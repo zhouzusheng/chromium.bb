@@ -6,11 +6,9 @@
 #define CONTENT_RENDERER_DEVTOOLS_DEVTOOLS_AGENT_H_
 
 #include <string>
-#include <vector>
 
 #include "base/atomicops.h"
 #include "base/basictypes.h"
-#include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "content/public/common/console_message_level.h"
 #include "content/public/renderer/render_frame_observer.h"
@@ -19,8 +17,6 @@
 namespace blink {
 class WebDevToolsAgent;
 }
-
-struct GpuTaskInfo;
 
 namespace content {
 
@@ -31,7 +27,6 @@ class RenderViewImpl;
 // agents infrastructure are flowing through this communication agent.
 // There is a corresponding DevToolsClient object on the client side.
 class DevToolsAgent : public RenderFrameObserver,
-                      public base::SupportsWeakPtr<DevToolsAgent>,
                       public blink::WebDevToolsAgentClient {
  public:
   explicit DevToolsAgent(RenderFrame* main_render_frame);
@@ -39,6 +34,13 @@ class DevToolsAgent : public RenderFrameObserver,
 
   // Returns agent instance for its routing id.
   static DevToolsAgent* FromRoutingId(int routing_id);
+
+  static void SendChunkedProtocolMessage(
+      IPC::Sender* sender,
+      int routing_id,
+      int call_id,
+      const std::string& message,
+      const std::string& post_state);
 
   blink::WebDevToolsAgent* GetWebAgent();
 
@@ -49,32 +51,30 @@ class DevToolsAgent : public RenderFrameObserver,
   bool OnMessageReceived(const IPC::Message& message) override;
 
   // WebDevToolsAgentClient implementation
-  virtual void sendMessageToInspectorFrontend(const blink::WebString& data);
-
-  virtual long processId() override;
-  virtual int debuggerId() override;
-  virtual void saveAgentRuntimeState(const blink::WebString& state) override;
-  virtual blink::WebDevToolsAgentClient::WebKitClientMessageLoop*
+  void sendProtocolMessage(int call_id,
+                           const blink::WebString& response,
+                           const blink::WebString& state) override;
+  long processId() override;
+  int debuggerId() override;
+  blink::WebDevToolsAgentClient::WebKitClientMessageLoop*
       createClientMessageLoop() override;
-  virtual void willEnterDebugLoop() override;
-  virtual void didExitDebugLoop() override;
+  void willEnterDebugLoop() override;
+  void didExitDebugLoop() override;
 
   typedef void (*TraceEventCallback)(
       char phase, const unsigned char*, const char* name, unsigned long long id,
       int numArgs, const char* const* argNames, const unsigned char* argTypes,
       const unsigned long long* argValues,
       unsigned char flags, double timestamp);
-  virtual void resetTraceEventCallback() override;
-  virtual void setTraceEventCallback(const blink::WebString& category_filter,
-                                     TraceEventCallback cb) override;
-  virtual void enableTracing(const blink::WebString& category_filter) override;
-  virtual void disableTracing() override;
-  virtual void startGPUEventsRecording() override;
-  virtual void stopGPUEventsRecording() override;
+  void resetTraceEventCallback() override;
+  void setTraceEventCallback(const blink::WebString& category_filter,
+                             TraceEventCallback cb) override;
+  void enableTracing(const blink::WebString& category_filter) override;
+  void disableTracing() override;
 
-  virtual void enableDeviceEmulation(
+  void enableDeviceEmulation(
       const blink::WebDeviceEmulationParams& params) override;
-  virtual void disableDeviceEmulation() override;
+  void disableDeviceEmulation() override;
 
   void OnAttach(const std::string& host_id);
   void OnReattach(const std::string& host_id,
@@ -84,7 +84,6 @@ class DevToolsAgent : public RenderFrameObserver,
   void OnInspectElement(const std::string& host_id, int x, int y);
   void OnAddMessageToConsole(ConsoleMessageLevel level,
                              const std::string& message);
-  void OnGpuTasksChunk(const std::vector<GpuTaskInfo>& tasks);
   void ContinueProgram();
   void OnSetupDevToolsClient();
 
@@ -104,7 +103,6 @@ class DevToolsAgent : public RenderFrameObserver,
 
   bool is_attached_;
   bool is_devtools_client_;
-  int32 gpu_route_id_;
   bool paused_in_mouse_move_;
   RenderFrame* main_render_frame_;
 

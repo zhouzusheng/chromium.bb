@@ -57,6 +57,10 @@ class State
     bool isRasterizerDiscardEnabled() const;
     void setRasterizerDiscard(bool enabled);
 
+    // Primitive restart
+    bool isPrimitiveRestartEnabled() const;
+    void setPrimitiveRestart(bool enabled);
+
     // Face culling state manipulation
     bool isCullFaceEnabled() const;
     void setCullFace(bool enabled);
@@ -173,6 +177,7 @@ class State
     // Transform feedback object (not buffer) binding manipulation
     void setTransformFeedbackBinding(TransformFeedback *transformFeedback);
     TransformFeedback *getCurrentTransformFeedback() const;
+    bool isTransformFeedbackActiveUnpaused() const;
     void detachTransformFeedback(GLuint transformFeedback);
 
     // Query binding manipulation
@@ -233,6 +238,8 @@ class State
     // Pixel unpack state manipulation
     void setUnpackAlignment(GLint alignment);
     GLint getUnpackAlignment() const;
+    void setUnpackRowLength(GLint rowLength);
+    GLint getUnpackRowLength() const;
     const PixelUnpackState &getUnpackState() const;
 
     // State query functions
@@ -314,6 +321,8 @@ class State
 
     PixelUnpackState mUnpack;
     PixelPackState mPack;
+
+    bool mPrimitiveRestart;
 };
 
 }

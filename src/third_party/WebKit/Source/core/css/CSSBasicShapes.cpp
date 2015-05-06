@@ -13,7 +13,7 @@
  *    disclaimer in the documentation and/or other materials
  *    provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER “AS IS” AND ANY
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
  * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE
@@ -129,7 +129,7 @@ bool CSSBasicShapeCircle::equals(const CSSBasicShape& shape) const
     if (shape.type() != CSSBasicShapeCircleType)
         return false;
 
-    const CSSBasicShapeCircle& other = static_cast<const CSSBasicShapeCircle&>(shape);
+    const CSSBasicShapeCircle& other = toCSSBasicShapeCircle(shape);
     return compareCSSValuePtr(m_centerX, other.m_centerX)
         && compareCSSValuePtr(m_centerY, other.m_centerY)
         && compareCSSValuePtr(m_radius, other.m_radius)
@@ -210,7 +210,7 @@ bool CSSBasicShapeEllipse::equals(const CSSBasicShape& shape) const
     if (shape.type() != CSSBasicShapeEllipseType)
         return false;
 
-    const CSSBasicShapeEllipse& other = static_cast<const CSSBasicShapeEllipse&>(shape);
+    const CSSBasicShapeEllipse& other = toCSSBasicShapeEllipse(shape);
     return compareCSSValuePtr(m_centerX, other.m_centerX)
         && compareCSSValuePtr(m_centerY, other.m_centerY)
         && compareCSSValuePtr(m_radiusX, other.m_radiusX)
@@ -288,7 +288,7 @@ bool CSSBasicShapePolygon::equals(const CSSBasicShape& shape) const
     if (shape.type() != CSSBasicShapePolygonType)
         return false;
 
-    const CSSBasicShapePolygon& rhs = static_cast<const CSSBasicShapePolygon&>(shape);
+    const CSSBasicShapePolygon& rhs = toCSSBasicShapePolygon(shape);
 
     if (!compareCSSValuePtr(m_referenceBox, rhs.m_referenceBox))
         return false;
@@ -424,7 +424,7 @@ bool CSSBasicShapeInset::equals(const CSSBasicShape& shape) const
     if (shape.type() != CSSBasicShapeInsetType)
         return false;
 
-    const CSSBasicShapeInset& other = static_cast<const CSSBasicShapeInset&>(shape);
+    const CSSBasicShapeInset& other = toCSSBasicShapeInset(shape);
     return compareCSSValuePtr(m_top, other.m_top)
         && compareCSSValuePtr(m_right, other.m_right)
         && compareCSSValuePtr(m_bottom, other.m_bottom)

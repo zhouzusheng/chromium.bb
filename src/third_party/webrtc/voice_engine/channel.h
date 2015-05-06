@@ -68,10 +68,11 @@ struct SenderInfo;
 
 namespace voe {
 
+class OutputMixer;
 class Statistics;
 class StatisticsProxy;
 class TransmitMixer;
-class OutputMixer;
+class VoERtcpObserver;
 
 // Helper class to simplify locking scheme for members that are accessed from
 // multiple threads.
@@ -163,6 +164,8 @@ class Channel:
     public MixerParticipant // supplies output mixer with audio frames
 {
 public:
+    friend class VoERtcpObserver;
+
     enum {KNumSocketThreads = 1};
     enum {KNumberOfSocketBuffers = 8};
     virtual ~Channel();
@@ -205,11 +208,6 @@ public:
     int32_t GetRecPayloadType(CodecInst& codec);
     int32_t SetSendCNPayloadType(int type, PayloadFrequencies frequency);
     int SetOpusMaxPlaybackRate(int frequency_hz);
-
-    // VoE dual-streaming.
-    int SetSecondarySendCodec(const CodecInst& codec, int red_payload_type);
-    void RemoveSecondarySendCodec();
-    int GetSecondarySendCodec(CodecInst* codec);
 
     // VoENetwork
     int32_t RegisterExternalTransport(Transport& transport);
@@ -454,17 +452,15 @@ public:
     uint32_t PrepareEncodeAndSend(int mixingFrequency);
     uint32_t EncodeAndSend();
 
-    // From BitrateObserver (called by the RTP/RTCP module).
-    void OnNetworkChanged(const uint32_t bitrate_bps,
-                          const uint8_t fraction_lost,  // 0 - 255.
-                          const uint32_t rtt);
+protected:
+    void OnIncomingFractionLoss(int fraction_lost);
 
 private:
     bool ReceivePacket(const uint8_t* packet, size_t packet_length,
                        const RTPHeader& header, bool in_order);
-    bool HandleEncapsulation(const uint8_t* packet,
-                             size_t packet_length,
-                             const RTPHeader& header);
+    bool HandleRtxPacket(const uint8_t* packet,
+                         size_t packet_length,
+                         const RTPHeader& header);
     bool IsPacketInOrder(const RTPHeader& header) const;
     bool IsPacketRetransmitted(const RTPHeader& header, bool in_order) const;
     int ResendPackets(const uint16_t* sequence_numbers, int length);
@@ -481,7 +477,7 @@ private:
                                   unsigned char id);
 
     int32_t GetPlayoutFrequency();
-    int GetRTT() const;
+    int64_t GetRTT() const;
 
     CriticalSectionWrapper& _fileCritSect;
     CriticalSectionWrapper& _callbackCritSect;
@@ -586,9 +582,7 @@ private:
     bool _rxNsIsEnabled;
     bool restored_packet_in_use_;
     // RtcpBandwidthObserver
-    scoped_ptr<BitrateController> bitrate_controller_;
-    scoped_ptr<RtcpBandwidthObserver> rtcp_bandwidth_observer_;
-    scoped_ptr<BitrateObserver> send_bitrate_observer_;
+    scoped_ptr<VoERtcpObserver> rtcp_observer_;
     scoped_ptr<NetworkPredictor> network_predictor_;
 };
 

@@ -15,6 +15,7 @@
 #include "./vpx_scale_rtcd.h"
 
 #include "vpx_mem/vpx_mem.h"
+#include "vpx_ports/vpx_once.h"
 #include "vpx_ports/vpx_timer.h"
 #include "vpx_scale/vpx_scale.h"
 
@@ -31,10 +32,9 @@
 #include "vp9/decoder/vp9_decodeframe.h"
 #include "vp9/decoder/vp9_decoder.h"
 #include "vp9/decoder/vp9_detokenize.h"
-#include "vp9/decoder/vp9_dthread.h"
 
-static void initialize_dec() {
-  static int init_done = 0;
+static void initialize_dec(void) {
+  static volatile int init_done = 0;
 
   if (!init_done) {
     vp9_rtcd();
@@ -62,8 +62,8 @@ static void vp9_dec_free_mi(VP9_COMMON *cm) {
 }
 
 VP9Decoder *vp9_decoder_create() {
-  VP9Decoder *const pbi = vpx_memalign(32, sizeof(*pbi));
-  VP9_COMMON *const cm = pbi ? &pbi->common : NULL;
+  VP9Decoder *volatile const pbi = vpx_memalign(32, sizeof(*pbi));
+  VP9_COMMON *volatile const cm = pbi ? &pbi->common : NULL;
 
   if (!cm)
     return NULL;
@@ -85,7 +85,7 @@ VP9Decoder *vp9_decoder_create() {
                   sizeof(*cm->frame_contexts)));
 
   pbi->need_resync = 1;
-  initialize_dec();
+  once(initialize_dec);
 
   // Initialize the references to not point to any frame buffers.
   vpx_memset(&cm->ref_frame_map, -1, sizeof(cm->ref_frame_map));
@@ -237,12 +237,12 @@ static void swap_frame_buffers(VP9Decoder *pbi) {
 
   // Invalidate these references until the next frame starts.
   for (ref_index = 0; ref_index < 3; ref_index++)
-    cm->frame_refs[ref_index].idx = INT_MAX;
+    cm->frame_refs[ref_index].idx = -1;
 }
 
 int vp9_receive_compressed_data(VP9Decoder *pbi,
                                 size_t size, const uint8_t **psource) {
-  VP9_COMMON *const cm = &pbi->common;
+  VP9_COMMON *volatile const cm = &pbi->common;
   const uint8_t *source = *psource;
   int retcode = 0;
 
@@ -257,7 +257,7 @@ int vp9_receive_compressed_data(VP9Decoder *pbi,
     // TODO(jkoleszar): Error concealment is undefined and non-normative
     // at this point, but if it becomes so, [0] may not always be the correct
     // thing to do here.
-    if (cm->frame_refs[0].idx != INT_MAX)
+    if (cm->frame_refs[0].idx > 0)
       cm->frame_refs[0].buf->corrupted = 1;
   }
 
@@ -287,16 +287,6 @@ int vp9_receive_compressed_data(VP9Decoder *pbi,
     }
 
     vp9_clear_system_state();
-
-    // We do not know if the missing frame(s) was supposed to update
-    // any of the reference buffers, but we act conservative and
-    // mark only the last buffer as corrupted.
-    //
-    // TODO(jkoleszar): Error concealment is undefined and non-normative
-    // at this point, but if it becomes so, [0] may not always be the correct
-    // thing to do here.
-    if (cm->frame_refs[0].idx != INT_MAX && cm->frame_refs[0].buf != NULL)
-      cm->frame_refs[0].buf->corrupted = 1;
 
     if (cm->new_fb_idx > 0 && cm->frame_bufs[cm->new_fb_idx].ref_count > 0)
       cm->frame_bufs[cm->new_fb_idx].ref_count--;

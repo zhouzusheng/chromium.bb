@@ -19,8 +19,9 @@
 #include "content/renderer/service_worker/service_worker_cache_storage_dispatcher.h"
 #include "third_party/WebKit/public/platform/WebGeofencingEventType.h"
 #include "third_party/WebKit/public/platform/WebMessagePortChannel.h"
-#include "third_party/WebKit/public/platform/WebServiceWorkerClientFocusCallback.h"
+#include "third_party/WebKit/public/platform/WebServiceWorkerClientsClaimCallbacks.h"
 #include "third_party/WebKit/public/platform/WebServiceWorkerClientsInfo.h"
+#include "third_party/WebKit/public/platform/WebServiceWorkerError.h"
 #include "third_party/WebKit/public/platform/WebServiceWorkerEventResult.h"
 #include "third_party/WebKit/public/platform/WebServiceWorkerSkipWaitingCallbacks.h"
 
@@ -36,9 +37,11 @@ class Message;
 
 namespace content {
 
-struct CrossOriginServiceWorkerClient;
 class EmbeddedWorkerContextClient;
+class WebServiceWorkerRegistrationImpl;
+struct NavigatorConnectClient;
 struct PlatformNotificationData;
+struct ServiceWorkerClientInfo;
 
 // TODO(kinuko): This should implement WebServiceWorkerContextClient
 // rather than having EmbeddedWorkerContextClient implement it.
@@ -53,6 +56,8 @@ class ServiceWorkerScriptContext {
 
   void OnMessageReceived(const IPC::Message& message);
 
+  void SetRegistrationInServiceWorkerGlobalScope(
+      scoped_ptr<WebServiceWorkerRegistrationImpl> registration);
   void DidHandleActivateEvent(int request_id,
                               blink::WebServiceWorkerEventResult);
   void DidHandleInstallEvent(int request_id,
@@ -69,6 +74,10 @@ class ServiceWorkerScriptContext {
   void DidHandleCrossOriginConnectEvent(int request_id, bool accept_connection);
   void GetClientDocuments(
       blink::WebServiceWorkerClientsCallbacks* callbacks);
+  void OpenWindow(const GURL& url,
+                  blink::WebServiceWorkerClientCallbacks* callbacks);
+  void SetCachedMetadata(const GURL& url, const char* data, size_t size);
+  void ClearCachedMetadata(const GURL& url);
   void PostMessageToDocument(
       int client_id,
       const base::string16& message,
@@ -78,8 +87,9 @@ class ServiceWorkerScriptContext {
       const base::string16& message,
       scoped_ptr<blink::WebMessagePortChannelArray> channels);
   void FocusClient(int client_id,
-                   blink::WebServiceWorkerClientFocusCallback* callback);
+                   blink::WebServiceWorkerClientCallbacks* callback);
   void SkipWaiting(blink::WebServiceWorkerSkipWaitingCallbacks* callbacks);
+  void ClaimClients(blink::WebServiceWorkerClientsClaimCallbacks* callbacks);
 
   // Send a message to the browser. Takes ownership of |message|.
   void Send(IPC::Message* message);
@@ -95,8 +105,10 @@ class ServiceWorkerScriptContext {
  private:
   typedef IDMap<blink::WebServiceWorkerClientsCallbacks, IDMapOwnPointer>
       ClientsCallbacksMap;
-  typedef IDMap<blink::WebServiceWorkerClientFocusCallback, IDMapOwnPointer>
-      FocusClientCallbacksMap;
+  typedef IDMap<blink::WebServiceWorkerClientsClaimCallbacks, IDMapOwnPointer>
+      ClaimClientsCallbacksMap;
+  typedef IDMap<blink::WebServiceWorkerClientCallbacks, IDMapOwnPointer>
+      ClientCallbacksMap;
   typedef IDMap<blink::WebServiceWorkerSkipWaitingCallbacks, IDMapOwnPointer>
       SkipWaitingCallbacksMap;
 
@@ -114,19 +126,27 @@ class ServiceWorkerScriptContext {
                          const std::string& region_id,
                          const blink::WebCircularGeofencingRegion& region);
   void OnCrossOriginConnectEvent(int request_id,
-                                 const CrossOriginServiceWorkerClient& client);
+                                 const NavigatorConnectClient& client);
   void OnPostMessage(const base::string16& message,
                      const std::vector<int>& sent_message_port_ids,
                      const std::vector<int>& new_routing_ids);
   void OnCrossOriginMessageToWorker(
-      const CrossOriginServiceWorkerClient& client,
+      const NavigatorConnectClient& client,
       const base::string16& message,
       const std::vector<int>& sent_message_port_ids,
       const std::vector<int>& new_routing_ids);
   void OnDidGetClientDocuments(
       int request_id, const std::vector<ServiceWorkerClientInfo>& clients);
-  void OnFocusClientResponse(int request_id, bool result);
+  void OnOpenWindowResponse(int request_id,
+                            const ServiceWorkerClientInfo& client);
+  void OnOpenWindowError(int request_id);
+  void OnFocusClientResponse(int request_id,
+                             const ServiceWorkerClientInfo& client);
   void OnDidSkipWaiting(int request_id);
+  void OnDidClaimClients(int request_id);
+  void OnClaimClientsError(int request_id,
+                           blink::WebServiceWorkerError::ErrorType error_type,
+                           const base::string16& message);
 
   scoped_ptr<ServiceWorkerCacheStorageDispatcher> cache_storage_dispatcher_;
 
@@ -144,11 +164,14 @@ class ServiceWorkerScriptContext {
   // Pending callbacks for GetClientDocuments().
   ClientsCallbacksMap pending_clients_callbacks_;
 
-  // Pending callbacks for FocusClient().
-  FocusClientCallbacksMap pending_focus_client_callbacks_;
+  // Pending callbacks for OpenWindow() and FocusClient().
+  ClientCallbacksMap pending_client_callbacks_;
 
   // Pending callbacks for SkipWaiting().
   SkipWaitingCallbacksMap pending_skip_waiting_callbacks_;
+
+  // Pending callbacks for ClaimClients().
+  ClaimClientsCallbacksMap pending_claim_clients_callbacks_;
 
   // Capture timestamps for UMA
   std::map<int, base::TimeTicks> activate_start_timings_;

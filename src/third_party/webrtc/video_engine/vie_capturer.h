@@ -90,7 +90,7 @@ class ViECapturer
   int32_t SetCaptureDelay(int32_t delay_ms);
 
   // Sets rotation of the incoming captured frame.
-  int32_t SetRotateCapturedFrames(const RotateCapturedFrame rotation);
+  int32_t SetVideoRotation(const VideoRotation rotation);
 
   // Effect filter.
   int32_t RegisterEffectFilter(ViEEffectFilter* effect_filter);
@@ -146,7 +146,6 @@ class ViECapturer
   bool ViECaptureProcess();
 
   void DeliverI420Frame(I420VideoFrame* video_frame);
-  void DeliverCodedFrame(VideoFrame* video_frame);
 
  private:
   bool SwapCapturedAndDeliverFrameIfAvailable();
@@ -167,6 +166,8 @@ class ViECapturer
   ThreadWrapper& capture_thread_;
   EventWrapper& capture_event_;
   EventWrapper& deliver_event_;
+
+  bool stop_;
 
   scoped_ptr<I420VideoFrame> captured_frame_;
   scoped_ptr<I420VideoFrame> deliver_frame_;

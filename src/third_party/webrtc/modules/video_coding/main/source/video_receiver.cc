@@ -168,7 +168,7 @@ int64_t VideoReceiver::TimeUntilNextProcess() {
   return timeUntilNextProcess;
 }
 
-int32_t VideoReceiver::SetReceiveChannelParameters(uint32_t rtt) {
+int32_t VideoReceiver::SetReceiveChannelParameters(int64_t rtt) {
   CriticalSectionScoped receiveCs(_receiveCritSect);
   _receiver.UpdateRtt(rtt);
   return 0;
@@ -335,6 +335,10 @@ int VideoReceiver::RegisterRenderBufferSizeCallback(
   return VCM_OK;
 }
 
+void VideoReceiver::TriggerDecoderShutdown() {
+  _receiver.TriggerDecoderShutdown();
+}
+
 // Decode next frame, blocking.
 // Should be called as often as possible to get the most out of the decoder.
 int32_t VideoReceiver::Decode(uint16_t maxWaitTimeMs) {
@@ -365,7 +369,7 @@ int32_t VideoReceiver::Decode(uint16_t maxWaitTimeMs) {
 
     if (pre_decode_image_callback_) {
       EncodedImage encoded_image(frame->EncodedImage());
-      pre_decode_image_callback_->Encoded(encoded_image);
+      pre_decode_image_callback_->Encoded(encoded_image, NULL, NULL);
     }
 
 #ifdef DEBUG_DECODER_BIT_STREAM
@@ -467,6 +471,7 @@ int32_t VideoReceiver::Decode(const VCMEncodedFrame& frame) {
       case kKeyOnLoss: {
         request_key_frame = true;
         ret = VCM_OK;
+        break;
       }
       default:
         break;

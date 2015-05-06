@@ -23,26 +23,28 @@ class AudioEncoderIlbc : public AudioEncoder {
     Config() : payload_type(102), frame_size_ms(30) {}
 
     int payload_type;
-    int frame_size_ms;
+    int frame_size_ms;  // Valid values are 20, 30, 40, and 60 ms.
+    // Note that frame size 40 ms produces encodings with two 20 ms frames in
+    // them, and frame size 60 ms consists of two 30 ms frames.
   };
 
   explicit AudioEncoderIlbc(const Config& config);
   virtual ~AudioEncoderIlbc();
 
-  virtual int sample_rate_hz() const OVERRIDE;
-  virtual int num_channels() const OVERRIDE;
+  virtual int SampleRateHz() const OVERRIDE;
+  virtual int NumChannels() const OVERRIDE;
   virtual int Num10MsFramesInNextPacket() const OVERRIDE;
   virtual int Max10MsFramesInAPacket() const OVERRIDE;
 
  protected:
-  virtual bool EncodeInternal(uint32_t timestamp,
+  virtual bool EncodeInternal(uint32_t rtp_timestamp,
                               const int16_t* audio,
                               size_t max_encoded_bytes,
                               uint8_t* encoded,
                               EncodedInfo* info) OVERRIDE;
 
  private:
-  static const int kMaxSamplesPerPacket = 240;
+  static const int kMaxSamplesPerPacket = 480;
   const int payload_type_;
   const int num_10ms_frames_per_packet_;
   int num_10ms_frames_buffered_;

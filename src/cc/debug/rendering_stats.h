@@ -8,8 +8,8 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/debug/trace_event_argument.h"
 #include "base/time/time.h"
+#include "base/trace_event/trace_event_argument.h"
 #include "base/values.h"
 #include "cc/base/cc_export.h"
 #include "cc/debug/traced_value.h"
@@ -24,7 +24,8 @@ struct CC_EXPORT RenderingStats {
     ~TimeDeltaList();
 
     void Append(base::TimeDelta value);
-    void AddToTracedValue(base::debug::TracedValue* list_value) const;
+    void AddToTracedValue(const char* name,
+                          base::trace_event::TracedValue* list_value) const;
 
     void Add(const TimeDeltaList& other);
 
@@ -51,7 +52,8 @@ struct CC_EXPORT RenderingStats {
   TimeDeltaList commit_to_activate_duration;
   TimeDeltaList commit_to_activate_duration_estimate;
 
-  scoped_refptr<base::debug::ConvertableToTraceFormat> AsTraceableData() const;
+  scoped_refptr<base::trace_event::ConvertableToTraceFormat> AsTraceableData()
+      const;
   void Add(const RenderingStats& other);
 };
 

@@ -29,7 +29,7 @@
           'dependencies': [
             'audio_processing',
             'audioproc_debug_proto',
-            '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
+            '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
             '<(webrtc_root)/test/test.gyp:test_support',
           ],
           'sources': [ 'test/process_test.cc', ],
@@ -49,7 +49,7 @@
           'type': 'executable',
           'dependencies': [
             'audioproc_debug_proto',
-            '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
+            '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
             '<(webrtc_root)/common_audio/common_audio.gyp:common_audio',
             '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
           ],

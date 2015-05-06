@@ -21,7 +21,6 @@
 #include "content/browser/renderer_host/render_widget_host_view_aura.h"
 #include "content/browser/renderer_host/web_input_event_aura.h"
 #include "content/browser/web_contents/aura/gesture_nav_simple.h"
-#include "content/browser/web_contents/aura/image_window_delegate.h"
 #include "content/browser/web_contents/aura/overscroll_navigation_overlay.h"
 #include "content/browser/web_contents/aura/shadow_layer_delegate.h"
 #include "content/browser/web_contents/aura/window_slider.h"
@@ -46,12 +45,14 @@
 #include "net/base/filename_util.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/aura/client/aura_constants.h"
+#include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_observer.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/aura/window_tree_host_observer.h"
+#include "ui/aura_extra/image_window_delegate.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/custom_data_helper.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
@@ -116,7 +117,7 @@ RenderWidgetHostViewAura* ToRenderWidgetHostViewAura(
 // The window delegate for the overscroll window. This redirects trackpad events
 // to the web-contents window. The delegate destroys itself when the window is
 // destroyed.
-class OverscrollWindowDelegate : public ImageWindowDelegate {
+class OverscrollWindowDelegate : public aura_extra::ImageWindowDelegate {
  public:
   OverscrollWindowDelegate(WebContentsImpl* web_contents,
                            OverscrollMode overscroll_mode)
@@ -125,11 +126,9 @@ class OverscrollWindowDelegate : public ImageWindowDelegate {
     const NavigationControllerImpl& controller = web_contents->GetController();
     const NavigationEntryImpl* entry = NULL;
     if (ShouldNavigateForward(controller, overscroll_mode)) {
-      entry = NavigationEntryImpl::FromNavigationEntry(
-          controller.GetEntryAtOffset(1));
+      entry = controller.GetEntryAtOffset(1);
     } else if (ShouldNavigateBack(controller, overscroll_mode)) {
-      entry = NavigationEntryImpl::FromNavigationEntry(
-          controller.GetEntryAtOffset(-1));
+      entry = controller.GetEntryAtOffset(-1);
     }
 
     gfx::Image image;
@@ -1235,11 +1234,18 @@ void WebContentsViewAura::StartDragging(
     gfx::NativeView content_native_view = GetContentNativeView();
     base::MessageLoop::ScopedNestableTaskAllower allow(
         base::MessageLoop::current());
+
+    gfx::Point root_point(event_info.event_location);
+    aura::client::ScreenPositionClient* spc =
+        aura::client::GetScreenPositionClient(root_window);
+    if (spc)
+      spc->ConvertPointFromScreen(root_window, &root_point);
+
     result_op = aura::client::GetDragDropClient(root_window)
         ->StartDragAndDrop(data,
                            root_window,
                            content_native_view,
-                           event_info.event_location,
+                           root_point,
                            ConvertFromWeb(operations),
                            event_info.event_source);
   }
@@ -1433,6 +1439,10 @@ void WebContentsViewAura::OnBoundsChanged(const gfx::Rect& old_bounds,
       window_->children()[i]->SetBounds(bounds);
     }
   }
+}
+
+ui::TextInputClient* WebContentsViewAura::GetFocusedTextInputClient() {
+  return nullptr;
 }
 
 gfx::NativeCursor WebContentsViewAura::GetCursor(const gfx::Point& point) {

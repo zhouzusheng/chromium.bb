@@ -34,7 +34,7 @@ class HTMLFieldSetElement final : public HTMLFormControlElement {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<HTMLFieldSetElement> create(Document&, HTMLFormElement*);
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
     HTMLLegendElement* legend() const;
 
     PassRefPtrWillBeRawPtr<HTMLFormControlsCollection> elements();
@@ -51,7 +51,7 @@ private:
 
     virtual bool isEnumeratable() const override { return true; }
     virtual bool supportsFocus() const override;
-    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual LayoutObject* createRenderer(const LayoutStyle&) override;
     virtual const AtomicString& formControlType() const override;
     virtual bool recalcWillValidate() const override { return false; }
     virtual bool matchesValidityPseudoClasses() const override final;

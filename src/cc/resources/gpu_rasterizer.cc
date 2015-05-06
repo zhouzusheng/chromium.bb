@@ -7,8 +7,8 @@
 #include <algorithm>
 
 #include "base/bind.h"
-#include "base/debug/trace_event.h"
 #include "base/metrics/histogram.h"
+#include "base/trace_event/trace_event.h"
 #include "cc/debug/devtools_instrumentation.h"
 #include "cc/debug/frame_viewer_instrumentation.h"
 #include "cc/output/context_provider.h"
@@ -31,58 +31,108 @@ scoped_ptr<GpuRasterizer> GpuRasterizer::Create(
     ContextProvider* context_provider,
     ResourceProvider* resource_provider,
     bool use_distance_field_text,
-    bool tile_prepare_enabled) {
-  return make_scoped_ptr<GpuRasterizer>(
-      new GpuRasterizer(context_provider, resource_provider,
-                        use_distance_field_text, tile_prepare_enabled));
+    bool threaded_gpu_rasterization_enabled,
+    int msaa_sample_count) {
+  return make_scoped_ptr<GpuRasterizer>(new GpuRasterizer(
+      context_provider, resource_provider, use_distance_field_text,
+      threaded_gpu_rasterization_enabled, msaa_sample_count));
 }
 
 GpuRasterizer::GpuRasterizer(ContextProvider* context_provider,
                              ResourceProvider* resource_provider,
                              bool use_distance_field_text,
-                             bool tile_prepare_enabled)
-    : context_provider_(context_provider),
-      resource_provider_(resource_provider),
+                             bool threaded_gpu_rasterization_enabled,
+                             int msaa_sample_count)
+    : resource_provider_(resource_provider),
       use_distance_field_text_(use_distance_field_text),
-      tile_prepare_enabled_(tile_prepare_enabled) {
-  DCHECK(context_provider_);
+      threaded_gpu_rasterization_enabled_(threaded_gpu_rasterization_enabled),
+      msaa_sample_count_(msaa_sample_count) {
 }
 
 GpuRasterizer::~GpuRasterizer() {
 }
 
 PrepareTilesMode GpuRasterizer::GetPrepareTilesMode() {
-  return tile_prepare_enabled_ ? PrepareTilesMode::PREPARE_PRIORITIZED_TILES
-                               : PrepareTilesMode::PREPARE_NONE;
+  return threaded_gpu_rasterization_enabled_
+             ? PrepareTilesMode::RASTERIZE_PRIORITIZED_TILES
+             : PrepareTilesMode::PREPARE_NONE;
+}
+
+ContextProvider* GpuRasterizer::GetContextProvider(bool worker_context) {
+  return worker_context
+             ? resource_provider_->output_surface()->worker_context_provider()
+             : resource_provider_->output_surface()->context_provider();
 }
 
 void GpuRasterizer::RasterizeTiles(
     const TileVector& tiles,
     ResourcePool* resource_pool,
+    ResourceFormat resource_format,
     const UpdateTileDrawInfoCallback& update_tile_draw_info) {
-  ScopedGpuRaster gpu_raster(context_provider_);
+  ScopedGpuRaster gpu_raster(GetContextProvider(false));
 
   ScopedResourceWriteLocks locks;
 
   for (Tile* tile : tiles) {
-    // TODO(hendrikw): Don't create resources for solid color tiles.
-    // See crbug.com/445919
-    scoped_ptr<ScopedResource> resource =
-        resource_pool->AcquireResource(tile->desired_texture_size());
-    const ScopedResource* const_resource = resource.get();
-
     RasterSource::SolidColorAnalysis analysis;
 
     if (tile->use_picture_analysis())
       PerformSolidColorAnalysis(tile, &analysis);
 
-    if (!analysis.is_solid_color)
-      AddToMultiPictureDraw(tile, const_resource, &locks);
-
+    scoped_ptr<ScopedResource> resource;
+    if (!analysis.is_solid_color) {
+      resource = resource_pool->AcquireResource(tile->desired_texture_size(),
+                                                resource_format);
+      AddToMultiPictureDraw(tile, resource.get(), &locks);
+    }
     update_tile_draw_info.Run(tile, resource.Pass(), analysis);
   }
 
-  multi_picture_draw_.draw();
+  // If MSAA is enabled, tell Skia to resolve each render target after draw.
+  multi_picture_draw_.draw(msaa_sample_count_ > 0);
+}
+
+void GpuRasterizer::RasterizeSource(
+    bool use_worker_context,
+    ResourceProvider::ScopedWriteLockGr* write_lock,
+    const RasterSource* raster_source,
+    const gfx::Rect& rect,
+    float scale) {
+  // Play back raster_source into temp SkPicture.
+  SkPictureRecorder recorder;
+  gfx::Size size = write_lock->resource()->size;
+  const int flags = SkPictureRecorder::kComputeSaveLayerInfo_RecordFlag;
+  skia::RefPtr<SkCanvas> canvas = skia::SharePtr(
+      recorder.beginRecording(size.width(), size.height(), NULL, flags));
+  canvas->save();
+  raster_source->PlaybackToCanvas(canvas.get(), rect, scale);
+  canvas->restore();
+  skia::RefPtr<SkPicture> picture = skia::AdoptRef(recorder.endRecording());
+
+  // Turn on distance fields for layers that have ever animated.
+  bool use_distance_field_text =
+      use_distance_field_text_ ||
+      raster_source->ShouldAttemptToUseDistanceFieldText();
+
+  // Playback picture into resource.
+  {
+    ScopedGpuRaster gpu_raster(GetContextProvider(use_worker_context));
+    write_lock->InitSkSurface(use_worker_context, use_distance_field_text,
+                              raster_source->CanUseLCDText(),
+                              msaa_sample_count_);
+
+    SkSurface* sk_surface = write_lock->sk_surface();
+
+    // Allocating an SkSurface will fail after a lost context.  Pretend we
+    // rasterized, as the contents of the resource don't matter anymore.
+    if (!sk_surface)
+      return;
+
+    SkMultiPictureDraw multi_picture_draw;
+    multi_picture_draw.add(sk_surface->getCanvas(), picture.get());
+    multi_picture_draw.draw(msaa_sample_count_ > 0);
+    write_lock->ReleaseSkSurface();
+  }
 }
 
 void GpuRasterizer::PerformSolidColorAnalysis(
@@ -120,13 +170,19 @@ void GpuRasterizer::AddToMultiPictureDraw(const Tile* tile,
   scoped_ptr<ResourceProvider::ScopedWriteLockGr> lock(
       new ResourceProvider::ScopedWriteLockGr(resource_provider_,
                                               resource->id()));
-  SkSurface* sk_surface = lock->GetSkSurface(
-      use_distance_field_text, tile->raster_source()->CanUseLCDText());
 
-  locks->push_back(lock.Pass());
+  lock->InitSkSurface(false, use_distance_field_text,
+                      tile->raster_source()->CanUseLCDText(),
+                      msaa_sample_count_);
 
+  SkSurface* sk_surface = lock->sk_surface();
+
+  // Allocating an SkSurface will fail after a lost context.  Pretend we
+  // rasterized, as the contents of the resource don't matter anymore.
   if (!sk_surface)
     return;
+
+  locks->push_back(lock.Pass());
 
   SkRTreeFactory factory;
   SkPictureRecorder recorder;

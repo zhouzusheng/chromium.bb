@@ -44,6 +44,7 @@ class SVGDocumentExtensions;
 class SVGElement;
 class SVGElementRareData;
 class SVGFitToViewBox;
+class SVGLength;
 class SVGSVGElement;
 class SVGUseElement;
 
@@ -66,6 +67,8 @@ public:
     virtual String title() const override;
     bool hasRelativeLengths() const { return !m_elementsWithRelativeLengths.isEmpty(); }
     static bool isAnimatableCSSProperty(const QualifiedName&);
+    virtual bool isPresentationAttributeWithSVGDOM(const QualifiedName&) const { return false; }
+
     enum CTMScope {
         NearestViewportScope, // Used by SVGGraphicsElement::getCTM()
         ScreenScope, // Used by SVGGraphicsElement::getScreenCTM()
@@ -106,6 +109,7 @@ public:
 
     void invalidateSVGAttributes() { ensureUniqueElementData().m_animatedSVGAttributesAreDirty = true; }
     void invalidateSVGPresentationAttributeStyle() { ensureUniqueElementData().m_presentationAttributeStyleIsDirty = true; }
+    void addSVGLengthPropertyToPresentationAttributeStyle(MutableStylePropertySet*, CSSPropertyID, SVGLength&);
 
     const WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> >& instancesForElement() const;
     void mapInstanceToElement(SVGElement*);
@@ -127,7 +131,7 @@ public:
 
     void synchronizeAnimatedSVGAttribute(const QualifiedName&) const;
 
-    virtual PassRefPtr<RenderStyle> customStyleForRenderer() override final;
+    virtual PassRefPtr<LayoutStyle> customStyleForRenderer() override final;
 
     virtual void synchronizeRequiredFeatures() { }
     virtual void synchronizeRequiredExtensions() { }
@@ -184,9 +188,11 @@ public:
 
     void invalidateInstances();
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     static const AtomicString& eventParameterName();
+
+    virtual bool isPresentationAttribute(const QualifiedName&) const override;
 
 protected:
     SVGElement(const QualifiedName&, Document&, ConstructionType = CreateSVGElement);
@@ -200,7 +206,6 @@ protected:
 
     virtual void attributeChanged(const QualifiedName&, const AtomicString&, AttributeModificationReason = ModifiedDirectly) override;
 
-    virtual bool isPresentationAttribute(const QualifiedName&) const override;
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
 
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
@@ -210,7 +215,7 @@ protected:
     static CSSPropertyID cssPropertyIdForSVGAttributeName(const QualifiedName&);
     void updateRelativeLengthsInformation() { updateRelativeLengthsInformation(selfHasRelativeLengths(), this); }
     void updateRelativeLengthsInformation(bool hasRelativeLengths, SVGElement*);
-    static void markForLayoutAndParentResourceInvalidation(RenderObject*);
+    static void markForLayoutAndParentResourceInvalidation(LayoutObject*);
 
     virtual bool selfHasRelativeLengths() const { return false; }
 
@@ -231,8 +236,8 @@ private:
     bool isSVGElement() const = delete; // This will catch anyone doing an unnecessary check.
     bool isStyledElement() const = delete; // This will catch anyone doing an unnecessary check.
 
-    RenderStyle* computedStyle(PseudoId = NOPSEUDO);
-    virtual RenderStyle* virtualComputedStyle(PseudoId pseudoElementSpecifier = NOPSEUDO) override final { return computedStyle(pseudoElementSpecifier); }
+    LayoutStyle* computedStyle(PseudoId = NOPSEUDO);
+    virtual LayoutStyle* virtualComputedStyle(PseudoId pseudoElementSpecifier = NOPSEUDO) override final { return computedStyle(pseudoElementSpecifier); }
     virtual void willRecalcStyle(StyleRecalcChange) override;
 
     void buildPendingResourcesIfNeeded();

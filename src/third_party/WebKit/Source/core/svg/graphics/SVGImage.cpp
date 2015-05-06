@@ -35,13 +35,13 @@
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
+#include "core/layout/style/LayoutStyle.h"
+#include "core/layout/svg/LayoutSVGRoot.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/page/Chrome.h"
+#include "core/paint/CompositingRecorder.h"
 #include "core/paint/FloatClipRecorder.h"
 #include "core/paint/TransformRecorder.h"
-#include "core/paint/TransparencyRecorder.h"
-#include "core/rendering/style/RenderStyle.h"
-#include "core/rendering/svg/RenderSVGRoot.h"
 #include "core/svg/SVGDocumentExtensions.h"
 #include "core/svg/SVGFEImageElement.h"
 #include "core/svg/SVGImageElement.h"
@@ -56,6 +56,7 @@
 #include "platform/graphics/ImageBuffer.h"
 #include "platform/graphics/ImageObserver.h"
 #include "platform/graphics/paint/ClipRecorder.h"
+#include "platform/graphics/paint/DisplayItemList.h"
 #include "third_party/skia/include/core/SkPicture.h"
 #include "wtf/PassRefPtr.h"
 
@@ -142,7 +143,7 @@ void SVGImage::setContainerSize(const IntSize& size)
     FrameView* view = frameView();
     view->resize(this->containerSize());
 
-    RenderSVGRoot* renderer = toRenderSVGRoot(rootElement->renderer());
+    LayoutSVGRoot* renderer = toLayoutSVGRoot(rootElement->renderer());
     if (!renderer)
         return;
     renderer->setContainerSize(size);
@@ -154,7 +155,7 @@ IntSize SVGImage::containerSize() const
     if (!rootElement)
         return IntSize();
 
-    RenderSVGRoot* renderer = toRenderSVGRoot(rootElement->renderer());
+    LayoutSVGRoot* renderer = toLayoutSVGRoot(rootElement->renderer());
     if (!renderer)
         return IntSize();
 
@@ -185,7 +186,7 @@ IntSize SVGImage::containerSize() const
 }
 
 void SVGImage::drawForContainer(GraphicsContext* context, const FloatSize containerSize, float zoom, const FloatRect& dstRect,
-    const FloatRect& srcRect, CompositeOperator compositeOp, blink::WebBlendMode blendMode)
+    const FloatRect& srcRect, SkXfermode::Mode compositeOp)
 {
     if (!m_page)
         return;
@@ -204,7 +205,7 @@ void SVGImage::drawForContainer(GraphicsContext* context, const FloatSize contai
     adjustedSrcSize.scale(roundedContainerSize.width() / containerSize.width(), roundedContainerSize.height() / containerSize.height());
     scaledSrc.setSize(adjustedSrcSize);
 
-    draw(context, dstRect, scaledSrc, compositeOp, blendMode);
+    draw(context, dstRect, scaledSrc, compositeOp, DoNotRespectImageOrientation);
 }
 
 PassRefPtr<NativeImageSkia> SVGImage::nativeImageForCurrentFrame()
@@ -216,14 +217,14 @@ PassRefPtr<NativeImageSkia> SVGImage::nativeImageForCurrentFrame()
     if (!buffer)
         return nullptr;
 
-    drawForContainer(buffer->context(), size(), 1, rect(), rect(), CompositeSourceOver, blink::WebBlendModeNormal);
+    drawForContainer(buffer->context(), size(), 1, rect(), rect(), SkXfermode::kSrcOver_Mode);
 
     return NativeImageSkia::create(buffer->bitmap());
 }
 
 void SVGImage::drawPatternForContainer(GraphicsContext* context, const FloatSize containerSize,
     float zoom, const FloatRect& srcRect, const FloatSize& tileScale, const FloatPoint& phase,
-    CompositeOperator compositeOp, const FloatRect& dstRect, blink::WebBlendMode blendMode,
+    SkXfermode::Mode compositeOp, const FloatRect& dstRect,
     const IntSize& repeatSpacing)
 {
     // Tile adjusted for scaling/stretch.
@@ -248,7 +249,7 @@ void SVGImage::drawPatternForContainer(GraphicsContext* context, const FloatSize
         OwnPtr<FloatClipRecorder> clipRecorder;
         if (tile != spacedTile)
             clipRecorder = adoptPtr(new FloatClipRecorder(recordingContext, displayItemClient(), PaintPhaseForeground, tile));
-        drawForContainer(&recordingContext, containerSize, zoom, tile, srcRect, CompositeSourceOver, blink::WebBlendModeNormal);
+        drawForContainer(&recordingContext, containerSize, zoom, tile, srcRect, SkXfermode::kSrcOver_Mode);
     }
 
     if (displayItemList)
@@ -264,12 +265,12 @@ void SVGImage::drawPatternForContainer(GraphicsContext* context, const FloatSize
 
     SkPaint paint;
     paint.setShader(patternShader.get());
-    paint.setXfermodeMode(WebCoreCompositeToSkiaComposite(compositeOp, blendMode));
+    paint.setXfermodeMode(compositeOp);
     paint.setColorFilter(context->colorFilter());
     context->drawRect(dstRect, paint);
 }
 
-void SVGImage::draw(GraphicsContext* context, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator compositeOp, blink::WebBlendMode blendMode)
+void SVGImage::draw(GraphicsContext* context, const FloatRect& dstRect, const FloatRect& srcRect, SkXfermode::Mode compositeOp, RespectImageOrientationEnum)
 {
     if (!m_page)
         return;
@@ -285,13 +286,10 @@ void SVGImage::draw(GraphicsContext* context, const FloatRect& dstRect, const Fl
     {
         ClipRecorder clipRecorder(displayItemClient(), &recordingContext, DisplayItem::ClipNodeImage, enclosingIntRect(dstRect));
 
-        bool compositingRequiresTransparencyLayer = compositeOp != CompositeSourceOver || blendMode != blink::WebBlendModeNormal;
-        bool requiresTransparencyLayer = compositingRequiresTransparencyLayer || opacity < 1;
-        OwnPtr<TransparencyRecorder> transparencyRecorder;
-        if (requiresTransparencyLayer) {
-            CompositeOperator postTransparencyLayerCompositeOp = compositingRequiresTransparencyLayer ? CompositeSourceOver : compositeOp;
-            transparencyRecorder = adoptPtr(new TransparencyRecorder(&recordingContext, displayItemClient(), compositeOp, blendMode, opacity, postTransparencyLayerCompositeOp));
-        }
+        bool hasCompositing = compositeOp != SkXfermode::kSrcOver_Mode;
+        OwnPtr<CompositingRecorder> compositingRecorder;
+        if (hasCompositing || opacity < 1)
+            compositingRecorder = adoptPtr(new CompositingRecorder(&recordingContext, displayItemClient(), compositeOperatorFromSkia(compositeOp), blendModeFromSkia(compositeOp), opacity));
 
         // We can only draw the entire frame, clipped to the rect we want. So compute where the top left
         // of the image would be if we were drawing without clipping, and translate accordingly.
@@ -304,8 +302,11 @@ void SVGImage::draw(GraphicsContext* context, const FloatRect& dstRect, const Fl
 
         FrameView* view = frameView();
         view->resize(containerSize());
-        if (!m_url.isEmpty())
-            view->scrollToFragment(m_url);
+
+        // Always call scrollToFragment, even if the url is empty, because
+        // there may have been a previous url/fragment that needs to be reset.
+        view->scrollToFragment(m_url);
+
         view->updateLayoutAndStyleForPainting();
         view->paint(&recordingContext, enclosingIntRect(srcRect));
         ASSERT(!view->needsLayout());

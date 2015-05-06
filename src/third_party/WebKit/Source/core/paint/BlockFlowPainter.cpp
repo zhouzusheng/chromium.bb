@@ -5,10 +5,11 @@
 #include "config.h"
 #include "core/paint/BlockFlowPainter.h"
 
-#include "core/rendering/FloatingObjects.h"
-#include "core/rendering/PaintInfo.h"
+#include "core/layout/FloatingObjects.h"
+#include "core/layout/Layer.h"
+#include "core/layout/PaintInfo.h"
+#include "core/paint/RenderDrawingRecorder.h"
 #include "core/rendering/RenderBlockFlow.h"
-#include "core/rendering/RenderLayer.h"
 #include "platform/graphics/paint/ClipRecorderStack.h"
 
 namespace blink {
@@ -54,9 +55,17 @@ void BlockFlowPainter::paintSelection(const PaintInfo& paintInfo, const LayoutPo
         LayoutUnit lastRight = m_renderBlockFlow.logicalRightSelectionOffset(&m_renderBlockFlow, lastTop);
         ClipRecorderStack clipRecorderStack(paintInfo.context);
 
-        LayoutRect gapRectsBounds = m_renderBlockFlow.selectionGaps(&m_renderBlockFlow, paintOffset, LayoutSize(), lastTop, lastLeft, lastRight, &paintInfo);
+        LayoutRect bounds;
+        if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
+            bounds = m_renderBlockFlow.visualOverflowRect();
+            bounds.moveBy(paintOffset);
+        }
+        RenderDrawingRecorder recorder(paintInfo.context, m_renderBlockFlow, DisplayItem::SelectionGap, bounds);
+
+        LayoutRect gapRectsBounds = m_renderBlockFlow.selectionGaps(&m_renderBlockFlow, paintOffset, LayoutSize(), lastTop, lastLeft, lastRight,
+            recorder.canUseCachedDrawing() ? nullptr : &paintInfo);
         if (!gapRectsBounds.isEmpty()) {
-            RenderLayer* layer = m_renderBlockFlow.enclosingLayer();
+            Layer* layer = m_renderBlockFlow.enclosingLayer();
             gapRectsBounds.moveBy(-paintOffset);
             if (!m_renderBlockFlow.hasLayer()) {
                 LayoutRect localBounds(gapRectsBounds);

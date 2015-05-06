@@ -35,8 +35,8 @@
 #include "core/html/forms/DateTimeFieldsState.h"
 #include "core/html/shadow/DateTimeFieldElements.h"
 #include "core/html/shadow/ShadowElementNames.h"
-#include "core/rendering/style/RenderStyle.h"
-#include "core/rendering/style/StyleInheritedData.h"
+#include "core/layout/style/LayoutStyle.h"
+#include "core/layout/style/StyleInheritedData.h"
 #include "platform/fonts/FontCache.h"
 #include "platform/text/DateTimeFormat.h"
 #include "platform/text/PlatformLocale.h"
@@ -455,7 +455,7 @@ DateTimeEditElement::~DateTimeEditElement()
 #endif
 }
 
-void DateTimeEditElement::trace(Visitor* visitor)
+DEFINE_TRACE(DateTimeEditElement)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_fields);
@@ -501,11 +501,11 @@ PassRefPtrWillBeRawPtr<DateTimeEditElement> DateTimeEditElement::create(Document
     return container.release();
 }
 
-PassRefPtr<RenderStyle> DateTimeEditElement::customStyleForRenderer()
+PassRefPtr<LayoutStyle> DateTimeEditElement::customStyleForRenderer()
 {
     // FIXME: This is a kind of layout. We might want to introduce new renderer.
-    RefPtr<RenderStyle> originalStyle = originalStyleForRenderer();
-    RefPtr<RenderStyle> style = RenderStyle::clone(originalStyle.get());
+    RefPtr<LayoutStyle> originalStyle = originalStyleForRenderer();
+    RefPtr<LayoutStyle> style = LayoutStyle::clone(*originalStyle);
     float width = 0;
     for (Node* child = fieldsWrapperElement()->firstChild(); child; child = child->nextSibling()) {
         if (!child->isElementNode())

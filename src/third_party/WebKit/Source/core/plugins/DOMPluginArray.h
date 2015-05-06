@@ -45,12 +45,11 @@ public:
 
     unsigned length() const;
     PassRefPtrWillBeRawPtr<DOMPlugin> item(unsigned index);
-    bool canGetItemsForName(const AtomicString& propertyName);
     PassRefPtrWillBeRawPtr<DOMPlugin> namedItem(const AtomicString& propertyName);
 
     void refresh(bool reload);
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     explicit DOMPluginArray(LocalFrame*);

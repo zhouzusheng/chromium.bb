@@ -55,6 +55,11 @@ NullRendererScheduler::CompositorTaskRunner() {
   return task_runner_;
 }
 
+scoped_refptr<base::SingleThreadTaskRunner>
+NullRendererScheduler::LoadingTaskRunner() {
+  return task_runner_;
+}
+
 scoped_refptr<SingleThreadIdleTaskRunner>
 NullRendererScheduler::IdleTaskRunner() {
   return idle_task_runner_;
@@ -63,14 +68,21 @@ NullRendererScheduler::IdleTaskRunner() {
 void NullRendererScheduler::WillBeginFrame(const cc::BeginFrameArgs& args) {
 }
 
+void NullRendererScheduler::BeginFrameNotExpectedSoon() {
+}
+
 void NullRendererScheduler::DidCommitFrameToCompositor() {
 }
 
 void NullRendererScheduler::DidReceiveInputEventOnCompositorThread(
-    blink::WebInputEvent::Type type) {
+    const blink::WebInputEvent& web_input_event) {
 }
 
 void NullRendererScheduler::DidAnimateForInputOnCompositorThread() {
+}
+
+bool NullRendererScheduler::IsHighPriorityWorkAnticipated() {
+  return false;
 }
 
 bool NullRendererScheduler::ShouldYieldForHighPriorityWork() {

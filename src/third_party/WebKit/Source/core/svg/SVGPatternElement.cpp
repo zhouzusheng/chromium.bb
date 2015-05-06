@@ -20,12 +20,11 @@
  */
 
 #include "config.h"
-
 #include "core/svg/SVGPatternElement.h"
 
 #include "core/XLinkNames.h"
 #include "core/dom/ElementTraversal.h"
-#include "core/rendering/svg/RenderSVGResourcePattern.h"
+#include "core/layout/svg/LayoutSVGResourcePattern.h"
 #include "core/svg/PatternAttributes.h"
 #include "platform/transforms/AffineTransform.h"
 
@@ -33,9 +32,6 @@ namespace blink {
 
 inline SVGPatternElement::SVGPatternElement(Document& document)
     : SVGElement(SVGNames::patternTag, document)
-    , SVGURIReference(this)
-    , SVGTests(this)
-    , SVGFitToViewBox(this)
     , m_x(SVGAnimatedLength::create(this, SVGNames::xAttr, SVGLength::create(LengthModeWidth), AllowNegativeLengths))
     , m_y(SVGAnimatedLength::create(this, SVGNames::yAttr, SVGLength::create(LengthModeHeight), AllowNegativeLengths))
     , m_width(SVGAnimatedLength::create(this, SVGNames::widthAttr, SVGLength::create(LengthModeWidth), ForbidNegativeLengths))
@@ -44,6 +40,10 @@ inline SVGPatternElement::SVGPatternElement(Document& document)
     , m_patternUnits(SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>::create(this, SVGNames::patternUnitsAttr, SVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX))
     , m_patternContentUnits(SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>::create(this, SVGNames::patternContentUnitsAttr, SVGUnitTypes::SVG_UNIT_TYPE_USERSPACEONUSE))
 {
+    SVGURIReference::initialize(this);
+    SVGTests::initialize(this);
+    SVGFitToViewBox::initialize(this);
+
     addToPropertyMap(m_x);
     addToPropertyMap(m_y);
     addToPropertyMap(m_width);
@@ -53,7 +53,7 @@ inline SVGPatternElement::SVGPatternElement(Document& document)
     addToPropertyMap(m_patternContentUnits);
 }
 
-void SVGPatternElement::trace(Visitor* visitor)
+DEFINE_TRACE(SVGPatternElement)
 {
     visitor->trace(m_x);
     visitor->trace(m_y);
@@ -88,6 +88,31 @@ bool SVGPatternElement::isSupportedAttribute(const QualifiedName& attrName)
     return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
+bool SVGPatternElement::isPresentationAttribute(const QualifiedName& attrName) const
+{
+    if (attrName == SVGNames::xAttr || attrName == SVGNames::yAttr)
+        return true;
+    return SVGElement::isPresentationAttribute(attrName);
+}
+
+bool SVGPatternElement::isPresentationAttributeWithSVGDOM(const QualifiedName& attrName) const
+{
+    if (attrName == SVGNames::xAttr || attrName == SVGNames::yAttr)
+        return true;
+    return SVGElement::isPresentationAttributeWithSVGDOM(attrName);
+}
+
+void SVGPatternElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStylePropertySet* style)
+{
+    RefPtrWillBeRawPtr<SVGAnimatedPropertyBase> property = propertyFromAttribute(name);
+    if (property == m_x)
+        addSVGLengthPropertyToPresentationAttributeStyle(style, CSSPropertyX, *m_x->currentValue());
+    else if (property == m_y)
+        addSVGLengthPropertyToPresentationAttributeStyle(style, CSSPropertyY, *m_y->currentValue());
+    else
+        SVGElement::collectStyleForPresentationAttribute(name, value, style);
+}
+
 void SVGPatternElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
     parseAttributeNew(name, value);
@@ -103,12 +128,19 @@ void SVGPatternElement::svgAttributeChanged(const QualifiedName& attrName)
     SVGElement::InvalidationGuard invalidationGuard(this);
 
     if (attrName == SVGNames::xAttr
+        || attrName == SVGNames::yAttr) {
+        invalidateSVGPresentationAttributeStyle();
+        setNeedsStyleRecalc(LocalStyleChange,
+            StyleChangeReasonForTracing::fromAttribute(attrName));
+    }
+
+    if (attrName == SVGNames::xAttr
         || attrName == SVGNames::yAttr
         || attrName == SVGNames::widthAttr
         || attrName == SVGNames::heightAttr)
         updateRelativeLengthsInformation();
 
-    RenderSVGResourceContainer* renderer = toRenderSVGResourceContainer(this->renderer());
+    LayoutSVGResourceContainer* renderer = toLayoutSVGResourceContainer(this->renderer());
     if (renderer)
         renderer->invalidateCacheAndMarkForLayout();
 }
@@ -120,13 +152,13 @@ void SVGPatternElement::childrenChanged(const ChildrenChange& change)
     if (change.byParser)
         return;
 
-    if (RenderObject* object = renderer())
+    if (LayoutObject* object = renderer())
         object->setNeedsLayoutAndFullPaintInvalidation();
 }
 
-RenderObject* SVGPatternElement::createRenderer(RenderStyle*)
+LayoutObject* SVGPatternElement::createRenderer(const LayoutStyle&)
 {
-    return new RenderSVGResourcePattern(this);
+    return new LayoutSVGResourcePattern(this);
 }
 
 static void setPatternAttributes(const SVGPatternElement* element, PatternAttributes& attributes)

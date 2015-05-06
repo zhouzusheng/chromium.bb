@@ -33,7 +33,6 @@ class RenderListMarker;
 class RenderListItem final : public RenderBlockFlow {
 public:
     explicit RenderListItem(Element*);
-    virtual void trace(Visitor*) override;
 
     int value() const { if (!m_isValueUpToDate) updateValueNow(); return m_value; }
     void updateValue();
@@ -58,7 +57,7 @@ public:
 private:
     virtual const char* renderName() const override { return "RenderListItem"; }
 
-    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectListItem || RenderBlockFlow::isOfType(type); }
+    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectListItem || RenderBlockFlow::isOfType(type); }
 
     virtual void willBeDestroyed() override;
 
@@ -75,7 +74,7 @@ private:
 
     void positionListMarker();
 
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) override;
+    virtual void styleDidChange(StyleDifference, const LayoutStyle* oldStyle) override;
 
     virtual void addOverflowFromChildren() override;
 
@@ -84,7 +83,7 @@ private:
     void explicitValueChanged();
 
     int m_explicitValue;
-    RawPtrWillBeMember<RenderListMarker> m_marker;
+    RenderListMarker* m_marker;
     mutable int m_value;
 
     bool m_hasExplicitValue : 1;
@@ -92,7 +91,7 @@ private:
     bool m_notInList : 1;
 };
 
-DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderListItem, isListItem());
+DEFINE_LAYOUT_OBJECT_TYPE_CASTS(RenderListItem, isListItem());
 
 } // namespace blink
 

@@ -145,6 +145,13 @@ void V8InjectedScriptHost::isHTMLAllCollectionMethodCustom(const v8::FunctionCal
     v8SetReturnValue(info, V8HTMLAllCollection::hasInstance(info[0], info.GetIsolate()));
 }
 
+void V8InjectedScriptHost::isTypedArrayMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
+{
+    if (info.Length() < 1)
+        return;
+    v8SetReturnValue(info, info[0]->IsTypedArray());
+}
+
 void V8InjectedScriptHost::subtypeMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
 {
     if (info.Length() < 1)
@@ -381,7 +388,8 @@ void V8InjectedScriptHost::evaluateWithExceptionDetailsMethodCustom(const v8::Fu
 
     ASSERT(isolate->InContext());
     v8::TryCatch tryCatch;
-    v8::Handle<v8::Value> result = V8ScriptRunner::compileAndRunInternalScript(expression, info.GetIsolate());
+    v8::Handle<v8::Script> script = V8ScriptRunner::compileScript(expression, String(), TextPosition(), isolate);
+    v8::Handle<v8::Value> result = V8ScriptRunner::runCompiledScript(isolate, script, currentExecutionContext(isolate));
 
     v8::Local<v8::Object> wrappedResult = v8::Object::New(isolate);
     if (tryCatch.HasCaught()) {
@@ -527,6 +535,41 @@ void V8InjectedScriptHost::setNonEnumPropertyMethodCustom(const v8::FunctionCall
 
     v8::Local<v8::Object> object = info[0]->ToObject(info.GetIsolate());
     object->ForceSet(info[1], info[2], v8::DontEnum);
+}
+
+void V8InjectedScriptHost::bindMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
+{
+    if (info.Length() < 1)
+        return;
+    InjectedScriptNative* injectedScriptNative = InjectedScriptNative::fromInjectedScriptHost(info.Holder());
+    if (!injectedScriptNative)
+        return;
+    int id = injectedScriptNative->bind(info[0]);
+    info.GetReturnValue().Set(id);
+}
+
+void V8InjectedScriptHost::unbindMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
+{
+    if (info.Length() < 1 || !info[0]->IsInt32())
+        return;
+    InjectedScriptNative* injectedScriptNative = InjectedScriptNative::fromInjectedScriptHost(info.Holder());
+    if (!injectedScriptNative)
+        return;
+    int id = info[0]->ToInt32(info.GetIsolate())->Value();
+    injectedScriptNative->unbind(id);
+}
+
+void V8InjectedScriptHost::objectForIdMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
+{
+    if (info.Length() < 1)
+        return;
+    InjectedScriptNative* injectedScriptNative = InjectedScriptNative::fromInjectedScriptHost(info.Holder());
+    if (!injectedScriptNative)
+        return;
+    int id = info[0]->ToInt32(info.GetIsolate())->Value();
+    v8::Local<v8::Value> value = injectedScriptNative->objectForId(id);
+    if (!value.IsEmpty())
+        info.GetReturnValue().Set(value);
 }
 
 } // namespace blink

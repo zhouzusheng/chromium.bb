@@ -7,7 +7,7 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
-#include "base/debug/trace_event.h"
+#include "base/trace_event/trace_event.h"
 #include "content/common/gpu/gpu_channel.h"
 #include "content/common/gpu/gpu_channel_manager.h"
 #include "content/common/gpu/gpu_command_buffer_stub.h"
@@ -106,18 +106,6 @@ void ImageTransportHelper::SendAcceleratedSurfaceBuffersSwapped(
   params.surface_id = stub_->surface_id();
   params.route_id = route_id_;
   manager_->Send(new GpuHostMsg_AcceleratedSurfaceBuffersSwapped(params));
-}
-
-void ImageTransportHelper::SendUpdateVSyncParameters(
-      base::TimeTicks timebase, base::TimeDelta interval) {
-  manager_->Send(new GpuHostMsg_UpdateVSyncParameters(stub_->surface_id(),
-                                                      timebase,
-                                                      interval));
-}
-
-void ImageTransportHelper::SwapBuffersCompleted(
-    const std::vector<ui::LatencyInfo>& latency_info) {
-  stub_->SwapBuffersCompleted(latency_info);
 }
 
 void ImageTransportHelper::SetPreemptByFlag(
@@ -233,7 +221,7 @@ void PassThroughImageTransportSurface::SwapBuffersCallBack() {
         ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0, 0);
   }
 
-  helper_->SwapBuffersCompleted(latency_info_);
+  helper_->stub()->SendSwapBuffersCompleted(latency_info_);
   latency_info_.clear();
 }
 
@@ -271,8 +259,8 @@ void PassThroughImageTransportSurface::SendVSyncUpdateIfAvailable() {
   gfx::VSyncProvider* vsync_provider = GetVSyncProvider();
   if (vsync_provider) {
     vsync_provider->GetVSyncParameters(
-      base::Bind(&ImageTransportHelper::SendUpdateVSyncParameters,
-                 helper_->AsWeakPtr()));
+        base::Bind(&GpuCommandBufferStub::SendUpdateVSyncParameters,
+                   helper_->stub()->AsWeakPtr()));
   }
 }
 

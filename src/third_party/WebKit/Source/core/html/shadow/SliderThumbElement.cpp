@@ -40,12 +40,12 @@
 #include "core/html/forms/StepRange.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/shadow/ShadowElementNames.h"
+#include "core/layout/LayoutSlider.h"
+#include "core/layout/LayoutSliderContainer.h"
+#include "core/layout/LayoutSliderThumb.h"
+#include "core/layout/LayoutTheme.h"
 #include "core/page/EventHandler.h"
 #include "core/rendering/RenderFlexibleBox.h"
-#include "core/rendering/RenderSlider.h"
-#include "core/rendering/RenderSliderContainer.h"
-#include "core/rendering/RenderSliderThumb.h"
-#include "core/rendering/RenderTheme.h"
 
 namespace blink {
 
@@ -54,7 +54,7 @@ using namespace HTMLNames;
 inline static bool hasVerticalAppearance(HTMLInputElement* input)
 {
     ASSERT(input->renderer());
-    RenderStyle* sliderStyle = input->renderer()->style();
+    LayoutStyle* sliderStyle = input->renderer()->style();
 
     return sliderStyle->appearance() == SliderVerticalPart;
 }
@@ -74,16 +74,16 @@ PassRefPtrWillBeRawPtr<SliderThumbElement> SliderThumbElement::create(Document& 
 
 void SliderThumbElement::setPositionFromValue()
 {
-    // Since the code to calculate position is in the RenderSliderThumb layout
+    // Since the code to calculate position is in the LayoutSliderThumb layout
     // path, we don't actually update the value here. Instead, we poke at the
     // renderer directly to trigger layout.
     if (renderer())
         renderer()->setNeedsLayoutAndFullPaintInvalidation();
 }
 
-RenderObject* SliderThumbElement::createRenderer(RenderStyle*)
+LayoutObject* SliderThumbElement::createRenderer(const LayoutStyle&)
 {
-    return new RenderSliderThumb(this);
+    return new LayoutSliderThumb(this);
 }
 
 bool SliderThumbElement::isDisabledFormControl() const
@@ -116,7 +116,7 @@ void SliderThumbElement::dragFrom(const LayoutPoint& point)
 void SliderThumbElement::setPositionFromPoint(const LayoutPoint& point)
 {
     RefPtrWillBeRawPtr<HTMLInputElement> input(hostInput());
-    Element* trackElement = input->userAgentShadowRoot()->getElementById(ShadowElementNames::sliderTrack());
+    Element* trackElement = input->closedShadowRoot()->getElementById(ShadowElementNames::sliderTrack());
 
     if (!input->renderer() || !renderBox() || !trackElement->renderBox())
         return;
@@ -283,7 +283,7 @@ const AtomicString& SliderThumbElement::shadowPseudoId() const
     if (!input || !input->renderer())
         return sliderThumbShadowPartId();
 
-    RenderStyle* sliderStyle = input->renderer()->style();
+    LayoutStyle* sliderStyle = input->renderer()->style();
     switch (sliderStyle->appearance()) {
     case MediaSliderPart:
     case MediaSliderThumbPart:
@@ -306,9 +306,9 @@ inline SliderContainerElement::SliderContainerElement(Document& document)
 
 DEFINE_NODE_FACTORY(SliderContainerElement)
 
-RenderObject* SliderContainerElement::createRenderer(RenderStyle*)
+LayoutObject* SliderContainerElement::createRenderer(const LayoutStyle&)
 {
-    return new RenderSliderContainer(this);
+    return new LayoutSliderContainer(this);
 }
 
 const AtomicString& SliderContainerElement::shadowPseudoId() const
@@ -319,7 +319,7 @@ const AtomicString& SliderContainerElement::shadowPseudoId() const
     if (!shadowHost() || !shadowHost()->renderer())
         return sliderContainer;
 
-    RenderStyle* sliderStyle = shadowHost()->renderer()->style();
+    LayoutStyle* sliderStyle = shadowHost()->renderer()->style();
     switch (sliderStyle->appearance()) {
     case MediaSliderPart:
     case MediaSliderThumbPart:

@@ -30,7 +30,7 @@
 #include "core/editing/Caret.h"
 #include "core/editing/EditingStyle.h"
 #include "core/editing/VisibleSelection.h"
-#include "core/rendering/ScrollAlignment.h"
+#include "core/layout/ScrollAlignment.h"
 #include "platform/Timer.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/geometry/LayoutRect.h"
@@ -122,6 +122,8 @@ public:
     bool modify(EAlteration, SelectionDirection, TextGranularity, EUserTriggered = NotUserTriggered);
     enum VerticalDirection { DirectionUp, DirectionDown };
     bool modify(EAlteration, unsigned verticalDistance, VerticalDirection, EUserTriggered = NotUserTriggered, CursorAlignOnScroll = AlignCursorOnScrollIfNeeded);
+    // Currently we support only CharaterGranularity and WordGranurarity.
+    void moveRangeSelectionExtent(const VisiblePosition&, TextGranularity);
 
     TextGranularity granularity() const { return m_granularity; }
 
@@ -219,7 +221,7 @@ public:
     // VisibleSelection::ChangeObserver interface.
     virtual void didChangeVisibleSelection() override;
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     explicit FrameSelection(LocalFrame*);
@@ -248,6 +250,7 @@ private:
 
     void notifyAccessibilityForSelectionChange();
     void notifyCompositorForSelectionChange();
+    void notifyEventHandlerForSelectionChange();
 
     void focusedOrActiveStateChanged();
 

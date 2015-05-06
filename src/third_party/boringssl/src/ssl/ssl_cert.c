@@ -801,7 +801,7 @@ int SSL_add_file_cert_subjects_to_stack(STACK_OF(X509_NAME) * stack,
     X509_free(x);
   }
 
-  sk_X509_NAME_set_cmp_func(stack, oldcmp);
+  (void) sk_X509_NAME_set_cmp_func(stack, oldcmp);
 
   return ret;
 }
@@ -1050,8 +1050,9 @@ int ssl_build_cert_chain(CERT *c, X509_STORE *chain_store, int flags) {
   }
 
   cpk->chain = chain;
-  if (rv == 0)
+  if (rv == 0) {
     rv = 1;
+  }
 
 err:
   if (flags & SSL_BUILD_CHAIN_FLAG_CHECK) {

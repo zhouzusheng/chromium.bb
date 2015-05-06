@@ -51,8 +51,9 @@ class PageDebuggerAgent final
 public:
     static PassOwnPtrWillBeRawPtr<PageDebuggerAgent> create(PageScriptDebugServer*, InspectorPageAgent*, InjectedScriptManager*, InspectorOverlay*);
     ~PageDebuggerAgent() override;
-    void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
+    void didStartProvisionalLoad(LocalFrame*);
     void didClearDocumentOfWindowObject(LocalFrame*);
     void didCommitLoad(LocalFrame*, DocumentLoader*);
 
@@ -74,8 +75,7 @@ private:
     InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId) override;
 
     PageDebuggerAgent(PageScriptDebugServer*, InspectorPageAgent*, InjectedScriptManager*, InspectorOverlay*);
-    // FIXME: Oilpan: Move PageScriptDebugServer to heap in follow-up CL.
-    PageScriptDebugServer* m_pageScriptDebugServer;
+    RawPtrWillBeMember<PageScriptDebugServer> m_pageScriptDebugServer;
     RawPtrWillBeMember<InspectorPageAgent> m_pageAgent;
     InspectorOverlay* m_overlay;
 };

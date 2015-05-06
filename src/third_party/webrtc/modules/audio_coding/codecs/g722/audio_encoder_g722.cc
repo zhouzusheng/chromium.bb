@@ -51,10 +51,15 @@ AudioEncoderG722::AudioEncoderG722(const Config& config)
 
 AudioEncoderG722::~AudioEncoderG722() {}
 
-int AudioEncoderG722::sample_rate_hz() const {
+int AudioEncoderG722::SampleRateHz() const {
   return kSampleRateHz;
 }
-int AudioEncoderG722::num_channels() const {
+int AudioEncoderG722::RtpTimestampRateHz() const {
+  // The RTP timestamp rate for G.722 is 8000 Hz, even though it is a 16 kHz
+  // codec.
+  return kSampleRateHz / 2;
+}
+int AudioEncoderG722::NumChannels() const {
   return num_channels_;
 }
 int AudioEncoderG722::Num10MsFramesInNextPacket() const {
@@ -64,7 +69,7 @@ int AudioEncoderG722::Max10MsFramesInAPacket() const {
   return num_10ms_frames_per_packet_;
 }
 
-bool AudioEncoderG722::EncodeInternal(uint32_t timestamp,
+bool AudioEncoderG722::EncodeInternal(uint32_t rtp_timestamp,
                                       const int16_t* audio,
                                       size_t max_encoded_bytes,
                                       uint8_t* encoded,
@@ -75,7 +80,7 @@ bool AudioEncoderG722::EncodeInternal(uint32_t timestamp,
            static_cast<size_t>(samples_per_channel) / 2 * num_channels_);
 
   if (num_10ms_frames_buffered_ == 0)
-    first_timestamp_in_buffer_ = timestamp;
+    first_timestamp_in_buffer_ = rtp_timestamp;
 
   // Deinterleave samples and save them in each channel's buffer.
   const int start = kSampleRateHz / 100 * num_10ms_frames_buffered_;
@@ -96,8 +101,6 @@ bool AudioEncoderG722::EncodeInternal(uint32_t timestamp,
     const int encoded = WebRtcG722_Encode(
         encoders_[i].encoder, encoders_[i].speech_buffer.get(),
         samples_per_channel, encoders_[i].encoded_buffer.get());
-    if (encoded < 0)
-      return false;
     CHECK_EQ(encoded, samples_per_channel / 2);
   }
 

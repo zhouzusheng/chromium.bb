@@ -39,17 +39,18 @@
 #include "core/frame/Settings.h"
 #include "core/inspector/IdentifiersFactory.h"
 #include "core/inspector/InspectorNodeIds.h"
+#include "core/inspector/InspectorPageAgent.h"
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InstrumentingAgents.h"
+#include "core/layout/LayoutPart.h"
+#include "core/layout/compositing/CompositedLayerMapping.h"
+#include "core/layout/compositing/LayerCompositor.h"
 #include "core/loader/DocumentLoader.h"
-#include "core/page/Page.h"
-#include "core/rendering/RenderPart.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/compositing/CompositedLayerMapping.h"
-#include "core/rendering/compositing/RenderLayerCompositor.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/graphics/CompositingReasons.h"
-#include "platform/graphics/GraphicsContextRecorder.h"
+#include "platform/graphics/PictureSnapshot.h"
+#include "platform/graphics/paint/DisplayItemList.h"
 #include "platform/image-encoders/skia/PNGImageEncoder.h"
 #include "platform/transforms/TransformationMatrix.h"
 #include "public/platform/WebFloatPoint.h"
@@ -105,7 +106,8 @@ static PassRefPtr<TypeBuilder::LayerTree::Layer> buildObjectForLayer(GraphicsLay
         .setOffsetY(webLayer->position().y)
         .setWidth(webLayer->bounds().width)
         .setHeight(webLayer->bounds().height)
-        .setPaintCount(graphicsLayer->paintCount());
+        .setPaintCount(graphicsLayer->paintCount())
+        .setDrawsContent(webLayer->drawsContent());
 
     if (nodeId)
         layerObject->setBackendNodeId(nodeId);
@@ -143,10 +145,10 @@ static PassRefPtr<TypeBuilder::LayerTree::Layer> buildObjectForLayer(GraphicsLay
     return layerObject;
 }
 
-InspectorLayerTreeAgent::InspectorLayerTreeAgent(Page* page)
+InspectorLayerTreeAgent::InspectorLayerTreeAgent(InspectorPageAgent* pageAgent)
     : InspectorBaseAgent<InspectorLayerTreeAgent>("LayerTree")
     , m_frontend(0)
-    , m_page(page)
+    , m_pageAgent(pageAgent)
 {
 }
 
@@ -154,9 +156,9 @@ InspectorLayerTreeAgent::~InspectorLayerTreeAgent()
 {
 }
 
-void InspectorLayerTreeAgent::trace(Visitor* visitor)
+DEFINE_TRACE(InspectorLayerTreeAgent)
 {
-    visitor->trace(m_page);
+    visitor->trace(m_pageAgent);
     InspectorBaseAgent::trace(visitor);
 }
 
@@ -181,7 +183,7 @@ void InspectorLayerTreeAgent::restore()
 void InspectorLayerTreeAgent::enable(ErrorString*)
 {
     m_instrumentingAgents->setInspectorLayerTreeAgent(this);
-    if (LocalFrame* frame = m_page->deprecatedLocalMainFrame()) {
+    if (LocalFrame* frame = m_pageAgent->inspectedFrame()) {
         Document* document = frame->document();
         if (document && document->lifecycle().state() >= DocumentLifecycle::CompositingClean)
             layerTreeDidChange();
@@ -200,7 +202,7 @@ void InspectorLayerTreeAgent::layerTreeDidChange()
     m_frontend->layerTreeDidChange(buildLayerTree());
 }
 
-void InspectorLayerTreeAgent::didPaint(RenderObject*, const GraphicsLayer* graphicsLayer, GraphicsContext*, const LayoutRect& rect)
+void InspectorLayerTreeAgent::didPaint(LayoutObject*, const GraphicsLayer* graphicsLayer, GraphicsContext*, const LayoutRect& rect)
 {
     // Should only happen for FrameView paints when compositing is off. Consider different instrumentation method for that.
     if (!graphicsLayer)
@@ -216,18 +218,18 @@ void InspectorLayerTreeAgent::didPaint(RenderObject*, const GraphicsLayer* graph
 
 PassRefPtr<TypeBuilder::Array<TypeBuilder::LayerTree::Layer> > InspectorLayerTreeAgent::buildLayerTree()
 {
-    RenderLayerCompositor* compositor = renderLayerCompositor();
+    LayerCompositor* compositor = renderLayerCompositor();
     if (!compositor || !compositor->inCompositingMode())
         return nullptr;
 
     LayerIdToNodeIdMap layerIdToNodeIdMap;
     RefPtr<TypeBuilder::Array<TypeBuilder::LayerTree::Layer> > layers = TypeBuilder::Array<TypeBuilder::LayerTree::Layer>::create();
-    buildLayerIdToNodeIdMap(compositor->rootRenderLayer(), layerIdToNodeIdMap);
+    buildLayerIdToNodeIdMap(compositor->rootLayer(), layerIdToNodeIdMap);
     gatherGraphicsLayers(rootGraphicsLayer(), layerIdToNodeIdMap, layers);
     return layers.release();
 }
 
-void InspectorLayerTreeAgent::buildLayerIdToNodeIdMap(RenderLayer* root, LayerIdToNodeIdMap& layerIdToNodeIdMap)
+void InspectorLayerTreeAgent::buildLayerIdToNodeIdMap(Layer* root, LayerIdToNodeIdMap& layerIdToNodeIdMap)
 {
     if (root->hasCompositedLayerMapping()) {
         if (Node* node = root->renderer()->generatingNode()) {
@@ -235,14 +237,14 @@ void InspectorLayerTreeAgent::buildLayerIdToNodeIdMap(RenderLayer* root, LayerId
             layerIdToNodeIdMap.set(graphicsLayer->platformLayer()->id(), idForNode(node));
         }
     }
-    for (RenderLayer* child = root->firstChild(); child; child = child->nextSibling())
+    for (Layer* child = root->firstChild(); child; child = child->nextSibling())
         buildLayerIdToNodeIdMap(child, layerIdToNodeIdMap);
-    if (!root->renderer()->isRenderIFrame())
+    if (!root->renderer()->isLayoutIFrame())
         return;
-    FrameView* childFrameView = toFrameView(toRenderPart(root->renderer())->widget());
+    FrameView* childFrameView = toFrameView(toLayoutPart(root->renderer())->widget());
     if (RenderView* childRenderView = childFrameView->renderView()) {
-        if (RenderLayerCompositor* childCompositor = childRenderView->compositor())
-            buildLayerIdToNodeIdMap(childCompositor->rootRenderLayer(), layerIdToNodeIdMap);
+        if (LayerCompositor* childCompositor = childRenderView->compositor())
+            buildLayerIdToNodeIdMap(childCompositor->rootLayer(), layerIdToNodeIdMap);
     }
 }
 
@@ -263,17 +265,17 @@ int InspectorLayerTreeAgent::idForNode(Node* node)
     return InspectorNodeIds::idForNode(node);
 }
 
-RenderLayerCompositor* InspectorLayerTreeAgent::renderLayerCompositor()
+LayerCompositor* InspectorLayerTreeAgent::renderLayerCompositor()
 {
-    RenderView* renderView = m_page->deprecatedLocalMainFrame()->contentRenderer();
-    RenderLayerCompositor* compositor = renderView ? renderView->compositor() : nullptr;
+    RenderView* renderView = m_pageAgent->inspectedFrame()->contentRenderer();
+    LayerCompositor* compositor = renderView ? renderView->compositor() : nullptr;
     return compositor;
 }
 
 GraphicsLayer* InspectorLayerTreeAgent::rootGraphicsLayer()
 {
-    if (m_page->settings().pinchVirtualViewportEnabled())
-        return m_page->frameHost().pinchViewport().rootGraphicsLayer();
+    if (m_pageAgent->frameHost()->settings().pinchVirtualViewportEnabled())
+        return m_pageAgent->frameHost()->pinchViewport().rootGraphicsLayer();
 
     return renderLayerCompositor()->rootGraphicsLayer();
 }
@@ -301,7 +303,7 @@ GraphicsLayer* InspectorLayerTreeAgent::layerById(ErrorString* errorString, cons
         *errorString = "Invalid layer id";
         return nullptr;
     }
-    RenderLayerCompositor* compositor = renderLayerCompositor();
+    LayerCompositor* compositor = renderLayerCompositor();
     if (!compositor) {
         *errorString = "Not in compositing mode";
         return nullptr;
@@ -337,11 +339,27 @@ void InspectorLayerTreeAgent::makeSnapshot(ErrorString* errorString, const Strin
     if (!layer)
         return;
 
-    GraphicsContextRecorder recorder;
     IntSize size = expandedIntSize(layer->size());
-    GraphicsContext* context = recorder.record(size, layer->contentsOpaque());
-    layer->paint(*context, IntRect(IntPoint(0, 0), size));
-    RefPtr<GraphicsContextSnapshot> snapshot = recorder.stop();
+
+    SkPictureRecorder pictureRecorder;
+
+    OwnPtr<GraphicsContext> graphicsContext;
+    OwnPtr<DisplayItemList> displayItemList;
+    if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
+        displayItemList = DisplayItemList::create();
+        graphicsContext = adoptPtr(new GraphicsContext(nullptr, displayItemList.get()));
+    } else {
+        graphicsContext = adoptPtr(new GraphicsContext(pictureRecorder.beginRecording(size.width(), size.height(), 0, 0), nullptr));
+    }
+
+    layer->paint(*graphicsContext, IntRect(IntPoint(0, 0), size));
+
+    if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
+        GraphicsContext canvasContext(pictureRecorder.beginRecording(size.width(), size.height(), 0, 0), nullptr);
+        displayItemList->replay(&canvasContext);
+    }
+    RefPtr<PictureSnapshot> snapshot = adoptRef(new PictureSnapshot(pictureRecorder.endRecording()));
+
     *snapshotId = String::number(++s_lastSnapshotId);
     bool newEntry = m_snapshotById.add(*snapshotId, snapshot).isNewEntry;
     ASSERT_UNUSED(newEntry, newEntry);
@@ -353,7 +371,7 @@ void InspectorLayerTreeAgent::loadSnapshot(ErrorString* errorString, const RefPt
         *errorString = "Invalid argument, no tiles provided";
         return;
     }
-    Vector<RefPtr<GraphicsContextSnapshot::TilePictureStream> > decodedTiles;
+    Vector<RefPtr<PictureSnapshot::TilePictureStream> > decodedTiles;
     decodedTiles.grow(tiles->length());
     for (size_t i = 0; i < tiles->length(); ++i) {
         RefPtr<JSONObject> item;
@@ -368,14 +386,14 @@ void InspectorLayerTreeAgent::loadSnapshot(ErrorString* errorString, const RefPt
             *errorString = "Invalid argument, missing required field";
             return;
         }
-        decodedTiles[i] = adoptRef(new GraphicsContextSnapshot::TilePictureStream());
+        decodedTiles[i] = adoptRef(new PictureSnapshot::TilePictureStream());
         decodedTiles[i]->layerOffset.set(x, y);
         if (!base64Decode(picture, decodedTiles[i]->data)) {
             *errorString = "Invalid base64 encoding";
             return;
         }
     }
-    RefPtr<GraphicsContextSnapshot> snapshot = GraphicsContextSnapshot::load(decodedTiles);
+    RefPtr<PictureSnapshot> snapshot = PictureSnapshot::load(decodedTiles);
     if (!snapshot) {
         *errorString = "Invalida snapshot format";
         return;
@@ -395,7 +413,7 @@ void InspectorLayerTreeAgent::releaseSnapshot(ErrorString* errorString, const St
     m_snapshotById.remove(it);
 }
 
-const GraphicsContextSnapshot* InspectorLayerTreeAgent::snapshotById(ErrorString* errorString, const String& snapshotId)
+const PictureSnapshot* InspectorLayerTreeAgent::snapshotById(ErrorString* errorString, const String& snapshotId)
 {
     SnapshotById::iterator it = m_snapshotById.find(snapshotId);
     if (it == m_snapshotById.end()) {
@@ -407,7 +425,7 @@ const GraphicsContextSnapshot* InspectorLayerTreeAgent::snapshotById(ErrorString
 
 void InspectorLayerTreeAgent::replaySnapshot(ErrorString* errorString, const String& snapshotId, const int* fromStep, const int* toStep, const double* scale, String* dataURL)
 {
-    const GraphicsContextSnapshot* snapshot = snapshotById(errorString, snapshotId);
+    const PictureSnapshot* snapshot = snapshotById(errorString, snapshotId);
     if (!snapshot)
         return;
     OwnPtr<Vector<char> > base64Data = snapshot->replay(fromStep ? *fromStep : 0, toStep ? *toStep : 0, scale ? *scale : 1.0);
@@ -434,7 +452,7 @@ static bool parseRect(const JSONObject& object, FloatRect* rect)
 
 void InspectorLayerTreeAgent::profileSnapshot(ErrorString* errorString, const String& snapshotId, const int* minRepeatCount, const double* minDuration, const RefPtr<JSONObject>* clipRect, RefPtr<TypeBuilder::Array<TypeBuilder::Array<double> > >& outTimings)
 {
-    const GraphicsContextSnapshot* snapshot = snapshotById(errorString, snapshotId);
+    const PictureSnapshot* snapshot = snapshotById(errorString, snapshotId);
     if (!snapshot)
         return;
     FloatRect rect;
@@ -442,7 +460,7 @@ void InspectorLayerTreeAgent::profileSnapshot(ErrorString* errorString, const St
         *errorString = "Invalid argument, missing required field";
         return;
     }
-    OwnPtr<GraphicsContextSnapshot::Timings> timings = snapshot->profile(minRepeatCount ? *minRepeatCount : 1, minDuration ? *minDuration : 0, clipRect ? &rect : 0);
+    OwnPtr<PictureSnapshot::Timings> timings = snapshot->profile(minRepeatCount ? *minRepeatCount : 1, minDuration ? *minDuration : 0, clipRect ? &rect : 0);
     outTimings = TypeBuilder::Array<TypeBuilder::Array<double> >::create();
     for (size_t i = 0; i < timings->size(); ++i) {
         const Vector<double>& row = (*timings)[i];
@@ -455,7 +473,7 @@ void InspectorLayerTreeAgent::profileSnapshot(ErrorString* errorString, const St
 
 void InspectorLayerTreeAgent::snapshotCommandLog(ErrorString* errorString, const String& snapshotId, RefPtr<TypeBuilder::Array<JSONObject> >& commandLog)
 {
-    const GraphicsContextSnapshot* snapshot = snapshotById(errorString, snapshotId);
+    const PictureSnapshot* snapshot = snapshotById(errorString, snapshotId);
     if (!snapshot)
         return;
     commandLog = TypeBuilder::Array<JSONObject>::runtimeCast(snapshot->snapshotCommandLog());

@@ -40,6 +40,7 @@ namespace blink {
 
 class InjectedScript;
 class InjectedScriptHost;
+class InjectedScriptNative;
 class ScriptValue;
 
 class InjectedScriptManager : public NoBaseWillBeGarbageCollectedFinalized<InjectedScriptManager> {
@@ -55,7 +56,7 @@ public:
     static PassOwnPtrWillBeRawPtr<InjectedScriptManager> createForPage();
     static PassOwnPtrWillBeRawPtr<InjectedScriptManager> createForWorker();
     ~InjectedScriptManager();
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
     void disconnect();
 
@@ -81,7 +82,7 @@ private:
     explicit InjectedScriptManager(InspectedStateAccessCheck);
 
     String injectedScriptSource();
-    ScriptValue createInjectedScript(const String& source, ScriptState*, int id);
+    ScriptValue createInjectedScript(const String& source, ScriptState*, int id, InjectedScriptNative*);
 
     static bool canAccessInspectedWindow(ScriptState*);
     static bool canAccessInspectedWorkerGlobalScope(ScriptState*);

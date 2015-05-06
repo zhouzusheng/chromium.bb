@@ -6,9 +6,10 @@
 #include "core/paint/ViewPainter.h"
 
 #include "core/frame/FrameView.h"
+#include "core/layout/PaintInfo.h"
 #include "core/paint/BlockPainter.h"
 #include "core/paint/GraphicsContextAnnotator.h"
-#include "core/rendering/PaintInfo.h"
+#include "core/paint/RenderDrawingRecorder.h"
 #include "core/rendering/RenderBox.h"
 #include "core/rendering/RenderView.h"
 
@@ -24,8 +25,15 @@ void ViewPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffs
     ANNOTATE_GRAPHICS_CONTEXT(paintInfo, &m_renderView);
 
     // This avoids painting garbage between columns if there is a column gap.
-    if (m_renderView.frameView() && m_renderView.style()->isOverflowPaged())
-        paintInfo.context->fillRect(paintInfo.rect, m_renderView.frameView()->baseBackgroundColor());
+    if (m_renderView.frameView() && m_renderView.style()->isOverflowPaged()) {
+        LayoutRect paintRect = paintInfo.rect;
+        if (RuntimeEnabledFeatures::slimmingPaintEnabled())
+            paintRect = m_renderView.viewRect();
+
+        RenderDrawingRecorder recorder(paintInfo.context, m_renderView, DisplayItem::ViewBackground, paintRect);
+        if (!recorder.canUseCachedDrawing())
+            paintInfo.context->fillRect(paintRect, m_renderView.frameView()->baseBackgroundColor());
+    }
 
     m_renderView.paintObject(paintInfo, paintOffset);
     BlockPainter(m_renderView).paintOverflowControlsIfNeeded(paintInfo, paintOffset);
@@ -34,17 +42,17 @@ void ViewPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffs
 static inline bool rendererObscuresBackground(RenderBox* rootBox)
 {
     ASSERT(rootBox);
-    RenderStyle* style = rootBox->style();
-    if (style->visibility() != VISIBLE
-        || style->opacity() != 1
-        || style->hasFilter()
-        || style->hasTransform())
+    const LayoutStyle& style = rootBox->styleRef();
+    if (style.visibility() != VISIBLE
+        || style.opacity() != 1
+        || style.hasFilter()
+        || style.hasTransform())
         return false;
 
     if (rootBox->compositingState() == PaintsIntoOwnBacking)
         return false;
 
-    const RenderObject* rootRenderer = rootBox->rendererForRootBackground();
+    const LayoutObject* rootRenderer = rootBox->rendererForRootBackground();
     if (rootRenderer->style()->backgroundClip() == TextFillBox)
         return false;
 
@@ -73,14 +81,21 @@ void ViewPainter::paintBoxDecorationBackground(const PaintInfo& paintInfo)
     // Only fill with the base background color (typically white) if we're the root document,
     // since iframes/frames with no background in the child document should show the parent's background.
     if (!m_renderView.frameView()->isTransparent()) {
-        Color baseColor = m_renderView.frameView()->baseBackgroundColor();
-        if (baseColor.alpha()) {
-            CompositeOperator previousOperator = paintInfo.context->compositeOperation();
-            paintInfo.context->setCompositeOperation(CompositeCopy);
-            paintInfo.context->fillRect(paintInfo.rect, baseColor);
-            paintInfo.context->setCompositeOperation(previousOperator);
-        } else {
-            paintInfo.context->clearRect(paintInfo.rect);
+        LayoutRect paintRect = paintInfo.rect;
+        if (RuntimeEnabledFeatures::slimmingPaintEnabled())
+            paintRect = m_renderView.viewRect();
+
+        RenderDrawingRecorder recorder(paintInfo.context, m_renderView, DisplayItem::BoxDecorationBackground, m_renderView.viewRect());
+        if (!recorder.canUseCachedDrawing()) {
+            Color baseColor = m_renderView.frameView()->baseBackgroundColor();
+            if (baseColor.alpha()) {
+                SkXfermode::Mode previousOperation = paintInfo.context->compositeOperation();
+                paintInfo.context->setCompositeOperation(SkXfermode::kSrc_Mode);
+                paintInfo.context->fillRect(paintRect, baseColor);
+                paintInfo.context->setCompositeOperation(previousOperation);
+            } else {
+                paintInfo.context->clearRect(paintRect);
+            }
         }
     }
 }

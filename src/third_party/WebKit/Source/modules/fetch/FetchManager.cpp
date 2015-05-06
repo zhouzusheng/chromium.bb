@@ -21,7 +21,9 @@
 #include "modules/fetch/FetchRequestData.h"
 #include "modules/fetch/Response.h"
 #include "modules/fetch/ResponseInit.h"
+#include "platform/network/ResourceError.h"
 #include "platform/network/ResourceRequest.h"
+#include "platform/network/ResourceResponse.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "public/platform/WebURLRequest.h"
 #include "wtf/HashSet.h"
@@ -37,7 +39,7 @@ public:
     }
 
     ~Loader() override;
-    void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     void didReceiveResponse(unsigned long, const ResourceResponse&, PassOwnPtr<WebDataConsumerHandle>) override;
     void didReceiveData(const char*, unsigned) override;
@@ -47,7 +49,7 @@ public:
     void didFailRedirectCheck() override;
 
     void start();
-    void cleanup();
+    void dispose();
 
 private:
     Loader(ExecutionContext*, FetchManager*, PassRefPtrWillBeRawPtr<ScriptPromiseResolver>, const FetchRequestData*);
@@ -64,6 +66,7 @@ private:
     PersistentWillBeMember<BodyStreamBuffer> m_responseBuffer;
     RefPtr<ThreadableLoader> m_loader;
     bool m_failed;
+    bool m_finished;
 };
 
 FetchManager::Loader::Loader(ExecutionContext* executionContext, FetchManager* fetchManager, PassRefPtrWillBeRawPtr<ScriptPromiseResolver> resolver, const FetchRequestData* request)
@@ -72,16 +75,16 @@ FetchManager::Loader::Loader(ExecutionContext* executionContext, FetchManager* f
     , m_resolver(resolver)
     , m_request(request->createCopy())
     , m_failed(false)
+    , m_finished(false)
 {
 }
 
 FetchManager::Loader::~Loader()
 {
-    if (m_loader)
-        m_loader->cancel();
+    ASSERT(!m_loader);
 }
 
-void FetchManager::Loader::trace(Visitor* visitor)
+DEFINE_TRACE(FetchManager::Loader)
 {
     visitor->trace(m_fetchManager);
     visitor->trace(m_resolver);
@@ -143,8 +146,10 @@ void FetchManager::Loader::didReceiveData(const char* data, unsigned size)
 void FetchManager::Loader::didFinishLoading(unsigned long, double)
 {
     ASSERT(m_responseBuffer);
+    ASSERT(!m_failed);
     m_responseBuffer->close();
     m_responseBuffer.clear();
+    m_finished = true;
     notifyFinished();
 }
 
@@ -165,6 +170,12 @@ void FetchManager::Loader::didFailRedirectCheck()
 
 void FetchManager::Loader::start()
 {
+    if (!executionContext()->isServiceWorkerGlobalScope()
+        && m_request->mode() == WebURLRequest::FetchRequestModeNoCORS) {
+        performNetworkError("no-cors is disabled for non-serviceworker.");
+        return;
+    }
+
     // "1. If |request|'s url contains a Known HSTS Host, modify it per the
     // requirements of the 'URI [sic] Loading and Port Mapping' chapter of HTTP
     // Strict Transport Security."
@@ -254,11 +265,10 @@ void FetchManager::Loader::start()
     performHTTPFetch(true, false);
 }
 
-void FetchManager::Loader::cleanup()
+void FetchManager::Loader::dispose()
 {
     // Prevent notification
-    m_fetchManager = 0;
-
+    m_fetchManager = nullptr;
     if (m_loader) {
         m_loader->cancel();
         m_loader.clear();
@@ -295,7 +305,7 @@ void FetchManager::Loader::performHTTPFetch(bool corsFlag, bool corsPreflightFla
     ResourceRequest request(m_request->url());
     request.setRequestContext(WebURLRequest::RequestContextFetch);
     request.setHTTPMethod(m_request->method());
-    const Vector<OwnPtr<FetchHeaderList::Header> >& list = m_request->headerList()->list();
+    const Vector<OwnPtr<FetchHeaderList::Header>>& list = m_request->headerList()->list();
     for (size_t i = 0; i < list.size(); ++i) {
         request.addHTTPHeaderField(AtomicString(list[i]->first), AtomicString(list[i]->second));
     }
@@ -354,11 +364,13 @@ void FetchManager::Loader::performHTTPFetch(bool corsFlag, bool corsPreflightFla
         break;
     }
     m_loader = ThreadableLoader::create(*executionContext(), this, request, threadableLoaderOptions, resourceLoaderOptions);
+    if (!m_loader)
+        performNetworkError("Can't create ThreadableLoader");
 }
 
 void FetchManager::Loader::failed(const String& message)
 {
-    if (m_failed)
+    if (m_failed || m_finished)
         return;
     m_failed = true;
     executionContext()->addConsoleMessage(ConsoleMessage::create(JSMessageSource, ErrorMessageLevel, message));
@@ -410,19 +422,19 @@ void FetchManager::stop()
 {
     ASSERT(!m_isStopped);
     m_isStopped = true;
-    for (auto& loader : m_loaders) {
-        loader->cleanup();
-    }
+    for (auto& loader : m_loaders)
+        loader->dispose();
 }
 
 void FetchManager::onLoaderFinished(Loader* loader)
 {
     // We don't use remove here, because it may cause recursive deletion.
     OwnPtrWillBeRawPtr<Loader> p = m_loaders.take(loader);
-    ALLOW_UNUSED_LOCAL(p);
+    ASSERT(p);
+    p->dispose();
 }
 
-void FetchManager::trace(Visitor* visitor)
+DEFINE_TRACE(FetchManager)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_executionContext);

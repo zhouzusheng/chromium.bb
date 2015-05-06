@@ -41,17 +41,18 @@ namespace blink {
 class Database;
 class InspectorDatabaseResource;
 class InspectorFrontend;
+class Page;
 
 typedef String ErrorString;
 
 class InspectorDatabaseAgent final : public InspectorBaseAgent<InspectorDatabaseAgent>, public InspectorBackendDispatcher::DatabaseCommandHandler {
 public:
-    static PassOwnPtrWillBeRawPtr<InspectorDatabaseAgent> create()
+    static PassOwnPtrWillBeRawPtr<InspectorDatabaseAgent> create(Page* page)
     {
-        return adoptPtrWillBeNoop(new InspectorDatabaseAgent());
+        return adoptPtrWillBeNoop(new InspectorDatabaseAgent(page));
     }
     virtual ~InspectorDatabaseAgent();
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     virtual void setFrontend(InspectorFrontend*) override;
     virtual void clearFrontend() override;
@@ -62,18 +63,18 @@ public:
     // Called from the front-end.
     virtual void enable(ErrorString*) override;
     virtual void disable(ErrorString*) override;
-    virtual void getDatabaseTableNames(ErrorString*, const String& databaseId, RefPtr<TypeBuilder::Array<String> >& names) override;
+    virtual void getDatabaseTableNames(ErrorString*, const String& databaseId, RefPtr<TypeBuilder::Array<String>>& names) override;
     virtual void executeSQL(ErrorString*, const String& databaseId, const String& query, PassRefPtrWillBeRawPtr<ExecuteSQLCallback>) override;
 
     void didOpenDatabase(Database*, const String& domain, const String& name, const String& version);
 private:
-    explicit InspectorDatabaseAgent();
+    explicit InspectorDatabaseAgent(Page*);
 
     Database* databaseForId(const String& databaseId);
     InspectorDatabaseResource* findByFileName(const String& fileName);
 
     InspectorFrontend::Database* m_frontend;
-    typedef PersistentHeapHashMapWillBeHeapHashMap<String, Member<InspectorDatabaseResource> > DatabaseResourcesHeapMap;
+    typedef PersistentHeapHashMapWillBeHeapHashMap<String, Member<InspectorDatabaseResource>> DatabaseResourcesHeapMap;
     DatabaseResourcesHeapMap m_resources;
     bool m_enabled;
 };

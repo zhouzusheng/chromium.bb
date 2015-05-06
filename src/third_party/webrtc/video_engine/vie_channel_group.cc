@@ -32,19 +32,16 @@ static const uint32_t kTimeOffsetSwitchThreshold = 30;
 
 class WrappingBitrateEstimator : public RemoteBitrateEstimator {
  public:
-  WrappingBitrateEstimator(int engine_id,
-                           RemoteBitrateObserver* observer,
+  WrappingBitrateEstimator(RemoteBitrateObserver* observer,
                            Clock* clock,
                            const Config& config)
       : observer_(observer),
         clock_(clock),
         crit_sect_(CriticalSectionWrapper::CreateCriticalSection()),
-        engine_id_(engine_id),
         min_bitrate_bps_(config.Get<RemoteBitrateEstimatorMinRate>().min_rate),
-        rate_control_type_(kAimdControl),
         rbe_(RemoteBitrateEstimatorFactory().Create(observer_,
                                                     clock_,
-                                                    rate_control_type_,
+                                                    kAimdControl,
                                                     min_bitrate_bps_)),
         using_absolute_send_time_(false),
         packets_since_absolute_send_time_(0) {
@@ -70,7 +67,7 @@ class WrappingBitrateEstimator : public RemoteBitrateEstimator {
     return rbe_->TimeUntilNextProcess();
   }
 
-  virtual void OnRttUpdate(uint32_t rtt) OVERRIDE {
+  virtual void OnRttUpdate(int64_t rtt) OVERRIDE {
     CriticalSectionScoped cs(crit_sect_.get());
     rbe_->OnRttUpdate(rtt);
   }
@@ -89,17 +86,6 @@ class WrappingBitrateEstimator : public RemoteBitrateEstimator {
   virtual bool GetStats(ReceiveBandwidthEstimatorStats* output) const OVERRIDE {
     CriticalSectionScoped cs(crit_sect_.get());
     return rbe_->GetStats(output);
-  }
-
-  void SetConfig(const webrtc::Config& config) {
-    CriticalSectionScoped cs(crit_sect_.get());
-    RateControlType new_control_type =
-        config.Get<AimdRemoteRateControl>().enabled ? kAimdControl :
-                                                      kMimdControl;
-    if (new_control_type != rate_control_type_) {
-      rate_control_type_ = new_control_type;
-      PickEstimator();
-    }
   }
 
  private:
@@ -132,19 +118,17 @@ class WrappingBitrateEstimator : public RemoteBitrateEstimator {
   void PickEstimator() EXCLUSIVE_LOCKS_REQUIRED(crit_sect_.get()) {
     if (using_absolute_send_time_) {
       rbe_.reset(AbsoluteSendTimeRemoteBitrateEstimatorFactory().Create(
-          observer_, clock_, rate_control_type_, min_bitrate_bps_));
+          observer_, clock_, kAimdControl, min_bitrate_bps_));
     } else {
       rbe_.reset(RemoteBitrateEstimatorFactory().Create(
-          observer_, clock_, rate_control_type_, min_bitrate_bps_));
+          observer_, clock_, kAimdControl, min_bitrate_bps_));
     }
   }
 
   RemoteBitrateObserver* observer_;
   Clock* clock_;
   scoped_ptr<CriticalSectionWrapper> crit_sect_;
-  const int engine_id_;
   const uint32_t min_bitrate_bps_;
-  RateControlType rate_control_type_;
   scoped_ptr<RemoteBitrateEstimator> rbe_;
   bool using_absolute_send_time_;
   uint32_t packets_since_absolute_send_time_;
@@ -153,8 +137,7 @@ class WrappingBitrateEstimator : public RemoteBitrateEstimator {
 };
 }  // namespace
 
-ChannelGroup::ChannelGroup(int engine_id,
-                           ProcessThread* process_thread,
+ChannelGroup::ChannelGroup(ProcessThread* process_thread,
                            const Config* config)
     : remb_(new VieRemb()),
       bitrate_controller_(
@@ -172,8 +155,7 @@ ChannelGroup::ChannelGroup(int engine_id,
   assert(config_);  // Must have a valid config pointer here.
 
   remote_bitrate_estimator_.reset(
-      new WrappingBitrateEstimator(engine_id,
-                                   remb_.get(),
+      new WrappingBitrateEstimator(remb_.get(),
                                    Clock::GetRealTimeClock(),
                                    *config_));
 
@@ -244,11 +226,5 @@ void ChannelGroup::SetChannelRembStatus(int channel_id,
   } else {
     remb_->RemoveReceiveChannel(rtp_module);
   }
-}
-
-void ChannelGroup::SetBandwidthEstimationConfig(const webrtc::Config& config) {
-  WrappingBitrateEstimator* estimator =
-      static_cast<WrappingBitrateEstimator*>(remote_bitrate_estimator_.get());
-  estimator->SetConfig(config);
 }
 }  // namespace webrtc

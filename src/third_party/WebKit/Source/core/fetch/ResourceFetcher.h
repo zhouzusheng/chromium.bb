@@ -42,11 +42,13 @@
 
 namespace blink {
 
+class ArchiveResourceCollection;
 class CSSStyleSheetResource;
 class DocumentResource;
 class FetchContext;
 class FontResource;
 class ImageResource;
+class MHTMLArchive;
 class RawResource;
 class ScriptResource;
 class SubstituteData;
@@ -76,7 +78,7 @@ friend class ResourceCacheValidationSuppressor;
 public:
     static PassRefPtrWillBeRawPtr<ResourceFetcher> create(DocumentLoader* documentLoader) { return adoptRefWillBeNoop(new ResourceFetcher(documentLoader)); }
     virtual ~ResourceFetcher();
-    virtual void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
 
 #if !ENABLE(OILPAN)
     using RefCounted<ResourceFetcher>::ref;
@@ -129,6 +131,9 @@ public:
     void preload(Resource::Type, FetchRequest&, const String& charset);
     void printPreloadStats();
 
+    void addAllArchiveResources(MHTMLArchive*);
+    ArchiveResourceCollection* archiveResourceCollection() const { return m_archiveResourceCollection.get(); }
+
     void setDefersLoading(bool);
     void stopFetching();
     bool isFetching() const;
@@ -158,6 +163,7 @@ public:
 #endif
 
     int64_t serviceWorkerID() const;
+    void acceptDataFromThreadedReceiver(unsigned long identifier, const char* data, int dataLength, int encodedDataLength);
 
     enum ResourceLoadStartType {
         ResourceLoadingFromNetwork,
@@ -169,7 +175,13 @@ public:
 
     String getCacheIdentifier() const;
 
+    virtual ResourceLoaderHost::LoaderHostType objectType() const override { return ResourceFetcherType; };
+
+    static ResourceFetcher* toResourceFetcher(ResourceLoaderHost*);
+
 private:
+    friend class ResourceFetcherTest;
+
     explicit ResourceFetcher(DocumentLoader*);
 
     bool shouldLoadNewResource(Resource::Type) const;
@@ -180,6 +192,7 @@ private:
     void preCacheDataURIImage(const FetchRequest&);
     void preCacheSubstituteDataForMainResource(const FetchRequest&, const SubstituteData&);
     void storeResourceTimingInitiatorInformation(Resource*);
+    bool scheduleArchiveLoad(Resource*, const ResourceRequest&);
 
     enum RevalidationPolicy { Use, Revalidate, Reload, Load };
     RevalidationPolicy determineRevalidationPolicy(Resource::Type, const FetchRequest&, Resource* existingResource) const;
@@ -187,6 +200,7 @@ private:
     void determineRequestContext(ResourceRequest&, Resource::Type);
     ResourceRequestCachePolicy resourceRequestCachePolicy(const ResourceRequest&, Resource::Type);
     void addAdditionalRequestHeaders(ResourceRequest&, Resource::Type);
+    void upgradeInsecureRequest(FetchRequest&);
 
     bool canRequest(Resource::Type, const ResourceRequest&, const KURL&, const ResourceLoaderOptions&, bool forPreload, FetchRequest::OriginRestriction) const;
 
@@ -207,12 +221,13 @@ private:
     HashSet<String> m_validatedURLs;
     mutable DocumentResourceMap m_documentResources;
     // FIXME: Oilpan: Ideally this should just be a traced Member but that will
-    // currently leak because RenderStyle and its data are not on the heap.
+    // currently leak because LayoutStyle and its data are not on the heap.
     // See crbug.com/383860 for details.
     RawPtrWillBeWeakMember<Document> m_document;
     DocumentLoader* m_documentLoader;
 
     OwnPtr<ListHashSet<Resource*>> m_preloads;
+    OwnPtrWillBeMember<ArchiveResourceCollection> m_archiveResourceCollection;
 
     Timer<ResourceFetcher> m_garbageCollectDocumentResourcesTimer;
     Timer<ResourceFetcher> m_resourceTimingReportTimer;

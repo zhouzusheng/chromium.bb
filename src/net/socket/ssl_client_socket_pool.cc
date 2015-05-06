@@ -247,6 +247,9 @@ void SSLConnectJob::GetAdditionalErrorState(ClientSocketHandle* handle) {
 }
 
 void SSLConnectJob::OnIOComplete(int result) {
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/455884 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("455884 SSLConnectJob::OnIOComplete"));
   int rv = DoLoop(result);
   if (rv != ERR_IO_PENDING)
     NotifyDelegateOfCompletion(rv);  // Deletes |this|.
@@ -496,7 +499,12 @@ int SSLConnectJob::DoSSLConnectComplete(int result) {
                                100);
 
     SSLInfo ssl_info;
-    ssl_socket_->GetSSLInfo(&ssl_info);
+    bool has_ssl_info = ssl_socket_->GetSSLInfo(&ssl_info);
+    DCHECK(has_ssl_info);
+
+    UMA_HISTOGRAM_ENUMERATION("Net.SSLVersion", SSLConnectionStatusToVersion(
+                                                    ssl_info.connection_status),
+                              SSL_CONNECTION_VERSION_MAX);
 
     UMA_HISTOGRAM_SPARSE_SLOWLY("Net.SSL_CipherSuite",
                                 SSLConnectionStatusToCipherSuite(
@@ -549,6 +557,12 @@ int SSLConnectJob::DoSSLConnectComplete(int result) {
     }
   }
 
+  UMA_HISTOGRAM_SPARSE_SLOWLY("Net.SSL_Connection_Error", std::abs(result));
+  if (params_->ssl_config().fastradio_padding_eligible) {
+    UMA_HISTOGRAM_SPARSE_SLOWLY("Net.SSL_Connection_Error_FastRadioPadding",
+                                std::abs(result));
+  }
+
   if (result == OK || IsCertificateError(result)) {
     SetSocket(ssl_socket_.Pass());
   } else if (result == ERR_SSL_CLIENT_AUTH_CERT_NEEDED) {
@@ -590,7 +604,6 @@ SSLClientSocketPool::SSLConnectJobFactory::SSLConnectJobFactory(
     SOCKSClientSocketPool* socks_pool,
     HttpProxyClientSocketPool* http_proxy_pool,
     ClientSocketFactory* client_socket_factory,
-    HostResolver* host_resolver,
     const SSLClientSocketContext& context,
     const SSLConnectJob::GetMessengerCallback& get_messenger_callback,
     NetLog* net_log)
@@ -598,7 +611,6 @@ SSLClientSocketPool::SSLConnectJobFactory::SSLConnectJobFactory(
       socks_pool_(socks_pool),
       http_proxy_pool_(http_proxy_pool),
       client_socket_factory_(client_socket_factory),
-      host_resolver_(host_resolver),
       context_(context),
       get_messenger_callback_(get_messenger_callback),
       net_log_(net_log) {
@@ -627,7 +639,6 @@ SSLClientSocketPool::SSLClientSocketPool(
     int max_sockets,
     int max_sockets_per_group,
     ClientSocketPoolHistograms* histograms,
-    HostResolver* host_resolver,
     CertVerifier* cert_verifier,
     ChannelIDService* channel_id_service,
     TransportSecurityState* transport_security_state,
@@ -655,7 +666,6 @@ SSLClientSocketPool::SSLClientSocketPool(
                 socks_pool,
                 http_proxy_pool,
                 client_socket_factory,
-                host_resolver,
                 SSLClientSocketContext(cert_verifier,
                                        channel_id_service,
                                        transport_security_state,

@@ -27,22 +27,32 @@
 #include "third_party/WebKit/public/platform/WebGeofencingEventType.h"
 #include "third_party/WebKit/public/platform/WebServiceWorkerEventResult.h"
 
+// Windows headers will redefine SendMessage.
+#ifdef SendMessage
+#undef SendMessage
+#endif
+
 class GURL;
 
 namespace blink {
 struct WebCircularGeofencingRegion;
 }
 
+namespace net {
+class HttpResponseInfo;
+}
+
 namespace content {
 
-struct CrossOriginServiceWorkerClient;
 class EmbeddedWorkerRegistry;
-struct PlatformNotificationData;
 class ServiceWorkerContextCore;
 class ServiceWorkerProviderHost;
 class ServiceWorkerRegistration;
 class ServiceWorkerURLRequestJob;
 class ServiceWorkerVersionInfo;
+struct NavigatorConnectClient;
+struct PlatformNotificationData;
+struct ServiceWorkerClientInfo;
 
 // This class corresponds to a specific version of a ServiceWorker
 // script for a given pattern. When a script is upgraded, there may be
@@ -59,9 +69,6 @@ class CONTENT_EXPORT ServiceWorkerVersion
   typedef base::Callback<void(ServiceWorkerStatusCode,
                               ServiceWorkerFetchEventResult,
                               const ServiceWorkerResponse&)> FetchCallback;
-  typedef base::Callback<void(ServiceWorkerStatusCode,
-                              const ServiceWorkerClientInfo&)>
-      GetClientInfoCallback;
   typedef base::Callback<void(ServiceWorkerStatusCode, bool)>
       CrossOriginConnectCallback;
 
@@ -243,7 +250,7 @@ class CONTENT_EXPORT ServiceWorkerVersion
   // This must be called when the status() is ACTIVATED.
   void DispatchCrossOriginConnectEvent(
       const CrossOriginConnectCallback& callback,
-      const CrossOriginServiceWorkerClient& client);
+      const NavigatorConnectClient& client);
 
   // Sends a cross origin message event to the associated embedded worker and
   // asynchronously calls |callback| when the message was sent (or failed to
@@ -254,7 +261,7 @@ class CONTENT_EXPORT ServiceWorkerVersion
   //
   // This must be called when the status() is ACTIVATED.
   void DispatchCrossOriginMessageEvent(
-      const CrossOriginServiceWorkerClient& client,
+      const NavigatorConnectClient& client,
       const base::string16& message,
       const std::vector<int>& sent_message_port_ids,
       const StatusCallback& callback);
@@ -291,6 +298,13 @@ class CONTENT_EXPORT ServiceWorkerVersion
   bool skip_waiting() const { return skip_waiting_; }
 
   void SetDevToolsAttached(bool attached);
+
+  // Sets the HttpResponseInfo used to load the main script.
+  // This HttpResponseInfo will be used for all responses sent back from the
+  // service worker, as the effective security of these responses is equivalent
+  // to that of the ServiceWorker.
+  void SetMainScriptHttpResponseInfo(const net::HttpResponseInfo& http_info);
+  const net::HttpResponseInfo* GetMainScriptHttpResponseInfo();
 
  private:
   class GetClientDocumentsCallback;
@@ -335,9 +349,6 @@ class CONTENT_EXPORT ServiceWorkerVersion
 
   // Message handlers.
   void OnGetClientDocuments(int request_id);
-  void OnGetClientInfoSuccess(int request_id,
-                              const ServiceWorkerClientInfo& info);
-  void OnGetClientInfoError(int request_id);
   void OnActivateEventFinished(int request_id,
                                blink::WebServiceWorkerEventResult result);
   void OnInstallEventFinished(int request_id,
@@ -352,23 +363,47 @@ class CONTENT_EXPORT ServiceWorkerVersion
   void OnGeofencingEventFinished(int request_id);
   void OnCrossOriginConnectEventFinished(int request_id,
                                          bool accept_connection);
+  void OnOpenWindow(int request_id, const GURL& url);
+  void DidOpenWindow(int request_id,
+                     int render_process_id,
+                     int render_frame_id);
+  void OnOpenWindowFinished(int request_id,
+                            int client_id,
+                            const ServiceWorkerClientInfo& client_info);
+
+  void OnSetCachedMetadata(const GURL& url, const std::vector<char>& data);
+  void OnClearCachedMetadata(const GURL& url);
+
   void OnPostMessageToDocument(int client_id,
                                const base::string16& message,
                                const std::vector<int>& sent_message_port_ids);
   void OnFocusClient(int request_id, int client_id);
   void OnSkipWaiting(int request_id);
+  void OnClaimClients(int request_id);
 
-  void OnFocusClientFinished(int request_id, bool result);
+  void OnFocusClientFinished(int request_id,
+                             int client_id,
+                             const ServiceWorkerClientInfo& client);
+
+  void DidEnsureLiveRegistrationForStartWorker(
+      bool pause_after_download,
+      const StatusCallback& callback,
+      ServiceWorkerStatusCode status,
+      const scoped_refptr<ServiceWorkerRegistration>& protect);
   void DidSkipWaiting(int request_id);
+  void DidClaimClients(int request_id, ServiceWorkerStatusCode status);
   void DidGetClientInfo(int client_id,
                         scoped_refptr<GetClientDocumentsCallback> callback,
-                        ServiceWorkerStatusCode status,
                         const ServiceWorkerClientInfo& info);
+
   void ScheduleStopWorker();
   void StopWorkerIfIdle();
   bool HasInflightRequests() const;
 
   void DoomInternal();
+
+  template <typename IDMAP>
+  void RemoveCallbackAndStopIfDoomed(IDMAP* callbacks, int request_id);
 
   const int64 version_id_;
   int64 registration_id_;
@@ -390,7 +425,6 @@ class CONTENT_EXPORT ServiceWorkerVersion
   IDMap<StatusCallback, IDMapOwnPointer> notification_click_callbacks_;
   IDMap<StatusCallback, IDMapOwnPointer> push_callbacks_;
   IDMap<StatusCallback, IDMapOwnPointer> geofencing_callbacks_;
-  IDMap<GetClientInfoCallback, IDMapOwnPointer> get_client_info_callbacks_;
   IDMap<CrossOriginConnectCallback, IDMapOwnPointer>
       cross_origin_connect_callbacks_;
 
@@ -398,6 +432,7 @@ class CONTENT_EXPORT ServiceWorkerVersion
 
   ControlleeMap controllee_map_;
   ControlleeByIDMap controllee_by_id_;
+  // Will be null while shutting down.
   base::WeakPtr<ServiceWorkerContextCore> context_;
   ObserverList<Listener> listeners_;
   ServiceWorkerScriptCacheMap script_cache_map_;
@@ -406,6 +441,7 @@ class CONTENT_EXPORT ServiceWorkerVersion
   bool is_doomed_;
   std::vector<int> pending_skip_waiting_requests_;
   bool skip_waiting_;
+  scoped_ptr<net::HttpResponseInfo> main_script_http_info_;
 
   base::WeakPtrFactory<ServiceWorkerVersion> weak_factory_;
 

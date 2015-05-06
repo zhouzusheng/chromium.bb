@@ -50,7 +50,6 @@ struct ChromeViewHostMsg_GetPluginInfo_Status {
     kAllowed,
     kBlocked,
     kBlockedByPolicy,
-    kClickToPlay,
     kDisabled,
     kNotFound,
     kNPAPINotSupported,
@@ -472,13 +471,6 @@ IPC_SYNC_MESSAGE_CONTROL1_3(
 #endif
 
 #if defined(ENABLE_PLUGIN_INSTALLATION)
-// Tells the browser to search for a plug-in that can handle the given MIME
-// type. The result will be sent asynchronously to the routing ID
-// |placeholder_id|.
-IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_FindMissingPlugin,
-                    int /* placeholder_id */,
-                    std::string /* mime_type */)
-
 // Notifies the browser that a missing plug-in placeholder has been removed, so
 // the corresponding PluginPlaceholderHost can be deleted.
 IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_RemovePluginPlaceholderHost,
@@ -545,10 +537,6 @@ IPC_MESSAGE_CONTROL2(ChromeViewHostMsg_V8HeapStats,
                      int /* size of heap (allocated from the OS) */,
                      int /* bytes in use */)
 
-// Request for preconnect to host providing resource specified by URL
-IPC_MESSAGE_CONTROL1(ChromeViewHostMsg_Preconnect,
-                     GURL /* preconnect target url */)
-
 // Notifies when a plugin couldn't be loaded because it's outdated.
 IPC_MESSAGE_ROUTED2(ChromeViewHostMsg_BlockedOutdatedPlugin,
                     int /* placeholder ID */,
@@ -573,10 +561,6 @@ IPC_MESSAGE_ROUTED0(ChromeViewHostMsg_CancelPrerenderForPrinting)
 // Sent when the renderer was prevented from displaying insecure content in
 // a secure page by a security policy.  The page may appear incomplete.
 IPC_MESSAGE_ROUTED0(ChromeViewHostMsg_DidBlockDisplayingInsecureContent)
-
-// Sent when the renderer was prevented from running insecure content in
-// a secure origin by a security policy.  The page may appear incomplete.
-IPC_MESSAGE_ROUTED0(ChromeViewHostMsg_DidBlockRunningInsecureContent)
 
 IPC_MESSAGE_ROUTED1(ChromeViewHostMsg_DidGetWebApplicationInfo,
                     WebApplicationInfo)
@@ -673,3 +657,7 @@ IPC_MESSAGE_CONTROL2(ChromeViewMsg_SetSearchURLs,
 IPC_SYNC_MESSAGE_CONTROL0_1(ChromeViewHostMsg_IsCrashReportingEnabled,
                             bool /* enabled */)
 #endif
+
+// Sent by the renderer to indicate that a fields trial has been activated.
+IPC_MESSAGE_CONTROL1(ChromeViewHostMsg_FieldTrialActivated,
+                     std::string /* name */)

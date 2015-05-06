@@ -121,10 +121,6 @@ class NET_EXPORT_PRIVATE QuicFramerVisitorInterface {
   // the framer will stop parsing the current packet.
   virtual bool OnAckFrame(const QuicAckFrame& frame) = 0;
 
-  // Called when a CongestionFeedbackFrame has been parsed.
-  virtual bool OnCongestionFeedbackFrame(
-      const QuicCongestionFeedbackFrame& frame) = 0;
-
   // Called when a StopWaitingFrame has been parsed.
   virtual bool OnStopWaitingFrame(const QuicStopWaitingFrame& frame) = 0;
 
@@ -305,18 +301,19 @@ class NET_EXPORT_PRIVATE QuicFramer {
       bool includes_version,
       QuicSequenceNumberLength sequence_number_length);
 
-  // Returns a SerializedPacket whose |packet| member is owned by the caller,
-  // is created from the first |num_frames| frames, or is nullptr if the packet
-  // could not be created.  The packet must be of size |packet_size|.
-  SerializedPacket BuildDataPacket(const QuicPacketHeader& header,
-                                   const QuicFrames& frames,
-                                   size_t packet_size);
+  // Returns a QuicPacket* that is owned by the caller, is created from
+  // |frames|.  Returns nullptr if the packet could not be created.
+  // The packet must be of size |packet_size|.
+  QuicPacket* BuildDataPacket(const QuicPacketHeader& header,
+                              const QuicFrames& frames,
+                              char* buffer,
+                              size_t packet_length);
 
-  // Returns a SerializedPacket whose |packet| member is owned by the caller,
-  // and is populated with the fields in |header| and |fec|, or is nullptr if
-  // the packet could not be created.
-  SerializedPacket BuildFecPacket(const QuicPacketHeader& header,
-                                  const QuicFecData& fec);
+  // Returns a QuicPacket* that is owned by the caller, and is populated with
+  // the fields in |header| and |fec|.  Returns nullptr if the packet could
+  // not be created.
+  QuicPacket* BuildFecPacket(const QuicPacketHeader& header,
+                             const QuicFecData& fec);
 
   // Returns a new public reset packet, owned by the caller.
   static QuicEncryptedPacket* BuildPublicResetPacket(
@@ -375,6 +372,9 @@ class NET_EXPORT_PRIVATE QuicFramer {
 
   bool is_server() const { return is_server_; }
 
+  static QuicPacketEntropyHash GetPacketEntropyHash(
+      const QuicPacketHeader& header);
+
  private:
   friend class test::QuicFramerPeer;
 
@@ -390,11 +390,10 @@ class NET_EXPORT_PRIVATE QuicFramer {
     NackRangeMap nack_ranges;
   };
 
-  QuicPacketEntropyHash GetPacketEntropyHash(
-      const QuicPacketHeader& header) const;
-
   bool ProcessDataPacket(const QuicPacketPublicHeader& public_header,
-                         const QuicEncryptedPacket& packet);
+                         const QuicEncryptedPacket& packet,
+                         char* decrypted_buffer,
+                         size_t buffer_length);
 
   bool ProcessPublicResetPacket(const QuicPacketPublicHeader& public_header);
 
@@ -402,8 +401,12 @@ class NET_EXPORT_PRIVATE QuicFramer {
 
   bool ProcessPublicHeader(QuicPacketPublicHeader* header);
 
+  // |decrypted_buffer| must be allocated to be large enough to hold the
+  // unencrypted contents of |packet|.
   bool ProcessPacketHeader(QuicPacketHeader* header,
-                           const QuicEncryptedPacket& packet);
+                           const QuicEncryptedPacket& packet,
+                           char* decrypted_buffer,
+                           size_t buffer_length);
 
   bool ProcessPacketSequenceNumber(
       QuicSequenceNumberLength sequence_number_length,
@@ -414,8 +417,6 @@ class NET_EXPORT_PRIVATE QuicFramer {
   bool ProcessTimestampsInAckFrame(QuicAckFrame* frame);
   bool ProcessStopWaitingFrame(const QuicPacketHeader& public_header,
                                QuicStopWaitingFrame* stop_waiting);
-  bool ProcessCongestionFeedbackFrame(
-      QuicCongestionFeedbackFrame* congestion_feedback);
   bool ProcessRstStreamFrame(QuicRstStreamFrame* frame);
   bool ProcessConnectionCloseFrame(QuicConnectionCloseFrame* frame);
   bool ProcessGoAwayFrame(QuicGoAwayFrame* frame);
@@ -423,7 +424,9 @@ class NET_EXPORT_PRIVATE QuicFramer {
   bool ProcessBlockedFrame(QuicBlockedFrame* frame);
 
   bool DecryptPayload(const QuicPacketHeader& header,
-                      const QuicEncryptedPacket& packet);
+                      const QuicEncryptedPacket& packet,
+                      char* decrypted_buffer,
+                      size_t buffer_length);
 
   // Returns the full packet sequence number from the truncated
   // wire format version and the last seen packet sequence number.
@@ -468,8 +471,6 @@ class NET_EXPORT_PRIVATE QuicFramer {
   bool AppendAckFrameAndTypeByte(const QuicPacketHeader& header,
                                  const QuicAckFrame& frame,
                                  QuicDataWriter* builder);
-  bool AppendCongestionFeedbackFrame(const QuicCongestionFeedbackFrame& frame,
-                                     QuicDataWriter* builder);
   bool AppendTimestampToAckFrame(const QuicAckFrame& frame,
                                  QuicDataWriter* builder);
   bool AppendStopWaitingFrame(const QuicPacketHeader& header,
@@ -505,8 +506,6 @@ class NET_EXPORT_PRIVATE QuicFramer {
   QuicPacketSequenceNumber last_sequence_number_;
   // Updated by WritePacketHeader.
   QuicConnectionId last_serialized_connection_id_;
-  // Buffer containing decrypted payload data during parsing.
-  scoped_ptr<QuicData> decrypted_;
   // Version of the protocol being used.
   QuicVersion quic_version_;
   // This vector contains QUIC versions which we currently support.

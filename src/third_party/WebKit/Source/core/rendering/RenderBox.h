@@ -23,15 +23,15 @@
 #ifndef RenderBox_h
 #define RenderBox_h
 
+#include "core/layout/shapes/ShapeOutsideInfo.h"
 #include "core/rendering/RenderBoxModelObject.h"
 #include "core/rendering/RenderOverflow.h"
-#include "core/rendering/shapes/ShapeOutsideInfo.h"
 #include "platform/scroll/ScrollTypes.h"
 #include "platform/scroll/ScrollableArea.h"
 
 namespace blink {
 
-class RenderMultiColumnSpannerPlaceholder;
+class LayoutMultiColumnSpannerPlaceholder;
 
 struct PaintInfo;
 
@@ -63,7 +63,7 @@ public:
     InlineBox* m_inlineBoxWrapper;
 
     // For spanners, the spanner placeholder that lays us out within the multicol container.
-    RenderMultiColumnSpannerPlaceholder* m_spannerPlaceholder;
+    LayoutMultiColumnSpannerPlaceholder* m_spannerPlaceholder;
 
     LayoutUnit m_overrideLogicalContentHeight;
     LayoutUnit m_overrideLogicalContentWidth;
@@ -76,17 +76,7 @@ class RenderBox : public RenderBoxModelObject {
 public:
     explicit RenderBox(ContainerNode*);
 
-    // hasAutoZIndex only returns true if the element is positioned or a flex-item since
-    // position:static elements that are not flex-items get their z-index coerced to auto.
-    virtual LayerType layerTypeRequired() const override
-    {
-        if (isPositioned() || createsGroup() || hasClipPath() || hasTransformRelatedProperty() || hasHiddenBackface() || hasReflection() || style()->specifiesColumns() || !style()->hasAutoZIndex() || style()->shouldCompositeForCurrentAnimations())
-            return NormalLayer;
-        if (hasOverflowClip())
-            return OverflowClipLayer;
-
-        return NoLayer;
-    }
+    virtual LayerType layerTypeRequired() const override;
 
     virtual bool backgroundIsKnownToBeOpaqueInRect(const LayoutRect& localRect) const override;
 
@@ -160,6 +150,12 @@ public:
     IntSize pixelSnappedSize() const { return m_frameRect.pixelSnappedSize(); }
 
     void setLocation(const LayoutPoint& location) { m_frameRect.setLocation(location); }
+
+    // FIXME: Currently scrollbars are using int geometry and positioned based on
+    // pixelSnappedBorderBoxRect whose size may change when location changes because of
+    // pixel snapping. This function is used to change location of the RenderBox outside
+    // of RenderBox::layout(). Will remove when we use LayoutUnits for scrollbars.
+    void setLocationAndUpdateOverflowControlsIfNeeded(const LayoutPoint&);
 
     void setSize(const LayoutSize& size) { m_frameRect.setSize(size); }
     void move(LayoutUnit dx, LayoutUnit dy) { m_frameRect.move(dx, dy); }
@@ -293,28 +289,28 @@ public:
     LayoutUnit marginLogicalLeft() const { return m_marginBoxOutsets.logicalLeft(style()->writingMode()); }
     LayoutUnit marginLogicalRight() const { return m_marginBoxOutsets.logicalRight(style()->writingMode()); }
 
-    virtual LayoutUnit marginBefore(const RenderStyle* overrideStyle = 0) const override final { return m_marginBoxOutsets.before((overrideStyle ? overrideStyle : style())->writingMode()); }
-    virtual LayoutUnit marginAfter(const RenderStyle* overrideStyle = 0) const override final { return m_marginBoxOutsets.after((overrideStyle ? overrideStyle : style())->writingMode()); }
-    virtual LayoutUnit marginStart(const RenderStyle* overrideStyle = 0) const override final
+    virtual LayoutUnit marginBefore(const LayoutStyle* overrideStyle = 0) const override final { return m_marginBoxOutsets.before((overrideStyle ? overrideStyle : style())->writingMode()); }
+    virtual LayoutUnit marginAfter(const LayoutStyle* overrideStyle = 0) const override final { return m_marginBoxOutsets.after((overrideStyle ? overrideStyle : style())->writingMode()); }
+    virtual LayoutUnit marginStart(const LayoutStyle* overrideStyle = 0) const override final
     {
-        const RenderStyle* styleToUse = overrideStyle ? overrideStyle : style();
+        const LayoutStyle* styleToUse = overrideStyle ? overrideStyle : style();
         return m_marginBoxOutsets.start(styleToUse->writingMode(), styleToUse->direction());
     }
-    virtual LayoutUnit marginEnd(const RenderStyle* overrideStyle = 0) const override final
+    virtual LayoutUnit marginEnd(const LayoutStyle* overrideStyle = 0) const override final
     {
-        const RenderStyle* styleToUse = overrideStyle ? overrideStyle : style();
+        const LayoutStyle* styleToUse = overrideStyle ? overrideStyle : style();
         return m_marginBoxOutsets.end(styleToUse->writingMode(), styleToUse->direction());
     }
-    void setMarginBefore(LayoutUnit value, const RenderStyle* overrideStyle = 0) { m_marginBoxOutsets.setBefore((overrideStyle ? overrideStyle : style())->writingMode(), value); }
-    void setMarginAfter(LayoutUnit value, const RenderStyle* overrideStyle = 0) { m_marginBoxOutsets.setAfter((overrideStyle ? overrideStyle : style())->writingMode(), value); }
-    void setMarginStart(LayoutUnit value, const RenderStyle* overrideStyle = 0)
+    void setMarginBefore(LayoutUnit value, const LayoutStyle* overrideStyle = 0) { m_marginBoxOutsets.setBefore((overrideStyle ? overrideStyle : style())->writingMode(), value); }
+    void setMarginAfter(LayoutUnit value, const LayoutStyle* overrideStyle = 0) { m_marginBoxOutsets.setAfter((overrideStyle ? overrideStyle : style())->writingMode(), value); }
+    void setMarginStart(LayoutUnit value, const LayoutStyle* overrideStyle = 0)
     {
-        const RenderStyle* styleToUse = overrideStyle ? overrideStyle : style();
+        const LayoutStyle* styleToUse = overrideStyle ? overrideStyle : style();
         m_marginBoxOutsets.setStart(styleToUse->writingMode(), styleToUse->direction(), value);
     }
-    void setMarginEnd(LayoutUnit value, const RenderStyle* overrideStyle = 0)
+    void setMarginEnd(LayoutUnit value, const LayoutStyle* overrideStyle = 0)
     {
-        const RenderStyle* styleToUse = overrideStyle ? overrideStyle : style();
+        const LayoutStyle* styleToUse = overrideStyle ? overrideStyle : style();
         m_marginBoxOutsets.setEnd(styleToUse->writingMode(), styleToUse->direction(), value);
     }
 
@@ -372,7 +368,7 @@ public:
     void setExtraBlockOffset(LayoutUnit blockOffest);
     void clearExtraInlineAndBlockOffests();
 
-    virtual LayoutSize offsetFromContainer(const RenderObject*, const LayoutPoint&, bool* offsetDependsOnPoint = 0) const override;
+    virtual LayoutSize offsetFromContainer(const LayoutObject*, const LayoutPoint&, bool* offsetDependsOnPoint = 0) const override;
 
     LayoutUnit adjustBorderBoxLogicalWidthForBoxSizing(LayoutUnit width) const;
     LayoutUnit adjustBorderBoxLogicalHeightForBoxSizing(LayoutUnit height) const;
@@ -405,23 +401,24 @@ public:
 
     void positionLineBox(InlineBox*);
     void moveWithEdgeOfInlineContainerIfNecessary(bool isHorizontal);
+    void markStaticPositionedBoxForLayout(bool isHorizontal, bool isInline);
 
     virtual InlineBox* createInlineBox();
     void dirtyLineBoxes(bool fullLayout);
 
     // For inline replaced elements, this function returns the inline box that owns us.  Enables
-    // the replaced RenderObject to quickly determine what line it is contained on and to easily
+    // the replaced LayoutObject to quickly determine what line it is contained on and to easily
     // iterate over structures on the line.
     InlineBox* inlineBoxWrapper() const { return m_rareData ? m_rareData->m_inlineBoxWrapper : 0; }
     void setInlineBoxWrapper(InlineBox*);
     void deleteLineBoxWrapper();
 
-    void setSpannerPlaceholder(RenderMultiColumnSpannerPlaceholder&);
+    void setSpannerPlaceholder(LayoutMultiColumnSpannerPlaceholder&);
     void clearSpannerPlaceholder();
-    virtual RenderMultiColumnSpannerPlaceholder* spannerPlaceholder() const final { return m_rareData ? m_rareData->m_spannerPlaceholder : 0; }
+    virtual LayoutMultiColumnSpannerPlaceholder* spannerPlaceholder() const final { return m_rareData ? m_rareData->m_spannerPlaceholder : 0; }
 
-    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, const PaintInvalidationState* = 0) const override;
-    virtual void mapRectToPaintInvalidationBacking(const RenderLayerModelObject* paintInvalidationContainer, LayoutRect&, const PaintInvalidationState*) const override;
+    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutLayerModelObject* paintInvalidationContainer, const PaintInvalidationState* = 0) const override;
+    virtual void mapRectToPaintInvalidationBacking(const LayoutLayerModelObject* paintInvalidationContainer, LayoutRect&, const PaintInvalidationState*) const override;
     virtual void invalidatePaintForOverhangingFloats(bool paintAllDescendants);
 
     virtual LayoutUnit containingBlockLogicalWidthForContent() const override;
@@ -464,7 +461,10 @@ public:
     virtual LayoutUnit computeReplacedLogicalWidth(ShouldComputePreferred  = ComputeActual) const;
     virtual LayoutUnit computeReplacedLogicalHeight() const;
 
+    static bool logicalWidthIsResolvableFromBlock(const RenderBlock* containingBlock);
+    bool hasDefiniteLogicalWidth() const;
     static bool percentageLogicalHeightIsResolvableFromBlock(const RenderBlock* containingBlock, bool outOfFlowPositioned);
+    bool hasDefiniteLogicalHeight() const;
     LayoutUnit computePercentageLogicalHeight(const Length& height) const;
 
     // Block flows subclass availableWidth/Height to handle multi column layout (shrinking the width/height available to children when laying out.)
@@ -488,7 +488,7 @@ public:
     virtual void autoscroll(const IntPoint&);
     bool canAutoscroll() const;
     IntSize calculateAutoscrollDirection(const IntPoint& windowPoint) const;
-    static RenderBox* findAutoscrollable(RenderObject*);
+    static RenderBox* findAutoscrollable(LayoutObject*);
     virtual void stopAutoscroll() { }
     virtual void panScroll(const IntPoint&);
 
@@ -528,7 +528,7 @@ public:
 
     void removeFloatingOrPositionedChildFromBlockLists();
 
-    RenderLayer* enclosingFloatPaintingLayer() const;
+    Layer* enclosingFloatPaintingLayer() const;
 
     virtual int firstLineBoxBaseline() const { return -1; }
     virtual int inlineBlockBaseline(LineDirectionMode) const { return -1; } // Returns -1 if we should skip this box when computing the baseline of an inline-block.
@@ -601,10 +601,10 @@ public:
     LayoutPoint topLeftLocation() const;
     LayoutSize topLeftLocationOffset() const { return toLayoutSize(topLeftLocation()); }
 
-    LayoutRect logicalVisualOverflowRectForPropagation(RenderStyle*) const;
-    LayoutRect visualOverflowRectForPropagation(RenderStyle*) const;
-    LayoutRect logicalLayoutOverflowRectForPropagation(RenderStyle*) const;
-    LayoutRect layoutOverflowRectForPropagation(RenderStyle*) const;
+    LayoutRect logicalVisualOverflowRectForPropagation(const LayoutStyle&) const;
+    LayoutRect visualOverflowRectForPropagation(const LayoutStyle&) const;
+    LayoutRect logicalLayoutOverflowRectForPropagation(const LayoutStyle&) const;
+    LayoutRect layoutOverflowRectForPropagation(const LayoutStyle&) const;
 
     bool hasRenderOverflow() const { return m_overflow; }
     bool hasVisualOverflow() const { return m_overflow && !borderBoxRect().contains(m_overflow->visualOverflowRect()); }
@@ -637,7 +637,7 @@ public:
         return layoutOverflowRect.y() < noOverflowRect.y() || layoutOverflowRect.maxY() > noOverflowRect.maxY();
     }
 
-    virtual RenderBox* createAnonymousBoxWithSameTypeAs(const RenderObject*) const
+    virtual RenderBox* createAnonymousBoxWithSameTypeAs(const LayoutObject*) const
     {
         ASSERT_NOT_REACHED();
         return 0;
@@ -660,11 +660,10 @@ public:
 
     void setIntrinsicContentLogicalHeight(LayoutUnit intrinsicContentLogicalHeight) const { m_intrinsicContentLogicalHeight = intrinsicContentLogicalHeight; }
 protected:
-    virtual void willBeRemovedFromTree() override;
     virtual void willBeDestroyed() override;
 
-    virtual void styleWillChange(StyleDifference, const RenderStyle& newStyle) override;
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) override;
+    virtual void styleWillChange(StyleDifference, const LayoutStyle& newStyle) override;
+    virtual void styleDidChange(StyleDifference, const LayoutStyle* oldStyle) override;
     virtual void updateFromStyle() override;
 
     // Returns false if it could not cheaply compute the extent (e.g. fixed background), in which case the returned rect may be incorrect.
@@ -680,29 +679,30 @@ protected:
 
     virtual bool shouldComputeSizeAsReplaced() const { return isReplaced() && !isInlineBlockOrInlineTable(); }
 
-    virtual void mapLocalToContainer(const RenderLayerModelObject* paintInvalidationContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0, const PaintInvalidationState* = 0) const override;
+    virtual void mapLocalToContainer(const LayoutLayerModelObject* paintInvalidationContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0, const PaintInvalidationState* = 0) const override;
     virtual void mapAbsoluteToLocalPoint(MapCoordinatesFlags, TransformState&) const override;
 
-    RenderObject* splitAnonymousBoxesAroundChild(RenderObject* beforeChild);
+    LayoutObject* splitAnonymousBoxesAroundChild(LayoutObject* beforeChild);
 
-    virtual void addLayerHitTestRects(LayerHitTestRects&, const RenderLayer* currentCompositedLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const override;
+    virtual void addLayerHitTestRects(LayerHitTestRects&, const Layer* currentCompositedLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const override;
     virtual void computeSelfHitTestRects(Vector<LayoutRect>&, const LayoutPoint& layerOffset) const override;
 
-    virtual PaintInvalidationReason paintInvalidationReason(const RenderLayerModelObject& paintInvalidationContainer,
+    virtual PaintInvalidationReason paintInvalidationReason(const LayoutLayerModelObject& paintInvalidationContainer,
         const LayoutRect& oldBounds, const LayoutPoint& oldPositionFromPaintInvalidationContainer,
         const LayoutRect& newBounds, const LayoutPoint& newPositionFromPaintInvalidationContainer) const override;
-    virtual void incrementallyInvalidatePaint(const RenderLayerModelObject& paintInvalidationContainer, const LayoutRect& oldBounds, const LayoutRect& newBounds, const LayoutPoint& positionFromPaintInvalidationContainer) override;
+    virtual void incrementallyInvalidatePaint(const LayoutLayerModelObject& paintInvalidationContainer, const LayoutRect& oldBounds, const LayoutRect& newBounds, const LayoutPoint& positionFromPaintInvalidationContainer) override;
 
     virtual void clearPaintInvalidationState(const PaintInvalidationState&) override;
 #if ENABLE(ASSERT)
     virtual bool paintInvalidationStateIsDirty() const override;
 #endif
 
-private:
-    void invalidatePaintRectClippedByOldAndNewBounds(const RenderLayerModelObject& paintInvalidationContainer, const LayoutRect&, const LayoutRect& oldBounds, const LayoutRect& newBounds);
+    virtual PaintInvalidationReason invalidatePaintIfNeeded(const PaintInvalidationState&, const LayoutLayerModelObject& newPaintInvalidationContainer) override;
+    virtual void invalidateDisplayItemClients(DisplayItemList*) const override;
 
-    void updateShapeOutsideInfoAfterStyleChange(const RenderStyle&, const RenderStyle* oldStyle);
-    void updateGridPositionAfterStyleChange(const RenderStyle*);
+private:
+    void updateShapeOutsideInfoAfterStyleChange(const LayoutStyle&, const LayoutStyle* oldStyle);
+    void updateGridPositionAfterStyleChange(const LayoutStyle*);
 
     bool autoWidthShouldFitContent() const;
     LayoutUnit shrinkToFitLogicalWidth(LayoutUnit availableLogicalWidth, LayoutUnit bordersPlusPadding) const;
@@ -750,8 +750,6 @@ private:
 
     bool logicalHeightComputesAsNone(SizeType) const;
 
-    virtual PaintInvalidationReason invalidatePaintIfNeeded(const PaintInvalidationState&, const RenderLayerModelObject& newPaintInvalidationContainer) override final;
-
     bool isBox() const = delete; // This will catch anyone doing an unnecessary check.
 
     // The width/height of the contents + borders + padding.  The x/y location is relative to our container (which is not always our parent).
@@ -782,7 +780,7 @@ private:
     OwnPtr<RenderBoxRareData> m_rareData;
 };
 
-DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderBox, isBox());
+DEFINE_LAYOUT_OBJECT_TYPE_CASTS(RenderBox, isBox());
 
 inline RenderBox* RenderBox::previousSiblingBox() const
 {
@@ -827,16 +825,16 @@ inline RenderBox* RenderBox::lastChildBox() const
 
 inline RenderBox* RenderBox::previousSiblingMultiColumnBox() const
 {
-    ASSERT(isRenderMultiColumnSpannerPlaceholder() || isRenderMultiColumnSet());
+    ASSERT(isLayoutMultiColumnSpannerPlaceholder() || isLayoutMultiColumnSet());
     RenderBox* previousBox = previousSiblingBox();
-    if (previousBox->isRenderFlowThread())
+    if (previousBox->isLayoutFlowThread())
         return 0;
     return previousBox;
 }
 
 inline RenderBox* RenderBox::nextSiblingMultiColumnBox() const
 {
-    ASSERT(isRenderMultiColumnSpannerPlaceholder() || isRenderMultiColumnSet());
+    ASSERT(isLayoutMultiColumnSpannerPlaceholder() || isLayoutMultiColumnSet());
     return nextSiblingBox();
 }
 

@@ -145,14 +145,22 @@ void AudioScheduledSourceNode::start(double when, ExceptionState& exceptionState
         return;
     }
 
-    if (!std::isfinite(when) || (when < 0)) {
+    if (when < 0) {
         exceptionState.throwDOMException(
             InvalidAccessError,
             "Start time must be a finite non-negative number: " + String::number(when));
         return;
     }
 
-    m_startTime = when;
+    // The node is started. Add a reference to keep us alive so that audio will eventually get
+    // played even if Javascript should drop all references to this node. The reference will get
+    // dropped when the source has finished playing.
+    context()->refNode(this);
+
+    // If |when| < currentTime, the source must start now according to the spec.
+    // So just set startTime to currentTime in this case to start the source now.
+    m_startTime = std::max(when, context()->currentTime());
+
     m_playbackState = SCHEDULED_STATE;
 }
 
@@ -167,10 +175,10 @@ void AudioScheduledSourceNode::stop(double when, ExceptionState& exceptionState)
         return;
     }
 
-    if (!std::isfinite(when) || (when < 0)) {
+    if (when < 0) {
         exceptionState.throwDOMException(
             InvalidAccessError,
-            "Stop time must be a finite non-negative number: " + String::number(when));
+            "Stop time must be a non-negative number: " + String::number(when));
         return;
     }
 
@@ -187,13 +195,17 @@ void AudioScheduledSourceNode::setOnended(PassRefPtr<EventListener> listener)
     setAttributeEventListener(EventTypeNames::ended, listener);
 }
 
-void AudioScheduledSourceNode::finish()
+void AudioScheduledSourceNode::finishWithoutOnEnded()
 {
     if (m_playbackState != FINISHED_STATE) {
         // Let the context dereference this AudioNode.
         context()->notifyNodeFinishedProcessing(this);
         m_playbackState = FINISHED_STATE;
     }
+}
+void AudioScheduledSourceNode::finish()
+{
+    finishWithoutOnEnded();
 
     if (m_hasEndedListener && context()->executionContext()) {
         context()->executionContext()->postTask(createCrossThreadTask(&AudioScheduledSourceNode::notifyEnded, this));

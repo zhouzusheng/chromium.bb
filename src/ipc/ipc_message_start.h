@@ -35,7 +35,6 @@ enum IPCMessageStart {
   AutofillMsgStart,
   SafeBrowsingMsgStart,
   P2PMsgStart,
-  SocketStreamMsgStart,
   ResourceMsgStart,
   FileSystemMsgStart,
   ChildProcessMsgStart,
@@ -45,7 +44,6 @@ enum IPCMessageStart {
   DeviceLightMsgStart,
   DeviceMotionMsgStart,
   DeviceOrientationMsgStart,
-  GeolocationMsgStart,
   AudioMsgStart,
   MidiMsgStart,
   ChromeMsgStart,
@@ -99,7 +97,6 @@ enum IPCMessageStart {
   CldDataProviderMsgStart,
   PushMessagingMsgStart,
   GinJavaBridgeMsgStart,
-  BatteryStatusMsgStart,
   ChromeUtilityPrintingMsgStart,
   AecDumpMsgStart,
   OzoneGpuMsgStart,
@@ -112,10 +109,12 @@ enum IPCMessageStart {
   ExtensionUtilityMsgStart,
   GeofencingMsgStart,
   LayoutTestMsgStart,
-  DnsPrefetchMsgStart,
+  NetworkHintsMsgStart,
   BluetoothMsgStart,
   NavigatorConnectMsgStart,
   CastMediaMsgStart,
+  AwMessagePortMsgStart,
+  GuestViewMsgStart,
   LastIPCMsgStart  // Must come last.
 };
 

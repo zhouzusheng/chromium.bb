@@ -27,15 +27,15 @@
 #include "core/SVGNames.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/NodeRenderStyle.h"
+#include "core/dom/NodeLayoutStyle.h"
 #include "core/dom/NodeRenderingTraversal.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/RenderTreeBuilder.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/events/ScopedEventQueue.h"
+#include "core/layout/svg/LayoutSVGInlineText.h"
 #include "core/rendering/RenderCombineText.h"
 #include "core/rendering/RenderText.h"
-#include "core/rendering/svg/RenderSVGInlineText.h"
 #include "core/svg/SVGForeignObjectElement.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/StringBuilder.h"
@@ -237,14 +237,14 @@ PassRefPtrWillBeRawPtr<Node> Text::cloneNode(bool /*deep*/)
     return cloneWithData(data());
 }
 
-static inline bool canHaveWhitespaceChildren(const RenderObject& parent)
+static inline bool canHaveWhitespaceChildren(const LayoutObject& parent)
 {
     // <button> should allow whitespace even though RenderFlexibleBox doesn't.
     if (parent.isRenderButton())
         return true;
 
     if (parent.isTable() || parent.isTableRow() || parent.isTableSection()
-        || parent.isRenderTableCol() || parent.isFrameSet()
+        || parent.isLayoutTableCol() || parent.isFrameSet()
         || parent.isFlexibleBox() || parent.isRenderGrid()
         || parent.isSVGRoot()
         || parent.isSVGContainer()
@@ -254,7 +254,7 @@ static inline bool canHaveWhitespaceChildren(const RenderObject& parent)
     return true;
 }
 
-bool Text::textRendererIsNeeded(const RenderStyle& style, const RenderObject& parent)
+bool Text::textRendererIsNeeded(const LayoutStyle& style, const LayoutObject& parent)
 {
     if (!parent.canHaveChildren())
         return false;
@@ -277,7 +277,11 @@ bool Text::textRendererIsNeeded(const RenderStyle& style, const RenderObject& pa
     if (style.preserveNewline()) // pre/pre-wrap/pre-line always make renderers.
         return true;
 
-    const RenderObject* prev = NodeRenderingTraversal::previousSiblingRenderer(*this);
+    // childNeedsDistributionRecalc() here is rare, only happens JS calling surroundContents() etc. from DOMNodeInsertedIntoDocument etc.
+    if (document().childNeedsDistributionRecalc())
+        return true;
+
+    const LayoutObject* prev = NodeRenderingTraversal::previousSiblingRenderer(*this);
     if (prev && prev->isBR()) // <span><br/> <br/></span>
         return false;
 
@@ -293,7 +297,7 @@ bool Text::textRendererIsNeeded(const RenderStyle& style, const RenderObject& pa
         // So to avoid blowing up on very wide DOMs, we limit the number of siblings to visit.
         unsigned maxSiblingsToVisit = 50;
 
-        RenderObject* first = parent.slowFirstChild();
+        LayoutObject* first = parent.slowFirstChild();
         while (first && first->isFloatingOrOutOfFlowPositioned() && maxSiblingsToVisit--)
             first = first->nextSibling();
         if (!first || first == renderer() || NodeRenderingTraversal::nextSiblingRenderer(*this) == first)
@@ -311,10 +315,10 @@ static bool isSVGText(Text* text)
     return parentOrShadowHostNode->isSVGElement() && !isSVGForeignObjectElement(*parentOrShadowHostNode);
 }
 
-RenderText* Text::createTextRenderer(RenderStyle* style)
+RenderText* Text::createTextRenderer(LayoutStyle* style)
 {
     if (isSVGText(this))
-        return new RenderSVGInlineText(this, dataImpl());
+        return new LayoutSVGInlineText(this, dataImpl());
 
     if (style->hasTextCombine())
         return new RenderCombineText(this, dataImpl());
@@ -325,7 +329,7 @@ RenderText* Text::createTextRenderer(RenderStyle* style)
 void Text::attach(const AttachContext& context)
 {
     if (ContainerNode* renderingParent = NodeRenderingTraversal::parent(*this)) {
-        if (RenderObject* parentRenderer = renderingParent->renderer()) {
+        if (LayoutObject* parentRenderer = renderingParent->renderer()) {
             if (textRendererIsNeeded(*parentRenderer->style(), *parentRenderer))
                 RenderTreeBuilderForText(*this, parentRenderer).createRenderer();
         }
@@ -338,7 +342,7 @@ void Text::reattachIfNeeded(const AttachContext& context)
     bool rendererIsNeeded = false;
     ContainerNode* renderingParent = NodeRenderingTraversal::parent(*this);
     if (renderingParent) {
-        if (RenderObject* parentRenderer = renderingParent->renderer()) {
+        if (LayoutObject* parentRenderer = renderingParent->renderer()) {
             if (textRendererIsNeeded(*parentRenderer->style(), *parentRenderer))
                 rendererIsNeeded = true;
         }
@@ -379,7 +383,7 @@ void Text::recalcTextStyle(StyleRecalcChange change, Text* nextTextSibling)
 bool Text::needsWhitespaceRenderer()
 {
     ASSERT(!renderer());
-    if (RenderStyle* style = parentRenderStyle())
+    if (LayoutStyle* style = parentLayoutStyle())
         return style->preserveNewline();
     return false;
 }

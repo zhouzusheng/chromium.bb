@@ -37,10 +37,9 @@ class RenderText;
 class RenderMenuList final : public RenderFlexibleBox, private PopupMenuClient {
 
 public:
-    RenderMenuList(Element*);
+    explicit RenderMenuList(Element*);
     virtual ~RenderMenuList();
     virtual void destroy() override;
-    virtual void trace(Visitor*) override;
 
     bool popupIsVisible() const { return m_popupIsVisible; }
     void showPopup();
@@ -58,11 +57,11 @@ public:
 private:
     HTMLSelectElement* selectElement() const;
 
-    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectMenuList || RenderFlexibleBox::isOfType(type); }
-    virtual bool isChildAllowed(RenderObject*, RenderStyle*) const override;
+    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectMenuList || RenderFlexibleBox::isOfType(type); }
+    virtual bool isChildAllowed(LayoutObject*, const LayoutStyle&) const override;
 
-    virtual void addChild(RenderObject* newChild, RenderObject* beforeChild = 0) override;
-    virtual void removeChild(RenderObject*) override;
+    virtual void addChild(LayoutObject* newChild, LayoutObject* beforeChild = 0) override;
+    virtual void removeChild(LayoutObject*) override;
     virtual bool createsAnonymousWrapper() const override { return true; }
 
     virtual void updateFromElement() override;
@@ -75,7 +74,7 @@ private:
 
     virtual void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const override;
 
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) override;
+    virtual void styleDidChange(StyleDifference, const LayoutStyle* oldStyle) override;
 
     // PopupMenuClient methods
     virtual void valueChanged(unsigned listIndex, bool fireOnChange = true) override;
@@ -97,6 +96,9 @@ private:
     virtual void setTextFromItem(unsigned listIndex) override;
     virtual void listBoxSelectItem(int listIndex, bool allowMultiplySelections, bool shift, bool fireOnChangeNow = true) override;
     virtual bool multiple() const override;
+    virtual IntRect elementRectRelativeToRootView() const override;
+    virtual Element& ownerElement() const override;
+    virtual const LayoutStyle* layoutStyleForItem(Element&) const override;
 
     virtual bool hasLineIfEmpty() const override { return true; }
 
@@ -119,21 +121,21 @@ private:
 
     void didUpdateActiveOption(int optionIndex);
 
-    RawPtrWillBeMember<RenderText> m_buttonText;
-    RawPtrWillBeMember<RenderBlock> m_innerBlock;
+    RenderText* m_buttonText;
+    RenderBlock* m_innerBlock;
 
     bool m_optionsChanged;
     int m_optionsWidth;
 
     int m_lastActiveIndex;
 
-    RefPtr<RenderStyle> m_optionStyle;
+    RefPtr<LayoutStyle> m_optionStyle;
 
-    RefPtrWillBeMember<PopupMenu> m_popup;
+    RefPtrWillBePersistent<PopupMenu> m_popup;
     bool m_popupIsVisible;
 };
 
-DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderMenuList, isMenuList());
+DEFINE_LAYOUT_OBJECT_TYPE_CASTS(RenderMenuList, isMenuList());
 
 }
 

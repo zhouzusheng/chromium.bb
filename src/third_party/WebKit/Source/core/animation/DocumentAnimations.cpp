@@ -36,11 +36,11 @@
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/Node.h"
-#include "core/dom/NodeRenderStyle.h"
+#include "core/dom/NodeLayoutStyle.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
+#include "core/layout/compositing/LayerCompositor.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/compositing/RenderLayerCompositor.h"
 
 namespace blink {
 
@@ -70,7 +70,7 @@ void DocumentAnimations::updateAnimationTimingForGetComputedStyle(Node& node, CS
     if (!node.isElementNode())
         return;
     const Element& element = toElement(node);
-    if (RenderStyle* style = element.renderStyle()) {
+    if (LayoutStyle* style = element.layoutStyle()) {
         if ((property == CSSPropertyOpacity && style->isRunningOpacityAnimationOnCompositor())
             || ((property == CSSPropertyTransform || property == CSSPropertyWebkitTransform) && style->isRunningTransformAnimationOnCompositor())
             || (property == CSSPropertyWebkitFilter && style->isRunningFilterAnimationOnCompositor())) {

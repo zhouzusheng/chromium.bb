@@ -33,8 +33,8 @@
 #include "core/html/HTMLObjectElement.h"
 #include "core/html/PluginDocument.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/rendering/RenderEmbeddedObject.h"
-#include "core/rendering/RenderPart.h"
+#include "core/layout/LayoutEmbeddedObject.h"
+#include "core/layout/LayoutPart.h"
 
 namespace blink {
 
@@ -48,22 +48,22 @@ inline HTMLEmbedElement::HTMLEmbedElement(Document& document, bool createdByPars
 PassRefPtrWillBeRawPtr<HTMLEmbedElement> HTMLEmbedElement::create(Document& document, bool createdByParser)
 {
     RefPtrWillBeRawPtr<HTMLEmbedElement> element = adoptRefWillBeNoop(new HTMLEmbedElement(document, createdByParser));
-    element->ensureUserAgentShadowRoot();
+    element->ensureClosedShadowRoot();
     return element.release();
 }
 
-static inline RenderPart* findPartRenderer(const Node* n)
+static inline LayoutPart* findPartRenderer(const Node* n)
 {
     if (!n->renderer())
         n = Traversal<HTMLObjectElement>::firstAncestor(*n);
 
-    if (n && n->renderer() && n->renderer()->isRenderPart())
-        return toRenderPart(n->renderer());
+    if (n && n->renderer() && n->renderer()->isLayoutPart())
+        return toLayoutPart(n->renderer());
 
     return nullptr;
 }
 
-RenderPart* HTMLEmbedElement::existingRenderPart() const
+LayoutPart* HTMLEmbedElement::existingLayoutPart() const
 {
     return findPartRenderer(this);
 }
@@ -123,7 +123,7 @@ void HTMLEmbedElement::parametersForPlugin(Vector<String>& paramNames, Vector<St
 // moved down into HTMLPluginElement.cpp
 void HTMLEmbedElement::updateWidgetInternal()
 {
-    ASSERT(!renderEmbeddedObject()->showsUnavailablePluginIndicator());
+    ASSERT(!layoutEmbeddedObject()->showsUnavailablePluginIndicator());
     ASSERT(needsWidgetUpdate());
     setNeedsWidgetUpdate(false);
 
@@ -149,7 +149,7 @@ void HTMLEmbedElement::updateWidgetInternal()
     requestObject(m_url, m_serviceType, paramNames, paramValues);
 }
 
-bool HTMLEmbedElement::rendererIsNeeded(const RenderStyle& style)
+bool HTMLEmbedElement::rendererIsNeeded(const LayoutStyle& style)
 {
     if (isImageType())
         return HTMLPlugInElement::rendererIsNeeded(style);

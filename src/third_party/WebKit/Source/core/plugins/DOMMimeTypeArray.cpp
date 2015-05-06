@@ -33,7 +33,7 @@ DOMMimeTypeArray::DOMMimeTypeArray(LocalFrame* frame)
 {
 }
 
-void DOMMimeTypeArray::trace(Visitor* visitor)
+DEFINE_TRACE(DOMMimeTypeArray)
 {
     DOMWindowProperty::trace(visitor);
 }
@@ -54,20 +54,7 @@ PassRefPtrWillBeRawPtr<DOMMimeType> DOMMimeTypeArray::item(unsigned index)
     const Vector<MimeClassInfo>& mimes = data->mimes();
     if (index >= mimes.size())
         return nullptr;
-    return DOMMimeType::create(data, m_frame, index).get();
-}
-
-bool DOMMimeTypeArray::canGetItemsForName(const AtomicString& propertyName)
-{
-    PluginData *data = getPluginData();
-    if (!data)
-        return 0;
-    const Vector<MimeClassInfo>& mimes = data->mimes();
-    for (unsigned i = 0; i < mimes.size(); ++i) {
-        if (mimes[i].type == propertyName)
-            return true;
-    }
-    return false;
+    return DOMMimeType::create(data, m_frame, index);
 }
 
 PassRefPtrWillBeRawPtr<DOMMimeType> DOMMimeTypeArray::namedItem(const AtomicString& propertyName)
@@ -78,7 +65,7 @@ PassRefPtrWillBeRawPtr<DOMMimeType> DOMMimeTypeArray::namedItem(const AtomicStri
     const Vector<MimeClassInfo>& mimes = data->mimes();
     for (unsigned i = 0; i < mimes.size(); ++i) {
         if (mimes[i].type == propertyName)
-            return DOMMimeType::create(data, m_frame, i).get();
+            return DOMMimeType::create(data, m_frame, i);
     }
     return nullptr;
 }
@@ -86,10 +73,10 @@ PassRefPtrWillBeRawPtr<DOMMimeType> DOMMimeTypeArray::namedItem(const AtomicStri
 PluginData* DOMMimeTypeArray::getPluginData() const
 {
     if (!m_frame)
-        return 0;
+        return nullptr;
     Page* p = m_frame->page();
     if (!p)
-        return 0;
+        return nullptr;
     return p->pluginData();
 }
 

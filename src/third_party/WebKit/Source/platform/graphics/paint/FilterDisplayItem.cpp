@@ -10,19 +10,40 @@
 
 namespace blink {
 
+BeginFilterDisplayItem::BeginFilterDisplayItem(DisplayItemClient client, PassRefPtr<ImageFilter> imageFilter, const LayoutRect& bounds)
+    : PairedBeginDisplayItem(client, BeginFilter)
+    , m_imageFilter(imageFilter)
+    , m_bounds(bounds)
+{
+}
+
+BeginFilterDisplayItem::BeginFilterDisplayItem(DisplayItemClient client, PassRefPtr<ImageFilter> imageFilter, const LayoutRect& bounds, PassOwnPtr<WebFilterOperations> webFilterOperations)
+    : PairedBeginDisplayItem(client, BeginFilter)
+    , m_imageFilter(imageFilter)
+    , m_webFilterOperations(webFilterOperations)
+    , m_bounds(bounds)
+{
+}
+
 void BeginFilterDisplayItem::replay(GraphicsContext* context)
 {
     context->save();
     FloatRect boundaries = mapImageFilterRect(m_imageFilter.get(), m_bounds);
     context->translate(m_bounds.x().toFloat(), m_bounds.y().toFloat());
     boundaries.move(-m_bounds.x().toFloat(), -m_bounds.y().toFloat());
-    context->beginLayer(1, CompositeSourceOver, &boundaries, ColorFilterNone, m_imageFilter.get());
+    context->beginLayer(1, SkXfermode::kSrcOver_Mode, &boundaries, ColorFilterNone, m_imageFilter.get());
     context->translate(-m_bounds.x().toFloat(), -m_bounds.y().toFloat());
 }
 
 void BeginFilterDisplayItem::appendToWebDisplayItemList(WebDisplayItemList* list) const
 {
-    list->appendFilterItem(m_imageFilter.get(), FloatRect(m_bounds));
+    list->appendFilterItem(*m_webFilterOperations, FloatRect(m_bounds));
+}
+
+bool BeginFilterDisplayItem::drawsContent() const
+{
+    // A filter with no inputs must produce its own content.
+    return m_imageFilter->countInputs() == 0;
 }
 
 #ifndef NDEBUG

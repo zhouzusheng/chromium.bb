@@ -15,6 +15,14 @@ namespace content {
 
 namespace {
 
+// According to http://www.ietf.org/rfc/rfc2373.txt, Appendix A, page 19.  An
+// address which contains MAC will have its 11th and 12th bytes as FF:FE as well
+// as the U/L bit as 1.
+bool IsMacBasedIPv6Address(const net::IPAddressNumber& ipaddress) {
+  return ((ipaddress[8] & 0x02) && ipaddress[11] == 0xFF &&
+          ipaddress[12] == 0xFE);
+}
+
 rtc::AdapterType ConvertConnectionTypeToAdapterType(
     net::NetworkChangeNotifier::ConnectionType type) {
   switch (type) {
@@ -74,8 +82,6 @@ void IpcNetworkManager::OnNetworkListChanged(
   // rtc::Network uses these prefix_length to compare network
   // interfaces discovered.
   std::vector<rtc::Network*> networks;
-  int ipv4_interfaces = 0;
-  int ipv6_interfaces = 0;
   for (net::NetworkInterfaceList::const_iterator it = list.begin();
        it != list.end(); it++) {
     if (it->address.size() == net::kIPv4AddressSize) {
@@ -89,11 +95,16 @@ void IpcNetworkManager::OnNetworkListChanged(
                            ConvertConnectionTypeToAdapterType(it->type));
       network->AddIP(rtc::IPAddress(address));
       networks.push_back(network);
-      ++ipv4_interfaces;
     } else if (it->address.size() == net::kIPv6AddressSize) {
+      // Only allow non-deprecated IPv6 addresses which don't contain MAC.
+      if (IsMacBasedIPv6Address(it->address) ||
+          (it->ip_address_attributes & net::IP_ADDRESS_ATTRIBUTE_DEPRECATED)) {
+        continue;
+      }
+
       in6_addr address;
       memcpy(&address, &it->address[0], sizeof(in6_addr));
-      rtc::IPAddress ip6_addr(address);
+      rtc::InterfaceAddress ip6_addr(address, it->ip_address_attributes);
       if (!rtc::IPIsPrivate(ip6_addr)) {
         rtc::IPAddress prefix =
             rtc::TruncateIP(rtc::IPAddress(ip6_addr), it->prefix_length);
@@ -102,17 +113,9 @@ void IpcNetworkManager::OnNetworkListChanged(
                              ConvertConnectionTypeToAdapterType(it->type));
         network->AddIP(ip6_addr);
         networks.push_back(network);
-        ++ipv6_interfaces;
       }
     }
   }
-
-
-  // Send interface counts to UMA.
-  UMA_HISTOGRAM_COUNTS_100("WebRTC.PeerConnection.IPv4Interfaces",
-                           ipv4_interfaces);
-  UMA_HISTOGRAM_COUNTS_100("WebRTC.PeerConnection.IPv6Interfaces",
-                           ipv6_interfaces);
 
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kAllowLoopbackInPeerConnection)) {
@@ -132,9 +135,16 @@ void IpcNetworkManager::OnNetworkListChanged(
   }
 
   bool changed = false;
-  MergeNetworkList(networks, &changed);
+  NetworkManager::Stats stats;
+  MergeNetworkList(networks, &changed, &stats);
   if (changed)
     SignalNetworksChanged();
+
+  // Send interface counts to UMA.
+  UMA_HISTOGRAM_COUNTS_100("WebRTC.PeerConnection.IPv4Interfaces",
+                           stats.ipv4_network_count);
+  UMA_HISTOGRAM_COUNTS_100("WebRTC.PeerConnection.IPv6Interfaces",
+                           stats.ipv6_network_count);
 }
 
 void IpcNetworkManager::SendNetworksChangedSignal() {

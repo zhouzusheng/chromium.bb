@@ -1,11 +1,9 @@
-
 /*
  * Copyright 2006 The Android Open Source Project
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
 
 #include "SkGlyphCache.h"
 #include "SkGlyphCache_Globals.h"
@@ -18,7 +16,6 @@
 #include "SkTypeface.h"
 
 //#define SPEW_PURGE_STATUS
-//#define RECORD_HASH_EFFICIENCY
 
 namespace {
 
@@ -43,26 +40,12 @@ static SkGlyphCache_Globals& getGlobals() {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#ifdef RECORD_HASH_EFFICIENCY
-    static uint32_t gHashSuccess;
-    static uint32_t gHashCollision;
-
-    static void RecordHashSuccess() {
-        gHashSuccess += 1;
-    }
-
-    static void RecordHashCollisionIf(bool pred) {
-        if (pred) {
-            gHashCollision += 1;
-
-            uint32_t total = gHashSuccess + gHashCollision;
-            SkDebugf("Font Cache Hash success rate: %d%%\n",
-                     100 * gHashSuccess / total);
-        }
-    }
+#ifdef SK_GLYPHCACHE_TRACK_HASH_STATS
+    #define RecordHashSuccess()             fHashHitCount += 1
+    #define RecordHashCollisionIf(pred)     do { if (pred) fHashMissCount += 1; } while (0)
 #else
-    #define RecordHashSuccess() (void)0
-    #define RecordHashCollisionIf(pred) (void)0
+    #define RecordHashSuccess()             (void)0
+    #define RecordHashCollisionIf(pred)     (void)0
 #endif
 #define RecordHashCollision() RecordHashCollisionIf(true)
 
@@ -86,14 +69,16 @@ SkGlyphCache::SkGlyphCache(SkTypeface* typeface, const SkDescriptor* desc, SkSca
 
     // init to 0 so that all of the pointers will be null
     memset(fGlyphHash, 0, sizeof(fGlyphHash));
-    // init with 0xFF so that the charCode field will be -1, which is invalid
-    memset(fCharToGlyphHash, 0xFF, sizeof(fCharToGlyphHash));
-
+            
     fMemoryUsed = sizeof(*this);
 
     fGlyphArray.setReserve(kMinGlyphCount);
 
     fAuxProcList = NULL;
+
+#ifdef SK_GLYPHCACHE_TRACK_HASH_STATS
+    fHashHitCount = fHashMissCount = 0;
+#endif
 }
 
 SkGlyphCache::~SkGlyphCache() {
@@ -116,8 +101,8 @@ SkGlyphCache::~SkGlyphCache() {
             }
         }
 
-        printf("glyphPtrArray,%zu, Alloc,%zu, imageUsed,%zu, glyphUsed,%zu, glyphHashAlloc,%zu, glyphHashUsed,%zu, unicharHashAlloc,%zu, unicharHashUsed,%zu\n",
-                 ptrMem, glyphAlloc, imageUsed, glyphUsed, sizeof(fGlyphHash), glyphHashUsed, sizeof(fCharToGlyphHash), uniHashUsed);
+        SkDebugf("glyphPtrArray,%zu, Alloc,%zu, imageUsed,%zu, glyphUsed,%zu, glyphHashAlloc,%zu, glyphHashUsed,%zu, unicharHashAlloc,%zu, unicharHashUsed,%zu\n",
+                 ptrMem, glyphAlloc, imageUsed, glyphUsed, sizeof(fGlyphHash), glyphHashUsed, sizeof(CharGlyphRec) * kHashCount, uniHashUsed);
 
     }
 #endif
@@ -135,6 +120,17 @@ SkGlyphCache::~SkGlyphCache() {
     this->invokeAndRemoveAuxProcs();
 }
 
+SkGlyphCache::CharGlyphRec* SkGlyphCache::getCharGlyphRec(uint32_t id) {
+    if (NULL == fCharToGlyphHash.get()) {
+        fCharToGlyphHash.reset(kHashCount);
+        // init with 0xFF so that the charCode field will be -1, which is invalid
+        memset(fCharToGlyphHash.get(), 0xFF,
+               sizeof(CharGlyphRec) * kHashCount);
+    }
+    
+    return &fCharToGlyphHash[ID2HashIndex(id)];
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 #ifdef SK_DEBUG
@@ -146,7 +142,7 @@ SkGlyphCache::~SkGlyphCache() {
 uint16_t SkGlyphCache::unicharToGlyph(SkUnichar charCode) {
     VALIDATE();
     uint32_t id = SkGlyph::MakeID(charCode);
-    const CharGlyphRec& rec = fCharToGlyphHash[ID2HashIndex(id)];
+    const CharGlyphRec& rec = *this->getCharGlyphRec(id);
 
     if (rec.fID == id) {
         return rec.fGlyph->getGlyphID();
@@ -168,7 +164,7 @@ unsigned SkGlyphCache::getGlyphCount() {
 const SkGlyph& SkGlyphCache::getUnicharAdvance(SkUnichar charCode) {
     VALIDATE();
     uint32_t id = SkGlyph::MakeID(charCode);
-    CharGlyphRec* rec = &fCharToGlyphHash[ID2HashIndex(id)];
+    CharGlyphRec* rec = this->getCharGlyphRec(id);
 
     if (rec->fID != id) {
         // this ID is based on the UniChar
@@ -198,7 +194,7 @@ const SkGlyph& SkGlyphCache::getGlyphIDAdvance(uint16_t glyphID) {
 const SkGlyph& SkGlyphCache::getUnicharMetrics(SkUnichar charCode) {
     VALIDATE();
     uint32_t id = SkGlyph::MakeID(charCode);
-    CharGlyphRec* rec = &fCharToGlyphHash[ID2HashIndex(id)];
+    CharGlyphRec* rec = this->getCharGlyphRec(id);
 
     if (rec->fID != id) {
         RecordHashCollisionIf(rec->fGlyph != NULL);
@@ -221,7 +217,7 @@ const SkGlyph& SkGlyphCache::getUnicharMetrics(SkUnichar charCode,
                                                SkFixed x, SkFixed y) {
     VALIDATE();
     uint32_t id = SkGlyph::MakeID(charCode, x, y);
-    CharGlyphRec* rec = &fCharToGlyphHash[ID2HashIndex(id)];
+    CharGlyphRec* rec = this->getCharGlyphRec(id);
 
     if (rec->fID != id) {
         RecordHashCollisionIf(rec->fGlyph != NULL);
@@ -260,8 +256,7 @@ const SkGlyph& SkGlyphCache::getGlyphIDMetrics(uint16_t glyphID) {
     return *glyph;
 }
 
-const SkGlyph& SkGlyphCache::getGlyphIDMetrics(uint16_t glyphID,
-                                               SkFixed x, SkFixed y) {
+const SkGlyph& SkGlyphCache::getGlyphIDMetrics(uint16_t glyphID, SkFixed x, SkFixed y) {
     VALIDATE();
     uint32_t id = SkGlyph::MakeID(glyphID, x, y);
     unsigned index = ID2HashIndex(id);
@@ -362,6 +357,29 @@ const SkPath* SkGlyphCache::findPath(const SkGlyph& glyph) {
         }
     }
     return glyph.fPath;
+}
+
+void SkGlyphCache::dump() const {
+    const SkTypeface* face = fScalerContext->getTypeface();
+    const SkScalerContextRec& rec = fScalerContext->getRec();
+    SkMatrix matrix;
+    rec.getSingleMatrix(&matrix);
+    matrix.preScale(SkScalarInvert(rec.fTextSize), SkScalarInvert(rec.fTextSize));
+    SkString name;
+    face->getFamilyName(&name);
+
+    SkString msg;
+    msg.printf("cache typeface:%x %25s:%d size:%2g [%g %g %g %g] lum:%02X devG:%d pntG:%d cntr:%d glyphs:%3d",
+               face->uniqueID(), name.c_str(), face->style(), rec.fTextSize,
+               matrix[SkMatrix::kMScaleX], matrix[SkMatrix::kMSkewX],
+               matrix[SkMatrix::kMSkewY], matrix[SkMatrix::kMScaleY],
+               rec.fLumBits & 0xFF, rec.fDeviceGamma, rec.fPaintGamma, rec.fContrast,
+               fGlyphArray.count());
+#ifdef SK_GLYPHCACHE_TRACK_HASH_STATS
+    const int sum = SkTMax(fHashHitCount + fHashMissCount, 1);   // avoid divide-by-zero
+    msg.appendf(" hash:%2d\n", 100 * fHashHitCount / sum);
+#endif
+    SkDebugf("%s\n", msg.c_str());
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -518,6 +536,33 @@ void SkGlyphCache::AttachCache(SkGlyphCache* cache) {
     SkASSERT(cache->fNext == NULL);
 
     getGlobals().attachCacheToHead(cache);
+}
+
+void SkGlyphCache::Dump() {
+    SkGlyphCache_Globals& globals = getGlobals();
+    SkAutoMutexAcquire    ac(globals.fMutex);
+    SkGlyphCache*         cache;
+
+    globals.validate();
+
+    SkDebugf("SkGlyphCache strikes:%d memory:%d\n",
+             globals.getCacheCountUsed(), (int)globals.getTotalMemoryUsed());
+
+#ifdef SK_GLYPHCACHE_TRACK_HASH_STATS
+    int hitCount = 0;
+    int missCount = 0;
+#endif
+
+    for (cache = globals.internalGetHead(); cache != NULL; cache = cache->fNext) {
+#ifdef SK_GLYPHCACHE_TRACK_HASH_STATS
+        hitCount += cache->fHashHitCount;
+        missCount += cache->fHashMissCount;
+#endif
+        cache->dump();
+    }
+#ifdef SK_GLYPHCACHE_TRACK_HASH_STATS
+    SkDebugf("Hash hit percent:%2d\n", 100 * hitCount / (hitCount + missCount));
+#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////////

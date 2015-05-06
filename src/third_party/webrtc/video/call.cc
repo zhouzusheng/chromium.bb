@@ -19,12 +19,16 @@
 #include "webrtc/common.h"
 #include "webrtc/config.h"
 #include "webrtc/modules/rtp_rtcp/interface/rtp_header_parser.h"
+#include "webrtc/modules/rtp_rtcp/source/byte_io.h"
 #include "webrtc/modules/video_coding/codecs/vp8/include/vp8.h"
 #include "webrtc/modules/video_coding/codecs/vp9/include/vp9.h"
+#include "webrtc/modules/video_render/include/video_render.h"
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
+#include "webrtc/system_wrappers/interface/logging.h"
 #include "webrtc/system_wrappers/interface/rw_lock_wrapper.h"
 #include "webrtc/system_wrappers/interface/scoped_ptr.h"
 #include "webrtc/system_wrappers/interface/trace.h"
+#include "webrtc/system_wrappers/interface/trace_event.h"
 #include "webrtc/video/video_receive_stream.h"
 #include "webrtc/video/video_send_stream.h"
 #include "webrtc/video_engine/include/vie_base.h"
@@ -149,8 +153,11 @@ class Call : public webrtc::Call, public PacketReceiver {
   VideoEngine* video_engine_;
   ViERTP_RTCP* rtp_rtcp_;
   ViECodec* codec_;
+  ViERender* render_;
   ViEBase* base_;
   int base_channel_id_;
+
+  scoped_ptr<VideoRender> external_render_;
 
   DISALLOW_COPY_AND_ASSIGN(Call);
 };
@@ -174,7 +181,9 @@ Call::Call(webrtc::VideoEngine* video_engine, const Call::Config& config)
       receive_crit_(RWLockWrapper::CreateRWLock()),
       send_crit_(RWLockWrapper::CreateRWLock()),
       video_engine_(video_engine),
-      base_channel_id_(-1) {
+      base_channel_id_(-1),
+      external_render_(
+          VideoRender::CreateVideoRender(42, NULL, false, kRenderExternal)) {
   assert(video_engine != NULL);
   assert(config.send_transport != NULL);
 
@@ -190,6 +199,11 @@ Call::Call(webrtc::VideoEngine* video_engine, const Call::Config& config)
     overuse_observer_proxy_.reset(
         new CpuOveruseObserverProxy(config.overuse_callback));
   }
+
+  render_ = ViERender::GetInterface(video_engine_);
+  assert(render_ != NULL);
+
+  render_->RegisterVideoRenderModule(*external_render_.get());
 
   rtp_rtcp_ = ViERTP_RTCP::GetInterface(video_engine_);
   assert(rtp_rtcp_ != NULL);
@@ -208,8 +222,12 @@ Call::Call(webrtc::VideoEngine* video_engine, const Call::Config& config)
 
 Call::~Call() {
   base_->DeleteChannel(base_channel_id_);
+
+  render_->DeRegisterVideoRenderModule(*external_render_.get());
+
   base_->Release();
   codec_->Release();
+  render_->Release();
   rtp_rtcp_->Release();
   webrtc::VideoEngine::Delete(video_engine_);
 }
@@ -219,6 +237,8 @@ PacketReceiver* Call::Receiver() { return this; }
 VideoSendStream* Call::CreateVideoSendStream(
     const VideoSendStream::Config& config,
     const VideoEncoderConfig& encoder_config) {
+  TRACE_EVENT0("webrtc", "Call::CreateVideoSendStream");
+  LOG(LS_INFO) << "CreateVideoSendStream: " << config.ToString();
   assert(config.rtp.ssrcs.size() > 0);
 
   // TODO(mflodman): Base the start bitrate on a current bandwidth estimate, if
@@ -242,6 +262,7 @@ VideoSendStream* Call::CreateVideoSendStream(
 }
 
 void Call::DestroyVideoSendStream(webrtc::VideoSendStream* send_stream) {
+  TRACE_EVENT0("webrtc", "Call::DestroyVideoSendStream");
   assert(send_stream != NULL);
 
   send_stream->Stop();
@@ -274,6 +295,8 @@ void Call::DestroyVideoSendStream(webrtc::VideoSendStream* send_stream) {
 
 VideoReceiveStream* Call::CreateVideoReceiveStream(
     const VideoReceiveStream::Config& config) {
+  TRACE_EVENT0("webrtc", "Call::CreateVideoReceiveStream");
+  LOG(LS_INFO) << "CreateVideoReceiveStream: " << config.ToString();
   VideoReceiveStream* receive_stream =
       new VideoReceiveStream(video_engine_,
                              config,
@@ -300,6 +323,7 @@ VideoReceiveStream* Call::CreateVideoReceiveStream(
 
 void Call::DestroyVideoReceiveStream(
     webrtc::VideoReceiveStream* receive_stream) {
+  TRACE_EVENT0("webrtc", "Call::DestroyVideoReceiveStream");
   assert(receive_stream != NULL);
 
   VideoReceiveStream* receive_stream_impl = NULL;
@@ -352,6 +376,7 @@ Call::Stats Call::GetStats() const {
 
 void Call::SetBitrateConfig(
     const webrtc::Call::Config::BitrateConfig& bitrate_config) {
+  TRACE_EVENT0("webrtc", "Call::SetBitrateConfig");
   assert(bitrate_config.min_bitrate_bps >= 0);
   assert(bitrate_config.max_bitrate_bps == -1 ||
          bitrate_config.max_bitrate_bps > 0);
@@ -436,8 +461,7 @@ PacketReceiver::DeliveryStatus Call::DeliverRtp(const uint8_t* packet,
   if (length < 12)
     return DELIVERY_PACKET_ERROR;
 
-  const uint8_t* ptr = &packet[8];
-  uint32_t ssrc = ptr[0] << 24 | ptr[1] << 16 | ptr[2] << 8 | ptr[3];
+  uint32_t ssrc = ByteReader<uint32_t>::ReadBigEndian(&packet[8]);
 
   ReadLockScoped read_lock(*receive_crit_);
   std::map<uint32_t, VideoReceiveStream*>::iterator it =

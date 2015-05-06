@@ -165,8 +165,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void InitAsPopup(RenderWidgetHostView* parent_host_view,
                    const gfx::Rect& pos) override;
   void InitAsFullscreen(RenderWidgetHostView* reference_host_view) override;
-  void WasShown() override;
-  void WasHidden() override;
   void MovePluginWindows(const std::vector<WebPluginGeometry>& moves) override;
   void Focus() override;
   void Blur() override;
@@ -227,6 +225,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void OnSwapCompositorFrame(uint32 output_surface_id,
                              scoped_ptr<cc::CompositorFrame> frame) override;
   void DidStopFlinging() override;
+  void OnDidNavigateMainFrameToNewPage() override;
 
 #if defined(OS_WIN)
   virtual void SetParentNativeViewAccessible(
@@ -264,8 +263,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void OnCandidateWindowShown() override;
   void OnCandidateWindowUpdated() override;
   void OnCandidateWindowHidden() override;
-  bool IsEditingCommandEnabled(int command_id) override;
-  void ExecuteEditingCommand(int command_id) override;
+  bool IsEditCommandEnabled(int command_id) override;
+  void SetEditCommandForNextKeyEvent(int command_id) override;
 
   // Overridden from gfx::DisplayObserver:
   void OnDisplayAdded(const gfx::Display& new_display) override;
@@ -278,6 +277,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   gfx::Size GetMaximumSize() const override;
   void OnBoundsChanged(const gfx::Rect& old_bounds,
                        const gfx::Rect& new_bounds) override;
+  ui::TextInputClient* GetFocusedTextInputClient() override;
   gfx::NativeCursor GetCursor(const gfx::Point& point) override;
   int GetNonClientComponent(const gfx::Point& point) const override;
   bool ShouldDescendIntoChildForEventHandling(
@@ -362,7 +362,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // Exposed for tests.
   aura::Window* window() { return window_; }
   SkColorType PreferredReadbackFormat() override;
-  DelegatedFrameHost* GetDelegatedFrameHost() const override;
+  DelegatedFrameHost* GetDelegatedFrameHost() const {
+    return delegated_frame_host_.get();
+  }
   const ui::MotionEventAura& pointer_state() const { return pointer_state_; }
 
  private:
@@ -373,6 +375,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
                            TouchEventPositionsArentRounded);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, TouchEventSyncAsync);
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, Resize);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, SwapNotifiesWindow);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, RecreateLayers);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
@@ -452,14 +455,23 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void RemovingFromRootWindow();
 
   // DelegatedFrameHostClient implementation.
-  ui::Compositor* GetCompositor() const override;
-  ui::Layer* GetLayer() override;
-  RenderWidgetHostImpl* GetHost() override;
-  bool IsVisible() override;
-  scoped_ptr<ResizeLock> CreateResizeLock(bool defer_compositor_lock) override;
-  gfx::Size DesiredFrameSize() override;
-  float CurrentDeviceScaleFactor() override;
-  gfx::Size ConvertViewSizeToPixel(const gfx::Size& size) override;
+  ui::Layer* DelegatedFrameHostGetLayer() const override;
+  bool DelegatedFrameHostIsVisible() const override;
+  gfx::Size DelegatedFrameHostDesiredSizeInDIP() const override;
+  bool DelegatedFrameCanCreateResizeLock() const override;
+  scoped_ptr<ResizeLock> DelegatedFrameHostCreateResizeLock(
+      bool defer_compositor_lock) override;
+  void DelegatedFrameHostResizeLockWasReleased() override;
+  void DelegatedFrameHostSendCompositorSwapAck(
+      int output_surface_id,
+      const cc::CompositorFrameAck& ack) override;
+  void DelegatedFrameHostSendReclaimCompositorResources(
+      int output_surface_id,
+      const cc::CompositorFrameAck& ack) override;
+  void DelegatedFrameHostOnLostCompositorResources() override;
+  void DelegatedFrameHostUpdateVSyncParameters(
+      const base::TimeTicks& timebase,
+      const base::TimeDelta& interval) override;
 
   // Detaches |this| from the input method object.
   void DetachFromInputMethod();

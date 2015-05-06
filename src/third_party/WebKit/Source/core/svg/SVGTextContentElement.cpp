@@ -30,8 +30,9 @@
 #include "core/XMLNames.h"
 #include "core/editing/FrameSelection.h"
 #include "core/frame/LocalFrame.h"
-#include "core/rendering/RenderObject.h"
-#include "core/rendering/svg/SVGTextQuery.h"
+#include "core/frame/UseCounter.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/svg/SVGTextQuery.h"
 
 namespace blink {
 
@@ -65,7 +66,7 @@ public:
 
 private:
     SVGAnimatedTextLength(SVGTextContentElement* contextElement)
-        : SVGAnimatedLength(contextElement, SVGNames::textLengthAttr, SVGLength::create(LengthModeOther), ForbidNegativeLengths)
+        : SVGAnimatedLength(contextElement, SVGNames::textLengthAttr, SVGLength::create(LengthModeWidth), ForbidNegativeLengths)
     {
     }
 };
@@ -81,7 +82,7 @@ SVGTextContentElement::SVGTextContentElement(const QualifiedName& tagName, Docum
     addToPropertyMap(m_lengthAdjust);
 }
 
-void SVGTextContentElement::trace(Visitor* visitor)
+DEFINE_TRACE(SVGTextContentElement)
 {
     visitor->trace(m_textLength);
     visitor->trace(m_lengthAdjust);
@@ -224,10 +225,13 @@ void SVGTextContentElement::collectStyleForPresentationAttribute(const Qualified
     else if (name.matches(XMLNames::spaceAttr)) {
         DEFINE_STATIC_LOCAL(const AtomicString, preserveString, ("preserve", AtomicString::ConstructFromLiteral));
 
-        if (value == preserveString)
+        if (value == preserveString) {
+            UseCounter::count(document(), UseCounter::WhiteSpacePreFromXMLSpace);
             addPropertyToPresentationAttributeStyle(style, CSSPropertyWhiteSpace, CSSValuePre);
-        else
+        } else {
+            UseCounter::count(document(), UseCounter::WhiteSpaceNowrapFromXMLSpace);
             addPropertyToPresentationAttributeStyle(style, CSSPropertyWhiteSpace, CSSValueNowrap);
+        }
     }
 }
 
@@ -248,7 +252,7 @@ void SVGTextContentElement::svgAttributeChanged(const QualifiedName& attrName)
 
     SVGElement::InvalidationGuard invalidationGuard(this);
 
-    if (RenderObject* renderer = this->renderer())
+    if (LayoutObject* renderer = this->renderer())
         markForLayoutAndParentResourceInvalidation(renderer);
 }
 
@@ -260,7 +264,7 @@ bool SVGTextContentElement::selfHasRelativeLengths() const
     return true;
 }
 
-SVGTextContentElement* SVGTextContentElement::elementFromRenderer(RenderObject* renderer)
+SVGTextContentElement* SVGTextContentElement::elementFromRenderer(LayoutObject* renderer)
 {
     if (!renderer)
         return 0;

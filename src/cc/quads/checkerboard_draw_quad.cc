@@ -4,8 +4,8 @@
 
 #include "cc/quads/checkerboard_draw_quad.h"
 
-#include "base/debug/trace_event_argument.h"
 #include "base/logging.h"
+#include "base/trace_event/trace_event_argument.h"
 #include "base/values.h"
 
 namespace cc {
@@ -43,7 +43,8 @@ const CheckerboardDrawQuad* CheckerboardDrawQuad::MaterialCast(
   return static_cast<const CheckerboardDrawQuad*>(quad);
 }
 
-void CheckerboardDrawQuad::ExtendValue(base::debug::TracedValue* value) const {
+void CheckerboardDrawQuad::ExtendValue(
+    base::trace_event::TracedValue* value) const {
   value->SetInteger("color", color);
 }
 

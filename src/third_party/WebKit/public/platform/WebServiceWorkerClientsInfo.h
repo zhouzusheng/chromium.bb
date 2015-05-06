@@ -25,8 +25,7 @@ struct WebServiceWorkerClientInfo {
     }
 
     int clientID;
-    // FIXME: remove when the Chromium code will be updated.
-    WebString visibilityState;
+
     WebPageVisibilityState pageVisibilityState;
     bool isFocused;
     WebURL url;
@@ -37,6 +36,8 @@ struct WebServiceWorkerClientsInfo {
     WebVector<WebServiceWorkerClientInfo> clients;
 };
 
+// Two WebCallbacks, one for one client, one for a WebVector of clients.
+typedef WebCallbacks<WebServiceWorkerClientInfo, WebServiceWorkerError> WebServiceWorkerClientCallbacks;
 typedef WebCallbacks<WebServiceWorkerClientsInfo, WebServiceWorkerError> WebServiceWorkerClientsCallbacks;
 
 } // namespace blink

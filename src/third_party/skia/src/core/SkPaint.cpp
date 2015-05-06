@@ -171,8 +171,8 @@ void SkPaint::reset() {
     *this = init;
 }
 
-void SkPaint::setFilterLevel(FilterLevel level) {
-    fBitfields.fFilterLevel = level;
+void SkPaint::setFilterQuality(SkFilterQuality quality) {
+    fBitfields.fFilterQuality = quality;
 }
 
 void SkPaint::setHinting(Hinting hintingLevel) {
@@ -2003,9 +2003,9 @@ SkMaskFilter* SkPaint::setMaskFilter(SkMaskFilter* filter) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-bool SkPaint::getFillPath(const SkPath& src, SkPath* dst,
-                          const SkRect* cullRect) const {
-    SkStrokeRec rec(*this);
+bool SkPaint::getFillPath(const SkPath& src, SkPath* dst, const SkRect* cullRect,
+                          SkScalar resScale) const {
+    SkStrokeRec rec(*this, resScale);
 
     const SkPath* srcPtr = &src;
     SkPath tmpPath;
@@ -2084,7 +2084,7 @@ void SkPaint::toString(SkString* str) const {
     if (typeface) {
         SkDynamicMemoryWStream ostream;
         typeface->serialize(&ostream);
-        SkAutoTUnref<SkStreamAsset> istream(ostream.detachAsStream());
+        SkAutoTDelete<SkStreamAsset> istream(ostream.detachAsStream());
         SkFontDescriptor descriptor(istream);
 
         str->append("<dt>Font Family Name:</dt><dd>");
@@ -2113,6 +2113,7 @@ void SkPaint::toString(SkString* str) const {
     SkPathEffect* pathEffect = this->getPathEffect();
     if (pathEffect) {
         str->append("<dt>PathEffect:</dt><dd>");
+        pathEffect->toString(str);
         str->append("</dd>");
     }
 

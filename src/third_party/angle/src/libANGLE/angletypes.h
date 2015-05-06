@@ -75,6 +75,8 @@ struct Extents
 
     Extents() : width(0), height(0), depth(0) { }
     Extents(int width_, int height_, int depth_) : width(width_), height(height_), depth(depth_) { }
+
+    bool empty() const { return (width * height * depth) == 0; }
 };
 
 struct Box
@@ -176,6 +178,9 @@ struct SamplerState
     GLenum swizzleAlpha;
 
     bool swizzleRequired() const;
+
+    bool operator==(const SamplerState &other) const;
+    bool operator!=(const SamplerState &other) const;
 };
 
 struct ClearParameters
@@ -205,13 +210,16 @@ struct PixelUnpackState
 {
     BindingPointer<Buffer> pixelBuffer;
     GLint alignment;
+    GLint rowLength;
 
     PixelUnpackState()
-        : alignment(4)
+        : alignment(4),
+          rowLength(0)
     {}
 
-    explicit PixelUnpackState(GLint alignmentIn)
-        : alignment(alignmentIn)
+    PixelUnpackState(GLint alignmentIn, GLint rowLengthIn)
+        : alignment(alignmentIn),
+          rowLength(rowLengthIn)
     {}
 };
 
@@ -257,14 +265,6 @@ struct VertexFormat
 
 namespace rx
 {
-
-enum VertexConversionType
-{
-    VERTEX_CONVERT_NONE = 0,
-    VERTEX_CONVERT_CPU  = 1,
-    VERTEX_CONVERT_GPU  = 2,
-    VERTEX_CONVERT_BOTH = 3
-};
 
 enum VendorID : uint32_t
 {

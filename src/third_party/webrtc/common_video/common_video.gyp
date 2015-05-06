@@ -18,7 +18,7 @@
         'libyuv/include',
       ],
       'dependencies': [
-        '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
+        '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
       ],
       'direct_dependent_settings': {
         'include_dirs': [
@@ -29,6 +29,9 @@
       'conditions': [
         ['build_libyuv==1', {
           'dependencies': ['<(DEPTH)/third_party/libyuv/libyuv.gyp:libyuv',],
+          'export_dependent_settings': [
+            '<(DEPTH)/third_party/libyuv/libyuv.gyp:libyuv',
+          ],
         }, {
           # Need to add a directory normally exported by libyuv.gyp.
           'include_dirs': ['<(libyuv_dir)/include',],

@@ -33,8 +33,10 @@ FrameTreeNode::FrameTreeNode(FrameTree* frame_tree,
                       render_widget_delegate,
                       manager_delegate),
       frame_tree_node_id_(next_frame_tree_node_id_++),
-      frame_name_(name),
-      parent_(NULL) {}
+      parent_(NULL),
+      replication_state_(name),
+      is_loading_(false) {
+}
 
 FrameTreeNode::~FrameTreeNode() {
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
@@ -86,14 +88,31 @@ void FrameTreeNode::RemoveChild(FrameTreeNode* child) {
 void FrameTreeNode::ResetForNewProcess() {
   current_url_ = GURL();
 
-  // The RenderFrame no longer exists and will need to be created again.
-  current_frame_host()->set_render_frame_created(false);
-
   // The children may not have been cleared if a cross-process navigation
   // commits before the old process cleans everything up.  Make sure the child
   // nodes get deleted before swapping to a new process.
   ScopedVector<FrameTreeNode> old_children = children_.Pass();
+
+  // Loop over all children removing them from the FrameTree. This will ensure
+  // that nodes are properly removed from the tree and notifications are sent.
+  // Note: since the |children_| vector is now empty, the calls into RemoveChild
+  // will be a noop and will not result in repeatedly traversing the list.
+  for (const auto& child : old_children)
+    frame_tree_->RemoveFrame(child);
+
   old_children.clear();  // May notify observers.
+}
+
+bool FrameTreeNode::IsDescendantOf(FrameTreeNode* other) const {
+  if (!other || !other->child_count())
+    return false;
+
+  for (FrameTreeNode* node = parent(); node; node = node->parent()) {
+    if (node == other)
+      return true;
+  }
+
+  return false;
 }
 
 }  // namespace content

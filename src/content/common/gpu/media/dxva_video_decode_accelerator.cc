@@ -18,7 +18,6 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/command_line.h"
-#include "base/debug/trace_event.h"
 #include "base/file_version_info.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
@@ -26,6 +25,7 @@
 #include "base/memory/shared_memory.h"
 #include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
+#include "base/trace_event/trace_event.h"
 #include "base/win/windows_version.h"
 #include "media/video/video_decode_accelerator.h"
 #include "ui/gl/gl_bindings.h"
@@ -884,6 +884,12 @@ bool DXVAVideoDecodeAccelerator::CheckDecoderDxvaSupport() {
     RETURN_ON_HR_FAILURE(hr, "Failed to enable DXVA H/W decoding", false);
   }
 
+  hr = attributes->SetUINT32(CODECAPI_AVLowLatencyMode, TRUE);
+  if (SUCCEEDED(hr)) {
+    DVLOG(1) << "Successfully set Low latency mode on decoder.";
+  } else {
+    DVLOG(1) << "Failed to set Low latency mode on decoder. Error: " << hr;
+  }
   return true;
 }
 
@@ -1241,9 +1247,8 @@ void DXVAVideoDecodeAccelerator::NotifyPictureReady(
   DCHECK(main_thread_task_runner_->BelongsToCurrentThread());
   // This task could execute after the decoder has been torn down.
   if (GetState() != kUninitialized && client_) {
-    media::Picture picture(picture_buffer_id,
-                           input_buffer_id,
-                           picture_buffer_size);
+    media::Picture picture(picture_buffer_id, input_buffer_id,
+                           picture_buffer_size, false);
     client_->PictureReady(picture);
   }
 }

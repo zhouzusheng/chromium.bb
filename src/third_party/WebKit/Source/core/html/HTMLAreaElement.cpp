@@ -25,8 +25,8 @@
 #include "core/HTMLNames.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLMapElement.h"
-#include "core/rendering/HitTestResult.h"
-#include "core/rendering/RenderImage.h"
+#include "core/layout/HitTestResult.h"
+#include "core/layout/LayoutImage.h"
 #include "core/rendering/RenderView.h"
 #include "platform/LengthFunctions.h"
 #include "platform/graphics/Path.h"
@@ -86,7 +86,7 @@ bool HTMLAreaElement::mapMouseEvent(LayoutPoint location, const LayoutSize& size
     return true;
 }
 
-Path HTMLAreaElement::computePath(RenderObject* obj) const
+Path HTMLAreaElement::computePath(LayoutObject* obj) const
 {
     if (!obj)
         return Path();
@@ -111,7 +111,7 @@ Path HTMLAreaElement::computePath(RenderObject* obj) const
     return p;
 }
 
-LayoutRect HTMLAreaElement::computeRect(RenderObject* obj) const
+LayoutRect HTMLAreaElement::computeRect(LayoutObject* obj) const
 {
     return enclosingLayoutRect(computePath(obj).boundingRect());
 }
@@ -209,11 +209,11 @@ void HTMLAreaElement::setFocus(bool shouldBeFocused)
     if (!imageElement)
         return;
 
-    RenderObject* renderer = imageElement->renderer();
+    LayoutObject* renderer = imageElement->renderer();
     if (!renderer || !renderer->isImage())
         return;
 
-    toRenderImage(renderer)->areaElementFocusChanged(this);
+    toLayoutImage(renderer)->areaElementFocusChanged(this);
 }
 
 void HTMLAreaElement::updateFocusAppearance(bool restorePreviousSelection)

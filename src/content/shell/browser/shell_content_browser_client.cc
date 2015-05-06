@@ -10,6 +10,7 @@
 #include "base/files/file_util.h"
 #include "base/path_service.h"
 #include "base/strings/utf_string_conversions.h"
+#include "content/public/browser/page_navigator.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/resource_dispatcher_host.h"
 #include "content/public/browser/storage_partition.h"
@@ -35,6 +36,7 @@
 #include "content/shell/common/shell_messages.h"
 #include "content/shell/common/shell_switches.h"
 #include "content/shell/common/webkit_test_helpers.h"
+#include "gin/public/isolate_holder.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "url/gurl.h"
 
@@ -132,7 +134,12 @@ void ShellContentBrowserClient::SetSwapProcessesForRedirect(bool swap) {
 }
 
 ShellContentBrowserClient::ShellContentBrowserClient()
-    : shell_browser_main_parts_(NULL) {
+    :
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
+      v8_natives_fd_(-1),
+      v8_snapshot_fd_(-1),
+#endif  // OS_POSIX && !OS_MACOSX
+      shell_browser_main_parts_(NULL) {
   DCHECK(!g_browser_client);
   g_browser_client = this;
 }
@@ -146,9 +153,10 @@ BrowserMainParts* ShellContentBrowserClient::CreateBrowserMainParts(
   shell_browser_main_parts_ =
       // SHEZ: Remove test-only code.
 #if 0
-      base::CommandLine::ForCurrentProcess()->HasSwitch(
-                                  switches::kDumpRenderTree) ?
-                                  new LayoutTestBrowserMainParts(parameters) :
+       base::CommandLine::ForCurrentProcess()->HasSwitch(
+                                  switches::kRunLayoutTest)
+                                  ? new LayoutTestBrowserMainParts(parameters)
+                                  :
 #endif
                                   new ShellBrowserMainParts(parameters);
   return shell_browser_main_parts_;
@@ -215,8 +223,8 @@ void ShellContentBrowserClient::AppendExtraCommandLineSwitches(
     base::CommandLine* command_line,
     int child_process_id) {
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDumpRenderTree))
-    command_line->AppendSwitch(switches::kDumpRenderTree);
+          switches::kRunLayoutTest))
+    command_line->AppendSwitch(switches::kRunLayoutTest);
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableFontAntialiasing))
     command_line->AppendSwitch(switches::kEnableFontAntialiasing);
@@ -258,10 +266,9 @@ void ShellContentBrowserClient::AppendExtraCommandLineSwitches(
 
 void ShellContentBrowserClient::OverrideWebkitPrefs(
     RenderViewHost* render_view_host,
-    const GURL& url,
     WebPreferences* prefs) {
   if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDumpRenderTree))
+          switches::kRunLayoutTest))
     return;
   // SHEZ: Remove test code.
 #if 0
@@ -274,8 +281,9 @@ void ShellContentBrowserClient::ResourceDispatcherHostCreated() {
       // SHEZ: Remove test-only code.
 #if 0
       base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDumpRenderTree) ?
-          new LayoutTestResourceDispatcherHostDelegate :
+          switches::kRunLayoutTest)
+          ? new LayoutTestResourceDispatcherHostDelegate
+          :
 #endif
           new ShellResourceDispatcherHostDelegate);
   ResourceDispatcherHost::Get()->SetDelegate(
@@ -321,11 +329,43 @@ ShellContentBrowserClient::GetDevToolsManagerDelegate() {
   return new ShellDevToolsManagerDelegate(browser_context());
 }
 
+void ShellContentBrowserClient::OpenURL(
+    BrowserContext* browser_context,
+    const OpenURLParams& params,
+    const base::Callback<void(WebContents*)>& callback) {
+  callback.Run(Shell::CreateNewWindow(browser_context,
+                                      params.url,
+                                      nullptr,
+                                      gfx::Size())->web_contents());
+}
+
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
 void ShellContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
     const base::CommandLine& command_line,
     int child_process_id,
     FileDescriptorInfo* mappings) {
+#if defined(V8_USE_EXTERNAL_STARTUP_DATA)
+  if (v8_snapshot_fd_.get() == -1 && v8_natives_fd_.get() == -1) {
+    base::FilePath v8_data_path;
+    PathService::Get(gin::IsolateHolder::kV8SnapshotBasePathKey, &v8_data_path);
+    DCHECK(!v8_data_path.empty());
+
+    int file_flags = base::File::FLAG_OPEN | base::File::FLAG_READ;
+    base::FilePath v8_natives_data_path =
+        v8_data_path.AppendASCII(gin::IsolateHolder::kNativesFileName);
+    base::FilePath v8_snapshot_data_path =
+        v8_data_path.AppendASCII(gin::IsolateHolder::kSnapshotFileName);
+    base::File v8_natives_data_file(v8_natives_data_path, file_flags);
+    base::File v8_snapshot_data_file(v8_snapshot_data_path, file_flags);
+    DCHECK(v8_natives_data_file.IsValid());
+    DCHECK(v8_snapshot_data_file.IsValid());
+    v8_natives_fd_.reset(v8_natives_data_file.TakePlatformFile());
+    v8_snapshot_fd_.reset(v8_snapshot_data_file.TakePlatformFile());
+  }
+  mappings->Share(kV8NativesDataDescriptor, v8_natives_fd_.get());
+  mappings->Share(kV8SnapshotDataDescriptor, v8_snapshot_fd_.get());
+#endif  // V8_USE_EXTERNAL_STARTUP_DATA
+
 #if defined(OS_ANDROID)
   int flags = base::File::FLAG_OPEN | base::File::FLAG_READ;
   base::FilePath pak_file;

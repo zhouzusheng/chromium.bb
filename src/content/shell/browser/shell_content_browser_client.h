@@ -47,7 +47,6 @@ class ShellContentBrowserClient : public ContentBrowserClient {
   void AppendExtraCommandLineSwitches(base::CommandLine* command_line,
                                       int child_process_id) override;
   void OverrideWebkitPrefs(RenderViewHost* render_view_host,
-                           const GURL& url,
                            WebPreferences* prefs) override;
   void ResourceDispatcherHostCreated() override;
   AccessTokenStore* CreateAccessTokenStore() override;
@@ -62,6 +61,10 @@ class ShellContentBrowserClient : public ContentBrowserClient {
                                       const GURL& current_url,
                                       const GURL& new_url) override;
   DevToolsManagerDelegate* GetDevToolsManagerDelegate() override;
+
+  void OpenURL(BrowserContext* browser_context,
+               const OpenURLParams& params,
+               const base::Callback<void(WebContents*)>& callback) override;
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
   void GetAdditionalMappedFilesForChildProcess(
@@ -89,6 +92,11 @@ class ShellContentBrowserClient : public ContentBrowserClient {
 
   scoped_ptr<ShellResourceDispatcherHostDelegate>
       resource_dispatcher_host_delegate_;
+
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
+  base::ScopedFD v8_natives_fd_;
+  base::ScopedFD v8_snapshot_fd_;
+#endif
 
   ShellBrowserMainParts* shell_browser_main_parts_;
 };

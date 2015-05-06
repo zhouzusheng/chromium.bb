@@ -42,17 +42,17 @@
 #include "core/inspector/InjectedScriptHost.h"
 #include "core/inspector/InjectedScriptManager.h"
 #include "core/inspector/InspectorDOMAgent.h"
-#include "core/page/Page.h"
+#include "core/inspector/InspectorPageAgent.h"
 #include "core/workers/WorkerInspectorProxy.h"
 
 namespace blink {
 
 int PageConsoleAgent::s_enabledAgentCount = 0;
 
-PageConsoleAgent::PageConsoleAgent(InjectedScriptManager* injectedScriptManager, InspectorDOMAgent* domAgent, Page* page)
+PageConsoleAgent::PageConsoleAgent(InjectedScriptManager* injectedScriptManager, InspectorDOMAgent* domAgent, InspectorPageAgent* pageAgent)
     : InspectorConsoleAgent(injectedScriptManager)
     , m_inspectorDOMAgent(domAgent)
-    , m_page(page)
+    , m_pageAgent(pageAgent)
 {
 }
 
@@ -64,10 +64,10 @@ PageConsoleAgent::~PageConsoleAgent()
 #endif
 }
 
-void PageConsoleAgent::trace(Visitor* visitor)
+DEFINE_TRACE(PageConsoleAgent)
 {
     visitor->trace(m_inspectorDOMAgent);
-    visitor->trace(m_page);
+    visitor->trace(m_pageAgent);
     InspectorConsoleAgent::trace(visitor);
 }
 
@@ -87,7 +87,7 @@ void PageConsoleAgent::disable(ErrorString* errorString)
 void PageConsoleAgent::clearMessages(ErrorString* errorString)
 {
     m_inspectorDOMAgent->releaseDanglingNodes();
-    InspectorConsoleAgent::clearMessages(errorString);
+    messageStorage()->clear(m_pageAgent->inspectedFrame()->document());
 }
 
 void PageConsoleAgent::workerConsoleAgentEnabled(WorkerGlobalScopeProxy* proxy)
@@ -97,7 +97,7 @@ void PageConsoleAgent::workerConsoleAgentEnabled(WorkerGlobalScopeProxy* proxy)
 
 ConsoleMessageStorage* PageConsoleAgent::messageStorage()
 {
-    return &m_page->frameHost().consoleMessageStorage();
+    return &m_pageAgent->frameHost()->consoleMessageStorage();
 }
 
 void PageConsoleAgent::workerTerminated(WorkerInspectorProxy* workerInspectorProxy)
@@ -155,7 +155,7 @@ void PageConsoleAgent::addInspectedNode(ErrorString* errorString, int nodeId)
     }
     while (node->isInShadowTree()) {
         Node& ancestor = NodeTraversal::highestAncestorOrSelf(*node);
-        if (!ancestor.isShadowRoot() || toShadowRoot(ancestor).type() == ShadowRoot::AuthorShadowRoot)
+        if (!ancestor.isShadowRoot() || toShadowRoot(ancestor).type() == ShadowRoot::OpenShadowRoot)
             break;
         // User agent shadow root, keep climbing up.
         node = toShadowRoot(ancestor).host();

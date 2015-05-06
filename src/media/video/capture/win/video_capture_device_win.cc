@@ -178,7 +178,7 @@ void VideoCaptureDeviceWin::ScopedMediaType::Free() {
     return;
 
   DeleteMediaType(media_type_);
-  media_type_= NULL;
+  media_type_ = NULL;
 }
 
 AM_MEDIA_TYPE** VideoCaptureDeviceWin::ScopedMediaType::Receive() {
@@ -231,9 +231,6 @@ VideoCaptureDeviceWin::~VideoCaptureDeviceWin() {
 
     if (capture_filter_.get())
       graph_builder_->RemoveFilter(capture_filter_.get());
-
-    if (mjpg_filter_.get())
-      graph_builder_->RemoveFilter(mjpg_filter_.get());
 
     if (crossbar_filter_.get())
       graph_builder_->RemoveFilter(crossbar_filter_.get());
@@ -322,12 +319,11 @@ void VideoCaptureDeviceWin::AllocateAndStart(
   // Get the camera capability that best match the requested format.
   const CapabilityWin found_capability =
       GetBestMatchedCapability(params.requested_format, capabilities_);
-  VideoCaptureFormat format = found_capability.supported_format;
 
   // Reduce the frame rate if the requested frame rate is lower
   // than the capability.
-  format.frame_rate =
-      std::min(format.frame_rate, params.requested_format.frame_rate);
+  float frame_rate = std::min(found_capability.supported_format.frame_rate,
+                              params.requested_format.frame_rate);
 
   ScopedComPtr<IAMStreamConfig> stream_config;
   HRESULT hr = output_capture_pin_.QueryInterface(stream_config.Receive());
@@ -354,53 +350,28 @@ void VideoCaptureDeviceWin::AllocateAndStart(
   if (hr != S_OK) {
     SetErrorState("Failed to get capture device capabilities");
     return;
-  } else {
-    if (media_type->formattype == FORMAT_VideoInfo) {
-      VIDEOINFOHEADER* h =
-          reinterpret_cast<VIDEOINFOHEADER*>(media_type->pbFormat);
-      if (format.frame_rate > 0)
-        h->AvgTimePerFrame = kSecondsToReferenceTime / format.frame_rate;
-    }
-    // Set the sink filter to request this format.
-    sink_filter_->SetRequestedMediaFormat(format);
-    // Order the capture device to use this format.
-    hr = stream_config->SetFormat(media_type.get());
-    if (FAILED(hr)) {
-      // TODO(grunell): Log the error. http://crbug.com/405016.
-      SetErrorState("Failed to set capture device output format");
-      return;
-    }
   }
-
-  if (format.pixel_format == PIXEL_FORMAT_MJPEG && !mjpg_filter_.get()) {
-    // Create MJPG filter if we need it.
-    hr = mjpg_filter_.CreateInstance(CLSID_MjpegDec, NULL, CLSCTX_INPROC);
-
-    if (SUCCEEDED(hr)) {
-      input_mjpg_pin_ =
-          GetPin(mjpg_filter_.get(), PINDIR_INPUT, GUID_NULL, GUID_NULL);
-      output_mjpg_pin_ =
-          GetPin(mjpg_filter_.get(), PINDIR_OUTPUT, GUID_NULL, GUID_NULL);
-      hr = graph_builder_->AddFilter(mjpg_filter_.get(), NULL);
-    }
-
-    if (FAILED(hr)) {
-      mjpg_filter_.Release();
-      input_mjpg_pin_.Release();
-      output_mjpg_pin_.Release();
-    }
+  if (media_type->formattype == FORMAT_VideoInfo) {
+    VIDEOINFOHEADER* h =
+        reinterpret_cast<VIDEOINFOHEADER*>(media_type->pbFormat);
+    if (frame_rate > 0)
+      h->AvgTimePerFrame = kSecondsToReferenceTime / frame_rate;
+  }
+  // Set the sink filter to request this format.
+  sink_filter_->SetRequestedMediaFormat(
+    found_capability.supported_format.pixel_format, frame_rate,
+    found_capability.info_header);
+  // Order the capture device to use this format.
+  hr = stream_config->SetFormat(media_type.get());
+  if (FAILED(hr)) {
+    // TODO(grunell): Log the error. http://crbug.com/405016.
+    SetErrorState("Failed to set capture device output format");
+    return;
   }
 
   SetAntiFlickerInCaptureFilter();
 
-  if (format.pixel_format == PIXEL_FORMAT_MJPEG && mjpg_filter_.get()) {
-    // Connect the camera to the MJPEG decoder.
-    hr = graph_builder_->ConnectDirect(output_capture_pin_.get(),
-                                       input_mjpg_pin_.get(), NULL);
-    // Connect the MJPEG filter to the Capture filter.
-    hr += graph_builder_->ConnectDirect(output_mjpg_pin_.get(),
-                                        input_sink_pin_.get(), NULL);
-  } else if (media_type->subtype == kMediaSubTypeHDYC) {
+  if (media_type->subtype == kMediaSubTypeHDYC) {
     // HDYC pixel format, used by the DeckLink capture card, needs an AVI
     // decompressor filter after source, let |graph_builder_| add it.
     hr = graph_builder_->Connect(output_capture_pin_.get(),
@@ -450,11 +421,6 @@ void VideoCaptureDeviceWin::StopAndDeAllocate() {
   graph_builder_->Disconnect(output_capture_pin_.get());
   graph_builder_->Disconnect(input_sink_pin_.get());
 
-  // If the _mjpg filter exist disconnect it even if it has not been used.
-  if (mjpg_filter_.get()) {
-    graph_builder_->Disconnect(input_mjpg_pin_.get());
-    graph_builder_->Disconnect(output_mjpg_pin_.get());
-  }
   if (crossbar_filter_.get()) {
     graph_builder_->Disconnect(analog_video_input_pin_.get());
     graph_builder_->Disconnect(crossbar_video_output_pin_.get());
@@ -550,7 +516,7 @@ bool VideoCaptureDeviceWin::CreateCapabilityMap() {
               ? (kSecondsToReferenceTime / static_cast<float>(time_per_frame))
               : 0.0;
 
-      capabilities_.emplace_back(stream_index, format);
+      capabilities_.emplace_back(stream_index, format, h->bmiHeader);
     }
   }
 

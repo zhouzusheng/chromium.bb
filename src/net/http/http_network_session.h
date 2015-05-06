@@ -113,13 +113,15 @@ class NET_EXPORT HttpNetworkSession
     double alternate_protocol_probability_threshold;
 
     bool enable_quic;
+    bool enable_quic_for_proxies;
     bool enable_quic_port_selection;
     bool quic_always_require_handshake_confirmation;
     bool quic_disable_connection_pooling;
     int quic_load_server_info_timeout_ms;
-    bool quic_disable_loading_server_info_for_new_servers;
     float quic_load_server_info_timeout_srtt_multiplier;
     bool quic_enable_truncated_connection_ids;
+    bool quic_enable_connection_racing;
+    bool quic_disable_disk_cache;
     HostPortPair origin_to_force_quic_on;
     QuicClock* quic_clock;  // Will be owned by QuicStreamFactory.
     QuicRandom* quic_random;

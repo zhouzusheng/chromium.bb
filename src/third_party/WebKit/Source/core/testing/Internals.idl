@@ -27,12 +27,13 @@
 [
     DoNotCheckConstants,
     GarbageCollected,
+    TypeChecking=Unrestricted,
 ] interface Internals {
     DOMString address(Node node);
 
     GCObservation observeGC(any observed);
 
-    [RaisesException, TypeChecking=Interface] DOMString elementRenderTreeAsText(Element element);
+    [RaisesException, TypeChecking=Interface] DOMString elementLayoutTreeAsText(Element element);
     boolean isPreloaded(DOMString url);
     boolean isLoadingFromMemoryCache(DOMString url);
 
@@ -40,7 +41,7 @@
 
     [TypeChecking=Interface] CSSStyleDeclaration computedStyleIncludingVisitedInfo(Node node);
 
-    [TypeChecking=Interface] ShadowRoot createUserAgentShadowRoot(Element host);
+    [TypeChecking=Interface] ShadowRoot createClosedShadowRoot(Element host);
 
     [TypeChecking=Interface] ShadowRoot shadowRoot(Element host);
     [TypeChecking=Interface] ShadowRoot youngestShadowRoot(Element host);
@@ -165,6 +166,7 @@
     const unsigned short LAYER_TREE_INCLUDES_PAINTING_PHASES = 4;
     const unsigned short LAYER_TREE_INCLUDES_ROOT_LAYER = 8;
     const unsigned short LAYER_TREE_INCLUDES_CLIP_AND_SCROLL_PARENTS = 16;
+    const unsigned short LAYER_TREE_INCLUDES_SCROLL_BLOCKS_ON = 32;
     [RaisesException, TypeChecking=Interface] DOMString layerTreeAsText(Document document, optional unsigned short flags);
     [RaisesException, TypeChecking=Interface] DOMString elementLayerTreeAsText(Element element, optional unsigned short flags);
 
@@ -182,8 +184,6 @@
     DOMString dumpRefCountedInstanceCounts();
     sequence<DOMString> consoleMessageArgumentCounts(Document document);
     unsigned long[] setMemoryCacheCapacities(unsigned long minDeadBytes, unsigned long maxDeadBytes, unsigned long totalBytes);
-    [RaisesException] void setInspectorResourcesDataSizeLimits(long maximumResourcesContentSize, long maximumSingleResourceContentSize);
-    [RaisesException] DOMString inspectorHighlightJSON(Node node);
 
     DOMString counterValue(Element element);
     long pageNumber(Element element, optional float pageWidth, optional float pageHeight);
@@ -197,10 +197,10 @@
 
     [RaisesException, TypeChecking=Interface] void setIsCursorVisible(Document document, boolean isVisible);
 
-    void mediaPlayerRequestFullscreen(HTMLMediaElement mediaElement);
-    double effectiveMediaVolume(HTMLMediaElement mediaElement);
-    void mediaPlayerRemoteRouteAvailabilityChanged(HTMLMediaElement mediaElement, boolean available);
-    void mediaPlayerPlayingRemotelyChanged(HTMLMediaElement mediaElement, boolean remote);
+    [TypeChecking=Interface] void mediaPlayerRequestFullscreen(HTMLMediaElement mediaElement);
+    [TypeChecking=Interface] double effectiveMediaVolume(HTMLMediaElement mediaElement);
+    [TypeChecking=Interface] void mediaPlayerRemoteRouteAvailabilityChanged(HTMLMediaElement mediaElement, boolean available);
+    [TypeChecking=Interface] void mediaPlayerPlayingRemotelyChanged(HTMLMediaElement mediaElement, boolean remote);
 
     void registerURLSchemeAsBypassingContentSecurityPolicy(DOMString scheme);
     void registerURLSchemeAsBypassingContentSecurityPolicy(DOMString scheme, sequence<DOMString> policyAreas);

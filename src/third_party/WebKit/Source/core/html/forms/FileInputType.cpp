@@ -59,7 +59,7 @@ PassRefPtrWillBeRawPtr<InputType> FileInputType::create(HTMLInputElement& elemen
     return adoptRefWillBeNoop(new FileInputType(element));
 }
 
-void FileInputType::trace(Visitor* visitor)
+DEFINE_TRACE(FileInputType)
 {
     visitor->trace(m_fileList);
     BaseClickableWithKeyInputType::trace(visitor);
@@ -166,7 +166,7 @@ void FileInputType::handleDOMActivateEvent(Event* event)
     event->setDefaultHandled();
 }
 
-RenderObject* FileInputType::createRenderer(RenderStyle*) const
+LayoutObject* FileInputType::createRenderer(const LayoutStyle&) const
 {
     return new RenderFileUploadControl(&element());
 }
@@ -262,20 +262,20 @@ void FileInputType::createShadowSubtree()
     button->setType(InputTypeNames::button);
     button->setAttribute(valueAttr, AtomicString(locale().queryString(element().multiple() ? WebLocalizedString::FileButtonChooseMultipleFilesLabel : WebLocalizedString::FileButtonChooseFileLabel)));
     button->setShadowPseudoId(AtomicString("-webkit-file-upload-button", AtomicString::ConstructFromLiteral));
-    element().userAgentShadowRoot()->appendChild(button.release());
+    element().closedShadowRoot()->appendChild(button.release());
 }
 
 void FileInputType::disabledAttributeChanged()
 {
     ASSERT(element().shadow());
-    if (Element* button = toElement(element().userAgentShadowRoot()->firstChild()))
+    if (Element* button = toElement(element().closedShadowRoot()->firstChild()))
         button->setBooleanAttribute(disabledAttr, element().isDisabledFormControl());
 }
 
 void FileInputType::multipleAttributeChanged()
 {
     ASSERT(element().shadow());
-    if (Element* button = toElement(element().userAgentShadowRoot()->firstChild()))
+    if (Element* button = toElement(element().closedShadowRoot()->firstChild()))
         button->setAttribute(valueAttr, AtomicString(locale().queryString(element().multiple() ? WebLocalizedString::FileButtonChooseMultipleFilesLabel : WebLocalizedString::FileButtonChooseFileLabel)));
 }
 

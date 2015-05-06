@@ -487,6 +487,12 @@ Runtime.prototype = {
             activatorExperiment = extension._module._descriptor["experiment"];
             if (activatorExperiment && !Runtime.experiments.isEnabled(activatorExperiment))
                 return false;
+            var condition = extension.descriptor()["condition"];
+            if (condition && !Runtime.queryParam(condition))
+                return false;
+            condition = extension._module._descriptor["condition"];
+            if (condition && !Runtime.queryParam(condition))
+                return false;
             return !context || extension.isApplicable(context);
         }
 
@@ -692,7 +698,7 @@ Runtime.Module.prototype = {
             }
             var sourceURL = window.location.href;
             if (window.location.search)
-                sourceURL.replace(window.location.search, "");
+                sourceURL = sourceURL.replace(window.location.search, "");
             sourceURL = sourceURL.substring(0, sourceURL.lastIndexOf("/") + 1) + path;
             Runtime.cachedResources[path] = content + "\n/*# sourceURL=" + sourceURL + " */";
         }

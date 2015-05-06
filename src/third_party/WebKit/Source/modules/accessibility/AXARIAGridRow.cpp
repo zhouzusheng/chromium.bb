@@ -35,7 +35,7 @@
 
 namespace blink {
 
-AXARIAGridRow::AXARIAGridRow(RenderObject* renderer, AXObjectCacheImpl* axObjectCache)
+AXARIAGridRow::AXARIAGridRow(LayoutObject* renderer, AXObjectCacheImpl* axObjectCache)
     : AXTableRow(renderer, axObjectCache)
 {
 }
@@ -44,7 +44,7 @@ AXARIAGridRow::~AXARIAGridRow()
 {
 }
 
-PassRefPtr<AXARIAGridRow> AXARIAGridRow::create(RenderObject* renderer, AXObjectCacheImpl* axObjectCache)
+PassRefPtr<AXARIAGridRow> AXARIAGridRow::create(LayoutObject* renderer, AXObjectCacheImpl* axObjectCache)
 {
     return adoptRef(new AXARIAGridRow(renderer, axObjectCache));
 }
@@ -69,6 +69,17 @@ AXObject* AXARIAGridRow::headerObject()
     }
 
     return 0;
+}
+
+void AXARIAGridRow::headerObjectsForRow(AccessibilityChildrenVector& headers)
+{
+    AccessibilityChildrenVector rowChildren = children();
+    unsigned childrenCount = rowChildren.size();
+    for (unsigned i = 0; i < childrenCount; i++) {
+        AXObject* cell = rowChildren[i].get();
+        if (cell->roleValue() == RowHeaderRole)
+            headers.append(cell);
+    }
 }
 
 } // namespace blink

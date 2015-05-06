@@ -11,6 +11,7 @@
 #include "bindings/core/v8/V8Binding.h"
 #include "bindings/modules/v8/V8Response.h"
 #include "core/dom/ExecutionContext.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "core/streams/Stream.h"
 #include "modules/fetch/BodyStreamBuffer.h"
 #include "modules/serviceworkers/ServiceWorkerGlobalScopeClient.h"
@@ -54,11 +55,11 @@ public:
         m_outStream->abort();
         cleanup();
     }
-    void trace(Visitor* visitor)
+    DEFINE_INLINE_TRACE()
     {
-        BodyStreamBuffer::Observer::trace(visitor);
         visitor->trace(m_buffer);
         visitor->trace(m_outStream);
+        BodyStreamBuffer::Observer::trace(visitor);
     }
     void start()
     {
@@ -96,7 +97,7 @@ public:
         return self->bindToV8Function();
     }
 
-    virtual void trace(Visitor* visitor) override
+    DEFINE_INLINE_VIRTUAL_TRACE()
     {
         visitor->trace(m_observer);
         ScriptFunction::trace(visitor);
@@ -201,20 +202,22 @@ void RespondWithObserver::responseWasFulfilled(const ScriptValue& value)
         return;
     }
     response->setBodyUsed();
-    if (response->streamAccessed()) {
-        // FIXME: We don't support returning the stream accessed Response to the
-        // page.
-        executionContext()->addConsoleMessage(ConsoleMessage::create(JSMessageSource, ErrorMessageLevel, "Returning the stream accessed Response to the page is not supported."));
-        responseWasRejected();
-        return;
-    }
-    if (response->internalBuffer()) {
+    if (BodyStreamBuffer* buffer = response->internalBuffer()) {
+        if (buffer == response->buffer() && response->streamAccessed()) {
+            bool dataLost = false;
+            buffer = response->createDrainingStream(&dataLost);
+            if (dataLost) {
+                executionContext()->addConsoleMessage(ConsoleMessage::create(JSMessageSource, ErrorMessageLevel, "Returning the stream accessed Response to the page is not supported."));
+                responseWasRejected();
+                return;
+            }
+        }
         WebServiceWorkerResponse webResponse;
         response->populateWebServiceWorkerResponse(webResponse);
         RefPtrWillBeMember<Stream> outStream(Stream::create(executionContext(), ""));
         webResponse.setStreamURL(outStream->url());
         ServiceWorkerGlobalScopeClient::from(executionContext())->didHandleFetchEvent(m_eventID, webResponse);
-        StreamUploader* uploader = new StreamUploader(response->internalBuffer(), outStream);
+        StreamUploader* uploader = new StreamUploader(buffer, outStream);
         uploader->start();
         m_state = Done;
         return;
@@ -234,7 +237,7 @@ RespondWithObserver::RespondWithObserver(ExecutionContext* context, int eventID,
 {
 }
 
-void RespondWithObserver::trace(Visitor* visitor)
+DEFINE_TRACE(RespondWithObserver)
 {
     ContextLifecycleObserver::trace(visitor);
 }

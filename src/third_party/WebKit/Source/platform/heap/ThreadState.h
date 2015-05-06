@@ -42,6 +42,8 @@
 #include "wtf/Threading.h"
 #include "wtf/ThreadingPrimitives.h"
 #include "wtf/Vector.h"
+#include "wtf/text/StringHash.h"
+#include "wtf/text/WTFString.h"
 
 namespace v8 {
 class Isolate;
@@ -49,8 +51,7 @@ class Isolate;
 
 namespace blink {
 
-class BaseHeap;
-class BaseHeapPage;
+class BasePage;
 class CallbackStack;
 struct GCInfo;
 class HeapObjectHeader;
@@ -59,7 +60,7 @@ class PageMemory;
 class PersistentNode;
 class SafePointBarrier;
 class SafePointAwareMutexLocker;
-class ThreadHeap;
+class BaseHeap;
 class ThreadState;
 class Visitor;
 
@@ -161,6 +162,12 @@ template<typename U> class ThreadingTrait<const U> : public ThreadingTrait<U> { 
         } \
         using UsingPreFinazlizerMacroNeedsTrailingSemiColon = char
 
+#if ENABLE(OILPAN)
+#define WILL_BE_USING_PRE_FINALIZER(Class, method) USING_PRE_FINALIZER(Class, method)
+#else
+#define WILL_BE_USING_PRE_FINALIZER(Class, method)
+#endif
+
 // List of typed heaps. The list is used to generate the implementation
 // of typed heap related methods.
 //
@@ -168,23 +175,31 @@ template<typename U> class ThreadingTrait<const U> : public ThreadingTrait<U> { 
 // FOR_EACH_TYPED_HEAP macro below.
 #define FOR_EACH_TYPED_HEAP(H)              \
     H(Node)                                 \
-    H(RenderObject)                         \
     H(CSSValue)
 
-#define TypedHeapEnumName(Type) Type##Heap,
+#define TypedHeapEnumName(Type) Type##HeapIndex,
 
-enum TypedHeaps {
-    General1Heap = 0,
-    General2Heap,
-    General3Heap,
-    General4Heap,
-    VectorBackingHeap,
-    InlineVectorBackingHeap,
-    HashTableBackingHeap,
+enum HeapIndices {
+    NormalPageHeapIndex = 0,
+    VectorHeapIndex,
+    InlineVectorHeapIndex,
+    HashTableHeapIndex,
     FOR_EACH_TYPED_HEAP(TypedHeapEnumName)
+    LargeObjectHeapIndex,
     // Values used for iteration of heap segments.
     NumberOfHeaps,
 };
+
+#if ENABLE(GC_PROFILING)
+const size_t numberOfGenerationsToTrack = 8;
+const size_t maxHeapObjectAge = numberOfGenerationsToTrack - 1;
+
+struct AgeCounts {
+    int ages[numberOfGenerationsToTrack];
+    AgeCounts() { std::fill(ages, ages + numberOfGenerationsToTrack, 0); }
+};
+typedef HashMap<String, AgeCounts> ClassAgeCountsMap;
+#endif
 
 class PLATFORM_EXPORT ThreadState {
     WTF_MAKE_NONCOPYABLE(ThreadState);
@@ -206,14 +221,16 @@ public:
     // See setGCState() for possible state transitions.
     enum GCState {
         NoGCScheduled,
-        GCScheduled,
+        IdleGCScheduled,
+        PreciseGCScheduled,
         GCScheduledForTesting,
         StoppingOtherThreads,
         GCRunning,
         EagerSweepScheduled,
         LazySweepScheduled,
         Sweeping,
-        SweepingAndNextGCScheduled,
+        SweepingAndIdleGCScheduled,
+        SweepingAndPreciseGCScheduled,
     };
 
     // The NoAllocationScope class is used in debug mode to catch unwanted
@@ -313,14 +330,17 @@ public:
 
     void didV8GC();
 
-    void scheduleGC();
-    void scheduleGCOrForceConservativeGCIfNeeded();
+    void performIdleGC(double deadlineSeconds);
+
+    void scheduleIdleGC();
+    void schedulePreciseGC();
+    void scheduleGCIfNeeded();
     void setGCState(GCState);
     GCState gcState() const;
     bool isInGC() const { return gcState() == GCRunning; }
     bool isSweepingInProgress() const
     {
-        return gcState() == Sweeping || gcState() == SweepingAndNextGCScheduled;
+        return gcState() == Sweeping || gcState() == SweepingAndPreciseGCScheduled || gcState() == SweepingAndIdleGCScheduled;
     }
 
     void preGC();
@@ -424,9 +444,6 @@ public:
         // succeeds.
         virtual void requestInterrupt() = 0;
 
-        // Clear previous interrupt request.
-        virtual void clearInterrupt() = 0;
-
     protected:
         // This method is called on the interrupted thread to
         // create a safepoint for a GC.
@@ -463,15 +480,15 @@ public:
     //
     // The heap is split into multiple heap parts based on object
     // types. To get the index for a given type, use
-    // HeapTypeTrait<Type>::index.
-    ThreadHeap* heap(int index) const { return m_heaps[index]; }
+    // HeapIndexTrait<Type>::index.
+    BaseHeap* heap(int heapIndex) const { return m_heaps[heapIndex]; }
 
-#if ENABLE(ASSERT)
+#if ENABLE(ASSERT) || ENABLE(GC_PROFILING)
     // Infrastructure to determine if an address is within one of the
     // address ranges for the Blink heap. If the address is in the Blink
     // heap the containing heap page is returned.
-    BaseHeapPage* findPageFromAddress(Address);
-    BaseHeapPage* findPageFromAddress(void* pointer) { return findPageFromAddress(reinterpret_cast<Address>(pointer)); }
+    BasePage* findPageFromAddress(Address);
+    BasePage* findPageFromAddress(void* pointer) { return findPageFromAddress(reinterpret_cast<Address>(pointer)); }
 #endif
 
     // List of persistent roots allocated on the given thread.
@@ -479,7 +496,7 @@ public:
 
     // List of global persistent roots not owned by any particular thread.
     // globalRootsMutex must be acquired before any modifications.
-    static PersistentNode* globalRoots();
+    static PersistentNode& globalRoots();
     static Mutex& globalRootsMutex();
 
     // Visit local thread stack and trace all pointers conservatively.
@@ -492,12 +509,10 @@ public:
     // Visit all persistents allocated on this thread.
     void visitPersistents(Visitor*);
 
-#if ENABLE(GC_PROFILE_MARKING)
+#if ENABLE(GC_PROFILING)
     const GCInfo* findGCInfo(Address);
     static const GCInfo* findGCInfoFromAllThreads(Address);
-#endif
 
-#if ENABLE(GC_PROFILE_HEAP)
     struct SnapshotInfo {
         ThreadState* state;
 
@@ -505,7 +520,8 @@ public:
         size_t pageCount;
 
         // Map from base-classes to a snapshot class-ids (used as index below).
-        HashMap<const GCInfo*, size_t> classTags;
+        using ClassTagMap = HashMap<const GCInfo*, size_t>;
+        ClassTagMap classTags;
 
         // Map from class-id (index) to count/size.
         Vector<int> liveCount;
@@ -516,7 +532,8 @@ public:
         // Map from class-id (index) to a vector of generation counts.
         // For i < 7, the count is the number of objects that died after surviving |i| GCs.
         // For i == 7, the count is the number of objects that survived at least 7 GCs.
-        Vector<Vector<int, 8>> generations;
+        using GenerationCountsVector = Vector<int, numberOfGenerationsToTrack>;
+        Vector<GenerationCountsVector> generations;
 
         explicit SnapshotInfo(ThreadState* state) : state(state), freeSize(0), pageCount(0) { }
 
@@ -524,6 +541,12 @@ public:
     };
 
     void snapshot();
+    void incrementMarkedObjectsAge();
+
+    void snapshotFreeListIfNecessary();
+
+    void collectAndReportMarkSweepStats() const;
+    void reportMarkSweepStats(const char* statsName, const ClassAgeCountsMap&) const;
 #endif
 
     void pushWeakPointerCallback(void*, WeakPointerCallback);
@@ -569,6 +592,8 @@ public:
         m_traceDOMWrappers = traceDOMWrappers;
     }
 
+    double collectionRate() const { return m_collectionRate; }
+
 private:
     ThreadState();
     ~ThreadState();
@@ -584,14 +609,15 @@ private:
         m_safePointScopeMarker = nullptr;
     }
 
-    // shouldGC and shouldForceConservativeGC implement the heuristics
-    // that are used to determine when to collect garbage. If
-    // shouldForceConservativeGC returns true, we force the garbage
+    // shouldSchedule{Precise,Idle}GC and shouldForceConservativeGC
+    // implement the heuristics that are used to determine when to collect garbage.
+    // If shouldForceConservativeGC returns true, we force the garbage
     // collection immediately. Otherwise, if shouldGC returns true, we
     // record that we should garbage collect the next time we return
     // to the event loop. If both return false, we don't need to
     // collect garbage at this point.
-    bool shouldGC();
+    bool shouldScheduleIdleGC();
+    bool shouldSchedulePreciseGC();
     bool shouldForceConservativeGC();
     void runScheduledGC(StackState);
 
@@ -607,6 +633,10 @@ private:
 
     void unregisterPreFinalizerInternal(void*);
     void invokePreFinalizers(Visitor&);
+
+#if ENABLE(GC_PROFILING)
+    void snapshotFreeList();
+#endif
 
     static WTF::ThreadSpecific<ThreadState*>* s_threadSpecific;
     static uintptr_t s_mainThreadStackStart;
@@ -631,11 +661,12 @@ private:
     Vector<Address> m_safePointStackCopy;
     bool m_atSafePoint;
     Vector<Interruptor*> m_interruptors;
+    bool m_hasPendingIdleTask;
     bool m_didV8GCAfterLastGC;
     bool m_sweepForbidden;
     size_t m_noAllocationCount;
-    size_t m_allocatedObjectSizeBeforeSweeping;
-    ThreadHeap* m_heaps[NumberOfHeaps];
+    size_t m_allocatedObjectSizeBeforeGC;
+    BaseHeap* m_heaps[NumberOfHeaps];
 
     Vector<OwnPtr<CleanupTask>> m_cleanupTasks;
     bool m_isTerminating;
@@ -655,6 +686,10 @@ private:
 #endif
 
     Vector<PageMemoryRegion*> m_allocatedRegionsSinceLastGC;
+
+#if ENABLE(GC_PROFILING)
+    double m_nextFreeListSnapshotTime;
+#endif
 };
 
 template<ThreadAffinity affinity> class ThreadStateFor;

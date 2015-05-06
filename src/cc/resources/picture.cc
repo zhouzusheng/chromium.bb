@@ -9,8 +9,8 @@
 #include <set>
 
 #include "base/base64.h"
-#include "base/debug/trace_event.h"
-#include "base/debug/trace_event_argument.h"
+#include "base/trace_event/trace_event.h"
+#include "base/trace_event/trace_event_argument.h"
 #include "base/values.h"
 #include "cc/base/math_util.h"
 #include "cc/base/util.h"
@@ -19,7 +19,6 @@
 #include "cc/debug/traced_value.h"
 #include "cc/layers/content_layer_client.h"
 #include "skia/ext/pixel_ref_utils.h"
-#include "third_party/skia/include/core/SkBBHFactory.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkDrawPictureCallback.h"
 #include "third_party/skia/include/core/SkPaint.h"
@@ -57,14 +56,14 @@ bool DecodeBitmap(const void* buffer, size_t size, SkBitmap* bm) {
 scoped_refptr<Picture> Picture::Create(
     const gfx::Rect& layer_rect,
     ContentLayerClient* client,
-    const SkTileGridFactory::TileGridInfo& tile_grid_info,
+    const gfx::Size& tile_grid_size,
     bool gather_pixel_refs,
-    RecordingMode recording_mode) {
+    RecordingSource::RecordingMode recording_mode) {
   scoped_refptr<Picture> picture = make_scoped_refptr(new Picture(layer_rect));
 
-  picture->Record(client, tile_grid_info, recording_mode);
+  picture->Record(client, tile_grid_size, recording_mode);
   if (gather_pixel_refs)
-    picture->GatherPixelRefs(tile_grid_info);
+    picture->GatherPixelRefs(tile_grid_size);
 
   return picture;
 }
@@ -170,8 +169,8 @@ bool Picture::HasText() const {
 }
 
 void Picture::Record(ContentLayerClient* painter,
-                     const SkTileGridFactory::TileGridInfo& tile_grid_info,
-                     RecordingMode recording_mode) {
+                     const gfx::Size& tile_grid_size,
+                     RecordingSource::RecordingMode recording_mode) {
   TRACE_EVENT2("cc",
                "Picture::Record",
                "data",
@@ -180,7 +179,7 @@ void Picture::Record(ContentLayerClient* painter,
                recording_mode);
 
   DCHECK(!picture_);
-  DCHECK(!tile_grid_info.fTileInterval.isEmpty());
+  DCHECK(!tile_grid_size.IsEmpty());
 
   // TODO(mtklein): If SkRTree sticks, clean up tile_grid_info.  skbug.com/3085
   SkRTreeFactory factory;
@@ -191,23 +190,27 @@ void Picture::Record(ContentLayerClient* painter,
       layer_rect_.width(), layer_rect_.height(), &factory,
       SkPictureRecorder::kComputeSaveLayerInfo_RecordFlag));
 
-  ContentLayerClient::GraphicsContextStatus graphics_context_status =
-      ContentLayerClient::GRAPHICS_CONTEXT_ENABLED;
+  ContentLayerClient::PaintingControlSetting painting_control =
+      ContentLayerClient::PAINTING_BEHAVIOR_NORMAL;
 
   switch (recording_mode) {
-    case RECORD_NORMALLY:
+    case RecordingSource::RECORD_NORMALLY:
       // Already setup for normal recording.
       break;
-    case RECORD_WITH_SK_NULL_CANVAS:
+    case RecordingSource::RECORD_WITH_SK_NULL_CANVAS:
       canvas = skia::AdoptRef(SkCreateNullCanvas());
       break;
-    case RECORD_WITH_PAINTING_DISABLED:
+    case RecordingSource::RECORD_WITH_PAINTING_DISABLED:
       // We pass a disable flag through the paint calls when perfromance
       // testing (the only time this case should ever arise) when we want to
       // prevent the Blink GraphicsContext object from consuming any compute
       // time.
       canvas = skia::AdoptRef(SkCreateNullCanvas());
-      graphics_context_status = ContentLayerClient::GRAPHICS_CONTEXT_DISABLED;
+      painting_control = ContentLayerClient::DISPLAY_LIST_CONSTRUCTION_DISABLED;
+      break;
+    case RecordingSource::RECORD_WITH_CACHING_DISABLED:
+      // This mode should give the same results as RECORD_NORMALLY.
+      painting_control = ContentLayerClient::DISPLAY_LIST_CACHING_DISABLED;
       break;
     default:
       NOTREACHED();
@@ -223,7 +226,7 @@ void Picture::Record(ContentLayerClient* painter,
                                          layer_rect_.height());
   canvas->clipRect(layer_skrect);
 
-  painter->PaintContents(canvas.get(), layer_rect_, graphics_context_status);
+  painter->PaintContents(canvas.get(), layer_rect_, painting_control);
 
   canvas->restore();
   picture_ = skia::AdoptRef(recorder.endRecording());
@@ -232,8 +235,7 @@ void Picture::Record(ContentLayerClient* painter,
   EmitTraceSnapshot();
 }
 
-void Picture::GatherPixelRefs(
-    const SkTileGridFactory::TileGridInfo& tile_grid_info) {
+void Picture::GatherPixelRefs(const gfx::Size& tile_grid_size) {
   TRACE_EVENT2("cc", "Picture::GatherPixelRefs",
                "width", layer_rect_.width(),
                "height", layer_rect_.height());
@@ -242,11 +244,7 @@ void Picture::GatherPixelRefs(
   DCHECK(pixel_refs_.empty());
   if (!WillPlayBackBitmaps())
     return;
-  cell_size_ = gfx::Size(
-      tile_grid_info.fTileInterval.width() +
-          2 * tile_grid_info.fMargin.width(),
-      tile_grid_info.fTileInterval.height() +
-          2 * tile_grid_info.fMargin.height());
+  cell_size_ = tile_grid_size;
   DCHECK_GT(cell_size_.width(), 0);
   DCHECK_GT(cell_size_.height(), 0);
 
@@ -463,23 +461,21 @@ Picture::PixelRefIterator& Picture::PixelRefIterator::operator++() {
   return *this;
 }
 
-scoped_refptr<base::debug::ConvertableToTraceFormat>
+scoped_refptr<base::trace_event::ConvertableToTraceFormat>
     Picture::AsTraceableRasterData(float scale) const {
-  scoped_refptr<base::debug::TracedValue> raster_data =
-      new base::debug::TracedValue();
+  scoped_refptr<base::trace_event::TracedValue> raster_data =
+      new base::trace_event::TracedValue();
   TracedValue::SetIDRef(this, raster_data.get(), "picture_id");
   raster_data->SetDouble("scale", scale);
   return raster_data;
 }
 
-scoped_refptr<base::debug::ConvertableToTraceFormat>
+scoped_refptr<base::trace_event::ConvertableToTraceFormat>
     Picture::AsTraceableRecordData() const {
-  scoped_refptr<base::debug::TracedValue> record_data =
-      new base::debug::TracedValue();
+  scoped_refptr<base::trace_event::TracedValue> record_data =
+      new base::trace_event::TracedValue();
   TracedValue::SetIDRef(this, record_data.get(), "picture_id");
-  record_data->BeginArray("layer_rect");
-  MathUtil::AddToTracedValue(layer_rect_, record_data.get());
-  record_data->EndArray();
+  MathUtil::AddToTracedValue("layer_rect", layer_rect_, record_data.get());
   return record_data;
 }
 

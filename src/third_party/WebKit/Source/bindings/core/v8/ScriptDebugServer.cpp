@@ -86,6 +86,10 @@ ScriptDebugServer::~ScriptDebugServer()
 {
 }
 
+void ScriptDebugServer::trace(Visitor* visitor)
+{
+}
+
 String ScriptDebugServer::setBreakpoint(const String& sourceID, const ScriptBreakpoint& scriptBreakpoint, int* actualLineNumber, int* actualColumnNumber, bool interstatementLocation)
 {
     v8::HandleScope scope(m_isolate);
@@ -345,6 +349,10 @@ PassRefPtrWillBeRawPtr<JavaScriptCallFrame> ScriptDebugServer::toJavaScriptCallF
 {
     if (value.isEmpty())
         return nullptr;
+    ScriptState* scriptState = value.scriptState();
+    if (!scriptState || !scriptState->contextIsValid())
+        return nullptr;
+    ScriptState::Scope scope(scriptState);
     ASSERT(value.isObject());
     return V8JavaScriptCallFrame::toImpl(v8::Handle<v8::Object>::Cast(value.v8ValueUnsafe()));
 }
@@ -521,9 +529,7 @@ void ScriptDebugServer::handleV8DebugEvent(const v8::Debug::EventDetails& eventD
     ScriptDebugListener* listener = getDebugListenerForContext(eventContext);
     if (listener) {
         v8::HandleScope scope(m_isolate);
-        if (event == v8::BeforeCompile) {
-            preprocessBeforeCompile(eventDetails);
-        } else if (event == v8::AfterCompile || event == v8::CompileError) {
+        if (event == v8::AfterCompile || event == v8::CompileError) {
             v8::Context::Scope contextScope(v8::Debug::GetDebugContext());
             v8::Handle<v8::Value> argv[] = { eventDetails.GetEventData() };
             v8::Handle<v8::Value> value = callDebuggerMethod("getAfterCompileScript", 1, argv);
@@ -596,7 +602,8 @@ void ScriptDebugServer::dispatchDidParseSource(ScriptDebugListener* listener, v8
         .setStartColumn(object->Get(v8AtomicString(m_isolate, "startColumn"))->ToInteger(m_isolate)->Value())
         .setEndLine(object->Get(v8AtomicString(m_isolate, "endLine"))->ToInteger(m_isolate)->Value())
         .setEndColumn(object->Get(v8AtomicString(m_isolate, "endColumn"))->ToInteger(m_isolate)->Value())
-        .setIsContentScript(object->Get(v8AtomicString(m_isolate, "isContentScript"))->ToBoolean(m_isolate)->Value());
+        .setIsContentScript(object->Get(v8AtomicString(m_isolate, "isContentScript"))->ToBoolean(m_isolate)->Value())
+        .setIsInternalScript(object->Get(v8AtomicString(m_isolate, "isInternalScript"))->ToBoolean(m_isolate)->Value());
 
     listener->didParseSource(sourceID, script, compileResult);
 }
@@ -676,7 +683,7 @@ bool ScriptDebugServer::isPaused()
     return m_pausedScriptState;
 }
 
-void ScriptDebugServer::compileScript(ScriptState* scriptState, const String& expression, const String& sourceURL, String* scriptId, String* exceptionDetailsText, int* lineNumber, int* columnNumber, RefPtrWillBeRawPtr<ScriptCallStack>* stackTrace)
+void ScriptDebugServer::compileScript(ScriptState* scriptState, const String& expression, const String& sourceURL, bool persistScript, String* scriptId, String* exceptionDetailsText, int* lineNumber, int* columnNumber, RefPtrWillBeRawPtr<ScriptCallStack>* stackTrace)
 {
     if (!scriptState->contextIsValid())
         return;
@@ -684,7 +691,7 @@ void ScriptDebugServer::compileScript(ScriptState* scriptState, const String& ex
 
     v8::Handle<v8::String> source = v8String(m_isolate, expression);
     v8::TryCatch tryCatch;
-    v8::Local<v8::Script> script = V8ScriptRunner::compileScript(source, sourceURL, TextPosition(), 0, 0, m_isolate);
+    v8::Local<v8::Script> script = V8ScriptRunner::compileScript(source, sourceURL, TextPosition(), m_isolate);
     if (tryCatch.HasCaught()) {
         v8::Local<v8::Message> message = tryCatch.Message();
         if (!message.IsEmpty()) {
@@ -697,7 +704,7 @@ void ScriptDebugServer::compileScript(ScriptState* scriptState, const String& ex
         }
         return;
     }
-    if (script.IsEmpty())
+    if (script.IsEmpty() || !persistScript)
         return;
 
     *scriptId = String::number(script->GetUnboundScript()->GetId());
@@ -741,16 +748,6 @@ void ScriptDebugServer::runScript(ScriptState* scriptState, const String& script
     } else {
         *result = ScriptValue(scriptState, value);
     }
-}
-
-PassOwnPtr<ScriptSourceCode> ScriptDebugServer::preprocess(LocalFrame*, const ScriptSourceCode&)
-{
-    return PassOwnPtr<ScriptSourceCode>();
-}
-
-String ScriptDebugServer::preprocessEventListener(LocalFrame*, const String& source, const String& url, const String& functionName)
-{
-    return source;
 }
 
 } // namespace blink

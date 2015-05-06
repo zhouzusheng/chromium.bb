@@ -43,6 +43,7 @@
 #include "ppapi/c/ppb_udp_socket.h"
 #include "ppapi/c/private/pp_content_decryptor.h"
 #include "ppapi/c/private/pp_private_font_charset.h"
+#include "ppapi/c/private/pp_video_capture_format.h"
 #include "ppapi/c/private/ppb_flash.h"
 #include "ppapi/c/private/ppb_host_resolver_private.h"
 #include "ppapi/c/private/ppb_isolated_file_system_private.h"
@@ -111,7 +112,6 @@ IPC_ENUM_TRAITS_MAX_VALUE(PP_NetworkList_Type, PP_NETWORKLIST_TYPE_CELLULAR)
 IPC_ENUM_TRAITS(PP_PrintOrientation_Dev)
 IPC_ENUM_TRAITS(PP_PrintOutputFormat_Dev)
 IPC_ENUM_TRAITS(PP_PrintScalingOption_Dev)
-IPC_ENUM_TRAITS_MAX_VALUE(PP_PrintDuplexMode_Dev, PP_PRINTDUPLEXMODE_SHORT_EDGE)
 IPC_ENUM_TRAITS(PP_PrivateFontCharset)
 IPC_ENUM_TRAITS(PP_ResourceImage)
 IPC_ENUM_TRAITS(PP_ResourceString)
@@ -209,17 +209,9 @@ IPC_STRUCT_TRAITS_BEGIN(PP_PrintSettings_Dev)
   IPC_STRUCT_TRAITS_MEMBER(format)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(PP_PrintRange_Dev)
-  IPC_STRUCT_TRAITS_MEMBER(from)
-  IPC_STRUCT_TRAITS_MEMBER(to)
-IPC_STRUCT_TRAITS_END()
-
 IPC_STRUCT_TRAITS_BEGIN(PP_PdfPrintPresetOptions_Dev)
   IPC_STRUCT_TRAITS_MEMBER(is_scaling_disabled)
   IPC_STRUCT_TRAITS_MEMBER(copies)
-  IPC_STRUCT_TRAITS_MEMBER(duplex)
-  IPC_STRUCT_TRAITS_MEMBER(page_range)
-  IPC_STRUCT_TRAITS_MEMBER(page_range_count)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(PP_URLComponent_Dev)
@@ -236,6 +228,11 @@ IPC_STRUCT_TRAITS_BEGIN(PP_URLComponents_Dev)
   IPC_STRUCT_TRAITS_MEMBER(path)
   IPC_STRUCT_TRAITS_MEMBER(query)
   IPC_STRUCT_TRAITS_MEMBER(ref)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(PP_VideoCaptureFormat)
+  IPC_STRUCT_TRAITS_MEMBER(frame_size)
+  IPC_STRUCT_TRAITS_MEMBER(frame_rate)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(PP_FileInfo)
@@ -794,20 +791,20 @@ IPC_MESSAGE_ROUTED4(PpapiMsg_PPPContentDecryptor_LoadSession,
                     PP_Instance /* instance */,
                     uint32_t /* promise_id */,
                     PP_SessionType /* session_type */,
-                    ppapi::proxy::SerializedVar /* web_session_id, String */)
+                    ppapi::proxy::SerializedVar /* session_id, String */)
 IPC_MESSAGE_ROUTED4(PpapiMsg_PPPContentDecryptor_UpdateSession,
                     PP_Instance /* instance */,
                     uint32_t /* promise_id */,
-                    ppapi::proxy::SerializedVar /* web_session_id, String */,
+                    ppapi::proxy::SerializedVar /* session_id, String */,
                     ppapi::proxy::SerializedVar /* response, ArrayBuffer */)
 IPC_MESSAGE_ROUTED3(PpapiMsg_PPPContentDecryptor_CloseSession,
                     PP_Instance /* instance */,
                     uint32_t /* promise_id */,
-                    std::string /* web_session_id */)
+                    std::string /* session_id */)
 IPC_MESSAGE_ROUTED3(PpapiMsg_PPPContentDecryptor_RemoveSession,
                     PP_Instance /* instance */,
                     uint32_t /* promise_id */,
-                    std::string /* web_session_id */)
+                    std::string /* session_id */)
 IPC_MESSAGE_ROUTED3(PpapiMsg_PPPContentDecryptor_Decrypt,
                     PP_Instance /* instance */,
                     ppapi::proxy::PPPDecryptor_Buffer /* buffer */,
@@ -1127,7 +1124,7 @@ IPC_MESSAGE_ROUTED2(PpapiHostMsg_PPBInstance_PromiseResolved,
 IPC_MESSAGE_ROUTED3(PpapiHostMsg_PPBInstance_PromiseResolvedWithSession,
                     PP_Instance /* instance */,
                     uint32_t /* promise_id */,
-                    ppapi::proxy::SerializedVar /* web_session_id, String */)
+                    ppapi::proxy::SerializedVar /* session_id, String */)
 IPC_MESSAGE_ROUTED5(PpapiHostMsg_PPBInstance_PromiseRejected,
                     PP_Instance /* instance */,
                     uint32_t /* promise_id */,
@@ -1136,25 +1133,25 @@ IPC_MESSAGE_ROUTED5(PpapiHostMsg_PPBInstance_PromiseRejected,
                     ppapi::proxy::SerializedVar /* error_description, String */)
 IPC_MESSAGE_ROUTED5(PpapiHostMsg_PPBInstance_SessionMessage,
                     PP_Instance /* instance */,
-                    ppapi::proxy::SerializedVar /* web_session_id, String */,
+                    ppapi::proxy::SerializedVar /* session_id, String */,
                     PP_CdmMessageType /* message_type */,
                     ppapi::proxy::SerializedVar /* message, ArrayBuffer */,
                     ppapi::proxy::SerializedVar /* destination_url, String */)
 IPC_MESSAGE_ROUTED4(PpapiHostMsg_PPBInstance_SessionKeysChange,
                     PP_Instance /* instance */,
-                    std::string /* web_session_id */,
+                    std::string /* session_id */,
                     PP_Bool /* has_additional_usable_key */,
                     std::vector<PP_KeyInformation> /* key_information */)
 IPC_MESSAGE_ROUTED3(PpapiHostMsg_PPBInstance_SessionExpirationChange,
                     PP_Instance /* instance */,
-                    std::string /* web_session_id */,
+                    std::string /* session_id */,
                     PP_Time /* new_expiry_time */)
 IPC_MESSAGE_ROUTED2(PpapiHostMsg_PPBInstance_SessionClosed,
                     PP_Instance /* instance */,
-                    ppapi::proxy::SerializedVar /* web_session_id, String */)
+                    ppapi::proxy::SerializedVar /* session_id, String */)
 IPC_MESSAGE_ROUTED5(PpapiHostMsg_PPBInstance_SessionError,
                     PP_Instance /* instance */,
-                    ppapi::proxy::SerializedVar /* web_session_id, String */,
+                    ppapi::proxy::SerializedVar /* session_id, String */,
                     PP_CdmExceptionCode /* exception_code */,
                     int32_t /* system_code */,
                     ppapi::proxy::SerializedVar /* error_description, String */)
@@ -1550,7 +1547,21 @@ IPC_MESSAGE_CONTROL2(PpapiHostMsg_Graphics2D_ReadImageData,
                      PP_Point /* top_left */)
 IPC_MESSAGE_CONTROL0(PpapiPluginMsg_Graphics2D_ReadImageDataAck)
 
-// IsolatedFileSystem
+// CameraDevice ----------------------------------------------------------------
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_CameraDevice_Create)
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_CameraDevice_Close)
+
+IPC_MESSAGE_CONTROL1(PpapiHostMsg_CameraDevice_Open,
+                     std::string /* camera_source_id */)
+IPC_MESSAGE_CONTROL0(PpapiPluginMsg_CameraDevice_OpenReply)
+
+IPC_MESSAGE_CONTROL0(
+    PpapiHostMsg_CameraDevice_GetSupportedVideoCaptureFormats)
+IPC_MESSAGE_CONTROL1(
+    PpapiPluginMsg_CameraDevice_GetSupportedVideoCaptureFormatsReply,
+    std::vector<PP_VideoCaptureFormat> /* video_capture_formats */)
+
+// IsolatedFileSystem ----------------------------------------------------------
 IPC_MESSAGE_CONTROL0(PpapiHostMsg_IsolatedFileSystem_Create)
 IPC_MESSAGE_CONTROL1(PpapiHostMsg_IsolatedFileSystem_BrowserOpen,
                      PP_IsolatedFileSystemType_Private /* type */)
@@ -2251,6 +2262,8 @@ IPC_MESSAGE_CONTROL1(PpapiHostMsg_PDF_SetSelectedText,
 // Called by the plugin to set the link under the cursor.
 IPC_MESSAGE_CONTROL1(PpapiHostMsg_PDF_SetLinkUnderCursor,
                      std::string /* url */)
+
+// VideoCapture ----------------------------------------------------------------
 
 // VideoCapture_Dev, plugin -> host
 IPC_MESSAGE_CONTROL0(PpapiHostMsg_VideoCapture_Create)

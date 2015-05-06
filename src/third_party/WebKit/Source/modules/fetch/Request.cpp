@@ -179,13 +179,18 @@ Request* Request::createRequestWithRequestOrString(ExecutionContext* context, Re
 
     // "21. If |init|'s body member is present, run these substeps:"
     if (init.bodyBlobHandle) {
-        // "1. Let |stream| and |Content-Type| be the result of extracting
-        // |init|'s body member."
-        // "2. Set |r|'s request's body to |stream|."
-        // "3.If |Content-Type| is non-null and |r|'s request's header list
+        // "1. If request's method is `GET` or `HEAD`, throw a TypeError."
+        // "2. Let |stream| and |Content-Type| be the result of extracting
+        //  |init|'s body member."
+        // "3. Set |r|'s request's body to |stream|."
+        // "4. If |Content-Type| is non-null and |r|'s request's header list
         //  contains no header named `Content-Type`, append
-        // `Content-Type`/|Content-Type| to |r|'s Headers object. Rethrow any
-        // exception."
+        //  `Content-Type`/|Content-Type| to |r|'s Headers object. Rethrow any
+        //  exception."
+        if (request->method() == "GET" || request->method() == "HEAD") {
+            exceptionState.throwTypeError("Request with GET/HEAD method cannot have body.");
+            return 0;
+        }
         r->setBodyBlobHandle(init.bodyBlobHandle);
         if (!init.bodyBlobHandle->type().isEmpty() && !r->headers()->has("Content-Type", exceptionState)) {
             r->headers()->append("Content-Type", init.bodyBlobHandle->type(), exceptionState);
@@ -251,13 +256,6 @@ Request* Request::create(ExecutionContext* context, const WebServiceWorkerReques
     return r;
 }
 
-Request* Request::create(const Request& copyFrom)
-{
-    Request* r = new Request(copyFrom);
-    r->suspendIfNeeded();
-    return r;
-}
-
 Request::Request(ExecutionContext* context, const WebServiceWorkerRequest& webRequest)
     : Body(context)
     , m_request(FetchRequestData::create(webRequest))
@@ -266,13 +264,12 @@ Request::Request(ExecutionContext* context, const WebServiceWorkerRequest& webRe
     m_headers->setGuard(Headers::RequestGuard);
 }
 
-Request::Request(const Request& copy_from)
-    : Body(copy_from)
-    , m_request(copy_from.m_request->createCopy())
+Request::Request(const Request& cloneFrom)
+    : Body(cloneFrom)
+    , m_request(cloneFrom.m_request->createCopy())
     , m_headers(Headers::create(m_request->headerList()))
 {
 }
-
 
 String Request::method() const
 {
@@ -342,12 +339,13 @@ Request* Request::clone(ExceptionState& exceptionState) const
         exceptionState.throwTypeError("Request body is already used");
         return nullptr;
     }
-    if (streamAccessed()) {
-        // FIXME: Support clone() of the stream accessed Request.
-        exceptionState.throwTypeError("clone() of the Request which .body is accessed is not supported.");
-        return nullptr;
-    }
-    return Request::create(*this);
+    // FIXME: We throw an error while cloning the Response which body was
+    // partially read. But in Request case, we don't. When the behavior of the
+    // partially read streams will be well defined in the spec, we have to
+    // implement the behavior correctly.
+    Request* r = new Request(*this);
+    r->suspendIfNeeded();
+    return r;
 }
 
 void Request::populateWebServiceWorkerRequest(WebServiceWorkerRequest& webRequest) const
@@ -394,7 +392,7 @@ String Request::contentTypeForBuffer() const
     return String();
 }
 
-void Request::trace(Visitor* visitor)
+DEFINE_TRACE(Request)
 {
     Body::trace(visitor);
     visitor->trace(m_request);

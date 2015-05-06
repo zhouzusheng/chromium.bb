@@ -33,8 +33,7 @@ class VideoEncoderFactory {
 class SimulcastEncoderAdapter : public VP8Encoder,
                                 public EncodedImageCallback {
  public:
-  explicit SimulcastEncoderAdapter(scoped_ptr<VideoEncoderFactory> factory);
-
+  explicit SimulcastEncoderAdapter(VideoEncoderFactory* factory);
   virtual ~SimulcastEncoderAdapter();
 
   // Implements VideoEncoder
@@ -47,7 +46,7 @@ class SimulcastEncoderAdapter : public VP8Encoder,
                      const std::vector<VideoFrameType>* frame_types) OVERRIDE;
   virtual int RegisterEncodeCompleteCallback(
       EncodedImageCallback* callback) OVERRIDE;
-  virtual int SetChannelParameters(uint32_t packet_loss, int rtt) OVERRIDE;
+  virtual int SetChannelParameters(uint32_t packet_loss, int64_t rtt) OVERRIDE;
   virtual int SetRates(uint32_t new_bitrate_kbit,
                        uint32_t new_framerate) OVERRIDE;
 

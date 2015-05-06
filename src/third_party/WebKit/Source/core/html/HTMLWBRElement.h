@@ -44,7 +44,7 @@ public:
 private:
     explicit HTMLWBRElement(Document&);
 
-    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual LayoutObject* createRenderer(const LayoutStyle&) override;
 };
 
 } // namespace

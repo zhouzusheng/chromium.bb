@@ -17,6 +17,7 @@
 
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/system_wrappers/interface/logging.h"
+#include "webrtc/system_wrappers/interface/trace_event.h"
 #include "webrtc/video_engine/include/vie_base.h"
 #include "webrtc/video_engine/include/vie_capture.h"
 #include "webrtc/video_engine/include/vie_codec.h"
@@ -33,8 +34,7 @@ VideoSendStream::Config::EncoderSettings::ToString() const {
   std::stringstream ss;
   ss << "{payload_name: " << payload_name;
   ss << ", payload_type: " << payload_type;
-  if (encoder != NULL)
-    ss << ", encoder: " << (encoder != NULL ? "(encoder)" : "NULL");
+  ss << ", encoder: " << (encoder != NULL ? "(VideoEncoder)" : "NULL");
   ss << '}';
   return ss.str();
 }
@@ -42,13 +42,13 @@ VideoSendStream::Config::EncoderSettings::ToString() const {
 std::string VideoSendStream::Config::Rtp::Rtx::ToString()
     const {
   std::stringstream ss;
-  ss << "{ssrcs: {";
+  ss << "{ssrcs: [";
   for (size_t i = 0; i < ssrcs.size(); ++i) {
     ss << ssrcs[i];
     if (i != ssrcs.size() - 1)
-      ss << "}, {";
+      ss << ", ";
   }
-  ss << '}';
+  ss << ']';
 
   ss << ", payload_type: " << payload_type;
   ss << '}';
@@ -57,32 +57,26 @@ std::string VideoSendStream::Config::Rtp::Rtx::ToString()
 
 std::string VideoSendStream::Config::Rtp::ToString() const {
   std::stringstream ss;
-  ss << "{ssrcs: {";
+  ss << "{ssrcs: [";
   for (size_t i = 0; i < ssrcs.size(); ++i) {
     ss << ssrcs[i];
     if (i != ssrcs.size() - 1)
-      ss << "}, {";
+      ss << ", ";
   }
-  ss << '}';
-
+  ss << ']';
   ss << ", max_packet_size: " << max_packet_size;
-
-  ss << ", extensions: {";
+  ss << ", extensions: [";
   for (size_t i = 0; i < extensions.size(); ++i) {
     ss << extensions[i].ToString();
     if (i != extensions.size() - 1)
-      ss << "}, {";
+      ss << ", ";
   }
-  ss << '}';
+  ss << ']';
 
-  if (nack.rtp_history_ms != 0)
-    ss << ", nack.rtp_history_ms: " << nack.rtp_history_ms;
-  if (fec.ulpfec_payload_type != -1 || fec.red_payload_type != -1)
-    ss << ", fec: " << fec.ToString();
-  if (rtx.payload_type != 0 || !rtx.ssrcs.empty())
-    ss << ", rtx: " << rtx.ToString();
-  if (c_name != "")
-    ss << ", c_name: " << c_name;
+  ss << ", nack: {rtp_history_ms: " << nack.rtp_history_ms << '}';
+  ss << ", fec: " << fec.ToString();
+  ss << ", rtx: " << rtx.ToString();
+  ss << ", c_name: " << c_name;
   ss << '}';
   return ss.str();
 }
@@ -91,17 +85,16 @@ std::string VideoSendStream::Config::ToString() const {
   std::stringstream ss;
   ss << "{encoder_settings: " << encoder_settings.ToString();
   ss << ", rtp: " << rtp.ToString();
-  if (pre_encode_callback != NULL)
-    ss << ", (pre_encode_callback)";
-  if (post_encode_callback != NULL)
-    ss << ", (post_encode_callback)";
-  if (local_renderer != NULL) {
-    ss << ", (local_renderer, render_delay_ms: " << render_delay_ms << ")";
-  }
-  if (target_delay_ms > 0)
-    ss << ", target_delay_ms: " << target_delay_ms;
-  if (suspend_below_min_bitrate)
-    ss << ", suspend_below_min_bitrate: on";
+  ss << ", pre_encode_callback: "
+     << (pre_encode_callback != NULL ? "(I420FrameCallback)" : "NULL");
+  ss << ", post_encode_callback: "
+     << (post_encode_callback != NULL ? "(EncodedFrameObserver)" : "NULL");
+  ss << "local_renderer: " << (local_renderer != NULL ? "(VideoRenderer)"
+                                                      : "NULL");
+  ss << ", render_delay_ms: " << render_delay_ms;
+  ss << ", target_delay_ms: " << target_delay_ms;
+  ss << ", suspend_below_min_bitrate: " << (suspend_below_min_bitrate ? "on"
+                                                                      : "off");
   ss << '}';
   return ss.str();
 }
@@ -133,7 +126,8 @@ VideoSendStream::VideoSendStream(
     assert(bitrate_config.max_bitrate_bps >= bitrate_config.start_bitrate_bps);
 
   video_engine_base_ = ViEBase::GetInterface(video_engine);
-  video_engine_base_->CreateChannel(channel_, base_channel);
+  video_engine_base_->CreateChannelWithoutDefaultEncoder(channel_,
+                                                         base_channel);
   assert(channel_ != -1);
 
   rtp_rtcp_ = ViERTP_RTCP::GetInterface(video_engine);
@@ -235,6 +229,7 @@ VideoSendStream::VideoSendStream(
                                                        &stats_proxy_);
   rtp_rtcp_->RegisterSendChannelRtpStatisticsCallback(channel_,
                                                       &stats_proxy_);
+  rtp_rtcp_->RegisterRtcpPacketTypeCounterObserver(channel_, &stats_proxy_);
   rtp_rtcp_->RegisterSendBitrateObserver(channel_, &stats_proxy_);
   rtp_rtcp_->RegisterSendFrameCountObserver(channel_, &stats_proxy_);
 
@@ -248,6 +243,7 @@ VideoSendStream::~VideoSendStream() {
 
   rtp_rtcp_->DeregisterSendFrameCountObserver(channel_, &stats_proxy_);
   rtp_rtcp_->DeregisterSendBitrateObserver(channel_, &stats_proxy_);
+  rtp_rtcp_->RegisterRtcpPacketTypeCounterObserver(channel_, NULL);
   rtp_rtcp_->DeregisterSendChannelRtpStatisticsCallback(channel_,
                                                         &stats_proxy_);
   rtp_rtcp_->DeregisterSendChannelRtcpStatisticsCallback(channel_,
@@ -299,6 +295,7 @@ void VideoSendStream::Stop() {
 
 bool VideoSendStream::ReconfigureVideoEncoder(
     const VideoEncoderConfig& config) {
+  TRACE_EVENT0("webrtc", "VideoSendStream::(Re)configureVideoEncoder");
   LOG(LS_INFO) << "(Re)configureVideoEncoder: " << config.ToString();
   const std::vector<VideoStream>& streams = config.streams;
   assert(!streams.empty());
@@ -448,6 +445,7 @@ VideoSendStream::Stats VideoSendStream::GetStats() {
 }
 
 void VideoSendStream::ConfigureSsrcs() {
+  rtp_rtcp_->SetLocalSSRC(channel_, config_.rtp.ssrcs.front());
   for (size_t i = 0; i < config_.rtp.ssrcs.size(); ++i) {
     uint32_t ssrc = config_.rtp.ssrcs[i];
     rtp_rtcp_->SetLocalSSRC(
@@ -517,17 +515,17 @@ void VideoSendStream::SignalNetworkState(Call::NetworkState state) {
     rtp_rtcp_->SetRTCPStatus(channel_, kRtcpNone);
 }
 
-int VideoSendStream::GetPacerQueuingDelayMs() const {
-  int pacer_delay_ms = 0;
+int64_t VideoSendStream::GetPacerQueuingDelayMs() const {
+  int64_t pacer_delay_ms = 0;
   if (rtp_rtcp_->GetPacerQueuingDelayMs(channel_, &pacer_delay_ms) != 0) {
     return 0;
   }
   return pacer_delay_ms;
 }
 
-int VideoSendStream::GetRtt() const {
+int64_t VideoSendStream::GetRtt() const {
   webrtc::RtcpStatistics rtcp_stats;
-  int rtt_ms;
+  int64_t rtt_ms;
   if (rtp_rtcp_->GetSendChannelRtcpStatistics(channel_, rtcp_stats, rtt_ms) ==
       0) {
     return rtt_ms;

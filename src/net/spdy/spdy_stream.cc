@@ -8,6 +8,7 @@
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
@@ -526,8 +527,23 @@ void SpdyStream::OnDataReceived(scoped_ptr<SpdyBuffer> buffer) {
   delegate_->OnDataReceived(buffer.Pass());
 }
 
+void SpdyStream::OnPaddingConsumed(size_t len) {
+  if (session_->flow_control_state() >= SpdySession::FLOW_CONTROL_STREAM) {
+    // Decrease window size because padding bytes are received.
+    // Increase window size because padding bytes are consumed (by discarding).
+    // Net result: |session_unacked_recv_window_bytes_| increases by |len|,
+    // |session_recv_window_size_| does not change.
+    DecreaseRecvWindowSize(static_cast<int32>(len));
+    IncreaseRecvWindowSize(static_cast<int32>(len));
+  }
+}
+
 void SpdyStream::OnFrameWriteComplete(SpdyFrameType frame_type,
                                       size_t frame_size) {
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/457517 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "457517 SpdyStream::OnFrameWriteComplete"));
   DCHECK_NE(type_, SPDY_PUSH_STREAM);
 
   if (frame_size < session_->GetFrameMinimumSize() ||

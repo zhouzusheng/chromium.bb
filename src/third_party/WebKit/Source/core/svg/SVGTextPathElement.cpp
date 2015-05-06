@@ -22,7 +22,7 @@
 #include "core/svg/SVGTextPathElement.h"
 
 #include "core/XLinkNames.h"
-#include "core/rendering/svg/RenderSVGTextPath.h"
+#include "core/layout/svg/LayoutSVGTextPath.h"
 #include "core/svg/SVGDocumentExtensions.h"
 
 namespace blink {
@@ -49,11 +49,12 @@ template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGTextPath
 
 inline SVGTextPathElement::SVGTextPathElement(Document& document)
     : SVGTextContentElement(SVGNames::textPathTag, document)
-    , SVGURIReference(this)
     , m_startOffset(SVGAnimatedLength::create(this, SVGNames::startOffsetAttr, SVGLength::create(LengthModeOther), AllowNegativeLengths))
     , m_method(SVGAnimatedEnumeration<SVGTextPathMethodType>::create(this, SVGNames::methodAttr, SVGTextPathMethodAlign))
     , m_spacing(SVGAnimatedEnumeration<SVGTextPathSpacingType>::create(this, SVGNames::spacingAttr, SVGTextPathSpacingExact))
 {
+    SVGURIReference::initialize(this);
+
     addToPropertyMap(m_startOffset);
     addToPropertyMap(m_method);
     addToPropertyMap(m_spacing);
@@ -68,7 +69,7 @@ SVGTextPathElement::~SVGTextPathElement()
 #endif
 }
 
-void SVGTextPathElement::trace(Visitor* visitor)
+DEFINE_TRACE(SVGTextPathElement)
 {
     visitor->trace(m_startOffset);
     visitor->trace(m_method);
@@ -111,16 +112,16 @@ void SVGTextPathElement::svgAttributeChanged(const QualifiedName& attrName)
     if (attrName == SVGNames::startOffsetAttr)
         updateRelativeLengthsInformation();
 
-    if (RenderObject* object = renderer())
+    if (LayoutObject* object = renderer())
         markForLayoutAndParentResourceInvalidation(object);
 }
 
-RenderObject* SVGTextPathElement::createRenderer(RenderStyle*)
+LayoutObject* SVGTextPathElement::createRenderer(const LayoutStyle&)
 {
-    return new RenderSVGTextPath(this);
+    return new LayoutSVGTextPath(this);
 }
 
-bool SVGTextPathElement::rendererIsNeeded(const RenderStyle& style)
+bool SVGTextPathElement::rendererIsNeeded(const LayoutStyle& style)
 {
     if (parentNode() && (isSVGAElement(*parentNode()) || isSVGTextElement(*parentNode())))
         return Element::rendererIsNeeded(style);

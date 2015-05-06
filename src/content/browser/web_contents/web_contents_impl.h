@@ -182,6 +182,12 @@ class CONTENT_EXPORT WebContentsImpl
 
   bool should_normally_be_visible() { return should_normally_be_visible_; }
 
+  // Indicate if the window has been occluded, and pass this to the views, only
+  // if there is no active capture going on (otherwise it is dropped on the
+  // floor).
+  void WasOccluded();
+  void WasUnOccluded();
+
   // Broadcasts the mode change to all frames.
   void SetAccessibilityMode(AccessibilityMode mode);
 
@@ -209,7 +215,7 @@ class CONTENT_EXPORT WebContentsImpl
   const GURL& GetVisibleURL() const override;
   const GURL& GetLastCommittedURL() const override;
   RenderProcessHost* GetRenderProcessHost() const override;
-  RenderFrameHost* GetMainFrame() override;
+  RenderFrameHostImpl* GetMainFrame() override;
   RenderFrameHost* GetFocusedFrame() override;
   void ForEachFrame(
       const base::Callback<void(RenderFrameHost*)>& on_frame) override;
@@ -299,6 +305,9 @@ class CONTENT_EXPORT WebContentsImpl
                 const base::FilePath& dir_path,
                 SavePageType save_type) override;
   void SaveFrame(const GURL& url, const Referrer& referrer) override;
+  void SaveFrameWithHeaders(const GURL& url,
+                            const Referrer& referrer,
+                            const std::string& headers) override;
   void GenerateMHTML(const base::FilePath& file,
                      const base::Callback<void(int64)>& callback) override;
   const std::string& GetContentsMimeType() const override;
@@ -333,9 +342,9 @@ class CONTENT_EXPORT WebContentsImpl
   void InsertCSS(const std::string& css) override;
   bool WasRecentlyAudible() override;
   void GetManifest(const GetManifestCallback&) override;
+  void ExitFullscreen() override;
 #if defined(OS_ANDROID)
-  virtual base::android::ScopedJavaLocalRef<jobject> GetJavaWebContents()
-      override;
+  base::android::ScopedJavaLocalRef<jobject> GetJavaWebContents() override;
   virtual WebContentsAndroid* GetWebContentsAndroid();
 #elif defined(OS_MACOSX)
   void SetAllowOtherViews(bool allow) override;
@@ -389,8 +398,11 @@ class CONTENT_EXPORT WebContentsImpl
   void AccessibilityEventReceived(
       const std::vector<AXEventNotificationDetails>& details) override;
   RenderFrameHost* GetGuestByInstanceID(
+      RenderFrameHost* render_frame_host,
       int browser_plugin_instance_id) override;
   GeolocationServiceContext* GetGeolocationServiceContext() override;
+  void EnterFullscreenMode(const GURL& origin) override;
+  void ExitFullscreenMode() override;
 #if defined(OS_WIN)
   gfx::NativeViewAccessible GetParentNativeViewAccessible() override;
 #endif
@@ -427,7 +439,6 @@ class CONTENT_EXPORT WebContentsImpl
                            const base::string16& source_id) override;
   RendererPreferences GetRendererPrefs(
       BrowserContext* browser_context) const override;
-  WebPreferences ComputeWebkitPrefs() override;
   void OnUserGesture() override;
   void OnIgnoredUIEvent() override;
   void RendererUnresponsive(RenderViewHost* render_view_host) override;
@@ -446,7 +457,6 @@ class CONTENT_EXPORT WebContentsImpl
   void HandleGestureEnd() override;
   void RunFileChooser(RenderViewHost* render_view_host,
                       const FileChooserParams& params) override;
-  void ToggleFullscreenMode(bool enter_fullscreen) override;
   bool IsFullscreenForCurrentTab() const override;
   void UpdatePreferredSize(const gfx::Size& pref_size) override;
   void ResizeDueToAutoResize(const gfx::Size& new_size) override;
@@ -465,9 +475,9 @@ class CONTENT_EXPORT WebContentsImpl
   void CreateNewFullscreenWidget(int render_process_id, int route_id) override;
   void ShowCreatedWindow(int route_id,
                          WindowOpenDisposition disposition,
-                         const gfx::Rect& initial_pos,
+                         const gfx::Rect& initial_rect,
                          bool user_gesture) override;
-  void ShowCreatedWidget(int route_id, const gfx::Rect& initial_pos) override;
+  void ShowCreatedWidget(int route_id, const gfx::Rect& initial_rect) override;
   void ShowCreatedFullscreenWidget(int route_id) override;
   void RequestMediaAccessPermission(
       const MediaStreamRequest& request,
@@ -514,7 +524,8 @@ class CONTENT_EXPORT WebContentsImpl
   bool CanOverscrollContent() const override;
   void NotifyChangedNavigationState(InvalidateTypes changed_flags) override;
   void AboutToNavigateRenderFrame(
-      RenderFrameHostImpl* render_frame_host) override;
+      RenderFrameHostImpl* old_host,
+      RenderFrameHostImpl* new_host) override;
   void DidStartNavigationToPendingEntry(
       RenderFrameHostImpl* render_frame_host,
       const GURL& url,
@@ -527,12 +538,13 @@ class CONTENT_EXPORT WebContentsImpl
 
   void RenderWidgetDeleted(RenderWidgetHostImpl* render_widget_host) override;
   void RenderWidgetGotFocus(RenderWidgetHostImpl* render_widget_host) override;
+  void RenderWidgetWasResized(RenderWidgetHostImpl* render_widget_host,
+                              bool width_changed) override;
   bool PreHandleKeyboardEvent(const NativeWebKeyboardEvent& event,
                               bool* is_keyboard_shortcut) override;
   void HandleKeyboardEvent(const NativeWebKeyboardEvent& event) override;
   bool HandleWheelEvent(const blink::WebMouseWheelEvent& event) override;
   bool PreHandleGestureEvent(const blink::WebGestureEvent& event) override;
-  bool HandleGestureEvent(const blink::WebGestureEvent& event) override;
   void DidSendScreenRects(RenderWidgetHostImpl* rwh) override;
   BrowserAccessibilityManager* GetRootBrowserAccessibilityManager() override;
   BrowserAccessibilityManager* GetOrCreateRootBrowserAccessibilityManager()
@@ -810,7 +822,8 @@ class CONTENT_EXPORT WebContentsImpl
   // |result| is true if permission was granted.
   void OnPpapiBrokerPermissionResult(int routing_id, bool result);
 
-  void OnBrowserPluginMessage(const IPC::Message& message);
+  void OnBrowserPluginMessage(RenderFrameHost* render_frame_host,
+                              const IPC::Message& message);
 #endif  // defined(ENABLE_PLUGINS)
   void OnDidDownloadImage(int id,
                           int http_status_code,
@@ -876,7 +889,7 @@ class CONTENT_EXPORT WebContentsImpl
   // Helper for ShowCreatedWidget/ShowCreatedFullscreenWidget.
   void ShowCreatedWidget(int route_id,
                          bool is_fullscreen,
-                         const gfx::Rect& initial_pos);
+                         const gfx::Rect& initial_rect);
 
   // Finds the new RenderWidgetHost and returns it. Note that this can only be
   // called once as this call also removes it from the internal map.
@@ -1126,11 +1139,6 @@ class CONTENT_EXPORT WebContentsImpl
   // Minimum/maximum zoom percent.
   int minimum_zoom_percent_;
   int maximum_zoom_percent_;
-
-  // The raw accumulated zoom value and the actual zoom increments made for an
-  // an in-progress pinch gesture.
-  float totalPinchGestureAmount_;
-  int currentPinchZoomStepDelta_;
 
   // The intrinsic size of the page.
   gfx::Size preferred_size_;

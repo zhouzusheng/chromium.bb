@@ -33,8 +33,9 @@ TransportChannelProxy::TransportChannelProxy(const std::string& content_name,
 TransportChannelProxy::~TransportChannelProxy() {
   // Clearing any pending signal.
   worker_thread_->Clear(this);
-  if (impl_)
+  if (impl_) {
     impl_->GetTransport()->DestroyChannel(impl_->component());
+  }
 }
 
 void TransportChannelProxy::SetImplementation(TransportChannelImpl* impl) {
@@ -103,6 +104,21 @@ int TransportChannelProxy::SetOption(rtc::Socket::Option opt, int value) {
   return impl_->SetOption(opt, value);
 }
 
+bool TransportChannelProxy::GetOption(rtc::Socket::Option opt, int* value) {
+  ASSERT(rtc::Thread::Current() == worker_thread_);
+  if (impl_) {
+    return impl_->GetOption(opt, value);
+  }
+
+  for (const auto& pending : pending_options_) {
+    if (pending.first == opt) {
+      *value = pending.second;
+      return true;
+    }
+  }
+  return false;
+}
+
 int TransportChannelProxy::GetError() {
   ASSERT(rtc::Thread::Current() == worker_thread_);
   if (!impl_) {
@@ -168,6 +184,14 @@ bool TransportChannelProxy::GetSrtpCipher(std::string* cipher) {
     return false;
   }
   return impl_->GetSrtpCipher(cipher);
+}
+
+bool TransportChannelProxy::GetSslCipher(std::string* cipher) {
+  ASSERT(rtc::Thread::Current() == worker_thread_);
+  if (!impl_) {
+    return false;
+  }
+  return impl_->GetSslCipher(cipher);
 }
 
 bool TransportChannelProxy::GetLocalIdentity(

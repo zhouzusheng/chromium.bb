@@ -21,7 +21,6 @@
 #include "net/dns/host_resolver.h"
 #include "net/dns/single_request_host_resolver.h"
 #include "net/http/http_server_properties.h"
-#include "net/quic/congestion_control/tcp_receiver.h"
 #include "net/quic/crypto/channel_id_chromium.h"
 #include "net/quic/crypto/proof_verifier_chromium.h"
 #include "net/quic/crypto/quic_random.h"
@@ -62,9 +61,6 @@ const int32 kInitialReceiveWindowSize = 10 * 1024 * 1024;  // 10MB
 
 // Set the maximum number of undecryptable packets the connection will store.
 const int32 kMaxUndecryptablePackets = 100;
-
-const char kDummyHostname[] = "quic.global.props";
-const uint16 kDummyPort = 0;
 
 void HistogramCreateSessionFailure(enum CreateSessionFailure error) {
   UMA_HISTOGRAM_ENUMERATION("Net.QuicSession.CreationError", error,
@@ -144,7 +140,7 @@ class QuicStreamFactory::Job {
       bool is_https,
       bool was_alternate_protocol_recently_broken,
       PrivacyMode privacy_mode,
-      base::StringPiece method,
+      bool is_post,
       QuicServerInfo* server_info,
       const BoundNetLog& net_log);
 
@@ -170,15 +166,15 @@ class QuicStreamFactory::Job {
 
   void OnIOComplete(int rv);
 
+  void RunAuxilaryJob();
+
+  void Cancel();
+
   void CancelWaitForDataReadyCallback();
 
-  CompletionCallback callback() {
-    return callback_;
-  }
+  const QuicServerId server_id() const { return server_id_; }
 
-  const QuicServerId server_id() const {
-    return server_id_;
-  }
+  base::WeakPtr<Job> GetWeakPtr() { return weak_factory_.GetWeakPtr(); }
 
  private:
   enum IoState {
@@ -199,12 +195,13 @@ class QuicStreamFactory::Job {
   bool is_post_;
   bool was_alternate_protocol_recently_broken_;
   scoped_ptr<QuicServerInfo> server_info_;
+  bool started_another_job_;
   const BoundNetLog net_log_;
   QuicClientSession* session_;
   CompletionCallback callback_;
   AddressList address_list_;
-  base::TimeTicks disk_cache_load_start_time_;
   base::TimeTicks dns_resolution_start_time_;
+  base::TimeTicks dns_resolution_end_time_;
   base::WeakPtrFactory<Job> weak_factory_;
   DISALLOW_COPY_AND_ASSIGN(Job);
 };
@@ -215,20 +212,22 @@ QuicStreamFactory::Job::Job(QuicStreamFactory* factory,
                             bool is_https,
                             bool was_alternate_protocol_recently_broken,
                             PrivacyMode privacy_mode,
-                            base::StringPiece method,
+                            bool is_post,
                             QuicServerInfo* server_info,
                             const BoundNetLog& net_log)
     : io_state_(STATE_RESOLVE_HOST),
       factory_(factory),
       host_resolver_(host_resolver),
       server_id_(host_port_pair, is_https, privacy_mode),
-      is_post_(method == "POST"),
+      is_post_(is_post),
       was_alternate_protocol_recently_broken_(
           was_alternate_protocol_recently_broken),
       server_info_(server_info),
+      started_another_job_(false),
       net_log_(net_log),
       session_(nullptr),
-      weak_factory_(this) {}
+      weak_factory_(this) {
+}
 
 QuicStreamFactory::Job::Job(QuicStreamFactory* factory,
                             HostResolver* host_resolver,
@@ -238,13 +237,18 @@ QuicStreamFactory::Job::Job(QuicStreamFactory* factory,
       factory_(factory),
       host_resolver_(host_resolver),  // unused
       server_id_(server_id),
-      is_post_(false),  // unused
+      is_post_(false),                                 // unused
       was_alternate_protocol_recently_broken_(false),  // unused
-      net_log_(session->net_log()),  // unused
+      started_another_job_(false),                     // unused
+      net_log_(session->net_log()),                    // unused
       session_(session),
-      weak_factory_(this) {}
+      weak_factory_(this) {
+}
 
 QuicStreamFactory::Job::~Job() {
+  // If disk cache has a pending WaitForDataReadyCallback, cancel that callback.
+  if (server_info_)
+    server_info_->ResetWaitForDataReadyCallback();
 }
 
 int QuicStreamFactory::Job::Run(const CompletionCallback& callback) {
@@ -310,6 +314,19 @@ void QuicStreamFactory::Job::OnIOComplete(int rv) {
   }
 }
 
+void QuicStreamFactory::Job::RunAuxilaryJob() {
+  int rv = Run(base::Bind(&QuicStreamFactory::OnJobComplete,
+                          base::Unretained(factory_), this));
+  if (rv != ERR_IO_PENDING)
+    factory_->OnJobComplete(this, rv);
+}
+
+void QuicStreamFactory::Job::Cancel() {
+  callback_.Reset();
+  if (session_)
+    session_->connection()->SendConnectionClose(QUIC_CONNECTION_CANCELLED);
+}
+
 void QuicStreamFactory::Job::CancelWaitForDataReadyCallback() {
   // If we are waiting for WaitForDataReadyCallback, then cancel the callback.
   if (io_state_ != STATE_LOAD_SERVER_INFO_COMPLETE)
@@ -332,11 +349,9 @@ int QuicStreamFactory::Job::DoResolveHost() {
   io_state_ = STATE_RESOLVE_HOST_COMPLETE;
   dns_resolution_start_time_ = base::TimeTicks::Now();
   return host_resolver_.Resolve(
-      HostResolver::RequestInfo(server_id_.host_port_pair()),
-      DEFAULT_PRIORITY,
+      HostResolver::RequestInfo(server_id_.host_port_pair()), DEFAULT_PRIORITY,
       &address_list_,
-      base::Bind(&QuicStreamFactory::Job::OnIOComplete,
-                 weak_factory_.GetWeakPtr()),
+      base::Bind(&QuicStreamFactory::Job::OnIOComplete, GetWeakPtr()),
       net_log_);
 }
 
@@ -346,8 +361,9 @@ int QuicStreamFactory::Job::DoResolveHostComplete(int rv) {
       FROM_HERE_WITH_EXPLICIT_FUNCTION(
           "422516 QuicStreamFactory::Job::DoResolveHostComplete"));
 
+  dns_resolution_end_time_ = base::TimeTicks::Now();
   UMA_HISTOGRAM_TIMES("Net.QuicSession.HostResolutionTime",
-                      base::TimeTicks::Now() - dns_resolution_start_time_);
+                      dns_resolution_end_time_ - dns_resolution_start_time_);
   if (rv != OK)
     return rv;
 
@@ -359,7 +375,10 @@ int QuicStreamFactory::Job::DoResolveHostComplete(int rv) {
     return OK;
   }
 
-  io_state_ = STATE_LOAD_SERVER_INFO;
+  if (server_info_)
+    io_state_ = STATE_LOAD_SERVER_INFO;
+  else
+    io_state_ = STATE_CONNECT;
   return OK;
 }
 
@@ -371,8 +390,7 @@ int QuicStreamFactory::Job::DoLoadServerInfo() {
 
   io_state_ = STATE_LOAD_SERVER_INFO_COMPLETE;
 
-  if (!server_info_)
-    return OK;
+  DCHECK(server_info_);
 
   // To mitigate the effects of disk cache taking too long to load QUIC server
   // information, set up a timer to cancel WaitForDataReady's callback.
@@ -388,14 +406,19 @@ int QuicStreamFactory::Job::DoLoadServerInfo() {
     factory_->task_runner_->PostDelayedTask(
         FROM_HERE,
         base::Bind(&QuicStreamFactory::Job::CancelWaitForDataReadyCallback,
-                   weak_factory_.GetWeakPtr()),
+                   GetWeakPtr()),
         base::TimeDelta::FromMilliseconds(load_server_info_timeout_ms));
   }
 
-  disk_cache_load_start_time_ = base::TimeTicks::Now();
-  return server_info_->WaitForDataReady(
-      base::Bind(&QuicStreamFactory::Job::OnIOComplete,
-                 weak_factory_.GetWeakPtr()));
+  int rv = server_info_->WaitForDataReady(
+      base::Bind(&QuicStreamFactory::Job::OnIOComplete, GetWeakPtr()));
+  if (rv == ERR_IO_PENDING && factory_->enable_connection_racing()) {
+    // If we are waiting to load server config from the disk cache, then start
+    // another job.
+    started_another_job_ = true;
+    factory_->CreateAuxilaryJob(server_id_, is_post_, net_log_);
+  }
+  return rv;
 }
 
 int QuicStreamFactory::Job::DoLoadServerInfoComplete(int rv) {
@@ -404,13 +427,20 @@ int QuicStreamFactory::Job::DoLoadServerInfoComplete(int rv) {
       FROM_HERE_WITH_EXPLICIT_FUNCTION(
           "422516 QuicStreamFactory::Job::DoLoadServerInfoComplete"));
 
-  if (server_info_) {
-    UMA_HISTOGRAM_TIMES("Net.QuicServerInfo.DiskCacheWaitForDataReadyTime",
-                        base::TimeTicks::Now() - disk_cache_load_start_time_);
-  }
+  UMA_HISTOGRAM_TIMES("Net.QuicServerInfo.DiskCacheWaitForDataReadyTime",
+                      base::TimeTicks::Now() - dns_resolution_end_time_);
 
-  if (rv != OK) {
+  if (rv != OK)
     server_info_.reset();
+
+  if (started_another_job_ &&
+      (!server_info_ || server_info_->state().server_config.empty() ||
+       !factory_->CryptoConfigCacheIsEmpty(server_id_))) {
+    // If we have started another job and if we didn't load the server config
+    // from the disk cache or if we have received a new server config from the
+    // server, then cancel the current job.
+    io_state_ = STATE_NONE;
+    return ERR_CONNECTION_CLOSED;
   }
 
   io_state_ = STATE_CONNECT;
@@ -425,8 +455,9 @@ int QuicStreamFactory::Job::DoConnect() {
 
   io_state_ = STATE_CONNECT_COMPLETE;
 
-  int rv = factory_->CreateSession(server_id_, server_info_.Pass(),
-                                   address_list_, net_log_, &session_);
+  int rv =
+      factory_->CreateSession(server_id_, server_info_.Pass(), address_list_,
+                              dns_resolution_end_time_, net_log_, &session_);
   if (rv != OK) {
     DCHECK(rv != ERR_IO_PENDING);
     DCHECK(!session_);
@@ -457,8 +488,7 @@ int QuicStreamFactory::Job::DoConnect() {
 
   rv = session_->CryptoConnect(
       require_confirmation,
-      base::Bind(&QuicStreamFactory::Job::OnIOComplete,
-                 base::Unretained(this)));
+      base::Bind(&QuicStreamFactory::Job::OnIOComplete, GetWeakPtr()));
   return rv;
 }
 
@@ -471,8 +501,7 @@ int QuicStreamFactory::Job::DoResumeConnect() {
   io_state_ = STATE_CONNECT_COMPLETE;
 
   int rv = session_->ResumeCryptoConnect(
-      base::Bind(&QuicStreamFactory::Job::OnIOComplete,
-                 base::Unretained(this)));
+      base::Bind(&QuicStreamFactory::Job::OnIOComplete, GetWeakPtr()));
 
   return rv;
 }
@@ -565,9 +594,10 @@ QuicStreamFactory::QuicStreamFactory(
     bool always_require_handshake_confirmation,
     bool disable_connection_pooling,
     int load_server_info_timeout,
-    bool disable_loading_server_info_for_new_servers,
     float load_server_info_timeout_srtt_multiplier,
     bool enable_truncated_connection_ids,
+    bool enable_connection_racing,
+    bool disable_disk_cache,
     const QuicTagVector& connection_options)
     : require_confirmation_(true),
       host_resolver_(host_resolver),
@@ -586,16 +616,20 @@ QuicStreamFactory::QuicStreamFactory(
           always_require_handshake_confirmation),
       disable_connection_pooling_(disable_connection_pooling),
       load_server_info_timeout_ms_(load_server_info_timeout),
-      disable_loading_server_info_for_new_servers_(
-          disable_loading_server_info_for_new_servers),
       load_server_info_timeout_srtt_multiplier_(
           load_server_info_timeout_srtt_multiplier),
       enable_truncated_connection_ids_(enable_truncated_connection_ids),
+      enable_connection_racing_(enable_connection_racing),
+      disable_disk_cache_(disable_disk_cache),
       port_seed_(random_generator_->RandUint64()),
       check_persisted_supports_quic_(true),
       task_runner_(nullptr),
       weak_factory_(this) {
   DCHECK(transport_security_state_);
+  // TODO(michaeln): Remove ScopedTracker below once crbug.com/454983 is fixed
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "454983 QuicStreamFactory::QuicStreamFactory"));
   crypto_config_.set_user_agent_id(user_agent_id);
   crypto_config_.AddCanonicalSuffix(".c.youtube.com");
   crypto_config_.AddCanonicalSuffix(".googlevideo.com");
@@ -616,17 +650,18 @@ QuicStreamFactory::~QuicStreamFactory() {
     delete all_sessions_.begin()->first;
     all_sessions_.erase(all_sessions_.begin());
   }
-  STLDeleteValues(&active_jobs_);
+  while (!active_jobs_.empty()) {
+    const QuicServerId server_id = active_jobs_.begin()->first;
+    STLDeleteElements(&(active_jobs_[server_id]));
+    active_jobs_.erase(server_id);
+  }
 }
 
 void QuicStreamFactory::set_require_confirmation(bool require_confirmation) {
   require_confirmation_ = require_confirmation;
   if (http_server_properties_ && (!(local_address_ == IPEndPoint()))) {
-    // TODO(rtenneti): Delete host_port_pair and persist data in globals.
-    HostPortPair host_port_pair(kDummyHostname, kDummyPort);
-    http_server_properties_->SetSupportsQuic(
-        host_port_pair, !require_confirmation,
-        local_address_.ToStringWithoutPort());
+    http_server_properties_->SetSupportsQuic(!require_confirmation,
+                                             local_address_.address());
   }
 }
 
@@ -643,16 +678,20 @@ int QuicStreamFactory::Create(const HostPortPair& host_port_pair,
   }
 
   if (HasActiveJob(server_id)) {
-    Job* job = active_jobs_[server_id];
-    active_requests_[request] = job;
-    job_requests_map_[job].insert(request);
+    active_requests_[request] = server_id;
+    job_requests_map_[server_id].insert(request);
     return ERR_IO_PENDING;
   }
 
+  // TODO(rtenneti): |task_runner_| is used by the Job. Initialize task_runner_
+  // in the constructor after WebRequestActionWithThreadsTest.* tests are fixed.
+  if (!task_runner_)
+    task_runner_ = base::MessageLoop::current()->message_loop_proxy().get();
+
   QuicServerInfo* quic_server_info = nullptr;
   if (quic_server_info_factory_) {
-    bool load_from_disk_cache = true;
-    if (disable_loading_server_info_for_new_servers_) {
+    bool load_from_disk_cache = !disable_disk_cache_;
+    if (http_server_properties_) {
       const AlternateProtocolMap& alternate_protocol_map =
           http_server_properties_->alternate_protocol_map();
       AlternateProtocolMap::const_iterator it =
@@ -663,40 +702,41 @@ int QuicStreamFactory::Create(const HostPortPair& host_port_pair,
         load_from_disk_cache = false;
       }
     }
-    if (load_from_disk_cache) {
-      QuicCryptoClientConfig::CachedState* cached =
-          crypto_config_.LookupOrCreate(server_id);
-      DCHECK(cached);
-      if (cached->IsEmpty()) {
-        quic_server_info = quic_server_info_factory_->GetForServer(server_id);
-      }
+    if (load_from_disk_cache && CryptoConfigCacheIsEmpty(server_id)) {
+      quic_server_info = quic_server_info_factory_->GetForServer(server_id);
     }
   }
-  // TODO(rtenneti): Initialize task_runner_ in the constructor after
-  // WebRequestActionWithThreadsTest.* tests are fixed.
-  if (!task_runner_)
-    task_runner_ = base::MessageLoop::current()->message_loop_proxy().get();
 
-  bool was_alternate_protocol_recently_broken =
-      http_server_properties_ &&
-      http_server_properties_->WasAlternateProtocolRecentlyBroken(
-          server_id.host_port_pair());
   scoped_ptr<Job> job(new Job(this, host_resolver_, host_port_pair, is_https,
-                              was_alternate_protocol_recently_broken,
-                              privacy_mode, method, quic_server_info, net_log));
+                              WasAlternateProtocolRecentlyBroken(server_id),
+                              privacy_mode, method == "POST" /* is_post */,
+                              quic_server_info, net_log));
   int rv = job->Run(base::Bind(&QuicStreamFactory::OnJobComplete,
                                base::Unretained(this), job.get()));
-
   if (rv == ERR_IO_PENDING) {
-    active_requests_[request] = job.get();
-    job_requests_map_[job.get()].insert(request);
-    active_jobs_[server_id] = job.release();
+    active_requests_[request] = server_id;
+    job_requests_map_[server_id].insert(request);
+    active_jobs_[server_id].insert(job.release());
+    return rv;
   }
   if (rv == OK) {
     DCHECK(HasActiveSession(server_id));
     request->set_stream(CreateIfSessionExists(server_id, net_log));
   }
   return rv;
+}
+
+void QuicStreamFactory::CreateAuxilaryJob(const QuicServerId server_id,
+                                          bool is_post,
+                                          const BoundNetLog& net_log) {
+  Job* aux_job = new Job(this, host_resolver_, server_id.host_port_pair(),
+                         server_id.is_https(),
+                         WasAlternateProtocolRecentlyBroken(server_id),
+                         server_id.privacy_mode(), is_post, nullptr, net_log);
+  active_jobs_[server_id].insert(aux_job);
+  task_runner_->PostTask(FROM_HERE,
+                         base::Bind(&QuicStreamFactory::Job::RunAuxilaryJob,
+                                    aux_job->GetWeakPtr()));
 }
 
 bool QuicStreamFactory::OnResolution(
@@ -724,6 +764,19 @@ bool QuicStreamFactory::OnResolution(
 }
 
 void QuicStreamFactory::OnJobComplete(Job* job, int rv) {
+  QuicServerId server_id = job->server_id();
+  if (rv != OK) {
+    JobSet* jobs = &(active_jobs_[server_id]);
+    if (jobs->size() > 1) {
+      // If there is another pending job, then we can delete this job and let
+      // the other job handle the request.
+      job->Cancel();
+      jobs->erase(job);
+      delete job;
+      return;
+    }
+  }
+
   if (rv == OK) {
     // TODO(vadimt): Remove ScopedTracker below once crbug.com/422516 is fixed.
     tracked_objects::ScopedTracker tracking_profile1(
@@ -734,11 +787,9 @@ void QuicStreamFactory::OnJobComplete(Job* job, int rv) {
       set_require_confirmation(false);
 
     // Create all the streams, but do not notify them yet.
-    for (RequestSet::iterator it = job_requests_map_[job].begin();
-         it != job_requests_map_[job].end() ; ++it) {
-      DCHECK(HasActiveSession(job->server_id()));
-      (*it)->set_stream(CreateIfSessionExists(job->server_id(),
-                                              (*it)->net_log()));
+    for (QuicStreamRequest* request : job_requests_map_[server_id]) {
+      DCHECK(HasActiveSession(server_id));
+      request->set_stream(CreateIfSessionExists(server_id, request->net_log()));
     }
   }
 
@@ -747,10 +798,10 @@ void QuicStreamFactory::OnJobComplete(Job* job, int rv) {
       FROM_HERE_WITH_EXPLICIT_FUNCTION(
           "422516 QuicStreamFactory::OnJobComplete2"));
 
-  while (!job_requests_map_[job].empty()) {
-    RequestSet::iterator it = job_requests_map_[job].begin();
+  while (!job_requests_map_[server_id].empty()) {
+    RequestSet::iterator it = job_requests_map_[server_id].begin();
     QuicStreamRequest* request = *it;
-    job_requests_map_[job].erase(it);
+    job_requests_map_[server_id].erase(it);
     active_requests_.erase(request);
     // Even though we're invoking callbacks here, we don't need to worry
     // about |this| being deleted, because the factory is owned by the
@@ -763,10 +814,14 @@ void QuicStreamFactory::OnJobComplete(Job* job, int rv) {
       FROM_HERE_WITH_EXPLICIT_FUNCTION(
           "422516 QuicStreamFactory::OnJobComplete3"));
 
-  active_jobs_.erase(job->server_id());
-  job_requests_map_.erase(job);
-  delete job;
-  return;
+  for (Job* other_job : active_jobs_[server_id]) {
+    if (other_job != job)
+      other_job->Cancel();
+  }
+
+  STLDeleteElements(&(active_jobs_[server_id]));
+  active_jobs_.erase(server_id);
+  job_requests_map_.erase(server_id);
 }
 
 // Returns a newly created QuicHttpStream owned by the caller, if a
@@ -845,7 +900,7 @@ void QuicStreamFactory::OnSessionConnectTimeout(
   QuicServerId server_id = *aliases.begin();
   session_aliases_.erase(session);
   Job* job = new Job(this, host_resolver_, session, server_id);
-  active_jobs_[server_id] = job;
+  active_jobs_[server_id].insert(job);
   int rv = job->Run(base::Bind(&QuicStreamFactory::OnJobComplete,
                                base::Unretained(this), job));
   DCHECK_EQ(ERR_IO_PENDING, rv);
@@ -853,8 +908,8 @@ void QuicStreamFactory::OnSessionConnectTimeout(
 
 void QuicStreamFactory::CancelRequest(QuicStreamRequest* request) {
   DCHECK(ContainsKey(active_requests_, request));
-  Job* job = active_requests_[request];
-  job_requests_map_[job].erase(request);
+  QuicServerId server_id = active_requests_[request];
+  job_requests_map_[server_id].erase(request);
   active_requests_.erase(request);
 }
 
@@ -924,12 +979,16 @@ bool QuicStreamFactory::HasActiveSession(
   return ContainsKey(active_sessions_, server_id);
 }
 
-int QuicStreamFactory::CreateSession(
-    const QuicServerId& server_id,
-    scoped_ptr<QuicServerInfo> server_info,
-    const AddressList& address_list,
-    const BoundNetLog& net_log,
-    QuicClientSession** session) {
+bool QuicStreamFactory::HasActiveJob(const QuicServerId& key) const {
+  return ContainsKey(active_jobs_, key);
+}
+
+int QuicStreamFactory::CreateSession(const QuicServerId& server_id,
+                                     scoped_ptr<QuicServerInfo> server_info,
+                                     const AddressList& address_list,
+                                     base::TimeTicks dns_resolution_end_time,
+                                     const BoundNetLog& net_log,
+                                     QuicClientSession** session) {
   // TODO(vadimt): Remove ScopedTracker below once crbug.com/422516 is fixed.
   tracked_objects::ScopedTracker tracking_profile1(
       FROM_HERE_WITH_EXPLICIT_FUNCTION(
@@ -987,7 +1046,7 @@ int QuicStreamFactory::CreateSession(
   // does not consume "too much" memory.  If we see bursty packet loss, we may
   // revisit this setting and test for its impact.
   const int32 kSocketBufferSize =
-      static_cast<int32>(TcpReceiver::kReceiveWindowTCP);
+      static_cast<int32>(kDefaultSocketReceiveBuffer);
   rv = socket->SetReceiveBufferSize(kSocketBufferSize);
   if (rv != OK) {
     HistogramCreateSessionFailure(CREATION_ERROR_SETTING_RECEIVE_BUFFER);
@@ -1005,11 +1064,9 @@ int QuicStreamFactory::CreateSession(
   socket->GetLocalAddress(&local_address_);
   if (check_persisted_supports_quic_ && http_server_properties_) {
     check_persisted_supports_quic_ = false;
-    // TODO(rtenneti): Delete host_port_pair and persist data in globals.
-    HostPortPair host_port_pair(kDummyHostname, kDummyPort);
-    SupportsQuic supports_quic(true, local_address_.ToStringWithoutPort());
-    if (http_server_properties_->GetSupportsQuic(
-            host_port_pair).Equals(supports_quic)) {
+    IPAddressNumber last_address;
+    if (http_server_properties_->GetSupportsQuic(&last_address) &&
+        last_address == local_address_.address()) {
       require_confirmation_ = false;
     }
   }
@@ -1044,15 +1101,55 @@ int QuicStreamFactory::CreateSession(
 
   InitializeCachedStateInCryptoConfig(server_id, server_info);
 
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422516 is fixed.
+  tracked_objects::ScopedTracker tracking_profile51(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "422516 QuicStreamFactory::CreateSession51"));
+
   QuicConfig config = config_;
+
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422516 is fixed.
+  tracked_objects::ScopedTracker tracking_profile52(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "422516 QuicStreamFactory::CreateSession52"));
+
   config.set_max_undecryptable_packets(kMaxUndecryptablePackets);
+
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422516 is fixed.
+  tracked_objects::ScopedTracker tracking_profile53(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "422516 QuicStreamFactory::CreateSession53"));
+
   config.SetInitialStreamFlowControlWindowToSend(kInitialReceiveWindowSize);
+
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422516 is fixed.
+  tracked_objects::ScopedTracker tracking_profile54(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "422516 QuicStreamFactory::CreateSession54"));
+
   config.SetInitialSessionFlowControlWindowToSend(kInitialReceiveWindowSize);
+
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422516 is fixed.
+  tracked_objects::ScopedTracker tracking_profile55(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "422516 QuicStreamFactory::CreateSession55"));
+
   int64 srtt = GetServerNetworkStatsSmoothedRttInMicroseconds(server_id);
+
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422516 is fixed.
+  tracked_objects::ScopedTracker tracking_profile56(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "422516 QuicStreamFactory::CreateSession56"));
+
   if (srtt > 0)
     config.SetInitialRoundTripTimeUsToSend(static_cast<uint32>(srtt));
-  if (FLAGS_allow_truncated_connection_ids_for_quic &&
-      enable_truncated_connection_ids_)
+
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422516 is fixed.
+  tracked_objects::ScopedTracker tracking_profile57(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "422516 QuicStreamFactory::CreateSession57"));
+
+  if (enable_truncated_connection_ids_)
     config.SetBytesForConnectionIdToSend(0);
 
   if (quic_server_info_factory_ && !server_info) {
@@ -1068,11 +1165,23 @@ int QuicStreamFactory::CreateSession(
     server_info->Start();
   }
 
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422516 is fixed.
+  tracked_objects::ScopedTracker tracking_profile61(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "422516 QuicStreamFactory::CreateSession61"));
+
   *session = new QuicClientSession(
       connection, socket.Pass(), this, transport_security_state_,
-      server_info.Pass(), config,
+      server_info.Pass(), config, network_connection_.GetDescription(),
+      dns_resolution_end_time,
       base::MessageLoop::current()->message_loop_proxy().get(),
       net_log.net_log());
+
+  // TODO(rtenneti): Remove ScopedTracker below once crbug.com/422516 is fixed.
+  tracked_objects::ScopedTracker tracking_profile62(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "422516 QuicStreamFactory::CreateSession62"));
+
   all_sessions_[*session] = server_id;  // owning pointer
 
   // TODO(vadimt): Remove ScopedTracker below once crbug.com/422516 is fixed.
@@ -1093,10 +1202,6 @@ int QuicStreamFactory::CreateSession(
     return ERR_CONNECTION_CLOSED;
   }
   return OK;
-}
-
-bool QuicStreamFactory::HasActiveJob(const QuicServerId& key) const {
-  return ContainsKey(active_jobs_, key);
 }
 
 void QuicStreamFactory::ActivateSession(
@@ -1124,9 +1229,28 @@ int64 QuicStreamFactory::GetServerNetworkStatsSmoothedRttInMicroseconds(
   return stats->srtt.InMicroseconds();
 }
 
+bool QuicStreamFactory::WasAlternateProtocolRecentlyBroken(
+    const QuicServerId& server_id) const {
+  return http_server_properties_ &&
+         http_server_properties_->WasAlternateProtocolRecentlyBroken(
+             server_id.host_port_pair());
+}
+
+bool QuicStreamFactory::CryptoConfigCacheIsEmpty(
+    const QuicServerId& server_id) {
+  QuicCryptoClientConfig::CachedState* cached =
+      crypto_config_.LookupOrCreate(server_id);
+  return cached->IsEmpty();
+}
+
 void QuicStreamFactory::InitializeCachedStateInCryptoConfig(
     const QuicServerId& server_id,
     const scoped_ptr<QuicServerInfo>& server_info) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422516 is fixed.
+  tracked_objects::ScopedTracker tracking_profile1(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "422516 QuicStreamFactory::InitializeCachedStateInCryptoConfig1"));
+
   // |server_info| will be NULL, if a non-empty server config already exists in
   // the memory cache. This is a minor optimization to avoid LookupOrCreate.
   if (!server_info)
@@ -1139,7 +1263,7 @@ void QuicStreamFactory::InitializeCachedStateInCryptoConfig(
 
   if (http_server_properties_) {
     if (quic_supported_servers_at_startup_.empty()) {
-      for (const std::pair<net::HostPortPair, net::AlternateProtocolInfo>&
+      for (const std::pair<const HostPortPair, AlternateProtocolInfo>&
                key_value : http_server_properties_->alternate_protocol_map()) {
         if (key_value.second.protocol == QUIC) {
           quic_supported_servers_at_startup_.insert(key_value.first);
@@ -1157,6 +1281,11 @@ void QuicStreamFactory::InitializeCachedStateInCryptoConfig(
           server_info->state().server_config.empty());
     }
   }
+
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422516 is fixed.
+  tracked_objects::ScopedTracker tracking_profile2(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "422516 QuicStreamFactory::InitializeCachedStateInCryptoConfig2"));
 
   if (!cached->Initialize(server_info->state().server_config,
                           server_info->state().source_address_token,
@@ -1197,7 +1326,9 @@ void QuicStreamFactory::ProcessGoingAwaySession(
   const HostPortPair& server = server_id.host_port_pair();
   // Don't try to change the alternate-protocol state, if the
   // alternate-protocol state is unknown.
-  if (!http_server_properties_->HasAlternateProtocol(server))
+  const AlternateProtocolInfo alternate =
+      http_server_properties_->GetAlternateProtocol(server);
+  if (alternate.protocol == UNINITIALIZED_ALTERNATE_PROTOCOL)
     return;
 
   // TODO(rch):  In the special case where the session has received no
@@ -1206,8 +1337,6 @@ void QuicStreamFactory::ProcessGoingAwaySession(
   // session connected until the handshake has been confirmed.
   HistogramBrokenAlternateProtocolLocation(
       BROKEN_ALTERNATE_PROTOCOL_LOCATION_QUIC_STREAM_FACTORY);
-  AlternateProtocolInfo alternate =
-      http_server_properties_->GetAlternateProtocol(server);
   DCHECK_EQ(QUIC, alternate.protocol);
 
   // Since the session was active, there's no longer an

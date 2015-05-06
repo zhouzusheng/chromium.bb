@@ -40,9 +40,9 @@
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
-#include "core/page/Page.h"
 #include "core/storage/Storage.h"
 #include "core/storage/StorageNamespace.h"
+#include "core/storage/StorageNamespaceController.h"
 #include "platform/JSONValues.h"
 #include "platform/weborigin/SecurityOrigin.h"
 
@@ -78,7 +78,7 @@ InspectorDOMStorageAgent::~InspectorDOMStorageAgent()
 {
 }
 
-void InspectorDOMStorageAgent::trace(Visitor* visitor)
+DEFINE_TRACE(InspectorDOMStorageAgent)
 {
     visitor->trace(m_pageAgent);
     InspectorBaseAgent::trace(visitor);
@@ -185,9 +185,9 @@ PassRefPtr<TypeBuilder::DOMStorage::StorageId> InspectorDOMStorageAgent::storage
         .setIsLocalStorage(isLocalStorage).release();
 }
 
-void InspectorDOMStorageAgent::didDispatchDOMStorageEvent(const String& key, const String& oldValue, const String& newValue, StorageType storageType, SecurityOrigin* securityOrigin)
+void InspectorDOMStorageAgent::didDispatchDOMStorageEvent(LocalFrame* frame, const String& key, const String& oldValue, const String& newValue, StorageType storageType, SecurityOrigin* securityOrigin)
 {
-    if (!m_frontend || !isEnabled())
+    if (!m_frontend || !isEnabled() || frame != m_pageAgent->inspectedFrame())
         return;
 
     RefPtr<TypeBuilder::DOMStorage::StorageId> id = storageId(securityOrigin, storageType == LocalStorage);
@@ -225,7 +225,7 @@ PassOwnPtrWillBeRawPtr<StorageArea> InspectorDOMStorageAgent::findStorageArea(Er
 
     if (isLocalStorage)
         return StorageNamespace::localStorageArea(frame->document()->securityOrigin());
-    return m_pageAgent->page()->sessionStorage()->storageArea(frame->document()->securityOrigin());
+    return StorageNamespaceController::from(frame->page())->sessionStorage()->storageArea(frame->document()->securityOrigin());
 }
 
 } // namespace blink

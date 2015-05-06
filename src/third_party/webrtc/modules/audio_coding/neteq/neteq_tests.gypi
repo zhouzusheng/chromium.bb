@@ -85,7 +85,7 @@
       'dependencies': [
         'neteq_unittest_tools',
         '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
-        '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers_default',
+        '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers_default',
       ],
       'sources': [
         'tools/rtp_analyze.cc',
@@ -130,7 +130,7 @@
       'type': 'executable',
       'dependencies': [
         'neteq_test_tools',
-        '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
+        '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
       ],
       'sources': [
         'test/rtp_to_text.cc',
@@ -158,6 +158,8 @@
         '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
       ],
       'sources': [
+        'tools/neteq_external_decoder_test.cc',
+        'tools/neteq_external_decoder_test.h',
         'tools/neteq_performance_test.cc',
         'tools/neteq_performance_test.h',
         'tools/neteq_quality_test.cc',

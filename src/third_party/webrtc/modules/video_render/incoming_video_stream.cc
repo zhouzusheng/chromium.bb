@@ -54,10 +54,7 @@ IncomingVideoStream::IncomingVideoStream(const int32_t module_id,
       temp_frame_(),
       start_image_(),
       timeout_image_(),
-      timeout_time_(),
-      mirror_frames_enabled_(false),
-      mirroring_(),
-      transformed_video_frame_() {
+      timeout_time_() {
   WEBRTC_TRACE(kTraceMemory, kTraceVideoRenderer, module_id_,
                "%s created for stream %d", __FUNCTION__, stream_id);
 }
@@ -100,25 +97,6 @@ int32_t IncomingVideoStream::RenderFrame(const uint32_t stream_id,
     return -1;
   }
 
-  // Mirroring is not supported if the frame is backed by a texture.
-  if (true == mirror_frames_enabled_ && video_frame.native_handle() == NULL) {
-    transformed_video_frame_.CreateEmptyFrame(video_frame.width(),
-                                              video_frame.height(),
-                                              video_frame.stride(kYPlane),
-                                              video_frame.stride(kUPlane),
-                                              video_frame.stride(kVPlane));
-    if (mirroring_.mirror_x_axis) {
-      MirrorI420UpDown(&video_frame,
-                       &transformed_video_frame_);
-      video_frame.SwapFrame(&transformed_video_frame_);
-    }
-    if (mirroring_.mirror_y_axis) {
-      MirrorI420LeftRight(&video_frame,
-                          &transformed_video_frame_);
-      video_frame.SwapFrame(&transformed_video_frame_);
-    }
-  }
-
   // Rate statistics.
   num_frames_since_last_calculation_++;
   int64_t now_ms = TickTime::MillisecondTimestamp();
@@ -159,17 +137,6 @@ int32_t IncomingVideoStream::SetRenderCallback(
                "%s(%x) for stream %d", __FUNCTION__, render_callback,
                stream_id_);
   render_callback_ = render_callback;
-  return 0;
-}
-
-int32_t IncomingVideoStream::EnableMirroring(const bool enable,
-                                             const bool mirror_x_axis,
-                                             const bool mirror_y_axis) {
-  CriticalSectionScoped cs(&stream_critsect_);
-  mirror_frames_enabled_ = enable;
-  mirroring_.mirror_x_axis = mirror_x_axis;
-  mirroring_.mirror_y_axis = mirror_y_axis;
-
   return 0;
 }
 
@@ -246,15 +213,21 @@ int32_t IncomingVideoStream::Stop() {
     return 0;
   }
 
-  thread_critsect_.Enter();
-  if (incoming_render_thread_) {
-    ThreadWrapper* thread = incoming_render_thread_;
-    incoming_render_thread_ = NULL;
-    thread->SetNotAlive();
-#ifndef WIN32_
-    deliver_buffer_event_.StopTimer();
-#endif
-    thread_critsect_.Leave();
+  ThreadWrapper* thread = NULL;
+  {
+    CriticalSectionScoped cs_thread(&thread_critsect_);
+    if (incoming_render_thread_ != NULL) {
+      thread = incoming_render_thread_;
+      // Setting the incoming render thread to NULL marks that we're performing
+      // a shutdown and will make IncomingVideoStreamProcess abort after wakeup.
+      incoming_render_thread_ = NULL;
+      deliver_buffer_event_.StopTimer();
+      // Set the event to allow the thread to wake up and shut down without
+      // waiting for a timeout.
+      deliver_buffer_event_.Set();
+    }
+  }
+  if (thread) {
     if (thread->Stop()) {
       delete thread;
     } else {
@@ -262,8 +235,6 @@ int32_t IncomingVideoStream::Stop() {
       WEBRTC_TRACE(kTraceWarning, kTraceVideoRenderer, module_id_,
                    "%s: Not able to stop thread, leaking", __FUNCTION__);
     }
-  } else {
-    thread_critsect_.Leave();
   }
   running_ = false;
   return 0;

@@ -39,8 +39,8 @@
 #include "core/events/Event.h"
 #include "core/frame/Settings.h"
 #include "core/html/HTMLElement.h"
-#include "core/rendering/RenderObject.h"
-#include "core/rendering/svg/RenderSVGResourceContainer.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/svg/LayoutSVGResourceContainer.h"
 #include "core/svg/SVGCursorElement.h"
 #include "core/svg/SVGDocumentExtensions.h"
 #include "core/svg/SVGElementRareData.h"
@@ -418,10 +418,10 @@ void SVGElement::invalidateRelativeLengthClients(SubtreeLayoutScope* layoutScope
     TemporaryChange<bool> inRelativeLengthClientsInvalidationChange(m_inRelativeLengthClientsInvalidation, true);
 #endif
 
-    RenderObject* renderer = this->renderer();
+    LayoutObject* renderer = this->renderer();
     if (renderer && selfHasRelativeLengths()) {
         if (renderer->isSVGResourceContainer())
-            toRenderSVGResourceContainer(renderer)->invalidateCacheAndMarkForLayout(layoutScope);
+            toLayoutSVGResourceContainer(renderer)->invalidateCacheAndMarkForLayout(layoutScope);
         else
             renderer->setNeedsLayoutAndFullPaintInvalidation(MarkContainingBlockChain, layoutScope);
     }
@@ -447,7 +447,7 @@ SVGSVGElement* SVGElement::ownerSVGElement() const
 
 SVGElement* SVGElement::viewportElement() const
 {
-    // This function needs shadow tree support - as RenderSVGContainer uses this function
+    // This function needs shadow tree support - as LayoutSVGContainer uses this function
     // to determine the "overflow" property. <use> on <symbol> wouldn't work otherwhise.
     ContainerNode* n = parentOrShadowHostNode();
     while (n) {
@@ -560,7 +560,7 @@ SVGElement* SVGElement::correspondingElement()
 SVGUseElement* SVGElement::correspondingUseElement() const
 {
     if (ShadowRoot* root = containingShadowRoot()) {
-        if (isSVGUseElement(root->host()) && (root->type() == ShadowRoot::UserAgentShadowRoot))
+        if (isSVGUseElement(root->host()) && (root->type() == ShadowRoot::ClosedShadowRoot))
             return toSVGUseElement(root->host());
     }
     return 0;
@@ -722,6 +722,13 @@ void SVGElement::collectStyleForPresentationAttribute(const QualifiedName& name,
         addPropertyToPresentationAttributeStyle(style, propertyID, value);
 }
 
+void SVGElement::addSVGLengthPropertyToPresentationAttributeStyle(MutableStylePropertySet* style, CSSPropertyID property, SVGLength& length)
+{
+    addPropertyToPresentationAttributeStyle(style, property,
+        length.valueInSpecifiedUnits(),
+        length.cssUnitTypeQuirk());
+}
+
 bool SVGElement::haveLoadedRequiredResources()
 {
     for (SVGElement* child = Traversal<SVGElement>::firstChild(*this); child; child = Traversal<SVGElement>::nextSibling(*child)) {
@@ -872,10 +879,10 @@ void SVGElement::svgAttributeChanged(const QualifiedName& attrName)
     }
 
     if (isIdAttributeName(attrName)) {
-        RenderObject* object = renderer();
+        LayoutObject* object = renderer();
         // Notify resources about id changes, this is important as we cache resources by id in SVGDocumentExtensions
         if (object && object->isSVGResourceContainer())
-            toRenderSVGResourceContainer(object)->idChanged();
+            toLayoutSVGResourceContainer(object)->idChanged();
         if (inDocument())
             buildPendingResourcesIfNeeded();
         invalidateInstances();
@@ -904,14 +911,14 @@ void SVGElement::synchronizeAnimatedSVGAttribute(const QualifiedName& name) cons
     }
 }
 
-PassRefPtr<RenderStyle> SVGElement::customStyleForRenderer()
+PassRefPtr<LayoutStyle> SVGElement::customStyleForRenderer()
 {
     if (!correspondingElement())
         return document().ensureStyleResolver().styleForElement(this);
 
-    RenderStyle* style = 0;
+    LayoutStyle* style = 0;
     if (Element* parent = parentOrShadowHostElement()) {
-        if (RenderObject* renderer = parent->renderer())
+        if (LayoutObject* renderer = parent->renderer())
             style = renderer->style();
     }
 
@@ -936,14 +943,14 @@ void SVGElement::setUseOverrideComputedStyle(bool value)
         svgRareData()->setUseOverrideComputedStyle(value);
 }
 
-RenderStyle* SVGElement::computedStyle(PseudoId pseudoElementSpecifier)
+LayoutStyle* SVGElement::computedStyle(PseudoId pseudoElementSpecifier)
 {
     if (!hasSVGRareData() || !svgRareData()->useOverrideComputedStyle())
         return Element::computedStyle(pseudoElementSpecifier);
 
-    RenderStyle* parentStyle = 0;
+    LayoutStyle* parentStyle = 0;
     if (Element* parent = parentOrShadowHostElement()) {
-        if (RenderObject* renderer = parent->renderer())
+        if (LayoutObject* renderer = parent->renderer())
             parentStyle = renderer->style();
     }
 
@@ -956,10 +963,10 @@ bool SVGElement::hasFocusEventListeners() const
         || hasEventListeners(EventTypeNames::focus) || hasEventListeners(EventTypeNames::blur);
 }
 
-void SVGElement::markForLayoutAndParentResourceInvalidation(RenderObject* renderer)
+void SVGElement::markForLayoutAndParentResourceInvalidation(LayoutObject* renderer)
 {
     ASSERT(renderer);
-    RenderSVGResourceContainer::markForLayoutAndParentResourceInvalidation(renderer, true);
+    LayoutSVGResourceContainer::markForLayoutAndParentResourceInvalidation(renderer, true);
 }
 
 void SVGElement::invalidateInstances()
@@ -1173,7 +1180,7 @@ void SVGElement::removeAllOutgoingReferences()
     outgoingReferences.clear();
 }
 
-void SVGElement::trace(Visitor* visitor)
+DEFINE_TRACE(SVGElement)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_elementsWithRelativeLengths);

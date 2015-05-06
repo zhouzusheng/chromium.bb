@@ -10,10 +10,13 @@
 #include "base/callback.h"
 #include "content/common/content_export.h"
 #include "content/public/common/push_messaging_status.h"
-#include "third_party/WebKit/public/platform/WebPushPermissionStatus.h"
+#include "third_party/WebKit/public/platform/modules/push_messaging/WebPushPermissionStatus.h"
 #include "url/gurl.h"
 
 namespace content {
+
+class BrowserContext;
+class ServiceWorkerContext;
 
 // A push service-agnostic interface that the Push API uses for talking to
 // push messaging services like GCM. Must only be used on the UI thread.
@@ -23,6 +26,12 @@ class CONTENT_EXPORT PushMessagingService {
       base::Callback<void(const std::string& /* registration_id */,
                           PushRegistrationStatus /* status */)>;
   using UnregisterCallback = base::Callback<void(PushUnregistrationStatus)>;
+
+  using StringCallback = base::Callback<void(const std::string& data,
+                                             bool success,
+                                             bool not_found)>;
+
+  using ResultCallback = base::Callback<void(bool success)>;
 
   virtual ~PushMessagingService() {}
 
@@ -54,6 +63,8 @@ class CONTENT_EXPORT PushMessagingService {
   // the push service.
   virtual void Unregister(const GURL& requesting_origin,
                           int64 service_worker_registration_id,
+                          const std::string& sender_id,
+                          bool retry_on_failure,
                           const UnregisterCallback& callback) = 0;
 
   // Checks the permission status for the requesting origin. Permission is only
@@ -62,6 +73,33 @@ class CONTENT_EXPORT PushMessagingService {
   virtual blink::WebPushPermissionStatus GetPermissionStatus(
       const GURL& requesting_origin,
       const GURL& embedding_origin) = 0;
+
+ protected:
+  // Provide a storage mechanism to read/write an opaque
+  // "notifications_shown_by_last_few_pushes" string associated with a Service
+  // Worker registration. Stored data is deleted when the associated
+  // registration is deleted.
+  static void GetNotificationsShownByLastFewPushes(
+      ServiceWorkerContext* service_worker_context,
+      int64 service_worker_registration_id,
+      const StringCallback& callback);
+  static void SetNotificationsShownByLastFewPushes(
+      ServiceWorkerContext* service_worker_context,
+      int64 service_worker_registration_id,
+      const GURL& origin,
+      const std::string& notifications_shown,
+      const ResultCallback& callback);
+
+  static void GetSenderId(BrowserContext* browser_context,
+                          const GURL& origin,
+                          int64 service_worker_registration_id,
+                          const StringCallback& callback);
+
+  // Clear the push registration id stored in the service worker with the given
+  // |service_worker_registration_id| for the given |origin|.
+  static void ClearPushRegistrationID(BrowserContext* browser_context,
+                                      const GURL& origin,
+                                      int64 service_worker_registration_id);
 };
 
 }  // namespace content

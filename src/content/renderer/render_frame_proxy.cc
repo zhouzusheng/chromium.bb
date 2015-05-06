@@ -73,7 +73,11 @@ RenderFrameProxy* RenderFrameProxy::CreateFrameProxy(
     // should not wind up here.
     RenderFrameProxy* parent =
         RenderFrameProxy::FromRoutingID(parent_routing_id);
-    web_frame = parent->web_frame()->createRemoteChild("", proxy.get());
+    web_frame = parent->web_frame()->createRemoteChild(
+        blink::WebString::fromUTF8(replicated_state.name),
+        RenderFrameImpl::ContentToWebSandboxFlags(
+            replicated_state.sandbox_flags),
+        proxy.get());
     render_view = parent->render_view();
   }
 
@@ -116,6 +120,15 @@ RenderFrameProxy::RenderFrameProxy(int routing_id, int frame_routing_id)
 }
 
 RenderFrameProxy::~RenderFrameProxy() {
+  // TODO(nasko): Set the render_frame_proxy to null to avoid a double deletion
+  // when detaching the main frame. This can be removed once RenderFrameImpl and
+  // RenderFrameProxy have been completely decoupled. See
+  // https://crbug.com/357747.
+  RenderFrameImpl* render_frame =
+      RenderFrameImpl::FromRoutingID(frame_routing_id_);
+  if (render_frame)
+    render_frame->set_render_frame_proxy(nullptr);
+
   render_view()->UnregisterRenderFrameProxy(this);
 
   FrameMap::iterator it = g_frame_map.Get().find(web_frame_);
@@ -157,6 +170,9 @@ void RenderFrameProxy::SetReplicatedState(const FrameReplicationState& state) {
   DCHECK(web_frame_);
   web_frame_->setReplicatedOrigin(blink::WebSecurityOrigin::createFromString(
       blink::WebString::fromUTF8(state.origin.string())));
+  web_frame_->setReplicatedSandboxFlags(
+      RenderFrameImpl::ContentToWebSandboxFlags(state.sandbox_flags));
+  web_frame_->setReplicatedName(blink::WebString::fromUTF8(state.name));
 }
 
 bool RenderFrameProxy::OnMessageReceived(const IPC::Message& msg) {

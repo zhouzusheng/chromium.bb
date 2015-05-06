@@ -9,7 +9,6 @@
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
-#include "base/debug/alias.h"
 #include "base/file_version_info.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/field_trial.h"
@@ -208,17 +207,10 @@ URLRequestHttpJob::URLRequestHttpJob(
                      base::Unretained(this))),
       awaiting_callback_(false),
       http_user_agent_settings_(http_user_agent_settings),
-      transaction_state_(TRANSACTION_WAS_NOT_INITIALIZED),
       weak_factory_(this) {
   URLRequestThrottlerManager* manager = request->context()->throttler_manager();
   if (manager)
     throttling_entry_ = manager->RegisterRequestUrl(request->url());
-
-  // TODO(battre) Remove this overriding once crbug.com/289715 has been
-  // resolved.
-  on_headers_received_callback_ =
-      base::Bind(&URLRequestHttpJob::OnHeadersReceivedCallbackForDebugging,
-                 weak_factory_.GetWeakPtr());
 
   ResetTimer();
 }
@@ -415,7 +407,6 @@ void URLRequestHttpJob::DestroyTransaction() {
 
   DoneWithRequest(ABORTED);
   transaction_.reset();
-  transaction_state_ = TRANSACTION_WAS_DESTROYED;
   response_info_ = NULL;
   receive_headers_end_ = base::TimeTicks();
 }
@@ -477,8 +468,6 @@ void URLRequestHttpJob::StartTransactionInternal() {
 
     rv = request_->context()->http_transaction_factory()->CreateTransaction(
         priority_, &transaction_);
-    if (rv == OK)
-      transaction_state_ = TRANSACTION_WAS_INITIALIZED;
 
     if (rv == OK && request_info_.url.SchemeIsWSOrWSS()) {
       base::SupportsUserData::Data* data = request_->GetUserData(
@@ -925,7 +914,6 @@ void URLRequestHttpJob::OnStartCompleted(int result) {
       NotifySSLCertificateError(info, true);
     } else {
       // Maybe overridable, maybe not. Ask the delegate to decide.
-      const URLRequestContext* context = request_->context();
       TransportSecurityState* state = context->transport_security_state();
       const bool fatal =
           state && state->ShouldSSLErrorsBeFatal(request_info_.url.host());
@@ -942,19 +930,6 @@ void URLRequestHttpJob::OnStartCompleted(int result) {
       response_info_ = transaction_->GetResponseInfo();
     NotifyStartError(URLRequestStatus(URLRequestStatus::FAILED, result));
   }
-}
-
-// TODO(battre) Use URLRequestHttpJob::OnHeadersReceivedCallback again, once
-// crbug.com/289715 has been resolved.
-// static
-void URLRequestHttpJob::OnHeadersReceivedCallbackForDebugging(
-    base::WeakPtr<net::URLRequestHttpJob> job,
-    int result) {
-  CHECK(job.get());
-  net::URLRequestHttpJob::TransactionState state = job->transaction_state_;
-  base::debug::Alias(&state);
-  CHECK(job->transaction_.get());
-  job->OnHeadersReceivedCallback(result);
 }
 
 void URLRequestHttpJob::OnHeadersReceivedCallback(int result) {
@@ -1020,6 +995,11 @@ void URLRequestHttpJob::SetExtraRequestHeaders(
 }
 
 LoadState URLRequestHttpJob::GetLoadState() const {
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/455952 is
+  // fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "455952 URLRequestHttpJob::GetLoadState"));
   return transaction_.get() ?
       transaction_->GetLoadState() : LOAD_STATE_IDLE;
 }
@@ -1035,7 +1015,10 @@ bool URLRequestHttpJob::GetMimeType(std::string* mime_type) const {
   if (!response_info_)
     return false;
 
-  return GetResponseHeaders()->GetMimeType(mime_type);
+  HttpResponseHeaders* headers = GetResponseHeaders();
+  if (!headers)
+    return false;
+  return headers->GetMimeType(mime_type);
 }
 
 bool URLRequestHttpJob::GetCharset(std::string* charset) {
@@ -1471,88 +1454,6 @@ void URLRequestHttpJob::RecordPacketStats(
   }
 }
 
-// The common type of histogram we use for all compression-tracking histograms.
-#define COMPRESSION_HISTOGRAM(name, sample) \
-    do { \
-      UMA_HISTOGRAM_CUSTOM_COUNTS("Net.Compress." name, sample, \
-                                  500, 1000000, 100); \
-    } while (0)
-
-void URLRequestHttpJob::RecordCompressionHistograms() {
-  DCHECK(request_);
-  if (!request_)
-    return;
-
-  if (is_cached_content_ ||                // Don't record cached content
-      !GetStatus().is_success() ||         // Don't record failed content
-      !IsCompressibleContent() ||          // Only record compressible content
-      !prefilter_bytes_read())       // Zero-byte responses aren't useful.
-    return;
-
-  // Miniature requests aren't really compressible. Don't count them.
-  const int kMinSize = 16;
-  if (prefilter_bytes_read() < kMinSize)
-    return;
-
-  // Only record for http or https urls.
-  bool is_http = request_->url().SchemeIs("http");
-  bool is_https = request_->url().SchemeIs("https");
-  if (!is_http && !is_https)
-    return;
-
-  int compressed_B = prefilter_bytes_read();
-  int decompressed_B = postfilter_bytes_read();
-  bool was_filtered = HasFilter();
-
-  // We want to record how often downloaded resources are compressed.
-  // But, we recognize that different protocols may have different
-  // properties. So, for each request, we'll put it into one of 3
-  // groups:
-  //      a) SSL resources
-  //         Proxies cannot tamper with compression headers with SSL.
-  //      b) Non-SSL, loaded-via-proxy resources
-  //         In this case, we know a proxy might have interfered.
-  //      c) Non-SSL, loaded-without-proxy resources
-  //         In this case, we know there was no explicit proxy. However,
-  //         it is possible that a transparent proxy was still interfering.
-  //
-  // For each group, we record the same 3 histograms.
-
-  if (is_https) {
-    if (was_filtered) {
-      COMPRESSION_HISTOGRAM("SSL.BytesBeforeCompression", compressed_B);
-      COMPRESSION_HISTOGRAM("SSL.BytesAfterCompression", decompressed_B);
-    } else {
-      COMPRESSION_HISTOGRAM("SSL.ShouldHaveBeenCompressed", decompressed_B);
-    }
-    return;
-  }
-
-  if (request_->was_fetched_via_proxy()) {
-    if (was_filtered) {
-      COMPRESSION_HISTOGRAM("Proxy.BytesBeforeCompression", compressed_B);
-      COMPRESSION_HISTOGRAM("Proxy.BytesAfterCompression", decompressed_B);
-    } else {
-      COMPRESSION_HISTOGRAM("Proxy.ShouldHaveBeenCompressed", decompressed_B);
-    }
-    return;
-  }
-
-  if (was_filtered) {
-    COMPRESSION_HISTOGRAM("NoProxy.BytesBeforeCompression", compressed_B);
-    COMPRESSION_HISTOGRAM("NoProxy.BytesAfterCompression", decompressed_B);
-  } else {
-    COMPRESSION_HISTOGRAM("NoProxy.ShouldHaveBeenCompressed", decompressed_B);
-  }
-}
-
-bool URLRequestHttpJob::IsCompressibleContent() const {
-  std::string mime_type;
-  return GetMimeType(&mime_type) &&
-      (IsSupportedJavascriptMimeType(mime_type.c_str()) ||
-       IsSupportedNonImageMimeType(mime_type.c_str()));
-}
-
 void URLRequestHttpJob::RecordPerfHistograms(CompletionCause reason) {
   if (start_time_.is_null())
     return;
@@ -1588,7 +1489,6 @@ void URLRequestHttpJob::DoneWithRequest(CompletionCause reason) {
   RecordPerfHistograms(reason);
   if (reason == FINISHED) {
     request_->set_received_response_content_length(prefilter_bytes_read());
-    RecordCompressionHistograms();
   }
 }
 

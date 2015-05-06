@@ -9,6 +9,7 @@
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
@@ -16,6 +17,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "pdf/draw_utils.h"
+#include "pdf/pdfium/pdfium_api_string_buffer_adapter.h"
 #include "pdf/pdfium/pdfium_mem_buffer_file_read.h"
 #include "pdf/pdfium/pdfium_mem_buffer_file_write.h"
 #include "ppapi/c/pp_errors.h"
@@ -30,6 +32,7 @@
 #include "ppapi/cpp/trusted/browser_font_trusted.h"
 #include "ppapi/cpp/url_response_info.h"
 #include "ppapi/cpp/var.h"
+#include "ppapi/cpp/var_dictionary.h"
 #include "third_party/pdfium/fpdfsdk/include/fpdf_ext.h"
 #include "third_party/pdfium/fpdfsdk/include/fpdf_flatten.h"
 #include "third_party/pdfium/fpdfsdk/include/fpdf_searchex.h"
@@ -511,6 +514,44 @@ void FormatStringForOS(base::string16* text) {
 #else
   NOTIMPLEMENTED();
 #endif
+}
+
+// Returns a VarDictionary (representing a bookmark), which in turn contains
+// child VarDictionaries (representing the child bookmarks).
+// If NULL is passed in as the bookmark then we traverse from the "root".
+// Note that the "root" bookmark contains no useful information.
+pp::VarDictionary TraverseBookmarks(FPDF_DOCUMENT doc, FPDF_BOOKMARK bookmark) {
+  pp::VarDictionary dict;
+  base::string16 title;
+  unsigned long buffer_size = FPDFBookmark_GetTitle(bookmark, NULL, 0);
+  size_t title_length = base::checked_cast<size_t>(buffer_size) /
+      sizeof(base::string16::value_type);
+  if (title_length > 0) {
+    PDFiumAPIStringBufferAdapter<base::string16> api_string_adapter(
+        &title, title_length, true);
+    void* data = api_string_adapter.GetData();
+    FPDFBookmark_GetTitle(bookmark, data, buffer_size);
+    api_string_adapter.Close(title_length);
+  }
+  dict.Set(pp::Var("title"), pp::Var(base::UTF16ToUTF8(title)));
+
+  FPDF_DEST dest = FPDFBookmark_GetDest(doc, bookmark);
+  // Some bookmarks don't have a page to select.
+  if (dest) {
+    int page_index = FPDFDest_GetPageIndex(doc, dest);
+    dict.Set(pp::Var("page"), pp::Var(page_index));
+  }
+
+  pp::VarArray children;
+  int child_index = 0;
+  for (FPDF_BOOKMARK child_bookmark = FPDFBookmark_GetFirstChild(doc, bookmark);
+      child_bookmark != NULL;
+      child_bookmark = FPDFBookmark_GetNextSibling(doc, child_bookmark)) {
+    children.Set(child_index, TraverseBookmarks(doc, child_bookmark));
+    child_index++;
+  }
+  dict.Set(pp::Var("children"), children);
+  return dict;
 }
 
 }  // namespace
@@ -1012,6 +1053,10 @@ void PDFiumEngine::Paint(const pp::Rect& rect,
                          pp::ImageData* image_data,
                          std::vector<pp::Rect>* ready,
                          std::vector<pp::Rect>* pending) {
+  DCHECK(image_data);
+  DCHECK(ready);
+  DCHECK(pending);
+
   pp::Rect leftover = rect;
   for (size_t i = 0; i < visible_pages_.size(); ++i) {
     int index = visible_pages_[i];
@@ -1030,15 +1075,18 @@ void PDFiumEngine::Paint(const pp::Rect& rect,
 
     if (pages_[index]->available()) {
       int progressive = GetProgressiveIndex(index);
-      if (progressive != -1 &&
-          progressive_paints_[progressive].rect != dirty_in_screen) {
-        // The PDFium code can only handle one progressive paint at a time, so
-        // queue this up. Previously we used to merge the rects when this
-        // happened, but it made scrolling up on complex PDFs very slow since
-        // there would be a damaged rect at the top (from scroll) and at the
-        // bottom (from toolbar).
-        pending->push_back(dirty_in_screen);
-        continue;
+      if (progressive != -1) {
+        DCHECK_GE(progressive, 0);
+        DCHECK_LT(static_cast<size_t>(progressive), progressive_paints_.size());
+        if (progressive_paints_[progressive].rect != dirty_in_screen) {
+          // The PDFium code can only handle one progressive paint at a time, so
+          // queue this up. Previously we used to merge the rects when this
+          // happened, but it made scrolling up on complex PDFs very slow since
+          // there would be a damaged rect at the top (from scroll) and at the
+          // bottom (from toolbar).
+          pending->push_back(dirty_in_screen);
+          continue;
+        }
       }
 
       if (progressive == -1) {
@@ -1683,7 +1731,7 @@ bool PDFiumEngine::OnMouseDown(const pp::MouseInputEvent& event) {
 }
 
 void PDFiumEngine::OnSingleClick(int page_index, int char_index) {
-  selecting_ = true;
+  SetSelecting(true);
   selection_.push_back(PDFiumRange(pages_[page_index], char_index, 0));
 }
 
@@ -1746,7 +1794,7 @@ bool PDFiumEngine::OnMouseUp(const pp::MouseInputEvent& event) {
   if (!selecting_)
     return false;
 
-  selecting_ = false;
+  SetSelecting(false);
   return true;
 }
 
@@ -1862,7 +1910,10 @@ bool PDFiumEngine::OnMouseMove(const pp::MouseInputEvent& event) {
     selection_.push_back(PDFiumRange(pages_[page_index], 0, char_index));
   } else {
     // Selecting into the previous page.
-    selection_[last].SetCharCount(-selection_[last].char_index());
+    // The selection's char_index is 0-based, so the character count is one
+    // more than the index. The character count needs to be negative to
+    // indicate a backwards selection.
+    selection_[last].SetCharCount(-(selection_[last].char_index() + 1));
 
     // First make sure that there are no gaps in selection, i.e. if mousedown on
     // page three but we only get mousemove over page one, we want page two.
@@ -2068,18 +2119,16 @@ void PDFiumEngine::SearchUsingICU(const base::string16& term,
   if (text_length <= 0)
     return;
 
+  PDFiumAPIStringBufferAdapter<base::string16> api_string_adapter(&page_text,
+                                                                  text_length,
+                                                                  false);
   unsigned short* data =
-      reinterpret_cast<unsigned short*>(WriteInto(&page_text, text_length + 1));
-  // |written| includes the trailing terminator, so get rid of the trailing
-  // NUL character by calling resize().
+      reinterpret_cast<unsigned short*>(api_string_adapter.GetData());
   int written = FPDFText_GetText(pages_[current_page]->GetTextPage(),
                                  character_to_start_searching_from,
                                  text_length,
                                  data);
-  if (written < 1)
-    page_text.resize(0);
-  else
-    page_text.resize(written - 1);
+  api_string_adapter.Close(written);
 
   std::vector<PDFEngine::Client::SearchStringResult> results;
   client_->SearchString(
@@ -2250,6 +2299,9 @@ void PDFiumEngine::InvalidateAllPages() {
 }
 
 std::string PDFiumEngine::GetSelectedText() {
+  if (!HasPermission(PDFEngine::PERMISSION_COPY))
+    return std::string();
+
   base::string16 result;
   base::string16 new_line_char = base::UTF8ToUTF16("\n");
   for (size_t i = 0; i < selection_.size(); ++i) {
@@ -2297,7 +2349,7 @@ bool PDFiumEngine::HasPermission(DocumentPermission permission) const {
              (permissions_ & kPDFPermissionPrintHighQualityMask) != 0;
     default:
       return true;
-  };
+  }
 }
 
 void PDFiumEngine::SelectAll() {
@@ -2313,6 +2365,12 @@ void PDFiumEngine::SelectAll() {
 
 int PDFiumEngine::GetNumberOfPages() {
   return pages_.size();
+}
+
+pp::VarArray PDFiumEngine::GetBookmarks() {
+  pp::VarDictionary dict = TraverseBookmarks(doc_, NULL);
+  // The root bookmark contains no useful information.
+  return pp::VarArray(dict.Get(pp::Var("children")));
 }
 
 int PDFiumEngine::GetNamedDestinationPage(const std::string& destination) {
@@ -2761,36 +2819,45 @@ int PDFiumEngine::StartPaint(int page_index, const pp::Rect& dirty) {
 
 bool PDFiumEngine::ContinuePaint(int progressive_index,
                                  pp::ImageData* image_data) {
+  DCHECK_GE(progressive_index, 0);
+  DCHECK_LT(static_cast<size_t>(progressive_index), progressive_paints_.size());
+  DCHECK(image_data);
+
 #if defined(OS_LINUX)
   g_last_instance_id = client_->GetPluginInstance()->pp_instance();
 #endif
 
   int rv;
+  FPDF_BITMAP bitmap = progressive_paints_[progressive_index].bitmap;
   int page_index = progressive_paints_[progressive_index].page_index;
+  DCHECK_GE(page_index, 0);
+  DCHECK_LT(static_cast<size_t>(page_index), pages_.size());
+  FPDF_PAGE page = pages_[page_index]->GetPage();
+
   last_progressive_start_time_ = base::Time::Now();
-  if (progressive_paints_[progressive_index].bitmap) {
-    rv = FPDF_RenderPage_Continue(
-        pages_[page_index]->GetPage(), static_cast<IFSDK_PAUSE*>(this));
+  if (bitmap) {
+    rv = FPDF_RenderPage_Continue(page, static_cast<IFSDK_PAUSE*>(this));
   } else {
     pp::Rect dirty = progressive_paints_[progressive_index].rect;
-    progressive_paints_[progressive_index].bitmap = CreateBitmap(dirty,
-                                                                 image_data);
+    bitmap = CreateBitmap(dirty, image_data);
     int start_x, start_y, size_x, size_y;
-    GetPDFiumRect(
-        page_index, dirty, &start_x, &start_y, &size_x, &size_y);
-    FPDFBitmap_FillRect(progressive_paints_[progressive_index].bitmap, start_x,
-                        start_y, size_x, size_y, 0xFFFFFFFF);
+    GetPDFiumRect(page_index, dirty, &start_x, &start_y, &size_x, &size_y);
+    FPDFBitmap_FillRect(bitmap, start_x, start_y, size_x, size_y, 0xFFFFFFFF);
     rv = FPDF_RenderPageBitmap_Start(
-        progressive_paints_[progressive_index].bitmap,
-        pages_[page_index]->GetPage(), start_x, start_y, size_x, size_y,
+        bitmap, page, start_x, start_y, size_x, size_y,
         current_rotation_,
         GetRenderingFlags(), static_cast<IFSDK_PAUSE*>(this));
+    progressive_paints_[progressive_index].bitmap = bitmap;
   }
   return rv != FPDF_RENDER_TOBECOUNTINUED;
 }
 
 void PDFiumEngine::FinishPaint(int progressive_index,
                                pp::ImageData* image_data) {
+  DCHECK_GE(progressive_index, 0);
+  DCHECK_LT(static_cast<size_t>(progressive_index), progressive_paints_.size());
+  DCHECK(image_data);
+
   int page_index = progressive_paints_[progressive_index].page_index;
   pp::Rect dirty_in_screen = progressive_paints_[progressive_index].rect;
   FPDF_BITMAP bitmap = progressive_paints_[progressive_index].bitmap;
@@ -2826,6 +2893,9 @@ void PDFiumEngine::CancelPaints() {
 }
 
 void PDFiumEngine::FillPageSides(int progressive_index) {
+  DCHECK_GE(progressive_index, 0);
+  DCHECK_LT(static_cast<size_t>(progressive_index), progressive_paints_.size());
+
   int page_index = progressive_paints_[progressive_index].page_index;
   pp::Rect dirty_in_screen = progressive_paints_[progressive_index].rect;
   FPDF_BITMAP bitmap = progressive_paints_[progressive_index].bitmap;
@@ -2841,7 +2911,7 @@ void PDFiumEngine::FillPageSides(int progressive_index) {
 
     FPDFBitmap_FillRect(bitmap, left.x() - dirty_in_screen.x(),
                         left.y() - dirty_in_screen.y(), left.width(),
-                        left.height(), kBackgroundColor);
+                        left.height(), client_->GetBackgroundColor());
   }
 
   if (page_rect.right() < document_size_.width()) {
@@ -2855,7 +2925,7 @@ void PDFiumEngine::FillPageSides(int progressive_index) {
 
     FPDFBitmap_FillRect(bitmap, right.x() - dirty_in_screen.x(),
                         right.y() - dirty_in_screen.y(), right.width(),
-                        right.height(), kBackgroundColor);
+                        right.height(), client_->GetBackgroundColor());
   }
 
   // Paint separator.
@@ -2867,11 +2937,15 @@ void PDFiumEngine::FillPageSides(int progressive_index) {
 
   FPDFBitmap_FillRect(bitmap, bottom.x() - dirty_in_screen.x(),
                       bottom.y() - dirty_in_screen.y(), bottom.width(),
-                      bottom.height(), kBackgroundColor);
+                      bottom.height(), client_->GetBackgroundColor());
 }
 
 void PDFiumEngine::PaintPageShadow(int progressive_index,
                                    pp::ImageData* image_data) {
+  DCHECK_GE(progressive_index, 0);
+  DCHECK_LT(static_cast<size_t>(progressive_index), progressive_paints_.size());
+  DCHECK(image_data);
+
   int page_index = progressive_paints_[progressive_index].page_index;
   pp::Rect dirty_in_screen = progressive_paints_[progressive_index].rect;
   pp::Rect page_rect = pages_[page_index]->rect();
@@ -2896,6 +2970,10 @@ void PDFiumEngine::PaintPageShadow(int progressive_index,
 
 void PDFiumEngine::DrawSelections(int progressive_index,
                                   pp::ImageData* image_data) {
+  DCHECK_GE(progressive_index, 0);
+  DCHECK_LT(static_cast<size_t>(progressive_index), progressive_paints_.size());
+  DCHECK(image_data);
+
   int page_index = progressive_paints_[progressive_index].page_index;
   pp::Rect dirty_in_screen = progressive_paints_[progressive_index].rect;
 
@@ -3311,7 +3389,8 @@ void PDFiumEngine::DrawPageShadow(const pp::Rect& page_rc,
 
   // We need to check depth only to verify our copy of shadow matrix is correct.
   if (!page_shadow_.get() || page_shadow_->depth() != depth)
-    page_shadow_.reset(new ShadowMatrix(depth, factor, kBackgroundColor));
+    page_shadow_.reset(new ShadowMatrix(depth, factor,
+                                        client_->GetBackgroundColor()));
 
   DCHECK(!image_data->is_null());
   DrawShadow(image_data, shadow_rect, page_rect, clip_rect, *page_shadow_);
@@ -3344,8 +3423,7 @@ void PDFiumEngine::GetRegion(const pp::Point& location,
 }
 
 void PDFiumEngine::OnSelectionChanged() {
-  if (HasPermission(PDFEngine::PERMISSION_COPY))
-    pp::PDF::SetSelectedText(GetPluginInstance(), GetSelectedText().c_str());
+  pp::PDF::SetSelectedText(GetPluginInstance(), GetSelectedText().c_str());
 }
 
 void PDFiumEngine::RotateInternal() {
@@ -3364,6 +3442,13 @@ void PDFiumEngine::RotateInternal() {
     client_->NotifyNumberOfFindResultsChanged(0, false);
     StartFind(current_find_text.c_str(), false);
   }
+}
+
+void PDFiumEngine::SetSelecting(bool selecting) {
+  bool was_selecting = selecting_;
+  selecting_ = selecting;
+  if (selecting_ != was_selecting)
+    client_->IsSelectingChanged(selecting);
 }
 
 void PDFiumEngine::Form_Invalidate(FPDF_FORMFILLINFO* param,
@@ -3614,7 +3699,8 @@ void PDFiumEngine::Form_Mail(IPDF_JSPLATFORM* param,
                              FPDF_WIDESTRING cc,
                              FPDF_WIDESTRING bcc,
                              FPDF_WIDESTRING message) {
-  DCHECK(length == 0);  // Don't handle attachments; no way with mailto.
+  // Note: |mail_data| and |length| are ignored. We don't handle attachments;
+  // there is no way with mailto.
   std::string to_str =
       base::UTF16ToUTF8(reinterpret_cast<const base::char16*>(to));
   std::string cc_str =

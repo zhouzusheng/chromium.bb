@@ -4,9 +4,9 @@
 
 #include "content/renderer/devtools/v8_sampling_profiler.h"
 
-#include "base/debug/trace_event.h"
 #include "base/synchronization/cancellation_flag.h"
 #include "base/threading/platform_thread.h"
+#include "base/trace_event/trace_event.h"
 
 namespace content {
 
@@ -57,13 +57,13 @@ void V8SamplingThread::Stop() {
 
 V8SamplingProfiler::V8SamplingProfiler() : sampling_thread_(nullptr) {
   // Force the "v8_cpu_profile" category to show up in the trace viewer.
-  base::debug::TraceLog::GetCategoryGroupEnabled(
+  base::trace_event::TraceLog::GetCategoryGroupEnabled(
       TRACE_DISABLED_BY_DEFAULT("v8_cpu_profile"));
-  base::debug::TraceLog::GetInstance()->AddEnabledStateObserver(this);
+  base::trace_event::TraceLog::GetInstance()->AddEnabledStateObserver(this);
 }
 
 V8SamplingProfiler::~V8SamplingProfiler() {
-  base::debug::TraceLog::GetInstance()->RemoveEnabledStateObserver(this);
+  base::trace_event::TraceLog::GetInstance()->RemoveEnabledStateObserver(this);
   DCHECK(!sampling_thread_.get());
 }
 

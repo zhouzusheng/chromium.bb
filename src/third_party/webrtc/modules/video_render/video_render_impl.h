@@ -34,11 +34,6 @@ public:
 
     virtual ~ModuleVideoRenderImpl();
 
-    /*
-     *   Change the unique identifier of this object
-     */
-    virtual int32_t ChangeUniqueId(const int32_t id);
-
     virtual int64_t TimeUntilNextProcess();
     virtual int32_t Process();
 
@@ -206,11 +201,6 @@ public:
     virtual int32_t SetTimeoutImage(const uint32_t streamId,
                                     const I420VideoFrame& videoFrame,
                                     const uint32_t timeout);
-
-    virtual int32_t MirrorRenderStream(const int renderId,
-                                       const bool enable,
-                                       const bool mirrorXAxis,
-                                       const bool mirrorYAxis);
 
 private:
     int32_t _id;

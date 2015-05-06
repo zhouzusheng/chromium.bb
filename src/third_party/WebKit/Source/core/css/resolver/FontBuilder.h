@@ -33,9 +33,7 @@ namespace blink {
 
 class CSSValue;
 class FontSelector;
-class RenderStyle;
-
-class FontDescriptionChangeScope;
+class LayoutStyle;
 
 class FontBuilder {
     STACK_ALLOCATED();
@@ -43,14 +41,11 @@ class FontBuilder {
 public:
     FontBuilder(const Document&);
 
-    void setFontDescription(const FontDescription& fd) { m_fontDescription = fd; }
-    const FontDescription& fontDescription() const { return m_fontDescription; }
-
     void setInitial(float effectiveZoom);
 
-    void didChangeFontParameters(bool);
-
-    void inheritFrom(const FontDescription&);
+    void didChangeEffectiveZoom();
+    void didChangeTextOrientation();
+    void didChangeWritingMode();
 
     FontFamily standardFontFamily() const;
     AtomicString standardFontFamilyName() const;
@@ -61,7 +56,7 @@ public:
     void setStretch(FontStretch);
     void setFamilyDescription(const FontDescription::FamilyDescription&);
     void setFeatureSettings(PassRefPtr<FontFeatureSettings>);
-    void setScript(const String& locale);
+    void setScript(const AtomicString& locale);
     void setStyle(FontStyle);
     void setVariant(FontVariant);
     void setVariantLigatures(const FontDescription::VariantLigatures&);
@@ -70,14 +65,11 @@ public:
     void setFontSmoothing(FontSmoothingMode);
 
     // FIXME: These need to just vend a Font object eventually.
-    void createFont(PassRefPtrWillBeRawPtr<FontSelector>, RenderStyle*, const RenderStyle* parentStyle);
+    void createFont(PassRefPtrWillBeRawPtr<FontSelector>, LayoutStyle&);
 
-    void createFontForDocument(PassRefPtrWillBeRawPtr<FontSelector>, RenderStyle*);
+    void createFontForDocument(PassRefPtrWillBeRawPtr<FontSelector>, LayoutStyle&);
 
-    // FIXME: These should not be necessary eventually.
-    void setFontDirty(bool fontDirty) { m_fontDirty = fontDirty; }
-    // FIXME: This is only used by an ASSERT in StyleResolver. Remove?
-    bool fontDirty() const { return m_fontDirty; }
+    bool fontDirty() const { return m_flags; }
 
     static FontDescription::FamilyDescription initialFamilyDescription() { return FontDescription::FamilyDescription(initialGenericFamily()); }
     static FontFeatureSettings* initialFeatureSettings() { return nullptr; }
@@ -92,29 +84,44 @@ public:
     static FontStretch initialStretch() { return FontStretchNormal; }
     static FontWeight initialWeight() { return FontWeightNormal; }
 
-    friend class FontDescriptionChangeScope;
-
 private:
 
     void setFamilyDescription(FontDescription&, const FontDescription::FamilyDescription&);
     void setSize(FontDescription&, const FontDescription::Size&);
-    void checkForOrientationChange(RenderStyle*);
+    void updateOrientation(FontDescription&, const LayoutStyle&);
     // This function fixes up the default font size if it detects that the current generic font family has changed. -dwh
-    void checkForGenericFamilyChange(RenderStyle*, const RenderStyle* parentStyle);
-    void updateComputedSize(RenderStyle*, const RenderStyle* parentStyle);
-    void updateComputedSize(FontDescription&, RenderStyle*);
+    void checkForGenericFamilyChange(const FontDescription&, FontDescription&);
+    void updateSpecifiedSize(FontDescription&, const LayoutStyle&);
+    void updateComputedSize(FontDescription&, const LayoutStyle&);
 
     float getComputedSizeFromSpecifiedSize(FontDescription&, float effectiveZoom, float specifiedSize);
 
     const Document& m_document;
     FontDescription m_fontDescription;
 
-    // Fontbuilder is responsbile for creating the Font()
-    // object on RenderStyle from various other font-related
-    // properties on RenderStyle. Whenever one of those
-    // is changed, FontBuilder tracks the need to update
-    // style->font() with this bool.
-    bool m_fontDirty;
+    enum class PropertySetFlag {
+        Weight,
+        Size,
+        Stretch,
+        Family,
+        FeatureSettings,
+        Script,
+        Style,
+        Variant,
+        VariantLigatures,
+        TextRendering,
+        Kerning,
+        FontSmoothing,
+
+        EffectiveZoom,
+        TextOrientation,
+        WritingMode
+    };
+
+    void set(PropertySetFlag flag) { m_flags |= (1 << unsigned(flag)); }
+    bool isSet(PropertySetFlag flag) const { return m_flags & (1 << unsigned(flag)); }
+
+    unsigned m_flags;
 };
 
 }

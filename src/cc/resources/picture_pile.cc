@@ -25,7 +25,6 @@ const int kOpCountThatIsOkToAnalyze = 10;
 // Dimensions of the tiles in this picture pile as well as the dimensions of
 // the base picture in each tile.
 const int kBasePictureSize = 512;
-const int kTileGridBorderPixels = 1;
 
 // Invalidation frequency settings. kInvalidationFrequencyThreshold is a value
 // between 0 and 1 meaning invalidation frequency between 0% and 100% that
@@ -153,23 +152,31 @@ void ClusterTiles(const std::vector<gfx::Rect>& invalid_tiles,
   *record_rects = vertical_clustering;
 }
 
+#ifdef NDEBUG
+const bool kDefaultClearCanvasSetting = false;
+#else
+const bool kDefaultClearCanvasSetting = true;
+#endif
+
 }  // namespace
 
 namespace cc {
 
-PicturePile::PicturePile()
+PicturePile::PicturePile(float min_contents_scale,
+                         const gfx::Size& tile_grid_size)
     : min_contents_scale_(0),
       slow_down_raster_scale_factor_for_debug_(0),
-      can_use_lcd_text_(true),
       has_any_recordings_(false),
+      clear_canvas_with_debug_color_(kDefaultClearCanvasSetting),
+      requires_clear_(true),
       is_solid_color_(false),
       solid_color_(SK_ColorTRANSPARENT),
+      background_color_(SK_ColorTRANSPARENT),
       pixel_record_distance_(kPixelDistanceToRecord),
       is_suitable_for_gpu_rasterization_(true) {
   tiling_.SetMaxTextureSize(gfx::Size(kBasePictureSize, kBasePictureSize));
-  tile_grid_info_.fTileInterval.setEmpty();
-  tile_grid_info_.fMargin.setEmpty();
-  tile_grid_info_.fOffset.setZero();
+  SetMinContentsScale(min_contents_scale);
+  SetTileGridSize(tile_grid_size);
 }
 
 PicturePile::~PicturePile() {
@@ -178,22 +185,17 @@ PicturePile::~PicturePile() {
 bool PicturePile::UpdateAndExpandInvalidation(
     ContentLayerClient* painter,
     Region* invalidation,
-    bool can_use_lcd_text,
     const gfx::Size& layer_size,
     const gfx::Rect& visible_layer_rect,
     int frame_number,
-    Picture::RecordingMode recording_mode) {
-  bool can_use_lcd_text_changed = can_use_lcd_text_ != can_use_lcd_text;
-  can_use_lcd_text_ = can_use_lcd_text;
-
+    RecordingSource::RecordingMode recording_mode) {
   gfx::Rect interest_rect = visible_layer_rect;
   interest_rect.Inset(-pixel_record_distance_, -pixel_record_distance_);
   recorded_viewport_ = interest_rect;
   recorded_viewport_.Intersect(gfx::Rect(layer_size));
 
-  bool updated =
-      ApplyInvalidationAndResize(interest_rect, invalidation, layer_size,
-                                 frame_number, can_use_lcd_text_changed);
+  bool updated = ApplyInvalidationAndResize(interest_rect, invalidation,
+                                            layer_size, frame_number);
   std::vector<gfx::Rect> invalid_tiles;
   GetInvalidTileRects(interest_rect, invalidation, visible_layer_rect,
                       frame_number, &invalid_tiles);
@@ -215,22 +217,13 @@ bool PicturePile::UpdateAndExpandInvalidation(
 bool PicturePile::ApplyInvalidationAndResize(const gfx::Rect& interest_rect,
                                              Region* invalidation,
                                              const gfx::Size& layer_size,
-                                             int frame_number,
-                                             bool can_use_lcd_text_changed) {
+                                             int frame_number) {
   bool updated = false;
 
   Region synthetic_invalidation;
   gfx::Size old_tiling_size = GetSize();
   if (old_tiling_size != layer_size) {
     tiling_.SetTilingSize(layer_size);
-    updated = true;
-  }
-  if (can_use_lcd_text_changed) {
-    // When LCD text is enabled/disabled, we must drop any raster tiles for
-    // the pile, so they can be recreated in a manner consistent with the new
-    // setting. We do this with |synthetic_invalidation| since we don't need to
-    // do a new recording, just invalidate rastered content.
-    synthetic_invalidation.Union(gfx::Rect(GetSize()));
     updated = true;
   }
 
@@ -533,7 +526,7 @@ void PicturePile::GetInvalidTileRects(const gfx::Rect& interest_rect,
 }
 
 void PicturePile::CreatePictures(ContentLayerClient* painter,
-                                 Picture::RecordingMode recording_mode,
+                                 RecordingSource::RecordingMode recording_mode,
                                  const std::vector<gfx::Rect>& record_rects) {
   for (const auto& record_rect : record_rects) {
     gfx::Rect padded_record_rect = PadRect(record_rect);
@@ -548,7 +541,7 @@ void PicturePile::CreatePictures(ContentLayerClient* painter,
     bool gather_pixel_refs = TileTaskWorkerPool::GetNumWorkerThreads() > 1;
 
     for (int i = 0; i < repeat_count; i++) {
-      picture = Picture::Create(padded_record_rect, painter, tile_grid_info_,
+      picture = Picture::Create(padded_record_rect, painter, tile_grid_size_,
                                 gather_pixel_refs, recording_mode);
       // Note the '&&' with previous is-suitable state.
       // This means that once a picture-pile becomes unsuitable for gpu
@@ -585,9 +578,10 @@ void PicturePile::CreatePictures(ContentLayerClient* painter,
   }
 }
 
-scoped_refptr<RasterSource> PicturePile::CreateRasterSource() const {
+scoped_refptr<RasterSource> PicturePile::CreateRasterSource(
+    bool can_use_lcd_text) const {
   return scoped_refptr<RasterSource>(
-      PicturePileImpl::CreateFromPicturePile(this));
+      PicturePileImpl::CreateFromPicturePile(this, can_use_lcd_text));
 }
 
 gfx::Size PicturePile::GetSize() const {
@@ -624,35 +618,31 @@ void PicturePile::SetSlowdownRasterScaleFactor(int factor) {
   slow_down_raster_scale_factor_for_debug_ = factor;
 }
 
+void PicturePile::SetBackgroundColor(SkColor background_color) {
+  background_color_ = background_color;
+}
+
+void PicturePile::SetRequiresClear(bool requires_clear) {
+  requires_clear_ = requires_clear;
+}
+
 bool PicturePile::IsSuitableForGpuRasterization() const {
   return is_suitable_for_gpu_rasterization_;
 }
 
-// static
-void PicturePile::ComputeTileGridInfo(const gfx::Size& tile_grid_size,
-                                      SkTileGridFactory::TileGridInfo* info) {
-  DCHECK(info);
-  info->fTileInterval.set(tile_grid_size.width() - 2 * kTileGridBorderPixels,
-                          tile_grid_size.height() - 2 * kTileGridBorderPixels);
-  DCHECK_GT(info->fTileInterval.width(), 0);
-  DCHECK_GT(info->fTileInterval.height(), 0);
-  info->fMargin.set(kTileGridBorderPixels, kTileGridBorderPixels);
-  // Offset the tile grid coordinate space to take into account the fact
-  // that the top-most and left-most tiles do not have top and left borders
-  // respectively.
-  info->fOffset.set(-kTileGridBorderPixels, -kTileGridBorderPixels);
-}
-
 void PicturePile::SetTileGridSize(const gfx::Size& tile_grid_size) {
-  ComputeTileGridInfo(tile_grid_size, &tile_grid_info_);
+  DCHECK_GT(tile_grid_size.width(), 0);
+  DCHECK_GT(tile_grid_size.height(), 0);
+
+  tile_grid_size_ = tile_grid_size;
 }
 
 void PicturePile::SetUnsuitableForGpuRasterizationForTesting() {
   is_suitable_for_gpu_rasterization_ = false;
 }
 
-SkTileGridFactory::TileGridInfo PicturePile::GetTileGridInfoForTesting() const {
-  return tile_grid_info_;
+gfx::Size PicturePile::GetTileGridSizeForTesting() const {
+  return tile_grid_size_;
 }
 
 bool PicturePile::CanRasterSlowTileCheck(const gfx::Rect& layer_rect) const {

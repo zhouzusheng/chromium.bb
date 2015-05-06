@@ -105,6 +105,16 @@ Scrollbar::~Scrollbar()
 #endif
 }
 
+void Scrollbar::setFrameRect(const IntRect& frameRect)
+{
+    if (frameRect == this->frameRect())
+        return;
+
+    invalidate();
+    Widget::setFrameRect(frameRect);
+    invalidate();
+}
+
 ScrollbarOverlayStyle Scrollbar::scrollbarOverlayStyle() const
 {
     return m_scrollableArea ? m_scrollableArea->scrollbarOverlayStyle() : ScrollbarOverlayStyleDefault;
@@ -554,6 +564,11 @@ float Scrollbar::scrollableAreaCurrentPos() const
         return m_scrollableArea->scrollPosition().x() - m_scrollableArea->minimumScrollPosition().x();
 
     return m_scrollableArea->scrollPosition().y() - m_scrollableArea->minimumScrollPosition().y();
+}
+
+DisplayItemClient Scrollbar::displayItemClient() const
+{
+    return m_scrollableArea->displayItemClient();
 }
 
 } // namespace blink

@@ -52,10 +52,10 @@
 #include "core/html/RadioNodeList.h"
 #include "core/html/forms/FormController.h"
 #include "core/inspector/ConsoleMessage.h"
+#include "core/layout/LayoutTextControl.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/MixedContentChecker.h"
-#include "core/rendering/RenderTextControl.h"
 #include "platform/UserGestureIndicator.h"
 #include "wtf/text/AtomicString.h"
 #include <limits>
@@ -99,7 +99,7 @@ HTMLFormElement::~HTMLFormElement()
 #endif
 }
 
-void HTMLFormElement::trace(Visitor* visitor)
+DEFINE_TRACE(HTMLFormElement)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_pastNamesMap);
@@ -121,7 +121,7 @@ bool HTMLFormElement::isValidElement()
     return !checkInvalidControlsAndCollectUnhandled(0, CheckValidityDispatchNoEvent);
 }
 
-bool HTMLFormElement::rendererIsNeeded(const RenderStyle& style)
+bool HTMLFormElement::rendererIsNeeded(const LayoutStyle& style)
 {
     if (!m_wasDemoted)
         return HTMLElement::rendererIsNeeded(style);
@@ -129,13 +129,13 @@ bool HTMLFormElement::rendererIsNeeded(const RenderStyle& style)
     ContainerNode* node = parentNode();
     if (!node || !node->renderer())
         return HTMLElement::rendererIsNeeded(style);
-    RenderObject* parentRenderer = node->renderer();
+    LayoutObject* parentRenderer = node->renderer();
     // FIXME: Shouldn't we also check for table caption (see |formIsTablePart| below).
     // FIXME: This check is not correct for Shadow DOM.
     bool parentIsTableElementPart = (parentRenderer->isTable() && isHTMLTableElement(*node))
         || (parentRenderer->isTableRow() && isHTMLTableRowElement(*node))
         || (parentRenderer->isTableSection() && node->hasTagName(tbodyTag))
-        || (parentRenderer->isRenderTableCol() && node->hasTagName(colTag))
+        || (parentRenderer->isLayoutTableCol() && node->hasTagName(colTag))
         || (parentRenderer->isTableCell() && isHTMLTableRowElement(*node));
 
     if (!parentIsTableElementPart)

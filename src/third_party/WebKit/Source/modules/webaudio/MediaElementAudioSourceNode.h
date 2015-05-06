@@ -59,13 +59,15 @@ public:
     virtual void lock() override;
     virtual void unlock() override;
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     MediaElementAudioSourceNode(AudioContext*, HTMLMediaElement*);
 
     // As an audio source, we will never propagate silence.
     virtual bool propagatesSilence() const override { return false; }
+
+    bool passesCORSAccessCheck();
 
     RefPtrWillBeMember<HTMLMediaElement> m_mediaElement;
     Mutex m_processLock;

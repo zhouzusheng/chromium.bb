@@ -100,8 +100,8 @@ static LocalFrame* createWindow(LocalFrame& openerFrame, LocalFrame& lookupFrame
     // specify the size of the viewport. We can only resize the window, so adjust
     // for the difference between the window size and the viewport size.
 
-    FloatRect windowRect = host->chrome().windowRect();
-    FloatSize viewportSize = host->chrome().pageRect().size();
+    IntRect windowRect = host->chrome().windowRect();
+    IntSize viewportSize = host->chrome().pageRect().size();
 
     if (features.xSet)
         windowRect.setX(features.x);
@@ -112,8 +112,8 @@ static LocalFrame* createWindow(LocalFrame& openerFrame, LocalFrame& lookupFrame
     if (features.heightSet)
         windowRect.setHeight(features.height + (windowRect.height() - viewportSize.height()));
 
-    // Ensure non-NaN values, minimum size as well as being within valid screen area.
-    FloatRect newWindowRect = LocalDOMWindow::adjustWindowRect(frame, windowRect);
+    // Ensure minimum size as well as being within valid screen area.
+    IntRect newWindowRect = LocalDOMWindow::adjustWindowRect(frame, windowRect);
 
     host->chrome().setWindowRect(newWindowRect);
     host->chrome().show(policy);
@@ -165,7 +165,7 @@ LocalFrame* createWindow(const String& urlString, const AtomicString& frameName,
     if (created)
         newFrame->loader().load(FrameLoadRequest(callingWindow.document(), completedURL));
     else if (!urlString.isEmpty())
-        newFrame->navigationScheduler().scheduleLocationChange(callingWindow.document(), completedURL.string(), false);
+        newFrame->navigate(*callingWindow.document(), completedURL, false);
     return newFrame;
 }
 

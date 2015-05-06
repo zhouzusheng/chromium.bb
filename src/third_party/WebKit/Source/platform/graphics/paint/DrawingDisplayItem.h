@@ -22,16 +22,20 @@ public:
 
     virtual void replay(GraphicsContext*);
     virtual void appendToWebDisplayItemList(WebDisplayItemList*) const override;
+    virtual bool drawsContent() const override;
 
     PassRefPtr<const SkPicture> picture() const { return m_picture; }
 
 protected:
     DrawingDisplayItem(DisplayItemClient client, Type type, PassRefPtr<const SkPicture> picture)
-        : DisplayItem(client, type), m_picture(picture) { ASSERT(m_picture); }
+        : DisplayItem(client, type), m_picture(picture)
+    {
+        ASSERT(m_picture);
+        ASSERT(isDrawingType(type));
+    }
 
 private:
 #ifndef NDEBUG
-    virtual const char* name() const override { return "Drawing"; }
     virtual void dumpPropertiesAsDebugString(WTF::StringBuilder&) const override;
 #endif
 

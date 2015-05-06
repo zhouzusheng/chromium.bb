@@ -91,8 +91,7 @@ static void WarmupWindowsLocales(const ppapi::PpapiPermissions& permissions) {
     }
   }
 }
-#else
-extern void* g_target_services;
+
 #endif
 
 namespace content {
@@ -124,7 +123,7 @@ PpapiThread::~PpapiThread() {
 }
 
 void PpapiThread::Shutdown() {
-  ChildThread::Shutdown();
+  ChildThreadImpl::Shutdown();
 
   ppapi::proxy::PluginGlobals::Get()->ResetPluginProxyDelegate();
   if (plugin_entry_points_.shutdown_module)
@@ -136,7 +135,7 @@ void PpapiThread::Shutdown() {
 bool PpapiThread::Send(IPC::Message* msg) {
   // Allow access from multiple threads.
   if (base::MessageLoop::current() == message_loop())
-    return ChildThread::Send(msg);
+    return ChildThreadImpl::Send(msg);
 
   return sync_message_filter()->Send(msg);
 }
@@ -158,7 +157,7 @@ bool PpapiThread::OnControlMessageReceived(const IPC::Message& msg) {
 }
 
 void PpapiThread::OnChannelConnected(int32 peer_pid) {
-  ChildThread::OnChannelConnected(peer_pid);
+  ChildThreadImpl::OnChannelConnected(peer_pid);
 #if defined(OS_WIN)
   if (is_broker_)
     peer_handle_.Set(::OpenProcess(PROCESS_DUP_HANDLE, FALSE, peer_pid));
@@ -204,8 +203,7 @@ std::string PpapiThread::GetUILanguage() {
 
 void PpapiThread::PreCacheFont(const void* logfontw) {
 #if defined(OS_WIN)
-  Send(new ChildProcessHostMsg_PreCacheFont(
-      *static_cast<const LOGFONTW*>(logfontw)));
+  ChildThreadImpl::PreCacheFont(*static_cast<const LOGFONTW*>(logfontw));
 #endif
 }
 
@@ -358,6 +356,12 @@ void PpapiThread::OnLoadPlugin(const base::FilePath& path,
     rand_s(&dummy_rand);
 
     WarmupWindowsLocales(permissions);
+
+#if defined(ADDRESS_SANITIZER)
+    // Bind and leak dbghelp.dll before the token is lowered, otherwise
+    // AddressSanitizer will crash when trying to symbolize a report.
+    LoadLibraryA("dbghelp.dll");
+#endif
 
     g_target_services->LowerToken();
   }

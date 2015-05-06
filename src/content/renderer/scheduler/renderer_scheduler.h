@@ -32,6 +32,14 @@ class CONTENT_EXPORT RendererScheduler {
   // time if no idle time is available.
   virtual scoped_refptr<SingleThreadIdleTaskRunner> IdleTaskRunner() = 0;
 
+  // Returns the loading task runner.  This queue is intended for tasks related
+  // to resource dispatch, foreground HTML parsing, etc...
+  virtual scoped_refptr<base::SingleThreadTaskRunner> LoadingTaskRunner() = 0;
+
+  // Called to notify about the start of an extended period where no frames
+  // need to be drawn. Must be called from the main thread.
+  virtual void BeginFrameNotExpectedSoon() = 0;
+
   // Called to notify about the start of a new frame.  Must be called from the
   // main thread.
   virtual void WillBeginFrame(const cc::BeginFrameArgs& args) = 0;
@@ -43,14 +51,22 @@ class CONTENT_EXPORT RendererScheduler {
   // Tells the scheduler that the system received an input event. Called by the
   // compositor (impl) thread.
   virtual void DidReceiveInputEventOnCompositorThread(
-      blink::WebInputEvent::Type type) = 0;
+      const blink::WebInputEvent& web_input_event) = 0;
 
   // Tells the scheduler that the system is displaying an input animation (e.g.
   // a fling). Called by the compositor (impl) thread.
   virtual void DidAnimateForInputOnCompositorThread() = 0;
 
+  // Returns true if the scheduler has reason to believe that high priority work
+  // may soon arrive on the main thread, e.g., if gesture events were observed
+  // recently.
+  // Must be called from the main thread.
+  virtual bool IsHighPriorityWorkAnticipated() = 0;
+
   // Returns true if there is high priority work pending on the main thread
-  // and the caller should yield to let the scheduler service that work.
+  // and the caller should yield to let the scheduler service that work. Note
+  // that this is a stricter condition than |IsHighPriorityWorkAnticipated|,
+  // restricted to the case where real work is pending.
   // Must be called from the main thread.
   virtual bool ShouldYieldForHighPriorityWork() = 0;
 

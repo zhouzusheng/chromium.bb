@@ -13,7 +13,6 @@
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/debug/alias.h"
-#include "base/debug/trace_event.h"
 #include "base/files/file_path.h"
 #include "base/i18n/rtl.h"
 #include "base/json/json_writer.h"
@@ -31,13 +30,14 @@
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
+#include "base/trace_event/trace_event.h"
 #include "cc/base/switches.h"
 #include "content/child/appcache/appcache_dispatcher.h"
 #include "content/child/appcache/web_application_cache_host_impl.h"
 #include "content/child/child_shared_bitmap_manager.h"
-#include "content/child/child_thread.h"
 #include "content/child/npapi/webplugin_delegate_impl.h"
 #include "content/child/request_extra_data.h"
+#include "content/child/v8_value_converter_impl.h"
 #include "content/child/webmessageportchannel_impl.h"
 #include "content/common/content_constants_internal.h"
 #include "content/common/database_messages.h"
@@ -103,7 +103,6 @@
 #include "content/renderer/stats_collection_controller.h"
 #include "content/renderer/stats_collection_observer.h"
 #include "content/renderer/text_input_client_observer.h"
-#include "content/renderer/v8_value_converter_impl.h"
 #include "content/renderer/web_ui_extension.h"
 #include "content/renderer/web_ui_extension_data.h"
 #include "content/renderer/web_ui_mojo.h"
@@ -642,7 +641,6 @@ RenderViewImpl::RenderViewImpl(const ViewMsg_New_Params& params)
       opener_suppressed_(false),
       suppress_dialogs_until_swap_out_(false),
       page_id_(-1),
-      last_page_id_sent_to_browser_(-1),
       next_page_id_(params.next_page_id),
       history_list_offset_(-1),
       history_list_length_(0),
@@ -809,8 +807,6 @@ void RenderViewImpl::Initialize(const ViewMsg_New_Params& params,
   if (command_line.HasSwitch(switches::kStatsCollectionController))
     enabled_bindings_ |= BINDINGS_POLICY_STATS_COLLECTION;
 
-  ProcessViewLayoutFlags(command_line);
-
   GetContentClient()->renderer()->RenderViewCreated(this);
 
   // If we have an opener_id but we weren't created by a renderer, then
@@ -832,7 +828,7 @@ RenderViewImpl::~RenderViewImpl() {
        it != disambiguation_bitmaps_.end();
        ++it)
     delete it->second;
-  base::debug::TraceLog::GetInstance()->RemoveProcessLabel(routing_id_);
+  base::trace_event::TraceLog::GetInstance()->RemoveProcessLabel(routing_id_);
 
   // If file chooser is still waiting for answer, dispatch empty answer.
   while (!file_chooser_completions_.empty()) {
@@ -1017,7 +1013,10 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
       prefs.allow_displaying_insecure_content);
   settings->setAllowRunningOfInsecureContent(
       prefs.allow_running_insecure_content);
+  settings->setDisableReadingFromCanvas(prefs.disable_reading_from_canvas);
   settings->setStrictMixedContentChecking(prefs.strict_mixed_content_checking);
+  settings->setStrictPowerfulFeatureRestrictions(
+      prefs.strict_powerful_feature_restrictions);
   settings->setPasswordEchoEnabled(prefs.password_echo_enabled);
   settings->setShouldPrintBackgrounds(prefs.should_print_backgrounds);
   settings->setShouldClearDocumentBackground(
@@ -1066,10 +1065,13 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
   settings->setV8CacheOptions(
       static_cast<WebSettings::V8CacheOptions>(prefs.v8_cache_options));
 
-  settings->setV8ScriptStreamingEnabled(prefs.v8_script_streaming_enabled);
-  settings->setV8ScriptStreamingMode(
-      static_cast<WebSettings::V8ScriptStreamingMode>(
-          prefs.v8_script_streaming_mode));
+  settings->setImageAnimationPolicy(
+      static_cast<WebSettings::ImageAnimationPolicy>(prefs.animation_policy));
+
+  // Needs to happen before setIgnoreVIewportTagScaleLimits below.
+  web_view->setDefaultPageScaleLimits(
+      prefs.default_minimum_page_scale_factor,
+      prefs.default_maximum_page_scale_factor);
 
 #if defined(OS_ANDROID)
   settings->setAllowCustomScrollbarInMainFrame(false);
@@ -1131,6 +1133,11 @@ void RenderView::ApplyWebPreferences(const WebPreferences& prefs,
 
 #if defined(OS_WIN)
   settings->setShowContextMenuOnMouseUp(true);
+#endif
+
+#if defined(OS_MACOSX)
+  settings->setDoubleTapToZoomEnabled(true);
+  web_view->setMaximumLegibleScale(prefs.default_maximum_page_scale_factor);
 #endif
 }
 
@@ -1418,15 +1425,20 @@ void RenderViewImpl::OnScrollFocusedEditableNodeIntoRect(
     const gfx::Rect& rect) {
   if (has_scrolled_focused_editable_node_into_rect_ &&
       rect == rect_for_scrolled_focused_editable_node_) {
+    FocusChangeComplete();
     return;
   }
 
   blink::WebElement element = GetFocusedElement();
+  bool will_animate = false;
   if (!element.isNull() && IsEditableNode(element)) {
     rect_for_scrolled_focused_editable_node_ = rect;
     has_scrolled_focused_editable_node_into_rect_ = true;
-    webview()->scrollFocusedNodeIntoRect(rect);
+    will_animate = webview()->scrollFocusedNodeIntoRect(rect);
   }
+
+  if (!will_animate)
+    FocusChangeComplete();
 }
 
 void RenderViewImpl::OnSetEditCommandsForNextKeyEvent(
@@ -1745,7 +1757,7 @@ bool RenderViewImpl::runFileChooser(
     ipc_params.mode = FileChooserParams::Open;
   ipc_params.title = params.title;
   ipc_params.default_file_name =
-      base::FilePath::FromUTF16Unsafe(params.initialValue);
+      base::FilePath::FromUTF16Unsafe(params.initialValue).BaseName();
   ipc_params.accept_types.reserve(params.acceptTypes.size());
   for (size_t i = 0; i < params.acceptTypes.size(); ++i)
     ipc_params.accept_types.push_back(params.acceptTypes[i]);
@@ -1906,21 +1918,35 @@ void RenderViewImpl::focusPrevious() {
   Send(new ViewHostMsg_TakeFocus(routing_id_, true));
 }
 
-void RenderViewImpl::focusedNodeChanged(const WebNode& node) {
+void RenderViewImpl::focusedNodeChanged(const WebNode& fromNode,
+                                        const WebNode& toNode) {
   has_scrolled_focused_editable_node_into_rect_ = false;
 
   gfx::Rect node_bounds;
-  if (!node.isNull() && node.isElementNode()) {
-    WebNode web_node = const_cast<WebNode&>(node);
+  if (!toNode.isNull() && toNode.isElementNode()) {
+    WebNode web_node = const_cast<WebNode&>(toNode);
     node_bounds = gfx::Rect(web_node.to<WebElement>().boundsInViewportSpace());
   }
-  Send(new ViewHostMsg_FocusedNodeChanged(routing_id_, IsEditableNode(node),
+  Send(new ViewHostMsg_FocusedNodeChanged(routing_id_, IsEditableNode(toNode),
                                           node_bounds));
 
-  FOR_EACH_OBSERVER(RenderViewObserver, observers_, FocusedNodeChanged(node));
+  // TODO(estade): remove.
+  FOR_EACH_OBSERVER(RenderViewObserver, observers_, FocusedNodeChanged(toNode));
 
-  // TODO(dmazzoni): this should be part of RenderFrameObserver.
-  GetMainRenderFrame()->FocusedNodeChanged(node);
+  RenderFrameImpl* previous_frame = nullptr;
+  if (!fromNode.isNull())
+    previous_frame = RenderFrameImpl::FromWebFrame(fromNode.document().frame());
+  RenderFrameImpl* new_frame = nullptr;
+  if (!toNode.isNull())
+    new_frame = RenderFrameImpl::FromWebFrame(toNode.document().frame());
+
+  if (previous_frame && previous_frame != new_frame)
+    previous_frame->FocusedNodeChanged(WebNode());
+  if (new_frame)
+    new_frame->FocusedNodeChanged(toNode);
+
+  // TODO(dmazzoni): remove once there's a separate a11y tree per frame.
+  GetMainRenderFrame()->FocusedNodeChangedForAccessibility(toNode);
 }
 
 void RenderViewImpl::didUpdateLayout() {
@@ -1990,13 +2016,13 @@ void RenderViewImpl::show(WebNavigationPolicy policy) {
 
   DCHECK(opener_id_ != MSG_ROUTING_NONE);
 
-  // NOTE: initial_pos_ may still have its default values at this point, but
+  // NOTE: initial_rect_ may still have its default values at this point, but
   // that's okay.  It'll be ignored if disposition is not NEW_POPUP, or the
   // browser process will impose a default position otherwise.
   Send(new ViewHostMsg_ShowView(opener_id_, routing_id_,
-      NavigationPolicyToDisposition(policy), initial_pos_,
+      NavigationPolicyToDisposition(policy), initial_rect_,
       opened_by_user_gesture_));
-  SetPendingWindowRect(initial_pos_);
+  SetPendingWindowRect(initial_rect_);
 }
 
 void RenderViewImpl::runModal() {
@@ -2019,15 +2045,6 @@ void RenderViewImpl::runModal() {
 
   SendAndRunNestedMessageLoop(new ViewHostMsg_RunModal(
       routing_id_, opener_id_));
-}
-
-bool RenderViewImpl::enterFullScreen() {
-  Send(new ViewHostMsg_ToggleFullscreen(routing_id_, true));
-  return true;
-}
-
-void RenderViewImpl::exitFullScreen() {
-  Send(new ViewHostMsg_ToggleFullscreen(routing_id_, false));
 }
 
 bool RenderViewImpl::requestPointerLock() {
@@ -2292,30 +2309,11 @@ NavigationState* RenderViewImpl::CreateNavigationStateFromPending() {
     navigation_state->set_transferred_request_request_id(
         params.transferred_request_request_id);
     navigation_state->set_allow_download(params.common_params.allow_download);
-    navigation_state->set_extra_headers(params.request_params.extra_headers);
+    navigation_state->set_extra_headers(params.extra_headers);
   } else {
     navigation_state = NavigationState::CreateContentInitiated();
   }
   return navigation_state;
-}
-
-void RenderViewImpl::ProcessViewLayoutFlags(
-    const base::CommandLine& command_line) {
-  bool enable_viewport =
-      command_line.HasSwitch(switches::kEnableViewport) ||
-      command_line.HasSwitch(switches::kEnableViewportMeta);
-
-  // If viewport tag is enabled, then the WebKit side will take care
-  // of setting the fixed layout size and page scale limits.
-  if (enable_viewport)
-    return;
-
-  // When navigating to a new page, reset the page scale factor to be 1.0.
-  webview()->setInitialPageScaleOverride(1.f);
-
-  float maxPageScaleFactor =
-      command_line.HasSwitch(switches::kEnablePinch) ? 4.f : 1.f ;
-  webview()->setPageScaleFactorLimits(1, maxPageScaleFactor);
 }
 
 void RenderViewImpl::didClearWindowObject(WebLocalFrame* frame) {
@@ -2444,19 +2442,6 @@ blink::WebView* RenderViewImpl::GetWebView() {
   return webview();
 }
 
-blink::WebElement RenderViewImpl::GetFocusedElement() const {
-  if (!webview())
-    return WebElement();
-  WebFrame* focused_frame = webview()->focusedFrame();
-  if (focused_frame) {
-    WebDocument doc = focused_frame->document();
-    if (!doc.isNull())
-      return doc.focusedElement();
-  }
-
-  return WebElement();
-}
-
 bool RenderViewImpl::IsEditableNode(const WebNode& node) const {
   if (node.isNull())
     return false;
@@ -2483,13 +2468,6 @@ bool RenderViewImpl::IsEditableNode(const WebNode& node) const {
   }
 
   return false;
-}
-
-bool RenderViewImpl::NodeContainsPoint(const WebNode& node,
-                                       const gfx::Point& point) const {
-  blink::WebHitTestResult hit_test =
-      webview()->hitTestResultAt(WebPoint(point.x(), point.y()));
-  return node.containsIncludingShadowDOM(hit_test.node());
 }
 
 bool RenderViewImpl::ShouldDisplayScrollbars(int width, int height) const {
@@ -2522,6 +2500,19 @@ void RenderViewImpl::SyncNavigationState() {
   if (!webview())
     return;
   SendUpdateState(history_controller_->GetCurrentEntry());
+}
+
+blink::WebElement RenderViewImpl::GetFocusedElement() const {
+  if (!webview())
+    return WebElement();
+  WebFrame* focused_frame = webview()->focusedFrame();
+  if (focused_frame) {
+    WebDocument doc = focused_frame->document();
+    if (!doc.isNull())
+      return doc.focusedElement();
+  }
+
+  return WebElement();
 }
 
 blink::WebPlugin* RenderViewImpl::GetWebPluginForFind() {
@@ -3075,7 +3066,8 @@ void RenderViewImpl::OnMediaPlayerActionAt(const gfx::Point& location,
 }
 
 void RenderViewImpl::OnOrientationChange() {
-  webview()->mainFrame()->toWebLocalFrame()->sendOrientationChangeEvent();
+  if (webview() && webview()->mainFrame()->isWebLocalFrame())
+    webview()->mainFrame()->toWebLocalFrame()->sendOrientationChangeEvent();
 }
 
 void RenderViewImpl::OnPluginActionAt(const gfx::Point& location,
@@ -3199,10 +3191,6 @@ void RenderViewImpl::OnResize(const ViewMsg_Resize_Params& params) {
 
   if (old_visible_viewport_size != visible_viewport_size_)
     has_scrolled_focused_editable_node_into_rect_ = false;
-
-  FOR_EACH_OBSERVER(RenderViewObserver,
-                    observers_,
-                    Resized());
 }
 
 void RenderViewImpl::DidInitiatePaint() {
@@ -3628,6 +3616,11 @@ void RenderViewImpl::GetSelectionBounds(gfx::Rect* start, gfx::Rect* end) {
   RenderWidget::GetSelectionBounds(start, end);
 }
 
+void RenderViewImpl::FocusChangeComplete() {
+  RenderWidget::FocusChangeComplete();
+  FOR_EACH_OBSERVER(RenderViewObserver, observers_, FocusChangeComplete());
+}
+
 void RenderViewImpl::GetCompositionCharacterBounds(
     std::vector<gfx::Rect>* bounds) {
   DCHECK(bounds);
@@ -3681,37 +3674,8 @@ bool RenderViewImpl::CanComposeInline() {
   return true;
 }
 
-void RenderViewImpl::InstrumentWillBeginFrame(int frame_id) {
-  if (!webview())
-    return;
-  if (!webview()->devToolsAgent())
-    return;
-  webview()->devToolsAgent()->didBeginFrame(frame_id);
-}
-
-void RenderViewImpl::InstrumentDidBeginFrame() {
-  if (!webview())
-    return;
-  if (!webview()->devToolsAgent())
-    return;
-  // TODO(jamesr/caseq): Decide if this needs to be renamed.
-  webview()->devToolsAgent()->didComposite();
-}
-
-void RenderViewImpl::InstrumentDidCancelFrame() {
-  if (!webview())
-    return;
-  if (!webview()->devToolsAgent())
-    return;
-  webview()->devToolsAgent()->didCancelFrame();
-}
-
-void RenderViewImpl::InstrumentWillComposite() {
-  if (!webview())
-    return;
-  if (!webview()->devToolsAgent())
-    return;
-  webview()->devToolsAgent()->willComposite();
+void RenderViewImpl::DidCompletePageScaleAnimation() {
+  FocusChangeComplete();
 }
 
 void RenderViewImpl::SetScreenMetricsEmulationParameters(
@@ -4040,11 +4004,11 @@ void RenderViewImpl::SetDeviceColorProfileForTesting(
 }
 
 void RenderViewImpl::ForceResizeForTesting(const gfx::Size& new_size) {
-  gfx::Rect new_position(rootWindowRect().x,
-                         rootWindowRect().y,
-                         new_size.width(),
-                         new_size.height());
-  ResizeSynchronously(new_position, new_size);
+  gfx::Rect new_window_rect(rootWindowRect().x,
+                            rootWindowRect().y,
+                            new_size.width(),
+                            new_size.height());
+  SetWindowRectSynchronously(new_window_rect);
 }
 
 void RenderViewImpl::UseSynchronousResizeModeForTesting(bool enable) {

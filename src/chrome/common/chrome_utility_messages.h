@@ -21,14 +21,20 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/ipc/gfx_param_traits.h"
 
-#define IPC_MESSAGE_START ChromeUtilityMsgStart
-
+// Singly-included section for typedefs.
 #ifndef CHROME_COMMON_CHROME_UTILITY_MESSAGES_H_
 #define CHROME_COMMON_CHROME_UTILITY_MESSAGES_H_
 
-typedef std::vector<Tuple<SkBitmap, base::FilePath>> DecodedImages;
+#if defined(OS_WIN)
+// A vector of filters, each being a Tuple containing a display string (i.e.
+// "Text Files") and a filter pattern (i.e. "*.txt").
+typedef std::vector<Tuple<base::string16, base::string16>>
+    GetOpenFileNameFilter;
+#endif  // OS_WIN
 
 #endif  // CHROME_COMMON_CHROME_UTILITY_MESSAGES_H_
+
+#define IPC_MESSAGE_START ChromeUtilityMsgStart
 
 #if defined(FULL_SAFE_BROWSING)
 IPC_STRUCT_TRAITS_BEGIN(safe_browsing::zip_analyzer::Results)
@@ -39,12 +45,6 @@ IPC_STRUCT_TRAITS_END()
 #endif
 
 #if defined(OS_WIN)
-
-// A vector of filters, each being a Tuple containing a display string (i.e.
-// "Text Files") and a filter pattern (i.e. "*.txt").
-typedef std::vector<Tuple<base::string16, base::string16>>
-    GetOpenFileNameFilter;
-
 IPC_STRUCT_BEGIN(ChromeUtilityMsg_GetSaveFileName_Params)
   IPC_STRUCT_MEMBER(HWND, owner)
   IPC_STRUCT_MEMBER(DWORD, flags)
@@ -54,7 +54,6 @@ IPC_STRUCT_BEGIN(ChromeUtilityMsg_GetSaveFileName_Params)
   IPC_STRUCT_MEMBER(base::FilePath, initial_directory)
   IPC_STRUCT_MEMBER(base::string16, default_extension)
 IPC_STRUCT_END()
-
 #endif  // OS_WIN
 
 //------------------------------------------------------------------------------
@@ -112,7 +111,12 @@ IPC_MESSAGE_CONTROL1(ChromeUtilityMsg_AnalyzeZipFileForDownloadProtection,
 #endif
 
 #if defined(OS_WIN)
-IPC_MESSAGE_CONTROL1(ChromeUtilityMsg_OpenItemViaShell,
+// Invokes ui::base::win::OpenFileViaShell from the utility process.
+IPC_MESSAGE_CONTROL1(ChromeUtilityMsg_OpenFileViaShell,
+                     base::FilePath /* full_path */)
+
+// Invokes ui::base::win::OpenFolderViaShell from the utility process.
+IPC_MESSAGE_CONTROL1(ChromeUtilityMsg_OpenFolderViaShell,
                      base::FilePath /* full_path */)
 
 // Instructs the utility process to invoke GetOpenFileName. |owner| is the
@@ -132,6 +136,13 @@ IPC_MESSAGE_CONTROL5(ChromeUtilityMsg_GetOpenFileName,
 IPC_MESSAGE_CONTROL1(ChromeUtilityMsg_GetSaveFileName,
                      ChromeUtilityMsg_GetSaveFileName_Params /* params */)
 #endif  // defined(OS_WIN)
+
+#if defined(OS_ANDROID)
+// Instructs the utility process to detect support for seccomp-bpf,
+// and the result is reported through
+// ChromeUtilityHostMsg_DetectSeccompSupport_Result.
+IPC_MESSAGE_CONTROL0(ChromeUtilityMsg_DetectSeccompSupport)
+#endif
 
 //------------------------------------------------------------------------------
 // Utility process host messages:
@@ -196,3 +207,12 @@ IPC_MESSAGE_CONTROL2(ChromeUtilityHostMsg_GetSaveFileName_Result,
 IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_BuildDirectWriteFontCache,
                      base::FilePath /* cache file path */)
 #endif  // defined(OS_WIN)
+
+#if defined(OS_ANDROID)
+// Reply to ChromeUtilityMsg_DetectSeccompSupport to report the level
+// of kernel support for seccomp-bpf.
+IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_DetectSeccompSupport_ResultPrctl,
+                     bool /* seccomp prctl supported */)
+IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_DetectSeccompSupport_ResultSyscall,
+                     bool /* seccomp syscall supported */)
+#endif

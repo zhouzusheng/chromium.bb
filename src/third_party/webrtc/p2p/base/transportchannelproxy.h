@@ -52,6 +52,7 @@ class TransportChannelProxy : public TransportChannel,
                          const rtc::PacketOptions& options,
                          int flags);
   virtual int SetOption(rtc::Socket::Option opt, int value);
+  virtual bool GetOption(rtc::Socket::Option opt, int* value);
   virtual int GetError();
   virtual IceRole GetIceRole() const;
   virtual bool GetStats(ConnectionInfos* infos);
@@ -60,6 +61,7 @@ class TransportChannelProxy : public TransportChannel,
   virtual bool SetSslRole(rtc::SSLRole role);
   virtual bool SetSrtpCiphers(const std::vector<std::string>& ciphers);
   virtual bool GetSrtpCipher(std::string* cipher);
+  virtual bool GetSslCipher(std::string* cipher);
   virtual bool GetLocalIdentity(rtc::SSLIdentity** identity) const;
   virtual bool GetRemoteCertificate(rtc::SSLCertificate** cert) const;
   virtual bool ExportKeyingMaterial(const std::string& label,

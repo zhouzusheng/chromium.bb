@@ -20,15 +20,18 @@ namespace webrtc {
 
 namespace acm2 {
 
-ACMPCMU::ACMPCMU(int16_t codec_id) { codec_id_ = codec_id; }
+ACMPCMU::ACMPCMU(int16_t codec_id, bool enable_red)
+    : ACMGenericCodec(enable_red) {
+  codec_id_ = codec_id;
+}
 
 ACMPCMU::~ACMPCMU() {}
 
 int16_t ACMPCMU::InternalEncode(uint8_t* bitstream,
                                 int16_t* bitstream_len_byte) {
-  *bitstream_len_byte = WebRtcG711_EncodeU(
-      &in_audio_[in_audio_ix_read_], frame_len_smpl_ * num_channels_,
-      reinterpret_cast<int16_t*>(bitstream));
+  *bitstream_len_byte =
+      WebRtcG711_EncodeU(&in_audio_[in_audio_ix_read_],
+                         frame_len_smpl_ * num_channels_, bitstream);
 
   // Increment the read index this tell the caller that how far
   // we have gone forward in reading the audio buffer.

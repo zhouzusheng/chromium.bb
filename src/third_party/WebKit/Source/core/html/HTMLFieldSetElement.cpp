@@ -50,7 +50,7 @@ PassRefPtrWillBeRawPtr<HTMLFieldSetElement> HTMLFieldSetElement::create(Document
     return adoptRefWillBeNoop(new HTMLFieldSetElement(document, form));
 }
 
-void HTMLFieldSetElement::trace(Visitor* visitor)
+DEFINE_TRACE(HTMLFieldSetElement)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_associatedElements);
@@ -116,7 +116,7 @@ const AtomicString& HTMLFieldSetElement::formControlType() const
     return fieldset;
 }
 
-RenderObject* HTMLFieldSetElement::createRenderer(RenderStyle*)
+LayoutObject* HTMLFieldSetElement::createRenderer(const LayoutStyle&)
 {
     return new RenderFieldset(this);
 }

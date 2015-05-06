@@ -70,6 +70,9 @@ class OscillatorNode;
 class PannerNode;
 class PeriodicWave;
 class ScriptProcessorNode;
+class ScriptPromiseResolver;
+class ScriptState;
+class SecurityOrigin;
 class StereoPannerNode;
 class WaveShaperNode;
 
@@ -96,7 +99,7 @@ public:
 
     virtual ~AudioContext();
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     bool isInitialized() const { return m_isInitialized; }
     bool isOfflineContext() { return m_isOfflineContext; }
@@ -106,14 +109,14 @@ public:
     virtual bool hasPendingActivity() const override;
 
     AudioDestinationNode* destination() { return m_destinationNode.get(); }
-    // currentSampleFrame() returns the current sample frame. It should only be called from the
-    // audio thread.
-    size_t currentSampleFrame() const { return m_destinationNode->currentSampleFrame(); }
+
+    size_t currentSampleFrame() const { return m_destinationNode ? m_destinationNode->currentSampleFrame() : 0; }
+    double currentTime() const { return m_destinationNode ? m_destinationNode->currentTime() : 0; }
     // cachedSampleFrame() is like currentSampleFrame() but must be called from the main thread to
     // get the sample frame. It might be slightly behind curentSampleFrame() due to locking.
     size_t cachedSampleFrame() const;
-    double currentTime() const { return m_destinationNode->currentTime(); }
-    float sampleRate() const { return m_destinationNode->sampleRate(); }
+    float sampleRate() const { return m_destinationNode ? m_destinationNode->sampleRate() : 0; }
+
     String state() const;
 
     AudioBuffer* createBuffer(unsigned numberOfChannels, size_t numberOfFrames, float sampleRate, ExceptionState&);
@@ -124,30 +127,33 @@ public:
     AudioListener* listener() { return m_listener.get(); }
 
     // The AudioNode create methods are called on the main thread (from JavaScript).
-    AudioBufferSourceNode* createBufferSource();
+    AudioBufferSourceNode* createBufferSource(ExceptionState&);
     MediaElementAudioSourceNode* createMediaElementSource(HTMLMediaElement*, ExceptionState&);
     MediaStreamAudioSourceNode* createMediaStreamSource(MediaStream*, ExceptionState&);
-    MediaStreamAudioDestinationNode* createMediaStreamDestination();
-    GainNode* createGain();
-    BiquadFilterNode* createBiquadFilter();
-    WaveShaperNode* createWaveShaper();
+    MediaStreamAudioDestinationNode* createMediaStreamDestination(ExceptionState&);
+    GainNode* createGain(ExceptionState&);
+    BiquadFilterNode* createBiquadFilter(ExceptionState&);
+    WaveShaperNode* createWaveShaper(ExceptionState&);
     DelayNode* createDelay(ExceptionState&);
     DelayNode* createDelay(double maxDelayTime, ExceptionState&);
-    PannerNode* createPanner();
-    ConvolverNode* createConvolver();
-    DynamicsCompressorNode* createDynamicsCompressor();
-    AnalyserNode* createAnalyser();
+    PannerNode* createPanner(ExceptionState&);
+    ConvolverNode* createConvolver(ExceptionState&);
+    DynamicsCompressorNode* createDynamicsCompressor(ExceptionState&);
+    AnalyserNode* createAnalyser(ExceptionState&);
     ScriptProcessorNode* createScriptProcessor(ExceptionState&);
     ScriptProcessorNode* createScriptProcessor(size_t bufferSize, ExceptionState&);
     ScriptProcessorNode* createScriptProcessor(size_t bufferSize, size_t numberOfInputChannels, ExceptionState&);
     ScriptProcessorNode* createScriptProcessor(size_t bufferSize, size_t numberOfInputChannels, size_t numberOfOutputChannels, ExceptionState&);
-    StereoPannerNode* createStereoPanner();
+    StereoPannerNode* createStereoPanner(ExceptionState&);
     ChannelSplitterNode* createChannelSplitter(ExceptionState&);
     ChannelSplitterNode* createChannelSplitter(size_t numberOfOutputs, ExceptionState&);
     ChannelMergerNode* createChannelMerger(ExceptionState&);
     ChannelMergerNode* createChannelMerger(size_t numberOfInputs, ExceptionState&);
-    OscillatorNode* createOscillator();
+    OscillatorNode* createOscillator(ExceptionState&);
     PeriodicWave* createPeriodicWave(DOMFloat32Array* real, DOMFloat32Array* imag, ExceptionState&);
+
+    // Close
+    ScriptPromise closeContext(ScriptState*);
 
     // Suspend/Resume
     ScriptPromise suspendContext(ScriptState*);
@@ -259,12 +265,27 @@ public:
     void fireCompletionEvent();
     void notifyStateChange();
 
+    // The context itself keeps a reference to all source nodes.  The source nodes, then reference all nodes they're connected to.
+    // In turn, these nodes reference all nodes they're connected to.  All nodes are ultimately connected to the AudioDestinationNode.
+    // When the context dereferences a source node, it will be deactivated from the rendering graph along with all other nodes it is
+    // uniquely connected to.  See the AudioNode::ref() and AudioNode::deref() methods for more details.
+    void refNode(AudioNode*);
+
+    // A context is considered closed if closeContext() has been called, even if the audio HW has
+    // not yet been stopped.  It will be stopped eventually.
+    bool isContextClosed() const { return m_closeResolver; }
+
     static unsigned s_hardwareContextCount;
+    static unsigned s_contextId;
+
+    // Get the security origin for this audio context.
+    SecurityOrigin* securityOrigin() const;
 
 protected:
     explicit AudioContext(Document*);
     AudioContext(Document*, unsigned numberOfChannels, size_t numberOfFrames, float sampleRate);
 
+    RefPtrWillBeMember<ScriptPromiseResolver> m_offlineResolver;
 private:
     void initialize();
     void uninitialize();
@@ -275,14 +296,11 @@ private:
     bool m_isCleared;
     void clear();
 
+    void throwExceptionForClosedState(ExceptionState&);
+
     // Set to true when the destination node has been initialized and is ready to process data.
     bool m_isInitialized;
 
-    // The context itself keeps a reference to all source nodes.  The source nodes, then reference all nodes they're connected to.
-    // In turn, these nodes reference all nodes they're connected to.  All nodes are ultimately connected to the AudioDestinationNode.
-    // When the context dereferences a source node, it will be deactivated from the rendering graph along with all other nodes it is
-    // uniquely connected to.  See the AudioNode::ref() and AudioNode::deref() methods for more details.
-    void refNode(AudioNode*);
     void derefNode(AudioNode*);
 
     // When the context goes away, there might still be some sources which haven't finished playing.
@@ -317,9 +335,9 @@ private:
 
     // Vector of promises created by resume(). It takes time to handle them, so we collect all of
     // the promises here until they can be resolved or rejected.
-    WillBeHeapVector<RefPtrWillBeMember<ScriptPromiseResolver> > m_resumeResolvers;
+    WillBeHeapVector<RefPtrWillBeMember<ScriptPromiseResolver>> m_resumeResolvers;
     // Like m_resumeResolvers but for suspend().
-    WillBeHeapVector<RefPtrWillBeMember<ScriptPromiseResolver> > m_suspendResolvers;
+    WillBeHeapVector<RefPtrWillBeMember<ScriptPromiseResolver>> m_suspendResolvers;
     void rejectPendingResolvers();
 
     // True if we're in the process of resolving promises for resume().  Resolving can take some
@@ -335,7 +353,7 @@ private:
     private:
         AudioNode& m_node;
     };
-    HeapHashMap<WeakMember<AudioNode>, OwnPtr<AudioNodeDisposer> > m_liveNodes;
+    HeapHashMap<WeakMember<AudioNode>, OwnPtr<AudioNodeDisposer>> m_liveNodes;
 
     class AudioSummingJunctionDisposer {
     public:
@@ -349,7 +367,7 @@ private:
     // AudioSummingJunction from m_dirtySummingJunctions. However we put all of
     // AudioSummingJunction objects to m_liveAudioSummingJunctions to avoid
     // concurrent access to m_liveAudioSummingJunctions.
-    HeapHashMap<WeakMember<AudioSummingJunction>, OwnPtr<AudioSummingJunctionDisposer> > m_liveAudioSummingJunctions;
+    HeapHashMap<WeakMember<AudioSummingJunction>, OwnPtr<AudioSummingJunctionDisposer>> m_liveAudioSummingJunctions;
 
     // These two HashSet must be accessed only when the graph lock is held.
     // Oilpan: These HashSet should be HeapHashSet<WeakMember<AudioNodeOutput>>
@@ -392,6 +410,7 @@ private:
 
     bool m_isOfflineContext;
 
+    // The state of the AudioContext.
     AudioContextState m_contextState;
     void setContextState(AudioContextState);
 
@@ -402,12 +421,22 @@ private:
     GC_PLUGIN_IGNORE("http://crbug.com/404527")
     HashSet<AudioNode*> m_deferredCountModeChange;
 
+    // The Promise that is returned by close();
+    RefPtrWillBeMember<ScriptPromiseResolver> m_closeResolver;
+
     // Follows the destination's currentSampleFrame, but might be slightly behind due to locking.
     size_t m_cachedSampleFrame;
+
+    // Tries to handle AudioBufferSourceNodes that were started but became disconnected or was never
+    // connected. Because these never get pulled anymore, they will stay around forever. So if we
+    // can, try to stop them so they can be collected.
+    void handleStoppableSourceNodes();
 
     // This is considering 32 is large enough for multiple channels audio.
     // It is somewhat arbitrary and could be increased if necessary.
     enum { MaxNumberOfChannels = 32 };
+
+    unsigned m_contextId;
 };
 
 } // namespace blink

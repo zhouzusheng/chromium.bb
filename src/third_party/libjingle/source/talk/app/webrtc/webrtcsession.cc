@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2012, Google Inc.
+ * Copyright 2012 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -209,12 +209,13 @@ static bool GetAudioSsrcByTrackId(
   const cricket::MediaContentDescription* audio_content =
       static_cast<const cricket::MediaContentDescription*>(
           audio_info->description);
-  cricket::StreamParams stream;
-  if (!cricket::GetStreamByIds(audio_content->streams(), "", track_id,
-                               &stream)) {
+  const cricket::StreamParams* stream =
+      cricket::GetStreamByIds(audio_content->streams(), "", track_id);
+  if (!stream) {
     return false;
   }
-  *ssrc = stream.first_ssrc();
+
+  *ssrc = stream->first_ssrc();
   return true;
 }
 
@@ -222,7 +223,6 @@ static bool GetTrackIdBySsrc(const SessionDescription* session_description,
                              uint32 ssrc, std::string* track_id) {
   ASSERT(track_id != NULL);
 
-  cricket::StreamParams stream_out;
   const cricket::ContentInfo* audio_info =
       cricket::GetFirstAudioContent(session_description);
   if (audio_info) {
@@ -230,8 +230,10 @@ static bool GetTrackIdBySsrc(const SessionDescription* session_description,
         static_cast<const cricket::MediaContentDescription*>(
             audio_info->description);
 
-    if (cricket::GetStreamBySsrc(audio_content->streams(), ssrc, &stream_out)) {
-      *track_id = stream_out.id;
+    const auto* found =
+        cricket::GetStreamBySsrc(audio_content->streams(), ssrc);
+    if (found) {
+      *track_id = found->id;
       return true;
     }
   }
@@ -243,8 +245,10 @@ static bool GetTrackIdBySsrc(const SessionDescription* session_description,
         static_cast<const cricket::MediaContentDescription*>(
             video_info->description);
 
-    if (cricket::GetStreamBySsrc(video_content->streams(), ssrc, &stream_out)) {
-      *track_id = stream_out.id;
+    const auto* found =
+        cricket::GetStreamBySsrc(video_content->streams(), ssrc);
+    if (found) {
+      *track_id = found->id;
       return true;
     }
   }
@@ -462,11 +466,12 @@ class IceRestartAnswerLatch {
   bool ice_restart_;
 };
 
-WebRtcSession::WebRtcSession(cricket::ChannelManager* channel_manager,
-                             rtc::Thread* signaling_thread,
-                             rtc::Thread* worker_thread,
-                             cricket::PortAllocator* port_allocator,
-                             MediaStreamSignaling* mediastream_signaling)
+WebRtcSession::WebRtcSession(
+    cricket::ChannelManager* channel_manager,
+    rtc::Thread* signaling_thread,
+    rtc::Thread* worker_thread,
+    cricket::PortAllocator* port_allocator,
+    MediaStreamSignaling* mediastream_signaling)
     : cricket::BaseSession(signaling_thread,
                            worker_thread,
                            port_allocator,
@@ -512,7 +517,10 @@ bool WebRtcSession::Initialize(
     const PeerConnectionFactoryInterface::Options& options,
     const MediaConstraintsInterface*  constraints,
     DTLSIdentityServiceInterface* dtls_identity_service,
-    PeerConnectionInterface::IceTransportsType ice_transport) {
+    PeerConnectionInterface::IceTransportsType ice_transport_type,
+    PeerConnectionInterface::BundlePolicy bundle_policy) {
+  bundle_policy_ = bundle_policy;
+
   // TODO(perkj): Take |constraints| into consideration. Return false if not all
   // mandatory constraints can be fulfilled. Note that |constraints|
   // can be null.
@@ -599,8 +607,8 @@ bool WebRtcSession::Initialize(
   if (video_options_.unsignalled_recv_stream_limit.IsSet()) {
     int stream_limit;
     video_options_.unsignalled_recv_stream_limit.Get(&stream_limit);
-    stream_limit = rtc::_min(kMaxUnsignalledRecvStreams, stream_limit);
-    stream_limit = rtc::_max(0, stream_limit);
+    stream_limit = std::min(kMaxUnsignalledRecvStreams, stream_limit);
+    stream_limit = std::max(0, stream_limit);
     video_options_.unsignalled_recv_stream_limit.Set(stream_limit);
   }
 
@@ -655,7 +663,7 @@ bool WebRtcSession::Initialize(
     webrtc_session_desc_factory_->SetSdesPolicy(cricket::SEC_DISABLED);
   }
   port_allocator()->set_candidate_filter(
-      ConvertIceTransportTypeToCandidateFilter(ice_transport));
+      ConvertIceTransportTypeToCandidateFilter(ice_transport_type));
   return true;
 }
 
@@ -832,6 +840,19 @@ bool WebRtcSession::SetRemoteDescription(SessionDescriptionInterface* desc,
 
   if (error() != cricket::BaseSession::ERROR_NONE) {
     return BadRemoteSdp(desc->type(), GetSessionErrorMsg(), err_desc);
+  }
+
+  // Set the the ICE connection state to connecting since the connection may
+  // become writable with peer reflexive candidates before any remote candidate
+  // is signaled.
+  // TODO(pthatcher): This is a short-term solution for crbug/446908. A real fix
+  // is to have a new signal the indicates a change in checking state from the
+  // transport and expose a new checking() member from transport that can be
+  // read to determine the current checking state. The existing SignalConnecting
+  // actually means "gathering candidates", so cannot be be used here.
+  if (desc->type() != SessionDescriptionInterface::kOffer &&
+      ice_connection_state_ == PeerConnectionInterface::kIceConnectionNew) {
+    SetIceConnectionState(PeerConnectionInterface::kIceConnectionChecking);
   }
   return true;
 }

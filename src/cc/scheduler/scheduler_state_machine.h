@@ -17,7 +17,7 @@
 #include "cc/scheduler/scheduler_settings.h"
 
 namespace base {
-namespace debug {
+namespace trace_event {
 class ConvertableToTraceFormat;
 class TracedValue;
 }
@@ -114,8 +114,9 @@ class CC_EXPORT SchedulerStateMachine {
   };
   static const char* ActionToString(Action action);
 
-  scoped_refptr<base::debug::ConvertableToTraceFormat> AsValue() const;
-  void AsValueInto(base::debug::TracedValue* dict, base::TimeTicks now) const;
+  scoped_refptr<base::trace_event::ConvertableToTraceFormat> AsValue() const;
+  void AsValueInto(base::trace_event::TracedValue* dict,
+                   base::TimeTicks now) const;
 
   Action NextAction() const;
   void UpdateState(Action action);
@@ -259,6 +260,8 @@ class CC_EXPORT SchedulerStateMachine {
         impl_latency_takes_priority_on_battery;
   }
 
+  void SetDeferCommits(bool defer_commits);
+
   // TODO(zmo): This is temporary for debugging crbug.com/393331.
   // We should remove it afterwards.
   std::string GetStatesForDebugging() const;
@@ -280,7 +283,6 @@ class CC_EXPORT SchedulerStateMachine {
 
   bool ShouldAnimate() const;
   bool ShouldBeginOutputSurfaceCreation() const;
-  bool ShouldDrawForced() const;
   bool ShouldDraw() const;
   bool ShouldActivatePendingTree() const;
   bool ShouldSendBeginMainFrame() const;
@@ -341,6 +343,7 @@ class CC_EXPORT SchedulerStateMachine {
   bool continuous_painting_;
   bool impl_latency_takes_priority_on_battery_;
   bool children_need_begin_frames_;
+  bool defer_commits_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SchedulerStateMachine);

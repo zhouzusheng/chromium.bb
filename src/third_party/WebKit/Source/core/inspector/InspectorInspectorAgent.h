@@ -32,7 +32,6 @@
 
 #include "core/InspectorFrontend.h"
 #include "core/inspector/InspectorBaseAgent.h"
-#include "wtf/HashMap.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
 
@@ -40,21 +39,21 @@ namespace blink {
 
 class LocalFrame;
 class InjectedScriptManager;
+class InspectorController;
 class JSONObject;
-class Page;
 
 typedef String ErrorString;
 
 class InspectorInspectorAgent final : public InspectorBaseAgent<InspectorInspectorAgent>, public InspectorBackendDispatcher::InspectorCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorInspectorAgent);
 public:
-    static PassOwnPtrWillBeRawPtr<InspectorInspectorAgent> create(Page* page, InjectedScriptManager* injectedScriptManager)
+    static PassOwnPtrWillBeRawPtr<InspectorInspectorAgent> create(InspectorController* inspectorController, InjectedScriptManager* injectedScriptManager)
     {
-        return adoptPtrWillBeNoop(new InspectorInspectorAgent(page, injectedScriptManager));
+        return adoptPtrWillBeNoop(new InspectorInspectorAgent(inspectorController, injectedScriptManager));
     }
 
     virtual ~InspectorInspectorAgent();
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     // Inspector front-end API.
     virtual void enable(ErrorString*) override;
@@ -65,8 +64,6 @@ public:
     virtual void setFrontend(InspectorFrontend*) override;
     virtual void clearFrontend() override;
 
-    void didClearDocumentOfWindowObject(LocalFrame*);
-
     void domContentLoadedEventFired(LocalFrame*);
 
     bool hasFrontend() const { return m_frontend; }
@@ -74,21 +71,17 @@ public:
     // Generic code called from custom implementations.
     void evaluateForTestInFrontend(long testCallId, const String& script);
 
-    void setInjectedScriptForOrigin(const String& origin, const String& source);
-
     void inspect(PassRefPtr<TypeBuilder::Runtime::RemoteObject> objectToInspect, PassRefPtr<JSONObject> hints);
 
 private:
-    InspectorInspectorAgent(Page*, InjectedScriptManager*);
+    InspectorInspectorAgent(InspectorController*, InjectedScriptManager*);
 
-    RawPtrWillBeMember<Page> m_inspectedPage;
+    RawPtrWillBeMember<InspectorController> m_inspectorController;
     InspectorFrontend::Inspector* m_frontend;
     RawPtrWillBeMember<InjectedScriptManager> m_injectedScriptManager;
 
     Vector<pair<long, String> > m_pendingEvaluateTestCommands;
     pair<RefPtr<TypeBuilder::Runtime::RemoteObject>, RefPtr<JSONObject> > m_pendingInspectData;
-    typedef HashMap<String, String> InjectedScriptForOriginMap;
-    InjectedScriptForOriginMap m_injectedScriptForOrigin;
 };
 
 } // namespace blink

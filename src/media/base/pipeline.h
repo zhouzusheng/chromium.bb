@@ -278,9 +278,8 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
   // Kicks off initialization for each media object, executing |done_cb| with
   // the result when completed.
   void InitializeDemuxer(const PipelineStatusCB& done_cb);
-  void InitializeRenderer(const base::Closure& done_cb);
+  void InitializeRenderer(const PipelineStatusCB& done_cb);
 
-  void OnStateTransition(PipelineStatus status);
   void StateTransitionTask(PipelineStatus status);
 
   // Initiates an asynchronous pause-flush-seek-preroll call sequence
@@ -336,8 +335,6 @@ class MEDIA_EXPORT Pipeline : public DemuxerHost {
 
   // The following data members are only accessed by tasks posted to
   // |task_runner_|.
-
-  bool is_initialized_;
 
   // Member that tracks the current state.
   State state_;

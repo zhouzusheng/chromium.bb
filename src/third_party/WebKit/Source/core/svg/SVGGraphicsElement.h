@@ -62,7 +62,7 @@ public:
 
     // "base class" methods for all the elements which render as paths
     virtual void toClipPath(Path&);
-    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual LayoutObject* createRenderer(const LayoutStyle&) override;
 
     virtual bool isValid() const override final { return SVGTests::isValid(document()); }
 
@@ -72,7 +72,7 @@ public:
     AffineTransform computeCTM(SVGElement::CTMScope mode, SVGGraphicsElement::StyleUpdateStrategy,
         const SVGGraphicsElement* ancestor = 0) const;
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     SVGGraphicsElement(const QualifiedName&, Document&, ConstructionType = CreateSVGElement);

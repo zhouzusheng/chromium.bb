@@ -34,7 +34,7 @@
 #include "core/dom/MessagePort.h"
 #include "core/workers/WorkerClients.h"
 #include "public/platform/WebMessagePortChannel.h"
-#include "public/platform/WebServiceWorkerClientFocusCallback.h"
+#include "public/platform/WebServiceWorkerClientsClaimCallbacks.h"
 #include "public/platform/WebServiceWorkerClientsInfo.h"
 #include "public/platform/WebServiceWorkerEventResult.h"
 #include "public/platform/WebServiceWorkerSkipWaitingCallbacks.h"
@@ -56,7 +56,12 @@ class ServiceWorkerGlobalScopeClient : public WillBeHeapSupplement<WorkerClients
 public:
     virtual ~ServiceWorkerGlobalScopeClient() { }
 
+    // Called from ServiceWorkerClients.
     virtual void getClients(WebServiceWorkerClientsCallbacks*) = 0;
+    virtual void openWindow(const WebURL&, WebServiceWorkerClientCallbacks*) = 0;
+    virtual void setCachedMetadata(const WebURL&, const char*, size_t) = 0;
+    virtual void clearCachedMetadata(const WebURL&) = 0;
+
     virtual WebURL scope() const = 0;
     virtual WebServiceWorkerCacheStorage* cacheStorage() const = 0;
 
@@ -73,7 +78,8 @@ public:
     virtual void postMessageToClient(int clientID, const WebString& message, PassOwnPtr<WebMessagePortChannelArray>) = 0;
     virtual void postMessageToCrossOriginClient(const WebCrossOriginServiceWorkerClient&, const WebString& message, PassOwnPtr<WebMessagePortChannelArray>) = 0;
     virtual void skipWaiting(WebServiceWorkerSkipWaitingCallbacks*) = 0;
-    virtual void focus(int clientID, WebServiceWorkerClientFocusCallback*) = 0;
+    virtual void claim(WebServiceWorkerClientsClaimCallbacks*) = 0;
+    virtual void focus(int clientID, WebServiceWorkerClientCallbacks*) = 0;
 
     static const char* supplementName();
     static ServiceWorkerGlobalScopeClient* from(ExecutionContext*);

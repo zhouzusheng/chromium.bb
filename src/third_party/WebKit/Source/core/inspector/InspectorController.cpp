@@ -34,6 +34,7 @@
 #include "bindings/core/v8/DOMWrapperWorld.h"
 #include "core/InspectorBackendDispatcher.h"
 #include "core/InspectorFrontend.h"
+#include "core/frame/FrameHost.h"
 #include "core/inspector/AsyncCallTracker.h"
 #include "core/inspector/IdentifiersFactory.h"
 #include "core/inspector/InjectedScriptHost.h"
@@ -47,7 +48,6 @@
 #include "core/inspector/InspectorDOMDebuggerAgent.h"
 #include "core/inspector/InspectorDOMStorageAgent.h"
 #include "core/inspector/InspectorDebuggerAgent.h"
-#include "core/inspector/InspectorFrontendClient.h"
 #include "core/inspector/InspectorHeapProfilerAgent.h"
 #include "core/inspector/InspectorInputAgent.h"
 #include "core/inspector/InspectorInspectorAgent.h"
@@ -66,9 +66,8 @@
 #include "core/inspector/PageConsoleAgent.h"
 #include "core/inspector/PageDebuggerAgent.h"
 #include "core/inspector/PageRuntimeAgent.h"
-#include "core/page/ContextMenuProvider.h"
+#include "core/layout/Layer.h"
 #include "core/page/Page.h"
-#include "core/rendering/RenderLayer.h"
 #include "platform/PlatformMouseEvent.h"
 
 namespace blink {
@@ -82,8 +81,6 @@ InspectorController::InspectorController(Page* page, InspectorClient* inspectorC
     , m_resourceAgent(nullptr)
     , m_layerTreeAgent(nullptr)
     , m_animationAgent(nullptr)
-    , m_inspectorFrontendClient(nullptr)
-    , m_page(page)
     , m_inspectorClient(inspectorClient)
     , m_agents(m_instrumentingAgents.get(), m_state.get())
     , m_isUnderTest(false)
@@ -92,9 +89,9 @@ InspectorController::InspectorController(Page* page, InspectorClient* inspectorC
     InjectedScriptManager* injectedScriptManager = m_injectedScriptManager.get();
     InspectorOverlay* overlay = m_overlay.get();
 
-    m_agents.append(InspectorInspectorAgent::create(m_page, injectedScriptManager));
+    m_agents.append(InspectorInspectorAgent::create(this, injectedScriptManager));
 
-    OwnPtrWillBeRawPtr<InspectorPageAgent> pageAgentPtr(InspectorPageAgent::create(m_page, injectedScriptManager, inspectorClient, overlay));
+    OwnPtrWillBeRawPtr<InspectorPageAgent> pageAgentPtr(InspectorPageAgent::create(page, injectedScriptManager, inspectorClient, overlay));
     m_pageAgent = pageAgentPtr.get();
     m_agents.append(pageAgentPtr.release());
 
@@ -102,23 +99,20 @@ InspectorController::InspectorController(Page* page, InspectorClient* inspectorC
     m_domAgent = domAgentPtr.get();
     m_agents.append(domAgentPtr.release());
 
-    OwnPtrWillBeRawPtr<InspectorLayerTreeAgent> layerTreeAgentPtr(InspectorLayerTreeAgent::create(m_page));
+    OwnPtrWillBeRawPtr<InspectorLayerTreeAgent> layerTreeAgentPtr(InspectorLayerTreeAgent::create(m_pageAgent));
     m_layerTreeAgent = layerTreeAgentPtr.get();
     m_agents.append(layerTreeAgentPtr.release());
 
-    OwnPtrWillBeRawPtr<InspectorTimelineAgent> timelineAgentPtr(InspectorTimelineAgent::create(m_pageAgent, m_layerTreeAgent,
-        overlay, InspectorTimelineAgent::PageInspector, inspectorClient));
-    m_timelineAgent = timelineAgentPtr.get();
-    m_agents.append(timelineAgentPtr.release());
+    m_agents.append(InspectorTimelineAgent::create());
 
     PageScriptDebugServer* pageScriptDebugServer = &PageScriptDebugServer::shared();
 
-    m_agents.append(PageRuntimeAgent::create(injectedScriptManager, inspectorClient, pageScriptDebugServer, m_page, m_pageAgent));
+    m_agents.append(PageRuntimeAgent::create(injectedScriptManager, inspectorClient, pageScriptDebugServer, m_pageAgent));
 
-    OwnPtrWillBeRawPtr<PageConsoleAgent> pageConsoleAgentPtr = PageConsoleAgent::create(injectedScriptManager, m_domAgent, m_page);
+    OwnPtrWillBeRawPtr<PageConsoleAgent> pageConsoleAgentPtr = PageConsoleAgent::create(injectedScriptManager, m_domAgent, m_pageAgent);
     OwnPtrWillBeRawPtr<InspectorWorkerAgent> workerAgentPtr = InspectorWorkerAgent::create(pageConsoleAgentPtr.get());
 
-    OwnPtrWillBeRawPtr<InspectorTracingAgent> tracingAgentPtr = InspectorTracingAgent::create(inspectorClient, workerAgentPtr.get(), page);
+    OwnPtrWillBeRawPtr<InspectorTracingAgent> tracingAgentPtr = InspectorTracingAgent::create(inspectorClient, workerAgentPtr.get(), m_pageAgent);
     m_tracingAgent = tracingAgentPtr.get();
     m_agents.append(tracingAgentPtr.release());
 
@@ -133,7 +127,7 @@ InspectorController::~InspectorController()
 {
 }
 
-void InspectorController::trace(Visitor* visitor)
+DEFINE_TRACE(InspectorController)
 {
     visitor->trace(m_instrumentingAgents);
     visitor->trace(m_injectedScriptManager);
@@ -143,13 +137,11 @@ void InspectorController::trace(Visitor* visitor)
     visitor->trace(m_domAgent);
     visitor->trace(m_animationAgent);
     visitor->trace(m_pageAgent);
-    visitor->trace(m_timelineAgent);
     visitor->trace(m_cssAgent);
     visitor->trace(m_resourceAgent);
     visitor->trace(m_layerTreeAgent);
     visitor->trace(m_tracingAgent);
     visitor->trace(m_inspectorBackendDispatcher);
-    visitor->trace(m_page);
     visitor->trace(m_agents);
 }
 
@@ -215,43 +207,28 @@ void InspectorController::initializeDeferredAgents()
 
     m_agents.append(InspectorCanvasAgent::create(m_pageAgent, injectedScriptManager));
 
-    m_agents.append(InspectorInputAgent::create(m_page, m_inspectorClient));
+    m_agents.append(InspectorInputAgent::create(m_pageAgent, m_inspectorClient));
 }
 
 void InspectorController::willBeDestroyed()
 {
 #if ENABLE(ASSERT)
-    ASSERT(m_page->mainFrame());
-    if (m_page->mainFrame()->isLocalFrame())
-        ASSERT(m_page->deprecatedLocalMainFrame()->view());
+    Frame* frame = m_pageAgent->frameHost()->page().mainFrame();
+    ASSERT(frame);
+    if (frame->isLocalFrame())
+        ASSERT(m_pageAgent->inspectedFrame()->view());
 #endif
 
     disconnectFrontend();
     m_injectedScriptManager->disconnect();
     m_inspectorClient = 0;
-    m_page = nullptr;
     m_instrumentingAgents->reset();
     m_agents.discardAgents();
-    if (m_inspectorFrontendClient)
-        m_inspectorFrontendClient->dispose();
 }
 
 void InspectorController::registerModuleAgent(PassOwnPtrWillBeRawPtr<InspectorAgent> agent)
 {
     m_agents.append(agent);
-}
-
-void InspectorController::setInspectorFrontendClient(InspectorFrontendClient* inspectorFrontendClient)
-{
-    m_inspectorFrontendClient = inspectorFrontendClient;
-}
-
-void InspectorController::didClearDocumentOfWindowObject(LocalFrame* frame)
-{
-    // If the page is supposed to serve as InspectorFrontend notify inspector frontend
-    // client that it's cleared so that the client can expose inspector bindings.
-    if (m_inspectorFrontendClient && frame == m_page->mainFrame())
-        m_inspectorFrontendClient->windowObjectCleared();
 }
 
 void InspectorController::connectFrontend(const String& hostId, InspectorFrontendChannel* frontendChannel)
@@ -324,7 +301,6 @@ void InspectorController::setProcessId(long processId)
 
 void InspectorController::setLayerTreeId(int id)
 {
-    m_timelineAgent->setLayerTreeId(id);
     m_tracingAgent->setLayerTreeId(id);
 }
 
@@ -363,19 +339,6 @@ void InspectorController::inspect(Node* node)
     if (injectedScript.isEmpty())
         return;
     injectedScript.inspectNode(node);
-}
-
-void InspectorController::setInjectedScriptForOrigin(const String& origin, const String& source)
-{
-    if (InspectorInspectorAgent* inspectorAgent = m_instrumentingAgents->inspectorInspectorAgent())
-        inspectorAgent->setInjectedScriptForOrigin(origin, source);
-}
-
-void InspectorController::showContextMenu(float x, float y, PassRefPtrWillBeRawPtr<ContextMenuProvider> menuProvider)
-{
-    if (!m_inspectorClient)
-        return;
-    m_inspectorClient->showContextMenu(x, y, menuProvider);
 }
 
 void InspectorController::dispatchMessageFromFrontend(const String& message)
@@ -426,9 +389,9 @@ bool InspectorController::handleKeyboardEvent(LocalFrame* frame, const PlatformK
     return false;
 }
 
-void InspectorController::deviceOrPageScaleFactorChanged()
+void InspectorController::pageScaleFactorChanged()
 {
-    m_pageAgent->deviceOrPageScaleFactorChanged();
+    m_pageAgent->pageScaleFactorChanged();
 }
 
 bool InspectorController::deviceEmulationEnabled()
@@ -441,81 +404,28 @@ bool InspectorController::screencastEnabled()
     return m_pageAgent->screencastEnabled();
 }
 
-void InspectorController::resume()
-{
-    if (InspectorDebuggerAgent* debuggerAgent = m_instrumentingAgents->inspectorDebuggerAgent()) {
-        ErrorString error;
-        debuggerAgent->resume(&error);
-    }
-}
-
-void InspectorController::setResourcesDataSizeLimitsFromInternals(int maximumResourcesContentSize, int maximumSingleResourceContentSize)
-{
-    if (m_resourceAgent)
-        m_resourceAgent->setResourcesDataSizeLimitsFromInternals(maximumResourcesContentSize, maximumSingleResourceContentSize);
-}
-
-PassRefPtr<JSONObject> InspectorController::highlightJSONForNode(Node* node)
-{
-    return m_overlay->highlightJSONForNode(node);
-}
-
 void InspectorController::willProcessTask()
 {
-    if (InspectorTimelineAgent* timelineAgent = m_instrumentingAgents->inspectorTimelineAgent())
-        timelineAgent->willProcessTask();
     if (InspectorProfilerAgent* profilerAgent = m_instrumentingAgents->inspectorProfilerAgent())
         profilerAgent->willProcessTask();
 }
 
 void InspectorController::didProcessTask()
 {
-    if (InspectorTimelineAgent* timelineAgent = m_instrumentingAgents->inspectorTimelineAgent())
-        timelineAgent->didProcessTask();
     if (InspectorProfilerAgent* profilerAgent = m_instrumentingAgents->inspectorProfilerAgent())
         profilerAgent->didProcessTask();
+    if (InspectorCanvasAgent* canvasAgent = m_instrumentingAgents->inspectorCanvasAgent())
+        canvasAgent->didProcessTask();
 }
 
-void InspectorController::flushPendingFrontendMessages()
+void InspectorController::flushPendingProtocolNotifications()
 {
-    m_agents.flushPendingFrontendMessages();
+    m_agents.flushPendingProtocolNotifications();
 }
 
 void InspectorController::didCommitLoadForMainFrame()
 {
     m_agents.didCommitLoadForMainFrame();
-}
-
-void InspectorController::didBeginFrame(int frameId)
-{
-    if (InspectorTimelineAgent* timelineAgent = m_instrumentingAgents->inspectorTimelineAgent())
-        timelineAgent->didBeginFrame(frameId);
-    if (InspectorCanvasAgent* canvasAgent = m_instrumentingAgents->inspectorCanvasAgent())
-        canvasAgent->didBeginFrame();
-}
-
-void InspectorController::didCancelFrame()
-{
-    if (InspectorTimelineAgent* timelineAgent = m_instrumentingAgents->inspectorTimelineAgent())
-        timelineAgent->didCancelFrame();
-}
-
-void InspectorController::willComposite()
-{
-    if (InspectorTimelineAgent* timelineAgent = m_instrumentingAgents->inspectorTimelineAgent())
-        timelineAgent->willComposite();
-}
-
-void InspectorController::didComposite()
-{
-    if (InspectorTimelineAgent* timelineAgent = m_instrumentingAgents->inspectorTimelineAgent())
-        timelineAgent->didComposite();
-}
-
-void InspectorController::processGPUEvent(double timestamp, int phase, bool foreign, uint64_t usedGPUMemoryBytes, uint64_t limitGPUMemoryBytes)
-{
-    if (InspectorTimelineAgent* timelineAgent = m_instrumentingAgents->inspectorTimelineAgent())
-        timelineAgent->processGPUEvent(InspectorTimelineAgent::GPUEvent(timestamp, phase, foreign, usedGPUMemoryBytes, limitGPUMemoryBytes));
 }
 
 void InspectorController::scriptsEnabled(bool  enabled)

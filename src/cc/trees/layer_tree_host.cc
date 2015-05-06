@@ -11,12 +11,12 @@
 #include "base/atomic_sequence_num.h"
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/debug/trace_event.h"
-#include "base/debug/trace_event_argument.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/trace_event/trace_event.h"
+#include "base/trace_event/trace_event_argument.h"
 #include "cc/animation/animation_registrar.h"
 #include "cc/animation/layer_animation_controller.h"
 #include "cc/base/math_util.h"
@@ -43,6 +43,7 @@
 #include "cc/trees/thread_proxy.h"
 #include "cc/trees/tree_synchronizer.h"
 #include "ui/gfx/geometry/size_conversions.h"
+#include "ui/gfx/geometry/vector2d_conversions.h"
 
 namespace {
 static base::StaticAtomicSequenceNumber s_layer_tree_host_sequence_number;
@@ -118,7 +119,7 @@ LayerTreeHost::LayerTreeHost(
       debug_state_(settings.initial_debug_state),
       top_controls_shrink_blink_size_(false),
       top_controls_height_(0.f),
-      top_controls_content_offset_(0.f),
+      top_controls_shown_ratio_(0.f),
       device_scale_factor_(1.f),
       visible_(true),
       page_scale_factor_(1.f),
@@ -130,8 +131,8 @@ LayerTreeHost::LayerTreeHost(
       background_color_(SK_ColorWHITE),
       has_transparent_background_(false),
       partial_texture_update_requests_(0),
+      did_complete_scale_animation_(false),
       in_paint_layer_contents_(false),
-      total_frames_used_for_lcd_text_metrics_(0),
       id_(s_layer_tree_host_sequence_number.GetNext() + 1),
       next_commit_forces_redraw_(false),
       shared_bitmap_manager_(shared_bitmap_manager),
@@ -183,8 +184,6 @@ void LayerTreeHost::InitializeProxy(scoped_ptr<Proxy> proxy) {
 LayerTreeHost::~LayerTreeHost() {
   TRACE_EVENT0("cc", "LayerTreeHost::~LayerTreeHost");
 
-  overhang_ui_resource_ = nullptr;
-
   if (root_layer_.get())
     root_layer_->SetLayerTreeHost(NULL);
 
@@ -223,8 +222,18 @@ void LayerTreeHost::DeleteContentsTexturesOnImplThread(
     contents_texture_manager_->ClearAllMemory(resource_provider);
 }
 
+void LayerTreeHost::WillBeginMainFrame() {
+  devtools_instrumentation::WillBeginMainThreadFrame(id(),
+                                                     source_frame_number());
+  client_->WillBeginMainFrame();
+}
+
 void LayerTreeHost::DidBeginMainFrame() {
   client_->DidBeginMainFrame();
+}
+
+void LayerTreeHost::BeginMainFrameNotExpectedSoon() {
+  client_->BeginMainFrameNotExpectedSoon();
 }
 
 void LayerTreeHost::BeginMainFrame(const BeginFrameArgs& args) {
@@ -329,20 +338,10 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
 
   sync_tree->PassSwapPromises(&swap_promise_list_);
 
-  // Track the change in top controls height to offset the top_controls_delta
-  // properly.  This is so that the top controls offset will be maintained
-  // across height changes.
-  float top_controls_height_delta =
-      sync_tree->top_controls_height() - top_controls_height_;
-
   sync_tree->set_top_controls_shrink_blink_size(
       top_controls_shrink_blink_size_);
   sync_tree->set_top_controls_height(top_controls_height_);
-  sync_tree->set_top_controls_content_offset(top_controls_content_offset_);
-  sync_tree->set_top_controls_delta(sync_tree->top_controls_delta() -
-                                    sync_tree->sent_top_controls_delta() -
-                                    top_controls_height_delta);
-  sync_tree->set_sent_top_controls_delta(0.f);
+  sync_tree->PushTopControlsFromMainThread(top_controls_shown_ratio_);
 
   host_impl->SetUseGpuRasterization(UseGpuRasterization());
   host_impl->set_gpu_rasterization_status(GetGpuRasterizationStatus());
@@ -359,11 +358,6 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
   if (!ui_resource_request_queue_.empty()) {
     sync_tree->set_ui_resource_request_queue(ui_resource_request_queue_);
     ui_resource_request_queue_.clear();
-  }
-  if (overhang_ui_resource_) {
-    host_impl->SetOverhangUIResource(
-        overhang_ui_resource_->id(),
-        GetUIResourceSize(overhang_ui_resource_->id()));
   }
 
   DCHECK(!sync_tree->ViewportSizeInvalid());
@@ -403,6 +397,10 @@ void LayerTreeHost::UpdateHudLayer() {
 void LayerTreeHost::CommitComplete() {
   source_frame_number_++;
   client_->DidCommit();
+  if (did_complete_scale_animation_) {
+    client_->DidCompletePageScaleAnimation();
+    did_complete_scale_animation_ = false;
+  }
 }
 
 void LayerTreeHost::SetOutputSurface(scoped_ptr<OutputSurface> surface) {
@@ -454,11 +452,8 @@ scoped_ptr<LayerTreeHostImpl> LayerTreeHost::CreateLayerTreeHostImpl(
   host_impl->SetUseGpuRasterization(UseGpuRasterization());
   shared_bitmap_manager_ = NULL;
   gpu_memory_buffer_manager_ = NULL;
-  if (settings_.calculate_top_controls_position &&
-      host_impl->top_controls_manager()) {
-    top_controls_manager_weak_ptr_ =
-        host_impl->top_controls_manager()->AsWeakPtr();
-  }
+  top_controls_manager_weak_ptr_ =
+      host_impl->top_controls_manager()->AsWeakPtr();
   input_handler_weak_ptr_ = host_impl->AsWeakPtr();
   return host_impl.Pass();
 }
@@ -481,8 +476,6 @@ void LayerTreeHost::FinishAllRendering() {
 void LayerTreeHost::SetDeferCommits(bool defer_commits) {
   proxy_->SetDeferCommits(defer_commits);
 }
-
-void LayerTreeHost::DidDeferCommit() {}
 
 void LayerTreeHost::SetNeedsDisplayOnAllLayers() {
   std::stack<Layer*> layer_stack;
@@ -566,19 +559,19 @@ void LayerTreeHost::SetAnimationEvents(
         animation_controllers.find(event_layer_id);
     if (iter != animation_controllers.end()) {
       switch ((*events)[event_index].type) {
-        case AnimationEvent::Started:
+        case AnimationEvent::STARTED:
           (*iter).second->NotifyAnimationStarted((*events)[event_index]);
           break;
 
-        case AnimationEvent::Finished:
+        case AnimationEvent::FINISHED:
           (*iter).second->NotifyAnimationFinished((*events)[event_index]);
           break;
 
-        case AnimationEvent::Aborted:
+        case AnimationEvent::ABORTED:
           (*iter).second->NotifyAnimationAborted((*events)[event_index]);
           break;
 
-        case AnimationEvent::PropertyUpdate:
+        case AnimationEvent::PROPERTY_UPDATE:
           (*iter).second->NotifyAnimationPropertyUpdate((*events)[event_index]);
           break;
       }
@@ -688,11 +681,11 @@ void LayerTreeHost::SetTopControlsHeight(float height) {
   SetNeedsCommit();
 }
 
-void LayerTreeHost::SetTopControlsContentOffset(float offset) {
-  if (top_controls_content_offset_ == offset)
+void LayerTreeHost::SetTopControlsShownRatio(float ratio) {
+  if (top_controls_shown_ratio_ == ratio)
     return;
 
-  top_controls_content_offset_ = offset;
+  top_controls_shown_ratio_ = ratio;
   SetNeedsCommit();
 }
 
@@ -713,23 +706,6 @@ void LayerTreeHost::SetPageScaleFactorAndLimits(float page_scale_factor,
   min_page_scale_factor_ = min_page_scale_factor;
   max_page_scale_factor_ = max_page_scale_factor;
   SetNeedsCommit();
-}
-
-void LayerTreeHost::SetOverhangBitmap(const SkBitmap& bitmap) {
-  DCHECK(bitmap.width() && bitmap.height());
-  DCHECK_EQ(bitmap.bytesPerPixel(), 4);
-
-  SkBitmap bitmap_copy;
-  if (bitmap.isImmutable()) {
-    bitmap_copy = bitmap;
-  } else {
-    bitmap.copyTo(&bitmap_copy);
-    bitmap_copy.setImmutable();
-  }
-
-  UIResourceBitmap overhang_bitmap(bitmap_copy);
-  overhang_bitmap.SetWrapMode(UIResourceBitmap::REPEAT);
-  overhang_ui_resource_ = ScopedUIResource::Create(this, overhang_bitmap);
 }
 
 void LayerTreeHost::SetVisible(bool visible) {
@@ -788,6 +764,10 @@ bool LayerTreeHost::UpdateLayers(ResourceUpdateQueue* queue) {
   return result || next_commit_forces_redraw_;
 }
 
+void LayerTreeHost::DidCompletePageScaleAnimation() {
+  did_complete_scale_animation_ = true;
+}
+
 static Layer* FindFirstScrollableLayer(Layer* layer) {
   if (!layer)
     return NULL;
@@ -827,18 +807,6 @@ void LayerTreeHost::RecordGpuRasterizationHistogram() {
   }
 
   gpu_rasterization_histogram_recorded_ = true;
-}
-
-void LayerTreeHost::CalculateLCDTextMetricsCallback(Layer* layer) {
-  if (!layer->SupportsLCDText())
-    return;
-
-  lcd_text_metrics_.total_num_cc_layers++;
-  if (layer->draw_properties().can_use_lcd_text) {
-    lcd_text_metrics_.total_num_cc_layers_can_use_lcd_text++;
-    if (layer->contents_opaque())
-      lcd_text_metrics_.total_num_cc_layers_will_use_lcd_text++;
-  }
 }
 
 bool LayerTreeHost::UsingSharedMemoryResources() {
@@ -881,29 +849,6 @@ bool LayerTreeHost::UpdateLayers(Layer* root_layer,
         settings_.verify_property_trees, &update_list,
         render_surface_layer_list_id);
     LayerTreeHostCommon::CalculateDrawProperties(&inputs);
-
-    if (total_frames_used_for_lcd_text_metrics_ <=
-        kTotalFramesToUseForLCDTextMetrics) {
-      LayerTreeHostCommon::CallFunctionForSubtree(
-          root_layer,
-          base::Bind(&LayerTreeHost::CalculateLCDTextMetricsCallback,
-                     base::Unretained(this)));
-      total_frames_used_for_lcd_text_metrics_++;
-    }
-
-    if (total_frames_used_for_lcd_text_metrics_ ==
-        kTotalFramesToUseForLCDTextMetrics) {
-      total_frames_used_for_lcd_text_metrics_++;
-
-      UMA_HISTOGRAM_PERCENTAGE(
-          "Renderer4.LCDText.PercentageOfCandidateLayers",
-          lcd_text_metrics_.total_num_cc_layers_can_use_lcd_text * 100.0 /
-          lcd_text_metrics_.total_num_cc_layers);
-      UMA_HISTOGRAM_PERCENTAGE(
-          "Renderer4.LCDText.PercentageOfAALayers",
-          lcd_text_metrics_.total_num_cc_layers_will_use_lcd_text * 100.0 /
-          lcd_text_metrics_.total_num_cc_layers_can_use_lcd_text);
-    }
   }
 
   // Reset partial texture update requests.
@@ -1104,8 +1049,8 @@ void LayerTreeHost::ApplyScrollAndScale(ScrollAndScaleSet* info) {
     QueueSwapPromise(swap_promise.Pass());
   }
 
-  gfx::Vector2d inner_viewport_scroll_delta;
-  gfx::Vector2d outer_viewport_scroll_delta;
+  gfx::Vector2dF inner_viewport_scroll_delta;
+  gfx::Vector2dF outer_viewport_scroll_delta;
 
   if (root_layer_.get()) {
     for (size_t i = 0; i < info->scrolls.size(); ++i) {
@@ -1148,10 +1093,13 @@ void LayerTreeHost::ApplyScrollAndScale(ScrollAndScaleSet* info) {
     ApplyPageScaleDeltaFromImplSide(info->page_scale_delta);
     elastic_overscroll_ += info->elastic_overscroll_delta;
     if (!settings_.use_pinch_virtual_viewport) {
+      // TODO(miletus): Make sure either this code path is totally gone,
+      // or revisit the flooring here if the old pinch viewport code path
+      // is causing problems with fractional scroll offset.
       client_->ApplyViewportDeltas(
-          inner_viewport_scroll_delta + outer_viewport_scroll_delta,
-          info->page_scale_delta,
-          info->top_controls_delta);
+          gfx::ToFlooredVector2d(inner_viewport_scroll_delta +
+                                 outer_viewport_scroll_delta),
+          info->page_scale_delta, info->top_controls_delta);
     } else {
       // TODO(ccameron): pass the elastic overscroll here so that input events
       // may be translated appropriately.
@@ -1223,9 +1171,6 @@ void LayerTreeHost::SetDeviceScaleFactor(float device_scale_factor) {
 void LayerTreeHost::UpdateTopControlsState(TopControlsState constraints,
                                            TopControlsState current,
                                            bool animate) {
-  if (!settings_.calculate_top_controls_position)
-    return;
-
   // Top controls are only used in threaded mode.
   proxy_->ImplThreadTaskRunner()->PostTask(
       FROM_HERE,
@@ -1236,7 +1181,7 @@ void LayerTreeHost::UpdateTopControlsState(TopControlsState constraints,
                  animate));
 }
 
-void LayerTreeHost::AsValueInto(base::debug::TracedValue* state) const {
+void LayerTreeHost::AsValueInto(base::trace_event::TracedValue* state) const {
   state->BeginDictionary("proxy");
   proxy_->AsValueInto(state);
   state->EndDictionary();
@@ -1268,8 +1213,7 @@ UIResourceId LayerTreeHost::CreateUIResource(UIResourceClient* client) {
          ui_resource_client_map_.end());
 
   bool resource_lost = false;
-  UIResourceRequest request(UIResourceRequest::UIResourceCreate,
-                            next_id,
+  UIResourceRequest request(UIResourceRequest::UI_RESOURCE_CREATE, next_id,
                             client->GetBitmap(next_id, resource_lost));
   ui_resource_request_queue_.push_back(request);
 
@@ -1287,7 +1231,7 @@ void LayerTreeHost::DeleteUIResource(UIResourceId uid) {
   if (iter == ui_resource_client_map_.end())
     return;
 
-  UIResourceRequest request(UIResourceRequest::UIResourceDelete, uid);
+  UIResourceRequest request(UIResourceRequest::UI_RESOURCE_DELETE, uid);
   ui_resource_request_queue_.push_back(request);
   ui_resource_client_map_.erase(iter);
 }
@@ -1299,8 +1243,7 @@ void LayerTreeHost::RecreateUIResources() {
     UIResourceId uid = iter->first;
     const UIResourceClientData& data = iter->second;
     bool resource_lost = true;
-    UIResourceRequest request(UIResourceRequest::UIResourceCreate,
-                              uid,
+    UIResourceRequest request(UIResourceRequest::UI_RESOURCE_CREATE, uid,
                               data.client->GetBitmap(uid, resource_lost));
     ui_resource_request_queue_.push_back(request);
   }

@@ -56,15 +56,9 @@ class CONTENT_EXPORT BrowserAccessibility {
 
   // Called after the object is first initialized and again every time
   // its data changes.
-  virtual void OnDataChanged();
+  virtual void OnDataChanged() {}
 
-  // Called after an atomic update to the tree finished and this object
-  // was created or changed in this update.
-  virtual void OnUpdateFinished() {}
-
-  // Returns true if this is a native platform-specific object, vs a
-  // cross-platform generic object.
-  virtual bool IsNative() const;
+  virtual void OnSubtreeWillBeDeleted() {}
 
   // Called when the location changed.
   virtual void OnLocationChanged() {}
@@ -87,6 +81,11 @@ class CONTENT_EXPORT BrowserAccessibility {
   // Return a pointer to the child at the given index, or NULL for an
   // invalid index. Returns NULL if PlatformIsLeaf() returns true.
   BrowserAccessibility* PlatformGetChild(uint32 child_index) const;
+
+  // Returns true if an ancestor of this node (not including itself) is a
+  // leaf node, meaning that this node is not actually exposed to the
+  // platform.
+  bool PlatformIsChildOfLeaf() const;
 
   // Return the previous sibling of this object, or NULL if it's the first
   // child of its parent.
@@ -140,10 +139,6 @@ class CONTENT_EXPORT BrowserAccessibility {
   BrowserAccessibilityManager* manager() const { return manager_; }
   bool instance_active() const { return node_ != NULL; }
   ui::AXNode* node() const { return node_; }
-  const std::string& name() const { return name_; }
-  const std::string& value() const { return value_; }
-  void set_name(const std::string& name) { name_ = name; }
-  void set_value(const std::string& value) { value_ = value; }
 
   // These access the internal accessibility tree, which doesn't necessarily
   // reflect the accessibility tree that should be exposed on each platform.
@@ -163,6 +158,12 @@ class CONTENT_EXPORT BrowserAccessibility {
 
   typedef base::StringPairs HtmlAttributes;
   const HtmlAttributes& GetHtmlAttributes() const;
+
+
+  // Returns true if this is a native platform-specific object, vs a
+  // cross-platform generic object. Don't call ToBrowserAccessibilityXXX if
+  // IsNative returns false.
+  virtual bool IsNative() const;
 
 #if defined(OS_MACOSX) && __OBJC__
   BrowserAccessibilityCocoa* ToBrowserAccessibilityCocoa();
@@ -214,9 +215,6 @@ class CONTENT_EXPORT BrowserAccessibility {
   bool GetIntListAttribute(ui::AXIntListAttribute attribute,
                            std::vector<int32>* value) const;
 
-  void SetStringAttribute(ui::AXStringAttribute attribute,
-                          const std::string& value);
-
   // Retrieve the value of a html attribute from the attribute map and
   // returns true if found.
   bool GetHtmlAttribute(const char* attr, base::string16* value) const;
@@ -241,14 +239,14 @@ class CONTENT_EXPORT BrowserAccessibility {
   // Returns true if the bit corresponding to the given state enum is 1.
   bool HasState(ui::AXState state_enum) const;
 
+  // Returns true if this node is an cell or an table header.
+  bool IsCellOrTableHeaderRole() const;
+
   // Returns true if this node is an editable text field of any kind.
   bool IsEditableText() const;
 
   // True if this is a web area, and its grandparent is a presentational iframe.
   bool IsWebAreaForPresentationalIframe() const;
-
-  // Append the text from this node and its children.
-  std::string GetTextRecursive() const;
 
  protected:
   BrowserAccessibility();
@@ -268,9 +266,6 @@ class CONTENT_EXPORT BrowserAccessibility {
   // subtree rather than skipping over them - because they contain important
   // bounds offsets.
   BrowserAccessibility* GetParentForBoundsCalculation() const;
-
-  std::string name_;
-  std::string value_;
 
   // Convert the bounding rectangle of an element (which is relative to
   // its nearest scrollable ancestor) to local bounds (which are relative

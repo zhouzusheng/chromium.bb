@@ -29,19 +29,6 @@ BufferD3D::~BufferD3D()
     SafeDelete(mStaticIndexBuffer);
 }
 
-BufferD3D *BufferD3D::makeBufferD3D(BufferImpl *buffer)
-{
-    ASSERT(HAS_DYNAMIC_TYPE(BufferD3D*, buffer));
-    return static_cast<BufferD3D*>(buffer);
-}
-
-BufferD3D *BufferD3D::makeFromBuffer(gl::Buffer *buffer)
-{
-    BufferImpl *impl = buffer->getImplementation();
-    ASSERT(impl);
-    return makeBufferD3D(impl);
-}
-
 void BufferD3D::updateSerial()
 {
     mSerial = mNextSerial++;
@@ -65,6 +52,9 @@ void BufferD3D::invalidateStaticData()
     {
         SafeDelete(mStaticVertexBuffer);
         SafeDelete(mStaticIndexBuffer);
+
+        // Re-init static data to track that we're in a static buffer
+        initializeStaticData();
     }
 
     mUnmodifiedDataUse = 0;

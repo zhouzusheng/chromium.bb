@@ -106,7 +106,8 @@ static void set_good_speed_feature(VP9_COMP *cpi, VP9_COMMON *cm,
                                                       : USE_LARGESTALL;
 
     sf->reference_masking = 1;
-    sf->mode_search_skip_flags = FLAG_SKIP_INTRA_DIRMISMATCH |
+    sf->mode_search_skip_flags = (cm->frame_type == KEY_FRAME) ? 0 :
+                                 FLAG_SKIP_INTRA_DIRMISMATCH |
                                  FLAG_SKIP_INTRA_BESTINTER |
                                  FLAG_SKIP_COMP_BESTINTRA |
                                  FLAG_SKIP_INTRA_LOWVAR;
@@ -140,7 +141,8 @@ static void set_good_speed_feature(VP9_COMP *cpi, VP9_COMMON *cm,
     sf->mv.search_method = BIGDIA;
     sf->mv.subpel_search_method = SUBPEL_TREE_PRUNED_MORE;
     sf->adaptive_rd_thresh = 4;
-    sf->mode_search_skip_flags |= FLAG_EARLY_TERMINATE;
+    if (cm->frame_type != KEY_FRAME)
+      sf->mode_search_skip_flags |= FLAG_EARLY_TERMINATE;
     sf->disable_filter_search_var_thresh = 200;
     sf->use_lp32x32fdct = 1;
     sf->use_fast_coef_updates = ONE_LOOP_REDUCED;
@@ -226,7 +228,8 @@ static void set_rt_speed_feature(VP9_COMP *cpi, SPEED_FEATURES *sf,
   }
 
   if (speed >= 2) {
-    sf->mode_search_skip_flags = FLAG_SKIP_INTRA_DIRMISMATCH |
+    sf->mode_search_skip_flags = (cm->frame_type == KEY_FRAME) ? 0 :
+                                 FLAG_SKIP_INTRA_DIRMISMATCH |
                                  FLAG_SKIP_INTRA_BESTINTER |
                                  FLAG_SKIP_COMP_BESTINTRA |
                                  FLAG_SKIP_INTRA_LOWVAR;
@@ -305,6 +308,7 @@ static void set_rt_speed_feature(VP9_COMP *cpi, SPEED_FEATURES *sf,
     sf->partition_search_breakout_rate_thr = 200;
     sf->coeff_prob_appx_step = 4;
     sf->use_fast_coef_updates = is_keyframe ? TWO_LOOP : ONE_LOOP_REDUCED;
+    sf->mode_search_skip_flags = FLAG_SKIP_INTRA_DIRMISMATCH;
 
     if (!is_keyframe) {
       int i;
@@ -321,7 +325,6 @@ static void set_rt_speed_feature(VP9_COMP *cpi, SPEED_FEATURES *sf,
   if (speed >= 6) {
     // Adaptively switch between SOURCE_VAR_BASED_PARTITION and FIXED_PARTITION.
     sf->partition_search_type = VAR_BASED_PARTITION;
-
     // Turn on this to use non-RD key frame coding mode.
     sf->use_nonrd_pick_mode = 1;
     sf->mv.search_method = NSTEP;
@@ -336,17 +339,9 @@ static void set_rt_speed_feature(VP9_COMP *cpi, SPEED_FEATURES *sf,
     sf->mv.fullpel_search_step_param = 10;
     sf->lpf_pick = LPF_PICK_MINIMAL_LPF;
   }
-
-  if (speed >= 12) {
+  if (speed >= 8) {
     sf->adaptive_rd_thresh = 4;
     sf->mv.subpel_force_stop = 2;
-  }
-
-  if (speed >= 13) {
-    int i;
-    sf->max_intra_bsize = BLOCK_32X32;
-    for (i = 0; i < BLOCK_SIZES; ++i)
-      sf->inter_mode_mask[i] = INTER_NEAREST;
   }
 }
 

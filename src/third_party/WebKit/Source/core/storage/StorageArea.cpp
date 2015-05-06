@@ -35,9 +35,11 @@
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/page/Page.h"
 #include "core/page/StorageClient.h"
+#include "core/storage/DOMWindowStorage.h"
 #include "core/storage/Storage.h"
 #include "core/storage/StorageEvent.h"
 #include "core/storage/StorageNamespace.h"
+#include "core/storage/StorageNamespaceController.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "public/platform/WebStorageArea.h"
 #include "public/platform/WebString.h"
@@ -62,7 +64,7 @@ StorageArea::~StorageArea()
 {
 }
 
-void StorageArea::trace(Visitor* visitor)
+DEFINE_TRACE(StorageArea)
 {
     FrameDestructionObserver::trace(visitor);
 }
@@ -141,9 +143,12 @@ bool StorageArea::canAccessStorage(LocalFrame* frame)
     // FrameDestructionObserver is used to safely keep the cached
     // reference to the LocalFrame. Should the LocalFrame die before
     // this StorageArea does, that cached reference will be cleared.
-    if (m_frame == frame)
+    if (this->frame() == frame)
         return m_canAccessStorageCachedResult;
-    bool result = frame->page()->storageClient().canAccessStorage(frame, m_storageType);
+    StorageNamespaceController* controller = StorageNamespaceController::from(frame->page());
+    if (!controller)
+        return false;
+    bool result = controller->storageClient()->canAccessStorage(frame, m_storageType);
     // Move attention to the new LocalFrame.
     observeFrame(frame);
     m_canAccessStorageCachedResult = result;
@@ -165,11 +170,12 @@ void StorageArea::dispatchLocalStorageEvent(const String& key, const String& old
             if (!frame->isLocalFrame())
                 continue;
             LocalFrame* localFrame = toLocalFrame(frame);
-            Storage* storage = localFrame->localDOMWindow()->optionalLocalStorage();
+            LocalDOMWindow* localWindow = localFrame->localDOMWindow();
+            Storage* storage = DOMWindowStorage::from(*localWindow).optionalLocalStorage();
             if (storage && localFrame->document()->securityOrigin()->canAccess(securityOrigin) && !isEventSource(storage, sourceAreaInstance))
                 localFrame->localDOMWindow()->enqueueWindowEvent(StorageEvent::create(EventTypeNames::storage, key, oldValue, newValue, pageURL, storage));
+            InspectorInstrumentation::didDispatchDOMStorageEvent(localFrame, key, oldValue, newValue, LocalStorage, securityOrigin);
         }
-        InspectorInstrumentation::didDispatchDOMStorageEvent(page, key, oldValue, newValue, LocalStorage, securityOrigin);
     }
 }
 
@@ -179,7 +185,7 @@ static Page* findPageWithSessionStorageNamespace(const WebStorageNamespace& sess
     const HashSet<Page*>& pages = Page::ordinaryPages();
     for (Page* page : pages) {
         const bool dontCreateIfMissing = false;
-        StorageNamespace* storageNamespace = page->sessionStorage(dontCreateIfMissing);
+        StorageNamespace* storageNamespace = StorageNamespaceController::from(page)->sessionStorage(dontCreateIfMissing);
         if (storageNamespace && storageNamespace->isSameNamespace(sessionNamespace))
             return page;
     }
@@ -197,11 +203,12 @@ void StorageArea::dispatchSessionStorageEvent(const String& key, const String& o
         if (!frame->isLocalFrame())
             continue;
         LocalFrame* localFrame = toLocalFrame(frame);
-        Storage* storage = localFrame->localDOMWindow()->optionalSessionStorage();
+        LocalDOMWindow* localWindow = localFrame->localDOMWindow();
+        Storage* storage = DOMWindowStorage::from(*localWindow).optionalSessionStorage();
         if (storage && localFrame->document()->securityOrigin()->canAccess(securityOrigin) && !isEventSource(storage, sourceAreaInstance))
             localFrame->localDOMWindow()->enqueueWindowEvent(StorageEvent::create(EventTypeNames::storage, key, oldValue, newValue, pageURL, storage));
+        InspectorInstrumentation::didDispatchDOMStorageEvent(localFrame, key, oldValue, newValue, SessionStorage, securityOrigin);
     }
-    InspectorInstrumentation::didDispatchDOMStorageEvent(page, key, oldValue, newValue, SessionStorage, securityOrigin);
 }
 
 bool StorageArea::isEventSource(Storage* storage, WebStorageArea* sourceAreaInstance)

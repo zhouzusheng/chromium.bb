@@ -106,8 +106,15 @@ public:
     void setScale(float);
     float scale() const { return m_scale; }
 
+    // Update scale factor, magnifying or minifying by magnifyDelta, centered around
+    // the point specified by anchor in window coordinates. Returns false if page
+    // scale factor is left unchanged.
+    bool magnifyScaleAroundAnchor(float magnifyDelta, const FloatPoint& anchor);
+
     void registerLayersWithTreeView(blink::WebLayerTreeView*) const;
     void clearLayersForTreeView(blink::WebLayerTreeView*) const;
+
+    ScrollResult wheelEvent(const PlatformWheelEvent&);
 
     // The portion of the unzoomed frame visible in the inner "pinch" viewport,
     // in partial CSS pixels. Relative to the main frame.
@@ -153,8 +160,10 @@ private:
     virtual bool isScrollCornerVisible() const override { return false; }
     virtual IntRect scrollCornerRect() const override { return IntRect(); }
     virtual IntPoint scrollPosition() const override { return flooredIntPoint(m_offset); }
+    virtual DoublePoint scrollPositionDouble() const override { return m_offset; }
     virtual IntPoint minimumScrollPosition() const override;
     virtual IntPoint maximumScrollPosition() const override;
+    virtual DoublePoint maximumScrollPositionDouble() const override;
     virtual int visibleHeight() const override { return visibleRect().height(); };
     virtual int visibleWidth() const override { return visibleRect().width(); };
     virtual IntSize contentsSize() const override;

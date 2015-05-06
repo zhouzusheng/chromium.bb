@@ -63,7 +63,7 @@ public:
     virtual Widget* parent() const override { return Widget::parent(); }
     virtual Widget* root() const override { return Widget::root(); }
 
-    virtual void setFrameRect(const IntRect& frameRect) override { Widget::setFrameRect(frameRect); }
+    virtual void setFrameRect(const IntRect&) override;
     virtual IntRect frameRect() const override { return Widget::frameRect(); }
 
     virtual void invalidate() override { Widget::invalidate(); }
@@ -150,7 +150,7 @@ public:
     bool overlapsResizer() const { return m_overlapsResizer; }
     void setOverlapsResizer(bool overlapsResizer) { m_overlapsResizer = overlapsResizer; }
 
-    DisplayItemClient displayItemClient() const { return static_cast<DisplayItemClientInternalVoid*>((void*)this); }
+    virtual DisplayItemClient displayItemClient() const override;
 
 protected:
     Scrollbar(ScrollableArea*, ScrollbarOrientation, ScrollbarControlSize, ScrollbarTheme* = 0);

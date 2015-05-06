@@ -232,40 +232,78 @@ template<typename T> class TraceTrait<const T> : public TraceTrait<T> { };
 
 #if ENABLE(INLINED_TRACE)
 
-#define DECLARE_TRACE(maybevirtual, maybeoverride)                           \
+#define DECLARE_TRACE_IMPL(maybevirtual)                                     \
 public:                                                                      \
     typedef int HasInlinedTraceMethodMarker;                                 \
-    maybevirtual void trace(Visitor*) maybeoverride;                         \
-    maybevirtual void trace(InlinedGlobalMarkingVisitor) maybeoverride;      \
+    maybevirtual void trace(Visitor*);                                       \
+    maybevirtual void trace(InlinedGlobalMarkingVisitor);                    \
+                                                                             \
 private:                                                                     \
     template <typename VisitorDispatcher> void traceImpl(VisitorDispatcher); \
+                                                                             \
 public:
-
 #define DEFINE_TRACE(T)                                                        \
     void T::trace(Visitor* visitor) { traceImpl(visitor); }                    \
     void T::trace(InlinedGlobalMarkingVisitor visitor) { traceImpl(visitor); } \
     template <typename VisitorDispatcher>                                      \
     ALWAYS_INLINE void T::traceImpl(VisitorDispatcher visitor)
 
-#define DEFINE_INLINE_TRACE(maybevirtual, maybeoverride)                                               \
-    typedef int HasInlinedTraceMethodMarker;                                                           \
-    maybevirtual void trace(Visitor* visitor) maybeoverride { traceImpl(visitor); }                    \
-    maybevirtual void trace(InlinedGlobalMarkingVisitor visitor) maybeoverride { traceImpl(visitor); } \
-    template <typename VisitorDispatcher>                                                              \
+#define DEFINE_INLINE_TRACE_IMPL(maybevirtual)                                           \
+    typedef int HasInlinedTraceMethodMarker;                                             \
+    maybevirtual void trace(Visitor* visitor) { traceImpl(visitor); }                    \
+    maybevirtual void trace(InlinedGlobalMarkingVisitor visitor) { traceImpl(visitor); } \
+    template <typename VisitorDispatcher>                                                \
     inline void traceImpl(VisitorDispatcher visitor)
+
+#define DECLARE_TRACE_AFTER_DISPATCH()                                                    \
+public:                                                                                   \
+    typedef int HasInlinedTraceAfterDispatchMethodMarker;                                 \
+    void traceAfterDispatch(Visitor*);                                                    \
+    void traceAfterDispatch(InlinedGlobalMarkingVisitor);                                 \
+private:                                                                                  \
+    template <typename VisitorDispatcher> void traceAfterDispatchImpl(VisitorDispatcher); \
+public:
+
+#define DEFINE_TRACE_AFTER_DISPATCH(T)                                                                   \
+    void T::traceAfterDispatch(Visitor* visitor) { traceAfterDispatchImpl(visitor); }                    \
+    void T::traceAfterDispatch(InlinedGlobalMarkingVisitor visitor) { traceAfterDispatchImpl(visitor); } \
+    template <typename VisitorDispatcher>                                                                \
+    ALWAYS_INLINE void T::traceAfterDispatchImpl(VisitorDispatcher visitor)
+
+#define DEFINE_INLINE_TRACE_AFTER_DISPATCH()                                                          \
+    typedef int HasInlinedTraceAfterDispatchMethodMarker;                                             \
+    void traceAfterDispatch(Visitor* visitor) { traceAfterDispatchImpl(visitor); }                    \
+    void traceAfterDispatch(InlinedGlobalMarkingVisitor visitor) { traceAfterDispatchImpl(visitor); } \
+    template <typename VisitorDispatcher>                                                             \
+    inline void traceAfterDispatchImpl(VisitorDispatcher visitor)
 
 #else // !ENABLE(INLINED_TRACE)
 
-#define DECLARE_TRACE(maybevirtual, maybeoverride)   \
-public:                                              \
-    maybevirtual void trace(Visitor*) maybeoverride;
+#define DECLARE_TRACE_IMPL(maybevirtual) \
+public:                                  \
+    maybevirtual void trace(Visitor*);
 
 #define DEFINE_TRACE(T) void T::trace(Visitor* visitor)
 
-#define DEFINE_INLINE_TRACE(maybevirtual, maybeoverride)    \
-    maybevirtual void trace(Visitor* visitor) maybeoverride
+#define DEFINE_INLINE_TRACE_IMPL(maybevirtual) \
+    maybevirtual void trace(Visitor* visitor)
+
+#define DECLARE_TRACE_AFTER_DISPATCH() void traceAfterDispatch(Visitor*);
+
+#define DEFINE_TRACE_AFTER_DISPATCH(T) \
+    void T::traceAfterDispatch(Visitor* visitor)
+
+#define DEFINE_INLINE_TRACE_AFTER_DISPATCH() \
+    void traceAfterDispatch(Visitor* visitor)
 
 #endif
+
+#define EMPTY_MACRO_ARGUMENT
+
+#define DECLARE_TRACE() DECLARE_TRACE_IMPL(EMPTY_MACRO_ARGUMENT)
+#define DECLARE_VIRTUAL_TRACE() DECLARE_TRACE_IMPL(virtual)
+#define DEFINE_INLINE_TRACE() DEFINE_INLINE_TRACE_IMPL(EMPTY_MACRO_ARGUMENT)
+#define DEFINE_INLINE_VIRTUAL_TRACE() DEFINE_INLINE_TRACE_IMPL(virtual)
 
 // If MARKER_EAGER_TRACING is set to 1, a marker thread is allowed
 // to directly invoke the trace() method of not-as-yet marked objects upon
@@ -324,7 +362,8 @@ struct OffHeapCollectionTraceTrait;
 
 template<typename T>
 struct ObjectAliveTrait {
-    static bool isHeapObjectAlive(Visitor*, T*);
+    template<typename VisitorDispatcher>
+    static bool isHeapObjectAlive(VisitorDispatcher, T*);
 };
 
 // VisitorHelper contains common implementation of Visitor helper methods.
@@ -345,6 +384,7 @@ public:
             return;
 #if ENABLE(ASSERT)
         TraceTrait<T>::checkGCInfo(t);
+        Derived::fromHelper(this)->checkMarkingAllowed();
 #endif
         TraceTrait<T>::mark(Derived::fromHelper(this), t);
 
@@ -409,7 +449,7 @@ public:
             if (!vtable)
                 return;
         }
-        const_cast<T&>(t).trace(Derived::fromHelper(this));
+        TraceCompatibilityAdaptor<T>::trace(Derived::fromHelper(this), &const_cast<T&>(t));
     }
 
     // For simple cases where you just want to zero out a cell when the thing
@@ -431,13 +471,13 @@ public:
     template<typename T, size_t inlineCapacity>
     void trace(const Vector<T, inlineCapacity>& vector)
     {
-        OffHeapCollectionTraceTrait<Vector<T, inlineCapacity, WTF::DefaultAllocator> >::trace(Derived::fromHelper(this), vector);
+        OffHeapCollectionTraceTrait<Vector<T, inlineCapacity, WTF::DefaultAllocator>>::trace(Derived::fromHelper(this), vector);
     }
 
     template<typename T, size_t N>
     void trace(const Deque<T, N>& deque)
     {
-        OffHeapCollectionTraceTrait<Deque<T, N> >::trace(Derived::fromHelper(this), deque);
+        OffHeapCollectionTraceTrait<Deque<T, N>>::trace(Derived::fromHelper(this), deque);
     }
 
 #if !ENABLE(OILPAN)
@@ -528,13 +568,8 @@ public:
     }
 
 private:
-    template<typename T>
-    static void handleWeakCell(Derived* self, void* obj)
-    {
-        T** cell = reinterpret_cast<T**>(obj);
-        if (*cell && !self->isAlive(*cell))
-            *cell = nullptr;
-    }
+    template <typename T>
+    static void handleWeakCell(Visitor* self, void* obj);
 };
 
 // Visitor is used to traverse the Blink object graph. Used for the
@@ -619,7 +654,7 @@ public:
     virtual bool isMarked(const void*) = 0;
     virtual bool ensureMarked(const void*) = 0;
 
-#if ENABLE(GC_PROFILE_MARKING)
+#if ENABLE(GC_PROFILING)
     void setHostInfo(void* object, const String& name)
     {
         m_hostObject = object;
@@ -627,13 +662,13 @@ public:
     }
 #endif
 
-    inline bool canTraceEagerly() const
+    inline static bool canTraceEagerly()
     {
         ASSERT(m_stackFrameDepth);
         return m_stackFrameDepth->isSafeToRecurse();
     }
 
-    inline void configureEagerTraceLimit()
+    inline static void configureEagerTraceLimit()
     {
         if (!m_stackFrameDepth)
             m_stackFrameDepth = new StackFrameDepth;
@@ -648,7 +683,7 @@ protected:
     { }
 
     virtual void registerWeakCellWithCallback(void**, WeakPointerCallback) = 0;
-#if ENABLE(GC_PROFILE_MARKING)
+#if ENABLE(GC_PROFILING)
     virtual void recordObjectGraphEdge(const void*)
     {
         ASSERT_NOT_REACHED();
@@ -658,6 +693,10 @@ protected:
     String m_hostName;
 #endif
 
+#if ENABLE(ASSERT)
+    virtual void checkMarkingAllowed() { }
+#endif
+
 private:
     static Visitor* fromHelper(VisitorHelper<Visitor>* helper) { return static_cast<Visitor*>(helper); }
     static StackFrameDepth* m_stackFrameDepth;
@@ -665,11 +704,20 @@ private:
     bool m_isGlobalMarkingVisitor;
 };
 
+template <typename Derived>
+template <typename T>
+void VisitorHelper<Derived>::handleWeakCell(Visitor* self, void* obj)
+{
+    T** cell = reinterpret_cast<T**>(obj);
+    if (*cell && !self->isAlive(*cell))
+        *cell = nullptr;
+}
+
 // We trace vectors by using the trace trait on each element, which means you
 // can have vectors of general objects (not just pointers to objects) that can
 // be traced.
 template<typename T, size_t N>
-struct OffHeapCollectionTraceTrait<WTF::Vector<T, N, WTF::DefaultAllocator> > {
+struct OffHeapCollectionTraceTrait<WTF::Vector<T, N, WTF::DefaultAllocator>> {
     typedef WTF::Vector<T, N, WTF::DefaultAllocator> Vector;
 
     template<typename VisitorDispatcher>
@@ -683,7 +731,7 @@ struct OffHeapCollectionTraceTrait<WTF::Vector<T, N, WTF::DefaultAllocator> > {
 };
 
 template<typename T, size_t N>
-struct OffHeapCollectionTraceTrait<WTF::Deque<T, N> > {
+struct OffHeapCollectionTraceTrait<WTF::Deque<T, N>> {
     typedef WTF::Deque<T, N> Deque;
 
     template<typename VisitorDispatcher>
@@ -696,7 +744,7 @@ struct OffHeapCollectionTraceTrait<WTF::Deque<T, N> > {
     }
 };
 
-template<typename T, typename Traits = WTF::VectorTraits<T> >
+template<typename T, typename Traits = WTF::VectorTraits<T>>
 class HeapVectorBacking;
 
 template<typename Table>
@@ -725,7 +773,17 @@ public:
             // Assert against deep stacks so as to flush them out,
             // but test and appropriately handle them should they occur
             // in release builds.
-            ASSERT(visitor->canTraceEagerly());
+            //
+            // ASan adds extra stack usage, so disable the assert when it is
+            // enabled so as to avoid testing against a much lower & too low,
+            // stack depth threshold.
+            //
+            // FIXME: visitor->isMarked(t) exception is to allow empty trace()
+            // calls from HashTable weak processing. Remove the condition once
+            // it is refactored.
+#if !defined(ADDRESS_SANITIZER)
+            ASSERT(visitor->canTraceEagerly() || visitor->isMarked(t));
+#endif
             if (LIKELY(visitor->canTraceEagerly())) {
                 if (visitor->ensureMarked(t)) {
                     TraceTrait<T>::trace(visitor, const_cast<T*>(t));
@@ -774,7 +832,8 @@ template<typename T, bool = NeedsAdjustAndMark<T>::value> class DefaultObjectAli
 template<typename T>
 class DefaultObjectAliveTrait<T, false> {
 public:
-    static bool isHeapObjectAlive(Visitor* visitor, T* obj)
+    template<typename VisitorDispatcher>
+    static bool isHeapObjectAlive(VisitorDispatcher visitor, T* obj)
     {
         return visitor->isMarked(obj);
     }
@@ -783,13 +842,16 @@ public:
 template<typename T>
 class DefaultObjectAliveTrait<T, true> {
 public:
-    static bool isHeapObjectAlive(Visitor* visitor, T* obj)
+    template<typename VisitorDispatcher>
+    static bool isHeapObjectAlive(VisitorDispatcher visitor, T* obj)
     {
         return obj->isHeapObjectAlive(visitor);
     }
 };
 
-template<typename T> bool ObjectAliveTrait<T>::isHeapObjectAlive(Visitor* visitor, T* obj)
+template<typename T>
+template<typename VisitorDispatcher>
+bool ObjectAliveTrait<T>::isHeapObjectAlive(VisitorDispatcher visitor, T* obj)
 {
     return DefaultObjectAliveTrait<T>::isHeapObjectAlive(visitor, obj);
 }
@@ -817,29 +879,43 @@ template<typename T> bool ObjectAliveTrait<T>::isHeapObjectAlive(Visitor* visito
 
 class PLATFORM_EXPORT GarbageCollectedMixin {
 public:
+    typedef int IsGarbageCollectedMixinMarker;
     virtual void adjustAndMark(Visitor*) const = 0;
     virtual bool isHeapObjectAlive(Visitor*) const = 0;
     virtual void trace(Visitor*) { }
+#if ENABLE(INLINED_TRACE)
+    virtual void adjustAndMark(InlinedGlobalMarkingVisitor) const = 0;
+    virtual bool isHeapObjectAlive(InlinedGlobalMarkingVisitor) const = 0;
+    virtual void trace(InlinedGlobalMarkingVisitor);
+#endif
 };
 
-#define USING_GARBAGE_COLLECTED_MIXIN(TYPE) \
-public: \
-    virtual void adjustAndMark(blink::Visitor* visitor) const override \
-    { \
+#define DEFINE_GARBAGE_COLLECTED_MIXIN_METHODS(VISITOR, TYPE)                                                                           \
+public:                                                                                                                                 \
+    virtual void adjustAndMark(VISITOR visitor) const override                                                                          \
+    {                                                                                                                                   \
         typedef WTF::IsSubclassOfTemplate<typename WTF::RemoveConst<TYPE>::Type, blink::GarbageCollected> IsSubclassOfGarbageCollected; \
         static_assert(IsSubclassOfGarbageCollected::value, "only garbage collected objects can have garbage collected mixins");         \
-        if (TraceEagerlyTrait<TYPE>::value) {                                           \
-            if (visitor->ensureMarked(static_cast<const TYPE*>(this)))                  \
-                TraceTrait<TYPE>::trace(visitor, const_cast<TYPE*>(this));              \
-            return;                                                                     \
-        }                                                                               \
-        visitor->mark(static_cast<const TYPE*>(this), &blink::TraceTrait<TYPE>::trace); \
-    } \
-    virtual bool isHeapObjectAlive(blink::Visitor* visitor) const override              \
-    { \
-        return visitor->isAlive(this); \
-    } \
+        if (TraceEagerlyTrait<TYPE>::value) {                                                                                           \
+            if (visitor->ensureMarked(static_cast<const TYPE*>(this)))                                                                  \
+                TraceTrait<TYPE>::trace(visitor, const_cast<TYPE*>(this));                                                              \
+            return;                                                                                                                     \
+        }                                                                                                                               \
+        visitor->mark(static_cast<const TYPE*>(this), &blink::TraceTrait<TYPE>::trace);                                                 \
+    }                                                                                                                                   \
+    virtual bool isHeapObjectAlive(VISITOR visitor) const override                                                                      \
+    {                                                                                                                                   \
+        return visitor->isAlive(this);                                                                                                  \
+    }                                                                                                                                   \
 private:
+#if ENABLE(INLINED_TRACE)
+#define USING_GARBAGE_COLLECTED_MIXIN(TYPE)                       \
+    DEFINE_GARBAGE_COLLECTED_MIXIN_METHODS(blink::Visitor*, TYPE) \
+    DEFINE_GARBAGE_COLLECTED_MIXIN_METHODS(blink::InlinedGlobalMarkingVisitor, TYPE)
+#else
+#define USING_GARBAGE_COLLECTED_MIXIN(TYPE) \
+    DEFINE_GARBAGE_COLLECTED_MIXIN_METHODS(blink::Visitor*, TYPE)
+#endif
 
 #if ENABLE(OILPAN)
 #define WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(TYPE) USING_GARBAGE_COLLECTED_MIXIN(TYPE)

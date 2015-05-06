@@ -5,7 +5,7 @@
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
 #include "../../include/fxcrt/fx_basic.h"
-#include "../../../third_party/numerics/safe_math.h"
+#include "../../../third_party/base/numerics/safe_math.h"
 
 static int _Buffer_itoa(char* buf, int i, FX_DWORD flags)
 {
@@ -52,7 +52,7 @@ static CFX_StringData* FX_AllocString(int nLen)
     if (nLen == 0 || nLen < 0) {
         return NULL;
     }
-    base::CheckedNumeric<int> nSize = nLen;
+    pdfium::base::CheckedNumeric<int> nSize = nLen;
     nSize += sizeof(long) * 3 + 1;
     CFX_StringData* pData = (CFX_StringData*)FX_Alloc(FX_BYTE, nSize.ValueOrDie());
     if (!pData) {
@@ -935,22 +935,6 @@ void CFX_ByteString::SetAt(FX_STRSIZE nIndex, FX_CHAR ch)
     FXSYS_assert(nIndex < m_pData->m_nDataLength);
     CopyBeforeWrite();
     m_pData->m_String[nIndex] = ch;
-}
-CFX_ByteString CFX_ByteString::LoadFromFile(FX_BSTR filename)
-{
-    FXSYS_FILE* file = FXSYS_fopen(CFX_ByteString(filename), "rb");
-    if (file == NULL) {
-        return CFX_ByteString();
-    }
-    FXSYS_fseek(file, 0, FXSYS_SEEK_END);
-    int len = FXSYS_ftell(file);
-    FXSYS_fseek(file, 0, FXSYS_SEEK_SET);
-    CFX_ByteString str;
-    FX_LPSTR buf = str.GetBuffer(len);
-    FXSYS_fread(buf, 1, len, file);
-    str.ReleaseBuffer(len);
-    FXSYS_fclose(file);
-    return str;
 }
 CFX_WideString CFX_ByteString::UTF8Decode() const
 {

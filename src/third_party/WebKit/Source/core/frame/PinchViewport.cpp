@@ -35,13 +35,14 @@
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
+#include "core/inspector/InspectorInstrumentation.h"
+#include "core/layout/compositing/LayerCompositor.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/compositing/RenderLayerCompositor.h"
 #include "platform/TraceEvent.h"
 #include "platform/geometry/FloatSize.h"
 #include "platform/graphics/GraphicsLayer.h"
@@ -128,7 +129,7 @@ FloatRect PinchViewport::visibleRectInDocument() const
     if (!mainFrame() || !mainFrame()->view())
         return FloatRect();
 
-    FloatRect viewRect = mainFrame()->view()->visibleContentRect();
+    FloatRect viewRect = mainFrame()->view()->scrollableArea()->visibleContentRect();
     FloatRect pinchRect = visibleRect();
     pinchRect.moveBy(viewRect.location());
     return pinchRect;
@@ -187,6 +188,7 @@ void PinchViewport::setScaleAndLocation(float scale, const FloatPoint& location)
     if (scale != m_scale) {
         m_scale = scale;
         valuesChanged = true;
+        frameHost().chrome().client().pageScaleFactorChanged();
     }
 
     // Old-style pinch sets scale here but we shouldn't call into the
@@ -212,6 +214,7 @@ void PinchViewport::setScaleAndLocation(float scale, const FloatPoint& location)
         document->enqueueScrollEventForNode(document);
 
         mainFrame()->loader().client()->didChangeScrollOffset();
+        InspectorInstrumentation::didScroll(mainFrame());
         valuesChanged = true;
     }
 
@@ -221,6 +224,36 @@ void PinchViewport::setScaleAndLocation(float scale, const FloatPoint& location)
     mainFrame()->loader().saveScrollState();
 
     clampToBoundaries();
+}
+
+bool PinchViewport::magnifyScaleAroundAnchor(float magnifyDelta, const FloatPoint& anchor)
+{
+    const float oldPageScale = scale();
+    const float newPageScale = frameHost().chrome().client().clampPageScaleFactorToLimits(
+        magnifyDelta * oldPageScale);
+    if (newPageScale == oldPageScale)
+        return false;
+    if (!mainFrame() || !mainFrame()->view())
+        return false;
+
+    // Keep the center-of-pinch anchor in a stable position over the course
+    // of the magnify.
+    FloatPoint anchorAtOldScale = anchor.scaledBy(1.f / oldPageScale);
+    FloatPoint anchorAtNewScale = anchor.scaledBy(1.f / newPageScale);
+    FloatSize anchorDelta = anchorAtOldScale - anchorAtNewScale;
+
+    // First try to use the anchor's delta to scroll the FrameView.
+    FloatSize anchorDeltaUnusedByScroll = anchorDelta;
+    FrameView* view = mainFrame()->view();
+    DoublePoint oldPosition = view->scrollPositionDouble();
+    view->scrollBy(DoubleSize(anchorDelta.width(), anchorDelta.height()));
+    DoublePoint newPosition = view->scrollPositionDouble();
+    anchorDeltaUnusedByScroll = anchorDelta - toFloatSize(newPosition - oldPosition);
+
+    // Manually bubble any remaining anchor delta up to the pinch viewport.
+    FloatPoint newLocation(location() + anchorDeltaUnusedByScroll);
+    setScaleAndLocation(newPageScale, newLocation);
+    return true;
 }
 
 // Modifies the top of the graphics layer tree to add layers needed to support
@@ -233,8 +266,8 @@ void PinchViewport::setScaleAndLocation(float scale, const FloatPoint& location)
 //  |       +- *pageScaleLayer
 //  |           +- *innerViewportScrollLayer
 //  |               +-- overflowControlsHostLayer (root layer)
-//  |                   +-- outerViewportContainerLayer (fixed pos container) [frame container layer in RenderLayerCompositor]
-//  |                   |   +-- outerViewportScrollLayer [frame scroll layer in RenderLayerCompositor]
+//  |                   +-- outerViewportContainerLayer (fixed pos container) [frame container layer in LayerCompositor]
+//  |                   |   +-- outerViewportScrollLayer [frame scroll layer in LayerCompositor]
 //  |                   |       +-- content layers ...
 //  |                   +-- horizontal ScrollbarLayer (non-overlay)
 //  |                   +-- verticalScrollbarLayer (non-overlay)
@@ -358,7 +391,7 @@ void PinchViewport::registerLayersWithTreeView(WebLayerTreeView* layerTreeView) 
 
     ASSERT(frameHost().page().deprecatedLocalMainFrame()->contentRenderer());
 
-    RenderLayerCompositor* compositor = frameHost().page().deprecatedLocalMainFrame()->contentRenderer()->compositor();
+    LayerCompositor* compositor = frameHost().page().deprecatedLocalMainFrame()->contentRenderer()->compositor();
     // Get the outer viewport scroll layer.
     WebLayer* scrollLayer = compositor->scrollLayer() ? compositor->scrollLayer()->platformLayer() : 0;
 
@@ -378,6 +411,36 @@ void PinchViewport::clearLayersForTreeView(WebLayerTreeView* layerTreeView) cons
     ASSERT(layerTreeView);
 
     layerTreeView->clearViewportLayers();
+}
+
+ScrollResult PinchViewport::wheelEvent(const PlatformWheelEvent& event)
+{
+    FrameView* view = mainFrame()->view();
+    ScrollResult viewScrollResult = view->wheelEvent(event);
+
+    // The virtual viewport will only accept pixel scrolls.
+    if (!event.canScroll() || event.granularity() == ScrollByPageWheelEvent)
+        return viewScrollResult;
+
+    // Move the location by the negative of the remaining scroll delta.
+    FloatPoint oldOffset = m_offset;
+    FloatPoint locationDelta;
+    if (viewScrollResult.didScroll) {
+        locationDelta = -FloatPoint(viewScrollResult.unusedScrollDeltaX, viewScrollResult.unusedScrollDeltaY);
+    } else {
+        if (event.railsMode() != PlatformEvent::RailsModeVertical)
+            locationDelta.setX(-event.deltaX());
+        if (event.railsMode() != PlatformEvent::RailsModeHorizontal)
+            locationDelta.setY(-event.deltaY());
+    }
+    move(locationDelta);
+
+    FloatPoint usedLocationDelta(m_offset - oldOffset);
+    if (!viewScrollResult.didScroll && usedLocationDelta == FloatPoint::zero())
+        return ScrollResult(false);
+
+    FloatPoint unusedLocationDelta(locationDelta - usedLocationDelta);
+    return ScrollResult(true, -unusedLocationDelta.x(), -unusedLocationDelta.y());
 }
 
 bool PinchViewport::shouldUseIntegerScrollOffset() const
@@ -401,6 +464,11 @@ IntPoint PinchViewport::minimumScrollPosition() const
 
 IntPoint PinchViewport::maximumScrollPosition() const
 {
+    return flooredIntPoint(maximumScrollPositionDouble());
+}
+
+DoublePoint PinchViewport::maximumScrollPositionDouble() const
+{
     if (!mainFrame())
         return IntPoint();
 
@@ -421,8 +489,7 @@ IntPoint PinchViewport::maximumScrollPosition() const
 
     FloatSize maxPosition = frameViewSize - viewportSize;
     maxPosition.scale(1 / m_scale);
-
-    return flooredIntPoint(maxPosition);
+    return DoublePoint(maxPosition);
 }
 
 IntPoint PinchViewport::clampDocumentOffsetAtScale(const IntPoint& offset, float scale)
@@ -518,8 +585,8 @@ LocalFrame* PinchViewport::mainFrame() const
 FloatPoint PinchViewport::clampOffsetToBoundaries(const FloatPoint& offset)
 {
     FloatPoint clampedOffset(offset);
-    clampedOffset = clampedOffset.shrunkTo(FloatPoint(maximumScrollPosition()));
-    clampedOffset = clampedOffset.expandedTo(FloatPoint(minimumScrollPosition()));
+    clampedOffset = clampedOffset.shrunkTo(FloatPoint(maximumScrollPositionDouble()));
+    clampedOffset = clampedOffset.expandedTo(FloatPoint(minimumScrollPositionDouble()));
     return clampedOffset;
 }
 

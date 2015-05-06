@@ -25,7 +25,6 @@ Surface::Surface(rx::SurfaceImpl *impl)
       mSwapBehavior(EGL_BUFFER_PRESERVED),
       mTexture(NULL)
 {
-    setSwapInterval(1);
 }
 
 Surface::~Surface()
@@ -43,11 +42,6 @@ Surface::~Surface()
     SafeDelete(mImplementation);
 }
 
-Error Surface::initialize()
-{
-    return mImplementation->initialize();
-}
-
 EGLNativeWindowType Surface::getWindowHandle() const
 {
     return mImplementation->getWindowHandle();
@@ -60,12 +54,6 @@ Error Surface::swap()
 
 Error Surface::postSubBuffer(EGLint x, EGLint y, EGLint width, EGLint height)
 {
-    if (!isPostSubBufferSupported())
-    {
-        // Spec is not clear about how this should be handled.
-        return Error(EGL_SUCCESS);
-    }
-
     return mImplementation->postSubBuffer(x, y, width, height);
 }
 
@@ -86,7 +74,12 @@ void Surface::setSwapInterval(EGLint interval)
 
 EGLint Surface::getConfigID() const
 {
-    return mImplementation->getConfig()->mConfigID;
+    return mImplementation->getConfig()->configID;
+}
+
+const Config *Surface::getConfig() const
+{
+    return mImplementation->getConfig();
 }
 
 EGLint Surface::getPixelAspectRatio() const
@@ -134,7 +127,7 @@ EGLint Surface::getHeight() const
     return mImplementation->getHeight();
 }
 
-Error Surface::bindTexImage(gl::Texture2D *texture, EGLint buffer)
+Error Surface::bindTexImage(gl::Texture *texture, EGLint buffer)
 {
     ASSERT(!mTexture);
 
@@ -146,7 +139,7 @@ Error Surface::bindTexImage(gl::Texture2D *texture, EGLint buffer)
 Error Surface::releaseTexImage(EGLint buffer)
 {
     ASSERT(mTexture);
-    gl::Texture2D *boundTexture = mTexture;
+    gl::Texture *boundTexture = mTexture;
     mTexture = NULL;
 
     boundTexture->releaseTexImage();

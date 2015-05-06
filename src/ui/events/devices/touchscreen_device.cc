@@ -10,14 +10,14 @@
 
 namespace ui {
 
-TouchscreenDevice::TouchscreenDevice() {
+TouchscreenDevice::TouchscreenDevice() : touch_points(0) {
 }
 
 TouchscreenDevice::TouchscreenDevice(unsigned int id,
                                      InputDeviceType type,
-                                     const std::string& name,
-                                     const gfx::Size& size)
-    : InputDevice(id, type, name), size(size) {
+                                     const gfx::Size& size,
+                                     int touch_points)
+    : InputDevice(id, type), size(size), touch_points(touch_points) {
 }
 
 }  // namespace ui

@@ -23,12 +23,13 @@ namespace webrtc {
 
 // Object that will be passed by the spawned thread when it enters the callback
 // function.
+// TODO(tommi): Remove this define.
 #define ThreadObj void*
 
 // Callback function that the spawned thread will enter once spawned.
 // A return value of false is interpreted as that the function has no
 // more work to do and that the thread can be released.
-typedef bool(*ThreadRunFunction)(ThreadObj);
+typedef bool(*ThreadRunFunction)(void*);
 
 enum ThreadPriority {
   kLowPriority = 1,
@@ -38,11 +39,14 @@ enum ThreadPriority {
   kRealtimePriority = 5
 };
 
+// Represents a simple worker thread.  The implementation must be assumed
+// to be single threaded, meaning that all methods of the class, must be
+// called from the same thread, including instantiation.
 class ThreadWrapper {
  public:
   enum {kThreadMaxNameLength = 64};
 
-  virtual ~ThreadWrapper() {};
+  virtual ~ThreadWrapper() {}
 
   // Factory method. Constructor disabled.
   //
@@ -52,33 +56,25 @@ class ThreadWrapper {
   // prio        Thread priority. May require root/admin rights.
   // thread_name  NULL terminated thread name, will be visable in the Windows
   //             debugger.
+  // TODO(tommi): Remove the priority argument and provide a setter instead.
+  // TODO(tommi): Make thread_name non-optional (i.e. no default value).
   static ThreadWrapper* CreateThread(ThreadRunFunction func,
-                                     ThreadObj obj,
+                                     void* obj,
                                      ThreadPriority prio = kNormalPriority,
                                      const char* thread_name = 0);
 
-  // Get the current thread's kernel thread ID.
+  // Get the current thread's thread ID.
+  // NOTE: This is a static method. It returns the id of the calling thread,
+  // *not* the id of the worker thread that a ThreadWrapper instance represents.
+  // TODO(tommi): Move outside of the ThreadWrapper class to avoid confusion.
   static uint32_t GetThreadId();
-
-  // Non blocking termination of the spawned thread. Note that it is not safe
-  // to delete this class until the spawned thread has been reclaimed.
-  virtual void SetNotAlive() = 0;
 
   // Tries to spawns a thread and returns true if that was successful.
   // Additionally, it tries to set thread priority according to the priority
   // from when CreateThread was called. However, failure to set priority will
   // not result in a false return value.
-  // TODO(henrike): add a function for polling whether priority was set or
-  //                not.
+  // TODO(tommi): Remove the id parameter.
   virtual bool Start(unsigned int& id) = 0;
-
-  // Sets the threads CPU affinity. CPUs are listed 0 - (number of CPUs - 1).
-  // The numbers in processor_numbers specify which CPUs are allowed to run the
-  // thread. processor_numbers should not contain any duplicates and elements
-  // should be lower than (number of CPUs - 1). amount_of_processors should be
-  // equal to the number of processors listed in processor_numbers.
-  virtual bool SetAffinity(const int* processor_numbers,
-                           const unsigned int amount_of_processors);
 
   // Stops the spawned thread and waits for it to be reclaimed with a timeout
   // of two seconds. Will return false if the thread was not reclaimed.

@@ -46,7 +46,7 @@ class HTMLFormElement final : public HTMLElement {
 public:
     static PassRefPtrWillBeRawPtr<HTMLFormElement> create(Document&);
     virtual ~HTMLFormElement();
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     void setNeedsValidityCheck(ValidityRecalcReason, bool isValid);
 
@@ -123,7 +123,7 @@ public:
 private:
     explicit HTMLFormElement(Document&);
 
-    virtual bool rendererIsNeeded(const RenderStyle&) override;
+    virtual bool rendererIsNeeded(const LayoutStyle&) override;
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
     virtual void removedFrom(ContainerNode*) override;
     virtual void finishParsingChildren() override;

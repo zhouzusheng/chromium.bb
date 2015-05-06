@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "webrtc/base/checks.h"
+#include "webrtc/base/safe_conversions.h"
 #include "webrtc/engine_configurations.h"
 #include "webrtc/modules/audio_coding/main/interface/audio_coding_module_typedefs.h"
 #include "webrtc/modules/audio_coding/main/acm2/acm_codec_database.h"
@@ -96,23 +97,27 @@ int UpMix(const AudioFrame& frame, int length_out_buff, int16_t* out_buff) {
   return 0;
 }
 
-// Return 1 if timestamp t1 is less than timestamp t2, while compensating for
-// wrap-around.
-static int TimestampLessThan(uint32_t t1, uint32_t t2) {
-  uint32_t kHalfFullRange = static_cast<uint32_t>(0xFFFFFFFF) / 2;
-  if (t1 == t2) {
-    return 0;
-  } else if (t1 < t2) {
-    if (t2 - t1 < kHalfFullRange)
-      return 1;
-    return 0;
-  } else {
-    if (t1 - t2 < kHalfFullRange)
-      return 0;
-    return 1;
+void ConvertEncodedInfoToFragmentationHeader(
+    const AudioEncoder::EncodedInfo& info,
+    RTPFragmentationHeader* frag) {
+  if (info.redundant.empty()) {
+    frag->fragmentationVectorSize = 0;
+    return;
+  }
+
+  frag->VerifyAndAllocateFragmentationHeader(
+      static_cast<uint16_t>(info.redundant.size()));
+  frag->fragmentationVectorSize = static_cast<uint16_t>(info.redundant.size());
+  size_t offset = 0;
+  for (size_t i = 0; i < info.redundant.size(); ++i) {
+    frag->fragmentationOffset[i] = offset;
+    offset += info.redundant[i].encoded_bytes;
+    frag->fragmentationLength[i] = info.redundant[i].encoded_bytes;
+    frag->fragmentationTimeDiff[i] = rtc::checked_cast<uint16_t>(
+        info.encoded_timestamp - info.redundant[i].encoded_timestamp);
+    frag->fragmentationPlType[i] = info.redundant[i].payload_type;
   }
 }
-
 }  // namespace
 
 AudioCodingModuleImpl::AudioCodingModuleImpl(
@@ -141,7 +146,6 @@ AudioCodingModuleImpl::AudioCodingModuleImpl(
       previous_pltype_(255),
       aux_rtp_header_(NULL),
       receiver_initialized_(false),
-      secondary_send_codec_inst_(),
       codec_timestamp_(expected_codec_ts_),
       first_10ms_data_(false),
       callback_crit_sect_(CriticalSectionWrapper::CreateCriticalSection()),
@@ -153,10 +157,6 @@ AudioCodingModuleImpl::AudioCodingModuleImpl(
   const char no_name[] = "noCodecRegistered";
   strncpy(send_codec_inst_.plname, no_name, RTP_PAYLOAD_NAME_SIZE - 1);
   send_codec_inst_.pltype = -1;
-
-  strncpy(secondary_send_codec_inst_.plname, no_name,
-          RTP_PAYLOAD_NAME_SIZE - 1);
-  secondary_send_codec_inst_.pltype = -1;
 
   for (int i = 0; i < ACMCodecDB::kMaxNumCodecs; i++) {
     codecs_[i] = NULL;
@@ -244,22 +244,6 @@ AudioCodingModuleImpl::~AudioCodingModuleImpl() {
                "Destroyed");
 }
 
-int32_t AudioCodingModuleImpl::ChangeUniqueId(const int32_t id) {
-  {
-    CriticalSectionScoped lock(acm_crit_sect_);
-    id_ = id;
-
-    for (int i = 0; i < ACMCodecDB::kMaxNumCodecs; i++) {
-      if (codecs_[i] != NULL) {
-        codecs_[i]->SetUniqueID(id);
-      }
-    }
-  }
-
-  receiver_.set_id(id_);
-  return 0;
-}
-
 // Returns the number of milliseconds until the module want a
 // worker thread to call Process.
 int64_t AudioCodingModuleImpl::TimeUntilNextProcess() {
@@ -272,218 +256,8 @@ int64_t AudioCodingModuleImpl::TimeUntilNextProcess() {
       (send_codec_inst_.plfreq / 1000);
 }
 
-int32_t AudioCodingModuleImpl::Process() {
-  bool dual_stream;
-  {
-    CriticalSectionScoped lock(acm_crit_sect_);
-    dual_stream = (secondary_encoder_.get() != NULL);
-  }
-  if (dual_stream) {
-    return ProcessDualStream();
-  }
-  return ProcessSingleStream();
-}
-
-int AudioCodingModuleImpl::EncodeFragmentation(int fragmentation_index,
-                                               int payload_type,
-                                               uint32_t current_timestamp,
-                                               ACMGenericCodec* encoder,
-                                               uint8_t* stream) {
-  int16_t len_bytes = MAX_PAYLOAD_SIZE_BYTE;
-  uint32_t rtp_timestamp;
-  WebRtcACMEncodingType encoding_type;
-  if (encoder->Encode(stream, &len_bytes, &rtp_timestamp, &encoding_type) < 0) {
-    return -1;
-  }
-  assert(encoding_type == kActiveNormalEncoded);
-  assert(len_bytes > 0);
-
-  fragmentation_.fragmentationLength[fragmentation_index] = len_bytes;
-  fragmentation_.fragmentationPlType[fragmentation_index] = payload_type;
-  fragmentation_.fragmentationTimeDiff[fragmentation_index] =
-      static_cast<uint16_t>(current_timestamp - rtp_timestamp);
-  fragmentation_.fragmentationVectorSize++;
-  return len_bytes;
-}
-
-// Primary payloads are sent immediately, whereas a single secondary payload is
-// buffered to be combined with "the next payload."
-// Normally "the next payload" would be a primary payload. In case two
-// consecutive secondary payloads are generated with no primary payload in
-// between, then two secondary payloads are packed in one RED.
-int AudioCodingModuleImpl::ProcessDualStream() {
-  uint8_t stream[kMaxNumFragmentationVectors * MAX_PAYLOAD_SIZE_BYTE];
-  uint32_t current_timestamp;
-  size_t length_bytes = 0;
-  RTPFragmentationHeader my_fragmentation;
-
-  uint8_t my_red_payload_type;
-
-  {
-    CriticalSectionScoped lock(acm_crit_sect_);
-    // Check if there is an encoder before.
-    if (!HaveValidEncoder("ProcessDualStream") ||
-        secondary_encoder_.get() == NULL) {
-      return -1;
-    }
-    ACMGenericCodec* primary_encoder = codecs_[current_send_codec_idx_];
-    // If primary encoder has a full frame of audio to generate payload.
-    bool primary_ready_to_encode = primary_encoder->HasFrameToEncode();
-    // If the secondary encoder has a frame of audio to generate a payload.
-    bool secondary_ready_to_encode = secondary_encoder_->HasFrameToEncode();
-
-    if (!primary_ready_to_encode && !secondary_ready_to_encode) {
-      // Nothing to send.
-      return 0;
-    }
-    size_t len_bytes_previous_secondary = fragmentation_.fragmentationLength[2];
-    assert(len_bytes_previous_secondary <= MAX_PAYLOAD_SIZE_BYTE);
-    bool has_previous_payload = len_bytes_previous_secondary > 0;
-
-    uint32_t primary_timestamp = primary_encoder->EarliestTimestamp();
-    uint32_t secondary_timestamp = secondary_encoder_->EarliestTimestamp();
-
-    if (!has_previous_payload && !primary_ready_to_encode &&
-        secondary_ready_to_encode) {
-      // Secondary payload will be the ONLY bit-stream. Encode by secondary
-      // encoder, store the payload, and return. No packet is sent.
-      int16_t len_bytes = MAX_PAYLOAD_SIZE_BYTE;
-      WebRtcACMEncodingType encoding_type;
-      if (secondary_encoder_->Encode(red_buffer_, &len_bytes,
-                                     &last_red_timestamp_,
-                                     &encoding_type) < 0) {
-        WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceAudioCoding, id_,
-                     "ProcessDual(): Encoding of secondary encoder Failed");
-        return -1;
-      }
-      assert(len_bytes > 0);
-      assert(encoding_type == kActiveNormalEncoded);
-      assert(len_bytes <= MAX_PAYLOAD_SIZE_BYTE);
-      fragmentation_.fragmentationLength[2] = len_bytes;
-      return 0;
-    }
-
-    // Initialize with invalid but different values, so later can have sanity
-    // check if they are different.
-    int index_primary = -1;
-    int index_secondary = -2;
-    int index_previous_secondary = -3;
-
-    if (primary_ready_to_encode) {
-      index_primary = secondary_ready_to_encode ?
-          TimestampLessThan(primary_timestamp, secondary_timestamp) : 0;
-      index_primary += has_previous_payload ?
-          TimestampLessThan(primary_timestamp, last_red_timestamp_) : 0;
-    }
-
-    if (secondary_ready_to_encode) {
-      // Timestamp of secondary payload can only be less than primary payload,
-      // but is always larger than the timestamp of previous secondary payload.
-      index_secondary = primary_ready_to_encode ?
-          (1 - TimestampLessThan(primary_timestamp, secondary_timestamp)) : 0;
-    }
-
-    if (has_previous_payload) {
-      index_previous_secondary = primary_ready_to_encode ?
-          (1 - TimestampLessThan(primary_timestamp, last_red_timestamp_)) : 0;
-      // If secondary is ready it always have a timestamp larger than previous
-      // secondary. So the index is either 0 or 1.
-      index_previous_secondary += secondary_ready_to_encode ? 1 : 0;
-    }
-
-    // Indices must not be equal.
-    assert(index_primary != index_secondary);
-    assert(index_primary != index_previous_secondary);
-    assert(index_secondary != index_previous_secondary);
-
-    // One of the payloads has to be at position zero.
-    assert(index_primary == 0 || index_secondary == 0 ||
-           index_previous_secondary == 0);
-
-    // Timestamp of the RED payload.
-    if (index_primary == 0) {
-      current_timestamp = primary_timestamp;
-    } else if (index_secondary == 0) {
-      current_timestamp = secondary_timestamp;
-    } else {
-      current_timestamp = last_red_timestamp_;
-    }
-
-    fragmentation_.fragmentationVectorSize = 0;
-    if (has_previous_payload) {
-      assert(index_previous_secondary >= 0 &&
-             index_previous_secondary < kMaxNumFragmentationVectors);
-      assert(len_bytes_previous_secondary <= MAX_PAYLOAD_SIZE_BYTE);
-      memcpy(&stream[index_previous_secondary * MAX_PAYLOAD_SIZE_BYTE],
-             red_buffer_, sizeof(stream[0]) * len_bytes_previous_secondary);
-      fragmentation_.fragmentationLength[index_previous_secondary] =
-          len_bytes_previous_secondary;
-      fragmentation_.fragmentationPlType[index_previous_secondary] =
-          secondary_send_codec_inst_.pltype;
-      fragmentation_.fragmentationTimeDiff[index_previous_secondary] =
-          static_cast<uint16_t>(current_timestamp - last_red_timestamp_);
-      fragmentation_.fragmentationVectorSize++;
-    }
-
-    if (primary_ready_to_encode) {
-      assert(index_primary >= 0 && index_primary < kMaxNumFragmentationVectors);
-      int i = index_primary * MAX_PAYLOAD_SIZE_BYTE;
-      if (EncodeFragmentation(index_primary, send_codec_inst_.pltype,
-                              current_timestamp, primary_encoder,
-                              &stream[i]) < 0) {
-        WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceAudioCoding, id_,
-                     "ProcessDualStream(): Encoding of primary encoder Failed");
-        return -1;
-      }
-    }
-
-    if (secondary_ready_to_encode) {
-      assert(index_secondary >= 0 &&
-             index_secondary < kMaxNumFragmentationVectors - 1);
-      int i = index_secondary * MAX_PAYLOAD_SIZE_BYTE;
-      if (EncodeFragmentation(index_secondary,
-                              secondary_send_codec_inst_.pltype,
-                              current_timestamp, secondary_encoder_.get(),
-                              &stream[i]) < 0) {
-        WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceAudioCoding, id_,
-                     "ProcessDualStream(): Encoding of secondary encoder "
-                     "Failed");
-        return -1;
-      }
-    }
-    // Copy to local variable, as it will be used outside the ACM lock.
-    my_fragmentation.CopyFrom(fragmentation_);
-    my_red_payload_type = red_pltype_;
-    length_bytes = 0;
-    for (int n = 0; n < fragmentation_.fragmentationVectorSize; n++) {
-      length_bytes += fragmentation_.fragmentationLength[n];
-    }
-  }
-
-  {
-    CriticalSectionScoped lock(callback_crit_sect_);
-    if (packetization_callback_ != NULL) {
-      // Callback with payload data, including redundant data (RED).
-      if (packetization_callback_->SendData(kAudioFrameSpeech,
-                                            my_red_payload_type,
-                                            current_timestamp, stream,
-                                            length_bytes,
-                                            &my_fragmentation) < 0) {
-        return -1;
-      }
-    }
-  }
-
-  {
-    CriticalSectionScoped lock(acm_crit_sect_);
-    // Now that data is sent, clean up fragmentation.
-    ResetFragmentation(0);
-  }
-  return 0;
-}
-
 // Process any pending tasks such as timeouts.
-int AudioCodingModuleImpl::ProcessSingleStream() {
+int32_t AudioCodingModuleImpl::Process() {
   // Make room for 1 RED payload.
   uint8_t stream[2 * MAX_PAYLOAD_SIZE_BYTE];
   // TODO(turajs): |length_bytes| & |red_length_bytes| can be of type int if
@@ -496,23 +270,22 @@ int AudioCodingModuleImpl::ProcessSingleStream() {
   FrameType frame_type = kAudioFrameSpeech;
   uint8_t current_payload_type = 0;
   bool has_data_to_send = false;
-  bool red_active = false;
   RTPFragmentationHeader my_fragmentation;
 
   // Keep the scope of the ACM critical section limited.
   {
     CriticalSectionScoped lock(acm_crit_sect_);
     // Check if there is an encoder before.
-    if (!HaveValidEncoder("ProcessSingleStream")) {
+    if (!HaveValidEncoder("Process")) {
       return -1;
     }
-    status = codecs_[current_send_codec_idx_]->Encode(stream, &length_bytes,
-                                                      &rtp_timestamp,
-                                                      &encoding_type);
+    AudioEncoder::EncodedInfo encoded_info;
+    status = codecs_[current_send_codec_idx_]->Encode(
+        stream, &length_bytes, &rtp_timestamp, &encoding_type, &encoded_info);
     if (status < 0) {
       // Encode failed.
       WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceAudioCoding, id_,
-                   "ProcessSingleStream(): Encoding Failed");
+                   "Process(): Encoding Failed");
       length_bytes = 0;
       return -1;
     } else if (status == 0) {
@@ -528,44 +301,51 @@ int AudioCodingModuleImpl::ProcessSingleStream() {
         }
         case kActiveNormalEncoded:
         case kPassiveNormalEncoded: {
-          current_payload_type = static_cast<uint8_t>(send_codec_inst_.pltype);
           frame_type = kAudioFrameSpeech;
           break;
         }
         case kPassiveDTXNB: {
-          current_payload_type = cng_nb_pltype_;
           frame_type = kAudioFrameCN;
           is_first_red_ = true;
           break;
         }
         case kPassiveDTXWB: {
-          current_payload_type = cng_wb_pltype_;
           frame_type = kAudioFrameCN;
           is_first_red_ = true;
           break;
         }
         case kPassiveDTXSWB: {
-          current_payload_type = cng_swb_pltype_;
           frame_type = kAudioFrameCN;
           is_first_red_ = true;
           break;
         }
         case kPassiveDTXFB: {
-          current_payload_type = cng_fb_pltype_;
           frame_type = kAudioFrameCN;
           is_first_red_ = true;
           break;
         }
       }
       has_data_to_send = true;
+      current_payload_type = encoded_info.payload_type;
       previous_pltype_ = current_payload_type;
+
+      ConvertEncodedInfoToFragmentationHeader(encoded_info, &my_fragmentation);
+      // If RED is produced by the AudioEncoder object, the payload type for
+      // RED must be set.
+      if (!encoded_info.redundant.empty())
+        current_payload_type = encoded_info.payload_type;
 
       // Redundancy encode is done here. The two bitstreams packetized into
       // one RTP packet and the fragmentation points are set.
       // Only apply RED on speech data.
-      if ((red_enabled_) &&
+      // Note: This will only happen if |encoded_info| did not contain any
+      // redundancy data. The if statement below will be removed once all codecs
+      // have been switched to the new AudioEncoder interface.
+      if ((codecs_[current_send_codec_idx_]->ExternalRedNeeded()) &&
           ((encoding_type == kActiveNormalEncoded) ||
-              (encoding_type == kPassiveNormalEncoded))) {
+           (encoding_type == kPassiveNormalEncoded))) {
+        DCHECK(encoded_info.redundant.empty());
+        FATAL() << "Don't go here!";
         // RED is enabled within this scope.
         //
         // Note that, a special solution exists for iSAC since it is the only
@@ -605,7 +385,6 @@ int AudioCodingModuleImpl::ProcessSingleStream() {
         //
         //  Hence, even if every second packet is dropped, perfect
         //  reconstruction is possible.
-        red_active = true;
 
         has_data_to_send = false;
         // Skip the following part for the first packet in a RED session.
@@ -673,7 +452,7 @@ int AudioCodingModuleImpl::ProcessSingleStream() {
     CriticalSectionScoped lock(callback_crit_sect_);
 
     if (packetization_callback_ != NULL) {
-      if (red_active) {
+      if (my_fragmentation.fragmentationVectorSize > 0) {
         // Callback with payload data, including redundant data (RED).
         packetization_callback_->SendData(frame_type, current_payload_type,
                                           rtp_timestamp, stream, length_bytes,
@@ -716,15 +495,11 @@ int AudioCodingModuleImpl::InitializeSender() {
 
   // Initialize RED.
   is_first_red_ = true;
-  if (red_enabled_ || secondary_encoder_.get() != NULL) {
+  if (red_enabled_) {
     if (red_buffer_ != NULL) {
       memset(red_buffer_, 0, MAX_PAYLOAD_SIZE_BYTE);
     }
-    if (red_enabled_) {
-      ResetFragmentation(kNumRedFragmentationVectors);
-    } else {
-      ResetFragmentation(0);
-    }
+    ResetFragmentation(kNumRedFragmentationVectors);
   }
 
   return 0;
@@ -740,8 +515,10 @@ int AudioCodingModuleImpl::ResetEncoder() {
 
 ACMGenericCodec* AudioCodingModuleImpl::CreateCodec(const CodecInst& codec) {
   ACMGenericCodec* my_codec = NULL;
-
-  my_codec = ACMCodecDB::CreateCodecInstance(codec);
+  CriticalSectionScoped lock(acm_crit_sect_);
+  my_codec = ACMCodecDB::CreateCodecInstance(
+      codec, cng_nb_pltype_, cng_wb_pltype_, cng_swb_pltype_, cng_fb_pltype_,
+      red_enabled_, red_pltype_);
   if (my_codec == NULL) {
     // Error, could not create the codec.
     WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceAudioCoding, id_,
@@ -820,69 +597,6 @@ static int IsValidSendCodec(const CodecInst& send_codec,
   return codec_id;
 }
 
-int AudioCodingModuleImpl::RegisterSecondarySendCodec(
-    const CodecInst& send_codec) {
-  CriticalSectionScoped lock(acm_crit_sect_);
-  if (!send_codec_registered_) {
-    return -1;
-  }
-  // Primary and Secondary codecs should have the same sampling rates.
-  if (send_codec.plfreq != send_codec_inst_.plfreq) {
-    return -1;
-  }
-  int mirror_id;
-  int codec_id = IsValidSendCodec(send_codec, false, id_, &mirror_id);
-  if (codec_id < 0) {
-    return -1;
-  }
-  ACMGenericCodec* encoder = CreateCodec(send_codec);
-  WebRtcACMCodecParams codec_params;
-  // Initialize the codec before registering. For secondary codec VAD & DTX are
-  // disabled.
-  memcpy(&(codec_params.codec_inst), &send_codec, sizeof(CodecInst));
-  codec_params.enable_vad = false;
-  codec_params.enable_dtx = false;
-  codec_params.vad_mode = VADNormal;
-  // Force initialization.
-  if (encoder->InitEncoder(&codec_params, true) < 0) {
-    // Could not initialize, therefore cannot be registered.
-    delete encoder;
-    return -1;
-  }
-  secondary_encoder_.reset(encoder);
-  memcpy(&secondary_send_codec_inst_, &send_codec, sizeof(send_codec));
-
-  // Disable VAD & DTX.
-  SetVADSafe(false, false, VADNormal);
-
-  // Cleaning.
-  if (red_buffer_) {
-    memset(red_buffer_, 0, MAX_PAYLOAD_SIZE_BYTE);
-  }
-  ResetFragmentation(0);
-  return 0;
-}
-
-void AudioCodingModuleImpl::UnregisterSecondarySendCodec() {
-  CriticalSectionScoped lock(acm_crit_sect_);
-  if (secondary_encoder_.get() == NULL) {
-    return;
-  }
-  secondary_encoder_.reset();
-  ResetFragmentation(0);
-}
-
-int AudioCodingModuleImpl::SecondarySendCodec(
-    CodecInst* secondary_codec) const {
-  CriticalSectionScoped lock(acm_crit_sect_);
-  if (secondary_encoder_.get() == NULL) {
-    return -1;
-  }
-  memcpy(secondary_codec, &secondary_send_codec_inst_,
-         sizeof(secondary_send_codec_inst_));
-  return 0;
-}
-
 // Can be called multiple times for Codec, CNG, RED.
 int AudioCodingModuleImpl::RegisterSendCodec(const CodecInst& send_codec) {
   int mirror_id;
@@ -944,6 +658,7 @@ int AudioCodingModuleImpl::RegisterSendCodec(const CodecInst& send_codec) {
         return -1;
       }
     }
+    SetCngPayloadType(send_codec.plfreq, send_codec.pltype);
     return 0;
   }
 
@@ -971,15 +686,6 @@ int AudioCodingModuleImpl::RegisterSendCodec(const CodecInst& send_codec) {
         (mirror_id == send_codec_mirror_id);
   } else {
     is_send_codec = false;
-  }
-
-  // If there is secondary codec registered and the new send codec has a
-  // sampling rate different than that of secondary codec, then unregister the
-  // secondary codec.
-  if (secondary_encoder_.get() != NULL &&
-      secondary_send_codec_inst_.plfreq != send_codec.plfreq) {
-    secondary_encoder_.reset();
-    ResetFragmentation(0);
   }
 
   // If new codec, or new settings, register.
@@ -1265,10 +971,6 @@ int AudioCodingModuleImpl::Add10MsData(
 
   // Check whether we need an up-mix or down-mix?
   bool remix = ptr_frame->num_channels_ != send_codec_inst_.channels;
-  if (secondary_encoder_.get() != NULL) {
-    remix = remix ||
-        (ptr_frame->num_channels_ != secondary_send_codec_inst_.channels);
-  }
 
   // If a re-mix is required (up or down), this buffer will store re-mixed
   // version of the input.
@@ -1296,18 +998,6 @@ int AudioCodingModuleImpl::Add10MsData(
       send_codec_inst_.channels) < 0)
     return -1;
 
-  if (secondary_encoder_.get() != NULL) {
-    // For pushing data to secondary, point the |ptr_audio| to correct buffer.
-    ptr_audio = ptr_frame->data_;
-    if (secondary_send_codec_inst_.channels != ptr_frame->num_channels_)
-      ptr_audio = buffer;
-
-    if (secondary_encoder_->Add10MsData(
-        ptr_frame->timestamp_, ptr_audio, ptr_frame->samples_per_channel_,
-        secondary_send_codec_inst_.channels) < 0)
-      return -1;
-  }
-
   return 0;
 }
 
@@ -1318,23 +1008,12 @@ int AudioCodingModuleImpl::Add10MsData(
 // is required, |*ptr_out| points to |in_frame|.
 int AudioCodingModuleImpl::PreprocessToAddData(const AudioFrame& in_frame,
                                                const AudioFrame** ptr_out) {
-  // Primary and secondary (if exists) should have the same sampling rate.
-  assert((secondary_encoder_.get() != NULL) ?
-      secondary_send_codec_inst_.plfreq == send_codec_inst_.plfreq : true);
-
   bool resample = (in_frame.sample_rate_hz_ != send_codec_inst_.plfreq);
 
   // This variable is true if primary codec and secondary codec (if exists)
   // are both mono and input is stereo.
-  bool down_mix;
-  if (secondary_encoder_.get() != NULL) {
-    down_mix = (in_frame.num_channels_ == 2) &&
-        (send_codec_inst_.channels == 1) &&
-        (secondary_send_codec_inst_.channels == 1);
-  } else {
-    down_mix = (in_frame.num_channels_ == 2) &&
-        (send_codec_inst_.channels == 1);
-  }
+  bool down_mix =
+      (in_frame.num_channels_ == 2) && (send_codec_inst_.channels == 1);
 
   if (!first_10ms_data_) {
     expected_in_ts_ = in_frame.timestamp_;
@@ -1426,6 +1105,8 @@ int AudioCodingModuleImpl::SetREDStatus(
     return -1;
   }
 
+  EnableCopyRedForAllCodecs(enable_red);
+
   if (red_enabled_ != enable_red) {
     // Reset the RED buffer.
     memset(red_buffer_, 0, MAX_PAYLOAD_SIZE_BYTE);
@@ -1514,17 +1195,6 @@ int AudioCodingModuleImpl::SetVADSafe(bool enable_dtx,
   if ((enable_dtx || enable_vad) && stereo_send_) {
     WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceAudioCoding, id_,
                  "VAD/DTX not supported for stereo sending");
-    dtx_enabled_ = false;
-    vad_enabled_ = false;
-    vad_mode_ = mode;
-    return -1;
-  }
-
-  // We don't support VAD/DTX when dual-streaming is enabled, i.e.
-  // secondary-encoder is registered.
-  if ((enable_dtx || enable_vad) && secondary_encoder_.get() != NULL) {
-    WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceAudioCoding, id_,
-                 "VAD/DTX not supported when dual-streaming is enabled.");
     dtx_enabled_ = false;
     vad_enabled_ = false;
     vad_mode_ = mode;
@@ -1776,8 +1446,8 @@ int AudioCodingModuleImpl::PlayoutData10Ms(int desired_freq_hz,
 
 // TODO(turajs) change the return value to void. Also change the corresponding
 // NetEq function.
-int AudioCodingModuleImpl::NetworkStatistics(ACMNetworkStatistics* statistics) {
-  receiver_.NetworkStatistics(statistics);
+int AudioCodingModuleImpl::GetNetworkStatistics(NetworkStatistics* statistics) {
+  receiver_.GetNetworkStatistics(statistics);
   return 0;
 }
 
@@ -1890,6 +1560,14 @@ int AudioCodingModuleImpl::ConfigISACBandwidthEstimator(
       frame_size_ms, rate_bit_per_sec, enforce_frame_size);
 }
 
+int AudioCodingModuleImpl::SetOpusApplication(OpusApplicationMode application) {
+  CriticalSectionScoped lock(acm_crit_sect_);
+  if (!HaveValidEncoder("SetOpusApplication")) {
+    return -1;
+  }
+  return codecs_[current_send_codec_idx_]->SetOpusApplication(application);
+}
+
 // Informs Opus encoder of the maximum playback rate the receiver will render.
 int AudioCodingModuleImpl::SetOpusMaxPlaybackRate(int frequency_hz) {
   CriticalSectionScoped lock(acm_crit_sect_);
@@ -1997,6 +1675,23 @@ int AudioCodingModuleImpl::GetAudioDecoder(const CodecInst& codec, int codec_id,
   return 0;
 }
 
+void AudioCodingModuleImpl::SetCngPayloadType(int sample_rate_hz,
+                                              int payload_type) {
+  for (auto* codec : codecs_) {
+    if (codec) {
+      codec->SetCngPt(sample_rate_hz, payload_type);
+    }
+  }
+}
+
+void AudioCodingModuleImpl::EnableCopyRedForAllCodecs(bool enable) {
+  for (auto* codec : codecs_) {
+    if (codec) {
+      codec->EnableCopyRed(enable, red_pltype_);
+    }
+  }
+}
+
 int AudioCodingModuleImpl::SetInitialPlayoutDelay(int delay_ms) {
   {
     CriticalSectionScoped lock(acm_crit_sect_);
@@ -2017,7 +1712,7 @@ void AudioCodingModuleImpl::DisableNack() {
 }
 
 std::vector<uint16_t> AudioCodingModuleImpl::GetNackList(
-    int round_trip_time_ms) const {
+    int64_t round_trip_time_ms) const {
   return receiver_.GetNackList(round_trip_time_ms);
 }
 
@@ -2141,8 +1836,8 @@ bool AudioCodingImpl::Get10MsAudio(AudioFrame* audio_frame) {
   return acm_old_->PlayoutData10Ms(playout_frequency_hz_, audio_frame) == 0;
 }
 
-bool AudioCodingImpl::NetworkStatistics(
-    ACMNetworkStatistics* network_statistics) {
+bool AudioCodingImpl::GetNetworkStatistics(
+    NetworkStatistics* network_statistics) {
   FATAL() << "Not implemented yet.";
   return false;
 }

@@ -4475,6 +4475,15 @@ std::string GLES2Util::GetStringBlitFilter(uint32_t value) {
                                            arraysize(string_table), value);
 }
 
+std::string GLES2Util::GetStringBufferMode(uint32_t value) {
+  static const EnumToString string_table[] = {
+      {GL_INTERLEAVED_ATTRIBS, "GL_INTERLEAVED_ATTRIBS"},
+      {GL_SEPARATE_ATTRIBS, "GL_SEPARATE_ATTRIBS"},
+  };
+  return GLES2Util::GetQualifiedEnumString(string_table,
+                                           arraysize(string_table), value);
+}
+
 std::string GLES2Util::GetStringBufferParameter(uint32_t value) {
   static const EnumToString string_table[] = {
       {GL_BUFFER_SIZE, "GL_BUFFER_SIZE"}, {GL_BUFFER_USAGE, "GL_BUFFER_USAGE"},
@@ -4497,6 +4506,38 @@ std::string GLES2Util::GetStringBufferUsage(uint32_t value) {
       {GL_STREAM_DRAW, "GL_STREAM_DRAW"},
       {GL_STATIC_DRAW, "GL_STATIC_DRAW"},
       {GL_DYNAMIC_DRAW, "GL_DYNAMIC_DRAW"},
+  };
+  return GLES2Util::GetQualifiedEnumString(string_table,
+                                           arraysize(string_table), value);
+}
+
+std::string GLES2Util::GetStringBufferfi(uint32_t value) {
+  static const EnumToString string_table[] = {
+      {GL_DEPTH_STENCIL, "GL_DEPTH_STENCIL"},
+  };
+  return GLES2Util::GetQualifiedEnumString(string_table,
+                                           arraysize(string_table), value);
+}
+
+std::string GLES2Util::GetStringBufferfv(uint32_t value) {
+  static const EnumToString string_table[] = {
+      {GL_COLOR, "GL_COLOR"}, {GL_DEPTH, "GL_DEPTH"},
+  };
+  return GLES2Util::GetQualifiedEnumString(string_table,
+                                           arraysize(string_table), value);
+}
+
+std::string GLES2Util::GetStringBufferiv(uint32_t value) {
+  static const EnumToString string_table[] = {
+      {GL_COLOR, "GL_COLOR"}, {GL_STENCIL, "GL_STENCIL"},
+  };
+  return GLES2Util::GetQualifiedEnumString(string_table,
+                                           arraysize(string_table), value);
+}
+
+std::string GLES2Util::GetStringBufferuiv(uint32_t value) {
+  static const EnumToString string_table[] = {
+      {GL_COLOR, "GL_COLOR"},
   };
   return GLES2Util::GetQualifiedEnumString(string_table,
                                            arraysize(string_table), value);
@@ -5060,6 +5101,14 @@ std::string GLES2Util::GetStringSubscriptionTarget(uint32_t value) {
                                            arraysize(string_table), value);
 }
 
+std::string GLES2Util::GetStringSyncCondition(uint32_t value) {
+  static const EnumToString string_table[] = {
+      {GL_SYNC_GPU_COMMANDS_COMPLETE, "GL_SYNC_GPU_COMMANDS_COMPLETE"},
+  };
+  return GLES2Util::GetQualifiedEnumString(string_table,
+                                           arraysize(string_table), value);
+}
+
 std::string GLES2Util::GetStringTexture3DTarget(uint32_t value) {
   static const EnumToString string_table[] = {
       {GL_TEXTURE_3D, "GL_TEXTURE_3D"},
@@ -5206,6 +5255,38 @@ std::string GLES2Util::GetStringTransformFeedbackPrimitiveMode(uint32_t value) {
       {GL_POINTS, "GL_POINTS"},
       {GL_LINES, "GL_LINES"},
       {GL_TRIANGLES, "GL_TRIANGLES"},
+  };
+  return GLES2Util::GetQualifiedEnumString(string_table,
+                                           arraysize(string_table), value);
+}
+
+std::string GLES2Util::GetStringUniformBlockParameter(uint32_t value) {
+  static const EnumToString string_table[] = {
+      {GL_UNIFORM_BLOCK_BINDING, "GL_UNIFORM_BLOCK_BINDING"},
+      {GL_UNIFORM_BLOCK_DATA_SIZE, "GL_UNIFORM_BLOCK_DATA_SIZE"},
+      {GL_UNIFORM_BLOCK_NAME_LENGTH, "GL_UNIFORM_BLOCK_NAME_LENGTH"},
+      {GL_UNIFORM_BLOCK_ACTIVE_UNIFORMS, "GL_UNIFORM_BLOCK_ACTIVE_UNIFORMS"},
+      {GL_UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES,
+       "GL_UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES"},
+      {GL_UNIFORM_BLOCK_REFERENCED_BY_VERTEX_SHADER,
+       "GL_UNIFORM_BLOCK_REFERENCED_BY_VERTEX_SHADER"},
+      {GL_UNIFORM_BLOCK_REFERENCED_BY_FRAGMENT_SHADER,
+       "GL_UNIFORM_BLOCK_REFERENCED_BY_FRAGMENT_SHADER"},
+  };
+  return GLES2Util::GetQualifiedEnumString(string_table,
+                                           arraysize(string_table), value);
+}
+
+std::string GLES2Util::GetStringUniformParameter(uint32_t value) {
+  static const EnumToString string_table[] = {
+      {GL_UNIFORM_SIZE, "GL_UNIFORM_SIZE"},
+      {GL_UNIFORM_TYPE, "GL_UNIFORM_TYPE"},
+      {GL_UNIFORM_NAME_LENGTH, "GL_UNIFORM_NAME_LENGTH"},
+      {GL_UNIFORM_BLOCK_INDEX, "GL_UNIFORM_BLOCK_INDEX"},
+      {GL_UNIFORM_OFFSET, "GL_UNIFORM_OFFSET"},
+      {GL_UNIFORM_ARRAY_STRIDE, "GL_UNIFORM_ARRAY_STRIDE"},
+      {GL_UNIFORM_MATRIX_STRIDE, "GL_UNIFORM_MATRIX_STRIDE"},
+      {GL_UNIFORM_IS_ROW_MAJOR, "GL_UNIFORM_IS_ROW_MAJOR"},
   };
   return GLES2Util::GetQualifiedEnumString(string_table,
                                            arraysize(string_table), value);

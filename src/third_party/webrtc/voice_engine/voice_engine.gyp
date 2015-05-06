@@ -24,12 +24,9 @@
         '<(webrtc_root)/modules/modules.gyp:media_file',
         '<(webrtc_root)/modules/modules.gyp:rtp_rtcp',
         '<(webrtc_root)/modules/modules.gyp:webrtc_utility',
-        '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
+        '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
       ],
       'sources': [
-        '../common_types.h',
-        '../engine_configurations.h',
-        '../typedefs.h',
         'include/voe_audio_processing.h',
         'include/voe_base.h',
         'include/voe_codec.h',
@@ -118,7 +115,7 @@
             '<(webrtc_root)/modules/modules.gyp:media_file',
             '<(webrtc_root)/modules/modules.gyp:rtp_rtcp',
             '<(webrtc_root)/modules/modules.gyp:webrtc_utility',
-            '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
+            '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
             '<(webrtc_root)/test/test.gyp:test_support_main',
           ],
           'sources': [
@@ -144,8 +141,8 @@
           'dependencies': [
             'voice_engine',
             '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
-            '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
-            '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers_default',
+            '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
+            '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers_default',
             '<(webrtc_root)/test/test.gyp:channel_transport',
             '<(webrtc_root)/test/test.gyp:test_support',
            ],
@@ -211,8 +208,8 @@
           'dependencies': [
             'voice_engine',
             '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
-            '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
-            '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers_default',
+            '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
+            '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers_default',
             '<(webrtc_root)/test/test.gyp:channel_transport',
             '<(webrtc_root)/test/test.gyp:test_support',
           ],
@@ -232,7 +229,7 @@
               'type': 'executable',
               'dependencies': [
                 'voice_engine',
-                '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
+                '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
                 '<(webrtc_root)/test/test.gyp:test_support',
               ],
               'sources': [

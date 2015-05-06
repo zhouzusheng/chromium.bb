@@ -23,6 +23,10 @@ enum {
   DIR_LOGS,                     // Directory where logs should be written.
   DIR_USER_DATA,                // Directory where user data can be written.
   DIR_CRASH_DUMPS,              // Directory where crash dumps are written.
+#if defined(OS_WIN)
+  DIR_WATCHER_DATA,             // Directory where the Chrome watcher stores
+                                // data.
+#endif
   DIR_RESOURCES,                // Directory containing separate file resources
                                 // used by Chrome at runtime.
   DIR_INSPECTOR,                // Directory where web inspector is located.
@@ -43,8 +47,6 @@ enum {
                                 // contains subdirectories.
 #endif
 #if defined(OS_MACOSX) && !defined(OS_IOS)
-  DIR_MANAGED_PREFS,            // Directory that stores the managed prefs plist
-                                // files for the current user.
   DIR_USER_APPLICATIONS,        // ~/Applications
   DIR_USER_LIBRARY,             // ~/Library
 #endif
@@ -85,7 +87,6 @@ enum {
                                 // matter the file exists or not.
   FILE_PEPPER_FLASH_PLUGIN,     // Full path to the bundled Pepper Flash plugin
                                 // file.
-  FILE_PDF_PLUGIN,              // Full path to the internal PDF plugin file.
 
   FILE_NACL_PLUGIN,             // Full path to the internal NaCl plugin file.
   DIR_PNACL_BASE,               // Full path to the base dir for PNaCl.

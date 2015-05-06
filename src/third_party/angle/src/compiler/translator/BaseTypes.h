@@ -258,6 +258,11 @@ inline bool IsShadowSampler(TBasicType type)
     return false;
 }
 
+inline bool IsInteger(TBasicType type)
+{
+    return type == EbtInt || type == EbtUInt;
+}
+
 inline bool SupportsPrecision(TBasicType type)
 {
     return type == EbtFloat || type == EbtInt || type == EbtUInt || IsSampler(type);
@@ -292,6 +297,9 @@ enum TQualifier
     EvqOut,
     EvqInOut,
     EvqConstReadOnly,
+
+    // built-ins read by vertex shader
+    EvqInstanceID,
 
     // built-ins written by vertex shader
     EvqPosition,
@@ -387,6 +395,7 @@ inline const char* getQualifierString(TQualifier q)
     case EvqIn:             return "in";             break;
     case EvqOut:            return "out";            break;
     case EvqInOut:          return "inout";          break;
+    case EvqInstanceID:     return "InstanceID";     break;
     case EvqPosition:       return "Position";       break;
     case EvqPointSize:      return "PointSize";      break;
     case EvqFragCoord:      return "FragCoord";      break;

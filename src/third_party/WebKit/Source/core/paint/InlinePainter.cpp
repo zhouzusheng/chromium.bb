@@ -5,16 +5,16 @@
 #include "config.h"
 #include "core/paint/InlinePainter.h"
 
+#include "core/layout/LayoutTheme.h"
+#include "core/layout/PaintInfo.h"
+#include "core/layout/line/RootInlineBox.h"
 #include "core/paint/BoxPainter.h"
 #include "core/paint/GraphicsContextAnnotator.h"
 #include "core/paint/LineBoxListPainter.h"
 #include "core/paint/ObjectPainter.h"
 #include "core/paint/RenderDrawingRecorder.h"
-#include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderBlock.h"
 #include "core/rendering/RenderInline.h"
-#include "core/rendering/RenderTheme.h"
-#include "core/rendering/RootInlineBox.h"
 #include "platform/geometry/LayoutPoint.h"
 
 namespace blink {
@@ -27,8 +27,8 @@ void InlinePainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOf
 
 void InlinePainter::paintOutline(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
-    RenderStyle* styleToUse = m_renderInline.style();
-    if (!styleToUse->hasOutline())
+    const LayoutStyle& styleToUse = m_renderInline.styleRef();
+    if (!styleToUse.hasOutline())
         return;
 
     LayoutRect bounds;
@@ -42,15 +42,15 @@ void InlinePainter::paintOutline(const PaintInfo& paintInfo, const LayoutPoint& 
     if (recorder.canUseCachedDrawing())
         return;
 
-    if (styleToUse->outlineStyleIsAuto()) {
-        if (RenderTheme::theme().shouldDrawDefaultFocusRing(&m_renderInline)) {
+    if (styleToUse.outlineStyleIsAuto()) {
+        if (LayoutTheme::theme().shouldDrawDefaultFocusRing(&m_renderInline)) {
             // Only paint the focus ring by hand if the theme isn't able to draw the focus ring.
             ObjectPainter(m_renderInline).paintFocusRing(paintInfo, paintOffset, styleToUse);
         }
         return;
     }
 
-    if (styleToUse->outlineStyle() == BNONE)
+    if (styleToUse.outlineStyle() == BNONE)
         return;
 
     Vector<LayoutRect> rects;
@@ -83,9 +83,9 @@ void InlinePainter::paintOutline(const PaintInfo& paintInfo, const LayoutPoint& 
 void InlinePainter::paintOutlineForLine(GraphicsContext* graphicsContext, const LayoutPoint& paintOffset,
     const LayoutRect& lastline, const LayoutRect& thisline, const LayoutRect& nextline, const Color outlineColor)
 {
-    RenderStyle* styleToUse = m_renderInline.style();
-    int outlineWidth = styleToUse->outlineWidth();
-    EBorderStyle outlineStyle = styleToUse->outlineStyle();
+    const LayoutStyle& styleToUse = m_renderInline.styleRef();
+    int outlineWidth = styleToUse.outlineWidth();
+    EBorderStyle outlineStyle = styleToUse.outlineStyle();
 
     bool antialias = BoxPainter::shouldAntialiasLines(graphicsContext);
 

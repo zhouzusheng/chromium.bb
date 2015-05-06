@@ -36,6 +36,8 @@
          disable_ext_draw_buffers)                           \
   GPU_OP(DISABLE_EXT_OCCLUSION_QUERY,                        \
          disable_ext_occlusion_query)                        \
+  GPU_OP(DISABLE_FBO_INVALIDATIONS,                          \
+         disable_fbo_invalidations)                          \
   GPU_OP(DISABLE_MULTIMONITOR_MULTISAMPLING,                 \
          disable_multimonitor_multisampling)                 \
   GPU_OP(DISABLE_MULTISAMPLING,                              \
@@ -58,6 +60,8 @@
          gl_begin_gl_end_on_fbo_change_to_backbuffer)        \
   GPU_OP(GL_CLEAR_BROKEN,                                    \
          gl_clear_broken)                                    \
+  GPU_OP(IGNORE_EGL_SYNC_FAILURES,                           \
+         ignore_egl_sync_failures)                           \
   GPU_OP(INIT_GL_POSITION_IN_VERTEX_SHADER,                  \
          init_gl_position_in_vertex_shader)                  \
   GPU_OP(INIT_TEXTURE_MAX_ANISOTROPY,                        \
@@ -98,6 +102,8 @@
          swizzle_rgba_for_async_readpixels)                  \
   GPU_OP(TEXSUBIMAGE2D_FASTER_THAN_TEXIMAGE2D,               \
          texsubimage2d_faster_than_teximage2d)               \
+  GPU_OP(UNBIND_ATTACHMENTS_ON_BOUND_RENDER_FBO_DELETE,      \
+         unbind_attachments_on_bound_render_fbo_delete)      \
   GPU_OP(UNBIND_FBO_ON_CONTEXT_SWITCH,                       \
          unbind_fbo_on_context_switch)                       \
   GPU_OP(UNFOLD_SHORT_CIRCUIT_AS_TERNARY_OPERATION,          \

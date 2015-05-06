@@ -33,6 +33,7 @@
 #include "web/WebPluginContainerImpl.h"
 
 #include "bindings/core/v8/ScriptController.h"
+#include "bindings/core/v8/ScriptSourceCode.h"
 #include "bindings/core/v8/V8Element.h"
 #include "bindings/core/v8/V8NPObject.h"
 #include "core/HTMLNames.h"
@@ -48,6 +49,9 @@
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLPlugInElement.h"
+#include "core/layout/HitTestResult.h"
+#include "core/layout/Layer.h"
+#include "core/layout/LayoutPart.h"
 #include "core/loader/FormState.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/page/Chrome.h"
@@ -56,10 +60,7 @@
 #include "core/page/Page.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
 #include "core/plugins/PluginOcclusionSupport.h"
-#include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderBox.h"
-#include "core/rendering/RenderLayer.h"
-#include "core/rendering/RenderPart.h"
 #include "platform/HostWindow.h"
 #include "platform/KeyboardCodes.h"
 #include "platform/PlatformGestureEvent.h"
@@ -143,16 +144,18 @@ void WebPluginContainerImpl::invalidateRect(const IntRect& rect)
     dirtyRect.move(renderer->borderLeft() + renderer->paddingLeft(),
                    renderer->borderTop() + renderer->paddingTop());
 
-    // For querying RenderLayer::compositingState().
+    // For querying Layer::compositingState().
     // This code should be correct.
     DisableCompositingQueryAsserts disabler;
+    // FIXME: We should not allow paint invalidation out of paint invalidation state. crbug.com/457415
+    DisablePaintInvalidationStateAsserts paintInvalidationAssertDisabler;
     renderer->invalidatePaintRectangle(dirtyRect);
 }
 
-void WebPluginContainerImpl::setFocus(bool focused)
+void WebPluginContainerImpl::setFocus(bool focused, WebFocusType focusType)
 {
-    Widget::setFocus(focused);
-    m_webPlugin->updateFocus(focused);
+    Widget::setFocus(focused, focusType);
+    m_webPlugin->updateFocus(focused, focusType);
 }
 
 void WebPluginContainerImpl::show()
@@ -307,8 +310,8 @@ void WebPluginContainerImpl::setWebLayer(WebLayer* layer)
 
     m_element->setNeedsCompositingUpdate();
     // Being composited or not affects the self painting layer bit
-    // on the RenderLayer.
-    if (RenderPart* renderer = m_element->renderPart()) {
+    // on the Layer.
+    if (LayoutPart* renderer = m_element->layoutPart()) {
         ASSERT(renderer->hasLayer());
         renderer->layer()->updateSelfPaintingLayer();
     }
@@ -395,7 +398,8 @@ void WebPluginContainerImpl::scrollRect(const WebRect& rect)
 
 void WebPluginContainerImpl::reportGeometry()
 {
-    if (!parent())
+    // We cannot compute geometry without a parent or renderer.
+    if (!parent() || !m_element->renderer())
         return;
 
     IntRect windowRect, clipRect;
@@ -592,11 +596,21 @@ WebLayer* WebPluginContainerImpl::platformLayer() const
 
 v8::Local<v8::Object> WebPluginContainerImpl::scriptableObject(v8::Isolate* isolate)
 {
+    // The plugin may be destroyed due to re-entrancy when calling
+    // v8ScriptableObject below. crbug.com/458776. Hold a reference to the
+    // plugin container to prevent this from happening. For Oilpan, 'this'
+    // is already stack reachable, so redundant.
+    RefPtrWillBeRawPtr<WebPluginContainerImpl> protector(this);
+
     v8::Local<v8::Object> object = m_webPlugin->v8ScriptableObject(isolate);
-    // |m_webPlugin| may be destroyed during the above line due to re-entrancy
-    // caused by sync messages to the plugin. If this is the case just return an
-    // empty handle. crbug.com/423263.
+
+    // If the plugin has been destroyed and the reference on the stack is the
+    // only one left, then don't return the scriptable object.
+#if ENABLE(OILPAN)
     if (!m_webPlugin)
+#else
+    if (hasOneRef())
+#endif
         return v8::Local<v8::Object>();
 
     if (!object.IsEmpty()) {
@@ -736,7 +750,7 @@ void WebPluginContainerImpl::shouldDisposePlugin()
 }
 #endif
 
-void WebPluginContainerImpl::trace(Visitor* visitor)
+DEFINE_TRACE(WebPluginContainerImpl)
 {
     visitor->trace(m_element);
     FrameDestructionObserver::trace(visitor);

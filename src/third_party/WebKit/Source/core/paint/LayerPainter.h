@@ -5,51 +5,53 @@
 #ifndef LayerPainter_h
 #define LayerPainter_h
 
-#include "core/rendering/LayerFragment.h"
-#include "core/rendering/LayerPaintingInfo.h"
+#include "core/layout/LayerFragment.h"
+#include "core/layout/LayerPaintingInfo.h"
 
 namespace blink {
 
 class ClipRect;
 class LayoutPoint;
-class RenderLayer;
+class Layer;
 
 class LayerPainter {
 public:
-    LayerPainter(RenderLayer& renderLayer) : m_renderLayer(renderLayer) { }
+    enum FragmentPolicy { AllowMultipleFragments, ForceSingleFragment };
+
+    LayerPainter(Layer& renderLayer) : m_renderLayer(renderLayer) { }
 
     // The paint() method paints the layers that intersect the damage rect from back to front.
     //  paint() assumes that the caller will clip to the bounds of damageRect if necessary.
-    void paint(GraphicsContext*, const LayoutRect& damageRect, PaintBehavior = PaintBehaviorNormal, RenderObject* paintingRoot = 0, PaintLayerFlags = 0);
+    void paint(GraphicsContext*, const LayoutRect& damageRect, PaintBehavior = PaintBehaviorNormal, LayoutObject* paintingRoot = 0, PaintLayerFlags = 0);
     // paintLayer() assumes that the caller will clip to the bounds of the painting dirty if necessary.
     void paintLayer(GraphicsContext*, const LayerPaintingInfo&, PaintLayerFlags);
     // paintLayerContents() assumes that the caller will clip to the bounds of the painting dirty rect if necessary.
-    void paintLayerContents(GraphicsContext*, const LayerPaintingInfo&, PaintLayerFlags);
+    void paintLayerContents(GraphicsContext*, const LayerPaintingInfo&, PaintLayerFlags, FragmentPolicy = AllowMultipleFragments);
 
-    void paintOverlayScrollbars(GraphicsContext*, const LayoutRect& damageRect, PaintBehavior, RenderObject* paintingRoot = 0);
+    void paintOverlayScrollbars(GraphicsContext*, const LayoutRect& damageRect, PaintBehavior, LayoutObject* paintingRoot = 0);
 
 private:
     enum ClipState { HasNotClipped, HasClipped };
 
-    void paintLayerContentsAndReflection(GraphicsContext*, const LayerPaintingInfo&, PaintLayerFlags);
+    void paintLayerContentsAndReflection(GraphicsContext*, const LayerPaintingInfo&, PaintLayerFlags, FragmentPolicy = AllowMultipleFragments);
     void paintLayerWithTransform(GraphicsContext*, const LayerPaintingInfo&, PaintLayerFlags);
     void paintFragmentByApplyingTransform(GraphicsContext*, const LayerPaintingInfo&, PaintLayerFlags, const LayoutPoint& fragmentTranslation);
 
     void paintChildren(unsigned childrenToVisit, GraphicsContext*, const LayerPaintingInfo&, PaintLayerFlags);
-    void paintPaginatedChildLayer(RenderLayer* childLayer, GraphicsContext*, const LayerPaintingInfo&, PaintLayerFlags);
-    void paintChildLayerIntoColumns(RenderLayer* childLayer, GraphicsContext*, const LayerPaintingInfo&, PaintLayerFlags, const Vector<RenderLayer*>& columnLayers, size_t columnIndex);
+    void paintPaginatedChildLayer(Layer* childLayer, GraphicsContext*, const LayerPaintingInfo&, PaintLayerFlags);
+    void paintChildLayerIntoColumns(Layer* childLayer, GraphicsContext*, const LayerPaintingInfo&, PaintLayerFlags, const Vector<Layer*>& columnLayers, size_t columnIndex);
     bool atLeastOneFragmentIntersectsDamageRect(LayerFragments&, const LayerPaintingInfo&, PaintLayerFlags, const LayoutPoint& offsetFromRoot);
-    void paintFragmentWithPhase(PaintPhase, const LayerFragment&, GraphicsContext*, const ClipRect&, const LayerPaintingInfo&, PaintBehavior, RenderObject* paintingRootForRenderer, PaintLayerFlags, ClipState);
+    void paintFragmentWithPhase(PaintPhase, const LayerFragment&, GraphicsContext*, const ClipRect&, const LayerPaintingInfo&, PaintBehavior, LayoutObject* paintingRootForRenderer, PaintLayerFlags, ClipState);
     void paintBackgroundForFragments(const LayerFragments&, GraphicsContext*,
-        const LayoutRect& transparencyPaintDirtyRect, const LayerPaintingInfo&, PaintBehavior, RenderObject* paintingRootForRenderer, PaintLayerFlags);
+        const LayoutRect& transparencyPaintDirtyRect, const LayerPaintingInfo&, PaintBehavior, LayoutObject* paintingRootForRenderer, PaintLayerFlags);
     void paintForegroundForFragments(const LayerFragments&, GraphicsContext*,
-        const LayoutRect& transparencyPaintDirtyRect, const LayerPaintingInfo&, PaintBehavior, RenderObject* paintingRootForRenderer,
+        const LayoutRect& transparencyPaintDirtyRect, const LayerPaintingInfo&, PaintBehavior, LayoutObject* paintingRootForRenderer,
         bool selectionOnly, PaintLayerFlags);
-    void paintForegroundForFragmentsWithPhase(PaintPhase, const LayerFragments&, GraphicsContext*, const LayerPaintingInfo&, PaintBehavior, RenderObject* paintingRootForRenderer, PaintLayerFlags, ClipState);
-    void paintOutlineForFragments(const LayerFragments&, GraphicsContext*, const LayerPaintingInfo&, PaintBehavior, RenderObject* paintingRootForRenderer, PaintLayerFlags);
+    void paintForegroundForFragmentsWithPhase(PaintPhase, const LayerFragments&, GraphicsContext*, const LayerPaintingInfo&, PaintBehavior, LayoutObject* paintingRootForRenderer, PaintLayerFlags, ClipState);
+    void paintOutlineForFragments(const LayerFragments&, GraphicsContext*, const LayerPaintingInfo&, PaintBehavior, LayoutObject* paintingRootForRenderer, PaintLayerFlags);
     void paintOverflowControlsForFragments(const LayerFragments&, GraphicsContext*, const LayerPaintingInfo&, PaintLayerFlags);
-    void paintMaskForFragments(const LayerFragments&, GraphicsContext*, const LayerPaintingInfo&, RenderObject* paintingRootForRenderer, PaintLayerFlags);
-    void paintChildClippingMaskForFragments(const LayerFragments&, GraphicsContext*, const LayerPaintingInfo&, RenderObject* paintingRootForRenderer, PaintLayerFlags);
+    void paintMaskForFragments(const LayerFragments&, GraphicsContext*, const LayerPaintingInfo&, LayoutObject* paintingRootForRenderer, PaintLayerFlags);
+    void paintChildClippingMaskForFragments(const LayerFragments&, GraphicsContext*, const LayerPaintingInfo&, LayoutObject* paintingRootForRenderer, PaintLayerFlags);
 
     static bool needsToClip(const LayerPaintingInfo& localPaintingInfo, const ClipRect&);
 
@@ -57,7 +59,7 @@ private:
     // layers).
     bool shouldPaintLayerInSoftwareMode(const LayerPaintingInfo&, PaintLayerFlags paintFlags);
 
-    RenderLayer& m_renderLayer;
+    Layer& m_renderLayer;
 };
 
 } // namespace blink

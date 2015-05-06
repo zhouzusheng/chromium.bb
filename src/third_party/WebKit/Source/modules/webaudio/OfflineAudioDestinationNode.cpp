@@ -89,7 +89,7 @@ void OfflineAudioDestinationNode::startRendering()
         m_startedRendering = true;
         context()->notifyNodeStartedProcessing(this);
         m_renderThread = adoptPtr(blink::Platform::current()->createThread("Offline Audio Renderer"));
-        m_renderThread->postTask(new Task(bind(&OfflineAudioDestinationNode::offlineRender, this)));
+        m_renderThread->postTask(FROM_HERE, new Task(bind(&OfflineAudioDestinationNode::offlineRender, this)));
     }
 }
 
@@ -159,7 +159,7 @@ void OfflineAudioDestinationNode::notifyComplete()
     context()->fireCompletionEvent();
 }
 
-void OfflineAudioDestinationNode::trace(Visitor* visitor)
+DEFINE_TRACE(OfflineAudioDestinationNode)
 {
     visitor->trace(m_renderTarget);
     AudioDestinationNode::trace(visitor);

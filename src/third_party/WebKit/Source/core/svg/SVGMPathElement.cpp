@@ -31,11 +31,11 @@ namespace blink {
 
 inline SVGMPathElement::SVGMPathElement(Document& document)
     : SVGElement(SVGNames::mpathTag, document)
-    , SVGURIReference(this)
 {
+    SVGURIReference::initialize(this);
 }
 
-void SVGMPathElement::trace(Visitor* visitor)
+DEFINE_TRACE(SVGMPathElement)
 {
     SVGElement::trace(visitor);
     SVGURIReference::trace(visitor);

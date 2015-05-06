@@ -39,27 +39,26 @@ namespace blink {
 
 class InspectorClient;
 class InspectorPageAgent;
-class Page;
 class SecurityOrigin;
 
 class PageRuntimeAgent final : public InspectorRuntimeAgent {
 public:
-    static PassOwnPtrWillBeRawPtr<PageRuntimeAgent> create(InjectedScriptManager* injectedScriptManager, InspectorClient* client, ScriptDebugServer* scriptDebugServer, Page* page, InspectorPageAgent* pageAgent)
+    static PassOwnPtrWillBeRawPtr<PageRuntimeAgent> create(InjectedScriptManager* injectedScriptManager, InspectorClient* client, ScriptDebugServer* scriptDebugServer, InspectorPageAgent* pageAgent)
     {
-        return adoptPtrWillBeNoop(new PageRuntimeAgent(injectedScriptManager, client, scriptDebugServer, page, pageAgent));
+        return adoptPtrWillBeNoop(new PageRuntimeAgent(injectedScriptManager, client, scriptDebugServer, pageAgent));
     }
     virtual ~PageRuntimeAgent();
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
     virtual void init() override;
     virtual void enable(ErrorString*) override;
     virtual void run(ErrorString*) override;
 
     void didClearDocumentOfWindowObject(LocalFrame*);
-    void didCreateScriptContext(LocalFrame*, ScriptState*, SecurityOrigin*, bool isMainWorldContext);
+    void didCreateScriptContext(LocalFrame*, ScriptState*, SecurityOrigin*, int worldId);
     void willReleaseScriptContext(LocalFrame*, ScriptState*);
 
 private:
-    PageRuntimeAgent(InjectedScriptManager*, InspectorClient*, ScriptDebugServer*, Page*, InspectorPageAgent*);
+    PageRuntimeAgent(InjectedScriptManager*, InspectorClient*, ScriptDebugServer*, InspectorPageAgent*);
 
     virtual InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId) override;
     virtual void muteConsole() override;
@@ -67,9 +66,9 @@ private:
     void reportExecutionContextCreation();
 
     InspectorClient* m_client;
-    RawPtrWillBeMember<Page> m_inspectedPage;
     RawPtrWillBeMember<InspectorPageAgent> m_pageAgent;
     bool m_mainWorldContextCreated;
+    int m_debuggerId;
 };
 
 } // namespace blink

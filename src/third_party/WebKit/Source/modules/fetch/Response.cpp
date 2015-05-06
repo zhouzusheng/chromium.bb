@@ -10,7 +10,10 @@
 #include "core/dom/DOMArrayBuffer.h"
 #include "core/dom/DOMArrayBufferView.h"
 #include "core/fileapi/Blob.h"
+#include "core/html/DOMFormData.h"
 #include "modules/fetch/ResponseInit.h"
+#include "platform/network/FormData.h"
+#include "platform/network/HTTPHeaderMap.h"
 #include "public/platform/WebServiceWorkerResponse.h"
 #include "wtf/RefPtr.h"
 
@@ -57,6 +60,23 @@ FetchResponseData* createFetchResponseDataFromWebResponse(const WebServiceWorker
     return response;
 }
 
+// Check whether |statusText| is a ByteString and
+// matches the Reason-Phrase token production.
+// RFC 2616: https://tools.ietf.org/html/rfc2616
+// RFC 7230: https://tools.ietf.org/html/rfc7230
+// "reason-phrase = *( HTAB / SP / VCHAR / obs-text )"
+bool isValidReasonPhrase(const String& statusText)
+{
+    for (unsigned i = 0; i < statusText.length(); ++i) {
+        UChar c = statusText[i];
+        if (!(c == 0x09 // HTAB
+            || (0x20 <= c && c <= 0x7E) // SP / VCHAR
+            || (0x80 <= c && c <= 0xFF))) // obs-text
+            return false;
+    }
+    return true;
+}
+
 }
 
 Response* Response::create(ExecutionContext* context, ExceptionState& exceptionState)
@@ -94,6 +114,37 @@ Response* Response::create(ExecutionContext* context, const BodyInit& body, cons
         Blob* blob = Blob::create(BlobDataHandle::create(blobData.release(), length));
         return create(context, blob, ResponseInit(responseInit, exceptionState), exceptionState);
     }
+    if (body.isFormData()) {
+        RefPtrWillBeRawPtr<DOMFormData> domFormData = body.getAsFormData();
+        OwnPtr<BlobData> blobData = BlobData::create();
+        // FIXME: the same code exist in RequestInit::RequestInit().
+        RefPtr<FormData> httpBody = domFormData->createMultiPartFormData();
+        for (size_t i = 0; i < httpBody->elements().size(); ++i) {
+            const FormDataElement& element = httpBody->elements()[i];
+            switch (element.m_type) {
+            case FormDataElement::data: {
+                blobData->appendBytes(element.m_data.data(), element.m_data.size());
+                break;
+            }
+            case FormDataElement::encodedFile:
+                blobData->appendFile(element.m_filename, element.m_fileStart, element.m_fileLength, element.m_expectedFileModificationTime);
+                break;
+            case FormDataElement::encodedBlob:
+                if (element.m_optionalBlobDataHandle)
+                    blobData->appendBlob(element.m_optionalBlobDataHandle, 0, element.m_optionalBlobDataHandle->size());
+                break;
+            case FormDataElement::encodedFileSystemURL:
+                blobData->appendFileSystemURL(element.m_fileSystemURL, element.m_fileStart, element.m_fileLength, element.m_expectedFileModificationTime);
+                break;
+            default:
+                ASSERT_NOT_REACHED();
+            }
+        }
+        blobData->setContentType(AtomicString("multipart/form-data; boundary=", AtomicString::ConstructFromLiteral) + httpBody->boundary().data());
+        const long long length = blobData->length();
+        Blob* blob = Blob::create(BlobDataHandle::create(blobData.release(), length));
+        return create(context, blob, ResponseInit(responseInit, exceptionState), exceptionState);
+    }
     ASSERT_NOT_REACHED();
     return nullptr;
 }
@@ -107,8 +158,12 @@ Response* Response::create(ExecutionContext* context, Blob* body, const Response
         return 0;
     }
 
-    // FIXME: "2. If |init|'s statusText member does not match the Reason-Phrase
-    //        token production, throw a TypeError."
+    // "2. If |init|'s statusText member does not match the Reason-Phrase
+    // token production, throw a TypeError."
+    if (!isValidReasonPhrase(responseInit.statusText)) {
+        exceptionState.throwTypeError("Invalid statusText");
+        return 0;
+    }
 
     // "3. Let |r| be a new Response object, associated with a new response,
     // Headers object, and Body object."
@@ -221,6 +276,13 @@ unsigned short Response::status() const
     return m_response->status();
 }
 
+bool Response::ok() const
+{
+    // "The ok attribute's getter must return true
+    // if response's status is in the range 200 to 299, and false otherwise."
+    return 200 <= status() && status() <= 299;
+}
+
 String Response::statusText() const
 {
     // "The statusText attribute's getter must return response's status message."
@@ -233,16 +295,24 @@ Headers* Response::headers() const
     return m_headers;
 }
 
-Response* Response::clone(ExceptionState& exceptionState) const
+Response* Response::clone(ExceptionState& exceptionState)
 {
     if (bodyUsed()) {
         exceptionState.throwTypeError("Response body is already used");
         return nullptr;
     }
+    // FIXME: We throw an error while cloning the Response which body was
+    // partially read. But in Request case, we don't. When the behavior of the
+    // partially read streams will be well defined in the spec, we have to
+    // implement the behavior correctly.
     if (streamAccessed()) {
-        // FIXME: Support clone() of the stream accessed Response.
-        exceptionState.throwTypeError("clone() of the Response which .body is accessed is not supported.");
-        return nullptr;
+        bool dataLost = false;
+        BodyStreamBuffer* drainingStream = createDrainingStream(&dataLost);
+        if (dataLost) {
+            exceptionState.throwTypeError("Cloning the Response which body was partially read is not supported.");
+            return nullptr;
+        }
+        m_response->replaceBodyStreamBuffer(drainingStream);
     }
     return Response::createClone(*this);
 }
@@ -310,7 +380,7 @@ String Response::internalContentTypeForBuffer() const
     return m_response->internalContentTypeForBuffer();
 }
 
-void Response::trace(Visitor* visitor)
+DEFINE_TRACE(Response)
 {
     Body::trace(visitor);
     visitor->trace(m_response);

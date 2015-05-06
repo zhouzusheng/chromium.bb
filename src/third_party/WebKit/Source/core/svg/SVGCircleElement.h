@@ -38,7 +38,7 @@ public:
     SVGAnimatedLength* cy() const { return m_cy.get(); }
     SVGAnimatedLength* r() const { return m_r.get(); }
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     explicit SVGCircleElement(Document&);
@@ -49,7 +49,7 @@ private:
 
     virtual bool selfHasRelativeLengths() const override;
 
-    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual LayoutObject* createRenderer(const LayoutStyle&) override;
 
     RefPtrWillBeMember<SVGAnimatedLength> m_cx;
     RefPtrWillBeMember<SVGAnimatedLength> m_cy;

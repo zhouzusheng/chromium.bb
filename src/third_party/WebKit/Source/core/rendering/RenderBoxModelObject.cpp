@@ -26,21 +26,21 @@
 #include "config.h"
 #include "core/rendering/RenderBoxModelObject.h"
 
+#include "core/layout/ImageQualityController.h"
+#include "core/layout/Layer.h"
+#include "core/layout/LayoutFlowThread.h"
+#include "core/layout/LayoutGeometryMap.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/LayoutRegion.h"
+#include "core/layout/compositing/CompositedLayerMapping.h"
+#include "core/layout/compositing/LayerCompositor.h"
+#include "core/layout/style/BorderEdge.h"
+#include "core/layout/style/ShadowList.h"
 #include "core/page/scrolling/ScrollingConstraints.h"
-#include "core/rendering/ImageQualityController.h"
 #include "core/rendering/RenderBlock.h"
-#include "core/rendering/RenderFlowThread.h"
-#include "core/rendering/RenderGeometryMap.h"
 #include "core/rendering/RenderInline.h"
-#include "core/rendering/RenderLayer.h"
-#include "core/rendering/RenderObjectInlines.h"
-#include "core/rendering/RenderRegion.h"
 #include "core/rendering/RenderTextFragment.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/compositing/CompositedLayerMapping.h"
-#include "core/rendering/compositing/RenderLayerCompositor.h"
-#include "core/rendering/style/BorderEdge.h"
-#include "core/rendering/style/ShadowList.h"
 #include "platform/LengthFunctions.h"
 #include "platform/geometry/TransformState.h"
 #include "platform/graphics/DrawLooperBuilder.h"
@@ -57,8 +57,8 @@ namespace blink {
 // an anonymous block (that houses other blocks) or it will be an inline flow.
 // <b><i><p>Hello</p></i></b>. In this example the <i> will have a block as
 // its continuation but the <b> will just have an inline as its continuation.
-typedef WillBeHeapHashMap<RawPtrWillBeMember<const RenderBoxModelObject>, RawPtrWillBeMember<RenderBoxModelObject> > ContinuationMap;
-static OwnPtrWillBePersistent<ContinuationMap>* continuationMap = 0;
+typedef HashMap<const RenderBoxModelObject*, RenderBoxModelObject*> ContinuationMap;
+static ContinuationMap* continuationMap = nullptr;
 
 void RenderBoxModelObject::setSelectionState(SelectionState state)
 {
@@ -67,9 +67,9 @@ void RenderBoxModelObject::setSelectionState(SelectionState state)
 
     if ((state == SelectionStart && selectionState() == SelectionEnd)
         || (state == SelectionEnd && selectionState() == SelectionStart))
-        RenderObject::setSelectionState(SelectionBoth);
+        LayoutObject::setSelectionState(SelectionBoth);
     else
-        RenderObject::setSelectionState(state);
+        LayoutObject::setSelectionState(state);
 
     // FIXME: We should consider whether it is OK propagating to ancestor RenderInlines.
     // This is a workaround for http://webkit.org/b/32123
@@ -93,7 +93,7 @@ bool RenderBoxModelObject::hasAcceleratedCompositing() const
 }
 
 RenderBoxModelObject::RenderBoxModelObject(ContainerNode* node)
-    : RenderLayerModelObject(node)
+    : LayoutLayerModelObject(node)
 {
 }
 
@@ -105,36 +105,35 @@ void RenderBoxModelObject::willBeDestroyed()
 {
     ImageQualityController::remove(this);
 
-    // A continuation of this RenderObject should be destroyed at subclasses.
+    // A continuation of this LayoutObject should be destroyed at subclasses.
     ASSERT(!continuation());
 
-    RenderLayerModelObject::willBeDestroyed();
+    LayoutLayerModelObject::willBeDestroyed();
 }
 
 bool RenderBoxModelObject::calculateHasBoxDecorations() const
 {
-    RenderStyle* styleToUse = style();
-    ASSERT(styleToUse);
-    return hasBackground() || styleToUse->hasBorder() || styleToUse->hasAppearance() || styleToUse->boxShadow();
+    const LayoutStyle& styleToUse = styleRef();
+    return hasBackground() || styleToUse.hasBorder() || styleToUse.hasAppearance() || styleToUse.boxShadow();
 }
 
 void RenderBoxModelObject::updateFromStyle()
 {
-    RenderLayerModelObject::updateFromStyle();
+    LayoutLayerModelObject::updateFromStyle();
 
-    RenderStyle* styleToUse = style();
+    const LayoutStyle& styleToUse = styleRef();
     setHasBoxDecorationBackground(calculateHasBoxDecorations());
-    setInline(styleToUse->isDisplayInlineType());
-    setPositionState(styleToUse->position());
-    setHorizontalWritingMode(styleToUse->isHorizontalWritingMode());
+    setInline(styleToUse.isDisplayInlineType());
+    setPositionState(styleToUse.position());
+    setHorizontalWritingMode(styleToUse.isHorizontalWritingMode());
 }
 
-static LayoutSize accumulateInFlowPositionOffsets(const RenderObject* child)
+static LayoutSize accumulateInFlowPositionOffsets(const LayoutObject* child)
 {
     if (!child->isAnonymousBlock() || !child->isRelPositioned())
         return LayoutSize();
     LayoutSize offset;
-    RenderObject* p = toRenderBlock(child)->inlineElementContinuation();
+    LayoutObject* p = toRenderBlock(child)->inlineElementContinuation();
     while (p && p->isRenderInline()) {
         if (p->isRelPositioned()) {
             RenderInline* renderInline = toRenderInline(p);
@@ -256,7 +255,7 @@ LayoutPoint RenderBoxModelObject::adjustedPositionRelativeToOffsetParent(const L
             if (isRelPositioned())
                 referencePoint.move(relativePositionOffset());
 
-            RenderObject* current;
+            LayoutObject* current;
             for (current = parent(); current != offsetParent && current->parent(); current = current->parent()) {
                 // FIXME: What are we supposed to do inside SVG content?
                 if (!isOutOfFlowPositioned()) {
@@ -465,24 +464,24 @@ RenderBoxModelObject* RenderBoxModelObject::continuation() const
 {
     if (!continuationMap)
         return 0;
-    return (*continuationMap)->get(this);
+    return continuationMap->get(this);
 }
 
 void RenderBoxModelObject::setContinuation(RenderBoxModelObject* continuation)
 {
     if (continuation) {
         if (!continuationMap)
-            continuationMap = new OwnPtrWillBePersistent<ContinuationMap>(adoptPtrWillBeNoop(new ContinuationMap));
-        (*continuationMap)->set(this, continuation);
+            continuationMap = new ContinuationMap;
+        continuationMap->set(this, continuation);
     } else {
         if (continuationMap)
-            (*continuationMap)->remove(this);
+            continuationMap->remove(this);
     }
 }
 
 void RenderBoxModelObject::computeLayerHitTestRects(LayerHitTestRects& rects) const
 {
-    RenderLayerModelObject::computeLayerHitTestRects(rects);
+    LayoutLayerModelObject::computeLayerHitTestRects(rects);
 
     // If there is a continuation then we need to consult it here, since this is
     // the root of the tree walk and it wouldn't otherwise get picked up.
@@ -500,13 +499,13 @@ LayoutRect RenderBoxModelObject::localCaretRectForEmptyElement(LayoutUnit width,
     // However, as soon as some content is entered, the line boxes will be
     // constructed and this kludge is not called any more. So only the caret size
     // of an empty :first-line'd block is wrong. I think we can live with that.
-    RenderStyle* currentStyle = firstLineStyle();
+    const LayoutStyle& currentStyle = firstLineStyleRef();
 
     enum CaretAlignment { alignLeft, alignRight, alignCenter };
 
     CaretAlignment alignment = alignLeft;
 
-    switch (currentStyle->textAlign()) {
+    switch (currentStyle.textAlign()) {
     case LEFT:
     case WEBKIT_LEFT:
         break;
@@ -520,11 +519,11 @@ LayoutRect RenderBoxModelObject::localCaretRectForEmptyElement(LayoutUnit width,
         break;
     case JUSTIFY:
     case TASTART:
-        if (!currentStyle->isLeftToRightDirection())
+        if (!currentStyle.isLeftToRightDirection())
             alignment = alignRight;
         break;
     case TAEND:
-        if (currentStyle->isLeftToRightDirection())
+        if (currentStyle.isLeftToRightDirection())
             alignment = alignRight;
         break;
     }
@@ -534,37 +533,37 @@ LayoutRect RenderBoxModelObject::localCaretRectForEmptyElement(LayoutUnit width,
 
     switch (alignment) {
     case alignLeft:
-        if (currentStyle->isLeftToRightDirection())
+        if (currentStyle.isLeftToRightDirection())
             x += textIndentOffset;
         break;
     case alignCenter:
         x = (x + maxX) / 2;
-        if (currentStyle->isLeftToRightDirection())
+        if (currentStyle.isLeftToRightDirection())
             x += textIndentOffset / 2;
         else
             x -= textIndentOffset / 2;
         break;
     case alignRight:
         x = maxX - caretWidth;
-        if (!currentStyle->isLeftToRightDirection())
+        if (!currentStyle.isLeftToRightDirection())
             x -= textIndentOffset;
         break;
     }
     x = std::min(x, std::max<LayoutUnit>(maxX - caretWidth, 0));
 
     LayoutUnit height = style()->fontMetrics().height();
-    LayoutUnit verticalSpace = lineHeight(true, currentStyle->isHorizontalWritingMode() ? HorizontalLine : VerticalLine,  PositionOfInteriorLineBoxes) - height;
+    LayoutUnit verticalSpace = lineHeight(true, currentStyle.isHorizontalWritingMode() ? HorizontalLine : VerticalLine,  PositionOfInteriorLineBoxes) - height;
     LayoutUnit y = paddingTop() + borderTop() + (verticalSpace / 2);
-    return currentStyle->isHorizontalWritingMode() ? LayoutRect(x, y, caretWidth, height) : LayoutRect(y, x, height, caretWidth);
+    return currentStyle.isHorizontalWritingMode() ? LayoutRect(x, y, caretWidth, height) : LayoutRect(y, x, height, caretWidth);
 }
 
 void RenderBoxModelObject::mapAbsoluteToLocalPoint(MapCoordinatesFlags mode, TransformState& transformState) const
 {
-    RenderObject* o = container();
+    LayoutObject* o = container();
     if (!o)
         return;
 
-    if (o->isRenderFlowThread())
+    if (o->isLayoutFlowThread())
         transformState.move(o->columnOffset(LayoutPoint(transformState.mappedPoint())));
 
     o->mapAbsoluteToLocalPoint(mode, transformState);
@@ -587,12 +586,12 @@ void RenderBoxModelObject::mapAbsoluteToLocalPoint(MapCoordinatesFlags mode, Tra
         transformState.move(containerOffset.width(), containerOffset.height(), preserve3D ? TransformState::AccumulateTransform : TransformState::FlattenTransform);
 }
 
-const RenderObject* RenderBoxModelObject::pushMappingToContainer(const RenderLayerModelObject* ancestorToStopAt, RenderGeometryMap& geometryMap) const
+const LayoutObject* RenderBoxModelObject::pushMappingToContainer(const LayoutLayerModelObject* ancestorToStopAt, LayoutGeometryMap& geometryMap) const
 {
     ASSERT(ancestorToStopAt != this);
 
     bool ancestorSkipped;
-    RenderObject* container = this->container(ancestorToStopAt, &ancestorSkipped);
+    LayoutObject* container = this->container(ancestorToStopAt, &ancestorSkipped);
     if (!container)
         return 0;
 
@@ -624,7 +623,7 @@ const RenderObject* RenderBoxModelObject::pushMappingToContainer(const RenderLay
     return ancestorSkipped ? ancestorToStopAt : container;
 }
 
-void RenderBoxModelObject::moveChildTo(RenderBoxModelObject* toBoxModelObject, RenderObject* child, RenderObject* beforeChild, bool fullRemoveInsert)
+void RenderBoxModelObject::moveChildTo(RenderBoxModelObject* toBoxModelObject, LayoutObject* child, LayoutObject* beforeChild, bool fullRemoveInsert)
 {
     // We assume that callers have cleared their positioned objects list for child moves (!fullRemoveInsert) so the
     // positioned renderer maps don't become stale. It would be too slow to do the map lookup on each call.
@@ -640,7 +639,7 @@ void RenderBoxModelObject::moveChildTo(RenderBoxModelObject* toBoxModelObject, R
         toBoxModelObject->virtualChildren()->insertChildNode(toBoxModelObject, virtualChildren()->removeChildNode(this, child, fullRemoveInsert), beforeChild, fullRemoveInsert);
 }
 
-void RenderBoxModelObject::moveChildrenTo(RenderBoxModelObject* toBoxModelObject, RenderObject* startChild, RenderObject* endChild, RenderObject* beforeChild, bool fullRemoveInsert)
+void RenderBoxModelObject::moveChildrenTo(RenderBoxModelObject* toBoxModelObject, LayoutObject* startChild, LayoutObject* endChild, LayoutObject* beforeChild, bool fullRemoveInsert)
 {
     // This condition is rarely hit since this function is usually called on
     // anonymous blocks which can no longer carry positioned objects (see r120761)
@@ -653,9 +652,9 @@ void RenderBoxModelObject::moveChildrenTo(RenderBoxModelObject* toBoxModelObject
     }
 
     ASSERT(!beforeChild || toBoxModelObject == beforeChild->parent());
-    for (RenderObject* child = startChild; child && child != endChild; ) {
+    for (LayoutObject* child = startChild; child && child != endChild; ) {
         // Save our next sibling as moveChildTo will clear it.
-        RenderObject* nextSibling = child->nextSibling();
+        LayoutObject* nextSibling = child->nextSibling();
         moveChildTo(toBoxModelObject, child, beforeChild, fullRemoveInsert);
         child = nextSibling;
     }

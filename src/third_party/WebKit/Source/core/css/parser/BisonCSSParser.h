@@ -26,7 +26,6 @@
 #include "core/CSSPropertyNames.h"
 #include "core/CSSValueKeywords.h"
 #include "core/css/CSSCalculationValue.h"
-#include "core/css/CSSFilterValue.h"
 #include "core/css/CSSGradientValue.h"
 #include "core/css/CSSProperty.h"
 #include "core/css/CSSPropertySourceData.h"
@@ -82,9 +81,6 @@ public:
     PassRefPtrWillBeRawPtr<StyleRuleKeyframe> parseKeyframeRule(StyleSheetContents*, const String&);
     bool parseSupportsCondition(const String&);
     static bool parseValue(MutableStylePropertySet*, CSSPropertyID, const String&, bool important, const CSSParserContext&);
-    static bool parseColor(RGBA32& color, const String&, bool strict = false);
-    static StyleColor colorFromRGBColorString(const String&);
-    static bool parseSystemColor(RGBA32& color, const String&);
     bool parseDeclaration(MutableStylePropertySet*, const String&, CSSParserObserver*, StyleSheetContents* contextStyleSheet);
     static PassRefPtrWillBeRawPtr<ImmutableStylePropertySet> parseInlineStyleDeclaration(const String&, Element*);
     PassOwnPtr<Vector<double> > parseKeyframeKeyList(const String&);
@@ -104,7 +100,6 @@ public:
     PassOwnPtr<CSSParserValueList> sinkFloatingValueList(CSSParserValueList*);
 
     CSSParserFunction* createFloatingFunction(const CSSParserString& name, PassOwnPtr<CSSParserValueList> args);
-    PassOwnPtr<CSSParserFunction> sinkFloatingFunction(CSSParserFunction*);
 
     CSSParserValue& sinkFloatingValue(CSSParserValue&);
 
@@ -256,8 +251,6 @@ private:
     bool parseValue(MutableStylePropertySet*, CSSPropertyID, const String&, bool important);
     PassRefPtrWillBeRawPtr<ImmutableStylePropertySet> parseDeclaration(const String&, StyleSheetContents* contextStyleSheet);
 
-    bool parseColor(const String&);
-
     const String* m_source;
     TextPosition m_startPosition;
     CSSRuleSourceData::Type m_ruleHeaderType;
@@ -295,13 +288,7 @@ private:
 
     OwnPtrWillBeMember<RuleSourceDataList> m_supportsRuleDataStack;
 
-    bool isLoggingErrors();
-    void logError(const String& message, const CSSParserLocation&);
-
     BisonCSSTokenizer m_tokenizer;
-
-    friend class TransformOperationInfo;
-    friend class FilterOperationInfo;
 };
 
 inline int cssyylex(void* yylval, BisonCSSParser* parser)

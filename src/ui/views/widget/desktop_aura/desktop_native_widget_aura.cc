@@ -5,7 +5,7 @@
 #include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
 
 #include "base/bind.h"
-#include "base/debug/trace_event.h"
+#include "base/trace_event/trace_event.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/client/focus_client.h"
@@ -873,7 +873,10 @@ void DesktopNativeWidgetAura::SetCursor(gfx::NativeCursor cursor) {
 }
 
 bool DesktopNativeWidgetAura::IsMouseEventsEnabled() const {
-  if (!content_window_)
+  // We explicitly check |host_| here because it can be null during the process
+  // of widget shutdown (even if |content_window_| is not), and must be valid to
+  // determine if mouse events are enabled.
+  if (!content_window_ || !host_)
     return false;
   aura::client::CursorClient* cursor_client =
       aura::client::GetCursorClient(host_->window());
@@ -977,6 +980,10 @@ gfx::Size DesktopNativeWidgetAura::GetMinimumSize() const {
 
 gfx::Size DesktopNativeWidgetAura::GetMaximumSize() const {
   return native_widget_delegate_->GetMaximumSize();
+}
+
+ui::TextInputClient* DesktopNativeWidgetAura::GetFocusedTextInputClient() {
+  return GetWidget()->GetFocusedTextInputClient();
 }
 
 gfx::NativeCursor DesktopNativeWidgetAura::GetCursor(const gfx::Point& point) {

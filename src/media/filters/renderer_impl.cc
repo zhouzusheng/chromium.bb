@@ -11,6 +11,7 @@
 #include "base/location.h"
 #include "base/single_thread_task_runner.h"
 #include "media/base/audio_renderer.h"
+#include "media/base/bind_to_current_loop.h"
 #include "media/base/demuxer_stream_provider.h"
 #include "media/base/time_source.h"
 #include "media/base/video_renderer.h"
@@ -49,11 +50,14 @@ RendererImpl::~RendererImpl() {
   video_renderer_.reset();
   audio_renderer_.reset();
 
-  FireAllPendingCallbacks();
+  if (!init_cb_.is_null())
+    base::ResetAndReturn(&init_cb_).Run(PIPELINE_ERROR_ABORT);
+  else if (!flush_cb_.is_null())
+    base::ResetAndReturn(&flush_cb_).Run();
 }
 
 void RendererImpl::Initialize(DemuxerStreamProvider* demuxer_stream_provider,
-                              const base::Closure& init_cb,
+                              const PipelineStatusCB& init_cb,
                               const StatisticsCB& statistics_cb,
                               const BufferingStateCB& buffering_state_cb,
                               const PaintCB& paint_cb,
@@ -77,8 +81,8 @@ void RendererImpl::Initialize(DemuxerStreamProvider* demuxer_stream_provider,
   paint_cb_ = paint_cb;
   ended_cb_ = ended_cb;
   error_cb_ = error_cb;
-
   init_cb_ = init_cb;
+
   state_ = STATE_INITIALIZING;
   InitializeAudioRenderer();
 }
@@ -261,13 +265,16 @@ void RendererImpl::OnAudioRendererInitializeDone(PipelineStatus status) {
   DVLOG(1) << __FUNCTION__ << ": " << status;
   DCHECK(task_runner_->BelongsToCurrentThread());
 
-  if (status != PIPELINE_OK)
-    OnError(status);
-
   // OnError() may be fired at any time by the renderers, even if they thought
   // they initialized successfully (due to delayed output device setup).
   if (state_ != STATE_INITIALIZING) {
+    DCHECK(init_cb_.is_null());
     audio_renderer_.reset();
+    return;
+  }
+
+  if (status != PIPELINE_OK) {
+    base::ResetAndReturn(&init_cb_).Run(status);
     return;
   }
 
@@ -307,18 +314,21 @@ void RendererImpl::OnVideoRendererInitializeDone(PipelineStatus status) {
   DVLOG(1) << __FUNCTION__ << ": " << status;
   DCHECK(task_runner_->BelongsToCurrentThread());
 
-  if (status != PIPELINE_OK)
-    OnError(status);
-
   // OnError() may be fired at any time by the renderers, even if they thought
   // they initialized successfully (due to delayed output device setup).
   if (state_ != STATE_INITIALIZING) {
+    DCHECK(init_cb_.is_null());
     audio_renderer_.reset();
     video_renderer_.reset();
     return;
   }
 
   DCHECK(!init_cb_.is_null());
+
+  if (status != PIPELINE_OK) {
+    base::ResetAndReturn(&init_cb_).Run(status);
+    return;
+  }
 
   if (audio_renderer_) {
     time_source_ = audio_renderer_->GetTimeSource();
@@ -330,7 +340,7 @@ void RendererImpl::OnVideoRendererInitializeDone(PipelineStatus status) {
   state_ = STATE_PLAYING;
   DCHECK(time_source_);
   DCHECK(audio_renderer_ || video_renderer_);
-  base::ResetAndReturn(&init_cb_).Run();
+  base::ResetAndReturn(&init_cb_).Run(PIPELINE_OK);
 }
 
 void RendererImpl::FlushAudioRenderer() {
@@ -548,19 +558,16 @@ void RendererImpl::OnError(PipelineStatus error) {
   if (state_ == STATE_ERROR)
     return;
 
+  const State old_state = state_;
   state_ = STATE_ERROR;
 
-  // Pipeline will destroy |this| as the result of error.
+  if (old_state == STATE_INITIALIZING) {
+    base::ResetAndReturn(&init_cb_).Run(error);
+    return;
+  }
+
+  // After OnError() returns, the pipeline may destroy |this|.
   base::ResetAndReturn(&error_cb_).Run(error);
-
-  FireAllPendingCallbacks();
-}
-
-void RendererImpl::FireAllPendingCallbacks() {
-  DCHECK(task_runner_->BelongsToCurrentThread());
-
-  if (!init_cb_.is_null())
-    base::ResetAndReturn(&init_cb_).Run();
 
   if (!flush_cb_.is_null())
     base::ResetAndReturn(&flush_cb_).Run();

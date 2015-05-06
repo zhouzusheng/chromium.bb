@@ -14,7 +14,7 @@
 // This should not be included by driver code.
 //
 
-#include "compiler/translator/BuiltInFunctionEmulator.h"
+#include "compiler/translator/BuiltInFunctionEmulatorGLSL.h"
 #include "compiler/translator/ExtensionBehavior.h"
 #include "compiler/translator/HashNames.h"
 #include "compiler/translator/InfoSink.h"
@@ -61,9 +61,15 @@ class TCompiler : public TShHandleBase
     virtual TCompiler* getAsCompiler() { return this; }
 
     bool Init(const ShBuiltInResources& resources);
+
+    // compileTreeForTesting should be used only when tests require access to
+    // the AST. Users of this function need to manually manage the global pool
+    // allocator. Returns NULL whenever there are compilation errors.
+    TIntermNode *compileTreeForTesting(const char* const shaderStrings[],
+        size_t numStrings, int compileOptions);
+
     bool compile(const char* const shaderStrings[],
-                 size_t numStrings,
-                 int compileOptions);
+        size_t numStrings, int compileOptions);
 
     // Get results of the last compilation.
     int getShaderVersion() const { return shaderVersion; }
@@ -105,7 +111,7 @@ class TCompiler : public TShHandleBase
     // Collect info for all attribs, uniforms, varyings.
     void collectVariables(TIntermNode* root);
     // Translate to object code.
-    virtual void translate(TIntermNode* root) = 0;
+    virtual void translate(TIntermNode *root, int compileOptions) = 0;
     // Returns true if, after applying the packing rules in the GLSL 1.017 spec
     // Appendix A, section 7, the shader does not use too many uniforms.
     bool enforcePackingRestrictions();
@@ -130,12 +136,13 @@ class TCompiler : public TShHandleBase
     bool limitExpressionComplexity(TIntermNode* root);
     // Get built-in extensions with default behavior.
     const TExtensionBehavior& getExtensionBehavior() const;
+    const char *getSourcePath() const;
     const TPragma& getPragma() const { return mPragma; }
     void writePragma();
 
     const ArrayBoundsClamper& getArrayBoundsClamper() const;
     ShArrayIndexClampingStrategy getArrayIndexClampingStrategy() const;
-    const BuiltInFunctionEmulator& getBuiltInFunctionEmulator() const;
+    const BuiltInFunctionEmulatorGLSL& getBuiltInFunctionEmulator() const;
 
     std::vector<sh::Attribute> attributes;
     std::vector<sh::Attribute> outputVariables;
@@ -145,6 +152,9 @@ class TCompiler : public TShHandleBase
     std::vector<sh::InterfaceBlock> interfaceBlocks;
 
   private:
+    TIntermNode *compileTreeImpl(const char* const shaderStrings[],
+        size_t numStrings, int compileOptions);
+
     sh::GLenum shaderType;
     ShShaderSpec shaderSpec;
     ShShaderOutput outputType;
@@ -165,11 +175,12 @@ class TCompiler : public TShHandleBase
 
     ArrayBoundsClamper arrayBoundsClamper;
     ShArrayIndexClampingStrategy clampingStrategy;
-    BuiltInFunctionEmulator builtInFunctionEmulator;
+    BuiltInFunctionEmulatorGLSL builtInFunctionEmulator;
 
     // Results of compilation.
     int shaderVersion;
     TInfoSink infoSink;  // Output sink.
+    const char *mSourcePath; // Path of source file or NULL
 
     // name hashing.
     ShHashFunction64 hashFunction;

@@ -30,6 +30,7 @@
 #include "platform/geometry/IntPoint.h"
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/graphics/Path.h"
+#include "platform/graphics/paint/DisplayItemClient.h"
 #include "public/platform/WebCompositorAnimationDelegate.h"
 #include "public/platform/WebContentLayer.h"
 #include "public/platform/WebContentLayerClient.h"
@@ -40,7 +41,7 @@
 namespace blink {
 
 class Node;
-class RenderLayerModelObject;
+class LayoutLayerModelObject;
 struct WebRect;
 class WebViewImpl;
 
@@ -55,14 +56,14 @@ public:
     void updateGeometry();
 
     // WebContentLayerClient implementation.
-    virtual void paintContents(WebCanvas*, const WebRect& clipRect, bool canPaintLCDText, WebContentLayerClient::GraphicsContextStatus) override;
-    virtual void paintContents(WebDisplayItemList*, const WebRect& clipRect, bool canPaintLCDText, WebContentLayerClient::GraphicsContextStatus) override { }
+    virtual void paintContents(WebCanvas*, const WebRect& clipRect, WebContentLayerClient::PaintingControlSetting) override;
+    virtual void paintContents(WebDisplayItemList*, const WebRect& clipRect, WebContentLayerClient::PaintingControlSetting) override { }
 
     // WebCompositorAnimationDelegate implementation.
     virtual void notifyAnimationStarted(double monotonicTime, int group) override;
     virtual void notifyAnimationFinished(double monotonicTime, int group) override;
 
-    // LinkHighlightClient inplementation.
+    // LinkHighlightClient implementation.
     virtual void invalidate() override;
     virtual WebLayer* layer() override;
     virtual void clearCurrentGraphicsLayer() override;
@@ -75,11 +76,13 @@ private:
     void releaseResources();
     void computeQuads(const Node&, WTF::Vector<FloatQuad>&) const;
 
-    void attachLinkHighlightToCompositingLayer(const RenderLayerModelObject* paintInvalidationContainer);
+    void attachLinkHighlightToCompositingLayer(const LayoutLayerModelObject* paintInvalidationContainer);
     void clearGraphicsLayerLinkHighlightPointer();
     // This function computes the highlight path, and returns true if it has changed
     // size since the last call to this function.
-    bool computeHighlightLayerPathAndPosition(const RenderLayerModelObject*);
+    bool computeHighlightLayerPathAndPosition(const LayoutLayerModelObject*);
+
+    DisplayItemClient displayItemClient() const { return toDisplayItemClient(this); }
 
     OwnPtr<WebContentLayer> m_contentLayer;
     OwnPtr<WebLayer> m_clipLayer;

@@ -11,13 +11,14 @@
 
 #include "base/cancelable_callback.h"
 #include "base/memory/memory_pressure_listener.h"
+#include "base/memory/ref_counted.h"
 #include "base/metrics/user_metrics_action.h"
 #include "base/observer_list.h"
 #include "base/strings/string16.h"
 #include "base/threading/thread_checker.h"
 #include "base/timer/timer.h"
 #include "build/build_config.h"
-#include "content/child/child_thread.h"
+#include "content/child/child_thread_impl.h"
 #include "content/common/content_export.h"
 #include "content/common/frame_replication_state.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
@@ -34,6 +35,7 @@
 
 class GrContext;
 class SkBitmap;
+struct FrameMsg_NewFrame_WidgetParams;
 struct ViewMsg_New_Params;
 struct WorkerProcessMsg_CreateWorker_Params;
 
@@ -54,6 +56,10 @@ namespace cc {
 class ContextProvider;
 }
 
+namespace cc_blink {
+class ContextProviderWebContext;
+}
+
 namespace IPC {
 class MessageFilter;
 }
@@ -65,13 +71,6 @@ class GpuVideoAcceleratorFactories;
 
 namespace v8 {
 class Extension;
-}
-
-namespace webkit {
-namespace gpu {
-class ContextProviderWebContext;
-class GrContextForWebGraphicsContext3D;
-}
 }
 
 namespace content {
@@ -102,11 +101,18 @@ class RenderProcessObserver;
 class RendererBlinkPlatformImpl;
 class RendererDemuxerAndroid;
 class RendererScheduler;
+class ResourceDispatchThrottler;
 class ResourceSchedulingFilter;
 class V8SamplingProfiler;
 class VideoCaptureImplManager;
 class WebGraphicsContext3DCommandBufferImpl;
 class WebRTCIdentityService;
+
+#if defined(COMPILER_MSVC)
+// See explanation for other RenderViewHostImpl which is the same issue.
+#pragma warning(push)
+#pragma warning(disable: 4250)
+#endif
 
 // The RenderThreadImpl class represents a background thread where RenderView
 // instances live.  The RenderThread supports an API that is used by its
@@ -119,7 +125,7 @@ class WebRTCIdentityService;
 // The routing IDs correspond to RenderView instances.
 class CONTENT_EXPORT RenderThreadImpl
     : public RenderThread,
-      public ChildThread,
+      public ChildThreadImpl,
       public GpuChannelHostFactory,
       NON_EXPORTED_BASE(public CompositorDependencies) {
  public:
@@ -173,16 +179,14 @@ class CONTENT_EXPORT RenderThreadImpl
   int PostTaskToAllWebWorkers(const base::Closure& closure) override;
   bool ResolveProxy(const GURL& url, std::string* proxy_list) override;
   base::WaitableEvent* GetShutdownEvent() override;
-#if defined(OS_WIN)
-  virtual void PreCacheFont(const LOGFONT& log_font) override;
-  virtual void ReleaseCachedFonts() override;
-#endif
   ServiceRegistry* GetServiceRegistry() override;
 
   // CompositorDependencies implementation.
   bool IsImplSidePaintingEnabled() override;
   bool IsGpuRasterizationForced() override;
   bool IsGpuRasterizationEnabled() override;
+  bool IsThreadedGpuRasterizationEnabled() override;
+  int GetGpuRasterizationMSAASampleCount() override;
   bool IsLcdTextEnabled() override;
   bool IsDistanceFieldTextEnabled() override;
   bool IsZeroCopyEnabled() override;
@@ -321,8 +325,8 @@ class CONTENT_EXPORT RenderThreadImpl
 
   scoped_refptr<media::GpuVideoAcceleratorFactories> GetGpuFactories();
 
-  scoped_refptr<webkit::gpu::ContextProviderWebContext>
-      SharedMainThreadContextProvider();
+  scoped_refptr<cc_blink::ContextProviderWebContext>
+  SharedMainThreadContextProvider();
 
   // AudioRendererMixerManager instance which manages renderer side mixer
   // instances shared based on configured audio parameters.  Lazily created on
@@ -404,8 +408,10 @@ class CONTENT_EXPORT RenderThreadImpl
   void AddEmbeddedWorkerRoute(int32 routing_id, IPC::Listener* listener);
   void RemoveEmbeddedWorkerRoute(int32 routing_id);
 
-  void RegisterPendingRenderFrameConnect(int routing_id,
-                                         mojo::ScopedMessagePipeHandle handle);
+  void RegisterPendingRenderFrameConnect(
+      int routing_id,
+      mojo::InterfaceRequest<mojo::ServiceProvider> services,
+      mojo::ServiceProviderPtr exposed_services);
 
  protected:
   virtual void SetResourceDispatchTaskQueue(
@@ -429,7 +435,9 @@ class CONTENT_EXPORT RenderThreadImpl
 
   void OnCreateNewFrame(int routing_id,
                         int parent_routing_id,
-                        int proxy_routing_id);
+                        int proxy_routing_id,
+                        const FrameReplicationState& replicated_state,
+                        FrameMsg_NewFrame_WidgetParams params);
   void OnCreateNewFrameProxy(int routing_id,
                              int parent_routing_id,
                              int render_view_routing_id,
@@ -469,6 +477,7 @@ class CONTENT_EXPORT RenderThreadImpl
   scoped_ptr<IndexedDBDispatcher> main_thread_indexed_db_dispatcher_;
   scoped_ptr<RendererScheduler> renderer_scheduler_;
   scoped_ptr<RendererBlinkPlatformImpl> blink_platform_impl_;
+  scoped_ptr<ResourceDispatchThrottler> resource_dispatch_throttler_;
   scoped_ptr<EmbeddedWorkerDispatcher> embedded_worker_dispatcher_;
 
   // Used on the render thread and deleted by WebKit at shutdown.
@@ -559,7 +568,7 @@ class CONTENT_EXPORT RenderThreadImpl
   scoped_ptr<InputHandlerManager> input_handler_manager_;
   scoped_refptr<CompositorForwardingMessageFilter> compositor_message_filter_;
 
-  scoped_refptr<webkit::gpu::ContextProviderWebContext>
+  scoped_refptr<cc_blink::ContextProviderWebContext>
       shared_main_thread_contexts_;
 
   ObserverList<RenderProcessObserver> observers_;
@@ -587,6 +596,8 @@ class CONTENT_EXPORT RenderThreadImpl
   // Compositor settings.
   bool is_gpu_rasterization_enabled_;
   bool is_gpu_rasterization_forced_;
+  int gpu_rasterization_msaa_sample_count_;
+  bool is_threaded_gpu_rasterization_enabled_;
   bool is_impl_side_painting_enabled_;
   bool is_lcd_text_enabled_;
   bool is_distance_field_text_enabled_;
@@ -595,10 +606,31 @@ class CONTENT_EXPORT RenderThreadImpl
   bool is_elastic_overscroll_enabled_;
   unsigned use_image_texture_target_;
 
-  std::map<int, mojo::MessagePipeHandle> pending_render_frame_connects_;
+  struct PendingRenderFrameConnect
+      : public base::RefCounted<PendingRenderFrameConnect> {
+    PendingRenderFrameConnect(
+        mojo::InterfaceRequest<mojo::ServiceProvider> services,
+        mojo::ServiceProviderPtr exposed_services);
+
+    mojo::InterfaceRequest<mojo::ServiceProvider> services;
+    mojo::ServiceProviderPtr exposed_services;
+
+   private:
+    friend class base::RefCounted<PendingRenderFrameConnect>;
+
+    ~PendingRenderFrameConnect();
+  };
+
+  typedef std::map<int, scoped_refptr<PendingRenderFrameConnect>>
+      PendingRenderFrameConnectMap;
+  PendingRenderFrameConnectMap pending_render_frame_connects_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderThreadImpl);
 };
+
+#if defined(COMPILER_MSVC)
+#pragma warning(pop)
+#endif
 
 }  // namespace content
 

@@ -73,7 +73,7 @@ private:
         SetSeletion
     };
 
-    virtual void didAddUserAgentShadowRoot(ShadowRoot&) override;
+    virtual void didAddClosedShadowRoot(ShadowRoot&) override;
     // FIXME: Author shadows should be allowed
     // https://bugs.webkit.org/show_bug.cgi?id=92608
     virtual bool areAuthorShadowsAllowed() const override { return false; }
@@ -94,7 +94,7 @@ private:
     virtual bool isRequiredFormControl() const override { return isRequired(); }
 
     virtual void defaultEventHandler(Event*) override;
-    virtual void handleFocusEvent(Element* oldFocusedNode, FocusType) override;
+    virtual void handleFocusEvent(Element* oldFocusedNode, WebFocusType) override;
 
     virtual void subtreeHasChanged() override;
 
@@ -114,7 +114,7 @@ private:
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
     virtual bool isPresentationAttribute(const QualifiedName&) const override;
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
-    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual LayoutObject* createRenderer(const LayoutStyle&) override;
     virtual bool appendFormData(FormDataList&, bool) override;
     virtual void resetImpl() override;
     virtual bool hasCustomFocusLogic() const override;

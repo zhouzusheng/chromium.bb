@@ -567,6 +567,11 @@ void WebSettingsImpl::setAllowRunningOfInsecureContent(bool enabled)
     m_settings->setAllowRunningOfInsecureContent(enabled);
 }
 
+void WebSettingsImpl::setDisableReadingFromCanvas(bool enabled)
+{
+    m_settings->setDisableReadingFromCanvas(enabled);
+}
+
 void WebSettingsImpl::setStrictMixedContentChecking(bool enabled)
 {
     m_settings->setStrictMixedContentChecking(enabled);
@@ -740,16 +745,6 @@ void WebSettingsImpl::setMainFrameResizesAreOrientationChanges(bool enabled)
 void WebSettingsImpl::setV8CacheOptions(V8CacheOptions options)
 {
     m_settings->setV8CacheOptions(static_cast<blink::V8CacheOptions>(options));
-}
-
-void WebSettingsImpl::setV8ScriptStreamingEnabled(bool enabled)
-{
-    m_settings->setV8ScriptStreamingEnabled(enabled);
-}
-
-void WebSettingsImpl::setV8ScriptStreamingMode(V8ScriptStreamingMode mode)
-{
-    m_settings->setV8ScriptStreamingMode(static_cast<blink::ScriptStreamingMode>(mode));
 }
 
 } // namespace blink

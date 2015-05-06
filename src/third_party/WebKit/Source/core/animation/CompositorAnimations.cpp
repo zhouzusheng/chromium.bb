@@ -31,6 +31,7 @@
 #include "config.h"
 #include "core/animation/CompositorAnimations.h"
 
+#include "core/animation/ActiveAnimations.h"
 #include "core/animation/AnimationNode.h"
 #include "core/animation/AnimationTranslationUtil.h"
 #include "core/animation/CompositorAnimationsImpl.h"
@@ -38,10 +39,10 @@
 #include "core/animation/animatable/AnimatableFilterOperations.h"
 #include "core/animation/animatable/AnimatableTransform.h"
 #include "core/animation/animatable/AnimatableValue.h"
+#include "core/layout/Layer.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/compositing/CompositedLayerMapping.h"
 #include "core/rendering/RenderBoxModelObject.h"
-#include "core/rendering/RenderLayer.h"
-#include "core/rendering/RenderObject.h"
-#include "core/rendering/compositing/CompositedLayerMapping.h"
 #include "platform/geometry/FloatBox.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebCompositorAnimation.h"
@@ -70,7 +71,57 @@ void getKeyframeValuesForProperty(const KeyframeEffectModelBase* effect, CSSProp
     }
 }
 
+bool considerPlayerAsIncompatible(const AnimationPlayer& player, const AnimationPlayer& playerToAdd)
+{
+    if (&player == &playerToAdd)
+        return false;
+
+    switch (player.playStateInternal()) {
+    case AnimationPlayer::Idle:
+        return false;
+    case AnimationPlayer::Pending:
+    case AnimationPlayer::Running:
+        return true;
+    case AnimationPlayer::Paused:
+    case AnimationPlayer::Finished:
+        return AnimationPlayer::hasLowerPriority(&playerToAdd, &player);
+    default:
+        ASSERT_NOT_REACHED();
+        return true;
+    }
 }
+
+bool hasIncompatibleAnimations(const Element& targetElement, const AnimationPlayer& playerToAdd, const AnimationEffect& effectToAdd)
+{
+    const bool affectsOpacity = effectToAdd.affects(CSSPropertyOpacity);
+    const bool affectsTransform = effectToAdd.affects(CSSPropertyTransform);
+    const bool affectsFilter = effectToAdd.affects(CSSPropertyWebkitFilter);
+
+    if (!targetElement.hasActiveAnimations())
+        return false;
+
+    ActiveAnimations* activeAnimations = targetElement.activeAnimations();
+    ASSERT(activeAnimations);
+
+    for (const auto& entry : activeAnimations->players()) {
+        const AnimationPlayer* attachedPlayer = entry.key;
+        if (!considerPlayerAsIncompatible(*attachedPlayer, playerToAdd))
+            continue;
+
+        if ((affectsOpacity && attachedPlayer->affects(targetElement, CSSPropertyOpacity))
+            || (affectsTransform && attachedPlayer->affects(targetElement, CSSPropertyTransform))
+            || (affectsFilter && attachedPlayer->affects(targetElement, CSSPropertyWebkitFilter)))
+            return true;
+    }
+
+    return false;
+}
+
+}
+
+CSSPropertyID CompositorAnimations::CompositableProperties[3] = {
+    CSSPropertyOpacity, CSSPropertyTransform, CSSPropertyWebkitFilter
+};
 
 bool CompositorAnimations::getAnimatedBoundingBox(FloatBox& box, const AnimationEffect& effect, double minValue, double maxValue) const
 {
@@ -133,12 +184,11 @@ bool CompositorAnimations::getAnimatedBoundingBox(FloatBox& box, const Animation
 // CompositorAnimations public API
 // -----------------------------------------------------------------------
 
-bool CompositorAnimations::isCandidateForAnimationOnCompositor(const Timing& timing, const AnimationEffect& effect, double playerPlaybackRate)
+bool CompositorAnimations::isCandidateForAnimationOnCompositor(const Timing& timing, const Element& targetElement, const AnimationPlayer* playerToAdd, const AnimationEffect& effect, double playerPlaybackRate)
 {
     const KeyframeEffectModelBase& keyframeEffect = toKeyframeEffectModelBase(effect);
 
     PropertySet properties = keyframeEffect.properties();
-
     if (properties.isEmpty())
         return false;
 
@@ -147,7 +197,8 @@ bool CompositorAnimations::isCandidateForAnimationOnCompositor(const Timing& tim
         ASSERT(keyframes.size() >= 2);
         for (const auto& keyframe : keyframes) {
             // FIXME: Determine candidacy based on the CSSValue instead of a snapshot AnimatableValue.
-            if (keyframe->composite() != AnimationEffect::CompositeReplace || !keyframe->getAnimatableValue())
+            bool isNeutralKeyframe = keyframe->isStringPropertySpecificKeyframe() && !toStringPropertySpecificKeyframe(keyframe.get())->value() && keyframe->composite() == AnimationEffect::CompositeAdd;
+            if ((keyframe->composite() != AnimationEffect::CompositeReplace && !isNeutralKeyframe) || !keyframe->getAnimatableValue())
                 return false;
 
             switch (property) {
@@ -164,10 +215,14 @@ bool CompositorAnimations::isCandidateForAnimationOnCompositor(const Timing& tim
                 break;
             }
             default:
+                // any other types are not allowed to run on compositor.
                 return false;
             }
         }
     }
+
+    if (playerToAdd && hasIncompatibleAnimations(targetElement, *playerToAdd, effect))
+        return false;
 
     CompositorAnimationsImpl::CompositorTiming out;
     if (!CompositorAnimationsImpl::convertTimingForCompositor(timing, 0, out, playerPlaybackRate))
@@ -176,20 +231,44 @@ bool CompositorAnimations::isCandidateForAnimationOnCompositor(const Timing& tim
     return true;
 }
 
+void CompositorAnimations::cancelIncompatibleAnimationsOnCompositor(const Element& targetElement, const AnimationPlayer& playerToAdd, const AnimationEffect& effectToAdd)
+{
+    const bool affectsOpacity = effectToAdd.affects(CSSPropertyOpacity);
+    const bool affectsTransform = effectToAdd.affects(CSSPropertyTransform);
+    const bool affectsFilter = effectToAdd.affects(CSSPropertyWebkitFilter);
+
+    if (!targetElement.hasActiveAnimations())
+        return;
+
+    ActiveAnimations* activeAnimations = targetElement.activeAnimations();
+    ASSERT(activeAnimations);
+
+    for (const auto& entry : activeAnimations->players()) {
+        AnimationPlayer* attachedPlayer = entry.key;
+        if (!considerPlayerAsIncompatible(*attachedPlayer, playerToAdd))
+            continue;
+
+        if ((affectsOpacity && attachedPlayer->affects(targetElement, CSSPropertyOpacity))
+            || (affectsTransform && attachedPlayer->affects(targetElement, CSSPropertyTransform))
+            || (affectsFilter && attachedPlayer->affects(targetElement, CSSPropertyWebkitFilter)))
+            attachedPlayer->cancelAnimationOnCompositor();
+    }
+}
+
 bool CompositorAnimations::canStartAnimationOnCompositor(const Element& element)
 {
     return element.renderer() && element.renderer()->compositingState() == PaintsIntoOwnBacking;
 }
 
-bool CompositorAnimations::startAnimationOnCompositor(const Element& element, int group, double startTime, double timeOffset, const Timing& timing, const AnimationEffect& effect, Vector<int>& startedAnimationIds, double playerPlaybackRate)
+bool CompositorAnimations::startAnimationOnCompositor(const Element& element, int group, double startTime, double timeOffset, const Timing& timing, const AnimationPlayer* player, const AnimationEffect& effect, Vector<int>& startedAnimationIds, double playerPlaybackRate)
 {
     ASSERT(startedAnimationIds.isEmpty());
-    ASSERT(isCandidateForAnimationOnCompositor(timing, effect, playerPlaybackRate));
+    ASSERT(isCandidateForAnimationOnCompositor(timing, element, player, effect, playerPlaybackRate));
     ASSERT(canStartAnimationOnCompositor(element));
 
     const KeyframeEffectModelBase& keyframeEffect = toKeyframeEffectModelBase(effect);
 
-    RenderLayer* layer = toRenderBoxModelObject(element.renderer())->layer();
+    Layer* layer = toRenderBoxModelObject(element.renderer())->layer();
     ASSERT(layer);
 
     Vector<OwnPtr<WebCompositorAnimation>> animations;
@@ -260,7 +339,7 @@ bool CompositorAnimationsImpl::convertTimingForCompositor(const Timing& timing, 
     out.scaledDuration = timing.iterationDuration;
     out.direction = timing.direction;
     // Compositor's time offset is positive for seeking into the animation.
-    out.scaledTimeOffset = -timing.startDelay + timeOffset;
+    out.scaledTimeOffset = -timing.startDelay / playerPlaybackRate + timeOffset;
     out.playbackRate = timing.playbackRate * playerPlaybackRate;
     out.fillMode = timing.fillMode == Timing::FillModeAuto ? Timing::FillModeNone : timing.fillMode;
     out.iterationStart = timing.iterationStart;

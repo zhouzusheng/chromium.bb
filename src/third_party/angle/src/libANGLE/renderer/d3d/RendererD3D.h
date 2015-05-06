@@ -12,10 +12,16 @@
 #include "common/MemoryBuffer.h"
 #include "libANGLE/Data.h"
 #include "libANGLE/renderer/Renderer.h"
+#include "libANGLE/renderer/d3d/formatutilsD3D.h"
 #include "libANGLE/renderer/d3d/d3d11/NativeWindow.h"
 
 //FIXME(jmadill): std::array is currently prohibited by Chromium style guide
 #include <array>
+
+namespace egl
+{
+class ConfigSet;
+}
 
 namespace gl
 {
@@ -26,13 +32,13 @@ class Texture;
 
 namespace rx
 {
-class Image;
+class ImageD3D;
 class IndexBuffer;
-class RenderTarget;
-class ShaderExecutable;
-class SwapChain;
+class RenderTargetD3D;
+class ShaderExecutableD3D;
+class SwapChainD3D;
 class TextureStorage;
-class UniformStorage;
+class UniformStorageD3D;
 class VertexBuffer;
 
 enum ShaderType
@@ -48,7 +54,11 @@ class RendererD3D : public Renderer
     explicit RendererD3D(egl::Display *display);
     virtual ~RendererD3D();
 
+    virtual egl::Error initialize() = 0;
+
     static RendererD3D *makeRendererD3D(Renderer *renderer);
+
+    virtual egl::ConfigSet generateConfigs() const = 0;
 
     gl::Error drawArrays(const gl::Data &data,
                          GLenum mode, GLint first,
@@ -65,12 +75,10 @@ class RendererD3D : public Renderer
     virtual int getMinorShaderModel() const = 0;
     virtual std::string getShaderModelSuffix() const = 0;
 
-    DisplayImpl *createDisplay() override;
-
     // Direct3D Specific methods
     virtual GUID getAdapterIdentifier() const = 0;
 
-    virtual SwapChain *createSwapChain(NativeWindow nativeWindow, HANDLE shareHandle, GLenum backBufferFormat, GLenum depthBufferFormat) = 0;
+    virtual SwapChainD3D *createSwapChain(NativeWindow nativeWindow, HANDLE shareHandle, GLenum backBufferFormat, GLenum depthBufferFormat) = 0;
 
     virtual gl::Error generateSwizzle(gl::Texture *texture) = 0;
     virtual gl::Error setSamplerState(gl::SamplerType type, int index, gl::Texture *texture, const gl::SamplerState &sampler) = 0;
@@ -92,8 +100,8 @@ class RendererD3D : public Renderer
     virtual gl::Error applyShaders(gl::Program *program, const gl::VertexFormat inputLayout[], const gl::Framebuffer *framebuffer,
                                    bool rasterizerDiscard, bool transformFeedbackActive) = 0;
     virtual gl::Error applyUniforms(const ProgramImpl &program, const std::vector<gl::LinkedUniform*> &uniformArray) = 0;
-    virtual bool applyPrimitiveType(GLenum primitiveType, GLsizei elementCount) = 0;
-    virtual gl::Error applyVertexBuffer(const gl::State &state, GLint first, GLsizei count, GLsizei instances) = 0;
+    virtual bool applyPrimitiveType(GLenum primitiveType, GLsizei elementCount, bool usesPointSize) = 0;
+    virtual gl::Error applyVertexBuffer(const gl::State &state, GLenum mode, GLint first, GLsizei count, GLsizei instances) = 0;
     virtual gl::Error applyIndexBuffer(const GLvoid *indices, gl::Buffer *elementArrayBuffer, GLsizei count, GLenum mode, GLenum type, TranslatedIndexData *indexInfo) = 0;
     virtual void applyTransformFeedbackBuffers(const gl::State& state) = 0;
 
@@ -106,6 +114,8 @@ class RendererD3D : public Renderer
     virtual bool getShareHandleSupport() const = 0;
     virtual bool getPostSubBufferSupport() const = 0;
 
+    virtual int getMajorShaderModel() const = 0;
+
     // Pixel operations
     virtual gl::Error copyImage2D(const gl::Framebuffer *framebuffer, const gl::Rectangle &sourceRect, GLenum destFormat,
                                  const gl::Offset &destOffset, TextureStorage *storage, GLint level) = 0;
@@ -117,30 +127,30 @@ class RendererD3D : public Renderer
                                        const gl::Offset &destOffset, TextureStorage *storage, GLint level) = 0;
 
     // RenderTarget creation
-    virtual gl::Error createRenderTarget(int width, int height, GLenum format, GLsizei samples, RenderTarget **outRT) = 0;
+    virtual gl::Error createRenderTarget(int width, int height, GLenum format, GLsizei samples, RenderTargetD3D **outRT) = 0;
 
     // Shader operations
     virtual gl::Error loadExecutable(const void *function, size_t length, ShaderType type,
                                      const std::vector<gl::LinkedVarying> &transformFeedbackVaryings,
-                                     bool separatedOutputBuffers, ShaderExecutable **outExecutable) = 0;
+                                     bool separatedOutputBuffers, ShaderExecutableD3D **outExecutable) = 0;
     virtual gl::Error compileToExecutable(gl::InfoLog &infoLog, const std::string &shaderHLSL, ShaderType type,
                                           const std::vector<gl::LinkedVarying> &transformFeedbackVaryings,
                                           bool separatedOutputBuffers, D3DWorkaroundType workaround,
-                                          ShaderExecutable **outExectuable) = 0;
-    virtual UniformStorage *createUniformStorage(size_t storageSize) = 0;
+                                          ShaderExecutableD3D **outExectuable) = 0;
+    virtual UniformStorageD3D *createUniformStorage(size_t storageSize) = 0;
 
     // Image operations
-    virtual Image *createImage() = 0;
-    virtual gl::Error generateMipmap(Image *dest, Image *source) = 0;
-    virtual TextureStorage *createTextureStorage2D(SwapChain *swapChain) = 0;
-    virtual TextureStorage *createTextureStorage2D(GLenum internalformat, bool renderTarget, GLsizei width, GLsizei height, int levels) = 0;
-    virtual TextureStorage *createTextureStorageCube(GLenum internalformat, bool renderTarget, int size, int levels) = 0;
+    virtual ImageD3D *createImage() = 0;
+    virtual gl::Error generateMipmap(ImageD3D *dest, ImageD3D *source) = 0;
+    virtual TextureStorage *createTextureStorage2D(SwapChainD3D *swapChain) = 0;
+    virtual TextureStorage *createTextureStorage2D(GLenum internalformat, bool renderTarget, GLsizei width, GLsizei height, int levels, bool hintLevelZeroOnly) = 0;
+    virtual TextureStorage *createTextureStorageCube(GLenum internalformat, bool renderTarget, int size, int levels, bool hintLevelZeroOnly) = 0;
     virtual TextureStorage *createTextureStorage3D(GLenum internalformat, bool renderTarget, GLsizei width, GLsizei height, GLsizei depth, int levels) = 0;
     virtual TextureStorage *createTextureStorage2DArray(GLenum internalformat, bool renderTarget, GLsizei width, GLsizei height, GLsizei depth, int levels) = 0;
 
     // Buffer-to-texture and Texture-to-buffer copies
     virtual bool supportsFastCopyBufferToTexture(GLenum internalFormat) const = 0;
-    virtual gl::Error fastCopyBufferToTexture(const gl::PixelUnpackState &unpack, unsigned int offset, RenderTarget *destRenderTarget,
+    virtual gl::Error fastCopyBufferToTexture(const gl::PixelUnpackState &unpack, unsigned int offset, RenderTargetD3D *destRenderTarget,
                                               GLenum destinationFormat, GLenum sourcePixelsType, const gl::Box &destArea) = 0;
 
     virtual VertexConversionType getVertexConversionType(const gl::VertexFormat &vertexFormat) const = 0;
@@ -156,7 +166,7 @@ class RendererD3D : public Renderer
     gl::Error getScratchMemoryBuffer(size_t requestedSize, MemoryBuffer **bufferOut);
 
   protected:
-    virtual gl::Error drawArrays(GLenum mode, GLsizei count, GLsizei instances, bool transformFeedbackActive) = 0;
+    virtual gl::Error drawArrays(const gl::Data &data, GLenum mode, GLsizei count, GLsizei instances, bool usesPointSize) = 0;
     virtual gl::Error drawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid *indices,
                                    gl::Buffer *elementArrayBuffer, const TranslatedIndexData &indexInfo, GLsizei instances) = 0;
 
@@ -178,8 +188,7 @@ class RendererD3D : public Renderer
 
     gl::Error applyRenderTarget(const gl::Data &data, GLenum drawMode, bool ignoreViewport);
     gl::Error applyState(const gl::Data &data, GLenum drawMode);
-    bool applyTransformFeedbackBuffers(const gl::Data &data);
-    gl::Error applyShaders(const gl::Data &data, bool transformFeedbackActive);
+    gl::Error applyShaders(const gl::Data &data);
     gl::Error applyTextures(const gl::Data &data, gl::SamplerType shaderType,
                             const FramebufferTextureSerialArray &framebufferSerials, size_t framebufferSerialCount);
     gl::Error applyTextures(const gl::Data &data);
@@ -201,6 +210,7 @@ struct dx_VertexConstants
 {
     float depthRange[4];
     float viewAdjust[4];
+    float viewCoords[4];
 };
 
 struct dx_PixelConstants

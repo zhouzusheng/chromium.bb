@@ -1867,10 +1867,13 @@ def _InitNinjaFlavor(params, target_list, target_dicts):
     if not spec.get('msvs_external_builder_out_dir'):
       gyp_file, _, _ = gyp.common.ParseQualifiedTarget(qualified_target)
       gyp_dir = os.path.dirname(gyp_file)
+      configuration = '$(Configuration)'
+      if params.get('target_arch') == 'x64':
+        configuration += '_x64'
       spec['msvs_external_builder_out_dir'] = os.path.join(
           gyp.common.RelativePath(params['options'].toplevel_dir, gyp_dir),
           ninja_generator.ComputeOutputDir(params),
-          '$(Configuration)')
+          configuration)
     if not spec.get('msvs_external_builder_build_cmd'):
       spec['msvs_external_builder_build_cmd'] = [
         path_to_ninja,
@@ -2117,6 +2120,9 @@ def _MapFileToMsBuildSourceType(source, rule_dependencies,
   elif ext == '.rc':
     group = 'resource'
     element = 'ResourceCompile'
+  elif ext == '.asm':
+    group = 'masm'
+    element = 'MASM'
   elif ext == '.idl':
     group = 'midl'
     element = 'Midl'
@@ -2633,6 +2639,10 @@ def _GetMSBuildGlobalProperties(spec, guid, gyp_file_name):
       ]
     ]
 
+  if os.environ.get('PROCESSOR_ARCHITECTURE') == 'AMD64' or \
+     os.environ.get('PROCESSOR_ARCHITEW6432') == 'AMD64':
+    properties[0].append(['PreferredToolArchitecture', 'x64'])
+
   if spec.get('msvs_enable_winrt'):
     properties[0].append(['DefaultLanguage', 'en-US'])
     properties[0].append(['AppContainerApplication', 'true'])
@@ -3095,7 +3105,7 @@ def _VerifySourcesExist(sources, root_dir):
 def _GetMSBuildSources(spec, sources, exclusions, rule_dependencies,
                        extension_to_rule_name, actions_spec,
                        sources_handled_by_action, list_excluded):
-  groups = ['none', 'midl', 'include', 'compile', 'resource', 'rule',
+  groups = ['none', 'masm', 'midl', 'include', 'compile', 'resource', 'rule',
             'rule_dependency']
   grouped_sources = {}
   for g in groups:
@@ -3260,6 +3270,12 @@ def _GenerateMSBuildProject(project, options, version, generator_flags):
       ['Import', {'Project': r'$(VCTargetsPath)\Microsoft.Cpp.props'}]]
   import_cpp_targets_section = [
       ['Import', {'Project': r'$(VCTargetsPath)\Microsoft.Cpp.targets'}]]
+  import_masm_props_section = [
+      ['Import',
+        {'Project': r'$(VCTargetsPath)\BuildCustomizations\masm.props'}]]
+  import_masm_targets_section = [
+      ['Import',
+        {'Project': r'$(VCTargetsPath)\BuildCustomizations\masm.targets'}]]
   macro_section = [['PropertyGroup', {'Label': 'UserMacros'}]]
 
   content = [
@@ -3278,6 +3294,7 @@ def _GenerateMSBuildProject(project, options, version, generator_flags):
   else:
    content += _GetMSBuildLocalProperties(project.msbuild_toolset)
   content += import_cpp_props_section
+  content += import_masm_props_section
   content += _GetMSBuildExtensions(props_files_of_rules)
   content += _GetMSBuildPropertySheets(configurations)
   content += macro_section
@@ -3289,6 +3306,7 @@ def _GenerateMSBuildProject(project, options, version, generator_flags):
       actions_spec, sources_handled_by_action, list_excluded)
   content += _GetMSBuildProjectReferences(project)
   content += import_cpp_targets_section
+  content += import_masm_targets_section
   content += _GetMSBuildExtensionTargets(targets_files_of_rules)
 
   if spec.get('msvs_external_builder'):

@@ -39,13 +39,14 @@ public:
     virtual bool filterPath(SkPath* dst, const SkPath& src,
                             SkStrokeRec*, const SkRect*) const SK_OVERRIDE;
 
+    SK_TO_STRING_OVERRIDE()
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkDiscretePathEffect)
 
 protected:
     SkDiscretePathEffect(SkScalar segLength,
                          SkScalar deviation,
                          uint32_t seedAssist);
-    virtual void flatten(SkWriteBuffer&) const SK_OVERRIDE;
+    void flatten(SkWriteBuffer&) const SK_OVERRIDE;
 
 private:
     SkScalar fSegLength, fPerterb;

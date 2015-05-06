@@ -7,7 +7,6 @@
 // SHEZ: Comment-out messages that we are not interested in.
 
 // #include "chrome/common/benchmarking_messages.h"
-// #include "chrome/common/cast_messages.h"
 // #include "chrome/common/chrome_utility_messages.h"
 // #include "chrome/common/mac/app_shim_messages.h"
 // #include "chrome/common/prefetch_messages.h"
@@ -16,6 +15,7 @@
 // #include "chrome/common/tts_messages.h"
 
 #if defined(ENABLE_EXTENSIONS)
+// #include "chrome/common/cast_messages.h"
 // #include "chrome/common/extensions/chrome_extension_messages.h"
 // #include "chrome/common/extensions/chrome_utility_extensions_messages.h"
 #endif
@@ -30,7 +30,6 @@
 
 #if defined(ENABLE_PRINTING)
 #include "chrome/common/chrome_utility_printing_messages.h"
-#include "chrome/common/print_messages.h"
 #endif
 
 #if defined(ENABLE_SPELLCHECK)

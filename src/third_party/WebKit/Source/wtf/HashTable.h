@@ -1256,6 +1256,11 @@ template<typename Key, typename Value, typename Extractor, typename HashFunction
                         // At this stage calling trace can make no difference
                         // (everything is already traced), but we use the
                         // return value to remove things from the collection.
+
+                        // FIXME: This should be rewritten so that this can check
+                        // if the element is dead without calling trace,
+                        // which is semantically not correct to be called in
+                        // weak processing stage.
                         if (TraceInCollectionTrait<WeakHandlingInCollections, WeakPointersActWeak, ValueType, Traits>::trace(visitor, *element)) {
                             table->registerModification();
                             HashTableType::deleteBucket(*element); // Also calls the destructor.

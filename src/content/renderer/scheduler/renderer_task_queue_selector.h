@@ -51,11 +51,14 @@ class CONTENT_EXPORT RendererTaskQueueSelector
   // Disable the |queue_index|.
   void DisableQueue(size_t queue_index);
 
+  // Whether |queue_index| is enabled.
+  bool IsQueueEnabled(size_t queue_index) const;
+
   // TaskQueueSelector implementation:
   void RegisterWorkQueues(
       const std::vector<const base::TaskQueue*>& work_queues) override;
   bool SelectWorkQueueToService(size_t* out_queue_index) override;
-  void AsValueInto(base::debug::TracedValue* state) const override;
+  void AsValueInto(base::trace_event::TracedValue* state) const override;
 
  private:
   // Returns true if queueA contains an older task than queueB.

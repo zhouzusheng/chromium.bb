@@ -32,7 +32,7 @@
 
 #ifdef __FreeBSD__
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD: head/sys/netinet/sctp_indata.c 269448 2014-08-02 21:36:40Z tuexen $");
+__FBSDID("$FreeBSD: head/sys/netinet/sctp_indata.c 276914 2015-01-10 20:49:57Z tuexen $");
 #endif
 
 #include <netinet/sctp_os.h>
@@ -1509,13 +1509,7 @@ sctp_process_a_data_chunk(struct sctp_tcb *stcb, struct sctp_association *asoc,
 				     the_len, M_NOWAIT);
 #ifdef SCTP_MBUF_LOGGING
 		if (SCTP_BASE_SYSCTL(sctp_logging_level) & SCTP_MBUF_LOGGING_ENABLE) {
-			struct mbuf *mat;
-
-			for (mat = dmbuf; mat; mat = SCTP_BUF_NEXT(mat)) {
-				if (SCTP_BUF_IS_EXTENDED(mat)) {
-					sctp_log_mb(mat, SCTP_MBUF_ICOPY);
-				}
-			}
+			sctp_log_mbc(dmbuf, SCTP_MBUF_ICOPY);
 		}
 #endif
 	} else {
@@ -2310,7 +2304,7 @@ sctp_process_data(struct mbuf **mm, int iphlen, int *offset, int length,
                   struct sctphdr *sh, struct sctp_inpcb *inp,
                   struct sctp_tcb *stcb, struct sctp_nets *net, uint32_t *high_tsn,
 #if defined(__FreeBSD__)
-                  uint8_t use_mflowid, uint32_t mflowid,
+                  uint8_t mflowtype, uint32_t mflowid,
 #endif
 		  uint32_t vrf_id, uint16_t port)
 {
@@ -2408,7 +2402,7 @@ sctp_process_data(struct mbuf **mm, int iphlen, int *offset, int length,
 				sctp_abort_association(inp, stcb, m, iphlen,
 				                       src, dst, sh, op_err,
 #if defined(__FreeBSD__)
-				                       use_mflowid, mflowid,
+				                       mflowtype, mflowid,
 #endif
 				                       vrf_id, port);
 				return (2);
@@ -2425,7 +2419,7 @@ sctp_process_data(struct mbuf **mm, int iphlen, int *offset, int length,
 				sctp_abort_association(inp, stcb, m, iphlen,
 				                       src, dst, sh, op_err,
 #if defined(__FreeBSD__)
-				                       use_mflowid, mflowid,
+				                       mflowtype, mflowid,
 #endif
 				                       vrf_id, port);
 				return (2);
@@ -2496,7 +2490,7 @@ sctp_process_data(struct mbuf **mm, int iphlen, int *offset, int length,
 					                       src, dst,
 					                       sh, op_err,
 #if defined(__FreeBSD__)
-					                       use_mflowid, mflowid,
+					                       mflowtype, mflowid,
 #endif
 					                       vrf_id, port);
 					return (2);

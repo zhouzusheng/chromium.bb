@@ -37,8 +37,8 @@
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/FrameView.h"
 #include "core/html/HTMLFrameOwnerElement.h"
+#include "core/layout/LayoutObject.h"
 #include "core/page/Page.h"
-#include "core/rendering/RenderObject.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace blink {
@@ -177,10 +177,10 @@ Node* SmartClip::findBestOverlappingNode(Node* rootNode, const IntRect& cropRect
             continue;
         }
 
-        RenderObject* renderer = node->renderer();
+        LayoutObject* renderer = node->renderer();
         if (renderer && !nodeRect.isEmpty()) {
             if (renderer->isText()
-                || renderer->isRenderImage()
+                || renderer->isLayoutImage()
                 || node->isFrameOwnerElement()
                 || (renderer->style()->hasBackgroundImage() && !shouldSkipBackgroundImage(node))) {
                 if (resizedCropRect.intersects(nodeRect)) {
@@ -211,7 +211,7 @@ bool SmartClip::shouldSkipBackgroundImage(Node* node)
     // image out of a CSS background, you're probably going to specify a height
     // or a width. On the other hand, if we've got a legit background image,
     // it's very likely the height or the width will be set to auto.
-    RenderObject* renderer = node->renderer();
+    LayoutObject* renderer = node->renderer();
     if (renderer && (renderer->style()->logicalHeight().isAuto() || renderer->style()->logicalWidth().isAuto()))
         return true;
 
@@ -244,7 +244,7 @@ String SmartClip::extractTextFromNode(Node* node)
 
     StringBuilder result;
     for (Node& currentNode : NodeTraversal::inclusiveDescendantsOf(*node)) {
-        RenderStyle* style = currentNode.computedStyle();
+        LayoutStyle* style = currentNode.computedStyle();
         if (style && style->userSelect() == SELECT_NONE)
             continue;
 

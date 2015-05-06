@@ -33,7 +33,6 @@ struct RtpPacket {
 
 RTPSenderVideo::RTPSenderVideo(Clock* clock, RTPSenderInterface* rtpSender)
     : _rtpSender(*rtpSender),
-      _sendVideoCritsect(CriticalSectionWrapper::CreateCriticalSection()),
       _videoType(kRtpVideoGeneric),
       _videoCodecInformation(NULL),
       _maxBitrate(0),
@@ -61,11 +60,9 @@ RTPSenderVideo::~RTPSenderVideo() {
   if (_videoCodecInformation) {
     delete _videoCodecInformation;
   }
-  delete _sendVideoCritsect;
 }
 
 void RTPSenderVideo::SetVideoCodecType(RtpVideoCodecTypes videoType) {
-  CriticalSectionScoped cs(_sendVideoCritsect);
   _videoType = videoType;
 }
 
@@ -78,8 +75,6 @@ int32_t RTPSenderVideo::RegisterVideoPayload(
     const int8_t payloadType,
     const uint32_t maxBitRate,
     RtpUtility::Payload*& payload) {
-  CriticalSectionScoped cs(_sendVideoCritsect);
-
   RtpVideoCodecTypes videoType = kRtpVideoGeneric;
   if (RtpUtility::StringCompare(payloadName, "VP8", 3)) {
     videoType = kRtpVideoVp8;
@@ -113,12 +108,9 @@ int32_t RTPSenderVideo::SendVideoPacket(uint8_t* data_buffer,
 
     RedPacket* red_packet = producer_fec_.BuildRedPacket(
         data_buffer, payload_length, rtp_header_length, _payloadTypeRED);
-    TRACE_EVENT_INSTANT2("webrtc_rtp",
-                         "Video::PacketRed",
-                         "timestamp",
-                         capture_timestamp,
-                         "seqnum",
-                         _rtpSender.SequenceNumber());
+    TRACE_EVENT_INSTANT2(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"),
+                         "Video::PacketRed", "timestamp", capture_timestamp,
+                         "seqnum", _rtpSender.SequenceNumber());
     // Sending the media packet with RED header.
     int packet_success =
         _rtpSender.SendToNetwork(red_packet->data(),
@@ -153,12 +145,9 @@ int32_t RTPSenderVideo::SendVideoPacket(uint8_t* data_buffer,
       if (_retransmissionSettings & kRetransmitFECPackets) {
         storage = kAllowRetransmission;
       }
-      TRACE_EVENT_INSTANT2("webrtc_rtp",
-                           "Video::PacketFec",
-                           "timestamp",
-                           capture_timestamp,
-                           "seqnum",
-                           _rtpSender.SequenceNumber());
+      TRACE_EVENT_INSTANT2(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"),
+                           "Video::PacketFec", "timestamp", capture_timestamp,
+                           "seqnum", _rtpSender.SequenceNumber());
       // Sending FEC packet with RED header.
       int packet_success =
           _rtpSender.SendToNetwork(red_packet->data(),
@@ -180,12 +169,9 @@ int32_t RTPSenderVideo::SendVideoPacket(uint8_t* data_buffer,
     _fecOverheadRate.Update(fec_overhead_sent);
     return ret;
   }
-  TRACE_EVENT_INSTANT2("webrtc_rtp",
-                       "Video::PacketNormal",
-                       "timestamp",
-                       capture_timestamp,
-                       "seqnum",
-                       _rtpSender.SequenceNumber());
+  TRACE_EVENT_INSTANT2(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"),
+                       "Video::PacketNormal", "timestamp", capture_timestamp,
+                       "seqnum", _rtpSender.SequenceNumber());
   int ret = _rtpSender.SendToNetwork(data_buffer,
                                      payload_length,
                                      rtp_header_length,
@@ -211,9 +197,8 @@ int32_t RTPSenderVideo::SendRTPIntraRequest() {
 
   RtpUtility::AssignUWord32ToBuffer(data + 4, _rtpSender.SSRC());
 
-  TRACE_EVENT_INSTANT1("webrtc_rtp",
-                       "Video::IntraRequest",
-                       "seqnum",
+  TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"),
+                       "Video::IntraRequest", "seqnum",
                        _rtpSender.SequenceNumber());
   return _rtpSender.SendToNetwork(
       data, 0, length, -1, kDontStore, PacedSender::kNormalPriority);

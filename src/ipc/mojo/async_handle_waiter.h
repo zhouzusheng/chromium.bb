@@ -9,7 +9,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "ipc/ipc_export.h"
-#include "mojo/public/c/system/types.h"
+#include "third_party/mojo/src/mojo/public/c/system/types.h"
 
 namespace IPC {
 namespace internal {
@@ -20,6 +20,9 @@ namespace internal {
 //    The client can call |Wait()| again once it is signaled and
 //    the |callback| is invoked.
 //  * To cancel waiting, delete the instance.
+//
+// |AsyncHandleWaiter| must be created, used and deleted only from the IO
+// |thread.
 class IPC_MOJO_EXPORT AsyncHandleWaiter {
  public:
   class Context;
@@ -32,9 +35,9 @@ class IPC_MOJO_EXPORT AsyncHandleWaiter {
  private:
   void InvokeCallback(MojoResult result);
 
-  base::WeakPtrFactory<AsyncHandleWaiter> weak_factory_;
   scoped_refptr<Context> context_;
   base::Callback<void(MojoResult)> callback_;
+  base::WeakPtrFactory<AsyncHandleWaiter> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(AsyncHandleWaiter);
 };

@@ -48,6 +48,7 @@
 #include "modules/accessibility/AXObjectCacheImpl.h"
 #include "platform/EventDispatchForbiddenScope.h"
 #include "platform/LayoutTestSupport.h"
+#include "platform/ScriptForbiddenScope.h"
 #include "platform/TraceEvent.h"
 #include "platform/heap/Handle.h"
 #include "public/platform/WebCompositeAndReadbackAsyncCallback.h"
@@ -80,14 +81,14 @@ private:
         m_popup->closePopup();
     }
 
-    virtual FloatRect windowRect() override
+    virtual IntRect windowRect() override
     {
-        return FloatRect(m_popup->m_windowRectInScreen.x, m_popup->m_windowRectInScreen.y, m_popup->m_windowRectInScreen.width, m_popup->m_windowRectInScreen.height);
+        return IntRect(m_popup->m_windowRectInScreen.x, m_popup->m_windowRectInScreen.y, m_popup->m_windowRectInScreen.width, m_popup->m_windowRectInScreen.height);
     }
 
-    virtual void setWindowRect(const FloatRect& rect) override
+    virtual void setWindowRect(const IntRect& rect) override
     {
-        m_popup->m_windowRectInScreen = IntRect(rect);
+        m_popup->m_windowRectInScreen = rect;
         m_popup->widgetClient()->setWindowRect(m_popup->m_windowRectInScreen);
     }
 
@@ -136,9 +137,9 @@ private:
         return m_popup->m_webView;
     }
 
-    virtual FloatSize minimumWindowSize() const override
+    virtual IntSize minimumWindowSize() const override
     {
-        return FloatSize(0, 0);
+        return IntSize(0, 0);
     }
 
     virtual void setCursor(const Cursor& cursor) override
@@ -171,6 +172,12 @@ private:
         // FIXME: Delete these lines once Chromium only uses the frame client interface, above.
         if (obj && m_popup->m_webView->client())
             m_popup->m_webView->client()->postAccessibilityEvent(WebAXObject(obj), static_cast<WebAXEvent>(notification));
+    }
+
+    virtual void setToolTip(const String& tooltipText, TextDirection dir) override
+    {
+        if (m_popup->m_webView->client())
+            m_popup->m_webView->client()->setToolTipText(tooltipText, toWebTextDirection(dir));
     }
 
     WebPagePopupImpl* m_popup;
@@ -255,7 +262,19 @@ bool WebPagePopupImpl::initializePage()
     RefPtr<SharedBuffer> data = SharedBuffer::create();
     m_popupClient->writeDocument(data.get());
     frame->loader().load(FrameLoadRequest(0, blankURL(), SubstituteData(data, "text/html", "UTF-8", KURL(), ForceSynchronousLoad)));
+
+    m_popupClient->didWriteDocument(*frame->document());
+
     return true;
+}
+
+void WebPagePopupImpl::postMessage(const String& message)
+{
+    if (!m_page)
+        return;
+    ScriptForbiddenScope::AllowUserAgentScript allowScript;
+    if (LocalDOMWindow* window = toLocalFrame(m_page->mainFrame())->localDOMWindow())
+        window->dispatchEvent(MessageEvent::create(message));
 }
 
 void WebPagePopupImpl::destroyPage()

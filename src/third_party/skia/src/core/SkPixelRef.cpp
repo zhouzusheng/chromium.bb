@@ -8,8 +8,14 @@
 #include "SkPixelRef.h"
 #include "SkThread.h"
 
-#ifdef SK_USE_POSIX_THREADS
+#ifdef SK_BUILD_FOR_WIN32
+    // We don't have SK_BASE_MUTEX_INIT on Windows.
 
+    // must be a power-of-2. undef to just use 1 mutex
+    #define PIXELREF_MUTEX_RING_COUNT       32
+    static SkBaseMutex gPixelRefMutexRing[PIXELREF_MUTEX_RING_COUNT];
+
+#else
     static SkBaseMutex gPixelRefMutexRing[] = {
         SK_BASE_MUTEX_INIT, SK_BASE_MUTEX_INIT,
         SK_BASE_MUTEX_INIT, SK_BASE_MUTEX_INIT,
@@ -31,15 +37,8 @@
         SK_BASE_MUTEX_INIT, SK_BASE_MUTEX_INIT,
         SK_BASE_MUTEX_INIT, SK_BASE_MUTEX_INIT,
     };
-
     // must be a power-of-2. undef to just use 1 mutex
     #define PIXELREF_MUTEX_RING_COUNT SK_ARRAY_COUNT(gPixelRefMutexRing)
-
-#else // not pthreads
-
-    // must be a power-of-2. undef to just use 1 mutex
-    #define PIXELREF_MUTEX_RING_COUNT       32
-    static SkBaseMutex gPixelRefMutexRing[PIXELREF_MUTEX_RING_COUNT];
 
 #endif
 
@@ -273,14 +272,3 @@ size_t SkPixelRef::getAllocatedSizeInBytes() const {
     return 0;
 }
 
-///////////////////////////////////////////////////////////////////////////////
-
-#ifdef SK_BUILD_FOR_ANDROID
-void SkPixelRef::globalRef(void* data) {
-    this->ref();
-}
-
-void SkPixelRef::globalUnref() {
-    this->unref();
-}
-#endif

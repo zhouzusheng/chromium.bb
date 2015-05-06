@@ -16,9 +16,10 @@ namespace cc {
 class CC_EXPORT YUVVideoDrawQuad : public DrawQuad {
  public:
   enum ColorSpace {
-    REC_601,       // SDTV standard with restricted "studio swing" color range.
-    REC_601_JPEG,  // Full color range [0, 255] variant of the above.
-    COLOR_SPACE_LAST = REC_601_JPEG
+    REC_601,  // SDTV standard with restricted "studio swing" color range.
+    REC_709,  // HDTV standard with restricted "studio swing" color range.
+    JPEG,     // Full color range [0, 255] JPEG color space.
+    COLOR_SPACE_LAST = JPEG
   };
 
   ~YUVVideoDrawQuad() override;
@@ -30,6 +31,7 @@ class CC_EXPORT YUVVideoDrawQuad : public DrawQuad {
               const gfx::Rect& opaque_rect,
               const gfx::Rect& visible_rect,
               const gfx::RectF& tex_coord_rect,
+              const gfx::Size& tex_size,
               unsigned y_plane_resource_id,
               unsigned u_plane_resource_id,
               unsigned v_plane_resource_id,
@@ -42,6 +44,7 @@ class CC_EXPORT YUVVideoDrawQuad : public DrawQuad {
               const gfx::Rect& visible_rect,
               bool needs_blending,
               const gfx::RectF& tex_coord_rect,
+              const gfx::Size& tex_size,
               unsigned y_plane_resource_id,
               unsigned u_plane_resource_id,
               unsigned v_plane_resource_id,
@@ -49,6 +52,8 @@ class CC_EXPORT YUVVideoDrawQuad : public DrawQuad {
               ColorSpace color_space);
 
   gfx::RectF tex_coord_rect;
+  // Empty texture size implies no clamping of texture coordinates.
+  gfx::Size tex_size;
   unsigned y_plane_resource_id;
   unsigned u_plane_resource_id;
   unsigned v_plane_resource_id;
@@ -60,7 +65,7 @@ class CC_EXPORT YUVVideoDrawQuad : public DrawQuad {
   static const YUVVideoDrawQuad* MaterialCast(const DrawQuad*);
 
  private:
-  void ExtendValue(base::debug::TracedValue* value) const override;
+  void ExtendValue(base::trace_event::TracedValue* value) const override;
 };
 
 }  // namespace cc

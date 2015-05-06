@@ -30,13 +30,14 @@ class AudioEncoderG722 : public AudioEncoder {
   explicit AudioEncoderG722(const Config& config);
   virtual ~AudioEncoderG722();
 
-  virtual int sample_rate_hz() const OVERRIDE;
-  virtual int num_channels() const OVERRIDE;
+  virtual int SampleRateHz() const OVERRIDE;
+  int RtpTimestampRateHz() const override;
+  virtual int NumChannels() const OVERRIDE;
   virtual int Num10MsFramesInNextPacket() const OVERRIDE;
   virtual int Max10MsFramesInAPacket() const OVERRIDE;
 
  protected:
-  virtual bool EncodeInternal(uint32_t timestamp,
+  virtual bool EncodeInternal(uint32_t rtp_timestamp,
                               const int16_t* audio,
                               size_t max_encoded_bytes,
                               uint8_t* encoded,

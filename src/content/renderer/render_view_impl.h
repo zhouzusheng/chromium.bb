@@ -44,6 +44,7 @@
 #include "content/renderer/stats_collection_observer.h"
 #include "ipc/ipc_platform_file.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
+#include "third_party/WebKit/public/platform/WebPageVisibilityState.h"
 #include "third_party/WebKit/public/web/WebAXObject.h"
 #include "third_party/WebKit/public/web/WebConsoleMessage.h"
 #include "third_party/WebKit/public/web/WebDataSource.h"
@@ -54,7 +55,6 @@
 #include "third_party/WebKit/public/web/WebNavigationType.h"
 #include "third_party/WebKit/public/web/WebNode.h"
 #include "third_party/WebKit/public/web/WebPageSerializerClient.h"
-#include "third_party/WebKit/public/web/WebPageVisibilityState.h"
 #include "third_party/WebKit/public/web/WebSecurityOrigin.h"
 #include "third_party/WebKit/public/web/WebViewClient.h"
 #include "ui/base/window_open_disposition.h"
@@ -334,8 +334,6 @@ class CONTENT_EXPORT RenderViewImpl
   virtual void didBlur();
   virtual void show(blink::WebNavigationPolicy policy);
   virtual void runModal();
-  virtual bool enterFullScreen();
-  virtual void exitFullScreen();
   virtual bool requestPointerLock();
   virtual void requestPointerUnlock();
   virtual bool isPointerLocked();
@@ -386,7 +384,8 @@ class CONTENT_EXPORT RenderViewImpl
   virtual bool acceptsLoadDrops();
   virtual void focusNext();
   virtual void focusPrevious();
-  virtual void focusedNodeChanged(const blink::WebNode& node);
+  virtual void focusedNodeChanged(const blink::WebNode& fromNode,
+                                  const blink::WebNode& toNode);
   virtual void didUpdateLayout();
 #if defined(OS_ANDROID) || defined(TOOLKIT_VIEWS)
   virtual bool didTapMultipleTargets(
@@ -440,10 +439,7 @@ class CONTENT_EXPORT RenderViewImpl
   WebPreferences& GetWebkitPreferences() override;
   void SetWebkitPreferences(const WebPreferences& preferences) override;
   blink::WebView* GetWebView() override;
-  blink::WebElement GetFocusedElement() const override;
   bool IsEditableNode(const blink::WebNode& node) const override;
-  bool NodeContainsPoint(const blink::WebNode& node,
-                         const gfx::Point& point) const override;
   bool ShouldDisplayScrollbars(int width, int height) const override;
   int GetEnabledBindings() const override;
   bool GetContentStateImmediately() const override;
@@ -457,9 +453,9 @@ class CONTENT_EXPORT RenderViewImpl
   SSLStatus GetSSLStatusOfFrame(blink::WebFrame* frame) const override;
   const std::string& GetAcceptLanguages() const override;
 #if defined(OS_ANDROID)
-  virtual void UpdateTopControlsState(TopControlsState constraints,
-                                      TopControlsState current,
-                                      bool animate) override;
+  void UpdateTopControlsState(TopControlsState constraints,
+                              TopControlsState current,
+                              bool animate) override;
 #endif
   bool uses_temporary_zoom_level() const { return uses_temporary_zoom_level_; }
 
@@ -499,15 +495,13 @@ class CONTENT_EXPORT RenderViewImpl
   void OnOrientationChange() override;
   ui::TextInputType GetTextInputType() override;
   void GetSelectionBounds(gfx::Rect* start, gfx::Rect* end) override;
+  void FocusChangeComplete() override;
   void GetCompositionCharacterBounds(
       std::vector<gfx::Rect>* character_bounds) override;
   void GetCompositionRange(gfx::Range* range) override;
   bool CanComposeInline() override;
   void DidCommitCompositorFrame() override;
-  void InstrumentWillBeginFrame(int frame_id) override;
-  void InstrumentDidBeginFrame() override;
-  void InstrumentDidCancelFrame() override;
-  void InstrumentWillComposite() override;
+  void DidCompletePageScaleAnimation() override;
 
  protected:
   explicit RenderViewImpl(const ViewMsg_New_Params& params);
@@ -717,10 +711,12 @@ class CONTENT_EXPORT RenderViewImpl
   // Check whether the preferred size has changed.
   void CheckPreferredSize();
 
+  // Gets the currently focused element, if any.
+  blink::WebElement GetFocusedElement() const;
+
   // Called to get the WebPlugin to handle find requests in the document.
   // Returns NULL if there is no such WebPlugin.
   blink::WebPlugin* GetWebPluginForFind();
-
 
   // If we initiated a navigation, this function will populate |document_state|
   // with the navigation information saved in OnNavigate().
@@ -729,10 +725,6 @@ class CONTENT_EXPORT RenderViewImpl
   // Returns a new NavigationState populated with the navigation information
   // saved in OnNavigate().
   NavigationState* CreateNavigationStateFromPending();
-
-  // Processes the command-line flags --enable-viewport,
-  // --enable-fixed-layout[=w,h] and --enable-pinch.
-  void ProcessViewLayoutFlags(const base::CommandLine& command_line);
 
 #if defined(OS_ANDROID)
   // Launch an Android content intent with the given URL.
@@ -860,13 +852,6 @@ class CONTENT_EXPORT RenderViewImpl
   // Page IDs ------------------------------------------------------------------
   // See documentation in RenderView.
   int32 page_id_;
-
-  // Indicates the ID of the last page that we sent a FrameNavigate to the
-  // browser for. This is used to determine if the most recent transition
-  // generated a history entry (less than page_id_), or not (equal to or
-  // greater than). Note that this will be greater than page_id_ if the user
-  // goes back.
-  int32 last_page_id_sent_to_browser_;
 
   // The next available page ID to use for this RenderView.  These IDs are
   // specific to a given RenderView and the frames within it.

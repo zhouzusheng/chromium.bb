@@ -64,7 +64,7 @@ IDBObjectStore::IDBObjectStore(const IDBObjectStoreMetadata& metadata, IDBTransa
     ASSERT(m_transaction);
 }
 
-void IDBObjectStore::trace(Visitor* visitor)
+DEFINE_TRACE(IDBObjectStore)
 {
     visitor->trace(m_transaction);
     visitor->trace(m_indexMap);
@@ -72,7 +72,7 @@ void IDBObjectStore::trace(Visitor* visitor)
 
 ScriptValue IDBObjectStore::keyPath(ScriptState* scriptState) const
 {
-    return idbAnyToScriptValue(scriptState, IDBAny::create(m_metadata.keyPath));
+    return idbKeyPathToScriptValue(scriptState, m_metadata.keyPath);
 }
 
 PassRefPtrWillBeRawPtr<DOMStringList> IDBObjectStore::indexNames() const
@@ -369,14 +369,14 @@ private:
             return;
 
         IDBAny* cursorAny = request->resultAsAny();
-        IDBCursorWithValue* cursor = 0;
+        IDBCursorWithValue* cursor = nullptr;
         if (cursorAny->type() == IDBAny::IDBCursorWithValueType)
             cursor = cursorAny->idbCursorWithValue();
 
         Vector<int64_t> indexIds;
         indexIds.append(m_indexMetadata.id);
         if (cursor && !cursor->isDeleted()) {
-            cursor->continueFunction(static_cast<IDBKey*>(0), static_cast<IDBKey*>(0), ASSERT_NO_EXCEPTION);
+            cursor->continueFunction(nullptr, nullptr, ASSERT_NO_EXCEPTION);
 
             IDBKey* primaryKey = cursor->idbPrimaryKey();
             ScriptValue value = cursor->value(m_scriptState.get());
@@ -428,10 +428,6 @@ IDBIndex* IDBObjectStore::createIndex(ScriptState* scriptState, const String& na
         exceptionState.throwDOMException(SyntaxError, "The keyPath argument contains an invalid key path.");
         return 0;
     }
-    if (name.isNull()) {
-        exceptionState.throwTypeError("The name provided is null.");
-        return 0;
-    }
     if (containsIndex(name)) {
         exceptionState.throwDOMException(ConstraintError, "An index with the specified name already exists.");
         return 0;
@@ -461,7 +457,7 @@ IDBIndex* IDBObjectStore::createIndex(ScriptState* scriptState, const String& na
     if (exceptionState.hadException())
         return 0;
 
-    IDBRequest* indexRequest = openCursor(scriptState, static_cast<IDBKeyRange*>(0), WebIDBCursorDirectionNext, WebIDBTaskTypePreemptive);
+    IDBRequest* indexRequest = openCursor(scriptState, nullptr, WebIDBCursorDirectionNext, WebIDBTaskTypePreemptive);
     indexRequest->preventPropagation();
 
     // This is kept alive by being the success handler of the request, which is in turn kept alive by the owning transaction.
@@ -492,7 +488,7 @@ IDBIndex* IDBObjectStore::index(const String& name, ExceptionState& exceptionSta
         return 0;
     }
 
-    const IDBIndexMetadata* indexMetadata(0);
+    const IDBIndexMetadata* indexMetadata(nullptr);
     for (IDBObjectStoreMetadata::IndexMap::const_iterator it = m_metadata.indexes.begin(); it != m_metadata.indexes.end(); ++it) {
         if (it->value.name == name) {
             indexMetadata = &it->value;

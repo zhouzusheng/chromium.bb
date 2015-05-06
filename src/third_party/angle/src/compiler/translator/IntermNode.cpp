@@ -264,7 +264,12 @@ bool TIntermOperator::isAssignment() const
       case EOpMatrixTimesScalarAssign:
       case EOpMatrixTimesMatrixAssign:
       case EOpDivAssign:
-      case EOpModAssign:
+      case EOpIModAssign:
+      case EOpBitShiftLeftAssign:
+      case EOpBitShiftRightAssign:
+      case EOpBitwiseAndAssign:
+      case EOpBitwiseXorAssign:
+      case EOpBitwiseOrAssign:
         return true;
       default:
         return false;
@@ -318,6 +323,10 @@ bool TIntermUnary::promote(TInfoSink &)
         if (mOperand->getBasicType() != EbtBool)
             return false;
         break;
+      // bit-wise not is already checked
+      case EOpBitwiseNot:
+        break;
+
       case EOpNegative:
       case EOpPositive:
       case EOpPostIncrement:
@@ -334,6 +343,9 @@ bool TIntermUnary::promote(TInfoSink &)
       case EOpVectorLogicalNot:
       case EOpIntBitsToFloat:
       case EOpUintBitsToFloat:
+      case EOpUnpackSnorm2x16:
+      case EOpUnpackUnorm2x16:
+      case EOpUnpackHalf2x16:
         return true;
 
       default:
@@ -364,8 +376,42 @@ bool TIntermBinary::promote(TInfoSink &infoSink)
     }
 
     // GLSL ES 2.0 does not support implicit type casting.
-    // So the basic type should always match.
-    if (mLeft->getBasicType() != mRight->getBasicType())
+    // So the basic type should usually match.
+    bool basicTypesMustMatch = true;
+
+    // Check ops which require integer / ivec parameters
+    switch (mOp)
+    {
+      case EOpBitShiftLeft:
+      case EOpBitShiftRight:
+      case EOpBitShiftLeftAssign:
+      case EOpBitShiftRightAssign:
+        // Unsigned can be bit-shifted by signed and vice versa, but we need to
+        // check that the basic type is an integer type.
+        basicTypesMustMatch = false;
+        if (!IsInteger(mLeft->getBasicType()) || !IsInteger(mRight->getBasicType()))
+        {
+            return false;
+        }
+        break;
+      case EOpBitwiseAnd:
+      case EOpBitwiseXor:
+      case EOpBitwiseOr:
+      case EOpBitwiseAndAssign:
+      case EOpBitwiseXorAssign:
+      case EOpBitwiseOrAssign:
+        // It is enough to check the type of only one operand, since later it
+        // is checked that the operand types match.
+        if (!IsInteger(mLeft->getBasicType()))
+        {
+            return false;
+        }
+        break;
+      default:
+        break;
+    }
+
+    if (basicTypesMustMatch && mLeft->getBasicType() != mRight->getBasicType())
     {
         return false;
     }
@@ -559,11 +605,21 @@ bool TIntermBinary::promote(TInfoSink &infoSink)
       case EOpAdd:
       case EOpSub:
       case EOpDiv:
-      case EOpMod:
+      case EOpIMod:
+      case EOpBitShiftLeft:
+      case EOpBitShiftRight:
+      case EOpBitwiseAnd:
+      case EOpBitwiseXor:
+      case EOpBitwiseOr:
       case EOpAddAssign:
       case EOpSubAssign:
       case EOpDivAssign:
-      case EOpModAssign:
+      case EOpIModAssign:
+      case EOpBitShiftLeftAssign:
+      case EOpBitShiftRightAssign:
+      case EOpBitwiseAndAssign:
+      case EOpBitwiseXorAssign:
+      case EOpBitwiseOrAssign:
         if ((mLeft->isMatrix() && mRight->isVector()) ||
             (mLeft->isVector() && mRight->isMatrix()))
         {
@@ -579,12 +635,14 @@ bool TIntermBinary::promote(TInfoSink &infoSink)
             if (!mLeft->isScalar() && !mRight->isScalar())
                 return false;
 
-            // In the case of compound assignment, the right side needs to be a
-            // scalar. Otherwise a vector/matrix would be assigned to a scalar.
+            // In the case of compound assignment other than multiply-assign,
+            // the right side needs to be a scalar. Otherwise a vector/matrix
+            // would be assigned to a scalar. A scalar can't be shifted by a
+            // vector either.
             if (!mRight->isScalar() &&
-                (mOp == EOpAddAssign ||
-                mOp == EOpSubAssign ||
-                mOp == EOpDivAssign))
+                (isAssignment() ||
+                mOp == EOpBitShiftLeft ||
+                mOp == EOpBitShiftRight))
                 return false;
 
             // Operator cannot be of type pure assignment.
@@ -734,7 +792,7 @@ TIntermTyped *TIntermConstantUnion::fold(
             break;
 
           case EOpDiv:
-          case EOpMod:
+          case EOpIMod:
             {
                 tempConstArray = new ConstantUnion[objectSize];
                 for (size_t i = 0; i < objectSize; i++)
@@ -752,6 +810,7 @@ TIntermTyped *TIntermConstantUnion::fold(
                         }
                         else
                         {
+                            ASSERT(op == EOpDiv);
                             tempConstArray[i].setFConst(
                                 unionArray[i].getFConst() /
                                 rightUnionArray[i].getFConst());
@@ -768,9 +827,19 @@ TIntermTyped *TIntermConstantUnion::fold(
                         }
                         else
                         {
-                            tempConstArray[i].setIConst(
-                                unionArray[i].getIConst() /
-                                rightUnionArray[i].getIConst());
+                            if (op == EOpDiv)
+                            {
+                                tempConstArray[i].setIConst(
+                                    unionArray[i].getIConst() /
+                                    rightUnionArray[i].getIConst());
+                            }
+                            else
+                            {
+                                ASSERT(op == EOpIMod);
+                                tempConstArray[i].setIConst(
+                                    unionArray[i].getIConst() %
+                                    rightUnionArray[i].getIConst());
+                            }
                         }
                         break;
 
@@ -784,9 +853,19 @@ TIntermTyped *TIntermConstantUnion::fold(
                         }
                         else
                         {
-                            tempConstArray[i].setUConst(
-                                unionArray[i].getUConst() /
-                                rightUnionArray[i].getUConst());
+                            if (op == EOpDiv)
+                            {
+                                tempConstArray[i].setUConst(
+                                    unionArray[i].getUConst() /
+                                    rightUnionArray[i].getUConst());
+                            }
+                            else
+                            {
+                                ASSERT(op == EOpIMod);
+                                tempConstArray[i].setUConst(
+                                    unionArray[i].getUConst() %
+                                    rightUnionArray[i].getUConst());
+                            }
                         }
                         break;
 
@@ -908,6 +987,32 @@ TIntermTyped *TIntermConstantUnion::fold(
                     }
                 }
             }
+            break;
+
+          case EOpBitwiseAnd:
+            tempConstArray = new ConstantUnion[objectSize];
+            for (size_t i = 0; i < objectSize; i++)
+                tempConstArray[i] = unionArray[i] & rightUnionArray[i];
+            break;
+          case EOpBitwiseXor:
+            tempConstArray = new ConstantUnion[objectSize];
+            for (size_t i = 0; i < objectSize; i++)
+                tempConstArray[i] = unionArray[i] ^ rightUnionArray[i];
+            break;
+          case EOpBitwiseOr:
+            tempConstArray = new ConstantUnion[objectSize];
+            for (size_t i = 0; i < objectSize; i++)
+                tempConstArray[i] = unionArray[i] | rightUnionArray[i];
+            break;
+          case EOpBitShiftLeft:
+            tempConstArray = new ConstantUnion[objectSize];
+            for (size_t i = 0; i < objectSize; i++)
+                tempConstArray[i] = unionArray[i] << rightUnionArray[i];
+            break;
+          case EOpBitShiftRight:
+            tempConstArray = new ConstantUnion[objectSize];
+            for (size_t i = 0; i < objectSize; i++)
+                tempConstArray[i] = unionArray[i] >> rightUnionArray[i];
             break;
 
           case EOpLessThan:
@@ -1093,6 +1198,23 @@ TIntermTyped *TIntermConstantUnion::fold(
                 {
                   case EbtBool:
                     tempConstArray[i].setBConst(!unionArray[i].getBConst());
+                    break;
+                  default:
+                    infoSink.info.message(
+                        EPrefixInternalError, getLine(),
+                        "Unary operation not folded into constant");
+                    return NULL;
+                }
+                break;
+
+              case EOpBitwiseNot:
+                switch (getType().getBasicType())
+                {
+                  case EbtInt:
+                    tempConstArray[i].setIConst(~unionArray[i].getIConst());
+                    break;
+                  case EbtUInt:
+                    tempConstArray[i].setUConst(~unionArray[i].getUConst());
                     break;
                   default:
                     infoSink.info.message(

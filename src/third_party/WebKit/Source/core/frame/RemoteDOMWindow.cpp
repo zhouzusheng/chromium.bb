@@ -87,12 +87,6 @@ Navigator* RemoteDOMWindow::navigator() const
     return nullptr;
 }
 
-Location* RemoteDOMWindow::location() const
-{
-    // FIXME: Implement.
-    return nullptr;
-}
-
 bool RemoteDOMWindow::offscreenBuffering() const
 {
     ASSERT_NOT_REACHED();
@@ -197,18 +191,6 @@ double RemoteDOMWindow::devicePixelRatio() const
     return 0.0;
 }
 
-Storage* RemoteDOMWindow::sessionStorage(ExceptionState&) const
-{
-    ASSERT_NOT_REACHED();
-    return nullptr;
-}
-
-Storage* RemoteDOMWindow::localStorage(ExceptionState&) const
-{
-    ASSERT_NOT_REACHED();
-    return nullptr;
-}
-
 ApplicationCache* RemoteDOMWindow::applicationCache() const
 {
     ASSERT_NOT_REACHED();
@@ -222,12 +204,6 @@ int RemoteDOMWindow::orientation() const
 }
 
 Console* RemoteDOMWindow::console() const
-{
-    ASSERT_NOT_REACHED();
-    return 0;
-}
-
-Performance* RemoteDOMWindow::performance() const
 {
     ASSERT_NOT_REACHED();
     return 0;
@@ -313,22 +289,22 @@ void RemoteDOMWindow::scrollTo(const ScrollToOptions&) const
     ASSERT_NOT_REACHED();
 }
 
-void RemoteDOMWindow::moveBy(float x, float y) const
+void RemoteDOMWindow::moveBy(int x, int y, bool hasX, bool hasY) const
 {
     ASSERT_NOT_REACHED();
 }
 
-void RemoteDOMWindow::moveTo(float x, float y) const
+void RemoteDOMWindow::moveTo(int x, int y, bool hasX, bool hasY) const
 {
     ASSERT_NOT_REACHED();
 }
 
-void RemoteDOMWindow::resizeBy(float x, float y) const
+void RemoteDOMWindow::resizeBy(int x, int y, bool hasX, bool hasY) const
 {
     ASSERT_NOT_REACHED();
 }
 
-void RemoteDOMWindow::resizeTo(float width, float height) const
+void RemoteDOMWindow::resizeTo(int width, int height, bool hasWidth, bool hasHeight) const
 {
     ASSERT_NOT_REACHED();
 }

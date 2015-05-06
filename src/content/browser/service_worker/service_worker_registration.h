@@ -42,8 +42,6 @@ class CONTENT_EXPORT ServiceWorkerRegistration
         const ServiceWorkerRegistrationInfo& info) {}
     virtual void OnRegistrationFailed(
         ServiceWorkerRegistration* registration) {}
-    virtual void OnRegistrationFinishedUninstalling(
-        ServiceWorkerRegistration* registration) {}
     virtual void OnUpdateFound(
         ServiceWorkerRegistration* registration) {}
     virtual void OnSkippedWaiting(ServiceWorkerRegistration* registation) {}
@@ -109,6 +107,10 @@ class CONTENT_EXPORT ServiceWorkerRegistration
   // initiated immediately.
   void ActivateWaitingVersionWhenReady();
 
+  // Takes over control of provider hosts which are currently not controlled or
+  // controlled by other registrations.
+  void ClaimClients(const StatusCallback& callback);
+
   // Triggers the [[ClearRegistration]] algorithm when the currently
   // active version has no controllees. Deletes this registration
   // from storage immediately.
@@ -162,6 +164,14 @@ class CONTENT_EXPORT ServiceWorkerRegistration
   void OnRestoreFinished(const StatusCallback& callback,
                          scoped_refptr<ServiceWorkerVersion> version,
                          ServiceWorkerStatusCode status);
+
+  void DidGetRegistrationsForClaimClients(
+      const StatusCallback& callback,
+      scoped_refptr<ServiceWorkerVersion> version,
+      const std::vector<ServiceWorkerRegistrationInfo>& registrations);
+  bool ShouldClaim(
+      ServiceWorkerProviderHost* provider_host,
+      const std::vector<ServiceWorkerRegistrationInfo>& registration_infos);
 
   const GURL pattern_;
   const int64 registration_id_;

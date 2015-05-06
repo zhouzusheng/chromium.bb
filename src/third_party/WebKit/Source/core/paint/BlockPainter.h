@@ -14,7 +14,7 @@ class LayoutRect;
 class RenderFlexibleBox;
 class RenderBlock;
 class RenderBox;
-class RenderObject;
+class LayoutObject;
 
 class BlockPainter {
 public:
@@ -23,13 +23,14 @@ public:
     void paint(const PaintInfo&, const LayoutPoint& paintOffset);
     void paintObject(const PaintInfo&, const LayoutPoint&);
     void paintChildren(const PaintInfo&, const LayoutPoint&);
-    void paintChildAsInlineBlock(RenderBox*, const PaintInfo&, const LayoutPoint&);
+    void paintChild(RenderBox&, const PaintInfo&, const LayoutPoint&);
+    void paintChildAsInlineBlock(RenderBox&, const PaintInfo&, const LayoutPoint&);
     void paintOverflowControlsIfNeeded(const PaintInfo&, const LayoutPoint&);
 
     // inline-block elements paint all phases atomically. This function ensures that. Certain other elements
     // (grid items, flex items) require this behavior as well, and this function exists as a helper for them.
     // It is expected that the caller will call this function independent of the value of paintInfo.phase.
-    static void paintAsInlineBlock(RenderObject*, const PaintInfo&, const LayoutPoint&);
+    static void paintAsInlineBlock(LayoutObject&, const PaintInfo&, const LayoutPoint&);
     static void paintChildrenOfFlexibleBox(RenderFlexibleBox&, const PaintInfo&, const LayoutPoint& paintOffset);
     static void paintInlineBox(InlineBox&, const PaintInfo&, const LayoutPoint& paintOffset);
 
@@ -40,7 +41,6 @@ private:
     void paintContents(const PaintInfo&, const LayoutPoint&);
     void paintColumnContents(const PaintInfo&, const LayoutPoint&, bool paintFloats = false);
     void paintColumnRules(const PaintInfo&, const LayoutPoint&);
-    void paintChild(RenderBox*, const PaintInfo&, const LayoutPoint&);
     void paintSelection(const PaintInfo&, const LayoutPoint&);
     void paintContinuationOutlines(const PaintInfo&, const LayoutPoint&);
 

@@ -46,12 +46,14 @@
 
 namespace blink {
 
-PageRuntimeAgent::PageRuntimeAgent(InjectedScriptManager* injectedScriptManager, InspectorClient* client, ScriptDebugServer* scriptDebugServer, Page* page, InspectorPageAgent* pageAgent)
+static int s_nextDebuggerId = 1;
+
+PageRuntimeAgent::PageRuntimeAgent(InjectedScriptManager* injectedScriptManager, InspectorClient* client, ScriptDebugServer* scriptDebugServer, InspectorPageAgent* pageAgent)
     : InspectorRuntimeAgent(injectedScriptManager, scriptDebugServer)
     , m_client(client)
-    , m_inspectedPage(page)
     , m_pageAgent(pageAgent)
     , m_mainWorldContextCreated(false)
+    , m_debuggerId(s_nextDebuggerId++)
 {
 }
 
@@ -62,9 +64,8 @@ PageRuntimeAgent::~PageRuntimeAgent()
 #endif
 }
 
-void PageRuntimeAgent::trace(Visitor* visitor)
+DEFINE_TRACE(PageRuntimeAgent)
 {
-    visitor->trace(m_inspectedPage);
     visitor->trace(m_pageAgent);
     InspectorRuntimeAgent::trace(visitor);
 }
@@ -104,14 +105,20 @@ void PageRuntimeAgent::didClearDocumentOfWindowObject(LocalFrame* frame)
     frame->script().initializeMainWorld();
 }
 
-void PageRuntimeAgent::didCreateScriptContext(LocalFrame* frame, ScriptState* scriptState, SecurityOrigin* origin, bool isMainWorldContext)
+void PageRuntimeAgent::didCreateScriptContext(LocalFrame* frame, ScriptState* scriptState, SecurityOrigin* origin, int worldId)
 {
+    bool isMainWorld = worldId == MainWorldId;
+
+    // Name the context for debugging.
+    String debugData = (isMainWorld ? "page," : "injected,") + String::number(m_debuggerId);
+    V8PerContextDebugData::setContextDebugData(scriptState->context(), debugData);
+
     if (!m_enabled)
         return;
     ASSERT(m_frontend);
     String originString = origin ? origin->toRawString() : "";
     String frameId = m_pageAgent->frameId(frame);
-    addExecutionContextToFrontend(scriptState, isMainWorldContext, originString, frameId);
+    addExecutionContextToFrontend(scriptState, isMainWorld, originString, frameId);
 }
 
 void PageRuntimeAgent::willReleaseScriptContext(LocalFrame* frame, ScriptState* scriptState)
@@ -128,7 +135,7 @@ void PageRuntimeAgent::willReleaseScriptContext(LocalFrame* frame, ScriptState* 
 InjectedScript PageRuntimeAgent::injectedScriptForEval(ErrorString* errorString, const int* executionContextId)
 {
     if (!executionContextId) {
-        ScriptState* scriptState = ScriptState::forMainWorld(m_inspectedPage->deprecatedLocalMainFrame());
+        ScriptState* scriptState = ScriptState::forMainWorld(m_pageAgent->inspectedFrame());
         InjectedScript result = injectedScriptManager()->injectedScriptFor(scriptState);
         if (result.isEmpty())
             *errorString = "Internal error: main world execution context not found.";
@@ -153,7 +160,7 @@ void PageRuntimeAgent::unmuteConsole()
 void PageRuntimeAgent::reportExecutionContextCreation()
 {
     Vector<std::pair<ScriptState*, SecurityOrigin*> > isolatedContexts;
-    for (Frame* frame = m_inspectedPage->mainFrame(); frame; frame = frame->tree().traverseNext()) {
+    for (Frame* frame = m_pageAgent->inspectedFrame(); frame; frame = frame->tree().traverseNext(m_pageAgent->inspectedFrame())) {
         if (!frame->isLocalFrame())
             continue;
         LocalFrame* localFrame = toLocalFrame(frame);

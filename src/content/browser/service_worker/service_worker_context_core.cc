@@ -209,7 +209,7 @@ void ServiceWorkerContextCore::RegisterServiceWorker(
     const RegistrationCallback& callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   if (storage()->IsDisabled()) {
-    callback.Run(SERVICE_WORKER_ERROR_ABORT,
+    callback.Run(SERVICE_WORKER_ERROR_ABORT, std::string(),
                  kInvalidServiceWorkerRegistrationId);
     return;
   }
@@ -292,17 +292,19 @@ void ServiceWorkerContextCore::RegistrationComplete(
     const GURL& pattern,
     const ServiceWorkerContextCore::RegistrationCallback& callback,
     ServiceWorkerStatusCode status,
+    const std::string& status_message,
     ServiceWorkerRegistration* registration) {
   if (status != SERVICE_WORKER_OK) {
     DCHECK(!registration);
-    callback.Run(status, kInvalidServiceWorkerRegistrationId);
+    callback.Run(status, status_message, kInvalidServiceWorkerRegistrationId);
     return;
   }
 
   DCHECK(registration);
-  callback.Run(status, registration->id());
+  callback.Run(status, status_message, registration->id());
   if (observer_list_.get()) {
-    observer_list_->Notify(&ServiceWorkerContextObserver::OnRegistrationStored,
+    observer_list_->Notify(FROM_HERE,
+                           &ServiceWorkerContextObserver::OnRegistrationStored,
                            pattern);
   }
 }
@@ -314,7 +316,8 @@ void ServiceWorkerContextCore::UnregistrationComplete(
     ServiceWorkerStatusCode status) {
   callback.Run(status);
   if (observer_list_.get()) {
-    observer_list_->Notify(&ServiceWorkerContextObserver::OnRegistrationDeleted,
+    observer_list_->Notify(FROM_HERE,
+                           &ServiceWorkerContextObserver::OnRegistrationDeleted,
                            registration_id, pattern);
   }
 }
@@ -414,6 +417,7 @@ ServiceWorkerContextCore::TransferProviderHostOut(
       new ServiceWorkerProviderHost(process_id,
                                     transferee->frame_id(),
                                     provider_id,
+                                    transferee->provider_type(),
                                     AsWeakPtr(),
                                     transferee->dispatcher_host());
   map->Replace(provider_id, replacement);
@@ -430,6 +434,7 @@ void ServiceWorkerContextCore::TransferProviderHostIn(
   transferee->CompleteCrossSiteTransfer(new_process_id,
                                         temp->frame_id(),
                                         new_provider_id,
+                                        temp->provider_type(),
                                         temp->dispatcher_host());
   map->Replace(new_provider_id, transferee.release());
   delete temp;
@@ -438,26 +443,27 @@ void ServiceWorkerContextCore::TransferProviderHostIn(
 void ServiceWorkerContextCore::OnWorkerStarted(ServiceWorkerVersion* version) {
   if (!observer_list_.get())
     return;
-  observer_list_->Notify(&ServiceWorkerContextObserver::OnWorkerStarted,
-                         version->version_id(),
-                         version->embedded_worker()->process_id(),
-                         version->embedded_worker()->thread_id());
+  observer_list_->Notify(
+      FROM_HERE, &ServiceWorkerContextObserver::OnWorkerStarted,
+      version->version_id(), version->embedded_worker()->process_id(),
+      version->embedded_worker()->thread_id());
 }
 
 void ServiceWorkerContextCore::OnWorkerStopped(ServiceWorkerVersion* version) {
   if (!observer_list_.get())
     return;
-  observer_list_->Notify(&ServiceWorkerContextObserver::OnWorkerStopped,
-                         version->version_id(),
-                         version->embedded_worker()->process_id(),
-                         version->embedded_worker()->thread_id());
+  observer_list_->Notify(
+      FROM_HERE, &ServiceWorkerContextObserver::OnWorkerStopped,
+      version->version_id(), version->embedded_worker()->process_id(),
+      version->embedded_worker()->thread_id());
 }
 
 void ServiceWorkerContextCore::OnVersionStateChanged(
     ServiceWorkerVersion* version) {
   if (!observer_list_.get())
     return;
-  observer_list_->Notify(&ServiceWorkerContextObserver::OnVersionStateChanged,
+  observer_list_->Notify(FROM_HERE,
+                         &ServiceWorkerContextObserver::OnVersionStateChanged,
                          version->version_id());
 }
 
@@ -470,12 +476,11 @@ void ServiceWorkerContextCore::OnErrorReported(
   if (!observer_list_.get())
     return;
   observer_list_->Notify(
-      &ServiceWorkerContextObserver::OnErrorReported,
-      version->version_id(),
-      version->embedded_worker()->process_id(),
+      FROM_HERE, &ServiceWorkerContextObserver::OnErrorReported,
+      version->version_id(), version->embedded_worker()->process_id(),
       version->embedded_worker()->thread_id(),
-      ServiceWorkerContextObserver::ErrorInfo(
-          error_message, line_number, column_number, source_url));
+      ServiceWorkerContextObserver::ErrorInfo(error_message, line_number,
+                                              column_number, source_url));
 }
 
 void ServiceWorkerContextCore::OnReportConsoleMessage(
@@ -488,18 +493,15 @@ void ServiceWorkerContextCore::OnReportConsoleMessage(
   if (!observer_list_.get())
     return;
   observer_list_->Notify(
-      &ServiceWorkerContextObserver::OnReportConsoleMessage,
-      version->version_id(),
-      version->embedded_worker()->process_id(),
+      FROM_HERE, &ServiceWorkerContextObserver::OnReportConsoleMessage,
+      version->version_id(), version->embedded_worker()->process_id(),
       version->embedded_worker()->thread_id(),
       ServiceWorkerContextObserver::ConsoleMessage(
           source_identifier, message_level, message, line_number, source_url));
 }
 
 ServiceWorkerProcessManager* ServiceWorkerContextCore::process_manager() {
-  if (wrapper_)
-    return wrapper_->process_manager();
-  return NULL;
+  return wrapper_->process_manager();
 }
 
 }  // namespace content

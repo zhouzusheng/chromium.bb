@@ -32,7 +32,6 @@
 #include "core/html/imports/LinkImport.h"
 
 #include "core/dom/Document.h"
-#include "core/fetch/CrossOriginAccessControl.h"
 #include "core/html/HTMLLinkElement.h"
 #include "core/html/imports/HTMLImportChild.h"
 #include "core/html/imports/HTMLImportLoader.h"
@@ -140,7 +139,7 @@ void LinkImport::ownerInserted()
         m_child->ownerInserted();
 }
 
-void LinkImport::trace(Visitor* visitor)
+DEFINE_TRACE(LinkImport)
 {
     visitor->trace(m_child);
     HTMLImportChildClient::trace(visitor);

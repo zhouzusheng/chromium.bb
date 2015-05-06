@@ -21,7 +21,7 @@
 #include "ui/gfx/geometry/rect.h"
 
 namespace base {
-namespace debug {
+namespace trace_event {
 class TracedValue;
 }
 }
@@ -59,6 +59,10 @@ class CC_EXPORT PictureLayerTiling {
   static const int kBorderTexels = 1;
 
   ~PictureLayerTiling();
+
+  static float CalculateSoonBorderDistance(
+      const gfx::Rect& visible_rect_in_content_space,
+      float content_to_screen_scale);
 
   // Create a tiling with no tiles. CreateTile() must be called to add some.
   static scoped_ptr<PictureLayerTiling> Create(
@@ -208,7 +212,7 @@ class CC_EXPORT PictureLayerTiling {
                                 const Occlusion& occlusion_in_layer_space);
 
   void GetAllTilesForTracing(std::set<const Tile*>* tiles) const;
-  void AsValueInto(base::debug::TracedValue* array) const;
+  void AsValueInto(base::trace_event::TracedValue* array) const;
   size_t GPUMemoryUsageInBytes() const;
 
   struct RectExpansionCache {
@@ -233,7 +237,8 @@ class CC_EXPORT PictureLayerTiling {
 
  protected:
   friend class CoverageIterator;
-  friend class TilingSetRasterQueue;
+  friend class TilingSetRasterQueueAll;
+  friend class TilingSetRasterQueueRequired;
   friend class TilingSetEvictionQueue;
 
   typedef std::pair<int, int> TileMapKey;

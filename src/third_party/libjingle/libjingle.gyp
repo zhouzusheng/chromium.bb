@@ -12,7 +12,6 @@
     'libjingle_peerconnection_additional_deps%': [],
     'libjingle_source%': "source",
     'libpeer_target_type%': 'static_library',
-    'libpeer_allocator_shim%': 0,
     'webrtc_p2p': "../webrtc/p2p",
     'webrtc_xmpp': "../webrtc/libjingle/xmpp",
   },
@@ -278,7 +277,7 @@
         '<(webrtc_p2p)/base/constants.h',
       ],
       'dependencies': [
-        '<(DEPTH)/third_party/webrtc/base/base.gyp:webrtc_base',
+        '<(DEPTH)/third_party/webrtc/base/base.gyp:rtc_base',
         '<(DEPTH)/third_party/webrtc/libjingle/xmllite/xmllite.gyp:rtc_xmllite',
         'libjingle_p2p_constants',
         '<@(libjingle_additional_deps)',
@@ -482,13 +481,6 @@
             '<(libjingle_source)/talk/session/media/voicechannel.h',
           ],
           'conditions': [
-            ['libpeer_allocator_shim==1 and '
-             'libpeer_target_type!="static_library" and OS!="mac"', {
-              'sources': [
-                'overrides/allocator_shim/allocator_stub.cc',
-                'overrides/allocator_shim/allocator_stub.h',
-              ],
-            }],
             # TODO(mallinath) - Enable SCTP for iOS.
             ['OS!="ios"', {
               'defines': [
@@ -551,8 +543,8 @@
           'dependencies': [
             '<(DEPTH)/third_party/libsrtp/libsrtp.gyp:libsrtp',
             '<(DEPTH)/third_party/webrtc/modules/modules.gyp:media_file',
-            '<(DEPTH)/third_party/webrtc/modules/modules.gyp:video_capture_module_impl',
-            '<(DEPTH)/third_party/webrtc/modules/modules.gyp:video_render_module_impl',
+            '<(DEPTH)/third_party/webrtc/modules/modules.gyp:video_capture',
+            '<(DEPTH)/third_party/webrtc/modules/modules.gyp:video_render',
             'libjingle',
           ],
         },  # target libjingle_webrtc_common
@@ -593,7 +585,6 @@
             '<(libjingle_source)/talk/media/webrtc/webrtcvoiceengine.h',
           ],
           'dependencies': [
-            '<(DEPTH)/third_party/webrtc/system_wrappers/source/system_wrappers.gyp:system_wrappers',
             '<(DEPTH)/third_party/webrtc/voice_engine/voice_engine.gyp:voice_engine',
             '<(DEPTH)/third_party/webrtc/webrtc.gyp:webrtc',
             '<@(libjingle_peerconnection_additional_deps)',

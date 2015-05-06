@@ -38,6 +38,7 @@
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
+#include "core/dom/SecurityContext.h"
 #include "core/events/MessageEvent.h"
 #include "core/fileapi/Blob.h"
 #include "core/frame/ConsoleTypes.h"
@@ -125,7 +126,7 @@ void DOMWebSocket::EventQueue::dispatchQueuedEvents()
     if (m_state != Active)
         return;
 
-    WillBeHeapDeque<RefPtrWillBeMember<Event> > events;
+    WillBeHeapDeque<RefPtrWillBeMember<Event>> events;
     events.swap(m_events);
     while (!events.isEmpty()) {
         if (m_state == Stopped || m_state == Suspended)
@@ -149,7 +150,7 @@ void DOMWebSocket::EventQueue::resumeTimerFired(Timer<EventQueue>*)
     dispatchQueuedEvents();
 }
 
-void DOMWebSocket::EventQueue::trace(Visitor* visitor)
+DEFINE_TRACE(DOMWebSocket::EventQueue)
 {
     visitor->trace(m_events);
 }
@@ -271,8 +272,15 @@ DOMWebSocket* DOMWebSocket::create(ExecutionContext* context, const String& url,
 
 void DOMWebSocket::connect(const String& url, const Vector<String>& protocols, ExceptionState& exceptionState)
 {
+
     WTF_LOG(Network, "WebSocket %p connect() url='%s'", this, url.utf8().data());
     m_url = KURL(KURL(), url);
+
+    if (executionContext()->securityContext().insecureContentPolicy() == SecurityContext::InsecureContentUpgrade && m_url.protocol() == "ws") {
+        m_url.setProtocol("wss");
+        if (m_url.port() == 80)
+            m_url.setPort(443);
+    }
 
     if (!m_url.isValid()) {
         m_state = CLOSED;
@@ -594,7 +602,7 @@ void DOMWebSocket::didReceiveTextMessage(const String& msg)
     m_eventQueue->dispatch(MessageEvent::create(msg, SecurityOrigin::create(m_url)->toString()));
 }
 
-void DOMWebSocket::didReceiveBinaryMessage(PassOwnPtr<Vector<char> > binaryData)
+void DOMWebSocket::didReceiveBinaryMessage(PassOwnPtr<Vector<char>> binaryData)
 {
     WTF_LOG(Network, "WebSocket %p didReceiveBinaryMessage() %lu byte binary message", this, static_cast<unsigned long>(binaryData->size()));
     switch (m_binaryType) {
@@ -655,7 +663,7 @@ void DOMWebSocket::didClose(ClosingHandshakeCompletionStatus closingHandshakeCom
     releaseChannel();
 }
 
-void DOMWebSocket::trace(Visitor* visitor)
+DEFINE_TRACE(DOMWebSocket)
 {
     visitor->trace(m_channel);
     visitor->trace(m_eventQueue);

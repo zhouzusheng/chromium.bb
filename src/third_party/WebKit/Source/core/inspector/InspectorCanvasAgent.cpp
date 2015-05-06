@@ -72,7 +72,7 @@ InspectorCanvasAgent::~InspectorCanvasAgent()
 {
 }
 
-void InspectorCanvasAgent::trace(Visitor* visitor)
+DEFINE_TRACE(InspectorCanvasAgent)
 {
     visitor->trace(m_pageAgent);
     visitor->trace(m_injectedScriptManager);
@@ -141,7 +141,7 @@ void InspectorCanvasAgent::hasUninstrumentedCanvases(ErrorString* errorString, b
 
 void InspectorCanvasAgent::captureFrame(ErrorString* errorString, const FrameId* frameId, TraceLogId* traceLogId)
 {
-    LocalFrame* frame = frameId ? m_pageAgent->assertFrame(errorString, *frameId) : m_pageAgent->mainFrame();
+    LocalFrame* frame = frameId ? m_pageAgent->assertFrame(errorString, *frameId) : m_pageAgent->inspectedFrame();
     if (!frame)
         return;
     InjectedScriptCanvasModule module = injectedScriptCanvasModule(errorString, ScriptState::forMainWorld(frame));
@@ -151,7 +151,7 @@ void InspectorCanvasAgent::captureFrame(ErrorString* errorString, const FrameId*
 
 void InspectorCanvasAgent::startCapturing(ErrorString* errorString, const FrameId* frameId, TraceLogId* traceLogId)
 {
-    LocalFrame* frame = frameId ? m_pageAgent->assertFrame(errorString, *frameId) : m_pageAgent->mainFrame();
+    LocalFrame* frame = frameId ? m_pageAgent->assertFrame(errorString, *frameId) : m_pageAgent->inspectedFrame();
     if (!frame)
         return;
     InjectedScriptCanvasModule module = injectedScriptCanvasModule(errorString, ScriptState::forMainWorld(frame));
@@ -268,8 +268,8 @@ void InspectorCanvasAgent::findFramesWithUninstrumentedCanvases()
 {
     class NodeVisitor final : public WrappedNodeVisitor {
     public:
-        NodeVisitor(Page* page, FramesWithUninstrumentedCanvases& result)
-            : m_page(page)
+        NodeVisitor(LocalFrame* frame, FramesWithUninstrumentedCanvases& result)
+            : m_frame(frame)
             , m_framesWithUninstrumentedCanvases(result)
         {
         }
@@ -281,7 +281,7 @@ void InspectorCanvasAgent::findFramesWithUninstrumentedCanvases()
                 return;
 
             LocalFrame* frame = node->document().frame();
-            if (frame->page() != m_page)
+            if (frame->localFrameRoot() != m_frame)
                 return;
 
             if (toHTMLCanvasElement(node)->renderingContext())
@@ -289,9 +289,9 @@ void InspectorCanvasAgent::findFramesWithUninstrumentedCanvases()
         }
 
     private:
-        Page* m_page;
+        LocalFrame* m_frame;
         FramesWithUninstrumentedCanvases& m_framesWithUninstrumentedCanvases;
-    } nodeVisitor(m_pageAgent->page(), m_framesWithUninstrumentedCanvases);
+    } nodeVisitor(m_pageAgent->inspectedFrame(), m_framesWithUninstrumentedCanvases);
 
     m_framesWithUninstrumentedCanvases.clear();
     ScriptProfiler::visitNodeWrappers(&nodeVisitor);
@@ -318,7 +318,7 @@ void InspectorCanvasAgent::didCommitLoad(LocalFrame*, DocumentLoader* loader)
     if (!m_enabled)
         return;
     Frame* frame = loader->frame();
-    if (frame == m_pageAgent->mainFrame()) {
+    if (frame == m_pageAgent->inspectedFrame()) {
         for (auto& frame : m_framesWithUninstrumentedCanvases)
             frame.value = false;
         m_frontend->traceLogsRemoved(0, 0);
@@ -340,14 +340,11 @@ void InspectorCanvasAgent::didCommitLoad(LocalFrame*, DocumentLoader* loader)
 
 void InspectorCanvasAgent::frameDetachedFromParent(LocalFrame* frame)
 {
-    if (m_enabled)
-        m_framesWithUninstrumentedCanvases.remove(frame);
+    m_framesWithUninstrumentedCanvases.remove(frame);
 }
 
-void InspectorCanvasAgent::didBeginFrame()
+void InspectorCanvasAgent::didProcessTask()
 {
-    if (!m_enabled)
-        return;
     ErrorString error;
     for (const auto& frame : m_framesWithUninstrumentedCanvases) {
         InjectedScriptCanvasModule module = injectedScriptCanvasModule(&error, ScriptState::forMainWorld(frame.key));

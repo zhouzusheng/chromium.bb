@@ -7,6 +7,7 @@
 
 #include <set>
 #include <string>
+#include <vector>
 
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
@@ -17,12 +18,14 @@
 #include "cc/base/cc_export.h"
 #include "cc/base/region.h"
 #include "cc/base/scoped_ptr_vector.h"
+#include "cc/debug/frame_timing_request.h"
 #include "cc/debug/micro_benchmark.h"
 #include "cc/layers/draw_properties.h"
 #include "cc/layers/layer_lists.h"
 #include "cc/layers/layer_position_constraint.h"
 #include "cc/layers/paint_properties.h"
 #include "cc/layers/render_surface.h"
+#include "cc/layers/scroll_blocks_on.h"
 #include "cc/output/filter_operations.h"
 #include "cc/trees/property_tree.h"
 #include "skia/ext/refptr.h"
@@ -41,7 +44,7 @@ class BoxF;
 }
 
 namespace base {
-namespace debug {
+namespace trace_event {
 class ConvertableToTraceFormat;
 }
 }
@@ -239,7 +242,6 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   bool screen_space_opacity_is_animating() const {
     return draw_properties_.screen_space_opacity_is_animating;
   }
-  bool can_use_lcd_text() const { return draw_properties_.can_use_lcd_text; }
   bool is_clipped() const { return draw_properties_.is_clipped; }
   gfx::Rect clip_rect() const { return draw_properties_.clip_rect; }
   gfx::Rect drawable_content_rect() const {
@@ -264,6 +266,10 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   RenderSurface* render_surface() const { return render_surface_.get(); }
   void SetScrollOffset(const gfx::ScrollOffset& scroll_offset);
+  void SetScrollCompensationAdjustment(
+      const gfx::Vector2dF& scroll_compensation_adjustment);
+  gfx::Vector2dF ScrollCompensationAdjustment() const;
+
   gfx::ScrollOffset scroll_offset() const { return scroll_offset_; }
   void SetScrollOffsetFromImplSide(const gfx::ScrollOffset& scroll_offset);
 
@@ -299,6 +305,9 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
     return touch_event_handler_region_;
   }
 
+  void SetScrollBlocksOn(ScrollBlocksOn scroll_blocks_on);
+  ScrollBlocksOn scroll_blocks_on() const { return scroll_blocks_on_; }
+
   void set_did_scroll_callback(const base::Closure& callback) {
     did_scroll_callback_ = callback;
   }
@@ -312,9 +321,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   bool force_render_surface() const { return force_render_surface_; }
 
   gfx::Vector2dF ScrollDelta() const { return gfx::Vector2dF(); }
-  gfx::ScrollOffset TotalScrollOffset() const {
-    return ScrollOffsetWithDelta(scroll_offset(), ScrollDelta());
-  }
+  gfx::ScrollOffset CurrentScrollOffset() const { return scroll_offset_; }
 
   void SetDoubleSided(bool double_sided);
   bool double_sided() const { return double_sided_; }
@@ -369,7 +376,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   virtual void OnOutputSurfaceCreated() {}
   virtual bool IsSuitableForGpuRasterization() const;
 
-  virtual scoped_refptr<base::debug::ConvertableToTraceFormat> TakeDebugInfo();
+  virtual scoped_refptr<base::trace_event::ConvertableToTraceFormat>
+  TakeDebugInfo();
 
   void SetLayerClient(LayerClient* client) { client_ = client; }
 
@@ -448,8 +456,6 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   float raster_scale() const { return raster_scale_; }
   bool raster_scale_is_unknown() const { return raster_scale_ == 0.f; }
 
-  virtual bool SupportsLCDText() const;
-
   void SetNeedsPushProperties();
   bool needs_push_properties() const { return needs_push_properties_; }
   bool descendant_needs_push_properties() const {
@@ -504,6 +510,9 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   bool has_render_surface() const {
     return has_render_surface_;
   }
+
+  // Sets new frame timing requests for this layer.
+  void SetFrameTimingRequests(const std::vector<FrameTimingRequest>& requests);
 
  protected:
   friend class LayerImpl;
@@ -631,6 +640,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   gfx::Size bounds_;
 
   gfx::ScrollOffset scroll_offset_;
+  gfx::Vector2dF scroll_compensation_adjustment_;
   // This variable indicates which ancestor layer (if any) whose size,
   // transformed relative to this layer, defines the maximum scroll offset for
   // this layer.
@@ -659,6 +669,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   bool force_render_surface_ : 1;
   bool transform_is_invertible_ : 1;
   bool has_render_surface_ : 1;
+  ScrollBlocksOn scroll_blocks_on_ : 3;
   Region non_fast_scrollable_region_;
   Region touch_event_handler_region_;
   gfx::PointF position_;
@@ -697,6 +708,10 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   scoped_ptr<RenderSurface> render_surface_;
 
   gfx::Rect visible_rect_from_property_trees_;
+
+  std::vector<FrameTimingRequest> frame_timing_requests_;
+  bool frame_timing_requests_dirty_;
+
   DISALLOW_COPY_AND_ASSIGN(Layer);
 };
 

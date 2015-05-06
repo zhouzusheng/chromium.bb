@@ -34,7 +34,8 @@ public:
         UINT32 fontFileReferenceKeySize,
         IDWriteFontFileStream** fontFileStream);
 
-    static HRESULT Create(SkStream* stream, StreamFontFileLoader** streamFontFileLoader) {
+    // Takes ownership of stream.
+    static HRESULT Create(SkStreamAsset* stream, StreamFontFileLoader** streamFontFileLoader) {
         *streamFontFileLoader = new StreamFontFileLoader(stream);
         if (NULL == streamFontFileLoader) {
             return E_OUTOFMEMORY;
@@ -42,10 +43,10 @@ public:
         return S_OK;
     }
 
-    SkAutoTUnref<SkStream> fStream;
+    SkAutoTDelete<SkStreamAsset> fStream;
 
 private:
-    StreamFontFileLoader(SkStream* stream) : fRefCount(1), fStream(SkRef(stream)) { }
+    StreamFontFileLoader(SkStreamAsset* stream) : fRefCount(1), fStream(stream) { }
     virtual ~StreamFontFileLoader() { }
 
     ULONG fRefCount;
@@ -80,7 +81,7 @@ HRESULT StreamFontFileLoader::CreateStreamFromKey(
     IDWriteFontFileStream** fontFileStream)
 {
     SkTScopedComPtr<SkDWriteFontFileStreamWrapper> stream;
-    HR(SkDWriteFontFileStreamWrapper::Create(fStream, &stream));
+    HR(SkDWriteFontFileStreamWrapper::Create(fStream->duplicate(), &stream));
     *fontFileStream = stream.release();
     return S_OK;
 }
@@ -264,10 +265,10 @@ public:
     }
 
 protected:
-    virtual int onCountFamilies() const SK_OVERRIDE;
-    virtual void onGetFamilyName(int index, SkString* familyName) const SK_OVERRIDE;
-    virtual SkFontStyleSet* onCreateStyleSet(int index) const SK_OVERRIDE;
-    virtual SkFontStyleSet* onMatchFamily(const char familyName[]) const SK_OVERRIDE;
+    int onCountFamilies() const SK_OVERRIDE;
+    void onGetFamilyName(int index, SkString* familyName) const SK_OVERRIDE;
+    SkFontStyleSet* onCreateStyleSet(int index) const SK_OVERRIDE;
+    SkFontStyleSet* onMatchFamily(const char familyName[]) const SK_OVERRIDE;
     virtual SkTypeface* onMatchFamilyStyle(const char familyName[],
                                            const SkFontStyle& fontstyle) const SK_OVERRIDE;
     virtual SkTypeface* onMatchFamilyStyleCharacter(const char familyName[], const SkFontStyle&,
@@ -275,9 +276,9 @@ protected:
                                                     SkUnichar character) const SK_OVERRIDE;
     virtual SkTypeface* onMatchFaceStyle(const SkTypeface* familyMember,
                                          const SkFontStyle& fontstyle) const SK_OVERRIDE;
-    virtual SkTypeface* onCreateFromStream(SkStream* stream, int ttcIndex) const SK_OVERRIDE;
-    virtual SkTypeface* onCreateFromData(SkData* data, int ttcIndex) const SK_OVERRIDE;
-    virtual SkTypeface* onCreateFromFile(const char path[], int ttcIndex) const SK_OVERRIDE;
+    SkTypeface* onCreateFromStream(SkStreamAsset* stream, int ttcIndex) const SK_OVERRIDE;
+    SkTypeface* onCreateFromData(SkData* data, int ttcIndex) const SK_OVERRIDE;
+    SkTypeface* onCreateFromFile(const char path[], int ttcIndex) const SK_OVERRIDE;
     virtual SkTypeface* onLegacyCreateTypeface(const char familyName[],
                                                unsigned styleBits) const SK_OVERRIDE;
 
@@ -307,10 +308,10 @@ public:
         , fFontFamily(SkRefComPtr(fontFamily))
     { }
 
-    virtual int count() SK_OVERRIDE;
-    virtual void getStyle(int index, SkFontStyle* fs, SkString* styleName) SK_OVERRIDE;
-    virtual SkTypeface* createTypeface(int index) SK_OVERRIDE;
-    virtual SkTypeface* matchStyle(const SkFontStyle& pattern) SK_OVERRIDE;
+    int count() SK_OVERRIDE;
+    void getStyle(int index, SkFontStyle* fs, SkString* styleName) SK_OVERRIDE;
+    SkTypeface* createTypeface(int index) SK_OVERRIDE;
+    SkTypeface* matchStyle(const SkFontStyle& pattern) SK_OVERRIDE;
 
 private:
     SkAutoTUnref<const SkFontMgr_DirectWrite> fFontMgr;
@@ -533,8 +534,9 @@ private:
     T* fUnregister;
 };
 
-SkTypeface* SkFontMgr_DirectWrite::onCreateFromStream(SkStream* stream, int ttcIndex) const {
+SkTypeface* SkFontMgr_DirectWrite::onCreateFromStream(SkStreamAsset* stream, int ttcIndex) const {
     SkTScopedComPtr<StreamFontFileLoader> fontFileLoader;
+    // This transfers ownership of stream to the new object.
     HRN(StreamFontFileLoader::Create(stream, &fontFileLoader));
     HRN(fFactory->RegisterFontFileLoader(fontFileLoader.get()));
     SkAutoIDWriteUnregister<StreamFontFileLoader> autoUnregisterFontFileLoader(
@@ -580,13 +582,11 @@ SkTypeface* SkFontMgr_DirectWrite::onCreateFromStream(SkStream* stream, int ttcI
 }
 
 SkTypeface* SkFontMgr_DirectWrite::onCreateFromData(SkData* data, int ttcIndex) const {
-    SkAutoTUnref<SkStream> stream(SkNEW_ARGS(SkMemoryStream, (data)));
-    return this->createFromStream(stream, ttcIndex);
+    return this->createFromStream(SkNEW_ARGS(SkMemoryStream, (data)), ttcIndex);
 }
 
 SkTypeface* SkFontMgr_DirectWrite::onCreateFromFile(const char path[], int ttcIndex) const {
-    SkAutoTUnref<SkStream> stream(SkStream::NewFromFile(path));
-    return this->createFromStream(stream, ttcIndex);
+    return this->createFromStream(SkStream::NewFromFile(path), ttcIndex);
 }
 
 HRESULT SkFontMgr_DirectWrite::getByFamilyName(const WCHAR wideFamilyName[],

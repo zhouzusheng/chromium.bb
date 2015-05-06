@@ -36,10 +36,10 @@
 #include "core/editing/TypingCommand.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLTextAreaElement.h"
+#include "core/layout/LayoutObject.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/EventHandler.h"
-#include "core/rendering/RenderObject.h"
 
 namespace blink {
 
@@ -318,13 +318,13 @@ void InputMethodController::setCompositionFromExistingText(const Vector<Composit
     Element* editable = frame().selection().rootEditableElement();
     Position base = frame().selection().base().downstream();
     Node* baseNode = base.anchorNode();
-    if (editable->firstChild() == baseNode && editable->lastChild() == baseNode && baseNode->isTextNode()) {
+    if (baseNode && editable->firstChild() == baseNode && editable->lastChild() == baseNode && baseNode->isTextNode()) {
         m_compositionNode = nullptr;
         m_customCompositionUnderlines.clear();
 
         if (base.anchorType() != Position::PositionIsOffsetInAnchor)
             return;
-        if (!baseNode || baseNode != frame().selection().extent().anchorNode())
+        if (baseNode != frame().selection().extent().anchorNode())
             return;
 
         m_compositionNode = toText(baseNode);
@@ -425,7 +425,7 @@ void InputMethodController::extendSelectionAndDelete(int before, int after)
     TypingCommand::deleteSelection(*frame().document());
 }
 
-void InputMethodController::trace(Visitor* visitor)
+DEFINE_TRACE(InputMethodController)
 {
     visitor->trace(m_frame);
     visitor->trace(m_compositionNode);

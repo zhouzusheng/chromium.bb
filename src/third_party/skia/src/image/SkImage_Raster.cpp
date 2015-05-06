@@ -68,7 +68,7 @@ public:
                                   SkShader::TileMode,
                                   const SkMatrix* localMatrix) const SK_OVERRIDE;
 
-    virtual bool isOpaque() const SK_OVERRIDE;
+    bool isOpaque() const SK_OVERRIDE;
 
     SkImage_Raster(const SkBitmap& bm, const SkSurfaceProps* props)
         : INHERITED(bm.width(), bm.height(), props)
@@ -186,11 +186,18 @@ SkImage* SkImage::NewFromGenerator(SkImageGenerator* generator) {
     if (!SkInstallDiscardablePixelRef(generator, &bitmap)) {
         return NULL;
     }
+    if (0 == bitmap.width() || 0 == bitmap.height()) {
+        return NULL;
+    }
+
     return SkNEW_ARGS(SkImage_Raster, (bitmap, NULL));
 }
 
 SkImage* SkNewImageFromPixelRef(const SkImageInfo& info, SkPixelRef* pr, size_t rowBytes,
                                 const SkSurfaceProps* props) {
+    if (!SkImage_Raster::ValidArgs(info, rowBytes)) {
+        return NULL;
+    }
     return SkNEW_ARGS(SkImage_Raster, (info, pr, rowBytes, props));
 }
 
@@ -201,3 +208,4 @@ const SkPixelRef* SkBitmapImageGetPixelRef(const SkImage* image) {
 bool SkImage_Raster::isOpaque() const {
     return fBitmap.isOpaque();
 }
+

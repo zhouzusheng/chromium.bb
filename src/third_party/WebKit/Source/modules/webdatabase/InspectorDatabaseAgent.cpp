@@ -36,6 +36,7 @@
 #include "core/loader/DocumentLoader.h"
 #include "core/page/Page.h"
 #include "modules/webdatabase/Database.h"
+#include "modules/webdatabase/DatabaseClient.h"
 #include "modules/webdatabase/InspectorDatabaseResource.h"
 #include "modules/webdatabase/SQLError.h"
 #include "modules/webdatabase/SQLResultSet.h"
@@ -76,7 +77,7 @@ public:
 
     virtual ~StatementCallback() { }
 
-    virtual void trace(Visitor* visitor)
+    DEFINE_INLINE_VIRTUAL_TRACE()
     {
         visitor->trace(m_requestCallback);
         SQLStatementCallback::trace(visitor);
@@ -86,12 +87,12 @@ public:
     {
         SQLResultSetRowList* rowList = resultSet->rows();
 
-        RefPtr<TypeBuilder::Array<String> > columnNames = TypeBuilder::Array<String>::create();
+        RefPtr<TypeBuilder::Array<String>> columnNames = TypeBuilder::Array<String>::create();
         const Vector<String>& columns = rowList->columnNames();
         for (size_t i = 0; i < columns.size(); ++i)
             columnNames->addItem(columns[i]);
 
-        RefPtr<TypeBuilder::Array<JSONValue> > values = TypeBuilder::Array<JSONValue>::create();
+        RefPtr<TypeBuilder::Array<JSONValue>> values = TypeBuilder::Array<JSONValue>::create();
         const Vector<SQLValue>& data = rowList->values();
         for (size_t i = 0; i < data.size(); ++i) {
             const SQLValue& value = rowList->values()[i];
@@ -120,7 +121,7 @@ public:
 
     virtual ~StatementErrorCallback() { }
 
-    virtual void trace(Visitor* visitor) override
+    DEFINE_INLINE_VIRTUAL_TRACE()
     {
         visitor->trace(m_requestCallback);
         SQLStatementErrorCallback::trace(visitor);
@@ -147,7 +148,7 @@ public:
 
     virtual ~TransactionCallback() { }
 
-    virtual void trace(Visitor* visitor) override
+    DEFINE_INLINE_VIRTUAL_TRACE()
     {
         visitor->trace(m_requestCallback);
         SQLTransactionCallback::trace(visitor);
@@ -181,7 +182,7 @@ public:
 
     virtual ~TransactionErrorCallback() { }
 
-    virtual void trace(Visitor* visitor) override
+    DEFINE_INLINE_VIRTUAL_TRACE()
     {
         visitor->trace(m_requestCallback);
         SQLTransactionErrorCallback::trace(visitor);
@@ -234,11 +235,12 @@ void InspectorDatabaseAgent::didCommitLoadForMainFrame()
     m_resources.clear();
 }
 
-InspectorDatabaseAgent::InspectorDatabaseAgent()
+InspectorDatabaseAgent::InspectorDatabaseAgent(Page* page)
     : InspectorBaseAgent<InspectorDatabaseAgent>("Database")
     , m_frontend(0)
     , m_enabled(false)
 {
+    DatabaseClient::fromPage(page)->setInspectorAgent(this);
 }
 
 InspectorDatabaseAgent::~InspectorDatabaseAgent()
@@ -281,7 +283,7 @@ void InspectorDatabaseAgent::restore()
     m_enabled = m_state->getBoolean(DatabaseAgentState::databaseAgentEnabled);
 }
 
-void InspectorDatabaseAgent::getDatabaseTableNames(ErrorString* error, const String& databaseId, RefPtr<TypeBuilder::Array<String> >& names)
+void InspectorDatabaseAgent::getDatabaseTableNames(ErrorString* error, const String& databaseId, RefPtr<TypeBuilder::Array<String>>& names)
 {
     if (!m_enabled) {
         *error = "Database agent is not enabled";
@@ -337,7 +339,7 @@ Database* InspectorDatabaseAgent::databaseForId(const String& databaseId)
     return it->value->database();
 }
 
-void InspectorDatabaseAgent::trace(Visitor* visitor)
+DEFINE_TRACE(InspectorDatabaseAgent)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_resources);

@@ -41,6 +41,11 @@ void WebRuntimeFeatures::enableExperimentalFeatures(bool enable)
     RuntimeEnabledFeatures::setExperimentalFeaturesEnabled(enable);
 }
 
+void WebRuntimeFeatures::enableFeatureFromString(const WebString& name, bool enable)
+{
+    RuntimeEnabledFeatures::setFeatureEnabledFromString(name, enable);
+}
+
 void WebRuntimeFeatures::enableBleedingEdgeFastPaths(bool enable)
 {
     ASSERT(enable);
@@ -153,6 +158,11 @@ void WebRuntimeFeatures::enableMediaSource(bool enable)
     RuntimeEnabledFeatures::setMediaSourceEnabled(enable);
 }
 
+void WebRuntimeFeatures::enableNotificationConstructor(bool enable)
+{
+    RuntimeEnabledFeatures::setNotificationConstructorEnabled(enable);
+}
+
 void WebRuntimeFeatures::enableNotifications(bool enable)
 {
     RuntimeEnabledFeatures::setNotificationsEnabled(enable);
@@ -216,6 +226,11 @@ void WebRuntimeFeatures::enableSessionStorage(bool enable)
 void WebRuntimeFeatures::enableSlimmingPaint(bool enable)
 {
     RuntimeEnabledFeatures::setSlimmingPaintEnabled(enable);
+}
+
+bool WebRuntimeFeatures::slimmingPaintDisplayItemCacheEnabled()
+{
+    return RuntimeEnabledFeatures::slimmingPaintDisplayItemCacheEnabled();
 }
 
 void WebRuntimeFeatures::enableTouch(bool enable)
@@ -306,6 +321,26 @@ void WebRuntimeFeatures::enableSVG1DOM(bool enable)
 void WebRuntimeFeatures::enableReducedReferrerGranularity(bool enable)
 {
     RuntimeEnabledFeatures::setReducedReferrerGranularityEnabled(enable);
+}
+
+void WebRuntimeFeatures::enablePushMessaging(bool enable)
+{
+    RuntimeEnabledFeatures::setPushMessagingEnabled(enable);
+}
+
+void WebRuntimeFeatures::enablePushMessagingData(bool enable)
+{
+    RuntimeEnabledFeatures::setPushMessagingDataEnabled(enable);
+}
+
+void WebRuntimeFeatures::enablePushMessagingHasPermission(bool enable)
+{
+    RuntimeEnabledFeatures::setPushMessagingHasPermissionEnabled(enable);
+}
+
+void WebRuntimeFeatures::enableUnsafeES3APIs(bool enable)
+{
+    RuntimeEnabledFeatures::setUnsafeES3APIsEnabled(enable);
 }
 
 } // namespace blink

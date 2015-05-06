@@ -139,6 +139,9 @@ public:
     virtual void connect(AudioNode*, unsigned outputIndex, unsigned inputIndex, ExceptionState&);
     void connect(AudioParam*, unsigned outputIndex, ExceptionState&);
     virtual void disconnect(unsigned outputIndex, ExceptionState&);
+    // Like disconnect, but no exception is thrown if the outputIndex is invalid.  Just do nothing
+    // in that case.
+    virtual void disconnectWithoutException(unsigned outputIndex);
 
     virtual float sampleRate() const { return m_sampleRate; }
 
@@ -192,7 +195,7 @@ public:
 
     void updateChannelCountMode();
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     // Inputs and outputs must be created before the AudioNode is initialized.
@@ -214,8 +217,8 @@ private:
     NodeType m_nodeType;
     Member<AudioContext> m_context;
     float m_sampleRate;
-    HeapVector<Member<AudioNodeInput> > m_inputs;
-    HeapVector<Member<AudioNodeOutput> > m_outputs;
+    HeapVector<Member<AudioNodeInput>> m_inputs;
+    HeapVector<Member<AudioNodeOutput>> m_outputs;
 
     double m_lastProcessingTime;
     double m_lastNonSilentTime;

@@ -17,8 +17,10 @@
 
 class GrContext;
 class GrPaint;
+class GrRenderTarget;
 class SkBitmap;
 class SkBlitter;
+class SkCachedData;
 class SkMatrix;
 class SkPath;
 class SkRasterClip;
@@ -96,6 +98,7 @@ public:
      *  true if drawing was successful.
      */
     virtual bool directFilterMaskGPU(GrContext* context,
+                                     GrRenderTarget* rt,
                                      GrPaint* grp,
                                      const SkMatrix& viewMatrix,
                                      const SkStrokeRec& strokeRec,
@@ -105,6 +108,7 @@ public:
      *  true if drawing was successful.
      */
     virtual bool directFilterRRectMaskGPU(GrContext* context,
+                                          GrRenderTarget* rt,
                                           GrPaint* grp,
                                           const SkMatrix& viewMatrix,
                                           const SkStrokeRec& strokeRec,
@@ -162,10 +166,17 @@ protected:
         kUnimplemented_FilterReturn
     };
 
-    struct NinePatch {
+    class NinePatch : ::SkNoncopyable {
+    public:
+        NinePatch() : fCache(NULL) {
+            fMask.fImage = NULL;
+        }
+        ~NinePatch();
+
         SkMask      fMask;      // fBounds must have [0,0] in its top-left
         SkIRect     fOuterRect; // width/height must be >= fMask.fBounds'
         SkIPoint    fCenter;    // identifies center row/col for stretching
+        SkCachedData* fCache;
     };
 
     /**

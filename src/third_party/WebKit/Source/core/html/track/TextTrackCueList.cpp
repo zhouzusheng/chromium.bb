@@ -113,22 +113,21 @@ bool TextTrackCueList::remove(TextTrackCue* cue)
     if (index == kNotFound)
         return false;
 
-    cue->setIsActive(false);
     m_list.remove(index);
     return true;
 }
 
-bool TextTrackCueList::contains(TextTrackCue* cue) const
-{
-    return m_list.contains(cue);
-}
-
 bool TextTrackCueList::updateCueIndex(TextTrackCue* cue)
 {
-    if (!contains(cue))
+    size_t index = m_list.find(cue);
+    if (index == kNotFound)
         return false;
 
-    remove(cue);
+    cue->setIsActive(false);
+    cue->removeDisplayTree();
+
+    m_list.remove(index);
+
     return add(cue);
 }
 
@@ -143,7 +142,7 @@ void TextTrackCueList::invalidateCueIndexes(size_t start)
         m_list[i]->invalidateCueIndex();
 }
 
-void TextTrackCueList::trace(Visitor* visitor)
+DEFINE_TRACE(TextTrackCueList)
 {
     visitor->trace(m_list);
     visitor->trace(m_activeCues);

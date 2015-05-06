@@ -52,13 +52,13 @@ namespace InspectorAgentState {
 static const char inspectorAgentEnabled[] = "inspectorAgentEnabled";
 }
 
-InspectorInspectorAgent::InspectorInspectorAgent(Page* page, InjectedScriptManager* injectedScriptManager)
+InspectorInspectorAgent::InspectorInspectorAgent(InspectorController* inspectorController, InjectedScriptManager* injectedScriptManager)
     : InspectorBaseAgent<InspectorInspectorAgent>("Inspector")
-    , m_inspectedPage(page)
+    , m_inspectorController(inspectorController)
     , m_frontend(nullptr)
     , m_injectedScriptManager(injectedScriptManager)
 {
-    ASSERT_ARG(page, page);
+    ASSERT_ARG(inspectorController, inspectorController);
 }
 
 InspectorInspectorAgent::~InspectorInspectorAgent()
@@ -68,29 +68,11 @@ InspectorInspectorAgent::~InspectorInspectorAgent()
 #endif
 }
 
-void InspectorInspectorAgent::trace(Visitor* visitor)
+DEFINE_TRACE(InspectorInspectorAgent)
 {
-    visitor->trace(m_inspectedPage);
+    visitor->trace(m_inspectorController);
     visitor->trace(m_injectedScriptManager);
     InspectorBaseAgent::trace(visitor);
-}
-
-void InspectorInspectorAgent::didClearDocumentOfWindowObject(LocalFrame* frame)
-{
-    if (m_injectedScriptForOrigin.isEmpty())
-        return;
-
-    String origin = frame->document()->securityOrigin()->toRawString();
-    String script = m_injectedScriptForOrigin.get(origin);
-    if (script.isEmpty())
-        return;
-    int injectedScriptId = m_injectedScriptManager->injectedScriptIdFor(ScriptState::forMainWorld(frame));
-    StringBuilder scriptSource;
-    scriptSource.append(script);
-    scriptSource.append('(');
-    scriptSource.appendNumber(injectedScriptId);
-    scriptSource.append(')');
-    frame->script().executeScriptInMainWorld(scriptSource.toString());
 }
 
 void InspectorInspectorAgent::init()
@@ -131,12 +113,12 @@ void InspectorInspectorAgent::disable(ErrorString*)
 
 void InspectorInspectorAgent::reset(ErrorString*)
 {
-    m_inspectedPage->inspectorController().reconnectFrontend();
+    m_inspectorController->reconnectFrontend();
 }
 
 void InspectorInspectorAgent::domContentLoadedEventFired(LocalFrame* frame)
 {
-    if (frame->page()->mainFrame() != frame)
+    if (frame != frame->localFrameRoot())
         return;
 
     m_injectedScriptManager->injectedScriptHost()->clearInspectedObjects();
@@ -150,11 +132,6 @@ void InspectorInspectorAgent::evaluateForTestInFrontend(long callId, const Strin
     } else {
         m_pendingEvaluateTestCommands.append(pair<long, String>(callId, script));
     }
-}
-
-void InspectorInspectorAgent::setInjectedScriptForOrigin(const String& origin, const String& source)
-{
-    m_injectedScriptForOrigin.set(origin, source);
 }
 
 void InspectorInspectorAgent::inspect(PassRefPtr<TypeBuilder::Runtime::RemoteObject> objectToInspect, PassRefPtr<JSONObject> hints)

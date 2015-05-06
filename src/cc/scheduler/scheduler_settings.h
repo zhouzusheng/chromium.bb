@@ -11,7 +11,7 @@
 #include "cc/base/cc_export.h"
 
 namespace base {
-namespace debug {
+namespace trace_event {
 class ConvertableToTraceFormat;
 }
 }
@@ -43,7 +43,7 @@ class CC_EXPORT SchedulerSettings {
 
   base::TimeDelta background_frame_interval;
 
-  scoped_refptr<base::debug::ConvertableToTraceFormat> AsValue() const;
+  scoped_refptr<base::trace_event::ConvertableToTraceFormat> AsValue() const;
 };
 
 }  // namespace cc

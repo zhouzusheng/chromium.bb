@@ -29,6 +29,8 @@
 #include "core/html/parser/HTMLDocumentParser.h"
 #include "core/html/parser/TextResourceDecoder.h"
 #include "core/html/parser/XSSAuditor.h"
+#include "platform/scheduler/ClosureRunnerTask.h"
+#include "platform/scheduler/Scheduler.h"
 #include "wtf/MainThread.h"
 #include "wtf/text/TextPosition.h"
 
@@ -76,13 +78,13 @@ static void checkThatXSSInfosAreSafeToSendToAnotherThread(const XSSInfoStream& i
 
 #endif
 
-void BackgroundHTMLParser::start(PassRefPtr<WeakReference<BackgroundHTMLParser>> reference, PassOwnPtr<Configuration> config)
+void BackgroundHTMLParser::start(PassRefPtr<WeakReference<BackgroundHTMLParser>> reference, PassOwnPtr<Configuration> config, Scheduler* scheduler)
 {
-    new BackgroundHTMLParser(reference, config);
+    new BackgroundHTMLParser(reference, config, scheduler);
     // Caller must free by calling stop().
 }
 
-BackgroundHTMLParser::BackgroundHTMLParser(PassRefPtr<WeakReference<BackgroundHTMLParser>> reference, PassOwnPtr<Configuration> config)
+BackgroundHTMLParser::BackgroundHTMLParser(PassRefPtr<WeakReference<BackgroundHTMLParser>> reference, PassOwnPtr<Configuration> config, Scheduler* scheduler)
     : m_weakFactory(reference, this)
     , m_token(adoptPtr(new HTMLToken))
     , m_tokenizer(HTMLTokenizer::create(config->options))
@@ -93,6 +95,7 @@ BackgroundHTMLParser::BackgroundHTMLParser(PassRefPtr<WeakReference<BackgroundHT
     , m_xssAuditor(config->xssAuditor.release())
     , m_preloadScanner(config->preloadScanner.release())
     , m_decoder(config->decoder.release())
+    , m_scheduler(scheduler)
     , m_startingScript(false)
 {
 }
@@ -267,7 +270,10 @@ void BackgroundHTMLParser::sendTokensToMainThread()
     chunk->tokens = m_pendingTokens.release();
     chunk->startingScript = m_startingScript;
     m_startingScript = false;
-    callOnMainThread(bind(&HTMLDocumentParser::didReceiveParsedChunkFromBackgroundParser, m_parser, chunk.release()));
+
+    m_scheduler->postLoadingTask(
+        FROM_HERE,
+        new ClosureRunnerTask(bind(&HTMLDocumentParser::didReceiveParsedChunkFromBackgroundParser, m_parser, chunk.release())));
 
     m_pendingTokens = adoptPtr(new CompactHTMLTokenStream);
 }

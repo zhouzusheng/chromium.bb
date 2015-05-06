@@ -23,7 +23,7 @@ class ExceptionState;
 class ResponseInit;
 class WebServiceWorkerResponse;
 
-typedef BlobOrArrayBufferOrArrayBufferViewOrUSVString BodyInit;
+typedef BlobOrArrayBufferOrArrayBufferViewOrFormDataOrUSVString BodyInit;
 
 class Response final : public Body {
     DEFINE_WRAPPERTYPEINFO();
@@ -46,11 +46,12 @@ public:
     String type() const;
     String url() const;
     unsigned short status() const;
+    bool ok() const;
     String statusText() const;
     Headers* headers() const;
 
     // From Response.idl:
-    Response* clone(ExceptionState&) const;
+    Response* clone(ExceptionState&);
 
     void populateWebServiceWorkerResponse(WebServiceWorkerResponse&);
 
@@ -64,7 +65,7 @@ public:
     BodyStreamBuffer* internalBuffer() const;
     String internalContentTypeForBuffer() const;
 
-    void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     explicit Response(const Response&);

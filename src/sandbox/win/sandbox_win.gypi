@@ -216,6 +216,7 @@
         'sandbox',
       ],
       'sources': [
+        'src/address_sanitizer_test.cc',
         'src/app_container_test.cc',
         'src/file_policy_test.cc',
         'src/handle_inheritance_test.cc',

@@ -68,7 +68,7 @@ class CONTENT_EXPORT FrameTreeNode {
   }
 
   const std::string& frame_name() const {
-    return frame_name_;
+    return replication_state_.name;
   }
 
   size_t child_count() const {
@@ -93,13 +93,30 @@ class CONTENT_EXPORT FrameTreeNode {
     replication_state_.origin = origin;
   }
 
+  void set_sandbox_flags(SandboxFlags sandbox_flags) {
+    replication_state_.sandbox_flags = sandbox_flags;
+  }
+
+  bool HasSameOrigin(const FrameTreeNode& node) const {
+    return replication_state_.origin.IsSameAs(node.replication_state_.origin);
+  }
+
   const FrameReplicationState& current_replication_state() const {
     return replication_state_;
+  }
+
+  void set_is_loading(bool is_loading) {
+    is_loading_ = is_loading;
+  }
+  bool is_loading() const {
+    return is_loading_;
   }
 
   RenderFrameHostImpl* current_frame_host() const {
     return render_manager_.current_frame_host();
   }
+
+  bool IsDescendantOf(FrameTreeNode* other) const;
 
  private:
   void set_parent(FrameTreeNode* parent) { parent_ = parent; }
@@ -124,10 +141,6 @@ class CONTENT_EXPORT FrameTreeNode {
   // even if the frame does a cross-process navigation.
   const int64 frame_tree_node_id_;
 
-  // The assigned name of the frame. This name can be empty, unlike the unique
-  // name generated internally in the DOM tree.
-  std::string frame_name_;
-
   // The parent node of this frame. NULL if this node is the root or if it has
   // not yet been attached to the frame tree.
   FrameTreeNode* parent_;
@@ -144,6 +157,15 @@ class CONTENT_EXPORT FrameTreeNode {
   // Track information that needs to be replicated to processes that have
   // proxies for this frame.
   FrameReplicationState replication_state_;
+
+  // Boolean value indicating whether the frame is in the process of loading
+  // a document or not. In cross-process transfer navigation the DidStartLoading
+  // message is received from both existing RenderFrame and from the pending
+  // RenderFrame. However, there will be only one DidStopLoading message sent by
+  // the pending-which-becomes-current RenderFrame. Since both renderers belong
+  // to the FrameTreeNode, it is better to ask it about the loading status than
+  // RenderFrameHost or using a counter to balance the events out.
+  bool is_loading_;
 
   DISALLOW_COPY_AND_ASSIGN(FrameTreeNode);
 };

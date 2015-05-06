@@ -6,19 +6,18 @@
 
 #include <map>
 
-#include "base/debug/trace_event.h"
 #include "base/lazy_instance.h"
 #include "base/message_loop/message_loop.h"
 #include "base/process/process_handle.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/trace_event/trace_event.h"
 #include "content/common/devtools_messages.h"
 #include "content/common/frame_messages.h"
-#include "content/common/gpu/gpu_messages.h"
 #include "content/common/view_messages.h"
 #include "content/renderer/devtools/devtools_agent_filter.h"
 #include "content/renderer/devtools/devtools_client.h"
-#include "content/renderer/render_thread_impl.h"
 #include "content/renderer/render_view_impl.h"
+#include "ipc/ipc_channel.h"
 #include "third_party/WebKit/public/platform/WebPoint.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/web/WebConsoleMessage.h"
@@ -43,8 +42,8 @@ using blink::WebCString;
 using blink::WebVector;
 using blink::WebView;
 
-using base::debug::TraceLog;
-using base::debug::TraceOptions;
+using base::trace_event::TraceLog;
+using base::trace_event::TraceOptions;
 
 namespace content {
 
@@ -80,7 +79,6 @@ DevToolsAgent::DevToolsAgent(RenderFrame* main_render_frame)
     : RenderFrameObserver(main_render_frame),
       is_attached_(false),
       is_devtools_client_(false),
-      gpu_route_id_(MSG_ROUTING_NONE),
       paused_in_mouse_move_(false),
       main_render_frame_(main_render_frame) {
   g_agent_for_routing_id.Get()[routing_id()] = this;
@@ -106,7 +104,6 @@ bool DevToolsAgent::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(DevToolsAgentMsg_InspectElement, OnInspectElement)
     IPC_MESSAGE_HANDLER(DevToolsAgentMsg_AddMessageToConsole,
                         OnAddMessageToConsole)
-    IPC_MESSAGE_HANDLER(DevToolsAgentMsg_GpuTasksChunk, OnGpuTasksChunk)
     IPC_MESSAGE_HANDLER(DevToolsMsg_SetupDevToolsClient, OnSetupDevToolsClient)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
@@ -118,21 +115,12 @@ bool DevToolsAgent::OnMessageReceived(const IPC::Message& message) {
   return handled;
 }
 
-void DevToolsAgent::sendMessageToInspectorFrontend(
-    const blink::WebString& message) {
-  std::string msg(message.utf8());
-  if (msg.length() < kMaxMessageChunkSize) {
-    Send(new DevToolsClientMsg_DispatchOnInspectorFrontend(
-        routing_id(), msg, msg.size()));
-    return;
-  }
-
-  for (size_t pos = 0; pos < msg.length(); pos += kMaxMessageChunkSize) {
-    Send(new DevToolsClientMsg_DispatchOnInspectorFrontend(
-        routing_id(),
-        msg.substr(pos, kMaxMessageChunkSize),
-        pos ? 0 : msg.size()));
-  }
+void DevToolsAgent::sendProtocolMessage(
+    int call_id,
+    const blink::WebString& message,
+    const blink::WebString& state_cookie) {
+  SendChunkedProtocolMessage(
+      this, routing_id(), call_id, message.utf8(), state_cookie.utf8());
 }
 
 long DevToolsAgent::processId() {
@@ -141,11 +129,6 @@ long DevToolsAgent::processId() {
 
 int DevToolsAgent::debuggerId() {
   return routing_id();
-}
-
-void DevToolsAgent::saveAgentRuntimeState(
-    const blink::WebString& state) {
-  Send(new DevToolsHostMsg_SaveAgentRuntimeState(routing_id(), state.utf8()));
 }
 
 blink::WebDevToolsAgentClient::WebKitClientMessageLoop*
@@ -177,8 +160,9 @@ void DevToolsAgent::setTraceEventCallback(const WebString& category_filter,
   base::subtle::NoBarrier_Store(&event_callback_,
                                 reinterpret_cast<base::subtle::AtomicWord>(cb));
   if (!!cb) {
-    trace_log->SetEventCallbackEnabled(base::debug::CategoryFilter(
-        category_filter.utf8()), TraceEventCallbackWrapper);
+    trace_log->SetEventCallbackEnabled(
+        base::trace_event::CategoryFilter(category_filter.utf8()),
+        TraceEventCallbackWrapper);
   } else {
     trace_log->SetEventCallbackDisabled();
   }
@@ -186,9 +170,9 @@ void DevToolsAgent::setTraceEventCallback(const WebString& category_filter,
 
 void DevToolsAgent::enableTracing(const WebString& category_filter) {
   TraceLog* trace_log = TraceLog::GetInstance();
-  trace_log->SetEnabled(base::debug::CategoryFilter(category_filter.utf8()),
-                        TraceLog::RECORDING_MODE,
-                        TraceOptions());
+  trace_log->SetEnabled(
+      base::trace_event::CategoryFilter(category_filter.utf8()),
+      TraceLog::RECORDING_MODE, TraceOptions());
 }
 
 void DevToolsAgent::disableTracing() {
@@ -217,46 +201,6 @@ void DevToolsAgent::TraceEventCallbackWrapper(
   }
 }
 
-void DevToolsAgent::startGPUEventsRecording() {
-  GpuChannelHost* gpu_channel_host =
-      RenderThreadImpl::current()->GetGpuChannel();
-  if (!gpu_channel_host)
-    return;
-  DCHECK(gpu_route_id_ == MSG_ROUTING_NONE);
-  int32 route_id = gpu_channel_host->GenerateRouteID();
-  bool succeeded = false;
-  gpu_channel_host->Send(
-      new GpuChannelMsg_DevToolsStartEventsRecording(route_id, &succeeded));
-  DCHECK(succeeded);
-  if (succeeded) {
-    gpu_route_id_ = route_id;
-    gpu_channel_host->AddRoute(gpu_route_id_, AsWeakPtr());
-  }
-}
-
-void DevToolsAgent::stopGPUEventsRecording() {
-  GpuChannelHost* gpu_channel_host =
-      RenderThreadImpl::current()->GetGpuChannel();
-  if (!gpu_channel_host || gpu_route_id_ == MSG_ROUTING_NONE)
-    return;
-  gpu_channel_host->Send(new GpuChannelMsg_DevToolsStopEventsRecording());
-  gpu_channel_host->RemoveRoute(gpu_route_id_);
-  gpu_route_id_ = MSG_ROUTING_NONE;
-}
-
-void DevToolsAgent::OnGpuTasksChunk(const std::vector<GpuTaskInfo>& tasks) {
-  WebDevToolsAgent* web_agent = GetWebAgent();
-  if (!web_agent)
-    return;
-  for (size_t i = 0; i < tasks.size(); i++) {
-    const GpuTaskInfo& task = tasks[i];
-    WebDevToolsAgent::GPUEvent event(
-        task.timestamp, task.phase, task.foreign, task.gpu_memory_used_bytes);
-    event.limitGPUMemoryBytes = task.gpu_memory_limit_bytes;
-    web_agent->processGPUEvent(event);
-  }
-}
-
 void DevToolsAgent::enableDeviceEmulation(
     const blink::WebDeviceEmulationParams& params) {
   GetRenderViewImpl()->EnableScreenMetricsEmulation(params);
@@ -273,6 +217,39 @@ DevToolsAgent* DevToolsAgent::FromRoutingId(int routing_id) {
     return it->second;
   }
   return NULL;
+}
+
+// static
+void DevToolsAgent::SendChunkedProtocolMessage(
+    IPC::Sender* sender,
+    int routing_id,
+    int call_id,
+    const std::string& message,
+    const std::string& post_state) {
+  DevToolsMessageChunk chunk;
+  chunk.message_size = message.size();
+  chunk.is_first = true;
+
+  if (message.length() < kMaxMessageChunkSize) {
+    chunk.data = message;
+    chunk.call_id = call_id;
+    chunk.post_state = post_state;
+    chunk.is_last = true;
+    sender->Send(new DevToolsClientMsg_DispatchOnInspectorFrontend(
+                     routing_id, chunk));
+    return;
+  }
+
+  for (size_t pos = 0; pos < message.length(); pos += kMaxMessageChunkSize) {
+    chunk.is_last = pos + kMaxMessageChunkSize >= message.length();
+    chunk.call_id = chunk.is_last ? call_id : 0;
+    chunk.post_state = chunk.is_last ? post_state : std::string();
+    chunk.data = message.substr(pos, kMaxMessageChunkSize);
+    sender->Send(new DevToolsClientMsg_DispatchOnInspectorFrontend(
+                     routing_id, chunk));
+    chunk.is_first = false;
+    chunk.message_size = 0;
+  }
 }
 
 void DevToolsAgent::OnAttach(const std::string& host_id) {

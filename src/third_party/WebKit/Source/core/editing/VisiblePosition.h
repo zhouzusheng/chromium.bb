@@ -94,14 +94,14 @@ public:
     }
 
     // Rect is local to the returned renderer
-    LayoutRect localCaretRect(RenderObject*&) const;
+    LayoutRect localCaretRect(LayoutObject*&) const;
     // Bounds of (possibly transformed) caret in absolute coords
     IntRect absoluteCaretBounds() const;
     // Abs x/y position of the caret ignoring transforms.
     // FIXME: navigation with transforms should be smarter.
     int lineDirectionPointForBlockDirectionNavigation() const;
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 #ifndef NDEBUG
     void debugPosition(const char* msg = "") const;

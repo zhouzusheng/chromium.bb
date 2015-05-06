@@ -15,7 +15,7 @@ TranslatorGLSL::TranslatorGLSL(sh::GLenum type, ShShaderSpec spec)
     : TCompiler(type, spec, SH_GLSL_OUTPUT) {
 }
 
-void TranslatorGLSL::translate(TIntermNode* root) {
+void TranslatorGLSL::translate(TIntermNode *root, int) {
     TInfoSinkBase& sink = getInfoSink().obj;
 
     // Write GLSL version.
@@ -64,9 +64,9 @@ void TranslatorGLSL::writeVersion(TIntermNode *root)
 
 void TranslatorGLSL::writeExtensionBehavior() {
     TInfoSinkBase& sink = getInfoSink().obj;
-    const TExtensionBehavior& extensionBehavior = getExtensionBehavior();
-    for (TExtensionBehavior::const_iterator iter = extensionBehavior.begin();
-         iter != extensionBehavior.end(); ++iter) {
+    const TExtensionBehavior& extBehavior = getExtensionBehavior();
+    for (TExtensionBehavior::const_iterator iter = extBehavior.begin();
+         iter != extBehavior.end(); ++iter) {
         if (iter->second == EBhUndefined)
             continue;
 

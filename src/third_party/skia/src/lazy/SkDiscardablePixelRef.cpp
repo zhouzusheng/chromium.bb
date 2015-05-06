@@ -64,14 +64,20 @@ bool SkDiscardablePixelRef::onNewLockPixels(LockRec* rec) {
     SkPMColor colors[256];
     int colorCount = 0;
 
-    if (!fGenerator->getPixels(info, pixels, fRowBytes, colors, &colorCount)) {
-        fDiscardableMemory->unlock();
-        SkDELETE(fDiscardableMemory);
-        fDiscardableMemory = NULL;
-        return false;
+    const SkImageGenerator::Result result = fGenerator->getPixels(info, pixels, fRowBytes,
+                                                                  colors, &colorCount);
+    switch (result) {
+        case SkImageGenerator::kSuccess:
+        case SkImageGenerator::kIncompleteInput:
+            break;
+        default:
+            fDiscardableMemory->unlock();
+            SkDELETE(fDiscardableMemory);
+            fDiscardableMemory = NULL;
+            return false;
     }
 
-    // Note: our ctable is not purgable, as it is not stored in the discardablememory block.
+    // Note: our ctable is not purgeable, as it is not stored in the discardablememory block.
     // This is because SkColorTable is refcntable, and therefore our caller could hold onto it
     // beyond the scope of a lock/unlock. If we change the API/lifecycle for SkColorTable, we
     // could move it into the block, but then again perhaps it is small enough that this doesn't

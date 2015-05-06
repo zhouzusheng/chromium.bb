@@ -67,7 +67,7 @@ public:
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(audioprocess);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     virtual double tailTime() const override;
@@ -82,8 +82,8 @@ private:
     void swapBuffers() { m_doubleBufferIndex = 1 - m_doubleBufferIndex; }
     unsigned m_doubleBufferIndex;
     unsigned m_doubleBufferIndexForEvent;
-    HeapVector<Member<AudioBuffer> > m_inputBuffers;
-    HeapVector<Member<AudioBuffer> > m_outputBuffers;
+    HeapVector<Member<AudioBuffer>> m_inputBuffers;
+    HeapVector<Member<AudioBuffer>> m_outputBuffers;
 
     size_t m_bufferSize;
     unsigned m_bufferReadWriteIndex;

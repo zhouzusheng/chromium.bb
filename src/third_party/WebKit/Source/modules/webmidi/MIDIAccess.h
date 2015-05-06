@@ -92,15 +92,15 @@ public:
     // |timeStampInMilliseconds| is in the same time coordinate system as performance.now().
     void sendMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStampInMilliseconds);
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     MIDIAccess(PassOwnPtr<MIDIAccessor>, bool sysexEnabled, const Vector<MIDIAccessInitializer::PortDescriptor>&, ExecutionContext*);
 
     OwnPtr<MIDIAccessor> m_accessor;
     bool m_sysexEnabled;
-    HeapVector<Member<MIDIInput> > m_inputs;
-    HeapVector<Member<MIDIOutput> > m_outputs;
+    HeapVector<Member<MIDIInput>> m_inputs;
+    HeapVector<Member<MIDIOutput>> m_outputs;
 };
 
 } // namespace blink

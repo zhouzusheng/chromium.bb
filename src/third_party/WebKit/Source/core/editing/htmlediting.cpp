@@ -39,10 +39,10 @@
 #include "core/editing/Editor.h"
 #include "core/editing/HTMLInterchange.h"
 #include "core/editing/PlainTextRange.h"
-#include "core/editing/TextIterator.h"
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleSelection.h"
 #include "core/editing/VisibleUnits.h"
+#include "core/editing/iterators/TextIterator.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/UseCounter.h"
 #include "core/html/HTMLBRElement.h"
@@ -52,8 +52,8 @@
 #include "core/html/HTMLSpanElement.h"
 #include "core/html/HTMLTableCellElement.h"
 #include "core/html/HTMLUListElement.h"
-#include "core/rendering/RenderObject.h"
-#include "core/rendering/RenderTableCell.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/LayoutTableCell.h"
 #include "wtf/Assertions.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/StringBuilder.h"
@@ -75,7 +75,7 @@ int comparePositions(const Position& a, const Position& b)
 {
     ASSERT(a.isNotNull());
     ASSERT(b.isNotNull());
-    TreeScope* commonScope = commonTreeScope(a.containerNode(), b.containerNode());
+    const TreeScope* commonScope = Position::commonAncestorTreeScope(a, b);
 
     ASSERT(commonScope);
     if (!commonScope)
@@ -355,7 +355,7 @@ TextDirection directionOfEnclosingBlock(const Position& position)
     Element* enclosingBlockElement = enclosingBlock(position.containerNode());
     if (!enclosingBlockElement)
         return LTR;
-    RenderObject* renderer = enclosingBlockElement->renderer();
+    LayoutObject* renderer = enclosingBlockElement->renderer();
     return renderer ? renderer->style()->direction() : LTR;
 }
 
@@ -413,8 +413,8 @@ String stringWithRebalancedWhitespace(const String& string, bool startIsStartOfP
 
 bool isTableStructureNode(const Node *node)
 {
-    RenderObject* renderer = node->renderer();
-    return (renderer && (renderer->isTableCell() || renderer->isTableRow() || renderer->isTableSection() || renderer->isRenderTableCol()));
+    LayoutObject* renderer = node->renderer();
+    return (renderer && (renderer->isTableCell() || renderer->isTableRow() || renderer->isTableSection() || renderer->isLayoutTableCol()));
 }
 
 const String& nonBreakingSpaceString()
@@ -432,7 +432,7 @@ static bool isSpecialHTMLElement(const Node& n)
     if (n.isLink())
         return true;
 
-    RenderObject* renderer = n.renderer();
+    LayoutObject* renderer = n.renderer();
     if (!renderer)
         return false;
 
@@ -629,7 +629,7 @@ Node* highestNodeToRemoveInPruning(Node* node, Node* excludeNode)
     Node* previousNode = nullptr;
     Element* rootEditableElement = node ? node->rootEditableElement() : nullptr;
     for (; node; node = node->parentNode()) {
-        if (RenderObject* renderer = node->renderer()) {
+        if (LayoutObject* renderer = node->renderer()) {
             if (!renderer->canHaveChildren() || hasARenderedDescendant(node, previousNode) || rootEditableElement == node || excludeNode == node)
                 return previousNode;
         }
@@ -752,14 +752,14 @@ bool isRenderedTableElement(const Node* node)
     if (!node || !node->isElementNode())
         return false;
 
-    RenderObject* renderer = node->renderer();
+    LayoutObject* renderer = node->renderer();
     return (renderer && renderer->isTable());
 }
 
 bool isTableCell(const Node* node)
 {
     ASSERT(node);
-    RenderObject* r = node->renderer();
+    LayoutObject* r = node->renderer();
     return r ? r->isTableCell() : isHTMLTableCellElement(*node);
 }
 
@@ -778,7 +778,7 @@ bool isEmptyTableCell(const Node* node)
 
     // Make sure the rendered node is a table cell or <br>.
     // If it's a <br>, then the parent node has to be a table cell.
-    RenderObject* renderer = node->renderer();
+    LayoutObject* renderer = node->renderer();
     if (renderer->isBR()) {
         renderer = renderer->parent();
         if (!renderer)
@@ -788,7 +788,7 @@ bool isEmptyTableCell(const Node* node)
         return false;
 
     // Check that the table cell contains no child renderers except for perhaps a single <br>.
-    RenderObject* childRenderer = toRenderTableCell(renderer)->firstChild();
+    LayoutObject* childRenderer = toLayoutTableCell(renderer)->firstChild();
     if (!childRenderer)
         return true;
     if (!childRenderer->isBR())
@@ -882,7 +882,7 @@ PassRefPtrWillBeRawPtr<HTMLBRElement> createBlockPlaceholderElement(Document& do
 
 bool isNodeRendered(const Node& node)
 {
-    RenderObject* renderer = node.renderer();
+    LayoutObject* renderer = node.renderer();
     if (!renderer)
         return false;
 
@@ -1007,7 +1007,7 @@ bool isMailHTMLBlockquoteElement(const Node* node)
 
 int caretMinOffset(const Node* n)
 {
-    RenderObject* r = n->renderer();
+    LayoutObject* r = n->renderer();
     ASSERT(!n->isCharacterDataNode() || !r || r->isText()); // FIXME: This was a runtime check that seemingly couldn't fail; changed it to an assertion for now.
     return r ? r->caretMinOffset() : 0;
 }
@@ -1135,7 +1135,7 @@ bool isRenderedAsNonInlineTableImageOrHR(const Node* node)
 {
     if (!node)
         return false;
-    RenderObject* renderer = node->renderer();
+    LayoutObject* renderer = node->renderer();
     return renderer && ((renderer->isTable() && !renderer->isInline()) || (renderer->isImage() && !renderer->isInline()) || renderer->isHR());
 }
 
@@ -1173,7 +1173,7 @@ bool isNonTableCellHTMLBlockElement(const Node* node)
 
 bool isBlockFlowElement(const Node& node)
 {
-    RenderObject* renderer = node.renderer();
+    LayoutObject* renderer = node.renderer();
     return node.isElementNode() && renderer && renderer->isRenderBlockFlow();
 }
 

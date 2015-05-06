@@ -12,7 +12,6 @@
 #include "base/lazy_instance.h"
 #include "base/memory/singleton.h"
 #include "base/message_loop/message_loop.h"
-#include "base/metrics/stats_counters.h"
 #include "base/profiler/scoped_tracker.h"
 #include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -210,7 +209,6 @@ void URLRequest::AppendChunkToUpload(const char* bytes,
                                      bool is_last_chunk) {
   DCHECK(upload_data_stream_);
   DCHECK(upload_data_stream_->is_chunked());
-  DCHECK_GT(bytes_len, 0);
   upload_chunked_data_stream_->AppendData(bytes, bytes_len, is_last_chunk);
 }
 
@@ -225,12 +223,6 @@ const UploadDataStream* URLRequest::get_upload() const {
 
 bool URLRequest::has_upload() const {
   return upload_data_stream_.get() != NULL;
-}
-
-void URLRequest::SetExtraRequestHeaderById(int id, const string& value,
-                                           bool overwrite) {
-  DCHECK(!is_pending_ || is_redirecting_);
-  NOTREACHED() << "implement me!";
 }
 
 void URLRequest::SetExtraRequestHeaderByName(const string& name,
@@ -273,6 +265,10 @@ int64 URLRequest::GetTotalReceivedBytes() const {
 }
 
 LoadStateWithParam URLRequest::GetLoadState() const {
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/455952 is
+  // fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("455952 URLRequest::GetLoadState"));
   // The !blocked_by_.empty() check allows |this| to report it's blocked on a
   // delegate before it has been started.
   if (calling_delegate_ || !blocked_by_.empty()) {
@@ -378,26 +374,12 @@ UploadProgress URLRequest::GetUploadProgress() const {
   return job_->GetUploadProgress();
 }
 
-void URLRequest::GetResponseHeaderById(int id, string* value) {
-  DCHECK(job_.get());
-  NOTREACHED() << "implement me!";
-}
-
 void URLRequest::GetResponseHeaderByName(const string& name, string* value) {
   DCHECK(value);
   if (response_info_.headers.get()) {
     response_info_.headers->GetNormalizedHeader(name, value);
   } else {
     value->clear();
-  }
-}
-
-void URLRequest::GetAllResponseHeaders(string* headers) {
-  DCHECK(headers);
-  if (response_info_.headers.get()) {
-    response_info_.headers->GetNormalizedHeaders(headers);
-  } else {
-    headers->clear();
   }
 }
 
@@ -486,26 +468,6 @@ void URLRequest::set_method(const std::string& method) {
   method_ = method;
 }
 
-// static
-std::string URLRequest::ComputeMethodForRedirect(
-    const std::string& method,
-    int http_status_code) {
-  // For 303 redirects, all request methods except HEAD are converted to GET,
-  // as per the latest httpbis draft.  The draft also allows POST requests to
-  // be converted to GETs when following 301/302 redirects, for historical
-  // reasons. Most major browsers do this and so shall we.  Both RFC 2616 and
-  // the httpbis draft say to prompt the user to confirm the generation of new
-  // requests, other than GET and HEAD requests, but IE omits these prompts and
-  // so shall we.
-  // See:  https://tools.ietf.org/html/draft-ietf-httpbis-p2-semantics-17#section-7.3
-  if ((http_status_code == 303 && method != "HEAD") ||
-      ((http_status_code == 301 || http_status_code == 302) &&
-       method == "POST")) {
-    return "GET";
-  }
-  return method;
-}
-
 void URLRequest::SetReferrer(const std::string& referrer) {
   DCHECK(!is_pending_);
   GURL referrer_url(referrer);
@@ -589,8 +551,6 @@ URLRequest::URLRequest(const GURL& url,
       creation_time_(base::TimeTicks::Now()),
       notified_before_network_start_(false),
       cookie_store_(cookie_store ? cookie_store : context->cookie_store()) {
-  SIMPLE_STATS_COUNTER("URLRequestCount");
-
   // Sanity check out environment.
   DCHECK(base::MessageLoop::current())
       << "The current base::MessageLoop must exist";
@@ -1033,13 +993,14 @@ void URLRequest::SetPriority(RequestPriority priority) {
 
 bool URLRequest::GetHSTSRedirect(GURL* redirect_url) const {
   const GURL& url = this->url();
-  if (!url.SchemeIs("http"))
+  bool scheme_is_http = url.SchemeIs("http");
+  if (!scheme_is_http && !url.SchemeIs("ws"))
     return false;
   TransportSecurityState* state = context()->transport_security_state();
   if (state && state->ShouldUpgradeToSSL(url.host())) {
-    url::Replacements<char> replacements;
-    const char kNewScheme[] = "https";
-    replacements.SetScheme(kNewScheme, url::Component(0, strlen(kNewScheme)));
+    GURL::Replacements replacements;
+    const char* new_scheme = scheme_is_http ? "https" : "wss";
+    replacements.SetSchemeStr(new_scheme);
     *redirect_url = url.ReplaceComponents(replacements);
     return true;
   }

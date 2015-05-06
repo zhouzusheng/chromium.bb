@@ -42,6 +42,7 @@ namespace blink {
 class ConsoleMessage;
 class ConsoleMessageStorage;
 class DocumentLoader;
+class ExecutionContext;
 class LocalFrame;
 class InspectorFrontend;
 class InjectedScriptManager;
@@ -56,11 +57,10 @@ class InspectorConsoleAgent : public InspectorBaseAgent<InspectorConsoleAgent>, 
 public:
     explicit InspectorConsoleAgent(InjectedScriptManager*);
     virtual ~InspectorConsoleAgent();
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     virtual void enable(ErrorString*) override;
     virtual void disable(ErrorString*) override;
-    virtual void clearMessages(ErrorString*) override;
     bool enabled() { return m_enabled; }
 
     virtual void setFrontend(InspectorFrontend*) override final;
@@ -70,9 +70,7 @@ public:
     void addMessageToConsole(ConsoleMessage*);
     void consoleMessagesCleared();
 
-    void didCommitLoad(LocalFrame*, DocumentLoader*);
-
-    void didFinishXHRLoading(XMLHttpRequest*, ThreadableLoaderClient*, unsigned long requestIdentifier, ScriptString, const AtomicString& method, const String& url);
+    void didFinishXHRLoading(ExecutionContext*, XMLHttpRequest*, ThreadableLoaderClient*, unsigned long requestIdentifier, ScriptString, const AtomicString& method, const String& url);
     void addProfileFinishedMessageToConsole(PassRefPtrWillBeRawPtr<ScriptProfile>, unsigned lineNumber, const String& sourceURL);
     void addStartProfilingMessageToConsole(const String& title, unsigned lineNumber, const String& sourceURL);
     virtual void setMonitoringXHREnabled(ErrorString*, bool enabled) override;

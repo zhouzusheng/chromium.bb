@@ -24,39 +24,39 @@ class GLES2Interface;
 namespace cc {
 
 enum TexCoordPrecision {
-  TexCoordPrecisionNA = 0,
-  TexCoordPrecisionMedium = 1,
-  TexCoordPrecisionHigh = 2,
-  NumTexCoordPrecisions = 3
+  TEX_COORD_PRECISION_NA = 0,
+  TEX_COORD_PRECISION_MEDIUM = 1,
+  TEX_COORD_PRECISION_HIGH = 2,
+  LAST_TEX_COORD_PRECISION = 2
 };
 
 enum SamplerType {
-  SamplerTypeNA = 0,
-  SamplerType2D = 1,
-  SamplerType2DRect = 2,
-  SamplerTypeExternalOES = 3,
-  NumSamplerTypes = 4
+  SAMPLER_TYPE_NA = 0,
+  SAMPLER_TYPE_2D = 1,
+  SAMPLER_TYPE_2D_RECT = 2,
+  SAMPLER_TYPE_EXTERNAL_OES = 3,
+  LAST_SAMPLER_TYPE = 3
 };
 
 enum BlendMode {
-  BlendModeNone,
-  BlendModeNormal,
-  BlendModeScreen,
-  BlendModeOverlay,
-  BlendModeDarken,
-  BlendModeLighten,
-  BlendModeColorDodge,
-  BlendModeColorBurn,
-  BlendModeHardLight,
-  BlendModeSoftLight,
-  BlendModeDifference,
-  BlendModeExclusion,
-  BlendModeMultiply,
-  BlendModeHue,
-  BlendModeSaturation,
-  BlendModeColor,
-  BlendModeLuminosity,
-  NumBlendModes
+  BLEND_MODE_NONE,
+  BLEND_MODE_NORMAL,
+  BLEND_MODE_SCREEN,
+  BLEND_MODE_OVERLAY,
+  BLEND_MODE_DARKEN,
+  BLEND_MODE_LIGHTEN,
+  BLEND_MODE_COLOR_DODGE,
+  BLEND_MODE_COLOR_BURN,
+  BLEND_MODE_HARD_LIGHT,
+  BLEND_MODE_SOFT_LIGHT,
+  BLEND_MODE_DIFFERENCE,
+  BLEND_MODE_EXCLUSION,
+  BLEND_MODE_MULTIPLY,
+  BLEND_MODE_HUE,
+  BLEND_MODE_SATURATION,
+  BLEND_MODE_COLOR,
+  BLEND_MODE_LUMINOSITY,
+  LAST_BLEND_MODE = BLEND_MODE_LUMINOSITY
 };
 
 // Note: The highp_threshold_cache must be provided by the caller to make
@@ -83,6 +83,8 @@ class VertexShaderPosTex {
             unsigned program,
             int* base_uniform_index);
   std::string GetShaderString() const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 
   int matrix_location() const { return matrix_location_; }
 
@@ -100,6 +102,8 @@ class VertexShaderPosTexYUVStretchOffset {
             unsigned program,
             int* base_uniform_index);
   std::string GetShaderString() const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 
   int matrix_location() const { return matrix_location_; }
   int tex_scale_location() const { return tex_scale_location_; }
@@ -121,6 +125,8 @@ class VertexShaderPos {
             unsigned program,
             int* base_uniform_index);
   std::string GetShaderString() const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 
   int matrix_location() const { return matrix_location_; }
 
@@ -136,6 +142,8 @@ class VertexShaderPosTexIdentity {
             unsigned program,
             int* base_uniform_index) {}
   std::string GetShaderString() const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 };
 
 class VertexShaderPosTexTransform {
@@ -146,6 +154,8 @@ class VertexShaderPosTexTransform {
             unsigned program,
             int* base_uniform_index);
   std::string GetShaderString() const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 
   int matrix_location() const { return matrix_location_; }
   int tex_transform_location() const { return tex_transform_location_; }
@@ -167,6 +177,8 @@ class VertexShaderQuad {
            unsigned program,
            int* base_uniform_index);
   std::string GetShaderString() const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 
   int matrix_location() const { return matrix_location_; }
   int viewport_location() const { return -1; }
@@ -188,6 +200,8 @@ class VertexShaderQuadAA {
            unsigned program,
            int* base_uniform_index);
   std::string GetShaderString() const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 
   int matrix_location() const { return matrix_location_; }
   int viewport_location() const { return viewport_location_; }
@@ -212,6 +226,8 @@ class VertexShaderQuadTexTransformAA {
            unsigned program,
            int* base_uniform_index);
   std::string GetShaderString() const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 
   int matrix_location() const { return matrix_location_; }
   int viewport_location() const { return viewport_location_; }
@@ -237,6 +253,8 @@ class VertexShaderTile {
             unsigned program,
             int* base_uniform_index);
   std::string GetShaderString() const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 
   int matrix_location() const { return matrix_location_; }
   int viewport_location() const { return -1; }
@@ -262,6 +280,8 @@ class VertexShaderTileAA {
             unsigned program,
             int* base_uniform_index);
   std::string GetShaderString() const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 
   int matrix_location() const { return matrix_location_; }
   int viewport_location() const { return viewport_location_; }
@@ -289,6 +309,8 @@ class VertexShaderVideoTransform {
             unsigned program,
             int* base_uniform_index);
   std::string GetShaderString() const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 
   int matrix_location() const { return matrix_location_; }
   int tex_matrix_location() const { return tex_matrix_location_; }
@@ -307,7 +329,7 @@ class FragmentTexBlendMode {
 
   BlendMode blend_mode() const { return blend_mode_; }
   void set_blend_mode(BlendMode blend_mode) { blend_mode_ = blend_mode; }
-  bool has_blend_mode() const { return blend_mode_ != BlendModeNone; }
+  bool has_blend_mode() const { return blend_mode_ != BLEND_MODE_NONE; }
 
  protected:
   FragmentTexBlendMode();
@@ -402,12 +424,16 @@ class FragmentShaderRGBATexVaryingAlpha : public FragmentTexOpaqueBinding {
  public:
   std::string GetShaderString(
       TexCoordPrecision precision, SamplerType sampler) const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 };
 
 class FragmentShaderRGBATexPremultiplyAlpha : public FragmentTexOpaqueBinding {
  public:
   std::string GetShaderString(
       TexCoordPrecision precision, SamplerType sampler) const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 };
 
 class FragmentShaderTexBackgroundVaryingAlpha
@@ -415,6 +441,8 @@ class FragmentShaderTexBackgroundVaryingAlpha
  public:
   std::string GetShaderString(
       TexCoordPrecision precision, SamplerType sampler) const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 };
 
 class FragmentShaderTexBackgroundPremultiplyAlpha
@@ -422,31 +450,41 @@ class FragmentShaderTexBackgroundPremultiplyAlpha
  public:
   std::string GetShaderString(
       TexCoordPrecision precision, SamplerType sampler) const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 };
 
 class FragmentShaderRGBATexAlpha : public FragmentTexAlphaBinding {
  public:
   std::string GetShaderString(
       TexCoordPrecision precision, SamplerType sampler) const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 };
 
 class FragmentShaderRGBATexColorMatrixAlpha
     : public FragmentTexColorMatrixAlphaBinding {
  public:
-    std::string GetShaderString(
-        TexCoordPrecision precision, SamplerType sampler) const;
+  std::string GetShaderString(TexCoordPrecision precision,
+                              SamplerType sampler) const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 };
 
 class FragmentShaderRGBATexOpaque : public FragmentTexOpaqueBinding {
  public:
   std::string GetShaderString(
       TexCoordPrecision precision, SamplerType sampler) const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 };
 
 class FragmentShaderRGBATex : public FragmentTexOpaqueBinding {
  public:
   std::string GetShaderString(
       TexCoordPrecision precision, SamplerType sampler) const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 };
 
 // Swizzles the red and blue component of sampled texel with alpha.
@@ -454,6 +492,8 @@ class FragmentShaderRGBATexSwizzleAlpha : public FragmentTexAlphaBinding {
  public:
   std::string GetShaderString(
       TexCoordPrecision precision, SamplerType sampler) const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 };
 
 // Swizzles the red and blue component of sampled texel without alpha.
@@ -461,6 +501,8 @@ class FragmentShaderRGBATexSwizzleOpaque : public FragmentTexOpaqueBinding {
  public:
   std::string GetShaderString(
       TexCoordPrecision precision, SamplerType sampler) const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 };
 
 class FragmentShaderRGBATexAlphaAA : public FragmentTexBlendMode {
@@ -472,6 +514,8 @@ class FragmentShaderRGBATexAlphaAA : public FragmentTexBlendMode {
             int* base_uniform_index);
   std::string GetShaderString(
       TexCoordPrecision precision, SamplerType sampler) const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 
   int alpha_location() const { return alpha_location_; }
   int sampler_location() const { return sampler_location_; }
@@ -509,6 +553,8 @@ class FragmentShaderRGBATexClampAlphaAA
  public:
   std::string GetShaderString(
       TexCoordPrecision precision, SamplerType sampler) const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 };
 
 // Swizzles the red and blue component of sampled texel.
@@ -517,6 +563,8 @@ class FragmentShaderRGBATexClampSwizzleAlphaAA
  public:
   std::string GetShaderString(
       TexCoordPrecision precision, SamplerType sampler) const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 };
 
 class FragmentShaderRGBATexAlphaMask : public FragmentTexBlendMode {
@@ -524,6 +572,8 @@ class FragmentShaderRGBATexAlphaMask : public FragmentTexBlendMode {
   FragmentShaderRGBATexAlphaMask();
   std::string GetShaderString(
       TexCoordPrecision precision, SamplerType sampler) const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 
   void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
@@ -553,6 +603,8 @@ class FragmentShaderRGBATexAlphaMaskAA : public FragmentTexBlendMode {
   FragmentShaderRGBATexAlphaMaskAA();
   std::string GetShaderString(
       TexCoordPrecision precision, SamplerType sampler) const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 
   void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
@@ -583,6 +635,8 @@ class FragmentShaderRGBATexAlphaMaskColorMatrixAA
   FragmentShaderRGBATexAlphaMaskColorMatrixAA();
   std::string GetShaderString(
       TexCoordPrecision precision, SamplerType sampler) const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 
   void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
@@ -614,6 +668,8 @@ class FragmentShaderRGBATexAlphaColorMatrixAA : public FragmentTexBlendMode {
   FragmentShaderRGBATexAlphaColorMatrixAA();
   std::string GetShaderString(
       TexCoordPrecision precision, SamplerType sampler) const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 
   void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
@@ -635,6 +691,8 @@ class FragmentShaderRGBATexAlphaMaskColorMatrix : public FragmentTexBlendMode {
   FragmentShaderRGBATexAlphaMaskColorMatrix();
   std::string GetShaderString(
       TexCoordPrecision precision, SamplerType sampler) const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 
   void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
@@ -666,6 +724,8 @@ class FragmentShaderYUVVideo : public FragmentTexBlendMode {
   FragmentShaderYUVVideo();
   std::string GetShaderString(
       TexCoordPrecision precision, SamplerType sampler) const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 
   void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
@@ -676,6 +736,7 @@ class FragmentShaderYUVVideo : public FragmentTexBlendMode {
   int alpha_location() const { return alpha_location_; }
   int yuv_matrix_location() const { return yuv_matrix_location_; }
   int yuv_adj_location() const { return yuv_adj_location_; }
+  int clamp_rect_location() const { return clamp_rect_location_; }
 
  private:
   int y_texture_location_;
@@ -684,6 +745,7 @@ class FragmentShaderYUVVideo : public FragmentTexBlendMode {
   int alpha_location_;
   int yuv_matrix_location_;
   int yuv_adj_location_;
+  int clamp_rect_location_;
 
   DISALLOW_COPY_AND_ASSIGN(FragmentShaderYUVVideo);
 };
@@ -693,6 +755,8 @@ class FragmentShaderYUVAVideo : public FragmentTexBlendMode {
   FragmentShaderYUVAVideo();
   std::string GetShaderString(
       TexCoordPrecision precision, SamplerType sampler) const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 
   void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
@@ -705,6 +769,7 @@ class FragmentShaderYUVAVideo : public FragmentTexBlendMode {
   int alpha_location() const { return alpha_location_; }
   int yuv_matrix_location() const { return yuv_matrix_location_; }
   int yuv_adj_location() const { return yuv_adj_location_; }
+  int clamp_rect_location() const { return clamp_rect_location_; }
 
  private:
   int y_texture_location_;
@@ -714,6 +779,7 @@ class FragmentShaderYUVAVideo : public FragmentTexBlendMode {
   int alpha_location_;
   int yuv_matrix_location_;
   int yuv_adj_location_;
+  int clamp_rect_location_;
 
   DISALLOW_COPY_AND_ASSIGN(FragmentShaderYUVAVideo);
 };
@@ -723,6 +789,8 @@ class FragmentShaderColor : public FragmentTexBlendMode {
   FragmentShaderColor();
   std::string GetShaderString(
       TexCoordPrecision precision, SamplerType sampler) const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 
   void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
@@ -740,6 +808,8 @@ class FragmentShaderColorAA : public FragmentTexBlendMode {
   FragmentShaderColorAA();
   std::string GetShaderString(
       TexCoordPrecision precision, SamplerType sampler) const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 
   void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
@@ -757,6 +827,8 @@ class FragmentShaderCheckerboard : public FragmentTexBlendMode {
   FragmentShaderCheckerboard();
   std::string GetShaderString(
       TexCoordPrecision precision, SamplerType sampler) const;
+  static std::string GetShaderHead();
+  static std::string GetShaderBody();
 
   void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,

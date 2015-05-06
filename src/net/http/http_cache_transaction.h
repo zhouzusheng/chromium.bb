@@ -186,6 +186,9 @@ class HttpCache::Transaction : public HttpTransaction {
     STATE_PARTIAL_HEADERS_RECEIVED,
     STATE_CACHE_READ_RESPONSE,
     STATE_CACHE_READ_RESPONSE_COMPLETE,
+    STATE_CACHE_DISPATCH_VALIDATION,
+    STATE_TOGGLE_UNUSED_SINCE_PREFETCH,
+    STATE_TOGGLE_UNUSED_SINCE_PREFETCH_COMPLETE,
     STATE_CACHE_WRITE_RESPONSE,
     STATE_CACHE_WRITE_TRUNCATED_RESPONSE,
     STATE_CACHE_WRITE_RESPONSE_COMPLETE,
@@ -257,6 +260,9 @@ class HttpCache::Transaction : public HttpTransaction {
   int DoPartialHeadersReceived();
   int DoCacheReadResponse();
   int DoCacheReadResponseComplete(int result);
+  int DoCacheDispatchValidation();
+  int DoCacheToggleUnusedSincePrefetch();
+  int DoCacheToggleUnusedSincePrefetchComplete(int result);
   int DoCacheWriteResponse();
   int DoCacheWriteTruncatedResponse();
   int DoCacheWriteResponseComplete(int result);
@@ -329,7 +335,7 @@ class HttpCache::Transaction : public HttpTransaction {
   // Handles a response validation error by bypassing the cache.
   void IgnoreRangeRequest();
 
-  // Removes content-length and byte range related info if needed.
+  // Fixes the response headers to match expectations for a HEAD request.
   void FixHeadersForHead();
 
   // Launches an asynchronous revalidation based on this transaction.

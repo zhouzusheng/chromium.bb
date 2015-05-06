@@ -148,6 +148,8 @@ class NET_EXPORT SSLClientSocket : public SSLSocket {
 
   static const char* NextProtoStatusToString(const NextProtoStatus status);
 
+  // Returns true if |error| is OK or |load_flags| ignores certificate errors
+  // and |error| is a certificate error.
   static bool IgnoreCertError(int error, int load_flags);
 
   // ClearSessionCache clears the SSL session cache, used to resume SSL
@@ -200,9 +202,6 @@ class NET_EXPORT SSLClientSocket : public SSLSocket {
       bool negotiated_channel_id,
       bool channel_id_enabled,
       bool supports_ecc);
-
-  // Records ConnectionType histograms for a successful SSL connection.
-  static void RecordConnectionTypeMetrics(int ssl_version);
 
   // Returns whether TLS channel ID is enabled.
   static bool IsChannelIDEnabled(

@@ -10,11 +10,13 @@
 #include <list>
 #include <set>
 #include <map>
+#include <stack>
 
 #include "angle_gl.h"
-
 #include "compiler/translator/IntermNode.h"
 #include "compiler/translator/ParseContext.h"
+
+class BuiltInFunctionEmulatorHLSL;
 
 namespace sh
 {
@@ -27,20 +29,25 @@ typedef std::map<TString, TIntermSymbol*> ReferencedSymbols;
 class OutputHLSL : public TIntermTraverser
 {
   public:
-    OutputHLSL(TParseContext &context, TranslatorHLSL *parentTranslator);
+    OutputHLSL(sh::GLenum shaderType, int shaderVersion,
+        const TExtensionBehavior &extensionBehavior,
+        const char *sourcePath, ShShaderOutput outputType,
+        int numRenderTargets, const std::vector<Uniform> &uniforms,
+        int compileOptions);
+
     ~OutputHLSL();
 
-    void output();
-
-    TInfoSinkBase &getBodyStream();
+    void output(TIntermNode *treeRoot, TInfoSinkBase &objSink);
 
     const std::map<std::string, unsigned int> &getInterfaceBlockRegisterMap() const;
     const std::map<std::string, unsigned int> &getUniformRegisterMap() const;
 
     static TString initializer(const TType &type);
 
+    TInfoSinkBase &getInfoSink() { ASSERT(!mInfoSinkStack.empty()); return *mInfoSinkStack.top(); }
+
   protected:
-    void header();
+    void header(const BuiltInFunctionEmulatorHLSL *builtInFunctionEmulator);
 
     // Visit AST nodes and output their code to the body stream
     void visitSymbol(TIntermSymbol*);
@@ -64,8 +71,23 @@ class OutputHLSL : public TIntermTraverser
     void outputConstructor(Visit visit, const TType &type, const TString &name, const TIntermSequence *parameters);
     const ConstantUnion *writeConstantUnion(const TType &type, const ConstantUnion *constUnion);
 
-    TParseContext &mContext;
+    void writeEmulatedFunctionTriplet(Visit visit, const char *preStr);
+    void makeFlaggedStructMaps(const std::vector<TIntermTyped *> &flaggedStructs);
+
+    // Returns true if it found a 'same symbol' initializer (initializer that references the variable it's initting)
+    bool writeSameSymbolInitializer(TInfoSinkBase &out, TIntermSymbol *symbolNode, TIntermTyped *expression);
+    void writeDeferredGlobalInitializers(TInfoSinkBase &out);
+
+    // Returns the function name
+    TString addStructEqualityFunction(const TStructure &structure);
+
+    sh::GLenum mShaderType;
+    int mShaderVersion;
+    const TExtensionBehavior &mExtensionBehavior;
+    const char *mSourcePath;
     const ShShaderOutput mOutputType;
+    int mCompileOptions;
+
     UnfoldShortCircuit *mUnfoldShortCircuit;
     bool mInsideFunction;
 
@@ -73,6 +95,10 @@ class OutputHLSL : public TIntermTraverser
     TInfoSinkBase mHeader;
     TInfoSinkBase mBody;
     TInfoSinkBase mFooter;
+
+    // A stack is useful when we want to traverse in the header, or in helper functions, but not always
+    // write to the body. Instead use an InfoSink stack to keep our current state intact.
+    std::stack<TInfoSinkBase *> mInfoSinkStack;
 
     ReferencedSymbols mReferencedUniforms;
     ReferencedSymbols mReferencedInterfaceBlocks;
@@ -119,23 +145,9 @@ class OutputHLSL : public TIntermTraverser
     bool mUsesPointCoord;
     bool mUsesFrontFacing;
     bool mUsesPointSize;
+    bool mUsesInstanceID;
     bool mUsesFragDepth;
     bool mUsesXor;
-    bool mUsesMod1;
-    bool mUsesMod2v;
-    bool mUsesMod2f;
-    bool mUsesMod3v;
-    bool mUsesMod3f;
-    bool mUsesMod4v;
-    bool mUsesMod4f;
-    bool mUsesFaceforward1;
-    bool mUsesFaceforward2;
-    bool mUsesFaceforward3;
-    bool mUsesFaceforward4;
-    bool mUsesAtan2_1;
-    bool mUsesAtan2_2;
-    bool mUsesAtan2_3;
-    bool mUsesAtan2_4;
     bool mUsesDiscardRewriting;
     bool mUsesNestedBreak;
 
@@ -156,7 +168,22 @@ class OutputHLSL : public TIntermTraverser
     std::map<TIntermTyped*, TString> mFlaggedStructMappedNames;
     std::map<TIntermTyped*, TString> mFlaggedStructOriginalNames;
 
-    void makeFlaggedStructMaps(const std::vector<TIntermTyped *> &flaggedStructs);
+    // Some initializers use varyings, uniforms or attributes, thus we can't evaluate some variables
+    // at global static scope in HLSL. These variables depend on values which we retrieve from the
+    // shader input structure, which we set in the D3D main function. Instead, we can initialize
+    // these static globals after we initialize our other globals.
+    std::vector<std::pair<TIntermSymbol*, TIntermTyped*>> mDeferredGlobalInitializers;
+
+    // A list of structure equality comparison functions. It's important to preserve the order at
+    // which we add the functions, since nested structures call each other recursively.
+    struct StructEqualityFunction
+    {
+        const TStructure *structure;
+        TString functionName;
+        TString functionDefinition;
+    };
+
+    std::vector<StructEqualityFunction> mStructEqualityFunctions;
 };
 
 }

@@ -276,21 +276,21 @@ void InspectorResourceAgent::restore()
 static PassRefPtr<TypeBuilder::Network::ResourceTiming> buildObjectForTiming(const ResourceLoadTiming& timing, DocumentLoader* loader)
 {
     return TypeBuilder::Network::ResourceTiming::create()
-        .setRequestTime(loader->timing()->monotonicTimeToPseudoWallTime(timing.requestTime))
-        .setProxyStart(timing.calculateMillisecondDelta(timing.proxyStart))
-        .setProxyEnd(timing.calculateMillisecondDelta(timing.proxyEnd))
-        .setDnsStart(timing.calculateMillisecondDelta(timing.dnsStart))
-        .setDnsEnd(timing.calculateMillisecondDelta(timing.dnsEnd))
-        .setConnectStart(timing.calculateMillisecondDelta(timing.connectStart))
-        .setConnectEnd(timing.calculateMillisecondDelta(timing.connectEnd))
-        .setSslStart(timing.calculateMillisecondDelta(timing.sslStart))
-        .setSslEnd(timing.calculateMillisecondDelta(timing.sslEnd))
-        .setServiceWorkerFetchStart(timing.calculateMillisecondDelta(timing.serviceWorkerFetchStart))
-        .setServiceWorkerFetchReady(timing.calculateMillisecondDelta(timing.serviceWorkerFetchReady))
-        .setServiceWorkerFetchEnd(timing.calculateMillisecondDelta(timing.serviceWorkerFetchEnd))
-        .setSendStart(timing.calculateMillisecondDelta(timing.sendStart))
-        .setSendEnd(timing.calculateMillisecondDelta(timing.sendEnd))
-        .setReceiveHeadersEnd(timing.calculateMillisecondDelta(timing.receiveHeadersEnd))
+        .setRequestTime(loader->timing().monotonicTimeToPseudoWallTime(timing.requestTime()))
+        .setProxyStart(timing.calculateMillisecondDelta(timing.proxyStart()))
+        .setProxyEnd(timing.calculateMillisecondDelta(timing.proxyEnd()))
+        .setDnsStart(timing.calculateMillisecondDelta(timing.dnsStart()))
+        .setDnsEnd(timing.calculateMillisecondDelta(timing.dnsEnd()))
+        .setConnectStart(timing.calculateMillisecondDelta(timing.connectStart()))
+        .setConnectEnd(timing.calculateMillisecondDelta(timing.connectEnd()))
+        .setSslStart(timing.calculateMillisecondDelta(timing.sslStart()))
+        .setSslEnd(timing.calculateMillisecondDelta(timing.sslEnd()))
+        .setServiceWorkerFetchStart(timing.calculateMillisecondDelta(timing.serviceWorkerFetchStart()))
+        .setServiceWorkerFetchReady(timing.calculateMillisecondDelta(timing.serviceWorkerFetchReady()))
+        .setServiceWorkerFetchEnd(timing.calculateMillisecondDelta(timing.serviceWorkerFetchEnd()))
+        .setSendStart(timing.calculateMillisecondDelta(timing.sendStart()))
+        .setSendEnd(timing.calculateMillisecondDelta(timing.sendEnd()))
+        .setReceiveHeadersEnd(timing.calculateMillisecondDelta(timing.receiveHeadersEnd()))
         .release();
 }
 
@@ -394,7 +394,7 @@ InspectorResourceAgent::~InspectorResourceAgent()
 #endif
 }
 
-void InspectorResourceAgent::trace(Visitor* visitor)
+DEFINE_TRACE(InspectorResourceAgent)
 {
     visitor->trace(m_pageAgent);
 #if ENABLE(OILPAN)
@@ -541,7 +541,7 @@ void InspectorResourceAgent::didFinishLoading(unsigned long identifier, Document
     double finishTime = 0.0;
     // FIXME: Expose all of the timing details to inspector and have it calculate finishTime.
     if (monotonicFinishTime)
-        finishTime = loader->timing()->monotonicTimeToPseudoWallTime(monotonicFinishTime);
+        finishTime = loader->timing().monotonicTimeToPseudoWallTime(monotonicFinishTime);
 
     String requestId = IdentifiersFactory::requestId(identifier);
     m_resourcesData->maybeDecodeDataToContent(requestId);
@@ -578,6 +578,12 @@ void InspectorResourceAgent::documentThreadableLoaderStartedLoadingForClient(uns
 {
     if (!client)
         return;
+
+    if (client == m_pendingEventSource) {
+        m_eventSourceRequestIdMap.set(client, identifier);
+        m_pendingEventSource = nullptr;
+        return;
+    }
 
     PendingXHRReplayDataMap::iterator it = m_pendingXHRReplayData.find(client);
     if (it == m_pendingXHRReplayData.end())
@@ -617,12 +623,32 @@ void InspectorResourceAgent::didFailXHRLoading(XMLHttpRequest* xhr, ThreadableLo
     delayedRemoveReplayXHR(xhr);
 }
 
-void InspectorResourceAgent::didFinishXHRLoading(XMLHttpRequest* xhr, ThreadableLoaderClient* client, unsigned long identifier, ScriptString sourceString, const AtomicString&, const String&)
+void InspectorResourceAgent::didFinishXHRLoading(ExecutionContext*, XMLHttpRequest* xhr, ThreadableLoaderClient* client, unsigned long identifier, ScriptString sourceString, const AtomicString&, const String&)
 {
     m_pendingXHRReplayData.remove(client);
 
     // See comments on |didFailXHRLoading| for why we are delaying delete.
     delayedRemoveReplayXHR(xhr);
+}
+
+void InspectorResourceAgent::willSendEventSourceRequest(ThreadableLoaderClient* eventSource)
+{
+    m_pendingEventSource = eventSource;
+}
+
+void InspectorResourceAgent::willDispachEventSourceEvent(ThreadableLoaderClient* eventSource, const AtomicString& eventName, const AtomicString& eventId, const Vector<UChar>& data)
+{
+    EventSourceRequestIdMap::iterator it = m_eventSourceRequestIdMap.find(eventSource);
+    if (it == m_eventSourceRequestIdMap.end())
+        return;
+    m_frontend->eventSourceMessageReceived(IdentifiersFactory::requestId(it->value), currentTime(), eventName.string(), eventId.string(), String(data));
+}
+
+void InspectorResourceAgent::didFinishEventSourceRequest(ThreadableLoaderClient* eventSource)
+{
+    m_eventSourceRequestIdMap.remove(eventSource);
+    if (eventSource == m_pendingEventSource)
+        m_pendingEventSource = nullptr;
 }
 
 void InspectorResourceAgent::willDestroyResource(Resource* cachedResource)
@@ -756,12 +782,6 @@ void InspectorResourceAgent::didReceiveWebSocketFrameError(unsigned long identif
     m_frontend->webSocketFrameError(IdentifiersFactory::requestId(identifier), currentTime(), errorMessage);
 }
 
-// called from Internals for layout test purposes.
-void InspectorResourceAgent::setResourcesDataSizeLimitsFromInternals(int maximumResourcesContentSize, int maximumSingleResourceContentSize)
-{
-    m_resourcesData->setResourcesDataSizeLimits(maximumResourcesContentSize, maximumSingleResourceContentSize);
-}
-
 void InspectorResourceAgent::enable(ErrorString*)
 {
     enable();
@@ -884,7 +904,7 @@ void InspectorResourceAgent::setCacheDisabled(ErrorString*, bool cacheDisabled)
     m_state->setBoolean(ResourceAgentState::cacheDisabled, cacheDisabled);
     if (cacheDisabled)
         memoryCache()->evictResources();
-    for (Frame* frame = m_pageAgent->mainFrame(); frame; frame = frame->tree().traverseNext()) {
+    for (Frame* frame = m_pageAgent->inspectedFrame(); frame; frame = frame->tree().traverseNext()) {
         if (frame->isLocalFrame())
             toLocalFrame(frame)->document()->fetcher()->garbageCollectDocumentResources();
     }
@@ -894,16 +914,18 @@ void InspectorResourceAgent::emulateNetworkConditions(ErrorString*, bool, double
 {
 }
 
-void InspectorResourceAgent::loadResourceForFrontend(ErrorString* errorString, const String& frameId, const String& url, const RefPtr<JSONObject>* requestHeaders, PassRefPtrWillBeRawPtr<LoadResourceForFrontendCallback> prpCallback)
+void InspectorResourceAgent::loadResourceForFrontend(ErrorString* errorString, const String& url, const RefPtr<JSONObject>* requestHeaders, PassRefPtrWillBeRawPtr<LoadResourceForFrontendCallback> prpCallback)
 {
     RefPtrWillBeRawPtr<LoadResourceForFrontendCallback> callback = prpCallback;
-    LocalFrame* frame = m_pageAgent->assertFrame(errorString, frameId);
-    if (!frame)
+    Frame* frame = m_pageAgent->inspectedFrame();
+    if (!frame || !frame->isLocalFrame()) {
+        *errorString = "No frame to use as a loader found";
         return;
+    }
 
-    Document* document = frame->document();
+    Document* document = static_cast<LocalFrame*>(frame)->document();
     if (!document) {
-        *errorString = "No Document instance for the specified frame";
+        *errorString = "No Document instance found";
         return;
     }
 
@@ -942,9 +964,14 @@ void InspectorResourceAgent::loadResourceForFrontend(ErrorString* errorString, c
     inspectorThreadableLoaderClient->setLoader(loader.release());
 }
 
+void InspectorResourceAgent::setDataSizeLimitsForTest(ErrorString*, int maxTotal, int maxResource)
+{
+    m_resourcesData->setResourcesDataSizeLimits(maxTotal, maxResource);
+}
+
 void InspectorResourceAgent::didCommitLoad(LocalFrame* frame, DocumentLoader* loader)
 {
-    if (loader->frame() != frame->page()->mainFrame())
+    if (loader->frame() != m_pageAgent->inspectedFrame())
         return;
 
     if (m_state->getBoolean(ResourceAgentState::cacheDisabled))
@@ -999,6 +1026,7 @@ InspectorResourceAgent::InspectorResourceAgent(InspectorPageAgent* pageAgent)
     , m_pageAgent(pageAgent)
     , m_frontend(0)
     , m_resourcesData(adoptPtr(new NetworkResourcesData()))
+    , m_pendingEventSource(nullptr)
     , m_isRecalculatingStyle(false)
     , m_removeFinishedReplayXHRTimer(this, &InspectorResourceAgent::removeFinishedReplayXHRFired)
 {

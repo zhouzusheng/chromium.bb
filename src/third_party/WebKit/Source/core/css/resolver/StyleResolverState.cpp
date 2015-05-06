@@ -24,12 +24,12 @@
 
 #include "core/animation/css/CSSAnimations.h"
 #include "core/dom/Node.h"
-#include "core/dom/NodeRenderStyle.h"
+#include "core/dom/NodeLayoutStyle.h"
 #include "core/frame/FrameHost.h"
 
 namespace blink {
 
-StyleResolverState::StyleResolverState(Document& document, const ElementResolveContext& elementContext, RenderStyle* parentStyle)
+StyleResolverState::StyleResolverState(Document& document, const ElementResolveContext& elementContext, LayoutStyle* parentStyle)
     : m_elementContext(elementContext)
     , m_document(document)
     , m_style(nullptr)
@@ -45,7 +45,7 @@ StyleResolverState::StyleResolverState(Document& document, const ElementResolveC
     m_elementStyleResources.setDeviceScaleFactor(document.frameHost()->deviceScaleFactor());
 }
 
-StyleResolverState::StyleResolverState(Document& document, Element* element, RenderStyle* parentStyle)
+StyleResolverState::StyleResolverState(Document& document, Element* element, LayoutStyle* parentStyle)
     : StyleResolverState(document, element ? ElementResolveContext(*element) : ElementResolveContext(document), parentStyle)
 {
 }

@@ -28,8 +28,6 @@
 #include "config.h"
 #include "core/dom/ExecutionContext.h"
 
-#include "core/dom/AddConsoleMessageTask.h"
-#include "core/dom/ContextLifecycleNotifier.h"
 #include "core/dom/ExecutionContextTask.h"
 #include "core/events/ErrorEvent.h"
 #include "core/events/EventTarget.h"
@@ -68,13 +66,13 @@ public:
 };
 
 ExecutionContext::ExecutionContext()
-    : m_circularSequentialID(0)
-    , m_timerNestingLevel(0)
+    : ContextLifecycleNotifier(this)
+    , m_circularSequentialID(0)
     , m_inDispatchErrorEvent(false)
     , m_activeDOMObjectsAreSuspended(false)
     , m_activeDOMObjectsAreStopped(false)
     , m_strictMixedContentCheckingEnforced(false)
-    , m_windowFocusTokens(0)
+    , m_windowInteractionTokens(0)
 {
 }
 
@@ -82,15 +80,10 @@ ExecutionContext::~ExecutionContext()
 {
 }
 
-bool ExecutionContext::hasPendingActivity()
-{
-    return lifecycleNotifier().hasPendingActivity();
-}
-
 void ExecutionContext::suspendActiveDOMObjects()
 {
     ASSERT(!m_activeDOMObjectsAreSuspended);
-    lifecycleNotifier().notifySuspendingActiveDOMObjects();
+    notifySuspendingActiveDOMObjects();
     m_activeDOMObjectsAreSuspended = true;
 }
 
@@ -98,18 +91,18 @@ void ExecutionContext::resumeActiveDOMObjects()
 {
     ASSERT(m_activeDOMObjectsAreSuspended);
     m_activeDOMObjectsAreSuspended = false;
-    lifecycleNotifier().notifyResumingActiveDOMObjects();
+    notifyResumingActiveDOMObjects();
 }
 
 void ExecutionContext::stopActiveDOMObjects()
 {
     m_activeDOMObjectsAreStopped = true;
-    lifecycleNotifier().notifyStoppingActiveDOMObjects();
+    notifyStoppingActiveDOMObjects();
 }
 
 unsigned ExecutionContext::activeDOMObjectCount()
 {
-    return lifecycleNotifier().activeDOMObjects().size();
+    return activeDOMObjects().size();
 }
 
 void ExecutionContext::suspendScheduledTasks()
@@ -126,7 +119,7 @@ void ExecutionContext::resumeScheduledTasks()
 
 void ExecutionContext::suspendActiveDOMObjectIfNeeded(ActiveDOMObject* object)
 {
-    ASSERT(lifecycleNotifier().contains(object));
+    ASSERT(contains(object));
     // Ensure all ActiveDOMObjects are suspended also newly created ones.
     if (m_activeDOMObjectsAreSuspended)
         object->suspend();
@@ -186,45 +179,11 @@ int ExecutionContext::circularSequentialID()
     return m_circularSequentialID;
 }
 
-int ExecutionContext::installNewTimeout(PassOwnPtr<ScheduledAction> action, int timeout, bool singleShot)
-{
-    int timeoutID;
-    while (true) {
-        timeoutID = circularSequentialID();
-        if (!m_timeouts.contains(timeoutID))
-            break;
-    }
-    TimeoutMap::AddResult result = m_timeouts.add(timeoutID, DOMTimer::create(this, action, timeout, singleShot, timeoutID));
-    ASSERT(result.isNewEntry);
-    DOMTimer* timer = result.storedValue->value.get();
-
-    timer->suspendIfNeeded();
-
-    return timer->timeoutID();
-}
-
-void ExecutionContext::removeTimeoutByID(int timeoutID)
-{
-    if (timeoutID <= 0)
-        return;
-
-    if (DOMTimer* removedTimer = m_timeouts.get(timeoutID))
-        removedTimer->dispose();
-
-    m_timeouts.remove(timeoutID);
-}
-
 PublicURLManager& ExecutionContext::publicURLManager()
 {
     if (!m_publicURLManager)
         m_publicURLManager = PublicURLManager::create(this);
     return *m_publicURLManager;
-}
-
-void ExecutionContext::didChangeTimerAlignmentInterval()
-{
-    for (TimeoutMap::iterator iter = m_timeouts.begin(); iter != m_timeouts.end(); ++iter)
-        iter->value->didChangeAlignmentInterval();
 }
 
 SecurityOrigin* ExecutionContext::securityOrigin()
@@ -247,39 +206,29 @@ KURL ExecutionContext::completeURL(const String& url) const
     return virtualCompleteURL(url);
 }
 
-PassOwnPtr<LifecycleNotifier<ExecutionContext> > ExecutionContext::createLifecycleNotifier()
-{
-    return ContextLifecycleNotifier::create(this);
-}
-
-ContextLifecycleNotifier& ExecutionContext::lifecycleNotifier()
-{
-    return static_cast<ContextLifecycleNotifier&>(LifecycleContext<ExecutionContext>::lifecycleNotifier());
-}
-
 bool ExecutionContext::isIteratingOverObservers() const
 {
     return m_lifecycleNotifier && m_lifecycleNotifier->isIteratingOverObservers();
 }
 
-void ExecutionContext::allowWindowFocus()
+void ExecutionContext::allowWindowInteraction()
 {
-    ++m_windowFocusTokens;
+    ++m_windowInteractionTokens;
 }
 
-void ExecutionContext::consumeWindowFocus()
+void ExecutionContext::consumeWindowInteraction()
 {
-    if (m_windowFocusTokens == 0)
+    if (m_windowInteractionTokens == 0)
         return;
-    --m_windowFocusTokens;
+    --m_windowInteractionTokens;
 }
 
-bool ExecutionContext::isWindowFocusAllowed() const
+bool ExecutionContext::isWindowInteractionAllowed() const
 {
     // FIXME: WindowFocusAllowedIndicator::windowFocusAllowed() is temporary,
     // it will be removed as soon as WebScopedWindowFocusAllowedIndicator will
     // be updated to not use WindowFocusAllowedIndicator.
-    return m_windowFocusTokens > 0 || WindowFocusAllowedIndicator::windowFocusAllowed();
+    return m_windowInteractionTokens > 0 || WindowFocusAllowedIndicator::windowFocusAllowed();
 }
 
 void ExecutionContext::trace(Visitor* visitor)
@@ -287,10 +236,9 @@ void ExecutionContext::trace(Visitor* visitor)
 #if ENABLE(OILPAN)
     visitor->trace(m_pendingExceptions);
     visitor->trace(m_publicURLManager);
-    visitor->trace(m_timeouts);
     HeapSupplementable<ExecutionContext>::trace(visitor);
 #endif
-    LifecycleContext<ExecutionContext>::trace(visitor);
+    ContextLifecycleNotifier::trace(visitor);
 }
 
 } // namespace blink

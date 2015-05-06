@@ -34,14 +34,10 @@ namespace blink {
 
 inline SVGScriptElement::SVGScriptElement(Document& document, bool wasInsertedByParser, bool alreadyStarted)
     : SVGElement(SVGNames::scriptTag, document)
-    , SVGURIReference(this)
     , m_svgLoadEventTimer(this, &SVGElement::svgLoadEventTimerFired)
     , m_loader(ScriptLoader::create(this, wasInsertedByParser, alreadyStarted))
 {
-}
-
-SVGScriptElement::~SVGScriptElement()
-{
+    SVGURIReference::initialize(this);
 }
 
 PassRefPtrWillBeRawPtr<SVGScriptElement> SVGScriptElement::create(Document& document, bool insertedByParser)
@@ -177,7 +173,7 @@ bool SVGScriptElement::isAnimatableAttribute(const QualifiedName& name) const
 }
 #endif
 
-void SVGScriptElement::trace(Visitor* visitor)
+DEFINE_TRACE(SVGScriptElement)
 {
     visitor->trace(m_loader);
     SVGElement::trace(visitor);

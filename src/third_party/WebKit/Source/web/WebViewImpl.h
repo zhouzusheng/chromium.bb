@@ -31,11 +31,13 @@
 #ifndef WebViewImpl_h
 #define WebViewImpl_h
 
+#include "core/page/ContextMenuProvider.h"
 #include "core/page/EventWithHitTestResults.h"
 #include "platform/geometry/IntPoint.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/heap/Handle.h"
+#include "public/platform/WebDisplayMode.h"
 #include "public/platform/WebFloatSize.h"
 #include "public/platform/WebGestureCurveTarget.h"
 #include "public/platform/WebLayer.h"
@@ -67,12 +69,13 @@ namespace blink {
 class DataObject;
 class Frame;
 class FullscreenController;
+class InputMethodContext;
 class LinkHighlight;
 class PopupContainer;
-class RenderLayerCompositor;
+class LayerCompositor;
 class UserGestureToken;
 class WebActiveGestureAnimation;
-class WebDevToolsAgentPrivate;
+class WebDevToolsAgentImpl;
 class WebLayerTreeView;
 class WebLocalFrameImpl;
 class WebImage;
@@ -118,13 +121,19 @@ public:
     virtual void applyViewportDeltas(
         const WebSize& scrollDelta,
         float pageScaleDelta,
-        float topControlsDelta) override;
+        float topControlsShownRatioDelta) override;
     virtual void applyViewportDeltas(
         const WebSize& pinchViewportDelta,
         const WebSize& mainFrameDelta,
         const WebFloatSize& elasticOverscrollDelta,
         float pageScaleDelta,
-        float topControlsDelta) override;
+        float topControlsShownRatioDelta) override;
+    virtual void applyViewportDeltas(
+        const WebFloatSize& pinchViewportDelta,
+        const WebFloatSize& mainFrameDelta,
+        const WebFloatSize& elasticOverscrollDelta,
+        float pageScaleDelta,
+        float topControlsShownRatioDelta) override;
     virtual void mouseCaptureLost() override;
     virtual void setFocus(bool enable) override;
     virtual bool setComposition(
@@ -184,26 +193,26 @@ public:
     virtual void setInitialFocus(bool reverse) override;
     virtual void clearFocusedElement() override;
     virtual bool scrollFocusedNodeIntoRect(const WebRect&) override;
-    virtual void zoomToFindInPageRect(const WebRect&) override;
+    virtual void zoomToFindInPageRect(const WebRect&);
     virtual void advanceFocus(bool reverse) override;
     virtual double zoomLevel() override;
     virtual double setZoomLevel(double) override;
     virtual void zoomLimitsChanged(double minimumZoomLevel, double maximumZoomLevel) override;
     virtual float textZoomFactor() override;
     virtual float setTextZoomFactor(float) override;
-    virtual void setInitialPageScaleOverride(float) override;
     virtual bool zoomToMultipleTargetsRect(const WebRect&) override;
     virtual float pageScaleFactor() const override;
-    virtual void setPageScaleFactorLimits(float minPageScale, float maxPageScale) override;
+    virtual void setDefaultPageScaleLimits(float minScale, float maxScale) override;
+    virtual void setInitialPageScaleOverride(float) override;
+    virtual void setMaximumLegibleScale(float) override;
     virtual void setMainFrameScrollOffset(const WebPoint&) override;
     virtual void setPageScaleFactor(float) override;
     virtual void setPinchViewportOffset(const WebFloatPoint&) override;
     virtual WebFloatPoint pinchViewportOffset() const override;
-    virtual float minimumPageScaleFactor() const override;
-    virtual float maximumPageScaleFactor() const override;
     virtual void resetScrollAndScaleState() override;
     virtual void setIgnoreViewportTagScaleLimits(bool) override;
     virtual WebSize contentsPreferredMinimumSize() override;
+    virtual void setDisplayMode(WebDisplayMode) override;
 
     virtual float deviceScaleFactor() const override;
     virtual void setDeviceScaleFactor(float) override;
@@ -273,6 +282,14 @@ public:
     virtual void acceptLanguagesChanged() override;
 
     // WebViewImpl
+    void enableViewport();
+    void disableViewport();
+
+    float defaultMinimumPageScaleFactor() const;
+    float defaultMaximumPageScaleFactor() const;
+    float minimumPageScaleFactor() const;
+    float maximumPageScaleFactor() const;
+    float clampPageScaleFactorToLimits(float) const;
 
     HitTestResult coreHitTestResultAt(const WebPoint&);
     void suppressInvalidations(bool enable);
@@ -281,7 +298,6 @@ public:
     void setIgnoreInputEvents(bool newValue);
     void setBackgroundColorOverride(WebColor);
     void setZoomFactorOverride(float);
-    WebDevToolsAgentPrivate* devToolsAgentPrivate() { return m_devToolsAgent.get(); }
 
     Color baseBackgroundColor() const { return m_baseBackgroundColor; }
 
@@ -356,6 +372,8 @@ public:
     // not take the user away from the current page.
     void didCommitLoad(bool isNewNavigation, bool isNavigationWithinPage);
 
+    void postLayoutResize(WebLocalFrameImpl* webframe);
+
     // Indicates two things:
     //   1) This view may have a new layout now.
     //   2) Calling layout() is a no-op.
@@ -366,7 +384,7 @@ public:
     void willInsertBody(WebLocalFrameImpl*);
     void didRemoveAllPendingStylesheet(WebLocalFrameImpl*);
     void didChangeContentsSize();
-    void deviceOrPageScaleFactorChanged();
+    void pageScaleFactorChanged();
 
     // Returns true if popup menus should be rendered by the browser, false if
     // they should be rendered by WebKit (which is the default).
@@ -421,7 +439,7 @@ public:
     void setRootGraphicsLayer(GraphicsLayer*);
     void scheduleCompositingLayerSync();
     GraphicsLayerFactory* graphicsLayerFactory() const;
-    RenderLayerCompositor* compositor() const;
+    LayerCompositor* compositor() const;
     void registerForAnimations(WebLayer*);
     void scheduleAnimation();
 
@@ -485,8 +503,8 @@ public:
 
     WebSettingsImpl* settingsImpl();
 
-    // Returns the bounding box of the block type node touched by the WebRect.
-    WebRect computeBlockBounds(const WebRect&, bool ignoreClipping);
+    // Returns the bounding box of the block type node touched by the WebPoint.
+    WebRect computeBlockBound(const WebPoint&, bool ignoreClipping);
 
     // FIXME(bokan): Replace with PinchViewport::clampDocumentOffsetAtScale once
     // old-path is gone.
@@ -501,7 +519,7 @@ public:
 
     bool matchesHeuristicsForGpuRasterizationForTesting() const { return m_matchesHeuristicsForGpuRasterization; }
 
-    virtual void setTopControlsLayoutHeight(float) override;
+    virtual void setTopControlsHeight(float height, bool topControlsShrinkLayoutSize) override;
 
     virtual void forceNextWebGLContextCreationToFail() override;
 
@@ -509,7 +527,7 @@ public:
 
 private:
     void didUpdateTopControls();
-    void setTopControlsContentOffset(float);
+    void setTopControlsShownRatio(float);
 
     // TODO(bokan): Remains for legacy pinch. Remove once it's gone. Made private to
     // prevent external usage
@@ -520,15 +538,13 @@ private:
 
     IntRect visibleRectInDocument() const;
 
-    float legibleScale() const;
+    float maximumLegiblePageScale() const;
     void refreshPageScaleFactorAfterLayout();
     void resumeTreeViewCommits();
     void setUserAgentPageScaleConstraints(PageScaleConstraints newConstraints);
-    float clampPageScaleFactorToLimits(float) const;
     IntSize contentsSize() const;
 
-    void updateMainFrameScrollPosition(const IntPoint& scrollPosition, bool programmaticScroll);
-    void updateRootLayerScrollPosition(const IntPoint& scrollPosition);
+    void updateMainFrameScrollPosition(const DoublePoint& scrollPosition, bool programmaticScroll);
 
     void performResize();
 
@@ -598,6 +614,8 @@ private:
     virtual bool handleKeyEvent(const WebKeyboardEvent&) override;
     virtual bool handleCharEvent(const WebKeyboardEvent&) override;
 
+    bool handleSyntheticWheelFromTouchpadPinchEvent(const WebGestureEvent&);
+
     InputMethodContext* inputMethodContext();
     WebPlugin* focusedPluginIfInputMethodSupported(LocalFrame*);
 
@@ -649,6 +667,10 @@ private:
 
     PageScaleConstraintsSet m_pageScaleConstraintsSet;
 
+    // This value, when multiplied by the font scale factor, gives the maximum
+    // page scale that can result from automatic zooms.
+    float m_maximumLegibleScale;
+
     // The scale moved to by the latest double tap zoom, if any.
     float m_doubleTapZoomPageScaleFactor;
     // Have we sent a double-tap zoom and not yet heard back the scale?
@@ -693,7 +715,7 @@ private:
     // The popup associated with an input element.
     RefPtr<WebPagePopupImpl> m_pagePopup;
 
-    OwnPtr<WebDevToolsAgentPrivate> m_devToolsAgent;
+    OwnPtr<WebDevToolsAgentImpl> m_devToolsAgent;
     OwnPtr<PageOverlayList> m_pageOverlays;
 
     // Whether the webview is rendering transparently.
@@ -742,12 +764,14 @@ private:
 
     bool m_userGestureObserved;
 
-    // The top controls offset since the last compositor commit.
-    float m_topControlsContentOffset;
+    // The top controls shown amount (normalized from 0 to 1) since the last
+    // compositor commit.
+    float m_topControlsShownRatio;
 
-    // The top controls offset at the time of the last Resize event. This is the
-    // amount that the viewport was shrunk by to accomodate the top controls.
-    float m_topControlsLayoutHeight;
+    float m_topControlsHeight;
+    // If this is true, then the embedder shrunk the WebView size by the top
+    // controls height.
+    bool m_topControlsShrinkLayoutSize;
 };
 
 DEFINE_TYPE_CASTS(WebViewImpl, WebWidget, widget, widget->isWebView(), widget.isWebView());

@@ -27,6 +27,7 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
+#include "storage/browser/blob/blob_data_builder.h"
 #include "storage/browser/blob/blob_storage_context.h"
 #include "storage/browser/database/database_util.h"
 #include "storage/common/database/database_identifier.h"
@@ -193,8 +194,8 @@ int64 IndexedDBDispatcherHost::HostTransactionId(int64 transaction_id) {
   // transaction_id are guaranteed to be unique within that renderer.
   base::ProcessId pid = peer_pid();
   DCHECK(!(transaction_id >> 32)) << "Transaction ids can only be 32 bits";
-  COMPILE_ASSERT(sizeof(base::ProcessId) <= sizeof(int32),
-                 Process_ID_must_fit_in_32_bits);
+  static_assert(sizeof(base::ProcessId) <= sizeof(int32),
+                "Process ID must fit in 32 bits");
 
   return transaction_id | (static_cast<uint64>(pid) << 32);
 }
@@ -226,11 +227,11 @@ std::string IndexedDBDispatcherHost::HoldBlobData(
   scoped_ptr<storage::BlobDataHandle> blob_data_handle;
   if (uuid.empty()) {
     uuid = base::GenerateGUID();
-    scoped_refptr<storage::BlobData> blob_data = new storage::BlobData(uuid);
-    blob_data->set_content_type(base::UTF16ToUTF8(blob_info.type()));
-    blob_data->AppendFile(blob_info.file_path(), 0, blob_info.size(),
-                          blob_info.last_modified());
-    blob_data_handle = context->AddFinishedBlob(blob_data.get());
+    storage::BlobDataBuilder blob_data_builder(uuid);
+    blob_data_builder.set_content_type(base::UTF16ToUTF8(blob_info.type()));
+    blob_data_builder.AppendFile(blob_info.file_path(), 0, blob_info.size(),
+                                 blob_info.last_modified());
+    blob_data_handle = context->AddFinishedBlob(&blob_data_builder);
   } else {
     auto iter = blob_data_handle_map_.find(uuid);
     if (iter != blob_data_handle_map_.end()) {
@@ -281,8 +282,8 @@ IndexedDBCursor* IndexedDBDispatcherHost::GetCursorFromId(int32 ipc_cursor_id) {
     ::IndexedDBObjectStoreMetadata idb_store_metadata;
     idb_store_metadata.id = web_store_metadata.id;
     idb_store_metadata.name = web_store_metadata.name;
-    idb_store_metadata.keyPath = web_store_metadata.key_path;
-    idb_store_metadata.autoIncrement = web_store_metadata.auto_increment;
+    idb_store_metadata.key_path = web_store_metadata.key_path;
+    idb_store_metadata.auto_increment = web_store_metadata.auto_increment;
     idb_store_metadata.max_index_id = web_store_metadata.max_index_id;
 
     for (const auto& index_iter : web_store_metadata.indexes) {
@@ -291,9 +292,9 @@ IndexedDBCursor* IndexedDBDispatcherHost::GetCursorFromId(int32 ipc_cursor_id) {
       ::IndexedDBIndexMetadata idb_index_metadata;
       idb_index_metadata.id = web_index_metadata.id;
       idb_index_metadata.name = web_index_metadata.name;
-      idb_index_metadata.keyPath = web_index_metadata.key_path;
+      idb_index_metadata.key_path = web_index_metadata.key_path;
       idb_index_metadata.unique = web_index_metadata.unique;
-      idb_index_metadata.multiEntry = web_index_metadata.multi_entry;
+      idb_index_metadata.multi_entry = web_index_metadata.multi_entry;
       idb_store_metadata.indexes.push_back(idb_index_metadata);
     }
     metadata.object_stores.push_back(idb_store_metadata);
@@ -613,7 +614,10 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnDestroyed(
     int32 ipc_object_id) {
   DCHECK(
       parent_->indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
-  IndexedDBConnection* connection = map_.Lookup(ipc_object_id);
+  IndexedDBConnection* connection =
+      parent_->GetOrTerminateProcess(&map_, ipc_object_id);
+  if (!connection)
+    return;
   if (connection->IsConnected())
     connection->Close();
   parent_->Context()

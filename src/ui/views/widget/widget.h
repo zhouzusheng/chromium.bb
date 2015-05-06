@@ -567,6 +567,9 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   FocusManager* GetFocusManager();
   const FocusManager* GetFocusManager() const;
 
+  // Returns the focused text input client within this widget.
+  ui::TextInputClient* GetFocusedTextInputClient();
+
   // Returns the InputMethod for this widget.
   // Note that all widgets in a widget hierarchy share the same input method.
   InputMethod* GetInputMethod();
@@ -626,6 +629,10 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   // Notifies the view hierarchy contained in this widget that locale resources
   // changed.
   void LocaleChanged();
+
+  // Notifies the view hierarchy contained in this widget that the device scale
+  // factor changed.
+  void DeviceScaleFactorChanged(float device_scale_factor);
 
   void SetFocusTraversableParent(FocusTraversable* parent);
   void SetFocusTraversableParentView(View* parent_view);

@@ -107,10 +107,11 @@
 #include "core/editing/PlainTextRange.h"
 #include "core/editing/SpellChecker.h"
 #include "core/editing/TextAffinity.h"
-#include "core/editing/TextIterator.h"
 #include "core/editing/htmlediting.h"
+#include "core/editing/iterators/TextIterator.h"
 #include "core/editing/markup.h"
 #include "core/fetch/ResourceFetcher.h"
+#include "core/fetch/SubstituteData.h"
 #include "core/frame/Console.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/FrameHost.h"
@@ -128,30 +129,32 @@
 #include "core/inspector/ConsoleMessage.h"
 #include "core/inspector/InspectorController.h"
 #include "core/inspector/ScriptCallStack.h"
+#include "core/layout/HitTestResult.h"
+#include "core/layout/Layer.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/LayoutPart.h"
+#include "core/layout/LayoutTreeAsText.h"
+#include "core/layout/style/StyleInheritedData.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/HistoryItem.h"
-#include "core/loader/SubstituteData.h"
 #include "core/page/Chrome.h"
 #include "core/page/EventHandler.h"
 #include "core/page/FocusController.h"
 #include "core/page/FrameTree.h"
 #include "core/page/Page.h"
 #include "core/page/PrintContext.h"
-#include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderBox.h"
-#include "core/rendering/RenderFrame.h"
-#include "core/rendering/RenderLayer.h"
-#include "core/rendering/RenderObject.h"
-#include "core/rendering/RenderTreeAsText.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/style/StyleInheritedData.h"
+#include "core/timing/DOMWindowPerformance.h"
 #include "core/timing/Performance.h"
 #include "modules/geolocation/GeolocationController.h"
 #include "modules/notifications/NotificationPermissionClient.h"
+#include "modules/presentation/PresentationController.h"
 #include "modules/push_messaging/PushController.h"
 #include "modules/screen_orientation/ScreenOrientationController.h"
+#include "platform/ScriptForbiddenScope.h"
 #include "platform/TraceEvent.h"
 #include "platform/UserGestureIndicator.h"
 #include "platform/clipboard/ClipboardUtilities.h"
@@ -202,11 +205,13 @@
 #include "web/MIDIClientProxy.h"
 #include "web/NotificationPermissionClientImpl.h"
 #include "web/PageOverlay.h"
+#include "web/RemoteBridgeFrameOwner.h"
 #include "web/SharedWorkerRepositoryClientImpl.h"
 #include "web/SuspendableScriptExecutor.h"
 #include "web/TextFinder.h"
 #include "web/WebDataSourceImpl.h"
-#include "web/WebDevToolsAgentPrivate.h"
+#include "web/WebDevToolsAgentImpl.h"
+#include "web/WebFrameWidgetImpl.h"
 #include "web/WebPluginContainerImpl.h"
 #include "web/WebRemoteFrameImpl.h"
 #include "web/WebViewImpl.h"
@@ -259,7 +264,7 @@ static void frameContentAsPlainText(size_t maxChars, LocalFrame* frame, StringBu
         LocalFrame* curLocalChild = toLocalFrame(curChild);
         // Ignore the text of non-visible frames.
         RenderView* contentRenderer = curLocalChild->contentRenderer();
-        RenderPart* ownerRenderer = curLocalChild->ownerRenderer();
+        LayoutPart* ownerRenderer = curLocalChild->ownerRenderer();
         if (!contentRenderer || !contentRenderer->size().width() || !contentRenderer->size().height()
             || (contentRenderer->location().x() + contentRenderer->size().width() <= 0) || (contentRenderer->location().y() + contentRenderer->size().height() <= 0)
             || (ownerRenderer && ownerRenderer->style() && ownerRenderer->style()->visibility() != VISIBLE)) {
@@ -281,9 +286,9 @@ static void frameContentAsPlainText(size_t maxChars, LocalFrame* frame, StringBu
     }
 }
 
-static Vector<ScriptSourceCode> createSourcesVector(const WebScriptSource* sourcesIn, unsigned numSources)
+static WillBeHeapVector<ScriptSourceCode> createSourcesVector(const WebScriptSource* sourcesIn, unsigned numSources)
 {
-    Vector<ScriptSourceCode> sources;
+    WillBeHeapVector<ScriptSourceCode> sources;
     sources.append(sourcesIn, numSources);
     return sources;
 }
@@ -410,7 +415,7 @@ protected:
         context.translate(static_cast<float>(-pageRect.x()), static_cast<float>(-pageRect.y()));
         context.clip(pageRect);
         frame()->view()->paintContents(&context, pageRect);
-        outputLinkAndLinkedDestinations(context, frame()->document(), pageRect);
+        outputLinkAndLinkedDestinations(context, pageRect);
         context.restore();
         return scale;
     }
@@ -508,7 +513,7 @@ WebLocalFrame* WebLocalFrame::frameForCurrentContext()
 
 WebLocalFrame* WebLocalFrame::frameForContext(v8::Handle<v8::Context> context)
 {
-    return WebLocalFrameImpl::fromFrame(toFrameIfNotDetached(context));
+    return WebLocalFrameImpl::fromFrame(toLocalFrame(toFrameIfNotDetached(context)));
 }
 
 WebLocalFrame* WebLocalFrame::fromFrameOwnerElement(const WebElement& element)
@@ -567,17 +572,14 @@ WebVector<WebIconURL> WebLocalFrameImpl::iconURLs(int iconTypesMask) const
 {
     // The URL to the icon may be in the header. As such, only
     // ask the loader for the icon if it's finished loading.
-    if (frame()->loader().state() == FrameStateComplete)
+    if (frame()->document()->loadEventFinished())
         return frame()->document()->iconURLs(iconTypesMask);
     return WebVector<WebIconURL>();
 }
 
 void WebLocalFrameImpl::setRemoteWebLayer(WebLayer* webLayer)
 {
-    if (!frame())
-        return;
-
-    frame()->setRemotePlatformLayer(webLayer);
+    ASSERT_NOT_REACHED();
 }
 
 void WebLocalFrameImpl::setPermissionClient(WebPermissionClient* permissionClient)
@@ -629,7 +631,7 @@ WebSize WebLocalFrameImpl::contentsSize() const
 
 bool WebLocalFrameImpl::hasVisibleContent() const
 {
-    if (RenderPart* renderer = frame()->ownerRenderer()) {
+    if (LayoutPart* renderer = frame()->ownerRenderer()) {
         if (renderer->style()->visibility() != VISIBLE)
             return false;
     }
@@ -685,7 +687,7 @@ WebPerformance WebLocalFrameImpl::performance() const
 {
     if (!frame())
         return WebPerformance();
-    return WebPerformance(frame()->domWindow()->performance());
+    return WebPerformance(DOMWindowPerformance::performance(*(frame()->domWindow())));
 }
 
 bool WebLocalFrameImpl::dispatchBeforeUnloadEvent()
@@ -699,12 +701,12 @@ void WebLocalFrameImpl::dispatchUnloadEvent()
 {
     if (!frame())
         return;
-    frame()->loader().closeURL();
+    frame()->loader().dispatchUnloadEvent();
 }
 
 NPObject* WebLocalFrameImpl::windowObject() const
 {
-    if (!frame())
+    if (!frame() || ScriptForbiddenScope::isScriptForbidden())
         return 0;
     return frame()->script().windowScriptNPObject();
 }
@@ -735,7 +737,7 @@ void WebLocalFrameImpl::executeScriptInIsolatedWorld(int worldID, const WebScrip
     RELEASE_ASSERT(worldID > 0);
     RELEASE_ASSERT(worldID < EmbedderWorldIdLimit);
 
-    Vector<ScriptSourceCode> sources = createSourcesVector(sourcesIn, numSources);
+    WillBeHeapVector<ScriptSourceCode> sources = createSourcesVector(sourcesIn, numSources);
     v8::HandleScope handleScope(toIsolate(frame()));
     frame()->script().executeScriptInIsolatedWorld(worldID, sources, extensionGroup, 0);
 }
@@ -801,7 +803,7 @@ bool WebLocalFrameImpl::checkIfRunInsecureContent(const WebURL& url) const
     // PluginURLFetcher::OnReceivedRedirect for redirects of NPAPI resources.
     //
     // FIXME: Remove this method entirely once we smother NPAPI.
-    return MixedContentChecker::shouldBlockFetch(frame(), WebURLRequest::RequestContextObject, WebURLRequest::FrameTypeNone, url);
+    return !MixedContentChecker::shouldBlockFetch(frame(), WebURLRequest::RequestContextObject, WebURLRequest::FrameTypeNested, url);
 }
 
 v8::Handle<v8::Value> WebLocalFrameImpl::executeScriptAndReturnValue(const WebScriptSource& source)
@@ -825,7 +827,7 @@ void WebLocalFrameImpl::executeScriptInIsolatedWorld(int worldID, const WebScrip
     RELEASE_ASSERT(worldID > 0);
     RELEASE_ASSERT(worldID < EmbedderWorldIdLimit);
 
-    Vector<ScriptSourceCode> sources = createSourcesVector(sourcesIn, numSources);
+    WillBeHeapVector<ScriptSourceCode> sources = createSourcesVector(sourcesIn, numSources);
 
     if (results) {
         Vector<v8::Local<v8::Value>> scriptResults;
@@ -1195,20 +1197,12 @@ void WebLocalFrameImpl::selectRange(const WebRange& webRange)
         frame()->selection().setSelectedRange(range.get(), VP_DEFAULT_AFFINITY, FrameSelection::NonDirectional, NotUserTriggered);
 }
 
-void WebLocalFrameImpl::moveRangeSelectionExtent(const WebPoint& point)
+void WebLocalFrameImpl::moveRangeSelectionExtent(const WebPoint& point, WebFrame::TextGranularity granularity)
 {
-    VisibleSelection currentSelection = frame()->selection().selection();
-
-    VisiblePosition basePosition = currentSelection.isBaseFirst() ?
-        currentSelection.visibleStart() : currentSelection.visibleEnd();
-    VisiblePosition extentPosition = visiblePositionForWindowPoint(point);
-
-    // Prevent the selection from collapsing.
-    if (comparePositions(basePosition, extentPosition) == 0)
-        return;
-
-    VisibleSelection newSelection = VisibleSelection(basePosition, extentPosition);
-    frame()->selection().setSelection(newSelection, CharacterGranularity);
+    blink::TextGranularity blinkGranularity = blink::CharacterGranularity;
+    if (granularity == WebFrame::WordGranularity)
+        blinkGranularity = blink::WordGranularity;
+    frame()->selection().moveRangeSelectionExtent(visiblePositionForWindowPoint(point), blinkGranularity);
 }
 
 void WebLocalFrameImpl::moveRangeSelection(const WebPoint& base, const WebPoint& extent)
@@ -1487,15 +1481,15 @@ WebString WebLocalFrameImpl::contentAsMarkup() const
     return createMarkup(frame()->document());
 }
 
-WebString WebLocalFrameImpl::renderTreeAsText(RenderAsTextControls toShow) const
+WebString WebLocalFrameImpl::layoutTreeAsText(LayoutAsTextControls toShow) const
 {
-    RenderAsTextBehavior behavior = RenderAsTextShowAllLayers;
+    LayoutAsTextBehavior behavior = LayoutAsTextShowAllLayers;
 
-    if (toShow & RenderAsTextDebug)
-        behavior |= RenderAsTextShowCompositedLayers | RenderAsTextShowAddresses | RenderAsTextShowIDAndClass | RenderAsTextShowLayerNesting;
+    if (toShow & LayoutAsTextDebug)
+        behavior |= LayoutAsTextShowCompositedLayers | LayoutAsTextShowAddresses | LayoutAsTextShowIDAndClass | LayoutAsTextShowLayerNesting;
 
-    if (toShow & RenderAsTextPrinting)
-        behavior |= RenderAsTextPrintingMode;
+    if (toShow & LayoutAsTextPrinting)
+        behavior |= LayoutAsTextPrintingMode;
 
     return externalRepresentation(frame(), behavior);
 }
@@ -1561,6 +1555,7 @@ WebLocalFrameImpl::WebLocalFrameImpl(WebFrameClient* client)
     , m_inputEventsScaleFactorForEmulation(1)
     , m_userMediaClientImpl(this)
     , m_geolocationClientProxy(GeolocationClientProxy::create(client ? client->geolocationClient() : 0))
+    , m_webDevToolsFrontend(0)
 #if ENABLE(OILPAN)
     , m_selfKeepAlive(this)
 #endif
@@ -1580,13 +1575,13 @@ WebLocalFrameImpl::~WebLocalFrameImpl()
 }
 
 #if ENABLE(OILPAN)
-void WebLocalFrameImpl::trace(Visitor* visitor)
+DEFINE_TRACE(WebLocalFrameImpl)
 {
     visitor->trace(m_frame);
     visitor->trace(m_textFinder);
     visitor->trace(m_printContext);
     visitor->trace(m_geolocationClientProxy);
-    visitor->registerWeakMembers<WebFrame, &WebFrame::clearWeakFrames>(this);
+    visitor->template registerWeakMembers<WebFrame, &WebFrame::clearWeakFrames>(this);
     WebFrame::traceFrames(visitor, this);
 }
 #endif
@@ -1609,6 +1604,8 @@ void WebLocalFrameImpl::setCoreFrame(PassRefPtrWillBeRawPtr<LocalFrame> frame)
 
         if (RuntimeEnabledFeatures::screenOrientationEnabled())
             ScreenOrientationController::provideTo(*m_frame, m_client ? m_client->webScreenOrientationClient() : nullptr);
+        if (RuntimeEnabledFeatures::presentationEnabled())
+            PresentationController::provideTo(*m_frame, m_client ? m_client->presentationClient() : nullptr);
     }
 }
 
@@ -1627,7 +1624,7 @@ PassRefPtrWillBeRawPtr<LocalFrame> WebLocalFrameImpl::initializeCoreFrame(FrameH
 PassRefPtrWillBeRawPtr<LocalFrame> WebLocalFrameImpl::createChildFrame(const FrameLoadRequest& request, HTMLFrameOwnerElement* ownerElement)
 {
     ASSERT(m_client);
-    WebLocalFrameImpl* webframeChild = toWebLocalFrameImpl(m_client->createChildFrame(this, request.frameName()));
+    WebLocalFrameImpl* webframeChild = toWebLocalFrameImpl(m_client->createChildFrame(this, request.frameName(), static_cast<WebSandboxFlags>(ownerElement->sandboxFlags())));
     if (!webframeChild)
         return nullptr;
 
@@ -1680,7 +1677,9 @@ void WebLocalFrameImpl::createFrameView()
     if (isLocalRoot)
         webView->suppressInvalidations(true);
 
-    frame()->createView(webView->mainFrameSize(), webView->baseBackgroundColor(), webView->isTransparent());
+    IntSize initialSize = frameWidget() ? (IntSize)frameWidget()->size() : webView->mainFrameSize();
+
+    frame()->createView(initialSize, webView->baseBackgroundColor(), webView->isTransparent());
     if (webView->shouldAutoResize() && isLocalRoot)
         frame()->view()->enableAutoSizeMode(webView->minAutoSize(), webView->maxAutoSize());
 
@@ -1858,7 +1857,7 @@ void WebLocalFrameImpl::loadJavaScriptURL(const KURL& url)
 void WebLocalFrameImpl::initializeToReplaceRemoteFrame(WebRemoteFrame* oldWebFrame)
 {
     Frame* oldFrame = toCoreFrame(oldWebFrame);
-    OwnPtrWillBePersistent<FrameOwner> tempOwner = adoptPtrWillBeNoop(new PlaceholderFrameOwner());
+    OwnPtrWillBePersistent<FrameOwner> tempOwner = RemoteBridgeFrameOwner::create(nullptr, SandboxNone);
     m_frame = LocalFrame::create(&m_frameLoaderClientImpl, oldFrame->host(), tempOwner.get());
     m_frame->setOwner(oldFrame->owner());
     m_frame->tree().setName(oldFrame->tree().name());

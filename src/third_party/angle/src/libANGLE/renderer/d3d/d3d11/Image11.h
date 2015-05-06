@@ -31,7 +31,7 @@ class Image11 : public ImageD3D
     Image11(Renderer11 *renderer);
     virtual ~Image11();
 
-    static Image11 *makeImage11(Image *img);
+    static Image11 *makeImage11(ImageD3D *img);
 
     static gl::Error generateMipmap(Image11 *dest, Image11 *src);
 
@@ -43,10 +43,10 @@ class Image11 : public ImageD3D
 
     DXGI_FORMAT getDXGIFormat() const;
 
-    virtual gl::Error loadData(const gl::Box &area, GLint unpackAlignment, GLenum type, const void *input);
+    virtual gl::Error loadData(const gl::Box &area, const gl::PixelUnpackState &unpack, GLenum type, const void *input);
     virtual gl::Error loadCompressedData(const gl::Box &area, const void *input);
 
-    virtual gl::Error copy(const gl::Offset &destOffset, const gl::Rectangle &sourceArea, RenderTarget *source);
+    virtual gl::Error copy(const gl::Offset &destOffset, const gl::Rectangle &sourceArea, RenderTargetD3D *source);
     virtual gl::Error copy(const gl::Offset &destOffset, const gl::Rectangle &sourceArea,
                            const gl::ImageIndex &sourceIndex, TextureStorage *source);
 

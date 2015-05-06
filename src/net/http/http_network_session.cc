@@ -9,6 +9,7 @@
 #include "base/compiler_specific.h"
 #include "base/debug/stack_trace.h"
 #include "base/logging.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
@@ -35,6 +36,10 @@ namespace {
 net::ClientSocketPoolManager* CreateSocketPoolManager(
     net::HttpNetworkSession::SocketPoolType pool_type,
     const net::HttpNetworkSession::Params& params) {
+  // TODO(michaeln): Remove ScopedTracker below once crbug.com/454983 is fixed
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "454983 CreateSocketPoolManager"));
   // TODO(yutak): Differentiate WebSocket pool manager and allow more
   // simultaneous connections for WebSockets.
   return new net::ClientSocketPoolManagerImpl(
@@ -85,20 +90,22 @@ HttpNetworkSession::Params::Params()
       use_alternate_protocols(false),
       alternate_protocol_probability_threshold(1),
       enable_quic(false),
+      enable_quic_for_proxies(false),
       enable_quic_port_selection(true),
       quic_always_require_handshake_confirmation(false),
       quic_disable_connection_pooling(false),
       quic_load_server_info_timeout_ms(0),
-      quic_disable_loading_server_info_for_new_servers(false),
       quic_load_server_info_timeout_srtt_multiplier(0.0f),
       quic_enable_truncated_connection_ids(false),
+      quic_enable_connection_racing(false),
+      quic_disable_disk_cache(false),
       quic_clock(NULL),
       quic_random(NULL),
       quic_max_packet_length(kDefaultMaxPacketSize),
       enable_user_alternate_protocol_ports(false),
       quic_crypto_client_stream_factory(NULL),
       proxy_delegate(NULL) {
-  quic_supported_versions.push_back(QUIC_VERSION_23);
+  quic_supported_versions.push_back(QUIC_VERSION_24);
 }
 
 HttpNetworkSession::Params::~Params() {}
@@ -135,9 +142,10 @@ HttpNetworkSession::HttpNetworkSession(const Params& params)
           params.quic_always_require_handshake_confirmation,
           params.quic_disable_connection_pooling,
           params.quic_load_server_info_timeout_ms,
-          params.quic_disable_loading_server_info_for_new_servers,
           params.quic_load_server_info_timeout_srtt_multiplier,
           params.quic_enable_truncated_connection_ids,
+          params.quic_enable_connection_racing,
+          params.quic_disable_disk_cache,
           params.quic_connection_options),
       spdy_session_pool_(params.host_resolver,
                          params.ssl_config_service,
@@ -158,6 +166,10 @@ HttpNetworkSession::HttpNetworkSession(const Params& params)
   DCHECK(proxy_service_);
   DCHECK(ssl_config_service_.get());
   CHECK(http_server_properties_);
+  // TODO(michaeln): Remove ScopedTracker below once crbug.com/454983 is fixed
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "454983 HttpNetworkSession::HttpNetworkSession"));
 
   for (int i = ALTERNATE_PROTOCOL_MINIMUM_VALID_VERSION;
        i <= ALTERNATE_PROTOCOL_MAXIMUM_VALID_VERSION; ++i) {
@@ -256,6 +268,7 @@ base::Value* HttpNetworkSession::QuicInfoToValue() const {
   base::DictionaryValue* dict = new base::DictionaryValue();
   dict->Set("sessions", quic_stream_factory_.QuicStreamFactoryInfoToValue());
   dict->SetBoolean("quic_enabled", params_.enable_quic);
+  dict->SetBoolean("quic_enabled_for_proxies", params_.enable_quic_for_proxies);
   dict->SetBoolean("enable_quic_port_selection",
                    params_.enable_quic_port_selection);
   base::ListValue* connection_options = new base::ListValue;

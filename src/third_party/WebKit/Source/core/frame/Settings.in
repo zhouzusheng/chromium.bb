@@ -122,7 +122,7 @@ scrollAnimatorEnabled initial=true
 # main thread scrolling are supported.
 threadedScrollingEnabled initial=true, invalidate=Style
 
-# Handles frame-level scrolls via the root RenderLayer instead of the FrameView.
+# Handles frame-level scrolls via the root Layer instead of the FrameView.
 # crbug.com/417782 tracks enabling this by default.
 rootLayerScrolls initial=false
 
@@ -239,9 +239,9 @@ loadWithOverviewMode initial=true, invalidate=ViewportDescription
 # Font scale factor for accessibility, applied as part of text autosizing.
 accessibilityFontScaleFactor type=double, initial=1.0, invalidate=TextAutosizing
 
-
 # Only set by Layout Tests.
 mediaTypeOverride type=String, initial="screen", invalidate=MediaType
+displayModeOverride type=WebDisplayMode, initial=WebDisplayModeUndefined, invalidate=MediaQuery
 
 # loadsImagesAutomatically only suppresses the network load of
 # the image URL. A cached image will still be rendered if requested.
@@ -289,9 +289,6 @@ fullscreenSupported initial=true
 # V8 supports different types of caching. Used by V8 bindings.
 v8CacheOptions type=V8CacheOptions, initial=V8CacheOptionsDefault
 
-v8ScriptStreamingEnabled initial=false
-v8ScriptStreamingMode type=ScriptStreamingMode, initial=ScriptStreamingModeAll
-
 # These values are bit fields for the properties of available pointing devices
 # and may take on multiple values (e.g. laptop with touchpad and touchscreen
 # has pointerType coarse *and* fine).
@@ -315,5 +312,7 @@ inlineTextBoxAccessibilityEnabled initial=false
 # Typically enabled on Windows to match platform convention.
 showContextMenuOnMouseUp initial=false
 
+disableReadingFromCanvas initial=false
 strictMixedContentChecking initial=false
 strictPowerfulFeatureRestrictions initial=false
+logDnsPrefetchAndPreconnect initial=false

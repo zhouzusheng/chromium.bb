@@ -35,9 +35,11 @@
 #include "core/dom/ScriptRunner.h"
 #include "core/dom/ScriptableDocumentParser.h"
 #include "core/dom/Text.h"
+#include "core/fetch/AccessControlStatus.h"
 #include "core/fetch/FetchRequest.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/fetch/ScriptResource.h"
+#include "core/frame/UseCounter.h"
 #include "core/html/HTMLScriptElement.h"
 #include "core/html/imports/HTMLImport.h"
 #include "core/html/parser/HTMLParserIdioms.h"
@@ -255,7 +257,7 @@ bool ScriptLoader::prepareScript(const TextPosition& scriptStartPosition, Legacy
         m_pendingScript = PendingScript(m_element, m_resource.get());
         LocalFrame* frame = m_element->document().frame();
         if (frame) {
-            ScriptStreamer::startStreaming(m_pendingScript, frame->settings(), ScriptState::forMainWorld(frame), PendingScript::Async);
+            ScriptStreamer::startStreaming(m_pendingScript, frame->settings(), ScriptState::forMainWorld(frame));
         }
         contextDocument->scriptRunner()->queueScriptForExecution(this, ScriptRunner::ASYNC_EXECUTION);
         // Note that watchForLoad can immediately call notifyFinished.
@@ -334,13 +336,19 @@ void ScriptLoader::executeScript(const ScriptSourceCode& sourceCode, double* com
         || csp->allowScriptWithNonce(m_element->fastGetAttribute(HTMLNames::nonceAttr))
         || csp->allowScriptWithHash(sourceCode.source());
 
-    if (!m_isExternalScript && (!shouldBypassMainWorldCSP && !csp->allowInlineScript(elementDocument->url(), m_startLineNumber)))
+    if (!m_isExternalScript && (!shouldBypassMainWorldCSP && !csp->allowInlineScript(elementDocument->url(), m_startLineNumber, sourceCode.source())))
         return;
 
     if (m_isExternalScript) {
         ScriptResource* resource = m_resource ? m_resource.get() : sourceCode.resource();
         if (resource && !resource->mimeTypeAllowedByNosniff()) {
             contextDocument->addConsoleMessage(ConsoleMessage::create(SecurityMessageSource, ErrorMessageLevel, "Refused to execute script from '" + resource->url().elidedString() + "' because its MIME type ('" + resource->mimeType() + "') is not executable, and strict MIME type checking is enabled."));
+            return;
+        }
+
+        if (resource && resource->mimeType().lower().startsWith("image/")) {
+            contextDocument->addConsoleMessage(ConsoleMessage::create(SecurityMessageSource, ErrorMessageLevel, "Refused to execute script from '" + resource->url().elidedString() + "' because its MIME type ('" + resource->mimeType() + "') is not executable."));
+            UseCounter::count(frame, UseCounter::BlockedSniffingImageToScript);
             return;
         }
 

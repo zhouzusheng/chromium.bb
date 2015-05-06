@@ -6,6 +6,7 @@
 
 #include "base/metrics/histogram.h"
 #include "base/metrics/sparse_histogram.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "net/quic/crypto/cert_compressor.h"
@@ -22,8 +23,6 @@
 #include "net/quic/quic_utils.h"
 
 using base::StringPiece;
-using std::find;
-using std::make_pair;
 using std::map;
 using std::string;
 using std::vector;
@@ -323,7 +322,7 @@ QuicCryptoClientConfig::CachedState* QuicCryptoClientConfig::LookupOrCreate(
   }
 
   CachedState* cached = new CachedState;
-  cached_states_.insert(make_pair(server_id, cached));
+  cached_states_.insert(std::make_pair(server_id, cached));
   bool cache_populated = PopulateFromCanonicalConfig(server_id, cached);
   UMA_HISTOGRAM_BOOLEAN(
       "Net.QuicCryptoClientConfig.PopulatedFromCanonicalConfig",
@@ -344,6 +343,11 @@ void QuicCryptoClientConfig::FillInchoateClientHello(
     const CachedState* cached,
     QuicCryptoNegotiatedParameters* out_params,
     CryptoHandshakeMessage* out) const {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422516 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "422516 QuicCryptoClientConfig::FillInchoateClientHello"));
+
   out->set_tag(kCHLO);
   out->set_minimum_size(kClientHelloMinimumSize);
 
@@ -402,6 +406,11 @@ QuicErrorCode QuicCryptoClientConfig::FillClientHello(
     QuicCryptoNegotiatedParameters* out_params,
     CryptoHandshakeMessage* out,
     string* error_details) const {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422516 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "422516 QuicCryptoClientConfig::FillClientHello"));
+
   DCHECK(error_details != nullptr);
 
   FillInchoateClientHello(server_id, preferred_version, cached,
@@ -534,16 +543,19 @@ QuicErrorCode QuicCryptoClientConfig::FillClientHello(
     }
 
     const QuicData& cetv_plaintext = cetv.GetSerialized();
-    scoped_ptr<QuicData> cetv_ciphertext(crypters.encrypter->EncryptPacket(
-        0 /* sequence number */,
-        StringPiece() /* associated data */,
-        cetv_plaintext.AsStringPiece()));
-    if (!cetv_ciphertext.get()) {
+    const size_t encrypted_len =
+        crypters.encrypter->GetCiphertextSize(cetv_plaintext.length());
+    scoped_ptr<char[]> output(new char[encrypted_len]);
+    size_t output_size = 0;
+    if (!crypters.encrypter->EncryptPacket(
+            0 /* sequence number */, StringPiece() /* associated data */,
+            cetv_plaintext.AsStringPiece(), output.get(), &output_size,
+            encrypted_len)) {
       *error_details = "Packet encryption failed";
       return QUIC_ENCRYPTION_FAILURE;
     }
 
-    out->SetStringPiece(kCETV, cetv_ciphertext->AsStringPiece());
+    out->SetStringPiece(kCETV, StringPiece(output.get(), output_size));
     out->MarkDirty();
 
     out->set_minimum_size(orig_min_size);
@@ -669,7 +681,7 @@ QuicErrorCode QuicCryptoClientConfig::ProcessRejection(
 
   const uint32* reject_reasons;
   size_t num_reject_reasons;
-  COMPILE_ASSERT(sizeof(QuicTag) == sizeof(uint32), header_out_of_sync);
+  static_assert(sizeof(QuicTag) == sizeof(uint32), "header out of sync");
   if (rej.GetTaglist(kRREJ, &reject_reasons,
                      &num_reject_reasons) == QUIC_NO_ERROR) {
     uint32 packed_error = 0;
@@ -826,7 +838,7 @@ void QuicCryptoClientConfig::PreferAesGcm() {
   if (aead.size() <= 1) {
     return;
   }
-  QuicTagVector::iterator pos = find(aead.begin(), aead.end(), kAESG);
+  QuicTagVector::iterator pos = std::find(aead.begin(), aead.end(), kAESG);
   if (pos != aead.end()) {
     aead.erase(pos);
     aead.insert(aead.begin(), kAESG);

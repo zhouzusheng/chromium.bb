@@ -45,7 +45,7 @@ public:
     SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>* maskUnits() { return m_maskUnits.get(); }
     SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>* maskContentUnits() { return m_maskContentUnits.get(); }
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     explicit SVGMaskElement(Document&);
@@ -55,10 +55,13 @@ private:
 
     bool isSupportedAttribute(const QualifiedName&);
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual bool isPresentationAttribute(const QualifiedName&) const override;
+    virtual bool isPresentationAttributeWithSVGDOM(const QualifiedName&) const override;
+    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
     virtual void svgAttributeChanged(const QualifiedName&) override;
     virtual void childrenChanged(const ChildrenChange&) override;
 
-    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual LayoutObject* createRenderer(const LayoutStyle&) override;
 
     virtual bool selfHasRelativeLengths() const override;
 

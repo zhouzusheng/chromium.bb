@@ -180,8 +180,9 @@ void UploadFileElementReader::OnGetFileInfoCompleted(
   // that the timestamps are within one second of each other. This check is used
   // for sliced files.
   if (!expected_modification_time_.is_null() &&
-      (expected_modification_time_ - file_info->last_modified).InSeconds() !=
-          0) {
+      (expected_modification_time_ - file_info->last_modified)
+              .magnitude()
+              .InSeconds() != 0) {
     callback.Run(ERR_UPLOAD_FILE_CHANGED);
     return;
   }

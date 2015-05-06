@@ -9,10 +9,10 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/trace_event/trace_event.h"
 #include "cc/layers/layer.h"
 #include "cc/output/copy_output_request.h"
 #include "cc/output/copy_output_result.h"
@@ -231,8 +231,13 @@ BOOL CALLBACK DismissOwnedPopups(HWND window, LPARAM arg) {
 }
 #endif
 
-bool CanRendererHandleEvent(const ui::MouseEvent* event) {
+bool CanRendererHandleEvent(const ui::MouseEvent* event,
+                            bool selection_popup) {
   if (event->type() == ui::ET_MOUSE_CAPTURE_CHANGED)
+    return false;
+
+  if (selection_popup &&
+      (event->type() == ui::ET_MOUSE_EXITED))
     return false;
 
 #if defined(OS_WIN)
@@ -264,8 +269,12 @@ bool CanRendererHandleEvent(const ui::MouseEvent* event) {
   // buttons.
   switch (event->type()) {
     case ui::ET_MOUSE_PRESSED:
-    case ui::ET_MOUSE_RELEASED:
-      return event->IsAnyButton();
+    case ui::ET_MOUSE_RELEASED: {
+      const int kAllowedButtons = ui::EF_LEFT_MOUSE_BUTTON |
+                                  ui::EF_MIDDLE_MOUSE_BUTTON |
+                                  ui::EF_RIGHT_MOUSE_BUTTON;
+      return (event->flags() & kAllowedButtons) != 0;
+    }
     default:
       break;
   }
@@ -560,7 +569,9 @@ RenderWidgetHost* RenderWidgetHostViewAura::GetRenderWidgetHost() const {
   return host_;
 }
 
-void RenderWidgetHostViewAura::WasShown() {
+void RenderWidgetHostViewAura::Show() {
+  window_->Show();
+
   DCHECK(host_);
   if (!host_->is_hidden())
     return;
@@ -599,27 +610,37 @@ void RenderWidgetHostViewAura::WasShown() {
   }
   LPARAM lparam = reinterpret_cast<LPARAM>(this);
   EnumChildWindows(ui::GetHiddenWindow(), ShowWindowsCallback, lparam);
+
+  if (legacy_render_widget_host_HWND_)
+    legacy_render_widget_host_HWND_->Show();
 #endif
 }
 
-void RenderWidgetHostViewAura::WasHidden() {
-  if (!host_ || host_->is_hidden())
-    return;
-  host_->WasHidden();
-  delegated_frame_host_->WasHidden();
+void RenderWidgetHostViewAura::Hide() {
+  window_->Hide();
+
+  if (host_ && !host_->is_hidden()) {
+    host_->WasHidden();
+    delegated_frame_host_->WasHidden();
 
 #if defined(OS_WIN)
-  constrained_rects_.clear();
-  aura::WindowTreeHost* host = window_->GetHost();
-  if (host) {
-    HWND parent = host->GetAcceleratedWidget();
-    LPARAM lparam = reinterpret_cast<LPARAM>(this);
-    EnumChildWindows(parent, HideWindowsCallback, lparam);
-    // We reparent the legacy Chrome_RenderWidgetHostHWND window to the global
-    // hidden window on the same lines as Windowed plugin windows.
-    if (legacy_render_widget_host_HWND_)
-      legacy_render_widget_host_HWND_->UpdateParent(ui::GetHiddenWindow());
+    constrained_rects_.clear();
+    aura::WindowTreeHost* host = window_->GetHost();
+    if (host) {
+      HWND parent = host->GetAcceleratedWidget();
+      LPARAM lparam = reinterpret_cast<LPARAM>(this);
+      EnumChildWindows(parent, HideWindowsCallback, lparam);
+      // We reparent the legacy Chrome_RenderWidgetHostHWND window to the global
+      // hidden window on the same lines as Windowed plugin windows.
+      if (legacy_render_widget_host_HWND_)
+        legacy_render_widget_host_HWND_->UpdateParent(ui::GetHiddenWindow());
+    }
+#endif
   }
+
+#if defined(OS_WIN)
+  if (legacy_render_widget_host_HWND_)
+    legacy_render_widget_host_HWND_->Hide();
 #endif
 }
 
@@ -777,24 +798,6 @@ bool RenderWidgetHostViewAura::HasFocus() const {
 
 bool RenderWidgetHostViewAura::IsSurfaceAvailableForCopy() const {
   return delegated_frame_host_->CanCopyToBitmap();
-}
-
-void RenderWidgetHostViewAura::Show() {
-  window_->Show();
-  WasShown();
-#if defined(OS_WIN)
-  if (legacy_render_widget_host_HWND_)
-    legacy_render_widget_host_HWND_->Show();
-#endif
-}
-
-void RenderWidgetHostViewAura::Hide() {
-  window_->Hide();
-  WasHidden();
-#if defined(OS_WIN)
-  if (legacy_render_widget_host_HWND_)
-    legacy_render_widget_host_HWND_->Hide();
-#endif
 }
 
 bool RenderWidgetHostViewAura::IsShowing() {
@@ -1169,22 +1172,42 @@ void RenderWidgetHostViewAura::GestureEventAck(
 }
 
 void RenderWidgetHostViewAura::ProcessAckedTouchEvent(
-    const TouchEventWithLatencyInfo& touch, InputEventAckState ack_result) {
+    const TouchEventWithLatencyInfo& touch,
+    InputEventAckState ack_result) {
   ScopedVector<ui::TouchEvent> events;
-  if (!MakeUITouchEventsFromWebTouchEvents(touch, &events,
-                                           SCREEN_COORDINATES))
-    return;
-
   aura::WindowTreeHost* host = window_->GetHost();
   // |host| is NULL during tests.
   if (!host)
     return;
 
-  ui::EventResult result = (ack_result ==
-      INPUT_EVENT_ACK_STATE_CONSUMED) ? ui::ER_HANDLED : ui::ER_UNHANDLED;
-  for (ScopedVector<ui::TouchEvent>::iterator iter = events.begin(),
-      end = events.end(); iter != end; ++iter) {
-    host->dispatcher()->ProcessedTouchEvent((*iter), window_, result);
+  ui::EventResult result = (ack_result == INPUT_EVENT_ACK_STATE_CONSUMED)
+                               ? ui::ER_HANDLED
+                               : ui::ER_UNHANDLED;
+
+  blink::WebTouchPoint::State required_state;
+  switch (touch.event.type) {
+    case blink::WebInputEvent::TouchStart:
+      required_state = blink::WebTouchPoint::StatePressed;
+      break;
+    case blink::WebInputEvent::TouchEnd:
+      required_state = blink::WebTouchPoint::StateReleased;
+      break;
+    case blink::WebInputEvent::TouchMove:
+      required_state = blink::WebTouchPoint::StateMoved;
+      break;
+    case blink::WebInputEvent::TouchCancel:
+      required_state = blink::WebTouchPoint::StateCancelled;
+      break;
+    default:
+      required_state = blink::WebTouchPoint::StateUndefined;
+      NOTREACHED();
+      break;
+  }
+
+  // Only send acks for changed touches.
+  for (size_t i = 0; i < touch.event.touchesLength; ++i) {
+    if (touch.event.touches[i].state == required_state)
+      host->dispatcher()->ProcessedTouchEvent(window_, result);
   }
 }
 
@@ -1656,11 +1679,11 @@ void RenderWidgetHostViewAura::OnCandidateWindowHidden() {
   host_->CandidateWindowHidden();
 }
 
-bool RenderWidgetHostViewAura::IsEditingCommandEnabled(int command_id) {
+bool RenderWidgetHostViewAura::IsEditCommandEnabled(int command_id) {
   return false;
 }
 
-void RenderWidgetHostViewAura::ExecuteEditingCommand(int command_id) {
+void RenderWidgetHostViewAura::SetEditCommandForNextKeyEvent(int command_id) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1708,6 +1731,10 @@ void RenderWidgetHostViewAura::OnBoundsChanged(const gfx::Rect& old_bounds,
 
   if (GetInputMethod())
     GetInputMethod()->OnCaretBoundsChanged(this);
+}
+
+ui::TextInputClient* RenderWidgetHostViewAura::GetFocusedTextInputClient() {
+  return GetTextInputClient();
 }
 
 gfx::NativeCursor RenderWidgetHostViewAura::GetCursor(const gfx::Point& point) {
@@ -1909,8 +1936,10 @@ void RenderWidgetHostViewAura::OnMouseEvent(ui::MouseEvent* event) {
         synthetic_move_sent_ = true;
         window_->MoveCursorTo(center);
       }
+      bool is_selection_popup = popup_child_host_view_ &&
+          popup_child_host_view_->NeedsInputGrab();
       // Forward event to renderer.
-      if (CanRendererHandleEvent(event) &&
+      if (CanRendererHandleEvent(event, is_selection_popup) &&
           !(event->flags() & ui::EF_FROM_TOUCH)) {
         host_->ForwardMouseEvent(mouse_event);
         // Ensure that we get keyboard focus on mouse down as a plugin window
@@ -1960,20 +1989,24 @@ void RenderWidgetHostViewAura::OnMouseEvent(ui::MouseEvent* event) {
         MakeWebMouseWheelEvent(static_cast<ui::MouseWheelEvent&>(*event));
     if (mouse_wheel_event.deltaX != 0 || mouse_wheel_event.deltaY != 0)
       host_->ForwardWheelEvent(mouse_wheel_event);
-  } else if (CanRendererHandleEvent(event) &&
-             !(event->flags() & ui::EF_FROM_TOUCH)) {
-    // Confirm existing composition text on mouse press, to make sure
-    // the input caret won't be moved with an ongoing composition text.
-    if (event->type() == ui::ET_MOUSE_PRESSED)
-      FinishImeCompositionSession();
+  } else {
+    bool is_selection_popup = popup_child_host_view_ &&
+        popup_child_host_view_->NeedsInputGrab();
+    if (CanRendererHandleEvent(event, is_selection_popup) &&
+        !(event->flags() & ui::EF_FROM_TOUCH)) {
+      // Confirm existing composition text on mouse press, to make sure
+      // the input caret won't be moved with an ongoing composition text.
+      if (event->type() == ui::ET_MOUSE_PRESSED)
+        FinishImeCompositionSession();
 
-    blink::WebMouseEvent mouse_event = MakeWebMouseEvent(*event);
-    ModifyEventMovementAndCoords(&mouse_event);
-    host_->ForwardMouseEvent(mouse_event);
-    // Ensure that we get keyboard focus on mouse down as a plugin window may
-    // have grabbed keyboard focus.
-    if (event->type() == ui::ET_MOUSE_PRESSED)
-      SetKeyboardFocus();
+      blink::WebMouseEvent mouse_event = MakeWebMouseEvent(*event);
+      ModifyEventMovementAndCoords(&mouse_event);
+      host_->ForwardMouseEvent(mouse_event);
+      // Ensure that we get keyboard focus on mouse down as a plugin window may
+      // have grabbed keyboard focus.
+      if (event->type() == ui::ET_MOUSE_PRESSED)
+        SetKeyboardFocus();
+    }
   }
 
   switch (event->type()) {
@@ -2525,7 +2558,7 @@ void RenderWidgetHostViewAura::AddedToRootWindow() {
         reinterpret_cast<HWND>(GetNativeViewId()));
 #endif
 
-  delegated_frame_host_->AddedToWindow();
+  delegated_frame_host_->SetCompositor(window_->GetHost()->compositor());
 }
 
 void RenderWidgetHostViewAura::RemovingFromRootWindow() {
@@ -2537,7 +2570,7 @@ void RenderWidgetHostViewAura::RemovingFromRootWindow() {
   DetachFromInputMethod();
 
   window_->GetHost()->RemoveObserver(this);
-  delegated_frame_host_->RemovingFromWindow();
+  delegated_frame_host_->ResetCompositor();
 
 #if defined(OS_WIN)
   // Update the legacy window's parent temporarily to the desktop window. It
@@ -2589,37 +2622,35 @@ SkColorType RenderWidgetHostViewAura::PreferredReadbackFormat() {
 ////////////////////////////////////////////////////////////////////////////////
 // DelegatedFrameHost, public:
 
-ui::Compositor* RenderWidgetHostViewAura::GetCompositor() const {
-  aura::WindowTreeHost* host = window_->GetHost();
-  return host ? host->compositor() : NULL;
-}
-
-ui::Layer* RenderWidgetHostViewAura::GetLayer() {
+ui::Layer* RenderWidgetHostViewAura::DelegatedFrameHostGetLayer() const {
   return window_->layer();
 }
 
-RenderWidgetHostImpl* RenderWidgetHostViewAura::GetHost() {
-  return host_;
+bool RenderWidgetHostViewAura::DelegatedFrameHostIsVisible() const {
+  return !host_->is_hidden();
 }
 
-bool RenderWidgetHostViewAura::IsVisible() {
-  return IsShowing();
-}
-
-gfx::Size RenderWidgetHostViewAura::DesiredFrameSize() {
+gfx::Size RenderWidgetHostViewAura::DelegatedFrameHostDesiredSizeInDIP() const {
   return window_->bounds().size();
 }
 
-float RenderWidgetHostViewAura::CurrentDeviceScaleFactor() {
-  return current_device_scale_factor_;
+bool RenderWidgetHostViewAura::DelegatedFrameCanCreateResizeLock() const {
+#if !defined(OS_CHROMEOS)
+  // On Windows and Linux, holding pointer moves will not help throttling
+  // resizes.
+  // TODO(piman): on Windows we need to block (nested message loop?) the
+  // WM_SIZE event. On Linux we need to throttle at the WM level using
+  // _NET_WM_SYNC_REQUEST.
+  return false;
+#else
+  if (host_->auto_resize_enabled())
+    return false;
+  return true;
+#endif
 }
 
-gfx::Size RenderWidgetHostViewAura::ConvertViewSizeToPixel(
-    const gfx::Size& size) {
-  return content::ConvertViewSizeToPixel(this, size);
-}
-
-scoped_ptr<ResizeLock> RenderWidgetHostViewAura::CreateResizeLock(
+scoped_ptr<ResizeLock>
+RenderWidgetHostViewAura::DelegatedFrameHostCreateResizeLock(
     bool defer_compositor_lock) {
   gfx::Size desired_size = window_->bounds().size();
   return scoped_ptr<ResizeLock>(new CompositorResizeLock(
@@ -2629,8 +2660,36 @@ scoped_ptr<ResizeLock> RenderWidgetHostViewAura::CreateResizeLock(
       base::TimeDelta::FromMilliseconds(kResizeLockTimeoutMs)));
 }
 
-DelegatedFrameHost* RenderWidgetHostViewAura::GetDelegatedFrameHost() const {
-  return delegated_frame_host_.get();
+void RenderWidgetHostViewAura::DelegatedFrameHostResizeLockWasReleased() {
+  host_->WasResized();
+}
+
+void RenderWidgetHostViewAura::DelegatedFrameHostSendCompositorSwapAck(
+    int output_surface_id,
+    const cc::CompositorFrameAck& ack) {
+  host_->Send(new ViewMsg_SwapCompositorFrameAck(host_->GetRoutingID(),
+                                                 output_surface_id, ack));
+}
+
+void RenderWidgetHostViewAura::DelegatedFrameHostSendReclaimCompositorResources(
+    int output_surface_id,
+    const cc::CompositorFrameAck& ack) {
+  host_->Send(new ViewMsg_ReclaimCompositorResources(host_->GetRoutingID(),
+                                                     output_surface_id, ack));
+}
+
+void RenderWidgetHostViewAura::DelegatedFrameHostOnLostCompositorResources() {
+  host_->ScheduleComposite();
+}
+
+void RenderWidgetHostViewAura::DelegatedFrameHostUpdateVSyncParameters(
+    const base::TimeTicks& timebase,
+    const base::TimeDelta& interval) {
+  host_->UpdateVSyncParameters(timebase, interval);
+}
+
+void RenderWidgetHostViewAura::OnDidNavigateMainFrameToNewPage() {
+  ui::GestureRecognizer::Get()->CancelActiveTouches(window_);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -39,7 +39,6 @@
 #include "platform/fonts/Font.h"
 #include "platform/graphics/Color.h"
 #include "platform/geometry/FloatSize.h"
-#include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/GraphicsTypes.h"
 #include "platform/graphics/ImageBuffer.h"
 #include "platform/graphics/Path.h"
@@ -164,6 +163,7 @@ public:
     void drawImage(const CanvasImageSourceUnion&, float x, float y, ExceptionState&);
     void drawImage(const CanvasImageSourceUnion&, float x, float y, float width, float height, ExceptionState&);
     void drawImage(const CanvasImageSourceUnion&, float sx, float sy, float sw, float sh, float dx, float dy, float dw, float dh, ExceptionState&);
+    void drawImage(CanvasImageSource*, float sx, float sy, float sw, float sh, float dx, float dy, float dw, float dh, ExceptionState&);
 
     PassRefPtrWillBeRawPtr<CanvasGradient> createLinearGradient(float x0, float y0, float x1, float y1);
     PassRefPtrWillBeRawPtr<CanvasGradient> createRadialGradient(float x0, float y0, float r0, float x1, float y1, float r1, ExceptionState&);
@@ -217,9 +217,11 @@ public:
 
     void restoreCanvasMatrixClipStack();
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
+    friend class CanvasRenderingContext2DAutoRestoreSkCanvas;
+
     enum Direction {
         DirectionInherit,
         DirectionRTL,
@@ -242,7 +244,7 @@ private:
         // CSSFontSelectorClient implementation
         virtual void fontsNeedUpdate(CSSFontSelector*) override;
 
-        virtual void trace(Visitor*) override;
+        DECLARE_VIRTUAL_TRACE();
 
         unsigned m_unrealizedSaveCount;
 
@@ -250,6 +252,7 @@ private:
         String m_unparsedFillColor;
         RefPtrWillBeMember<CanvasStyle> m_strokeStyle;
         RefPtrWillBeMember<CanvasStyle> m_fillStyle;
+
         float m_lineWidth;
         LineCap m_lineCap;
         LineJoin m_lineJoin;
@@ -258,8 +261,7 @@ private:
         float m_shadowBlur;
         RGBA32 m_shadowColor;
         float m_globalAlpha;
-        CompositeOperator m_globalComposite;
-        WebBlendMode m_globalBlend;
+        SkXfermode::Mode m_globalComposite;
         AffineTransform m_transform;
         bool m_invertibleCTM;
         Vector<float> m_lineDash;
@@ -276,6 +278,7 @@ private:
         bool m_realizedFont;
 
         bool m_hasClip;
+        bool m_hasComplexClip;
 
         ClipList m_clipList;
     };
@@ -298,15 +301,14 @@ private:
     bool computeDirtyRect(const FloatRect& localBounds, const FloatRect& transformedClipBounds, FloatRect*);
     void didDraw(const FloatRect&);
 
-    GraphicsContext* drawingContext() const;
+    GraphicsContext* drawingContext() const; // Deprecated: use drawingCanvas
+    SkCanvas* drawingCanvas() const;
 
     void unwindStateStack();
-    void realizeSaves(GraphicsContext*);
+    void realizeSaves(SkCanvas*);
 
     void applyStrokePattern();
     void applyFillPattern();
-
-    void drawImageInternal(CanvasImageSource*, float sx, float sy, float sw, float sh, float dx, float dy, float dw, float dh, ExceptionState&);
 
     void fillInternal(const Path&, const String& windingRuleString);
     void strokeInternal(const Path&);
@@ -337,6 +339,19 @@ private:
 
     void validateStateStack();
 
+    enum DrawType {
+        ClipFill, // Fill that is already known to cover the current clip
+        UntransformedUnclippedFill
+    };
+
+    enum ImageType {
+        NoImage,
+        OpaqueImage,
+        NonOpaqueImage
+    };
+
+    void checkOverdraw(const SkRect&, const SkPaint*, ImageType, DrawType);
+
     virtual bool is2d() const override { return true; }
     virtual bool isAccelerated() const override;
     virtual bool hasAlpha() const override { return m_hasAlpha; }
@@ -345,7 +360,7 @@ private:
     virtual bool isTransformInvertible() const override { return state().m_invertibleCTM; }
 
     virtual WebLayer* platformLayer() const override;
-    TextDirection toTextDirection(Direction, RenderStyle** computedStyle = nullptr) const;
+    TextDirection toTextDirection(Direction, LayoutStyle** computedStyle = nullptr) const;
 
     WillBeHeapVector<OwnPtrWillBeMember<State>> m_stateStack;
     OwnPtrWillBeMember<HitRegionManager> m_hitRegionManager;

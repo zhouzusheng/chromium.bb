@@ -11,45 +11,12 @@
 
 #include "libANGLE/Display.h"
 #include "libANGLE/Surface.h"
+#include "libANGLE/validationEGL.h"
 
 #include "common/debug.h"
 
 namespace egl
 {
-
-// EGL object validation
-static bool ValidateDisplay(Display *display)
-{
-    if (display == EGL_NO_DISPLAY)
-    {
-        SetGlobalError(Error(EGL_BAD_DISPLAY));
-        return false;
-    }
-
-    if (!display->isInitialized())
-    {
-        SetGlobalError(Error(EGL_NOT_INITIALIZED));
-        return false;
-    }
-
-    return true;
-}
-
-static bool ValidateSurface(Display *display, Surface *surface)
-{
-    if (!ValidateDisplay(display))
-    {
-        return false;
-    }
-
-    if (!display->isValidSurface(surface))
-    {
-        SetGlobalError(Error(EGL_BAD_SURFACE));
-        return false;
-    }
-
-    return true;
-}
 
 // EGL_ANGLE_query_surface_pointer
 EGLBoolean EGLAPIENTRY QuerySurfacePointerANGLE(EGLDisplay dpy, EGLSurface surface, EGLint attribute, void **value)
@@ -58,10 +25,18 @@ EGLBoolean EGLAPIENTRY QuerySurfacePointerANGLE(EGLDisplay dpy, EGLSurface surfa
           dpy, surface, attribute, value);
 
     Display *display = static_cast<Display*>(dpy);
-    Surface *eglSurface = (Surface*)surface;
+    Surface *eglSurface = static_cast<Surface*>(surface);
 
-    if (!ValidateSurface(display, eglSurface))
+    Error error = ValidateSurface(display, eglSurface);
+    if (error.isError())
     {
+        SetGlobalError(error);
+        return EGL_FALSE;
+    }
+
+    if (!display->getExtensions().querySurfacePointer)
+    {
+        SetGlobalError(Error(EGL_SUCCESS));
         return EGL_FALSE;
     }
 
@@ -75,13 +50,19 @@ EGLBoolean EGLAPIENTRY QuerySurfacePointerANGLE(EGLDisplay dpy, EGLSurface surfa
     switch (attribute)
     {
       case EGL_D3D_TEXTURE_2D_SHARE_HANDLE_ANGLE:
+        if (!display->getExtensions().surfaceD3DTexture2DShareHandle)
+        {
+            SetGlobalError(Error(EGL_BAD_ATTRIBUTE));
+            return EGL_FALSE;
+        }
         break;
+
       default:
         SetGlobalError(Error(EGL_BAD_ATTRIBUTE));
         return EGL_FALSE;
     }
 
-    Error error = eglSurface->querySurfacePointerANGLE(attribute, value);
+    error = eglSurface->querySurfacePointerANGLE(attribute, value);
     SetGlobalError(error);
     return (error.isError() ? EGL_FALSE : EGL_TRUE);
 }
@@ -101,12 +82,14 @@ EGLBoolean EGLAPIENTRY PostSubBufferNV(EGLDisplay dpy, EGLSurface surface, EGLin
     Display *display = static_cast<Display*>(dpy);
     Surface *eglSurface = static_cast<Surface*>(surface);
 
-    if (!ValidateSurface(display, eglSurface))
+    Error error = ValidateSurface(display, eglSurface);
+    if (error.isError())
     {
+        SetGlobalError(error);
         return EGL_FALSE;
     }
 
-    if (display->getRenderer()->isDeviceLost())
+    if (display->isDeviceLost())
     {
         SetGlobalError(Error(EGL_CONTEXT_LOST));
         return EGL_FALSE;
@@ -118,7 +101,14 @@ EGLBoolean EGLAPIENTRY PostSubBufferNV(EGLDisplay dpy, EGLSurface surface, EGLin
         return EGL_FALSE;
     }
 
-    Error error = eglSurface->postSubBuffer(x, y, width, height);
+    if (!display->getExtensions().postSubBuffer)
+    {
+        // Spec is not clear about how this should be handled.
+        SetGlobalError(Error(EGL_SUCCESS));
+        return EGL_TRUE;
+    }
+
+    error = eglSurface->postSubBuffer(x, y, width, height);
     if (error.isError())
     {
         SetGlobalError(error);
@@ -135,17 +125,22 @@ EGLDisplay EGLAPIENTRY GetPlatformDisplayEXT(EGLenum platform, void *native_disp
     EVENT("(EGLenum platform = %d, void* native_display = 0x%0.8p, const EGLint* attrib_list = 0x%0.8p)",
           platform, native_display, attrib_list);
 
+    const ClientExtensions &clientExtensions = Display::getClientExtensions();
+
     switch (platform)
     {
       case EGL_PLATFORM_ANGLE_ANGLE:
+        if (!clientExtensions.platformANGLE)
+        {
+            SetGlobalError(Error(EGL_SUCCESS));
+            return EGL_NO_DISPLAY;
+        }
         break;
 
       default:
         SetGlobalError(Error(EGL_BAD_CONFIG));
         return EGL_NO_DISPLAY;
     }
-
-    const ClientExtensions &clientExtensions = Display::getClientExtensions();
 
     EGLint platformType = EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE;
     bool majorVersionSpecified = false;

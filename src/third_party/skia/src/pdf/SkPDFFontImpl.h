@@ -18,8 +18,7 @@ public:
     virtual bool multiByteGlyphs() const { return true; }
     SK_API virtual SkPDFFont* getFontSubset(const SkPDFGlyphSet* usage);
 #ifdef SK_DEBUG
-    virtual void emitObject(SkWStream* stream, SkPDFCatalog* catalog,
-                            bool indirect);
+    virtual void emitObject(SkWStream* stream, SkPDFCatalog* catalog);
 #endif
 
 private:
@@ -29,7 +28,9 @@ private:
     typedef SkPDFDict INHERITED;
 #endif
 
-    SkPDFType0Font(const SkAdvancedTypefaceMetrics* info, SkTypeface* typeface);
+    SkPDFType0Font(SkPDFCanon* canon,
+                   const SkAdvancedTypefaceMetrics* info,
+                   SkTypeface* typeface);
 
     bool populate(const SkPDFGlyphSet* subset);
 };
@@ -42,7 +43,9 @@ public:
 private:
     friend class SkPDFType0Font;  // to access the constructor
 
-    SkPDFCIDFont(const SkAdvancedTypefaceMetrics* info, SkTypeface* typeface,
+    SkPDFCIDFont(SkPDFCanon* canon,
+                 const SkAdvancedTypefaceMetrics* info,
+                 SkTypeface* typeface,
                  const SkPDFGlyphSet* subset);
 
     bool populate(const SkPDFGlyphSet* subset);
@@ -58,8 +61,11 @@ public:
 private:
     friend class SkPDFFont;  // to access the constructor
 
-    SkPDFType1Font(const SkAdvancedTypefaceMetrics* info, SkTypeface* typeface,
-                   uint16_t glyphID, SkPDFDict* relatedFontDescriptor);
+    SkPDFType1Font(SkPDFCanon* canon,
+                   const SkAdvancedTypefaceMetrics* info,
+                   SkTypeface* typeface,
+                   uint16_t glyphID,
+                   SkPDFDict* relatedFontDescriptor);
 
     bool populate(int16_t glyphID);
     bool addFontDescriptor(int16_t defaultWidth);
@@ -75,8 +81,10 @@ public:
 private:
     friend class SkPDFFont;  // to access the constructor
 
-    SkPDFType3Font(const SkAdvancedTypefaceMetrics* info,
-                   SkTypeface* typeface, uint16_t glyphID);
+    SkPDFType3Font(SkPDFCanon* canon,
+                   const SkAdvancedTypefaceMetrics* info,
+                   SkTypeface* typeface,
+                   uint16_t glyphID);
 
     bool populate(uint16_t glyphID);
 };

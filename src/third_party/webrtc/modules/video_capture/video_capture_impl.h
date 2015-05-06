@@ -52,14 +52,9 @@ public:
     static DeviceInfo* CreateDeviceInfo(const int32_t id);
 
     // Helpers for converting between (integral) degrees and
-    // VideoCaptureRotation values.  Return 0 on success.
-    static int32_t RotationFromDegrees(int degrees,
-                                       VideoCaptureRotation* rotation);
-    static int32_t RotationInDegrees(VideoCaptureRotation rotation,
-                                     int* degrees);
-
-    // Implements Module declared functions.
-    virtual int32_t ChangeUniqueId(const int32_t id);
+    // VideoRotation values.  Return 0 on success.
+    static int32_t RotationFromDegrees(int degrees, VideoRotation* rotation);
+    static int32_t RotationInDegrees(VideoRotation rotation, int* degrees);
 
     //Call backs
     virtual void RegisterCaptureDataCallback(
@@ -70,7 +65,11 @@ public:
 
     virtual void SetCaptureDelay(int32_t delayMS);
     virtual int32_t CaptureDelay();
-    virtual int32_t SetCaptureRotation(VideoCaptureRotation rotation);
+    virtual int32_t SetCaptureRotation(VideoRotation rotation);
+    virtual bool SetApplyRotation(bool enable);
+    virtual bool GetApplyRotation() {
+      return apply_rotation_;
+    }
 
     virtual void EnableFrameRateCallback(const bool enable);
     virtual void EnableNoPictureAlarm(const bool enable);
@@ -136,13 +135,15 @@ private:
     VideoRotationMode _rotateFrame; //Set if the frame should be rotated by the capture module.
 
     I420VideoFrame _captureFrame;
-    VideoFrame _capture_encoded_frame;
 
     // Used to make sure incoming timestamp is increasing for every frame.
     int64_t last_capture_time_;
 
     // Delta used for translating between NTP and internal timestamps.
     const int64_t delta_ntp_internal_ms_;
+
+    // Indicate whether rotation should be applied before delivered externally.
+    bool apply_rotation_;
 };
 }  // namespace videocapturemodule
 }  // namespace webrtc

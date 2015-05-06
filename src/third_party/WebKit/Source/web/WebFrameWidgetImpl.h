@@ -46,7 +46,7 @@ class Frame;
 class Element;
 class LocalFrame;
 class Page;
-class RenderLayerCompositor;
+class LayerCompositor;
 class UserGestureToken;
 class WebLayer;
 class WebLayerTreeView;
@@ -94,6 +94,12 @@ public:
         const WebFloatSize& elasticOverscrollDelta,
         float pageScaleDelta,
         float topControlsDelta) override;
+    void applyViewportDeltas(
+        const WebFloatSize& pinchViewportDelta,
+        const WebFloatSize& mainFrameDelta,
+        const WebFloatSize& elasticOverscrollDelta,
+        float pageScaleDelta,
+        float topControlsDelta) override;
     void mouseCaptureLost() override;
     void setFocus(bool enable) override;
     bool setComposition(
@@ -124,7 +130,7 @@ public:
 
     void scheduleAnimation();
 
-    RenderLayerCompositor* compositor() const;
+    LayerCompositor* compositor() const;
     void suppressInvalidations(bool enable);
     void setRootGraphicsLayer(GraphicsLayer*);
 
@@ -207,4 +213,3 @@ private:
 } // namespace blink
 
 #endif
-

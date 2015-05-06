@@ -39,6 +39,7 @@
 #include "ipc/ipc_listener.h"
 #include "ui/base/ime/text_input_mode.h"
 #include "ui/base/ime/text_input_type.h"
+#include "ui/events/gesture_detection/gesture_provider_config_helper.h"
 #include "ui/events/latency_info.h"
 #include "ui/gfx/native_widget_types.h"
 
@@ -139,8 +140,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
                             const SkColorType color_type) override;
   bool CanCopyFromBackingStore() override;
 #if defined(OS_ANDROID)
-  virtual void LockBackingStore() override;
-  virtual void UnlockBackingStore() override;
+  void LockBackingStore() override;
+  void UnlockBackingStore() override;
 #endif
   void ForwardMouseEvent(const blink::WebMouseEvent& mouse_event) override;
   void ForwardWheelEvent(const blink::WebMouseWheelEvent& wheel_event) override;
@@ -190,6 +191,18 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // menus, and other times when the renderer initiates creating an object.
   virtual void Init();
 
+  // Initializes a RenderWidgetHost that is attached to a RenderFrameHost.
+  void InitForFrame();
+
+  // Signal whether this RenderWidgetHost is owned by a RenderFrameHost, in
+  // which case it does not do self-deletion.
+  void set_owned_by_render_frame_host(bool owned_by_rfh) {
+    owned_by_render_frame_host_ = owned_by_rfh;
+  }
+
+  // Called by RenderFrameHost before destroying this object.
+  void Cleanup();
+
   // Tells the renderer to die and then calls Destroy().
   virtual void Shutdown();
 
@@ -214,6 +227,15 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // got/lost focused.
   virtual void GotFocus();
   virtual void LostCapture();
+
+  // Indicates whether the RenderWidgetHost thinks it is focused.
+  // This is different from RenderWidgetHostView::HasFocus() in the sense that
+  // it reflects what the renderer process knows: it saves the state that is
+  // sent/received.
+  // RenderWidgetHostView::HasFocus() is checking whether the view is focused so
+  // it is possible in some edge cases that a view was requested to be focused
+  // but it failed, thus HasFocus() returns false.
+  bool is_focused() const { return is_focused_; }
 
   // Called to notify the RenderWidget that it has lost the mouse lock.
   virtual void LostMouseLock();
@@ -254,6 +276,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // responsive.
   void StopHangMonitorTimeout();
 
+  // Disables elastic overscroll effect if enabled.
+  void DisableElasticOverscroll();
+
   // Forwards the given message to the renderer. These are called by the view
   // when it has received a message.
   void ForwardGestureEventWithLatencyInfo(
@@ -270,7 +295,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
       const ui::LatencyInfo& ui_latency);
 
   // Enables/disables touch emulation using mouse event. See TouchEmulator.
-  void SetTouchEventEmulationEnabled(bool enabled);
+  void SetTouchEventEmulationEnabled(
+      bool enabled, ui::GestureProviderConfigType config_type);
 
   // TouchEmulatorClient implementation.
   void ForwardGestureEvent(
@@ -389,9 +415,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   bool GotResponseToLockMouseRequest(bool allowed);
 
   // Tells the RenderWidget about the latest vsync parameters.
-  // Note: Make sure the timebase was obtained using
-  // base::TimeTicks::HighResNow. Using the non-high res timer will result in
-  // incorrect synchronization across processes.
   virtual void UpdateVSyncParameters(base::TimeTicks timebase,
                                      base::TimeDelta interval);
 
@@ -478,6 +501,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // or create it if it doesn't already exist.
   BrowserAccessibilityManager* GetOrCreateRootBrowserAccessibilityManager();
 
+  void RejectMouseLockOrUnlockIfNecessary();
+
 #if defined(OS_WIN)
   gfx::NativeViewAccessible GetParentNativeViewAccessible();
 #endif
@@ -527,7 +552,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   virtual void RequestToLockMouse(bool user_gesture,
                                   bool last_unlocked_by_target);
 
-  void RejectMouseLockOrUnlockIfNecessary();
   bool IsMouseLocked() const;
 
   // RenderViewHost overrides this method to report when in fullscreen mode.
@@ -824,6 +848,16 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   typedef std::map<int,
       base::Callback<void(const unsigned char*, size_t)> > PendingSnapshotMap;
   PendingSnapshotMap pending_browser_snapshots_;
+
+  // Indicates whether a RenderFramehost has ownership, in which case this
+  // object does not self destroy.
+  bool owned_by_render_frame_host_;
+
+  // Indicates whether this RenderWidgetHost thinks is focused. This is trying
+  // to match what the renderer process knows. It is different from
+  // RenderWidgetHostView::HasFocus in that in that the focus request may fail,
+  // causing HasFocus to return false when is_focused_ is true.
+  bool is_focused_;
 
   base::WeakPtrFactory<RenderWidgetHostImpl> weak_factory_;
 

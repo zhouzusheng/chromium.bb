@@ -41,8 +41,8 @@ class PluginService {
 
   // Tells all the renderer processes associated with the given browser context
   // to throw away their cache of the plugin list, and optionally also reload
-  // all the pages with plugins. If |browser_context| is NULL, purges the cache
-  // in all renderers.
+  // all the pages with plugins. If |browser_context| is nullptr, purges the
+  // cache in all renderers.
   // NOTE: can only be called on the UI thread.
   CONTENT_EXPORT static void PurgePluginListCache(
       BrowserContext* browser_context,
@@ -96,7 +96,7 @@ class PluginService {
   // provided function on the calling MessageLoop on completion.
   virtual void GetPlugins(const GetPluginsCallback& callback) = 0;
 
-  // Returns information about a pepper plugin if it exists, otherwise NULL.
+  // Returns information about a pepper plugin if it exists, otherwise nullptr.
   // The caller does not own the pointer, and it's not guaranteed to live past
   // the call stack.
   virtual PepperPluginInfo* GetRegisteredPpapiPluginInfo(
@@ -142,6 +142,9 @@ class PluginService {
   // Returns true iff NPAPI plugins are supported on the current platform.
   // This can be called from any thread.
   virtual bool NPAPIPluginsSupported() = 0;
+
+  // This is equivalent to specifying kEnableNpapi.
+  virtual void EnableNpapiPlugins() = 0;
 
   // This is equivalent to specifying kDisablePluginsDiscovery, but is useful
   // for unittests.

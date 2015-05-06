@@ -218,7 +218,9 @@ typedef char* caddr_t;
 
 #define bzero(buf, len) memset(buf, 0, len)
 #define bcopy(srcKey, dstKey, len) memcpy(dstKey, srcKey, len)
+#if _MSC_VER < 1900
 #define snprintf(data, size, format, ...) _snprintf_s(data, size, _TRUNCATE, format, __VA_ARGS__)
+#endif
 #define inline __inline
 #define __inline__ __inline
 #define	MSG_EOR		0x8		/* data completes record */
@@ -483,12 +485,10 @@ struct sx {int dummy;};
 #include <netinet/in_systm.h>
 #include <netinet/ip.h>
 #endif
-#if defined INET
-#if defined(__Userspace_os_Windows)
-#include <user_ip_icmp.h>
-#else
+#if defined(HAVE_NETINET_IP_ICMP_H)
 #include <netinet/ip_icmp.h>
-#endif
+#else
+#include <user_ip_icmp.h>
 #endif
 /* #include <netinet/in_pcb.h> ported to userspace */
 #include <user_inpcb.h>

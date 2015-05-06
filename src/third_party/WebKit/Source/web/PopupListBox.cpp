@@ -33,7 +33,9 @@
 
 #include "core/CSSValueKeywords.h"
 #include "core/html/forms/PopupMenuClient.h"
-#include "core/rendering/RenderTheme.h"
+#include "core/layout/LayoutTheme.h"
+#include "core/paint/ScrollRecorder.h"
+#include "core/paint/TransformRecorder.h"
 #include "platform/KeyboardCodes.h"
 #include "platform/PlatformGestureEvent.h"
 #include "platform/PlatformKeyboardEvent.h"
@@ -48,6 +50,8 @@
 #include "platform/geometry/IntRect.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/GraphicsContextStateSaver.h"
+#include "platform/graphics/paint/ClipRecorder.h"
+#include "platform/graphics/paint/DrawingRecorder.h"
 #include "platform/scroll/ScrollbarTheme.h"
 #include "platform/text/StringTruncator.h"
 #include "platform/text/TextRun.h"
@@ -85,8 +89,6 @@ PopupListBox::PopupListBox(PopupMenuClient* client, bool deviceSupportsTouch, Po
 
 PopupListBox::~PopupListBox()
 {
-    clear();
-
     // Oilpan: the scrollbars of the ScrollView are self-sufficient,
     // capable of detaching themselves from their animator on
     // finalization.
@@ -95,7 +97,7 @@ PopupListBox::~PopupListBox()
 #endif
 }
 
-void PopupListBox::trace(Visitor* visitor)
+DEFINE_TRACE(PopupListBox)
 {
     visitor->trace(m_capturingScrollbar);
     visitor->trace(m_lastScrollbarUnderMouse);
@@ -179,25 +181,6 @@ bool PopupListBox::handleWheelEvent(const PlatformWheelEvent& event)
 
     ScrollableArea::handleWheelEvent(event);
     return true;
-}
-
-// Should be kept in sync with handleKeyEvent().
-bool PopupListBox::isInterestedInEventForKey(int keyCode)
-{
-    switch (keyCode) {
-    case VKEY_ESCAPE:
-    case VKEY_RETURN:
-    case VKEY_UP:
-    case VKEY_DOWN:
-    case VKEY_PRIOR:
-    case VKEY_NEXT:
-    case VKEY_HOME:
-    case VKEY_END:
-    case VKEY_TAB:
-        return true;
-    default:
-        return false;
-    }
 }
 
 bool PopupListBox::handleTouchEvent(const PlatformTouchEvent&)
@@ -374,40 +357,36 @@ void PopupListBox::typeAheadFind(const PlatformKeyboardEvent& event)
 
 void PopupListBox::paint(GraphicsContext* gc, const IntRect& rect)
 {
-    // Adjust coords for scrolled frame.
-    IntRect r = intersection(rect, frameRect());
-    int tx = x() - scrollX() + ((shouldPlaceVerticalScrollbarOnLeft() && verticalScrollbar() && !verticalScrollbar()->isOverlayScrollbar()) ? verticalScrollbar()->width() : 0);
-    int ty = y() - scrollY();
+    ClipRecorder frameClip(displayItemClient(), gc, DisplayItem::ClipPopupListBoxFrame, frameRect());
+    TransformRecorder transformRecorder(*gc, displayItemClient(), AffineTransform::translation(x(), y()));
+    IntRect paintRect = intersection(rect, frameRect());
+    paintRect.moveBy(-location());
 
-    r.move(-tx, -ty);
+    if (numItems()) {
+        IntSize scrollOffset = flooredIntSize(m_scrollOffset);
+        // FIXME: Calling this part of the scroll might cause issues later on
+        // depending on how the compositor winds up using this information.
+        // We may need to use an additional TransformRecorder instead, if that
+        // happens.
+        if (shouldPlaceVerticalScrollbarOnLeft() && verticalScrollbar() && !verticalScrollbar()->isOverlayScrollbar())
+            scrollOffset.expand(-verticalScrollbar()->width(), 0);
+        ScrollRecorder scroll(gc, displayItemClient(), PaintPhase::PaintPhaseForeground, scrollOffset);
+        IntRect scrolledPaintRect = paintRect;
+        scrolledPaintRect.move(scrollOffset);
 
-    // Set clip rect to match revised damage rect.
-    gc->save();
-    gc->translate(static_cast<float>(tx), static_cast<float>(ty));
-    gc->clip(r);
-
-    // FIXME: Can we optimize scrolling to not require repainting the entire
-    // window? Should we?
-    for (int i = 0; i < numItems(); ++i)
-        paintRow(gc, r, i);
-
-    // Special case for an empty popup.
-    if (!numItems())
-        gc->fillRect(r, Color::white);
-
-    gc->restore();
-
-    if (m_verticalScrollbar) {
-        GraphicsContextStateSaver stateSaver(*gc);
-        IntRect scrollbarDirtyRect = rect;
-        IntRect visibleAreaWithScrollbars(location(), visibleContentRect(IncludeScrollbars).size());
-        scrollbarDirtyRect.intersect(visibleAreaWithScrollbars);
-        gc->translate(x(), y());
-        scrollbarDirtyRect.moveBy(-location());
-        gc->clip(IntRect(IntPoint(), visibleAreaWithScrollbars.size()));
-
-        m_verticalScrollbar->paint(gc, scrollbarDirtyRect);
+        // FIXME: Can we optimize scrolling to not require repainting the entire
+        // window? Should we?
+        for (int i = 0; i < numItems(); ++i)
+            paintRow(gc, scrolledPaintRect, i);
+    } else {
+        // Special case for an empty popup.
+        DrawingRecorder drawingRecorder(gc, displayItemClient(), DisplayItem::PopupListBoxBackground, boundsRect());
+        if (!drawingRecorder.canUseCachedDrawing())
+            gc->fillRect(boundsRect(), Color::white);
     }
+
+    if (verticalScrollbar())
+        verticalScrollbar()->paint(gc, paintRect);
 }
 
 static const int separatorPadding = 4;
@@ -423,13 +402,17 @@ void PopupListBox::paintRow(GraphicsContext* gc, const IntRect& rect, int rowInd
     if (!rowRect.intersects(rect))
         return;
 
+    DrawingRecorder drawingRecorder(gc, m_items[rowIndex]->displayItemClient(), DisplayItem::PopupListBoxRow, rowRect);
+    if (drawingRecorder.canUseCachedDrawing())
+        return;
+
     PopupMenuStyle style = m_popupClient->itemStyle(rowIndex);
 
     // Paint background
     Color backColor, textColor, labelColor;
     if (rowIndex == m_selectedIndex) {
-        backColor = RenderTheme::theme().activeListBoxSelectionBackgroundColor();
-        textColor = RenderTheme::theme().activeListBoxSelectionForegroundColor();
+        backColor = LayoutTheme::theme().activeListBoxSelectionBackgroundColor();
+        textColor = LayoutTheme::theme().activeListBoxSelectionForegroundColor();
         labelColor = textColor;
     } else {
         backColor = style.backgroundColor();
@@ -439,8 +422,8 @@ void PopupListBox::paintRow(GraphicsContext* gc, const IntRect& rect, int rowInd
         // <select> background color. On Linux, that makes the <option>
         // background color very dark, so by default, try to use a lighter
         // background color for <option>s.
-        if (style.backgroundColorType() == PopupMenuStyle::DefaultBackgroundColor && RenderTheme::theme().systemColor(CSSValueButtonface) == backColor)
-            backColor = RenderTheme::theme().systemColor(CSSValueMenu);
+        if (style.backgroundColorType() == PopupMenuStyle::DefaultBackgroundColor && LayoutTheme::theme().systemColor(CSSValueButtonface) == backColor)
+            backColor = LayoutTheme::theme().systemColor(CSSValueMenu);
 #endif
 
         // FIXME: for now the label color is hard-coded. It should be added to
@@ -634,6 +617,9 @@ void PopupListBox::invalidateRow(int index)
     if (shouldPlaceVerticalScrollbarOnLeft() && verticalScrollbar() && !verticalScrollbar()->isOverlayScrollbar())
         clipRect.move(verticalScrollbar()->width(), 0);
     invalidateRect(clipRect);
+
+    if (HostWindow* host = hostWindow())
+        host->invalidateDisplayItemClient(m_items[index]->displayItemClient());
 }
 
 void PopupListBox::scrollToRevealRow(int index)
@@ -726,7 +712,9 @@ void PopupListBox::hidePopup()
 
 void PopupListBox::updateFromElement()
 {
-    clear();
+    // Clearing the items doesn't immediately invalidate display items, but the
+    // layout at the end of this method does.
+    m_items.clear();
 
     int size = m_popupClient->listSize();
     for (int i = 0; i < size; ++i) {
@@ -737,7 +725,7 @@ void PopupListBox::updateFromElement()
             type = PopupItem::TypeGroup;
         else
             type = PopupItem::TypeOption;
-        m_items.append(new PopupItem(m_popupClient->itemText(i), type));
+        m_items.append(adoptPtr(new PopupItem(m_popupClient->itemText(i), type)));
         m_items[i]->enabled = isSelectableItem(i);
         PopupMenuStyle style = m_popupClient->itemStyle(i);
         m_items[i]->textDirection = style.textDirection();
@@ -745,8 +733,8 @@ void PopupListBox::updateFromElement()
         m_items[i]->displayNone = style.isDisplayNone();
     }
 
-    m_selectedIndex = m_popupClient->selectedIndex();
-    setOriginalIndex(m_selectedIndex);
+    if (m_originalIndex != m_popupClient->selectedIndex() || m_selectedIndex >= static_cast<int>(m_items.size()))
+        setOriginalIndex(m_popupClient->selectedIndex());
 
     layout();
 }
@@ -846,12 +834,12 @@ void PopupListBox::layout()
         scrollToRevealSelection();
 
     invalidate();
-}
 
-void PopupListBox::clear()
-{
-    deleteAllValues(m_items);
-    m_items.clear();
+    // It's slight overkill to invalidate /all/ display items, but in practice
+    // most of the display items in the host window belong to the rows of this
+    // list box.
+    if (HostWindow* host = hostWindow())
+        host->invalidateAllDisplayItems();
 }
 
 bool PopupListBox::isPointInBounds(const IntPoint& point)
@@ -884,6 +872,9 @@ void PopupListBox::invalidateScrollbarRect(Scrollbar* scrollbar, const IntRect& 
     IntRect dirtyRect = rect;
     dirtyRect.move(scrollbar->x(), scrollbar->y());
     invalidateRect(dirtyRect);
+
+    if (HostWindow* host = hostWindow())
+        host->invalidateDisplayItemClient(scrollbar->displayItemClient());
 }
 
 bool PopupListBox::isActive() const
@@ -1050,6 +1041,7 @@ void PopupListBox::setScrollOffset(const IntPoint& newOffset)
         IntRect updateRect = clipRect;
         updateRect.intersect(convertToContainingWindow(IntRect((shouldPlaceVerticalScrollbarOnLeft() && verticalScrollbar()) ? verticalScrollbar()->width() : 0, 0, visibleWidth(), visibleHeight())));
         window->invalidateRect(updateRect);
+        window->invalidateDisplayItemClient(displayItemClient());
     }
 }
 

@@ -28,6 +28,7 @@
 
 #include "bindings/core/v8/ScriptState.h"
 #include "core/dom/ExecutionContext.h"
+#include "core/dom/SecurityContext.h"
 #include "core/frame/ConsoleTypes.h"
 #include "platform/network/ContentSecurityPolicyParsers.h"
 #include "platform/network/HTTPParsers.h"
@@ -90,7 +91,10 @@ public:
 
     // Mixed Content Directive
     // https://w3c.github.io/webappsec/specs/mixedcontent/#strict-mode
-    static const char StrictMixedContentChecking[];
+    static const char BlockAllMixedContent[];
+
+    // https://w3c.github.io/webappsec/specs/upgrade/
+    static const char UpgradeInsecureRequests[];
 
     enum ReportingStatus {
         SendReport,
@@ -116,8 +120,8 @@ public:
 
     bool allowJavaScriptURLs(const String& contextURL, const WTF::OrdinalNumber& contextLine, ReportingStatus = SendReport) const;
     bool allowInlineEventHandlers(const String& contextURL, const WTF::OrdinalNumber& contextLine, ReportingStatus = SendReport) const;
-    bool allowInlineScript(const String& contextURL, const WTF::OrdinalNumber& contextLine, ReportingStatus = SendReport) const;
-    bool allowInlineStyle(const String& contextURL, const WTF::OrdinalNumber& contextLine, ReportingStatus = SendReport) const;
+    bool allowInlineScript(const String& contextURL, const WTF::OrdinalNumber& contextLine, const String& scriptContent, ReportingStatus = SendReport) const;
+    bool allowInlineStyle(const String& contextURL, const WTF::OrdinalNumber& contextLine, const String& styleContent, ReportingStatus = SendReport) const;
     bool allowEval(ScriptState* = nullptr, ReportingStatus = SendReport) const;
     bool allowPluginType(const String& type, const String& typeAttribute, const KURL&, ReportingStatus = SendReport) const;
 
@@ -132,7 +136,6 @@ public:
     bool allowFormAction(const KURL&, ReportingStatus = SendReport) const;
     bool allowBaseURI(const KURL&, ReportingStatus = SendReport) const;
     bool allowAncestors(LocalFrame*, const KURL&, ReportingStatus = SendReport) const;
-    bool allowChildContextFromSource(const KURL&, ReportingStatus = SendReport) const;
     bool allowWorkerContextFromSource(const KURL&, ReportingStatus = SendReport) const;
 
     bool allowManifestFromSource(const KURL&, ReportingStatus = SendReport) const;
@@ -153,7 +156,6 @@ public:
 
     ReflectedXSSDisposition reflectedXSSDisposition() const;
 
-    ReferrerPolicy referrerPolicy() const;
     bool didSetReferrerPolicy() const;
 
     void setOverrideAllowInlineStyle(bool);
@@ -192,6 +194,9 @@ public:
     void enforceSandboxFlags(SandboxFlags);
     void enforceStrictMixedContentChecking();
     String evalDisabledErrorMessage() const;
+
+    void setInsecureContentPolicy(SecurityContext::InsecureContentPolicy);
+    SecurityContext::InsecureContentPolicy insecureContentPolicy() const { return m_insecureContentPolicy; };
 
     bool urlMatchesSelf(const KURL&) const;
     bool protocolMatchesSelf(const KURL&) const;
@@ -235,6 +240,7 @@ private:
     bool m_enforceStrictMixedContentChecking;
     ReferrerPolicy m_referrerPolicy;
     String m_disableEvalErrorMessage;
+    SecurityContext::InsecureContentPolicy m_insecureContentPolicy;
 
     OwnPtr<CSPSource> m_selfSource;
     String m_selfProtocol;

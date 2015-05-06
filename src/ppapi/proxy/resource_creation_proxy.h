@@ -156,6 +156,7 @@ class ResourceCreationProxy : public InterfaceProxy,
   virtual PP_Resource CreateUDPSocketPrivate(PP_Instance instance) override;
   virtual PP_Resource CreateVideoDecoder(PP_Instance instance) override;
   virtual PP_Resource CreateVideoDestination(PP_Instance instance) override;
+  virtual PP_Resource CreateVideoEncoder(PP_Instance instance) override;
   virtual PP_Resource CreateVideoSource(PP_Instance instance) override;
   virtual PP_Resource CreateWebSocket(PP_Instance instance) override;
   virtual PP_Resource CreateX509CertificatePrivate(
@@ -168,6 +169,7 @@ class ResourceCreationProxy : public InterfaceProxy,
       const PP_BrowserFont_Trusted_Description* description) override;
   virtual PP_Resource CreateBuffer(PP_Instance instance,
                                    uint32_t size) override;
+  virtual PP_Resource CreateCameraDevicePrivate(PP_Instance instance) override;
   virtual PP_Resource CreateFlashDRM(PP_Instance instance) override;
   virtual PP_Resource CreateFlashFontFile(
       PP_Instance instance,

@@ -23,90 +23,109 @@
 #include "config.h"
 #include "core/svg/SVGLengthContext.h"
 
-#include "bindings/core/v8/ExceptionMessages.h"
-#include "bindings/core/v8/ExceptionState.h"
-#include "core/SVGNames.h"
 #include "core/css/CSSHelper.h"
-#include "core/dom/ExceptionCode.h"
-#include "core/rendering/RenderView.h"
-#include "core/rendering/svg/RenderSVGRoot.h"
-#include "core/rendering/svg/RenderSVGViewportContainer.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/style/LayoutStyle.h"
 #include "core/svg/SVGSVGElement.h"
+#include "platform/LengthFunctions.h"
 #include "platform/fonts/FontMetrics.h"
 
 namespace blink {
+
+static inline float dimensionForLengthMode(SVGLengthMode mode, const FloatSize& viewportSize)
+{
+    switch (mode) {
+    case LengthModeWidth:
+        return viewportSize.width();
+    case LengthModeHeight:
+        return viewportSize.height();
+    case LengthModeOther:
+        return sqrtf(viewportSize.diagonalLengthSquared() / 2);
+    }
+    ASSERT_NOT_REACHED();
+    return 0;
+}
+
+static float convertValueFromPercentageToUserUnits(const SVGLength& value, const FloatSize& viewportSize)
+{
+    return value.scaleByPercentage(dimensionForLengthMode(value.unitMode(), viewportSize));
+}
 
 SVGLengthContext::SVGLengthContext(const SVGElement* context)
     : m_context(context)
 {
 }
 
-FloatRect SVGLengthContext::resolveRectangle(const SVGElement* context, SVGUnitTypes::SVGUnitType type, const FloatRect& viewport, PassRefPtrWillBeRawPtr<SVGLength> passX, PassRefPtrWillBeRawPtr<SVGLength> passY, PassRefPtrWillBeRawPtr<SVGLength> passWidth, PassRefPtrWillBeRawPtr<SVGLength> passHeight)
+FloatRect SVGLengthContext::resolveRectangle(const SVGElement* context, SVGUnitTypes::SVGUnitType type, const FloatRect& viewport, const SVGLength& x, const SVGLength& y, const SVGLength& width, const SVGLength& height)
 {
-    RefPtrWillBeRawPtr<SVGLength> x = passX;
-    RefPtrWillBeRawPtr<SVGLength> y = passY;
-    RefPtrWillBeRawPtr<SVGLength> width = passWidth;
-    RefPtrWillBeRawPtr<SVGLength> height = passHeight;
-
     ASSERT(type != SVGUnitTypes::SVG_UNIT_TYPE_UNKNOWN);
     if (type != SVGUnitTypes::SVG_UNIT_TYPE_USERSPACEONUSE && !viewport.isEmpty()) {
         const FloatSize& viewportSize = viewport.size();
         return FloatRect(
-            convertValueFromPercentageToUserUnits(x->valueAsPercentage(), x->unitMode(), viewportSize) + viewport.x(),
-            convertValueFromPercentageToUserUnits(y->valueAsPercentage(), y->unitMode(), viewportSize) + viewport.y(),
-            convertValueFromPercentageToUserUnits(width->valueAsPercentage(), width->unitMode(), viewportSize),
-            convertValueFromPercentageToUserUnits(height->valueAsPercentage(), height->unitMode(), viewportSize));
+            convertValueFromPercentageToUserUnits(x, viewportSize) + viewport.x(),
+            convertValueFromPercentageToUserUnits(y, viewportSize) + viewport.y(),
+            convertValueFromPercentageToUserUnits(width, viewportSize),
+            convertValueFromPercentageToUserUnits(height, viewportSize));
     }
 
     SVGLengthContext lengthContext(context);
-    return FloatRect(x->value(lengthContext), y->value(lengthContext), width->value(lengthContext), height->value(lengthContext));
+    return FloatRect(x.value(lengthContext), y.value(lengthContext), width.value(lengthContext), height.value(lengthContext));
 }
 
-FloatPoint SVGLengthContext::resolvePoint(const SVGElement* context, SVGUnitTypes::SVGUnitType type, PassRefPtrWillBeRawPtr<SVGLength> passX, PassRefPtrWillBeRawPtr<SVGLength> passY)
+FloatPoint SVGLengthContext::resolvePoint(const SVGElement* context, SVGUnitTypes::SVGUnitType type, const SVGLength& x, const SVGLength& y)
 {
-    RefPtrWillBeRawPtr<SVGLength> x = passX;
-    RefPtrWillBeRawPtr<SVGLength> y = passY;
-
     ASSERT(type != SVGUnitTypes::SVG_UNIT_TYPE_UNKNOWN);
     if (type == SVGUnitTypes::SVG_UNIT_TYPE_USERSPACEONUSE) {
         SVGLengthContext lengthContext(context);
-        return FloatPoint(x->value(lengthContext), y->value(lengthContext));
+        return FloatPoint(x.value(lengthContext), y.value(lengthContext));
     }
 
     // FIXME: valueAsPercentage() won't be correct for eg. cm units. They need to be resolved in user space and then be considered in objectBoundingBox space.
-    return FloatPoint(x->valueAsPercentage(), y->valueAsPercentage());
+    return FloatPoint(x.valueAsPercentage(), y.valueAsPercentage());
 }
 
-float SVGLengthContext::resolveLength(const SVGElement* context, SVGUnitTypes::SVGUnitType type, PassRefPtrWillBeRawPtr<SVGLength> passX)
+float SVGLengthContext::resolveLength(const SVGElement* context, SVGUnitTypes::SVGUnitType type, const SVGLength& x)
 {
-    RefPtrWillBeRawPtr<SVGLength> x = passX;
-
     ASSERT(type != SVGUnitTypes::SVG_UNIT_TYPE_UNKNOWN);
     if (type == SVGUnitTypes::SVG_UNIT_TYPE_USERSPACEONUSE) {
         SVGLengthContext lengthContext(context);
-        return x->value(lengthContext);
+        return x.value(lengthContext);
     }
 
     // FIXME: valueAsPercentage() won't be correct for eg. cm units. They need to be resolved in user space and then be considered in objectBoundingBox space.
-    return x->valueAsPercentage();
+    return x.valueAsPercentage();
 }
 
-float SVGLengthContext::convertValueToUserUnits(float value, SVGLengthMode mode, SVGLengthType fromUnit, ExceptionState& exceptionState) const
+float SVGLengthContext::valueForLength(const Length& length, SVGLengthMode mode) const
+{
+    float dimension = 0;
+    if (length.isPercent()) {
+        FloatSize viewportSize;
+        determineViewport(viewportSize);
+        dimension = dimensionForLengthMode(mode, viewportSize);
+    }
+    return floatValueForLength(length, dimension);
+}
+
+float SVGLengthContext::convertValueToUserUnits(float value, SVGLengthMode mode, SVGLengthType fromUnit) const
 {
     switch (fromUnit) {
     case LengthTypeUnknown:
-        exceptionState.throwDOMException(NotSupportedError, ExceptionMessages::argumentNullOrIncorrectType(3, "SVGLengthType"));
         return 0;
     case LengthTypeNumber:
         return value;
     case LengthTypePX:
         return value;
-    case LengthTypePercentage:
-        return convertValueFromPercentageToUserUnits(value / 100, mode, exceptionState);
+    case LengthTypePercentage: {
+        FloatSize viewportSize;
+        if (!determineViewport(viewportSize))
+            return 0;
+        return value * dimensionForLengthMode(mode, viewportSize) / 100;
+    }
     case LengthTypeEMS:
-        return convertValueFromEMSToUserUnits(value, exceptionState);
+        return convertValueFromEMSToUserUnits(value);
     case LengthTypeEXS:
-        return convertValueFromEXSToUserUnits(value, exceptionState);
+        return convertValueFromEXSToUserUnits(value);
     case LengthTypeCM:
         return value * cssPixelsPerCentimeter;
     case LengthTypeMM:
@@ -123,20 +142,25 @@ float SVGLengthContext::convertValueToUserUnits(float value, SVGLengthMode mode,
     return 0;
 }
 
-float SVGLengthContext::convertValueFromUserUnits(float value, SVGLengthMode mode, SVGLengthType toUnit, ExceptionState& exceptionState) const
+float SVGLengthContext::convertValueFromUserUnits(float value, SVGLengthMode mode, SVGLengthType toUnit) const
 {
     switch (toUnit) {
     case LengthTypeUnknown:
-        exceptionState.throwDOMException(NotSupportedError, ExceptionMessages::argumentNullOrIncorrectType(3, "SVGLengthType"));
         return 0;
     case LengthTypeNumber:
         return value;
-    case LengthTypePercentage:
-        return convertValueFromUserUnitsToPercentage(value * 100, mode, exceptionState);
+    case LengthTypePercentage: {
+        FloatSize viewportSize;
+        if (!determineViewport(viewportSize))
+            return 0;
+        // LengthTypePercentage is represented with 100% = 100.0.
+        // Good for accuracy but could eventually be changed.
+        return value * 100 / dimensionForLengthMode(mode, viewportSize);
+    }
     case LengthTypeEMS:
-        return convertValueFromUserUnitsToEMS(value, exceptionState);
+        return convertValueFromUserUnitsToEMS(value);
     case LengthTypeEXS:
-        return convertValueFromUserUnitsToEXS(value, exceptionState);
+        return convertValueFromUserUnitsToEXS(value);
     case LengthTypePX:
         return value;
     case LengthTypeCM:
@@ -155,53 +179,7 @@ float SVGLengthContext::convertValueFromUserUnits(float value, SVGLengthMode mod
     return 0;
 }
 
-float SVGLengthContext::convertValueFromUserUnitsToPercentage(float value, SVGLengthMode mode, ExceptionState& exceptionState) const
-{
-    FloatSize viewportSize;
-    if (!determineViewport(viewportSize)) {
-        exceptionState.throwDOMException(NotSupportedError, "The viewport could not be determined.");
-        return 0;
-    }
-
-    switch (mode) {
-    case LengthModeWidth:
-        return value / viewportSize.width() * 100;
-    case LengthModeHeight:
-        return value / viewportSize.height() * 100;
-    case LengthModeOther:
-        return value / sqrtf(viewportSize.diagonalLengthSquared() / 2) * 100;
-    };
-
-    ASSERT_NOT_REACHED();
-    return 0;
-}
-
-float SVGLengthContext::convertValueFromPercentageToUserUnits(float value, SVGLengthMode mode, ExceptionState& exceptionState) const
-{
-    FloatSize viewportSize;
-    if (!determineViewport(viewportSize)) {
-        exceptionState.throwDOMException(NotSupportedError, "The viewport could not be determined.");
-        return 0;
-    }
-    return convertValueFromPercentageToUserUnits(value, mode, viewportSize);
-}
-
-float SVGLengthContext::convertValueFromPercentageToUserUnits(float value, SVGLengthMode mode, const FloatSize& viewportSize)
-{
-    switch (mode) {
-    case LengthModeWidth:
-        return value * viewportSize.width();
-    case LengthModeHeight:
-        return value * viewportSize.height();
-    case LengthModeOther:
-        return value * sqrtf(viewportSize.diagonalLengthSquared() / 2);
-    };
-
-    ASSERT_NOT_REACHED();
-    return 0;
-}
-
-static inline RenderStyle* renderStyleForLengthResolving(const SVGElement* context)
+static inline LayoutStyle* layoutStyleForLengthResolving(const SVGElement* context)
 {
     if (!context)
         return 0;
@@ -213,65 +191,52 @@ static inline RenderStyle* renderStyleForLengthResolving(const SVGElement* conte
         currentContext = currentContext->parentNode();
     } while (currentContext);
 
-    // There must be at least a RenderSVGRoot renderer, carrying a style.
+    // There must be at least a LayoutSVGRoot renderer, carrying a style.
     ASSERT_NOT_REACHED();
     return 0;
 }
 
-float SVGLengthContext::convertValueFromUserUnitsToEMS(float value, ExceptionState& exceptionState) const
+float SVGLengthContext::convertValueFromUserUnitsToEMS(float value) const
 {
-    RenderStyle* style = renderStyleForLengthResolving(m_context);
-    if (!style) {
-        exceptionState.throwDOMException(NotSupportedError, "No context could be found.");
+    LayoutStyle* style = layoutStyleForLengthResolving(m_context);
+    if (!style)
         return 0;
-    }
 
     float fontSize = style->specifiedFontSize();
-    if (!fontSize) {
-        exceptionState.throwDOMException(NotSupportedError, "No font-size could be determined.");
+    if (!fontSize)
         return 0;
-    }
 
     return value / fontSize;
 }
 
-float SVGLengthContext::convertValueFromEMSToUserUnits(float value, ExceptionState& exceptionState) const
+float SVGLengthContext::convertValueFromEMSToUserUnits(float value) const
 {
-    RenderStyle* style = renderStyleForLengthResolving(m_context);
-    if (!style) {
-        exceptionState.throwDOMException(NotSupportedError, "No context could be found.");
+    LayoutStyle* style = layoutStyleForLengthResolving(m_context);
+    if (!style)
         return 0;
-    }
-
     return value * style->specifiedFontSize();
 }
 
-float SVGLengthContext::convertValueFromUserUnitsToEXS(float value, ExceptionState& exceptionState) const
+float SVGLengthContext::convertValueFromUserUnitsToEXS(float value) const
 {
-    RenderStyle* style = renderStyleForLengthResolving(m_context);
-    if (!style) {
-        exceptionState.throwDOMException(NotSupportedError, "No context could be found.");
+    LayoutStyle* style = layoutStyleForLengthResolving(m_context);
+    if (!style)
         return 0;
-    }
 
     // Use of ceil allows a pixel match to the W3Cs expected output of coords-units-03-b.svg
     // if this causes problems in real world cases maybe it would be best to remove this
     float xHeight = ceilf(style->fontMetrics().xHeight());
-    if (!xHeight) {
-        exceptionState.throwDOMException(NotSupportedError, "No x-height could be determined.");
+    if (!xHeight)
         return 0;
-    }
 
     return value / xHeight;
 }
 
-float SVGLengthContext::convertValueFromEXSToUserUnits(float value, ExceptionState& exceptionState) const
+float SVGLengthContext::convertValueFromEXSToUserUnits(float value) const
 {
-    RenderStyle* style = renderStyleForLengthResolving(m_context);
-    if (!style) {
-        exceptionState.throwDOMException(NotSupportedError, "No context could be found.");
+    LayoutStyle* style = layoutStyleForLengthResolving(m_context);
+    if (!style)
         return 0;
-    }
 
     // Use of ceil allows a pixel match to the W3Cs expected output of coords-units-03-b.svg
     // if this causes problems in real world cases maybe it would be best to remove this

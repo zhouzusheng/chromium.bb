@@ -36,7 +36,7 @@
 #include "core/dom/AXObjectCache.h"
 #include "core/dom/Document.h"
 #include "core/dom/ElementTraversal.h"
-#include "core/dom/NodeRenderStyle.h"
+#include "core/dom/NodeLayoutStyle.h"
 #include "core/dom/StyleEngine.h"
 #include "core/editing/FrameSelection.h"
 #include "core/frame/FrameView.h"
@@ -45,17 +45,17 @@
 #include "core/html/HTMLOptGroupElement.h"
 #include "core/html/HTMLOptionElement.h"
 #include "core/html/HTMLSelectElement.h"
+#include "core/layout/HitTestResult.h"
+#include "core/layout/Layer.h"
+#include "core/layout/LayoutTheme.h"
+#include "core/layout/PaintInfo.h"
+#include "core/layout/TextRunConstructor.h"
 #include "core/page/EventHandler.h"
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
 #include "core/page/SpatialNavigation.h"
-#include "core/rendering/HitTestResult.h"
-#include "core/rendering/PaintInfo.h"
-#include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderText.h"
-#include "core/rendering/RenderTheme.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/TextRunConstructor.h"
 #include "platform/fonts/FontCache.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/text/BidiTextRun.h"
@@ -113,7 +113,7 @@ LayoutUnit RenderListBox::itemHeight() const
         baseItem = &toHTMLOptGroupElement(baseItem)->optGroupLabelElement();
     else if (!isHTMLOptionElement(baseItem))
         return defaultItemHeight();
-    RenderObject* baseItemRenderer = baseItem->renderer();
+    LayoutObject* baseItemRenderer = baseItem->renderer();
     if (!baseItemRenderer)
         return defaultItemHeight();
     if (!baseItemRenderer || !baseItemRenderer->isBox())

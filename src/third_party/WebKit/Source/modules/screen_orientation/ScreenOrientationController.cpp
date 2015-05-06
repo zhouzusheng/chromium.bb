@@ -56,7 +56,7 @@ WebScreenOrientationType ScreenOrientationController::computeOrientation(FrameVi
     if (LayoutTestSupport::isRunningLayoutTest())
         return WebScreenOrientationPortraitPrimary;
 
-    FloatRect rect = screenRect(view);
+    IntRect rect = screenRect(view);
     uint16_t rotation = screenOrientationAngle(view);
     bool isTallDisplay = rotation % 180 ? rect.height() < rect.width() : rect.height() > rect.width();
     switch (rotation) {
@@ -128,7 +128,7 @@ void ScreenOrientationController::notifyOrientationChanged()
     // Keep track of the frames that need to be notified before notifying the
     // current frame as it will prevent side effects from the change event
     // handlers.
-    WillBeHeapVector<RefPtrWillBeMember<LocalFrame> > childFrames;
+    WillBeHeapVector<RefPtrWillBeMember<LocalFrame>> childFrames;
     for (Frame* child = frame()->tree().firstChild(); child; child = child->tree().nextSibling()) {
         if (child->isLocalFrame())
             childFrames.append(toLocalFrame(child));
@@ -209,7 +209,7 @@ void ScreenOrientationController::notifyDispatcher()
         stopUpdating();
 }
 
-void ScreenOrientationController::trace(Visitor* visitor)
+DEFINE_TRACE(ScreenOrientationController)
 {
     visitor->trace(m_orientation);
     FrameDestructionObserver::trace(visitor);

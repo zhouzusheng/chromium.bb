@@ -8,7 +8,6 @@
 #ifndef GrGLGpu_DEFINED
 #define GrGLGpu_DEFINED
 
-#include "GrDrawState.h"
 #include "GrGLContext.h"
 #include "GrGLIRect.h"
 #include "GrGLIndexBuffer.h"
@@ -20,9 +19,11 @@
 #include "GrGLVertexArray.h"
 #include "GrGLVertexBuffer.h"
 #include "GrGpu.h"
-#include "GrOptDrawState.h"
+#include "GrPipelineBuilder.h"
 #include "GrXferProcessor.h"
 #include "SkTypes.h"
+
+class GrPipeline;
 
 #ifdef SK_DEVELOPER
 #define PROGRAM_CACHE_STATS
@@ -104,11 +105,10 @@ public:
                         const SkIRect& srcRect,
                         const SkIPoint& dstPoint) SK_OVERRIDE;
 
-protected:
-    void buildProgramDesc(const GrOptDrawState&,
-                          const GrProgramDesc::DescInfo&,
-                          GrGpu::DrawType,
-                          GrProgramDesc*) SK_OVERRIDE;
+    void buildProgramDesc(GrProgramDesc*,
+                          const GrPrimitiveProcessor&,
+                          const GrPipeline&,
+                          const GrBatchTracker&) const SK_OVERRIDE;
 
 private:
     // GrGpu overrides
@@ -122,8 +122,7 @@ private:
     GrIndexBuffer* onCreateIndexBuffer(size_t size, bool dynamic) SK_OVERRIDE;
     GrTexture* onWrapBackendTexture(const GrBackendTextureDesc&) SK_OVERRIDE;
     GrRenderTarget* onWrapBackendRenderTarget(const GrBackendRenderTargetDesc&) SK_OVERRIDE;
-    bool createStencilBufferForRenderTarget(GrRenderTarget* rt,
-                                            int width, int height) SK_OVERRIDE;
+    bool createStencilBufferForRenderTarget(GrRenderTarget* rt, int width, int height) SK_OVERRIDE;
     bool attachStencilBufferToRenderTarget(GrStencilBuffer* sb, GrRenderTarget* rt) SK_OVERRIDE;
 
     void onClear(GrRenderTarget*, const SkIRect* rect, GrColor color,
@@ -145,10 +144,10 @@ private:
 
     void onResolveRenderTarget(GrRenderTarget* target) SK_OVERRIDE;
 
-    void onDraw(const GrOptDrawState&, const GrDrawTarget::DrawInfo&) SK_OVERRIDE;
+    void onDraw(const DrawArgs&, const GrDrawTarget::DrawInfo&) SK_OVERRIDE;
     void onStencilPath(const GrPath*, const StencilPathState&) SK_OVERRIDE;
-    void onDrawPath(const GrOptDrawState&, const GrPath*, const GrStencilSettings&) SK_OVERRIDE;
-    void onDrawPaths(const GrOptDrawState&,
+    void onDrawPath(const DrawArgs&, const GrPath*, const GrStencilSettings&) SK_OVERRIDE;
+    void onDrawPaths(const DrawArgs&,
                      const GrPathRange*,
                      const void* indices,
                      GrDrawTarget::PathIndexType,
@@ -166,13 +165,15 @@ private:
     // binds texture unit in GL
     void setTextureUnit(int unitIdx);
 
-    // Flushes state from GrOptDrawState to GL. Returns false if the state couldn't be set.
-    bool flushGLState(const GrOptDrawState&);
+    // Flushes state from GrPipeline to GL. Returns false if the state couldn't be set.
+    // TODO we only have need to know if this is a line draw for flushing AA state on some buggy
+    // hardware.  Evaluate if this is really necessary anymore
+    bool flushGLState(const DrawArgs&, bool isLineDraw);
 
     // Sets up vertex attribute pointers and strides. On return indexOffsetInBytes gives the offset
     // an into the index buffer. It does not account for drawInfo.startIndex() but rather the start
     // index is relative to the returned offset.
-    void setupGeometry(const GrOptDrawState&,
+    void setupGeometry(const GrPrimitiveProcessor&,
                        const GrDrawTarget::DrawInfo& info,
                        size_t* indexOffsetInBytes);
 
@@ -189,7 +190,7 @@ private:
         ~ProgramCache();
 
         void abandon();
-        GrGLProgram* getProgram(const GrOptDrawState&);
+        GrGLProgram* getProgram(const DrawArgs&);
 
     private:
         enum {
@@ -225,7 +226,7 @@ private:
 
     void flushDither(bool dither);
     void flushColorWrite(bool writeColor);
-    void flushDrawFace(GrDrawState::DrawFace face);
+    void flushDrawFace(GrPipelineBuilder::DrawFace face);
 
     // flushes the scissor. see the note on flushBoundTextureAndParams about
     // flushing the scissor after that function is called.
@@ -280,7 +281,15 @@ private:
     bool createRenderTargetObjects(const GrSurfaceDesc&, bool budgeted, GrGLuint texID, 
                                    GrGLRenderTarget::IDDesc*);
 
-    GrGLuint bindSurfaceAsFBO(GrSurface* surface, GrGLenum fboTarget, GrGLIRect* viewport);
+    enum TempFBOTarget {
+        kSrc_TempFBOTarget,
+        kDst_TempFBOTarget
+    };
+
+    GrGLuint bindSurfaceAsFBO(GrSurface* surface, GrGLenum fboTarget, GrGLIRect* viewport,
+                              TempFBOTarget tempFBOTarget);
+
+    void unbindTextureFromFBO(GrGLenum fboTarget);
 
     GrGLContext fGLContext;
 
@@ -299,6 +308,9 @@ private:
         kYes_TriState,
         kUnknown_TriState
     };
+
+    GrGLuint                    fTempSrcFBOID;
+    GrGLuint                    fTempDstFBOID;
 
     // last scissor / viewport scissor state seen by the GL.
     struct {
@@ -441,7 +453,7 @@ private:
     TriState                    fHWStencilTestEnabled;
 
 
-    GrDrawState::DrawFace       fHWDrawFace;
+    GrPipelineBuilder::DrawFace fHWDrawFace;
     TriState                    fHWWriteToColor;
     TriState                    fHWDitherEnabled;
     uint32_t                    fHWBoundRenderTargetUniqueID;

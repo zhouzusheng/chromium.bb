@@ -25,24 +25,10 @@ public:
     SK_DECLARE_INST_COUNT(GrRenderTarget)
 
     // GrSurface overrides
-    virtual GrRenderTarget* asRenderTarget() SK_OVERRIDE { return this; }
-    virtual const GrRenderTarget* asRenderTarget() const  SK_OVERRIDE { return this; }
+    GrRenderTarget* asRenderTarget() SK_OVERRIDE { return this; }
+    const GrRenderTarget* asRenderTarget() const  SK_OVERRIDE { return this; }
 
     // GrRenderTarget
-    /**
-     * If this RT is multisampled, this is the multisample buffer
-     * @return the 3D API's handle to this object (e.g. FBO ID in OpenGL)
-     */
-    virtual GrBackendObject getRenderTargetHandle() const = 0;
-
-    /**
-     * If this RT is multisampled, this is the buffer it is resolved to.
-     * Otherwise, same as getRenderTargetHandle().
-     * (In GL a separate FBO ID is used for the MSAA and resolved buffers)
-     * @return the 3D API's handle to this object (e.g. FBO ID in OpenGL)
-     */
-    virtual GrBackendObject getRenderTargetResolvedHandle() const = 0;
-
     /**
      * @return true if the surface is multisampled, false otherwise
      */
@@ -116,8 +102,8 @@ protected:
     }
 
     // override of GrResource
-    virtual void onAbandon() SK_OVERRIDE;
-    virtual void onRelease() SK_OVERRIDE;
+    void onAbandon() SK_OVERRIDE;
+    void onRelease() SK_OVERRIDE;
 
 private:
     GrStencilBuffer*  fStencilBuffer;

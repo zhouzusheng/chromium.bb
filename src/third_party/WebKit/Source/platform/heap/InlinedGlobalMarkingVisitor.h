@@ -52,7 +52,9 @@ public:
 
     using Impl::ensureMarked;
 
-    inline bool canTraceEagerly() const { return m_visitor->canTraceEagerly(); }
+    inline bool canTraceEagerly() { return Visitor::canTraceEagerly(); }
+
+    using Impl::isMarked;
 
     Visitor* getUninlined() { return m_visitor; }
 
@@ -65,7 +67,7 @@ protected:
         return true;
     }
 
-#if ENABLE(GC_PROFILE_MARKING)
+#if ENABLE(GC_PROFILING)
     inline void recordObjectGraphEdge(const void* objectPointer)
     {
         m_visitor->recordObjectGraphEdge(objectPointer);
@@ -77,6 +79,10 @@ private:
     {
         return *static_cast<InlinedGlobalMarkingVisitor*>(helper);
     }
+
+#if ENABLE(ASSERT)
+    inline void checkMarkingAllowed() { m_visitor->checkMarkingAllowed(); }
+#endif
 
     Visitor* m_visitor;
 };
@@ -114,6 +120,12 @@ struct TraceCompatibilityAdaptor<T, true> {
         self->trace(visitor);
     }
 };
+
+#if ENABLE(INLINED_TRACE)
+inline void GarbageCollectedMixin::trace(InlinedGlobalMarkingVisitor)
+{
+}
+#endif
 
 } // namespace blink
 

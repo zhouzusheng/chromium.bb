@@ -54,9 +54,9 @@
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLFontElement.h"
 #include "core/html/HTMLSpanElement.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/style/LayoutStyle.h"
 #include "core/rendering/RenderBox.h"
-#include "core/rendering/RenderObject.h"
-#include "core/rendering/style/RenderStyle.h"
 
 namespace blink {
 
@@ -169,7 +169,7 @@ public:
     virtual bool valueIsPresentInStyle(HTMLElement*, StylePropertySet*) const;
     virtual void addToStyle(Element*, EditingStyle*) const;
 
-    virtual void trace(Visitor* visitor) { visitor->trace(m_primitiveValue); }
+    DEFINE_INLINE_VIRTUAL_TRACE() { visitor->trace(m_primitiveValue); }
 
 protected:
     HTMLElementEquivalent(CSSPropertyID);
@@ -222,7 +222,7 @@ public:
     virtual bool propertyExistsInStyle(const StylePropertySet*) const override;
     virtual bool valueIsPresentInStyle(HTMLElement*, StylePropertySet*) const override;
 
-    virtual void trace(Visitor* visitor) override { HTMLElementEquivalent::trace(visitor); }
+    DEFINE_INLINE_VIRTUAL_TRACE() { HTMLElementEquivalent::trace(visitor); }
 
 private:
     HTMLTextDecorationEquivalent(CSSValueID primitiveValue, const HTMLQualifiedName& tagName);
@@ -266,7 +266,7 @@ public:
     virtual PassRefPtrWillBeRawPtr<CSSValue> attributeValueAsCSSValue(Element*) const;
     inline const QualifiedName& attributeName() const { return m_attrName; }
 
-    virtual void trace(Visitor* visitor) override { HTMLElementEquivalent::trace(visitor); }
+    DEFINE_INLINE_VIRTUAL_TRACE() { HTMLElementEquivalent::trace(visitor); }
 
 protected:
     HTMLAttributeEquivalent(CSSPropertyID, const HTMLQualifiedName& tagName, const QualifiedName& attrName);
@@ -321,7 +321,7 @@ public:
     }
     virtual PassRefPtrWillBeRawPtr<CSSValue> attributeValueAsCSSValue(Element*) const override;
 
-    virtual void trace(Visitor* visitor) override { HTMLAttributeEquivalent::trace(visitor); }
+    DEFINE_INLINE_VIRTUAL_TRACE() { HTMLAttributeEquivalent::trace(visitor); }
 
 private:
     HTMLFontSizeEquivalent();
@@ -472,23 +472,23 @@ void EditingStyle::init(Node* node, PropertiesToInclude propertiesToInclude)
     }
 
     if (node && node->computedStyle()) {
-        RenderStyle* renderStyle = node->computedStyle();
-        removeTextFillAndStrokeColorsIfNeeded(renderStyle);
-        replaceFontSizeByKeywordIfPossible(renderStyle, computedStyleAtPosition.get());
+        LayoutStyle* layoutStyle = node->computedStyle();
+        removeTextFillAndStrokeColorsIfNeeded(layoutStyle);
+        replaceFontSizeByKeywordIfPossible(layoutStyle, computedStyleAtPosition.get());
     }
 
     m_fixedPitchFontType = computedStyleAtPosition->fixedPitchFontType();
     extractFontSizeDelta();
 }
 
-void EditingStyle::removeTextFillAndStrokeColorsIfNeeded(RenderStyle* renderStyle)
+void EditingStyle::removeTextFillAndStrokeColorsIfNeeded(LayoutStyle* layoutStyle)
 {
     // If a node's text fill color is currentColor, then its children use
     // their font-color as their text fill color (they don't
     // inherit it).  Likewise for stroke color.
-    if (renderStyle->textFillColor().isCurrentColor())
+    if (layoutStyle->textFillColor().isCurrentColor())
         m_mutableStyle->removeProperty(CSSPropertyWebkitTextFillColor);
-    if (renderStyle->textStrokeColor().isCurrentColor())
+    if (layoutStyle->textStrokeColor().isCurrentColor())
         m_mutableStyle->removeProperty(CSSPropertyWebkitTextStrokeColor);
 }
 
@@ -500,10 +500,10 @@ void EditingStyle::setProperty(CSSPropertyID propertyID, const String& value, bo
     m_mutableStyle->setProperty(propertyID, value, important);
 }
 
-void EditingStyle::replaceFontSizeByKeywordIfPossible(RenderStyle* renderStyle, CSSComputedStyleDeclaration* computedStyle)
+void EditingStyle::replaceFontSizeByKeywordIfPossible(LayoutStyle* layoutStyle, CSSComputedStyleDeclaration* computedStyle)
 {
-    ASSERT(renderStyle);
-    if (renderStyle->fontDescription().keywordSize())
+    ASSERT(layoutStyle);
+    if (layoutStyle->fontDescription().keywordSize())
         m_mutableStyle->setProperty(CSSPropertyFontSize, computedStyle->getFontSizeCSSValuePreferringKeyword()->cssText());
 }
 
@@ -1234,7 +1234,7 @@ void EditingStyle::removePropertiesInElementDefaultStyle(Element* element)
 void EditingStyle::addAbsolutePositioningFromElement(const Element& element)
 {
     LayoutRect rect = element.boundingBox();
-    RenderObject* renderer = element.renderer();
+    LayoutObject* renderer = element.renderer();
 
     LayoutUnit x = rect.x();
     LayoutUnit y = rect.y();
@@ -1394,7 +1394,7 @@ WritingDirection EditingStyle::textDirectionForSelection(const VisibleSelection&
     return foundDirection;
 }
 
-void EditingStyle::trace(Visitor* visitor)
+DEFINE_TRACE(EditingStyle)
 {
     visitor->trace(m_mutableStyle);
 }

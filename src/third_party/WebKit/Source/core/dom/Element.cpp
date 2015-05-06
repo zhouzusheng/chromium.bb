@@ -61,7 +61,7 @@
 #include "core/dom/MutationObserverInterestGroup.h"
 #include "core/dom/MutationRecord.h"
 #include "core/dom/NamedNodeMap.h"
-#include "core/dom/NodeRenderStyle.h"
+#include "core/dom/NodeLayoutStyle.h"
 #include "core/dom/PresentationAttributeStyle.h"
 #include "core/dom/PseudoElement.h"
 #include "core/dom/RenderTreeBuilder.h"
@@ -75,8 +75,8 @@
 #include "core/dom/shadow/InsertionPoint.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/FrameSelection.h"
-#include "core/editing/TextIterator.h"
 #include "core/editing/htmlediting.h"
+#include "core/editing/iterators/TextIterator.h"
 #include "core/editing/markup.h"
 #include "core/events/EventDispatcher.h"
 #include "core/events/FocusEvent.h"
@@ -103,16 +103,16 @@
 #include "core/html/HTMLTemplateElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/inspector/InspectorInstrumentation.h"
+#include "core/layout/Layer.h"
+#include "core/layout/compositing/LayerCompositor.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
 #include "core/page/PointerLockController.h"
 #include "core/page/SpatialNavigation.h"
-#include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderTextFragment.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/compositing/RenderLayerCompositor.h"
 #include "core/svg/SVGDocumentExtensions.h"
 #include "core/svg/SVGElement.h"
 #include "platform/EventDispatchForbiddenScope.h"
@@ -481,17 +481,17 @@ void Element::scrollIntoViewIfNeeded(bool centerIfNeeded)
         renderer()->scrollRectToVisible(bounds, ScrollAlignment::alignToEdgeIfNeeded, ScrollAlignment::alignToEdgeIfNeeded);
 }
 
-static float localZoomForRenderer(RenderObject& renderer)
+static float localZoomForRenderer(LayoutObject& renderer)
 {
     // FIXME: This does the wrong thing if two opposing zooms are in effect and canceled each
     // other out, but the alternative is that we'd have to crawl up the whole render tree every
-    // time (or store an additional bit in the RenderStyle to indicate that a zoom was specified).
+    // time (or store an additional bit in the LayoutStyle to indicate that a zoom was specified).
     float zoomFactor = 1;
     if (renderer.style()->effectiveZoom() != 1) {
-        // Need to find the nearest enclosing RenderObject that set up
+        // Need to find the nearest enclosing LayoutObject that set up
         // a differing zoom, and then we divide our result by it to eliminate the zoom.
-        RenderObject* prev = &renderer;
-        for (RenderObject* curr = prev->parent(); curr; curr = curr->parent()) {
+        LayoutObject* prev = &renderer;
+        for (LayoutObject* curr = prev->parent(); curr; curr = curr->parent()) {
             if (curr->style()->effectiveZoom() != prev->style()->effectiveZoom()) {
                 zoomFactor = prev->style()->zoom();
                 break;
@@ -504,7 +504,7 @@ static float localZoomForRenderer(RenderObject& renderer)
     return zoomFactor;
 }
 
-static double adjustForLocalZoom(LayoutUnit value, RenderObject& renderer)
+static double adjustForLocalZoom(LayoutUnit value, LayoutObject& renderer)
 {
     float zoomFactor = localZoomForRenderer(renderer);
     if (zoomFactor == 1)
@@ -555,7 +555,7 @@ Element* Element::offsetParentForBindings()
 Element* Element::offsetParent()
 {
     document().updateLayoutIgnorePendingStylesheets();
-    if (RenderObject* renderer = this->renderer())
+    if (LayoutObject* renderer = this->renderer())
         return renderer->offsetParent();
     return nullptr;
 }
@@ -902,7 +902,7 @@ PassRefPtrWillBeRawPtr<ClientRectList> Element::getClientRects()
 {
     document().updateLayoutIgnorePendingStylesheets();
 
-    RenderObject* elementRenderer = renderer();
+    LayoutObject* elementRenderer = renderer();
     if (!elementRenderer || (!elementRenderer->isBoxModelObject() && !elementRenderer->isBR()))
         return ClientRectList::create();
 
@@ -920,7 +920,7 @@ PassRefPtrWillBeRawPtr<ClientRect> Element::getBoundingClientRect()
     document().updateLayoutIgnorePendingStylesheets();
 
     Vector<FloatQuad> quads;
-    RenderObject* elementRenderer = renderer();
+    LayoutObject* elementRenderer = renderer();
     if (elementRenderer) {
         if (isSVGElement() && !elementRenderer->isSVGRoot()) {
             // Get the bounding rectangle from the SVG model.
@@ -1317,14 +1317,14 @@ const AtomicString Element::imageSourceURL() const
     return getAttribute(srcAttr);
 }
 
-bool Element::rendererIsNeeded(const RenderStyle& style)
+bool Element::rendererIsNeeded(const LayoutStyle& style)
 {
     return style.display() != NONE;
 }
 
-RenderObject* Element::createRenderer(RenderStyle* style)
+LayoutObject* Element::createRenderer(const LayoutStyle& style)
 {
-    return RenderObject::createObject(this, style);
+    return LayoutObject::createObject(this, style);
 }
 
 Node::InsertionNotificationRequest Element::insertedInto(ContainerNode* insertionPoint)
@@ -1475,12 +1475,12 @@ void Element::detach(const AttachContext& context)
                 DisableCompositingQueryAsserts disabler;
 
                 // FIXME: restart compositor animations rather than pull back to the main thread
-                activeAnimations->cancelAnimationOnCompositor();
+                activeAnimations->restartAnimationOnCompositor();
             } else {
                 activeAnimations->cssAnimations().cancel();
                 activeAnimations->setAnimationStyleChange(false);
             }
-            activeAnimations->clearBaseRenderStyle();
+            activeAnimations->clearBaseLayoutStyle();
         }
 
         if (ElementShadow* shadow = data->shadow())
@@ -1494,9 +1494,9 @@ void Element::detach(const AttachContext& context)
         document().unscheduleSVGFilterLayerUpdateHack(*this);
 }
 
-bool Element::pseudoStyleCacheIsInvalid(const RenderStyle* currentStyle, RenderStyle* newStyle)
+bool Element::pseudoStyleCacheIsInvalid(const LayoutStyle* currentStyle, LayoutStyle* newStyle)
 {
-    ASSERT(currentStyle == renderStyle());
+    ASSERT(currentStyle == layoutStyle());
     ASSERT(renderer());
 
     if (!currentStyle)
@@ -1508,7 +1508,7 @@ bool Element::pseudoStyleCacheIsInvalid(const RenderStyle* currentStyle, RenderS
 
     size_t cacheSize = pseudoStyleCache->size();
     for (size_t i = 0; i < cacheSize; ++i) {
-        RefPtr<RenderStyle> newPseudoStyle;
+        RefPtr<LayoutStyle> newPseudoStyle;
         PseudoId pseudoId = pseudoStyleCache->at(i)->styleType();
         if (pseudoId == FIRST_LINE || pseudoId == FIRST_LINE_INHERITED)
             newPseudoStyle = renderer()->uncachedFirstLineStyle(newStyle);
@@ -1523,7 +1523,7 @@ bool Element::pseudoStyleCacheIsInvalid(const RenderStyle* currentStyle, RenderS
             if (pseudoId == FIRST_LINE || pseudoId == FIRST_LINE_INHERITED) {
                 // FIXME: We should do an actual diff to determine whether a repaint vs. layout
                 // is needed, but for now just assume a layout will be required. The diff code
-                // in RenderObject::setStyle would need to be factored out so that it could be reused.
+                // in LayoutObject::setStyle would need to be factored out so that it could be reused.
                 renderer()->setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
             }
             return true;
@@ -1532,11 +1532,11 @@ bool Element::pseudoStyleCacheIsInvalid(const RenderStyle* currentStyle, RenderS
     return false;
 }
 
-PassRefPtr<RenderStyle> Element::styleForRenderer()
+PassRefPtr<LayoutStyle> Element::styleForRenderer()
 {
     ASSERT(document().inStyleRecalc());
 
-    RefPtr<RenderStyle> style;
+    RefPtr<LayoutStyle> style;
 
     // FIXME: Instead of clearing updates that may have been added from calls to styleForElement
     // outside recalcStyle, we should just never set them if we're not inside recalcStyle.
@@ -1564,7 +1564,7 @@ PassRefPtr<RenderStyle> Element::styleForRenderer()
     return style.release();
 }
 
-PassRefPtr<RenderStyle> Element::originalStyleForRenderer()
+PassRefPtr<LayoutStyle> Element::originalStyleForRenderer()
 {
     ASSERT(document().inStyleRecalc());
     return document().ensureStyleResolver().styleForElement(this);
@@ -1589,7 +1589,7 @@ void Element::recalcStyle(StyleRecalcChange change, Text* nextTextSibling)
                     activeAnimations->setAnimationStyleChange(false);
             }
         }
-        if (parentRenderStyle())
+        if (parentLayoutStyle())
             change = recalcOwnStyle(change);
         clearNeedsStyleRecalc();
     }
@@ -1632,11 +1632,11 @@ StyleRecalcChange Element::recalcOwnStyle(StyleRecalcChange change)
     ASSERT(document().inStyleRecalc());
     ASSERT(!parentOrShadowHostNode()->needsStyleRecalc());
     ASSERT(change >= Inherit || needsStyleRecalc());
-    ASSERT(parentRenderStyle());
+    ASSERT(parentLayoutStyle());
 
-    RefPtr<RenderStyle> oldStyle = renderStyle();
-    RefPtr<RenderStyle> newStyle = styleForRenderer();
-    StyleRecalcChange localChange = RenderStyle::stylePropagationDiff(oldStyle.get(), newStyle.get());
+    RefPtr<LayoutStyle> oldStyle = layoutStyle();
+    RefPtr<LayoutStyle> newStyle = styleForRenderer();
+    StyleRecalcChange localChange = LayoutStyle::stylePropagationDiff(oldStyle.get(), newStyle.get());
 
     ASSERT(newStyle);
 
@@ -1655,7 +1655,7 @@ StyleRecalcChange Element::recalcOwnStyle(StyleRecalcChange change)
     if (localChange != NoChange)
         updateCallbackSelectors(oldStyle.get(), newStyle.get());
 
-    if (RenderObject* renderer = this->renderer()) {
+    if (LayoutObject* renderer = this->renderer()) {
         if (localChange != NoChange || pseudoStyleCacheIsInvalid(oldStyle.get(), newStyle.get()) || svgFilterNeedsLayerUpdate()) {
             renderer->setStyle(newStyle.get());
         } else {
@@ -1679,7 +1679,7 @@ StyleRecalcChange Element::recalcOwnStyle(StyleRecalcChange change)
     return localChange;
 }
 
-void Element::updateCallbackSelectors(RenderStyle* oldStyle, RenderStyle* newStyle)
+void Element::updateCallbackSelectors(LayoutStyle* oldStyle, LayoutStyle* newStyle)
 {
     Vector<String> emptyVector;
     const Vector<String>& oldCallbackSelectors = oldStyle ? oldStyle->callbackSelectors() : emptyVector;
@@ -1692,12 +1692,12 @@ void Element::updateCallbackSelectors(RenderStyle* oldStyle, RenderStyle* newSty
 
 void Element::addCallbackSelectors()
 {
-    updateCallbackSelectors(0, renderStyle());
+    updateCallbackSelectors(0, layoutStyle());
 }
 
 void Element::removeCallbackSelectors()
 {
-    updateCallbackSelectors(renderStyle(), 0);
+    updateCallbackSelectors(layoutStyle(), 0);
 }
 
 ElementShadow* Element::shadow() const
@@ -1767,8 +1767,8 @@ CustomElementDefinition* Element::customElementDefinition() const
 
 PassRefPtrWillBeRawPtr<ShadowRoot> Element::createShadowRoot(ExceptionState& exceptionState)
 {
-    if (alwaysCreateUserAgentShadowRoot())
-        ensureUserAgentShadowRoot();
+    if (alwaysCreateClosedShadowRoot())
+        ensureClosedShadowRoot();
 
     // Some elements make assumptions about what kind of renderers they allow
     // as children so we can't allow author shadows on them for now. An override
@@ -1778,7 +1778,7 @@ PassRefPtrWillBeRawPtr<ShadowRoot> Element::createShadowRoot(ExceptionState& exc
         return nullptr;
     }
 
-    return PassRefPtrWillBeRawPtr<ShadowRoot>(ensureShadow().addShadowRoot(*this, ShadowRoot::AuthorShadowRoot));
+    return PassRefPtrWillBeRawPtr<ShadowRoot>(ensureShadow().addShadowRoot(*this, ShadowRoot::OpenShadowRoot));
 }
 
 ShadowRoot* Element::shadowRoot() const
@@ -1787,16 +1787,16 @@ ShadowRoot* Element::shadowRoot() const
     if (!elementShadow)
         return nullptr;
     ShadowRoot* shadowRoot = elementShadow->youngestShadowRoot();
-    if (shadowRoot->type() == ShadowRoot::AuthorShadowRoot)
+    if (shadowRoot->type() == ShadowRoot::OpenShadowRoot)
         return shadowRoot;
     return nullptr;
 }
 
-ShadowRoot* Element::userAgentShadowRoot() const
+ShadowRoot* Element::closedShadowRoot() const
 {
     if (ElementShadow* elementShadow = shadow()) {
         if (ShadowRoot* shadowRoot = elementShadow->oldestShadowRoot()) {
-            ASSERT(shadowRoot->type() == ShadowRoot::UserAgentShadowRoot);
+            ASSERT(shadowRoot->type() == ShadowRoot::ClosedShadowRoot);
             return shadowRoot;
         }
     }
@@ -1804,12 +1804,12 @@ ShadowRoot* Element::userAgentShadowRoot() const
     return nullptr;
 }
 
-ShadowRoot& Element::ensureUserAgentShadowRoot()
+ShadowRoot& Element::ensureClosedShadowRoot()
 {
-    if (ShadowRoot* shadowRoot = userAgentShadowRoot())
+    if (ShadowRoot* shadowRoot = closedShadowRoot())
         return *shadowRoot;
-    ShadowRoot& shadowRoot = ensureShadow().addShadowRoot(*this, ShadowRoot::UserAgentShadowRoot);
-    didAddUserAgentShadowRoot(shadowRoot);
+    ShadowRoot& shadowRoot = ensureShadow().addShadowRoot(*this, ShadowRoot::ClosedShadowRoot);
+    didAddClosedShadowRoot(shadowRoot);
     return shadowRoot;
 }
 
@@ -1830,7 +1830,7 @@ bool Element::childTypeAllowed(NodeType type) const
 
 void Element::checkForEmptyStyleChange()
 {
-    RenderStyle* style = renderStyle();
+    LayoutStyle* style = layoutStyle();
 
     if (!style && !styleAffectedByEmpty())
         return;
@@ -2132,7 +2132,7 @@ bool Element::hasAttributeNS(const AtomicString& namespaceURI, const AtomicStrin
     return elementData()->attributes().find(qName);
 }
 
-void Element::focus(bool restorePreviousSelection, FocusType type)
+void Element::focus(bool restorePreviousSelection, WebFocusType type)
 {
     if (!inDocument())
         return;
@@ -2186,7 +2186,7 @@ void Element::updateFocusAppearance(bool /*restorePreviousSelection*/)
         // and we don't want to change the focus to a new Element.
         frame->selection().setSelection(newSelection,  FrameSelection::CloseTyping | FrameSelection::ClearTypingStyle | FrameSelection::DoNotSetFocus);
         frame->selection().revealSelection();
-    } else if (renderer() && !renderer()->isRenderPart())
+    } else if (renderer() && !renderer()->isLayoutPart())
         renderer()->scrollRectToVisible(boundingBox());
 }
 
@@ -2220,8 +2220,7 @@ bool Element::supportsSpatialNavigationFocus() const
     // i.e. checks if click or keyboard event handler is specified.
     // This is the way to make it possible to navigate to (focus) elements
     // which web designer meant for being active (made them respond to click events).
-
-    if (!isSpatialNavigationEnabled(document().frame()))
+    if (!isSpatialNavigationEnabled(document().frame()) || spatialNavigationIgnoresEventHandlers(document().frame()))
         return false;
     if (hasEventListeners(EventTypeNames::click)
         || hasEventListeners(EventTypeNames::keydown)
@@ -2251,7 +2250,7 @@ bool Element::isMouseFocusable() const
     return isFocusable();
 }
 
-void Element::dispatchFocusEvent(Element* oldFocusedElement, FocusType type)
+void Element::dispatchFocusEvent(Element* oldFocusedElement, WebFocusType type)
 {
     RefPtrWillBeRawPtr<FocusEvent> event = FocusEvent::create(EventTypeNames::focus, false, false, document().domWindow(), 0, oldFocusedElement);
     EventDispatcher::dispatchEvent(*this, FocusEventDispatchMediator::create(event.release()));
@@ -2263,7 +2262,7 @@ void Element::dispatchBlurEvent(Element* newFocusedElement)
     EventDispatcher::dispatchEvent(*this, BlurEventDispatchMediator::create(event.release()));
 }
 
-void Element::dispatchFocusInEvent(const AtomicString& eventType, Element* oldFocusedElement, FocusType)
+void Element::dispatchFocusInEvent(const AtomicString& eventType, Element* oldFocusedElement, WebFocusType)
 {
     ASSERT(!EventDispatchForbiddenScope::isEventDispatchForbidden());
     ASSERT(eventType == EventTypeNames::focusin || eventType == EventTypeNames::DOMFocusIn);
@@ -2470,7 +2469,7 @@ String Element::textFromChildren()
 const AtomicString& Element::shadowPseudoId() const
 {
     if (ShadowRoot* root = containingShadowRoot()) {
-        if (root->type() == ShadowRoot::UserAgentShadowRoot)
+        if (root->type() == ShadowRoot::ClosedShadowRoot)
             return fastGetAttribute(pseudoAttr);
     }
     return nullAtom;
@@ -2509,7 +2508,7 @@ void Element::setMinimumSizeForResizing(const LayoutSize& size)
     ensureElementRareData().setMinimumSizeForResizing(size);
 }
 
-RenderStyle* Element::computedStyle(PseudoId pseudoElementSpecifier)
+LayoutStyle* Element::computedStyle(PseudoId pseudoElementSpecifier)
 {
     if (PseudoElement* element = pseudoElement(pseudoElementSpecifier))
         return element->computedStyle();
@@ -2523,7 +2522,7 @@ RenderStyle* Element::computedStyle(PseudoId pseudoElementSpecifier)
     // FIXME: Find and use the renderer from the pseudo element instead of the actual element so that the 'length'
     // properties, which are only known by the renderer because it did the layout, will be correct and so that the
     // values returned for the ":selection" pseudo-element will be correct.
-    RenderStyle* elementStyle = renderStyle();
+    LayoutStyle* elementStyle = layoutStyle();
     if (!elementStyle) {
         ElementRareData& rareData = ensureElementRareData();
         if (!rareData.computedStyle())
@@ -2534,10 +2533,10 @@ RenderStyle* Element::computedStyle(PseudoId pseudoElementSpecifier)
     if (!pseudoElementSpecifier)
         return elementStyle;
 
-    if (RenderStyle* pseudoElementStyle = elementStyle->getCachedPseudoStyle(pseudoElementSpecifier))
+    if (LayoutStyle* pseudoElementStyle = elementStyle->getCachedPseudoStyle(pseudoElementSpecifier))
         return pseudoElementStyle;
 
-    RefPtr<RenderStyle> result = document().ensureStyleResolver().pseudoStyleForElement(this, PseudoStyleRequest(pseudoElementSpecifier, PseudoStyleRequest::ForComputedStyle), elementStyle);
+    RefPtr<LayoutStyle> result = document().ensureStyleResolver().pseudoStyleForElement(this, PseudoStyleRequest(pseudoElementSpecifier, PseudoStyleRequest::ForComputedStyle), elementStyle);
     ASSERT(result);
     return elementStyle->addCachedPseudoStyle(result.release());
 }
@@ -2562,7 +2561,7 @@ AtomicString Element::computeInheritedLanguage() const
             value = toDocument(n)->contentLanguage();
         }
 
-        n = n->parentNode();
+        n = n->parentOrShadowHostNode();
     } while (n && value.isNull());
 
     return value;
@@ -2615,7 +2614,7 @@ void Element::updatePseudoElement(PseudoId pseudoId, StyleRecalcChange change)
 
         // Wait until our parent is not displayed or pseudoElementRendererIsNeeded
         // is false, otherwise we could continuously create and destroy PseudoElements
-        // when RenderObject::isChildAllowed on our parent returns false for the
+        // when LayoutObject::isChildAllowed on our parent returns false for the
         // PseudoElement's renderer for each style recalc.
         if (!renderer() || !pseudoElementRendererIsNeeded(renderer()->getCachedPseudoStyle(pseudoId)))
             elementRareData()->setPseudoElement(pseudoId, nullptr);
@@ -2635,7 +2634,7 @@ void Element::updatePseudoElement(PseudoId pseudoId, StyleRecalcChange change)
 // the first letter renderer.
 bool Element::updateFirstLetter(Element* element)
 {
-    RenderObject* remainingTextRenderer = FirstLetterPseudoElement::firstLetterTextRenderer(*element);
+    LayoutObject* remainingTextRenderer = FirstLetterPseudoElement::firstLetterTextRenderer(*element);
     if (!remainingTextRenderer || remainingTextRenderer != toFirstLetterPseudoElement(element)->remainingTextRenderer()) {
         // We have to clear out the old first letter here because when it is
         // disposed it will set the original text back on the remaining text
@@ -2676,7 +2675,7 @@ PseudoElement* Element::pseudoElement(PseudoId pseudoId) const
     return hasRareData() ? elementRareData()->pseudoElement(pseudoId) : nullptr;
 }
 
-RenderObject* Element::pseudoElementRenderer(PseudoId pseudoId) const
+LayoutObject* Element::pseudoElementRenderer(PseudoId pseudoId) const
 {
     if (PseudoElement* element = pseudoElement(pseudoId))
         return element->renderer();
@@ -3094,7 +3093,7 @@ void Element::didRecalcStyle(StyleRecalcChange)
 }
 
 
-PassRefPtr<RenderStyle> Element::customStyleForRenderer()
+PassRefPtr<LayoutStyle> Element::customStyleForRenderer()
 {
     ASSERT(hasCustomStyleCallbacks());
     return nullptr;
@@ -3241,7 +3240,7 @@ void Element::styleAttributeChanged(const AtomicString& newStyleString, Attribut
 
     if (newStyleString.isNull()) {
         ensureUniqueElementData().m_inlineStyle.clear();
-    } else if (modificationReason == ModifiedByCloning || document().contentSecurityPolicy()->allowInlineStyle(document().url(), startLineNumber)) {
+    } else if (modificationReason == ModifiedByCloning || document().contentSecurityPolicy()->allowInlineStyle(document().url(), startLineNumber, newStyleString)) {
         setInlineStyleFromString(newStyleString);
     }
 
@@ -3358,7 +3357,7 @@ bool Element::supportsStyleSharing() const
     if (hasActiveAnimations())
         return false;
     // Turn off style sharing for elements that can gain layers for reasons outside of the style system.
-    // See comments in RenderObject::setStyle().
+    // See comments in LayoutObject::setStyle().
     // FIXME: Why does gaining a layer from outside the style system require disabling sharing?
     if (isHTMLFrameElementBase(*this) || isHTMLPlugInElement(*this) || isHTMLCanvasElement(*this))
         return false;

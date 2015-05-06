@@ -32,7 +32,7 @@ namespace blink {
 class SVGTextPositioningElement : public SVGTextContentElement {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static SVGTextPositioningElement* elementFromRenderer(RenderObject&);
+    static SVGTextPositioningElement* elementFromRenderer(LayoutObject&);
 
     SVGAnimatedLengthList* x() { return m_x.get(); }
     SVGAnimatedLengthList* y() { return m_y.get(); }
@@ -40,7 +40,7 @@ public:
     SVGAnimatedLengthList* dy() { return m_dy.get(); }
     SVGAnimatedNumberList* rotate() { return m_rotate.get(); }
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     SVGTextPositioningElement(const QualifiedName&, Document&);

@@ -32,7 +32,7 @@
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/html/ClassList.h"
 #include "core/html/ime/InputMethodContext.h"
-#include "core/rendering/style/StyleInheritedData.h"
+#include "core/layout/style/StyleInheritedData.h"
 #include "platform/heap/Handle.h"
 #include "wtf/OwnPtr.h"
 
@@ -42,7 +42,7 @@ class HTMLElement;
 
 class ElementRareData : public NodeRareData {
 public:
-    static ElementRareData* create(RenderObject* renderer)
+    static ElementRareData* create(LayoutObject* renderer)
     {
         return new ElementRareData(renderer);
     }
@@ -80,8 +80,8 @@ public:
     NamedNodeMap* attributeMap() const { return m_attributeMap.get(); }
     void setAttributeMap(PassOwnPtrWillBeRawPtr<NamedNodeMap> attributeMap) { m_attributeMap = attributeMap; }
 
-    RenderStyle* computedStyle() const { return m_computedStyle.get(); }
-    void setComputedStyle(PassRefPtr<RenderStyle> computedStyle) { m_computedStyle = computedStyle; }
+    LayoutStyle* computedStyle() const { return m_computedStyle.get(); }
+    void setComputedStyle(PassRefPtr<LayoutStyle> computedStyle) { m_computedStyle = computedStyle; }
     void clearComputedStyle() { m_computedStyle = nullptr; }
 
     ClassList* classList() const { return m_classList.get(); }
@@ -143,7 +143,7 @@ private:
     OwnPtrWillBeMember<ActiveAnimations> m_activeAnimations;
     OwnPtrWillBeMember<InlineCSSStyleDeclaration> m_cssomWrapper;
 
-    RefPtr<RenderStyle> m_computedStyle;
+    RefPtr<LayoutStyle> m_computedStyle;
     RefPtrWillBeMember<CustomElementDefinition> m_customElementDefinition;
 
     RefPtrWillBeMember<PseudoElement> m_generatedBefore;
@@ -151,7 +151,7 @@ private:
     RefPtrWillBeMember<PseudoElement> m_generatedFirstLetter;
     RefPtrWillBeMember<PseudoElement> m_backdrop;
 
-    explicit ElementRareData(RenderObject*);
+    explicit ElementRareData(LayoutObject*);
 };
 
 inline LayoutSize defaultMinimumSizeForResizing()
@@ -159,7 +159,7 @@ inline LayoutSize defaultMinimumSizeForResizing()
     return LayoutSize(LayoutUnit::max(), LayoutUnit::max());
 }
 
-inline ElementRareData::ElementRareData(RenderObject* renderer)
+inline ElementRareData::ElementRareData(LayoutObject* renderer)
     : NodeRareData(renderer)
     , m_tabindex(0)
     , m_minimumSizeForResizing(defaultMinimumSizeForResizing())

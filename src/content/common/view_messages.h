@@ -224,6 +224,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::RendererPreferences)
   IPC_STRUCT_TRAITS_MEMBER(use_custom_colors)
   IPC_STRUCT_TRAITS_MEMBER(enable_referrers)
   IPC_STRUCT_TRAITS_MEMBER(enable_do_not_track)
+  IPC_STRUCT_TRAITS_MEMBER(enable_webrtc_multiple_routes)
   IPC_STRUCT_TRAITS_MEMBER(default_zoom_level)
   IPC_STRUCT_TRAITS_MEMBER(user_agent_override)
   IPC_STRUCT_TRAITS_MEMBER(accept_languages)
@@ -1043,19 +1044,19 @@ IPC_SYNC_MESSAGE_CONTROL0_2(ViewHostMsg_GetProcessMemorySizes,
 // page/widget that was created by
 // CreateWindow/CreateWidget/CreateFullscreenWidget. routing_id
 // refers to the id that was returned from the Create message above.
-// The initial_position parameter is a rectangle in screen coordinates.
+// The initial_rect parameter is in screen coordinates.
 //
 // FUTURE: there will probably be flags here to control if the result is
 // in a new window.
 IPC_MESSAGE_ROUTED4(ViewHostMsg_ShowView,
                     int /* route_id */,
                     WindowOpenDisposition /* disposition */,
-                    gfx::Rect /* initial_pos */,
+                    gfx::Rect /* initial_rect */,
                     bool /* opened_by_user_gesture */)
 
 IPC_MESSAGE_ROUTED2(ViewHostMsg_ShowWidget,
                     int /* route_id */,
-                    gfx::Rect /* initial_pos */)
+                    gfx::Rect /* initial_rect */)
 
 // Message to show a full screen widget.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_ShowFullscreenWidget,
@@ -1069,12 +1070,6 @@ IPC_SYNC_MESSAGE_ROUTED1_0(ViewHostMsg_RunModal,
 // Indicates the renderer is ready in response to a ViewMsg_New or
 // a ViewMsg_CreatingNew_ACK.
 IPC_MESSAGE_ROUTED0(ViewHostMsg_RenderViewReady)
-
-// Indicates the renderer process is gone.  This actually is sent by the
-// browser process to itself, but keeps the interface cleaner.
-IPC_MESSAGE_ROUTED2(ViewHostMsg_RenderProcessGone,
-                    int, /* this really is base::TerminationStatus */
-                    int /* exit_code */)
 
 // Sent by the renderer process to request that the browser close the view.
 // This corresponds to the window.close() API, and the browser may ignore
@@ -1363,6 +1358,13 @@ IPC_MESSAGE_ROUTED3(ViewHostMsg_RequestPpapiBrokerPermission,
                     int /* routing_id */,
                     GURL /* document_url */,
                     base::FilePath /* plugin_path */)
+
+// A renderer sends this to the browser process when it throttles or unthrottles
+// a plugin instance for the Plugin Power Saver feature.
+IPC_MESSAGE_CONTROL3(ViewHostMsg_PluginInstanceThrottleStateChange,
+                     int /* plugin_child_id */,
+                     int32 /* pp_instance */,
+                     bool /* is_throttled */)
 #endif  // defined(ENABLE_PLUGINS)
 
 // Send the tooltip text for the current mouse position to the browser.
@@ -1467,10 +1469,10 @@ IPC_SYNC_MESSAGE_CONTROL3_1(ViewHostMsg_Keygen,
                             std::string /* signed public key and challenge */)
 
 // Message sent from the renderer to the browser to request that the browser
-// cache |data| associated with |url|.
+// cache |data| associated with |url| and |expected_response_time|.
 IPC_MESSAGE_CONTROL3(ViewHostMsg_DidGenerateCacheableMetadata,
                      GURL /* url */,
-                     double /* expected_response_time */,
+                     base::Time /* expected_response_time */,
                      std::vector<char> /* data */)
 
 // Register a new handler for URL requests with the given scheme.
@@ -1485,11 +1487,6 @@ IPC_MESSAGE_ROUTED3(ViewHostMsg_UnregisterProtocolHandler,
                     std::string /* scheme */,
                     GURL /* url */,
                     bool /* user_gesture */)
-
-// Puts the browser into "tab fullscreen" mode for the sending renderer.
-// See the comment in chrome/browser/ui/browser.h for more details.
-IPC_MESSAGE_ROUTED1(ViewHostMsg_ToggleFullscreen,
-                    bool /* enter_fullscreen */)
 
 // Send back a string to be recorded by UserMetrics.
 IPC_MESSAGE_CONTROL1(ViewHostMsg_UserMetricsRecordAction,

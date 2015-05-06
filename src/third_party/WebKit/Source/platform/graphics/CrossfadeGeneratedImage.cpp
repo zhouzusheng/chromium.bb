@@ -28,17 +28,16 @@
 
 #include "platform/geometry/FloatRect.h"
 #include "platform/graphics/GraphicsContextStateSaver.h"
-#include "platform/graphics/ImageBuffer.h"
 
 namespace blink {
 
 CrossfadeGeneratedImage::CrossfadeGeneratedImage(Image* fromImage, Image* toImage, float percentage, IntSize crossfadeSize, const IntSize& size)
-    : m_fromImage(fromImage)
+    : GeneratedImage(size)
+    , m_fromImage(fromImage)
     , m_toImage(toImage)
     , m_percentage(percentage)
     , m_crossfadeSize(crossfadeSize)
 {
-    m_size = size;
 }
 
 void CrossfadeGeneratedImage::drawCrossfade(GraphicsContext* context)
@@ -48,13 +47,6 @@ void CrossfadeGeneratedImage::drawCrossfade(GraphicsContext* context)
     IntSize fromImageSize = m_fromImage->size();
     IntSize toImageSize = m_toImage->size();
 
-    // Draw nothing if either of the images hasn't loaded yet.
-    if (m_fromImage == Image::nullImage() || m_toImage == Image::nullImage())
-        return;
-
-    GraphicsContextStateSaver stateSaver(*context);
-
-    context->clip(IntRect(IntPoint(), m_crossfadeSize));
     context->beginTransparencyLayer(1);
 
     // Draw the image we're fading away from.
@@ -76,16 +68,20 @@ void CrossfadeGeneratedImage::drawCrossfade(GraphicsContext* context)
             static_cast<float>(m_crossfadeSize.height()) / toImageSize.height());
     }
     context->setAlphaAsFloat(m_percentage);
-    context->drawImage(m_toImage, IntPoint(), CompositePlusLighter);
+    context->drawImage(m_toImage, IntPoint(), SkXfermode::kPlus_Mode);
     context->restore();
 
     context->endLayer();
 }
 
-void CrossfadeGeneratedImage::draw(GraphicsContext* context, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator compositeOp, WebBlendMode blendMode)
+void CrossfadeGeneratedImage::draw(GraphicsContext* context, const FloatRect& dstRect, const FloatRect& srcRect, SkXfermode::Mode compositeOp, RespectImageOrientationEnum)
 {
+    // Draw nothing if either of the images hasn't loaded yet.
+    if (m_fromImage == Image::nullImage() || m_toImage == Image::nullImage())
+        return;
+
     GraphicsContextStateSaver stateSaver(*context);
-    context->setCompositeOperation(compositeOp, blendMode);
+    context->setCompositeOperation(compositeOp);
     context->clip(dstRect);
     context->translate(dstRect.x(), dstRect.y());
     if (dstRect.size() != srcRect.size())
@@ -95,18 +91,13 @@ void CrossfadeGeneratedImage::draw(GraphicsContext* context, const FloatRect& ds
     drawCrossfade(context);
 }
 
-void CrossfadeGeneratedImage::drawPattern(GraphicsContext* context, const FloatRect& srcRect, const FloatSize& scale, const FloatPoint& phase, CompositeOperator compositeOp, const FloatRect& dstRect, WebBlendMode blendMode, const IntSize& repeatSpacing)
+void CrossfadeGeneratedImage::drawTile(GraphicsContext* context, const FloatRect& srcRect)
 {
-    OwnPtr<ImageBuffer> imageBuffer = context->createRasterBuffer(m_size);
-    if (!imageBuffer)
+    // Draw nothing if either of the images hasn't loaded yet.
+    if (m_fromImage == Image::nullImage() || m_toImage == Image::nullImage())
         return;
 
-    // Fill with the cross-faded image.
-    GraphicsContext* graphicsContext = imageBuffer->context();
-    drawCrossfade(graphicsContext);
-
-    // Tile the image buffer into the context.
-    imageBuffer->drawPattern(context, srcRect, scale, phase, compositeOp, dstRect, blendMode, repeatSpacing);
+    drawCrossfade(context);
 }
 
 } // namespace blink

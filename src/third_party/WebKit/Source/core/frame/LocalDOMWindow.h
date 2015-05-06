@@ -29,9 +29,9 @@
 
 #include "core/events/EventTarget.h"
 #include "core/frame/DOMWindow.h"
+#include "core/frame/DOMWindowLifecycleNotifier.h"
 #include "core/frame/FrameDestructionObserver.h"
 #include "core/frame/LocalFrame.h"
-#include "platform/LifecycleContext.h"
 #include "platform/Supplementable.h"
 #include "platform/heap/Handle.h"
 
@@ -41,14 +41,13 @@
 namespace blink {
 
 class DOMWindowEventQueue;
-class DOMWindowLifecycleNotifier;
 class DOMWindowProperty;
 class DocumentInit;
 class EventListener;
 class EventQueue;
 class ExceptionState;
-class FloatRect;
 class FrameConsole;
+class IntRect;
 class Page;
 class PostMessageTimer;
 class ScriptCallStack;
@@ -59,11 +58,9 @@ enum PageshowEventPersistence {
     PageshowEventPersisted = 1
 };
 
-enum SetLocationLocking { LockHistoryBasedOnGestureState, LockHistoryAndBackForwardList };
-
 // Note: if you're thinking of returning something DOM-related by reference,
 // please ping dcheng@chromium.org first. You probably don't want to do that.
-class LocalDOMWindow final : public DOMWindow, public WillBeHeapSupplementable<LocalDOMWindow>, public LifecycleContext<LocalDOMWindow> {
+class LocalDOMWindow final : public DOMWindow, public WillBeHeapSupplementable<LocalDOMWindow>, public DOMWindowLifecycleNotifier {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(LocalDOMWindow);
 public:
     static PassRefPtrWillBeRawPtr<Document> createDocument(const String& mimeType, const DocumentInit&, bool forceXHTML);
@@ -93,7 +90,6 @@ public:
     BarProp* statusbar() const override;
     BarProp* toolbar() const override;
     Navigator* navigator() const override;
-    Location* location() const override;
     bool offscreenBuffering() const override;
     int outerHeight() const override;
     int outerWidth() const override;
@@ -112,12 +108,9 @@ public:
     Document* document() const override;
     StyleMedia* styleMedia() const override;
     double devicePixelRatio() const override;
-    Storage* sessionStorage(ExceptionState&) const override;
-    Storage* localStorage(ExceptionState&) const override;
     ApplicationCache* applicationCache() const override;
     int orientation() const override;
     Console* console() const override;
-    Performance* performance() const override;
     DOMWindowCSS* css() const override;
     DOMSelection* getSelection() override;
     void focus(ExecutionContext*) override;
@@ -137,10 +130,10 @@ public:
     void scrollTo(double x, double y) const override;
     void scrollTo(const ScrollToOptions&) const override;
 
-    void moveBy(float x, float y) const override;
-    void moveTo(float x, float y) const override;
-    void resizeBy(float x, float y) const override;
-    void resizeTo(float width, float height) const override;
+    void moveBy(int x, int y, bool hasX, bool hasY) const override;
+    void moveTo(int x, int y, bool hasX, bool hasY) const override;
+    void resizeBy(int x, int y, bool hasX, bool hasY) const override;
+    void resizeTo(int width, int height, bool hasWidth, bool hasHeight) const override;
     PassRefPtrWillBeRawPtr<MediaQueryList> matchMedia(const String&) override;
     PassRefPtrWillBeRawPtr<CSSStyleDeclaration> getComputedStyle(Element*, const String& pseudoElt) const override;
     PassRefPtrWillBeRawPtr<CSSRuleList> getMatchedCSSRules(Element*, const String& pseudoElt) const override;
@@ -158,19 +151,15 @@ public:
 
     unsigned pendingUnloadEventListeners() const;
 
-    static FloatRect adjustWindowRect(LocalFrame&, const FloatRect& pendingChanges);
+    static IntRect adjustWindowRect(LocalFrame&, const IntRect& pendingChanges);
 
     bool allowPopUp(); // Call on first window, not target window.
     static bool allowPopUp(LocalFrame& firstFrame);
     static bool canShowModalDialogNow(const LocalFrame*);
 
-    // DOM Level 0
-    void setLocation(const String& location, LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow,
-        SetLocationLocking = LockHistoryBasedOnGestureState);
-
     Element* frameElement() const;
 
-    PassRefPtrWillBeRawPtr<LocalDOMWindow> open(const String& urlString, const AtomicString& frameName, const String& windowFeaturesString,
+    PassRefPtrWillBeRawPtr<DOMWindow> open(const String& urlString, const AtomicString& frameName, const String& windowFeaturesString,
         LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow);
 
     typedef void (*PrepareDialogFunction)(LocalDOMWindow*, void* context);
@@ -197,26 +186,15 @@ public:
 
     void finishedLoading();
 
-    // HTML 5 key/value storage
-    Storage* optionalSessionStorage() const { return m_sessionStorage.get(); }
-    Storage* optionalLocalStorage() const { return m_localStorage.get(); }
     ApplicationCache* optionalApplicationCache() const { return m_applicationCache.get(); }
 
     // Dispatch the (deprecated) orientationchange event to this DOMWindow and
     // recurse on its child frames.
     void sendOrientationChangeEvent();
 
-    // FIXME: When this LocalDOMWindow is no longer the active LocalDOMWindow (i.e.,
-    // when its document is no longer the document that is displayed in its
-    // frame), we would like to zero out m_frame to avoid being confused
-    // by the document that is currently active in m_frame.
-    bool isCurrentlyDisplayedInFrame() const;
-
     void willDetachDocumentFromFrame();
 
-    bool isInsecureScriptAccess(LocalDOMWindow& callingWindow, const String& urlString);
-
-    PassOwnPtr<LifecycleNotifier<LocalDOMWindow>> createLifecycleNotifier();
+    bool isInsecureScriptAccess(DOMWindow& callingWindow, const String& urlString) override;
 
     EventQueue* eventQueue() const;
     void enqueueWindowEvent(PassRefPtrWillBeRawPtr<Event>);
@@ -234,9 +212,6 @@ public:
     void acceptLanguagesChanged();
 
     virtual v8::Handle<v8::Object> wrap(v8::Handle<v8::Object> creationContext, v8::Isolate*) override;
-
-protected:
-    DOMWindowLifecycleNotifier& lifecycleNotifier();
 
 private:
     // Rather than simply inheriting FrameDestructionObserver like most other
@@ -259,6 +234,7 @@ private:
 
         // FrameDestructionObserver overrides:
         void willDetachFrameHost() override;
+        void frameDestroyed() override;
 
         RawPtrWillBeMember<LocalDOMWindow> m_window;
     };
@@ -282,6 +258,7 @@ private:
     };
 
     void willDetachFrameHost();
+    void frameDestroyed();
     void removeAllEventListenersInternal(BroadcastListenerRemoval);
 
     OwnPtrWillBeMember<WindowFrameObserver> m_frameObserver;
@@ -304,17 +281,12 @@ private:
     mutable RefPtrWillBeMember<BarProp> m_toolbar;
     mutable RefPtrWillBeMember<Console> m_console;
     mutable RefPtrWillBeMember<Navigator> m_navigator;
-    mutable RefPtrWillBeMember<Location> m_location;
     mutable RefPtrWillBeMember<StyleMedia> m_media;
 
     String m_status;
     String m_defaultStatus;
 
-    mutable RefPtrWillBeMember<Storage> m_sessionStorage;
-    mutable RefPtrWillBeMember<Storage> m_localStorage;
     mutable RefPtrWillBeMember<ApplicationCache> m_applicationCache;
-
-    mutable RefPtrWillBeMember<Performance> m_performance;
 
     mutable RefPtrWillBeMember<DOMWindowCSS> m_css;
 

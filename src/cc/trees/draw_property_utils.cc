@@ -38,7 +38,7 @@ void CalculateVisibleRects(
       const TransformNode* clip_transform_node =
           transform_tree.Node(clip_node->data.transform_id);
       const TransformNode* target_node =
-          transform_tree.Node(layer->render_target()->transform_tree_index());
+          transform_tree.Node(transform_node->data.target_id);
 
       gfx::Transform clip_to_target;
       gfx::Transform content_to_target;
@@ -250,8 +250,8 @@ void ComputeClips(ClipTree* clip_tree, const TransformTree& transform_tree) {
 }
 
 void ComputeTransforms(TransformTree* transform_tree) {
-  for (int i = 0; i < static_cast<int>(transform_tree->size()); ++i)
-    transform_tree->UpdateScreenSpaceTransform(i);
+  for (int i = 1; i < static_cast<int>(transform_tree->size()); ++i)
+    transform_tree->UpdateTransforms(i);
 }
 
 void ComputeVisibleRectsUsingPropertyTrees(

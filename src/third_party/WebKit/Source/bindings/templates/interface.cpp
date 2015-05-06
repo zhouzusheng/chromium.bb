@@ -61,7 +61,7 @@ static void indexedPropertySetter(uint32_t index, v8::Local<v8::Value> v8Value, 
     {% if setter.has_type_checking_interface %}
     {# Type checking for interface types (if interface not implemented, throw
        TypeError), per http://www.w3.org/TR/WebIDL/#es-interface #}
-    if (!isUndefinedOrNull(v8Value) && !V8{{setter.idl_type}}::hasInstance(v8Value, info.GetIsolate())) {
+    if (!propertyValue{% if setter.is_nullable %} && !isUndefinedOrNull(v8Value){% endif %}) {
         exceptionState.throwTypeError("The provided value is not of type '{{setter.idl_type}}'.");
         exceptionState.throwIfNeeded();
         return;
@@ -232,6 +232,15 @@ static void namedPropertySetter(v8::Local<v8::Name> name, v8::Local<v8::Value> v
     {# v8_value_to_local_cpp_value('DOMString', 'nameString', 'propertyName') #}
     TOSTRING_VOID(V8StringResource<>, propertyName, nameString);
     {{setter.v8_value_to_local_cpp_value}};
+    {% if setter.has_type_checking_interface %}
+    {# Type checking for interface types (if interface not implemented, throw
+       TypeError), per http://www.w3.org/TR/WebIDL/#es-interface #}
+    if (!propertyValue{% if setter.is_nullable %} && !isUndefinedOrNull(v8Value){% endif %}) {
+        exceptionState.throwTypeError("The provided value is not of type '{{setter.idl_type}}'.");
+        exceptionState.throwIfNeeded();
+        return;
+    }
+    {% endif %}
     {% set setter_name = setter.name or 'anonymousNamedSetter' %}
     {% set setter_arguments =
            ['propertyName', 'propertyValue', 'exceptionState']
@@ -729,7 +738,7 @@ static void configureShadowObjectTemplate(v8::Local<v8::ObjectTemplate> templ, v
 static const V8DOMConfiguration::AttributeConfiguration {{method.name}}OriginSafeAttributeConfiguration = {
     "{{method.name}}", {{getter_callback}}, {{setter_callback}}, {{getter_callback_for_main_world}}, {{setter_callback_for_main_world}}, &{{v8_class}}::wrapperTypeInfo, v8::ALL_CAN_READ, {{property_attribute}}, {{only_exposed_to_private_script}}, V8DOMConfiguration::OnInstance,
 };
-V8DOMConfiguration::installAttribute({{method.function_template}}, v8::Local<v8::ObjectTemplate>(), {{method.name}}OriginSafeAttributeConfiguration, isolate);
+V8DOMConfiguration::installAttribute(isolate, {{method.function_template}}, v8::Local<v8::ObjectTemplate>(), {{method.name}}OriginSafeAttributeConfiguration);
 {%- endmacro %}
 
 
@@ -877,7 +886,7 @@ void {{v8_class}}::installConditionallyEnabledProperties(v8::Local<v8::Object> i
     {% filter exposed(attribute.exposed_test) %}
     static const V8DOMConfiguration::AttributeConfiguration attributeConfiguration =\
     {{attribute_configuration(attribute)}};
-    V8DOMConfiguration::installAttribute(instanceObject, prototypeObject, attributeConfiguration, isolate);
+    V8DOMConfiguration::installAttribute(isolate, instanceObject, prototypeObject, attributeConfiguration);
     {% endfilter %}
     {% endfilter %}
     {% endfor %}

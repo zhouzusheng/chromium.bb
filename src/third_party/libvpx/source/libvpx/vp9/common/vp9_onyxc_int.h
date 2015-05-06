@@ -76,7 +76,7 @@ typedef struct VP9Common {
   DECLARE_ALIGNED(16, int16_t, y_dequant[QINDEX_RANGE][8]);
   DECLARE_ALIGNED(16, int16_t, uv_dequant[QINDEX_RANGE][8]);
 
-  COLOR_SPACE color_space;
+  vpx_color_space_t color_space;
 
   int width;
   int height;
@@ -112,7 +112,10 @@ typedef struct VP9Common {
 
   int new_fb_idx;
 
+#if CONFIG_VP9_POSTPROC
   YV12_BUFFER_CONFIG post_proc_buffer;
+  YV12_BUFFER_CONFIG post_proc_buffer_int;
+#endif
 
   FRAME_TYPE last_frame_type;  /* last frame's frame type for motion search.*/
   FRAME_TYPE frame_type;
@@ -181,7 +184,6 @@ typedef struct VP9Common {
   struct segmentation seg;
 
   // Context probabilities for reference frame prediction
-  int allow_comp_inter_inter;
   MV_REFERENCE_FRAME comp_fixed_ref;
   MV_REFERENCE_FRAME comp_var_ref[2];
   REFERENCE_MODE reference_mode;
@@ -206,6 +208,7 @@ typedef struct VP9Common {
   int frame_parallel_decoding_mode;
 
   int log2_tile_cols, log2_tile_rows;
+  int byte_alignment;
 
   // Private data associated with the frame buffer callbacks.
   void *cb_priv;
@@ -262,13 +265,14 @@ static INLINE void init_macroblockd(VP9_COMMON *cm, MACROBLOCKD *xd) {
   int i;
 
   for (i = 0; i < MAX_MB_PLANE; ++i) {
-    xd->plane[i].dqcoeff = xd->dqcoeff[i];
+    xd->plane[i].dqcoeff = xd->dqcoeff;
     xd->above_context[i] = cm->above_context +
         i * sizeof(*cm->above_context) * 2 * mi_cols_aligned_to_sb(cm->mi_cols);
   }
 
   xd->above_seg_context = cm->above_seg_context;
   xd->mi_stride = cm->mi_stride;
+  xd->error_info = &cm->error;
 }
 
 static INLINE int frame_is_intra_only(const VP9_COMMON *const cm) {
@@ -309,17 +313,21 @@ static INLINE void set_mi_row_col(MACROBLOCKD *xd, const TileInfo *const tile,
   // Are edges available for intra prediction?
   xd->up_available    = (mi_row != 0);
   xd->left_available  = (mi_col > tile->mi_col_start);
-}
+  if (xd->up_available) {
+    xd->above_mi = xd->mi[-xd->mi_stride].src_mi;
+    xd->above_mbmi = xd->above_mi ? &xd->above_mi->mbmi : NULL;
+  } else {
+    xd->above_mi = NULL;
+    xd->above_mbmi = NULL;
+  }
 
-static INLINE void set_prev_mi(VP9_COMMON *cm) {
-  const int use_prev_in_find_mv_refs = cm->width == cm->last_width &&
-                                       cm->height == cm->last_height &&
-                                       !cm->intra_only &&
-                                       cm->last_show_frame;
-  // Special case: set prev_mi to NULL when the previous mode info
-  // context cannot be used.
-  cm->prev_mi = use_prev_in_find_mv_refs ?
-                  cm->prev_mip + cm->mi_stride + 1 : NULL;
+  if (xd->left_available) {
+    xd->left_mi = xd->mi[-1].src_mi;
+    xd->left_mbmi = xd->left_mi ? &xd->left_mi->mbmi : NULL;
+  } else {
+    xd->left_mi = NULL;
+    xd->left_mbmi = NULL;
+  }
 }
 
 static INLINE void update_partition_context(MACROBLOCKD *xd,

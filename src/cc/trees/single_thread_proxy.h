@@ -38,6 +38,7 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   // Proxy implementation
   void FinishAllRendering() override;
   bool IsStarted() const override;
+  bool CommitToActiveTree() const override;
   void SetOutputSurface(scoped_ptr<OutputSurface>) override;
   void SetLayerTreeHostClientReady() override;
   void SetVisible(bool visible) override;
@@ -58,7 +59,7 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   size_t MaxPartialTextureUpdates() const override;
   void ForceSerializeOnSwapBuffers() override;
   bool SupportsImplScrolling() const override;
-  void AsValueInto(base::debug::TracedValue* state) const override;
+  void AsValueInto(base::trace_event::TracedValue* state) const override;
   bool MainFrameWillHappenForTesting() override;
   void SetChildrenNeedBeginFrames(bool children_need_begin_frames) override;
 
@@ -78,6 +79,7 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   base::TimeDelta CommitToActivateDurationEstimate() override;
   void DidBeginImplFrameDeadline() override;
   void SendBeginFramesToChildren(const BeginFrameArgs& args) override;
+  void SendBeginMainFrameNotExpectedSoon() override;
 
   // LayerTreeHostImplClient implementation
   void UpdateRendererCapabilitiesOnImplThread() override;
@@ -106,6 +108,7 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
                                             base::TimeDelta delay) override {}
   void DidActivateSyncTree() override;
   void DidPrepareTiles() override;
+  void DidCompletePageScaleAnimationOnImplThread() override;
   void SetDebugState(const LayerTreeDebugState& debug_state) override {}
 
   void RequestNewOutputSurface();
@@ -113,13 +116,14 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   // Called by the legacy path where RenderWidget does the scheduling.
   void CompositeImmediately(base::TimeTicks frame_begin_time);
 
- private:
+ protected:
   SingleThreadProxy(
       LayerTreeHost* layer_tree_host,
       LayerTreeHostSingleThreadClient* client,
       scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
       scoped_ptr<BeginFrameSource> external_begin_frame_source);
 
+ private:
   void BeginMainFrame();
   void BeginMainFrameAbortedOnImplThread(CommitEarlyOutReason reason);
   void DoAnimate();
@@ -153,7 +157,6 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
 
   bool inside_draw_;
   bool defer_commits_;
-  bool commit_was_deferred_;
   bool commit_requested_;
   bool inside_synchronous_composite_;
 

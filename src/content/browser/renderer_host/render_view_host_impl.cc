@@ -11,7 +11,6 @@
 
 #include "base/callback.h"
 #include "base/command_line.h"
-#include "base/debug/trace_event.h"
 #include "base/i18n/rtl.h"
 #include "base/json/json_reader.h"
 #include "base/message_loop/message_loop.h"
@@ -22,6 +21,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/sys_info.h"
 #include "base/time/time.h"
+#include "base/trace_event/trace_event.h"
 #include "base/values.h"
 #include "cc/base/switches.h"
 #include "content/browser/child_process_security_policy_impl.h"
@@ -318,28 +318,21 @@ void RenderViewHostImpl::SyncRendererPrefs() {
                                         GetProcess()->GetBrowserContext())));
 }
 
-WebPreferences RenderViewHostImpl::ComputeWebkitPrefs(const GURL& url) {
+WebPreferences RenderViewHostImpl::ComputeWebkitPrefs() {
   TRACE_EVENT0("browser", "RenderViewHostImpl::GetWebkitPrefs");
   WebPreferences prefs;
 
   const base::CommandLine& command_line =
       *base::CommandLine::ForCurrentProcess();
 
-  prefs.javascript_enabled =
-      !command_line.HasSwitch(switches::kDisableJavaScript);
   prefs.web_security_enabled =
       !command_line.HasSwitch(switches::kDisableWebSecurity);
-  prefs.plugins_enabled =
-      !command_line.HasSwitch(switches::kDisablePlugins);
   prefs.java_enabled =
       !command_line.HasSwitch(switches::kDisableJava);
 
   prefs.remote_fonts_enabled =
       !command_line.HasSwitch(switches::kDisableRemoteFonts);
-  prefs.xslt_enabled =
-      !command_line.HasSwitch(switches::kDisableXSLT);
-  prefs.application_cache_enabled =
-      !command_line.HasSwitch(switches::kDisableApplicationCache);
+  prefs.application_cache_enabled = true;
 
   prefs.local_storage_enabled =
       !command_line.HasSwitch(switches::kDisableLocalStorage);
@@ -480,38 +473,18 @@ WebPreferences RenderViewHostImpl::ComputeWebkitPrefs(const GURL& url) {
   prefs.spatial_navigation_enabled = command_line.HasSwitch(
       switches::kEnableSpatialNavigation);
 
-  prefs.strict_mixed_content_checking =
-      command_line.HasSwitch(switches::kEnableStrictMixedContentChecking);
+  prefs.disable_reading_from_canvas = command_line.HasSwitch(
+      switches::kDisableReadingFromCanvas);
 
-  std::string v8_cache_options =
-      command_line.GetSwitchValueASCII(switches::kV8CacheOptions);
-  if (v8_cache_options.empty())
-    v8_cache_options = base::FieldTrialList::FindFullName("V8CacheOptions");
-  if (v8_cache_options == "parse") {
-    prefs.v8_cache_options = V8_CACHE_OPTIONS_PARSE;
-  } else if (v8_cache_options == "code") {
-    prefs.v8_cache_options = V8_CACHE_OPTIONS_CODE;
-  } else if (v8_cache_options == "code-compressed") {
-    prefs.v8_cache_options = V8_CACHE_OPTIONS_CODE_COMPRESSED;
-  } else if (v8_cache_options == "none") {
-    prefs.v8_cache_options = V8_CACHE_OPTIONS_NONE;
-  } else if (v8_cache_options == "parse-memory") {
-    prefs.v8_cache_options = V8_CACHE_OPTIONS_PARSE_MEMORY;
-  } else if (v8_cache_options == "heuristics") {
-    prefs.v8_cache_options = V8_CACHE_OPTIONS_HEURISTICS;
-  } else if (v8_cache_options == "heuristics-mobile") {
-    prefs.v8_cache_options = V8_CACHE_OPTIONS_HEURISTICS_MOBILE;
-  } else {
-    prefs.v8_cache_options = V8_CACHE_OPTIONS_DEFAULT;
-  }
+  prefs.strict_mixed_content_checking = command_line.HasSwitch(
+      switches::kEnableStrictMixedContentChecking);
 
-  // TODO(marja): Clean up preferences + command line flag after streaming has
-  // launched in stable.
-  prefs.v8_script_streaming_enabled = true;
-  prefs.v8_script_streaming_mode =
-      V8_SCRIPT_STREAMING_MODE_ONLY_ASYNC_AND_DEFER;
+  prefs.strict_powerful_feature_restrictions = command_line.HasSwitch(
+      switches::kEnableStrictPowerfulFeatureRestrictions);
 
-  GetContentClient()->browser()->OverrideWebkitPrefs(this, url, &prefs);
+  prefs.v8_cache_options = GetV8CacheOptions();
+
+  GetContentClient()->browser()->OverrideWebkitPrefs(this, &prefs);
   return prefs;
 }
 
@@ -716,10 +689,8 @@ void RenderViewHostImpl::AllowBindings(int bindings_flags) {
           GetProcess()->GetID())) {
     // This process has no bindings yet. Make sure it does not have more
     // than this single active view.
-    RenderProcessHostImpl* process =
-        static_cast<RenderProcessHostImpl*>(GetProcess());
     // --single-process only has one renderer.
-    if (process->GetActiveViewCount() > 1 &&
+    if (GetProcess()->GetActiveViewCount() > 1 &&
         !base::CommandLine::ForCurrentProcess()->HasSwitch(
             switches::kSingleProcess))
       return;
@@ -873,20 +844,19 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
 
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(RenderViewHostImpl, msg)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_RenderProcessGone, OnRenderProcessGone)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ShowView, OnShowView)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ShowWidget, OnShowWidget)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ShowFullscreenWidget,
                         OnShowFullscreenWidget)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(ViewHostMsg_RunModal, OnRunModal)
     IPC_MESSAGE_HANDLER(ViewHostMsg_RenderViewReady, OnRenderViewReady)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_RenderProcessGone, OnRenderProcessGone)
     IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateState, OnUpdateState)
     IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateTargetURL, OnUpdateTargetURL)
     IPC_MESSAGE_HANDLER(ViewHostMsg_Close, OnClose)
     IPC_MESSAGE_HANDLER(ViewHostMsg_RequestMove, OnRequestMove)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DocumentAvailableInMainFrame,
                         OnDocumentAvailableInMainFrame)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_ToggleFullscreen, OnToggleFullscreen)
     IPC_MESSAGE_HANDLER(ViewHostMsg_DidContentsPreferredSizeChange,
                         OnDidContentsPreferredSizeChange)
     IPC_MESSAGE_HANDLER(ViewHostMsg_RouteCloseEvent,
@@ -995,19 +965,19 @@ void RenderViewHostImpl::CreateNewFullscreenWidget(int route_id) {
 
 void RenderViewHostImpl::OnShowView(int route_id,
                                     WindowOpenDisposition disposition,
-                                    const gfx::Rect& initial_pos,
+                                    const gfx::Rect& initial_rect,
                                     bool user_gesture) {
   if (is_active_) {
     delegate_->ShowCreatedWindow(
-        route_id, disposition, initial_pos, user_gesture);
+        route_id, disposition, initial_rect, user_gesture);
   }
   Send(new ViewMsg_Move_ACK(route_id));
 }
 
 void RenderViewHostImpl::OnShowWidget(int route_id,
-                                      const gfx::Rect& initial_pos) {
+                                      const gfx::Rect& initial_rect) {
   if (is_active_)
-    delegate_->ShowCreatedWidget(route_id, initial_pos);
+    delegate_->ShowCreatedWidget(route_id, initial_rect);
   Send(new ViewMsg_Move_ACK(route_id));
 }
 
@@ -1045,22 +1015,10 @@ void RenderViewHostImpl::OnRenderViewReady() {
 }
 
 void RenderViewHostImpl::OnRenderProcessGone(int status, int exit_code) {
-  // Keep the termination status so we can get at it later when we
-  // need to know why it died.
-  render_view_termination_status_ =
-      static_cast<base::TerminationStatus>(status);
-
-  // Reset frame tree state associated with this process.  This must happen
-  // before RenderViewTerminated because observers expect the subframes of any
-  // affected frames to be cleared first.
-  delegate_->GetFrameTree()->RenderProcessGone(this);
-
-  // Our base class RenderWidgetHost needs to reset some stuff.
-  RendererExited(render_view_termination_status_, exit_code);
-
-  delegate_->RenderViewTerminated(this,
-                                  static_cast<base::TerminationStatus>(status),
-                                  exit_code);
+  // Do nothing, otherwise RenderWidgetHostImpl will assume it is not a
+  // RenderViewHostImpl and destroy itself.
+  // TODO(nasko): Remove this hack once RenderViewHost and RenderWidgetHost are
+  // decoupled.
 }
 
 void RenderViewHostImpl::OnUpdateState(int32 page_id, const PageState& state) {
@@ -1113,14 +1071,6 @@ void RenderViewHostImpl::OnDocumentAvailableInMainFrame(
   host_zoom_map->SetTemporaryZoomLevel(GetProcess()->GetID(),
                                        GetRoutingID(),
                                        host_zoom_map->GetDefaultZoomLevel());
-}
-
-void RenderViewHostImpl::OnToggleFullscreen(bool enter_fullscreen) {
-  DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  delegate_->ToggleFullscreenMode(enter_fullscreen);
-  // We need to notify the contents that its fullscreen state has changed. This
-  // is done as part of the resize message.
-  WasResized();
 }
 
 void RenderViewHostImpl::OnDidContentsPreferredSizeChange(
@@ -1339,12 +1289,6 @@ void RenderViewHostImpl::OnTextSurroundingSelectionResponse(
   view_->OnTextSurroundingSelectionResponse(content, start_offset, end_offset);
 }
 
-void RenderViewHostImpl::ExitFullscreen() {
-  RejectMouseLockOrUnlockIfNecessary();
-  // Notify delegate_ and renderer of fullscreen state change.
-  OnToggleFullscreen(false);
-}
-
 WebPreferences RenderViewHostImpl::GetWebkitPreferences() {
   if (!web_preferences_.get()) {
     OnWebkitPreferencesChanged();
@@ -1364,15 +1308,8 @@ void RenderViewHostImpl::OnWebkitPreferencesChanged() {
   if (updating_web_preferences_)
     return;
   updating_web_preferences_ = true;
-  UpdateWebkitPreferences(delegate_->ComputeWebkitPrefs());
+  UpdateWebkitPreferences(ComputeWebkitPrefs());
   updating_web_preferences_ = false;
-}
-
-void RenderViewHostImpl::GetAudioOutputControllers(
-    const GetAudioOutputControllersCallback& callback) const {
-  scoped_refptr<AudioRendererHost> audio_host =
-      static_cast<RenderProcessHostImpl*>(GetProcess())->audio_renderer_host();
-  audio_host->GetOutputControllers(GetRoutingID(), callback);
 }
 
 void RenderViewHostImpl::ClearFocusedElement() {
@@ -1443,6 +1380,14 @@ void RenderViewHostImpl::OnDidZoomURL(double zoom_level,
 }
 
 void RenderViewHostImpl::OnRunFileChooser(const FileChooserParams& params) {
+  // Do not allow messages with absolute paths in them as this can permit a
+  // renderer to coerce the browser to perform I/O on a renderer controlled
+  // path.
+  if (params.default_file_name != params.default_file_name.BaseName()) {
+    GetProcess()->ReceivedBadMessage();
+    return;
+  }
+
   delegate_->RunFileChooser(this, params);
 }
 

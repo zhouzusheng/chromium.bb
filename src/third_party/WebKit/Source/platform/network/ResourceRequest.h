@@ -117,6 +117,7 @@ public:
     const AtomicString& httpContentType() const { return httpHeaderField("Content-Type");  }
     void setHTTPContentType(const AtomicString& httpContentType) { setHTTPHeaderField("Content-Type", httpContentType); }
 
+    bool didSetHTTPReferrer() const { return m_didSetHTTPReferrer; }
     const AtomicString& httpReferrer() const { return httpHeaderField("Referer"); }
     ReferrerPolicy referrerPolicy() const { return m_referrerPolicy; }
     void setHTTPReferrer(const Referrer&);
@@ -171,7 +172,7 @@ public:
 
     // True if request was user initiated.
     bool hasUserGesture() const { return m_hasUserGesture; }
-    void setHasUserGesture(bool hasUserGesture) { m_hasUserGesture = hasUserGesture; }
+    void setHasUserGesture(bool);
 
     // True if request should be downloaded to file.
     bool downloadToFile() const { return m_downloadToFile; }
@@ -221,6 +222,9 @@ public:
     double uiStartTime() const { return m_uiStartTime; }
     void setUIStartTime(double uiStartTime) { m_uiStartTime = uiStartTime; }
 
+    bool originatesFromReservedIPRange() const { return m_originatesFromReservedIPRange; }
+    void setOriginatesFromReservedIPRange(bool value) { m_originatesFromReservedIPRange = value; }
+
     InputToLoadPerfMetricReportPolicy inputPerfMetricReportPolicy() const { return m_inputPerfMetricReportPolicy; }
     void setInputPerfMetricReportPolicy(InputToLoadPerfMetricReportPolicy inputPerfMetricReportPolicy) { m_inputPerfMetricReportPolicy = inputPerfMetricReportPolicy; }
 
@@ -255,8 +259,10 @@ private:
     WebURLRequest::FetchRequestMode m_fetchRequestMode;
     WebURLRequest::FetchCredentialsMode m_fetchCredentialsMode;
     ReferrerPolicy m_referrerPolicy;
+    bool m_didSetHTTPReferrer;
     bool m_checkForBrowserSideNavigation;
     double m_uiStartTime;
+    bool m_originatesFromReservedIPRange;
     InputToLoadPerfMetricReportPolicy m_inputPerfMetricReportPolicy;
 
     mutable CacheControlHeader m_cacheControlHeaderCache;
@@ -299,8 +305,10 @@ public:
     WebURLRequest::FetchRequestMode m_fetchRequestMode;
     WebURLRequest::FetchCredentialsMode m_fetchCredentialsMode;
     ReferrerPolicy m_referrerPolicy;
+    bool m_didSetHTTPReferrer;
     bool m_checkForBrowserSideNavigation;
     double m_uiStartTime;
+    bool m_originatesFromReservedIPRange;
     InputToLoadPerfMetricReportPolicy m_inputPerfMetricReportPolicy;
 };
 

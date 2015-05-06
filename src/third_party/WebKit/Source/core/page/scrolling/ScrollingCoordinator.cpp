@@ -35,14 +35,14 @@
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/html/HTMLElement.h"
+#include "core/layout/LayoutGeometryMap.h"
+#include "core/layout/LayoutPart.h"
+#include "core/layout/compositing/CompositedLayerMapping.h"
+#include "core/layout/compositing/LayerCompositor.h"
 #include "core/page/Chrome.h"
 #include "core/page/Page.h"
 #include "core/plugins/PluginView.h"
-#include "core/rendering/RenderGeometryMap.h"
-#include "core/rendering/RenderPart.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/compositing/CompositedLayerMapping.h"
-#include "core/rendering/compositing/RenderLayerCompositor.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/TraceEvent.h"
 #include "platform/exported/WebScrollbarImpl.h"
@@ -117,6 +117,18 @@ void ScrollingCoordinator::notifyLayoutUpdated()
     m_scrollGestureRegionIsDirty = true;
     m_touchEventTargetRectsAreDirty = true;
     m_shouldScrollOnMainThreadDirty = true;
+}
+
+void ScrollingCoordinator::scrollableAreasDidChange()
+{
+    // Layout may update scrollable area bounding boxes. It also sets the same dirty
+    // flag making this one redundant (See |ScrollingCoordinator::notifyLayoutUpdated|).
+    // So if layout is expected, ignore this call allowing scrolling coordinator
+    // to be notified post-layout to recompute gesture regions.
+    if (!m_page->deprecatedLocalMainFrame()->view() || m_page->deprecatedLocalMainFrame()->view()->needsLayout())
+        return;
+
+    m_scrollGestureRegionIsDirty = true;
 }
 
 void ScrollingCoordinator::updateAfterCompositingChangeIfNeeded()
@@ -198,12 +210,12 @@ static void clearPositionConstraintExceptForLayer(GraphicsLayer* layer, Graphics
         toWebLayer(layer)->setPositionConstraint(WebLayerPositionConstraint());
 }
 
-static WebLayerPositionConstraint computePositionConstraint(const RenderLayer* layer)
+static WebLayerPositionConstraint computePositionConstraint(const Layer* layer)
 {
     ASSERT(layer->hasCompositedLayerMapping());
     do {
         if (layer->renderer()->style()->position() == FixedPosition) {
-            const RenderObject* fixedPositionObject = layer->renderer();
+            const LayoutObject* fixedPositionObject = layer->renderer();
             bool fixedToRight = !fixedPositionObject->style()->right().isAuto();
             bool fixedToBottom = !fixedPositionObject->style()->bottom().isAuto();
             return WebLayerPositionConstraint::fixedPosition(fixedToRight, fixedToBottom);
@@ -212,12 +224,12 @@ static WebLayerPositionConstraint computePositionConstraint(const RenderLayer* l
         layer = layer->parent();
 
         // Composited layers that inherit a fixed position state will be positioned with respect to the nearest compositedLayerMapping's GraphicsLayer.
-        // So, once we find a layer that has its own compositedLayerMapping, we can stop searching for a fixed position RenderObject.
+        // So, once we find a layer that has its own compositedLayerMapping, we can stop searching for a fixed position LayoutObject.
     } while (layer && !layer->hasCompositedLayerMapping());
     return WebLayerPositionConstraint();
 }
 
-void ScrollingCoordinator::updateLayerPositionConstraint(RenderLayer* layer)
+void ScrollingCoordinator::updateLayerPositionConstraint(Layer* layer)
 {
     ASSERT(layer->hasCompositedLayerMapping());
     CompositedLayerMapping* compositedLayerMapping = layer->compositedLayerMapping();
@@ -378,10 +390,18 @@ bool ScrollingCoordinator::scrollableAreaScrollLayerDidChange(ScrollableArea* sc
         // to set the WebLayer's scroll position at fractional precision otherwise the
         // WebLayer's position after snapping to device pixel can be off with regard to
         // fixed position elements.
-        if (m_lastMainThreadScrollingReasons & ScrollingCoordinator::HasNonLayerViewportConstrainedObjects)
+        if (m_lastMainThreadScrollingReasons & ScrollingCoordinator::HasNonLayerViewportConstrainedObjects) {
             webLayer->setScrollPositionDouble(DoublePoint(scrollableArea->scrollPosition() - scrollableArea->minimumScrollPosition()));
-        else
-            webLayer->setScrollPositionDouble(DoublePoint(scrollableArea->scrollPositionDouble() - scrollableArea->minimumScrollPosition()));
+        } else {
+            DoublePoint scrollPosition(scrollableArea->scrollPositionDouble() - scrollableArea->minimumScrollPositionDouble());
+            IntPoint flooredScrollPosition(flooredIntPoint(scrollPosition));
+            DoublePoint fractionalPart(scrollPosition.x() - flooredScrollPosition.x(), scrollPosition.y() - flooredScrollPosition.y());
+            webLayer->setScrollPositionDouble(scrollPosition);
+            // Blink can only use the integer part of the scroll offset to position elements.
+            // Sends the fractional part of the scroll offset to CC as scroll adjustment for
+            // fixed-position layer.
+            webLayer->setScrollCompensationAdjustment(fractionalPart);
+        }
 
         webLayer->setBounds(scrollableArea->contentsSize());
         bool canScrollX = scrollableArea->userInputScrollable(HorizontalScrollbar);
@@ -403,16 +423,18 @@ bool ScrollingCoordinator::scrollableAreaScrollLayerDidChange(ScrollableArea* sc
     if (m_page->settings().rootLayerScrolls() && isForRootLayer(scrollableArea))
         m_page->chrome().registerViewportLayers();
 
+    scrollableArea->layerForScrollingDidChange();
+
     return !!webLayer;
 }
 
 using GraphicsLayerHitTestRects = WTF::HashMap<const GraphicsLayer*, Vector<LayoutRect>>;
 
-// In order to do a DFS cross-frame walk of the RenderLayer tree, we need to know which
-// RenderLayers have child frames inside of them. This computes a mapping for the
+// In order to do a DFS cross-frame walk of the Layer tree, we need to know which
+// Layers have child frames inside of them. This computes a mapping for the
 // current frame which we can consult while walking the layers of that frame.
 // Whenever we descend into a new frame, a new map will be created.
-using LayerFrameMap = HashMap<const RenderLayer*, Vector<const LocalFrame*>>;
+using LayerFrameMap = HashMap<const Layer*, Vector<const LocalFrame*>>;
 static void makeLayerChildFrameMap(const LocalFrame* currentFrame, LayerFrameMap* map)
 {
     map->clear();
@@ -420,10 +442,10 @@ static void makeLayerChildFrameMap(const LocalFrame* currentFrame, LayerFrameMap
     for (const Frame* child = tree.firstChild(); child; child = child->tree().nextSibling()) {
         if (!child->isLocalFrame())
             continue;
-        const RenderObject* ownerRenderer = toLocalFrame(child)->ownerRenderer();
+        const LayoutObject* ownerRenderer = toLocalFrame(child)->ownerRenderer();
         if (!ownerRenderer)
             continue;
-        const RenderLayer* containingLayer = ownerRenderer->enclosingLayer();
+        const Layer* containingLayer = ownerRenderer->enclosingLayer();
         LayerFrameMap::iterator iter = map->find(containingLayer);
         if (iter == map->end())
             map->add(containingLayer, Vector<const LocalFrame*>()).storedValue->value.append(toLocalFrame(child));
@@ -433,21 +455,21 @@ static void makeLayerChildFrameMap(const LocalFrame* currentFrame, LayerFrameMap
 }
 
 static void projectRectsToGraphicsLayerSpaceRecursive(
-    const RenderLayer* curLayer,
+    const Layer* curLayer,
     const LayerHitTestRects& layerRects,
     GraphicsLayerHitTestRects& graphicsRects,
-    RenderGeometryMap& geometryMap,
-    HashSet<const RenderLayer*>& layersWithRects,
+    LayoutGeometryMap& geometryMap,
+    HashSet<const Layer*>& layersWithRects,
     LayerFrameMap& layerChildFrameMap)
 {
     // Project any rects for the current layer
     LayerHitTestRects::const_iterator layerIter = layerRects.find(curLayer);
     if (layerIter != layerRects.end()) {
         // Find the enclosing composited layer when it's in another document (for non-composited iframes).
-        const RenderLayer* compositedLayer = layerIter->key->enclosingLayerForPaintInvalidationCrossingFrameBoundaries();
+        const Layer* compositedLayer = layerIter->key->enclosingLayerForPaintInvalidationCrossingFrameBoundaries();
         ASSERT(compositedLayer);
 
-        // Find the appropriate GraphicsLayer for the composited RenderLayer.
+        // Find the appropriate GraphicsLayer for the composited Layer.
         GraphicsLayer* graphicsLayer = compositedLayer->graphicsLayerBackingForScrolling();
 
         GraphicsLayerHitTestRects::iterator glIter = graphicsRects.find(graphicsLayer);
@@ -469,13 +491,13 @@ static void projectRectsToGraphicsLayerSpaceRecursive(
                 if (compositedLayer->renderer()->hasOverflowClip())
                     rect.move(compositedLayer->renderBox()->scrolledContentOffset());
             }
-            RenderLayer::mapRectToPaintBackingCoordinates(compositedLayer->renderer(), rect);
+            Layer::mapRectToPaintBackingCoordinates(compositedLayer->renderer(), rect);
             glRects->append(rect);
         }
     }
 
     // Walk child layers of interest
-    for (const RenderLayer* childLayer = curLayer->firstChild(); childLayer; childLayer = childLayer->nextSibling()) {
+    for (const Layer* childLayer = curLayer->firstChild(); childLayer; childLayer = childLayer->nextSibling()) {
         if (layersWithRects.contains(childLayer)) {
             geometryMap.pushMappingsToAncestor(childLayer, curLayer);
             projectRectsToGraphicsLayerSpaceRecursive(childLayer, layerRects, graphicsRects, geometryMap, layersWithRects, layerChildFrameMap);
@@ -488,7 +510,7 @@ static void projectRectsToGraphicsLayerSpaceRecursive(
     if (mapIter != layerChildFrameMap.end()) {
         for (size_t i = 0; i < mapIter->value.size(); i++) {
             const LocalFrame* childFrame = mapIter->value[i];
-            const RenderLayer* childLayer = childFrame->view()->renderView()->layer();
+            const Layer* childLayer = childFrame->view()->renderView()->layer();
             if (layersWithRects.contains(childLayer)) {
                 LayerFrameMap newLayerChildFrameMap;
                 makeLayerChildFrameMap(childFrame, &newLayerChildFrameMap);
@@ -505,32 +527,32 @@ static void projectRectsToGraphicsLayerSpace(LocalFrame* mainFrame, const LayerH
     TRACE_EVENT0("input", "ScrollingCoordinator::projectRectsToGraphicsLayerSpace");
     bool touchHandlerInChildFrame = false;
 
-    // We have a set of rects per RenderLayer, we need to map them to their bounding boxes in their
-    // enclosing composited layer. To do this most efficiently we'll walk the RenderLayer tree using
-    // RenderGeometryMap. First record all the branches we should traverse in the tree (including
+    // We have a set of rects per Layer, we need to map them to their bounding boxes in their
+    // enclosing composited layer. To do this most efficiently we'll walk the Layer tree using
+    // LayoutGeometryMap. First record all the branches we should traverse in the tree (including
     // all documents on the page).
-    HashSet<const RenderLayer*> layersWithRects;
+    HashSet<const Layer*> layersWithRects;
     for (const auto& layerRect : layerRects) {
-        const RenderLayer* layer = layerRect.key;
+        const Layer* layer = layerRect.key;
         do {
             if (!layersWithRects.add(layer).isNewEntry)
                 break;
 
             if (layer->parent()) {
                 layer = layer->parent();
-            } else if (RenderObject* parentDocRenderer = layer->renderer()->frame()->ownerRenderer()) {
+            } else if (LayoutObject* parentDocRenderer = layer->renderer()->frame()->ownerRenderer()) {
                 layer = parentDocRenderer->enclosingLayer();
                 touchHandlerInChildFrame = true;
             }
         } while (layer);
     }
 
-    // Now walk the layer projecting rects while maintaining a RenderGeometryMap
+    // Now walk the layer projecting rects while maintaining a LayoutGeometryMap
     MapCoordinatesFlags flags = UseTransforms;
     if (touchHandlerInChildFrame)
         flags |= TraverseDocumentBoundaries;
-    RenderLayer* rootLayer = mainFrame->contentRenderer()->layer();
-    RenderGeometryMap geometryMap(flags);
+    Layer* rootLayer = mainFrame->contentRenderer()->layer();
+    LayoutGeometryMap geometryMap(flags);
     geometryMap.pushMappingsToAncestor(rootLayer, 0);
     LayerFrameMap layerChildFrameMap;
     makeLayerChildFrameMap(mainFrame, &layerChildFrameMap);
@@ -572,11 +594,11 @@ void ScrollingCoordinator::setTouchEventTargetRects(LayerHitTestRects& layerRect
     TRACE_EVENT0("input", "ScrollingCoordinator::setTouchEventTargetRects");
 
     // Update the list of layers with touch hit rects.
-    HashSet<const RenderLayer*> oldLayersWithTouchRects;
+    HashSet<const Layer*> oldLayersWithTouchRects;
     m_layersWithTouchRects.swap(oldLayersWithTouchRects);
     for (const auto& layerRect : layerRects) {
         if (!layerRect.value.isEmpty()) {
-            const RenderLayer* compositedLayer = layerRect.key->enclosingLayerForPaintInvalidationCrossingFrameBoundaries();
+            const Layer* compositedLayer = layerRect.key->enclosingLayerForPaintInvalidationCrossingFrameBoundaries();
             ASSERT(compositedLayer);
             m_layersWithTouchRects.add(compositedLayer);
         }
@@ -584,8 +606,8 @@ void ScrollingCoordinator::setTouchEventTargetRects(LayerHitTestRects& layerRect
 
     // Ensure we have an entry for each composited layer that previously had rects (so that old
     // ones will get cleared out). Note that ideally we'd track this on GraphicsLayer instead of
-    // RenderLayer, but we have no good hook into the lifetime of a GraphicsLayer.
-    for (const RenderLayer* layer : oldLayersWithTouchRects) {
+    // Layer, but we have no good hook into the lifetime of a GraphicsLayer.
+    for (const Layer* layer : oldLayersWithTouchRects) {
         if (!layerRects.contains(layer))
             layerRects.add(layer, Vector<LayoutRect>());
     }
@@ -620,7 +642,7 @@ void ScrollingCoordinator::touchEventTargetRectsDidChange()
     m_touchEventTargetRectsAreDirty = true;
 }
 
-void ScrollingCoordinator::updateScrollParentForGraphicsLayer(GraphicsLayer* child, RenderLayer* parent)
+void ScrollingCoordinator::updateScrollParentForGraphicsLayer(GraphicsLayer* child, Layer* parent)
 {
     WebLayer* scrollParentWebLayer = nullptr;
     if (parent && parent->hasCompositedLayerMapping())
@@ -629,7 +651,7 @@ void ScrollingCoordinator::updateScrollParentForGraphicsLayer(GraphicsLayer* chi
     child->setScrollParent(scrollParentWebLayer);
 }
 
-void ScrollingCoordinator::updateClipParentForGraphicsLayer(GraphicsLayer* child, RenderLayer* parent)
+void ScrollingCoordinator::updateClipParentForGraphicsLayer(GraphicsLayer* child, Layer* parent)
 {
     WebLayer* clipParentWebLayer = nullptr;
     if (parent && parent->hasCompositedLayerMapping())
@@ -638,7 +660,7 @@ void ScrollingCoordinator::updateClipParentForGraphicsLayer(GraphicsLayer* child
     child->setClipParent(clipParentWebLayer);
 }
 
-void ScrollingCoordinator::willDestroyRenderLayer(RenderLayer* layer)
+void ScrollingCoordinator::willDestroyLayer(Layer* layer)
 {
     m_layersWithTouchRects.remove(layer);
 }
@@ -751,8 +773,11 @@ Region ScrollingCoordinator::computeShouldHandleScrollGestureOnMainThreadRegion(
                 continue;
 
             PluginView* pluginView = toPluginView(child.get());
-            if (pluginView->wantsWheelEvents())
-                shouldHandleScrollGestureOnMainThreadRegion.unite(pluginView->frameRect());
+            if (pluginView->wantsWheelEvents()) {
+                IntRect box = pluginView->frameRect();
+                box.moveBy(offset);
+                shouldHandleScrollGestureOnMainThreadRegion.unite(box);
+            }
         }
     }
 
@@ -806,7 +831,7 @@ static void accumulateDocumentTouchEventTargetRects(LayerHitTestRects& rects, co
 
         if (node->isDocumentNode() && node != document) {
             accumulateDocumentTouchEventTargetRects(rects, toDocument(node));
-        } else if (RenderObject* renderer = node->renderer()) {
+        } else if (LayoutObject* renderer = node->renderer()) {
             // If the set also contains one of our ancestor nodes then processing
             // this node would be redundant.
             bool hasTouchEventTargetAncestor = false;
@@ -816,8 +841,8 @@ static void accumulateDocumentTouchEventTargetRects(LayerHitTestRects& rects, co
             }
             if (!hasTouchEventTargetAncestor) {
                 // Walk up the tree to the outermost non-composited scrollable layer.
-                RenderLayer* enclosingNonCompositedScrollLayer = nullptr;
-                for (RenderLayer* parent = renderer->enclosingLayer(); parent && parent->compositingState() == NotComposited; parent = parent->parent()) {
+                Layer* enclosingNonCompositedScrollLayer = nullptr;
+                for (Layer* parent = renderer->enclosingLayer(); parent && parent->compositingState() == NotComposited; parent = parent->parent()) {
                     if (parent->scrollsOverflow())
                         enclosingNonCompositedScrollLayer = parent;
                 }
@@ -933,14 +958,14 @@ bool ScrollingCoordinator::hasVisibleSlowRepaintViewportConstrainedObjects(Frame
     if (!viewportConstrainedObjects)
         return false;
 
-    for (const RenderObject* renderer : *viewportConstrainedObjects) {
+    for (const LayoutObject* renderer : *viewportConstrainedObjects) {
         ASSERT(renderer->isBoxModelObject() && renderer->hasLayer());
         ASSERT(renderer->style()->position() == FixedPosition);
-        RenderLayer* layer = toRenderBoxModelObject(renderer)->layer();
+        Layer* layer = toRenderBoxModelObject(renderer)->layer();
 
-        // Whether the RenderLayer scrolls with the viewport is a tree-depenent
+        // Whether the Layer scrolls with the viewport is a tree-depenent
         // property and our viewportConstrainedObjects collection is maintained
-        // with only RenderObject-level information.
+        // with only LayoutObject-level information.
         if (!layer->scrollsWithViewport())
             continue;
 

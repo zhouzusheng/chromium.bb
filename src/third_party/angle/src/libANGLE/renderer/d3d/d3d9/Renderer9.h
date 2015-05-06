@@ -15,7 +15,7 @@
 #include "libANGLE/renderer/d3d/d3d9/VertexDeclarationCache.h"
 #include "libANGLE/renderer/d3d/HLSLCompiler.h"
 #include "libANGLE/renderer/d3d/RendererD3D.h"
-#include "libANGLE/renderer/RenderTarget.h"
+#include "libANGLE/renderer/d3d/RenderTargetD3D.h"
 
 namespace gl
 {
@@ -39,23 +39,23 @@ class Blit9;
 class Renderer9 : public RendererD3D
 {
   public:
-    Renderer9(egl::Display *display, EGLNativeDisplayType hDc, const egl::AttributeMap &attributes);
+    explicit Renderer9(egl::Display *display);
     virtual ~Renderer9();
 
     static Renderer9 *makeRenderer9(Renderer *renderer);
 
-    virtual EGLint initialize();
+    egl::Error initialize() override;
     virtual bool resetDevice();
 
-    virtual int generateConfigs(ConfigDesc **configDescList);
-    virtual void deleteConfigs(ConfigDesc *configDescList);
+    egl::ConfigSet generateConfigs() const override;
 
     void startScene();
     void endScene();
 
-    virtual gl::Error sync(bool block);
+    gl::Error flush() override;
+    gl::Error finish() override;
 
-    virtual SwapChain *createSwapChain(NativeWindow nativeWindow, HANDLE shareHandle, GLenum backBufferFormat, GLenum depthBufferFormat);
+    virtual SwapChainD3D *createSwapChain(NativeWindow nativeWindow, HANDLE shareHandle, GLenum backBufferFormat, GLenum depthBufferFormat);
 
     gl::Error allocateEventQuery(IDirect3DQuery9 **outQuery);
     void freeEventQuery(IDirect3DQuery9* query);
@@ -86,13 +86,13 @@ class Renderer9 : public RendererD3D
     virtual gl::Error applyShaders(gl::Program *program, const gl::VertexFormat inputLayout[], const gl::Framebuffer *framebuffer,
                                    bool rasterizerDiscard, bool transformFeedbackActive);
     virtual gl::Error applyUniforms(const ProgramImpl &program, const std::vector<gl::LinkedUniform*> &uniformArray);
-    virtual bool applyPrimitiveType(GLenum primitiveType, GLsizei elementCount);
-    virtual gl::Error applyVertexBuffer(const gl::State &state, GLint first, GLsizei count, GLsizei instances);
+    virtual bool applyPrimitiveType(GLenum primitiveType, GLsizei elementCount, bool usesPointSize);
+    virtual gl::Error applyVertexBuffer(const gl::State &state, GLenum mode, GLint first, GLsizei count, GLsizei instances);
     virtual gl::Error applyIndexBuffer(const GLvoid *indices, gl::Buffer *elementArrayBuffer, GLsizei count, GLenum mode, GLenum type, TranslatedIndexData *indexInfo);
 
-    virtual void applyTransformFeedbackBuffers(const gl::State& state);
+    void applyTransformFeedbackBuffers(const gl::State &state) override;
 
-    virtual gl::Error drawArrays(GLenum mode, GLsizei count, GLsizei instances, bool transformFeedbackActive);
+    gl::Error drawArrays(const gl::Data &data, GLenum mode, GLsizei count, GLsizei instances, bool usesPointSize) override;
     virtual gl::Error drawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid *indices,
                                    gl::Buffer *elementArrayBuffer, const TranslatedIndexData &indexInfo, GLsizei instances);
 
@@ -123,8 +123,6 @@ class Renderer9 : public RendererD3D
     std::string getShaderModelSuffix() const override;
 
     DWORD getCapsDeclTypes() const;
-    virtual int getMinSwapInterval() const;
-    virtual int getMaxSwapInterval() const;
 
     // Pixel operations
     virtual gl::Error copyImage2D(const gl::Framebuffer *framebuffer, const gl::Rectangle &sourceRect, GLenum destFormat,
@@ -137,7 +135,7 @@ class Renderer9 : public RendererD3D
                                        const gl::Offset &destOffset, TextureStorage *storage, GLint level);
 
     // RenderTarget creation
-    virtual gl::Error createRenderTarget(int width, int height, GLenum format, GLsizei samples, RenderTarget **outRT);
+    virtual gl::Error createRenderTarget(int width, int height, GLenum format, GLsizei samples, RenderTargetD3D **outRT);
 
     // Framebuffer creation
     virtual DefaultAttachmentImpl *createDefaultAttachment(GLenum type, egl::Surface *surface) override;
@@ -151,19 +149,19 @@ class Renderer9 : public RendererD3D
     // Shader operations
     virtual gl::Error loadExecutable(const void *function, size_t length, ShaderType type,
                                      const std::vector<gl::LinkedVarying> &transformFeedbackVaryings,
-                                     bool separatedOutputBuffers, ShaderExecutable **outExecutable);
+                                     bool separatedOutputBuffers, ShaderExecutableD3D **outExecutable);
     virtual gl::Error compileToExecutable(gl::InfoLog &infoLog, const std::string &shaderHLSL, ShaderType type,
                                           const std::vector<gl::LinkedVarying> &transformFeedbackVaryings,
                                           bool separatedOutputBuffers, D3DWorkaroundType workaround,
-                                          ShaderExecutable **outExectuable);
-    virtual UniformStorage *createUniformStorage(size_t storageSize);
+                                          ShaderExecutableD3D **outExectuable);
+    virtual UniformStorageD3D *createUniformStorage(size_t storageSize);
 
     // Image operations
-    virtual Image *createImage();
-    gl::Error generateMipmap(Image *dest, Image *source) override;
-    virtual TextureStorage *createTextureStorage2D(SwapChain *swapChain);
-    virtual TextureStorage *createTextureStorage2D(GLenum internalformat, bool renderTarget, GLsizei width, GLsizei height, int levels);
-    virtual TextureStorage *createTextureStorageCube(GLenum internalformat, bool renderTarget, int size, int levels);
+    virtual ImageD3D *createImage();
+    gl::Error generateMipmap(ImageD3D *dest, ImageD3D *source) override;
+    virtual TextureStorage *createTextureStorage2D(SwapChainD3D *swapChain);
+    virtual TextureStorage *createTextureStorage2D(GLenum internalformat, bool renderTarget, GLsizei width, GLsizei height, int levels, bool hintLevelZeroOnly);
+    virtual TextureStorage *createTextureStorageCube(GLenum internalformat, bool renderTarget, int size, int levels, bool hintLevelZeroOnly);
     virtual TextureStorage *createTextureStorage3D(GLenum internalformat, bool renderTarget, GLsizei width, GLsizei height, GLsizei depth, int levels);
     virtual TextureStorage *createTextureStorage2DArray(GLenum internalformat, bool renderTarget, GLsizei width, GLsizei height, GLsizei depth, int levels);
 
@@ -191,7 +189,7 @@ class Renderer9 : public RendererD3D
 
     // Buffer-to-texture and Texture-to-buffer copies
     virtual bool supportsFastCopyBufferToTexture(GLenum internalFormat) const;
-    virtual gl::Error fastCopyBufferToTexture(const gl::PixelUnpackState &unpack, unsigned int offset, RenderTarget *destRenderTarget,
+    virtual gl::Error fastCopyBufferToTexture(const gl::PixelUnpackState &unpack, unsigned int offset, RenderTargetD3D *destRenderTarget,
                                               GLenum destinationFormat, GLenum sourcePixelsType, const gl::Box &destArea);
 
     // D3D9-renderer specific methods
@@ -227,7 +225,6 @@ class Renderer9 : public RendererD3D
     D3DPOOL getBufferPool(DWORD usage) const;
 
     HMODULE mD3d9Module;
-    HDC mDc;
 
     void initializeDevice();
     D3DPRESENT_PARAMETERS getDefaultPresentParameters();
@@ -258,8 +255,6 @@ class Renderer9 : public RendererD3D
     GLsizei mRepeatDraw;
 
     bool mSceneStarted;
-    int mMinSwapInterval;
-    int mMaxSwapInterval;
 
     bool mVertexTextureSupport;
 

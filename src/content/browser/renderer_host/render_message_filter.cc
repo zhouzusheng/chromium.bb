@@ -395,6 +395,8 @@ bool RenderMessageFilter::OnMessageReceived(const IPC::Message& message) {
                         OnDidDeleteOutOfProcessPepperInstance)
     IPC_MESSAGE_HANDLER(ViewHostMsg_OpenChannelToPpapiBroker,
                         OnOpenChannelToPpapiBroker)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_PluginInstanceThrottleStateChange,
+                        OnPluginInstanceThrottleStateChange)
 #endif
 #if defined(OS_MACOSX)
     IPC_MESSAGE_HANDLER_GENERIC(ViewHostMsg_SwapCompositorFrame,
@@ -817,6 +819,15 @@ void RenderMessageFilter::OnOpenChannelToPpapiBroker(
       path,
       new OpenChannelToPpapiBrokerCallback(this, routing_id));
 }
+
+void RenderMessageFilter::OnPluginInstanceThrottleStateChange(
+    int plugin_child_id,
+    int32 pp_instance,
+    bool is_throttled) {
+  // Feature is only implemented for non-external Plugins.
+  PpapiPluginProcessHost::OnPluginInstanceThrottleStateChange(
+      plugin_child_id, pp_instance, is_throttled);
+}
 #endif  // defined(ENABLE_PLUGINS)
 
 void RenderMessageFilter::OnGenerateRoutingID(int* route_id) {
@@ -870,6 +881,7 @@ void RenderMessageFilter::DownloadUrl(int render_view_id,
       resource_context_,
       render_process_id_,
       render_view_id,
+      false,
       false,
       save_info.Pass(),
       DownloadItem::kInvalidId,
@@ -976,7 +988,7 @@ net::CookieStore* RenderMessageFilter::GetCookieStoreForURL(
 
 void RenderMessageFilter::OnCacheableMetadataAvailable(
     const GURL& url,
-    double expected_response_time,
+    base::Time expected_response_time,
     const std::vector<char>& data) {
   net::HttpCache* cache = request_context_->GetURLRequestContext()->
       http_transaction_factory()->GetCache();
@@ -990,10 +1002,7 @@ void RenderMessageFilter::OnCacheableMetadataAvailable(
   const net::RequestPriority kPriority = net::LOW;
   scoped_refptr<net::IOBuffer> buf(new net::IOBuffer(data.size()));
   memcpy(buf->data(), &data.front(), data.size());
-  cache->WriteMetadata(url,
-                       kPriority,
-                       base::Time::FromDoubleT(expected_response_time),
-                       buf.get(),
+  cache->WriteMetadata(url, kPriority, expected_response_time, buf.get(),
                        data.size());
 }
 

@@ -134,7 +134,6 @@ public:
     // indicating that the default action should be suppressed.
     virtual bool handleCurrentKeyboardEvent() { return false; }
 
-
     // Dialogs -------------------------------------------------------------
 
     // This method returns immediately after showing the dialog. When the
@@ -186,8 +185,9 @@ public:
     virtual void focusNext() { }
     virtual void focusPrevious() { }
 
-    // Called when a new node gets focused.
-    virtual void focusedNodeChanged(const WebNode&) { }
+    // Called when a new node gets focused. |fromNode| is the previously focused node, |toNode|
+    // is the newly focused node. Either can be null.
+    virtual void focusedNodeChanged(const WebNode& fromNode, const WebNode& toNode) { }
 
     // Indicates two things:
     //   1) This view may have a new layout now.

@@ -9,14 +9,15 @@
 #include <windows.h>
 #endif
 
-#include "base/debug/trace_event.h"
 #include "base/lazy_instance.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
+#include "base/third_party/dynamic_annotations/dynamic_annotations.h"
 #include "base/threading/platform_thread.h"
+#include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "content/child/child_process.h"
 #include "content/common/content_constants_internal.h"
@@ -58,8 +59,8 @@
 #include "content/common/sandbox_mac.h"
 #endif
 
-#if defined(ADDRESS_SANITIZER)
-#include <sanitizer/asan_interface.h>
+#if defined(SANITIZER_COVERAGE)
+#include <sanitizer/common_interface_defs.h>
 #endif
 
 const int kGpuTimeout = 10000;
@@ -104,8 +105,8 @@ bool GpuProcessLogMessageHandler(int severity,
 // Main function for starting the Gpu process.
 int GpuMain(const MainFunctionParams& parameters) {
   TRACE_EVENT0("gpu", "GpuMain");
-  base::debug::TraceLog::GetInstance()->SetProcessName("GPU Process");
-  base::debug::TraceLog::GetInstance()->SetProcessSortIndex(
+  base::trace_event::TraceLog::GetInstance()->SetProcessName("GPU Process");
+  base::trace_event::TraceLog::GetInstance()->SetProcessSortIndex(
       kTraceEventGpuProcessSortIndex);
 
   const base::CommandLine& command_line = parameters.command_line;
@@ -489,7 +490,7 @@ bool StartSandboxLinux(const gpu::GPUInfo& gpu_info,
     LinuxSandbox::StopThread(watchdog_thread);
   }
 
-#if defined(ADDRESS_SANITIZER)
+#if defined(SANITIZER_COVERAGE)
   const std::string sancov_file_name =
       "gpu." + base::Uint64ToString(base::RandUint64());
   LinuxSandbox* linux_sandbox = LinuxSandbox::GetInstance();
@@ -521,6 +522,13 @@ bool StartSandboxWindows(const sandbox::SandboxInterfaceInfo* sandbox_info) {
   // content.
   sandbox::TargetServices* target_services = sandbox_info->target_services;
   if (target_services) {
+#if defined(ADDRESS_SANITIZER)
+    // Bind and leak dbghelp.dll before the token is lowered, otherwise
+    // AddressSanitizer will crash when trying to symbolize a report.
+    if (!LoadLibraryA("dbghelp.dll"))
+      return false;
+#endif
+
     target_services->LowerToken();
     return true;
   }

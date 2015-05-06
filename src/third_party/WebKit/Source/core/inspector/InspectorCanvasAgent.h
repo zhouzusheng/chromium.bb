@@ -58,7 +58,7 @@ public:
         return adoptPtrWillBeNoop(new InspectorCanvasAgent(pageAgent, injectedScriptManager));
     }
     virtual ~InspectorCanvasAgent();
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     virtual void setFrontend(InspectorFrontend*) override;
     virtual void clearFrontend() override;
@@ -66,7 +66,7 @@ public:
 
     void didCommitLoad(LocalFrame*, DocumentLoader*);
     void frameDetachedFromParent(LocalFrame*);
-    void didBeginFrame();
+    void didProcessTask();
 
     // Called from InspectorCanvasInstrumentation.
     ScriptValue wrapCanvas2DRenderingContextForInstrumentation(const ScriptValue&);

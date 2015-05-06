@@ -27,7 +27,6 @@
 
 #include "platform/PlatformExport.h"
 #include "platform/fonts/Glyph.h"
-#include "platform/fonts/GlyphPage.h"
 #include "wtf/HashMap.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -36,6 +35,7 @@
 namespace blink {
 
 class FontPlatformData;
+class GlyphPage;
 class SimpleFontData;
 
 class PLATFORM_EXPORT OpenTypeVerticalData : public RefCounted<OpenTypeVerticalData> {
@@ -48,10 +48,12 @@ public:
     bool isOpenType() const { return !m_advanceWidths.isEmpty(); }
     bool hasVerticalMetrics() const { return !m_advanceHeights.isEmpty(); }
     float advanceHeight(const SimpleFontData*, Glyph) const;
-    void getVerticalTranslationsForGlyphs(const SimpleFontData*, const Glyph*, size_t, float* outXYArray) const;
-    void substituteWithVerticalGlyphs(const SimpleFontData*, GlyphPage*, unsigned offset, unsigned length) const;
+
     bool inFontCache() const { return m_inFontCache; }
     void setInFontCache(bool inFontCache) { m_inFontCache = inFontCache; }
+
+    void getVerticalTranslationsForGlyphs(const SimpleFontData*, const Glyph*, size_t, float* outXYArray) const;
+    void substituteWithVerticalGlyphs(const SimpleFontData*, GlyphPage*, unsigned offset, unsigned length) const;
 
 private:
 

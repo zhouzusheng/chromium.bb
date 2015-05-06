@@ -13,6 +13,7 @@
 #include "common/platform.h"
 #include "libANGLE/Compiler.h"
 #include "libANGLE/Buffer.h"
+#include "libANGLE/Config.h"
 #include "libANGLE/Display.h"
 #include "libANGLE/Fence.h"
 #include "libANGLE/Framebuffer.h"
@@ -36,7 +37,7 @@
 namespace gl
 {
 
-Context::Context(int clientVersion, const Context *shareContext, rx::Renderer *renderer, bool notifyResets, bool robustAccess)
+Context::Context(const egl::Config *config, int clientVersion, const Context *shareContext, rx::Renderer *renderer, bool notifyResets, bool robustAccess)
     : mRenderer(renderer)
 {
     ASSERT(robustAccess == false);   // Unimplemented
@@ -45,6 +46,10 @@ Context::Context(int clientVersion, const Context *shareContext, rx::Renderer *r
     mState.initialize(mCaps, clientVersion);
 
     mClientVersion = clientVersion;
+
+    mConfigID = config->configID;
+    mClientType = EGL_OPENGL_ES_API;
+    mRenderBuffer = EGL_NONE;
 
     mFenceNVHandleAllocator.setBaseHandle(0);
 
@@ -64,19 +69,19 @@ Context::Context(int clientVersion, const Context *shareContext, rx::Renderer *r
     // In order that access to these initial textures not be lost, they are treated as texture
     // objects all of whose names are 0.
 
-    Texture2D *zeroTexture2D = new Texture2D(mRenderer->createTexture(GL_TEXTURE_2D), 0);
+    Texture *zeroTexture2D = new Texture(mRenderer->createTexture(GL_TEXTURE_2D), 0, GL_TEXTURE_2D);
     mZeroTextures[GL_TEXTURE_2D].set(zeroTexture2D);
 
-    TextureCubeMap *zeroTextureCube = new TextureCubeMap(mRenderer->createTexture(GL_TEXTURE_CUBE_MAP), 0);
+    Texture *zeroTextureCube = new Texture(mRenderer->createTexture(GL_TEXTURE_CUBE_MAP), 0, GL_TEXTURE_CUBE_MAP);
     mZeroTextures[GL_TEXTURE_CUBE_MAP].set(zeroTextureCube);
 
     if (mClientVersion >= 3)
     {
         // TODO: These could also be enabled via extension
-        Texture3D *zeroTexture3D = new Texture3D(mRenderer->createTexture(GL_TEXTURE_3D), 0);
+        Texture *zeroTexture3D = new Texture(mRenderer->createTexture(GL_TEXTURE_3D), 0, GL_TEXTURE_3D);
         mZeroTextures[GL_TEXTURE_3D].set(zeroTexture3D);
 
-        Texture2DArray *zeroTexture2DArray = new Texture2DArray(mRenderer->createTexture(GL_TEXTURE_2D_ARRAY), 0);
+        Texture *zeroTexture2DArray = new Texture(mRenderer->createTexture(GL_TEXTURE_2D_ARRAY), 0, GL_TEXTURE_2D_ARRAY);
         mZeroTextures[GL_TEXTURE_2D_ARRAY].set(zeroTexture2DArray);
     }
 
@@ -186,6 +191,8 @@ void Context::makeCurrent(egl::Surface *surface)
                                                           mRenderer->createDefaultAttachment(GL_STENCIL, surface));
 
     setFramebufferZero(framebufferZero);
+
+    mRenderBuffer = surface->getRenderBuffer();
 }
 
 // NOTE: this function should not assume that this context is current!
@@ -230,7 +237,7 @@ GLsync Context::createFenceSync()
 {
     GLuint handle = mResourceManager->createFenceSync();
 
-    return reinterpret_cast<GLsync>(handle);
+    return reinterpret_cast<GLsync>(static_cast<uintptr_t>(handle));
 }
 
 GLuint Context::createVertexArray()
@@ -724,39 +731,9 @@ Query *Context::getQuery(unsigned int handle, bool create, GLenum type)
 
 Texture *Context::getTargetTexture(GLenum target) const
 {
-    if (!ValidTextureTarget(this, target))
-    {
-        return NULL;
-    }
+    ASSERT(ValidTextureTarget(this, target));
 
-    switch (target)
-    {
-      case GL_TEXTURE_2D:       return getTexture2D();
-      case GL_TEXTURE_CUBE_MAP: return getTextureCubeMap();
-      case GL_TEXTURE_3D:       return getTexture3D();
-      case GL_TEXTURE_2D_ARRAY: return getTexture2DArray();
-      default:                  return NULL;
-    }
-}
-
-Texture2D *Context::getTexture2D() const
-{
-    return static_cast<Texture2D*>(getSamplerTexture(mState.getActiveSampler(), GL_TEXTURE_2D));
-}
-
-TextureCubeMap *Context::getTextureCubeMap() const
-{
-    return static_cast<TextureCubeMap*>(getSamplerTexture(mState.getActiveSampler(), GL_TEXTURE_CUBE_MAP));
-}
-
-Texture3D *Context::getTexture3D() const
-{
-    return static_cast<Texture3D*>(getSamplerTexture(mState.getActiveSampler(), GL_TEXTURE_3D));
-}
-
-Texture2DArray *Context::getTexture2DArray() const
-{
-    return static_cast<Texture2DArray*>(getSamplerTexture(mState.getActiveSampler(), GL_TEXTURE_2D_ARRAY));
+    return getSamplerTexture(mState.getActiveSampler(), target);
 }
 
 Texture *Context::getSamplerTexture(unsigned int sampler, GLenum type) const
@@ -1232,10 +1209,14 @@ Error Context::drawElements(GLenum mode, GLsizei count, GLenum type,
     return mRenderer->drawElements(getData(), mode, count, type, indices, instances, indexRange);
 }
 
-// Implements glFlush when block is false, glFinish when block is true
-Error Context::sync(bool block)
+Error Context::flush()
 {
-    return mRenderer->sync(block);
+    return mRenderer->flush();
+}
+
+Error Context::finish()
+{
+    return mRenderer->finish();
 }
 
 void Context::recordError(const Error &error)
@@ -1298,6 +1279,21 @@ bool Context::isResetNotificationEnabled()
 int Context::getClientVersion() const
 {
     return mClientVersion;
+}
+
+EGLint Context::getConfigID() const
+{
+    return mConfigID;
+}
+
+EGLenum Context::getClientType() const
+{
+    return mClientType;
+}
+
+EGLenum Context::getRenderBuffer() const
+{
+    return mRenderBuffer;
 }
 
 const Caps &Context::getCaps() const

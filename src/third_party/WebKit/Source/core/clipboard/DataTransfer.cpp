@@ -35,9 +35,9 @@
 #include "core/fileapi/FileList.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLImageElement.h"
-#include "core/rendering/RenderImage.h"
-#include "core/rendering/RenderLayer.h"
-#include "core/rendering/RenderObject.h"
+#include "core/layout/Layer.h"
+#include "core/layout/LayoutImage.h"
+#include "core/layout/LayoutObject.h"
 #include "platform/DragImage.h"
 #include "platform/MIMETypeRegistry.h"
 #include "platform/clipboard/ClipboardMimeTypes.h"
@@ -264,11 +264,11 @@ static ImageResource* getImageResource(Element* element)
 {
     // Attempt to pull ImageResource from element
     ASSERT(element);
-    RenderObject* renderer = element->renderer();
+    LayoutObject* renderer = element->renderer();
     if (!renderer || !renderer->isImage())
         return 0;
 
-    RenderImage* image = toRenderImage(renderer);
+    LayoutImage* image = toLayoutImage(renderer);
     if (image->cachedImage() && !image->cachedImage()->errorOccurred())
         return image->cachedImage();
 
@@ -377,13 +377,6 @@ void DataTransfer::writePlainText(const String& text)
     replaceNBSPWithSpace(str);
 
     m_dataObject->setData(mimeTypeTextPlain, str);
-}
-
-bool DataTransfer::hasData()
-{
-    ASSERT(isForDragAndDrop());
-
-    return m_dataObject->length() > 0;
 }
 
 void DataTransfer::setAccessPolicy(DataTransferAccessPolicy policy)
@@ -531,7 +524,7 @@ String convertDragOperationToDropZoneOperation(DragOperation operation)
     }
 }
 
-void DataTransfer::trace(Visitor* visitor)
+DEFINE_TRACE(DataTransfer)
 {
     visitor->trace(m_dataObject);
     visitor->trace(m_dragImageElement);

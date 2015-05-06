@@ -34,6 +34,7 @@
 #include "core/fetch/ResourceLoader.h"
 #include "core/fetch/ResourcePtr.h"
 #include "core/inspector/InspectorInstrumentation.h"
+#include "core/loader/LinkLoader.h"
 #include "platform/Logging.h"
 #include "platform/SharedBuffer.h"
 #include "platform/TraceEvent.h"
@@ -95,6 +96,48 @@ static inline bool shouldUpdateHeaderAfterRevalidation(const AtomicString& heade
 DEFINE_DEBUG_ONLY_GLOBAL(RefCountedLeakCounter, cachedResourceLeakCounter, ("Resource"));
 unsigned Resource::s_instanceCount = 0;
 
+class Resource::CacheHandler : public CachedMetadataHandler {
+public:
+    static PassOwnPtr<CacheHandler> create(Resource* resource)
+    {
+        return adoptPtr(new CacheHandler(resource));
+    }
+    ~CacheHandler() override { }
+    void setCachedMetadata(unsigned, const char*, size_t, CacheType) override;
+    void clearCachedMetadata(CacheType) override;
+    CachedMetadata* cachedMetadata(unsigned) const override;
+    String encoding() const override;
+
+private:
+    explicit CacheHandler(Resource*);
+    Resource* m_resource;
+};
+
+Resource::CacheHandler::CacheHandler(Resource* resource)
+    : m_resource(resource)
+{
+}
+
+void Resource::CacheHandler::setCachedMetadata(unsigned dataTypeID, const char* data, size_t size, CacheType type)
+{
+    m_resource->setCachedMetadata(dataTypeID, data, size, type);
+}
+
+void Resource::CacheHandler::clearCachedMetadata(CacheType type)
+{
+    m_resource->clearCachedMetadata(type);
+}
+
+CachedMetadata* Resource::CacheHandler::cachedMetadata(unsigned dataTypeID) const
+{
+    return m_resource->cachedMetadata(dataTypeID);
+}
+
+String Resource::CacheHandler::encoding() const
+{
+    return m_resource->encoding();
+}
+
 Resource::Resource(const ResourceRequest& request, Type type)
     : m_resourceRequest(request)
     , m_responseTimestamp(currentTime())
@@ -128,6 +171,10 @@ Resource::Resource(const ResourceRequest& request, Type type)
 #endif
     memoryCache()->registerLiveResource(*this);
 
+    // Currently we support the metadata caching only for HTTP family.
+    if (m_resourceRequest.url().protocolIsInHTTPFamily())
+        m_cacheHandler = CacheHandler::create(this);
+
     if (!m_resourceRequest.url().hasFragmentIdentifier())
         return;
     KURL urlForCache = MemoryCache::removeFragmentIdentifierIfNeeded(m_resourceRequest.url());
@@ -158,7 +205,7 @@ void Resource::dispose()
 {
 }
 
-void Resource::trace(Visitor* visitor)
+DEFINE_TRACE(Resource)
 {
     visitor->trace(m_loader);
     visitor->trace(m_resourceToRevalidate);
@@ -393,6 +440,13 @@ void Resource::responseReceived(const ResourceResponse& response, PassOwnPtr<Web
     if (!encoding.isNull())
         setEncoding(encoding);
 
+    if (m_loader) {
+        ResourceFetcher* fetcher = ResourceFetcher::toResourceFetcher(m_loader->host());
+        if (fetcher && fetcher->frame()) {
+            LinkLoader::loadLinkFromHeader(response.httpHeaderField("Link"), fetcher->frame()->document());
+        }
+    }
+
     if (!m_resourceToRevalidate)
         return;
     if (response.httpStatusCode() == 304)
@@ -412,7 +466,12 @@ void Resource::setSerializedCachedMetadata(const char* data, size_t size)
     m_cachedMetadata = CachedMetadata::deserialize(data, size);
 }
 
-void Resource::setCachedMetadata(unsigned dataTypeID, const char* data, size_t size, MetadataCacheType cacheType)
+CachedMetadataHandler* Resource::cacheHandler()
+{
+    return m_cacheHandler.get();
+}
+
+void Resource::setCachedMetadata(unsigned dataTypeID, const char* data, size_t size, CachedMetadataHandler::CacheType cacheType)
 {
     // Currently, only one type of cached metadata per resource is supported.
     // If the need arises for multiple types of metadata per resource this could
@@ -421,15 +480,23 @@ void Resource::setCachedMetadata(unsigned dataTypeID, const char* data, size_t s
 
     m_cachedMetadata = CachedMetadata::create(dataTypeID, data, size);
 
-    if (cacheType == SendToPlatform) {
+    // We don't support sending the metadata to the platform when the response
+    // was fetched via a ServiceWorker to prevent an attacker's Service Worker
+    // from poisoning the metadata cache.
+    // FIXME: Support sending the metadata even if the response was fetched via
+    // a ServiceWorker. https://crbug.com/448706
+    if (cacheType == CachedMetadataHandler::SendToPlatform && !m_response.wasFetchedViaServiceWorker()) {
         const Vector<char>& serializedData = m_cachedMetadata->serialize();
         blink::Platform::current()->cacheMetadata(m_response.url(), m_response.responseTime(), serializedData.data(), serializedData.size());
     }
 }
 
-void Resource::clearCachedMetadata()
+void Resource::clearCachedMetadata(CachedMetadataHandler::CacheType cacheType)
 {
     m_cachedMetadata.clear();
+
+    if (cacheType == CachedMetadataHandler::SendToPlatform)
+        blink::Platform::current()->cacheMetadata(m_response.url(), m_response.responseTime(), 0, 0);
 }
 
 bool Resource::canDelete() const

@@ -16,7 +16,6 @@
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/sparse_histogram.h"
-#include "base/metrics/stats_counters.h"
 #include "base/process/process_metrics.h"
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
@@ -31,7 +30,7 @@
 #include "content/app/resources/grit/content_resources.h"
 #include "content/app/strings/grit/content_strings.h"
 #include "content/child/bluetooth/web_bluetooth_impl.h"
-#include "content/child/child_thread.h"
+#include "content/child/child_thread_impl.h"
 #include "content/child/content_child_helpers.h"
 #include "content/child/geofencing/web_geofencing_provider_impl.h"
 #include "content/child/navigator_connect/navigator_connect_provider.h"
@@ -59,6 +58,7 @@
 #include "third_party/WebKit/public/platform/WebWaitableEvent.h"
 #include "third_party/WebKit/public/web/WebSecurityOrigin.h"
 #include "ui/base/layout.h"
+#include "ui/events/keycodes/dom4/keycode_converter.h"
 
 using blink::WebData;
 using blink::WebFallbackThemeEngine;
@@ -139,7 +139,7 @@ class MemoryUsageCache {
 };
 
 class ConvertableToTraceFormatWrapper
-    : public base::debug::ConvertableToTraceFormat {
+    : public base::trace_event::ConvertableToTraceFormat {
  public:
   explicit ConvertableToTraceFormatWrapper(
       const blink::WebConvertableToTraceFormat& convertable)
@@ -153,13 +153,6 @@ class ConvertableToTraceFormatWrapper
 
   blink::WebConvertableToTraceFormat convertable_;
 };
-
-bool isHostnameReservedIPAddress(const std::string& host) {
-  net::IPAddressNumber address;
-  if (!net::ParseURLHostnameToNumber(host, &address))
-    return false;
-  return net::IsIPAddressReserved(address);
-}
 
 }  // namespace
 
@@ -443,15 +436,15 @@ BlinkPlatformImpl::BlinkPlatformImpl(
 
 void BlinkPlatformImpl::InternalInit() {
   // ChildThread may not exist in some tests.
-  if (ChildThread::current()) {
+  if (ChildThreadImpl::current()) {
     geofencing_provider_.reset(new WebGeofencingProviderImpl(
-        ChildThread::current()->thread_safe_sender()));
+        ChildThreadImpl::current()->thread_safe_sender()));
     bluetooth_.reset(
-        new WebBluetoothImpl(ChildThread::current()->thread_safe_sender()));
-    thread_safe_sender_ = ChildThread::current()->thread_safe_sender();
+        new WebBluetoothImpl(ChildThreadImpl::current()->thread_safe_sender()));
+    thread_safe_sender_ = ChildThreadImpl::current()->thread_safe_sender();
     notification_dispatcher_ =
-        ChildThread::current()->notification_dispatcher();
-    push_dispatcher_ = ChildThread::current()->push_dispatcher();
+        ChildThreadImpl::current()->notification_dispatcher();
+    push_dispatcher_ = ChildThreadImpl::current()->push_dispatcher();
   }
 
   if (main_thread_task_runner_.get()) {
@@ -463,7 +456,7 @@ BlinkPlatformImpl::~BlinkPlatformImpl() {
 }
 
 WebURLLoader* BlinkPlatformImpl::createURLLoader() {
-  ChildThread* child_thread = ChildThread::current();
+  ChildThreadImpl* child_thread = ChildThreadImpl::current();
   // There may be no child thread in RenderViewTests.  These tests can still use
   // data URLs to bypass the ResourceDispatcher.
   return new WebURLLoaderImpl(
@@ -498,12 +491,11 @@ WebURLError BlinkPlatformImpl::cancelledError(
 }
 
 bool BlinkPlatformImpl::isReservedIPAddress(
-    const blink::WebSecurityOrigin& securityOrigin) const {
-  return isHostnameReservedIPAddress(securityOrigin.host().utf8());
-}
-
-bool BlinkPlatformImpl::isReservedIPAddress(const blink::WebURL& url) const {
-  return isHostnameReservedIPAddress(GURL(url).host());
+    const blink::WebString& host) const {
+  net::IPAddressNumber address;
+  if (!net::ParseURLHostnameToNumber(host.utf8(), &address))
+    return false;
+  return net::IsIPAddressReserved(address);
 }
 
 blink::WebThread* BlinkPlatformImpl::createThread(const char* name) {
@@ -546,11 +538,9 @@ blink::WebWaitableEvent* BlinkPlatformImpl::waitMultipleEvents(
 }
 
 void BlinkPlatformImpl::decrementStatsCounter(const char* name) {
-  base::StatsCounter(name).Decrement();
 }
 
 void BlinkPlatformImpl::incrementStatsCounter(const char* name) {
-  base::StatsCounter(name).Increment();
 }
 
 void BlinkPlatformImpl::histogramCustomCounts(
@@ -601,24 +591,30 @@ long* BlinkPlatformImpl::getTraceSamplingState(
   return NULL;
 }
 
-COMPILE_ASSERT(
+static_assert(
     sizeof(blink::Platform::TraceEventHandle) ==
-        sizeof(base::debug::TraceEventHandle),
-    TraceEventHandle_types_must_be_same_size);
+        sizeof(base::trace_event::TraceEventHandle),
+    "TraceEventHandle types must be same size");
 
 blink::Platform::TraceEventHandle BlinkPlatformImpl::addTraceEvent(
     char phase,
     const unsigned char* category_group_enabled,
     const char* name,
     unsigned long long id,
+    double timestamp,
     int num_args,
     const char** arg_names,
     const unsigned char* arg_types,
     const unsigned long long* arg_values,
     unsigned char flags) {
-  base::debug::TraceEventHandle handle = TRACE_EVENT_API_ADD_TRACE_EVENT(
-      phase, category_group_enabled, name, id,
-      num_args, arg_names, arg_types, arg_values, NULL, flags);
+  base::TimeTicks timestamp_tt = base::TimeTicks::FromInternalValue(
+      static_cast<int64>(timestamp * base::Time::kMicrosecondsPerSecond));
+  base::trace_event::TraceEventHandle handle =
+      TRACE_EVENT_API_ADD_TRACE_EVENT_WITH_THREAD_ID_AND_TIMESTAMP(
+          phase, category_group_enabled, name, id,
+          base::PlatformThread::CurrentId(),
+          timestamp_tt,
+          num_args, arg_names, arg_types, arg_values, NULL, flags);
   blink::Platform::TraceEventHandle result;
   memcpy(&result, &handle, sizeof(result));
   return result;
@@ -629,13 +625,15 @@ blink::Platform::TraceEventHandle BlinkPlatformImpl::addTraceEvent(
     const unsigned char* category_group_enabled,
     const char* name,
     unsigned long long id,
+    double timestamp,
     int num_args,
     const char** arg_names,
     const unsigned char* arg_types,
     const unsigned long long* arg_values,
     const blink::WebConvertableToTraceFormat* convertable_values,
     unsigned char flags) {
-  scoped_refptr<base::debug::ConvertableToTraceFormat> convertable_wrappers[2];
+  scoped_refptr<base::trace_event::ConvertableToTraceFormat>
+      convertable_wrappers[2];
   if (convertable_values) {
     size_t size = std::min(static_cast<size_t>(num_args),
                            arraysize(convertable_wrappers));
@@ -646,11 +644,15 @@ blink::Platform::TraceEventHandle BlinkPlatformImpl::addTraceEvent(
       }
     }
   }
-  base::debug::TraceEventHandle handle =
-      TRACE_EVENT_API_ADD_TRACE_EVENT(phase,
+  base::TimeTicks timestamp_tt = base::TimeTicks::FromInternalValue(
+      static_cast<int64>(timestamp * base::Time::kMicrosecondsPerSecond));
+  base::trace_event::TraceEventHandle handle =
+      TRACE_EVENT_API_ADD_TRACE_EVENT_WITH_THREAD_ID_AND_TIMESTAMP(phase,
                                       category_group_enabled,
                                       name,
                                       id,
+                                      base::PlatformThread::CurrentId(),
+                                      timestamp_tt,
                                       num_args,
                                       arg_names,
                                       arg_types,
@@ -666,7 +668,7 @@ void BlinkPlatformImpl::updateTraceEventDuration(
     const unsigned char* category_group_enabled,
     const char* name,
     TraceEventHandle handle) {
-  base::debug::TraceEventHandle traceEventHandle;
+  base::trace_event::TraceEventHandle traceEventHandle;
   memcpy(&traceEventHandle, &handle, sizeof(handle));
   TRACE_EVENT_API_UPDATE_TRACE_EVENT_DURATION(
       category_group_enabled, name, traceEventHandle);
@@ -816,10 +818,6 @@ const DataResource kDataResources[] = {
     IDR_MEDIAPLAYER_OVERLAY_CAST_BUTTON_OFF, ui::SCALE_FACTOR_100P },
   { "mediaplayerOverlayPlay",
     IDR_MEDIAPLAYER_OVERLAY_PLAY_BUTTON, ui::SCALE_FACTOR_100P },
-#if defined(OS_MACOSX)
-  { "overhangPattern", IDR_OVERHANG_PATTERN, ui::SCALE_FACTOR_100P },
-  { "overhangShadow", IDR_OVERHANG_SHADOW, ui::SCALE_FACTOR_100P },
-#endif
   { "panIcon", IDR_PAN_SCROLL_ICON, ui::SCALE_FACTOR_100P },
   { "searchCancel", IDR_SEARCH_CANCEL, ui::SCALE_FACTOR_100P },
   { "searchCancelPressed", IDR_SEARCH_CANCEL_PRESSED, ui::SCALE_FACTOR_100P },
@@ -892,6 +890,8 @@ const DataResource kDataResources[] = {
   { "pickerCommon.css", IDR_PICKER_COMMON_CSS, ui::SCALE_FACTOR_NONE },
   { "calendarPicker.js", IDR_CALENDAR_PICKER_JS, ui::SCALE_FACTOR_NONE },
   { "calendarPicker.css", IDR_CALENDAR_PICKER_CSS, ui::SCALE_FACTOR_NONE },
+  { "listPicker.js", IDR_LIST_PICKER_JS, ui::SCALE_FACTOR_NONE },
+  { "listPicker.css", IDR_LIST_PICKER_CSS, ui::SCALE_FACTOR_NONE },
   { "pickerButton.css", IDR_PICKER_BUTTON_CSS, ui::SCALE_FACTOR_NONE },
   { "suggestionPicker.js", IDR_SUGGESTION_PICKER_JS, ui::SCALE_FACTOR_NONE },
   { "suggestionPicker.css", IDR_SUGGESTION_PICKER_CSS, ui::SCALE_FACTOR_NONE },
@@ -1251,6 +1251,16 @@ void BlinkPlatformImpl::DestroyCurrentThread(void* thread) {
   WebThreadImplForMessageLoop* impl =
       static_cast<WebThreadImplForMessageLoop*>(thread);
   delete impl;
+}
+
+WebString BlinkPlatformImpl::domCodeStringFromEnum(int dom_code) {
+  return WebString::fromUTF8(ui::KeycodeConverter::DomCodeToCodeString(
+      static_cast<ui::DomCode>(dom_code)));
+}
+
+int BlinkPlatformImpl::domEnumFromCodeString(const WebString& code) {
+  return static_cast<int>(ui::KeycodeConverter::CodeStringToDomCode(
+      code.utf8().data()));
 }
 
 }  // namespace content

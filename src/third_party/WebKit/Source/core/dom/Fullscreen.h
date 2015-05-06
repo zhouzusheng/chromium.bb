@@ -41,7 +41,7 @@
 namespace blink {
 
 class RenderFullScreen;
-class RenderStyle;
+class LayoutStyle;
 
 class Fullscreen final
     : public NoBaseWillBeGarbageCollectedFinalized<Fullscreen>
@@ -107,11 +107,11 @@ private:
 
     RefPtrWillBeMember<Element> m_fullScreenElement;
     WillBeHeapVector<std::pair<RefPtrWillBeMember<Element>, RequestType> > m_fullScreenElementStack;
-    RawPtrWillBeMember<RenderFullScreen> m_fullScreenRenderer;
+    RenderFullScreen* m_fullScreenRenderer;
     Timer<Fullscreen> m_eventQueueTimer;
-    WillBeHeapDeque<RefPtrWillBeMember<Event> > m_eventQueue;
+    WillBeHeapDeque<RefPtrWillBeMember<Event>> m_eventQueue;
     LayoutRect m_savedPlaceholderFrameRect;
-    RefPtr<RenderStyle> m_savedPlaceholderRenderStyle;
+    RefPtr<LayoutStyle> m_savedPlaceholderLayoutStyle;
 };
 
 inline bool Fullscreen::isActiveFullScreenElement(const Element& element)

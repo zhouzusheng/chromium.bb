@@ -24,14 +24,14 @@ public:
         virtual void onWrite() = 0;
         virtual void onClose() = 0;
         virtual void onError() = 0;
-        virtual void trace(Visitor*) { }
+        DEFINE_INLINE_VIRTUAL_TRACE() { }
     };
     class BlobHandleCreatorClient : public GarbageCollectedFinalized<BlobHandleCreatorClient> {
     public:
         virtual ~BlobHandleCreatorClient() { }
         virtual void didCreateBlobHandle(PassRefPtr<BlobDataHandle>) = 0;
         virtual void didFail(PassRefPtrWillBeRawPtr<DOMException>) = 0;
-        virtual void trace(Visitor*) { }
+        DEFINE_INLINE_VIRTUAL_TRACE() { }
     };
     BodyStreamBuffer();
     ~BodyStreamBuffer() { }
@@ -49,17 +49,21 @@ public:
     void error(PassRefPtrWillBeRawPtr<DOMException>);
 
     // This function registers an observer so it fails and returns false when an
-    // observer was already registered
+    // observer was already registered.
     bool readAllAndCreateBlobHandle(const String& contentType, BlobHandleCreatorClient*);
+
+    // This function registers an observer so it fails and returns false when an
+    // observer was already registered.
+    bool startTee(BodyStreamBuffer* out1, BodyStreamBuffer* out2);
 
     // When an observer was registered this function fails and returns false.
     bool registerObserver(Observer*);
     void unregisterObserver();
     bool isObserverRegistered() const { return m_observer.get(); }
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
-    Deque<RefPtr<DOMArrayBuffer> > m_queue;
+    Deque<RefPtr<DOMArrayBuffer>> m_queue;
     bool m_isClosed;
     RefPtrWillBeMember<DOMException> m_exception;
     Member<Observer> m_observer;

@@ -4,10 +4,10 @@
 
 #include "ui/views/widget/widget.h"
 
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/trace_event/trace_event.h"
 #include "ui/base/cursor/cursor.h"
 #include "ui/base/default_theme_provider.h"
 #include "ui/base/hit_test.h"
@@ -16,6 +16,7 @@
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/layer.h"
 #include "ui/events/event.h"
+#include "ui/events/event_utils.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/controls/menu/menu_controller.h"
@@ -439,9 +440,9 @@ void Widget::NotifyNativeViewHierarchyChanged() {
 }
 
 void Widget::NotifyWillRemoveView(View* view) {
-    FOR_EACH_OBSERVER(WidgetRemovalsObserver,
-                      removals_observers_,
-                      OnWillRemoveView(this, view));
+  FOR_EACH_OBSERVER(WidgetRemovalsObserver,
+                    removals_observers_,
+                    OnWillRemoveView(this, view));
 }
 
 // Converted methods (see header) ----------------------------------------------
@@ -599,7 +600,9 @@ bool Widget::IsClosed() const {
 }
 
 void Widget::Show() {
-  TRACE_EVENT0("views", "Widget::Show");
+  const ui::Layer* layer = GetLayer();
+  TRACE_EVENT1("views", "Widget::Show", "layer",
+               layer ? layer->name() : "none");
   if (non_client_view_) {
     // While initializing, the kiosk mode will go to full screen before the
     // widget gets shown. In that case we stay in full screen mode, regardless
@@ -756,6 +759,12 @@ const FocusManager* Widget::GetFocusManager() const {
   return toplevel_widget ? toplevel_widget->focus_manager_.get() : NULL;
 }
 
+ui::TextInputClient* Widget::GetFocusedTextInputClient() {
+  FocusManager* focus_manager = GetFocusManager();
+  View* view = focus_manager ? focus_manager->GetFocusedView() : nullptr;
+  return view ? view->GetTextInputClient() : nullptr;
+}
+
 InputMethod* Widget::GetInputMethod() {
   return const_cast<InputMethod*>(
       const_cast<const Widget*>(this)->GetInputMethod());
@@ -859,6 +868,10 @@ void Widget::ThemeChanged() {
 
 void Widget::LocaleChanged() {
   root_view_->LocaleChanged();
+}
+
+void Widget::DeviceScaleFactorChanged(float device_scale_factor) {
+  root_view_->DeviceScaleFactorChanged(device_scale_factor);
 }
 
 void Widget::SetFocusTraversableParent(FocusTraversable* parent) {
@@ -979,9 +992,8 @@ gfx::Rect Widget::GetWorkAreaBoundsInScreen() const {
 
 void Widget::SynthesizeMouseMoveEvent() {
   last_mouse_event_was_move_ = false;
-  ui::MouseEvent mouse_event(ui::ET_MOUSE_MOVED,
-                             last_mouse_event_position_,
-                             last_mouse_event_position_,
+  ui::MouseEvent mouse_event(ui::ET_MOUSE_MOVED, last_mouse_event_position_,
+                             last_mouse_event_position_, ui::EventTimeForNow(),
                              ui::EF_IS_SYNTHESIZED, 0);
   root_view_->OnMouseMoved(mouse_event);
 }

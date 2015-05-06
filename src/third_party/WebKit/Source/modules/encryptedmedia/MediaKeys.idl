@@ -29,8 +29,6 @@ enum SessionType {
     "persistent-release-message"
 };
 
-typedef (ArrayBuffer or ArrayBufferView) BufferSource;
-
 [
     RuntimeEnabled=EncryptedMedia,
     GarbageCollected,

@@ -39,8 +39,8 @@
 #include "platform/graphics/ImageOrientation.h"
 #include "platform/graphics/GraphicsContextAnnotation.h"
 #include "platform/graphics/GraphicsContextState.h"
-#include "platform/graphics/RegionTracker.h"
 #include "platform/graphics/skia/SkiaUtils.h"
+#include "third_party/skia/include/core/SkRegion.h"
 #include "wtf/FastAllocBase.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
@@ -116,10 +116,10 @@ public:
     SkColor effectiveStrokeColor() const { return immutableState()->effectiveStrokeColor(); }
 
     Pattern* strokePattern() const { return immutableState()->strokePattern(); }
-    void setStrokePattern(PassRefPtr<Pattern>);
+    void setStrokePattern(PassRefPtr<Pattern>, float alpha = 1);
 
     Gradient* strokeGradient() const { return immutableState()->strokeGradient(); }
-    void setStrokeGradient(PassRefPtr<Gradient>);
+    void setStrokeGradient(PassRefPtr<Gradient>, float alpha = 1);
 
     void setLineCap(LineCap cap) { mutableState()->setLineCap(cap); }
     void setLineDash(const DashArray& dashes, float dashOffset) { mutableState()->setLineDash(dashes, dashOffset); }
@@ -133,10 +133,10 @@ public:
     void setFillColor(const Color& color) { mutableState()->setFillColor(color); }
     SkColor effectiveFillColor() const { return immutableState()->effectiveFillColor(); }
 
-    void setFillPattern(PassRefPtr<Pattern>);
+    void setFillPattern(PassRefPtr<Pattern>, float alpha = 1);
     Pattern* fillPattern() const { return immutableState()->fillPattern(); }
 
-    void setFillGradient(PassRefPtr<Gradient>);
+    void setFillGradient(PassRefPtr<Gradient>, float alpha = 1);
     Gradient* fillGradient() const { return immutableState()->fillGradient(); }
 
     SkDrawLooper* drawLooper() const { return immutableState()->drawLooper(); }
@@ -157,10 +157,6 @@ public:
     void setShouldClampToSourceRect(bool clampToSourceRect) { mutableState()->setShouldClampToSourceRect(clampToSourceRect); }
     bool shouldClampToSourceRect() const { return immutableState()->shouldClampToSourceRect(); }
 
-    // FIXME: the setter is only used once, at construction time; convert to a constructor param,
-    // and possibly consolidate with other flags (paintDisabled, isPrinting, ...)
-    void setShouldSmoothFonts(bool smoothFonts) { m_shouldSmoothFonts = smoothFonts; }
-
     // Turn off LCD text for the paint if not supported on this context.
     void adjustTextRenderMode(SkPaint*) const;
     bool couldUseLCDRenderedText() const;
@@ -178,9 +174,10 @@ public:
     void setImageInterpolationQuality(InterpolationQuality quality) { mutableState()->setInterpolationQuality(quality); }
     InterpolationQuality imageInterpolationQuality() const { return immutableState()->interpolationQuality(); }
 
-    void setCompositeOperation(CompositeOperator, WebBlendMode = WebBlendModeNormal);
-    CompositeOperator compositeOperation() const { return immutableState()->compositeOperator(); }
-    WebBlendMode blendModeOperation() const { return immutableState()->blendMode(); }
+    void setCompositeOperation(SkXfermode::Mode);
+    SkXfermode::Mode compositeOperation() const;
+    // TODO(dshwang): remove these method. crbug.com/425656
+    CompositeOperator compositeOperationDeprecated() const;
 
     // Specify the device scale factor which may change the way document markers
     // and fonts are rendered.
@@ -201,17 +198,6 @@ public:
 
     bool isAccelerated() const { return m_accelerated; }
     void setAccelerated(bool accelerated) { m_accelerated = accelerated; }
-
-    // The opaque region is empty until tracking is turned on.
-    // It is never clerared by the context.
-    enum RegionTrackingMode {
-        RegionTrackingDisabled = 0,
-        RegionTrackingOpaque,
-        RegionTrackingOverwrite
-    };
-    void setRegionTrackingMode(RegionTrackingMode);
-    bool regionTrackingEnabled() { return m_regionTrackingMode != RegionTrackingDisabled; }
-    const RegionTracker& opaqueRegion() const { return m_trackedRegion; }
 
     // The text region is empty until tracking is turned on.
     // It is never clerared by the context.
@@ -251,7 +237,7 @@ public:
 
     void fillRect(const FloatRect&);
     void fillRect(const FloatRect&, const Color&);
-    void fillRect(const FloatRect&, const Color&, CompositeOperator);
+    void fillRect(const FloatRect&, const Color&, SkXfermode::Mode);
     void fillRoundedRect(const FloatRect&, const FloatSize& topLeft, const FloatSize& topRight, const FloatSize& bottomLeft, const FloatSize& bottomRight, const Color&);
     void fillRoundedRect(const FloatRoundedRect&, const Color&);
 
@@ -265,23 +251,22 @@ public:
     void fillBetweenRoundedRects(const FloatRoundedRect&, const FloatRoundedRect&, const Color&);
 
     void drawPicture(const SkPicture*);
-    void compositePicture(SkPicture*, const FloatRect& dest, const FloatRect& src, CompositeOperator, WebBlendMode);
+    void compositePicture(SkPicture*, const FloatRect& dest, const FloatRect& src, SkXfermode::Mode);
 
-    void drawImage(Image*, const IntPoint&, CompositeOperator = CompositeSourceOver, RespectImageOrientationEnum = DoNotRespectImageOrientation);
-    void drawImage(Image*, const IntRect&, CompositeOperator = CompositeSourceOver, RespectImageOrientationEnum = DoNotRespectImageOrientation);
+    void drawImage(Image*, const IntPoint&, SkXfermode::Mode = SkXfermode::kSrcOver_Mode, RespectImageOrientationEnum = DoNotRespectImageOrientation);
+    void drawImage(Image*, const IntRect&, SkXfermode::Mode = SkXfermode::kSrcOver_Mode, RespectImageOrientationEnum = DoNotRespectImageOrientation);
     void drawImage(Image*, const FloatRect& destRect);
-    void drawImage(Image*, const FloatRect& destRect, const FloatRect& srcRect, CompositeOperator = CompositeSourceOver, RespectImageOrientationEnum = DoNotRespectImageOrientation);
-    void drawImage(Image*, const FloatRect& destRect, const FloatRect& srcRect, CompositeOperator, WebBlendMode, RespectImageOrientationEnum = DoNotRespectImageOrientation);
+    void drawImage(Image*, const FloatRect& destRect, const FloatRect& srcRect, SkXfermode::Mode = SkXfermode::kSrcOver_Mode, RespectImageOrientationEnum = DoNotRespectImageOrientation);
 
     void drawTiledImage(Image*, const IntRect& destRect, const IntPoint& srcPoint, const IntSize& tileSize,
-        CompositeOperator = CompositeSourceOver, WebBlendMode = WebBlendModeNormal, const IntSize& repeatSpacing = IntSize());
+        SkXfermode::Mode = SkXfermode::kSrcOver_Mode, const IntSize& repeatSpacing = IntSize());
     void drawTiledImage(Image*, const IntRect& destRect, const IntRect& srcRect,
         const FloatSize& tileScaleFactor, Image::TileRule hRule = Image::StretchTile, Image::TileRule vRule = Image::StretchTile,
-        CompositeOperator = CompositeSourceOver);
+        SkXfermode::Mode = SkXfermode::kSrcOver_Mode);
 
-    void drawImageBuffer(ImageBuffer*, const FloatRect& destRect, const FloatRect* srcRect = 0, CompositeOperator = CompositeSourceOver, WebBlendMode = WebBlendModeNormal);
+    void drawImageBuffer(ImageBuffer*, const FloatRect& destRect, const FloatRect* srcRect = 0, SkXfermode::Mode = SkXfermode::kSrcOver_Mode);
 
-    // These methods write to the canvas and modify the opaque region, if tracked.
+    // These methods write to the canvas.
     // Also drawLine(const IntPoint& point1, const IntPoint& point2) and fillRoundedRect
     void writePixels(const SkImageInfo&, const void* pixels, size_t rowBytes, int x, int y);
     void drawBitmap(const SkBitmap&, SkScalar, SkScalar, const SkPaint* = 0);
@@ -321,10 +306,11 @@ public:
 
     // beginLayer()/endLayer() behaves like save()/restore() for only CTM and clip states.
     void beginTransparencyLayer(float opacity, const FloatRect* = 0);
-    // Apply CompositeOperator when the layer is composited on the backdrop (i.e. endLayer()).
-    // Don't change the current CompositeOperator state.
-    void beginLayer(float opacity, CompositeOperator, const FloatRect* = 0, ColorFilter = ColorFilterNone, ImageFilter* = 0);
+    // Apply SkXfermode::Mode when the layer is composited on the backdrop (i.e. endLayer()).
+    // Don't change the current SkXfermode::Mode states.
+    void beginLayer(float opacity, SkXfermode::Mode, const FloatRect* = 0, ColorFilter = ColorFilterNone, ImageFilter* = 0);
     void endLayer();
+    bool isDrawingToLayer() { return m_layerCount; }
 
     // Instead of being dispatched to the active canvas, draw commands following beginRecording()
     // are stored in a display list that can be replayed at a later time. Pass in the bounding
@@ -362,8 +348,8 @@ public:
     // which is not the final transform used to place content on screen. It cannot be relied upon
     // for testing where a point will appear on screen or how large it will be.
     AffineTransform getCTM() const;
-    void concatCTM(const AffineTransform& affine) { concat(affineTransformToSkMatrix(affine)); }
-    void setCTM(const AffineTransform& affine) { setMatrix(affineTransformToSkMatrix(affine)); }
+    void concatCTM(const AffineTransform&);
+    void setCTM(const AffineTransform&);
     void setMatrix(const SkMatrix&);
 
     void scale(float x, float y);
@@ -376,34 +362,18 @@ public:
     void setURLFragmentForRect(const String& name, const IntRect&);
     void addURLTargetAtPoint(const String& name, const IntPoint&);
 
-    // Create an image buffer compatible with this context, with suitable resolution
-    // for drawing into the buffer and then into this context.
-    PassOwnPtr<ImageBuffer> createRasterBuffer(const IntSize&, OpacityMode = NonOpaque) const;
-
     static void adjustLineToPixelBoundaries(FloatPoint& p1, FloatPoint& p2, float strokeWidth, StrokeStyle);
 
     void beginAnnotation(const AnnotationList&);
     void endAnnotation();
 
-    class AutoCanvasRestorer {
-    public:
-        AutoCanvasRestorer(SkCanvas* canvas, int restoreCount)
-            : m_canvas(canvas)
-            , m_restoreCount(restoreCount)
-        { }
-
-        ~AutoCanvasRestorer();
-    private:
-        SkCanvas* m_canvas;
-        int m_restoreCount;
-    };
-
-    WARN_UNUSED_RETURN PassOwnPtr<AutoCanvasRestorer> preparePaintForDrawRectToRect(
+    // This method can potentially push saves onto the canvas. It returns the initial save count,
+    // and should be balanced with a call to context->canvas()->restoreToCount(initialSaveCount).
+    WARN_UNUSED_RETURN int preparePaintForDrawRectToRect(
         SkPaint*,
         const SkRect& srcRect,
         const SkRect& destRect,
-        CompositeOperator,
-        WebBlendMode,
+        SkXfermode::Mode,
         bool isBitmapWithAlpha,
         bool isLazyDecoded = false,
         bool isDataComplete = true) const;
@@ -501,7 +471,7 @@ private:
     // Paint states stack. Enables local drawing state change with save()/restore() calls.
     // This state controls the appearance of drawn content.
     // We do not delete from this stack to avoid memory churn.
-    Vector<OwnPtr<GraphicsContextState> > m_paintStateStack;
+    Vector<OwnPtr<GraphicsContextState>> m_paintStateStack;
     // Current index on the stack. May not be the last thing on the stack.
     unsigned m_paintStateIndex;
     // Raw pointer to the current state.
@@ -509,16 +479,15 @@ private:
 
     AnnotationModeFlags m_annotationMode;
 
-    Vector<OwnPtr<RecordingState> > m_recordingStateStack;
+    Vector<OwnPtr<RecordingState>> m_recordingStateStack;
+
+    unsigned m_layerCount;
 
 #if ENABLE(ASSERT)
     unsigned m_annotationCount;
-    unsigned m_layerCount;
     bool m_disableDestructionChecks;
     bool m_inDrawingRecorder;
 #endif
-    // Tracks the region painted opaque via the GraphicsContext.
-    RegionTracker m_trackedRegion;
 
     // Tracks the region where text is painted via the GraphicsContext.
     SkRect m_textRegion;
@@ -527,15 +496,12 @@ private:
 
     float m_deviceScaleFactor;
 
-    // Activation for the above region tracking features
-    unsigned m_regionTrackingMode : 2;
     unsigned m_trackTextRegion : 1;
 
     unsigned m_accelerated : 1;
     unsigned m_isCertainlyOpaque : 1;
     unsigned m_printing : 1;
     unsigned m_antialiasHairlineImages : 1;
-    unsigned m_shouldSmoothFonts : 1;
 };
 
 } // namespace blink

@@ -115,6 +115,9 @@ public:
 
     static unsigned getWebGLVersion(const CanvasRenderingContext*);
 
+    static PassOwnPtr<blink::WebGraphicsContext3D> createWebGraphicsContext3D(HTMLCanvasElement*, WebGLContextAttributes, unsigned webGLVersion);
+    static void forceNextWebGLContextCreationToFail();
+
     int drawingBufferWidth() const;
     int drawingBufferHeight() const;
 
@@ -196,7 +199,7 @@ public:
     ScriptValue getBufferParameter(ScriptState*, GLenum target, GLenum pname);
     void getContextAttributes(Nullable<WebGLContextAttributes>&);
     GLenum getError();
-    PassRefPtrWillBeRawPtr<WebGLExtension> getExtension(const String& name);
+    ScriptValue getExtension(ScriptState*, const String& name);
     ScriptValue getFramebufferAttachmentParameter(ScriptState*, GLenum target, GLenum attachment, GLenum pname);
     ScriptValue getParameter(ScriptState*, GLenum pname);
     ScriptValue getProgramParameter(ScriptState*, WebGLProgram*, GLenum pname);
@@ -373,7 +376,7 @@ public:
     void populateSubscribedValuesCHROMIUM(GLenum target);
     void uniformValuebufferCHROMIUM(const WebGLUniformLocation*, GLenum target, GLenum subscription);
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     // Returns approximate gpu memory allocated per pixel.
     int externallyAllocatedBytesPerPixel();
@@ -384,7 +387,7 @@ public:
         RefPtrWillBeMember<WebGLTexture> m_texture2DBinding;
         RefPtrWillBeMember<WebGLTexture> m_textureCubeMapBinding;
 
-        void trace(Visitor*);
+        DECLARE_TRACE();
     };
 
     void setFilterLevel(SkPaint::FilterLevel);
@@ -420,6 +423,8 @@ protected:
     virtual void setIsHidden(bool) override;
     bool paintRenderingResultsToCanvas(SourceDrawingBuffer) override;
     virtual blink::WebLayer* platformLayer() const override;
+
+    bool isWebGL2OrHigher() { return version() >= 2; }
 
     void addSharedObject(WebGLSharedObject*);
     void addContextObject(WebGLContextObject*);
@@ -622,7 +627,7 @@ protected:
         virtual const char* extensionName() const = 0;
         virtual void loseExtension() = 0;
 
-        virtual void trace(Visitor*) { }
+        DEFINE_INLINE_VIRTUAL_TRACE() { }
 
     private:
         bool m_draft;
@@ -676,7 +681,7 @@ protected:
             }
         }
 
-        virtual void trace(Visitor* visitor) override
+        DEFINE_INLINE_VIRTUAL_TRACE()
         {
             visitor->trace(m_extension);
             ExtensionTracker::trace(visitor);
@@ -857,7 +862,7 @@ protected:
     bool validateStencilOrDepthFunc(const char* functionName, GLenum);
 
     // Helper function for texParameterf and texParameteri.
-    void texParameter(GLenum target, GLenum pname, GLfloat parami, GLint paramf, bool isFloat);
+    void texParameter(GLenum target, GLenum pname, GLfloat paramf, GLint parami, bool isFloat);
 
     // Helper function to print GL errors to console.
     void printGLErrorToConsole(const String&);

@@ -14,6 +14,7 @@
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "cc/blink/context_provider_web_context.h"
 #include "content/child/database_util.h"
 #include "content/child/file_info_util.h"
 #include "content/child/fileapi/webfilesystem_impl.h"
@@ -79,7 +80,6 @@
 #include "third_party/WebKit/public/platform/WebVector.h"
 #include "ui/gfx/color_profile.h"
 #include "url/gurl.h"
-#include "webkit/common/gpu/context_provider_web_context.h"
 
 #if defined(OS_ANDROID)
 #include "content/renderer/android/synchronous_compositor_factory.h"
@@ -171,9 +171,6 @@ class RendererBlinkPlatformImpl::MimeRegistry
       const blink::WebString& key_system);
   virtual bool supportsMediaSourceMIMEType(const blink::WebString& mime_type,
                                            const blink::WebString& codecs);
-  virtual bool supportsEncryptedMediaMIMEType(const WebString& key_system,
-                                              const WebString& mime_type,
-                                              const WebString& codecs) override;
   virtual blink::WebString mimeTypeForExtension(
       const blink::WebString& file_extension);
   virtual blink::WebString mimeTypeFromFile(
@@ -245,10 +242,10 @@ RendererBlinkPlatformImpl::RendererBlinkPlatformImpl(
   }
 
   // ChildThread may not exist in some tests.
-  if (ChildThread::current()) {
-    sync_message_filter_ = ChildThread::current()->sync_message_filter();
-    thread_safe_sender_ = ChildThread::current()->thread_safe_sender();
-    quota_message_filter_ = ChildThread::current()->quota_message_filter();
+  if (ChildThreadImpl::current()) {
+    sync_message_filter_ = ChildThreadImpl::current()->sync_message_filter();
+    thread_safe_sender_ = ChildThreadImpl::current()->thread_safe_sender();
+    quota_message_filter_ = ChildThreadImpl::current()->quota_message_filter();
     blob_registry_.reset(new WebBlobRegistryImpl(thread_safe_sender_.get()));
     web_idb_factory_.reset(new WebIDBFactoryImpl(thread_safe_sender_.get()));
     web_database_observer_impl_.reset(
@@ -350,8 +347,20 @@ void RendererBlinkPlatformImpl::cacheMetadata(const blink::WebURL& url,
   // browser may cache it and return it on subsequent responses to speed
   // the processing of this resource.
   std::vector<char> copy(data, data + size);
-  RenderThread::Get()->Send(
-      new ViewHostMsg_DidGenerateCacheableMetadata(url, response_time, copy));
+  RenderThread::Get()->Send(new ViewHostMsg_DidGenerateCacheableMetadata(
+      url, base::Time::FromDoubleT(response_time), copy));
+}
+
+void RendererBlinkPlatformImpl::cacheMetadata(const blink::WebURL& url,
+                                              int64 response_time,
+                                              const char* data,
+                                              size_t size) {
+  // Let the browser know we generated cacheable metadata for this resource. The
+  // browser may cache it and return it on subsequent responses to speed
+  // the processing of this resource.
+  std::vector<char> copy(data, data + size);
+  RenderThread::Get()->Send(new ViewHostMsg_DidGenerateCacheableMetadata(
+      url, base::Time::FromInternalValue(response_time), copy));
 }
 
 WebString RendererBlinkPlatformImpl::defaultLocale() {
@@ -419,7 +428,7 @@ RendererBlinkPlatformImpl::MimeRegistry::supportsMediaMIMEType(
     std::vector<std::string> strict_codecs;
     net::ParseCodecString(ToASCIIOrEmpty(codecs), &strict_codecs, true);
 
-    if (!media::IsSupportedKeySystemWithMediaMimeType(
+    if (!media::PrefixedIsSupportedKeySystemWithMediaMimeType(
             mime_type_ascii, strict_codecs, key_system_ascii)) {
       return IsNotSupported;
     }
@@ -456,30 +465,6 @@ bool RendererBlinkPlatformImpl::MimeRegistry::supportsMediaSourceMIMEType(
     return false;
   return media::StreamParserFactory::IsTypeSupported(
       mime_type_ascii, parsed_codec_ids);
-}
-
-bool RendererBlinkPlatformImpl::MimeRegistry::supportsEncryptedMediaMIMEType(
-    const WebString& key_system,
-    const WebString& mime_type,
-    const WebString& codecs) {
-  // Chromium only supports ASCII parameters.
-  if (!base::IsStringASCII(key_system) || !base::IsStringASCII(mime_type) ||
-      !base::IsStringASCII(codecs)) {
-    return false;
-  }
-
-  if (key_system.isEmpty())
-    return false;
-
-  const std::string mime_type_ascii = base::UTF16ToASCII(mime_type);
-
-  std::vector<std::string> codec_vector;
-  bool strip_suffix = !net::IsStrictMediaMimeType(mime_type_ascii);
-  net::ParseCodecString(base::UTF16ToASCII(codecs), &codec_vector,
-                        strip_suffix);
-
-  return media::IsSupportedKeySystemWithMediaMimeType(
-      mime_type_ascii, codec_vector, base::UTF16ToASCII(key_system));
 }
 
 WebString RendererBlinkPlatformImpl::MimeRegistry::mimeTypeForExtension(
@@ -980,11 +965,27 @@ RendererBlinkPlatformImpl::createOffscreenGraphicsContext3D(
 
   if (gpu_channel_host.get() && gl_info) {
     const gpu::GPUInfo& gpu_info = gpu_channel_host->gpu_info();
-    gl_info->vendorInfo.assign(blink::WebString::fromUTF8(gpu_info.gl_vendor));
-    gl_info->rendererInfo.assign(
-        blink::WebString::fromUTF8(gpu_info.gl_renderer));
-    gl_info->driverVersion.assign(
-        blink::WebString::fromUTF8(gpu_info.gl_version));
+    switch (gpu_info.context_info_state) {
+      case gpu::kCollectInfoSuccess:
+      case gpu::kCollectInfoNonFatalFailure:
+        gl_info->vendorInfo.assign(
+            blink::WebString::fromUTF8(gpu_info.gl_vendor));
+        gl_info->rendererInfo.assign(
+            blink::WebString::fromUTF8(gpu_info.gl_renderer));
+        gl_info->driverVersion.assign(
+            blink::WebString::fromUTF8(gpu_info.driver_version));
+        gl_info->vendorId = gpu_info.gpu.vendor_id;
+        gl_info->deviceId = gpu_info.gpu.device_id;
+        break;
+      case gpu::kCollectInfoFatalFailure:
+      case gpu::kCollectInfoNone:
+        gl_info->contextInfoCollectionFailure.assign(blink::WebString::fromUTF8(
+            "GPUInfoCollectionFailure: GPU initialization Failed. GPU "
+            "Info not Collected."));
+        break;
+      default:
+        NOTREACHED();
+    };
   }
 
   WebGraphicsContext3DCommandBufferImpl::SharedMemoryLimits limits;
@@ -1009,7 +1010,7 @@ RendererBlinkPlatformImpl::createOffscreenGraphicsContext3D(
 
 blink::WebGraphicsContext3DProvider*
 RendererBlinkPlatformImpl::createSharedOffscreenGraphicsContext3DProvider() {
-  scoped_refptr<webkit::gpu::ContextProviderWebContext> provider =
+  scoped_refptr<cc_blink::ContextProviderWebContext> provider =
       RenderThreadImpl::current()->SharedMainThreadContextProvider();
   if (!provider.get())
     return NULL;

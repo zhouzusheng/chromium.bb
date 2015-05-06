@@ -9,13 +9,13 @@
  */
 
 
-/*!\defgroup vp8_decoder WebM VP8 Decoder
+/*!\defgroup vp8_decoder WebM VP8/VP9 Decoder
  * \ingroup vp8
  *
  * @{
  */
 /*!\file
- * \brief Provides definitions for using the VP8 algorithm within the vpx Decoder
+ * \brief Provides definitions for using VP8 or VP9 within the vpx Decoder
  *        interface.
  */
 #ifndef VPX_VP8DX_H_
@@ -30,14 +30,18 @@ extern "C" {
 
 /*!\name Algorithm interface for VP8
  *
- * This interface provides the capability to decode raw VP8 streams, as would
- * be found in AVI files and other non-Flash uses.
+ * This interface provides the capability to decode VP8 streams.
  * @{
  */
 extern vpx_codec_iface_t  vpx_codec_vp8_dx_algo;
 extern vpx_codec_iface_t *vpx_codec_vp8_dx(void);
+/*!@} - end algorithm interface member group*/
 
-/* TODO(jkoleszar): These move to VP9 in a later patch set. */
+/*!\name Algorithm interface for VP9
+ *
+ * This interface provides the capability to decode VP9 streams.
+ * @{
+ */
 extern vpx_codec_iface_t  vpx_codec_vp9_dx_algo;
 extern vpx_codec_iface_t *vpx_codec_vp9_dx(void);
 /*!@} - end algorithm interface member group*/
@@ -78,7 +82,21 @@ enum vp8_dec_control_id {
   /** control function to get the bit depth of the stream. */
   VP9D_GET_BIT_DEPTH,
 
-  /** For testing. */
+  /** control function to set the byte alignment of the planes in the reference
+   * buffers. Valid values are power of 2, from 32 to 1024. A value of 0 sets
+   * legacy alignment. I.e. Y plane is aligned to 32 bytes, U plane directly
+   * follows Y plane, and V plane directly follows U plane. Default value is 0.
+   */
+  VP9_SET_BYTE_ALIGNMENT,
+
+  /** control function to invert the decoding order to from right to left. The
+   * function is used in a test to confirm the decoding independence of tile
+   * columns. The function may be used in application where this order
+   * of decoding is desired.
+   *
+   * TODO(yaowu): Rework the unit test that uses this control, and in a future
+   *              release, this test-only control shall be removed.
+   */
   VP9_INVERT_TILE_DECODE_ORDER,
 
   VP8_DECODER_CTRL_ID_MAX

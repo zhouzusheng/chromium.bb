@@ -47,7 +47,6 @@ enum WorldIdConstants {
     MainWorldId = 0,
     // Embedder isolated worlds can use IDs in [1, 1<<29).
     EmbedderWorldIdLimit = (1 << 29),
-    ScriptPreprocessorIsolatedWorldId,
     PrivateScriptIsolatedWorldId,
     IsolatedWorldIdLimit,
     WorkerWorldId,
@@ -66,7 +65,7 @@ public:
     void dispose();
 
     static bool isolatedWorldsExist() { return isolatedWorldCount; }
-    static void allWorldsInMainThread(Vector<RefPtr<DOMWrapperWorld> >& worlds);
+    static void allWorldsInMainThread(Vector<RefPtr<DOMWrapperWorld>>& worlds);
 
     static DOMWrapperWorld& world(v8::Handle<v8::Context> context)
     {
@@ -150,7 +149,7 @@ private:
     template<typename T>
     class DOMObjectHolder : public DOMObjectHolderBase {
     public:
-        static PassOwnPtr<DOMObjectHolder<T> > create(v8::Isolate* isolate, T* object, v8::Handle<v8::Value> wrapper)
+        static PassOwnPtr<DOMObjectHolder<T>> create(v8::Isolate* isolate, T* object, v8::Handle<v8::Value> wrapper)
         {
             return adoptPtr(new DOMObjectHolder(isolate, object, wrapper));
         }
@@ -185,7 +184,7 @@ private:
     const int m_worldId;
     const int m_extensionGroup;
     OwnPtr<DOMDataStore> m_domDataStore;
-    HashSet<OwnPtr<DOMObjectHolderBase> > m_domObjectHolders;
+    HashSet<OwnPtr<DOMObjectHolderBase>> m_domObjectHolders;
 };
 
 } // namespace blink

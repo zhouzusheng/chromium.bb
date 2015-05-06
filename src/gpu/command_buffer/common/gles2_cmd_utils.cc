@@ -791,6 +791,8 @@ bool GLES2Util::ParseUniformName(
     size_t* array_pos,
     int* element_index,
     bool* getting_array) {
+  if (name.empty())
+    return false;
   bool getting_array_location = false;
   size_t open_pos = std::string::npos;
   base::CheckedNumeric<int> index = 0;
@@ -820,6 +822,42 @@ bool GLES2Util::ParseUniformName(
   *element_index = index.ValueOrDie();
   *array_pos = open_pos;
   return true;
+}
+
+size_t GLES2Util::CalcClearBufferivDataCount(int buffer) {
+  switch (buffer) {
+    case GL_COLOR:
+      return 4;
+    case GL_STENCIL:
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+size_t GLES2Util::CalcClearBufferfvDataCount(int buffer) {
+  switch (buffer) {
+    case GL_COLOR:
+      return 4;
+    case GL_DEPTH:
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+// static
+void GLES2Util::MapUint64ToTwoUint32(
+    uint64_t v64, uint32_t* v32_0, uint32_t* v32_1) {
+  DCHECK(v32_0 && v32_1);
+  *v32_0 = static_cast<uint32_t>(v64 & 0xFFFFFFFF);
+  *v32_1 = static_cast<uint32_t>((v64 & 0xFFFFFFFF00000000) >> 32);
+}
+
+// static
+uint64_t GLES2Util::MapTwoUint32ToUint64(uint32_t v32_0, uint32_t v32_1) {
+  uint64_t v64 = v32_1;
+  return (v64 << 32) | v32_0;
 }
 
 namespace {

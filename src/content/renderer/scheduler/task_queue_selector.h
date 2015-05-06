@@ -11,9 +11,9 @@
 
 namespace base {
 class TaskQueue;
-namespace debug {
+namespace trace_event {
 class TracedValue;
-}  // namespace debug
+}  // namespace trace_event
 }  // namespace base
 
 namespace content {
@@ -35,7 +35,7 @@ class TaskQueueSelector {
   virtual bool SelectWorkQueueToService(size_t* out_queue_index) = 0;
 
   // Serialize the selector state for tracing.
-  virtual void AsValueInto(base::debug::TracedValue* state) const = 0;
+  virtual void AsValueInto(base::trace_event::TracedValue* state) const = 0;
 };
 
 }  // namespace content

@@ -7,6 +7,8 @@
 // Framebuffer11.cpp: Implements the Framebuffer11 class.
 
 #include "libANGLE/renderer/d3d/d3d11/Framebuffer11.h"
+
+#include "common/debug.h"
 #include "libANGLE/renderer/d3d/d3d11/Buffer11.h"
 #include "libANGLE/renderer/d3d/d3d11/Clear11.h"
 #include "libANGLE/renderer/d3d/d3d11/TextureStorage11.h"
@@ -33,33 +35,57 @@ Framebuffer11::~Framebuffer11()
 {
 }
 
-static void InvalidateAttachmentSwizzles(const gl::FramebufferAttachment *attachment)
+static gl::Error InvalidateAttachmentSwizzles(const gl::FramebufferAttachment *attachment)
 {
     if (attachment && attachment->type() == GL_TEXTURE)
     {
         gl::Texture *texture = attachment->getTexture();
 
-        TextureD3D *textureD3D = TextureD3D::makeTextureD3D(texture->getImplementation());
-        TextureStorage *texStorage = textureD3D->getNativeTexture();
+        TextureD3D *textureD3D = GetImplAs<TextureD3D>(texture);
+
+        TextureStorage *texStorage = NULL;
+        gl::Error error = textureD3D->getNativeTexture(&texStorage);
+        if (error.isError())
+        {
+            return error;
+        }
+
         if (texStorage)
         {
             TextureStorage11 *texStorage11 = TextureStorage11::makeTextureStorage11(texStorage);
-            if (!texStorage11)
-            {
-                ERR("texture storage pointer unexpectedly null.");
-                return;
-            }
+            ASSERT(texStorage11);
 
             texStorage11->invalidateSwizzleCacheLevel(attachment->mipLevel());
         }
     }
+
+    return gl::Error(GL_NO_ERROR);
 }
 
-void Framebuffer11::invalidateSwizzles()
+gl::Error Framebuffer11::invalidateSwizzles() const
 {
-    std::for_each(mColorBuffers.begin(), mColorBuffers.end(), InvalidateAttachmentSwizzles);
-    InvalidateAttachmentSwizzles(mDepthbuffer);
-    InvalidateAttachmentSwizzles(mStencilbuffer);
+    for (size_t i = 0; i < mColorBuffers.size(); i++)
+    {
+        gl::Error error = InvalidateAttachmentSwizzles(mColorBuffers[i]);
+        if (error.isError())
+        {
+            return error;
+        }
+    }
+
+    gl::Error error = InvalidateAttachmentSwizzles(mDepthbuffer);
+    if (error.isError())
+    {
+        return error;
+    }
+
+    error = InvalidateAttachmentSwizzles(mStencilbuffer);
+    if (error.isError())
+    {
+        return error;
+    }
+
+    return gl::Error(GL_NO_ERROR);
 }
 
 gl::Error Framebuffer11::clear(const gl::State &state, const gl::ClearParameters &clearParams)
@@ -72,7 +98,11 @@ gl::Error Framebuffer11::clear(const gl::State &state, const gl::ClearParameters
         return error;
     }
 
-    invalidateSwizzles();
+    error = invalidateSwizzles();
+    if (error.isError())
+    {
+        return error;
+    }
 
     return gl::Error(GL_NO_ERROR);
 }
@@ -108,7 +138,7 @@ gl::Error Framebuffer11::readPixels(const gl::Rectangle &area, GLenum format, GL
     ID3D11Texture2D *colorBufferTexture = NULL;
     unsigned int subresourceIndex = 0;
 
-    const gl::FramebufferAttachment *colorbuffer = mColorBuffers[0];
+    const gl::FramebufferAttachment *colorbuffer = getReadAttachment();
     ASSERT(colorbuffer);
 
     gl::Error error = getRenderTargetResource(colorbuffer, &subresourceIndex, &colorBufferTexture);
@@ -156,7 +186,7 @@ gl::Error Framebuffer11::blit(const gl::Rectangle &sourceArea, const gl::Rectang
         const gl::FramebufferAttachment *readBuffer = sourceFramebuffer->getReadColorbuffer();
         ASSERT(readBuffer);
 
-        RenderTarget *readRenderTarget = NULL;
+        RenderTargetD3D *readRenderTarget = NULL;
         gl::Error error = GetAttachmentRenderTarget(readBuffer, &readRenderTarget);
         if (error.isError())
         {
@@ -170,7 +200,7 @@ gl::Error Framebuffer11::blit(const gl::Rectangle &sourceArea, const gl::Rectang
             {
                 const gl::FramebufferAttachment *drawBuffer = mColorBuffers[colorAttachment];
 
-                RenderTarget *drawRenderTarget = NULL;
+                RenderTargetD3D *drawRenderTarget = NULL;
                 error = GetAttachmentRenderTarget(drawBuffer, &drawRenderTarget);
                 if (error.isError())
                 {
@@ -193,7 +223,7 @@ gl::Error Framebuffer11::blit(const gl::Rectangle &sourceArea, const gl::Rectang
         gl::FramebufferAttachment *readBuffer = sourceFramebuffer->getDepthOrStencilbuffer();
         ASSERT(readBuffer);
 
-        RenderTarget *readRenderTarget = NULL;
+        RenderTargetD3D *readRenderTarget = NULL;
         gl::Error error = GetAttachmentRenderTarget(readBuffer, &readRenderTarget);
         if (error.isError())
         {
@@ -205,7 +235,7 @@ gl::Error Framebuffer11::blit(const gl::Rectangle &sourceArea, const gl::Rectang
                                                                                 : mStencilbuffer;
         ASSERT(drawBuffer);
 
-        RenderTarget *drawRenderTarget = NULL;
+        RenderTargetD3D *drawRenderTarget = NULL;
         error = GetAttachmentRenderTarget(drawBuffer, &drawRenderTarget);
         if (error.isError())
         {
@@ -221,12 +251,16 @@ gl::Error Framebuffer11::blit(const gl::Rectangle &sourceArea, const gl::Rectang
         }
     }
 
-    invalidateSwizzles();
+    gl::Error error = invalidateSwizzles();
+    if (error.isError())
+    {
+        return error;
+    }
 
     return gl::Error(GL_NO_ERROR);
 }
 
-GLenum Framebuffer11::getRenderTargetImplementationFormat(RenderTarget *renderTarget) const
+GLenum Framebuffer11::getRenderTargetImplementationFormat(RenderTargetD3D *renderTarget) const
 {
     RenderTarget11 *renderTarget11 = RenderTarget11::makeRenderTarget11(renderTarget);
     const d3d11::DXGIFormat &dxgiFormatInfo = d3d11::GetDXGIFormatInfo(renderTarget11->getDXGIFormat());

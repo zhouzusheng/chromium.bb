@@ -37,8 +37,8 @@
 #include "platform/heap/Handle.h"
 #include "platform/text/TextDirection.h"
 #include "platform/weborigin/KURL.h"
-#include "public/platform/WebNotificationDelegate.h"
-#include "public/platform/WebNotificationPermission.h"
+#include "public/platform/modules/notifications/WebNotificationDelegate.h"
+#include "public/platform/modules/notifications/WebNotificationPermission.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefCounted.h"
 
@@ -56,7 +56,7 @@ class Notification final : public RefCountedGarbageCollectedEventTargetWithInlin
 public:
     // Used for JavaScript instantiations of the Notification object. Will automatically schedule for
     // the notification to be displayed to the user.
-    static Notification* create(ExecutionContext*, const String& title, const NotificationOptions&);
+    static Notification* create(ExecutionContext*, const String& title, const NotificationOptions&, ExceptionState&);
 
     // Used for embedder-created Notification objects. Will initialize the Notification's state as showing.
     static Notification* create(ExecutionContext*, const String& persistentId, const WebNotificationData&);
@@ -86,8 +86,8 @@ public:
     TextDirection direction() const;
     KURL iconURL() const { return m_iconUrl; }
 
-    static const String& permissionString(WebNotificationPermission);
-    static const String& permission(ExecutionContext*);
+    static String permissionString(WebNotificationPermission);
+    static String permission(ExecutionContext*);
     static WebNotificationPermission checkPermission(ExecutionContext*);
     static void requestPermission(ExecutionContext*, NotificationPermissionCallback* = nullptr);
 
@@ -100,7 +100,7 @@ public:
     virtual void stop() override;
     virtual bool hasPendingActivity() const override;
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     Notification(const String& title, ExecutionContext*);

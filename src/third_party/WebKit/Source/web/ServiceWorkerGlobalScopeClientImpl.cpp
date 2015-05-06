@@ -53,6 +53,21 @@ void ServiceWorkerGlobalScopeClientImpl::getClients(WebServiceWorkerClientsCallb
     m_client.getClients(callbacks);
 }
 
+void ServiceWorkerGlobalScopeClientImpl::openWindow(const WebURL& url, WebServiceWorkerClientCallbacks* callbacks)
+{
+    m_client.openWindow(url, callbacks);
+}
+
+void ServiceWorkerGlobalScopeClientImpl::setCachedMetadata(const WebURL& url, const char* data, size_t size)
+{
+    m_client.setCachedMetadata(url, data, size);
+}
+
+void ServiceWorkerGlobalScopeClientImpl::clearCachedMetadata(const WebURL& url)
+{
+    m_client.clearCachedMetadata(url);
+}
+
 WebURL ServiceWorkerGlobalScopeClientImpl::scope() const
 {
     return m_client.scope();
@@ -118,7 +133,12 @@ void ServiceWorkerGlobalScopeClientImpl::skipWaiting(WebServiceWorkerSkipWaiting
     m_client.skipWaiting(callbacks);
 }
 
-void ServiceWorkerGlobalScopeClientImpl::focus(int clientID, WebServiceWorkerClientFocusCallback* callback)
+void ServiceWorkerGlobalScopeClientImpl::claim(WebServiceWorkerClientsClaimCallbacks* callbacks)
+{
+    m_client.claim(callbacks);
+}
+
+void ServiceWorkerGlobalScopeClientImpl::focus(int clientID, WebServiceWorkerClientCallbacks* callback)
 {
     m_client.focus(clientID, callback);
 }

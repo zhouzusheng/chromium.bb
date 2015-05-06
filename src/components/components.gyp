@@ -21,7 +21,8 @@
     'cronet.gypi',
     'crx_file.gypi',
     'data_reduction_proxy.gypi',
-    'dns_prefetch.gypi',
+    'device_event_log.gypi',
+    'network_hints.gypi',
     'dom_distiller.gypi',
     'domain_reliability.gypi',
     'enhanced_bookmarks.gypi',
@@ -72,7 +73,6 @@
       'includes': [
         'app_modal.gypi',
         'cdm.gypi',
-        'copresence_endpoints.gypi',
         'navigation_interception.gypi',
         'plugins.gypi',
         'power.gypi',
@@ -84,6 +84,7 @@
     }],
     ['OS == "ios"', {
       'includes': [
+        'open_from_clipboard.gypi',
         'webp_transcode.gypi',
       ],
     }],
@@ -94,6 +95,7 @@
     }],
     ['OS != "ios" and OS != "android"', {
       'includes': [
+        'audio_modem.gypi',
         'copresence.gypi',
         'proximity_auth.gypi',
         'storage_monitor.gypi',
@@ -138,6 +140,11 @@
         'sync_driver.gypi',
         'invalidation.gypi',
         'webdata_services.gypi',
+      ],
+    }],
+    ['enable_basic_printing==1 or enable_print_preview==1', {
+      'includes': [
+        'printing.gypi',
       ],
     }],
     ['enable_plugins==1', {

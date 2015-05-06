@@ -13,8 +13,9 @@
       'type': 'static_library',
       'dependencies': [
         'webrtc_utility',
+        '<(webrtc_root)/base/base.gyp:rtc_base_approved',
         '<(webrtc_root)/common_audio/common_audio.gyp:common_audio',
-        '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
+        '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
       ],
       'include_dirs': [
         '.',
@@ -192,6 +193,7 @@
                   'OTHER_LDFLAGS': [
                     '-framework AudioToolbox',
                     '-framework AVFoundation',
+                    '-framework Foundation',
                   ],
                 },
               },
@@ -223,7 +225,7 @@
             'webrtc_utility',
             '<(webrtc_root)/test/test.gyp:test_support_main',
             '<(DEPTH)/testing/gtest.gyp:gtest',
-            '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
+            '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
           ],
           'sources': [
             'test/audio_device_test_api.cc',
@@ -237,7 +239,7 @@
             'audio_device',
             'webrtc_utility',
             '<(webrtc_root)/common_audio/common_audio.gyp:common_audio',
-            '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
+            '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
             '<(webrtc_root)/test/test.gyp:test_support',
             '<(DEPTH)/testing/gtest.gyp:gtest',
           ],
@@ -277,7 +279,7 @@
                 'webrtc_utility',
                 '<(DEPTH)/testing/gmock.gyp:gmock',
                 '<(DEPTH)/testing/gtest.gyp:gtest',
-                '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
+                '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
                 '<(webrtc_root)/test/test.gyp:test_support_main',
               ],
               'sources': [

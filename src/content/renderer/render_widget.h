@@ -54,12 +54,15 @@ class SyncMessageFilter;
 
 namespace blink {
 struct WebDeviceEmulationParams;
+class WebFrameWidget;
 class WebGestureEvent;
 class WebKeyboardEvent;
+class WebLocalFrame;
 class WebMouseEvent;
 class WebNode;
 struct WebPoint;
 class WebTouchEvent;
+class WebView;
 }
 
 namespace cc {
@@ -100,6 +103,17 @@ class CONTENT_EXPORT RenderWidget
                               blink::WebPopupType popup_type,
                               const blink::WebScreenInfo& screen_info);
 
+  // Creates a new RenderWidget that will be attached to a RenderFrame.
+  static RenderWidget* CreateForFrame(int routing_id,
+                                      int surface_id,
+                                      bool hidden,
+                                      const blink::WebScreenInfo& screen_info,
+                                      CompositorDependencies* compositor_deps,
+                                      blink::WebLocalFrame* frame);
+
+  static blink::WebWidget* CreateWebFrameWidget(RenderWidget* render_widget,
+                                                blink::WebLocalFrame* frame);
+
   // Creates a WebWidget based on the popup type.
   static blink::WebWidget* CreateWebWidget(RenderWidget* render_widget);
 
@@ -124,6 +138,9 @@ class CONTENT_EXPORT RenderWidget
   gfx::Point host_context_menu_location() {
     return host_context_menu_location_;
   }
+
+  // ScreenInfo exposed so it can be passed to subframe RenderWidgets.
+  blink::WebScreenInfo screen_info() const { return screen_info_; }
 
   // Functions to track out-of-process frames for special notifications.
   void RegisterRenderFrameProxy(RenderFrameProxy* proxy);
@@ -176,6 +193,8 @@ class CONTENT_EXPORT RenderWidget
 #if defined(OS_ANDROID)
   // Notifies that a tap was not consumed, so showing a UI for the unhandled
   // tap may be needed.
+  // Performs various checks on the given WebNode to apply heuristics to
+  // determine if triggering is appropriate.
   virtual void showUnhandledTapUIIfNeeded(
       const blink::WebPoint& tapped_position,
       const blink::WebNode& tapped_node,
@@ -238,10 +257,8 @@ class CONTENT_EXPORT RenderWidget
   // Returns whether we currently should handle an IME event.
   bool ShouldHandleImeEvent();
 
-  virtual void InstrumentWillBeginFrame(int frame_id) {}
-  virtual void InstrumentDidBeginFrame() {}
-  virtual void InstrumentDidCancelFrame() {}
-  virtual void InstrumentWillComposite() {}
+  // Called by the compositor when page scale animation completed.
+  virtual void DidCompletePageScaleAnimation() {}
 
   // When paused in debugger, we send ack for mouse event early. This ensures
   // that we continue receiving mouse moves and pass them to debugger. Returns
@@ -305,6 +322,10 @@ class CONTENT_EXPORT RenderWidget
   // the browser side, such as changes by JavaScript or autofill.
   void UpdateTextInputState(ShowIme show_ime, ChangeSource change_source);
 #endif
+
+  // Called when animations due to focus change have completed (if any). Can be
+  // called from the renderer, browser, or compositor.
+  virtual void FocusChangeComplete() {}
 
   // Checks if the composition range or composition character bounds have been
   // changed. If they are changed, the new value will be sent to the browser
@@ -376,9 +397,7 @@ class CONTENT_EXPORT RenderWidget
               bool is_fullscreen,
               ResizeAck resize_ack);
   // Used to force the size of a window when running layout tests.
-  void ResizeSynchronously(
-      const gfx::Rect& new_position,
-      const gfx::Size& visible_viewport_size);
+  void SetWindowRectSynchronously(const gfx::Rect& new_window_rect);
   virtual void SetScreenMetricsEmulationParameters(
       float device_scale_factor,
       const gfx::Point& root_layer_offset,
@@ -482,7 +501,6 @@ class CONTENT_EXPORT RenderWidget
       MessageDeliveryPolicy policy,
       FrameSwapMessageQueue* frame_swap_message_queue,
       scoped_refptr<IPC::SyncMessageFilter> sync_message_filter,
-      bool commit_requested,
       int source_frame_number);
 
   // Override point to obtain that the current input method state and caret
@@ -596,8 +614,8 @@ class CONTENT_EXPORT RenderWidget
   // view is.
   int32 opener_id_;
 
-  // The position where this view should be initially shown.
-  gfx::Rect initial_pos_;
+  // The rect where this view should be initially shown.
+  gfx::Rect initial_rect_;
 
   bool init_complete_;
 

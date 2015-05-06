@@ -98,7 +98,6 @@ public:
 
     IdTargetObserverRegistry& idTargetObserverRegistry() const { return *m_idTargetObserverRegistry.get(); }
 
-
 #if !ENABLE(OILPAN)
     // Nodes belonging to this scope hold guard references -
     // these are enough to keep the scope from being destroyed, but
@@ -158,9 +157,9 @@ protected:
     void setNeedsStyleRecalcForViewportUnits();
 
 private:
+#if !ENABLE(OILPAN)
     virtual void dispose() { }
 
-#if !ENABLE(OILPAN)
     int refCount() const;
 
 #if ENABLE(SECURITY_ASSERT)
@@ -207,7 +206,6 @@ inline bool TreeScope::containsMultipleElementsWithId(const AtomicString& id) co
 DEFINE_COMPARISON_OPERATORS_WITH_REFERENCES(TreeScope)
 
 HitTestResult hitTestInDocument(const Document*, int x, int y);
-TreeScope* commonTreeScope(Node*, Node*);
 
 } // namespace blink
 

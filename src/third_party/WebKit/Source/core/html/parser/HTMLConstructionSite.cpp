@@ -50,6 +50,7 @@
 #include "core/loader/FrameLoaderClient.h"
 #include "core/svg/SVGScriptElement.h"
 #include "platform/NotImplemented.h"
+#include "platform/ScriptForbiddenScope.h"
 #include "platform/text/TextBreakIterator.h"
 #include <limits>
 
@@ -102,8 +103,10 @@ static inline void insert(HTMLConstructionSiteTask& task)
     if (isHTMLTemplateElement(*task.parent))
         task.parent = toHTMLTemplateElement(task.parent.get())->content();
 
-    if (ContainerNode* parent = task.child->parentNode())
+    if (ContainerNode* parent = task.child->parentNode()) {
+        ScriptForbiddenScope forbidScript;
         parent->parserRemoveChild(*task.child);
+    }
 
     if (task.nextChild)
         task.parent->parserInsertBefore(task.child.get(), *task.nextChild);
@@ -150,8 +153,10 @@ static inline void executeReparentTask(HTMLConstructionSiteTask& task)
 {
     ASSERT(task.operation == HTMLConstructionSiteTask::Reparent);
 
-    if (ContainerNode* parent = task.child->parentNode())
+    if (ContainerNode* parent = task.child->parentNode()) {
+        ScriptForbiddenScope forbidScript;
         parent->parserRemoveChild(*task.child);
+    }
 
     task.parent->parserAppendChild(task.child);
 }
@@ -353,7 +358,7 @@ HTMLConstructionSite::~HTMLConstructionSite()
     ASSERT(m_pendingText.isEmpty());
 }
 
-void HTMLConstructionSite::trace(Visitor* visitor)
+DEFINE_TRACE(HTMLConstructionSite)
 {
     visitor->trace(m_document);
     visitor->trace(m_attachmentRoot);
@@ -878,7 +883,7 @@ void HTMLConstructionSite::fosterParent(PassRefPtrWillBeRawPtr<Node> node)
     queueTask(task);
 }
 
-void HTMLConstructionSite::PendingText::trace(Visitor* visitor)
+DEFINE_TRACE(HTMLConstructionSite::PendingText)
 {
     visitor->trace(parent);
     visitor->trace(nextChild);

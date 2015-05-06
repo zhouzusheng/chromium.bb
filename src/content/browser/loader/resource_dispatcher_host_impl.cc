@@ -21,6 +21,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/sparse_histogram.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/stl_util.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
 #include "content/browser/appcache/appcache_interceptor.h"
@@ -94,10 +95,9 @@
 #include "storage/browser/blob/blob_data_handle.h"
 #include "storage/browser/blob/blob_storage_context.h"
 #include "storage/browser/blob/blob_url_request_job_factory.h"
+#include "storage/browser/blob/shareable_file_reference.h"
 #include "storage/browser/fileapi/file_permission_policy.h"
 #include "storage/browser/fileapi/file_system_context.h"
-#include "storage/common/blob/blob_data.h"
-#include "storage/common/blob/shareable_file_reference.h"
 #include "url/url_constants.h"
 
 using base::Time;
@@ -595,6 +595,7 @@ DownloadInterruptReason ResourceDispatcherHostImpl::BeginDownload(
     int child_id,
     int route_id,
     bool prefer_cache,
+    bool do_not_prompt_for_login,
     scoped_ptr<DownloadSaveInfo> save_info,
     uint32 download_id,
     const DownloadStartedCallback& started_callback) {
@@ -657,6 +658,7 @@ DownloadInterruptReason ResourceDispatcherHostImpl::BeginDownload(
 
   ResourceRequestInfoImpl* extra_info =
       CreateRequestInfo(child_id, route_id, true, context);
+  extra_info->set_do_not_prompt_for_login(do_not_prompt_for_login);
   extra_info->AssociateWithRequest(request.get());  // Request takes ownership.
 
   if (request->url().SchemeIs(url::kBlobScheme)) {
@@ -797,9 +799,9 @@ bool ResourceDispatcherHostImpl::HandleExternalProtocol(ResourceLoader* loader,
 void ResourceDispatcherHostImpl::DidStartRequest(ResourceLoader* loader) {
   // Make sure we have the load state monitor running
   if (!update_load_states_timer_->IsRunning()) {
-    update_load_states_timer_->Start(FROM_HERE,
-        TimeDelta::FromMilliseconds(kUpdateLoadStatesIntervalMsec),
-        this, &ResourceDispatcherHostImpl::UpdateLoadStates);
+    update_load_states_timer_->Start(
+        FROM_HERE, TimeDelta::FromMilliseconds(kUpdateLoadStatesIntervalMsec),
+        this, &ResourceDispatcherHostImpl::UpdateLoadInfo);
   }
 }
 
@@ -975,10 +977,16 @@ void ResourceDispatcherHostImpl::OnRequestResource(
     int routing_id,
     int request_id,
     const ResourceHostMsg_Request& request_data) {
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/456331 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "456331 ResourceDispatcherHostImpl::OnRequestResource"));
   // When logging time-to-network only care about main frame and non-transfer
   // navigations.
   if (request_data.resource_type == RESOURCE_TYPE_MAIN_FRAME &&
-      request_data.transferred_request_request_id == -1) {
+      request_data.transferred_request_request_id == -1 &&
+      !base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableBrowserSideNavigation)) {
     BrowserThread::PostTask(
         BrowserThread::UI,
         FROM_HERE,
@@ -1088,6 +1096,10 @@ void ResourceDispatcherHostImpl::BeginRequest(
     const ResourceHostMsg_Request& request_data,
     IPC::Message* sync_result,  // only valid for sync
     int route_id) {
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/456331 is fixed.
+  tracked_objects::ScopedTracker tracking_profile1(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "456331 ResourceDispatcherHostImpl::BeginRequest1"));
   int process_type = filter_->process_type();
   int child_id = filter_->child_id();
 
@@ -1108,6 +1120,11 @@ void ResourceDispatcherHostImpl::BeginRequest(
   // If the request that's coming in is being transferred from another process,
   // we want to reuse and resume the old loader rather than start a new one.
   {
+    // TODO(pkasting): Remove ScopedTracker below once crbug.com/456331 is
+    // fixed.
+    tracked_objects::ScopedTracker tracking_profile2(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION(
+            "456331 ResourceDispatcherHostImpl::BeginRequest2"));
     LoaderMap::iterator it = pending_loaders_.find(
         GlobalRequestID(request_data.transferred_request_child_id,
                         request_data.transferred_request_request_id));
@@ -1128,6 +1145,10 @@ void ResourceDispatcherHostImpl::BeginRequest(
     }
   }
 
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/456331 is fixed.
+  tracked_objects::ScopedTracker tracking_profile3(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "456331 ResourceDispatcherHostImpl::BeginRequest3"));
   ResourceContext* resource_context = NULL;
   net::URLRequestContext* request_context = NULL;
   filter_->GetContexts(request_data, &resource_context, &request_context);
@@ -1150,19 +1171,10 @@ void ResourceDispatcherHostImpl::BeginRequest(
     return;
   }
 
-  bool is_sync_load = sync_result != NULL;
-  int load_flags =
-      BuildLoadFlagsForRequest(request_data, child_id, is_sync_load);
-
-  // Sync loads should have maximum priority and should be the only
-  // requets that have the ignore limits flag set.
-  if (is_sync_load) {
-    DCHECK_EQ(request_data.priority, net::MAXIMUM_PRIORITY);
-    DCHECK_NE(load_flags & net::LOAD_IGNORE_LIMITS, 0);
-  } else {
-    DCHECK_EQ(load_flags & net::LOAD_IGNORE_LIMITS, 0);
-  }
-
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/456331 is fixed.
+  tracked_objects::ScopedTracker tracking_profile4(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "456331 ResourceDispatcherHostImpl::BeginRequest4"));
   // Construct the request.
   net::CookieStore* cookie_store =
       GetContentClient()->browser()->OverrideCookieStoreForRenderProcess(
@@ -1189,8 +1201,10 @@ void ResourceDispatcherHostImpl::BeginRequest(
   headers.AddHeadersFromString(request_data.headers);
   new_request->SetExtraRequestHeaders(headers);
 
-  new_request->SetLoadFlags(load_flags);
-
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/456331 is fixed.
+  tracked_objects::ScopedTracker tracking_profile5(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "456331 ResourceDispatcherHostImpl::BeginRequest5"));
   storage::BlobStorageContext* blob_context =
       GetBlobStorageContext(filter_->blob_storage_context());
   // Resolve elements from request_body and prepare upload data.
@@ -1214,8 +1228,45 @@ void ResourceDispatcherHostImpl::BeginRequest(
             .get()));
   }
 
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/456331 is fixed.
+  tracked_objects::ScopedTracker tracking_profile6(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "456331 ResourceDispatcherHostImpl::BeginRequest6"));
   bool allow_download = request_data.allow_download &&
       IsResourceTypeFrame(request_data.resource_type);
+  bool do_not_prompt_for_login = request_data.do_not_prompt_for_login;
+  bool is_sync_load = sync_result != NULL;
+  int load_flags =
+      BuildLoadFlagsForRequest(request_data, child_id, is_sync_load);
+  if (request_data.resource_type == RESOURCE_TYPE_PREFETCH ||
+      request_data.resource_type == RESOURCE_TYPE_FAVICON) {
+    do_not_prompt_for_login = true;
+  }
+  if (request_data.resource_type == RESOURCE_TYPE_IMAGE &&
+      HTTP_AUTH_RELATION_BLOCKED_CROSS ==
+          HttpAuthRelationTypeOf(request_data.url,
+                                 request_data.first_party_for_cookies)) {
+    // Prevent third-party image content from prompting for login, as this
+    // is often a scam to extract credentials for another domain from the user.
+    // Only block image loads, as the attack applies largely to the "src"
+    // property of the <img> tag. It is common for web properties to allow
+    // untrusted values for <img src>; this is considered a fair thing for an
+    // HTML sanitizer to do. Conversely, any HTML sanitizer that didn't
+    // filter sources for <script>, <link>, <embed>, <object>, <iframe> tags
+    // would be considered vulnerable in and of itself.
+    do_not_prompt_for_login = true;
+    load_flags |= net::LOAD_DO_NOT_USE_EMBEDDED_IDENTITY;
+  }
+
+  // Sync loads should have maximum priority and should be the only
+  // requets that have the ignore limits flag set.
+  if (is_sync_load) {
+    DCHECK_EQ(request_data.priority, net::MAXIMUM_PRIORITY);
+    DCHECK_NE(load_flags & net::LOAD_IGNORE_LIMITS, 0);
+  } else {
+    DCHECK_EQ(load_flags & net::LOAD_IGNORE_LIMITS, 0);
+  }
+  new_request->SetLoadFlags(load_flags);
 
   // Make extra info and read footer (contains request ID).
   ResourceRequestInfoImpl* extra_info =
@@ -1238,6 +1289,7 @@ void ResourceDispatcherHostImpl::BeginRequest(
           request_data.has_user_gesture,
           request_data.enable_load_timing,
           request_data.enable_upload_progress,
+          do_not_prompt_for_login,
           request_data.referrer_policy,
           request_data.visiblity_state,
           resource_context,
@@ -1255,17 +1307,19 @@ void ResourceDispatcherHostImpl::BeginRequest(
             new_request->url()));
   }
 
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/456331 is fixed.
+  tracked_objects::ScopedTracker tracking_profile7(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "456331 ResourceDispatcherHostImpl::BeginRequest7"));
   // Initialize the service worker handler for the request. We don't use
-  // ServiceWorker for synchronous loads to avoid renderer deadlocks. We
-  // don't use ServiceWorker for favicons to avoid cache tainting.
-  bool is_favicon_load = request_data.resource_type == RESOURCE_TYPE_FAVICON;
+  // ServiceWorker for synchronous loads to avoid renderer deadlocks.
   ServiceWorkerRequestHandler::InitializeHandler(
       new_request.get(),
       filter_->service_worker_context(),
       blob_context,
       child_id,
       request_data.service_worker_provider_id,
-      request_data.skip_service_worker || is_sync_load || is_favicon_load,
+      request_data.skip_service_worker || is_sync_load,
       request_data.fetch_request_mode,
       request_data.fetch_credentials_mode,
       request_data.resource_type,
@@ -1483,9 +1537,9 @@ ResourceRequestInfoImpl* ResourceDispatcherHostImpl::CreateRequestInfo(
       0,
       request_id_,
       MSG_ROUTING_NONE,  // render_frame_id
-      false,     // is_main_frame
-      false,     // parent_is_main_frame
-      -1,        // parent_render_frame_id
+      false,             // is_main_frame
+      false,             // parent_is_main_frame
+      -1,                // parent_render_frame_id
       RESOURCE_TYPE_SUB_RESOURCE,
       ui::PAGE_TRANSITION_LINK,
       false,     // should_replace_current_entry
@@ -1495,6 +1549,7 @@ ResourceRequestInfoImpl* ResourceDispatcherHostImpl::CreateRequestInfo(
       false,     // has_user_gesture
       false,     // enable_load_timing
       false,     // enable_upload_progress
+      false,     // do_not_prompt_for_login
       blink::WebReferrerPolicyDefault,
       blink::WebPageVisibilityStateVisible,
       context,
@@ -1827,9 +1882,7 @@ void ResourceDispatcherHostImpl::FinishedWithResourcesForRequest(
 void ResourceDispatcherHostImpl::BeginNavigationRequest(
     ResourceContext* resource_context,
     int64 frame_tree_node_id,
-    const CommonNavigationParams& params,
     const NavigationRequestInfo& info,
-    scoped_refptr<ResourceRequestBody> request_body,
     NavigationURLLoaderImplCore* loader) {
   // PlzNavigate: BeginNavigationRequest currently should only be used for the
   // browser-side navigations project.
@@ -1844,8 +1897,8 @@ void ResourceDispatcherHostImpl::BeginNavigationRequest(
       // needs to be checked relative to the child that /requested/ the
       // navigation. It's where file upload checks, etc., come in.
       (delegate_ && !delegate_->ShouldBeginRequest(
-          info.navigation_params.method,
-          params.url,
+          info.begin_params.method,
+          info.common_params.url,
           resource_type,
           resource_context))) {
     loader->NotifyRequestFailed(net::ERR_ABORTED);
@@ -1855,14 +1908,15 @@ void ResourceDispatcherHostImpl::BeginNavigationRequest(
   // Save the URL on the stack to help catch URLRequests which outlive their
   // URLRequestContexts. See https://crbug.com/90971
   char url_buf[128];
-  base::strlcpy(url_buf, params.url.spec().c_str(), arraysize(url_buf));
+  base::strlcpy(
+      url_buf, info.common_params.url.spec().c_str(), arraysize(url_buf));
   base::debug::Alias(url_buf);
   CHECK(ContainsKey(active_resource_contexts_, resource_context));
 
   const net::URLRequestContext* request_context =
       resource_context->GetRequestContext();
 
-  int load_flags = info.navigation_params.load_flags;
+  int load_flags = info.begin_params.load_flags;
   load_flags |= net::LOAD_VERIFY_EV_CERT;
   if (info.is_main_frame) {
     load_flags |= net::LOAD_MAIN_FRAME;
@@ -1884,10 +1938,10 @@ void ResourceDispatcherHostImpl::BeginNavigationRequest(
   // prerender. There may not be a renderer process yet, so we need to use the
   // ResourceContext or something.
   scoped_ptr<net::URLRequest> new_request;
-  new_request = request_context->CreateRequest(params.url, net::HIGHEST,
-                                               nullptr, nullptr);
+  new_request = request_context->CreateRequest(
+      info.common_params.url, net::HIGHEST, nullptr, nullptr);
 
-  new_request->set_method(info.navigation_params.method);
+  new_request->set_method(info.begin_params.method);
   new_request->set_first_party_for_cookies(
       info.first_party_for_cookies);
   if (info.is_main_frame) {
@@ -1895,26 +1949,26 @@ void ResourceDispatcherHostImpl::BeginNavigationRequest(
         net::URLRequest::UPDATE_FIRST_PARTY_URL_ON_REDIRECT);
   }
 
-  SetReferrerForRequest(new_request.get(), params.referrer);
+  SetReferrerForRequest(new_request.get(), info.common_params.referrer);
 
   net::HttpRequestHeaders headers;
-  headers.AddHeadersFromString(info.navigation_params.headers);
+  headers.AddHeadersFromString(info.begin_params.headers);
   new_request->SetExtraRequestHeaders(headers);
 
   new_request->SetLoadFlags(load_flags);
 
   // Resolve elements from request_body and prepare upload data.
-  if (info.navigation_params.request_body.get()) {
+  if (info.request_body.get()) {
     storage::BlobStorageContext* blob_context = GetBlobStorageContext(
         GetChromeBlobStorageContextForResourceContext(resource_context));
     AttachRequestBodyBlobDataHandles(
-        info.navigation_params.request_body.get(),
+        info.request_body.get(),
         blob_context);
     // TODO(davidben): The FileSystemContext is null here. In the case where
     // another renderer requested this navigation, this should be the same
     // FileSystemContext passed into ShouldServiceRequest.
     new_request->set_upload(UploadDataStreamBuilder::Build(
-        info.navigation_params.request_body.get(),
+        info.request_body.get(),
         blob_context,
         nullptr,  // file_system_context
         BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE)
@@ -1939,17 +1993,18 @@ void ResourceDispatcherHostImpl::BeginNavigationRequest(
           info.parent_is_main_frame,
           -1,  // request_data.parent_render_frame_id,
           resource_type,
-          params.transition,
+          info.common_params.transition,
           // should_replace_current_entry. This was only maintained at layer for
           // request transfers and isn't needed for browser-side navigations.
           false,
           false,  // is download
           false,  // is stream
-          params.allow_download,
-          info.navigation_params.has_user_gesture,
+          info.common_params.allow_download,
+          info.begin_params.has_user_gesture,
           true,   // enable_load_timing
           false,  // enable_upload_progress
-          params.referrer.policy,
+          false,  // do_not_prompt_for_login
+          info.common_params.referrer.policy,
           // TODO(davidben): This is only used for prerenders. Replace
           // is_showing with something for that. Or maybe it just comes from the
           // same mechanism as the cookie one.
@@ -2009,6 +2064,10 @@ int ResourceDispatcherHostImpl::CalculateApproximateMemoryCost(
 void ResourceDispatcherHostImpl::BeginRequestInternal(
     scoped_ptr<net::URLRequest> request,
     scoped_ptr<ResourceHandler> handler) {
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/456331 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "456331 ResourceDispatcherHostImpl::BeginRequestInternal"));
   DCHECK(!request->is_pending());
   ResourceRequestInfoImpl* info =
       ResourceRequestInfoImpl::ForRequest(request.get());
@@ -2079,116 +2138,87 @@ net::URLRequest* ResourceDispatcherHostImpl::GetURLRequest(
   return loader->request();
 }
 
-namespace {
+// static
+bool ResourceDispatcherHostImpl::LoadInfoIsMoreInteresting(const LoadInfo& a,
+                                                           const LoadInfo& b) {
+  // Set |*_uploading_size| to be the size of the corresponding upload body if
+  // it's currently being uploaded.
 
-// This function attempts to return the "more interesting" load state of |a|
-// and |b|.  We don't have temporal information about these load states
-// (meaning we don't know when we transitioned into these states), so we just
-// rank them according to how "interesting" the states are.
-//
-// We take advantage of the fact that the load states are an enumeration listed
-// in the order in which they occur during the lifetime of a request, so we can
-// regard states with larger numeric values as being further along toward
-// completion.  We regard those states as more interesting to report since they
-// represent progress.
-//
-// For example, by this measure "tranferring data" is a more interesting state
-// than "resolving host" because when we are transferring data we are actually
-// doing something that corresponds to changes that the user might observe,
-// whereas waiting for a host name to resolve implies being stuck.
-//
-const net::LoadStateWithParam& MoreInterestingLoadState(
-    const net::LoadStateWithParam& a, const net::LoadStateWithParam& b) {
-  return (a.state < b.state) ? b : a;
+  uint64 a_uploading_size = 0;
+  if (a.load_state.state == net::LOAD_STATE_SENDING_REQUEST)
+    a_uploading_size = a.upload_size;
+
+  uint64 b_uploading_size = 0;
+  if (b.load_state.state == net::LOAD_STATE_SENDING_REQUEST)
+    b_uploading_size = b.upload_size;
+
+  if (a_uploading_size != b_uploading_size)
+    return a_uploading_size > b_uploading_size;
+
+  return a.load_state.state > b.load_state.state;
 }
 
-// Carries information about a load state change.
-struct LoadInfo {
-  GURL url;
-  net::LoadStateWithParam load_state;
-  uint64 upload_position;
-  uint64 upload_size;
-};
-
-// Map from ProcessID+RouteID pair to LoadState
-typedef std::map<GlobalRoutingID, LoadInfo> LoadInfoMap;
-
-// Used to marshal calls to LoadStateChanged from the IO to UI threads.  We do
-// them all as a single callback to avoid spamming the UI thread.
-void LoadInfoUpdateCallback(const LoadInfoMap& info_map) {
-  LoadInfoMap::const_iterator i;
-  for (i = info_map.begin(); i != info_map.end(); ++i) {
-    RenderViewHostImpl* view =
-        RenderViewHostImpl::FromID(i->first.child_id, i->first.route_id);
-    if (view)  // The view could be gone at this point.
-      view->LoadStateChanged(i->second.url, i->second.load_state,
-                             i->second.upload_position,
-                             i->second.upload_size);
+// static
+void ResourceDispatcherHostImpl::UpdateLoadInfoOnUIThread(
+    scoped_ptr<LoadInfoMap> info_map) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  for (const auto& load_info : *info_map) {
+    RenderViewHostImpl* view = RenderViewHostImpl::FromID(
+        load_info.first.child_id, load_info.first.route_id);
+    // The view could be gone at this point.
+    if (view) {
+      view->LoadStateChanged(load_info.second.url, load_info.second.load_state,
+                             load_info.second.upload_position,
+                             load_info.second.upload_size);
+    }
   }
 }
 
-}  // namespace
-
-void ResourceDispatcherHostImpl::UpdateLoadStates() {
+scoped_ptr<ResourceDispatcherHostImpl::LoadInfoMap>
+ResourceDispatcherHostImpl::GetLoadInfoForAllRoutes() {
   // Populate this map with load state changes, and then send them on to the UI
   // thread where they can be passed along to the respective RVHs.
-  LoadInfoMap info_map;
+  scoped_ptr<LoadInfoMap> info_map(new LoadInfoMap());
 
-  LoaderMap::const_iterator i;
+  for (const auto& loader : pending_loaders_) {
+    // Also poll for upload progress on this timer and send upload progress ipc
+    // messages to the plugin process.
+    loader.second->ReportUploadProgress();
 
-  // Determine the largest upload size of all requests
-  // in each View (good chance it's zero).
-  std::map<GlobalRoutingID, uint64> largest_upload_size;
-  for (i = pending_loaders_.begin(); i != pending_loaders_.end(); ++i) {
-    net::URLRequest* request = i->second->request();
-    ResourceRequestInfoImpl* info = i->second->GetRequestInfo();
-    uint64 upload_size = request->GetUploadProgress().size();
-    if (request->GetLoadState().state != net::LOAD_STATE_SENDING_REQUEST)
-      upload_size = 0;
-    GlobalRoutingID id(info->GetGlobalRoutingID());
-    if (upload_size && largest_upload_size[id] < upload_size)
-      largest_upload_size[id] = upload_size;
-  }
-
-  for (i = pending_loaders_.begin(); i != pending_loaders_.end(); ++i) {
-    net::URLRequest* request = i->second->request();
-    ResourceRequestInfoImpl* info = i->second->GetRequestInfo();
-    net::LoadStateWithParam load_state = request->GetLoadState();
-    net::UploadProgress progress = request->GetUploadProgress();
-
-    // We also poll for upload progress on this timer and send upload
-    // progress ipc messages to the plugin process.
-    i->second->ReportUploadProgress();
-
-    GlobalRoutingID id(info->GetGlobalRoutingID());
-
-    // If a request is uploading data, ignore all other requests so that the
-    // upload progress takes priority for being shown in the status bar.
-    if (largest_upload_size.find(id) != largest_upload_size.end() &&
-        progress.size() < largest_upload_size[id])
-      continue;
-
-    net::LoadStateWithParam to_insert = load_state;
-    LoadInfoMap::iterator existing = info_map.find(id);
-    if (existing != info_map.end()) {
-      to_insert =
-          MoreInterestingLoadState(existing->second.load_state, load_state);
-      if (to_insert.state == existing->second.load_state.state)
-        continue;
-    }
-    LoadInfo& load_info = info_map[id];
+    net::URLRequest* request = loader.second->request();
+    net::UploadProgress upload_progress = request->GetUploadProgress();
+    LoadInfo load_info;
     load_info.url = request->url();
-    load_info.load_state = to_insert;
-    load_info.upload_size = progress.size();
-    load_info.upload_position = progress.position();
-  }
+    load_info.load_state = request->GetLoadState();
+    load_info.upload_size = upload_progress.size();
+    load_info.upload_position = upload_progress.position();
 
-  if (info_map.empty())
+    GlobalRoutingID id(loader.second->GetRequestInfo()->GetGlobalRoutingID());
+    LoadInfoMap::iterator existing = info_map->find(id);
+    if (existing == info_map->end() ||
+        LoadInfoIsMoreInteresting(load_info, existing->second)) {
+      (*info_map)[id] = load_info;
+    }
+  }
+  return info_map.Pass();
+}
+
+void ResourceDispatcherHostImpl::UpdateLoadInfo() {
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/455952 is
+  // fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "455952 ResourceDispatcherHostImpl::UpdateLoadStates"));
+
+  scoped_ptr<LoadInfoMap> info_map(GetLoadInfoForAllRoutes());
+
+  if (info_map->empty())
     return;
 
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      base::Bind(&LoadInfoUpdateCallback, info_map));
+      base::Bind(&ResourceDispatcherHostImpl::UpdateLoadInfoOnUIThread,
+                 base::Passed(&info_map)));
 }
 
 void ResourceDispatcherHostImpl::BlockRequestsForRoute(int child_id,
@@ -2323,24 +2353,7 @@ int ResourceDispatcherHostImpl::BuildLoadFlagsForRequest(
   } else if (request_data.resource_type == RESOURCE_TYPE_SUB_FRAME) {
     load_flags |= net::LOAD_SUB_FRAME;
   } else if (request_data.resource_type == RESOURCE_TYPE_PREFETCH) {
-    load_flags |= (net::LOAD_PREFETCH | net::LOAD_DO_NOT_PROMPT_FOR_LOGIN);
-  } else if (request_data.resource_type == RESOURCE_TYPE_FAVICON) {
-    load_flags |= net::LOAD_DO_NOT_PROMPT_FOR_LOGIN;
-  } else if (request_data.resource_type == RESOURCE_TYPE_IMAGE) {
-    // Prevent third-party image content from prompting for login, as this
-    // is often a scam to extract credentials for another domain from the user.
-    // Only block image loads, as the attack applies largely to the "src"
-    // property of the <img> tag. It is common for web properties to allow
-    // untrusted values for <img src>; this is considered a fair thing for an
-    // HTML sanitizer to do. Conversely, any HTML sanitizer that didn't
-    // filter sources for <script>, <link>, <embed>, <object>, <iframe> tags
-    // would be considered vulnerable in and of itself.
-    HttpAuthRelationType relation_type = HttpAuthRelationTypeOf(
-        request_data.url, request_data.first_party_for_cookies);
-    if (relation_type == HTTP_AUTH_RELATION_BLOCKED_CROSS) {
-      load_flags |= (net::LOAD_DO_NOT_USE_EMBEDDED_IDENTITY |
-                     net::LOAD_DO_NOT_PROMPT_FOR_LOGIN);
-    }
+    load_flags |= net::LOAD_PREFETCH;
   }
 
   if (is_sync_load)

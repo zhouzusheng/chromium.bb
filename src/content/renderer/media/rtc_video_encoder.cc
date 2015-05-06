@@ -502,6 +502,7 @@ void RTCVideoEncoder::Impl::EncodeOneFrame() {
           reinterpret_cast<uint8*>(input_buffer->memory()),
           input_buffer->mapped_size(),
           input_buffer->handle(),
+          0,
           base::TimeDelta(),
           base::Bind(&RTCVideoEncoder::Impl::EncodeFrameFinished, this, index));
   if (!frame.get()) {
@@ -673,7 +674,8 @@ int32_t RTCVideoEncoder::Release() {
   return WEBRTC_VIDEO_CODEC_OK;
 }
 
-int32_t RTCVideoEncoder::SetChannelParameters(uint32_t packet_loss, int rtt) {
+int32_t RTCVideoEncoder::SetChannelParameters(uint32_t packet_loss,
+                                              int64_t rtt) {
   DVLOG(3) << "SetChannelParameters(): packet_loss=" << packet_loss
            << ", rtt=" << rtt;
   // Ignored.

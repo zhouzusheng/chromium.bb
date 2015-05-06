@@ -41,8 +41,9 @@ WebInspector.IDBDatabaseView = function(database)
     this.element.classList.add("indexed-db-database-view");
     this.element.classList.add("storage-view");
 
-    this._headersListElement = this.element.createChild("ol", "outline-disclosure");
-    this._headersTreeOutline = new TreeOutline(this._headersListElement);
+    this._headersTreeOutline = new TreeOutline();
+    this._headersTreeOutline.element.classList.add("outline-disclosure");
+    this.element.appendChild(this._headersTreeOutline.element);
     this._headersTreeOutline.expandTreeElementsWhenArrowing = true;
 
     this._securityOriginTreeElement = new TreeElement("", null, false);
@@ -407,7 +408,7 @@ WebInspector.IDBDataGridNode.prototype = {
         case "array":
             var section = new WebInspector.ObjectPropertiesSection(value, value.description);
             section.editable = false;
-            section.skipProto = true;
+            section.skipProto();
             contents.appendChild(section.element);
             break;
         case "string":

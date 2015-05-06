@@ -36,13 +36,28 @@
       ],
     },
     {
+      'target_name': 'loopback_base',
+      'type': 'static_library',
+      'sources': [
+        'video/loopback.cc',
+        'video/loopback.h',
+      ],
+      'dependencies': [
+        '<(DEPTH)/testing/gtest.gyp:gtest',
+        '<(webrtc_root)/modules/modules.gyp:video_capture_module_internal_impl',
+        '<(webrtc_root)/modules/modules.gyp:video_render',
+        '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
+        'webrtc',
+      ],
+    },
+    {
       'target_name': 'video_loopback',
       'type': 'executable',
       'sources': [
         'test/mac/run_test.mm',
         'test/run_test.cc',
         'test/run_test.h',
-        'video/loopback.cc',
+        'video/video_loopback.cc',
       ],
       'conditions': [
         ['OS=="mac"', {
@@ -52,13 +67,37 @@
         }],
       ],
       'dependencies': [
+        'loopback_base',
         '<(DEPTH)/testing/gtest.gyp:gtest',
         '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
         'test/webrtc_test_common.gyp:webrtc_test_common',
         'test/webrtc_test_common.gyp:webrtc_test_renderer',
-        '<(webrtc_root)/modules/modules.gyp:video_capture_module_internal_impl',
-        '<(webrtc_root)/modules/modules.gyp:video_render_module_impl',
-        '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
+        'test/test.gyp:test_main',
+        'webrtc',
+      ],
+    },
+        {
+      'target_name': 'screenshare_loopback',
+      'type': 'executable',
+      'sources': [
+        'test/mac/run_test.mm',
+        'test/run_test.cc',
+        'test/run_test.h',
+        'video/screenshare_loopback.cc',
+      ],
+      'conditions': [
+        ['OS=="mac"', {
+          'sources!': [
+            'test/run_test.cc',
+          ],
+        }],
+      ],
+      'dependencies': [
+        'loopback_base',
+        '<(DEPTH)/testing/gtest.gyp:gtest',
+        '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
+        'test/webrtc_test_common.gyp:webrtc_test_common',
+        'test/webrtc_test_common.gyp:webrtc_test_renderer',
         'test/test.gyp:test_main',
         'webrtc',
       ],
@@ -84,9 +123,9 @@
         '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
         'test/webrtc_test_common.gyp:webrtc_test_common',
         'test/webrtc_test_common.gyp:webrtc_test_renderer',
-        '<(webrtc_root)/modules/modules.gyp:video_capture_module_impl',
-        '<(webrtc_root)/modules/modules.gyp:video_render_module_impl',
-        '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers_default',
+        '<(webrtc_root)/modules/modules.gyp:video_capture',
+        '<(webrtc_root)/modules/modules.gyp:video_render',
+        '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers_default',
         'webrtc',
       ],
     },
@@ -96,20 +135,20 @@
       'target_name': 'video_engine_tests',
       'type': '<(gtest_target_type)',
       'sources': [
-        'modules/audio_processing/agc/test/agc_manager_unittest.cc',
+        'test/common_unittest.cc',
+        'test/testsupport/metrics/video_metrics_unittest.cc',
+        'tools/agc/agc_manager_unittest.cc',
         'video/bitrate_estimator_tests.cc',
         'video/end_to_end_tests.cc',
         'video/send_statistics_proxy_unittest.cc',
         'video/video_send_stream_tests.cc',
-        'test/common_unittest.cc',
-        'test/testsupport/metrics/video_metrics_unittest.cc',
       ],
       'dependencies': [
         '<(DEPTH)/testing/gmock.gyp:gmock',
         '<(DEPTH)/testing/gtest.gyp:gtest',
         '<(webrtc_root)/modules/modules.gyp:rtp_rtcp',
-        '<(webrtc_root)/modules/modules.gyp:video_capture_module_impl',
-        '<(webrtc_root)/modules/modules.gyp:video_render_module_impl',
+        '<(webrtc_root)/modules/modules.gyp:video_capture',
+        '<(webrtc_root)/modules/modules.gyp:video_render',
         '<(webrtc_root)/test/test.gyp:channel_transport',
         '<(webrtc_root)/voice_engine/voice_engine.gyp:voice_engine',
         'test/metrics.gyp:metrics',
@@ -131,7 +170,7 @@
       'type': '<(gtest_target_type)',
       'sources': [
         'modules/audio_coding/neteq/test/neteq_performance_unittest.cc',
-        'modules/audio_processing/agc/test/agc_manager_integrationtest.cc',
+        'tools/agc/agc_manager_integrationtest.cc',
         'video/call_perf_tests.cc',
         'video/full_stack.cc',
         'video/rampup_tests.cc',
@@ -140,7 +179,7 @@
       'dependencies': [
         '<(DEPTH)/testing/gmock.gyp:gmock',
         '<(DEPTH)/testing/gtest.gyp:gtest',
-        '<(webrtc_root)/modules/modules.gyp:video_capture_module_impl',
+        '<(webrtc_root)/modules/modules.gyp:video_capture',
         '<(webrtc_root)/test/test.gyp:channel_transport',
         '<(webrtc_root)/voice_engine/voice_engine.gyp:voice_engine',
         'modules/modules.gyp:neteq_test_support',  # Needed by neteq_performance_unittest.

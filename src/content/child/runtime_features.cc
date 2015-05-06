@@ -4,10 +4,14 @@
 
 #include "content/child/runtime_features.h"
 
+#include <vector>
+
 #include "base/command_line.h"
 #include "base/metrics/field_trial.h"
+#include "base/strings/string_split.h"
 #include "content/common/content_switches_internal.h"
 #include "content/public/common/content_switches.h"
+#include "gpu/command_buffer/service/gpu_switches.h"
 #include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
 #include "ui/native_theme/native_theme_switches.h"
 
@@ -44,8 +48,6 @@ static void SetRuntimeFeatureDefaultsForPlatform() {
 
   // Android does not have support for PagePopup
   WebRuntimeFeatures::enablePagePopup(false);
-  // Android does not yet support the Web Notification API. crbug.com/115320
-  WebRuntimeFeatures::enableNotifications(false);
   // Android does not yet support SharedWorker. crbug.com/154571
   WebRuntimeFeatures::enableSharedWorker(false);
   // Android does not yet support NavigatorContentUtils.
@@ -60,6 +62,9 @@ static void SetRuntimeFeatureDefaultsForPlatform() {
   // the feature via experimental web platform features.
   if (base::FieldTrialList::FindFullName("NavigationTransitions") == "Enabled")
     WebRuntimeFeatures::enableNavigationTransitions(true);
+  // Android won't be able to reliably support non-persistent notifications, the
+  // intended behavior for which is in flux by itself.
+  WebRuntimeFeatures::enableNotificationConstructor(false);
 #else
   WebRuntimeFeatures::enableNavigatorContentUtils(true);
 #endif  // defined(OS_ANDROID)
@@ -89,9 +94,6 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kDisableDatabases))
     WebRuntimeFeatures::enableDatabase(false);
 
-  if (command_line.HasSwitch(switches::kDisableApplicationCache))
-    WebRuntimeFeatures::enableApplicationCache(false);
-
   if (command_line.HasSwitch(switches::kDisableBlinkScheduler))
     WebRuntimeFeatures::enableBlinkScheduler(false);
 
@@ -101,15 +103,19 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kDisableMediaSource))
     WebRuntimeFeatures::enableMediaSource(false);
 
+  if (command_line.HasSwitch(switches::kDisableNotifications)) {
+    WebRuntimeFeatures::enableNotifications(false);
+
+    // Chrome's Push Messaging implementation relies on Web Notifications.
+    WebRuntimeFeatures::enablePushMessaging(false);
+  }
+
   if (command_line.HasSwitch(switches::kDisableSharedWorkers))
     WebRuntimeFeatures::enableSharedWorker(false);
 
 #if defined(OS_ANDROID)
   if (command_line.HasSwitch(switches::kDisableWebRTC))
     WebRuntimeFeatures::enablePeerConnection(false);
-
-  if (command_line.HasSwitch(switches::kEnableExperimentalWebPlatformFeatures))
-    WebRuntimeFeatures::enableNotifications(true);
 
   // WebAudio is enabled by default on ARM and X86, if the MediaCodec
   // API is available.
@@ -121,8 +127,8 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
     WebRuntimeFeatures::enableWebAudio(false);
 #endif
 
-  if (command_line.HasSwitch(switches::kEnableEncryptedMedia))
-    WebRuntimeFeatures::enableEncryptedMedia(true);
+  if (command_line.HasSwitch(switches::kDisableEncryptedMedia))
+    WebRuntimeFeatures::enableEncryptedMedia(false);
 
   if (command_line.HasSwitch(switches::kDisablePrefixedEncryptedMedia))
     WebRuntimeFeatures::enablePrefixedEncryptedMedia(false);
@@ -182,10 +188,42 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kReducedReferrerGranularity))
     WebRuntimeFeatures::enableReducedReferrerGranularity(true);
 
+  if (command_line.HasSwitch(switches::kEnablePushMessagePayload))
+    WebRuntimeFeatures::enablePushMessagingData(true);
+
+  if (command_line.HasSwitch(switches::kEnablePushMessagingHasPermission))
+    WebRuntimeFeatures::enablePushMessagingHasPermission(true);
+
   if (command_line.HasSwitch(switches::kDisableV8IdleTasks))
     WebRuntimeFeatures::enableV8IdleTasks(false);
   else
     WebRuntimeFeatures::enableV8IdleTasks(true);
+
+  if (command_line.HasSwitch(switches::kEnableUnsafeES3APIs))
+    WebRuntimeFeatures::enableUnsafeES3APIs(true);
+
+  // Enable explicitly enabled features, and then disable explicitly disabled
+  // ones.
+  if (command_line.HasSwitch(switches::kEnableBlinkFeatures)) {
+    std::vector<std::string> enabled_features;
+    base::SplitString(
+        command_line.GetSwitchValueASCII(switches::kEnableBlinkFeatures), ',',
+        &enabled_features);
+    for (const std::string& feature : enabled_features) {
+      WebRuntimeFeatures::enableFeatureFromString(
+          blink::WebString::fromLatin1(feature), true);
+    }
+  }
+  if (command_line.HasSwitch(switches::kDisableBlinkFeatures)) {
+    std::vector<std::string> disabled_features;
+    base::SplitString(
+        command_line.GetSwitchValueASCII(switches::kDisableBlinkFeatures), ',',
+        &disabled_features);
+    for (const std::string& feature : disabled_features) {
+      WebRuntimeFeatures::enableFeatureFromString(
+          blink::WebString::fromLatin1(feature), false);
+    }
+  }
 }
 
 }  // namespace content

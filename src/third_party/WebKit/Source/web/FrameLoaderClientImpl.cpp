@@ -38,9 +38,11 @@
 #include "core/dom/Fullscreen.h"
 #include "core/events/MessageEvent.h"
 #include "core/events/MouseEvent.h"
+#include "core/events/UIEventWithKeyState.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/Settings.h"
 #include "core/html/HTMLAppletElement.h"
+#include "core/layout/HitTestResult.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/loader/FrameLoader.h"
@@ -49,7 +51,6 @@
 #include "core/page/EventHandler.h"
 #include "core/page/Page.h"
 #include "core/page/WindowFeatures.h"
-#include "core/rendering/HitTestResult.h"
 #include "core/storage/DOMWindowStorageController.h"
 #include "modules/device_light/DeviceLightController.h"
 #include "modules/device_orientation/DeviceMotionController.h"
@@ -89,7 +90,7 @@
 #include "web/PluginPlaceholderImpl.h"
 #include "web/SharedWorkerRepositoryClientImpl.h"
 #include "web/WebDataSourceImpl.h"
-#include "web/WebDevToolsAgentPrivate.h"
+#include "web/WebDevToolsFrontendImpl.h"
 #include "web/WebLocalFrameImpl.h"
 #include "web/WebPluginContainerImpl.h"
 #include "web/WebPluginLoadObserver.h"
@@ -132,6 +133,10 @@ void FrameLoaderClientImpl::dispatchDidClearWindowObjectInMainWorld()
             DOMWindowStorageController::from(*document);
         }
     }
+    // FIXME: when extensions go out of process, this whole concept stops working.
+    WebDevToolsFrontendImpl* devToolsFrontend = m_webFrame->top()->isWebLocalFrame() ? toWebLocalFrameImpl(m_webFrame->top())->devToolsFrontend() : nullptr;
+    if (devToolsFrontend)
+        devToolsFrontend->didClearWindowObject(m_webFrame);
 }
 
 void FrameLoaderClientImpl::documentElementAvailable()
@@ -142,9 +147,6 @@ void FrameLoaderClientImpl::documentElementAvailable()
 
 void FrameLoaderClientImpl::didCreateScriptContext(v8::Handle<v8::Context> context, int extensionGroup, int worldId)
 {
-    WebViewImpl* webview = m_webFrame->viewImpl();
-    if (webview->devToolsAgentPrivate())
-        webview->devToolsAgentPrivate()->didCreateScriptContext(m_webFrame, worldId);
     if (m_webFrame->client())
         m_webFrame->client()->didCreateScriptContext(m_webFrame, context, extensionGroup, worldId);
 }
@@ -470,8 +472,10 @@ void FrameLoaderClientImpl::dispatchDidChangeThemeColor()
 
 static bool allowCreatingBackgroundTabs()
 {
+
     const WebInputEvent* inputEvent = WebViewImpl::currentInputEvent();
-    if (!inputEvent || (inputEvent->type != WebInputEvent::MouseUp && (inputEvent->type != WebInputEvent::RawKeyDown && inputEvent->type != WebInputEvent::KeyDown)))
+    if (!inputEvent || (inputEvent->type != WebInputEvent::MouseUp && (inputEvent->type != WebInputEvent::RawKeyDown && inputEvent->type != WebInputEvent::KeyDown)
+        && inputEvent->type != WebInputEvent::GestureTap))
         return false;
 
     unsigned short buttonNumber;
@@ -511,7 +515,7 @@ NavigationPolicy FrameLoaderClientImpl::decidePolicyForNavigation(const Resource
     if (!m_webFrame->client())
         return NavigationPolicyIgnore;
 
-    if (policy == NavigationPolicyNewBackgroundTab && !allowCreatingBackgroundTabs())
+    if (policy == NavigationPolicyNewBackgroundTab && !allowCreatingBackgroundTabs() && !UIEventWithKeyState::newTabModifierSetFromIsolatedWorld())
         policy = NavigationPolicyNewForegroundTab;
 
     WebDataSourceImpl* ds = WebDataSourceImpl::fromDocumentLoader(loader);
@@ -932,6 +936,14 @@ unsigned FrameLoaderClientImpl::backForwardLength()
     if (!webview || !webview->client())
         return 0;
     return webview->client()->historyBackListCount() + 1 + webview->client()->historyForwardListCount();
+}
+
+void FrameLoaderClientImpl::suddenTerminationDisablerChanged(bool present, SuddenTerminationDisablerType type)
+{
+    if (m_webFrame->client()) {
+        m_webFrame->client()->suddenTerminationDisablerChanged(
+            present, static_cast<WebFrameClient::SuddenTerminationDisablerType>(type));
+    }
 }
 
 } // namespace blink

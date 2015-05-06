@@ -38,6 +38,7 @@
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "core/inspector/ScriptCallStack.h"
 #include "core/inspector/WorkerDebuggerAgent.h"
 #include "core/loader/DocumentLoadTiming.h"
@@ -105,6 +106,8 @@ WorkerMessagingProxy::~WorkerMessagingProxy()
     ASSERT(!m_workerObject);
     ASSERT((m_executionContext->isDocument() && isMainThread())
         || (m_executionContext->isWorkerGlobalScope() && toWorkerGlobalScope(m_executionContext.get())->thread()->isCurrentThread()));
+    if (m_loaderProxy)
+        m_loaderProxy->detachProvider(this);
 }
 
 void WorkerMessagingProxy::startWorkerGlobalScope(const KURL& scriptURL, const String& userAgent, const String& sourceCode, WorkerThreadStartMode startMode)
@@ -118,10 +121,11 @@ void WorkerMessagingProxy::startWorkerGlobalScope(const KURL& scriptURL, const S
     Document* document = toDocument(m_executionContext.get());
     SecurityOrigin* starterOrigin = document->securityOrigin();
 
-    OwnPtrWillBeRawPtr<WorkerThreadStartupData> startupData = WorkerThreadStartupData::create(scriptURL, userAgent, sourceCode, startMode, document->contentSecurityPolicy()->deprecatedHeader(), document->contentSecurityPolicy()->deprecatedHeaderType(), starterOrigin, m_workerClients.release());
-    double originTime = document->loader() ? document->loader()->timing()->referenceMonotonicTime() : monotonicallyIncreasingTime();
+    OwnPtrWillBeRawPtr<WorkerThreadStartupData> startupData = WorkerThreadStartupData::create(scriptURL, userAgent, sourceCode, nullptr, startMode, document->contentSecurityPolicy()->deprecatedHeader(), document->contentSecurityPolicy()->deprecatedHeaderType(), starterOrigin, m_workerClients.release());
+    double originTime = document->loader() ? document->loader()->timing().referenceMonotonicTime() : monotonicallyIncreasingTime();
 
-    RefPtr<DedicatedWorkerThread> thread = DedicatedWorkerThread::create(*this, *m_workerObjectProxy.get(), originTime, startupData.release());
+    m_loaderProxy = WorkerLoaderProxy::create(this);
+    RefPtr<DedicatedWorkerThread> thread = DedicatedWorkerThread::create(m_loaderProxy, *m_workerObjectProxy.get(), originTime, startupData.release());
     thread->start();
     workerThreadCreated(thread);
     m_workerInspectorProxy->workerThreadCreated(m_executionContext.get(), m_workerThread.get(), scriptURL);

@@ -71,22 +71,13 @@ static LocalFrame* retrieveFrameWithGlobalObjectCheck(v8::Handle<v8::Context> co
     if (global.IsEmpty())
         return 0;
 
-    return toFrameIfNotDetached(context);
-}
-
-void PageScriptDebugServer::setPreprocessorSource(const String& preprocessorSource)
-{
-    if (preprocessorSource.isEmpty())
-        m_preprocessorSourceCode.clear();
-    else
-        m_preprocessorSourceCode = adoptPtr(new ScriptSourceCode(preprocessorSource));
-    m_scriptPreprocessor.clear();
+    return toLocalFrame(toFrameIfNotDetached(context));
 }
 
 PageScriptDebugServer& PageScriptDebugServer::shared()
 {
-    DEFINE_STATIC_LOCAL(PageScriptDebugServer, server, ());
-    return server;
+    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<PageScriptDebugServer>, server, (adoptPtrWillBeNoop(new PageScriptDebugServer())));
+    return *server;
 }
 
 v8::Isolate* PageScriptDebugServer::s_mainThreadIsolate = 0;
@@ -98,7 +89,7 @@ void PageScriptDebugServer::setMainThreadIsolate(v8::Isolate* isolate)
 
 PageScriptDebugServer::PageScriptDebugServer()
     : ScriptDebugServer(s_mainThreadIsolate)
-    , m_pausedPage(0)
+    , m_pausedFrame(nullptr)
 {
 }
 
@@ -106,9 +97,20 @@ PageScriptDebugServer::~PageScriptDebugServer()
 {
 }
 
-void PageScriptDebugServer::addListener(ScriptDebugListener* listener, Page* page)
+void PageScriptDebugServer::trace(Visitor* visitor)
 {
-    ScriptController& scriptController = page->deprecatedLocalMainFrame()->script();
+#if ENABLE(OILPAN)
+    visitor->trace(m_listenersMap);
+    visitor->trace(m_pausedFrame);
+#endif
+    ScriptDebugServer::trace(visitor);
+}
+
+void PageScriptDebugServer::addListener(ScriptDebugListener* listener, LocalFrame* localFrameRoot)
+{
+    ASSERT(localFrameRoot == localFrameRoot->localFrameRoot());
+
+    ScriptController& scriptController = localFrameRoot->script();
     if (!scriptController.canExecuteScripts(NotAboutToExecuteScript))
         return;
 
@@ -124,14 +126,14 @@ void PageScriptDebugServer::addListener(ScriptDebugListener* listener, Page* pag
 
     v8::Local<v8::Object> debuggerScript = m_debuggerScript.newLocal(m_isolate);
     ASSERT(!debuggerScript->IsUndefined());
-    m_listenersMap.set(page, listener);
+    m_listenersMap.set(localFrameRoot, listener);
 
     WindowProxy* windowProxy = scriptController.existingWindowProxy(DOMWrapperWorld::mainWorld());
     if (!windowProxy || !windowProxy->isContextInitialized())
         return;
     v8::Local<v8::Context> context = windowProxy->context();
     v8::Handle<v8::Function> getScriptsFunction = v8::Local<v8::Function>::Cast(debuggerScript->Get(v8AtomicString(m_isolate, "getScripts")));
-    v8::Handle<v8::Value> argv[] = { context->GetEmbedderData(0) };
+    v8::Handle<v8::Value> argv[] = { V8PerContextDebugData::contextDebugData(context) };
     v8::Handle<v8::Value> value = V8ScriptRunner::callInternalFunction(getScriptsFunction, debuggerScript, WTF_ARRAY_LENGTH(argv), argv, m_isolate);
     if (value.IsEmpty())
         return;
@@ -141,15 +143,15 @@ void PageScriptDebugServer::addListener(ScriptDebugListener* listener, Page* pag
         dispatchDidParseSource(listener, v8::Handle<v8::Object>::Cast(scriptsArray->Get(v8::Integer::New(m_isolate, i))), CompileSuccess);
 }
 
-void PageScriptDebugServer::removeListener(ScriptDebugListener* listener, Page* page)
+void PageScriptDebugServer::removeListener(ScriptDebugListener* listener, LocalFrame* localFrame)
 {
-    if (!m_listenersMap.contains(page))
+    if (!m_listenersMap.contains(localFrame))
         return;
 
-    if (m_pausedPage == page)
+    if (m_pausedFrame == localFrame)
         continueProgram();
 
-    m_listenersMap.remove(page);
+    m_listenersMap.remove(localFrame);
 
     if (m_listenersMap.isEmpty()) {
         discardDebuggerScript();
@@ -168,11 +170,11 @@ void PageScriptDebugServer::setClientMessageLoop(PassOwnPtr<ClientMessageLoop> c
     m_clientMessageLoop = clientMessageLoop;
 }
 
-void PageScriptDebugServer::compileScript(ScriptState* scriptState, const String& expression, const String& sourceURL, String* scriptId, String* exceptionDetailsText, int* lineNumber, int* columnNumber, RefPtrWillBeRawPtr<ScriptCallStack>* stackTrace)
+void PageScriptDebugServer::compileScript(ScriptState* scriptState, const String& expression, const String& sourceURL, bool persistScript, String* scriptId, String* exceptionDetailsText, int* lineNumber, int* columnNumber, RefPtrWillBeRawPtr<ScriptCallStack>* stackTrace)
 {
     ExecutionContext* executionContext = scriptState->executionContext();
     RefPtrWillBeRawPtr<LocalFrame> protect(toDocument(executionContext)->frame());
-    ScriptDebugServer::compileScript(scriptState, expression, sourceURL, scriptId, exceptionDetailsText, lineNumber, columnNumber, stackTrace);
+    ScriptDebugServer::compileScript(scriptState, expression, sourceURL, persistScript, scriptId, exceptionDetailsText, lineNumber, columnNumber, stackTrace);
     if (!scriptId->isNull())
         m_compiledScriptURLs.set(*scriptId, sourceURL);
 }
@@ -190,7 +192,6 @@ void PageScriptDebugServer::runScript(ScriptState* scriptState, const String& sc
     ExecutionContext* executionContext = scriptState->executionContext();
     LocalFrame* frame = toDocument(executionContext)->frame();
     TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "EvaluateScript", "data", InspectorEvaluateScriptEvent::data(frame, sourceURL, TextPosition::minimumPosition().m_line.oneBasedInt()));
-    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentationCookie cookie;
     if (frame)
         cookie = InspectorInstrumentation::willEvaluateScript(frame, sourceURL, TextPosition::minimumPosition().m_line.oneBasedInt());
@@ -209,107 +210,28 @@ ScriptDebugListener* PageScriptDebugServer::getDebugListenerForContext(v8::Handl
     LocalFrame* frame = retrieveFrameWithGlobalObjectCheck(context);
     if (!frame)
         return 0;
-    return m_listenersMap.get(frame->page());
+    return m_listenersMap.get(frame->localFrameRoot());
 }
 
 void PageScriptDebugServer::runMessageLoopOnPause(v8::Handle<v8::Context> context)
 {
     v8::HandleScope scope(m_isolate);
     LocalFrame* frame = retrieveFrameWithGlobalObjectCheck(context);
-    m_pausedPage = frame->page();
+    m_pausedFrame = frame->localFrameRoot();
 
     // Wait for continue or step command.
-    m_clientMessageLoop->run(m_pausedPage);
+    m_clientMessageLoop->run(m_pausedFrame);
 
     // The listener may have been removed in the nested loop.
-    if (ScriptDebugListener* listener = m_listenersMap.get(m_pausedPage))
+    if (ScriptDebugListener* listener = m_listenersMap.get(m_pausedFrame))
         listener->didContinue();
 
-    m_pausedPage = 0;
+    m_pausedFrame = 0;
 }
 
 void PageScriptDebugServer::quitMessageLoopOnPause()
 {
     m_clientMessageLoop->quitNow();
-}
-
-void PageScriptDebugServer::preprocessBeforeCompile(const v8::Debug::EventDetails& eventDetails)
-{
-    v8::Handle<v8::Context> eventContext = eventDetails.GetEventContext();
-    LocalFrame* frame = retrieveFrameWithGlobalObjectCheck(eventContext);
-    if (!frame)
-        return;
-
-    if (!canPreprocess(frame))
-        return;
-
-    v8::Handle<v8::Object> eventData = eventDetails.GetEventData();
-    v8::Local<v8::Context> debugContext = v8::Debug::GetDebugContext();
-    v8::Context::Scope contextScope(debugContext);
-    v8::TryCatch tryCatch;
-    // <script> tag source and attribute value source are preprocessed before we enter V8.
-    // Avoid preprocessing any internal scripts by processing only eval source in this V8 event handler.
-    v8::Handle<v8::Value> argvEventData[] = { eventData };
-    v8::Handle<v8::Value> v8Value = callDebuggerMethod("isEvalCompilation", WTF_ARRAY_LENGTH(argvEventData), argvEventData);
-    if (v8Value.IsEmpty() || !v8Value->ToBoolean(debugContext->GetIsolate())->Value())
-        return;
-
-    // The name and source are in the JS event data.
-    String scriptName = toCoreStringWithUndefinedOrNullCheck(callDebuggerMethod("getScriptName", WTF_ARRAY_LENGTH(argvEventData), argvEventData));
-    String script = toCoreStringWithUndefinedOrNullCheck(callDebuggerMethod("getScriptSource", WTF_ARRAY_LENGTH(argvEventData), argvEventData));
-
-    String preprocessedSource  = m_scriptPreprocessor->preprocessSourceCode(script, scriptName);
-
-    v8::Handle<v8::Value> argvPreprocessedScript[] = { eventData, v8String(debugContext->GetIsolate(), preprocessedSource) };
-    callDebuggerMethod("setScriptSource", WTF_ARRAY_LENGTH(argvPreprocessedScript), argvPreprocessedScript);
-}
-
-static bool isCreatingPreprocessor = false;
-
-bool PageScriptDebugServer::canPreprocess(LocalFrame* frame)
-{
-    ASSERT(frame);
-
-    if (!m_preprocessorSourceCode || !frame->page() || isCreatingPreprocessor)
-        return false;
-
-    // We delay the creation of the preprocessor until just before the first JS from the
-    // Web page to ensure that the debugger's console initialization code has completed.
-    if (!m_scriptPreprocessor) {
-        TemporaryChange<bool> isPreprocessing(isCreatingPreprocessor, true);
-        m_scriptPreprocessor = adoptPtr(new ScriptPreprocessor(m_isolate, *m_preprocessorSourceCode.get(), frame));
-    }
-
-    if (m_scriptPreprocessor->isValid())
-        return true;
-
-    m_scriptPreprocessor.clear();
-    // Don't retry the compile if we fail one time.
-    m_preprocessorSourceCode.clear();
-    return false;
-}
-
-// Source to Source processing iff debugger enabled and it has loaded a preprocessor.
-PassOwnPtr<ScriptSourceCode> PageScriptDebugServer::preprocess(LocalFrame* frame, const ScriptSourceCode& sourceCode)
-{
-    if (!canPreprocess(frame))
-        return PassOwnPtr<ScriptSourceCode>();
-
-    String preprocessedSource = m_scriptPreprocessor->preprocessSourceCode(sourceCode.source(), sourceCode.url());
-    return adoptPtr(new ScriptSourceCode(preprocessedSource, sourceCode.url()));
-}
-
-String PageScriptDebugServer::preprocessEventListener(LocalFrame* frame, const String& source, const String& url, const String& functionName)
-{
-    if (!canPreprocess(frame))
-        return source;
-
-    return m_scriptPreprocessor->preprocessSourceCode(source, url, functionName);
-}
-
-void PageScriptDebugServer::clearPreprocessor()
-{
-    m_scriptPreprocessor.clear();
 }
 
 void PageScriptDebugServer::muteWarningsAndDeprecations()

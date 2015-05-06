@@ -25,7 +25,7 @@ class SkDefaultEventTracer: public SkEventTracer {
                                  const char* name,
                                  SkEventTracer::Handle handle) SK_OVERRIDE {};
 
-    virtual const uint8_t* getCategoryGroupEnabled(const char* name) SK_OVERRIDE {
+    const uint8_t* getCategoryGroupEnabled(const char* name) SK_OVERRIDE {
         static uint8_t no = 0;
         return &no;
     };
@@ -51,8 +51,8 @@ static void intialize_default_tracer(SkEventTracer* current_instance) {
 }
 
 
+SK_DECLARE_STATIC_ONCE(once);
 SkEventTracer* SkEventTracer::GetInstance() {
-    SK_DECLARE_STATIC_ONCE(once);
     SkOnce(&once, intialize_default_tracer, SkEventTracer::gInstance);
     SkASSERT(SkEventTracer::gInstance);
     return SkEventTracer::gInstance;

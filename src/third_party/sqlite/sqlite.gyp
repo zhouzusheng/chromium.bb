@@ -11,12 +11,31 @@
     'defines': [
       'SQLITE_CORE',
       'SQLITE_ENABLE_FTS3',
+      # New unicode61 tokenizer with built-in tables.
+      'SQLITE_DISABLE_FTS3_UNICODE',
+      # Chromium currently does not enable fts4, disable extra code.
+      'SQLITE_DISABLE_FTS4_DEFERRED',
       'SQLITE_ENABLE_ICU',
       'SQLITE_ENABLE_MEMORY_MANAGEMENT',
       'SQLITE_SECURE_DELETE',
+      # Custom flag to tweak pcache pools.
+      # TODO(shess): This shouldn't use faux-SQLite naming.      
       'SQLITE_SEPARATE_CACHE_POOLS',
+      # TODO(shess): SQLite adds mutexes to protect structures which cross
+      # threads.  In theory Chromium should be able to turn this off for a
+      # slight speed boost.
       'THREADSAFE',
+      # TODO(shess): Figure out why this is here.  Nobody references it
+      # directly.
       '_HAS_EXCEPTIONS=0',
+      # NOTE(shess): Some defines can affect the amalgamation.  Those should be
+      # added to google_generate_amalgamation.sh, and the amalgamation
+      # re-generated.  Usually this involves disabling features which include
+      # keywords or syntax, for instance SQLITE_OMIT_VIRTUALTABLE omits the
+      # virtual table syntax entirely.  Missing an item usually results in
+      # syntax working but execution failing.  Review:
+      #   src/src/parse.py
+      #   src/tool/mkkeywordhash.c
     ],
   },
   'targets': [
@@ -33,6 +52,16 @@
                 ],
           },
         ],
+        ['os_posix == 1', {
+          'defines': [
+            # Allow xSleep() call on Unix to use usleep() rather than sleep().
+            # Microsecond precision is better than second precision.  Should
+            # only affect contended databases via the busy callback.  Browser
+            # profile databases are mostly exclusive, but renderer databases may
+            # allow for contention.
+            'HAVE_USLEEP=1',
+          ],
+        }],
         ['use_system_sqlite', {
           'type': 'none',
           'direct_dependent_settings': {
@@ -104,17 +133,6 @@
           'msvs_disabled_warnings': [
             4018, 4244, 4267,
           ],
-          'variables': {
-            'clang_warning_flags': [
-              # sqlite does `if (*a++ && *b++);` in a non-buggy way.
-              '-Wno-empty-body',
-              # sqlite has some `unsigned < 0` checks.
-              '-Wno-tautological-compare',
-              # Needed because we don't have this commit yet:
-              # https://github.com/mackyle/sqlite/commit/25df0fa050dcc9be7fb937b8e25be24049b3fef0
-              '-Wno-pointer-bool-conversion',
-            ],
-          },
           'conditions': [
             ['OS=="linux"', {
               'link_settings': {
@@ -132,7 +150,6 @@
             }],
             ['OS == "android"', {
               'defines': [
-                'HAVE_USLEEP=1',
                 'SQLITE_DEFAULT_JOURNAL_SIZE_LIMIT=1048576',
                 'SQLITE_DEFAULT_AUTOVACUUM=1',
                 'SQLITE_TEMP_STORE=3',

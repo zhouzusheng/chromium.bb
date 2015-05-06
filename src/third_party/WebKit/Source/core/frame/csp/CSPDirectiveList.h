@@ -34,8 +34,8 @@ public:
 
     bool allowJavaScriptURLs(const String& contextURL, const WTF::OrdinalNumber& contextLine, ContentSecurityPolicy::ReportingStatus) const;
     bool allowInlineEventHandlers(const String& contextURL, const WTF::OrdinalNumber& contextLine, ContentSecurityPolicy::ReportingStatus) const;
-    bool allowInlineScript(const String& contextURL, const WTF::OrdinalNumber& contextLine, ContentSecurityPolicy::ReportingStatus) const;
-    bool allowInlineStyle(const String& contextURL, const WTF::OrdinalNumber& contextLine, ContentSecurityPolicy::ReportingStatus) const;
+    bool allowInlineScript(const String& contextURL, const WTF::OrdinalNumber& contextLine, ContentSecurityPolicy::ReportingStatus, const String& scriptContent) const;
+    bool allowInlineStyle(const String& contextURL, const WTF::OrdinalNumber& contextLine, ContentSecurityPolicy::ReportingStatus, const String& styleContent) const;
     bool allowEval(ScriptState*, ContentSecurityPolicy::ReportingStatus) const;
     bool allowPluginType(const String& type, const String& typeAttribute, const KURL&, ContentSecurityPolicy::ReportingStatus) const;
 
@@ -75,6 +75,7 @@ private:
     void addDirective(const String& name, const String& value);
     void applySandboxPolicy(const String& name, const String& sandboxPolicy);
     void enforceStrictMixedContentChecking(const String& name, const String& value);
+    void enableInsecureContentUpgrade(const String& name, const String& value);
 
     template <class CSPDirectiveType>
     void setCSPDirective(const String& name, const String& value, OwnPtr<CSPDirectiveType>&);
@@ -97,7 +98,7 @@ private:
     void setEvalDisabledErrorMessage(const String& errorMessage) { m_evalDisabledErrorMessage = errorMessage; }
 
     bool checkEvalAndReportViolation(SourceListDirective*, const String& consoleMessage, ScriptState*) const;
-    bool checkInlineAndReportViolation(SourceListDirective*, const String& consoleMessage, const String& contextURL, const WTF::OrdinalNumber& contextLine, bool isScript) const;
+    bool checkInlineAndReportViolation(SourceListDirective*, const String& consoleMessage, const String& contextURL, const WTF::OrdinalNumber& contextLine, bool isScript, const String& hashValue) const;
 
     bool checkSourceAndReportViolation(SourceListDirective*, const KURL&, const String& effectiveDirective) const;
     bool checkMediaTypeAndReportViolation(MediaListDirective*, const String& type, const String& typeAttribute, const String& consoleMessage) const;
@@ -119,6 +120,8 @@ private:
     ReferrerPolicy m_referrerPolicy;
 
     bool m_strictMixedContentCheckingEnforced;
+
+    bool m_upgradeInsecureRequests;
 
     OwnPtr<MediaListDirective> m_pluginTypes;
     OwnPtr<SourceListDirective> m_baseURI;

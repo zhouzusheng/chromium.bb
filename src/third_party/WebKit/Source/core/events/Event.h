@@ -75,6 +75,12 @@ public:
         CHANGE              = 32768
     };
 
+    enum RailsMode {
+        RailsModeFree       = 0,
+        RailsModeHorizontal = 1,
+        RailsModeVertical   = 2
+    };
+
     static PassRefPtrWillBeRawPtr<Event> create()
     {
         return adoptRefWillBeNoop(new Event);
@@ -179,14 +185,14 @@ public:
     EventPath& eventPath() { ASSERT(m_eventPath); return *m_eventPath; }
     void initEventPath(Node&);
 
-    PassRefPtrWillBeRawPtr<StaticNodeList> path() const;
+    WillBeHeapVector<RefPtrWillBeMember<EventTarget>> path() const;
 
     bool isBeingDispatched() const { return eventPhase(); }
 
     double uiCreateTime() const { return m_uiCreateTime; }
     void setUICreateTime(double uiCreateTime) { m_uiCreateTime = uiCreateTime; }
 
-    virtual void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     Event();

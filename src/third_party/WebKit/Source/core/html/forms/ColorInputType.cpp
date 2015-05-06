@@ -35,16 +35,17 @@
 #include "bindings/core/v8/ScriptController.h"
 #include "core/CSSPropertyNames.h"
 #include "core/InputTypeNames.h"
-#include "core/events/MouseEvent.h"
 #include "core/dom/shadow/ShadowRoot.h"
+#include "core/events/MouseEvent.h"
 #include "core/html/HTMLDataListElement.h"
 #include "core/html/HTMLDataListOptionsCollection.h"
 #include "core/html/HTMLDivElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLOptionElement.h"
 #include "core/html/forms/ColorChooser.h"
+#include "core/inspector/ConsoleMessage.h"
+#include "core/layout/LayoutTheme.h"
 #include "core/page/Chrome.h"
-#include "core/rendering/RenderTheme.h"
 #include "core/rendering/RenderView.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/UserGestureIndicator.h"
@@ -84,7 +85,7 @@ ColorInputType::~ColorInputType()
 {
 }
 
-void ColorInputType::trace(Visitor* visitor)
+DEFINE_TRACE(ColorInputType)
 {
     visitor->trace(m_chooser);
     BaseClickableWithKeyInputType::trace(visitor);
@@ -137,7 +138,7 @@ void ColorInputType::createShadowSubtree()
     RefPtrWillBeRawPtr<HTMLDivElement> colorSwatch = HTMLDivElement::create(document);
     colorSwatch->setShadowPseudoId(AtomicString("-webkit-color-swatch", AtomicString::ConstructFromLiteral));
     wrapperElement->appendChild(colorSwatch.release());
-    element().userAgentShadowRoot()->appendChild(wrapperElement.release());
+    element().closedShadowRoot()->appendChild(wrapperElement.release());
 
     element().updateView();
 }
@@ -198,13 +199,13 @@ void ColorInputType::didChooseColor(const Color& color)
         return;
     element().setValueFromRenderer(color.serialized());
     element().updateView();
-    if (!RenderTheme::theme().isModalColorChooser())
+    if (!LayoutTheme::theme().isModalColorChooser())
         element().dispatchFormControlChangeEvent();
 }
 
 void ColorInputType::didEndChooser()
 {
-    if (RenderTheme::theme().isModalColorChooser())
+    if (LayoutTheme::theme().isModalColorChooser())
         element().dispatchFormControlChangeEvent();
     m_chooser.clear();
 }
@@ -226,7 +227,7 @@ void ColorInputType::updateView()
 
 HTMLElement* ColorInputType::shadowColorSwatch() const
 {
-    ShadowRoot* shadow = element().userAgentShadowRoot();
+    ShadowRoot* shadow = element().closedShadowRoot();
     return shadow ? toHTMLElement(shadow->firstChild()->firstChild()) : 0;
 }
 
@@ -273,7 +274,7 @@ Vector<ColorSuggestion> ColorInputType::suggestions() const
 
 AXObject* ColorInputType::popupRootAXObject()
 {
-    return m_chooser ? m_chooser->rootAXObject() : 0;
+    return m_chooser ? m_chooser->rootAXObject() : nullptr;
 }
 
 ColorChooserClient* ColorInputType::colorChooserClient()

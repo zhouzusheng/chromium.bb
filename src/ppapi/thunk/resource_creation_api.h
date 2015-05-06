@@ -171,6 +171,7 @@ class ResourceCreationAPI {
   virtual PP_Resource CreateUDPSocketPrivate(PP_Instance instace) = 0;
   virtual PP_Resource CreateVideoDecoder(PP_Instance instance) = 0;
   virtual PP_Resource CreateVideoDestination(PP_Instance instance) = 0;
+  virtual PP_Resource CreateVideoEncoder(PP_Instance instance) = 0;
   virtual PP_Resource CreateVideoSource(PP_Instance instance) = 0;
   virtual PP_Resource CreateWebSocket(PP_Instance instance) = 0;
   virtual PP_Resource CreateX509CertificatePrivate(PP_Instance instance) = 0;
@@ -181,6 +182,7 @@ class ResourceCreationAPI {
       PP_Instance instance,
       const PP_BrowserFont_Trusted_Description* description) = 0;
   virtual PP_Resource CreateBuffer(PP_Instance instance, uint32_t size) = 0;
+  virtual PP_Resource CreateCameraDevicePrivate(PP_Instance instance) = 0;
   virtual PP_Resource CreateFlashDRM(PP_Instance instance) = 0;
   virtual PP_Resource CreateFlashFontFile(
       PP_Instance instance,

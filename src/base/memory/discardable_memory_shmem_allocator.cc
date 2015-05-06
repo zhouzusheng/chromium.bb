@@ -18,12 +18,12 @@ class DiscardableMemoryShmemChunkImpl : public DiscardableMemoryShmemChunk {
       : shared_memory_(shared_memory.Pass()) {}
 
   // Overridden from DiscardableMemoryShmemChunk:
-  bool Lock() override { return shared_memory_->Lock(0, 0); }
-  void Unlock() override { shared_memory_->Unlock(0, 0); }
-  void* Memory() const override { return shared_memory_->memory(); }
-  bool IsMemoryResident() const override {
-    return shared_memory_->IsMemoryResident();
+  bool Lock() override { return false; }
+  void Unlock() override {
+    shared_memory_->Unlock(0, 0);
+    shared_memory_.reset();
   }
+  void* Memory() const override { return shared_memory_->memory(); }
 
  private:
   scoped_ptr<DiscardableSharedMemory> shared_memory_;

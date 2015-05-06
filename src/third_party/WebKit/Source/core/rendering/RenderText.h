@@ -24,7 +24,8 @@
 #define RenderText_h
 
 #include "core/dom/Text.h"
-#include "core/rendering/RenderObject.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/line/FloatToLayoutUnit.h"
 #include "platform/LengthFunctions.h"
 #include "platform/text/TextPath.h"
 #include "wtf/Forward.h"
@@ -35,7 +36,7 @@ namespace blink {
 class AbstractInlineTextBox;
 class InlineTextBox;
 
-class RenderText : public RenderObject {
+class RenderText : public LayoutObject {
 public:
     // FIXME: If the node argument is not a Text node or the string argument is
     // not the content of the Text node, updating text-transform property
@@ -91,12 +92,12 @@ public:
     float minLogicalWidth() const;
     float maxLogicalWidth() const;
 
-    void trimmedPrefWidths(float leadWidth,
-        float& firstLineMinWidth, bool& hasBreakableStart,
-        float& lastLineMinWidth, bool& hasBreakableEnd,
+    void trimmedPrefWidths(FloatWillBeLayoutUnit leadWidth,
+        FloatWillBeLayoutUnit& firstLineMinWidth, bool& hasBreakableStart,
+        FloatWillBeLayoutUnit& lastLineMinWidth, bool& hasBreakableEnd,
         bool& hasBreakableChar, bool& hasBreak,
-        float& firstLineMaxWidth, float& lastLineMaxWidth,
-        float& minWidth, float& maxWidth, bool& stripFrontSpaces,
+        FloatWillBeLayoutUnit& firstLineMaxWidth, FloatWillBeLayoutUnit& lastLineMaxWidth,
+        FloatWillBeLayoutUnit& minWidth, FloatWillBeLayoutUnit& maxWidth, bool& stripFrontSpaces,
         TextDirection);
 
     virtual IntRect linesBoundingBox() const;
@@ -113,7 +114,7 @@ public:
 
     virtual bool canBeSelectionLeaf() const override { return true; }
     virtual void setSelectionState(SelectionState) override final;
-    virtual LayoutRect selectionRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const override;
+    virtual LayoutRect selectionRectForPaintInvalidation(const LayoutLayerModelObject* paintInvalidationContainer) const override;
     virtual LayoutRect localCaretRect(InlineBox*, int caretOffset, LayoutUnit* extraWidthToEndOfLine = 0) override;
 
     InlineTextBox* firstTextBox() const { return m_firstTextBox; }
@@ -143,15 +144,17 @@ public:
 protected:
     virtual void willBeDestroyed() override;
 
-    virtual void styleWillChange(StyleDifference, const RenderStyle&) override final { }
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) override;
+    virtual void styleWillChange(StyleDifference, const LayoutStyle&) override final { }
+    virtual void styleDidChange(StyleDifference, const LayoutStyle* oldStyle) override;
 
     virtual void setTextInternal(PassRefPtr<StringImpl>);
     virtual UChar previousCharacter() const;
 
-    virtual void addLayerHitTestRects(LayerHitTestRects&, const RenderLayer* currentLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const override;
+    virtual void addLayerHitTestRects(LayerHitTestRects&, const Layer* currentLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const override;
 
     virtual InlineTextBox* createTextBox(int start, unsigned short length); // Subclassed by SVG.
+
+    virtual void invalidateDisplayItemClients(DisplayItemList*) const override;
 
 private:
     void computePreferredLogicalWidths(float leadWidth);
@@ -161,7 +164,7 @@ private:
 
     // Make length() private so that callers that have a RenderText*
     // will use the more efficient textLength() instead, while
-    // callers with a RenderObject* can continue to use length().
+    // callers with a LayoutObject* can continue to use length().
     virtual unsigned length() const override final { return textLength(); }
 
     virtual void paint(const PaintInfo&, const LayoutPoint&) override final { ASSERT_NOT_REACHED(); }
@@ -177,7 +180,7 @@ private:
 
     bool isText() const = delete; // This will catch anyone doing an unnecessary check.
 
-    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, const PaintInvalidationState* = 0) const override;
+    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutLayerModelObject* paintInvalidationContainer, const PaintInvalidationState* = 0) const override;
 
     void checkConsistency() const;
 
@@ -222,7 +225,7 @@ inline UChar RenderText::characterAt(unsigned i) const
     return uncheckedCharacterAt(i);
 }
 
-DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderText, isText());
+DEFINE_LAYOUT_OBJECT_TYPE_CASTS(RenderText, isText());
 
 #if !ENABLE(ASSERT)
 inline void RenderText::checkConsistency() const
@@ -235,7 +238,7 @@ inline RenderText* Text::renderer() const
     return toRenderText(CharacterData::renderer());
 }
 
-void applyTextTransform(const RenderStyle*, String&, UChar);
+void applyTextTransform(const LayoutStyle*, String&, UChar);
 
 } // namespace blink
 

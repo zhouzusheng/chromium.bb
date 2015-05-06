@@ -28,7 +28,7 @@
 
 #include "core/dom/Element.h"
 #include "core/frame/FrameView.h"
-#include "core/rendering/RenderObject.h"
+#include "core/layout/LayoutObject.h"
 #include "platform/HostWindow.h"
 #include "public/platform/WebRect.h"
 #include "public/platform/WebString.h"
@@ -143,7 +143,7 @@ void ValidationMessageClientImpl::willBeDestroyed()
         hideValidationMessage(*m_currentAnchor);
 }
 
-void ValidationMessageClientImpl::trace(Visitor* visitor)
+DEFINE_TRACE(ValidationMessageClientImpl)
 {
     visitor->trace(m_currentAnchor);
     ValidationMessageClient::trace(visitor);

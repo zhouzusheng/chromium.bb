@@ -24,8 +24,8 @@
 #ifndef RenderBoxModelObject_h
 #define RenderBoxModelObject_h
 
-#include "core/rendering/RenderLayerModelObject.h"
-#include "core/rendering/style/ShadowData.h"
+#include "core/layout/LayoutLayerModelObject.h"
+#include "core/layout/style/ShadowData.h"
 #include "platform/geometry/LayoutRect.h"
 
 namespace blink {
@@ -53,7 +53,7 @@ class InlineFlowBox;
 // This class is the base for all objects that adhere to the CSS box model as described
 // at http://www.w3.org/TR/CSS21/box.html
 
-class RenderBoxModelObject : public RenderLayerModelObject {
+class RenderBoxModelObject : public LayoutLayerModelObject {
 public:
     RenderBoxModelObject(ContainerNode*);
     virtual ~RenderBoxModelObject();
@@ -136,10 +136,10 @@ public:
     virtual LayoutUnit marginBottom() const = 0;
     virtual LayoutUnit marginLeft() const = 0;
     virtual LayoutUnit marginRight() const = 0;
-    virtual LayoutUnit marginBefore(const RenderStyle* otherStyle = 0) const = 0;
-    virtual LayoutUnit marginAfter(const RenderStyle* otherStyle = 0) const = 0;
-    virtual LayoutUnit marginStart(const RenderStyle* otherStyle = 0) const = 0;
-    virtual LayoutUnit marginEnd(const RenderStyle* otherStyle = 0) const = 0;
+    virtual LayoutUnit marginBefore(const LayoutStyle* otherStyle = 0) const = 0;
+    virtual LayoutUnit marginAfter(const LayoutStyle* otherStyle = 0) const = 0;
+    virtual LayoutUnit marginStart(const LayoutStyle* otherStyle = 0) const = 0;
+    virtual LayoutUnit marginEnd(const LayoutStyle* otherStyle = 0) const = 0;
     LayoutUnit marginHeight() const { return marginTop() + marginBottom(); }
     LayoutUnit marginWidth() const { return marginLeft() + marginRight(); }
     LayoutUnit marginLogicalHeight() const { return marginBefore() + marginAfter(); }
@@ -150,7 +150,7 @@ public:
 
     virtual LayoutUnit containingBlockLogicalWidthForContent() const;
 
-    virtual void childBecameNonInline(RenderObject* /*child*/) { }
+    virtual void childBecameNonInline(LayoutObject* /*child*/) { }
 
     virtual bool boxShadowShouldBeAppliedToBackground(BackgroundBleedAvoidance, InlineFlowBox* = 0) const;
 
@@ -159,7 +159,7 @@ public:
     virtual int baselinePosition(FontBaseline, bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const = 0;
 
     virtual void mapAbsoluteToLocalPoint(MapCoordinatesFlags, TransformState&) const override;
-    virtual const RenderObject* pushMappingToContainer(const RenderLayerModelObject* ancestorToStopAt, RenderGeometryMap&) const override;
+    virtual const LayoutObject* pushMappingToContainer(const LayoutLayerModelObject* ancestorToStopAt, LayoutGeometryMap&) const override;
 
     virtual void setSelectionState(SelectionState) override;
 
@@ -187,8 +187,8 @@ public:
     // These functions are only used internally to manipulate the render tree structure via remove/insert/appendChildNode.
     // Since they are typically called only to move objects around within anonymous blocks (which only have layers in
     // the case of column spans), the default for fullRemoveInsert is false rather than true.
-    void moveChildTo(RenderBoxModelObject* toBoxModelObject, RenderObject* child, RenderObject* beforeChild, bool fullRemoveInsert = false);
-    void moveChildTo(RenderBoxModelObject* toBoxModelObject, RenderObject* child, bool fullRemoveInsert = false)
+    void moveChildTo(RenderBoxModelObject* toBoxModelObject, LayoutObject* child, LayoutObject* beforeChild, bool fullRemoveInsert = false);
+    void moveChildTo(RenderBoxModelObject* toBoxModelObject, LayoutObject* child, bool fullRemoveInsert = false)
     {
         moveChildTo(toBoxModelObject, child, 0, fullRemoveInsert);
     }
@@ -196,17 +196,17 @@ public:
     {
         moveAllChildrenTo(toBoxModelObject, 0, fullRemoveInsert);
     }
-    void moveAllChildrenTo(RenderBoxModelObject* toBoxModelObject, RenderObject* beforeChild, bool fullRemoveInsert = false)
+    void moveAllChildrenTo(RenderBoxModelObject* toBoxModelObject, LayoutObject* beforeChild, bool fullRemoveInsert = false)
     {
         moveChildrenTo(toBoxModelObject, slowFirstChild(), 0, beforeChild, fullRemoveInsert);
     }
     // Move all of the kids from |startChild| up to but excluding |endChild|. 0 can be passed as the |endChild| to denote
     // that all the kids from |startChild| onwards should be moved.
-    void moveChildrenTo(RenderBoxModelObject* toBoxModelObject, RenderObject* startChild, RenderObject* endChild, bool fullRemoveInsert = false)
+    void moveChildrenTo(RenderBoxModelObject* toBoxModelObject, LayoutObject* startChild, LayoutObject* endChild, bool fullRemoveInsert = false)
     {
         moveChildrenTo(toBoxModelObject, startChild, endChild, 0, fullRemoveInsert);
     }
-    virtual void moveChildrenTo(RenderBoxModelObject* toBoxModelObject, RenderObject* startChild, RenderObject* endChild, RenderObject* beforeChild, bool fullRemoveInsert = false);
+    virtual void moveChildrenTo(RenderBoxModelObject* toBoxModelObject, LayoutObject* startChild, LayoutObject* endChild, LayoutObject* beforeChild, bool fullRemoveInsert = false);
 
     enum ScaleByEffectiveZoomOrNot { ScaleByEffectiveZoom, DoNotScaleByEffectiveZoom };
     IntSize calculateImageIntrinsicDimensions(StyleImage*, const IntSize& scaledPositioningAreaSize, ScaleByEffectiveZoomOrNot) const;
@@ -216,7 +216,7 @@ private:
     virtual bool isBoxModelObject() const override final { return true; }
 };
 
-DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderBoxModelObject, isBoxModelObject());
+DEFINE_LAYOUT_OBJECT_TYPE_CASTS(RenderBoxModelObject, isBoxModelObject());
 
 } // namespace blink
 

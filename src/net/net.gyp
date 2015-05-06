@@ -144,8 +144,8 @@
           'sources!': [
             'http/http_auth_gssapi_posix.cc',
             'http/http_auth_gssapi_posix.h',
-            'http/http_auth_handler_negotiate.h',
             'http/http_auth_handler_negotiate.cc',
+            'http/http_auth_handler_negotiate.h',
           ],
         }],
         ['posix_avoid_mmap==1', {
@@ -172,12 +172,12 @@
           'sources!': [
             'base/directory_lister.cc',
             'base/directory_lister.h',
+            'url_request/file_protocol_handler.cc',
+            'url_request/file_protocol_handler.h',
             'url_request/url_request_file_dir_job.cc',
             'url_request/url_request_file_dir_job.h',
             'url_request/url_request_file_job.cc',
             'url_request/url_request_file_job.h',
-            'url_request/file_protocol_handler.cc',
-            'url_request/file_protocol_handler.h',
           ],
         }],
         ['disable_ftp_support==1', {
@@ -220,8 +220,8 @@
               'cert/nss_cert_database_chromeos.h',
               'cert/nss_profile_filter_chromeos.cc',
               'cert/nss_profile_filter_chromeos.h',
-              'cert/sha256_legacy_support_nss_win.cc',
               'cert/scoped_nss_types.h',
+              'cert/sha256_legacy_support_nss_win.cc',
               'cert/test_root_certs_nss.cc',
               'cert/x509_certificate_nss.cc',
               'cert/x509_util_nss.cc',
@@ -262,7 +262,6 @@
               'cert/sha256_legacy_support_openssl_win.cc',
               'cert/x509_util_openssl.cc',
               'cert/x509_util_openssl.h',
-              'crypto/scoped_openssl_types.h',
               'quic/crypto/aead_base_decrypter_openssl.cc',
               'quic/crypto/aead_base_encrypter_openssl.cc',
               'quic/crypto/aes_128_gcm_12_decrypter_openssl.cc',
@@ -279,9 +278,9 @@
               'socket/ssl_server_socket_openssl.h',
               'socket/ssl_session_cache_openssl.cc',
               'socket/ssl_session_cache_openssl.h',
+              'ssl/openssl_platform_key.h',
               'ssl/openssl_platform_key_mac.cc',
               'ssl/openssl_platform_key_win.cc',
-              'ssl/openssl_platform_key.h',
               'ssl/openssl_ssl_util.cc',
               'ssl/openssl_ssl_util.h',
             ],
@@ -368,10 +367,10 @@
             'sources!': [
               'cert/cert_verify_proc_nss.cc',
               'cert/cert_verify_proc_nss.h',
-              'ssl/client_cert_store_nss.cc',
-              'ssl/client_cert_store_nss.h',
               'ssl/client_cert_store_chromeos.cc',
               'ssl/client_cert_store_chromeos.h',
+              'ssl/client_cert_store_nss.cc',
+              'ssl/client_cert_store_nss.h',
             ],
         }],
         [ 'enable_websockets != 1', {
@@ -581,8 +580,8 @@
         }],
         [ 'use_nss != 1', {
           'sources!': [
-            'ssl/client_cert_store_nss_unittest.cc',
             'ssl/client_cert_store_chromeos_unittest.cc',
+            'ssl/client_cert_store_nss_unittest.cc',
           ],
         }],
         [ 'use_openssl == 1', {
@@ -642,8 +641,8 @@
             # TODO(bulach): Add equivalent tests when the underlying
             #               functionality is ported to OpenSSL.
             'sources!': [
-              'cert/nss_cert_database_unittest.cc',
               'cert/nss_cert_database_chromeos_unittest.cc',
+              'cert/nss_cert_database_unittest.cc',
               'cert/nss_profile_filter_chromeos_unittest.cc',
               'cert/x509_util_nss_unittest.cc',
               'quic/test_tools/crypto_test_utils_nss.cc',
@@ -702,8 +701,21 @@
             ],
           }, {  # else: !use_v8_in_net
             'sources!': [
-              'proxy/proxy_resolver_v8_unittest.cc',
               'proxy/proxy_resolver_v8_tracing_unittest.cc',
+              'proxy/proxy_resolver_v8_unittest.cc',
+            ],
+          },
+        ],
+
+        [ 'use_v8_in_net==1 and OS != "android"', {
+            'dependencies': [
+              'net_with_v8',
+              'net_browser_services',
+              '../third_party/mojo/mojo_edk.gyp:mojo_system_impl',
+            ],
+          }, {  # else
+            'sources!': [
+              'dns/mojo_host_resolver_impl_unittest.cc',
             ],
           },
         ],
@@ -759,15 +771,15 @@
               'disk_cache/blockfile/block_files_unittest.cc',
               # Need to read input data files.
               'filter/gzip_filter_unittest.cc',
-              'socket/ssl_server_socket_unittest.cc',
-              'spdy/fuzzing/hpack_fuzz_util_test.cc',
               # Need TestServer.
               'proxy/proxy_script_fetcher_impl_unittest.cc',
               'socket/ssl_client_socket_unittest.cc',
-              'url_request/url_fetcher_impl_unittest.cc',
-              'url_request/url_request_context_builder_unittest.cc',
+              'socket/ssl_server_socket_unittest.cc',
+              'spdy/fuzzing/hpack_fuzz_util_test.cc',
               # Needs GetAppOutput().
               'test/python_utils_unittest.cc',
+              'url_request/url_fetcher_impl_unittest.cc',
+              'url_request/url_request_context_builder_unittest.cc',
 
               # The following tests are disabled because they don't apply to
               # iOS.
@@ -837,6 +849,7 @@
         'cookies/cookie_monster_perftest.cc',
         'disk_cache/blockfile/disk_cache_perftest.cc',
         'proxy/proxy_resolver_perftest.cc',
+        'udp/udp_socket_perftest.cc',
         'websockets/websocket_frame_perftest.cc',
       ],
       'conditions': [
@@ -876,6 +889,7 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/base.gyp:test_support_base',
+        '../crypto/crypto.gyp:crypto',
         '../net/tools/tld_cleanup/tld_cleanup.gyp:tld_cleanup_util',
         '../testing/gtest.gyp:gtest',
         '../testing/gmock.gyp:gmock',
@@ -952,10 +966,10 @@
         'test/python_utils.h',
         'test/spawned_test_server/base_test_server.cc',
         'test/spawned_test_server/base_test_server.h',
-        'test/spawned_test_server/local_test_server_posix.cc',
-        'test/spawned_test_server/local_test_server_win.cc',
         'test/spawned_test_server/local_test_server.cc',
         'test/spawned_test_server/local_test_server.h',
+        'test/spawned_test_server/local_test_server_posix.cc',
+        'test/spawned_test_server/local_test_server_win.cc',
         'test/spawned_test_server/remote_test_server.cc',
         'test/spawned_test_server/remote_test_server.h',
         'test/spawned_test_server/spawned_test_server.h',
@@ -967,6 +981,8 @@
         'test/url_request/url_request_mock_data_job.h',
         'test/url_request/url_request_mock_http_job.cc',
         'test/url_request/url_request_mock_http_job.h',
+        'test/url_request/url_request_slow_download_job.cc',
+        'test/url_request/url_request_slow_download_job.h',
         'url_request/test_url_fetcher_factory.cc',
         'url_request/test_url_fetcher_factory.h',
         'url_request/test_url_request_interceptor.cc',
@@ -1133,8 +1149,8 @@
         'tools/dump_cache/simple_cache_dumper.h',
         'tools/dump_cache/url_to_filename_encoder.cc',
         'tools/dump_cache/url_to_filename_encoder.h',
-        'tools/dump_cache/url_utilities.h',
         'tools/dump_cache/url_utilities.cc',
+        'tools/dump_cache/url_utilities.h',
       ],
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [4267, ],
@@ -1197,6 +1213,52 @@
           ],
           # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
           'msvs_disabled_warnings': [4267, ],
+        },
+      ],
+    }],
+    ['use_v8_in_net == 1 and OS != "android"', {
+      'targets': [
+        {
+          # GN version: //net/interfaces
+          'target_name': 'net_interfaces',
+          'type': 'static_library',
+          'sources': [
+            'interfaces/host_resolver_service.mojom',
+            'interfaces/proxy_resolver_service.mojom',
+          ],
+          'includes': [
+            '../third_party/mojo/mojom_bindings_generator.gypi',
+          ],
+        },
+        {
+          # GN version: //net:net_browser_services
+          'target_name': 'net_browser_services',
+          'type': 'static_library',
+          'sources': [
+            'dns/mojo_host_resolver_impl.cc',
+            'dns/mojo_host_resolver_impl.h',
+          ],
+          'dependencies': [
+            'mojo_type_converters',
+            'net',
+            'net_interfaces',
+            '../mojo/mojo_base.gyp:mojo_environment_chromium',
+            '../third_party/mojo/mojo_public.gyp:mojo_cpp_bindings',
+          ],
+        },
+        {
+          # GN version: //net:mojo_type_converters
+          'target_name': 'mojo_type_converters',
+          'type': 'static_library',
+          'sources': [
+            'dns/mojo_type_converters.cc',
+            'dns/mojo_type_converters.h',
+          ],
+          'dependencies': [
+            'net',
+            'net_interfaces',
+            '../third_party/mojo/mojo_public.gyp:mojo_cpp_bindings',
+          ],
         },
       ],
     }],
@@ -1404,20 +1466,20 @@
           'sources': [
             'tools/dump_cache/url_to_filename_encoder.cc',
             'tools/dump_cache/url_to_filename_encoder.h',
-            'tools/dump_cache/url_utilities.h',
             'tools/dump_cache/url_utilities.cc',
-            'tools/flip_server/acceptor_thread.h',
+            'tools/dump_cache/url_utilities.h',
             'tools/flip_server/acceptor_thread.cc',
+            'tools/flip_server/acceptor_thread.h',
+            'tools/flip_server/constants.h',
             'tools/flip_server/create_listener.cc',
             'tools/flip_server/create_listener.h',
-            'tools/flip_server/constants.h',
             'tools/flip_server/flip_config.cc',
             'tools/flip_server/flip_config.h',
             'tools/flip_server/http_interface.cc',
             'tools/flip_server/http_interface.h',
             'tools/flip_server/loadtime_measurement.h',
-            'tools/flip_server/mem_cache.h',
             'tools/flip_server/mem_cache.cc',
+            'tools/flip_server/mem_cache.h',
             'tools/flip_server/output_ordering.cc',
             'tools/flip_server/output_ordering.h',
             'tools/flip_server/ring_buffer.cc',
@@ -1425,10 +1487,10 @@
             'tools/flip_server/sm_connection.cc',
             'tools/flip_server/sm_connection.h',
             'tools/flip_server/sm_interface.h',
-            'tools/flip_server/spdy_ssl.cc',
-            'tools/flip_server/spdy_ssl.h',
             'tools/flip_server/spdy_interface.cc',
             'tools/flip_server/spdy_interface.h',
+            'tools/flip_server/spdy_ssl.cc',
+            'tools/flip_server/spdy_ssl.h',
             'tools/flip_server/spdy_util.cc',
             'tools/flip_server/spdy_util.h',
             'tools/flip_server/streamer_interface.cc',
@@ -1488,8 +1550,8 @@
             'tools/quic/quic_client_session.h',
             'tools/quic/quic_default_packet_writer.cc',
             'tools/quic/quic_default_packet_writer.h',
-            'tools/quic/quic_dispatcher.h',
             'tools/quic/quic_dispatcher.cc',
+            'tools/quic/quic_dispatcher.h',
             'tools/quic/quic_epoll_clock.cc',
             'tools/quic/quic_epoll_clock.h',
             'tools/quic/quic_epoll_connection_helper.cc',
@@ -1510,8 +1572,8 @@
             'tools/quic/quic_spdy_client_stream.h',
             'tools/quic/quic_spdy_server_stream.cc',
             'tools/quic/quic_spdy_server_stream.h',
-            'tools/quic/quic_time_wait_list_manager.h',
             'tools/quic/quic_time_wait_list_manager.cc',
+            'tools/quic/quic_time_wait_list_manager.h',
           ],
         },
         {

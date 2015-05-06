@@ -43,7 +43,7 @@ namespace blink {
 class Resource;
 class Document;
 class DocumentLoader;
-class LocalFrame;
+class FrameHost;
 class GraphicsContext;
 class GraphicsLayer;
 class InjectedScriptManager;
@@ -52,8 +52,9 @@ class InspectorOverlay;
 class InspectorResourceContentLoader;
 class KURL;
 class LayoutRect;
+class LocalFrame;
 class Page;
-class RenderObject;
+class LayoutObject;
 class SharedBuffer;
 class StyleResolver;
 class TextResourceDecoder;
@@ -99,7 +100,7 @@ public:
     void disable(ErrorString*) override;
     void addScriptToEvaluateOnLoad(ErrorString*, const String& source, String* result) override;
     void removeScriptToEvaluateOnLoad(ErrorString*, const String& identifier) override;
-    void reload(ErrorString*, const bool* optionalIgnoreCache, const String* optionalScriptToEvaluateOnLoad, const String* optionalScriptPreprocessor) override;
+    void reload(ErrorString*, const bool* optionalIgnoreCache, const String* optionalScriptToEvaluateOnLoad) override;
     void navigate(ErrorString*, const String& url, String* frameId) override;
     void getCookies(ErrorString*, RefPtr<TypeBuilder::Array<TypeBuilder::Page::Cookie> >& cookies) override;
     void deleteCookie(ErrorString*, const String& cookieName, const String& url) override;
@@ -124,8 +125,9 @@ public:
     void stopScreencast(ErrorString*) override;
     void setShowViewportSizeOnResize(ErrorString*, bool show, const bool* showGrid) override;
     void setOverlayMessage(ErrorString*, const String*) override;
-    void animationsPlaybackRate(ErrorString*, double* playbackRate) override;
+    void getAnimationsPlaybackRate(ErrorString*, double* playbackRate) override;
     void setAnimationsPlaybackRate(ErrorString*, double playbackRate) override;
+    void setCurrentTime(ErrorString*, double currentTime) override;
 
     // InspectorInstrumentation API
     void didClearDocumentOfWindowObject(LocalFrame*);
@@ -143,8 +145,8 @@ public:
     void didRunJavaScriptDialog();
     bool applyViewportStyleOverride(StyleResolver*);
     void applyEmulatedMedia(String*);
-    void didPaint(RenderObject*, const GraphicsLayer*, GraphicsContext*, const LayoutRect&);
-    void didLayout(RenderObject*);
+    void didPaint(LayoutObject*, const GraphicsLayer*, GraphicsContext*, const LayoutRect&);
+    void didLayout(LayoutObject*);
     void didScroll();
     void didResizeMainFrame();
     void didRecalculateStyle(int);
@@ -157,8 +159,8 @@ public:
     void discardAgent() override;
 
     // Cross-agents API
-    Page* page() { return m_page; }
-    LocalFrame* mainFrame();
+    FrameHost* frameHost();
+    LocalFrame* inspectedFrame();
     String createIdentifier();
     LocalFrame* frameForId(const String& frameId);
     String frameId(LocalFrame*);
@@ -166,10 +168,9 @@ public:
     String loaderId(DocumentLoader*);
     LocalFrame* findFrameWithSecurityOrigin(const String& originRawString);
     LocalFrame* assertFrame(ErrorString*, const String& frameId);
-    String scriptPreprocessorSource() { return m_scriptPreprocessorSource; }
     const AtomicString& resourceSourceMapURL(const String& url);
     bool deviceMetricsOverrideEnabled();
-    void deviceOrPageScaleFactorChanged();
+    void pageScaleFactorChanged();
     bool screencastEnabled();
     static DocumentLoader* assertDocumentLoader(ErrorString*, LocalFrame*);
     InspectorResourceContentLoader* resourceContentLoader() { return m_inspectorResourceContentLoader.get(); }
@@ -177,7 +178,7 @@ public:
     void addEditedResourceContent(const String& url, const String& content);
     bool getEditedResourceContent(const String& url, String* content);
 
-    void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     class GetResourceContentLoadListener;
@@ -205,8 +206,6 @@ private:
     long m_lastScriptIdentifier;
     String m_pendingScriptToEvaluateOnLoadOnce;
     String m_scriptToEvaluateOnLoadOnce;
-    String m_pendingScriptPreprocessor;
-    String m_scriptPreprocessorSource;
     HashMap<LocalFrame*, String> m_frameToIdentifier;
     HashMap<String, LocalFrame*> m_identifierToFrame;
     HashMap<DocumentLoader*, String> m_loaderToIdentifier;

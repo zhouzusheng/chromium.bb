@@ -27,7 +27,7 @@
 #include "core/dom/PseudoElement.h"
 #include "core/dom/StyleChangeReason.h"
 #include "core/dom/Text.h"
-#include "core/rendering/HitTestResult.h"
+#include "core/layout/HitTestResult.h"
 #include "core/rendering/RenderBlock.h"
 
 namespace blink {
@@ -65,12 +65,6 @@ void RenderTextFragment::destroy()
     RenderText::destroy();
 }
 
-void RenderTextFragment::trace(Visitor* visitor)
-{
-    visitor->trace(m_firstLetterPseudoElement);
-    RenderText::trace(visitor);
-}
-
 PassRefPtr<StringImpl> RenderTextFragment::completeText() const
 {
     Text* text = associatedTextNode();
@@ -101,7 +95,7 @@ void RenderTextFragment::setText(PassRefPtr<StringImpl> text, bool force)
     // If we're the remaining text from a first letter then we have to tell the
     // first letter pseudo element to reattach itself so it can re-calculate the
     // correct first-letter settings.
-    if (RenderObject* previous = previousSibling()) {
+    if (LayoutObject* previous = previousSibling()) {
         if (!previous->isPseudoElement() || !previous->node()->isFirstLetterPseudoElement())
             return;
 
@@ -143,13 +137,21 @@ UChar RenderTextFragment::previousCharacter() const
 // at the node for the remaining text to find our content.
 Text* RenderTextFragment::associatedTextNode() const
 {
-    Node* node = m_isRemainingTextRenderer ? this->node() : this->firstLetterPseudoElement();
+    Node* node = this->firstLetterPseudoElement();
+    if (m_isRemainingTextRenderer || !node) {
+        // If we don't have a node, then we aren't part of a first-letter pseudo
+        // element, so use the actual node. Likewise, if we have a node, but
+        // we're the remainingTextRenderer for a pseudo element use the real
+        // text node.
+        node = this->node();
+    }
+
     if (!node)
         return nullptr;
 
     if (node->isFirstLetterPseudoElement()) {
         FirstLetterPseudoElement* pseudo = toFirstLetterPseudoElement(node);
-        RenderObject* nextRenderer = FirstLetterPseudoElement::firstLetterTextRenderer(*pseudo);
+        LayoutObject* nextRenderer = FirstLetterPseudoElement::firstLetterTextRenderer(*pseudo);
         if (!nextRenderer)
             return nullptr;
         node = nextRenderer->node();

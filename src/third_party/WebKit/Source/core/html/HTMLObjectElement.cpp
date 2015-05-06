@@ -32,15 +32,15 @@
 #include "core/dom/Text.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/fetch/ImageResource.h"
+#include "core/frame/Settings.h"
 #include "core/html/FormDataList.h"
 #include "core/html/HTMLDocument.h"
 #include "core/html/HTMLImageLoader.h"
 #include "core/html/HTMLMetaElement.h"
 #include "core/html/HTMLParamElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/frame/Settings.h"
+#include "core/layout/LayoutEmbeddedObject.h"
 #include "core/plugins/PluginView.h"
-#include "core/rendering/RenderEmbeddedObject.h"
 #include "platform/MIMETypeRegistry.h"
 #include "platform/Widget.h"
 
@@ -65,19 +65,19 @@ inline HTMLObjectElement::~HTMLObjectElement()
 PassRefPtrWillBeRawPtr<HTMLObjectElement> HTMLObjectElement::create(Document& document, HTMLFormElement* form, bool createdByParser)
 {
     RefPtrWillBeRawPtr<HTMLObjectElement> element = adoptRefWillBeNoop(new HTMLObjectElement(document, form, createdByParser));
-    element->ensureUserAgentShadowRoot();
+    element->ensureClosedShadowRoot();
     return element.release();
 }
 
-void HTMLObjectElement::trace(Visitor* visitor)
+DEFINE_TRACE(HTMLObjectElement)
 {
     FormAssociatedElement::trace(visitor);
     HTMLPlugInElement::trace(visitor);
 }
 
-RenderPart* HTMLObjectElement::existingRenderPart() const
+LayoutPart* HTMLObjectElement::existingLayoutPart() const
 {
-    return renderPart(); // This will return 0 if the renderer is not a RenderPart.
+    return layoutPart(); // This will return 0 if the renderer is not a LayoutPart.
 }
 
 bool HTMLObjectElement::isPresentationAttribute(const QualifiedName& name) const
@@ -262,7 +262,7 @@ void HTMLObjectElement::reloadPluginOnAttributeChange(const QualifiedName& name)
 // moved down into HTMLPluginElement.cpp
 void HTMLObjectElement::updateWidgetInternal()
 {
-    ASSERT(!renderEmbeddedObject()->showsUnavailablePluginIndicator());
+    ASSERT(!layoutEmbeddedObject()->showsUnavailablePluginIndicator());
     ASSERT(needsWidgetUpdate());
     setNeedsWidgetUpdate(false);
     // FIXME: This should ASSERT isFinishedParsingChildren() instead.
@@ -305,7 +305,7 @@ void HTMLObjectElement::updateWidgetInternal()
     }
 }
 
-bool HTMLObjectElement::rendererIsNeeded(const RenderStyle& style)
+bool HTMLObjectElement::rendererIsNeeded(const LayoutStyle& style)
 {
     // FIXME: This check should not be needed, detached documents never render!
     if (!document().frame())

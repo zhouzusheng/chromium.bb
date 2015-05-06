@@ -30,23 +30,28 @@
 
 /**
  * @constructor
- * @extends {WebInspector.PanelWithSidebarTree}
+ * @extends {WebInspector.PanelWithSidebar}
  */
 WebInspector.AuditsPanel = function()
 {
-    WebInspector.PanelWithSidebarTree.call(this, "audits");
+    WebInspector.PanelWithSidebar.call(this, "audits");
     this.registerRequiredCSS("ui/panelEnablerView.css");
     this.registerRequiredCSS("audits/auditsPanel.css");
 
+    var sidebarTree = new TreeOutline();
+    sidebarTree.element.classList.add("sidebar-tree");
+    this.panelSidebarElement().appendChild(sidebarTree.element);
+    this.setDefaultFocusedElement(sidebarTree.element);
+
     this.auditsTreeElement = new WebInspector.SidebarSectionTreeElement("", {}, true);
-    this.sidebarTree.appendChild(this.auditsTreeElement);
+    sidebarTree.appendChild(this.auditsTreeElement);
     this.auditsTreeElement.listItemElement.classList.add("hidden");
 
     this.auditsItemTreeElement = new WebInspector.AuditsSidebarTreeElement(this);
     this.auditsTreeElement.appendChild(this.auditsItemTreeElement);
 
     this.auditResultsTreeElement = new WebInspector.SidebarSectionTreeElement(WebInspector.UIString("RESULTS"), {}, true);
-    this.sidebarTree.appendChild(this.auditResultsTreeElement);
+    sidebarTree.appendChild(this.auditResultsTreeElement);
     this.auditResultsTreeElement.expand();
 
     this._constructCategories();
@@ -184,7 +189,7 @@ WebInspector.AuditsPanel.prototype = {
         this.addCategory(new WebInspector.AuditExtensionCategory(category.extensionOrigin, category.id, category.displayName, category.ruleCount));
     },
 
-    __proto__: WebInspector.PanelWithSidebarTree.prototype
+    __proto__: WebInspector.PanelWithSidebar.prototype
 }
 
 /**

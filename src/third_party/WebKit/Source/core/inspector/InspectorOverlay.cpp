@@ -32,6 +32,7 @@
 #include "bindings/core/v8/ScriptController.h"
 #include "bindings/core/v8/ScriptSourceCode.h"
 #include "bindings/core/v8/V8InspectorOverlayHost.h"
+#include "core/dom/ClientRect.h"
 #include "core/dom/Element.h"
 #include "core/dom/Node.h"
 #include "core/dom/PseudoElement.h"
@@ -40,6 +41,9 @@
 #include "core/frame/Settings.h"
 #include "core/inspector/InspectorClient.h"
 #include "core/inspector/InspectorOverlayHost.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/shapes/ShapeOutsideInfo.h"
+#include "core/layout/style/LayoutStyleConstants.h"
 #include "core/loader/EmptyClients.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/page/Chrome.h"
@@ -48,13 +52,10 @@
 #include "core/rendering/RenderBox.h"
 #include "core/rendering/RenderBoxModelObject.h"
 #include "core/rendering/RenderInline.h"
-#include "core/rendering/RenderObject.h"
-#include "core/rendering/shapes/ShapeOutsideInfo.h"
-#include "core/rendering/style/RenderStyleConstants.h"
 #include "platform/JSONValues.h"
 #include "platform/PlatformMouseEvent.h"
 #include "platform/ScriptForbiddenScope.h"
-#include "platform/graphics/GraphicsContextStateSaver.h"
+#include "platform/graphics/GraphicsContext.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebData.h"
 #include "wtf/Vector.h"
@@ -94,12 +95,12 @@ private:
 
 class ShapePathBuilder : public PathBuilder {
 public:
-    ShapePathBuilder(FrameView& view, RenderObject& renderer, const ShapeOutsideInfo& shapeOutsideInfo)
+    ShapePathBuilder(FrameView& view, LayoutObject& renderer, const ShapeOutsideInfo& shapeOutsideInfo)
         : m_view(view)
         , m_renderer(renderer)
         , m_shapeOutsideInfo(shapeOutsideInfo) { }
 
-    static PassRefPtr<TypeBuilder::Array<JSONValue> > buildPath(FrameView& view, RenderObject& renderer, const ShapeOutsideInfo& shapeOutsideInfo, const Path& path)
+    static PassRefPtr<TypeBuilder::Array<JSONValue>> buildPath(FrameView& view, LayoutObject& renderer, const ShapeOutsideInfo& shapeOutsideInfo, const Path& path)
     {
         ShapePathBuilder builder(view, renderer, shapeOutsideInfo);
         builder.appendPath(path);
@@ -115,7 +116,7 @@ protected:
 
 private:
     FrameView& m_view;
-    RenderObject& m_renderer;
+    LayoutObject& m_renderer;
     const ShapeOutsideInfo& m_shapeOutsideInfo;
 };
 
@@ -244,7 +245,7 @@ static void contentsQuadToScreen(const FrameView* view, FloatQuad& quad)
     quad.setP4(view->contentsToRootView(roundedIntPoint(quad.p4())));
 }
 
-static bool buildNodeQuads(RenderObject* renderer, FloatQuad* content, FloatQuad* padding, FloatQuad* border, FloatQuad* margin)
+static bool buildNodeQuads(LayoutObject* renderer, FloatQuad* content, FloatQuad* padding, FloatQuad* border, FloatQuad* margin)
 {
     FrameView* containingView = renderer->frameView();
     if (!containingView)
@@ -261,14 +262,18 @@ static bool buildNodeQuads(RenderObject* renderer, FloatQuad* content, FloatQuad
         RenderBox* renderBox = toRenderBox(renderer);
 
         // RenderBox returns the "pure" content area box, exclusive of the scrollbars (if present), which also count towards the content area in CSS.
+        const int verticalScrollbarWidth = renderBox->verticalScrollbarWidth();
+        const int horizontalScrollbarHeight = renderBox->horizontalScrollbarHeight();
         contentBox = renderBox->contentBoxRect();
-        contentBox.setWidth(contentBox.width() + renderBox->verticalScrollbarWidth());
-        contentBox.setHeight(contentBox.height() + renderBox->horizontalScrollbarHeight());
+        contentBox.setWidth(contentBox.width() + verticalScrollbarWidth);
+        contentBox.setHeight(contentBox.height() + horizontalScrollbarHeight);
 
-        paddingBox = LayoutRect(contentBox.x() - renderBox->paddingLeft(), contentBox.y() - renderBox->paddingTop(),
-            contentBox.width() + renderBox->paddingLeft() + renderBox->paddingRight(), contentBox.height() + renderBox->paddingTop() + renderBox->paddingBottom());
-        borderBox = LayoutRect(paddingBox.x() - renderBox->borderLeft(), paddingBox.y() - renderBox->borderTop(),
-            paddingBox.width() + renderBox->borderLeft() + renderBox->borderRight(), paddingBox.height() + renderBox->borderTop() + renderBox->borderBottom());
+        paddingBox = renderBox->paddingBoxRect();
+        paddingBox.setWidth(paddingBox.width() + verticalScrollbarWidth);
+        paddingBox.setHeight(paddingBox.height() + horizontalScrollbarHeight);
+
+        borderBox = renderBox->borderBoxRect();
+
         marginBox = LayoutRect(borderBox.x() - renderBox->marginLeft(), borderBox.y() - renderBox->marginTop(),
             borderBox.width() + renderBox->marginWidth(), borderBox.height() + renderBox->marginHeight());
     } else {
@@ -300,13 +305,13 @@ static bool buildNodeQuads(RenderObject* renderer, FloatQuad* content, FloatQuad
 
 static void buildNodeHighlight(Node& node, const HighlightConfig& highlightConfig, Highlight* highlight)
 {
-    RenderObject* renderer = node.renderer();
+    LayoutObject* renderer = node.renderer();
     if (!renderer)
         return;
 
     highlight->setDataFromConfig(highlightConfig);
 
-    // RenderSVGRoot should be highlighted through the isBox() code path, all other SVG elements should just dump their absoluteQuads().
+    // LayoutSVGRoot should be highlighted through the isBox() code path, all other SVG elements should just dump their absoluteQuads().
     if (renderer->node() && renderer->node()->isSVGElement() && !renderer->isSVGRoot()) {
         Vector<FloatQuad> quads;
         renderer->absoluteQuads(quads);
@@ -349,7 +354,7 @@ InspectorOverlay::~InspectorOverlay()
     ASSERT(!m_overlayPage);
 }
 
-void InspectorOverlay::trace(Visitor* visitor)
+DEFINE_TRACE(InspectorOverlay)
 {
     visitor->trace(m_page);
     visitor->trace(m_highlightNode);
@@ -362,7 +367,6 @@ void InspectorOverlay::paint(GraphicsContext& context)
 {
     if (isEmpty())
         return;
-    GraphicsContextStateSaver stateSaver(context);
     FrameView* view = toLocalFrame(overlayPage()->mainFrame())->view();
     ASSERT(!view->needsLayout());
     view->paint(&context, IntRect(0, 0, view->width(), view->height()));
@@ -589,7 +593,7 @@ static RefPtr<TypeBuilder::Array<double> > buildArrayForQuad(const FloatQuad& qu
 
 static const ShapeOutsideInfo* shapeOutsideInfoForNode(Node* node, Shape::DisplayPaths* paths, FloatQuad* bounds)
 {
-    RenderObject* renderer = node->renderer();
+    LayoutObject* renderer = node->renderer();
     if (!renderer || !renderer->isBox() || !toRenderBox(renderer)->shapeOutsideInfo())
         return nullptr;
 
@@ -659,15 +663,16 @@ PassRefPtr<JSONObject> buildElementInfo(Element* element)
     if (!classNames.isEmpty())
         elementInfo->setString("className", classNames.toString());
 
-    RenderObject* renderer = element->renderer();
+    LayoutObject* renderer = element->renderer();
     FrameView* containingView = element->document().view();
     if (!renderer || !containingView)
         return elementInfo;
 
-    IntRect boundingBox = pixelSnappedIntRect(containingView->contentsToRootView(renderer->absoluteBoundingBoxRect()));
-    RenderBoxModelObject* modelObject = renderer->isBoxModelObject() ? toRenderBoxModelObject(renderer) : 0;
-    elementInfo->setString("nodeWidth", String::number(modelObject ? adjustForAbsoluteZoom(modelObject->pixelSnappedOffsetWidth(), modelObject) : boundingBox.width()));
-    elementInfo->setString("nodeHeight", String::number(modelObject ? adjustForAbsoluteZoom(modelObject->pixelSnappedOffsetHeight(), modelObject) : boundingBox.height()));
+    // Render the getBoundingClientRect() data in the tooltip
+    // to be consistent with the rulers (see http://crbug.com/262338).
+    RefPtrWillBeRawPtr<ClientRect> boundingBox = element->getBoundingClientRect();
+    elementInfo->setString("nodeWidth", String::number(boundingBox->width()));
+    elementInfo->setString("nodeHeight", String::number(boundingBox->height()));
 
     return elementInfo;
 }
@@ -816,7 +821,7 @@ void InspectorOverlay::onTimer(Timer<InspectorOverlay>*)
 
 bool InspectorOverlay::getBoxModel(Node* node, RefPtr<TypeBuilder::DOM::BoxModel>& model)
 {
-    RenderObject* renderer = node->renderer();
+    LayoutObject* renderer = node->renderer();
     FrameView* view = node->document().view();
     if (!renderer || !view)
         return false;
@@ -866,6 +871,8 @@ PassRefPtr<JSONObject> InspectorOverlay::highlightJSONForNode(Node* node)
     Highlight highlight;
     appendPathsForShapeOutside(highlight, config, node);
     buildNodeHighlight(*node, config, &highlight);
+    if (node->isElementNode())
+        highlight.setElementInfo(buildElementInfo(toElement(node)));
     return highlight.asJSONObject();
 }
 

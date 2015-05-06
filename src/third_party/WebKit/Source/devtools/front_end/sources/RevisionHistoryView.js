@@ -37,11 +37,11 @@ WebInspector.RevisionHistoryView = function()
     WebInspector.VBox.call(this);
     this.registerRequiredCSS("sources/revisionHistory.css");
     this.element.classList.add("revision-history-drawer");
-    this.element.classList.add("outline-disclosure");
     this._uiSourceCodeItems = new Map();
 
-    var olElement = this.element.createChild("ol");
-    this._treeOutline = new TreeOutline(olElement);
+    this._treeOutline = new TreeOutline();
+    this._treeOutline.element.classList.add("outline-disclosure");
+    this.element.appendChild(this._treeOutline.element);
 
     /**
      * @param {!WebInspector.UISourceCode} uiSourceCode

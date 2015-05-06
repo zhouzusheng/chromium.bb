@@ -24,6 +24,23 @@
 
 namespace webrtc
 {
+
+// Converting the rotation mode from capturemodule's to I420VideoFrame's define.
+VideoRotation ConvertRotation(VideoRotationMode rotation) {
+  switch (rotation) {
+    case kRotateNone:
+      return kVideoRotation_0;
+    case kRotate90:
+      return kVideoRotation_90;
+    case kRotate180:
+      return kVideoRotation_180;
+    case kRotate270:
+      return kVideoRotation_270;
+  }
+  assert(false);
+  return kVideoRotation_0;
+}
+
 namespace videocapturemodule
 {
 VideoCaptureModule* VideoCaptureImpl::Create(
@@ -43,19 +60,19 @@ const char* VideoCaptureImpl::CurrentDeviceName() const
 
 // static
 int32_t VideoCaptureImpl::RotationFromDegrees(int degrees,
-                                              VideoCaptureRotation* rotation) {
+                                              VideoRotation* rotation) {
   switch (degrees) {
     case 0:
-      *rotation = kCameraRotate0;
+      *rotation = kVideoRotation_0;
       return 0;
     case 90:
-      *rotation = kCameraRotate90;
+      *rotation = kVideoRotation_90;
       return 0;
     case 180:
-      *rotation = kCameraRotate180;
+      *rotation = kVideoRotation_180;
       return 0;
     case 270:
-      *rotation = kCameraRotate270;
+      *rotation = kVideoRotation_270;
       return 0;
     default:
       return -1;;
@@ -63,29 +80,23 @@ int32_t VideoCaptureImpl::RotationFromDegrees(int degrees,
 }
 
 // static
-int32_t VideoCaptureImpl::RotationInDegrees(VideoCaptureRotation rotation,
+int32_t VideoCaptureImpl::RotationInDegrees(VideoRotation rotation,
                                             int* degrees) {
   switch (rotation) {
-    case kCameraRotate0:
+    case kVideoRotation_0:
       *degrees = 0;
       return 0;
-    case kCameraRotate90:
+    case kVideoRotation_90:
       *degrees = 90;
       return 0;
-    case kCameraRotate180:
+    case kVideoRotation_180:
       *degrees = 180;
       return 0;
-    case kCameraRotate270:
+    case kVideoRotation_270:
       *degrees = 270;
       return 0;
   }
   return -1;
-}
-
-int32_t VideoCaptureImpl::ChangeUniqueId(const int32_t id)
-{
-    _id = id;
-    return 0;
 }
 
 // returns the number of milliseconds until the module want a worker thread to call Process
@@ -165,7 +176,8 @@ VideoCaptureImpl::VideoCaptureImpl(const int32_t id)
       last_capture_time_(0),
       delta_ntp_internal_ms_(
           Clock::GetRealTimeClock()->CurrentNtpInMilliseconds() -
-          TickTime::MillisecondTimestamp()) {
+          TickTime::MillisecondTimestamp()),
+      apply_rotation_(true) {
     _requestedCapability.width = kDefaultWidth;
     _requestedCapability.height = kDefaultHeight;
     _requestedCapability.maxFPS = 30;
@@ -284,11 +296,15 @@ int32_t VideoCaptureImpl::IncomingFrame(
         int stride_uv = (width + 1) / 2;
         int target_width = width;
         int target_height = height;
-        // Rotating resolution when for 90/270 degree rotations.
-        if (_rotateFrame == kRotate90 || _rotateFrame == kRotate270)  {
-          target_width = abs(height);
-          target_height = width;
+
+        if (apply_rotation_) {
+          // Rotating resolution when for 90/270 degree rotations.
+          if (_rotateFrame == kRotate90 || _rotateFrame == kRotate270) {
+            target_width = abs(height);
+            target_height = width;
+          }
         }
+
         // TODO(mikhal): Update correct aligned stride values.
         //Calc16ByteAlignedStride(target_width, &stride_y, &stride_uv);
         // Setting absolute height (in case it was negative).
@@ -304,19 +320,24 @@ int32_t VideoCaptureImpl::IncomingFrame(
                              "happen due to bad parameters.";
             return -1;
         }
-        const int conversionResult = ConvertToI420(commonVideoType,
-                                                   videoFrame,
-                                                   0, 0,  // No cropping
-                                                   width, height,
-                                                   videoFrameLength,
-                                                   _rotateFrame,
-                                                   &_captureFrame);
+        const int conversionResult = ConvertToI420(
+            commonVideoType, videoFrame, 0, 0,  // No cropping
+            width, height, videoFrameLength,
+            apply_rotation_ ? _rotateFrame : kRotateNone,
+            &_captureFrame);
         if (conversionResult < 0)
         {
           LOG(LS_ERROR) << "Failed to convert capture frame from type "
                         << frameInfo.rawType << "to I420.";
             return -1;
         }
+
+        if (!apply_rotation_) {
+          _captureFrame.set_rotation(ConvertRotation(_rotateFrame));
+        } else {
+          _captureFrame.set_rotation(kVideoRotation_0);
+        }
+
         DeliverCapturedFrame(_captureFrame, captureTime);
     }
     else // Encoded format
@@ -338,20 +359,20 @@ int32_t VideoCaptureImpl::IncomingI420VideoFrame(I420VideoFrame* video_frame,
   return 0;
 }
 
-int32_t VideoCaptureImpl::SetCaptureRotation(VideoCaptureRotation rotation) {
+int32_t VideoCaptureImpl::SetCaptureRotation(VideoRotation rotation) {
   CriticalSectionScoped cs(&_apiCs);
   CriticalSectionScoped cs2(&_callBackCs);
   switch (rotation){
-    case kCameraRotate0:
+    case kVideoRotation_0:
       _rotateFrame = kRotateNone;
       break;
-    case kCameraRotate90:
+    case kVideoRotation_90:
       _rotateFrame = kRotate90;
       break;
-    case kCameraRotate180:
+    case kVideoRotation_180:
       _rotateFrame = kRotate180;
       break;
-    case kCameraRotate270:
+    case kVideoRotation_270:
       _rotateFrame = kRotate270;
       break;
     default:
@@ -368,6 +389,14 @@ void VideoCaptureImpl::EnableFrameRateCallback(const bool enable) {
     {
         _lastFrameRateCallbackTime = TickTime::Now();
     }
+}
+
+bool VideoCaptureImpl::SetApplyRotation(bool enable) {
+  CriticalSectionScoped cs(&_apiCs);
+  CriticalSectionScoped cs2(&_callBackCs);
+  // The effect of this is the last caller wins.
+  apply_rotation_ = enable;
+  return true;
 }
 
 void VideoCaptureImpl::EnableNoPictureAlarm(const bool enable) {

@@ -89,11 +89,6 @@ public:
 
     // Called to update imperative animation state. This should be called before
     // paint, although the client can rate-limit these calls.
-    // FIXME: Remove this function once Chrome side patch lands.
-    void animate(double monotonicFrameBeginTime)
-    {
-        beginFrame(WebBeginFrameArgs(monotonicFrameBeginTime, 0, 0));
-    }
     virtual void beginFrame(const WebBeginFrameArgs& frameTime) { }
 
     // Called to layout the WebWidget. This MUST be called before Paint,
@@ -143,16 +138,27 @@ public:
     virtual void applyViewportDeltas(
         const WebSize& scrollDelta,
         float scaleFactor,
-        float topControlsDelta) { }
+        float topControlsShownRatioDelta) { }
 
     // Applies viewport related properties during a commit from the compositor
     // thread.
+    // FIXME: Remove this version once CC side switches to use WebFloatSize version.
+    // crbug.com/414283.
     virtual void applyViewportDeltas(
         const WebSize& pinchViewportDelta,
         const WebSize& mainFrameDelta,
         const WebFloatSize& elasticOverscrollDelta,
         float scaleFactor,
-        float topControlsDelta) { }
+        float topControlsShownRatioDelta) { }
+
+    // Applies viewport related properties during a commit from the compositor
+    // thread.
+    virtual void applyViewportDeltas(
+        const WebFloatSize& pinchViewportDelta,
+        const WebFloatSize& mainFrameDelta,
+        const WebFloatSize& elasticOverscrollDelta,
+        float scaleFactor,
+        float topControlsShownRatioDelta) { }
 
     // Called to inform the WebWidget that mouse capture was lost.
     virtual void mouseCaptureLost() { }
@@ -265,8 +271,9 @@ public:
     // but not the select popup.
     virtual WebPagePopup* pagePopup() const { return 0; }
 
-    // Sets the height subtracted from the Widget to accomodate the top controls.
-    virtual void setTopControlsLayoutHeight(float) { }
+    // Notification about the top controls height.  If the boolean is true, then
+    // the embedder shrunk the WebView size by the top controls height.
+    virtual void setTopControlsHeight(float height, bool topControlsShrinkLayoutSize) { }
 
 protected:
     ~WebWidget() { }

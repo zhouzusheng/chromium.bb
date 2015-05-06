@@ -22,6 +22,7 @@
 #include "ipc/message_filter.h"
 #include "media/base/limits.h"
 #include "ui/gl/gl_context.h"
+#include "ui/gl/gl_image.h"
 #include "ui/gl/gl_surface_egl.h"
 
 #if defined(OS_WIN)
@@ -30,18 +31,15 @@
 #elif defined(OS_MACOSX)
 #include "content/common/gpu/media/vt_video_decode_accelerator.h"
 #elif defined(OS_CHROMEOS)
-#if defined(ARCH_CPU_ARMEL) && defined(USE_LIBV4L2)
+#if defined(USE_V4L2_CODEC)
 #include "content/common/gpu/media/v4l2_slice_video_decode_accelerator.h"
-#endif  // defined(ARCH_CPU_ARMEL)
-#if defined(ARCH_CPU_ARMEL) || (defined(USE_OZONE) && defined(USE_V4L2_CODEC))
 #include "content/common/gpu/media/v4l2_video_decode_accelerator.h"
 #include "content/common/gpu/media/v4l2_video_device.h"
-// defined(ARCH_CPU_ARMEL) || (defined(USE_OZONE) && defined(USE_V4L2_CODEC))
 #endif
 #if defined(ARCH_CPU_X86_FAMILY)
 #include "content/common/gpu/media/vaapi_video_decode_accelerator.h"
 #include "ui/gl/gl_implementation.h"
-#endif  // defined(ARCH_CPU_X86_FAMILY)
+#endif
 #elif defined(USE_OZONE)
 #include "media/ozone/media_ozone_platform.h"
 #elif defined(OS_ANDROID)
@@ -215,10 +213,9 @@ void GpuVideoDecodeAccelerator::PictureReady(
   }
 
   if (!Send(new AcceleratedVideoDecoderHostMsg_PictureReady(
-          host_route_id_,
-          picture.picture_buffer_id(),
-          picture.bitstream_buffer_id(),
-          picture.visible_rect()))) {
+          host_route_id_, picture.picture_buffer_id(),
+          picture.bitstream_buffer_id(), picture.visible_rect(),
+          picture.allow_overlay()))) {
     DLOG(ERROR) << "Send(AcceleratedVideoDecoderHostMsg_PictureReady) failed";
   }
 }
@@ -303,8 +300,7 @@ GpuVideoDecodeAccelerator::CreateDXVAVDA() {
 scoped_ptr<media::VideoDecodeAccelerator>
 GpuVideoDecodeAccelerator::CreateV4L2VDA() {
   scoped_ptr<media::VideoDecodeAccelerator> decoder;
-#if defined(OS_CHROMEOS) && (defined(ARCH_CPU_ARMEL) || \
-    (defined(USE_OZONE) && defined(USE_V4L2_CODEC)))
+#if defined(OS_CHROMEOS) && defined(USE_V4L2_CODEC)
   scoped_refptr<V4L2Device> device = V4L2Device::Create(V4L2Device::kDecoder);
   if (device.get()) {
     decoder.reset(new V4L2VideoDecodeAccelerator(
@@ -322,7 +318,7 @@ GpuVideoDecodeAccelerator::CreateV4L2VDA() {
 scoped_ptr<media::VideoDecodeAccelerator>
 GpuVideoDecodeAccelerator::CreateV4L2SliceVDA() {
   scoped_ptr<media::VideoDecodeAccelerator> decoder;
-#if defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL) && defined(USE_LIBV4L2)
+#if defined(OS_CHROMEOS) && defined(USE_V4L2_CODEC)
   scoped_refptr<V4L2Device> device = V4L2Device::Create(V4L2Device::kDecoder);
   if (device.get()) {
     decoder.reset(new V4L2SliceVideoDecodeAccelerator(
@@ -337,11 +333,24 @@ GpuVideoDecodeAccelerator::CreateV4L2SliceVDA() {
   return decoder.Pass();
 }
 
+void GpuVideoDecodeAccelerator::BindImage(uint32 client_texture_id,
+                                          uint32 texture_target,
+                                          scoped_refptr<gfx::GLImage> image) {
+  gpu::gles2::GLES2Decoder* command_decoder = stub_->decoder();
+  gpu::gles2::TextureManager* texture_manager =
+      command_decoder->GetContextGroup()->texture_manager();
+  gpu::gles2::TextureRef* ref = texture_manager->GetTexture(client_texture_id);
+  if (ref)
+    texture_manager->SetLevelImage(ref, texture_target, 0, image.get());
+}
+
 scoped_ptr<media::VideoDecodeAccelerator>
 GpuVideoDecodeAccelerator::CreateVaapiVDA() {
   scoped_ptr<media::VideoDecodeAccelerator> decoder;
 #if defined(OS_CHROMEOS) && defined(ARCH_CPU_X86_FAMILY)
-  decoder.reset(new VaapiVideoDecodeAccelerator(make_context_current_));
+  decoder.reset(new VaapiVideoDecodeAccelerator(
+      make_context_current_, base::Bind(&GpuVideoDecodeAccelerator::BindImage,
+                                        base::Unretained(this))));
 #endif
   return decoder.Pass();
 }
@@ -468,15 +477,9 @@ void GpuVideoDecodeAccelerator::OnAssignPictureBuffers(
                                       width, height, 1, 0, format, 0, false);
       }
     }
-    uint32 service_texture_id;
-    if (!command_decoder->GetServiceTextureId(
-            texture_ids[i], &service_texture_id)) {
-      DLOG(ERROR) << "Failed to translate texture!";
-      NotifyError(media::VideoDecodeAccelerator::PLATFORM_FAILURE);
-      return;
-    }
-    buffers.push_back(media::PictureBuffer(
-        buffer_ids[i], texture_dimensions_, service_texture_id));
+    buffers.push_back(media::PictureBuffer(buffer_ids[i], texture_dimensions_,
+                                           texture_ref->service_id(),
+                                           texture_ids[i]));
     textures.push_back(texture_ref);
   }
   video_decode_accelerator_->AssignPictureBuffers(buffers);

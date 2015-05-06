@@ -167,7 +167,7 @@ bool VertexBufferInterface::directStoragePossible(const gl::VertexAttribute &att
                                                   const gl::VertexAttribCurrentValueData &currentValue) const
 {
     gl::Buffer *buffer = attrib.buffer.get();
-    BufferD3D *storage = buffer ? BufferD3D::makeBufferD3D(buffer->getImplementation()) : NULL;
+    BufferD3D *storage = buffer ? GetImplAs<BufferD3D>(buffer) : NULL;
 
     if (!storage || !storage->supportsDirectBinding())
     {
@@ -293,7 +293,7 @@ gl::Error StaticVertexBufferInterface::storeVertexAttributes(const gl::VertexAtt
     }
 
     size_t attributeOffset = static_cast<size_t>(attrib.offset) % ComputeVertexAttributeStride(attrib);
-    VertexElement element = { attrib.type, attrib.size, ComputeVertexAttributeStride(attrib), attrib.normalized, attrib.pureInteger, attributeOffset, streamOffset };
+    VertexElement element = { attrib.type, attrib.size, static_cast<GLuint>(ComputeVertexAttributeStride(attrib)), attrib.normalized, attrib.pureInteger, attributeOffset, streamOffset };
     mCache.push_back(element);
 
     if (outStreamOffset)

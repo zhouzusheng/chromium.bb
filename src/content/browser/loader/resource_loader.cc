@@ -146,6 +146,11 @@ void ResourceLoader::CancelWithError(int error_code) {
 }
 
 void ResourceLoader::ReportUploadProgress() {
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/455952 is
+  // fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "455952 ResourceLoader::ReportUploadProgress"));
   if (waiting_for_upload_progress_ack_)
     return;  // Send one progress event at a time.
 
@@ -281,7 +286,8 @@ void ResourceLoader::OnAuthRequired(net::URLRequest* unused,
                                     net::AuthChallengeInfo* auth_info) {
   DCHECK_EQ(request_.get(), unused);
 
-  if (request_->load_flags() & net::LOAD_DO_NOT_PROMPT_FOR_LOGIN) {
+  ResourceRequestInfoImpl* info = GetRequestInfo();
+  if (info->do_not_prompt_for_login()) {
     request_->CancelAuth();
     return;
   }

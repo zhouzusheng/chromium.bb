@@ -34,6 +34,7 @@
 #include "platform/Logging.h"
 #include "platform/audio/AudioUtilities.h"
 #include "platform/graphics/media/MediaPlayer.h"
+#include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/Locker.h"
 
 namespace blink {
@@ -103,6 +104,14 @@ void MediaElementAudioSourceNode::setFormat(size_t numberOfChannels, float sourc
     }
 }
 
+bool MediaElementAudioSourceNode::passesCORSAccessCheck()
+{
+    ASSERT(mediaElement());
+
+    return (mediaElement()->webMediaPlayer() && mediaElement()->webMediaPlayer()->didPassCORSAccessCheck())
+        || (context()->securityOrigin() && context()->securityOrigin()->canRequest(mediaElement()->currentSrc()));
+}
+
 void MediaElementAudioSourceNode::process(size_t numberOfFrames)
 {
     AudioBus* outputBus = output(0)->bus();
@@ -118,6 +127,8 @@ void MediaElementAudioSourceNode::process(size_t numberOfFrames)
     MutexTryLocker tryLocker(m_processLock);
     if (tryLocker.locked()) {
         if (AudioSourceProvider* provider = mediaElement()->audioSourceProvider()) {
+            // Grab data from the provider so that the element continues to make progress, even if
+            // we're going to output silence anyway.
             if (m_multiChannelResampler.get()) {
                 ASSERT(m_sourceSampleRate != sampleRate());
                 m_multiChannelResampler->process(provider, outputBus, numberOfFrames);
@@ -125,6 +136,10 @@ void MediaElementAudioSourceNode::process(size_t numberOfFrames)
                 // Bypass the resampler completely if the source is at the context's sample-rate.
                 ASSERT(m_sourceSampleRate == sampleRate());
                 provider->provideInput(outputBus, numberOfFrames);
+            }
+            // Output silence if we don't have access to the element.
+            if (!passesCORSAccessCheck()) {
+                outputBus->zero();
             }
         } else {
             // Either this port doesn't yet support HTMLMediaElement audio stream access,
@@ -147,7 +162,7 @@ void MediaElementAudioSourceNode::unlock()
     m_processLock.unlock();
 }
 
-void MediaElementAudioSourceNode::trace(Visitor* visitor)
+DEFINE_TRACE(MediaElementAudioSourceNode)
 {
     visitor->trace(m_mediaElement);
     AudioSourceNode::trace(visitor);

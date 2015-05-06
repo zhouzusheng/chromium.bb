@@ -12,7 +12,7 @@
 void SkRecordDraw(const SkRecord& record,
                   SkCanvas* canvas,
                   SkPicture const* const drawablePicts[],
-                  SkCanvasDrawable* const drawables[],
+                  SkDrawable* const drawables[],
                   int drawableCount,
                   const SkBBoxHierarchy* bbh,
                   SkPicture::AbortCallback* callback) {
@@ -124,7 +124,7 @@ template <> void Draw::draw(const DrawDrawable& r) {
     SkASSERT(r.index < fDrawableCount);
     if (fDrawables) {
         SkASSERT(NULL == fDrawablePicts);
-        fCanvas->EXPERIMENTAL_drawDrawable(fDrawables[r.index]);
+        fCanvas->drawDrawable(fDrawables[r.index]);
     } else {
         fCanvas->drawPicture(fDrawablePicts[r.index]);
     }
@@ -177,7 +177,7 @@ public:
 
         // Finally feed all stored bounds into the BBH.  They'll be returned in this order.
         if (bbh) {
-            bbh->insert(&fBounds, fNumRecords);
+            bbh->insert(fBounds.get(), fNumRecords);
         }
     }
 

@@ -72,12 +72,12 @@ public:
         return RenderBlock::marginRight();
     }
 
-    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectRenderScrollbarPart || RenderBlock::isOfType(type); }
-    RenderObject* rendererOwningScrollbar() const;
+    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectRenderScrollbarPart || RenderBlock::isOfType(type); }
+    LayoutObject* rendererOwningScrollbar() const;
 
 protected:
-    virtual void styleWillChange(StyleDifference, const RenderStyle& newStyle) override;
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) override;
+    virtual void styleWillChange(StyleDifference, const LayoutStyle& newStyle) override;
+    virtual void styleDidChange(StyleDifference, const LayoutStyle* oldStyle) override;
     virtual void imageChanged(WrappedImagePtr, const IntRect* = 0) override;
 
 private:
@@ -108,7 +108,7 @@ private:
     ScrollbarPart m_part;
 };
 
-DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderScrollbarPart, isRenderScrollbarPart());
+DEFINE_LAYOUT_OBJECT_TYPE_CASTS(RenderScrollbarPart, isRenderScrollbarPart());
 
 } // namespace blink
 

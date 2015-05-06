@@ -486,14 +486,6 @@ void OpenTypeVerticalData::loadMetrics(const FontPlatformData& platformData)
     }
 }
 
-void OpenTypeVerticalData::loadVerticalGlyphSubstitutions(const FontPlatformData& platformData)
-{
-    RefPtr<SharedBuffer> buffer = platformData.openTypeTable(OpenType::GSUBTag);
-    const OpenType::GSUBTable* gsub = OpenType::validateTable<OpenType::GSUBTable>(buffer);
-    if (gsub)
-        gsub->getVerticalGlyphSubstitutions(&m_verticalGlyphMap, *buffer.get());
-}
-
 float OpenTypeVerticalData::advanceHeight(const SimpleFontData* font, Glyph glyph) const
 {
     size_t countHeights = m_advanceHeights.size();
@@ -548,6 +540,14 @@ void OpenTypeVerticalData::getVerticalTranslationsForGlyphs(const SimpleFontData
         // No vertical info in the font file; use ascent as vertical origin.
         outXYArray[1] = -ascent;
     }
+}
+
+void OpenTypeVerticalData::loadVerticalGlyphSubstitutions(const FontPlatformData& platformData)
+{
+    RefPtr<SharedBuffer> buffer = platformData.openTypeTable(OpenType::GSUBTag);
+    const OpenType::GSUBTable* gsub = OpenType::validateTable<OpenType::GSUBTable>(buffer);
+    if (gsub)
+        gsub->getVerticalGlyphSubstitutions(&m_verticalGlyphMap, *buffer.get());
 }
 
 void OpenTypeVerticalData::substituteWithVerticalGlyphs(const SimpleFontData* font, GlyphPage* glyphPage, unsigned offset, unsigned length) const

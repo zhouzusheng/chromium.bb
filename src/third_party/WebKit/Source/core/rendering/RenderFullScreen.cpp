@@ -45,7 +45,7 @@ public:
         setDocumentForAnonymous(&owner->document());
     }
 private:
-    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectRenderFullScreenPlaceholder || RenderBlockFlow::isOfType(type); }
+    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectRenderFullScreenPlaceholder || RenderBlockFlow::isOfType(type); }
     virtual void willBeDestroyed() override;
     RenderFullScreen* m_owner;
 };
@@ -70,12 +70,6 @@ RenderFullScreen* RenderFullScreen::createAnonymous(Document* document)
     return renderer;
 }
 
-void RenderFullScreen::trace(Visitor* visitor)
-{
-    visitor->trace(m_placeholder);
-    RenderFlexibleBox::trace(visitor);
-}
-
 void RenderFullScreen::willBeDestroyed()
 {
     if (m_placeholder) {
@@ -85,7 +79,7 @@ void RenderFullScreen::willBeDestroyed()
         ASSERT(!m_placeholder);
     }
 
-    // RenderObjects are unretained, so notify the document (which holds a pointer to a RenderFullScreen)
+    // LayoutObjects are unretained, so notify the document (which holds a pointer to a RenderFullScreen)
     // if its RenderFullScreen is destroyed.
     Fullscreen& fullscreen = Fullscreen::from(document());
     if (fullscreen.fullScreenRenderer() == this)
@@ -96,7 +90,7 @@ void RenderFullScreen::willBeDestroyed()
 
 void RenderFullScreen::updateStyle()
 {
-    RefPtr<RenderStyle> fullscreenStyle = RenderStyle::createDefaultStyle();
+    RefPtr<LayoutStyle> fullscreenStyle = LayoutStyle::createDefaultStyle();
 
     // Create a stacking context:
     fullscreenStyle->setZIndex(INT_MAX);
@@ -126,7 +120,7 @@ void RenderFullScreen::updateStyle()
     setStyle(fullscreenStyle);
 }
 
-RenderObject* RenderFullScreen::wrapRenderer(RenderObject* object, RenderObject* parent, Document* document)
+LayoutObject* RenderFullScreen::wrapRenderer(LayoutObject* object, LayoutObject* parent, Document* document)
 {
     // FIXME: We should not modify the structure of the render tree during
     // layout. crbug.com/370459
@@ -134,14 +128,14 @@ RenderObject* RenderFullScreen::wrapRenderer(RenderObject* object, RenderObject*
 
     RenderFullScreen* fullscreenRenderer = RenderFullScreen::createAnonymous(document);
     fullscreenRenderer->updateStyle();
-    if (parent && !parent->isChildAllowed(fullscreenRenderer, fullscreenRenderer->style())) {
+    if (parent && !parent->isChildAllowed(fullscreenRenderer, fullscreenRenderer->styleRef())) {
         fullscreenRenderer->destroy();
         return 0;
     }
     if (object) {
         // |object->parent()| can be null if the object is not yet attached
         // to |parent|.
-        if (RenderObject* parent = object->parent()) {
+        if (LayoutObject* parent = object->parent()) {
             RenderBlock* containingBlock = object->containingBlock();
             ASSERT(containingBlock);
             // Since we are moving the |object| to a new parent |fullscreenRenderer|,
@@ -173,7 +167,7 @@ void RenderFullScreen::unwrapRenderer()
     DeprecatedDisableModifyRenderTreeStructureAsserts disabler;
 
     if (parent()) {
-        for (RenderObject* child = firstChild(); child; child = firstChild()) {
+        for (LayoutObject* child = firstChild(); child; child = firstChild()) {
             // We have to clear the override size, because as a flexbox, we
             // may have set one on the child, and we don't want to leave that
             // lying around on the child.
@@ -195,7 +189,7 @@ void RenderFullScreen::setPlaceholder(RenderBlock* placeholder)
     m_placeholder = placeholder;
 }
 
-void RenderFullScreen::createPlaceholder(PassRefPtr<RenderStyle> style, const LayoutRect& frameRect)
+void RenderFullScreen::createPlaceholder(PassRefPtr<LayoutStyle> style, const LayoutRect& frameRect)
 {
     if (style->width().isAuto())
         style->setWidth(Length(frameRect.width(), Fixed));

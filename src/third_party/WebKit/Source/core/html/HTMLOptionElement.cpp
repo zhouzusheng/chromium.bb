@@ -30,7 +30,7 @@
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/HTMLNames.h"
 #include "core/dom/Document.h"
-#include "core/dom/NodeRenderStyle.h"
+#include "core/dom/NodeLayoutStyle.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/ScriptLoader.h"
 #include "core/dom/Text.h"
@@ -39,7 +39,7 @@
 #include "core/html/HTMLOptGroupElement.h"
 #include "core/html/HTMLSelectElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/rendering/RenderTheme.h"
+#include "core/layout/LayoutTheme.h"
 #include "wtf/Vector.h"
 #include "wtf/text/StringBuilder.h"
 
@@ -55,14 +55,10 @@ HTMLOptionElement::HTMLOptionElement(Document& document)
     setHasCustomStyleCallbacks();
 }
 
-HTMLOptionElement::~HTMLOptionElement()
-{
-}
-
 PassRefPtrWillBeRawPtr<HTMLOptionElement> HTMLOptionElement::create(Document& document)
 {
     RefPtrWillBeRawPtr<HTMLOptionElement> option = adoptRefWillBeNoop(new HTMLOptionElement(document));
-    option->ensureUserAgentShadowRoot();
+    option->ensureClosedShadowRoot();
     return option.release();
 }
 
@@ -70,7 +66,7 @@ PassRefPtrWillBeRawPtr<HTMLOptionElement> HTMLOptionElement::createForJSConstruc
     bool defaultSelected, bool selected, ExceptionState& exceptionState)
 {
     RefPtrWillBeRawPtr<HTMLOptionElement> element = adoptRefWillBeNoop(new HTMLOptionElement(document));
-    element->ensureUserAgentShadowRoot();
+    element->ensureClosedShadowRoot();
     element->appendChild(Text::create(document, data.isNull() ? "" : data), exceptionState);
     if (exceptionState.hadException())
         return nullptr;
@@ -91,7 +87,7 @@ void HTMLOptionElement::attach(const AttachContext& context)
         ASSERT(!m_style || m_style == context.resolvedStyle);
         m_style = context.resolvedStyle;
     } else {
-        updateNonRenderStyle();
+        updateNonLayoutStyle();
         optionContext.resolvedStyle = m_style.get();
     }
     HTMLElement::attach(optionContext);
@@ -172,6 +168,13 @@ int HTMLOptionElement::index() const
     return 0;
 }
 
+int HTMLOptionElement::listIndex() const
+{
+    if (HTMLSelectElement* selectElement = ownerSelectElement())
+        return selectElement->listIndexForOption(*this);
+    return -1;
+}
+
 void HTMLOptionElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
     if (name == valueAttr) {
@@ -184,7 +187,7 @@ void HTMLOptionElement::parseAttribute(const QualifiedName& name, const AtomicSt
             pseudoStateChanged(CSSSelector::PseudoDisabled);
             pseudoStateChanged(CSSSelector::PseudoEnabled);
             if (renderer() && renderer()->style()->hasAppearance())
-                RenderTheme::theme().stateChanged(renderer(), EnabledControlState);
+                LayoutTheme::theme().stateChanged(renderer(), EnabledControlState);
         }
     } else if (name == selectedAttr) {
         if (bool willBeSelected = !value.isNull())
@@ -281,21 +284,21 @@ void HTMLOptionElement::setLabel(const AtomicString& label)
     setAttribute(labelAttr, label);
 }
 
-void HTMLOptionElement::updateNonRenderStyle()
+void HTMLOptionElement::updateNonLayoutStyle()
 {
     m_style = originalStyleForRenderer();
     if (HTMLSelectElement* select = ownerSelectElement())
         select->updateListOnRenderer();
 }
 
-RenderStyle* HTMLOptionElement::nonRendererStyle() const
+LayoutStyle* HTMLOptionElement::nonRendererStyle() const
 {
     return m_style.get();
 }
 
-PassRefPtr<RenderStyle> HTMLOptionElement::customStyleForRenderer()
+PassRefPtr<LayoutStyle> HTMLOptionElement::customStyleForRenderer()
 {
-    updateNonRenderStyle();
+    updateNonLayoutStyle();
     return m_style;
 }
 
@@ -306,7 +309,7 @@ void HTMLOptionElement::didRecalcStyle(StyleRecalcChange change)
 
     // FIXME: We ask our owner select to repaint regardless of which property changed.
     if (HTMLSelectElement* select = ownerSelectElement()) {
-        if (RenderObject* renderer = select->renderer())
+        if (LayoutObject* renderer = select->renderer())
             renderer->setShouldDoFullPaintInvalidation();
     }
 }
@@ -374,14 +377,14 @@ HTMLFormElement* HTMLOptionElement::form() const
     return nullptr;
 }
 
-void HTMLOptionElement::didAddUserAgentShadowRoot(ShadowRoot& root)
+void HTMLOptionElement::didAddClosedShadowRoot(ShadowRoot& root)
 {
     updateLabel();
 }
 
 void HTMLOptionElement::updateLabel()
 {
-    if (ShadowRoot* root = userAgentShadowRoot())
+    if (ShadowRoot* root = closedShadowRoot())
         root->setTextContent(text());
 }
 
@@ -404,7 +407,7 @@ bool HTMLOptionElement::isDisplayNone() const
         Element* parent = parentElement();
         ASSERT(parent);
         if (isHTMLOptGroupElement(*parent)) {
-            RenderStyle* parentStyle = parent->renderStyle() ? parent->renderStyle() : parent->computedStyle();
+            LayoutStyle* parentStyle = parent->layoutStyle() ? parent->layoutStyle() : parent->computedStyle();
             return !parentStyle || parentStyle->display() == NONE;
         }
     }

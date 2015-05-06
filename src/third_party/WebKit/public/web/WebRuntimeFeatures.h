@@ -32,6 +32,7 @@
 #define WebRuntimeFeatures_h
 
 #include "../platform/WebCommon.h"
+#include "../platform/WebString.h"
 
 namespace blink {
 
@@ -41,6 +42,10 @@ class WebRuntimeFeatures {
 public:
     BLINK_EXPORT static void enableExperimentalFeatures(bool);
     BLINK_EXPORT static void enableTestOnlyFeatures(bool);
+
+    // Enables a feature by its string identifier from
+    // RuntimeEnabledFeatures.in.
+    BLINK_EXPORT static void enableFeatureFromString(const WebString& name, bool enable);
 
     BLINK_EXPORT static void enableApplicationCache(bool);
 
@@ -82,6 +87,8 @@ public:
 
     BLINK_EXPORT static void enableMediaSource(bool);
 
+    BLINK_EXPORT static void enableNotificationConstructor(bool);
+
     BLINK_EXPORT static void enableNotifications(bool);
 
     BLINK_EXPORT static void enableNavigatorContentUtils(bool);
@@ -107,6 +114,7 @@ public:
     BLINK_EXPORT static void enableSessionStorage(bool);
 
     BLINK_EXPORT static void enableSlimmingPaint(bool);
+    BLINK_EXPORT static bool slimmingPaintDisplayItemCacheEnabled();
 
     BLINK_EXPORT static void enableTouch(bool);
 
@@ -145,6 +153,14 @@ public:
     BLINK_EXPORT static void enableSVG1DOM(bool);
 
     BLINK_EXPORT static void enableReducedReferrerGranularity(bool);
+
+    BLINK_EXPORT static void enablePushMessaging(bool);
+
+    BLINK_EXPORT static void enablePushMessagingData(bool);
+
+    BLINK_EXPORT static void enablePushMessagingHasPermission(bool);
+
+    BLINK_EXPORT static void enableUnsafeES3APIs(bool);
 
 private:
     WebRuntimeFeatures();

@@ -28,11 +28,10 @@
 
 #include "core/editing/TextGranularity.h"
 #include "core/events/TextEventInputType.h"
+#include "core/layout/HitTestRequest.h"
+#include "core/layout/style/LayoutStyleConstants.h"
 #include "core/page/DragActions.h"
 #include "core/page/EventWithHitTestResults.h"
-#include "core/page/FocusType.h"
-#include "core/rendering/HitTestRequest.h"
-#include "core/rendering/style/RenderStyleConstants.h"
 #include "platform/Cursor.h"
 #include "platform/PlatformMouseEvent.h"
 #include "platform/Timer.h"
@@ -40,6 +39,7 @@
 #include "platform/geometry/LayoutPoint.h"
 #include "platform/heap/Handle.h"
 #include "platform/scroll/ScrollTypes.h"
+#include "public/platform/WebFocusType.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
 #include "wtf/HashTraits.h"
@@ -69,9 +69,9 @@ class PlatformGestureEvent;
 class PlatformKeyboardEvent;
 class PlatformTouchEvent;
 class PlatformWheelEvent;
-class RenderLayer;
-class RenderLayerScrollableArea;
-class RenderObject;
+class Layer;
+class LayerScrollableArea;
+class LayoutObject;
 class ScrollableArea;
 class Scrollbar;
 class TextEvent;
@@ -94,10 +94,8 @@ public:
 
     void updateSelectionForMouseDrag();
 
-    Node* mousePressNode() const;
-
 #if OS(WIN)
-    void startPanScrolling(RenderObject*);
+    void startPanScrolling(LayoutObject*);
 #endif
 
     void stopAutoscroll();
@@ -110,7 +108,6 @@ public:
         const LayoutSize& padding = LayoutSize());
 
     bool mousePressed() const { return m_mousePressed; }
-    void setMousePressed(bool pressed) { m_mousePressed = pressed; }
 
     void setCapturingMouseEventsNode(PassRefPtrWillBeRawPtr<Node>); // A caller is responsible for resetting capturing node to 0.
 
@@ -190,6 +187,7 @@ public:
     bool useHandCursor(Node*, bool isOverLink);
 
     void notifyElementActivated();
+    void notifySelectionChanged();
 
     PassRefPtr<UserGestureToken> takeLastMouseDownGestureToken() { return m_lastMouseDownUserGestureToken.release(); }
 
@@ -244,7 +242,7 @@ private:
     bool isCursorVisible() const;
     void updateCursor();
 
-    ScrollableArea* associatedScrollableArea(const RenderLayer*) const;
+    ScrollableArea* associatedScrollableArea(const Layer*) const;
 
     // Scrolls the elements of the DOM tree. Returns true if a node was scrolled.
     // False if we reached the root and couldn't scroll anything.
@@ -281,7 +279,6 @@ private:
 
     bool dispatchDragSrcEvent(const AtomicString& eventType, const PlatformMouseEvent&);
 
-    bool dragHysteresisExceeded(const FloatPoint&) const;
     bool dragHysteresisExceeded(const IntPoint&) const;
 
     bool passMousePressEventToSubframe(MouseEventWithHitTestResults&, LocalFrame* subframe);
@@ -297,7 +294,7 @@ private:
     void defaultBackspaceEventHandler(KeyboardEvent*);
     void defaultTabEventHandler(KeyboardEvent*);
     void defaultEscapeEventHandler(KeyboardEvent*);
-    void defaultArrowEventHandler(FocusType, KeyboardEvent*);
+    void defaultArrowEventHandler(WebFocusType, KeyboardEvent*);
 
     void updateSelectionForMouseDrag(const HitTestResult&);
 
@@ -311,7 +308,7 @@ private:
 
     bool handleScrollGestureOnResizer(Node*, const PlatformGestureEvent&);
 
-    bool passScrollGestureEventToWidget(const PlatformGestureEvent&, RenderObject*);
+    bool passScrollGestureEventToWidget(const PlatformGestureEvent&, LayoutObject*);
 
     AutoscrollController* autoscrollController() const;
     bool panScrollInProgress() const;
@@ -343,7 +340,7 @@ private:
 
     bool m_svgPan;
 
-    RenderLayerScrollableArea* m_resizeScrollableArea;
+    LayerScrollableArea* m_resizeScrollableArea;
 
     RefPtrWillBeMember<Node> m_capturingMouseEventsNode;
     bool m_eventHandlerWillResetCapturingMouseEventsNode;

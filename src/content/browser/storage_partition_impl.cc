@@ -11,7 +11,8 @@
 #include "content/browser/geofencing/geofencing_manager.h"
 #include "content/browser/gpu/shader_disk_cache.h"
 #include "content/browser/host_zoom_map_impl.h"
-#include "content/browser/navigator_connect/navigator_connect_context.h"
+#include "content/browser/navigator_connect/navigator_connect_context_impl.h"
+#include "content/browser/navigator_connect/navigator_connect_service_worker_service_factory.h"
 #include "content/common/dom_storage/dom_storage_types.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
@@ -360,6 +361,7 @@ void StoragePartitionImpl::DataDeletionHelper::ClearQuotaManagedDataOnIOThread(
 }
 
 StoragePartitionImpl::StoragePartitionImpl(
+    BrowserContext* browser_context,
     const base::FilePath& partition_path,
     storage::QuotaManager* quota_manager,
     ChromeAppCacheService* appcache_service,
@@ -372,7 +374,7 @@ StoragePartitionImpl::StoragePartitionImpl(
     storage::SpecialStoragePolicy* special_storage_policy,
     GeofencingManager* geofencing_manager,
     HostZoomLevelContext* host_zoom_level_context,
-    NavigatorConnectContext* navigator_connect_context)
+    NavigatorConnectContextImpl* navigator_connect_context)
     : partition_path_(partition_path),
       quota_manager_(quota_manager),
       appcache_service_(appcache_service),
@@ -385,10 +387,13 @@ StoragePartitionImpl::StoragePartitionImpl(
       special_storage_policy_(special_storage_policy),
       geofencing_manager_(geofencing_manager),
       host_zoom_level_context_(host_zoom_level_context),
-      navigator_connect_context_(navigator_connect_context) {
+      navigator_connect_context_(navigator_connect_context),
+      browser_context_(browser_context) {
 }
 
 StoragePartitionImpl::~StoragePartitionImpl() {
+  browser_context_ = nullptr;
+
   // These message loop checks are just to avoid leaks in unittests.
   if (GetDatabaseTracker() &&
       BrowserThread::IsMessageLoopValid(BrowserThread::FILE)) {
@@ -411,8 +416,6 @@ StoragePartitionImpl::~StoragePartitionImpl() {
     GetGeofencingManager()->Shutdown();
 }
 
-// TODO(ajwong): Break the direct dependency on |context|. We only
-// need 3 pieces of info from it.
 StoragePartitionImpl* StoragePartitionImpl::Create(
     BrowserContext* context,
     bool in_memory,
@@ -488,16 +491,22 @@ StoragePartitionImpl* StoragePartitionImpl::Create(
       new HostZoomLevelContext(
           context->CreateZoomLevelDelegate(partition_path)));
 
-  scoped_refptr<NavigatorConnectContext> navigator_connect_context =
-      new NavigatorConnectContext(service_worker_context);
+  scoped_refptr<NavigatorConnectContextImpl> navigator_connect_context =
+      new NavigatorConnectContextImpl();
+  navigator_connect_context->AddFactory(make_scoped_ptr(
+      new NavigatorConnectServiceWorkerServiceFactory(service_worker_context)));
 
-  return new StoragePartitionImpl(
-      partition_path, quota_manager.get(), appcache_service.get(),
+  StoragePartitionImpl* storage_partition = new StoragePartitionImpl(
+      context, partition_path, quota_manager.get(), appcache_service.get(),
       filesystem_context.get(), database_tracker.get(),
       dom_storage_context.get(), indexed_db_context.get(),
       service_worker_context.get(), webrtc_identity_store.get(),
       special_storage_policy.get(), geofencing_manager.get(),
       host_zoom_level_context.get(), navigator_connect_context.get());
+
+  service_worker_context->set_storage_partition(storage_partition);
+
+  return storage_partition;
 }
 
 base::FilePath StoragePartitionImpl::GetPath() {
@@ -559,7 +568,8 @@ ZoomLevelDelegate* StoragePartitionImpl::GetZoomLevelDelegate() {
   return host_zoom_level_context_->GetZoomLevelDelegate();
 }
 
-NavigatorConnectContext* StoragePartitionImpl::GetNavigatorConnectContext() {
+NavigatorConnectContextImpl*
+StoragePartitionImpl::GetNavigatorConnectContext() {
   return navigator_connect_context_.get();
 }
 
@@ -851,6 +861,10 @@ void StoragePartitionImpl::ClearData(
 
 WebRTCIdentityStore* StoragePartitionImpl::GetWebRTCIdentityStore() {
   return webrtc_identity_store_.get();
+}
+
+BrowserContext* StoragePartitionImpl::browser_context() const {
+  return browser_context_;
 }
 
 void StoragePartitionImpl::OverrideQuotaManagerForTesting(

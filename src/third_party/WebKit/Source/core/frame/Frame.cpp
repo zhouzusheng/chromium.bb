@@ -37,6 +37,7 @@
 #include "core/frame/Settings.h"
 #include "core/html/HTMLFrameElementBase.h"
 #include "core/inspector/InspectorInstrumentation.h"
+#include "core/layout/LayoutPart.h"
 #include "core/loader/EmptyClients.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/page/Chrome.h"
@@ -44,10 +45,6 @@
 #include "core/page/EventHandler.h"
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
-#include "core/rendering/RenderLayer.h"
-#include "core/rendering/RenderPart.h"
-#include "platform/graphics/GraphicsLayer.h"
-#include "public/platform/WebLayer.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefCountedLeakCounter.h"
 
@@ -75,6 +72,7 @@ void Frame::trace(Visitor* visitor)
 void Frame::detach()
 {
     ASSERT(m_client);
+    domWindow()->resetLocation();
     disconnectOwnerElement();
     // After this, we must no longer talk to the client since this clears
     // its owning reference back to our owning LocalFrame.
@@ -248,34 +246,20 @@ Frame* Frame::findUnsafeParentScrollPropagationBoundary()
     return nullptr;
 }
 
-RenderPart* Frame::ownerRenderer() const
+LayoutPart* Frame::ownerRenderer() const
 {
     if (!deprecatedLocalOwner())
         return nullptr;
-    RenderObject* object = deprecatedLocalOwner()->renderer();
+    LayoutObject* object = deprecatedLocalOwner()->renderer();
     if (!object)
         return nullptr;
     // FIXME: If <object> is ever fixed to disassociate itself from frames
     // that it has started but canceled, then this can turn into an ASSERT
     // since ownerElement() would be 0 when the load is canceled.
     // https://bugs.webkit.org/show_bug.cgi?id=18585
-    if (!object->isRenderPart())
+    if (!object->isLayoutPart())
         return nullptr;
-    return toRenderPart(object);
-}
-
-void Frame::setRemotePlatformLayer(WebLayer* layer)
-{
-    if (m_remotePlatformLayer)
-        GraphicsLayer::unregisterContentsLayer(m_remotePlatformLayer);
-    m_remotePlatformLayer = layer;
-    if (m_remotePlatformLayer)
-        GraphicsLayer::registerContentsLayer(layer);
-
-    ASSERT(owner());
-    toHTMLFrameOwnerElement(owner())->setNeedsCompositingUpdate();
-    if (RenderPart* renderer = ownerRenderer())
-        renderer->layer()->updateSelfPaintingLayer();
+    return toLayoutPart(object);
 }
 
 Settings* Frame::settings() const
@@ -290,7 +274,7 @@ Frame::Frame(FrameClient* client, FrameHost* host, FrameOwner* owner)
     , m_host(host)
     , m_owner(owner)
     , m_client(client)
-    , m_remotePlatformLayer(nullptr)
+    , m_isLoading(false)
 {
     ASSERT(page());
 

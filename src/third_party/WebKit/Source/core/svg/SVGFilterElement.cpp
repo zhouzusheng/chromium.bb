@@ -26,14 +26,13 @@
 #include "core/svg/SVGFilterElement.h"
 
 #include "core/XLinkNames.h"
-#include "core/rendering/svg/RenderSVGResourceFilter.h"
+#include "core/layout/svg/LayoutSVGResourceFilter.h"
 #include "core/svg/SVGParserUtilities.h"
 
 namespace blink {
 
 inline SVGFilterElement::SVGFilterElement(Document& document)
     : SVGElement(SVGNames::filterTag, document)
-    , SVGURIReference(this)
     , m_x(SVGAnimatedLength::create(this, SVGNames::xAttr, SVGLength::create(LengthModeWidth), AllowNegativeLengths))
     , m_y(SVGAnimatedLength::create(this, SVGNames::yAttr, SVGLength::create(LengthModeHeight), AllowNegativeLengths))
     , m_width(SVGAnimatedLength::create(this, SVGNames::widthAttr, SVGLength::create(LengthModeWidth), ForbidNegativeLengths))
@@ -42,6 +41,8 @@ inline SVGFilterElement::SVGFilterElement(Document& document)
     , m_primitiveUnits(SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>::create(this, SVGNames::primitiveUnitsAttr, SVGUnitTypes::SVG_UNIT_TYPE_USERSPACEONUSE))
     , m_filterRes(SVGAnimatedIntegerOptionalInteger::create(this, SVGNames::filterResAttr))
 {
+    SVGURIReference::initialize(this);
+
     // Spec: If the x/y attribute is not specified, the effect is as if a value of "-10%" were specified.
     // Spec: If the width/height attribute is not specified, the effect is as if a value of "120%" were specified.
     m_x->setDefaultValueAsString("-10%");
@@ -60,7 +61,7 @@ inline SVGFilterElement::SVGFilterElement(Document& document)
 
 DEFINE_NODE_FACTORY(SVGFilterElement)
 
-void SVGFilterElement::trace(Visitor* visitor)
+DEFINE_TRACE(SVGFilterElement)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_x);
@@ -121,7 +122,7 @@ void SVGFilterElement::svgAttributeChanged(const QualifiedName& attrName)
         || attrName == SVGNames::heightAttr)
         updateRelativeLengthsInformation();
 
-    RenderSVGResourceContainer* renderer = toRenderSVGResourceContainer(this->renderer());
+    LayoutSVGResourceContainer* renderer = toLayoutSVGResourceContainer(this->renderer());
     if (renderer)
         renderer->invalidateCacheAndMarkForLayout();
 }
@@ -133,16 +134,16 @@ void SVGFilterElement::childrenChanged(const ChildrenChange& change)
     if (change.byParser)
         return;
 
-    if (RenderObject* object = renderer())
+    if (LayoutObject* object = renderer())
         object->setNeedsLayoutAndFullPaintInvalidation();
 }
 
-RenderObject* SVGFilterElement::createRenderer(RenderStyle*)
+LayoutObject* SVGFilterElement::createRenderer(const LayoutStyle&)
 {
-    RenderSVGResourceFilter* renderer = new RenderSVGResourceFilter(this);
+    LayoutSVGResourceFilter* renderer = new LayoutSVGResourceFilter(this);
 
     for (const RefPtrWillBeMember<Node>& node : m_clientsToAdd)
-        renderer->addClientRenderLayer(node.get());
+        renderer->addClientLayer(node.get());
     m_clientsToAdd.clear();
 
     return renderer;

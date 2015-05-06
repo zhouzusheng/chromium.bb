@@ -481,6 +481,8 @@ void RuleFeatureSet::collectFeaturesFromSelector(const CSSSelector& selector, Ru
     for (const CSSSelector* current = &selector; current; current = current->tagHistory()) {
         if (current->pseudoType() == CSSSelector::PseudoFirstLine)
             metadata.usesFirstLineRules = true;
+        if (current->pseudoType() == CSSSelector::PseudoWindowInactive)
+            metadata.usesWindowInactiveSelector = true;
         if (current->isDirectAdjacentSelector()) {
             maxDirectAdjacentSelectors++;
         } else if (maxDirectAdjacentSelectors) {
@@ -505,12 +507,14 @@ void RuleFeatureSet::collectFeaturesFromSelector(const CSSSelector& selector, Ru
 void RuleFeatureSet::FeatureMetadata::add(const FeatureMetadata& other)
 {
     usesFirstLineRules = usesFirstLineRules || other.usesFirstLineRules;
+    usesWindowInactiveSelector = usesWindowInactiveSelector || other.usesWindowInactiveSelector;
     maxDirectAdjacentSelectors = std::max(maxDirectAdjacentSelectors, other.maxDirectAdjacentSelectors);
 }
 
 void RuleFeatureSet::FeatureMetadata::clear()
 {
     usesFirstLineRules = false;
+    usesWindowInactiveSelector = false;
     foundSiblingSelector = false;
     maxDirectAdjacentSelectors = 0;
 }

@@ -153,7 +153,6 @@ class CONTENT_EXPORT RenderViewHostImpl
   void ExecutePluginActionAtLocation(
       const gfx::Point& location,
       const blink::WebPluginAction& action) override;
-  void ExitFullscreen() override;
   void FilesSelectedInChooser(
       const std::vector<content::FileChooserFileInfo>& files,
       FileChooserParams::Mode permissions) override;
@@ -169,15 +168,11 @@ class CONTENT_EXPORT RenderViewHostImpl
   WebPreferences GetWebkitPreferences() override;
   void UpdateWebkitPreferences(const WebPreferences& prefs) override;
   void OnWebkitPreferencesChanged() override;
-  void GetAudioOutputControllers(
-      const GetAudioOutputControllersCallback& callback) const override;
   void SelectWordAroundCaret() override;
 
 #if defined(OS_ANDROID)
-  virtual void ActivateNearestFindResult(int request_id,
-                                         float x,
-                                         float y) override;
-  virtual void RequestFindMatchRects(int current_version) override;
+  void ActivateNearestFindResult(int request_id, float x, float y) override;
+  void RequestFindMatchRects(int current_version) override;
 #endif
 
   void set_delegate(RenderViewHostDelegate* d) {
@@ -204,9 +199,6 @@ class CONTENT_EXPORT RenderViewHostImpl
   base::TerminationStatus render_view_termination_status() const {
     return render_view_termination_status_;
   }
-
-  // Returns the content specific prefs for this RenderViewHost.
-  WebPreferences ComputeWebkitPrefs(const GURL& url);
 
   // Tracks whether this RenderViewHost is in an active state (rather than
   // pending swap out, pending deletion, or swapped out), according to its main
@@ -337,9 +329,9 @@ class CONTENT_EXPORT RenderViewHostImpl
   // IPC message handlers.
   void OnShowView(int route_id,
                   WindowOpenDisposition disposition,
-                  const gfx::Rect& initial_pos,
+                  const gfx::Rect& initial_rect,
                   bool user_gesture);
-  void OnShowWidget(int route_id, const gfx::Rect& initial_pos);
+  void OnShowWidget(int route_id, const gfx::Rect& initial_rect);
   void OnShowFullscreenWidget(int route_id);
   void OnRunModal(int opener_id, IPC::Message* reply_msg);
   void OnRenderViewReady();
@@ -349,7 +341,6 @@ class CONTENT_EXPORT RenderViewHostImpl
   void OnClose();
   void OnRequestMove(const gfx::Rect& pos);
   void OnDocumentAvailableInMainFrame(bool uses_temporary_zoom_level);
-  void OnToggleFullscreen(bool enter_fullscreen);
   void OnDidContentsPreferredSizeChange(const gfx::Size& new_size);
   void OnPasteFromSelectionClipboard();
   void OnRouteCloseEvent();
@@ -382,6 +373,12 @@ class CONTENT_EXPORT RenderViewHostImpl
   // Delay to wait on closing the WebContents for a beforeunload/unload handler
   // to fire.
   static const int64 kUnloadTimeoutMS;
+
+  // Returns the content specific prefs for this RenderViewHost.
+  // TODO(creis): Move most of this method to RenderProcessHost, since it's
+  // mostly the same across all RVHs in a process.  Move the rest to RFH.
+  // See https://crbug.com/304341.
+  WebPreferences ComputeWebkitPrefs();
 
   // Returns whether the current RenderProcessHost has read access to the files
   // reported in |state|.

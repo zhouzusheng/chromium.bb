@@ -32,6 +32,7 @@
 #include "modules/filesystem/InspectorFileSystemAgent.h"
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/UnionTypesCore.h"
 #include "core/dom/DOMArrayBuffer.h"
 #include "core/dom/DOMImplementation.h"
 #include "core/dom/Document.h"
@@ -204,7 +205,7 @@ private:
     bool didGetEntry(Entry*);
     bool didReadDirectoryEntries(const EntryHeapVector&);
 
-    void reportResult(FileError::ErrorCode errorCode, PassRefPtr<Array<TypeBuilder::FileSystem::Entry> > entries = nullptr)
+    void reportResult(FileError::ErrorCode errorCode, PassRefPtr<Array<TypeBuilder::FileSystem::Entry>> entries = nullptr)
     {
         m_requestCallback->sendSuccess(static_cast<int>(errorCode), entries);
     }
@@ -217,7 +218,7 @@ private:
 
     RefPtrWillBePersistent<RequestDirectoryContentCallback> m_requestCallback;
     KURL m_url;
-    RefPtr<Array<TypeBuilder::FileSystem::Entry> > m_entries;
+    RefPtr<Array<TypeBuilder::FileSystem::Entry>> m_entries;
     Persistent<DirectoryReader> m_directoryReader;
 };
 
@@ -482,7 +483,9 @@ bool FileContentRequest::didGetFile(File* file)
 
 void FileContentRequest::didRead()
 {
-    RefPtr<DOMArrayBuffer> buffer = m_reader->arrayBufferResult();
+    StringOrArrayBuffer resultAttribute;
+    m_reader->result(resultAttribute);
+    RefPtr<DOMArrayBuffer> buffer = resultAttribute.getAsArrayBuffer();
 
     if (!m_readAsText) {
         String result = base64Encode(static_cast<char*>(buffer->data()), buffer->byteLength());

@@ -6,8 +6,8 @@
 
 #include <string>
 
-#include "base/debug/trace_event.h"
-#include "base/debug/trace_event_argument.h"
+#include "base/trace_event/trace_event.h"
+#include "base/trace_event/trace_event_argument.h"
 #include "cc/base/math_util.h"
 #include "cc/debug/picture_debug_util.h"
 #include "third_party/skia/include/core/SkCanvas.h"
@@ -65,12 +65,17 @@ size_t DisplayItemList::PictureMemoryUsage() const {
   return total_size;
 }
 
-scoped_refptr<base::debug::ConvertableToTraceFormat> DisplayItemList::AsValue()
-    const {
-  scoped_refptr<base::debug::TracedValue> state =
-      new base::debug::TracedValue();
+scoped_refptr<base::trace_event::ConvertableToTraceFormat>
+DisplayItemList::AsValue() const {
+  scoped_refptr<base::trace_event::TracedValue> state =
+      new base::trace_event::TracedValue();
 
   state->SetInteger("length", items_.size());
+  state->BeginArray("params.items");
+  for (const DisplayItem* item : items_) {
+    item->AsValueInto(state.get());
+  }
+  state->EndArray();
   state->SetValue("params.layer_rect",
                   MathUtil::AsValue(layer_rect_).release());
 

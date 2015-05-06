@@ -29,17 +29,17 @@
 #include "core/html/forms/ColorChooser.h"
 #include "core/html/forms/DateTimeChooser.h"
 #include "core/inspector/InspectorInstrumentation.h"
+#include "core/layout/HitTestResult.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/FrameTree.h"
 #include "core/page/Page.h"
 #include "core/page/PopupOpeningObserver.h"
 #include "core/page/ScopedPageLoadDeferrer.h"
 #include "core/page/WindowFeatures.h"
-#include "core/rendering/HitTestResult.h"
 #include "platform/FileChooser.h"
 #include "platform/Logging.h"
-#include "platform/geometry/FloatRect.h"
-#include "platform/network/DNS.h"
+#include "platform/geometry/IntRect.h"
+#include "platform/network/NetworkHints.h"
 #include "public/platform/WebScreenInfo.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/Vector.h"
@@ -84,17 +84,17 @@ void Chrome::contentsSizeChanged(LocalFrame* frame, const IntSize& size) const
     m_client->contentsSizeChanged(frame, size);
 }
 
-void Chrome::setWindowRect(const FloatRect& rect) const
+void Chrome::setWindowRect(const IntRect& rect) const
 {
     m_client->setWindowRect(rect);
 }
 
-FloatRect Chrome::windowRect() const
+IntRect Chrome::windowRect() const
 {
     return m_client->windowRect();
 }
 
-FloatRect Chrome::pageRect() const
+IntRect Chrome::pageRect() const
 {
     return m_client->pageRect();
 }
@@ -104,19 +104,19 @@ void Chrome::focus() const
     m_client->focus();
 }
 
-bool Chrome::canTakeFocus(FocusType type) const
+bool Chrome::canTakeFocus(WebFocusType type) const
 {
     return m_client->canTakeFocus(type);
 }
 
-void Chrome::takeFocus(FocusType type) const
+void Chrome::takeFocus(WebFocusType type) const
 {
     m_client->takeFocus(type);
 }
 
-void Chrome::focusedNodeChanged(Node* node) const
+void Chrome::focusedNodeChanged(Node* fromNode, Node* toNode) const
 {
-    m_client->focusedNodeChanged(node);
+    m_client->focusedNodeChanged(fromNode, toNode);
 }
 
 void Chrome::show(NavigationPolicy policy) const
@@ -196,7 +196,7 @@ bool Chrome::runBeforeUnloadConfirmPanel(const String& message, LocalFrame* fram
     // otherwise cause the load to continue while we're in the middle of executing JavaScript.
     ScopedPageLoadDeferrer deferrer;
 
-    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willRunJavaScriptDialog(m_page, message);
+    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willRunJavaScriptDialog(frame, message);
     bool ok = m_client->runBeforeUnloadConfirmPanel(message, frame);
     InspectorInstrumentation::didRunJavaScriptDialog(cookie);
     return ok;
@@ -219,7 +219,7 @@ void Chrome::runJavaScriptAlert(LocalFrame* frame, const String& message)
     ASSERT(frame);
     notifyPopupOpeningObservers();
 
-    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willRunJavaScriptDialog(m_page, message);
+    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willRunJavaScriptDialog(frame, message);
     m_client->runJavaScriptAlert(frame, message);
     InspectorInstrumentation::didRunJavaScriptDialog(cookie);
 }
@@ -236,7 +236,7 @@ bool Chrome::runJavaScriptConfirm(LocalFrame* frame, const String& message)
     ASSERT(frame);
     notifyPopupOpeningObservers();
 
-    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willRunJavaScriptDialog(m_page, message);
+    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willRunJavaScriptDialog(frame, message);
     bool ok = m_client->runJavaScriptConfirm(frame, message);
     InspectorInstrumentation::didRunJavaScriptDialog(cookie);
     return ok;
@@ -254,7 +254,7 @@ bool Chrome::runJavaScriptPrompt(LocalFrame* frame, const String& prompt, const 
     ASSERT(frame);
     notifyPopupOpeningObservers();
 
-    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willRunJavaScriptDialog(m_page, prompt);
+    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willRunJavaScriptDialog(frame, prompt);
     bool ok = m_client->runJavaScriptPrompt(frame, prompt, defaultValue, result);
     InspectorInstrumentation::didRunJavaScriptDialog(cookie);
 

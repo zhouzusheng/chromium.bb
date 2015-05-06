@@ -8,13 +8,13 @@
 #include <string>
 
 #include "base/bind.h"
-#include "base/debug/trace_event.h"
-#include "base/debug/trace_event_synthetic_delay.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
+#include "base/trace_event/trace_event.h"
+#include "base/trace_event/trace_event_synthetic_delay.h"
 #include "gpu/command_buffer/service/async_pixel_transfer_delegate.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_surface_egl.h"
@@ -256,7 +256,7 @@ class TransferStateInternal
 
     base::TimeTicks begin_time;
     if (texture_upload_stats.get())
-      begin_time = base::TimeTicks::HighResNow();
+      begin_time = base::TimeTicks::Now();
 
     {
       TRACE_EVENT0("gpu", "glTexImage2D no data");
@@ -291,8 +291,7 @@ class TransferStateInternal
 
     DCHECK(CHECK_GL());
     if (texture_upload_stats.get()) {
-      texture_upload_stats->AddUpload(base::TimeTicks::HighResNow() -
-                                      begin_time);
+      texture_upload_stats->AddUpload(base::TimeTicks::Now() - begin_time);
     }
   }
 
@@ -314,7 +313,7 @@ class TransferStateInternal
 
     base::TimeTicks begin_time;
     if (texture_upload_stats.get())
-      begin_time = base::TimeTicks::HighResNow();
+      begin_time = base::TimeTicks::Now();
 
     if (!thread_texture_id_) {
       TRACE_EVENT0("gpu", "glEGLImageTargetTexture2DOES");
@@ -335,8 +334,7 @@ class TransferStateInternal
 
     DCHECK(CHECK_GL());
     if (texture_upload_stats.get()) {
-      texture_upload_stats->AddUpload(base::TimeTicks::HighResNow() -
-                                      begin_time);
+      texture_upload_stats->AddUpload(base::TimeTicks::Now() - begin_time);
     }
   }
 
@@ -641,7 +639,7 @@ bool AsyncPixelTransferDelegateEGL::WorkAroundAsyncTexSubImage2D(
   void* data = mem_params.GetDataAddress();
   base::TimeTicks begin_time;
   if (shared_state_->texture_upload_stats.get())
-    begin_time = base::TimeTicks::HighResNow();
+    begin_time = base::TimeTicks::Now();
   {
     TRACE_EVENT0("gpu", "glTexSubImage2D");
     // Note we use define_params_ instead of tex_params.
@@ -650,7 +648,7 @@ bool AsyncPixelTransferDelegateEGL::WorkAroundAsyncTexSubImage2D(
   }
   if (shared_state_->texture_upload_stats.get()) {
     shared_state_->texture_upload_stats
-        ->AddUpload(base::TimeTicks::HighResNow() - begin_time);
+        ->AddUpload(base::TimeTicks::Now() - begin_time);
   }
 
   DCHECK(CHECK_GL());

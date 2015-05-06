@@ -8,10 +8,10 @@
 
 #include "base/callback.h"
 #include "base/debug/crash_logging.h"
-#include "base/debug/trace_event.h"
 #include "base/lazy_instance.h"
 #include "base/numerics/safe_math.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/trace_event/trace_event.h"
 
 namespace content {
 namespace {
@@ -229,8 +229,8 @@ void HostDiscardableSharedMemoryManager::ReduceMemoryUsageUntilWithinLimit(
 
 void HostDiscardableSharedMemoryManager::BytesAllocatedChanged(
     size_t new_bytes_allocated) const {
-  TRACE_COUNTER_ID1(
-      "base", "TotalDiscardableMemoryUsage", this, new_bytes_allocated);
+  TRACE_COUNTER_ID1("renderer_host", "TotalDiscardableMemoryUsage", this,
+                    new_bytes_allocated);
 
   static const char kTotalDiscardableMemoryUsageKey[] = "total-dm-usage";
   base::debug::SetCrashKeyValue(kTotalDiscardableMemoryUsageKey,

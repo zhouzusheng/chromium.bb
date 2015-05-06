@@ -8,6 +8,8 @@
 #include "bindings/core/v8/CallbackPromiseAdapter.h"
 #include "bindings/core/v8/ScriptPromiseResolver.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/workers/WorkerGlobalScope.h"
+#include "core/workers/WorkerLocation.h"
 #include "modules/serviceworkers/ServiceWorkerError.h"
 #include "modules/serviceworkers/ServiceWorkerGlobalScopeClient.h"
 #include "modules/serviceworkers/ServiceWorkerWindowClient.h"
@@ -22,10 +24,10 @@ namespace {
     class ClientArray {
     public:
         typedef blink::WebServiceWorkerClientsInfo WebType;
-        static HeapVector<Member<ServiceWorkerClient> > take(ScriptPromiseResolver*, WebType* webClientsRaw)
+        static HeapVector<Member<ServiceWorkerClient>> take(ScriptPromiseResolver*, WebType* webClientsRaw)
         {
             OwnPtr<WebType> webClients = adoptPtr(webClientsRaw);
-            HeapVector<Member<ServiceWorkerClient> > clients;
+            HeapVector<Member<ServiceWorkerClient>> clients;
             for (size_t i = 0; i < webClients->clients.size(); ++i) {
                 clients.append(ServiceWorkerWindowClient::create(webClients->clients[i]));
             }
@@ -52,8 +54,13 @@ ServiceWorkerClients::ServiceWorkerClients()
 {
 }
 
-ScriptPromise ServiceWorkerClients::getAll(ScriptState* scriptState, const ClientQueryOptions& options)
+ScriptPromise ServiceWorkerClients::matchAll(ScriptState* scriptState, const ClientQueryOptions& options)
 {
+    ExecutionContext* executionContext = scriptState->executionContext();
+    // FIXME: May be null due to worker termination: http://crbug.com/413518.
+    if (!executionContext)
+        return ScriptPromise();
+
     RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
 
@@ -69,7 +76,50 @@ ScriptPromise ServiceWorkerClients::getAll(ScriptState* scriptState, const Clien
         return promise;
     }
 
-    ServiceWorkerGlobalScopeClient::from(scriptState->executionContext())->getClients(new CallbackPromiseAdapter<ClientArray, ServiceWorkerError>(resolver));
+    ServiceWorkerGlobalScopeClient::from(executionContext)->getClients(new CallbackPromiseAdapter<ClientArray, ServiceWorkerError>(resolver));
+    return promise;
+}
+
+ScriptPromise ServiceWorkerClients::claim(ScriptState* scriptState)
+{
+    ExecutionContext* executionContext = scriptState->executionContext();
+
+    // FIXME: May be null due to worker termination: http://crbug.com/413518.
+    if (!executionContext)
+        return ScriptPromise();
+
+    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
+    ScriptPromise promise = resolver->promise();
+
+    WebServiceWorkerClientsClaimCallbacks* callbacks = new CallbackPromiseAdapter<void, ServiceWorkerError>(resolver);
+    ServiceWorkerGlobalScopeClient::from(executionContext)->claim(callbacks);
+    return promise;
+}
+
+ScriptPromise ServiceWorkerClients::openWindow(ScriptState* scriptState, const String& url)
+{
+    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
+    ScriptPromise promise = resolver->promise();
+    ExecutionContext* context = scriptState->executionContext();
+
+    KURL parsedUrl = KURL(toWorkerGlobalScope(context)->location()->url(), url);
+    if (!parsedUrl.isValid()) {
+        resolver->reject(DOMException::create(SyntaxError, "'" + url + "' is not a valid URL."));
+        return promise;
+    }
+
+    if (!context->securityOrigin()->canRequest(parsedUrl)) {
+        resolver->reject(DOMException::create(SecurityError, "'" + parsedUrl.elidedString() + "' is not same-origin with the Worker."));
+        return promise;
+    }
+
+    if (!context->isWindowInteractionAllowed()) {
+        resolver->reject(DOMException::create(InvalidAccessError, "Not allowed to open a window."));
+        return promise;
+    }
+    context->consumeWindowInteraction();
+
+    ServiceWorkerGlobalScopeClient::from(context)->openWindow(parsedUrl, new CallbackPromiseAdapter<ServiceWorkerWindowClient, ServiceWorkerError>(resolver));
     return promise;
 }
 

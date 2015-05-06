@@ -46,19 +46,18 @@
 #include "core/html/forms/ColorChooser.h"
 #include "core/html/forms/ColorChooserClient.h"
 #include "core/html/forms/DateTimeChooser.h"
+#include "core/layout/HitTestResult.h"
+#include "core/layout/LayoutPart.h"
+#include "core/layout/compositing/CompositedSelectionBound.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/page/Page.h"
-#include "core/rendering/HitTestResult.h"
-#include "core/rendering/RenderPart.h"
-#include "core/rendering/compositing/CompositedSelectionBound.h"
 #include "modules/accessibility/AXObject.h"
 #include "platform/Cursor.h"
 #include "platform/FileChooser.h"
 #include "platform/PlatformScreen.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/exported/WrappedResourceRequest.h"
-#include "platform/geometry/FloatRect.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/weborigin/SecurityOrigin.h"
@@ -92,6 +91,7 @@
 #include "web/ExternalDateTimeChooser.h"
 #include "web/ExternalPopupMenu.h"
 #include "web/PopupMenuChromium.h"
+#include "web/PopupMenuImpl.h"
 #include "web/WebFileChooserCompletionImpl.h"
 #include "web/WebFrameWidgetImpl.h"
 #include "web/WebInputEventConversion.h"
@@ -145,13 +145,13 @@ void ChromeClientImpl::chromeDestroyed()
     // Our lifetime is bound to the WebViewImpl.
 }
 
-void ChromeClientImpl::setWindowRect(const FloatRect& r)
+void ChromeClientImpl::setWindowRect(const IntRect& r)
 {
     if (m_webView->client())
-        m_webView->client()->setWindowRect(IntRect(r));
+        m_webView->client()->setWindowRect(r);
 }
 
-FloatRect ChromeClientImpl::windowRect()
+IntRect ChromeClientImpl::windowRect()
 {
     WebRect rect;
     if (m_webView->client())
@@ -163,10 +163,10 @@ FloatRect ChromeClientImpl::windowRect()
         rect.width = m_webView->size().width;
         rect.height = m_webView->size().height;
     }
-    return FloatRect(rect);
+    return IntRect(rect);
 }
 
-FloatRect ChromeClientImpl::pageRect()
+IntRect ChromeClientImpl::pageRect()
 {
     // We hide the details of the window's border thickness from the web page by
     // simple re-using the window position here.  So, from the point-of-view of
@@ -180,30 +180,30 @@ void ChromeClientImpl::focus()
         m_webView->client()->didFocus();
 }
 
-bool ChromeClientImpl::canTakeFocus(FocusType)
+bool ChromeClientImpl::canTakeFocus(WebFocusType)
 {
     // For now the browser can always take focus if we're not running layout
     // tests.
     return !layoutTestMode();
 }
 
-void ChromeClientImpl::takeFocus(FocusType type)
+void ChromeClientImpl::takeFocus(WebFocusType type)
 {
     if (!m_webView->client())
         return;
-    if (type == FocusTypeBackward)
+    if (type == WebFocusTypeBackward)
         m_webView->client()->focusPrevious();
     else
         m_webView->client()->focusNext();
 }
 
-void ChromeClientImpl::focusedNodeChanged(Node* node)
+void ChromeClientImpl::focusedNodeChanged(Node* fromNode, Node* toNode)
 {
-    m_webView->client()->focusedNodeChanged(WebNode(node));
+    m_webView->client()->focusedNodeChanged(WebNode(fromNode), WebNode(toNode));
 
     WebURL focusURL;
-    if (node && node->isElementNode() && toElement(node)->isLiveLink() && node->shouldHaveFocusAppearance())
-        focusURL = toElement(node)->hrefURL();
+    if (toNode && toNode->isElementNode() && toElement(toNode)->isLiveLink() && toNode->shouldHaveFocusAppearance())
+        focusURL = toElement(toNode)->hrefURL();
     m_webView->client()->setKeyboardFocusURL(focusURL);
 }
 
@@ -525,9 +525,14 @@ void ChromeClientImpl::contentsSizeChanged(LocalFrame* frame, const IntSize& siz
     frame->loader().restoreScrollPositionAndViewState();
 }
 
-void ChromeClientImpl::deviceOrPageScaleFactorChanged() const
+void ChromeClientImpl::pageScaleFactorChanged() const
 {
-    m_webView->deviceOrPageScaleFactorChanged();
+    m_webView->pageScaleFactorChanged();
+}
+
+float ChromeClientImpl::clampPageScaleFactorToLimits(float scale) const
+{
+    return m_webView->clampPageScaleFactorToLimits(scale);
 }
 
 void ChromeClientImpl::layoutUpdated(LocalFrame* frame) const
@@ -547,9 +552,9 @@ void ChromeClientImpl::mouseDidMoveOverElement(const HitTestResult& result)
     } else if (result.innerNonSharedNode()
         && (isHTMLObjectElement(*result.innerNonSharedNode())
             || isHTMLEmbedElement(*result.innerNonSharedNode()))) {
-        RenderObject* object = result.innerNonSharedNode()->renderer();
-        if (object && object->isRenderPart()) {
-            Widget* widget = toRenderPart(object)->widget();
+        LayoutObject* object = result.innerNonSharedNode()->renderer();
+        if (object && object->isLayoutPart()) {
+            Widget* widget = toLayoutPart(object)->widget();
             if (widget && widget->isPluginContainer()) {
                 WebPluginContainerImpl* plugin = toWebPluginContainerImpl(widget);
                 url = plugin->plugin()->linkAtPosition(result.roundedPointInInnerNodeFrame());
@@ -743,6 +748,9 @@ PassRefPtrWillBeRawPtr<PopupMenu> ChromeClientImpl::createPopupMenu(LocalFrame& 
 {
     if (WebViewImpl::useExternalPopupMenus())
         return adoptRefWillBeNoop(new ExternalPopupMenu(frame, client, *m_webView));
+
+    if (RuntimeEnabledFeatures::htmlPopupMenuEnabled() && RuntimeEnabledFeatures::pagePopupEnabled())
+        return PopupMenuImpl::create(this, client);
 
     return adoptRefWillBeNoop(new PopupMenuChromium(frame, client));
 }

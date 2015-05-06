@@ -24,7 +24,7 @@
 #include "cc/scheduler/scheduler_state_machine.h"
 
 namespace base {
-namespace debug {
+namespace trace_event {
 class ConvertableToTraceFormat;
 }
 class SingleThreadTaskRunner;
@@ -49,6 +49,7 @@ class SchedulerClient {
   virtual base::TimeDelta CommitToActivateDurationEstimate() = 0;
   virtual void DidBeginImplFrameDeadline() = 0;
   virtual void SendBeginFramesToChildren(const BeginFrameArgs& args) = 0;
+  virtual void SendBeginMainFrameNotExpectedSoon() = 0;
 
  protected:
   virtual ~SchedulerClient() {}
@@ -162,8 +163,10 @@ class CC_EXPORT Scheduler : public BeginFrameObserverMixIn,
 
   base::TimeTicks LastBeginImplFrameTime();
 
-  scoped_refptr<base::debug::ConvertableToTraceFormat> AsValue() const;
-  void AsValueInto(base::debug::TracedValue* value) const override;
+  void SetDeferCommits(bool defer_commits);
+
+  scoped_refptr<base::trace_event::ConvertableToTraceFormat> AsValue() const;
+  void AsValueInto(base::trace_event::TracedValue* value) const override;
 
   void SetContinuousPainting(bool continuous_painting) {
     state_machine_.SetContinuousPainting(continuous_painting);

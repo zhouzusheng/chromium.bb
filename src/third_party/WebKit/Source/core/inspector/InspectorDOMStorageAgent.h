@@ -51,7 +51,7 @@ public:
         return adoptPtrWillBeNoop(new InspectorDOMStorageAgent(pageAgent));
     }
     virtual ~InspectorDOMStorageAgent();
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     virtual void setFrontend(InspectorFrontend*) override;
     virtual void clearFrontend() override;
@@ -65,7 +65,7 @@ public:
     virtual void removeDOMStorageItem(ErrorString*, const RefPtr<JSONObject>& storageId, const String& key) override;
 
     // Called from InspectorInstrumentation
-    void didDispatchDOMStorageEvent(const String& key, const String& oldValue, const String& newValue, StorageType, SecurityOrigin*);
+    void didDispatchDOMStorageEvent(LocalFrame*, const String& key, const String& oldValue, const String& newValue, StorageType, SecurityOrigin*);
 
 private:
 

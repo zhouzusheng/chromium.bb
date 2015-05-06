@@ -107,9 +107,12 @@ void WindowProxy::disposeContext(GlobalDetachmentBehavior behavior)
     v8::Handle<v8::Context> context = m_scriptState->context();
     if (m_frame->isLocalFrame()) {
         LocalFrame* frame = toLocalFrame(m_frame);
+        // The embedder could run arbitrary code in response to the willReleaseScriptContext callback, so all disposing should happen after it returns.
         frame->loader().client()->willReleaseScriptContext(context, m_world->worldId());
         InspectorInstrumentation::willReleaseScriptContext(frame, m_scriptState.get());
     }
+
+    m_document.clear();
 
     if (behavior == DetachGlobal)
         m_scriptState->detachGlobalObject();
@@ -127,7 +130,6 @@ void WindowProxy::clearForClose()
     if (!isContextInitialized())
         return;
 
-    m_document.clear();
     disposeContext(DoNotDetachGlobal);
 }
 
@@ -138,12 +140,6 @@ void WindowProxy::clearForNavigation()
 
     ScriptState::Scope scope(m_scriptState.get());
 
-    m_document.clear();
-
-    // Clear the document wrapper cache before turning on access checks on
-    // the old DOMWindow wrapper. This way, access to the document wrapper
-    // will be protected by the security checks on the DOMWindow wrapper.
-    clearDocumentProperty();
 
     v8::Handle<v8::Object> windowWrapper = V8Window::findInstanceInPrototypeChain(m_global.newLocal(m_isolate), m_isolate);
     ASSERT(!windowWrapper.IsEmpty());
@@ -242,7 +238,7 @@ bool WindowProxy::initialize()
     }
     if (m_frame->isLocalFrame()) {
         LocalFrame* frame = toLocalFrame(m_frame);
-        InspectorInstrumentation::didCreateScriptContext(frame, m_scriptState.get(), origin, m_world->isMainWorld());
+        InspectorInstrumentation::didCreateScriptContext(frame, m_scriptState.get(), origin, m_world->worldId());
         frame->loader().client()->didCreateScriptContext(context, m_world->extensionGroup(), m_world->worldId());
     }
     return true;
@@ -250,8 +246,8 @@ bool WindowProxy::initialize()
 
 void WindowProxy::createContext()
 {
-    // This can get called after a frame is already detached...
-    // FIXME: Fix the code so we don't need this check.
+    // FIXME: This should be a null check of m_frame->client(), but there are still some edge cases
+    // that this fails to catch during frame detach.
     if (m_frame->isLocalFrame() && !toLocalFrame(m_frame)->loader().documentLoader())
         return;
 
@@ -342,7 +338,6 @@ void WindowProxy::updateDocumentProperty()
         return;
 
     if (m_frame->isRemoteFrame()) {
-        clearDocumentProperty();
         return;
     }
 
@@ -355,12 +350,6 @@ void WindowProxy::updateDocumentProperty()
         updateDocumentWrapper(v8::Handle<v8::Object>::Cast(documentWrapper));
     checkDocumentWrapper(m_document.newLocal(m_isolate), frame->document());
 
-    // If instantiation of the document wrapper fails, clear the cache
-    // and let the LocalDOMWindow accessor handle access to the document.
-    if (documentWrapper.IsEmpty()) {
-        clearDocumentProperty();
-        return;
-    }
     ASSERT(documentWrapper->IsObject());
     context->Global()->ForceSet(v8AtomicString(m_isolate, "document"), documentWrapper, static_cast<v8::PropertyAttribute>(v8::ReadOnly | v8::DontDelete));
 
@@ -368,16 +357,6 @@ void WindowProxy::updateDocumentProperty()
     // LocalDOMWindow objects we obtain from JavaScript references are guaranteed to have
     // live Document objects.
     V8HiddenValue::setHiddenValue(m_isolate, toInnerGlobalObject(context), V8HiddenValue::document(m_isolate), documentWrapper);
-}
-
-void WindowProxy::clearDocumentProperty()
-{
-    ASSERT(isContextInitialized());
-    if (!m_world->isMainWorld())
-        return;
-    v8::HandleScope handleScope(m_isolate);
-    m_scriptState->context()->Global()->ForceDelete(v8AtomicString(m_isolate, "document"));
-    V8HiddenValue::deleteHiddenValue(m_isolate, toInnerGlobalObject(m_scriptState->context()), V8HiddenValue::document(m_isolate));
 }
 
 void WindowProxy::updateActivityLogger()

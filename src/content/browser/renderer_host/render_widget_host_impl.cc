@@ -12,7 +12,6 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/containers/hash_tables.h"
-#include "base/debug/trace_event.h"
 #include "base/i18n/rtl.h"
 #include "base/lazy_instance.h"
 #include "base/message_loop/message_loop.h"
@@ -21,6 +20,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/thread_task_runner_handle.h"
+#include "base/trace_event/trace_event.h"
 #include "cc/base/switches.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/compositor_frame_ack.h"
@@ -32,6 +32,7 @@
 #include "content/browser/gpu/gpu_process_host_ui_shim.h"
 #include "content/browser/gpu/gpu_surface_tracker.h"
 #include "content/browser/renderer_host/dip_util.h"
+#include "content/browser/renderer_host/frame_metadata_util.h"
 #include "content/browser/renderer_host/input/input_router_config_helper.h"
 #include "content/browser/renderer_host/input/input_router_impl.h"
 #include "content/browser/renderer_host/input/synthetic_gesture.h"
@@ -47,6 +48,7 @@
 #include "content/browser/renderer_host/render_widget_resize_helper.h"
 #include "content/common/content_constants_internal.h"
 #include "content/common/cursors/webcursor.h"
+#include "content/common/frame_messages.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/host_shared_bitmap_manager.h"
 #include "content/common/input_messages.h"
@@ -184,6 +186,8 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
       allow_privileged_mouse_lock_(false),
       has_touch_handler_(false),
       next_browser_snapshot_id_(1),
+      owned_by_render_frame_host_(false),
+      is_focused_(false),
       weak_factory_(this) {
   CHECK(delegate_);
   if (routing_id_ == MSG_ROUTING_NONE) {
@@ -414,6 +418,11 @@ void RenderWidgetHostImpl::Init() {
   WasResized();
 }
 
+void RenderWidgetHostImpl::InitForFrame() {
+  DCHECK(process_->HasConnection());
+  renderer_initialized_ = true;
+}
+
 void RenderWidgetHostImpl::Shutdown() {
   RejectMouseLockOrUnlockIfNecessary();
 
@@ -437,12 +446,12 @@ bool RenderWidgetHostImpl::IsRenderView() const {
 bool RenderWidgetHostImpl::OnMessageReceived(const IPC::Message &msg) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(RenderWidgetHostImpl, msg)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_RenderProcessGone, OnRenderProcessGone)
     IPC_MESSAGE_HANDLER(InputHostMsg_QueueSyntheticGesture,
                         OnQueueSyntheticGesture)
     IPC_MESSAGE_HANDLER(InputHostMsg_ImeCancelComposition,
                         OnImeCancelComposition)
     IPC_MESSAGE_HANDLER(ViewHostMsg_RenderViewReady, OnRenderViewReady)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_RenderProcessGone, OnRenderProcessGone)
     IPC_MESSAGE_HANDLER(ViewHostMsg_Close, OnClose)
     IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateScreenRects_ACK,
                         OnUpdateScreenRectsAck)
@@ -603,12 +612,15 @@ void RenderWidgetHostImpl::WasResized() {
   }
 
   bool size_changed = true;
+  bool width_changed = true;
   bool side_payload_changed = screen_info_out_of_date_;
   scoped_ptr<ViewMsg_Resize_Params> params(new ViewMsg_Resize_Params);
 
   GetResizeParams(params.get());
   if (old_resize_params_) {
     size_changed = old_resize_params_->new_size != params->new_size;
+    width_changed =
+        old_resize_params_->new_size.width() != params->new_size.width();
     side_payload_changed =
         side_payload_changed ||
         old_resize_params_->physical_backing_size !=
@@ -637,6 +649,9 @@ void RenderWidgetHostImpl::WasResized() {
   } else {
     old_resize_params_.swap(params);
   }
+
+  if (delegate_)
+    delegate_->RenderWidgetWasResized(this, width_changed);
 }
 
 void RenderWidgetHostImpl::ResizeRectChanged(const gfx::Rect& new_rect) {
@@ -650,10 +665,14 @@ void RenderWidgetHostImpl::GotFocus() {
 }
 
 void RenderWidgetHostImpl::Focus() {
+  is_focused_ = true;
+
   Send(new InputMsg_SetFocus(routing_id_, true));
 }
 
 void RenderWidgetHostImpl::Blur() {
+  is_focused_ = false;
+
   // If there is a pending mouse lock request, we don't want to reject it at
   // this point. The user can switch focus back to this view and approve the
   // request later.
@@ -859,6 +878,10 @@ void RenderWidgetHostImpl::StopHangMonitorTimeout() {
   if (hang_monitor_timeout_)
     hang_monitor_timeout_->Stop();
   RendererIsResponsive();
+}
+
+void RenderWidgetHostImpl::DisableElasticOverscroll() {
+  // TODO(dgozman): Send an IPC handled by InputHandlerProxy.
 }
 
 void RenderWidgetHostImpl::ForwardMouseEvent(const WebMouseEvent& mouse_event) {
@@ -1309,6 +1332,13 @@ void RenderWidgetHostImpl::SetAutoResize(bool enable,
   max_size_for_auto_resize_ = max_size;
 }
 
+void RenderWidgetHostImpl::Cleanup() {
+  if (view_) {
+    view_->Destroy();
+    view_ = nullptr;
+  }
+}
+
 void RenderWidgetHostImpl::Destroy() {
   NotificationService::current()->Notify(
       NOTIFICATION_RENDER_WIDGET_HOST_DESTROYED,
@@ -1319,8 +1349,10 @@ void RenderWidgetHostImpl::Destroy() {
   // Note that in the process of the view shutting down, it can call a ton
   // of other messages on us.  So if you do any other deinitialization here,
   // do it after this call to view_->Destroy().
-  if (view_)
+  if (view_) {
     view_->Destroy();
+    view_ = nullptr;
+  }
 
   delete this;
 }
@@ -1347,10 +1379,16 @@ void RenderWidgetHostImpl::OnRenderViewReady() {
 }
 
 void RenderWidgetHostImpl::OnRenderProcessGone(int status, int exit_code) {
-  // TODO(evanm): This synchronously ends up calling "delete this".
-  // Is that really what we want in response to this message?  I'm matching
-  // previous behavior of the code here.
-  Destroy();
+  // RenderFrameHost owns a RenderWidgetHost when it needs one, in which case
+  // it handles destruction.
+  if (!owned_by_render_frame_host_) {
+    // TODO(evanm): This synchronously ends up calling "delete this".
+    // Is that really what we want in response to this message?  I'm matching
+    // previous behavior of the code here.
+    Destroy();
+  } else {
+    RendererExited(static_cast<base::TerminationStatus>(status), exit_code);
+  }
 }
 
 void RenderWidgetHostImpl::OnClose() {
@@ -1413,8 +1451,7 @@ bool RenderWidgetHostImpl::OnSwapCompositorFrame(
     const IPC::Message& message) {
   // This trace event is used in
   // chrome/browser/extensions/api/cast_streaming/performance_test.cc
-  TRACE_EVENT0("test_fps",
-               TRACE_DISABLED_BY_DEFAULT("OnSwapCompositorFrame"));
+  TRACE_EVENT0("test_fps,benchmark", "OnSwapCompositorFrame");
   ViewHostMsg_SwapCompositorFrame::Param param;
   if (!ViewHostMsg_SwapCompositorFrame::Read(&message, &param))
     return false;
@@ -1428,6 +1465,11 @@ bool RenderWidgetHostImpl::OnSwapCompositorFrame(
 
   input_router_->OnViewUpdated(
       GetInputRouterViewFlagsFromCompositorFrameMetadata(frame->metadata));
+
+  if (touch_emulator_) {
+    touch_emulator_->SetDoubleTapSupportForPageEnabled(
+        !IsMobileOptimizedFrame(frame->metadata));
+  }
 
   if (view_) {
     view_->OnSwapCompositorFrame(output_surface_id, frame.Pass());
@@ -1587,11 +1629,12 @@ void RenderWidgetHostImpl::OnSetCursor(const WebCursor& cursor) {
   SetCursor(cursor);
 }
 
-void RenderWidgetHostImpl::SetTouchEventEmulationEnabled(bool enabled) {
+void RenderWidgetHostImpl::SetTouchEventEmulationEnabled(
+    bool enabled, ui::GestureProviderConfigType config_type) {
   if (enabled) {
     if (!touch_emulator_)
       touch_emulator_.reset(new TouchEmulator(this));
-    touch_emulator_->Enable();
+    touch_emulator_->Enable(config_type);
   } else {
     if (touch_emulator_)
       touch_emulator_->Disable();
@@ -1828,11 +1871,6 @@ void RenderWidgetHostImpl::OnGestureEventAck(
     const GestureEventWithLatencyInfo& event,
     InputEventAckState ack_result) {
   latency_tracker_.OnInputEventAck(event.event, &event.latency);
-
-  if (ack_result != INPUT_EVENT_ACK_STATE_CONSUMED) {
-    if (delegate_->HandleGestureEvent(event.event))
-      ack_result = INPUT_EVENT_ACK_STATE_CONSUMED;
-  }
 
   if (view_)
     view_->GestureEventAck(event.event, ack_result);

@@ -26,7 +26,7 @@
 #ifndef RenderScrollbar_h
 #define RenderScrollbar_h
 
-#include "core/rendering/style/RenderStyleConstants.h"
+#include "core/layout/style/LayoutStyleConstants.h"
 #include "platform/heap/Handle.h"
 #include "platform/scroll/Scrollbar.h"
 #include "wtf/HashMap.h"
@@ -37,12 +37,9 @@ class LocalFrame;
 class Node;
 class RenderBox;
 class RenderScrollbarPart;
-class RenderStyle;
+class LayoutStyle;
 
 class RenderScrollbar final : public Scrollbar {
-#if ENABLE(OILPAN)
-    USING_PRE_FINALIZER(RenderScrollbar, destroyParts);
-#endif
 public:
     static PassRefPtrWillBeRawPtr<Scrollbar> createCustomScrollbar(ScrollableArea*, ScrollbarOrientation, Node*, LocalFrame* owningFrame = 0);
     virtual ~RenderScrollbar();
@@ -79,10 +76,8 @@ private:
 
     void updateScrollbarParts(bool destroy = false);
 
-    PassRefPtr<RenderStyle> getScrollbarPseudoStyle(ScrollbarPart, PseudoId);
+    PassRefPtr<LayoutStyle> getScrollbarPseudoStyle(ScrollbarPart, PseudoId);
     void updateScrollbarPart(ScrollbarPart, bool destroy = false);
-
-    void destroyParts();
 
     // This Scrollbar(Widget) may outlive the DOM which created it (during tear down),
     // so we keep a reference to the Node which caused this custom scrollbar creation.
@@ -92,7 +87,7 @@ private:
 
     RawPtrWillBeMember<LocalFrame> m_owningFrame;
 
-    WillBeHeapHashMap<unsigned, RawPtrWillBeMember<RenderScrollbarPart> > m_parts;
+    HashMap<unsigned, RenderScrollbarPart*> m_parts;
 };
 
 DEFINE_TYPE_CASTS(RenderScrollbar, ScrollbarThemeClient, scrollbar, scrollbar->isCustomScrollbar(), scrollbar.isCustomScrollbar());

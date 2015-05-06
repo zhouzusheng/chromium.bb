@@ -35,7 +35,6 @@
 #include "bindings/core/v8/ScriptController.h"
 #include "bindings/core/v8/ScriptRegexp.h"
 #include "core/HTMLNames.h"
-#include "core/UserAgentStyleSheets.h"
 #include "core/animation/AnimationTimeline.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/css/resolver/StyleResolver.h"
@@ -49,6 +48,7 @@
 #include "core/fetch/Resource.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/fetch/ScriptResource.h"
+#include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
@@ -76,6 +76,7 @@
 #include "platform/Cookie.h"
 #include "platform/JSONValues.h"
 #include "platform/MIMETypeRegistry.h"
+#include "platform/PlatformResourceLoader.h"
 #include "platform/UserGestureIndicator.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/CurrentTime.h"
@@ -150,7 +151,7 @@ static float calculateFontScaleFactor(int width, int height, float deviceScaleFa
 class InspectorPageAgent::GetResourceContentLoadListener final : public VoidCallback {
 public:
     GetResourceContentLoadListener(InspectorPageAgent*, const String& frameId, const String& url, PassRefPtrWillBeRawPtr<GetResourceContentCallback>);
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
     virtual void handleEvent() override;
 private:
     RawPtrWillBeMember<InspectorPageAgent> m_pageAgent;
@@ -167,7 +168,7 @@ InspectorPageAgent::GetResourceContentLoadListener::GetResourceContentLoadListen
 {
 }
 
-void InspectorPageAgent::GetResourceContentLoadListener::trace(Visitor* visitor)
+DEFINE_TRACE(InspectorPageAgent::GetResourceContentLoadListener)
 {
     visitor->trace(m_pageAgent);
     visitor->trace(m_callback);
@@ -502,7 +503,7 @@ void InspectorPageAgent::enable(ErrorString*)
     m_instrumentingAgents->setInspectorPageAgent(this);
     if (m_inspectorResourceContentLoader)
         m_inspectorResourceContentLoader->dispose();
-    m_inspectorResourceContentLoader = adoptPtrWillBeNoop(new InspectorResourceContentLoader(m_page));
+    m_inspectorResourceContentLoader = adoptPtrWillBeNoop(new InspectorResourceContentLoader(inspectedFrame()));
 }
 
 void InspectorPageAgent::discardAgent()
@@ -584,17 +585,15 @@ void InspectorPageAgent::removeScriptToEvaluateOnLoad(ErrorString* error, const 
     scripts->remove(identifier);
 }
 
-void InspectorPageAgent::reload(ErrorString*, const bool* const optionalIgnoreCache, const String* optionalScriptToEvaluateOnLoad, const String* optionalScriptPreprocessor)
+void InspectorPageAgent::reload(ErrorString*, const bool* const optionalIgnoreCache, const String* optionalScriptToEvaluateOnLoad)
 {
     m_pendingScriptToEvaluateOnLoadOnce = optionalScriptToEvaluateOnLoad ? *optionalScriptToEvaluateOnLoad : "";
-    m_pendingScriptPreprocessor = optionalScriptPreprocessor ? *optionalScriptPreprocessor : "";
-    m_page->mainFrame()->reload(asBool(optionalIgnoreCache) ? EndToEndReload : NormalReload, NotClientRedirect);
+    inspectedFrame()->reload(asBool(optionalIgnoreCache) ? EndToEndReload : NormalReload, NotClientRedirect);
 }
 
 void InspectorPageAgent::navigate(ErrorString*, const String& url, String* outFrameId)
 {
-    LocalFrame* frame = m_page->deprecatedLocalMainFrame();
-    *outFrameId = frameId(frame);
+    *outFrameId = frameId(inspectedFrame());
 }
 
 static PassRefPtr<TypeBuilder::Page::Cookie> buildObjectForCookie(const Cookie& cookie)
@@ -700,7 +699,7 @@ void InspectorPageAgent::getCookies(ErrorString*, RefPtr<TypeBuilder::Array<Type
 {
     ListHashSet<Cookie> rawCookiesList;
 
-    for (Frame* frame = mainFrame(); frame; frame = frame->tree().traverseNext(mainFrame())) {
+    for (Frame* frame = inspectedFrame(); frame; frame = frame->tree().traverseNext(inspectedFrame())) {
         if (!frame->isLocalFrame())
             continue;
         Document* document = toLocalFrame(frame)->document();
@@ -722,7 +721,7 @@ void InspectorPageAgent::getCookies(ErrorString*, RefPtr<TypeBuilder::Array<Type
 void InspectorPageAgent::deleteCookie(ErrorString*, const String& cookieName, const String& url)
 {
     KURL parsedURL(ParsedURLString, url);
-    for (Frame* frame = m_page->mainFrame(); frame; frame = frame->tree().traverseNext(m_page->mainFrame())) {
+    for (Frame* frame = inspectedFrame(); frame; frame = frame->tree().traverseNext(inspectedFrame())) {
         if (frame->isLocalFrame())
             blink::deleteCookie(toLocalFrame(frame)->document(), parsedURL, cookieName);
     }
@@ -730,7 +729,7 @@ void InspectorPageAgent::deleteCookie(ErrorString*, const String& cookieName, co
 
 void InspectorPageAgent::getResourceTree(ErrorString*, RefPtr<TypeBuilder::Page::FrameResourceTree>& object)
 {
-    object = buildObjectForFrameTree(m_page->deprecatedLocalMainFrame());
+    object = buildObjectForFrameTree(inspectedFrame());
 }
 
 void InspectorPageAgent::getResourceContentAfterResourcesContentLoaded(const String& frameId, const String& url, PassRefPtrWillBeRawPtr<GetResourceContentCallback> callback)
@@ -909,8 +908,8 @@ void InspectorPageAgent::setShowPaintRects(ErrorString*, bool show)
     m_state->setBoolean(PageAgentState::pageAgentShowPaintRects, show);
     m_client->setShowPaintRects(show);
 
-    if (!show && mainFrame() && mainFrame()->view())
-        mainFrame()->view()->invalidate();
+    if (!show && inspectedFrame() && inspectedFrame()->isMainFrame() && inspectedFrame()->view())
+        inspectedFrame()->view()->invalidate();
 }
 
 void InspectorPageAgent::setShowDebugBorders(ErrorString* errorString, bool show)
@@ -950,7 +949,7 @@ void InspectorPageAgent::getScriptExecutionStatus(ErrorString*, PageCommandHandl
 {
     bool disabledByScriptController = false;
     bool disabledInSettings = false;
-    LocalFrame* frame = mainFrame();
+    LocalFrame* frame = inspectedFrame();
     if (frame) {
         disabledByScriptController = !frame->script().canExecuteScripts(NotAboutToExecuteScript);
         if (frame->settings())
@@ -969,10 +968,10 @@ void InspectorPageAgent::getScriptExecutionStatus(ErrorString*, PageCommandHandl
 void InspectorPageAgent::setScriptExecutionDisabled(ErrorString*, bool value)
 {
     m_state->setBoolean(PageAgentState::pageAgentScriptExecutionDisabled, value);
-    if (!mainFrame())
+    if (!inspectedFrame())
         return;
 
-    Settings* settings = mainFrame()->settings();
+    Settings* settings = inspectedFrame()->settings();
     if (settings) {
         m_ignoreScriptsEnabledNotification = true;
         settings->setScriptEnabled(!value);
@@ -999,28 +998,23 @@ void InspectorPageAgent::didClearDocumentOfWindowObject(LocalFrame* frame)
 
 void InspectorPageAgent::domContentLoadedEventFired(LocalFrame* frame)
 {
-    if (!frame->isMainFrame())
+    if (frame != inspectedFrame())
         return;
     m_frontend->domContentEventFired(currentTime());
 }
 
 void InspectorPageAgent::loadEventFired(LocalFrame* frame)
 {
-    if (!frame->isMainFrame())
+    if (frame != inspectedFrame())
         return;
     m_frontend->loadEventFired(currentTime());
 }
 
 void InspectorPageAgent::didCommitLoad(LocalFrame*, DocumentLoader* loader)
 {
-    // FIXME: If "frame" is always guaranteed to be in the same Page as loader->frame()
-    // then all we need to check here is loader->frame()->isMainFrame()
-    // and we don't need "frame" at all.
-    if (loader->frame() == m_page->mainFrame()) {
+    if (loader->frame() == inspectedFrame()) {
         m_scriptToEvaluateOnLoadOnce = m_pendingScriptToEvaluateOnLoadOnce;
-        m_scriptPreprocessorSource = m_pendingScriptPreprocessor;
         m_pendingScriptToEvaluateOnLoadOnce = String();
-        m_pendingScriptPreprocessor = String();
         if (m_inspectorResourceContentLoader)
             m_inspectorResourceContentLoader->stop();
     }
@@ -1046,7 +1040,12 @@ void InspectorPageAgent::frameDetachedFromParent(LocalFrame* frame)
     }
 }
 
-LocalFrame* InspectorPageAgent::mainFrame()
+FrameHost* InspectorPageAgent::frameHost()
+{
+    return &m_page->frameHost();
+}
+
+LocalFrame* InspectorPageAgent::inspectedFrame()
 {
     return m_page->deprecatedLocalMainFrame();
 }
@@ -1088,8 +1087,7 @@ String InspectorPageAgent::loaderId(DocumentLoader* loader)
 
 LocalFrame* InspectorPageAgent::findFrameWithSecurityOrigin(const String& originRawString)
 {
-    for (Frame* frame = m_page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
-        // FIXME: RemoteFrame security origins are not yet available.
+    for (Frame* frame = inspectedFrame(); frame; frame = frame->tree().traverseNext(inspectedFrame())) {
         if (!frame->isLocalFrame())
             continue;
         RefPtr<SecurityOrigin> documentOrigin = toLocalFrame(frame)->document()->securityOrigin();
@@ -1113,7 +1111,7 @@ const AtomicString& InspectorPageAgent::resourceSourceMapURL(const String& url)
     DEFINE_STATIC_LOCAL(const AtomicString, deprecatedSourceMapHttpHeader, ("X-SourceMap", AtomicString::ConstructFromLiteral));
     if (url.isEmpty())
         return nullAtom;
-    LocalFrame* frame = mainFrame();
+    LocalFrame* frame = inspectedFrame();
     if (!frame)
         return nullAtom;
     Resource* resource = cachedResource(frame, KURL(ParsedURLString, url));
@@ -1183,7 +1181,7 @@ void InspectorPageAgent::didRunJavaScriptDialog()
     m_frontend->javascriptDialogClosed();
 }
 
-void InspectorPageAgent::didPaint(RenderObject*, const GraphicsLayer*, GraphicsContext* context, const LayoutRect& rect)
+void InspectorPageAgent::didPaint(LayoutObject*, const GraphicsLayer*, GraphicsContext* context, const LayoutRect& rect)
 {
     if (!m_enabled || m_client->overridesShowPaintRects() || !m_state->getBoolean(PageAgentState::pageAgentShowPaintRects))
         return;
@@ -1200,7 +1198,7 @@ void InspectorPageAgent::didPaint(RenderObject*, const GraphicsLayer*, GraphicsC
     m_overlay->drawOutline(context, inflatedRect, colors[colorSelector++ % WTF_ARRAY_LENGTH(colors)]);
 }
 
-void InspectorPageAgent::didLayout(RenderObject*)
+void InspectorPageAgent::didLayout(LayoutObject*)
 {
     if (!m_enabled)
         return;
@@ -1217,13 +1215,19 @@ void InspectorPageAgent::didScroll()
 
 void InspectorPageAgent::viewportChanged()
 {
-    if (!m_enabled || !m_deviceMetricsOverridden)
+    if (!m_enabled || !m_deviceMetricsOverridden || !inspectedFrame()->isMainFrame())
         return;
-    IntSize contentsSize = m_page->deprecatedLocalMainFrame()->view()->contentsSize();
-    IntRect viewRect = m_page->deprecatedLocalMainFrame()->view()->visibleContentRect();
+    IntSize contentsSize = inspectedFrame()->view()->contentsSize();
+    FloatPoint scrollOffset;
+
+    if (frameHost()->settings().pinchVirtualViewportEnabled())
+        scrollOffset = frameHost()->pinchViewport().visibleRectInDocument().location();
+    else
+        scrollOffset = inspectedFrame()->view()->visibleContentRect().location();
+
     RefPtr<TypeBuilder::Page::Viewport> viewport = TypeBuilder::Page::Viewport::create()
-        .setScrollX(viewRect.x())
-        .setScrollY(viewRect.y())
+        .setScrollX(scrollOffset.x())
+        .setScrollY(scrollOffset.y())
         .setContentsWidth(contentsSize.width())
         .setContentsHeight(contentsSize.height())
         .setPageScaleFactor(m_page->pageScaleFactor())
@@ -1234,6 +1238,8 @@ void InspectorPageAgent::viewportChanged()
 
 void InspectorPageAgent::didResizeMainFrame()
 {
+    if (!inspectedFrame()->isMainFrame())
+        return;
 #if !OS(ANDROID)
     if (m_enabled && m_state->getBoolean(PageAgentState::showSizeOnResize))
         m_overlay->showAndHideViewSize(m_state->getBoolean(PageAgentState::showGridOnResize));
@@ -1248,7 +1254,7 @@ void InspectorPageAgent::didRecalculateStyle(int)
         m_overlay->update();
 }
 
-void InspectorPageAgent::deviceOrPageScaleFactorChanged()
+void InspectorPageAgent::pageScaleFactorChanged()
 {
     if (m_enabled)
         m_overlay->update();
@@ -1346,6 +1352,8 @@ void InspectorPageAgent::updateViewMetrics(bool enabled, int width, int height, 
 {
     if (enabled && !m_page->settings().acceleratedCompositingEnabled())
         return;
+    if (!inspectedFrame()->isMainFrame())
+        return;
 
     m_deviceMetricsOverridden = enabled;
     m_emulateMobileEnabled = mobile;
@@ -1354,7 +1362,7 @@ void InspectorPageAgent::updateViewMetrics(bool enabled, int width, int height, 
     else
         m_client->clearDeviceMetricsOverride();
 
-    Document* document = mainFrame()->document();
+    Document* document = inspectedFrame()->document();
     if (document) {
         document->styleResolverChanged();
         document->mediaQueryAffectingValueChanged();
@@ -1377,6 +1385,8 @@ void InspectorPageAgent::updateViewMetrics(bool enabled, int width, int height, 
 
 void InspectorPageAgent::updateTouchEventEmulationInPage(bool enabled)
 {
+    if (!inspectedFrame()->isMainFrame())
+        return;
     if (!m_touchEmulationEnabled) {
         m_originalTouchEnabled = RuntimeEnabledFeatures::touchEnabled();
         m_originalDeviceSupportsMouse = m_page->settings().deviceSupportsMouse();
@@ -1392,7 +1402,7 @@ void InspectorPageAgent::updateTouchEventEmulationInPage(bool enabled)
     }
     m_touchEmulationEnabled = enabled;
     m_client->setTouchEventEmulationEnabled(enabled);
-    m_page->deprecatedLocalMainFrame()->view()->layout();
+    inspectedFrame()->view()->layout();
 }
 
 void InspectorPageAgent::setTouchEmulationEnabled(ErrorString*, bool enabled, const String* configuration)
@@ -1406,14 +1416,14 @@ void InspectorPageAgent::setTouchEmulationEnabled(ErrorString*, bool enabled, co
 
 void InspectorPageAgent::setEmulatedMedia(ErrorString*, const String& media)
 {
+    if (!inspectedFrame()->isMainFrame())
+        return;
     String currentMedia = m_state->getString(PageAgentState::pageAgentEmulatedMedia);
     if (media == currentMedia)
         return;
 
     m_state->setString(PageAgentState::pageAgentEmulatedMedia, media);
-    Document* document = 0;
-    if (m_page->mainFrame())
-        document = m_page->deprecatedLocalMainFrame()->document();
+    Document* document = inspectedFrame()->document();
     if (document) {
         document->mediaQueryAffectingValueChanged();
         document->styleResolverChanged();
@@ -1427,7 +1437,7 @@ bool InspectorPageAgent::applyViewportStyleOverride(StyleResolver* resolver)
         return false;
 
     RefPtrWillBeRawPtr<StyleSheetContents> styleSheet = StyleSheetContents::create(CSSParserContext(UASheetMode, 0));
-    styleSheet->parseString(String(viewportAndroidCss, sizeof(viewportAndroidCss)));
+    styleSheet->parseString(loadResourceAsASCIIString("viewportAndroid.css"));
     OwnPtrWillBeRawPtr<RuleSet> ruleSet = RuleSet::create();
     ruleSet->addRulesFromSheet(styleSheet.get(), MediaQueryEvaluator("screen"));
     resolver->viewportStyleResolver()->collectViewportRules(ruleSet.get(), ViewportStyleResolver::UserAgentOrigin);
@@ -1472,17 +1482,22 @@ void InspectorPageAgent::setOverlayMessage(ErrorString*, const String* message)
     m_overlay->setPausedInDebuggerMessage(message);
 }
 
-void InspectorPageAgent::animationsPlaybackRate(ErrorString*, double* playbackRate)
+void InspectorPageAgent::getAnimationsPlaybackRate(ErrorString*, double* playbackRate)
 {
-    *playbackRate = toLocalFrame(m_page->mainFrame())->document()->timeline().playbackRate();
+    *playbackRate = inspectedFrame()->document()->timeline().playbackRate();
 }
 
 void InspectorPageAgent::setAnimationsPlaybackRate(ErrorString*, double playbackRate)
 {
-    for (Frame* frame = m_page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
+    for (Frame* frame = inspectedFrame(); frame; frame = frame->tree().traverseNext(inspectedFrame())) {
         if (frame->isLocalFrame())
             toLocalFrame(frame)->document()->timeline().setPlaybackRate(playbackRate);
     }
+}
+
+void InspectorPageAgent::setCurrentTime(ErrorString*, double currentTime)
+{
+    inspectedFrame()->document()->timeline().setCurrentTime(currentTime);
 }
 
 void InspectorPageAgent::clearEditedResourcesContent()
@@ -1503,7 +1518,7 @@ bool InspectorPageAgent::getEditedResourceContent(const String& url, String* con
     return true;
 }
 
-void InspectorPageAgent::trace(Visitor* visitor)
+DEFINE_TRACE(InspectorPageAgent)
 {
     visitor->trace(m_page);
     visitor->trace(m_injectedScriptManager);

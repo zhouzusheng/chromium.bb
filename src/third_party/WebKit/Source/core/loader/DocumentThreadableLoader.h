@@ -76,6 +76,7 @@ class DocumentThreadableLoader final : public ThreadableLoader, private Resource
         // RawResourceClient
         void dataSent(Resource*, unsigned long long bytesSent, unsigned long long totalBytesToBeSent) override;
         void responseReceived(Resource*, const ResourceResponse&, PassOwnPtr<WebDataConsumerHandle>) override;
+        void setSerializedCachedMetadata(Resource*, const char*, size_t) override;
         void dataReceived(Resource*, const char* data, unsigned dataLength) override;
         void redirectReceived(Resource*, ResourceRequest&, const ResourceResponse&) override;
         void dataDownloaded(Resource*, int) override;
@@ -136,9 +137,13 @@ class DocumentThreadableLoader final : public ThreadableLoader, private Resource
 
         const bool m_async;
 
+        // Holds the original request context (used for sanity checks).
+        const WebURLRequest::RequestContext m_requestContext;
+
         // Holds the original request for fallback in case the Service Worker
         // does not respond.
         OwnPtr<ResourceRequest> m_fallbackRequestForServiceWorker;
+
         // Holds the original request and options for it during preflight
         // request handling phase.
         OwnPtr<ResourceRequest> m_actualRequest;
@@ -147,6 +152,13 @@ class DocumentThreadableLoader final : public ThreadableLoader, private Resource
         HTTPHeaderMap m_simpleRequestHeaders; // stores simple request headers in case of a cross-origin redirect.
         Timer<DocumentThreadableLoader> m_timeoutTimer;
         double m_requestStartedSeconds; // Time an asynchronous fetch request is started
+
+        // Max number of times that this DocumentThreadableLoader can follow
+        // cross-origin redirects.
+        // This is used to limit the number of redirects.
+        // But this value is not the max number of total redirects allowed,
+        // because same-origin redirects are not counted here.
+        int m_corsRedirectLimit;
     };
 
 } // namespace blink

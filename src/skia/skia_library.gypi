@@ -32,8 +32,6 @@
     '../third_party/skia/src/images/SkScaledBitmapSampler.cpp',
     '../third_party/skia/src/images/SkScaledBitmapSampler.h',
 
-    '../third_party/skia/src/opts/opts_check_x86.cpp',
-
     '../third_party/skia/src/ports/SkFontConfigInterface_direct.cpp',
 
     '../third_party/skia/src/fonts/SkFontMgr_fontconfig.cpp',
@@ -118,8 +116,6 @@
   '../third_party/skia/src/utils/SkCullPoints.cpp',
   '../third_party/skia/src/utils/SkDumpCanvas.cpp',
   '../third_party/skia/src/utils/SkFloatUtils.h',
-  '../third_party/skia/src/utils/SkGatherPixelRefsAndRects.cpp',
-  '../third_party/skia/src/utils/SkGatherPixelRefsAndRects.h',
   '../third_party/skia/src/utils/SkInterpolator.cpp',
   '../third_party/skia/src/utils/SkLayer.cpp',
   '../third_party/skia/src/utils/SkMD5.cpp',
@@ -227,12 +223,6 @@
         '../build/android/cpufeatures.gypi',
       ],
     }],
-    [ 'target_arch == "arm" or target_arch == "arm64" or \
-       target_arch == "mipsel" or target_arch == "mips64el"', {
-      'sources!': [
-        '../third_party/skia/src/opts/opts_check_x86.cpp'
-      ],
-    }],
     [ 'desktop_linux == 1 or chromeos == 1', {
       'dependencies': [
         '../build/linux/system.gyp:fontconfig',
@@ -244,7 +234,7 @@
         '-Wno-unused-function',
       ],
     }],
-    [ 'use_cairo == 1', {
+    [ 'use_cairo == 1 and use_pango == 1', {
       'dependencies': [
         '../build/linux/system.gyp:pangocairo',
       ],
@@ -290,9 +280,6 @@
         #  from the ios and mac conditions and moved into the main sources
         #  list.
         '../third_party/skia/src/utils/mac/SkStream_mac.cpp',
-      ],
-      'sources/': [
-        ['exclude', 'opts_check_x86\\.cpp$'],
       ],
 
       # The main skia_opts target does not currently work on iOS because the

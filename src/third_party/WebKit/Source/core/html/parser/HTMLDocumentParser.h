@@ -74,7 +74,7 @@ public:
         return adoptRefWillBeNoop(new HTMLDocumentParser(document, reportErrors, backgroundParsingPolicy));
     }
     virtual ~HTMLDocumentParser();
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     // Exposed for HTMLParserScheduler
     void resumeParsingAfterYield();
@@ -197,6 +197,7 @@ private:
     WeakPtrFactory<HTMLDocumentParser> m_weakFactory;
     WeakPtr<BackgroundHTMLParser> m_backgroundParser;
     OwnPtrWillBeMember<HTMLResourcePreloader> m_preloader;
+    PreloadRequestStream m_queuedPreloads;
 
     bool m_shouldUseThreading;
     bool m_endWasDelayed;

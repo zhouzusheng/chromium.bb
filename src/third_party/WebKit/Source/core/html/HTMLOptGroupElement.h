@@ -49,19 +49,19 @@ private:
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
     virtual void childrenChanged(const ChildrenChange&) override;
     virtual void accessKeyAction(bool sendMouseEvents) override;
-    virtual void didAddUserAgentShadowRoot(ShadowRoot&) override;
+    virtual void didAddClosedShadowRoot(ShadowRoot&) override;
     virtual void attach(const AttachContext& = AttachContext()) override;
     virtual void detach(const AttachContext& = AttachContext()) override;
 
     // <optgroup> might not have a renderer so we manually manage a cached style.
-    void updateNonRenderStyle();
-    virtual RenderStyle* nonRendererStyle() const override;
-    virtual PassRefPtr<RenderStyle> customStyleForRenderer() override;
+    void updateNonLayoutStyle();
+    virtual LayoutStyle* nonRendererStyle() const override;
+    virtual PassRefPtr<LayoutStyle> customStyleForRenderer() override;
 
     void updateGroupLabel();
     void recalcSelectOptions();
 
-    RefPtr<RenderStyle> m_style;
+    RefPtr<LayoutStyle> m_style;
 };
 
 } // namespace blink

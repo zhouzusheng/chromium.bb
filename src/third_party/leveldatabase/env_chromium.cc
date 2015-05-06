@@ -9,7 +9,6 @@
 #include <sys/types.h>
 #endif
 
-#include "base/debug/trace_event.h"
 #include "base/files/file_util.h"
 #include "base/lazy_instance.h"
 #include "base/memory/shared_memory.h"
@@ -17,6 +16,7 @@
 #include "base/process/process_metrics.h"
 #include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/trace_event/trace_event.h"
 #include "third_party/leveldatabase/chromium_logger.h"
 #include "third_party/re2/re2/re2.h"
 
@@ -412,7 +412,7 @@ Status MakeIOError(Slice filename,
 
 ErrorParsingResult ParseMethodAndError(const leveldb::Status& status,
                                        MethodID* method_param,
-                                       int* error) {
+                                       base::File::Error* error) {
   const std::string status_string = status.ToString();
   int method;
   if (RE2::PartialMatch(status_string.c_str(), "ChromeMethodOnly: (\\d+)",
@@ -420,18 +420,15 @@ ErrorParsingResult ParseMethodAndError(const leveldb::Status& status,
     *method_param = static_cast<MethodID>(method);
     return METHOD_ONLY;
   }
+  int parsed_error;
   if (RE2::PartialMatch(status_string.c_str(),
                         "ChromeMethodPFE: (\\d+)::.*::(\\d+)", &method,
-                        error)) {
-    *error = -*error;
+                        &parsed_error)) {
     *method_param = static_cast<MethodID>(method);
+    *error = static_cast<base::File::Error>(-parsed_error);
+    DCHECK_LT(*error, base::File::FILE_OK);
+    DCHECK_GT(*error, base::File::FILE_ERROR_MAX);
     return METHOD_AND_PFE;
-  }
-  if (RE2::PartialMatch(status_string.c_str(),
-                        "ChromeMethodErrno: (\\d+)::.*::(\\d+)", &method,
-                        error)) {
-    *method_param = static_cast<MethodID>(method);
-    return METHOD_AND_ERRNO;
   }
   return NONE;
 }
@@ -507,13 +504,12 @@ bool IndicatesDiskFull(const leveldb::Status& status) {
   if (status.ok())
     return false;
   leveldb_env::MethodID method;
-  int error = -1;
+  base::File::Error error = base::File::FILE_OK;
   leveldb_env::ErrorParsingResult result =
       leveldb_env::ParseMethodAndError(status, &method, &error);
   return (result == leveldb_env::METHOD_AND_PFE &&
           static_cast<base::File::Error>(error) ==
-              base::File::FILE_ERROR_NO_SPACE) ||
-         (result == leveldb_env::METHOD_AND_ERRNO && error == ENOSPC);
+              base::File::FILE_ERROR_NO_SPACE);
 }
 
 bool ChromiumEnv::MakeBackup(const std::string& fname) {
@@ -900,14 +896,6 @@ Status ChromiumEnv::NewWritableFile(const std::string& fname,
 
 Status ChromiumEnv::NewAppendableFile(const std::string& fname,
                                       leveldb::WritableFile** result) {
-#if defined(OS_CHROMEOS)
-  // Disabled until crbug.com/460568 is fixed. Technically this method shouldn't
-  // be called if reuse_logs is false, but a leveldb bug (fixed, but not yet in
-  // Chrome) still calls this function. Using default leveldb Env implementation
-  // to workaround this bug.
-  return Env::NewAppendableFile(fname, result);
-#endif
-
   *result = NULL;
   FilePath path = FilePath::FromUTF8Unsafe(fname);
   scoped_ptr<base::File> f(new base::File(

@@ -33,7 +33,10 @@
 
 #include "bindings/core/v8/SharedPersistent.h"
 
+#include "bindings/core/v8/WindowProxyManager.h"
+#include "core/fetch/AccessControlStatus.h"
 #include "core/fetch/CrossOriginAccessControl.h"
+#include "core/frame/LocalFrame.h"
 #include "platform/heap/Handle.h"
 #include "wtf/HashMap.h"
 #include "wtf/Vector.h"
@@ -49,7 +52,6 @@ class ExecutionContext;
 class HTMLDocument;
 class HTMLPlugInElement;
 class KURL;
-class LocalFrame;
 class ScriptState;
 class ScriptSourceCode;
 class SecurityOrigin;
@@ -97,7 +99,7 @@ public:
     //
     // FIXME: Get rid of extensionGroup here.
     // FIXME: We don't want to support multiple scripts.
-    void executeScriptInIsolatedWorld(int worldID, const Vector<ScriptSourceCode>& sources, int extensionGroup, Vector<v8::Local<v8::Value> >* results);
+    void executeScriptInIsolatedWorld(int worldID, const WillBeHeapVector<ScriptSourceCode>& sources, int extensionGroup, Vector<v8::Local<v8::Value>>* results);
 
     // Returns true if argument is a JavaScript URL.
     bool executeScriptIfJavaScriptURL(const KURL&);
@@ -113,7 +115,7 @@ public:
     // Creates a property of the global object of a frame.
     void bindToWindowObject(LocalFrame*, const String& key, NPObject*);
 
-    PassRefPtr<SharedPersistent<v8::Object> > createPluginWrapper(Widget*);
+    PassRefPtr<SharedPersistent<v8::Object>> createPluginWrapper(Widget*);
 
     void enableEval();
     void disableEval(const String& errorMessage);
@@ -121,7 +123,7 @@ public:
     static bool canAccessFromCurrentOrigin(LocalFrame*);
 
     static void setCaptureCallStackForUncaughtExceptions(bool);
-    void collectIsolatedContexts(Vector<std::pair<ScriptState*, SecurityOrigin*> >&);
+    void collectIsolatedContexts(Vector<std::pair<ScriptState*, SecurityOrigin*>>&);
 
     bool canExecuteScripts(ReasonForCallingCanExecuteScripts);
 
@@ -148,24 +150,19 @@ public:
     static void registerExtensionIfNeeded(v8::Extension*);
     static V8Extensions& registeredExtensions();
 
-    void setWorldDebugId(int worldId, int debuggerId);
-
-    v8::Isolate* isolate() const { return m_isolate; }
+    v8::Isolate* isolate() const { return m_windowProxyManager->isolate(); }
 
 private:
     explicit ScriptController(LocalFrame*);
 
-    typedef WillBeHeapHashMap<int, OwnPtrWillBeMember<WindowProxy> > IsolatedWorldMap;
+    LocalFrame* frame() const { return toLocalFrame(m_windowProxyManager->frame()); }
+
     typedef HashMap<Widget*, NPObject*> PluginObjectMap;
 
     v8::Local<v8::Value> evaluateScriptInMainWorld(const ScriptSourceCode&, AccessControlStatus, ExecuteScriptPolicy, double* compilationFinishTime = 0);
 
-    RawPtrWillBeMember<LocalFrame> m_frame;
+    OwnPtrWillBeMember<WindowProxyManager> m_windowProxyManager;
     const String* m_sourceURL;
-    v8::Isolate* m_isolate;
-
-    OwnPtrWillBeMember<WindowProxy> m_windowProxy;
-    IsolatedWorldMap m_isolatedWorlds;
 
     // A mapping between Widgets and their corresponding script object.
     // This list is used so that when the plugin dies, we can immediately

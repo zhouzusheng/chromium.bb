@@ -27,6 +27,7 @@
 #include "bindings/core/v8/V8Initializer.h"
 
 #include "bindings/core/v8/DOMWrapperWorld.h"
+#include "bindings/core/v8/RejectedPromises.h"
 #include "bindings/core/v8/ScriptCallStackFactory.h"
 #include "bindings/core/v8/ScriptController.h"
 #include "bindings/core/v8/ScriptProfiler.h"
@@ -40,23 +41,25 @@
 #include "bindings/core/v8/V8Location.h"
 #include "bindings/core/v8/V8PerContextData.h"
 #include "bindings/core/v8/V8Window.h"
+#include "bindings/core/v8/WorkerScriptController.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/fetch/AccessControlStatus.h"
 #include "core/frame/ConsoleTypes.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
-#include "core/inspector/ConsoleMessage.h"
 #include "core/inspector/ScriptArguments.h"
 #include "core/inspector/ScriptCallStack.h"
+#include "core/workers/WorkerGlobalScope.h"
 #include "platform/EventDispatchForbiddenScope.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/TraceEvent.h"
 #include "platform/heap/AddressSanitizer.h"
 #include "platform/scheduler/Scheduler.h"
 #include "public/platform/Platform.h"
+#include "wtf/ArrayBufferContents.h"
 #include "wtf/RefPtr.h"
-#include "wtf/ThreadSpecific.h"
 #include "wtf/text/WTFString.h"
 #include <v8-debug.h>
 
@@ -152,7 +155,7 @@ static void messageHandlerInMainThread(v8::Handle<v8::Message> message, v8::Hand
     AccessControlStatus corsStatus = message->IsSharedCrossOrigin() ? SharableCrossOrigin : NotSharableCrossOrigin;
 
     ScriptState* scriptState = ScriptState::current(isolate);
-    String errorMessage = toCoreString(message->Get());
+    String errorMessage = toCoreStringWithNullCheck(message->Get());
     RefPtrWillBeRawPtr<ErrorEvent> event = ErrorEvent::create(errorMessage, resourceName, message->GetLineNumber(), message->GetStartColumn() + 1, &scriptState->world());
 
     String messageForConsole = extractMessageForConsole(data);
@@ -183,89 +186,18 @@ static void messageHandlerInMainThread(v8::Handle<v8::Message> message, v8::Hand
 
 namespace {
 
-class PromiseRejectMessage {
-    ALLOW_ONLY_INLINE_ALLOCATION();
-public:
-    PromiseRejectMessage(const ScriptValue& promise, const ScriptValue& exception, const String& errorMessage, const String& resourceName, int scriptId, int lineNumber, int columnNumber, PassRefPtrWillBeRawPtr<ScriptCallStack> callStack)
-        : m_promise(promise)
-        , m_exception(exception)
-        , m_errorMessage(errorMessage)
-        , m_resourceName(resourceName)
-        , m_scriptId(scriptId)
-        , m_lineNumber(lineNumber)
-        , m_columnNumber(columnNumber)
-        , m_callStack(callStack)
-    {
-    }
-
-    void trace(Visitor* visitor)
-    {
-        visitor->trace(m_callStack);
-    }
-
-    const ScriptValue m_promise;
-    const ScriptValue m_exception;
-    const String m_errorMessage;
-    const String m_resourceName;
-    const int m_scriptId;
-    const int m_lineNumber;
-    const int m_columnNumber;
-    const RefPtrWillBeMember<ScriptCallStack> m_callStack;
-};
+static RejectedPromises& rejectedPromisesOnMainThread()
+{
+    ASSERT(isMainThread());
+    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<RejectedPromises>, rejectedPromises, (adoptPtrWillBeNoop(new RejectedPromises())));
+    return *rejectedPromises;
+}
 
 } // namespace
 
-typedef Deque<PromiseRejectMessage> PromiseRejectMessageQueue;
-
-static PromiseRejectMessageQueue& promiseRejectMessageQueue()
+void V8Initializer::reportRejectedPromisesOnMainThread()
 {
-    AtomicallyInitializedStatic(ThreadSpecific<PromiseRejectMessageQueue>*, queue = new ThreadSpecific<PromiseRejectMessageQueue>);
-    return **queue;
-}
-
-void V8Initializer::reportRejectedPromises()
-{
-    PromiseRejectMessageQueue& queue = promiseRejectMessageQueue();
-    while (!queue.isEmpty()) {
-        PromiseRejectMessage message = queue.takeFirst();
-        ScriptState* scriptState = message.m_promise.scriptState();
-        if (!scriptState->contextIsValid())
-            continue;
-        // If execution termination has been triggered, quietly bail out.
-        if (v8::V8::IsExecutionTerminating(scriptState->isolate()))
-            continue;
-        ExecutionContext* executionContext = scriptState->executionContext();
-        if (!executionContext)
-            continue;
-
-        ScriptState::Scope scope(scriptState);
-
-        ASSERT(!message.m_promise.isEmpty());
-        v8::Handle<v8::Value> value = message.m_promise.v8Value();
-        ASSERT(!value.IsEmpty() && value->IsPromise());
-        if (v8::Handle<v8::Promise>::Cast(value)->HasHandler())
-            continue;
-
-        const String errorMessage = "Uncaught (in promise)";
-        Vector<ScriptValue> args;
-        args.append(ScriptValue(scriptState, v8String(scriptState->isolate(), errorMessage)));
-        args.append(message.m_exception);
-        RefPtrWillBeRawPtr<ScriptArguments> arguments = ScriptArguments::create(scriptState, args);
-
-        String embedderErrorMessage = message.m_errorMessage;
-        if (embedderErrorMessage.isEmpty()) {
-            embedderErrorMessage = errorMessage;
-        } else {
-            if (embedderErrorMessage.startsWith("Uncaught "))
-                embedderErrorMessage.insert(" (in promise)", 8);
-        }
-
-        RefPtrWillBeRawPtr<ConsoleMessage> consoleMessage = ConsoleMessage::create(JSMessageSource, ErrorMessageLevel, embedderErrorMessage, message.m_resourceName, message.m_lineNumber, message.m_columnNumber);
-        consoleMessage->setScriptArguments(arguments);
-        consoleMessage->setCallStack(message.m_callStack);
-        consoleMessage->setScriptId(message.m_scriptId);
-        executionContext->addConsoleMessage(consoleMessage.release());
-    }
+    rejectedPromisesOnMainThread().processQueue();
 }
 
 static void promiseRejectHandlerInMainThread(v8::PromiseRejectMessage data)
@@ -320,7 +252,7 @@ static void promiseRejectHandlerInMainThread(v8::PromiseRejectMessage data)
         lineNumber = message->GetLineNumber();
         columnNumber = message->GetStartColumn() + 1;
         resourceName = extractResourceName(message, window->document());
-        errorMessage = toCoreString(message->Get());
+        errorMessage = toCoreStringWithNullCheck(message->Get());
         callStack = extractCallStack(isolate, message, &scriptId);
     } else if (!exception.IsEmpty() && exception->IsInt32()) {
         // For Smi's the message would be empty.
@@ -332,7 +264,7 @@ static void promiseRejectHandlerInMainThread(v8::PromiseRejectMessage data)
         errorMessage = "Uncaught " + messageForConsole;
 
     ScriptState* scriptState = ScriptState::from(context);
-    promiseRejectMessageQueue().append(PromiseRejectMessage(ScriptValue(scriptState, promise), ScriptValue(scriptState, data.GetValue()), errorMessage, resourceName, scriptId, lineNumber, columnNumber, callStack));
+    rejectedPromisesOnMainThread().add(scriptState, data, errorMessage, resourceName, scriptId, lineNumber, columnNumber, callStack);
 }
 
 static void promiseRejectHandlerInWorker(v8::PromiseRejectMessage data)
@@ -344,9 +276,17 @@ static void promiseRejectHandlerInWorker(v8::PromiseRejectMessage data)
 
     // Bail out if called during context initialization.
     v8::Isolate* isolate = promise->GetIsolate();
-    v8::Handle<v8::Context> context = isolate->GetCurrentContext();
-    if (context.IsEmpty())
+    ScriptState* scriptState = ScriptState::current(isolate);
+    if (!scriptState->contextIsValid())
         return;
+
+    ExecutionContext* executionContext = scriptState->executionContext();
+    if (!executionContext)
+        return;
+
+    ASSERT(executionContext->isWorkerGlobalScope());
+    WorkerScriptController* scriptController = toWorkerGlobalScope(executionContext)->script();
+    ASSERT(scriptController);
 
     int scriptId = 0;
     int lineNumber = 0;
@@ -360,11 +300,10 @@ static void promiseRejectHandlerInWorker(v8::PromiseRejectMessage data)
         scriptId = message->GetScriptOrigin().ScriptID()->Value();
         lineNumber = message->GetLineNumber();
         columnNumber = message->GetStartColumn() + 1;
-        errorMessage = toCoreString(message->Get());
+        // message->Get() can be empty here. https://crbug.com/450330
+        errorMessage = toCoreStringWithNullCheck(message->Get());
     }
-
-    ScriptState* scriptState = ScriptState::from(context);
-    promiseRejectMessageQueue().append(PromiseRejectMessage(ScriptValue(scriptState, promise), ScriptValue(scriptState, data.GetValue()), errorMessage, resourceName, scriptId, lineNumber, columnNumber, nullptr));
+    scriptController->rejectedPromises()->add(scriptState, data, errorMessage, resourceName, scriptId, lineNumber, columnNumber, nullptr);
 }
 
 static void failedAccessCheckCallbackInMainThread(v8::Local<v8::Object> host, v8::AccessType type, v8::Local<v8::Value> data)
@@ -434,6 +373,31 @@ static void initializeV8Common(v8::Isolate* isolate)
     isolate->SetAutorunMicrotasks(false);
 }
 
+namespace {
+
+class ArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
+    virtual void* Allocate(size_t size) override
+    {
+        void* data;
+        WTF::ArrayBufferContents::allocateMemory(size, WTF::ArrayBufferContents::ZeroInitialize, data);
+        return data;
+    }
+
+    virtual void* AllocateUninitialized(size_t size) override
+    {
+        void* data;
+        WTF::ArrayBufferContents::allocateMemory(size, WTF::ArrayBufferContents::DontInitialize, data);
+        return data;
+    }
+
+    virtual void Free(void* data, size_t size) override
+    {
+        WTF::ArrayBufferContents::freeMemory(data, size);
+    }
+};
+
+} // namespace
+
 void V8Initializer::initializeMainThreadIfNeeded()
 {
     ASSERT(isMainThread());
@@ -443,7 +407,8 @@ void V8Initializer::initializeMainThreadIfNeeded()
         return;
     initialized = true;
 
-    gin::IsolateHolder::Initialize(gin::IsolateHolder::kNonStrictMode, v8ArrayBufferAllocator());
+    DEFINE_STATIC_LOCAL(ArrayBufferAllocator, arrayBufferAllocator, ());
+    gin::IsolateHolder::Initialize(gin::IsolateHolder::kNonStrictMode, &arrayBufferAllocator);
 
     v8::Isolate* isolate = V8PerIsolateData::initialize();
 
@@ -481,7 +446,7 @@ static void messageHandlerInWorker(v8::Handle<v8::Message> message, v8::Handle<v
     ScriptState* scriptState = ScriptState::current(isolate);
     // During the frame teardown, there may not be a valid context.
     if (ExecutionContext* context = scriptState->executionContext()) {
-        String errorMessage = toCoreString(message->Get());
+        String errorMessage = toCoreStringWithNullCheck(message->Get());
         TOSTRING_VOID(V8StringResource<>, sourceURL, message->GetScriptOrigin().ResourceName());
         int scriptId = 0;
         RefPtrWillBeRawPtr<ScriptCallStack> callStack = extractCallStack(isolate, message, &scriptId);

@@ -9,8 +9,8 @@
 #include "libANGLE/renderer/d3d/FramebufferD3D.h"
 #include "libANGLE/renderer/d3d/TextureD3D.h"
 #include "libANGLE/renderer/d3d/RendererD3D.h"
+#include "libANGLE/renderer/d3d/RenderTargetD3D.h"
 #include "libANGLE/renderer/d3d/RenderbufferD3D.h"
-#include "libANGLE/renderer/RenderTarget.h"
 #include "libANGLE/formatutils.h"
 #include "libANGLE/Framebuffer.h"
 #include "libANGLE/FramebufferAttachment.h"
@@ -18,7 +18,7 @@
 namespace rx
 {
 
-DefaultAttachmentD3D::DefaultAttachmentD3D(RenderTarget *renderTarget)
+DefaultAttachmentD3D::DefaultAttachmentD3D(RenderTargetD3D *renderTarget)
     : mRenderTarget(renderTarget)
 {
     ASSERT(mRenderTarget);
@@ -55,7 +55,7 @@ GLsizei DefaultAttachmentD3D::getSamples() const
     return mRenderTarget->getSamples();
 }
 
-RenderTarget *DefaultAttachmentD3D::getRenderTarget() const
+RenderTargetD3D *DefaultAttachmentD3D::getRenderTarget() const
 {
     return mRenderTarget;
 }
@@ -207,18 +207,25 @@ gl::Error FramebufferD3D::clearBufferfi(const gl::State &state, GLenum buffer, G
     return clear(state, clearParams);
 }
 
+const gl::FramebufferAttachment *FramebufferD3D::getReadAttachment() const
+{
+    ASSERT(mReadBuffer == GL_BACK || (mReadBuffer >= GL_COLOR_ATTACHMENT0 && mReadBuffer <= GL_COLOR_ATTACHMENT15));
+    size_t readIndex = (mReadBuffer == GL_BACK ? 0 : static_cast<size_t>(mReadBuffer - GL_COLOR_ATTACHMENT0));
+    ASSERT(readIndex < mColorBuffers.size());
+    return mColorBuffers[readIndex];
+}
+
 GLenum FramebufferD3D::getImplementationColorReadFormat() const
 {
-    // Will require more logic if glReadBuffers is supported
-    ASSERT(mReadBuffer == GL_COLOR_ATTACHMENT0 || mReadBuffer == GL_BACK);
+    const gl::FramebufferAttachment *readAttachment = getReadAttachment();
 
-    if (mColorBuffers[0] == nullptr)
+    if (readAttachment == nullptr)
     {
         return GL_NONE;
     }
 
-    RenderTarget *attachmentRenderTarget = NULL;
-    gl::Error error = GetAttachmentRenderTarget(mColorBuffers[0], &attachmentRenderTarget);
+    RenderTargetD3D *attachmentRenderTarget = NULL;
+    gl::Error error = GetAttachmentRenderTarget(readAttachment, &attachmentRenderTarget);
     if (error.isError())
     {
         return GL_NONE;
@@ -232,16 +239,15 @@ GLenum FramebufferD3D::getImplementationColorReadFormat() const
 
 GLenum FramebufferD3D::getImplementationColorReadType() const
 {
-    // Will require more logic if glReadBuffers is supported
-    ASSERT(mReadBuffer == GL_COLOR_ATTACHMENT0 || mReadBuffer == GL_BACK);
+    const gl::FramebufferAttachment *readAttachment = getReadAttachment();
 
-    if (mColorBuffers[0] == nullptr)
+    if (readAttachment == nullptr)
     {
         return GL_NONE;
     }
 
-    RenderTarget *attachmentRenderTarget = NULL;
-    gl::Error error = GetAttachmentRenderTarget(mColorBuffers[0], &attachmentRenderTarget);
+    RenderTargetD3D *attachmentRenderTarget = NULL;
+    gl::Error error = GetAttachmentRenderTarget(readAttachment, &attachmentRenderTarget);
     if (error.isError())
     {
         return GL_NONE;
@@ -257,7 +263,7 @@ gl::Error FramebufferD3D::readPixels(const gl::State &state, const gl::Rectangle
 {
     GLenum sizedInternalFormat = gl::GetSizedInternalFormat(format, type);
     const gl::InternalFormat &sizedFormatInfo = gl::GetInternalFormatInfo(sizedInternalFormat);
-    GLuint outputPitch = sizedFormatInfo.computeRowPitch(type, area.width, state.getPackAlignment());
+    GLuint outputPitch = sizedFormatInfo.computeRowPitch(type, area.width, state.getPackAlignment(), 0);
 
     return readPixels(area, format, type, outputPitch, state.getPackState(), reinterpret_cast<uint8_t*>(pixels));
 }
@@ -327,13 +333,13 @@ GLenum FramebufferD3D::checkStatus() const
     return GL_FRAMEBUFFER_COMPLETE;
 }
 
-gl::Error GetAttachmentRenderTarget(const gl::FramebufferAttachment *attachment, RenderTarget **outRT)
+gl::Error GetAttachmentRenderTarget(const gl::FramebufferAttachment *attachment, RenderTargetD3D **outRT)
 {
     if (attachment->type() == GL_TEXTURE)
     {
         gl::Texture *texture = attachment->getTexture();
         ASSERT(texture);
-        TextureD3D *textureD3D = TextureD3D::makeTextureD3D(texture->getImplementation());
+        TextureD3D *textureD3D = GetImplAs<TextureD3D>(texture);
         const gl::ImageIndex *index = attachment->getTextureImageIndex();
         ASSERT(index);
         return textureD3D->getRenderTarget(*index, outRT);
@@ -369,7 +375,7 @@ unsigned int GetAttachmentSerial(const gl::FramebufferAttachment *attachment)
     {
         gl::Texture *texture = attachment->getTexture();
         ASSERT(texture);
-        TextureD3D *textureD3D = TextureD3D::makeTextureD3D(texture->getImplementation());
+        TextureD3D *textureD3D = GetImplAs<TextureD3D>(texture);
         const gl::ImageIndex *index = attachment->getTextureImageIndex();
         ASSERT(index);
         return textureD3D->getRenderTargetSerial(*index);

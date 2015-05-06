@@ -65,7 +65,7 @@ public:
 
     void willBeDetachedFromFrame();
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     PassRefPtrWillBeRawPtr<ServiceWorker> controller() { return m_controller.get(); }
     ScriptPromise ready(ScriptState*);
@@ -89,7 +89,7 @@ public:
 private:
     explicit ServiceWorkerContainer(ExecutionContext*);
 
-    typedef ScriptPromiseProperty<Member<ServiceWorkerContainer>, Member<ServiceWorkerRegistration>, Member<ServiceWorkerRegistration> > ReadyProperty;
+    typedef ScriptPromiseProperty<Member<ServiceWorkerContainer>, Member<ServiceWorkerRegistration>, Member<ServiceWorkerRegistration>> ReadyProperty;
     ReadyProperty* createReadyProperty();
 
     WebServiceWorkerProvider* m_provider;

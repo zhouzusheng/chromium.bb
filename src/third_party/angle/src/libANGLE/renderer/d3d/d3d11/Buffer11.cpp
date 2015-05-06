@@ -588,7 +588,7 @@ Buffer11::BufferStorage *Buffer11::getBufferStorage(BufferUsage usage)
             NativeStorage *stagingBuffer = getStagingStorage();
 
             stagingBuffer->copyFromStorage(latestBuffer, 0, latestBuffer->getSize(), 0);
-            newStorage->setDataRevision(latestBuffer->getDataRevision());
+            stagingBuffer->setDataRevision(latestBuffer->getDataRevision());
 
             latestBuffer = stagingBuffer;
         }
@@ -618,6 +618,16 @@ Buffer11::BufferStorage *Buffer11::getLatestBufferStorage() const
         {
             latestStorage = storage;
             latestRevision = storage->getDataRevision();
+        }
+    }
+
+    // resize buffer
+    if (latestStorage && latestStorage->getSize() < mSize)
+    {
+        if (latestStorage->resize(mSize, true).isError())
+        {
+            // Out of memory error
+            return NULL;
         }
     }
 

@@ -163,7 +163,7 @@ static bool shouldBypassMainWorldCSP(Element* element)
 
     // Main world CSP is bypassed for style elements in user agent shadow DOM.
     ShadowRoot* root = element->containingShadowRoot();
-    if (root && root->type() == ShadowRoot::UserAgentShadowRoot)
+    if (root && root->type() == ShadowRoot::ClosedShadowRoot)
         return true;
 
     return false;
@@ -181,7 +181,7 @@ void StyleElement::createSheet(Element* e, const String& text)
     bool passesContentSecurityPolicyChecks = shouldBypassMainWorldCSP(e)
         || csp->allowStyleWithHash(text)
         || csp->allowStyleWithNonce(e->fastGetAttribute(HTMLNames::nonceAttr))
-        || csp->allowInlineStyle(e->document().url(), m_startPosition.m_line);
+        || csp->allowInlineStyle(e->document().url(), m_startPosition.m_line, text);
 
     // If type is empty or CSS, this is a CSS style sheet.
     const AtomicString& type = this->type();

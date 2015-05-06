@@ -13,10 +13,10 @@
 #include "libANGLE/FramebufferAttachment.h"
 #include "libANGLE/Program.h"
 #include "libANGLE/features.h"
-#include "libANGLE/renderer/ShaderExecutable.h"
 #include "libANGLE/renderer/d3d/DynamicHLSL.h"
 #include "libANGLE/renderer/d3d/RendererD3D.h"
 #include "libANGLE/renderer/d3d/ShaderD3D.h"
+#include "libANGLE/renderer/d3d/ShaderExecutableD3D.h"
 #include "libANGLE/renderer/d3d/VertexDataManager.h"
 
 namespace rx
@@ -83,10 +83,12 @@ void GetDefaultInputLayoutFromShader(const std::vector<sh::Attribute> &shaderAtt
 
 std::vector<GLenum> GetDefaultOutputLayoutFromShader(const std::vector<PixelShaderOutputVariable> &shaderOutputVars)
 {
-    std::vector<GLenum> defaultPixelOutput(1);
+    std::vector<GLenum> defaultPixelOutput;
 
-    ASSERT(!shaderOutputVars.empty());
-    defaultPixelOutput[0] = GL_COLOR_ATTACHMENT0 + shaderOutputVars[0].outputIndex;
+    if (!shaderOutputVars.empty())
+    {
+        defaultPixelOutput.push_back(GL_COLOR_ATTACHMENT0 + shaderOutputVars[0].outputIndex);
+    }
 
     return defaultPixelOutput;
 }
@@ -122,7 +124,7 @@ struct AttributeSorter
 
 ProgramD3D::VertexExecutable::VertexExecutable(const gl::VertexFormat inputLayout[],
                                                const GLenum signature[],
-                                               ShaderExecutable *shaderExecutable)
+                                               ShaderExecutableD3D *shaderExecutable)
     : mShaderExecutable(shaderExecutable)
 {
     for (size_t attributeIndex = 0; attributeIndex < gl::MAX_VERTEX_ATTRIBS; attributeIndex++)
@@ -150,7 +152,7 @@ bool ProgramD3D::VertexExecutable::matchesSignature(const GLenum signature[]) co
     return true;
 }
 
-ProgramD3D::PixelExecutable::PixelExecutable(const std::vector<GLenum> &outputSignature, ShaderExecutable *shaderExecutable)
+ProgramD3D::PixelExecutable::PixelExecutable(const std::vector<GLenum> &outputSignature, ShaderExecutableD3D *shaderExecutable)
     : mOutputSignature(outputSignature),
       mShaderExecutable(shaderExecutable)
 {
@@ -192,18 +194,6 @@ ProgramD3D::~ProgramD3D()
     SafeDelete(mDynamicHLSL);
 }
 
-ProgramD3D *ProgramD3D::makeProgramD3D(ProgramImpl *impl)
-{
-    ASSERT(HAS_DYNAMIC_TYPE(ProgramD3D*, impl));
-    return static_cast<ProgramD3D*>(impl);
-}
-
-const ProgramD3D *ProgramD3D::makeProgramD3D(const ProgramImpl *impl)
-{
-    ASSERT(HAS_DYNAMIC_TYPE(const ProgramD3D*, impl));
-    return static_cast<const ProgramD3D*>(impl);
-}
-
 bool ProgramD3D::usesPointSpriteEmulation() const
 {
     return mUsesPointSize && mRenderer->getMajorShaderModel() >= 4;
@@ -211,7 +201,12 @@ bool ProgramD3D::usesPointSpriteEmulation() const
 
 bool ProgramD3D::usesGeometryShader() const
 {
-    return usesPointSpriteEmulation();
+    return usesPointSpriteEmulation() && !usesInstancedPointSpriteEmulation();
+}
+
+bool ProgramD3D::usesInstancedPointSpriteEmulation() const
+{
+    return mRenderer->getWorkarounds().useInstancedPointSpriteEmulation;
 }
 
 GLint ProgramD3D::getSamplerMapping(gl::SamplerType type, unsigned int samplerIndex, const gl::Caps &caps) const
@@ -579,7 +574,7 @@ LinkResult ProgramD3D::load(gl::InfoLog &infoLog, gl::BinaryInputStream *stream)
         unsigned int vertexShaderSize = stream->readInt<unsigned int>();
         const unsigned char *vertexShaderFunction = binary + stream->offset();
 
-        ShaderExecutable *shaderExecutable = NULL;
+        ShaderExecutableD3D *shaderExecutable = NULL;
         gl::Error error = mRenderer->loadExecutable(vertexShaderFunction, vertexShaderSize,
                                                     SHADER_VERTEX,
                                                     mTransformFeedbackLinkedVaryings,
@@ -618,7 +613,7 @@ LinkResult ProgramD3D::load(gl::InfoLog &infoLog, gl::BinaryInputStream *stream)
 
         const size_t pixelShaderSize = stream->readInt<unsigned int>();
         const unsigned char *pixelShaderFunction = binary + stream->offset();
-        ShaderExecutable *shaderExecutable = NULL;
+        ShaderExecutableD3D *shaderExecutable = NULL;
         gl::Error error = mRenderer->loadExecutable(pixelShaderFunction, pixelShaderSize, SHADER_PIXEL,
                                                     mTransformFeedbackLinkedVaryings,
                                                     (mTransformFeedbackBufferMode == GL_SEPARATE_ATTRIBS),
@@ -839,7 +834,7 @@ gl::Error ProgramD3D::save(gl::BinaryOutputStream *stream)
     return gl::Error(GL_NO_ERROR);
 }
 
-gl::Error ProgramD3D::getPixelExecutableForFramebuffer(const gl::Framebuffer *fbo, ShaderExecutable **outExecutable)
+gl::Error ProgramD3D::getPixelExecutableForFramebuffer(const gl::Framebuffer *fbo, ShaderExecutableD3D **outExecutable)
 {
     std::vector<GLenum> outputs;
 
@@ -863,7 +858,7 @@ gl::Error ProgramD3D::getPixelExecutableForFramebuffer(const gl::Framebuffer *fb
 }
 
 gl::Error ProgramD3D::getPixelExecutableForOutputLayout(const std::vector<GLenum> &outputSignature,
-                                                        ShaderExecutable **outExectuable,
+                                                        ShaderExecutableD3D **outExectuable,
                                                         gl::InfoLog *infoLog)
 {
     for (size_t executableIndex = 0; executableIndex < mPixelExecutables.size(); executableIndex++)
@@ -879,7 +874,7 @@ gl::Error ProgramD3D::getPixelExecutableForOutputLayout(const std::vector<GLenum
                                                                                      outputSignature);
 
     // Generate new pixel executable
-    ShaderExecutable *pixelExecutable = NULL;
+    ShaderExecutableD3D *pixelExecutable = NULL;
 
     gl::InfoLog tempInfoLog;
     gl::InfoLog *currentInfoLog = infoLog ? infoLog : &tempInfoLog;
@@ -909,7 +904,7 @@ gl::Error ProgramD3D::getPixelExecutableForOutputLayout(const std::vector<GLenum
 }
 
 gl::Error ProgramD3D::getVertexExecutableForInputLayout(const gl::VertexFormat inputLayout[gl::MAX_VERTEX_ATTRIBS],
-                                                        ShaderExecutable **outExectuable,
+                                                        ShaderExecutableD3D **outExectuable,
                                                         gl::InfoLog *infoLog)
 {
     GLenum signature[gl::MAX_VERTEX_ATTRIBS];
@@ -928,7 +923,7 @@ gl::Error ProgramD3D::getVertexExecutableForInputLayout(const gl::VertexFormat i
     std::string finalVertexHLSL = mDynamicHLSL->generateVertexShaderForInputLayout(mVertexHLSL, inputLayout, mShaderAttributes);
 
     // Generate new vertex executable
-    ShaderExecutable *vertexExecutable = NULL;
+    ShaderExecutableD3D *vertexExecutable = NULL;
 
     gl::InfoLog tempInfoLog;
     gl::InfoLog *currentInfoLog = infoLog ? infoLog : &tempInfoLog;
@@ -965,7 +960,7 @@ LinkResult ProgramD3D::compileProgramExecutables(gl::InfoLog &infoLog, gl::Shade
 
     gl::VertexFormat defaultInputLayout[gl::MAX_VERTEX_ATTRIBS];
     GetDefaultInputLayoutFromShader(vertexShader->getActiveAttributes(), defaultInputLayout);
-    ShaderExecutable *defaultVertexExecutable = NULL;
+    ShaderExecutableD3D *defaultVertexExecutable = NULL;
     gl::Error error = getVertexExecutableForInputLayout(defaultInputLayout, &defaultVertexExecutable, &infoLog);
     if (error.isError())
     {
@@ -973,7 +968,7 @@ LinkResult ProgramD3D::compileProgramExecutables(gl::InfoLog &infoLog, gl::Shade
     }
 
     std::vector<GLenum> defaultPixelOutput = GetDefaultOutputLayoutFromShader(getPixelShaderKey());
-    ShaderExecutable *defaultPixelExecutable = NULL;
+    ShaderExecutableD3D *defaultPixelExecutable = NULL;
     error = getPixelExecutableForOutputLayout(defaultPixelOutput, &defaultPixelExecutable, &infoLog);
     if (error.isError())
     {
@@ -1437,29 +1432,27 @@ void ProgramD3D::defineUniform(const ShaderD3D *shader, const sh::ShaderVariable
 
         gl::LinkedUniform *linkedUniform = getUniformByName(fullName);
 
+        // Advance the uniform offset, to track registers allocation for structs
+        sh::BlockMemberInfo blockInfo = encoder->encodeType(uniform.type, uniform.arraySize, false);
+
         if (!linkedUniform)
         {
             linkedUniform = new gl::LinkedUniform(uniform.type, uniform.precision, fullName, uniform.arraySize,
-                                              -1, sh::BlockMemberInfo::getDefaultBlockInfo());
+                                                  -1, sh::BlockMemberInfo::getDefaultBlockInfo());
             ASSERT(linkedUniform);
-            linkedUniform->registerElement = encoder->getCurrentElement();
+            linkedUniform->registerElement = sh::HLSLBlockEncoder::getBlockRegisterElement(blockInfo);
             mUniforms.push_back(linkedUniform);
         }
 
-        ASSERT(linkedUniform->registerElement == encoder->getCurrentElement());
-
         if (shader->getShaderType() == GL_FRAGMENT_SHADER)
         {
-            linkedUniform->psRegisterIndex = encoder->getCurrentRegister();
+            linkedUniform->psRegisterIndex = sh::HLSLBlockEncoder::getBlockRegister(blockInfo);
         }
         else if (shader->getShaderType() == GL_VERTEX_SHADER)
         {
-            linkedUniform->vsRegisterIndex = encoder->getCurrentRegister();
+            linkedUniform->vsRegisterIndex = sh::HLSLBlockEncoder::getBlockRegister(blockInfo);
         }
         else UNREACHABLE();
-
-        // Advance the uniform offset, to track registers allocation for structs
-        encoder->encodeType(uniform.type, uniform.arraySize, false);
 
         // Arrays are treated as aggregate types
         if (uniform.isArray())

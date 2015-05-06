@@ -41,7 +41,6 @@
 namespace blink {
 
 class AsyncCallTracker;
-class ContextMenuProvider;
 class LocalFrame;
 class GraphicsContext;
 class GraphicsLayer;
@@ -54,11 +53,9 @@ class InspectorCSSAgent;
 class InspectorDOMAgent;
 class InspectorFrontend;
 class InspectorFrontendChannel;
-class InspectorFrontendClient;
 class InspectorLayerTreeAgent;
 class InspectorPageAgent;
 class InspectorResourceAgent;
-class InspectorTimelineAgent;
 class InspectorTracingAgent;
 class InspectorOverlay;
 class InstrumentingAgents;
@@ -74,7 +71,7 @@ class InspectorController : public NoBaseWillBeGarbageCollectedFinalized<Inspect
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
     ~InspectorController();
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
     static PassOwnPtrWillBeRawPtr<InspectorController> create(Page*, InspectorClient*);
 
@@ -85,11 +82,6 @@ public:
 
     void willBeDestroyed();
     void registerModuleAgent(PassOwnPtrWillBeRawPtr<InspectorAgent>);
-
-    void setInspectorFrontendClient(InspectorFrontendClient*);
-    void didClearDocumentOfWindowObject(LocalFrame*);
-    void setInjectedScriptForOrigin(const String& origin, const String& source);
-    void showContextMenu(float x, float y, PassRefPtrWillBeRawPtr<ContextMenuProvider>);
 
     void dispatchMessageFromFrontend(const String& message);
 
@@ -108,41 +100,30 @@ public:
     bool handleTouchEvent(LocalFrame*, const PlatformTouchEvent&);
     bool handleKeyboardEvent(LocalFrame*, const PlatformKeyboardEvent&);
 
-    void deviceOrPageScaleFactorChanged();
+    void pageScaleFactorChanged();
     bool deviceEmulationEnabled();
     bool screencastEnabled();
 
     bool isUnderTest();
     void evaluateForTestInFrontend(long callId, const String& script);
 
-    void resume();
-
-    void setResourcesDataSizeLimitsFromInternals(int maximumResourcesContentSize, int maximumSingleResourceContentSize);
-    PassRefPtr<JSONObject> highlightJSONForNode(Node*);
-
     void willProcessTask();
     void didProcessTask();
-    void flushPendingFrontendMessages();
+    void flushPendingProtocolNotifications();
 
     void didCommitLoadForMainFrame();
-    void didBeginFrame(int frameId);
-    void didCancelFrame();
-    void willComposite();
-    void didComposite();
-
-    void processGPUEvent(double timestamp, int phase, bool foreign, uint64_t usedGPUMemoryBytes, uint64_t limitGPUMemoryBytes);
 
     void scriptsEnabled(bool);
 
     void willAddPageOverlay(const GraphicsLayer*);
     void didRemovePageOverlay(const GraphicsLayer*);
 
+    InstrumentingAgents* instrumentingAgents() { return m_instrumentingAgents.get(); }
+
 private:
     InspectorController(Page*, InspectorClient*);
 
     void initializeDeferredAgents();
-
-    friend InstrumentingAgents* instrumentationForPage(Page*);
 
     RefPtrWillBeMember<InstrumentingAgents> m_instrumentingAgents;
     OwnPtrWillBeMember<InjectedScriptManager> m_injectedScriptManager;
@@ -152,7 +133,6 @@ private:
 
     RawPtrWillBeMember<InspectorDOMAgent> m_domAgent;
     RawPtrWillBeMember<InspectorPageAgent> m_pageAgent;
-    RawPtrWillBeMember<InspectorTimelineAgent> m_timelineAgent;
     RawPtrWillBeMember<InspectorCSSAgent> m_cssAgent;
     RawPtrWillBeMember<InspectorResourceAgent> m_resourceAgent;
     RawPtrWillBeMember<InspectorLayerTreeAgent> m_layerTreeAgent;
@@ -160,9 +140,7 @@ private:
     RawPtrWillBeMember<InspectorAnimationAgent> m_animationAgent;
 
     RefPtrWillBeMember<InspectorBackendDispatcher> m_inspectorBackendDispatcher;
-    InspectorFrontendClient* m_inspectorFrontendClient;
     OwnPtr<InspectorFrontend> m_inspectorFrontend;
-    RawPtrWillBeMember<Page> m_page;
     InspectorClient* m_inspectorClient;
     InspectorAgentRegistry m_agents;
     bool m_isUnderTest;

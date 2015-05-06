@@ -40,6 +40,7 @@ static WebVector<WebMediaKeySystemMediaCapability> convertCapabilities(const Vec
     WebVector<WebMediaKeySystemMediaCapability> result(capabilities.size());
     for (size_t i = 0; i < capabilities.size(); ++i) {
         const WebString& contentType = capabilities[i].contentType();
+        result[i].contentType = contentType;
         if (isValidContentType(contentType)) {
             // FIXME: Fail if there are unrecognized parameters.
             ParsedContentType type(capabilities[i].contentType());
@@ -103,7 +104,9 @@ MediaKeySystemAccessInitializer::MediaKeySystemAccessInitializer(ScriptState* sc
             webConfig.audioCapabilities = convertCapabilities(config.audioCapabilities());
         if (config.hasVideoCapabilities())
             webConfig.videoCapabilities = convertCapabilities(config.videoCapabilities());
+        ASSERT(config.hasDistinctiveIdentifier());
         webConfig.distinctiveIdentifier = convertMediaKeysRequirement(config.distinctiveIdentifier());
+        ASSERT(config.hasPersistentState());
         webConfig.persistentState = convertMediaKeysRequirement(config.persistentState());
         m_supportedConfigurations[i] = webConfig;
     }
@@ -123,54 +126,15 @@ void MediaKeySystemAccessInitializer::requestNotSupported(const WebString& error
 
 } // namespace
 
-NavigatorRequestMediaKeySystemAccess::NavigatorRequestMediaKeySystemAccess()
-{
-}
-
-NavigatorRequestMediaKeySystemAccess::~NavigatorRequestMediaKeySystemAccess()
-{
-}
-
-NavigatorRequestMediaKeySystemAccess& NavigatorRequestMediaKeySystemAccess::from(Navigator& navigator)
-{
-    NavigatorRequestMediaKeySystemAccess* supplement = static_cast<NavigatorRequestMediaKeySystemAccess*>(WillBeHeapSupplement<Navigator>::from(navigator, supplementName()));
-    if (!supplement) {
-        supplement = new NavigatorRequestMediaKeySystemAccess();
-        provideTo(navigator, supplementName(), adoptPtrWillBeNoop(supplement));
-    }
-    return *supplement;
-}
-
-ScriptPromise NavigatorRequestMediaKeySystemAccess::requestMediaKeySystemAccess(
-    ScriptState* scriptState,
-    Navigator& navigator,
-    const String& keySystem)
-{
-    // From https://w3c.github.io/encrypted-media/#requestmediakeysystemaccess
-    // When this method is invoked, the user agent must run the following steps:
-    // 1. If keySystem is an empty string, return a promise rejected with a
-    //    new DOMException whose name is InvalidAccessError.
-    if (keySystem.isEmpty()) {
-        return ScriptPromise::rejectWithDOMException(
-            scriptState, DOMException::create(InvalidAccessError, "The keySystem parameter is empty."));
-    }
-
-    // 2. If supportedConfigurations was provided and is empty, return a
-    //    promise rejected with a new DOMException whose name is
-    //    InvalidAccessError.
-    //    (|supportedConfigurations| was not provided.)
-
-    // Remainder of steps handled in common routine below.
-    return NavigatorRequestMediaKeySystemAccess::from(navigator).requestMediaKeySystemAccess(scriptState, keySystem, Vector<MediaKeySystemConfiguration>());
-}
-
 ScriptPromise NavigatorRequestMediaKeySystemAccess::requestMediaKeySystemAccess(
     ScriptState* scriptState,
     Navigator& navigator,
     const String& keySystem,
     const Vector<MediaKeySystemConfiguration>& supportedConfigurations)
 {
-    // From https://w3c.github.io/encrypted-media/#requestmediakeysystemaccess
+    WTF_LOG(Media, "NavigatorRequestMediaKeySystemAccess::requestMediaKeySystemAccess()");
+
+    // From https://w3c.github.io/encrypted-media/#requestMediaKeySystemAccess
     // When this method is invoked, the user agent must run the following steps:
     // 1. If keySystem is an empty string, return a promise rejected with a
     //    new DOMException whose name is InvalidAccessError.
@@ -187,18 +151,6 @@ ScriptPromise NavigatorRequestMediaKeySystemAccess::requestMediaKeySystemAccess(
             scriptState, DOMException::create(InvalidAccessError, "The supportedConfigurations parameter is empty."));
     }
 
-    // Remainder of steps handled in common routine below.
-    return NavigatorRequestMediaKeySystemAccess::from(navigator).requestMediaKeySystemAccess(
-        scriptState, keySystem, supportedConfigurations);
-}
-
-ScriptPromise NavigatorRequestMediaKeySystemAccess::requestMediaKeySystemAccess(
-    ScriptState* scriptState,
-    const String& keySystem,
-    const Vector<MediaKeySystemConfiguration>& supportedConfigurations)
-{
-    WTF_LOG(Media, "NavigatorRequestMediaKeySystemAccess::requestMediaKeySystemAccess()");
-
     // 3-4. 'May Document use powerful features?' check.
     // FIXME: Implement 'May Document use powerful features?' check.
 
@@ -206,28 +158,23 @@ ScriptPromise NavigatorRequestMediaKeySystemAccess::requestMediaKeySystemAccess(
     //    (Passed with the execution context in step 7.)
 
     // 6. Let promise be a new promise.
+    Document* document = toDocument(scriptState->executionContext());
+    if (!document->page()) {
+        return ScriptPromise::rejectWithDOMException(
+            scriptState, DOMException::create(InvalidStateError, "Document does not have a page."));
+    }
+
     MediaKeySystemAccessInitializer* initializer = new MediaKeySystemAccessInitializer(scriptState, keySystem, supportedConfigurations);
     ScriptPromise promise = initializer->promise();
 
     // 7. Asynchronously determine support, and if allowed, create and
     //    initialize the MediaKeySystemAccess object.
-    Document* document = toDocument(scriptState->executionContext());
     MediaKeysController* controller = MediaKeysController::from(document->page());
     WebEncryptedMediaClient* mediaClient = controller->encryptedMediaClient(scriptState->executionContext());
     mediaClient->requestMediaKeySystemAccess(WebEncryptedMediaRequest(initializer));
 
     // 8. Return promise.
     return promise;
-}
-
-const char* NavigatorRequestMediaKeySystemAccess::supplementName()
-{
-    return "RequestMediaKeySystemAccess";
-}
-
-void NavigatorRequestMediaKeySystemAccess::trace(Visitor* visitor)
-{
-    WillBeHeapSupplement<Navigator>::trace(visitor);
 }
 
 } // namespace blink

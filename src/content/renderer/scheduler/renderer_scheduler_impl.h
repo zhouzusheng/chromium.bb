@@ -8,13 +8,14 @@
 #include "base/atomicops.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread_checker.h"
+#include "cc/test/test_now_source.h"
 #include "content/renderer/scheduler/cancelable_closure_holder.h"
 #include "content/renderer/scheduler/renderer_scheduler.h"
 #include "content/renderer/scheduler/single_thread_idle_task_runner.h"
 #include "content/renderer/scheduler/task_queue_manager.h"
 
 namespace base {
-namespace debug {
+namespace trace_event {
 class ConvertableToTraceFormat;
 }
 }
@@ -33,26 +34,29 @@ class CONTENT_EXPORT RendererSchedulerImpl : public RendererScheduler {
   scoped_refptr<base::SingleThreadTaskRunner> DefaultTaskRunner() override;
   scoped_refptr<base::SingleThreadTaskRunner> CompositorTaskRunner() override;
   scoped_refptr<SingleThreadIdleTaskRunner> IdleTaskRunner() override;
+  scoped_refptr<base::SingleThreadTaskRunner> LoadingTaskRunner() override;
   void WillBeginFrame(const cc::BeginFrameArgs& args) override;
+  void BeginFrameNotExpectedSoon() override;
   void DidCommitFrameToCompositor() override;
   void DidReceiveInputEventOnCompositorThread(
-      blink::WebInputEvent::Type type) override;
+      const blink::WebInputEvent& web_input_event) override;
   void DidAnimateForInputOnCompositorThread() override;
+  bool IsHighPriorityWorkAnticipated() override;
   bool ShouldYieldForHighPriorityWork() override;
   void Shutdown() override;
 
- protected:
-  // Virtual for testing.
-  virtual base::TimeTicks Now() const;
+  void SetTimeSourceForTesting(scoped_refptr<cc::TestNowSource> time_source);
 
  private:
   friend class RendererSchedulerImplTest;
 
+  // Keep RendererSchedulerImpl::TaskQueueIdToString in sync with this enum.
   enum QueueId {
     DEFAULT_TASK_QUEUE,
     COMPOSITOR_TASK_QUEUE,
     IDLE_TASK_QUEUE,
     CONTROL_TASK_QUEUE,
+    LOADING_TASK_QUEUE,
     // Must be the last entry.
     TASK_QUEUE_COUNT,
   };
@@ -60,6 +64,13 @@ class CONTENT_EXPORT RendererSchedulerImpl : public RendererScheduler {
   enum Policy {
     NORMAL_PRIORITY_POLICY,
     COMPOSITOR_PRIORITY_POLICY,
+    TOUCHSTART_PRIORITY_POLICY,
+  };
+
+  enum InputStreamState {
+    INPUT_INACTIVE,
+    INPUT_ACTIVE,
+    INPUT_ACTIVE_AND_AWAITING_TOUCHSTART_RESPONSE
   };
 
   class PollableNeedsUpdateFlag {
@@ -76,19 +87,24 @@ class CONTENT_EXPORT RendererSchedulerImpl : public RendererScheduler {
    private:
     base::subtle::Atomic32 flag_;
     base::Lock* write_lock_;  // Not owned.
-    base::ThreadChecker thread_checker_;
 
     DISALLOW_COPY_AND_ASSIGN(PollableNeedsUpdateFlag);
   };
 
   // Returns the serialized scheduler state for tracing.
-  scoped_refptr<base::debug::ConvertableToTraceFormat> AsValueLocked(
+  scoped_refptr<base::trace_event::ConvertableToTraceFormat> AsValueLocked(
       base::TimeTicks optional_now) const;
   static const char* TaskQueueIdToString(QueueId queue_id);
   static const char* PolicyToString(Policy policy);
+  static const char* InputStreamStateToString(InputStreamState state);
 
-  // The time we should stay in CompositorPriority mode for after a touch event.
-  static const int kCompositorPriorityAfterTouchMillis = 100;
+  static InputStreamState ComputeNewInputStreamState(
+      InputStreamState current_state,
+      blink::WebInputEvent::Type new_input_event,
+      blink::WebInputEvent::Type last_input_event);
+
+  // The time we should stay in a priority-escalated mode after an input event.
+  static const int kPriorityEscalationAfterInputMillis = 100;
 
   // IdleTaskDeadlineSupplier Implementation:
   void CurrentIdleTaskDeadlineCallback(base::TimeTicks* deadline_out) const;
@@ -107,11 +123,13 @@ class CONTENT_EXPORT RendererSchedulerImpl : public RendererScheduler {
   void UpdatePolicy();
 
   // An input event of some sort happened, the policy may need updating.
-  void UpdateForInputEvent();
+  void UpdateForInputEvent(blink::WebInputEvent::Type type);
 
   // Start and end an idle period.
   void StartIdlePeriod();
   void EndIdlePeriod();
+
+  base::TimeTicks Now() const;
 
   base::ThreadChecker main_thread_checker_;
   scoped_ptr<RendererTaskQueueSelector> renderer_task_queue_selector_;
@@ -119,6 +137,7 @@ class CONTENT_EXPORT RendererSchedulerImpl : public RendererScheduler {
   scoped_refptr<base::SingleThreadTaskRunner> control_task_runner_;
   scoped_refptr<base::SingleThreadTaskRunner> default_task_runner_;
   scoped_refptr<base::SingleThreadTaskRunner> compositor_task_runner_;
+  scoped_refptr<base::SingleThreadTaskRunner> loading_task_runner_;
   scoped_refptr<SingleThreadIdleTaskRunner> idle_task_runner_;
 
   base::Closure update_policy_closure_;
@@ -129,11 +148,15 @@ class CONTENT_EXPORT RendererSchedulerImpl : public RendererScheduler {
 
   base::TimeTicks estimated_next_frame_begin_;
 
-  // The incoming_signals_lock_ mutex protects access to last_input_time_
-  // and write access to policy_may_need_update_.
+  // The incoming_signals_lock_ mutex protects access to all variables in the
+  // (contiguous) block below.
   base::Lock incoming_signals_lock_;
   base::TimeTicks last_input_time_;
+  blink::WebInputEvent::Type last_input_type_;
+  InputStreamState input_stream_state_;
   PollableNeedsUpdateFlag policy_may_need_update_;
+
+  scoped_refptr<cc::TestNowSource> time_source_;
 
   base::WeakPtr<RendererSchedulerImpl> weak_renderer_scheduler_ptr_;
   base::WeakPtrFactory<RendererSchedulerImpl> weak_factory_;

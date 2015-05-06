@@ -66,6 +66,7 @@ public:
     bool affects(CSSPropertyID) const;
     const AnimationEffect* effect() const { return m_effect.get(); }
     AnimationEffect* effect() { return m_effect.get(); }
+    void setEffect(PassRefPtrWillBeRawPtr<AnimationEffect> effect) { m_effect = effect; }
     Priority priority() const { return m_priority; }
     Element* target() const { return m_target; }
 
@@ -79,8 +80,12 @@ public:
     bool maybeStartAnimationOnCompositor(int group, double startTime, double timeOffset, double playerPlaybackRate);
     bool hasActiveAnimationsOnCompositor() const;
     bool hasActiveAnimationsOnCompositor(CSSPropertyID) const;
-    void cancelAnimationOnCompositor();
+    bool cancelAnimationOnCompositor();
+    void restartAnimationOnCompositor();
+    void cancelIncompatibleAnimationsOnCompositor();
     void pauseAnimationForTestingOnCompositor(double pauseTime);
+
+    void setCompositorAnimationIdsForTesting(const Vector<int>& compositorAnimationIds) { m_compositorAnimationIds = compositorAnimationIds; }
 
     virtual void trace(Visitor*) override;
 

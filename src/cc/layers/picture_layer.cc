@@ -23,7 +23,6 @@ PictureLayer::PictureLayer(ContentLayerClient* client)
     : client_(client),
       instrumentation_object_tracker_(id()),
       update_source_frame_number_(-1),
-      can_use_lcd_text_for_update_(true),
       is_mask_(false),
       nearest_neighbor_(false) {
 }
@@ -38,7 +37,8 @@ PictureLayer::~PictureLayer() {
 }
 
 scoped_ptr<LayerImpl> PictureLayer::CreateLayerImpl(LayerTreeImpl* tree_impl) {
-  return PictureLayerImpl::Create(tree_impl, id(), is_mask_);
+  return PictureLayerImpl::Create(tree_impl, id(), is_mask_,
+                                  new LayerImpl::SyncedScrollOffset);
 }
 
 void PictureLayer::PushPropertiesTo(LayerImpl* base_layer) {
@@ -68,11 +68,10 @@ void PictureLayer::PushPropertiesTo(LayerImpl* base_layer) {
 
   layer_impl->SetNearestNeighbor(nearest_neighbor_);
 
+  // Preserve lcd text settings from the current raster source.
+  bool can_use_lcd_text = layer_impl->RasterSourceUsesLCDText();
   scoped_refptr<RasterSource> raster_source =
-      recording_source_->CreateRasterSource();
-  raster_source->SetBackgoundColor(SafeOpaqueBackgroundColor());
-  raster_source->SetRequiresClear(!contents_opaque() &&
-                                  !client_->FillsBoundsCompletely());
+      recording_source_->CreateRasterSource(can_use_lcd_text);
   layer_impl->UpdateRasterSource(raster_source, &recording_invalidation_,
                                  nullptr);
   DCHECK(recording_invalidation_.IsEmpty());
@@ -85,12 +84,11 @@ void PictureLayer::SetLayerTreeHost(LayerTreeHost* host) {
       if (host->settings().use_display_lists) {
         recording_source_.reset(new DisplayListRecordingSource);
       } else {
-        recording_source_.reset(new PicturePile);
+        recording_source_.reset(
+            new PicturePile(host->settings().minimum_contents_scale,
+                            host->settings().default_tile_grid_size));
       }
     }
-    recording_source_->SetMinContentsScale(
-        host->settings().minimum_contents_scale);
-    recording_source_->SetTileGridSize(host->settings().default_tile_grid_size);
     recording_source_->SetSlowdownRasterScaleFactor(
         host->debug_state().slow_down_raster_scale_factor);
   }
@@ -110,18 +108,20 @@ bool PictureLayer::Update(ResourceUpdateQueue* queue,
   update_source_frame_number_ = layer_tree_host()->source_frame_number();
   bool updated = Layer::Update(queue, occlusion);
 
-  bool can_use_lcd_text_changed = UpdateCanUseLCDText();
-
   gfx::Rect visible_layer_rect = gfx::ScaleToEnclosingRect(
       visible_content_rect(), 1.f / contents_scale_x());
   gfx::Size layer_size = paint_properties().bounds;
 
   if (last_updated_visible_content_rect_ == visible_content_rect() &&
-      recording_source_->GetSize() == layer_size && !can_use_lcd_text_changed &&
+      recording_source_->GetSize() == layer_size &&
       pending_invalidation_.IsEmpty()) {
     // Only early out if the visible content rect of this layer hasn't changed.
     return updated;
   }
+
+  recording_source_->SetBackgroundColor(SafeOpaqueBackgroundColor());
+  recording_source_->SetRequiresClear(!contents_opaque() &&
+                                      !client_->FillsBoundsCompletely());
 
   TRACE_EVENT1("cc", "PictureLayer::Update",
                "source_frame_number",
@@ -146,9 +146,8 @@ bool PictureLayer::Update(ResourceUpdateQueue* queue,
   // for them.
   DCHECK(client_);
   updated |= recording_source_->UpdateAndExpandInvalidation(
-      client_, &recording_invalidation_, can_use_lcd_text_for_update_,
-      layer_size, visible_layer_rect, update_source_frame_number_,
-      Picture::RECORD_NORMALLY);
+      client_, &recording_invalidation_, layer_size, visible_layer_rect,
+      update_source_frame_number_, RecordingSource::RECORD_NORMALLY);
   last_updated_visible_content_rect_ = visible_content_rect();
 
   if (updated) {
@@ -166,20 +165,6 @@ void PictureLayer::SetIsMask(bool is_mask) {
   is_mask_ = is_mask;
 }
 
-bool PictureLayer::SupportsLCDText() const {
-  return true;
-}
-
-bool PictureLayer::UpdateCanUseLCDText() {
-  if (!can_use_lcd_text_for_update_)
-    return false;  // Don't allow the LCD text state to change once disabled.
-  if (can_use_lcd_text_for_update_ == can_use_lcd_text())
-    return false;
-
-  can_use_lcd_text_for_update_ = can_use_lcd_text();
-  return true;
-}
-
 skia::RefPtr<SkPicture> PictureLayer::GetPicture() const {
   // We could either flatten the RecordingSource into a single SkPicture,
   // or paint a fresh one depending on what we intend to do with the
@@ -192,9 +177,8 @@ skia::RefPtr<SkPicture> PictureLayer::GetPicture() const {
 
   SkPictureRecorder recorder;
   SkCanvas* canvas = recorder.beginRecording(width, height, nullptr, 0);
-  client_->PaintContents(canvas,
-                         gfx::Rect(width, height),
-                         ContentLayerClient::GRAPHICS_CONTEXT_ENABLED);
+  client_->PaintContents(canvas, gfx::Rect(width, height),
+                         ContentLayerClient::PAINTING_BEHAVIOR_NORMAL);
   skia::RefPtr<SkPicture> picture = skia::AdoptRef(recorder.endRecording());
   return picture;
 }

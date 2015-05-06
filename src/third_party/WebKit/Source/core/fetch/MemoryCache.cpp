@@ -74,7 +74,7 @@ PassOwnPtrWillBeRawPtr<MemoryCache> replaceMemoryCacheForTesting(PassOwnPtrWillB
     return oldCache.release();
 }
 
-void MemoryCacheEntry::trace(Visitor* visitor)
+DEFINE_TRACE(MemoryCacheEntry)
 {
     visitor->trace(m_previousInLiveResourcesList);
     visitor->trace(m_nextInLiveResourcesList);
@@ -89,7 +89,7 @@ void MemoryCacheEntry::dispose()
 }
 #endif
 
-void MemoryCacheLRUList::trace(Visitor* visitor)
+DEFINE_TRACE(MemoryCacheLRUList)
 {
     visitor->trace(m_head);
     visitor->trace(m_tail);
@@ -128,7 +128,7 @@ MemoryCache::~MemoryCache()
         blink::Platform::current()->currentThread()->removeTaskObserver(this);
 }
 
-void MemoryCache::trace(Visitor* visitor)
+DEFINE_TRACE(MemoryCache)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_allResources);
@@ -635,7 +635,7 @@ void MemoryCache::removeURLFromCache(ExecutionContext* context, const KURL& url)
 {
     if (context->isWorkerGlobalScope()) {
         WorkerGlobalScope* workerGlobalScope = toWorkerGlobalScope(context);
-        workerGlobalScope->thread()->workerLoaderProxy().postTaskToLoader(createCrossThreadTask(&removeURLFromCacheInternal, url));
+        workerGlobalScope->thread()->workerLoaderProxy()->postTaskToLoader(createCrossThreadTask(&removeURLFromCacheInternal, url));
         return;
     }
     removeURLFromCacheInternal(context, url);

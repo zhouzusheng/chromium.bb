@@ -23,10 +23,10 @@
 #define Chrome_h
 
 #include "core/loader/NavigationPolicy.h"
-#include "core/page/FocusType.h"
 #include "platform/Cursor.h"
 #include "platform/HostWindow.h"
 #include "platform/heap/Handle.h"
+#include "public/platform/WebFocusType.h"
 #include "wtf/Forward.h"
 
 namespace blink {
@@ -37,7 +37,6 @@ class ColorChooserClient;
 class DateTimeChooser;
 class DateTimeChooserClient;
 class FileChooser;
-class FloatRect;
 class LocalFrame;
 class HTMLInputElement;
 class HitTestResult;
@@ -73,17 +72,17 @@ public:
 
     void setCursor(const Cursor&);
 
-    void setWindowRect(const FloatRect&) const;
-    FloatRect windowRect() const;
+    void setWindowRect(const IntRect&) const;
+    IntRect windowRect() const;
 
-    FloatRect pageRect() const;
+    IntRect pageRect() const;
 
     void focus() const;
 
-    bool canTakeFocus(FocusType) const;
-    void takeFocus(FocusType) const;
+    bool canTakeFocus(WebFocusType) const;
+    void takeFocus(WebFocusType) const;
 
-    void focusedNodeChanged(Node*) const;
+    void focusedNodeChanged(Node*, Node*) const;
 
     void show(NavigationPolicy = NavigationPolicyIgnore) const;
 

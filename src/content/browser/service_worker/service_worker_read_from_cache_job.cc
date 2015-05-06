@@ -7,8 +7,8 @@
 #include <string>
 #include <vector>
 
-#include "base/debug/trace_event.h"
 #include "base/profiler/scoped_tracker.h"
+#include "base/trace_event/trace_event.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_disk_cache.h"
 #include "content/browser/service_worker/service_worker_metrics.h"
@@ -26,9 +26,11 @@ ServiceWorkerReadFromCacheJob::ServiceWorkerReadFromCacheJob(
     net::URLRequest* request,
     net::NetworkDelegate* network_delegate,
     base::WeakPtr<ServiceWorkerContextCore> context,
+    const scoped_refptr<ServiceWorkerVersion>& version,
     int64 response_id)
     : net::URLRequestJob(request, network_delegate),
       context_(context),
+      version_(version),
       response_id_(response_id),
       has_been_killed_(false),
       weak_factory_(this) {
@@ -73,6 +75,11 @@ void ServiceWorkerReadFromCacheJob::Kill() {
 }
 
 net::LoadState ServiceWorkerReadFromCacheJob::GetLoadState() const {
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/455952 is
+  // fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "455952 ServiceWorkerReadFromCacheJob::GetLoadState"));
   if (reader_.get() && reader_->IsReadPending())
     return net::LOAD_STATE_READING_RESPONSE;
   return net::LOAD_STATE_IDLE;
@@ -164,6 +171,8 @@ void ServiceWorkerReadFromCacheJob::OnReadInfoComplete(int result) {
   if (is_range_request())
     SetupRangeResponse(http_info_io_buffer_->response_data_size);
   http_info_io_buffer_ = NULL;
+  if (request_->url() == version_->script_url())
+    version_->SetMainScriptHttpResponseInfo(*http_info_);
   TRACE_EVENT_ASYNC_END1("ServiceWorker",
                          "ServiceWorkerReadFromCacheJob::ReadInfo",
                          this,

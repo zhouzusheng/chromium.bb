@@ -76,10 +76,12 @@ RTCPSender::FeedbackState::FeedbackState()
       remote_sr(0),
       has_last_xr_rr(false) {}
 
-RTCPSender::RTCPSender(int32_t id,
-                       bool audio,
-                       Clock* clock,
-                       ReceiveStatistics* receive_statistics)
+RTCPSender::RTCPSender(
+    int32_t id,
+    bool audio,
+    Clock* clock,
+    ReceiveStatistics* receive_statistics,
+    RtcpPacketTypeCounterObserver* packet_type_counter_observer)
     : _id(id),
       _audio(audio),
       _clock(clock),
@@ -108,9 +110,6 @@ RTCPSender::RTCPSender(int32_t id,
       internal_report_blocks_(),
       external_report_blocks_(),
       _csrcCNAMEs(),
-
-      _cameraDelayMS(0),
-
       _lastSendReport(),
       _lastRTCPTime(),
 
@@ -132,7 +131,8 @@ RTCPSender::RTCPSender(int32_t id,
 
       xrSendReceiverReferenceTimeEnabled_(false),
       _xrSendVoIPMetric(false),
-      _xrVoIPMetric() {
+      _xrVoIPMetric(),
+      packet_type_counter_observer_(packet_type_counter_observer) {
     memset(_CNAME, 0, sizeof(_CNAME));
     memset(_lastSendReport, 0, sizeof(_lastSendReport));
     memset(_lastRTCPTime, 0, sizeof(_lastRTCPTime));
@@ -302,18 +302,6 @@ void RTCPSender::SetRemoteSSRC(uint32_t ssrc)
     _remoteSSRC = ssrc;
 }
 
-int32_t RTCPSender::SetCameraDelay(int32_t delayMS) {
-    CriticalSectionScoped lock(_criticalSectionRTCPSender);
-    if(delayMS > 1000 || delayMS < -1000)
-    {
-        LOG(LS_WARNING) << "Delay can't be larger than 1 second: "
-                        << delayMS << " ms";
-        return -1;
-    }
-    _cameraDelayMS = delayMS;
-    return 0;
-}
-
 int32_t RTCPSender::SetCNAME(const char cName[RTCP_CNAME_SIZE]) {
   if (!cName)
     return -1;
@@ -438,8 +426,7 @@ From RFC 3550
     return false;
 }
 
-uint32_t
-RTCPSender::LastSendReport( uint32_t& lastRTCPTime)
+uint32_t RTCPSender::LastSendReport(int64_t& lastRTCPTime)
 {
     CriticalSectionScoped lock(_criticalSectionRTCPSender);
 
@@ -447,7 +434,7 @@ RTCPSender::LastSendReport( uint32_t& lastRTCPTime)
     return _lastSendReport[0];
 }
 
-uint32_t RTCPSender::SendTimeOfSendReport(uint32_t sendReport) {
+int64_t RTCPSender::SendTimeOfSendReport(uint32_t sendReport) {
     CriticalSectionScoped lock(_criticalSectionRTCPSender);
 
     // This is only saved when we are the sender
@@ -480,12 +467,6 @@ bool RTCPSender::SendTimeOfXrRrReport(uint32_t mid_ntp,
   }
   *time_ms = it->second;
   return true;
-}
-
-void RTCPSender::GetPacketTypeCounter(
-    RtcpPacketTypeCounter* packet_counter) const {
-  CriticalSectionScoped lock(_criticalSectionRTCPSender);
-  *packet_counter = packet_type_counter_;
 }
 
 int32_t RTCPSender::AddExternalReportBlock(
@@ -1765,9 +1746,11 @@ int RTCPSender::PrepareRTCP(const FeedbackState& feedback_state,
       } else if (buildVal == -2) {
         return position;
       }
-      TRACE_EVENT_INSTANT0("webrtc_rtp", "RTCPSender::PLI");
+      TRACE_EVENT_INSTANT0(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"),
+                           "RTCPSender::PLI");
       ++packet_type_counter_.pli_packets;
-      TRACE_COUNTER_ID1("webrtc_rtp", "RTCP_PLICount", _SSRC,
+      TRACE_COUNTER_ID1(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"),
+                        "RTCP_PLICount", _SSRC,
                         packet_type_counter_.pli_packets);
   }
   if(rtcpPacketTypeFlags & kRtcpFir)
@@ -1778,9 +1761,11 @@ int RTCPSender::PrepareRTCP(const FeedbackState& feedback_state,
       } else if (buildVal == -2) {
         return position;
       }
-      TRACE_EVENT_INSTANT0("webrtc_rtp", "RTCPSender::FIR");
+      TRACE_EVENT_INSTANT0(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"),
+                           "RTCPSender::FIR");
       ++packet_type_counter_.fir_packets;
-      TRACE_COUNTER_ID1("webrtc_rtp", "RTCP_FIRCount", _SSRC,
+      TRACE_COUNTER_ID1(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"),
+                        "RTCP_FIRCount", _SSRC,
                         packet_type_counter_.fir_packets);
   }
   if(rtcpPacketTypeFlags & kRtcpSli)
@@ -1814,7 +1799,8 @@ int RTCPSender::PrepareRTCP(const FeedbackState& feedback_state,
       } else if (buildVal == -2) {
         return position;
       }
-      TRACE_EVENT_INSTANT0("webrtc_rtp", "RTCPSender::REMB");
+      TRACE_EVENT_INSTANT0(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"),
+                           "RTCPSender::REMB");
   }
   if(rtcpPacketTypeFlags & kRtcpBye)
   {
@@ -1862,10 +1848,12 @@ int RTCPSender::PrepareRTCP(const FeedbackState& feedback_state,
       } else if (buildVal == -2) {
         return position;
       }
-      TRACE_EVENT_INSTANT1("webrtc_rtp", "RTCPSender::NACK",
-                           "nacks", TRACE_STR_COPY(nackString.c_str()));
+      TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"),
+                           "RTCPSender::NACK", "nacks",
+                           TRACE_STR_COPY(nackString.c_str()));
       ++packet_type_counter_.nack_packets;
-      TRACE_COUNTER_ID1("webrtc_rtp", "RTCP_NACKCount", _SSRC,
+      TRACE_COUNTER_ID1(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"),
+                        "RTCP_NACKCount", _SSRC,
                         packet_type_counter_.nack_packets);
   }
   if(rtcpPacketTypeFlags & kRtcpXrVoipMetric)
@@ -1898,6 +1886,12 @@ int RTCPSender::PrepareRTCP(const FeedbackState& feedback_state,
         return position;
       }
   }
+
+  if (packet_type_counter_observer_ != NULL) {
+    packet_type_counter_observer_->RtcpPacketTypesCounterUpdated(
+        _remoteSSRC, packet_type_counter_);
+  }
+
   return position;
 }
 

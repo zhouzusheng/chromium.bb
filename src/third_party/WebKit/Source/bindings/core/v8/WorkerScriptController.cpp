@@ -52,7 +52,6 @@
 #include "core/workers/WorkerThread.h"
 #include "platform/heap/ThreadState.h"
 #include "public/platform/Platform.h"
-#include "public/platform/WebWorkerRunLoop.h"
 #include <v8.h>
 
 namespace blink {
@@ -108,6 +107,7 @@ WorkerScriptController::WorkerScriptController(WorkerGlobalScope& workerGlobalSc
     , m_workerGlobalScope(workerGlobalScope)
     , m_executionForbidden(false)
     , m_executionScheduledToTerminate(false)
+    , m_rejectedPromises(RejectedPromises::create())
     , m_globalScopeExecutionState(0)
 {
     m_isolate = V8PerIsolateData::initialize();
@@ -141,14 +141,16 @@ private:
 
 WorkerScriptController::~WorkerScriptController()
 {
+    m_rejectedPromises->dispose();
+    m_rejectedPromises.clear();
+
     ThreadState::current()->removeInterruptor(m_interruptor.get());
 
     m_world->dispose();
 
-    // The corresponding call to didStartWorkerRunLoop is in
-    // WorkerThread::initialize().
+    // The corresponding call to didStartRunLoop() is in WorkerThread::initialize().
     // See http://webkit.org/b/83104#c14 for why this is here.
-    blink::Platform::current()->didStopWorkerRunLoop(blink::WebWorkerRunLoop(m_workerGlobalScope.thread()));
+    m_workerGlobalScope.thread()->didStopRunLoop();
 
     if (isContextInitialized())
         m_scriptState->disposePerContextData();
@@ -173,8 +175,8 @@ bool WorkerScriptController::initializeContextIfNeeded()
 
     ScriptState::Scope scope(m_scriptState.get());
 
-    // Set DebugId for the new context.
-    context->SetEmbedderData(0, v8AtomicString(m_isolate, "worker"));
+    // Name new context for debugging.
+    V8PerContextDebugData::setContextDebugData(context, "worker");
 
     // Create a new JS object and use it as the prototype for the shadow global object.
     const WrapperTypeInfo* wrapperTypeInfo = m_workerGlobalScope.wrapperTypeInfo();
@@ -194,7 +196,7 @@ bool WorkerScriptController::initializeContextIfNeeded()
     return true;
 }
 
-ScriptValue WorkerScriptController::evaluate(const String& script, const String& fileName, const TextPosition& scriptStartPosition)
+ScriptValue WorkerScriptController::evaluate(const String& script, const String& fileName, const TextPosition& scriptStartPosition, CachedMetadataHandler* cacheHandler, V8CacheOptions v8CacheOptions)
 {
     if (!initializeContextIfNeeded())
         return ScriptValue();
@@ -210,11 +212,11 @@ ScriptValue WorkerScriptController::evaluate(const String& script, const String&
     v8::TryCatch block;
 
     v8::Handle<v8::String> scriptString = v8String(m_isolate, script);
-    v8::Handle<v8::Script> compiledScript = V8ScriptRunner::compileScript(scriptString, fileName, scriptStartPosition, 0, 0, m_isolate);
+    v8::Handle<v8::Script> compiledScript = V8ScriptRunner::compileScript(scriptString, fileName, scriptStartPosition, m_isolate, nullptr, nullptr, cacheHandler, SharableCrossOrigin, v8CacheOptions);
     v8::Local<v8::Value> result = V8ScriptRunner::runCompiledScript(m_isolate, compiledScript, &m_workerGlobalScope);
 
     if (!block.CanContinue()) {
-        m_workerGlobalScope.script()->forbidExecution();
+        forbidExecution();
         return ScriptValue();
     }
 
@@ -238,13 +240,15 @@ ScriptValue WorkerScriptController::evaluate(const String& script, const String&
     return ScriptValue(m_scriptState.get(), result);
 }
 
-bool WorkerScriptController::evaluate(const ScriptSourceCode& sourceCode, RefPtrWillBeRawPtr<ErrorEvent>* errorEvent)
+bool WorkerScriptController::evaluate(const ScriptSourceCode& sourceCode, RefPtrWillBeRawPtr<ErrorEvent>* errorEvent, CachedMetadataHandler* cacheHandler, V8CacheOptions v8CacheOptions)
 {
     if (isExecutionForbidden())
         return false;
 
     WorkerGlobalScopeExecutionState state(this);
-    evaluate(sourceCode.source(), sourceCode.url().string(), sourceCode.startPosition());
+    evaluate(sourceCode.source(), sourceCode.url().string(), sourceCode.startPosition(), cacheHandler, v8CacheOptions);
+    if (isExecutionForbidden())
+        return false;
     if (state.hadException) {
         if (errorEvent) {
             if (state.m_errorEventFromImportedScript) {

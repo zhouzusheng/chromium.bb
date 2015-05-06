@@ -9,8 +9,8 @@
 
 #include "base/containers/hash_tables.h"
 #include "base/containers/scoped_ptr_hash_map.h"
-#include "base/debug/trace_event.h"
 #include "base/metrics/histogram.h"
+#include "base/trace_event/trace_event.h"
 #include "cc/base/math_util.h"
 #include "cc/output/copy_output_request.h"
 #include "cc/quads/draw_quad.h"
@@ -235,7 +235,7 @@ void DirectRenderer::DrawFrame(RenderPassList* render_passes_in_draw_order,
              pass->copy_requests.begin();
          it != pass->copy_requests.end();
          ++it) {
-      if (i > 0) {
+      if (it != pass->copy_requests.begin()) {
         // Doing a readback is destructive of our state on Mac, so make sure
         // we restore the state between readbacks. http://crbug.com/99393.
         UseRenderPass(&frame, pass);
@@ -409,7 +409,7 @@ bool DirectRenderer::UseRenderPass(DrawingFrame* frame,
                enlarge_pass_texture_amount_.y());
   if (!texture->id())
     texture->Allocate(
-        size, ResourceProvider::TextureHintImmutableFramebuffer, RGBA_8888);
+        size, ResourceProvider::TEXTURE_HINT_IMMUTABLE_FRAMEBUFFER, RGBA_8888);
   DCHECK(texture->id());
 
   return BindFramebufferToTexture(frame, texture, render_pass->output_rect);

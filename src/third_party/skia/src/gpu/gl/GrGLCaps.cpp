@@ -25,6 +25,7 @@ void GrGLCaps::reset() {
     fMSFBOType = kNone_MSFBOType;
     fInvalidateFBType = kNone_InvalidateFBType;
     fLATCAlias = kLATC_LATCAlias;
+    fNvprSupport = kNone_NvprSupport;
     fMapBufferType = kNone_MapBufferType;
     fMaxFragmentUniformVectors = 0;
     fMaxVertexAttributes = 0;
@@ -50,6 +51,7 @@ void GrGLCaps::reset() {
     fFullClearIsFree = false;
     fDropsTileOnZeroDivide = false;
     fFBFetchSupport = false;
+    fFBFetchNeedsCustomOutput = false;
     fFBFetchColorName = NULL;
     fFBFetchExtensionString = NULL;
 
@@ -66,6 +68,7 @@ GrGLCaps& GrGLCaps::operator= (const GrGLCaps& caps) {
     fStencilFormats = caps.fStencilFormats;
     fStencilVerifiedColorConfigs = caps.fStencilVerifiedColorConfigs;
     fLATCAlias = caps.fLATCAlias;
+    fNvprSupport = caps.fNvprSupport;
     fMaxFragmentUniformVectors = caps.fMaxFragmentUniformVectors;
     fMaxVertexAttributes = caps.fMaxVertexAttributes;
     fMaxFragmentTextureUnits = caps.fMaxFragmentTextureUnits;
@@ -93,6 +96,7 @@ GrGLCaps& GrGLCaps::operator= (const GrGLCaps& caps) {
     fFullClearIsFree = caps.fFullClearIsFree;
     fDropsTileOnZeroDivide = caps.fDropsTileOnZeroDivide;
     fFBFetchSupport = caps.fFBFetchSupport;
+    fFBFetchNeedsCustomOutput = caps.fFBFetchNeedsCustomOutput;
     fFBFetchColorName = caps.fFBFetchColorName;
     fFBFetchExtensionString = caps.fFBFetchExtensionString;
 
@@ -250,16 +254,19 @@ bool GrGLCaps::init(const GrGLContextInfo& ctxInfo, const GrGLInterface* gli) {
 
     if (kGLES_GrGLStandard == standard) {
         if (ctxInfo.hasExtension("GL_EXT_shader_framebuffer_fetch")) {
+            fFBFetchNeedsCustomOutput = (version >= GR_GL_VER(3, 0));
             fFBFetchSupport = true;
             fFBFetchColorName = "gl_LastFragData[0]";
             fFBFetchExtensionString = "GL_EXT_shader_framebuffer_fetch";
         } else if (ctxInfo.hasExtension("GL_NV_shader_framebuffer_fetch")) {
+            // Actually, we haven't seen an ES3.0 device with this extension yet, so we don't know
+            fFBFetchNeedsCustomOutput = false;
             fFBFetchSupport = true;
             fFBFetchColorName = "gl_LastFragData[0]";
             fFBFetchExtensionString = "GL_NV_shader_framebuffer_fetch";
         } else if (ctxInfo.hasExtension("GL_ARM_shader_framebuffer_fetch")) {
             // The arm extension also requires an additional flag which we will set onResetContext
-            // This is all temporary.
+            fFBFetchNeedsCustomOutput = false;
             fFBFetchSupport = true;
             fFBFetchColorName = "gl_LastFragColorARM";
             fFBFetchExtensionString = "GL_ARM_shader_framebuffer_fetch";
@@ -354,9 +361,16 @@ bool GrGLCaps::init(const GrGLContextInfo& ctxInfo, const GrGLInterface* gli) {
                  ((ctxInfo.version() >= GR_GL_VER(4,3) ||
                    ctxInfo.hasExtension("GL_ARB_program_interface_query")) &&
                   gli->fFunctions.fProgramPathFragmentInputGen));
+            if (fPathRenderingSupport) {
+                fNvprSupport = gli->fFunctions.fProgramPathFragmentInputGen ? kNormal_NvprSupport :
+                                                                              kLegacy_NvprSupport;
+            }
         } else {
             fPathRenderingSupport = ctxInfo.version() >= GR_GL_VER(3,1);
+            fNvprSupport = fPathRenderingSupport ? kNormal_NvprSupport : kNone_NvprSupport;
         }
+    } else {
+        fNvprSupport = kNone_NvprSupport;
     }
 
     fGpuTracingSupport = ctxInfo.hasExtension("GL_EXT_debug_marker");
@@ -388,8 +402,22 @@ bool GrGLCaps::init(const GrGLContextInfo& ctxInfo, const GrGLInterface* gli) {
     }
 
     if (kPowerVR54x_GrGLRenderer == ctxInfo.renderer() ||
-        kPowerVRRogue_GrGLRenderer == ctxInfo.renderer()) {
+        kPowerVRRogue_GrGLRenderer == ctxInfo.renderer() ||
+        kAdreno3xx_GrGLRenderer == ctxInfo.renderer()) {
         fUseDrawInsteadOfClear = true;
+    }
+
+    if (kGL_GrGLStandard == standard) {
+        // ARB allows mixed size FBO attachments, EXT does not.
+        if (ctxInfo.version() >= GR_GL_VER(3, 0) ||
+            ctxInfo.hasExtension("GL_ARB_framebuffer_object")) {
+            fOversizedStencilSupport = true;
+        } else {
+            SkASSERT(ctxInfo.hasExtension("GL_EXT_framebuffer_object"));
+        }
+    } else {
+        // ES 3.0 supports mixed size FBO attachments, 2.0 does not.
+        fOversizedStencilSupport = ctxInfo.version() >= GR_GL_VER(3, 0);
     }
 
     this->initConfigTexturableTable(ctxInfo, gli);

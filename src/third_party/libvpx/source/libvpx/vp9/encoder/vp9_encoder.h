@@ -19,7 +19,9 @@
 
 #include "vp9/common/vp9_ppflags.h"
 #include "vp9/common/vp9_entropymode.h"
+#include "vp9/common/vp9_loopfilter_thread.h"
 #include "vp9/common/vp9_onyxc_int.h"
+#include "vp9/common/vp9_thread.h"
 
 #include "vp9/encoder/vp9_aq_cyclicrefresh.h"
 #include "vp9/encoder/vp9_context_tree.h"
@@ -35,6 +37,7 @@
 #include "vp9/encoder/vp9_svc_layercontext.h"
 #include "vp9/encoder/vp9_tokenize.h"
 #include "vp9/encoder/vp9_variance.h"
+
 #if CONFIG_VP9_TEMPORAL_DENOISING
 #include "vp9/encoder/vp9_denoiser.h"
 #endif
@@ -216,6 +219,8 @@ typedef struct VP9EncoderConfig {
   int tile_columns;
   int tile_rows;
 
+  int max_threads;
+
   vpx_fixed_buf_t two_pass_stats_in;
   struct vpx_codec_pkt_list *output_pkt_list;
 
@@ -228,6 +233,7 @@ typedef struct VP9EncoderConfig {
 #if CONFIG_VP9_HIGHBITDEPTH
   int use_highbitdepth;
 #endif
+  vpx_color_space_t color_space;
 } VP9EncoderConfig;
 
 static INLINE int is_lossless_requested(const VP9EncoderConfig *cfg) {
@@ -257,6 +263,8 @@ typedef struct ThreadData {
   PC_TREE *pc_tree;
   PC_TREE *pc_root;
 } ThreadData;
+
+struct EncWorkerData;
 
 typedef struct VP9_COMP {
   QUANTS quants;
@@ -301,7 +309,7 @@ typedef struct VP9_COMP {
   unsigned int tok_count[4][1 << 6];
 
   // Ambient reconstruction err target for force key frames
-  int ambient_err;
+  int64_t ambient_err;
 
   RD_OPT rd;
 
@@ -311,9 +319,6 @@ typedef struct VP9_COMP {
   int *nmvcosts_hp[2];
   int *nmvsadcosts[2];
   int *nmvsadcosts_hp[2];
-
-  int zbin_mode_boost;
-  int zbin_mode_boost_enabled;
 
   int64_t last_time_stamp_seen;
   int64_t last_end_time_stamp_seen;
@@ -336,6 +341,8 @@ typedef struct VP9_COMP {
   unsigned int max_mv_magnitude;
   int mv_step_param;
 
+  int allow_comp_inter_inter;
+
   // Default value is 1. From first pass stats, encode_breakout may be disabled.
   ENCODE_BREAKOUT_TYPE allow_encode_breakout;
 
@@ -347,8 +354,6 @@ typedef struct VP9_COMP {
 
   // segment threashold for encode breakout
   int  segment_encode_breakout[MAX_SEGMENTS];
-
-  unsigned char *complexity_map;
 
   CYCLIC_REFRESH *cyclic_refresh;
 
@@ -442,9 +447,15 @@ typedef struct VP9_COMP {
 #if CONFIG_VP9_TEMPORAL_DENOISING
   VP9_DENOISER denoiser;
 #endif
+
+  // Multi-threading
+  int num_workers;
+  VP9Worker *workers;
+  struct EncWorkerData *tile_thr_data;
+  VP9LfSync lf_row_sync;
 } VP9_COMP;
 
-void vp9_initialize_enc();
+void vp9_initialize_enc(void);
 
 struct VP9_COMP *vp9_create_compressor(VP9EncoderConfig *oxcf);
 void vp9_remove_compressor(VP9_COMP *cpi);
@@ -530,11 +541,10 @@ static INLINE int allocated_tokens(TileInfo tile) {
   return get_token_alloc(tile_mb_rows, tile_mb_cols);
 }
 
-int vp9_get_y_sse(const YV12_BUFFER_CONFIG *a, const YV12_BUFFER_CONFIG *b);
+int64_t vp9_get_y_sse(const YV12_BUFFER_CONFIG *a, const YV12_BUFFER_CONFIG *b);
 #if CONFIG_VP9_HIGHBITDEPTH
-int vp9_highbd_get_y_sse(const YV12_BUFFER_CONFIG *a,
-                         const YV12_BUFFER_CONFIG *b,
-                         vpx_bit_depth_t bit_depth);
+int64_t vp9_highbd_get_y_sse(const YV12_BUFFER_CONFIG *a,
+                             const YV12_BUFFER_CONFIG *b);
 #endif  // CONFIG_VP9_HIGHBITDEPTH
 
 void vp9_alloc_compressor_data(VP9_COMP *cpi);

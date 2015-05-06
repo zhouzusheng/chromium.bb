@@ -36,7 +36,7 @@
     'jni_generator_includes%': (
         'base/android/jni_generator/jni_generator_helper.h'
     ),
-    'native_exports%': '',
+    'native_exports%': '--native_exports_optional',
   },
   'rules': [
     {

@@ -41,8 +41,8 @@
 #include "core/events/Event.h"
 #include "core/html/HTMLCollection.h"
 #include "core/html/HTMLElement.h"
-#include "core/rendering/RenderObject.h"
-#include "core/rendering/RenderPart.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/LayoutPart.h"
 #include "modules/accessibility/AXObject.h"
 #include "modules/accessibility/AXObjectCacheImpl.h"
 #include "platform/Widget.h"
@@ -163,6 +163,11 @@ bool WebNode::isContentEditable() const
     return m_private->isContentEditable();
 }
 
+bool WebNode::isInsideFocusableElementOrARIAWidget() const
+{
+    return AXObject::isInsideFocusableElementOrARIAWidget(*this->constUnwrap<Node>());
+}
+
 bool WebNode::isElementNode() const
 {
     return m_private->isElementNode();
@@ -231,9 +236,9 @@ WebPluginContainer* WebNode::pluginContainer() const
         return 0;
     const Node& coreNode = *constUnwrap<Node>();
     if (isHTMLObjectElement(coreNode) || isHTMLEmbedElement(coreNode)) {
-        RenderObject* object = coreNode.renderer();
-        if (object && object->isRenderPart()) {
-            Widget* widget = toRenderPart(object)->widget();
+        LayoutObject* object = coreNode.renderer();
+        if (object && object->isLayoutPart()) {
+            Widget* widget = toLayoutPart(object)->widget();
             if (widget && widget->isPluginContainer())
                 return toWebPluginContainerImpl(widget);
         }

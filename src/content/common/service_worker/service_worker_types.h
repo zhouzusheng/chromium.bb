@@ -14,6 +14,7 @@
 #include "content/public/common/referrer.h"
 #include "content/public/common/request_context_frame_type.h"
 #include "content/public/common/request_context_type.h"
+#include "third_party/WebKit/public/platform/WebPageVisibilityState.h"
 #include "third_party/WebKit/public/platform/WebServiceWorkerResponseType.h"
 #include "third_party/WebKit/public/platform/WebServiceWorkerState.h"
 #include "url/gurl.h"
@@ -36,6 +37,7 @@ static const int kInvalidServiceWorkerRequestId = -1;
 extern const char kServiceWorkerRegisterErrorPrefix[];
 extern const char kServiceWorkerUnregisterErrorPrefix[];
 extern const char kServiceWorkerGetRegistrationErrorPrefix[];
+extern const char kFetchScriptError[];
 
 // Constants for invalid identifiers.
 static const int kInvalidServiceWorkerHandleId = -1;
@@ -46,6 +48,20 @@ static const int64 kInvalidServiceWorkerVersionId = -1;
 static const int64 kInvalidServiceWorkerResourceId = -1;
 static const int64 kInvalidServiceWorkerResponseId = -1;
 static const int kInvalidEmbeddedWorkerThreadId = -1;
+static const int kInvalidServiceWorkerClientId = 0;
+
+// ServiceWorker provider type.
+enum ServiceWorkerProviderType {
+  SERVICE_WORKER_PROVIDER_UNKNOWN,
+
+  // For Documents and SharedWorkers.
+  SERVICE_WORKER_PROVIDER_FOR_CONTROLLEE,
+
+  // For ServiceWorkers.
+  SERVICE_WORKER_PROVIDER_FOR_CONTROLLER,
+
+  SERVICE_WORKER_PROVIDER_TYPE_LAST = SERVICE_WORKER_PROVIDER_FOR_CONTROLLER
+};
 
 enum FetchRequestMode {
   FETCH_REQUEST_MODE_SAME_ORIGIN,
@@ -160,7 +176,6 @@ struct CONTENT_EXPORT ServiceWorkerBatchOperation {
 struct CONTENT_EXPORT ServiceWorkerObjectInfo {
   ServiceWorkerObjectInfo();
   int handle_id;
-  GURL scope;
   GURL url;
   blink::WebServiceWorkerState state;
   int64 version_id;
@@ -201,14 +216,6 @@ class ChangedVersionAttributesMask {
 
  private:
   int changed_;
-};
-
-struct ServiceWorkerClientInfo {
-  int client_id;
-  std::string visibility_state;
-  bool is_focused;
-  GURL url;
-  RequestContextFrameType frame_type;
 };
 
 }  // namespace content

@@ -26,8 +26,8 @@
 #include "core/frame/SettingsDelegate.h"
 #include "core/frame/UseCounter.h"
 #include "core/page/PageAnimator.h"
+#include "core/page/PageLifecycleNotifier.h"
 #include "core/page/PageVisibilityState.h"
-#include "platform/LifecycleContext.h"
 #include "platform/Supplementable.h"
 #include "platform/geometry/LayoutRect.h"
 #include "platform/geometry/Region.h"
@@ -55,14 +55,11 @@ class Frame;
 class FrameHost;
 class InspectorClient;
 class InspectorController;
-class PageLifecycleNotifier;
 class PluginData;
 class PointerLockController;
-class StorageClient;
 class ScrollingCoordinator;
 class Settings;
 class SpellCheckerClient;
-class StorageNamespace;
 class UndoStack;
 class ValidationMessageClient;
 
@@ -70,7 +67,7 @@ typedef uint64_t LinkHash;
 
 float deviceScaleFactor(LocalFrame*);
 
-class Page final : public NoBaseWillBeGarbageCollectedFinalized<Page>, public WillBeHeapSupplementable<Page>, public LifecycleContext<Page>, public SettingsDelegate {
+class Page final : public NoBaseWillBeGarbageCollectedFinalized<Page>, public WillBeHeapSupplementable<Page>, public PageLifecycleNotifier, public SettingsDelegate {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Page);
     WTF_MAKE_NONCOPYABLE(Page);
     friend class Settings;
@@ -90,7 +87,6 @@ public:
         DragClient* dragClient;
         InspectorClient* inspectorClient;
         SpellCheckerClient* spellCheckerClient;
-        StorageClient* storageClient;
     };
 
     explicit Page(PageClients&);
@@ -175,9 +171,6 @@ public:
     static void allVisitedStateChanged();
     static void visitedStateChanged(LinkHash visitedHash);
 
-    StorageNamespace* sessionStorage(bool optionalCreate = true);
-    StorageClient& storageClient() const { return *m_storageClient; }
-
     PageVisibilityState visibilityState() const;
     void setVisibilityState(PageVisibilityState, bool);
 
@@ -204,13 +197,9 @@ public:
     void acceptLanguagesChanged();
 
     static void networkStateChanged(bool online);
-    PassOwnPtr<LifecycleNotifier<Page>> createLifecycleNotifier();
 
     void trace(Visitor*);
     void willBeDestroyed();
-
-protected:
-    PageLifecycleNotifier& lifecycleNotifier();
 
 private:
     void initGroup();
@@ -252,7 +241,6 @@ private:
 
     EditorClient* const m_editorClient;
     SpellCheckerClient* const m_spellCheckerClient;
-    StorageClient* m_storageClient;
     OwnPtrWillBeMember<ValidationMessageClient> m_validationMessageClient;
 
     UseCounter m_useCounter;
@@ -263,8 +251,6 @@ private:
     bool m_defersLoading;
 
     float m_deviceScaleFactor;
-
-    OwnPtr<StorageNamespace> m_sessionStorage;
 
     double m_timerAlignmentInterval;
 

@@ -115,9 +115,11 @@ static std::string GuessInitDataType(const unsigned char* init_data,
 EncryptedMediaPlayerSupport::EncryptedMediaPlayerSupport(
     scoped_ptr<CdmFactory> cdm_factory,
     blink::WebMediaPlayerClient* client,
+    MediaPermission* media_permission,
     const SetCdmContextCB& set_cdm_context_cb)
     : cdm_factory_(cdm_factory.Pass()),
       client_(client),
+      media_permission_(media_permission),
       set_cdm_context_cb_(set_cdm_context_cb) {
 }
 
@@ -149,13 +151,14 @@ EncryptedMediaPlayerSupport::GenerateKeyRequestInternal(
     const std::string& key_system,
     const unsigned char* init_data,
     unsigned init_data_length) {
-  if (!IsConcreteSupportedKeySystem(key_system))
+  if (!PrefixedIsSupportedConcreteKeySystem(key_system))
     return WebMediaPlayer::MediaKeyExceptionKeySystemNotSupported;
 
   // We do not support run-time switching between key systems for now.
   if (current_key_system_.empty()) {
     if (!proxy_decryptor_) {
       proxy_decryptor_.reset(new ProxyDecryptor(
+          media_permission_,
           BIND_TO_RENDER_LOOP(&EncryptedMediaPlayerSupport::OnKeyAdded),
           BIND_TO_RENDER_LOOP(&EncryptedMediaPlayerSupport::OnKeyError),
           BIND_TO_RENDER_LOOP(&EncryptedMediaPlayerSupport::OnKeyMessage)));
@@ -231,7 +234,7 @@ EncryptedMediaPlayerSupport::AddKeyInternal(
   DCHECK(key);
   DCHECK_GT(key_length, 0u);
 
-  if (!IsConcreteSupportedKeySystem(key_system))
+  if (!PrefixedIsSupportedConcreteKeySystem(key_system))
     return WebMediaPlayer::MediaKeyExceptionKeySystemNotSupported;
 
   if (current_key_system_.empty() || key_system != current_key_system_)
@@ -263,7 +266,7 @@ WebMediaPlayer::MediaKeyException
 EncryptedMediaPlayerSupport::CancelKeyRequestInternal(
     const std::string& key_system,
     const std::string& session_id) {
-  if (!IsConcreteSupportedKeySystem(key_system))
+  if (!PrefixedIsSupportedConcreteKeySystem(key_system))
     return WebMediaPlayer::MediaKeyExceptionKeySystemNotSupported;
 
   if (current_key_system_.empty() || key_system != current_key_system_)

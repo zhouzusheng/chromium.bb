@@ -31,8 +31,8 @@
 #include "core/frame/UseCounter.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/shadow/MeterShadowElement.h"
+#include "core/layout/LayoutTheme.h"
 #include "core/rendering/RenderMeter.h"
-#include "core/rendering/RenderTheme.h"
 
 namespace blink {
 
@@ -51,15 +51,14 @@ HTMLMeterElement::~HTMLMeterElement()
 PassRefPtrWillBeRawPtr<HTMLMeterElement> HTMLMeterElement::create(Document& document)
 {
     RefPtrWillBeRawPtr<HTMLMeterElement> meter = adoptRefWillBeNoop(new HTMLMeterElement(document));
-    meter->ensureUserAgentShadowRoot();
+    meter->ensureClosedShadowRoot();
     return meter.release();
 }
 
-RenderObject* HTMLMeterElement::createRenderer(RenderStyle* style)
+LayoutObject* HTMLMeterElement::createRenderer(const LayoutStyle& style)
 {
-    if (hasAuthorShadowRoot() || !RenderTheme::theme().supportsMeter(style->appearance()))
-        return RenderObject::createObject(this, style);
-
+    if (hasOpenShadowRoot() || !LayoutTheme::theme().supportsMeter(style.appearance()))
+        return LayoutObject::createObject(this, style);
     return new RenderMeter(this);
 }
 
@@ -192,11 +191,11 @@ RenderMeter* HTMLMeterElement::renderMeter() const
     if (renderer() && renderer()->isMeter())
         return toRenderMeter(renderer());
 
-    RenderObject* renderObject = userAgentShadowRoot()->firstChild()->renderer();
-    return toRenderMeter(renderObject);
+    LayoutObject* layoutObject = closedShadowRoot()->firstChild()->renderer();
+    return toRenderMeter(layoutObject);
 }
 
-void HTMLMeterElement::didAddUserAgentShadowRoot(ShadowRoot& root)
+void HTMLMeterElement::didAddClosedShadowRoot(ShadowRoot& root)
 {
     ASSERT(!m_value);
 
@@ -212,7 +211,13 @@ void HTMLMeterElement::didAddUserAgentShadowRoot(ShadowRoot& root)
     inner->appendChild(bar);
 }
 
-void HTMLMeterElement::trace(Visitor* visitor)
+void HTMLMeterElement::willAddFirstOpenShadowRoot()
+{
+    ASSERT(RuntimeEnabledFeatures::authorShadowDOMForAnyElementEnabled());
+    lazyReattachIfAttached();
+}
+
+DEFINE_TRACE(HTMLMeterElement)
 {
     visitor->trace(m_value);
     LabelableElement::trace(visitor);

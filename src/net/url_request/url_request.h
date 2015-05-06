@@ -82,14 +82,6 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
                                            NetworkDelegate* network_delegate,
                                            const std::string& scheme);
 
-  // HTTP request/response header IDs (via some preprocessor fun) for use with
-  // SetRequestHeaderById and GetResponseHeaderById.
-  enum {
-#define HTTP_ATOM(x) HTTP_ ## x,
-#include "net/http/http_atom_list.h"
-#undef HTTP_ATOM
-  };
-
   // Referrer policies (see set_referrer_policy): During server redirects, the
   // referrer header might be cleared, if the protocol changes from HTTPS to
   // HTTP. This is the default behavior of URLRequest, corresponding to
@@ -289,12 +281,6 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   const std::string& method() const { return method_; }
   void set_method(const std::string& method);
 
-  // Determines the new method of the request afer following a redirect.
-  // |method| is the method used to arrive at the redirect,
-  // |http_status_code| is the status code associated with the redirect.
-  static std::string ComputeMethodForRedirect(const std::string& method,
-                                              int http_status_code);
-
   // The referrer URL for the request.  This header may actually be suppressed
   // from the underlying network request for security reasons (e.g., a HTTPS
   // URL will not be sent as the referrer for a HTTP request).  The referrer
@@ -317,10 +303,14 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   void EnableChunkedUpload();
 
   // Appends the given bytes to the request's upload data to be sent
-  // immediately via chunked transfer encoding. When all data has been sent,
-  // call MarkEndOfChunks() to indicate the end of upload data.
+  // immediately via chunked transfer encoding. When all data has been added,
+  // set |is_last_chunk| to true to indicate the end of upload data.  All chunks
+  // but the last must have |bytes_len| > 0.
   //
   // This method may be called only after calling EnableChunkedUpload().
+  //
+  // Despite the name of this method, over-the-wire chunk boundaries will most
+  // likely not match the "chunks" appended with this function.
   void AppendChunkToUpload(const char* bytes,
                            int bytes_len,
                            bool is_last_chunk);
@@ -334,11 +324,9 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // Returns true if the request has a non-empty message body to upload.
   bool has_upload() const;
 
-  // Set an extra request header by ID or name, or remove one by name.  These
-  // methods may only be called before Start() is called, or before a new
-  // redirect in the request chain.
-  void SetExtraRequestHeaderById(int header_id, const std::string& value,
-                                 bool overwrite);
+  // Set or remove a extra request header.  These methods may only be called
+  // before Start() is called, or between receiving a redirect and trying to
+  // follow it.
   void SetExtraRequestHeaderByName(const std::string& name,
                                    const std::string& value, bool overwrite);
   void RemoveRequestHeaderByName(const std::string& name);
@@ -401,18 +389,12 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // chunked, size is set to zero, but position will not be.
   UploadProgress GetUploadProgress() const;
 
-  // Get response header(s) by ID or name.  These methods may only be called
+  // Get response header(s) by name.  This method may only be called
   // once the delegate's OnResponseStarted method has been called.  Headers
   // that appear more than once in the response are coalesced, with values
   // separated by commas (per RFC 2616). This will not work with cookies since
   // comma can be used in cookie values.
-  // TODO(darin): add API to enumerate response headers.
-  void GetResponseHeaderById(int header_id, std::string* value);
   void GetResponseHeaderByName(const std::string& name, std::string* value);
-
-  // Get all response headers, \n-delimited and \n\0-terminated.  This includes
-  // the response status line.  Restrictions on GetResponseHeaders apply.
-  void GetAllResponseHeaders(std::string* headers);
 
   // The time when |this| was constructed.
   base::TimeTicks creation_time() const { return creation_time_; }

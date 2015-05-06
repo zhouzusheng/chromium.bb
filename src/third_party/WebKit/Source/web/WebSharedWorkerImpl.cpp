@@ -47,6 +47,7 @@
 #include "core/workers/WorkerClients.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerInspectorProxy.h"
+#include "core/workers/WorkerLoaderProxy.h"
 #include "core/workers/WorkerScriptLoader.h"
 #include "core/workers/WorkerThreadStartupData.h"
 #include "platform/RuntimeEnabledFeatures.h"
@@ -62,6 +63,7 @@
 #include "public/platform/WebURLRequest.h"
 #include "public/web/WebDevToolsAgent.h"
 #include "public/web/WebFrame.h"
+#include "public/web/WebServiceWorkerNetworkProvider.h"
 #include "public/web/WebSettings.h"
 #include "public/web/WebView.h"
 #include "public/web/WebWorkerPermissionClientProxy.h"
@@ -171,6 +173,8 @@ WebSharedWorkerImpl::~WebSharedWorkerImpl()
 
     m_webView->close();
     m_mainFrame->close();
+    if (m_loaderProxy)
+        m_loaderProxy->detachProvider(this);
 }
 
 void WebSharedWorkerImpl::stopWorkerThread()
@@ -235,10 +239,19 @@ void WebSharedWorkerImpl::loadShadowPage()
     webFrame->frame()->loader().load(FrameLoadRequest(0, ResourceRequest(m_url), SubstituteData(buffer, "text/html", "UTF-8", KURL())));
 }
 
+void WebSharedWorkerImpl::willSendRequest(
+    WebLocalFrame* frame, unsigned, WebURLRequest& request,
+    const WebURLResponse& redirectResponse)
+{
+    if (m_networkProvider)
+        m_networkProvider->willSendRequest(frame->dataSource(), request);
+}
+
 void WebSharedWorkerImpl::didFinishDocumentLoad(WebLocalFrame* frame)
 {
     ASSERT(!m_loadingDocument);
     ASSERT(!m_mainScriptLoader);
+    m_networkProvider = adoptPtr(client()->createServiceWorkerNetworkProvider(frame->dataSource()));
     m_mainScriptLoader = Loader::create();
     m_loadingDocument = toWebLocalFrameImpl(frame)->frame()->document();
     m_mainScriptLoader->load(
@@ -248,9 +261,21 @@ void WebSharedWorkerImpl::didFinishDocumentLoad(WebLocalFrame* frame)
         bind(&WebSharedWorkerImpl::onScriptLoaderFinished, this));
 }
 
-void WebSharedWorkerImpl::sendMessageToInspectorFrontend(const WebString& message)
+bool WebSharedWorkerImpl::isControlledByServiceWorker(WebDataSource& dataSource)
 {
-    client()->dispatchDevToolsMessage(message);
+    return m_networkProvider && m_networkProvider->isControlledByServiceWorker(dataSource);
+}
+
+int64_t WebSharedWorkerImpl::serviceWorkerID(WebDataSource& dataSource)
+{
+    if (!m_networkProvider)
+        return -1;
+    return m_networkProvider->serviceWorkerID(dataSource);
+}
+
+void WebSharedWorkerImpl::sendProtocolMessage(int callId, const WebString& message, const WebString& state)
+{
+    client()->sendDevToolsMessage(callId, message, state);
 }
 
 void WebSharedWorkerImpl::resumeStartup()
@@ -259,11 +284,6 @@ void WebSharedWorkerImpl::resumeStartup()
     m_isPausedOnStart = false;
     if (isPausedOnStart)
         loadShadowPage();
-}
-
-void WebSharedWorkerImpl::saveAgentRuntimeState(const WebString& inspectorState)
-{
-    client()->saveDevToolsAgentState(inspectorState);
 }
 
 // WorkerReportingProxy --------------------------------------------------------
@@ -322,7 +342,7 @@ void WebSharedWorkerImpl::workerThreadTerminatedOnMainThread()
     delete this;
 }
 
-// WorkerLoaderProxy -----------------------------------------------------------
+// WorkerLoaderProxyProvider -----------------------------------------------------------
 
 void WebSharedWorkerImpl::postTaskToLoader(PassOwnPtr<ExecutionContextTask> task)
 {
@@ -396,8 +416,9 @@ void WebSharedWorkerImpl::onScriptLoaderFinished()
     provideLocalFileSystemToWorker(workerClients.get(), LocalFileSystemClient::create());
     WebSecurityOrigin webSecurityOrigin(m_loadingDocument->securityOrigin());
     providePermissionClientToWorker(workerClients.get(), adoptPtr(client()->createWorkerPermissionClientProxy(webSecurityOrigin)));
-    OwnPtrWillBeRawPtr<WorkerThreadStartupData> startupData = WorkerThreadStartupData::create(m_url, m_loadingDocument->userAgent(m_url), m_mainScriptLoader->script(), startMode, m_contentSecurityPolicy, static_cast<ContentSecurityPolicyHeaderType>(m_policyType), starterOrigin, workerClients.release());
-    setWorkerThread(SharedWorkerThread::create(m_name, *this, *this, startupData.release()));
+    OwnPtrWillBeRawPtr<WorkerThreadStartupData> startupData = WorkerThreadStartupData::create(m_url, m_loadingDocument->userAgent(m_url), m_mainScriptLoader->script(), nullptr, startMode, m_contentSecurityPolicy, static_cast<ContentSecurityPolicyHeaderType>(m_policyType), starterOrigin, workerClients.release());
+    m_loaderProxy = WorkerLoaderProxy::create(this);
+    setWorkerThread(SharedWorkerThread::create(m_name, m_loaderProxy, *this, startupData.release()));
     InspectorInstrumentation::scriptImported(m_loadingDocument.get(), m_mainScriptLoader->identifier(), m_mainScriptLoader->script());
     m_mainScriptLoader.clear();
 

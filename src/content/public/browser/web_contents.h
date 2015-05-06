@@ -120,7 +120,7 @@ class WebContents : public PageNavigator,
     BrowserPluginGuestDelegate* guest_delegate;
 
     // Used to specify the location context which display the new view should
-    // belong. This can be NULL if not needed.
+    // belong. This can be nullptr if not needed.
     gfx::NativeView context;
   };
 
@@ -141,7 +141,7 @@ class WebContents : public PageNavigator,
       const CreateParams& params,
       const SessionStorageNamespaceMap& session_storage_namespace_map);
 
-  // Returns a WebContents that wraps the RenderViewHost, or NULL if the
+  // Returns a WebContents that wraps the RenderViewHost, or nullptr if the
   // render view host's delegate isn't a WebContents.
   CONTENT_EXPORT static WebContents* FromRenderViewHost(
       const RenderViewHost* rvh);
@@ -192,6 +192,10 @@ class WebContents : public PageNavigator,
   virtual RenderFrameHost* GetFocusedFrame() = 0;
 
   // Calls |on_frame| for each frame in the currently active view.
+  // Note: The RenderFrameHost parameter is not guaranteed to have a live
+  // RenderFrame counterpart in the renderer process. Callbacks should check
+  // IsRenderFrameLive, as sending IPC messages to it in this case will fail
+  // silently.
   virtual void ForEachFrame(
       const base::Callback<void(RenderFrameHost*)>& on_frame) = 0;
 
@@ -207,11 +211,11 @@ class WebContents : public PageNavigator,
   virtual int GetRoutingID() const = 0;
 
   // Returns the currently active RenderWidgetHostView. This may change over
-  // time and can be NULL (during setup and teardown).
+  // time and can be nullptr (during setup and teardown).
   virtual RenderWidgetHostView* GetRenderWidgetHostView() const = 0;
 
   // Returns the currently active fullscreen widget. If there is none, returns
-  // NULL.
+  // nullptr.
   virtual RenderWidgetHostView* GetFullscreenRenderWidgetHostView() const = 0;
 
   // Create a WebUI page for the given url. In most cases, this doesn't need to
@@ -440,7 +444,7 @@ class WebContents : public PageNavigator,
   // Various other systems need to know about our interstitials.
   virtual bool ShowingInterstitialPage() const = 0;
 
-  // Returns the currently showing interstitial, NULL if no interstitial is
+  // Returns the currently showing interstitial, nullptr if no interstitial is
   // showing.
   virtual InterstitialPage* GetInterstitialPage() const = 0;
 
@@ -460,9 +464,17 @@ class WebContents : public PageNavigator,
                         const base::FilePath& dir_path,
                         SavePageType save_type) = 0;
 
-  // Saves the given frame's URL to the local filesystem..
+  // Saves the given frame's URL to the local filesystem.
   virtual void SaveFrame(const GURL& url,
                          const Referrer& referrer) = 0;
+
+  // Saves the given frame's URL to the local filesystem. The headers, if
+  // provided, is used to make a request to the URL rather than using cache.
+  // Format of |headers| is a new line separated list of key value pairs:
+  // "<key1>: <value1>\n<key2>: <value2>".
+  virtual void SaveFrameWithHeaders(const GURL& url,
+                                    const Referrer& referrer,
+                                    const std::string& headers) = 0;
 
   // Generate an MHTML representation of the current page in the given file.
   virtual void GenerateMHTML(
@@ -542,7 +554,7 @@ class WebContents : public PageNavigator,
   // Does this have an opener associated with it?
   virtual bool HasOpener() const = 0;
 
-  // Returns the opener if HasOpener() is true, or NULL otherwise.
+  // Returns the opener if HasOpener() is true, or nullptr otherwise.
   virtual WebContents* GetOpener() const = 0;
 
   typedef base::Callback<void(
@@ -595,6 +607,9 @@ class WebContents : public PageNavigator,
 
   // Requests the Manifest of the main frame's document.
   virtual void GetManifest(const GetManifestCallback&) = 0;
+
+  // Requests the renderer to exit fullscreen.
+  virtual void ExitFullscreen() = 0;
 
 #if defined(OS_ANDROID)
   CONTENT_EXPORT static WebContents* FromJavaWebContents(

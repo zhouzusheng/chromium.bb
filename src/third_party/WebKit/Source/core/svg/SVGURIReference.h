@@ -55,10 +55,23 @@ public:
     // JS API
     SVGAnimatedString* href() const { return m_href.get(); }
 
-    virtual void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
-    explicit SVGURIReference(SVGElement*);
+    SVGURIReference();
+
+    // FIXME: Oilpan: the construction of this mixin requires heap allocation,
+    // which cannot be safely done with Oilpan until the object that include
+    // this mixin have had its vptr initialized -- so as to be able to
+    // accurately trace the entire object should a GC strike while constructing
+    // the mixin.
+    //
+    // Try to come up with a more natural alternative and solution that doesn't
+    // require hoisting the constructor code for mixins into a separate method
+    // like initialize(). It makes construction of these heap-allocation mixins
+    // safe in the meantime, however.
+    //
+    void initialize(SVGElement*);
 
 private:
     RefPtrWillBeMember<SVGAnimatedString> m_href;

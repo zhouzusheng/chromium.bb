@@ -5,10 +5,10 @@
 #include "config.h"
 #include "core/paint/FilterPainter.h"
 
+#include "core/layout/FilterEffectRenderer.h"
+#include "core/layout/Layer.h"
 #include "core/paint/LayerClipRecorder.h"
 #include "core/paint/LayerPainter.h"
-#include "core/rendering/FilterEffectRenderer.h"
-#include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/graphics/GraphicsContext.h"
@@ -17,10 +17,13 @@
 #include "platform/graphics/filters/SkiaImageFilterBuilder.h"
 #include "platform/graphics/paint/DisplayItemList.h"
 #include "platform/graphics/paint/FilterDisplayItem.h"
+#include "public/platform/Platform.h"
+#include "public/platform/WebCompositorSupport.h"
+#include "public/platform/WebFilterOperations.h"
 
 namespace blink {
 
-FilterPainter::FilterPainter(RenderLayer& renderLayer, GraphicsContext* context, const LayoutPoint& offsetFromRoot, const ClipRect& clipRect, LayerPaintingInfo& paintingInfo, PaintLayerFlags paintFlags,
+FilterPainter::FilterPainter(Layer& renderLayer, GraphicsContext* context, const LayoutPoint& offsetFromRoot, const ClipRect& clipRect, LayerPaintingInfo& paintingInfo, PaintLayerFlags paintFlags,
     LayoutRect& rootRelativeBounds, bool& rootRelativeBoundsComputed)
     : m_filterInProgress(false)
     , m_context(context)
@@ -56,11 +59,17 @@ FilterPainter::FilterPainter(RenderLayer& renderLayer, GraphicsContext* context,
     }
 
     ASSERT(m_renderer);
-    OwnPtr<BeginFilterDisplayItem> filterDisplayItem = BeginFilterDisplayItem::create(m_renderer->displayItemClient(), DisplayItem::BeginFilter, imageFilter, rootRelativeBounds);
     if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
+        FilterOperations filterOperations(renderLayer.computeFilterOperations(m_renderer->styleRef()));
+        OwnPtr<WebFilterOperations> webFilterOperations = adoptPtr(Platform::current()->compositorSupport()->createFilterOperations());
+        builder.buildFilterOperations(filterOperations, webFilterOperations.get());
+        OwnPtr<BeginFilterDisplayItem> filterDisplayItem = BeginFilterDisplayItem::create(m_renderer->displayItemClient(), imageFilter, rootRelativeBounds, webFilterOperations.release());
+
         ASSERT(context->displayItemList());
         context->displayItemList()->add(filterDisplayItem.release());
     } else {
+        OwnPtr<BeginFilterDisplayItem> filterDisplayItem = BeginFilterDisplayItem::create(m_renderer->displayItemClient(), imageFilter, rootRelativeBounds);
+
         filterDisplayItem->replay(context);
     }
 

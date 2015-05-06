@@ -29,7 +29,7 @@
 #include "config.h"
 #include "modules/accessibility/AXTableColumn.h"
 
-#include "core/rendering/RenderTableCell.h"
+#include "core/layout/LayoutTableCell.h"
 #include "modules/accessibility/AXObjectCacheImpl.h"
 #include "modules/accessibility/AXTableCell.h"
 
@@ -52,6 +52,7 @@ PassRefPtr<AXTableColumn> AXTableColumn::create(AXObjectCacheImpl* axObjectCache
     return adoptRef(new AXTableColumn(axObjectCache));
 }
 
+
 void AXTableColumn::setParent(AXObject* parent)
 {
     AXMockObject::setParent(parent);
@@ -65,12 +66,62 @@ LayoutRect AXTableColumn::elementRect() const
     return m_columnRect;
 }
 
+void AXTableColumn::headerObjectsForColumn(AccessibilityChildrenVector& headers)
+{
+    if (!m_parent)
+        return;
+
+    LayoutObject* renderer = m_parent->renderer();
+    if (!renderer)
+        return;
+
+    if (!m_parent->isAXTable())
+        return;
+
+    if (toAXTable(m_parent)->isAriaTable()) {
+        AccessibilityChildrenVector columnChildren = children();
+        unsigned childrenCount = columnChildren.size();
+        for (unsigned i = 0; i < childrenCount; i++) {
+            AXObject* cell = columnChildren[i].get();
+            if (cell->roleValue() == ColumnHeaderRole)
+                headers.append(cell);
+        }
+        return;
+    }
+
+    if (!renderer->isTable())
+        return;
+
+    LayoutTable* table = toLayoutTable(renderer);
+    LayoutTableSection* tableSection = table->topSection();
+    for (; tableSection; tableSection = table->sectionBelow(tableSection, SkipEmptySections)) {
+        unsigned numRows = tableSection->numRows();
+        for (unsigned r = 0; r < numRows; r++) {
+            LayoutTableCell* layoutCell = tableSection->primaryCellAt(r, m_columnIndex);
+            if (!layoutCell)
+                continue;
+
+            // Whenever cell's effective col is less then current column index, we've found the cell with colspan.
+            // We do not need to add this cell, it's already been added.
+            if (layoutCell->table()->colToEffCol(layoutCell->col()) < m_columnIndex)
+                continue;
+
+            AXObject* cell = axObjectCache()->getOrCreate(layoutCell->node());
+            if (!cell || !cell->isTableCell())
+                continue;
+
+            if (toAXTableCell(cell)->scanToDecideHeaderRole() == ColumnHeaderRole)
+                headers.append(cell);
+        }
+    }
+}
+
 AXObject* AXTableColumn::headerObject()
 {
     if (!m_parent)
         return 0;
 
-    RenderObject* renderer = m_parent->renderer();
+    LayoutObject* renderer = m_parent->renderer();
     if (!renderer)
         return 0;
 
@@ -93,7 +144,7 @@ AXObject* AXTableColumn::headerObject()
     if (!renderer->isTable())
         return 0;
 
-    RenderTable* table = toRenderTable(renderer);
+    LayoutTable* table = toLayoutTable(renderer);
 
     AXObject* headerObject = 0;
 
@@ -109,7 +160,7 @@ AXObject* AXTableColumn::headerObject()
     return headerObject;
 }
 
-AXObject* AXTableColumn::headerObjectForSection(RenderTableSection* section, bool thTagRequired)
+AXObject* AXTableColumn::headerObjectForSection(LayoutTableSection* section, bool thTagRequired)
 {
     if (!section)
         return 0;
@@ -121,16 +172,16 @@ AXObject* AXTableColumn::headerObjectForSection(RenderTableSection* section, boo
     if (!section->numRows())
         return 0;
 
-    RenderTableCell* cell = 0;
+    LayoutTableCell* cell = 0;
     // also account for cells that have a span
     for (int testCol = m_columnIndex; testCol >= 0; --testCol) {
-        RenderTableCell* testCell = section->primaryCellAt(0, testCol);
+        LayoutTableCell* testCell = section->primaryCellAt(0, testCol);
         if (!testCell)
             continue;
 
         // we've reached a cell that doesn't even overlap our column
         // it can't be our header
-        if ((testCell->col() + (testCell->colSpan()-1)) < m_columnIndex)
+        if (testCell->table()->colToEffCol(testCell->col() + (testCell->colSpan()-1)) < m_columnIndex)
             break;
 
         Node* node = testCell->node();

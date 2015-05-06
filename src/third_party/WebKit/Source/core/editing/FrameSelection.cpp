@@ -41,33 +41,33 @@
 #include "core/editing/InputMethodController.h"
 #include "core/editing/RenderedPosition.h"
 #include "core/editing/SpellChecker.h"
-#include "core/editing/TextIterator.h"
 #include "core/editing/TypingCommand.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
+#include "core/editing/iterators/TextIterator.h"
 #include "core/events/Event.h"
+#include "core/frame/FrameView.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
+#include "core/frame/Settings.h"
 #include "core/html/HTMLBodyElement.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLFrameElementBase.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLSelectElement.h"
+#include "core/layout/HitTestRequest.h"
+#include "core/layout/HitTestResult.h"
+#include "core/layout/Layer.h"
+#include "core/layout/LayoutPart.h"
+#include "core/layout/LayoutTheme.h"
+#include "core/layout/line/InlineTextBox.h"
 #include "core/page/EditorClient.h"
 #include "core/page/EventHandler.h"
 #include "core/page/FocusController.h"
 #include "core/page/FrameTree.h"
-#include "core/frame/FrameView.h"
 #include "core/page/Page.h"
-#include "core/frame/Settings.h"
 #include "core/page/SpatialNavigation.h"
-#include "core/rendering/HitTestRequest.h"
-#include "core/rendering/HitTestResult.h"
-#include "core/rendering/InlineTextBox.h"
-#include "core/rendering/RenderLayer.h"
-#include "core/rendering/RenderPart.h"
 #include "core/rendering/RenderText.h"
-#include "core/rendering/RenderTheme.h"
 #include "core/rendering/RenderView.h"
 #include "platform/SecureTextInput.h"
 #include "platform/geometry/FloatQuad.h"
@@ -298,6 +298,7 @@ void FrameSelection::setSelection(const VisibleSelection& newSelection, SetSelec
 
     notifyAccessibilityForSelectionChange();
     notifyCompositorForSelectionChange();
+    notifyEventHandlerForSelectionChange();
     m_frame->localDOMWindow()->enqueueDocumentEvent(Event::create(EventTypeNames::selectionchange));
 }
 
@@ -342,7 +343,7 @@ void FrameSelection::respondToNodeModification(Node& node, bool baseRemoved, boo
         if (endRemoved)
             updatePositionForNodeRemoval(end, node);
 
-        if (start.isNotNull() && end.isNotNull()) {
+        if (Position::commonAncestorTreeScope(start, end) && start.isNotNull() && end.isNotNull()) {
             if (m_selection.isBaseFirst())
                 m_selection.setWithoutValidation(start, end);
             else
@@ -1247,7 +1248,7 @@ IntRect FrameSelection::absoluteCaretBounds()
     return absoluteBoundsForLocalRect(m_selection.start().deprecatedNode(), localCaretRectWithoutUpdate());
 }
 
-static LayoutRect localCaretRect(const VisibleSelection& m_selection, const PositionWithAffinity& caretPosition, RenderObject*& renderer)
+static LayoutRect localCaretRect(const VisibleSelection& m_selection, const PositionWithAffinity& caretPosition, LayoutObject*& renderer)
 {
     renderer = nullptr;
     if (!isNonOrphanedCaret(m_selection))
@@ -1262,7 +1263,7 @@ void FrameSelection::invalidateCaretRect()
         return;
     m_caretRectDirty = false;
 
-    RenderObject* renderer = nullptr;
+    LayoutObject* renderer = nullptr;
     LayoutRect newRect = localCaretRect(m_selection, PositionWithAffinity(m_selection.start(), m_selection.affinity()), renderer);
     Node* newNode = renderer ? renderer->node() : nullptr;
 
@@ -1459,6 +1460,11 @@ void FrameSelection::notifyCompositorForSelectionChange()
     scheduleVisualUpdate();
 }
 
+void FrameSelection::notifyEventHandlerForSelectionChange()
+{
+    m_frame->eventHandler().notifySelectionChanged();
+}
+
 void FrameSelection::focusedOrActiveStateChanged()
 {
     bool activeAndFocused = isFocusedAndActive();
@@ -1466,8 +1472,8 @@ void FrameSelection::focusedOrActiveStateChanged()
     RefPtrWillBeRawPtr<Document> document = m_frame->document();
     document->updateRenderTreeIfNeeded();
 
-    // Because RenderObject::selectionBackgroundColor() and
-    // RenderObject::selectionForegroundColor() check if the frame is active,
+    // Because LayoutObject::selectionBackgroundColor() and
+    // LayoutObject::selectionForegroundColor() check if the frame is active,
     // we have to update places those colors were painted.
     if (RenderView* view = document->renderView())
         view->invalidatePaintForSelection();
@@ -1552,7 +1558,7 @@ void FrameSelection::updateAppearance(ResetCaretBlinkOption option)
     // Start blinking with a black caret. Be sure not to restart if we're
     // already blinking in the right location.
     if (shouldBlink && !m_caretBlinkTimer.isActive()) {
-        if (double blinkInterval = RenderTheme::theme().caretBlinkInterval())
+        if (double blinkInterval = LayoutTheme::theme().caretBlinkInterval())
             m_caretBlinkTimer.startRepeating(blinkInterval, FROM_HERE);
 
         m_shouldPaintCaret = true;
@@ -1618,10 +1624,10 @@ static bool isFrameElement(const Node* n)
 {
     if (!n)
         return false;
-    RenderObject* renderer = n->renderer();
-    if (!renderer || !renderer->isRenderPart())
+    LayoutObject* renderer = n->renderer();
+    if (!renderer || !renderer->isLayoutPart())
         return false;
-    Widget* widget = toRenderPart(renderer)->widget();
+    Widget* widget = toLayoutPart(renderer)->widget();
     return widget && widget->isFrameView();
 }
 
@@ -1864,7 +1870,7 @@ void FrameSelection::showTreeForThis() const
 
 #endif
 
-void FrameSelection::trace(Visitor* visitor)
+DEFINE_TRACE(FrameSelection)
 {
     visitor->trace(m_frame);
     visitor->trace(m_selection);
@@ -1904,6 +1910,29 @@ bool FrameSelection::selectWordAroundPosition(const VisiblePosition& position)
     }
 
     return false;
+}
+
+void FrameSelection::moveRangeSelectionExtent(const VisiblePosition& extentPosition, TextGranularity granularity)
+{
+    if (isNone())
+        return;
+
+    const VisiblePosition basePosition = m_selection.isBaseFirst() ?
+        m_selection.visibleStart() : m_selection.visibleEnd();
+
+    int order = comparePositions(basePosition, extentPosition);
+    if (!order)
+        return;
+
+    // Currently we support only CharaterGranularity and WordGranurarity.
+    // If |granurarity| is not of them, we fall back it to
+    // CharacterGranularity.
+    VisiblePosition newExtentPosition = extentPosition;
+    if (granularity == WordGranularity)
+        newExtentPosition = order < 0 ? endOfWord(extentPosition) : startOfWord(extentPosition);
+
+    VisibleSelection newSelection = VisibleSelection(basePosition, newExtentPosition);
+    setSelection(newSelection, FrameSelection::CloseTyping | FrameSelection::ClearTypingStyle | UserTriggered, FrameSelection::AlignCursorOnScrollIfNeeded, granularity);
 }
 
 }

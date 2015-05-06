@@ -43,7 +43,7 @@ class Pair;
 class Quad;
 class RGBColor;
 class Rect;
-class RenderStyle;
+class LayoutStyle;
 
 // Dimension calculations are imprecise, often resulting in values of e.g.
 // 44.99998. We need to go ahead and round if we're really close to the next
@@ -89,7 +89,6 @@ public:
         CSS_S = 15,
         CSS_HZ = 16,
         CSS_KHZ = 17,
-        CSS_DIMENSION = 18,
         CSS_STRING = 19,
         CSS_URI = 20,
         CSS_IDENT = 21,
@@ -108,9 +107,6 @@ public:
         CSS_FR = 33,
         CSS_PAIR = 100, // We envision this being exposed as a means of getting computed style values for pairs (border-spacing/radius, background-position, etc.)
         CSS_UNICODE_RANGE = 102,
-
-        // FIXME: This is only used in CSSParserValue, so it's probably better as part of the enum there
-        CSS_PARSER_HEXCOLOR = 105,
 
         // These are from CSS3 Values and Units, but that isn't a finished standard yet
         CSS_TURN = 107,
@@ -168,6 +164,8 @@ public:
         UOther
     };
     static UnitCategory unitCategory(UnitType);
+
+    static void initUnitTable();
 
     static UnitType fromName(const String& unit);
 
@@ -239,7 +237,7 @@ public:
     {
         return adoptRefWillBeNoop(new CSSPrimitiveValue(value, zoom));
     }
-    static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> create(const LengthSize& value, const RenderStyle& style)
+    static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> create(const LengthSize& value, const LayoutStyle& style)
     {
         return adoptRefWillBeNoop(new CSSPrimitiveValue(value, style));
     }
@@ -279,8 +277,8 @@ public:
      */
     template<typename T> T computeLength(const CSSToLengthConversionData&);
 
-    // Converts to a Length, mapping various unit types appropriately.
-    template<int> Length convertToLength(const CSSToLengthConversionData&);
+    // Converts to a Length (Fixed, Percent or Calculated)
+    Length convertToLength(const CSSToLengthConversionData&);
 
     double getDoubleValue(UnitType) const;
     double getDoubleValue() const;
@@ -338,7 +336,7 @@ private:
     CSSPrimitiveValue(int parserOperator, UnitType);
     CSSPrimitiveValue(unsigned color, UnitType); // RGB value
     CSSPrimitiveValue(const Length&, float zoom);
-    CSSPrimitiveValue(const LengthSize&, const RenderStyle&);
+    CSSPrimitiveValue(const LengthSize&, const LayoutStyle&);
     CSSPrimitiveValue(const String&, UnitType);
     CSSPrimitiveValue(double, UnitType);
 
@@ -360,7 +358,7 @@ private:
     template<typename T> operator T*(); // compile-time guard
 
     void init(const Length&);
-    void init(const LengthSize&, const RenderStyle&);
+    void init(const LengthSize&, const LayoutStyle&);
     void init(PassRefPtrWillBeRawPtr<Counter>);
     void init(PassRefPtrWillBeRawPtr<Rect>);
     void init(PassRefPtrWillBeRawPtr<Pair>);

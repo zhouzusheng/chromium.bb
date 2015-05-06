@@ -39,7 +39,6 @@ public:
 
     virtual ~RenderListMarker();
     virtual void destroy() override;
-    virtual void trace(Visitor*) override;
 
     const String& text() const { return m_text; }
 
@@ -51,7 +50,7 @@ public:
     LayoutRect localSelectionRect();
     virtual bool isImage() const override;
     const StyleImage* image() { return m_image.get(); }
-    const RenderListItem* listItem() { return m_listItem.get(); }
+    const RenderListItem* listItem() { return m_listItem; }
 
     static UChar listMarkerSuffix(EListStyleType, int value);
 
@@ -63,7 +62,7 @@ private:
     virtual const char* renderName() const override { return "RenderListMarker"; }
     virtual void computePreferredLogicalWidths() override;
 
-    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectListMarker || RenderBox::isOfType(type); }
+    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectListMarker || RenderBox::isOfType(type); }
 
     virtual void paint(const PaintInfo&, const LayoutPoint&) override;
 
@@ -79,21 +78,21 @@ private:
     bool isText() const { return !isImage(); }
 
     virtual void setSelectionState(SelectionState) override;
-    virtual LayoutRect selectionRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const override;
+    virtual LayoutRect selectionRectForPaintInvalidation(const LayoutLayerModelObject* paintInvalidationContainer) const override;
     virtual bool canBeSelectionLeaf() const override { return true; }
 
     void updateMargins();
     void updateContent();
 
-    virtual void styleWillChange(StyleDifference, const RenderStyle& newStyle) override;
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) override;
+    virtual void styleWillChange(StyleDifference, const LayoutStyle& newStyle) override;
+    virtual void styleDidChange(StyleDifference, const LayoutStyle* oldStyle) override;
 
     String m_text;
     RefPtr<StyleImage> m_image;
-    RawPtrWillBeMember<RenderListItem> m_listItem;
+    RenderListItem* m_listItem;
 };
 
-DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderListMarker, isListMarker());
+DEFINE_LAYOUT_OBJECT_TYPE_CASTS(RenderListMarker, isListMarker());
 
 } // namespace blink
 

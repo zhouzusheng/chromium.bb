@@ -121,6 +121,8 @@ public:
     unsigned maxDirectAdjacentSelectors() const { return m_maxDirectAdjacentSelectors; }
     bool usesSiblingRules() const { return m_usesSiblingRules; }
     bool usesFirstLineRules() const { return m_usesFirstLineRules; }
+    bool usesWindowInactiveSelector() const { return m_usesWindowInactiveSelector; }
+
     bool usesFirstLetterRules() const { return m_usesFirstLetterRules; }
     void setUsesFirstLetterRules(bool b) { m_usesFirstLetterRules = b; }
     bool usesRemUnits() const { return m_usesRemUnits; }
@@ -153,6 +155,8 @@ public:
     void clearMasterResolver();
 
     CSSFontSelector* fontSelector() { return m_fontSelector.get(); }
+    void setFontSelector(PassRefPtrWillBeRawPtr<CSSFontSelector>);
+
     void removeFontFaceRules(const WillBeHeapVector<RawPtrWillBeMember<const StyleRuleFontFace> >&);
     void clearFontCache();
     // updateGenericFontFamilySettings is used from WebSettingsImpl.
@@ -168,7 +172,6 @@ public:
     PassRefPtrWillBeRawPtr<CSSStyleSheet> createSheet(Element*, const String& text, TextPosition startPosition, bool createdByParser);
     void removeSheet(StyleSheetContents*);
 
-    bool onlyDocumentHasStyles() const { return m_activeTreeScopes.isEmpty(); }
     void collectScopedStyleFeaturesTo(RuleFeatureSet&) const;
 
     void platformColorsChanged();
@@ -283,6 +286,7 @@ private:
 
     bool m_usesSiblingRules;
     bool m_usesFirstLineRules;
+    bool m_usesWindowInactiveSelector;
     bool m_usesFirstLetterRules;
     bool m_usesRemUnits;
     unsigned m_maxDirectAdjacentSelectors;

@@ -148,12 +148,21 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
   virtual void AccessibilityEventReceived(
       const std::vector<AXEventNotificationDetails>& details) {}
 
-  // Find a guest RenderFrameHost by its browser plugin instance id.
+  // Find a guest RenderFrameHost by its parent |render_frame_host| and
+  // |browser_plugin_instance_id|.
   virtual RenderFrameHost* GetGuestByInstanceID(
+      RenderFrameHost* render_frame_host,
       int browser_plugin_instance_id);
 
   // Gets the GeolocationServiceContext associated with this delegate.
   virtual GeolocationServiceContext* GetGeolocationServiceContext();
+
+  // Notification that the frame wants to go into fullscreen mode.
+  // |origin| represents the origin of the frame that requests fullscreen.
+  virtual void EnterFullscreenMode(const GURL& origin) {}
+
+  // Notification that the frame wants to go out of fullscreen mode.
+  virtual void ExitFullscreenMode() {}
 
 #if defined(OS_WIN)
   // Returns the frame's parent's NativeViewAccessible.

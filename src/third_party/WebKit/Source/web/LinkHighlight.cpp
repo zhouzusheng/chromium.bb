@@ -32,14 +32,15 @@
 #include "core/dom/NodeRenderingTraversal.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
-#include "core/rendering/RenderLayer.h"
-#include "core/rendering/RenderLayerModelObject.h"
-#include "core/rendering/RenderObject.h"
-#include "core/rendering/RenderPart.h"
+#include "core/layout/Layer.h"
+#include "core/layout/LayoutLayerModelObject.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/compositing/CompositedLayerMapping.h"
+#include "core/layout/style/ShadowData.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/compositing/CompositedLayerMapping.h"
-#include "core/rendering/style/ShadowData.h"
 #include "platform/graphics/Color.h"
+#include "platform/graphics/paint/DisplayItemList.h"
+#include "platform/graphics/paint/DrawingRecorder.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebCompositorAnimationCurve.h"
 #include "public/platform/WebCompositorSupport.h"
@@ -105,7 +106,7 @@ void LinkHighlight::releaseResources()
     m_node.clear();
 }
 
-void LinkHighlight::attachLinkHighlightToCompositingLayer(const RenderLayerModelObject* paintInvalidationContainer)
+void LinkHighlight::attachLinkHighlightToCompositingLayer(const LayoutLayerModelObject* paintInvalidationContainer)
 {
     GraphicsLayer* newGraphicsLayer = paintInvalidationContainer->layer()->graphicsLayerBacking();
     // FIXME: There should always be a GraphicsLayer. See crbug.com/431961.
@@ -125,7 +126,7 @@ void LinkHighlight::attachLinkHighlightToCompositingLayer(const RenderLayerModel
     }
 }
 
-static void convertTargetSpaceQuadToCompositedLayer(const FloatQuad& targetSpaceQuad, RenderObject* targetRenderer, const RenderLayerModelObject* paintInvalidationContainer, FloatQuad& compositedSpaceQuad)
+static void convertTargetSpaceQuadToCompositedLayer(const FloatQuad& targetSpaceQuad, LayoutObject* targetRenderer, const LayoutLayerModelObject* paintInvalidationContainer, FloatQuad& compositedSpaceQuad)
 {
     ASSERT(targetRenderer);
     ASSERT(paintInvalidationContainer);
@@ -142,7 +143,7 @@ static void convertTargetSpaceQuadToCompositedLayer(const FloatQuad& targetSpace
         point = targetRenderer->frame()->view()->contentsToWindow(point);
         point = paintInvalidationContainer->frame()->view()->windowToContents(point);
         FloatPoint floatPoint = paintInvalidationContainer->absoluteToLocal(point, UseTransforms);
-        RenderLayer::mapPointToPaintBackingCoordinates(paintInvalidationContainer, floatPoint);
+        Layer::mapPointToPaintBackingCoordinates(paintInvalidationContainer, floatPoint);
 
         switch (i) {
         case 0: compositedSpaceQuad.setP1(floatPoint); break;
@@ -168,7 +169,7 @@ void LinkHighlight::computeQuads(const Node& node, Vector<FloatQuad>& outQuads) 
     if (!node.renderer())
         return;
 
-    RenderObject* renderer = node.renderer();
+    LayoutObject* renderer = node.renderer();
 
     // For inline elements, absoluteQuads will return a line box based on the line-height
     // and font metrics, which is technically incorrect as replaced elements like images
@@ -184,7 +185,7 @@ void LinkHighlight::computeQuads(const Node& node, Vector<FloatQuad>& outQuads) 
     }
 }
 
-bool LinkHighlight::computeHighlightLayerPathAndPosition(const RenderLayerModelObject* paintInvalidationContainer)
+bool LinkHighlight::computeHighlightLayerPathAndPosition(const LayoutLayerModelObject* paintInvalidationContainer)
 {
     if (!m_node || !m_node->renderer() || !m_currentGraphicsLayer)
         return false;
@@ -242,17 +243,37 @@ bool LinkHighlight::computeHighlightLayerPathAndPosition(const RenderLayerModelO
     return pathHasChanged;
 }
 
-void LinkHighlight::paintContents(WebCanvas* canvas, const WebRect& webClipRect, bool, WebContentLayerClient::GraphicsContextStatus contextStatus)
+void LinkHighlight::paintContents(WebCanvas* canvas, const WebRect& webClipRect, WebContentLayerClient::PaintingControlSetting paintingControl)
 {
     if (!m_node || !m_node->renderer())
         return;
 
-    GraphicsContext gc(canvas, nullptr,
-        contextStatus == WebContentLayerClient::GraphicsContextEnabled ? GraphicsContext::NothingDisabled : GraphicsContext::FullyDisabled);
+    GraphicsContext::DisabledMode disabledMode = GraphicsContext::NothingDisabled;
+    if (paintingControl == WebContentLayerClient::DisplayListConstructionDisabled)
+        disabledMode = GraphicsContext::FullyDisabled;
+
+    OwnPtr<GraphicsContext> graphicsContext;
+    OwnPtr<DisplayItemList> displayItemList;
+    if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
+        displayItemList = DisplayItemList::create();
+        graphicsContext = adoptPtr(new GraphicsContext(nullptr, displayItemList.get(), disabledMode));
+    } else {
+        graphicsContext = adoptPtr(new GraphicsContext(canvas, nullptr, disabledMode));
+    }
+
     IntRect clipRect(IntPoint(webClipRect.x, webClipRect.y), IntSize(webClipRect.width, webClipRect.height));
-    gc.clip(clipRect);
-    gc.setFillColor(m_node->renderer()->style()->tapHighlightColor());
-    gc.fillPath(m_path);
+    {
+        DrawingRecorder drawingRecorder(graphicsContext.get(), displayItemClient(), DisplayItem::LinkHighlight, clipRect);
+
+        graphicsContext->clip(clipRect);
+        graphicsContext->setFillColor(m_node->renderer()->style()->tapHighlightColor());
+        graphicsContext->fillPath(m_path);
+    }
+
+    if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
+        GraphicsContext canvasGraphicsContext(canvas, nullptr, disabledMode);
+        displayItemList->replay(&canvasGraphicsContext);
+    }
 }
 
 void LinkHighlight::startHighlightAnimationIfNeeded()
@@ -319,7 +340,7 @@ void LinkHighlight::updateGeometry()
     m_geometryNeedsUpdate = false;
 
     bool hasRenderer = m_node && m_node->renderer();
-    const RenderLayerModelObject* paintInvalidationContainer = hasRenderer ? m_node->renderer()->containerForPaintInvalidation() : 0;
+    const LayoutLayerModelObject* paintInvalidationContainer = hasRenderer ? m_node->renderer()->containerForPaintInvalidation() : 0;
     if (paintInvalidationContainer)
         attachLinkHighlightToCompositingLayer(paintInvalidationContainer);
     if (paintInvalidationContainer && computeHighlightLayerPathAndPosition(paintInvalidationContainer)) {

@@ -142,7 +142,7 @@ bool PositionIterator::isCandidate() const
     if (!m_anchorNode)
         return false;
 
-    RenderObject* renderer = m_anchorNode->renderer();
+    LayoutObject* renderer = m_anchorNode->renderer();
     if (!renderer)
         return false;
 
@@ -167,7 +167,7 @@ bool PositionIterator::isCandidate() const
 
     if (renderer->isSVG()) {
         // We don't consider SVG elements are contenteditable except for
-        // associated renderer returns isText() true, e.g. RenderSVGInlineText.
+        // associated renderer returns isText() true, e.g. LayoutSVGInlineText.
         return false;
     }
 

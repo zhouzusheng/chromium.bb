@@ -7,9 +7,9 @@
 #include <algorithm>
 #include <limits>
 
-#include "base/debug/trace_event.h"
-#include "base/debug/trace_event_argument.h"
 #include "base/strings/stringprintf.h"
+#include "base/trace_event/trace_event.h"
+#include "base/trace_event/trace_event_argument.h"
 #include "cc/debug/traced_value.h"
 #include "cc/resources/raster_buffer.h"
 #include "cc/resources/resource_pool.h"
@@ -25,12 +25,14 @@ class RasterBufferImpl : public RasterBuffer {
   RasterBufferImpl(OneCopyTileTaskWorkerPool* worker_pool,
                    ResourceProvider* resource_provider,
                    ResourcePool* resource_pool,
+                   ResourceFormat resource_format,
                    const Resource* resource)
       : worker_pool_(worker_pool),
         resource_provider_(resource_provider),
         resource_pool_(resource_pool),
         resource_(resource),
-        raster_resource_(resource_pool->AcquireResource(resource->size())),
+        raster_resource_(
+            resource_pool->AcquireResource(resource->size(), resource_format)),
         lock_(new ResourceProvider::ScopedWriteLockGpuMemoryBuffer(
             resource_provider_,
             raster_resource_->id())),
@@ -165,6 +167,13 @@ void OneCopyTileTaskWorkerPool::Shutdown() {
 void OneCopyTileTaskWorkerPool::ScheduleTasks(TileTaskQueue* queue) {
   TRACE_EVENT0("cc", "OneCopyTileTaskWorkerPool::ScheduleTasks");
 
+#if DCHECK_IS_ON()
+  {
+    base::AutoLock lock(lock_);
+    DCHECK(!shutdown_);
+  }
+#endif
+
   if (tasks_pending_.none())
     TRACE_EVENT_ASYNC_BEGIN0("cc", "ScheduledTasks", this);
 
@@ -212,7 +221,8 @@ void OneCopyTileTaskWorkerPool::ScheduleTasks(TileTaskQueue* queue) {
 
   for (TaskSet task_set = 0; task_set < kNumberOfTaskSets; ++task_set) {
     InsertNodeForTask(&graph_, new_task_set_finished_tasks[task_set].get(),
-                      kTaskSetFinishedTaskPriority, task_count[task_set]);
+                      kTaskSetFinishedTaskPriorityBase + task_set,
+                      task_count[task_set]);
   }
 
   ScheduleTasksOnOriginThread(this, &graph_);
@@ -247,11 +257,17 @@ void OneCopyTileTaskWorkerPool::CheckForCompletedTasks() {
   completed_tasks_.clear();
 }
 
+ResourceFormat OneCopyTileTaskWorkerPool::GetResourceFormat() {
+  return resource_provider_->best_texture_format();
+}
+
 scoped_ptr<RasterBuffer> OneCopyTileTaskWorkerPool::AcquireBufferForRaster(
     const Resource* resource) {
-  DCHECK_EQ(resource->format(), resource_pool_->resource_format());
+  DCHECK_EQ(resource->format(), resource_provider_->best_texture_format());
   return make_scoped_ptr<RasterBuffer>(
-      new RasterBufferImpl(this, resource_provider_, resource_pool_, resource));
+      new RasterBufferImpl(this, resource_provider_, resource_pool_,
+                           resource_provider_->best_texture_format(),
+                           resource));
 }
 
 void OneCopyTileTaskWorkerPool::ReleaseBufferForRaster(
@@ -458,10 +474,10 @@ void OneCopyTileTaskWorkerPool::CheckForCompletedCopyOperations(
   }
 }
 
-scoped_refptr<base::debug::ConvertableToTraceFormat>
+scoped_refptr<base::trace_event::ConvertableToTraceFormat>
 OneCopyTileTaskWorkerPool::StateAsValue() const {
-  scoped_refptr<base::debug::TracedValue> state =
-      new base::debug::TracedValue();
+  scoped_refptr<base::trace_event::TracedValue> state =
+      new base::trace_event::TracedValue();
 
   state->BeginArray("tasks_pending");
   for (TaskSet task_set = 0; task_set < kNumberOfTaskSets; ++task_set)
@@ -475,7 +491,7 @@ OneCopyTileTaskWorkerPool::StateAsValue() const {
 }
 
 void OneCopyTileTaskWorkerPool::StagingStateAsValueInto(
-    base::debug::TracedValue* staging_state) const {
+    base::trace_event::TracedValue* staging_state) const {
   staging_state->SetInteger("staging_resource_count",
                             resource_pool_->total_resource_count());
   staging_state->SetInteger("bytes_used_for_staging_resources",

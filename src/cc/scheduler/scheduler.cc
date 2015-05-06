@@ -7,10 +7,10 @@
 #include <algorithm>
 
 #include "base/auto_reset.h"
-#include "base/debug/trace_event.h"
-#include "base/debug/trace_event_argument.h"
 #include "base/logging.h"
 #include "base/single_thread_task_runner.h"
+#include "base/trace_event/trace_event.h"
+#include "base/trace_event/trace_event_argument.h"
 #include "cc/debug/devtools_instrumentation.h"
 #include "cc/debug/traced_value.h"
 #include "cc/scheduler/delay_based_time_source.h"
@@ -335,6 +335,9 @@ void Scheduler::SetupNextBeginFrameIfNeeded() {
   if (state_machine_.ShouldSetNeedsBeginFrames(
           frame_source_->NeedsBeginFrames())) {
     frame_source_->SetNeedsBeginFrames(state_machine_.BeginFrameNeeded());
+    if (!frame_source_->NeedsBeginFrames()) {
+      client_->SendBeginMainFrameNotExpectedSoon();
+    }
   }
 
   if (state_machine_.begin_impl_frame_state() ==
@@ -399,7 +402,7 @@ void Scheduler::SetupPollingMechanisms() {
 // If the scheduler is busy, we queue the BeginFrame to be handled later as
 // a BeginRetroFrame.
 bool Scheduler::OnBeginFrameMixInDelegate(const BeginFrameArgs& args) {
-  TRACE_EVENT1("cc", "Scheduler::BeginFrame", "args", args.AsValue());
+  TRACE_EVENT1("cc,benchmark", "Scheduler::BeginFrame", "args", args.AsValue());
 
   // Deliver BeginFrames to children.
   if (settings_.forward_begin_frames_to_children &&
@@ -461,7 +464,7 @@ void Scheduler::SetChildrenNeedBeginFrames(bool children_need_begin_frames) {
 // BeginRetroFrame is called for BeginFrames that we've deferred because
 // the scheduler was in the middle of processing a previous BeginFrame.
 void Scheduler::BeginRetroFrame() {
-  TRACE_EVENT0("cc", "Scheduler::BeginRetroFrame");
+  TRACE_EVENT0("cc,benchmark", "Scheduler::BeginRetroFrame");
   DCHECK(!settings_.using_synchronous_renderer_compositor);
   DCHECK(!begin_retro_frame_args_.empty());
   DCHECK(!begin_retro_frame_task_.IsCancelled());
@@ -537,7 +540,7 @@ void Scheduler::PostBeginRetroFrameIfNeeded() {
 void Scheduler::BeginImplFrame(const BeginFrameArgs& args) {
   bool main_thread_is_in_high_latency_mode =
       state_machine_.MainThreadIsInHighLatencyMode();
-  TRACE_EVENT2("cc",
+  TRACE_EVENT2("cc,benchmark",
                "Scheduler::BeginImplFrame",
                "args",
                args.AsValue(),
@@ -561,9 +564,9 @@ void Scheduler::BeginImplFrame(const BeginFrameArgs& args) {
     state_machine_.SetSkipNextBeginMainFrameToReduceLatency();
   }
 
-  client_->WillBeginImplFrame(begin_impl_frame_args_);
   state_machine_.OnBeginImplFrame(begin_impl_frame_args_);
   devtools_instrumentation::DidBeginFrame(layer_tree_host_id_);
+  client_->WillBeginImplFrame(begin_impl_frame_args_);
 
   ProcessScheduledActions();
 
@@ -635,7 +638,7 @@ void Scheduler::RescheduleBeginImplFrameDeadlineIfNeeded() {
 }
 
 void Scheduler::OnBeginImplFrameDeadline() {
-  TRACE_EVENT0("cc", "Scheduler::OnBeginImplFrameDeadline");
+  TRACE_EVENT0("cc,benchmark", "Scheduler::OnBeginImplFrameDeadline");
   begin_impl_frame_deadline_task_.Cancel();
   // We split the deadline actions up into two phases so the state machine
   // has a chance to trigger actions that should occur durring and after
@@ -669,6 +672,14 @@ void Scheduler::PollToAdvanceCommitState() {
 void Scheduler::DrawAndSwapIfPossible() {
   DrawResult result = client_->ScheduledActionDrawAndSwapIfPossible();
   state_machine_.DidDrawIfPossibleCompleted(result);
+}
+
+void Scheduler::SetDeferCommits(bool defer_commits) {
+  TRACE_EVENT1("cc", "Scheduler::SetDeferCommits",
+                "defer_commits",
+                defer_commits);
+  state_machine_.SetDeferCommits(defer_commits);
+  ProcessScheduledActions();
 }
 
 void Scheduler::ProcessScheduledActions() {
@@ -732,15 +743,15 @@ void Scheduler::ProcessScheduledActions() {
   RescheduleBeginImplFrameDeadlineIfNeeded();
 }
 
-scoped_refptr<base::debug::ConvertableToTraceFormat> Scheduler::AsValue()
+scoped_refptr<base::trace_event::ConvertableToTraceFormat> Scheduler::AsValue()
     const {
-  scoped_refptr<base::debug::TracedValue> state =
-      new base::debug::TracedValue();
+  scoped_refptr<base::trace_event::TracedValue> state =
+      new base::trace_event::TracedValue();
   AsValueInto(state.get());
   return state;
 }
 
-void Scheduler::AsValueInto(base::debug::TracedValue* state) const {
+void Scheduler::AsValueInto(base::trace_event::TracedValue* state) const {
   state->BeginDictionary("state_machine");
   state_machine_.AsValueInto(state, Now());
   state->EndDictionary();

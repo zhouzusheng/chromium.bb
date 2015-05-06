@@ -28,8 +28,10 @@
 
 #include "modules/webaudio/AudioBufferSourceNode.h"
 
+#include "bindings/core/v8/ExceptionMessages.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/frame/UseCounter.h"
 #include "platform/audio/AudioUtilities.h"
 #include "modules/webaudio/AudioContext.h"
 #include "modules/webaudio/AudioNodeOutput.h"
@@ -340,6 +342,12 @@ void AudioBufferSourceNode::setBuffer(AudioBuffer* buffer, ExceptionState& excep
 {
     ASSERT(isMainThread());
 
+    if (m_buffer) {
+        // Setting the buffer more than once is deprecated.  Change this to a DOM exception in M45
+        // or so.
+        UseCounter::countDeprecation(context()->executionContext(), UseCounter::AudioBufferSourceBufferOnce);
+    }
+
     // The context must be locked since changing the buffer can re-configure the number of channels that are output.
     AudioContext::AutoLocker contextLocker(context());
 
@@ -350,10 +358,18 @@ void AudioBufferSourceNode::setBuffer(AudioBuffer* buffer, ExceptionState& excep
         // Do any necesssary re-configuration to the buffer's number of channels.
         unsigned numberOfChannels = buffer->numberOfChannels();
 
+        // This should not be possible since AudioBuffers can't be created with too many channels
+        // either.
         if (numberOfChannels > AudioContext::maxNumberOfChannels()) {
-            exceptionState.throwTypeError("number of input channels (" + String::number(numberOfChannels)
-                + ") exceeds maximum ("
-                + String::number(AudioContext::maxNumberOfChannels()) + ").");
+            exceptionState.throwDOMException(
+                NotSupportedError,
+                ExceptionMessages::indexOutsideRange(
+                    "number of input channels",
+                    numberOfChannels,
+                    1u,
+                    ExceptionMessages::InclusiveBound,
+                    AudioContext::maxNumberOfChannels(),
+                    ExceptionMessages::InclusiveBound));
             return;
         }
 
@@ -364,6 +380,11 @@ void AudioBufferSourceNode::setBuffer(AudioBuffer* buffer, ExceptionState& excep
 
         for (unsigned i = 0; i < numberOfChannels; ++i)
             m_sourceChannels[i] = buffer->getChannelData(i)->data();
+
+        // If this is a grain (as set by a previous call to start()), validate the grain parameters
+        // now since it wasn't validated when start was called (because there was no buffer then).
+        if (m_isGrain)
+            clampGrainParameters(buffer);
     }
 
     m_virtualReadIndex = 0;
@@ -373,6 +394,33 @@ void AudioBufferSourceNode::setBuffer(AudioBuffer* buffer, ExceptionState& excep
 unsigned AudioBufferSourceNode::numberOfChannels()
 {
     return output(0)->numberOfChannels();
+}
+
+void AudioBufferSourceNode::clampGrainParameters(const AudioBuffer* buffer)
+{
+    ASSERT(buffer);
+
+    // We have a buffer so we can clip the offset and duration to lie within the buffer.
+    double bufferDuration = buffer->duration();
+
+    m_grainOffset = clampTo(m_grainOffset, 0.0, bufferDuration);
+
+    if (loop()) {
+        // We're looping a grain with a grain duration specified. Schedule the loop to stop after
+        // grainDuration seconds after starting, possibly running the loop multiple times if
+        // grainDuration is larger than the buffer duration. The net effect is as if the user called
+        // stop(when + grainDuration).
+        m_grainDuration = clampTo(m_grainDuration, 0.0, std::numeric_limits<double>::infinity());
+        m_endTime = m_startTime + m_grainDuration;
+    } else {
+        m_grainDuration = clampTo(m_grainDuration, 0.0, bufferDuration - m_grainOffset);
+    }
+
+    // We call timeToSampleFrame here since at playbackRate == 1 we don't want to go through
+    // linear interpolation at a sub-sample position since it will degrade the quality. When
+    // aligned to the sample-frame the playback will be identical to the PCM data stored in the
+    // buffer. Since playbackRate == 1 is very common, it's worth considering quality.
+    m_virtualReadIndex = AudioUtilities::timeToSampleFrame(m_grainOffset, buffer->sampleRate());
 }
 
 void AudioBufferSourceNode::start(double when, ExceptionState& exceptionState)
@@ -396,51 +444,37 @@ void AudioBufferSourceNode::start(double when, double grainOffset, double grainD
         return;
     }
 
-    if (!std::isfinite(when) || (when < 0)) {
+    if (when < 0) {
         exceptionState.throwDOMException(
             InvalidStateError,
-            "Start time must be a finite non-negative number: " + String::number(when));
+            "Start time must be a non-negative number: " + String::number(when));
         return;
     }
 
-    if (!std::isfinite(grainOffset) || (grainOffset < 0)) {
+    if (grainOffset < 0) {
         exceptionState.throwDOMException(
             InvalidStateError,
-            "Offset must be a finite non-negative number: " + String::number(grainOffset));
+            "Offset must be a non-negative number: " + String::number(grainOffset));
         return;
     }
 
-    if (!std::isfinite(grainDuration) || (grainDuration < 0)) {
+    if (grainDuration < 0) {
         exceptionState.throwDOMException(
             InvalidStateError,
-            "Duration must be a finite non-negative number: " + String::number(grainDuration));
+            "Duration must be a non-negative number: " + String::number(grainDuration));
         return;
     }
-
-    if (!buffer())
-        return;
-
-    // Do sanity checking of grain parameters versus buffer size.
-    double bufferDuration = buffer()->duration();
-
-    grainOffset = std::max(0.0, grainOffset);
-    grainOffset = std::min(bufferDuration, grainOffset);
-    m_grainOffset = grainOffset;
-
-    double maxDuration = bufferDuration - grainOffset;
-
-    grainDuration = std::max(0.0, grainDuration);
-    grainDuration = std::min(maxDuration, grainDuration);
-    m_grainDuration = grainDuration;
 
     m_isGrain = true;
-    m_startTime = when;
+    m_grainOffset = grainOffset;
+    m_grainDuration = grainDuration;
 
-    // We call timeToSampleFrame here since at playbackRate == 1 we don't want to go through linear interpolation
-    // at a sub-sample position since it will degrade the quality.
-    // When aligned to the sample-frame the playback will be identical to the PCM data stored in the buffer.
-    // Since playbackRate == 1 is very common, it's worth considering quality.
-    m_virtualReadIndex = AudioUtilities::timeToSampleFrame(m_grainOffset, buffer()->sampleRate());
+    // If |when| < currentTime, the source must start now according to the spec.
+    // So just set startTime to currentTime in this case to start the source now.
+    m_startTime = std::max(when, context()->currentTime());
+
+    if (buffer())
+        clampGrainParameters(buffer());
 
     m_playbackState = SCHEDULED_STATE;
 }
@@ -500,6 +534,21 @@ void AudioBufferSourceNode::clearPannerNode()
     }
 }
 
+void AudioBufferSourceNode::handleStoppableSourceNode()
+{
+    // If the source node is not looping, and we have a buffer, we can determine when the
+    // source would stop playing.
+    if (!loop() && buffer() && isPlayingOrScheduled()) {
+        double stopTime = m_startTime + buffer()->duration();
+        if (context()->currentTime() > stopTime) {
+            // The context time has passed the time when the source nodes should have stopped
+            // playing. Stop the node now and deref it. (But don't run the onEnded event because the
+            // source never actually played.)
+            finishWithoutOnEnded();
+        }
+    }
+}
+
 void AudioBufferSourceNode::finish()
 {
     clearPannerNode();
@@ -507,7 +556,7 @@ void AudioBufferSourceNode::finish()
     AudioScheduledSourceNode::finish();
 }
 
-void AudioBufferSourceNode::trace(Visitor* visitor)
+DEFINE_TRACE(AudioBufferSourceNode)
 {
     visitor->trace(m_buffer);
     visitor->trace(m_playbackRate);

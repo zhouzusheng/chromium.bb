@@ -36,7 +36,6 @@
 #include "vp9/decoder/vp9_decodemv.h"
 #include "vp9/decoder/vp9_decoder.h"
 #include "vp9/decoder/vp9_dsubexp.h"
-#include "vp9/decoder/vp9_dthread.h"
 #include "vp9/decoder/vp9_read_bit_buffer.h"
 #include "vp9/decoder/vp9_reader.h"
 
@@ -463,8 +462,8 @@ static void decode_partition(VP9_COMMON *const cm, MACROBLOCKD *const xd,
   subsize = get_subsize(bsize, partition);
   uv_subsize = ss_size_lookup[subsize][cm->subsampling_x][cm->subsampling_y];
   if (subsize >= BLOCK_8X8 && uv_subsize == BLOCK_INVALID)
-    vpx_internal_error(&cm->error, VPX_CODEC_CORRUPT_FRAME,
-                       "Invalid block size.");
+    vpx_internal_error(xd->error_info,
+                       VPX_CODEC_CORRUPT_FRAME, "Invalid block size.");
   if (subsize < BLOCK_8X8) {
     decode_block(cm, xd, tile, mi_row, mi_col, r, subsize);
   } else {
@@ -719,6 +718,7 @@ static void setup_frame_size(VP9_COMMON *cm, struct vp9_read_bit_buffer *rb) {
           cm->use_highbitdepth,
 #endif
           VP9_DEC_BORDER_IN_PIXELS,
+          cm->byte_alignment,
           &cm->frame_bufs[cm->new_fb_idx].raw_frame_buffer, cm->get_fb_cb,
           cm->cb_priv)) {
     vpx_internal_error(&cm->error, VPX_CODEC_MEM_ERROR,
@@ -726,6 +726,8 @@ static void setup_frame_size(VP9_COMMON *cm, struct vp9_read_bit_buffer *rb) {
   }
   cm->frame_bufs[cm->new_fb_idx].buf.subsampling_x = cm->subsampling_x;
   cm->frame_bufs[cm->new_fb_idx].buf.subsampling_y = cm->subsampling_y;
+  cm->frame_bufs[cm->new_fb_idx].buf.color_space =
+      (vpx_color_space_t)cm->color_space;
   cm->frame_bufs[cm->new_fb_idx].buf.bit_depth = (unsigned int)cm->bit_depth;
 }
 
@@ -747,10 +749,6 @@ static void setup_frame_size_with_refs(VP9_COMMON *cm,
       YV12_BUFFER_CONFIG *const buf = cm->frame_refs[i].buf;
       width = buf->y_crop_width;
       height = buf->y_crop_height;
-      if (buf->corrupted) {
-        vpx_internal_error(&cm->error, VPX_CODEC_CORRUPT_FRAME,
-                           "Frame reference is corrupt");
-      }
       found = 1;
       break;
     }
@@ -784,7 +782,7 @@ static void setup_frame_size_with_refs(VP9_COMMON *cm,
             cm->subsampling_x,
             cm->subsampling_y))
       vpx_internal_error(&cm->error, VPX_CODEC_CORRUPT_FRAME,
-                         "Referenced frame has incompatible color space");
+                         "Referenced frame has incompatible color format");
   }
 
   resize_context_buffers(cm, width, height);
@@ -797,6 +795,7 @@ static void setup_frame_size_with_refs(VP9_COMMON *cm,
           cm->use_highbitdepth,
 #endif
           VP9_DEC_BORDER_IN_PIXELS,
+          cm->byte_alignment,
           &cm->frame_bufs[cm->new_fb_idx].raw_frame_buffer, cm->get_fb_cb,
           cm->cb_priv)) {
     vpx_internal_error(&cm->error, VPX_CODEC_MEM_ERROR,
@@ -956,7 +955,6 @@ static const uint8_t *decode_tiles(VP9Decoder *pbi,
                           &tile_data->bit_reader, pbi->decrypt_cb,
                           pbi->decrypt_state);
       init_macroblockd(cm, &tile_data->xd);
-      vp9_zero(tile_data->xd.dqcoeff);
     }
   }
 
@@ -978,9 +976,12 @@ static const uint8_t *decode_tiles(VP9Decoder *pbi,
                            &tile_data->bit_reader, BLOCK_64X64);
         }
         pbi->mb.corrupted |= tile_data->xd.corrupted;
+        if (pbi->mb.corrupted)
+            vpx_internal_error(&cm->error, VPX_CODEC_CORRUPT_FRAME,
+                               "Failed to decode tile data");
       }
       // Loopfilter one row.
-      if (cm->lf.filter_level && !pbi->mb.corrupted) {
+      if (cm->lf.filter_level) {
         const int lf_start = mi_row - MI_BLOCK_SIZE;
         LFWorkerData *const lf_data = (LFWorkerData*)pbi->lf_worker.data1;
 
@@ -1003,7 +1004,7 @@ static const uint8_t *decode_tiles(VP9Decoder *pbi,
   }
 
   // Loopfilter remaining rows in the frame.
-  if (cm->lf.filter_level && !pbi->mb.corrupted) {
+  if (cm->lf.filter_level) {
     LFWorkerData *const lf_data = (LFWorkerData*)pbi->lf_worker.data1;
     winterface->sync(&pbi->lf_worker);
     lf_data->start = lf_data->stop;
@@ -1020,6 +1021,15 @@ static const uint8_t *decode_tiles(VP9Decoder *pbi,
 static int tile_worker_hook(TileWorkerData *const tile_data,
                             const TileInfo *const tile) {
   int mi_row, mi_col;
+
+  if (setjmp(tile_data->error_info.jmp)) {
+    tile_data->error_info.setjmp = 0;
+    tile_data->xd.corrupted = 1;
+    return 0;
+  }
+
+  tile_data->error_info.setjmp = 1;
+  tile_data->xd.error_info = &tile_data->error_info;
 
   for (mi_row = tile->mi_row_start; mi_row < tile->mi_row_end;
        mi_row += MI_BLOCK_SIZE) {
@@ -1150,7 +1160,6 @@ static const uint8_t *decode_tiles_mt(VP9Decoder *pbi,
                           &tile_data->bit_reader, pbi->decrypt_cb,
                           pbi->decrypt_state);
       init_macroblockd(cm, &tile_data->xd);
-      vp9_zero(tile_data->xd.dqcoeff);
 
       worker->had_error = 0;
       if (i == num_workers - 1 || n == tile_cols - 1) {
@@ -1168,6 +1177,10 @@ static const uint8_t *decode_tiles_mt(VP9Decoder *pbi,
 
     for (; i > 0; --i) {
       VP9Worker *const worker = &pbi->tile_workers[i - 1];
+      // TODO(jzern): The tile may have specific error data associated with
+      // its vpx_internal_error_info which could be propagated to the main info
+      // in cm. Additionally once the threads have been synced and an error is
+      // detected, there's no point in continuing to decode tiles.
       pbi->mb.corrupted |= !winterface->sync(worker);
     }
     if (final_worker > -1) {
@@ -1213,8 +1226,8 @@ static void read_bitdepth_colorspace_sampling(
     cm->use_highbitdepth = 0;
 #endif
   }
-  cm->color_space = (COLOR_SPACE)vp9_rb_read_literal(rb, 3);
-  if (cm->color_space != SRGB) {
+  cm->color_space = vp9_rb_read_literal(rb, 3);
+  if (cm->color_space != VPX_CS_SRGB) {
     vp9_rb_read_bit(rb);  // [16,235] (including xvycc) vs [0,255] range
     if (cm->profile == PROFILE_1 || cm->profile == PROFILE_3) {
       cm->subsampling_x = vp9_rb_read_bit(rb);
@@ -1312,9 +1325,9 @@ static size_t read_uncompressed_header(VP9Decoder *pbi,
       } else {
         // NOTE: The intra-only frame header does not include the specification
         // of either the color format or color sub-sampling in profile 0. VP9
-        // specifies that the default color space should be YUV 4:2:0 in this
+        // specifies that the default color format should be YUV 4:2:0 in this
         // case (normative).
-        cm->color_space = BT_601;
+        cm->color_space = VPX_CS_BT_601;
         cm->subsampling_y = cm->subsampling_x = 1;
         cm->bit_depth = VPX_BITS_8;
 #if CONFIG_VP9_HIGHBITDEPTH
@@ -1547,8 +1560,6 @@ void vp9_decode_frame(VP9Decoder *pbi,
     vpx_internal_error(&cm->error, VPX_CODEC_CORRUPT_FRAME,
                        "Truncated packet or corrupt header length");
 
-  init_macroblockd(cm, &pbi->mb);
-
   cm->use_prev_frame_mvs = !cm->error_resilient_mode &&
                            cm->width == cm->last_width &&
                            cm->height == cm->last_height &&
@@ -1559,11 +1570,17 @@ void vp9_decode_frame(VP9Decoder *pbi,
   vp9_setup_block_planes(xd, cm->subsampling_x, cm->subsampling_y);
 
   *cm->fc = cm->frame_contexts[cm->frame_context_idx];
+  if (!cm->fc->initialized)
+    vpx_internal_error(&cm->error, VPX_CODEC_CORRUPT_FRAME,
+                       "Uninitialized entropy context.");
+
   vp9_zero(cm->counts);
-  vp9_zero(xd->dqcoeff);
 
   xd->corrupted = 0;
   new_fb->corrupted = read_compressed_header(pbi, data, first_partition_size);
+  if (new_fb->corrupted)
+    vpx_internal_error(&cm->error, VPX_CODEC_CORRUPT_FRAME,
+                       "Decode failed. Frame data header is corrupted.");
 
   // TODO(jzern): remove frame_parallel_decoding_mode restriction for
   // single-frame tile decoding.
@@ -1573,9 +1590,13 @@ void vp9_decode_frame(VP9Decoder *pbi,
     if (!xd->corrupted) {
       // If multiple threads are used to decode tiles, then we use those threads
       // to do parallel loopfiltering.
-      vp9_loop_filter_frame_mt(&pbi->lf_row_sync, new_fb, pbi->mb.plane, cm,
-                               pbi->tile_workers, pbi->num_tile_workers,
-                               cm->lf.filter_level, 0);
+      vp9_loop_filter_frame_mt(new_fb, cm, pbi->mb.plane, cm->lf.filter_level,
+                               0, 0, pbi->tile_workers, pbi->num_tile_workers,
+                               &pbi->lf_row_sync);
+    } else {
+      vpx_internal_error(&cm->error, VPX_CODEC_CORRUPT_FRAME,
+                         "Decode failed. Frame data is corrupted.");
+
     }
   } else {
     *p_data_end = decode_tiles(pbi, data + first_partition_size, data_end);

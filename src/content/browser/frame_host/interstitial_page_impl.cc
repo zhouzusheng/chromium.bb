@@ -493,13 +493,6 @@ RendererPreferences InterstitialPageImpl::GetRendererPrefs(
   return renderer_preferences_;
 }
 
-WebPreferences InterstitialPageImpl::ComputeWebkitPrefs() {
-  if (!enabled())
-    return WebPreferences();
-
-  return render_view_host_->ComputeWebkitPrefs(url_);
-}
-
 void InterstitialPageImpl::RenderWidgetDeleted(
     RenderWidgetHostImpl* render_widget_host) {
   // TODO(creis): Remove this method once we verify the shutdown path is sane.
@@ -740,13 +733,13 @@ void InterstitialPageImpl::CreateNewFullscreenWidget(int render_process_id,
 
 void InterstitialPageImpl::ShowCreatedWindow(int route_id,
                                              WindowOpenDisposition disposition,
-                                             const gfx::Rect& initial_pos,
+                                             const gfx::Rect& initial_rect,
                                              bool user_gesture) {
   NOTREACHED() << "InterstitialPage does not support showing popups yet.";
 }
 
 void InterstitialPageImpl::ShowCreatedWidget(int route_id,
-                                             const gfx::Rect& initial_pos) {
+                                             const gfx::Rect& initial_rect) {
   NOTREACHED() << "InterstitialPage does not support showing drop-downs yet.";
 }
 

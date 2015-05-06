@@ -9,6 +9,7 @@
       'type': 'static_library',
       'dependencies': [
         '../base/base.gyp:base',
+        '../blpwtk2/blpwtk2.gyp:blpwtk2_generate_sources',
         '../components/components.gyp:ui_zoom',
         '../content/content.gyp:content_common',
         '../net/net.gyp:net',
@@ -18,6 +19,7 @@
       ],
       'ldflags': [ '-L<(PRODUCT_DIR)',],
       'sources': [
+        'blppdfium.rc',
         'button.h',
         'button.cc',
         'chunk_stream.h',
@@ -57,6 +59,11 @@
         'thumbnail_control.h',
       ],
       'conditions': [
+        ['bb_version!=""', {
+          'product_name': 'blppdfium.<(bb_version)',
+        }, {
+          'product_name': 'blppdfium',
+        }],
         ['pdf_engine==0', {
           'sources': [
             'pdfium/pdfium_api_string_buffer_adapter.cc',

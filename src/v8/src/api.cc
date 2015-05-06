@@ -10,6 +10,7 @@
 #endif  // V8_USE_ADDRESS_SANITIZER
 #include <cmath>  // For isnan.
 #include "include/v8-debug.h"
+#include "include/v8-default-platform.h"
 #include "include/v8-profiler.h"
 #include "include/v8-testing.h"
 #include "src/api-natives.h"
@@ -33,6 +34,7 @@
 #include "src/heap-snapshot-generator-inl.h"
 #include "src/icu_util.h"
 #include "src/json-parser.h"
+#include "src/libplatform/default-platform.h"
 #include "src/messages.h"
 #include "src/natives.h"
 #include "src/parser.h"
@@ -195,6 +197,20 @@ static inline bool IsExecutionTerminatingCheck(i::Isolate* isolate) {
   }
   return false;
 }
+
+
+namespace platform {
+
+v8::Platform* CreateDefaultPlatform(int thread_pool_size) {
+  return CreateDefaultPlatformImpl(thread_pool_size);
+}
+
+
+bool PumpMessageLoop(v8::Platform* platform, v8::Isolate* isolate) {
+  return PumpMessageLoopImpl(platform, isolate);
+}
+
+}  // namespace platform
 
 
 void V8::SetNativesDataBlob(StartupData* natives_blob) {
@@ -1318,6 +1334,24 @@ void ObjectTemplate::SetInternalFieldCount(int value) {
 // Internally, UnboundScript is a SharedFunctionInfo, and Script is a
 // JSFunction.
 
+
+ScriptCompiler::CachedData* ScriptCompiler::CachedData::create() {
+  return new ScriptCompiler::CachedData();
+}
+
+
+ScriptCompiler::CachedData* ScriptCompiler::CachedData::create(
+    const uint8_t* data, int length,
+    BufferPolicy buffer_policy) {
+  return new ScriptCompiler::CachedData(data, length, buffer_policy);
+}
+
+
+void ScriptCompiler::CachedData::dispose(CachedData* cd) {
+  delete cd;
+}
+
+
 ScriptCompiler::CachedData::CachedData(const uint8_t* data_, int length_,
                                        BufferPolicy buffer_policy_)
     : data(data_),
@@ -1547,7 +1581,7 @@ Local<UnboundScript> ScriptCompiler::CompileUnboundInternal(
         script_data != NULL) {
       // script_data now contains the data that was generated. source will
       // take the ownership.
-      source->cached_data = new CachedData(
+      source->cached_data = CachedData::create(
           script_data->data(), script_data->length(), CachedData::BufferOwned);
       script_data->ReleaseDataOwnership();
     } else if (options == kConsumeParserCache || options == kConsumeCodeCache) {
@@ -5187,6 +5221,16 @@ HeapStatistics::HeapStatistics(): total_heap_size_(0),
 
 bool v8::V8::InitializeICU(const char* icu_data_file) {
   return i::InitializeICU(icu_data_file);
+}
+
+
+bool v8::V8::InitializeICUWithData(const void* icu_data) {
+  return i::InitializeICUWithData(icu_data);
+}
+
+
+intptr_t v8::V8::GetHeapHandle() {
+  return _get_heap_handle();
 }
 
 

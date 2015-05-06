@@ -131,7 +131,7 @@ v8::Local<v8::Script> compileAndConsumeCache(CachedMetadataHandler* cacheHandler
         v8::ScriptCompiler::Source source(code, origin);
         script = v8::ScriptCompiler::Compile(isolate, &source, v8::ScriptCompiler::kNoCompileOptions);
     } else {
-        v8::ScriptCompiler::CachedData* cachedData = new v8::ScriptCompiler::CachedData(
+        v8::ScriptCompiler::CachedData* cachedData = v8::ScriptCompiler::CachedData::create(
             reinterpret_cast<const uint8_t*>(data), length, v8::ScriptCompiler::CachedData::BufferNotOwned);
         v8::ScriptCompiler::Source source(code, origin, cachedData);
         script = v8::ScriptCompiler::Compile(isolate, &source, compileOptions);

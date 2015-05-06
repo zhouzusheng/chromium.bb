@@ -8,7 +8,7 @@
 
 #include "src/v8.h"
 
-#include "include/libplatform/libplatform.h"
+#include "include/v8-default-platform.h"
 #include "src/assembler.h"
 #include "src/base/platform/platform.h"
 #include "src/bootstrapper.h"

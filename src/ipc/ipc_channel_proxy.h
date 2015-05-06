@@ -112,6 +112,11 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
   void AddFilter(MessageFilter* filter);
   void RemoveFilter(MessageFilter* filter);
 
+  // Return the channel id that was used to construct this ChannelProxy.
+  const std::string& ChannelId() const {
+    return context_->channel_id();
+  }
+
   // Set the task runner on which dispatched messages are posted. Both the new
   // task runner and the existing task runner must run on the same thread, and
   // must belong to the calling thread.

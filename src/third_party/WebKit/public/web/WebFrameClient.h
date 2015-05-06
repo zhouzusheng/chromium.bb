@@ -175,7 +175,7 @@ public:
     virtual bool shouldReportDetailedMessageForSource(const WebString& source) { return false; }
 
     // A new message was added to the console.
-    virtual void didAddMessageToConsole(const WebConsoleMessage&, const WebString& sourceName, unsigned sourceLine, const WebString& stackTrace) { }
+    virtual void didAddMessageToConsole(const WebConsoleMessage&, const WebString& sourceName, unsigned sourceLine, unsigned sourceColumn, const WebString& stackTrace) { }
 
 
     // Load commands -------------------------------------------------------

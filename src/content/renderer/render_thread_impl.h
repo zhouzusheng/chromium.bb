@@ -210,6 +210,9 @@ class CONTENT_EXPORT RenderThreadImpl
   // time this routine returns.
   GpuChannelHost* EstablishGpuChannelSync(CauseForGpuLaunch);
 
+#if defined(OS_WIN)
+  void InitCOMIfUsingInProcessPlugins();
+#endif
 
   // These methods modify how the next message is sent.  Normally, when sending
   // a synchronous message that runs a nested message loop, we need to suspend
@@ -453,6 +456,7 @@ class CONTENT_EXPORT RenderThreadImpl
   void OnNetworkTypeChanged(net::NetworkChangeNotifier::ConnectionType type);
   void OnGetAccessibilityTree();
   void OnTempCrashWithData(const GURL& data);
+  void OnClearWebCache();
   void OnUpdateTimezone();
   void OnMemoryPressure(
       base::MemoryPressureListener::MemoryPressureLevel memory_pressure_level);

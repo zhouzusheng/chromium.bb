@@ -36,6 +36,8 @@
 
 namespace blink {
 
+bool g_bbNoRelayoutOnSetCharacterData = false;
+
 void CharacterData::atomize()
 {
     m_data = AtomicString(m_data);
@@ -53,6 +55,13 @@ void CharacterData::setData(const String& data)
 
     setDataAndUpdate(nonNullData, 0, oldLength, nonNullData.length(), UpdateFromNonParser);
     document().didRemoveText(this, 0, oldLength);
+}
+
+void CharacterData::bbSetDataNoRelayout(const String& data)
+{
+    g_bbNoRelayoutOnSetCharacterData = true;
+    setData(data);
+    g_bbNoRelayoutOnSetCharacterData = false;
 }
 
 String CharacterData::substringData(unsigned offset, unsigned count, ExceptionState& exceptionState)

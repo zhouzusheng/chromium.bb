@@ -265,7 +265,7 @@ static LayoutObject* firstNonMarkerChild(LayoutObject* parent)
     return result;
 }
 
-RenderObject* firstRenderText(RenderObject* curr, RenderObject* stayWithin)
+static LayoutObject* firstRenderText(LayoutObject* curr, LayoutObject* stayWithin)
 {
     while (curr && !curr->isText()) {
         curr = curr->nextInPreOrder(stayWithin);
@@ -304,8 +304,8 @@ bool RenderListItem::updateMarkerLocation()
     }
 
     bool fontsAreDifferent = false;
-    RenderObject* firstNonMarker = firstNonMarkerChild(lineBoxParent);
-    RenderObject* firstText = firstRenderText(firstNonMarker, lineBoxParent);
+    LayoutObject* firstNonMarker = firstNonMarkerChild(lineBoxParent);
+    LayoutObject* firstText = firstRenderText(firstNonMarker, lineBoxParent);
     if (firstText && m_marker->style()->fontDescription() != firstText->style()->fontDescription()) {
         fontsAreDifferent = true;
     }

@@ -255,7 +255,6 @@ int LazyLineBreakIterator::nextBreakablePositionIgnoringNBSP(int pos, EWordBreak
         if (m_string.is8Bit())
             return nextBreakablePosition<LChar, KeepAll>(*this, m_string.characters8(), m_string.length(), pos);
         return nextBreakablePosition<UChar, KeepAll>(*this, m_string.characters16(), m_string.length(), pos);
-    }
     case KeepAllIfKoreanWordBreak:
         if (m_string.is8Bit())
             return nextBreakablePosition<LChar, KeepAllIfKorean>(*this, m_string.characters8(), m_string.length(), pos);

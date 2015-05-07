@@ -597,6 +597,8 @@ text-with-leading-tab
 // word-break
 //
 break-all
+keep-all
+-bb-keep-all-if-korean
 
 //
 // word-wrap

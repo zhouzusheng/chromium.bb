@@ -24,6 +24,10 @@ CONTENT_EXPORT extern const char kFontCacheSharedSectionName[];
 CONTENT_EXPORT IDWriteFontCollection* GetCustomFontCollection(
     IDWriteFactory* factory);
 
+// Add the font at the specified 'filename' to the font collection.  This must
+// be called before 'GetCustomFontCollection'.
+CONTENT_EXPORT void AddCustomFontFile(const base::FilePath& filename);
+
 // Builds static font cache. As this function need to iterate through all
 // available fonts in the system, it may take a while.
 CONTENT_EXPORT bool BuildFontCache(const base::FilePath& file);

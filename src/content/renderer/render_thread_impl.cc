@@ -365,6 +365,8 @@ blink::WebGraphicsContext3D::Attributes GetOffscreenAttribs() {
   return attributes;
 }
 
+RenderProcessImpl* g_render_process = 0;
+
 }  // namespace
 
 // For measuring memory usage after each task. Behind a command line flag.
@@ -382,6 +384,47 @@ class MemoryObserver : public base::MessageLoop::TaskObserver {
  private:
   DISALLOW_COPY_AND_ASSIGN(MemoryObserver);
 };
+
+// static
+void RenderThread::InitInProcessRenderer(const std::string& channel_id)
+{
+  g_render_process = new RenderProcessImpl();
+  RenderThreadImpl* thread = new RenderThreadImpl(channel_id);
+  if (channel_id.empty()) {
+    // Normally, WebKit is initialized in the browser's WebKit thread.  This is
+    // necessary because there is code in the browser that depends on WebKit
+    // being initialized at startup.  However, when running an in-process
+    // renderer, we don't run the browser's WebKit thread.
+    // We need to ensure WebKit is initialized to simulate the case that the
+    // WebKit thread has been run.  We only do this if the channel_id is empty,
+    // so that this behavior is only performed for blpwtk2.  Regular
+    // content_shell --single-process mode will have the default upstream
+    // behavior of initializing WebKit when the first RenderView is created.
+    thread->EnsureWebKitInitialized();
+  }
+}
+
+// static
+void RenderThread::SetInProcessRendererChannelName(const std::string& channel_id)
+{
+  RenderThreadImpl* thread = RenderThreadImpl::current();
+  thread->SetChannelName(channel_id);  // This will create the channel.
+}
+
+// static
+base::SingleThreadTaskRunner* RenderThread::IPCTaskRunner()
+{
+  return g_render_process->io_message_loop_proxy();
+}
+
+// static
+void RenderThread::CleanUpInProcessRenderer()
+{
+  if (g_render_process) {
+    delete g_render_process;
+    g_render_process = 0;
+  }
+}
 
 RenderThreadImpl::HistogramCustomizer::HistogramCustomizer() {
   custom_histograms_.insert("V8.MemoryExternalFragmentationTotal");
@@ -789,6 +832,8 @@ void RenderThreadImpl::Shutdown() {
   main_message_loop_.reset();
   if (blink_platform_impl_)
     blink::shutdown();
+
+  gpu_va_context_provider_ = 0;
 
   lazy_tls.Pointer()->Set(NULL);
 }
@@ -1519,6 +1564,7 @@ bool RenderThreadImpl::OnControlMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ViewMsg_SetWebKitSharedTimersSuspended,
                         OnSetWebKitSharedTimersSuspended)
 #endif
+    IPC_MESSAGE_HANDLER(ViewMsg_ClearWebCache, OnClearWebCache)
 #if defined(OS_MACOSX)
     IPC_MESSAGE_HANDLER(ViewMsg_UpdateScrollbarTheme, OnUpdateScrollbarTheme)
 #endif
@@ -1716,6 +1762,10 @@ void RenderThreadImpl::OnUpdateScrollbarTheme(
                                              redraw);
 }
 #endif
+
+void RenderThreadImpl::OnClearWebCache() {
+  blink::WebCache::clear();
+}
 
 void RenderThreadImpl::OnCreateNewSharedWorker(
     const WorkerProcessMsg_CreateWorker_Params& params) {

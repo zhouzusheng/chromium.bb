@@ -61,6 +61,8 @@ class CONTENT_EXPORT ChildThreadImpl
     : public IPC::Listener,
       virtual public ChildThread {
  public:
+  // If the channel_name is empty, channel initialization will be deferred
+  // until SetChannelName() is called.
   struct CONTENT_EXPORT Options {
     Options();
     explicit Options(bool mojo);
@@ -94,6 +96,10 @@ class CONTENT_EXPORT ChildThreadImpl
   void PreCacheFont(const LOGFONT& log_font) override;
   void ReleaseCachedFonts() override;
 #endif
+
+  // Perform deferred channel initialization for the case where ChildThread
+  // was constructed with an empty channel_name.
+  void SetChannelName(const std::string& channel_name);
 
   IPC::SyncChannel* channel() { return channel_.get(); }
 
@@ -219,6 +225,8 @@ class CONTENT_EXPORT ChildThreadImpl
   };
 
   void Init(const Options& options);
+  void InitChannel();
+  void InitManagers();
 
   // We create the channel first without connecting it so we can add filters
   // prior to any messages being received, then connect it afterwards.
@@ -261,6 +269,8 @@ class CONTENT_EXPORT ChildThreadImpl
   // The OnChannelError() callback was invoked - the channel is dead, don't
   // attempt to communicate.
   bool on_channel_error_called_;
+
+  bool use_mojo_channel_;
 
   base::MessageLoop* message_loop_;
 

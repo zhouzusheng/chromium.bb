@@ -481,8 +481,7 @@ void PrintWebViewHelper::PrintHeaderAndFooter(
   blink::WebLocalFrame* frame = blink::WebLocalFrame::create(NULL);
   web_view->setMainFrame(frame);
 
-  // SHEZ: This will be filled in by blpwtk2.
-  base::StringValue html("");
+  base::StringValue html(params.header_footer_html);
   // Load page with script to avoid async operations.
   ExecuteScript(frame, kPageLoadScriptFormat, html);
 

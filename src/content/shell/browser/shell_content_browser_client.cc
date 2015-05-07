@@ -10,6 +10,7 @@
 #include "base/files/file_util.h"
 #include "base/path_service.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/threading/thread.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/resource_dispatcher_host.h"
@@ -17,6 +18,7 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/web_preferences.h"
+#include "content/renderer/in_process_renderer_thread.h"
 #include "content/shell/browser/ipc_echo_message_filter.h"
 
 // SHEZ: Remove test-only code.
@@ -67,6 +69,8 @@ namespace {
 
 ShellContentBrowserClient* g_browser_client;
 bool g_swap_processes_for_redirect = false;
+
+base::Thread* g_in_process_renderer_thread = 0;
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
 breakpad::CrashHandlerHostLinux* CreateCrashHandlerHost(
@@ -274,6 +278,41 @@ void ShellContentBrowserClient::OverrideWebkitPrefs(
 #if 0
   WebKitTestController::Get()->OverrideWebkitPrefs(prefs);
 #endif
+}
+
+bool ShellContentBrowserClient::SupportsInProcessRenderer()
+{
+#if !defined(OS_IOS) && (!defined(GOOGLE_CHROME_BUILD) || defined(OS_ANDROID))
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess);
+#else
+  // Single-process is an unsupported and not fully tested mode, so don't
+  // enable it for official Chrome builds (except on Android).
+  return false;
+#endif
+}
+
+void ShellContentBrowserClient::StartInProcessRendererThread(
+    const std::string& channel_id) {
+  DCHECK(!g_in_process_renderer_thread);
+  g_in_process_renderer_thread = CreateInProcessRendererThread(channel_id);
+
+  base::Thread::Options options;
+#if defined(OS_WIN) && !defined(OS_MACOSX)
+  // In-process plugins require this to be a UI message loop.
+  options.message_loop_type = base::MessageLoop::TYPE_UI;
+#else
+  // We can't have multiple UI loops on Linux and Android, so we don't support
+  // in-process plugins.
+  options.message_loop_type = base::MessageLoop::TYPE_DEFAULT;
+#endif
+
+  g_in_process_renderer_thread->StartWithOptions(options);
+}
+
+void ShellContentBrowserClient::StopInProcessRendererThread() {
+  DCHECK(g_in_process_renderer_thread);
+  delete g_in_process_renderer_thread;
+  g_in_process_renderer_thread = 0;
 }
 
 void ShellContentBrowserClient::ResourceDispatcherHostCreated() {

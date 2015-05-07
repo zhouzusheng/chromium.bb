@@ -88,7 +88,7 @@ class ExternalStreamingStream : public BufferedUtf16CharacterStream {
         current_data_length_(0),
         utf8_split_char_buffer_length_(0) {}
 
-  virtual ~ExternalStreamingStream() { delete[] current_data_; }
+  virtual ~ExternalStreamingStream() { source_stream_->ReleaseData(current_data_); }
 
   size_t BufferSeekForward(size_t delta) OVERRIDE {
     // We never need to seek forward when streaming scripts. We only seek

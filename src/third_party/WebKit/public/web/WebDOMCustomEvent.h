@@ -41,6 +41,7 @@ class WebDOMCustomEvent : public WebDOMEvent {
 public:
     WebDOMCustomEvent() { }
     BLINK_EXPORT void initCustomEvent(const WebString& type, bool canBubble, bool cancelable, const WebSerializedScriptValue& messageData);
+    BLINK_EXPORT static WebDOMCustomEvent create();
 };
 
 } // namespace blink

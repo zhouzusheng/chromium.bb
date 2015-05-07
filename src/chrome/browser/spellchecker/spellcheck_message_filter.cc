@@ -122,23 +122,6 @@ void SpellCheckMessageFilter::OnTextCheckComplete(
   if (!spellcheck)
     return;
   std::vector<SpellCheckResult> results_copy = results;
-
-  // Erase custom dictionary words from the spellcheck results.
-  std::vector<SpellCheckResult>::iterator write_iter;
-  std::vector<SpellCheckResult>::iterator iter;
-  std::string text_copy = base::UTF16ToUTF8(text);
-  for (iter = write_iter = results_copy.begin();
-       iter != results_copy.end();
-       ++iter) {
-    if (!spellcheck->GetCustomDictionary()->HasWord(
-            text_copy.substr(iter->location, iter->length))) {
-      if (write_iter != iter)
-        *write_iter = *iter;
-      ++write_iter;
-    }
-  }
-  results_copy.erase(write_iter, results_copy.end());
-
   Send(new SpellCheckMsg_RespondSpellingService(
       route_id, identifier, success, text, results_copy));
 }

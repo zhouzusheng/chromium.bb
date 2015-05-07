@@ -320,7 +320,7 @@ public:
 
     // Rubberbanding
     void rubberbandWalkFrame(const RubberbandContext&, LocalFrame*, const LayoutPoint&);
-    void rubberbandWalkRenderObject(const RubberbandContext&, RenderObject*);
+    void rubberbandWalkRenderObject(const RubberbandContext&, LayoutObject*);
     WTF::String getTextInRubberbandImpl(const WebRect&);
     bool handleAltDragRubberbandEvent(const WebInputEvent&);
 

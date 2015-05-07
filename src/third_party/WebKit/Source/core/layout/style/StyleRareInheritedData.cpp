@@ -94,7 +94,7 @@ StyleRareInheritedData::StyleRareInheritedData()
     , hyphenationLimitAfter(-1)
     , hyphenationLimitLines(-1)
     , tapHighlightColor(LayoutStyle::initialTapHighlightColor())
-    , caretColor(RenderStyle::initialCaretColor())
+    , caretColor(LayoutStyle::initialCaretColor())
     , m_tabSize(LayoutStyle::initialTabSize())
 {
 }

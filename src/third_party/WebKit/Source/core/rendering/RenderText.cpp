@@ -935,6 +935,7 @@ void RenderText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
     int firstGlyphLeftOverflow = -1;
 
     bool breakAll = (styleToUse.wordBreak() == BreakAllWordBreak || styleToUse.wordBreak() == BreakWordBreak) && styleToUse.autoWrap();
+    EWordBreak effectiveWordBreak = styleToUse.autoWrap() ? styleToUse.wordBreak() : NormalWordBreak;
 
     TextRun textRun(text());
     BidiResolver<TextRunIterator, BidiCharacterRun> bidiResolver;
@@ -1014,7 +1015,7 @@ void RenderText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
             continue;
         }
 
-        bool hasBreak = breakIterator.isBreakable(i, nextBreakable, breakAll ? LineBreakType::BreakAll : LineBreakType::Normal);
+        bool hasBreak = breakIterator.isBreakable(i, nextBreakable, effectiveWordBreak, breakAll ? LineBreakType::BreakAll : LineBreakType::Normal);
         bool betweenWords = true;
         int j = i;
         while (c != newlineCharacter && c != space && c != characterTabulation && (c != softHyphen)) {
@@ -1022,7 +1023,7 @@ void RenderText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
             if (j == len)
                 break;
             c = uncheckedCharacterAt(j);
-            if (breakIterator.isBreakable(j, nextBreakable) && characterAt(j - 1) != softHyphen)
+            if (breakIterator.isBreakable(j, nextBreakable, effectiveWordBreak) && characterAt(j - 1) != softHyphen)
                 break;
             if (breakAll) {
                 betweenWords = false;

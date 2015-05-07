@@ -257,6 +257,9 @@ public:
     // reasons such as the user exiting lock, window focus changing, etc.
     virtual void didLosePointerLock() { }
 
+    // Informs the WebWidget that the window rect has changed.
+    virtual void didChangeWindowRect() { }
+
     // Informs the WebWidget that the resizer rect changed. Happens for example
     // on mac, when a widget appears below the WebWidget without changing the
     // WebWidget's size (WebWidget::resize() automatically checks the resizer

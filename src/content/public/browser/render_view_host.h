@@ -193,6 +193,10 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   // Passes a list of Webkit preferences to the renderer.
   virtual void UpdateWebkitPreferences(const WebPreferences& prefs) = 0;
 
+#define BB_RENDER_VIEW_HOST_SUPPORTS_RUBBERBANDING
+  // Enable alt-drag rubberbanding.
+  virtual void EnableAltDragRubberbanding(bool enable) = 0;
+
   // Notify the render view host to select the word around the caret.
   virtual void SelectWordAroundCaret() = 0;
 

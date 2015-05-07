@@ -40,6 +40,7 @@
 
 namespace blink {
 
+class BBWindowHooks;
 class DOMWindowEventQueue;
 class DOMWindowProperty;
 class DocumentInit;
@@ -90,6 +91,7 @@ public:
     BarProp* statusbar() const override;
     BarProp* toolbar() const override;
     Navigator* navigator() const override;
+    BBWindowHooks* bbWindowHooks() const override;
     bool offscreenBuffering() const override;
     int outerHeight() const override;
     int outerWidth() const override;
@@ -282,6 +284,7 @@ private:
     mutable RefPtrWillBeMember<Console> m_console;
     mutable RefPtrWillBeMember<Navigator> m_navigator;
     mutable RefPtrWillBeMember<StyleMedia> m_media;
+    mutable RefPtrWillBeMember<BBWindowHooks> m_bbWindowHooks;
 
     String m_status;
     String m_defaultStatus;

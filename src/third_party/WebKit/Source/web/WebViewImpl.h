@@ -161,6 +161,7 @@ public:
     virtual void didAcquirePointerLock() override;
     virtual void didNotAcquirePointerLock() override;
     virtual void didLosePointerLock() override;
+    virtual void didChangeWindowRect() override;
     virtual void didChangeWindowResizerRect() override;
 
     // WebView methods:

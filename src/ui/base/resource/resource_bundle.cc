@@ -182,7 +182,7 @@ void ResourceBundle::InitSharedInstanceWithPakPath(const base::FilePath& path) {
 // static
 void ResourceBundle::InitSharedInstance() {
   InitSharedInstance(NULL);
-  InitDefaultFontList();
+  g_shared_instance_->InitDefaultFontList();
 }
 
 // static

@@ -210,9 +210,6 @@ class CONTENT_EXPORT RenderThreadImpl
   // time this routine returns.
   GpuChannelHost* EstablishGpuChannelSync(CauseForGpuLaunch);
 
-#if defined(OS_WIN)
-  void InitCOMIfUsingInProcessPlugins();
-#endif
 
   // These methods modify how the next message is sent.  Normally, when sending
   // a synchronous message that runs a nested message loop, we need to suspend

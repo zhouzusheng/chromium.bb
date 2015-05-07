@@ -33,7 +33,6 @@
 #include <base/files/file_util.h>
 #include <base/logging.h>
 #include <base/path_service.h>
-#include <chrome/common/chrome_paths.h>
 #include <content/public/common/content_switches.h>
 #include <content/public/common/user_agent.h>
 #include <ui/base/resource/resource_bundle.h>
@@ -168,19 +167,6 @@ void ContentMainDelegateImpl::PreSandboxStartup()
                 pak_file,
                 ui::SCALE_FACTOR_NONE);
         }
-    }
-
-    if (processType == switches::kUtilityProcess
-     || commandLine->HasSwitch(switches::kSingleProcess))
-    {
-        base::FilePath dirModule;
-        PathService::Get(base::DIR_MODULE, &dirModule);
-
-        base::FilePath pdfDll = dirModule;
-        pdfDll = pdfDll.AppendASCII(BLPPDFIUM_DLL_NAME);
-        PathService::Override(chrome::FILE_PDF_PLUGIN, pdfDll);
-
-        ContentUtilityClientImpl::PreSandboxStartup();
     }
 }
 

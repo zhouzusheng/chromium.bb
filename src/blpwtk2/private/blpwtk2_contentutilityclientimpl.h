@@ -38,9 +38,6 @@ class ContentUtilityClientImpl : public content::ContentUtilityClient {
     ContentUtilityClientImpl();
     virtual ~ContentUtilityClientImpl();
 
-    // Loads the pdf dll.
-    static void PreSandboxStartup();
-
     // Allows the embedder to filter messages.
     bool OnMessageReceived(const IPC::Message& message) override;
 

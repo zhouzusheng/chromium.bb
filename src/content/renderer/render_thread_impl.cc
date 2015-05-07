@@ -367,14 +367,6 @@ blink::WebGraphicsContext3D::Attributes GetOffscreenAttribs() {
 
 RenderProcessImpl* g_render_process = 0;
 
-typedef std::vector<IPC::MessageFilter*> MessageFilterList;
-
-static MessageFilterList& deferredAddFilterList()
-{
-  static MessageFilterList list;
-  return list;
-}
-
 }  // namespace
 
 // For measuring memory usage after each task. Behind a command line flag.
@@ -417,18 +409,6 @@ void RenderThread::SetInProcessRendererChannelName(const std::string& channel_id
 {
   RenderThreadImpl* thread = RenderThreadImpl::current();
   thread->SetChannelName(channel_id);  // This will create the channel.
-
-  thread->channelWithCheck()->SetListenerTaskRunner(thread->GetRendererScheduler()->DefaultTaskRunner());
-
-  // MessageFilters can only be added when the channel has been created.  If
-  // the channel was not provided at init time, then AddFilter would place the
-  // MessageFilter on a deferred list, until the channel gets created.
-  MessageFilterList filterList;
-  filterList.swap(deferredAddFilterList());
-  for (std::size_t i = 0; i < filterList.size(); ++i) {
-    thread->AddFilter(filterList[i]);
-  }
-  DCHECK(deferredAddFilterList().empty());
 }
 
 // static
@@ -545,6 +525,7 @@ void RenderThreadImpl::Init() {
   main_thread_indexed_db_dispatcher_.reset(new IndexedDBDispatcher(
       thread_safe_sender()));
   renderer_scheduler_ = RendererScheduler::Create();
+  channel()->SetListenerTaskRunner(renderer_scheduler_->DefaultTaskRunner());
   embedded_worker_dispatcher_.reset(new EmbeddedWorkerDispatcher());
 
   // Note: This may reorder messages from the ResourceDispatcher with respect to
@@ -926,9 +907,6 @@ scoped_refptr<base::SingleThreadTaskRunner> RenderThreadImpl::GetTaskRunner() {
 }
 
 IPC::SyncChannel* RenderThreadImpl::GetChannel() {
-  DCHECK(channel());  // Since we allow channel initialization to be deferred,
-                      // the channel pointer might be null.  Make sure nobody
-                      // tries to get it before it has been initialized.
   return channel();
 }
 
@@ -1014,31 +992,11 @@ int RenderThreadImpl::GenerateRoutingID() {
 }
 
 void RenderThreadImpl::AddFilter(IPC::MessageFilter* filter) {
-  if (channel()) {
-    channel()->AddFilter(filter);
-  }
-  else {
-    deferredAddFilterList().push_back(filter);
-  }
+  channel()->AddFilter(filter);
 }
 
 void RenderThreadImpl::RemoveFilter(IPC::MessageFilter* filter) {
-  if (channel()) {
-    channel()->RemoveFilter(filter);
-  }
-  else {
-    MessageFilterList& list = deferredAddFilterList();
-    DCHECK(!list.empty());
-    for (std::size_t i = 0; i < list.size() - 1; ++i) {
-      if (list[i] == filter) {
-        list[i] = list[list.size() - 1];
-        list.pop_back();
-        return;
-      }
-    }
-    DCHECK(list[list.size() - 1] == filter);
-    list.pop_back();
-  }
+  channel()->RemoveFilter(filter);
 }
 
 void RenderThreadImpl::AddObserver(RenderProcessObserver* observer) {
@@ -1060,10 +1018,7 @@ void RenderThreadImpl::SetResourceDispatchTaskQueue(
   // particular task runner.
   resource_scheduling_filter_ =
       new ResourceSchedulingFilter(resource_task_queue, resource_dispatcher());
-
-  // SHEZ: use AddFilter instead of channel()->AddFilter in order to support
-  // SHEZ: deferred channel creation
-  AddFilter(resource_scheduling_filter_.get());
+  channel()->AddFilter(resource_scheduling_filter_.get());
 
   // The ChildResourceMessageFilter and the ResourceDispatcher need to use the
   // same queue to ensure tasks are executed in the expected order.

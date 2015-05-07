@@ -132,7 +132,6 @@ void ContentBrowserClientImpl::RenderProcessWillLaunch(
 
 void ContentBrowserClientImpl::OverrideWebkitPrefs(
     content::RenderViewHost* render_view_host,
-    const GURL& url,
     content::WebPreferences* prefs)
 {
     content::WebContents* webContents =

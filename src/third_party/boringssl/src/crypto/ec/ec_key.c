@@ -67,6 +67,8 @@
 
 #include <openssl/ec_key.h>
 
+#include <string.h>
+
 #include <openssl/ec.h>
 #include <openssl/engine.h>
 #include <openssl/err.h>
@@ -369,10 +371,12 @@ int EC_KEY_check_key(const EC_KEY *eckey) {
   ok = 1;
 
 err:
-  if (ctx != NULL)
+  if (ctx != NULL) {
     BN_CTX_free(ctx);
-  if (point != NULL)
+  }
+  if (point != NULL) {
     EC_POINT_free(point);
+  }
   return ok;
 }
 
@@ -423,10 +427,12 @@ int EC_KEY_set_public_key_affine_coordinates(EC_KEY *key, BIGNUM *x,
   ok = 1;
 
 err:
-  if (ctx)
+  if (ctx) {
     BN_CTX_free(ctx);
-  if (point)
+  }
+  if (point) {
     EC_POINT_free(point);
+  }
   return ok;
 }
 
@@ -487,14 +493,18 @@ int EC_KEY_generate_key(EC_KEY *eckey) {
   ok = 1;
 
 err:
-  if (order)
+  if (order) {
     BN_free(order);
-  if (pub_key != NULL && eckey->pub_key == NULL)
+  }
+  if (pub_key != NULL && eckey->pub_key == NULL) {
     EC_POINT_free(pub_key);
-  if (priv_key != NULL && eckey->priv_key == NULL)
+  }
+  if (priv_key != NULL && eckey->priv_key == NULL) {
     BN_free(priv_key);
-  if (ctx != NULL)
+  }
+  if (ctx != NULL) {
     BN_CTX_free(ctx);
+  }
   return ok;
 }
 

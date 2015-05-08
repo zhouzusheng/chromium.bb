@@ -17,8 +17,8 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
-#include "chrome/browser/chrome_page_zoom_constants.h"
 #include "chrome/common/content_restriction.h"
+#include "components/ui/zoom/page_zoom_constants.h"
 #include "content/public/common/page_zoom.h"
 #include "net/base/escape.h"
 #include "pdf/draw_utils.h"
@@ -55,6 +55,8 @@ struct ToolbarButtonInfo {
   PP_ResourceImage highlighted;
   PP_ResourceImage pressed;
 };
+
+const uint32 kBackgroundColor = 0xFFCCCCCC;
 
 namespace {
 
@@ -683,7 +685,7 @@ pp::Var Instance::GetLinkAtPosition(const pp::Point& point) {
 }
 
 pp::Var Instance::GetSelectedText(bool html) {
-  if (html || !engine_->HasPermission(PDFEngine::PERMISSION_COPY))
+  if (html)
     return pp::Var();
   return engine_->GetSelectedText();
 }
@@ -1857,7 +1859,10 @@ pp::Var Instance::CallScriptableMethod(const pp::Var& method,
           v_scrollbar_.get() ? GetScrollbarReservedThickness() : 0);
   }
   if (method_str == kJSGetSelectedText) {
-    return GetSelectedText(false);
+    std::string selected_text = engine_->GetSelectedText();
+    // Always return unix newlines to JS.
+    base::ReplaceChars(selected_text, "\r", std::string(), &selected_text);
+    return selected_text;
   }
   if (method_str == kJSDocumentLoadComplete) {
     return pp::Var((document_load_state_ != LOAD_STATE_LOADING));
@@ -2571,14 +2576,14 @@ void Instance::UpdateZoomScale() {
 
 double Instance::CalculateZoom(uint32 control_id) const {
   if (control_id == kZoomInButtonId) {
-    for (size_t i = 0; i < chrome_page_zoom::kPresetZoomFactorsSize; ++i) {
-      double current_zoom = chrome_page_zoom::kPresetZoomFactors[i];
+    for (size_t i = 0; i < ui_zoom::kPresetZoomFactorsSize; ++i) {
+      double current_zoom = ui_zoom::kPresetZoomFactors[i];
       if (current_zoom - content::kEpsilon > zoom_)
         return current_zoom;
     }
   } else {
-    for (size_t i = chrome_page_zoom::kPresetZoomFactorsSize; i > 0; --i) {
-      double current_zoom = chrome_page_zoom::kPresetZoomFactors[i - 1];
+    for (size_t i = ui_zoom::kPresetZoomFactorsSize; i > 0; --i) {
+      double current_zoom = ui_zoom::kPresetZoomFactors[i - 1];
       if (current_zoom + content::kEpsilon < zoom_)
         return current_zoom;
     }
@@ -2634,6 +2639,10 @@ void Instance::SetPrintPreviewMode(int page_count) {
 
 bool Instance::IsPrintPreview() {
   return IsPrintPreviewUrl(url_);
+}
+
+uint32 Instance::GetBackgroundColor() {
+  return kBackgroundColor;
 }
 
 int Instance::GetPageNumberToDisplay() {

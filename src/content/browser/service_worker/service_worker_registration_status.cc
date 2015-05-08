@@ -13,10 +13,14 @@ using blink::WebServiceWorkerError;
 
 void GetServiceWorkerRegistrationStatusResponse(
     ServiceWorkerStatusCode status,
+    const std::string& status_message,
     blink::WebServiceWorkerError::ErrorType* error_type,
     base::string16* message) {
   *error_type = WebServiceWorkerError::ErrorTypeUnknown;
-  *message = base::ASCIIToUTF16(ServiceWorkerStatusToString(status));
+  if (!status_message.empty())
+    *message = base::UTF8ToUTF16(status_message);
+  else
+    *message = base::ASCIIToUTF16(ServiceWorkerStatusToString(status));
   switch (status) {
     case SERVICE_WORKER_OK:
       NOTREACHED() << "Calling this when status == OK is not allowed";
@@ -49,6 +53,7 @@ void GetServiceWorkerRegistrationStatusResponse(
     case SERVICE_WORKER_ERROR_PROCESS_NOT_FOUND:
     case SERVICE_WORKER_ERROR_EXISTS:
     case SERVICE_WORKER_ERROR_EVENT_WAITUNTIL_REJECTED:
+    case SERVICE_WORKER_ERROR_STATE:
       // Unexpected, or should have bailed out before calling this, or we don't
       // have a corresponding blink error code yet.
       break;  // Fall through to NOTREACHED().

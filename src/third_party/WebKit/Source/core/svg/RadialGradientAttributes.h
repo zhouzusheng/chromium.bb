@@ -66,7 +66,7 @@ public:
     bool hasFy() const { return m_fySet; }
     bool hasFr() const { return m_frSet; }
 
-    void trace(Visitor* visitor)
+    DEFINE_INLINE_TRACE()
     {
         visitor->trace(m_cx);
         visitor->trace(m_cy);
@@ -93,6 +93,28 @@ private:
     bool m_fySet : 1;
     bool m_frSet : 1;
 };
+
+#if ENABLE(OILPAN)
+// Wrapper object for the RadialGradientAttributes part object.
+class RadialGradientAttributesWrapper : public GarbageCollectedFinalized<RadialGradientAttributesWrapper> {
+public:
+    static RadialGradientAttributesWrapper* create()
+    {
+        return new RadialGradientAttributesWrapper;
+    }
+
+    RadialGradientAttributes& attributes() { return m_attributes; }
+    void set(const RadialGradientAttributes& attributes) { m_attributes = attributes; }
+    DEFINE_INLINE_TRACE() { visitor->trace(m_attributes); }
+
+private:
+    RadialGradientAttributesWrapper()
+    {
+    }
+
+    RadialGradientAttributes m_attributes;
+};
+#endif
 
 } // namespace blink
 

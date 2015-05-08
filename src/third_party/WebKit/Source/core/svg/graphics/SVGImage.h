@@ -28,7 +28,7 @@
 #define SVGImage_h
 
 #include "platform/graphics/Image.h"
-#include "platform/graphics/paint/DisplayItem.h"
+#include "platform/graphics/paint/DisplayItemClient.h"
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
 
@@ -93,13 +93,13 @@ private:
     // FIXME: Implement this to be less conservative.
     virtual bool currentFrameKnownToBeOpaque() override { return false; }
 
-    DisplayItemClient displayItemClient() const { return static_cast<DisplayItemClientInternalVoid*>((void*)this); }
+    DisplayItemClient displayItemClient() const { return toDisplayItemClient(this); }
 
     SVGImage(ImageObserver*);
-    virtual void draw(GraphicsContext*, const FloatRect& fromRect, const FloatRect& toRect, CompositeOperator, blink::WebBlendMode) override;
-    void drawForContainer(GraphicsContext*, const FloatSize, float, const FloatRect&, const FloatRect&, CompositeOperator, blink::WebBlendMode);
+    void draw(GraphicsContext*, const FloatRect& fromRect, const FloatRect& toRect, SkXfermode::Mode, RespectImageOrientationEnum) override;
+    void drawForContainer(GraphicsContext*, const FloatSize, float, const FloatRect&, const FloatRect&, SkXfermode::Mode);
     void drawPatternForContainer(GraphicsContext*, const FloatSize, float, const FloatRect&, const FloatSize&, const FloatPoint&,
-        CompositeOperator, const FloatRect&, blink::WebBlendMode, const IntSize& repeatSpacing);
+        SkXfermode::Mode, const FloatRect&, const IntSize& repeatSpacing);
 
     OwnPtr<SVGImageChromeClient> m_chromeClient;
     OwnPtrWillBePersistent<Page> m_page;

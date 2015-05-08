@@ -332,12 +332,7 @@ InProcessResourceLoaderBridge::~InProcessResourceLoaderBridge()
     d_context->dispose();
 }
 
-// webkit_glue::ResourceLoaderBridge overrides
-
-void InProcessResourceLoaderBridge::SetRequestBody(
-    content::ResourceRequestBody* request_body)
-{
-}
+// content::ResourceLoaderBridge overrides
 
 bool InProcessResourceLoaderBridge::Start(content::RequestPeer* peer)
 {
@@ -351,22 +346,6 @@ void InProcessResourceLoaderBridge::Cancel()
     d_context->cancel();
 }
 
-void InProcessResourceLoaderBridge::SetDefersLoading(bool value)
-{
-}
-
-void InProcessResourceLoaderBridge::DidChangePriority(
-    net::RequestPriority new_priority,
-    int intra_priority_value)
-{
-}
-
-bool InProcessResourceLoaderBridge::AttachThreadedDataReceiver(
-    blink::WebThreadedDataReceiver* threaded_data_receiver)
-{
-    return false;
-}
-
 void InProcessResourceLoaderBridge::SyncLoad(content::SyncLoadResponse* response)
 {
     DLOG(ERROR) << "Synchronous requests not supported: url("
@@ -376,4 +355,3 @@ void InProcessResourceLoaderBridge::SyncLoad(content::SyncLoadResponse* response
 
 
 }  // close namespace blpwtk2
-

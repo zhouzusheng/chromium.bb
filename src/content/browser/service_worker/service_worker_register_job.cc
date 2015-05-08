@@ -12,6 +12,7 @@
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/browser/service_worker/service_worker_storage.h"
 #include "content/browser/service_worker/service_worker_utils.h"
+#include "content/common/service_worker/service_worker_types.h"
 #include "net/base/net_errors.h"
 
 namespace content {
@@ -37,6 +38,7 @@ ServiceWorkerRegisterJob::ServiceWorkerRegisterJob(
       phase_(INITIAL),
       doom_installing_worker_(false),
       is_promise_resolved_(false),
+      should_uninstall_on_failure_(false),
       promise_resolved_status_(SERVICE_WORKER_OK),
       weak_factory_(this) {
 }
@@ -51,6 +53,7 @@ ServiceWorkerRegisterJob::ServiceWorkerRegisterJob(
       phase_(INITIAL),
       doom_installing_worker_(false),
       is_promise_resolved_(false),
+      should_uninstall_on_failure_(false),
       promise_resolved_status_(SERVICE_WORKER_OK),
       weak_factory_(this) {
   internal_.registration = registration;
@@ -71,8 +74,9 @@ void ServiceWorkerRegisterJob::AddCallback(
       provider_host->AddScopedProcessReferenceToPattern(pattern_);
     return;
   }
-  RunSoon(base::Bind(
-      callback, promise_resolved_status_, promise_resolved_registration_));
+  RunSoon(base::Bind(callback, promise_resolved_status_,
+                     promise_resolved_status_message_,
+                     promise_resolved_registration_));
 }
 
 void ServiceWorkerRegisterJob::Start() {
@@ -98,7 +102,7 @@ void ServiceWorkerRegisterJob::Start() {
 
 void ServiceWorkerRegisterJob::Abort() {
   SetPhase(ABORT);
-  CompleteInternal(SERVICE_WORKER_ERROR_ABORT);
+  CompleteInternal(SERVICE_WORKER_ERROR_ABORT, std::string());
   // Don't have to call FinishJob() because the caller takes care of removing
   // the jobs from the queue.
 }
@@ -119,7 +123,7 @@ RegistrationJobType ServiceWorkerRegisterJob::GetType() const {
 void ServiceWorkerRegisterJob::DoomInstallingWorker() {
   doom_installing_worker_ = true;
   if (phase_ == INSTALL)
-    Complete(SERVICE_WORKER_ERROR_INSTALL_WORKER_FAILED);
+    Complete(SERVICE_WORKER_ERROR_INSTALL_WORKER_FAILED, std::string());
 }
 
 ServiceWorkerRegisterJob::Internal::Internal() {}
@@ -150,18 +154,6 @@ ServiceWorkerVersion* ServiceWorkerRegisterJob::new_version() {
   return internal_.new_version.get();
 }
 
-void ServiceWorkerRegisterJob::set_uninstalling_registration(
-    const scoped_refptr<ServiceWorkerRegistration>& registration) {
-  DCHECK_EQ(phase_, WAIT_FOR_UNINSTALL);
-  internal_.uninstalling_registration = registration;
-}
-
-ServiceWorkerRegistration*
-ServiceWorkerRegisterJob::uninstalling_registration() {
-  DCHECK_EQ(phase_, WAIT_FOR_UNINSTALL);
-  return internal_.uninstalling_registration.get();
-}
-
 void ServiceWorkerRegisterJob::SetPhase(Phase phase) {
   switch (phase) {
     case INITIAL:
@@ -170,11 +162,8 @@ void ServiceWorkerRegisterJob::SetPhase(Phase phase) {
     case START:
       DCHECK(phase_ == INITIAL) << phase_;
       break;
-    case WAIT_FOR_UNINSTALL:
-      DCHECK(phase_ == START) << phase_;
-      break;
     case REGISTER:
-      DCHECK(phase_ == START || phase_ == WAIT_FOR_UNINSTALL) << phase_;
+      DCHECK(phase_ == START) << phase_;
       break;
     case UPDATE:
       DCHECK(phase_ == START || phase_ == REGISTER) << phase_;
@@ -207,7 +196,7 @@ void ServiceWorkerRegisterJob::ContinueWithRegistration(
   }
 
   if (!existing_registration.get() || existing_registration->is_uninstalled()) {
-    RegisterAndContinue(SERVICE_WORKER_OK);
+    RegisterAndContinue();
     return;
   }
 
@@ -223,15 +212,12 @@ void ServiceWorkerRegisterJob::ContinueWithRegistration(
   }
 
   if (existing_registration->is_uninstalling()) {
-    // "Wait until the Record {[[key]], [[value]]} entry of its
-    // [[ScopeToRegistrationMap]] where registation.scope matches entry.[[key]]
-    // is deleted."
-    WaitForUninstall(existing_registration);
+    existing_registration->AbortPendingClear(base::Bind(
+        &ServiceWorkerRegisterJob::ContinueWithUninstallingRegistration,
+        weak_factory_.GetWeakPtr(),
+        existing_registration));
     return;
   }
-
-  // "Set registration.[[Uninstalling]] to false."
-  DCHECK(!existing_registration->is_uninstalling());
 
   // "Return the result of running the [[Update]] algorithm, or its equivalent,
   // passing registration as the argument."
@@ -269,14 +255,8 @@ void ServiceWorkerRegisterJob::ContinueWithUpdate(
 }
 
 // Creates a new ServiceWorkerRegistration.
-void ServiceWorkerRegisterJob::RegisterAndContinue(
-    ServiceWorkerStatusCode status) {
+void ServiceWorkerRegisterJob::RegisterAndContinue() {
   SetPhase(REGISTER);
-  if (status != SERVICE_WORKER_OK) {
-    // Abort this registration job.
-    Complete(status);
-    return;
-  }
 
   set_registration(new ServiceWorkerRegistration(
       pattern_, context_->storage()->NewRegistrationId(), context_));
@@ -284,11 +264,16 @@ void ServiceWorkerRegisterJob::RegisterAndContinue(
   UpdateAndContinue();
 }
 
-void ServiceWorkerRegisterJob::WaitForUninstall(
-    const scoped_refptr<ServiceWorkerRegistration>& existing_registration) {
-  SetPhase(WAIT_FOR_UNINSTALL);
-  set_uninstalling_registration(existing_registration);
-  uninstalling_registration()->AddListener(this);
+void ServiceWorkerRegisterJob::ContinueWithUninstallingRegistration(
+    const scoped_refptr<ServiceWorkerRegistration>& existing_registration,
+    ServiceWorkerStatusCode status) {
+  if (status != SERVICE_WORKER_OK) {
+    Complete(status);
+    return;
+  }
+  should_uninstall_on_failure_ = true;
+  set_registration(existing_registration);
+  UpdateAndContinue();
 }
 
 void ServiceWorkerRegisterJob::ContinueWithRegistrationForSameScriptUrl(
@@ -309,7 +294,7 @@ void ServiceWorkerRegisterJob::ContinueWithRegistrationForSameScriptUrl(
   // either case.
   DCHECK(!existing_registration->installing_version());
   if (existing_registration->active_version()) {
-    ResolvePromise(status, existing_registration.get());
+    ResolvePromise(status, std::string(), existing_registration.get());
     Complete(SERVICE_WORKER_OK);
     return;
   }
@@ -352,6 +337,7 @@ void ServiceWorkerRegisterJob::OnStartWorkerFinished(
   // be updated to a more specific one.
   const net::URLRequestStatus& main_script_status =
       new_version()->script_cache_map()->main_script_status();
+  std::string message;
   if (main_script_status.status() != net::URLRequestStatus::SUCCESS) {
     switch (main_script_status.error()) {
       case net::ERR_INSECURE_RESPONSE:
@@ -364,8 +350,11 @@ void ServiceWorkerRegisterJob::OnStartWorkerFinished(
       default:
         status = SERVICE_WORKER_ERROR_NETWORK;
     }
+    message = new_version()->script_cache_map()->main_script_status_message();
+    if (message.empty())
+      message = kFetchScriptError;
   }
-  Complete(status);
+  Complete(status, message);
 }
 
 // This function corresponds to the spec's [[Install]] algorithm.
@@ -381,7 +370,7 @@ void ServiceWorkerRegisterJob::InstallAndContinue() {
   new_version()->SetStatus(ServiceWorkerVersion::INSTALLING);
 
   // "Resolve registrationPromise with registration."
-  ResolvePromise(SERVICE_WORKER_OK, registration());
+  ResolvePromise(SERVICE_WORKER_OK, std::string(), registration());
 
   // "Fire a simple event named updatefound..."
   registration()->NotifyUpdateFound();
@@ -450,15 +439,23 @@ void ServiceWorkerRegisterJob::OnStoreRegistrationComplete(
 }
 
 void ServiceWorkerRegisterJob::Complete(ServiceWorkerStatusCode status) {
-  CompleteInternal(status);
+  Complete(status, std::string());
+}
+
+void ServiceWorkerRegisterJob::Complete(ServiceWorkerStatusCode status,
+                                        const std::string& status_message) {
+  CompleteInternal(status, status_message);
   context_->job_coordinator()->FinishJob(pattern_, this);
 }
 
 void ServiceWorkerRegisterJob::CompleteInternal(
-    ServiceWorkerStatusCode status) {
+    ServiceWorkerStatusCode status,
+    const std::string& status_message) {
   SetPhase(COMPLETE);
   if (status != SERVICE_WORKER_OK) {
     if (registration()) {
+      if (should_uninstall_on_failure_)
+        registration()->ClearWhenReady();
       if (new_version()) {
         registration()->UnsetVersion(new_version());
         new_version()->Doom();
@@ -473,7 +470,7 @@ void ServiceWorkerRegisterJob::CompleteInternal(
       }
     }
     if (!is_promise_resolved_)
-      ResolvePromise(status, NULL);
+      ResolvePromise(status, status_message, NULL);
   }
   DCHECK(callbacks_.empty());
   if (registration()) {
@@ -486,16 +483,18 @@ void ServiceWorkerRegisterJob::CompleteInternal(
 
 void ServiceWorkerRegisterJob::ResolvePromise(
     ServiceWorkerStatusCode status,
+    const std::string& status_message,
     ServiceWorkerRegistration* registration) {
   DCHECK(!is_promise_resolved_);
 
   is_promise_resolved_ = true;
   promise_resolved_status_ = status;
+  promise_resolved_status_message_ = status_message,
   promise_resolved_registration_ = registration;
   for (std::vector<RegistrationCallback>::iterator it = callbacks_.begin();
        it != callbacks_.end();
        ++it) {
-    it->Run(status, registration);
+    it->Run(status, status_message, registration);
   }
   callbacks_.clear();
 }
@@ -526,15 +525,6 @@ bool ServiceWorkerRegisterJob::OnMessageReceived(const IPC::Message& message) {
   return false;
 }
 
-void ServiceWorkerRegisterJob::OnRegistrationFinishedUninstalling(
-    ServiceWorkerRegistration* existing_registration) {
-  DCHECK_EQ(phase_, WAIT_FOR_UNINSTALL);
-  DCHECK_EQ(existing_registration, uninstalling_registration());
-  existing_registration->RemoveListener(this);
-  set_uninstalling_registration(NULL);
-  RegisterAndContinue(SERVICE_WORKER_OK);
-}
-
 void ServiceWorkerRegisterJob::OnCompareScriptResourcesComplete(
     ServiceWorkerStatusCode status,
     bool are_equal) {
@@ -547,7 +537,7 @@ void ServiceWorkerRegisterJob::OnCompareScriptResourcesComplete(
       context_->storage()->UpdateLastUpdateCheckTime(registration());
     }
 
-    ResolvePromise(SERVICE_WORKER_OK, registration());
+    ResolvePromise(SERVICE_WORKER_OK, std::string(), registration());
     Complete(SERVICE_WORKER_ERROR_EXISTS);
     return;
   }

@@ -7,8 +7,8 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/debug/trace_event_impl.h"
 #include "base/sync_socket.h"
+#include "base/trace_event/trace_event_impl.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_message_utils.h"
@@ -16,7 +16,7 @@
 
 #define IPC_MESSAGE_START TracingMsgStart
 
-IPC_STRUCT_TRAITS_BEGIN(base::debug::TraceLogStatus)
+IPC_STRUCT_TRAITS_BEGIN(base::trace_event::TraceLogStatus)
 IPC_STRUCT_TRAITS_MEMBER(event_capacity)
 IPC_STRUCT_TRAITS_MEMBER(event_count)
 IPC_STRUCT_TRAITS_END()
@@ -25,7 +25,7 @@ IPC_STRUCT_TRAITS_END()
 IPC_MESSAGE_CONTROL3(TracingMsg_BeginTracing,
                      std::string /*  category_filter_str */,
                      base::TimeTicks /* browser_time */,
-                     std::string /* base::debug::TraceOptions */)
+                     std::string /* base::trace_event::TraceOptions */)
 
 // Sent to all child processes to disable trace event recording.
 IPC_MESSAGE_CONTROL0(TracingMsg_EndTracing)
@@ -34,7 +34,7 @@ IPC_MESSAGE_CONTROL0(TracingMsg_EndTracing)
 IPC_MESSAGE_CONTROL3(TracingMsg_EnableMonitoring,
                      std::string /*  category_filter_str */,
                      base::TimeTicks /* browser_time */,
-                     std::string /* base::debug::TraceOptions */)
+                     std::string /* base::trace_event::TraceOptions */)
 
 // Sent to all child processes to stop monitoring.
 IPC_MESSAGE_CONTROL0(TracingMsg_DisableMonitoring)
@@ -76,5 +76,6 @@ IPC_MESSAGE_CONTROL1(TracingHostMsg_MonitoringTraceDataCollected,
                      std::string /*json trace data*/)
 
 // Reply to TracingMsg_GetTraceLogStatus.
-IPC_MESSAGE_CONTROL1(TracingHostMsg_TraceLogStatusReply,
-                     base::debug::TraceLogStatus /*status of the trace log*/)
+IPC_MESSAGE_CONTROL1(
+    TracingHostMsg_TraceLogStatusReply,
+    base::trace_event::TraceLogStatus /*status of the trace log*/)

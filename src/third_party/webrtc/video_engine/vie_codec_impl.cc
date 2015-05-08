@@ -188,15 +188,12 @@ int ViECodecImpl::SetSendCodec(const int video_channel,
     video_codec_internal.startBitrate = video_codec_internal.maxBitrate;
   }
 
-  VideoCodec encoder;
-  vie_encoder->GetEncoder(&encoder);
-
   // Make sure to generate a new SSRC if the codec type and/or resolution has
   // changed. This won't have any effect if the user has set an SSRC.
-  bool new_rtp_stream = false;
-  if (encoder.codecType != video_codec_internal.codecType) {
-    new_rtp_stream = true;
-  }
+  bool new_rtp_stream = true;
+  VideoCodec encoder;
+  if (vie_encoder->GetEncoder(&encoder) == 0)
+    new_rtp_stream = encoder.codecType != video_codec_internal.codecType;
 
   ViEInputManagerScoped is(*(shared_data_->input_manager()));
 
@@ -653,7 +650,8 @@ bool ViECodecImpl::CodecValid(const VideoCodec& video_codec) {
   }
 
   if (video_codec.plType == 0 || video_codec.plType > 127) {
-    LOG(LS_ERROR) << "Invalif payload type: " << video_codec.plType;
+    LOG(LS_ERROR) << "Invalif payload type: "
+                  << static_cast<int>(video_codec.plType);
     return false;
   }
 

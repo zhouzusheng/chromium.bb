@@ -48,12 +48,8 @@
 #include "webrtc/video_send_stream.h"
 
 namespace webrtc {
-class VideoCaptureModule;
 class VideoDecoder;
 class VideoEncoder;
-class VideoRender;
-class VideoSendStreamInput;
-class VideoReceiveStream;
 }
 
 namespace rtc {
@@ -79,8 +75,6 @@ class WebRtcVoiceEngine;
 struct CapturedFrame;
 struct Device;
 
-class WebRtcVideoRenderer;
-
 class UnsignalledSsrcHandler {
  public:
   enum Action {
@@ -96,7 +90,7 @@ class DefaultUnsignalledSsrcHandler : public UnsignalledSsrcHandler {
  public:
   DefaultUnsignalledSsrcHandler();
   virtual Action OnUnsignalledSsrc(VideoMediaChannel* engine,
-                                   uint32_t ssrc) OVERRIDE;
+                                   uint32_t ssrc) override;
 
   VideoRenderer* GetDefaultRenderer() const;
   void SetDefaultRenderer(VideoMediaChannel* channel, VideoRenderer* renderer);
@@ -104,27 +98,6 @@ class DefaultUnsignalledSsrcHandler : public UnsignalledSsrcHandler {
  private:
   uint32_t default_recv_ssrc_;
   VideoRenderer* default_renderer_;
-};
-
-// TODO(pbos): Remove this class and just inline configuring code.
-class WebRtcVideoEncoderFactory2 {
- public:
-  virtual ~WebRtcVideoEncoderFactory2();
-  virtual std::vector<webrtc::VideoStream> CreateVideoStreams(
-      const VideoCodec& codec,
-      const VideoOptions& options,
-      size_t num_streams);
-
-  std::vector<webrtc::VideoStream> CreateSimulcastVideoStreams(
-      const VideoCodec& codec,
-      const VideoOptions& options,
-      size_t num_streams);
-
-  virtual void* CreateVideoEncoderSettings(const VideoCodec& codec,
-                                           const VideoOptions& options);
-
-  virtual void DestroyVideoEncoderSettings(const VideoCodec& codec,
-                                           void* encoder_settings);
 };
 
 // CallFactory, overridden for testing to verify that webrtc::Call is configured
@@ -138,7 +111,6 @@ class WebRtcCallFactory {
 // WebRtcVideoEngine2 is used for the new native WebRTC Video API (webrtc:1667).
 class WebRtcVideoEngine2 : public sigslot::has_slots<> {
  public:
-  // Creates the WebRtcVideoEngine2 with internal VideoCaptureModule.
   WebRtcVideoEngine2();
   virtual ~WebRtcVideoEngine2();
 
@@ -185,10 +157,6 @@ class WebRtcVideoEngine2 : public sigslot::has_slots<> {
 
   VideoFormat GetStartCaptureFormat() const { return default_codec_format_; }
 
-  rtc::CpuMonitor* cpu_monitor() { return cpu_monitor_.get(); }
-
-  virtual WebRtcVideoEncoderFactory2* GetVideoEncoderFactory();
-
  private:
   std::vector<VideoCodec> GetSupportedCodecs() const;
 
@@ -200,14 +168,12 @@ class WebRtcVideoEngine2 : public sigslot::has_slots<> {
 
   bool initialized_;
 
-  rtc::scoped_ptr<rtc::CpuMonitor> cpu_monitor_;
-  WebRtcVideoEncoderFactory2 default_video_encoder_factory_;
-
   WebRtcCallFactory default_call_factory_;
   WebRtcCallFactory* call_factory_;
 
   WebRtcVideoDecoderFactory* external_decoder_factory_;
   WebRtcVideoEncoderFactory* external_encoder_factory_;
+  rtc::scoped_ptr<WebRtcVideoEncoderFactory> simulcast_encoder_factory_;
 };
 
 class WebRtcVideoChannel2 : public rtc::MessageHandler,
@@ -220,58 +186,55 @@ class WebRtcVideoChannel2 : public rtc::MessageHandler,
                       VoiceMediaChannel* voice_channel,
                       const VideoOptions& options,
                       WebRtcVideoEncoderFactory* external_encoder_factory,
-                      WebRtcVideoDecoderFactory* external_decoder_factory,
-                      WebRtcVideoEncoderFactory2* encoder_factory);
+                      WebRtcVideoDecoderFactory* external_decoder_factory);
   ~WebRtcVideoChannel2();
   bool Init();
 
   // VideoMediaChannel implementation
-  virtual bool SetRecvCodecs(const std::vector<VideoCodec>& codecs) OVERRIDE;
-  virtual bool SetSendCodecs(const std::vector<VideoCodec>& codecs) OVERRIDE;
-  virtual bool GetSendCodec(VideoCodec* send_codec) OVERRIDE;
+  virtual bool SetRecvCodecs(const std::vector<VideoCodec>& codecs) override;
+  virtual bool SetSendCodecs(const std::vector<VideoCodec>& codecs) override;
+  virtual bool GetSendCodec(VideoCodec* send_codec) override;
   virtual bool SetSendStreamFormat(uint32 ssrc,
-                                   const VideoFormat& format) OVERRIDE;
-  virtual bool SetRender(bool render) OVERRIDE;
-  virtual bool SetSend(bool send) OVERRIDE;
+                                   const VideoFormat& format) override;
+  virtual bool SetRender(bool render) override;
+  virtual bool SetSend(bool send) override;
 
-  virtual bool AddSendStream(const StreamParams& sp) OVERRIDE;
-  virtual bool RemoveSendStream(uint32 ssrc) OVERRIDE;
-  virtual bool AddRecvStream(const StreamParams& sp) OVERRIDE;
-  virtual bool RemoveRecvStream(uint32 ssrc) OVERRIDE;
-  virtual bool SetRenderer(uint32 ssrc, VideoRenderer* renderer) OVERRIDE;
+  virtual bool AddSendStream(const StreamParams& sp) override;
+  virtual bool RemoveSendStream(uint32 ssrc) override;
+  virtual bool AddRecvStream(const StreamParams& sp) override;
+  virtual bool RemoveRecvStream(uint32 ssrc) override;
+  virtual bool SetRenderer(uint32 ssrc, VideoRenderer* renderer) override;
   virtual bool GetStats(const StatsOptions& options,
-                        VideoMediaInfo* info) OVERRIDE;
-  virtual bool SetCapturer(uint32 ssrc, VideoCapturer* capturer) OVERRIDE;
-  virtual bool SendIntraFrame() OVERRIDE;
-  virtual bool RequestIntraFrame() OVERRIDE;
+                        VideoMediaInfo* info) override;
+  virtual bool SetCapturer(uint32 ssrc, VideoCapturer* capturer) override;
+  virtual bool SendIntraFrame() override;
+  virtual bool RequestIntraFrame() override;
 
   virtual void OnPacketReceived(rtc::Buffer* packet,
-                                const rtc::PacketTime& packet_time)
-      OVERRIDE;
+                                const rtc::PacketTime& packet_time) override;
   virtual void OnRtcpReceived(rtc::Buffer* packet,
-                              const rtc::PacketTime& packet_time)
-      OVERRIDE;
-  virtual void OnReadyToSend(bool ready) OVERRIDE;
-  virtual bool MuteStream(uint32 ssrc, bool mute) OVERRIDE;
+                              const rtc::PacketTime& packet_time) override;
+  virtual void OnReadyToSend(bool ready) override;
+  virtual bool MuteStream(uint32 ssrc, bool mute) override;
 
   // Set send/receive RTP header extensions. This must be done before creating
   // streams as it only has effect on future streams.
   virtual bool SetRecvRtpHeaderExtensions(
-      const std::vector<RtpHeaderExtension>& extensions) OVERRIDE;
+      const std::vector<RtpHeaderExtension>& extensions) override;
   virtual bool SetSendRtpHeaderExtensions(
-      const std::vector<RtpHeaderExtension>& extensions) OVERRIDE;
-  virtual bool SetMaxSendBandwidth(int bps) OVERRIDE;
-  virtual bool SetOptions(const VideoOptions& options) OVERRIDE;
-  virtual bool GetOptions(VideoOptions* options) const OVERRIDE {
+      const std::vector<RtpHeaderExtension>& extensions) override;
+  virtual bool SetMaxSendBandwidth(int bps) override;
+  virtual bool SetOptions(const VideoOptions& options) override;
+  virtual bool GetOptions(VideoOptions* options) const override {
     *options = options_;
     return true;
   }
-  virtual void SetInterface(NetworkInterface* iface) OVERRIDE;
-  virtual void UpdateAspectRatio(int ratio_w, int ratio_h) OVERRIDE;
+  virtual void SetInterface(NetworkInterface* iface) override;
+  virtual void UpdateAspectRatio(int ratio_w, int ratio_h) override;
 
-  virtual void OnMessage(rtc::Message* msg) OVERRIDE;
+  virtual void OnMessage(rtc::Message* msg) override;
 
-  virtual void OnLoadUpdate(Load load) OVERRIDE;
+  virtual void OnLoadUpdate(Load load) override;
 
   // Implemented for VideoMediaChannelTest.
   bool sending() const { return sending_; }
@@ -300,7 +263,6 @@ class WebRtcVideoChannel2 : public rtc::MessageHandler,
     WebRtcVideoSendStream(
         webrtc::Call* call,
         WebRtcVideoEncoderFactory* external_encoder_factory,
-        WebRtcVideoEncoderFactory2* encoder_factory,
         const VideoOptions& options,
         const Settable<VideoCodecSettings>& codec_settings,
         const StreamParams& sp,
@@ -357,11 +319,36 @@ class WebRtcVideoChannel2 : public rtc::MessageHandler,
     };
 
     struct Dimensions {
-      Dimensions() : width(-1), height(-1), is_screencast(false) {}
+      // Initial encoder configuration (QCIF, 176x144) frame (to ensure that
+      // hardware encoders can be initialized). This gives us low memory usage
+      // but also makes it so configuration errors are discovered at the time we
+      // apply the settings rather than when we get the first frame (waiting for
+      // the first frame to know that you gave a bad codec parameter could make
+      // debugging hard).
+      // TODO(pbos): Consider setting up encoders lazily.
+      Dimensions() : width(176), height(144), is_screencast(false) {}
       int width;
       int height;
       bool is_screencast;
     };
+
+    union VideoEncoderSettings {
+      webrtc::VideoCodecVP8 vp8;
+      webrtc::VideoCodecVP9 vp9;
+    };
+
+    static std::vector<webrtc::VideoStream> CreateVideoStreams(
+        const VideoCodec& codec,
+        const VideoOptions& options,
+        size_t num_streams);
+    static std::vector<webrtc::VideoStream> CreateSimulcastVideoStreams(
+        const VideoCodec& codec,
+        const VideoOptions& options,
+        size_t num_streams);
+
+    void* ConfigureVideoEncoderSettings(const VideoCodec& codec,
+                                        const VideoOptions& options)
+        EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
     AllocatedEncoder CreateVideoEncoder(const VideoCodec& codec)
         EXCLUSIVE_LOCKS_REQUIRED(lock_);
@@ -380,11 +367,11 @@ class WebRtcVideoChannel2 : public rtc::MessageHandler,
     webrtc::Call* const call_;
     WebRtcVideoEncoderFactory* const external_encoder_factory_
         GUARDED_BY(lock_);
-    WebRtcVideoEncoderFactory2* const encoder_factory_ GUARDED_BY(lock_);
 
     rtc::CriticalSection lock_;
     webrtc::VideoSendStream* stream_ GUARDED_BY(lock_);
     VideoSendStreamParameters parameters_ GUARDED_BY(lock_);
+    VideoEncoderSettings encoder_settings_ GUARDED_BY(lock_);
     AllocatedEncoder allocated_encoder_ GUARDED_BY(lock_);
     Dimensions last_dimensions_ GUARDED_BY(lock_);
 
@@ -413,7 +400,8 @@ class WebRtcVideoChannel2 : public rtc::MessageHandler,
     void SetRtpExtensions(const std::vector<webrtc::RtpExtension>& extensions);
 
     virtual void RenderFrame(const webrtc::I420VideoFrame& frame,
-                             int time_to_render_ms) OVERRIDE;
+                             int time_to_render_ms) override;
+    virtual bool IsTextureSupported() const override;
 
     void SetRenderer(cricket::VideoRenderer* renderer);
     cricket::VideoRenderer* GetRenderer();
@@ -451,13 +439,21 @@ class WebRtcVideoChannel2 : public rtc::MessageHandler,
     cricket::VideoRenderer* renderer_ GUARDED_BY(renderer_lock_);
     int last_width_ GUARDED_BY(renderer_lock_);
     int last_height_ GUARDED_BY(renderer_lock_);
+    // Expands remote RTP timestamps to int64_t to be able to estimate how long
+    // the stream has been running.
+    rtc::TimestampWrapAroundHandler timestamp_wraparound_handler_
+        GUARDED_BY(renderer_lock_);
+    int64_t first_frame_timestamp_ GUARDED_BY(renderer_lock_);
+    // Start NTP time is estimated as current remote NTP time (estimated from
+    // RTCP) minus the elapsed time, as soon as remote NTP time is available.
+    int64_t estimated_remote_start_ntp_time_ms_ GUARDED_BY(renderer_lock_);
   };
 
   void Construct(webrtc::Call* call, WebRtcVideoEngine2* engine);
   void SetDefaultOptions();
 
-  virtual bool SendRtp(const uint8_t* data, size_t len) OVERRIDE;
-  virtual bool SendRtcp(const uint8_t* data, size_t len) OVERRIDE;
+  virtual bool SendRtp(const uint8_t* data, size_t len) override;
+  virtual bool SendRtcp(const uint8_t* data, size_t len) override;
 
   void StartAllSendStreams();
   void StopAllSendStreams();
@@ -495,7 +491,6 @@ class WebRtcVideoChannel2 : public rtc::MessageHandler,
   VoiceMediaChannel* const voice_channel_;
   WebRtcVideoEncoderFactory* const external_encoder_factory_;
   WebRtcVideoDecoderFactory* const external_decoder_factory_;
-  WebRtcVideoEncoderFactory2* const encoder_factory_;
   std::vector<VideoCodecSettings> recv_codecs_;
   std::vector<webrtc::RtpExtension> recv_rtp_extensions_;
   webrtc::Call::Config::BitrateConfig bitrate_config_;

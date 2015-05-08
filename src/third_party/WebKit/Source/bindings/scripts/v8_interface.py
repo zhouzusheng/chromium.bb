@@ -37,7 +37,7 @@ import itertools
 from operator import itemgetter
 
 import idl_definitions
-from idl_definitions import IdlOperation
+from idl_definitions import IdlOperation, IdlArgument
 import idl_types
 from idl_types import IdlType, inherits_interface
 import v8_attributes
@@ -124,26 +124,6 @@ def interface_context(interface):
     # [DependentLifetime]
     is_dependent_lifetime = 'DependentLifetime' in extended_attributes
 
-    # [Iterable], iterable<>, maplike<> and setlike<>
-    iterator_method = None
-    # FIXME: support Iterable in partial interfaces. However, we don't
-    # need to support iterator overloads between interface and
-    # partial interface definitions.
-    # http://heycam.github.io/webidl/#idl-overloading
-    if (not interface.is_partial
-        and (interface.iterable or interface.maplike or interface.setlike
-             or 'Iterable' in extended_attributes)):
-        iterator_operation = IdlOperation(interface.idl_name)
-        iterator_operation.name = 'iterator'
-        iterator_operation.idl_type = IdlType('Iterator')
-        iterator_operation.extended_attributes['RaisesException'] = None
-        iterator_operation.extended_attributes['CallWith'] = 'ScriptState'
-        iterator_method = v8_methods.method_context(interface,
-                                                    iterator_operation)
-        # FIXME: iterable<>, maplike<> and setlike<> should also imply the
-        # presence of a subset of keys(), values(), entries(), forEach(), has(),
-        # get(), add(), set(), delete() and clear(), and a 'size' attribute.
-
     # [MeasureAs]
     is_measure_as = 'MeasureAs' in extended_attributes
     if is_measure_as:
@@ -208,7 +188,6 @@ def interface_context(interface):
         'is_node': inherits_interface(interface.name, 'Node'),
         'is_partial': interface.is_partial,
         'is_typed_array_type': is_typed_array_type,
-        'iterator_method': iterator_method,
         'lifetime': 'Dependent'
             if (has_visit_dom_wrapper or
                 is_active_dom_object or
@@ -313,7 +292,13 @@ def interface_context(interface):
 
     context.update({
         'attributes': attributes,
-        'has_accessors': any(attribute['is_expose_js_accessors'] and attribute['should_be_exposed_to_script'] for attribute in attributes),
+        'has_accessor_configuration': any(
+            attribute['is_expose_js_accessors'] and
+            not (attribute['is_static'] or
+                 attribute['runtime_enabled_function'] or
+                 attribute['per_context_enabled_function']) and
+            attribute['should_be_exposed_to_script']
+            for attribute in attributes),
         'has_attribute_configuration': any(
              not (attribute['is_expose_js_accessors'] or
                   attribute['is_static'] or
@@ -343,18 +328,158 @@ def interface_context(interface):
                             if operation.name])
     compute_method_overloads_context(interface, methods)
 
+    def generated_method(return_type, name, arguments=None, extended_attributes=None, implemented_as=None):
+        operation = IdlOperation(interface.idl_name)
+        operation.idl_type = return_type
+        operation.name = name
+        if arguments:
+            operation.arguments = arguments
+        if extended_attributes:
+            operation.extended_attributes.update(extended_attributes)
+        if implemented_as is None:
+            implemented_as = name + 'ForBinding'
+        operation.extended_attributes['ImplementedAs'] = implemented_as
+        return v8_methods.method_context(interface, operation)
+
+    def generated_argument(idl_type, name, is_optional=False, extended_attributes=None):
+        argument = IdlArgument(interface.idl_name)
+        argument.idl_type = idl_type
+        argument.name = name
+        argument.is_optional = is_optional
+        if extended_attributes:
+            argument.extended_attributes.update(extended_attributes)
+        return argument
+
+    # [Iterable], iterable<>, maplike<> and setlike<>
+    iterator_method = None
+    # FIXME: support Iterable in partial interfaces. However, we don't
+    # need to support iterator overloads between interface and
+    # partial interface definitions.
+    # http://heycam.github.io/webidl/#idl-overloading
+    if (not interface.is_partial
+        and (interface.iterable or interface.maplike or interface.setlike
+             or 'Iterable' in extended_attributes)):
+
+        used_extended_attributes = {}
+
+        if interface.iterable:
+            used_extended_attributes.update(interface.iterable.extended_attributes)
+        elif interface.maplike:
+            used_extended_attributes.update(interface.maplike.extended_attributes)
+        elif interface.setlike:
+            used_extended_attributes.update(interface.setlike.extended_attributes)
+
+        if 'RaisesException' in used_extended_attributes:
+            raise ValueError('[RaisesException] is implied for iterable<>/maplike<>/setlike<>')
+        if 'CallWith' in used_extended_attributes:
+            raise ValueError('[CallWith=ScriptState] is implied for iterable<>/maplike<>/setlike<>')
+
+        used_extended_attributes.update({
+            'RaisesException': None,
+            'CallWith': 'ScriptState',
+        })
+
+        forEach_extended_attributes = used_extended_attributes.copy()
+        forEach_extended_attributes.update({
+            'CallWith': ['ScriptState', 'ThisValue'],
+        })
+
+        def generated_iterator_method(name, implemented_as=None):
+            return generated_method(
+                return_type=IdlType('Iterator'),
+                name=name,
+                extended_attributes=used_extended_attributes,
+                implemented_as=implemented_as)
+
+        iterator_method = generated_iterator_method('iterator', implemented_as='iterator')
+
+        if interface.iterable or interface.maplike or interface.setlike:
+            implicit_methods = [
+                generated_iterator_method('keys'),
+                generated_iterator_method('values'),
+                generated_iterator_method('entries'),
+
+                # void forEach(Function callback, [Default=Undefined] optional any thisArg)
+                generated_method(IdlType('void'), 'forEach',
+                                 arguments=[generated_argument(IdlType('Function'), 'callback'),
+                                            generated_argument(IdlType('any'), 'thisArg',
+                                                               is_optional=True,
+                                                               extended_attributes={'Default': 'Undefined'})],
+                                 extended_attributes=forEach_extended_attributes),
+            ]
+
+            if interface.maplike:
+                key_argument = generated_argument(interface.maplike.key_type, 'key')
+                value_argument = generated_argument(interface.maplike.value_type, 'value')
+
+                implicit_methods.extend([
+                    generated_method(IdlType('boolean'), 'has',
+                                     arguments=[key_argument],
+                                     extended_attributes=used_extended_attributes),
+                    generated_method(IdlType('any'), 'get',
+                                     arguments=[key_argument],
+                                     extended_attributes=used_extended_attributes),
+                ])
+
+                if not interface.maplike.is_read_only:
+                    implicit_methods.extend([
+                        generated_method(IdlType('void'), 'clear',
+                                         extended_attributes=used_extended_attributes),
+                        generated_method(IdlType('boolean'), 'delete',
+                                         arguments=[key_argument],
+                                         extended_attributes=used_extended_attributes),
+                        generated_method(IdlType(interface.name), 'set',
+                                         arguments=[key_argument, value_argument],
+                                         extended_attributes=used_extended_attributes),
+                    ])
+
+            if interface.setlike:
+                value_argument = generated_argument(interface.setlike.value_type, 'value')
+
+                implicit_methods.extend([
+                    generated_method(IdlType('boolean'), 'has',
+                                     arguments=[value_argument],
+                                     extended_attributes=used_extended_attributes),
+                ])
+
+                if not interface.setlike.is_read_only:
+                    implicit_methods.extend([
+                        generated_method(IdlType(interface.name), 'add',
+                                         arguments=[value_argument],
+                                         extended_attributes=used_extended_attributes),
+                        generated_method(IdlType('void'), 'clear',
+                                         extended_attributes=used_extended_attributes),
+                        generated_method(IdlType('boolean'), 'delete',
+                                         arguments=[value_argument],
+                                         extended_attributes=used_extended_attributes),
+                    ])
+
+            methods_by_name = {}
+            for method in methods:
+                methods_by_name.setdefault(method['name'], []).append(method)
+
+            for implicit_method in implicit_methods:
+                if implicit_method['name'] in methods_by_name:
+                    # FIXME: Check that the existing method is compatible.
+                    continue
+                methods.append(implicit_method)
+
+        # FIXME: maplike<> and setlike<> should also imply the presence of a
+        # 'size' attribute.
+
     # Stringifier
     if interface.stringifier:
         stringifier = interface.stringifier
-        method = IdlOperation(interface.idl_name)
-        method.name = 'toString'
-        method.idl_type = IdlType('DOMString')
-        method.extended_attributes.update(stringifier.extended_attributes)
+        stringifier_ext_attrs = stringifier.extended_attributes.copy()
         if stringifier.attribute:
-            method.extended_attributes['ImplementedAs'] = stringifier.attribute.name
+            stringifier_ext_attrs['ImplementedAs'] = stringifier.attribute.name
         elif stringifier.operation:
-            method.extended_attributes['ImplementedAs'] = stringifier.operation.name
-        methods.append(v8_methods.method_context(interface, method))
+            stringifier_ext_attrs['ImplementedAs'] = stringifier.operation.name
+        methods.append(generated_method(
+            return_type=IdlType('DOMString'),
+            name='toString',
+            extended_attributes=stringifier_ext_attrs,
+            implemented_as='toString'))
 
     conditionally_enabled_methods = []
     custom_registration_methods = []
@@ -420,18 +545,19 @@ def interface_context(interface):
             for method in methods),
         'has_private_script': any(attribute['is_implemented_in_private_script'] for attribute in attributes) or
             any(method['is_implemented_in_private_script'] for method in methods),
+        'iterator_method': iterator_method,
         'method_configuration_methods': method_configuration_methods,
         'methods': methods,
     })
 
     context.update({
-        'indexed_property_getter': indexed_property_getter(interface),
-        'indexed_property_setter': indexed_property_setter(interface),
-        'indexed_property_deleter': indexed_property_deleter(interface),
+        'indexed_property_getter': property_getter(interface.indexed_property_getter, ['index']),
+        'indexed_property_setter': property_setter(interface.indexed_property_setter, interface),
+        'indexed_property_deleter': property_deleter(interface.indexed_property_deleter),
         'is_override_builtins': 'OverrideBuiltins' in extended_attributes,
-        'named_property_getter': named_property_getter(interface),
-        'named_property_setter': named_property_setter(interface),
-        'named_property_deleter': named_property_deleter(interface),
+        'named_property_getter': property_getter(interface.named_property_getter, ['propertyName']),
+        'named_property_setter': property_setter(interface.named_property_setter, interface),
+        'named_property_deleter': property_deleter(interface.named_property_deleter),
     })
 
     return context
@@ -1093,6 +1219,9 @@ def interface_length(interface, constructors):
 ################################################################################
 
 def property_getter(getter, cpp_arguments):
+    if not getter:
+        return None
+
     def is_null_expression(idl_type):
         if idl_type.use_output_parameter_for_result:
             return 'result.isNull()'
@@ -1138,26 +1267,37 @@ def property_getter(getter, cpp_arguments):
     }
 
 
-def property_setter(setter):
+def property_setter(setter, interface):
+    if not setter:
+        return None
+
     idl_type = setter.arguments[1].idl_type
     extended_attributes = setter.extended_attributes
     is_raises_exception = 'RaisesException' in extended_attributes
+    restricted_float = (
+        has_extended_attribute_value(interface, 'TypeChecking', 'Unrestricted') or
+        has_extended_attribute_value(setter, 'TypeChecking', 'Unrestricted'))
     return {
+        'has_exception_state': (is_raises_exception or
+                                idl_type.v8_conversion_needs_exception_state),
         'has_type_checking_interface':
-            has_extended_attribute_value(setter, 'TypeChecking', 'Interface') and
+            (has_extended_attribute_value(interface, 'TypeChecking', 'Interface') or
+             has_extended_attribute_value(setter, 'TypeChecking', 'Interface')) and
             idl_type.is_wrapper_type,
         'idl_type': idl_type.base_type,
         'is_custom': 'Custom' in extended_attributes,
-        'has_exception_state': (is_raises_exception or
-                                idl_type.v8_conversion_needs_exception_state),
+        'is_nullable': idl_type.is_nullable,
         'is_raises_exception': is_raises_exception,
         'name': cpp_name(setter),
         'v8_value_to_local_cpp_value': idl_type.v8_value_to_local_cpp_value(
-            extended_attributes, 'v8Value', 'propertyValue'),
+            extended_attributes, 'v8Value', 'propertyValue', restricted_float),
     }
 
 
 def property_deleter(deleter):
+    if not deleter:
+        return None
+
     idl_type = deleter.idl_type
     if str(idl_type) != 'boolean':
         raise Exception(
@@ -1169,110 +1309,3 @@ def property_deleter(deleter):
         'is_raises_exception': 'RaisesException' in extended_attributes,
         'name': cpp_name(deleter),
     }
-
-
-################################################################################
-# Indexed properties
-# http://heycam.github.io/webidl/#idl-indexed-properties
-################################################################################
-
-def indexed_property_getter(interface):
-    try:
-        # Find indexed property getter, if present; has form:
-        # getter TYPE [OPTIONAL_IDENTIFIER](unsigned long ARG1)
-        getter = next(
-            method
-            for method in interface.operations
-            if ('getter' in method.specials and
-                len(method.arguments) == 1 and
-                str(method.arguments[0].idl_type) == 'unsigned long'))
-    except StopIteration:
-        return None
-
-    return property_getter(getter, ['index'])
-
-
-def indexed_property_setter(interface):
-    try:
-        # Find indexed property setter, if present; has form:
-        # setter RETURN_TYPE [OPTIONAL_IDENTIFIER](unsigned long ARG1, ARG_TYPE ARG2)
-        setter = next(
-            method
-            for method in interface.operations
-            if ('setter' in method.specials and
-                len(method.arguments) == 2 and
-                str(method.arguments[0].idl_type) == 'unsigned long'))
-    except StopIteration:
-        return None
-
-    return property_setter(setter)
-
-
-def indexed_property_deleter(interface):
-    try:
-        # Find indexed property deleter, if present; has form:
-        # deleter TYPE [OPTIONAL_IDENTIFIER](unsigned long ARG)
-        deleter = next(
-            method
-            for method in interface.operations
-            if ('deleter' in method.specials and
-                len(method.arguments) == 1 and
-                str(method.arguments[0].idl_type) == 'unsigned long'))
-    except StopIteration:
-        return None
-
-    return property_deleter(deleter)
-
-
-################################################################################
-# Named properties
-# http://heycam.github.io/webidl/#idl-named-properties
-################################################################################
-
-def named_property_getter(interface):
-    try:
-        # Find named property getter, if present; has form:
-        # getter TYPE [OPTIONAL_IDENTIFIER](DOMString ARG1)
-        getter = next(
-            method
-            for method in interface.operations
-            if ('getter' in method.specials and
-                len(method.arguments) == 1 and
-                str(method.arguments[0].idl_type) == 'DOMString'))
-    except StopIteration:
-        return None
-
-    getter.name = getter.name or 'anonymousNamedGetter'
-    return property_getter(getter, ['propertyName'])
-
-
-def named_property_setter(interface):
-    try:
-        # Find named property setter, if present; has form:
-        # setter RETURN_TYPE [OPTIONAL_IDENTIFIER](DOMString ARG1, ARG_TYPE ARG2)
-        setter = next(
-            method
-            for method in interface.operations
-            if ('setter' in method.specials and
-                len(method.arguments) == 2 and
-                str(method.arguments[0].idl_type) == 'DOMString'))
-    except StopIteration:
-        return None
-
-    return property_setter(setter)
-
-
-def named_property_deleter(interface):
-    try:
-        # Find named property deleter, if present; has form:
-        # deleter TYPE [OPTIONAL_IDENTIFIER](DOMString ARG)
-        deleter = next(
-            method
-            for method in interface.operations
-            if ('deleter' in method.specials and
-                len(method.arguments) == 1 and
-                str(method.arguments[0].idl_type) == 'DOMString'))
-    except StopIteration:
-        return None
-
-    return property_deleter(deleter)

@@ -29,6 +29,8 @@
   F(PPB_BrowserFont_Singleton_API)      \
   F(PPB_BrowserFont_Trusted_API)        \
   F(PPB_Buffer_API)                     \
+  F(PPB_CameraCapabilities_API)         \
+  F(PPB_CameraDevice_API)               \
   F(PPB_Compositor_API)                 \
   F(PPB_CompositorLayer_API)            \
   F(PPB_DeviceRef_API)                  \
@@ -83,6 +85,7 @@
   F(PPB_VideoDecoder_API)               \
   F(PPB_VideoDecoder_Dev_API)           \
   F(PPB_VideoDestination_Private_API)   \
+  F(PPB_VideoEncoder_API)               \
   F(PPB_VideoFrame_API)                 \
   F(PPB_VideoLayer_API)                 \
   F(PPB_VideoSource_Private_API)        \

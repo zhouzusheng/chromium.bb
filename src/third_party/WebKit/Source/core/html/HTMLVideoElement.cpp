@@ -37,8 +37,8 @@
 #include "core/html/HTMLImageLoader.h"
 #include "core/html/canvas/CanvasRenderingContext.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/rendering/RenderImage.h"
-#include "core/rendering/RenderVideo.h"
+#include "core/layout/LayoutImage.h"
+#include "core/layout/LayoutVideo.h"
 #include "platform/UserGestureIndicator.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/ImageBuffer.h"
@@ -60,25 +60,25 @@ inline HTMLVideoElement::HTMLVideoElement(Document& document)
 PassRefPtrWillBeRawPtr<HTMLVideoElement> HTMLVideoElement::create(Document& document)
 {
     RefPtrWillBeRawPtr<HTMLVideoElement> video = adoptRefWillBeNoop(new HTMLVideoElement(document));
-    video->ensureUserAgentShadowRoot();
+    video->ensureClosedShadowRoot();
     video->suspendIfNeeded();
     return video.release();
 }
 
-void HTMLVideoElement::trace(Visitor* visitor)
+DEFINE_TRACE(HTMLVideoElement)
 {
     visitor->trace(m_imageLoader);
     HTMLMediaElement::trace(visitor);
 }
 
-bool HTMLVideoElement::rendererIsNeeded(const RenderStyle& style)
+bool HTMLVideoElement::rendererIsNeeded(const LayoutStyle& style)
 {
     return HTMLElement::rendererIsNeeded(style);
 }
 
-RenderObject* HTMLVideoElement::createRenderer(RenderStyle*)
+LayoutObject* HTMLVideoElement::createRenderer(const LayoutStyle&)
 {
-    return new RenderVideo(this);
+    return new LayoutVideo(this);
 }
 
 void HTMLVideoElement::attach(const AttachContext& context)
@@ -91,7 +91,7 @@ void HTMLVideoElement::attach(const AttachContext& context)
             m_imageLoader = HTMLImageLoader::create(this);
         m_imageLoader->updateFromElement();
         if (renderer())
-            toRenderImage(renderer())->imageResource()->setImageResource(m_imageLoader->image());
+            toLayoutImage(renderer())->imageResource()->setImageResource(m_imageLoader->image());
     }
 }
 
@@ -124,7 +124,7 @@ void HTMLVideoElement::parseAttribute(const QualifiedName& name, const AtomicStr
             m_imageLoader->updateFromElement(ImageLoader::UpdateIgnorePreviousError);
         } else {
             if (renderer())
-                toRenderImage(renderer())->imageResource()->setImageResource(0);
+                toLayoutImage(renderer())->imageResource()->setImageResource(0);
         }
         // Notify the player when the poster image URL changes.
         if (webMediaPlayer())
@@ -183,7 +183,7 @@ void HTMLVideoElement::setDisplayMode(DisplayMode mode)
         // Don't show the poster if there is a seek operation or
         // the video has restarted because of loop attribute
         if (mode == Video && oldMode == Poster && !hasAvailableVideoFrame())
-            mode = PosterWaitingForVideo;
+            return;
     }
 
     HTMLMediaElement::setDisplayMode(mode);
@@ -206,7 +206,7 @@ void HTMLVideoElement::paintCurrentFrameInContext(GraphicsContext* context, cons
         return;
 
     WebCanvas* canvas = context->canvas();
-    SkXfermode::Mode mode = WebCoreCompositeToSkiaComposite(context->compositeOperation(), context->blendModeOperation());
+    SkXfermode::Mode mode = context->compositeOperation();
     webMediaPlayer()->paint(canvas, destRect, context->getNormalizedAlpha(), mode);
 }
 
@@ -310,13 +310,13 @@ PassRefPtr<Image> HTMLVideoElement::getSourceImageForCanvas(SourceImageMode mode
 
     paintCurrentFrameInContext(imageBuffer->context(), IntRect(IntPoint(0, 0), intrinsicSize));
 
-    *status = NormalSourceImageStatus;
+    *status = (mode == CopySourceImageIfVolatile) ? NormalSourceImageStatus : ExternalSourceImageStatus;
     return imageBuffer->copyImage(mode == CopySourceImageIfVolatile ? CopyBackingStore : DontCopyBackingStore, Unscaled);
 }
 
 bool HTMLVideoElement::wouldTaintOrigin(SecurityOrigin* destinationSecurityOrigin) const
 {
-    return !hasSingleSecurityOrigin() || (!(webMediaPlayer() && webMediaPlayer()->didPassCORSAccessCheck()) && destinationSecurityOrigin->taintsCanvas(currentSrc()));
+    return !isMediaDataCORSSameOrigin(destinationSecurityOrigin);
 }
 
 FloatSize HTMLVideoElement::sourceSize() const

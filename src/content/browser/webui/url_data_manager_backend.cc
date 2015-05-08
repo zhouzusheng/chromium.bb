@@ -11,7 +11,6 @@
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/debug/alias.h"
-#include "base/debug/trace_event.h"
 #include "base/lazy_instance.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/ref_counted_memory.h"
@@ -20,6 +19,7 @@
 #include "base/profiler/scoped_tracker.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/trace_event/trace_event.h"
 #include "content/browser/appcache/view_appcache_internals_job.h"
 #include "content/browser/fileapi/chrome_blob_storage_context.h"
 #include "content/browser/histogram_internals_request_job.h"
@@ -337,11 +337,20 @@ void URLRequestChromeJob::DataAvailable(base::RefCountedMemory* bytes) {
     int bytes_read;
     if (pending_buf_.get()) {
       CHECK(pending_buf_->data());
+      // TODO(pkasting): Remove ScopedTracker below once crbug.com/455423 is
+      // fixed.
+      tracked_objects::ScopedTracker tracking_profile(
+          FROM_HERE_WITH_EXPLICIT_FUNCTION(
+              "455423 URLRequestChromeJob::CompleteRead"));
       CompleteRead(pending_buf_.get(), pending_buf_size_, &bytes_read);
       pending_buf_ = NULL;
       NotifyReadComplete(bytes_read);
     }
   } else {
+    // TODO(pkasting): Remove ScopedTracker below once crbug.com/455423 is
+    // fixed.
+    tracked_objects::ScopedTracker tracking_profile(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION("455423 URLRequestJob::NotifyDone"));
     // The request failed.
     NotifyDone(net::URLRequestStatus(net::URLRequestStatus::FAILED,
                                      net::ERR_FAILED));
@@ -716,10 +725,14 @@ void URLDataManagerBackend::RemoveRequest(URLRequestChromeJob* job) {
 
 void URLDataManagerBackend::DataAvailable(RequestID request_id,
                                           base::RefCountedMemory* bytes) {
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/455423 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "455423 URLDataManagerBackend::DataAvailable"));
   // Forward this data on to the pending net::URLRequest, if it exists.
   PendingRequestMap::iterator i = pending_requests_.find(request_id);
   if (i != pending_requests_.end()) {
-    URLRequestChromeJob* job(i->second);
+    URLRequestChromeJob* job = i->second;
     pending_requests_.erase(i);
     job->DataAvailable(bytes);
   }

@@ -38,16 +38,18 @@ class AXObjectCacheImpl;
 class AXTableRow : public AXRenderObject {
 
 protected:
-    AXTableRow(RenderObject*, AXObjectCacheImpl*);
+    AXTableRow(LayoutObject*, AXObjectCacheImpl*);
 
 public:
-    static PassRefPtr<AXTableRow> create(RenderObject*, AXObjectCacheImpl*);
+    static PassRefPtr<AXTableRow> create(LayoutObject*, AXObjectCacheImpl*);
     virtual ~AXTableRow();
 
     virtual bool isTableRow() const override final;
 
     // retrieves the "row" header (a th tag in the rightmost column)
     virtual AXObject* headerObject();
+    // retrieves the "row" headers (th, scope) from left to right for the each row.
+    virtual void headerObjectsForRow(AccessibilityChildrenVector&);
     AXObject* parentTable() const;
 
     void setRowIndex(int rowIndex) { m_rowIndex = rowIndex; }

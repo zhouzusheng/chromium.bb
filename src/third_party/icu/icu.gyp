@@ -134,10 +134,9 @@
               ],
             }],
             [ 'icu_use_data_file_flag==1', {
+              'type': 'none',
               # Remove any assembly data file.
               'sources/': [['exclude', 'icudtl_dat']],
-              # Compile in the stub data symbol.
-              'sources': ['source/stubdata/stubdata.c'],
 
               # Make sure any binary depending on this gets the data file.
               'conditions': [
@@ -325,9 +324,12 @@
             [ 'use_system_icu==0 and want_separate_host_toolset==0', {
               'toolsets': ['target'],
             }],
-            [ 'OS == "win" and icu_use_data_file_flag==0', {
+            [ 'OS == "win" or icu_use_data_file_flag==1', {
               'sources': [
                 'source/stubdata/stubdata.c',
+              ],
+              'defines': [
+                'U_ICUDATAENTRY_IN_COMMON',
               ],
             }],
             [ 'OS == "win" and clang==1', {
@@ -389,9 +391,9 @@
             'headers_root_path': 'source/i18n',
             'header_filenames': [
               # This list can easily be updated using the command below:
-              # find third_party/icu/source/i18n/unicode -iname '*.h' \
-              # -printf "'%p',\n" | \
-              # sed -e 's|third_party/icu/source/i18n/||' | sort -u
+              # find source/i18n/unicode -iname '*.h' \
+              # -printf "              '%p',\n" | \
+              # sed -e 's|source/i18n/||' | sort -u
               'unicode/alphaindex.h',
               'unicode/basictz.h',
               'unicode/calendar.h',
@@ -411,6 +413,7 @@
               'unicode/dtptngen.h',
               'unicode/dtrule.h',
               'unicode/fieldpos.h',
+              'unicode/filteredbrk.h',
               'unicode/fmtable.h',
               'unicode/format.h',
               'unicode/fpositer.h',
@@ -429,6 +432,8 @@
               'unicode/rbtz.h',
               'unicode/regex.h',
               'unicode/region.h',
+              'unicode/reldatefmt.h',
+              'unicode/scientificformathelper.h',
               'unicode/search.h',
               'unicode/selfmt.h',
               'unicode/simpletz.h',
@@ -486,9 +491,9 @@
             'headers_root_path': 'source/common',
             'header_filenames': [
               # This list can easily be updated using the command below:
-              # find third_party/icu/source/common/unicode -iname '*.h' \
-              # -printf "'%p',\n" | \
-              # sed -e 's|third_party/icu/source/common/||' | sort -u
+              # find source/common/unicode -iname '*.h' \
+              # -printf "              '%p',\n" | \
+              # sed -e 's|source/common/||' | sort -u
               'unicode/appendable.h',
               'unicode/brkiter.h',
               'unicode/bytestream.h',

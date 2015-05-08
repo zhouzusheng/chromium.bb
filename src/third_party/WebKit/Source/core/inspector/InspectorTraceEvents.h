@@ -13,7 +13,7 @@
 #include "wtf/Functional.h"
 
 namespace blink {
-
+class AnimationPlayer;
 class CSSStyleSheetResource;
 class DescendantInvalidationSet;
 class Document;
@@ -24,14 +24,14 @@ class FrameView;
 class GraphicsLayer;
 class ImageResource;
 class KURL;
+class Layer;
 class LayoutRect;
 class LocalFrame;
 class Node;
 class QualifiedName;
 class Page;
-class RenderImage;
-class RenderLayer;
-class RenderObject;
+class LayoutImage;
+class LayoutObject;
 class ResourceRequest;
 class ResourceResponse;
 class StyleChangeReasonForTracing;
@@ -43,7 +43,7 @@ class XMLHttpRequest;
 class InspectorLayoutEvent {
 public:
     static PassRefPtr<TraceEvent::ConvertableToTraceFormat> beginData(FrameView*);
-    static PassRefPtr<TraceEvent::ConvertableToTraceFormat> endData(RenderObject* rootForThisLayout);
+    static PassRefPtr<TraceEvent::ConvertableToTraceFormat> endData(LayoutObject* rootForThisLayout);
 };
 
 class InspectorScheduleStyleInvalidationTrackingEvent {
@@ -110,12 +110,12 @@ private:
 
 class InspectorLayoutInvalidationTrackingEvent {
 public:
-    static PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(const RenderObject*);
+    static PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(const LayoutObject*);
 };
 
 class InspectorPaintInvalidationTrackingEvent {
 public:
-    static PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(const RenderObject* renderer, const RenderObject* paintContainer);
+    static PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(const LayoutObject* renderer, const LayoutObject* paintContainer);
 };
 
 class InspectorSendRequestEvent {
@@ -196,7 +196,7 @@ public:
     static const char ReflectionLayerChanged[];
     static const char NewCompositedLayer[];
 
-    static PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(const RenderLayer*, const char* reason);
+    static PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(const Layer*, const char* reason);
 };
 #define TRACE_LAYER_INVALIDATION(LAYER, REASON) \
     TRACE_EVENT_INSTANT1( \
@@ -207,14 +207,14 @@ public:
 
 class InspectorPaintEvent {
 public:
-    static PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(RenderObject*, const LayoutRect& clipRect, const GraphicsLayer*);
+    static PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(LayoutObject*, const LayoutRect& clipRect, const GraphicsLayer*);
 };
 
 class InspectorPaintImageEvent {
 public:
-    static PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(const RenderImage&);
-    static PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(const RenderObject&, const StyleImage&);
-    static PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(const RenderObject*, const ImageResource&);
+    static PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(const LayoutImage&);
+    static PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(const LayoutObject&, const StyleImage&);
+    static PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(const LayoutObject*, const ImageResource&);
 };
 
 class InspectorCommitLoadEvent {
@@ -229,7 +229,7 @@ public:
 
 class InspectorScrollLayerEvent {
 public:
-    static PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(RenderObject*);
+    static PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(LayoutObject*);
 };
 
 class InspectorUpdateLayerTreeEvent {
@@ -277,9 +277,9 @@ public:
     static PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(const String& sessionId, int workerId, WorkerThread*);
 };
 
-class InspectorTracingStartedInPage {
+class InspectorTracingStartedInFrame {
 public:
-    static PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(const String& sessionId, Page*);
+    static PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(const String& sessionId, LocalFrame*);
 };
 
 class InspectorSetLayerTreeId {
@@ -287,9 +287,14 @@ public:
     static PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(const String& sessionId, int layerTreeId);
 };
 
-class InspectorBeginFrameEvent {
+class InspectorAnimationEvent {
 public:
-    static PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(int frameId);
+    static PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(const AnimationPlayer&);
+};
+
+class InspectorAnimationStateEvent {
+public:
+    static PassRefPtr<TraceEvent::ConvertableToTraceFormat> data(const AnimationPlayer&);
 };
 
 } // namespace blink

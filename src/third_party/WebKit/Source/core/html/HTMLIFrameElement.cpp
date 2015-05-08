@@ -28,9 +28,10 @@
 #include "bindings/core/v8/V8DOMActivityLogger.h"
 #include "core/CSSPropertyNames.h"
 #include "core/HTMLNames.h"
+#include "core/frame/UseCounter.h"
 #include "core/html/HTMLDocument.h"
 #include "core/inspector/ConsoleMessage.h"
-#include "core/rendering/RenderIFrame.h"
+#include "core/layout/LayoutIFrame.h"
 
 namespace blink {
 
@@ -100,19 +101,20 @@ void HTMLIFrameElement::parseAttribute(const QualifiedName& name, const AtomicSt
         setSandboxFlags(value.isNull() ? SandboxNone : parseSandboxPolicy(value, invalidTokens));
         if (!invalidTokens.isNull())
             document().addConsoleMessage(ConsoleMessage::create(OtherMessageSource, ErrorMessageLevel, "Error while parsing the 'sandbox' attribute: " + invalidTokens));
+        UseCounter::count(document(), UseCounter::SandboxViaIFrame);
     } else {
         HTMLFrameElementBase::parseAttribute(name, value);
     }
 }
 
-bool HTMLIFrameElement::rendererIsNeeded(const RenderStyle& style)
+bool HTMLIFrameElement::rendererIsNeeded(const LayoutStyle& style)
 {
     return isURLAllowed() && HTMLElement::rendererIsNeeded(style);
 }
 
-RenderObject* HTMLIFrameElement::createRenderer(RenderStyle*)
+LayoutObject* HTMLIFrameElement::createRenderer(const LayoutStyle&)
 {
-    return new RenderIFrame(this);
+    return new LayoutIFrame(this);
 }
 
 Node::InsertionNotificationRequest HTMLIFrameElement::insertedInto(ContainerNode* insertionPoint)

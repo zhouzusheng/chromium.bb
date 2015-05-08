@@ -149,12 +149,14 @@ function nullifyObjectProto(obj)
 }
 
 /**
- * @param {*} obj
+ * @param {number|string} obj
  * @return {boolean}
  */
 function isUInt32(obj)
 {
-    return typeof obj === "number" && obj >>> 0 === obj && (obj > 0 || 1 / obj > 0);
+    if (typeof obj === "number")
+        return obj >>> 0 === obj && (obj > 0 || 1 / obj > 0);
+    return "" + (obj >>> 0) === obj;
 }
 
 /**
@@ -167,8 +169,10 @@ function isArrayLike(obj)
     if (typeof obj !== "object")
         return false;
     try {
-        if (typeof obj.splice === "function")
-            return isUInt32(obj.length);
+        if (typeof obj.splice === "function") {
+            var len = obj.length;
+            return typeof len === "number" && isUInt32(len);
+        }
     } catch (e) {
     }
     return false;
@@ -200,10 +204,6 @@ function isSymbol(obj)
  */
 var InjectedScript = function()
 {
-    /** @type {number} */
-    this._lastBoundObjectId = 1;
-    /** @type {!Object.<number, (!Object|symbol)>} */
-    this._idToWrappedObject = { __proto__: null };
     /** @type {!Object.<number, string>} */
     this._idToObjectGroupName = { __proto__: null };
     /** @type {!Object.<string, !Array.<number>>} */
@@ -341,8 +341,7 @@ InjectedScript.prototype = {
      */
     _bind: function(object, objectGroupName)
     {
-        var id = this._lastBoundObjectId++;
-        this._idToWrappedObject[id] = object;
+        var id = InjectedScriptHost.bind(object);
         var objectId = "{\"injectedScriptId\":" + injectedScriptId + ",\"id\":" + id + "}";
         if (objectGroupName) {
             var group = this._objectGroups[objectGroupName];
@@ -421,11 +420,11 @@ InjectedScript.prototype = {
         if (!this._isDefined(object) || isSymbol(object))
             return false;
         object = /** @type {!Object} */ (object);
-        var descriptors = this._propertyDescriptors(object, ownProperties, accessorPropertiesOnly);
+        var descriptors = [];
+        var iter = this._propertyDescriptors(object, ownProperties, accessorPropertiesOnly);
 
         // Go over properties, wrap object values.
-        for (var i = 0; i < descriptors.length; ++i) {
-            var descriptor = descriptors[i];
+        for (var descriptor of iter) {
             if ("get" in descriptor)
                 descriptor.get = this._wrapObject(descriptor.get, objectGroupName);
             if ("set" in descriptor)
@@ -438,6 +437,7 @@ InjectedScript.prototype = {
                 descriptor.enumerable = false;
             if ("symbol" in descriptor)
                 descriptor.symbol = this._wrapObject(descriptor.symbol, objectGroupName);
+            push(descriptors, descriptor);
         }
         return descriptors;
     },
@@ -549,7 +549,7 @@ InjectedScript.prototype = {
      */
     _releaseObject: function(id)
     {
-        delete this._idToWrappedObject[id];
+        InjectedScriptHost.unbind(id);
         delete this._idToObjectGroupName[id];
     },
 
@@ -557,21 +557,19 @@ InjectedScript.prototype = {
      * @param {!Object} object
      * @param {boolean=} ownProperties
      * @param {boolean=} accessorPropertiesOnly
-     * @return {!Array.<!Object>}
+     * @param {?Array.<string>=} propertyNamesOnly
      */
-    _propertyDescriptors: function(object, ownProperties, accessorPropertiesOnly)
+    _propertyDescriptors: function*(object, ownProperties, accessorPropertiesOnly, propertyNamesOnly)
     {
-        var descriptors = [];
         var propertyProcessed = { __proto__: null };
 
         /**
          * @param {?Object} o
-         * @param {!Array.<string|symbol>} properties
+         * @param {!Iterator.<string|symbol>|!Array.<string|symbol>} properties
          */
-        function process(o, properties)
+        function* process(o, properties)
         {
-            for (var i = 0; i < properties.length; ++i) {
-                var property = properties[i];
+            for (var property of properties) {
                 if (propertyProcessed[property])
                     continue;
 
@@ -593,7 +591,7 @@ InjectedScript.prototype = {
                             descriptor = { name: name, value: o[property], writable: false, configurable: false, enumerable: false, __proto__: null };
                             if (o === object)
                                 descriptor.isOwn = true;
-                            push(descriptors, descriptor);
+                            yield descriptor;
                         } catch (e) {
                             // Silent catch.
                         }
@@ -612,25 +610,63 @@ InjectedScript.prototype = {
                     descriptor.isOwn = true;
                 if (isSymbol(property))
                     descriptor.symbol = property;
-                push(descriptors, descriptor);
+                yield descriptor;
             }
+        }
+
+        /**
+         * @param {number} length
+         */
+        function* arrayIndexNames(length)
+        {
+            for (var i = 0; i < length; ++i)
+                yield "" + i;
+        }
+
+        if (propertyNamesOnly) {
+            for (var i = 0; i < propertyNamesOnly.length; ++i) {
+                var name = propertyNamesOnly[i];
+                for (var o = object; this._isDefined(o); o = o.__proto__) {
+                    if (InjectedScriptHost.suppressWarningsAndCallFunction(Object.prototype.hasOwnProperty, o, [name])) {
+                        for (var descriptor of process(o, [name]))
+                            yield descriptor;
+                        break;
+                    }
+                    if (ownProperties)
+                        break;
+                }
+            }
+            return;
+        }
+
+        var skipGetOwnPropertyNames;
+        try {
+            skipGetOwnPropertyNames = InjectedScriptHost.isTypedArray(object) && object.length > 500000;
+        } catch (e) {
         }
 
         for (var o = object; this._isDefined(o); o = o.__proto__) {
-            // First call Object.keys() to enforce ordering of the property descriptors.
-            process(o, Object.keys(/** @type {!Object} */ (o)));
-            process(o, Object.getOwnPropertyNames(/** @type {!Object} */ (o)));
-            if (Object.getOwnPropertySymbols)
-                process(o, Object.getOwnPropertySymbols(/** @type {!Object} */ (o)));
-
+            if (skipGetOwnPropertyNames && o === object) {
+                // Avoid OOM crashes from getting all own property names of a large TypedArray.
+                for (var descriptor of process(o, arrayIndexNames(o.length)))
+                    yield descriptor;
+            } else {
+                // First call Object.keys() to enforce ordering of the property descriptors.
+                for (var descriptor of process(o, Object.keys(/** @type {!Object} */ (o))))
+                    yield descriptor;
+                for (var descriptor of process(o, Object.getOwnPropertyNames(/** @type {!Object} */ (o))))
+                    yield descriptor;
+            }
+            if (Object.getOwnPropertySymbols) {
+                for (var descriptor of process(o, Object.getOwnPropertySymbols(/** @type {!Object} */ (o))))
+                    yield descriptor;
+            }
             if (ownProperties) {
                 if (object.__proto__ && !accessorPropertiesOnly)
-                    push(descriptors, { name: "__proto__", value: object.__proto__, writable: true, configurable: true, enumerable: false, isOwn: true, __proto__: null });
+                    yield { name: "__proto__", value: object.__proto__, writable: true, configurable: true, enumerable: false, isOwn: true, __proto__: null };
                 break;
             }
         }
-
-        return descriptors;
     },
 
     /**
@@ -705,7 +741,7 @@ InjectedScript.prototype = {
             return this._createThrownValue(e, objectGroup, false);
         } finally {
             try {
-                delete inspectedWindow["__customFormatterAPI"];
+                delete inspectedWindow["__remoteObjectAPI"];
             } catch(e) {
             }
         }
@@ -1006,7 +1042,7 @@ InjectedScript.prototype = {
      */
     _objectForId: function(objectId)
     {
-        return objectId.injectedScriptId === injectedScriptId ? this._idToWrappedObject[objectId.id] : void 0;
+        return objectId.injectedScriptId === injectedScriptId ? /** @type{!Object|symbol|undefined} */ (InjectedScriptHost.objectForId(objectId.id)) : void 0;
     },
 
     /**
@@ -1307,18 +1343,7 @@ InjectedScript.RemoteObject.prototype = {
         };
 
         try {
-            var descriptors = injectedScript._propertyDescriptors(object);
-
-            if (firstLevelKeys) {
-                var nameToDescriptors = { __proto__: null };
-                for (var i = 0; i < descriptors.length; ++i) {
-                    var descriptor = descriptors[i];
-                    nameToDescriptors["#" + descriptor.name] = descriptor;
-                }
-                descriptors = [];
-                for (var i = 0; i < firstLevelKeys.length; ++i)
-                    descriptors[i] = nameToDescriptors["#" + firstLevelKeys[i]];
-            }
+            var descriptors = injectedScript._propertyDescriptors(object, undefined, undefined, firstLevelKeys);
 
             this._appendPropertyDescriptors(preview, descriptors, propertiesThreshold, secondLevelKeys, isTable);
             if (propertiesThreshold.indexes < 0 || propertiesThreshold.properties < 0)
@@ -1344,31 +1369,29 @@ InjectedScript.RemoteObject.prototype = {
 
     /**
      * @param {!RuntimeAgent.ObjectPreview} preview
-     * @param {!Array.<!Object>} descriptors
+     * @param {!Iterator.<!Object>|!Array.<!Object>} descriptors
      * @param {!Object} propertiesThreshold
      * @param {?Array.<string>=} secondLevelKeys
      * @param {boolean=} isTable
      */
     _appendPropertyDescriptors: function(preview, descriptors, propertiesThreshold, secondLevelKeys, isTable)
     {
-        for (var i = 0; i < descriptors.length; ++i) {
+        for (var descriptor of descriptors) {
             if (propertiesThreshold.indexes < 0 || propertiesThreshold.properties < 0)
                 break;
-
-            var descriptor = descriptors[i];
             if (!descriptor)
                 continue;
             if (descriptor.wasThrown) {
                 preview.lossless = false;
                 continue;
             }
-            if (!descriptor.enumerable && !descriptor.isOwn)
-                continue;
 
             var name = descriptor.name;
             if (name === "__proto__")
                 continue;
             if (this.subtype === "array" && name === "length")
+                continue;
+            if (!descriptor.enumerable && !descriptor.isOwn && !(this.subtype === "array" && isUInt32(name)))
                 continue;
 
             if (!("value" in descriptor)) {
@@ -1900,7 +1923,7 @@ CommandLineAPIImpl.prototype = {
     _normalizeEventTypes: function(types)
     {
         if (typeof types === "undefined")
-            types = ["mouse", "key", "touch", "control", "load", "unload", "abort", "error", "select", "change", "submit", "reset", "focus", "blur", "resize", "scroll", "search", "devicemotion", "deviceorientation"];
+            types = ["mouse", "key", "touch", "control", "load", "unload", "abort", "error", "select", "input", "change", "submit", "reset", "focus", "blur", "resize", "scroll", "search", "devicemotion", "deviceorientation"];
         else if (typeof types === "string")
             types = [types];
 
@@ -1913,7 +1936,7 @@ CommandLineAPIImpl.prototype = {
             else if (types[i] === "touch")
                 push(result, "touchstart", "touchmove", "touchend", "touchcancel");
             else if (types[i] === "control")
-                push(result, "resize", "scroll", "zoom", "focus", "blur", "select", "change", "submit", "reset");
+                push(result, "resize", "scroll", "zoom", "focus", "blur", "select", "input", "change", "submit", "reset");
             else
                 push(result, types[i]);
         }

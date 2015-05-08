@@ -70,10 +70,10 @@
 #include "core/inspector/InspectorPageAgent.h"
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InstrumentingAgents.h"
+#include "core/layout/HitTestResult.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/page/FrameTree.h"
 #include "core/page/Page.h"
-#include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderView.h"
 #include "core/xml/DocumentXPathEvaluator.h"
 #include "core/xml/XPathResult.h"
@@ -189,7 +189,7 @@ public:
     void scheduleContentDistributionRevalidationFor(Element*);
     void reset() { m_timer.stop(); }
     void onTimer(Timer<InspectorRevalidateDOMTask>*);
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     RawPtrWillBeMember<InspectorDOMAgent> m_domAgent;
@@ -236,7 +236,7 @@ void InspectorRevalidateDOMTask::onTimer(Timer<InspectorRevalidateDOMTask>*)
     m_contentDistributionInvalidatedElements.clear();
 }
 
-void InspectorRevalidateDOMTask::trace(Visitor* visitor)
+DEFINE_TRACE(InspectorRevalidateDOMTask)
 {
     visitor->trace(m_domAgent);
 #if ENABLE(OILPAN)
@@ -336,7 +336,7 @@ void InspectorDOMAgent::setFrontend(InspectorFrontend* frontend)
 
     m_frontend = frontend->dom();
     m_instrumentingAgents->setInspectorDOMAgent(this);
-    m_document = m_pageAgent->mainFrame()->document();
+    m_document = m_pageAgent->inspectedFrame()->document();
 }
 
 void InspectorDOMAgent::clearFrontend()
@@ -511,7 +511,7 @@ Element* InspectorDOMAgent::assertElement(ErrorString* errorString, int nodeId)
     return toElement(node);
 }
 
-static ShadowRoot* userAgentShadowRoot(Node* node)
+static ShadowRoot* closedShadowRoot(Node* node)
 {
     if (!node || !node->isInShadowTree())
         return nullptr;
@@ -522,7 +522,7 @@ static ShadowRoot* userAgentShadowRoot(Node* node)
     ASSERT(candidate);
     ShadowRoot* shadowRoot = toShadowRoot(candidate);
 
-    return shadowRoot->type() == ShadowRoot::UserAgentShadowRoot ? shadowRoot : nullptr;
+    return shadowRoot->type() == ShadowRoot::ClosedShadowRoot ? shadowRoot : nullptr;
 }
 
 Node* InspectorDOMAgent::assertEditableNode(ErrorString* errorString, int nodeId)
@@ -536,7 +536,7 @@ Node* InspectorDOMAgent::assertEditableNode(ErrorString* errorString, int nodeId
             *errorString = "Cannot edit shadow roots";
             return nullptr;
         }
-        if (userAgentShadowRoot(node)) {
+        if (closedShadowRoot(node)) {
             *errorString = "Cannot edit nodes from user-agent shadow trees";
             return nullptr;
         }
@@ -568,7 +568,7 @@ Element* InspectorDOMAgent::assertEditableElement(ErrorString* errorString, int 
     if (!element)
         return nullptr;
 
-    if (element->isInShadowTree() && userAgentShadowRoot(element)) {
+    if (element->isInShadowTree() && closedShadowRoot(element)) {
         *errorString = "Cannot edit elements from user-agent shadow trees";
         return nullptr;
     }
@@ -585,7 +585,7 @@ void InspectorDOMAgent::innerEnable()
 {
     m_state->setBoolean(DOMAgentState::domAgentEnabled, true);
     m_document = nullptr;
-    setDocument(m_pageAgent->mainFrame()->document());
+    setDocument(m_pageAgent->inspectedFrame()->document());
     if (m_listener)
         m_listener->domAgentWasEnabled();
 }
@@ -1110,7 +1110,7 @@ static Node* nextNodeWithShadowDOMInMind(const Node& current, const Node* stayWi
         if (elementShadow) {
             ShadowRoot* shadowRoot = elementShadow->youngestShadowRoot();
             if (shadowRoot) {
-                if (shadowRoot->type() == ShadowRoot::AuthorShadowRoot || includeUserAgentShadowDOM)
+                if (shadowRoot->type() == ShadowRoot::OpenShadowRoot || includeUserAgentShadowDOM)
                     return shadowRoot;
             }
         }
@@ -1348,11 +1348,11 @@ bool InspectorDOMAgent::handleMouseMove(LocalFrame* frame, const PlatformMouseEv
         return true;
     Node* node = hoveredNodeForEvent(frame, event, event.shiftKey());
 
-    // Do not highlight within UA shadow root unless requested.
+    // Do not highlight within closed shadow root unless requested.
     if (m_searchingForNode != SearchingForUAShadow) {
-        ShadowRoot* uaShadowRoot = userAgentShadowRoot(node);
-        if (uaShadowRoot)
-            node = uaShadowRoot->host();
+        ShadowRoot* shadowRoot = closedShadowRoot(node);
+        if (shadowRoot)
+            node = shadowRoot->host();
     }
 
     // Shadow roots don't have boxes - use host element instead.
@@ -1688,9 +1688,9 @@ static String documentBaseURLString(Document* document)
 static TypeBuilder::DOM::ShadowRootType::Enum shadowRootType(ShadowRoot* shadowRoot)
 {
     switch (shadowRoot->type()) {
-    case ShadowRoot::UserAgentShadowRoot:
+    case ShadowRoot::ClosedShadowRoot:
         return TypeBuilder::DOM::ShadowRootType::User_agent;
-    case ShadowRoot::AuthorShadowRoot:
+    case ShadowRoot::OpenShadowRoot:
         return TypeBuilder::DOM::ShadowRootType::Author;
     }
     ASSERT_NOT_REACHED();
@@ -1845,11 +1845,10 @@ PassRefPtr<TypeBuilder::Array<TypeBuilder::DOM::Node> > InspectorDOMAgent::build
 PassRefPtr<TypeBuilder::DOM::EventListener> InspectorDOMAgent::buildObjectForEventListener(const RegisteredEventListener& registeredEventListener, const AtomicString& eventType, Node* node, const String* objectGroupId)
 {
     RefPtr<EventListener> eventListener = registeredEventListener.listener;
-    String sourceName;
     String scriptId;
     int lineNumber;
     int columnNumber;
-    if (!eventListenerHandlerLocation(&node->document(), eventListener.get(), sourceName, scriptId, lineNumber, columnNumber))
+    if (!eventListenerHandlerLocation(&node->document(), eventListener.get(), scriptId, lineNumber, columnNumber))
         return nullptr;
 
     Document& document = node->document();
@@ -1862,7 +1861,6 @@ PassRefPtr<TypeBuilder::DOM::EventListener> InspectorDOMAgent::buildObjectForEve
         .setUseCapture(registeredEventListener.useCapture)
         .setIsAttribute(eventListener->isAttribute())
         .setNodeId(pushNodePathToFrontend(node))
-        .setHandlerBody(eventListenerHandlerBody(&document, eventListener.get()))
         .setLocation(location);
     if (objectGroupId) {
         ScriptValue functionValue = eventListenerHandler(&document, eventListener.get());
@@ -1880,8 +1878,6 @@ PassRefPtr<TypeBuilder::DOM::EventListener> InspectorDOMAgent::buildObjectForEve
             }
         }
     }
-    if (!sourceName.isEmpty())
-        value->setSourceName(sourceName);
     return value.release();
 }
 
@@ -1952,7 +1948,7 @@ bool InspectorDOMAgent::isWhitespace(Node* node)
 
 void InspectorDOMAgent::domContentLoadedEventFired(LocalFrame* frame)
 {
-    if (!frame->isMainFrame())
+    if (frame != m_pageAgent->inspectedFrame())
         return;
 
     // Re-push document once it is loaded.
@@ -1982,20 +1978,15 @@ void InspectorDOMAgent::invalidateFrameOwnerElement(LocalFrame* frame)
     m_frontend->childNodeInserted(parentId, prevId, value.release());
 }
 
-void InspectorDOMAgent::didCommitLoad(LocalFrame* frame, DocumentLoader* loader)
+void InspectorDOMAgent::didCommitLoad(LocalFrame*, DocumentLoader* loader)
 {
-    // FIXME: If "frame" is always guarenteed to be in the same Page as loader->frame()
-    // then all we need to check here is loader->frame()->isMainFrame()
-    // and we don't need "frame" at all.
-    if (!frame->page()->mainFrame()->isLocalFrame())
-        return;
-    LocalFrame* mainFrame = frame->page()->deprecatedLocalMainFrame();
-    if (loader->frame() != mainFrame) {
+    LocalFrame* inspectedFrame = m_pageAgent->inspectedFrame();
+    if (loader->frame() != inspectedFrame) {
         invalidateFrameOwnerElement(loader->frame());
         return;
     }
 
-    setDocument(mainFrame->document());
+    setDocument(inspectedFrame->document());
 }
 
 void InspectorDOMAgent::didInsertDOMNode(Node* node)
@@ -2186,9 +2177,7 @@ void InspectorDOMAgent::frameDocumentUpdated(LocalFrame* frame)
     if (!document)
         return;
 
-    Page* page = frame->page();
-    ASSERT(page);
-    if (frame != page->mainFrame())
+    if (frame != m_pageAgent->inspectedFrame())
         return;
 
     // Only update the main frame document, nested frame document updates are not required
@@ -2232,7 +2221,7 @@ static ShadowRoot* shadowRootForNode(Node* node, const String& type)
     if (type == "a")
         return toElement(node)->shadowRoot();
     if (type == "u")
-        return toElement(node)->userAgentShadowRoot();
+        return toElement(node)->closedShadowRoot();
     return nullptr;
 }
 
@@ -2294,7 +2283,7 @@ void InspectorDOMAgent::pushNodesByBackendIdsToFrontend(ErrorString* errorString
         }
 
         Node* node = InspectorNodeIds::nodeForId(backendNodeId);
-        if (node && node->document().page() == m_pageAgent->page())
+        if (node && node->document().frame()->instrumentingAgents() == m_pageAgent->inspectedFrame()->instrumentingAgents())
             result->addItem(pushNodePathToFrontend(node));
         else
             result->addItem(0);
@@ -2306,7 +2295,7 @@ void InspectorDOMAgent::getRelayoutBoundary(ErrorString* errorString, int nodeId
     Node* node = assertNode(errorString, nodeId);
     if (!node)
         return;
-    RenderObject* renderer = node->renderer();
+    LayoutObject* renderer = node->renderer();
     if (!renderer) {
         *errorString = "No renderer for node, perhaps orphan or hidden node";
         return;
@@ -2315,6 +2304,14 @@ void InspectorDOMAgent::getRelayoutBoundary(ErrorString* errorString, int nodeId
         renderer = renderer->container();
     Node* resultNode = renderer ? renderer->generatingNode() : node->ownerDocument();
     *relayoutBoundaryNodeId = pushNodePathToFrontend(resultNode);
+}
+
+void InspectorDOMAgent::getHighlightObjectForTest(ErrorString* errorString, int nodeId, RefPtr<JSONObject>& result)
+{
+    Node* node = assertNode(errorString, nodeId);
+    if (!node)
+        return;
+    result = m_overlay->highlightJSONForNode(node);
 }
 
 PassRefPtr<TypeBuilder::Runtime::RemoteObject> InspectorDOMAgent::resolveNode(Node* node, const String& objectGroup)
@@ -2341,7 +2338,7 @@ bool InspectorDOMAgent::pushDocumentUponHandlelessOperation(ErrorString* errorSt
     return true;
 }
 
-void InspectorDOMAgent::trace(Visitor* visitor)
+DEFINE_TRACE(InspectorDOMAgent)
 {
     visitor->trace(m_domListener);
     visitor->trace(m_pageAgent);

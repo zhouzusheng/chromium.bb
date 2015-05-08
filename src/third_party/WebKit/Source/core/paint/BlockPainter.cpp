@@ -9,6 +9,8 @@
 #include "core/editing/FrameSelection.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
+#include "core/layout/Layer.h"
+#include "core/layout/PaintInfo.h"
 #include "core/page/Page.h"
 #include "core/paint/BoxClipper.h"
 #include "core/paint/BoxPainter.h"
@@ -16,21 +18,23 @@
 #include "core/paint/InlinePainter.h"
 #include "core/paint/LineBoxListPainter.h"
 #include "core/paint/RenderDrawingRecorder.h"
+#include "core/paint/ScopeRecorder.h"
+#include "core/paint/ScrollRecorder.h"
 #include "core/paint/ScrollableAreaPainter.h"
-#include "core/rendering/PaintInfo.h"
+#include "core/paint/SubtreeRecorder.h"
 #include "core/rendering/RenderBlock.h"
 #include "core/rendering/RenderFlexibleBox.h"
 #include "core/rendering/RenderInline.h"
-#include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
 #include "platform/geometry/LayoutPoint.h"
 #include "platform/geometry/LayoutRect.h"
-#include "platform/graphics/GraphicsContextStateSaver.h"
+#include "platform/graphics/paint/ClipRecorder.h"
 
 namespace blink {
 
 void BlockPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
+    SubtreeRecorder subtreeRecorder(paintInfo.context, m_renderBlock, paintInfo.phase);
     PaintInfo localPaintInfo(paintInfo);
 
     ANNOTATE_GRAPHICS_CONTEXT(localPaintInfo, &m_renderBlock);
@@ -49,6 +53,8 @@ void BlockPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOff
         if (!overflowBox.intersects(localPaintInfo.rect))
             return;
     }
+
+    subtreeRecorder.begin();
 
     // There are some cases where not all clipped visual overflow is accounted for.
     // FIXME: reduce the number of such cases.
@@ -94,26 +100,26 @@ void BlockPainter::paintOverflowControlsIfNeeded(const PaintInfo& paintInfo, con
 void BlockPainter::paintChildren(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
     for (RenderBox* child = m_renderBlock.firstChildBox(); child; child = child->nextSiblingBox())
-        paintChild(child, paintInfo, paintOffset);
+        paintChild(*child, paintInfo, paintOffset);
 }
 
-void BlockPainter::paintChild(RenderBox* child, const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void BlockPainter::paintChild(RenderBox& child, const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
-    LayoutPoint childPoint = m_renderBlock.flipForWritingModeForChild(child, paintOffset);
-    if (!child->hasSelfPaintingLayer() && !child->isFloating())
-        child->paint(paintInfo, childPoint);
+    LayoutPoint childPoint = m_renderBlock.flipForWritingModeForChild(&child, paintOffset);
+    if (!child.hasSelfPaintingLayer() && !child.isFloating() && !child.isColumnSpanAll())
+        child.paint(paintInfo, childPoint);
 }
 
 void BlockPainter::paintChildrenOfFlexibleBox(RenderFlexibleBox& renderFlexibleBox, const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
     for (RenderBox* child = renderFlexibleBox.orderIterator().first(); child; child = renderFlexibleBox.orderIterator().next())
-        BlockPainter(renderFlexibleBox).paintChildAsInlineBlock(child, paintInfo, paintOffset);
+        BlockPainter(renderFlexibleBox).paintChildAsInlineBlock(*child, paintInfo, paintOffset);
 }
 
-void BlockPainter::paintChildAsInlineBlock(RenderBox* child, const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void BlockPainter::paintChildAsInlineBlock(RenderBox& child, const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
-    LayoutPoint childPoint = m_renderBlock.flipForWritingModeForChild(child, paintOffset);
-    if (!child->hasSelfPaintingLayer() && !child->isFloating())
+    LayoutPoint childPoint = m_renderBlock.flipForWritingModeForChild(&child, paintOffset);
+    if (!child.hasSelfPaintingLayer() && !child.isFloating())
         paintAsInlineBlock(child, paintInfo, childPoint);
 }
 
@@ -126,10 +132,10 @@ void BlockPainter::paintInlineBox(InlineBox& inlineBox, const PaintInfo& paintIn
     if (inlineBox.parent()->renderer().style()->isFlippedBlocksWritingMode()) // Faster than calling containingBlock().
         childPoint = inlineBox.renderer().containingBlock()->flipForWritingModeForChild(&toRenderBox(inlineBox.renderer()), childPoint);
 
-    paintAsInlineBlock(&inlineBox.renderer(), paintInfo, childPoint);
+    paintAsInlineBlock(inlineBox.renderer(), paintInfo, childPoint);
 }
 
-void BlockPainter::paintAsInlineBlock(RenderObject* renderer, const PaintInfo& paintInfo, const LayoutPoint& childPoint)
+void BlockPainter::paintAsInlineBlock(LayoutObject& renderer, const PaintInfo& paintInfo, const LayoutPoint& childPoint)
 {
     if (paintInfo.phase != PaintPhaseForeground && paintInfo.phase != PaintPhaseSelection)
         return;
@@ -141,16 +147,16 @@ void BlockPainter::paintAsInlineBlock(RenderObject* renderer, const PaintInfo& p
     bool preservePhase = paintInfo.phase == PaintPhaseSelection || paintInfo.phase == PaintPhaseTextClip;
     PaintInfo info(paintInfo);
     info.phase = preservePhase ? paintInfo.phase : PaintPhaseBlockBackground;
-    renderer->paint(info, childPoint);
+    renderer.paint(info, childPoint);
     if (!preservePhase) {
         info.phase = PaintPhaseChildBlockBackgrounds;
-        renderer->paint(info, childPoint);
+        renderer.paint(info, childPoint);
         info.phase = PaintPhaseFloat;
-        renderer->paint(info, childPoint);
+        renderer.paint(info, childPoint);
         info.phase = PaintPhaseForeground;
-        renderer->paint(info, childPoint);
+        renderer.paint(info, childPoint);
         info.phase = PaintPhaseOutline;
-        renderer->paint(info, childPoint);
+        renderer.paint(info, childPoint);
     }
 }
 
@@ -158,10 +164,13 @@ void BlockPainter::paintObject(const PaintInfo& paintInfo, const LayoutPoint& pa
 {
     PaintPhase paintPhase = paintInfo.phase;
 
-    // Adjust our painting position if we're inside a scrolled layer (e.g., an overflow:auto div).
     LayoutPoint scrolledOffset = paintOffset;
-    if (m_renderBlock.hasOverflowClip())
-        scrolledOffset.move(-m_renderBlock.scrolledContentOffset());
+    if (!RuntimeEnabledFeatures::slimmingPaintCompositorLayerizationEnabled()) {
+        // Adjust our painting position if we're inside a scrolled layer (e.g., an overflow:auto div).
+        // With compositor layerization, a scroll display item is used instead.
+        if (m_renderBlock.hasOverflowClip())
+            scrolledOffset.move(-m_renderBlock.scrolledContentOffset());
+    }
 
     LayoutRect bounds;
     if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
@@ -169,14 +178,10 @@ void BlockPainter::paintObject(const PaintInfo& paintInfo, const LayoutPoint& pa
         bounds.moveBy(scrolledOffset);
     }
 
-    if ((paintPhase == PaintPhaseBlockBackground || paintPhase == PaintPhaseChildBlockBackground) && m_renderBlock.style()->visibility() == VISIBLE) {
-        if (m_renderBlock.hasBoxDecorationBackground())
-            m_renderBlock.paintBoxDecorationBackground(paintInfo, paintOffset);
-        if (m_renderBlock.hasColumns() && !paintInfo.paintRootBackgroundOnly()) {
-            DrawingRecorder drawingRecorder(paintInfo.context, m_renderBlock.displayItemClient(), DisplayItem::ColumnRules, bounds);
-            paintColumnRules(paintInfo, scrolledOffset);
-        }
-    }
+    if ((paintPhase == PaintPhaseBlockBackground || paintPhase == PaintPhaseChildBlockBackground)
+        && m_renderBlock.style()->visibility() == VISIBLE
+        && m_renderBlock.hasBoxDecorationBackground())
+        m_renderBlock.paintBoxDecorationBackground(paintInfo, paintOffset);
 
     if (paintPhase == PaintPhaseMask && m_renderBlock.style()->visibility() == VISIBLE) {
         RenderDrawingRecorder recorder(paintInfo.context, m_renderBlock, paintPhase, bounds);
@@ -192,27 +197,49 @@ void BlockPainter::paintObject(const PaintInfo& paintInfo, const LayoutPoint& pa
         return;
     }
 
-    // We're done. We don't bother painting any children.
-    if (paintPhase == PaintPhaseBlockBackground || paintInfo.paintRootBackgroundOnly())
-        return;
+    {
+        OwnPtr<ScrollRecorder> scrollRecorder;
+        if (RuntimeEnabledFeatures::slimmingPaintCompositorLayerizationEnabled()
+            && m_renderBlock.hasOverflowClip()
+            && m_renderBlock.layer()->scrollsOverflow()) {
+            scrollRecorder = adoptPtr(new ScrollRecorder(
+                paintInfo.context,
+                m_renderBlock.displayItemClient(),
+                paintPhase,
+                m_renderBlock.scrolledContentOffset()));
+        }
 
-    if (paintPhase != PaintPhaseSelfOutline) {
-        if (m_renderBlock.hasColumns())
-            paintColumnContents(paintInfo, scrolledOffset);
-        else
-            paintContents(paintInfo, scrolledOffset);
-    }
+        if ((paintPhase == PaintPhaseBlockBackground || paintPhase == PaintPhaseChildBlockBackground)
+            && m_renderBlock.style()->visibility() == VISIBLE
+            && m_renderBlock.hasColumns()
+            && !paintInfo.paintRootBackgroundOnly()) {
+            RenderDrawingRecorder recorder(paintInfo.context, m_renderBlock, DisplayItem::ColumnRules, bounds);
+            if (!recorder.canUseCachedDrawing())
+                paintColumnRules(paintInfo, scrolledOffset);
+        }
 
-    // FIXME: Make this work with multi column layouts. For now don't fill gaps.
-    bool isPrinting = m_renderBlock.document().printing();
-    if (!isPrinting && !m_renderBlock.hasColumns())
-        m_renderBlock.paintSelection(paintInfo, scrolledOffset); // Fill in gaps in selection on lines and between blocks.
+        // We're done. We don't bother painting any children.
+        if (paintPhase == PaintPhaseBlockBackground || paintInfo.paintRootBackgroundOnly())
+            return;
 
-    if (paintPhase == PaintPhaseFloat || paintPhase == PaintPhaseSelection || paintPhase == PaintPhaseTextClip) {
-        if (m_renderBlock.hasColumns())
-            paintColumnContents(paintInfo, scrolledOffset, true);
-        else
-            m_renderBlock.paintFloats(paintInfo, scrolledOffset, paintPhase == PaintPhaseSelection || paintPhase == PaintPhaseTextClip);
+        if (paintPhase != PaintPhaseSelfOutline) {
+            if (m_renderBlock.hasColumns())
+                paintColumnContents(paintInfo, scrolledOffset);
+            else
+                paintContents(paintInfo, scrolledOffset);
+        }
+
+        // FIXME: Make this work with multi column layouts. For now don't fill gaps.
+        bool isPrinting = m_renderBlock.document().printing();
+        if (!isPrinting && !m_renderBlock.hasColumns())
+            m_renderBlock.paintSelection(paintInfo, scrolledOffset); // Fill in gaps in selection on lines and between blocks.
+
+        if (paintPhase == PaintPhaseFloat || paintPhase == PaintPhaseSelection || paintPhase == PaintPhaseTextClip) {
+            if (m_renderBlock.hasColumns())
+                paintColumnContents(paintInfo, scrolledOffset, true);
+            else
+                m_renderBlock.paintFloats(paintInfo, scrolledOffset, paintPhase == PaintPhaseSelection || paintPhase == PaintPhaseTextClip);
+        }
     }
 
     if ((paintPhase == PaintPhaseOutline || paintPhase == PaintPhaseSelfOutline) && m_renderBlock.style()->hasOutline() && m_renderBlock.style()->visibility() == VISIBLE) {
@@ -228,7 +255,7 @@ void BlockPainter::paintObject(const PaintInfo& paintInfo, const LayoutPoint& pa
     // If the caret's node's render object's containing block is this block, and the paint action is PaintPhaseForeground,
     // then paint the caret.
     if (paintPhase == PaintPhaseForeground && hasCaret()) {
-        RenderDrawingRecorder recorder(paintInfo.context, m_renderBlock, PaintPhaseCaret, bounds);
+        RenderDrawingRecorder recorder(paintInfo.context, m_renderBlock, DisplayItem::Caret, bounds);
         if (!recorder.canUseCachedDrawing())
             paintCarets(paintInfo, paintOffset);
     }
@@ -371,14 +398,16 @@ void BlockPainter::paintColumnRules(const PaintInfo& paintInfo, const LayoutPoin
 void BlockPainter::paintColumnContents(const PaintInfo& paintInfo, const LayoutPoint& paintOffset, bool paintingFloats)
 {
     // We need to do multiple passes, breaking up our child painting into strips.
-    GraphicsContext* context = paintInfo.context;
     ColumnInfo* colInfo = m_renderBlock.columnInfo();
     unsigned colCount = m_renderBlock.columnCount(colInfo);
     if (!colCount)
         return;
     LayoutUnit currLogicalTopOffset = 0;
     LayoutUnit colGap = m_renderBlock.columnGap();
+
     for (unsigned i = 0; i < colCount; i++) {
+        ScopeRecorder scopeRecorder(paintInfo.context, m_renderBlock);
+
         // For each rect, we clip to the rect, and then we adjust our coords.
         LayoutRect colRect = m_renderBlock.columnRectAt(colInfo, i);
         m_renderBlock.flipForWritingMode(colRect);
@@ -397,7 +426,6 @@ void BlockPainter::paintColumnContents(const PaintInfo& paintInfo, const LayoutP
         info.rect.intersect(enclosingIntRect(colRect));
 
         if (!info.rect.isEmpty()) {
-            GraphicsContextStateSaver stateSaver(*context);
             LayoutRect clipRect(colRect);
 
             if (i < colCount - 1) {
@@ -410,7 +438,8 @@ void BlockPainter::paintColumnContents(const PaintInfo& paintInfo, const LayoutP
             // like overflow:hidden.
             // FIXME: Content and column rules that extend outside column boxes at the edges of the multi-column element
             // are clipped according to the 'overflow' property.
-            context->clip(enclosingIntRect(clipRect));
+            ClipRecorder clipRecorder(m_renderBlock.displayItemClient(), paintInfo.context,
+                DisplayItem::paintPhaseToClipColumnBoundsType(paintInfo.phase), enclosingIntRect(clipRect));
 
             // Adjust our x and y when painting.
             LayoutPoint adjustedPaintOffset = paintOffset + offset;

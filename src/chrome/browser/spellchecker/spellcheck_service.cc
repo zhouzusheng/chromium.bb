@@ -42,13 +42,6 @@ SpellcheckService::SpellcheckService(content::BrowserContext* context)
   PrefService* prefs = user_prefs::UserPrefs::Get(context);
   pref_change_registrar_.Init(prefs);
 
-  std::string language_code;
-  std::string country_code;
-  chrome::spellcheck_common::GetISOLanguageCountryCodeFromLocale(
-      prefs->GetString(prefs::kSpellCheckDictionary),
-      &language_code,
-      &country_code);
-
   pref_change_registrar_.Add(
       prefs::kAutoSpellCorrectBehavior,
       base::Bind(&SpellcheckService::OnAutoSpellCorrectBehaviorChanged,

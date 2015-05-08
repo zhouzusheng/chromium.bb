@@ -26,10 +26,10 @@
 
 namespace blink {
 
-class CachedUAStyle;
+class AuthorStyleInfo;
 class Element;
 class HTMLElement;
-class RenderStyle;
+class LayoutStyle;
 
 // Certain CSS Properties/Values do not apply to certain elements
 // and the web expects that we expose "adjusted" values when
@@ -41,14 +41,14 @@ public:
         : m_useQuirksModeStyles(useQuirksModeStyles)
     { }
 
-    void adjustRenderStyle(RenderStyle* styleToAdjust, RenderStyle* parentStyle, Element*, const CachedUAStyle*);
+    void adjustLayoutStyle(LayoutStyle& styleToAdjust, const LayoutStyle& parentStyle, Element*, const AuthorStyleInfo&);
 
 private:
-    void adjustStyleForFirstLetter(RenderStyle*);
-    void adjustStyleForDisplay(RenderStyle* styleToAdjust, RenderStyle* parentStyle);
-    void adjustStyleForHTMLElement(RenderStyle* styleToAdjust, RenderStyle* parentStyle, HTMLElement&);
-    void adjustOverflow(RenderStyle* styleToAdjust);
-    void adjustStyleForAlignment(RenderStyle& styleToAdjust, const RenderStyle& parentStyle);
+    void adjustStyleForFirstLetter(LayoutStyle&);
+    void adjustStyleForDisplay(LayoutStyle& styleToAdjust, const LayoutStyle& parentStyle);
+    void adjustStyleForHTMLElement(LayoutStyle& styleToAdjust, const LayoutStyle& parentStyle, HTMLElement&);
+    void adjustOverflow(LayoutStyle& styleToAdjust);
+    void adjustStyleForAlignment(LayoutStyle& styleToAdjust, const LayoutStyle& parentStyle);
 
     bool m_useQuirksModeStyles;
 };

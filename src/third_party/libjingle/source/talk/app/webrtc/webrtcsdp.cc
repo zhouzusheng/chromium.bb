@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2011, Google Inc.
+ * Copyright 2011 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -39,6 +39,7 @@
 #include "talk/media/base/codec.h"
 #include "talk/media/base/constants.h"
 #include "talk/media/base/cryptoparams.h"
+#include "talk/media/base/rtputils.h"
 #include "talk/media/sctp/sctpdataengine.h"
 #include "webrtc/p2p/base/candidate.h"
 #include "webrtc/p2p/base/constants.h"
@@ -261,7 +262,8 @@ static void BuildCandidate(const std::vector<Candidate>& candidates,
                            std::string* message);
 static void BuildIceOptions(const std::vector<std::string>& transport_options,
                             std::string* message);
-
+static bool IsRtp(const std::string& protocol);
+static bool IsDtlsSctp(const std::string& protocol);
 static bool ParseSessionDescription(const std::string& message, size_t* pos,
                                     std::string* session_id,
                                     std::string* session_version,
@@ -586,6 +588,14 @@ static bool GetValueFromString(const std::string& line,
   return true;
 }
 
+static bool GetPayloadTypeFromString(const std::string& line,
+                                     const std::string& s,
+                                     int* payload_type,
+                                     SdpParseError* error) {
+  return GetValueFromString(line, s, payload_type, error) &&
+      cricket::IsValidRtpPayloadType(*payload_type);
+}
+
 void CreateTracksFromSsrcInfos(const SsrcInfoVec& ssrc_infos,
                                StreamParamsVec* tracks) {
   ASSERT(tracks != NULL);
@@ -668,8 +678,9 @@ static int GetCandidatePreferenceFromType(const std::string& type) {
   return preference;
 }
 
-// Get ip and port of the default destination from the |candidates| with
-// the given value of |component_id|.
+// Get ip and port of the default destination from the |candidates| with the
+// given value of |component_id|. The default candidate should be the one most
+// likely to work, typically IPv4 relay.
 // RFC 5245
 // The value of |component_id| currently supported are 1 (RTP) and 2 (RTCP).
 // TODO: Decide the default destination in webrtcsession and
@@ -682,25 +693,35 @@ static void GetDefaultDestination(
   *port = kDummyPort;
   *ip = kDummyAddress;
   int current_preference = kPreferenceUnknown;
+  int current_family = AF_UNSPEC;
   for (std::vector<Candidate>::const_iterator it = candidates.begin();
        it != candidates.end(); ++it) {
     if (it->component() != component_id) {
       continue;
     }
-    const int preference = GetCandidatePreferenceFromType(it->type());
-    // See if this candidate is more preferable then the current one.
-    if (preference <= current_preference) {
+    // Default destination should be UDP only.
+    if (it->protocol() != cricket::UDP_PROTOCOL_NAME) {
       continue;
     }
-    current_preference = preference;
-    *port = it->address().PortAsString();
-    *ip = it->address().ipaddr().ToString();
-    int family = it->address().ipaddr().family();
+    const int preference = GetCandidatePreferenceFromType(it->type());
+    const int family = it->address().ipaddr().family();
+    // See if this candidate is more preferable then the current one if it's the
+    // same family. Or if the current family is IPv4 already so we could safely
+    // ignore all IPv6 ones. WebRTC bug 4269.
+    // http://code.google.com/p/webrtc/issues/detail?id=4269
+    if ((preference <= current_preference && current_family == family) ||
+        (current_family == AF_INET && family == AF_INET6)) {
+      continue;
+    }
     if (family == AF_INET) {
       addr_type->assign(kConnectionIpv4Addrtype);
     } else if (family == AF_INET6) {
       addr_type->assign(kConnectionIpv6Addrtype);
     }
+    current_preference = preference;
+    current_family = family;
+    *port = it->address().PortAsString();
+    *ip = it->address().ipaddr().ToString();
   }
 }
 
@@ -1090,8 +1111,7 @@ bool ParseCandidate(const std::string& message, Candidate* candidate,
     }
   }
 
-  const std::string id;
-  *candidate = Candidate(id, component_id, cricket::ProtoToString(protocol),
+  *candidate = Candidate(component_id, cricket::ProtoToString(protocol),
                          address, priority, username, password, candidate_type,
                          generation, foundation);
   candidate->set_related_address(related_address);
@@ -1181,7 +1201,6 @@ void BuildMediaDescription(const ContentInfo* content_info,
           content_info->description);
   ASSERT(media_desc != NULL);
 
-  bool is_sctp = (media_desc->protocol() == cricket::kMediaProtocolDtlsSctp);
   int sctp_port = cricket::kSctpDefaultPort;
 
   // RFC 4566
@@ -1219,7 +1238,7 @@ void BuildMediaDescription(const ContentInfo* content_info,
   } else if (media_type == cricket::MEDIA_TYPE_DATA) {
     const DataContentDescription* data_desc =
           static_cast<const DataContentDescription*>(media_desc);
-    if (is_sctp) {
+    if (IsDtlsSctp(media_desc->protocol())) {
       fmt.append(" ");
 
       for (std::vector<cricket::DataCodec>::const_iterator it =
@@ -1282,11 +1301,7 @@ void BuildMediaDescription(const ContentInfo* content_info,
   }
 
   // Add the a=rtcp line.
-  bool is_rtp =
-      media_desc->protocol().empty() ||
-      rtc::starts_with(media_desc->protocol().data(),
-                             cricket::kMediaProtocolRtpPrefix);
-  if (is_rtp) {
+  if (IsRtp(media_desc->protocol())) {
     std::string rtcp_line = GetRtcpLine(candidates);
     if (!rtcp_line.empty()) {
       AddLine(rtcp_line, message);
@@ -1347,9 +1362,9 @@ void BuildMediaDescription(const ContentInfo* content_info,
   os << kSdpDelimiterColon << content_info->name;
   AddLine(os.str(), message);
 
-  if (is_sctp) {
+  if (IsDtlsSctp(media_desc->protocol())) {
     BuildSctpContentAttributes(message, sctp_port);
-  } else {
+  } else if (IsRtp(media_desc->protocol())) {
     BuildRtpContentAttributes(media_desc, media_type, message);
   }
 }
@@ -1796,6 +1811,16 @@ void BuildIceOptions(const std::vector<std::string>& transport_options,
   }
 }
 
+bool IsRtp(const std::string& protocol) {
+  return protocol.empty() ||
+      (protocol.find(cricket::kMediaProtocolRtpPrefix) != std::string::npos);
+}
+
+bool IsDtlsSctp(const std::string& protocol) {
+  // This intentionally excludes "SCTP" and "SCTP/DTLS".
+  return protocol.find(cricket::kMediaProtocolDtlsSctp) != std::string::npos;
+}
+
 bool ParseSessionDescription(const std::string& message, size_t* pos,
                              std::string* session_id,
                              std::string* session_version,
@@ -2178,11 +2203,10 @@ bool ParseMediaDescription(const std::string& message,
     }
 
     std::string protocol = fields[2];
-    bool is_sctp = (protocol == cricket::kMediaProtocolDtlsSctp);
 
     // <fmt>
     std::vector<int> codec_preference;
-    if (!is_sctp) {
+    if (IsRtp(protocol)) {
       for (size_t j = 3 ; j < fields.size(); ++j) {
         // TODO(wu): Remove when below bug is fixed.
         // https://bugzilla.mozilla.org/show_bug.cgi?id=996329
@@ -2191,7 +2215,7 @@ bool ParseMediaDescription(const std::string& message,
         }
 
         int pl = 0;
-        if (!GetValueFromString(line, fields[j], &pl, error)) {
+        if (!GetPayloadTypeFromString(line, fields[j], &pl, error)) {
           return false;
         }
         codec_preference.push_back(pl);
@@ -2230,8 +2254,7 @@ bool ParseMediaDescription(const std::string& message,
       content.reset(data_desc);
 
       int p;
-      if (data_desc && protocol == cricket::kMediaProtocolDtlsSctp &&
-          rtc::FromString(fields[3], &p)) {
+      if (data_desc && IsDtlsSctp(protocol) && rtc::FromString(fields[3], &p)) {
         if (!AddSctpDataCodec(data_desc, p))
           return false;
       }
@@ -2255,7 +2278,7 @@ bool ParseMediaDescription(const std::string& message,
       return false;
     }
 
-    if (!is_sctp) {
+    if (IsRtp(protocol)) {
       // Make sure to set the media direction correctly. If the direction is not
       // MD_RECVONLY or Inactive and no streams are parsed,
       // a default MediaStream will be created to prepare for receiving media.
@@ -2278,8 +2301,8 @@ bool ParseMediaDescription(const std::string& message,
     }
     content->set_protocol(protocol);
     desc->AddContent(content_name,
-                     is_sctp ? cricket::NS_JINGLE_DRAFT_SCTP :
-                               cricket::NS_JINGLE_RTP,
+                     IsDtlsSctp(protocol) ? cricket::NS_JINGLE_DRAFT_SCTP :
+                                            cricket::NS_JINGLE_RTP,
                      rejected,
                      content.release());
     // Create TransportInfo with the media level "ice-pwd" and "ice-ufrag".
@@ -2413,10 +2436,9 @@ void UpdateCodec(MediaContentDescription* content_desc, int payload_type,
   AddOrReplaceCodec<T, U>(content_desc, new_codec);
 }
 
-bool PopWildcardCodec(std::vector<cricket::VideoCodec>* codecs,
-                      cricket::VideoCodec* wildcard_codec) {
-  for (std::vector<cricket::VideoCodec>::iterator iter = codecs->begin();
-       iter != codecs->end(); ++iter) {
+template <class T>
+bool PopWildcardCodec(std::vector<T>* codecs, T* wildcard_codec) {
+  for (auto iter = codecs->begin(); iter != codecs->end(); ++iter) {
     if (iter->id == kWildcardPayloadType) {
       *wildcard_codec = *iter;
       codecs->erase(iter);
@@ -2426,18 +2448,17 @@ bool PopWildcardCodec(std::vector<cricket::VideoCodec>* codecs,
   return false;
 }
 
-void UpdateFromWildcardVideoCodecs(VideoContentDescription* video_desc) {
-  std::vector<cricket::VideoCodec> codecs = video_desc->codecs();
-  cricket::VideoCodec wildcard_codec;
+template<class T>
+void UpdateFromWildcardCodecs(cricket::MediaContentDescriptionImpl<T>* desc) {
+  auto codecs = desc->codecs();
+  T wildcard_codec;
   if (!PopWildcardCodec(&codecs, &wildcard_codec)) {
     return;
   }
-  for (std::vector<cricket::VideoCodec>::iterator iter = codecs.begin();
-       iter != codecs.end(); ++iter) {
-    cricket::VideoCodec& codec = *iter;
+  for (auto& codec : codecs) {
     AddFeedbackParameters(wildcard_codec.feedback_params, &codec);
   }
-  video_desc->set_codecs(codecs);
+  desc->set_codecs(codecs);
 }
 
 void AddAudioAttribute(const std::string& name, const std::string& value,
@@ -2484,11 +2505,6 @@ bool ParseContent(const std::string& message,
   SsrcGroupVec ssrc_groups;
   std::string maxptime_as_string;
   std::string ptime_as_string;
-
-  bool is_rtp =
-      protocol.empty() ||
-      rtc::starts_with(protocol.data(),
-                             cricket::kMediaProtocolRtpPrefix);
 
   // Loop until the next m line
   while (!IsLineType(message, kLineTypeMedia, *pos)) {
@@ -2567,7 +2583,7 @@ bool ParseContent(const std::string& message,
       if (!ParseDtlsSetup(line, &(transport->connection_role), error)) {
         return false;
       }
-    } else if (HasAttribute(line, kAttributeSctpPort)) {
+    } else if (IsDtlsSctp(protocol) && HasAttribute(line, kAttributeSctpPort)) {
       int sctp_port;
       if (!ParseSctpPort(line, &sctp_port, error)) {
         return false;
@@ -2576,7 +2592,7 @@ bool ParseContent(const std::string& message,
                             sctp_port)) {
         return false;
       }
-    } else if (is_rtp) {
+    } else if (IsRtp(protocol)) {
       //
       // RTP specific attrubtes
       //
@@ -2686,6 +2702,8 @@ bool ParseContent(const std::string& message,
   if (media_type == cricket::MEDIA_TYPE_AUDIO) {
     AudioContentDescription* audio_desc =
         static_cast<AudioContentDescription*>(media_desc);
+    UpdateFromWildcardCodecs(audio_desc);
+
     // Verify audio codec ensures that no audio codec has been populated with
     // only fmtp.
     if (!VerifyAudioCodecs(audio_desc)) {
@@ -2696,14 +2714,14 @@ bool ParseContent(const std::string& message,
   }
 
   if (media_type == cricket::MEDIA_TYPE_VIDEO) {
-      VideoContentDescription* video_desc =
-          static_cast<VideoContentDescription*>(media_desc);
-      UpdateFromWildcardVideoCodecs(video_desc);
-      // Verify video codec ensures that no video codec has been populated with
-      // only rtcp-fb.
-      if (!VerifyVideoCodecs(video_desc)) {
-        return ParseFailed("Failed to parse video codecs correctly.", error);
-      }
+    VideoContentDescription* video_desc =
+        static_cast<VideoContentDescription*>(media_desc);
+    UpdateFromWildcardCodecs(video_desc);
+    // Verify video codec ensures that no video codec has been populated with
+    // only rtcp-fb.
+    if (!VerifyVideoCodecs(video_desc)) {
+      return ParseFailed("Failed to parse video codecs correctly.", error);
+    }
   }
 
   // RFC 5245
@@ -2914,7 +2932,8 @@ bool ParseRtpmapAttribute(const std::string& line,
     return false;
   }
   int payload_type = 0;
-  if (!GetValueFromString(line, payload_type_value, &payload_type, error)) {
+  if (!GetPayloadTypeFromString(line, payload_type_value, &payload_type,
+                                error)) {
     return false;
   }
 
@@ -3052,7 +3071,7 @@ bool ParseFmtpAttributes(const std::string& line, const MediaType media_type,
   }
 
   int int_payload_type = 0;
-  if (!GetValueFromString(line, payload_type, &int_payload_type, error)) {
+  if (!GetPayloadTypeFromString(line, payload_type, &int_payload_type, error)) {
     return false;
   }
   if (media_type == cricket::MEDIA_TYPE_AUDIO) {
@@ -3084,7 +3103,8 @@ bool ParseRtcpFbAttribute(const std::string& line, const MediaType media_type,
   }
   int payload_type = kWildcardPayloadType;
   if (payload_type_string != "*") {
-    if (!GetValueFromString(line, payload_type_string, &payload_type, error)) {
+    if (!GetPayloadTypeFromString(line, payload_type_string, &payload_type,
+                                  error)) {
       return false;
     }
   }

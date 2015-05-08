@@ -42,19 +42,20 @@
 #include "core/css/MediaValuesDynamic.h"
 #include "core/css/PointerProperties.h"
 #include "core/css/resolver/MediaQueryResult.h"
-#include "core/dom/NodeRenderStyle.h"
+#include "core/dom/NodeLayoutStyle.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/frame/UseCounter.h"
 #include "core/inspector/InspectorInstrumentation.h"
+#include "core/layout/compositing/LayerCompositor.h"
+#include "core/layout/style/LayoutStyle.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/compositing/RenderLayerCompositor.h"
-#include "core/rendering/style/RenderStyle.h"
 #include "platform/PlatformScreen.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/geometry/FloatRect.h"
+#include "public/platform/WebDisplayMode.h"
 #include "wtf/HashMap.h"
 
 namespace blink {
@@ -218,6 +219,27 @@ static bool monochromeMediaFeatureEval(const MediaQueryExpValue& value, MediaFea
     }
 
     return colorMediaFeatureEval(value, op, mediaValues);
+}
+
+static bool displayModeMediaFeatureEval(const MediaQueryExpValue& value, MediaFeaturePrefix, const MediaValues& mediaValues)
+{
+    if (!value.isID)
+        return false;
+
+    WebDisplayMode mode = mediaValues.displayMode();
+    switch (value.id) {
+    case CSSValueFullscreen:
+        return mode == WebDisplayModeFullscreen;
+    case CSSValueStandalone:
+        return mode == WebDisplayModeStandalone;
+    case CSSValueMinimalUi:
+        return mode == WebDisplayModeMinimalUi;
+    case CSSValueBrowser:
+        return mode == WebDisplayModeBrowser;
+    default:
+        ASSERT_NOT_REACHED();
+        return false;
+    }
 }
 
 static bool orientationMediaFeatureEval(const MediaQueryExpValue& value, MediaFeaturePrefix, const MediaValues& mediaValues)

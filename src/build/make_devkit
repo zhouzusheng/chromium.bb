@@ -104,21 +104,22 @@ def copyBin(destDir, version):
     'content_shell.exe',
     'blpv8' + productAppend + '.dll',
     'blpwtk2' + productAppend + '.dll',
-    'blpangle' + productAppend + '.dll',
+    'blpcr_egl' + productAppend + '.dll',
+    'blpcr_glesv2' + productAppend + '.dll',
     'blppdfium' + productAppend + '.dll',
     'ffmpegsumo' + productAppend + '.dll',
-    'd3dcompiler_46.dll',
+    'd3dcompiler_47.dll',
     'icudtl.dat',
-    'libEGL.dll',
-    'libGLESv2.dll',
     'blpwtk2_devtools' + productAppend + '.pak',
     'content_shell.pak',
     'blpv8' + productAppend + '.pdb',
     'blpv8' + productAppend + '.map',
     'blpwtk2' + productAppend + '.pdb',
     'blpwtk2' + productAppend + '.map',
-    'blpangle' + productAppend + '.pdb',
-    'blpangle' + productAppend + '.map',
+    'blpcr_egl' + productAppend + '.pdb',
+    'blpcr_egl' + productAppend + '.map',
+    'blpcr_glesv2' + productAppend + '.pdb',
+    'blpcr_glesv2' + productAppend + '.map',
     'blppdfium' + productAppend + '.pdb',
     'blppdfium' + productAppend + '.map',
     'ffmpegsumo' + productAppend + '.pdb',
@@ -238,18 +239,21 @@ def main(args):
   applyVariableToEnvironment('GYP_DEFINES', 'dont_include_type_in_pdb', '1')
   applyVariableToEnvironment('GYP_DEFINES', 'win_embed_manifest', '1')
 
-  print("Running hooks...")
+  print("Running hooks for ninjaDebug...")
   sys.stdout.flush()
   rc = bbutil.shellExecNoPipe('python src/build/runhooks.py ninjaDebug')
-  if rc != 0:
-    return rc
-  rc = bbutil.shellExecNoPipe('python src/build/gyp_blpwtk2.py ninjaRelease -Dbuildtype=Official')
   if rc != 0:
     return rc
 
   print("Building Debug...")
   sys.stdout.flush()
   rc = bbutil.shellExecNoPipe('ninja.exe -C src/out/Debug blpwtk2_all')
+  if rc != 0:
+    return rc
+
+  print("Running gyp for ninjaRelease...")
+  sys.stdout.flush()
+  rc = bbutil.shellExecNoPipe('python src/build/gyp_blpwtk2.py ninjaRelease -Dbuildtype=Official')
   if rc != 0:
     return rc
 

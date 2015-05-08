@@ -22,12 +22,9 @@
 #include "config.h"
 #include "core/svg/SVGDocumentExtensions.h"
 
-#include "core/XLinkNames.h"
 #include "core/dom/Document.h"
 #include "core/inspector/ConsoleMessage.h"
-#include "core/rendering/RenderView.h"
-#include "core/rendering/svg/SVGResourcesCache.h"
-#include "core/svg/SVGElementRareData.h"
+#include "core/layout/svg/SVGResourcesCache.h"
 #include "core/svg/SVGSVGElement.h"
 #include "core/svg/SVGViewSpec.h"
 #include "core/svg/SVGZoomAndPan.h"
@@ -60,7 +57,7 @@ void SVGDocumentExtensions::removeTimeContainer(SVGSVGElement* element)
     m_timeContainers.remove(element);
 }
 
-void SVGDocumentExtensions::addResource(const AtomicString& id, RenderSVGResourceContainer* resource)
+void SVGDocumentExtensions::addResource(const AtomicString& id, LayoutSVGResourceContainer* resource)
 {
     ASSERT(resource);
 
@@ -79,7 +76,7 @@ void SVGDocumentExtensions::removeResource(const AtomicString& id)
     m_resources.remove(id);
 }
 
-RenderSVGResourceContainer* SVGDocumentExtensions::resourceById(const AtomicString& id) const
+LayoutSVGResourceContainer* SVGDocumentExtensions::resourceById(const AtomicString& id) const
 {
     if (id.isEmpty())
         return 0;
@@ -96,8 +93,8 @@ void SVGDocumentExtensions::serviceOnAnimationFrame(Document& document, double m
 
 void SVGDocumentExtensions::serviceAnimations(double monotonicAnimationStartTime)
 {
-    WillBeHeapVector<RefPtrWillBeMember<SVGSVGElement> > timeContainers;
-    timeContainers.appendRange(m_timeContainers.begin(), m_timeContainers.end());
+    WillBeHeapVector<RefPtrWillBeMember<SVGSVGElement>> timeContainers;
+    copyToVector(m_timeContainers, timeContainers);
     for (const auto& container : timeContainers)
         container->timeContainer()->serviceAnimations(monotonicAnimationStartTime);
 }
@@ -108,8 +105,8 @@ void SVGDocumentExtensions::startAnimations()
     // starting animations for a document will do this "latching"
     // FIXME: We hold a ref pointers to prevent a shadow tree from getting removed out from underneath us.
     // In the future we should refactor the use-element to avoid this. See https://webkit.org/b/53704
-    WillBeHeapVector<RefPtrWillBeMember<SVGSVGElement> > timeContainers;
-    timeContainers.appendRange(m_timeContainers.begin(), m_timeContainers.end());
+    WillBeHeapVector<RefPtrWillBeMember<SVGSVGElement>> timeContainers;
+    copyToVector(m_timeContainers, timeContainers);
     for (const auto& container : timeContainers) {
         SMILTimeContainer* timeContainer = container->timeContainer();
         if (!timeContainer->isStarted())
@@ -125,9 +122,8 @@ void SVGDocumentExtensions::pauseAnimations()
 
 void SVGDocumentExtensions::dispatchSVGLoadEventToOutermostSVGElements()
 {
-    WillBeHeapVector<RefPtrWillBeMember<SVGSVGElement> > timeContainers;
-    timeContainers.appendRange(m_timeContainers.begin(), m_timeContainers.end());
-
+    WillBeHeapVector<RefPtrWillBeMember<SVGSVGElement>> timeContainers;
+    copyToVector(m_timeContainers, timeContainers);
     for (const auto& container : timeContainers) {
         SVGSVGElement* outerSVG = container.get();
         if (!outerSVG->isOutermostSVGSVGElement())
@@ -365,7 +361,7 @@ SVGSVGElement* SVGDocumentExtensions::rootElement() const
     return rootElement(*m_document);
 }
 
-void SVGDocumentExtensions::trace(Visitor* visitor)
+DEFINE_TRACE(SVGDocumentExtensions)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_document);

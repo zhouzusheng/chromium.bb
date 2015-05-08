@@ -60,7 +60,6 @@
 #include "core/loader/FrameLoader.h"
 #include "core/storage/Storage.h"
 #include "platform/PlatformScreen.h"
-#include "platform/graphics/media/MediaPlayer.h"
 #include "wtf/Assertions.h"
 #include "wtf/OwnPtr.h"
 
@@ -309,7 +308,7 @@ void V8Window::openMethodCustom(const v8::FunctionCallbackInfo<v8::Value>& info)
     }
     TOSTRING_VOID(V8StringResource<TreatNullAndUndefinedAsNullString>, windowFeaturesString, info[2]);
 
-    RefPtrWillBeRawPtr<LocalDOMWindow> openedWindow = impl->open(urlString, frameName, windowFeaturesString, callingDOMWindow(info.GetIsolate()), enteredDOMWindow(info.GetIsolate()));
+    RefPtrWillBeRawPtr<DOMWindow> openedWindow = impl->open(urlString, frameName, windowFeaturesString, callingDOMWindow(info.GetIsolate()), enteredDOMWindow(info.GetIsolate()));
     if (!openedWindow)
         return;
 

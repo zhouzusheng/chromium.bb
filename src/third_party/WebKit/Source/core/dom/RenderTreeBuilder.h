@@ -31,19 +31,19 @@
 #include "core/dom/Node.h"
 #include "core/dom/NodeRenderingTraversal.h"
 #include "core/dom/Text.h"
-#include "core/rendering/RenderObject.h"
+#include "core/layout/LayoutObject.h"
 #include "wtf/RefPtr.h"
 
 namespace blink {
 
-class RenderObject;
-class RenderStyle;
+class LayoutObject;
+class LayoutStyle;
 
 template <typename NodeType>
 class RenderTreeBuilder {
     STACK_ALLOCATED();
 protected:
-    RenderTreeBuilder(NodeType& node, RenderObject* renderingParent)
+    RenderTreeBuilder(NodeType& node, LayoutObject* renderingParent)
         : m_node(node)
         , m_renderingParent(renderingParent)
     {
@@ -58,9 +58,9 @@ protected:
         // which does an updateLayoutIgnorePendingStylesheets.
     }
 
-    RenderObject* parentRenderer() const { return m_renderingParent; }
+    LayoutObject* parentRenderer() const { return m_renderingParent; }
 
-    RenderObject* nextRenderer() const
+    LayoutObject* nextRenderer() const
     {
         ASSERT(m_renderingParent);
 
@@ -72,12 +72,12 @@ protected:
     }
 
     RawPtrWillBeMember<NodeType> m_node;
-    RawPtrWillBeMember<RenderObject> m_renderingParent;
+    RawPtrWillBeMember<LayoutObject> m_renderingParent;
 };
 
 class RenderTreeBuilderForElement : public RenderTreeBuilder<Element> {
 public:
-    RenderTreeBuilderForElement(Element&, RenderStyle*);
+    RenderTreeBuilderForElement(Element&, LayoutStyle*);
 
     void createRendererIfNeeded()
     {
@@ -86,18 +86,18 @@ public:
     }
 
 private:
-    RenderObject* parentRenderer() const;
-    RenderObject* nextRenderer() const;
+    LayoutObject* parentRenderer() const;
+    LayoutObject* nextRenderer() const;
     bool shouldCreateRenderer() const;
-    RenderStyle& style() const;
+    LayoutStyle& style() const;
     void createRenderer();
 
-    mutable RefPtr<RenderStyle> m_style;
+    mutable RefPtr<LayoutStyle> m_style;
 };
 
 class RenderTreeBuilderForText : public RenderTreeBuilder<Text> {
 public:
-    RenderTreeBuilderForText(Text& text, RenderObject* renderingParent)
+    RenderTreeBuilderForText(Text& text, LayoutObject* renderingParent)
         : RenderTreeBuilder(text, renderingParent) { }
 
     void createRenderer();

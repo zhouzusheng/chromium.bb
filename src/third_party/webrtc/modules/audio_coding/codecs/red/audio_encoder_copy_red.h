@@ -35,13 +35,16 @@ class AudioEncoderCopyRed : public AudioEncoder {
 
   virtual ~AudioEncoderCopyRed();
 
-  virtual int sample_rate_hz() const OVERRIDE;
-  virtual int num_channels() const OVERRIDE;
+  virtual int SampleRateHz() const OVERRIDE;
+  int RtpTimestampRateHz() const override;
+  virtual int NumChannels() const OVERRIDE;
   virtual int Num10MsFramesInNextPacket() const OVERRIDE;
   virtual int Max10MsFramesInAPacket() const OVERRIDE;
+  void SetTargetBitrate(int bits_per_second) override;
+  void SetProjectedPacketLossRate(double fraction) override;
 
  protected:
-  virtual bool EncodeInternal(uint32_t timestamp,
+  virtual bool EncodeInternal(uint32_t rtp_timestamp,
                               const int16_t* audio,
                               size_t max_encoded_bytes,
                               uint8_t* encoded,

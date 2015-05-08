@@ -63,7 +63,7 @@ public:
     SVGAnimatedEnumeration<SVGTextPathMethodType>* method() { return m_method.get(); }
     SVGAnimatedEnumeration<SVGTextPathSpacingType>* spacing() { return m_spacing.get(); }
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     explicit SVGTextPathElement(Document&);
@@ -79,8 +79,8 @@ private:
     bool isSupportedAttribute(const QualifiedName&);
     virtual void svgAttributeChanged(const QualifiedName&) override;
 
-    virtual RenderObject* createRenderer(RenderStyle*) override;
-    virtual bool rendererIsNeeded(const RenderStyle&) override;
+    virtual LayoutObject* createRenderer(const LayoutStyle&) override;
+    virtual bool rendererIsNeeded(const LayoutStyle&) override;
 
     virtual bool selfHasRelativeLengths() const override;
 

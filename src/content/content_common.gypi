@@ -12,6 +12,7 @@
     '../third_party/WebKit/public/blink_headers.gyp:blink_headers',
     '../third_party/icu/icu.gyp:icuuc',
     '../ui/accessibility/accessibility.gyp:accessibility',
+    '../ui/base/ime/ui_base_ime.gyp:ui_base_ime',
     '../ui/base/ui_base.gyp:ui_base',
     '../ui/events/ipc/events_ipc.gyp:events_ipc',
     '../ui/gfx/gfx.gyp:gfx',
@@ -82,6 +83,10 @@
       'public/common/media_stream_request.h',
       'public/common/menu_item.cc',
       'public/common/menu_item.h',
+      'public/common/mojo_channel_switches.cc',
+      'public/common/mojo_channel_switches.h',
+      'public/common/navigator_connect_client.cc',
+      'public/common/navigator_connect_client.h',
       'public/common/page_state.cc',
       'public/common/page_state.h',
       'public/common/page_type.h',
@@ -169,6 +174,8 @@
       'common/appcache_interfaces.cc',
       'common/appcache_interfaces.h',
       'common/appcache_messages.h',
+      'common/bluetooth/bluetooth_device.cc',
+      'common/bluetooth/bluetooth_device.h',
       'common/bluetooth/bluetooth_error.h',
       'common/bluetooth/bluetooth_messages.h',
       'common/browser_plugin/browser_plugin_constants.cc',
@@ -282,10 +289,6 @@
       'common/gpu/client/gpu_video_encode_accelerator_host.h',
       'common/gpu/client/webgraphicscontext3d_command_buffer_impl.cc',
       'common/gpu/client/webgraphicscontext3d_command_buffer_impl.h',
-      'common/gpu/devtools_gpu_agent.cc',
-      'common/gpu/devtools_gpu_agent.h',
-      'common/gpu/devtools_gpu_instrumentation.cc',
-      'common/gpu/devtools_gpu_instrumentation.h',
       'common/gpu/gpu_channel.cc',
       'common/gpu/gpu_channel.h',
       'common/gpu/gpu_channel_manager.cc',
@@ -324,6 +327,8 @@
       'common/gpu/image_transport_surface_linux.cc',
       'common/gpu/image_transport_surface_mac.mm',
       'common/gpu/image_transport_surface_win.cc',
+      'common/gpu/media/fake_video_decode_accelerator.cc',
+      'common/gpu/media/fake_video_decode_accelerator.h',
       'common/gpu/media/gpu_video_decode_accelerator.cc',
       'common/gpu/media/gpu_video_decode_accelerator.h',
       'common/gpu/media/gpu_video_encode_accelerator.cc',
@@ -417,8 +422,6 @@
       'common/navigation_params.cc',
       'common/navigation_params.h',
       'common/navigator_connect_messages.h',
-      'common/navigator_connect_types.cc',
-      'common/navigator_connect_types.h',
       'common/net/url_fetcher.cc',
       'common/net/url_request_user_data.cc',
       'common/net/url_request_user_data.h',
@@ -469,6 +472,8 @@
       'common/sandbox_linux/bpf_utility_policy_linux.h',
       'common/sandbox_linux/sandbox_bpf_base_policy_linux.cc',
       'common/sandbox_linux/sandbox_bpf_base_policy_linux.h',
+      'common/sandbox_linux/sandbox_debug_handling_linux.cc',
+      'common/sandbox_linux/sandbox_debug_handling_linux.h',
       'common/sandbox_linux/sandbox_init_linux.cc',
       'common/sandbox_linux/sandbox_linux.cc',
       'common/sandbox_linux/sandbox_linux.h',
@@ -485,6 +490,8 @@
       'common/screen_orientation_messages.h',
       'common/send_zygote_child_ping_linux.cc',
       'common/service_worker/embedded_worker_messages.h',
+      'common/service_worker/service_worker_client_info.cc',
+      'common/service_worker/service_worker_client_info.h',
       'common/service_worker/service_worker_messages.h',
       'common/service_worker/service_worker_status_code.cc',
       'common/service_worker/service_worker_status_code.h',
@@ -576,18 +583,17 @@
         '../media/media.gyp:media',
         '../media/media.gyp:shared_memory_support',
         '../mojo/mojo_base.gyp:mojo_environment_chromium',
-        '../mojo/mojo_edk.gyp:mojo_system_impl',
-        '../mojo/mojo_public.gyp:mojo_application_bindings',
-        '../mojo/mojo_public.gyp:mojo_cpp_bindings',
-        '../storage/storage_browser.gyp:storage',
         '../storage/storage_common.gyp:storage_common',
         '../third_party/WebKit/public/blink.gyp:blink',
+        '../third_party/mojo/mojo_edk.gyp:mojo_system_impl',
+        '../third_party/mojo/mojo_public.gyp:mojo_application_bindings',
+        '../third_party/mojo/mojo_public.gyp:mojo_cpp_bindings',
         '../ui/gl/gl.gyp:gl',
         '../webkit/common/gpu/webkit_gpu.gyp:webkit_gpu',
       ],
       'export_dependent_settings' : [
-        '../mojo/mojo_public.gyp:mojo_application_bindings',
-        '../mojo/mojo_public.gyp:mojo_cpp_bindings',
+        '../third_party/mojo/mojo_public.gyp:mojo_application_bindings',
+        '../third_party/mojo/mojo_public.gyp:mojo_cpp_bindings',
       ],
       'actions': [
         {
@@ -763,7 +769,7 @@
     }],
     ['use_v4lplugin==1 and chromeos==1', {
       'defines': [
-        'USE_LIBV4L2',
+        'USE_LIBV4L2'
       ],
       'variables': {
         'generate_stubs_script': '../tools/generate_stubs/generate_stubs.py',
@@ -806,53 +812,48 @@
       ],
     }],
     ['chromeos==1 and use_v4l2_codec==1', {
+      'direct_dependent_settings': {
+        'defines': [
+          'USE_V4L2_CODEC'
+        ],
+      },
       'defines': [
-        'USE_V4L2_CODEC',
+        'USE_V4L2_CODEC'
       ],
-    }],
-    ['chromeos==1 and (target_arch=="arm" or (use_ozone==1 and use_v4l2_codec==1))', {
       'dependencies': [
         '../media/media.gyp:media',
       ],
       'sources': [
+        'common/gpu/media/accelerated_video_decoder.h',
         'common/gpu/media/generic_v4l2_video_device.cc',
         'common/gpu/media/generic_v4l2_video_device.h',
+        'common/gpu/media/h264_decoder.cc',
+        'common/gpu/media/h264_decoder.h',
+        'common/gpu/media/h264_dpb.cc',
+        'common/gpu/media/h264_dpb.h',
         'common/gpu/media/v4l2_image_processor.cc',
         'common/gpu/media/v4l2_image_processor.h',
+        'common/gpu/media/v4l2_slice_video_decode_accelerator.cc',
+        'common/gpu/media/v4l2_slice_video_decode_accelerator.h',
         'common/gpu/media/v4l2_video_decode_accelerator.cc',
         'common/gpu/media/v4l2_video_decode_accelerator.h',
         'common/gpu/media/v4l2_video_device.cc',
         'common/gpu/media/v4l2_video_device.h',
         'common/gpu/media/v4l2_video_encode_accelerator.cc',
         'common/gpu/media/v4l2_video_encode_accelerator.h',
+        'common/gpu/media/vp8_decoder.cc',
+        'common/gpu/media/vp8_decoder.h',
+        'common/gpu/media/vp8_picture.cc',
+        'common/gpu/media/vp8_picture.h',
       ],
       'include_dirs': [
         '<(DEPTH)/third_party/khronos',
       ],
-      'conditions': [
-        ['target_arch == "arm"', {
-          'sources': [
-            'common/gpu/media/tegra_v4l2_video_device.cc',
-            'common/gpu/media/tegra_v4l2_video_device.h',
-          ],
-          'conditions': [
-            ['use_v4lplugin==1', {
-              'sources': [
-                'common/gpu/media/accelerated_video_decoder.h',
-                'common/gpu/media/h264_decoder.cc',
-                'common/gpu/media/h264_decoder.h',
-                'common/gpu/media/h264_dpb.cc',
-                'common/gpu/media/h264_dpb.h',
-                'common/gpu/media/v4l2_slice_video_decode_accelerator.cc',
-                'common/gpu/media/v4l2_slice_video_decode_accelerator.h',
-                'common/gpu/media/vp8_decoder.cc',
-                'common/gpu/media/vp8_decoder.h',
-                'common/gpu/media/vp8_picture.cc',
-                'common/gpu/media/vp8_picture.h',
-              ],
-            }],
-          ],
-        }],
+    }],
+    ['target_arch == "arm" and chromeos == 1', {
+      'sources': [
+        'common/gpu/media/tegra_v4l2_video_device.cc',
+        'common/gpu/media/tegra_v4l2_video_device.h',
       ],
     }],
     ['target_arch != "arm" and chromeos == 1', {
@@ -866,6 +867,8 @@
         'common/gpu/media/vaapi_h264_decoder.h',
         'common/gpu/media/vaapi_h264_dpb.cc',
         'common/gpu/media/vaapi_h264_dpb.h',
+        'common/gpu/media/vaapi_jpeg_decoder.cc',
+        'common/gpu/media/vaapi_jpeg_decoder.h',
         'common/gpu/media/vaapi_picture.cc',
         'common/gpu/media/vaapi_picture.h',
         'common/gpu/media/vaapi_video_decode_accelerator.cc',
@@ -1021,6 +1024,7 @@
     ['use_ozone==1', {
       'dependencies': [
         '../ui/ozone/ozone.gyp:ozone',
+        '../ui/ozone/ozone.gyp:ozone_base',
         '../ui/ozone/gpu/ozone_gpu.gyp:ozone_gpu',
       ],
       'sources!': [

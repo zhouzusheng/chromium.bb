@@ -25,8 +25,6 @@
 #include "ui/gfx/geometry/vector2d.h"
 #include "ui/gfx/native_widget_types.h"
 
-class SkBitmap;
-
 namespace base {
 class MessageLoopProxy;
 class RunLoop;
@@ -116,9 +114,10 @@ class COMPOSITOR_EXPORT ContextFactory {
 // event. The typical use case is when waiting for a renderer to produce a frame
 // at the right size. The caller keeps a reference on this object, and drops the
 // reference once it desires to release the lock.
-// Note however that the lock is cancelled after a short timeout to ensure
+// By default, the lock will be cancelled after a short timeout to ensure
 // responsiveness of the UI, so the compositor tree should be kept in a
-// "reasonable" state while the lock is held.
+// "reasonable" state while the lock is held. If the compositor sets
+// locks to not time out, then the lock will remain in effect until destroyed.
 // Don't instantiate this class directly, use Compositor::GetCompositorLock.
 class COMPOSITOR_EXPORT CompositorLock
     : public base::RefCounted<CompositorLock>,
@@ -175,9 +174,6 @@ class COMPOSITOR_EXPORT Compositor
   // compositing layers on.
   float device_scale_factor() const { return device_scale_factor_; }
 
-  // Draws the scene created by the layer tree and any visual effects.
-  void Draw();
-
   // Where possible, draws are scissored to a damage region calculated from
   // changes to layer properties.  This bypasses that and indicates that
   // the whole frame needs to be drawn.
@@ -186,6 +182,9 @@ class COMPOSITOR_EXPORT Compositor
   // Schedule redraw and append damage_rect to the damage region calculated
   // from changes to layer properties.
   void ScheduleRedrawRect(const gfx::Rect& damage_rect);
+
+  // Finishes all outstanding rendering and disables swapping on this surface.
+  void FinishAllRendering();
 
   // Finishes all outstanding rendering and disables swapping on this surface
   // until it is resized.
@@ -203,8 +202,11 @@ class COMPOSITOR_EXPORT Compositor
   // the |root_layer|.
   void SetBackgroundColor(SkColor color);
 
-  // Set the visibility of the underlying compositor.
+  // Sets the visibility of the underlying compositor.
   void SetVisible(bool visible);
+
+  // Gets the visibility of the underlying compositor.
+  bool IsVisible();
 
   // Returns the widget for this compositor.
   gfx::AcceleratedWidget widget() const { return widget_; }
@@ -228,6 +230,13 @@ class COMPOSITOR_EXPORT Compositor
   void RemoveAnimationObserver(CompositorAnimationObserver* observer);
   bool HasAnimationObserver(const CompositorAnimationObserver* observer) const;
 
+  // Change the timeout behavior for all future locks that are created. Locks
+  // should time out if there is an expectation that the compositor will be
+  // responsive.
+  void SetLocksWillTimeOut(bool locks_will_time_out) {
+    locks_will_time_out_ = locks_will_time_out;
+  }
+
   // Creates a compositor lock. Returns NULL if it is not possible to lock at
   // this time (i.e. we're waiting to complete a previous unlock).
   scoped_refptr<CompositorLock> GetCompositorLock();
@@ -245,12 +254,13 @@ class COMPOSITOR_EXPORT Compositor
   void OnSwapBuffersAborted();
 
   // LayerTreeHostClient implementation.
-  void WillBeginMainFrame(int frame_id) override {}
+  void WillBeginMainFrame() override {}
   void DidBeginMainFrame() override {}
   void BeginMainFrame(const cc::BeginFrameArgs& args) override;
+  void BeginMainFrameNotExpectedSoon() override;
   void Layout() override;
-  void ApplyViewportDeltas(const gfx::Vector2d& inner_delta,
-                           const gfx::Vector2d& outer_delta,
+  void ApplyViewportDeltas(const gfx::Vector2dF& inner_delta,
+                           const gfx::Vector2dF& outer_delta,
                            const gfx::Vector2dF& elastic_overscroll_delta,
                            float page_scale,
                            float top_controls_delta) override {}
@@ -264,15 +274,11 @@ class COMPOSITOR_EXPORT Compositor
   void DidCommit() override;
   void DidCommitAndDrawFrame() override;
   void DidCompleteSwapBuffers() override;
+  void DidCompletePageScaleAnimation() override {}
 
   // cc::LayerTreeHostSingleThreadClient implementation.
-  void ScheduleComposite() override;
-  void ScheduleAnimation() override;
   void DidPostSwapBuffers() override;
   void DidAbortSwapBuffers() override;
-
-  int last_started_frame() { return last_started_frame_; }
-  int last_ended_frame() { return last_ended_frame_; }
 
   bool IsLocked() { return compositor_lock_ != NULL; }
 
@@ -303,9 +309,6 @@ class COMPOSITOR_EXPORT Compositor
   // Called to release any pending CompositorLock
   void CancelCompositorLock();
 
-  // Notifies the compositor that compositing is complete.
-  void NotifyEnd();
-
   gfx::Size size_;
 
   ui::ContextFactory* context_factory_;
@@ -313,7 +316,7 @@ class COMPOSITOR_EXPORT Compositor
   // The root of the Layer tree drawn by this compositor.
   Layer* root_layer_;
 
-  ObserverList<CompositorObserver> observer_list_;
+  ObserverList<CompositorObserver, true> observer_list_;
   ObserverList<CompositorAnimationObserver> animation_observer_list_;
 
   gfx::AcceleratedWidget widget_;
@@ -337,16 +340,9 @@ class COMPOSITOR_EXPORT Compositor
 
   bool disable_schedule_composite_;
 
+  bool locks_will_time_out_;
+
   CompositorLock* compositor_lock_;
-
-  // Prevent more than one draw from being scheduled.
-  bool defer_draw_scheduling_;
-
-  // Used to prevent Draw()s while a composite is in progress.
-  bool waiting_on_compositing_end_;
-  bool draw_on_compositing_end_;
-  enum SwapState { SWAP_NONE, SWAP_POSTED, SWAP_COMPLETED };
-  SwapState swap_state_;
 
   LayerAnimatorCollection layer_animator_collection_;
 

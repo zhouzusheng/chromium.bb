@@ -39,6 +39,7 @@
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
+#include "core/paint/TransformRecorder.h"
 #include "platform/PlatformGestureEvent.h"
 #include "platform/PlatformKeyboardEvent.h"
 #include "platform/PlatformMouseEvent.h"
@@ -48,6 +49,7 @@
 #include "platform/UserGestureIndicator.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/graphics/GraphicsContext.h"
+#include "platform/graphics/paint/DrawingRecorder.h"
 #include "public/web/WebPopupMenuInfo.h"
 #include "public/web/WebPopupType.h"
 #include "public/web/WebViewClient.h"
@@ -106,14 +108,14 @@ PopupContainer::~PopupContainer()
 #endif
 }
 
-void PopupContainer::trace(Visitor* visitor)
+DEFINE_TRACE(PopupContainer)
 {
     visitor->trace(m_frameView);
     visitor->trace(m_listBox);
     Widget::trace(visitor);
 }
 
-IntRect PopupContainer::layoutAndCalculateWidgetRectInternal(IntRect widgetRectInScreen, int targetControlHeight, const FloatRect& windowRect, const FloatRect& screen, bool isRTL, const int rtlOffset, const int verticalOffset, const IntSize& transformOffset, PopupContent* listBox, bool& needToResizeView)
+IntRect PopupContainer::layoutAndCalculateWidgetRectInternal(IntRect widgetRectInScreen, int targetControlHeight, const IntRect& windowRect, const IntRect& screen, bool isRTL, const int rtlOffset, const int verticalOffset, const IntSize& transformOffset, PopupContent* listBox, bool& needToResizeView)
 {
     ASSERT(listBox);
     if (windowRect.x() >= screen.x() && windowRect.maxX() <= screen.maxX() && (widgetRectInScreen.x() < screen.x() || widgetRectInScreen.maxX() > screen.maxX())) {
@@ -122,9 +124,8 @@ IntRect PopupContainer::layoutAndCalculateWidgetRectInternal(IntRect widgetRectI
         IntRect inverseWidgetRectInScreen = widgetRectInScreen;
         inverseWidgetRectInScreen.setX(inverseWidgetRectInScreen.x() + (isRTL ? -rtlOffset : rtlOffset));
         inverseWidgetRectInScreen.setY(inverseWidgetRectInScreen.y() + (isRTL ? -verticalOffset : verticalOffset));
-        IntRect enclosingScreen = enclosingIntRect(screen);
-        unsigned originalCutoff = std::max(enclosingScreen.x() - widgetRectInScreen.x(), 0) + std::max(widgetRectInScreen.maxX() - enclosingScreen.maxX(), 0);
-        unsigned inverseCutoff = std::max(enclosingScreen.x() - inverseWidgetRectInScreen.x(), 0) + std::max(inverseWidgetRectInScreen.maxX() - enclosingScreen.maxX(), 0);
+        unsigned originalCutoff = std::max(screen.x() - widgetRectInScreen.x(), 0) + std::max(widgetRectInScreen.maxX() - screen.maxX(), 0);
+        unsigned inverseCutoff = std::max(screen.x() - inverseWidgetRectInScreen.x(), 0) + std::max(inverseWidgetRectInScreen.maxX() - screen.maxX(), 0);
 
         // Accept the inverse popup alignment if the trimmed content gets
         // shorter than that in the original alignment case.
@@ -199,7 +200,7 @@ IntRect PopupContainer::layoutAndCalculateWidgetRect(int targetControlHeight, co
     IntRect widgetRectInScreen;
     // If the popup would extend past the bottom of the screen, open upwards
     // instead.
-    FloatRect screen = screenAvailableRect(m_frameView.get());
+    IntRect screen = screenAvailableRect(m_frameView.get());
     // Use popupInitialCoordinate.x() + rightOffset because RTL position
     // needs to be considered.
     float pageScaleFactor = m_frameView->frame().page()->pageScaleFactor();
@@ -210,7 +211,7 @@ IntRect PopupContainer::layoutAndCalculateWidgetRect(int targetControlHeight, co
     // If we have multiple screens and the browser rect is in one screen, we
     // have to clip the window width to the screen width.
     // When clipping, we also need to set a maximum width for the list box.
-    FloatRect windowRect = chromeClient().windowRect();
+    IntRect windowRect = chromeClient().windowRect();
 
     bool needToResizeView = false;
     widgetRectInScreen = layoutAndCalculateWidgetRectInternal(widgetRectInScreen, targetControlHeight, windowRect, screen, isRTL, rtlOffset, verticalOffset, transformOffset, m_listBox.get(), needToResizeView);
@@ -355,43 +356,32 @@ void PopupContainer::hide()
     m_listBox->abandon();
 }
 
-void PopupContainer::paint(GraphicsContext* gc, const IntRect& rect)
+void PopupContainer::paint(GraphicsContext* gc, const IntRect& paintRect)
 {
-    // Adjust coords for scrolled frame.
-    IntRect r = intersection(rect, frameRect());
-    int tx = x();
-    int ty = y();
+    TransformRecorder transformRecorder(*gc, displayItemClient(), AffineTransform::translation(x(),  y()));
+    IntRect adjustedPaintRect = intersection(paintRect, frameRect());
+    adjustedPaintRect.moveBy(-location());
 
-    r.move(-tx, -ty);
-
-    gc->translate(static_cast<float>(tx), static_cast<float>(ty));
-    m_listBox->paint(gc, r);
-    gc->translate(-static_cast<float>(tx), -static_cast<float>(ty));
-
-    paintBorder(gc, rect);
+    m_listBox->paint(gc, adjustedPaintRect);
+    paintBorder(gc, adjustedPaintRect);
 }
 
 void PopupContainer::paintBorder(GraphicsContext* gc, const IntRect& rect)
 {
+    DrawingRecorder drawingRecorder(gc, displayItemClient(), DisplayItem::PopupContainerBorder, boundsRect());
+    if (drawingRecorder.canUseCachedDrawing())
+        return;
+
     // FIXME: Where do we get the border color from?
     Color borderColor(127, 157, 185);
 
-    gc->setStrokeStyle(NoStroke);
-    gc->setFillColor(borderColor);
+    gc->setStrokeStyle(SolidStroke);
+    gc->setStrokeThickness(borderSize);
+    gc->setStrokeColor(borderColor);
 
-    int tx = x();
-    int ty = y();
-
-    // top, left, bottom, right
-    gc->drawRect(IntRect(tx, ty, width(), borderSize));
-    gc->drawRect(IntRect(tx, ty, borderSize, height()));
-    gc->drawRect(IntRect(tx, ty + height() - borderSize, width(), borderSize));
-    gc->drawRect(IntRect(tx + width() - borderSize, ty, borderSize, height()));
-}
-
-bool PopupContainer::isInterestedInEventForKey(int keyCode)
-{
-    return m_listBox->isInterestedInEventForKey(keyCode);
+    FloatRect borderRect(boundsRect());
+    borderRect.inflate(-gc->strokeThickness() / 2);
+    gc->strokeRect(borderRect);
 }
 
 ChromeClient& PopupContainer::chromeClient()
@@ -405,7 +395,7 @@ void PopupContainer::showInRect(const FloatQuad& controlPosition, const IntSize&
     // we need. Subtract border size so that usually the container will be
     // displayed exactly the same width as the select box.
     m_listBox->setBaseWidth(std::max(controlSize.width() - borderSize * 2, 0));
-
+    m_listBox->setOriginalIndex(m_listBox->m_popupClient->selectedIndex());
     m_listBox->updateFromElement();
 
     // We set the selected item in updateFromElement(), and disregard the
@@ -433,28 +423,6 @@ void PopupContainer::showInRect(const FloatQuad& controlPosition, const IntSize&
     showPopup(v);
 }
 
-IntRect PopupContainer::refresh(const IntRect& targetControlRect)
-{
-    m_listBox->setBaseWidth(std::max(m_controlSize.width() - borderSize * 2, 0));
-    m_listBox->updateFromElement();
-
-    IntPoint locationInWindow = m_frameView->contentsToWindow(targetControlRect.location());
-
-    // Move it below the select widget.
-    locationInWindow.move(0, targetControlRect.height());
-
-    IntRect widgetRectInScreen = layoutAndCalculateWidgetRect(targetControlRect.height(), IntSize(), locationInWindow);
-
-    // Reset the size (which can be set to the PopupListBox size in
-    // layoutAndGetRTLOffset(), exceeding the available widget rectangle.)
-    if (size() != widgetRectInScreen.size())
-        resize(widgetRectInScreen.size());
-
-    invalidate();
-
-    return widgetRectInScreen;
-}
-
 inline bool PopupContainer::isRTL() const
 {
     return m_listBox->m_popupClient->menuStyle().textDirection() == RTL;
@@ -478,11 +446,6 @@ int PopupContainer::menuItemFontSize() const
 PopupMenuStyle PopupContainer::menuStyle() const
 {
     return m_listBox->m_popupClient->menuStyle();
-}
-
-const WTF::Vector<PopupItem*>& PopupContainer:: popupData() const
-{
-    return m_listBox->items();
 }
 
 String PopupContainer::getSelectedItemToolTip()
@@ -509,50 +472,17 @@ void PopupContainer::popupOpened(const IntRect& bounds)
     toWebPopupMenuImpl(webwidget)->initialize(this, bounds);
 }
 
-void PopupContainer::getPopupMenuInfo(WebPopupMenuInfo* info)
-{
-    const Vector<PopupItem*>& inputItems = popupData();
-
-    WebVector<WebMenuItemInfo> outputItems(inputItems.size());
-
-    for (size_t i = 0; i < inputItems.size(); ++i) {
-        const PopupItem& inputItem = *inputItems[i];
-        WebMenuItemInfo& outputItem = outputItems[i];
-
-        outputItem.label = inputItem.label;
-        outputItem.enabled = inputItem.enabled;
-        outputItem.textDirection = toWebTextDirection(inputItem.textDirection);
-        outputItem.hasTextDirectionOverride = inputItem.hasTextDirectionOverride;
-
-        switch (inputItem.type) {
-        case PopupItem::TypeOption:
-            outputItem.type = WebMenuItemInfo::Option;
-            break;
-        case PopupItem::TypeGroup:
-            outputItem.type = WebMenuItemInfo::Group;
-            break;
-        case PopupItem::TypeSeparator:
-            outputItem.type = WebMenuItemInfo::Separator;
-            break;
-        }
-    }
-
-    info->itemHeight = menuItemHeight();
-    info->itemFontSize = menuItemFontSize();
-    info->selectedIndex = selectedIndex();
-    info->items.swap(outputItems);
-    info->rightAligned = menuStyle().textDirection() == RTL;
-}
-
 void PopupContainer::invalidateRect(const IntRect& rect)
 {
     if (HostWindow* h = hostWindow())
         h->invalidateRect(rect);
+    if (m_client)
+        m_client->invalidateDisplayItemClient(displayItemClient());
 }
 
 HostWindow* PopupContainer::hostWindow() const
 {
-    return const_cast<PopupContainerClient*>(m_client);
+    return m_client;
 }
 
 IntPoint PopupContainer::convertChildToSelf(const Widget* child, const IntPoint& point) const

@@ -25,6 +25,12 @@ void BindBuffer(GLenum target, GLuint buffer) override;
 
 void BindBufferBase(GLenum target, GLuint index, GLuint buffer) override;
 
+void BindBufferRange(GLenum target,
+                     GLuint index,
+                     GLuint buffer,
+                     GLintptr offset,
+                     GLsizeiptr size) override;
+
 void BindFramebuffer(GLenum target, GLuint framebuffer) override;
 
 void BindRenderbuffer(GLenum target, GLuint renderbuffer) override;
@@ -65,6 +71,23 @@ GLenum CheckFramebufferStatus(GLenum target) override;
 
 void Clear(GLbitfield mask) override;
 
+void ClearBufferfi(GLenum buffer,
+                   GLint drawbuffers,
+                   GLfloat depth,
+                   GLint stencil) override;
+
+void ClearBufferfv(GLenum buffer,
+                   GLint drawbuffers,
+                   const GLfloat* value) override;
+
+void ClearBufferiv(GLenum buffer,
+                   GLint drawbuffers,
+                   const GLint* value) override;
+
+void ClearBufferuiv(GLenum buffer,
+                    GLint drawbuffers,
+                    const GLuint* value) override;
+
 void ClearColor(GLclampf red,
                 GLclampf green,
                 GLclampf blue,
@@ -73,6 +96,8 @@ void ClearColor(GLclampf red,
 void ClearDepthf(GLclampf depth) override;
 
 void ClearStencil(GLint s) override;
+
+GLenum ClientWaitSync(GLsync sync, GLbitfield flags, GLuint64 timeout) override;
 
 void ColorMask(GLboolean red,
                GLboolean green,
@@ -124,6 +149,16 @@ void CopyTexSubImage2D(GLenum target,
                        GLsizei width,
                        GLsizei height) override;
 
+void CopyTexSubImage3D(GLenum target,
+                       GLint level,
+                       GLint xoffset,
+                       GLint yoffset,
+                       GLint zoffset,
+                       GLint x,
+                       GLint y,
+                       GLsizei width,
+                       GLsizei height) override;
+
 GLuint CreateProgram() override;
 
 GLuint CreateShader(GLenum type) override;
@@ -139,6 +174,8 @@ void DeleteProgram(GLuint program) override;
 void DeleteRenderbuffers(GLsizei n, const GLuint* renderbuffers) override;
 
 void DeleteSamplers(GLsizei n, const GLuint* samplers) override;
+
+void DeleteSync(GLsync sync) override;
 
 void DeleteShader(GLuint shader) override;
 
@@ -164,6 +201,8 @@ void DrawElements(GLenum mode,
                   const void* indices) override;
 
 void Enable(GLenum cap) override;
+
+GLsync FenceSync(GLenum condition, GLbitfield flags) override;
 
 void Finish() override;
 
@@ -218,6 +257,23 @@ void GetActiveUniform(GLuint program,
                       GLenum* type,
                       char* name) override;
 
+void GetActiveUniformBlockiv(GLuint program,
+                             GLuint index,
+                             GLenum pname,
+                             GLint* params) override;
+
+void GetActiveUniformBlockName(GLuint program,
+                               GLuint index,
+                               GLsizei bufsize,
+                               GLsizei* length,
+                               char* name) override;
+
+void GetActiveUniformsiv(GLuint program,
+                         GLsizei count,
+                         const GLuint* indices,
+                         GLenum pname,
+                         GLint* params) override;
+
 void GetAttachedShaders(GLuint program,
                         GLsizei maxcount,
                         GLsizei* count,
@@ -232,6 +288,8 @@ void GetBufferParameteriv(GLenum target, GLenum pname, GLint* params) override;
 GLenum GetError() override;
 
 void GetFloatv(GLenum pname, GLfloat* params) override;
+
+GLint GetFragDataLocation(GLuint program, const char* name) override;
 
 void GetFramebufferAttachmentParameteriv(GLenum target,
                                          GLenum attachment,
@@ -288,9 +346,24 @@ void GetTexParameterfv(GLenum target, GLenum pname, GLfloat* params) override;
 
 void GetTexParameteriv(GLenum target, GLenum pname, GLint* params) override;
 
+void GetTransformFeedbackVarying(GLuint program,
+                                 GLuint index,
+                                 GLsizei bufsize,
+                                 GLsizei* length,
+                                 GLsizei* size,
+                                 GLenum* type,
+                                 char* name) override;
+
+GLuint GetUniformBlockIndex(GLuint program, const char* name) override;
+
 void GetUniformfv(GLuint program, GLint location, GLfloat* params) override;
 
 void GetUniformiv(GLuint program, GLint location, GLint* params) override;
+
+void GetUniformIndices(GLuint program,
+                       GLsizei count,
+                       const char* const* names,
+                       GLuint* indices) override;
 
 GLint GetUniformLocation(GLuint program, const char* name) override;
 
@@ -325,6 +398,8 @@ GLboolean IsRenderbuffer(GLuint renderbuffer) override;
 GLboolean IsSampler(GLuint sampler) override;
 
 GLboolean IsShader(GLuint shader) override;
+
+GLboolean IsSync(GLsync sync) override;
 
 GLboolean IsTexture(GLuint texture) override;
 
@@ -389,6 +464,8 @@ void ShaderSource(GLuint shader,
 void ShallowFinishCHROMIUM() override;
 
 void ShallowFlushCHROMIUM() override;
+
+void OrderingBarrierCHROMIUM() override;
 
 void StencilFunc(GLenum func, GLint ref, GLuint mask) override;
 
@@ -468,6 +545,11 @@ void TexSubImage3D(GLenum target,
                    GLenum type,
                    const void* pixels) override;
 
+void TransformFeedbackVaryings(GLuint program,
+                               GLsizei count,
+                               const char* const* varyings,
+                               GLenum buffermode) override;
+
 void Uniform1f(GLint location, GLfloat x) override;
 
 void Uniform1fv(GLint location, GLsizei count, const GLfloat* v) override;
@@ -523,6 +605,8 @@ void Uniform4ui(GLint location,
                 GLuint w) override;
 
 void Uniform4uiv(GLint location, GLsizei count, const GLuint* v) override;
+
+void UniformBlockBinding(GLuint program, GLuint index, GLuint binding) override;
 
 void UniformMatrix2fv(GLint location,
                       GLsizei count,
@@ -619,6 +703,8 @@ void VertexAttribPointer(GLuint indx,
                          const void* ptr) override;
 
 void Viewport(GLint x, GLint y, GLsizei width, GLsizei height) override;
+
+void WaitSync(GLsync sync, GLbitfield flags, GLuint64 timeout) override;
 
 void BlitFramebufferCHROMIUM(GLint srcX0,
                              GLint srcY0,
@@ -729,6 +815,21 @@ void RequestExtensionCHROMIUM(const char* extension) override;
 void RateLimitOffscreenContextCHROMIUM() override;
 
 void GetProgramInfoCHROMIUM(GLuint program,
+                            GLsizei bufsize,
+                            GLsizei* size,
+                            void* info) override;
+
+void GetUniformBlocksCHROMIUM(GLuint program,
+                              GLsizei bufsize,
+                              GLsizei* size,
+                              void* info) override;
+
+void GetTransformFeedbackVaryingsCHROMIUM(GLuint program,
+                                          GLsizei bufsize,
+                                          GLsizei* size,
+                                          void* info) override;
+
+void GetUniformsES3CHROMIUM(GLuint program,
                             GLsizei bufsize,
                             GLsizei* size,
                             void* info) override;

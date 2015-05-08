@@ -52,13 +52,6 @@ public:
      */
     static void DestroyVideoRender(VideoRender* module);
 
-    /*
-     *   Change the unique identifier of this object
-     *
-     *   id      - new unique identifier of this video render module object
-     */
-    virtual int32_t ChangeUniqueId(const int32_t id) OVERRIDE = 0;
-
     virtual int64_t TimeUntilNextProcess() OVERRIDE = 0;
     virtual int32_t Process() OVERRIDE = 0;
 
@@ -278,11 +271,6 @@ public:
     virtual int32_t SetTimeoutImage(const uint32_t streamId,
                                     const I420VideoFrame& videoFrame,
                                     const uint32_t timeout)= 0;
-
-    virtual int32_t MirrorRenderStream(const int renderId,
-                                       const bool enable,
-                                       const bool mirrorXAxis,
-                                       const bool mirrorYAxis) = 0;
 };
 }  // namespace webrtc
 #endif  // WEBRTC_MODULES_VIDEO_RENDER_MAIN_INTERFACE_VIDEO_RENDER_H_

@@ -34,7 +34,7 @@
 #include "core/InspectorFrontend.h"
 #include "core/InspectorTypeBuilder.h"
 #include "core/inspector/InspectorBaseAgent.h"
-#include "core/rendering/RenderLayer.h"
+#include "core/layout/Layer.h"
 #include "platform/Timer.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
@@ -42,20 +42,20 @@
 
 namespace blink {
 
-class GraphicsContextSnapshot;
-class Page;
-class RenderLayerCompositor;
+class InspectorPageAgent;
+class PictureSnapshot;
+class LayerCompositor;
 
 typedef String ErrorString;
 
 class InspectorLayerTreeAgent final : public InspectorBaseAgent<InspectorLayerTreeAgent>, public InspectorBackendDispatcher::LayerTreeCommandHandler {
 public:
-    static PassOwnPtrWillBeRawPtr<InspectorLayerTreeAgent> create(Page* page)
+    static PassOwnPtrWillBeRawPtr<InspectorLayerTreeAgent> create(InspectorPageAgent* pageAgent)
     {
-        return adoptPtrWillBeNoop(new InspectorLayerTreeAgent(page));
+        return adoptPtrWillBeNoop(new InspectorLayerTreeAgent(pageAgent));
     }
     virtual ~InspectorLayerTreeAgent();
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     virtual void setFrontend(InspectorFrontend*) override;
     virtual void clearFrontend() override;
@@ -67,7 +67,7 @@ public:
 
     // Called from InspectorInstrumentation
     void layerTreeDidChange();
-    void didPaint(RenderObject*, const GraphicsLayer*, GraphicsContext*, const LayoutRect&);
+    void didPaint(LayoutObject*, const GraphicsLayer*, GraphicsContext*, const LayoutRect&);
 
     // Called from the front-end.
     virtual void enable(ErrorString*) override;
@@ -86,24 +86,24 @@ public:
 private:
     static unsigned s_lastSnapshotId;
 
-    explicit InspectorLayerTreeAgent(Page*);
+    explicit InspectorLayerTreeAgent(InspectorPageAgent*);
 
     GraphicsLayer* rootGraphicsLayer();
 
-    RenderLayerCompositor* renderLayerCompositor();
+    LayerCompositor* renderLayerCompositor();
     GraphicsLayer* layerById(ErrorString*, const String& layerId);
-    const GraphicsContextSnapshot* snapshotById(ErrorString*, const String& snapshotId);
+    const PictureSnapshot* snapshotById(ErrorString*, const String& snapshotId);
 
     typedef HashMap<int, int> LayerIdToNodeIdMap;
-    void buildLayerIdToNodeIdMap(RenderLayer*, LayerIdToNodeIdMap&);
+    void buildLayerIdToNodeIdMap(Layer*, LayerIdToNodeIdMap&);
     void gatherGraphicsLayers(GraphicsLayer*, HashMap<int, int>& layerIdToNodeIdMap, RefPtr<TypeBuilder::Array<TypeBuilder::LayerTree::Layer> >&);
     int idForNode(Node*);
 
     InspectorFrontend::LayerTree* m_frontend;
-    RawPtrWillBeMember<Page> m_page;
+    RawPtrWillBeMember<InspectorPageAgent> m_pageAgent;
     Vector<int, 2> m_pageOverlayLayerIds;
 
-    typedef HashMap<String, RefPtr<GraphicsContextSnapshot> > SnapshotById;
+    typedef HashMap<String, RefPtr<PictureSnapshot> > SnapshotById;
     SnapshotById m_snapshotById;
 };
 

@@ -142,6 +142,14 @@ if (info.Length() <= {{argument.index}} || !{% if argument.is_nullable %}(info[{
 {{argument.name}} = {% if argument.is_nullable %}info[{{argument.index}}]->IsNull() ? nullptr : {% endif %}V8{{argument.idl_type}}::create(v8::Local<v8::Function>::Cast(info[{{argument.index}}]), ScriptState::current(info.GetIsolate()));
 {% endif %}{# argument.is_optional #}
 {% endif %}{# argument.idl_type == 'EventListener' #}
+{% elif argument.is_callback_function %}
+if (!info[{{argument.index}}]->IsFunction(){% if argument.is_nullable %} && !info[{{argument.index}}]->IsNull(){% endif %}) {
+    {{throw_type_error(method,
+          '"The callback provided as parameter %s is not a function."' %
+              (argument.index + 1)) | indent(8)}}
+    return;
+}
+{{argument.v8_value_to_local_cpp_value}};
 {% elif argument.is_variadic_wrapper_type %}
 for (int i = {{argument.index}}; i < info.Length(); ++i) {
     if (!V8{{argument.idl_type}}::hasInstance(info[i], info.GetIsolate())) {
@@ -167,16 +175,7 @@ if (!isUndefinedOrNull(info[{{argument.index}}]) && !info[{{argument.index}}]->I
 {% endif %}{# argument.is_nullable #}
 {# Type checking, possibly throw a TypeError, per:
    http://www.w3.org/TR/WebIDL/#es-type-mapping #}
-{% if argument.has_type_checking_unrestricted %}
-{# Non-finite floating point values (NaN, +Infinity or −Infinity), per:
-   http://heycam.github.io/webidl/#es-float
-   http://heycam.github.io/webidl/#es-double #}
-if (!std::isfinite({{argument.name}})) {
-    {{throw_type_error(method, '"%s parameter %s is non-finite."' %
-                               (argument.idl_type, argument.index + 1)) | indent}}
-    return;
-}
-{% elif argument.has_type_checking_interface and not argument.is_variadic_wrapper_type %}
+{% if argument.has_type_checking_interface and not argument.is_variadic_wrapper_type %}
 {# Type checking for wrapper interface types (if interface not implemented,
    throw a TypeError), per http://www.w3.org/TR/WebIDL/#es-interface
    Note: for variadic arguments, the type checking is done for each matched
@@ -450,7 +449,7 @@ static void {{method.name}}MethodCallback{{world_suffix}}(const v8::FunctionCall
     if (contextData && contextData->activityLogger()) {
     {% endif %}
         ExceptionState exceptionState(ExceptionState::ExecutionContext, "{{method.name}}", "{{interface_name}}", info.Holder(), info.GetIsolate());
-        Vector<v8::Local<v8::Value> > loggerArgs = toImplArguments<v8::Local<v8::Value> >(info, 0, exceptionState);
+        Vector<v8::Local<v8::Value>> loggerArgs = toImplArguments<v8::Local<v8::Value>>(info, 0, exceptionState);
         contextData->activityLogger()->logMethod("{{interface_name}}.{{method.name}}", info.Length(), loggerArgs.data());
     }
     {% endif %}
@@ -625,7 +624,7 @@ v8SetReturnValue(info, wrapper);
 const V8DOMConfiguration::MethodConfiguration {{method.name}}MethodConfiguration = {
     "{{method.name}}", {{method_callback}}, {{method_callback_for_main_world}}, {{method_length}}, {{only_exposed_to_private_script}},
 };
-V8DOMConfiguration::installMethod({{method.function_template}}, {{method.signature}}, {{property_attribute}}, {{method.name}}MethodConfiguration, isolate);
+V8DOMConfiguration::installMethod(isolate, {{method.function_template}}, {{method.signature}}, {{property_attribute}}, {{method.name}}MethodConfiguration);
 {%- endmacro %}
 
 {######################################}

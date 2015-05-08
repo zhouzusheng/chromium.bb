@@ -29,6 +29,7 @@
 #include <stdint.h>
 
 namespace blink {
+class WebTraceLocation;
 
 // Always an integer value.
 typedef uintptr_t PlatformThreadId;
@@ -39,7 +40,7 @@ typedef uintptr_t PlatformThreadId;
 // run.
 class BLINK_PLATFORM_EXPORT WebThread {
 public:
-    class Task {
+    class BLINK_PLATFORM_EXPORT Task {
     public:
         virtual ~Task() { }
         virtual void run() = 0;
@@ -55,8 +56,8 @@ public:
     // postTask() and postDelayedTask() take ownership of the passed Task
     // object. It is safe to invoke postTask() and postDelayedTask() from any
     // thread.
-    virtual void postTask(Task*) = 0;
-    virtual void postDelayedTask(Task*, long long delayMs) = 0;
+    virtual void postTask(const WebTraceLocation&, Task*) = 0;
+    virtual void postDelayedTask(const WebTraceLocation&, Task*, long long delayMs) = 0;
 
     virtual bool isCurrentThread() const = 0;
     virtual PlatformThreadId threadId() const { return 0; }

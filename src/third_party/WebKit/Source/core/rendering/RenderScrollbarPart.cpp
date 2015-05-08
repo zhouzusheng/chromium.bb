@@ -27,7 +27,7 @@
 #include "core/rendering/RenderScrollbarPart.h"
 
 #include "core/frame/UseCounter.h"
-#include "core/rendering/PaintInfo.h"
+#include "core/layout/PaintInfo.h"
 #include "core/rendering/RenderScrollbar.h"
 #include "core/rendering/RenderScrollbarTheme.h"
 #include "core/rendering/RenderView.h"
@@ -166,13 +166,13 @@ void RenderScrollbarPart::computePreferredLogicalWidths()
     clearPreferredLogicalWidthsDirty();
 }
 
-void RenderScrollbarPart::styleWillChange(StyleDifference diff, const RenderStyle& newStyle)
+void RenderScrollbarPart::styleWillChange(StyleDifference diff, const LayoutStyle& newStyle)
 {
     RenderBlock::styleWillChange(diff, newStyle);
     setInline(false);
 }
 
-void RenderScrollbarPart::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
+void RenderScrollbarPart::styleDidChange(StyleDifference diff, const LayoutStyle* oldStyle)
 {
     RenderBlock::styleDidChange(diff, oldStyle);
     setInline(false);
@@ -199,7 +199,7 @@ void RenderScrollbarPart::imageChanged(WrappedImagePtr image, const IntRect* rec
     }
 }
 
-RenderObject* RenderScrollbarPart::rendererOwningScrollbar() const
+LayoutObject* RenderScrollbarPart::rendererOwningScrollbar() const
 {
     if (!m_scrollbar)
         return 0;

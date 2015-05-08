@@ -31,6 +31,7 @@
 #include "core/dom/DOMArrayPiece.h"
 #include "core/dom/DOMException.h"
 #include "modules/EventTargetModules.h"
+#include "modules/encryptedmedia/MediaKeyStatusMap.h"
 #include "platform/Timer.h"
 #include "platform/heap/Handle.h"
 #include "public/platform/WebContentDecryptionModuleSession.h"
@@ -68,6 +69,7 @@ public:
     String sessionId() const;
     double expiration() const { return m_expiration; }
     ScriptPromise closed(ScriptState*);
+    MediaKeyStatusMap* keyStatuses();
 
     ScriptPromise generateRequest(ScriptState*, const String& initDataType, const DOMArrayPiece& initData);
     ScriptPromise load(ScriptState*, const String& sessionId);
@@ -99,9 +101,9 @@ private:
 
     // WebContentDecryptionModuleSession::Client
     virtual void message(MessageType, const unsigned char* message, size_t messageLength) override;
-    virtual void message(const unsigned char* message, size_t messageLength, const WebURL& destinationURL) override;
     virtual void close() override;
     virtual void expirationChanged(double updatedExpiryTimeInMS) override;
+    virtual void keysStatusesChange(const WebVector<WebEncryptedMediaKeyInformation>&, bool hasAdditionalUsableKey) override;
 
     // Called by NewSessionResult when the new session has been created.
     void finishGenerateRequest();
@@ -119,6 +121,7 @@ private:
     // Session properties.
     String m_sessionType;
     double m_expiration;
+    Member<MediaKeyStatusMap> m_keyStatusesMap;
 
     // Session states.
     bool m_isUninitialized;
@@ -126,10 +129,10 @@ private:
     bool m_isClosed; // Is the CDM finished with this session?
 
     // Keep track of the closed promise.
-    typedef ScriptPromiseProperty<Member<MediaKeySession>, ToV8UndefinedGenerator, RefPtrWillBeMember<DOMException> > ClosedPromise;
+    typedef ScriptPromiseProperty<Member<MediaKeySession>, ToV8UndefinedGenerator, RefPtrWillBeMember<DOMException>> ClosedPromise;
     Member<ClosedPromise> m_closedPromise;
 
-    HeapDeque<Member<PendingAction> > m_pendingActions;
+    HeapDeque<Member<PendingAction>> m_pendingActions;
     Timer<MediaKeySession> m_actionTimer;
 };
 

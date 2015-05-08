@@ -79,8 +79,7 @@ static String algorithmToString(HashAlgorithm algorithm)
 static String digestToString(const DigestValue& digest)
 {
     // We always output base64url encoded data, even though we use base64 internally.
-    String output = base64Encode(reinterpret_cast<const char*>(digest.data()), digest.size(), Base64DoNotInsertLFs);
-    return output.replace('+', '-').replace('/', '_');
+    return base64URLEncode(reinterpret_cast<const char*>(digest.data()), digest.size(), Base64DoNotInsertLFs);
 }
 
 bool SubresourceIntegrity::CheckSubresourceIntegrity(const Element& element, const String& source, const KURL& resourceUrl, const String& resourceType)
@@ -92,26 +91,6 @@ bool SubresourceIntegrity::CheckSubresourceIntegrity(const Element& element, con
         return true;
 
     Document& document = element.document();
-
-    // Instead of just checking SecurityOrigin::isSecure on resourceUrl, this
-    // checks canAccessFeatureRequiringSecureOrigin so that file:// protocols
-    // and localhost resources can be allowed. These may be useful for testing
-    // and are allowed for features requiring authenticated origins, so Chrome
-    // allows them here.
-    String insecureOriginMsg = "";
-    RefPtr<SecurityOrigin> resourceSecurityOrigin = SecurityOrigin::create(resourceUrl);
-    if (!document.securityOrigin()->canAccessFeatureRequiringSecureOrigin(insecureOriginMsg)) {
-        UseCounter::count(document, UseCounter::SRIElementWithIntegrityAttributeAndInsecureOrigin);
-        // FIXME: This console message should probably utilize
-        // inesecureOriginMsg to give a more helpful message to the user.
-        logErrorToConsole("The 'integrity' attribute may only be used in documents in secure origins.", document);
-        return false;
-    }
-    if (!resourceSecurityOrigin->canAccessFeatureRequiringSecureOrigin(insecureOriginMsg)) {
-        UseCounter::count(document, UseCounter::SRIElementWithIntegrityAttributeAndInsecureResource);
-        logErrorToConsole("The 'integrity' attribute may only be used with resources on secure origins.", document);
-        return false;
-    }
 
     String integrity;
     HashAlgorithm algorithm;
@@ -219,7 +198,7 @@ bool SubresourceIntegrity::parseDigest(const UChar*& position, const UChar* end,
     }
 
     // We accept base64url encoding, but normalize to "normal" base64 internally:
-    digest = String(begin, position - begin).replace('-', '+').replace('_', '/');
+    digest = normalizeToBase64(String(begin, position - begin));
     return true;
 }
 

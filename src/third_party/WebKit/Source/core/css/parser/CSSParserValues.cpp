@@ -125,17 +125,48 @@ CSSParserValueList::CSSParserValueList(CSSParserTokenRange range)
             break;
         }
         case DimensionToken:
-            if (!token.unitType() && token.value() == "__qem") {
-                value.setFromNumber(token.numericValue(), CSSParserValue::Q_EMS);
-                value.isInt = (token.numericValueType() == IntegerValueType);
+            if (!token.unitType()) {
+                if (token.value() == "__qem") {
+                    value.setFromNumber(token.numericValue(), CSSParserValue::Q_EMS);
+                    value.isInt = (token.numericValueType() == IntegerValueType);
+                    break;
+                }
+
+                // Unknown dimensions are handled as a list of two values
+                value.unit = CSSParserValue::DimensionList;
+                CSSParserValueList* list = new CSSParserValueList;
+                value.valueList = list;
+
+                CSSParserValue number;
+                number.setFromNumber(token.numericValue());
+                number.isInt = (token.numericValueType() == IntegerValueType);
+                list->addValue(number);
+
+                CSSParserString unitString;
+                unitString.init(token.value());
+                CSSParserValue unit;
+                unit.string = unitString;
+                unit.unit = CSSPrimitiveValue::CSS_IDENT;
+                list->addValue(unit);
+
                 break;
             }
+            // fallthrough
         case NumberToken:
         case PercentageToken:
             value.setFromNumber(token.numericValue(), token.unitType());
             value.isInt = (token.numericValueType() == IntegerValueType);
             break;
         case HashToken:
+            // FIXME: Move this logic to the property parser
+            // This check prevents us from allowing #red and similar
+            for (size_t i = 0; i < token.value().length(); ++i) {
+                if (!isASCIIHexDigit(token.value()[i])) {
+                    destroyAndClear();
+                    return;
+                }
+            }
+            // fallthrough
         case StringToken:
         case UnicodeRangeToken:
         case UrlToken: {
@@ -144,7 +175,7 @@ CSSParserValueList::CSSParserValueList(CSSParserTokenRange range)
             value.id = CSSValueInvalid;
             value.isInt = false;
             if (token.type() == HashToken)
-                value.unit = CSSPrimitiveValue::CSS_PARSER_HEXCOLOR;
+                value.unit = CSSParserValue::HexColor;
             else if (token.type() == StringToken)
                 value.unit = CSSPrimitiveValue::CSS_STRING;
             else if (token.type() == UnicodeRangeToken)
@@ -182,6 +213,8 @@ CSSParserValueList::CSSParserValueList(CSSParserTokenRange range)
             continue;
         case EOFToken:
             ASSERT_NOT_REACHED();
+        case CDOToken:
+        case CDCToken:
         case AtKeywordToken:
         case IncludeMatchToken:
         case DashMatchToken:

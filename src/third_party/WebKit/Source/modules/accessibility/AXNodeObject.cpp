@@ -43,8 +43,9 @@
 #include "core/html/HTMLPlugInElement.h"
 #include "core/html/HTMLSelectElement.h"
 #include "core/html/HTMLTextAreaElement.h"
+#include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/shadow/MediaControlElements.h"
-#include "core/rendering/RenderObject.h"
+#include "core/layout/LayoutObject.h"
 #include "modules/accessibility/AXObjectCacheImpl.h"
 #include "platform/UserGestureIndicator.h"
 #include "wtf/text/StringBuilder.h"
@@ -92,12 +93,16 @@ static String accessibleNameForNode(Node* node)
         const AtomicString& alt = toHTMLElement(node)->getAttribute(altAttr);
         if (!alt.isEmpty())
             return alt;
+
+        const AtomicString& title = toHTMLElement(node)->getAttribute(titleAttr);
+        if (!title.isEmpty())
+            return title;
     }
 
     return String();
 }
 
-String AXNodeObject::accessibilityDescriptionForElements(WillBeHeapVector<RawPtrWillBeMember<Element> > &elements) const
+String AXNodeObject::accessibilityDescriptionForElements(WillBeHeapVector<RawPtrWillBeMember<Element>> &elements) const
 {
     StringBuilder builder;
     unsigned size = elements.size();
@@ -139,7 +144,7 @@ String AXNodeObject::ariaAccessibilityDescription() const
 }
 
 
-void AXNodeObject::ariaLabeledByElements(WillBeHeapVector<RawPtrWillBeMember<Element> >& elements) const
+void AXNodeObject::ariaLabeledByElements(WillBeHeapVector<RawPtrWillBeMember<Element>>& elements) const
 {
     elementsFromAttribute(elements, aria_labeledbyAttr);
     if (!elements.size())
@@ -318,7 +323,7 @@ AccessibilityRole AXNodeObject::determineAriaRoleAttribute() const
     return UnknownRole;
 }
 
-void AXNodeObject::elementsFromAttribute(WillBeHeapVector<RawPtrWillBeMember<Element> >& elements, const QualifiedName& attribute) const
+void AXNodeObject::elementsFromAttribute(WillBeHeapVector<RawPtrWillBeMember<Element>>& elements, const QualifiedName& attribute) const
 {
     Node* node = this->node();
     if (!node || !node->isElementNode())
@@ -352,16 +357,6 @@ bool AXNodeObject::hasContentEditableAttributeSet() const
     const AtomicString& contentEditableValue = getAttribute(contenteditableAttr);
     // Both "true" (case-insensitive) and the empty string count as true.
     return contentEditableValue.isEmpty() || equalIgnoringCase(contentEditableValue, "true");
-}
-
-bool AXNodeObject::isDescendantOfBarrenParent() const
-{
-    for (AXObject* object = parentObject(); object; object = object->parentObject()) {
-        if (!object->canHaveChildren())
-            return true;
-    }
-
-    return false;
 }
 
 bool AXNodeObject::isGenericFocusableElement() const
@@ -1170,17 +1165,17 @@ String AXNodeObject::stringValue() const
     if (ariaRoleAttribute() == StaticTextRole) {
         String staticText = text();
         if (!staticText.length())
-            staticText = textUnderElement();
+            staticText = textUnderElement(TextUnderElementAll);
         return staticText;
     }
 
     if (node->isTextNode())
-        return textUnderElement();
+        return textUnderElement(TextUnderElementAll);
 
     if (isHTMLSelectElement(*node)) {
         HTMLSelectElement& selectElement = toHTMLSelectElement(*node);
         int selectedIndex = selectElement.selectedIndex();
-        const WillBeHeapVector<RawPtrWillBeMember<HTMLElement> >& listItems = selectElement.listItems();
+        const WillBeHeapVector<RawPtrWillBeMember<HTMLElement>>& listItems = selectElement.listItems();
         if (selectedIndex >= 0 && static_cast<size_t>(selectedIndex) < listItems.size()) {
             const AtomicString& overriddenDescription = listItems[selectedIndex]->fastGetAttribute(aria_labelAttr);
             if (!overriddenDescription.isNull())
@@ -1216,15 +1211,20 @@ const AtomicString& AXNodeObject::textInputType() const
 
 String AXNodeObject::ariaDescribedByAttribute() const
 {
-    WillBeHeapVector<RawPtrWillBeMember<Element> > elements;
+    WillBeHeapVector<RawPtrWillBeMember<Element>> elements;
     elementsFromAttribute(elements, aria_describedbyAttr);
 
     return accessibilityDescriptionForElements(elements);
 }
 
+const AtomicString& AXNodeObject::ariaDropEffect() const
+{
+    return getAttribute(aria_dropeffectAttr);
+}
+
 String AXNodeObject::ariaLabeledByAttribute() const
 {
-    WillBeHeapVector<RawPtrWillBeMember<Element> > elements;
+    WillBeHeapVector<RawPtrWillBeMember<Element>> elements;
     ariaLabeledByElements(elements);
 
     return accessibilityDescriptionForElements(elements);
@@ -1271,6 +1271,11 @@ static bool shouldUseAccessibilityObjectInnerText(AXObject* obj)
     if (obj->isInertOrAriaHidden())
         return false;
 
+    // If something doesn't expose any children, then we can always take the inner text content.
+    // This is what we want when someone puts an <a> inside a <button> for example.
+    if (obj->isDescendantOfBarrenParent())
+        return true;
+
     // Skip focusable children, so we don't include the text of links and controls.
     if (obj->canSetFocusAttribute())
         return false;
@@ -1282,13 +1287,25 @@ static bool shouldUseAccessibilityObjectInnerText(AXObject* obj)
     return true;
 }
 
-String AXNodeObject::textUnderElement() const
+// Returns true if |r1| and |r2| are both non-null and are contained within the
+// same RenderBox.
+static bool isSameRenderBox(LayoutObject* r1, LayoutObject* r2)
+{
+    if (!r1 || !r2)
+        return false;
+    RenderBox* b1 = r1->enclosingBox();
+    RenderBox* b2 = r2->enclosingBox();
+    return b1 && b2 && b1 == b2;
+}
+
+String AXNodeObject::textUnderElement(TextUnderElementMode mode) const
 {
     Node* node = this->node();
     if (node && node->isTextNode())
         return toText(node)->wholeText();
 
     StringBuilder builder;
+    AXObject* previous = nullptr;
     for (AXObject* child = firstChild(); child; child = child->nextSibling()) {
         if (!shouldUseAccessibilityObjectInnerText(child))
             continue;
@@ -1298,11 +1315,27 @@ String AXNodeObject::textUnderElement() const
             toAXNodeObject(child)->alternativeText(textOrder);
             if (textOrder.size() > 0) {
                 builder.append(textOrder[0].text);
+                if (mode == TextUnderElementAny)
+                    break;
                 continue;
             }
         }
 
-        builder.append(child->textUnderElement());
+        // If we're going between two renderers that are in separate RenderBoxes, add
+        // whitespace if it wasn't there already. Intuitively if you have
+        // <span>Hello</span><span>World</span>, those are part of the same RenderBox
+        // so we should return "HelloWorld", but given <div>Hello</div><div>World</div> the
+        // strings are in separate boxes so we should return "Hello World".
+        if (previous && builder.length() && !isHTMLSpace(builder[builder.length() - 1])) {
+            if (!isSameRenderBox(child->renderer(), previous->renderer()))
+                builder.append(' ');
+        }
+
+        builder.append(child->textUnderElement(mode));
+        previous = child;
+
+        if (mode == TextUnderElementAny && !builder.isEmpty())
+            break;
     }
 
     return builder.toString();
@@ -1340,7 +1373,7 @@ String AXNodeObject::accessibilityDescription() const
     // Both are used to generate what a screen reader speaks.
     // If this point is reached (i.e. there's no accessibilityDescription) and there's no title(), we should fallback to using the title attribute.
     // The title attribute is normally used as help text (because it is a tooltip), but if there is nothing else available, this should be used (according to ARIA).
-    if (title().isEmpty())
+    if (title(TextUnderElementAny).isEmpty())
         return getAttribute(titleAttr);
 
     if (roleValue() == FigureRole) {
@@ -1352,7 +1385,7 @@ String AXNodeObject::accessibilityDescription() const
     return String();
 }
 
-String AXNodeObject::title() const
+String AXNodeObject::title(TextUnderElementMode mode) const
 {
     Node* node = this->node();
     if (!node)
@@ -1391,7 +1424,7 @@ String AXNodeObject::title() const
     case MenuItemRadioRole:
     case RadioButtonRole:
     case TabRole:
-        return textUnderElement();
+        return textUnderElement(mode);
     // SVGRoots should not use the text under itself as a title. That could include the text of objects like <text>.
     case SVGRootRole:
         return String();
@@ -1405,12 +1438,12 @@ String AXNodeObject::title() const
     }
 
     if (isHeading() || isLink())
-        return textUnderElement();
+        return textUnderElement(mode);
 
     // If it's focusable but it's not content editable or a known control type, then it will appear to
     // the user as a single atomic object, so we should use its text as the default title.
     if (isGenericFocusableElement())
-        return textUnderElement();
+        return textUnderElement(mode);
 
     return String();
 }
@@ -1457,7 +1490,7 @@ String AXNodeObject::helpText() const
 
 String AXNodeObject::computedName() const
 {
-    String title = this->title();
+    String title = this->title(TextUnderElementAll);
 
     String titleUIText;
     if (title.isEmpty()) {
@@ -1943,7 +1976,7 @@ void AXNodeObject::ariaLabeledByText(Vector<AccessibilityText>& textOrder) const
 {
     String ariaLabeledBy = ariaLabeledByAttribute();
     if (!ariaLabeledBy.isEmpty()) {
-        WillBeHeapVector<RawPtrWillBeMember<Element> > elements;
+        WillBeHeapVector<RawPtrWillBeMember<Element>> elements;
         ariaLabeledByElements(elements);
 
         unsigned length = elements.size();

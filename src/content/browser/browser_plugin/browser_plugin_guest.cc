@@ -127,7 +127,7 @@ void BrowserPluginGuest::Init() {
 
 void BrowserPluginGuest::WillDestroy() {
   is_in_destruction_ = true;
-  owner_web_contents_ = NULL;
+  owner_web_contents_ = nullptr;
   attached_ = false;
 }
 
@@ -135,11 +135,18 @@ base::WeakPtr<BrowserPluginGuest> BrowserPluginGuest::AsWeakPtr() {
   return weak_ptr_factory_.GetWeakPtr();
 }
 
-void BrowserPluginGuest::SetFocus(RenderWidgetHost* rwh, bool focused) {
+void BrowserPluginGuest::SetFocus(RenderWidgetHost* rwh,
+                                  bool focused,
+                                  blink::WebFocusType focus_type) {
   focused_ = focused;
   if (!rwh)
     return;
 
+  if ((focus_type == blink::WebFocusTypeForward) ||
+      (focus_type == blink::WebFocusTypeBackward)) {
+    static_cast<RenderViewHostImpl*>(RenderViewHost::From(rwh))->
+        SetInitialFocus(focus_type == blink::WebFocusTypeBackward);
+  }
   rwh->Send(new InputMsg_SetFocus(rwh->GetRoutingID(), focused));
   if (!focused && mouse_locked_)
     OnUnlockMouse();
@@ -223,7 +230,9 @@ void BrowserPluginGuest::InitInternal(
     const BrowserPluginHostMsg_Attach_Params& params,
     WebContentsImpl* owner_web_contents) {
   focused_ = params.focused;
-  OnSetFocus(browser_plugin::kInstanceIDNone, focused_);
+  OnSetFocus(browser_plugin::kInstanceIDNone,
+             focused_,
+             blink::WebFocusTypeNone);
 
   guest_visible_ = params.visible;
   UpdateVisibility();
@@ -278,14 +287,6 @@ void BrowserPluginGuest::InitInternal(
       GetWebContents()->GetRenderViewHost()->GetWebkitPreferences();
   prefs.navigate_on_drag_drop = false;
   GetWebContents()->GetRenderViewHost()->UpdateWebkitPreferences(prefs);
-
-  // Enable input method for guest if it's enabled for the embedder.
-  if (static_cast<RenderViewHostImpl*>(
-      owner_web_contents_->GetRenderViewHost())->input_method_active()) {
-    RenderViewHostImpl* guest_rvh = static_cast<RenderViewHostImpl*>(
-        GetWebContents()->GetRenderViewHost());
-    guest_rvh->SetInputMethodActive(true);
-  }
 }
 
 BrowserPluginGuest::~BrowserPluginGuest() {
@@ -296,7 +297,7 @@ BrowserPluginGuest* BrowserPluginGuest::Create(
     WebContentsImpl* web_contents,
     BrowserPluginGuestDelegate* delegate) {
   return new BrowserPluginGuest(
-      web_contents->opener() != NULL, web_contents, delegate);
+      web_contents->opener() != nullptr, web_contents, delegate);
 }
 
 // static
@@ -313,7 +314,7 @@ bool BrowserPluginGuest::IsGuest(RenderViewHostImpl* render_view_host) {
 
 RenderWidgetHostView* BrowserPluginGuest::GetOwnerRenderWidgetHostView() {
   if (!owner_web_contents_)
-    return NULL;
+    return nullptr;
   return owner_web_contents_->GetRenderWidgetHostView();
 }
 
@@ -348,7 +349,7 @@ void BrowserPluginGuest::SwapCompositorFrame(
       1.0f / frame->metadata.device_scale_factor)));
 
   if (last_seen_view_size_ != view_size) {
-    delegate_->GuestSizeChanged(last_seen_view_size_, view_size);
+    delegate_->GuestSizeChanged(view_size);
     last_seen_view_size_ = view_size;
   }
 
@@ -373,6 +374,10 @@ bool BrowserPluginGuest::Find(int request_id,
                               const base::string16& search_text,
                               const blink::WebFindOptions& options) {
   return delegate_->Find(request_id, search_text, options);
+}
+
+bool BrowserPluginGuest::StopFinding(StopFindAction action) {
+  return delegate_->StopFinding(action);
 }
 
 WebContentsImpl* BrowserPluginGuest::GetWebContents() const {
@@ -631,6 +636,14 @@ void BrowserPluginGuest::Attach(
 
   has_render_view_ = true;
 
+  // Enable input method for guest if it's enabled for the embedder.
+  if (static_cast<RenderViewHostImpl*>(
+      owner_web_contents_->GetRenderViewHost())->input_method_active()) {
+    RenderViewHostImpl* guest_rvh = static_cast<RenderViewHostImpl*>(
+        GetWebContents()->GetRenderViewHost());
+    guest_rvh->SetInputMethodActive(true);
+  }
+
   RecordAction(base::UserMetricsAction("BrowserPlugin.Guest.Attached"));
 }
 
@@ -768,7 +781,7 @@ void BrowserPluginGuest::OnResizeGuest(
   // BrowserPluginGuest does not yet have a RenderViewHost.
   if (guest_device_scale_factor_ != params.scale_factor &&
       GetWebContents()->GetRenderViewHost()) {
-    RenderWidgetHostImpl* render_widget_host =
+    auto render_widget_host =
         RenderWidgetHostImpl::From(GetWebContents()->GetRenderViewHost());
     guest_device_scale_factor_ = params.scale_factor;
     render_widget_host->NotifyScreenInfoChanged();
@@ -785,10 +798,11 @@ void BrowserPluginGuest::OnResizeGuest(
 }
 
 void BrowserPluginGuest::OnSetFocus(int browser_plugin_instance_id,
-                                    bool focused) {
+                                    bool focused,
+                                    blink::WebFocusType focus_type) {
   RenderWidgetHostView* rwhv = web_contents()->GetRenderWidgetHostView();
-  RenderWidgetHost* rwh = rwhv ? rwhv->GetRenderWidgetHost() : NULL;
-  SetFocus(rwh, focused);
+  RenderWidgetHost* rwh = rwhv ? rwhv->GetRenderWidgetHost() : nullptr;
+  SetFocus(rwh, focused, focus_type);
 }
 
 void BrowserPluginGuest::OnSetEditCommandsForNextKeyEvent(
@@ -857,8 +871,8 @@ void BrowserPluginGuest::OnShowPopup(
 #endif
 
 void BrowserPluginGuest::OnShowWidget(int route_id,
-                                      const gfx::Rect& initial_pos) {
-  GetWebContents()->ShowCreatedWidget(route_id, initial_pos);
+                                      const gfx::Rect& initial_rect) {
+  GetWebContents()->ShowCreatedWidget(route_id, initial_rect);
 }
 
 void BrowserPluginGuest::OnTakeFocus(bool reverse) {

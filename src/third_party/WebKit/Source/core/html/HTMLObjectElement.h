@@ -36,7 +36,7 @@ class HTMLObjectElement final : public HTMLPlugInElement, public FormAssociatedE
 public:
     static PassRefPtrWillBeRawPtr<HTMLObjectElement> create(Document&, HTMLFormElement*, bool createdByParser);
     virtual ~HTMLObjectElement();
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     const String& classId() const { return m_classId; }
 
@@ -82,7 +82,7 @@ private:
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
     virtual void removedFrom(ContainerNode*) override;
 
-    virtual bool rendererIsNeeded(const RenderStyle&) override;
+    virtual bool rendererIsNeeded(const LayoutStyle&) override;
     virtual void didMoveToNewDocument(Document& oldDocument) override;
 
     virtual void childrenChanged(const ChildrenChange&) override;
@@ -92,7 +92,7 @@ private:
     virtual const QualifiedName& subResourceAttributeName() const override;
     virtual const AtomicString imageSourceURL() const override;
 
-    virtual RenderPart* existingRenderPart() const override;
+    virtual LayoutPart* existingLayoutPart() const override;
 
     virtual void updateWidgetInternal() override;
     void updateDocNamedItem();

@@ -143,14 +143,12 @@
             # such as:
             # com.google.Chrome[] objc[]: Class ScrollbarPrefsObserver is implemented in both .../Google Chrome.app/Contents/Versions/.../Google Chrome Helper.app/Contents/MacOS/../../../Google Chrome Framework.framework/Google Chrome Framework and /System/Library/Frameworks/WebKit.framework/Versions/A/Frameworks/WebCore.framework/Versions/A/WebCore. One of the two will be used. Which one is undefined.
             'WebCascadeList=ChromiumWebCoreObjCWebCascadeList',
-            'WebFontCache=ChromiumWebCoreObjCWebFontCache',
             'WebScrollAnimationHelperDelegate=ChromiumWebCoreObjCWebScrollAnimationHelperDelegate',
             'WebScrollbarPainterControllerDelegate=ChromiumWebCoreObjCWebScrollbarPainterControllerDelegate',
             'WebScrollbarPainterDelegate=ChromiumWebCoreObjCWebScrollbarPainterDelegate',
             'WebScrollbarPartAnimation=ChromiumWebCoreObjCWebScrollbarPartAnimation',
             'WebCoreFlippedView=ChromiumWebCoreObjCWebCoreFlippedView',
             'WebCoreTextFieldCell=ChromiumWebCoreObjCWebCoreTextFieldCell',
-            'WebCoreRenderThemeNotificationObserver=ChromiumWebCoreObjCWebCoreRenderThemeNotificationObserver',
           ],
           'postbuilds': [
             {
@@ -159,7 +157,7 @@
               'postbuild_name': 'Check Objective-C Rename',
               'variables': {
                 'class_whitelist_regex':
-                    'ChromiumWebCoreObjC|TCMVisibleView|RTCMFlippedView|ScrollerStyleObserver',
+                    'ChromiumWebCoreObjC|TCMVisibleView|RTCMFlippedView|ScrollerStyleObserver|LayoutThemeNotificationObserver',
                 'category_whitelist_regex':
                     'WebCoreFocusRingDrawing|WebCoreTheme',
               },
@@ -338,9 +336,6 @@
           ['include', 'geometry/cg/IntPointCG\\.cpp$'],
           ['include', 'geometry/cg/IntRectCG\\.cpp$'],
           ['include', 'geometry/cg/IntSizeCG\\.cpp$'],
-        ],
-        'defines': [
-        'WebFontCache=ChromiumWebCoreObjCWebFontCache',
         ],
       }, { # OS!="mac"
         'sources/': [

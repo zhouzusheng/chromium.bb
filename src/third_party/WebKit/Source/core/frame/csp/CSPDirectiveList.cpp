@@ -6,14 +6,37 @@
 #include "core/frame/csp/CSPDirectiveList.h"
 
 #include "core/dom/Document.h"
+#include "core/dom/SecurityContext.h"
 #include "core/frame/LocalFrame.h"
 #include "core/inspector/ConsoleMessage.h"
+#include "platform/Crypto.h"
 #include "platform/ParsingUtilities.h"
 #include "platform/RuntimeEnabledFeatures.h"
+#include "platform/network/ContentSecurityPolicyParsers.h"
 #include "platform/weborigin/KURL.h"
+#include "wtf/text/Base64.h"
+#include "wtf/text/StringUTF8Adaptor.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
+
+namespace {
+
+String getSha256String(const String& content)
+{
+    DigestValue digest;
+    StringUTF8Adaptor normalizedContent = normalizeSource(content);
+    bool digestSuccess = computeDigest(HashAlgorithmSha256, normalizedContent.data(), normalizedContent.length(), digest);
+    if (!digestSuccess) {
+        return "sha256-...";
+    }
+
+    // For consistency with Subresource Integrity, we output base64url encoded
+    // data in error messages.
+    return "sha256-" + base64URLEncode(reinterpret_cast<char*>(digest.data()), digest.size(), Base64DoNotInsertLFs);
+}
+
+}
 
 CSPDirectiveList::CSPDirectiveList(ContentSecurityPolicy* policy, ContentSecurityPolicyHeaderType type, ContentSecurityPolicyHeaderSource source)
     : m_policy(policy)
@@ -25,6 +48,7 @@ CSPDirectiveList::CSPDirectiveList(ContentSecurityPolicy* policy, ContentSecurit
     , m_didSetReferrerPolicy(false)
     , m_referrerPolicy(ReferrerPolicyDefault)
     , m_strictMixedContentCheckingEnforced(false)
+    , m_upgradeInsecureRequests(false)
 {
     m_reportOnly = type == ContentSecurityPolicyHeaderTypeReport;
 }
@@ -162,7 +186,7 @@ bool CSPDirectiveList::checkMediaTypeAndReportViolation(MediaListDirective* dire
     return denyIfEnforcingPolicy();
 }
 
-bool CSPDirectiveList::checkInlineAndReportViolation(SourceListDirective* directive, const String& consoleMessage, const String& contextURL, const WTF::OrdinalNumber& contextLine, bool isScript) const
+bool CSPDirectiveList::checkInlineAndReportViolation(SourceListDirective* directive, const String& consoleMessage, const String& contextURL, const WTF::OrdinalNumber& contextLine, bool isScript, const String& hashValue) const
 {
     if (checkInline(directive))
         return true;
@@ -172,7 +196,7 @@ bool CSPDirectiveList::checkInlineAndReportViolation(SourceListDirective* direct
         // If inline is allowed, but a hash or nonce is present, we ignore 'unsafe-inline'. Throw a reasonable error.
         suffix = " Note that 'unsafe-inline' is ignored if either a hash or nonce value is present in the source list.";
     } else {
-        suffix = " Either the 'unsafe-inline' keyword, a hash ('sha256-...'), or a nonce ('nonce-...') is required to enable inline execution.";
+        suffix = " Either the 'unsafe-inline' keyword, a hash ('" + hashValue + "'), or a nonce ('nonce-...') is required to enable inline execution.";
         if (directive == m_defaultSrc)
             suffix = suffix + " Note also that '" + String(isScript ? "script" : "style") + "-src' was not explicitly set, so 'default-src' is used as a fallback.";
     }
@@ -237,44 +261,42 @@ bool CSPDirectiveList::checkAncestorsAndReportViolation(SourceListDirective* dir
 
 bool CSPDirectiveList::allowJavaScriptURLs(const String& contextURL, const WTF::OrdinalNumber& contextLine, ContentSecurityPolicy::ReportingStatus reportingStatus) const
 {
-    DEFINE_STATIC_LOCAL(String, consoleMessage, ("Refused to execute JavaScript URL because it violates the following Content Security Policy directive: "));
-    if (reportingStatus == ContentSecurityPolicy::SendReport)
-        return checkInlineAndReportViolation(operativeDirective(m_scriptSrc.get()), consoleMessage, contextURL, contextLine, true);
-
+    if (reportingStatus == ContentSecurityPolicy::SendReport) {
+        return checkInlineAndReportViolation(operativeDirective(m_scriptSrc.get()), "Refused to execute JavaScript URL because it violates the following Content Security Policy directive: ", contextURL, contextLine, true, "sha256-...");
+    }
     return checkInline(operativeDirective(m_scriptSrc.get()));
 }
 
 bool CSPDirectiveList::allowInlineEventHandlers(const String& contextURL, const WTF::OrdinalNumber& contextLine, ContentSecurityPolicy::ReportingStatus reportingStatus) const
 {
-    DEFINE_STATIC_LOCAL(String, consoleMessage, ("Refused to execute inline event handler because it violates the following Content Security Policy directive: "));
-    if (reportingStatus == ContentSecurityPolicy::SendReport)
-        return checkInlineAndReportViolation(operativeDirective(m_scriptSrc.get()), consoleMessage, contextURL, contextLine, true);
+    if (reportingStatus == ContentSecurityPolicy::SendReport) {
+        return checkInlineAndReportViolation(operativeDirective(m_scriptSrc.get()), "Refused to execute inline event handler because it violates the following Content Security Policy directive: ", contextURL, contextLine, true, "sha256-...");
+    }
     return checkInline(operativeDirective(m_scriptSrc.get()));
 }
 
-bool CSPDirectiveList::allowInlineScript(const String& contextURL, const WTF::OrdinalNumber& contextLine, ContentSecurityPolicy::ReportingStatus reportingStatus) const
+bool CSPDirectiveList::allowInlineScript(const String& contextURL, const WTF::OrdinalNumber& contextLine, ContentSecurityPolicy::ReportingStatus reportingStatus, const String& content) const
 {
-    DEFINE_STATIC_LOCAL(String, consoleMessage, ("Refused to execute inline script because it violates the following Content Security Policy directive: "));
-    return reportingStatus == ContentSecurityPolicy::SendReport ?
-        checkInlineAndReportViolation(operativeDirective(m_scriptSrc.get()), consoleMessage, contextURL, contextLine, true) :
-        checkInline(operativeDirective(m_scriptSrc.get()));
+    if (reportingStatus == ContentSecurityPolicy::SendReport) {
+        return checkInlineAndReportViolation(operativeDirective(m_scriptSrc.get()), "Refused to execute inline script because it violates the following Content Security Policy directive: ", contextURL, contextLine, true, getSha256String(content));
+    }
+    return checkInline(operativeDirective(m_scriptSrc.get()));
 }
 
-bool CSPDirectiveList::allowInlineStyle(const String& contextURL, const WTF::OrdinalNumber& contextLine, ContentSecurityPolicy::ReportingStatus reportingStatus) const
+bool CSPDirectiveList::allowInlineStyle(const String& contextURL, const WTF::OrdinalNumber& contextLine, ContentSecurityPolicy::ReportingStatus reportingStatus, const String& content) const
 {
-    DEFINE_STATIC_LOCAL(String, consoleMessage, ("Refused to apply inline style because it violates the following Content Security Policy directive: "));
-    return reportingStatus == ContentSecurityPolicy::SendReport ?
-        checkInlineAndReportViolation(operativeDirective(m_styleSrc.get()), consoleMessage, contextURL, contextLine, false) :
-        checkInline(operativeDirective(m_styleSrc.get()));
+    if (reportingStatus == ContentSecurityPolicy::SendReport) {
+        return checkInlineAndReportViolation(operativeDirective(m_styleSrc.get()), "Refused to apply inline style because it violates the following Content Security Policy directive: ", contextURL, contextLine, false, getSha256String(content));
+    }
+    return checkInline(operativeDirective(m_styleSrc.get()));
 }
 
 bool CSPDirectiveList::allowEval(ScriptState* scriptState, ContentSecurityPolicy::ReportingStatus reportingStatus) const
 {
-    DEFINE_STATIC_LOCAL(String, consoleMessage, ("Refused to evaluate a string as JavaScript because 'unsafe-eval' is not an allowed source of script in the following Content Security Policy directive: "));
-
-    return reportingStatus == ContentSecurityPolicy::SendReport ?
-        checkEvalAndReportViolation(operativeDirective(m_scriptSrc.get()), consoleMessage, scriptState) :
-        checkEval(operativeDirective(m_scriptSrc.get()));
+    if (reportingStatus == ContentSecurityPolicy::SendReport) {
+        return checkEvalAndReportViolation(operativeDirective(m_scriptSrc.get()), "Refused to evaluate a string as JavaScript because 'unsafe-eval' is not an allowed source of script in the following Content Security Policy directive: ", scriptState);
+    }
+    return checkEval(operativeDirective(m_scriptSrc.get()));
 }
 
 bool CSPDirectiveList::allowPluginType(const String& type, const String& typeAttribute, const KURL& url, ContentSecurityPolicy::ReportingStatus reportingStatus) const
@@ -557,6 +579,20 @@ void CSPDirectiveList::enforceStrictMixedContentChecking(const String& name, con
         m_policy->reportValueForEmptyDirective(name, value);
 }
 
+void CSPDirectiveList::enableInsecureContentUpgrade(const String& name, const String& value)
+{
+    if (m_upgradeInsecureRequests) {
+        m_policy->reportDuplicateDirective(name);
+        return;
+    }
+    m_upgradeInsecureRequests = true;
+    // FIXME: Monitoring insecure content currently has no effect. We'll eventually wire it up
+    // to the CSP reporting mechanism if we go this route. https://crbug.com/455674
+    m_policy->setInsecureContentPolicy(m_reportOnly ? SecurityContext::InsecureContentMonitor : SecurityContext::InsecureContentUpgrade);
+    if (!value.isEmpty())
+        m_policy->reportValueForEmptyDirective(name, value);
+}
+
 void CSPDirectiveList::parseReflectedXSS(const String& name, const String& value)
 {
     if (m_reflectedXSSDisposition != ReflectedXSSUnset) {
@@ -705,8 +741,10 @@ void CSPDirectiveList::addDirective(const String& name, const String& value)
     } else if (m_policy->experimentalFeaturesEnabled()) {
         if (equalIgnoringCase(name, ContentSecurityPolicy::ManifestSrc))
             setCSPDirective<SourceListDirective>(name, value, m_manifestSrc);
-        else if (equalIgnoringCase(name, ContentSecurityPolicy::StrictMixedContentChecking))
+        else if (equalIgnoringCase(name, ContentSecurityPolicy::BlockAllMixedContent))
             enforceStrictMixedContentChecking(name, value);
+        else if (equalIgnoringCase(name, ContentSecurityPolicy::UpgradeInsecureRequests))
+            enableInsecureContentUpgrade(name, value);
         else
             m_policy->reportUnsupportedDirective(name);
     } else {

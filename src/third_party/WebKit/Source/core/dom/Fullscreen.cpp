@@ -37,6 +37,7 @@
 #include "core/frame/UseCounter.h"
 #include "core/html/HTMLIFrameElement.h"
 #include "core/html/HTMLMediaElement.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/EventHandler.h"
@@ -339,11 +340,11 @@ void Fullscreen::exitFullscreen()
 
     // 4. For each descendant in descendants, empty descendant's fullscreen element stack, and queue a
     // task to fire an event named fullscreenchange with its bubbles attribute set to true on descendant.
-    for (WillBeHeapDeque<RefPtrWillBeMember<Document> >::iterator i = descendants.begin(); i != descendants.end(); ++i) {
-        ASSERT(*i);
-        RequestType requestType = from(**i).m_fullScreenElementStack.last().second;
-        from(**i).clearFullscreenElementStack();
-        enqueueChangeEvent(**i, requestType);
+    for (auto& descendant : descendants) {
+        ASSERT(descendant);
+        RequestType requestType = from(*descendant).m_fullScreenElementStack.last().second;
+        from(*descendant).clearFullscreenElementStack();
+        enqueueChangeEvent(*descendant, requestType);
     }
 
     // 5. While doc is not null, run these substeps:
@@ -428,11 +429,11 @@ void Fullscreen::didEnterFullScreenForElement(Element* element)
     // when the element is removed from the normal flow. Only do this for a RenderBox, as only
     // a box will have a frameRect. The placeholder will be created in setFullScreenRenderer()
     // during layout.
-    RenderObject* renderer = m_fullScreenElement->renderer();
+    LayoutObject* renderer = m_fullScreenElement->renderer();
     bool shouldCreatePlaceholder = renderer && renderer->isBox();
     if (shouldCreatePlaceholder) {
         m_savedPlaceholderFrameRect = toRenderBox(renderer)->frameRect();
-        m_savedPlaceholderRenderStyle = RenderStyle::clone(renderer->style());
+        m_savedPlaceholderLayoutStyle = LayoutStyle::clone(renderer->styleRef());
     }
 
     if (m_fullScreenElement != document()->documentElement())
@@ -488,11 +489,11 @@ void Fullscreen::setFullScreenRenderer(RenderFullScreen* renderer)
     if (renderer == m_fullScreenRenderer)
         return;
 
-    if (renderer && m_savedPlaceholderRenderStyle) {
-        renderer->createPlaceholder(m_savedPlaceholderRenderStyle.release(), m_savedPlaceholderFrameRect);
+    if (renderer && m_savedPlaceholderLayoutStyle) {
+        renderer->createPlaceholder(m_savedPlaceholderLayoutStyle.release(), m_savedPlaceholderFrameRect);
     } else if (renderer && m_fullScreenRenderer && m_fullScreenRenderer->placeholder()) {
         RenderBlock* placeholder = m_fullScreenRenderer->placeholder();
-        renderer->createPlaceholder(RenderStyle::clone(placeholder->style()), placeholder->frameRect());
+        renderer->createPlaceholder(LayoutStyle::clone(placeholder->styleRef()), placeholder->frameRect());
     }
 
     if (m_fullScreenRenderer)
@@ -605,7 +606,6 @@ void Fullscreen::trace(Visitor* visitor)
 {
     visitor->trace(m_fullScreenElement);
     visitor->trace(m_fullScreenElementStack);
-    visitor->trace(m_fullScreenRenderer);
     visitor->trace(m_eventQueue);
     DocumentSupplement::trace(visitor);
     DocumentLifecycleObserver::trace(visitor);

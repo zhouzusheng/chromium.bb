@@ -5,10 +5,10 @@
 #include "gpu/command_buffer/service/async_pixel_transfer_manager_idle.h"
 
 #include "base/bind.h"
-#include "base/debug/trace_event.h"
-#include "base/debug/trace_event_synthetic_delay.h"
 #include "base/lazy_instance.h"
 #include "base/memory/weak_ptr.h"
+#include "base/trace_event/trace_event.h"
+#include "base/trace_event/trace_event_synthetic_delay.h"
 #include "ui/gl/scoped_binders.h"
 
 namespace gpu {
@@ -144,7 +144,7 @@ void AsyncPixelTransferDelegateIdle::PerformAsyncTexImage2D(
 
   void* data = mem_params.GetDataAddress();
 
-  base::TimeTicks begin_time(base::TimeTicks::HighResNow());
+  base::TimeTicks begin_time(base::TimeTicks::Now());
   gfx::ScopedTextureBinder texture_binder(tex_params.target, texture_id_);
 
   {
@@ -165,7 +165,7 @@ void AsyncPixelTransferDelegateIdle::PerformAsyncTexImage2D(
   transfer_in_progress_ = false;
   shared_state_->texture_upload_count++;
   shared_state_->total_texture_upload_time +=
-      base::TimeTicks::HighResNow() - begin_time;
+      base::TimeTicks::Now() - begin_time;
 
   // The texture is already fully bound so just call it now.
   bind_callback.Run();
@@ -180,12 +180,11 @@ void AsyncPixelTransferDelegateIdle::PerformAsyncTexSubImage2D(
 
   void* data = mem_params.GetDataAddress();
 
-  base::TimeTicks begin_time(base::TimeTicks::HighResNow());
+  base::TimeTicks begin_time(base::TimeTicks::Now());
   gfx::ScopedTextureBinder texture_binder(tex_params.target, texture_id_);
 
-  // If it's a full texture update, use glTexImage2D as it's faster.
-  // TODO(epenner): Make this configurable (http://crbug.com/259924)
-  if (tex_params.xoffset == 0 &&
+  if (shared_state_->use_teximage2d_over_texsubimage2d &&
+      tex_params.xoffset == 0 &&
       tex_params.yoffset == 0 &&
       tex_params.target == define_params_.target &&
       tex_params.level  == define_params_.level &&
@@ -220,7 +219,7 @@ void AsyncPixelTransferDelegateIdle::PerformAsyncTexSubImage2D(
   transfer_in_progress_ = false;
   shared_state_->texture_upload_count++;
   shared_state_->total_texture_upload_time +=
-      base::TimeTicks::HighResNow() - begin_time;
+      base::TimeTicks::Now() - begin_time;
 }
 
 AsyncPixelTransferManagerIdle::Task::Task(
@@ -234,8 +233,11 @@ AsyncPixelTransferManagerIdle::Task::Task(
 
 AsyncPixelTransferManagerIdle::Task::~Task() {}
 
-AsyncPixelTransferManagerIdle::SharedState::SharedState()
-    : texture_upload_count(0) {}
+AsyncPixelTransferManagerIdle::SharedState::SharedState(
+    bool use_teximage2d_over_texsubimage2d)
+    : use_teximage2d_over_texsubimage2d(use_teximage2d_over_texsubimage2d),
+      texture_upload_count(0) {
+}
 
 AsyncPixelTransferManagerIdle::SharedState::~SharedState() {}
 
@@ -250,8 +252,9 @@ void AsyncPixelTransferManagerIdle::SharedState::ProcessNotificationTasks() {
   }
 }
 
-AsyncPixelTransferManagerIdle::AsyncPixelTransferManagerIdle()
-  : shared_state_() {
+AsyncPixelTransferManagerIdle::AsyncPixelTransferManagerIdle(
+    bool use_teximage2d_over_texsubimage2d)
+    : shared_state_(use_teximage2d_over_texsubimage2d) {
 }
 
 AsyncPixelTransferManagerIdle::~AsyncPixelTransferManagerIdle() {}

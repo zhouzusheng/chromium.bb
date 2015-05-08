@@ -28,34 +28,31 @@
 #ifndef ExecutionContext_h
 #define ExecutionContext_h
 
-#include "core/dom/ActiveDOMObject.h"
+#include "core/dom/ContextLifecycleNotifier.h"
 #include "core/dom/SecurityContext.h"
-#include "core/fetch/CrossOriginAccessControl.h"
-#include "core/frame/ConsoleTypes.h"
-#include "core/frame/DOMTimer.h"
-#include "core/inspector/ConsoleMessage.h"
-#include "platform/LifecycleContext.h"
+#include "core/fetch/AccessControlStatus.h"
 #include "platform/Supplementable.h"
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
-#include "wtf/Functional.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 
 namespace blink {
 
-class ContextLifecycleNotifier;
-class LocalDOMWindow;
+class ActiveDOMObject;
+class ConsoleMessage;
+class DOMTimerCoordinator;
 class ErrorEvent;
 class EventQueue;
+class EventTarget;
 class ExecutionContextTask;
+class LocalDOMWindow;
 class PublicURLManager;
 class SecurityOrigin;
 class ScriptCallStack;
 
 class ExecutionContext
-    : public LifecycleContext<ExecutionContext>
-    , public WillBeHeapSupplementable<ExecutionContext> {
+    : public ContextLifecycleNotifier, public WillBeHeapSupplementable<ExecutionContext> {
 public:
     virtual void trace(Visitor*) override;
 
@@ -75,6 +72,12 @@ public:
     virtual void postTask(PassOwnPtr<ExecutionContextTask>) = 0; // Executes the task on context's thread asynchronously.
     virtual double timerAlignmentInterval() const = 0;
 
+    // Gets the DOMTimerCoordinator which maintains the "active timer
+    // list" of tasks created by setTimeout and setInterval. The
+    // DOMTimerCoordinator is owned by the ExecutionContext and should
+    // not be used after the ExecutionContext is destroyed.
+    virtual DOMTimerCoordinator* timers() = 0;
+
     virtual void reportBlockedScriptExecutionToInspector(const String& directiveText) = 0;
 
     virtual SecurityContext& securityContext() = 0;
@@ -88,9 +91,6 @@ public:
     virtual void logExceptionToConsole(const String& errorMessage, int scriptId, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtrWillBeRawPtr<ScriptCallStack>) = 0;
 
     PublicURLManager& publicURLManager();
-
-    // Active objects are not garbage collected even if inaccessible, e.g. because their activity may result in callbacks being invoked.
-    bool hasPendingActivity();
 
     void suspendActiveDOMObjects();
     void resumeActiveDOMObjects();
@@ -117,11 +117,6 @@ public:
     // Gets the next id in a circular sequence from 1 to 2^31-1.
     int circularSequentialID();
 
-    void didChangeTimerAlignmentInterval();
-
-    int timerNestingLevel() { return m_timerNestingLevel; }
-    void setTimerNestingLevel(int level) { m_timerNestingLevel = level; }
-
     PassOwnPtr<LifecycleNotifier<ExecutionContext> > createLifecycleNotifier();
 
     virtual EventTarget* errorEventTarget() = 0;
@@ -130,9 +125,11 @@ public:
     void enforceStrictMixedContentChecking() { m_strictMixedContentCheckingEnforced = true; }
     bool shouldEnforceStrictMixedContentChecking() const { return m_strictMixedContentCheckingEnforced; }
 
-    void allowWindowFocus();
-    void consumeWindowFocus();
-    bool isWindowFocusAllowed() const;
+    // Methods related to window interaction. It should be used to manage window
+    // focusing and window creation permission for an ExecutionContext.
+    void allowWindowInteraction();
+    void consumeWindowInteraction();
+    bool isWindowInteractionAllowed() const;
 
 protected:
     ExecutionContext();
@@ -144,8 +141,6 @@ protected:
     ContextLifecycleNotifier& lifecycleNotifier();
 
 private:
-    friend class DOMTimer; // For installNewTimeout() and removeTimeoutByID() below.
-
     bool dispatchErrorEvent(PassRefPtrWillBeRawPtr<ErrorEvent>, AccessControlStatus);
 
 #if !ENABLE(OILPAN)
@@ -154,14 +149,7 @@ private:
 #endif
     // LifecycleContext implementation.
 
-    // Implementation details for DOMTimer. No other classes should call these functions.
-    int installNewTimeout(PassOwnPtr<ScheduledAction>, int timeout, bool singleShot);
-    void removeTimeoutByID(int timeoutID); // This makes underlying DOMTimer instance destructed.
-
     int m_circularSequentialID;
-    typedef WillBeHeapHashMap<int, RefPtrWillBeMember<DOMTimer> > TimeoutMap;
-    TimeoutMap m_timeouts;
-    int m_timerNestingLevel;
 
     bool m_inDispatchErrorEvent;
     class PendingException;
@@ -174,16 +162,13 @@ private:
 
     bool m_strictMixedContentCheckingEnforced;
 
-    // The location of this member is important; to make sure contextDestroyed() notification on
-    // ExecutionContext's members (notably m_timeouts) is called before they are destructed,
-    // m_lifecycleNotifer should be placed *after* such members.
     OwnPtr<ContextLifecycleNotifier> m_lifecycleNotifier;
 
-    // Counter that keeps track of how many window focus calls are allowed for
-    // this ExecutionContext. Callers are expected to call |allowWindowFocus()|
-    // and |consumeWindowFocus()| in order to increment and decrement the
-    // counter.
-    int m_windowFocusTokens;
+    // Counter that keeps track of how many window interaction calls are allowed
+    // for this ExecutionContext. Callers are expected to call
+    // |allowWindowInteraction()| and |consumeWindowInteraction()| in order to
+    // increment and decrement the counter.
+    int m_windowInteractionTokens;
 };
 
 } // namespace blink

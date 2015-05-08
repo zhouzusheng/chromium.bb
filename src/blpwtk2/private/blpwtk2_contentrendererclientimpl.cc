@@ -30,9 +30,9 @@
 #include <blpwtk2_stringref.h>
 
 #include <base/strings/utf_string_conversions.h>
-#include <chrome/renderer/printing/print_web_view_helper.h>
 #include <chrome/renderer/spellchecker/spellcheck.h>
 #include <chrome/renderer/spellchecker/spellcheck_provider.h>
+#include <components/printing/renderer/print_web_view_helper.h>
 #include <content/child/request_info.h>
 #include <content/public/renderer/render_font_warmup_win.h>
 #include <content/public/renderer/render_thread.h>
@@ -75,7 +75,7 @@ void ContentRendererClientImpl::RenderViewCreated(
     new RenderViewObserverImpl(render_view);
 
     new SpellCheckProvider(render_view, d_spellcheck.get());
-    new printing::PrintWebViewHelper(render_view, true, true,
+    new printing::PrintWebViewHelper(render_view,
                                      scoped_ptr<printing::PrintWebViewHelper::Delegate>(printing::PrintWebViewHelper::CreateEmptyDelegate()));
 }
 

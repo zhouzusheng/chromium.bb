@@ -41,6 +41,7 @@
 #include "WebIconURL.h"
 #include "WebNavigationPolicy.h"
 #include "WebNavigationType.h"
+#include "WebSandboxFlags.h"
 #include "WebSecurityOrigin.h"
 #include "WebTextDirection.h"
 #include "public/platform/WebCommon.h"
@@ -75,6 +76,7 @@ class WebServiceWorkerProvider;
 class WebSocketHandle;
 class WebPlugin;
 class WebPluginPlaceholder;
+class WebPresentationClient;
 class WebPushClient;
 class WebRTCPeerConnectionHandler;
 class WebScreenOrientationClient;
@@ -105,10 +107,6 @@ public:
     // May return null.
     // WebContentDecryptionModule* may be null if one has not yet been set.
     virtual WebMediaPlayer* createMediaPlayer(WebLocalFrame*, const WebURL&, WebMediaPlayerClient*, WebContentDecryptionModule*) { return 0; }
-
-    // May return null.
-    // FIXME: remove once encryptedMediaClient() is used.
-    virtual WebContentDecryptionModule* createContentDecryptionModule(WebLocalFrame*, const WebSecurityOrigin&, const WebString& keySystem) { return 0; }
 
     // May return null.
     virtual WebApplicationCacheHost* createApplicationCacheHost(WebLocalFrame*, WebApplicationCacheHostClient*) { return 0; }
@@ -148,7 +146,7 @@ public:
     // until frameDetached() is called on it.
     // Note: If you override this, you should almost certainly be overriding
     // frameDetached().
-    virtual WebFrame* createChildFrame(WebLocalFrame* parent, const WebString& frameName) { return 0; }
+    virtual WebFrame* createChildFrame(WebLocalFrame* parent, const WebString& frameName, WebSandboxFlags sandboxFlags) { return nullptr; }
 
     // This frame set its opener to null, disowning it.
     // See http://html.spec.whatwg.org/#dom-opener.
@@ -330,6 +328,12 @@ public:
 
     // Used to access the embedder for the Push API.
     virtual WebPushClient* pushClient() { return 0; }
+
+
+    // Presentation API ----------------------------------------------------
+
+    // Used to access the embedder for the Presentation API.
+    virtual WebPresentationClient* presentationClient() { return 0; }
 
 
     // Editing -------------------------------------------------------------
@@ -596,13 +600,27 @@ public:
 
     // Fullscreen ----------------------------------------------------------
 
-    // Called to enter/exit fullscreen mode. If enterFullScreen returns true,
-    // then WebWidget::{will,Did}EnterFullScreen should bound resizing the
-    // WebWidget into fullscreen mode. Similarly, when exitFullScreen is
-    // called, WebWidget::{will,Did}ExitFullScreen should bound resizing the
-    // WebWidget out of fullscreen mode.
+    // Called to enter/exit fullscreen mode.
+    // After calling enterFullscreen, WebWidget::{will,Did}EnterFullScreen
+    // should bound resizing the WebWidget into fullscreen mode.
+    // Similarly, when exitFullScreen is called,
+    // WebWidget::{will,Did}ExitFullScreen should bound resizing the WebWidget
+    // out of fullscreen mode.
+    // Note: the return value is ignored.
     virtual bool enterFullscreen() { return false; }
     virtual bool exitFullscreen() { return false; }
+
+
+    // Sudden termination --------------------------------------------------
+
+    // Called when elements preventing the sudden termination of the frame
+    // become present or stop being present. |type| is the type of element
+    // (BeforeUnload handler, Unload handler).
+    enum SuddenTerminationDisablerType {
+        BeforeUnloadHandler,
+        UnloadHandler,
+    };
+    virtual void suddenTerminationDisablerChanged(bool present, SuddenTerminationDisablerType) { }
 
 protected:
     virtual ~WebFrameClient() { }

@@ -5,11 +5,11 @@
 #include "config.h"
 #include "core/paint/MultiColumnSetPainter.h"
 
+#include "core/layout/LayoutMultiColumnSet.h"
+#include "core/layout/PaintInfo.h"
 #include "core/paint/BlockPainter.h"
 #include "core/paint/BoxPainter.h"
 #include "core/paint/RenderDrawingRecorder.h"
-#include "core/rendering/PaintInfo.h"
-#include "core/rendering/RenderMultiColumnSet.h"
 #include "platform/geometry/LayoutPoint.h"
 
 namespace blink {
@@ -34,14 +34,14 @@ void MultiColumnSetPainter::paintObject(const PaintInfo& paintInfo, const Layout
 
 void MultiColumnSetPainter::paintColumnRules(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
-    if (m_renderMultiColumnSet.flowThread()->isRenderPagedFlowThread())
+    if (m_renderMultiColumnSet.flowThread()->isLayoutPagedFlowThread())
         return;
 
-    RenderStyle* blockStyle = m_renderMultiColumnSet.multiColumnBlockFlow()->style();
+    const LayoutStyle& blockStyle = m_renderMultiColumnSet.multiColumnBlockFlow()->styleRef();
     const Color& ruleColor = m_renderMultiColumnSet.resolveColor(blockStyle, CSSPropertyWebkitColumnRuleColor);
-    bool ruleTransparent = blockStyle->columnRuleIsTransparent();
-    EBorderStyle ruleStyle = blockStyle->columnRuleStyle();
-    LayoutUnit ruleThickness = blockStyle->columnRuleWidth();
+    bool ruleTransparent = blockStyle.columnRuleIsTransparent();
+    EBorderStyle ruleStyle = blockStyle.columnRuleStyle();
+    LayoutUnit ruleThickness = blockStyle.columnRuleWidth();
     LayoutUnit colGap = m_renderMultiColumnSet.columnGap();
     bool renderRule = ruleStyle > BHIDDEN && !ruleTransparent;
     if (!renderRule)
@@ -51,7 +51,10 @@ void MultiColumnSetPainter::paintColumnRules(const PaintInfo& paintInfo, const L
     if (colCount <= 1)
         return;
 
-    DrawingRecorder drawingRecorder(paintInfo.context, m_renderMultiColumnSet.displayItemClient(), DisplayItem::ColumnRules, m_renderMultiColumnSet.visualOverflowRect());
+    RenderDrawingRecorder drawingRecorder(paintInfo.context, m_renderMultiColumnSet, DisplayItem::ColumnRules, m_renderMultiColumnSet.visualOverflowRect());
+    if (drawingRecorder.canUseCachedDrawing())
+        return;
+
     bool antialias = BoxPainter::shouldAntialiasLines(paintInfo.context);
     bool leftToRight = m_renderMultiColumnSet.style()->isLeftToRightDirection();
     LayoutUnit currLogicalLeftOffset = leftToRight ? LayoutUnit() : m_renderMultiColumnSet.contentLogicalWidth();

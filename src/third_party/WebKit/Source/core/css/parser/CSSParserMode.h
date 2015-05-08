@@ -14,7 +14,7 @@
  *    disclaimer in the documentation and/or other materials
  *    provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER “AS IS” AND ANY
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
  * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE
@@ -62,11 +62,6 @@ inline bool isQuirksModeBehavior(CSSParserMode mode)
 inline bool isUASheetBehavior(CSSParserMode mode)
 {
     return mode == UASheetMode;
-}
-
-inline bool isInternalPropertyAndValueParsingEnabledForMode(CSSParserMode mode)
-{
-    return mode == HTMLAttributeMode || mode == UASheetMode;
 }
 
 inline bool isUnitLessLengthParsingEnabledForMode(CSSParserMode mode)

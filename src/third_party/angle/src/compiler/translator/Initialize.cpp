@@ -75,6 +75,36 @@ void InsertBuiltInFunctions(sh::GLenum type, ShShaderSpec spec, const ShBuiltInR
     symbolTable.insertBuiltIn(COMMON_BUILTINS, float3, "atan", float3);
     symbolTable.insertBuiltIn(COMMON_BUILTINS, float4, "atan", float4);
 
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, float1, "sinh", float1);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, float2, "sinh", float2);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, float3, "sinh", float3);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, float4, "sinh", float4);
+
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, float1, "cosh", float1);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, float2, "cosh", float2);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, float3, "cosh", float3);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, float4, "cosh", float4);
+
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, float1, "tanh", float1);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, float2, "tanh", float2);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, float3, "tanh", float3);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, float4, "tanh", float4);
+
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, float1, "asinh", float1);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, float2, "asinh", float2);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, float3, "asinh", float3);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, float4, "asinh", float4);
+
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, float1, "acosh", float1);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, float2, "acosh", float2);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, float3, "acosh", float3);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, float4, "acosh", float4);
+
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, float1, "atanh", float1);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, float2, "atanh", float2);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, float3, "atanh", float3);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, float4, "atanh", float4);
+
     //
     // Exponential Functions.
     //
@@ -157,6 +187,27 @@ void InsertBuiltInFunctions(sh::GLenum type, ShShaderSpec spec, const ShBuiltInR
     symbolTable.insertBuiltIn(COMMON_BUILTINS, float3, "min", float3, float3);
     symbolTable.insertBuiltIn(COMMON_BUILTINS, float4, "min", float4, float4);
 
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, int1, "min", int1, int1);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, int2, "min", int2, int2);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, int3, "min", int3, int3);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, int4, "min", int4, int4);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, int2, "min", int2, int1);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, int3, "min", int3, int1);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, int4, "min", int4, int1);
+
+    TType *uint1 = new TType(EbtUInt);
+    TType *uint2 = new TType(EbtUInt, 2);
+    TType *uint3 = new TType(EbtUInt, 3);
+    TType *uint4 = new TType(EbtUInt, 4);
+
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, uint1, "min", uint1, uint1);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, uint2, "min", uint2, uint2);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, uint3, "min", uint3, uint3);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, uint4, "min", uint4, uint4);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, uint2, "min", uint2, uint1);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, uint3, "min", uint3, uint1);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, uint4, "min", uint4, uint1);
+
     symbolTable.insertBuiltIn(COMMON_BUILTINS, float1, "max", float1, float1);
     symbolTable.insertBuiltIn(COMMON_BUILTINS, float2, "max", float2, float1);
     symbolTable.insertBuiltIn(COMMON_BUILTINS, float3, "max", float3, float1);
@@ -165,6 +216,22 @@ void InsertBuiltInFunctions(sh::GLenum type, ShShaderSpec spec, const ShBuiltInR
     symbolTable.insertBuiltIn(COMMON_BUILTINS, float3, "max", float3, float3);
     symbolTable.insertBuiltIn(COMMON_BUILTINS, float4, "max", float4, float4);
 
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, int1, "max", int1, int1);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, int2, "max", int2, int2);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, int3, "max", int3, int3);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, int4, "max", int4, int4);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, int2, "max", int2, int1);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, int3, "max", int3, int1);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, int4, "max", int4, int1);
+
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, uint1, "max", uint1, uint1);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, uint2, "max", uint2, uint2);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, uint3, "max", uint3, uint3);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, uint4, "max", uint4, uint4);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, uint2, "max", uint2, uint1);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, uint3, "max", uint3, uint1);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, uint4, "max", uint4, uint1);
+
     symbolTable.insertBuiltIn(COMMON_BUILTINS, float1, "clamp", float1, float1, float1);
     symbolTable.insertBuiltIn(COMMON_BUILTINS, float2, "clamp", float2, float1, float1);
     symbolTable.insertBuiltIn(COMMON_BUILTINS, float3, "clamp", float3, float1, float1);
@@ -172,6 +239,22 @@ void InsertBuiltInFunctions(sh::GLenum type, ShShaderSpec spec, const ShBuiltInR
     symbolTable.insertBuiltIn(COMMON_BUILTINS, float2, "clamp", float2, float2, float2);
     symbolTable.insertBuiltIn(COMMON_BUILTINS, float3, "clamp", float3, float3, float3);
     symbolTable.insertBuiltIn(COMMON_BUILTINS, float4, "clamp", float4, float4, float4);
+
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, int1, "clamp", int1, int1, int1);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, int2, "clamp", int2, int1, int1);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, int3, "clamp", int3, int1, int1);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, int4, "clamp", int4, int1, int1);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, int2, "clamp", int2, int2, int2);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, int3, "clamp", int3, int3, int3);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, int4, "clamp", int4, int4, int4);
+
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, uint1, "clamp", uint1, uint1, uint1);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, uint2, "clamp", uint2, uint1, uint1);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, uint3, "clamp", uint3, uint1, uint1);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, uint4, "clamp", uint4, uint1, uint1);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, uint2, "clamp", uint2, uint2, uint2);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, uint3, "clamp", uint3, uint3, uint3);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, uint4, "clamp", uint4, uint4, uint4);
 
     symbolTable.insertBuiltIn(COMMON_BUILTINS, float1, "mix", float1, float1, float1);
     symbolTable.insertBuiltIn(COMMON_BUILTINS, float2, "mix", float2, float2, float1);
@@ -197,10 +280,20 @@ void InsertBuiltInFunctions(sh::GLenum type, ShShaderSpec spec, const ShBuiltInR
     symbolTable.insertBuiltIn(COMMON_BUILTINS, float3, "smoothstep", float1, float1, float3);
     symbolTable.insertBuiltIn(COMMON_BUILTINS, float4, "smoothstep", float1, float1, float4);
 
-    TType *uint1 = new TType(EbtUInt);
-    TType *uint2 = new TType(EbtUInt, 2);
-    TType *uint3 = new TType(EbtUInt, 3);
-    TType *uint4 = new TType(EbtUInt, 4);
+    TType *bool1 = new TType(EbtBool);
+    TType *bool2 = new TType(EbtBool, 2);
+    TType *bool3 = new TType(EbtBool, 3);
+    TType *bool4 = new TType(EbtBool, 4);
+
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, bool1, "isnan", float1);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, bool2, "isnan", float2);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, bool3, "isnan", float3);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, bool4, "isnan", float4);
+
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, bool1, "isinf", float1);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, bool2, "isinf", float2);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, bool3, "isinf", float3);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, bool4, "isinf", float4);
 
     symbolTable.insertBuiltIn(ESSL3_BUILTINS, int1, "floatBitsToInt", float1);
     symbolTable.insertBuiltIn(ESSL3_BUILTINS, int2, "floatBitsToInt", float2);
@@ -221,6 +314,13 @@ void InsertBuiltInFunctions(sh::GLenum type, ShShaderSpec spec, const ShBuiltInR
     symbolTable.insertBuiltIn(ESSL3_BUILTINS, float2, "uintBitsToFloat", uint2);
     symbolTable.insertBuiltIn(ESSL3_BUILTINS, float3, "uintBitsToFloat", uint3);
     symbolTable.insertBuiltIn(ESSL3_BUILTINS, float4, "uintBitsToFloat", uint4);
+
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, uint1, "packSnorm2x16", float2);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, uint1, "packUnorm2x16", float2);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, uint1, "packHalf2x16", float2);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, float2, "unpackSnorm2x16", uint1);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, float2, "unpackUnorm2x16", uint1);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, float2, "unpackHalf2x16", uint1);
 
     //
     // Geometric Functions.
@@ -264,6 +364,12 @@ void InsertBuiltInFunctions(sh::GLenum type, ShShaderSpec spec, const ShBuiltInR
     TType *mat2 = new TType(EbtFloat, 2, 2);
     TType *mat3 = new TType(EbtFloat, 3, 3);
     TType *mat4 = new TType(EbtFloat, 4, 4);
+    TType *mat2x3 = new TType(EbtFloat, 2, 3);
+    TType *mat3x2 = new TType(EbtFloat, 3, 2);
+    TType *mat2x4 = new TType(EbtFloat, 2, 4);
+    TType *mat4x2 = new TType(EbtFloat, 4, 2);
+    TType *mat3x4 = new TType(EbtFloat, 3, 4);
+    TType *mat4x3 = new TType(EbtFloat, 4, 3);
 
     //
     // Matrix Functions.
@@ -271,11 +377,40 @@ void InsertBuiltInFunctions(sh::GLenum type, ShShaderSpec spec, const ShBuiltInR
     symbolTable.insertBuiltIn(COMMON_BUILTINS, mat2, "matrixCompMult", mat2, mat2);
     symbolTable.insertBuiltIn(COMMON_BUILTINS, mat3, "matrixCompMult", mat3, mat3);
     symbolTable.insertBuiltIn(COMMON_BUILTINS, mat4, "matrixCompMult", mat4, mat4);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, mat2x3, "matrixCompMult", mat2x3, mat2x3);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, mat3x2, "matrixCompMult", mat3x2, mat3x2);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, mat2x4, "matrixCompMult", mat2x4, mat2x4);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, mat4x2, "matrixCompMult", mat4x2, mat4x2);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, mat3x4, "matrixCompMult", mat3x4, mat3x4);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, mat4x3, "matrixCompMult", mat4x3, mat4x3);
 
-    TType *bool1 = new TType(EbtBool);
-    TType *bool2 = new TType(EbtBool, 2);
-    TType *bool3 = new TType(EbtBool, 3);
-    TType *bool4 = new TType(EbtBool, 4);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, mat2, "outerProduct", float2, float2);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, mat3, "outerProduct", float3, float3);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, mat4, "outerProduct", float4, float4);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, mat2x3, "outerProduct", float3, float2);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, mat3x2, "outerProduct", float2, float3);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, mat2x4, "outerProduct", float4, float2);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, mat4x2, "outerProduct", float2, float4);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, mat3x4, "outerProduct", float4, float3);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, mat4x3, "outerProduct", float3, float4);
+
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, mat2, "transpose", mat2);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, mat3, "transpose", mat3);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, mat4, "transpose", mat4);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, mat2x3, "transpose", mat3x2);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, mat3x2, "transpose", mat2x3);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, mat2x4, "transpose", mat4x2);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, mat4x2, "transpose", mat2x4);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, mat3x4, "transpose", mat4x3);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, mat4x3, "transpose", mat3x4);
+
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, float1, "determinant", mat2);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, float1, "determinant", mat3);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, float1, "determinant", mat4);
+
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, mat2, "inverse", mat2);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, mat3, "inverse", mat3);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, mat4, "inverse", mat4);
 
     //
     // Vector relational functions.
@@ -288,6 +423,10 @@ void InsertBuiltInFunctions(sh::GLenum type, ShShaderSpec spec, const ShBuiltInR
     symbolTable.insertBuiltIn(COMMON_BUILTINS, bool3, "lessThan", int3, int3);
     symbolTable.insertBuiltIn(COMMON_BUILTINS, bool4, "lessThan", int4, int4);
 
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, bool2, "lessThan", uint2, uint2);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, bool3, "lessThan", uint3, uint3);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, bool4, "lessThan", uint4, uint4);
+
     symbolTable.insertBuiltIn(COMMON_BUILTINS, bool2, "lessThanEqual", float2, float2);
     symbolTable.insertBuiltIn(COMMON_BUILTINS, bool3, "lessThanEqual", float3, float3);
     symbolTable.insertBuiltIn(COMMON_BUILTINS, bool4, "lessThanEqual", float4, float4);
@@ -295,6 +434,10 @@ void InsertBuiltInFunctions(sh::GLenum type, ShShaderSpec spec, const ShBuiltInR
     symbolTable.insertBuiltIn(COMMON_BUILTINS, bool2, "lessThanEqual", int2, int2);
     symbolTable.insertBuiltIn(COMMON_BUILTINS, bool3, "lessThanEqual", int3, int3);
     symbolTable.insertBuiltIn(COMMON_BUILTINS, bool4, "lessThanEqual", int4, int4);
+
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, bool2, "lessThanEqual", uint2, uint2);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, bool3, "lessThanEqual", uint3, uint3);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, bool4, "lessThanEqual", uint4, uint4);
 
     symbolTable.insertBuiltIn(COMMON_BUILTINS, bool2, "greaterThan", float2, float2);
     symbolTable.insertBuiltIn(COMMON_BUILTINS, bool3, "greaterThan", float3, float3);
@@ -304,6 +447,10 @@ void InsertBuiltInFunctions(sh::GLenum type, ShShaderSpec spec, const ShBuiltInR
     symbolTable.insertBuiltIn(COMMON_BUILTINS, bool3, "greaterThan", int3, int3);
     symbolTable.insertBuiltIn(COMMON_BUILTINS, bool4, "greaterThan", int4, int4);
 
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, bool2, "greaterThan", uint2, uint2);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, bool3, "greaterThan", uint3, uint3);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, bool4, "greaterThan", uint4, uint4);
+
     symbolTable.insertBuiltIn(COMMON_BUILTINS, bool2, "greaterThanEqual", float2, float2);
     symbolTable.insertBuiltIn(COMMON_BUILTINS, bool3, "greaterThanEqual", float3, float3);
     symbolTable.insertBuiltIn(COMMON_BUILTINS, bool4, "greaterThanEqual", float4, float4);
@@ -312,6 +459,10 @@ void InsertBuiltInFunctions(sh::GLenum type, ShShaderSpec spec, const ShBuiltInR
     symbolTable.insertBuiltIn(COMMON_BUILTINS, bool3, "greaterThanEqual", int3, int3);
     symbolTable.insertBuiltIn(COMMON_BUILTINS, bool4, "greaterThanEqual", int4, int4);
 
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, bool2, "greaterThanEqual", uint2, uint2);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, bool3, "greaterThanEqual", uint3, uint3);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, bool4, "greaterThanEqual", uint4, uint4);
+
     symbolTable.insertBuiltIn(COMMON_BUILTINS, bool2, "equal", float2, float2);
     symbolTable.insertBuiltIn(COMMON_BUILTINS, bool3, "equal", float3, float3);
     symbolTable.insertBuiltIn(COMMON_BUILTINS, bool4, "equal", float4, float4);
@@ -319,6 +470,10 @@ void InsertBuiltInFunctions(sh::GLenum type, ShShaderSpec spec, const ShBuiltInR
     symbolTable.insertBuiltIn(COMMON_BUILTINS, bool2, "equal", int2, int2);
     symbolTable.insertBuiltIn(COMMON_BUILTINS, bool3, "equal", int3, int3);
     symbolTable.insertBuiltIn(COMMON_BUILTINS, bool4, "equal", int4, int4);
+
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, bool2, "equal", uint2, uint2);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, bool3, "equal", uint3, uint3);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, bool4, "equal", uint4, uint4);
 
     symbolTable.insertBuiltIn(COMMON_BUILTINS, bool2, "equal", bool2, bool2);
     symbolTable.insertBuiltIn(COMMON_BUILTINS, bool3, "equal", bool3, bool3);
@@ -331,6 +486,10 @@ void InsertBuiltInFunctions(sh::GLenum type, ShShaderSpec spec, const ShBuiltInR
     symbolTable.insertBuiltIn(COMMON_BUILTINS, bool2, "notEqual", int2, int2);
     symbolTable.insertBuiltIn(COMMON_BUILTINS, bool3, "notEqual", int3, int3);
     symbolTable.insertBuiltIn(COMMON_BUILTINS, bool4, "notEqual", int4, int4);
+
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, bool2, "notEqual", uint2, uint2);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, bool3, "notEqual", uint3, uint3);
+    symbolTable.insertBuiltIn(ESSL3_BUILTINS, bool4, "notEqual", uint4, uint4);
 
     symbolTable.insertBuiltIn(COMMON_BUILTINS, bool2, "notEqual", bool2, bool2);
     symbolTable.insertBuiltIn(COMMON_BUILTINS, bool3, "notEqual", bool3, bool3);
@@ -668,6 +827,7 @@ void IdentifyBuiltIns(sh::GLenum type, ShShaderSpec spec,
     case GL_VERTEX_SHADER:
         symbolTable.insert(COMMON_BUILTINS, new TVariable(NewPoolTString("gl_Position"), TType(EbtFloat, EbpHigh, EvqPosition,    4)));
         symbolTable.insert(COMMON_BUILTINS, new TVariable(NewPoolTString("gl_PointSize"), TType(EbtFloat, EbpMedium, EvqPointSize,   1)));
+        symbolTable.insert(ESSL3_BUILTINS, new TVariable(NewPoolTString("gl_InstanceID"), TType(EbtInt, EbpHigh, EvqInstanceID,   1)));
         break;
 
     default: assert(false && "Language not supported");
@@ -680,6 +840,7 @@ void IdentifyBuiltIns(sh::GLenum type, ShShaderSpec spec,
     // operations.
     //
     symbolTable.relateToOperator(COMMON_BUILTINS, "matrixCompMult",   EOpMul);
+    symbolTable.relateToOperator(ESSL3_BUILTINS,  "matrixCompMult",   EOpMul);
 
     symbolTable.relateToOperator(COMMON_BUILTINS, "equal",            EOpVectorEqual);
     symbolTable.relateToOperator(COMMON_BUILTINS, "notEqual",         EOpVectorNotEqual);
@@ -687,7 +848,14 @@ void IdentifyBuiltIns(sh::GLenum type, ShShaderSpec spec,
     symbolTable.relateToOperator(COMMON_BUILTINS, "greaterThan",      EOpGreaterThan);
     symbolTable.relateToOperator(COMMON_BUILTINS, "lessThanEqual",    EOpLessThanEqual);
     symbolTable.relateToOperator(COMMON_BUILTINS, "greaterThanEqual", EOpGreaterThanEqual);
-    
+
+    symbolTable.relateToOperator(ESSL3_BUILTINS, "equal",             EOpVectorEqual);
+    symbolTable.relateToOperator(ESSL3_BUILTINS, "notEqual",          EOpVectorNotEqual);
+    symbolTable.relateToOperator(ESSL3_BUILTINS, "lessThan",          EOpLessThan);
+    symbolTable.relateToOperator(ESSL3_BUILTINS, "greaterThan",       EOpGreaterThan);
+    symbolTable.relateToOperator(ESSL3_BUILTINS, "lessThanEqual",     EOpLessThanEqual);
+    symbolTable.relateToOperator(ESSL3_BUILTINS, "greaterThanEqual",  EOpGreaterThanEqual);
+
     symbolTable.relateToOperator(COMMON_BUILTINS, "radians",      EOpRadians);
     symbolTable.relateToOperator(COMMON_BUILTINS, "degrees",      EOpDegrees);
     symbolTable.relateToOperator(COMMON_BUILTINS, "sin",          EOpSin);
@@ -696,6 +864,13 @@ void IdentifyBuiltIns(sh::GLenum type, ShShaderSpec spec,
     symbolTable.relateToOperator(COMMON_BUILTINS, "asin",         EOpAsin);
     symbolTable.relateToOperator(COMMON_BUILTINS, "acos",         EOpAcos);
     symbolTable.relateToOperator(COMMON_BUILTINS, "atan",         EOpAtan);
+
+    symbolTable.relateToOperator(ESSL3_BUILTINS, "sinh",          EOpSinh);
+    symbolTable.relateToOperator(ESSL3_BUILTINS, "cosh",          EOpCosh);
+    symbolTable.relateToOperator(ESSL3_BUILTINS, "tanh",          EOpTanh);
+    symbolTable.relateToOperator(ESSL3_BUILTINS, "asinh",         EOpAsinh);
+    symbolTable.relateToOperator(ESSL3_BUILTINS, "acosh",         EOpAcosh);
+    symbolTable.relateToOperator(ESSL3_BUILTINS, "atanh",         EOpAtanh);
 
     symbolTable.relateToOperator(COMMON_BUILTINS, "pow",          EOpPow);
     symbolTable.relateToOperator(COMMON_BUILTINS, "exp2",         EOpExp2);
@@ -718,10 +893,24 @@ void IdentifyBuiltIns(sh::GLenum type, ShShaderSpec spec,
     symbolTable.relateToOperator(COMMON_BUILTINS, "step",         EOpStep);
     symbolTable.relateToOperator(COMMON_BUILTINS, "smoothstep",   EOpSmoothStep);
 
+    symbolTable.relateToOperator(ESSL3_BUILTINS, "min",           EOpMin);
+    symbolTable.relateToOperator(ESSL3_BUILTINS, "max",           EOpMax);
+    symbolTable.relateToOperator(ESSL3_BUILTINS, "clamp",         EOpClamp);
+    symbolTable.relateToOperator(ESSL3_BUILTINS, "isnan",         EOpIsNan);
+    symbolTable.relateToOperator(ESSL3_BUILTINS, "isinf",         EOpIsInf);
+
     symbolTable.relateToOperator(ESSL3_BUILTINS, "floatBitsToInt",  EOpFloatBitsToInt);
     symbolTable.relateToOperator(ESSL3_BUILTINS, "floatBitsToUint", EOpFloatBitsToUint);
     symbolTable.relateToOperator(ESSL3_BUILTINS, "intBitsToFloat",  EOpIntBitsToFloat);
     symbolTable.relateToOperator(ESSL3_BUILTINS, "uintBitsToFloat", EOpUintBitsToFloat);
+
+    symbolTable.relateToOperator(ESSL3_BUILTINS, "packSnorm2x16", EOpPackSnorm2x16);
+    symbolTable.relateToOperator(ESSL3_BUILTINS, "packUnorm2x16", EOpPackUnorm2x16);
+    symbolTable.relateToOperator(ESSL3_BUILTINS, "packHalf2x16",  EOpPackHalf2x16);
+
+    symbolTable.relateToOperator(ESSL3_BUILTINS, "unpackSnorm2x16", EOpUnpackSnorm2x16);
+    symbolTable.relateToOperator(ESSL3_BUILTINS, "unpackUnorm2x16", EOpUnpackUnorm2x16);
+    symbolTable.relateToOperator(ESSL3_BUILTINS, "unpackHalf2x16",  EOpUnpackHalf2x16);
 
     symbolTable.relateToOperator(COMMON_BUILTINS, "length",       EOpLength);
     symbolTable.relateToOperator(COMMON_BUILTINS, "distance",     EOpDistance);
@@ -731,6 +920,11 @@ void IdentifyBuiltIns(sh::GLenum type, ShShaderSpec spec,
     symbolTable.relateToOperator(COMMON_BUILTINS, "faceforward",  EOpFaceForward);
     symbolTable.relateToOperator(COMMON_BUILTINS, "reflect",      EOpReflect);
     symbolTable.relateToOperator(COMMON_BUILTINS, "refract",      EOpRefract);
+
+    symbolTable.relateToOperator(ESSL3_BUILTINS, "outerProduct",  EOpOuterProduct);
+    symbolTable.relateToOperator(ESSL3_BUILTINS, "transpose",     EOpTranspose);
+    symbolTable.relateToOperator(ESSL3_BUILTINS, "determinant",   EOpDeterminant);
+    symbolTable.relateToOperator(ESSL3_BUILTINS, "inverse",       EOpInverse);
 
     symbolTable.relateToOperator(COMMON_BUILTINS, "any",          EOpAny);
     symbolTable.relateToOperator(COMMON_BUILTINS, "all",          EOpAll);
@@ -831,4 +1025,14 @@ void InitExtensionBehavior(const ShBuiltInResources& resources,
         extBehavior["GL_NV_shader_framebuffer_fetch"] = EBhUndefined;
     if (resources.ARM_shader_framebuffer_fetch)
         extBehavior["GL_ARM_shader_framebuffer_fetch"] = EBhUndefined;
+}
+
+void ResetExtensionBehavior(TExtensionBehavior &extBehavior)
+{
+    for (auto ext_iter = extBehavior.begin();
+         ext_iter != extBehavior.end();
+         ++ext_iter)
+    {
+        ext_iter->second = EBhUndefined;
+    }
 }

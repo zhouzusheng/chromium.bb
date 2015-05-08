@@ -38,13 +38,14 @@
 #include "core/editing/TextCheckingHelper.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
+#include "core/editing/iterators/CharacterIterator.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/loader/EmptyClients.h"
 #include "core/page/Page.h"
 #include "core/frame/Settings.h"
+#include "core/layout/LayoutTextControl.h"
 #include "core/page/SpellCheckerClient.h"
-#include "core/rendering/RenderTextControl.h"
 #include "platform/text/TextCheckerClient.h"
 
 namespace blink {
@@ -905,7 +906,7 @@ static Node* findFirstMarkable(Node* node)
         if (node->renderer()->isText())
             return node;
         if (node->renderer()->isTextControl())
-            node = toRenderTextControl(node->renderer())->textFormControlElement()->visiblePositionForIndex(1).deepEquivalent().deprecatedNode();
+            node = toLayoutTextControl(node->renderer())->textFormControlElement()->visiblePositionForIndex(1).deepEquivalent().deprecatedNode();
         else if (node->hasChildren())
             node = node->firstChild();
         else
@@ -968,7 +969,7 @@ void SpellChecker::requestTextChecking(const Element& element)
     m_spellCheckRequester->requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));
 }
 
-void SpellChecker::trace(Visitor* visitor)
+DEFINE_TRACE(SpellChecker)
 {
     visitor->trace(m_frame);
     visitor->trace(m_spellCheckRequester);

@@ -26,11 +26,11 @@
 #include "config.h"
 #include "core/editing/SimplifyMarkupCommand.h"
 
-#include "core/dom/NodeRenderStyle.h"
+#include "core/dom/NodeLayoutStyle.h"
 #include "core/dom/NodeTraversal.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/style/LayoutStyle.h"
 #include "core/rendering/RenderInline.h"
-#include "core/rendering/RenderObject.h"
-#include "core/rendering/style/RenderStyle.h"
 
 namespace blink {
 
@@ -55,7 +55,7 @@ void SimplifyMarkupCommand::doApply()
         ContainerNode* startingNode = node->parentNode();
         if (!startingNode)
             continue;
-        RenderStyle* startingStyle = startingNode->renderStyle();
+        LayoutStyle* startingStyle = startingNode->layoutStyle();
         if (!startingStyle)
             continue;
         ContainerNode* currentNode = startingNode;
@@ -76,7 +76,7 @@ void SimplifyMarkupCommand::doApply()
                 break;
             }
 
-            if (!currentNode->renderStyle()->visualInvalidationDiff(*startingStyle).hasDifference())
+            if (!currentNode->layoutStyle()->visualInvalidationDiff(*startingStyle).hasDifference())
                 topNodeWithStartingStyle = currentNode;
 
         }
@@ -121,7 +121,7 @@ int SimplifyMarkupCommand::pruneSubsequentAncestorsToRemove(WillBeHeapVector<Ref
     return pastLastNodeToRemove - startNodeIndex - 1;
 }
 
-void SimplifyMarkupCommand::trace(Visitor* visitor)
+DEFINE_TRACE(SimplifyMarkupCommand)
 {
     visitor->trace(m_firstNode);
     visitor->trace(m_nodeAfterLast);

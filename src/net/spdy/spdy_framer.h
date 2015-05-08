@@ -180,6 +180,11 @@ class NET_EXPORT_PRIVATE SpdyFramerVisitorInterface {
                                  size_t len,
                                  bool fin) = 0;
 
+  // Called when padding is received (padding length field or padding octets).
+  // |stream_id| The stream receiving data.
+  // |len| The number of padding octets.
+  virtual void OnStreamPadding(SpdyStreamId stream_id, size_t len) = 0;
+
   // Called when a chunk of header data is available. This is called
   // after OnSynStream, OnSynReply, OnHeaders(), or OnPushPromise.
   // |stream_id| The stream receiving the header data.
@@ -565,14 +570,14 @@ class NET_EXPORT_PRIVATE SpdyFramer {
   static const char* StatusCodeToString(int status_code);
   static const char* FrameTypeToString(SpdyFrameType type);
 
-  SpdyMajorVersion protocol_version() const { return spdy_version_; }
+  SpdyMajorVersion protocol_version() const { return protocol_version_; }
 
   bool probable_http_response() const { return probable_http_response_; }
 
   SpdyStreamId expect_continuation() const { return expect_continuation_; }
 
   SpdyPriority GetLowestPriority() const {
-    return spdy_version_ < SPDY3 ? 3 : 7;
+    return protocol_version_ < SPDY3 ? 3 : 7;
   }
 
   SpdyPriority GetHighestPriority() const { return 0; }
@@ -774,8 +779,8 @@ class NET_EXPORT_PRIVATE SpdyFramer {
 
   std::string display_protocol_;
 
-  // The major SPDY version to be spoken/understood by this framer.
-  const SpdyMajorVersion spdy_version_;
+  // The protocol version to be spoken/understood by this framer.
+  const SpdyMajorVersion protocol_version_;
 
   // Tracks if we've ever gotten far enough in framing to see a control frame of
   // type SYN_STREAM or SYN_REPLY.

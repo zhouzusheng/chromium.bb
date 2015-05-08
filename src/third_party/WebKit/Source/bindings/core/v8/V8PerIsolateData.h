@@ -39,7 +39,6 @@
 namespace blink {
 
 class DOMDataStore;
-class GCEventData;
 class StringCache;
 struct WrapperTypeInfo;
 
@@ -92,7 +91,6 @@ public:
     int decrementInternalScriptRecursionLevel() { return --m_internalScriptRecursionLevel; }
 #endif
 
-    GCEventData* gcEventData() { return m_gcEventData.get(); }
     V8HiddenValue* hiddenValue() { return m_hiddenValue.get(); }
 
     v8::Handle<v8::FunctionTemplate> domTemplate(void* domTemplateKey, v8::FunctionCallback = 0, v8::Handle<v8::Value> data = v8::Handle<v8::Value>(), v8::Handle<v8::Signature> = v8::Handle<v8::Signature>(), int length = 0);
@@ -119,7 +117,7 @@ private:
     V8PerIsolateData();
     ~V8PerIsolateData();
 
-    typedef HashMap<const void*, v8::Eternal<v8::FunctionTemplate> > DOMTemplateMap;
+    typedef HashMap<const void*, v8::Eternal<v8::FunctionTemplate>> DOMTemplateMap;
     DOMTemplateMap& currentDOMTemplateMap();
     bool hasInstance(const WrapperTypeInfo*, v8::Handle<v8::Value>, DOMTemplateMap&);
     v8::Local<v8::Object> findInstanceInPrototypeChain(const WrapperTypeInfo*, v8::Local<v8::Value>, DOMTemplateMap&);
@@ -146,7 +144,6 @@ private:
 #if ENABLE(ASSERT)
     int m_internalScriptRecursionLevel;
 #endif
-    OwnPtr<GCEventData> m_gcEventData;
     bool m_performingMicrotaskCheckpoint;
 
     Vector<OwnPtr<EndOfScopeTask>> m_endOfScopeTasks;

@@ -38,6 +38,7 @@
 #include "platform/graphics/Image.h"
 #include "platform/graphics/filters/SkiaImageFilterBuilder.h"
 #include "platform/graphics/paint/DisplayItemList.h"
+#include "platform/graphics/paint/DrawingRecorder.h"
 #include "platform/graphics/skia/NativeImageSkia.h"
 #include "platform/scroll/ScrollableArea.h"
 #include "platform/text/TextStream.h"
@@ -63,7 +64,7 @@
 
 namespace blink {
 
-typedef HashMap<const GraphicsLayer*, Vector<FloatRect> > RepaintMap;
+typedef HashMap<const GraphicsLayer*, Vector<FloatRect>> RepaintMap;
 static RepaintMap& repaintRectMap()
 {
     DEFINE_STATIC_LOCAL(RepaintMap, map, ());
@@ -80,6 +81,7 @@ GraphicsLayer::GraphicsLayer(GraphicsLayerClient* client)
     , m_backgroundColor(Color::transparent)
     , m_opacity(1)
     , m_blendMode(WebBlendModeNormal)
+    , m_scrollBlocksOn(WebScrollBlocksOnNone)
     , m_hasTransformOrigin(false)
     , m_contentsOpaque(false)
     , m_shouldFlattenTransform(true)
@@ -278,13 +280,16 @@ void GraphicsLayer::paintGraphicsLayerContents(GraphicsContext& context, const I
     if (firstPaintInvalidationTrackingEnabled())
         m_debugInfo.clearAnnotatedInvalidateRects();
     incrementPaintCount();
-    m_client->paintContents(this, context, m_paintingPhase, clip);
 #ifndef NDEBUG
-    if (m_displayItemList) {
+    if (m_displayItemList && contentsOpaque()) {
         ASSERT(RuntimeEnabledFeatures::slimmingPaintEnabled());
-        context.fillRect(clip, Color(0xFF, 0, 0));
+        FloatRect rect(FloatPoint(), size());
+        DrawingRecorder recorder(&context, displayItemClient(), DisplayItem::DebugRedFill, rect);
+        if (!recorder.canUseCachedDrawing())
+            context.fillRect(rect, SK_ColorRED);
     }
 #endif
+    m_client->paintContents(this, context, m_paintingPhase, clip);
 }
 
 void GraphicsLayer::updateChildList()
@@ -574,6 +579,17 @@ PassRefPtr<JSONObject> GraphicsLayer::layerTreeAsJSON(LayerTreeFlags flags, Rend
     if (m_blendMode != WebBlendModeNormal)
         json->setString("blendMode", compositeOperatorName(CompositeSourceOver, m_blendMode));
 
+    if ((flags & LayerTreeIncludesScrollBlocksOn) && m_scrollBlocksOn) {
+        RefPtr<JSONArray> scrollBlocksOnJSON = adoptRef(new JSONArray);
+        if (m_scrollBlocksOn & WebScrollBlocksOnStartTouch)
+            scrollBlocksOnJSON->pushString("StartTouch");
+        if (m_scrollBlocksOn & WebScrollBlocksOnWheelEvent)
+            scrollBlocksOnJSON->pushString("WheelEvent");
+        if (m_scrollBlocksOn & WebScrollBlocksOnScrollEvent)
+            scrollBlocksOnJSON->pushString("ScrollEvent");
+        json->setArray("scrollBlocksOn", scrollBlocksOnJSON);
+    }
+
     if (m_isRootForIsolatedGroup)
         json->setBoolean("isolate", m_isRootForIsolatedGroup);
 
@@ -607,7 +623,7 @@ PassRefPtr<JSONObject> GraphicsLayer::layerTreeAsJSON(LayerTreeFlags flags, Rend
         json->setString("client", pointerAsString(m_client));
 
     if (m_backgroundColor.alpha())
-        json->setString("backgroundColor", m_backgroundColor.nameForRenderTreeAsText());
+        json->setString("backgroundColor", m_backgroundColor.nameForLayoutTreeAsText());
 
     if (!m_transform.isIdentity())
         json->setArray("transform", transformAsJSONArray(m_transform));
@@ -738,6 +754,14 @@ void GraphicsLayer::setSize(const FloatSize& size)
 
     m_layer->layer()->setBounds(flooredIntSize(m_size));
     // Note that we don't resize m_contentsLayer. It's up the caller to do that.
+
+#ifndef NDEBUG
+    // The red debug fill needs to be invalidated if the layer resizes.
+    if (m_displayItemList) {
+        ASSERT(RuntimeEnabledFeatures::slimmingPaintEnabled());
+        m_displayItemList->invalidate(displayItemClient());
+    }
+#endif
 }
 
 void GraphicsLayer::setTransform(const TransformationMatrix& transform)
@@ -876,7 +900,15 @@ void GraphicsLayer::setBlendMode(WebBlendMode blendMode)
     if (m_blendMode == blendMode)
         return;
     m_blendMode = blendMode;
-    platformLayer()->setBlendMode(WebBlendMode(blendMode));
+    platformLayer()->setBlendMode(blendMode);
+}
+
+void GraphicsLayer::setScrollBlocksOn(WebScrollBlocksOn scrollBlocksOn)
+{
+    if (m_scrollBlocksOn == scrollBlocksOn)
+        return;
+    m_scrollBlocksOn = scrollBlocksOn;
+    platformLayer()->setScrollBlocksOn(scrollBlocksOn);
 }
 
 void GraphicsLayer::setIsRootForIsolatedGroup(bool isolated)
@@ -1065,16 +1097,19 @@ void GraphicsLayer::notifyAnimationStarted(double monotonicTime, int group)
         m_client->notifyAnimationStarted(this, monotonicTime, group);
 }
 
-void GraphicsLayer::notifyAnimationFinished(double, int)
+void GraphicsLayer::notifyAnimationFinished(double, int group)
 {
+    if (m_scrollableArea)
+        m_scrollableArea->notifyCompositorAnimationFinished(group);
 }
 
 void GraphicsLayer::didScroll()
 {
     if (m_scrollableArea) {
         DoublePoint newPosition = m_scrollableArea->minimumScrollPosition() + toDoubleSize(m_layer->layer()->scrollPositionDouble());
+        bool cancelProgrammaticAnimations = false;
         // FIXME: Remove the toFloatPoint(). crbug.com/414283.
-        m_scrollableArea->scrollToOffsetWithoutAnimation(toFloatPoint(newPosition));
+        m_scrollableArea->scrollToOffsetWithoutAnimation(toFloatPoint(newPosition), cancelProgrammaticAnimations);
     }
 }
 

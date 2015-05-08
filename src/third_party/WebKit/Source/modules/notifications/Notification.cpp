@@ -40,10 +40,12 @@
 #include "core/frame/UseCounter.h"
 #include "modules/notifications/NotificationOptions.h"
 #include "modules/notifications/NotificationPermissionClient.h"
+#include "platform/RuntimeEnabledFeatures.h"
+#include "platform/UserGestureIndicator.h"
 #include "public/platform/Platform.h"
-#include "public/platform/WebNotificationData.h"
-#include "public/platform/WebNotificationManager.h"
 #include "public/platform/WebSerializedOrigin.h"
+#include "public/platform/modules/notifications/WebNotificationData.h"
+#include "public/platform/modules/notifications/WebNotificationManager.h"
 
 namespace blink {
 namespace {
@@ -55,8 +57,21 @@ WebNotificationManager* notificationManager()
 
 } // namespace
 
-Notification* Notification::create(ExecutionContext* context, const String& title, const NotificationOptions& options)
+Notification* Notification::create(ExecutionContext* context, const String& title, const NotificationOptions& options, ExceptionState& exceptionState)
 {
+    // The Web Notification constructor may be disabled through a runtime feature. The
+    // behavior of the constructor is changing, but not completely agreed upon yet.
+    if (!RuntimeEnabledFeatures::notificationConstructorEnabled()) {
+        exceptionState.throwTypeError("Illegal constructor. Use ServiceWorkerRegistration.showNotification() instead.");
+        return nullptr;
+    }
+
+    // The Web Notification constructor may not be used in Service Worker contexts.
+    if (context->isServiceWorkerGlobalScope()) {
+        exceptionState.throwTypeError("Illegal constructor.");
+        return nullptr;
+    }
+
     Notification* notification = new Notification(title, context);
 
     notification->setBody(options.body());
@@ -189,26 +204,22 @@ TextDirection Notification::direction() const
     return dir() == "rtl" ? RTL : LTR;
 }
 
-const String& Notification::permissionString(WebNotificationPermission permission)
+String Notification::permissionString(WebNotificationPermission permission)
 {
-    DEFINE_STATIC_LOCAL(const String, allowedPermission, ("granted"));
-    DEFINE_STATIC_LOCAL(const String, deniedPermission, ("denied"));
-    DEFINE_STATIC_LOCAL(const String, defaultPermission, ("default"));
-
     switch (permission) {
     case WebNotificationPermissionAllowed:
-        return allowedPermission;
+        return "granted";
     case WebNotificationPermissionDenied:
-        return deniedPermission;
+        return "denied";
     case WebNotificationPermissionDefault:
-        return defaultPermission;
+        return "default";
     }
 
     ASSERT_NOT_REACHED();
-    return deniedPermission;
+    return "denied";
 }
 
-const String& Notification::permission(ExecutionContext* context)
+String Notification::permission(ExecutionContext* context)
 {
     return permissionString(checkPermission(context));
 }
@@ -254,7 +265,7 @@ bool Notification::hasPendingActivity() const
     return m_state == NotificationStateShowing || m_asyncRunner.isActive();
 }
 
-void Notification::trace(Visitor* visitor)
+DEFINE_TRACE(Notification)
 {
     RefCountedGarbageCollectedEventTargetWithInlineData<Notification>::trace(visitor);
     ActiveDOMObject::trace(visitor);

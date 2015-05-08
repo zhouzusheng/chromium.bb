@@ -244,6 +244,7 @@ void VideoCaptureImpl::OnBufferReceived(int buffer_id,
           reinterpret_cast<uint8*>(buffer->buffer->memory()),
           buffer->buffer_size,
           buffer->buffer->handle(),
+          0,
           timestamp - first_frame_timestamp_,
           media::BindToCurrentLoop(
               base::Bind(&VideoCaptureImpl::OnClientBufferFinished,
@@ -257,8 +258,6 @@ void VideoCaptureImpl::OnBufferReceived(int buffer_id,
     it->second.deliver_frame_cb.Run(frame, format, timestamp);
   }
 }
-
-static void NullReadPixelsCB(const SkBitmap& bitmap) { NOTIMPLEMENTED(); }
 
 void VideoCaptureImpl::OnMailboxBufferReceived(
     int buffer_id,
@@ -278,16 +277,11 @@ void VideoCaptureImpl::OnMailboxBufferReceived(
 
   scoped_refptr<media::VideoFrame> frame = media::VideoFrame::WrapNativeTexture(
       make_scoped_ptr(new gpu::MailboxHolder(mailbox_holder)),
-      media::BindToCurrentLoop(
-          base::Bind(&VideoCaptureImpl::OnClientBufferFinished,
-                     weak_factory_.GetWeakPtr(),
-                     buffer_id,
-                     scoped_refptr<ClientBuffer>())),
-      last_frame_format_.frame_size,
-      gfx::Rect(last_frame_format_.frame_size),
-      last_frame_format_.frame_size,
-      timestamp - first_frame_timestamp_,
-      base::Bind(&NullReadPixelsCB));
+      media::BindToCurrentLoop(base::Bind(
+          &VideoCaptureImpl::OnClientBufferFinished, weak_factory_.GetWeakPtr(),
+          buffer_id, scoped_refptr<ClientBuffer>())),
+      last_frame_format_.frame_size, gfx::Rect(last_frame_format_.frame_size),
+      last_frame_format_.frame_size, timestamp - first_frame_timestamp_, false);
 
   for (ClientInfoMap::iterator it = clients_.begin(); it != clients_.end();
        ++it) {

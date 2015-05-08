@@ -174,6 +174,7 @@ public:
 
     virtual unsigned backForwardLength() override;
 
+    virtual void suddenTerminationDisablerChanged(bool present, SuddenTerminationDisablerType) override;
 private:
     virtual bool isFrameLoaderClientImpl() const override { return true; }
 

@@ -39,8 +39,8 @@ using blink::WebURL;
 using blink::WebVector;
 
 namespace {
-typedef std::map<blink::WebPluginContainer*, content::BrowserPlugin*>
-    PluginContainerMap;
+using PluginContainerMap =
+    std::map<blink::WebPluginContainer*, content::BrowserPlugin*>;
 static base::LazyInstance<PluginContainerMap> g_plugin_container_map =
     LAZY_INSTANCE_INITIALIZER;
 }  // namespace
@@ -51,20 +51,20 @@ namespace content {
 BrowserPlugin* BrowserPlugin::GetFromNode(blink::WebNode& node) {
   blink::WebPluginContainer* container = node.pluginContainer();
   if (!container)
-    return NULL;
+    return nullptr;
 
   PluginContainerMap* browser_plugins = g_plugin_container_map.Pointer();
   PluginContainerMap::iterator it = browser_plugins->find(container);
-  return it == browser_plugins->end() ? NULL : it->second;
+  return it == browser_plugins->end() ? nullptr : it->second;
 }
 
 BrowserPlugin::BrowserPlugin(RenderFrame* render_frame,
                              scoped_ptr<BrowserPluginDelegate> delegate)
     : attached_(false),
       render_view_routing_id_(render_frame->GetRenderView()->GetRoutingID()),
-      container_(NULL),
+      container_(nullptr),
       last_device_scale_factor_(GetDeviceScaleFactor()),
-      sad_guest_(NULL),
+      sad_guest_(nullptr),
       guest_crashed_(false),
       plugin_focused_(false),
       visible_(true),
@@ -154,7 +154,7 @@ void BrowserPlugin::Detach() {
   EnableCompositing(false);
   if (compositing_helper_.get()) {
     compositing_helper_->OnContainerDestroy();
-    compositing_helper_ = NULL;
+    compositing_helper_ = nullptr;
   }
 
   BrowserPluginManager::Get()->Send(new BrowserPluginHostMsg_Detach(
@@ -168,8 +168,7 @@ void BrowserPlugin::DidCommitCompositorFrame() {
 
 void BrowserPlugin::OnAdvanceFocus(int browser_plugin_instance_id,
                                    bool reverse) {
-  RenderViewImpl* render_view =
-      RenderViewImpl::FromRoutingID(render_view_routing_id());
+  auto render_view = RenderViewImpl::FromRoutingID(render_view_routing_id());
   if (!render_view)
     return;
   render_view->GetWebView()->advanceFocus(reverse);
@@ -231,8 +230,7 @@ void BrowserPlugin::OnSetCursor(int browser_plugin_instance_id,
 
 void BrowserPlugin::OnSetMouseLock(int browser_plugin_instance_id,
                                    bool enable) {
-  RenderViewImpl* render_view =
-      RenderViewImpl::FromRoutingID(render_view_routing_id());
+  auto render_view = RenderViewImpl::FromRoutingID(render_view_routing_id());
   if (enable) {
     if (mouse_locked_ || !render_view)
       return;
@@ -265,14 +263,13 @@ void BrowserPlugin::OnShouldAcceptTouchEvents(int browser_plugin_instance_id,
 
 void BrowserPlugin::ShowSadGraphic() {
   // If the BrowserPlugin is scheduled to be deleted, then container_ will be
-  // NULL so we shouldn't attempt to access it.
+  // nullptr so we shouldn't attempt to access it.
   if (container_)
     container_->invalidate();
 }
 
 float BrowserPlugin::GetDeviceScaleFactor() const {
-  RenderViewImpl* render_view =
-      RenderViewImpl::FromRoutingID(render_view_routing_id());
+  auto render_view = RenderViewImpl::FromRoutingID(render_view_routing_id());
   if (!render_view)
     return 1.0f;
   return render_view->GetWebView()->deviceScaleFactor();
@@ -290,20 +287,20 @@ void BrowserPlugin::UpdateDeviceScaleFactor() {
       params));
 }
 
-void BrowserPlugin::UpdateGuestFocusState() {
+void BrowserPlugin::UpdateGuestFocusState(blink::WebFocusType focus_type) {
   if (!attached())
     return;
   bool should_be_focused = ShouldGuestBeFocused();
   BrowserPluginManager::Get()->Send(new BrowserPluginHostMsg_SetFocus(
       render_view_routing_id_,
       browser_plugin_instance_id_,
-      should_be_focused));
+      should_be_focused,
+      focus_type));
 }
 
 bool BrowserPlugin::ShouldGuestBeFocused() const {
   bool embedder_focused = false;
-  RenderViewImpl* render_view =
-      RenderViewImpl::FromRoutingID(render_view_routing_id());
+  auto render_view = RenderViewImpl::FromRoutingID(render_view_routing_id());
   if (render_view)
     embedder_focused = render_view->has_focus();
   return plugin_focused_ && embedder_focused;
@@ -354,7 +351,7 @@ void BrowserPlugin::EnableCompositing(bool enable) {
   if (!enable) {
     DCHECK(compositing_helper_.get());
     compositing_helper_->OnContainerDestroy();
-    compositing_helper_ = NULL;
+    compositing_helper_ = nullptr;
   }
 }
 
@@ -365,10 +362,9 @@ void BrowserPlugin::destroy() {
     g_plugin_container_map.Get().erase(container_);
   }
 
-  container_ = NULL;
+  container_ = nullptr;
   // Will be a no-op if the mouse is not currently locked.
-  RenderViewImpl* render_view =
-      RenderViewImpl::FromRoutingID(render_view_routing_id());
+  auto render_view = RenderViewImpl::FromRoutingID(render_view_routing_id());
   if (render_view)
     render_view->mouse_lock_dispatcher()->OnLockTargetDestroyed(this);
   base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
@@ -450,8 +446,10 @@ void BrowserPlugin::updateGeometry(
   int old_height = height();
   plugin_rect_ = window_rect;
   if (!ready_) {
-    if (delegate_)
+    if (delegate_) {
+      delegate_->DidResizeElement(gfx::Size(), plugin_size());
       delegate_->Ready();
+    }
     ready_ = true;
   }
   if (!attached())
@@ -470,6 +468,11 @@ void BrowserPlugin::updateGeometry(
       render_view_routing_id_,
       browser_plugin_instance_id_,
       params));
+
+  if (delegate_) {
+    delegate_->DidResizeElement(
+        gfx::Size(old_width, old_height), plugin_size());
+  }
 }
 
 void BrowserPlugin::PopulateResizeGuestParameters(
@@ -483,9 +486,9 @@ void BrowserPlugin::PopulateResizeGuestParameters(
   }
 }
 
-void BrowserPlugin::updateFocus(bool focused) {
+void BrowserPlugin::updateFocus(bool focused, blink::WebFocusType focus_type) {
   plugin_focused_ = focused;
-  UpdateGuestFocusState();
+  UpdateGuestFocusState(focus_type);
 }
 
 void BrowserPlugin::updateVisibility(bool visible) {

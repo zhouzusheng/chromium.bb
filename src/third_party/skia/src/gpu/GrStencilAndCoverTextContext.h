@@ -51,8 +51,8 @@ private:
         kMaxPerformance_RenderMode,
     };
 
-    GrDrawState                     fDrawState;
-    GrDrawState::AutoRestoreEffects fStateRestore;
+    GrPipelineBuilder                     fPipelineBuilder;
+    GrPipelineBuilder::AutoRestoreEffects fStateRestore;
     SkScalar                        fTextRatio;
     float                           fTextInverseRatio;
     SkGlyphCache*                   fGlyphCache;
@@ -69,17 +69,19 @@ private:
 
     GrStencilAndCoverTextContext(GrContext*, const SkDeviceProperties&);
 
-    virtual bool canDraw(const SkPaint& paint, const SkMatrix& viewMatrix) SK_OVERRIDE;
+    bool canDraw(const SkPaint& paint, const SkMatrix& viewMatrix) SK_OVERRIDE;
 
-    virtual void onDrawText(const GrPaint&, const SkPaint&, const SkMatrix& viewMatrix,
+    virtual void onDrawText(GrRenderTarget*, const GrPaint&, const SkPaint&,
+                            const SkMatrix& viewMatrix,
                             const char text[], size_t byteLength,
                             SkScalar x, SkScalar y) SK_OVERRIDE;
-    virtual void onDrawPosText(const GrPaint&, const SkPaint&, const SkMatrix& viewMatrix,
+    virtual void onDrawPosText(GrRenderTarget*, const GrPaint&, const SkPaint&,
+                               const SkMatrix& viewMatrix,
                                const char text[], size_t byteLength,
                                const SkScalar pos[], int scalarsPerPosition,
                                const SkPoint& offset) SK_OVERRIDE;
 
-    void init(const GrPaint&, const SkPaint&, size_t textByteLength, RenderMode,
+    void init(GrRenderTarget*, const GrPaint&, const SkPaint&, size_t textByteLength, RenderMode,
               const SkMatrix& viewMatrix);
     bool mapToFallbackContext(SkMatrix* inverse);
     void appendGlyph(const SkGlyph&, const SkPoint&);

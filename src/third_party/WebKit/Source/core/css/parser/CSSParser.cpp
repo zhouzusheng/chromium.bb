@@ -12,7 +12,9 @@
 #include "core/css/parser/CSSParserFastPaths.h"
 #include "core/css/parser/CSSParserImpl.h"
 #include "core/css/parser/CSSSelectorParser.h"
+#include "core/css/parser/CSSSupportsParser.h"
 #include "core/css/parser/CSSTokenizer.h"
+#include "core/layout/LayoutTheme.h"
 
 namespace blink {
 
@@ -43,7 +45,7 @@ void CSSParser::parseSelector(const String& selector, CSSSelectorList& selectorL
 PassRefPtrWillBeRawPtr<StyleRuleBase> CSSParser::parseRule(const CSSParserContext& context, StyleSheetContents* styleSheet, const String& rule)
 {
     if (RuntimeEnabledFeatures::newCSSParserEnabled())
-        return CSSParserImpl::parseRule(rule, context, CSSParserImpl::RegularRules);
+        return CSSParserImpl::parseRule(rule, context, CSSParserImpl::AllowImportRules);
     return BisonCSSParser(context).parseRule(styleSheet, rule);
 }
 
@@ -121,22 +123,64 @@ PassRefPtrWillBeRawPtr<StyleRuleKeyframe> CSSParser::parseKeyframeRule(const CSS
 
 bool CSSParser::parseSupportsCondition(const String& condition)
 {
+    if (RuntimeEnabledFeatures::newCSSParserEnabled()) {
+        Vector<CSSParserToken> tokens;
+        CSSTokenizer::tokenize(condition, tokens);
+        CSSParserImpl parser(strictCSSParserContext(), "");
+        return CSSSupportsParser::supportsCondition(tokens, parser) == CSSSupportsParser::Supported;
+    }
     return BisonCSSParser(CSSParserContext(HTMLStandardMode, 0)).parseSupportsCondition(condition);
 }
 
 bool CSSParser::parseColor(RGBA32& color, const String& string, bool strict)
 {
-    return BisonCSSParser::parseColor(color, string, strict);
+    if (string.isEmpty())
+        return false;
+
+    // First try creating a color specified by name, rgba(), rgb() or "#" syntax.
+    if (CSSPropertyParser::fastParseColor(color, string, strict))
+        return true;
+
+    // In case the fast-path parser didn't understand the color, try the full parser.
+    RefPtrWillBeRawPtr<MutableStylePropertySet> stylePropertySet = MutableStylePropertySet::create();
+    // FIXME: The old CSS parser is only working in strict mode ignoring the strict parameter.
+    // It needs to be investigated why.
+    if (!parseValue(stylePropertySet.get(), CSSPropertyColor, string, false, strictCSSParserContext()))
+        return false;
+
+    RefPtrWillBeRawPtr<CSSValue> value = stylePropertySet->getPropertyCSSValue(CSSPropertyColor);
+    if (!value || !value->isPrimitiveValue())
+        return false;
+
+    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value.get());
+    if (!primitiveValue->isRGBColor())
+        return false;
+
+    color = primitiveValue->getRGBA32Value();
+    return true;
 }
 
 StyleColor CSSParser::colorFromRGBColorString(const String& string)
 {
-    return BisonCSSParser::colorFromRGBColorString(string);
+    // FIXME: Rework css parser so it is more SVG aware.
+    RGBA32 color;
+    if (parseColor(color, string.stripWhiteSpace()))
+        return StyleColor(color);
+    // FIXME: This branch catches the string currentColor, but we should error if we have an illegal color value.
+    return StyleColor::currentColor();
 }
 
 bool CSSParser::parseSystemColor(RGBA32& color, const String& colorString)
 {
-    return BisonCSSParser::parseSystemColor(color, colorString);
+    CSSParserString cssColor;
+    cssColor.init(colorString);
+    CSSValueID id = cssValueKeywordID(cssColor);
+    if (!CSSPropertyParser::isSystemColor(id))
+        return false;
+
+    Color parsedColor = LayoutTheme::theme().systemColor(id);
+    color = parsedColor.rgb();
+    return true;
 }
 
 } // namespace blink

@@ -108,7 +108,7 @@ float Font::buildGlyphBuffer(const TextRunPaintInfo& runInfo, GlyphBuffer& glyph
     }
 
     SimpleShaper shaper(this, runInfo.run, nullptr /* fallbackFonts */,
-        nullptr /* GlyphBounds */, forTextEmphasis);
+        nullptr, forTextEmphasis);
     shaper.advance(runInfo.from);
     shaper.advance(runInfo.to, &glyphBuffer);
     float width = shaper.runWidthSoFar();
@@ -256,16 +256,6 @@ float Font::width(const TextRun& run, HashSet<const SimpleFontData*>* fallbackFo
     return result;
 }
 
-static bool requiresRecomputingBounds(const Font& font, const FloatRect& bounds)
-{
-    // Blobs should never have empty bounds, but see http://crbug.com/445527
-    if (bounds.isEmpty())
-        return true;
-
-    const FontDescription& fontDescription = font.fontDescription();
-    return fontDescription.letterSpacing() < 0 || fontDescription.wordSpacing() < 0;
-}
-
 static void initFontSmoothingOverride(BBFontSmoothingOverride* fontSmoothingOverride,
                                       const SimpleFontData* font,
                                       const FontDescription& fontDescription)
@@ -295,10 +285,6 @@ PassTextBlobPtr Font::buildTextBlob(const GlyphBuffer& glyphBuffer, const FloatR
     ASSERT(RuntimeEnabledFeatures::textBlobEnabled());
 
     SkTextBlobBuilder builder;
-    SkRect skBounds = bounds;
-    // FIXME: Identify these cases earlier on and avoid using bounds that are
-    // not visually correct in other places.
-    const SkRect* skBoundsPtr = requiresRecomputingBounds(*this, bounds) ? nullptr : &skBounds;
     bool hasVerticalOffsets = glyphBuffer.hasVerticalOffsets();
 
     unsigned i = 0;
@@ -325,8 +311,8 @@ PassTextBlobPtr Font::buildTextBlob(const GlyphBuffer& glyphBuffer, const FloatR
         unsigned count = i - start;
 
         const SkTextBlobBuilder::RunBuffer& buffer = hasVerticalOffsets
-            ? builder.allocRunPos(paint, count, skBoundsPtr)
-            : builder.allocRunPosH(paint, count, 0, skBoundsPtr);
+            ? builder.allocRunPos(paint, count)
+            : builder.allocRunPosH(paint, count, 0);
 
         const uint16_t* glyphs = glyphBuffer.glyphs(start);
         const float* offsets = glyphBuffer.offsets(start);
@@ -392,10 +378,10 @@ CodePath Font::codePath(const TextRunPaintInfo& runInfo) const
     if (fontDescription().textRendering() == OptimizeLegibility || fontDescription().textRendering() == GeometricPrecision)
         return ComplexPath;
 
-    if (run.useComplexCodePath())
+    if (run.codePath() == TextRun::ForceComplex)
         return ComplexPath;
 
-    if (!run.characterScanForCodePath())
+    if (run.codePath() == TextRun::ForceSimple)
         return SimplePath;
 
     if (run.is8Bit())
@@ -791,7 +777,7 @@ void Font::drawGlyphs(GraphicsContext* gc, const SimpleFontData* font,
             -adjustedPoint.y() + adjustedPoint.x() + verticalOrigin.y(),
             adjustedPoint.x() + adjustedPoint.y() - verticalOrigin.x()));
     } else {
-        gc->concatCTM(AffineTransform(1, 0, 0, 1, point.x(), point.y()));
+        gc->concatCTM(AffineTransform::translation(point.x(), point.y()));
     }
 
     SkAutoSTMalloc<64, SkPoint> storage(numGlyphs);
@@ -831,14 +817,15 @@ void Font::drawTextBlob(GraphicsContext* gc, const SkTextBlob* blob, const SkPoi
 
 float Font::floatWidthForComplexText(const TextRun& run, HashSet<const SimpleFontData*>* fallbackFonts, IntRectOutsets* glyphBounds) const
 {
-    HarfBuzzShaper shaper(this, run, HarfBuzzShaper::NotForTextEmphasis, fallbackFonts);
+    FloatRect bounds;
+    HarfBuzzShaper shaper(this, run, HarfBuzzShaper::NotForTextEmphasis, fallbackFonts, glyphBounds ? &bounds : 0);
     if (!shaper.shape())
         return 0;
 
-    glyphBounds->setTop(ceilf(-shaper.glyphBoundingBox().y()));
-    glyphBounds->setBottom(ceilf(shaper.glyphBoundingBox().maxY()));
-    glyphBounds->setLeft(std::max<int>(0, ceilf(-shaper.glyphBoundingBox().x())));
-    glyphBounds->setRight(std::max<int>(0, ceilf(shaper.glyphBoundingBox().maxX() - shaper.totalWidth())));
+    glyphBounds->setTop(ceilf(-bounds.y()));
+    glyphBounds->setBottom(ceilf(bounds.maxY()));
+    glyphBounds->setLeft(std::max<int>(0, ceilf(-bounds.x())));
+    glyphBounds->setRight(std::max<int>(0, ceilf(bounds.maxX() - shaper.totalWidth())));
 
     return shaper.totalWidth();
 }
@@ -937,23 +924,23 @@ void Font::drawEmphasisMarks(GraphicsContext* context, const TextRunPaintInfo& r
 
 float Font::floatWidthForSimpleText(const TextRun& run, HashSet<const SimpleFontData*>* fallbackFonts, IntRectOutsets* glyphBounds) const
 {
-    SimpleShaper::GlyphBounds bounds;
+    FloatRect bounds;
     SimpleShaper shaper(this, run, fallbackFonts, glyphBounds ? &bounds : 0);
     shaper.advance(run.length());
+    float runWidth = shaper.runWidthSoFar();
 
     if (glyphBounds) {
-        glyphBounds->setTop(floorf(-bounds.minGlyphBoundingBoxY));
-        glyphBounds->setBottom(ceilf(bounds.maxGlyphBoundingBoxY));
-        glyphBounds->setLeft(floorf(bounds.firstGlyphOverflow));
-        glyphBounds->setRight(ceilf(bounds.lastGlyphOverflow));
+        glyphBounds->setTop(ceilf(-bounds.y()));
+        glyphBounds->setBottom(ceilf(bounds.maxY()));
+        glyphBounds->setLeft(std::max<int>(0, ceilf(-bounds.x())));
+        glyphBounds->setRight(std::max<int>(0, ceilf(bounds.maxX() - runWidth)));
     }
-
-    return shaper.runWidthSoFar();
+    return runWidth;
 }
 
 FloatRect Font::selectionRectForSimpleText(const TextRun& run, const FloatPoint& point, int h, int from, int to, bool accountForGlyphBounds) const
 {
-    SimpleShaper::GlyphBounds bounds;
+    FloatRect bounds;
     SimpleShaper shaper(this, run, 0, accountForGlyphBounds ? &bounds : 0);
     shaper.advance(from);
     float fromX = shaper.runWidthSoFar();
@@ -970,9 +957,9 @@ FloatRect Font::selectionRectForSimpleText(const TextRun& run, const FloatPoint&
     }
 
     return FloatRect(point.x() + fromX,
-        accountForGlyphBounds ? bounds.minGlyphBoundingBoxY : point.y(),
+        accountForGlyphBounds ? bounds.y(): point.y(),
         toX - fromX,
-        accountForGlyphBounds ? bounds.maxGlyphBoundingBoxY - bounds.minGlyphBoundingBoxY : h);
+        accountForGlyphBounds ? bounds.maxY()- bounds.y(): h);
 }
 
 int Font::offsetForPositionForSimpleText(const TextRun& run, float x, bool includePartialGlyphs) const

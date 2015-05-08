@@ -29,7 +29,7 @@
 #include "core/css/PseudoStyleRequest.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
-#include "core/rendering/RenderPart.h"
+#include "core/layout/LayoutPart.h"
 #include "core/rendering/RenderScrollbarPart.h"
 #include "core/rendering/RenderScrollbarTheme.h"
 #include "platform/graphics/GraphicsContext.h"
@@ -64,21 +64,9 @@ RenderScrollbar::RenderScrollbar(ScrollableArea* scrollableArea, ScrollbarOrient
 
     setFrameRect(rect);
 
-#if ENABLE(OILPAN)
-    ThreadState::current()->registerPreFinalizer(*this);
-#endif
 }
 
 RenderScrollbar::~RenderScrollbar()
-{
-    // Oilpan: to be able to access the hash map that's
-    // also on the heap, a pre-destruction finalizer is used.
-#if !ENABLE(OILPAN)
-    destroyParts();
-#endif
-}
-
-void RenderScrollbar::destroyParts()
 {
     if (m_parts.isEmpty())
         return;
@@ -97,7 +85,6 @@ void RenderScrollbar::trace(Visitor* visitor)
 #if ENABLE(OILPAN)
     visitor->trace(m_owner);
     visitor->trace(m_owningFrame);
-    visitor->trace(m_parts);
 #endif
     Scrollbar::trace(visitor);
 }
@@ -160,12 +147,12 @@ void RenderScrollbar::setPressedPart(ScrollbarPart part)
     updateScrollbarPart(TrackBGPart);
 }
 
-PassRefPtr<RenderStyle> RenderScrollbar::getScrollbarPseudoStyle(ScrollbarPart partType, PseudoId pseudoId)
+PassRefPtr<LayoutStyle> RenderScrollbar::getScrollbarPseudoStyle(ScrollbarPart partType, PseudoId pseudoId)
 {
     if (!owningRenderer())
         return nullptr;
 
-    RefPtr<RenderStyle> result = owningRenderer()->getUncachedPseudoStyle(PseudoStyleRequest(pseudoId, this, partType), owningRenderer()->style());
+    RefPtr<LayoutStyle> result = owningRenderer()->getUncachedPseudoStyle(PseudoStyleRequest(pseudoId, this, partType), owningRenderer()->style());
     // Scrollbars for root frames should always have background color
     // unless explicitly specified as transparent. So we force it.
     // This is because WebKit assumes scrollbar to be always painted and missing background
@@ -241,7 +228,7 @@ void RenderScrollbar::updateScrollbarPart(ScrollbarPart partType, bool destroy)
     if (partType == NoPart)
         return;
 
-    RefPtr<RenderStyle> partStyle = !destroy ? getScrollbarPseudoStyle(partType,  pseudoForScrollbarPart(partType)) : PassRefPtr<RenderStyle>(nullptr);
+    RefPtr<LayoutStyle> partStyle = !destroy ? getScrollbarPseudoStyle(partType,  pseudoForScrollbarPart(partType)) : PassRefPtr<LayoutStyle>(nullptr);
 
     bool needRenderer = !destroy && partStyle && partStyle->display() != NONE;
 

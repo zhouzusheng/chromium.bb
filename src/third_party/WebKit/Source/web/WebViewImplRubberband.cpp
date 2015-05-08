@@ -29,16 +29,15 @@
 #include "core/events/Event.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/FrameView.h"
+#include "core/layout/line/InlineTextBox.h"
+#include "core/layout/Layer.h"
+#include "core/layout/LayoutIFrame.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/TextRunConstructor.h"
 #include "core/page/Page.h"
-#include "core/rendering/InlineTextBox.h"
-#include "core/rendering/ColumnInfo.h"
 #include "core/rendering/RenderBlock.h"
-#include "core/rendering/RenderIFrame.h"
-#include "core/rendering/RenderLayer.h"
-#include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderText.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/TextRunConstructor.h"
 #include "wtf/text/StringBuilder.h"
 
 #include "public/web/WebViewClient.h"
@@ -143,7 +142,7 @@ class RubberbandContext {
   public:
     const RubberbandContext* m_parent;
     RubberbandLayerContext* m_layerContext;
-    const RenderObject* m_renderer;
+    const LayoutObject* m_renderer;
     const RenderBlock* m_containingBlock;
     LayoutPoint m_layoutTopLeft;  // relative to the layer's top-left
 
@@ -155,7 +154,7 @@ class RubberbandContext {
     {
     }
 
-    explicit RubberbandContext(const RubberbandContext* parent, const RenderObject* renderer)
+    explicit RubberbandContext(const RubberbandContext* parent, const LayoutObject* renderer)
     : m_parent(parent)
     , m_renderer(renderer)
     , m_containingBlock(renderer ? renderer->containingBlock() : 0)
@@ -222,14 +221,14 @@ static bool isSupportedTransform(const TransformationMatrix& matrix)
         && 0.0 < matrix.m11() && 0.0 < matrix.m22();
 }
 
-static bool isTextRubberbandable(RenderObject* renderer)
+static bool isTextRubberbandable(LayoutObject* renderer)
 {
     return !renderer->style()
         || RUBBERBANDABLE_TEXT == renderer->style()->rubberbandable()
         || RUBBERBANDABLE_TEXT_WITH_LEADING_TAB == renderer->style()->rubberbandable();
 }
 
-static bool isTextWithLeadingTab(RenderObject* renderer)
+static bool isTextWithLeadingTab(LayoutObject* renderer)
 {
     return !renderer->style()
         || RUBBERBANDABLE_TEXT_WITH_LEADING_TAB == renderer->style()->rubberbandable();
@@ -264,7 +263,7 @@ void WebViewImpl::rubberbandWalkFrame(const RubberbandContext& context, LocalFra
 
     FrameView* view = frame->view();
 
-    RenderObject* renderer = frame->contentRenderer();
+    LayoutObject* renderer = frame->contentRenderer();
     if (!renderer || !renderer->hasLayer())
         return;
 
@@ -303,13 +302,13 @@ void WebViewImpl::rubberbandWalkFrame(const RubberbandContext& context, LocalFra
     rubberbandWalkRenderObject(localContext, renderer);
 }
 
-void WebViewImpl::rubberbandWalkRenderObject(const RubberbandContext& context, RenderObject* renderer)
+void WebViewImpl::rubberbandWalkRenderObject(const RubberbandContext& context, LayoutObject* renderer)
 {
     RubberbandContext localContext(&context, renderer);
 
     if (renderer->hasLayer()) {
-        ASSERT(renderer->isLayerModelObject());
-        RenderLayer* layer = toRenderLayerModelObject(renderer)->layer();
+        ASSERT(renderer->isLayoutLayerModelObject());
+        Layer* layer = toLayoutLayerModelObject(renderer)->layer();
         RubberbandLayerContext& layerContext = *localContext.m_layerContext;
 
         if (layer->hasTransformRelatedProperty()) {
@@ -391,8 +390,8 @@ void WebViewImpl::rubberbandWalkRenderObject(const RubberbandContext& context, R
             localContext.m_layoutTopLeft.move(renderBox->frameRect().x(), renderBox->frameRect().y());
         }
 
-        if (renderer->isRenderIFrame() && isVisible) {
-            RenderIFrame* renderIFrame = toRenderIFrame(renderer);
+        if (renderer->isLayoutIFrame() && isVisible) {
+            LayoutIFrame* renderIFrame = toLayoutIFrame(renderer);
             if (renderIFrame->widget() && renderIFrame->widget()->isFrameView()) {
                 FrameView* frameView = static_cast<FrameView*>(renderIFrame->widget());
                 LayoutPoint topLeft;
@@ -450,14 +449,14 @@ void WebViewImpl::rubberbandWalkRenderObject(const RubberbandContext& context, R
                     const Font& font = renderer->style()->font();
                     UChar space = ' ';
                     candidate.m_spaceWidth = font.width(
-                        constructTextRun(renderer, font, &space, 1, renderer->style(), candidate.m_isLTR ? LTR : RTL));
+                        constructTextRun(renderer, font, &space, 1, renderer->styleRef(), candidate.m_isLTR ? LTR : RTL));
                     candidate.m_spaceWidth *= localContext.m_layerContext->m_scaleX;
                 }
             }
         }
     }
 
-    for (RenderObject* child = renderer->slowFirstChild(); child; child = child->nextSibling()) {
+    for (LayoutObject* child = renderer->slowFirstChild(); child; child = child->nextSibling()) {
         rubberbandWalkRenderObject(localContext, child);
     }
 }

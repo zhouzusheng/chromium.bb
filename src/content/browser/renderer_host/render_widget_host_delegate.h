@@ -36,6 +36,10 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
   // The RenderWidgetHost got the focus.
   virtual void RenderWidgetGotFocus(RenderWidgetHostImpl* render_widget_host) {}
 
+  // The RenderWidget was resized.
+  virtual void RenderWidgetWasResized(RenderWidgetHostImpl* render_widget_host,
+                                      bool width_changed) {}
+
   // Callback to give the browser a chance to handle the specified keyboard
   // event before sending it to the renderer.
   // Returns true if the |event| was handled. Otherwise, if the |event| would
@@ -58,10 +62,6 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
   // event before sending it to the renderer.
   // Returns true if the |event| was handled.
   virtual bool PreHandleGestureEvent(const blink::WebGestureEvent& event);
-
-  // Callback to inform the browser that the renderer did not process the
-  // specified gesture event.  Returns true if the |event| was handled.
-  virtual bool HandleGestureEvent(const blink::WebGestureEvent& event);
 
   // Returns true if RWHV should take focus on mouse-down.
   virtual bool ShouldSetKeyboardFocusOnMouseDown();

@@ -24,8 +24,9 @@ bool LengthStyleInterpolation::canCreateFrom(const CSSValue& value)
     return value.isCalcValue();
 }
 
-PassOwnPtrWillBeRawPtr<InterpolableValue> LengthStyleInterpolation::lengthToInterpolableValue(const CSSValue& value)
+PassOwnPtrWillBeRawPtr<InterpolableValue> LengthStyleInterpolation::toInterpolableValue(const CSSValue& value)
 {
+    ASSERT(canCreateFrom(value));
     OwnPtrWillBeRawPtr<InterpolableList> listOfValuesAndTypes = InterpolableList::create(2);
     OwnPtrWillBeRawPtr<InterpolableList> listOfValues = InterpolableList::create(CSSPrimitiveValue::LengthUnitTypeCount);
     OwnPtrWillBeRawPtr<InterpolableList> listOfTypes = InterpolableList::create(CSSPrimitiveValue::LengthUnitTypeCount);
@@ -80,9 +81,9 @@ static PassRefPtrWillBeRawPtr<CSSCalcExpressionNode> constructCalcExpression(Pas
 
 }
 
-PassRefPtrWillBeRawPtr<CSSPrimitiveValue> LengthStyleInterpolation::interpolableValueToLength(const InterpolableValue* value, ValueRange range)
+PassRefPtrWillBeRawPtr<CSSPrimitiveValue> LengthStyleInterpolation::fromInterpolableValue(const InterpolableValue& value, InterpolationRange range)
 {
-    const InterpolableList* listOfValuesAndTypes = toInterpolableList(value);
+    const InterpolableList* listOfValuesAndTypes = toInterpolableList(&value);
     const InterpolableList* listOfValues = toInterpolableList(listOfValuesAndTypes->get(0));
     const InterpolableList* listOfTypes = toInterpolableList(listOfValuesAndTypes->get(1));
     unsigned unitTypeCount = 0;
@@ -102,20 +103,21 @@ PassRefPtrWillBeRawPtr<CSSPrimitiveValue> LengthStyleInterpolation::interpolable
             const InterpolableNumber *subValueType = toInterpolableNumber(listOfTypes->get(i));
             if (subValueType->value()) {
                 double value = toInterpolableNumber(listOfValues->get(i))->value();
-                if (range == ValueRangeNonNegative && value < 0)
+                if (range == RangeNonNegative && value < 0)
                     value = 0;
                 return CSSPrimitiveValue::create(value, toUnitType(i));
             }
         }
         ASSERT_NOT_REACHED();
     default:
-        return CSSPrimitiveValue::create(CSSCalcValue::create(constructCalcExpression(nullptr, listOfValuesAndTypes, 0), range));
+        ValueRange valueRange = (range == RangeNonNegative) ? ValueRangeNonNegative : ValueRangeAll;
+        return CSSPrimitiveValue::create(CSSCalcValue::create(constructCalcExpression(nullptr, listOfValuesAndTypes, 0), valueRange));
     }
 }
 
 void LengthStyleInterpolation::apply(StyleResolverState& state) const
 {
-    StyleBuilder::applyProperty(m_id, state, interpolableValueToLength(m_cachedValue.get(), m_range).get());
+    StyleBuilder::applyProperty(m_id, state, fromInterpolableValue(*m_cachedValue.get(), m_range).get());
 }
 
 void LengthStyleInterpolation::trace(Visitor* visitor)

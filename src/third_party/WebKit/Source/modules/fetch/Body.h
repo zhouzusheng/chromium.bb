@@ -29,8 +29,6 @@ class Body
     DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Body);
 public:
-    explicit Body(ExecutionContext*);
-    virtual ~Body() { }
     enum ResponseType {
         ResponseUnknown,
         ResponseAsArrayBuffer,
@@ -39,6 +37,8 @@ public:
         ResponseAsJSON,
         ResponseAsText
     };
+    explicit Body(ExecutionContext*);
+    virtual ~Body() { }
 
     ScriptPromise arrayBuffer(ScriptState*);
     ScriptPromise blob(ScriptState*);
@@ -54,11 +54,14 @@ public:
 
     bool streamAccessed() const;
 
+    // Creates a new BodyStreamBuffer to drain the data from the ReadableStream.
+    BodyStreamBuffer* createDrainingStream(bool* dataLost);
+
     // ActiveDOMObject override.
     virtual void stop() override;
     virtual bool hasPendingActivity() const override;
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     // Copy constructor for clone() implementations
@@ -69,7 +72,7 @@ private:
     class BlobHandleReceiver;
 
     void pullSource();
-    void readAllFromStream(ScriptState*);
+    void readAllFromStream();
     ScriptPromise readAsync(ScriptState*, ResponseType);
     void readAsyncFromBlob(PassRefPtr<BlobDataHandle>);
     void resolveJSON(const String&);
@@ -90,11 +93,10 @@ private:
     virtual BodyStreamBuffer* buffer() const = 0;
     virtual String contentTypeForBuffer() const = 0;
 
-    void didFinishLoadingViaStream(DOMArrayBuffer*);
+    void didFinishLoadingViaStream(PassRefPtr<DOMArrayBuffer>);
 
     OwnPtr<FileReaderLoader> m_loader;
     bool m_bodyUsed;
-    bool m_streamAccessed;
     ResponseType m_responseType;
     RefPtrWillBeMember<ScriptPromiseResolver> m_resolver;
     Member<ReadableStreamSource> m_streamSource;

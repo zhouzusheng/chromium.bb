@@ -36,7 +36,7 @@ public:
     DECLARE_NODE_FACTORY(SVGAElement);
     SVGAnimatedString* svgTarget() { return m_svgTarget.get(); }
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     explicit SVGAElement(Document&);
@@ -46,7 +46,7 @@ private:
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
     virtual void svgAttributeChanged(const QualifiedName&) override;
 
-    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual LayoutObject* createRenderer(const LayoutStyle&) override;
 
     virtual void defaultEventHandler(Event*) override;
 
@@ -54,7 +54,7 @@ private:
 
     virtual bool supportsFocus() const override;
     virtual bool shouldHaveFocusAppearance() const override final;
-    virtual void dispatchFocusEvent(Element* oldFocusedElement, FocusType) override;
+    virtual void dispatchFocusEvent(Element* oldFocusedElement, WebFocusType) override;
     virtual bool isMouseFocusable() const override;
     virtual bool isKeyboardFocusable() const override;
     virtual bool isURLAttribute(const Attribute&) const override;

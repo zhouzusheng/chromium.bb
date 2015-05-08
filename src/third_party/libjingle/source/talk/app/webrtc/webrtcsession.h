@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2012, Google Inc.
+ * Copyright 2012 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -118,7 +118,8 @@ class WebRtcSession : public cricket::BaseSession,
   bool Initialize(const PeerConnectionFactoryInterface::Options& options,
                   const MediaConstraintsInterface* constraints,
                   DTLSIdentityServiceInterface* dtls_identity_service,
-                  PeerConnectionInterface::IceTransportsType ice_transport);
+                  PeerConnectionInterface::IceTransportsType ice_transport_type,
+                  PeerConnectionInterface::BundlePolicy bundle_policy);
   // Deletes the voice, video and data channel and changes the session state
   // to STATE_RECEIVEDTERMINATE.
   void Terminate();
@@ -135,6 +136,10 @@ class WebRtcSession : public cricket::BaseSession,
   }
   virtual cricket::DataChannel* data_channel() {
     return data_channel_.get();
+  }
+
+  virtual const MediaStreamSignaling* mediastream_signaling() const {
+    return mediastream_signaling_;
   }
 
   void SetSdesPolicy(cricket::SecurePolicy secure_policy);
@@ -367,6 +372,9 @@ class WebRtcSession : public cricket::BaseSession,
   cricket::AudioOptions audio_options_;
   cricket::VideoOptions video_options_;
   MetricsObserverInterface* metrics_observer_;
+
+  // Declares the bundle policy for the WebRTCSession.
+  PeerConnectionInterface::BundlePolicy bundle_policy_;
 
   DISALLOW_COPY_AND_ASSIGN(WebRtcSession);
 };

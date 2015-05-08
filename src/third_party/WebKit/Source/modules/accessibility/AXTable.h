@@ -40,10 +40,10 @@ class AXTableCell;
 class AXTable : public AXRenderObject {
 
 protected:
-    AXTable(RenderObject*, AXObjectCacheImpl*);
+    AXTable(LayoutObject*, AXObjectCacheImpl*);
 
 public:
-    static PassRefPtr<AXTable> create(RenderObject*, AXObjectCacheImpl*);
+    static PassRefPtr<AXTable> create(LayoutObject*, AXObjectCacheImpl*);
     virtual ~AXTable();
 
     virtual void init() override final;
@@ -60,13 +60,13 @@ public:
     virtual bool isAriaTable() const { return false; }
     virtual bool supportsSelectedRows() { return false; }
 
-    AccessibilityChildrenVector& columns();
-    AccessibilityChildrenVector& rows();
+    const AccessibilityChildrenVector& columns();
+    const AccessibilityChildrenVector& rows();
 
     unsigned columnCount();
     unsigned rowCount();
 
-    virtual String title() const override final;
+    virtual String title(TextUnderElementMode) const override final;
 
     // all the cells in the table
     void cells(AccessibilityChildrenVector&);

@@ -41,10 +41,6 @@ class WebRtcPassthroughRender : public webrtc::VideoRender {
   WebRtcPassthroughRender();
   virtual ~WebRtcPassthroughRender();
 
-  virtual int32_t ChangeUniqueId(const int32_t id) OVERRIDE {
-    return 0;
-  }
-
   virtual int64_t TimeUntilNextProcess() OVERRIDE { return 0; }
 
   virtual int32_t Process() OVERRIDE { return 0; }
@@ -178,13 +174,6 @@ class WebRtcPassthroughRender : public webrtc::VideoRender {
       const uint32_t stream_id,
       const webrtc::I420VideoFrame& videoFrame,
       const uint32_t timeout) OVERRIDE {
-    return -1;
-  }
-
-  virtual int32_t MirrorRenderStream(const int renderId,
-                                     const bool enable,
-                                     const bool mirrorXAxis,
-                                     const bool mirrorYAxis) OVERRIDE {
     return -1;
   }
 

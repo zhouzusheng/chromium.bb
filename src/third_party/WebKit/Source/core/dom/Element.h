@@ -34,8 +34,8 @@
 #include "core/dom/ElementData.h"
 #include "core/dom/SpaceSplitString.h"
 #include "core/html/CollectionType.h"
-#include "core/page/FocusType.h"
 #include "platform/heap/Handle.h"
+#include "public/platform/WebFocusType.h"
 
 namespace blink {
 
@@ -320,8 +320,9 @@ public:
 
     virtual void attach(const AttachContext& = AttachContext()) override;
     virtual void detach(const AttachContext& = AttachContext()) override;
-    virtual RenderObject* createRenderer(RenderStyle*);
-    virtual bool rendererIsNeeded(const RenderStyle&);
+
+    virtual LayoutObject* createRenderer(const LayoutStyle&);
+    virtual bool rendererIsNeeded(const LayoutStyle&);
     void recalcStyle(StyleRecalcChange, Text* nextTextSibling = nullptr);
     void pseudoStateChanged(CSSSelector::PseudoType);
     void setAnimationStyleChange(bool);
@@ -337,14 +338,14 @@ public:
     ShadowRoot* shadowRoot() const;
     ShadowRoot* youngestShadowRoot() const;
 
-    bool hasAuthorShadowRoot() const { return shadowRoot(); }
-    ShadowRoot* userAgentShadowRoot() const;
-    ShadowRoot& ensureUserAgentShadowRoot();
-    virtual void willAddFirstAuthorShadowRoot() { }
+    bool hasOpenShadowRoot() const { return shadowRoot(); }
+    ShadowRoot* closedShadowRoot() const;
+    ShadowRoot& ensureClosedShadowRoot();
+    virtual void willAddFirstOpenShadowRoot() { }
 
     bool isInDescendantTreeOf(const Element* shadowHost) const;
 
-    RenderStyle* computedStyle(PseudoId = NOPSEUDO);
+    LayoutStyle* computedStyle(PseudoId = NOPSEUDO);
 
     // Methods for indicating the style is affected by dynamic updates (e.g., children changing, our position changing in our sibling list, etc.)
     bool styleAffectedByEmpty() const { return hasElementFlag(StyleAffectedByEmpty); }
@@ -373,7 +374,7 @@ public:
     virtual const AtomicString imageSourceURL() const;
     virtual Image* imageContents() { return nullptr; }
 
-    virtual void focus(bool restorePreviousSelection = true, FocusType = FocusTypeNone);
+    virtual void focus(bool restorePreviousSelection = true, WebFocusType = WebFocusTypeNone);
     virtual void updateFocusAppearance(bool restorePreviousSelection);
     virtual void blur();
     // Whether this element can receive focus at all. Most elements are not
@@ -385,9 +386,9 @@ public:
     bool isFocusable() const;
     virtual bool isKeyboardFocusable() const;
     virtual bool isMouseFocusable() const;
-    virtual void dispatchFocusEvent(Element* oldFocusedElement, FocusType);
+    virtual void dispatchFocusEvent(Element* oldFocusedElement, WebFocusType);
     virtual void dispatchBlurEvent(Element* newFocusedElement);
-    virtual void dispatchFocusInEvent(const AtomicString& eventType, Element* oldFocusedElement, FocusType);
+    virtual void dispatchFocusInEvent(const AtomicString& eventType, Element* oldFocusedElement, WebFocusType);
     void dispatchFocusOutEvent(const AtomicString& eventType, Element* newFocusedElement);
 
     String innerText();
@@ -425,7 +426,7 @@ public:
     void beginParsingChildren() { setIsFinishedParsingChildren(false); }
 
     PseudoElement* pseudoElement(PseudoId) const;
-    RenderObject* pseudoElementRenderer(PseudoId) const;
+    LayoutObject* pseudoElementRenderer(PseudoId) const;
 
     virtual bool matchesReadOnlyPseudoClass() const { return false; }
     virtual bool matchesReadWritePseudoClass() const { return false; }
@@ -482,7 +483,7 @@ public:
     bool isSpellCheckingEnabled() const;
 
     // FIXME: public for RenderTreeBuilder, we shouldn't expose this though.
-    PassRefPtr<RenderStyle> styleForRenderer();
+    PassRefPtr<LayoutStyle> styleForRenderer();
 
     bool hasID() const;
     bool hasClass() const;
@@ -508,6 +509,8 @@ public:
 
     virtual void trace(Visitor*) override;
 
+    SpellcheckAttributeState spellcheckAttributeState() const;
+
 protected:
     Element(const QualifiedName& tagName, Document*, ConstructionType);
 
@@ -524,7 +527,7 @@ protected:
 
     virtual void willRecalcStyle(StyleRecalcChange);
     virtual void didRecalcStyle(StyleRecalcChange);
-    virtual PassRefPtr<RenderStyle> customStyleForRenderer();
+    virtual PassRefPtr<LayoutStyle> customStyleForRenderer();
 
     virtual bool shouldRegisterAsNamedItem() const { return false; }
     virtual bool shouldRegisterAsExtraNamedItem() const { return false; }
@@ -536,7 +539,7 @@ protected:
     // Subclasses may override this method to affect focusability. Unlike
     // supportsFocus, this method must be called on an up-to-date layout, so it
     // may use the renderer to reason about focusability. This method cannot be
-    // moved to RenderObject because some focusable nodes don't have renderers,
+    // moved to LayoutObject because some focusable nodes don't have renderers,
     // e.g., HTMLOptionElement.
     virtual bool rendererIsFocusable() const;
 
@@ -545,7 +548,7 @@ protected:
     // svgAttributeChanged (called when element.className.baseValue is set)
     void classAttributeChanged(const AtomicString& newClassString);
 
-    PassRefPtr<RenderStyle> originalStyleForRenderer();
+    PassRefPtr<LayoutStyle> originalStyleForRenderer();
 
     Node* insertAdjacent(const String& where, Node* newChild, ExceptionState&);
 
@@ -585,8 +588,8 @@ private:
 
     // FIXME: Everyone should allow author shadows.
     virtual bool areAuthorShadowsAllowed() const { return true; }
-    virtual void didAddUserAgentShadowRoot(ShadowRoot&) { }
-    virtual bool alwaysCreateUserAgentShadowRoot() const { return false; }
+    virtual void didAddClosedShadowRoot(ShadowRoot&) { }
+    virtual bool alwaysCreateClosedShadowRoot() const { return false; }
 
     // FIXME: Remove the need for Attr to call willModifyAttribute/didModifyAttribute.
     friend class Attr;
@@ -617,13 +620,13 @@ private:
     virtual void formatForDebugger(char* buffer, unsigned length) const override;
 #endif
 
-    bool pseudoStyleCacheIsInvalid(const RenderStyle* currentStyle, RenderStyle* newStyle);
+    bool pseudoStyleCacheIsInvalid(const LayoutStyle* currentStyle, LayoutStyle* newStyle);
 
     void cancelFocusAppearanceUpdate();
 
-    virtual RenderStyle* virtualComputedStyle(PseudoId pseudoElementSpecifier = NOPSEUDO) override { return computedStyle(pseudoElementSpecifier); }
+    virtual LayoutStyle* virtualComputedStyle(PseudoId pseudoElementSpecifier = NOPSEUDO) override { return computedStyle(pseudoElementSpecifier); }
 
-    inline void updateCallbackSelectors(RenderStyle* oldStyle, RenderStyle* newStyle);
+    inline void updateCallbackSelectors(LayoutStyle* oldStyle, LayoutStyle* newStyle);
     inline void removeCallbackSelectors();
     inline void addCallbackSelectors();
 
@@ -633,8 +636,6 @@ private:
     virtual PassRefPtrWillBeRawPtr<Element> cloneElementWithoutAttributesAndChildren();
 
     QualifiedName m_tagName;
-
-    SpellcheckAttributeState spellcheckAttributeState() const;
 
     void updateNamedItemRegistration(const AtomicString& oldName, const AtomicString& newName);
     void updateExtraNamedItemRegistration(const AtomicString& oldName, const AtomicString& newName);

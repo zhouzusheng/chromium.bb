@@ -59,11 +59,11 @@
 #include "core/inspector/InspectorResourceContentLoader.h"
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InstrumentingAgents.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/LayoutObjectInlines.h"
+#include "core/layout/line/InlineTextBox.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/page/Page.h"
-#include "core/rendering/InlineTextBox.h"
-#include "core/rendering/RenderObject.h"
-#include "core/rendering/RenderObjectInlines.h"
 #include "core/rendering/RenderText.h"
 #include "core/rendering/RenderTextFragment.h"
 #include "platform/fonts/Font.h"
@@ -131,7 +131,7 @@ public:
 class InspectorCSSAgent::InspectorResourceContentLoaderCallback final : public VoidCallback {
 public:
     InspectorResourceContentLoaderCallback(InspectorCSSAgent*, PassRefPtrWillBeRawPtr<EnableCallback>);
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
     virtual void handleEvent() override;
 
 private:
@@ -145,7 +145,7 @@ InspectorCSSAgent::InspectorResourceContentLoaderCallback::InspectorResourceCont
 {
 }
 
-void InspectorCSSAgent::InspectorResourceContentLoaderCallback::trace(Visitor* visitor)
+DEFINE_TRACE(InspectorCSSAgent::InspectorResourceContentLoaderCallback)
 {
     visitor->trace(m_cssAgent);
     visitor->trace(m_callback);
@@ -202,7 +202,7 @@ public:
         m_text = other->m_text;
     }
 
-    virtual void trace(Visitor* visitor) override
+    DEFINE_INLINE_VIRTUAL_TRACE()
     {
         visitor->trace(m_styleSheet);
         InspectorCSSAgent::StyleSheetAction::trace(visitor);
@@ -264,7 +264,7 @@ public:
         m_text = other->m_text;
     }
 
-    virtual void trace(Visitor* visitor) override
+    DEFINE_INLINE_VIRTUAL_TRACE()
     {
         visitor->trace(m_styleSheet);
         InspectorCSSAgent::StyleSheetAction::trace(visitor);
@@ -308,7 +308,7 @@ public:
         return m_styleSheet->setRuleSelector(m_cssId, m_selector, exceptionState);
     }
 
-    virtual void trace(Visitor* visitor) override
+    DEFINE_INLINE_VIRTUAL_TRACE()
     {
         visitor->trace(m_styleSheet);
         InspectorCSSAgent::StyleSheetAction::trace(visitor);
@@ -350,7 +350,7 @@ public:
         return m_styleSheet->setMediaRuleText(m_cssId, m_text, exceptionState);
     }
 
-    virtual void trace(Visitor* visitor) override
+    DEFINE_INLINE_VIRTUAL_TRACE()
     {
         visitor->trace(m_styleSheet);
         InspectorCSSAgent::StyleSheetAction::trace(visitor);
@@ -397,7 +397,7 @@ public:
 
     InspectorCSSId newRuleId() { return m_newId; }
 
-    virtual void trace(Visitor* visitor) override
+    DEFINE_INLINE_VIRTUAL_TRACE()
     {
         visitor->trace(m_styleSheet);
         InspectorCSSAgent::StyleSheetAction::trace(visitor);
@@ -476,7 +476,7 @@ void InspectorCSSAgent::restore()
         wasEnabled();
 }
 
-void InspectorCSSAgent::flushPendingFrontendMessages()
+void InspectorCSSAgent::flushPendingProtocolNotifications()
 {
     if (!m_invalidatedDocuments.size())
         return;
@@ -546,7 +546,7 @@ void InspectorCSSAgent::didCommitLoadForMainFrame()
 
 void InspectorCSSAgent::mediaQueryResultChanged()
 {
-    flushPendingFrontendMessages();
+    flushPendingProtocolNotifications();
     m_frontend->mediaQueryResultChanged();
 }
 
@@ -591,7 +591,7 @@ void InspectorCSSAgent::activeStyleSheetsUpdated(Document* document)
 
     m_invalidatedDocuments.add(document);
     if (m_creatingViaInspectorStyleSheet)
-        flushPendingFrontendMessages();
+        flushPendingProtocolNotifications();
 }
 
 void InspectorCSSAgent::updateActiveStyleSheets(Document* document, StyleSheetsUpdateType styleSheetsUpdateType)
@@ -800,8 +800,8 @@ void InspectorCSSAgent::getComputedStyleForNode(ErrorString* errorString, int no
 void InspectorCSSAgent::collectPlatformFontsForRenderer(RenderText* renderer, HashCountedSet<String>* fontStats)
 {
     for (InlineTextBox* box = renderer->firstTextBox(); box; box = box->nextTextBox()) {
-        RenderStyle* style = renderer->style(box->isFirstLineStyle());
-        const Font& font = style->font();
+        const LayoutStyle& style = renderer->styleRef(box->isFirstLineStyle());
+        const Font& font = style.font();
         TextRun run = box->constructTextRunForInspector(style, font);
         SimpleShaper shaper(&font, run);
         GlyphBuffer glyphBuffer;
@@ -846,7 +846,7 @@ void InspectorCSSAgent::getPlatformFontsForNode(ErrorString* errorString, int no
 
         // If we're the remaining text from a first-letter then our previous
         // sibling has to be the first-letter renderer.
-        RenderObject* previous = renderer->previousSibling();
+        LayoutObject* previous = renderer->previousSibling();
         if (!previous)
             continue;
 
@@ -1518,7 +1518,7 @@ void InspectorCSSAgent::didModifyDOMAttr(Element* element)
 
 void InspectorCSSAgent::styleSheetChanged(InspectorStyleSheetBase* styleSheet)
 {
-    flushPendingFrontendMessages();
+    flushPendingProtocolNotifications();
     m_frontend->styleSheetChanged(styleSheet->id());
 }
 
@@ -1548,7 +1548,7 @@ void InspectorCSSAgent::resetPseudoStates()
         document->setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::Inspector));
 }
 
-void InspectorCSSAgent::trace(Visitor* visitor)
+DEFINE_TRACE(InspectorCSSAgent)
 {
     visitor->trace(m_domAgent);
     visitor->trace(m_pageAgent);

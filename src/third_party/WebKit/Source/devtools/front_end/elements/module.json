@@ -76,6 +76,10 @@
         "extensions"
     ],
     "scripts": [
+        "BezierUI.js",
+        "AnimationTimeline.js",
+        "StylesPopoverHelper.js",
+        "BezierEditor.js",
         "Spectrum.js",
         "ElementsBreadcrumbs.js",
         "ElementsSidebarPane.js",
@@ -88,9 +92,12 @@
         "StylesSectionModel.js",
         "StylesSidebarPane.js",
         "ElementsPanel.js",
-        "AnimationsSidebarPane.js"
+        "AnimationsSidebarPane.js",
+        "AccessibilitySidebarPane.js"
     ],
     "stylesheets": [
+        "animationTimeline.css",
+        "bezierEditor.css",
         "breadcrumbs.css",
         "elementsPanel.css",
         "elementsTreeOutline.css",

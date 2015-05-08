@@ -356,6 +356,7 @@ static struct tag *find_tag(struct tag_index index, uint32_t tag_id)
 
 #define DESC_TYPE 0x64657363 // 'desc'
 #define MLUC_TYPE 0x6d6c7563 // 'mluc'
+#define MMOD_TYPE 0x6D6D6F64 // 'mmod'
 
 static bool read_tag_descType(qcms_profile *profile, struct mem_source *src, struct tag_index index, uint32_t tag_id)
 {
@@ -365,23 +366,31 @@ static bool read_tag_descType(qcms_profile *profile, struct mem_source *src, str
 		uint32_t offset = tag->offset;
 		uint32_t type = read_u32(src, offset);
 		uint32_t length = read_u32(src, offset+8);
-		uint32_t i, description;
+		uint32_t i, description_offset;
+		bool mluc = false;
 		if (length && type == MLUC_TYPE) {
 			length = read_u32(src, offset+20);
 			if (!length || (length & 1) || (read_u32(src, offset+12) != 12))
 				goto invalid_desc_tag;
-			description = offset + read_u32(src, offset+24);
+			description_offset = offset + read_u32(src, offset+24);
 			if (!src->valid)
 				goto invalid_desc_tag;
+			mluc = true;
 		} else if (length && type == DESC_TYPE) {
-			description = offset + 12;
+			description_offset = offset + 12;
 		} else {
 			goto invalid_desc_tag;
 		}
 		if (length >= limit)
 			length = limit - 1;
-		for (i = 0; i < length; ++i)
-			profile->description[i] = read_u8(src, description+i);
+		for (i = 0; i < length; ++i) {
+			uint8_t value = read_u8(src, description_offset + i);
+			if (!src->valid)
+				goto invalid_desc_tag;
+			if (mluc && !value)
+				value = '.';
+			profile->description[i] = value;
+		}
 		profile->description[length] = 0;
 	} else {
 		goto invalid_desc_tag;
@@ -394,6 +403,102 @@ invalid_desc_tag:
 	invalid_source(src, "invalid description");
 	return false;
 }
+
+#if defined(__APPLE__)
+
+// Use the dscm tag to change profile description "Display" to its more specific en-localized monitor name, if any.
+
+#define TAG_dscm  0x6473636D // 'dscm'
+
+static bool read_tag_dscmType(qcms_profile *profile, struct mem_source *src, struct tag_index index, uint32_t tag_id)
+{
+	if (strcmp(profile->description, "Display") != 0)
+		return true;
+
+	struct tag *tag = find_tag(index, tag_id);
+	if (tag) {
+		uint32_t offset = tag->offset;
+		uint32_t type = read_u32(src, offset);
+		uint32_t records = read_u32(src, offset+8);
+
+		if (!src->valid || !records || type != MLUC_TYPE)
+			goto invalid_dscm_tag;
+		if (read_u32(src, offset+12) != 12) // MLUC record size: bytes
+			goto invalid_dscm_tag;
+
+		for (uint32_t i = 0; i < records; ++i) {
+			const uint32_t limit = sizeof profile->description;
+			const uint16_t isoen = 0x656E; // ISO-3166-1 language 'en'
+
+			uint16_t language = read_u16(src, offset + 16 + (i * 12) + 0);
+			uint32_t length = read_u32(src, offset + 16 + (i * 12) + 4);
+			uint32_t description_offset = read_u32(src, offset + 16 + (i * 12) + 8);
+
+			if (!src->valid || !length || (length & 1))
+				goto invalid_dscm_tag;
+			if (language != isoen)
+				continue;
+
+			// Use a prefix to identify the display description source
+			strcpy(profile->description, "dscm:");
+			length += 5;
+
+			if (length >= limit)
+				length = limit - 1;
+			for (uint32_t j = 5; j < length; ++j) {
+				uint8_t value = read_u8(src, offset + description_offset + j - 5);
+				if (!src->valid)
+					goto invalid_dscm_tag;
+				profile->description[j] = value ? value : '.';
+			}
+			profile->description[length] = 0;
+			break;
+		}
+	}
+
+	if (src->valid)
+		return true;
+
+invalid_dscm_tag:
+	invalid_source(src, "invalid dscm tag");
+	return false;
+}
+
+// Use the mmod tag to change profile description "Display" to its specific mmod maker model data, if any.
+
+#define TAG_mmod  0x6D6D6F64 // 'mmod'
+
+static bool read_tag_mmodType(qcms_profile *profile, struct mem_source *src, struct tag_index index, uint32_t tag_id)
+{
+	if (strcmp(profile->description, "Display") != 0)
+		return true;
+
+	struct tag *tag = find_tag(index, tag_id);
+	if (tag) {
+		const uint8_t length = 4 * 4; // Four 4-byte fields: 'mmod', 0, maker, model.
+
+		uint32_t offset = tag->offset;
+		if (tag->size < 40 || read_u32(src, offset) != MMOD_TYPE)
+			goto invalid_mmod_tag;
+
+		for (uint8_t i = 0; i < length; ++i) {
+			uint8_t value = read_u8(src, offset + i);
+			if (!src->valid)
+				goto invalid_mmod_tag;
+			profile->description[i] = value ? value : '.';
+		}
+		profile->description[length] = 0;
+	}
+
+	if (src->valid)
+		return true;
+
+invalid_mmod_tag:
+	invalid_source(src, "invalid mmod tag");
+	return false;
+}
+
+#endif // __APPLE__
 
 #define XYZ_TYPE		0x58595a20 // 'XYZ '
 #define CURVE_TYPE		0x63757276 // 'curv'
@@ -1091,6 +1196,12 @@ qcms_profile* qcms_profile_from_memory(const void *mem, size_t size)
 
 	if (!read_tag_descType(profile, src, index, TAG_desc))
 		goto invalid_tag_table;
+#if defined(__APPLE__)
+	if (!read_tag_dscmType(profile, src, index, TAG_dscm))
+		goto invalid_tag_table;
+	if (!read_tag_mmodType(profile, src, index, TAG_mmod))
+		goto invalid_tag_table;
+#endif // __APPLE__
 
 	if (find_tag(index, TAG_CHAD)) {
 		profile->chromaticAdaption = read_tag_s15Fixed16ArrayType(src, index, TAG_CHAD);

@@ -14,7 +14,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
-#include "base/metrics/stats_counters.h"
 #include "base/profiler/scoped_tracker.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
@@ -163,8 +162,6 @@ HttpNetworkTransaction::~HttpNetworkTransaction() {
 int HttpNetworkTransaction::Start(const HttpRequestInfo* request_info,
                                   const CompletionCallback& callback,
                                   const BoundNetLog& net_log) {
-  SIMPLE_STATS_COUNTER("HttpNetworkTransaction.Count");
-
   net_log_ = net_log;
   request_ = request_info;
 
@@ -173,9 +170,18 @@ int HttpNetworkTransaction::Start(const HttpRequestInfo* request_info,
     proxy_ssl_config_.rev_checking_enabled = false;
   }
 
+  if (request_->load_flags & LOAD_PREFETCH)
+    response_.unused_since_prefetch = true;
+
   // Channel ID is disabled if privacy mode is enabled for this request.
   if (request_->privacy_mode == PRIVACY_MODE_ENABLED)
     server_ssl_config_.channel_id_enabled = false;
+
+  if (server_ssl_config_.fastradio_padding_enabled) {
+    server_ssl_config_.fastradio_padding_eligible =
+        session_->ssl_config_service()->SupportsFastradioPadding(
+            request_info->url);
+  }
 
   next_state_ = STATE_NOTIFY_BEFORE_CREATE_STREAM;
   int rv = DoLoop(OK);
@@ -563,12 +569,13 @@ void HttpNetworkTransaction::OnHttpsProxyTunnelResponse(
   OnIOComplete(ERR_HTTPS_PROXY_TUNNEL_RESPONSE);
 }
 
-bool HttpNetworkTransaction::is_https_request() const {
-  return request_->url.SchemeIs("https");
+bool HttpNetworkTransaction::IsSecureRequest() const {
+  return request_->url.SchemeIsSecure();
 }
 
 bool HttpNetworkTransaction::UsingHttpProxyWithoutTunnel() const {
-  return (proxy_info_.is_http() || proxy_info_.is_https()) &&
+  return (proxy_info_.is_http() || proxy_info_.is_https() ||
+          proxy_info_.is_quic()) &&
          !(request_->url.SchemeIs("https") || request_->url.SchemeIsWSOrWSS());
 }
 
@@ -962,7 +969,7 @@ int HttpNetworkTransaction::DoReadHeadersComplete(int result) {
   } else if (result == ERR_SSL_CLIENT_AUTH_CERT_NEEDED) {
     // TODO(wtc): Need a test case for this code path!
     DCHECK(stream_.get());
-    DCHECK(is_https_request());
+    DCHECK(IsSecureRequest());
     response_.cert_request_info = new SSLCertRequestInfo;
     stream_->GetSSLCertRequestInfo(response_.cert_request_info.get());
     result = HandleCertificateRequest(result);
@@ -1043,7 +1050,7 @@ int HttpNetworkTransaction::DoReadHeadersComplete(int result) {
   if (rv != OK)
     return rv;
 
-  if (is_https_request())
+  if (IsSecureRequest())
     stream_->GetSSLInfo(&response_.ssl_info);
 
   headers_valid_ = true;

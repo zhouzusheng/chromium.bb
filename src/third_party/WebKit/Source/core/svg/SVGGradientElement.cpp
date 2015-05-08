@@ -20,15 +20,12 @@
  */
 
 #include "config.h"
-
 #include "core/svg/SVGGradientElement.h"
 
 #include "core/XLinkNames.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/ElementTraversal.h"
-#include "core/rendering/svg/RenderSVGPath.h"
-#include "core/rendering/svg/RenderSVGResourceLinearGradient.h"
-#include "core/rendering/svg/RenderSVGResourceRadialGradient.h"
+#include "core/layout/svg/LayoutSVGResourceContainer.h"
 #include "core/svg/SVGStopElement.h"
 #include "core/svg/SVGTransformList.h"
 
@@ -47,17 +44,18 @@ template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGSpreadMe
 
 SVGGradientElement::SVGGradientElement(const QualifiedName& tagName, Document& document)
     : SVGElement(tagName, document)
-    , SVGURIReference(this)
     , m_gradientTransform(SVGAnimatedTransformList::create(this, SVGNames::gradientTransformAttr, SVGTransformList::create()))
     , m_spreadMethod(SVGAnimatedEnumeration<SVGSpreadMethodType>::create(this, SVGNames::spreadMethodAttr, SVGSpreadMethodPad))
     , m_gradientUnits(SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>::create(this, SVGNames::gradientUnitsAttr, SVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX))
 {
+    SVGURIReference::initialize(this);
+
     addToPropertyMap(m_gradientTransform);
     addToPropertyMap(m_spreadMethod);
     addToPropertyMap(m_gradientUnits);
 }
 
-void SVGGradientElement::trace(Visitor* visitor)
+DEFINE_TRACE(SVGGradientElement)
 {
     visitor->trace(m_gradientTransform);
     visitor->trace(m_spreadMethod);
@@ -92,7 +90,7 @@ void SVGGradientElement::svgAttributeChanged(const QualifiedName& attrName)
 
     SVGElement::InvalidationGuard invalidationGuard(this);
 
-    RenderSVGResourceContainer* renderer = toRenderSVGResourceContainer(this->renderer());
+    LayoutSVGResourceContainer* renderer = toLayoutSVGResourceContainer(this->renderer());
     if (renderer)
         renderer->invalidateCacheAndMarkForLayout();
 }
@@ -104,7 +102,7 @@ void SVGGradientElement::childrenChanged(const ChildrenChange& change)
     if (change.byParser)
         return;
 
-    if (RenderObject* object = renderer())
+    if (LayoutObject* object = renderer())
         object->setNeedsLayoutAndFullPaintInvalidation();
 }
 

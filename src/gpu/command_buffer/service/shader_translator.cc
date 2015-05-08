@@ -10,10 +10,10 @@
 
 #include "base/at_exit.h"
 #include "base/command_line.h"
-#include "base/debug/trace_event.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/trace_event/trace_event.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
 
 namespace gpu {
@@ -123,7 +123,6 @@ bool ShaderTranslator::Init(
     compiler_ = ShConstructCompiler(
         shader_type, shader_spec, shader_output, resources);
   }
-  compiler_options_ = *resources;
   implementation_is_glsl_es_ = (glsl_implementation_type == kGlslES);
   driver_bug_workarounds_ = driver_bug_workarounds;
   return compiler_ != NULL;

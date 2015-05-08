@@ -5,12 +5,13 @@
 #include "config.h"
 #include "core/paint/ScrollableAreaPainter.h"
 
+#include "core/layout/Layer.h"
+#include "core/layout/LayerScrollableArea.h"
+#include "core/layout/PaintInfo.h"
 #include "core/page/Page.h"
 #include "core/paint/ScrollbarPainter.h"
-#include "core/rendering/PaintInfo.h"
-#include "core/rendering/RenderLayer.h"
-#include "core/rendering/RenderLayerScrollableArea.h"
 #include "core/rendering/RenderView.h"
+#include "core/paint/TransformRecorder.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/GraphicsContextStateSaver.h"
 #include "platform/graphics/paint/DrawingRecorder.h"
@@ -27,12 +28,14 @@ void ScrollableAreaPainter::paintResizer(GraphicsContext* context, const IntPoin
     if (!absRect.intersects(damageRect))
         return;
 
-    DrawingRecorder recorder(context, m_renderLayerScrollableArea.box().displayItemClient(), DisplayItem::Resizer, damageRect);
-
     if (m_renderLayerScrollableArea.resizer()) {
         ScrollbarPainter::paintIntoRect(m_renderLayerScrollableArea.resizer(), context, paintOffset, absRect);
         return;
     }
+
+    DrawingRecorder recorder(context, m_renderLayerScrollableArea.displayItemClient(), DisplayItem::Resizer, damageRect);
+    if (recorder.canUseCachedDrawing())
+        return;
 
     drawPlatformResizerImage(context, absRect);
 
@@ -89,12 +92,8 @@ void ScrollableAreaPainter::paintOverflowControls(GraphicsContext* context, cons
     if (paintingOverlayControls)
         adjustedPaintOffset = m_renderLayerScrollableArea.cachedOverlayScrollbarOffset();
 
-    // Move the scrollbar widgets if necessary. We normally move and resize widgets during layout,
-    // but sometimes widgets can move without layout occurring (most notably when you scroll a
-    // document that contains fixed positioned elements).
-
-    // FIXME: this code should not be necessary.
-    m_renderLayerScrollableArea.positionOverflowControls(toIntSize(adjustedPaintOffset));
+    IntRect localDamageRect = damageRect;
+    localDamageRect.moveBy(-adjustedPaintOffset);
 
     // Overlay scrollbars paint in a second pass through the layer tree so that they will paint
     // on top of everything else. If this is the normal painting pass, paintingOverlayControls
@@ -107,14 +106,12 @@ void ScrollableAreaPainter::paintOverflowControls(GraphicsContext* context, cons
         // It's not necessary to do the second pass if the scrollbars paint into layers.
         if ((m_renderLayerScrollableArea.horizontalScrollbar() && m_renderLayerScrollableArea.layerForHorizontalScrollbar()) || (m_renderLayerScrollableArea.verticalScrollbar() && m_renderLayerScrollableArea.layerForVerticalScrollbar()))
             return;
-        IntRect localDamgeRect = damageRect;
-        localDamgeRect.moveBy(-paintOffset);
-        if (!overflowControlsIntersectRect(localDamgeRect))
+        if (!overflowControlsIntersectRect(localDamageRect))
             return;
 
         RenderView* renderView = m_renderLayerScrollableArea.box().view();
 
-        RenderLayer* paintingRoot = m_renderLayerScrollableArea.layer()->enclosingLayerWithCompositedLayerMapping(IncludeSelf);
+        Layer* paintingRoot = m_renderLayerScrollableArea.layer()->enclosingLayerWithCompositedLayerMapping(IncludeSelf);
         if (!paintingRoot)
             paintingRoot = renderView->layer();
 
@@ -126,11 +123,13 @@ void ScrollableAreaPainter::paintOverflowControls(GraphicsContext* context, cons
     if (paintingOverlayControls && !m_renderLayerScrollableArea.hasOverlayScrollbars())
         return;
 
-    // Now that we're sure the scrollbars are in the right place, paint them.
-    if (m_renderLayerScrollableArea.horizontalScrollbar() && !m_renderLayerScrollableArea.layerForHorizontalScrollbar())
-        m_renderLayerScrollableArea.horizontalScrollbar()->paint(context, damageRect);
-    if (m_renderLayerScrollableArea.verticalScrollbar() && !m_renderLayerScrollableArea.layerForVerticalScrollbar())
-        m_renderLayerScrollableArea.verticalScrollbar()->paint(context, damageRect);
+    {
+        TransformRecorder translateRecorder(*context, m_renderLayerScrollableArea.displayItemClient(), AffineTransform::translation(adjustedPaintOffset.x(), adjustedPaintOffset.y()));
+        if (m_renderLayerScrollableArea.horizontalScrollbar() && !m_renderLayerScrollableArea.layerForHorizontalScrollbar())
+            m_renderLayerScrollableArea.horizontalScrollbar()->paint(context, localDamageRect);
+        if (m_renderLayerScrollableArea.verticalScrollbar() && !m_renderLayerScrollableArea.layerForVerticalScrollbar())
+            m_renderLayerScrollableArea.verticalScrollbar()->paint(context, localDamageRect);
+    }
 
     if (m_renderLayerScrollableArea.layerForScrollCorner())
         return;
@@ -170,12 +169,15 @@ void ScrollableAreaPainter::paintScrollCorner(GraphicsContext* context, const In
     if (!absRect.intersects(damageRect))
         return;
 
-    DrawingRecorder recorder(context, m_renderLayerScrollableArea.box().displayItemClient(), DisplayItem::ScrollbarCorner, damageRect);
-
     if (m_renderLayerScrollableArea.scrollCorner()) {
         ScrollbarPainter::paintIntoRect(m_renderLayerScrollableArea.scrollCorner(), context, paintOffset, absRect);
         return;
     }
+
+    DrawingRecorder recorder(context, m_renderLayerScrollableArea.displayItemClient(), DisplayItem::ScrollbarCorner, damageRect);
+    if (recorder.canUseCachedDrawing())
+        return;
+
     // We don't want to paint white if we have overlay scrollbars, since we need
     // to see what is behind it.
     if (!m_renderLayerScrollableArea.hasOverlayScrollbars())

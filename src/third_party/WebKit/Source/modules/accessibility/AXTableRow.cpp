@@ -29,7 +29,7 @@
 #include "config.h"
 #include "modules/accessibility/AXTableRow.h"
 
-#include "core/rendering/RenderTableRow.h"
+#include "core/layout/LayoutTableRow.h"
 #include "modules/accessibility/AXObjectCacheImpl.h"
 #include "modules/accessibility/AXTableCell.h"
 
@@ -38,7 +38,7 @@ namespace blink {
 
 using namespace HTMLNames;
 
-AXTableRow::AXTableRow(RenderObject* renderer, AXObjectCacheImpl* axObjectCache)
+AXTableRow::AXTableRow(LayoutObject* renderer, AXObjectCacheImpl* axObjectCache)
     : AXRenderObject(renderer, axObjectCache)
 {
 }
@@ -47,7 +47,7 @@ AXTableRow::~AXTableRow()
 {
 }
 
-PassRefPtr<AXTableRow> AXTableRow::create(RenderObject* renderer, AXObjectCacheImpl* axObjectCache)
+PassRefPtr<AXTableRow> AXTableRow::create(LayoutObject* renderer, AXObjectCacheImpl* axObjectCache)
 {
     return adoptRef(new AXTableRow(renderer, axObjectCache));
 }
@@ -115,7 +115,7 @@ AXObject* AXTableRow::headerObject()
     if (!cell->isTableCell())
         return 0;
 
-    RenderObject* cellRenderer = toAXTableCell(cell)->renderer();
+    LayoutObject* cellRenderer = toAXTableCell(cell)->renderer();
     if (!cellRenderer)
         return 0;
 
@@ -124,6 +124,23 @@ AXObject* AXTableRow::headerObject()
         return 0;
 
     return cell;
+}
+
+void AXTableRow::headerObjectsForRow(AccessibilityChildrenVector& headers)
+{
+    if (!m_renderer || !m_renderer->isTableRow())
+        return;
+
+    AccessibilityChildrenVector rowChildren = children();
+    unsigned childrenCount = rowChildren.size();
+    for (unsigned i = 0; i < childrenCount; i++) {
+        AXObject* cell = rowChildren[i].get();
+        if (!cell->isTableCell())
+            continue;
+
+        if (toAXTableCell(cell)->scanToDecideHeaderRole() == RowHeaderRole)
+            headers.append(cell);
+    }
 }
 
 } // namespace blink

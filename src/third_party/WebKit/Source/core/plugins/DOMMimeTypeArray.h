@@ -45,10 +45,9 @@ public:
 
     unsigned length() const;
     PassRefPtrWillBeRawPtr<DOMMimeType> item(unsigned index);
-    bool canGetItemsForName(const AtomicString& propertyName);
     PassRefPtrWillBeRawPtr<DOMMimeType> namedItem(const AtomicString& propertyName);
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     explicit DOMMimeTypeArray(LocalFrame*);

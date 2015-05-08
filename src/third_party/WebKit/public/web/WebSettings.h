@@ -65,13 +65,11 @@ public:
         V8CacheOptionsNone,
         V8CacheOptionsParseMemory,
         V8CacheOptionsHeuristics,
-        V8CacheOptionsHeuristicsMobile
-    };
-
-    enum V8ScriptStreamingMode {
-        V8ScriptStreamingModeAll,
-        V8ScriptStreamingModeOnlyAsyncAndDefer,
-        V8ScriptStreamingModeAllPlusBlockParsingBlocking,
+        V8CacheOptionsHeuristicsMobile,
+        V8CacheOptionsHeuristicsDefault,
+        V8CacheOptionsHeuristicsDefaultMobile,
+        V8CacheOptionsRecent,
+        V8CacheOptionsRecentSmall
     };
 
     // Bit field values indicating available pointer types. Identical to
@@ -90,7 +88,7 @@ public:
     enum HoverType {
         HoverTypeNone = 1 << 0,
         // Indicates that the primary pointing system can hover, but it requires
-        // a significant action on the user’s part. e.g. hover on “long press”.
+        // a significant action on the user's part. e.g. hover on "long press".
         HoverTypeOnDemand = 1 << 1,
         HoverTypeHover = 1 << 2
     };
@@ -150,6 +148,7 @@ public:
     virtual void setDeviceScaleAdjustment(float) = 0;
     virtual void setDeviceSupportsMouse(bool) = 0;
     virtual void setDeviceSupportsTouch(bool) = 0;
+    virtual void setDisableReadingFromCanvas(bool) = 0;
     virtual void setDoubleTapToZoomEnabled(bool) = 0;
     virtual void setDownloadableBinaryFontsEnabled(bool) = 0;
     virtual void setEditingBehavior(EditingBehavior) = 0;
@@ -240,8 +239,6 @@ public:
     virtual void setUseWideViewport(bool) = 0;
     virtual void setUsesEncodingDetector(bool) = 0;
     virtual void setV8CacheOptions(V8CacheOptions) = 0;
-    virtual void setV8ScriptStreamingEnabled(bool) = 0;
-    virtual void setV8ScriptStreamingMode(V8ScriptStreamingMode) = 0;
     virtual void setValidationMessageTimerMagnification(int) = 0;
     virtual void setViewportEnabled(bool) = 0;
     virtual void setViewportMetaEnabled(bool) = 0;

@@ -25,8 +25,8 @@
 
 #include "core/SVGNames.h"
 #include "core/css/resolver/StyleResolver.h"
-#include "core/rendering/svg/RenderSVGPath.h"
-#include "core/rendering/svg/SVGPathData.h"
+#include "core/layout/svg/LayoutSVGPath.h"
+#include "core/layout/svg/SVGPathData.h"
 #include "core/svg/SVGElementRareData.h"
 #include "platform/transforms/AffineTransform.h"
 
@@ -34,9 +34,10 @@ namespace blink {
 
 SVGGraphicsElement::SVGGraphicsElement(const QualifiedName& tagName, Document& document, ConstructionType constructionType)
     : SVGElement(tagName, document, constructionType)
-    , SVGTests(this)
     , m_transform(SVGAnimatedTransformList::create(this, SVGNames::transformAttr, SVGTransformList::create()))
 {
+    SVGTests::initialize(this);
+
     addToPropertyMap(m_transform);
 }
 
@@ -44,7 +45,7 @@ SVGGraphicsElement::~SVGGraphicsElement()
 {
 }
 
-void SVGGraphicsElement::trace(Visitor* visitor)
+DEFINE_TRACE(SVGGraphicsElement)
 {
     visitor->trace(m_transform);
     SVGElement::trace(visitor);
@@ -131,7 +132,7 @@ PassRefPtrWillBeRawPtr<SVGMatrixTearOff> SVGGraphicsElement::getScreenCTMFromJav
 
 bool SVGGraphicsElement::hasAnimatedLocalTransform() const
 {
-    RenderStyle* style = renderer() ? renderer()->style() : 0;
+    LayoutStyle* style = renderer() ? renderer()->style() : 0;
 
     // Each of these is used in SVGGraphicsElement::calculateAnimatedLocalTransform to create an animated local transform.
     return (style && style->hasTransform()) || !m_transform->currentValue()->isEmpty() || hasSVGRareData();
@@ -140,7 +141,7 @@ bool SVGGraphicsElement::hasAnimatedLocalTransform() const
 AffineTransform SVGGraphicsElement::calculateAnimatedLocalTransform() const
 {
     AffineTransform matrix;
-    RenderStyle* style = renderer() ? renderer()->style() : 0;
+    LayoutStyle* style = renderer() ? renderer()->style() : 0;
 
     // If CSS property was set, use that, otherwise fallback to attribute (if set).
     if (style && style->hasTransform()) {
@@ -150,7 +151,7 @@ AffineTransform SVGGraphicsElement::calculateAnimatedLocalTransform() const
         // SVGTextElements need special handling for the text positioning code.
         if (isSVGTextElement(this)) {
             // Do not take into account SVG's zoom rules, transform-origin, or percentage values.
-            style->applyTransform(transform, LayoutSize(0, 0), RenderStyle::ExcludeTransformOrigin);
+            style->applyTransform(transform, LayoutSize(0, 0), LayoutStyle::ExcludeTransformOrigin);
         } else {
             // CSS transforms operate with pre-scaled lengths. To make this work with SVG
             // (which applies the zoom factor globally, at the root level) we
@@ -217,7 +218,7 @@ void SVGGraphicsElement::svgAttributeChanged(const QualifiedName& attrName)
         return;
     }
 
-    RenderObject* object = renderer();
+    LayoutObject* object = renderer();
     if (!object)
         return;
 
@@ -266,10 +267,10 @@ PassRefPtrWillBeRawPtr<SVGRectTearOff> SVGGraphicsElement::getBBoxFromJavascript
     return SVGRectTearOff::create(SVGRect::create(getBBox()), 0, PropertyIsNotAnimVal);
 }
 
-RenderObject* SVGGraphicsElement::createRenderer(RenderStyle*)
+LayoutObject* SVGGraphicsElement::createRenderer(const LayoutStyle&)
 {
     // By default, any subclass is expected to do path-based drawing
-    return new RenderSVGPath(this);
+    return new LayoutSVGPath(this);
 }
 
 void SVGGraphicsElement::toClipPath(Path& path)

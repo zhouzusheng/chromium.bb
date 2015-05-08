@@ -36,8 +36,8 @@
 #include "core/dom/AXObjectCache.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/ElementTraversal.h"
+#include "core/dom/NodeLayoutStyle.h"
 #include "core/dom/NodeListsNodeData.h"
-#include "core/dom/NodeRenderStyle.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/events/GestureEvent.h"
 #include "core/events/KeyboardEvent.h"
@@ -49,15 +49,15 @@
 #include "core/html/HTMLOptGroupElement.h"
 #include "core/html/HTMLOptionElement.h"
 #include "core/html/forms/FormController.h"
+#include "core/layout/HitTestRequest.h"
+#include "core/layout/HitTestResult.h"
+#include "core/layout/LayoutTheme.h"
 #include "core/page/AutoscrollController.h"
 #include "core/page/EventHandler.h"
 #include "core/page/Page.h"
 #include "core/page/SpatialNavigation.h"
-#include "core/rendering/HitTestRequest.h"
-#include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderListBox.h"
 #include "core/rendering/RenderMenuList.h"
-#include "core/rendering/RenderTheme.h"
 #include "core/rendering/RenderView.h"
 #include "platform/PlatformMouseEvent.h"
 #include "platform/text/PlatformLocale.h"
@@ -90,14 +90,14 @@ HTMLSelectElement::HTMLSelectElement(Document& document, HTMLFormElement* form)
 PassRefPtrWillBeRawPtr<HTMLSelectElement> HTMLSelectElement::create(Document& document)
 {
     RefPtrWillBeRawPtr<HTMLSelectElement> select = adoptRefWillBeNoop(new HTMLSelectElement(document, 0));
-    select->ensureUserAgentShadowRoot();
+    select->ensureClosedShadowRoot();
     return select.release();
 }
 
 PassRefPtrWillBeRawPtr<HTMLSelectElement> HTMLSelectElement::create(Document& document, HTMLFormElement* form)
 {
     RefPtrWillBeRawPtr<HTMLSelectElement> select = adoptRefWillBeNoop(new HTMLSelectElement(document, form));
-    select->ensureUserAgentShadowRoot();
+    select->ensureClosedShadowRoot();
     return select.release();
 }
 
@@ -192,17 +192,10 @@ void HTMLSelectElement::listBoxSelectItem(int listIndex, bool allowMultiplySelec
 
 bool HTMLSelectElement::usesMenuList() const
 {
-    if (RenderTheme::theme().delegatesMenuListRendering())
+    if (LayoutTheme::theme().delegatesMenuListRendering())
         return true;
 
     return !m_multiple && m_size <= 1;
-}
-
-int HTMLSelectElement::activeSelectionStartListIndex() const
-{
-    if (m_activeSelectionAnchorIndex >= 0)
-        return m_activeSelectionAnchorIndex;
-    return optionToListIndex(selectedIndex());
 }
 
 int HTMLSelectElement::activeSelectionEndListIndex() const
@@ -385,7 +378,7 @@ bool HTMLSelectElement::canSelectAll() const
     return !usesMenuList();
 }
 
-RenderObject* HTMLSelectElement::createRenderer(RenderStyle*)
+LayoutObject* HTMLSelectElement::createRenderer(const LayoutStyle&)
 {
     if (usesMenuList())
         return new RenderMenuList(this);
@@ -742,7 +735,7 @@ void HTMLSelectElement::scrollToSelection()
 
 void HTMLSelectElement::setOptionsChangedOnRenderer()
 {
-    if (RenderObject* renderer = this->renderer()) {
+    if (LayoutObject* renderer = this->renderer()) {
         if (usesMenuList())
             toRenderMenuList(renderer)->setOptionsChanged(true);
     }
@@ -884,7 +877,7 @@ void HTMLSelectElement::setSuggestedIndex(int suggestedIndex)
 {
     m_suggestedIndex = suggestedIndex;
 
-    if (RenderObject* renderer = this->renderer())  {
+    if (LayoutObject* renderer = this->renderer())  {
         renderer->updateFromElement();
         scrollToIndex(suggestedIndex);
     }
@@ -964,7 +957,7 @@ void HTMLSelectElement::selectOption(int optionIndex, SelectOptionFlags flags)
         deselectItemsWithoutValidation(element);
 
     // For the menu list case, this is what makes the selected element appear.
-    if (RenderObject* renderer = this->renderer())
+    if (LayoutObject* renderer = this->renderer())
         renderer->updateFromElement();
 
     scrollToSelection();
@@ -974,7 +967,7 @@ void HTMLSelectElement::selectOption(int optionIndex, SelectOptionFlags flags)
         m_isProcessingUserDrivenChange = flags & UserDriven;
         if (flags & DispatchInputAndChangeEvent)
             dispatchInputAndChangeEventForMenuList();
-        if (RenderObject* renderer = this->renderer()) {
+        if (LayoutObject* renderer = this->renderer()) {
             if (usesMenuList()) {
                 toRenderMenuList(renderer)->didSetSelectedIndex(listIndex);
             } else if (renderer->isListBox()) {
@@ -1022,7 +1015,7 @@ int HTMLSelectElement::listToOptionIndex(int listIndex) const
     return optionIndex;
 }
 
-void HTMLSelectElement::dispatchFocusEvent(Element* oldFocusedElement, FocusType type)
+void HTMLSelectElement::dispatchFocusEvent(Element* oldFocusedElement, WebFocusType type)
 {
     // Save the selection so it can be compared to the new selection when
     // dispatching change events during blur event dispatch.
@@ -1217,23 +1210,23 @@ void HTMLSelectElement::handlePopupOpenKeyboardEvent(Event* event)
 bool HTMLSelectElement::shouldOpenPopupForKeyDownEvent(KeyboardEvent* keyEvent)
 {
     const String& keyIdentifier = keyEvent->keyIdentifier();
-    RenderTheme& renderTheme = RenderTheme::theme();
+    LayoutTheme& layoutTheme = LayoutTheme::theme();
 
     if (isSpatialNavigationEnabled(document().frame()))
         return false;
 
-    return ((renderTheme.popsMenuByArrowKeys() &&  (keyIdentifier == "Down" || keyIdentifier == "Up"))
-        || (renderTheme.popsMenuByAltDownUpOrF4Key() && (keyIdentifier == "Down" || keyIdentifier == "Up") && keyEvent->altKey())
-        || (renderTheme.popsMenuByAltDownUpOrF4Key() && (!keyEvent->altKey() && !keyEvent->ctrlKey() && keyIdentifier == "F4")));
+    return ((layoutTheme.popsMenuByArrowKeys() &&  (keyIdentifier == "Down" || keyIdentifier == "Up"))
+        || (layoutTheme.popsMenuByAltDownUpOrF4Key() && (keyIdentifier == "Down" || keyIdentifier == "Up") && keyEvent->altKey())
+        || (layoutTheme.popsMenuByAltDownUpOrF4Key() && (!keyEvent->altKey() && !keyEvent->ctrlKey() && keyIdentifier == "F4")));
 }
 
 bool HTMLSelectElement::shouldOpenPopupForKeyPressEvent(KeyboardEvent *event)
 {
-    RenderTheme& renderTheme = RenderTheme::theme();
+    LayoutTheme& layoutTheme = LayoutTheme::theme();
     int keyCode = event->keyCode();
 
-    return ((renderTheme.popsMenuBySpaceKey() && event->keyCode() == ' ')
-        || (renderTheme.popsMenuByReturnKey() && keyCode == '\r'));
+    return ((layoutTheme.popsMenuBySpaceKey() && event->keyCode() == ' ')
+        || (layoutTheme.popsMenuByReturnKey() && keyCode == '\r'));
 }
 
 void HTMLSelectElement::menuListDefaultEventHandler(Event* event)
@@ -1257,7 +1250,7 @@ void HTMLSelectElement::menuListDefaultEventHandler(Event* event)
         }
 
         // The key handling below shouldn't be used for non spatial navigation mode Mac
-        if (RenderTheme::theme().popsMenuByArrowKeys() && !isSpatialNavigationEnabled(document().frame()))
+        if (LayoutTheme::theme().popsMenuByArrowKeys() && !isSpatialNavigationEnabled(document().frame()))
             return;
 
         const String& keyIdentifier = keyEvent->keyIdentifier();
@@ -1305,7 +1298,7 @@ void HTMLSelectElement::menuListDefaultEventHandler(Event* event)
             return;
         }
 
-        if (!RenderTheme::theme().popsMenuByReturnKey() && keyCode == '\r') {
+        if (!LayoutTheme::theme().popsMenuByReturnKey() && keyCode == '\r') {
             if (form())
                 form()->submitImplicitly(event, false);
             dispatchInputAndChangeEventForMenuList();
@@ -1753,7 +1746,7 @@ void HTMLSelectElement::updateListOnRenderer()
     setOptionsChangedOnRenderer();
 }
 
-void HTMLSelectElement::trace(Visitor* visitor)
+DEFINE_TRACE(HTMLSelectElement)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_listItems);
@@ -1761,7 +1754,7 @@ void HTMLSelectElement::trace(Visitor* visitor)
     HTMLFormControlElementWithState::trace(visitor);
 }
 
-void HTMLSelectElement::didAddUserAgentShadowRoot(ShadowRoot& root)
+void HTMLSelectElement::didAddClosedShadowRoot(ShadowRoot& root)
 {
     RefPtrWillBeRawPtr<HTMLContentElement> content = HTMLContentElement::create(document());
     content->setAttribute(selectAttr, "option,optgroup,hr");

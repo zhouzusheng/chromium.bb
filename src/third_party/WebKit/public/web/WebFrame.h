@@ -98,13 +98,25 @@ template <typename T> class WebVector;
 // getting a frame's parent or its opener.
 class WebFrame {
 public:
-    // Control of renderTreeAsText output
-    enum RenderAsTextControl {
-        RenderAsTextNormal = 0,
-        RenderAsTextDebug = 1 << 0,
-        RenderAsTextPrinting = 1 << 1
+    // Control of layoutTreeAsText output
+    enum LayoutAsTextControl {
+        LayoutAsTextNormal = 0,
+        LayoutAsTextDebug = 1 << 0,
+        LayoutAsTextPrinting = 1 << 1
     };
-    typedef unsigned RenderAsTextControls;
+    typedef unsigned LayoutAsTextControls;
+
+    // FIXME: We already have blink::TextGranularity. For now we support only
+    // a part of blink::TextGranularity.
+    // Ideally it seems blink::TextGranularity should be broken up into
+    // blink::TextGranularity and perhaps blink::TextBoundary and then
+    // TextGranularity enum could be moved somewhere to public/, and we could
+    // just use it here directly without introducing a new enum.
+    enum TextGranularity {
+        CharacterGranularity = 0,
+        WordGranularity,
+        TextGranularityLast = WordGranularity,
+    };
 
     // Returns the number of live WebFrame objects, used for leak checking.
     BLINK_EXPORT static int instanceCount();
@@ -635,9 +647,9 @@ public:
 
     // Returns a text representation of the render tree.  This method is used
     // to support layout tests.
-    virtual WebString renderTreeAsText(RenderAsTextControls toShow = RenderAsTextNormal) const = 0;
+    virtual WebString layoutTreeAsText(LayoutAsTextControls toShow = LayoutAsTextNormal) const = 0;
 
-    // Calls markerTextForListItem() defined in WebCore/rendering/RenderTreeAsText.h.
+    // Calls markerTextForListItem() defined in core/layout/LayoutTreeAsText.h.
     virtual WebString markerTextForListItem(const WebElement&) const = 0;
 
     // Prints all of the pages into the canvas, with page boundaries drawn as
@@ -662,7 +674,9 @@ public:
     static WebFrame* fromFrame(Frame*);
 #if ENABLE(OILPAN)
     static void traceFrames(Visitor*, WebFrame*);
+    static void traceFrames(InlinedGlobalMarkingVisitor, WebFrame*);
     void clearWeakFrames(Visitor*);
+    void clearWeakFrames(InlinedGlobalMarkingVisitor);
 #endif
 #endif
 
@@ -682,7 +696,18 @@ private:
 #if BLINK_IMPLEMENTATION
 #if ENABLE(OILPAN)
     static void traceFrame(Visitor*, WebFrame*);
+    static void traceFrame(InlinedGlobalMarkingVisitor, WebFrame*);
     static bool isFrameAlive(Visitor*, const WebFrame*);
+    static bool isFrameAlive(InlinedGlobalMarkingVisitor, const WebFrame*);
+
+    template <typename VisitorDispatcher>
+    static void traceFramesImpl(VisitorDispatcher, WebFrame*);
+    template <typename VisitorDispatcher>
+    void clearWeakFramesImpl(VisitorDispatcher);
+    template <typename VisitorDispatcher>
+    static void traceFrameImpl(VisitorDispatcher, WebFrame*);
+    template <typename VisitorDispatcher>
+    static bool isFrameAliveImpl(VisitorDispatcher, const WebFrame*);
 #endif
 #endif
 

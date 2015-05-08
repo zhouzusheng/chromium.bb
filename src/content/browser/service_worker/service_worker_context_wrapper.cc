@@ -21,10 +21,13 @@
 #include "content/browser/service_worker/service_worker_process_manager.h"
 #include "content/browser/service_worker/service_worker_quota_client.h"
 #include "content/browser/service_worker/service_worker_request_handler.h"
+#include "content/browser/service_worker/service_worker_utils.h"
+#include "content/browser/storage_partition_impl.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/service_worker_context.h"
 #include "net/base/net_errors.h"
+#include "net/base/net_util.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "storage/browser/blob/blob_storage_context.h"
 #include "storage/browser/quota/quota_manager_proxy.h"
@@ -73,7 +76,9 @@ ServiceWorkerContextWrapper::ServiceWorkerContextWrapper(
     : observer_list_(
           new ObserverListThreadSafe<ServiceWorkerContextObserver>()),
       process_manager_(new ServiceWorkerProcessManager(browser_context)),
-      is_incognito_(false) {
+      is_incognito_(false),
+      storage_partition_(nullptr) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 }
 
 ServiceWorkerContextWrapper::~ServiceWorkerContextWrapper() {
@@ -83,6 +88,8 @@ void ServiceWorkerContextWrapper::Init(
     const base::FilePath& user_data_directory,
     storage::QuotaManagerProxy* quota_manager_proxy,
     storage::SpecialStoragePolicy* special_storage_policy) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
   is_incognito_ = user_data_directory.empty();
   base::SequencedWorkerPool* pool = BrowserThread::GetBlockingPool();
   scoped_ptr<ServiceWorkerDatabaseTaskManager> database_task_manager(
@@ -103,6 +110,8 @@ void ServiceWorkerContextWrapper::Init(
 
 void ServiceWorkerContextWrapper::Shutdown() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
+  storage_partition_ = nullptr;
   process_manager_->Shutdown();
   BrowserThread::PostTask(
       BrowserThread::IO,
@@ -121,9 +130,21 @@ ServiceWorkerContextCore* ServiceWorkerContextWrapper::context() {
   return context_core_.get();
 }
 
+StoragePartitionImpl* ServiceWorkerContextWrapper::storage_partition() const {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  return storage_partition_;
+}
+
+void ServiceWorkerContextWrapper::set_storage_partition(
+    StoragePartitionImpl* storage_partition) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  storage_partition_ = storage_partition;
+}
+
 static void FinishRegistrationOnIO(
     const ServiceWorkerContext::ResultCallback& continuation,
     ServiceWorkerStatusCode status,
+    const std::string& status_message,
     int64 registration_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   BrowserThread::PostTask(
@@ -259,6 +280,27 @@ void ServiceWorkerContextWrapper::DidGetAllRegistrationsForGetAllOrigins(
   callback.Run(usage_infos);
 }
 
+void ServiceWorkerContextWrapper::DidFindRegistrationForCheckHasServiceWorker(
+    const GURL& other_url,
+    const CheckHasServiceWorkerCallback& callback,
+    ServiceWorkerStatusCode status,
+    const scoped_refptr<ServiceWorkerRegistration>& registration) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+
+  if (status != SERVICE_WORKER_OK) {
+    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
+                            base::Bind(callback, false));
+    return;
+  }
+
+  DCHECK(registration);
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(callback, registration->active_version() &&
+                               ServiceWorkerUtils::ScopeMatches(
+                                   registration->pattern(), other_url)));
+}
+
 namespace {
 void StatusCodeToBoolCallbackAdapter(
     const ServiceWorkerContext::ResultCallback& callback,
@@ -288,6 +330,30 @@ void ServiceWorkerContextWrapper::DeleteForOrigin(
 
 void ServiceWorkerContextWrapper::DeleteForOrigin(const GURL& origin_url) {
   DeleteForOrigin(origin_url, base::Bind(&EmptySuccessCallback));
+}
+
+void ServiceWorkerContextWrapper::CheckHasServiceWorker(
+    const GURL& url,
+    const GURL& other_url,
+    const CheckHasServiceWorkerCallback& callback) {
+  if (!BrowserThread::CurrentlyOn(BrowserThread::IO)) {
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        base::Bind(&ServiceWorkerContextWrapper::CheckHasServiceWorker, this,
+                   url, other_url, callback));
+    return;
+  }
+  if (!context_core_.get()) {
+    LOG(ERROR) << "ServiceWorkerContextCore is no longer alive.";
+    BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
+                            base::Bind(callback, false));
+    return;
+  }
+  GURL stripped_url = net::SimplifyUrlForRequest(url);
+  context()->storage()->FindRegistrationForDocument(
+      stripped_url, base::Bind(&ServiceWorkerContextWrapper::
+                                   DidFindRegistrationForCheckHasServiceWorker,
+                               this, other_url, callback));
 }
 
 void ServiceWorkerContextWrapper::AddObserver(
@@ -362,7 +428,8 @@ void ServiceWorkerContextWrapper::DidDeleteAndStartOver(
   context_core_.reset(new ServiceWorkerContextCore(context_core_.get(), this));
   DVLOG(1) << "Restarted ServiceWorkerContextCore successfully.";
 
-  observer_list_->Notify(&ServiceWorkerContextObserver::OnStorageWiped);
+  observer_list_->Notify(FROM_HERE,
+                         &ServiceWorkerContextObserver::OnStorageWiped);
 }
 
 }  // namespace content

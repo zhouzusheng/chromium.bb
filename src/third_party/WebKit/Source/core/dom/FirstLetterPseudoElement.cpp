@@ -25,8 +25,8 @@
 #include "core/dom/FirstLetterPseudoElement.h"
 
 #include "core/dom/Element.h"
-#include "core/rendering/RenderObject.h"
-#include "core/rendering/RenderObjectInlines.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/LayoutObjectInlines.h"
 #include "core/rendering/RenderText.h"
 #include "core/rendering/RenderTextFragment.h"
 #include "wtf/TemporaryChange.h"
@@ -89,14 +89,14 @@ unsigned FirstLetterPseudoElement::firstLetterLength(const String& text)
 
 // Once we see any of these renderers we can stop looking for first-letter as
 // they signal the end of the first line of text.
-static bool isInvalidFirstLetterRenderer(const RenderObject* obj)
+static bool isInvalidFirstLetterRenderer(const LayoutObject* obj)
 {
     return (obj->isBR() || (obj->isText() && toRenderText(obj)->isWordBreak()));
 }
 
-RenderObject* FirstLetterPseudoElement::firstLetterTextRenderer(const Element& element)
+LayoutObject* FirstLetterPseudoElement::firstLetterTextRenderer(const Element& element)
 {
-    RenderObject* parentRenderer = 0;
+    LayoutObject* parentRenderer = 0;
 
     // If we are looking at a first letter element then we need to find the
     // first letter text renderer from the parent node, and not ourselves.
@@ -112,7 +112,7 @@ RenderObject* FirstLetterPseudoElement::firstLetterTextRenderer(const Element& e
         return nullptr;
 
     // Drill down into our children and look for our first text child.
-    RenderObject* firstLetterTextRenderer = parentRenderer->slowFirstChild();
+    LayoutObject* firstLetterTextRenderer = parentRenderer->slowFirstChild();
     while (firstLetterTextRenderer) {
         // This can be called when the first letter renderer is already in the tree. We do not
         // want to consider that renderer for our text renderer so we go to the sibling (which is
@@ -170,12 +170,6 @@ FirstLetterPseudoElement::~FirstLetterPseudoElement()
 {
 }
 
-void FirstLetterPseudoElement::trace(Visitor* visitor)
-{
-    visitor->trace(m_remainingTextRenderer);
-    PseudoElement::trace(visitor);
-}
-
 void FirstLetterPseudoElement::updateTextFragments()
 {
     String oldText =  m_remainingTextRenderer->completeText();
@@ -223,17 +217,18 @@ void FirstLetterPseudoElement::detach(const AttachContext& context)
             m_remainingTextRenderer->setTextFragment(textNode->dataImpl(), 0, textNode->dataImpl()->length());
         }
         m_remainingTextRenderer->setFirstLetterPseudoElement(nullptr);
+        m_remainingTextRenderer->setIsRemainingTextRenderer(false);
     }
     m_remainingTextRenderer = nullptr;
 
     PseudoElement::detach(context);
 }
 
-RenderStyle* FirstLetterPseudoElement::styleForFirstLetter(RenderObject* rendererContainer)
+LayoutStyle* FirstLetterPseudoElement::styleForFirstLetter(LayoutObject* rendererContainer)
 {
     ASSERT(rendererContainer);
 
-    RenderObject* styleContainer = parentOrShadowHostElement()->renderer();
+    LayoutObject* styleContainer = parentOrShadowHostElement()->renderer();
     ASSERT(styleContainer);
 
     // We always force the pseudo style to recompute as the first-letter style
@@ -241,7 +236,7 @@ RenderStyle* FirstLetterPseudoElement::styleForFirstLetter(RenderObject* rendere
     // into account.
     styleContainer->style()->removeCachedPseudoStyle(FIRST_LETTER);
 
-    RenderStyle* pseudoStyle = styleContainer->getCachedPseudoStyle(FIRST_LETTER, rendererContainer->firstLineStyle());
+    LayoutStyle* pseudoStyle = styleContainer->getCachedPseudoStyle(FIRST_LETTER, rendererContainer->firstLineStyle());
     ASSERT(pseudoStyle);
 
     return pseudoStyle;
@@ -249,7 +244,7 @@ RenderStyle* FirstLetterPseudoElement::styleForFirstLetter(RenderObject* rendere
 
 void FirstLetterPseudoElement::attachFirstLetterTextRenderers()
 {
-    RenderObject* nextRenderer = FirstLetterPseudoElement::firstLetterTextRenderer(*this);
+    LayoutObject* nextRenderer = FirstLetterPseudoElement::firstLetterTextRenderer(*this);
     ASSERT(nextRenderer);
     ASSERT(nextRenderer->isText());
 
@@ -259,7 +254,7 @@ void FirstLetterPseudoElement::attachFirstLetterTextRenderers()
     String oldText = toRenderText(nextRenderer)->isTextFragment() ? toRenderTextFragment(nextRenderer)->completeText() : toRenderText(nextRenderer)->originalText();
     ASSERT(oldText.impl());
 
-    RenderStyle* pseudoStyle = styleForFirstLetter(nextRenderer->parent());
+    LayoutStyle* pseudoStyle = styleForFirstLetter(nextRenderer->parent());
     renderer()->setStyle(pseudoStyle);
 
     // FIXME: This would already have been calculated in firstLetterRenderer. Can we pass the length through?
@@ -270,7 +265,7 @@ void FirstLetterPseudoElement::attachFirstLetterTextRenderers()
     RenderTextFragment* remainingText =
         new RenderTextFragment(nextRenderer->node() ? nextRenderer->node() : &nextRenderer->document(), oldText.impl(), length, oldText.length() - length);
     remainingText->setFirstLetterPseudoElement(this);
-    remainingText->setIsRemainingTextRenderer();
+    remainingText->setIsRemainingTextRenderer(true);
     remainingText->setStyle(nextRenderer->style());
 
     if (remainingText->node())
@@ -278,7 +273,7 @@ void FirstLetterPseudoElement::attachFirstLetterTextRenderers()
 
     m_remainingTextRenderer = remainingText;
 
-    RenderObject* nextSibling = renderer()->nextSibling();
+    LayoutObject* nextSibling = renderer()->nextSibling();
     renderer()->parent()->addChild(remainingText, nextSibling);
 
     // Construct text fragment for the first letter.
@@ -296,13 +291,13 @@ void FirstLetterPseudoElement::didRecalcStyle(StyleRecalcChange)
         return;
 
     // The renderers inside pseudo elements are anonymous so they don't get notified of recalcStyle and must have
-    // the style propagated downward manually similar to RenderObject::propagateStyleToAnonymousChildren.
-    RenderObject* renderer = this->renderer();
-    for (RenderObject* child = renderer->nextInPreOrder(renderer); child; child = child->nextInPreOrder(renderer)) {
+    // the style propagated downward manually similar to LayoutObject::propagateStyleToAnonymousChildren.
+    LayoutObject* renderer = this->renderer();
+    for (LayoutObject* child = renderer->nextInPreOrder(renderer); child; child = child->nextInPreOrder(renderer)) {
         // We need to re-calculate the correct style for the first letter element
         // and then apply that to the container and the text fragment inside.
         if (child->style()->styleType() == FIRST_LETTER && m_remainingTextRenderer) {
-            if (RenderStyle* pseudoStyle = styleForFirstLetter(m_remainingTextRenderer->parent()))
+            if (LayoutStyle* pseudoStyle = styleForFirstLetter(m_remainingTextRenderer->parent()))
                 child->setPseudoStyle(pseudoStyle);
             continue;
         }

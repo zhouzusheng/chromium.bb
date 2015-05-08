@@ -44,7 +44,7 @@
 #include "core/html/HTMLTableRowsCollection.h"
 #include "core/html/HTMLTableSectionElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/rendering/RenderTable.h"
+#include "core/layout/LayoutTable.h"
 #include "platform/weborigin/Referrer.h"
 #include "wtf/StdLibExtras.h"
 
@@ -304,12 +304,8 @@ void HTMLTableElement::collectStyleForPresentationAttribute(const QualifiedName&
             addHTMLLengthToStyle(style, CSSPropertyBorderSpacing, value);
     } else if (name == vspaceAttr) {
         UseCounter::countDeprecation(document(), UseCounter::HTMLTableElementVspace);
-        addHTMLLengthToStyle(style, CSSPropertyMarginTop, value);
-        addHTMLLengthToStyle(style, CSSPropertyMarginBottom, value);
     } else if (name == hspaceAttr) {
         UseCounter::countDeprecation(document(), UseCounter::HTMLTableElementHspace);
-        addHTMLLengthToStyle(style, CSSPropertyMarginLeft, value);
-        addHTMLLengthToStyle(style, CSSPropertyMarginRight, value);
     } else if (name == alignAttr) {
         if (!value.isEmpty()) {
             if (equalIgnoringCase(value, "center")) {
@@ -558,7 +554,7 @@ const AtomicString& HTMLTableElement::summary() const
     return getAttribute(summaryAttr);
 }
 
-void HTMLTableElement::trace(Visitor* visitor)
+DEFINE_TRACE(HTMLTableElement)
 {
     visitor->trace(m_sharedCellStyle);
     HTMLElement::trace(visitor);

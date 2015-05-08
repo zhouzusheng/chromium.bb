@@ -12,8 +12,11 @@
       'target_name': 'webrtc_common',
       'type': 'static_library',
       'sources': [
+        'common_types.h',
         'config.h',
         'config.cc',
+        'engine_configurations.h',
+        'typedefs.h',
       ],
     },
   ],

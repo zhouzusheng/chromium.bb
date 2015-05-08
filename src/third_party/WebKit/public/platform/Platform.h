@@ -306,6 +306,7 @@ public:
     virtual WebString userAgent() { return WebString(); }
 
     // A suggestion to cache this metadata in association with this URL.
+    virtual void cacheMetadata(const WebURL&, int64 responseTime, const char* data, size_t dataSize) { }
     virtual void cacheMetadata(const WebURL&, double responseTime, const char* data, size_t dataSize) { }
 
     // Returns the decoded data url if url had a supported mimetype and parsing was successful.
@@ -313,8 +314,7 @@ public:
 
     virtual WebURLError cancelledError(const WebURL&) const { return WebURLError(); }
 
-    virtual bool isReservedIPAddress(const WebURL&) const { return false; }
-    virtual bool isReservedIPAddress(const WebSecurityOrigin&) const { return false; }
+    virtual bool isReservedIPAddress(const WebString& host) const { return false; }
 
     // Plugins -------------------------------------------------------------
 
@@ -394,7 +394,9 @@ public:
 
     // Sudden Termination --------------------------------------------------
 
-    // Disable/Enable sudden termination.
+    // Disable/Enable sudden termination on a process level. When possible, it
+    // is preferable to disable sudden termination on a per-frame level via
+    // WebFrameClient::suddenTerminationDisablerChanged.
     virtual void suddenTerminationChanged(bool enabled) { }
 
 
@@ -420,9 +422,8 @@ public:
     virtual void setSharedTimerFireInterval(double) { }
     virtual void stopSharedTimer() { }
 
-    // Callable from a background WebKit thread.
-    virtual void callOnMainThread(void (*func)(void*), void* context) { }
-
+    // Returns an interface to the main thread. Can be null if blink was initialized on a thread without a message loop.
+    BLINK_PLATFORM_EXPORT WebThread* mainThread() const;
 
     // Vibration -----------------------------------------------------------
 
@@ -521,6 +522,7 @@ public:
         const unsigned char* categoryEnabledFlag,
         const char* name,
         unsigned long long id,
+        double timestamp,
         int numArgs,
         const char** argNames,
         const unsigned char* argTypes,
@@ -604,6 +606,18 @@ public:
     // longer notify the listener, if any.
     virtual void stopListening(WebPlatformEventType type) { }
 
+    // This method converts from the supplied DOM code enum to the
+    // embedder's DOM code value for the key pressed. |domCode| values are
+    // based on the value defined in ui/events/keycodes/dom4/keycode_converter_data.h.
+    // Returns null string, if DOM code value is not found.
+    virtual WebString domCodeStringFromEnum(int domCode) { return WebString(); }
+
+    // This method converts from the suppled DOM code value to the
+    // embedder's DOM code enum for the key pressed. |codeString| is defined in
+    // ui/events/keycodes/dom4/keycode_converter_data.h.
+    // Returns 0, if DOM code enum is not found.
+    virtual int domEnumFromCodeString(const WebString& codeString) { return 0; }
+
     // Quota -----------------------------------------------------------
 
     // Queries the storage partition's storage usage and quota information.
@@ -648,7 +662,10 @@ public:
     virtual WebNavigatorConnectProvider* navigatorConnectProvider() { return 0; }
 
 protected:
+    BLINK_PLATFORM_EXPORT Platform();
     virtual ~Platform() { }
+
+    WebThread* m_mainThread;
 };
 
 } // namespace blink

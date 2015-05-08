@@ -51,6 +51,10 @@
 #include "core/html/HTMLPlugInElement.h"
 #include "core/inspector/ConsoleMessageStorage.h"
 #include "core/inspector/InspectorInstrumentation.h"
+#include "core/inspector/InstrumentingAgents.h"
+#include "core/layout/HitTestResult.h"
+#include "core/layout/Layer.h"
+#include "core/layout/compositing/LayerCompositor.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/page/Chrome.h"
 #include "core/page/EventHandler.h"
@@ -58,10 +62,7 @@
 #include "core/page/Page.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
 #include "core/paint/TransformRecorder.h"
-#include "core/rendering/HitTestResult.h"
-#include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/compositing/RenderLayerCompositor.h"
 #include "core/svg/SVGDocumentExtensions.h"
 #include "platform/DragImage.h"
 #include "platform/RuntimeEnabledFeatures.h"
@@ -69,6 +70,7 @@
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/ImageBuffer.h"
 #include "platform/graphics/paint/ClipRecorder.h"
+#include "platform/graphics/paint/DisplayItemList.h"
 #include "platform/text/TextStream.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/StdLibExtras.h"
@@ -202,24 +204,16 @@ LocalFrame::~LocalFrame()
     // Verify that the FrameView has been cleared as part of detaching
     // the frame owner.
     ASSERT(!m_view);
-
 #if !ENABLE(OILPAN)
     // Oilpan: see setDOMWindow() comment why it is acceptable not to
-    // mirror the non-Oilpan call below.
-    //
-    // Also, FrameDestructionObservers that live longer than this
-    // frame object keep weak references to the frame; those will be
-    // automatically cleared by the garbage collector. Hence, explicit
-    // frameDestroyed() notifications aren't needed.
+    // explicitly call setDOMWindow() here.
     setDOMWindow(nullptr);
-
-    for (const auto& frameDestructionObserver : m_destructionObservers)
-        frameDestructionObserver->frameDestroyed();
 #endif
 }
 
 void LocalFrame::trace(Visitor* visitor)
 {
+    visitor->trace(m_instrumentingAgents);
 #if ENABLE(OILPAN)
     visitor->trace(m_destructionObservers);
     visitor->trace(m_loader);
@@ -245,6 +239,11 @@ DOMWindow* LocalFrame::domWindow() const
     return m_domWindow.get();
 }
 
+WindowProxy* LocalFrame::windowProxy(DOMWrapperWorld& world)
+{
+    return m_script->windowProxy(world);
+}
+
 void LocalFrame::navigate(Document& originDocument, const KURL& url, bool lockBackForwardList)
 {
     m_navigationScheduler.scheduleLocationChange(&originDocument, url.string(), lockBackForwardList);
@@ -265,15 +264,16 @@ void LocalFrame::detach()
     // detached, so protect a reference to it.
     RefPtrWillBeRawPtr<LocalFrame> protect(this);
     m_loader.stopAllLoaders();
-    m_loader.closeURL();
+    m_loader.dispatchUnloadEvent();
     detachChildren();
     // stopAllLoaders() needs to be called after detachChildren(), because detachChildren()
     // will trigger the unload event handlers of any child frames, and those event
     // handlers might start a new subresource load in this frame.
     m_loader.stopAllLoaders();
+    m_loader.detach();
     if (!client())
         return;
-    m_loader.detach();
+
     // Notify ScriptController that the frame is closing, since its cleanup ends up calling
     // back to FrameLoaderClient via WindowProxy.
     script().clearForClose();
@@ -286,16 +286,19 @@ void LocalFrame::detach()
     // finalization. Too late to access various heap objects at that
     // stage.
     m_loader.clear();
+
+    // Signal frame destruction here rather than in the destructor.
+    // Main motivation is to avoid being dependent on its exact timing (Oilpan.)
+    for (const auto& frameDestructionObserver : m_destructionObservers)
+        frameDestructionObserver->frameDestroyed();
+
+    m_destructionObservers.clear();
+    m_supplements.clear();
 }
 
 SecurityContext* LocalFrame::securityContext() const
 {
     return document();
-}
-
-bool LocalFrame::checkLoadComplete()
-{
-    return loader().checkLoadCompleteForThisFrame();
 }
 
 void LocalFrame::printNavigationErrorMessage(const Frame& targetFrame, const char* reason)
@@ -308,6 +311,11 @@ void LocalFrame::printNavigationErrorMessage(const Frame& targetFrame, const cha
 
     // FIXME: should we print to the console of the document performing the navigation instead?
     targetLocalFrame.localDOMWindow()->printErrorMessage(message);
+}
+
+bool LocalFrame::isLoadingAsChild() const
+{
+    return isLoading() || !document()->isLoadCompleted();
 }
 
 void LocalFrame::disconnectOwnerElement()
@@ -418,6 +426,16 @@ LocalFrame* LocalFrame::localFrameRoot()
     return curFrame;
 }
 
+InstrumentingAgents* LocalFrame::instrumentingAgents()
+{
+    return m_instrumentingAgents.get();
+}
+
+void LocalFrame::setInstrumentingAgents(InstrumentingAgents* instrumentingAgents)
+{
+    m_instrumentingAgents = instrumentingAgents;
+}
+
 bool LocalFrame::inScope(TreeScope* scope) const
 {
     ASSERT(scope);
@@ -433,7 +451,7 @@ bool LocalFrame::inScope(TreeScope* scope) const
 
 void LocalFrame::countObjectsNeedingLayout(unsigned& needsLayoutObjects, unsigned& totalObjects, bool& isPartial)
 {
-    RenderObject* root = view()->layoutRoot();
+    LayoutObject* root = view()->layoutRoot();
     isPartial = true;
     if (!root) {
         isPartial = false;
@@ -443,7 +461,7 @@ void LocalFrame::countObjectsNeedingLayout(unsigned& needsLayoutObjects, unsigne
     needsLayoutObjects = 0;
     totalObjects = 0;
 
-    for (RenderObject* o = root; o; o = o->nextInPreOrder(root)) {
+    for (LayoutObject* o = root; o; o = o->nextInPreOrder(root)) {
         ++totalObjects;
         if (o->needsLayout())
             ++needsLayoutObjects;
@@ -484,7 +502,7 @@ void LocalFrame::setPrinting(bool printing, const FloatSize& pageSize, const Flo
     if (shouldUsePrintingLayout()) {
         view()->forceLayoutForPagination(pageSize, originalPageSize, maximumShrinkRatio);
     } else {
-        view()->forceLayout();
+        view()->layout();
         view()->adjustViewSize();
     }
 
@@ -573,12 +591,12 @@ void LocalFrame::setPageAndTextZoomFactors(float pageZoomFactor, float textZoomF
     document->updateLayoutIgnorePendingStylesheets();
 }
 
-void LocalFrame::deviceOrPageScaleFactorChanged()
+void LocalFrame::deviceScaleFactorChanged()
 {
     document()->mediaQueryAffectingValueChanged();
     for (RefPtrWillBeRawPtr<Frame> child = tree().firstChild(); child; child = child->tree().nextSibling()) {
         if (child->isLocalFrame())
-            toLocalFrame(child.get())->deviceOrPageScaleFactorChanged();
+            toLocalFrame(child.get())->deviceScaleFactorChanged();
     }
 }
 
@@ -646,8 +664,8 @@ PassOwnPtr<DragImage> LocalFrame::nodeImage(Node& node)
 
     m_view->setNodeToDraw(&node); // Enable special sub-tree drawing mode.
 
-    // Document::updateLayout may have blown away the original RenderObject.
-    RenderObject* renderer = node.renderer();
+    // Document::updateLayout may have blown away the original LayoutObject.
+    LayoutObject* renderer = node.renderer();
     if (!renderer)
         return nullptr;
 
@@ -686,7 +704,7 @@ VisiblePosition LocalFrame::visiblePositionForPoint(const IntPoint& framePoint)
     Node* node = result.innerNonSharedNode();
     if (!node)
         return VisiblePosition();
-    RenderObject* renderer = node->renderer();
+    LayoutObject* renderer = node->renderer();
     if (!renderer)
         return VisiblePosition();
     VisiblePosition visiblePos = VisiblePosition(renderer->positionForPoint(result.localPoint()));
@@ -809,6 +827,7 @@ inline LocalFrame::LocalFrame(FrameLoaderClient* client, FrameHost* host, FrameO
     , m_pageZoomFactor(parentPageZoomFactor(this))
     , m_textZoomFactor(parentTextZoomFactor(this))
     , m_inViewSourceMode(false)
+    , m_instrumentingAgents(host->instrumentingAgents())
 {
 }
 

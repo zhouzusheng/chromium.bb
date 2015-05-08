@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2012, Google Inc.
+ * Copyright 2012 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -78,6 +78,7 @@
 #include "talk/app/webrtc/statstypes.h"
 #include "talk/app/webrtc/umametrics.h"
 #include "webrtc/base/fileutils.h"
+#include "webrtc/base/network.h"
 #include "webrtc/base/socketaddress.h"
 
 namespace rtc {
@@ -180,18 +181,31 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
   typedef std::vector<IceServer> IceServers;
 
   enum IceTransportsType {
+    // TODO(pthatcher): Rename these kTransporTypeXXX, but update
+    // Chromium at the same time.
     kNone,
     kRelay,
     kNoHost,
     kAll
   };
 
-  struct RTCConfiguration {
-    IceTransportsType type;
-    IceServers servers;
+  // https://tools.ietf.org/html/draft-ietf-rtcweb-jsep-08#section-4.1.1
+  enum BundlePolicy {
+    kBundlePolicyBalanced,
+    kBundlePolicyMaxBundle,
+    kBundlePolicyMaxCompat
+  };
 
-    RTCConfiguration() : type(kAll) {}
-    explicit RTCConfiguration(IceTransportsType type) : type(type) {}
+  struct RTCConfiguration {
+    // TODO(pthatcher): Rename this ice_transport_type, but update
+    // Chromium at the same time.
+    IceTransportsType type;
+    // TODO(pthatcher): Rename this ice_servers, but update Chromium
+    // at the same time.
+    IceServers servers;
+    BundlePolicy bundle_policy;
+
+    RTCConfiguration() : type(kAll), bundle_policy(kBundlePolicyBalanced) {}
   };
 
   struct RTCOfferAnswerOptions {
@@ -408,6 +422,12 @@ class PortAllocatorFactoryInterface : public rtc::RefCountInterface {
       const std::vector<StunConfiguration>& stun_servers,
       const std::vector<TurnConfiguration>& turn_configurations) = 0;
 
+  // TODO(phoglund): Make pure virtual when Chrome's factory implements this.
+  // After this method is called, the port allocator should consider loopback
+  // network interfaces as well.
+  virtual void SetNetworkIgnoreMask(int network_ignore_mask) {
+  }
+
  protected:
   PortAllocatorFactoryInterface() {}
   ~PortAllocatorFactoryInterface() {}
@@ -469,10 +489,16 @@ class PeerConnectionFactoryInterface : public rtc::RefCountInterface {
    public:
     Options() :
       disable_encryption(false),
-      disable_sctp_data_channels(false) {
+      disable_sctp_data_channels(false),
+      network_ignore_mask(rtc::kDefaultNetworkIgnoreMask) {
     }
     bool disable_encryption;
     bool disable_sctp_data_channels;
+
+    // Sets the network types to ignore. For instance, calling this with
+    // ADAPTER_TYPE_ETHERNET | ADAPTER_TYPE_LOOPBACK will ignore Ethernet and
+    // loopback interfaces.
+    int network_ignore_mask;
   };
 
   virtual void SetOptions(const Options& options) = 0;
@@ -493,13 +519,13 @@ class PeerConnectionFactoryInterface : public rtc::RefCountInterface {
   // http://dev.w3.org/2011/webrtc/editor/webrtc.html
   inline rtc::scoped_refptr<PeerConnectionInterface>
       CreatePeerConnection(
-          const PeerConnectionInterface::IceServers& configuration,
+          const PeerConnectionInterface::IceServers& servers,
           const MediaConstraintsInterface* constraints,
           PortAllocatorFactoryInterface* allocator_factory,
           DTLSIdentityServiceInterface* dtls_identity_service,
           PeerConnectionObserver* observer) {
       PeerConnectionInterface::RTCConfiguration rtc_config;
-      rtc_config.servers = configuration;
+      rtc_config.servers = servers;
       return CreatePeerConnection(rtc_config, constraints, allocator_factory,
                                   dtls_identity_service, observer);
   }

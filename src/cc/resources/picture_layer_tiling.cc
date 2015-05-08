@@ -9,9 +9,9 @@
 #include <limits>
 #include <set>
 
-#include "base/debug/trace_event.h"
-#include "base/debug/trace_event_argument.h"
 #include "base/logging.h"
+#include "base/trace_event/trace_event.h"
+#include "base/trace_event/trace_event_argument.h"
 #include "cc/base/math_util.h"
 #include "cc/resources/tile.h"
 #include "cc/resources/tile_priority.h"
@@ -23,7 +23,8 @@
 namespace cc {
 namespace {
 
-const float kSoonBorderDistanceInScreenPixels = 312.f;
+const float kSoonBorderDistanceViewportPercentage = 0.15f;
+const float kMaxSoonBorderDistanceInScreenPixels = 312.f;
 
 }  // namespace
 
@@ -81,6 +82,17 @@ PictureLayerTiling::PictureLayerTiling(
 PictureLayerTiling::~PictureLayerTiling() {
   for (TileMap::const_iterator it = tiles_.begin(); it != tiles_.end(); ++it)
     it->second->set_shared(false);
+}
+
+// static
+float PictureLayerTiling::CalculateSoonBorderDistance(
+    const gfx::Rect& visible_rect_in_content_space,
+    float content_to_screen_scale) {
+  float max_dimension = std::max(visible_rect_in_content_space.width(),
+                                 visible_rect_in_content_space.height());
+  return std::min(
+      kMaxSoonBorderDistanceInScreenPixels / content_to_screen_scale,
+      max_dimension * kSoonBorderDistanceViewportPercentage);
 }
 
 Tile* PictureLayerTiling::CreateTile(int i,
@@ -518,6 +530,8 @@ gfx::Rect PictureLayerTiling::ComputeSkewport(
     double current_frame_time_in_seconds,
     const gfx::Rect& visible_rect_in_content_space) const {
   gfx::Rect skewport = visible_rect_in_content_space;
+  if (skewport.IsEmpty())
+    return skewport;
   if (last_impl_frame_time_in_seconds_ == 0.0)
     return skewport;
 
@@ -551,11 +565,13 @@ gfx::Rect PictureLayerTiling::ComputeSkewport(
                  extrapolation_multiplier * (old_right - new_right),
                  extrapolation_multiplier * (old_bottom - new_bottom));
 
-  // Clip the skewport to |max_skewport|.
+  // Ensure that visible rect is contained in the skewport.
+  skewport.Union(visible_rect_in_content_space);
+
+  // Clip the skewport to |max_skewport|. This needs to happen after the
+  // union in case intersecting would have left the empty rect.
   skewport.Intersect(max_skewport);
 
-  // Finally, ensure that visible rect is contained in the skewport.
-  skewport.Union(visible_rect_in_content_space);
   return skewport;
 }
 
@@ -605,7 +621,8 @@ bool PictureLayerTiling::ComputeTilePriorityRects(
   // Calculate the soon border rect.
   float content_to_screen_scale = ideal_contents_scale / contents_scale_;
   gfx::Rect soon_border_rect = visible_rect_in_content_space;
-  float border = kSoonBorderDistanceInScreenPixels / content_to_screen_scale;
+  float border = CalculateSoonBorderDistance(visible_rect_in_content_space,
+                                             content_to_screen_scale);
   soon_border_rect.Inset(-border, -border, -border, -border);
 
   last_impl_frame_time_in_seconds_ = current_frame_time_in_seconds;
@@ -866,12 +883,11 @@ void PictureLayerTiling::GetAllTilesForTracing(
     tiles->insert(it->second.get());
 }
 
-void PictureLayerTiling::AsValueInto(base::debug::TracedValue* state) const {
+void PictureLayerTiling::AsValueInto(
+    base::trace_event::TracedValue* state) const {
   state->SetInteger("num_tiles", tiles_.size());
   state->SetDouble("content_scale", contents_scale_);
-  state->BeginDictionary("tiling_size");
-  MathUtil::AddToTracedValue(tiling_size(), state);
-  state->EndDictionary();
+  MathUtil::AddToTracedValue("tiling_size", tiling_size(), state);
 }
 
 size_t PictureLayerTiling::GPUMemoryUsageInBytes() const {

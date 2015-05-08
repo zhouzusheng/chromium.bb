@@ -34,17 +34,15 @@
 #include "vp9/encoder/vp9_tokenize.h"
 #include "vp9/encoder/vp9_write_bit_buffer.h"
 
-static struct vp9_token intra_mode_encodings[INTRA_MODES];
-static struct vp9_token switchable_interp_encodings[SWITCHABLE_FILTERS];
-static struct vp9_token partition_encodings[PARTITION_TYPES];
-static struct vp9_token inter_mode_encodings[INTER_MODES];
-
-void vp9_entropy_mode_init() {
-  vp9_tokens_from_tree(intra_mode_encodings, vp9_intra_mode_tree);
-  vp9_tokens_from_tree(switchable_interp_encodings, vp9_switchable_interp_tree);
-  vp9_tokens_from_tree(partition_encodings, vp9_partition_tree);
-  vp9_tokens_from_tree(inter_mode_encodings, vp9_inter_mode_tree);
-}
+static const struct vp9_token intra_mode_encodings[INTRA_MODES] = {
+  {0, 1}, {6, 3}, {28, 5}, {30, 5}, {58, 6}, {59, 6}, {126, 7}, {127, 7},
+  {62, 6}, {2, 2}};
+static const struct vp9_token switchable_interp_encodings[SWITCHABLE_FILTERS] =
+  {{0, 1}, {2, 2}, {3, 2}};
+static const struct vp9_token partition_encodings[PARTITION_TYPES] =
+  {{0, 1}, {2, 2}, {6, 3}, {7, 3}};
+static const struct vp9_token inter_mode_encodings[INTER_MODES] =
+  {{2, 2}, {6, 3}, {0, 1}, {7, 3}};
 
 static void write_intra_mode(vp9_writer *w, PREDICTION_MODE mode,
                              const vp9_prob *probs) {
@@ -299,7 +297,6 @@ static void pack_inter_mode_mvs(VP9_COMP *cpi, const MODE_INFO *mi,
     if (!vp9_segfeature_active(seg, segment_id, SEG_LVL_SKIP)) {
       if (bsize >= BLOCK_8X8) {
         write_inter_mode(w, mode, inter_probs);
-        ++cpi->td.counts->inter_mode[mode_ctx][INTER_OFFSET(mode)];
       }
     }
 
@@ -322,7 +319,6 @@ static void pack_inter_mode_mvs(VP9_COMP *cpi, const MODE_INFO *mi,
           const int j = idy * 2 + idx;
           const PREDICTION_MODE b_mode = mi->bmi[j].as_mode;
           write_inter_mode(w, b_mode, inter_probs);
-          ++cpi->td.counts->inter_mode[mode_ctx][INTER_OFFSET(b_mode)];
           if (b_mode == NEWMV) {
             for (ref = 0; ref < 1 + is_compound; ++ref)
               vp9_encode_mv(cpi, w, &mi->bmi[j].as_mv[ref].as_mv,
@@ -346,9 +342,8 @@ static void write_mb_modes_kf(const VP9_COMMON *cm, const MACROBLOCKD *xd,
                               MODE_INFO *mi_8x8, vp9_writer *w) {
   const struct segmentation *const seg = &cm->seg;
   const MODE_INFO *const mi = mi_8x8;
-  const MODE_INFO *const above_mi = mi_8x8[-xd->mi_stride].src_mi;
-  const MODE_INFO *const left_mi =
-      xd->left_available ? mi_8x8[-1].src_mi : NULL;
+  const MODE_INFO *const above_mi = xd->above_mi;
+  const MODE_INFO *const left_mi = xd->left_mi;
   const MB_MODE_INFO *const mbmi = &mi->mbmi;
   const BLOCK_SIZE bsize = mbmi->sb_type;
 
@@ -1060,7 +1055,7 @@ static void write_bitdepth_colorspace_sampling(
     vp9_wb_write_bit(wb, cm->bit_depth == VPX_BITS_10 ? 0 : 1);
   }
   vp9_wb_write_literal(wb, cm->color_space, 3);
-  if (cm->color_space != SRGB) {
+  if (cm->color_space != VPX_CS_SRGB) {
     vp9_wb_write_bit(wb, 0);  // 0: [16, 235] (i.e. xvYCC), 1: [0, 255]
     if (cm->profile == PROFILE_1 || cm->profile == PROFILE_3) {
       assert(cm->subsampling_x != 1 || cm->subsampling_y != 1);
@@ -1175,8 +1170,6 @@ static size_t write_compressed_header(VP9_COMP *cpi, uint8_t *data) {
       prob_diff_update(vp9_inter_mode_tree, cm->fc->inter_mode_probs[i],
                        counts->inter_mode[i], INTER_MODES, &header_bc);
 
-    vp9_zero(counts->inter_mode);
-
     if (cm->interp_filter == SWITCHABLE)
       update_switchable_interp_probs(cm, &header_bc, counts);
 
@@ -1184,7 +1177,7 @@ static size_t write_compressed_header(VP9_COMP *cpi, uint8_t *data) {
       vp9_cond_prob_diff_update(&header_bc, &fc->intra_inter_prob[i],
                                 counts->intra_inter[i]);
 
-    if (cm->allow_comp_inter_inter) {
+    if (cpi->allow_comp_inter_inter) {
       const int use_compound_pred = cm->reference_mode != SINGLE_REFERENCE;
       const int use_hybrid_pred = cm->reference_mode == REFERENCE_MODE_SELECT;
 

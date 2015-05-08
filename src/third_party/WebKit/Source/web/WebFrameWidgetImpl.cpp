@@ -38,11 +38,11 @@
 #include "core/frame/FrameView.h"
 #include "core/frame/RemoteFrame.h"
 #include "core/frame/Settings.h"
+#include "core/layout/compositing/LayerCompositor.h"
 #include "core/page/EventHandler.h"
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/compositing/RenderLayerCompositor.h"
 #include "platform/KeyboardCodes.h"
 #include "platform/NotImplemented.h"
 #include "public/web/WebBeginFrameArgs.h"
@@ -426,6 +426,16 @@ void WebFrameWidgetImpl::applyViewportDeltas(
     // FIXME: To be implemented.
 }
 
+void WebFrameWidgetImpl::applyViewportDeltas(
+    const WebFloatSize& pinchViewportDelta,
+    const WebFloatSize& mainFrameDelta,
+    const WebFloatSize& elasticOverscrollDelta,
+    float pageScaleDelta,
+    float topControlsDelta)
+{
+    // FIXME: To be implemented.
+}
+
 void WebFrameWidgetImpl::applyViewportDeltas(const WebSize& scrollDelta, float pageScaleDelta, float topControlsDelta)
 {
     // FIXME: To be implemented.
@@ -670,7 +680,7 @@ void WebFrameWidgetImpl::handleMouseDown(LocalFrame& mainFrame, const WebMouseEv
     if (event.button == WebMouseEvent::ButtonLeft) {
         point = m_localRoot->frameView()->windowToContents(point);
         HitTestResult result(m_localRoot->frame()->eventHandler().hitTestResultAtPoint(point));
-        result.setToShadowHostIfInUserAgentShadowRoot();
+        result.setToShadowHostIfInClosedShadowRoot();
         Node* hitNode = result.innerNonSharedNode();
 
         if (!result.scrollbar() && hitNode && hitNode->renderer() && hitNode->renderer()->isEmbeddedObject()) {
@@ -962,7 +972,7 @@ void WebFrameWidgetImpl::setIsAcceleratedCompositingActive(bool active)
         m_localRoot->frameView()->setClipsRepaints(!m_isAcceleratedCompositingActive);
 }
 
-RenderLayerCompositor* WebFrameWidgetImpl::compositor() const
+LayerCompositor* WebFrameWidgetImpl::compositor() const
 {
     LocalFrame* frame = toLocalFrame(toCoreFrame(m_localRoot));
     if (!frame || !frame->document() || !frame->document()->renderView())

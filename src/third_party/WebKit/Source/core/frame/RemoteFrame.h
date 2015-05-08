@@ -14,6 +14,8 @@ class Event;
 class RemoteDOMWindow;
 class RemoteFrameClient;
 class RemoteFrameView;
+class WebLayer;
+class WindowProxyManager;
 
 class RemoteFrame: public Frame {
 public:
@@ -23,25 +25,27 @@ public:
 
     // Frame overrides:
     void trace(Visitor*) override;
-    virtual bool isRemoteFrame() const override { return true; }
-    virtual DOMWindow* domWindow() const override;
-    virtual void navigate(Document& originDocument, const KURL&, bool lockBackForwardList) override;
-    virtual void reload(ReloadPolicy, ClientRedirectPolicy) override;
-    virtual void detach() override;
-    virtual RemoteSecurityContext* securityContext() const override;
-    bool checkLoadComplete() override;
-    void printNavigationErrorMessage(const Frame&, const char* reason) { }
+    bool isRemoteFrame() const override { return true; }
+    DOMWindow* domWindow() const override;
+    WindowProxy* windowProxy(DOMWrapperWorld&) override;
+    void navigate(Document& originDocument, const KURL&, bool lockBackForwardList) override;
+    void reload(ReloadPolicy, ClientRedirectPolicy) override;
+    void detach() override;
+    RemoteSecurityContext* securityContext() const override;
+    void printNavigationErrorMessage(const Frame&, const char* reason) override { }
+    void disconnectOwnerElement() override;
 
     // FIXME: Remove this method once we have input routing in the browser
     // process. See http://crbug.com/339659.
     void forwardInputEvent(Event*);
 
+    void setRemotePlatformLayer(WebLayer*);
+    WebLayer* remotePlatformLayer() const { return m_remotePlatformLayer; }
+
     void setView(PassRefPtrWillBeRawPtr<RemoteFrameView>);
     void createView();
-    void setIsLoading(bool isLoading) { m_isLoading = isLoading; }
 
     RemoteFrameView* view() const;
-
 
 private:
     RemoteFrame(RemoteFrameClient*, FrameHost*, FrameOwner*);
@@ -51,8 +55,8 @@ private:
     RefPtrWillBeMember<RemoteFrameView> m_view;
     RefPtr<RemoteSecurityContext> m_securityContext;
     RefPtrWillBeMember<RemoteDOMWindow> m_domWindow;
-
-    bool m_isLoading;
+    OwnPtrWillBeMember<WindowProxyManager> m_windowProxyManager;
+    WebLayer* m_remotePlatformLayer;
 };
 
 inline RemoteFrameView* RemoteFrame::view() const

@@ -43,9 +43,17 @@ WaveShaperNode::WaveShaperNode(AudioContext* context)
     initialize();
 }
 
-void WaveShaperNode::setCurve(DOMFloat32Array* curve)
+void WaveShaperNode::setCurve(DOMFloat32Array* curve, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
+
+    if (curve && curve->length() < 2) {
+        exceptionState.throwDOMException(
+            InvalidAccessError,
+            "curve length cannot be less than 2: " + String::number(curve->length()));
+        return;
+    }
+
     waveShaperProcessor()->setCurve(curve);
 }
 
@@ -54,7 +62,7 @@ DOMFloat32Array* WaveShaperNode::curve()
     return waveShaperProcessor()->curve();
 }
 
-void WaveShaperNode::setOversample(const String& type, ExceptionState& exceptionState)
+void WaveShaperNode::setOversample(const String& type)
 {
     ASSERT(isMainThread());
 

@@ -30,10 +30,10 @@
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/Range.h"
-#include "core/editing/TextIterator.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
-#include "core/rendering/RenderObject.h"
+#include "core/editing/iterators/CharacterIterator.h"
+#include "core/layout/LayoutObject.h"
 #include "platform/geometry/LayoutPoint.h"
 #include "wtf/Assertions.h"
 #include "wtf/text/CString.h"
@@ -752,7 +752,7 @@ Element* VisibleSelection::rootEditableElement() const
 
 Node* VisibleSelection::nonBoundaryShadowTreeRootNode() const
 {
-    return start().deprecatedNode() ? start().deprecatedNode()->nonBoundaryShadowTreeRootNode() : 0;
+    return start().deprecatedNode() && !start().deprecatedNode()->isShadowRoot() ? start().deprecatedNode()->nonBoundaryShadowTreeRootNode() : 0;
 }
 
 VisibleSelection::ChangeObserver::ChangeObserver()
@@ -781,7 +781,7 @@ void VisibleSelection::didChange()
         m_changeObserver->didChangeVisibleSelection();
 }
 
-void VisibleSelection::trace(Visitor* visitor)
+DEFINE_TRACE(VisibleSelection)
 {
     visitor->trace(m_base);
     visitor->trace(m_extent);

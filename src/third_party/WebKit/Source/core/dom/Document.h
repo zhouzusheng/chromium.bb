@@ -36,6 +36,7 @@
 #include "core/dom/DocumentEncodingData.h"
 #include "core/dom/DocumentInit.h"
 #include "core/dom/DocumentLifecycle.h"
+#include "core/dom/DocumentLifecycleNotifier.h"
 #include "core/dom/DocumentSupplementable.h"
 #include "core/dom/DocumentTiming.h"
 #include "core/dom/ExecutionContext.h"
@@ -45,16 +46,17 @@
 #include "core/dom/UserActionElementSet.h"
 #include "core/dom/ViewportDescription.h"
 #include "core/dom/custom/CustomElement.h"
+#include "core/frame/DOMTimerCoordinator.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/html/CollectionType.h"
 #include "core/html/parser/ParserSynchronizationPolicy.h"
-#include "core/page/FocusType.h"
 #include "core/page/PageVisibilityState.h"
 #include "platform/Length.h"
 #include "platform/Timer.h"
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/ReferrerPolicy.h"
+#include "public/platform/WebFocusType.h"
 #include "wtf/HashSet.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
@@ -80,7 +82,6 @@ class CustomElementRegistrationContext;
 class DOMImplementation;
 class DOMWindow;
 class DocumentFragment;
-class DocumentLifecycleNotifier;
 class DocumentLoader;
 class DocumentMarkerController;
 class DocumentNameCollection;
@@ -218,7 +219,7 @@ private:
 };
 
 class Document : public ContainerNode, public TreeScope, public SecurityContext, public ExecutionContext
-    , public DocumentSupplementable, public LifecycleContext<Document> {
+    , public DocumentSupplementable, public DocumentLifecycleNotifier {
     DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Document);
 public:
@@ -437,8 +438,8 @@ public:
     void scheduleUseShadowTreeUpdate(SVGUseElement&);
     void unscheduleUseShadowTreeUpdate(SVGUseElement&);
 
-    // FIXME: SVG filters should change to store the filter on the RenderStyle
-    // instead of the RenderObject so we can get rid of this hack.
+    // FIXME: SVG filters should change to store the filter on the LayoutStyle
+    // instead of the LayoutObject so we can get rid of this hack.
     void scheduleSVGFilterLayerUpdateHack(Element&);
     void unscheduleSVGFilterLayerUpdateHack(Element&);
 
@@ -464,7 +465,7 @@ public:
     // Special support for editing
     PassRefPtrWillBeRawPtr<Text> createEditingTextNode(const String&);
 
-    void setupFontBuilder(RenderStyle* documentStyle);
+    void setupFontBuilder(LayoutStyle& documentStyle);
 
     bool needsRenderTreeUpdate() const;
     void updateRenderTreeIfNeeded() { updateRenderTree(NoChange); }
@@ -475,8 +476,8 @@ public:
         RunPostLayoutTasksSynchronously,
     };
     void updateLayoutIgnorePendingStylesheets(RunPostLayoutTasks = RunPostLayoutTasksAsyhnchronously);
-    PassRefPtr<RenderStyle> styleForElementIgnoringPendingStylesheets(Element*);
-    PassRefPtr<RenderStyle> styleForPage(int pageIndex);
+    PassRefPtr<LayoutStyle> styleForElementIgnoringPendingStylesheets(Element*);
+    PassRefPtr<LayoutStyle> styleForPage(int pageIndex);
 
     void updateDistributionForNodeIfNeeded(Node*);
 
@@ -617,7 +618,7 @@ public:
     String selectedStylesheetSet() const;
     void setSelectedStylesheetSet(const String&);
 
-    bool setFocusedElement(PassRefPtrWillBeRawPtr<Element>, FocusType = FocusTypeNone);
+    bool setFocusedElement(PassRefPtrWillBeRawPtr<Element>, WebFocusType = WebFocusTypeNone);
     Element* focusedElement() const { return m_focusedElement.get(); }
     UserActionElementSet& userActionElements()  { return m_userActionElements; }
     const UserActionElementSet& userActionElements() const { return m_userActionElements; }
@@ -788,7 +789,7 @@ public:
     // that as the style for the root element, rather than obtaining it on our own. The reason for
     // this is that style may not have been associated with the elements yet - in which case it may
     // have been calculated on the fly (without associating it with the actual element) somewhere.
-    Element* viewportDefiningElement(RenderStyle* rootStyle = nullptr) const;
+    Element* viewportDefiningElement(LayoutStyle* rootStyle = nullptr) const;
 
     DocumentMarkerController& markers() const { return *m_markers; }
 
@@ -804,7 +805,6 @@ public:
     // designMode support
     enum InheritedBool { off = false, on = true, inherit };
     void setDesignMode(InheritedBool value);
-    InheritedBool getDesignMode() const;
     bool inDesignMode() const;
     String designMode() const;
     void setDesignMode(const String&);
@@ -824,6 +824,9 @@ public:
 
     void incDOMTreeVersion() { ASSERT(m_lifecycle.stateAllowsTreeMutations()); m_domTreeVersion = ++s_globalTreeVersion; }
     uint64_t domTreeVersion() const { return m_domTreeVersion; }
+
+    void incStyleVersion() { ++m_styleVersion; }
+    uint64_t styleVersion() const { return m_styleVersion; }
 
     enum PendingSheetLayout { NoLayoutWithPendingSheets, DidLayoutWithPendingSheets, IgnoreLayoutWithPendingSheets };
 
@@ -908,7 +911,7 @@ public:
     bool loadEventFinished() const { return m_loadEventProgress >= LoadEventCompleted; }
     bool unloadStarted() const { return m_loadEventProgress >= PageHideInProgress; }
     bool processingBeforeUnload() const { return m_loadEventProgress == BeforeUnloadEventInProgress; }
-    void suppressLoadEvent() { m_loadEventProgress = LoadEventCompleted; }
+    void suppressLoadEvent();
 
     void setContainsPlugins() { m_containsPlugins = true; }
     bool containsPlugins() const { return m_containsPlugins; }
@@ -957,13 +960,10 @@ public:
 
     bool isInDocumentWrite() { return m_writeRecursionDepth > 0; }
 
-    IntSize initialViewportSize() const;
-
     TextAutosizer* textAutosizer();
 
     PassRefPtrWillBeRawPtr<Element> createElement(const AtomicString& localName, const AtomicString& typeExtension, ExceptionState&);
     PassRefPtrWillBeRawPtr<Element> createElementNS(const AtomicString& namespaceURI, const AtomicString& qualifiedName, const AtomicString& typeExtension, ExceptionState&);
-    ScriptValue registerElement(ScriptState*, const AtomicString& name, ExceptionState&);
     ScriptValue registerElement(ScriptState*, const AtomicString& name, const ElementRegistrationOptions&, ExceptionState&, CustomElement::NameSet validNames = CustomElement::StandardNames);
     CustomElementRegistrationContext* registrationContext() { return m_registrationContext.get(); }
     CustomElementMicrotaskRunQueue* customElementMicrotaskRunQueue();
@@ -975,13 +975,13 @@ public:
     bool haveImportsLoaded() const;
     void didLoadAllImports();
 
-    void adjustFloatQuadsForScrollAndAbsoluteZoom(Vector<FloatQuad>&, RenderObject&);
-    void adjustFloatRectForScrollAndAbsoluteZoom(FloatRect&, RenderObject&);
+    void adjustFloatQuadsForScrollAndAbsoluteZoom(Vector<FloatQuad>&, LayoutObject&);
+    void adjustFloatRectForScrollAndAbsoluteZoom(FloatRect&, LayoutObject&);
 
     bool hasActiveParser();
     unsigned activeParserCount() { return m_activeParserCount; }
     void incrementActiveParserCount() { ++m_activeParserCount; }
-    void decrementActiveParserCount();
+    void decrementActiveParserCount() { --m_activeParserCount; }
 
     void setContextFeatures(ContextFeatures&);
     ContextFeatures& contextFeatures() const { return *m_contextFeatures; }
@@ -1021,9 +1021,9 @@ public:
     virtual LocalDOMWindow* executingWindow() override final;
     LocalFrame* executingFrame();
 
-    DocumentLifecycleNotifier& lifecycleNotifier();
     DocumentLifecycle& lifecycle() { return m_lifecycle; }
     bool isActive() const { return m_lifecycle.isActive(); }
+    bool isDetached() const { return m_lifecycle.state() >= DocumentLifecycle::Stopping; }
     bool isStopped() const { return m_lifecycle.state() == DocumentLifecycle::Stopped; }
     bool isDisposed() const { return m_lifecycle.state() == DocumentLifecycle::Disposed; }
 
@@ -1034,7 +1034,6 @@ public:
     void maybeHandleHttpRefresh(const String&, HttpRefreshType);
 
     void updateSecurityOrigin(PassRefPtr<SecurityOrigin>);
-    PassOwnPtr<LifecycleNotifier<Document>> createLifecycleNotifier();
 
     void setHasViewportUnits() { m_hasViewportUnits = true; }
     bool hasViewportUnits() const { return m_hasViewportUnits; }
@@ -1053,6 +1052,8 @@ public:
     AtomicString convertLocalName(const AtomicString&);
 
     void platformColorsChanged();
+
+    virtual DOMTimerCoordinator* timers() override final;
 
     virtual v8::Handle<v8::Object> wrap(v8::Handle<v8::Object> creationContext, v8::Isolate*) override;
     virtual v8::Handle<v8::Object> associateWithWrapper(v8::Isolate*, const WrapperTypeInfo*, v8::Handle<v8::Object> wrapper) override;
@@ -1228,6 +1229,8 @@ private:
     uint64_t m_domTreeVersion;
     static uint64_t s_globalTreeVersion;
 
+    uint64_t m_styleVersion;
+
     WillBeHeapHashSet<RawPtrWillBeWeakMember<NodeIterator>> m_nodeIterators;
     using AttachedRangeSet = WillBeHeapHashSet<RawPtrWillBeWeakMember<Range>>;
     AttachedRangeSet m_ranges;
@@ -1377,6 +1380,8 @@ private:
 
     WillBeHeapHashSet<RawPtrWillBeMember<SVGUseElement>> m_useElementsNeedingUpdate;
     WillBeHeapHashSet<RawPtrWillBeMember<Element>> m_layerUpdateSVGFilterElements;
+
+    DOMTimerCoordinator m_timers;
 
     bool m_hasViewportUnits;
 

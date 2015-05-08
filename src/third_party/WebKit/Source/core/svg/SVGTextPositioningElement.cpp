@@ -23,7 +23,7 @@
 #include "core/svg/SVGTextPositioningElement.h"
 
 #include "core/SVGNames.h"
-#include "core/rendering/svg/RenderSVGText.h"
+#include "core/layout/svg/LayoutSVGText.h"
 #include "core/svg/SVGLengthList.h"
 #include "core/svg/SVGNumberList.h"
 
@@ -44,7 +44,7 @@ SVGTextPositioningElement::SVGTextPositioningElement(const QualifiedName& tagNam
     addToPropertyMap(m_rotate);
 }
 
-void SVGTextPositioningElement::trace(Visitor* visitor)
+DEFINE_TRACE(SVGTextPositioningElement)
 {
     visitor->trace(m_x);
     visitor->trace(m_y);
@@ -89,18 +89,18 @@ void SVGTextPositioningElement::svgAttributeChanged(const QualifiedName& attrNam
     if (updateRelativeLengths)
         updateRelativeLengthsInformation();
 
-    RenderObject* renderer = this->renderer();
+    LayoutObject* renderer = this->renderer();
     if (!renderer)
         return;
 
     ASSERT(updateRelativeLengths || attrName == SVGNames::rotateAttr);
 
-    if (RenderSVGText* textRenderer = RenderSVGText::locateRenderSVGTextAncestor(renderer))
+    if (LayoutSVGText* textRenderer = LayoutSVGText::locateLayoutSVGTextAncestor(renderer))
         textRenderer->setNeedsPositioningValuesUpdate();
     markForLayoutAndParentResourceInvalidation(renderer);
 }
 
-SVGTextPositioningElement* SVGTextPositioningElement::elementFromRenderer(RenderObject& renderer)
+SVGTextPositioningElement* SVGTextPositioningElement::elementFromRenderer(LayoutObject& renderer)
 {
     if (!renderer.isSVGText() && !renderer.isSVGInline())
         return 0;

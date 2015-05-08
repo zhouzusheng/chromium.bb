@@ -227,9 +227,15 @@ static const V8DOMConfiguration::AttributeConfiguration {{v8_class}}Attributes[]
 {##############################################################################}
 {% block install_accessors %}
 {% from 'attributes.cpp' import attribute_configuration with context %}
-{% if has_accessors %}
+{% if has_accessor_configuration %}
 static const V8DOMConfiguration::AccessorConfiguration {{v8_class}}Accessors[] = {
-    {% for attribute in attributes if attribute.is_expose_js_accessors and attribute.should_be_exposed_to_script %}
+    {% for attribute in attributes
+       if (attribute.is_expose_js_accessors and
+           not (attribute.is_static or
+                attribute.runtime_enabled_function or
+                attribute.per_context_enabled_function or
+                attribute.exposed_test) and
+           attribute.should_be_exposed_to_script) %}
     {{attribute_configuration(attribute)}},
     {% endfor %}
 };
@@ -299,7 +305,7 @@ static void install{{v8_class}}Template(v8::Local<v8::FunctionTemplate> function
         {% set accessors_name, accessors_length =
                ('%sAccessors' % v8_class,
                 'WTF_ARRAY_LENGTH(%sAccessors)' % v8_class)
-           if has_accessors else (0, 0) %}
+           if has_accessor_configuration else (0, 0) %}
         {% set methods_name, methods_length =
                ('%sMethods' % v8_class,
                 'WTF_ARRAY_LENGTH(%sMethods)' % v8_class)
@@ -327,9 +333,15 @@ static void install{{v8_class}}Template(v8::Local<v8::FunctionTemplate> function
           not attribute.is_static %}
     {% filter conditional(attribute.conditional_string) %}
     if ({{attribute.runtime_enabled_function}}()) {
+        {% if attribute.is_expose_js_accessors %}
+        static const V8DOMConfiguration::AccessorConfiguration accessorConfiguration =\
+        {{attribute_configuration(attribute)}};
+        V8DOMConfiguration::installAccessor(isolate, prototypeTemplate, defaultSignature, accessorConfiguration);
+        {% else %}
         static const V8DOMConfiguration::AttributeConfiguration attributeConfiguration =\
         {{attribute_configuration(attribute)}};
-        V8DOMConfiguration::installAttribute(instanceTemplate, prototypeTemplate, attributeConfiguration, isolate);
+        V8DOMConfiguration::installAttribute(isolate, instanceTemplate, prototypeTemplate, attributeConfiguration);
+        {% endif %}
     }
     {% endfilter %}
     {% endfor %}
@@ -391,8 +403,14 @@ static void install{{v8_class}}Template(v8::Local<v8::FunctionTemplate> function
     }
     {% endif %}
     {% if iterator_method %}
+    {% filter per_context_enabled(iterator_method.per_context_enabled_function) %}
+    {% filter exposed(iterator_method.exposed_test) %}
+    {% filter runtime_enabled(iterator_method.runtime_enabled_function) %}
     static const V8DOMConfiguration::SymbolKeyedMethodConfiguration symbolKeyedIteratorConfiguration = { v8::Symbol::GetIterator, {{cpp_class_or_partial}}V8Internal::iteratorMethodCallback, 0, V8DOMConfiguration::ExposedToAllScripts };
-    V8DOMConfiguration::installMethod(prototypeTemplate, defaultSignature, v8::DontDelete, symbolKeyedIteratorConfiguration, isolate);
+    V8DOMConfiguration::installMethod(isolate, prototypeTemplate, defaultSignature, v8::DontDelete, symbolKeyedIteratorConfiguration);
+    {% endfilter %}{# runtime_enabled() #}
+    {% endfilter %}{# exposed() #}
+    {% endfilter %}{# per_context_enabled() #}
     {% endif %}
     {# End special operations #}
     {% if has_custom_legacy_call_as_function %}

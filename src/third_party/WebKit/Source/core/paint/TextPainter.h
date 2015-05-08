@@ -5,8 +5,8 @@
 #ifndef TextPainter_h
 #define TextPainter_h
 
-#include "core/rendering/FloatToLayoutUnit.h"
-#include "core/rendering/style/RenderStyleConstants.h"
+#include "core/layout/line/FloatToLayoutUnit.h"
+#include "core/layout/style/LayoutStyleConstants.h"
 #include "platform/fonts/TextBlob.h"
 #include "platform/geometry/FloatPoint.h"
 #include "platform/geometry/FloatRect.h"
@@ -20,8 +20,8 @@ class Font;
 class GraphicsContext;
 class GraphicsContextStateSaver;
 class RenderCombineText;
-class RenderObject;
-class RenderStyle;
+class LayoutObject;
+class LayoutStyle;
 class ShadowList;
 class TextRun;
 struct TextRunPaintInfo;
@@ -57,8 +57,8 @@ public:
         }
         bool operator!=(const Style& other) { return !(*this == other); }
     };
-    static Style textPaintingStyle(RenderObject&, RenderStyle*, bool forceBlackText, bool isPrinting);
-    static Style selectionPaintingStyle(RenderObject&, bool haveSelection, bool forceBlackText, bool isPrinting, const Style& textStyle);
+    static Style textPaintingStyle(LayoutObject&, const LayoutStyle&, bool forceBlackText, bool isPrinting);
+    static Style selectionPaintingStyle(LayoutObject&, bool haveSelection, bool forceBlackText, bool isPrinting, const Style& textStyle);
 
     enum RotationDirection { Counterclockwise, Clockwise };
     static AffineTransform rotation(const FloatRectWillBeLayoutRect& boxRect, RotationDirection);

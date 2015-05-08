@@ -14,15 +14,14 @@
 #include "base/threading/thread.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/output_surface.h"
+#include "cc/surfaces/onscreen_display_client.h"
+#include "cc/surfaces/surface_display_output_surface.h"
 #include "cc/surfaces/surface_manager.h"
 #include "content/browser/compositor/browser_compositor_output_surface.h"
-#include "content/browser/compositor/browser_compositor_output_surface_proxy.h"
 #include "content/browser/compositor/gpu_browser_compositor_output_surface.h"
 #include "content/browser/compositor/gpu_surfaceless_browser_compositor_output_surface.h"
-#include "content/browser/compositor/onscreen_display_client.h"
 #include "content/browser/compositor/reflector_impl.h"
 #include "content/browser/compositor/software_browser_compositor_output_surface.h"
-#include "content/browser/compositor/surface_display_output_surface.h"
 #include "content/browser/gpu/browser_gpu_channel_host_factory.h"
 #include "content/browser/gpu/browser_gpu_memory_buffer_manager.h"
 #include "content/browser/gpu/compositor_util.h"
@@ -66,24 +65,12 @@ namespace content {
 struct GpuProcessTransportFactory::PerCompositorData {
   int surface_id;
   scoped_refptr<ReflectorImpl> reflector;
-  scoped_ptr<OnscreenDisplayClient> display_client;
+  scoped_ptr<cc::OnscreenDisplayClient> display_client;
 };
 
 GpuProcessTransportFactory::GpuProcessTransportFactory()
     : next_surface_id_namespace_(1u),
       callback_factory_(this) {
-  output_surface_proxy_ = new BrowserCompositorOutputSurfaceProxy(
-      &output_surface_map_);
-#if defined(OS_CHROMEOS)
-  bool use_thread = !base::CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kUIDisableThreadedCompositing);
-#else
-  bool use_thread = false;
-#endif
-  if (use_thread) {
-    compositor_thread_.reset(new base::Thread("Browser Compositor"));
-    compositor_thread_->Start();
-  }
   if (UseSurfacesEnabled())
     surface_manager_ = make_scoped_ptr(new cc::SurfaceManager);
 }
@@ -194,18 +181,6 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
   UMA_HISTOGRAM_BOOLEAN("Aura.CreatedGpuBrowserCompositor",
                         !!context_provider.get());
 
-  if (context_provider.get()) {
-    scoped_refptr<base::SingleThreadTaskRunner> compositor_thread_task_runner =
-        GetCompositorMessageLoop();
-    if (!compositor_thread_task_runner.get())
-      compositor_thread_task_runner = base::MessageLoopProxy::current();
-
-    // Here we know the GpuProcessHost has been set up, because we created a
-    // context.
-    output_surface_proxy_->ConnectToGpuProcessHost(
-        compositor_thread_task_runner.get());
-  }
-
   if (UseSurfacesEnabled()) {
     // This gets a bit confusing. Here we have a ContextProvider configured to
     // render directly to this widget. We need to make an OnscreenDisplayClient
@@ -216,7 +191,6 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
     if (!context_provider.get()) {
       display_surface =
           make_scoped_ptr(new SoftwareBrowserCompositorOutputSurface(
-              output_surface_proxy_,
               CreateSoftwareOutputDevice(compositor.get()),
               data->surface_id,
               &output_surface_map_,
@@ -229,12 +203,14 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
           compositor->vsync_manager(),
           CreateOverlayCandidateValidator(compositor->widget())));
     }
-    scoped_ptr<OnscreenDisplayClient> display_client(new OnscreenDisplayClient(
-        display_surface.Pass(), manager, compositor->GetRendererSettings(),
-        compositor->task_runner()));
+    scoped_ptr<cc::OnscreenDisplayClient> display_client(
+        new cc::OnscreenDisplayClient(
+            display_surface.Pass(), manager, HostSharedBitmapManager::current(),
+            BrowserGpuMemoryBufferManager::current(),
+            compositor->GetRendererSettings(), compositor->task_runner()));
 
-    scoped_ptr<SurfaceDisplayOutputSurface> output_surface(
-        new SurfaceDisplayOutputSurface(
+    scoped_ptr<cc::SurfaceDisplayOutputSurface> output_surface(
+        new cc::SurfaceDisplayOutputSurface(
             manager, compositor->surface_id_allocator(), context_provider));
     display_client->set_surface_output_surface(output_surface.get());
     output_surface->set_display_client(display_client.get());
@@ -247,12 +223,11 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
   if (!context_provider.get()) {
     if (compositor_thread_.get()) {
       LOG(FATAL) << "Failed to create UI context, but can't use software"
-                 " compositing with browser threaded compositing. Aborting.";
+                    " compositing with browser threaded compositing. Aborting.";
     }
 
     scoped_ptr<SoftwareBrowserCompositorOutputSurface> surface(
         new SoftwareBrowserCompositorOutputSurface(
-            output_surface_proxy_,
             CreateSoftwareOutputDevice(compositor.get()),
             data->surface_id,
             &output_surface_map_,

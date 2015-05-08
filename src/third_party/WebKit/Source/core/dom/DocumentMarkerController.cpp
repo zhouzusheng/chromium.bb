@@ -32,8 +32,8 @@
 #include "core/dom/Range.h"
 #include "core/dom/RenderedDocumentMarker.h"
 #include "core/dom/Text.h"
-#include "core/editing/TextIterator.h"
-#include "core/rendering/RenderObject.h"
+#include "core/editing/iterators/TextIterator.h"
+#include "core/layout/LayoutObject.h"
 
 #ifndef NDEBUG
 #include <stdio.h>
@@ -444,10 +444,7 @@ DocumentMarkerVector DocumentMarkerController::markersInRange(Range* range, Docu
 
     Node* pastLastNode = range->pastLastNode();
     for (Node* node = range->firstNode(); node != pastLastNode; node = NodeTraversal::next(*node)) {
-        DocumentMarkerVector markers = markersFor(node);
-        DocumentMarkerVector::const_iterator end = markers.end();
-        for (DocumentMarkerVector::const_iterator it = markers.begin(); it != end; ++it) {
-            DocumentMarker* marker = *it;
+        for (DocumentMarker* marker : markersFor(node)) {
             if (!markerTypes.contains(marker->type()))
                 continue;
             if (node == startContainer && marker->endOffset() <= static_cast<unsigned>(range->startOffset()))
@@ -576,7 +573,7 @@ void DocumentMarkerController::removeMarkersFromList(MarkerMap::iterator iterato
     }
 
     if (needsRepainting) {
-        if (RenderObject* renderer = iterator->key->renderer())
+        if (LayoutObject* renderer = iterator->key->renderer())
             renderer->setShouldDoFullPaintInvalidation();
     }
 
@@ -606,7 +603,7 @@ void DocumentMarkerController::repaintMarkers(DocumentMarker::MarkerTypes marker
                 continue;
 
             // cause the node to be redrawn
-            if (RenderObject* renderer = node->renderer()) {
+            if (LayoutObject* renderer = node->renderer()) {
                 renderer->setShouldDoFullPaintInvalidation();
                 break;
             }
@@ -706,35 +703,6 @@ void DocumentMarkerController::setMarkersActive(Node* node, unsigned startOffset
     // repaint the affected node
     if (docDirty && node->renderer())
         node->renderer()->setShouldDoFullPaintInvalidation();
-}
-
-bool DocumentMarkerController::hasMarkers(Range* range, DocumentMarker::MarkerTypes markerTypes)
-{
-    if (!possiblyHasMarkers(markerTypes))
-        return false;
-    ASSERT(!m_markers.isEmpty());
-
-    Node* startContainer = range->startContainer();
-    ASSERT(startContainer);
-    Node* endContainer = range->endContainer();
-    ASSERT(endContainer);
-
-    Node* pastLastNode = range->pastLastNode();
-    for (Node* node = range->firstNode(); node != pastLastNode; node = NodeTraversal::next(*node)) {
-        DocumentMarkerVector markers = markersFor(node);
-        DocumentMarkerVector::const_iterator end = markers.end();
-        for (DocumentMarkerVector::const_iterator it = markers.begin(); it != end; ++it) {
-            DocumentMarker* marker = *it;
-            if (!markerTypes.contains(marker->type()))
-                continue;
-            if (node == startContainer && marker->endOffset() <= static_cast<unsigned>(range->startOffset()))
-                continue;
-            if (node == endContainer && marker->startOffset() >= static_cast<unsigned>(range->endOffset()))
-                continue;
-            return true;
-        }
-    }
-    return false;
 }
 
 #ifndef NDEBUG

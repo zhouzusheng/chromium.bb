@@ -33,6 +33,7 @@
 
 #include "core/frame/EventHandlerRegistry.h"
 #include "core/inspector/ConsoleMessageStorage.h"
+#include "core/inspector/InspectorController.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
@@ -48,7 +49,7 @@ FrameHost::FrameHost(Page& page)
     : m_page(&page)
     , m_pinchViewport(PinchViewport::create(*this))
     , m_eventHandlerRegistry(adoptPtrWillBeNoop(new EventHandlerRegistry(*this)))
-    , m_consoleMessageStorage(ConsoleMessageStorage::createForFrameHost(this))
+    , m_consoleMessageStorage(ConsoleMessageStorage::create())
     , m_subframeCount(0)
 {
 }
@@ -71,6 +72,11 @@ Chrome& FrameHost::chrome() const
 UseCounter& FrameHost::useCounter() const
 {
     return m_page->useCounter();
+}
+
+InstrumentingAgents* FrameHost::instrumentingAgents() const
+{
+    return m_page->inspectorController().instrumentingAgents();
 }
 
 float FrameHost::deviceScaleFactor() const

@@ -39,7 +39,7 @@ public:
     SVGAnimatedLength* rx() const { return m_rx.get(); }
     SVGAnimatedLength* ry() const { return m_ry.get(); }
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     explicit SVGEllipseElement(Document&);
@@ -50,7 +50,7 @@ private:
 
     virtual bool selfHasRelativeLengths() const override;
 
-    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual LayoutObject* createRenderer(const LayoutStyle&) override;
 
     RefPtrWillBeMember<SVGAnimatedLength> m_cx;
     RefPtrWillBeMember<SVGAnimatedLength> m_cy;

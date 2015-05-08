@@ -9,6 +9,7 @@
 #ifndef LIBANGLE_RENDERER_D3D_FRAMBUFFERD3D_H_
 #define LIBANGLE_RENDERER_D3D_FRAMBUFFERD3D_H_
 
+#include "libANGLE/renderer/DefaultAttachmentImpl.h"
 #include "libANGLE/renderer/FramebufferImpl.h"
 
 #include <vector>
@@ -23,13 +24,13 @@ struct PixelPackState;
 
 namespace rx
 {
-class RenderTarget;
+class RenderTargetD3D;
 class RendererD3D;
 
 class DefaultAttachmentD3D : public DefaultAttachmentImpl
 {
   public:
-    DefaultAttachmentD3D(RenderTarget *renderTarget);
+    DefaultAttachmentD3D(RenderTargetD3D *renderTarget);
     virtual ~DefaultAttachmentD3D();
 
     static DefaultAttachmentD3D *makeDefaultAttachmentD3D(DefaultAttachmentImpl* impl);
@@ -39,10 +40,12 @@ class DefaultAttachmentD3D : public DefaultAttachmentImpl
     virtual GLenum getInternalFormat() const override;
     virtual GLsizei getSamples() const override;
 
-    RenderTarget *getRenderTarget() const;
+    RenderTargetD3D *getRenderTarget() const;
 
   private:
-    RenderTarget *mRenderTarget;
+    DISALLOW_COPY_AND_ASSIGN(DefaultAttachmentD3D);
+
+    RenderTargetD3D *mRenderTarget;
 };
 
 class FramebufferD3D : public FramebufferImpl
@@ -76,6 +79,7 @@ class FramebufferD3D : public FramebufferImpl
                    GLbitfield mask, GLenum filter, const gl::Framebuffer *sourceFramebuffer) override;
 
     GLenum checkStatus() const override;
+    const gl::FramebufferAttachment *getReadAttachment() const;
 
   protected:
     std::vector<const gl::FramebufferAttachment*> mColorBuffers;
@@ -86,6 +90,8 @@ class FramebufferD3D : public FramebufferImpl
     GLenum mReadBuffer;
 
   private:
+    DISALLOW_COPY_AND_ASSIGN(FramebufferD3D);
+
     RendererD3D *const mRenderer;
 
     virtual gl::Error clear(const gl::State &state, const gl::ClearParameters &clearParams) = 0;
@@ -97,10 +103,10 @@ class FramebufferD3D : public FramebufferImpl
                            bool blitRenderTarget, bool blitDepth, bool blitStencil, GLenum filter,
                            const gl::Framebuffer *sourceFramebuffer) = 0;
 
-    virtual GLenum getRenderTargetImplementationFormat(RenderTarget *renderTarget) const = 0;
+    virtual GLenum getRenderTargetImplementationFormat(RenderTargetD3D *renderTarget) const = 0;
 };
 
-gl::Error GetAttachmentRenderTarget(const gl::FramebufferAttachment *attachment, RenderTarget **outRT);
+gl::Error GetAttachmentRenderTarget(const gl::FramebufferAttachment *attachment, RenderTargetD3D **outRT);
 unsigned int GetAttachmentSerial(const gl::FramebufferAttachment *attachment);
 
 }

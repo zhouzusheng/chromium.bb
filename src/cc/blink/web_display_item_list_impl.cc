@@ -7,7 +7,9 @@
 #include <vector>
 
 #include "cc/blink/web_blend_mode.h"
+#include "cc/blink/web_filter_operations_impl.h"
 #include "cc/resources/clip_display_item.h"
+#include "cc/resources/clip_path_display_item.h"
 #include "cc/resources/drawing_display_item.h"
 #include "cc/resources/filter_display_item.h"
 #include "cc/resources/float_clip_display_item.h"
@@ -31,11 +33,9 @@ scoped_refptr<cc::DisplayItemList> WebDisplayItemListImpl::ToDisplayItemList() {
   return display_item_list_;
 }
 
-void WebDisplayItemListImpl::appendDrawingItem(
-    SkPicture* picture,
-    const blink::WebFloatPoint& location) {
-  display_item_list_->AppendItem(
-      cc::DrawingDisplayItem::Create(skia::SharePtr(picture), location));
+void WebDisplayItemListImpl::appendDrawingItem(const SkPicture* picture) {
+  display_item_list_->AppendItem(cc::DrawingDisplayItem::Create(
+      skia::SharePtr(const_cast<SkPicture*>(picture))));
 }
 
 void WebDisplayItemListImpl::appendClipItem(
@@ -51,6 +51,17 @@ void WebDisplayItemListImpl::appendClipItem(
 
 void WebDisplayItemListImpl::appendEndClipItem() {
   display_item_list_->AppendItem(cc::EndClipDisplayItem::Create());
+}
+
+void WebDisplayItemListImpl::appendClipPathItem(const SkPath& clip_path,
+                                                SkRegion::Op clip_op,
+                                                bool antialias) {
+  display_item_list_->AppendItem(
+      cc::ClipPathDisplayItem::Create(clip_path, clip_op, antialias));
+}
+
+void WebDisplayItemListImpl::appendEndClipPathItem() {
+  display_item_list_->AppendItem(cc::EndClipPathDisplayItem::Create());
 }
 
 void WebDisplayItemListImpl::appendFloatClipItem(
@@ -84,14 +95,28 @@ void WebDisplayItemListImpl::appendEndTransparencyItem() {
 }
 
 void WebDisplayItemListImpl::appendFilterItem(
-    SkImageFilter* filter,
+    const blink::WebFilterOperations& filters,
     const blink::WebFloatRect& bounds) {
+  const WebFilterOperationsImpl& filters_impl =
+      static_cast<const WebFilterOperationsImpl&>(filters);
   display_item_list_->AppendItem(
-      cc::FilterDisplayItem::Create(skia::SharePtr(filter), bounds));
+      cc::FilterDisplayItem::Create(filters_impl.AsFilterOperations(), bounds));
 }
 
 void WebDisplayItemListImpl::appendEndFilterItem() {
   display_item_list_->AppendItem(cc::EndFilterDisplayItem::Create());
+}
+
+void WebDisplayItemListImpl::appendScrollItem(
+    const blink::WebSize& scrollOffset,
+    ScrollContainerId) {
+  SkMatrix44 matrix;
+  matrix.setTranslate(-scrollOffset.width, -scrollOffset.height, 0);
+  appendTransformItem(matrix);
+}
+
+void WebDisplayItemListImpl::appendEndScrollItem() {
+  appendEndTransformItem();
 }
 
 WebDisplayItemListImpl::~WebDisplayItemListImpl() {

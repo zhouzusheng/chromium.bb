@@ -84,11 +84,11 @@ WebInspector.CSSStyleModel.prototype = {
     {
         this._agent.disable();
         this._isEnabled = false;
-        this._resetStyleSheets();
     },
 
     resumeModel: function()
     {
+        this._resetStyleSheets();
         this._agent.enable(this._wasEnabled.bind(this));
     },
 
@@ -577,7 +577,7 @@ WebInspector.CSSStyleModel.prototype = {
      * @param {!CSSAgent.StyleSheetId} styleSheetId
      * @param {string} newText
      * @param {boolean} majorChange
-     * @param {function(?Protocol.Error)} userCallback
+     * @param {?function(?Protocol.Error)} userCallback
      */
     setStyleSheetText: function(styleSheetId, newText, majorChange, userCallback)
     {
@@ -692,15 +692,16 @@ WebInspector.CSSStyleDeclaration = function(cssModel, payload)
 }
 
 /**
+ * @param {!WebInspector.Target} target
  * @return {!WebInspector.CSSStyleDeclaration}
  */
-WebInspector.CSSStyleDeclaration.createDummyStyle = function()
+WebInspector.CSSStyleDeclaration.createDummyStyle = function(target)
 {
     var dummyPayload = {
         shorthandEntries: [],
         cssProperties: []
     };
-    return new WebInspector.CSSStyleDeclaration(WebInspector.cssModel, dummyPayload);
+    return new WebInspector.CSSStyleDeclaration(target.cssModel, dummyPayload);
 }
 
 /**
@@ -1826,8 +1827,3 @@ WebInspector.CSSStyleModel.ComputedStyleLoader.prototype = {
         }
     }
 }
-
-/**
- * @type {!WebInspector.CSSStyleModel}
- */
-WebInspector.cssModel;

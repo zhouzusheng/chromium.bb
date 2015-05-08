@@ -9,17 +9,18 @@
 #include "core/frame/FrameView.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/InspectorTraceEvents.h"
+#include "core/layout/Layer.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
 #include "core/paint/LayerPainter.h"
 #include "core/paint/ScrollbarPainter.h"
 #include "core/paint/TransformRecorder.h"
-#include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
 #include "platform/fonts/FontCache.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/paint/ClipRecorder.h"
+#include "platform/graphics/paint/DrawingRecorder.h"
 #include "platform/scroll/ScrollbarTheme.h"
 
 namespace blink {
@@ -85,8 +86,12 @@ void FramePainter::paintContents(GraphicsContext* context, const IntRect& rect)
     else
         fillWithRed = true;
 
-    if (fillWithRed)
-        context->fillRect(rect, Color(0xFF, 0, 0));
+    if (fillWithRed) {
+        IntRect contentRect(IntPoint(), m_frameView.contentsSize());
+        DrawingRecorder drawingRecorder(context, m_frameView.renderView()->displayItemClient(), DisplayItem::DebugRedFill, contentRect);
+        if (!drawingRecorder.canUseCachedDrawing())
+            context->fillRect(contentRect, Color(0xFF, 0, 0));
+    }
 #endif
 
     RenderView* renderView = m_frameView.renderView();
@@ -99,8 +104,6 @@ void FramePainter::paintContents(GraphicsContext* context, const IntRect& rect)
     ASSERT(document->lifecycle().state() >= DocumentLifecycle::CompositingClean);
 
     TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "Paint", "data", InspectorPaintEvent::data(renderView, rect, 0));
-    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
-    InspectorInstrumentation::willPaint(renderView, 0);
 
     bool isTopLevelPainter = !s_inPaintContents;
     s_inPaintContents = true;
@@ -124,12 +127,12 @@ void FramePainter::paintContents(GraphicsContext* context, const IntRect& rect)
     m_frameView.setIsPainting(true);
 
     // m_frameView.nodeToDraw() is used to draw only one element (and its descendants)
-    RenderObject* renderer = m_frameView.nodeToDraw() ? m_frameView.nodeToDraw()->renderer() : 0;
-    RenderLayer* rootLayer = renderView->layer();
+    LayoutObject* renderer = m_frameView.nodeToDraw() ? m_frameView.nodeToDraw()->renderer() : 0;
+    Layer* rootLayer = renderView->layer();
 
 #if ENABLE(ASSERT)
     renderView->assertSubtreeIsLaidOut();
-    RenderObject::SetLayoutNeededForbiddenScope forbidSetNeedsLayout(*rootLayer->renderer());
+    LayoutObject::SetLayoutNeededForbiddenScope forbidSetNeedsLayout(*rootLayer->renderer());
 #endif
 
     LayerPainter layerPainter(*rootLayer);
@@ -187,7 +190,7 @@ void FramePainter::paintScrollCorner(GraphicsContext* context, const IntRect& co
         return;
     }
 
-    ScrollbarTheme::theme()->paintScrollCorner(context, cornerRect);
+    ScrollbarTheme::theme()->paintScrollCorner(context, m_frameView.displayItemClient(), cornerRect);
 }
 
 void FramePainter::paintScrollbar(GraphicsContext* context, Scrollbar* bar, const IntRect& rect)

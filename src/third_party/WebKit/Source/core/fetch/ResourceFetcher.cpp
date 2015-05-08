@@ -42,6 +42,8 @@
 #include "core/fetch/ResourceLoader.h"
 #include "core/fetch/ResourceLoaderSet.h"
 #include "core/fetch/ScriptResource.h"
+#include "core/fetch/SubstituteData.h"
+#include "core/fetch/UniqueIdentifier.h"
 #include "core/fetch/XSLStyleSheetResource.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/LocalDOMWindow.h"
@@ -57,15 +59,17 @@
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/PingLoader.h"
-#include "core/loader/SubstituteData.h"
-#include "core/loader/UniqueIdentifier.h"
 #include "core/loader/appcache/ApplicationCacheHost.h"
+#include "core/timing/DOMWindowPerformance.h"
 #include "core/timing/Performance.h"
 #include "core/timing/ResourceTimingInfo.h"
 #include "core/svg/graphics/SVGImageChromeClient.h"
 #include "platform/Logging.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/TraceEvent.h"
+#include "platform/mhtml/ArchiveResource.h"
+#include "platform/mhtml/ArchiveResourceCollection.h"
+#include "platform/weborigin/KnownPorts.h"
 #include "platform/weborigin/SchemeRegistry.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "platform/weborigin/SecurityPolicy.h"
@@ -198,7 +202,7 @@ static void reportResourceTiming(ResourceTimingInfo* info, Document* initiatorDo
     if (!initiatorDocument || !initiatorDocument->loader())
         return;
     if (LocalDOMWindow* initiatorWindow = initiatorDocument->domWindow())
-        initiatorWindow->performance()->addResourceTiming(*info, initiatorDocument);
+        DOMWindowPerformance::performance(*initiatorWindow)->addResourceTiming(*info, initiatorDocument);
 }
 
 static WebURLRequest::RequestContext requestContextFromType(const ResourceFetcher* fetcher, Resource::Type type)
@@ -715,6 +719,8 @@ ResourcePtr<Resource> ResourceFetcher::requestResource(Resource::Type type, Fetc
 
     TRACE_EVENT0("blink", "ResourceFetcher::requestResource");
 
+    upgradeInsecureRequest(request);
+
     KURL url = request.resourceRequest().url();
 
     WTF_LOG(ResourceLoading, "ResourceFetcher::requestResource '%s', charset '%s', priority=%d, forPreload=%u, type=%s", url.elidedString().latin1().data(), request.charset().latin1().data(), request.priority(), request.forPreload(), ResourceTypeName(type));
@@ -794,7 +800,7 @@ ResourcePtr<Resource> ResourceFetcher::requestResource(Resource::Type type, Fetc
             return nullptr;
         }
 
-        if (!m_documentLoader || !m_documentLoader->scheduleArchiveLoad(resource.get(), request.resourceRequest()))
+        if (!scheduleArchiveLoad(resource.get(), request.resourceRequest()))
             resource->load(this, request.options());
 
         // For asynchronous loads that immediately fail, it's sufficient to return a
@@ -889,8 +895,42 @@ void ResourceFetcher::addAdditionalRequestHeaders(ResourceRequest& request, Reso
         determineRequestContext(request, type);
     if (type == Resource::LinkPrefetch || type == Resource::LinkSubresource)
         request.setHTTPHeaderField("Purpose", "prefetch");
+    if (frame()->document())
+        request.setOriginatesFromReservedIPRange(frame()->document()->isHostedInReservedIPRange());
 
     context().addAdditionalRequestHeaders(document(), request, (type == Resource::MainResource) ? FetchMainResource : FetchSubresource);
+}
+
+void ResourceFetcher::upgradeInsecureRequest(FetchRequest& fetchRequest)
+{
+    if (!m_document || !RuntimeEnabledFeatures::experimentalContentSecurityPolicyFeaturesEnabled())
+        return;
+
+    KURL url = fetchRequest.resourceRequest().url();
+
+    // Tack a 'Prefer' header to outgoing navigational requests, as described in
+    // https://w3c.github.io/webappsec/specs/upgrade/#feature-detect
+    if (fetchRequest.resourceRequest().frameType() != WebURLRequest::FrameTypeNone && !SecurityOrigin::isSecure(url))
+        fetchRequest.mutableResourceRequest().addHTTPHeaderField("Prefer", "return=secure-representation");
+
+    if (m_document->insecureContentPolicy() == SecurityContext::InsecureContentUpgrade && url.protocolIs("http")) {
+        // We always upgrade subresource requests and nested frames, we always upgrade form
+        // submissions, and we always upgrade requests whose host matches the host of the
+        // containing document's security origin.
+        //
+        // FIXME: We need to check the document that set the policy, not the current document.
+        const ResourceRequest& request = fetchRequest.resourceRequest();
+        if (request.frameType() == WebURLRequest::FrameTypeNone
+            || request.frameType() == WebURLRequest::FrameTypeNested
+            || request.requestContext() == WebURLRequest::RequestContextForm
+            || url.host() == m_document->securityOrigin()->host())
+        {
+            url.setProtocol("https");
+            if (url.port() == 80)
+                url.setPort(443);
+            fetchRequest.mutableResourceRequest().setURL(url);
+        }
+    }
 }
 
 ResourcePtr<Resource> ResourceFetcher::createResourceForRevalidation(const FetchRequest& request, Resource* resource)
@@ -1219,7 +1259,7 @@ void ResourceFetcher::notifyLoadedFromMemoryCache(Resource* resource)
     context().dispatchDidLoadResourceFromMemoryCache(request, resource->response());
     // FIXME: If willSendRequest changes the request, we don't respect it.
     willSendRequest(identifier, request, ResourceResponse(), resource->options().initiatorInfo);
-    InspectorInstrumentation::markResourceAsCached(frame()->page(), identifier);
+    InspectorInstrumentation::markResourceAsCached(frame(), identifier);
     context().sendRemainingDelegateMessages(m_documentLoader, identifier, resource->response(), resource->encodedSize());
 }
 
@@ -1298,6 +1338,34 @@ void ResourceFetcher::clearPreloads()
     m_preloads.clear();
 }
 
+void ResourceFetcher::addAllArchiveResources(MHTMLArchive* archive)
+{
+    ASSERT(archive);
+    if (!m_archiveResourceCollection)
+        m_archiveResourceCollection = ArchiveResourceCollection::create();
+    m_archiveResourceCollection->addAllResources(archive);
+}
+
+bool ResourceFetcher::scheduleArchiveLoad(Resource* resource, const ResourceRequest& request)
+{
+    if (!m_archiveResourceCollection)
+        return false;
+
+    ArchiveResource* archiveResource = m_archiveResourceCollection->archiveResourceForURL(request.url());
+    if (!archiveResource) {
+        resource->error(Resource::LoadError);
+        return true;
+    }
+
+    resource->setLoading(true);
+    resource->responseReceived(archiveResource->response(), nullptr);
+    SharedBuffer* data = archiveResource->data();
+    if (data)
+        resource->appendData(data->data(), data->size());
+    resource->finish();
+    return true;
+}
+
 void ResourceFetcher::didFinishLoading(Resource* resource, double finishTime, int64_t encodedDataLength)
 {
     TRACE_EVENT_ASYNC_END0("net", "Resource", resource);
@@ -1364,6 +1432,11 @@ void ResourceFetcher::didDownloadData(const Resource* resource, int dataLength, 
     context().dispatchDidDownloadData(m_documentLoader, resource->identifier(), dataLength, encodedDataLength);
 }
 
+void ResourceFetcher::acceptDataFromThreadedReceiver(unsigned long identifier, const char* data, int dataLength, int encodedDataLength)
+{
+    context().dispatchDidReceiveData(m_documentLoader, identifier, data, dataLength, encodedDataLength);
+}
+
 void ResourceFetcher::subresourceLoaderFinishedLoadingOnePart(ResourceLoader* loader)
 {
     if (!m_nonBlockingLoaders)
@@ -1395,9 +1468,6 @@ void ResourceFetcher::willTerminateResourceLoader(ResourceLoader* loader)
         m_nonBlockingLoaders->remove(loader);
     else
         ASSERT_NOT_REACHED();
-
-    if (LocalFrame* frame = this->frame())
-        frame->loader().checkLoadComplete();
 }
 
 void ResourceFetcher::willStartLoadingResource(Resource* resource, ResourceRequest& request)
@@ -1573,12 +1643,19 @@ void ResourceFetcher::DeadResourceStatsRecorder::update(RevalidationPolicy polic
     }
 }
 
-void ResourceFetcher::trace(Visitor* visitor)
+DEFINE_TRACE(ResourceFetcher)
 {
     visitor->trace(m_document);
+    visitor->trace(m_archiveResourceCollection);
     visitor->trace(m_loaders);
     visitor->trace(m_nonBlockingLoaders);
     ResourceLoaderHost::trace(visitor);
+}
+
+ResourceFetcher* ResourceFetcher::toResourceFetcher(ResourceLoaderHost* host)
+{
+    ASSERT(host->objectType() == ResourceLoaderHost::ResourceFetcherType);
+    return static_cast<ResourceFetcher*>(host);
 }
 
 }

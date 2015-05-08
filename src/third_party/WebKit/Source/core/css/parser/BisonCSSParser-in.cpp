@@ -55,7 +55,6 @@
 #include "core/css/CSSShadowValue.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/CSSTimingFunctionValue.h"
-#include "core/css/CSSTransformValue.h"
 #include "core/css/CSSUnicodeRangeValue.h"
 #include "core/css/CSSValueList.h"
 #include "core/css/CSSValuePool.h"
@@ -77,7 +76,6 @@
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/rendering/RenderTheme.h"
 #include "platform/FloatConversion.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "wtf/BitArray.h"
@@ -230,64 +228,6 @@ bool BisonCSSParser::parseValue(MutableStylePropertySet* declaration, CSSPropert
     }
 
     return ok;
-}
-
-// The color will only be changed when string contains a valid CSS color, so callers
-// can set it to a default color and ignore the boolean result.
-bool BisonCSSParser::parseColor(RGBA32& color, const String& string, bool strict)
-{
-    // First try creating a color specified by name, rgba(), rgb() or "#" syntax.
-    if (CSSPropertyParser::fastParseColor(color, string, strict))
-        return true;
-
-    BisonCSSParser parser(strictCSSParserContext());
-
-    // In case the fast-path parser didn't understand the color, try the full parser.
-    if (!parser.parseColor(string))
-        return false;
-
-    CSSValue* value = parser.m_parsedProperties.first().value();
-    if (!value->isPrimitiveValue())
-        return false;
-
-    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-    if (!primitiveValue->isRGBColor())
-        return false;
-
-    color = primitiveValue->getRGBA32Value();
-    return true;
-}
-
-StyleColor BisonCSSParser::colorFromRGBColorString(const String& colorString)
-{
-    // FIXME: Rework css parser so it is more SVG aware.
-    RGBA32 color;
-    if (parseColor(color, colorString.stripWhiteSpace()))
-        return StyleColor(color);
-    // FIXME: This branch catches the string currentColor, but we should error if we have an illegal color value.
-    return StyleColor::currentColor();
-}
-
-bool BisonCSSParser::parseColor(const String& string)
-{
-    setupParser("@-internal-decls color:", string, "");
-    cssyyparse(this);
-    m_rule = nullptr;
-
-    return !m_parsedProperties.isEmpty() && m_parsedProperties.first().id() == CSSPropertyColor;
-}
-
-bool BisonCSSParser::parseSystemColor(RGBA32& color, const String& string)
-{
-    CSSParserString cssColor;
-    cssColor.init(string);
-    CSSValueID id = cssValueKeywordID(cssColor);
-    if (!CSSPropertyParser::isSystemColor(id))
-        return false;
-
-    Color parsedColor = RenderTheme::theme().systemColor(id);
-    color = parsedColor.rgb();
-    return true;
 }
 
 void BisonCSSParser::parseSelector(const String& string, CSSSelectorList& selectorList)
@@ -493,16 +433,6 @@ CSSParserFunction* BisonCSSParser::createFloatingFunction(const CSSParserString&
     function->id = cssValueKeywordID(name);
     function->args = args;
     return function;
-}
-
-PassOwnPtr<CSSParserFunction> BisonCSSParser::sinkFloatingFunction(CSSParserFunction* function)
-{
-    if (function) {
-        size_t index = m_floatingFunctions.reverseFind(function);
-        ASSERT(index != kNotFound);
-        m_floatingFunctions.remove(index);
-    }
-    return adoptPtr(function);
 }
 
 CSSParserValue& BisonCSSParser::sinkFloatingValue(CSSParserValue& value)
@@ -760,27 +690,6 @@ void BisonCSSParser::endInvalidRuleHeader()
 void BisonCSSParser::reportError(const CSSParserLocation&, CSSParserError)
 {
     // FIXME: error reporting temporatily disabled.
-}
-
-bool BisonCSSParser::isLoggingErrors()
-{
-    return m_logErrors && !m_ignoreErrors;
-}
-
-void BisonCSSParser::logError(const String& message, const CSSParserLocation& location)
-{
-    unsigned lineNumberInStyleSheet;
-    unsigned columnNumber = 0;
-    if (InspectorInstrumentation::hasFrontends()) {
-        ensureLineEndings();
-        TextPosition tokenPosition = TextPosition::fromOffsetAndLineEndings(location.offset, *m_lineEndings);
-        lineNumberInStyleSheet = tokenPosition.m_line.zeroBasedInt();
-        columnNumber = (lineNumberInStyleSheet ? 0 : m_startPosition.m_column.zeroBasedInt()) + tokenPosition.m_column.zeroBasedInt();
-    } else {
-        lineNumberInStyleSheet = location.lineNumber;
-    }
-    FrameConsole& console = m_styleSheet->singleOwnerDocument()->frame()->console();
-    console.addMessage(ConsoleMessage::create(CSSMessageSource, WarningMessageLevel, message, m_styleSheet->baseURL().string(), lineNumberInStyleSheet + m_startPosition.m_line.zeroBasedInt() + 1, columnNumber + 1));
 }
 
 StyleRuleKeyframes* BisonCSSParser::createKeyframesRule(const String& name, PassOwnPtrWillBeRawPtr<WillBeHeapVector<RefPtrWillBeMember<StyleRuleKeyframe> > > popKeyframes, bool isPrefixed)

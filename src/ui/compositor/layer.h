@@ -340,10 +340,10 @@ class COMPOSITOR_EXPORT Layer
   void PaintContents(
       SkCanvas* canvas,
       const gfx::Rect& clip,
-      ContentLayerClient::GraphicsContextStatus gc_status) override;
+      ContentLayerClient::PaintingControlSetting painting_control) override;
   scoped_refptr<cc::DisplayItemList> PaintContentsToDisplayList(
       const gfx::Rect& clip,
-      GraphicsContextStatus gc_status) override;
+      ContentLayerClient::PaintingControlSetting painting_control) override;
   bool FillsBoundsCompletely() const override;
 
   cc::Layer* cc_layer() { return cc_layer_; }
@@ -362,7 +362,8 @@ class COMPOSITOR_EXPORT Layer
   bool force_render_surface() const { return force_render_surface_; }
 
   // LayerClient
-  scoped_refptr<base::debug::ConvertableToTraceFormat> TakeDebugInfo() override;
+  scoped_refptr<base::trace_event::ConvertableToTraceFormat> TakeDebugInfo()
+      override;
 
   // LayerAnimationEventObserver
   void OnAnimationStarted(const cc::AnimationEvent& event) override;

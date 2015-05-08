@@ -122,10 +122,8 @@ public:
     // be required (per spec), but throwing TypeError breaks legacy content.
     // http://crbug.com/353484
     bool addEventListener();
-    bool addEventListener(const AtomicString& eventType);
     virtual bool addEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false);
     bool removeEventListener();
-    bool removeEventListener(const AtomicString& eventType);
     virtual bool removeEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false);
     virtual void removeAllEventListeners();
     virtual bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>);
@@ -144,7 +142,7 @@ public:
 
     bool fireEventListeners(Event*);
 
-    virtual void trace(Visitor*) { }
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 
     virtual bool keepEventInNode(Event*) { return false; };
 
@@ -202,7 +200,7 @@ class RefCountedGarbageCollectedEventTargetWithInlineData : public EventTargetWi
 template <typename T>
 class RefCountedGarbageCollectedEventTargetWithInlineData : public RefCountedGarbageCollected<T>, public EventTargetWithInlineData {
 public:
-    virtual void trace(Visitor* visitor) override { EventTargetWithInlineData::trace(visitor); }
+    DEFINE_INLINE_VIRTUAL_TRACE() { EventTargetWithInlineData::trace(visitor); }
 };
 #endif
 

@@ -27,14 +27,20 @@
 
 namespace blink {
 
-SVGURIReference::SVGURIReference(SVGElement* element)
-    : m_href(SVGAnimatedString::create(element, XLinkNames::hrefAttr, SVGString::create()))
+SVGURIReference::SVGURIReference()
 {
+}
+
+void SVGURIReference::initialize(SVGElement* element)
+{
+    ASSERT(!m_href);
     ASSERT(element);
+
+    m_href = SVGAnimatedString::create(element, XLinkNames::hrefAttr, SVGString::create());
     element->addToPropertyMap(m_href);
 }
 
-void SVGURIReference::trace(Visitor* visitor)
+DEFINE_TRACE(SVGURIReference)
 {
     visitor->trace(m_href);
 }

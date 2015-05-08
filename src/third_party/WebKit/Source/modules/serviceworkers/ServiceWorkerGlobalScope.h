@@ -45,8 +45,10 @@ class Request;
 class ScriptPromise;
 class ScriptState;
 class ServiceWorkerClients;
+class ServiceWorkerRegistration;
 class ServiceWorkerThread;
 class WaitUntilObserver;
+class WebServiceWorkerRegistration;
 class WorkerThreadStartupData;
 
 typedef RequestOrUSVString RequestInfo;
@@ -64,6 +66,7 @@ public:
 
     // ServiceWorkerGlobalScope.idl
     ServiceWorkerClients* clients();
+    ServiceWorkerRegistration* registration();
 
     CacheStorage* caches(ExecutionContext*);
 
@@ -72,6 +75,8 @@ public:
     void close(ExceptionState&);
 
     ScriptPromise skipWaiting(ScriptState*);
+
+    void setRegistration(WebServiceWorkerRegistration*);
 
     // EventTarget
     virtual bool addEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false) override;
@@ -86,16 +91,18 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(message);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(sync);
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     class SkipWaitingCallback;
 
     ServiceWorkerGlobalScope(const KURL&, const String& userAgent, ServiceWorkerThread*, double timeOrigin, const SecurityOrigin*, PassOwnPtrWillBeRawPtr<WorkerClients>);
     virtual void importScripts(const Vector<String>& urls, ExceptionState&) override;
+    virtual PassOwnPtr<CachedMetadataHandler> createWorkerScriptCachedMetadataHandler(const KURL& scriptURL, const Vector<char>* metaData);
     virtual void logExceptionToConsole(const String& errorMessage, int scriptId, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtrWillBeRawPtr<ScriptCallStack>) override;
 
     PersistentWillBeMember<ServiceWorkerClients> m_clients;
+    PersistentWillBeMember<ServiceWorkerRegistration> m_registration;
     PersistentWillBeMember<CacheStorage> m_caches;
     bool m_didEvaluateScript;
     bool m_hadErrorInTopLevelEventHandler;

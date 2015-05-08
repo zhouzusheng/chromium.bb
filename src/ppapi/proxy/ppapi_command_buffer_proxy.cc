@@ -4,6 +4,7 @@
 
 #include "ppapi/proxy/ppapi_command_buffer_proxy.h"
 
+#include "base/numerics/safe_conversions.h"
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/proxy/proxy_channel.h"
 #include "ppapi/shared_impl/api_id.h"
@@ -58,6 +59,10 @@ void PpapiCommandBufferProxy::Flush(int32 put_offset) {
   // cached last_state_ with out-of-date data.
   message->set_unblock(true);
   Send(message);
+}
+
+void PpapiCommandBufferProxy::OrderingBarrier(int32 put_offset) {
+  Flush(put_offset);
 }
 
 void PpapiCommandBufferProxy::WaitForTokenInRange(int32 start, int32 end) {
@@ -118,7 +123,8 @@ scoped_refptr<gpu::Buffer> PpapiCommandBufferProxy::CreateTransferBuffer(
   ppapi::proxy::SerializedHandle handle(
       ppapi::proxy::SerializedHandle::SHARED_MEMORY);
   if (!Send(new PpapiHostMsg_PPBGraphics3D_CreateTransferBuffer(
-            ppapi::API_ID_PPB_GRAPHICS_3D, resource_, size, id, &handle))) {
+            ppapi::API_ID_PPB_GRAPHICS_3D, resource_,
+            base::checked_cast<uint32_t>(size), id, &handle))) {
     return NULL;
   }
 
@@ -150,6 +156,10 @@ void PpapiCommandBufferProxy::DestroyTransferBuffer(int32 id) {
 uint32 PpapiCommandBufferProxy::CreateStreamTexture(uint32 texture_id) {
   NOTREACHED();
   return 0;
+}
+
+void PpapiCommandBufferProxy::SetLock(base::Lock*) {
+  NOTIMPLEMENTED();
 }
 
 uint32 PpapiCommandBufferProxy::InsertSyncPoint() {

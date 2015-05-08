@@ -210,6 +210,10 @@ WebTouchPoint CreateWebTouchPoint(const MotionEvent& event,
 
   float major_radius = event.GetTouchMajor(pointer_index) / 2.f;
   float minor_radius = event.GetTouchMinor(pointer_index) / 2.f;
+
+  DCHECK_LE(minor_radius, major_radius);
+  DCHECK_IMPLIES(major_radius, minor_radius);
+
   float orientation_deg = event.GetOrientation(pointer_index) * 180.f / M_PI;
   DCHECK_GE(major_radius, 0);
   DCHECK_GE(minor_radius, 0);
@@ -258,9 +262,9 @@ void UpdateWindowsKeyCodeAndKeyIdentifier(blink::WebKeyboardEvent* event,
 blink::WebTouchEvent CreateWebTouchEventFromMotionEvent(
     const ui::MotionEvent& event,
     bool may_cause_scrolling) {
-  COMPILE_ASSERT(static_cast<int>(MotionEvent::MAX_TOUCH_POINT_COUNT) ==
-                     static_cast<int>(blink::WebTouchEvent::touchesLengthCap),
-                 inconsistent_maximum_number_of_active_touch_points);
+  static_assert(static_cast<int>(MotionEvent::MAX_TOUCH_POINT_COUNT) ==
+                    static_cast<int>(blink::WebTouchEvent::touchesLengthCap),
+                "inconsistent maximum number of active touch points");
 
   blink::WebTouchEvent result;
 

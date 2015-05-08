@@ -13,7 +13,7 @@
  *    disclaimer in the documentation and/or other materials
  *    provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER “AS IS” AND ANY
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
  * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE
@@ -36,7 +36,7 @@
 #include "core/css/StylePropertySet.h"
 #include "core/css/StyleRule.h"
 #include "core/dom/Document.h"
-#include "core/dom/NodeRenderStyle.h"
+#include "core/dom/NodeLayoutStyle.h"
 #include "core/dom/ViewportDescription.h"
 #include "core/frame/FrameView.h"
 
@@ -130,7 +130,7 @@ float ViewportStyleResolver::viewportArgumentValue(CSSPropertyID id) const
         return primitiveValue->getFloatValue();
 
     if (primitiveValue->isFontRelativeLength())
-        return primitiveValue->getFloatValue() * m_document->renderStyle()->fontDescription().computedSize();
+        return primitiveValue->getFloatValue() * m_document->layoutStyle()->fontDescription().computedSize();
 
     if (primitiveValue->isPercentage()) {
         float percentValue = primitiveValue->getFloatValue() / 100.0f;
@@ -179,7 +179,7 @@ Length ViewportStyleResolver::viewportLengthValue(CSSPropertyID id) const
     if (primitiveValue->getValueID() == CSSValueInternalExtendToZoom)
         return Length(ExtendToZoom);
 
-    RenderStyle* documentStyle = m_document->renderStyle();
+    LayoutStyle* documentStyle = m_document->layoutStyle();
 
     // If we have viewport units the conversion will mark the document style as having viewport units.
     bool documentStyleHasViewportUnits = documentStyle->hasViewportUnits();
@@ -191,7 +191,11 @@ Length ViewportStyleResolver::viewportLengthValue(CSSPropertyID id) const
 
     CSSToLengthConversionData::FontSizes fontSizes(documentStyle, documentStyle);
     CSSToLengthConversionData::ViewportSize viewportSize(width, height);
-    Length result = primitiveValue->convertToLength<AnyConversion>(CSSToLengthConversionData(documentStyle, fontSizes, viewportSize, 1.0f));
+
+    if (primitiveValue->getValueID() == CSSValueAuto)
+        return Length(Auto);
+
+    Length result = primitiveValue->convertToLength(CSSToLengthConversionData(documentStyle, fontSizes, viewportSize, 1.0f));
     if (documentStyle->hasViewportUnits())
         m_document->setHasViewportUnits();
     documentStyle->setHasViewportUnits(documentStyleHasViewportUnits);

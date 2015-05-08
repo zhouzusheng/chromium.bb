@@ -28,6 +28,11 @@ static const GLenum valid_blit_filter_table[] = {
     GL_LINEAR,
 };
 
+static const GLenum valid_buffer_mode_table[] = {
+    GL_INTERLEAVED_ATTRIBS,
+    GL_SEPARATE_ATTRIBS,
+};
+
 static const GLenum valid_buffer_parameter_table[] = {
     GL_BUFFER_SIZE,
     GL_BUFFER_USAGE,
@@ -42,6 +47,24 @@ static const GLenum valid_buffer_usage_table[] = {
     GL_STREAM_DRAW,
     GL_STATIC_DRAW,
     GL_DYNAMIC_DRAW,
+};
+
+static const GLenum valid_bufferfi_table[] = {
+    GL_DEPTH_STENCIL,
+};
+
+static const GLenum valid_bufferfv_table[] = {
+    GL_COLOR,
+    GL_DEPTH,
+};
+
+static const GLenum valid_bufferiv_table[] = {
+    GL_COLOR,
+    GL_STENCIL,
+};
+
+static const GLenum valid_bufferuiv_table[] = {
+    GL_COLOR,
 };
 
 static const GLenum valid_capability_table[] = {
@@ -434,6 +457,11 @@ static const GLenum valid_subscription_target_table[] = {
     GL_MOUSE_POSITION_CHROMIUM,
 };
 
+static const GLbitfield valid_sync_flush_flags_table[] = {
+    GL_SYNC_FLUSH_COMMANDS_BIT,
+    0,
+};
+
 static const GLenum valid_texture_3_d_target_table[] = {
     GL_TEXTURE_3D,
     GL_TEXTURE_2D_ARRAY,
@@ -529,6 +557,27 @@ static const GLenum valid_transform_feedback_primitive_mode_table[] = {
     GL_TRIANGLES,
 };
 
+static const GLenum valid_uniform_block_parameter_table[] = {
+    GL_UNIFORM_BLOCK_BINDING,
+    GL_UNIFORM_BLOCK_DATA_SIZE,
+    GL_UNIFORM_BLOCK_NAME_LENGTH,
+    GL_UNIFORM_BLOCK_ACTIVE_UNIFORMS,
+    GL_UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES,
+    GL_UNIFORM_BLOCK_REFERENCED_BY_VERTEX_SHADER,
+    GL_UNIFORM_BLOCK_REFERENCED_BY_FRAGMENT_SHADER,
+};
+
+static const GLenum valid_uniform_parameter_table[] = {
+    GL_UNIFORM_SIZE,
+    GL_UNIFORM_TYPE,
+    GL_UNIFORM_NAME_LENGTH,
+    GL_UNIFORM_BLOCK_INDEX,
+    GL_UNIFORM_OFFSET,
+    GL_UNIFORM_ARRAY_STRIDE,
+    GL_UNIFORM_MATRIX_STRIDE,
+    GL_UNIFORM_IS_ROW_MAJOR,
+};
+
 static const GLenum valid_value_buffer_target_table[] = {
     GL_SUBSCRIBED_VALUES_BUFFER_CHROMIUM,
 };
@@ -567,12 +616,17 @@ Validators::Validators()
       backbuffer_attachment(valid_backbuffer_attachment_table,
                             arraysize(valid_backbuffer_attachment_table)),
       blit_filter(valid_blit_filter_table, arraysize(valid_blit_filter_table)),
+      buffer_mode(valid_buffer_mode_table, arraysize(valid_buffer_mode_table)),
       buffer_parameter(valid_buffer_parameter_table,
                        arraysize(valid_buffer_parameter_table)),
       buffer_target(valid_buffer_target_table,
                     arraysize(valid_buffer_target_table)),
       buffer_usage(valid_buffer_usage_table,
                    arraysize(valid_buffer_usage_table)),
+      bufferfi(valid_bufferfi_table, arraysize(valid_bufferfi_table)),
+      bufferfv(valid_bufferfv_table, arraysize(valid_bufferfv_table)),
+      bufferiv(valid_bufferiv_table, arraysize(valid_bufferiv_table)),
+      bufferuiv(valid_bufferuiv_table, arraysize(valid_bufferuiv_table)),
       capability(valid_capability_table, arraysize(valid_capability_table)),
       cmp_function(valid_cmp_function_table,
                    arraysize(valid_cmp_function_table)),
@@ -639,6 +693,8 @@ Validators::Validators()
       string_type(valid_string_type_table, arraysize(valid_string_type_table)),
       subscription_target(valid_subscription_target_table,
                           arraysize(valid_subscription_target_table)),
+      sync_flush_flags(valid_sync_flush_flags_table,
+                       arraysize(valid_sync_flush_flags_table)),
       texture_3_d_target(valid_texture_3_d_target_table,
                          arraysize(valid_texture_3_d_target_table)),
       texture_bind_target(valid_texture_bind_target_table,
@@ -670,6 +726,10 @@ Validators::Validators()
       transform_feedback_primitive_mode(
           valid_transform_feedback_primitive_mode_table,
           arraysize(valid_transform_feedback_primitive_mode_table)),
+      uniform_block_parameter(valid_uniform_block_parameter_table,
+                              arraysize(valid_uniform_block_parameter_table)),
+      uniform_parameter(valid_uniform_parameter_table,
+                        arraysize(valid_uniform_parameter_table)),
       value_buffer_target(valid_value_buffer_target_table,
                           arraysize(valid_value_buffer_target_table)),
       vertex_attrib_size(valid_vertex_attrib_size_table,

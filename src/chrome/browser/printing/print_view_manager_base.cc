@@ -14,12 +14,12 @@
 #include "chrome/browser/printing/print_job_manager.h"
 #include "chrome/browser/printing/printer_query.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/common/print_messages.h"
-#include "components/user_prefs/user_prefs.h"
 
 // LEVI: Remove chrome resources.
 // #include "chrome/grit/generated_resources.h"
 
+#include "components/printing/common/print_messages.h"
+#include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"

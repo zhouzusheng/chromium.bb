@@ -25,7 +25,7 @@
 
 #include <blpwtk2_config.h>
 #include <base/memory/ref_counted.h>
-#include <content/child/resource_loader_bridge.h>
+#include <content/child/resource_dispatcher.h>
 
 namespace content {
 struct RequestInfo;
@@ -40,16 +40,9 @@ class InProcessResourceLoaderBridge
         const content::RequestInfo& requestInfo);
     virtual ~InProcessResourceLoaderBridge();
 
-    // webkit_glue::ResourceLoaderBridge overrides
-    void SetRequestBody(
-        content::ResourceRequestBody* request_body) override;
+    // content::ResourceLoaderBridge overrides
     bool Start(content::RequestPeer* peer) override;
     void Cancel() override;
-    void SetDefersLoading(bool value) override;
-    void DidChangePriority(net::RequestPriority new_priority,
-                           int intra_priority_value) override;
-    bool AttachThreadedDataReceiver(
-        blink::WebThreadedDataReceiver* threaded_data_receiver) override;
     void SyncLoad(content::SyncLoadResponse* response) override;
 
   private:

@@ -48,9 +48,12 @@ class ScriptSourceCode;
 class ScriptValue;
 class JavaScriptCallFrame;
 
-class ScriptDebugServer {
+class ScriptDebugServer : public NoBaseWillBeGarbageCollectedFinalized<ScriptDebugServer> {
     WTF_MAKE_NONCOPYABLE(ScriptDebugServer);
 public:
+    virtual ~ScriptDebugServer();
+    virtual void trace(Visitor*);
+
     String setBreakpoint(const String& sourceID, const ScriptBreakpoint&, int* actualLineNumber, int* actualColumnNumber, bool interstatementLocation);
     void removeBreakpoint(const String& breakpointId);
     void clearBreakpoints();
@@ -99,21 +102,17 @@ public:
     v8::Handle<v8::Value> setFunctionVariableValue(v8::Handle<v8::Value> functionValue, int scopeNumber, const String& variableName, v8::Handle<v8::Value> newValue);
     v8::Local<v8::Value> callDebuggerMethod(const char* functionName, int argc, v8::Handle<v8::Value> argv[]);
 
-    virtual void compileScript(ScriptState*, const String& expression, const String& sourceURL, String* scriptId, String* exceptionDetailsText, int* lineNumber, int* columnNumber, RefPtrWillBeRawPtr<ScriptCallStack>* stackTrace);
+    virtual void compileScript(ScriptState*, const String& expression, const String& sourceURL, bool persistScript, String* scriptId, String* exceptionDetailsText, int* lineNumber, int* columnNumber, RefPtrWillBeRawPtr<ScriptCallStack>* stackTrace);
     virtual void clearCompiledScripts();
     virtual void runScript(ScriptState*, const String& scriptId, ScriptValue* result, bool* wasThrown, String* exceptionDetailsText, int* lineNumber, int* columnNumber, RefPtrWillBeRawPtr<ScriptCallStack>* stackTrace);
-    virtual void setPreprocessorSource(const String&) { }
-    virtual void preprocessBeforeCompile(const v8::Debug::EventDetails&) { }
-    virtual PassOwnPtr<ScriptSourceCode> preprocess(LocalFrame*, const ScriptSourceCode&);
-    virtual String preprocessEventListener(LocalFrame*, const String& source, const String& url, const String& functionName);
-    virtual void clearPreprocessor() { }
 
     virtual void muteWarningsAndDeprecations() { }
     virtual void unmuteWarningsAndDeprecations() { }
 
+    v8::Isolate* isolate() const { return m_isolate; }
+
 protected:
     explicit ScriptDebugServer(v8::Isolate*);
-    virtual ~ScriptDebugServer();
 
     virtual ScriptDebugListener* getDebugListenerForContext(v8::Handle<v8::Context>) = 0;
     virtual void runMessageLoopOnPause(v8::Handle<v8::Context>) = 0;
@@ -136,7 +135,7 @@ protected:
     RefPtr<ScriptState> m_pausedScriptState;
     bool m_breakpointsActivated;
     ScopedPersistent<v8::FunctionTemplate> m_breakProgramCallbackTemplate;
-    HashMap<String, OwnPtr<ScopedPersistent<v8::Script> > > m_compiledScripts;
+    HashMap<String, OwnPtr<ScopedPersistent<v8::Script>>> m_compiledScripts;
     v8::Isolate* m_isolate;
 
 private:

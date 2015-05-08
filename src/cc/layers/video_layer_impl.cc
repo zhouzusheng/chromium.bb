@@ -72,7 +72,7 @@ void VideoLayerImpl::PushPropertiesTo(LayerImpl* layer) {
 }
 
 void VideoLayerImpl::DidBecomeActive() {
-  provider_client_impl_->set_active_video_layer(this);
+  provider_client_impl_->SetActiveVideoLayer(this);
 }
 
 bool VideoLayerImpl::WillDraw(DrawMode draw_mode,
@@ -132,7 +132,6 @@ bool VideoLayerImpl::WillDraw(DrawMode draw_mode,
 }
 
 void VideoLayerImpl::AppendQuads(RenderPass* render_pass,
-                                 const Occlusion& occlusion_in_content_space,
                                  AppendQuadsData* append_quads_data) {
   DCHECK(frame_.get());
 
@@ -172,7 +171,9 @@ void VideoLayerImpl::AppendQuads(RenderPass* render_pass,
   gfx::Size coded_size = frame_->coded_size();
 
   Occlusion occlusion_in_video_space =
-      occlusion_in_content_space.GetOcclusionWithGivenDrawTransform(transform);
+      draw_properties()
+          .occlusion_in_content_space.GetOcclusionWithGivenDrawTransform(
+              transform);
   gfx::Rect visible_quad_rect =
       occlusion_in_video_space.GetUnoccludedContentRect(quad_rect);
   if (visible_quad_rect.IsEmpty())
@@ -221,25 +222,22 @@ void VideoLayerImpl::AppendQuads(RenderPass* render_pass,
       DCHECK_GE(frame_resources_.size(), 3u);
       if (frame_resources_.size() < 3u)
         break;
-      YUVVideoDrawQuad::ColorSpace color_space =
-          frame_->format() == media::VideoFrame::YV12J
-              ? YUVVideoDrawQuad::REC_601_JPEG
-              : YUVVideoDrawQuad::REC_601;
+      YUVVideoDrawQuad::ColorSpace color_space = YUVVideoDrawQuad::REC_601;
+      if (frame_->format() == media::VideoFrame::YV12J) {
+        color_space = YUVVideoDrawQuad::JPEG;
+      } else if (frame_->format() == media::VideoFrame::YV12HD) {
+        color_space = YUVVideoDrawQuad::REC_709;
+      }
+
       gfx::RectF tex_coord_rect(
           tex_x_offset, tex_y_offset, tex_width_scale, tex_height_scale);
       YUVVideoDrawQuad* yuv_video_quad =
           render_pass->CreateAndAppendDrawQuad<YUVVideoDrawQuad>();
       yuv_video_quad->SetNew(
-          shared_quad_state,
-          quad_rect,
-          opaque_rect,
-          visible_quad_rect,
-          tex_coord_rect,
-          frame_resources_[0],
-          frame_resources_[1],
+          shared_quad_state, quad_rect, opaque_rect, visible_quad_rect,
+          tex_coord_rect, coded_size, frame_resources_[0], frame_resources_[1],
           frame_resources_[2],
-          frame_resources_.size() > 3 ? frame_resources_[3] : 0,
-          color_space);
+          frame_resources_.size() > 3 ? frame_resources_[3] : 0, color_space);
       break;
     }
     case VideoFrameExternalResources::RGB_RESOURCE: {

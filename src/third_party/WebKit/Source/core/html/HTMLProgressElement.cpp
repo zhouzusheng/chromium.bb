@@ -54,15 +54,14 @@ HTMLProgressElement::~HTMLProgressElement()
 PassRefPtrWillBeRawPtr<HTMLProgressElement> HTMLProgressElement::create(Document& document)
 {
     RefPtrWillBeRawPtr<HTMLProgressElement> progress = adoptRefWillBeNoop(new HTMLProgressElement(document));
-    progress->ensureUserAgentShadowRoot();
+    progress->ensureClosedShadowRoot();
     return progress.release();
 }
 
-RenderObject* HTMLProgressElement::createRenderer(RenderStyle* style)
+LayoutObject* HTMLProgressElement::createRenderer(const LayoutStyle& style)
 {
-    if (!style->hasAppearance() || hasAuthorShadowRoot())
-        return RenderObject::createObject(this, style);
-
+    if (!style.hasAppearance() || hasOpenShadowRoot())
+        return LayoutObject::createObject(this, style);
     return new RenderProgress(this);
 }
 
@@ -71,9 +70,9 @@ RenderProgress* HTMLProgressElement::renderProgress() const
     if (renderer() && renderer()->isProgress())
         return toRenderProgress(renderer());
 
-    RenderObject* renderObject = userAgentShadowRoot()->firstChild()->renderer();
-    ASSERT_WITH_SECURITY_IMPLICATION(!renderObject || renderObject->isProgress());
-    return toRenderProgress(renderObject);
+    LayoutObject* layoutObject = closedShadowRoot()->firstChild()->renderer();
+    ASSERT_WITH_SECURITY_IMPLICATION(!layoutObject || layoutObject->isProgress());
+    return toRenderProgress(layoutObject);
 }
 
 void HTMLProgressElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -147,7 +146,7 @@ void HTMLProgressElement::didElementStateChange()
     }
 }
 
-void HTMLProgressElement::didAddUserAgentShadowRoot(ShadowRoot& root)
+void HTMLProgressElement::didAddClosedShadowRoot(ShadowRoot& root)
 {
     ASSERT(!m_value);
 
@@ -171,7 +170,13 @@ bool HTMLProgressElement::shouldAppearIndeterminate() const
     return !isDeterminate();
 }
 
-void HTMLProgressElement::trace(Visitor* visitor)
+void HTMLProgressElement::willAddFirstOpenShadowRoot()
+{
+    ASSERT(RuntimeEnabledFeatures::authorShadowDOMForAnyElementEnabled());
+    lazyReattachIfAttached();
+}
+
+DEFINE_TRACE(HTMLProgressElement)
 {
     visitor->trace(m_value);
     LabelableElement::trace(visitor);

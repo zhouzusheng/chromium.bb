@@ -20,6 +20,7 @@ public:
     bool parseDeclaration(MutableStylePropertySet*, const String&, CSSParserObserver*, StyleSheetContents* contextStyleSheet);
     void parseSelector(const String&, CSSSelectorList&);
 
+    // As well as regular rules, allows @import and @namespace but not @charset
     static PassRefPtrWillBeRawPtr<StyleRuleBase> parseRule(const CSSParserContext&, StyleSheetContents*, const String&);
     static void parseSheet(const CSSParserContext&, StyleSheetContents*, const String&, const TextPosition& startPosition, CSSParserObserver*, bool logErrors = false);
     static bool parseValue(MutableStylePropertySet*, CSSPropertyID, const String&, bool important, CSSParserMode, StyleSheetContents*);
@@ -34,6 +35,8 @@ public:
 
     static bool parseSupportsCondition(const String&);
 
+    // The color will only be changed when string contains a valid CSS color, so callers
+    // can set it to a default color and ignore the boolean result.
     static bool parseColor(RGBA32& color, const String&, bool strict = false);
     static bool parseSystemColor(RGBA32& color, const String&);
     static StyleColor colorFromRGBColorString(const String&);

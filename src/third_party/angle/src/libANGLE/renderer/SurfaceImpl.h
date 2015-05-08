@@ -15,12 +15,7 @@
 namespace egl
 {
 class Display;
-class Config;
-}
-
-namespace gl
-{
-class Texture2D;
+struct Config;
 }
 
 namespace rx
@@ -29,9 +24,9 @@ namespace rx
 class SurfaceImpl
 {
   public:
-    SurfaceImpl(egl::Display *display, const egl::Config *config, EGLint width, EGLint height,
+    SurfaceImpl(egl::Display *display, const egl::Config *config,
                 EGLint fixedSize, EGLint postSubBufferSupported, EGLenum textureFormat,
-                EGLenum textureType, EGLClientBuffer shareHandle);
+                EGLenum textureType);
     virtual ~SurfaceImpl();
 
     virtual egl::Error initialize() = 0;
@@ -42,12 +37,12 @@ class SurfaceImpl
     virtual egl::Error releaseTexImage(EGLint buffer) = 0;
     virtual void setSwapInterval(EGLint interval) = 0;
 
-    // width and height can change with client window resizing
-    EGLint getWidth() const { return mWidth; }
-    EGLint getHeight() const { return mHeight; }
-
     //TODO(jmadill): Possibly should be redesigned
     virtual EGLNativeWindowType getWindowHandle() const = 0;
+
+    // width and height can change with client window resizing
+    virtual EGLint getWidth() const = 0;
+    virtual EGLint getHeight() const = 0;
 
     const egl::Config *getConfig() const { return mConfig; }
     EGLint isFixedSize() const { return mFixedSize; }
@@ -61,22 +56,16 @@ class SurfaceImpl
     SurfaceImpl()
         : mDisplay(nullptr),
           mConfig(nullptr),
-          mWidth(0),
-          mHeight(0),
           mFixedSize(0),
           mPostSubBufferSupported(0),
           mTextureFormat(EGL_NONE),
-          mTextureTarget(EGL_NONE),
-          mShareHandle(static_cast<EGLClientBuffer>(0))
+          mTextureTarget(EGL_NONE)
     {}
 
     egl::Display *const mDisplay;
     const egl::Config *mConfig;    // EGL config surface was created with
 
-    EGLint mWidth;
-    EGLint mHeight;
     EGLint mFixedSize;
-    EGLint mSwapInterval;
     EGLint mPostSubBufferSupported;
 //  EGLint horizontalResolution;   // Horizontal dot pitch
 //  EGLint verticalResolution;     // Vertical dot pitch
@@ -88,7 +77,6 @@ class SurfaceImpl
     EGLenum mTextureTarget;        // Type of texture: 2D or no texture
 //  EGLenum vgAlphaFormat;         // Alpha format for OpenVG
 //  EGLenum vgColorSpace;          // Color space for OpenVG
-    EGLClientBuffer mShareHandle;
 
   private:
     DISALLOW_COPY_AND_ASSIGN(SurfaceImpl);

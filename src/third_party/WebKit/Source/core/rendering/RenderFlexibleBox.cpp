@@ -32,11 +32,11 @@
 #include "core/rendering/RenderFlexibleBox.h"
 
 #include "core/frame/UseCounter.h"
+#include "core/layout/Layer.h"
+#include "core/layout/TextAutosizer.h"
+#include "core/layout/style/LayoutStyle.h"
 #include "core/paint/BlockPainter.h"
-#include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/TextAutosizer.h"
-#include "core/rendering/style/RenderStyle.h"
 #include "platform/LengthFunctions.h"
 #include "wtf/MathExtras.h"
 #include <limits>
@@ -197,13 +197,13 @@ int RenderFlexibleBox::inlineBlockBaseline(LineDirectionMode direction) const
     return synthesizedBaselineFromContentBox(*this, direction) + marginAscent;
 }
 
-void RenderFlexibleBox::removeChild(RenderObject* child)
+void RenderFlexibleBox::removeChild(LayoutObject* child)
 {
     RenderBlock::removeChild(child);
     m_intrinsicSizeAlongMainAxis.remove(child);
 }
 
-void RenderFlexibleBox::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
+void RenderFlexibleBox::styleDidChange(StyleDifference diff, const LayoutStyle* oldStyle)
 {
     RenderBlock::styleDidChange(diff, oldStyle);
 
@@ -211,8 +211,8 @@ void RenderFlexibleBox::styleDidChange(StyleDifference diff, const RenderStyle* 
         // Flex items that were previously stretching need to be relayed out so we can compute new available cross axis space.
         // This is only necessary for stretching since other alignment values don't change the size of the box.
         for (RenderBox* child = firstChildBox(); child; child = child->nextSiblingBox()) {
-            ItemPosition previousAlignment = RenderStyle::resolveAlignment(oldStyle, child->style(), ItemPositionStretch);
-            if (previousAlignment == ItemPositionStretch && previousAlignment != RenderStyle::resolveAlignment(style(), child->style(), ItemPositionStretch))
+            ItemPosition previousAlignment = LayoutStyle::resolveAlignment(*oldStyle, child->styleRef(), ItemPositionStretch);
+            if (previousAlignment == ItemPositionStretch && previousAlignment != LayoutStyle::resolveAlignment(styleRef(), child->styleRef(), ItemPositionStretch))
                 child->setChildNeedsLayout(MarkOnlyThis);
         }
     }
@@ -583,9 +583,9 @@ LayoutPoint RenderFlexibleBox::flowAwareLocationForChild(RenderBox& child) const
 void RenderFlexibleBox::setFlowAwareLocationForChild(RenderBox& child, const LayoutPoint& location)
 {
     if (isHorizontalFlow())
-        child.setLocation(location);
+        child.setLocationAndUpdateOverflowControlsIfNeeded(location);
     else
-        child.setLocation(location.transposedPoint());
+        child.setLocationAndUpdateOverflowControlsIfNeeded(location.transposedPoint());
 }
 
 LayoutUnit RenderFlexibleBox::mainAxisBorderAndPaddingExtentForChild(RenderBox& child) const
@@ -990,7 +990,7 @@ void RenderFlexibleBox::prepareChildForPositionedLayout(RenderBox& child, Layout
 {
     ASSERT(child.isOutOfFlowPositioned());
     child.containingBlock()->insertPositionedObject(&child);
-    RenderLayer* childLayer = child.layer();
+    Layer* childLayer = child.layer();
     LayoutUnit inlinePosition = isColumnFlow() ? crossAxisOffset : mainAxisOffset;
     if (layoutMode == FlipForRowReverse && style()->flexDirection() == FlowRowReverse)
         inlinePosition = mainAxisExtent() - mainAxisOffset;
@@ -1006,7 +1006,7 @@ void RenderFlexibleBox::prepareChildForPositionedLayout(RenderBox& child, Layout
 
 ItemPosition RenderFlexibleBox::alignmentForChild(RenderBox& child) const
 {
-    ItemPosition align = RenderStyle::resolveAlignment(style(), child.style(), ItemPositionStretch);
+    ItemPosition align = LayoutStyle::resolveAlignment(styleRef(), child.styleRef(), ItemPositionStretch);
 
     if (align == ItemPositionBaseline && hasOrthogonalFlow(child))
         align = ItemPositionFlexStart;
@@ -1083,7 +1083,7 @@ void RenderFlexibleBox::layoutAndPlaceChildren(LayoutUnit& crossAxisOffset, cons
         }
 
         // FIXME Investigate if this can be removed based on other flags. crbug.com/370010
-        child->setMayNeedPaintInvalidation(true);
+        child->setMayNeedPaintInvalidation();
 
         LayoutUnit childPreferredSize = childSizes[i] + mainAxisBorderAndPaddingExtentForChild(*child);
         setOverrideMainAxisSizeForChild(*child, childPreferredSize);
@@ -1179,15 +1179,15 @@ void RenderFlexibleBox::layoutColumnReverse(const OrderedFlexItemList& children,
     }
 }
 
-static LayoutUnit initialAlignContentOffset(LayoutUnit availableFreeSpace, EAlignContent alignContent, unsigned numberOfLines)
+static LayoutUnit initialAlignContentOffset(LayoutUnit availableFreeSpace, ContentPosition alignContent, ContentDistributionType alignContentDistribution, unsigned numberOfLines)
 {
     if (numberOfLines <= 1)
         return 0;
-    if (alignContent == AlignContentFlexEnd)
+    if (alignContent == ContentPositionFlexEnd)
         return availableFreeSpace;
-    if (alignContent == AlignContentCenter)
+    if (alignContent == ContentPositionCenter)
         return availableFreeSpace / 2;
-    if (alignContent == AlignContentSpaceAround) {
+    if (alignContentDistribution == ContentDistributionSpaceAround) {
         if (availableFreeSpace > 0 && numberOfLines)
             return availableFreeSpace / (2 * numberOfLines);
         if (availableFreeSpace < 0)
@@ -1196,12 +1196,12 @@ static LayoutUnit initialAlignContentOffset(LayoutUnit availableFreeSpace, EAlig
     return 0;
 }
 
-static LayoutUnit alignContentSpaceBetweenChildren(LayoutUnit availableFreeSpace, EAlignContent alignContent, unsigned numberOfLines)
+static LayoutUnit alignContentSpaceBetweenChildren(LayoutUnit availableFreeSpace, ContentDistributionType alignContentDistribution, unsigned numberOfLines)
 {
     if (availableFreeSpace > 0 && numberOfLines > 1) {
-        if (alignContent == AlignContentSpaceBetween)
+        if (alignContentDistribution == ContentDistributionSpaceBetween)
             return availableFreeSpace / (numberOfLines - 1);
-        if (alignContent == AlignContentSpaceAround || alignContent == AlignContentStretch)
+        if (alignContentDistribution == ContentDistributionSpaceAround || alignContentDistribution == ContentDistributionStretch)
             return availableFreeSpace / numberOfLines;
     }
     return 0;
@@ -1217,7 +1217,7 @@ void RenderFlexibleBox::alignFlexLines(Vector<LineContext>& lineContexts)
         return;
     }
 
-    if (style()->alignContent() == AlignContentFlexStart)
+    if (style()->alignContent() == ContentPositionFlexStart)
         return;
 
     LayoutUnit availableCrossAxisSpace = crossAxisContentExtent();
@@ -1225,16 +1225,16 @@ void RenderFlexibleBox::alignFlexLines(Vector<LineContext>& lineContexts)
         availableCrossAxisSpace -= lineContexts[i].crossAxisExtent;
 
     RenderBox* child = m_orderIterator.first();
-    LayoutUnit lineOffset = initialAlignContentOffset(availableCrossAxisSpace, style()->alignContent(), lineContexts.size());
+    LayoutUnit lineOffset = initialAlignContentOffset(availableCrossAxisSpace, style()->alignContent(), style()->alignContentDistribution(), lineContexts.size());
     for (unsigned lineNumber = 0; lineNumber < lineContexts.size(); ++lineNumber) {
         lineContexts[lineNumber].crossAxisOffset += lineOffset;
         for (size_t childNumber = 0; childNumber < lineContexts[lineNumber].numberOfChildren; ++childNumber, child = m_orderIterator.next())
             adjustAlignmentForChild(*child, lineOffset);
 
-        if (style()->alignContent() == AlignContentStretch && availableCrossAxisSpace > 0)
+        if (style()->alignContentDistribution() == ContentDistributionStretch && availableCrossAxisSpace > 0)
             lineContexts[lineNumber].crossAxisExtent += availableCrossAxisSpace / static_cast<unsigned>(lineContexts.size());
 
-        lineOffset += alignContentSpaceBetweenChildren(availableCrossAxisSpace, style()->alignContent(), lineContexts.size());
+        lineOffset += alignContentSpaceBetweenChildren(availableCrossAxisSpace, style()->alignContentDistribution(), lineContexts.size());
     }
 }
 

@@ -81,7 +81,7 @@ private:
     HashMap<uint32_t, uint16_t> m_glyphCache;
 };
 
-typedef HashMap<uint64_t, RefPtr<FaceCacheEntry>, WTF::IntHash<uint64_t>, WTF::UnsignedWithZeroKeyHashTraits<uint64_t> > HarfBuzzFaceCache;
+typedef HashMap<uint64_t, RefPtr<FaceCacheEntry>, WTF::IntHash<uint64_t>, WTF::UnsignedWithZeroKeyHashTraits<uint64_t>> HarfBuzzFaceCache;
 
 static HarfBuzzFaceCache* harfBuzzFaceCache()
 {
@@ -234,7 +234,7 @@ static hb_position_t harfBuzzGetGlyphVerticalAdvance(hb_font_t* hbFont, void* fo
         return SkiaScalarToHarfBuzzPosition(hbFontData->m_simpleFontData->fontMetrics().height());
 
     Glyph theGlyph = glyph;
-    float advanceHeight = verticalData->advanceHeight(hbFontData->m_simpleFontData.get(), theGlyph);
+    float advanceHeight = -verticalData->advanceHeight(hbFontData->m_simpleFontData.get(), theGlyph);
     return SkiaScalarToHarfBuzzPosition(SkFloatToScalar(advanceHeight));
 }
 

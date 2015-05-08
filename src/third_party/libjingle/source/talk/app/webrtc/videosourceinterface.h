@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2012, Google Inc.
+ * Copyright 2012 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -43,6 +43,12 @@ class VideoSourceInterface : public MediaSourceInterface {
   // This can be used for receiving frames and state notifications.
   // But it should not be used for starting or stopping capturing.
   virtual cricket::VideoCapturer* GetVideoCapturer() = 0;
+
+  // Stop the video capturer.
+  // TODO(perkj): Make pure virtual after updating Chrome.
+  virtual void Stop() {};
+  virtual void Restart() {};
+
   // Adds |output| to the source to receive frames.
   virtual void AddSink(cricket::VideoRenderer* output) = 0;
   virtual void RemoveSink(cricket::VideoRenderer* output) = 0;

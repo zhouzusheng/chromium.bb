@@ -5,20 +5,14 @@
 WebInspector.OverridesUI = {}
 
 /**
- * @param {function(function(string))=} titleProvider
  * @return {!Element}
  */
-WebInspector.OverridesUI.createDeviceSelect = function(titleProvider)
+WebInspector.OverridesUI.createDeviceSelect = function()
 {
     var p = createElement("p");
 
     var deviceSelectElement = p.createChild("select");
     deviceSelectElement.addEventListener("change", deviceSelected, false);
-
-    var saveButton = createTextButton(WebInspector.UIString("Save as"), saveClicked);
-    p.appendChild(saveButton);
-    var removeButton = createTextButton(WebInspector.UIString("Remove"), removeClicked);
-    p.appendChild(removeButton);
 
     // This has to be object, not boolean, otherwise its value doesn't update properly.
     var emulatedSettingChangedMuted = { muted: false };
@@ -30,19 +24,19 @@ WebInspector.OverridesUI.createDeviceSelect = function(titleProvider)
     WebInspector.overridesSupport.settings.emulateTouch.addChangeListener(emulatedSettingChanged);
     WebInspector.overridesSupport.settings.userAgent.addChangeListener(emulatedSettingChanged);
 
-    WebInspector.overridesSupport.settings.customDevicePresets.addChangeListener(customPresetsChanged);
-    customPresetsChanged();
+    WebInspector.emulatedDevicesList.addEventListener(WebInspector.EmulatedDevicesList.Events.CustomDevicesUpdated, deviceListChanged);
+    WebInspector.emulatedDevicesList.addEventListener(WebInspector.EmulatedDevicesList.Events.StandardDevicesUpdated, deviceListChanged);
+    WebInspector.emulatedDevicesList.maybeAutoUpdate();
+    deviceListChanged();
 
     function deviceSelected()
     {
-        updateButtons();
-
         if (deviceSelectElement.selectedIndex === 0)
             return;
 
         var option = deviceSelectElement.options[deviceSelectElement.selectedIndex];
         emulatedSettingChangedMuted.muted = true;
-        WebInspector.overridesSupport.emulateDevice(option.device);
+        WebInspector.overridesSupport.emulateDevice(option.overridesDevice);
         emulatedSettingChangedMuted.muted = false;
     }
 
@@ -54,24 +48,15 @@ WebInspector.OverridesUI.createDeviceSelect = function(titleProvider)
         var index = 0;
         for (var i = 1; i < deviceSelectElement.options.length; ++i) {
             var option = deviceSelectElement.options[i];
-            if (WebInspector.overridesSupport.isEmulatingDevice(option.device)) {
+            if (WebInspector.overridesSupport.isEmulatingDevice(option.overridesDevice)) {
                 index = i;
                 break;
             }
         }
         deviceSelectElement.selectedIndex = index;
-        updateButtons();
     }
 
-    function updateButtons()
-    {
-        var index = deviceSelectElement.selectedIndex;
-        var custom = deviceSelectElement.options[index].custom;
-        saveButton.disabled = !!index || !titleProvider;
-        removeButton.disabled = !custom;
-    }
-
-    function customPresetsChanged()
+    function deviceListChanged()
     {
         deviceSelectElement.removeChildren();
 
@@ -80,70 +65,32 @@ WebInspector.OverridesUI.createDeviceSelect = function(titleProvider)
         selectDeviceOption.disabled = true;
         deviceSelectElement.appendChild(selectDeviceOption);
 
-        addGroup(WebInspector.UIString("Custom"), WebInspector.overridesSupport.settings.customDevicePresets.get(), true);
-        addGroup(WebInspector.UIString("Devices"), WebInspector.OverridesUI._phones.concat(WebInspector.OverridesUI._tablets));
-        addGroup(WebInspector.UIString("Notebooks"), WebInspector.OverridesUI._notebooks);
+        addGroup(WebInspector.UIString("Custom"), WebInspector.emulatedDevicesList.custom(), true);
+        addGroup(WebInspector.UIString("Devices"), WebInspector.emulatedDevicesList.standard());
 
         /**
          * @param {string} name
-         * @param {!Array.<!WebInspector.OverridesSupport.Device>} devices
+         * @param {!Array.<!WebInspector.EmulatedDevice>} devices
          * @param {boolean=} custom
          */
         function addGroup(name, devices, custom)
         {
+            devices = devices.filter(function (d) { return d.show(); });
             if (!devices.length)
                 return;
-            devices = devices.slice();
-            devices.sort(compareDevices);
+            devices.sort(WebInspector.EmulatedDevice.compareByTitle);
             var groupElement = deviceSelectElement.createChild("optgroup");
             groupElement.label = name;
             for (var i = 0; i < devices.length; ++i) {
                 var option = new Option(devices[i].title, devices[i].title);
                 option.device = devices[i];
+                option.overridesDevice = devices[i].toOverridesDevice();
                 option.custom = custom;
                 groupElement.appendChild(option);
             }
         }
 
-        /**
-         * @param {!WebInspector.OverridesSupport.Device} device1
-         * @param {!WebInspector.OverridesSupport.Device} device2
-         * @return {number}
-         */
-        function compareDevices(device1, device2)
-        {
-            return device1.title < device2.title ? -1 : (device1.title > device2.title ? 1 : 0);
-        }
-
         emulatedSettingChanged();
-    }
-
-    function saveClicked()
-    {
-        titleProvider(saveDevicePreset);
-    }
-
-    /**
-     * @param {string} title
-     */
-    function saveDevicePreset(title)
-    {
-        if (!title)
-            return;
-        var device = WebInspector.overridesSupport.deviceFromCurrentSettings();
-        device.title = title;
-        var presets = WebInspector.overridesSupport.settings.customDevicePresets.get();
-        presets.push(device);
-        WebInspector.overridesSupport.settings.customDevicePresets.set(presets);
-    }
-
-    function removeClicked()
-    {
-        var presets = WebInspector.overridesSupport.settings.customDevicePresets.get();
-        var option = deviceSelectElement.options[deviceSelectElement.selectedIndex];
-        var device = option.device;
-        presets.remove(device);
-        WebInspector.overridesSupport.settings.customDevicePresets.set(presets);
     }
 
     return p;
@@ -301,7 +248,7 @@ WebInspector.OverridesUI.createUserAgentSelectAndInput = function()
     return { select: userAgentSelectElement, input: otherUserAgentElement };
 }
 
-/** @type {!Array.<!WebInspector.OverridesSupport.Device>} */
+/** @type {!Array.<*>} */
 WebInspector.OverridesUI._phones = [
     {title: "Apple iPhone 3GS", width: 320, height: 480, deviceScaleFactor: 1, userAgent: "Mozilla/5.0 (iPhone; U; CPU iPhone OS 4_2_1 like Mac OS X; en-us) AppleWebKit/533.17.9 (KHTML, like Gecko) Version/5.0.2 Mobile/8C148 Safari/6533.18.5", touch: true, mobile: true},
     {title: "Apple iPhone 4", width: 320, height: 480, deviceScaleFactor: 2, userAgent: "Mozilla/5.0 (iPhone; U; CPU iPhone OS 4_2_1 like Mac OS X; en-us) AppleWebKit/533.17.9 (KHTML, like Gecko) Version/5.0.2 Mobile/8C148 Safari/6533.18.5", touch: true, mobile: true},
@@ -310,8 +257,8 @@ WebInspector.OverridesUI._phones = [
     {title: "Apple iPhone 6 Plus", width: 414, height: 736, deviceScaleFactor: 3, userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 8_0 like Mac OS X) AppleWebKit/600.1.3 (KHTML, like Gecko) Version/8.0 Mobile/12A4345d Safari/600.1.4", touch: true, mobile: true},
     {title: "BlackBerry Z10", width: 384, height: 640, deviceScaleFactor: 2, userAgent: "Mozilla/5.0 (BB10; Touch) AppleWebKit/537.10+ (KHTML, like Gecko) Version/10.0.9.2372 Mobile Safari/537.10+", touch: true, mobile: true},
     {title: "BlackBerry Z30", width: 360, height: 640, deviceScaleFactor: 2, userAgent: "Mozilla/5.0 (BB10; Touch) AppleWebKit/537.10+ (KHTML, like Gecko) Version/10.0.9.2372 Mobile Safari/537.10+", touch: true, mobile: true},
-    {title: "Google Nexus 4", width: 384, height: 640, deviceScaleFactor: 2, userAgent: "Mozilla/5.0 (Linux; Android 4.2.1; en-us; Nexus 4 Build/JOP40D) AppleWebKit/535.19 (KHTML, like Gecko) Chrome/18.0.1025.166 Mobile Safari/535.19", touch: true, mobile: true},
-    {title: "Google Nexus 5", width: 360, height: 640, deviceScaleFactor: 3, userAgent: "Mozilla/5.0 (Linux; Android 4.2.1; en-us; Nexus 5 Build/JOP40D) AppleWebKit/535.19 (KHTML, like Gecko) Chrome/18.0.1025.166 Mobile Safari/535.19", touch: true, mobile: true},
+    {title: "Google Nexus 4", width: 384, height: 640, deviceScaleFactor: 2, userAgent: "Mozilla/5.0 (Linux; Android 4.4.4; en-us; Nexus 4 Build/JOP40D) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2307.2 Mobile Safari/537.36", touch: true, mobile: true},
+    {title: "Google Nexus 5", width: 360, height: 640, deviceScaleFactor: 3, userAgent: "Mozilla/5.0 (Linux; Android 4.4.4; en-us; Nexus 5 Build/JOP40D) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2307.2 Mobile Safari/537.36", touch: true, mobile: true},
     {title: "Google Nexus S", width: 320, height: 533, deviceScaleFactor: 1.5, userAgent: "Mozilla/5.0 (Linux; U; Android 2.3.4; en-us; Nexus S Build/GRJ22) AppleWebKit/533.1 (KHTML, like Gecko) Version/4.0 Mobile Safari/533.1", touch: true, mobile: true},
     {title: "HTC Evo, Touch HD, Desire HD, Desire", width: 320, height: 533, deviceScaleFactor: 1.5, userAgent: "Mozilla/5.0 (Linux; U; Android 2.2; en-us; Sprint APA9292KT Build/FRF91) AppleWebKit/533.1 (KHTML, like Gecko) Version/4.0 Mobile Safari/533.1", touch: true, mobile: true},
     {title: "HTC One X, EVO LTE", width: 360, height: 640, deviceScaleFactor: 2, userAgent: "Mozilla/5.0 (Linux; Android 4.0.3; HTC One X Build/IML74K) AppleWebKit/535.19 (KHTML, like Gecko) Chrome/18.0.1025.133 Mobile Safari/535.19", touch: true, mobile: true},
@@ -330,13 +277,13 @@ WebInspector.OverridesUI._phones = [
     {title: "Samsung Galaxy Note", width: 400, height: 640, deviceScaleFactor: 2, userAgent: "Mozilla/5.0 (Linux; U; Android 2.3; en-us; SAMSUNG-SGH-I717 Build/GINGERBREAD) AppleWebKit/533.1 (KHTML, like Gecko) Version/4.0 Mobile Safari/533.1", touch: true, mobile: true},
     {title: "Samsung Galaxy S III, Galaxy Nexus", width: 360, height: 640, deviceScaleFactor: 2, userAgent: "Mozilla/5.0 (Linux; U; Android 4.0; en-us; GT-I9300 Build/IMM76D) AppleWebKit/534.30 (KHTML, like Gecko) Version/4.0 Mobile Safari/534.30", touch: true, mobile: true},
     {title: "Samsung Galaxy S, S II, W", width: 320, height: 533, deviceScaleFactor: 1.5, userAgent: "Mozilla/5.0 (Linux; U; Android 2.1; en-us; GT-I9000 Build/ECLAIR) AppleWebKit/525.10+ (KHTML, like Gecko) Version/3.0.4 Mobile Safari/523.12.2", touch: true, mobile: true},
-    {title: "Samsung Galaxy S4", width: 360, height: 640, deviceScaleFactor: 3, userAgent: "Mozilla/5.0 (Linux; Android 4.2.2; GT-I9505 Build/JDQ39) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/31.0.1650.59 Mobile Safari/537.36", touch: true, mobile: true},
+    {title: "Samsung Galaxy S4", width: 360, height: 640, deviceScaleFactor: 3, userAgent: "Mozilla/5.0 (Linux; Android 4.4.2; GT-I9505 Build/JDQ39) AppleWebKit/537.36 (KHTML, like Gecko) Version/1.5 Chrome/28.0.1500.94 Mobile Safari/537.36", touch: true, mobile: true},
     {title: "Sony Xperia S, Ion", width: 360, height: 640, deviceScaleFactor: 2, userAgent: "Mozilla/5.0 (Linux; U; Android 4.0; en-us; LT28at Build/6.1.C.1.111) AppleWebKit/534.30 (KHTML, like Gecko) Version/4.0 Mobile Safari/534.30", touch: true, mobile: true},
     {title: "Sony Xperia Sola, U", width: 480, height: 854, deviceScaleFactor: 1, userAgent: "Mozilla/5.0 (Linux; U; Android 2.3; en-us; SonyEricssonST25i Build/6.0.B.1.564) AppleWebKit/533.1 (KHTML, like Gecko) Version/4.0 Mobile Safari/533.1", touch: true, mobile: true},
     {title: "Sony Xperia Z, Z1", width: 360, height: 640, deviceScaleFactor: 3, userAgent: "Mozilla/5.0 (Linux; U; Android 4.2; en-us; SonyC6903 Build/14.1.G.1.518) AppleWebKit/534.30 (KHTML, like Gecko) Version/4.0 Mobile Safari/534.30", touch: true, mobile: true}
 ];
 
-/** @type {!Array.<!WebInspector.OverridesSupport.Device>} */
+/** @type {!Array.<*>} */
 WebInspector.OverridesUI._tablets = [
     {title: "Amazon Kindle Fire HDX 7″", width: 1920, height: 1200, deviceScaleFactor: 2, userAgent: "Mozilla/5.0 (Linux; U; en-us; KFTHWI Build/JDQ39) AppleWebKit/535.19 (KHTML, like Gecko) Silk/3.13 Safari/535.19 Silk-Accelerated=true", touch: true, mobile: true},
     {title: "Amazon Kindle Fire HDX 8.9″", width: 2560, height: 1600, deviceScaleFactor: 2, userAgent: "Mozilla/5.0 (Linux; U; en-us; KFAPWI Build/JDQ39) AppleWebKit/535.19 (KHTML, like Gecko) Silk/3.13 Safari/535.19 Silk-Accelerated=true", touch: true, mobile: true},
@@ -344,15 +291,15 @@ WebInspector.OverridesUI._tablets = [
     {title: "Apple iPad 1 / 2 / iPad Mini", width: 1024, height: 768, deviceScaleFactor: 1, userAgent: "Mozilla/5.0 (iPad; CPU OS 4_3_5 like Mac OS X; en-us) AppleWebKit/533.17.9 (KHTML, like Gecko) Version/5.0.2 Mobile/8L1 Safari/6533.18.5", touch: true, mobile: true},
     {title: "Apple iPad 3 / 4", width: 1024, height: 768, deviceScaleFactor: 2, userAgent: "Mozilla/5.0 (iPad; CPU OS 7_0 like Mac OS X) AppleWebKit/537.51.1 (KHTML, like Gecko) Version/7.0 Mobile/11A465 Safari/9537.53", touch: true, mobile: true},
     {title: "BlackBerry PlayBook", width: 1024, height: 600, deviceScaleFactor: 1, userAgent: "Mozilla/5.0 (PlayBook; U; RIM Tablet OS 2.1.0; en-US) AppleWebKit/536.2+ (KHTML like Gecko) Version/7.2.1.0 Safari/536.2+", touch: true, mobile: true},
-    {title: "Google Nexus 10", width: 1280, height: 800, deviceScaleFactor: 2, userAgent: "Mozilla/5.0 (Linux; Android 4.3; Nexus 10 Build/JSS15Q) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/29.0.1547.72 Safari/537.36", touch: true, mobile: true},
-    {title: "Google Nexus 7 2", width: 960, height: 600, deviceScaleFactor: 2, userAgent: "Mozilla/5.0 (Linux; Android 4.3; Nexus 7 Build/JSS15Q) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/29.0.1547.72 Safari/537.36", touch: true, mobile: true},
-    {title: "Google Nexus 7", width: 966, height: 604, deviceScaleFactor: 1.325, userAgent: "Mozilla/5.0 (Linux; Android 4.3; Nexus 7 Build/JSS15Q) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/29.0.1547.72 Safari/537.36", touch: true, mobile: true},
+    {title: "Google Nexus 10", width: 1280, height: 800, deviceScaleFactor: 2, userAgent: "Mozilla/5.0 (Linux; Android 4.3; Nexus 10 Build/JSS15Q) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2307.2 Mobile Safari/537.36", touch: true, mobile: true},
+    {title: "Google Nexus 7 2", width: 960, height: 600, deviceScaleFactor: 2, userAgent: "Mozilla/5.0 (Linux; Android 4.3; Nexus 7 Build/JSS15Q) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2307.2 Mobile Safari/537.36", touch: true, mobile: true},
+    {title: "Google Nexus 7", width: 966, height: 604, deviceScaleFactor: 1.325, userAgent: "Mozilla/5.0 (Linux; Android 4.3; Nexus 7 Build/JSS15Q) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2307.2 Mobile Safari/537.36", touch: true, mobile: true},
     {title: "Motorola Xoom, Xyboard", width: 1280, height: 800, deviceScaleFactor: 1, userAgent: "Mozilla/5.0 (Linux; U; Android 3.0; en-us; Xoom Build/HRI39) AppleWebKit/525.10 (KHTML, like Gecko) Version/3.0.4 Mobile Safari/523.12.2", touch: true, mobile: true},
     {title: "Samsung Galaxy Tab 7.7, 8.9, 10.1", width: 1280, height: 800, deviceScaleFactor: 1, userAgent: "Mozilla/5.0 (Linux; U; Android 2.2; en-us; SCH-I800 Build/FROYO) AppleWebKit/533.1 (KHTML, like Gecko) Version/4.0 Mobile Safari/533.1", touch: true, mobile: true},
     {title: "Samsung Galaxy Tab", width: 1024, height: 600, deviceScaleFactor: 1, userAgent: "Mozilla/5.0 (Linux; U; Android 2.2; en-us; SCH-I800 Build/FROYO) AppleWebKit/533.1 (KHTML, like Gecko) Version/4.0 Mobile Safari/533.1", touch: true, mobile: true}
 ];
 
-/** @type {!Array.<!WebInspector.OverridesSupport.Device>} */
+/** @type {!Array.<*>} */
 WebInspector.OverridesUI._notebooks = [
     {title: "Notebook with touch", width: 1280, height: 950, deviceScaleFactor: 1, userAgent: "", touch: true, mobile: false},
     {title: "Notebook with HiDPI screen", width: 1440, height: 900, deviceScaleFactor: 2, userAgent: "", touch: false, mobile: false},
@@ -392,6 +339,8 @@ WebInspector.OverridesUI._userAgents = [
     {title: "Firefox 4 \u2014 Windows", value: "Mozilla/5.0 (Windows NT 6.1; rv:2.0.1) Gecko/20100101 Firefox/4.0.1"},
     {title: "Firefox 7 \u2014 Mac", value: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.6; rv:7.0.1) Gecko/20100101 Firefox/7.0.1"},
     {title: "Firefox 7 \u2014 Windows", value: "Mozilla/5.0 (Windows NT 6.1; Intel Mac OS X 10.6; rv:7.0.1) Gecko/20100101 Firefox/7.0.1"},
+    {title: "Googlebot", value: "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"},
+    {title: "Googlebot Smartphone", value: "Mozilla/5.0 (iPhone; CPU iPhone OS 6_0 like Mac OS X) AppleWebKit/536.26 (KHTML, like Gecko) Version/6.0 Mobile/10A5376e Safari/8536.25 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"},
     {title: "Internet Explorer 10", value: "Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.2; Trident/6.0)"},
     {title: "Internet Explorer 7", value: "Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.0)"},
     {title: "Internet Explorer 8", value: "Mozilla/4.0 (compatible; MSIE 8.0; Windows NT 6.0; Trident/4.0)"},

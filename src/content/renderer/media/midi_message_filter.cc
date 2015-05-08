@@ -7,9 +7,9 @@
 #include <algorithm>
 
 #include "base/bind.h"
-#include "base/debug/trace_event.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/trace_event/trace_event.h"
 #include "content/common/media/midi_messages.h"
 #include "content/renderer/render_thread_impl.h"
 #include "ipc/ipc_logging.h"
@@ -116,6 +116,8 @@ bool MidiMessageFilter::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(MidiMsg_SessionStarted, OnSessionStarted)
     IPC_MESSAGE_HANDLER(MidiMsg_AddInputPort, OnAddInputPort)
     IPC_MESSAGE_HANDLER(MidiMsg_AddOutputPort, OnAddOutputPort)
+    IPC_MESSAGE_HANDLER(MidiMsg_SetInputPortState, OnSetInputPortState)
+    IPC_MESSAGE_HANDLER(MidiMsg_SetOutputPortState, OnSetOutputPortState)
     IPC_MESSAGE_HANDLER(MidiMsg_DataReceived, OnDataReceived)
     IPC_MESSAGE_HANDLER(MidiMsg_AcknowledgeSentData, OnAcknowledgeSentData)
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -161,6 +163,24 @@ void MidiMessageFilter::OnAddOutputPort(media::MidiPortInfo info) {
   main_message_loop_->PostTask(
       FROM_HERE,
       base::Bind(&MidiMessageFilter::HandleAddOutputPort, this, info));
+}
+
+void MidiMessageFilter::OnSetInputPortState(uint32 port,
+                                            media::MidiPortState state) {
+  DCHECK(io_message_loop_->BelongsToCurrentThread());
+  main_message_loop_->PostTask(
+      FROM_HERE,
+      base::Bind(&MidiMessageFilter::HandleSetInputPortState,
+                 this, port, state));
+}
+
+void MidiMessageFilter::OnSetOutputPortState(uint32 port,
+                                             media::MidiPortState state) {
+  DCHECK(io_message_loop_->BelongsToCurrentThread());
+  main_message_loop_->PostTask(
+      FROM_HERE,
+      base::Bind(&MidiMessageFilter::HandleSetOutputPortState,
+                 this, port, state));
 }
 
 void MidiMessageFilter::OnDataReceived(uint32 port,
@@ -263,6 +283,20 @@ void MidiMessageFilter::HandleAckknowledgeSentData(size_t bytes_sent) {
   DCHECK_GE(unacknowledged_bytes_sent_, bytes_sent);
   if (unacknowledged_bytes_sent_ >= bytes_sent)
     unacknowledged_bytes_sent_ -= bytes_sent;
+}
+
+void MidiMessageFilter::HandleSetInputPortState(uint32 port,
+                                                media::MidiPortState state) {
+  DCHECK(main_message_loop_->BelongsToCurrentThread());
+  inputs_[port].state = state;
+  // TODO(toyoshim): Notify to all clients.
+}
+
+void MidiMessageFilter::HandleSetOutputPortState(uint32 port,
+                                                 media::MidiPortState state) {
+  DCHECK(main_message_loop_->BelongsToCurrentThread());
+  outputs_[port].state = state;
+  // TODO(toyoshim): Notify to all clients.
 }
 
 }  // namespace content

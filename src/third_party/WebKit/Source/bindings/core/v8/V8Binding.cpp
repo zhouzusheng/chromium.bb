@@ -60,7 +60,6 @@
 #include "core/xml/XPathNSResolver.h"
 #include "platform/EventTracer.h"
 #include "platform/JSONValues.h"
-#include "wtf/ArrayBufferContents.h"
 #include "wtf/MainThread.h"
 #include "wtf/MathExtras.h"
 #include "wtf/StdLibExtras.h"
@@ -93,33 +92,6 @@ v8::Local<v8::Value> createMinimumArityTypeErrorForConstructor(v8::Isolate* isol
 void setMinimumArityTypeError(ExceptionState& exceptionState, unsigned expected, unsigned provided)
 {
     exceptionState.throwTypeError(ExceptionMessages::notEnoughArguments(expected, provided));
-}
-
-class ArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
-    virtual void* Allocate(size_t size) override
-    {
-        void* data;
-        WTF::ArrayBufferContents::allocateMemory(size, WTF::ArrayBufferContents::ZeroInitialize, data);
-        return data;
-    }
-
-    virtual void* AllocateUninitialized(size_t size) override
-    {
-        void* data;
-        WTF::ArrayBufferContents::allocateMemory(size, WTF::ArrayBufferContents::DontInitialize, data);
-        return data;
-    }
-
-    virtual void Free(void* data, size_t size) override
-    {
-        WTF::ArrayBufferContents::freeMemory(data, size);
-    }
-};
-
-v8::ArrayBuffer::Allocator* v8ArrayBufferAllocator()
-{
-    DEFINE_STATIC_LOCAL(ArrayBufferAllocator, arrayBufferAllocator, ());
-    return &arrayBufferAllocator;
 }
 
 PassRefPtrWillBeRawPtr<NodeFilter> toNodeFilter(v8::Handle<v8::Value> callback, v8::Handle<v8::Object> creationContext, ScriptState* scriptState)
@@ -547,19 +519,40 @@ float toFloat(v8::Handle<v8::Value> value, ExceptionState& exceptionState)
     return static_cast<float>(toDouble(value, exceptionState));
 }
 
-double toDouble(v8::Handle<v8::Value> value, ExceptionState& exceptionState)
+float toRestrictedFloat(v8::Handle<v8::Value> value, ExceptionState& exceptionState)
 {
-    if (value->IsNumber())
-        return value->NumberValue();
+    float numberValue = toFloat(value, exceptionState);
+    if (exceptionState.hadException())
+        return 0;
+    if (!std::isfinite(numberValue)) {
+        exceptionState.throwTypeError("The provided float value is non-finite.");
+        return 0;
+    }
+    return numberValue;
+}
 
+double toDoubleSlow(v8::Handle<v8::Value> value, ExceptionState& exceptionState)
+{
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
     v8::TryCatch block(isolate);
-    v8::Local<v8::Number> numberObject(value->ToNumber(isolate));
+    double doubleValue = value->NumberValue();
     if (block.HasCaught()) {
         exceptionState.rethrowV8Exception(block.Exception());
         return 0;
     }
-    return numberObject->NumberValue();
+    return doubleValue;
+}
+
+double toRestrictedDouble(v8::Handle<v8::Value> value, ExceptionState& exceptionState)
+{
+    double numberValue = toDouble(value, exceptionState);
+    if (exceptionState.hadException())
+        return 0;
+    if (!std::isfinite(numberValue)) {
+        exceptionState.throwTypeError("The provided double value is non-finite.");
+        return 0;
+    }
+    return numberValue;
 }
 
 String toByteString(v8::Handle<v8::Value> value, ExceptionState& exceptionState)
@@ -673,10 +666,10 @@ static String replaceUnmatchedSurrogates(const String& string)
             // 0xD800 <= c <= 0xDBFF
             ASSERT(U16_IS_LEAD(c));
             if (i == n - 1) {
-                // 1. If i = n−1, then append to U a U+FFFD REPLACEMENT CHARACTER.
+                // 1. If i = n-1, then append to U a U+FFFD REPLACEMENT CHARACTER.
                 u.append(WTF::Unicode::replacementCharacter);
             } else {
-                // 2. Otherwise, i < n−1:
+                // 2. Otherwise, i < n-1:
                 ASSERT(i < n - 1);
                 // ....1. Let d be the code unit in S at index i+1.
                 UChar d = s[i + 1];
@@ -819,15 +812,15 @@ ExecutionContext* callingExecutionContext(v8::Isolate* isolate)
     return toExecutionContext(context);
 }
 
-LocalFrame* toFrameIfNotDetached(v8::Handle<v8::Context> context)
+Frame* toFrameIfNotDetached(v8::Handle<v8::Context> context)
 {
-    LocalDOMWindow* window = toLocalDOMWindow(toDOMWindow(context));
+    DOMWindow* window = toDOMWindow(context);
     if (window && window->isCurrentlyDisplayedInFrame())
         return window->frame();
-    // We return 0 here because |context| is detached from the LocalFrame. If we
+    // We return 0 here because |context| is detached from the Frame. If we
     // did return |frame| we could get in trouble because the frame could be
     // navigated to another security origin.
-    return 0;
+    return nullptr;
 }
 
 EventTarget* toEventTarget(v8::Isolate* isolate, v8::Handle<v8::Value> value)
@@ -858,12 +851,12 @@ v8::Local<v8::Context> toV8Context(ExecutionContext* context, DOMWrapperWorld& w
 
 v8::Local<v8::Context> toV8Context(Frame* frame, DOMWrapperWorld& world)
 {
-    if (!frame || frame->isRemoteFrame())
+    if (!frame)
         return v8::Local<v8::Context>();
-    v8::Local<v8::Context> context = toLocalFrame(frame)->script().windowProxy(world)->context();
+    v8::Local<v8::Context> context = frame->windowProxy(world)->context();
     if (context.IsEmpty())
         return v8::Local<v8::Context>();
-    LocalFrame* attachedFrame = toFrameIfNotDetached(context);
+    Frame* attachedFrame = toFrameIfNotDetached(context);
     return frame == attachedFrame ? context : v8::Local<v8::Context>();
 }
 
@@ -1014,30 +1007,50 @@ v8::Isolate* V8TestingScope::isolate() const
     return m_scriptState->isolate();
 }
 
-void GetDevToolsFunctionInfo(v8::Handle<v8::Function> function, v8::Isolate* isolate, int& scriptId, String& resourceName, int& lineNumber)
+void DevToolsFunctionInfo::ensureInitialized() const
 {
-    v8::Handle<v8::Function> originalFunction = getBoundFunction(function);
-    scriptId = originalFunction->ScriptId();
+    if (m_function.IsEmpty())
+        return;
+
+    v8::Handle<v8::Function> originalFunction = getBoundFunction(m_function);
+    m_scriptId = originalFunction->ScriptId();
     v8::ScriptOrigin origin = originalFunction->GetScriptOrigin();
     if (!origin.ResourceName().IsEmpty()) {
         V8StringResource<> stringResource(origin.ResourceName());
         stringResource.prepare();
-        resourceName = stringResource;
-        lineNumber = originalFunction->GetScriptLineNumber() + 1;
+        m_resourceName = stringResource;
+        m_lineNumber = originalFunction->GetScriptLineNumber() + 1;
     }
-    if (resourceName.isEmpty()) {
-        resourceName = "undefined";
-        lineNumber = 1;
+    if (m_resourceName.isEmpty()) {
+        m_resourceName = "undefined";
+        m_lineNumber = 1;
     }
+
+    m_function.Clear();
+}
+
+int DevToolsFunctionInfo::scriptId() const
+{
+    ensureInitialized();
+    return m_scriptId;
+}
+
+int DevToolsFunctionInfo::lineNumber() const
+{
+    ensureInitialized();
+    return m_lineNumber;
+}
+
+String DevToolsFunctionInfo::resourceName() const
+{
+    ensureInitialized();
+    return m_resourceName;
 }
 
 PassRefPtr<TraceEvent::ConvertableToTraceFormat> devToolsTraceEventData(v8::Isolate* isolate, ExecutionContext* context, v8::Handle<v8::Function> function)
 {
-    int scriptId = 0;
-    String resourceName;
-    int lineNumber = 1;
-    GetDevToolsFunctionInfo(function, isolate, scriptId, resourceName, lineNumber);
-    return InspectorFunctionCallEvent::data(context, scriptId, resourceName, lineNumber);
+    DevToolsFunctionInfo info(function);
+    return InspectorFunctionCallEvent::data(context, info.scriptId(), info.resourceName(), info.lineNumber());
 }
 
 } // namespace blink

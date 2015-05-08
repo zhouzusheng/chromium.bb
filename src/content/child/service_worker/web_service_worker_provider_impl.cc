@@ -6,7 +6,6 @@
 
 #include "base/atomic_sequence_num.h"
 #include "base/logging.h"
-#include "content/child/child_thread.h"
 #include "content/child/service_worker/service_worker_dispatcher.h"
 #include "content/child/service_worker/service_worker_handle_reference.h"
 #include "content/child/service_worker/service_worker_provider_context.h"
@@ -31,14 +30,14 @@ WebServiceWorkerProviderImpl::WebServiceWorkerProviderImpl(
 }
 
 WebServiceWorkerProviderImpl::~WebServiceWorkerProviderImpl() {
-  // Make sure the script client is removed.
-  RemoveScriptClient();
+  // Make sure the provider client is removed.
+  RemoveProviderClient();
 }
 
 void WebServiceWorkerProviderImpl::setClient(
     blink::WebServiceWorkerProviderClient* client) {
   if (!client) {
-    RemoveScriptClient();
+    RemoveProviderClient();
     return;
   }
 
@@ -47,9 +46,11 @@ void WebServiceWorkerProviderImpl::setClient(
   // (e.g. on document and on dedicated workers) can properly share
   // the single provider context across threads. (http://crbug.com/366538
   // for more context)
-  GetDispatcher()->AddScriptClient(provider_id_, client);
+  GetDispatcher()->AddProviderClient(provider_id_, client);
 
-  if (!context_->registration()) {
+  ServiceWorkerRegistrationObjectInfo info;
+  ServiceWorkerVersionAttributes attrs;
+  if (!context_->GetRegistrationInfoAndVersionAttributes(&info, &attrs)) {
     // This provider is not associated with any registration.
     return;
   }
@@ -57,12 +58,10 @@ void WebServiceWorkerProviderImpl::setClient(
   // Set .ready if the associated registration has the active service worker.
   if (context_->active_handle_id() != kInvalidServiceWorkerHandleId) {
     WebServiceWorkerRegistrationImpl* registration =
-        GetDispatcher()->FindServiceWorkerRegistration(
-            context_->registration()->info(), false);
+        GetDispatcher()->FindServiceWorkerRegistration(info, false);
     if (!registration) {
-      registration = GetDispatcher()->CreateServiceWorkerRegistration(
-          context_->registration()->info(), false);
-      ServiceWorkerVersionAttributes attrs = context_->GetVersionAttributes();
+      registration =
+          GetDispatcher()->CreateServiceWorkerRegistration(info, false);
       registration->SetInstalling(
           GetDispatcher()->GetServiceWorker(attrs.installing, false));
       registration->SetWaiting(
@@ -101,13 +100,13 @@ void WebServiceWorkerProviderImpl::getRegistration(
   GetDispatcher()->GetRegistration(provider_id_, document_url, callbacks);
 }
 
-void WebServiceWorkerProviderImpl::RemoveScriptClient() {
-  // Remove the script client, but only if the dispatcher is still there.
+void WebServiceWorkerProviderImpl::RemoveProviderClient() {
+  // Remove the provider client, but only if the dispatcher is still there.
   // (For cleanup path we don't need to bother creating a new dispatcher)
   ServiceWorkerDispatcher* dispatcher =
       ServiceWorkerDispatcher::GetThreadSpecificInstance();
   if (dispatcher)
-    dispatcher->RemoveScriptClient(provider_id_);
+    dispatcher->RemoveProviderClient(provider_id_);
 }
 
 ServiceWorkerDispatcher* WebServiceWorkerProviderImpl::GetDispatcher() {

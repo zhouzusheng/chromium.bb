@@ -29,15 +29,15 @@ public:
 protected:
     SkEmptyTypeface() : SkTypeface(SkFontStyle(), 0, true) { }
 
-    virtual SkStream* onOpenStream(int* ttcIndex) const SK_OVERRIDE { return NULL; }
-    virtual SkScalerContext* onCreateScalerContext(const SkDescriptor*) const SK_OVERRIDE {
+    SkStreamAsset* onOpenStream(int* ttcIndex) const SK_OVERRIDE { return NULL; }
+    SkScalerContext* onCreateScalerContext(const SkDescriptor*) const SK_OVERRIDE {
         return NULL;
     }
-    virtual void onFilterRec(SkScalerContextRec*) const SK_OVERRIDE { }
+    void onFilterRec(SkScalerContextRec*) const SK_OVERRIDE { }
     virtual SkAdvancedTypefaceMetrics* onGetAdvancedTypefaceMetrics(
                                 SkAdvancedTypefaceMetrics::PerGlyphInfo,
                                 const uint32_t*, uint32_t) const SK_OVERRIDE { return NULL; }
-    virtual void onGetFontDescriptor(SkFontDescriptor*, bool*) const SK_OVERRIDE { }
+    void onGetFontDescriptor(SkFontDescriptor*, bool*) const SK_OVERRIDE { }
     virtual int onCharsToGlyphs(const void* chars, Encoding encoding,
                                 uint16_t glyphs[], int glyphCount) const SK_OVERRIDE {
         if (glyphs && glyphCount > 0) {
@@ -45,20 +45,20 @@ protected:
         }
         return 0;
     }
-    virtual int onCountGlyphs() const SK_OVERRIDE { return 0; };
-    virtual int onGetUPEM() const SK_OVERRIDE { return 0; };
+    int onCountGlyphs() const SK_OVERRIDE { return 0; };
+    int onGetUPEM() const SK_OVERRIDE { return 0; };
     class EmptyLocalizedStrings : public SkTypeface::LocalizedStrings {
     public:
-        virtual bool next(SkTypeface::LocalizedString*) SK_OVERRIDE { return false; }
+        bool next(SkTypeface::LocalizedString*) SK_OVERRIDE { return false; }
     };
-    virtual void onGetFamilyName(SkString* familyName) const SK_OVERRIDE {
+    void onGetFamilyName(SkString* familyName) const SK_OVERRIDE {
         familyName->reset();
     }
-    virtual SkTypeface::LocalizedStrings* onCreateFamilyNameIterator() const SK_OVERRIDE {
+    SkTypeface::LocalizedStrings* onCreateFamilyNameIterator() const SK_OVERRIDE {
         return SkNEW(EmptyLocalizedStrings);
     };
-    virtual int onGetTableTags(SkFontTableTag tags[]) const SK_OVERRIDE { return 0; }
-    virtual size_t onGetTableData(SkFontTableTag, size_t, size_t, void*) const SK_OVERRIDE {
+    int onGetTableTags(SkFontTableTag tags[]) const SK_OVERRIDE { return 0; }
+    size_t onGetTableData(SkFontTableTag, size_t, size_t, void*) const SK_OVERRIDE {
         return 0;
     }
 };
@@ -138,7 +138,7 @@ SkTypeface* SkTypeface::CreateFromTypeface(const SkTypeface* family, Style s) {
     return fm->matchFaceStyle(family, newStyle);
 }
 
-SkTypeface* SkTypeface::CreateFromStream(SkStream* stream, int index) {
+SkTypeface* SkTypeface::CreateFromStream(SkStreamAsset* stream, int index) {
     SkAutoTUnref<SkFontMgr> fm(SkFontMgr::RefDefault());
     return fm->createFromStream(stream, index);
 }
@@ -156,7 +156,7 @@ void SkTypeface::serialize(SkWStream* wstream) const {
     this->onGetFontDescriptor(&desc, &isLocal);
 
     // Embed font data if it's a local font.
-    if (isLocal && NULL == desc.getFontData()) {
+    if (isLocal && !desc.hasFontData()) {
         int ttcIndex;
         desc.setFontData(this->onOpenStream(&ttcIndex));
         desc.setFontIndex(ttcIndex);
@@ -170,7 +170,7 @@ void SkTypeface::serializeForcingEmbedding(SkWStream* wstream) const {
     this->onGetFontDescriptor(&desc, &ignoredIsLocal);
 
     // Always embed font data.
-    if (NULL == desc.getFontData()) {
+    if (!desc.hasFontData()) {
         int ttcIndex;
         desc.setFontData(this->onOpenStream(&ttcIndex));
         desc.setFontIndex(ttcIndex);
@@ -180,7 +180,7 @@ void SkTypeface::serializeForcingEmbedding(SkWStream* wstream) const {
 
 SkTypeface* SkTypeface::Deserialize(SkStream* stream) {
     SkFontDescriptor desc(stream);
-    SkStream* data = desc.getFontData();
+    SkStreamAsset* data = desc.transferFontData();
     if (data) {
         SkTypeface* typeface = SkTypeface::CreateFromStream(data, desc.getFontIndex());
         if (typeface) {
@@ -209,7 +209,7 @@ size_t SkTypeface::getTableData(SkFontTableTag tag, size_t offset, size_t length
     return this->onGetTableData(tag, offset, length, data);
 }
 
-SkStream* SkTypeface::openStream(int* ttcIndex) const {
+SkStreamAsset* SkTypeface::openStream(int* ttcIndex) const {
     int ttcIndexStorage;
     if (NULL == ttcIndex) {
         // So our subclasses don't need to check for null param

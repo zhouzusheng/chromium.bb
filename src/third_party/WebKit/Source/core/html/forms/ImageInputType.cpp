@@ -34,8 +34,8 @@
 #include "core/html/HTMLImageLoader.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
+#include "core/layout/LayoutImage.h"
 #include "core/rendering/RenderBlockFlow.h"
-#include "core/rendering/RenderImage.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/StringBuilder.h"
 
@@ -121,19 +121,19 @@ void ImageInputType::handleDOMActivateEvent(Event* event)
     event->setDefaultHandled();
 }
 
-RenderObject* ImageInputType::createRenderer(RenderStyle* style) const
+LayoutObject* ImageInputType::createRenderer(const LayoutStyle& style) const
 {
     if (m_useFallbackContent)
         return new RenderBlockFlow(&element());
-    RenderImage* image = new RenderImage(&element());
-    image->setImageResource(RenderImageResource::create());
+    LayoutImage* image = new LayoutImage(&element());
+    image->setImageResource(LayoutImageResource::create());
     return image;
 }
 
 void ImageInputType::altAttributeChanged()
 {
-    if (element().userAgentShadowRoot()) {
-        Element* text = element().userAgentShadowRoot()->getElementById("alttext");
+    if (element().closedShadowRoot()) {
+        Element* text = element().closedShadowRoot()->getElementById("alttext");
         String value = element().altText();
         if (text && text->textContent() != value)
             text->setTextContent(element().altText());
@@ -161,11 +161,11 @@ void ImageInputType::startResourceLoading()
     HTMLImageLoader& imageLoader = element().ensureImageLoader();
     imageLoader.updateFromElement();
 
-    RenderObject* renderer = element().renderer();
-    if (!renderer || !renderer->isRenderImage())
+    LayoutObject* renderer = element().renderer();
+    if (!renderer || !renderer->isLayoutImage())
         return;
 
-    RenderImageResource* imageResource = toRenderImage(renderer)->imageResource();
+    LayoutImageResource* imageResource = toLayoutImage(renderer)->imageResource();
     imageResource->setImageResource(imageLoader.image());
 }
 
@@ -263,7 +263,7 @@ void ImageInputType::setUseFallbackContent()
     m_useFallbackContent = true;
     if (element().document().inStyleRecalc())
         return;
-    if (ShadowRoot* root = element().userAgentShadowRoot())
+    if (ShadowRoot* root = element().closedShadowRoot())
         root->removeChildren();
     createShadowSubtree();
 }
@@ -295,7 +295,7 @@ void ImageInputType::createShadowSubtree()
     HTMLImageFallbackHelper::createAltTextShadowTree(element());
 }
 
-PassRefPtr<RenderStyle> ImageInputType::customStyleForRenderer(PassRefPtr<RenderStyle> newStyle)
+PassRefPtr<LayoutStyle> ImageInputType::customStyleForRenderer(PassRefPtr<LayoutStyle> newStyle)
 {
     if (!m_useFallbackContent)
         return newStyle;

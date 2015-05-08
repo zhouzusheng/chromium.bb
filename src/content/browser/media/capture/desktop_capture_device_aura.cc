@@ -119,6 +119,7 @@ class DesktopVideoCaptureMachine
   void OnCompositingEnded(ui::Compositor* compositor) override;
   void OnCompositingAborted(ui::Compositor* compositor) override {}
   void OnCompositingLockStateChanged(ui::Compositor* compositor) override {}
+  void OnCompositingShuttingDown(ui::Compositor* compositor) override {}
 
  private:
   // Captures a frame.
@@ -361,11 +362,8 @@ bool DesktopVideoCaptureMachine::ProcessCopyOutputResponse(
                                                texture_mailbox.target(),
                                                texture_mailbox.sync_point())),
         base::Bind(&RunSingleReleaseCallback, base::Passed(&release_callback)),
-        result->size(),
-        gfx::Rect(result->size()),
-        result->size(),
-        base::TimeDelta(),
-        media::VideoFrame::ReadPixelsCB());
+        result->size(), gfx::Rect(result->size()), result->size(),
+        base::TimeDelta(), false);
     capture_frame_cb.Run(video_frame, start_time, true);
     return true;
   }

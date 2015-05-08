@@ -23,7 +23,7 @@
 
 #include "core/svg/SVGClipPathElement.h"
 
-#include "core/rendering/svg/RenderSVGResourceClipper.h"
+#include "core/layout/svg/LayoutSVGResourceClipper.h"
 
 namespace blink {
 
@@ -34,7 +34,7 @@ inline SVGClipPathElement::SVGClipPathElement(Document& document)
     addToPropertyMap(m_clipPathUnits);
 }
 
-void SVGClipPathElement::trace(Visitor* visitor)
+DEFINE_TRACE(SVGClipPathElement)
 {
     visitor->trace(m_clipPathUnits);
     SVGGraphicsElement::trace(visitor);
@@ -56,7 +56,7 @@ void SVGClipPathElement::svgAttributeChanged(const QualifiedName& attrName)
 
     SVGElement::InvalidationGuard invalidationGuard(this);
 
-    RenderSVGResourceContainer* renderer = toRenderSVGResourceContainer(this->renderer());
+    LayoutSVGResourceContainer* renderer = toLayoutSVGResourceContainer(this->renderer());
     if (renderer)
         renderer->invalidateCacheAndMarkForLayout();
 }
@@ -68,13 +68,13 @@ void SVGClipPathElement::childrenChanged(const ChildrenChange& change)
     if (change.byParser)
         return;
 
-    if (RenderObject* object = renderer())
+    if (LayoutObject* object = renderer())
         object->setNeedsLayoutAndFullPaintInvalidation();
 }
 
-RenderObject* SVGClipPathElement::createRenderer(RenderStyle*)
+LayoutObject* SVGClipPathElement::createRenderer(const LayoutStyle&)
 {
-    return new RenderSVGResourceClipper(this);
+    return new LayoutSVGResourceClipper(this);
 }
 
 }

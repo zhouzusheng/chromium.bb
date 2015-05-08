@@ -34,7 +34,7 @@ public:
     DECLARE_NODE_FACTORY(SVGFEMergeNodeElement);
     SVGAnimatedString* in1() { return m_in1.get(); }
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     explicit SVGFEMergeNodeElement(Document&);
@@ -42,7 +42,7 @@ private:
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
     virtual void svgAttributeChanged(const QualifiedName&) override;
 
-    virtual bool rendererIsNeeded(const RenderStyle&) override { return false; }
+    virtual bool rendererIsNeeded(const LayoutStyle&) override { return false; }
 
     RefPtrWillBeMember<SVGAnimatedString> m_in1;
 };

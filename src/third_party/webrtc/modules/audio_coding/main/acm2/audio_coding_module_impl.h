@@ -35,9 +35,6 @@ class AudioCodingModuleImpl : public AudioCodingModule {
   explicit AudioCodingModuleImpl(const AudioCodingModule::Config& config);
   ~AudioCodingModuleImpl();
 
-  // Change the unique identifier of this object.
-  virtual int32_t ChangeUniqueId(const int32_t id) OVERRIDE;
-
   // Returns the number of milliseconds until the module want a worker thread
   // to call Process.
   virtual int64_t TimeUntilNextProcess() OVERRIDE;
@@ -57,17 +54,6 @@ class AudioCodingModuleImpl : public AudioCodingModule {
 
   // Can be called multiple times for Codec, CNG, RED.
   virtual int RegisterSendCodec(const CodecInst& send_codec) OVERRIDE;
-
-  // Register Secondary codec for dual-streaming. Dual-streaming is activated
-  // right after the secondary codec is registered.
-  virtual int RegisterSecondarySendCodec(const CodecInst& send_codec) OVERRIDE;
-
-  // Unregister the secondary codec. Dual-streaming is deactivated right after
-  // deregistering secondary codec.
-  virtual void UnregisterSecondarySendCodec() OVERRIDE;
-
-  // Get the secondary codec.
-  virtual int SecondarySendCodec(CodecInst* secondary_codec) const OVERRIDE;
 
   // Get current send codec.
   virtual int SendCodec(CodecInst* current_codec) const OVERRIDE;
@@ -212,7 +198,7 @@ class AudioCodingModuleImpl : public AudioCodingModule {
   //   Statistics
   //
 
-  virtual int NetworkStatistics(ACMNetworkStatistics* statistics) OVERRIDE;
+  virtual int GetNetworkStatistics(NetworkStatistics* statistics) OVERRIDE;
 
   // GET RED payload for iSAC. The method id called when 'this' ACM is
   // the default ACM.
@@ -235,6 +221,8 @@ class AudioCodingModuleImpl : public AudioCodingModule {
       int rate_bit_per_sec,
       bool enforce_frame_size = false) OVERRIDE;
 
+  int SetOpusApplication(OpusApplicationMode application) override;
+
   // If current send codec is Opus, informs it about the maximum playback rate
   // the receiver will render.
   virtual int SetOpusMaxPlaybackRate(int frequency_hz) OVERRIDE;
@@ -246,7 +234,7 @@ class AudioCodingModuleImpl : public AudioCodingModule {
   virtual void DisableNack() OVERRIDE;
 
   virtual std::vector<uint16_t> GetNackList(
-      int round_trip_time_ms) const OVERRIDE;
+      int64_t round_trip_time_ms) const OVERRIDE;
 
   virtual void GetDecodingCallStatistics(
       AudioDecodingCallStats* stats) const OVERRIDE;
@@ -265,14 +253,6 @@ class AudioCodingModuleImpl : public AudioCodingModule {
   // created to be called only from inside a critical section.
   int SetVADSafe(bool enable_dtx, bool enable_vad, ACMVADMode mode)
       EXCLUSIVE_LOCKS_REQUIRED(acm_crit_sect_);
-
-  // Process buffered audio when dual-streaming is not enabled (When RED is
-  // enabled still this function is used.)
-  int ProcessSingleStream();
-
-  // Process buffered audio when dual-streaming is enabled, i.e. secondary send
-  // codec is registered.
-  int ProcessDualStream();
 
   // Preprocessing of input audio, including resampling and down-mixing if
   // required, before pushing audio into encoder's buffer.
@@ -293,13 +273,6 @@ class AudioCodingModuleImpl : public AudioCodingModule {
   // to |index|.
   int UpdateUponReceivingCodec(int index);
 
-  int EncodeFragmentation(int fragmentation_index,
-                          int payload_type,
-                          uint32_t current_timestamp,
-                          ACMGenericCodec* encoder,
-                          uint8_t* stream)
-      EXCLUSIVE_LOCKS_REQUIRED(acm_crit_sect_);
-
   void ResetFragmentation(int vector_size)
       EXCLUSIVE_LOCKS_REQUIRED(acm_crit_sect_);
 
@@ -315,6 +288,12 @@ class AudioCodingModuleImpl : public AudioCodingModule {
   // valid pointer, otherwise it will be NULL.
   int GetAudioDecoder(const CodecInst& codec, int codec_id,
                       int mirror_id, AudioDecoder** decoder)
+      EXCLUSIVE_LOCKS_REQUIRED(acm_crit_sect_);
+
+  void SetCngPayloadType(int sample_rate_hz, int payload_type)
+      EXCLUSIVE_LOCKS_REQUIRED(acm_crit_sect_);
+
+  void EnableCopyRedForAllCodecs(bool enable)
       EXCLUSIVE_LOCKS_REQUIRED(acm_crit_sect_);
 
   CriticalSectionWrapper* acm_crit_sect_;
@@ -348,7 +327,7 @@ class AudioCodingModuleImpl : public AudioCodingModule {
   // TODO(turajs): |red_buffer_| is allocated in constructor, why having them
   // as pointers and not an array. If concerned about the memory, then make a
   // set-up function to allocate them only when they are going to be used, i.e.
-  // RED or Dual-streaming is enabled.
+  // RED is enabled.
   uint8_t* red_buffer_ GUARDED_BY(acm_crit_sect_);
 
   // TODO(turajs): we actually don't need |fragmentation_| as a member variable.
@@ -374,8 +353,6 @@ class AudioCodingModuleImpl : public AudioCodingModule {
   bool receiver_initialized_ GUARDED_BY(acm_crit_sect_);
 
   AudioFrame preprocess_frame_ GUARDED_BY(acm_crit_sect_);
-  CodecInst secondary_send_codec_inst_ GUARDED_BY(acm_crit_sect_);
-  scoped_ptr<ACMGenericCodec> secondary_encoder_ GUARDED_BY(acm_crit_sect_);
   uint32_t codec_timestamp_ GUARDED_BY(acm_crit_sect_);
   bool first_10ms_data_ GUARDED_BY(acm_crit_sect_);
 
@@ -441,8 +418,8 @@ class AudioCodingImpl : public AudioCoding {
 
   virtual bool Get10MsAudio(AudioFrame* audio_frame) OVERRIDE;
 
-  virtual bool NetworkStatistics(
-      ACMNetworkStatistics* network_statistics) OVERRIDE;
+  virtual bool GetNetworkStatistics(
+      NetworkStatistics* network_statistics) OVERRIDE;
 
   virtual bool EnableNack(size_t max_nack_list_size) OVERRIDE;
 

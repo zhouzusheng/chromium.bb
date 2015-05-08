@@ -71,20 +71,20 @@ inline void FormControlState::append(const String& value)
     m_values.append(value);
 }
 
-typedef HashMap<AtomicString, OwnPtr<SavedFormState>> SavedFormStateMap;
+using SavedFormStateMap = HashMap<AtomicString, OwnPtr<SavedFormState>>;
 
 class DocumentState final : public RefCountedWillBeGarbageCollected<DocumentState> {
     DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(DocumentState);
 public:
     static PassRefPtrWillBeRawPtr<DocumentState> create();
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
     void addControl(HTMLFormControlElementWithState*);
     void removeControl(HTMLFormControlElementWithState*);
     Vector<String> toStateVector();
 
 private:
-    typedef WillBeHeapListHashSet<RefPtrWillBeMember<HTMLFormControlElementWithState>, 64> FormElementListHashSet;
+    using FormElementListHashSet = WillBeHeapListHashSet<RefPtrWillBeMember<HTMLFormControlElementWithState>, 64>;
     FormElementListHashSet m_formControls;
 };
 
@@ -96,7 +96,7 @@ public:
         return adoptPtrWillBeNoop(new FormController);
     }
     ~FormController();
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
     RadioButtonGroupScope& radioButtonGroupScope() { return m_radioButtonGroupScope; }
 

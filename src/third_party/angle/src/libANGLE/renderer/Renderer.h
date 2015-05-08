@@ -52,18 +52,7 @@ class FramebufferImpl;
 class CompilerImpl;
 struct TranslatedIndexData;
 struct Workarounds;
-class SwapChain;
 class DisplayImpl;
-
-struct ConfigDesc
-{
-    GLenum  renderTargetFormat;
-    GLenum  depthStencilFormat;
-    GLint   multiSample;
-    bool    fastConfig;
-    bool    es2Conformant;
-    bool    es3Capable;
-};
 
 class Renderer
 {
@@ -71,22 +60,14 @@ class Renderer
     Renderer();
     virtual ~Renderer();
 
-    virtual EGLint initialize() = 0;
-
-    virtual int generateConfigs(ConfigDesc **configDescList) = 0;
-    virtual void deleteConfigs(ConfigDesc *configDescList) = 0;
-
-    virtual gl::Error sync(bool block) = 0;
+    virtual gl::Error flush() = 0;
+    virtual gl::Error finish() = 0;
 
     virtual gl::Error drawArrays(const gl::Data &data, GLenum mode,
                                  GLint first, GLsizei count, GLsizei instances) = 0;
     virtual gl::Error drawElements(const gl::Data &data, GLenum mode, GLsizei count, GLenum type,
                                    const GLvoid *indices, GLsizei instances,
                                    const RangeUI &indexRange) = 0;
-
-    // TODO(jmadill): caps? and virtual for egl::Display
-    virtual bool getShareHandleSupport() const = 0;
-    virtual bool getPostSubBufferSupport() const = 0;
 
     // Shader creation
     virtual CompilerImpl *createCompiler(const gl::Data &data) = 0;
@@ -125,22 +106,14 @@ class Renderer
     virtual bool testDeviceResettable() = 0;
 
     virtual VendorID getVendorId() const = 0;
+    virtual std::string getVendorString() const = 0;
     virtual std::string getRendererDescription() const = 0;
 
-    // Renderer capabilities (virtual because of egl::Display)
-    virtual const gl::Caps &getRendererCaps() const;
+    // Renderer capabilities
+    const gl::Caps &getRendererCaps() const;
     const gl::TextureCapsMap &getRendererTextureCaps() const;
-    virtual const gl::Extensions &getRendererExtensions() const;
+    const gl::Extensions &getRendererExtensions() const;
     const Workarounds &getWorkarounds() const;
-
-    virtual std::string getVendorString() const = 0;
-
-    // TODO(jmadill): needed by egl::Display, probably should be removed
-    virtual int getMajorShaderModel() const = 0;
-    virtual int getMinSwapInterval() const = 0;
-    virtual int getMaxSwapInterval() const = 0;
-
-    virtual DisplayImpl *createDisplay() = 0;
 
   private:
     DISALLOW_COPY_AND_ASSIGN(Renderer);

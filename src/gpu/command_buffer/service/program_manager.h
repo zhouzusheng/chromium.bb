@@ -24,7 +24,6 @@ class ProgramCache;
 class ProgramManager;
 class Shader;
 class ShaderManager;
-class ShaderTranslator;
 
 // This is used to track which attributes a particular program needs
 // so we can verify at glDrawXXX time that every attribute is either disabled
@@ -149,6 +148,19 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
   void GetProgramInfo(
       ProgramManager* manager, CommonDecoder::Bucket* bucket) const;
 
+  // Gets all the UniformBlock info.
+  // Return false on overflow.
+  bool GetUniformBlocks(CommonDecoder::Bucket* bucket) const;
+
+  // Gets all the TransformFeedbackVarying info.
+  // Return false on overflow.
+  bool GetTransformFeedbackVaryings(CommonDecoder::Bucket* bucket) const;
+
+  // Gather all info through glGetActiveUniformsiv, except for size, type,
+  // name_length, which we gather through glGetActiveUniform in
+  // glGetProgramInfoCHROMIUM.
+  bool GetUniformsES3(CommonDecoder::Bucket* bucket) const;
+
   // Sets the sampler values for a uniform.
   // This is safe to call for any location. If the location is not
   // a sampler uniform nothing will happen.
@@ -171,12 +183,12 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
   bool AttachShader(ShaderManager* manager, Shader* shader);
   bool DetachShader(ShaderManager* manager, Shader* shader);
 
+  void CompileAttachedShaders();
+  bool AttachedShadersExist() const;
   bool CanLink() const;
 
   // Performs glLinkProgram and related activities.
   bool Link(ShaderManager* manager,
-            ShaderTranslator* vertex_translator,
-            ShaderTranslator* fragment_shader,
             VaryingsPackingOption varyings_packing_option,
             const ShaderCacheCallback& shader_callback);
 

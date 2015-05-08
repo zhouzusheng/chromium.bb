@@ -36,8 +36,8 @@
 
 #include "public/platform/WebSize.h"
 #include "public/platform/WebThread.h"
+#include "public/web/WebDevToolsAgent.h"
 #include "public/web/WebPageOverlay.h"
-#include "web/WebDevToolsAgentPrivate.h"
 #include "wtf/Forward.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/Vector.h"
@@ -47,15 +47,18 @@ namespace blink {
 class LocalFrame;
 class InspectorClient;
 class InspectorController;
+class IntPoint;
 class Page;
 class PlatformKeyboardEvent;
 class WebDevToolsAgentClient;
+class WebInputEvent;
 class WebLocalFrameImpl;
 class WebString;
 class WebViewImpl;
+class DebuggerTask;
 
 class WebDevToolsAgentImpl final
-    : public WebDevToolsAgentPrivate
+    : public WebDevToolsAgent
     , public InspectorClient
     , public InspectorFrontendChannel
     , public WebPageOverlay
@@ -66,20 +69,13 @@ public:
 
     WebDevToolsAgentClient* client() { return m_client; }
 
-    // WebDevToolsAgentPrivate implementation.
-    virtual void didCreateScriptContext(WebLocalFrameImpl*, int worldId) override;
-    virtual bool handleInputEvent(Page*, const WebInputEvent&) override;
-    virtual void willLayout() override;
+    bool handleInputEvent(Page*, const WebInputEvent&);
 
     // WebDevToolsAgent implementation.
     virtual void attach(const WebString& hostId) override;
     virtual void reattach(const WebString& hostId, const WebString& savedState) override;
     virtual void detach() override;
     virtual void continueProgram() override;
-    virtual void didBeginFrame(int frameId) override;
-    virtual void didCancelFrame() override;
-    virtual void willComposite() override;
-    virtual void didComposite() override;
     virtual void dispatchOnInspectorBackend(const WebString& message) override;
     virtual void inspectElementAt(const WebPoint&) override;
     virtual void evaluateInWebInspector(long callId, const WebString& script) override;
@@ -90,7 +86,8 @@ public:
     virtual void highlight() override;
     virtual void hideHighlight() override;
     virtual void updateInspectorStateCookie(const WTF::String&) override;
-    virtual void sendMessageToFrontend(PassRefPtr<JSONObject> message) override;
+    virtual void sendProtocolResponse(int callId, PassRefPtr<JSONObject> message) override;
+    virtual void sendProtocolNotification(PassRefPtr<JSONObject> message) override;
     virtual void flush() override;
     virtual void resumeStartup() override;
 
@@ -103,16 +100,13 @@ public:
     virtual void enableTracing(const WTF::String& categoryFilter) override;
     virtual void disableTracing() override;
 
-    virtual void startGPUEventsRecording() override;
-    virtual void stopGPUEventsRecording() override;
-
     virtual void dispatchKeyEvent(const PlatformKeyboardEvent&) override;
     virtual void dispatchMouseEvent(const PlatformMouseEvent&) override;
 
     // WebPageOverlay
-    virtual void paintPageOverlay(WebCanvas*) override;
+    virtual void paintPageOverlay(WebGraphicsContext*, const WebSize& webViewSize) override;
 
-    void flushPendingFrontendMessages();
+    void flushPendingProtocolNotifications();
 
 private:
     // WebThread::TaskObserver
@@ -121,35 +115,33 @@ private:
 
     void enableMobileEmulation();
     void disableMobileEmulation();
-    void updatePageScaleFactorLimits();
 
     InspectorController* inspectorController();
     LocalFrame* mainFrame();
 
-    int m_debuggerId;
     int m_layerTreeId;
     WebDevToolsAgentClient* m_client;
     WebViewImpl* m_webViewImpl;
     bool m_attached;
     bool m_generatingEvent;
 
-    bool m_webViewDidLayoutOnceAfterLoad;
-
     bool m_deviceMetricsEnabled;
     bool m_emulateMobileEnabled;
     bool m_originalViewportEnabled;
     bool m_isOverlayScrollbarsEnabled;
 
-    float m_originalMinimumPageScaleFactor;
-    float m_originalMaximumPageScaleFactor;
-    bool m_pageScaleLimitsOverriden;
+    float m_originalDefaultMinimumPageScaleFactor;
+    float m_originalDefaultMaximumPageScaleFactor;
 
     bool m_touchEventEmulationEnabled;
     OwnPtr<IntPoint> m_lastPinchAnchorCss;
     OwnPtr<IntPoint> m_lastPinchAnchorDip;
 
-    typedef Vector<RefPtr<JSONObject>> FrontendMessageQueue;
-    FrontendMessageQueue m_frontendMessageQueue;
+    typedef Vector<RefPtr<JSONObject> > NotificationQueue;
+    NotificationQueue m_notificationQueue;
+    String m_stateCookie;
+
+    friend class DebuggerTask;
 };
 
 } // namespace blink

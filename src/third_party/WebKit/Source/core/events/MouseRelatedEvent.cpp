@@ -27,8 +27,8 @@
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
-#include "core/rendering/RenderLayer.h"
-#include "core/rendering/RenderObject.h"
+#include "core/layout/Layer.h"
+#include "core/layout/LayoutObject.h"
 
 namespace blink {
 
@@ -143,7 +143,7 @@ void MouseRelatedEvent::computeRelativePosition()
     targetNode->document().updateLayoutIgnorePendingStylesheets();
 
     // Adjust offsetLocation to be relative to the target's position.
-    if (RenderObject* r = targetNode->renderer()) {
+    if (LayoutObject* r = targetNode->renderer()) {
         FloatPoint localPos = r->absoluteToLocal(FloatPoint(absoluteLocation()), UseTransforms);
         m_offsetLocation = roundedLayoutPoint(localPos);
         float scaleFactor = 1 / pageZoomFactor(this);
@@ -153,7 +153,7 @@ void MouseRelatedEvent::computeRelativePosition()
 
     // Adjust layerLocation to be relative to the layer.
     // FIXME: event.layerX and event.layerY are poorly defined,
-    // and probably don't always correspond to RenderLayer offsets.
+    // and probably don't always correspond to Layer offsets.
     // https://bugs.webkit.org/show_bug.cgi?id=21868
     Node* n = targetNode;
     while (n && !n->renderer())
@@ -161,7 +161,7 @@ void MouseRelatedEvent::computeRelativePosition()
 
     if (n) {
         // FIXME: This logic is a wrong implementation of convertToLayerCoords.
-        for (RenderLayer* layer = n->renderer()->enclosingLayer(); layer; layer = layer->parent())
+        for (Layer* layer = n->renderer()->enclosingLayer(); layer; layer = layer->parent())
             m_layerLocation -= toLayoutSize(layer->location());
     }
 
@@ -224,7 +224,7 @@ int MouseRelatedEvent::y() const
     return m_clientLocation.y();
 }
 
-void MouseRelatedEvent::trace(Visitor* visitor)
+DEFINE_TRACE(MouseRelatedEvent)
 {
     UIEventWithKeyState::trace(visitor);
 }

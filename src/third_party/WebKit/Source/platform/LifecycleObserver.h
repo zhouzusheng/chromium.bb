@@ -34,9 +34,10 @@ namespace blink {
 
 template<typename T>
 class LifecycleObserver : public WillBeGarbageCollectedMixin {
-#if ENABLE(OILPAN)
-    USING_PRE_FINALIZER(LifecycleObserver, dispose);
-#endif
+    // FIXME: Oilpan: Remove the pre-finalizer by moving LifecycleNotifier
+    // to Oilpan's heap and making LifecycleNotifier::m_observers
+    // a hash set of weak members.
+    WILL_BE_USING_PRE_FINALIZER(LifecycleObserver, dispose);
 public:
     typedef T Context;
 
@@ -55,7 +56,7 @@ public:
 #if ENABLE(OILPAN)
         ThreadState::current()->registerPreFinalizer(*this);
 #endif
-        observeContext(context);
+        setContext(context);
     }
     virtual ~LifecycleObserver()
     {
@@ -64,11 +65,14 @@ public:
 #endif
     }
 
-    virtual void trace(Visitor*) { }
+    DEFINE_INLINE_VIRTUAL_TRACE()
+    {
+        visitor->trace(m_lifecycleContext);
+    }
     virtual void contextDestroyed() { }
     void dispose()
     {
-        observeContext(nullptr);
+        setContext(nullptr);
     }
 
     Context* lifecycleContext() const { return m_lifecycleContext; }
@@ -76,29 +80,29 @@ public:
     Type observerType() const { return m_observerType; }
 
 protected:
-    void observeContext(Context*);
+    void setContext(Context*);
 
-    Context* m_lifecycleContext;
+    RawPtrWillBeWeakMember<Context> m_lifecycleContext;
     Type m_observerType;
 };
 
 //
 // These functions should be specialized for each LifecycleObserver instances.
 //
-template<typename T> void observerContext(T*, LifecycleObserver<T>*) { ASSERT_NOT_REACHED(); }
-template<typename T> void unobserverContext(T*, LifecycleObserver<T>*) { ASSERT_NOT_REACHED(); }
+template<typename T> void observeContext(T*, LifecycleObserver<T>*) { ASSERT_NOT_REACHED(); }
+template<typename T> void unobserveContext(T*, LifecycleObserver<T>*) { ASSERT_NOT_REACHED(); }
 
 
 template<typename T>
-inline void LifecycleObserver<T>::observeContext(typename LifecycleObserver<T>::Context* context)
+inline void LifecycleObserver<T>::setContext(typename LifecycleObserver<T>::Context* context)
 {
     if (m_lifecycleContext)
-        unobserverContext(m_lifecycleContext, this);
+        unobserveContext(m_lifecycleContext.get(), this);
 
     m_lifecycleContext = context;
 
     if (m_lifecycleContext)
-        observerContext(m_lifecycleContext, this);
+        observeContext(m_lifecycleContext.get(), this);
 }
 
 } // namespace blink

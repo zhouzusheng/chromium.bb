@@ -50,7 +50,7 @@ public:
 
     static PassOwnPtrWillBeRawPtr<InputMethodController> create(LocalFrame&);
     ~InputMethodController();
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
     // international text input composition
     bool hasComposition() const;

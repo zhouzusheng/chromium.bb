@@ -45,7 +45,7 @@ public:
     SVGAnimatedNumber* offset() { return m_offset.get(); }
     SVGAnimatedEnumeration<ComponentTransferType>* type() { return m_type.get(); }
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     SVGComponentTransferFunctionElement(const QualifiedName&, Document&);
@@ -54,7 +54,7 @@ protected:
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) override final;
     virtual void svgAttributeChanged(const QualifiedName&) override final;
 
-    virtual bool rendererIsNeeded(const RenderStyle&) override final { return false; }
+    virtual bool rendererIsNeeded(const LayoutStyle&) override final { return false; }
 
 private:
     RefPtrWillBeMember<SVGAnimatedNumberList> m_tableValues;

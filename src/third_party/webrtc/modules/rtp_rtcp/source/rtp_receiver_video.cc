@@ -54,11 +54,8 @@ int32_t RTPReceiverVideo::ParseRtpPacket(WebRtcRTPHeader* rtp_header,
                                          size_t payload_length,
                                          int64_t timestamp_ms,
                                          bool is_first_packet) {
-  TRACE_EVENT2("webrtc_rtp",
-               "Video::ParseRtp",
-               "seqnum",
-               rtp_header->header.sequenceNumber,
-               "timestamp",
+  TRACE_EVENT2(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"), "Video::ParseRtp",
+               "seqnum", rtp_header->header.sequenceNumber, "timestamp",
                rtp_header->header.timestamp);
   rtp_header->type.Video.codec = specific_payload.Video.videoCodecType;
 
@@ -112,7 +109,7 @@ int32_t RTPReceiverVideo::InvokeOnInitializeDecoder(
       callback->OnInitializeDecoder(
           id, payload_type, payload_name, kVideoPayloadTypeFrequency, 1, 0)) {
     LOG(LS_ERROR) << "Failed to created decoder for payload type: "
-                  << payload_type;
+                  << static_cast<int>(payload_type);
     return -1;
   }
   return 0;

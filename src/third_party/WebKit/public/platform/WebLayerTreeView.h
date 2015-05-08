@@ -68,9 +68,6 @@ public:
     // Sets the background transparency for the viewport. The default is 'false'.
     virtual void setHasTransparentBackground(bool) = 0;
 
-    // Sets the overhang gutter bitmap.
-    virtual void setOverhangBitmap(const SkBitmap&) { }
-
     // Sets whether this view is visible. In threaded mode, a view that is not visible will not
     // composite or trigger updateAnimations() or layout() calls until it becomes visible.
     virtual void setVisible(bool) = 0;
@@ -85,9 +82,9 @@ public:
 
     virtual void heuristicsForGpuRasterizationUpdated(bool) { }
 
-    // Sets the offset from the top of the screen that the contents are displaced by due to top controls showing.
-    virtual void setTopControlsContentOffset(float) { }
-
+    // Sets the amount that the top controls are showing, from 0 (hidden) to 1
+    // (fully shown).
+    virtual void setTopControlsShownRatio(float) { }
 
     // Flow control and scheduling ---------------------------------------
 

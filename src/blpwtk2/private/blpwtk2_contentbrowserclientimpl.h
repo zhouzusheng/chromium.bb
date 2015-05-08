@@ -55,7 +55,6 @@ class ContentBrowserClientImpl : public content::ContentBrowserClient {
     // the renderer. The content layer will add its own settings, and then it's up
     // to the embedder to update it if it wants.
     void OverrideWebkitPrefs(content::RenderViewHost* render_view_host,
-                             const GURL& url,
                              content::WebPreferences* prefs) override;
 
     // Returns true whether the embedder supports in-process renderers or not.

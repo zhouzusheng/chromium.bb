@@ -65,14 +65,14 @@ public:
 
     bool isEmpty() const { return m_defaultStack.isEmpty() && m_cssAnimations.isEmpty() && m_players.isEmpty(); }
 
-    void cancelAnimationOnCompositor();
+    void restartAnimationOnCompositor();
 
-    void updateAnimationFlags(RenderStyle&);
+    void updateAnimationFlags(LayoutStyle&);
     void setAnimationStyleChange(bool animationStyleChange) { m_animationStyleChange = animationStyleChange; }
 
-    const RenderStyle* baseRenderStyle() const;
-    void updateBaseRenderStyle(const RenderStyle*);
-    void clearBaseRenderStyle();
+    const LayoutStyle* baseLayoutStyle() const;
+    void updateBaseLayoutStyle(const LayoutStyle*);
+    void clearBaseLayoutStyle();
 
 #if !ENABLE(OILPAN)
     void addAnimation(Animation* animation) { m_animations.append(animation); }
@@ -88,7 +88,7 @@ private:
     CSSAnimations m_cssAnimations;
     AnimationPlayerCountedSet m_players;
     bool m_animationStyleChange;
-    RefPtr<RenderStyle> m_baseRenderStyle;
+    RefPtr<LayoutStyle> m_baseLayoutStyle;
 
 #if !ENABLE(OILPAN)
     // FIXME: Oilpan: This is to avoid a reference cycle that keeps Elements alive
@@ -96,8 +96,9 @@ private:
     Vector<Animation*> m_animations;
 #endif
 
-    // CSSAnimations checks if a style change is due to animation.
+    // CSSAnimations and DeferredLegacyStyleInterpolation checks if a style change is due to animation.
     friend class CSSAnimations;
+    friend class DeferredLegacyStyleInterpolation;
 };
 
 } // namespace blink

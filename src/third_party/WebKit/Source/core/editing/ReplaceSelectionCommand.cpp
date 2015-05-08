@@ -43,9 +43,9 @@
 #include "core/editing/HTMLInterchange.h"
 #include "core/editing/SimplifyMarkupCommand.h"
 #include "core/editing/SmartReplace.h"
-#include "core/editing/TextIterator.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
+#include "core/editing/iterators/TextIterator.h"
 #include "core/editing/markup.h"
 #include "core/events/BeforeTextInsertedEvent.h"
 #include "core/frame/LocalFrame.h"
@@ -57,7 +57,7 @@
 #include "core/html/HTMLQuoteElement.h"
 #include "core/html/HTMLSelectElement.h"
 #include "core/html/HTMLSpanElement.h"
-#include "core/rendering/RenderObject.h"
+#include "core/layout/LayoutObject.h"
 #include "core/rendering/RenderText.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/Vector.h"
@@ -1551,7 +1551,7 @@ bool ReplaceSelectionCommand::performTrivialReplace(const ReplacementFragment& f
     return true;
 }
 
-void ReplaceSelectionCommand::trace(Visitor* visitor)
+DEFINE_TRACE(ReplaceSelectionCommand)
 {
     visitor->trace(m_startOfInsertedContent);
     visitor->trace(m_endOfInsertedContent);

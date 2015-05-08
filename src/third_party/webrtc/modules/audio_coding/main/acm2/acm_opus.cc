@@ -23,8 +23,9 @@ namespace acm2 {
 
 #ifndef WEBRTC_CODEC_OPUS
 
-ACMOpus::ACMOpus(int16_t /* codec_id */)
-    : encoder_inst_ptr_(NULL),
+ACMOpus::ACMOpus(int16_t /* codec_id */, bool enable_red)
+    : ACMGenericCodec(enable_red),
+      encoder_inst_ptr_(NULL),
       sample_freq_(0),
       bitrate_(0),
       channels_(1),
@@ -63,12 +64,14 @@ int16_t ACMOpus::SetBitRateSafe(const int32_t /*rate*/) {
 
 #else  //===================== Actual Implementation =======================
 
-ACMOpus::ACMOpus(int16_t codec_id)
-    : encoder_inst_ptr_(NULL),
-      sample_freq_(32000),  // Default sampling frequency.
-      bitrate_(20000),  // Default bit-rate.
-      channels_(1),  // Default mono.
-      packet_loss_rate_(0) {  // Initial packet loss rate.
+ACMOpus::ACMOpus(int16_t codec_id, bool enable_red)
+    : ACMGenericCodec(enable_red),
+      encoder_inst_ptr_(NULL),
+      sample_freq_(32000),   // Default sampling frequency.
+      bitrate_(20000),       // Default bit-rate.
+      channels_(1),          // Default mono.
+      packet_loss_rate_(0),  // Initial packet loss rate.
+      application_(kVoip) {  // Initial application mode.
   codec_id_ = codec_id;
   // Opus has internal DTX, but we dont use it for now.
   has_internal_dtx_ = false;
@@ -113,6 +116,16 @@ int16_t ACMOpus::InternalEncode(uint8_t* bitstream,
   return *bitstream_len_byte;
 }
 
+int16_t ACMOpus::InitEncoderSafe(WebRtcACMCodecParams* codec_params,
+                                 bool force_initialization) {
+  // Determine target application if codec is not initialized or a forced
+  // initialization is requested.
+  if (!encoder_initialized_ || force_initialization) {
+    application_ = (codec_params->codec_inst.channels == 1) ? kVoip : kAudio;
+  }
+  return ACMGenericCodec::InitEncoderSafe(codec_params, force_initialization);
+}
+
 int16_t ACMOpus::InternalInitEncoder(WebRtcACMCodecParams* codec_params) {
   int16_t ret;
   if (encoder_inst_ptr_ != NULL) {
@@ -120,7 +133,8 @@ int16_t ACMOpus::InternalInitEncoder(WebRtcACMCodecParams* codec_params) {
     encoder_inst_ptr_ = NULL;
   }
   ret = WebRtcOpus_EncoderCreate(&encoder_inst_ptr_,
-                                 codec_params->codec_inst.channels);
+                                 codec_params->codec_inst.channels,
+                                 application_);
   // Store number of channels.
   channels_ = codec_params->codec_inst.channels;
 
@@ -249,6 +263,13 @@ int ACMOpus::SetPacketLossRate(int loss_rate) {
 int ACMOpus::SetOpusMaxPlaybackRate(int frequency_hz) {
   // Informs Opus encoder of the maximum playback rate the receiver will render.
   return WebRtcOpus_SetMaxPlaybackRate(encoder_inst_ptr_, frequency_hz);
+}
+
+int ACMOpus::SetOpusApplication(OpusApplicationMode application) {
+  WriteLockScoped lockCodec(codec_wrapper_lock_);
+  application_ = application;
+  // Set Opus application invokes a reset of the encoder.
+  return InternalResetEncoder();
 }
 
 #endif  // WEBRTC_CODEC_OPUS

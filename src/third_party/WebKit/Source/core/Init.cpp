@@ -56,6 +56,7 @@
 #include "platform/FontFamilyNames.h"
 #include "platform/Partitions.h"
 #include "platform/PlatformThreadData.h"
+#include "platform/weborigin/KURL.h"
 #include "wtf/text/StringStatics.h"
 
 namespace blink {
@@ -92,6 +93,7 @@ void CoreInitializer::init()
     MediaFeatureNames::init();
     MediaTypeNames::init();
 
+    CSSPrimitiveValue::initUnitTable();
     CSSParserTokenRange::initStaticEOFToken();
 
     // It would make logical sense to do this in WTF::initialize() but there are
@@ -103,6 +105,7 @@ void CoreInitializer::init()
     QualifiedName::init();
     Partitions::init();
     EventTracer::initialize();
+    KURL::initialize();
 
     registerEventFactory();
 

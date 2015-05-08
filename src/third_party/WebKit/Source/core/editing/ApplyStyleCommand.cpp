@@ -40,13 +40,13 @@
 #include "core/editing/EditingStyle.h"
 #include "core/editing/HTMLInterchange.h"
 #include "core/editing/PlainTextRange.h"
-#include "core/editing/TextIterator.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
+#include "core/editing/iterators/TextIterator.h"
 #include "core/frame/UseCounter.h"
 #include "core/html/HTMLFontElement.h"
 #include "core/html/HTMLSpanElement.h"
-#include "core/rendering/RenderObject.h"
+#include "core/layout/LayoutObject.h"
 #include "core/rendering/RenderText.h"
 #include "platform/heap/Handle.h"
 #include "wtf/StdLibExtras.h"
@@ -753,7 +753,7 @@ public:
         return start && end && start->inDocument() && end->inDocument();
     }
 
-    void trace(Visitor* visitor)
+    DEFINE_INLINE_TRACE()
     {
         visitor->trace(start);
         visitor->trace(end);
@@ -1113,6 +1113,7 @@ void ApplyStyleCommand::removeInlineStyle(EditingStyle* style, const Position &s
     ASSERT(end.isNotNull());
     ASSERT(start.inDocument());
     ASSERT(end.inDocument());
+    ASSERT(Position::commonAncestorTreeScope(start, end));
     ASSERT(comparePositions(start, end) <= 0);
     // FIXME: We should assert that start/end are not in the middle of a text node.
 
@@ -1141,6 +1142,11 @@ void ApplyStyleCommand::removeInlineStyle(EditingStyle* style, const Position &s
     // use pushDownStart or pushDownEnd instead, which pushDownInlineStyleAroundNode won't prune.
     Position s = start.isNull() || start.isOrphan() ? pushDownStart : start;
     Position e = end.isNull() || end.isOrphan() ? pushDownEnd : end;
+
+    // Current ending selection resetting algorithm assumes |start| and |end|
+    // are in a same DOM tree even if they are not in document.
+    if (!Position::commonAncestorTreeScope(start, end))
+        return;
 
     RefPtrWillBeRawPtr<Node> node = start.deprecatedNode();
     while (node) {
@@ -1580,7 +1586,7 @@ void ApplyStyleCommand::joinChildTextNodes(ContainerNode* node, const Position& 
     updateStartEnd(newStart, newEnd);
 }
 
-void ApplyStyleCommand::trace(Visitor* visitor)
+DEFINE_TRACE(ApplyStyleCommand)
 {
     visitor->trace(m_style);
     visitor->trace(m_start);

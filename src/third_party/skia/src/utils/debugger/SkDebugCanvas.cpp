@@ -19,14 +19,11 @@ SkDebugCanvas::SkDebugCanvas(int width, int height)
         , fPicture(NULL)
         , fFilter(false)
         , fMegaVizMode(false)
-        , fIndex(0)
         , fOverdrawViz(false)
         , fOverdrawFilter(NULL)
         , fOverrideTexFiltering(false)
-        , fTexOverrideFilter(NULL)
-        , fOutstandingSaveCount(0) {
+        , fTexOverrideFilter(NULL) {
     fUserMatrix.reset();
-    fDrawNeedsReset = false;
 
     // SkPicturePlayback uses the base-class' quickReject calls to cull clipped
     // operations. This can lead to problems in the debugger which expects all
@@ -59,8 +56,6 @@ void SkDebugCanvas::addDrawCommand(SkDrawCommand* command) {
 }
 
 void SkDebugCanvas::draw(SkCanvas* canvas) {
-    fDrawNeedsReset = true;
-
     if (!fCommandVector.isEmpty()) {
         this->drawTo(canvas, fCommandVector.count() - 1);
     }
@@ -95,7 +90,7 @@ int SkDebugCanvas::getCommandAtPoint(int x, int y, int index) {
 
 class OverdrawXfermode : public SkXfermode {
 public:
-    virtual SkPMColor xferColor(SkPMColor src, SkPMColor dst) const SK_OVERRIDE {
+    SkPMColor xferColor(SkPMColor src, SkPMColor dst) const SK_OVERRIDE {
         // This table encodes the color progression of the overdraw visualization
         static const SkPMColor gTable[] = {
             SkPackARGB32(0x00, 0x00, 0x00, 0x00),
@@ -120,9 +115,9 @@ public:
         return gTable[SK_ARRAY_COUNT(gTable)-1];
     }
 
-    virtual Factory getFactory() const SK_OVERRIDE { return NULL; }
+    Factory getFactory() const SK_OVERRIDE { return NULL; }
 #ifndef SK_IGNORE_TO_STRING
-    virtual void toString(SkString* str) const { str->set("OverdrawXfermode"); }
+    virtual void toString(SkString* str) const SK_OVERRIDE { str->set("OverdrawXfermode"); }
 #endif
 };
 
@@ -136,7 +131,7 @@ public:
         delete fXferMode;
     }
 
-    virtual bool filter(SkPaint* p, Type) SK_OVERRIDE {
+    bool filter(SkPaint* p, Type) SK_OVERRIDE {
         p->setXfermode(fXferMode);
         return true;
     }
@@ -159,7 +154,7 @@ public:
         fFilterLevel = filterLevel;
     }
 
-    virtual bool filter(SkPaint* p, Type) SK_OVERRIDE {
+    bool filter(SkPaint* p, Type) SK_OVERRIDE {
         p->setFilterLevel(fFilterLevel);
         return true;
     }
@@ -175,21 +170,21 @@ class SkDebugClipVisitor : public SkCanvas::ClipVisitor {
 public:
     SkDebugClipVisitor(SkCanvas* canvas) : fCanvas(canvas) {}
 
-    virtual void clipRect(const SkRect& r, SkRegion::Op, bool doAA) SK_OVERRIDE {
+    void clipRect(const SkRect& r, SkRegion::Op, bool doAA) SK_OVERRIDE {
         SkPaint p;
         p.setColor(SK_ColorRED);
         p.setStyle(SkPaint::kStroke_Style);
         p.setAntiAlias(doAA);
         fCanvas->drawRect(r, p);
     }
-    virtual void clipRRect(const SkRRect& rr, SkRegion::Op, bool doAA) SK_OVERRIDE {
+    void clipRRect(const SkRRect& rr, SkRegion::Op, bool doAA) SK_OVERRIDE {
         SkPaint p;
         p.setColor(SK_ColorGREEN);
         p.setStyle(SkPaint::kStroke_Style);
         p.setAntiAlias(doAA);
         fCanvas->drawRRect(rr, p);
     }
-    virtual void clipPath(const SkPath& path, SkRegion::Op, bool doAA) SK_OVERRIDE {
+    void clipPath(const SkPath& path, SkRegion::Op, bool doAA) SK_OVERRIDE {
         SkPaint p;
         p.setColor(SK_ColorBLUE);
         p.setStyle(SkPaint::kStroke_Style);
@@ -231,32 +226,20 @@ void SkDebugCanvas::markActiveCommands(int index) {
 void SkDebugCanvas::drawTo(SkCanvas* canvas, int index) {
     SkASSERT(!fCommandVector.isEmpty());
     SkASSERT(index < fCommandVector.count());
-    int i = 0;
+
+    int saveCount = canvas->save();
+
     SkRect windowRect = SkRect::MakeWH(SkIntToScalar(canvas->getBaseLayerSize().width()),
                                        SkIntToScalar(canvas->getBaseLayerSize().height()));
 
     bool pathOpsMode = getAllowSimplifyClip();
     canvas->setAllowSimplifyClip(pathOpsMode);
-    // This only works assuming the canvas and device are the same ones that
-    // were previously drawn into because they need to preserve all saves
-    // and restores.
-    // The visibility filter also requires a full re-draw - otherwise we can
-    // end up drawing the filter repeatedly.
-    if (fIndex < index && !fFilter && !fMegaVizMode && !pathOpsMode && !fDrawNeedsReset) {
-        i = fIndex + 1;
-    } else {
-        for (int j = 0; j < fOutstandingSaveCount; j++) {
-            canvas->restore();
-        }
-        canvas->clear(SK_ColorTRANSPARENT);
-        canvas->resetMatrix();
-        if (!windowRect.isEmpty()) {
-            canvas->clipRect(windowRect, SkRegion::kReplace_Op);
-        }
-        this->applyUserTransform(canvas);
-        fDrawNeedsReset = false;
-        fOutstandingSaveCount = 0;
+    canvas->clear(SK_ColorTRANSPARENT);
+    canvas->resetMatrix();
+    if (!windowRect.isEmpty()) {
+        canvas->clipRect(windowRect, SkRegion::kReplace_Op);
     }
+    this->applyUserTransform(canvas);
 
     // The setting of the draw filter has to go here (rather than in
     // SkRasterWidget) due to the canvas restores this class performs.
@@ -286,7 +269,7 @@ void SkDebugCanvas::drawTo(SkCanvas* canvas, int index) {
         this->markActiveCommands(index);
     }
 
-    for (; i <= index; i++) {
+    for (int i = 0; i <= index; i++) {
         if (i == index && fFilter) {
             canvas->clear(0xAAFFFFFF);
         }
@@ -302,8 +285,6 @@ void SkDebugCanvas::drawTo(SkCanvas* canvas, int index) {
                 fCommandVector[i]->setUserMatrix(fUserMatrix);
                 fCommandVector[i]->execute(canvas);
             }
-
-            fCommandVector[i]->trackSaveState(&fOutstandingSaveCount);
         }
     }
 
@@ -350,7 +331,8 @@ void SkDebugCanvas::drawTo(SkCanvas* canvas, int index) {
     if (!canvas->getClipDeviceBounds(&fClip)) {
         fClip.setEmpty();
     }
-    fIndex = index;
+
+    canvas->restoreToCount(saveCount);
 }
 
 void SkDebugCanvas::deleteDrawCommandAt(int index) {
@@ -414,20 +396,7 @@ void SkDebugCanvas::onClipRegion(const SkRegion& region, SkRegion::Op op) {
 }
 
 void SkDebugCanvas::didConcat(const SkMatrix& matrix) {
-    switch (matrix.getType()) {
-        case SkMatrix::kTranslate_Mask:
-            this->addDrawCommand(new SkTranslateCommand(matrix.getTranslateX(),
-                                                        matrix.getTranslateY()));
-            break;
-        case SkMatrix::kScale_Mask:
-            this->addDrawCommand(new SkScaleCommand(matrix.getScaleX(),
-                                                    matrix.getScaleY()));
-            break;
-        default:
-            this->addDrawCommand(new SkConcatCommand(matrix));
-            break;
-    }
-
+    this->addDrawCommand(new SkConcatCommand(matrix));
     this->INHERITED::didConcat(matrix);
 }
 
@@ -534,6 +503,12 @@ void SkDebugCanvas::onDrawTextOnPath(const void* text, size_t byteLength, const 
 void SkDebugCanvas::onDrawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y,
                                    const SkPaint& paint) {
     this->addDrawCommand(new SkDrawTextBlobCommand(blob, x, y, paint));
+}
+
+void SkDebugCanvas::onDrawPatch(const SkPoint cubics[12], const SkColor colors[4],
+                                const SkPoint texCoords[4], SkXfermode* xmode,
+                                const SkPaint& paint) {
+    this->addDrawCommand(new SkDrawPatchCommand(cubics, colors, texCoords, xmode, paint));
 }
 
 void SkDebugCanvas::onDrawVertices(VertexMode vmode, int vertexCount, const SkPoint vertices[],

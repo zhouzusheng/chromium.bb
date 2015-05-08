@@ -4,7 +4,7 @@
 
 #include "cc/output/software_renderer.h"
 
-#include "base/debug/trace_event.h"
+#include "base/trace_event/trace_event.h"
 #include "cc/base/math_util.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/compositor_frame_ack.h"
@@ -160,6 +160,11 @@ bool SoftwareRenderer::BindFramebufferToTexture(
     DrawingFrame* frame,
     const ScopedResource* texture,
     const gfx::Rect& target_rect) {
+  DCHECK(texture->id());
+
+  // Explicitly release lock, otherwise we can crash when try to lock
+  // same texture again.
+  current_framebuffer_lock_ = nullptr;
   current_framebuffer_lock_ = make_scoped_ptr(
       new ResourceProvider::ScopedWriteLockSoftware(
           resource_provider_, texture->id()));
@@ -218,11 +223,11 @@ void SoftwareRenderer::SetDrawViewport(
 bool SoftwareRenderer::IsSoftwareResource(
     ResourceProvider::ResourceId resource_id) const {
   switch (resource_provider_->GetResourceType(resource_id)) {
-    case ResourceProvider::GLTexture:
+    case ResourceProvider::RESOURCE_TYPE_GL_TEXTURE:
       return false;
-    case ResourceProvider::Bitmap:
+    case ResourceProvider::RESOURCE_TYPE_BITMAP:
       return true;
-    case ResourceProvider::InvalidType:
+    case ResourceProvider::RESOURCE_TYPE_INVALID:
       break;
   }
 

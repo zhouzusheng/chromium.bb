@@ -36,7 +36,7 @@
 
 namespace blink {
 
-AXARIAGridCell::AXARIAGridCell(RenderObject* renderer, AXObjectCacheImpl* axObjectCache)
+AXARIAGridCell::AXARIAGridCell(LayoutObject* renderer, AXObjectCacheImpl* axObjectCache)
     : AXTableCell(renderer, axObjectCache)
 {
 }
@@ -45,9 +45,21 @@ AXARIAGridCell::~AXARIAGridCell()
 {
 }
 
-PassRefPtr<AXARIAGridCell> AXARIAGridCell::create(RenderObject* renderer, AXObjectCacheImpl* axObjectCache)
+PassRefPtr<AXARIAGridCell> AXARIAGridCell::create(LayoutObject* renderer, AXObjectCacheImpl* axObjectCache)
 {
     return adoptRef(new AXARIAGridCell(renderer, axObjectCache));
+}
+
+bool AXARIAGridCell::isAriaColumnHeader() const
+{
+    const AtomicString& role = getAttribute(HTMLNames::roleAttr);
+    return equalIgnoringCase(role, "columnheader");
+}
+
+bool AXARIAGridCell::isAriaRowHeader() const
+{
+    const AtomicString& role = getAttribute(HTMLNames::roleAttr);
+    return equalIgnoringCase(role, "rowheader");
 }
 
 AXObject* AXARIAGridCell::parentTable() const
@@ -119,6 +131,17 @@ void AXARIAGridCell::columnIndexRange(pair<unsigned, unsigned>& columnRange)
 
     // as far as I can tell, grid cells cannot span columns
     columnRange.second = 1;
+}
+
+AccessibilityRole AXARIAGridCell::scanToDecideHeaderRole()
+{
+    if (isAriaRowHeader())
+        return RowHeaderRole;
+
+    if (isAriaColumnHeader())
+        return ColumnHeaderRole;
+
+    return CellRole;
 }
 
 } // namespace blink

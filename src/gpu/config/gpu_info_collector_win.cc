@@ -15,7 +15,6 @@
 #include <setupapi.h>
 
 #include "base/command_line.h"
-#include "base/debug/trace_event.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -31,6 +30,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread.h"
 #include "base/threading/worker_pool.h"
+#include "base/trace_event/trace_event.h"
 #include "base/win/registry.h"
 #include "base/win/scoped_com_initializer.h"
 #include "base/win/scoped_comptr.h"
@@ -407,8 +407,18 @@ CollectInfoResult CollectDriverInfoD3D(const std::wstring& device_id,
                         {0xbf, 0xc1, 0x08, 0x00, 0x2b, 0xe1, 0x03, 0x18}};
 
   // create device info for the display device
-  HDEVINFO device_info =
-      SetupDiGetClassDevsW(&display_class, NULL, NULL, DIGCF_PRESENT);
+  HDEVINFO device_info;
+  if (base::win::GetVersion() <= base::win::VERSION_XP) {
+    // Collection of information on all adapters is much slower on XP (almost
+    // 100ms), and not very useful (as it's not going to use the GPU anyway), so
+    // just collect information on the current device. http://crbug.com/456178
+    device_info =
+        SetupDiGetClassDevsW(NULL, device_id.c_str(), NULL,
+                             DIGCF_PRESENT | DIGCF_PROFILE | DIGCF_ALLCLASSES);
+  } else {
+    device_info =
+        SetupDiGetClassDevsW(&display_class, NULL, NULL, DIGCF_PRESENT);
+  }
   if (device_info == INVALID_HANDLE_VALUE) {
     LOG(ERROR) << "Creating device info failed";
     return kCollectInfoNonFatalFailure;

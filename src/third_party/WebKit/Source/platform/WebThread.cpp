@@ -5,6 +5,7 @@
 #include "config.h"
 #include "public/platform/WebThread.h"
 
+#include "public/platform/WebTraceLocation.h"
 #include "wtf/Assertions.h"
 
 #if OS(WIN)
@@ -21,4 +22,5 @@ static_assert(sizeof(blink::PlatformThreadId) >= sizeof(pid_t), "size of platfor
 #else
 #error Unexpected platform
 #endif
-}
+
+} // namespace blink

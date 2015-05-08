@@ -71,7 +71,7 @@ WebInspector.NetworkPanel = function()
 
     this._toggleRecordButton(true);
     this._toggleHideColumnsButton(WebInspector.settings.networkLogHideColumns.get());
-    this._toggleLargerRequests(WebInspector.settings.resourcesLargeRows.get());
+    this._toggleLargerRequests(WebInspector.settings.networkLogLargeRows.get());
     this._dockSideChanged();
 
     WebInspector.dockController.addEventListener(WebInspector.DockController.Events.DockSideChanged, this._dockSideChanged.bind(this));
@@ -120,7 +120,7 @@ WebInspector.NetworkPanel.prototype = {
         this._disableCacheCheckbox = new WebInspector.StatusBarCheckbox(WebInspector.UIString("Disable cache"), WebInspector.UIString("Disable cache (while DevTools is open)."), WebInspector.settings.cacheDisabled);
         this._panelStatusBar.appendStatusBarItem(this._disableCacheCheckbox);
 
-        this._panelStatusBar.appendStatusBarItem(new WebInspector.StatusBarItemWrapper(this._progressBarContainer));
+        this._panelStatusBar.appendStatusBarItem(new WebInspector.StatusBarItem(this._progressBarContainer));
     },
 
     /**
@@ -182,9 +182,9 @@ WebInspector.NetworkPanel.prototype = {
      */
     _toggleLargerRequests: function(toggled)
     {
-        WebInspector.settings.resourcesLargeRows.set(toggled);
+        WebInspector.settings.networkLogLargeRows.set(toggled);
         this._largerRequestsButton.setToggled(toggled);
-        this._largerRequestsButton.setTitle(WebInspector.UIString(toggled ? "Use small resource rows." : "Use large resource rows."));
+        this._largerRequestsButton.setTitle(WebInspector.UIString(toggled ? "Use small request rows." : "Use large request rows."));
         this._updateUI();
     },
 
@@ -329,6 +329,7 @@ WebInspector.NetworkPanel.prototype = {
             this._networkItemView.insertBeforeTabStrip(this._closeButtonElement);
             this._networkItemView.show(this._detailsView.element);
             this._splitView.showBoth();
+            this._networkLogView.revealSelectedItem();
         } else {
             this._splitView.hideMain();
             this._networkLogView.clearSelection();
@@ -339,7 +340,7 @@ WebInspector.NetworkPanel.prototype = {
     _updateUI: function()
     {
         var detailsPaneAtBottom = this._isDetailsPaneAtBottom();
-        this._detailsView.element.classList.toggle("network-details-view-tall-header", WebInspector.settings.resourcesLargeRows.get() && !detailsPaneAtBottom);
+        this._detailsView.element.classList.toggle("network-details-view-tall-header", WebInspector.settings.networkLogLargeRows.get() && !detailsPaneAtBottom);
         this._networkLogView.switchViewMode(!this._splitView.isResizable() || detailsPaneAtBottom);
     },
 

@@ -11,13 +11,13 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
-#include "base/debug/trace_event.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/sys_byteorder.h"
+#include "base/trace_event/trace_event.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/demuxer_stream.h"
@@ -354,10 +354,12 @@ void VpxVideoDecoder::DecodeBuffer(const scoped_refptr<DecoderBuffer>& buffer) {
     return;
   }
 
-  base::ResetAndReturn(&decode_cb_).Run(kOk);
-
   if (video_frame.get())
     output_cb_.Run(video_frame);
+
+  // VideoDecoderShim expects that |decode_cb| is called only after
+  // |output_cb_|.
+  base::ResetAndReturn(&decode_cb_).Run(kOk);
 }
 
 bool VpxVideoDecoder::VpxDecode(const scoped_refptr<DecoderBuffer>& buffer,

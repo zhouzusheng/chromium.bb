@@ -172,6 +172,10 @@ void DelegatedRendererLayerImpl::SetRenderPasses(
 
   // Give back an empty array instead of nulls.
   render_passes_in_draw_order->clear();
+
+  // The render passes given here become part of the RenderSurfaceLayerList, so
+  // changing them requires recomputing the RenderSurfaceLayerList.
+  layer_tree_impl()->set_needs_update_draw_properties();
 }
 
 void DelegatedRendererLayerImpl::ClearRenderPasses() {
@@ -255,15 +259,14 @@ bool DelegatedRendererLayerImpl::WillDraw(DrawMode draw_mode,
 
 void DelegatedRendererLayerImpl::AppendQuads(
     RenderPass* render_pass,
-    const Occlusion& occlusion_in_content_space,
     AppendQuadsData* append_quads_data) {
-  AppendRainbowDebugBorder(render_pass, append_quads_data);
+  AppendRainbowDebugBorder(render_pass);
 
   // This list will be empty after a lost context until a new frame arrives.
   if (render_passes_in_draw_order_.empty())
     return;
 
-  RenderPassId target_render_pass_id = append_quads_data->render_pass_id;
+  RenderPassId target_render_pass_id = render_pass->id;
 
   const RenderPass* root_delegated_render_pass =
       render_passes_in_draw_order_.back();
@@ -282,8 +285,6 @@ void DelegatedRendererLayerImpl::AppendQuads(
     DCHECK(target_render_pass_id.layer_id == render_target()->id());
 
     AppendRenderPassQuads(render_pass,
-                          occlusion_in_content_space,
-                          append_quads_data,
                           root_delegated_render_pass,
                           frame_size);
   } else {
@@ -294,16 +295,13 @@ void DelegatedRendererLayerImpl::AppendQuads(
     const RenderPass* delegated_render_pass =
         render_passes_in_draw_order_[render_pass_index];
     AppendRenderPassQuads(render_pass,
-                          occlusion_in_content_space,
-                          append_quads_data,
                           delegated_render_pass,
                           frame_size);
   }
 }
 
 void DelegatedRendererLayerImpl::AppendRainbowDebugBorder(
-    RenderPass* render_pass,
-    AppendQuadsData* append_quads_data) {
+    RenderPass* render_pass) {
   if (!ShowDebugBorders())
     return;
 
@@ -352,40 +350,52 @@ void DelegatedRendererLayerImpl::AppendRainbowDebugBorder(
       break;
 
     if (!top.IsEmpty()) {
+      bool force_anti_aliasing_off = false;
       SolidColorDrawQuad* top_quad =
           render_pass->CreateAndAppendDrawQuad<SolidColorDrawQuad>();
-      top_quad->SetNew(
-          shared_quad_state, top, top, colors[i % kNumColors], false);
+      top_quad->SetNew(shared_quad_state, top, top, colors[i % kNumColors],
+                       force_anti_aliasing_off);
 
       SolidColorDrawQuad* bottom_quad =
           render_pass->CreateAndAppendDrawQuad<SolidColorDrawQuad>();
-      bottom_quad->SetNew(shared_quad_state,
-                          bottom,
-                          bottom,
+      bottom_quad->SetNew(shared_quad_state, bottom, bottom,
                           colors[kNumColors - 1 - (i % kNumColors)],
-                          false);
+                          force_anti_aliasing_off);
+
+      if (contents_opaque()) {
+        // Draws a stripe filling the layer vertically with the same color and
+        // width as the horizontal stipes along the layer's top border.
+        SolidColorDrawQuad* solid_quad =
+            render_pass->CreateAndAppendDrawQuad<SolidColorDrawQuad>();
+        // The inner fill is more transparent then the border.
+        static const float kFillOpacity = 0.1f;
+        SkColor fill_color = SkColorSetA(
+            colors[i % kNumColors],
+            static_cast<uint8_t>(SkColorGetA(colors[i % kNumColors]) *
+                                 kFillOpacity));
+        gfx::Rect fill_rect(x, 0, width, content_bounds().height());
+        solid_quad->SetNew(shared_quad_state, fill_rect, fill_rect, fill_color,
+                           force_anti_aliasing_off);
+      }
     }
     if (!left.IsEmpty()) {
+      bool force_anti_aliasing_off = false;
       SolidColorDrawQuad* left_quad =
           render_pass->CreateAndAppendDrawQuad<SolidColorDrawQuad>();
-      left_quad->SetNew(shared_quad_state,
-                        left,
-                        left,
+      left_quad->SetNew(shared_quad_state, left, left,
                         colors[kNumColors - 1 - (i % kNumColors)],
-                        false);
+                        force_anti_aliasing_off);
 
       SolidColorDrawQuad* right_quad =
           render_pass->CreateAndAppendDrawQuad<SolidColorDrawQuad>();
-      right_quad->SetNew(
-          shared_quad_state, right, right, colors[i % kNumColors], false);
+      right_quad->SetNew(shared_quad_state, right, right,
+                         colors[i % kNumColors], force_anti_aliasing_off);
     }
   }
 }
 
 void DelegatedRendererLayerImpl::AppendRenderPassQuads(
     RenderPass* render_pass,
-    const Occlusion& occlusion_in_content_space,
-    AppendQuadsData* append_quads_data,
     const RenderPass* delegated_render_pass,
     const gfx::Size& frame_size) const {
   const SharedQuadState* delegated_shared_quad_state = nullptr;
@@ -441,8 +451,9 @@ void DelegatedRendererLayerImpl::AppendRenderPassQuads(
     }
 
     Occlusion occlusion_in_quad_space =
-        occlusion_in_content_space.GetOcclusionWithGivenDrawTransform(
-            quad_content_to_delegated_target_space);
+        draw_properties()
+            .occlusion_in_content_space.GetOcclusionWithGivenDrawTransform(
+                quad_content_to_delegated_target_space);
 
     gfx::Rect quad_visible_rect =
         occlusion_in_quad_space.GetUnoccludedContentRect(
@@ -467,8 +478,7 @@ void DelegatedRendererLayerImpl::AppendRenderPassQuads(
       // The frame may have a RenderPassDrawQuad that points to a RenderPass not
       // part of the frame. Just ignore these quads.
       if (present) {
-        DCHECK(output_contributing_render_pass_id !=
-               append_quads_data->render_pass_id);
+        DCHECK(output_contributing_render_pass_id != render_pass->id);
 
         RenderPassDrawQuad* output_quad =
             render_pass->CopyFromAndAppendRenderPassDrawQuad(

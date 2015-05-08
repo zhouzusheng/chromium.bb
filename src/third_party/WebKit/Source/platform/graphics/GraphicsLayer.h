@@ -38,6 +38,7 @@
 #include "platform/graphics/GraphicsLayerDebugInfo.h"
 #include "platform/graphics/PaintInvalidationReason.h"
 #include "platform/graphics/filters/FilterOperations.h"
+#include "platform/graphics/paint/DisplayItemClient.h"
 #include "platform/transforms/TransformationMatrix.h"
 #include "public/platform/WebCompositorAnimationDelegate.h"
 #include "public/platform/WebContentLayer.h"
@@ -45,6 +46,7 @@
 #include "public/platform/WebLayerClient.h"
 #include "public/platform/WebLayerScrollClient.h"
 #include "public/platform/WebNinePatchLayer.h"
+#include "public/platform/WebScrollBlocksOn.h"
 #include "third_party/skia/include/core/SkPaint.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
@@ -166,7 +168,7 @@ public:
     void setClipParent(WebLayer*);
 
     // For special cases, e.g. drawing missing tiles on Android.
-    // The compositor should never paint this color in normal cases because the RenderLayer
+    // The compositor should never paint this color in normal cases because the Layer
     // will paint background by itself.
     void setBackgroundColor(const Color&);
 
@@ -181,6 +183,7 @@ public:
     void setOpacity(float);
 
     void setBlendMode(WebBlendMode);
+    void setScrollBlocksOn(WebScrollBlocksOn);
     void setIsRootForIsolatedGroup(bool);
 
     void setFilters(const FilterOperations&);
@@ -253,6 +256,9 @@ public:
 
     virtual DisplayItemList* displayItemList() override;
 
+    // Exposed for tests.
+    virtual WebLayer* contentsLayer() const { return m_contentsLayer; }
+
 protected:
     String debugName(WebLayer*) const;
 
@@ -261,9 +267,6 @@ protected:
     friend class GraphicsLayerFactoryChromium;
     // for testing
     friend class FakeGraphicsLayerFactory;
-
-    // Exposed for tests.
-    virtual WebLayer* contentsLayer() const { return m_contentsLayer; }
 
 private:
     // Callback from the underlying graphics system to draw layer contents.
@@ -291,6 +294,8 @@ private:
     void clearContentsLayerIfUnregistered();
     WebLayer* contentsLayerIfRegistered();
 
+    DisplayItemClient displayItemClient() const { return toDisplayItemClient(this); }
+
     GraphicsLayerClient* m_client;
 
     // Offset from the owning renderer
@@ -307,6 +312,8 @@ private:
     float m_opacity;
 
     WebBlendMode m_blendMode;
+
+    WebScrollBlocksOn m_scrollBlocksOn;
 
     bool m_hasTransformOrigin : 1;
     bool m_contentsOpaque : 1;

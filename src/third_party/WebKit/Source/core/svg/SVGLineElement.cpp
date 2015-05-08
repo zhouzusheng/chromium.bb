@@ -21,7 +21,7 @@
 #include "config.h"
 #include "core/svg/SVGLineElement.h"
 
-#include "core/rendering/svg/RenderSVGShape.h"
+#include "core/layout/svg/LayoutSVGShape.h"
 #include "core/svg/SVGLength.h"
 
 namespace blink {
@@ -39,7 +39,7 @@ inline SVGLineElement::SVGLineElement(Document& document)
     addToPropertyMap(m_y2);
 }
 
-void SVGLineElement::trace(Visitor* visitor)
+DEFINE_TRACE(SVGLineElement)
 {
     visitor->trace(m_x1);
     visitor->trace(m_y1);
@@ -84,7 +84,7 @@ void SVGLineElement::svgAttributeChanged(const QualifiedName& attrName)
     if (isLengthAttribute)
         updateRelativeLengthsInformation();
 
-    RenderSVGShape* renderer = toRenderSVGShape(this->renderer());
+    LayoutSVGShape* renderer = toLayoutSVGShape(this->renderer());
     if (!renderer)
         return;
 

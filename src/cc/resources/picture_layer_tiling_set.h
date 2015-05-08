@@ -14,7 +14,7 @@
 #include "ui/gfx/geometry/size.h"
 
 namespace base {
-namespace debug {
+namespace trace_event {
 class TracedValue;
 }
 }
@@ -151,7 +151,7 @@ class CC_EXPORT PictureLayerTilingSet {
     Region::Iterator region_iter_;
   };
 
-  void AsValueInto(base::debug::TracedValue* array) const;
+  void AsValueInto(base::trace_event::TracedValue* array) const;
   size_t GPUMemoryUsageInBytes() const;
 
   TilingRange GetTilingRange(TilingRangeType type) const;

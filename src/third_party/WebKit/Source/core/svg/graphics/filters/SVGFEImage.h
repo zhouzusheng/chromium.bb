@@ -31,7 +31,7 @@
 namespace blink {
 
 class Image;
-class RenderObject;
+class LayoutObject;
 
 class FEImage final : public FilterEffect {
 public:
@@ -45,15 +45,15 @@ public:
     virtual TextStream& externalRepresentation(TextStream&, int indention) const override;
     virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) override;
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     virtual ~FEImage() { }
     FEImage(Filter*, PassRefPtr<Image>, PassRefPtrWillBeRawPtr<SVGPreserveAspectRatio>);
     FEImage(Filter*, TreeScope&, const String&, PassRefPtrWillBeRawPtr<SVGPreserveAspectRatio>);
-    RenderObject* referencedRenderer() const;
+    LayoutObject* referencedRenderer() const;
 
-    PassRefPtr<SkImageFilter> createImageFilterForRenderer(RenderObject* rendererer, SkiaImageFilterBuilder*);
+    PassRefPtr<SkImageFilter> createImageFilterForRenderer(LayoutObject* rendererer, SkiaImageFilterBuilder*);
 
     RefPtr<Image> m_image;
 

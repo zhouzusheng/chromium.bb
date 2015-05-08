@@ -13,9 +13,12 @@
 #include "third_party/WebKit/public/platform/WebDisplayItemList.h"
 #include "third_party/WebKit/public/platform/WebFloatPoint.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
+#include "third_party/skia/include/core/SkRegion.h"
+#include "ui/gfx/geometry/point_f.h"
 
 class SkImageFilter;
 class SkMatrix44;
+class SkPath;
 class SkPicture;
 class SkRRect;
 
@@ -29,12 +32,15 @@ class WebDisplayItemListImpl : public blink::WebDisplayItemList {
   scoped_refptr<cc::DisplayItemList> ToDisplayItemList();
 
   // blink::WebDisplayItemList implementation.
-  virtual void appendDrawingItem(SkPicture* picture,
-                                 const blink::WebFloatPoint& location);
+  virtual void appendDrawingItem(const SkPicture*);
   virtual void appendClipItem(
       const blink::WebRect& clip_rect,
       const blink::WebVector<SkRRect>& rounded_clip_rects);
   virtual void appendEndClipItem();
+  virtual void appendClipPathItem(const SkPath& clip_path,
+                                  SkRegion::Op clip_op,
+                                  bool antialias);
+  virtual void appendEndClipPathItem();
   virtual void appendFloatClipItem(const blink::WebFloatRect& clip_rect);
   virtual void appendEndFloatClipItem();
   virtual void appendTransformItem(const SkMatrix44& matrix);
@@ -42,9 +48,12 @@ class WebDisplayItemListImpl : public blink::WebDisplayItemList {
   virtual void appendTransparencyItem(float opacity,
                                       blink::WebBlendMode blend_mode);
   virtual void appendEndTransparencyItem();
-  virtual void appendFilterItem(SkImageFilter* filter,
+  virtual void appendFilterItem(const blink::WebFilterOperations& filters,
                                 const blink::WebFloatRect& bounds);
   virtual void appendEndFilterItem();
+  virtual void appendScrollItem(const blink::WebSize& scrollOffset,
+                                ScrollContainerId);
+  virtual void appendEndScrollItem();
 
  private:
   scoped_refptr<cc::DisplayItemList> display_item_list_;

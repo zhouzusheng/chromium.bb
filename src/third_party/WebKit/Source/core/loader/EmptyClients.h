@@ -36,15 +36,14 @@
 #include "core/page/ContextMenuClient.h"
 #include "core/page/DragClient.h"
 #include "core/page/EditorClient.h"
-#include "core/page/FocusType.h"
 #include "core/page/Page.h"
 #include "core/page/SpellCheckerClient.h"
-#include "core/page/StorageClient.h"
 #include "platform/DragImage.h"
-#include "platform/geometry/FloatRect.h"
+#include "platform/geometry/IntRect.h"
 #include "platform/heap/Handle.h"
 #include "platform/network/ResourceError.h"
 #include "platform/text/TextCheckerClient.h"
+#include "public/platform/WebFocusType.h"
 #include "public/platform/WebScreenInfo.h"
 #include "wtf/Forward.h"
 #include <v8.h>
@@ -71,17 +70,17 @@ public:
     virtual void chromeDestroyed() override { }
 
     virtual void* webView() const override { return 0; }
-    virtual void setWindowRect(const FloatRect&) override { }
-    virtual FloatRect windowRect() override { return FloatRect(); }
+    virtual void setWindowRect(const IntRect&) override { }
+    virtual IntRect windowRect() override { return IntRect(); }
 
-    virtual FloatRect pageRect() override { return FloatRect(); }
+    virtual IntRect pageRect() override { return IntRect(); }
 
     virtual void focus() override { }
 
-    virtual bool canTakeFocus(FocusType) override { return false; }
-    virtual void takeFocus(FocusType) override { }
+    virtual bool canTakeFocus(WebFocusType) override { return false; }
+    virtual void takeFocus(WebFocusType) override { }
 
-    virtual void focusedNodeChanged(Node*) override { }
+    virtual void focusedNodeChanged(Node*, Node*) override { }
     virtual void focusedFrameChanged(LocalFrame*) override { }
     virtual Page* createWindow(LocalFrame*, const FrameLoadRequest&, const WindowFeatures&, NavigationPolicy, ShouldSendReferrer) override { return 0; }
     virtual void show(NavigationPolicy) override { }
@@ -321,12 +320,6 @@ public:
 
     virtual void highlight() override { }
     virtual void hideHighlight() override { }
-};
-
-class EmptyStorageClient final : public StorageClient {
-public:
-    virtual PassOwnPtr<StorageNamespace> createSessionStorageNamespace() override;
-    virtual bool canAccessStorage(LocalFrame*, StorageType) const override { return false; }
 };
 
 void fillWithEmptyClients(Page::PageClients&);

@@ -17,8 +17,8 @@
 namespace rx
 {
 class RendererD3D;
-class RenderTarget;
-class SwapChain;
+class RenderTargetD3D;
+class SwapChainD3D;
 
 class RenderbufferD3D : public RenderbufferImpl
 {
@@ -30,14 +30,14 @@ class RenderbufferD3D : public RenderbufferImpl
 
     virtual gl::Error setStorage(GLsizei width, GLsizei height, GLenum internalformat, GLsizei samples) override;
 
-    RenderTarget *getRenderTarget();
+    RenderTargetD3D *getRenderTarget();
     unsigned int getRenderTargetSerial() const;
 
   private:
     DISALLOW_COPY_AND_ASSIGN(RenderbufferD3D);
 
     RendererD3D *mRenderer;
-    RenderTarget *mRenderTarget;
+    RenderTargetD3D *mRenderTarget;
 };
 }
 

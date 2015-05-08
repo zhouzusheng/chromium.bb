@@ -13,6 +13,12 @@
 namespace rx
 {
 
+DisplayImpl::DisplayImpl()
+    : mExtensionsInitialized(false),
+      mCapsInitialized(false)
+{
+}
+
 DisplayImpl::~DisplayImpl()
 {
     while (!mSurfaceSet.empty())
@@ -25,6 +31,28 @@ void DisplayImpl::destroySurface(egl::Surface *surface)
 {
     mSurfaceSet.erase(surface);
     SafeDelete(surface);
+}
+
+const egl::DisplayExtensions &DisplayImpl::getExtensions() const
+{
+    if (!mExtensionsInitialized)
+    {
+        generateExtensions(&mExtensions);
+        mExtensionsInitialized = true;
+    }
+
+    return mExtensions;
+}
+
+const egl::Caps &DisplayImpl::getCaps() const
+{
+    if (!mCapsInitialized)
+    {
+        generateCaps(&mCaps);
+        mCapsInitialized = true;
+    }
+
+    return mCaps;
 }
 
 }

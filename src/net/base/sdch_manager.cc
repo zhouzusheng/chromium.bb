@@ -259,6 +259,12 @@ SdchManager::~SdchManager() {
     auto it = dictionaries_.begin();
     dictionaries_.erase(it->first);
   }
+#if defined(OS_CHROMEOS)
+  // For debugging http://crbug.com/454198; remove when resolved.
+
+  // Explicitly confirm that we can't notify any observers anymore.
+  CHECK(!observers_.might_have_observers());
+#endif
 }
 
 void SdchManager::ClearData() {
@@ -456,15 +462,15 @@ SdchManager::GetDictionarySetByHash(
   *problem_code = SDCH_DICTIONARY_HASH_NOT_FOUND;
   const auto& it = dictionaries_.find(server_hash);
   if (it == dictionaries_.end())
-    return result;
+    return result.Pass();
 
   *problem_code = it->second->data.CanUse(target_url);
   if (*problem_code != SDCH_OK)
-    return result;
+    return result.Pass();
 
   result.reset(new DictionarySet);
   result->AddDictionary(it->first, it->second);
-  return result;
+  return result.Pass();
 }
 
 // static

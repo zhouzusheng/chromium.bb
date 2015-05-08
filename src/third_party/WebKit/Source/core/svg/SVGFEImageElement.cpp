@@ -35,9 +35,10 @@ namespace blink {
 
 inline SVGFEImageElement::SVGFEImageElement(Document& document)
     : SVGFilterPrimitiveStandardAttributes(SVGNames::feImageTag, document)
-    , SVGURIReference(this)
     , m_preserveAspectRatio(SVGAnimatedPreserveAspectRatio::create(this, SVGNames::preserveAspectRatioAttr, SVGPreserveAspectRatio::create()))
 {
+    SVGURIReference::initialize(this);
+
     addToPropertyMap(m_preserveAspectRatio);
 }
 
@@ -55,7 +56,7 @@ SVGFEImageElement::~SVGFEImageElement()
 #endif
 }
 
-void SVGFEImageElement::trace(Visitor* visitor)
+DEFINE_TRACE(SVGFEImageElement)
 {
     visitor->trace(m_preserveAspectRatio);
     SVGFilterPrimitiveStandardAttributes::trace(visitor);
@@ -175,7 +176,7 @@ void SVGFEImageElement::notifyFinished(Resource*)
     if (!isSVGFilterElement(*parent) || !parent->renderer())
         return;
 
-    if (RenderObject* renderer = this->renderer())
+    if (LayoutObject* renderer = this->renderer())
         markForLayoutAndParentResourceInvalidation(renderer);
 }
 

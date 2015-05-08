@@ -23,13 +23,13 @@
 #ifndef RenderSearchField_h
 #define RenderSearchField_h
 
-#include "core/rendering/RenderTextControlSingleLine.h"
+#include "core/layout/LayoutTextControlSingleLine.h"
 
 namespace blink {
 
 class HTMLInputElement;
 
-class RenderSearchField final : public RenderTextControlSingleLine {
+class RenderSearchField final : public LayoutTextControlSingleLine {
 public:
     RenderSearchField(HTMLInputElement*);
     virtual ~RenderSearchField();
@@ -43,7 +43,7 @@ private:
     Element* cancelButtonElement() const;
 };
 
-DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderSearchField, isTextField());
+DEFINE_LAYOUT_OBJECT_TYPE_CASTS(RenderSearchField, isTextField());
 
 }
 

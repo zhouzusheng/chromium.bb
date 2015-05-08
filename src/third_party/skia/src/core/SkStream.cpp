@@ -239,7 +239,7 @@ SkStreamAsset* SkFILEStream::duplicate() const {
     }
 
     if (!fName.isEmpty()) {
-        SkAutoTUnref<SkFILEStream> that(new SkFILEStream(fName.c_str()));
+        SkAutoTDelete<SkFILEStream> that(new SkFILEStream(fName.c_str()));
         if (sk_fidentical(that->fFILE, this->fFILE)) {
             return that.detach();
         }
@@ -265,7 +265,7 @@ bool SkFILEStream::move(long offset) {
 }
 
 SkStreamAsset* SkFILEStream::fork() const {
-    SkAutoTUnref<SkStreamAsset> that(this->duplicate());
+    SkAutoTDelete<SkStreamAsset> that(this->duplicate());
     that->seek(this->getPosition());
     return that.detach();
 }
@@ -396,7 +396,7 @@ bool SkMemoryStream::move(long offset) {
 }
 
 SkMemoryStream* SkMemoryStream::fork() const {
-    SkAutoTUnref<SkMemoryStream> that(this->duplicate());
+    SkAutoTDelete<SkMemoryStream> that(this->duplicate());
     that->seek(fOffset);
     return that.detach();
 }
@@ -674,7 +674,7 @@ public:
         : fBlockMemory(SkRef(headRef)), fCurrent(fBlockMemory->fHead)
         , fSize(size) , fOffset(0), fCurrentOffset(0) { }
 
-    virtual size_t read(void* buffer, size_t rawCount) SK_OVERRIDE {
+    size_t read(void* buffer, size_t rawCount) SK_OVERRIDE {
         size_t count = rawCount;
         if (fOffset + count > fSize) {
             count = fSize - fOffset;
@@ -700,26 +700,26 @@ public:
         return 0;
     }
 
-    virtual bool isAtEnd() const SK_OVERRIDE {
+    bool isAtEnd() const SK_OVERRIDE {
         return fOffset == fSize;
     }
 
-    virtual bool rewind() SK_OVERRIDE {
+    bool rewind() SK_OVERRIDE {
         fCurrent = fBlockMemory->fHead;
         fOffset = 0;
         fCurrentOffset = 0;
         return true;
     }
 
-    virtual SkBlockMemoryStream* duplicate() const SK_OVERRIDE {
+    SkBlockMemoryStream* duplicate() const SK_OVERRIDE {
         return SkNEW_ARGS(SkBlockMemoryStream, (fBlockMemory.get(), fSize));
     }
 
-    virtual size_t getPosition() const SK_OVERRIDE {
+    size_t getPosition() const SK_OVERRIDE {
         return fOffset;
     }
 
-    virtual bool seek(size_t position) SK_OVERRIDE {
+    bool seek(size_t position) SK_OVERRIDE {
         // If possible, skip forward.
         if (position >= fOffset) {
             size_t skipAmount = position - fOffset;
@@ -736,23 +736,23 @@ public:
         return this->rewind() && this->skip(position) == position;
     }
 
-    virtual bool move(long offset) SK_OVERRIDE {
+    bool move(long offset) SK_OVERRIDE {
         return seek(fOffset + offset);
     }
 
-    virtual SkBlockMemoryStream* fork() const SK_OVERRIDE {
-        SkAutoTUnref<SkBlockMemoryStream> that(this->duplicate());
+    SkBlockMemoryStream* fork() const SK_OVERRIDE {
+        SkAutoTDelete<SkBlockMemoryStream> that(this->duplicate());
         that->fCurrent = this->fCurrent;
         that->fOffset = this->fOffset;
         that->fCurrentOffset = this->fCurrentOffset;
         return that.detach();
     }
 
-    virtual size_t getLength() const SK_OVERRIDE {
+    size_t getLength() const SK_OVERRIDE {
         return fSize;
     }
 
-    virtual const void* getMemoryBase() SK_OVERRIDE {
+    const void* getMemoryBase() SK_OVERRIDE {
         if (NULL == fBlockMemory->fHead->fNext) {
             return fBlockMemory->fHead->start();
         }
@@ -827,7 +827,7 @@ SkStreamAsset* SkStream::NewFromFile(const char path[]) {
     // file access.
     SkFILEStream* stream = SkNEW_ARGS(SkFILEStream, (path));
     if (!stream->isValid()) {
-        stream->unref();
+        SkDELETE(stream);
         stream = NULL;
     }
     return stream;
@@ -886,7 +886,7 @@ SkStreamRewindable* SkStreamRewindableFromSkStream(SkStream* stream) {
     if (!stream) {
         return NULL;
     }
-    SkAutoTUnref<SkStreamRewindable> dupStream(stream->duplicate());
+    SkAutoTDelete<SkStreamRewindable> dupStream(stream->duplicate());
     if (dupStream) {
         return dupStream.detach();
     }

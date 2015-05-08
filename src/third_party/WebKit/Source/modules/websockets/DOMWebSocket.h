@@ -119,13 +119,13 @@ public:
     // WebSocketChannelClient functions.
     virtual void didConnect(const String& subprotocol, const String& extensions) override;
     virtual void didReceiveTextMessage(const String& message) override;
-    virtual void didReceiveBinaryMessage(PassOwnPtr<Vector<char> >) override;
+    virtual void didReceiveBinaryMessage(PassOwnPtr<Vector<char>>) override;
     virtual void didError() override;
     virtual void didConsumeBufferedAmount(uint64_t) override;
     virtual void didStartClosingHandshake() override;
     virtual void didClose(ClosingHandshakeCompletionStatus, unsigned short code, const String& reason) override;
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     static bool isValidSubprotocolString(const String&);
 
@@ -153,7 +153,7 @@ private:
         void resume();
         void stop();
 
-        void trace(Visitor*);
+        DECLARE_TRACE();
 
     private:
         enum State {
@@ -171,7 +171,7 @@ private:
 
         State m_state;
         EventTarget* m_target;
-        WillBeHeapDeque<RefPtrWillBeMember<Event> > m_events;
+        WillBeHeapDeque<RefPtrWillBeMember<Event>> m_events;
         Timer<EventQueue> m_resumeTimer;
     };
 

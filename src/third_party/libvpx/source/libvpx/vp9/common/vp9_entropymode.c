@@ -442,6 +442,7 @@ void vp9_setup_past_independence(VP9_COMMON *cm) {
   vp9_default_coef_probs(cm);
   vp9_init_mode_probs(cm->fc);
   vp9_init_mv_probs(cm);
+  cm->fc->initialized = 1;
 
   if (cm->frame_type == KEY_FRAME ||
       cm->error_resilient_mode || cm->reset_frame_context == 3) {
@@ -457,8 +458,6 @@ void vp9_setup_past_independence(VP9_COMMON *cm) {
   if (frame_is_intra_only(cm) && cm->prev_mip)
     vpx_memset(cm->prev_mip, 0, cm->mi_stride * (cm->mi_rows + 1) *
                                     sizeof(*cm->prev_mip));
-
-  vpx_memset(cm->mip, 0, cm->mi_stride * (cm->mi_rows + 1) * sizeof(*cm->mip));
 
   vp9_zero(cm->ref_frame_sign_bias);
 

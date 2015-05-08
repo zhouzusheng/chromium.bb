@@ -35,8 +35,8 @@
 #include "core/CSSPropertyNames.h"
 #include "core/HTMLNames.h"
 #include "core/html/HTMLMeterElement.h"
+#include "core/layout/LayoutTheme.h"
 #include "core/rendering/RenderMeter.h"
-#include "core/rendering/RenderTheme.h"
 
 namespace blink {
 
@@ -52,10 +52,10 @@ HTMLMeterElement* MeterShadowElement::meterElement() const
     return toHTMLMeterElement(shadowHost());
 }
 
-bool MeterShadowElement::rendererIsNeeded(const RenderStyle& style)
+bool MeterShadowElement::rendererIsNeeded(const LayoutStyle& style)
 {
-    RenderObject* renderer = meterElement()->renderer();
-    return renderer && !RenderTheme::theme().supportsMeter(renderer->style()->appearance()) && HTMLDivElement::rendererIsNeeded(style);
+    LayoutObject* renderer = meterElement()->renderer();
+    return renderer && !LayoutTheme::theme().supportsMeter(renderer->style()->appearance()) && HTMLDivElement::rendererIsNeeded(style);
 }
 
 inline MeterInnerElement::MeterInnerElement(Document& document)
@@ -70,16 +70,16 @@ PassRefPtrWillBeRawPtr<MeterInnerElement> MeterInnerElement::create(Document& do
     return element.release();
 }
 
-bool MeterInnerElement::rendererIsNeeded(const RenderStyle& style)
+bool MeterInnerElement::rendererIsNeeded(const LayoutStyle& style)
 {
-    if (meterElement()->hasAuthorShadowRoot())
+    if (meterElement()->hasOpenShadowRoot())
         return HTMLDivElement::rendererIsNeeded(style);
 
-    RenderObject* renderer = meterElement()->renderer();
-    return renderer && !RenderTheme::theme().supportsMeter(renderer->style()->appearance()) && HTMLDivElement::rendererIsNeeded(style);
+    LayoutObject* renderer = meterElement()->renderer();
+    return renderer && !LayoutTheme::theme().supportsMeter(renderer->style()->appearance()) && HTMLDivElement::rendererIsNeeded(style);
 }
 
-RenderObject* MeterInnerElement::createRenderer(RenderStyle*)
+LayoutObject* MeterInnerElement::createRenderer(const LayoutStyle&)
 {
     return new RenderMeter(this);
 }

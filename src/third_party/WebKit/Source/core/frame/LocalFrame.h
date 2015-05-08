@@ -57,6 +57,7 @@ namespace blink {
     class InputMethodController;
     class IntPoint;
     class IntSize;
+    class InstrumentingAgents;
     class LocalDOMWindow;
     class Node;
     class Range;
@@ -83,13 +84,14 @@ namespace blink {
         virtual void trace(Visitor*) override;
         virtual bool isLocalFrame() const override { return true; }
         virtual DOMWindow* domWindow() const override;
+        WindowProxy* windowProxy(DOMWrapperWorld&) override;
         virtual void navigate(Document& originDocument, const KURL&, bool lockBackForwardList) override;
         virtual void reload(ReloadPolicy, ClientRedirectPolicy) override;
         virtual void detach() override;
         virtual void disconnectOwnerElement() override;
         virtual SecurityContext* securityContext() const override;
-        bool checkLoadComplete() override;
         void printNavigationErrorMessage(const Frame&, const char* reason) override;
+        bool isLoadingAsChild() const override;
 
         void addDestructionObserver(FrameDestructionObserver*);
         void removeDestructionObserver(FrameDestructionObserver*);
@@ -124,6 +126,9 @@ namespace blink {
         // should be updated to avoid storing things on the main frame.
         LocalFrame* localFrameRoot();
 
+        InstrumentingAgents* instrumentingAgents();
+        void setInstrumentingAgents(InstrumentingAgents*);
+
     // ======== All public functions below this point are candidates to move out of LocalFrame into another class. ========
 
         bool inScope(TreeScope*) const;
@@ -146,7 +151,7 @@ namespace blink {
         float textZoomFactor() const { return m_textZoomFactor; }
         void setPageAndTextZoomFactors(float pageZoomFactor, float textZoomFactor);
 
-        void deviceOrPageScaleFactorChanged();
+        void deviceScaleFactorChanged();
         double devicePixelRatio() const;
 
         PassOwnPtr<DragImage> nodeImage(Node&);
@@ -168,6 +173,7 @@ namespace blink {
         void unregisterPluginElement(HTMLPlugInElement*);
         void clearWeakMembers(Visitor*);
 #endif
+        DisplayItemClient displayItemClient() const { return toDisplayItemClient(this); }
 
     // ========
 
@@ -175,8 +181,6 @@ namespace blink {
         LocalFrame(FrameLoaderClient*, FrameHost*, FrameOwner*);
 
         String localLayerTreeAsText(unsigned flags) const;
-
-        DisplayItemClient displayItemClient() const { return static_cast<DisplayItemClientInternalVoid*>((void*)this); }
 
         void detachView();
 
@@ -222,6 +226,8 @@ namespace blink {
         float m_textZoomFactor;
 
         bool m_inViewSourceMode;
+
+        RefPtrWillBeMember<InstrumentingAgents> m_instrumentingAgents;
     };
 
     inline void LocalFrame::init()

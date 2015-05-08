@@ -26,6 +26,7 @@
 #include "core/css/StylePropertySet.h"
 #include "core/css/StyleRule.h"
 #include "core/css/StyleRuleImport.h"
+#include "core/css/StyleRuleNamespace.h"
 #include "core/css/parser/CSSParser.h"
 #include "core/dom/Document.h"
 #include "core/dom/Node.h"
@@ -154,6 +155,15 @@ void StyleSheetContents::parserAppendRule(PassRefPtrWillBeRawPtr<StyleRuleBase> 
         m_importRules.append(importRule);
         m_importRules.last()->setParentStyleSheet(this);
         m_importRules.last()->requestStyleSheet();
+        return;
+    }
+
+    if (rule->isNamespaceRule()) {
+        ASSERT(RuntimeEnabledFeatures::newCSSParserEnabled());
+        // Parser enforces that @namespace rules come before anything else
+        ASSERT(m_childRules.isEmpty());
+        StyleRuleNamespace& namespaceRule = toStyleRuleNamespace(*rule);
+        parserAddNamespace(namespaceRule.prefix(), namespaceRule.uri());
         return;
     }
 
@@ -452,15 +462,13 @@ static bool childRulesHaveFailedOrCanceledSubresources(const WillBeHeapVector<Re
                 return true;
             break;
         case StyleRuleBase::Import:
+        case StyleRuleBase::Namespace:
             ASSERT_NOT_REACHED();
         case StyleRuleBase::Page:
         case StyleRuleBase::Keyframes:
-        case StyleRuleBase::Unknown:
-        case StyleRuleBase::Charset:
         case StyleRuleBase::Keyframe:
         case StyleRuleBase::Supports:
         case StyleRuleBase::Viewport:
-        case StyleRuleBase::Filter:
             break;
         }
     }

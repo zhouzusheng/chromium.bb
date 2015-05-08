@@ -18,7 +18,7 @@
 #include "webrtc/modules/audio_processing/agc/agc_manager_direct.h"
 #include "webrtc/modules/audio_processing/audio_buffer.h"
 #include "webrtc/modules/audio_processing/beamformer/beamformer.h"
-#include "webrtc/modules/audio_processing/channel_buffer.h"
+#include "webrtc/common_audio/channel_buffer.h"
 #include "webrtc/modules/audio_processing/common.h"
 #include "webrtc/modules/audio_processing/echo_cancellation_impl.h"
 #include "webrtc/modules/audio_processing/echo_control_mobile_impl.h"
@@ -30,7 +30,6 @@
 #include "webrtc/modules/audio_processing/transient/transient_suppressor.h"
 #include "webrtc/modules/audio_processing/voice_detection_impl.h"
 #include "webrtc/modules/interface/module_common_types.h"
-#include "webrtc/system_wrappers/interface/compile_assert.h"
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
 #include "webrtc/system_wrappers/interface/file_wrapper.h"
 #include "webrtc/system_wrappers/interface/logging.h"
@@ -55,7 +54,7 @@
 namespace webrtc {
 
 // Throughout webrtc, it's assumed that success is represented by zero.
-COMPILE_ASSERT(AudioProcessing::kNoError == 0, no_error_must_be_zero);
+static_assert(AudioProcessing::kNoError == 0, "kNoError must be zero");
 
 // This class has two main functionalities:
 //
@@ -136,17 +135,18 @@ class GainControlForNewAgc : public GainControl, public VolumeCallbacks {
   int volume_;
 };
 
-AudioProcessing* AudioProcessing::Create(int id) {
-  return Create();
-}
-
 AudioProcessing* AudioProcessing::Create() {
   Config config;
-  return Create(config);
+  return Create(config, nullptr);
 }
 
 AudioProcessing* AudioProcessing::Create(const Config& config) {
-  AudioProcessingImpl* apm = new AudioProcessingImpl(config);
+  return Create(config, nullptr);
+}
+
+AudioProcessing* AudioProcessing::Create(const Config& config,
+                                         Beamformer* beamformer) {
+  AudioProcessingImpl* apm = new AudioProcessingImpl(config, beamformer);
   if (apm->Initialize() != kNoError) {
     delete apm;
     apm = NULL;
@@ -156,6 +156,10 @@ AudioProcessing* AudioProcessing::Create(const Config& config) {
 }
 
 AudioProcessingImpl::AudioProcessingImpl(const Config& config)
+    : AudioProcessingImpl(config, nullptr) {}
+
+AudioProcessingImpl::AudioProcessingImpl(const Config& config,
+                                         Beamformer* beamformer)
     : echo_cancellation_(NULL),
       echo_control_mobile_(NULL),
       gain_control_(NULL),
@@ -186,6 +190,7 @@ AudioProcessingImpl::AudioProcessingImpl(const Config& config)
 #endif
       transient_suppressor_enabled_(config.Get<ExperimentalNs>().enabled),
       beamformer_enabled_(config.Get<Beamforming>().enabled),
+      beamformer_(beamformer),
       array_geometry_(config.Get<Beamforming>().array_geometry) {
   echo_cancellation_ = new EchoCancellationImpl(this, crit_);
   component_list_.push_back(echo_cancellation_);
@@ -335,6 +340,11 @@ int AudioProcessingImpl::InitializeLocked(int input_sample_rate_hz,
       num_reverse_channels > 2 || num_reverse_channels < 1) {
     return kBadNumberChannelsError;
   }
+  if (beamformer_enabled_ &&
+      (static_cast<size_t>(num_input_channels) != array_geometry_.size() ||
+       num_output_channels > 1)) {
+    return kBadNumberChannelsError;
+  }
 
   fwd_in_format_.set(input_sample_rate_hz, num_input_channels);
   fwd_out_format_.set(output_sample_rate_hz, num_output_channels);
@@ -399,11 +409,6 @@ int AudioProcessingImpl::MaybeInitializeLocked(int input_sample_rate_hz,
       num_output_channels == fwd_out_format_.num_channels() &&
       num_reverse_channels == rev_in_format_.num_channels()) {
     return kNoError;
-  }
-  if (beamformer_enabled_ &&
-      (static_cast<size_t>(num_input_channels) != array_geometry_.size() ||
-       num_output_channels > 1)) {
-    return kBadNumberChannelsError;
   }
   return InitializeLocked(input_sample_rate_hz,
                           output_sample_rate_hz,
@@ -502,11 +507,9 @@ int AudioProcessingImpl::ProcessStream(const float* const* src,
 
   capture_audio_->CopyFrom(src, samples_per_channel, input_layout);
   RETURN_ON_ERR(ProcessStreamLocked());
-  if (output_copy_needed(is_data_processed())) {
-    capture_audio_->CopyTo(fwd_out_format_.samples_per_channel(),
-                           output_layout,
-                           dest);
-  }
+  capture_audio_->CopyTo(fwd_out_format_.samples_per_channel(),
+                         output_layout,
+                         dest);
 
 #ifdef WEBRTC_AUDIOPROC_DEBUG_DUMP
   if (debug_file_->Open()) {
@@ -588,14 +591,14 @@ int AudioProcessingImpl::ProcessStreamLocked() {
     audioproc::Stream* msg = event_msg_->mutable_stream();
     msg->set_delay(stream_delay_ms_);
     msg->set_drift(echo_cancellation_->stream_drift_samples());
-    msg->set_level(gain_control_->stream_analog_level());
+    msg->set_level(gain_control()->stream_analog_level());
     msg->set_keypress(key_pressed_);
   }
 #endif
 
   AudioBuffer* ca = capture_audio_.get();  // For brevity.
   if (use_new_agc_ && gain_control_->is_enabled()) {
-    agc_manager_->AnalyzePreProcess(ca->data(0),
+    agc_manager_->AnalyzePreProcess(ca->channels()[0],
                                     ca->num_channels(),
                                     fwd_proc_format_.samples_per_channel());
   }
@@ -610,7 +613,7 @@ int AudioProcessingImpl::ProcessStreamLocked() {
     beamformer_->ProcessChunk(ca->split_channels_const_f(kBand0To8kHz),
                               ca->split_channels_const_f(kBand8To16kHz),
                               ca->num_channels(),
-                              ca->samples_per_split_channel(),
+                              ca->num_frames_per_band(),
                               ca->split_channels_f(kBand0To8kHz),
                               ca->split_channels_f(kBand8To16kHz));
     ca->set_num_channels(1);
@@ -629,9 +632,11 @@ int AudioProcessingImpl::ProcessStreamLocked() {
   RETURN_ON_ERR(echo_control_mobile_->ProcessCaptureAudio(ca));
   RETURN_ON_ERR(voice_detection_->ProcessCaptureAudio(ca));
 
-  if (use_new_agc_ && gain_control_->is_enabled()) {
+  if (use_new_agc_ &&
+      gain_control_->is_enabled() &&
+      (!beamformer_enabled_ || beamformer_->is_target_present())) {
     agc_manager_->Process(ca->split_bands_const(0)[kBand0To8kHz],
-                          ca->samples_per_split_channel(),
+                          ca->num_frames_per_band(),
                           split_rate_);
   }
   RETURN_ON_ERR(gain_control_->ProcessCaptureAudio(ca));
@@ -646,13 +651,13 @@ int AudioProcessingImpl::ProcessStreamLocked() {
     float voice_probability =
         agc_manager_.get() ? agc_manager_->voice_probability() : 1.f;
 
-    transient_suppressor_->Suppress(ca->data_f(0),
-                                    ca->samples_per_channel(),
+    transient_suppressor_->Suppress(ca->channels_f()[0],
+                                    ca->num_frames(),
                                     ca->num_channels(),
                                     ca->split_bands_const_f(0)[kBand0To8kHz],
-                                    ca->samples_per_split_channel(),
+                                    ca->num_frames_per_band(),
                                     ca->keyboard_data(),
-                                    ca->samples_per_keyboard_channel(),
+                                    ca->num_keyboard_frames(),
                                     voice_probability,
                                     key_pressed_);
   }
@@ -997,9 +1002,10 @@ int AudioProcessingImpl::InitializeTransient() {
 void AudioProcessingImpl::InitializeBeamformer() {
   if (beamformer_enabled_) {
 #ifdef WEBRTC_BEAMFORMER
-    beamformer_.reset(new Beamformer(kChunkSizeMs,
-                                     split_rate_,
-                                     array_geometry_));
+    if (!beamformer_) {
+      beamformer_.reset(new Beamformer(array_geometry_));
+    }
+    beamformer_->Initialize(kChunkSizeMs, split_rate_);
 #else
     assert(false);
 #endif

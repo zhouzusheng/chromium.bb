@@ -35,6 +35,7 @@
 #include <content/public/browser/browser_main_runner.h>
 #include <content/public/browser/devtools_http_handler.h>
 #include <content/public/common/content_switches.h>
+#include <net/base/net_errors.h>
 #include <net/socket/tcp_server_socket.h>
 #include <ui/gfx/screen.h>
 #include <ui/views/widget/desktop_aura/desktop_screen.h>
@@ -44,16 +45,24 @@ namespace {
 class TCPServerSocketFactory
     : public content::DevToolsHttpHandler::ServerSocketFactory {
  public:
-  TCPServerSocketFactory(const std::string& address, int port, int backlog)
-      : content::DevToolsHttpHandler::ServerSocketFactory(
-            address, port, backlog) {}
+  TCPServerSocketFactory(const std::string& address, uint16 port)
+      : address_(address), port_(port) {
+  }
 
  private:
-  // content::DevToolsHttpHandler::ServerSocketFactory.
-  scoped_ptr<net::ServerSocket> Create() const override {
-    return scoped_ptr<net::ServerSocket>(
-        new net::TCPServerSocket(NULL, net::NetLog::Source()));
+  // DevToolsHttpHandler::ServerSocketFactory.
+  scoped_ptr<net::ServerSocket> CreateForHttpServer() override {
+    const int kBackLog = 10;
+    scoped_ptr<net::ServerSocket> socket(
+        new net::TCPServerSocket(nullptr, net::NetLog::Source()));
+    if (socket->ListenWithAddressAndPort(address_, port_, kBackLog) != net::OK)
+      return scoped_ptr<net::ServerSocket>();
+
+    return socket;
   }
+
+  std::string address_;
+  uint16 port_;
 
   DISALLOW_COPY_AND_ASSIGN(TCPServerSocketFactory);
 };
@@ -104,7 +113,7 @@ BrowserMainRunner::BrowserMainRunner(
     d_devtoolsHttpHandler.reset(
         content::DevToolsHttpHandler::Start(
             scoped_ptr<content::DevToolsHttpHandler::ServerSocketFactory>(
-                new TCPServerSocketFactory("127.0.0.1", getRemoteDebuggingPort(), 1)),
+                new TCPServerSocketFactory("127.0.0.1", getRemoteDebuggingPort())),
             "",
             new DevToolsHttpHandlerDelegateImpl(),  // the DevToolsHttpHandler takes ownership of this
             base::FilePath()));

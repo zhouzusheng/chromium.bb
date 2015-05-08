@@ -477,8 +477,6 @@ public:
         SRIElementWithMatchingIntegrityAttribute = 540,
         SRIElementWithNonMatchingIntegrityAttribute = 541,
         SRIElementWithUnparsableIntegrityAttribute = 542,
-        SRIElementWithIntegrityAttributeAndInsecureOrigin = 543,
-        SRIElementWithIntegrityAttributeAndInsecureResource = 544,
         AnimationPlayerGetStartTime = 545,
         AnimationPlayerSetStartTime = 546,
         AnimationPlayerGetCurrentTime = 547,
@@ -595,9 +593,7 @@ public:
         PrefixedAudioContext = 654,
         PrefixedOfflineAudioContext = 655,
         AddEventListenerNoArguments = 656,
-        AddEventListenerOneArgument = 657,
         RemoveEventListenerNoArguments = 658,
-        RemoveEventListenerOneArgument = 659,
         SRIElementWithNonMatchingIntegrityType = 660,
         MixedContentInNonHTTPSFrameThatRestrictsMixedContent = 661,
         MixedContentInSecureFrameThatDoesNotRestrictMixedContent = 662,
@@ -606,6 +602,34 @@ public:
         MixedContentFormPresent = 665,
         GetUserMediaInsecureOrigin = 666,
         GetUserMediaSecureOrigin = 667,
+        // The above items are available in M41 branch.
+
+        DeviceMotionInsecureOrigin = 668,
+        DeviceMotionSecureOrigin = 669,
+        DeviceOrientationInsecureOrigin = 670,
+        DeviceOrientationSecureOrigin = 671,
+        SandboxViaIFrame = 672,
+        SandboxViaCSP = 673,
+        BlockedSniffingImageToScript = 674,
+        Fetch = 675,
+        FetchBodyStream = 676,
+        XMLHttpRequestAsynchronous = 677,
+        AudioBufferSourceBufferOnce = 678,
+        WhiteSpacePreFromXMLSpace = 679,
+        WhiteSpaceNowrapFromXMLSpace = 680,
+        SVGElementXmlbase = 681,
+        SVGElementXmllang = 682,
+        SVGElementXmlspace = 683,
+        WindowMoveResizeMissingArguments = 684,
+        SVGSVGElementForceRedraw = 685,
+        SVGSVGElementSuspendRedraw = 686,
+        SVGSVGElementUnsuspendRedraw = 687,
+        SVGSVGElementUnsuspendRedrawAll = 688,
+        AudioContextClose = 689,
+        ServiceWorkerClientPostMessage = 690,
+        CSSZoomNotEqualToOne = 691,
+        SVGGraphicsElementGetTransformToElement = 692,
+        ServiceWorkerClientsGetAll = 693,
 
         // Add new features immediately above this line. Don't change assigned
         // numbers of any item, and don't reuse removed slots.
@@ -637,8 +661,8 @@ public:
     // deprecation warnings when we're actively interested in removing them from
     // the platform.
     //
-    // The ExecutionContext* overload doesn't work for shared workers and
-    // service workers.
+    // For shared workers and service workers, the ExecutionContext* overload
+    // doesn't count the usage but only sends a console warning.
     static void countDeprecation(const LocalFrame*, Feature);
     static void countDeprecation(ExecutionContext*, Feature);
     static void countDeprecation(const Document&, Feature);
@@ -646,7 +670,7 @@ public:
     // if you don't want to count metrics in private scripts. You should use
     // countDeprecationIfNotPrivateScript() in a binding layer.
     static void countDeprecationIfNotPrivateScript(v8::Isolate*, ExecutionContext*, Feature);
-    String deprecationMessage(Feature);
+    static String deprecationMessage(Feature);
 
     void didCommitLoad();
 
@@ -659,30 +683,38 @@ public:
     static void muteForInspector();
     static void unmuteForInspector();
 
+    class CountBits {
+    public:
+        bool recordMeasurement(Feature feature)
+        {
+            if (UseCounter::m_muteCount)
+                return false;
+            ASSERT(feature != PageDestruction); // PageDestruction is reserved as a scaling factor.
+            ASSERT(feature < NumberOfFeatures);
+            if (!m_bits) {
+                m_bits = adoptPtr(new BitVector(NumberOfFeatures));
+                m_bits->clearAll();
+            }
+
+            if (m_bits->quickGet(feature))
+                return false;
+
+            m_bits->quickSet(feature);
+            return true;
+        }
+        void updateMeasurements();
+
+    private:
+        OwnPtr<BitVector> m_bits;
+    };
+
 private:
     static int m_muteCount;
 
-    bool recordMeasurement(Feature feature)
-    {
-        if (UseCounter::m_muteCount)
-            return false;
-        ASSERT(feature != PageDestruction); // PageDestruction is reserved as a scaling factor.
-        ASSERT(feature < NumberOfFeatures);
-        if (!m_countBits) {
-            m_countBits = adoptPtr(new BitVector(NumberOfFeatures));
-            m_countBits->clearAll();
-        }
-
-        if (m_countBits->quickGet(feature))
-            return false;
-
-        m_countBits->quickSet(feature);
-        return true;
-    }
-
+    bool recordMeasurement(Feature feature) { return m_countBits.recordMeasurement(feature); }
     void updateMeasurements();
 
-    OwnPtr<BitVector> m_countBits;
+    CountBits m_countBits;
     BitVector m_CSSFeatureBits;
 };
 

@@ -53,6 +53,8 @@ void BlockFlowPainter::paintSelection(const PaintInfo& paintInfo, const LayoutPo
         LayoutUnit lastTop = 0;
         LayoutUnit lastLeft = m_renderBlockFlow.logicalLeftSelectionOffset(&m_renderBlockFlow, lastTop);
         LayoutUnit lastRight = m_renderBlockFlow.logicalRightSelectionOffset(&m_renderBlockFlow, lastTop);
+        bool shouldHighlightBeforeSide = false;
+        bool isAfterSideSelected = false;
         ClipRecorderStack clipRecorderStack(paintInfo.context);
 
         LayoutRect bounds;
@@ -63,7 +65,8 @@ void BlockFlowPainter::paintSelection(const PaintInfo& paintInfo, const LayoutPo
         RenderDrawingRecorder recorder(paintInfo.context, m_renderBlockFlow, DisplayItem::SelectionGap, bounds);
 
         LayoutRect gapRectsBounds = m_renderBlockFlow.selectionGaps(&m_renderBlockFlow, paintOffset, LayoutSize(), lastTop, lastLeft, lastRight,
-            recorder.canUseCachedDrawing() ? nullptr : &paintInfo);
+            recorder.canUseCachedDrawing() ? nullptr : &paintInfo,
+            shouldHighlightBeforeSide, isAfterSideSelected);
         if (!gapRectsBounds.isEmpty()) {
             Layer* layer = m_renderBlockFlow.enclosingLayer();
             gapRectsBounds.moveBy(-paintOffset);

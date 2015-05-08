@@ -144,7 +144,7 @@ private:
     bool m_hadVerticalLayoutOverflow;
 };
 
-static bool isSpanningHeader(RenderObject* ro)
+static bool isSpanningHeader(LayoutObject* ro)
 {
     return ro->style()->columnSpanCount() > 1 && !ro->style()->hasSpanAllColumns();
 }

@@ -118,12 +118,14 @@ public:
         RowStruct()
             : rowRenderer(nullptr)
             , baseline()
+            , paginationStrut()
         {
         }
 
         Row row;
         LayoutTableRow* rowRenderer;
         LayoutUnit baseline;
+        LayoutUnit paginationStrut;
         Length logicalHeight;
     };
 

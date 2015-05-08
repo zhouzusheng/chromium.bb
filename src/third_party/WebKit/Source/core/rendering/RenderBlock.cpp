@@ -3542,7 +3542,7 @@ LayoutRect RenderBlock::localCaretRect(InlineBox* inlineBox, int caretOffset, La
         // left of the child, or to the right of the child (if the caret is
         // after the last child).
 
-        RenderObject* child = firstChild();
+        LayoutObject* child = firstChild();
         while (caretOffset && child) {
             child = child->nextSibling();
             --caretOffset;

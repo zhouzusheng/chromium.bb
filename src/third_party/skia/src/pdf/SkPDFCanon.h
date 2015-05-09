@@ -32,8 +32,8 @@ class SkPaint;
  */
 class SkPDFCanon : SkNoncopyable {
 public:
-    SkPDFCanon();
-    ~SkPDFCanon();
+    SK_API SkPDFCanon();
+    SK_API ~SkPDFCanon();
 
     // Returns exact match if there is one.  If not, it returns NULL.
     // If there is no exact match, but there is a related font, we

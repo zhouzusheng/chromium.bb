@@ -306,6 +306,11 @@ void WebViewImpl::print()
     printViewManager->PrintNow();
 }
 
+void WebViewImpl::drawContents(int x, int y, int width, int height, int scaleX, int scaleY, NativeDeviceContext deviceContext)
+{
+    NOTREACHED() << "drawContents() not supported in WebViewImpl";
+}
+
 void WebViewImpl::handleInputEvents(const InputEvent *events, size_t eventsCount)
 {
     NOTREACHED() << "handleInputEvents() not supported in WebViewImpl";

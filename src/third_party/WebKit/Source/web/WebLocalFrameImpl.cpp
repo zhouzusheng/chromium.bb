@@ -1536,6 +1536,22 @@ WebString WebLocalFrameImpl::layerTreeAsText(bool showDebugInfo) const
     return WebString(frame()->layerTreeAsText(showDebugInfo ? LayerTreeIncludesDebugInfo : LayerTreeNormal));
 }
 
+
+void WebLocalFrameImpl::drawInCanvas(const WebRect& rect, WebCanvas* canvas) const
+{
+    IntRect intRect(rect);
+    GraphicsContext graphicsContext(canvas, nullptr);
+
+    graphicsContext.translate(static_cast<float>(-intRect.x()), static_cast<float>(-intRect.y()));
+    graphicsContext.clip(rect);
+
+    FrameView *view = frameView();
+    PaintBehavior paintBehavior = view->paintBehavior();
+    view->setPaintBehavior(paintBehavior | PaintBehaviorFlattenCompositingLayers);
+    view->paintContents(&graphicsContext, intRect);
+    view->setPaintBehavior(paintBehavior);
+}
+
 // WebLocalFrameImpl public ---------------------------------------------------------
 
 WebLocalFrame* WebLocalFrame::create(WebFrameClient* client)

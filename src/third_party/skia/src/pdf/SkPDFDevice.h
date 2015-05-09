@@ -65,7 +65,7 @@ public:
      *  @param SkPDFCanon.  Should be non-null, and shared by all
      *         devices in a document.
      */
-    static SkPDFDevice* Create(SkISize pageSize,
+    SK_API static SkPDFDevice* Create(SkISize pageSize,
                                SkScalar rasterDpi,
                                SkPDFCanon* canon) {
         return SkNEW_ARGS(SkPDFDevice, (pageSize, rasterDpi, canon, true));

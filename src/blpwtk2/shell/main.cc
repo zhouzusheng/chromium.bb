@@ -95,6 +95,7 @@ enum {
     IDM_TEST_LOGICAL_FOCUS,
     IDM_TEST_LOGICAL_BLUR,
     IDM_TEST_PLAY_KEYBOARD_EVENTS,
+    IDM_TEST_GET_PICTURE,
     IDM_SPELLCHECK,
     IDM_SPELLCHECK_ENABLED,
     IDM_AUTOCORRECT,
@@ -180,6 +181,136 @@ void testPlayKeyboardEvents(HWND hwnd, blpwtk2::WebView* webView)
     webView->handleInputEvents(&ev, 1);
     ev.wparam = 'C';
     webView->handleInputEvents(&ev, 1);
+}
+
+void getWebViewPosition(HWND hwnd, int *left, int *top, int *width, int *height)
+{
+    RECT rect;
+    GetClientRect(hwnd, &rect);
+    assert(0 == rect.left);
+    assert(0 == rect.top);
+
+    *left = 0;
+    *top = URLBAR_HEIGHT;
+    *width = rect.right;
+    *height = rect.bottom - URLBAR_HEIGHT;
+}
+
+void testGetPicture(blpwtk2::NativeView hwnd, blpwtk2::WebView* webView, int scaleX, int scaleY)
+{
+    // NOTE: The PDF engine issues different commands based on the type of
+    // device it is drawing to
+    //
+    //   Real printer:  Rasterizes the output into a bitmap and block
+    //                  transfers it to the provided device context. This is
+    //                  a temporary workaround in
+    //                  PDFiumEngineExports::RenderPDFPageToDC
+    //
+    //   non-EMF files: Uses the CGdiDisplayDriver driver to issue the draw
+    //                  commands on the provided device context.
+    //
+    //   EMF files:     Uses the CGdiPrinterDriver driver to issue the draw
+    //                  commands on the provided device context.
+    //
+    // Using EMF files produces a very low-quality output. This is probably due
+    // to an incorrect assumption by CFX_WindowsDevice::CreateDriver to assume
+    // all EMF files to be compatible with a printer device rather than being
+    // truely device independent.
+    //
+    // To ensure the test driver generates an output close to the output that
+    // will be sent to the printer, we will use a non-EMF files (ie. Bitmap)
+    // to test the drawContent method. Once the workaround in RenderPDFPageToDC
+    // is removed and CFX_WindowsDevice::CreateDriver creates a driver that
+    // issues device-independent commands, we can switch the test driver to use
+    // EMF files instead.
+    //
+
+    int left = 0, top = 0, width = 0, height = 0;
+
+    assert(webView);
+    getWebViewPosition(hwnd, &left, &top, &width, &height);
+
+    if (!width || !height) {
+        OutputDebugStringA("Unable to get bitmap of canvas. Canvas area is zero\n");
+        return;
+    }
+
+    blpwtk2::NativeDeviceContext refDeviceContext = GetDC(hwnd);
+
+#ifdef USE_EMF
+    RECT rect = { 0 };
+    int iWidthMM = GetDeviceCaps(refDeviceContext, HORZSIZE);
+    int iHeightMM = GetDeviceCaps(refDeviceContext, VERTSIZE);
+    int iWidthPels = GetDeviceCaps(refDeviceContext, HORZRES);
+    int iHeightPels = GetDeviceCaps(refDeviceContext, VERTRES);
+
+    rect.right = (scaleX * width * iWidthMM * 100) / iWidthPels;
+    rect.bottom = (scaleY * height * iHeightMM * 100) / iHeightPels;
+
+    blpwtk2::NativeDeviceContext deviceContext = CreateEnhMetaFileW(refDeviceContext, L"outputPicture.emf", &rect, L"blpwtk2_shell");
+#else
+    const int bytesPerRow = width * scaleX * 4;
+    const long imageDataSize = bytesPerRow * height * scaleY;
+
+    BITMAPFILEHEADER fileHeader = {
+        0x4d42,
+        sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + imageDataSize,
+        0,
+        0,
+        sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER),
+    };
+
+    BITMAPINFO bmi = { {
+            sizeof(BITMAPINFOHEADER),
+            width * scaleX,
+            height * scaleY,
+            1,
+            32,
+            BI_RGB
+        } };
+
+    // Use the device context of the parent HWND as a template to create a new
+    // device context.
+    blpwtk2::NativeDeviceContext deviceContext = CreateCompatibleDC(refDeviceContext);
+#endif
+
+    ReleaseDC(hwnd, refDeviceContext);
+
+    // This is the best stretch mode
+    SetStretchBltMode(deviceContext, HALFTONE);
+
+#ifndef USE_EMF
+    // Create a new bitmap object
+    void *buffer = (void*) NULL;
+    HBITMAP bitmap = CreateDIBSection(deviceContext, &bmi, DIB_RGB_COLORS, &buffer, 0, 0);
+
+    // Set the new bitmap object as a backing surface for the device context.
+    // The original backing surface is saved in originalSurface
+    HGDIOBJ originalSurface = SelectObject(deviceContext, bitmap);
+#endif
+
+    // Draw the contents of the webview onto the device context
+    webView->drawContents(0, 0, width, height, scaleX, scaleY, deviceContext);
+
+#ifdef USE_EMF
+    HENHMETAFILE emf = CloseEnhMetaFile(deviceContext);
+    DeleteEnhMetaFile(emf);
+#else
+    // The device context is switched back to use the original backing surface.
+    SelectObject(deviceContext, originalSurface);
+
+    std::ofstream file("outputBitmap.bmp", std::ios::binary);
+    file.write(reinterpret_cast<char *>(&fileHeader), sizeof(fileHeader));
+    file.write(reinterpret_cast<char *>(&bmi.bmiHeader), sizeof(bmi.bmiHeader));
+    file.write(reinterpret_cast<char *>(buffer), imageDataSize);
+    file.close();
+
+    // Delete the bitmap object and its associated memory
+    DeleteObject(bitmap);
+
+    // Delete the device context
+    DeleteDC(deviceContext);
+#endif
 }
 
 class Shell : public blpwtk2::WebViewDelegate {
@@ -268,19 +399,23 @@ public:
 
     void resizeSubViews()
     {
+        int left, top, width, height;
+
         if (!d_webView) return;
 
-        RECT rect;
-        GetClientRect(d_mainWnd, &rect);
-        assert(0 == rect.left);
-        assert(0 == rect.top);
-        d_webView->move(0, URLBAR_HEIGHT, rect.right, rect.bottom-URLBAR_HEIGHT);
+        left = 0;
+        top = 0;
+        width = 0;
+        height = 0;
+        getWebViewPosition(d_mainWnd, &left, &top, &width, &height);
+
+        d_webView->move(left, top, width, height);
 
         int x = (4 * BUTTON_WIDTH) +
             FIND_LABEL_WIDTH +
             FIND_ENTRY_WIDTH +
             (2 * FIND_BUTTON_WIDTH);
-        MoveWindow(d_urlEntryWnd, x, 0, rect.right-x, URLBAR_HEIGHT, TRUE);
+        MoveWindow(d_urlEntryWnd, x, 0, width - x, URLBAR_HEIGHT, TRUE);
     }
 
 
@@ -1230,6 +1365,9 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
         case IDM_TEST_PLAY_KEYBOARD_EVENTS:
             testPlayKeyboardEvents(shell->d_mainWnd, shell->d_webView);
             return 0;
+        case IDM_TEST_GET_PICTURE:
+            testGetPicture(shell->d_mainWnd, shell->d_webView, 2, 2);
+            return 0;
         case IDM_SPELLCHECK_ENABLED:
             g_spellCheckEnabled = !g_spellCheckEnabled;
             updateSpellCheckConfig(shell->d_profile);
@@ -1467,6 +1605,7 @@ Shell* createShell(blpwtk2::Profile* profile, blpwtk2::WebView* webView)
     AppendMenu(testMenu, MF_STRING, IDM_TEST_LOGICAL_FOCUS, L"Test Logical Focus");
     AppendMenu(testMenu, MF_STRING, IDM_TEST_LOGICAL_BLUR, L"Test Logical Blur");
     AppendMenu(testMenu, MF_STRING, IDM_TEST_PLAY_KEYBOARD_EVENTS, L"Test Play Keyboard Events");
+    AppendMenu(testMenu, MF_STRING, IDM_TEST_GET_PICTURE, L"Test Draw Picture");
     AppendMenu(menu, MF_POPUP, (UINT_PTR)testMenu, L"&Test");
     HMENU spellCheckMenu = CreateMenu();
     AppendMenu(spellCheckMenu, MF_STRING, IDM_SPELLCHECK_ENABLED, L"Enable &Spellcheck");

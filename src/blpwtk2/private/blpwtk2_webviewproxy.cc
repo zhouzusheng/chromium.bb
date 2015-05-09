@@ -39,7 +39,14 @@
 #include <content/public/browser/native_web_keyboard_event.h>
 #include <content/public/renderer/render_view.h>
 #include <third_party/WebKit/public/web/WebView.h>
+#include <third_party/WebKit/public/web/WebFrame.h>
 #include <third_party/WebKit/public/web/WebInputEvent.h>
+#include <skia/ext/platform_canvas.h>
+#include <third_party/skia/src/pdf/SkPDFDevice.h>
+#include <third_party/skia/src/pdf/SkPDFDocument.h>
+#include <third_party/skia/src/pdf/SkPDFCanon.h>
+#include <third_party/skia/include/core/SkStream.h>
+#include <pdf/pdf.h>
 #include <ui/events/event.h>
 #include <ui/gfx/geometry/size.h>
 
@@ -161,6 +168,76 @@ void WebViewProxy::print()
 {
     DCHECK(Statics::isInApplicationMainThread());
     Send(new BlpWebViewHostMsg_Print(d_routingId));
+}
+
+void WebViewProxy::drawContents(int x, int y, int width, int height, int scaleX, int scaleY, NativeDeviceContext deviceContext)
+{
+    DCHECK(Statics::isRendererMainThreadMode());
+    DCHECK(Statics::isInApplicationMainThread());
+    DCHECK(d_isMainFrameAccessible)
+        << "You should wait for didFinishLoad";
+    DCHECK(d_gotRenderViewInfo);
+
+    content::RenderView* rv = content::RenderView::FromRoutingID(d_renderViewRoutingId);
+    blink::WebFrame* webFrame = rv->GetWebView()->mainFrame();
+    DCHECK(webFrame->isWebLocalFrame());
+
+    const int widthMM = GetDeviceCaps(deviceContext, HORZSIZE);
+    const int heightMM = GetDeviceCaps(deviceContext, VERTSIZE);
+    const int widthPixels = GetDeviceCaps(deviceContext, HORZRES);
+    const int heightPixels = GetDeviceCaps(deviceContext, VERTRES);
+
+    // Compute an average dpi rounded to the nearest integer
+    const double MM_over_inch = 25.4;
+    const double dpi_x = MM_over_inch * widthPixels / widthMM;
+    const double dpi_y = MM_over_inch * heightPixels / heightMM;
+    const int dpi = (dpi_x + dpi_y + 0.5) / 2;
+
+    std::vector<char> pdf_data;
+    {
+        SkDynamicMemoryWStream pdf_stream;
+        {
+            SkPDFCanon canon;
+            SkPDFDocument document;
+            {
+                // Create a skia device that will generate a PDF
+                skia::RefPtr<SkPDFDevice> device = skia::AdoptRef(SkPDFDevice::Create(
+                    SkISize::Make(width * scaleX, height * scaleY),
+                    dpi,
+                    &canon));
+                DCHECK(device);
+
+                // Create a scaled canvas that is backed by the metafile and draw the contents
+                // of the web frame into it
+                SkCanvas canvas(device.get());
+                canvas.scale(scaleX, scaleY);
+                webFrame->drawInCanvas(blink::WebRect(x, y, width, height), &canvas);
+                canvas.flush();
+
+                document.appendPage(device.get());
+            }
+            document.emitPDF(&pdf_stream);
+        }
+        pdf_data.reserve(pdf_stream.getOffset());
+        pdf_data.push_back(0);
+        pdf_stream.copyTo(&pdf_data[0]);
+    }
+
+    chrome_pdf::RenderPDFPageToDC(
+        pdf_data.data(),
+        pdf_data.capacity(),
+        0,
+        deviceContext,
+        dpi,
+        0,
+        0,
+        width * scaleX,
+        height * scaleY,
+        false,
+        false,
+        false,
+        false,
+        false);
 }
 
 void WebViewProxy::handleInputEvents(const InputEvent *events, size_t eventsCount)

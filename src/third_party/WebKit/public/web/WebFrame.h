@@ -670,6 +670,10 @@ public:
     // text form. This is used only by layout tests.
     virtual WebString layerTreeAsText(bool showDebugInfo = false) const = 0;
 
+    // Draws the contents of the web frame at the specified region onto the
+    // specified canvas
+    virtual void drawInCanvas(const WebRect& rect, WebCanvas* canvas) const = 0;
+
 #if BLINK_IMPLEMENTATION
     static WebFrame* fromFrame(Frame*);
 #if ENABLE(OILPAN)

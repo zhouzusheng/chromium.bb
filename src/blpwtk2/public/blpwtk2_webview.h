@@ -228,6 +228,11 @@ public:
     // be sent to the new delegate.
     virtual void setDelegate(WebViewDelegate* delegate) = 0;
 
+    // Draw the specified region of the main web frame onto the draw context.
+    virtual void drawContents(int x, int y, int width, int height,
+                              int scaleX, int scaleY,
+                              NativeDeviceContext deviceContext) = 0;
+
 protected:
     // Destroy this WebView.  Note that clients of blpwtk2 should use the
     // 'destroy()' method, instead of deleting the object directly.

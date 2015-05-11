@@ -87,6 +87,8 @@ def writeProductsFile(f, version):
   f.write('#define BLPCR_EGL_DLL_NAME "blpcr_egl{}.dll"\n'.format(productAppend))
   f.write('#define BLPCR_GLESV2_DLL_NAME "blpcr_glesv2{}.dll"\n'.format(productAppend))
   f.write('#define BLPV8_DLL_NAME "blpv8{}.dll"\n'.format(productAppend))
+  f.write('#define BLPV8_NATIVES_BLOB_NAME "natives_blob{}.bin"\n'.format(productAppend))
+  f.write('#define BLPV8_SNAPSHOT_BLOB_NAME "snapshot_blob{}.bin"\n'.format(productAppend))
   f.write('#define FFMPEGSUMO_DLL_NAME "ffmpegsumo{}.dll"\n'.format(productAppend))
   f.write('\n')
   f.write('#endif  // INCLUDED_GENERATED_BLPWTK2_PRODUCTS\n')

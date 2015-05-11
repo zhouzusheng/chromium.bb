@@ -1524,6 +1524,11 @@
         # generate anything deterministic with WPO enabled AFAIK.
         'dont_embed_build_metadata%': 0,
       }],
+      ['bb_version==""', {
+        'bb_version_suffix': '',
+      }, {
+        'bb_version_suffix': '.<(bb_version)',
+      }],
       # Enable the Syzygy optimization step for the official builds.
       ['OS=="win" and buildtype=="Official" and syzyasan!=1', {
         'syzygy_optimize%': 1,

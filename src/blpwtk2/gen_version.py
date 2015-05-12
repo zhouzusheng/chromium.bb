@@ -23,6 +23,7 @@
 
 import sys, os
 
+
 def getChromiumVersion():
   scriptDir = os.path.dirname(os.path.realpath(__file__))
   chromiumDir = os.path.abspath(os.path.join(scriptDir, os.pardir, os.pardir))
@@ -30,6 +31,7 @@ def getChromiumVersion():
     if path.count('.') == 3:
       return path
   raise Exception("Could not find chromium version directory!")
+
 
 def getVersionParts(version):
   chromiumVersion = getChromiumVersion()
@@ -47,7 +49,8 @@ def getVersionParts(version):
 
   return version, chromiumVersion, bbPatch
 
-def writeProductsFile(f, version):
+
+def writeBlpwtk2ProductsFile(f, version):
   productAppend = ""
   if version != "":
     productAppend = "." + version
@@ -86,12 +89,26 @@ def writeProductsFile(f, version):
   f.write('#define BLPWTK2_DEVTOOLS_PAK_NAME "blpwtk2_devtools{}.pak"\n'.format(productAppend))
   f.write('#define BLPCR_EGL_DLL_NAME "blpcr_egl{}.dll"\n'.format(productAppend))
   f.write('#define BLPCR_GLESV2_DLL_NAME "blpcr_glesv2{}.dll"\n'.format(productAppend))
-  f.write('#define BLPV8_DLL_NAME "blpv8{}.dll"\n'.format(productAppend))
-  f.write('#define BLPV8_NATIVES_BLOB_NAME "natives_blob{}.bin"\n'.format(productAppend))
-  f.write('#define BLPV8_SNAPSHOT_BLOB_NAME "snapshot_blob{}.bin"\n'.format(productAppend))
   f.write('#define FFMPEGSUMO_DLL_NAME "ffmpegsumo{}.dll"\n'.format(productAppend))
   f.write('\n')
   f.write('#endif  // INCLUDED_GENERATED_BLPWTK2_PRODUCTS\n')
+
+
+def writeBlpv8ProductsFile(f, version):
+  productAppend = ""
+  if version != "":
+    productAppend = "." + version
+
+  f.write('// generated file -- DO NOT EDIT\n')
+  f.write('#ifndef INCLUDED_GENERATED_BLPV8_PRODUCTS\n')
+  f.write('#define INCLUDED_GENERATED_BLPV8_PRODUCTS\n')
+  f.write('\n')
+  f.write('#define BLPV8_DLL_NAME "blpv8{}.dll"\n'.format(productAppend))
+  f.write('#define BLPV8_NATIVES_BLOB_NAME "natives_blob{}.bin"\n'.format(productAppend))
+  f.write('#define BLPV8_SNAPSHOT_BLOB_NAME "snapshot_blob{}.bin"\n'.format(productAppend))
+  f.write('\n')
+  f.write('#endif  // INCLUDED_GENERATED_BLPV8_PRODUCTS\n')
+
 
 def writeVersionFiles(fH, fCC, version):
   version, chromiumVersion, bbPatch = getVersionParts(version)
@@ -137,14 +154,17 @@ def writeVersionFiles(fH, fCC, version):
 
 
 def doMain(args):
-  productsFile = None
+  blpwtk2ProductsFile = None
+  blpv8ProductsFile = None
   versionHFile = None
   versionCCFile = None
   version = None
 
   for i in range(len(args)):
-    if args[i] == '--output-products':
-      productsFile = args[i+1]
+    if args[i] == '--output-blpwtk2-products':
+      blpwtk2ProductsFile = args[i+1]
+    elif args[i] == '--output-blpv8-products':
+      blpv8ProductsFile = args[i+1]
     elif args[i] == '--output-version-h':
       versionHFile = args[i+1]
     elif args[i] == '--output-version-cc':
@@ -152,13 +172,17 @@ def doMain(args):
     elif args[i] == '--version':
       version = args[i+1]
 
-  assert(productsFile != None)
+  assert(blpwtk2ProductsFile != None)
+  assert(blpv8ProductsFile != None)
   assert(versionHFile != None)
   assert(versionCCFile != None)
   assert(version != None)
 
-  with open(productsFile, 'w') as f:
-    writeProductsFile(f, version)
+  with open(blpwtk2ProductsFile, 'w') as f:
+    writeBlpwtk2ProductsFile(f, version)
+
+  with open(blpv8ProductsFile, 'w') as f:
+    writeBlpv8ProductsFile(f, version)
 
   with open(versionHFile, 'w') as fH:
     with open(versionCCFile, 'w') as fCC:

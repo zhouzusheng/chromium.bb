@@ -35,7 +35,8 @@
     ],
   },
   'variables': {
-    'products_h': '<(SHARED_INTERMEDIATE_DIR)/blpwtk2/public/blpwtk2_products.h',
+    'blpwtk2_products_h': '<(SHARED_INTERMEDIATE_DIR)/blpwtk2/public/blpwtk2_products.h',
+    'blpv8_products_h': '<(SHARED_INTERMEDIATE_DIR)/blpv8/public/blpv8_products.h',
     'version_h': '<(SHARED_INTERMEDIATE_DIR)/blpwtk2/public/blpwtk2_version.h',
     'version_cc': '<(SHARED_INTERMEDIATE_DIR)/blpwtk2/public/blpwtk2_version.cc',
   },
@@ -50,14 +51,16 @@
             'gen_version.py',
           ],
           'outputs': [
-            '<(products_h)',
+            '<(blpwtk2_products_h)',
+            '<(blpv8_products_h)',
             '<(version_h)',
             '<(version_cc)',
           ],
           'action': [
             'python',
             '<@(_inputs)',
-            '--output-products', '<(products_h)',
+            '--output-blpwtk2-products', '<(blpwtk2_products_h)',
+            '--output-blpv8-products', '<(blpv8_products_h)',
             '--output-version-h', '<(version_h)',
             '--output-version-cc', '<(version_cc)',
             '--version', '<(bb_version)',
@@ -67,7 +70,7 @@
       'direct_dependent_settings': {
         'include_dirs': [
           '<(SHARED_INTERMEDIATE_DIR)/blpwtk2/public',
-          '<(SHARED_INTERMEDIATE_DIR)/blpwtk2/private',
+          '<(SHARED_INTERMEDIATE_DIR)/blpv8/public',
         ],
       },
     },
@@ -125,7 +128,7 @@
         '<(SHARED_INTERMEDIATE_DIR)/ui/resources/ui_resources.rc',
         '<(SHARED_INTERMEDIATE_DIR)/content/app/resources/content_resources.rc',
         '<(SHARED_INTERMEDIATE_DIR)/content/content_resources.rc',
-        '<(products_h)',
+        '<(blpwtk2_products_h)',
         '<(version_cc)',
         '<(version_h)',
         'private/blpwtk2.rc',

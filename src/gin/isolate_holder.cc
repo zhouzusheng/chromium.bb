@@ -29,7 +29,7 @@
 #include "base/path_service.h"
 #endif  // V8_USE_EXTERNAL_STARTUP_DATA
 
-#include <blpwtk2_products.h>  // For BLPV8_NATIVES_BLOB_NAME, BLPV8_SNAPSHOT_BLOB_NAME
+#include <blpv8_products.h>  // For BLPV8_NATIVES_BLOB_NAME, BLPV8_SNAPSHOT_BLOB_NAME
 
 namespace gin {
 

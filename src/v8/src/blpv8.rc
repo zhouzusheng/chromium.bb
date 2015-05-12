@@ -1,6 +1,7 @@
 // Microsoft Visual C++ generated resource script.
 //
-#include <blpwtk2_products.h>
+#include <blpv8_products.h>
+#include <blpwtk2_products.h>  // for VERSION defines
 
 #define APSTUDIO_READONLY_SYMBOLS
 /////////////////////////////////////////////////////////////////////////////

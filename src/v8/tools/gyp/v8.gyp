@@ -74,12 +74,14 @@
         }],
         ['v8_use_external_startup_data==1 and want_separate_host_toolset==0', {
           'dependencies': ['v8_base', 'v8_external_snapshot'],
-          'inputs': [ '<(PRODUCT_DIR)/snapshot_blob.bin', ],
+          'inputs': [ '<(PRODUCT_DIR)/snapshot_blob<(bb_version_suffix).bin', ],
         }],
         ['v8_as_shared_library==1', {
           'type': 'shared_library',
+          'product_name': 'blpv8<(bb_version_suffix)',
           'sources': [
             '../../src/blpv8.rc',
+            '<(SHARED_INTERMEDIATE_DIR)/gin/v8_snapshot_fingerprint.cc',
             # Note: on non-Windows we still build this file so that gyp
             # has some sources to link into the component.
             '../../src/v8dll-main.cc',
@@ -89,6 +91,7 @@
           ],
           'dependencies': [
             '../../../blpwtk2/blpwtk2.gyp:blpwtk2_generate_sources',
+            '../../../gin/gin.gyp:gin_v8_snapshot_fingerprint',
           ],
           'defines': [
             'V8_SHARED',
@@ -111,11 +114,6 @@
             }],
           ],
           'conditions': [
-            ['bb_version!=""', {
-              'product_name': 'blpv8.<(bb_version)',
-            }, {
-              'product_name': 'blpv8',
-            }],
             ['OS=="win" and win_use_allocator_shim==1', {
               'dependencies': [
                 '<(DEPTH)/base/allocator/allocator.gyp:allocator',
@@ -321,13 +319,13 @@
                     }, {
                       'outputs': [
                         '<(INTERMEDIATE_DIR)/snapshot.cc',
-                        '<(PRODUCT_DIR)/snapshot_blob.bin',
+                        '<(PRODUCT_DIR)/snapshot_blob<(bb_version_suffix).bin',
                       ],
                       'action': [
                         '<(mksnapshot_exec)',
                         '<@(mksnapshot_flags)',
                         '<@(INTERMEDIATE_DIR)/snapshot.cc',
-                        '--startup_blob', '<(PRODUCT_DIR)/snapshot_blob.bin',
+                        '--startup_blob', '<(PRODUCT_DIR)/snapshot_blob<(bb_version_suffix).bin',
                         '<(embed_script)',
                       ],
                     }],
@@ -1636,10 +1634,10 @@
                     ],
                   }, {
                     'outputs': [
-                      '<(PRODUCT_DIR)/natives_blob.bin',
+                      '<(PRODUCT_DIR)/natives_blob<(bb_version_suffix).bin',
                     ],
                     'action': [
-                      'python', '<@(_inputs)', '<(PRODUCT_DIR)/natives_blob.bin'
+                      'python', '<@(_inputs)', '<(PRODUCT_DIR)/natives_blob<(bb_version_suffix).bin'
                     ],
                   }],
                 ],

@@ -195,8 +195,7 @@ class SourceState {
                     const StreamParser::BufferQueue& video_buffers,
                     const StreamParser::TextBufferQueueMap& text_map);
 
-  void OnSourceInitDone(bool success,
-                        const StreamParser::InitParameters& params);
+  void OnSourceInitDone(const StreamParser::InitParameters& params);
 
   CreateDemuxerStreamCB create_demuxer_stream_cb_;
   NewTextTrackCB new_text_track_cb_;
@@ -788,10 +787,9 @@ bool SourceState::OnNewBuffers(
   return true;
 }
 
-void SourceState::OnSourceInitDone(bool success,
-                                   const StreamParser::InitParameters& params) {
+void SourceState::OnSourceInitDone(const StreamParser::InitParameters& params) {
   auto_update_timestamp_offset_ = params.auto_update_timestamp_offset;
-  base::ResetAndReturn(&init_cb_).Run(success, params);
+  base::ResetAndReturn(&init_cb_).Run(params);
 }
 
 ChunkDemuxerStream::ChunkDemuxerStream(Type type,
@@ -1132,6 +1130,7 @@ void ChunkDemuxer::Initialize(
 
   base::AutoLock auto_lock(lock_);
 
+  // The |init_cb_| must only be run after this method returns, so always post.
   init_cb_ = BindToCurrentLoop(cb);
   if (state_ == SHUTDOWN) {
     base::ResetAndReturn(&init_cb_).Run(DEMUXER_ERROR_COULD_NOT_OPEN);
@@ -1347,18 +1346,7 @@ void ChunkDemuxer::AppendData(
 
     switch (state_) {
       case INITIALIZING:
-        DCHECK(IsValidId(id));
-        if (!source_state_map_[id]->Append(data, length,
-                                           append_window_start,
-                                           append_window_end,
-                                           timestamp_offset,
-                                           init_segment_received_cb)) {
-          ReportError_Locked(DEMUXER_ERROR_COULD_NOT_OPEN);
-          return;
-        }
-        break;
-
-      case INITIALIZED: {
+      case INITIALIZED:
         DCHECK(IsValidId(id));
         if (!source_state_map_[id]->Append(data, length,
                                            append_window_start,
@@ -1368,7 +1356,7 @@ void ChunkDemuxer::AppendData(
           ReportError_Locked(PIPELINE_ERROR_DECODE);
           return;
         }
-      } break;
+        break;
 
       case PARSE_ERROR:
         DVLOG(1) << "AppendData(): Ignoring data after a parse error.";
@@ -1654,13 +1642,11 @@ bool ChunkDemuxer::IsSeekWaitingForData_Locked() const {
 }
 
 void ChunkDemuxer::OnSourceInitDone(
-    bool success,
     const StreamParser::InitParameters& params) {
-  DVLOG(1) << "OnSourceInitDone(" << success << ", "
-           << params.duration.InSecondsF() << ")";
+  DVLOG(1) << "OnSourceInitDone(" << params.duration.InSecondsF() << ")";
   lock_.AssertAcquired();
   DCHECK_EQ(state_, INITIALIZING);
-  if (!success || (!audio_ && !video_)) {
+  if (!audio_ && !video_) {
     ReportError_Locked(DEMUXER_ERROR_COULD_NOT_OPEN);
     return;
   }

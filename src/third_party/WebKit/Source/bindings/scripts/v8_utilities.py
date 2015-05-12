@@ -37,7 +37,7 @@ import re
 
 from idl_types import IdlTypeBase
 import idl_types
-from idl_definitions import Exposure
+from idl_definitions import Exposure, IdlInterface
 from v8_globals import includes
 import v8_types
 
@@ -201,6 +201,7 @@ CALL_WITH_ARGUMENTS = {
     'ActiveWindow': 'callingDOMWindow(info.GetIsolate())',
     'FirstWindow': 'enteredDOMWindow(info.GetIsolate())',
     'Document': 'document',
+    'ThisValue': 'ScriptValue(scriptState, info.This())',
 }
 # List because key order matters, as we want arguments in deterministic order
 CALL_WITH_VALUES = [
@@ -210,6 +211,7 @@ CALL_WITH_VALUES = [
     'ActiveWindow',
     'FirstWindow',
     'Document',
+    'ThisValue',
 ]
 
 
@@ -397,3 +399,113 @@ def runtime_enabled_function_name(definition_or_member):
         return None
     feature_name = extended_attributes['RuntimeEnabled']
     return 'RuntimeEnabledFeatures::%sEnabled' % uncapitalize(feature_name)
+
+
+# [Unforgeable]
+def is_unforgeable(interface, member):
+    return ('Unforgeable' in interface.extended_attributes or
+            'Unforgeable' in member.extended_attributes)
+
+
+################################################################################
+# Indexed properties
+# http://heycam.github.io/webidl/#idl-indexed-properties
+################################################################################
+
+def indexed_property_getter(interface):
+    try:
+        # Find indexed property getter, if present; has form:
+        # getter TYPE [OPTIONAL_IDENTIFIER](unsigned long ARG1)
+        return next(
+            method
+            for method in interface.operations
+            if ('getter' in method.specials and
+                len(method.arguments) == 1 and
+                str(method.arguments[0].idl_type) == 'unsigned long'))
+    except StopIteration:
+        return None
+
+
+def indexed_property_setter(interface):
+    try:
+        # Find indexed property setter, if present; has form:
+        # setter RETURN_TYPE [OPTIONAL_IDENTIFIER](unsigned long ARG1, ARG_TYPE ARG2)
+        return next(
+            method
+            for method in interface.operations
+            if ('setter' in method.specials and
+                len(method.arguments) == 2 and
+                str(method.arguments[0].idl_type) == 'unsigned long'))
+    except StopIteration:
+        return None
+
+
+def indexed_property_deleter(interface):
+    try:
+        # Find indexed property deleter, if present; has form:
+        # deleter TYPE [OPTIONAL_IDENTIFIER](unsigned long ARG)
+        return next(
+            method
+            for method in interface.operations
+            if ('deleter' in method.specials and
+                len(method.arguments) == 1 and
+                str(method.arguments[0].idl_type) == 'unsigned long'))
+    except StopIteration:
+        return None
+
+
+################################################################################
+# Named properties
+# http://heycam.github.io/webidl/#idl-named-properties
+################################################################################
+
+def named_property_getter(interface):
+    try:
+        # Find named property getter, if present; has form:
+        # getter TYPE [OPTIONAL_IDENTIFIER](DOMString ARG1)
+        getter = next(
+            method
+            for method in interface.operations
+            if ('getter' in method.specials and
+                len(method.arguments) == 1 and
+                str(method.arguments[0].idl_type) == 'DOMString'))
+        getter.name = getter.name or 'anonymousNamedGetter'
+        return getter
+    except StopIteration:
+        return None
+
+
+def named_property_setter(interface):
+    try:
+        # Find named property setter, if present; has form:
+        # setter RETURN_TYPE [OPTIONAL_IDENTIFIER](DOMString ARG1, ARG_TYPE ARG2)
+        return next(
+            method
+            for method in interface.operations
+            if ('setter' in method.specials and
+                len(method.arguments) == 2 and
+                str(method.arguments[0].idl_type) == 'DOMString'))
+    except StopIteration:
+        return None
+
+
+def named_property_deleter(interface):
+    try:
+        # Find named property deleter, if present; has form:
+        # deleter TYPE [OPTIONAL_IDENTIFIER](DOMString ARG)
+        return next(
+            method
+            for method in interface.operations
+            if ('deleter' in method.specials and
+                len(method.arguments) == 1 and
+                str(method.arguments[0].idl_type) == 'DOMString'))
+    except StopIteration:
+        return None
+
+
+IdlInterface.indexed_property_getter = property(indexed_property_getter)
+IdlInterface.indexed_property_setter = property(indexed_property_setter)
+IdlInterface.indexed_property_deleter = property(indexed_property_deleter)
+IdlInterface.named_property_getter = property(named_property_getter)
+IdlInterface.named_property_setter = property(named_property_setter)
+IdlInterface.named_property_deleter = property(named_property_deleter)

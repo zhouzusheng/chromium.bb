@@ -102,7 +102,7 @@ public:
     static void collectAllDocumentStyleSheets(Document*, WillBeHeapVector<RawPtrWillBeMember<CSSStyleSheet> >&);
 
     virtual ~InspectorCSSAgent();
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     bool forcePseudoState(Element*, CSSSelector::PseudoType);
     virtual void setFrontend(InspectorFrontend*) override;
@@ -110,7 +110,7 @@ public:
     virtual void discardAgent() override;
     virtual void didCommitLoadForMainFrame() override;
     virtual void restore() override;
-    virtual void flushPendingFrontendMessages() override;
+    virtual void flushPendingProtocolNotifications() override;
     virtual void enable(ErrorString*, PassRefPtrWillBeRawPtr<EnableCallback>) override;
     virtual void disable(ErrorString*) override;
     void reset();

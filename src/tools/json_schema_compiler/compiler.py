@@ -24,7 +24,6 @@ import sys
 from cpp_bundle_generator import CppBundleGenerator
 from cpp_generator import CppGenerator
 from cpp_type_generator import CppTypeGenerator
-from dart_generator import DartGenerator
 import json_schema
 from cpp_namespace_environment import CppNamespaceEnvironment
 from model import Model
@@ -32,14 +31,13 @@ from schema_loader import SchemaLoader
 
 # Names of supported code generators, as specified on the command-line.
 # First is default.
-GENERATORS = ['cpp', 'cpp-bundle-registration', 'cpp-bundle-schema', 'dart']
+GENERATORS = ['cpp', 'cpp-bundle-registration', 'cpp-bundle-schema']
 
 def GenerateSchema(generator_name,
                    file_paths,
                    root,
                    destdir,
                    cpp_namespace_pattern,
-                   dart_overrides_dir,
                    impl_dir,
                    include_rules):
   # Merge the source files into a single list of schemas.
@@ -85,7 +83,7 @@ def GenerateSchema(generator_name,
     else:
       src_path = os.path.commonprefix((src_path, namespace.source_file_dir))
 
-    path, filename = os.path.split(file_path)
+    _, filename = os.path.split(file_path)
     filename_base, _ = os.path.splitext(filename)
 
   # Construct the type generator with all the namespaces in this model.
@@ -117,13 +115,8 @@ def GenerateSchema(generator_name,
       ('%s.h' % filename_base, cpp_generator.h_generator),
       ('%s.cc' % filename_base, cpp_generator.cc_generator)
     ]
-  elif generator_name == 'dart':
-    generators = [
-      ('%s.dart' % namespace.unix_name, DartGenerator(
-          dart_overrides_dir))
-    ]
   else:
-    raise Exception('Unrecognised generator %s' % generator)
+    raise Exception('Unrecognised generator %s' % generator_name)
 
   output_code = []
   for filename, generator in generators:
@@ -159,8 +152,6 @@ if __name__ == '__main__':
       choices=GENERATORS,
       help='The generator to use to build the output code. Supported values are'
       ' %s' % GENERATORS)
-  parser.add_option('-D', '--dart-overrides-dir', dest='dart_overrides_dir',
-      help='Adds custom dart from files in the given directory (Dart only).')
   parser.add_option('-i', '--impl-dir', dest='impl_dir',
       help='The root path of all API implementations')
   parser.add_option('-I', '--include-rules',
@@ -192,7 +183,6 @@ if __name__ == '__main__':
                         shlex.split(opts.include_rules))
 
   result = GenerateSchema(opts.generator, file_paths, opts.root, opts.destdir,
-                          opts.namespace, opts.dart_overrides_dir,
-                          opts.impl_dir, include_rules)
+                          opts.namespace, opts.impl_dir, include_rules)
   if not opts.destdir:
     print result

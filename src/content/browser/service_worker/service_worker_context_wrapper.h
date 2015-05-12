@@ -35,6 +35,7 @@ class BrowserContext;
 class ChromeBlobStorageContext;
 class ServiceWorkerContextCore;
 class ServiceWorkerContextObserver;
+class StoragePartitionImpl;
 
 // A refcounted wrapper class for our core object. Higher level content lib
 // classes keep references to this class on mutliple threads. The inner core
@@ -61,6 +62,12 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
   // The core context is only for use on the IO thread.
   ServiceWorkerContextCore* context();
 
+  // The StoragePartition should only be used on the UI thread.
+  // Can be null before/during init and during/after shutdown.
+  StoragePartitionImpl* storage_partition() const;
+
+  void set_storage_partition(StoragePartitionImpl* storage_partition);
+
   // The process manager can be used on either UI or IO.
   ServiceWorkerProcessManager* process_manager() {
     return process_manager_.get();
@@ -78,6 +85,10 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
       const net::CompletionCallback& callback) override;
   void GetAllOriginsInfo(const GetUsageInfoCallback& callback) override;
   void DeleteForOrigin(const GURL& origin_url) override;
+  void CheckHasServiceWorker(
+      const GURL& url,
+      const GURL& other_url,
+      const CheckHasServiceWorkerCallback& callback) override;
 
   // DeleteForOrigin with completion callback.  Does not exit early, and returns
   // false if one or more of the deletions fail.
@@ -122,6 +133,12 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
       const GetUsageInfoCallback& callback,
       const std::vector<ServiceWorkerRegistrationInfo>& registrations);
 
+  void DidFindRegistrationForCheckHasServiceWorker(
+      const GURL& other_url,
+      const CheckHasServiceWorkerCallback& callback,
+      ServiceWorkerStatusCode status,
+      const scoped_refptr<ServiceWorkerRegistration>& registration);
+
   const scoped_refptr<ObserverListThreadSafe<ServiceWorkerContextObserver> >
       observer_list_;
   const scoped_ptr<ServiceWorkerProcessManager> process_manager_;
@@ -130,6 +147,9 @@ class CONTENT_EXPORT ServiceWorkerContextWrapper
 
   // Initialized in Init(); true if the user data directory is empty.
   bool is_incognito_;
+
+  // Raw pointer to the StoragePartitionImpl owning |this|.
+  StoragePartitionImpl* storage_partition_;
 };
 
 }  // namespace content

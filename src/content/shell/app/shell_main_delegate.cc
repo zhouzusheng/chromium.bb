@@ -151,11 +151,6 @@ class ShellContentUtilityClient : public content::ContentUtilityClient
         return handled;
     }
 
-    static void PreSandboxStartup()
-    {
-        PrintingHandler::PreSandboxStartup();
-    }
-
     void onStartupPing()
     {
         Send(new ChromeUtilityHostMsg_ProcessStarted);
@@ -175,6 +170,14 @@ ShellMainDelegate::~ShellMainDelegate() {
 }
 
 bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
+  base::CommandLine& command_line = *base::CommandLine::ForCurrentProcess();
+
+  // "dump-render-tree" has been renamed to "run-layout-test", but the old
+  // flag name is still used in some places, so this check will remain until
+  // it is phased out entirely.
+  if (command_line.HasSwitch(switches::kDumpRenderTree))
+    command_line.AppendSwitch(switches::kRunLayoutTest);
+
 #if defined(OS_WIN)
   // Enable trace control and transport through event tracing for Windows.
   logging::LogEventProvider::Initialize(kContentShellProviderName);
@@ -190,7 +193,6 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
 #endif  // OS_MACOSX
 
   InitLogging();
-  base::CommandLine& command_line = *base::CommandLine::ForCurrentProcess();
 
   // SHEZ: Remove test-only code
 #if 0
@@ -206,7 +208,7 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
   }
 #endif
 
-  if (command_line.HasSwitch(switches::kDumpRenderTree)) {
+  if (command_line.HasSwitch(switches::kRunLayoutTest)) {
     // SHEZ: remove test-only code
     //EnableBrowserLayoutTestMode();
 
@@ -232,7 +234,6 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
     if (!command_line.HasSwitch(switches::kEnableThreadedCompositing)) {
       command_line.AppendSwitch(switches::kDisableThreadedCompositing);
       command_line.AppendSwitch(cc::switches::kDisableThreadedAnimation);
-      command_line.AppendSwitch(switches::kDisableImplSidePainting);
       // Text blobs are normally disabled when kDisableImplSidePainting is
       // present to ensure correct LCD behavior, but for layout tests we want
       // them on because LCD is always suppressed.
@@ -256,6 +257,9 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
 
     command_line.AppendSwitchASCII(switches::kHostResolverRules,
                                    "MAP *.test 127.0.0.1");
+
+    // TODO(wfh): crbug.com/295137 Remove this when NPAPI is gone.
+    command_line.AppendSwitch(switches::kEnableNpapi);
 
     // Unless/until WebM files are added to the media layout tests, we need to
     // avoid removing MP4/H264/AAC so that layout tests can run on Android.
@@ -313,20 +317,6 @@ void ShellMainDelegate::PreSandboxStartup() {
   }
 
   InitializeResourceBundle();
-
-  const base::CommandLine& commandLine = *base::CommandLine::ForCurrentProcess();
-  std::string processType = commandLine.GetSwitchValueASCII(switches::kProcessType);
-
-  if (processType == switches::kUtilityProcess) {
-    base::FilePath dirModule;
-    PathService::Get(base::DIR_MODULE, &dirModule);
-
-    base::FilePath pdfDll = dirModule;
-    pdfDll = pdfDll.AppendASCII("pdf.dll");
-    PathService::Override(chrome::FILE_PDF_PLUGIN, pdfDll);
-
-    ShellContentUtilityClient::PreSandboxStartup();
-  }
 }
 
 int ShellMainDelegate::RunProcess(
@@ -347,7 +337,7 @@ int ShellMainDelegate::RunProcess(
   // SHEZ: Remove test-only code
 #if 0
   base::CommandLine& command_line = *base::CommandLine::ForCurrentProcess();
-  return command_line.HasSwitch(switches::kDumpRenderTree) ||
+  return command_line.HasSwitch(switches::kRunLayoutTest) ||
                  command_line.HasSwitch(switches::kCheckLayoutTestSysDeps)
              ? LayoutTestBrowserMain(main_function_params, browser_runner_)
              : ShellBrowserMain(main_function_params, browser_runner_);
@@ -406,9 +396,10 @@ ContentBrowserClient* ShellMainDelegate::CreateContentBrowserClient() {
   browser_client_.reset(
       // SHEZ: Remove test-only code.
 #if 0
-      base::CommandLine::ForCurrentProcess()->HasSwitch(
-                            switches::kDumpRenderTree) ?
-                            new LayoutTestContentBrowserClient :
+          base::CommandLine::ForCurrentProcess()->HasSwitch(
+                            switches::kRunLayoutTest)
+                            ? new LayoutTestContentBrowserClient
+                            : 
 #endif
                             new ShellContentBrowserClient);
 
@@ -419,9 +410,10 @@ ContentRendererClient* ShellMainDelegate::CreateContentRendererClient() {
   renderer_client_.reset(
       // SHEZ: Remove test-only code.
 #if 0
-      base::CommandLine::ForCurrentProcess()->HasSwitch(
-                             switches::kDumpRenderTree) ?
-                             new LayoutTestContentRendererClient :
+          base::CommandLine::ForCurrentProcess()->HasSwitch(
+                             switches::kRunLayoutTest)
+                             ? new LayoutTestContentRendererClient
+                             : 
 #endif
                              new ShellContentRendererClient);
 

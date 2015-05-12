@@ -46,17 +46,18 @@ public:
 
     virtual bool canContainRangeEndPoint() const override { return false; }
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     explicit HTMLProgressElement(Document&);
     virtual ~HTMLProgressElement();
 
     virtual bool areAuthorShadowsAllowed() const override { return false; }
+    virtual void willAddFirstOpenShadowRoot() override;
     virtual bool shouldAppearIndeterminate() const override;
     virtual bool supportLabels() const override { return true; }
 
-    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual LayoutObject* createRenderer(const LayoutStyle&) override;
     RenderProgress* renderProgress() const;
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
@@ -64,7 +65,7 @@ private:
     virtual void attach(const AttachContext& = AttachContext()) override;
 
     void didElementStateChange();
-    virtual void didAddUserAgentShadowRoot(ShadowRoot&) override;
+    virtual void didAddClosedShadowRoot(ShadowRoot&) override;
     bool isDeterminate() const;
 
     RawPtrWillBeMember<ProgressValueElement> m_value;

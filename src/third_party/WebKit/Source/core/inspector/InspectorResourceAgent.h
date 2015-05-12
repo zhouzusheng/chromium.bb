@@ -45,6 +45,7 @@ class Resource;
 struct FetchInitiatorInfo;
 class Document;
 class DocumentLoader;
+class ExecutionContext;
 class FormData;
 class LocalFrame;
 class HTTPHeaderMap;
@@ -78,7 +79,7 @@ public:
     virtual void restore() override;
 
     virtual ~InspectorResourceAgent();
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     // Called from instrumentation.
     void willSendRequest(unsigned long identifier, DocumentLoader*, ResourceRequest&, const ResourceResponse& redirectResponse, const FetchInitiatorInfo&);
@@ -96,7 +97,11 @@ public:
     void documentThreadableLoaderStartedLoadingForClient(unsigned long identifier, ThreadableLoaderClient*);
     void willLoadXHR(XMLHttpRequest*, ThreadableLoaderClient*, const AtomicString& method, const KURL&, bool async, PassRefPtr<FormData> body, const HTTPHeaderMap& headers, bool includeCrendentials);
     void didFailXHRLoading(XMLHttpRequest*, ThreadableLoaderClient*);
-    void didFinishXHRLoading(XMLHttpRequest*, ThreadableLoaderClient*, unsigned long identifier, ScriptString sourceString, const AtomicString&, const String&);
+    void didFinishXHRLoading(ExecutionContext*, XMLHttpRequest*, ThreadableLoaderClient*, unsigned long identifier, ScriptString sourceString, const AtomicString&, const String&);
+
+    void willSendEventSourceRequest(ThreadableLoaderClient*);
+    void willDispachEventSourceEvent(ThreadableLoaderClient*, const AtomicString& eventName, const AtomicString& eventId, const Vector<UChar>& data);
+    void didFinishEventSourceRequest(ThreadableLoaderClient*);
 
     void willDestroyResource(Resource*);
 
@@ -120,9 +125,6 @@ public:
     void didSendWebSocketFrame(unsigned long identifier, int opCode, bool masked, const char* payload, size_t payloadLength);
     void didReceiveWebSocketFrameError(unsigned long identifier, const String&);
 
-    // called from Internals for layout test purposes.
-    void setResourcesDataSizeLimitsFromInternals(int maximumResourcesContentSize, int maximumSingleResourceContentSize);
-
     // Called from frontend
     virtual void enable(ErrorString*) override;
     virtual void disable(ErrorString*) override;
@@ -137,7 +139,8 @@ public:
     virtual void emulateNetworkConditions(ErrorString*, bool, double, double, double) override;
     virtual void setCacheDisabled(ErrorString*, bool cacheDisabled) override;
 
-    virtual void loadResourceForFrontend(ErrorString*, const String& frameId, const String& url, const RefPtr<JSONObject>* requestHeaders, PassRefPtrWillBeRawPtr<LoadResourceForFrontendCallback>) override;
+    virtual void loadResourceForFrontend(ErrorString*, const String& url, const RefPtr<JSONObject>* requestHeaders, PassRefPtrWillBeRawPtr<LoadResourceForFrontendCallback>) override;
+    virtual void setDataSizeLimitsForTest(ErrorString*, int maxTotal, int maxResource) override;
 
     // Called from other agents.
     void setHostId(const String&);
@@ -158,6 +161,10 @@ private:
 
     typedef WillBeHeapHashMap<ThreadableLoaderClient*, RefPtrWillBeMember<XHRReplayData> > PendingXHRReplayDataMap;
     PendingXHRReplayDataMap m_pendingXHRReplayData;
+
+    ThreadableLoaderClient* m_pendingEventSource;
+    typedef HashMap<ThreadableLoaderClient*, unsigned long> EventSourceRequestIdMap;
+    EventSourceRequestIdMap m_eventSourceRequestIdMap;
 
     typedef HashMap<String, RefPtr<TypeBuilder::Network::Initiator> > FrameNavigationInitiatorMap;
     FrameNavigationInitiatorMap m_frameNavigationInitiatorMap;

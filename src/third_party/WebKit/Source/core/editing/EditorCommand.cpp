@@ -269,11 +269,11 @@ static unsigned verticalScrollDistance(LocalFrame& frame)
     Element* focusedElement = frame.document()->focusedElement();
     if (!focusedElement)
         return 0;
-    RenderObject* renderer = focusedElement->renderer();
+    LayoutObject* renderer = focusedElement->renderer();
     if (!renderer || !renderer->isBox())
         return 0;
     RenderBox& renderBox = toRenderBox(*renderer);
-    RenderStyle* style = renderBox.style();
+    LayoutStyle* style = renderBox.style();
     if (!style)
         return 0;
     if (!(style->overflowY() == OSCROLL || style->overflowY() == OAUTO || focusedElement->hasEditableStyle()))

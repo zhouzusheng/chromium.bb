@@ -50,7 +50,8 @@ public:
     virtual void highlight() override;
     virtual void hideHighlight() override;
 
-    virtual void sendMessageToFrontend(PassRefPtr<JSONObject>) override;
+    virtual void sendProtocolResponse(int callId, PassRefPtr<JSONObject> message) override;
+    virtual void sendProtocolNotification(PassRefPtr<JSONObject> message) override;
     virtual void flush() override;
 
     virtual void updateInspectorStateCookie(const WTF::String&) override;
@@ -69,7 +70,6 @@ public:
     virtual float minimumPageScaleFactor() override;
     virtual float maximumPageScaleFactor() override;
     virtual void setPageScaleFactor(float) override;
-    virtual void showContextMenu(float x, float y, PassRefPtrWillBeRawPtr<ContextMenuProvider>) override;
 
     virtual void dispatchKeyEvent(const PlatformKeyboardEvent&) override;
     virtual void dispatchMouseEvent(const PlatformMouseEvent&) override;
@@ -78,9 +78,6 @@ public:
     virtual void resetTraceEventCallback() override;
     virtual void enableTracing(const String& categoryFilter) override;
     virtual void disableTracing() override;
-
-    virtual void startGPUEventsRecording() override;
-    virtual void stopGPUEventsRecording() override;
 
     virtual void resumeStartup() override;
 

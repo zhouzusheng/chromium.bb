@@ -41,7 +41,7 @@ class CSSFontSelectorClient;
 class Document;
 class FontDescription;
 
-class CSSFontSelector final : public FontSelector {
+class CSSFontSelector : public FontSelector {
 public:
     static PassRefPtrWillBeRawPtr<CSSFontSelector> create(Document* document)
     {
@@ -78,13 +78,15 @@ public:
 
     virtual void trace(Visitor*) override;
 
-private:
+protected:
     explicit CSSFontSelector(Document*);
+
+private:
 
     void dispatchInvalidationCallbacks();
 
     // FIXME: Oilpan: Ideally this should just be a traced Member but that will
-    // currently leak because RenderStyle and its data are not on the heap.
+    // currently leak because LayoutStyle and its data are not on the heap.
     // See crbug.com/383860 for details.
     RawPtrWillBeWeakMember<Document> m_document;
     // FIXME: Move to Document or StyleEngine.

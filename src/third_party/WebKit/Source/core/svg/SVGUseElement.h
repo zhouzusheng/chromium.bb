@@ -44,7 +44,7 @@ public:
 
     void invalidateShadowTree();
 
-    RenderObject* rendererClipChild() const;
+    LayoutObject* rendererClipChild() const;
 
     SVGAnimatedLength* x() const { return m_x.get(); }
     SVGAnimatedLength* y() const { return m_y.get(); }
@@ -53,7 +53,11 @@ public:
 
     virtual void buildPendingResource() override;
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
+
+    virtual bool isPresentationAttribute(const QualifiedName&) const override;
+    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
+    virtual bool isPresentationAttributeWithSVGDOM(const QualifiedName&) const override;
 
 private:
     explicit SVGUseElement(Document&);
@@ -67,7 +71,7 @@ private:
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
     virtual void svgAttributeChanged(const QualifiedName&) override;
 
-    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual LayoutObject* createRenderer(const LayoutStyle&) override;
     virtual void toClipPath(Path&) override;
 
     void clearResourceReferences();

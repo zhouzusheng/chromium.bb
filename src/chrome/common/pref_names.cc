@@ -485,6 +485,11 @@ const char kTouchpadSensitivity[] = "settings.touchpad.sensitivity2";
 // A boolean pref set to true if time should be displayed in 24-hour clock.
 const char kUse24HourClock[] = "settings.clock.use_24hour_clock";
 
+// This setting disables manual timezone selection and starts periodic timezone
+// refresh.
+const char kResolveTimezoneByGeolocation[] =
+    "settings.resolve_timezone_by_geolocation";
+
 // A boolean pref to disable Google Drive integration.
 // The pref prefix should remain as "gdata" for backward compatibility.
 const char kDisableDrive[] = "gdata.disabled";
@@ -937,6 +942,9 @@ const char kPluginsDisabledPluginsExceptions[] =
 // List pref containing names of plugins that are enabled by policy.
 const char kPluginsEnabledPlugins[] = "plugins.plugins_enabled";
 
+// Whether NPAPI plugins are enabled.
+const char kEnableNpapi[] = "plugins.enable_npapi";
+
 // When bundled NPAPI Flash is removed, if at that point it is enabled while
 // Pepper Flash is disabled, we would like to turn on Pepper Flash. And we will
 // want to do so only once.
@@ -1201,12 +1209,13 @@ const char kLocalDiscoveryNotificationsEnabled[] =
 // a preference was reset.
 const char kPreferenceResetTime[] = "prefs.preference_reset_time";
 
-// The GCM channel's enabled state.
-const char kGCMChannelEnabled[] = "gcm.channel_enabled";
-
 // How many Service Workers are registered with the Push API (could be zero).
 const char kPushMessagingRegistrationCount[] =
     "gcm.push_messaging_registration_count";
+
+// Maps from app ids to origin + Service Worker registration ID.
+const char kPushMessagingApplicationIdMap[] =
+    "gcm.push_messaging_application_id_map";
 
 // Whether a user is allowed to use Easy Unlock.
 const char kEasyUnlockAllowed[] = "easy_unlock.allowed";
@@ -1234,6 +1243,12 @@ const char kZeroSuggestCachedResults[] = "zerosuggest.cachedresults";
 const char kCopresenceAuthenticatedDeviceId[] =
     "apps.copresence.auth_device_id";
 const char kCopresenceAnonymousDeviceId[] = "apps.copresence.unauth_device_id";
+#endif
+
+// Whether WebRTC should bind to individual NICs to explore all possible routing
+// options. Default is true.
+#if defined(ENABLE_WEBRTC)
+const char kWebRTCMultipleRoutesEnabled[] = "webrtc.multiple_routes_enabled";
 #endif
 
 // *************** LOCAL STATE ***************
@@ -1300,6 +1315,9 @@ const char kCrashReportingEnabled[] =
     "user_experience_metrics_crash.reporting_enabled";
 #endif
 
+// Base64-encoded compressed serialized form of the variations seed protobuf.
+const char kVariationsCompressedSeed[] = "variations_compressed_seed";
+
 // 64-bit integer serialization of the base::Time from the last successful seed
 // fetch (i.e. when the Variations server responds with 200 or 304).
 const char kVariationsLastFetchTime[] = "variations_last_fetch_time";
@@ -1307,14 +1325,11 @@ const char kVariationsLastFetchTime[] = "variations_last_fetch_time";
 // String for the restrict parameter to be appended to the variations URL.
 const char kVariationsRestrictParameter[] = "variations_restrict_parameter";
 
-// String serialized form of variations seed protobuf.
+// Base64-encoded serialized form of the variations seed protobuf.
 const char kVariationsSeed[] = "variations_seed";
 
 // 64-bit integer serialization of the base::Time from the last seed received.
 const char kVariationsSeedDate[] = "variations_seed_date";
-
-// SHA-1 hash of the serialized variations seed data (hex encoded).
-const char kVariationsSeedHash[] = "variations_seed_hash";
 
 // Digital signature of the binary variations seed data, base64-encoded.
 const char kVariationsSeedSignature[] = "variations_seed_signature";
@@ -1559,9 +1574,6 @@ const char kNtpMostVisitedURLsBlacklist[] = "ntp.most_visited_blacklist";
 // True if a desktop sync session was found for this user.
 const char kNtpPromoDesktopSessionFound[] = "ntp.promo_desktop_session_found";
 
-// Last time of update of promo_resource_cache.
-const char kNtpPromoResourceCacheUpdate[] = "ntp.promo_resource_cache_update";
-
 // Which bookmarks folder should be visible on the new tab page v4.
 const char kNtpShownBookmarksFolder[] = "ntp.shown_bookmarks_folder";
 
@@ -1658,6 +1670,10 @@ const char kGoogleGeolocationAccessEnabled[] =
     "googlegeolocationaccess.enabled";
 #endif
 
+// Boolean that specifies whether to enable the Google Now Launcher extension.
+// Note: This is not the notifications component gated by ENABLE_GOOGLE_NOW.
+const char kGoogleNowLauncherEnabled[] = "google_now_launcher.enabled";
+
 // The default audio capture device used by the Media content setting.
 const char kDefaultAudioCaptureDevice[] = "media.default_audio_capture_device";
 
@@ -1666,48 +1682,6 @@ const char kDefaultVideoCaptureDevice[] = "media.default_video_capture_Device";
 
 // The salt used for creating random MediaSource IDs.
 const char kMediaDeviceIdSalt[] = "media.device_id_salt";
-
-// Boolean that indicates whether to allow firewall traversal while trying to
-// establish the initial connection from the client or host.
-const char kRemoteAccessHostFirewallTraversal[] =
-    "remote_access.host_firewall_traversal";
-
-// Boolean controlling whether 2-factor auth should be required when connecting
-// to a host (instead of a PIN).
-const char kRemoteAccessHostRequireTwoFactor[] =
-    "remote_access.host_require_two_factor";
-
-// String containing the domain name that hosts must belong to. If blank, then
-// hosts can belong to any domain.
-const char kRemoteAccessHostDomain[] = "remote_access.host_domain";
-
-// String containing the domain name of the Chromoting Directory.
-// Used by Chromoting host and client.
-const char kRemoteAccessHostTalkGadgetPrefix[] =
-    "remote_access.host_talkgadget_prefix";
-
-// Boolean controlling whether curtaining is required when connecting to a host.
-const char kRemoteAccessHostRequireCurtain[] =
-    "remote_access.host_require_curtain";
-
-// Boolean controlling whether curtaining is required when connecting to a host.
-const char kRemoteAccessHostAllowClientPairing[] =
-    "remote_access.host_allow_client_pairing";
-
-// Whether Chrome Remote Desktop can proxy gnubby authentication traffic.
-const char kRemoteAccessHostAllowGnubbyAuth[] =
-    "remote_access.host_allow_gnubby_auth";
-
-// Boolean that indicates whether the Chromoting host should allow connections
-// using relay servers.
-const char kRemoteAccessHostAllowRelayedConnection[] =
-    "remote_access.host_allow_relayed_connection";
-
-// String containing the UDP port range that the Chromoting host should used
-// when connecting to clients. The port range should be in the form:
-// <min_port>-<max_port>. E.g. 12400-12409.
-const char kRemoteAccessHostUdpPortRange[] =
-    "remote_access.host_udp_port_range";
 
 // The last used printer and its settings.
 const char kPrintPreviewStickySettings[] =
@@ -1938,6 +1912,11 @@ const char kConsumerManagementStage[] = "consumer_management.stage";
 
 // A boolean pref. If set to true, new experimental OOBE UI is displayed.
 const char kNewOobe[] = "NewOobe";
+
+// A boolean pref. If set to true, experimental webview based signin flow
+// activated.
+extern const char kWebviewSigninEnabled[] =
+    "webview_signin_enabled";
 #endif  // defined(OS_CHROMEOS)
 
 // Whether there is a Flash version installed that supports clearing LSO data.
@@ -1986,6 +1965,14 @@ const char kMessageCenterShowIcon[] = "message_center.show_icon";
 
 const char kMessageCenterForcedOnTaskbar[] =
     "message_center.was_forced_on_taskbar";
+
+#if defined(OS_CHROMEOS)
+// This setting starts periodic timezone refresh when not in user session.
+// (user session is controlled by user profile preference
+// kResolveTimezoneByGeolocation
+const char kResolveDeviceTimezoneByGeolocation[] =
+    "settings.resolve_device_timezone_by_geolocation";
+#endif  // defined(OS_CHROMEOS)
 
 // *************** SERVICE PREFS ***************
 // These are attached to the service process.
@@ -2277,12 +2264,23 @@ const char kBrowserGuestModeEnabled[] = "profile.browser_guest_enabled";
 // Whether Adding a new Person is enabled within the user manager.
 const char kBrowserAddPersonEnabled[] = "profile.add_person_enabled";
 
+// Device identifier used by Easy Unlock stored in local state. This id will be
+// combined with a user id, before being registered with the CryptAuth server,
+// so it can't correlate users on the same device.
+extern const char kEasyUnlockDeviceId[] = "easy_unlock.device_id";
+
 // A dictionary that maps user id to hardlock state.
 const char kEasyUnlockHardlockState[] = "easy_unlock.hardlock_state";
 
 // A dictionary that maps user id to public part of RSA key pair used by
 // Easy Sign-in for the user.
 const char kEasyUnlockLocalStateTpmKeys[] = "easy_unlock.public_tpm_keys";
+
+// A dictionary in local state containing each user's Easy Unlock profile
+// preferences, so they can be accessed outside of the user's profile. The value
+// is a dictionary containing an entry for each user. Each user's entry mirrors
+// their profile's Easy Unlock preferences.
+const char kEasyUnlockLocalStateUserPrefs[] = "easy_unlock.user_prefs";
 
 // The beginning of time span when we count user's "Nope" for the password
 // bubble.
@@ -2297,5 +2295,15 @@ const char kPasswordBubbleLastInteractions[] = "password_bubble.interactions";
 // Boolean that indicates whether elevation is needed to recover Chrome upgrade.
 const char kRecoveryComponentNeedsElevation[] =
     "recovery_component.needs_elevation";
+
+// A dictionary that maps from supervised user whitelist IDs to their properties
+// (name and a list of clients that registered the whitelist).
+const char kRegisteredSupervisedUserWhitelists[] =
+    "supervised_users.whitelists";
+
+#if defined(ENABLE_EXTENSIONS)
+// Policy that indicates how to handle animated images.
+const char kAnimationPolicy[] = "settings.a11y.animation_policy";
+#endif
 
 }  // namespace prefs

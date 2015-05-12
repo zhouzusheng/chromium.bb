@@ -76,6 +76,9 @@ struct PopupItem {
         , yOffset(0)
     {
     }
+
+    DisplayItemClient displayItemClient() { return toDisplayItemClient(this); }
+
     String label;
     Type type;
     int yOffset; // y offset of this item, relative to the top of the popup.
@@ -135,9 +138,6 @@ public:
     // Updates our internal list to match the client.
     void updateFromElement();
 
-    // Frees any allocated resources used in a particular popup session.
-    void clear();
-
     // Sets the index of the option that is displayed in the <select> widget in the page
     void setOriginalIndex(int);
 
@@ -159,9 +159,6 @@ public:
     // Computes the size of widget and children.
     virtual void layout() override;
 
-    // Returns whether the popup wants to process events for the passed key.
-    bool isInterestedInEventForKey(int keyCode);
-
     // Gets the height of a row.
     int getRowHeight(int index) const;
 
@@ -175,13 +172,13 @@ public:
 
     void disconnectClient() { m_popupClient = 0; }
 
-    const Vector<PopupItem*>& items() const { return m_items; }
-
     virtual int popupContentHeight() const override;
 
     static const int defaultMaxHeight;
 
-    void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
+
+    DisplayItemClient displayItemClient() { return toDisplayItemClient(this); }
 
 protected:
     virtual void invalidateScrollCornerRect(const IntRect&) override { }
@@ -283,7 +280,7 @@ private:
     int m_maxHeight;
 
     // A list of the options contained within the <select>
-    Vector<PopupItem*> m_items;
+    Vector<OwnPtr<PopupItem>> m_items;
 
     // The <select> PopupMenuClient that opened us.
     PopupMenuClient* m_popupClient;

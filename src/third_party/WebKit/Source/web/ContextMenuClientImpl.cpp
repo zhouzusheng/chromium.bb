@@ -54,14 +54,14 @@
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/HTMLPlugInElement.h"
 #include "core/html/MediaError.h"
+#include "core/layout/HitTestResult.h"
+#include "core/layout/LayoutPart.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/HistoryItem.h"
 #include "core/page/ContextMenuController.h"
 #include "core/page/EventHandler.h"
 #include "core/page/Page.h"
-#include "core/rendering/HitTestResult.h"
-#include "core/rendering/RenderPart.h"
 #include "platform/ContextMenu.h"
 #include "platform/Widget.h"
 #include "platform/text/TextBreakIterator.h"
@@ -197,7 +197,7 @@ void ContextMenuClientImpl::showContextMenu(const ContextMenu* defaultMenu, bool
 
     HitTestResult r = m_webView->page()->contextMenuController().hitTestResult();
 
-    r.setToShadowHostIfInUserAgentShadowRoot();
+    r.setToShadowHostIfInClosedShadowRoot();
 
     LocalFrame* selectedFrame = r.innerNodeFrame();
 
@@ -278,9 +278,9 @@ void ContextMenuClientImpl::showContextMenu(const ContextMenu* defaultMenu, bool
         if (mediaElement->shouldShowControls())
             data.mediaFlags |= WebContextMenuData::MediaControls;
     } else if (isHTMLObjectElement(*r.innerNonSharedNode()) || isHTMLEmbedElement(*r.innerNonSharedNode())) {
-        RenderObject* object = r.innerNonSharedNode()->renderer();
-        if (object && object->isRenderPart()) {
-            Widget* widget = toRenderPart(object)->widget();
+        LayoutObject* object = r.innerNonSharedNode()->renderer();
+        if (object && object->isLayoutPart()) {
+            Widget* widget = toLayoutPart(object)->widget();
             if (widget && widget->isPluginContainer()) {
                 data.mediaType = WebContextMenuData::MediaTypePlugin;
                 WebPluginContainerImpl* plugin = toWebPluginContainerImpl(widget);
@@ -384,10 +384,15 @@ void ContextMenuClientImpl::showContextMenu(const ContextMenu* defaultMenu, bool
     // Filter out custom menu elements and add them into the data.
     populateCustomMenuItems(defaultMenu, &data);
 
-    // Extract suggested filename for saving file.
     if (isHTMLAnchorElement(r.URLElement())) {
         HTMLAnchorElement* anchor = toHTMLAnchorElement(r.URLElement());
+
+        // Extract suggested filename for saving file.
         data.suggestedFilename = anchor->fastGetAttribute(HTMLNames::downloadAttr);
+
+        // If the anchor wants to suppress the referrer, update the referrerPolicy accordingly.
+        if (anchor->hasRel(RelationNoReferrer))
+            data.referrerPolicy = WebReferrerPolicyNever;
     }
 
     data.node = r.innerNonSharedNode();
@@ -420,6 +425,7 @@ static void populateSubMenuItems(const Vector<ContextMenuItem>& inputMenu, WebVe
 
         WebMenuItemInfo outputItem;
         outputItem.label = inputItem->title();
+        outputItem.icon = inputItem->icon();
         outputItem.enabled = inputItem->enabled();
         outputItem.checked = inputItem->checked();
         outputItem.action = static_cast<unsigned>(inputItem->action() - ContextMenuItemBaseCustomTag);

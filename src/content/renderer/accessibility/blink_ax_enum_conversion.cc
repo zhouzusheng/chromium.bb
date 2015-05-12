@@ -400,4 +400,46 @@ ui::AXTextDirection AXTextDirectionFromBlink(
   return ui::AX_TEXT_DIRECTION_NONE;
 }
 
-}  // namespace content
+ui::AXInvalidState AXInvalidStateFromBlink(
+    blink::WebAXInvalidState invalid_state) {
+  switch (invalid_state) {
+    case blink::WebAXInvalidStateUndefined:
+      return ui::AX_INVALID_STATE_NONE;
+    case blink::WebAXInvalidStateFalse:
+      return ui::AX_INVALID_STATE_FALSE;
+    case blink::WebAXInvalidStateTrue:
+      return ui::AX_INVALID_STATE_TRUE;
+    case blink::WebAXInvalidStateSpelling:
+      return ui::AX_INVALID_STATE_SPELLING;
+    case blink::WebAXInvalidStateGrammar:
+      return ui::AX_INVALID_STATE_GRAMMAR;
+    case blink::WebAXInvalidStateOther:
+      return ui::AX_INVALID_STATE_OTHER;
+    default:
+      NOTREACHED();
+  }
+
+  return ui::AX_INVALID_STATE_NONE;
+}
+
+ui::AXSortDirection AXSortDirectionFromBlink(
+    blink::WebAXSortDirection sort_direction) {
+  switch (sort_direction) {
+    case blink::WebAXSortDirectionUndefined:
+      return ui::AX_SORT_DIRECTION_NONE;
+    case blink::WebAXSortDirectionNone:
+      return ui::AX_SORT_DIRECTION_UNSORTED;
+    case blink::WebAXSortDirectionAscending:
+      return ui::AX_SORT_DIRECTION_ASCENDING;
+    case blink::WebAXSortDirectionDescending:
+      return ui::AX_SORT_DIRECTION_DESCENDING;
+    case blink::WebAXSortDirectionOther:
+      return ui::AX_SORT_DIRECTION_OTHER;
+    default:
+      NOTREACHED();
+  }
+
+  return ui::AX_SORT_DIRECTION_NONE;
+}
+
+}  // Namespace content.

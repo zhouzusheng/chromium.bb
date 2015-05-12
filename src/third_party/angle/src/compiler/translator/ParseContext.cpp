@@ -1077,14 +1077,14 @@ const TVariable *TParseContext::getNamedVariable(const TSourceLoc &location,
 //
 // Return the function symbol if found, otherwise 0.
 //
-const TFunction* TParseContext::findFunction(const TSourceLoc& line, TFunction* call, int shaderVersion, bool *builtIn)
+const TFunction* TParseContext::findFunction(const TSourceLoc& line, TFunction* call, int inputShaderVersion, bool *builtIn)
 {
     // First find by unmangled name to check whether the function name has been
     // hidden by a variable name or struct typename.
     // If a function is found, check for one with a matching argument list.
-    const TSymbol* symbol = symbolTable.find(call->getName(), shaderVersion, builtIn);
+    const TSymbol* symbol = symbolTable.find(call->getName(), inputShaderVersion, builtIn);
     if (symbol == 0 || symbol->isFunction()) {
-        symbol = symbolTable.find(call->getMangledName(), shaderVersion, builtIn);
+        symbol = symbolTable.find(call->getMangledName(), inputShaderVersion, builtIn);
     }
 
     if (symbol == 0) {
@@ -2545,7 +2545,10 @@ TPublicType TParseContext::addStructure(const TSourceLoc& structLine, const TSou
     TStructure* structure = new TStructure(structName, fieldList);
     TType* structureType = new TType(structure);
 
+    // Store a bool in the struct if we're at global scope, to allow us to
+    // skip the local struct scoping workaround in HLSL.
     structure->setUniqueId(TSymbolTable::nextUniqueId());
+    structure->setAtGlobalScope(symbolTable.atGlobalLevel());
 
     if (!structName->empty())
     {
@@ -2583,6 +2586,53 @@ TPublicType TParseContext::addStructure(const TSourceLoc& structLine, const TSou
     exitStructDeclaration();
 
     return publicType;
+}
+
+TIntermTyped *TParseContext::addUnaryMath(TOperator op, TIntermTyped *child, const TSourceLoc &loc)
+{
+    TIntermTyped *node = intermediate.addUnaryMath(op, child, loc);
+    if (node == 0)
+    {
+        unaryOpError(loc, GetOperatorString(op), child->getCompleteString());
+        recover();
+        return child;
+    }
+    return node;
+}
+
+TIntermTyped *TParseContext::addUnaryMathLValue(TOperator op, TIntermTyped *child, const TSourceLoc &loc)
+{
+    if (lValueErrorCheck(loc, GetOperatorString(op), child))
+        recover();
+    return addUnaryMath(op, child, loc);
+}
+
+TIntermTyped *TParseContext::addBinaryMath(TOperator op, TIntermTyped *left, TIntermTyped *right,
+    const TSourceLoc &loc)
+{
+    TIntermTyped *node = intermediate.addBinaryMath(op, left, right, loc);
+    if (node == 0)
+    {
+        binaryOpError(loc, GetOperatorString(op), left->getCompleteString(), right->getCompleteString());
+        recover();
+        return left;
+    }
+    return node;
+}
+
+TIntermTyped *TParseContext::addBinaryMathBooleanResult(TOperator op, TIntermTyped *left, TIntermTyped *right,
+    const TSourceLoc &loc)
+{
+    TIntermTyped *node = intermediate.addBinaryMath(op, left, right, loc);
+    if (node == 0)
+    {
+        binaryOpError(loc, GetOperatorString(op), left->getCompleteString(), right->getCompleteString());
+        recover();
+        ConstantUnion *unionArray = new ConstantUnion[1];
+        unionArray->setBConst(false);
+        return intermediate.addConstantUnion(unionArray, TType(EbtBool, EbpUndefined, EvqConst), loc);
+    }
+    return node;
 }
 
 //

@@ -48,7 +48,11 @@ public:
     static PassOwnPtrWillBeRawPtr<ServiceWorkerGlobalScopeClient> create(WebServiceWorkerContextClient&);
     virtual ~ServiceWorkerGlobalScopeClientImpl();
 
-    virtual void getClients(WebServiceWorkerClientsCallbacks*);
+    virtual void getClients(WebServiceWorkerClientsCallbacks*) override;
+    virtual void openWindow(const WebURL&, WebServiceWorkerClientCallbacks*) override;
+    virtual void setCachedMetadata(const WebURL&, const char*, size_t) override;
+    virtual void clearCachedMetadata(const WebURL&) override;
+
     virtual WebURL scope() const override;
     virtual WebServiceWorkerCacheStorage* cacheStorage() const override;
 
@@ -63,9 +67,10 @@ public:
     virtual void postMessageToClient(int clientID, const WebString& message, PassOwnPtr<WebMessagePortChannelArray>) override;
     virtual void postMessageToCrossOriginClient(const WebCrossOriginServiceWorkerClient&, const WebString& message, PassOwnPtr<WebMessagePortChannelArray>) override;
     virtual void skipWaiting(WebServiceWorkerSkipWaitingCallbacks*) override;
-    virtual void focus(int clientID, WebServiceWorkerClientFocusCallback*) override;
+    virtual void claim(WebServiceWorkerClientsClaimCallbacks*) override;
+    virtual void focus(int clientID, WebServiceWorkerClientCallbacks*) override;
 
-    virtual void trace(Visitor* visitor) override { ServiceWorkerGlobalScopeClient::trace(visitor); }
+    DEFINE_INLINE_VIRTUAL_TRACE() { ServiceWorkerGlobalScopeClient::trace(visitor); }
 
 private:
     explicit ServiceWorkerGlobalScopeClientImpl(WebServiceWorkerContextClient&);

@@ -13,6 +13,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/strings/string_util.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/values.h"
@@ -290,7 +291,7 @@ base::Value* NetLogBadProxyListCallback(const ProxyRetryInfoMap* retry_info,
 
 // Returns NetLog parameters on a successfuly proxy resolution.
 base::Value* NetLogFinishedResolvingProxyCallback(
-    ProxyInfo* result,
+    const ProxyInfo* result,
     NetLog::LogLevel /* log_level */) {
   base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetString("pac_string", result->ToPacString());
@@ -301,12 +302,11 @@ base::Value* NetLogFinishedResolvingProxyCallback(
 class UnsetProxyConfigService : public ProxyConfigService {
  public:
   UnsetProxyConfigService() {}
-  virtual ~UnsetProxyConfigService() {}
+  ~UnsetProxyConfigService() override {}
 
-  virtual void AddObserver(Observer* observer) override {}
-  virtual void RemoveObserver(Observer* observer) override {}
-  virtual ConfigAvailability GetLatestProxyConfig(
-      ProxyConfig* config) override {
+  void AddObserver(Observer* observer) override {}
+  void RemoveObserver(Observer* observer) override {}
+  ConfigAvailability GetLatestProxyConfig(ProxyConfig* config) override {
     return CONFIG_UNSET;
   }
 };
@@ -896,8 +896,7 @@ ProxyService* ProxyService::CreateUsingSystemProxyResolver(
   DCHECK(proxy_config_service);
 
   if (!ProxyResolverFactoryForSystem::IsSupported()) {
-    LOG(WARNING) << "PAC support disabled because there is no "
-                    "system implementation";
+    VLOG(1) << "PAC support disabled because there is no system implementation";
     return CreateWithoutProxyResolver(proxy_config_service, net_log);
   }
 
@@ -1480,6 +1479,10 @@ scoped_ptr<ProxyService::PacPollPolicy>
 void ProxyService::OnProxyConfigChanged(
     const ProxyConfig& config,
     ProxyConfigService::ConfigAvailability availability) {
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/455942 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "455942 ProxyService::OnProxyConfigChanged"));
   // Retrieve the current proxy configuration from the ProxyConfigService.
   // If a configuration is not available yet, we will get called back later
   // by our ProxyConfigService::Observer once it changes.

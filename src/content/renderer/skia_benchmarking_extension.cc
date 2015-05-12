@@ -9,7 +9,7 @@
 #include "base/values.h"
 #include "cc/base/math_util.h"
 #include "cc/resources/picture.h"
-#include "content/public/renderer/v8_value_converter.h"
+#include "content/public/child/v8_value_converter.h"
 #include "content/renderer/chrome_object_extensions_utils.h"
 #include "content/renderer/render_thread_impl.h"
 #include "gin/arguments.h"
@@ -219,7 +219,7 @@ void SkiaBenchmarking::GetOps(gin::Arguments* args) {
 
   v8::Handle<v8::Array> result = v8::Array::New(isolate, canvas.getSize());
   for (int i = 0; i < canvas.getSize(); ++i) {
-    DrawType cmd_type = canvas.getDrawCommandAt(i)->getType();
+    SkDrawCommand::OpType cmd_type = canvas.getDrawCommandAt(i)->getType();
     v8::Handle<v8::Object> cmd = v8::Object::New(isolate);
     cmd->Set(v8::String::NewFromUtf8(isolate, "cmd_type"),
              v8::Integer::New(isolate, cmd_type));
@@ -263,9 +263,9 @@ void SkiaBenchmarking::GetOpTimings(gin::Arguments* args) {
   bitmap.allocN32Pixels(bounds.width(), bounds.height());
   SkCanvas bitmap_canvas(bitmap);
   bitmap_canvas.clear(SK_ColorTRANSPARENT);
-  base::TimeTicks t0 = base::TimeTicks::HighResNow();
+  base::TimeTicks t0 = base::TimeTicks::Now();
   picture->Replay(&bitmap_canvas);
-  base::TimeDelta total_time = base::TimeTicks::HighResNow() - t0;
+  base::TimeDelta total_time = base::TimeTicks::Now() - t0;
 
   // Gather per-op timing info by drawing into a BenchmarkingCanvas.
   skia::BenchmarkingCanvas benchmarking_canvas(bounds.width(), bounds.height());

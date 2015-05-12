@@ -30,6 +30,7 @@
 #include "bindings/core/v8/ScriptController.h"
 #include "core/dom/DOMStringList.h"
 #include "core/dom/Document.h"
+#include "core/dom/SandboxFlags.h"
 #include "core/events/SecurityPolicyViolationEvent.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
@@ -90,7 +91,10 @@ const char ContentSecurityPolicy::ManifestSrc[] = "manifest-src";
 
 // Mixed Content Directive
 // https://w3c.github.io/webappsec/specs/mixedcontent/#strict-mode
-const char ContentSecurityPolicy::StrictMixedContentChecking[] = "strict-mixed-content-checking";
+const char ContentSecurityPolicy::BlockAllMixedContent[] = "block-all-mixed-content";
+
+// https://w3c.github.io/webappsec/specs/upgrade/
+const char ContentSecurityPolicy::UpgradeInsecureRequests[] = "upgrade-insecure-requests";
 
 bool ContentSecurityPolicy::isDirectiveName(const String& name)
 {
@@ -113,7 +117,8 @@ bool ContentSecurityPolicy::isDirectiveName(const String& name)
         || equalIgnoringCase(name, ReflectedXSS)
         || equalIgnoringCase(name, Referrer)
         || equalIgnoringCase(name, ManifestSrc)
-        || equalIgnoringCase(name, StrictMixedContentChecking));
+        || equalIgnoringCase(name, BlockAllMixedContent)
+        || equalIgnoringCase(name, UpgradeInsecureRequests));
 }
 
 static UseCounter::Feature getUseCounterType(ContentSecurityPolicyHeaderType type)
@@ -143,6 +148,7 @@ ContentSecurityPolicy::ContentSecurityPolicy()
     , m_sandboxMask(0)
     , m_enforceStrictMixedContentChecking(false)
     , m_referrerPolicy(ReferrerPolicyDefault)
+    , m_insecureContentPolicy(SecurityContext::InsecureContentDoNotUpgrade)
 {
 }
 
@@ -162,11 +168,16 @@ void ContentSecurityPolicy::applyPolicySideEffectsToExecutionContext()
     // If we're in a Document, set the referrer policy, mixed content checking, and sandbox
     // flags, then dump all the parsing error messages, then poke at histograms.
     if (Document* document = this->document()) {
-        document->enforceSandboxFlags(m_sandboxMask);
+        if (m_sandboxMask != SandboxNone) {
+            UseCounter::count(document, UseCounter::SandboxViaCSP);
+            document->enforceSandboxFlags(m_sandboxMask);
+        }
         if (m_enforceStrictMixedContentChecking)
             document->enforceStrictMixedContentChecking();
         if (didSetReferrerPolicy())
             document->setReferrerPolicy(m_referrerPolicy);
+        if (m_insecureContentPolicy > document->insecureContentPolicy())
+            document->setInsecureContentPolicy(m_insecureContentPolicy);
 
         for (const auto& consoleMessage : m_consoleMessages)
             m_executionContext->addConsoleMessage(consoleMessage);
@@ -314,6 +325,16 @@ bool isAllowedByAllWithContext(const CSPDirectiveListVector& policies, const Str
     return true;
 }
 
+template<bool (CSPDirectiveList::*allowed)(const String&, const WTF::OrdinalNumber&, ContentSecurityPolicy::ReportingStatus, const String& content) const>
+bool isAllowedByAllWithContextAndContent(const CSPDirectiveListVector& policies, const String& contextURL, const WTF::OrdinalNumber& contextLine, ContentSecurityPolicy::ReportingStatus reportingStatus, const String& content)
+{
+    for (const auto& policy : policies) {
+        if (!(policy.get()->*allowed)(contextURL, contextLine, reportingStatus, content))
+            return false;
+    }
+    return true;
+}
+
 template<bool (CSPDirectiveList::*allowed)(const String&) const>
 bool isAllowedByAllWithNonce(const CSPDirectiveListVector& policies, const String& nonce)
 {
@@ -377,7 +398,7 @@ bool checkDigest(const String& source, uint8_t hashAlgorithmsUsed, const CSPDire
     if (hashAlgorithmsUsed == ContentSecurityPolicyHashAlgorithmNone)
         return false;
 
-    StringUTF8Adaptor normalizedSource(source, StringUTF8Adaptor::Normalize, WTF::EntitiesForUnencodables);
+    StringUTF8Adaptor normalizedSource = normalizeSource(source);
 
     for (const auto& algorithmMap : kAlgorithmMap) {
         DigestValue digest;
@@ -401,16 +422,16 @@ bool ContentSecurityPolicy::allowInlineEventHandlers(const String& contextURL, c
     return isAllowedByAllWithContext<&CSPDirectiveList::allowInlineEventHandlers>(m_policies, contextURL, contextLine, reportingStatus);
 }
 
-bool ContentSecurityPolicy::allowInlineScript(const String& contextURL, const WTF::OrdinalNumber& contextLine, ContentSecurityPolicy::ReportingStatus reportingStatus) const
+bool ContentSecurityPolicy::allowInlineScript(const String& contextURL, const WTF::OrdinalNumber& contextLine, const String& scriptContent, ContentSecurityPolicy::ReportingStatus reportingStatus) const
 {
-    return isAllowedByAllWithContext<&CSPDirectiveList::allowInlineScript>(m_policies, contextURL, contextLine, reportingStatus);
+    return isAllowedByAllWithContextAndContent<&CSPDirectiveList::allowInlineScript>(m_policies, contextURL, contextLine, reportingStatus, scriptContent);
 }
 
-bool ContentSecurityPolicy::allowInlineStyle(const String& contextURL, const WTF::OrdinalNumber& contextLine, ContentSecurityPolicy::ReportingStatus reportingStatus) const
+bool ContentSecurityPolicy::allowInlineStyle(const String& contextURL, const WTF::OrdinalNumber& contextLine, const String& styleContent, ContentSecurityPolicy::ReportingStatus reportingStatus) const
 {
     if (m_overrideInlineStyleAllowed)
         return true;
-    return isAllowedByAllWithContext<&CSPDirectiveList::allowInlineStyle>(m_policies, contextURL, contextLine, reportingStatus);
+    return isAllowedByAllWithContextAndContent<&CSPDirectiveList::allowInlineStyle>(m_policies, contextURL, contextLine, reportingStatus, styleContent);
 }
 
 bool ContentSecurityPolicy::allowEval(ScriptState* scriptState, ContentSecurityPolicy::ReportingStatus reportingStatus) const
@@ -525,11 +546,6 @@ bool ContentSecurityPolicy::allowAncestors(LocalFrame* frame, const KURL& url, C
     return isAllowedByAllWithFrame<&CSPDirectiveList::allowAncestors>(m_policies, frame, url, reportingStatus);
 }
 
-bool ContentSecurityPolicy::allowChildContextFromSource(const KURL& url, ContentSecurityPolicy::ReportingStatus reportingStatus) const
-{
-    return isAllowedByAllWithURL<&CSPDirectiveList::allowChildContextFromSource>(m_policies, url, reportingStatus);
-}
-
 bool ContentSecurityPolicy::allowWorkerContextFromSource(const KURL& url, ContentSecurityPolicy::ReportingStatus reportingStatus) const
 {
     // CSP 1.1 moves workers from 'script-src' to the new 'child-src'. Measure the impact of this backwards-incompatible change.
@@ -560,21 +576,6 @@ ReflectedXSSDisposition ContentSecurityPolicy::reflectedXSSDisposition() const
             disposition = std::max(disposition, policy->reflectedXSSDisposition());
     }
     return disposition;
-}
-
-ReferrerPolicy ContentSecurityPolicy::referrerPolicy() const
-{
-    ReferrerPolicy referrerPolicy = ReferrerPolicyDefault;
-    bool first = true;
-    for (const auto& policy : m_policies) {
-        if (policy->didSetReferrerPolicy()) {
-            if (first)
-                referrerPolicy = policy->referrerPolicy();
-            else
-                referrerPolicy = mergeReferrerPolicies(referrerPolicy, policy->referrerPolicy());
-        }
-    }
-    return referrerPolicy;
 }
 
 bool ContentSecurityPolicy::didSetReferrerPolicy() const
@@ -609,6 +610,12 @@ void ContentSecurityPolicy::enforceSandboxFlags(SandboxFlags mask)
 void ContentSecurityPolicy::enforceStrictMixedContentChecking()
 {
     m_enforceStrictMixedContentChecking = true;
+}
+
+void ContentSecurityPolicy::setInsecureContentPolicy(SecurityContext::InsecureContentPolicy policy)
+{
+    if (policy > m_insecureContentPolicy)
+        m_insecureContentPolicy = policy;
 }
 
 static String stripURLForUseInReport(Document* document, const KURL& url)
@@ -792,6 +799,8 @@ void ContentSecurityPolicy::reportInvalidPluginTypes(const String& pluginType)
     String message;
     if (pluginType.isNull())
         message = "'plugin-types' Content Security Policy directive is empty; all plugins will be blocked.\n";
+    else if (pluginType == "'none'")
+        message = "Invalid plugin type in 'plugin-types' Content Security Policy directive: '" + pluginType + "'. Did you mean to set the object-src directive to 'none'?\n";
     else
         message = "Invalid plugin type in 'plugin-types' Content Security Policy directive: '" + pluginType + "'.\n";
     logToConsole(message);

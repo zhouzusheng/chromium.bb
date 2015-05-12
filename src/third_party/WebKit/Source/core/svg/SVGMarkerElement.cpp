@@ -24,7 +24,7 @@
 #include "core/svg/SVGMarkerElement.h"
 
 #include "core/SVGNames.h"
-#include "core/rendering/svg/RenderSVGResourceMarker.h"
+#include "core/layout/svg/LayoutSVGResourceMarker.h"
 #include "core/svg/SVGAngleTearOff.h"
 
 namespace blink {
@@ -42,7 +42,6 @@ template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGMarkerUn
 
 inline SVGMarkerElement::SVGMarkerElement(Document& document)
     : SVGElement(SVGNames::markerTag, document)
-    , SVGFitToViewBox(this)
     , m_refX(SVGAnimatedLength::create(this, SVGNames::refXAttr, SVGLength::create(LengthModeWidth), AllowNegativeLengths))
     , m_refY(SVGAnimatedLength::create(this, SVGNames::refYAttr, SVGLength::create(LengthModeHeight), AllowNegativeLengths))
     , m_markerWidth(SVGAnimatedLength::create(this, SVGNames::markerWidthAttr, SVGLength::create(LengthModeWidth), ForbidNegativeLengths))
@@ -50,6 +49,8 @@ inline SVGMarkerElement::SVGMarkerElement(Document& document)
     , m_orientAngle(SVGAnimatedAngle::create(this))
     , m_markerUnits(SVGAnimatedEnumeration<SVGMarkerUnitsType>::create(this, SVGNames::markerUnitsAttr, SVGMarkerUnitsStrokeWidth))
 {
+    SVGFitToViewBox::initialize(this);
+
     // Spec: If the markerWidth/markerHeight attribute is not specified, the effect is as if a value of "3" were specified.
     m_markerWidth->setDefaultValueAsString("3");
     m_markerHeight->setDefaultValueAsString("3");
@@ -62,7 +63,7 @@ inline SVGMarkerElement::SVGMarkerElement(Document& document)
     addToPropertyMap(m_markerUnits);
 }
 
-void SVGMarkerElement::trace(Visitor* visitor)
+DEFINE_TRACE(SVGMarkerElement)
 {
     visitor->trace(m_refX);
     visitor->trace(m_refY);
@@ -116,7 +117,7 @@ void SVGMarkerElement::svgAttributeChanged(const QualifiedName& attrName)
         || attrName == SVGNames::markerHeightAttr)
         updateRelativeLengthsInformation();
 
-    RenderSVGResourceContainer* renderer = toRenderSVGResourceContainer(this->renderer());
+    LayoutSVGResourceContainer* renderer = toLayoutSVGResourceContainer(this->renderer());
     if (renderer)
         renderer->invalidateCacheAndMarkForLayout();
 }
@@ -128,7 +129,7 @@ void SVGMarkerElement::childrenChanged(const ChildrenChange& change)
     if (change.byParser)
         return;
 
-    if (RenderObject* object = renderer())
+    if (LayoutObject* object = renderer())
         object->setNeedsLayoutAndFullPaintInvalidation();
 }
 
@@ -148,9 +149,9 @@ void SVGMarkerElement::setOrientToAngle(PassRefPtrWillBeRawPtr<SVGAngleTearOff> 
     svgAttributeChanged(SVGNames::orientAttr);
 }
 
-RenderObject* SVGMarkerElement::createRenderer(RenderStyle*)
+LayoutObject* SVGMarkerElement::createRenderer(const LayoutStyle&)
 {
-    return new RenderSVGResourceMarker(this);
+    return new LayoutSVGResourceMarker(this);
 }
 
 bool SVGMarkerElement::selfHasRelativeLengths() const

@@ -23,16 +23,16 @@
 
 #include "core/dom/ContainerNode.h"
 #include "core/dom/Node.h"
-#include "core/dom/NodeRenderStyle.h"
+#include "core/dom/NodeLayoutStyle.h"
 #include "core/dom/Text.h"
 #include "core/editing/Editor.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLFrameOwnerElement.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/style/LayoutStyle.h"
 #include "core/rendering/RenderBox.h"
-#include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderText.h"
-#include "core/rendering/style/RenderStyle.h"
 #include "platform/geometry/FloatPoint.h"
 #include "platform/geometry/FloatQuad.h"
 #include "platform/geometry/IntSize.h"
@@ -94,8 +94,8 @@ bool nodeRespondsToTapGesture(Node* node)
         if (element->childrenOrSiblingsAffectedByActive() || element->childrenOrSiblingsAffectedByHover())
             return true;
     }
-    if (RenderStyle* renderStyle = node->renderStyle()) {
-        if (renderStyle->affectedByActive() || renderStyle->affectedByHover())
+    if (LayoutStyle* layoutStyle = node->layoutStyle()) {
+        if (layoutStyle->affectedByActive() || layoutStyle->affectedByHover())
             return true;
     }
     return false;
@@ -131,7 +131,7 @@ bool providesContextMenuItems(Node* node)
             return true;
         // Only the selected part of the renderer is a valid target, but this will be corrected in
         // appendContextSubtargetsForNode.
-        if (node->renderer()->selectionState() != RenderObject::SelectionNone)
+        if (node->renderer()->selectionState() != LayoutObject::SelectionNone)
             return true;
     }
     return false;
@@ -185,24 +185,24 @@ static inline void appendContextSubtargetsForNode(Node* node, SubtargetGeometryL
             lastOffset = offset;
         }
     } else {
-        if (textRenderer->selectionState() == RenderObject::SelectionNone)
+        if (textRenderer->selectionState() == LayoutObject::SelectionNone)
             return appendBasicSubtargetsForNode(node, subtargets);
         // If selected, make subtargets out of only the selected part of the text.
         int startPos, endPos;
         switch (textRenderer->selectionState()) {
-        case RenderObject::SelectionInside:
+        case LayoutObject::SelectionInside:
             startPos = 0;
             endPos = textRenderer->textLength();
             break;
-        case RenderObject::SelectionStart:
+        case LayoutObject::SelectionStart:
             textRenderer->selectionStartEnd(startPos, endPos);
             endPos = textRenderer->textLength();
             break;
-        case RenderObject::SelectionEnd:
+        case LayoutObject::SelectionEnd:
             textRenderer->selectionStartEnd(startPos, endPos);
             startPos = 0;
             break;
-        case RenderObject::SelectionBoth:
+        case LayoutObject::SelectionBoth:
             textRenderer->selectionStartEnd(startPos, endPos);
             break;
         default:

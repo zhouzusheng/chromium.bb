@@ -31,8 +31,12 @@
 #ifndef AnimationPlayer_h
 #define AnimationPlayer_h
 
+#include "bindings/core/v8/ScriptPromise.h"
+#include "bindings/core/v8/ScriptPromiseProperty.h"
+#include "core/CSSPropertyNames.h"
 #include "core/animation/AnimationNode.h"
 #include "core/dom/ActiveDOMObject.h"
+#include "core/dom/DOMException.h"
 #include "core/events/EventTarget.h"
 #include "platform/heap/Handle.h"
 #include "wtf/RefPtr.h"
@@ -40,6 +44,7 @@
 namespace blink {
 
 class AnimationTimeline;
+class Element;
 class ExceptionState;
 
 class AnimationPlayer final
@@ -59,7 +64,7 @@ public:
     };
 
     ~AnimationPlayer();
-    static PassRefPtrWillBeRawPtr<AnimationPlayer> create(ExecutionContext*, AnimationTimeline&, AnimationNode*);
+    static PassRefPtrWillBeRawPtr<AnimationPlayer> create(AnimationNode*, AnimationTimeline*);
 
     // Returns whether the player is finished.
     bool update(TimingUpdateReason);
@@ -81,17 +86,19 @@ public:
     void setCurrentTimeInternal(double newCurrentTime, TimingUpdateReason = TimingUpdateOnDemand);
     bool paused() const { return m_paused && !m_isPausedForTesting; }
     static const char* playStateString(AnimationPlayState);
-    String playState() { return playStateString(playStateInternal()); }
+    String playState() const { return playStateString(playStateInternal()); }
     AnimationPlayState playStateInternal() const;
 
     void pause();
     void play();
     void reverse();
     void finish(ExceptionState&);
-    bool finished() const { return m_playState != Idle && limited(currentTimeInternal()); }
-    bool playing() const { return !(playStateInternal() == Idle || finished() || m_paused || m_isPausedForTesting); }
-    // FIXME: Resolve whether finished() should just return the flag, and
-    // remove this method.
+
+    ScriptPromise finished(ScriptState*);
+    ScriptPromise ready(ScriptState*);
+
+    bool playing() const { return !(playStateInternal() == Idle || limited() || m_paused || m_isPausedForTesting); }
+    bool limited() const { return limited(currentTimeInternal()); }
     bool finishedInternal() const { return m_finished; }
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(finish);
@@ -135,11 +142,14 @@ public:
     bool canStartAnimationOnCompositor();
     bool maybeStartAnimationOnCompositor();
     void cancelAnimationOnCompositor();
+    void restartAnimationOnCompositor();
+    void cancelIncompatibleAnimationsOnCompositor();
     bool hasActiveAnimationsOnCompositor();
     void setCompositorPending(bool sourceChanged = false);
     void notifyCompositorStartTime(double timelineTime);
     void notifyStartTime(double timelineTime);
 
+    bool affects(const Element&, CSSPropertyID) const;
 
     void preCommit(int compositorGroup, bool startOnCompositor);
     void postCommit(double timelineTime);
@@ -147,7 +157,7 @@ public:
     unsigned sequenceNumber() const { return m_sequenceNumber; }
     int compositorGroup() const { return m_compositorGroup; }
 
-    static bool hasLowerPriority(AnimationPlayer* player1, AnimationPlayer* player2)
+    static bool hasLowerPriority(const AnimationPlayer* player1, const AnimationPlayer* player2)
     {
         return player1->sequenceNumber() < player2->sequenceNumber();
     }
@@ -184,6 +194,10 @@ private:
     double m_holdTime;
 
     unsigned m_sequenceNumber;
+
+    typedef ScriptPromiseProperty<RawPtrWillBeMember<AnimationPlayer>, RawPtrWillBeMember<AnimationPlayer>, RefPtrWillBeMember<DOMException> > AnimationPlayerPromise;
+    PersistentWillBeMember<AnimationPlayerPromise> m_finishedPromise;
+    PersistentWillBeMember<AnimationPlayerPromise> m_readyPromise;
 
     RefPtrWillBeMember<AnimationNode> m_content;
     RawPtrWillBeMember<AnimationTimeline> m_timeline;
@@ -238,7 +252,7 @@ private:
         ~PlayStateUpdateScope();
     private:
         RawPtrWillBeMember<AnimationPlayer> m_player;
-        AnimationPlayState m_initial;
+        AnimationPlayState m_initialPlayState;
         CompositorPendingChange m_compositorPendingChange;
     };
 
@@ -251,6 +265,7 @@ private:
 
     bool m_currentTimePending;
     bool m_stateIsBeingUpdated;
+
 };
 
 } // namespace blink

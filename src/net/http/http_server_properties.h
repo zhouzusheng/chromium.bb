@@ -13,6 +13,7 @@
 #include "base/time/time.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_export.h"
+#include "net/base/net_util.h"
 #include "net/quic/quic_bandwidth.h"
 #include "net/socket/next_proto.h"
 #include "net/spdy/spdy_framer.h"  // TODO(willchan): Reconsider this.
@@ -86,6 +87,12 @@ NET_EXPORT_PRIVATE AlternateProtocol AlternateProtocolFromNextProto(
     NextProto next_proto);
 
 struct NET_EXPORT AlternateProtocolInfo {
+  AlternateProtocolInfo()
+      : port(0),
+        protocol(UNINITIALIZED_ALTERNATE_PROTOCOL),
+        probability(0),
+        is_broken(false) {}
+
   AlternateProtocolInfo(uint16 port,
                         AlternateProtocol protocol,
                         double probability)
@@ -141,7 +148,6 @@ struct NET_EXPORT ServerNetworkStats {
 typedef base::MRUCache<
     HostPortPair, AlternateProtocolInfo> AlternateProtocolMap;
 typedef base::MRUCache<HostPortPair, SettingsMap> SpdySettingsMap;
-typedef std::map<HostPortPair, SupportsQuic> SupportsQuicMap;
 typedef base::MRUCache<HostPortPair, ServerNetworkStats> ServerNetworkStatsMap;
 
 extern const char kAlternateProtocolHeader[];
@@ -162,8 +168,9 @@ class NET_EXPORT HttpServerProperties {
   // Deletes all data.
   virtual void Clear() = 0;
 
-  // Returns true if |server| supports SPDY.
-  virtual bool SupportsSpdy(const HostPortPair& server) = 0;
+  // Returns true if |server| supports a network protocol which honors
+  // request prioritization.
+  virtual bool SupportsRequestPriority(const HostPortPair& server) = 0;
 
   // Add |server| into the persistent store. Should only be called from IO
   // thread.
@@ -183,11 +190,9 @@ class NET_EXPORT HttpServerProperties {
   virtual void MaybeForceHTTP11(const HostPortPair& server,
                                 SSLConfig* ssl_config) = 0;
 
-  // Returns true if |server| has an Alternate-Protocol header.
-  virtual bool HasAlternateProtocol(const HostPortPair& server) = 0;
-
-  // Returns the Alternate-Protocol and port for |server|.
-  // HasAlternateProtocol(server) must be true.
+  // Returns the AlternateProtocol for |server| if it has probability equal to
+  // or exceeding threshold, or else the forced AlternateProtocol if there is
+  // one, or else one with UNINITIALIZED_ALTERNATE_PROTOCOL.
   virtual AlternateProtocolInfo GetAlternateProtocol(
       const HostPortPair& server) = 0;
 
@@ -242,15 +247,10 @@ class NET_EXPORT HttpServerProperties {
   // Returns all persistent SPDY settings.
   virtual const SpdySettingsMap& spdy_settings_map() const = 0;
 
-  // TODO(rtenneti): Make SupportsQuic a global (instead of per host_port_pair).
-  virtual SupportsQuic GetSupportsQuic(
-      const HostPortPair& host_port_pair) const = 0;
+  virtual bool GetSupportsQuic(IPAddressNumber* last_address) const = 0;
 
-  virtual void SetSupportsQuic(const HostPortPair& host_port_pair,
-                               bool used_quic,
-                               const std::string& address) = 0;
-
-  virtual const SupportsQuicMap& supports_quic_map() const = 0;
+  virtual void SetSupportsQuic(bool used_quic,
+                               const IPAddressNumber& last_address) = 0;
 
   virtual void SetServerNetworkStats(const HostPortPair& host_port_pair,
                                      ServerNetworkStats stats) = 0;

@@ -37,6 +37,7 @@
 #include "vp9/encoder/vp9_rd.h"
 #include "vp9/encoder/vp9_rdopt.h"
 #include "vp9/encoder/vp9_variance.h"
+#include "vp9/encoder/vp9_aq_variance.h"
 
 #define LAST_FRAME_MODE_MASK    ((1 << GOLDEN_FRAME) | (1 << ALTREF_FRAME) | \
                                  (1 << INTRA_FRAME))
@@ -48,6 +49,7 @@
 #define SECOND_REF_FRAME_MASK   ((1 << ALTREF_FRAME) | 0x01)
 
 #define MIN_EARLY_TERM_INDEX    3
+#define NEW_MV_DISCOUNT_FACTOR  8
 
 typedef struct {
   PREDICTION_MODE mode;
@@ -75,6 +77,7 @@ struct rdcost_block_args {
   const scan_order *so;
 };
 
+#define LAST_NEW_MV_INDEX 6
 static const MODE_DEFINITION vp9_mode_order[MAX_MODES] = {
   {NEARESTMV, {LAST_FRAME,   NONE}},
   {NEARESTMV, {ALTREF_FRAME, NONE}},
@@ -125,19 +128,6 @@ static const REF_DEFINITION vp9_ref_order[MAX_REFS] = {
   {{GOLDEN_FRAME, ALTREF_FRAME}},
   {{INTRA_FRAME,  NONE}},
 };
-
-static int raster_block_offset(BLOCK_SIZE plane_bsize,
-                               int raster_block, int stride) {
-  const int bw = b_width_log2_lookup[plane_bsize];
-  const int y = 4 * (raster_block >> bw);
-  const int x = 4 * (raster_block & ((1 << bw) - 1));
-  return y * stride + x;
-}
-static int16_t* raster_block_offset_int16(BLOCK_SIZE plane_bsize,
-                                          int raster_block, int16_t *base) {
-  const int stride = 4 * num_4x4_blocks_wide_lookup[plane_bsize];
-  return base + raster_block_offset(plane_bsize, raster_block, stride);
-}
 
 static void swap_block_ptr(MACROBLOCK *x, PICK_MODE_CONTEXT *ctx,
                            int m, int n, int min_plane, int max_plane) {
@@ -265,15 +255,15 @@ static void model_rd_for_sb(VP9_COMP *cpi, BLOCK_SIZE bsize,
     } else {
 #if CONFIG_VP9_HIGHBITDEPTH
       if (xd->cur_buf->flags & YV12_FLAG_HIGHBITDEPTH) {
-        vp9_model_rd_from_var_lapndz(sum_sse, 1 << num_pels_log2_lookup[bs],
+        vp9_model_rd_from_var_lapndz(sum_sse, num_pels_log2_lookup[bs],
                                      pd->dequant[1] >> (xd->bd - 5),
                                      &rate, &dist);
       } else {
-        vp9_model_rd_from_var_lapndz(sum_sse, 1 << num_pels_log2_lookup[bs],
+        vp9_model_rd_from_var_lapndz(sum_sse, num_pels_log2_lookup[bs],
                                      pd->dequant[1] >> 3, &rate, &dist);
       }
 #else
-      vp9_model_rd_from_var_lapndz(sum_sse, 1 << num_pels_log2_lookup[bs],
+      vp9_model_rd_from_var_lapndz(sum_sse, num_pels_log2_lookup[bs],
                                    pd->dequant[1] >> 3, &rate, &dist);
 #endif  // CONFIG_VP9_HIGHBITDEPTH
       rate_sum += rate;
@@ -357,6 +347,12 @@ static INLINE int cost_coeffs(MACROBLOCK *x,
   uint8_t token_cache[32 * 32];
   int pt = combine_entropy_contexts(*A, *L);
   int c, cost;
+#if CONFIG_VP9_HIGHBITDEPTH
+  const int16_t *cat6_high_cost = vp9_get_high_cost_table(xd->bd);
+#else
+  const int16_t *cat6_high_cost = vp9_get_high_cost_table(8);
+#endif
+
   // Check for consistency of tx_size with mode info
   assert(type == PLANE_TYPE_Y ? mbmi->tx_size == tx_size
                               : get_uv_tx_size(mbmi, pd) == tx_size);
@@ -370,23 +366,29 @@ static INLINE int cost_coeffs(MACROBLOCK *x,
 
     // dc token
     int v = qcoeff[0];
-    int prev_t = vp9_dct_value_tokens_ptr[v].token;
-    cost = (*token_costs)[0][pt][prev_t] + vp9_dct_value_cost_ptr[v];
+    int16_t prev_t;
+    EXTRABIT e;
+    vp9_get_token_extra(v, &prev_t, &e);
+    cost = (*token_costs)[0][pt][prev_t] +
+        vp9_get_cost(prev_t, e, cat6_high_cost);
+
     token_cache[0] = vp9_pt_energy_class[prev_t];
     ++token_costs;
 
     // ac tokens
     for (c = 1; c < eob; c++) {
       const int rc = scan[c];
-      int t;
+      int16_t t;
 
       v = qcoeff[rc];
-      t = vp9_dct_value_tokens_ptr[v].token;
+      vp9_get_token_extra(v, &t, &e);
       if (use_fast_coef_costing) {
-        cost += (*token_costs)[!prev_t][!prev_t][t] + vp9_dct_value_cost_ptr[v];
+        cost += (*token_costs)[!prev_t][!prev_t][t] +
+            vp9_get_cost(t, e, cat6_high_cost);
       } else {
         pt = get_coef_context(nb, token_cache, c);
-        cost += (*token_costs)[!prev_t][pt][t] + vp9_dct_value_cost_ptr[v];
+        cost += (*token_costs)[!prev_t][pt][t] +
+            vp9_get_cost(t, e, cat6_high_cost);
         token_cache[rc] = vp9_pt_energy_class[t];
       }
       prev_t = t;
@@ -758,10 +760,10 @@ static int64_t rd_pick_intra4x4block(VP9_COMP *cpi, MACROBLOCK *x, int ib,
   struct macroblockd_plane *pd = &xd->plane[0];
   const int src_stride = p->src.stride;
   const int dst_stride = pd->dst.stride;
-  const uint8_t *src_init = &p->src.buf[raster_block_offset(BLOCK_8X8, ib,
-                                                            src_stride)];
-  uint8_t *dst_init = &pd->dst.buf[raster_block_offset(BLOCK_8X8, ib,
-                                                       dst_stride)];
+  const uint8_t *src_init = &p->src.buf[vp9_raster_block_offset(BLOCK_8X8, ib,
+                                                                src_stride)];
+  uint8_t *dst_init = &pd->dst.buf[vp9_raster_block_offset(BLOCK_8X8, ib,
+                                                           dst_stride)];
   ENTROPY_CONTEXT ta[2], tempa[2];
   ENTROPY_CONTEXT tl[2], templ[2];
 
@@ -805,8 +807,9 @@ static int64_t rd_pick_intra4x4block(VP9_COMP *cpi, MACROBLOCK *x, int ib,
           const int block = ib + idy * 2 + idx;
           const uint8_t *const src = &src_init[idx * 4 + idy * 4 * src_stride];
           uint8_t *const dst = &dst_init[idx * 4 + idy * 4 * dst_stride];
-          int16_t *const src_diff = raster_block_offset_int16(BLOCK_8X8, block,
-                                                              p->src_diff);
+          int16_t *const src_diff = vp9_raster_block_offset_int16(BLOCK_8X8,
+                                                                  block,
+                                                                  p->src_diff);
           tran_low_t *const coeff = BLOCK_OFFSET(x->plane[0].coeff, block);
           xd->mi[0].src_mi->bmi[block].as_mode = mode;
           vp9_predict_intra_block(xd, block, 1,
@@ -905,8 +908,8 @@ static int64_t rd_pick_intra4x4block(VP9_COMP *cpi, MACROBLOCK *x, int ib,
         const int block = ib + idy * 2 + idx;
         const uint8_t *const src = &src_init[idx * 4 + idy * 4 * src_stride];
         uint8_t *const dst = &dst_init[idx * 4 + idy * 4 * dst_stride];
-        int16_t *const src_diff = raster_block_offset_int16(BLOCK_8X8, block,
-                                                            p->src_diff);
+        int16_t *const src_diff =
+            vp9_raster_block_offset_int16(BLOCK_8X8, block, p->src_diff);
         tran_low_t *const coeff = BLOCK_OFFSET(x->plane[0].coeff, block);
         xd->mi[0].src_mi->bmi[block].as_mode = mode;
         vp9_predict_intra_block(xd, block, 1,
@@ -982,8 +985,8 @@ static int64_t rd_pick_intra_sub_8x8_y_mode(VP9_COMP *cpi, MACROBLOCK *mb,
   int i, j;
   const MACROBLOCKD *const xd = &mb->e_mbd;
   MODE_INFO *const mic = xd->mi[0].src_mi;
-  const MODE_INFO *above_mi = xd->mi[-xd->mi_stride].src_mi;
-  const MODE_INFO *left_mi = xd->left_available ? xd->mi[-1].src_mi : NULL;
+  const MODE_INFO *above_mi = xd->above_mi;
+  const MODE_INFO *left_mi = xd->left_mi;
   const BLOCK_SIZE bsize = xd->mi[0].src_mi->mbmi.sb_type;
   const int num_4x4_blocks_wide = num_4x4_blocks_wide_lookup[bsize];
   const int num_4x4_blocks_high = num_4x4_blocks_high_lookup[bsize];
@@ -1058,8 +1061,8 @@ static int64_t rd_pick_intra_sby_mode(VP9_COMP *cpi, MACROBLOCK *x,
   TX_SIZE best_tx = TX_4X4;
   int i;
   int *bmode_costs;
-  const MODE_INFO *above_mi = xd->mi[-xd->mi_stride].src_mi;
-  const MODE_INFO *left_mi = xd->left_available ? xd->mi[-1].src_mi : NULL;
+  const MODE_INFO *above_mi = xd->above_mi;
+  const MODE_INFO *left_mi = xd->left_mi;
   const PREDICTION_MODE A = vp9_above_block_mode(mic, above_mi, 0);
   const PREDICTION_MODE L = vp9_left_block_mode(mic, left_mi, 0);
   bmode_costs = cpi->y_mode_costs[A][L];
@@ -1072,6 +1075,16 @@ static int64_t rd_pick_intra_sby_mode(VP9_COMP *cpi, MACROBLOCK *x,
   /* Y Search for intra prediction mode */
   for (mode = DC_PRED; mode <= TM_PRED; mode++) {
     int64_t local_tx_cache[TX_MODES];
+
+    if (cpi->sf.use_nonrd_pick_mode) {
+      // These speed features are turned on in hybrid non-RD and RD mode
+      // for key frame coding in the context of real-time setting.
+      if (conditional_skipintra(mode, mode_selected))
+          continue;
+      if (*skippable)
+        break;
+    }
+
     mic->mbmi.mode = mode;
 
     super_block_yrd(cpi, x, &this_rate_tokenonly, &this_distortion,
@@ -1328,10 +1341,10 @@ static int64_t encode_inter_mb_segment(VP9_COMP *cpi,
   const int height = 4 * num_4x4_blocks_high_lookup[plane_bsize];
   int idx, idy;
 
-  const uint8_t *const src = &p->src.buf[raster_block_offset(BLOCK_8X8, i,
-                                                             p->src.stride)];
-  uint8_t *const dst = &pd->dst.buf[raster_block_offset(BLOCK_8X8, i,
-                                                        pd->dst.stride)];
+  const uint8_t *const src =
+      &p->src.buf[vp9_raster_block_offset(BLOCK_8X8, i, p->src.stride)];
+  uint8_t *const dst = &pd->dst.buf[vp9_raster_block_offset(BLOCK_8X8, i,
+                                                            pd->dst.stride)];
   int64_t thisdistortion = 0, thissse = 0;
   int thisrate = 0, ref;
   const scan_order *so = &vp9_default_scan_orders[TX_4X4];
@@ -1339,7 +1352,7 @@ static int64_t encode_inter_mb_segment(VP9_COMP *cpi,
   const InterpKernel *kernel = vp9_get_interp_kernel(mi->mbmi.interp_filter);
 
   for (ref = 0; ref < 1 + is_compound; ++ref) {
-    const uint8_t *pre = &pd->pre[ref].buf[raster_block_offset(BLOCK_8X8, i,
+    const uint8_t *pre = &pd->pre[ref].buf[vp9_raster_block_offset(BLOCK_8X8, i,
                                                pd->pre[ref].stride)];
 #if CONFIG_VP9_HIGHBITDEPTH
   if (xd->cur_buf->flags & YV12_FLAG_HIGHBITDEPTH) {
@@ -1373,17 +1386,17 @@ static int64_t encode_inter_mb_segment(VP9_COMP *cpi,
 #if CONFIG_VP9_HIGHBITDEPTH
   if (xd->cur_buf->flags & YV12_FLAG_HIGHBITDEPTH) {
     vp9_highbd_subtract_block(
-        height, width, raster_block_offset_int16(BLOCK_8X8, i, p->src_diff), 8,
-        src, p->src.stride, dst, pd->dst.stride, xd->bd);
+        height, width, vp9_raster_block_offset_int16(BLOCK_8X8, i, p->src_diff),
+        8, src, p->src.stride, dst, pd->dst.stride, xd->bd);
   } else {
     vp9_subtract_block(
-        height, width, raster_block_offset_int16(BLOCK_8X8, i, p->src_diff), 8,
-        src, p->src.stride, dst, pd->dst.stride);
+        height, width, vp9_raster_block_offset_int16(BLOCK_8X8, i, p->src_diff),
+        8, src, p->src.stride, dst, pd->dst.stride);
   }
 #else
   vp9_subtract_block(height, width,
-                     raster_block_offset_int16(BLOCK_8X8, i, p->src_diff), 8,
-                     src, p->src.stride, dst, pd->dst.stride);
+                     vp9_raster_block_offset_int16(BLOCK_8X8, i, p->src_diff),
+                     8, src, p->src.stride, dst, pd->dst.stride);
 #endif  // CONFIG_VP9_HIGHBITDEPTH
 
   k = i;
@@ -1394,7 +1407,7 @@ static int64_t encode_inter_mb_segment(VP9_COMP *cpi,
 
       k += (idy * 2 + idx);
       coeff = BLOCK_OFFSET(p->coeff, k);
-      x->fwd_txm4x4(raster_block_offset_int16(BLOCK_8X8, k, p->src_diff),
+      x->fwd_txm4x4(vp9_raster_block_offset_int16(BLOCK_8X8, k, p->src_diff),
                     coeff, 8);
       vp9_regular_quantize_b_4x4(x, 0, k, so->scan, so->iscan);
 #if CONFIG_VP9_HIGHBITDEPTH
@@ -1467,13 +1480,14 @@ static INLINE void mi_buf_shift(MACROBLOCK *x, int i) {
   struct macroblock_plane *const p = &x->plane[0];
   struct macroblockd_plane *const pd = &x->e_mbd.plane[0];
 
-  p->src.buf = &p->src.buf[raster_block_offset(BLOCK_8X8, i, p->src.stride)];
+  p->src.buf = &p->src.buf[vp9_raster_block_offset(BLOCK_8X8, i,
+                                                   p->src.stride)];
   assert(((intptr_t)pd->pre[0].buf & 0x7) == 0);
-  pd->pre[0].buf = &pd->pre[0].buf[raster_block_offset(BLOCK_8X8, i,
-                                                       pd->pre[0].stride)];
+  pd->pre[0].buf = &pd->pre[0].buf[vp9_raster_block_offset(BLOCK_8X8, i,
+                                                           pd->pre[0].stride)];
   if (has_second_ref(mbmi))
-    pd->pre[1].buf = &pd->pre[1].buf[raster_block_offset(BLOCK_8X8, i,
-                                                         pd->pre[1].stride)];
+    pd->pre[1].buf = &pd->pre[1].buf[vp9_raster_block_offset(BLOCK_8X8, i,
+                                                           pd->pre[1].stride)];
 }
 
 static INLINE void mi_buf_restore(MACROBLOCK *x, struct buf_2d orig_src,
@@ -2345,6 +2359,27 @@ static INLINE void restore_dst_buf(MACROBLOCKD *xd,
   }
 }
 
+// In some situations we want to discount tha pparent cost of a new motion
+// vector. Where there is a subtle motion field and especially where there is
+// low spatial complexity then it can be hard to cover the cost of a new motion
+// vector in a single block, even if that motion vector reduces distortion.
+// However, once established that vector may be usable through the nearest and
+// near mv modes to reduce distortion in subsequent blocks and also improve
+// visual quality.
+static int discount_newmv_test(const VP9_COMP *cpi,
+                               int this_mode,
+                               int_mv this_mv,
+                               int_mv (*mode_mv)[MAX_REF_FRAMES],
+                               int ref_frame) {
+  return (!cpi->rc.is_src_frame_alt_ref &&
+          (this_mode == NEWMV) &&
+          (this_mv.as_int != 0) &&
+          ((mode_mv[NEARESTMV][ref_frame].as_int == 0) ||
+           (mode_mv[NEARESTMV][ref_frame].as_int == INVALID_MV)) &&
+          ((mode_mv[NEARMV][ref_frame].as_int == 0) ||
+           (mode_mv[NEARMV][ref_frame].as_int == INVALID_MV)));
+}
+
 static int64_t handle_inter_mode(VP9_COMP *cpi, MACROBLOCK *x,
                                  BLOCK_SIZE bsize,
                                  int64_t txfm_cache[],
@@ -2454,10 +2489,20 @@ static int64_t handle_inter_mode(VP9_COMP *cpi, MACROBLOCK *x,
                            &tmp_mv, &rate_mv);
       if (tmp_mv.as_int == INVALID_MV)
         return INT64_MAX;
-      *rate2 += rate_mv;
+
       frame_mv[refs[0]].as_int =
           xd->mi[0].src_mi->bmi[0].as_mv[0].as_int = tmp_mv.as_int;
       single_newmv[refs[0]].as_int = tmp_mv.as_int;
+
+      // Estimate the rate implications of a new mv but discount this
+      // under certain circumstances where we want to help initiate a weak
+      // motion field, where the distortion gain for a single block may not
+      // be enough to overcome the cost of a new mv.
+      if (discount_newmv_test(cpi, this_mode, tmp_mv, mode_mv, refs[0])) {
+        *rate2 += MAX((rate_mv / NEW_MV_DISCOUNT_FACTOR), 1);
+      } else {
+        *rate2 += rate_mv;
+      }
     }
   }
 
@@ -2482,11 +2527,20 @@ static int64_t handle_inter_mode(VP9_COMP *cpi, MACROBLOCK *x,
     orig_dst_stride[i] = xd->plane[i].dst.stride;
   }
 
-  /* We don't include the cost of the second reference here, because there
-   * are only three options: Last/Golden, ARF/Last or Golden/ARF, or in other
-   * words if you present them in that order, the second one is always known
-   * if the first is known */
-  *rate2 += cost_mv_ref(cpi, this_mode, mbmi->mode_context[refs[0]]);
+  // We don't include the cost of the second reference here, because there
+  // are only three options: Last/Golden, ARF/Last or Golden/ARF, or in other
+  // words if you present them in that order, the second one is always known
+  // if the first is known.
+  //
+  // Under some circumstances we discount the cost of new mv mode to encourage
+  // initiation of a motion field.
+  if (discount_newmv_test(cpi, this_mode, frame_mv[refs[0]],
+                          mode_mv, refs[0])) {
+    *rate2 += MIN(cost_mv_ref(cpi, this_mode, mbmi->mode_context[refs[0]]),
+                  cost_mv_ref(cpi, NEARESTMV, mbmi->mode_context[refs[0]]));
+  } else {
+    *rate2 += cost_mv_ref(cpi, this_mode, mbmi->mode_context[refs[0]]);
+  }
 
   if (RDCOST(x->rdmult, x->rddiv, *rate2, 0) > ref_best_rd &&
       mbmi->mode != NEARESTMV)
@@ -2716,6 +2770,7 @@ void vp9_rd_pick_intra_mode_sb(VP9_COMP *cpi, MACROBLOCK *x,
   x->skip_encode = 0;
   ctx->skip = 0;
   xd->mi[0].src_mi->mbmi.ref_frame[0] = INTRA_FRAME;
+  xd->mi[0].src_mi->mbmi.ref_frame[1] = NONE;
 
   if (bsize >= BLOCK_8X8) {
     if (rd_pick_intra_sby_mode(cpi, x, &rate_y, &rate_y_tokenonly,
@@ -2931,7 +2986,9 @@ void vp9_rd_pick_inter_mode_sb(VP9_COMP *cpi,
   mode_skip_mask[INTRA_FRAME] |=
       ~(sf->intra_y_mode_mask[max_txsize_lookup[bsize]]);
 
-  for (i = 0; i < MAX_MODES; ++i)
+  for (i = 0; i <= LAST_NEW_MV_INDEX; ++i)
+    mode_threshold[i] = 0;
+  for (i = LAST_NEW_MV_INDEX + 1; i < MAX_MODES; ++i)
     mode_threshold[i] = ((int64_t)rd_threshes[i] * rd_thresh_freq_fact[i]) >> 5;
 
   midx =  sf->schedule_mode_search ? mode_skip_start : 0;
@@ -3055,7 +3112,7 @@ void vp9_rd_pick_inter_mode_sb(VP9_COMP *cpi,
 
     comp_pred = second_ref_frame > INTRA_FRAME;
     if (comp_pred) {
-      if (!cm->allow_comp_inter_inter)
+      if (!cpi->allow_comp_inter_inter)
         continue;
 
       // Skip compound inter modes if ARF is not available.
@@ -3705,7 +3762,7 @@ void vp9_rd_pick_inter_mode_sub8x8(VP9_COMP *cpi,
 
     comp_pred = second_ref_frame > INTRA_FRAME;
     if (comp_pred) {
-      if (!cm->allow_comp_inter_inter)
+      if (!cpi->allow_comp_inter_inter)
         continue;
       if (!(cpi->ref_frame_flags & flag_list[second_ref_frame]))
         continue;

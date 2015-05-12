@@ -15,11 +15,11 @@
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/html/imports/HTMLImportsController.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/compositing/LayerCompositor.h"
+#include "core/layout/style/LayoutStyle.h"
 #include "core/page/Page.h"
-#include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/compositing/RenderLayerCompositor.h"
-#include "core/rendering/style/RenderStyle.h"
 #include "platform/PlatformScreen.h"
 
 namespace blink {
@@ -103,6 +103,20 @@ const String MediaValues::calculateMediaType(LocalFrame* frame) const
     if (!frame->view())
         return emptyAtom;
     return frame->view()->mediaType();
+}
+
+WebDisplayMode MediaValues::calculateDisplayMode(LocalFrame* frame) const
+{
+    ASSERT(frame);
+    WebDisplayMode mode = frame->host()->settings().displayModeOverride();
+
+    if (mode != WebDisplayModeUndefined)
+        return mode;
+
+    if (!frame->view())
+        return WebDisplayModeBrowser;
+
+    return frame->view()->displayMode();
 }
 
 bool MediaValues::calculateThreeDEnabled(LocalFrame* frame) const

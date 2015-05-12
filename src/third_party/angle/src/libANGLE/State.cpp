@@ -15,7 +15,6 @@
 #include "libANGLE/Query.h"
 #include "libANGLE/VertexArray.h"
 #include "libANGLE/formatutils.h"
-#include "libANGLE/renderer/RenderTarget.h"
 
 namespace gl
 {
@@ -142,6 +141,8 @@ void State::initialize(const Caps& caps, GLuint clientVersion)
 
     mReadFramebuffer = NULL;
     mDrawFramebuffer = NULL;
+
+    mPrimitiveRestart = false;
 }
 
 void State::reset()
@@ -532,6 +533,16 @@ void State::setDither(bool enabled)
     mBlend.dither = enabled;
 }
 
+bool State::isPrimitiveRestartEnabled() const
+{
+    return mPrimitiveRestart;
+}
+
+void State::setPrimitiveRestart(bool enabled)
+{
+    mPrimitiveRestart = enabled;
+}
+
 void State::setEnableFeature(GLenum feature, bool enabled)
 {
     switch (feature)
@@ -545,7 +556,7 @@ void State::setEnableFeature(GLenum feature, bool enabled)
       case GL_DEPTH_TEST:                    setDepthTest(enabled);             break;
       case GL_BLEND:                         setBlend(enabled);                 break;
       case GL_DITHER:                        setDither(enabled);                break;
-      case GL_PRIMITIVE_RESTART_FIXED_INDEX: UNIMPLEMENTED();                   break;
+      case GL_PRIMITIVE_RESTART_FIXED_INDEX: setPrimitiveRestart(enabled);      break;
       case GL_RASTERIZER_DISCARD:            setRasterizerDiscard(enabled);     break;
       default:                               UNREACHABLE();
     }
@@ -564,7 +575,7 @@ bool State::getEnableFeature(GLenum feature)
       case GL_DEPTH_TEST:                    return isDepthTestEnabled();
       case GL_BLEND:                         return isBlendEnabled();
       case GL_DITHER:                        return isDitherEnabled();
-      case GL_PRIMITIVE_RESTART_FIXED_INDEX: UNIMPLEMENTED(); return false;
+      case GL_PRIMITIVE_RESTART_FIXED_INDEX: return isPrimitiveRestartEnabled();
       case GL_RASTERIZER_DISCARD:            return isRasterizerDiscardEnabled();
       default:                               UNREACHABLE(); return false;
     }
@@ -618,12 +629,16 @@ void State::setSamplerTexture(GLenum type, Texture *texture)
 
 Texture *State::getSamplerTexture(unsigned int sampler, GLenum type) const
 {
-    return mSamplerTextures.at(type)[sampler].get();
+    const auto it = mSamplerTextures.find(type);
+    ASSERT(it != mSamplerTextures.end());
+    return it->second[sampler].get();
 }
 
 GLuint State::getSamplerTextureId(unsigned int sampler, GLenum type) const
 {
-    return mSamplerTextures.at(type)[sampler].id();
+    const auto it = mSamplerTextures.find(type);
+    ASSERT(it != mSamplerTextures.end());
+    return it->second[sampler].id();
 }
 
 void State::detachTexture(const TextureMap &zeroTextures, GLuint texture)
@@ -646,8 +661,10 @@ void State::detachTexture(const TextureMap &zeroTextures, GLuint texture)
             BindingPointer<Texture> &binding = textureVector[textureIdx];
             if (binding.id() == texture)
             {
+                auto it = zeroTextures.find(textureType);
+                ASSERT(it != zeroTextures.end());
                 // Zero textures are the "default" textures instead of NULL
-                binding.set(zeroTextures.at(textureType).get());
+                binding.set(it->second.get());
             }
         }
     }
@@ -883,6 +900,12 @@ TransformFeedback *State::getCurrentTransformFeedback() const
     return mTransformFeedback.get();
 }
 
+bool State::isTransformFeedbackActiveUnpaused() const
+{
+    gl::TransformFeedback *curTransformFeedback = getCurrentTransformFeedback();
+    return curTransformFeedback && curTransformFeedback->isStarted() && !curTransformFeedback->isPaused();
+}
+
 void State::detachTransformFeedback(GLuint transformFeedback)
 {
     if (mTransformFeedback.id() == transformFeedback)
@@ -918,10 +941,12 @@ GLuint State::getActiveQueryId(GLenum target) const
 
 Query *State::getActiveQuery(GLenum target) const
 {
-    // All query types should already exist in the activeQueries map
-    ASSERT(mActiveQueries.find(target) != mActiveQueries.end());
+    const auto it = mActiveQueries.find(target);
 
-    return mActiveQueries.at(target).get();
+    // All query types should already exist in the activeQueries map
+    ASSERT(it != mActiveQueries.end());
+
+    return it->second.get();
 }
 
 void State::setArrayBufferBinding(Buffer *buffer)
@@ -1121,6 +1146,16 @@ GLint State::getUnpackAlignment() const
     return mUnpack.alignment;
 }
 
+void State::setUnpackRowLength(GLint rowLength)
+{
+    mUnpack.rowLength = rowLength;
+}
+
+GLint State::getUnpackRowLength() const
+{
+    return mUnpack.rowLength;
+}
+
 const PixelUnpackState &State::getUnpackState() const
 {
     return mUnpack;
@@ -1219,6 +1254,7 @@ void State::getIntegerv(const gl::Data &data, GLenum pname, GLint *params)
       case GL_PACK_ALIGNMENT:                           *params = mPack.alignment;                                break;
       case GL_PACK_REVERSE_ROW_ORDER_ANGLE:             *params = mPack.reverseRowOrder;                          break;
       case GL_UNPACK_ALIGNMENT:                         *params = mUnpack.alignment;                              break;
+      case GL_UNPACK_ROW_LENGTH:                        *params = mUnpack.rowLength;                              break;
       case GL_GENERATE_MIPMAP_HINT:                     *params = mGenerateMipmapHint;                            break;
       case GL_FRAGMENT_SHADER_DERIVATIVE_HINT_OES:      *params = mFragmentShaderDerivativeHint;                  break;
       case GL_ACTIVE_TEXTURE:                           *params = (mActiveSampler + GL_TEXTURE0);                 break;
@@ -1345,19 +1381,19 @@ void State::getIntegerv(const gl::Data &data, GLenum pname, GLint *params)
         break;
       case GL_TEXTURE_BINDING_2D:
         ASSERT(mActiveSampler < mMaxCombinedTextureImageUnits);
-        *params = mSamplerTextures.at(GL_TEXTURE_2D)[mActiveSampler].id();
+        *params = getSamplerTextureId(mActiveSampler, GL_TEXTURE_2D) ;
         break;
       case GL_TEXTURE_BINDING_CUBE_MAP:
         ASSERT(mActiveSampler < mMaxCombinedTextureImageUnits);
-        *params = mSamplerTextures.at(GL_TEXTURE_CUBE_MAP)[mActiveSampler].id();
+        *params = getSamplerTextureId(mActiveSampler, GL_TEXTURE_CUBE_MAP);
         break;
       case GL_TEXTURE_BINDING_3D:
         ASSERT(mActiveSampler < mMaxCombinedTextureImageUnits);
-        *params = mSamplerTextures.at(GL_TEXTURE_3D)[mActiveSampler].id();
+        *params = getSamplerTextureId(mActiveSampler, GL_TEXTURE_3D);
         break;
       case GL_TEXTURE_BINDING_2D_ARRAY:
         ASSERT(mActiveSampler < mMaxCombinedTextureImageUnits);
-        *params = mSamplerTextures.at(GL_TEXTURE_2D_ARRAY)[mActiveSampler].id();
+        *params = getSamplerTextureId(mActiveSampler, GL_TEXTURE_2D_ARRAY);
         break;
       case GL_UNIFORM_BUFFER_BINDING:
         *params = mGenericUniformBuffer.id();

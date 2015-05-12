@@ -12,6 +12,7 @@
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/pepper/message_channel.h"
 #include "content/renderer/pepper/pepper_plugin_instance_impl.h"
+#include "content/renderer/pepper/plugin_instance_throttler_impl.h"
 #include "content/renderer/pepper/plugin_module.h"
 #include "content/renderer/pepper/v8object_var.h"
 #include "content/renderer/render_frame_impl.h"
@@ -59,10 +60,10 @@ PepperWebPluginImpl::PepperWebPluginImpl(
     PluginModule* plugin_module,
     const WebPluginParams& params,
     RenderFrameImpl* render_frame,
-    RenderFrame::PluginPowerSaverMode power_saver_mode)
+    scoped_ptr<PluginInstanceThrottlerImpl> throttler)
     : init_data_(new InitData()),
       full_frame_(params.loadManually),
-      power_saver_mode_(power_saver_mode),
+      throttler_(throttler.Pass()),
       instance_object_(PP_MakeUndefined()),
       container_(NULL) {
   DCHECK(plugin_module);
@@ -76,6 +77,9 @@ PepperWebPluginImpl::PepperWebPluginImpl(
 
   // Set subresource URL for crash reporting.
   base::debug::SetCrashKeyValue("subresource_url", init_data_->url.spec());
+
+  if (throttler_)
+    throttler_->SetWebPlugin(this);
 }
 
 PepperWebPluginImpl::~PepperWebPluginImpl() {}
@@ -96,7 +100,7 @@ bool PepperWebPluginImpl::initialize(WebPluginContainer* container) {
 
   bool success =
       instance_->Initialize(init_data_->arg_names, init_data_->arg_values,
-                            full_frame_, power_saver_mode_);
+                            full_frame_, throttler_.Pass());
   if (!success) {
     instance_->Delete();
     instance_ = NULL;
@@ -177,7 +181,8 @@ void PepperWebPluginImpl::updateGeometry(
   }
 }
 
-void PepperWebPluginImpl::updateFocus(bool focused) {
+void PepperWebPluginImpl::updateFocus(bool focused,
+                                      blink::WebFocusType focus_type) {
   instance_->SetWebKitFocus(focused);
 }
 

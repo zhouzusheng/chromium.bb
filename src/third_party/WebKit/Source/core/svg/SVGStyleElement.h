@@ -50,7 +50,7 @@ public:
     virtual String title() const override;
     void setTitle(const AtomicString&);
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     SVGStyleElement(Document&, bool createdByParser);
@@ -62,7 +62,7 @@ private:
     virtual void childrenChanged(const ChildrenChange&) override;
 
     virtual void finishParsingChildren() override;
-    virtual bool rendererIsNeeded(const RenderStyle&) override { return false; }
+    virtual bool rendererIsNeeded(const LayoutStyle&) override { return false; }
 
     virtual bool sheetLoaded() override { return StyleElement::sheetLoaded(document()); }
     virtual void startLoadingDynamicSheet() override { StyleElement::startLoadingDynamicSheet(document()); }

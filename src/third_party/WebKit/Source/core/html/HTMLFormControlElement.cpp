@@ -35,10 +35,10 @@
 #include "core/html/HTMLLegendElement.h"
 #include "core/html/ValidityState.h"
 #include "core/inspector/ConsoleMessage.h"
+#include "core/layout/LayoutTheme.h"
 #include "core/page/Page.h"
 #include "core/page/ValidationMessageClient.h"
 #include "core/rendering/RenderBox.h"
-#include "core/rendering/RenderTheme.h"
 #include "platform/text/BidiTextRun.h"
 #include "wtf/Vector.h"
 
@@ -68,11 +68,17 @@ HTMLFormControlElement::HTMLFormControlElement(const QualifiedName& tagName, Doc
 HTMLFormControlElement::~HTMLFormControlElement()
 {
 #if !ENABLE(OILPAN)
+#if ENABLE(ASSERT)
+    // Recalculate m_willValidate and m_isValid for the vtbl change in order to
+    // avoid assertion failures in isValidElement() called in setForm(0).
+    setNeedsWillValidateCheck();
+    setNeedsValidityCheck();
+#endif
     setForm(0);
 #endif
 }
 
-void HTMLFormControlElement::trace(Visitor* visitor)
+DEFINE_TRACE(HTMLFormControlElement)
 {
     FormAssociatedElement::trace(visitor);
     LabelableElement::trace(visitor);
@@ -153,7 +159,7 @@ void HTMLFormControlElement::parseAttribute(const QualifiedName& name, const Ato
             setNeedsWillValidateCheck();
             setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::fromAttribute(name));
             if (renderer() && renderer()->style()->hasAppearance())
-                RenderTheme::theme().stateChanged(renderer(), ReadOnlyControlState);
+                LayoutTheme::theme().stateChanged(renderer(), ReadOnlyControlState);
         }
     } else if (name == requiredAttr) {
         bool wasRequired = m_isRequired;
@@ -174,7 +180,7 @@ void HTMLFormControlElement::disabledAttributeChanged()
     pseudoStateChanged(CSSSelector::PseudoDisabled);
     pseudoStateChanged(CSSSelector::PseudoEnabled);
     if (renderer() && renderer()->style()->hasAppearance())
-        RenderTheme::theme().stateChanged(renderer(), EnabledControlState);
+        LayoutTheme::theme().stateChanged(renderer(), EnabledControlState);
     if (isDisabledFormControl() && treeScope().adjustedFocusedElement() == this) {
         // We might want to call blur(), but it's dangerous to dispatch events
         // here.
@@ -350,7 +356,7 @@ String HTMLFormControlElement::resultForDialogSubmit()
 
 void HTMLFormControlElement::didRecalcStyle(StyleRecalcChange)
 {
-    if (RenderObject* renderer = this->renderer())
+    if (LayoutObject* renderer = this->renderer())
         renderer->updateFromElement();
 }
 
@@ -375,10 +381,10 @@ bool HTMLFormControlElement::shouldHaveFocusAppearance() const
     return !m_wasFocusedByMouse || shouldShowFocusRingOnMouseFocus();
 }
 
-void HTMLFormControlElement::dispatchFocusEvent(Element* oldFocusedElement, FocusType type)
+void HTMLFormControlElement::dispatchFocusEvent(Element* oldFocusedElement, WebFocusType type)
 {
-    if (type != FocusTypePage)
-        m_wasFocusedByMouse = type == FocusTypeMouse;
+    if (type != WebFocusTypePage)
+        m_wasFocusedByMouse = type == WebFocusTypeMouse;
     HTMLElement::dispatchFocusEvent(oldFocusedElement, type);
 }
 

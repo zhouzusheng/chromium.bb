@@ -4,11 +4,11 @@
 
 #include "cc/scheduler/scheduler_state_machine.h"
 
-#include "base/debug/trace_event.h"
-#include "base/debug/trace_event_argument.h"
 #include "base/format_macros.h"
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
+#include "base/trace_event/trace_event.h"
+#include "base/trace_event/trace_event_argument.h"
 #include "base/values.h"
 #include "ui/gfx/frame_time.h"
 
@@ -48,7 +48,8 @@ SchedulerStateMachine::SchedulerStateMachine(const SchedulerSettings& settings)
       skip_begin_main_frame_to_reduce_latency_(false),
       continuous_painting_(false),
       impl_latency_takes_priority_on_battery_(false),
-      children_need_begin_frames_(false) {
+      children_need_begin_frames_(false),
+      defer_commits_(false) {
 }
 
 const char* SchedulerStateMachine::OutputSurfaceStateToString(
@@ -147,15 +148,15 @@ const char* SchedulerStateMachine::ActionToString(Action action) {
   return "???";
 }
 
-scoped_refptr<base::debug::ConvertableToTraceFormat>
+scoped_refptr<base::trace_event::ConvertableToTraceFormat>
 SchedulerStateMachine::AsValue() const {
-  scoped_refptr<base::debug::TracedValue> state =
-      new base::debug::TracedValue();
+  scoped_refptr<base::trace_event::TracedValue> state =
+      new base::trace_event::TracedValue();
   AsValueInto(state.get(), gfx::FrameTime::Now());
   return state;
 }
 
-void SchedulerStateMachine::AsValueInto(base::debug::TracedValue* state,
+void SchedulerStateMachine::AsValueInto(base::trace_event::TracedValue* state,
                                         base::TimeTicks now) const {
   state->BeginDictionary("major_state");
   state->SetString("next_action", ActionToString(NextAction()));
@@ -238,6 +239,7 @@ void SchedulerStateMachine::AsValueInto(base::debug::TracedValue* state,
   state->SetBoolean("impl_latency_takes_priority_on_battery",
                     impl_latency_takes_priority_on_battery_);
   state->SetBoolean("children_need_begin_frames", children_need_begin_frames_);
+  state->SetBoolean("defer_commits", defer_commits_);
   state->EndDictionary();
 }
 
@@ -412,6 +414,10 @@ bool SchedulerStateMachine::CouldSendBeginMainFrame() const {
 
   // We can not perform commits if we are not visible.
   if (!visible_)
+    return false;
+
+  // Do not make a new commits when it is deferred.
+  if (defer_commits_)
     return false;
 
   return true;
@@ -769,6 +775,10 @@ void SchedulerStateMachine::SetChildrenNeedBeginFrames(
   children_need_begin_frames_ = children_need_begin_frames;
 }
 
+void SchedulerStateMachine::SetDeferCommits(bool defer_commits) {
+  defer_commits_ = defer_commits;
+}
+
 // These are the cases where we definitely (or almost definitely) have a
 // new frame to animate and/or draw and can draw.
 bool SchedulerStateMachine::BeginFrameNeededToAnimateOrDraw() const {
@@ -777,7 +787,15 @@ bool SchedulerStateMachine::BeginFrameNeededToAnimateOrDraw() const {
   if (forced_redraw_state_ == FORCED_REDRAW_STATE_WAITING_FOR_DRAW)
     return true;
 
-  return needs_animate_ || needs_redraw_;
+  // TODO(mithro): Remove background animation ticking. crbug.com/371747
+  if (needs_animate_)
+    return true;
+
+  // Only background tick for animations - not draws, which will never happen.
+  if (!visible_)
+    return false;
+
+  return needs_redraw_;
 }
 
 // These are cases where we are very likely to draw soon, but might not
@@ -790,8 +808,11 @@ bool SchedulerStateMachine::ProactiveBeginFrameWanted() const {
     return false;
 
   // We should proactively request a BeginImplFrame if a commit is pending
-  // because we will want to draw if the commit completes quickly.
-  if (needs_commit_ || commit_state_ != COMMIT_STATE_IDLE)
+  // because we will want to draw if the commit completes quickly. Do not
+  // request frames when commits are disabled, because the frame requests will
+  // not provide the needed commit (and will wake up the process when it could
+  // stay idle).
+  if ((needs_commit_ || commit_state_ != COMMIT_STATE_IDLE) && !defer_commits_)
     return true;
 
   // If the pending tree activates quickly, we'll want a BeginImplFrame soon
@@ -1052,6 +1073,7 @@ void SchedulerStateMachine::BeginMainFrameAborted(CommitEarlyOutReason reason) {
   switch (reason) {
     case CommitEarlyOutReason::ABORTED_OUTPUT_SURFACE_LOST:
     case CommitEarlyOutReason::ABORTED_NOT_VISIBLE:
+    case CommitEarlyOutReason::ABORTED_DEFERRED_COMMIT:
       commit_state_ = COMMIT_STATE_IDLE;
       SetNeedsCommit();
       return;

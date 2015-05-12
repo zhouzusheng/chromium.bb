@@ -68,7 +68,7 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
   void OnBlockedFrames(const std::vector<QuicBlockedFrame>& frames) override;
   void OnConnectionClosed(QuicErrorCode error, bool from_peer) override;
   void OnWriteBlocked() override {}
-  void OnSuccessfulVersionNegotiation(const QuicVersion& version) override {}
+  void OnSuccessfulVersionNegotiation(const QuicVersion& version) override;
   void OnCanWrite() override;
   void OnCongestionWindowChange(QuicTime now) override {}
   bool WillingAndAbleToWrite() const override;
@@ -116,6 +116,7 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
       QuicStreamId id,
       const SpdyHeaderBlock& headers,
       bool fin,
+      QuicPriority priority,
       QuicAckNotifier::DelegateInterface* ack_notifier_delegate);
 
   // Called by streams when they want to close the stream in both directions.
@@ -217,6 +218,8 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
   }
 
   size_t get_max_open_streams() const { return max_open_streams_; }
+
+  const QuicHeadersStream* headers_stream() { return headers_stream_.get(); }
 
  protected:
   typedef base::hash_map<QuicStreamId, QuicDataStream*> DataStreamMap;

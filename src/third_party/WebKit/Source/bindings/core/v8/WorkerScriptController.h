@@ -31,8 +31,10 @@
 #ifndef WorkerScriptController_h
 #define WorkerScriptController_h
 
+#include "bindings/core/v8/RejectedPromises.h"
 #include "bindings/core/v8/ScriptValue.h"
 #include "bindings/core/v8/V8Binding.h"
+#include "bindings/core/v8/V8CacheOptions.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/ThreadingPrimitives.h"
 #include "wtf/text/TextPosition.h"
@@ -40,6 +42,7 @@
 
 namespace blink {
 
+class CachedMetadataHandler;
 class ErrorEvent;
 class ExceptionState;
 class ScriptSourceCode;
@@ -54,7 +57,7 @@ public:
     bool isExecutionTerminating() const;
 
     // Returns true if the evaluation completed with no uncaught exception.
-    bool evaluate(const ScriptSourceCode&, RefPtrWillBeRawPtr<ErrorEvent>* = 0);
+    bool evaluate(const ScriptSourceCode&, RefPtrWillBeRawPtr<ErrorEvent>* = nullptr, CachedMetadataHandler* = nullptr, V8CacheOptions = V8CacheOptionsDefault);
 
     // Prevents future JavaScript execution. See
     // scheduleExecutionTermination, isExecutionForbidden.
@@ -84,13 +87,15 @@ public:
     // Used by V8 bindings:
     v8::Local<v8::Context> context() { return m_scriptState ? m_scriptState->context() : v8::Local<v8::Context>(); }
 
+    RejectedPromises* rejectedPromises() const { return m_rejectedPromises.get(); }
+
 private:
     class WorkerGlobalScopeExecutionState;
 
     bool isContextInitialized() { return m_scriptState && !!m_scriptState->perContextData(); }
 
     // Evaluate a script file in the current execution environment.
-    ScriptValue evaluate(const String& script, const String& fileName, const TextPosition& scriptStartPosition);
+    ScriptValue evaluate(const String& script, const String& fileName, const TextPosition& scriptStartPosition, CachedMetadataHandler*, V8CacheOptions);
 
     v8::Isolate* m_isolate;
     WorkerGlobalScope& m_workerGlobalScope;
@@ -100,6 +105,8 @@ private:
     bool m_executionForbidden;
     bool m_executionScheduledToTerminate;
     mutable Mutex m_scheduledTerminationMutex;
+
+    OwnPtrWillBePersistent<RejectedPromises> m_rejectedPromises;
 
     // |m_globalScopeExecutionState| refers to a stack object
     // that evaluate() allocates; evaluate() ensuring that the

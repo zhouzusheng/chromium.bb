@@ -33,7 +33,7 @@
 
 #include "WebWorkerPermissionClientProxy.h"
 #include "public/platform/WebMessagePortChannel.h"
-#include "public/platform/WebServiceWorkerClientFocusCallback.h"
+#include "public/platform/WebServiceWorkerClientsClaimCallbacks.h"
 #include "public/platform/WebServiceWorkerClientsInfo.h"
 #include "public/platform/WebServiceWorkerEventResult.h"
 #include "public/platform/WebServiceWorkerSkipWaitingCallbacks.h"
@@ -46,14 +46,15 @@ class WebDataSource;
 class WebServiceWorkerCacheStorage;
 class WebServiceWorkerContextProxy;
 class WebServiceWorkerNetworkProvider;
+class WebServiceWorkerProvider;
 class WebServiceWorkerResponse;
 class WebString;
 
 // This interface is implemented by the client. It is supposed to be created
-// on the main thread and then passed on to the worker thread.
-// by a newly created WorkerGlobalScope. All methods of this class, except
-// for createServiceWorkerNetworkProvider() and workerContextFailedToStart(),
+// on the main thread and then passed on to the worker thread by a newly
+// created WorkerGlobalScope. Unless otherwise noted, all methods of this class
 // are called on the worker thread.
+//
 // FIXME: Split this into EmbeddedWorkerContextClient and
 // ServiceWorkerScriptContextClient when we decide to use EmbeddedWorker
 // framework for other implementation (like SharedWorker).
@@ -62,7 +63,7 @@ public:
     virtual ~WebServiceWorkerContextClient() { }
 
     // ServiceWorker specific method.
-    virtual WebServiceWorkerCacheStorage* cacheStorage() { return 0; }
+    virtual WebServiceWorkerCacheStorage* cacheStorage() { return nullptr; }
 
     // ServiceWorker specific method. Called when script accesses the
     // the |scope| attribute of the ServiceWorkerGlobalScope. Immutable per spec.
@@ -108,8 +109,7 @@ public:
     virtual void reportConsoleMessage(int source, int level, const WebString& message, int lineNumber, const WebString& sourceURL) { }
 
     // Inspector related messages.
-    virtual void dispatchDevToolsMessage(const WebString&) { }
-    virtual void saveDevToolsAgentState(const WebString&) { }
+    virtual void sendDevToolsMessage(int callId, const WebString& message, const WebString& state) { }
 
     // ServiceWorker specific method.
     virtual void didHandleActivateEvent(int eventID, WebServiceWorkerEventResult result) { }
@@ -146,13 +146,30 @@ public:
     virtual void didHandleCrossOriginConnectEvent(int connectEventID, bool acceptConnect) { }
 
     // Ownership of the returned object is transferred to the caller.
-    virtual WebServiceWorkerNetworkProvider* createServiceWorkerNetworkProvider(WebDataSource*) { return 0; }
+    // This is called on the main thread.
+    virtual WebServiceWorkerNetworkProvider* createServiceWorkerNetworkProvider(WebDataSource*) { return nullptr; }
+
+    // Ownership of the returned object is transferred to the caller.
+    // This is called on the main thread.
+    virtual WebServiceWorkerProvider* createServiceWorkerProvider() { return nullptr; }
 
     // Ownership of the passed callbacks is transferred to the callee, callee
     // should delete the callbacks after calling either onSuccess or onError.
     // WebServiceWorkerClientsInfo and WebServiceWorkerError ownerships are
     // passed to the WebServiceWorkerClientsCallbacks implementation.
     virtual void getClients(WebServiceWorkerClientsCallbacks*) { BLINK_ASSERT_NOT_REACHED(); }
+
+    // Ownership of the passed callbacks is transferred to the callee, callee
+    // should delete the callbacks after calling either onSuccess or onError.
+    // WebServiceWorkerClientInfo and WebServiceWorkerError ownerships are
+    // passed to the WebServiceWorkerClientsCallbacks implementation.
+    virtual void openWindow(const WebURL& url, WebServiceWorkerClientCallbacks*) { BLINK_ASSERT_NOT_REACHED(); }
+
+    // A suggestion to cache this metadata in association with this URL.
+    virtual void setCachedMetadata(const WebURL& url, const char* data, size_t size) { }
+
+    // A suggestion to clear the cached metadata in association with this URL.
+    virtual void clearCachedMetadata(const WebURL& url) { }
 
     // Callee receives ownership of the passed vector.
     // FIXME: Blob refs should be passed to maintain ref counts. crbug.com/351753
@@ -167,15 +184,12 @@ public:
     virtual void skipWaiting(WebServiceWorkerSkipWaitingCallbacks*) { BLINK_ASSERT_NOT_REACHED(); }
 
     // Ownership of the passed callbacks is transferred to the callee, callee
+    // should delete the callbacks after run.
+    virtual void claim(WebServiceWorkerClientsClaimCallbacks*) { BLINK_ASSERT_NOT_REACHED(); }
+
+    // Ownership of the passed callbacks is transferred to the callee, callee
     // should delete the callback after calling either onSuccess or onError.
-    virtual void focus(int clientID, WebServiceWorkerClientFocusCallback* callback)
-    {
-        // FIXME: call BLINK_ASSERT_NOT_REACHED() when Chromium implementation
-        // is present. https://crbug.com/437149
-        bool result = true;
-        callback->onSuccess(&result);
-        delete callback;
-    }
+    virtual void focus(int cliendID, WebServiceWorkerClientCallbacks*) { BLINK_ASSERT_NOT_REACHED(); }
 };
 
 } // namespace blink

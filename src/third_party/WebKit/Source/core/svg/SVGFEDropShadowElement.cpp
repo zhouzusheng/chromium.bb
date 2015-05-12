@@ -21,9 +21,9 @@
 #include "core/svg/SVGFEDropShadowElement.h"
 
 #include "core/SVGNames.h"
-#include "core/rendering/RenderObject.h"
-#include "core/rendering/style/RenderStyle.h"
-#include "core/rendering/style/SVGRenderStyle.h"
+#include "core/layout/LayoutObject.h"
+#include "core/layout/style/LayoutStyle.h"
+#include "core/layout/style/SVGLayoutStyle.h"
 #include "core/svg/SVGParserUtilities.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
 
@@ -42,7 +42,7 @@ inline SVGFEDropShadowElement::SVGFEDropShadowElement(Document& document)
     addToPropertyMap(m_in1);
 }
 
-void SVGFEDropShadowElement::trace(Visitor* visitor)
+DEFINE_TRACE(SVGFEDropShadowElement)
 {
     visitor->trace(m_dx);
     visitor->trace(m_dy);
@@ -99,7 +99,7 @@ void SVGFEDropShadowElement::svgAttributeChanged(const QualifiedName& attrName)
 
 PassRefPtrWillBeRawPtr<FilterEffect> SVGFEDropShadowElement::build(SVGFilterBuilder* filterBuilder, Filter* filter)
 {
-    RenderObject* renderer = this->renderer();
+    LayoutObject* renderer = this->renderer();
     if (!renderer)
         return nullptr;
 
@@ -107,7 +107,7 @@ PassRefPtrWillBeRawPtr<FilterEffect> SVGFEDropShadowElement::build(SVGFilterBuil
         return nullptr;
 
     ASSERT(renderer->style());
-    const SVGRenderStyle& svgStyle = renderer->style()->svgStyle();
+    const SVGLayoutStyle& svgStyle = renderer->style()->svgStyle();
 
     Color color = svgStyle.floodColor();
     float opacity = svgStyle.floodOpacity();

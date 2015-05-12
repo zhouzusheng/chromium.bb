@@ -190,6 +190,9 @@ bool WidgetDelegate::ShouldDescendIntoChildForEventHandling(
 ////////////////////////////////////////////////////////////////////////////////
 // WidgetDelegateView:
 
+// static
+const char WidgetDelegateView::kViewClassName[] = "WidgetDelegateView";
+
 WidgetDelegateView::WidgetDelegateView() {
   // A WidgetDelegate should be deleted on DeleteDelegate.
   set_owned_by_client();
@@ -208,6 +211,10 @@ Widget* WidgetDelegateView::GetWidget() {
 
 const Widget* WidgetDelegateView::GetWidget() const {
   return View::GetWidget();
+}
+
+const char* WidgetDelegateView::GetClassName() const {
+  return kViewClassName;
 }
 
 }  // namespace views

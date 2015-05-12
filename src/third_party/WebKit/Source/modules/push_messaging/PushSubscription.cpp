@@ -10,8 +10,8 @@
 #include "modules/push_messaging/PushError.h"
 #include "modules/serviceworkers/ServiceWorkerRegistration.h"
 #include "public/platform/Platform.h"
-#include "public/platform/WebPushProvider.h"
-#include "public/platform/WebPushSubscription.h"
+#include "public/platform/modules/push_messaging/WebPushProvider.h"
+#include "public/platform/modules/push_messaging/WebPushSubscription.h"
 #include "wtf/OwnPtr.h"
 
 namespace blink {
@@ -51,7 +51,7 @@ ScriptPromise PushSubscription::unsubscribe(ScriptState* scriptState)
     return promise;
 }
 
-void PushSubscription::trace(Visitor* visitor)
+DEFINE_TRACE(PushSubscription)
 {
     visitor->trace(m_serviceWorkerRegistration);
 }

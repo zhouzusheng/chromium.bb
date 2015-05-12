@@ -5,9 +5,9 @@
 #include "ui/aura/window_event_dispatcher.h"
 
 #include "base/bind.h"
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
+#include "base/trace_event/trace_event.h"
 #include "ui/aura/client/capture_client.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/client/event_client.h"
@@ -22,6 +22,7 @@
 #include "ui/base/hit_test.h"
 #include "ui/compositor/dip_util.h"
 #include "ui/events/event.h"
+#include "ui/events/event_utils.h"
 #include "ui/events/gestures/gesture_recognizer.h"
 #include "ui/events/gestures/gesture_types.h"
 
@@ -152,19 +153,15 @@ void WindowEventDispatcher::DispatchGestureEvent(ui::GestureEvent* event) {
 DispatchDetails WindowEventDispatcher::DispatchMouseExitAtPoint(
     Window* window,
     const gfx::Point& point) {
-  ui::MouseEvent event(ui::ET_MOUSE_EXITED, point, point, ui::EF_NONE,
-                       ui::EF_NONE);
+  ui::MouseEvent event(ui::ET_MOUSE_EXITED, point, point, ui::EventTimeForNow(),
+                       ui::EF_NONE, ui::EF_NONE);
   return DispatchMouseEnterOrExit(window, event, ui::ET_MOUSE_EXITED);
 }
 
-void WindowEventDispatcher::ProcessedTouchEvent(ui::TouchEvent* event,
-                                                Window* window,
+void WindowEventDispatcher::ProcessedTouchEvent(Window* window,
                                                 ui::EventResult result) {
-  // Once we've fully migrated to the eager gesture detector, we won't need to
-  // pass an event here.
   scoped_ptr<ui::GestureRecognizer::Gestures> gestures(
-      ui::GestureRecognizer::Get()->AckAsyncTouchEvent(
-          *event, result, window));
+      ui::GestureRecognizer::Get()->AckAsyncTouchEvent(result, window));
   DispatchDetails details = ProcessGestures(gestures.get());
   if (details.dispatcher_destroyed)
     return;
@@ -370,7 +367,7 @@ void WindowEventDispatcher::UpdateCapture(Window* old_capture,
       old_capture->delegate()) {
     // Send a capture changed event with bogus location data.
     ui::MouseEvent event(ui::ET_MOUSE_CAPTURE_CHANGED, gfx::Point(),
-                         gfx::Point(), 0, 0);
+                         gfx::Point(), ui::EventTimeForNow(), 0, 0);
 
     DispatchDetails details = DispatchEvent(old_capture, &event);
     if (details.dispatcher_destroyed)
@@ -726,11 +723,9 @@ ui::EventDispatchDetails WindowEventDispatcher::SynthesizeMouseMoveEvent() {
     return details;
   gfx::Point host_mouse_location = root_mouse_location;
   host_->ConvertPointToHost(&host_mouse_location);
-  ui::MouseEvent event(ui::ET_MOUSE_MOVED,
-                       host_mouse_location,
-                       host_mouse_location,
-                       ui::EF_IS_SYNTHESIZED,
-                       0);
+  ui::MouseEvent event(ui::ET_MOUSE_MOVED, host_mouse_location,
+                       host_mouse_location, ui::EventTimeForNow(),
+                       ui::EF_IS_SYNTHESIZED, 0);
   return OnEventFromSource(&event);
 }
 
@@ -783,7 +778,9 @@ void WindowEventDispatcher::PreDispatchMouseEvent(Window* target,
 
   const int kMouseButtonFlagMask = ui::EF_LEFT_MOUSE_BUTTON |
                                    ui::EF_MIDDLE_MOUSE_BUTTON |
-                                   ui::EF_RIGHT_MOUSE_BUTTON;
+                                   ui::EF_RIGHT_MOUSE_BUTTON |
+                                   ui::EF_BACK_MOUSE_BUTTON |
+                                   ui::EF_FORWARD_MOUSE_BUTTON;
   switch (event->type()) {
     case ui::ET_MOUSE_EXITED:
       if (!target || target == window()) {

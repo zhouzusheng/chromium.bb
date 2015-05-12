@@ -110,11 +110,10 @@ class CC_EXPORT LayerTreeHost {
   void SetLayerTreeHostClientReady();
 
   // LayerTreeHost interface to Proxy.
-  void WillBeginMainFrame() {
-    client_->WillBeginMainFrame(source_frame_number_);
-  }
+  void WillBeginMainFrame();
   void DidBeginMainFrame();
   void BeginMainFrame(const BeginFrameArgs& args);
+  void BeginMainFrameNotExpectedSoon();
   void AnimateLayers(base::TimeTicks monotonic_frame_begin_time);
   void DidStopFlinging();
   void Layout();
@@ -135,6 +134,9 @@ class CC_EXPORT LayerTreeHost {
   void DeleteContentsTexturesOnImplThread(ResourceProvider* resource_provider);
   bool UpdateLayers(ResourceUpdateQueue* queue);
 
+  // Called when the compositor completed page scale animation.
+  void DidCompletePageScaleAnimation();
+
   LayerTreeHostClient* client() { return client_; }
   const base::WeakPtr<InputHandler>& GetInputHandler() {
     return input_handler_weak_ptr_;
@@ -147,9 +149,6 @@ class CC_EXPORT LayerTreeHost {
   void FinishAllRendering();
 
   void SetDeferCommits(bool defer_commits);
-
-  // Test only hook
-  virtual void DidDeferCommit();
 
   int source_frame_number() const { return source_frame_number_; }
 
@@ -214,7 +213,7 @@ class CC_EXPORT LayerTreeHost {
   void SetViewportSize(const gfx::Size& device_viewport_size);
   void SetTopControlsShrinkBlinkSize(bool shrink);
   void SetTopControlsHeight(float height);
-  void SetTopControlsContentOffset(float offset);
+  void SetTopControlsShownRatio(float ratio);
 
   gfx::Size device_viewport_size() const { return device_viewport_size_; }
 
@@ -231,8 +230,6 @@ class CC_EXPORT LayerTreeHost {
   void set_has_transparent_background(bool transparent) {
     has_transparent_background_ = transparent;
   }
-
-  void SetOverhangBitmap(const SkBitmap& bitmap);
 
   PrioritizedResourceManager* contents_texture_manager() const {
     return contents_texture_manager_.get();
@@ -277,7 +274,7 @@ class CC_EXPORT LayerTreeHost {
   }
 
   // Obtains a thorough dump of the LayerTreeHost as a value.
-  void AsValueInto(base::debug::TracedValue* value) const;
+  void AsValueInto(base::trace_event::TracedValue* value) const;
 
   bool in_paint_layer_contents() const { return in_paint_layer_contents_; }
 
@@ -420,7 +417,7 @@ class CC_EXPORT LayerTreeHost {
   gfx::Size device_viewport_size_;
   bool top_controls_shrink_blink_size_;
   float top_controls_height_;
-  float top_controls_content_offset_;
+  float top_controls_shown_ratio_;
   float device_scale_factor_;
 
   bool visible_;
@@ -438,10 +435,6 @@ class CC_EXPORT LayerTreeHost {
   SkColor background_color_;
   bool has_transparent_background_;
 
-  // If set, this texture is used to fill in the parts of the screen not
-  // covered by layers.
-  scoped_ptr<ScopedUIResource> overhang_ui_resource_;
-
   typedef ScopedPtrVector<PrioritizedResource> TextureList;
   size_t partial_texture_update_requests_;
 
@@ -449,22 +442,12 @@ class CC_EXPORT LayerTreeHost {
 
   scoped_ptr<PendingPageScaleAnimation> pending_page_scale_animation_;
 
+  // If set, then page scale animation has completed, but the client hasn't been
+  // notified about it yet.
+  bool did_complete_scale_animation_;
+
   bool in_paint_layer_contents_;
 
-  static const int kTotalFramesToUseForLCDTextMetrics = 50;
-  int total_frames_used_for_lcd_text_metrics_;
-
-  struct LCDTextMetrics {
-    LCDTextMetrics()
-        : total_num_cc_layers(0),
-          total_num_cc_layers_can_use_lcd_text(0),
-          total_num_cc_layers_will_use_lcd_text(0) {}
-
-    int64 total_num_cc_layers;
-    int64 total_num_cc_layers_can_use_lcd_text;
-    int64 total_num_cc_layers_will_use_lcd_text;
-  };
-  LCDTextMetrics lcd_text_metrics_;
   int id_;
   bool next_commit_forces_redraw_;
 

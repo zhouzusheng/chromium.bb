@@ -67,11 +67,10 @@ public:
     void serviceAnimations(TimingUpdateReason);
     void scheduleNextService();
 
-    // Creates a player attached to this timeline, but without a start time.
-    AnimationPlayer* createAnimationPlayer(AnimationNode*);
     AnimationPlayer* play(AnimationNode*);
     WillBeHeapVector<RefPtrWillBeMember<AnimationPlayer>> getAnimationPlayers();
 
+    void playerAttached(AnimationPlayer&);
 #if !ENABLE(OILPAN)
     void playerDestroyed(AnimationPlayer* player)
     {
@@ -112,13 +111,12 @@ protected:
 private:
     RawPtrWillBeMember<Document> m_document;
     double m_zeroTime;
+    bool m_zeroTimeInitialized;
     // AnimationPlayers which will be updated on the next frame
     // i.e. current, in effect, or had timing changed
     WillBeHeapHashSet<RefPtrWillBeMember<AnimationPlayer>> m_playersNeedingUpdate;
     WillBeHeapHashSet<RawPtrWillBeWeakMember<AnimationPlayer>> m_players;
 
-    double m_documentCurrentTimeSnapshot;
-    double m_zeroTimeOffset;
     double m_playbackRate;
 
     friend class SMILTimeContainer;

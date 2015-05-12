@@ -30,7 +30,7 @@
 
 namespace blink {
 
-class RenderObject;
+class LayoutObject;
 
 class SVGClipPathElement final : public SVGGraphicsElement {
     DEFINE_WRAPPERTYPEINFO();
@@ -40,7 +40,7 @@ public:
 
     virtual bool supportsFocus() const override { return false; }
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     explicit SVGClipPathElement(Document&);
@@ -51,7 +51,7 @@ private:
     virtual void svgAttributeChanged(const QualifiedName&) override;
     virtual void childrenChanged(const ChildrenChange&) override;
 
-    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual LayoutObject* createRenderer(const LayoutStyle&) override;
 
     RefPtrWillBeMember<SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType> > m_clipPathUnits;
 };

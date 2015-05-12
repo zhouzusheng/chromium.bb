@@ -65,9 +65,9 @@ void NotificationMessageFilter::OnCheckNotificationPermission(
   PlatformNotificationService* service =
       GetContentClient()->browser()->GetPlatformNotificationService();
   if (service) {
-    *permission = service->CheckPermission(resource_context_,
-                                           origin,
-                                           process_id_);
+    *permission = service->CheckPermissionOnIOThread(resource_context_,
+                                                     origin,
+                                                     process_id_);
   } else {
     *permission = blink::WebNotificationPermissionDenied;
   }
@@ -85,7 +85,8 @@ void NotificationMessageFilter::OnShowPlatformNotification(
       GetContentClient()->browser()->GetPlatformNotificationService();
   DCHECK(service);
 
-  // TODO(peter): Verify that permission has been granted for |origin|.
+  if (!VerifyNotificationPermissionGranted(service, origin))
+    return;
 
   base::Closure close_closure;
   service->DisplayNotification(browser_context_,
@@ -93,7 +94,6 @@ void NotificationMessageFilter::OnShowPlatformNotification(
                                icon,
                                notification_data,
                                delegate.Pass(),
-                               process_id_,
                                &close_closure);
 
   if (!close_closure.is_null())
@@ -111,14 +111,12 @@ void NotificationMessageFilter::OnShowPersistentNotification(
       GetContentClient()->browser()->GetPlatformNotificationService();
   DCHECK(service);
 
-  // TODO(peter): Verify that permission has been granted for |origin|.
+  if (!VerifyNotificationPermissionGranted(service, origin))
+    return;
 
   service->DisplayPersistentNotification(browser_context_,
-                                         service_worker_registration_id,
-                                         origin,
-                                         icon,
-                                         notification_data,
-                                         process_id_);
+                                         service_worker_registration_id, origin,
+                                         icon, notification_data);
 }
 
 void NotificationMessageFilter::OnClosePlatformNotification(
@@ -140,6 +138,18 @@ void NotificationMessageFilter::OnClosePersistentNotification(
 
   service->ClosePersistentNotification(browser_context_,
                                        persistent_notification_id);
+}
+
+bool NotificationMessageFilter::VerifyNotificationPermissionGranted(
+    PlatformNotificationService* service,
+    const GURL& origin) {
+  blink::WebNotificationPermission permission =
+      service->CheckPermissionOnUIThread(browser_context_, origin, process_id_);
+  if (permission == blink::WebNotificationPermissionAllowed)
+    return true;
+
+  BadMessageReceived();
+  return false;
 }
 
 }  // namespace content

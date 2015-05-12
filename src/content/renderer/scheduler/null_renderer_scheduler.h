@@ -16,13 +16,16 @@ class NullRendererScheduler : public RendererScheduler {
 
   scoped_refptr<base::SingleThreadTaskRunner> DefaultTaskRunner() override;
   scoped_refptr<base::SingleThreadTaskRunner> CompositorTaskRunner() override;
+  scoped_refptr<base::SingleThreadTaskRunner> LoadingTaskRunner() override;
   scoped_refptr<SingleThreadIdleTaskRunner> IdleTaskRunner() override;
 
   void WillBeginFrame(const cc::BeginFrameArgs& args) override;
+  void BeginFrameNotExpectedSoon() override;
   void DidCommitFrameToCompositor() override;
   void DidReceiveInputEventOnCompositorThread(
-      blink::WebInputEvent::Type type) override;
+      const blink::WebInputEvent& web_input_event) override;
   void DidAnimateForInputOnCompositorThread() override;
+  bool IsHighPriorityWorkAnticipated() override;
   bool ShouldYieldForHighPriorityWork() override;
   void Shutdown() override;
 

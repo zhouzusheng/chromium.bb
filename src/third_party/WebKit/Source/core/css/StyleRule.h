@@ -38,18 +38,16 @@ class StyleRuleBase : public RefCountedWillBeGarbageCollectedFinalized<StyleRule
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
     enum Type {
-        Unknown, // Not used.
         Style,
-        Charset, // Not used. These are internally strings owned by the style sheet.
         Import,
         Media,
         FontFace,
         Page,
         Keyframes,
         Keyframe,
-        Supports = 12,
-        Viewport = 15,
-        Filter = 17
+        Namespace,
+        Supports,
+        Viewport,
     };
 
     Type type() const { return static_cast<Type>(m_type); }
@@ -57,13 +55,13 @@ public:
     bool isFontFaceRule() const { return type() == FontFace; }
     bool isKeyframesRule() const { return type() == Keyframes; }
     bool isKeyframeRule() const { return type() == Keyframe; }
+    bool isNamespaceRule() const { return type() == Namespace; }
     bool isMediaRule() const { return type() == Media; }
     bool isPageRule() const { return type() == Page; }
     bool isStyleRule() const { return type() == Style; }
     bool isSupportsRule() const { return type() == Supports; }
     bool isViewportRule() const { return type() == Viewport; }
     bool isImportRule() const { return type() == Import; }
-    bool isFilterRule() const { return type() == Filter; }
 
     PassRefPtrWillBeRawPtr<StyleRuleBase> copy() const;
 
@@ -254,31 +252,6 @@ private:
     RefPtrWillBeMember<StylePropertySet> m_properties; // Cannot be null
 };
 
-class StyleRuleFilter : public StyleRuleBase {
-public:
-    static PassRefPtrWillBeRawPtr<StyleRuleFilter> create(const String& filterName) { return adoptRefWillBeNoop(new StyleRuleFilter(filterName)); }
-
-    ~StyleRuleFilter();
-
-    const String& filterName() const { return m_filterName; }
-
-    const StylePropertySet& properties() const { return *m_properties; }
-    MutableStylePropertySet& mutableProperties();
-
-    void setProperties(PassRefPtrWillBeRawPtr<StylePropertySet>);
-
-    PassRefPtrWillBeRawPtr<StyleRuleFilter> copy() const { return adoptRefWillBeNoop(new StyleRuleFilter(*this)); }
-
-    void traceAfterDispatch(Visitor*);
-
-private:
-    StyleRuleFilter(const String&);
-    StyleRuleFilter(const StyleRuleFilter&);
-
-    String m_filterName;
-    RefPtrWillBeMember<StylePropertySet> m_properties;
-};
-
 #define DEFINE_STYLE_RULE_TYPE_CASTS(Type) \
     DEFINE_TYPE_CASTS(StyleRule##Type, StyleRuleBase, rule, rule->is##Type##Rule(), rule.is##Type##Rule())
 
@@ -288,7 +261,6 @@ DEFINE_STYLE_RULE_TYPE_CASTS(Page);
 DEFINE_STYLE_RULE_TYPE_CASTS(Media);
 DEFINE_STYLE_RULE_TYPE_CASTS(Supports);
 DEFINE_STYLE_RULE_TYPE_CASTS(Viewport);
-DEFINE_STYLE_RULE_TYPE_CASTS(Filter);
 
 } // namespace blink
 

@@ -36,18 +36,19 @@
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/html/HTMLDialogElement.h"
+#include "core/layout/HitTestLocation.h"
+#include "core/layout/Layer.h"
+#include "core/layout/LayoutFlowThread.h"
+#include "core/layout/LayoutMultiColumnFlowThread.h"
+#include "core/layout/LayoutMultiColumnSpannerPlaceholder.h"
+#include "core/layout/LayoutPagedFlowThread.h"
+#include "core/layout/TextAutosizer.h"
+#include "core/layout/line/LineBreaker.h"
+#include "core/layout/line/LineWidth.h"
 #include "core/paint/BlockFlowPainter.h"
 #include "core/paint/RenderDrawingRecorder.h"
-#include "core/rendering/HitTestLocation.h"
-#include "core/rendering/RenderFlowThread.h"
-#include "core/rendering/RenderLayer.h"
-#include "core/rendering/RenderMultiColumnFlowThread.h"
-#include "core/rendering/RenderMultiColumnSpannerPlaceholder.h"
-#include "core/rendering/RenderPagedFlowThread.h"
 #include "core/rendering/RenderText.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/TextAutosizer.h"
-#include "core/rendering/line/LineWidth.h"
 #include "platform/geometry/TransformState.h"
 #include "platform/graphics/paint/ClipRecorderStack.h"
 #include "platform/text/BidiTextRun.h"
@@ -149,18 +150,13 @@ static bool inNormalFlow(RenderBox* child)
     RenderBlock* curr = child->containingBlock();
     RenderView* renderView = child->view();
     while (curr && curr != renderView) {
-        if (curr->hasColumns() || curr->isRenderFlowThread())
+        if (curr->hasColumns() || curr->isLayoutFlowThread())
             return true;
         if (curr->isFloatingOrOutOfFlowPositioned())
             return false;
         curr = curr->containingBlock();
     }
     return true;
-}
-
-void RenderBlockFlow::RenderBlockFlowRareData::trace(Visitor* visitor)
-{
-    visitor->trace(m_multiColumnFlowThread);
 }
 
 RenderBlockFlow::RenderBlockFlow(ContainerNode* node)
@@ -174,12 +170,6 @@ RenderBlockFlow::~RenderBlockFlow()
 {
 }
 
-void RenderBlockFlow::trace(Visitor* visitor)
-{
-    visitor->trace(m_rareData);
-    RenderBlock::trace(visitor);
-}
-
 RenderBlockFlow* RenderBlockFlow::createAnonymous(Document* document)
 {
     RenderBlockFlow* renderer = new RenderBlockFlow(0);
@@ -187,9 +177,9 @@ RenderBlockFlow* RenderBlockFlow::createAnonymous(Document* document)
     return renderer;
 }
 
-RenderObject* RenderBlockFlow::layoutSpecialExcludedChild(bool relayoutChildren, SubtreeLayoutScope& layoutScope)
+LayoutObject* RenderBlockFlow::layoutSpecialExcludedChild(bool relayoutChildren, SubtreeLayoutScope& layoutScope)
 {
-    RenderMultiColumnFlowThread* flowThread = multiColumnFlowThread();
+    LayoutMultiColumnFlowThread* flowThread = multiColumnFlowThread();
     if (!flowThread)
         return 0;
     setLogicalTopForChild(*flowThread, borderBefore() + paddingBefore());
@@ -201,7 +191,7 @@ RenderObject* RenderBlockFlow::layoutSpecialExcludedChild(bool relayoutChildren,
 bool RenderBlockFlow::updateLogicalWidthAndColumnWidth()
 {
     bool relayoutChildren = RenderBlock::updateLogicalWidthAndColumnWidth();
-    if (RenderMultiColumnFlowThread* flowThread = multiColumnFlowThread()) {
+    if (LayoutMultiColumnFlowThread* flowThread = multiColumnFlowThread()) {
         if (flowThread->needsNewWidth())
             return true;
     }
@@ -210,7 +200,7 @@ bool RenderBlockFlow::updateLogicalWidthAndColumnWidth()
 
 void RenderBlockFlow::checkForPaginationLogicalHeightChange(LayoutUnit& pageLogicalHeight, bool& pageLogicalHeightChanged, bool& hasSpecifiedPageLogicalHeight)
 {
-    if (RenderMultiColumnFlowThread* flowThread = multiColumnFlowThread()) {
+    if (LayoutMultiColumnFlowThread* flowThread = multiColumnFlowThread()) {
         LogicalExtentComputedValues computedValues;
         computeLogicalHeight(LayoutUnit(), logicalTop(), computedValues);
         LayoutUnit columnHeight = computedValues.m_extent - borderAndPaddingLogicalHeight() - scrollbarLogicalHeight();
@@ -239,8 +229,8 @@ void RenderBlockFlow::checkForPaginationLogicalHeightChange(LayoutUnit& pageLogi
 
         if (!hasSpecifiedPageLogicalHeight && !pageLogicalHeight)
             colInfo->clearForcedBreaks();
-    } else if (isRenderFlowThread()) {
-        RenderFlowThread* flowThread = toRenderFlowThread(this);
+    } else if (isLayoutFlowThread()) {
+        LayoutFlowThread* flowThread = toLayoutFlowThread(this);
 
         // FIXME: This is a hack to always make sure we have a page logical height, if said height
         // is known. The page logical height thing in LayoutState is meaningless for flow
@@ -377,7 +367,7 @@ void RenderBlockFlow::layoutBlock(bool relayoutChildren)
     if (m_paintInvalidationLogicalTop != m_paintInvalidationLogicalBottom) {
         bool hasVisibleContent = style()->visibility() == VISIBLE;
         if (!hasVisibleContent) {
-            RenderLayer* layer = enclosingLayer();
+            Layer* layer = enclosingLayer();
             layer->updateDescendantDependentFlags();
             hasVisibleContent = layer->hasVisibleContent();
         }
@@ -449,7 +439,7 @@ inline bool RenderBlockFlow::layoutBlockFlow(bool relayoutChildren, LayoutUnit &
     if (lowestFloatLogicalBottom() > (logicalHeight() - afterEdge) && createsNewFormattingContext())
         setLogicalHeight(lowestFloatLogicalBottom() + afterEdge);
 
-    if (RenderMultiColumnFlowThread* flowThread = multiColumnFlowThread()) {
+    if (LayoutMultiColumnFlowThread* flowThread = multiColumnFlowThread()) {
         if (flowThread->recalculateColumnHeights()) {
             setChildNeedsLayout(MarkOnlyThis);
             return false;
@@ -484,7 +474,7 @@ inline bool RenderBlockFlow::layoutBlockFlow(bool relayoutChildren, LayoutUnit &
     LayoutUnit newHeight = logicalHeight();
     if (oldHeight > newHeight && !childrenInline()) {
         // One of our children's floats may have become an overhanging float for us.
-        for (RenderObject* child = lastChild(); child; child = child->previousSibling()) {
+        for (LayoutObject* child = lastChild(); child; child = child->previousSibling()) {
             if (child->isRenderBlockFlow() && !child->isFloatingOrOutOfFlowPositioned()) {
                 RenderBlockFlow* block = toRenderBlockFlow(child);
                 if (block->lowestFloatLogicalBottom() + block->logicalTop() <= newHeight)
@@ -706,6 +696,11 @@ void RenderBlockFlow::layoutBlockChild(RenderBox& child, MarginInfo& marginInfo,
         if (newHeight != size().height())
             setLogicalHeight(newHeight);
     }
+
+    if (child.isLayoutMultiColumnSpannerPlaceholder()) {
+        // The actual column-span:all element is positioned by this placeholder child.
+        positionSpannerDescendant(toLayoutMultiColumnSpannerPlaceholder(child));
+    }
 }
 
 LayoutUnit RenderBlockFlow::adjustBlockChildForPagination(LayoutUnit logicalTopAfterClear, LayoutUnit estimateWithoutPagination, RenderBox& child, bool atBeforeSideOfBlock)
@@ -801,11 +796,11 @@ LayoutUnit RenderBlockFlow::adjustBlockChildForPagination(LayoutUnit logicalTopA
     return result;
 }
 
-static inline LayoutUnit calculateMinimumPageHeight(RenderStyle* renderStyle, RootInlineBox* lastLine, LayoutUnit lineTop, LayoutUnit lineBottom)
+static inline LayoutUnit calculateMinimumPageHeight(const LayoutStyle& style, RootInlineBox* lastLine, LayoutUnit lineTop, LayoutUnit lineBottom)
 {
     // We may require a certain minimum number of lines per page in order to satisfy
     // orphans and widows, and that may affect the minimum page height.
-    unsigned lineCount = std::max<unsigned>(renderStyle->hasAutoOrphans() ? 1 : renderStyle->orphans(), renderStyle->widows());
+    unsigned lineCount = std::max<unsigned>(style.hasAutoOrphans() ? 1 : style.orphans(), style.widows());
     if (lineCount > 1) {
         RootInlineBox* line = lastLine;
         for (unsigned i = 1; i < lineCount && line->prevRootBox(); i++)
@@ -819,7 +814,7 @@ static inline LayoutUnit calculateMinimumPageHeight(RenderStyle* renderStyle, Ro
     return lineBottom - lineTop;
 }
 
-void RenderBlockFlow::adjustLinePositionForPagination(RootInlineBox& lineBox, LayoutUnit& delta, RenderFlowThread* flowThread)
+void RenderBlockFlow::adjustLinePositionForPagination(RootInlineBox& lineBox, LayoutUnit& delta, LayoutFlowThread* flowThread)
 {
     // FIXME: For now we paginate using line overflow. This ensures that lines don't overlap at all when we
     // put a strut between them for pagination purposes. However, this really isn't the desired rendering, since
@@ -844,7 +839,7 @@ void RenderBlockFlow::adjustLinePositionForPagination(RootInlineBox& lineBox, La
     LayoutUnit logicalOffset = std::min(lineBox.lineTopWithLeading(), logicalVisualOverflow.y());
     LayoutUnit logicalBottom = std::max(lineBox.lineBottomWithLeading(), logicalVisualOverflow.maxY());
     LayoutUnit lineHeight = logicalBottom - logicalOffset;
-    updateMinimumPageHeight(logicalOffset, calculateMinimumPageHeight(style(), &lineBox, logicalOffset, logicalBottom));
+    updateMinimumPageHeight(logicalOffset, calculateMinimumPageHeight(styleRef(), &lineBox, logicalOffset, logicalBottom));
     logicalOffset += delta;
     lineBox.setPaginationStrut(0);
     lineBox.setIsFirstAfterPageBreak(false);
@@ -978,7 +973,7 @@ void RenderBlockFlow::rebuildFloatsFromIntruding()
     // outside it (i.e. objects that create a new block formatting context).
     RenderBlockFlow* parentBlockFlow = toRenderBlockFlow(parent());
     bool parentHasFloats = false;
-    RenderObject* prev = previousSibling();
+    LayoutObject* prev = previousSibling();
     while (prev && (!prev->isBox() || !prev->isRenderBlock() || toRenderBlock(prev)->avoidsFloats() || toRenderBlock(prev)->createsNewFormattingContext())) {
         if (prev->isFloating())
             parentHasFloats = true;
@@ -1077,7 +1072,7 @@ void RenderBlockFlow::layoutBlockChildren(bool relayoutChildren, SubtreeLayoutSc
     // Fieldsets need to find their legend and position it inside the border of the object.
     // The legend then gets skipped during normal layout. The same is true for ruby text.
     // It doesn't get included in the normal layout process but is instead skipped.
-    RenderObject* childToExclude = layoutSpecialExcludedChild(relayoutChildren, layoutScope);
+    LayoutObject* childToExclude = layoutSpecialExcludedChild(relayoutChildren, layoutScope);
 
     LayoutUnit previousFloatLogicalBottom = 0;
 
@@ -1088,7 +1083,7 @@ void RenderBlockFlow::layoutBlockChildren(bool relayoutChildren, SubtreeLayoutSc
         RenderBox* child = next;
         next = child->nextSiblingBox();
 
-        child->setMayNeedPaintInvalidation(true);
+        child->setMayNeedPaintInvalidation();
 
         if (childToExclude == child)
             continue; // Skip this child, since it will be positioned by the specialized subclass (fieldsets and ruby runs).
@@ -1107,7 +1102,15 @@ void RenderBlockFlow::layoutBlockChildren(bool relayoutChildren, SubtreeLayoutSc
         }
         if (child->isColumnSpanAll()) {
             // This is not the containing block of the spanner. The spanner's placeholder will lay
-            // it out in due course.
+            // it out in due course. For now we just need to consult our flow thread, so that the
+            // columns (if any) preceding and following the spanner are laid out correctly. But
+            // first we apply the pending margin, so that it's taken into consideration and doesn't
+            // end up on the other side of the spanner.
+            setLogicalHeight(logicalHeight() + marginInfo.margin());
+            marginInfo.clearMargin();
+
+            LayoutUnit adjustment = flowThreadContainingBlock()->skipColumnSpanner(child, offsetFromLogicalTopOfFirstPage() + logicalHeight());
+            setLogicalHeight(logicalHeight() + adjustment);
             continue;
         }
 
@@ -1131,18 +1134,18 @@ MarginInfo::MarginInfo(RenderBlockFlow* blockFlow, LayoutUnit beforeBorderPaddin
     , m_determinedMarginBeforeQuirk(false)
     , m_discardMargin(false)
 {
-    RenderStyle* blockStyle = blockFlow->style();
+    const LayoutStyle& blockStyle = blockFlow->styleRef();
     ASSERT(blockFlow->isRenderView() || blockFlow->parent());
-    m_canCollapseWithChildren = !blockFlow->createsNewFormattingContext() && !blockFlow->isRenderFlowThread() && !blockFlow->isRenderView();
+    m_canCollapseWithChildren = !blockFlow->createsNewFormattingContext() && !blockFlow->isLayoutFlowThread() && !blockFlow->isRenderView();
 
-    m_canCollapseMarginBeforeWithChildren = m_canCollapseWithChildren && !beforeBorderPadding && blockStyle->marginBeforeCollapse() != MSEPARATE;
+    m_canCollapseMarginBeforeWithChildren = m_canCollapseWithChildren && !beforeBorderPadding && blockStyle.marginBeforeCollapse() != MSEPARATE;
 
     // If any height other than auto is specified in CSS, then we don't collapse our bottom
     // margins with our children's margins. To do otherwise would be to risk odd visual
     // effects when the children overflow out of the parent block and yet still collapse
     // with it. We also don't collapse if we have any bottom border/padding.
     m_canCollapseMarginAfterWithChildren = m_canCollapseWithChildren && !afterBorderPadding
-        && (blockStyle->logicalHeight().isAuto() && !blockStyle->logicalHeight().value()) && blockStyle->marginAfterCollapse() != MSEPARATE;
+        && (blockStyle.logicalHeight().isAuto() && !blockStyle.logicalHeight().value()) && blockStyle.marginAfterCollapse() != MSEPARATE;
 
     m_quirkContainer = blockFlow->isTableCell() || blockFlow->isBody();
 
@@ -1282,7 +1285,7 @@ LayoutUnit RenderBlockFlow::collapseMargins(RenderBox& child, MarginInfo& margin
     LayoutUnit logicalTop = beforeCollapseLogicalTop;
 
     LayoutUnit clearanceForSelfCollapsingBlock;
-    RenderObject* prev = child.previousSibling();
+    LayoutObject* prev = child.previousSibling();
     RenderBlockFlow* previousBlockFlow =  prev && prev->isRenderBlockFlow() && !prev->isFloatingOrOutOfFlowPositioned() ? toRenderBlockFlow(prev) : 0;
     // If the child's previous sibling is a self-collapsing block that cleared a float then its top border edge has been set at the bottom border edge
     // of the float. Since we want to collapse the child's top margin with the self-collapsing block's top and bottom margins we need to adjust our parent's height to match the
@@ -1393,7 +1396,7 @@ void RenderBlockFlow::adjustPositionedBlock(RenderBox& child, const MarginInfo& 
         logicalTop += collapsedBeforePos - collapsedBeforeNeg;
     }
 
-    RenderLayer* childLayer = child.layer();
+    Layer* childLayer = child.layer();
     if (childLayer->staticBlockPosition() != logicalTop) {
         childLayer->setStaticBlockPosition(logicalTop);
         if (hasStaticBlockPosition)
@@ -1516,7 +1519,7 @@ void RenderBlockFlow::marginBeforeEstimateForChild(RenderBox& child, LayoutUnit&
 
     RenderBox* grandchildBox = childBlockFlow->firstChildBox();
     for ( ; grandchildBox; grandchildBox = grandchildBox->nextSiblingBox()) {
-        if (!grandchildBox->isFloatingOrOutOfFlowPositioned())
+        if (!grandchildBox->isFloatingOrOutOfFlowPositioned() && !grandchildBox->isColumnSpanAll())
             break;
     }
 
@@ -1665,7 +1668,7 @@ void RenderBlockFlow::setMustDiscardMarginBefore(bool value)
         return;
 
     if (!m_rareData)
-        m_rareData = adoptPtrWillBeNoop(new RenderBlockFlowRareData(this));
+        m_rareData = adoptPtr(new RenderBlockFlowRareData(this));
 
     m_rareData->m_discardMarginBefore = value;
 }
@@ -1681,7 +1684,7 @@ void RenderBlockFlow::setMustDiscardMarginAfter(bool value)
         return;
 
     if (!m_rareData)
-        m_rareData = adoptPtrWillBeNoop(new RenderBlockFlowRareData(this));
+        m_rareData = adoptPtr(new RenderBlockFlowRareData(this));
 
     m_rareData->m_discardMarginAfter = value;
 }
@@ -1726,7 +1729,7 @@ void RenderBlockFlow::setMaxMarginBeforeValues(LayoutUnit pos, LayoutUnit neg)
     if (!m_rareData) {
         if (pos == RenderBlockFlowRareData::positiveMarginBeforeDefault(this) && neg == RenderBlockFlowRareData::negativeMarginBeforeDefault(this))
             return;
-        m_rareData = adoptPtrWillBeNoop(new RenderBlockFlowRareData(this));
+        m_rareData = adoptPtr(new RenderBlockFlowRareData(this));
     }
     m_rareData->m_margins.setPositiveMarginBefore(pos);
     m_rareData->m_margins.setNegativeMarginBefore(neg);
@@ -1737,7 +1740,7 @@ void RenderBlockFlow::setMaxMarginAfterValues(LayoutUnit pos, LayoutUnit neg)
     if (!m_rareData) {
         if (pos == RenderBlockFlowRareData::positiveMarginAfterDefault(this) && neg == RenderBlockFlowRareData::negativeMarginAfterDefault(this))
             return;
-        m_rareData = adoptPtrWillBeNoop(new RenderBlockFlowRareData(this));
+        m_rareData = adoptPtr(new RenderBlockFlowRareData(this));
     }
     m_rareData->m_margins.setPositiveMarginAfter(pos);
     m_rareData->m_margins.setNegativeMarginAfter(neg);
@@ -1746,11 +1749,11 @@ void RenderBlockFlow::setMaxMarginAfterValues(LayoutUnit pos, LayoutUnit neg)
 bool RenderBlockFlow::mustSeparateMarginBeforeForChild(const RenderBox& child) const
 {
     ASSERT(!child.selfNeedsLayout());
-    const RenderStyle* childStyle = child.style();
+    const LayoutStyle& childStyle = child.styleRef();
     if (!child.isWritingModeRoot())
-        return childStyle->marginBeforeCollapse() == MSEPARATE;
+        return childStyle.marginBeforeCollapse() == MSEPARATE;
     if (child.isHorizontalWritingMode() == isHorizontalWritingMode())
-        return childStyle->marginAfterCollapse() == MSEPARATE;
+        return childStyle.marginAfterCollapse() == MSEPARATE;
 
     // FIXME: See |mustDiscardMarginBeforeForChild| above.
     return false;
@@ -1759,11 +1762,11 @@ bool RenderBlockFlow::mustSeparateMarginBeforeForChild(const RenderBox& child) c
 bool RenderBlockFlow::mustSeparateMarginAfterForChild(const RenderBox& child) const
 {
     ASSERT(!child.selfNeedsLayout());
-    const RenderStyle* childStyle = child.style();
+    const LayoutStyle& childStyle = child.styleRef();
     if (!child.isWritingModeRoot())
-        return childStyle->marginAfterCollapse() == MSEPARATE;
+        return childStyle.marginAfterCollapse() == MSEPARATE;
     if (child.isHorizontalWritingMode() == isHorizontalWritingMode())
-        return childStyle->marginBeforeCollapse() == MSEPARATE;
+        return childStyle.marginBeforeCollapse() == MSEPARATE;
 
     // FIXME: See |mustDiscardMarginBeforeForChild| above.
     return false;
@@ -1772,7 +1775,7 @@ bool RenderBlockFlow::mustSeparateMarginAfterForChild(const RenderBox& child) co
 LayoutUnit RenderBlockFlow::applyBeforeBreak(RenderBox& child, LayoutUnit logicalOffset)
 {
     // FIXME: Add page break checking here when we support printing.
-    RenderFlowThread* flowThread = flowThreadContainingBlock();
+    LayoutFlowThread* flowThread = flowThreadContainingBlock();
     bool isInsideMulticolFlowThread = flowThread;
     bool checkColumnBreaks = isInsideMulticolFlowThread || view()->layoutState()->isPaginatingColumns();
     bool checkPageBreaks = !checkColumnBreaks && view()->layoutState()->pageLogicalHeight(); // FIXME: Once columns can print we have to check this.
@@ -1796,23 +1799,21 @@ LayoutUnit RenderBlockFlow::applyBeforeBreak(RenderBox& child, LayoutUnit logica
 LayoutUnit RenderBlockFlow::applyAfterBreak(RenderBox& child, LayoutUnit logicalOffset, MarginInfo& marginInfo)
 {
     // FIXME: Add page break checking here when we support printing.
-    RenderFlowThread* flowThread = flowThreadContainingBlock();
+    LayoutFlowThread* flowThread = flowThreadContainingBlock();
     bool isInsideMulticolFlowThread = flowThread;
     bool checkColumnBreaks = isInsideMulticolFlowThread || view()->layoutState()->isPaginatingColumns();
     bool checkPageBreaks = !checkColumnBreaks && view()->layoutState()->pageLogicalHeight(); // FIXME: Once columns can print we have to check this.
     bool checkAfterAlways = (checkColumnBreaks && child.style()->columnBreakAfter() == PBALWAYS)
         || (checkPageBreaks && child.style()->pageBreakAfter() == PBALWAYS);
     if (checkAfterAlways && inNormalFlow(&child)) {
-        LayoutUnit marginOffset = marginInfo.canCollapseWithMarginBefore() ? LayoutUnit() : marginInfo.margin();
-
         // So our margin doesn't participate in the next collapsing steps.
         marginInfo.clearMargin();
 
         if (checkColumnBreaks) {
             if (isInsideMulticolFlowThread) {
                 LayoutUnit offsetBreakAdjustment = 0;
-                if (flowThread->addForcedRegionBreak(offsetFromLogicalTopOfFirstPage() + logicalOffset + marginOffset, &child, false, &offsetBreakAdjustment))
-                    return logicalOffset + marginOffset + offsetBreakAdjustment;
+                if (flowThread->addForcedRegionBreak(offsetFromLogicalTopOfFirstPage() + logicalOffset, &child, false, &offsetBreakAdjustment))
+                    return logicalOffset + offsetBreakAdjustment;
             } else {
                 view()->layoutState()->addForcedColumnBreak(child, logicalOffset);
             }
@@ -1875,8 +1876,8 @@ void RenderBlockFlow::markAllDescendantsWithFloatsForLayout(RenderBox* floatToRe
         removeFloatingObject(floatToRemove);
 
     // Iterate over our children and mark them as needed.
-    if (!childrenInline()) {
-        for (RenderObject* child = firstChild(); child; child = child->nextSibling()) {
+    if (!childrenInline() || floatToRemove) {
+        for (LayoutObject* child = firstChild(); child; child = child->nextSibling()) {
             if ((!floatToRemove && child->isFloatingOrOutOfFlowPositioned()) || !child->isRenderBlock())
                 continue;
             if (!child->isRenderBlockFlow()) {
@@ -1900,7 +1901,7 @@ void RenderBlockFlow::markSiblingsWithFloatsForLayout(RenderBox* floatToRemove)
     const FloatingObjectSet& floatingObjectSet = m_floatingObjects->set();
     FloatingObjectSetIterator end = floatingObjectSet.end();
 
-    for (RenderObject* next = nextSibling(); next; next = next->nextSibling()) {
+    for (LayoutObject* next = nextSibling(); next; next = next->nextSibling()) {
         if (!next->isRenderBlockFlow() || next->isFloatingOrOutOfFlowPositioned() || toRenderBlockFlow(next)->avoidsFloats())
             continue;
 
@@ -1978,9 +1979,9 @@ void RenderBlockFlow::createFloatingObjects()
     m_floatingObjects = adoptPtr(new FloatingObjects(this, isHorizontalWritingMode()));
 }
 
-void RenderBlockFlow::styleWillChange(StyleDifference diff, const RenderStyle& newStyle)
+void RenderBlockFlow::styleWillChange(StyleDifference diff, const LayoutStyle& newStyle)
 {
-    RenderStyle* oldStyle = style();
+    const LayoutStyle* oldStyle = style();
     s_canPropagateFloatIntoSibling = oldStyle ? !isFloatingOrOutOfFlowPositioned() && !avoidsFloats() : false;
     if (oldStyle && parent() && diff.needsFullLayout() && oldStyle->position() != newStyle.position()
         && containsFloats() && !isFloating() && !isOutOfFlowPositioned() && newStyle.hasOutOfFlowPosition())
@@ -1989,7 +1990,7 @@ void RenderBlockFlow::styleWillChange(StyleDifference diff, const RenderStyle& n
     RenderBlock::styleWillChange(diff, newStyle);
 }
 
-void RenderBlockFlow::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
+void RenderBlockFlow::styleDidChange(StyleDifference diff, const LayoutStyle* oldStyle)
 {
     RenderBlock::styleDidChange(diff, oldStyle);
 
@@ -2003,7 +2004,7 @@ void RenderBlockFlow::styleDidChange(StyleDifference diff, const RenderStyle* ol
         const FloatingObjectSet& floatingObjectSet = m_floatingObjects->set();
         FloatingObjectSetIterator end = floatingObjectSet.end();
 
-        for (RenderObject* curr = parent(); curr && !curr->isRenderView(); curr = curr->parent()) {
+        for (LayoutObject* curr = parent(); curr && !curr->isRenderView(); curr = curr->parent()) {
             if (curr->isRenderBlockFlow()) {
                 RenderBlockFlow* currBlock = toRenderBlockFlow(curr);
 
@@ -2025,11 +2026,20 @@ void RenderBlockFlow::styleDidChange(StyleDifference diff, const RenderStyle* ol
 
     if (diff.needsFullLayout() || !oldStyle)
         createOrDestroyMultiColumnFlowThreadIfNeeded(oldStyle);
+    if (oldStyle) {
+        if (LayoutMultiColumnFlowThread* flowThread = multiColumnFlowThread()) {
+            if (!style()->columnRuleEquivalent(oldStyle)) {
+                // Column rules are painted by anonymous column set children of the multicol
+                // container. We need to notify them.
+                flowThread->columnRuleStyleDidChange();
+            }
+        }
+    }
 }
 
 void RenderBlockFlow::updateBlockChildDirtyBitsBeforeLayout(bool relayoutChildren, RenderBox& child)
 {
-    if (child.isRenderMultiColumnSpannerPlaceholder() && toRenderMultiColumnSpannerPlaceholder(child).rendererInFlowThread()->needsLayout()) {
+    if (child.isLayoutMultiColumnSpannerPlaceholder() && toLayoutMultiColumnSpannerPlaceholder(child).rendererInFlowThread()->needsLayout()) {
         // The containing block of a spanner is the multicol container (|this| block), but the spanner
         // is laid out via its spanner set (|child|), so we need to make sure that we enter it.
         child.setChildNeedsLayout(MarkOnlyThis);
@@ -2050,9 +2060,9 @@ void RenderBlockFlow::setStaticInlinePositionForChild(RenderBox& child, LayoutUn
     child.layer()->setStaticInlinePosition(inlinePosition);
 }
 
-void RenderBlockFlow::addChild(RenderObject* newChild, RenderObject* beforeChild)
+void RenderBlockFlow::addChild(LayoutObject* newChild, LayoutObject* beforeChild)
 {
-    if (RenderMultiColumnFlowThread* flowThread = multiColumnFlowThread()) {
+    if (LayoutMultiColumnFlowThread* flowThread = multiColumnFlowThread()) {
         if (beforeChild == flowThread)
             beforeChild = flowThread->firstChild();
         ASSERT(!beforeChild || beforeChild->isDescendantOf(flowThread));
@@ -2476,7 +2486,7 @@ bool RenderBlockFlow::positionNewFloats(LineWidth* width)
         RenderBox* childBox = floatingObject->renderer();
 
         // FIXME Investigate if this can be removed. crbug.com/370006
-        childBox->setMayNeedPaintInvalidation(true);
+        childBox->setMayNeedPaintInvalidation();
 
         LayoutUnit childLogicalLeftMargin = style()->isLeftToRightDirection() ? marginStartForChild(*childBox) : marginEndForChild(*childBox);
         if (childBox->style()->clear() & CLEFT)
@@ -2601,7 +2611,7 @@ void RenderBlockFlow::addIntrudingFloats(RenderBlockFlow* prev, LayoutUnit logic
 void RenderBlockFlow::addOverhangingFloats(RenderBlockFlow* child, bool makeChildPaintOtherFloats)
 {
     // Prevent floats from being added to the canvas by the root element, e.g., <html>.
-    if (!child->containsFloats() || child->isRenderRegion() || child->createsNewFormattingContext())
+    if (!child->containsFloats() || child->isLayoutRegion() || child->createsNewFormattingContext())
         return;
 
     LayoutUnit childLogicalTop = child->logicalTop();
@@ -2733,17 +2743,17 @@ LayoutUnit RenderBlockFlow::logicalRightFloatOffsetForLine(LayoutUnit logicalTop
     return fixedOffset;
 }
 
-LayoutRect RenderBlockFlow::selectionRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const
+LayoutRect RenderBlockFlow::selectionRectForPaintInvalidation(const LayoutLayerModelObject* paintInvalidationContainer) const
 {
     LayoutRect rect = selectionGapRectsForPaintInvalidation(paintInvalidationContainer);
     // FIXME: groupedMapping() leaks the squashing abstraction.
     // TODO(shez): Investigate why layer() is sometimes null here.
     if (paintInvalidationContainer->layer() && paintInvalidationContainer->layer()->groupedMapping())
-        RenderLayer::mapRectToPaintBackingCoordinates(paintInvalidationContainer, rect);
+        Layer::mapRectToPaintBackingCoordinates(paintInvalidationContainer, rect);
     return rect;
 }
 
-GapRects RenderBlockFlow::selectionGapRectsForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const
+GapRects RenderBlockFlow::selectionGapRectsForPaintInvalidation(const LayoutLayerModelObject* paintInvalidationContainer) const
 {
     ASSERT(!needsLayout());
 
@@ -2907,7 +2917,7 @@ bool RenderBlockFlow::shouldPaintSelectionGaps() const
 void RenderBlockFlow::getLineSelectionLogicalLeftAndRight(const RenderBlock *rootBlock, const LayoutSize& offsetFromRootBlock, RootInlineBox* line,
     LayoutUnit& logicalLeft, LayoutUnit& logicalRight) const
 {
-    RenderObject::SelectionState lineState = line->selectionState();
+    LayoutObject::SelectionState lineState = line->selectionState();
     if (lineState == SelectionNone) {
         logicalLeft = 0;
         logicalRight = 0;
@@ -3004,9 +3014,7 @@ LayoutRect RenderBlockFlow::blockSelectionGap(const RenderBlock* rootBlock, cons
     LayoutRect gapRect = rootBlock->logicalRectToPhysicalRect(rootBlockPhysicalPosition, LayoutRect(logicalLeft, logicalTop, logicalWidth, logicalHeight));
     if (paintInfo) {
         IntRect selectionGapRect = alignSelectionRectToDevicePixels(gapRect);
-        RenderDrawingRecorder recorder(paintInfo->context, *this, paintInfo->phase, selectionGapRect);
-        if (!recorder.canUseCachedDrawing())
-            paintInfo->context->fillRect(selectionGapRect, selectionBackgroundColor());
+        paintInfo->context->fillRect(selectionGapRect, selectionBackgroundColor());
     }
     return gapRect;
 }
@@ -3089,7 +3097,7 @@ GapRects RenderBlockFlow::blockSelectionGaps(const RenderBlock* rootBlock, const
 }
 
 LayoutRect RenderBlockFlow::logicalLeftSelectionGap(const RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
-    const RenderObject* selObj, LayoutUnit logicalLeft, LayoutUnit logicalTop, LayoutUnit logicalHeight, const PaintInfo* paintInfo) const
+    const LayoutObject* selObj, LayoutUnit logicalLeft, LayoutUnit logicalTop, LayoutUnit logicalHeight, const PaintInfo* paintInfo) const
 {
     LayoutUnit rootBlockLogicalTop = rootBlock->blockDirectionOffset(offsetFromRootBlock) + logicalTop;
     LayoutUnit rootBlockLogicalLeft = std::max(logicalLeftSelectionOffset(rootBlock, logicalTop), logicalLeftSelectionOffset(rootBlock, logicalTop + logicalHeight));
@@ -3101,15 +3109,13 @@ LayoutRect RenderBlockFlow::logicalLeftSelectionGap(const RenderBlock* rootBlock
     LayoutRect gapRect = rootBlock->logicalRectToPhysicalRect(rootBlockPhysicalPosition, LayoutRect(rootBlockLogicalLeft, rootBlockLogicalTop, rootBlockLogicalWidth, logicalHeight));
     if (paintInfo) {
         IntRect selectionGapRect = alignSelectionRectToDevicePixels(gapRect);
-        RenderDrawingRecorder recorder(paintInfo->context, *this, paintInfo->phase, selectionGapRect);
-        if (!recorder.canUseCachedDrawing())
-            paintInfo->context->fillRect(selectionGapRect, selObj->selectionBackgroundColor());
+        paintInfo->context->fillRect(selectionGapRect, selObj->selectionBackgroundColor());
     }
     return gapRect;
 }
 
 LayoutRect RenderBlockFlow::logicalRightSelectionGap(const RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
-    const RenderObject* selObj, LayoutUnit logicalRight, LayoutUnit logicalTop, LayoutUnit logicalHeight, const PaintInfo* paintInfo) const
+    const LayoutObject* selObj, LayoutUnit logicalRight, LayoutUnit logicalTop, LayoutUnit logicalHeight, const PaintInfo* paintInfo) const
 {
     LayoutUnit rootBlockLogicalTop = rootBlock->blockDirectionOffset(offsetFromRootBlock) + logicalTop;
     LayoutUnit rootBlockLogicalLeft = std::max(rootBlock->inlineDirectionOffset(offsetFromRootBlock) + logicalRight, max(logicalLeftSelectionOffset(rootBlock, logicalTop), logicalLeftSelectionOffset(rootBlock, logicalTop + logicalHeight)));
@@ -3121,15 +3127,13 @@ LayoutRect RenderBlockFlow::logicalRightSelectionGap(const RenderBlock* rootBloc
     LayoutRect gapRect = rootBlock->logicalRectToPhysicalRect(rootBlockPhysicalPosition, LayoutRect(rootBlockLogicalLeft, rootBlockLogicalTop, rootBlockLogicalWidth, logicalHeight));
     if (paintInfo) {
         IntRect selectionGapRect = alignSelectionRectToDevicePixels(gapRect);
-        RenderDrawingRecorder recorder(paintInfo->context, *this, paintInfo->phase, selectionGapRect);
-        if (!recorder.canUseCachedDrawing())
-            paintInfo->context->fillRect(selectionGapRect, selObj->selectionBackgroundColor());
+        paintInfo->context->fillRect(selectionGapRect, selObj->selectionBackgroundColor());
     }
     return gapRect;
 }
 
 LayoutRect RenderBlockFlow::lineEndingSelectionGap(const RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
-    const RenderObject* selObj, LayoutUnit logicalEnd, LayoutUnit logicalTop, LayoutUnit logicalHeight, const PaintInfo* paintInfo) const
+    const LayoutObject* selObj, LayoutUnit logicalEnd, LayoutUnit logicalTop, LayoutUnit logicalHeight, const PaintInfo* paintInfo) const
 {
     LayoutUnit rootBlockLogicalTop = rootBlock->blockDirectionOffset(offsetFromRootBlock) + logicalTop;
     LayoutUnit lineEndingLogicalLeft;
@@ -3176,12 +3180,12 @@ void RenderBlockFlow::getSelectionGapInfo(const RenderBlock* rootBlock, bool& le
 
     SelectionState state = rootBlock->selectionState();
     bool ltr = style()->isLeftToRightDirection();
-    leftGap = (state == RenderObject::SelectionInside)
-        || (state == RenderObject::SelectionEnd && ltr)
-        || (state == RenderObject::SelectionStart && !ltr);
-    rightGap = (state == RenderObject::SelectionInside)
-        || (state == RenderObject::SelectionStart && ltr)
-        || (state == RenderObject::SelectionEnd && !ltr);
+    leftGap = (state == LayoutObject::SelectionInside)
+        || (state == LayoutObject::SelectionEnd && ltr)
+        || (state == LayoutObject::SelectionStart && !ltr);
+    rightGap = (state == LayoutObject::SelectionInside)
+        || (state == LayoutObject::SelectionStart && ltr)
+        || (state == LayoutObject::SelectionEnd && !ltr);
 }
 
 void RenderBlockFlow::setPaginationStrut(LayoutUnit strut)
@@ -3189,9 +3193,18 @@ void RenderBlockFlow::setPaginationStrut(LayoutUnit strut)
     if (!m_rareData) {
         if (!strut)
             return;
-        m_rareData = adoptPtrWillBeNoop(new RenderBlockFlowRareData(this));
+        m_rareData = adoptPtr(new RenderBlockFlowRareData(this));
     }
     m_rareData->m_paginationStrut = strut;
+}
+
+void RenderBlockFlow::positionSpannerDescendant(LayoutMultiColumnSpannerPlaceholder& child)
+{
+    RenderBox& spanner = *child.rendererInFlowThread();
+    // FIXME: |spanner| is a descendant, but never a direct child, so the names here are bad, if
+    // nothing else.
+    setLogicalTopForChild(spanner, child.logicalTop());
+    determineLogicalLeftPositionForChild(spanner);
 }
 
 bool RenderBlockFlow::avoidsFloats() const
@@ -3201,7 +3214,7 @@ bool RenderBlockFlow::avoidsFloats() const
     return RenderBox::avoidsFloats() || !style()->hasAutoColumnCount() || !style()->hasAutoColumnWidth();
 }
 
-void RenderBlockFlow::moveChildrenTo(RenderBoxModelObject* toBoxModelObject, RenderObject* startChild, RenderObject* endChild, RenderObject* beforeChild, bool fullRemoveInsert)
+void RenderBlockFlow::moveChildrenTo(RenderBoxModelObject* toBoxModelObject, LayoutObject* startChild, LayoutObject* endChild, LayoutObject* beforeChild, bool fullRemoveInsert)
 {
     if (childrenInline())
         deleteLineBoxTree();
@@ -3257,35 +3270,35 @@ RootInlineBox* RenderBlockFlow::createRootInlineBox()
     return new RootInlineBox(*this);
 }
 
-bool RenderBlockFlow::isPagedOverflow(const RenderStyle* style)
+bool RenderBlockFlow::isPagedOverflow(const LayoutStyle& style)
 {
-    return style->isOverflowPaged() && node() != document().viewportDefiningElement();
+    return style.isOverflowPaged() && node() != document().viewportDefiningElement();
 }
 
-RenderBlockFlow::FlowThreadType RenderBlockFlow::flowThreadType(const RenderStyle* style)
+RenderBlockFlow::FlowThreadType RenderBlockFlow::flowThreadType(const LayoutStyle& style)
 {
     if (isPagedOverflow(style))
         return PagedFlowThread;
-    if (style->specifiesColumns())
+    if (style.specifiesColumns())
         return MultiColumnFlowThread;
     return NoFlowThread;
 }
 
-RenderMultiColumnFlowThread* RenderBlockFlow::createMultiColumnFlowThread(FlowThreadType type)
+LayoutMultiColumnFlowThread* RenderBlockFlow::createMultiColumnFlowThread(FlowThreadType type)
 {
     switch (type) {
     case MultiColumnFlowThread:
-        return RenderMultiColumnFlowThread::createAnonymous(document(), style());
+        return LayoutMultiColumnFlowThread::createAnonymous(document(), styleRef());
     case PagedFlowThread:
         // Paged overflow is currently done using the multicol implementation.
-        return RenderPagedFlowThread::createAnonymous(document(), style());
+        return LayoutPagedFlowThread::createAnonymous(document(), styleRef());
     default:
         ASSERT_NOT_REACHED();
         return nullptr;
     }
 }
 
-void RenderBlockFlow::createOrDestroyMultiColumnFlowThreadIfNeeded(const RenderStyle* oldStyle)
+void RenderBlockFlow::createOrDestroyMultiColumnFlowThreadIfNeeded(const LayoutStyle* oldStyle)
 {
     if (!document().regionBasedColumnsEnabled())
         return;
@@ -3294,11 +3307,11 @@ void RenderBlockFlow::createOrDestroyMultiColumnFlowThreadIfNeeded(const RenderS
     // both paged overflow and multicol on the same element, but then we need two flow
     // threads. Anyway, this is nothing to worry about until we can actually nest multicol properly
     // inside other fragmentation contexts.
-    FlowThreadType type = flowThreadType(style());
+    FlowThreadType type = flowThreadType(styleRef());
 
     if (multiColumnFlowThread()) {
         ASSERT(oldStyle);
-        if (type != flowThreadType(oldStyle)) {
+        if (type != flowThreadType(*oldStyle)) {
             // If we're no longer to be multicol/paged, destroy the flow thread. Also destroy it
             // when switching between multicol and paged, since that affects the column set
             // structure (multicol containers may have spanners, paged containers may not).
@@ -3310,7 +3323,7 @@ void RenderBlockFlow::createOrDestroyMultiColumnFlowThreadIfNeeded(const RenderS
     if (type == NoFlowThread || multiColumnFlowThread())
         return;
 
-    RenderMultiColumnFlowThread* flowThread = createMultiColumnFlowThread(type);
+    LayoutMultiColumnFlowThread* flowThread = createMultiColumnFlowThread(type);
     addChild(flowThread);
     flowThread->populate();
     RenderBlockFlowRareData& rareData = ensureRareData();
@@ -3323,7 +3336,7 @@ RenderBlockFlow::RenderBlockFlowRareData& RenderBlockFlow::ensureRareData()
     if (m_rareData)
         return *m_rareData;
 
-    m_rareData = adoptPtrWillBeNoop(new RenderBlockFlowRareData(this));
+    m_rareData = adoptPtr(new RenderBlockFlowRareData(this));
     return *m_rareData;
 }
 

@@ -17,10 +17,13 @@ void RenderingStats::TimeDeltaList::Append(base::TimeDelta value) {
 }
 
 void RenderingStats::TimeDeltaList::AddToTracedValue(
-    base::debug::TracedValue* list_value) const {
+    const char* name,
+    base::trace_event::TracedValue* list_value) const {
+  list_value->BeginArray(name);
   for (const auto& value : values) {
     list_value->AppendDouble(value.InMillisecondsF());
   }
+  list_value->EndArray();
 }
 
 void RenderingStats::TimeDeltaList::Add(const TimeDeltaList& other) {
@@ -40,38 +43,30 @@ RenderingStats::RenderingStats()
 RenderingStats::~RenderingStats() {
 }
 
-scoped_refptr<base::debug::ConvertableToTraceFormat>
+scoped_refptr<base::trace_event::ConvertableToTraceFormat>
 RenderingStats::AsTraceableData() const {
-  scoped_refptr<base::debug::TracedValue> record_data =
-      new base::debug::TracedValue();
+  scoped_refptr<base::trace_event::TracedValue> record_data =
+      new base::trace_event::TracedValue();
   record_data->SetInteger("frame_count", frame_count);
   record_data->SetInteger("visible_content_area", visible_content_area);
   record_data->SetInteger("approximated_visible_content_area",
                           approximated_visible_content_area);
-  record_data->BeginArray("draw_duration_ms");
-  draw_duration.AddToTracedValue(record_data.get());
-  record_data->EndArray();
+  draw_duration.AddToTracedValue("draw_duration_ms", record_data.get());
 
-  record_data->BeginArray("draw_duration_estimate_ms");
-  draw_duration_estimate.AddToTracedValue(record_data.get());
-  record_data->EndArray();
+  draw_duration_estimate.AddToTracedValue("draw_duration_estimate_ms",
+                                          record_data.get());
 
-  record_data->BeginArray("begin_main_frame_to_commit_duration_ms");
-  begin_main_frame_to_commit_duration.AddToTracedValue(record_data.get());
-  record_data->EndArray();
+  begin_main_frame_to_commit_duration.AddToTracedValue(
+      "begin_main_frame_to_commit_duration_ms", record_data.get());
 
-  record_data->BeginArray("begin_main_frame_to_commit_duration_estimate_ms");
   begin_main_frame_to_commit_duration_estimate.AddToTracedValue(
-      record_data.get());
-  record_data->EndArray();
+      "begin_main_frame_to_commit_duration_estimate_ms", record_data.get());
 
-  record_data->BeginArray("commit_to_activate_duration_ms");
-  commit_to_activate_duration.AddToTracedValue(record_data.get());
-  record_data->EndArray();
+  commit_to_activate_duration.AddToTracedValue("commit_to_activate_duration_ms",
+                                               record_data.get());
 
-  record_data->BeginArray("commit_to_activate_duration_estimate_ms");
-  commit_to_activate_duration_estimate.AddToTracedValue(record_data.get());
-  record_data->EndArray();
+  commit_to_activate_duration_estimate.AddToTracedValue(
+      "commit_to_activate_duration_estimate_ms", record_data.get());
   return record_data;
 }
 

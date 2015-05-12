@@ -39,8 +39,8 @@
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLHtmlElement.h"
+#include "core/layout/HitTestResult.h"
 #include "core/page/EventHandler.h"
-#include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderBlock.h"
 #include <algorithm>
 #include <cmath>
@@ -104,7 +104,7 @@ void findGoodTouchTargets(const IntRect& touchBox, LocalFrame* mainFrame, Vector
     WillBeHeapHashSet<RawPtrWillBeMember<Node>> blackList;
     for (const auto& hitResult : hitResults) {
         // Ignore any Nodes that can't be clicked on.
-        RenderObject* renderer = hitResult.get()->renderer();
+        LayoutObject* renderer = hitResult.get()->renderer();
         if (!renderer || !hitResult.get()->willRespondToMouseClickEvents())
             continue;
 

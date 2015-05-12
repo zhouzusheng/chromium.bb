@@ -49,6 +49,7 @@ ViECapturer::ViECapturer(int capture_id,
                                                    "ViECaptureThread")),
       capture_event_(*EventWrapper::Create()),
       deliver_event_(*EventWrapper::Create()),
+      stop_(false),
       effect_filter_(NULL),
       image_proc_module_(NULL),
       image_proc_module_ref_counter_(0),
@@ -70,12 +71,8 @@ ViECapturer::~ViECapturer() {
   module_process_thread_.DeRegisterModule(overuse_detector_.get());
 
   // Stop the thread.
-  deliver_cs_->Enter();
-  capture_cs_->Enter();
-  capture_thread_.SetNotAlive();
+  stop_ = true;
   capture_event_.Set();
-  capture_cs_->Leave();
-  deliver_cs_->Leave();
 
   // Stop the camera input.
   if (capture_module_) {
@@ -258,24 +255,8 @@ int32_t ViECapturer::SetCaptureDelay(int32_t delay_ms) {
   return 0;
 }
 
-int32_t ViECapturer::SetRotateCapturedFrames(
-  const RotateCapturedFrame rotation) {
-  VideoCaptureRotation converted_rotation = kCameraRotate0;
-  switch (rotation) {
-    case RotateCapturedFrame_0:
-      converted_rotation = kCameraRotate0;
-      break;
-    case RotateCapturedFrame_90:
-      converted_rotation = kCameraRotate90;
-      break;
-    case RotateCapturedFrame_180:
-      converted_rotation = kCameraRotate180;
-      break;
-    case RotateCapturedFrame_270:
-      converted_rotation = kCameraRotate270;
-      break;
-  }
-  return capture_module_->SetCaptureRotation(converted_rotation);
+int32_t ViECapturer::SetVideoRotation(const VideoRotation rotation) {
+  return capture_module_->SetCaptureRotation(rotation);
 }
 
 int ViECapturer::IncomingFrame(unsigned char* video_frame,
@@ -454,6 +435,9 @@ bool ViECapturer::ViECaptureThreadFunction(void* obj) {
 bool ViECapturer::ViECaptureProcess() {
   int64_t capture_time = -1;
   if (capture_event_.Wait(kThreadWaitTimeMs) == kEventSignaled) {
+    if (stop_)
+      return false;
+
     overuse_detector_->FrameProcessingStarted();
     int64_t encode_start_time = -1;
     deliver_cs_->Enter();

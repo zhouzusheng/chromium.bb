@@ -56,11 +56,11 @@ namespace blink {
         int y() const;
 
         // Page point in "absolute" coordinates (i.e. post-zoomed, page-relative coords,
-        // usable with RenderObject::absoluteToLocal).
+        // usable with LayoutObject::absoluteToLocal).
         const LayoutPoint& absoluteLocation() const { return m_absoluteLocation; }
         void setAbsoluteLocation(const LayoutPoint& p) { m_absoluteLocation = p; }
 
-        virtual void trace(Visitor*) override;
+        DECLARE_VIRTUAL_TRACE();
 
     protected:
         MouseRelatedEvent();

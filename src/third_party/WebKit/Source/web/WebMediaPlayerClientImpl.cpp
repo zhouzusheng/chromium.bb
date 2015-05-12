@@ -8,8 +8,8 @@
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/TimeRanges.h"
+#include "core/layout/compositing/LayerCompositor.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/compositing/RenderLayerCompositor.h"
 #include "modules/encryptedmedia/HTMLMediaElementEncryptedMedia.h"
 #include "modules/mediastream/MediaStreamRegistry.h"
 #include "platform/audio/AudioBus.h"
@@ -218,6 +218,8 @@ void WebMediaPlayerClientImpl::load(WebMediaPlayer::LoadType loadType, const WTF
 
     m_webMediaPlayer->setPoster(poster);
 
+    setPreload(mediaElement().preloadType());
+
     m_webMediaPlayer->load(loadType, kurl, corsMode);
 
     if (mediaElement().isFullscreen())
@@ -306,7 +308,7 @@ void WebMediaPlayerClientImpl::AudioClientImpl::setFormat(size_t numberOfChannel
         m_client->setFormat(numberOfChannels, sampleRate);
 }
 
-void WebMediaPlayerClientImpl::AudioClientImpl::trace(Visitor* visitor)
+DEFINE_TRACE(WebMediaPlayerClientImpl::AudioClientImpl)
 {
     visitor->trace(m_client);
 }

@@ -43,7 +43,7 @@
 
 namespace blink {
 
-HashMap<String, RefPtr<SkTypeface> >* FontCache::s_sideloadedFonts = 0;
+HashMap<String, RefPtr<SkTypeface>>* FontCache::s_sideloadedFonts = 0;
 
 // Cached system font metrics.
 AtomicString* FontCache::s_menuFontFamilyName = 0;
@@ -58,7 +58,7 @@ namespace {
 int32_t ensureMinimumFontHeightIfNeeded(int32_t fontHeight)
 {
     // Adjustment for codepage 936 to make the fonts more legible in Simplified Chinese.
-    // Please refer to RenderThemeChromiumFontProviderWin.cpp for more information.
+    // Please refer to LayoutThemeFontProviderWin.cpp for more information.
     return (fontHeight < 12.0f) && (GetACP() == 936) ? 12.0f : fontHeight;
 }
 
@@ -68,7 +68,7 @@ int32_t ensureMinimumFontHeightIfNeeded(int32_t fontHeight)
 void FontCache::addSideloadedFontForTesting(SkTypeface* typeface)
 {
     if (!s_sideloadedFonts)
-        s_sideloadedFonts = new HashMap<String, RefPtr<SkTypeface> >;
+        s_sideloadedFonts = new HashMap<String, RefPtr<SkTypeface>>;
     SkString name;
     typeface->getFamilyName(&name);
     s_sideloadedFonts->set(name.c_str(), adoptRef(typeface));

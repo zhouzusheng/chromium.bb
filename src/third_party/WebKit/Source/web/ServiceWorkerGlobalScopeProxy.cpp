@@ -56,9 +56,9 @@
 #include "modules/serviceworkers/WaitUntilObserver.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "public/platform/WebCrossOriginServiceWorkerClient.h"
-#include "public/platform/WebNotificationData.h"
 #include "public/platform/WebServiceWorkerEventResult.h"
 #include "public/platform/WebServiceWorkerRequest.h"
+#include "public/platform/modules/notifications/WebNotificationData.h"
 #include "public/web/WebSerializedScriptValue.h"
 #include "public/web/WebServiceWorkerContextClient.h"
 #include "web/WebEmbeddedWorkerImpl.h"
@@ -74,6 +74,12 @@ PassOwnPtr<ServiceWorkerGlobalScopeProxy> ServiceWorkerGlobalScopeProxy::create(
 
 ServiceWorkerGlobalScopeProxy::~ServiceWorkerGlobalScopeProxy()
 {
+}
+
+void ServiceWorkerGlobalScopeProxy::setRegistration(WebServiceWorkerRegistration* registration)
+{
+    ASSERT(m_workerGlobalScope);
+    m_workerGlobalScope->setRegistration(registration);
 }
 
 void ServiceWorkerGlobalScopeProxy::dispatchActivateEvent(int eventID)

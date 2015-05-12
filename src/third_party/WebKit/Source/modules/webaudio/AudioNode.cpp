@@ -198,6 +198,13 @@ void AudioNode::connect(AudioNode* destination, unsigned outputIndex, unsigned i
     ASSERT(isMainThread());
     AudioContext::AutoLocker locker(context());
 
+    if (context()->isContextClosed()) {
+        exceptionState.throwDOMException(
+            InvalidStateError,
+            "Cannot connect after the context has been closed.");
+        return;
+    }
+
     if (!destination) {
         exceptionState.throwDOMException(
             SyntaxError,
@@ -239,6 +246,13 @@ void AudioNode::connect(AudioParam* param, unsigned outputIndex, ExceptionState&
     ASSERT(isMainThread());
     AudioContext::AutoLocker locker(context());
 
+    if (context()->isContextClosed()) {
+        exceptionState.throwDOMException(
+            InvalidStateError,
+            "Cannot connect after the context has been closed.");
+        return;
+    }
+
     if (!param) {
         exceptionState.throwDOMException(
             SyntaxError,
@@ -278,6 +292,18 @@ void AudioNode::disconnect(unsigned outputIndex, ExceptionState& exceptionState)
 
     AudioNodeOutput* output = this->output(outputIndex);
     output->disconnectAll();
+}
+
+void AudioNode::disconnectWithoutException(unsigned outputIndex)
+{
+    ASSERT(isMainThread());
+    AudioContext::AutoLocker locker(context());
+
+    // Sanity check input and output indices.
+    if (outputIndex < numberOfOutputs()) {
+        AudioNodeOutput* output = this->output(outputIndex);
+        output->disconnectAll();
+    }
 }
 
 unsigned long AudioNode::channelCount()
@@ -567,7 +593,7 @@ void AudioNode::printNodeCounts()
 
 #endif // DEBUG_AUDIONODE_REFERENCES
 
-void AudioNode::trace(Visitor* visitor)
+DEFINE_TRACE(AudioNode)
 {
     visitor->trace(m_context);
     visitor->trace(m_inputs);

@@ -148,6 +148,16 @@ CSSParserToken CSSTokenizer::asterisk(UChar cc)
     return CSSParserToken(DelimiterToken, '*');
 }
 
+CSSParserToken CSSTokenizer::lessThan(UChar cc)
+{
+    ASSERT(cc == '<');
+    if (m_input.peek(0) == '!' && m_input.peek(1) == '-' && m_input.peek(2) == '-') {
+        consume(3);
+        return CSSParserToken(CDOToken);
+    }
+    return CSSParserToken(DelimiterToken, '<');
+}
+
 CSSParserToken CSSTokenizer::comma(UChar cc)
 {
     return CSSParserToken(CommaToken);
@@ -158,6 +168,10 @@ CSSParserToken CSSTokenizer::hyphenMinus(UChar cc)
     if (nextCharsAreNumber(cc)) {
         reconsume(cc);
         return consumeNumericToken();
+    }
+    if (m_input.peek(0) == '-' && m_input.peek(1) == '>') {
+        consume(2);
+        return CSSParserToken(CDCToken);
     }
     if (nextCharsAreIdentifier(cc)) {
         reconsume(cc);
@@ -294,6 +308,10 @@ void CSSTokenizer::tokenize(String string, Vector<CSSParserToken>& outTokens)
     if (string.isEmpty())
         return;
 
+    // To avoid resizing we err on the side of reserving too much space.
+    // Most strings we tokenize have about 3.5 to 5 characters per token.
+    outTokens.reserveInitialCapacity(string.length() / 3);
+
     CSSTokenizerInputStream input(string);
     CSSTokenizer tokenizer(input);
     while (true) {
@@ -328,24 +346,25 @@ CSSParserToken CSSTokenizer::nextToken()
     return CSSParserToken(DelimiterToken, cc);
 }
 
-static int getSign(CSSTokenizerInputStream& input, unsigned& offset)
+static NumericSign getSign(CSSTokenizerInputStream& input, unsigned& offset)
 {
-    int sign = 1;
     if (input.nextInputChar() == '+') {
         ++offset;
-    } else if (input.peek(offset) == '-') {
-        sign = -1;
-        ++offset;
+        return PlusSign;
     }
-    return sign;
+    if (input.nextInputChar() == '-') {
+        ++offset;
+        return MinusSign;
+    }
+    return NoSign;
 }
 
-static unsigned long long getInteger(CSSTokenizerInputStream& input, unsigned& offset)
+static double getInteger(CSSTokenizerInputStream& input, unsigned& offset)
 {
     unsigned intStartPos = offset;
     offset = input.skipWhilePredicate<isASCIIDigit>(offset);
     unsigned intEndPos = offset;
-    return input.getUInt(intStartPos, intEndPos);
+    return input.getDouble(intStartPos, intEndPos);
 }
 
 static double getFraction(CSSTokenizerInputStream& input, unsigned& offset)
@@ -357,7 +376,7 @@ static double getFraction(CSSTokenizerInputStream& input, unsigned& offset)
     return input.getDouble(startOffset, offset);
 }
 
-static unsigned long long getExponent(CSSTokenizerInputStream& input, unsigned& offset, int& sign)
+static double getExponent(CSSTokenizerInputStream& input, unsigned& offset, int& sign)
 {
     unsigned exponentStartPos = 0;
     unsigned exponentEndPos = 0;
@@ -376,7 +395,7 @@ static unsigned long long getExponent(CSSTokenizerInputStream& input, unsigned& 
         if (exponentEndPos == exponentStartPos)
             offset = offsetBeforeExponent;
     }
-    return input.getUInt(exponentStartPos, exponentEndPos);
+    return input.getDouble(exponentStartPos, exponentEndPos);
 }
 
 // This method merges the following spec sections for efficiency
@@ -389,20 +408,22 @@ CSSParserToken CSSTokenizer::consumeNumber()
     double value = 0;
     unsigned offset = 0;
     int exponentSign = 1;
-    int sign = getSign(m_input, offset);
-    unsigned long long integerPart = getInteger(m_input, offset);
+    NumericSign sign = getSign(m_input, offset);
+    double integerPart = getInteger(m_input, offset);
     unsigned integerPartEndOffset = offset;
 
     double fractionPart = getFraction(m_input, offset);
-    unsigned long long exponentPart = getExponent(m_input, offset, exponentSign);
+    double exponentPart = getExponent(m_input, offset, exponentSign);
     double exponent = pow(10, (float)exponentSign * (double)exponentPart);
-    value = (double)sign * ((double)integerPart + fractionPart) * exponent;
+    value = ((double)integerPart + fractionPart) * exponent;
+    if (sign == MinusSign)
+        value = -value;
 
     m_input.advance(offset);
     if (offset != integerPartEndOffset)
         type = NumberValueType;
 
-    return CSSParserToken(NumberToken, value, type);
+    return CSSParserToken(NumberToken, value, type, sign);
 }
 
 // http://www.w3.org/TR/css3-syntax/#consume-a-numeric-token
@@ -620,7 +641,7 @@ String CSSTokenizer::consumeName()
 }
 
 // http://dev.w3.org/csswg/css-syntax/#consume-an-escaped-code-point
-UChar CSSTokenizer::consumeEscape()
+UChar32 CSSTokenizer::consumeEscape()
 {
     UChar cc = consume();
     ASSERT(!isNewLine(cc));
@@ -635,8 +656,9 @@ UChar CSSTokenizer::consumeEscape()
         };
         consumeSingleWhitespaceIfNext();
         bool ok = false;
-        UChar codePoint = hexChars.toString().toUIntStrict(&ok, 16);
-        if (!ok)
+        UChar32 codePoint = hexChars.toString().toUIntStrict(&ok, 16);
+        ASSERT(ok);
+        if (codePoint == 0 || (0xD800 <= codePoint && codePoint <= 0xDFFF) || codePoint > 0x10FFFF)
             return WTF::Unicode::replacementCharacter;
         return codePoint;
     }

@@ -57,6 +57,7 @@
 #include <openssl/hmac.h>
 
 #include <assert.h>
+#include <string.h>
 
 #include <openssl/mem.h>
 
@@ -74,13 +75,6 @@ uint8_t *HMAC(const EVP_MD *evp_md, const void *key, size_t key_len,
     out = static_out_buffer;
   }
 
-  /* If key_len is 0, the value of key doesn't matter. However, if we pass
-   * key == NULL into HMAC_Init, it interprets it to mean "use the previous
-   * value" instead of using a key of length 0. */
-  if (key == NULL && key_len == 0) {
-    key = static_out_buffer;
-  }
-
   HMAC_CTX_init(&ctx);
   if (!HMAC_Init(&ctx, key, key_len, evp_md) ||
       !HMAC_Update(&ctx, data, data_len) ||
@@ -93,6 +87,8 @@ uint8_t *HMAC(const EVP_MD *evp_md, const void *key, size_t key_len,
 }
 
 void HMAC_CTX_init(HMAC_CTX *ctx) {
+  ctx->md = NULL;
+  ctx->key_length = 0;
   EVP_MD_CTX_init(&ctx->i_ctx);
   EVP_MD_CTX_init(&ctx->o_ctx);
   EVP_MD_CTX_init(&ctx->md_ctx);
@@ -111,6 +107,15 @@ int HMAC_Init_ex(HMAC_CTX *ctx, const void *key, size_t key_len,
   uint8_t pad[HMAC_MAX_MD_CBLOCK];
 
   if (md != NULL) {
+    if (ctx->md == NULL && key == NULL && ctx->key_length == 0) {
+      /* TODO(eroman): Change the API instead of this hack.
+       * If a key hasn't yet been assigned to the context, then default to using
+       * an all-zero key. This is to work around callers of
+       * HMAC_Init_ex(key=NULL, key_len=0) intending to set a zero-length key.
+       * Rather than resulting in uninitialized memory reads, it will
+       * predictably use a zero key. */
+      memset(ctx->key, 0, sizeof(ctx->key));
+    }
     reset = 1;
     ctx->md = md;
   } else {
@@ -188,10 +193,10 @@ size_t HMAC_size(const HMAC_CTX *ctx) {
   return EVP_MD_size(ctx->md);
 }
 
-int HMAC_CTX_copy(HMAC_CTX *dest, const HMAC_CTX *src) {
-  if (!EVP_MD_CTX_copy(&dest->i_ctx, &src->i_ctx) ||
-      !EVP_MD_CTX_copy(&dest->o_ctx, &src->o_ctx) ||
-      !EVP_MD_CTX_copy(&dest->md_ctx, &src->md_ctx)) {
+int HMAC_CTX_copy_ex(HMAC_CTX *dest, const HMAC_CTX *src) {
+  if (!EVP_MD_CTX_copy_ex(&dest->i_ctx, &src->i_ctx) ||
+      !EVP_MD_CTX_copy_ex(&dest->o_ctx, &src->o_ctx) ||
+      !EVP_MD_CTX_copy_ex(&dest->md_ctx, &src->md_ctx)) {
     return 0;
   }
 
@@ -212,4 +217,9 @@ int HMAC_Init(HMAC_CTX *ctx, const void *key, int key_len, const EVP_MD *md) {
     HMAC_CTX_init(ctx);
   }
   return HMAC_Init_ex(ctx, key, key_len, md, NULL);
+}
+
+int HMAC_CTX_copy(HMAC_CTX *dest, const HMAC_CTX *src) {
+  HMAC_CTX_init(dest);
+  return HMAC_CTX_copy_ex(dest, src);
 }

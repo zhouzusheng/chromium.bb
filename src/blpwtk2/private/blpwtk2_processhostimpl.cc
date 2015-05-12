@@ -89,7 +89,7 @@ ProcessHostImpl::~ProcessHostImpl()
         d_renderProcessHost.release());
 
     if (d_processHandle != base::kNullProcessHandle) {
-        base::CloseProcessHandle(d_processHandle);
+        ::CloseHandle(d_processHandle);
     }
 }
 
@@ -201,18 +201,15 @@ void ProcessHostImpl::OnChannelConnected(int32 peer_pid)
     DLOG(INFO) << "channel connected: peer_pid(" << peer_pid << ")";
     if (peer_pid == base::GetCurrentProcId()) {
         d_processHandle = base::GetCurrentProcessHandle();
+        CHECK(d_processHandle != base::kNullProcessHandle);
     }
     else {
-        bool success =
-            base::OpenProcessHandleWithAccess(
-                peer_pid,
-                base::kProcessAccessDuplicateHandle |
-                base::kProcessAccessQueryInformation |
-                base::kProcessAccessWaitForTermination,
-                &d_processHandle);
-        CHECK(success);
+        d_processHandle = ::OpenProcess(
+            PROCESS_DUP_HANDLE | PROCESS_QUERY_INFORMATION | SYNCHRONIZE,
+            FALSE,
+            peer_pid);
+        CHECK(d_processHandle != base::kNullProcessHandle);
     }
-    CHECK(d_processHandle != base::kNullProcessHandle);
 }
 
 void ProcessHostImpl::OnChannelError()

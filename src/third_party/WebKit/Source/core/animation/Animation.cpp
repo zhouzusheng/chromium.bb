@@ -40,9 +40,9 @@
 #include "core/animation/Interpolation.h"
 #include "core/animation/KeyframeEffectModel.h"
 #include "core/dom/Element.h"
-#include "core/dom/NodeRenderStyle.h"
+#include "core/dom/NodeLayoutStyle.h"
 #include "core/frame/UseCounter.h"
-#include "core/rendering/RenderLayer.h"
+#include "core/layout/Layer.h"
 
 namespace blink {
 
@@ -173,7 +173,7 @@ void Animation::clearEffects()
 
     m_sampledEffect->clear();
     m_sampledEffect = nullptr;
-    cancelAnimationOnCompositor();
+    restartAnimationOnCompositor();
     m_target->setNeedsAnimationStyleRecalc();
     invalidate();
 }
@@ -250,10 +250,10 @@ bool Animation::isCandidateForAnimationOnCompositor(double playerPlaybackRate) c
 {
     if (!effect()
         || !m_target
-        || (m_target->renderStyle() && m_target->renderStyle()->hasMotionPath()))
+        || (m_target->layoutStyle() && m_target->layoutStyle()->hasMotionPath()))
         return false;
 
-    return CompositorAnimations::instance()->isCandidateForAnimationOnCompositor(specifiedTiming(), *effect(), playerPlaybackRate);
+    return CompositorAnimations::instance()->isCandidateForAnimationOnCompositor(specifiedTiming(), *m_target, player(), *effect(), playerPlaybackRate);
 }
 
 bool Animation::maybeStartAnimationOnCompositor(int group, double startTime, double currentTime, double playerPlaybackRate)
@@ -263,7 +263,7 @@ bool Animation::maybeStartAnimationOnCompositor(int group, double startTime, dou
         return false;
     if (!CompositorAnimations::instance()->canStartAnimationOnCompositor(*m_target))
         return false;
-    if (!CompositorAnimations::instance()->startAnimationOnCompositor(*m_target, group, startTime, currentTime, specifiedTiming(), *effect(), m_compositorAnimationIds, playerPlaybackRate))
+    if (!CompositorAnimations::instance()->startAnimationOnCompositor(*m_target, group, startTime, currentTime, specifiedTiming(), player(), *effect(), m_compositorAnimationIds, playerPlaybackRate))
         return false;
     ASSERT(!m_compositorAnimationIds.isEmpty());
     return true;
@@ -284,20 +284,32 @@ bool Animation::affects(CSSPropertyID property) const
     return m_effect && m_effect->affects(property);
 }
 
-void Animation::cancelAnimationOnCompositor()
+bool Animation::cancelAnimationOnCompositor()
 {
     // FIXME: cancelAnimationOnCompositor is called from withins style recalc.
     // This queries compositingState, which is not necessarily up to date.
     // https://code.google.com/p/chromium/issues/detail?id=339847
     DisableCompositingQueryAsserts disabler;
     if (!hasActiveAnimationsOnCompositor())
-        return;
+        return false;
     if (!m_target || !m_target->renderer())
-        return;
+        return false;
     for (const auto& compositorAnimationId : m_compositorAnimationIds)
         CompositorAnimations::instance()->cancelAnimationOnCompositor(*m_target, compositorAnimationId);
     m_compositorAnimationIds.clear();
-    player()->setCompositorPending(true);
+    return true;
+}
+
+void Animation::restartAnimationOnCompositor()
+{
+    if (cancelAnimationOnCompositor())
+        player()->setCompositorPending(true);
+}
+
+void Animation::cancelIncompatibleAnimationsOnCompositor()
+{
+    if (m_target && player() && effect())
+        CompositorAnimations::instance()->cancelIncompatibleAnimationsOnCompositor(*m_target, *player(), *effect());
 }
 
 void Animation::pauseAnimationForTestingOnCompositor(double pauseTime)

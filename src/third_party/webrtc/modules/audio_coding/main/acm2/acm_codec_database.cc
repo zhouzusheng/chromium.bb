@@ -19,6 +19,7 @@
 
 #include <assert.h>
 
+#include "webrtc/base/checks.h"
 #include "webrtc/modules/audio_coding/main/acm2/acm_common_defs.h"
 #include "webrtc/system_wrappers/interface/trace.h"
 
@@ -196,7 +197,7 @@ const ACMCodecDB::CodecSettings ACMCodecDB::codec_settings_[] = {
 #if (defined(WEBRTC_CODEC_ISAC) || defined(WEBRTC_CODEC_ISACFX))
     {2, {kIsacPacSize480, kIsacPacSize960}, 0, 1, true},
 # if (defined(WEBRTC_CODEC_ISAC))
-    {1, {kIsacPacSize960}, 0, 1, false},
+    {1, {kIsacPacSize960}, 0, 1, true},
     {1, {kIsacPacSize1440}, 0, 1, true},
 # endif
 #endif
@@ -465,9 +466,6 @@ int ACMCodecDB::CodecNumber(const CodecInst& codec_inst, int* mirror_id) {
   } else if (STR_CASE_CMP("speex", codec_inst.plname) == 0) {
     return IsSpeexRateValid(codec_inst.rate)
         ? codec_id : kInvalidRate;
-  } else if (STR_CASE_CMP("celt", codec_inst.plname) == 0) {
-    return IsCeltRateValid(codec_inst.rate)
-        ? codec_id : kInvalidRate;
   }
 
   return IsRateValid(codec_id, codec_inst.rate) ?
@@ -567,43 +565,44 @@ int ACMCodecDB::MirrorID(int codec_id) {
 }
 
 // Creates memory/instance for storing codec state.
-ACMGenericCodec* ACMCodecDB::CreateCodecInstance(const CodecInst& codec_inst) {
+ACMGenericCodec* ACMCodecDB::CreateCodecInstance(const CodecInst& codec_inst,
+                                                 int cng_pt_nb,
+                                                 int cng_pt_wb,
+                                                 int cng_pt_swb,
+                                                 int cng_pt_fb,
+                                                 bool enable_red,
+                                                 int red_payload_type) {
   // All we have support for right now.
   if (!STR_CASE_CMP(codec_inst.plname, "ISAC")) {
 #if (defined(WEBRTC_CODEC_ISAC) || defined(WEBRTC_CODEC_ISACFX))
-    return new ACMISAC(kISAC);
+    return new ACMGenericCodecWrapper(codec_inst, cng_pt_nb, cng_pt_wb,
+                                      cng_pt_swb, cng_pt_fb, enable_red,
+                                      red_payload_type);
 #endif
-  } else if (!STR_CASE_CMP(codec_inst.plname, "PCMU")) {
-    if (codec_inst.channels == 1) {
-      return new ACMPCMU(kPCMU);
-    } else {
-      return new ACMPCMU(kPCMU_2ch);
-    }
-  } else if (!STR_CASE_CMP(codec_inst.plname, "PCMA")) {
-    if (codec_inst.channels == 1) {
-      return new ACMPCMA(kPCMA);
-    } else {
-      return new ACMPCMA(kPCMA_2ch);
-    }
+  } else if (!STR_CASE_CMP(codec_inst.plname, "PCMU") ||
+             !STR_CASE_CMP(codec_inst.plname, "PCMA")) {
+    return new ACMGenericCodecWrapper(codec_inst, cng_pt_nb, cng_pt_wb,
+                                      cng_pt_swb, cng_pt_fb, enable_red,
+                                      red_payload_type);
   } else if (!STR_CASE_CMP(codec_inst.plname, "ILBC")) {
 #ifdef WEBRTC_CODEC_ILBC
-    return new ACMILBC(kILBC);
+    return new ACMGenericCodecWrapper(codec_inst, cng_pt_nb, cng_pt_wb,
+                                      cng_pt_swb, cng_pt_fb, enable_red,
+                                      red_payload_type);
 #endif
   } else if (!STR_CASE_CMP(codec_inst.plname, "AMR")) {
 #ifdef WEBRTC_CODEC_AMR
-    return new ACMAMR(kGSMAMR);
+    return new ACMAMR(kGSMAMR, enable_red);
 #endif
   } else if (!STR_CASE_CMP(codec_inst.plname, "AMR-WB")) {
 #ifdef WEBRTC_CODEC_AMRWB
-    return new ACMAMRwb(kGSMAMRWB);
+    return new ACMAMRwb(kGSMAMRWB, enable_red);
 #endif
   } else if (!STR_CASE_CMP(codec_inst.plname, "G722")) {
 #ifdef WEBRTC_CODEC_G722
-    if (codec_inst.channels == 1) {
-      return new ACMG722(kG722);
-    } else {
-      return new ACMG722(kG722_2ch);
-    }
+    return new ACMGenericCodecWrapper(codec_inst, cng_pt_nb, cng_pt_wb,
+                                      cng_pt_swb, cng_pt_fb, enable_red,
+                                      red_payload_type);
 #endif
   } else if (!STR_CASE_CMP(codec_inst.plname, "G7221")) {
     switch (codec_inst.plfreq) {
@@ -626,9 +625,10 @@ ACMGenericCodec* ACMCodecDB::CreateCodecInstance(const CodecInst& codec_inst) {
           default: {
             return NULL;
           }
-          return new ACMG722_1(codec_id);
         }
+        return new ACMG722_1(codec_id, enable_red);
 #endif
+        FALLTHROUGH();
       }
       case 32000: {
 #ifdef WEBRTC_CODEC_G722_1C
@@ -649,10 +649,13 @@ ACMGenericCodec* ACMCodecDB::CreateCodecInstance(const CodecInst& codec_inst) {
           default: {
             return NULL;
           }
-          return new ACMG722_1C(codec_id);
         }
+        return new ACMG722_1C(codec_id, enable_red);
 #endif
+        FALLTHROUGH();
       }
+      default:
+        FATAL();
     }
   } else if (!STR_CASE_CMP(codec_inst.plname, "CN")) {
     // For CN we need to check sampling frequency to know what codec to create.
@@ -680,18 +683,20 @@ ACMGenericCodec* ACMCodecDB::CreateCodecInstance(const CodecInst& codec_inst) {
         return NULL;
       }
     }
-    return new ACMCNG(codec_id);
+    return new ACMCNG(codec_id, enable_red);
   } else if (!STR_CASE_CMP(codec_inst.plname, "G729")) {
 #ifdef WEBRTC_CODEC_G729
-    return new ACMG729(kG729);
+    return new ACMG729(kG729, enable_red);
 #endif
   } else if (!STR_CASE_CMP(codec_inst.plname, "G7291")) {
 #ifdef WEBRTC_CODEC_G729_1
-    return new ACMG729_1(kG729_1);
+    return new ACMG729_1(kG729_1, enable_red);
 #endif
   } else if (!STR_CASE_CMP(codec_inst.plname, "opus")) {
 #ifdef WEBRTC_CODEC_OPUS
-    return new ACMOpus(kOpus);
+    return new ACMGenericCodecWrapper(codec_inst, cng_pt_nb, cng_pt_wb,
+                                      cng_pt_swb, cng_pt_fb, enable_red,
+                                      red_payload_type);
 #endif
   } else if (!STR_CASE_CMP(codec_inst.plname, "speex")) {
 #ifdef WEBRTC_CODEC_SPEEX
@@ -709,7 +714,7 @@ ACMGenericCodec* ACMCodecDB::CreateCodecInstance(const CodecInst& codec_inst) {
         return NULL;
       }
     }
-    return new ACMSPEEX(codec_id);
+    return new ACMSPEEX(codec_id, enable_red);
 #endif
   } else if (!STR_CASE_CMP(codec_inst.plname, "CN")) {
     // For CN we need to check sampling frequency to know what codec to create.
@@ -737,57 +742,20 @@ ACMGenericCodec* ACMCodecDB::CreateCodecInstance(const CodecInst& codec_inst) {
         return NULL;
       }
     }
-    return new ACMCNG(codec_id);
+    return new ACMCNG(codec_id, enable_red);
   } else if (!STR_CASE_CMP(codec_inst.plname, "L16")) {
 #ifdef WEBRTC_CODEC_PCM16
-    // For L16 we need to check sampling frequency to know what codec to create.
-    int codec_id;
-    if (codec_inst.channels == 1) {
-      switch (codec_inst.plfreq) {
-        case 8000: {
-          codec_id = kPCM16B;
-          break;
-        }
-        case 16000: {
-          codec_id = kPCM16Bwb;
-          break;
-        }
-        case 32000: {
-          codec_id = kPCM16Bswb32kHz;
-          break;
-        }
-        default: {
-          return NULL;
-        }
-      }
-    } else {
-      switch (codec_inst.plfreq) {
-        case 8000: {
-          codec_id = kPCM16B_2ch;
-          break;
-        }
-        case 16000: {
-          codec_id = kPCM16Bwb_2ch;
-          break;
-        }
-        case 32000: {
-          codec_id = kPCM16Bswb32kHz_2ch;
-          break;
-        }
-        default: {
-          return NULL;
-        }
-      }
-    }
-    return new ACMPCM16B(codec_id);
+    return new ACMGenericCodecWrapper(codec_inst, cng_pt_nb, cng_pt_wb,
+                                      cng_pt_swb, cng_pt_fb, enable_red,
+                                      red_payload_type);
 #endif
   } else if (!STR_CASE_CMP(codec_inst.plname, "telephone-event")) {
 #ifdef WEBRTC_CODEC_AVT
-    return new ACMDTMFPlayout(kAVT);
+    return new ACMDTMFPlayout(kAVT, enable_red);
 #endif
   } else if (!STR_CASE_CMP(codec_inst.plname, "red")) {
 #ifdef WEBRTC_CODEC_RED
-    return new ACMRED(kRED);
+    return new ACMRED(kRED, enable_red);
 #endif
   }
   return NULL;
@@ -901,15 +869,6 @@ bool ACMCodecDB::IsOpusRateValid(int rate) {
     return false;
   }
   return true;
-}
-
-// Checks if the bitrate is valid for Celt.
-bool ACMCodecDB::IsCeltRateValid(int rate) {
-  if ((rate >= 48000) && (rate <= 128000)) {
-    return true;
-  } else {
-    return false;
-  }
 }
 
 // Checks if the payload type is in the valid range.

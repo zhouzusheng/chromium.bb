@@ -25,13 +25,12 @@
 
 #include "core/svg/SVGMaskElement.h"
 
-#include "core/rendering/svg/RenderSVGResourceMasker.h"
+#include "core/layout/svg/LayoutSVGResourceMasker.h"
 
 namespace blink {
 
 inline SVGMaskElement::SVGMaskElement(Document& document)
     : SVGElement(SVGNames::maskTag, document)
-    , SVGTests(this)
     , m_x(SVGAnimatedLength::create(this, SVGNames::xAttr, SVGLength::create(LengthModeWidth), AllowNegativeLengths))
     , m_y(SVGAnimatedLength::create(this, SVGNames::yAttr, SVGLength::create(LengthModeHeight), AllowNegativeLengths))
     , m_width(SVGAnimatedLength::create(this, SVGNames::widthAttr, SVGLength::create(LengthModeWidth), ForbidNegativeLengths))
@@ -39,6 +38,8 @@ inline SVGMaskElement::SVGMaskElement(Document& document)
     , m_maskUnits(SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>::create(this, SVGNames::maskUnitsAttr, SVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX))
     , m_maskContentUnits(SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>::create(this, SVGNames::maskContentUnitsAttr, SVGUnitTypes::SVG_UNIT_TYPE_USERSPACEONUSE))
 {
+    SVGTests::initialize(this);
+
     // Spec: If the x/y attribute is not specified, the effect is as if a value of "-10%" were specified.
     m_x->setDefaultValueAsString("-10%");
     m_y->setDefaultValueAsString("-10%");
@@ -55,7 +56,7 @@ inline SVGMaskElement::SVGMaskElement(Document& document)
     addToPropertyMap(m_maskContentUnits);
 }
 
-void SVGMaskElement::trace(Visitor* visitor)
+DEFINE_TRACE(SVGMaskElement)
 {
     visitor->trace(m_x);
     visitor->trace(m_y);
@@ -84,6 +85,31 @@ bool SVGMaskElement::isSupportedAttribute(const QualifiedName& attrName)
     return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
+bool SVGMaskElement::isPresentationAttribute(const QualifiedName& attrName) const
+{
+    if (attrName == SVGNames::xAttr || attrName == SVGNames::yAttr)
+        return true;
+    return SVGElement::isPresentationAttribute(attrName);
+}
+
+bool SVGMaskElement::isPresentationAttributeWithSVGDOM(const QualifiedName& attrName) const
+{
+    if (attrName == SVGNames::xAttr || attrName == SVGNames::yAttr)
+        return true;
+    return SVGElement::isPresentationAttributeWithSVGDOM(attrName);
+}
+
+void SVGMaskElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStylePropertySet* style)
+{
+    RefPtrWillBeRawPtr<SVGAnimatedPropertyBase> property = propertyFromAttribute(name);
+    if (property == m_x)
+        addSVGLengthPropertyToPresentationAttributeStyle(style, CSSPropertyX, *m_x->currentValue());
+    else if (property == m_y)
+        addSVGLengthPropertyToPresentationAttributeStyle(style, CSSPropertyY, *m_y->currentValue());
+    else
+        SVGElement::collectStyleForPresentationAttribute(name, value, style);
+}
+
 void SVGMaskElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
     parseAttributeNew(name, value);
@@ -99,12 +125,19 @@ void SVGMaskElement::svgAttributeChanged(const QualifiedName& attrName)
     SVGElement::InvalidationGuard invalidationGuard(this);
 
     if (attrName == SVGNames::xAttr
+        || attrName == SVGNames::yAttr) {
+        invalidateSVGPresentationAttributeStyle();
+        setNeedsStyleRecalc(LocalStyleChange,
+            StyleChangeReasonForTracing::fromAttribute(attrName));
+    }
+
+    if (attrName == SVGNames::xAttr
         || attrName == SVGNames::yAttr
         || attrName == SVGNames::widthAttr
         || attrName == SVGNames::heightAttr)
         updateRelativeLengthsInformation();
 
-    RenderSVGResourceContainer* renderer = toRenderSVGResourceContainer(this->renderer());
+    LayoutSVGResourceContainer* renderer = toLayoutSVGResourceContainer(this->renderer());
     if (renderer)
         renderer->invalidateCacheAndMarkForLayout();
 }
@@ -116,13 +149,13 @@ void SVGMaskElement::childrenChanged(const ChildrenChange& change)
     if (change.byParser)
         return;
 
-    if (RenderObject* object = renderer())
+    if (LayoutObject* object = renderer())
         object->setNeedsLayoutAndFullPaintInvalidation();
 }
 
-RenderObject* SVGMaskElement::createRenderer(RenderStyle*)
+LayoutObject* SVGMaskElement::createRenderer(const LayoutStyle&)
 {
-    return new RenderSVGResourceMasker(this);
+    return new LayoutSVGResourceMasker(this);
 }
 
 bool SVGMaskElement::selfHasRelativeLengths() const

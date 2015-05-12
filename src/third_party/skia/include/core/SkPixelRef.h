@@ -10,6 +10,7 @@
 
 #include "SkBitmap.h"
 #include "SkDynamicAnnotations.h"
+#include "SkMutex.h"
 #include "SkRefCnt.h"
 #include "SkString.h"
 #include "SkImageInfo.h"
@@ -35,7 +36,6 @@
 class SkColorTable;
 class SkData;
 struct SkIRect;
-class SkMutex;
 
 class GrTexture;
 
@@ -263,22 +263,6 @@ public:
     virtual SkPixelRef* deepCopy(SkColorType, SkColorProfileType, const SkIRect* /*subset*/) {
         return NULL;
     }
-
-#ifdef SK_BUILD_FOR_ANDROID
-    /**
-     *  Acquire a "global" ref on this object.
-     *  The default implementation just calls ref(), but subclasses can override
-     *  this method to implement additional behavior.
-     */
-    virtual void globalRef(void* data=NULL);
-
-    /**
-     *  Release a "global" ref on this object.
-     *  The default implementation just calls unref(), but subclasses can override
-     *  this method to implement additional behavior.
-     */
-    virtual void globalUnref();
-#endif
 
     // Register a listener that may be called the next time our generation ID changes.
     //

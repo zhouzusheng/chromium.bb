@@ -5,8 +5,9 @@
 #ifndef BoxClipper_h
 #define BoxClipper_h
 
-#include "core/rendering/PaintPhase.h"
+#include "core/layout/PaintPhase.h"
 #include "platform/geometry/LayoutPoint.h"
+#include "platform/graphics/paint/DisplayItem.h"
 
 namespace blink {
 
@@ -26,6 +27,7 @@ private:
     LayoutPoint m_accumulatedOffset;
     const PaintInfo& m_paintInfo;
     RenderBox& m_box;
+    DisplayItem::Type m_clipType;
 };
 
 } // namespace blink

@@ -67,8 +67,13 @@ public:
     virtual bool defersLoading() const = 0;
     virtual bool isLoadedBy(ResourceLoaderHost*) const = 0;
 
-    virtual void trace(Visitor*) { }
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 
+    enum LoaderHostType {
+        ResourceFetcherType
+    };
+
+    virtual LoaderHostType objectType() const = 0;
 #if !ENABLE(OILPAN)
     virtual void refResourceLoaderHost() = 0;
     virtual void derefResourceLoaderHost() = 0;

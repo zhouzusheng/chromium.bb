@@ -51,6 +51,7 @@
       'dependencies': [
         'sql',
         '../base/base.gyp:base',
+        '../third_party/sqlite/sqlite.gyp:sqlite',
       ],
       'export_dependent_settings': [
         'sql',

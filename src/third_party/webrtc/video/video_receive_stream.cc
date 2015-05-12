@@ -15,6 +15,7 @@
 
 #include <string>
 
+#include "webrtc/base/checks.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/system_wrappers/interface/clock.h"
 #include "webrtc/system_wrappers/interface/logging.h"
@@ -31,8 +32,77 @@
 #include "webrtc/video_receive_stream.h"
 
 namespace webrtc {
+std::string VideoReceiveStream::Decoder::ToString() const {
+  std::stringstream ss;
+  ss << "{decoder: " << (decoder != NULL ? "(VideoDecoder)" : "NULL");
+  ss << ", payload_type: " << payload_type;
+  ss << ", payload_name: " << payload_name;
+  ss << ", is_renderer: " << (is_renderer ? "yes" : "no");
+  ss << ", expected_delay_ms: " << expected_delay_ms;
+  ss << '}';
+
+  return ss.str();
+}
+
+std::string VideoReceiveStream::Config::ToString() const {
+  std::stringstream ss;
+  ss << "{decoders: [";
+  for (size_t i = 0; i < decoders.size(); ++i) {
+    ss << decoders[i].ToString();
+    if (i != decoders.size() - 1)
+      ss << ", ";
+  }
+  ss << ']';
+  ss << ", rtp: " << rtp.ToString();
+  ss << ", renderer: " << (renderer != NULL ? "(renderer)" : "NULL");
+  ss << ", render_delay_ms: " << render_delay_ms;
+  ss << ", audio_channel_id: " << audio_channel_id;
+  ss << ", pre_decode_callback: "
+     << (pre_decode_callback != NULL ? "(EncodedFrameObserver)" : "NULL");
+  ss << ", pre_render_callback: "
+     << (pre_render_callback != NULL ? "(I420FrameCallback)" : "NULL");
+  ss << ", target_delay_ms: " << target_delay_ms;
+  ss << '}';
+
+  return ss.str();
+}
+
+std::string VideoReceiveStream::Config::Rtp::ToString() const {
+  std::stringstream ss;
+  ss << "{remote_ssrc: " << remote_ssrc;
+  ss << ", local_ssrc: " << local_ssrc;
+  ss << ", rtcp_mode: " << (rtcp_mode == newapi::kRtcpCompound
+                                ? "kRtcpCompound"
+                                : "kRtcpReducedSize");
+  ss << ", rtcp_xr: ";
+  ss << "{receiver_reference_time_report: "
+     << (rtcp_xr.receiver_reference_time_report ? "on" : "off");
+  ss << '}';
+  ss << ", remb: " << (remb ? "on" : "off");
+  ss << ", nack: {rtp_history_ms: " << nack.rtp_history_ms << '}';
+  ss << ", fec: " << fec.ToString();
+  ss << ", rtx: {";
+  for (auto& kv : rtx) {
+    ss << kv.first << " -> ";
+    ss << "{ssrc: " << kv.second.ssrc;
+    ss << ", payload_type: " << kv.second.payload_type;
+    ss << '}';
+  }
+  ss << '}';
+  ss << ", extensions: [";
+  for (size_t i = 0; i < extensions.size(); ++i) {
+    ss << extensions[i].ToString();
+    if (i != extensions.size() - 1)
+      ss << ", ";
+  }
+  ss << ']';
+  ss << '}';
+  return ss.str();
+}
+
 namespace internal {
 namespace {
+
 VideoCodec CreateDecoderVideoCodec(const VideoReceiveStream::Decoder& decoder) {
   VideoCodec codec;
   memset(&codec, 0, sizeof(codec));
@@ -149,7 +219,7 @@ VideoReceiveStream::VideoReceiveStream(webrtc::VideoEngine* video_engine,
   }
 
   stats_proxy_.reset(
-      new ReceiveStatisticsProxy(config_.rtp.local_ssrc, clock_));
+      new ReceiveStatisticsProxy(config_.rtp.remote_ssrc, clock_));
 
   if (rtp_rtcp_->RegisterReceiveChannelRtcpStatisticsCallback(
           channel_, stats_proxy_.get()) != 0) {
@@ -157,6 +227,11 @@ VideoReceiveStream::VideoReceiveStream(webrtc::VideoEngine* video_engine,
   }
 
   if (rtp_rtcp_->RegisterReceiveChannelRtpStatisticsCallback(
+          channel_, stats_proxy_.get()) != 0) {
+    abort();
+  }
+
+  if (rtp_rtcp_->RegisterRtcpPacketTypeCounterObserver(
           channel_, stats_proxy_.get()) != 0) {
     abort();
   }
@@ -173,11 +248,8 @@ VideoReceiveStream::VideoReceiveStream(webrtc::VideoEngine* video_engine,
   for (size_t i = 0; i < config_.decoders.size(); ++i) {
     const Decoder& decoder = config_.decoders[i];
     if (external_codec_->RegisterExternalReceiveCodec(
-            channel_,
-            decoder.payload_type,
-            decoder.decoder,
-            decoder.renderer,
-            decoder.expected_delay_ms) != 0) {
+            channel_, decoder.payload_type, decoder.decoder,
+            decoder.is_renderer, decoder.expected_delay_ms) != 0) {
       // TODO(pbos): Abort gracefully? Can this be a runtime error?
       abort();
     }
@@ -194,7 +266,7 @@ VideoReceiveStream::VideoReceiveStream(webrtc::VideoEngine* video_engine,
   render_ = ViERender::GetInterface(video_engine);
   assert(render_ != NULL);
 
-  render_->AddRenderCallback(channel_, this);
+  render_->AddRenderer(channel_, kVideoI420, this);
 
   if (voice_engine && config_.audio_channel_id != -1) {
     video_engine_base_->SetVoiceEngine(voice_engine);
@@ -234,6 +306,7 @@ VideoReceiveStream::~VideoReceiveStream() {
                                                            stats_proxy_.get());
   rtp_rtcp_->DeregisterReceiveChannelRtcpStatisticsCallback(channel_,
                                                             stats_proxy_.get());
+  rtp_rtcp_->RegisterRtcpPacketTypeCounterObserver(channel_, NULL);
   codec_->Release();
   network_->Release();
   render_->Release();
@@ -278,8 +351,24 @@ void VideoReceiveStream::FrameCallback(I420VideoFrame* video_frame) {
     config_.pre_render_callback->FrameCallback(video_frame);
 }
 
-int32_t VideoReceiveStream::RenderFrame(const uint32_t stream_id,
-                                        I420VideoFrame& video_frame) {
+int VideoReceiveStream::FrameSizeChange(unsigned int width,
+                                        unsigned int height,
+                                        unsigned int number_of_streams) {
+  return 0;
+}
+
+int VideoReceiveStream::DeliverFrame(unsigned char* buffer,
+                                     size_t buffer_size,
+                                     uint32_t timestamp,
+                                     int64_t ntp_time_ms,
+                                     int64_t render_time_ms,
+                                     void* handle) {
+  CHECK(false) << "Renderer should be configured as kVideoI420 and never "
+                  "receive callbacks on DeliverFrame.";
+  return 0;
+}
+
+int VideoReceiveStream::DeliverI420Frame(const I420VideoFrame& video_frame) {
   if (config_.renderer != NULL)
     config_.renderer->RenderFrame(
         video_frame,
@@ -288,6 +377,12 @@ int32_t VideoReceiveStream::RenderFrame(const uint32_t stream_id,
   stats_proxy_->OnRenderedFrame();
 
   return 0;
+}
+
+bool VideoReceiveStream::IsTextureSupported() {
+  if (config_.renderer == NULL)
+    return false;
+  return config_.renderer->IsTextureSupported();
 }
 
 void VideoReceiveStream::SignalNetworkState(Call::NetworkState state) {

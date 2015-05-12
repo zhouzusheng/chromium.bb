@@ -148,21 +148,12 @@ bool TextTrackCue::isActive()
     return m_isActive && track() && track()->mode() != TextTrack::disabledKeyword();
 }
 
-void TextTrackCue::setIsActive(bool active)
-{
-    m_isActive = active;
-
-    // Remove the display tree as soon as the cue becomes inactive.
-    if (!active)
-        removeDisplayTree();
-}
-
 const AtomicString& TextTrackCue::interfaceName() const
 {
     return EventTargetNames::TextTrackCue;
 }
 
-void TextTrackCue::trace(Visitor* visitor)
+DEFINE_TRACE(TextTrackCue)
 {
     visitor->trace(m_track);
     EventTargetWithInlineData::trace(visitor);

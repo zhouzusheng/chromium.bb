@@ -32,6 +32,7 @@
 #include "bindings/core/v8/ScheduledAction.h"
 #include "bindings/core/v8/ScriptSourceCode.h"
 #include "bindings/core/v8/ScriptValue.h"
+#include "bindings/core/v8/V8CacheOptions.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/dom/AddConsoleMessageTask.h"
 #include "core/dom/ContextLifecycleNotifier.h"
@@ -40,6 +41,8 @@
 #include "core/dom/MessagePort.h"
 #include "core/events/ErrorEvent.h"
 #include "core/events/Event.h"
+#include "core/frame/DOMTimer.h"
+#include "core/frame/DOMTimerCoordinator.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/inspector/ConsoleMessageStorage.h"
 #include "core/inspector/InspectorConsoleInstrumentation.h"
@@ -82,6 +85,7 @@ public:
 WorkerGlobalScope::WorkerGlobalScope(const KURL& url, const String& userAgent, WorkerThread* thread, double timeOrigin, const SecurityOrigin* starterOrigin, PassOwnPtrWillBeRawPtr<WorkerClients> workerClients)
     : m_url(url)
     , m_userAgent(userAgent)
+    , m_v8CacheOptions(V8CacheOptionsDefault)
     , m_script(adoptPtr(new WorkerScriptController(*this)))
     , m_thread(thread)
     , m_workerInspectorController(adoptRefWillBeNoop(new WorkerInspectorController(this)))
@@ -89,7 +93,7 @@ WorkerGlobalScope::WorkerGlobalScope(const KURL& url, const String& userAgent, W
     , m_eventQueue(WorkerEventQueue::create(this))
     , m_workerClients(workerClients)
     , m_timeOrigin(timeOrigin)
-    , m_messageStorage(ConsoleMessageStorage::createForWorker(this))
+    , m_messageStorage(ConsoleMessageStorage::create())
     , m_workerExceptionUniqueIdentifier(0)
 {
     setSecurityOrigin(SecurityOrigin::create(url));
@@ -151,6 +155,11 @@ void WorkerGlobalScope::disableEval(const String& errorMessage)
 double WorkerGlobalScope::timerAlignmentInterval() const
 {
     return DOMTimer::visiblePageAlignmentInterval();
+}
+
+DOMTimerCoordinator* WorkerGlobalScope::timers()
+{
+    return &m_timers;
 }
 
 WorkerLocation* WorkerGlobalScope::location() const
@@ -257,7 +266,9 @@ void WorkerGlobalScope::importScripts(const Vector<String>& urls, ExceptionState
         InspectorInstrumentation::scriptImported(&executionContext, scriptLoader->identifier(), scriptLoader->script());
 
         RefPtrWillBeRawPtr<ErrorEvent> errorEvent = nullptr;
-        m_script->evaluate(ScriptSourceCode(scriptLoader->script(), scriptLoader->responseURL()), &errorEvent);
+        OwnPtr<Vector<char>> cachedMetaData(scriptLoader->releaseCachedMetadata());
+        OwnPtr<CachedMetadataHandler> handler(createWorkerScriptCachedMetadataHandler(completeURL, cachedMetaData.get()));
+        m_script->evaluate(ScriptSourceCode(scriptLoader->script(), scriptLoader->responseURL()), &errorEvent, handler.get(), m_v8CacheOptions);
         if (errorEvent) {
             m_script->rethrowExceptionFromImportedScript(errorEvent.release(), exceptionState);
             return;
@@ -299,7 +310,7 @@ void WorkerGlobalScope::addConsoleMessage(PassRefPtrWillBeRawPtr<ConsoleMessage>
 void WorkerGlobalScope::addMessageToWorkerConsole(PassRefPtrWillBeRawPtr<ConsoleMessage> consoleMessage)
 {
     ASSERT(isContextThread());
-    m_messageStorage->reportMessage(consoleMessage);
+    m_messageStorage->reportMessage(this, consoleMessage);
 }
 
 bool WorkerGlobalScope::isContextThread() const
@@ -327,9 +338,18 @@ void WorkerGlobalScope::countFeature(UseCounter::Feature) const
     // FIXME: How should we count features for shared/service workers?
 }
 
-void WorkerGlobalScope::countDeprecation(UseCounter::Feature) const
+void WorkerGlobalScope::countDeprecation(UseCounter::Feature feature) const
 {
     // FIXME: How should we count features for shared/service workers?
+
+    ASSERT(isSharedWorkerGlobalScope() || isServiceWorkerGlobalScope());
+    // For each deprecated feature, send console message at most once
+    // per worker lifecycle.
+    if (m_deprecationWarningBits.recordMeasurement(feature)) {
+        ASSERT(!UseCounter::deprecationMessage(feature).isEmpty());
+        ASSERT(executionContext());
+        executionContext()->addConsoleMessage(ConsoleMessage::create(DeprecationMessageSource, WarningMessageLevel, UseCounter::deprecationMessage(feature)));
+    }
 }
 
 ConsoleMessageStorage* WorkerGlobalScope::messageStorage()
@@ -344,7 +364,7 @@ void WorkerGlobalScope::exceptionHandled(int exceptionId, bool isHandled)
         addConsoleMessage(consoleMessage.release());
 }
 
-void WorkerGlobalScope::trace(Visitor* visitor)
+DEFINE_TRACE(WorkerGlobalScope)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_console);
@@ -353,6 +373,7 @@ void WorkerGlobalScope::trace(Visitor* visitor)
     visitor->trace(m_workerInspectorController);
     visitor->trace(m_eventQueue);
     visitor->trace(m_workerClients);
+    visitor->trace(m_timers);
     visitor->trace(m_messageStorage);
     visitor->trace(m_pendingMessages);
     HeapSupplementable<WorkerGlobalScope>::trace(visitor);

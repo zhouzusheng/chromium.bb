@@ -18,6 +18,7 @@
 #include "content/browser/ppapi_plugin_process_host.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
+#include "content/common/content_switches_internal.h"
 #include "content/common/pepper_plugin_list.h"
 #include "content/common/plugin_list.h"
 #include "content/common/view_messages.h"
@@ -57,6 +58,16 @@ enum FlashUsage {
   // Total number of browser processes.
   TOTAL_BROWSER_PROCESSES,
   FLASH_USAGE_ENUM_COUNT
+};
+
+enum NPAPIPluginStatus {
+  // Platform does not support NPAPI.
+  NPAPI_STATUS_UNSUPPORTED,
+  // Platform supports NPAPI and NPAPI is disabled.
+  NPAPI_STATUS_DISABLED,
+  // Platform supports NPAPI and NPAPI is enabled.
+  NPAPI_STATUS_ENABLED,
+  NPAPI_STATUS_ENUM_COUNT
 };
 
 bool LoadPluginListInProcess() {
@@ -143,7 +154,7 @@ PluginServiceImpl* PluginServiceImpl::GetInstance() {
 }
 
 PluginServiceImpl::PluginServiceImpl()
-    : filter_(NULL) {
+    : npapi_plugins_enabled_(false), filter_(NULL) {
   // Collect the total number of browser processes (which create
   // PluginServiceImpl objects, to be precise). The number is used to normalize
   // the number of processes which start at least one NPAPI/PPAPI Flash process.
@@ -760,8 +771,9 @@ void PluginServiceImpl::AddExtraPluginDir(const base::FilePath& path) {
 void PluginServiceImpl::RegisterInternalPlugin(
     const WebPluginInfo& info,
     bool add_at_beginning) {
-  if (!NPAPIPluginsSupported() &&
-      info.type == WebPluginInfo::PLUGIN_TYPE_NPAPI) {
+  // Internal plugins should never be NPAPI.
+  CHECK_NE(info.type, WebPluginInfo::PLUGIN_TYPE_NPAPI);
+  if (info.type == WebPluginInfo::PLUGIN_TYPE_NPAPI) {
     DVLOG(0) << "Don't register NPAPI plugins when they're not supported";
     return;
   }
@@ -778,15 +790,42 @@ void PluginServiceImpl::GetInternalPlugins(
 }
 
 bool PluginServiceImpl::NPAPIPluginsSupported() {
+  if (npapi_plugins_enabled_)
+    return true;
+
+  static bool command_line_checked = false;
+
+  if (!command_line_checked) {
 #if defined(OS_WIN) || defined(OS_MACOSX)
-  return true;
+    const base::CommandLine* command_line =
+        base::CommandLine::ForCurrentProcess();
+    npapi_plugins_enabled_ = command_line->HasSwitch(switches::kEnableNpapi);
+    NPAPIPluginStatus status =
+        npapi_plugins_enabled_ ? NPAPI_STATUS_ENABLED : NPAPI_STATUS_DISABLED;
 #else
-  return false;
+    NPAPIPluginStatus status = NPAPI_STATUS_UNSUPPORTED;
 #endif
+    UMA_HISTOGRAM_ENUMERATION("Plugin.NPAPIStatus", status,
+        NPAPI_STATUS_ENUM_COUNT);
+  }
+
+  return npapi_plugins_enabled_;
 }
 
 void PluginServiceImpl::DisablePluginsDiscoveryForTesting() {
   PluginList::Singleton()->DisablePluginsDiscovery();
+}
+
+void PluginServiceImpl::EnableNpapiPlugins() {
+#if defined(OS_WIN)
+  DisableWin32kRendererLockdown();
+#endif
+  npapi_plugins_enabled_ = true;
+  RefreshPlugins();
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(&PluginService::PurgePluginListCache,
+                 static_cast<BrowserContext*>(NULL), false));
 }
 
 #if defined(OS_MACOSX)

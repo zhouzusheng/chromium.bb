@@ -94,7 +94,6 @@ ScriptedAnimationController::CallbackId ScriptedAnimationController::registerCal
     scheduleAnimationIfNeeded();
 
     TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "RequestAnimationFrame", "data", InspectorAnimationFrameEvent::data(m_document, id));
-    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentation::didRequestAnimationFrame(m_document, id);
 
     return id;
@@ -105,7 +104,6 @@ void ScriptedAnimationController::cancelCallback(CallbackId id)
     for (size_t i = 0; i < m_callbacks.size(); ++i) {
         if (m_callbacks[i]->m_id == id) {
             TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "CancelAnimationFrame", "data", InspectorAnimationFrameEvent::data(m_document, id));
-            // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
             InspectorInstrumentation::didCancelAnimationFrame(m_document, id);
             m_callbacks.remove(i);
             return;
@@ -114,7 +112,6 @@ void ScriptedAnimationController::cancelCallback(CallbackId id)
     for (size_t i = 0; i < m_callbacksToInvoke.size(); ++i) {
         if (m_callbacksToInvoke[i]->m_id == id) {
             TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "CancelAnimationFrame", "data", InspectorAnimationFrameEvent::data(m_document, id));
-            // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
             InspectorInstrumentation::didCancelAnimationFrame(m_document, id);
             m_callbacksToInvoke[i]->m_cancelled = true;
             // will be removed at the end of executeCallbacks()
@@ -163,8 +160,8 @@ void ScriptedAnimationController::executeCallbacks(double monotonicTimeNow)
     if (!m_document)
         return;
 
-    double highResNowMs = 1000.0 * m_document->loader()->timing()->monotonicTimeToZeroBasedDocumentTime(monotonicTimeNow);
-    double legacyHighResNowMs = 1000.0 * m_document->loader()->timing()->monotonicTimeToPseudoWallTime(monotonicTimeNow);
+    double highResNowMs = 1000.0 * m_document->loader()->timing().monotonicTimeToZeroBasedDocumentTime(monotonicTimeNow);
+    double legacyHighResNowMs = 1000.0 * m_document->loader()->timing().monotonicTimeToPseudoWallTime(monotonicTimeNow);
 
     // First, generate a list of callbacks to consider.  Callbacks registered from this point
     // on are considered only for the "next" frame, not this one.
@@ -175,7 +172,6 @@ void ScriptedAnimationController::executeCallbacks(double monotonicTimeNow)
         RequestAnimationFrameCallback* callback = m_callbacksToInvoke[i].get();
         if (!callback->m_cancelled) {
             TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "FireAnimationFrame", "data", InspectorAnimationFrameEvent::data(m_document, callback->m_id));
-            // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
             InspectorInstrumentationCookie cookie = InspectorInstrumentation::willFireAnimationFrame(m_document, callback->m_id);
             if (callback->m_useLegacyTimeBase)
                 callback->handleEvent(legacyHighResNowMs);
@@ -194,9 +190,8 @@ void ScriptedAnimationController::callMediaQueryListListeners()
     MediaQueryListListeners listeners;
     listeners.swap(m_mediaQueryListListeners);
 
-    for (MediaQueryListListeners::const_iterator it = listeners.begin(), end = listeners.end();
-        it != end; ++it) {
-        (*it)->notifyMediaQueryChanged();
+    for (const auto& listener : listeners) {
+        listener->notifyMediaQueryChanged();
     }
 }
 

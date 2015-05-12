@@ -49,6 +49,19 @@ namespace blink {
 class GraphicsContext;
 
 SkXfermode::Mode PLATFORM_EXPORT WebCoreCompositeToSkiaComposite(CompositeOperator, WebBlendMode = WebBlendModeNormal);
+CompositeOperator PLATFORM_EXPORT compositeOperatorFromSkia(SkXfermode::Mode);
+WebBlendMode PLATFORM_EXPORT blendModeFromSkia(SkXfermode::Mode);
+
+// Map alpha values from [0, 1] to [0, 256] for alpha blending.
+int PLATFORM_EXPORT clampedAlphaForBlending(float);
+
+// Multiply a color's alpha channel by an additional alpha factor where
+// alpha is in the range [0, 1].
+SkColor PLATFORM_EXPORT scaleAlpha(SkColor, float);
+
+// Multiply a color's alpha channel by an additional alpha factor where
+// alpha is in the range [0, 256].
+SkColor PLATFORM_EXPORT scaleAlpha(SkColor, int);
 
 inline SkPaint::FilterLevel WebCoreInterpolationQualityToSkFilterLevel(InterpolationQuality quality)
 {
@@ -84,8 +97,21 @@ inline SkPath::FillType WebCoreWindRuleToSkFillType(WindRule rule)
     return static_cast<SkPath::FillType>(rule);
 }
 
+inline WindRule SkFillTypeToWindRule(SkPath::FillType fillType)
+{
+    switch (fillType) {
+    case SkPath::kWinding_FillType:
+    case SkPath::kEvenOdd_FillType:
+        return static_cast<WindRule>(fillType);
+    default:
+        ASSERT_NOT_REACHED();
+        break;
+    }
+    return RULE_NONZERO;
+}
+
 // Determine if a given WebKit point is contained in a path
-bool PLATFORM_EXPORT SkPathContainsPoint(const SkPath&, const FloatPoint&, SkPath::FillType);
+bool SkPathContainsPoint(const SkPath&, const FloatPoint&, SkPath::FillType);
 
 SkMatrix PLATFORM_EXPORT affineTransformToSkMatrix(const AffineTransform&);
 

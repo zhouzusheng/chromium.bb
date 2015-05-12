@@ -69,7 +69,7 @@ MIDIAccess::~MIDIAccess()
 
 MIDIInputMap* MIDIAccess::inputs() const
 {
-    HeapHashMap<String, Member<MIDIInput> > inputs;
+    HeapHashMap<String, Member<MIDIInput>> inputs;
     size_t inactiveCount = 0;
     for (size_t i = 0; i < m_inputs.size(); ++i) {
         MIDIInput* input = m_inputs[i];
@@ -87,7 +87,7 @@ MIDIInputMap* MIDIAccess::inputs() const
 
 MIDIOutputMap* MIDIAccess::outputs() const
 {
-    HeapHashMap<String, Member<MIDIOutput> > outputs;
+    HeapHashMap<String, Member<MIDIOutput>> outputs;
     size_t inactiveCount = 0;
     for (size_t i = 0; i < m_outputs.size(); ++i) {
         MIDIOutput* output = m_outputs[i];
@@ -142,7 +142,7 @@ void MIDIAccess::didReceiveMIDIData(unsigned portIndex, const unsigned char* dat
     Document* document = toDocument(executionContext());
     ASSERT(document);
 
-    double timeStampInMilliseconds = 1000 * document->loader()->timing()->monotonicTimeToZeroBasedDocumentTime(timeStamp);
+    double timeStampInMilliseconds = 1000 * document->loader()->timing().monotonicTimeToZeroBasedDocumentTime(timeStamp);
 
     m_inputs[portIndex]->didReceiveMIDIData(portIndex, data, length, timeStampInMilliseconds);
 }
@@ -162,7 +162,7 @@ void MIDIAccess::sendMIDIData(unsigned portIndex, const unsigned char* data, siz
     } else {
         Document* document = toDocument(executionContext());
         ASSERT(document);
-        double documentStartTime = document->loader()->timing()->referenceMonotonicTime();
+        double documentStartTime = document->loader()->timing().referenceMonotonicTime();
         timeStamp = documentStartTime + 0.001 * timeStampInMilliseconds;
     }
 
@@ -174,7 +174,7 @@ void MIDIAccess::stop()
     m_accessor.clear();
 }
 
-void MIDIAccess::trace(Visitor* visitor)
+DEFINE_TRACE(MIDIAccess)
 {
     visitor->trace(m_inputs);
     visitor->trace(m_outputs);

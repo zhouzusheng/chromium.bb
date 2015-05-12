@@ -14,7 +14,7 @@
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/inspector/InspectorTraceEvents.h"
-#include "core/rendering/RenderObject.h"
+#include "core/layout/LayoutObject.h"
 
 namespace blink {
 
@@ -174,9 +174,9 @@ bool StyleInvalidator::invalidate(Element& element, StyleInvalidator::RecursionD
     if (thisElementNeedsStyleRecalc) {
         element.setNeedsStyleRecalc(recursionData.wholeSubtreeInvalid() ? SubtreeStyleChange : LocalStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::StyleInvalidator));
     } else if (recursionData.hasInvalidationSets() && someChildrenNeedStyleRecalc) {
-        // Clone the RenderStyle in order to preserve correct style sharing, if possible. Otherwise recalc style.
-        if (RenderObject* renderer = element.renderer()) {
-            renderer->setStyleInternal(RenderStyle::clone(renderer->style()));
+        // Clone the LayoutStyle in order to preserve correct style sharing, if possible. Otherwise recalc style.
+        if (LayoutObject* renderer = element.renderer()) {
+            renderer->setStyleInternal(LayoutStyle::clone(renderer->styleRef()));
         } else {
             TRACE_STYLE_INVALIDATOR_INVALIDATION_IF_ENABLED(element, PreventStyleSharingForParent);
             element.setNeedsStyleRecalc(LocalStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::StyleInvalidator));

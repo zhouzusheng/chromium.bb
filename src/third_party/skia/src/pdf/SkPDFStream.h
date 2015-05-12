@@ -39,11 +39,9 @@ public:
 
     virtual ~SkPDFStream();
 
-    // The SkPDFObject interface.  These two methods use a mutex to
+    // The SkPDFObject interface.  This two method uses a mutex to
     // allow multiple threads to call at the same time.
-    virtual void emitObject(SkWStream* stream, SkPDFCatalog* catalog,
-                            bool indirect);
-    virtual size_t getOutputSize(SkPDFCatalog* catalog, bool indirect);
+    virtual void emitObject(SkWStream* stream, SkPDFCatalog* catalog) SK_OVERRIDE;
 
 protected:
     enum State {
@@ -95,10 +93,7 @@ private:
     // Mutex guards fState, fDataStream, and fSubstitute in public interface.
     SkMutex fMutex;
 
-    SkMemoryStream fMemoryStream;  // Used by fDataStream when
-                                   // fDataStream needs to be backed
-                                   // by SkData.
-    SkAutoTUnref<SkStreamRewindable> fDataStream;
+    SkAutoTDelete<SkStreamRewindable> fDataStream;
     SkAutoTUnref<SkPDFStream> fSubstitute;
 
     typedef SkPDFDict INHERITED;

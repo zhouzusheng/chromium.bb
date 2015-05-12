@@ -92,15 +92,15 @@ bool Image::setData(PassRefPtr<SharedBuffer> data, bool allDataReceived)
     return dataChanged(allDataReceived);
 }
 
-void Image::fillWithSolidColor(GraphicsContext* ctxt, const FloatRect& dstRect, const Color& color, CompositeOperator op)
+void Image::fillWithSolidColor(GraphicsContext* ctxt, const FloatRect& dstRect, const Color& color, SkXfermode::Mode op)
 {
     if (!color.alpha())
         return;
 
-    CompositeOperator previousOperator = ctxt->compositeOperation();
-    ctxt->setCompositeOperation(!color.hasAlpha() && op == CompositeSourceOver ? CompositeCopy : op);
+    SkXfermode::Mode previousOperation = ctxt->compositeOperation();
+    ctxt->setCompositeOperation(!color.hasAlpha() && op == SkXfermode::kSrcOver_Mode ? SkXfermode::kSrc_Mode : op);
     ctxt->fillRect(dstRect, color);
-    ctxt->setCompositeOperation(previousOperator);
+    ctxt->setCompositeOperation(previousOperation);
 }
 
 FloatRect Image::adjustForNegativeSize(const FloatRect& rect)
@@ -117,12 +117,7 @@ FloatRect Image::adjustForNegativeSize(const FloatRect& rect)
     return norm;
 }
 
-void Image::draw(GraphicsContext* ctx, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator op, WebBlendMode blendMode, RespectImageOrientationEnum)
-{
-    draw(ctx, dstRect, srcRect, op, blendMode);
-}
-
-void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const FloatPoint& srcPoint, const FloatSize& scaledTileSize, CompositeOperator op, WebBlendMode blendMode, const IntSize& repeatSpacing)
+void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const FloatPoint& srcPoint, const FloatSize& scaledTileSize, SkXfermode::Mode op, const IntSize& repeatSpacing)
 {
     if (mayFillWithSolidColor()) {
         fillWithSolidColor(ctxt, destRect, solidColor(), op);
@@ -154,19 +149,19 @@ void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const Fl
         visibleSrcRect.setY((destRect.y() - oneTileRect.y()) / scale.height());
         visibleSrcRect.setWidth(destRect.width() / scale.width());
         visibleSrcRect.setHeight(destRect.height() / scale.height());
-        draw(ctxt, destRect, visibleSrcRect, op, blendMode);
+        draw(ctxt, destRect, visibleSrcRect, op, DoNotRespectImageOrientation);
         return;
     }
 
     FloatRect tileRect(FloatPoint(), intrinsicTileSize);
-    drawPattern(ctxt, tileRect, scale, oneTileRect.location(), op, destRect, blendMode, repeatSpacing);
+    drawPattern(ctxt, tileRect, scale, oneTileRect.location(), op, destRect, repeatSpacing);
 
     startAnimation();
 }
 
 // FIXME: Merge with the other drawTiled eventually, since we need a combination of both for some things.
 void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& dstRect, const FloatRect& srcRect,
-    const FloatSize& providedTileScaleFactor, TileRule hRule, TileRule vRule, CompositeOperator op)
+    const FloatSize& providedTileScaleFactor, TileRule hRule, TileRule vRule, SkXfermode::Mode op)
 {
     if (mayFillWithSolidColor()) {
         fillWithSolidColor(ctxt, dstRect, solidColor(), op);
@@ -224,11 +219,11 @@ void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& dstRect, const Flo
 }
 
 void Image::drawPattern(GraphicsContext* context, const FloatRect& floatSrcRect, const FloatSize& scale,
-    const FloatPoint& phase, CompositeOperator compositeOp, const FloatRect& destRect, WebBlendMode blendMode, const IntSize& repeatSpacing)
+    const FloatPoint& phase, SkXfermode::Mode op, const FloatRect& destRect, const IntSize& repeatSpacing)
 {
     TRACE_EVENT0("skia", "Image::drawPattern");
     if (RefPtr<NativeImageSkia> bitmap = nativeImageForCurrentFrame())
-        bitmap->drawPattern(context, adjustForNegativeSize(floatSrcRect), scale, phase, compositeOp, destRect, blendMode, repeatSpacing);
+        bitmap->drawPattern(context, adjustForNegativeSize(floatSrcRect), scale, phase, op, destRect, repeatSpacing);
 }
 
 void Image::computeIntrinsicDimensions(Length& intrinsicWidth, Length& intrinsicHeight, FloatSize& intrinsicRatio)

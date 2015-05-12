@@ -39,6 +39,7 @@
 #include "third_party/WebKit/public/platform/WebSelectionBound.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
 #include "third_party/WebKit/public/web/WebKit.h"
+#include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
 #include "third_party/WebKit/public/web/WebWidget.h"
 #include "ui/gfx/frame_time.h"
 #include "ui/gl/gl_switches.h"
@@ -194,7 +195,12 @@ void RenderWidgetCompositor::Initialize() {
       !compositor_deps_->IsElasticOverscrollEnabled();
   settings.accelerated_animation_enabled =
       !cmd->HasSwitch(cc::switches::kDisableThreadedAnimation);
-  settings.use_display_lists = cmd->HasSwitch(switches::kEnableSlimmingPaint);
+  if (cmd->HasSwitch(switches::kEnableSlimmingPaint)) {
+    settings.use_display_lists = true;
+    blink::WebRuntimeFeatures::enableSlimmingPaint(true);
+    settings.record_full_layer =
+        !blink::WebRuntimeFeatures::slimmingPaintDisplayItemCacheEnabled();
+  }
 
   settings.default_tile_size = CalculateDefaultTileSize();
   if (cmd->HasSwitch(switches::kDefaultTileWidth)) {
@@ -232,11 +238,19 @@ void RenderWidgetCompositor::Initialize() {
   settings.max_untiled_layer_size = gfx::Size(max_untiled_layer_width,
                                            max_untiled_layer_height);
 
+  settings.gpu_rasterization_msaa_sample_count =
+      compositor_deps_->GetGpuRasterizationMSAASampleCount();
   settings.impl_side_painting = compositor_deps_->IsImplSidePaintingEnabled();
   settings.gpu_rasterization_forced =
       compositor_deps_->IsGpuRasterizationForced();
   settings.gpu_rasterization_enabled =
       compositor_deps_->IsGpuRasterizationEnabled();
+
+  if (compositor_deps_->IsThreadedGpuRasterizationEnabled()) {
+    settings.threaded_gpu_rasterization_enabled = true;
+    settings.gpu_rasterization_skewport_target_time_in_seconds = 0.2f;
+  }
+
   settings.can_use_lcd_text = compositor_deps_->IsLcdTextEnabled();
   settings.use_distance_field_text =
       compositor_deps_->IsDistanceFieldTextEnabled();
@@ -246,8 +260,6 @@ void RenderWidgetCompositor::Initialize() {
       compositor_deps_->IsElasticOverscrollEnabled();
   settings.use_image_texture_target = compositor_deps_->GetImageTextureTarget();
 
-  settings.calculate_top_controls_position =
-      cmd->HasSwitch(cc::switches::kEnableTopControlsPositionCalculation);
   if (cmd->HasSwitch(cc::switches::kTopControlsShowThreshold)) {
       std::string top_threshold_str =
           cmd->GetSwitchValueASCII(cc::switches::kTopControlsShowThreshold);
@@ -290,10 +302,6 @@ void RenderWidgetCompositor::Initialize() {
       cmd->HasSwitch(cc::switches::kShowScreenSpaceRects);
   settings.initial_debug_state.show_replica_screen_space_rects =
       cmd->HasSwitch(cc::switches::kShowReplicaScreenSpaceRects);
-  settings.initial_debug_state.show_occluding_rects =
-      cmd->HasSwitch(cc::switches::kShowOccludingRects);
-  settings.initial_debug_state.show_non_occluding_rects =
-      cmd->HasSwitch(cc::switches::kShowNonOccludingRects);
 
   settings.initial_debug_state.SetRecordRenderingStats(
       cmd->HasSwitch(cc::switches::kEnableGpuBenchmarking));
@@ -349,10 +357,10 @@ void RenderWidgetCompositor::Initialize() {
   settings.max_partial_texture_updates = 0;
   if (synchronous_compositor_factory) {
     // Android WebView uses system scrollbars, so make ours invisible.
-    settings.scrollbar_animator = cc::LayerTreeSettings::NoAnimator;
+    settings.scrollbar_animator = cc::LayerTreeSettings::NO_ANIMATOR;
     settings.solid_color_scrollbar_color = SK_ColorTRANSPARENT;
   } else {
-    settings.scrollbar_animator = cc::LayerTreeSettings::LinearFade;
+    settings.scrollbar_animator = cc::LayerTreeSettings::LINEAR_FADE;
     settings.scrollbar_fade_delay_ms = 300;
     settings.scrollbar_fade_resize_delay_ms = 2000;
     settings.scrollbar_fade_duration_ms = 300;
@@ -389,13 +397,13 @@ void RenderWidgetCompositor::Initialize() {
 
 #elif !defined(OS_MACOSX)
   if (ui::IsOverlayScrollbarEnabled()) {
-    settings.scrollbar_animator = cc::LayerTreeSettings::Thinning;
+    settings.scrollbar_animator = cc::LayerTreeSettings::THINNING;
     settings.solid_color_scrollbar_color = SkColorSetARGB(128, 128, 128, 128);
   } else if (cmd->HasSwitch(cc::switches::kEnablePinchVirtualViewport)) {
     // use_pinch_zoom_scrollbars is only true on desktop when non-overlay
     // scrollbars are in use.
     settings.use_pinch_zoom_scrollbars = true;
-    settings.scrollbar_animator = cc::LayerTreeSettings::LinearFade;
+    settings.scrollbar_animator = cc::LayerTreeSettings::LINEAR_FADE;
     settings.solid_color_scrollbar_color = SkColorSetARGB(128, 128, 128, 128);
   }
   settings.scrollbar_fade_delay_ms = 500;
@@ -510,6 +518,10 @@ int RenderWidgetCompositor::GetSourceFrameNumber() const {
   return layer_tree_host_->source_frame_number();
 }
 
+void RenderWidgetCompositor::SetNeedsUpdateLayers() {
+  layer_tree_host_->SetNeedsUpdateLayers();
+}
+
 void RenderWidgetCompositor::SetNeedsCommit() {
   layer_tree_host_->SetNeedsCommit();
 }
@@ -586,10 +598,6 @@ void RenderWidgetCompositor::setBackgroundColor(blink::WebColor color) {
 
 void RenderWidgetCompositor::setHasTransparentBackground(bool transparent) {
   layer_tree_host_->set_has_transparent_background(transparent);
-}
-
-void RenderWidgetCompositor::setOverhangBitmap(const SkBitmap& bitmap) {
-  layer_tree_host_->SetOverhangBitmap(bitmap);
 }
 
 void RenderWidgetCompositor::setVisible(bool visible) {
@@ -750,16 +758,18 @@ void RenderWidgetCompositor::setShowScrollBottleneckRects(bool show) {
 }
 
 void RenderWidgetCompositor::setTopControlsContentOffset(float offset) {
-  layer_tree_host_->SetTopControlsContentOffset(offset);
+  setTopControlsShownRatio(offset);
 }
 
-void RenderWidgetCompositor::WillBeginMainFrame(int frame_id) {
-  widget_->InstrumentWillBeginFrame(frame_id);
+void RenderWidgetCompositor::setTopControlsShownRatio(float ratio) {
+  layer_tree_host_->SetTopControlsShownRatio(ratio);
+}
+
+void RenderWidgetCompositor::WillBeginMainFrame() {
   widget_->willBeginCompositorFrame();
 }
 
 void RenderWidgetCompositor::DidBeginMainFrame() {
-  widget_->InstrumentDidBeginFrame();
 }
 
 void RenderWidgetCompositor::BeginMainFrame(const cc::BeginFrameArgs& args) {
@@ -770,6 +780,10 @@ void RenderWidgetCompositor::BeginMainFrame(const cc::BeginFrameArgs& args) {
       WebBeginFrameArgs(frame_time_sec, deadline_sec, interval_sec);
   compositor_deps_->GetRendererScheduler()->WillBeginFrame(args);
   widget_->webwidget()->beginFrame(web_begin_frame_args);
+}
+
+void RenderWidgetCompositor::BeginMainFrameNotExpectedSoon() {
+  compositor_deps_->GetRendererScheduler()->BeginFrameNotExpectedSoon();
 }
 
 void RenderWidgetCompositor::Layout() {
@@ -783,8 +797,8 @@ void RenderWidgetCompositor::Layout() {
 }
 
 void RenderWidgetCompositor::ApplyViewportDeltas(
-    const gfx::Vector2d& inner_delta,
-    const gfx::Vector2d& outer_delta,
+    const gfx::Vector2dF& inner_delta,
+    const gfx::Vector2dF& outer_delta,
     const gfx::Vector2dF& elastic_overscroll_delta,
     float page_scale,
     float top_controls_delta) {
@@ -842,7 +856,6 @@ void RenderWidgetCompositor::DidFailToInitializeOutputSurface() {
 }
 
 void RenderWidgetCompositor::WillCommit() {
-  widget_->InstrumentWillComposite();
 }
 
 void RenderWidgetCompositor::DidCommit() {
@@ -861,6 +874,10 @@ void RenderWidgetCompositor::DidCompleteSwapBuffers() {
   bool threaded = !!compositor_deps_->GetCompositorImplThreadTaskRunner().get();
   if (!threaded)
     widget_->OnSwapBuffersComplete();
+}
+
+void RenderWidgetCompositor::DidCompletePageScaleAnimation() {
+  widget_->DidCompletePageScaleAnimation();
 }
 
 void RenderWidgetCompositor::ScheduleAnimation() {

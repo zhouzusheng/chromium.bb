@@ -32,19 +32,19 @@
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/shadow/ShadowElementNames.h"
-#include "core/rendering/RenderObject.h"
+#include "core/layout/LayoutObject.h"
 #include "modules/accessibility/AXObjectCacheImpl.h"
 
 namespace blink {
 
 using namespace HTMLNames;
 
-AXSlider::AXSlider(RenderObject* renderer, AXObjectCacheImpl* axObjectCache)
+AXSlider::AXSlider(LayoutObject* renderer, AXObjectCacheImpl* axObjectCache)
     : AXRenderObject(renderer, axObjectCache)
 {
 }
 
-PassRefPtr<AXSlider> AXSlider::create(RenderObject* renderer, AXObjectCacheImpl* axObjectCache)
+PassRefPtr<AXSlider> AXSlider::create(LayoutObject* renderer, AXObjectCacheImpl* axObjectCache)
 {
     return adoptRef(new AXSlider(renderer, axObjectCache));
 }
@@ -55,7 +55,7 @@ AccessibilityOrientation AXSlider::orientation() const
     if (!m_renderer)
         return AccessibilityOrientationHorizontal;
 
-    RenderStyle* style = m_renderer->style();
+    LayoutStyle* style = m_renderer->style();
     if (!style)
         return AccessibilityOrientationHorizontal;
 
@@ -121,7 +121,7 @@ void AXSlider::setValue(const String& value)
 
     input->setValue(value);
 
-    // Fire change event manually, as RenderSlider::setValueForPosition does.
+    // Fire change event manually, as LayoutSlider::setValueForPosition does.
     input->dispatchFormControlChangeEvent();
 }
 
@@ -145,10 +145,10 @@ LayoutRect AXSliderThumb::elementRect() const
     if (!m_parent)
         return LayoutRect();
 
-    RenderObject* sliderRenderer = m_parent->renderer();
+    LayoutObject* sliderRenderer = m_parent->renderer();
     if (!sliderRenderer || !sliderRenderer->isSlider())
         return LayoutRect();
-    return toElement(sliderRenderer->node())->userAgentShadowRoot()->getElementById(ShadowElementNames::sliderThumb())->boundingBox();
+    return toElement(sliderRenderer->node())->closedShadowRoot()->getElementById(ShadowElementNames::sliderThumb())->boundingBox();
 }
 
 bool AXSliderThumb::computeAccessibilityIsIgnored() const

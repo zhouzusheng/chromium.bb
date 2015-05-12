@@ -99,7 +99,7 @@ public:
     /**
      * Resets the caps such that nothing is supported.
      */
-    virtual void reset() SK_OVERRIDE;
+    void reset() SK_OVERRIDE;
 
     /**
      * Initializes the GrGLCaps to the set of features supported in the current
@@ -171,6 +171,8 @@ public:
      * TODO(joshualitt) On desktop opengl 4.2+ we can achieve something similar to this effect
      */
     bool fbFetchSupport() const { return fFBFetchSupport; }
+
+    bool fbFetchNeedsCustomOutput() const { return fFBFetchNeedsCustomOutput; }
 
     const char* fbFetchColorName() const { return fFBFetchColorName; }
 
@@ -269,7 +271,7 @@ public:
     /**
      * Returns a string containing the caps info.
      */
-    virtual SkString dump() const SK_OVERRIDE;
+    SkString dump() const SK_OVERRIDE;
 
     /**
      * LATC can appear under one of three possible names. In order to know
@@ -283,6 +285,18 @@ public:
     };
 
     LATCAlias latcAlias() const { return fLATCAlias; }
+
+    /**
+     * Which type of path rendering is supported, if any
+     * TODO delete this when we only support normal non-legacy nvpr
+     */
+    enum NvprSupport {
+        kNone_NvprSupport,
+        kLegacy_NvprSupport,
+        kNormal_NvprSupport,
+    };
+
+    NvprSupport nvprSupport() const { return fNvprSupport; }
 
 private:
     /**
@@ -352,6 +366,7 @@ private:
     InvalidateFBType    fInvalidateFBType;
     MapBufferType       fMapBufferType;
     LATCAlias           fLATCAlias;
+    NvprSupport         fNvprSupport;
 
     bool fRGBA8RenderbufferSupport : 1;
     bool fBGRAIsInternalFormat : 1;
@@ -372,8 +387,8 @@ private:
     bool fIsCoreProfile : 1;
     bool fFullClearIsFree : 1;
     bool fDropsTileOnZeroDivide : 1;
-    // TODO(joshualitt) encapsulate the FB Fetch logic in a feature object
     bool fFBFetchSupport : 1;
+    bool fFBFetchNeedsCustomOutput : 1;
 
     const char* fFBFetchColorName;
     const char* fFBFetchExtensionString;

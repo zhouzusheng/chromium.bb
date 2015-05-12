@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-#include "base/debug/trace_event.h"
+#include "base/trace_event/trace_event.h"
 #include "content/public/browser/browser_message_filter.h"
 
 namespace content {
@@ -24,11 +24,13 @@ class TraceMessageFilter : public BrowserMessageFilter {
   void OnChannelClosing() override;
   bool OnMessageReceived(const IPC::Message& message) override;
 
-  void SendBeginTracing(const base::debug::CategoryFilter& category_filter_str,
-                        const base::debug::TraceOptions& options);
+  void SendBeginTracing(
+      const base::trace_event::CategoryFilter& category_filter_str,
+      const base::trace_event::TraceOptions& options);
   void SendEndTracing();
-  void SendEnableMonitoring(const base::debug::CategoryFilter& category_filter,
-                            const base::debug::TraceOptions& options);
+  void SendEnableMonitoring(
+      const base::trace_event::CategoryFilter& category_filter,
+      const base::trace_event::TraceOptions& options);
   void SendDisableMonitoring();
   void SendCaptureMonitoringSnapshot();
   void SendGetTraceLogStatus();
@@ -45,7 +47,7 @@ class TraceMessageFilter : public BrowserMessageFilter {
   void OnEndTracingAck(const std::vector<std::string>& known_categories);
   void OnCaptureMonitoringSnapshotAcked();
   void OnWatchEventMatched();
-  void OnTraceLogStatusReply(const base::debug::TraceLogStatus& status);
+  void OnTraceLogStatusReply(const base::trace_event::TraceLogStatus& status);
   void OnTraceDataCollected(const std::string& data);
   void OnMonitoringTraceDataCollected(const std::string& data);
 

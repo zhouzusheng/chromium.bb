@@ -12,6 +12,17 @@ namespace blink {
 
 class StyleResolverState;
 
+enum InterpolationRange {
+    RangeAll,
+    RangeFloor,
+    RangeGreaterThanOrEqualToOne,
+    RangeNonNegative,
+    RangeRound,
+    RangeRoundGreaterThanOrEqualToOne,
+    RangeOpacityFIXME,
+    RangeZeroToOne
+};
+
 class StyleInterpolation : public Interpolation {
 public:
     // 1) convert m_cachedValue into an X
@@ -23,6 +34,7 @@ public:
     virtual void apply(StyleResolverState&) const = 0;
 
     virtual bool isStyleInterpolation() const override final { return true; }
+    virtual bool isDeferredLegacyStyleInterpolation() const { return false; }
 
     CSSPropertyID id() const { return m_id; }
 

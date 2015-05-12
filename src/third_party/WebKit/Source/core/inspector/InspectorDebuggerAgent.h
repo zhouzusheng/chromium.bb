@@ -42,6 +42,7 @@
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
+#include "wtf/ListHashSet.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/Vector.h"
 #include "wtf/text/StringHash.h"
@@ -49,7 +50,9 @@
 namespace blink {
 
 class AsyncCallChain;
+class AsyncCallStack;
 class ConsoleMessage;
+class DevToolsFunctionInfo;
 class InjectedScript;
 class InjectedScriptManager;
 class JavaScriptCallFrame;
@@ -65,7 +68,8 @@ typedef String ErrorString;
 class InspectorDebuggerAgent
     : public InspectorBaseAgent<InspectorDebuggerAgent>
     , public ScriptDebugListener
-    , public InspectorBackendDispatcher::DebuggerCommandHandler {
+    , public InspectorBackendDispatcher::DebuggerCommandHandler
+    , public PromiseTracker::Listener {
     WTF_MAKE_NONCOPYABLE(InspectorDebuggerAgent);
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
@@ -78,7 +82,7 @@ public:
     static const char backtraceObjectGroup[];
 
     ~InspectorDebuggerAgent() override;
-    void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     void canSetScriptSource(ErrorString*, bool* result) final { *result = true; }
 
@@ -89,9 +93,6 @@ public:
 
     bool isPaused();
     void addMessageToConsole(ConsoleMessage*);
-
-    String preprocessEventListener(LocalFrame*, const String& source, const String& url, const String& functionName);
-    PassOwnPtr<ScriptSourceCode> preprocess(LocalFrame*, const ScriptSourceCode&);
 
     // Part of the protocol.
     void enable(ErrorString*) final;
@@ -130,7 +131,7 @@ public:
         RefPtr<TypeBuilder::Runtime::RemoteObject>& result,
         TypeBuilder::OptOutput<bool>* wasThrown,
         RefPtr<TypeBuilder::Debugger::ExceptionDetails>&) final;
-    void compileScript(ErrorString*, const String& expression, const String& sourceURL, const int* executionContextId, TypeBuilder::OptOutput<TypeBuilder::Debugger::ScriptId>*, RefPtr<TypeBuilder::Debugger::ExceptionDetails>&) override;
+    void compileScript(ErrorString*, const String& expression, const String& sourceURL, bool persistScript, const int* executionContextId, TypeBuilder::OptOutput<TypeBuilder::Debugger::ScriptId>*, RefPtr<TypeBuilder::Debugger::ExceptionDetails>&) override;
     void runScript(ErrorString*, const TypeBuilder::Debugger::ScriptId&, const int* executionContextId, const String* objectGroup, const bool* doNotPauseOnExceptionsAndMuteConsole, RefPtr<TypeBuilder::Runtime::RemoteObject>& result, RefPtr<TypeBuilder::Debugger::ExceptionDetails>&) override;
     void setVariableValue(ErrorString*, int in_scopeNumber, const String& in_variableName, const RefPtr<JSONObject>& in_newValue, const String* in_callFrame, const String* in_functionObjectId) final;
     void skipStackFrames(ErrorString*, const String* pattern, const bool* skipContentScripts) final;
@@ -146,7 +147,7 @@ public:
     bool canBreakProgram();
     void breakProgram(InspectorFrontend::Debugger::Reason::Enum breakReason, PassRefPtr<JSONObject> data);
     void scriptExecutionBlockedByCSP(const String& directiveText);
-    void willCallFunction(ExecutionContext*, int scriptId, const String& scriptName, int scriptLine);
+    void willCallFunction(ExecutionContext*, const DevToolsFunctionInfo&);
     void didCallFunction();
     void willEvaluateScript(LocalFrame*, const String& url, int lineNumber);
     void didEvaluateScript();
@@ -172,22 +173,25 @@ public:
 
     // Async call stacks implementation
     PassRefPtrWillBeRawPtr<ScriptAsyncCallStack> currentAsyncStackTraceForConsole();
-    PassRefPtrWillBeRawPtr<AsyncCallChain> createAsyncCallChain(const String& description);
-    void setCurrentAsyncCallChain(v8::Isolate*, PassRefPtrWillBeRawPtr<AsyncCallChain>);
-    const AsyncCallChain* currentAsyncCallChain() const;
-    void clearCurrentAsyncCallChain();
-    void didCompleteAsyncOperation(AsyncCallChain*);
+    static const int unknownAsyncOperationId;
+    int traceAsyncOperationStarting(const String& description);
+    void traceAsyncCallbackStarting(int operationId);
+    void traceAsyncCallbackCompleted();
+    void traceAsyncOperationCompleted(int operationId);
     bool trackingAsyncCalls() const { return m_maxAsyncCallStackDepth; }
 
     class AsyncCallTrackingListener : public WillBeGarbageCollectedMixin {
     public:
         virtual ~AsyncCallTrackingListener() { }
-        virtual void trace(Visitor*) { }
+        DEFINE_INLINE_VIRTUAL_TRACE() { }
         virtual void asyncCallTrackingStateChanged(bool tracking) = 0;
-        virtual void resetAsyncCallChains() = 0;
+        virtual void resetAsyncOperations() = 0;
     };
     void addAsyncCallTrackingListener(AsyncCallTrackingListener*);
     void removeAsyncCallTrackingListener(AsyncCallTrackingListener*);
+
+    // PromiseTracker::Listener
+    void didUpdatePromise(InspectorFrontend::Debugger::EventType::Enum, PassRefPtr<TypeBuilder::Debugger::PromiseDetails>) final;
 
 protected:
     explicit InspectorDebuggerAgent(InjectedScriptManager*);
@@ -209,7 +213,6 @@ protected:
 private:
     SkipPauseRequest shouldSkipExceptionPause();
     SkipPauseRequest shouldSkipStepPause();
-    bool isTopCallFrameInFramework();
 
     void schedulePauseOnNextStatementIfSteppingInto();
     void cancelPauseOnNextStatement();
@@ -218,8 +221,9 @@ private:
     PassRefPtr<TypeBuilder::Array<TypeBuilder::Debugger::CallFrame> > currentCallFrames();
     PassRefPtr<TypeBuilder::Debugger::StackTrace> currentAsyncStackTrace();
 
+    void flushPendingAsyncOperationNotifications();
+    void clearCurrentAsyncOperation();
     void resetAsyncCallTracker();
-    void didCreateAsyncCallChain(AsyncCallChain*);
 
     void changeJavaScriptRecursionLevel(int step);
 
@@ -241,7 +245,8 @@ private:
     String sourceMapURLForScript(const Script&, CompileResult);
 
     bool isCallStackEmptyOrBlackboxed();
-    PassRefPtrWillBeRawPtr<JavaScriptCallFrame> topCallFrameSkipUnknownSources(String* scriptURL, bool* isBlackboxed, int* index = nullptr);
+    bool isTopCallFrameBlackboxed();
+    bool isCallFrameWithUnknownScriptOrBlackboxed(PassRefPtrWillBeRawPtr<JavaScriptCallFrame>);
     PromiseTracker& promiseTracker() const { return *m_promiseTracker; }
 
     void internalSetAsyncCallStackDepth(int);
@@ -286,10 +291,16 @@ private:
     OwnPtrWillBeMember<V8AsyncCallTracker> m_v8AsyncCallTracker;
     OwnPtrWillBeMember<PromiseTracker> m_promiseTracker;
 
-    WillBeHeapHashSet<RefPtrWillBeMember<AsyncCallChain> > m_asyncOperationsForStepInto;
+    using AsyncOperationIdToAsyncCallChain = WillBeHeapHashMap<int, RefPtrWillBeMember<AsyncCallChain>>;
+    AsyncOperationIdToAsyncCallChain m_asyncOperations;
+    int m_lastAsyncOperationId;
+    HashSet<int> m_asyncOperationsForStepInto;
+    ListHashSet<int> m_asyncOperationNotifications;
     unsigned m_maxAsyncCallStackDepth;
     RefPtrWillBeMember<AsyncCallChain> m_currentAsyncCallChain;
     unsigned m_nestedAsyncCallCount;
+    int m_currentAsyncOperationId;
+    bool m_pendingTraceAsyncOperationCompleted;
     bool m_performingAsyncStepIn;
     WillBeHeapVector<RawPtrWillBeMember<AsyncCallTrackingListener>> m_asyncCallTrackingListeners;
 };

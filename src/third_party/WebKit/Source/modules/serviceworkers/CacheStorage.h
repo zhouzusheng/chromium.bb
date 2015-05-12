@@ -32,7 +32,7 @@ public:
     ScriptPromise match(ScriptState*, const RequestInfo&, const CacheQueryOptions&, ExceptionState&);
 
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     class Callbacks;
@@ -48,7 +48,7 @@ private:
     ScriptPromise matchImpl(ScriptState*, const Request*, const CacheQueryOptions&);
 
     WebServiceWorkerCacheStorage* m_webCacheStorage;
-    HeapHashMap<String, Member<Cache> > m_nameToCacheMap;
+    HeapHashMap<String, Member<Cache>> m_nameToCacheMap;
 };
 
 } // namespace blink

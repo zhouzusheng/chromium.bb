@@ -80,7 +80,10 @@ WebInspector.DebuggerModel.PauseOnExceptionsState = {
     PauseOnUncaughtExceptions: "uncaught"
 };
 
+/** @enum {string} */
 WebInspector.DebuggerModel.Events = {
+    AsyncOperationStarted: "AsyncOperationStarted",
+    AsyncOperationCompleted: "AsyncOperationCompleted",
     DebuggerWasEnabled: "DebuggerWasEnabled",
     DebuggerWasDisabled: "DebuggerWasDisabled",
     DebuggerPaused: "DebuggerPaused",
@@ -90,8 +93,10 @@ WebInspector.DebuggerModel.Events = {
     GlobalObjectCleared: "GlobalObjectCleared",
     CallFrameSelected: "CallFrameSelected",
     ConsoleCommandEvaluatedInSelectedCallFrame: "ConsoleCommandEvaluatedInSelectedCallFrame",
+    PromiseUpdated: "PromiseUpdated",
 }
 
+/** @enum {string} */
 WebInspector.DebuggerModel.BreakReason = {
     DOM: "DOM",
     EventListener: "EventListener",
@@ -297,7 +302,6 @@ WebInspector.DebuggerModel.prototype = {
             }
         }
         this._agent.setBreakpointByUrl(lineNumber, url, undefined, columnNumber, condition, didSetBreakpoint);
-        WebInspector.userMetrics.ScriptsBreakpointSet.record();
     },
 
     /**
@@ -322,7 +326,6 @@ WebInspector.DebuggerModel.prototype = {
             }
         }
         this._agent.setBreakpoint(rawLocation.payload(), condition, didSetBreakpoint);
-        WebInspector.userMetrics.ScriptsBreakpointSet.record();
     },
 
     /**
@@ -359,6 +362,31 @@ WebInspector.DebuggerModel.prototype = {
         this._setDebuggerPausedDetails(null);
         this._reset();
         this.dispatchEventToListeners(WebInspector.DebuggerModel.Events.GlobalObjectCleared);
+    },
+
+    /**
+     * @param {string} eventType
+     * @param {!DebuggerAgent.PromiseDetails} promise
+     */
+    _promiseUpdated: function(eventType, promise)
+    {
+        this.dispatchEventToListeners(WebInspector.DebuggerModel.Events.PromiseUpdated, { target: this.target(), eventType: eventType, promise: promise });
+    },
+
+    /**
+     * @param {!DebuggerAgent.AsyncOperation} operation
+     */
+    _asyncOperationStarted: function(operation)
+    {
+        this.dispatchEventToListeners(WebInspector.DebuggerModel.Events.AsyncOperationStarted, { target: this.target(), operation: operation });
+    },
+
+    /**
+     * @param {number} operationId
+     */
+    _asyncOperationCompleted: function(operationId)
+    {
+        this.dispatchEventToListeners(WebInspector.DebuggerModel.Events.AsyncOperationCompleted, { target: this.target(), operationId: operationId });
     },
 
     _reset: function()
@@ -518,13 +546,14 @@ WebInspector.DebuggerModel.prototype = {
      * @param {number} endLine
      * @param {number} endColumn
      * @param {boolean} isContentScript
+     * @param {boolean} isInternalScript
      * @param {string=} sourceMapURL
      * @param {boolean=} hasSourceURL
      * @param {boolean=} hasSyntaxError
      */
-    _parsedScriptSource: function(scriptId, sourceURL, startLine, startColumn, endLine, endColumn, isContentScript, sourceMapURL, hasSourceURL, hasSyntaxError)
+    _parsedScriptSource: function(scriptId, sourceURL, startLine, startColumn, endLine, endColumn, isContentScript, isInternalScript, sourceMapURL, hasSourceURL, hasSyntaxError)
     {
-        var script = new WebInspector.Script(this.target(), scriptId, sourceURL, startLine, startColumn, endLine, endColumn, isContentScript, sourceMapURL, hasSourceURL);
+        var script = new WebInspector.Script(this.target(), scriptId, sourceURL, startLine, startColumn, endLine, endColumn, isContentScript, isInternalScript, sourceMapURL, hasSourceURL);
         this._registerScript(script);
         if (!hasSyntaxError)
             this.dispatchEventToListeners(WebInspector.DebuggerModel.Events.ParsedScriptSource, script);
@@ -587,16 +616,15 @@ WebInspector.DebuggerModel.prototype = {
     },
 
     /**
-     * @param {?DebuggerAgent.ScriptId} scriptId
-     * @param {string} sourceUrl
+     * @param {!DebuggerAgent.ScriptId} scriptId
      * @param {number} lineNumber
      * @param {number} columnNumber
      * @return {?WebInspector.DebuggerModel.Location}
      */
-    createRawLocationByScriptId: function(scriptId, sourceUrl, lineNumber, columnNumber)
+    createRawLocationByScriptId: function(scriptId, lineNumber, columnNumber)
     {
-        var script = scriptId ? this.scriptForId(scriptId) : null;
-        return script ? this.createRawLocation(script, lineNumber, columnNumber) : this.createRawLocationByURL(sourceUrl, lineNumber, columnNumber);
+        var script = this.scriptForId(scriptId);
+        return script ? this.createRawLocation(script, lineNumber, columnNumber) : null;
     },
 
     /**
@@ -860,12 +888,13 @@ WebInspector.DebuggerDispatcher.prototype = {
      * @param {number} endLine
      * @param {number} endColumn
      * @param {boolean=} isContentScript
+     * @param {boolean=} isInternalScript
      * @param {string=} sourceMapURL
      * @param {boolean=} hasSourceURL
      */
-    scriptParsed: function(scriptId, sourceURL, startLine, startColumn, endLine, endColumn, isContentScript, sourceMapURL, hasSourceURL)
+    scriptParsed: function(scriptId, sourceURL, startLine, startColumn, endLine, endColumn, isContentScript, isInternalScript, sourceMapURL, hasSourceURL)
     {
-        this._debuggerModel._parsedScriptSource(scriptId, sourceURL, startLine, startColumn, endLine, endColumn, !!isContentScript, sourceMapURL, hasSourceURL, false);
+        this._debuggerModel._parsedScriptSource(scriptId, sourceURL, startLine, startColumn, endLine, endColumn, !!isContentScript, !!isInternalScript, sourceMapURL, hasSourceURL, false);
     },
 
     /**
@@ -877,12 +906,13 @@ WebInspector.DebuggerDispatcher.prototype = {
      * @param {number} endLine
      * @param {number} endColumn
      * @param {boolean=} isContentScript
+     * @param {boolean=} isInternalScript
      * @param {string=} sourceMapURL
      * @param {boolean=} hasSourceURL
      */
-    scriptFailedToParse: function(scriptId, sourceURL, startLine, startColumn, endLine, endColumn, isContentScript, sourceMapURL, hasSourceURL)
+    scriptFailedToParse: function(scriptId, sourceURL, startLine, startColumn, endLine, endColumn, isContentScript, isInternalScript, sourceMapURL, hasSourceURL)
     {
-        this._debuggerModel._parsedScriptSource(scriptId, sourceURL, startLine, startColumn, endLine, endColumn, !!isContentScript, sourceMapURL, hasSourceURL, true);
+        this._debuggerModel._parsedScriptSource(scriptId, sourceURL, startLine, startColumn, endLine, endColumn, !!isContentScript, !!isInternalScript, sourceMapURL, hasSourceURL, true);
     },
 
     /**
@@ -893,6 +923,34 @@ WebInspector.DebuggerDispatcher.prototype = {
     breakpointResolved: function(breakpointId, location)
     {
         this._debuggerModel._breakpointResolved(breakpointId, location);
+    },
+
+    /**
+     * @override
+     * @param {string} eventType
+     * @param {!DebuggerAgent.PromiseDetails} promise
+     */
+    promiseUpdated: function(eventType, promise)
+    {
+        this._debuggerModel._promiseUpdated(eventType, promise);
+    },
+
+    /**
+     * @override
+     * @param {!DebuggerAgent.AsyncOperation} operation
+     */
+    asyncOperationStarted: function(operation)
+    {
+        this._debuggerModel._asyncOperationStarted(operation);
+    },
+
+    /**
+     * @override
+     * @param {number} operationId
+     */
+    asyncOperationCompleted: function(operationId)
+    {
+        this._debuggerModel._asyncOperationCompleted(operationId);
     }
 }
 
@@ -1175,8 +1233,3 @@ WebInspector.DebuggerPausedDetails.prototype = {
 
     __proto__: WebInspector.SDKObject.prototype
 }
-
-/**
- * @type {!WebInspector.DebuggerModel}
- */
-WebInspector.debuggerModel;

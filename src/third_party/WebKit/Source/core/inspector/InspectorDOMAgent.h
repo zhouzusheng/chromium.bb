@@ -34,7 +34,7 @@
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InjectedScriptManager.h"
 #include "core/inspector/InspectorBaseAgent.h"
-#include "core/rendering/RenderLayer.h"
+#include "core/layout/Layer.h"
 #include "platform/JSONValues.h"
 
 #include "wtf/HashMap.h"
@@ -103,7 +103,7 @@ public:
     static bool getPseudoElementType(PseudoId, TypeBuilder::DOM::PseudoType::Enum*);
 
     virtual ~InspectorDOMAgent();
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     virtual void setFrontend(InspectorFrontend*) override;
     virtual void clearFrontend() override;
@@ -154,6 +154,7 @@ public:
     virtual void getBoxModel(ErrorString*, int nodeId, RefPtr<TypeBuilder::DOM::BoxModel>&) override;
     virtual void getNodeForLocation(ErrorString*, int x, int y, int* nodeId) override;
     virtual void getRelayoutBoundary(ErrorString*, int nodeId, int* relayoutBoundaryNodeId) override;
+    virtual void getHighlightObjectForTest(ErrorString*, int nodeId, RefPtr<JSONObject>&) override;
     static void getEventListeners(EventTarget*, Vector<EventListenerInfo>& listenersArray, bool includeAncestors);
 
     class Listener : public WillBeGarbageCollectedMixin {

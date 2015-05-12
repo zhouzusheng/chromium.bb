@@ -47,10 +47,10 @@
 #include "core/dom/Range.h"
 #include "core/editing/Editor.h"
 #include "core/editing/MarkupAccumulator.h"
-#include "core/editing/TextIterator.h"
 #include "core/editing/VisibleSelection.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
+#include "core/editing/iterators/TextIterator.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLAnchorElement.h"
 #include "core/html/HTMLBRElement.h"
@@ -62,7 +62,7 @@
 #include "core/html/HTMLTableCellElement.h"
 #include "core/html/HTMLTableElement.h"
 #include "core/html/HTMLTextFormControlElement.h"
-#include "core/rendering/RenderObject.h"
+#include "core/layout/LayoutObject.h"
 #include "platform/weborigin/KURL.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/StringBuilder.h"
@@ -91,7 +91,7 @@ public:
         m_element->setAttribute(m_name, AtomicString(m_value));
     }
 
-    void trace(Visitor* visitor)
+    DEFINE_INLINE_TRACE()
     {
         visitor->trace(m_element);
     }
@@ -819,12 +819,12 @@ bool isPlainTextMarkup(Node* node)
 static bool shouldPreserveNewline(const Range& range)
 {
     if (Node* node = range.firstNode()) {
-        if (RenderObject* renderer = node->renderer())
+        if (LayoutObject* renderer = node->renderer())
             return renderer->style()->preserveNewline();
     }
 
     if (Node* node = range.startPosition().anchorNode()) {
-        if (RenderObject* renderer = node->renderer())
+        if (LayoutObject* renderer = node->renderer())
             return renderer->style()->preserveNewline();
     }
 

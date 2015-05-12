@@ -70,8 +70,6 @@ v8::Local<v8::Value> createMinimumArityTypeErrorForMethod(v8::Isolate*, const ch
 v8::Local<v8::Value> createMinimumArityTypeErrorForConstructor(v8::Isolate*, const char* type, unsigned expected, unsigned provided);
 void setMinimumArityTypeError(ExceptionState&, unsigned expected, unsigned provided);
 
-v8::ArrayBuffer::Allocator* v8ArrayBufferAllocator();
-
 template<typename CallbackInfo, typename S>
 inline void v8SetReturnValue(const CallbackInfo& info, const v8::Persistent<S>& handle)
 {
@@ -470,6 +468,9 @@ uint64_t toUInt64(v8::Handle<v8::Value>);
 // Convert a value to a single precision float, which might fail.
 float toFloat(v8::Handle<v8::Value>, ExceptionState&);
 
+// Convert a value to a single precision float, throwing on non-finite values.
+float toRestrictedFloat(v8::Handle<v8::Value>, ExceptionState&);
+
 // Convert a value to a single precision float assuming the conversion cannot fail.
 inline float toFloat(v8::Local<v8::Value> value)
 {
@@ -477,7 +478,17 @@ inline float toFloat(v8::Local<v8::Value> value)
 }
 
 // Convert a value to a double precision float, which might fail.
-double toDouble(v8::Handle<v8::Value>, ExceptionState&);
+double toDoubleSlow(v8::Handle<v8::Value>, ExceptionState&);
+
+inline double toDouble(v8::Handle<v8::Value> value, ExceptionState& exceptionState)
+{
+    if (value->IsNumber())
+        return value->NumberValue();
+    return toDoubleSlow(value, exceptionState);
+}
+
+// Convert a value to a double precision float, throwing on non-finite values.
+double toRestrictedDouble(v8::Handle<v8::Value>, ExceptionState&);
 
 // Converts a value to a String, throwing if any code unit is outside 0-255.
 String toByteString(v8::Handle<v8::Value>, ExceptionState&);
@@ -516,9 +527,9 @@ bool toV8Sequence(v8::Handle<v8::Value>, uint32_t& length, v8::Isolate*, Excepti
 // Converts a JavaScript value to an array as per the Web IDL specification:
 // http://www.w3.org/TR/2012/CR-WebIDL-20120419/#es-array
 template <class T, class V8T>
-Vector<RefPtr<T> > toRefPtrNativeArrayUnchecked(v8::Local<v8::Value> v8Value, uint32_t length, v8::Isolate* isolate, ExceptionState& exceptionState)
+Vector<RefPtr<T>> toRefPtrNativeArrayUnchecked(v8::Local<v8::Value> v8Value, uint32_t length, v8::Isolate* isolate, ExceptionState& exceptionState)
 {
-    Vector<RefPtr<T> > result;
+    Vector<RefPtr<T>> result;
     result.reserveInitialCapacity(length);
     v8::Local<v8::Object> object = v8::Local<v8::Object>::Cast(v8Value);
     v8::TryCatch block;
@@ -526,21 +537,21 @@ Vector<RefPtr<T> > toRefPtrNativeArrayUnchecked(v8::Local<v8::Value> v8Value, ui
         v8::Handle<v8::Value> element = object->Get(i);
         if (block.HasCaught()) {
             exceptionState.rethrowV8Exception(block.Exception());
-            return Vector<RefPtr<T> >();
+            return Vector<RefPtr<T>>();
         }
         if (V8T::hasInstance(element, isolate)) {
             v8::Handle<v8::Object> elementObject = v8::Handle<v8::Object>::Cast(element);
             result.uncheckedAppend(V8T::toImpl(elementObject));
         } else {
             exceptionState.throwTypeError("Invalid Array element type");
-            return Vector<RefPtr<T> >();
+            return Vector<RefPtr<T>>();
         }
     }
     return result;
 }
 
 template <class T, class V8T>
-Vector<RefPtr<T> > toRefPtrNativeArray(v8::Handle<v8::Value> value, int argumentIndex, v8::Isolate* isolate, ExceptionState& exceptionState)
+Vector<RefPtr<T>> toRefPtrNativeArray(v8::Handle<v8::Value> value, int argumentIndex, v8::Isolate* isolate, ExceptionState& exceptionState)
 {
     v8::Local<v8::Value> v8Value(v8::Local<v8::Value>::New(isolate, value));
     uint32_t length = 0;
@@ -549,13 +560,13 @@ Vector<RefPtr<T> > toRefPtrNativeArray(v8::Handle<v8::Value> value, int argument
     } else if (!toV8Sequence(value, length, isolate, exceptionState)) {
         if (!exceptionState.hadException())
             exceptionState.throwTypeError(ExceptionMessages::notAnArrayTypeArgumentOrValue(argumentIndex));
-        return Vector<RefPtr<T> >();
+        return Vector<RefPtr<T>>();
     }
     return toRefPtrNativeArrayUnchecked<T, V8T>(v8Value, length, isolate, exceptionState);
 }
 
 template <class T, class V8T>
-Vector<RefPtr<T> > toRefPtrNativeArray(v8::Handle<v8::Value> value, const String& propertyName, v8::Isolate* isolate, ExceptionState& exceptionState)
+Vector<RefPtr<T>> toRefPtrNativeArray(v8::Handle<v8::Value> value, const String& propertyName, v8::Isolate* isolate, ExceptionState& exceptionState)
 {
     v8::Local<v8::Value> v8Value(v8::Local<v8::Value>::New(isolate, value));
     uint32_t length = 0;
@@ -564,13 +575,13 @@ Vector<RefPtr<T> > toRefPtrNativeArray(v8::Handle<v8::Value> value, const String
     } else if (!toV8Sequence(value, length, isolate, exceptionState)) {
         if (!exceptionState.hadException())
             exceptionState.throwTypeError(ExceptionMessages::notASequenceTypeProperty(propertyName));
-        return Vector<RefPtr<T> >();
+        return Vector<RefPtr<T>>();
     }
     return toRefPtrNativeArrayUnchecked<T, V8T>(v8Value, length, isolate, exceptionState);
 }
 
 template <class T, class V8T>
-WillBeHeapVector<RefPtrWillBeMember<T> > toRefPtrWillBeMemberNativeArray(v8::Handle<v8::Value> value, int argumentIndex, v8::Isolate* isolate, ExceptionState& exceptionState)
+WillBeHeapVector<RefPtrWillBeMember<T>> toRefPtrWillBeMemberNativeArray(v8::Handle<v8::Value> value, int argumentIndex, v8::Isolate* isolate, ExceptionState& exceptionState)
 {
     v8::Local<v8::Value> v8Value(v8::Local<v8::Value>::New(isolate, value));
     uint32_t length = 0;
@@ -579,10 +590,10 @@ WillBeHeapVector<RefPtrWillBeMember<T> > toRefPtrWillBeMemberNativeArray(v8::Han
     } else if (!toV8Sequence(value, length, isolate, exceptionState)) {
         if (!exceptionState.hadException())
             exceptionState.throwTypeError(ExceptionMessages::notAnArrayTypeArgumentOrValue(argumentIndex));
-        return WillBeHeapVector<RefPtrWillBeMember<T> >();
+        return WillBeHeapVector<RefPtrWillBeMember<T>>();
     }
 
-    WillBeHeapVector<RefPtrWillBeMember<T> > result;
+    WillBeHeapVector<RefPtrWillBeMember<T>> result;
     result.reserveInitialCapacity(length);
     v8::Local<v8::Object> object = v8::Local<v8::Object>::Cast(v8Value);
     v8::TryCatch block;
@@ -590,21 +601,21 @@ WillBeHeapVector<RefPtrWillBeMember<T> > toRefPtrWillBeMemberNativeArray(v8::Han
         v8::Handle<v8::Value> element = object->Get(i);
         if (block.HasCaught()) {
             exceptionState.rethrowV8Exception(block.Exception());
-            return WillBeHeapVector<RefPtrWillBeMember<T> >();
+            return WillBeHeapVector<RefPtrWillBeMember<T>>();
         }
         if (V8T::hasInstance(element, isolate)) {
             v8::Handle<v8::Object> elementObject = v8::Handle<v8::Object>::Cast(element);
             result.uncheckedAppend(V8T::toImpl(elementObject));
         } else {
             exceptionState.throwTypeError("Invalid Array element type");
-            return WillBeHeapVector<RefPtrWillBeMember<T> >();
+            return WillBeHeapVector<RefPtrWillBeMember<T>>();
         }
     }
     return result;
 }
 
 template <class T, class V8T>
-WillBeHeapVector<RefPtrWillBeMember<T> > toRefPtrWillBeMemberNativeArray(v8::Handle<v8::Value> value, const String& propertyName, v8::Isolate* isolate, ExceptionState& exceptionState)
+WillBeHeapVector<RefPtrWillBeMember<T>> toRefPtrWillBeMemberNativeArray(v8::Handle<v8::Value> value, const String& propertyName, v8::Isolate* isolate, ExceptionState& exceptionState)
 {
     v8::Local<v8::Value> v8Value(v8::Local<v8::Value>::New(isolate, value));
     uint32_t length = 0;
@@ -613,10 +624,10 @@ WillBeHeapVector<RefPtrWillBeMember<T> > toRefPtrWillBeMemberNativeArray(v8::Han
     } else if (!toV8Sequence(value, length, isolate, exceptionState)) {
         if (!exceptionState.hadException())
             exceptionState.throwTypeError(ExceptionMessages::notASequenceTypeProperty(propertyName));
-        return WillBeHeapVector<RefPtrWillBeMember<T> >();
+        return WillBeHeapVector<RefPtrWillBeMember<T>>();
     }
 
-    WillBeHeapVector<RefPtrWillBeMember<T> > result;
+    WillBeHeapVector<RefPtrWillBeMember<T>> result;
     result.reserveInitialCapacity(length);
     v8::Local<v8::Object> object = v8::Local<v8::Object>::Cast(v8Value);
     v8::TryCatch block;
@@ -624,21 +635,21 @@ WillBeHeapVector<RefPtrWillBeMember<T> > toRefPtrWillBeMemberNativeArray(v8::Han
         v8::Handle<v8::Value> element = object->Get(i);
         if (block.HasCaught()) {
             exceptionState.rethrowV8Exception(block.Exception());
-            return WillBeHeapVector<RefPtrWillBeMember<T> >();
+            return WillBeHeapVector<RefPtrWillBeMember<T>>();
         }
         if (V8T::hasInstance(element, isolate)) {
             v8::Handle<v8::Object> elementObject = v8::Handle<v8::Object>::Cast(element);
             result.uncheckedAppend(V8T::toImpl(elementObject));
         } else {
             exceptionState.throwTypeError("Invalid Array element type");
-            return WillBeHeapVector<RefPtrWillBeMember<T> >();
+            return WillBeHeapVector<RefPtrWillBeMember<T>>();
         }
     }
     return result;
 }
 
 template <class T, class V8T>
-HeapVector<Member<T> > toMemberNativeArray(v8::Handle<v8::Value> value, int argumentIndex, v8::Isolate* isolate, ExceptionState& exceptionState)
+HeapVector<Member<T>> toMemberNativeArray(v8::Handle<v8::Value> value, int argumentIndex, v8::Isolate* isolate, ExceptionState& exceptionState)
 {
     v8::Local<v8::Value> v8Value(v8::Local<v8::Value>::New(isolate, value));
     uint32_t length = 0;
@@ -647,10 +658,10 @@ HeapVector<Member<T> > toMemberNativeArray(v8::Handle<v8::Value> value, int argu
     } else if (!toV8Sequence(value, length, isolate, exceptionState)) {
         if (!exceptionState.hadException())
             exceptionState.throwTypeError(ExceptionMessages::notAnArrayTypeArgumentOrValue(argumentIndex));
-        return HeapVector<Member<T> >();
+        return HeapVector<Member<T>>();
     }
 
-    HeapVector<Member<T> > result;
+    HeapVector<Member<T>> result;
     result.reserveInitialCapacity(length);
     v8::Local<v8::Object> object = v8::Local<v8::Object>::Cast(v8Value);
     v8::TryCatch block;
@@ -658,14 +669,14 @@ HeapVector<Member<T> > toMemberNativeArray(v8::Handle<v8::Value> value, int argu
         v8::Handle<v8::Value> element = object->Get(i);
         if (UNLIKELY(block.HasCaught())) {
             exceptionState.rethrowV8Exception(block.Exception());
-            return HeapVector<Member<T> >();
+            return HeapVector<Member<T>>();
         }
         if (V8T::hasInstance(element, isolate)) {
             v8::Handle<v8::Object> elementObject = v8::Handle<v8::Object>::Cast(element);
             result.uncheckedAppend(V8T::toImpl(elementObject));
         } else {
             exceptionState.throwTypeError("Invalid Array element type");
-            return HeapVector<Member<T> >();
+            return HeapVector<Member<T>>();
         }
     }
     return result;
@@ -746,7 +757,7 @@ inline bool toV8Sequence(v8::Handle<v8::Value> value, uint32_t& length, v8::Isol
 
     // FIXME: The specification states that the length property should be used as fallback, if value
     // is not a platform object that supports indexed properties. If it supports indexed properties,
-    // length should actually be one greater than value’s maximum indexed property index.
+    // length should actually be one greater than value's maximum indexed property index.
     v8::TryCatch block;
     v8::Local<v8::Value> lengthValue = object->Get(lengthSymbol);
     if (block.HasCaught()) {
@@ -813,7 +824,7 @@ struct NativeValueTraits<double> {
 };
 
 template<>
-struct NativeValueTraits<v8::Local<v8::Value> > {
+struct NativeValueTraits<v8::Local<v8::Value>> {
     static inline v8::Local<v8::Value> nativeValue(const v8::Local<v8::Value>& value, v8::Isolate* isolate, ExceptionState&)
     {
         return value;
@@ -829,7 +840,7 @@ struct NativeValueTraits<ScriptValue> {
 };
 
 template <typename T>
-struct NativeValueTraits<Vector<T> > {
+struct NativeValueTraits<Vector<T>> {
     static inline Vector<T> nativeValue(const v8::Local<v8::Value>& value, v8::Isolate* isolate, ExceptionState& exceptionState)
     {
         return toImplArray<T>(value, 0, isolate, exceptionState);
@@ -856,8 +867,8 @@ v8::Local<v8::Context> toV8Context(ExecutionContext*, DOMWrapperWorld&);
 v8::Local<v8::Context> toV8Context(Frame*, DOMWrapperWorld&);
 
 // Returns the frame object of the window object associated with
-// a context, if the window is currently being displayed in the LocalFrame.
-LocalFrame* toFrameIfNotDetached(v8::Handle<v8::Context>);
+// a context, if the window is currently being displayed in a Frame.
+Frame* toFrameIfNotDetached(v8::Handle<v8::Context>);
 
 EventTarget* toEventTarget(v8::Isolate*, v8::Handle<v8::Value>);
 
@@ -911,40 +922,22 @@ class V8IsolateInterruptor : public ThreadState::Interruptor {
 public:
     explicit V8IsolateInterruptor(v8::Isolate* isolate)
         : m_isolate(isolate)
-        , m_canceled(false)
     {
     }
 
     static void onInterruptCallback(v8::Isolate* isolate, void* data)
     {
         V8IsolateInterruptor* interruptor = reinterpret_cast<V8IsolateInterruptor*>(data);
-        if (!interruptor->canceled())
-            interruptor->onInterrupted();
+        interruptor->onInterrupted();
     }
 
     virtual void requestInterrupt() override
     {
-        MutexLocker locker(m_mutex);
-        m_canceled = false;
         m_isolate->RequestInterrupt(&onInterruptCallback, this);
-    }
-
-    virtual void clearInterrupt() override
-    {
-        MutexLocker locker(m_mutex);
-        m_canceled = true;
-    }
-
-    bool canceled()
-    {
-        MutexLocker locker(m_mutex);
-        return m_canceled;
     }
 
 private:
     v8::Isolate* m_isolate;
-    Mutex m_mutex;
-    bool m_canceled;
 };
 
 class V8TestingScope {
@@ -960,7 +953,36 @@ private:
     RefPtr<ScriptState> m_scriptState;
 };
 
-void GetDevToolsFunctionInfo(v8::Handle<v8::Function>, v8::Isolate*, int& scriptId, String& resourceName, int& lineNumber);
+class DevToolsFunctionInfo final {
+public:
+    explicit DevToolsFunctionInfo(v8::Handle<v8::Function>& function)
+        : m_scriptId(0)
+        , m_lineNumber(1)
+        , m_function(function)
+    {
+        ASSERT(!m_function.IsEmpty());
+    }
+
+    DevToolsFunctionInfo(int scriptId, const String& resourceName, int lineNumber)
+        : m_scriptId(scriptId)
+        , m_lineNumber(lineNumber)
+        , m_resourceName(resourceName)
+    {
+    }
+
+    int scriptId() const;
+    int lineNumber() const;
+    String resourceName() const;
+
+private:
+    void ensureInitialized() const;
+
+    mutable int m_scriptId;
+    mutable int m_lineNumber;
+    mutable String m_resourceName;
+    mutable v8::Handle<v8::Function> m_function;
+};
+
 PassRefPtr<TraceEvent::ConvertableToTraceFormat> devToolsTraceEventData(v8::Isolate*, ExecutionContext*, v8::Handle<v8::Function>);
 
 class V8RethrowTryCatchScope final {

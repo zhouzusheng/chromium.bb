@@ -5,7 +5,7 @@
 #ifndef RenderDrawingRecorder_h
 #define RenderDrawingRecorder_h
 
-#include "core/rendering/PaintPhase.h"
+#include "core/layout/PaintPhase.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/graphics/paint/DisplayItem.h"
 #include "platform/graphics/paint/DrawingRecorder.h"
@@ -13,11 +13,12 @@
 namespace blink {
 
 class GraphicsContext;
-class RenderObject;
+class LayoutObject;
 
 class RenderDrawingRecorder {
 public:
-    explicit RenderDrawingRecorder(GraphicsContext*, const RenderObject&, PaintPhase, const FloatRect&);
+    RenderDrawingRecorder(GraphicsContext*, const LayoutObject&, PaintPhase, const FloatRect&);
+    RenderDrawingRecorder(GraphicsContext*, const LayoutObject&, DisplayItem::Type, const FloatRect&);
 
     ~RenderDrawingRecorder();
 
@@ -26,7 +27,7 @@ public:
 private:
     DrawingRecorder m_drawingRecorder;
 #ifndef NDEBUG
-    const RenderObject& m_renderer;
+    const LayoutObject& m_renderer;
 #endif
 };
 

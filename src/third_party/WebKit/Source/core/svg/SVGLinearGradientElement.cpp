@@ -22,13 +22,11 @@
  */
 
 #include "config.h"
-
 #include "core/svg/SVGLinearGradientElement.h"
 
-#include "core/rendering/svg/RenderSVGResourceLinearGradient.h"
+#include "core/layout/svg/LayoutSVGResourceLinearGradient.h"
 #include "core/svg/LinearGradientAttributes.h"
 #include "core/svg/SVGLength.h"
-#include "core/svg/SVGTransformList.h"
 
 namespace blink {
 
@@ -48,7 +46,7 @@ inline SVGLinearGradientElement::SVGLinearGradientElement(Document& document)
     addToPropertyMap(m_y2);
 }
 
-void SVGLinearGradientElement::trace(Visitor* visitor)
+DEFINE_TRACE(SVGLinearGradientElement)
 {
     visitor->trace(m_x1);
     visitor->trace(m_y1);
@@ -87,14 +85,14 @@ void SVGLinearGradientElement::svgAttributeChanged(const QualifiedName& attrName
 
     updateRelativeLengthsInformation();
 
-    RenderSVGResourceContainer* renderer = toRenderSVGResourceContainer(this->renderer());
+    LayoutSVGResourceContainer* renderer = toLayoutSVGResourceContainer(this->renderer());
     if (renderer)
         renderer->invalidateCacheAndMarkForLayout();
 }
 
-RenderObject* SVGLinearGradientElement::createRenderer(RenderStyle*)
+LayoutObject* SVGLinearGradientElement::createRenderer(const LayoutStyle&)
 {
-    return new RenderSVGResourceLinearGradient(this);
+    return new LayoutSVGResourceLinearGradient(this);
 }
 
 static void setGradientAttributes(SVGGradientElement* element, LinearGradientAttributes& attributes, bool isLinear = true)

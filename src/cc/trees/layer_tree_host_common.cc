@@ -6,7 +6,7 @@
 
 #include <algorithm>
 
-#include "base/debug/trace_event.h"
+#include "base/trace_event/trace_event.h"
 #include "cc/base/math_util.h"
 #include "cc/layers/heads_up_display_layer_impl.h"
 #include "cc/layers/layer.h"
@@ -21,6 +21,7 @@
 #include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/geometry/vector2d_conversions.h"
 #include "ui/gfx/transform.h"
+#include "ui/gfx/transform_util.h"
 
 namespace cc {
 
@@ -46,19 +47,28 @@ static void SortLayers(LayerImplList::iterator first,
 
 template <typename LayerType>
 static gfx::Vector2dF GetEffectiveScrollDelta(LayerType* layer) {
-  gfx::Vector2dF scroll_delta = layer->ScrollDelta();
+  // Layer's scroll offset can have an integer part and fractional part.
+  // Due to Blink's limitation, it only counter-scrolls the position-fixed
+  // layer using the integer part of Layer's scroll offset.
+  // CC scrolls the layer using the full scroll offset, so we have to
+  // add the ScrollCompensationAdjustment (fractional part of the scroll
+  // offset) to the effective scroll delta which is used to counter-scroll
+  // the position-fixed layer.
+  gfx::Vector2dF scroll_delta =
+      layer->ScrollDelta() + layer->ScrollCompensationAdjustment();
   // The scroll parent's scroll delta is the amount we've scrolled on the
   // compositor thread since the commit for this layer tree's source frame.
   // we last reported to the main thread. I.e., it's the discrepancy between
   // a scroll parent's scroll delta and offset, so we must add it here.
   if (layer->scroll_parent())
-    scroll_delta += layer->scroll_parent()->ScrollDelta();
+    scroll_delta += layer->scroll_parent()->ScrollDelta() +
+        layer->ScrollCompensationAdjustment();
   return scroll_delta;
 }
 
 template <typename LayerType>
-static gfx::ScrollOffset GetEffectiveTotalScrollOffset(LayerType* layer) {
-  gfx::ScrollOffset offset = layer->TotalScrollOffset();
+static gfx::ScrollOffset GetEffectiveCurrentScrollOffset(LayerType* layer) {
+  gfx::ScrollOffset offset = layer->CurrentScrollOffset();
   // The scroll parent's total scroll offset (scroll offset + scroll delta)
   // can't be used because its scroll offset has already been applied to the
   // scroll children's positions by the main thread layer positioning code.
@@ -151,8 +161,8 @@ static gfx::Vector2dF ComputeChangeOfBasisTranslation(
 }
 
 enum TranslateRectDirection {
-  TranslateRectDirectionToAncestor,
-  TranslateRectDirectionToDescendant
+  TRANSLATE_RECT_DIRECTION_TO_ANCESTOR,
+  TRANSLATE_RECT_DIRECTION_TO_DESCENDANT
 };
 
 template <typename LayerType>
@@ -162,7 +172,7 @@ static gfx::Rect TranslateRectToTargetSpace(const LayerType& ancestor_layer,
                                             TranslateRectDirection direction) {
   gfx::Vector2dF translation = ComputeChangeOfBasisTranslation<LayerType>(
       ancestor_layer, descendant_layer);
-  if (direction == TranslateRectDirectionToDescendant)
+  if (direction == TRANSLATE_RECT_DIRECTION_TO_DESCENDANT)
     translation.Scale(-1.f);
   return gfx::ToEnclosingRect(
       gfx::RectF(rect.origin() + translation, rect.size()));
@@ -201,20 +211,16 @@ static void UpdateClipRectsForClipChild(
   // clip rects will want to be in its target space, not ours.
   if (clip_parent == layer->clip_parent()) {
     *clip_rect_in_parent_target_space = TranslateRectToTargetSpace<LayerType>(
-        *clip_parent,
-        *layer->parent(),
-        *clip_rect_in_parent_target_space,
-        TranslateRectDirectionToDescendant);
+        *clip_parent, *layer->parent(), *clip_rect_in_parent_target_space,
+        TRANSLATE_RECT_DIRECTION_TO_DESCENDANT);
   } else {
     // If we're being clipped by our scroll parent, we must translate through
     // our common ancestor. This happens to be our parent, so it is sufficent to
     // translate from our clip parent's space to the space of its ancestor (our
     // parent).
-    *clip_rect_in_parent_target_space =
-        TranslateRectToTargetSpace<LayerType>(*layer->parent(),
-                                              *clip_parent,
-                                              *clip_rect_in_parent_target_space,
-                                              TranslateRectDirectionToAncestor);
+    *clip_rect_in_parent_target_space = TranslateRectToTargetSpace<LayerType>(
+        *layer->parent(), *clip_parent, *clip_rect_in_parent_target_space,
+        TRANSLATE_RECT_DIRECTION_TO_ANCESTOR);
   }
 }
 
@@ -276,10 +282,8 @@ void UpdateAccumulatedSurfaceState(
     // so we'll need to transform it before it is applied.
     if (layer->clip_parent()) {
       clip_rect = TranslateRectToTargetSpace<LayerType>(
-          *layer->clip_parent(),
-          *layer,
-          clip_rect,
-          TranslateRectDirectionToDescendant);
+          *layer->clip_parent(), *layer, clip_rect,
+          TRANSLATE_RECT_DIRECTION_TO_DESCENDANT);
     }
     target_rect.Intersect(clip_rect);
   }
@@ -1194,8 +1198,8 @@ struct PreCalculateMetaInformationRecursiveData {
 };
 
 static bool ValidateRenderSurface(LayerImpl* layer) {
-  // There are a few cases in which it is incorrect to not have a
-  // render_surface.
+  // This test verifies that there are no cases where a LayerImpl needs
+  // a render surface, but doesn't have one.
   if (layer->render_surface())
     return true;
 
@@ -1260,11 +1264,6 @@ static void PreCalculateMetaInformation(
       recursive_data->layer_or_descendant_has_copy_request;
   layer->draw_properties().layer_or_descendant_has_input_handler =
       recursive_data->layer_or_descendant_has_input_handler;
-}
-
-static void RoundTranslationComponents(gfx::Transform* transform) {
-  transform->matrix().set(0, 3, MathUtil::Round(transform->matrix().get(0, 3)));
-  transform->matrix().set(1, 3, MathUtil::Round(transform->matrix().get(1, 3)));
 }
 
 template <typename LayerType>
@@ -1666,7 +1665,7 @@ static void CalculateDrawPropertiesInternal(
         layer->parent()->screen_space_transform_is_animating();
   }
   gfx::Point3F transform_origin = layer->transform_origin();
-  gfx::ScrollOffset scroll_offset = GetEffectiveTotalScrollOffset(layer);
+  gfx::ScrollOffset scroll_offset = GetEffectiveCurrentScrollOffset(layer);
   gfx::PointF position =
       layer->position() - ScrollOffsetToVector2dF(scroll_offset);
   gfx::Transform combined_transform = data_from_ancestor.parent_matrix;
@@ -1692,7 +1691,7 @@ static void CalculateDrawPropertiesInternal(
     // blurriness.  To avoid side-effects, do this only if the transform is
     // simple.
     gfx::Vector2dF previous_translation = combined_transform.To2dTranslation();
-    RoundTranslationComponents(&combined_transform);
+    combined_transform.RoundTranslationComponents();
     gfx::Vector2dF current_translation = combined_transform.To2dTranslation();
 
     // This rounding changes the scroll delta, and so must be included
@@ -1831,14 +1830,6 @@ static void CalculateDrawPropertiesInternal(
   data_for_children.full_hierarchy_matrix =
       data_from_ancestor.full_hierarchy_matrix;
 
-  // If the subtree will scale layer contents by the transform hierarchy, then
-  // we should scale things into the render surface by the transform hierarchy
-  // to take advantage of that.
-  gfx::Vector2dF render_surface_sublayer_scale =
-      globals.can_adjust_raster_scales
-      ? combined_transform_scales
-      : gfx::Vector2dF(layer_scale_factors, layer_scale_factors);
-
   bool render_to_separate_surface =
       IsRootLayer(layer) ||
       (globals.can_render_to_separate_surface && layer->render_surface());
@@ -1873,17 +1864,19 @@ static void CalculateDrawPropertiesInternal(
       // space which we do not want; so here we use the combined_transform
       // instead of the draw_transform. However, we do need to add a different
       // scale factor that accounts for the surface's pixel dimensions.
-      combined_transform.Scale(1.0 / render_surface_sublayer_scale.x(),
-                               1.0 / render_surface_sublayer_scale.y());
-      render_surface->SetDrawTransform(combined_transform);
+      // Remove the combined_transform scale from the draw transform.
+      gfx::Transform draw_transform = combined_transform;
+      draw_transform.Scale(1.0 / combined_transform_scales.x(),
+                           1.0 / combined_transform_scales.y());
+      render_surface->SetDrawTransform(draw_transform);
 
       // The owning layer's transform was re-parented by the surface, so the
       // layer's new draw_transform only needs to scale the layer to surface
       // space.
       layer_draw_properties.target_space_transform.MakeIdentity();
-      layer_draw_properties.target_space_transform.
-          Scale(render_surface_sublayer_scale.x() / layer->contents_scale_x(),
-                render_surface_sublayer_scale.y() / layer->contents_scale_y());
+      layer_draw_properties.target_space_transform.Scale(
+          combined_transform_scales.x() / layer->contents_scale_x(),
+          combined_transform_scales.y() / layer->contents_scale_y());
 
       // Inside the surface's subtree, we scale everything to the owning layer's
       // scale.  The sublayer matrix transforms layer rects into target surface
@@ -1892,8 +1885,8 @@ static void CalculateDrawPropertiesInternal(
       // but we apply it explicitly to the owning layer and the remainder of the
       // subtree independently.
       DCHECK(data_for_children.parent_matrix.IsIdentity());
-      data_for_children.parent_matrix.Scale(render_surface_sublayer_scale.x(),
-                            render_surface_sublayer_scale.y());
+      data_for_children.parent_matrix.Scale(combined_transform_scales.x(),
+                                            combined_transform_scales.y());
 
       // Even if the |layer_is_drawn|, it only contributes to a drawn surface
       // when the |layer_is_visible|.
@@ -2311,14 +2304,14 @@ static void CalculateDrawPropertiesInternal(
     // surface's subtree into layer space.
     gfx::Transform screen_space_transform = layer->screen_space_transform();
     screen_space_transform.Scale(
-        layer->contents_scale_x() / render_surface_sublayer_scale.x(),
-        layer->contents_scale_y() / render_surface_sublayer_scale.y());
+        layer->contents_scale_x() / combined_transform_scales.x(),
+        layer->contents_scale_y() / combined_transform_scales.y());
     render_surface->SetScreenSpaceTransform(screen_space_transform);
 
     if (layer->replica_layer()) {
       gfx::Transform surface_origin_to_replica_origin_transform;
       surface_origin_to_replica_origin_transform.Scale(
-          render_surface_sublayer_scale.x(), render_surface_sublayer_scale.y());
+          combined_transform_scales.x(), combined_transform_scales.y());
       surface_origin_to_replica_origin_transform.Translate(
           layer->replica_layer()->position().x() +
               layer->replica_layer()->transform_origin().x(),
@@ -2330,8 +2323,8 @@ static void CalculateDrawPropertiesInternal(
           -layer->replica_layer()->transform_origin().x(),
           -layer->replica_layer()->transform_origin().y());
       surface_origin_to_replica_origin_transform.Scale(
-          1.0 / render_surface_sublayer_scale.x(),
-          1.0 / render_surface_sublayer_scale.y());
+          1.0 / combined_transform_scales.x(),
+          1.0 / combined_transform_scales.y());
 
       // Compute the replica's "originTransform" that maps from the replica's
       // origin space to the target surface origin space.
@@ -2488,6 +2481,12 @@ static bool ApproximatelyEqual(const gfx::Rect& r1, const gfx::Rect& r2) {
          std::abs(r1.height() - r2.height()) <= tolerance;
 }
 
+static bool ApproximatelyEqual(const gfx::Transform& a,
+                               const gfx::Transform& b) {
+  static const float tolerance = 0.01f;
+  return gfx::MatrixDistance(a, b) < tolerance;
+}
+
 void LayerTreeHostCommon::CalculateDrawProperties(
     CalcDrawPropsMainInputs* inputs) {
   UpdateRenderSurfaces(inputs->root_layer,
@@ -2517,8 +2516,8 @@ void LayerTreeHostCommon::CalculateDrawProperties(
   DCHECK(inputs->root_layer->render_surface());
 
   if (inputs->verify_property_trees) {
-    // TODO(ajuma): Can we efficiently cache some of this rather than
-    // starting from scratch every frame?
+    // The translation from layer to property trees is an intermediate state. We
+    // will eventually get these data passed directly to the compositor.
     TransformTree transform_tree;
     ClipTree clip_tree;
     ComputeVisibleRectsUsingPropertyTrees(
@@ -2527,23 +2526,24 @@ void LayerTreeHostCommon::CalculateDrawProperties(
         gfx::Rect(inputs->device_viewport_size), inputs->device_transform,
         &transform_tree, &clip_tree);
 
-    bool failed = false;
     LayerIterator<Layer> it, end;
     for (it = LayerIterator<Layer>::Begin(inputs->render_surface_layer_list),
         end = LayerIterator<Layer>::End(inputs->render_surface_layer_list);
          it != end; ++it) {
       Layer* current_layer = *it;
-      if (it.represents_itself()) {
-        if (!failed && current_layer->DrawsContent() &&
-            !ApproximatelyEqual(
-                current_layer->visible_content_rect(),
-                current_layer->visible_rect_from_property_trees())) {
-          failed = true;
-        }
-      }
-    }
+      if (!it.represents_itself() || !current_layer->DrawsContent())
+        continue;
 
-    CHECK(!failed);
+      const bool visible_rects_match =
+          ApproximatelyEqual(current_layer->visible_content_rect(),
+                             current_layer->visible_rect_from_property_trees());
+      CHECK(visible_rects_match);
+
+      const bool draw_transforms_match = ApproximatelyEqual(
+          current_layer->draw_transform(),
+          current_layer->draw_transform_from_property_trees(transform_tree));
+      CHECK(draw_transforms_match);
+    }
   }
 }
 

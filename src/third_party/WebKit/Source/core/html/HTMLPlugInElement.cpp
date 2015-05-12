@@ -38,6 +38,9 @@
 #include "core/html/HTMLContentElement.h"
 #include "core/html/HTMLImageLoader.h"
 #include "core/html/PluginDocument.h"
+#include "core/layout/LayoutEmbeddedObject.h"
+#include "core/layout/LayoutImage.h"
+#include "core/layout/LayoutPart.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/MixedContentChecker.h"
 #include "core/page/EventHandler.h"
@@ -46,9 +49,6 @@
 #include "core/plugins/PluginPlaceholder.h"
 #include "core/plugins/PluginView.h"
 #include "core/rendering/RenderBlockFlow.h"
-#include "core/rendering/RenderEmbeddedObject.h"
-#include "core/rendering/RenderImage.h"
-#include "core/rendering/RenderPart.h"
 #include "platform/Logging.h"
 #include "platform/MIMETypeFromURL.h"
 #include "platform/MIMETypeRegistry.h"
@@ -85,7 +85,7 @@ HTMLPlugInElement::~HTMLPlugInElement()
     }
 }
 
-void HTMLPlugInElement::trace(Visitor* visitor)
+DEFINE_TRACE(HTMLPlugInElement)
 {
     visitor->trace(m_imageLoader);
     visitor->trace(m_placeholder);
@@ -140,14 +140,14 @@ bool HTMLPlugInElement::willRespondToMouseClickEvents()
 {
     if (isDisabledFormControl())
         return false;
-    RenderObject* r = renderer();
-    return r && (r->isEmbeddedObject() || r->isRenderPart());
+    LayoutObject* r = renderer();
+    return r && (r->isEmbeddedObject() || r->isLayoutPart());
 }
 
 void HTMLPlugInElement::removeAllEventListeners()
 {
     HTMLFrameOwnerElement::removeAllEventListeners();
-    if (RenderPart* renderer = existingRenderPart()) {
+    if (LayoutPart* renderer = existingLayoutPart()) {
         if (Widget* widget = renderer->widget())
             widget->eventListenersRemoved();
     }
@@ -172,8 +172,8 @@ void HTMLPlugInElement::attach(const AttachContext& context)
             m_imageLoader = HTMLImageLoader::create(this);
         m_imageLoader->updateFromElement();
     } else if (needsWidgetUpdate()
-        && renderEmbeddedObject()
-        && !renderEmbeddedObject()->showsUnavailablePluginIndicator()
+        && layoutEmbeddedObject()
+        && !layoutEmbeddedObject()->showsUnavailablePluginIndicator()
         && !wouldLoadAsNetscapePlugin(m_url, m_serviceType)
         && !m_isDelayingLoadEvent) {
         m_isDelayingLoadEvent = true;
@@ -201,7 +201,7 @@ void HTMLPlugInElement::requestPluginCreationWithoutRendererIfPossible()
         || !document().frame()->loader().client()->canCreatePluginWithoutRenderer(m_serviceType))
         return;
 
-    if (renderer() && renderer()->isRenderPart())
+    if (renderer() && renderer()->isLayoutPart())
         return;
 
     createPluginWithoutRenderer();
@@ -263,24 +263,24 @@ void HTMLPlugInElement::detach(const AttachContext& context)
     HTMLFrameOwnerElement::detach(context);
 }
 
-RenderObject* HTMLPlugInElement::createRenderer(RenderStyle* style)
+LayoutObject* HTMLPlugInElement::createRenderer(const LayoutStyle& style)
 {
     // Fallback content breaks the DOM->Renderer class relationship of this
     // class and all superclasses because createObject won't necessarily return
-    // a RenderEmbeddedObject or RenderPart.
+    // a LayoutEmbeddedObject or LayoutPart.
     if (useFallbackContent())
-        return RenderObject::createObject(this, style);
+        return LayoutObject::createObject(this, style);
 
     if (isImageType()) {
-        RenderImage* image = new RenderImage(this);
-        image->setImageResource(RenderImageResource::create());
+        LayoutImage* image = new LayoutImage(this);
+        image->setImageResource(LayoutImageResource::create());
         return image;
     }
 
     if (usePlaceholderContent())
         return new RenderBlockFlow(this);
 
-    return new RenderEmbeddedObject(this);
+    return new LayoutEmbeddedObject(this);
 }
 
 void HTMLPlugInElement::finishParsingChildren()
@@ -324,15 +324,15 @@ SharedPersistent<v8::Object>* HTMLPlugInElement::pluginWrapper()
 
 Widget* HTMLPlugInElement::existingPluginWidget() const
 {
-    if (RenderPart* renderPart = existingRenderPart())
-        return renderPart->widget();
+    if (LayoutPart* layoutPart = existingLayoutPart())
+        return layoutPart->widget();
     return nullptr;
 }
 
 Widget* HTMLPlugInElement::pluginWidgetForJSBindings()
 {
-    if (RenderPart* renderPart = renderPartForJSBindings())
-        return renderPart->widget();
+    if (LayoutPart* layoutPart = layoutPartForJSBindings())
+        return layoutPart->widget();
     return nullptr;
 }
 
@@ -374,14 +374,14 @@ void HTMLPlugInElement::defaultEventHandler(Event* event)
     // FIXME: Mouse down and scroll events are passed down to plug-in via custom
     // code in EventHandler; these code paths should be united.
 
-    RenderObject* r = renderer();
-    if (!r || !r->isRenderPart())
+    LayoutObject* r = renderer();
+    if (!r || !r->isLayoutPart())
         return;
     if (r->isEmbeddedObject()) {
-        if (toRenderEmbeddedObject(r)->showsUnavailablePluginIndicator())
+        if (toLayoutEmbeddedObject(r)->showsUnavailablePluginIndicator())
             return;
     }
-    RefPtrWillBeRawPtr<Widget> widget = toRenderPart(r)->widget();
+    RefPtrWillBeRawPtr<Widget> widget = toLayoutPart(r)->widget();
     if (!widget)
         return;
     widget->handleEvent(event);
@@ -390,13 +390,13 @@ void HTMLPlugInElement::defaultEventHandler(Event* event)
     HTMLFrameOwnerElement::defaultEventHandler(event);
 }
 
-RenderPart* HTMLPlugInElement::renderPartForJSBindings() const
+LayoutPart* HTMLPlugInElement::layoutPartForJSBindings() const
 {
     // Needs to load the plugin immediatedly because this function is called
     // when JavaScript code accesses the plugin.
     // FIXME: Check if dispatching events here is safe.
     document().updateLayoutIgnorePendingStylesheets(Document::RunPostLayoutTasksSynchronously);
-    return existingRenderPart();
+    return existingLayoutPart();
 }
 
 bool HTMLPlugInElement::isKeyboardFocusable() const
@@ -430,7 +430,7 @@ bool HTMLPlugInElement::rendererIsFocusable() const
 
     if (useFallbackContent() || !renderer() || !renderer()->isEmbeddedObject())
         return false;
-    return !toRenderEmbeddedObject(renderer())->showsUnavailablePluginIndicator();
+    return !toLayoutEmbeddedObject(renderer())->showsUnavailablePluginIndicator();
 }
 
 NPObject* HTMLPlugInElement::getNPObject()
@@ -439,6 +439,14 @@ NPObject* HTMLPlugInElement::getNPObject()
     if (!m_NPObject)
         m_NPObject = document().frame()->script().createScriptObjectForPluginElement(this);
     return m_NPObject;
+}
+
+void HTMLPlugInElement::setPluginFocus(bool focused)
+{
+    Widget* focusedWidget = existingPluginWidget();
+    // NPAPI flash requires to receive messages when web contents focus changes.
+    if (getNPObject() && focusedWidget)
+        focusedWidget->setFocus(focused, WebFocusTypeNone);
 }
 
 bool HTMLPlugInElement::isImageType()
@@ -454,13 +462,13 @@ bool HTMLPlugInElement::isImageType()
     return Image::supportsType(m_serviceType);
 }
 
-RenderEmbeddedObject* HTMLPlugInElement::renderEmbeddedObject() const
+LayoutEmbeddedObject* HTMLPlugInElement::layoutEmbeddedObject() const
 {
     // HTMLObjectElement and HTMLEmbedElement may return arbitrary renderers
     // when using fallback content.
     if (!renderer() || !renderer()->isEmbeddedObject())
         return nullptr;
-    return toRenderEmbeddedObject(renderer());
+    return toLayoutEmbeddedObject(renderer());
 }
 
 // We don't use m_url, as it may not be the final URL that the object loads,
@@ -494,7 +502,7 @@ bool HTMLPlugInElement::requestObject(const String& url, const String& mimeType,
         return false;
 
     // FIXME: None of this code should use renderers!
-    RenderEmbeddedObject* renderer = renderEmbeddedObject();
+    LayoutEmbeddedObject* renderer = layoutEmbeddedObject();
     ASSERT(renderer);
     if (!renderer)
         return false;
@@ -510,7 +518,7 @@ bool HTMLPlugInElement::requestObject(const String& url, const String& mimeType,
 
     // If the plug-in element already contains a subframe,
     // loadOrRedirectSubframe will re-use it. Otherwise, it will create a new
-    // frame and set it as the RenderPart's widget, causing what was previously
+    // frame and set it as the LayoutPart's widget, causing what was previously
     // in the widget to be torn down.
     return loadOrRedirectSubframe(completedURL, getNameAttribute(), true, CheckContentSecurityPolicy);
 }
@@ -522,7 +530,7 @@ bool HTMLPlugInElement::loadPlugin(const KURL& url, const String& mimeType, cons
     if (!frame->loader().allowPlugins(AboutToInstantiatePlugin))
         return false;
 
-    RenderEmbeddedObject* renderer = renderEmbeddedObject();
+    LayoutEmbeddedObject* renderer = layoutEmbeddedObject();
     // FIXME: This code should not depend on renderer!
     if ((!renderer && requireRenderer) || useFallback)
         return false;
@@ -544,7 +552,7 @@ bool HTMLPlugInElement::loadPlugin(const KURL& url, const String& mimeType, cons
 
     if (!placeholder && !widget) {
         if (renderer && !renderer->showsUnavailablePluginIndicator())
-            renderer->setPluginUnavailabilityReason(RenderEmbeddedObject::PluginMissing);
+            renderer->setPluginUnavailabilityReason(LayoutEmbeddedObject::PluginMissing);
         setPlaceholder(nullptr);
         return false;
     }
@@ -594,10 +602,10 @@ void HTMLPlugInElement::setPlaceholder(PassOwnPtrWillBeRawPtr<PluginPlaceholder>
 {
     bool needsLazyReattach = (!placeholder) != (!m_placeholder);
     if (placeholder) {
-        placeholder->loadIntoContainer(ensureUserAgentShadowRoot());
+        placeholder->loadIntoContainer(ensureClosedShadowRoot());
         m_placeholder = placeholder;
     } else {
-        ShadowRoot& shadowRoot = ensureUserAgentShadowRoot();
+        ShadowRoot& shadowRoot = ensureClosedShadowRoot();
         shadowRoot.removeChildren();
         shadowRoot.appendChild(HTMLContentElement::create(document()));
         m_placeholder.clear();
@@ -637,19 +645,19 @@ bool HTMLPlugInElement::pluginIsLoadable(const KURL& url, const String& mimeType
         fastGetAttribute(HTMLNames::typeAttr);
     if (!document().contentSecurityPolicy()->allowObjectFromSource(url)
         || !document().contentSecurityPolicy()->allowPluginType(mimeType, declaredMimeType, url)) {
-        renderEmbeddedObject()->setPluginUnavailabilityReason(RenderEmbeddedObject::PluginBlockedByContentSecurityPolicy);
+        layoutEmbeddedObject()->setPluginUnavailabilityReason(LayoutEmbeddedObject::PluginBlockedByContentSecurityPolicy);
         return false;
     }
 
     return !MixedContentChecker::shouldBlockFetch(frame, WebURLRequest::RequestContextObject, WebURLRequest::FrameTypeNone, url);
 }
 
-void HTMLPlugInElement::didAddUserAgentShadowRoot(ShadowRoot&)
+void HTMLPlugInElement::didAddClosedShadowRoot(ShadowRoot&)
 {
-    userAgentShadowRoot()->appendChild(HTMLContentElement::create(document()));
+    closedShadowRoot()->appendChild(HTMLContentElement::create(document()));
 }
 
-void HTMLPlugInElement::willAddFirstAuthorShadowRoot()
+void HTMLPlugInElement::willAddFirstOpenShadowRoot()
 {
     lazyReattachIfAttached();
 }
@@ -661,7 +669,7 @@ bool HTMLPlugInElement::hasFallbackContent() const
 
 bool HTMLPlugInElement::useFallbackContent() const
 {
-    return hasAuthorShadowRoot();
+    return hasOpenShadowRoot();
 }
 
 void HTMLPlugInElement::lazyReattachIfNeeded()

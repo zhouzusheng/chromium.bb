@@ -10,7 +10,7 @@
 #ifndef VPX_VP8CX_H_
 #define VPX_VP8CX_H_
 
-/*!\defgroup vp8_encoder WebM VP8 Encoder
+/*!\defgroup vp8_encoder WebM VP8/VP9 Encoder
  * \ingroup vp8
  *
  * @{
@@ -18,7 +18,7 @@
 #include "./vp8.h"
 
 /*!\file
- * \brief Provides definitions for using the VP8 encoder algorithm within the
+ * \brief Provides definitions for using VP8 or VP9 encoder algorithm within the
  *        vpx Codec Interface.
  */
 
@@ -28,17 +28,20 @@ extern "C" {
 
 /*!\name Algorithm interface for VP8
  *
- * This interface provides the capability to encode raw VP8 streams, as would
- * be found in AVI files.
+ * This interface provides the capability to encode raw VP8 streams.
  * @{
  */
 extern vpx_codec_iface_t  vpx_codec_vp8_cx_algo;
 extern vpx_codec_iface_t *vpx_codec_vp8_cx(void);
+/*!@} - end algorithm interface member group*/
 
-/* TODO(jkoleszar): These move to VP9 in a later patch set. */
+/*!\name Algorithm interface for VP9
+ *
+ * This interface provides the capability to encode raw VP9 streams.
+ * @{
+ */
 extern vpx_codec_iface_t  vpx_codec_vp9_cx_algo;
 extern vpx_codec_iface_t *vpx_codec_vp9_cx(void);
-
 /*!@} - end algorithm interface member group*/
 
 
@@ -234,20 +237,111 @@ enum vp8e_enc_control_id {
 
   VP8E_SET_SCREEN_CONTENT_MODE,  /**<control function to set encoder screen content mode */
 
-  /* TODO(jkoleszar): Move to vp9cx.h */
+  /*!\brief Codec control function to set lossless encoding mode
+   *
+   * VP9 can operate in lossless encoding mode, in which the bitstream
+   * produced will be able to decode and reconstruct a perfect copy of
+   * input source. This control function provides a mean to switch encoder
+   * into lossless coding mode(1) or normal coding mode(0) that may be lossy.
+   *                          0 = lossy coding mode
+   *                          1 = lossless coding mode
+   *
+   *  By default, encoder operates in normal coding mode (maybe lossy).
+   */
   VP9E_SET_LOSSLESS,
+
+  /*!\brief Codec control function to set number of tile columns
+   *
+   * In encoding and decoding, VP9 allows an input image frame be partitioned
+   * into separated vertical tile columns, which can be encoded or decoded
+   * independently. This enables easy implementation of parallel encoding and
+   * decoding. This control requests the encoder to use column tiles in
+   * encoding an input frame, with number of tile columns (in Log2 unit) as
+   * the parameter:
+   *             0 = 1 tile column
+   *             1 = 2 tile columns
+   *             2 = 4 tile columns
+   *             .....
+   *             n = 2**n tile columns
+   * The requested tile columns will be capped by encoder based on image size
+   * limitation (The minimum width of a tile column is 256 pixel, the maximum
+   * is 4096).
+   *
+   * By default, the value is 0, i.e. one single column tile for entire image.
+   */
   VP9E_SET_TILE_COLUMNS,
+
+  /*!\brief Codec control function to set number of tile rows
+   *
+   * In encoding and decoding, VP9 allows an input image frame be partitioned
+   * into separated horizontal tile rows. Tile rows are encoded or decoded
+   * sequentially. Even though encoding/decoding of later tile rows depends on
+   * earlier ones, this allows the encoder to output data packets for tile rows
+   * prior to completely processing all tile rows in a frame, thereby reducing
+   * the latency in processing between input and output. The parameter
+   * for this control describes the number of tile rows, which has a valid
+   * range [0, 2]:
+   *            0 = 1 tile row
+   *            1 = 2 tile rows
+   *            2 = 4 tile rows
+   *
+   * By default, the value is 0, i.e. one single row tile for entire image.
+   */
   VP9E_SET_TILE_ROWS,
+
+  /*!\brief Codec control function to enable frame parallel decoding feature
+   *
+   * VP9 has a bitstream feature to reduce decoding dependency between frames
+   * by turning off backward update of probability context used in encoding
+   * and decoding. This allows staged parallel processing of more than one
+   * video frames in the decoder. This control function provides a mean to
+   * turn this feature on or off for bitstreams produced by encoder.
+   *
+   * By default, this feature is off.
+   */
   VP9E_SET_FRAME_PARALLEL_DECODING,
+
+  /*!\brief Codec control function to set adaptive quantization mode
+   *
+   * VP9 has a segment based feature that allows encoder to adaptively change
+   * quantization parameter for each segment within a frame to improve the
+   * subjective quality. This control makes encoder operate in one of the
+   * several AQ_modes supported.
+   *
+   * By default, encoder operates with AQ_Mode 0(adaptive quantization off).
+   */
   VP9E_SET_AQ_MODE,
+
+  /*!\brief Codec control function to enable/disable periodic Q boost
+   *
+   * One VP9 encoder speed feature is to enable quality boost by lowering
+   * frame level Q periodically. This control function provides a mean to
+   * turn on/off this feature.
+   *               0 = off
+   *               1 = on
+   *
+   * By default, the encoder is allowed to use this feature for appropriate
+   * encoding modes.
+   */
   VP9E_SET_FRAME_PERIODIC_BOOST,
+
   /*!\brief control function to set noise sensitivity
    *
    *  0: off, 1: OnYOnly
    */
   VP9E_SET_NOISE_SENSITIVITY,
 
+  /*!\brief control function to turn on/off SVC in encoder.
+   * \note Return value is VPX_CODEC_INVALID_PARAM if the encoder does not
+   *       support SVC in its current encoding mode
+   *  0: off, 1: on
+   */
   VP9E_SET_SVC,
+
+  /*!\brief control function to set parameters for SVC.
+   * \note Parameters contain min_q, max_q, scaling factor for each of the
+   *       SVC layers.
+   */
   VP9E_SET_SVC_PARAMETERS,
 
   /*!\brief control function to set svc layer for spatial and temporal.
@@ -256,9 +350,38 @@ enum vp8e_enc_control_id {
    *                     temporal layer.
    */
   VP9E_SET_SVC_LAYER_ID,
+
+  /*!\brief control function to set content type.
+   * \note Valid parameter range:
+   *              VP9E_CONTENT_DEFAULT = Regular video content (Default)
+   *              VP9E_CONTENT_SCREEN  = Screen capture content
+   */
   VP9E_SET_TUNE_CONTENT,
+
+  /*!\brief control function to get svc layer ID.
+   * \note The layer ID returned is for the data packet from the registered
+   *       callback function.
+   */
   VP9E_GET_SVC_LAYER_ID,
+
+  /*!\brief control function to register callback for getting per layer packet.
+   * \note Parameter for this control function is a structure with a callback
+   *       function and a pointer to private data used by the callback.
+   */
   VP9E_REGISTER_CX_CALLBACK,
+
+  /*!\brief control function to set color space info.
+   * \note Valid ranges: 0..7, default is "UNKNOWN".
+   *                     0 = UNKNOWN,
+   *                     1 = BT_601
+   *                     2 = BT_709
+   *                     3 = SMPTE_170
+   *                     4 = SMPTE_240
+   *                     5 = BT_2020
+   *                     6 = RESERVED
+   *                     7 = SRGB
+   */
+  VP9E_SET_COLOR_SPACE,
 };
 
 /*!\brief vpx 1-D scaling mode
@@ -423,6 +546,8 @@ VPX_CTRL_USE_TYPE(VP9E_SET_FRAME_PERIODIC_BOOST, unsigned int)
 VPX_CTRL_USE_TYPE(VP9E_SET_NOISE_SENSITIVITY,  unsigned int)
 
 VPX_CTRL_USE_TYPE(VP9E_SET_TUNE_CONTENT, int) /* vp9e_tune_content */
+
+VPX_CTRL_USE_TYPE(VP9E_SET_COLOR_SPACE, int)
 /*! @} - end defgroup vp8_encoder */
 #ifdef __cplusplus
 }  // extern "C"

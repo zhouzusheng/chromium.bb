@@ -6,9 +6,14 @@
 #define CONTENT_BROWSER_MESSAGE_PORT_MESSAGE_FILTER_H_
 
 #include "base/callback.h"
-#include "content/browser/message_port_delegate.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/browser_message_filter.h"
+#include "content/public/browser/message_port_delegate.h"
+
+// Windows headers will redefine SendMessage.
+#ifdef SendMessage
+#undef SendMessage
+#endif
 
 struct ViewMsg_PostMessage_Params;
 
@@ -17,7 +22,7 @@ namespace content {
 // Filter for MessagePort related IPC messages (creating and destroying a
 // MessagePort, sending a message via a MessagePort etc).
 class CONTENT_EXPORT MessagePortMessageFilter
-    : NON_EXPORTED_BASE(public MessagePortDelegate),
+    : public MessagePortDelegate,
       public BrowserMessageFilter {
  public:
   typedef base::Callback<int(void)> NextRoutingIDCallback;

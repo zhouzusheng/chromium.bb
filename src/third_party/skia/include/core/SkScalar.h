@@ -58,6 +58,7 @@ typedef float SkScalar;
 #define SkScalarATan2(y, x)         (float)sk_float_atan2(y,x)
 #define SkScalarExp(x)              (float)sk_float_exp(x)
 #define SkScalarLog(x)              (float)sk_float_log(x)
+#define SkScalarLog2(x)             (float)sk_float_log2(x)
 
 #else   // SK_SCALAR_IS_DOUBLE
 
@@ -100,6 +101,7 @@ typedef double SkScalar;
 #define SkScalarATan2(y, x)         atan2(y,x)
 #define SkScalarExp(x)              exp(x)
 #define SkScalarLog(x)              log(x)
+#define SkScalarLog2(x)             log2(x)
 
 #endif
 
@@ -126,7 +128,23 @@ static inline bool SkScalarIsFinite(SkScalar x) {
     // 0 * NaN --> NaN
     SkScalar prod = x * 0;
     // At this point, prod will either be NaN or 0
-    // Therefore we can return (prod == prod) or (0 == prod).
+    return !SkScalarIsNaN(prod);
+}
+
+static inline bool SkScalarsAreFinite(SkScalar a, SkScalar b) {
+    SkScalar prod = 0;
+    prod *= a;
+    prod *= b;
+    // At this point, prod will either be NaN or 0
+    return !SkScalarIsNaN(prod);
+}
+
+static inline bool SkScalarsAreFinite(const SkScalar array[], int count) {
+    SkScalar prod = 0;
+    for (int i = 0; i < count; ++i) {
+        prod *= array[i];
+    }
+    // At this point, prod will either be NaN or 0
     return !SkScalarIsNaN(prod);
 }
 

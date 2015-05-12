@@ -26,31 +26,59 @@
 
 namespace blink {
 
+// RenderCombineText uses different coordinate systems for layout and inlineTextBox,
+// because it is treated as 1em-box character in vertical flow for the layout,
+// while its inline box is in horizontal flow.
 class RenderCombineText final : public RenderText {
 public:
     RenderCombineText(Node*, PassRefPtr<StringImpl>);
 
-    void combineText();
-    void adjustTextOrigin(FloatPoint& textOrigin, const FloatRect& boxRect) const;
-    void getStringToRender(int, StringView&, int& length) const;
+    void updateFont();
     bool isCombined() const { return m_isCombined; }
     float combinedTextWidth(const Font& font) const { return font.fontDescription().computedSize(); }
     const Font& originalFont() const { return parent()->style()->font(); }
+    void transformToInlineCoordinates(GraphicsContext&, const FloatRect& boxRect) const;
+    void transformLayoutRect(FloatRect& boxRect) const;
+    float inlineWidthForLayout() const;
 
 private:
     virtual bool isCombineText() const override { return true; }
     virtual float width(unsigned from, unsigned length, const Font&, float xPosition, TextDirection, HashSet<const SimpleFontData*>* fallbackFonts = 0, GlyphOverflow* = 0) const override;
     virtual const char* renderName() const override { return "RenderCombineText"; }
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) override;
+    virtual void styleDidChange(StyleDifference, const LayoutStyle* oldStyle) override;
     virtual void setTextInternal(PassRefPtr<StringImpl>) override;
+    void updateIsCombined();
+
+    float offsetX(const FloatRect& boxRect) const;
+    float offsetXNoScale(const FloatRect& boxRect) const;
+    float offsetY() const { return style()->font().fontDescription().computedPixelSize(); }
 
     float m_combinedTextWidth;
-    String m_renderingText;
+    float m_scaleX;
     bool m_isCombined : 1;
     bool m_needsFontUpdate : 1;
 };
 
-DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderCombineText, isCombineText());
+DEFINE_LAYOUT_OBJECT_TYPE_CASTS(RenderCombineText, isCombineText());
+
+inline float RenderCombineText::inlineWidthForLayout() const
+{
+    ASSERT(!m_needsFontUpdate);
+    return m_combinedTextWidth;
+}
+
+inline float RenderCombineText::offsetX(const FloatRect& boxRect) const
+{
+    ASSERT(!m_needsFontUpdate);
+    return (boxRect.height() - m_combinedTextWidth / m_scaleX) / 2;
+}
+
+inline float RenderCombineText::offsetXNoScale(const FloatRect& boxRect) const
+{
+    ASSERT(!m_needsFontUpdate);
+    return (boxRect.height() - m_combinedTextWidth) / 2;
+}
+
 
 } // namespace blink
 

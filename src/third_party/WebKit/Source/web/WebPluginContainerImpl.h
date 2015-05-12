@@ -83,7 +83,7 @@ public:
     virtual void setFrameRect(const IntRect&) override;
     virtual void paint(GraphicsContext*, const IntRect&) override;
     virtual void invalidateRect(const IntRect&) override;
-    virtual void setFocus(bool) override;
+    virtual void setFocus(bool, WebFocusType) override;
     virtual void show() override;
     virtual void hide() override;
     virtual void handleEvent(Event*) override;
@@ -163,7 +163,7 @@ public:
 
     bool paintCustomOverhangArea(GraphicsContext*, const IntRect&, const IntRect&, const IntRect&);
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
     virtual void dispose() override;
 
 #if ENABLE(OILPAN)

@@ -12,9 +12,9 @@
 #include "third_party/WebKit/public/web/WebView.h"
 #include "v8/include/v8.h"
 
-#include "chrome/renderer/printing/print_web_view_helper.h"
 #include "chrome/renderer/spellchecker/spellcheck.h"
 #include "chrome/renderer/spellchecker/spellcheck_provider.h"
+#include "components/printing/renderer/print_web_view_helper.h"
 
 namespace content {
 
@@ -35,7 +35,7 @@ void ShellContentRendererClient::RenderThreadStarted() {
 void ShellContentRendererClient::RenderViewCreated(RenderView* render_view) {
   new ShellRenderViewObserver(render_view);
   new SpellCheckProvider(render_view, spellcheck_.get());
-  new printing::PrintWebViewHelper(render_view, true, true,
+  new printing::PrintWebViewHelper(render_view,
                                    scoped_ptr<printing::PrintWebViewHelper::Delegate>(printing::PrintWebViewHelper::CreateEmptyDelegate()));
 }
 

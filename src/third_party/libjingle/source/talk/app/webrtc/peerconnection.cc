@@ -1,6 +1,6 @@
 /*
  * libjingle
- * Copyright 2012, Google Inc.
+ * Copyright 2012 Google Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -323,28 +323,16 @@ bool PeerConnection::Initialize(
     PortAllocatorFactoryInterface* allocator_factory,
     DTLSIdentityServiceInterface* dtls_identity_service,
     PeerConnectionObserver* observer) {
+  ASSERT(observer != NULL);
+  if (!observer)
+    return false;
+  observer_ = observer;
+
   std::vector<PortAllocatorFactoryInterface::StunConfiguration> stun_config;
   std::vector<PortAllocatorFactoryInterface::TurnConfiguration> turn_config;
   if (!ParseIceServers(configuration.servers, &stun_config, &turn_config)) {
     return false;
   }
-
-  return DoInitialize(configuration.type, stun_config, turn_config, constraints,
-                      allocator_factory, dtls_identity_service, observer);
-}
-
-bool PeerConnection::DoInitialize(
-    IceTransportsType type,
-    const StunConfigurations& stun_config,
-    const TurnConfigurations& turn_config,
-    const MediaConstraintsInterface* constraints,
-    webrtc::PortAllocatorFactoryInterface* allocator_factory,
-    DTLSIdentityServiceInterface* dtls_identity_service,
-    PeerConnectionObserver* observer) {
-  ASSERT(observer != NULL);
-  if (!observer)
-    return false;
-  observer_ = observer;
   port_allocator_.reset(
       allocator_factory->CreatePortAllocator(stun_config, turn_config));
 
@@ -353,17 +341,18 @@ bool PeerConnection::DoInitialize(
   int portallocator_flags = port_allocator_->flags();
   portallocator_flags |= cricket::PORTALLOCATOR_ENABLE_BUNDLE |
                          cricket::PORTALLOCATOR_ENABLE_SHARED_UFRAG |
-                         cricket::PORTALLOCATOR_ENABLE_SHARED_SOCKET;
+                         cricket::PORTALLOCATOR_ENABLE_SHARED_SOCKET |
+                         cricket::PORTALLOCATOR_ENABLE_IPV6;
   bool value;
   // If IPv6 flag was specified, we'll not override it by experiment.
   if (FindConstraint(
           constraints, MediaConstraintsInterface::kEnableIPv6, &value, NULL)) {
-    if (value) {
-      portallocator_flags |= cricket::PORTALLOCATOR_ENABLE_IPV6;
+    if (!value) {
+      portallocator_flags &= ~(cricket::PORTALLOCATOR_ENABLE_IPV6);
     }
   } else if (webrtc::field_trial::FindFullName("WebRTC-IPv6Default") ==
-             "Enabled") {
-    portallocator_flags |= cricket::PORTALLOCATOR_ENABLE_IPV6;
+             "Disabled") {
+    portallocator_flags &= ~(cricket::PORTALLOCATOR_ENABLE_IPV6);
   }
 
   port_allocator_->set_flags(portallocator_flags);
@@ -384,7 +373,9 @@ bool PeerConnection::DoInitialize(
 
   // Initialize the WebRtcSession. It creates transport channels etc.
   if (!session_->Initialize(factory_->options(), constraints,
-                            dtls_identity_service, type))
+                            dtls_identity_service,
+                            configuration.type,
+                            configuration.bundle_policy))
     return false;
 
   // Register PeerConnection as receiver of local ice candidates.

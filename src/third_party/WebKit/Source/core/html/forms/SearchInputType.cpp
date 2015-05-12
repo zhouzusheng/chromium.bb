@@ -34,8 +34,8 @@
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/HTMLNames.h"
 #include "core/InputTypeNames.h"
-#include "core/events/KeyboardEvent.h"
 #include "core/dom/shadow/ShadowRoot.h"
+#include "core/events/KeyboardEvent.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/html/shadow/TextControlInnerElements.h"
@@ -62,7 +62,7 @@ void SearchInputType::countUsage()
     countUsageIfVisible(UseCounter::InputTypeSearch);
 }
 
-RenderObject* SearchInputType::createRenderer(RenderStyle*) const
+LayoutObject* SearchInputType::createRenderer(const LayoutStyle&) const
 {
     return new RenderSearchField(&element());
 }
@@ -70,11 +70,6 @@ RenderObject* SearchInputType::createRenderer(RenderStyle*) const
 const AtomicString& SearchInputType::formControlType() const
 {
     return InputTypeNames::search;
-}
-
-bool SearchInputType::shouldRespectSpeechAttribute()
-{
-    return true;
 }
 
 bool SearchInputType::needsContainer() const
@@ -86,7 +81,7 @@ void SearchInputType::createShadowSubtree()
 {
     TextFieldInputType::createShadowSubtree();
     Element* container = containerElement();
-    Element* viewPort = element().userAgentShadowRoot()->getElementById(ShadowElementNames::editingViewPort());
+    Element* viewPort = element().closedShadowRoot()->getElementById(ShadowElementNames::editingViewPort());
     ASSERT(container);
     ASSERT(viewPort);
 
@@ -162,7 +157,7 @@ void SearchInputType::updateView()
 
 void SearchInputType::updateCancelButtonVisibility()
 {
-    Element* button = element().userAgentShadowRoot()->getElementById(ShadowElementNames::clearButton());
+    Element* button = element().closedShadowRoot()->getElementById(ShadowElementNames::clearButton());
     if (!button)
         return;
     if (element().value().isEmpty()) {

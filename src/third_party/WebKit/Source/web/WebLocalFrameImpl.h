@@ -53,6 +53,7 @@ class SharedWorkerRepositoryClientImpl;
 class TextFinder;
 class WebAutofillClient;
 class WebDataSourceImpl;
+class WebDevToolsFrontendImpl;
 class WebFrameClient;
 class WebFrameWidgetImpl;
 class WebPerformance;
@@ -169,7 +170,7 @@ public:
     virtual bool selectWordAroundCaret() override;
     virtual void selectRange(const WebPoint& base, const WebPoint& extent) override;
     virtual void selectRange(const WebRange&) override;
-    virtual void moveRangeSelectionExtent(const WebPoint&) override;
+    virtual void moveRangeSelectionExtent(const WebPoint&, TextGranularity = CharacterGranularity) override;
     virtual void moveRangeSelection(const WebPoint& base, const WebPoint& extent) override;
     virtual void moveCaretSelection(const WebPoint&) override;
     virtual bool setEditableSelectionOffsets(int start, int end) override;
@@ -215,7 +216,8 @@ public:
 
     virtual WebString contentAsText(size_t maxChars) const override;
     virtual WebString contentAsMarkup() const override;
-    virtual WebString renderTreeAsText(RenderAsTextControls toShow = RenderAsTextNormal) const override;
+    virtual WebString layoutTreeAsText(LayoutAsTextControls toShow = LayoutAsTextNormal) const override;
+
     virtual WebString markerTextForListItem(const WebElement&) const override;
     virtual WebRect selectionBoundsRect() const override;
 
@@ -321,8 +323,12 @@ public:
     void setFrameWidget(WebFrameWidgetImpl*);
     WebFrameWidgetImpl* frameWidget() const;
 
+    // DevTools front-end bindings.
+    void setDevToolsFrontend(WebDevToolsFrontendImpl* frontend) { m_webDevToolsFrontend = frontend; }
+    WebDevToolsFrontendImpl* devToolsFrontend() { return m_webDevToolsFrontend; }
+
 #if ENABLE(OILPAN)
-    void trace(Visitor*);
+    DECLARE_TRACE();
 #endif
 
 private:
@@ -366,6 +372,8 @@ private:
     UserMediaClientImpl m_userMediaClientImpl;
 
     OwnPtrWillBeMember<GeolocationClientProxy> m_geolocationClientProxy;
+
+    WebDevToolsFrontendImpl* m_webDevToolsFrontend;
 
 #if ENABLE(OILPAN)
     // Oilpan: to provide the guarantee of having the frame live until

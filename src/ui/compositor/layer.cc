@@ -7,11 +7,11 @@
 #include <algorithm>
 
 #include "base/command_line.h"
-#include "base/debug/trace_event.h"
 #include "base/json/json_writer.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/trace_event/trace_event.h"
 #include "cc/base/scoped_ptr_algorithm.h"
 #include "cc/layers/content_layer.h"
 #include "cc/layers/delegated_renderer_layer.h"
@@ -540,6 +540,9 @@ void Layer::SetTextureMailbox(
     new_layer->SetFlipped(true);
     SwitchToLayer(new_layer);
     texture_layer_ = new_layer;
+    // Reset the frame_size_in_dip_ so that SetTextureSize() will not early out,
+    // the frame_size_in_dip_ was for a previous (different) |texture_layer_|.
+    frame_size_in_dip_ = gfx::Size();
   }
   if (mailbox_release_callback_)
     mailbox_release_callback_->Run(0, false);
@@ -726,10 +729,11 @@ void Layer::RequestCopyOfOutput(scoped_ptr<cc::CopyOutputRequest> request) {
   cc_layer_->RequestCopyOfOutput(request.Pass());
 }
 
-void Layer::PaintContents(SkCanvas* sk_canvas,
-                          const gfx::Rect& clip,
-                          ContentLayerClient::GraphicsContextStatus gc_status) {
-  TRACE_EVENT0("ui", "Layer::PaintContents");
+void Layer::PaintContents(
+    SkCanvas* sk_canvas,
+    const gfx::Rect& clip,
+    ContentLayerClient::PaintingControlSetting painting_control) {
+  TRACE_EVENT1("ui", "Layer::PaintContents", "name", name_);
   scoped_ptr<gfx::Canvas> canvas(gfx::Canvas::CreateCanvasWithoutScaling(
       sk_canvas, device_scale_factor_));
   if (delegate_)
@@ -738,7 +742,7 @@ void Layer::PaintContents(SkCanvas* sk_canvas,
 
 scoped_refptr<cc::DisplayItemList> Layer::PaintContentsToDisplayList(
     const gfx::Rect& clip,
-    ContentLayerClient::GraphicsContextStatus gc_status) {
+    ContentLayerClient::PaintingControlSetting painting_control) {
   NOTIMPLEMENTED();
   return cc::DisplayItemList::Create();
 }
@@ -764,7 +768,7 @@ void Layer::SetForceRenderSurface(bool force) {
   cc_layer_->SetForceRenderSurface(force_render_surface_);
 }
 
-class LayerDebugInfo : public base::debug::ConvertableToTraceFormat {
+class LayerDebugInfo : public base::trace_event::ConvertableToTraceFormat {
  public:
   explicit LayerDebugInfo(std::string name) : name_(name) { }
   void AppendAsTraceFormat(std::string* out) const override {
@@ -778,7 +782,8 @@ class LayerDebugInfo : public base::debug::ConvertableToTraceFormat {
   std::string name_;
 };
 
-scoped_refptr<base::debug::ConvertableToTraceFormat> Layer::TakeDebugInfo() {
+scoped_refptr<base::trace_event::ConvertableToTraceFormat>
+Layer::TakeDebugInfo() {
   return new LayerDebugInfo(name_);
 }
 

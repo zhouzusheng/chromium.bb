@@ -29,6 +29,7 @@
 #include "core/events/Event.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/frame/DOMTimer.h"
+#include "core/frame/DOMTimerCoordinator.h"
 #include "core/frame/FrameConsole.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
@@ -39,6 +40,8 @@
 #include "core/frame/Settings.h"
 #include "core/inspector/InspectorController.h"
 #include "core/inspector/InspectorInstrumentation.h"
+#include "core/layout/Layer.h"
+#include "core/layout/TextAutosizer.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/HistoryItem.h"
 #include "core/page/AutoscrollController.h"
@@ -48,15 +51,11 @@
 #include "core/page/DragController.h"
 #include "core/page/FocusController.h"
 #include "core/page/FrameTree.h"
-#include "core/page/PageLifecycleNotifier.h"
 #include "core/page/PointerLockController.h"
-#include "core/page/StorageClient.h"
 #include "core/page/ValidationMessageClient.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
-#include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/TextAutosizer.h"
-#include "core/storage/StorageNamespace.h"
+#include "platform/graphics/GraphicsLayer.h"
 #include "platform/plugins/PluginData.h"
 #include "wtf/HashMap.h"
 #include "wtf/RefCountedLeakCounter.h"
@@ -93,12 +92,13 @@ void Page::networkStateChanged(bool online)
             if (frame->isLocalFrame())
                 frames.append(toLocalFrame(frame));
         }
-        InspectorInstrumentation::networkStateChanged(page, online);
     }
 
     AtomicString eventName = online ? EventTypeNames::online : EventTypeNames::offline;
-    for (unsigned i = 0; i < frames.size(); i++)
+    for (unsigned i = 0; i < frames.size(); i++) {
         frames[i]->domWindow()->dispatchEvent(Event::create(eventName));
+        InspectorInstrumentation::networkStateChanged(frames[i].get(), online);
+    }
 }
 
 float deviceScaleFactor(LocalFrame* frame)
@@ -112,7 +112,8 @@ float deviceScaleFactor(LocalFrame* frame)
 }
 
 Page::Page(PageClients& pageClients)
-    : SettingsDelegate(Settings::create())
+    : PageLifecycleNotifier(this)
+    , SettingsDelegate(Settings::create())
     , m_animator(PageAnimator::create(*this))
     , m_autoscrollController(AutoscrollController::create(*this))
     , m_chrome(Chrome::create(this, pageClients.chromeClient))
@@ -126,7 +127,6 @@ Page::Page(PageClients& pageClients)
     , m_mainFrame(nullptr)
     , m_editorClient(pageClients.editorClient)
     , m_spellCheckerClient(pageClients.spellCheckerClient)
-    , m_storageClient(pageClients.storageClient)
     , m_openedByDOM(false)
     , m_tabKeyCyclesThroughElements(true)
     , m_defersLoading(false)
@@ -184,16 +184,14 @@ String Page::mainThreadScrollingReasonsAsText()
 
 PassRefPtrWillBeRawPtr<ClientRectList> Page::nonFastScrollableRects(const LocalFrame* frame)
 {
-    if (m_mainFrame->isLocalFrame() && deprecatedLocalMainFrame()->document())
-        deprecatedLocalMainFrame()->document()->updateLayout();
-
-    Vector<IntRect> rects;
     if (ScrollingCoordinator* scrollingCoordinator = this->scrollingCoordinator()) {
         // Hits in compositing/iframes/iframe-composited-scrolling.html
         DisableCompositingQueryAsserts disabler;
-        rects = scrollingCoordinator->computeShouldHandleScrollGestureOnMainThreadRegion(frame, IntPoint()).rects();
+        scrollingCoordinator->updateAfterCompositingChangeIfNeeded();
     }
 
+    // Now retain non-fast scrollable regions
+    WebVector<WebRect> rects = frame->view()->layerForScrolling()->platformLayer()->nonFastScrollableRegion();
     Vector<FloatQuad> quads(rects.size());
     for (size_t i = 0; i < rects.size(); ++i)
         quads[i] = FloatRect(rects[i]);
@@ -333,8 +331,7 @@ void Page::setPageScaleFactor(float scale, const IntPoint& origin)
         if (view && !settings().pinchVirtualViewportEnabled())
             view->setVisibleContentScaleFactor(scale);
 
-        deprecatedLocalMainFrame()->deviceOrPageScaleFactorChanged();
-        m_chrome->client().deviceOrPageScaleFactorChanged();
+        m_chrome->client().pageScaleFactorChanged();
 
         // FIXME: In virtual-viewport pinch mode, scale doesn't change the fixed-pos viewport;
         // remove once it's the only pinch mode in town.
@@ -361,10 +358,8 @@ void Page::setDeviceScaleFactor(float scaleFactor)
     m_deviceScaleFactor = scaleFactor;
     setNeedsRecalcStyleInAllFrames();
 
-    if (mainFrame() && mainFrame()->isLocalFrame()) {
-        deprecatedLocalMainFrame()->deviceOrPageScaleFactorChanged();
-        m_chrome->client().deviceOrPageScaleFactorChanged();
-    }
+    if (mainFrame() && mainFrame()->isLocalFrame())
+        deprecatedLocalMainFrame()->deviceScaleFactorChanged();
 }
 
 void Page::setDeviceColorProfile(const Vector<char>& profile)
@@ -397,13 +392,6 @@ void Page::visitedStateChanged(LinkHash linkHash)
     }
 }
 
-StorageNamespace* Page::sessionStorage(bool optionalCreate)
-{
-    if (!m_sessionStorage && optionalCreate)
-        m_sessionStorage = m_storageClient->createSessionStorageNamespace();
-    return m_sessionStorage.get();
-}
-
 void Page::setTimerAlignmentInterval(double interval)
 {
     if (interval == m_timerAlignmentInterval)
@@ -411,8 +399,14 @@ void Page::setTimerAlignmentInterval(double interval)
 
     m_timerAlignmentInterval = interval;
     for (Frame* frame = mainFrame(); frame; frame = frame->tree().traverseNextWithWrap(false)) {
-        if (frame->isLocalFrame() && toLocalFrame(frame)->document())
-            toLocalFrame(frame)->document()->didChangeTimerAlignmentInterval();
+        if (!frame->isLocalFrame())
+            continue;
+
+        if (Document* document = toLocalFrame(frame)->document()) {
+            if (DOMTimerCoordinator* timers = document->timers()) {
+                timers->didChangeTimerAlignmentInterval();
+            }
+        }
     }
 }
 
@@ -433,7 +427,7 @@ void Page::setVisibilityState(PageVisibilityState visibilityState, bool isInitia
         setTimerAlignmentInterval(DOMTimer::hiddenPageAlignmentInterval());
 
     if (!isInitialState)
-        lifecycleNotifier().notifyPageVisibilityChanged();
+        notifyPageVisibilityChanged();
 
     if (!isInitialState && m_mainFrame && m_mainFrame->isLocalFrame())
         deprecatedLocalMainFrame()->didChangeVisibilityState();
@@ -539,7 +533,7 @@ void Page::updateAcceleratedCompositingSettings()
 
 void Page::didCommitLoad(LocalFrame* frame)
 {
-    lifecycleNotifier().notifyDidCommitLoad(frame);
+    notifyDidCommitLoad(frame);
     if (m_mainFrame == frame) {
         frame->console().clearMessages();
         useCounter().didCommitLoad();
@@ -563,16 +557,6 @@ void Page::acceptLanguagesChanged()
         frames[i]->localDOMWindow()->acceptLanguagesChanged();
 }
 
-PageLifecycleNotifier& Page::lifecycleNotifier()
-{
-    return static_cast<PageLifecycleNotifier&>(LifecycleContext<Page>::lifecycleNotifier());
-}
-
-PassOwnPtr<LifecycleNotifier<Page>> Page::createLifecycleNotifier()
-{
-    return PageLifecycleNotifier::create(this);
-}
-
 void Page::trace(Visitor* visitor)
 {
 #if ENABLE(OILPAN)
@@ -590,7 +574,7 @@ void Page::trace(Visitor* visitor)
     visitor->trace(m_frameHost);
     HeapSupplementable<Page>::trace(visitor);
 #endif
-    LifecycleContext<Page>::trace(visitor);
+    PageLifecycleNotifier::trace(visitor);
 }
 
 void Page::willBeDestroyed()
@@ -635,7 +619,6 @@ Page::PageClients::PageClients()
     , dragClient(nullptr)
     , inspectorClient(nullptr)
     , spellCheckerClient(nullptr)
-    , storageClient(nullptr)
 {
 }
 

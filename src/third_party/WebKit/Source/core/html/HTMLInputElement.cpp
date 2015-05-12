@@ -71,10 +71,10 @@
 #include "core/html/forms/SearchInputType.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/shadow/ShadowElementNames.h"
+#include "core/layout/LayoutTextControlSingleLine.h"
+#include "core/layout/LayoutTheme.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
-#include "core/rendering/RenderTextControlSingleLine.h"
-#include "core/rendering/RenderTheme.h"
 #include "platform/Language.h"
 #include "platform/PlatformMouseEvent.h"
 #include "platform/RuntimeEnabledFeatures.h"
@@ -89,7 +89,7 @@ class ListAttributeTargetObserver : public IdTargetObserver {
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
     static PassOwnPtrWillBeRawPtr<ListAttributeTargetObserver> create(const AtomicString& id, HTMLInputElement*);
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
     virtual void idTargetChanged() override;
 
 private:
@@ -139,11 +139,11 @@ PassRefPtrWillBeRawPtr<HTMLInputElement> HTMLInputElement::create(Document& docu
 {
     RefPtrWillBeRawPtr<HTMLInputElement> inputElement = adoptRefWillBeNoop(new HTMLInputElement(document, form, createdByParser));
     if (!createdByParser)
-        inputElement->ensureUserAgentShadowRoot();
+        inputElement->ensureClosedShadowRoot();
     return inputElement.release();
 }
 
-void HTMLInputElement::trace(Visitor* visitor)
+DEFINE_TRACE(HTMLInputElement)
 {
     visitor->trace(m_inputType);
     visitor->trace(m_inputTypeView);
@@ -159,12 +159,12 @@ HTMLImageLoader& HTMLInputElement::ensureImageLoader()
     return *m_imageLoader;
 }
 
-void HTMLInputElement::didAddUserAgentShadowRoot(ShadowRoot&)
+void HTMLInputElement::didAddClosedShadowRoot(ShadowRoot&)
 {
     m_inputTypeView->createShadowSubtree();
 }
 
-void HTMLInputElement::willAddFirstAuthorShadowRoot()
+void HTMLInputElement::willAddFirstOpenShadowRoot()
 {
     m_inputTypeView->destroyShadowSubtree();
     m_inputTypeView = InputTypeView::create(*this);
@@ -384,13 +384,13 @@ void HTMLInputElement::endEditing()
     frame->host()->chrome().client().didEndEditingOnTextField(*this);
 }
 
-void HTMLInputElement::handleFocusEvent(Element* oldFocusedElement, FocusType type)
+void HTMLInputElement::handleFocusEvent(Element* oldFocusedElement, WebFocusType type)
 {
     m_inputTypeView->handleFocusEvent(oldFocusedElement, type);
     m_inputType->enableSecureTextInput();
 }
 
-void HTMLInputElement::dispatchFocusInEvent(const AtomicString& eventType, Element* oldFocusedElement, FocusType type)
+void HTMLInputElement::dispatchFocusInEvent(const AtomicString& eventType, Element* oldFocusedElement, WebFocusType type)
 {
     if (eventType == EventTypeNames::DOMFocusIn)
         m_inputTypeView->handleFocusInEvent(oldFocusedElement, type);
@@ -435,7 +435,7 @@ void HTMLInputElement::initializeTypeInParsing()
     const AtomicString& newTypeName = InputType::normalizeTypeName(fastGetAttribute(typeAttr));
     m_inputType = InputType::create(*this, newTypeName);
     m_inputTypeView = m_inputType;
-    ensureUserAgentShadowRoot();
+    ensureClosedShadowRoot();
 
     updateTouchEventHandlerRegistry();
 
@@ -467,7 +467,7 @@ void HTMLInputElement::updateType()
     lazyReattachIfAttached();
 
     m_inputType = newType.release();
-    if (hasAuthorShadowRoot())
+    if (hasOpenShadowRoot())
         m_inputTypeView = InputTypeView::create(*this);
     else
         m_inputTypeView = m_inputType;
@@ -815,12 +815,12 @@ void HTMLInputElement::finishParsingChildren()
     }
 }
 
-bool HTMLInputElement::rendererIsNeeded(const RenderStyle& style)
+bool HTMLInputElement::rendererIsNeeded(const LayoutStyle& style)
 {
     return m_inputType->rendererIsNeeded() && HTMLTextFormControlElement::rendererIsNeeded(style);
 }
 
-RenderObject* HTMLInputElement::createRenderer(RenderStyle* style)
+LayoutObject* HTMLInputElement::createRenderer(const LayoutStyle& style)
 {
     return m_inputTypeView->createRenderer(style);
 }
@@ -912,7 +912,7 @@ void HTMLInputElement::setChecked(bool nowChecked, TextFieldEventBehavior eventB
     if (RadioButtonGroupScope* scope = radioButtonGroupScope())
         scope->updateCheckedState(this);
     if (renderer() && renderer()->style()->hasAppearance())
-        RenderTheme::theme().stateChanged(renderer(), CheckedControlState);
+        LayoutTheme::theme().stateChanged(renderer(), CheckedControlState);
 
     setNeedsValidityCheck();
 
@@ -949,7 +949,7 @@ void HTMLInputElement::setIndeterminate(bool newValue)
     pseudoStateChanged(CSSSelector::PseudoIndeterminate);
 
     if (renderer() && renderer()->style()->hasAppearance())
-        RenderTheme::theme().stateChanged(renderer(), CheckedControlState);
+        LayoutTheme::theme().stateChanged(renderer(), CheckedControlState);
 }
 
 int HTMLInputElement::size() const
@@ -1784,7 +1784,7 @@ ListAttributeTargetObserver::ListAttributeTargetObserver(const AtomicString& id,
 {
 }
 
-void ListAttributeTargetObserver::trace(Visitor* visitor)
+DEFINE_TRACE(ListAttributeTargetObserver)
 {
     visitor->trace(m_element);
     IdTargetObserver::trace(visitor);
@@ -1884,7 +1884,7 @@ bool HTMLInputElement::supportsAutofocus() const
     return m_inputType->isInteractiveContent();
 }
 
-PassRefPtr<RenderStyle> HTMLInputElement::customStyleForRenderer()
+PassRefPtr<LayoutStyle> HTMLInputElement::customStyleForRenderer()
 {
     return m_inputTypeView->customStyleForRenderer(originalStyleForRenderer());
 }

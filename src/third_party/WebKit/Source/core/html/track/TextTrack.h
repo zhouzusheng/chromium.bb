@@ -34,6 +34,7 @@
 
 namespace blink {
 
+class CueTimeline;
 class ExceptionState;
 class HTMLMediaElement;
 class TextTrack;
@@ -116,13 +117,15 @@ public:
     virtual const AtomicString& interfaceName() const override;
     virtual ExecutionContext* executionContext() const override;
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     TextTrack(const AtomicString& kind, const AtomicString& label, const AtomicString& language, const AtomicString& id, TextTrackType);
 
     virtual bool isValidKind(const AtomicString& kind) const override { return isValidKindKeyword(kind); }
     virtual AtomicString defaultKind() const override { return subtitlesKeyword(); }
+
+    CueTimeline* cueTimeline() const;
 
     RefPtrWillBeMember<TextTrackCueList> m_cues;
 

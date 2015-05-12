@@ -48,7 +48,7 @@ public:
     static PassRefPtrWillBeRawPtr<HTMLImageElement> createForJSConstructor(Document&, int width, int height);
 
     virtual ~HTMLImageElement();
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     int width(bool ignorePendingStylesheets = false);
     int height(bool ignorePendingStylesheets = false);
@@ -92,12 +92,13 @@ public:
     virtual void ensureFallbackContent();
     virtual void ensurePrimaryContent();
 
-    // CanvasImageSourceImplementations
+    // CanvasImageSource implementation
     virtual PassRefPtr<Image> getSourceImageForCanvas(SourceImageMode, SourceImageStatus*) const override;
     virtual bool wouldTaintOrigin(SecurityOrigin*) const override;
     virtual FloatSize sourceSize() const override;
     virtual FloatSize defaultDestinationSize() const override;
     virtual const KURL& sourceURL() const override;
+    virtual bool isOpaque() const override;
 
     // public so that HTMLPictureElement can call this as well.
     void selectSourceURL(ImageLoader::UpdateFromElementBehavior);
@@ -111,8 +112,8 @@ protected:
     virtual void didMoveToNewDocument(Document& oldDocument) override;
     virtual bool useFallbackContent() const { return m_useFallbackContent; }
 
-    virtual void didAddUserAgentShadowRoot(ShadowRoot&) override;
-    virtual PassRefPtr<RenderStyle> customStyleForRenderer() override;
+    virtual void didAddClosedShadowRoot(ShadowRoot&) override;
+    virtual PassRefPtr<LayoutStyle> customStyleForRenderer() override;
 private:
     virtual bool areAuthorShadowsAllowed() const override { return false; }
 
@@ -121,9 +122,9 @@ private:
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
 
     virtual void attach(const AttachContext& = AttachContext()) override;
-    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual LayoutObject* createRenderer(const LayoutStyle&) override;
 
-    virtual bool canStartSelection() const override;
+    virtual bool canStartSelection() const override { return false; }
 
     virtual bool isURLAttribute(const Attribute&) const override;
     virtual bool hasLegalLinkAttribute(const QualifiedName&) const override;

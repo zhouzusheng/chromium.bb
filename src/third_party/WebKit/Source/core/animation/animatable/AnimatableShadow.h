@@ -32,7 +32,7 @@
 #define AnimatableShadow_h
 
 #include "core/animation/animatable/AnimatableValue.h"
-#include "core/rendering/style/ShadowList.h"
+#include "core/layout/style/ShadowList.h"
 
 namespace blink {
 
@@ -49,6 +49,7 @@ public:
 
 protected:
     virtual PassRefPtrWillBeRawPtr<AnimatableValue> interpolateTo(const AnimatableValue*, double fraction) const override;
+    virtual bool usesDefaultInterpolationWith(const AnimatableValue*) const override;
 
 private:
     explicit AnimatableShadow(PassRefPtr<ShadowList> shadowList)

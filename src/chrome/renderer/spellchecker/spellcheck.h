@@ -143,7 +143,6 @@ class SpellCheck : public content::RenderProcessObserver,
       const std::vector<std::string>& words_removed);
   void OnSetAutoSpellCorrectBehavior(int flags);
   void OnEnableSpellCheck(bool enable);
-  void OnRequestDocumentMarkers();
 
 #if !defined (OS_MACOSX)
   // Posts delayed spellcheck task and clear it if any.

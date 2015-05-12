@@ -28,15 +28,17 @@
 #define StyleBuilderConverter_h
 
 #include "core/css/CSSValue.h"
+#include "core/css/CSSValueList.h"
 #include "core/css/resolver/StyleResolverState.h"
+#include "core/layout/style/QuotesData.h"
+#include "core/layout/style/ShadowList.h"
+#include "core/layout/style/StyleReflection.h"
+#include "core/layout/style/TransformOrigin.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/style/QuotesData.h"
-#include "core/rendering/style/ShadowList.h"
-#include "core/rendering/style/StyleReflection.h"
-#include "core/rendering/style/TransformOrigin.h"
 #include "core/svg/SVGLength.h"
 #include "platform/LengthSize.h"
 #include "platform/fonts/FontDescription.h"
+#include "platform/text/TabSize.h"
 
 namespace blink {
 
@@ -60,16 +62,19 @@ public:
     static GridPosition convertGridPosition(StyleResolverState&, CSSValue*);
     static GridTrackSize convertGridTrackSize(StyleResolverState&, CSSValue*);
     template <typename T> static T convertLineWidth(StyleResolverState&, CSSValue*);
-    static Length convertLength(StyleResolverState&, CSSValue*);
-    static Length convertLengthOrAuto(StyleResolverState&, CSSValue*);
+    static Length convertLength(const StyleResolverState&, CSSValue*);
+    static Length convertLengthOrAuto(const StyleResolverState&, CSSValue*);
+    static Length convertLengthUnzoomed(const StyleResolverState&, CSSValue*);
     static Length convertLengthSizing(StyleResolverState&, CSSValue*);
     static Length convertLengthMaxSizing(StyleResolverState&, CSSValue*);
-    static LengthPoint convertLengthPoint(StyleResolverState&, CSSValue*);
+    static TabSize convertLengthOrTabSpaces(StyleResolverState&, CSSValue*);
     static LineBoxContain convertLineBoxContain(StyleResolverState&, CSSValue*);
     static Length convertLineHeight(StyleResolverState&, CSSValue*);
     static float convertNumberOrPercentage(StyleResolverState&, CSSValue*);
+    static LengthPoint convertObjectPosition(StyleResolverState&, CSSValue*);
     static float convertPerspective(StyleResolverState&, CSSValue*);
     static LengthPoint convertPerspectiveOrigin(StyleResolverState&, CSSValue*);
+    static Length convertQuirkyLength(StyleResolverState&, CSSValue*);
     static PassRefPtr<QuotesData> convertQuotes(StyleResolverState&, CSSValue*);
     static LengthSize convertRadius(StyleResolverState&, CSSValue*);
     static EPaintOrder convertPaintOrder(StyleResolverState&, CSSValue*);

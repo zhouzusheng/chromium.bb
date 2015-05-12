@@ -4,9 +4,9 @@
 
 #include "content/renderer/scheduler/renderer_task_queue_selector.h"
 
-#include "base/debug/trace_event_argument.h"
 #include "base/logging.h"
 #include "base/pending_task.h"
+#include "base/trace_event/trace_event_argument.h"
 
 namespace content {
 
@@ -18,13 +18,12 @@ RendererTaskQueueSelector::~RendererTaskQueueSelector() {
 
 void RendererTaskQueueSelector::RegisterWorkQueues(
     const std::vector<const base::TaskQueue*>& work_queues) {
-  main_thread_checker_.CalledOnValidThread();
+  DCHECK(main_thread_checker_.CalledOnValidThread());
   work_queues_ = work_queues;
-  for (QueuePriority priority = FIRST_QUEUE_PRIORITY;
-       priority < QUEUE_PRIORITY_COUNT;
-       priority = NextPriority(priority)) {
-    queue_priorities_[priority].clear();
+  for (auto& queue_priority : queue_priorities_) {
+    queue_priority.clear();
   }
+
   // By default, all work queues are set to normal priority.
   for (size_t i = 0; i < work_queues.size(); i++) {
     queue_priorities_[NORMAL_PRIORITY].insert(i);
@@ -33,7 +32,7 @@ void RendererTaskQueueSelector::RegisterWorkQueues(
 
 void RendererTaskQueueSelector::SetQueuePriority(size_t queue_index,
                                                  QueuePriority priority) {
-  main_thread_checker_.CalledOnValidThread();
+  DCHECK(main_thread_checker_.CalledOnValidThread());
   DCHECK_LT(queue_index, work_queues_.size());
   DCHECK_LT(priority, QUEUE_PRIORITY_COUNT);
   DisableQueue(queue_index);
@@ -46,13 +45,21 @@ void RendererTaskQueueSelector::EnableQueue(size_t queue_index,
 }
 
 void RendererTaskQueueSelector::DisableQueue(size_t queue_index) {
-  main_thread_checker_.CalledOnValidThread();
+  DCHECK(main_thread_checker_.CalledOnValidThread());
   DCHECK_LT(queue_index, work_queues_.size());
-  for (QueuePriority priority = FIRST_QUEUE_PRIORITY;
-       priority < QUEUE_PRIORITY_COUNT;
-       priority = NextPriority(priority)) {
-    queue_priorities_[priority].erase(queue_index);
+  for (auto& queue_priority : queue_priorities_) {
+    queue_priority.erase(queue_index);
   }
+}
+
+bool RendererTaskQueueSelector::IsQueueEnabled(size_t queue_index) const {
+  DCHECK(main_thread_checker_.CalledOnValidThread());
+  DCHECK_LT(queue_index, work_queues_.size());
+  for (const auto& queue_priority : queue_priorities_) {
+    if (queue_priority.find(queue_index) != queue_priority.end())
+      return true;
+  }
+  return false;
 }
 
 bool RendererTaskQueueSelector::IsOlder(const base::TaskQueue* queueA,
@@ -93,7 +100,7 @@ bool RendererTaskQueueSelector::ChooseOldestWithPriority(
 
 bool RendererTaskQueueSelector::SelectWorkQueueToService(
     size_t* out_queue_index) {
-  main_thread_checker_.CalledOnValidThread();
+  DCHECK(main_thread_checker_.CalledOnValidThread());
   DCHECK(work_queues_.size());
   // Always service the control queue if it has any work.
   if (ChooseOldestWithPriority(CONTROL_PRIORITY, out_queue_index)) {
@@ -153,8 +160,8 @@ const char* RendererTaskQueueSelector::PriorityToString(
 }
 
 void RendererTaskQueueSelector::AsValueInto(
-    base::debug::TracedValue* state) const {
-  main_thread_checker_.CalledOnValidThread();
+    base::trace_event::TracedValue* state) const {
+  DCHECK(main_thread_checker_.CalledOnValidThread());
   state->BeginDictionary("priorities");
   for (QueuePriority priority = FIRST_QUEUE_PRIORITY;
        priority < QUEUE_PRIORITY_COUNT; priority = NextPriority(priority)) {

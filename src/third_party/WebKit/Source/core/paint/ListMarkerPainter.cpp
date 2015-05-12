@@ -5,13 +5,13 @@
 #include "config.h"
 #include "core/paint/ListMarkerPainter.h"
 
+#include "core/layout/PaintInfo.h"
+#include "core/layout/TextRunConstructor.h"
 #include "core/paint/BlockPainter.h"
 #include "core/paint/GraphicsContextAnnotator.h"
 #include "core/paint/RenderDrawingRecorder.h"
-#include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderListItem.h"
 #include "core/rendering/RenderListMarker.h"
-#include "core/rendering/TextRunConstructor.h"
 #include "platform/geometry/LayoutPoint.h"
 #include "platform/graphics/GraphicsContextStateSaver.h"
 #include "wtf/unicode/CharacterNames.h"
@@ -154,7 +154,7 @@ void ListMarkerPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& pai
         return;
 
     const Font& font = m_renderListMarker.style()->font();
-    TextRun textRun = constructTextRun(&m_renderListMarker, font, m_renderListMarker.text(), m_renderListMarker.style());
+    TextRun textRun = constructTextRun(&m_renderListMarker, font, m_renderListMarker.text(), m_renderListMarker.styleRef());
 
     GraphicsContextStateSaver stateSaver(*context, false);
     if (!m_renderListMarker.style()->isHorizontalWritingMode()) {
@@ -179,17 +179,17 @@ void ListMarkerPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& pai
         bool textNeedsReversing = WTF::Unicode::direction(m_renderListMarker.text()[0]) == WTF::Unicode::RightToLeft;
         StringBuilder reversedText;
         if (textNeedsReversing) {
-            int length = m_renderListMarker.text().length();
+            unsigned length = m_renderListMarker.text().length();
             reversedText.reserveCapacity(length);
             for (int i = length - 1; i >= 0; --i)
                 reversedText.append(m_renderListMarker.text()[i]);
-            ASSERT(reversedText.length() == reversedText.capacity());
+            ASSERT(reversedText.length() == length);
             textRun.setText(reversedText.toString());
         }
 
         const UChar suffix = m_renderListMarker.listMarkerSuffix(type, m_renderListMarker.listItem()->value());
         UChar suffixStr[1] = { suffix };
-        TextRun suffixRun = constructTextRun(&m_renderListMarker, font, suffixStr, 1, m_renderListMarker.style(), m_renderListMarker.style()->direction());
+        TextRun suffixRun = constructTextRun(&m_renderListMarker, font, suffixStr, 1, m_renderListMarker.styleRef(), m_renderListMarker.style()->direction());
         TextRunPaintInfo suffixRunInfo(suffixRun);
         suffixRunInfo.bounds = marker;
 

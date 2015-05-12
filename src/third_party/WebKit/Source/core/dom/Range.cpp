@@ -35,9 +35,9 @@
 #include "core/dom/NodeWithIndex.h"
 #include "core/dom/ProcessingInstruction.h"
 #include "core/dom/Text.h"
-#include "core/editing/TextIterator.h"
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleUnits.h"
+#include "core/editing/iterators/TextIterator.h"
 #include "core/editing/markup.h"
 #include "core/events/ScopedEventQueue.h"
 #include "core/html/HTMLBodyElement.h"
@@ -1430,7 +1430,7 @@ void Range::textRects(Vector<IntRect>& rects, bool useSelectionHeight, RangeInFi
 
     Node* stopNode = pastLastNode();
     for (Node* node = firstNode(); node != stopNode; node = NodeTraversal::next(*node)) {
-        RenderObject* r = node->renderer();
+        LayoutObject* r = node->renderer();
         if (!r || !r->isText())
             continue;
         RenderText* renderText = toRenderText(r);
@@ -1458,7 +1458,7 @@ void Range::textQuads(Vector<FloatQuad>& quads, bool useSelectionHeight, RangeIn
 
     Node* stopNode = pastLastNode();
     for (Node* node = firstNode(); node != stopNode; node = NodeTraversal::next(*node)) {
-        RenderObject* r = node->renderer();
+        LayoutObject* r = node->renderer();
         if (!r || !r->isText())
             continue;
         RenderText* renderText = toRenderText(r);

@@ -6,10 +6,10 @@
 
 #include <algorithm>
 
-#include "base/debug/trace_event.h"
 #include "base/lazy_instance.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/simple_thread.h"
+#include "base/trace_event/trace_event.h"
 #include "cc/base/scoped_ptr_deque.h"
 #include "cc/resources/raster_source.h"
 #include "skia/ext/refptr.h"
@@ -93,9 +93,12 @@ class TaskSetFinishedTaskImpl : public TileTask {
 // since it should finish as quickly as possible.
 unsigned TileTaskWorkerPool::kBenchmarkTaskPriority = 0u;
 // Task priorities that make sure task set finished tasks run before any
-// other remaining tasks.
-unsigned TileTaskWorkerPool::kTaskSetFinishedTaskPriority = 1u;
-unsigned TileTaskWorkerPool::kTileTaskPriorityBase = 2u;
+// other remaining tasks. This is combined with the task set type to ensure
+// proper prioritization ordering between task set types.
+unsigned TileTaskWorkerPool::kTaskSetFinishedTaskPriorityBase = 1u;
+// For correctness, |kTileTaskPriorityBase| must be greater than
+// |kTaskSetFinishedTaskPriorityBase + kNumberOfTaskSets|.
+unsigned TileTaskWorkerPool::kTileTaskPriorityBase = 10u;
 
 TileTaskWorkerPool::TileTaskWorkerPool() {
 }

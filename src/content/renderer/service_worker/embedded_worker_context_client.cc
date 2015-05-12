@@ -7,25 +7,33 @@
 #include <map>
 #include <string>
 
-#include "base/debug/trace_event.h"
 #include "base/lazy_instance.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/pickle.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/thread_local.h"
+#include "base/trace_event/trace_event.h"
 #include "content/child/request_extra_data.h"
+#include "content/child/service_worker/service_worker_dispatcher.h"
 #include "content/child/service_worker/service_worker_network_provider.h"
+#include "content/child/service_worker/service_worker_provider_context.h"
+#include "content/child/service_worker/service_worker_registration_handle_reference.h"
+#include "content/child/service_worker/web_service_worker_impl.h"
+#include "content/child/service_worker/web_service_worker_provider_impl.h"
+#include "content/child/service_worker/web_service_worker_registration_impl.h"
 #include "content/child/thread_safe_sender.h"
 #include "content/child/worker_task_runner.h"
-#include "content/child/worker_thread_task_runner.h"
 #include "content/common/devtools_messages.h"
 #include "content/common/service_worker/embedded_worker_messages.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/public/renderer/document_state.h"
+#include "content/renderer/devtools/devtools_agent.h"
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/service_worker/embedded_worker_dispatcher.h"
 #include "content/renderer/service_worker/service_worker_script_context.h"
+#include "content/renderer/service_worker/service_worker_type_util.h"
 #include "ipc/ipc_message_macros.h"
 #include "third_party/WebKit/public/platform/WebServiceWorkerResponse.h"
 #include "third_party/WebKit/public/platform/WebString.h"
@@ -35,8 +43,6 @@
 namespace content {
 
 namespace {
-
-const size_t kMaxMessageChunkSize = IPC::Channel::kMaximumMessageSize / 4;
 
 // For now client must be a per-thread instance.
 // TODO(kinuko): This needs to be refactored when we start using thread pool
@@ -99,8 +105,8 @@ EmbeddedWorkerContextClient::EmbeddedWorkerContextClient(
       service_worker_scope_(service_worker_scope),
       script_url_(script_url),
       worker_devtools_agent_route_id_(worker_devtools_agent_route_id),
-      sender_(ChildThread::current()->thread_safe_sender()),
-      main_thread_proxy_(base::MessageLoopProxy::current()),
+      sender_(ChildThreadImpl::current()->thread_safe_sender()),
+      main_thread_task_runner_(RenderThreadImpl::current()->GetTaskRunner()),
       weak_factory_(this) {
   TRACE_EVENT_ASYNC_BEGIN0("ServiceWorker",
                            "EmbeddedWorkerContextClient::StartingWorkerContext",
@@ -149,12 +155,32 @@ void EmbeddedWorkerContextClient::getClients(
   script_context_->GetClientDocuments(callbacks);
 }
 
+void EmbeddedWorkerContextClient::openWindow(
+    const blink::WebURL& url,
+    blink::WebServiceWorkerClientCallbacks* callbacks) {
+  DCHECK(script_context_);
+  script_context_->OpenWindow(url, callbacks);
+}
+
+void EmbeddedWorkerContextClient::setCachedMetadata(const blink::WebURL& url,
+                                                    const char* data,
+                                                    size_t size) {
+  DCHECK(script_context_);
+  script_context_->SetCachedMetadata(url, data, size);
+}
+
+void EmbeddedWorkerContextClient::clearCachedMetadata(
+    const blink::WebURL& url) {
+  DCHECK(script_context_);
+  script_context_->ClearCachedMetadata(url);
+}
+
 void EmbeddedWorkerContextClient::workerReadyForInspection() {
   Send(new EmbeddedWorkerHostMsg_WorkerReadyForInspection(embedded_worker_id_));
 }
 
 void EmbeddedWorkerContextClient::workerContextFailedToStart() {
-  DCHECK(main_thread_proxy_->RunsTasksOnCurrentThread());
+  DCHECK(main_thread_task_runner_->RunsTasksOnCurrentThread());
   DCHECK(!script_context_);
 
   Send(new EmbeddedWorkerHostMsg_WorkerScriptLoadFailed(embedded_worker_id_));
@@ -166,9 +192,8 @@ void EmbeddedWorkerContextClient::workerContextFailedToStart() {
 void EmbeddedWorkerContextClient::workerContextStarted(
     blink::WebServiceWorkerContextProxy* proxy) {
   DCHECK(!worker_task_runner_.get());
-  worker_task_runner_ = new WorkerThreadTaskRunner(
-      WorkerTaskRunner::Instance()->CurrentWorkerId());
   DCHECK_NE(0, WorkerTaskRunner::Instance()->CurrentWorkerId());
+  worker_task_runner_ = base::ThreadTaskRunnerHandle::Get();
   // g_worker_client_tls.Pointer()->Get() could return NULL if this context
   // gets deleted before workerContextStarted() is called.
   DCHECK(g_worker_client_tls.Pointer()->Get() == NULL);
@@ -176,9 +201,12 @@ void EmbeddedWorkerContextClient::workerContextStarted(
   g_worker_client_tls.Pointer()->Set(this);
   script_context_.reset(new ServiceWorkerScriptContext(this, proxy));
 
+  SetRegistrationInServiceWorkerGlobalScope();
+
   Send(new EmbeddedWorkerHostMsg_WorkerScriptLoaded(
       embedded_worker_id_,
-      WorkerTaskRunner::Instance()->CurrentWorkerId()));
+      WorkerTaskRunner::Instance()->CurrentWorkerId(),
+      provider_context_->provider_id()));
 
   // Schedule a task to send back WorkerStarted asynchronously,
   // so that at the time we send it we can be sure that the worker
@@ -215,7 +243,7 @@ void EmbeddedWorkerContextClient::workerContextDestroyed() {
 
   // Now we should be able to free the WebEmbeddedWorker container on the
   // main thread.
-  main_thread_proxy_->PostTask(
+  main_thread_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&CallWorkerContextDestroyedOnMainThread,
                  embedded_worker_id_));
@@ -248,28 +276,13 @@ void EmbeddedWorkerContextClient::reportConsoleMessage(
       embedded_worker_id_, params));
 }
 
-void EmbeddedWorkerContextClient::dispatchDevToolsMessage(
-    const blink::WebString& message) {
-  std::string msg(message.utf8());
-
-  if (msg.length() < kMaxMessageChunkSize) {
-    sender_->Send(new DevToolsClientMsg_DispatchOnInspectorFrontend(
-        worker_devtools_agent_route_id_, msg, msg.size()));
-    return;
-  }
-
-  for (size_t pos = 0; pos < msg.length(); pos += kMaxMessageChunkSize) {
-    sender_->Send(new DevToolsClientMsg_DispatchOnInspectorFrontend(
-        worker_devtools_agent_route_id_,
-        msg.substr(pos, kMaxMessageChunkSize),
-        pos ? 0 : msg.size()));
-  }
-}
-
-void EmbeddedWorkerContextClient::saveDevToolsAgentState(
-    const blink::WebString& state) {
-  sender_->Send(new DevToolsHostMsg_SaveAgentRuntimeState(
-      worker_devtools_agent_route_id_, state.utf8()));
+void EmbeddedWorkerContextClient::sendDevToolsMessage(
+    int call_id,
+    const blink::WebString& message,
+    const blink::WebString& state_cookie) {
+  DevToolsAgent::SendChunkedProtocolMessage(
+      sender_.get(), worker_devtools_agent_route_id_,
+      call_id, message.utf8(), state_cookie.utf8());
 }
 
 void EmbeddedWorkerContextClient::didHandleActivateEvent(
@@ -299,13 +312,7 @@ void EmbeddedWorkerContextClient::didHandleFetchEvent(
     const blink::WebServiceWorkerResponse& web_response) {
   DCHECK(script_context_);
   ServiceWorkerHeaderMap headers;
-  const blink::WebVector<blink::WebString>& header_keys =
-      web_response.getHeaderKeys();
-  for (size_t i = 0; i < header_keys.size(); ++i) {
-    const base::string16& key = header_keys[i];
-    headers[base::UTF16ToUTF8(key)] =
-        base::UTF16ToUTF8(web_response.getHeader(key));
-  }
+  GetServiceWorkerHeaderMapFromWebResponse(web_response, &headers);
   ServiceWorkerResponse response(web_response.url(),
                                  web_response.status(),
                                  web_response.statusText().utf8(),
@@ -348,10 +355,14 @@ void EmbeddedWorkerContextClient::didHandleCrossOriginConnectEvent(
 blink::WebServiceWorkerNetworkProvider*
 EmbeddedWorkerContextClient::createServiceWorkerNetworkProvider(
     blink::WebDataSource* data_source) {
+  DCHECK(main_thread_task_runner_->RunsTasksOnCurrentThread());
+
   // Create a content::ServiceWorkerNetworkProvider for this data source so
   // we can observe its requests.
   scoped_ptr<ServiceWorkerNetworkProvider> provider(
-      new ServiceWorkerNetworkProvider(MSG_ROUTING_NONE));
+      new ServiceWorkerNetworkProvider(
+          MSG_ROUTING_NONE, SERVICE_WORKER_PROVIDER_FOR_CONTROLLER));
+  provider_context_ = provider->context();
 
   // Tell the network provider about which version to load.
   provider->SetServiceWorkerVersionId(service_worker_version_id_);
@@ -365,6 +376,16 @@ EmbeddedWorkerContextClient::createServiceWorkerNetworkProvider(
 
   // Blink is responsible for deleting the returned object.
   return new WebServiceWorkerNetworkProviderImpl();
+}
+
+blink::WebServiceWorkerProvider*
+EmbeddedWorkerContextClient::createServiceWorkerProvider() {
+  DCHECK(main_thread_task_runner_->RunsTasksOnCurrentThread());
+  DCHECK(provider_context_);
+
+  // Blink is responsible for deleting the returned object.
+  return new WebServiceWorkerProviderImpl(
+      thread_safe_sender(), provider_context_.get());
 }
 
 void EmbeddedWorkerContextClient::postMessageToClient(
@@ -386,7 +407,7 @@ void EmbeddedWorkerContextClient::postMessageToCrossOriginClient(
 }
 
 void EmbeddedWorkerContextClient::focus(
-    int client_id, blink::WebServiceWorkerClientFocusCallback* callback) {
+    int client_id, blink::WebServiceWorkerClientCallbacks* callback) {
   DCHECK(script_context_);
   script_context_->FocusClient(client_id, callback);
 }
@@ -395,6 +416,12 @@ void EmbeddedWorkerContextClient::skipWaiting(
     blink::WebServiceWorkerSkipWaitingCallbacks* callbacks) {
   DCHECK(script_context_);
   script_context_->SkipWaiting(callbacks);
+}
+
+void EmbeddedWorkerContextClient::claim(
+    blink::WebServiceWorkerClientsClaimCallbacks* callbacks) {
+  DCHECK(script_context_);
+  script_context_->ClaimClients(callbacks);
 }
 
 void EmbeddedWorkerContextClient::OnMessageToWorker(
@@ -413,6 +440,37 @@ void EmbeddedWorkerContextClient::SendWorkerStarted() {
                          "EmbeddedWorkerContextClient::StartingWorkerContext",
                          this);
   Send(new EmbeddedWorkerHostMsg_WorkerStarted(embedded_worker_id_));
+}
+
+void EmbeddedWorkerContextClient::SetRegistrationInServiceWorkerGlobalScope() {
+  DCHECK(worker_task_runner_->RunsTasksOnCurrentThread());
+  DCHECK(provider_context_);
+  DCHECK(script_context_);
+
+  ServiceWorkerRegistrationObjectInfo info;
+  ServiceWorkerVersionAttributes attrs;
+  bool found =
+      provider_context_->GetRegistrationInfoAndVersionAttributes(&info, &attrs);
+  if (!found)
+    return;  // Cannot be associated with a registration in some tests.
+
+  ServiceWorkerDispatcher* dispatcher =
+      ServiceWorkerDispatcher::GetOrCreateThreadSpecificInstance(
+          thread_safe_sender());
+
+  // Register a registration and its version attributes with the dispatcher
+  // living on the worker thread.
+  scoped_ptr<WebServiceWorkerRegistrationImpl> registration(
+      dispatcher->CreateServiceWorkerRegistration(info, false));
+  registration->SetInstalling(
+      dispatcher->GetServiceWorker(attrs.installing, false));
+  registration->SetWaiting(
+      dispatcher->GetServiceWorker(attrs.waiting, false));
+  registration->SetActive(
+      dispatcher->GetServiceWorker(attrs.active, false));
+
+  script_context_->SetRegistrationInServiceWorkerGlobalScope(
+      registration.Pass());
 }
 
 }  // namespace content

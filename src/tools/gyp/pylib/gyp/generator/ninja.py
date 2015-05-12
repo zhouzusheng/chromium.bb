@@ -396,6 +396,7 @@ class NinjaWriter(object):
       self.ninja.variable('cxx', '$cl_' + arch)
       self.ninja.variable('cc_host', '$cl_' + arch)
       self.ninja.variable('cxx_host', '$cl_' + arch)
+      self.ninja.variable('asm', '$ml_' + arch)
 
     if self.flavor == 'mac':
       self.archs = self.xcode_settings.GetActiveArchs(config_name)
@@ -599,9 +600,13 @@ class NinjaWriter(object):
       is_cygwin = (self.msvs_settings.IsRuleRunUnderCygwin(action)
                    if self.flavor == 'win' else False)
       args = action['action']
+      depfile = action.get('depfile', None)
+      if depfile:
+        depfile = self.ExpandSpecial(depfile, self.base_to_build)
       pool = 'console' if int(action.get('ninja_use_console', 0)) else None
       rule_name, _ = self.WriteNewNinjaRule(name, args, description,
-                                            is_cygwin, env, pool)
+                                            is_cygwin, env, pool,
+                                            depfile=depfile)
 
       inputs = [self.GypPathToNinja(i, env) for i in action['inputs']]
       if int(action.get('process_outputs_as_sources', False)):
@@ -957,6 +962,8 @@ class NinjaWriter(object):
         include = precompiled_header.GetInclude(ext, arch)
         if include: ninja_file.variable(var, include)
 
+    arflags = config.get('arflags', [])
+
     self.WriteVariableList(ninja_file, 'cflags',
                            map(self.ExpandSpecial, cflags))
     self.WriteVariableList(ninja_file, 'cflags_c',
@@ -968,6 +975,8 @@ class NinjaWriter(object):
                              map(self.ExpandSpecial, cflags_objc))
       self.WriteVariableList(ninja_file, 'cflags_objcc',
                              map(self.ExpandSpecial, cflags_objcc))
+    self.WriteVariableList(ninja_file, 'arflags',
+                           map(self.ExpandSpecial, arflags))
     ninja_file.newline()
     outputs = []
     has_rc_source = False
@@ -983,9 +992,7 @@ class NinjaWriter(object):
       elif ext == 's' and self.flavor != 'win':  # Doesn't generate .o.d files.
         command = 'cc_s'
       elif (self.flavor == 'win' and ext == 'asm' and
-            self.msvs_settings.GetArch(config_name) == 'x86' and
             not self.msvs_settings.HasExplicitAsmRules(spec)):
-        # Asm files only get auto assembled for x86 (not x64).
         command = 'asm'
         # Add the _asm suffix as msvs is capable of handling .cc and
         # .asm files of the same name without collision.
@@ -1213,7 +1220,8 @@ class NinjaWriter(object):
             gyp.common.EncodePOSIXShellArgument(link_file_list)))
       if self.flavor == 'win':
         extra_bindings.append(('binary', output))
-        if '/NOENTRY' not in ldflags:
+        if ('/NOENTRY' not in ldflags and
+            not self.msvs_settings.GetNoImportLibrary(config_name)):
           self.target.import_lib = output + '.lib'
           extra_bindings.append(('implibflag',
                                  '/IMPLIB:%s' % self.target.import_lib))
@@ -1506,7 +1514,8 @@ class NinjaWriter(object):
       values = []
     ninja_file.variable(var, ' '.join(values))
 
-  def WriteNewNinjaRule(self, name, args, description, is_cygwin, env, pool):
+  def WriteNewNinjaRule(self, name, args, description, is_cygwin, env, pool,
+                        depfile=None):
     """Write out a new ninja "rule" statement for a given command.
 
     Returns the name of the new rule, and a copy of |args| with variables
@@ -1564,7 +1573,8 @@ class NinjaWriter(object):
     # GYP rules/actions express being no-ops by not touching their outputs.
     # Avoid executing downstream dependencies in this case by specifying
     # restat=1 to ninja.
-    self.ninja.rule(rule_name, command, description, restat=True, pool=pool,
+    self.ninja.rule(rule_name, command, description, depfile=depfile,
+                    restat=True, pool=pool,
                     rspfile=rspfile, rspfile_content=rspfile_content)
     self.ninja.newline()
 
@@ -1900,7 +1910,8 @@ def GenerateOutputForConfig(target_list, target_dicts, data, params,
     master_ninja.variable('idl', 'midl.exe')
     master_ninja.variable('ar', ar)
     master_ninja.variable('rc', 'rc.exe')
-    master_ninja.variable('asm', 'ml.exe')
+    master_ninja.variable('ml_x86', 'ml.exe')
+    master_ninja.variable('ml_x64', 'ml64.exe')
     master_ninja.variable('mt', 'mt.exe')
   else:
     master_ninja.variable('ld', CommandWithWrapper('LINK', wrappers, ld))
@@ -2025,11 +2036,11 @@ def GenerateOutputForConfig(target_list, target_dicts, data, params,
     master_ninja.rule(
       'alink',
       description='AR $out',
-      command='rm -f $out && $ar rcs $out $in')
+      command='rm -f $out && $ar rcs $arflags $out $in')
     master_ninja.rule(
       'alink_thin',
       description='AR $out',
-      command='rm -f $out && $ar rcsT $out $in')
+      command='rm -f $out && $ar rcsT $arflags $out $in')
 
     # This allows targets that only need to depend on $lib's API to declare an
     # order-only dependency on $lib.TOC and avoid relinking such downstream

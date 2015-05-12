@@ -13,7 +13,7 @@
  *    disclaimer in the documentation and/or other materials
  *    provided with the distribution.
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER “AS IS” AND ANY
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER "AS IS" AND ANY
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
  * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE
@@ -54,6 +54,11 @@ public:
 
     CSSPrimitiveValue* referenceBox() const { return m_referenceBox.get(); }
     void setReferenceBox(PassRefPtrWillBeRawPtr<CSSPrimitiveValue> referenceBox) { m_referenceBox = referenceBox; }
+
+    bool isEllipse() const { return type() == CSSBasicShapeEllipseType; }
+    bool isPolygon() const { return type() == CSSBasicShapePolygonType; }
+    bool isCircle() const { return type() == CSSBasicShapeCircleType; }
+    bool isInset() const { return type() == CSSBasicShapeInsetType; }
 
     virtual void trace(Visitor* visitor) { visitor->trace(m_referenceBox); }
 
@@ -221,6 +226,11 @@ private:
     RefPtrWillBeMember<CSSPrimitiveValue> m_bottomRightRadius;
     RefPtrWillBeMember<CSSPrimitiveValue> m_bottomLeftRadius;
 };
+
+DEFINE_TYPE_CASTS(CSSBasicShapeCircle, CSSBasicShape, shape, shape->isCircle(), shape.isCircle());
+DEFINE_TYPE_CASTS(CSSBasicShapeEllipse, CSSBasicShape, shape, shape->isEllipse(), shape.isEllipse());
+DEFINE_TYPE_CASTS(CSSBasicShapePolygon, CSSBasicShape, shape, shape->isPolygon(), shape.isPolygon());
+DEFINE_TYPE_CASTS(CSSBasicShapeInset, CSSBasicShape, shape, shape->isInset(), shape.isInset());
 
 } // namespace blink
 

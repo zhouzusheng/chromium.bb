@@ -15,6 +15,7 @@
 #include "libANGLE/renderer/d3d/d3d11/renderer11_utils.h"
 #include "libANGLE/Framebuffer.h"
 #include "libANGLE/FramebufferAttachment.h"
+#include "libANGLE/formatutils.h"
 
 #include "common/utilities.h"
 
@@ -42,7 +43,7 @@ Image11::~Image11()
     releaseStagingTexture();
 }
 
-Image11 *Image11::makeImage11(Image *img)
+Image11 *Image11::makeImage11(ImageD3D *img)
 {
     ASSERT(HAS_DYNAMIC_TYPE(Image11*, img));
     return static_cast<Image11*>(img);
@@ -245,11 +246,11 @@ DXGI_FORMAT Image11::getDXGIFormat() const
 
 // Store the pixel rectangle designated by xoffset,yoffset,width,height with pixels stored as format/type at input
 // into the target pixel rectangle.
-gl::Error Image11::loadData(const gl::Box &area, GLint unpackAlignment, GLenum type, const void *input)
+gl::Error Image11::loadData(const gl::Box &area, const gl::PixelUnpackState &unpack, GLenum type, const void *input)
 {
     const gl::InternalFormat &formatInfo = gl::GetInternalFormatInfo(mInternalFormat);
-    GLsizei inputRowPitch = formatInfo.computeRowPitch(type, area.width, unpackAlignment);
-    GLsizei inputDepthPitch = formatInfo.computeDepthPitch(type, area.width, area.height, unpackAlignment);
+    GLsizei inputRowPitch = formatInfo.computeRowPitch(type, area.width, unpack.alignment, unpack.rowLength);
+    GLsizei inputDepthPitch = formatInfo.computeDepthPitch(type, area.width, area.height, unpack.alignment, unpack.rowLength);
 
     const d3d11::DXGIFormat &dxgiFormatInfo = d3d11::GetDXGIFormatInfo(mDXGIFormat);
     GLuint outputPixelSize = dxgiFormatInfo.pixelBytes;
@@ -277,8 +278,8 @@ gl::Error Image11::loadData(const gl::Box &area, GLint unpackAlignment, GLenum t
 gl::Error Image11::loadCompressedData(const gl::Box &area, const void *input)
 {
     const gl::InternalFormat &formatInfo = gl::GetInternalFormatInfo(mInternalFormat);
-    GLsizei inputRowPitch = formatInfo.computeRowPitch(GL_UNSIGNED_BYTE, area.width, 1);
-    GLsizei inputDepthPitch = formatInfo.computeDepthPitch(GL_UNSIGNED_BYTE, area.width, area.height, 1);
+    GLsizei inputRowPitch = formatInfo.computeRowPitch(GL_UNSIGNED_BYTE, area.width, 1, 0);
+    GLsizei inputDepthPitch = formatInfo.computeDepthPitch(GL_UNSIGNED_BYTE, area.width, area.height, 1, 0);
 
     const d3d11::DXGIFormat &dxgiFormatInfo = d3d11::GetDXGIFormatInfo(mDXGIFormat);
     GLuint outputPixelSize = dxgiFormatInfo.pixelBytes;
@@ -311,7 +312,7 @@ gl::Error Image11::loadCompressedData(const gl::Box &area, const void *input)
     return gl::Error(GL_NO_ERROR);
 }
 
-gl::Error Image11::copy(const gl::Offset &destOffset, const gl::Rectangle &sourceArea, RenderTarget *source)
+gl::Error Image11::copy(const gl::Offset &destOffset, const gl::Rectangle &sourceArea, RenderTargetD3D *source)
 {
     RenderTarget11 *sourceRenderTarget = RenderTarget11::makeRenderTarget11(source);
     ASSERT(sourceRenderTarget->getTexture());

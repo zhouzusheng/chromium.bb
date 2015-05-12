@@ -112,7 +112,7 @@ String AXImageMapLink::accessibilityDescription() const
     return String();
 }
 
-String AXImageMapLink::title() const
+String AXImageMapLink::title(TextUnderElementMode mode) const
 {
     const AtomicString& title = getAttribute(titleAttr);
     if (!title.isEmpty())
@@ -129,7 +129,7 @@ LayoutRect AXImageMapLink::elementRect() const
     if (!m_mapElement.get() || !m_areaElement.get())
         return LayoutRect();
 
-    RenderObject* renderer;
+    LayoutObject* renderer;
     if (m_parent && m_parent->isAXRenderObject())
         renderer = toAXRenderObject(m_parent)->renderer();
     else

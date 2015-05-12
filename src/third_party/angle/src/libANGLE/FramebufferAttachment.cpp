@@ -8,15 +8,13 @@
 // objects and related functionality. [OpenGL ES 2.0.24] section 4.4.3 page 108.
 
 #include "libANGLE/FramebufferAttachment.h"
-#include "libANGLE/Texture.h"
-#include "libANGLE/formatutils.h"
-#include "libANGLE/Renderbuffer.h"
-#include "libANGLE/renderer/FramebufferImpl.h"
-#include "libANGLE/renderer/RenderTarget.h"
-#include "libANGLE/renderer/Renderer.h"
-#include "libANGLE/renderer/d3d/TextureStorage.h"
 
 #include "common/utilities.h"
+#include "libANGLE/Renderbuffer.h"
+#include "libANGLE/Texture.h"
+#include "libANGLE/formatutils.h"
+#include "libANGLE/renderer/DefaultAttachmentImpl.h"
+#include "libANGLE/renderer/FramebufferImpl.h"
 
 namespace gl
 {
@@ -98,17 +96,17 @@ GLuint TextureAttachment::id() const
 
 GLsizei TextureAttachment::getWidth() const
 {
-    return mTexture->getWidth(mIndex);
+    return mTexture->getWidth(mIndex.type, mIndex.mipIndex);
 }
 
 GLsizei TextureAttachment::getHeight() const
 {
-    return mTexture->getHeight(mIndex);
+    return mTexture->getHeight(mIndex.type, mIndex.mipIndex);
 }
 
 GLenum TextureAttachment::getInternalFormat() const
 {
-    return mTexture->getInternalFormat(mIndex);
+    return mTexture->getInternalFormat(mIndex.type, mIndex.mipIndex);
 }
 
 GLenum TextureAttachment::type() const
@@ -123,7 +121,7 @@ GLint TextureAttachment::mipLevel() const
 
 GLenum TextureAttachment::cubeMapFace() const
 {
-    return IsCubemapTextureTarget(mIndex.type) ? mIndex.type : GL_NONE;
+    return IsCubeMapTextureTarget(mIndex.type) ? mIndex.type : GL_NONE;
 }
 
 GLint TextureAttachment::layer() const

@@ -10,6 +10,7 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/logging.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -134,8 +135,9 @@ int HttpStreamFactoryImpl::Job::Preconnect(int num_streams) {
   DCHECK_GT(num_streams, 0);
   base::WeakPtr<HttpServerProperties> http_server_properties =
       session_->http_server_properties();
-  if (http_server_properties && http_server_properties->SupportsSpdy(
-      HostPortPair::FromURL(request_info_.url))) {
+  if (http_server_properties &&
+      http_server_properties->SupportsRequestPriority(
+          HostPortPair::FromURL(request_info_.url))) {
     num_streams_ = 1;
   } else {
     num_streams_ = num_streams;
@@ -168,6 +170,7 @@ void HttpStreamFactoryImpl::Job::MarkAsAlternate(
     AlternateProtocolInfo alternate) {
   DCHECK(!original_url_.get());
   original_url_.reset(new GURL(original_url));
+  alternate_protocol_ = alternate;
   if (alternate.protocol == QUIC) {
     DCHECK(session_->params().enable_quic);
     using_quic_ = true;
@@ -434,6 +437,10 @@ int HttpStreamFactoryImpl::Job::OnHostResolution(
 }
 
 void HttpStreamFactoryImpl::Job::OnIOComplete(int result) {
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/455884 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "455884 HttpStreamFactoryImpl::Job::OnIOComplete"));
   RunLoop(result);
 }
 
@@ -664,10 +671,15 @@ int HttpStreamFactoryImpl::Job::DoResolveProxyComplete(int result) {
 
   if (result == OK) {
     // Remove unsupported proxies from the list.
-    proxy_info_.RemoveProxiesWithoutScheme(
-        ProxyServer::SCHEME_DIRECT | ProxyServer::SCHEME_QUIC |
-        ProxyServer::SCHEME_HTTP | ProxyServer::SCHEME_HTTPS |
-        ProxyServer::SCHEME_SOCKS4 | ProxyServer::SCHEME_SOCKS5);
+    int supported_proxies =
+        ProxyServer::SCHEME_DIRECT | ProxyServer::SCHEME_HTTP |
+        ProxyServer::SCHEME_HTTPS | ProxyServer::SCHEME_SOCKS4 |
+        ProxyServer::SCHEME_SOCKS5;
+
+    if (session_->params().enable_quic_for_proxies)
+      supported_proxies |= ProxyServer::SCHEME_QUIC;
+
+    proxy_info_.RemoveProxiesWithoutScheme(supported_proxies);
 
     if (proxy_info_.is_empty()) {
       // No proxies/direct to choose from. This happens when we don't support
@@ -740,11 +752,14 @@ int HttpStreamFactoryImpl::Job::DoInitConnection() {
   if (ShouldForceQuic())
     using_quic_ = true;
 
-  if (proxy_info_.is_quic())
+  DCHECK(!using_quic_ || session_->params().enable_quic);
+
+  if (proxy_info_.is_quic()) {
     using_quic_ = true;
+    DCHECK(session_->params().enable_quic_for_proxies);
+  }
 
   if (using_quic_) {
-    DCHECK(session_->params().enable_quic);
     if (proxy_info_.is_quic() && !request_info_.url.SchemeIs("http")) {
       NOTREACHED();
       // TODO(rch): support QUIC proxies for HTTPS urls.
@@ -894,6 +909,13 @@ int HttpStreamFactoryImpl::Job::DoInitConnectionComplete(int result) {
       ReturnToStateInitConnection(true /* close connection */);
     }
     return OK;
+  }
+
+  if (proxy_info_.is_quic() && using_quic_ &&
+      (result == ERR_QUIC_PROTOCOL_ERROR ||
+       result == ERR_QUIC_HANDSHAKE_FAILED)) {
+    using_quic_ = false;
+    return ReconsiderProxyAfterError(result);
   }
 
   // TODO(willchan): Make this a bit more exact. Maybe there are recoverable
@@ -1306,6 +1328,8 @@ int HttpStreamFactoryImpl::Job::ReconsiderProxyAfterError(int error) {
     case ERR_PROXY_CERTIFICATE_INVALID:
     // This can happen when trying to talk SSL to a non-SSL server (Like a
     // captive portal).
+    case ERR_QUIC_PROTOCOL_ERROR:
+    case ERR_QUIC_HANDSHAKE_FAILED:
     case ERR_SSL_PROTOCOL_ERROR:
       break;
     case ERR_SOCKS_CONNECTION_HOST_UNREACHABLE:
@@ -1453,6 +1477,7 @@ void HttpStreamFactoryImpl::Job::ReportJobSuccededForRequest() {
 void HttpStreamFactoryImpl::Job::MarkOtherJobComplete(const Job& job) {
   DCHECK_EQ(STATUS_RUNNING, other_job_status_);
   other_job_status_ = job.job_status_;
+  other_job_alternate_protocol_ = job.alternate_protocol_;
   MaybeMarkAlternateProtocolBroken();
 }
 

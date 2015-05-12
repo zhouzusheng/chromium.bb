@@ -26,7 +26,7 @@
 #ifndef ScrollingCoordinator_h
 #define ScrollingCoordinator_h
 
-#include "core/rendering/RenderObject.h"
+#include "core/layout/LayoutObject.h"
 #include "platform/PlatformWheelEvent.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/scroll/ScrollTypes.h"
@@ -66,6 +66,9 @@ public:
     void updateHaveWheelEventHandlers();
     void updateHaveScrollEventHandlers();
 
+    // Should be called whenever scrollable area set changes.
+    void scrollableAreasDidChange();
+
     // Should be called whenever the slow repaint objects counter changes between zero and one.
     void frameViewHasSlowRepaintObjectsDidChange(FrameView*);
 
@@ -96,12 +99,12 @@ public:
     bool scrollableAreaScrollLayerDidChange(ScrollableArea*);
     void scrollableAreaScrollbarLayerDidChange(ScrollableArea*, ScrollbarOrientation);
     void setLayerIsContainerForFixedPositionLayers(GraphicsLayer*, bool);
-    void updateLayerPositionConstraint(RenderLayer*);
+    void updateLayerPositionConstraint(Layer*);
     void touchEventTargetRectsDidChange();
-    void willDestroyRenderLayer(RenderLayer*);
+    void willDestroyLayer(Layer*);
 
-    void updateScrollParentForGraphicsLayer(GraphicsLayer* child, RenderLayer* parent);
-    void updateClipParentForGraphicsLayer(GraphicsLayer* child, RenderLayer* parent);
+    void updateScrollParentForGraphicsLayer(GraphicsLayer* child, Layer* parent);
+    void updateClipParentForGraphicsLayer(GraphicsLayer* child, Layer* parent);
 
     static String mainThreadScrollingReasonsAsText(MainThreadScrollingReasons);
     String mainThreadScrollingReasonsAsText() const;
@@ -147,7 +150,7 @@ private:
     using ScrollbarMap = HashMap<ScrollableArea*, OwnPtr<blink::WebScrollbarLayer>>;
     ScrollbarMap m_horizontalScrollbars;
     ScrollbarMap m_verticalScrollbars;
-    HashSet<const RenderLayer*> m_layersWithTouchRects;
+    HashSet<const Layer*> m_layersWithTouchRects;
     bool m_wasFrameScrollable;
 
     MainThreadScrollingReasons m_lastMainThreadScrollingReasons;

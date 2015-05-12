@@ -9,7 +9,7 @@
 
 #include "base/callback_forward.h"
 #include "content/public/browser/browser_message_filter.h"
-#include "third_party/WebKit/public/platform/WebNotificationPermission.h"
+#include "third_party/WebKit/public/platform/modules/notifications/WebNotificationPermission.h"
 
 class GURL;
 class SkBitmap;
@@ -18,6 +18,7 @@ namespace content {
 
 class BrowserContext;
 struct PlatformNotificationData;
+class PlatformNotificationService;
 class ResourceContext;
 
 class NotificationMessageFilter : public BrowserMessageFilter {
@@ -55,6 +56,14 @@ class NotificationMessageFilter : public BrowserMessageFilter {
   void OnClosePlatformNotification(int notification_id);
   void OnClosePersistentNotification(
       const std::string& persistent_notification_id);
+
+  // Verifies that Web Notification permission has been granted for |origin| in
+  // cases where the renderer shouldn't send messages if it weren't the case. If
+  // no permission has been granted, a bad message has been received and the
+  // renderer should be killed accordingly.
+  bool VerifyNotificationPermissionGranted(
+      PlatformNotificationService* service,
+      const GURL& origin);
 
   int process_id_;
   ResourceContext* resource_context_;

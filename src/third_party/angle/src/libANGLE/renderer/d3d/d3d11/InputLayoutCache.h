@@ -39,7 +39,7 @@ class InputLayoutCache
     void markDirty();
 
     gl::Error applyVertexBuffers(TranslatedAttribute attributes[gl::MAX_VERTEX_ATTRIBS],
-                                 gl::Program *program);
+                                 GLenum mode, gl::Program *program);
 
   private:
     DISALLOW_COPY_AND_ASSIGN(InputLayoutCache);
@@ -76,6 +76,9 @@ class InputLayoutCache
     ID3D11Buffer *mCurrentBuffers[gl::MAX_VERTEX_ATTRIBS];
     UINT mCurrentVertexStrides[gl::MAX_VERTEX_ATTRIBS];
     UINT mCurrentVertexOffsets[gl::MAX_VERTEX_ATTRIBS];
+
+    ID3D11Buffer *mPointSpriteVertexBuffer;
+    ID3D11Buffer *mPointSpriteIndexBuffer;
 
     static std::size_t hashInputLayout(const InputLayoutKey &inputLayout);
     static bool compareInputLayouts(const InputLayoutKey &a, const InputLayoutKey &b);

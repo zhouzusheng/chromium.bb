@@ -49,7 +49,7 @@ class HTMLInputElement : public HTMLTextFormControlElement {
 public:
     static PassRefPtrWillBeRawPtr<HTMLInputElement> create(Document&, HTMLFormElement*, bool createdByParser);
     virtual ~HTMLInputElement();
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(webkitspeechchange);
 
@@ -145,8 +145,8 @@ public:
     void setSelectionRangeForBinding(int start, int end, ExceptionState&);
     void setSelectionRangeForBinding(int start, int end, const String& direction, ExceptionState&);
 
-    virtual bool rendererIsNeeded(const RenderStyle&) override final;
-    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual bool rendererIsNeeded(const LayoutStyle&) override final;
+    virtual LayoutObject* createRenderer(const LayoutStyle&) override;
     virtual void detach(const AttachContext& = AttachContext()) override final;
     virtual void updateFocusAppearance(bool restorePreviousSelection) override final;
 
@@ -265,8 +265,8 @@ protected:
 private:
     enum AutoCompleteSetting { Uninitialized, On, Off };
 
-    virtual void didAddUserAgentShadowRoot(ShadowRoot&) override final;
-    virtual void willAddFirstAuthorShadowRoot() override final;
+    virtual void didAddClosedShadowRoot(ShadowRoot&) override final;
+    virtual void willAddFirstOpenShadowRoot() override final;
 
     virtual void willChangeForm() override final;
     virtual void didChangeForm() override final;
@@ -331,9 +331,9 @@ private:
     virtual void updatePlaceholderText() override final;
     virtual bool isEmptyValue() const override final { return innerEditorValue().isEmpty(); }
     virtual bool isEmptySuggestedValue() const override final { return suggestedValue().isEmpty(); }
-    virtual void handleFocusEvent(Element* oldFocusedElement, FocusType) override final;
+    virtual void handleFocusEvent(Element* oldFocusedElement, WebFocusType) override final;
     virtual void handleBlurEvent() override final;
-    virtual void dispatchFocusInEvent(const AtomicString& eventType, Element* oldFocusedElement, FocusType) override final;
+    virtual void dispatchFocusInEvent(const AtomicString& eventType, Element* oldFocusedElement, WebFocusType) override final;
 
     virtual bool isOptionalFormControl() const override final { return !isRequiredFormControl(); }
     virtual bool isRequiredFormControl() const override final;
@@ -356,7 +356,7 @@ private:
     RadioButtonGroupScope* radioButtonGroupScope() const;
     void addToRadioButtonGroup();
     void removeFromRadioButtonGroup();
-    virtual PassRefPtr<RenderStyle> customStyleForRenderer() override;
+    virtual PassRefPtr<LayoutStyle> customStyleForRenderer() override;
 
     virtual bool shouldDispatchFormControlChangeEvent(String&, String&) override;
 

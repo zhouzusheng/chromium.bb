@@ -6,11 +6,8 @@
 #define MIDIPortMap_h
 
 #include "bindings/core/v8/ExceptionState.h"
-#include "bindings/core/v8/ScriptState.h"
-#include "bindings/core/v8/ScriptValue.h"
+#include "bindings/core/v8/Maplike.h"
 #include "bindings/core/v8/V8Binding.h"
-#include "bindings/core/v8/V8IteratorResultValue.h"
-#include "core/dom/Iterator.h"
 #include "platform/heap/Handle.h"
 #include "wtf/HashMap.h"
 #include "wtf/text/StringHash.h"
@@ -19,109 +16,72 @@
 namespace blink {
 
 template <typename T>
-class MIDIPortMap : public GarbageCollected<MIDIPortMap<T> > {
+class MIDIPortMap : public GarbageCollected<MIDIPortMap<T>>, public Maplike<String, T*> {
 public:
-    explicit MIDIPortMap(const HeapHashMap<String, Member<T> >& entries) : m_entries(entries) { }
+    explicit MIDIPortMap(const HeapHashMap<String, Member<T>>& entries) : m_entries(entries) { }
 
     // IDL attributes / methods
     size_t size() const { return m_entries.size(); }
-    Iterator* keys();
-    Iterator* entries();
-    Iterator* values();
-    T* get(const String& key) const;
-    bool has(const String& key) const { return m_entries.contains(key); }
-    Iterator* iterator(ScriptState*, ExceptionState&) { return entries(); }
 
-    virtual void trace(Visitor* visitor)
+    DEFINE_INLINE_VIRTUAL_TRACE()
     {
         visitor->trace(m_entries);
     }
 
 private:
-    typedef HeapHashMap<String, Member<T> > MapType;
-    typedef typename HeapHashMap<String, Member<T> >::const_iterator IteratorType;
-    struct KeySelector {
-        static const String& select(ScriptState*, IteratorType i) { return i->key; }
-    };
-    struct ValueSelector {
-        static T* select(ScriptState*, IteratorType i) { return i->value; }
-    };
-    struct EntrySelector {
-        static Vector<ScriptValue> select(ScriptState* scriptState, IteratorType i)
-        {
-            Vector<ScriptValue> entry;
-            entry.append(ScriptValue(scriptState, v8String(scriptState->isolate(), i->key)));
-            entry.append(ScriptValue(scriptState, toV8(i->value, scriptState->context()->Global(), scriptState->isolate())));
-            return entry;
-        }
-    };
+    typedef HeapHashMap<String, Member<T>> MapType;
+    typedef typename HeapHashMap<String, Member<T>>::const_iterator IteratorType;
+
+    typename PairIterable<String, T*>::IterationSource* startIteration(ScriptState*, ExceptionState&) override
+    {
+        return new MapIterationSource(this, m_entries.begin(), m_entries.end());
+    }
+
+    bool getMapEntry(ScriptState*, const String& key, T*& value, ExceptionState&) override
+    {
+        if (!m_entries.contains(key))
+            return false;
+        value = m_entries.get(key);
+        return true;
+    }
 
     // Note: This template class relies on the fact that m_map.m_entries will
     // never be modified once it is created.
-    template <typename Selector>
-    class MapIterator : public Iterator {
+    class MapIterationSource final : public PairIterable<String, T*>::IterationSource {
     public:
-        MapIterator(MIDIPortMap<T>* map, IteratorType iterator, IteratorType end)
+        MapIterationSource(MIDIPortMap<T>* map, IteratorType iterator, IteratorType end)
             : m_map(map)
             , m_iterator(iterator)
             , m_end(end)
         {
         }
 
-        virtual ScriptValue next(ScriptState* scriptState, ExceptionState&) override
+        bool next(ScriptState* scriptState, String& key, T*& value, ExceptionState&) override
         {
             if (m_iterator == m_end)
-                return v8IteratorResultDone(scriptState);
-            ScriptValue result = v8IteratorResult(scriptState, Selector::select(scriptState, m_iterator));
+                return false;
+            key = m_iterator->key;
+            value = m_iterator->value;
             ++m_iterator;
-            return result;
+            return true;
         }
 
-        virtual ScriptValue next(ScriptState* scriptState, ScriptValue, ExceptionState& exceptionState) override
-        {
-            return next(scriptState, exceptionState);
-        }
-
-        virtual void trace(Visitor* visitor) override
+        DEFINE_INLINE_VIRTUAL_TRACE()
         {
             visitor->trace(m_map);
-            Iterator::trace(visitor);
+            PairIterable<String, T*>::IterationSource::trace(visitor);
         }
 
     private:
         // m_map is stored just for keeping it alive. It needs to be kept
         // alive while JavaScript holds the iterator to it.
-        const Member<const MIDIPortMap<T> > m_map;
+        const Member<const MIDIPortMap<T>> m_map;
         IteratorType m_iterator;
         const IteratorType m_end;
     };
 
     const MapType m_entries;
 };
-
-template <typename T>
-Iterator* MIDIPortMap<T>::keys()
-{
-    return new MapIterator<KeySelector>(this, m_entries.begin(), m_entries.end());
-}
-
-template <typename T>
-Iterator* MIDIPortMap<T>::entries()
-{
-    return new MapIterator<EntrySelector>(this, m_entries.begin(), m_entries.end());
-}
-
-template <typename T>
-Iterator* MIDIPortMap<T>::values()
-{
-    return new MapIterator<ValueSelector>(this, m_entries.begin(), m_entries.end());
-}
-
-template <typename T>
-T* MIDIPortMap<T>::get(const String& key) const
-{
-    return has(key) ? m_entries.get(key) : 0;
-}
 
 } // namespace blink
 

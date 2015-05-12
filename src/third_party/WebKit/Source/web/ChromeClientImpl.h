@@ -70,13 +70,13 @@ public:
 
     // ChromeClient methods:
     virtual void chromeDestroyed() override;
-    virtual void setWindowRect(const FloatRect&) override;
-    virtual FloatRect windowRect() override;
-    virtual FloatRect pageRect() override;
+    virtual void setWindowRect(const IntRect&) override;
+    virtual IntRect windowRect() override;
+    virtual IntRect pageRect() override;
     virtual void focus() override;
-    virtual bool canTakeFocus(FocusType) override;
-    virtual void takeFocus(FocusType) override;
-    virtual void focusedNodeChanged(Node*) override;
+    virtual bool canTakeFocus(WebFocusType) override;
+    virtual void takeFocus(WebFocusType) override;
+    virtual void focusedNodeChanged(Node* fromNode, Node* toNode) override;
     virtual void focusedFrameChanged(LocalFrame*) override;
     virtual Page* createWindow(
         LocalFrame*, const FrameLoadRequest&, const WindowFeatures&, NavigationPolicy, ShouldSendReferrer) override;
@@ -115,7 +115,8 @@ public:
     virtual IntRect rootViewToScreen(const IntRect&) const override;
     virtual WebScreenInfo screenInfo() const override;
     virtual void contentsSizeChanged(LocalFrame*, const IntSize&) const override;
-    virtual void deviceOrPageScaleFactorChanged() const override;
+    virtual void pageScaleFactorChanged() const override;
+    virtual float clampPageScaleFactorToLimits(float scale) const override;
     virtual void layoutUpdated(LocalFrame*) const override;
     virtual void mouseDidMoveOverElement(const HitTestResult&) override;
     virtual void setToolTip(const WTF::String& tooltipText, TextDirection) override;

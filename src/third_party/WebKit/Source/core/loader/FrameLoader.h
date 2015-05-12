@@ -86,12 +86,9 @@ public:
 
     static void reportLocalLoadFailed(LocalFrame*, const String& url);
 
-    // FIXME: These are all functions which stop loads. We have too many.
     // Warning: stopAllLoaders can and will detach the LocalFrame out from under you. All callers need to either protect the LocalFrame
     // or guarantee they won't in any way access the LocalFrame after stopAllLoaders returns.
     void stopAllLoaders();
-    void stopLoading();
-    bool closeURL();
 
     // FIXME: clear() is trying to do too many things. We should break it down into smaller functions.
     void clear();
@@ -111,7 +108,6 @@ public:
     DocumentLoader* documentLoader() const { return m_documentLoader.get(); }
     DocumentLoader* policyDocumentLoader() const { return m_policyDocumentLoader.get(); }
     DocumentLoader* provisionalDocumentLoader() const { return m_provisionalDocumentLoader.get(); }
-    FrameState state() const { return m_state; }
     FetchContext& fetchContext() const { return *m_fetchContext; }
 
     void receivedMainResourceError(DocumentLoader*, const ResourceError&);
@@ -123,8 +119,6 @@ public:
 
     FrameLoadType loadType() const;
     void setLoadType(FrameLoadType loadType) { m_loadType = loadType; }
-
-    void checkLoadComplete();
 
     FrameLoaderClient* client() const;
 
@@ -150,6 +144,8 @@ public:
 
     bool shouldEnforceStrictMixedContentChecking() const;
 
+    SecurityContext::InsecureContentPolicy insecureContentPolicy() const;
+
     Frame* opener();
     void setOpener(LocalFrame*);
 
@@ -170,6 +166,7 @@ public:
     bool allAncestorsAreComplete() const; // including this
 
     bool shouldClose();
+    void dispatchUnloadEvent();
 
     bool allowPlugins(ReasonForCallingAllowPlugins);
 
@@ -183,11 +180,7 @@ public:
 
     void trace(Visitor*);
 
-    bool checkLoadCompleteForThisFrame();
-
 private:
-    bool allChildrenAreComplete() const; // immediate children, not all descendants
-
     void checkTimerFired(Timer<FrameLoader>*);
     void didAccessInitialDocumentTimerFired(Timer<FrameLoader>*);
 
@@ -221,7 +214,6 @@ private:
 
     OwnPtrWillBeMember<ProgressTracker> m_progressTracker;
 
-    FrameState m_state;
     FrameLoadType m_loadType;
 
     // Document loaders for the three phases of frame loading. Note that while

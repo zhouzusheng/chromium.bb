@@ -127,7 +127,7 @@ unsigned long long PerformanceTiming::domainLookupStart() const
 
     // This will be zero when a DNS request is not performed.
     // Rather than exposing a special value that indicates no DNS, we "backfill" with fetchStart.
-    double dnsStart = timing->dnsStart;
+    double dnsStart = timing->dnsStart();
     if (dnsStart == 0.0)
         return fetchStart();
 
@@ -142,7 +142,7 @@ unsigned long long PerformanceTiming::domainLookupEnd() const
 
     // This will be zero when a DNS request is not performed.
     // Rather than exposing a special value that indicates no DNS, we "backfill" with domainLookupStart.
-    double dnsEnd = timing->dnsEnd;
+    double dnsEnd = timing->dnsEnd();
     if (dnsEnd == 0.0)
         return domainLookupStart();
 
@@ -161,14 +161,14 @@ unsigned long long PerformanceTiming::connectStart() const
 
     // connectStart will be zero when a network request is not made.
     // Rather than exposing a special value that indicates no new connection, we "backfill" with domainLookupEnd.
-    double connectStart = timing->connectStart;
+    double connectStart = timing->connectStart();
     if (connectStart == 0.0 || loader->response().connectionReused())
         return domainLookupEnd();
 
     // ResourceLoadTiming's connect phase includes DNS, however Navigation Timing's
     // connect phase should not. So if there is DNS time, trim it from the start.
-    if (timing->dnsEnd > 0.0 && timing->dnsEnd > connectStart)
-        connectStart = timing->dnsEnd;
+    if (timing->dnsEnd() > 0.0 && timing->dnsEnd() > connectStart)
+        connectStart = timing->dnsEnd();
 
     return monotonicTimeToIntegerMilliseconds(connectStart);
 }
@@ -185,7 +185,7 @@ unsigned long long PerformanceTiming::connectEnd() const
 
     // connectEnd will be zero when a network request is not made.
     // Rather than exposing a special value that indicates no new connection, we "backfill" with connectStart.
-    double connectEnd = timing->connectEnd;
+    double connectEnd = timing->connectEnd();
     if (connectEnd == 0.0 || loader->response().connectionReused())
         return connectStart();
 
@@ -202,7 +202,7 @@ unsigned long long PerformanceTiming::secureConnectionStart() const
     if (!timing)
         return 0;
 
-    double sslStart = timing->sslStart;
+    double sslStart = timing->sslStart();
     if (sslStart == 0.0)
         return 0;
 
@@ -213,16 +213,16 @@ unsigned long long PerformanceTiming::requestStart() const
 {
     ResourceLoadTiming* timing = resourceLoadTiming();
 
-    if (!timing || timing->sendStart == 0.0)
+    if (!timing || timing->sendStart() == 0.0)
         return connectEnd();
 
-    return monotonicTimeToIntegerMilliseconds(timing->sendStart);
+    return monotonicTimeToIntegerMilliseconds(timing->sendStart());
 }
 
 unsigned long long PerformanceTiming::responseStart() const
 {
     ResourceLoadTiming* timing = resourceLoadTiming();
-    if (!timing || timing->receiveHeadersEnd == 0.0)
+    if (!timing || timing->receiveHeadersEnd() == 0.0)
         return requestStart();
 
     // FIXME: Response start needs to be the time of the first received byte.
@@ -231,7 +231,7 @@ unsigned long long PerformanceTiming::responseStart() const
     // sized cookies, the HTTP headers fit into a single packet so this time
     // is basically equivalent. But for some responses, particularly those with
     // headers larger than a single packet, this time will be too late.
-    return monotonicTimeToIntegerMilliseconds(timing->receiveHeadersEnd);
+    return monotonicTimeToIntegerMilliseconds(timing->receiveHeadersEnd());
 }
 
 unsigned long long PerformanceTiming::responseEnd() const
@@ -249,7 +249,7 @@ unsigned long long PerformanceTiming::domLoading() const
     if (!timing)
         return fetchStart();
 
-    return monotonicTimeToIntegerMilliseconds(timing->domLoading);
+    return monotonicTimeToIntegerMilliseconds(timing->domLoading());
 }
 
 unsigned long long PerformanceTiming::domInteractive() const
@@ -258,7 +258,7 @@ unsigned long long PerformanceTiming::domInteractive() const
     if (!timing)
         return 0;
 
-    return monotonicTimeToIntegerMilliseconds(timing->domInteractive);
+    return monotonicTimeToIntegerMilliseconds(timing->domInteractive());
 }
 
 unsigned long long PerformanceTiming::domContentLoadedEventStart() const
@@ -267,7 +267,7 @@ unsigned long long PerformanceTiming::domContentLoadedEventStart() const
     if (!timing)
         return 0;
 
-    return monotonicTimeToIntegerMilliseconds(timing->domContentLoadedEventStart);
+    return monotonicTimeToIntegerMilliseconds(timing->domContentLoadedEventStart());
 }
 
 unsigned long long PerformanceTiming::domContentLoadedEventEnd() const
@@ -276,7 +276,7 @@ unsigned long long PerformanceTiming::domContentLoadedEventEnd() const
     if (!timing)
         return 0;
 
-    return monotonicTimeToIntegerMilliseconds(timing->domContentLoadedEventEnd);
+    return monotonicTimeToIntegerMilliseconds(timing->domContentLoadedEventEnd());
 }
 
 unsigned long long PerformanceTiming::domComplete() const
@@ -285,7 +285,7 @@ unsigned long long PerformanceTiming::domComplete() const
     if (!timing)
         return 0;
 
-    return monotonicTimeToIntegerMilliseconds(timing->domComplete);
+    return monotonicTimeToIntegerMilliseconds(timing->domComplete());
 }
 
 unsigned long long PerformanceTiming::loadEventStart() const
@@ -332,7 +332,7 @@ DocumentLoadTiming* PerformanceTiming::documentLoadTiming() const
     if (!loader)
         return nullptr;
 
-    return loader->timing();
+    return &loader->timing();
 }
 
 ResourceLoadTiming* PerformanceTiming::resourceLoadTiming() const

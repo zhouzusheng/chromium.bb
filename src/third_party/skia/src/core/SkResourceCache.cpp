@@ -73,9 +73,9 @@ public:
     ~SkOneShotDiscardablePixelRef();
 
 protected:
-    virtual bool onNewLockPixels(LockRec*) SK_OVERRIDE;
-    virtual void onUnlockPixels() SK_OVERRIDE;
-    virtual size_t getAllocatedSizeInBytes() const SK_OVERRIDE;
+    bool onNewLockPixels(LockRec*) SK_OVERRIDE;
+    void onUnlockPixels() SK_OVERRIDE;
+    size_t getAllocatedSizeInBytes() const SK_OVERRIDE;
 
 private:
     SkDiscardableMemory* fDM;
@@ -143,7 +143,7 @@ public:
         fFactory = factory;
     }
 
-    virtual bool allocPixelRef(SkBitmap*, SkColorTable*) SK_OVERRIDE;
+    bool allocPixelRef(SkBitmap*, SkColorTable*) SK_OVERRIDE;
 
 private:
     SkResourceCache::DiscardableFactory fFactory;
@@ -435,6 +435,22 @@ size_t SkResourceCache::getSingleAllocationByteLimit() const {
     return fSingleAllocationByteLimit;
 }
 
+size_t SkResourceCache::getEffectiveSingleAllocationByteLimit() const {
+    // fSingleAllocationByteLimit == 0 means the caller is asking for our default
+    size_t limit = fSingleAllocationByteLimit;
+
+    // if we're not discardable (i.e. we are fixed-budget) then cap the single-limit
+    // to our budget.
+    if (NULL == fDiscardableFactory) {
+        if (0 == limit) {
+            limit = fTotalByteLimit;
+        } else {
+            limit = SkTMin(limit, fTotalByteLimit);
+        }
+    }
+    return limit;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 #include "SkThread.h"
@@ -509,6 +525,11 @@ size_t SkResourceCache::SetSingleAllocationByteLimit(size_t size) {
 size_t SkResourceCache::GetSingleAllocationByteLimit() {
     SkAutoMutexAcquire am(gMutex);
     return get_cache()->getSingleAllocationByteLimit();
+}
+
+size_t SkResourceCache::GetEffectiveSingleAllocationByteLimit() {
+    SkAutoMutexAcquire am(gMutex);
+    return get_cache()->getEffectiveSingleAllocationByteLimit();
 }
 
 void SkResourceCache::PurgeAll() {

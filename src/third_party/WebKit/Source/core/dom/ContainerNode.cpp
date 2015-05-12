@@ -31,8 +31,8 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/NameNodeList.h"
 #include "core/dom/NodeChildRemovalTracker.h"
+#include "core/dom/NodeLayoutStyle.h"
 #include "core/dom/NodeRareData.h"
-#include "core/dom/NodeRenderStyle.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/SelectorQuery.h"
 #include "core/dom/StaticNodeList.h"
@@ -45,10 +45,10 @@
 #include "core/html/HTMLTagCollection.h"
 #include "core/html/RadioNodeList.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/rendering/InlineTextBox.h"
+#include "core/layout/LayoutTheme.h"
+#include "core/layout/line/InlineTextBox.h"
 #include "core/rendering/RenderInline.h"
 #include "core/rendering/RenderText.h"
-#include "core/rendering/RenderTheme.h"
 #include "core/rendering/RenderView.h"
 #include "platform/EventDispatchForbiddenScope.h"
 #include "platform/ScriptForbiddenScope.h"
@@ -59,10 +59,6 @@ using namespace HTMLNames;
 
 static void dispatchChildInsertionEvents(Node&);
 static void dispatchChildRemovalEvents(Node&);
-
-#if ENABLE(ASSERT)
-unsigned EventDispatchForbiddenScope::s_count = 0;
-#endif
 
 static void collectChildrenAndRemoveFromOldParent(Node& node, NodeVector& nodes, ExceptionState& exceptionState)
 {
@@ -239,9 +235,13 @@ PassRefPtrWillBeRawPtr<Node> ContainerNode::insertBefore(PassRefPtrWillBeRawPtr<
         if (child.parentNode())
             break;
 
-        treeScope().adoptIfNeeded(child);
+        {
+            EventDispatchForbiddenScope assertNoEventDispatch;
+            ScriptForbiddenScope forbidScript;
 
-        insertBeforeCommon(*next, child);
+            treeScope().adoptIfNeeded(child);
+            insertBeforeCommon(*next, child);
+        }
 
         updateTreeAfterInsertion(child);
     }
@@ -306,11 +306,15 @@ void ContainerNode::parserInsertBefore(PassRefPtrWillBeRawPtr<Node> newChild, No
     if (document() != newChild->document())
         document().adoptNode(newChild.get(), ASSERT_NO_EXCEPTION);
 
-    insertBeforeCommon(nextChild, *newChild);
+    {
+        EventDispatchForbiddenScope assertNoEventDispatch;
+        ScriptForbiddenScope forbidScript;
 
-    newChild->updateAncestorConnectedSubframeCountForInsertion();
-
-    ChildListMutationScope(*this).childAdded(*newChild);
+        treeScope().adoptIfNeeded(*newChild);
+        insertBeforeCommon(nextChild, *newChild);
+        newChild->updateAncestorConnectedSubframeCountForInsertion();
+        ChildListMutationScope(*this).childAdded(*newChild);
+    }
 
     notifyNodeInserted(*newChild, ChildrenChangeSourceParser);
 }
@@ -861,7 +865,7 @@ bool ContainerNode::getUpperLeftCorner(FloatPoint& point) const
         return false;
 
     // FIXME: What is this code really trying to do?
-    RenderObject* o = renderer();
+    LayoutObject* o = renderer();
     if (!o->isInline() || o->isReplaced()) {
         point = o->localToAbsolute(FloatPoint(), UseTransforms);
         return true;
@@ -869,13 +873,13 @@ bool ContainerNode::getUpperLeftCorner(FloatPoint& point) const
 
     // Find the next text/image child, to get a position.
     while (o) {
-        RenderObject* p = o;
-        if (RenderObject* oFirstChild = o->slowFirstChild()) {
+        LayoutObject* p = o;
+        if (LayoutObject* oFirstChild = o->slowFirstChild()) {
             o = oFirstChild;
         } else if (o->nextSibling()) {
             o = o->nextSibling();
         } else {
-            RenderObject* next = nullptr;
+            LayoutObject* next = nullptr;
             while (!next && o->parent()) {
                 o = o->parent();
                 next = o->nextSibling();
@@ -916,10 +920,10 @@ bool ContainerNode::getUpperLeftCorner(FloatPoint& point) const
     return false;
 }
 
-static inline RenderObject* endOfContinuations(RenderObject* renderer)
+static inline LayoutObject* endOfContinuations(LayoutObject* renderer)
 {
-    RenderObject* prev = nullptr;
-    RenderObject* cur = renderer;
+    LayoutObject* prev = nullptr;
+    LayoutObject* cur = renderer;
 
     if (!cur->isRenderInline() && !cur->isRenderBlock())
         return nullptr;
@@ -940,22 +944,22 @@ bool ContainerNode::getLowerRightCorner(FloatPoint& point) const
     if (!renderer())
         return false;
 
-    RenderObject* o = renderer();
+    LayoutObject* o = renderer();
     if (!o->isInline() || o->isReplaced()) {
         RenderBox* box = toRenderBox(o);
         point = o->localToAbsolute(FloatPoint(box->size()), UseTransforms);
         return true;
     }
 
-    RenderObject* startContinuation = nullptr;
+    LayoutObject* startContinuation = nullptr;
     // Find the last text/image child, to get a position.
     while (o) {
-        if (RenderObject* oLastChild = o->slowLastChild()) {
+        if (LayoutObject* oLastChild = o->slowLastChild()) {
             o = oLastChild;
         } else if (o != renderer() && o->previousSibling()) {
             o = o->previousSibling();
         } else {
-            RenderObject* prev = nullptr;
+            LayoutObject* prev = nullptr;
             while (!prev) {
                 // Check if the current renderer has contiunation and move the location for finding the renderer
                 // to the end of continuations if there is the continuation.
@@ -963,7 +967,7 @@ bool ContainerNode::getLowerRightCorner(FloatPoint& point) const
                 if (startContinuation == o) {
                     startContinuation = nullptr;
                 } else if (!startContinuation) {
-                    if (RenderObject* continuation = endOfContinuations(o)) {
+                    if (LayoutObject* continuation = endOfContinuations(o)) {
                         startContinuation = o;
                         prev = continuation;
                         break;
@@ -1032,16 +1036,16 @@ void ContainerNode::focusStateChanged()
         return;
 
     if (styleChangeType() < SubtreeStyleChange) {
-        if (renderStyle()->affectedByFocus() && renderStyle()->hasPseudoStyle(FIRST_LETTER))
+        if (layoutStyle()->affectedByFocus() && layoutStyle()->hasPseudoStyle(FIRST_LETTER))
             setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Focus));
         else if (isElementNode() && toElement(this)->childrenOrSiblingsAffectedByFocus())
             document().ensureStyleResolver().ensureUpdatedRuleFeatureSet().scheduleStyleInvalidationForPseudoChange(CSSSelector::PseudoFocus, *toElement(this));
-        else if (renderStyle()->affectedByFocus())
+        else if (layoutStyle()->affectedByFocus())
             setNeedsStyleRecalc(LocalStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Focus));
     }
 
     if (renderer() && renderer()->style()->hasAppearance())
-        RenderTheme::theme().stateChanged(renderer(), FocusControlState);
+        LayoutTheme::theme().stateChanged(renderer(), FocusControlState);
 }
 
 void ContainerNode::setFocus(bool received)
@@ -1073,16 +1077,16 @@ void ContainerNode::setActive(bool down)
     // FIXME: Why does this not need to handle the display: none transition like :hover does?
     if (renderer()) {
         if (styleChangeType() < SubtreeStyleChange) {
-            if (renderStyle()->affectedByActive() && renderStyle()->hasPseudoStyle(FIRST_LETTER))
+            if (layoutStyle()->affectedByActive() && layoutStyle()->hasPseudoStyle(FIRST_LETTER))
                 setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Active));
             else if (isElementNode() && toElement(this)->childrenOrSiblingsAffectedByActive())
                 document().ensureStyleResolver().ensureUpdatedRuleFeatureSet().scheduleStyleInvalidationForPseudoChange(CSSSelector::PseudoActive, *toElement(this));
-            else if (renderStyle()->affectedByActive())
+            else if (layoutStyle()->affectedByActive())
                 setNeedsStyleRecalc(LocalStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Active));
         }
 
-        if (renderStyle()->hasAppearance())
-            RenderTheme::theme().stateChanged(renderer(), PressedControlState);
+        if (layoutStyle()->hasAppearance())
+            LayoutTheme::theme().stateChanged(renderer(), PressedControlState);
     }
 }
 
@@ -1105,16 +1109,16 @@ void ContainerNode::setHovered(bool over)
     }
 
     if (styleChangeType() < SubtreeStyleChange) {
-        if (renderStyle()->affectedByHover() && renderStyle()->hasPseudoStyle(FIRST_LETTER))
+        if (layoutStyle()->affectedByHover() && layoutStyle()->hasPseudoStyle(FIRST_LETTER))
             setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Hover));
         else if (isElementNode() && toElement(this)->childrenOrSiblingsAffectedByHover())
             document().ensureStyleResolver().ensureUpdatedRuleFeatureSet().scheduleStyleInvalidationForPseudoChange(CSSSelector::PseudoHover, *toElement(this));
-        else if (renderStyle()->affectedByHover())
+        else if (layoutStyle()->affectedByHover())
             setNeedsStyleRecalc(LocalStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Hover));
     }
 
     if (renderer()->style()->hasAppearance())
-        RenderTheme::theme().stateChanged(renderer(), HoverControlState);
+        LayoutTheme::theme().stateChanged(renderer(), HoverControlState);
 }
 
 PassRefPtrWillBeRawPtr<HTMLCollection> ContainerNode::children()

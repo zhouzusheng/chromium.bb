@@ -69,9 +69,11 @@ public:
     bool spatialNavigationFocused() const;
 
     bool isDisplayNone() const;
+
+    int listIndex() const;
+
 private:
     explicit HTMLOptionElement(Document&);
-    virtual ~HTMLOptionElement();
 
     virtual bool rendererIsFocusable() const override { return true; }
     virtual void attach(const AttachContext& = AttachContext()) override;
@@ -84,11 +86,11 @@ private:
     virtual void childrenChanged(const ChildrenChange&) override;
 
     // <option> never has a renderer so we manually manage a cached style.
-    void updateNonRenderStyle();
-    virtual RenderStyle* nonRendererStyle() const override;
-    virtual PassRefPtr<RenderStyle> customStyleForRenderer() override;
+    void updateNonLayoutStyle();
+    virtual LayoutStyle* nonRendererStyle() const override;
+    virtual PassRefPtr<LayoutStyle> customStyleForRenderer() override;
     virtual void didRecalcStyle(StyleRecalcChange) override;
-    virtual void didAddUserAgentShadowRoot(ShadowRoot&) override;
+    virtual void didAddClosedShadowRoot(ShadowRoot&) override;
 
     String collectOptionInnerText() const;
 
@@ -96,7 +98,7 @@ private:
 
     bool m_disabled;
     bool m_isSelected;
-    RefPtr<RenderStyle> m_style;
+    RefPtr<LayoutStyle> m_style;
 };
 
 } // namespace blink

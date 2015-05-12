@@ -35,12 +35,15 @@ class CC_EXPORT LayerTreeSettings {
   bool use_distance_field_text;
   bool gpu_rasterization_enabled;
   bool gpu_rasterization_forced;
+  int gpu_rasterization_msaa_sample_count;
+  float gpu_rasterization_skewport_target_time_in_seconds;
+  bool threaded_gpu_rasterization_enabled;
   bool create_low_res_tiling;
 
   enum ScrollbarAnimator {
-    NoAnimator,
-    LinearFade,
-    Thinning,
+    NO_ANIMATOR,
+    LINEAR_FADE,
+    THINNING,
   };
   ScrollbarAnimator scrollbar_animator;
   int scrollbar_fade_delay_ms;
@@ -48,7 +51,6 @@ class CC_EXPORT LayerTreeSettings {
   int scrollbar_fade_duration_ms;
   float scrollbar_show_scale_threshold;
   SkColor solid_color_scrollbar_color;
-  bool calculate_top_controls_position;
   bool timeout_and_draw_when_animation_checkerboards;
   int maximum_number_of_failed_draws_before_draw_is_forced_;
   bool layer_transforms_should_scale_layer_contents;

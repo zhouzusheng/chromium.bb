@@ -27,8 +27,8 @@
 #include "core/CSSPropertyNames.h"
 #include "core/HTMLNames.h"
 #include "core/html/HTMLLegendElement.h"
+#include "core/layout/PaintInfo.h"
 #include "core/paint/FieldsetPainter.h"
-#include "core/rendering/PaintInfo.h"
 #include "platform/graphics/GraphicsContextStateSaver.h"
 
 using std::min;
@@ -62,7 +62,7 @@ void RenderFieldset::computePreferredLogicalWidths()
     }
 }
 
-RenderObject* RenderFieldset::layoutSpecialExcludedChild(bool relayoutChildren, SubtreeLayoutScope&)
+LayoutObject* RenderFieldset::layoutSpecialExcludedChild(bool relayoutChildren, SubtreeLayoutScope&)
 {
     RenderBox* legend = findLegend();
     if (legend) {
@@ -128,7 +128,7 @@ RenderObject* RenderFieldset::layoutSpecialExcludedChild(bool relayoutChildren, 
 
 RenderBox* RenderFieldset::findLegend(FindLegendOption option) const
 {
-    for (RenderObject* legend = firstChild(); legend; legend = legend->nextSibling()) {
+    for (LayoutObject* legend = firstChild(); legend; legend = legend->nextSibling()) {
         if (option == IgnoreFloatingOrOutOfFlow && legend->isFloatingOrOutOfFlowPositioned())
             continue;
 

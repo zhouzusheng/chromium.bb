@@ -23,6 +23,9 @@ class StyleRuleImport;
 class StyleRuleKeyframe;
 class StyleRuleKeyframes;
 class StyleRuleMedia;
+class StyleRuleNamespace;
+class StyleRulePage;
+class StyleRuleSupports;
 class StyleRuleViewport;
 class StyleSheetContents;
 class ImmutableStylePropertySet;
@@ -55,6 +58,8 @@ public:
 
     static PassOwnPtr<Vector<double>> parseKeyframeKeyList(const String&);
 
+    bool supportsDeclaration(CSSParserTokenRange&);
+
 private:
     enum RuleListType {
         TopLevelRuleList,
@@ -62,18 +67,22 @@ private:
         KeyframesRuleList
     };
 
-    WillBeHeapVector<RefPtrWillBeMember<StyleRuleBase>> consumeRuleList(CSSParserTokenRange, RuleListType);
+    template<typename T>
+    void consumeRuleList(CSSParserTokenRange, RuleListType, T callback);
 
-    // These two functions update the range they're given and allowed rules
-    PassRefPtrWillBeRawPtr<StyleRuleBase> consumeAtRule(CSSParserTokenRange&, AllowedRulesType&);
-    PassRefPtrWillBeRawPtr<StyleRuleBase> consumeQualifiedRule(CSSParserTokenRange&, AllowedRulesType&);
+    // These two functions update the range they're given
+    PassRefPtrWillBeRawPtr<StyleRuleBase> consumeAtRule(CSSParserTokenRange&, AllowedRulesType);
+    PassRefPtrWillBeRawPtr<StyleRuleBase> consumeQualifiedRule(CSSParserTokenRange&, AllowedRulesType);
 
     PassRefPtrWillBeRawPtr<StyleRuleImport> consumeImportRule(CSSParserTokenRange prelude);
-    void consumeNamespaceRule(CSSParserTokenRange prelude); // This modifies m_styleSheet directly!
+    PassRefPtrWillBeRawPtr<StyleRuleNamespace> consumeNamespaceRule(CSSParserTokenRange prelude); // This can set m_defaultNamespace
     PassRefPtrWillBeRawPtr<StyleRuleMedia> consumeMediaRule(CSSParserTokenRange prelude, CSSParserTokenRange block);
+    PassRefPtrWillBeRawPtr<StyleRuleSupports> consumeSupportsRule(CSSParserTokenRange prelude, CSSParserTokenRange block);
     PassRefPtrWillBeRawPtr<StyleRuleViewport> consumeViewportRule(CSSParserTokenRange prelude, CSSParserTokenRange block);
     PassRefPtrWillBeRawPtr<StyleRuleFontFace> consumeFontFaceRule(CSSParserTokenRange prelude, CSSParserTokenRange block);
     PassRefPtrWillBeRawPtr<StyleRuleKeyframes> consumeKeyframesRule(bool webkitPrefixed, CSSParserTokenRange prelude, CSSParserTokenRange block);
+    PassRefPtrWillBeRawPtr<StyleRulePage> consumePageRule(CSSParserTokenRange prelude, CSSParserTokenRange block);
+
     PassRefPtrWillBeRawPtr<StyleRuleKeyframe> consumeKeyframeStyleRule(CSSParserTokenRange prelude, CSSParserTokenRange block);
     PassRefPtrWillBeRawPtr<StyleRule> consumeStyleRule(CSSParserTokenRange prelude, CSSParserTokenRange block);
 

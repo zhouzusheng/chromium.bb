@@ -36,7 +36,7 @@
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/FrameSelection.h"
 #include "core/editing/SpellChecker.h"
-#include "core/editing/TextIterator.h"
+#include "core/editing/iterators/TextIterator.h"
 #include "core/events/BeforeTextInsertedEvent.h"
 #include "core/events/Event.h"
 #include "core/frame/FrameHost.h"
@@ -46,9 +46,9 @@
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/html/shadow/TextControlInnerElements.h"
+#include "core/layout/LayoutTextControlMultiLine.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
-#include "core/rendering/RenderTextControlMultiLine.h"
 #include "platform/text/PlatformLocale.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/StringBuilder.h"
@@ -91,11 +91,11 @@ HTMLTextAreaElement::HTMLTextAreaElement(Document& document, HTMLFormElement* fo
 PassRefPtrWillBeRawPtr<HTMLTextAreaElement> HTMLTextAreaElement::create(Document& document, HTMLFormElement* form)
 {
     RefPtrWillBeRawPtr<HTMLTextAreaElement> textArea = adoptRefWillBeNoop(new HTMLTextAreaElement(document, form));
-    textArea->ensureUserAgentShadowRoot();
+    textArea->ensureClosedShadowRoot();
     return textArea.release();
 }
 
-void HTMLTextAreaElement::didAddUserAgentShadowRoot(ShadowRoot& root)
+void HTMLTextAreaElement::didAddClosedShadowRoot(ShadowRoot& root)
 {
     root.appendChild(TextControlInnerEditorElement::create(document()));
 }
@@ -198,9 +198,9 @@ void HTMLTextAreaElement::parseAttribute(const QualifiedName& name, const Atomic
         HTMLTextFormControlElement::parseAttribute(name, value);
 }
 
-RenderObject* HTMLTextAreaElement::createRenderer(RenderStyle*)
+LayoutObject* HTMLTextAreaElement::createRenderer(const LayoutStyle&)
 {
-    return new RenderTextControlMultiLine(this);
+    return new LayoutTextControlMultiLine(this);
 }
 
 bool HTMLTextAreaElement::appendFormData(FormDataList& encoding, bool)
@@ -261,7 +261,7 @@ void HTMLTextAreaElement::defaultEventHandler(Event* event)
     HTMLTextFormControlElement::defaultEventHandler(event);
 }
 
-void HTMLTextAreaElement::handleFocusEvent(Element*, FocusType)
+void HTMLTextAreaElement::handleFocusEvent(Element*, WebFocusType)
 {
     if (LocalFrame* frame = document().frame())
         frame->spellChecker().didBeginEditing(this);
@@ -609,7 +609,7 @@ void HTMLTextAreaElement::updatePlaceholderText()
     const AtomicString& placeholderText = fastGetAttribute(placeholderAttr);
     if (placeholderText.isEmpty()) {
         if (placeholder)
-            userAgentShadowRoot()->removeChild(placeholder);
+            closedShadowRoot()->removeChild(placeholder);
         return;
     }
     if (!placeholder) {
@@ -617,7 +617,7 @@ void HTMLTextAreaElement::updatePlaceholderText()
         placeholder = newElement.get();
         placeholder->setShadowPseudoId(AtomicString("-webkit-input-placeholder", AtomicString::ConstructFromLiteral));
         placeholder->setAttribute(idAttr, ShadowElementNames::placeholder());
-        userAgentShadowRoot()->insertBefore(placeholder, innerEditorElement()->nextSibling());
+        closedShadowRoot()->insertBefore(placeholder, innerEditorElement()->nextSibling());
     }
     placeholder->setTextContent(placeholderText);
 }

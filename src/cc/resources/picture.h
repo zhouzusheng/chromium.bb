@@ -11,15 +11,15 @@
 
 #include "base/basictypes.h"
 #include "base/containers/hash_tables.h"
-#include "base/debug/trace_event.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/trace_event/trace_event.h"
 #include "cc/base/cc_export.h"
 #include "cc/base/region.h"
+#include "cc/resources/recording_source.h"
 #include "skia/ext/refptr.h"
-#include "third_party/skia/include/core/SkBBHFactory.h"
 #include "third_party/skia/include/core/SkPicture.h"
 #include "ui/gfx/geometry/rect.h"
 
@@ -45,19 +45,12 @@ class CC_EXPORT Picture
   typedef std::vector<SkPixelRef*> PixelRefs;
   typedef base::hash_map<PixelRefMapKey, PixelRefs> PixelRefMap;
 
-  enum RecordingMode {
-    RECORD_NORMALLY,
-    RECORD_WITH_SK_NULL_CANVAS,
-    RECORD_WITH_PAINTING_DISABLED,
-    RECORDING_MODE_COUNT,  // Must be the last entry.
-  };
-
   static scoped_refptr<Picture> Create(
       const gfx::Rect& layer_rect,
       ContentLayerClient* client,
-      const SkTileGridFactory::TileGridInfo& tile_grid_info,
+      const gfx::Size& tile_grid_size,
       bool gather_pixels_refs,
-      RecordingMode recording_mode);
+      RecordingSource::RecordingMode recording_mode);
   static scoped_refptr<Picture> CreateFromValue(const base::Value* value);
   static scoped_refptr<Picture> CreateFromSkpValue(const base::Value* value);
 
@@ -142,11 +135,11 @@ class CC_EXPORT Picture
   // Record a paint operation. To be able to safely use this SkPicture for
   // playback on a different thread this can only be called once.
   void Record(ContentLayerClient* client,
-              const SkTileGridFactory::TileGridInfo& tile_grid_info,
-              RecordingMode recording_mode);
+              const gfx::Size& tile_grid_size,
+              RecordingSource::RecordingMode recording_mode);
 
   // Gather pixel refs from recording.
-  void GatherPixelRefs(const SkTileGridFactory::TileGridInfo& tile_grid_info);
+  void GatherPixelRefs(const gfx::Size& tile_grid_info);
 
   gfx::Rect layer_rect_;
   skia::RefPtr<SkPicture> picture_;
@@ -156,9 +149,9 @@ class CC_EXPORT Picture
   gfx::Point max_pixel_cell_;
   gfx::Size cell_size_;
 
-  scoped_refptr<base::debug::ConvertableToTraceFormat>
+  scoped_refptr<base::trace_event::ConvertableToTraceFormat>
     AsTraceableRasterData(float scale) const;
-  scoped_refptr<base::debug::ConvertableToTraceFormat>
+  scoped_refptr<base::trace_event::ConvertableToTraceFormat>
     AsTraceableRecordData() const;
 
   friend class base::RefCountedThreadSafe<Picture>;

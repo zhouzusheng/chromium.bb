@@ -43,10 +43,10 @@ public:
     }
 
     // setCurve() is called on the main thread.
-    void setCurve(DOMFloat32Array*);
+    void setCurve(DOMFloat32Array*, ExceptionState&);
     DOMFloat32Array* curve();
 
-    void setOversample(const String& , ExceptionState&);
+    void setOversample(const String&);
     String oversample() const;
 
 private:

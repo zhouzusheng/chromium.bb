@@ -34,7 +34,6 @@ public:
     BarProp* statusbar() const override;
     BarProp* toolbar() const override;
     Navigator* navigator() const override;
-    Location* location() const override;
     BBWindowHooks* bbWindowHooks() const override;
     bool offscreenBuffering() const override;
     int outerHeight() const override;
@@ -54,12 +53,9 @@ public:
     Document* document() const override;
     StyleMedia* styleMedia() const override;
     double devicePixelRatio() const override;
-    Storage* sessionStorage(ExceptionState&) const override;
-    Storage* localStorage(ExceptionState&) const override;
     ApplicationCache* applicationCache() const override;
     int orientation() const override;
     Console* console() const override;
-    Performance* performance() const override;
     DOMWindowCSS* css() const override;
     DOMSelection* getSelection() override;
     void focus(ExecutionContext* = 0) override;
@@ -75,10 +71,10 @@ public:
     void scrollBy(const ScrollToOptions&) const override;
     void scrollTo(double x, double y) const override;
     void scrollTo(const ScrollToOptions&) const override;
-    void moveBy(float x, float y) const override;
-    void moveTo(float x, float y) const override;
-    void resizeBy(float x, float y) const override;
-    void resizeTo(float width, float height) const override;
+    void moveBy(int x, int y, bool hasX, bool hasY) const override;
+    void moveTo(int x, int y, bool hasX, bool hasY) const override;
+    void resizeBy(int x, int y, bool hasX, bool hasY) const override;
+    void resizeTo(int width, int height, bool hasWidth, bool hasHeight) const override;
     PassRefPtrWillBeRawPtr<MediaQueryList> matchMedia(const String&) override;
     PassRefPtrWillBeRawPtr<CSSStyleDeclaration> getComputedStyle(Element*, const String& pseudoElt) const override;
     PassRefPtrWillBeRawPtr<CSSRuleList> getMatchedCSSRules(Element*, const String& pseudoElt) const override;

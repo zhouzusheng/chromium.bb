@@ -11,7 +11,6 @@
 
 #include "base/allocator/allocator_extension.h"
 #include "base/command_line.h"
-#include "base/debug/trace_event.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/discardable_memory.h"
@@ -20,7 +19,6 @@
 #include "base/memory/shared_memory.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
-#include "base/metrics/stats_table.h"
 #include "base/path_service.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/string16.h"
@@ -30,6 +28,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_local.h"
 #include "base/threading/thread_restrictions.h"
+#include "base/trace_event/trace_event.h"
 #include "base/values.h"
 #include "cc/base/switches.h"
 #include "cc/blink/web_external_bitmap_impl.h"
@@ -70,6 +69,7 @@
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_paths.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/common/mojo_channel_switches.h"
 #include "content/public/common/renderer_preferences.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/renderer/content_renderer_client.h"
@@ -104,6 +104,7 @@
 #include "content/renderer/render_view_impl.h"
 #include "content/renderer/renderer_blink_platform_impl.h"
 #include "content/renderer/scheduler/renderer_scheduler.h"
+#include "content/renderer/scheduler/resource_dispatch_throttler.h"
 #include "content/renderer/service_worker/embedded_worker_context_message_filter.h"
 #include "content/renderer/service_worker/embedded_worker_dispatcher.h"
 #include "content/renderer/shared_worker/embedded_shared_worker_stub.h"
@@ -195,6 +196,16 @@ namespace {
 const int64 kInitialIdleHandlerDelayMs = 1000;
 const int64 kLongIdleHandlerDelayMs = 30*1000;
 
+#if defined(OS_ANDROID)
+// On Android, resource messages can each take ~1.5ms to dispatch on the browser
+// IO thread. Limiting the message rate to 3/frame at 60hz ensures that the
+// induced work takes but a fraction (~1/4) of the overall frame budget.
+const int kMaxResourceRequestsPerFlushWhenThrottled = 3;
+#else
+const int kMaxResourceRequestsPerFlushWhenThrottled = 8;
+#endif
+const double kThrottledResourceRequestFlushPeriodS = 1. / 60.;
+
 // Maximum allocation size allowed for image scaling filters that
 // require pre-scaling. Skia will fallback to a filter that doesn't
 // require pre-scaling if the default filter would require an
@@ -281,8 +292,8 @@ void AddHistogramSample(void* hist, int sample) {
 
 scoped_ptr<cc::SharedBitmap> AllocateSharedBitmapFunction(
     const gfx::Size& size) {
-  return ChildThread::current()->shared_bitmap_manager()->AllocateSharedBitmap(
-      size);
+  return ChildThreadImpl::current()->shared_bitmap_manager()->
+      AllocateSharedBitmap(size);
 }
 
 void EnableBlinkPlatformLogChannels(const std::string& channels) {
@@ -300,15 +311,24 @@ void NotifyTimezoneChangeOnThisThread() {
   v8::Date::DateTimeConfigurationChangeNotification(isolate);
 }
 
+void LowMemoryNotificationOnThisThread() {
+  v8::Isolate* isolate = v8::Isolate::GetCurrent();
+  if (!isolate)
+    return;
+  isolate->LowMemoryNotification();
+}
+
 class RenderFrameSetupImpl : public mojo::InterfaceImpl<RenderFrameSetup> {
  public:
   RenderFrameSetupImpl()
       : routing_id_highmark_(-1) {
   }
 
-  void GetServiceProviderForFrame(
+  void ExchangeServiceProviders(
       int32_t frame_routing_id,
-      mojo::InterfaceRequest<mojo::ServiceProvider> request) override {
+      mojo::InterfaceRequest<mojo::ServiceProvider> services,
+      mojo::ServiceProviderPtr exposed_services)
+      override {
     // TODO(morrita): This is for investigating http://crbug.com/415059 and
     // should be removed once it is fixed.
     CHECK_LT(routing_id_highmark_, frame_routing_id);
@@ -320,11 +340,11 @@ class RenderFrameSetupImpl : public mojo::InterfaceImpl<RenderFrameSetup> {
     // triggers creation of the RenderFrame we want.
     if (!frame) {
       RenderThreadImpl::current()->RegisterPendingRenderFrameConnect(
-          frame_routing_id, request.PassMessagePipe());
+          frame_routing_id, services.Pass(), exposed_services.Pass());
       return;
     }
 
-    frame->BindServiceRegistry(request.PassMessagePipe());
+    frame->BindServiceRegistry(services.Pass(), exposed_services.Pass());
   }
 
  private:
@@ -333,12 +353,6 @@ class RenderFrameSetupImpl : public mojo::InterfaceImpl<RenderFrameSetup> {
 
 void CreateRenderFrameSetup(mojo::InterfaceRequest<RenderFrameSetup> request) {
   mojo::BindToRequest(new RenderFrameSetupImpl(), &request);
-}
-
-bool ShouldUseMojoChannel() {
-  return base::CommandLine::ForCurrentProcess()->HasSwitch(
-             switches::kEnableRendererMojoChannel) ||
-         IPC::ChannelMojo::ShouldBeUsed();
 }
 
 blink::WebGraphicsContext3D::Attributes GetOffscreenAttribs() {
@@ -352,14 +366,6 @@ blink::WebGraphicsContext3D::Attributes GetOffscreenAttribs() {
 }
 
 RenderProcessImpl* g_render_process = 0;
-
-typedef std::vector<IPC::MessageFilter*> MessageFilterList;
-
-static MessageFilterList& deferredAddFilterList()
-{
-  static MessageFilterList list;
-  return list;
-}
 
 }  // namespace
 
@@ -403,18 +409,6 @@ void RenderThread::SetInProcessRendererChannelName(const std::string& channel_id
 {
   RenderThreadImpl* thread = RenderThreadImpl::current();
   thread->SetChannelName(channel_id);  // This will create the channel.
-
-  thread->channelWithCheck()->SetListenerTaskRunner(thread->GetRendererScheduler()->DefaultTaskRunner());
-
-  // MessageFilters can only be added when the channel has been created.  If
-  // the channel was not provided at init time, then AddFilter would place the
-  // MessageFilter on a deferred list, until the channel gets created.
-  MessageFilterList filterList;
-  filterList.swap(deferredAddFilterList());
-  for (std::size_t i = 0; i < filterList.size(); ++i) {
-    thread->AddFilter(filterList[i]);
-  }
-  DCHECK(deferredAddFilterList().empty());
 }
 
 // static
@@ -482,18 +476,18 @@ RenderThreadImpl* RenderThreadImpl::current() {
 // When we run plugins in process, we actually run them on the render thread,
 // which means that we need to make the render thread pump UI events.
 RenderThreadImpl::RenderThreadImpl()
-    : ChildThread(Options(ShouldUseMojoChannel())) {
+    : ChildThreadImpl(Options(ShouldUseMojoChannel())) {
   Init();
 }
 
 RenderThreadImpl::RenderThreadImpl(const std::string& channel_name)
-    : ChildThread(Options(channel_name, ShouldUseMojoChannel())) {
+    : ChildThreadImpl(Options(channel_name, ShouldUseMojoChannel())) {
   Init();
 }
 
 RenderThreadImpl::RenderThreadImpl(
     scoped_ptr<base::MessageLoop> main_message_loop)
-    : ChildThread(Options(ShouldUseMojoChannel())),
+    : ChildThreadImpl(Options(ShouldUseMojoChannel())),
       main_message_loop_(main_message_loop.Pass()) {
   Init();
 }
@@ -501,7 +495,7 @@ RenderThreadImpl::RenderThreadImpl(
 void RenderThreadImpl::Init() {
   TRACE_EVENT_BEGIN_ETW("RenderThreadImpl::Init", 0, "");
 
-  base::debug::TraceLog::GetInstance()->SetThreadSortIndex(
+  base::trace_event::TraceLog::GetInstance()->SetThreadSortIndex(
       base::PlatformThread::CurrentId(),
       kTraceEventRendererMainThreadSortIndex);
 
@@ -531,7 +525,16 @@ void RenderThreadImpl::Init() {
   main_thread_indexed_db_dispatcher_.reset(new IndexedDBDispatcher(
       thread_safe_sender()));
   renderer_scheduler_ = RendererScheduler::Create();
+  channel()->SetListenerTaskRunner(renderer_scheduler_->DefaultTaskRunner());
   embedded_worker_dispatcher_.reset(new EmbeddedWorkerDispatcher());
+
+  // Note: This may reorder messages from the ResourceDispatcher with respect to
+  // other subsystems.
+  resource_dispatch_throttler_.reset(new ResourceDispatchThrottler(
+      static_cast<RenderThread*>(this), renderer_scheduler_.get(),
+      base::TimeDelta::FromSecondsD(kThrottledResourceRequestFlushPeriodS),
+      kMaxResourceRequestsPerFlushWhenThrottled));
+  resource_dispatcher()->set_message_sender(resource_dispatch_throttler_.get());
 
   media_stream_center_ = NULL;
 
@@ -590,15 +593,7 @@ void RenderThreadImpl::Init() {
       is_impl_side_painting_enabled_);
 
   is_zero_copy_enabled_ = command_line.HasSwitch(switches::kEnableZeroCopy);
-
-#if defined(OS_MACOSX) || defined(OS_ANDROID)
-  // TODO(danakj): If changing these also update NumberOfRendererRasterThreads
-  // in compositor_util.cc. We should be using methods from compositor_util here
-  // instead of inspecting flags.
-  is_one_copy_enabled_ = command_line.HasSwitch(switches::kEnableOneCopy);
-#else
   is_one_copy_enabled_ = !command_line.HasSwitch(switches::kDisableOneCopy);
-#endif
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
   is_elastic_overscroll_enabled_ =
@@ -649,6 +644,19 @@ void RenderThreadImpl::Init() {
   is_gpu_rasterization_forced_ =
       command_line.HasSwitch(switches::kForceGpuRasterization);
 
+  if (command_line.HasSwitch(switches::kGpuRasterizationMSAASampleCount)) {
+    std::string string_value = command_line.GetSwitchValueASCII(
+        switches::kGpuRasterizationMSAASampleCount);
+    bool parsed_msaa_sample_count =
+        base::StringToInt(string_value, &gpu_rasterization_msaa_sample_count_);
+    DCHECK(parsed_msaa_sample_count) << string_value;
+    DCHECK_GE(gpu_rasterization_msaa_sample_count_, 0);
+  } else {
+    gpu_rasterization_msaa_sample_count_ = 0;
+  }
+  is_threaded_gpu_rasterization_enabled_ =
+      command_line.HasSwitch(switches::kEnableThreadedGpuRasterization);
+
   if (command_line.HasSwitch(switches::kDisableDistanceFieldText)) {
     is_distance_field_text_enabled_ = false;
   } else if (command_line.HasSwitch(switches::kEnableDistanceFieldText)) {
@@ -698,6 +706,12 @@ void RenderThreadImpl::Init() {
         base::StringToInt(string_value, &num_raster_threads);
     DCHECK(parsed_num_raster_threads) << string_value;
     DCHECK_GT(num_raster_threads, 0);
+
+    // Force maximum 1 thread for threaded GPU rasterization.
+    // TODO(vmiura): crbug.com/459760 Support existence of multiple raster
+    // threads in GPU raster mode.
+    if (is_threaded_gpu_rasterization_enabled_)
+      num_raster_threads = 1;
     cc::TileTaskWorkerPool::SetNumWorkerThreads(num_raster_threads);
 
 #if defined(OS_ANDROID) || defined(OS_LINUX)
@@ -710,7 +724,7 @@ void RenderThreadImpl::Init() {
   }
 
   base::DiscardableMemoryShmemAllocator::SetInstance(
-      ChildThread::discardable_shared_memory_manager());
+      ChildThreadImpl::discardable_shared_memory_manager());
 
   service_registry()->AddService<RenderFrameSetup>(
       base::Bind(CreateRenderFrameSetup));
@@ -719,19 +733,13 @@ void RenderThreadImpl::Init() {
 }
 
 RenderThreadImpl::~RenderThreadImpl() {
-  for (std::map<int, mojo::MessagePipeHandle>::iterator it =
-           pending_render_frame_connects_.begin();
-       it != pending_render_frame_connects_.end();
-       ++it) {
-    mojo::CloseRaw(it->second);
-  }
 }
 
 void RenderThreadImpl::Shutdown() {
   FOR_EACH_OBSERVER(
       RenderProcessObserver, observers_, OnRenderProcessShutdown());
 
-  ChildThread::Shutdown();
+  ChildThreadImpl::Shutdown();
 
   if (memory_observer_) {
     message_loop()->RemoveTaskObserver(memory_observer_.get());
@@ -874,7 +882,7 @@ bool RenderThreadImpl::Send(IPC::Message* msg) {
 #endif
   }
 
-  bool rv = ChildThread::Send(msg);
+  bool rv = ChildThreadImpl::Send(msg);
 
   if (pumping_events) {
 #if defined(ENABLE_PLUGINS)
@@ -899,9 +907,6 @@ scoped_refptr<base::SingleThreadTaskRunner> RenderThreadImpl::GetTaskRunner() {
 }
 
 IPC::SyncChannel* RenderThreadImpl::GetChannel() {
-  DCHECK(channel());  // Since we allow channel initialization to be deferred,
-                      // the channel pointer might be null.  Make sure nobody
-                      // tries to get it before it has been initialized.
   return channel();
 }
 
@@ -926,8 +931,8 @@ scoped_refptr<base::MessageLoopProxy>
 }
 
 void RenderThreadImpl::AddRoute(int32 routing_id, IPC::Listener* listener) {
-  ChildThread::GetRouter()->AddRoute(routing_id, listener);
-  std::map<int, mojo::MessagePipeHandle>::iterator it =
+  ChildThreadImpl::GetRouter()->AddRoute(routing_id, listener);
+  PendingRenderFrameConnectMap::iterator it =
       pending_render_frame_connects_.find(routing_id);
   if (it == pending_render_frame_connects_.end())
     return;
@@ -936,13 +941,18 @@ void RenderThreadImpl::AddRoute(int32 routing_id, IPC::Listener* listener) {
   if (!frame)
     return;
 
-  mojo::ScopedMessagePipeHandle handle(it->second);
+  scoped_refptr<PendingRenderFrameConnect> connection(it->second);
+  mojo::InterfaceRequest<mojo::ServiceProvider> services(
+      connection->services.Pass());
+  mojo::ServiceProviderPtr exposed_services(
+      connection->exposed_services.Pass());
   pending_render_frame_connects_.erase(it);
-  frame->BindServiceRegistry(handle.Pass());
+
+  frame->BindServiceRegistry(services.Pass(), exposed_services.Pass());
 }
 
 void RenderThreadImpl::RemoveRoute(int32 routing_id) {
-  ChildThread::GetRouter()->RemoveRoute(routing_id);
+  ChildThreadImpl::GetRouter()->RemoveRoute(routing_id);
 }
 
 void RenderThreadImpl::AddEmbeddedWorkerRoute(int32 routing_id,
@@ -964,10 +974,14 @@ void RenderThreadImpl::RemoveEmbeddedWorkerRoute(int32 routing_id) {
 
 void RenderThreadImpl::RegisterPendingRenderFrameConnect(
     int routing_id,
-    mojo::ScopedMessagePipeHandle handle) {
-  std::pair<std::map<int, mojo::MessagePipeHandle>::iterator, bool> result =
-      pending_render_frame_connects_.insert(
-          std::make_pair(routing_id, handle.release()));
+    mojo::InterfaceRequest<mojo::ServiceProvider> services,
+    mojo::ServiceProviderPtr exposed_services) {
+  std::pair<PendingRenderFrameConnectMap::iterator, bool> result =
+      pending_render_frame_connects_.insert(std::make_pair(
+          routing_id,
+          make_scoped_refptr(new PendingRenderFrameConnect(
+              services.Pass(),
+              exposed_services.Pass()))));
   CHECK(result.second) << "Inserting a duplicate item.";
 }
 
@@ -978,31 +992,11 @@ int RenderThreadImpl::GenerateRoutingID() {
 }
 
 void RenderThreadImpl::AddFilter(IPC::MessageFilter* filter) {
-  if (channel()) {
-    channel()->AddFilter(filter);
-  }
-  else {
-    deferredAddFilterList().push_back(filter);
-  }
+  channel()->AddFilter(filter);
 }
 
 void RenderThreadImpl::RemoveFilter(IPC::MessageFilter* filter) {
-  if (channel()) {
-    channel()->RemoveFilter(filter);
-  }
-  else {
-    MessageFilterList& list = deferredAddFilterList();
-    DCHECK(!list.empty());
-    for (std::size_t i = 0; i < list.size() - 1; ++i) {
-      if (list[i] == filter) {
-        list[i] = list[list.size() - 1];
-        list.pop_back();
-        return;
-      }
-    }
-    DCHECK(list[list.size() - 1] == filter);
-    list.pop_back();
-  }
+  channel()->RemoveFilter(filter);
 }
 
 void RenderThreadImpl::AddObserver(RenderProcessObserver* observer) {
@@ -1024,10 +1018,7 @@ void RenderThreadImpl::SetResourceDispatchTaskQueue(
   // particular task runner.
   resource_scheduling_filter_ =
       new ResourceSchedulingFilter(resource_task_queue, resource_dispatcher());
-
-  // SHEZ: use AddFilter instead of channel()->AddFilter in order to support
-  // SHEZ: deferred channel creation
-  AddFilter(resource_scheduling_filter_.get());
+  channel()->AddFilter(resource_scheduling_filter_.get());
 
   // The ChildResourceMessageFilter and the ResourceDispatcher need to use the
   // same queue to ensure tasks are executed in the expected order.
@@ -1054,8 +1045,6 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
   blink::initialize(blink_platform_impl_.get());
 
   v8::Isolate* isolate = blink::mainThreadIsolate();
-
-  isolate->SetCounterFunction(base::StatsTable::FindLocation);
   isolate->SetCreateHistogramFunction(CreateHistogram);
   isolate->SetAddHistogramSampleFunction(AddHistogramSample);
 
@@ -1066,8 +1055,7 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
       base::Bind(base::IgnoreResult(&RenderThreadImpl::OnMessageReceived),
                  base::Unretained(this)));
 
-  // TODO(alexclarke): Add a dedicated loading task queue
-  SetResourceDispatchTaskQueue(renderer_scheduler_->DefaultTaskRunner());
+  SetResourceDispatchTaskQueue(renderer_scheduler_->LoadingTaskRunner());
 
   bool enable = !command_line.HasSwitch(switches::kDisableThreadedCompositing);
   if (enable) {
@@ -1193,7 +1181,7 @@ void RenderThreadImpl::RecordComputedAction(const std::string& action) {
 
 scoped_ptr<base::SharedMemory>
     RenderThreadImpl::HostAllocateSharedMemoryBuffer(size_t size) {
-  return ChildThread::AllocateSharedMemory(size, thread_safe_sender());
+  return ChildThreadImpl::AllocateSharedMemory(size, thread_safe_sender());
 }
 
 cc::SharedBitmapManager* RenderThreadImpl::GetSharedBitmapManager() {
@@ -1228,7 +1216,7 @@ void RenderThreadImpl::IdleHandler() {
   }
 
   base::allocator::ReleaseFreeMemory();
-  base::DiscardableMemory::ReleaseFreeMemory();
+  discardable_shared_memory_manager()->ReleaseFreeMemory();
 
   // Continue the idle timer if the webkit shared timer is not suspended or
   // something is left to do.
@@ -1349,7 +1337,7 @@ RenderThreadImpl::CreateOffscreenContext3d() {
           NULL));
 }
 
-scoped_refptr<webkit::gpu::ContextProviderWebContext>
+scoped_refptr<cc_blink::ContextProviderWebContext>
 RenderThreadImpl::SharedMainThreadContextProvider() {
   DCHECK(IsMainThread());
   if (!shared_main_thread_contexts_.get() ||
@@ -1407,14 +1395,6 @@ void RenderThreadImpl::PreCacheFontCharacters(const LOGFONT& log_font,
   Send(new ViewHostMsg_PreCacheFontCharacters(log_font, str));
 }
 
-void RenderThreadImpl::PreCacheFont(const LOGFONT& log_font) {
-  Send(new ChildProcessHostMsg_PreCacheFont(log_font));
-}
-
-void RenderThreadImpl::ReleaseCachedFonts() {
-  Send(new ChildProcessHostMsg_ReleaseCachedFonts());
-}
-
 #endif  // OS_WIN
 
 ServiceRegistry* RenderThreadImpl::GetServiceRegistry() {
@@ -1431,6 +1411,14 @@ bool RenderThreadImpl::IsGpuRasterizationForced() {
 
 bool RenderThreadImpl::IsGpuRasterizationEnabled() {
   return is_gpu_rasterization_enabled_;
+}
+
+bool RenderThreadImpl::IsThreadedGpuRasterizationEnabled() {
+  return is_threaded_gpu_rasterization_enabled_;
+}
+
+int RenderThreadImpl::GetGpuRasterizationMSAASampleCount() {
+  return gpu_rasterization_msaa_sample_count_;
 }
 
 bool RenderThreadImpl::IsLcdTextEnabled() {
@@ -1461,6 +1449,7 @@ bool RenderThreadImpl::UseSingleThreadScheduler() {
 uint32 RenderThreadImpl::GetImageTextureTarget() {
   return use_image_texture_target_;
 }
+
 scoped_refptr<base::SingleThreadTaskRunner>
 RenderThreadImpl::GetCompositorMainThreadTaskRunner() {
   return main_thread_compositor_task_runner_;
@@ -1587,10 +1576,15 @@ bool RenderThreadImpl::OnControlMessageReceived(const IPC::Message& msg) {
   return handled;
 }
 
-void RenderThreadImpl::OnCreateNewFrame(int routing_id,
-                                        int parent_routing_id,
-                                        int proxy_routing_id) {
-  RenderFrameImpl::CreateFrame(routing_id, parent_routing_id, proxy_routing_id);
+void RenderThreadImpl::OnCreateNewFrame(
+    int routing_id,
+    int parent_routing_id,
+    int proxy_routing_id,
+    const FrameReplicationState& replicated_state,
+    FrameMsg_NewFrame_WidgetParams params) {
+  CompositorDependencies* compositor_deps = this;
+  RenderFrameImpl::CreateFrame(routing_id, parent_routing_id, proxy_routing_id,
+                               replicated_state, compositor_deps, params);
 }
 
 void RenderThreadImpl::OnCreateNewFrameProxy(
@@ -1788,28 +1782,30 @@ void RenderThreadImpl::OnMemoryPressure(
     base::MemoryPressureListener::MemoryPressureLevel memory_pressure_level) {
   base::allocator::ReleaseFreeMemory();
 
-  // Trigger full v8 garbage collection on critical memory notification. This
-  // will potentially hang the renderer for a long time, however, when we
-  // receive a memory pressure notification, we might be about to be killed.
-  if (blink_platform_impl_ && blink::mainThreadIsolate()) {
-    blink::mainThreadIsolate()->LowMemoryNotification();
-  }
-
-  if (memory_pressure_level ==
-      base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_CRITICAL) {
-    if (blink_platform_impl_) {
-      // Clear the image cache. Do not call into blink if it is not initialized.
-      blink::WebImageCache::clear();
-    }
-
-    // Purge Skia font cache, by setting it to 0 and then again to the previous
-    // limit.
-    size_t font_cache_limit = SkGraphics::SetFontCacheLimit(0);
-    SkGraphics::SetFontCacheLimit(font_cache_limit);
-  }
-
+  // Do not call into blink if it is not initialized.
   if (blink_platform_impl_) {
     blink::WebCache::pruneAll();
+
+    if (blink::mainThreadIsolate()) {
+      // Trigger full v8 garbage collection on memory pressure notifications.
+      // This will potentially hang the renderer for a long time, however, when
+      // we receive a memory pressure notification, we might be about to be
+      // killed.
+      blink::mainThreadIsolate()->LowMemoryNotification();
+      RenderThread::Get()->PostTaskToAllWebWorkers(
+          base::Bind(&LowMemoryNotificationOnThisThread));
+    }
+
+    if (memory_pressure_level ==
+        base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_CRITICAL) {
+      // Clear the image cache.
+      blink::WebImageCache::clear();
+
+      // Purge Skia font cache, by setting it to 0 and then again to the
+      // previous limit.
+      size_t font_cache_limit = SkGraphics::SetFontCacheLimit(0);
+      SkGraphics::SetFontCacheLimit(font_cache_limit);
+    }
   }
 }
 
@@ -1875,6 +1871,16 @@ void RenderThreadImpl::WidgetRestored() {
   }
 
   ScheduleIdleHandler(kLongIdleHandlerDelayMs);
+}
+
+RenderThreadImpl::PendingRenderFrameConnect::PendingRenderFrameConnect(
+    mojo::InterfaceRequest<mojo::ServiceProvider> services,
+    mojo::ServiceProviderPtr exposed_services)
+    : services(services.Pass()),
+      exposed_services(exposed_services.Pass()) {
+}
+
+RenderThreadImpl::PendingRenderFrameConnect::~PendingRenderFrameConnect() {
 }
 
 }  // namespace content

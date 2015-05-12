@@ -59,13 +59,13 @@ public:
     int getCharNumAtPosition(PassRefPtrWillBeRawPtr<SVGPointTearOff>, ExceptionState&);
     void selectSubString(unsigned charnum, unsigned nchars, ExceptionState&);
 
-    static SVGTextContentElement* elementFromRenderer(RenderObject*);
+    static SVGTextContentElement* elementFromRenderer(LayoutObject*);
 
     SVGAnimatedLength* textLength() { return m_textLength.get(); }
     bool textLengthIsSpecifiedByUser() { return m_textLengthIsSpecifiedByUser; }
     SVGAnimatedEnumeration<SVGLengthAdjustType>* lengthAdjust() { return m_lengthAdjust.get(); }
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     SVGTextContentElement(const QualifiedName&, Document&);

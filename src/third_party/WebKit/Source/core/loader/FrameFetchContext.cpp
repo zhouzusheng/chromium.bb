@@ -60,20 +60,15 @@ void FrameFetchContext::addAdditionalRequestHeaders(Document* document, Resource
 {
     bool isMainResource = type == FetchMainResource;
     if (!isMainResource) {
-        String outgoingReferrer;
-        ReferrerPolicy referrerPolicy;
         String outgoingOrigin;
-        if (request.httpReferrer().isNull()) {
-            outgoingReferrer = document->outgoingReferrer();
-            referrerPolicy = document->referrerPolicy();
+        if (!request.didSetHTTPReferrer()) {
             outgoingOrigin = document->outgoingOrigin();
+            request.setHTTPReferrer(SecurityPolicy::generateReferrer(document->referrerPolicy(), request.url(), document->outgoingReferrer()));
         } else {
-            outgoingReferrer = request.httpReferrer();
-            referrerPolicy = request.referrerPolicy();
-            outgoingOrigin = SecurityOrigin::createFromString(outgoingReferrer)->toString();
+            RELEASE_ASSERT(SecurityPolicy::generateReferrer(request.referrerPolicy(), request.url(), request.httpReferrer()).referrer == request.httpReferrer());
+            outgoingOrigin = SecurityOrigin::createFromString(request.httpReferrer())->toString();
         }
 
-        request.setHTTPReferrer(SecurityPolicy::generateReferrer(referrerPolicy, request.url(), outgoingReferrer));
         request.addHTTPOriginIfNeeded(AtomicString(outgoingOrigin));
     }
 
@@ -135,7 +130,6 @@ void FrameFetchContext::dispatchWillSendRequest(DocumentLoader* loader, unsigned
     m_frame->loader().applyUserAgent(request);
     m_frame->loader().client()->dispatchWillSendRequest(loader, identifier, request, redirectResponse);
     TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceSendRequest", "data", InspectorSendRequestEvent::data(identifier, m_frame, request));
-    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentation::willSendRequest(m_frame, identifier, ensureLoader(loader), request, redirectResponse, initiatorInfo);
 }
 
@@ -149,7 +143,6 @@ void FrameFetchContext::dispatchDidReceiveResponse(DocumentLoader* loader, unsig
     m_frame->loader().progress().incrementProgress(identifier, r);
     m_frame->loader().client()->dispatchDidReceiveResponse(loader, identifier, r);
     TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceReceiveResponse", "data", InspectorReceiveResponseEvent::data(identifier, m_frame, r));
-    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     DocumentLoader* documentLoader = ensureLoader(loader);
     InspectorInstrumentation::didReceiveResourceResponse(m_frame, identifier, documentLoader, r, resourceLoader);
     // It is essential that inspector gets resource response BEFORE console.
@@ -158,17 +151,15 @@ void FrameFetchContext::dispatchDidReceiveResponse(DocumentLoader* loader, unsig
 
 void FrameFetchContext::dispatchDidReceiveData(DocumentLoader*, unsigned long identifier, const char* data, int dataLength, int encodedDataLength)
 {
-    m_frame->loader().progress().incrementProgress(identifier, data, dataLength);
+    m_frame->loader().progress().incrementProgress(identifier, dataLength);
     TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceReceivedData", "data", InspectorReceiveDataEvent::data(identifier, m_frame, encodedDataLength));
-    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentation::didReceiveData(m_frame, identifier, data, dataLength, encodedDataLength);
 }
 
 void FrameFetchContext::dispatchDidDownloadData(DocumentLoader*, unsigned long identifier, int dataLength, int encodedDataLength)
 {
-    m_frame->loader().progress().incrementProgress(identifier, 0, dataLength);
+    m_frame->loader().progress().incrementProgress(identifier, dataLength);
     TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceReceivedData", "data", InspectorReceiveDataEvent::data(identifier, m_frame, encodedDataLength));
-    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentation::didReceiveData(m_frame, identifier, 0, dataLength, encodedDataLength);
 }
 
@@ -178,7 +169,6 @@ void FrameFetchContext::dispatchDidFinishLoading(DocumentLoader* loader, unsigne
     m_frame->loader().client()->dispatchDidFinishLoading(loader, identifier);
 
     TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceFinish", "data", InspectorResourceFinishEvent::data(identifier, finishTime, false));
-    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentation::didFinishLoading(m_frame, identifier, ensureLoader(loader), finishTime, encodedDataLength);
 }
 
@@ -187,7 +177,6 @@ void FrameFetchContext::dispatchDidFail(DocumentLoader* loader, unsigned long id
     m_frame->loader().progress().completeProgress(identifier);
     m_frame->loader().client()->dispatchDidFinishLoading(loader, identifier);
     TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceFinish", "data", InspectorResourceFinishEvent::data(identifier, 0, true));
-    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentation::didFailLoading(m_frame, identifier, error);
     // Notification to FrameConsole should come AFTER InspectorInstrumentation call, DevTools front-end relies on this.
     if (!isInternalRequest)

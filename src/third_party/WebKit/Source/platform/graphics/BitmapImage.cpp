@@ -48,6 +48,15 @@ PassRefPtr<BitmapImage> BitmapImage::create(PassRefPtr<NativeImageSkia> nativeIm
     return adoptRef(new BitmapImage(nativeImage, observer));
 }
 
+PassRefPtr<BitmapImage> BitmapImage::createWithOrientationForTesting(PassRefPtr<NativeImageSkia> nativeImage, ImageOrientation orientation)
+{
+    RefPtr<BitmapImage> result = create(nativeImage);
+    result->m_frames[0].m_orientation = orientation;
+    if (orientation.usesWidthAsHeight())
+        result->m_sizeRespectingOrientation = IntSize(result->m_size.height(), result->m_size.width());
+    return result.release();
+}
+
 BitmapImage::BitmapImage(ImageObserver* observer)
     : Image(observer)
     , m_currentFrame(0)
@@ -260,18 +269,8 @@ String BitmapImage::filenameExtension() const
     return m_source.filenameExtension();
 }
 
-void BitmapImage::draw(GraphicsContext* ctxt, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator compositeOp, WebBlendMode blendMode)
+void BitmapImage::draw(GraphicsContext* ctxt, const FloatRect& dstRect, const FloatRect& srcRect, SkXfermode::Mode compositeOp, RespectImageOrientationEnum shouldRespectImageOrientation)
 {
-    draw(ctxt, dstRect, srcRect, compositeOp, blendMode, DoNotRespectImageOrientation);
-}
-
-void BitmapImage::draw(GraphicsContext* ctxt, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator compositeOp, WebBlendMode blendMode, RespectImageOrientationEnum shouldRespectImageOrientation)
-{
-    // Spin the animation to the correct frame before we try to draw it, so we
-    // don't draw an old frame and then immediately need to draw a newer one,
-    // causing flicker and wasting CPU.
-    startAnimation();
-
     RefPtr<NativeImageSkia> image = nativeImageForCurrentFrame();
     if (!image)
         return; // It's too early and we don't have an image yet.
@@ -304,10 +303,12 @@ void BitmapImage::draw(GraphicsContext* ctxt, const FloatRect& dstRect, const Fl
         }
     }
 
-    image->draw(ctxt, normSrcRect, normDstRect, compositeOp, blendMode);
+    image->draw(ctxt, normSrcRect, normDstRect, compositeOp);
 
     if (ImageObserver* observer = imageObserver())
         observer->didDraw(this);
+
+    startAnimation();
 }
 
 void BitmapImage::resetDecoder()

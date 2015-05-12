@@ -27,9 +27,9 @@
 #include "core/HTMLNames.h"
 #include "core/dom/NodeRenderingTraversal.h"
 #include "core/html/HTMLOListElement.h"
+#include "core/layout/TextAutosizer.h"
 #include "core/rendering/RenderListMarker.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/TextAutosizer.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/StringBuilder.h"
 
@@ -47,13 +47,7 @@ RenderListItem::RenderListItem(Element* element)
     setInline(false);
 }
 
-void RenderListItem::trace(Visitor* visitor)
-{
-    visitor->trace(m_marker);
-    RenderBlockFlow::trace(visitor);
-}
-
-void RenderListItem::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
+void RenderListItem::styleDidChange(StyleDifference diff, const LayoutStyle* oldStyle)
 {
     RenderBlockFlow::styleDidChange(diff, oldStyle);
 
@@ -135,7 +129,7 @@ static RenderListItem* nextListItem(const Node* listNode, const RenderListItem* 
             continue;
         }
 
-        RenderObject* renderer = current->renderer();
+        LayoutObject* renderer = current->renderer();
         if (renderer && renderer->isListItem())
             return toRenderListItem(renderer);
 
@@ -153,7 +147,7 @@ static RenderListItem* previousListItem(const Node* listNode, const RenderListIt
     ASSERT(current);
     ASSERT(!current->document().childNeedsDistributionRecalc());
     for (current = NodeRenderingTraversal::previous(*current, listNode); current && current != listNode; current = NodeRenderingTraversal::previous(*current, listNode)) {
-        RenderObject* renderer = current->renderer();
+        LayoutObject* renderer = current->renderer();
         if (!renderer || (renderer && !renderer->isListItem()))
             continue;
         Node* otherList = enclosingList(toRenderListItem(renderer));
@@ -222,14 +216,14 @@ bool RenderListItem::isEmpty() const
     return lastChild() == m_marker;
 }
 
-static RenderObject* getParentOfFirstLineBox(RenderBlockFlow* curr, RenderObject* marker)
+static LayoutObject* getParentOfFirstLineBox(RenderBlockFlow* curr, LayoutObject* marker)
 {
-    RenderObject* firstChild = curr->firstChild();
+    LayoutObject* firstChild = curr->firstChild();
     if (!firstChild)
         return 0;
 
     bool inQuirksMode = curr->document().inQuirksMode();
-    for (RenderObject* currChild = firstChild; currChild; currChild = currChild->nextSibling()) {
+    for (LayoutObject* currChild = firstChild; currChild; currChild = currChild->nextSibling()) {
         if (currChild == marker)
             continue;
 
@@ -246,7 +240,7 @@ static RenderObject* getParentOfFirstLineBox(RenderBlockFlow* curr, RenderObject
             (isHTMLUListElement(*currChild->node()) || isHTMLOListElement(*currChild->node())))
             break;
 
-        RenderObject* lineBox = getParentOfFirstLineBox(toRenderBlockFlow(currChild), marker);
+        LayoutObject* lineBox = getParentOfFirstLineBox(toRenderBlockFlow(currChild), marker);
         if (lineBox)
             return lineBox;
     }
@@ -263,15 +257,15 @@ void RenderListItem::updateValue()
     }
 }
 
-static RenderObject* firstNonMarkerChild(RenderObject* parent)
+static LayoutObject* firstNonMarkerChild(LayoutObject* parent)
 {
-    RenderObject* result = parent->slowFirstChild();
+    LayoutObject* result = parent->slowFirstChild();
     while (result && result->isListMarker())
         result = result->nextSibling();
     return result;
 }
 
-RenderObject* firstRenderText(RenderObject* curr, RenderObject* stayWithin)
+static LayoutObject* firstRenderText(LayoutObject* curr, LayoutObject* stayWithin)
 {
     while (curr && !curr->isText()) {
         curr = curr->nextInPreOrder(stayWithin);
@@ -297,8 +291,8 @@ void RenderListItem::updateMarkerLocationAndInvalidateWidth()
 bool RenderListItem::updateMarkerLocation()
 {
     ASSERT(m_marker);
-    RenderObject* markerParent = m_marker->parent();
-    RenderObject* lineBoxParent = getParentOfFirstLineBox(this, m_marker);
+    LayoutObject* markerParent = m_marker->parent();
+    LayoutObject* lineBoxParent = getParentOfFirstLineBox(this, m_marker);
     if (!lineBoxParent) {
         // If the marker is currently contained inside an anonymous box, then we
         // are the only item in that anonymous box (since no line box parent was
@@ -310,8 +304,8 @@ bool RenderListItem::updateMarkerLocation()
     }
 
     bool fontsAreDifferent = false;
-    RenderObject* firstNonMarker = firstNonMarkerChild(lineBoxParent);
-    RenderObject* firstText = firstRenderText(firstNonMarker, lineBoxParent);
+    LayoutObject* firstNonMarker = firstNonMarkerChild(lineBoxParent);
+    LayoutObject* firstText = firstRenderText(firstNonMarker, lineBoxParent);
     if (firstText && m_marker->style()->fontDescription() != firstText->style()->fontDescription()) {
         fontsAreDifferent = true;
     }

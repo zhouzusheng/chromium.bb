@@ -9,12 +9,12 @@
 #include <algorithm>
 #include <cmath>
 
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/trace_event/trace_event.h"
 #include "third_party/skia/include/core/SkRect.h"
 #include "ui/accessibility/ax_enums.h"
 #include "ui/base/cursor/cursor.h"
@@ -544,6 +544,7 @@ void View::Layout() {
   for (int i = 0, count = child_count(); i < count; ++i) {
     View* child = child_at(i);
     if (child->needs_layout_ || !layout_manager_.get()) {
+      TRACE_EVENT1("views", "View::Layout", "class", child->GetClassName());
       child->needs_layout_ = false;
       child->Layout();
     }
@@ -1915,6 +1916,17 @@ void View::BoundsChanged(const gfx::Rect& previous_bounds) {
     } else {
       SetLayerBounds(bounds_);
     }
+
+    // In RTL mode, if our width has changed, our children's mirrored bounds
+    // will have changed. Update the child's layer bounds, or if it is not a
+    // layer, the bounds of any layers inside the child.
+    if (base::i18n::IsRTL() && bounds_.width() != previous_bounds.width()) {
+      for (int i = 0; i < child_count(); ++i) {
+        View* child = child_at(i);
+        child->UpdateChildLayerBounds(
+            gfx::Vector2d(child->GetMirroredX(), child->y()));
+      }
+    }
   } else {
     // If our bounds have changed, then any descendant layer bounds may have
     // changed. Update them accordingly.
@@ -2413,6 +2425,16 @@ void View::PropagateLocaleChanged() {
   for (int i = child_count() - 1; i >= 0; --i)
     child_at(i)->PropagateLocaleChanged();
   OnLocaleChanged();
+}
+
+void View::PropagateDeviceScaleFactorChanged(float device_scale_factor) {
+  for (int i = child_count() - 1; i >= 0; --i)
+    child_at(i)->PropagateDeviceScaleFactorChanged(device_scale_factor);
+
+  // If the view is drawing to the layer, OnDeviceScaleFactorChanged() is called
+  // through LayerDelegate callback.
+  if (!layer())
+    OnDeviceScaleFactorChanged(device_scale_factor);
 }
 
 // Tooltips --------------------------------------------------------------------

@@ -29,6 +29,7 @@
 #include "platform/PlatformExport.h"
 #include "platform/geometry/DoublePoint.h"
 #include "platform/scroll/ScrollAnimator.h"
+#include "platform/scroll/ScrollTypes.h"
 #include "platform/scroll/Scrollbar.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/Vector.h"
@@ -65,18 +66,19 @@ public:
     virtual HostWindow* hostWindow() const { return 0; };
 
     bool scroll(ScrollDirection, ScrollGranularity, float delta = 1);
-    void scrollToOffsetWithoutAnimation(const FloatPoint&);
+    virtual void setScrollPosition(const DoublePoint&, ScrollBehavior = ScrollBehaviorInstant);
+    void scrollToOffsetWithoutAnimation(const FloatPoint&, bool cancelProgrammaticAnimations = true);
     void scrollToOffsetWithoutAnimation(ScrollbarOrientation, float offset);
 
     void programmaticallyScrollSmoothlyToOffset(const FloatPoint&);
 
     // Should be called when the scroll position changes externally, for example if the scroll layer position
     // is updated on the scrolling thread and we need to notify the main thread.
-    void notifyScrollPositionChanged(const IntPoint&);
+    void notifyScrollPositionChanged(const DoublePoint&);
 
     static bool scrollBehaviorFromString(const String&, ScrollBehavior&);
 
-    bool handleWheelEvent(const PlatformWheelEvent&);
+    ScrollResult handleWheelEvent(const PlatformWheelEvent&);
 
     // Functions for controlling if you can scroll past the end of the document.
     bool constrainsScrollingToContentEdge() const { return m_constrainsScrollingToContentEdge; }
@@ -175,7 +177,9 @@ public:
     virtual IntPoint scrollPosition() const = 0;
     virtual DoublePoint scrollPositionDouble() const { return DoublePoint(scrollPosition()); }
     virtual IntPoint minimumScrollPosition() const = 0;
+    virtual DoublePoint minimumScrollPositionDouble() const { return DoublePoint(minimumScrollPosition()); }
     virtual IntPoint maximumScrollPosition() const = 0;
+    virtual DoublePoint maximumScrollPositionDouble() const { return DoublePoint(maximumScrollPosition()); }
 
     virtual IntRect visibleContentRect(IncludeScrollbarsInRect = ExcludeScrollbars) const;
     virtual int visibleHeight() const { return visibleContentRect().height(); }
@@ -206,8 +210,11 @@ public:
     // animations.
     bool scheduleAnimation();
     void serviceScrollAnimations(double monotonicTime);
+    void updateCompositorScrollAnimations();
     virtual void registerForAnimation() { }
     virtual void deregisterForAnimation() { }
+
+    void notifyCompositorAnimationFinished(int groupId);
 
     virtual bool usesCompositedScrolling() const { return false; }
 
@@ -251,7 +258,11 @@ public:
     bool hasLayerForVerticalScrollbar() const;
     bool hasLayerForScrollCorner() const;
 
+    void layerForScrollingDidChange();
+
     void cancelProgrammaticScrollAnimation();
+
+    DisplayItemClient displayItemClient() const { return toDisplayItemClient(this); }
 
 protected:
     ScrollableArea();

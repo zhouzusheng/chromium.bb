@@ -5,10 +5,10 @@
 #include "config.h"
 #include "core/paint/FieldsetPainter.h"
 
+#include "core/layout/PaintInfo.h"
 #include "core/paint/BoxDecorationData.h"
 #include "core/paint/BoxPainter.h"
 #include "core/paint/RenderDrawingRecorder.h"
-#include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderFieldset.h"
 
 namespace blink {
@@ -43,9 +43,9 @@ void FieldsetPainter::paintBoxDecorationBackground(const PaintInfo& paintInfo, c
     BoxDecorationData boxDecorationData(m_renderFieldset, paintInfo.context);
 
     if (boxDecorationData.bleedAvoidance() == BackgroundBleedNone)
-        BoxPainter::paintBoxShadow(paintInfo, paintRect, m_renderFieldset.style(), Normal);
+        BoxPainter::paintBoxShadow(paintInfo, paintRect, m_renderFieldset.styleRef(), Normal);
     BoxPainter(m_renderFieldset).paintFillLayers(paintInfo, boxDecorationData.backgroundColor, m_renderFieldset.style()->backgroundLayers(), paintRect);
-    BoxPainter::paintBoxShadow(paintInfo, paintRect, m_renderFieldset.style(), Inset);
+    BoxPainter::paintBoxShadow(paintInfo, paintRect, m_renderFieldset.styleRef(), Inset);
 
     if (!boxDecorationData.hasBorder)
         return;
@@ -67,7 +67,7 @@ void FieldsetPainter::paintBoxDecorationBackground(const PaintInfo& paintInfo, c
         graphicsContext->clipOut(pixelSnappedIntRect(clipLeft, paintRect.y() + legend->location().y(), clipWidth, legend->size().height()));
     }
 
-    BoxPainter::paintBorder(m_renderFieldset, paintInfo, paintRect, m_renderFieldset.style());
+    BoxPainter::paintBorder(m_renderFieldset, paintInfo, paintRect, m_renderFieldset.styleRef());
 }
 
 void FieldsetPainter::paintMask(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)

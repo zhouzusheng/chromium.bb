@@ -26,10 +26,10 @@
 #include "core/rendering/RenderListMarker.h"
 
 #include "core/fetch/ImageResource.h"
+#include "core/layout/Layer.h"
+#include "core/layout/TextRunConstructor.h"
 #include "core/paint/ListMarkerPainter.h"
-#include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderListItem.h"
-#include "core/rendering/TextRunConstructor.h"
 #include "platform/fonts/Font.h"
 #include "wtf/text/StringBuilder.h"
 
@@ -1051,7 +1051,7 @@ RenderListMarker::RenderListMarker(RenderListItem* item)
     : RenderBox(0)
     , m_listItem(item)
 {
-    // init RenderObject attributes
+    // init LayoutObject attributes
     setInline(true);   // our object is Inline
     setReplaced(true); // pretend to be replaced
 }
@@ -1067,12 +1067,6 @@ void RenderListMarker::destroy()
     RenderBox::destroy();
 }
 
-void RenderListMarker::trace(Visitor* visitor)
-{
-    visitor->trace(m_listItem);
-    RenderBox::trace(visitor);
-}
-
 RenderListMarker* RenderListMarker::createAnonymous(RenderListItem* item)
 {
     Document& document = item->document();
@@ -1081,7 +1075,7 @@ RenderListMarker* RenderListMarker::createAnonymous(RenderListItem* item)
     return renderer;
 }
 
-void RenderListMarker::styleWillChange(StyleDifference diff, const RenderStyle& newStyle)
+void RenderListMarker::styleWillChange(StyleDifference diff, const LayoutStyle& newStyle)
 {
     if (style() && (newStyle.listStylePosition() != style()->listStylePosition() || newStyle.listStyleType() != style()->listStyleType()))
         setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
@@ -1089,7 +1083,7 @@ void RenderListMarker::styleWillChange(StyleDifference diff, const RenderStyle& 
     RenderBox::styleWillChange(diff, newStyle);
 }
 
-void RenderListMarker::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
+void RenderListMarker::styleDidChange(StyleDifference diff, const LayoutStyle* oldStyle)
 {
     RenderBox::styleDidChange(diff, oldStyle);
 
@@ -1398,7 +1392,7 @@ void RenderListMarker::computePreferredLogicalWidths()
             else {
                 LayoutUnit itemWidth = font.width(m_text);
                 UChar suffixSpace[1] = { listMarkerSuffix(type, m_listItem->value()) };
-                LayoutUnit suffixSpaceWidth = font.width(constructTextRun(this, font, suffixSpace, 1, style(), style()->direction()));
+                LayoutUnit suffixSpaceWidth = font.width(constructTextRun(this, font, suffixSpace, 1, styleRef(), style()->direction()));
                 logicalWidth = itemWidth + suffixSpaceWidth;
                 logicalWidth += cMarkerPadding;
             }
@@ -1558,7 +1552,7 @@ IntRect RenderListMarker::getRelativeMarkerRect()
             const Font& font = style()->font();
             int itemWidth = font.width(m_text);
             UChar suffixSpace[1] = { listMarkerSuffix(type, m_listItem->value()) };
-            int suffixSpaceWidth = font.width(constructTextRun(this, font, suffixSpace, 1, style(), style()->direction()));
+            int suffixSpaceWidth = font.width(constructTextRun(this, font, suffixSpace, 1, styleRef(), style()->direction()));
             relativeRect = IntRect(0, 0, itemWidth + suffixSpaceWidth, font.fontMetrics().height());
     }
 
@@ -1583,7 +1577,7 @@ void RenderListMarker::setSelectionState(SelectionState state)
         inlineBoxWrapper()->root().setHasSelectedChildren(state != SelectionNone);
 }
 
-LayoutRect RenderListMarker::selectionRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const
+LayoutRect RenderListMarker::selectionRectForPaintInvalidation(const LayoutLayerModelObject* paintInvalidationContainer) const
 {
     ASSERT(!needsLayout());
 
@@ -1596,16 +1590,16 @@ LayoutRect RenderListMarker::selectionRectForPaintInvalidation(const RenderLayer
     // FIXME: groupedMapping() leaks the squashing abstraction.
     // TODO(shez): Investigate why layer() is sometimes null here.
     if (paintInvalidationContainer->layer() && paintInvalidationContainer->layer()->groupedMapping())
-        RenderLayer::mapRectToPaintBackingCoordinates(paintInvalidationContainer, rect);
+        Layer::mapRectToPaintBackingCoordinates(paintInvalidationContainer, rect);
     return rect;
 }
 
 void RenderListMarker::listItemStyleDidChange()
 {
-    RefPtr<RenderStyle> newStyle = RenderStyle::create();
+    RefPtr<LayoutStyle> newStyle = LayoutStyle::create();
     // The marker always inherits from the list item, regardless of where it might end
     // up (e.g., in some deeply nested line box). See CSS3 spec.
-    newStyle->inheritFrom(m_listItem->style());
+    newStyle->inheritFrom(m_listItem->styleRef());
     if (style()) {
         // Reuse the current margins. Otherwise resetting the margins to initial values
         // would trigger unnecessary layout.

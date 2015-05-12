@@ -35,6 +35,7 @@
 #include "core/dom/XMLDocument.h"
 #include "core/editing/markup.h"
 #include "core/events/Event.h"
+#include "core/fetch/CrossOriginAccessControl.h"
 #include "core/fetch/FetchUtils.h"
 #include "core/fileapi/Blob.h"
 #include "core/fileapi/File.h"
@@ -182,7 +183,7 @@ public:
         enqueueToStreamFromHandle();
     }
 
-    void startStream(ReadableStreamImpl<ReadableStreamChunkTypeTraits<DOMArrayBuffer> >* stream)
+    void startStream(ReadableStreamImpl<ReadableStreamChunkTypeTraits<DOMArrayBuffer>>* stream)
     {
         m_stream = stream;
         stream->didSourceStart();
@@ -207,7 +208,7 @@ public:
         }
     }
 
-    void trace(Visitor* visitor) override
+    DEFINE_INLINE_VIRTUAL_TRACE()
     {
         visitor->trace(m_owner);
         visitor->trace(m_stream);
@@ -294,7 +295,7 @@ public:
         m_loader.cancel();
     }
 
-    void trace(Visitor* visitor)
+    DEFINE_INLINE_TRACE()
     {
         visitor->trace(m_xhr);
     }
@@ -461,7 +462,7 @@ Blob* XMLHttpRequest::responseBlob()
             if (m_binaryResponseBuilder && m_binaryResponseBuilder->size()) {
                 size = m_binaryResponseBuilder->size();
                 blobData->appendBytes(m_binaryResponseBuilder->data(), size);
-                blobData->setContentType(finalResponseMIMETypeWithFallback());
+                blobData->setContentType(finalResponseMIMETypeWithFallback().lower());
                 m_binaryResponseBuilder.clear();
             }
             m_responseBlob = Blob::create(BlobDataHandle::create(blobData.release(), size));
@@ -563,12 +564,12 @@ void XMLHttpRequest::setResponseType(const String& responseType, ExceptionState&
     } else if (responseType == "arraybuffer") {
         m_responseTypeCode = ResponseTypeArrayBuffer;
     } else if (responseType == "legacystream") {
-        if (RuntimeEnabledFeatures::streamEnabled())
+        if (RuntimeEnabledFeatures::experimentalStreamEnabled())
             m_responseTypeCode = ResponseTypeLegacyStream;
         else
             return;
     } else if (responseType == "stream") {
-        if (RuntimeEnabledFeatures::streamEnabled())
+        if (RuntimeEnabledFeatures::experimentalStreamEnabled())
             m_responseTypeCode = ResponseTypeStream;
         else
             return;
@@ -645,8 +646,6 @@ void XMLHttpRequest::dispatchReadyStateChangeEvent()
     if (!executionContext())
         return;
 
-    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willDispatchXHRReadyStateChangeEvent(executionContext(), this);
-
     if (m_async || (m_state <= OPENED || m_state == DONE)) {
         TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "XHRReadyStateChange", "data", InspectorXhrReadyStateChangeEvent::data(executionContext(), this));
         XMLHttpRequestProgressEventThrottle::DeferredEventAction action = XMLHttpRequestProgressEventThrottle::Ignore;
@@ -660,13 +659,9 @@ void XMLHttpRequest::dispatchReadyStateChangeEvent()
         TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "UpdateCounters", "data", InspectorUpdateCountersEvent::data());
     }
 
-    InspectorInstrumentation::didDispatchXHRReadyStateChangeEvent(cookie);
     if (m_state == DONE && !m_error) {
         TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "XHRLoad", "data", InspectorXhrLoadEvent::data(executionContext(), this));
-        InspectorInstrumentationCookie cookie = InspectorInstrumentation::willDispatchXHRLoadEvent(executionContext(), this);
         dispatchProgressEventFromSnapshot(EventTypeNames::load);
-        InspectorInstrumentation::didDispatchXHRLoadEvent(cookie);
-
         dispatchProgressEventFromSnapshot(EventTypeNames::loadend);
         TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "UpdateCounters", "data", InspectorUpdateCountersEvent::data());
     }
@@ -1004,7 +999,6 @@ void XMLHttpRequest::createRequest(PassRefPtr<FormData> httpBody, ExceptionState
     resourceLoaderOptions.allowCredentials = (m_sameOriginRequest || m_includeCredentials) ? AllowStoredCredentials : DoNotAllowStoredCredentials;
     resourceLoaderOptions.credentialsRequested = m_includeCredentials ? ClientRequestedCredentials : ClientDidNotRequestCredentials;
     resourceLoaderOptions.securityOrigin = securityOrigin();
-    resourceLoaderOptions.mixedContentBlockingTreatment = TreatAsActiveContent;
 
     // When responseType is set to "blob", we redirect the downloaded data to a
     // file-handle directly.
@@ -1023,6 +1017,7 @@ void XMLHttpRequest::createRequest(PassRefPtr<FormData> httpBody, ExceptionState
     m_error = false;
 
     if (m_async) {
+        UseCounter::count(&executionContext, UseCounter::XMLHttpRequestAsynchronous);
         if (m_upload)
             request.setReportUploadProgress(true);
 
@@ -1538,7 +1533,7 @@ PassRefPtr<BlobDataHandle> XMLHttpRequest::createBlobDataHandleFromResponse()
         // FIXME: finalResponseMIMETypeWithFallback() defaults to
         // text/xml which may be incorrect. Replace it with
         // finalResponseMIMEType() after compatibility investigation.
-        blobData->setContentType(finalResponseMIMETypeWithFallback());
+        blobData->setContentType(finalResponseMIMETypeWithFallback().lower());
     }
     return BlobDataHandle::create(blobData.release(), m_lengthDownloadedToFile);
 }
@@ -1616,7 +1611,7 @@ void XMLHttpRequest::didReceiveResponse(unsigned long identifier, const Resource
         ASSERT(!m_responseStream);
         ASSERT(!m_responseStreamSource);
         m_responseStreamSource = new ReadableStreamSource(this, handle);
-        m_responseStream = new ReadableStreamImpl<ReadableStreamChunkTypeTraits<DOMArrayBuffer> >(executionContext(), m_responseStreamSource);
+        m_responseStream = new ReadableStreamImpl<ReadableStreamChunkTypeTraits<DOMArrayBuffer>>(executionContext(), m_responseStreamSource);
         m_responseStreamSource->startStream(m_responseStream);
 
         changeState(HEADERS_RECEIVED);
@@ -1714,7 +1709,7 @@ void XMLHttpRequest::didReceiveData(const char* data, unsigned len)
         if (!m_responseStream) {
             ASSERT(!m_responseStreamSource);
             m_responseStreamSource = new ReadableStreamSource(this, nullptr);
-            m_responseStream = new ReadableStreamImpl<ReadableStreamChunkTypeTraits<DOMArrayBuffer> >(executionContext(), m_responseStreamSource);
+            m_responseStream = new ReadableStreamImpl<ReadableStreamChunkTypeTraits<DOMArrayBuffer>>(executionContext(), m_responseStreamSource);
             m_responseStreamSource->startStream(m_responseStream);
         }
         m_responseStreamSource->didReceiveData(data, len);
@@ -1791,7 +1786,7 @@ bool XMLHttpRequest::hasPendingActivity() const
     // DocumentParserClient callbacks may be called.
     if (m_loader || m_responseDocumentParser)
         return true;
-    if (m_responseStream && (m_responseStream->state() == ReadableStream::Readable || m_responseStream->state() == ReadableStream::Waiting))
+    if (m_responseStream && m_responseStream->hasPendingActivity())
         return true;
     return m_eventDispatchRecursionLevel > 0;
 }
@@ -1812,7 +1807,7 @@ ExecutionContext* XMLHttpRequest::executionContext() const
     return ActiveDOMObject::executionContext();
 }
 
-void XMLHttpRequest::trace(Visitor* visitor)
+DEFINE_TRACE(XMLHttpRequest)
 {
     visitor->trace(m_responseBlob);
     visitor->trace(m_responseLegacyStream);

@@ -55,13 +55,13 @@ public:
     ArchiveResource* archiveResourceForURL(const KURL&);
     PassRefPtrWillBeRawPtr<MHTMLArchive> popSubframeArchive(const String& frameName, const KURL&);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     ArchiveResourceCollection();
 
-    WillBeHeapHashMap<String, RefPtrWillBeMember<ArchiveResource> > m_subresources;
-    WillBeHeapHashMap<String, RefPtrWillBeMember<MHTMLArchive> > m_subframes;
+    WillBeHeapHashMap<String, RefPtrWillBeMember<ArchiveResource>> m_subresources;
+    WillBeHeapHashMap<String, RefPtrWillBeMember<MHTMLArchive>> m_subframes;
 };
 
 }

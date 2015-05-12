@@ -36,6 +36,7 @@
 #include "core/events/Event.h"
 #include "core/fetch/MemoryCache.h"
 #include "core/fetch/ResourceLoaderOptions.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "core/inspector/ScriptCallStack.h"
 #include "core/inspector/WorkerInspectorController.h"
 #include "core/loader/ThreadableLoader.h"
@@ -47,6 +48,8 @@
 #include "modules/serviceworkers/InspectorServiceWorkerCacheAgent.h"
 #include "modules/serviceworkers/ServiceWorkerClients.h"
 #include "modules/serviceworkers/ServiceWorkerGlobalScopeClient.h"
+#include "modules/serviceworkers/ServiceWorkerRegistration.h"
+#include "modules/serviceworkers/ServiceWorkerScriptCachedMetadataHandler.h"
 #include "modules/serviceworkers/ServiceWorkerThread.h"
 #include "modules/serviceworkers/WaitUntilObserver.h"
 #include "platform/network/ResourceRequest.h"
@@ -77,6 +80,7 @@ PassRefPtrWillBeRawPtr<ServiceWorkerGlobalScope> ServiceWorkerGlobalScope::creat
 {
     RefPtrWillBeRawPtr<ServiceWorkerGlobalScope> context = adoptRefWillBeNoop(new ServiceWorkerGlobalScope(startupData->m_scriptURL, startupData->m_userAgent, thread, monotonicallyIncreasingTime(), startupData->m_starterOrigin, startupData->m_workerClients.release()));
 
+    context->setV8CacheOptions(startupData->m_v8CacheOptions);
     context->applyContentSecurityPolicyFromString(startupData->m_contentSecurityPolicy, startupData->m_contentSecurityPolicyType);
 
     return context.release();
@@ -119,6 +123,11 @@ ServiceWorkerClients* ServiceWorkerGlobalScope::clients()
     return m_clients;
 }
 
+ServiceWorkerRegistration* ServiceWorkerGlobalScope::registration()
+{
+    return m_registration;
+}
+
 void ServiceWorkerGlobalScope::close(ExceptionState& exceptionState)
 {
     exceptionState.throwDOMException(InvalidAccessError, "Not supported.");
@@ -136,6 +145,15 @@ ScriptPromise ServiceWorkerGlobalScope::skipWaiting(ScriptState* scriptState)
 
     ServiceWorkerGlobalScopeClient::from(executionContext)->skipWaiting(new SkipWaitingCallback(resolver));
     return promise;
+}
+
+void ServiceWorkerGlobalScope::setRegistration(WebServiceWorkerRegistration* registration)
+{
+    if (!executionContext()) {
+        ServiceWorkerRegistration::dispose(registration);
+        return;
+    }
+    m_registration = ServiceWorkerRegistration::from(executionContext(), registration);
 }
 
 bool ServiceWorkerGlobalScope::addEventListener(const AtomicString& eventType, PassRefPtr<EventListener> listener, bool useCapture)
@@ -174,12 +192,15 @@ void ServiceWorkerGlobalScope::dispatchExtendableEvent(PassRefPtrWillBeRawPtr<Ev
 
     observer->willDispatchEvent();
     dispatchEvent(event);
+    if (thread()->terminated())
+        m_hadErrorInTopLevelEventHandler = true;
     observer->didDispatchEvent(m_hadErrorInTopLevelEventHandler);
 }
 
-void ServiceWorkerGlobalScope::trace(Visitor* visitor)
+DEFINE_TRACE(ServiceWorkerGlobalScope)
 {
     visitor->trace(m_clients);
+    visitor->trace(m_registration);
     visitor->trace(m_caches);
     WorkerGlobalScope::trace(visitor);
 }
@@ -192,6 +213,11 @@ void ServiceWorkerGlobalScope::importScripts(const Vector<String>& urls, Excepti
     for (Vector<String>::const_iterator it = urls.begin(); it != urls.end(); ++it)
         MemoryCache::removeURLFromCache(this->executionContext(), completeURL(*it));
     WorkerGlobalScope::importScripts(urls, exceptionState);
+}
+
+PassOwnPtr<CachedMetadataHandler> ServiceWorkerGlobalScope::createWorkerScriptCachedMetadataHandler(const KURL& scriptURL, const Vector<char>* metaData)
+{
+    return ServiceWorkerScriptCachedMetadataHandler::create(this, scriptURL, metaData);
 }
 
 void ServiceWorkerGlobalScope::logExceptionToConsole(const String& errorMessage, int scriptId, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtrWillBeRawPtr<ScriptCallStack> callStack)

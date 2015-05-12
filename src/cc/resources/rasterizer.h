@@ -16,7 +16,6 @@ class TileManager;
 
 enum class PrepareTilesMode {
   RASTERIZE_PRIORITIZED_TILES,
-  PREPARE_PRIORITIZED_TILES,
   PREPARE_NONE
 };
 
@@ -33,6 +32,7 @@ class CC_EXPORT Rasterizer {
   virtual void RasterizeTiles(
       const TileVector& tiles,
       ResourcePool* resource_pool,
+      ResourceFormat resource_format,
       const UpdateTileDrawInfoCallback& update_tile_draw_info) = 0;
 
  protected:

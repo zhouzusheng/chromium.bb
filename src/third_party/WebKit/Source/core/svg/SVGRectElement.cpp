@@ -21,7 +21,7 @@
 #include "config.h"
 #include "core/svg/SVGRectElement.h"
 
-#include "core/rendering/svg/RenderSVGRect.h"
+#include "core/layout/svg/LayoutSVGRect.h"
 #include "core/svg/SVGLength.h"
 
 namespace blink {
@@ -43,7 +43,7 @@ inline SVGRectElement::SVGRectElement(Document& document)
     addToPropertyMap(m_ry);
 }
 
-void SVGRectElement::trace(Visitor* visitor)
+DEFINE_TRACE(SVGRectElement)
 {
     visitor->trace(m_x);
     visitor->trace(m_y);
@@ -75,6 +75,31 @@ void SVGRectElement::parseAttribute(const QualifiedName& name, const AtomicStrin
     parseAttributeNew(name, value);
 }
 
+bool SVGRectElement::isPresentationAttribute(const QualifiedName& attrName) const
+{
+    if (attrName == SVGNames::xAttr || attrName == SVGNames::yAttr)
+        return true;
+    return SVGGeometryElement::isPresentationAttribute(attrName);
+}
+
+bool SVGRectElement::isPresentationAttributeWithSVGDOM(const QualifiedName& attrName) const
+{
+    if (attrName == SVGNames::xAttr || attrName == SVGNames::yAttr)
+        return true;
+    return SVGGeometryElement::isPresentationAttributeWithSVGDOM(attrName);
+}
+
+void SVGRectElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStylePropertySet* style)
+{
+    RefPtrWillBeRawPtr<SVGAnimatedPropertyBase> property = propertyFromAttribute(name);
+    if (property == m_x)
+        addSVGLengthPropertyToPresentationAttributeStyle(style, CSSPropertyX, *m_x->currentValue());
+    else if (property == m_y)
+        addSVGLengthPropertyToPresentationAttributeStyle(style, CSSPropertyY, *m_y->currentValue());
+    else
+        SVGGeometryElement::collectStyleForPresentationAttribute(name, value, style);
+}
+
 void SVGRectElement::svgAttributeChanged(const QualifiedName& attrName)
 {
     if (!isSupportedAttribute(attrName)) {
@@ -84,8 +109,16 @@ void SVGRectElement::svgAttributeChanged(const QualifiedName& attrName)
 
     SVGElement::InvalidationGuard invalidationGuard(this);
 
-    bool isLengthAttribute = attrName == SVGNames::xAttr
-                          || attrName == SVGNames::yAttr
+    bool isLengthAttributeXY =
+        attrName == SVGNames::xAttr
+        || attrName == SVGNames::yAttr;
+    if (isLengthAttributeXY) {
+        invalidateSVGPresentationAttributeStyle();
+        setNeedsStyleRecalc(LocalStyleChange,
+            StyleChangeReasonForTracing::fromAttribute(attrName));
+    }
+
+    bool isLengthAttribute = isLengthAttributeXY
                           || attrName == SVGNames::widthAttr
                           || attrName == SVGNames::heightAttr
                           || attrName == SVGNames::rxAttr
@@ -94,7 +127,7 @@ void SVGRectElement::svgAttributeChanged(const QualifiedName& attrName)
     if (isLengthAttribute)
         updateRelativeLengthsInformation();
 
-    RenderSVGShape* renderer = toRenderSVGShape(this->renderer());
+    LayoutSVGShape* renderer = toLayoutSVGShape(this->renderer());
     if (!renderer)
         return;
 
@@ -117,9 +150,9 @@ bool SVGRectElement::selfHasRelativeLengths() const
         || m_ry->currentValue()->isRelative();
 }
 
-RenderObject* SVGRectElement::createRenderer(RenderStyle*)
+LayoutObject* SVGRectElement::createRenderer(const LayoutStyle&)
 {
-    return new RenderSVGRect(this);
+    return new LayoutSVGRect(this);
 }
 
 } // namespace blink

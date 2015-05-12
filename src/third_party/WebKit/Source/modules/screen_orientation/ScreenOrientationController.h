@@ -39,10 +39,11 @@ public:
     static ScreenOrientationController* from(LocalFrame&);
     static const char* supplementName();
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
-    explicit ScreenOrientationController(LocalFrame&, WebScreenOrientationClient*);
+    ScreenOrientationController(LocalFrame&, WebScreenOrientationClient*);
+
     static WebScreenOrientationType computeOrientation(FrameView*);
 
     // Inherited from PlatformEventController.

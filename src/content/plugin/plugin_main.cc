@@ -45,8 +45,8 @@ int PluginMain(const MainFunctionParams& parameters) {
   base::MessageLoopForUI main_message_loop;
   main_message_loop.set_ipc_sync_messages_should_peek(true);
   base::PlatformThread::SetName("CrPluginMain");
-  base::debug::TraceLog::GetInstance()->SetProcessName("Plugin Process");
-  base::debug::TraceLog::GetInstance()->SetProcessSortIndex(
+  base::trace_event::TraceLog::GetInstance()->SetProcessName("Plugin Process");
+  base::trace_event::TraceLog::GetInstance()->SetProcessSortIndex(
       kTraceEventPluginProcessSortIndex);
 
   const base::CommandLine& parsed_command_line = parameters.command_line;

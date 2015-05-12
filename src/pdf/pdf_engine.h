@@ -24,12 +24,12 @@
 #include "ppapi/cpp/rect.h"
 #include "ppapi/cpp/size.h"
 #include "ppapi/cpp/url_loader.h"
+#include "ppapi/cpp/var_array.h"
 
 namespace pp {
 class InputEvent;
+class VarDictionary;
 }
-
-const uint32 kBackgroundColor = 0xFFCCCCCC;
 
 namespace chrome_pdf {
 
@@ -173,6 +173,12 @@ class PDFEngine {
 
     // Returns true if the plugin has been opened within print preview.
     virtual bool IsPrintPreview() = 0;
+
+    // Get the background color of the PDF.
+    virtual uint32 GetBackgroundColor() = 0;
+
+    // Sets selection status.
+    virtual void IsSelectingChanged(bool is_selecting){};
   };
 
   // Factory method to create an instance of the PDF Engine.
@@ -245,6 +251,14 @@ class PDFEngine {
   virtual bool GetPrintScaling() = 0;
   // Returns number of copies to be printed.
   virtual int GetCopiesToPrint() = 0;
+
+  // Returns a VarArray of Bookmarks, each a VarDictionary containing the
+  // following key/values:
+  // - "title" - a string Var.
+  // - "page" - an int Var.
+  // - "children" - a VarArray(), with each entry containing a VarDictionary of
+  //   the same structure.
+  virtual pp::VarArray GetBookmarks() = 0;
 
   // Append blank pages to make a 1-page document to a |num_pages| document.
   // Always retain the first page data.

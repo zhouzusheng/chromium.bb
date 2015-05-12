@@ -21,7 +21,7 @@
 #include "config.h"
 #include "core/svg/SVGCircleElement.h"
 
-#include "core/rendering/svg/RenderSVGEllipse.h"
+#include "core/layout/svg/LayoutSVGEllipse.h"
 #include "core/svg/SVGLength.h"
 
 namespace blink {
@@ -37,7 +37,7 @@ inline SVGCircleElement::SVGCircleElement(Document& document)
     addToPropertyMap(m_r);
 }
 
-void SVGCircleElement::trace(Visitor* visitor)
+DEFINE_TRACE(SVGCircleElement)
 {
     visitor->trace(m_cx);
     visitor->trace(m_cy);
@@ -79,7 +79,7 @@ void SVGCircleElement::svgAttributeChanged(const QualifiedName& attrName)
     if (isLengthAttribute)
         updateRelativeLengthsInformation();
 
-    RenderSVGShape* renderer = toRenderSVGShape(this->renderer());
+    LayoutSVGShape* renderer = toLayoutSVGShape(this->renderer());
     if (!renderer)
         return;
 
@@ -99,9 +99,9 @@ bool SVGCircleElement::selfHasRelativeLengths() const
         || m_r->currentValue()->isRelative();
 }
 
-RenderObject* SVGCircleElement::createRenderer(RenderStyle*)
+LayoutObject* SVGCircleElement::createRenderer(const LayoutStyle&)
 {
-    return new RenderSVGEllipse(this);
+    return new LayoutSVGEllipse(this);
 }
 
 }

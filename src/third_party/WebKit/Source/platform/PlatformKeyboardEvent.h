@@ -47,11 +47,12 @@ public:
     {
     }
 
-    PlatformKeyboardEvent(Type type, const String& text, const String& unmodifiedText, const String& keyIdentifier, int windowsVirtualKeyCode, int nativeVirtualKeyCode, bool isAutoRepeat, bool isKeypad, bool isSystemKey, Modifiers modifiers, double timestamp)
+    PlatformKeyboardEvent(Type type, const String& text, const String& unmodifiedText, const String& keyIdentifier, const String& code, int windowsVirtualKeyCode, int nativeVirtualKeyCode, bool isAutoRepeat, bool isKeypad, bool isSystemKey, Modifiers modifiers, double timestamp)
         : PlatformEvent(type, modifiers, timestamp)
         , m_text(text)
         , m_unmodifiedText(unmodifiedText)
         , m_keyIdentifier(keyIdentifier)
+        , m_code(code)
         , m_windowsVirtualKeyCode(windowsVirtualKeyCode)
         , m_nativeVirtualKeyCode(nativeVirtualKeyCode)
         , m_autoRepeat(isAutoRepeat)
@@ -78,6 +79,8 @@ public:
 
     String keyIdentifier() const { return m_keyIdentifier; }
 
+    String code() const { return m_code; }
+
     // Most compatible Windows virtual key code associated with the event.
     // Zero for Char events.
     int windowsVirtualKeyCode() const { return m_windowsVirtualKeyCode; }
@@ -96,6 +99,7 @@ protected:
     String m_text;
     String m_unmodifiedText;
     String m_keyIdentifier;
+    String m_code;
     int m_windowsVirtualKeyCode;
     int m_nativeVirtualKeyCode;
     bool m_autoRepeat;

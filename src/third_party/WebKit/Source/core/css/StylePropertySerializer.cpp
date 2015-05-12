@@ -111,9 +111,6 @@ bool StylePropertySerializer::StylePropertySetForSerializer::shouldProcessProper
     // and so on) either.
     if (isShorthandProperty(propertyID) || propertyID == CSSPropertyAll)
         return false;
-    // We should not serialize internal properties.
-    if (isInternalProperty(propertyID))
-        return false;
 
     // The all property is a shorthand that resets all CSS properties except
     // direction and unicode-bidi. It only accepts the CSS-wide keywords.
@@ -203,8 +200,8 @@ String StylePropertySerializer::asText() const
 
         StylePropertySerializer::PropertyValueForSerializer property = m_propertySet.propertyAt(n);
         CSSPropertyID propertyID = property.id();
-        // Only enabled or internal properties should be part of the style.
-        ASSERT(CSSPropertyMetadata::isEnabledProperty(propertyID) || isInternalProperty(propertyID));
+        // Only enabled properties should be part of the style.
+        ASSERT(CSSPropertyMetadata::isEnabledProperty(propertyID));
         CSSPropertyID shorthandPropertyID = CSSPropertyInvalid;
         CSSPropertyID borderFallbackShorthandProperty = CSSPropertyInvalid;
         String value;
@@ -401,7 +398,7 @@ String StylePropertySerializer::getPropertyValue(CSSPropertyID propertyID) const
     case CSSPropertyBackgroundRepeat:
         return backgroundRepeatPropertyValue();
     case CSSPropertyBackground:
-        return getLayeredShorthandValue(backgroundShorthand());
+        return getLayeredShorthandValue(backgroundShorthand(), true);
     case CSSPropertyBorder:
         return borderPropertyValue(OmitUncommonValues);
     case CSSPropertyBorderTop:

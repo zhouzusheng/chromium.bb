@@ -36,10 +36,10 @@
 #ifndef RenderBlockFlow_h
 #define RenderBlockFlow_h
 
-#include "core/rendering/FloatingObjects.h"
+#include "core/layout/FloatingObjects.h"
+#include "core/layout/line/TrailingObjects.h"
+#include "core/layout/style/LayoutStyleConstants.h"
 #include "core/rendering/RenderBlock.h"
-#include "core/rendering/line/TrailingObjects.h"
-#include "core/rendering/style/RenderStyleConstants.h"
 
 namespace blink {
 
@@ -47,15 +47,15 @@ class MarginInfo;
 class LineBreaker;
 class LineInfo;
 class LineWidth;
-class RenderMultiColumnFlowThread;
-class RenderRubyRun;
+class LayoutMultiColumnFlowThread;
+class LayoutMultiColumnSpannerPlaceholder;
+class LayoutRubyRun;
 template <class Run> class BidiRunList;
 
 class RenderBlockFlow : public RenderBlock {
 public:
     explicit RenderBlockFlow(ContainerNode*);
     virtual ~RenderBlockFlow();
-    virtual void trace(Visitor*) override;
 
     static RenderBlockFlow* createAnonymous(Document*);
 
@@ -111,11 +111,11 @@ public:
 
     void removeFloatingObjects();
 
-    virtual void addChild(RenderObject* newChild, RenderObject* beforeChild = 0) override;
+    virtual void addChild(LayoutObject* newChild, LayoutObject* beforeChild = 0) override;
 
     void moveAllChildrenIncludingFloatsTo(RenderBlock* toBlock, bool fullRemoveInsert);
 
-    bool generatesLineBoxesForInlineChild(RenderObject*);
+    bool generatesLineBoxesForInlineChild(LayoutObject*);
 
     LayoutUnit logicalTopForFloat(const FloatingObject* floatingObject) const { return isHorizontalWritingMode() ? floatingObject->y() : floatingObject->x(); }
     LayoutUnit logicalBottomForFloat(const FloatingObject* floatingObject) const { return isHorizontalWritingMode() ? floatingObject->maxY() : floatingObject->maxX(); }
@@ -164,12 +164,12 @@ public:
     void setStaticInlinePositionForChild(RenderBox&, LayoutUnit inlinePosition);
     void updateStaticInlinePositionForChild(RenderBox&, LayoutUnit logicalTop);
 
-    static bool shouldSkipCreatingRunsForObject(RenderObject* obj)
+    static bool shouldSkipCreatingRunsForObject(LayoutObject* obj)
     {
         return obj->isFloating() || (obj->isOutOfFlowPositioned() && !obj->style()->isOriginalDisplayInlineType() && !obj->container()->isRenderInline());
     }
 
-    RenderMultiColumnFlowThread* multiColumnFlowThread() const { return m_rareData ? m_rareData->m_multiColumnFlowThread.get() : 0; }
+    LayoutMultiColumnFlowThread* multiColumnFlowThread() const { return m_rareData ? m_rareData->m_multiColumnFlowThread : 0; }
     void resetMultiColumnFlowThread()
     {
         if (m_rareData)
@@ -183,17 +183,17 @@ public:
 
     virtual bool shouldPaintSelectionGaps() const override final;
     LayoutRect logicalLeftSelectionGap(const RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
-        const RenderObject* selObj, LayoutUnit logicalLeft, LayoutUnit logicalTop, LayoutUnit logicalHeight, const PaintInfo*) const;
+        const LayoutObject* selObj, LayoutUnit logicalLeft, LayoutUnit logicalTop, LayoutUnit logicalHeight, const PaintInfo*) const;
     LayoutRect logicalRightSelectionGap(const RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
-        const RenderObject* selObj, LayoutUnit logicalRight, LayoutUnit logicalTop, LayoutUnit logicalHeight, const PaintInfo*) const;
+        const LayoutObject* selObj, LayoutUnit logicalRight, LayoutUnit logicalTop, LayoutUnit logicalHeight, const PaintInfo*) const;
     LayoutRect lineEndingSelectionGap(const RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
-        const RenderObject* selObj, LayoutUnit logicalEnd, LayoutUnit logicalTop, LayoutUnit logicalHeight, const PaintInfo*) const;
+        const LayoutObject* selObj, LayoutUnit logicalEnd, LayoutUnit logicalTop, LayoutUnit logicalHeight, const PaintInfo*) const;
     void getLineEndingGapLogicalLeftAndRight(const RenderBlock* rootBlock, const LayoutSize& offsetFromRootBlock, LayoutUnit logicalEnd,
         LayoutUnit logicalTop, LayoutUnit logicalHeight, LayoutUnit& logicalLeft, LayoutUnit& logicalRight) const;
     void getSelectionGapInfo(const RenderBlock* rootBlock, bool& leftGap, bool& rightGap) const;
 
-    virtual LayoutRect selectionRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const override final;
-    GapRects selectionGapRectsForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const;
+    virtual LayoutRect selectionRectForPaintInvalidation(const LayoutLayerModelObject* paintInvalidationContainer) const override final;
+    GapRects selectionGapRectsForPaintInvalidation(const LayoutLayerModelObject* paintInvalidationContainer) const;
     GapRects selectionGaps(const RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
         LayoutUnit& lastLogicalTop, LayoutUnit& lastLogicalLeft, LayoutUnit& lastLogicalRight, const PaintInfo*,
         bool& shouldHighlightBeforeSide, bool& isAfterSideSelected) const;
@@ -211,10 +211,12 @@ public:
     LayoutUnit paginationStrut() const { return m_rareData ? m_rareData->m_paginationStrut : LayoutUnit(); }
     void setPaginationStrut(LayoutUnit);
 
+    void positionSpannerDescendant(LayoutMultiColumnSpannerPlaceholder& child);
+
     virtual bool avoidsFloats() const override;
 
     using RenderBoxModelObject::moveChildrenTo;
-    virtual void moveChildrenTo(RenderBoxModelObject* toBoxModelObject, RenderObject* startChild, RenderObject* endChild, RenderObject* beforeChild, bool fullRemoveInsert = false) override;
+    virtual void moveChildrenTo(RenderBoxModelObject* toBoxModelObject, LayoutObject* startChild, LayoutObject* endChild, LayoutObject* beforeChild, bool fullRemoveInsert = false) override;
 
     LayoutUnit xPositionForFloatIncludingMargin(const FloatingObject* child) const
     {
@@ -251,8 +253,8 @@ protected:
 
     void createFloatingObjects();
 
-    virtual void styleWillChange(StyleDifference, const RenderStyle& newStyle) override;
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) override;
+    virtual void styleWillChange(StyleDifference, const LayoutStyle& newStyle) override;
+    virtual void styleDidChange(StyleDifference, const LayoutStyle* oldStyle) override;
 
     void updateBlockChildDirtyBitsBeforeLayout(bool relayoutChildren, RenderBox&);
 
@@ -267,7 +269,7 @@ protected:
         return adjustLogicalLeftOffsetForLine(logicalLeftFloatOffsetForLine(logicalTop, fixedOffset, logicalHeight), applyTextIndent);
     }
 
-    virtual RenderObject* layoutSpecialExcludedChild(bool /*relayoutChildren*/, SubtreeLayoutScope&);
+    virtual LayoutObject* layoutSpecialExcludedChild(bool /*relayoutChildren*/, SubtreeLayoutScope&);
     virtual bool updateLogicalWidthAndColumnWidth() override;
 
     void setLogicalLeftForChild(RenderBox& child, LayoutUnit logicalLeft);
@@ -322,7 +324,7 @@ private:
 
     virtual RootInlineBox* createRootInlineBox(); // Subclassed by SVG
 
-    bool isPagedOverflow(const RenderStyle*);
+    bool isPagedOverflow(const LayoutStyle&);
 
     enum FlowThreadType {
         NoFlowThread,
@@ -330,10 +332,10 @@ private:
         PagedFlowThread
     };
 
-    FlowThreadType flowThreadType(const RenderStyle*);
+    FlowThreadType flowThreadType(const LayoutStyle&);
 
-    RenderMultiColumnFlowThread* createMultiColumnFlowThread(FlowThreadType);
-    void createOrDestroyMultiColumnFlowThreadIfNeeded(const RenderStyle* oldStyle);
+    LayoutMultiColumnFlowThread* createMultiColumnFlowThread(FlowThreadType);
+    void createOrDestroyMultiColumnFlowThreadIfNeeded(const LayoutStyle* oldStyle);
 
     void updateLogicalWidthForAlignment(const ETextAlign&, const RootInlineBox*, BidiRun* trailingSpaceRun, float& logicalLeft, float& totalLogicalWidth, float& availableLogicalWidth, unsigned expansionOpportunityCount);
     void checkForPaginationLogicalHeightChange(LayoutUnit& pageLogicalHeight, bool& pageLogicalHeightChanged, bool& hasSpecifiedPageLogicalHeight);
@@ -391,8 +393,8 @@ public:
     MarginValues marginValuesForChild(RenderBox& child) const;
 
     // Allocated only when some of these fields have non-default values
-    struct RenderBlockFlowRareData : public NoBaseWillBeGarbageCollected<RenderBlockFlowRareData> {
-        WTF_MAKE_NONCOPYABLE(RenderBlockFlowRareData); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    struct RenderBlockFlowRareData {
+        WTF_MAKE_NONCOPYABLE(RenderBlockFlowRareData); WTF_MAKE_FAST_ALLOCATED;
     public:
         RenderBlockFlowRareData(const RenderBlockFlow* block)
             : m_margins(positiveMarginBeforeDefault(block), negativeMarginBeforeDefault(block), positiveMarginAfterDefault(block), negativeMarginAfterDefault(block))
@@ -404,7 +406,6 @@ public:
             , m_discardMarginAfter(false)
         {
         }
-        void trace(Visitor*);
 
         static LayoutUnit positiveMarginBeforeDefault(const RenderBlockFlow* block)
         {
@@ -426,7 +427,7 @@ public:
         MarginValues m_margins;
         LayoutUnit m_paginationStrut;
 
-        RawPtrWillBeMember<RenderMultiColumnFlowThread> m_multiColumnFlowThread;
+        LayoutMultiColumnFlowThread* m_multiColumnFlowThread;
 
         int m_lineBreakToAvoidWidow;
         bool m_didBreakAtLineToAvoidWidow : 1;
@@ -487,7 +488,7 @@ private:
 
     LayoutUnit adjustBlockChildForPagination(LayoutUnit logicalTopAfterClear, LayoutUnit estimateWithoutPagination, RenderBox& child, bool atBeforeSideOfBlock);
     // Computes a deltaOffset value that put a line at the top of the next page if it doesn't fit on the current page.
-    void adjustLinePositionForPagination(RootInlineBox&, LayoutUnit& deltaOffset, RenderFlowThread*);
+    void adjustLinePositionForPagination(RootInlineBox&, LayoutUnit& deltaOffset, LayoutFlowThread*);
     // If the child is unsplittable and can't fit on the current page, return the top of the next page/column.
     LayoutUnit adjustForUnsplittableChild(RenderBox&, LayoutUnit logicalOffset, bool includeMargins = false);
 
@@ -502,7 +503,7 @@ private:
     virtual bool isSelfCollapsingBlock() const override;
 
 protected:
-    OwnPtrWillBeMember<RenderBlockFlowRareData> m_rareData;
+    OwnPtr<RenderBlockFlowRareData> m_rareData;
     OwnPtr<FloatingObjects> m_floatingObjects;
 
     friend class BreakingContext; // FIXME: It uses insertFloatingObject and positionNewFloatOnLine, if we move those out from the private scope/add a helper to LineBreaker, we can remove this friend
@@ -515,9 +516,9 @@ protected:
 // line layout code is separated from RenderBlock and RenderBlockFlow.
 // START METHODS DEFINED IN RenderBlockLineLayout
 private:
-    InlineFlowBox* createLineBoxes(RenderObject*, const LineInfo&, InlineBox* childBox);
+    InlineFlowBox* createLineBoxes(LayoutObject*, const LineInfo&, InlineBox* childBox);
     RootInlineBox* constructLine(BidiRunList<BidiRun>&, const LineInfo&);
-    void setMarginsForRubyRun(BidiRun*, RenderRubyRun*, RenderObject*, const LineInfo&);
+    void setMarginsForRubyRun(BidiRun*, LayoutRubyRun*, LayoutObject*, const LineInfo&);
     void computeInlineDirectionPositionsForLine(RootInlineBox*, const LineInfo&, BidiRun* firstRun, BidiRun* trailingSpaceRun, bool reachedEnd, GlyphOverflowAndFallbackFontsMap&, VerticalPositionCache&, WordMeasurements&);
     BidiRun* computeInlineDirectionPositionsForSegment(RootInlineBox*, const LineInfo&, ETextAlign, float& logicalLeft,
         float& availableLogicalWidth, BidiRun* firstRun, BidiRun* trailingSpaceRun, GlyphOverflowAndFallbackFontsMap& textBoxDataMap, VerticalPositionCache&, WordMeasurements&);
@@ -547,7 +548,7 @@ private:
 
 };
 
-DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderBlockFlow, isRenderBlockFlow());
+DEFINE_LAYOUT_OBJECT_TYPE_CASTS(RenderBlockFlow, isRenderBlockFlow());
 
 } // namespace blink
 

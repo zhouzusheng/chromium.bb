@@ -32,9 +32,13 @@
 #define CSSAnimations_h
 
 #include "core/animation/InertAnimation.h"
+#include "core/animation/Interpolation.h"
+#include "core/animation/css/CSSAnimationData.h"
 #include "core/animation/css/CSSAnimationUpdate.h"
+#include "core/css/CSSKeyframesRule.h"
 #include "core/css/StylePropertySet.h"
 #include "core/dom/Document.h"
+#include "core/dom/Element.h"
 #include "wtf/HashMap.h"
 #include "wtf/text/AtomicString.h"
 
@@ -44,7 +48,6 @@ class CSSTransitionData;
 class Element;
 class StylePropertyShorthand;
 class StyleResolver;
-class StyleRuleKeyframes;
 
 class CSSAnimations final {
     WTF_MAKE_NONCOPYABLE(CSSAnimations);
@@ -53,10 +56,11 @@ public:
     CSSAnimations();
 
     const AtomicString getAnimationNameForInspector(const AnimationPlayer&);
+    bool isTransitionAnimationForInspector(const AnimationPlayer&) const;
 
     static const StylePropertyShorthand& animatableProperties();
     static bool isAllowedAnimation(CSSPropertyID);
-    static PassOwnPtrWillBeRawPtr<CSSAnimationUpdate> calculateUpdate(const Element* animatingElement, Element&, const RenderStyle&, RenderStyle* parentStyle, StyleResolver*);
+    static PassOwnPtrWillBeRawPtr<CSSAnimationUpdate> calculateUpdate(const Element* animatingElement, Element&, const LayoutStyle&, LayoutStyle* parentStyle, StyleResolver*);
 
     void setPendingUpdate(PassOwnPtrWillBeRawPtr<CSSAnimationUpdate> update) { m_pendingUpdate = update; }
     void maybeApplyPendingUpdate(Element*);
@@ -66,6 +70,35 @@ public:
     void trace(Visitor*);
 
 private:
+    class RunningAnimation final : public RefCountedWillBeGarbageCollectedFinalized<RunningAnimation> {
+    public:
+        RunningAnimation(PassRefPtrWillBeRawPtr<AnimationPlayer> player, CSSAnimationUpdate::NewAnimation animation)
+            : player(player)
+            , specifiedTiming(animation.timing)
+            , styleRule(animation.styleRule)
+            , styleRuleVersion(animation.styleRuleVersion)
+        {
+        }
+
+        void update(CSSAnimationUpdate::UpdatedAnimation update)
+        {
+            styleRule = update.styleRule;
+            styleRuleVersion = update.styleRuleVersion;
+            specifiedTiming = update.specifiedTiming;
+        }
+
+        void trace(Visitor* visitor)
+        {
+            visitor->trace(player);
+            visitor->trace(styleRule);
+        }
+
+        RefPtrWillBeMember<AnimationPlayer> player;
+        Timing specifiedTiming;
+        RefPtrWillBeMember<StyleRuleKeyframes> styleRule;
+        unsigned styleRuleVersion;
+    };
+
     struct RunningTransition {
         ALLOW_ONLY_INLINE_ALLOCATION();
     public:
@@ -81,7 +114,7 @@ private:
         RawPtrWillBeMember<const AnimatableValue> to;
     };
 
-    using AnimationMap = WillBeHeapHashMap<AtomicString, RefPtrWillBeMember<AnimationPlayer>>;
+    using AnimationMap = WillBeHeapHashMap<AtomicString, RefPtrWillBeMember<RunningAnimation>>;
     AnimationMap m_animations;
 
     using TransitionMap = WillBeHeapHashMap<CSSPropertyID, RunningTransition>;
@@ -91,17 +124,17 @@ private:
 
     WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<Interpolation>> m_previousActiveInterpolationsForAnimations;
 
-    static void calculateAnimationUpdate(CSSAnimationUpdate*, const Element* animatingElement, Element&, const RenderStyle&, RenderStyle* parentStyle, StyleResolver*);
-    static void calculateTransitionUpdate(CSSAnimationUpdate*, const Element* animatingElement, const RenderStyle&);
-    static void calculateTransitionUpdateForProperty(CSSPropertyID, CSSPropertyID eventId, const CSSTransitionData&, size_t transitionIndex, const RenderStyle& oldStyle, const RenderStyle&, const TransitionMap* activeTransitions, CSSAnimationUpdate*, const Element*);
+    static void calculateAnimationUpdate(CSSAnimationUpdate*, const Element* animatingElement, Element&, const LayoutStyle&, LayoutStyle* parentStyle, StyleResolver*);
+    static void calculateTransitionUpdate(CSSAnimationUpdate*, const Element* animatingElement, const LayoutStyle&);
+    static void calculateTransitionUpdateForProperty(CSSPropertyID, CSSPropertyID eventId, const CSSTransitionData&, size_t transitionIndex, const LayoutStyle& oldStyle, const LayoutStyle&, const TransitionMap* activeTransitions, CSSAnimationUpdate*, const Element*);
 
     static void calculateAnimationActiveInterpolations(CSSAnimationUpdate*, const Element* animatingElement, double timelineCurrentTime);
     static void calculateTransitionActiveInterpolations(CSSAnimationUpdate*, const Element* animatingElement, double timelineCurrentTime);
 
     class AnimationEventDelegate final : public AnimationNode::EventDelegate {
     public:
-        AnimationEventDelegate(Element* target, const AtomicString& name)
-            : m_target(target)
+        AnimationEventDelegate(Element* animationTarget, const AtomicString& name)
+            : m_animationTarget(animationTarget)
             , m_name(name)
             , m_previousPhase(AnimationNode::PhaseNone)
             , m_previousIteration(nullValue())
@@ -112,8 +145,12 @@ private:
         virtual void trace(Visitor*) override;
 
     private:
+        const Element& animationTarget() const { return *m_animationTarget; }
+        EventTarget* eventTarget() const;
+        Document& document() const { return m_animationTarget->document(); }
+
         void maybeDispatch(Document::ListenerType, const AtomicString& eventName, double elapsedTime);
-        RawPtrWillBeMember<Element> m_target;
+        RawPtrWillBeMember<Element> m_animationTarget;
         const AtomicString m_name;
         AnimationNode::Phase m_previousPhase;
         double m_previousIteration;
@@ -121,8 +158,8 @@ private:
 
     class TransitionEventDelegate final : public AnimationNode::EventDelegate {
     public:
-        TransitionEventDelegate(Element* target, CSSPropertyID property)
-            : m_target(target)
+        TransitionEventDelegate(Element* transitionTarget, CSSPropertyID property)
+            : m_transitionTarget(transitionTarget)
             , m_property(property)
             , m_previousPhase(AnimationNode::PhaseNone)
         {
@@ -132,7 +169,12 @@ private:
         virtual void trace(Visitor*) override;
 
     private:
-        RawPtrWillBeMember<Element> m_target;
+        const Element& transitionTarget() const { return *m_transitionTarget; }
+        EventTarget* eventTarget() const;
+        PseudoId pseudoId() const { return m_transitionTarget->pseudoId(); }
+        Document& document() const { return m_transitionTarget->document(); }
+
+        RawPtrWillBeMember<Element> m_transitionTarget;
         const CSSPropertyID m_property;
         AnimationNode::Phase m_previousPhase;
     };

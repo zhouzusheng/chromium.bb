@@ -14,12 +14,12 @@
 #include "base/callback_helpers.h"
 #include "base/debug/alias.h"
 #include "base/debug/crash_logging.h"
-#include "base/debug/trace_event.h"
 #include "base/float_util.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
 #include "base/single_thread_task_runner.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/trace_event/trace_event.h"
 #include "cc/blink/web_layer_impl.h"
 #include "cc/layers/video_layer.h"
 #include "gpu/blink/webgraphicscontext3d_impl.h"
@@ -144,6 +144,7 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
       encrypted_media_support_(
           cdm_factory.Pass(),
           client,
+          params.media_permission(),
           base::Bind(&WebMediaPlayerImpl::SetCdm, AsWeakPtr())),
       renderer_factory_(renderer_factory.Pass()) {
   // Threaded compositing isn't enabled universally yet.
@@ -244,9 +245,9 @@ void WebMediaPlayerImpl::DoLoad(LoadType load_type,
       media_log_.get(),
       &buffered_data_source_host_,
       base::Bind(&WebMediaPlayerImpl::NotifyDownloading, AsWeakPtr())));
+  data_source_->SetPreload(preload_);
   data_source_->Initialize(
       base::Bind(&WebMediaPlayerImpl::DataSourceInitialized, AsWeakPtr()));
-  data_source_->SetPreload(preload_);
 }
 
 void WebMediaPlayerImpl::play() {

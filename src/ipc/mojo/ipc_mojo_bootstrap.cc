@@ -8,7 +8,7 @@
 #include "base/process/process_handle.h"
 #include "ipc/ipc_message_utils.h"
 #include "ipc/ipc_platform_file.h"
-#include "mojo/edk/embedder/platform_channel_pair.h"
+#include "third_party/mojo/src/mojo/edk/embedder/platform_channel_pair.h"
 
 namespace IPC {
 
@@ -198,6 +198,10 @@ void MojoBootstrap::Init(scoped_ptr<Channel> channel, Delegate* delegate) {
 
 bool MojoBootstrap::Connect() {
   return channel_->Connect();
+}
+
+base::ProcessId MojoBootstrap::GetSelfPID() const {
+  return channel_->GetSelfPID();
 }
 
 void MojoBootstrap::OnBadMessageReceived(const Message& message) {

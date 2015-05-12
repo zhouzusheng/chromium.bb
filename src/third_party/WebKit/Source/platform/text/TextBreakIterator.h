@@ -22,6 +22,7 @@
 #ifndef TextBreakIterator_h
 #define TextBreakIterator_h
 
+#include "core/layout/style/LayoutStyleConstants.h"
 #include "platform/PlatformExport.h"
 #include "wtf/text/AtomicString.h"
 #include "wtf/unicode/Unicode.h"
@@ -50,6 +51,11 @@ PLATFORM_EXPORT TextBreakIterator* sentenceBreakIterator(const UChar*, int lengt
 PLATFORM_EXPORT bool isWordTextBreak(TextBreakIterator*);
 
 const int TextBreakDone = -1;
+
+enum class LineBreakType {
+    Normal,
+    BreakAll, // word-break:break-all allows breaks between letters/numbers
+};
 
 class PLATFORM_EXPORT LazyLineBreakIterator {
 public:
@@ -157,7 +163,20 @@ public:
         m_cachedPriorContextLength = 0;
     }
 
+    inline bool isBreakable(int pos, int& nextBreakable, EWordBreak wordBreak, LineBreakType lineBreakType = LineBreakType::Normal)
+    {
+        if (pos > nextBreakable) {
+            nextBreakable = lineBreakType == LineBreakType::BreakAll
+                ? nextBreakablePositionBreakAll(pos)
+                : nextBreakablePositionIgnoringNBSP(pos, wordBreak);
+        }
+        return pos == nextBreakable;
+    }
+
 private:
+    int nextBreakablePositionIgnoringNBSP(int pos, EWordBreak wordBreak);
+    int nextBreakablePositionBreakAll(int pos);
+
     static const unsigned priorContextCapacity = 2;
     String m_string;
     AtomicString m_locale;

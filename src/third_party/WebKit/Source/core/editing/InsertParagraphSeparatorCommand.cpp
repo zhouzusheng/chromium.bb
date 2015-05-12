@@ -37,7 +37,7 @@
 #include "core/html/HTMLBRElement.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLQuoteElement.h"
-#include "core/rendering/RenderObject.h"
+#include "core/layout/LayoutObject.h"
 #include "core/rendering/RenderText.h"
 
 namespace blink {
@@ -428,7 +428,7 @@ void InsertParagraphSeparatorCommand::doApply()
     applyStyleAfterInsertion(startBlock.get());
 }
 
-void InsertParagraphSeparatorCommand::trace(Visitor *visitor)
+DEFINE_TRACE(InsertParagraphSeparatorCommand)
 {
     visitor->trace(m_style);
     CompositeEditCommand::trace(visitor);

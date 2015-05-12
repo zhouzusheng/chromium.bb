@@ -45,7 +45,7 @@ class PageHandler {
 
   Response Reload(const bool* ignoreCache,
                   const std::string* script_to_evaluate_on_load,
-                  const std::string* script_preprocessor);
+                  const std::string* script_preprocessor = NULL);
 
   Response Navigate(const std::string& url, FrameId* frame_id);
 
@@ -61,7 +61,6 @@ class PageHandler {
 
   Response ClearGeolocationOverride();
 
-  Response SetTouchEmulationEnabled(bool enabled);
   Response SetTouchEmulationEnabled(bool enabled,
                                     const std::string* configuration);
 
@@ -79,6 +78,7 @@ class PageHandler {
 
   Response StartRecordingFrames(int max_frame_count);
   Response StopRecordingFrames(DevToolsCommandId command_id);
+  Response CancelRecordingFrames();
 
   Response HandleJavaScriptDialog(bool accept, const std::string* prompt_text);
 

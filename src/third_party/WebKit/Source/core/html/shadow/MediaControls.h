@@ -58,7 +58,6 @@ public:
 
     void changedClosedCaptionsVisibility();
     void refreshClosedCaptionsButtonVisibility();
-    void textTracksChanged();
 
     void enteredFullscreen();
     void exitedFullscreen();
@@ -72,12 +71,12 @@ public:
 
     void mediaElementFocused();
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     explicit MediaControls(HTMLMediaElement&);
 
-    bool initializeControls();
+    void initializeControls();
 
     void makeOpaque();
     void makeTransparent();
@@ -85,6 +84,7 @@ private:
     void updatePlayState();
 
     enum HideBehaviorFlags {
+        IgnoreNone = 0,
         IgnoreVideoHover = 1 << 0,
         IgnoreFocus = 1 << 1,
         IgnoreControlsHover = 1 << 2
@@ -110,9 +110,6 @@ private:
     virtual void defaultEventHandler(Event*) override;
     bool containsRelatedTarget(Event*);
 
-    // Element
-    virtual const AtomicString& shadowPseudoId() const override;
-
     RawPtrWillBeMember<HTMLMediaElement> m_mediaElement;
 
     // Container for the media control elements.
@@ -137,9 +134,9 @@ private:
     RawPtrWillBeMember<MediaControlPanelEnclosureElement> m_enclosure;
 
     Timer<MediaControls> m_hideMediaControlsTimer;
+    unsigned m_hideTimerBehaviorFlags;
     bool m_isMouseOverControls : 1;
     bool m_isPausedForScrubbing : 1;
-    bool m_wasLastEventTouch : 1;
 };
 
 DEFINE_ELEMENT_TYPE_CASTS(MediaControls, isMediaControls());

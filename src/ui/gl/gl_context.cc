@@ -38,20 +38,6 @@ void GLContext::ScopedReleaseCurrent::Cancel() {
   canceled_ = true;
 }
 
-GLContext::FlushEvent::FlushEvent() {
-}
-
-GLContext::FlushEvent::~FlushEvent() {
-}
-
-void GLContext::FlushEvent::Signal() {
-  flag_.Set();
-}
-
-bool GLContext::FlushEvent::IsSignaled() {
-  return flag_.IsSet();
-}
-
 GLContext::GLContext(GLShareGroup* share_group) :
     share_group_(share_group),
     swap_interval_(1),
@@ -67,13 +53,6 @@ GLContext::~GLContext() {
   if (GetCurrent() == this) {
     SetCurrent(NULL);
   }
-}
-
-scoped_refptr<GLContext::FlushEvent> GLContext::SignalFlush() {
-  DCHECK(IsCurrent(NULL));
-  scoped_refptr<FlushEvent> flush_event = new FlushEvent();
-  flush_events_.push_back(flush_event);
-  return flush_event;
 }
 
 bool GLContext::GetTotalGpuMemory(size_t* bytes) {
@@ -127,8 +106,8 @@ const GLVersionInfo* GLContext::GetVersionInfo() {
   if(!version_info_) {
     std::string version = GetGLVersion();
     std::string renderer = GetGLRenderer();
-    version_info_ = scoped_ptr<GLVersionInfo>(
-        new GLVersionInfo(version.c_str(), renderer.c_str()));
+    version_info_ =
+        make_scoped_ptr(new GLVersionInfo(version.c_str(), renderer.c_str()));
   }
   return version_info_.get();
 }
@@ -228,12 +207,6 @@ void GLContext::OnReleaseVirtuallyCurrent(GLContext* virtual_context) {
 
 void GLContext::SetRealGLApi() {
   SetGLToRealGLApi();
-}
-
-void GLContext::OnFlush() {
-  for (size_t n = 0; n < flush_events_.size(); n++)
-    flush_events_[n]->Signal();
-  flush_events_.clear();
 }
 
 GLContextReal::GLContextReal(GLShareGroup* share_group)

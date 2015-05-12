@@ -30,9 +30,9 @@
 #include "core/css/CSSCalculationValue.h"
 #include "core/css/CSSToLengthConversionData.h"
 #include "core/css/Pair.h"
-#include "core/dom/NodeRenderStyle.h"
+#include "core/dom/NodeLayoutStyle.h"
 #include "core/dom/TextLinkColors.h"
-#include "core/rendering/RenderObject.h"
+#include "core/layout/LayoutObject.h"
 #include "platform/geometry/IntSize.h"
 #include "platform/graphics/Gradient.h"
 #include "platform/graphics/GradientGeneratedImage.h"
@@ -49,7 +49,7 @@ void CSSGradientColorStop::trace(Visitor* visitor)
     visitor->trace(m_color);
 }
 
-PassRefPtr<Image> CSSGradientValue::image(RenderObject* renderer, const IntSize& size)
+PassRefPtr<Image> CSSGradientValue::image(LayoutObject* renderer, const IntSize& size)
 {
     if (size.isEmpty())
         return nullptr;
@@ -68,7 +68,7 @@ PassRefPtr<Image> CSSGradientValue::image(RenderObject* renderer, const IntSize&
     // We need to create an image.
     RefPtr<Gradient> gradient;
 
-    RenderStyle* rootStyle = renderer->document().documentElement()->renderStyle();
+    LayoutStyle* rootStyle = renderer->document().documentElement()->layoutStyle();
     CSSToLengthConversionData conversionData(renderer->style(), rootStyle, renderer->view(), renderer->style()->effectiveZoom());
     if (isLinearGradientValue())
         gradient = toCSSLinearGradientValue(this)->createGradient(conversionData, size, *renderer);
@@ -101,9 +101,7 @@ void CSSGradientValue::sortStopsIfNeeded()
     }
 }
 
-class GradientStop {
-    ALLOW_ONLY_INLINE_ALLOCATION();
-public:
+struct GradientStop {
     Color color;
     float offset;
     bool specified;
@@ -114,7 +112,7 @@ public:
     { }
 };
 
-void replaceColorHintsWithColorStops(WillBeHeapVector<GradientStop>& stops, const WillBeHeapVector<CSSGradientColorStop, 2>& cssGradientStops)
+static void replaceColorHintsWithColorStops(Vector<GradientStop>& stops, const WillBeHeapVector<CSSGradientColorStop, 2>& cssGradientStops)
 {
     // This algorithm will replace each color interpolation hint with 9 regular
     // color stops. The color values for the new color stops will be calculated
@@ -202,12 +200,12 @@ void replaceColorHintsWithColorStops(WillBeHeapVector<GradientStop>& stops, cons
     }
 }
 
-static Color resolveStopColor(CSSPrimitiveValue* stopColor, const RenderObject& object)
+static Color resolveStopColor(CSSPrimitiveValue* stopColor, const LayoutObject& object)
 {
     return object.document().textLinkColors().colorFromPrimitiveValue(stopColor, object.resolveColor(CSSPropertyColor));
 }
 
-void CSSGradientValue::addStops(Gradient* gradient, const CSSToLengthConversionData& conversionData, float maxLengthForRepeat, const RenderObject& object)
+void CSSGradientValue::addStops(Gradient* gradient, const CSSToLengthConversionData& conversionData, float maxLengthForRepeat, const LayoutObject& object)
 {
     if (m_gradientType == CSSDeprecatedLinearGradient || m_gradientType == CSSDeprecatedRadialGradient) {
         sortStopsIfNeeded();
@@ -229,7 +227,7 @@ void CSSGradientValue::addStops(Gradient* gradient, const CSSToLengthConversionD
 
     size_t numStops = m_stops.size();
 
-    WillBeHeapVector<GradientStop> stops(numStops);
+    Vector<GradientStop> stops(numStops);
 
     float gradientLength = 0;
     bool computedGradientLength = false;
@@ -258,6 +256,7 @@ void CSSGradientValue::addStops(Gradient* gradient, const CSSToLengthConversionD
                 if (!computedGradientLength) {
                     FloatSize gradientSize(gradientStart - gradientEnd);
                     gradientLength = gradientSize.diagonalLength();
+                    computedGradientLength = true;
                 }
                 float length;
                 if (stop.m_position->isLength())
@@ -353,6 +352,7 @@ void CSSGradientValue::addStops(Gradient* gradient, const CSSToLengthConversionD
                 if (!computedGradientLength) {
                     FloatSize gradientSize(gradientStart - gradientEnd);
                     gradientLength = gradientSize.diagonalLength();
+                    computedGradientLength = true;
                 }
 
                 if (maxLengthForRepeat > gradientLength)
@@ -546,7 +546,7 @@ bool CSSGradientValue::isCacheable() const
     return true;
 }
 
-bool CSSGradientValue::knownToBeOpaque(const RenderObject* object) const
+bool CSSGradientValue::knownToBeOpaque(const LayoutObject* object) const
 {
     ASSERT(object);
     for (auto& stop : m_stops) {
@@ -723,7 +723,7 @@ static void endPointsFromAngle(float angleDeg, const IntSize& size, FloatPoint& 
     firstPoint.set(halfWidth - endX, halfHeight + endY);
 }
 
-PassRefPtr<Gradient> CSSLinearGradientValue::createGradient(const CSSToLengthConversionData& conversionData, const IntSize& size, const RenderObject& object)
+PassRefPtr<Gradient> CSSLinearGradientValue::createGradient(const CSSToLengthConversionData& conversionData, const IntSize& size, const LayoutObject& object)
 {
     ASSERT(!size.isEmpty());
 
@@ -1071,7 +1071,7 @@ static inline float horizontalEllipseRadius(const FloatSize& p, float aspectRati
 }
 
 // FIXME: share code with the linear version
-PassRefPtr<Gradient> CSSRadialGradientValue::createGradient(const CSSToLengthConversionData& conversionData, const IntSize& size, const RenderObject& object)
+PassRefPtr<Gradient> CSSRadialGradientValue::createGradient(const CSSToLengthConversionData& conversionData, const IntSize& size, const LayoutObject& object)
 {
     ASSERT(!size.isEmpty());
 

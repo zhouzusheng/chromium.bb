@@ -201,9 +201,9 @@ void URLRequestContextGetterImpl::initialize()
     d_storage->set_network_delegate(new NetworkDelegateImpl());
     d_storage->set_cookie_store(
         new net::CookieMonster(d_cookieStore.get(), 0));
-    d_storage->set_channel_id_service(new net::ChannelIDService(
-        new net::DefaultChannelIDStore(0),
-        base::WorkerPool::GetTaskRunner(true)));
+    d_storage->set_channel_id_service(make_scoped_ptr(
+        new net::ChannelIDService(new net::DefaultChannelIDStore(NULL),
+                                  base::WorkerPool::GetTaskRunner(true))));
     d_storage->set_http_user_agent_settings(
         new net::StaticHttpUserAgentSettings(
         "en-us,en", base::EmptyString()));

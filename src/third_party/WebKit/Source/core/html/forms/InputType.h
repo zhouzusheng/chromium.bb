@@ -33,11 +33,11 @@
 #ifndef InputType_h
 #define InputType_h
 
+#include "core/frame/UseCounter.h"
 #include "core/html/HTMLTextFormControlElement.h"
 #include "core/html/forms/ColorChooserClient.h"
 #include "core/html/forms/InputTypeView.h"
 #include "core/html/forms/StepRange.h"
-#include "core/frame/UseCounter.h"
 
 namespace blink {
 
@@ -162,7 +162,6 @@ public:
     virtual bool storesValueSeparateFromAttribute();
     virtual void setValue(const String&, bool valueChanged, TextFieldEventBehavior);
     virtual bool shouldRespectListAttribute();
-    virtual bool shouldRespectSpeechAttribute();
     virtual bool isEnumeratable();
     virtual bool isCheckable();
     virtual bool isSteppable() const;
@@ -204,8 +203,8 @@ public:
     void dispatchSimulatedClickIfActive(KeyboardEvent*) const;
 
     // InputTypeView override
-    virtual bool shouldSubmitImplicitly(Event*) override;
-    virtual bool hasCustomFocusLogic() const override;
+    bool shouldSubmitImplicitly(Event*) override;
+    bool hasCustomFocusLogic() const override;
 
     virtual bool shouldDispatchFormControlChangeEvent(String&, String&);
 

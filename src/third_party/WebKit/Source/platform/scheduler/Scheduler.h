@@ -6,12 +6,12 @@
 #define Scheduler_h
 
 #include "platform/PlatformExport.h"
+#include "public/platform/WebThread.h"
 #include "wtf/Functional.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/PassOwnPtr.h"
 
 namespace blink {
-class TraceLocation;
 class WebScheduler;
 
 // The scheduler is an opinionated gateway for arranging work to be run on the
@@ -28,7 +28,12 @@ public:
 
     // For non-critical tasks which may be reordered relative to other task types and may be starved
     // for an arbitrarily long time if no idle time is available.
-    void postIdleTask(const TraceLocation&, PassOwnPtr<IdleTask>);
+    void postIdleTask(const WebTraceLocation&, PassOwnPtr<IdleTask>);
+
+    // For tasks related to loading, e.g. HTML parsing.  Loading tasks usually have default priority
+    // but they may be deprioritized when the user is interacting with the device.
+    // Takes ownership of |WebThread::Task|.
+    void postLoadingTask(const WebTraceLocation&, WebThread::Task*);
 
     // Returns true if there is high priority work pending on the main thread
     // and the caller should yield to let the scheduler service that work.

@@ -8,8 +8,10 @@
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "content/browser/frame_host/navigation_entry_impl.h"
 #include "content/browser/loader/navigation_url_loader_delegate.h"
 #include "content/common/content_export.h"
+#include "content/common/frame_message_enums.h"
 #include "content/common/navigation_params.h"
 
 namespace content {
@@ -17,6 +19,7 @@ namespace content {
 class FrameTreeNode;
 class NavigationURLLoader;
 class ResourceRequestBody;
+class SiteInstanceImpl;
 struct NavigationRequestInfo;
 
 // PlzNavigate
@@ -49,19 +52,33 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
     FAILED,
   };
 
-  NavigationRequest(FrameTreeNode* frame_tree_node,
-                    const CommonNavigationParams& common_params,
-                    const CommitNavigationParams& commit_params);
+  // Creates a request for a browser-intiated navigation.
+  static scoped_ptr<NavigationRequest> CreateBrowserInitiated(
+      FrameTreeNode* frame_tree_node,
+      const NavigationEntryImpl& entry,
+      FrameMsg_Navigate_Type::Value navigation_type,
+      base::TimeTicks navigation_start);
+
+  // Creates a request for a renderer-intiated navigation.
+  // Note: |body| is sent to the IO thread when calling BeginNavigation, and
+  // should no longer be manipulated afterwards on the UI thread.
+  static scoped_ptr<NavigationRequest> CreateRendererInitiated(
+      FrameTreeNode* frame_tree_node,
+      const CommonNavigationParams& common_params,
+      const BeginNavigationParams& begin_params,
+      scoped_refptr<ResourceRequestBody> body);
 
   ~NavigationRequest() override;
 
-  // Called on the UI thread by the RenderFrameHostManager which owns the
-  // NavigationRequest. Takes ownership of |info|. After calling this function,
-  // |body| can no longer be manipulated on the UI thread.
-  void BeginNavigation(scoped_ptr<NavigationRequestInfo> info,
-                       scoped_refptr<ResourceRequestBody> body);
+  // Called on the UI thread by the Navigator to start the navigation on the IO
+  // thread.
+  // TODO(clamy): see if ResourceRequestBody could be un-refcounted to avoid
+  // threading subtleties.
+  void BeginNavigation();
 
-  CommonNavigationParams& common_params() { return common_params_; }
+  const CommonNavigationParams& common_params() const { return common_params_; }
+
+  const BeginNavigationParams& begin_params() const { return begin_params_; }
 
   const CommitNavigationParams& commit_params() const { return commit_params_; }
 
@@ -69,12 +86,38 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
 
   NavigationState state() const { return state_; }
 
+  SiteInstanceImpl* source_site_instance() const {
+    return source_site_instance_.get();
+  }
+
+  SiteInstanceImpl* dest_site_instance() const {
+    return dest_site_instance_.get();
+  }
+
+  NavigationEntryImpl::RestoreType restore_type() const {
+    return restore_type_;
+  };
+
+  bool is_view_source() const { return is_view_source_; };
+
+  int bindings() const { return bindings_; };
+
+  bool browser_initiated() const { return browser_initiated_ ; }
+
   void SetWaitingForRendererResponse() {
     DCHECK(state_ == NOT_STARTED);
     state_ = WAITING_FOR_RENDERER_RESPONSE;
   }
 
  private:
+  NavigationRequest(FrameTreeNode* frame_tree_node,
+                    const CommonNavigationParams& common_params,
+                    const BeginNavigationParams& begin_params,
+                    const CommitNavigationParams& commit_params,
+                    scoped_refptr<ResourceRequestBody> body,
+                    bool browser_initiated,
+                    const NavigationEntryImpl* navitation_entry);
+
   // NavigationURLLoaderDelegate implementation.
   void OnRequestRedirected(
       const net::RedirectInfo& redirect_info,
@@ -82,6 +125,7 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
   void OnResponseStarted(const scoped_refptr<ResourceResponse>& response,
                          scoped_ptr<StreamHandle> body) override;
   void OnRequestFailed(int net_error) override;
+  void OnRequestStarted(base::TimeTicks timestamp) override;
 
   FrameTreeNode* frame_tree_node_;
 
@@ -91,11 +135,27 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
   // will be set to the final navigation url, obtained after following all
   // redirects.
   CommonNavigationParams common_params_;
+  const BeginNavigationParams begin_params_;
   const CommitNavigationParams commit_params_;
+  const bool browser_initiated_;
 
   NavigationState state_;
 
+
+  // The parameters to send to the IO thread. |loader_| takes ownership of
+  // |info_| after calling BeginNavigation.
+  scoped_ptr<NavigationRequestInfo> info_;
+
   scoped_ptr<NavigationURLLoader> loader_;
+
+  // These next items are used in browser-initiated navigations to store
+  // information from the NavigationEntryImpl that is required after request
+  // creation time.
+  scoped_refptr<SiteInstanceImpl> source_site_instance_;
+  scoped_refptr<SiteInstanceImpl> dest_site_instance_;
+  NavigationEntryImpl::RestoreType restore_type_;
+  bool is_view_source_;
+  int bindings_;
 
   DISALLOW_COPY_AND_ASSIGN(NavigationRequest);
 };

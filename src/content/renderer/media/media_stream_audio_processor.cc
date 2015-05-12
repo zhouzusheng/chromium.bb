@@ -4,11 +4,11 @@
 
 #include "content/renderer/media/media_stream_audio_processor.h"
 
-#include "base/debug/trace_event.h"
-#if defined(OS_MACOSX)
+#include "base/command_line.h"
 #include "base/metrics/field_trial.h"
-#endif
 #include "base/metrics/histogram.h"
+#include "base/trace_event/trace_event.h"
+#include "content/public/common/content_switches.h"
 #include "content/renderer/media/media_stream_audio_processor_options.h"
 #include "content/renderer/media/rtc_media_constraints.h"
 #include "content/renderer/media/webrtc_audio_device_impl.h"
@@ -77,6 +77,17 @@ void RecordProcessingState(AudioTrackProcessingStates state) {
                             state, AUDIO_PROCESSING_MAX);
 }
 
+bool isDelayAgnosticAecEnabled() {
+  // Note: It's important to query the field trial state first, to ensure that
+  // UMA reports the correct group.
+  const std::string group_name =
+      base::FieldTrialList::FindFullName("UseDelayAgnosticAEC");
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(switches::kEnableDelayAgnosticAec))
+    return true;
+
+  return (group_name == "Enabled" || group_name == "DefaultEnabled");
+}
 }  // namespace
 
 // Wraps AudioBus to provide access to the array of channel pointers, since this
@@ -407,9 +418,7 @@ void MediaStreamAudioProcessor::OnPlayoutDataSourceChanged() {
 void MediaStreamAudioProcessor::GetStats(AudioProcessorStats* stats) {
   stats->typing_noise_detected =
       (base::subtle::Acquire_Load(&typing_detected_) != false);
-  GetAecStats(audio_processing_.get(), stats);
-  if (echo_information_)
-    echo_information_.get()->UpdateAecDelayStats(stats->echo_delay_median_ms);
+  GetAecStats(audio_processing_.get()->echo_cancellation(), stats);
 }
 
 void MediaStreamAudioProcessor::InitializeAudioProcessingModule(
@@ -468,10 +477,8 @@ void MediaStreamAudioProcessor::InitializeAudioProcessingModule(
     config.Set<webrtc::DelayCorrection>(new webrtc::DelayCorrection(true));
   if (goog_experimental_ns)
     config.Set<webrtc::ExperimentalNs>(new webrtc::ExperimentalNs(true));
-#if defined(OS_MACOSX)
-  if (base::FieldTrialList::FindFullName("NoReportedDelayOnMac") == "Enabled")
+  if (isDelayAgnosticAecEnabled())
     config.Set<webrtc::ReportedDelay>(new webrtc::ReportedDelay(false));
-#endif
   if (goog_beamforming) {
     ConfigureBeamforming(&config);
   }
@@ -519,8 +526,7 @@ void MediaStreamAudioProcessor::ConfigureBeamforming(webrtc::Config* config) {
     enabled = true;
     geometry.push_back(webrtc::Point(0.050f, 0.f, 0.f));
   } else if (board == "swanky") {
-    // TODO(aluebs): Verify beamforming works on Swanky and enable.
-    enabled = false;
+    enabled = true;
     geometry.push_back(webrtc::Point(0.052f, 0.f, 0.f));
   }
 #endif
@@ -669,6 +675,10 @@ int MediaStreamAudioProcessor::ProcessData(const float* const* process_ptrs,
     bool detected = typing_detector_->Process(key_pressed,
                                               vad->stream_has_voice());
     base::subtle::Release_Store(&typing_detected_, detected);
+  }
+
+  if (echo_information_) {
+    echo_information_.get()->UpdateAecDelayStats(ap->echo_cancellation());
   }
 
   // Return 0 if the volume hasn't been changed, and otherwise the new volume.

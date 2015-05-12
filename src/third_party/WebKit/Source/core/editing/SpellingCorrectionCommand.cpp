@@ -29,7 +29,7 @@
 #include "core/dom/Document.h"
 #include "core/editing/InsertTextCommand.h"
 #include "core/editing/SetSelectionCommand.h"
-#include "core/editing/TextIterator.h"
+#include "core/editing/iterators/TextIterator.h"
 #include "core/frame/Frame.h"
 
 namespace blink {

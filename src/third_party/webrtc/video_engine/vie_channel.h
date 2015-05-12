@@ -19,6 +19,7 @@
 #include "webrtc/modules/video_coding/main/interface/video_coding_defines.h"
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
 #include "webrtc/system_wrappers/interface/scoped_ptr.h"
+#include "webrtc/system_wrappers/interface/scoped_refptr.h"
 #include "webrtc/system_wrappers/interface/tick_util.h"
 #include "webrtc/typedefs.h"
 #include "webrtc/video_engine/include/vie_network.h"
@@ -38,6 +39,7 @@ class CriticalSectionWrapper;
 class EncodedImageCallback;
 class I420FrameCallback;
 class PacedSender;
+class PayloadRouter;
 class ProcessThread;
 class ReceiveStatisticsProxy;
 class ReportBlockStats;
@@ -73,7 +75,8 @@ class ViEChannel
              RtcpRttStats* rtt_stats,
              PacedSender* paced_sender,
              RtpRtcp* default_rtp_rtcp,
-             bool sender);
+             bool sender,
+             bool disable_default_encoder);
   ~ViEChannel();
 
   int32_t Init();
@@ -171,7 +174,7 @@ class ViEChannel
                                 uint32_t* cumulative_lost,
                                 uint32_t* extended_max,
                                 uint32_t* jitter_samples,
-                                int32_t* rtt_ms);
+                                int64_t* rtt_ms);
 
   // Called on receipt of RTCP report block from remote side.
   void RegisterSendChannelRtcpStatisticsCallback(
@@ -182,7 +185,7 @@ class ViEChannel
                                     uint32_t* cumulative_lost,
                                     uint32_t* extended_max,
                                     uint32_t* jitter_samples,
-                                    int32_t* rtt_ms);
+                                    int64_t* rtt_ms);
 
   // Called on generation of RTCP stats
   void RegisterReceiveChannelRtcpStatisticsCallback(
@@ -301,6 +304,7 @@ class ViEChannel
 
   // Gets the modules used by the channel.
   RtpRtcp* rtp_rtcp();
+  scoped_refptr<PayloadRouter> send_payload_router();
 
   CallStatsObserver* GetStatsObserver();
 
@@ -355,6 +359,8 @@ class ViEChannel
       EncodedImageCallback* pre_decode_callback);
 
   void RegisterSendFrameCountObserver(FrameCountObserver* observer);
+  void RegisterRtcpPacketTypeCounterObserver(
+      RtcpPacketTypeCounterObserver* observer);
   void RegisterReceiveStatisticsProxy(
       ReceiveStatisticsProxy* receive_statistics_proxy);
   void ReceivedBWEPacket(int64_t arrival_time_ms, size_t payload_size,
@@ -364,7 +370,7 @@ class ViEChannel
   static bool ChannelDecodeThreadFunction(void* obj);
   bool ChannelDecodeProcess();
 
-  void OnRttUpdate(uint32_t rtt);
+  void OnRttUpdate(int64_t rtt);
 
  private:
   void ReserveRtpRtcpModules(size_t total_modules)
@@ -452,6 +458,29 @@ class ViEChannel
     }
   } send_side_delay_observer_;
 
+  class RegisterableRtcpPacketTypeCounterObserver
+      : public RegisterableCallback<RtcpPacketTypeCounterObserver> {
+   public:
+    virtual void RtcpPacketTypesCounterUpdated(
+        uint32_t ssrc,
+        const RtcpPacketTypeCounter& packet_counter) override {
+      CriticalSectionScoped cs(critsect_.get());
+      if (callback_)
+        callback_->RtcpPacketTypesCounterUpdated(ssrc, packet_counter);
+      counter_map_[ssrc] = packet_counter;
+    }
+
+    virtual std::map<uint32_t, RtcpPacketTypeCounter> GetPacketTypeCounterMap()
+        const {
+      CriticalSectionScoped cs(critsect_.get());
+      return counter_map_;
+    }
+
+   private:
+    std::map<uint32_t, RtcpPacketTypeCounter> counter_map_
+        GUARDED_BY(critsect_);
+  } rtcp_packet_type_counter_observer_;
+
   int32_t channel_id_;
   int32_t engine_id_;
   uint32_t number_of_cores_;
@@ -467,6 +496,8 @@ class ViEChannel
   scoped_ptr<RtpRtcp> rtp_rtcp_;
   std::list<RtpRtcp*> simulcast_rtp_rtcp_;
   std::list<RtpRtcp*> removed_rtp_rtcp_;
+  scoped_refptr<PayloadRouter> send_payload_router_;
+
   VideoCodingModule* const vcm_;
   ViEReceiver vie_receiver_;
   ViESender vie_sender_;
@@ -505,6 +536,8 @@ class ViEChannel
   // User set MTU, -1 if not set.
   uint16_t mtu_;
   const bool sender_;
+  // Used to skip default encoder in the new API.
+  const bool disable_default_encoder_;
 
   int nack_history_size_sender_;
   int max_nack_reordering_threshold_;

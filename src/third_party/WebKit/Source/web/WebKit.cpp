@@ -79,8 +79,24 @@ public:
     {
         Microtask::performCheckpoint();
         V8GCController::reportDOMMemoryUsageToV8(mainThreadIsolate());
-        V8Initializer::reportRejectedPromises();
+        V8Initializer::reportRejectedPromisesOnMainThread();
     }
+};
+
+class MainThreadTaskRunner: public WebThread::Task {
+    WTF_MAKE_NONCOPYABLE(MainThreadTaskRunner);
+public:
+    MainThreadTaskRunner(WTF::MainThreadFunction* function, void* context)
+        : m_function(function)
+        , m_context(context) { }
+
+    void run() override
+    {
+        m_function(m_context);
+    }
+private:
+    WTF::MainThreadFunction* m_function;
+    void* m_context;
 };
 
 } // namespace
@@ -104,7 +120,7 @@ void initialize(Platform* platform)
     ThreadState::current()->addInterruptor(s_isolateInterruptor);
     ThreadState::current()->registerTraceDOMWrappers(V8PerIsolateData::mainThreadIsolate(), V8GCController::traceDOMWrappers);
 
-    // currentThread will always be non-null in production, but can be null in Chromium unit tests.
+    // currentThread is null if we are running on a thread without a message loop.
     if (WebThread* currentThread = platform->currentThread()) {
         ASSERT(!s_endOfTaskRunner);
         s_endOfTaskRunner = new EndOfTaskRunner;
@@ -134,7 +150,7 @@ static void cryptographicallyRandomValues(unsigned char* buffer, size_t length)
 
 static void callOnMainThreadFunction(WTF::MainThreadFunction function, void* context)
 {
-    Platform::current()->callOnMainThread(function, context);
+    Platform::current()->mainThread()->postTask(FROM_HERE, new MainThreadTaskRunner(function, context));
 }
 
 void initializeWithoutV8(Platform* platform)
@@ -151,7 +167,7 @@ void initializeWithoutV8(Platform* platform)
     Heap::init();
 
     ThreadState::attachMainThread();
-    // currentThread will always be non-null in production, but can be null in Chromium unit tests.
+    // currentThread() is null if we are running on a thread without a message loop.
     if (WebThread* currentThread = platform->currentThread()) {
         ASSERT(!s_pendingGCRunner);
         s_pendingGCRunner = new PendingGCRunner;
@@ -165,15 +181,6 @@ void initializeWithoutV8(Platform* platform)
     DEFINE_STATIC_LOCAL(ModulesInitializer, initializer, ());
     initializer.init();
 
-    // There are some code paths (for example, running WebKit in the browser
-    // process and calling into LocalStorage before anything else) where the
-    // UTF8 string encoding tables are used on a background thread before
-    // they're set up.  This is a problem because their set up routines assert
-    // they're running on the main WebKitThread.  It might be possible to make
-    // the initialization thread-safe, but given that so many code paths use
-    // this, initializing this lazily probably doesn't buy us much.
-    WTF::UTF8Encoding();
-
     setIndexedDBClientCreateFunction(IndexedDBClientImpl::create);
 
     MediaPlayer::setMediaEngineCreateFunction(WebMediaPlayerClientImpl::create);
@@ -181,7 +188,7 @@ void initializeWithoutV8(Platform* platform)
 
 void shutdown()
 {
-    // currentThread will always be non-null in production, but can be null in Chromium unit tests.
+    // currentThread() is null if we are running on a thread without a message loop.
     if (Platform::current()->currentThread()) {
         // We don't need to (cannot) remove s_endOfTaskRunner from the current
         // message loop, because the message loop is already destructed before
@@ -193,7 +200,7 @@ void shutdown()
     ASSERT(s_isolateInterruptor);
     ThreadState::current()->removeInterruptor(s_isolateInterruptor);
 
-    // currentThread will always be non-null in production, but can be null in Chromium unit tests.
+    // currentThread() is null if we are running on a thread without a message loop.
     if (Platform::current()->currentThread()) {
         ASSERT(s_pendingGCRunner);
         delete s_pendingGCRunner;

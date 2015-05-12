@@ -43,12 +43,6 @@ ContentUtilityClientImpl::~ContentUtilityClientImpl()
 {
 }
 
-//static
-void ContentUtilityClientImpl::PreSandboxStartup()
-{
-    PrintingHandler::PreSandboxStartup();
-}
-
 bool ContentUtilityClientImpl::OnMessageReceived(const IPC::Message& message)
 {
     bool handled = true;

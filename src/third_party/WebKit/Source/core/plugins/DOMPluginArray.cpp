@@ -33,7 +33,7 @@ DOMPluginArray::DOMPluginArray(LocalFrame* frame)
 {
 }
 
-void DOMPluginArray::trace(Visitor* visitor)
+DEFINE_TRACE(DOMPluginArray)
 {
     DOMWindowProperty::trace(visitor);
 }
@@ -54,20 +54,7 @@ PassRefPtrWillBeRawPtr<DOMPlugin> DOMPluginArray::item(unsigned index)
     const Vector<PluginInfo>& plugins = data->plugins();
     if (index >= plugins.size())
         return nullptr;
-    return DOMPlugin::create(data, m_frame, index).get();
-}
-
-bool DOMPluginArray::canGetItemsForName(const AtomicString& propertyName)
-{
-    PluginData* data = pluginData();
-    if (!data)
-        return 0;
-    const Vector<PluginInfo>& plugins = data->plugins();
-    for (unsigned i = 0; i < plugins.size(); ++i) {
-        if (plugins[i].name == propertyName)
-            return true;
-    }
-    return false;
+    return DOMPlugin::create(data, m_frame, index);
 }
 
 PassRefPtrWillBeRawPtr<DOMPlugin> DOMPluginArray::namedItem(const AtomicString& propertyName)
@@ -78,7 +65,7 @@ PassRefPtrWillBeRawPtr<DOMPlugin> DOMPluginArray::namedItem(const AtomicString& 
     const Vector<PluginInfo>& plugins = data->plugins();
     for (unsigned i = 0; i < plugins.size(); ++i) {
         if (plugins[i].name == propertyName)
-            return DOMPlugin::create(data, m_frame, i).get();
+            return DOMPlugin::create(data, m_frame, i);
     }
     return nullptr;
 }
@@ -95,10 +82,10 @@ void DOMPluginArray::refresh(bool reload)
 PluginData* DOMPluginArray::pluginData() const
 {
     if (!m_frame)
-        return 0;
+        return nullptr;
     Page* page = m_frame->page();
     if (!page)
-        return 0;
+        return nullptr;
     return page->pluginData();
 }
 

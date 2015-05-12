@@ -6,8 +6,8 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/debug/trace_event.h"
 #include "base/process/process.h"
+#include "base/trace_event/trace_event.h"
 #include "content/browser/browser_main_loop.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/media/media_internals.h"
@@ -143,6 +143,14 @@ void MidiHost::AddInputPort(const media::MidiPortInfo& info) {
 
 void MidiHost::AddOutputPort(const media::MidiPortInfo& info) {
   Send(new MidiMsg_AddOutputPort(info));
+}
+
+void MidiHost::SetInputPortState(uint32 port, media::MidiPortState state) {
+  Send(new MidiMsg_SetInputPortState(port, state));
+}
+
+void MidiHost::SetOutputPortState(uint32 port, media::MidiPortState state) {
+  Send(new MidiMsg_SetOutputPortState(port, state));
 }
 
 void MidiHost::ReceiveMidiData(

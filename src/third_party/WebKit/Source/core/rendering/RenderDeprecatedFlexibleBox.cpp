@@ -26,10 +26,10 @@
 #include "core/rendering/RenderDeprecatedFlexibleBox.h"
 
 #include "core/frame/UseCounter.h"
-#include "core/rendering/RenderLayer.h"
+#include "core/layout/Layer.h"
+#include "core/layout/TextAutosizer.h"
+#include "core/layout/TextRunConstructor.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/TextAutosizer.h"
-#include "core/rendering/TextRunConstructor.h"
 #include "platform/fonts/Font.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/unicode/CharacterNames.h"
@@ -154,7 +154,7 @@ static LayoutUnit marginWidthForChild(RenderBox* child)
     return margin;
 }
 
-static bool childDoesNotAffectWidthOrFlexing(RenderObject* child)
+static bool childDoesNotAffectWidthOrFlexing(LayoutObject* child)
 {
     // Positioned children and collapsed children don't affect the min/max width.
     return child->isOutOfFlowPositioned() || child->style()->visibility() == COLLAPSE;
@@ -174,9 +174,9 @@ static LayoutUnit contentHeightForChild(RenderBox* child)
     return child->logicalHeight() - child->borderAndPaddingLogicalHeight();
 }
 
-void RenderDeprecatedFlexibleBox::styleWillChange(StyleDifference diff, const RenderStyle& newStyle)
+void RenderDeprecatedFlexibleBox::styleWillChange(StyleDifference diff, const LayoutStyle& newStyle)
 {
-    RenderStyle* oldStyle = style();
+    LayoutStyle* oldStyle = style();
     if (oldStyle && !oldStyle->lineClamp().isNone() && newStyle.lineClamp().isNone())
         clearLineClamp();
 
@@ -380,7 +380,7 @@ void RenderDeprecatedFlexibleBox::layoutHorizontalBox(bool relayoutChildren)
         for (RenderBox* child = iterator.first(); child; child = iterator.next()) {
             if (child->isOutOfFlowPositioned()) {
                 child->containingBlock()->insertPositionedObject(child);
-                RenderLayer* childLayer = child->layer();
+                Layer* childLayer = child->layer();
                 childLayer->setStaticInlinePosition(xPos);
                 if (childLayer->staticBlockPosition() != yPos) {
                     childLayer->setStaticBlockPosition(yPos);
@@ -618,7 +618,7 @@ void RenderDeprecatedFlexibleBox::layoutVerticalBox(bool relayoutChildren)
         for (RenderBox* child = iterator.first(); child; child = iterator.next()) {
             if (child->isOutOfFlowPositioned()) {
                 child->containingBlock()->insertPositionedObject(child);
-                RenderLayer* childLayer = child->layer();
+                Layer* childLayer = child->layer();
                 childLayer->setStaticInlinePosition(borderStart() + paddingStart());
                 if (childLayer->staticBlockPosition() != size().height()) {
                     childLayer->setStaticBlockPosition(size().height());
@@ -903,10 +903,10 @@ void RenderDeprecatedFlexibleBox::applyLineClamp(FlexBoxIterator& iterator, bool
         float totalWidth;
         InlineBox* anchorBox = lastLine->lastChild();
         if (anchorBox && anchorBox->renderer().style()->isLink())
-            totalWidth = anchorBox->logicalWidth() + font.width(constructTextRun(this, font, ellipsisAndSpace, 2, style(), style()->direction()));
+            totalWidth = anchorBox->logicalWidth() + font.width(constructTextRun(this, font, ellipsisAndSpace, 2, styleRef(), style()->direction()));
         else {
             anchorBox = 0;
-            totalWidth = font.width(constructTextRun(this, font, &horizontalEllipsis, 1, style(), style()->direction()));
+            totalWidth = font.width(constructTextRun(this, font, &horizontalEllipsis, 1, styleRef(), style()->direction()));
         }
 
         // See if this width can be accommodated on the last visible line
@@ -956,7 +956,7 @@ void RenderDeprecatedFlexibleBox::clearLineClamp()
 void RenderDeprecatedFlexibleBox::placeChild(RenderBox* child, const LayoutPoint& location)
 {
     // FIXME Investigate if this can be removed based on other flags. crbug.com/370010
-    child->setMayNeedPaintInvalidation(true);
+    child->setMayNeedPaintInvalidation();
 
     // Place the child.
     child->setLocation(location);

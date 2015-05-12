@@ -6,9 +6,9 @@
 #define CONTENT_CHILD_BLINK_PLATFORM_IMPL_H_
 
 #include "base/compiler_specific.h"
-#include "base/debug/trace_event.h"
 #include "base/threading/thread_local_storage.h"
 #include "base/timer/timer.h"
+#include "base/trace_event/trace_event.h"
 #include "content/child/webcrypto/webcrypto_impl.h"
 #include "content/child/webfallbackthemeengine_impl.h"
 #include "content/common/content_export.h"
@@ -82,9 +82,7 @@ class CONTENT_EXPORT BlinkPlatformImpl
       const blink::WebURL& url, blink::WebString& mimetype,
       blink::WebString& charset);
   virtual blink::WebURLError cancelledError(const blink::WebURL& url) const;
-  virtual bool isReservedIPAddress(
-      const blink::WebSecurityOrigin&) const;
-  virtual bool isReservedIPAddress(const blink::WebURL&) const;
+  virtual bool isReservedIPAddress(const blink::WebString& host) const;
   virtual blink::WebThread* createThread(const char* name);
   virtual blink::WebThread* currentThread();
   virtual void yieldCurrentThread();
@@ -106,6 +104,7 @@ class CONTENT_EXPORT BlinkPlatformImpl
       const unsigned char* category_group_enabled,
       const char* name,
       unsigned long long id,
+      double timestamp,
       int num_args,
       const char** arg_names,
       const unsigned char* arg_types,
@@ -116,6 +115,7 @@ class CONTENT_EXPORT BlinkPlatformImpl
       const unsigned char* category_group_enabled,
       const char* name,
       unsigned long long id,
+      double timestamp,
       int num_args,
       const char** arg_names,
       const unsigned char* arg_types,
@@ -165,6 +165,9 @@ class CONTENT_EXPORT BlinkPlatformImpl
   virtual void OnStartSharedTimer(base::TimeDelta delay) {}
 
   WebBluetoothImpl* BluetoothImplForTesting() { return bluetooth_.get(); }
+
+  virtual blink::WebString domCodeStringFromEnum(int dom_code);
+  virtual int domEnumFromCodeString(const blink::WebString& codeString);
 
  private:
   static void DestroyCurrentThread(void*);

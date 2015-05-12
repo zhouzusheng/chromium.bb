@@ -22,9 +22,8 @@
 #include "content/common/indexed_db/indexed_db_constants.h"
 #include "content/common/indexed_db/indexed_db_messages.h"
 #include "storage/browser/blob/blob_storage_context.h"
+#include "storage/browser/blob/shareable_file_reference.h"
 #include "storage/browser/quota/quota_manager.h"
-#include "storage/common/blob/blob_data.h"
-#include "storage/common/blob/shareable_file_reference.h"
 
 using storage::ShareableFileReference;
 
@@ -425,12 +424,12 @@ void IndexedDBCallbacks::OnSuccessWithPrefetch(
   DCHECK_EQ(kNoDatabaseCallbacks, ipc_database_callbacks_id_);
   DCHECK_EQ(blink::WebIDBDataLossNone, data_loss_);
 
-  std::vector<IndexedDBKey> msgKeys;
-  std::vector<IndexedDBKey> msgPrimaryKeys;
+  std::vector<IndexedDBKey> msg_keys;
+  std::vector<IndexedDBKey> msg_primary_keys;
 
   for (size_t i = 0; i < keys.size(); ++i) {
-    msgKeys.push_back(keys[i]);
-    msgPrimaryKeys.push_back(primary_keys[i]);
+    msg_keys.push_back(keys[i]);
+    msg_primary_keys.push_back(primary_keys[i]);
   }
 
   scoped_ptr<IndexedDBMsg_CallbacksSuccessCursorPrefetch_Params> params(
@@ -438,8 +437,8 @@ void IndexedDBCallbacks::OnSuccessWithPrefetch(
   params->ipc_thread_id = ipc_thread_id_;
   params->ipc_callbacks_id = ipc_callbacks_id_;
   params->ipc_cursor_id = ipc_cursor_id_;
-  params->keys = msgKeys;
-  params->primary_keys = msgPrimaryKeys;
+  params->keys = msg_keys;
+  params->primary_keys = msg_primary_keys;
   std::vector<std::string>& values_bits = params->values;
   values_bits.resize(values->size());
   std::vector<std::vector<IndexedDBMsg_BlobOrFileInfo> >& values_blob_infos =

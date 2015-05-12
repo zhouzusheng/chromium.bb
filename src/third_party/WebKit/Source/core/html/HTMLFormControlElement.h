@@ -44,7 +44,7 @@ class HTMLFormControlElement : public LabelableElement, public FormAssociatedEle
 
 public:
     virtual ~HTMLFormControlElement();
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     String formEnctype() const;
     void setFormEnctype(const AtomicString&);
@@ -137,7 +137,7 @@ protected:
     virtual bool shouldShowFocusRingOnMouseFocus() const;
     virtual bool shouldHaveFocusAppearance() const override final;
     virtual void dispatchBlurEvent(Element* newFocusedElement) override;
-    virtual void dispatchFocusEvent(Element* oldFocusedElement, FocusType) override;
+    virtual void dispatchFocusEvent(Element* oldFocusedElement, WebFocusType) override;
     virtual void willCallDefaultEventHandler(const Event&) override final;
 
     virtual void didRecalcStyle(StyleRecalcChange) override final;
@@ -156,7 +156,7 @@ private:
 #endif
 
     virtual bool isFormControlElement() const override final { return true; }
-    virtual bool alwaysCreateUserAgentShadowRoot() const override { return true; }
+    virtual bool alwaysCreateClosedShadowRoot() const override { return true; }
 
     virtual short tabIndex() const override final;
 

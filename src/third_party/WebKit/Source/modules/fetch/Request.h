@@ -39,9 +39,6 @@ public:
     static Request* create(ExecutionContext*, Request*, const Dictionary&, ExceptionState&);
     static Request* create(ExecutionContext*, FetchRequestData*);
     static Request* create(ExecutionContext*, const WebServiceWorkerRequest&);
-    // The 'FetchRequestData' object is shared between requests, as it is
-    // immutable to the user after Request creation. Headers are copied.
-    static Request* create(const Request&);
 
     const FetchRequestData* request() { return m_request; }
 
@@ -61,10 +58,13 @@ public:
     void setBodyBlobHandle(PassRefPtr<BlobDataHandle>);
     bool hasBody() const { return m_request->blobDataHandle(); }
 
-    void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
+    // The 'FetchRequestData' object is shared between requests, as it is
+    // immutable to the user after Request creation. Headers are copied.
     explicit Request(const Request&);
+
     Request(ExecutionContext*, FetchRequestData*);
     Request(ExecutionContext*, const WebServiceWorkerRequest&);
 

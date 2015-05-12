@@ -8,8 +8,8 @@
 
 #include "base/bind.h"
 #include "base/containers/hash_tables.h"
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
+#include "base/trace_event/trace_event.h"
 #include "cc/base/math_util.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/delegated_frame_data.h"
@@ -433,6 +433,10 @@ void SurfaceAggregator::RemoveUnreferencedChildren() {
         provider_->DestroyChild(it->second);
         surface_id_to_resource_child_id_.erase(it);
       }
+
+      Surface* surface_ptr = manager_->GetSurfaceForId(surface.first);
+      if (surface_ptr)
+        surface_ptr->RunDrawCallbacks(SurfaceDrawStatus::DRAW_SKIPPED);
     }
   }
 }

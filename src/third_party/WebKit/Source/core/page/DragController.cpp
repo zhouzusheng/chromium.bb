@@ -54,6 +54,7 @@
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLPlugInElement.h"
+#include "core/layout/LayoutTheme.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/loader/FrameLoader.h"
 #include "core/page/DragClient.h"
@@ -63,13 +64,12 @@
 #include "core/page/EventHandler.h"
 #include "core/page/Page.h"
 #include "core/frame/Settings.h"
-#include "core/rendering/HitTestRequest.h"
-#include "core/rendering/HitTestResult.h"
-#include "core/rendering/RenderImage.h"
-#include "core/rendering/RenderTheme.h"
+#include "core/layout/HitTestRequest.h"
+#include "core/layout/HitTestResult.h"
+#include "core/layout/LayoutImage.h"
 #include "core/rendering/RenderView.h"
 #include "platform/DragImage.h"
-#include "platform/geometry/FloatRect.h"
+#include "platform/geometry/IntRect.h"
 #include "platform/graphics/Image.h"
 #include "platform/graphics/ImageOrientation.h"
 #include "platform/network/ResourceRequest.h"
@@ -634,7 +634,7 @@ Node* DragController::draggableNode(const LocalFrame* src, Node* startNode, cons
 
     Node* node = nullptr;
     DragSourceAction candidateDragType = DragSourceActionNone;
-    for (const RenderObject* renderer = startNode->renderer(); renderer; renderer = renderer->parent()) {
+    for (const LayoutObject* renderer = startNode->renderer(); renderer; renderer = renderer->parent()) {
         node = renderer->nonPseudoNode();
         if (!node) {
             // Anonymous render blocks don't correspond to actual DOM nodes, so we skip over them
@@ -697,10 +697,10 @@ Node* DragController::draggableNode(const LocalFrame* src, Node* startNode, cons
 static ImageResource* getImageResource(Element* element)
 {
     ASSERT(element);
-    RenderObject* renderer = element->renderer();
+    LayoutObject* renderer = element->renderer();
     if (!renderer || !renderer->isImage())
         return nullptr;
-    RenderImage* image = toRenderImage(renderer);
+    LayoutImage* image = toLayoutImage(renderer);
     return image->cachedImage();
 }
 
@@ -809,8 +809,9 @@ static PassOwnPtr<DragImage> dragImageForImage(Element* element, Image* image, c
     OwnPtr<DragImage> dragImage;
     IntPoint origin;
 
+    InterpolationQuality interpolationQuality = element->computedStyle()->imageRendering() == ImageRenderingPixelated ? InterpolationNone : InterpolationHigh;
     if (image->size().height() * image->size().width() <= MaxOriginalImageArea
-        && (dragImage = DragImage::create(image, element->renderer() ? element->renderer()->shouldRespectImageOrientation() : DoNotRespectImageOrientation))) {
+        && (dragImage = DragImage::create(image, element->renderer() ? element->renderer()->shouldRespectImageOrientation() : DoNotRespectImageOrientation, 1 /* deviceScaleFactor */, interpolationQuality))) {
         IntSize originalSize = imageRect.size();
         origin = imageRect.location();
 
@@ -835,7 +836,7 @@ static PassOwnPtr<DragImage> dragImageForImage(Element* element, Image* image, c
 static PassOwnPtr<DragImage> dragImageForLink(const KURL& linkURL, const String& linkText, float deviceScaleFactor, const IntPoint& mouseDraggedPoint, IntPoint& dragLoc)
 {
     FontDescription fontDescription;
-    RenderTheme::theme().systemFont(blink::CSSValueNone, fontDescription);
+    LayoutTheme::theme().systemFont(blink::CSSValueNone, fontDescription);
     OwnPtr<DragImage> dragImage = DragImage::create(linkURL, linkText, fontDescription, deviceScaleFactor);
 
     IntSize size = dragImage ? dragImage->size() : IntSize();

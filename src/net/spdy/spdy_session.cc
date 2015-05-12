@@ -15,7 +15,6 @@
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/sparse_histogram.h"
-#include "base/metrics/stats_counters.h"
 #include "base/profiler/scoped_tracker.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
@@ -450,8 +449,8 @@ void SplitPushedHeadersToRequestAndResponse(const SpdyHeaderBlock& headers,
         to_insert = request_headers;
     } else {
       const char* host = protocol_version >= SPDY4 ? ":authority" : ":host";
-      static const char* scheme = ":scheme";
-      static const char* path = ":path";
+      static const char scheme[] = ":scheme";
+      static const char path[] = ":path";
       if (it->first == host || it->first == scheme || it->first == path)
         to_insert = request_headers;
     }
@@ -717,9 +716,6 @@ void SpdySession::InitializeWithSocket(
   // TODO(akalin): Check connection->is_initialized() instead. This
   // requires re-working CreateFakeSpdySession(), though.
   DCHECK(connection->socket());
-
-  base::StatsCounter spdy_sessions("spdy.sessions");
-  spdy_sessions.Increment();
 
   connection_ = connection.Pass();
   is_secure_ = is_secure;
@@ -1084,8 +1080,6 @@ scoped_ptr<SpdyFrame> SpdySession::CreateSynStream(
     syn_frame.reset(buffered_spdy_framer_->SerializeFrame(headers));
   }
 
-  base::StatsCounter spdy_requests("spdy.requests");
-  spdy_requests.Increment();
   streams_initiated_count_++;
 
   if (net_log().IsLogging()) {
@@ -1468,6 +1462,9 @@ int SpdySession::DoReadComplete(int result) {
 }
 
 void SpdySession::PumpWriteLoop(WriteState expected_write_state, int result) {
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/457517 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("457517 SpdySession::PumpWriteLoop"));
   CHECK(!in_io_loop_);
   DCHECK_EQ(write_state_, expected_write_state);
 
@@ -1519,6 +1516,9 @@ int SpdySession::DoWriteLoop(WriteState expected_write_state, int result) {
 }
 
 int SpdySession::DoWrite() {
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/457517 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("457517 SpdySession::DoWrite"));
   CHECK(in_io_loop_);
 
   DCHECK(buffered_spdy_framer_);
@@ -1582,6 +1582,9 @@ int SpdySession::DoWrite() {
 }
 
 int SpdySession::DoWriteComplete(int result) {
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/457517 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("457517 SpdySession::DoWriteComplete"));
   CHECK(in_io_loop_);
   DCHECK_NE(result, ERR_IO_PENDING);
   DCHECK_GT(in_flight_write_->GetRemainingSize(), 0u);
@@ -1649,6 +1652,9 @@ void SpdySession::DcheckDraining() const {
 
 void SpdySession::StartGoingAway(SpdyStreamId last_good_stream_id,
                                  Error status) {
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/457517 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("457517 SpdySession::StartGoingAway"));
   DCHECK_GE(availability_state_, STATE_GOING_AWAY);
 
   // The loops below are carefully written to avoid reentrancy problems.
@@ -1768,13 +1774,9 @@ void SpdySession::LogAbandonedActiveStream(ActiveStreamMap::const_iterator it,
   DCHECK_GT(it->first, 0u);
   LogAbandonedStream(it->second.stream, status);
   ++streams_abandoned_count_;
-  base::StatsCounter abandoned_streams("spdy.abandoned_streams");
-  abandoned_streams.Increment();
   if (it->second.stream->type() == SPDY_PUSH_STREAM &&
       unclaimed_pushed_streams_.find(it->second.stream->url()) !=
       unclaimed_pushed_streams_.end()) {
-    base::StatsCounter abandoned_push_streams("spdy.abandoned_push_streams");
-    abandoned_push_streams.Increment();
   }
 }
 
@@ -1962,8 +1964,6 @@ void SpdySession::DeleteStream(scoped_ptr<SpdyStream> stream, int status) {
 }
 
 base::WeakPtr<SpdyStream> SpdySession::GetActivePushStream(const GURL& url) {
-  base::StatsCounter used_push_streams("spdy.claimed_push_streams");
-
   PushedStreamMap::iterator unclaimed_it = unclaimed_pushed_streams_.find(url);
   if (unclaimed_it == unclaimed_pushed_streams_.end())
     return base::WeakPtr<SpdyStream>();
@@ -1980,7 +1980,6 @@ base::WeakPtr<SpdyStream> SpdySession::GetActivePushStream(const GURL& url) {
   net_log_.AddEvent(NetLog::TYPE_SPDY_STREAM_ADOPTED_PUSH_STREAM,
                     base::Bind(&NetLogSpdyAdoptedPushStreamCallback,
                                active_it->second.stream->stream_id(), &url));
-  used_push_streams.Increment();
   return active_it->second.stream->GetWeakPtr();
 }
 
@@ -2051,14 +2050,6 @@ void SpdySession::OnStreamFrameData(SpdyStreamId stream_id,
                                     size_t len,
                                     bool fin) {
   CHECK(in_io_loop_);
-
-  if (data == NULL && len != 0) {
-    // This is notification of consumed data padding.
-    // TODO(jgraettinger): Properly flow padding into WINDOW_UPDATE frames.
-    // See crbug.com/353012.
-    return;
-  }
-
   DCHECK_LT(len, 1u << 24);
   if (net_log().IsLogging()) {
     net_log().AddEvent(
@@ -2106,6 +2097,25 @@ void SpdySession::OnStreamFrameData(SpdyStreamId stream_id,
   }
 
   stream->OnDataReceived(buffer.Pass());
+}
+
+void SpdySession::OnStreamPadding(SpdyStreamId stream_id, size_t len) {
+  CHECK(in_io_loop_);
+
+  if (flow_control_state_ != FLOW_CONTROL_STREAM_AND_SESSION)
+    return;
+
+  // Decrease window size because padding bytes are received.
+  // Increase window size because padding bytes are consumed (by discarding).
+  // Net result: |session_unacked_recv_window_bytes_| increases by |len|,
+  // |session_recv_window_size_| does not change.
+  DecreaseRecvWindowSize(static_cast<int32>(len));
+  IncreaseRecvWindowSize(static_cast<int32>(len));
+
+  ActiveStreamMap::iterator it = active_streams_.find(stream_id);
+  if (it == active_streams_.end())
+    return;
+  it->second.stream->OnPaddingConsumed(len);
 }
 
 void SpdySession::OnSettings(bool clear_persisted) {
@@ -2255,14 +2265,9 @@ void SpdySession::OnSynStream(SpdyStreamId stream_id,
     return;
   }
 
-  if (OnInitialResponseHeadersReceived(response_headers,
-                                       response_time,
-                                       recv_first_byte_time,
-                                       active_it->second.stream) != OK)
-    return;
-
-  base::StatsCounter push_requests("spdy.pushed_streams");
-  push_requests.Increment();
+  OnInitialResponseHeadersReceived(response_headers, response_time,
+                                   recv_first_byte_time,
+                                   active_it->second.stream);
 }
 
 void SpdySession::DeleteExpiredPushedStreams() {
@@ -2720,12 +2725,12 @@ bool SpdySession::TryCreatePushStream(SpdyStreamId stream_id,
 
   last_compressed_frame_len_ = 0;
 
-  DeleteExpiredPushedStreams();
   PushedStreamMap::iterator inserted_pushed_it =
       unclaimed_pushed_streams_.insert(
           pushed_it,
           std::make_pair(gurl, PushedStreamInfo(stream_id, time_func_())));
   DCHECK(inserted_pushed_it != pushed_it);
+  DeleteExpiredPushedStreams();
 
   InsertActivatedStream(stream.Pass());
 
@@ -2758,9 +2763,6 @@ void SpdySession::OnPushPromise(SpdyStreamId stream_id,
   // TODO(baranovich): pass parent stream id priority?
   if (!TryCreatePushStream(promised_stream_id, stream_id, 0, headers))
     return;
-
-  base::StatsCounter push_requests("spdy.pushed_streams");
-  push_requests.Increment();
 }
 
 void SpdySession::SendStreamWindowUpdate(SpdyStreamId stream_id,

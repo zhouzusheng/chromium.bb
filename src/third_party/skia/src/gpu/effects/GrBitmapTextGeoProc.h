@@ -22,43 +22,48 @@ class GrInvariantOutput;
 class GrBitmapTextGeoProc : public GrGeometryProcessor {
 public:
     static GrGeometryProcessor* Create(GrColor color, GrTexture* tex, const GrTextureParams& p,
-                                       bool useColorAttrib, bool opaqueVertexColors,
+                                       GrMaskFormat format, bool opaqueVertexColors,
                                        const SkMatrix& localMatrix) {
-        return SkNEW_ARGS(GrBitmapTextGeoProc, (color, tex, p, useColorAttrib, opaqueVertexColors,
+        return SkNEW_ARGS(GrBitmapTextGeoProc, (color, tex, p, format, opaqueVertexColors,
                                                 localMatrix));
     }
 
     virtual ~GrBitmapTextGeoProc() {}
 
-    virtual const char* name() const SK_OVERRIDE { return "Texture"; }
+    const char* name() const SK_OVERRIDE { return "Texture"; }
 
-    const GrAttribute* inPosition() const { return fInPosition; }
-    const GrAttribute* inColor() const { return fInColor; }
-    const GrAttribute* inTextureCoords() const { return fInTextureCoords; }
+    const Attribute* inPosition() const { return fInPosition; }
+    const Attribute* inColor() const { return fInColor; }
+    const Attribute* inTextureCoords() const { return fInTextureCoords; }
+    GrMaskFormat maskFormat() const { return fMaskFormat; }
 
     virtual void getGLProcessorKey(const GrBatchTracker& bt,
                                    const GrGLCaps& caps,
                                    GrProcessorKeyBuilder* b) const SK_OVERRIDE;
 
-    virtual GrGLGeometryProcessor* createGLInstance(const GrBatchTracker& bt) const SK_OVERRIDE;
+    virtual GrGLPrimitiveProcessor* createGLInstance(const GrBatchTracker& bt,
+                                                     const GrGLCaps& caps) const SK_OVERRIDE;
 
-    void initBatchTracker(GrBatchTracker*, const InitBT&) const SK_OVERRIDE;
+    void initBatchTracker(GrBatchTracker*, const GrPipelineInfo&) const SK_OVERRIDE;
     bool onCanMakeEqual(const GrBatchTracker&,
                         const GrGeometryProcessor&,
                         const GrBatchTracker&) const SK_OVERRIDE;
 
 private:
     GrBitmapTextGeoProc(GrColor, GrTexture* texture, const GrTextureParams& params,
-                        bool useColorAttrib, bool opaqueVertexColors, const SkMatrix& localMatrix);
+                        GrMaskFormat format, bool opaqueVertexColors, const SkMatrix& localMatrix);
 
-    virtual bool onIsEqual(const GrGeometryProcessor& other) const SK_OVERRIDE;
+    bool onIsEqual(const GrGeometryProcessor& other) const SK_OVERRIDE;
 
-    virtual void onGetInvariantOutputCoverage(GrInitInvariantOutput*) const SK_OVERRIDE;
+    void onGetInvariantOutputColor(GrInitInvariantOutput*) const SK_OVERRIDE;
 
-    GrTextureAccess    fTextureAccess;
-    const GrAttribute* fInPosition;
-    const GrAttribute* fInColor;
-    const GrAttribute* fInTextureCoords;
+    void onGetInvariantOutputCoverage(GrInitInvariantOutput*) const SK_OVERRIDE;
+
+    GrTextureAccess  fTextureAccess;
+    const Attribute* fInPosition;
+    const Attribute* fInColor;
+    const Attribute* fInTextureCoords;
+    GrMaskFormat     fMaskFormat;
 
     GR_DECLARE_GEOMETRY_PROCESSOR_TEST;
 

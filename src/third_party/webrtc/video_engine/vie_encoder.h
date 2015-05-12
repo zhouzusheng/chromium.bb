@@ -13,16 +13,18 @@
 
 #include <list>
 #include <map>
+#include <vector>
 
+#include "webrtc/base/scoped_ptr.h"
 #include "webrtc/base/thread_annotations.h"
 #include "webrtc/common_types.h"
 #include "webrtc/modules/bitrate_controller/include/bitrate_controller.h"
 #include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp_defines.h"
 #include "webrtc/modules/video_coding/main/interface/video_coding_defines.h"
 #include "webrtc/modules/video_processing/main/interface/video_processing.h"
-#include "webrtc/system_wrappers/interface/scoped_ptr.h"
 #include "webrtc/typedefs.h"
 #include "webrtc/frame_callback.h"
+#include "webrtc/system_wrappers/interface/scoped_refptr.h"
 #include "webrtc/video_engine/vie_defines.h"
 #include "webrtc/video_engine/vie_frame_provider_base.h"
 
@@ -32,6 +34,7 @@ class Config;
 class CriticalSectionWrapper;
 class EncodedImageCallback;
 class PacedSender;
+class PayloadRouter;
 class ProcessThread;
 class QMVideoSettingsCallback;
 class RtpRtcp;
@@ -57,10 +60,22 @@ class ViEEncoder
              uint32_t number_of_cores,
              const Config& config,
              ProcessThread& module_process_thread,
-             BitrateController* bitrate_controller);
+             BitrateController* bitrate_controller,
+             bool disable_default_encoder);
   ~ViEEncoder();
 
   bool Init();
+
+  // This function is assumed to be called before any frames are delivered and
+  // only once.
+  // Ideally this would be done in Init, but the dependencies between ViEEncoder
+  // and ViEChannel makes it really hard to do in a good way.
+  void StartThreadsAndSetSendPayloadRouter(
+      scoped_refptr<PayloadRouter> send_payload_router);
+
+  // This function must be called before the corresponding ViEChannel is
+  // deleted.
+  void StopThreadsAndRemovePayloadRouter();
 
   void SetNetworkTransmissionState(bool is_transmitting);
 
@@ -110,7 +125,7 @@ class ViEEncoder
   int32_t SendCodecStatistics(uint32_t* num_key_frames,
                               uint32_t* num_delta_frames);
 
-  int PacerQueuingDelayMs() const;
+  int64_t PacerQueuingDelayMs() const;
 
   int CodecTargetBitrate(uint32_t* bitrate) const;
   // Loss protection.
@@ -181,7 +196,7 @@ class ViEEncoder
   // Called by BitrateObserver.
   void OnNetworkChanged(uint32_t bitrate_bps,
                         uint8_t fraction_lost,
-                        uint32_t round_trip_time_ms);
+                        int64_t round_trip_time_ms);
 
   // Called by PacedSender.
   bool TimeToSendPacket(uint32_t ssrc, uint16_t sequence_number,
@@ -197,15 +212,17 @@ class ViEEncoder
   int32_t engine_id_;
   const int channel_id_;
   const uint32_t number_of_cores_;
+  const bool disable_default_encoder_;
 
   VideoCodingModule& vcm_;
   VideoProcessingModule& vpm_;
-  scoped_ptr<RtpRtcp> default_rtp_rtcp_;
-  scoped_ptr<CriticalSectionWrapper> callback_cs_;
-  scoped_ptr<CriticalSectionWrapper> data_cs_;
-  scoped_ptr<BitrateObserver> bitrate_observer_;
-  scoped_ptr<PacedSender> paced_sender_;
-  scoped_ptr<ViEPacedSenderCallback> pacing_callback_;
+  rtc::scoped_ptr<RtpRtcp> default_rtp_rtcp_;
+  scoped_refptr<PayloadRouter> send_payload_router_;
+  rtc::scoped_ptr<CriticalSectionWrapper> callback_cs_;
+  rtc::scoped_ptr<CriticalSectionWrapper> data_cs_;
+  rtc::scoped_ptr<BitrateObserver> bitrate_observer_;
+  rtc::scoped_ptr<PacedSender> paced_sender_;
+  rtc::scoped_ptr<ViEPacedSenderCallback> pacing_callback_;
 
   BitrateController* bitrate_controller_;
 
@@ -225,6 +242,7 @@ class ViEEncoder
   ViEEncoderObserver* codec_observer_ GUARDED_BY(callback_cs_);
   ViEEffectFilter* effect_filter_ GUARDED_BY(callback_cs_);
   ProcessThread& module_process_thread_;
+  rtc::scoped_ptr<ProcessThread> pacer_thread_;
 
   bool has_received_sli_ GUARDED_BY(data_cs_);
   uint8_t picture_id_sli_ GUARDED_BY(data_cs_);

@@ -25,25 +25,24 @@
 #ifndef RenderFullScreen_h
 #define RenderFullScreen_h
 
+#include "core/layout/style/StyleInheritedData.h"
 #include "core/rendering/RenderFlexibleBox.h"
-#include "core/rendering/style/StyleInheritedData.h"
 
 namespace blink {
 
 class RenderFullScreen final : public RenderFlexibleBox {
 public:
     static RenderFullScreen* createAnonymous(Document*);
-    virtual void trace(Visitor*) override;
 
-    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectRenderFullScreen || RenderFlexibleBox::isOfType(type); }
+    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectRenderFullScreen || RenderFlexibleBox::isOfType(type); }
     virtual const char* renderName() const override { return "RenderFullScreen"; }
 
     void setPlaceholder(RenderBlock*);
     RenderBlock* placeholder() { return m_placeholder; }
-    void createPlaceholder(PassRefPtr<RenderStyle>, const LayoutRect& frameRect);
+    void createPlaceholder(PassRefPtr<LayoutStyle>, const LayoutRect& frameRect);
 
 
-    static RenderObject* wrapRenderer(RenderObject*, RenderObject*, Document*);
+    static LayoutObject* wrapRenderer(LayoutObject*, LayoutObject*, Document*);
     void unwrapRenderer();
 
     void updateStyle();
@@ -53,10 +52,10 @@ private:
     virtual void willBeDestroyed() override;
 
 protected:
-    RawPtrWillBeMember<RenderBlock> m_placeholder;
+    RenderBlock* m_placeholder;
 };
 
-DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderFullScreen, isRenderFullScreen());
+DEFINE_LAYOUT_OBJECT_TYPE_CASTS(RenderFullScreen, isRenderFullScreen());
 
 }
 

@@ -10,6 +10,7 @@
 #include "base/files/memory_mapped_file.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
+#include "base/metrics/field_trial.h"
 #include "base/rand_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/sys_info.h"
@@ -27,6 +28,8 @@
 #endif  // OS_MACOSX
 #include "base/path_service.h"
 #endif  // V8_USE_EXTERNAL_STARTUP_DATA
+
+#include <blpv8_products.h>  // For BLPV8_NATIVES_BLOB_NAME, BLPV8_SNAPSHOT_BLOB_NAME
 
 namespace gin {
 
@@ -105,9 +108,22 @@ bool VerifyV8SnapshotFile(base::MemoryMappedFile* snapshot_file,
   return !memcmp(fingerprint, output, sizeof(output));
 }
 #endif  // V8_VERIFY_EXTERNAL_STARTUP_DATA
+#endif  // V8_USE_EXTERNAL_STARTUP_DATA
+
+}  // namespace
+
+#if defined(V8_USE_EXTERNAL_STARTUP_DATA)
+
+#if defined(V8_VERIFY_EXTERNAL_STARTUP_DATA)
+// Defined in gen/gin/v8_snapshot_fingerprint.cc
+extern "C" {
+    __declspec(dllimport) const unsigned char* GetV8NativesFingerprint();
+    __declspec(dllimport) const unsigned char* GetV8SnapshotFingerprint();
+}
+#endif  // V8_VERIFY_EXTERNAL_STARTUP_DATA
 
 #if !defined(OS_MACOSX)
-const int v8_snapshot_dir =
+const int IsolateHolder::kV8SnapshotBasePathKey =
 #if defined(OS_ANDROID)
     base::DIR_ANDROID_APP_DATA;
 #elif defined(OS_POSIX)
@@ -117,20 +133,8 @@ const int v8_snapshot_dir =
 #endif  // OS_ANDROID
 #endif  // !OS_MACOSX
 
-#endif  // V8_USE_EXTERNAL_STARTUP_DATA
-
-}  // namespace
-
-#if defined(V8_USE_EXTERNAL_STARTUP_DATA)
-
-#if defined(V8_VERIFY_EXTERNAL_STARTUP_DATA)
-// Defined in gen/gin/v8_snapshot_fingerprint.cc
-extern const unsigned char g_natives_fingerprint[];
-extern const unsigned char g_snapshot_fingerprint[];
-#endif  // V8_VERIFY_EXTERNAL_STARTUP_DATA
-
-const char IsolateHolder::kNativesFileName[] = "natives_blob.bin";
-const char IsolateHolder::kSnapshotFileName[] = "snapshot_blob.bin";
+const char IsolateHolder::kNativesFileName[] = BLPV8_NATIVES_BLOB_NAME;
+const char IsolateHolder::kSnapshotFileName[] = BLPV8_SNAPSHOT_BLOB_NAME;
 
 // static
 bool IsolateHolder::LoadV8Snapshot() {
@@ -139,7 +143,7 @@ bool IsolateHolder::LoadV8Snapshot() {
 
 #if !defined(OS_MACOSX)
   base::FilePath data_path;
-  PathService::Get(v8_snapshot_dir, &data_path);
+  PathService::Get(kV8SnapshotBasePathKey, &data_path);
   DCHECK(!data_path.empty());
 
   base::FilePath natives_path = data_path.AppendASCII(kNativesFileName);
@@ -161,8 +165,8 @@ bool IsolateHolder::LoadV8Snapshot() {
     return false;
 
 #if defined(V8_VERIFY_EXTERNAL_STARTUP_DATA)
-  return VerifyV8SnapshotFile(g_mapped_natives, g_natives_fingerprint) &&
-         VerifyV8SnapshotFile(g_mapped_snapshot, g_snapshot_fingerprint);
+  return VerifyV8SnapshotFile(g_mapped_natives, GetV8NativesFingerprint()) &&
+         VerifyV8SnapshotFile(g_mapped_snapshot, GetV8SnapshotFingerprint());
 #else
   return true;
 #endif  // V8_VERIFY_EXTERNAL_STARTUP_DATA
@@ -253,6 +257,7 @@ IsolateHolder::~IsolateHolder() {
 #endif
   isolate_data_.reset();
   isolate_->Dispose();
+  isolate_ = NULL;
 }
 
 // static
@@ -266,8 +271,12 @@ void IsolateHolder::Initialize(ScriptMode mode,
   v8::V8::SetArrayBufferAllocator(allocator);
   g_array_buffer_allocator = allocator;
   if (mode == gin::IsolateHolder::kStrictMode) {
-    static const char v8_flags[] = "--use_strict";
-    v8::V8::SetFlagsFromString(v8_flags, sizeof(v8_flags) - 1);
+    static const char use_strict[] = "--use_strict";
+    v8::V8::SetFlagsFromString(use_strict, sizeof(use_strict) - 1);
+  }
+  if (base::FieldTrialList::FindFullName("V8VerifyHeap") == "Enabled") {
+    static const char verify_heap[] = "--verify_heap";
+    v8::V8::SetFlagsFromString(verify_heap, sizeof(verify_heap) - 1);
   }
   v8::V8::SetEntropySource(&GenerateEntropy);
 #if defined(V8_USE_EXTERNAL_STARTUP_DATA)

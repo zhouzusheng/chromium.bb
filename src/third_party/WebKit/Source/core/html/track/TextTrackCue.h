@@ -77,15 +77,19 @@ public:
     virtual bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>) override;
 
     bool isActive();
-    void setIsActive(bool);
+    void setIsActive(bool active) { m_isActive = active; }
 
-    virtual void updateDisplay(const IntSize& videoSize, HTMLDivElement& container) = 0;
+    virtual void updateDisplay(HTMLDivElement& container) = 0;
 
     // FIXME: Consider refactoring to eliminate or merge the following three members.
     // https://code.google.com/p/chromium/issues/detail?id=322434
     virtual void updateDisplayTree(double movieTime) = 0;
-    virtual void removeDisplayTree() = 0;
-    virtual void notifyRegionWhenRemovingDisplayTree(bool notifyRegion) = 0;
+
+    enum RemovalNotification {
+        DontNotifyRegion,
+        NotifyRegion
+    };
+    virtual void removeDisplayTree(RemovalNotification = NotifyRegion) = 0;
 
     virtual const AtomicString& interfaceName() const override;
 
@@ -96,7 +100,7 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(enter);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(exit);
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 protected:
     TextTrackCue(double start, double end);

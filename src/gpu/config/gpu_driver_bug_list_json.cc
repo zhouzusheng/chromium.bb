@@ -19,7 +19,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
 {
   "name": "gpu driver bug list",
   // Please update the version number whenever you change this file.
-  "version": "7.16",
+  "version": "7.18",
   "entries": [
     {
       "id": 1,
@@ -1107,6 +1107,35 @@ LONG_STRING_CONST(
       ]
     },
     {
+      "id": 98,
+      "description": "PowerVR SGX 540 drivers throw GL_OUT_OF_MEMORY error when a buffer object's size is set to 0",
+      "cr_bugs": [451501],
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "Imagination.*",
+      "gl_renderer": "PowerVR SGX 540",
+      "features": [
+        "use_non_zero_size_for_client_side_stream_buffers"
+      ]
+    },
+    {
+      "id": 99,
+      "description": "Qualcomm driver before Lollipop deletes egl sync objects after context destruction",
+      "cr_bugs": [453857],
+      "os": {
+        "type": "android",
+        "version": {
+          "op": "<",
+          "value": "5.0.0"
+        }
+      },
+      "gl_vendor": "Qualcomm.*",
+      "features": [
+        "ignore_egl_sync_failures"
+      ]
+    },
+    {
       "id": 100,
       "description": "Disable Direct3D11 on systems with AMD switchable graphics",
       "cr_bugs": [451420],
@@ -1116,6 +1145,49 @@ LONG_STRING_CONST(
       "multi_gpu_style": "amd_switchable",
       "features": [
         "disable_d3d11"
+      ]
+    },
+    {
+      "id": 101,
+      "description": "The Mali-Txxx driver hangs when reading from currently displayed buffer",
+      "cr_bugs": [457511],
+      "os": {
+        "type": "chromeos"
+      },
+      "gl_vendor": "ARM.*",
+      "gl_renderer": "Mali-T.*",
+      "features": [
+        "disable_post_sub_buffers_for_onscreen_surfaces"
+      ]
+    },
+    {
+      "id": 102,
+      "description": "Adreno 420 driver loses FBO attachment contents on bound FBO deletion",
+      "cr_bugs": [457027],
+      "os": {
+        "type": "android",
+        "version": {
+          "op": ">",
+          "value": "5.0.2"
+        }
+      },
+      "gl_vendor": "Qualcomm.*",
+      "gl_renderer": ".*420",
+      "features": [
+        "unbind_attachments_on_bound_render_fbo_delete"
+      ]
+    },
+    {
+      "id": 103,
+      "description": "Adreno 420 driver drops draw calls after FBO invalidation",
+      "cr_bugs": [443060],
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "Qualcomm.*",
+      "gl_renderer": ".*420",
+      "features": [
+        "disable_fbo_invalidations"
       ]
     }
   ]

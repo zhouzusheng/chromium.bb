@@ -40,7 +40,7 @@
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLStyleElement.h"
 #include "core/html/HTMLTableRowElement.h"
-#include "core/rendering/RenderTableCell.h"
+#include "core/layout/LayoutTableCell.h"
 #include "core/rendering/RenderText.h"
 
 namespace blink {
@@ -374,8 +374,8 @@ void DeleteSelectionCommand::removeNode(PassRefPtrWillBeRawPtr<Node> node, Shoul
 
         // Make sure empty cell has some height, if a placeholder can be inserted.
         document().updateLayoutIgnorePendingStylesheets();
-        RenderObject *r = node->renderer();
-        if (r && r->isTableCell() && toRenderTableCell(r)->contentHeight() <= 0) {
+        LayoutObject* r = node->renderer();
+        if (r && r->isTableCell() && toLayoutTableCell(r)->contentHeight() <= 0) {
             Position firstEditablePosition = firstEditablePositionInNode(node.get());
             if (firstEditablePosition.isNotNull())
                 insertBlockPlaceholder(firstEditablePosition);
@@ -781,7 +781,7 @@ void DeleteSelectionCommand::doApply()
     if (!m_hasSelectionToDelete)
         m_selectionToDelete = endingSelection();
 
-    if (!m_selectionToDelete.isNonOrphanedRange())
+    if (!m_selectionToDelete.isNonOrphanedRange() || !m_selectionToDelete.isContentEditable())
         return;
 
     // save this to later make the selection with
@@ -875,7 +875,7 @@ bool DeleteSelectionCommand::preservesTypingStyle() const
     return m_typingStyle;
 }
 
-void DeleteSelectionCommand::trace(Visitor* visitor)
+DEFINE_TRACE(DeleteSelectionCommand)
 {
     visitor->trace(m_selectionToDelete);
     visitor->trace(m_upstreamStart);

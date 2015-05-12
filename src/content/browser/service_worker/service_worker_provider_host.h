@@ -45,11 +45,18 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
     : public NON_EXPORTED_BASE(ServiceWorkerRegistration::Listener),
       public base::SupportsWeakPtr<ServiceWorkerProviderHost> {
  public:
-  typedef base::Callback<void(bool)> FocusCallback;
+  using GetClientInfoCallback =
+      base::Callback<void(const ServiceWorkerClientInfo&)>;
 
+  // If |render_frame_id| is MSG_ROUTING_NONE, this provider host works for the
+  // worker context, i.e. ServiceWorker or SharedWorker.
+  // |provider_type| gives additional information whether the provider is
+  // created for controller (ServiceWorker) or controllee (Document or
+  // SharedWorker).
   ServiceWorkerProviderHost(int render_process_id,
                             int render_frame_id,
                             int provider_id,
+                            ServiceWorkerProviderType provider_type,
                             base::WeakPtr<ServiceWorkerContextCore> context,
                             ServiceWorkerDispatcherHost* dispatcher_host);
   virtual ~ServiceWorkerProviderHost();
@@ -94,6 +101,8 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   void SetTopmostFrameUrl(const GURL& url);
   const GURL& topmost_frame_url() const { return topmost_frame_url_; }
 
+  ServiceWorkerProviderType provider_type() const { return provider_type_; }
+
   // Associates to |registration| to listen for its version change events.
   void AssociateRegistration(ServiceWorkerRegistration* registration);
 
@@ -115,6 +124,12 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
       base::WeakPtr<storage::BlobStorageContext> blob_storage_context,
       scoped_refptr<ResourceRequestBody> body);
 
+  // Creates a ServiceWorkerHandle to retain |version| and returns a
+  // ServiceWorkerInfo with a newly created handle ID. The handle is held in
+  // the dispatcher host until its ref-count becomes zero.
+  ServiceWorkerObjectInfo CreateAndRegisterServiceWorkerHandle(
+      ServiceWorkerVersion* version);
+
   // Returns true if |registration| can be associated with this provider.
   bool CanAssociateRegistration(ServiceWorkerRegistration* registration);
 
@@ -133,16 +148,18 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
 
   // Activates the WebContents associated with
   // { render_process_id_, render_frame_id_ }.
-  // Runs the |callback| with the result in parameter describing whether the
-  // focusing action was successful.
-  void Focus(const FocusCallback& callback);
+  // Runs the |callback| with the updated ServiceWorkerClientInfo in parameter.
+  void Focus(const GetClientInfoCallback& callback);
 
   // Asks the renderer to send back the document information.
-  void GetClientInfo(int embedded_worker_id, int request_id);
+  void GetClientInfo(const GetClientInfoCallback& callback) const;
 
   // Adds reference of this host's process to the |pattern|, the reference will
   // be removed in destructor.
   void AddScopedProcessReferenceToPattern(const GURL& pattern);
+
+  // |registration| claims the document to be controlled.
+  void ClaimedByRegistration(ServiceWorkerRegistration* registration);
 
   // Methods to support cross site navigations.
   void PrepareForCrossSiteTransfer();
@@ -150,10 +167,28 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
       int new_process_id,
       int new_frame_id,
       int new_provider_id,
+      ServiceWorkerProviderType new_provider_type,
       ServiceWorkerDispatcherHost* dispatcher_host);
   ServiceWorkerDispatcherHost* dispatcher_host() const {
     return dispatcher_host_;
   }
+
+  // Sends event messages to the renderer. Events for the worker are queued up
+  // until the worker thread id is known via SetReadyToSendMessagesToWorker().
+  void SendUpdateFoundMessage(
+      const ServiceWorkerRegistrationObjectInfo& object_info);
+  void SendSetVersionAttributesMessage(
+      int registration_handle_id,
+      ChangedVersionAttributesMask changed_mask,
+      ServiceWorkerVersion* installing_version,
+      ServiceWorkerVersion* waiting_version,
+      ServiceWorkerVersion* active_version);
+  void SendServiceWorkerStateChangedMessage(
+      int worker_handle_id,
+      blink::WebServiceWorkerState state);
+
+  // Sets the worker thread id and flushes queued events.
+  void SetReadyToSendMessagesToWorker(int render_thread_id);
 
  private:
   friend class ServiceWorkerProviderHostTest;
@@ -177,9 +212,14 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   void IncreaseProcessReference(const GURL& pattern);
   void DecreaseProcessReference(const GURL& pattern);
 
+  bool IsReadyToSendMessages() const;
+  void Send(IPC::Message* message) const;
+
   int render_process_id_;
   int render_frame_id_;
+  int render_thread_id_;
   int provider_id_;
+  ServiceWorkerProviderType provider_type_;
   GURL document_url_;
   GURL topmost_frame_url_;
 
@@ -191,6 +231,9 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   base::WeakPtr<ServiceWorkerContextCore> context_;
   ServiceWorkerDispatcherHost* dispatcher_host_;
   bool allow_association_;
+  bool is_claiming_;
+
+  std::vector<base::Closure> queued_events_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerProviderHost);
 };

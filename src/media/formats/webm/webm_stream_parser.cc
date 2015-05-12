@@ -240,10 +240,11 @@ int WebMStreamParser::ParseInfoAndTracks(const uint8* data, int size) {
       tracks_parser.ignored_tracks(),
       tracks_parser.audio_encryption_key_id(),
       tracks_parser.video_encryption_key_id(),
+      audio_config.codec(),
       log_cb_));
 
   if (!init_cb_.is_null())
-    base::ResetAndReturn(&init_cb_).Run(true, params);
+    base::ResetAndReturn(&init_cb_).Run(params);
 
   return bytes_parsed;
 }

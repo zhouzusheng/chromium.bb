@@ -197,9 +197,9 @@ void FontBuilder::setFamilyDescription(FontDescription& fontDescription, const F
     fontDescription.setFamily(isInitial ? standardFontFamily() : familyDescription.family);
 
     if (familyDescription.boldOverride)
-        fontDescription.setWeight(FontWeightBold);
+        setWeight(FontWeightBold);
     if (familyDescription.italicOverride)
-        fontDescription.setStyle(FontStyleItalic);
+        setStyle(FontStyleItalic);
 }
 
 void FontBuilder::setSize(FontDescription& fontDescription, const FontDescription::Size& size)

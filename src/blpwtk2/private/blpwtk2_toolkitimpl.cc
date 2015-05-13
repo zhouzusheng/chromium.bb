@@ -55,6 +55,7 @@
 #include <content/public/browser/render_process_host.h>
 #include <content/public/common/content_switches.h>
 #include <sandbox/win/src/win_utils.h>
+#include <third_party/WebKit/public/web/WebScriptController.h>
 
 extern HANDLE g_instDLL;  // set in DllMain
 
@@ -100,6 +101,7 @@ ToolkitImpl::ToolkitImpl(const StringRef& dictionaryPath,
         d_mainDelegate.appendCommandLineSwitch(switches::kNoSandbox);
     }
 
+    blink::WebScriptController::setStackCaptureControlledByInspector(false);
     d_mainDelegate.setRendererInfoMap(&d_rendererInfoMap);
     base::MessageLoop::InitMessagePumpForUIFactory(&messagePumpForUIFactory);
 }

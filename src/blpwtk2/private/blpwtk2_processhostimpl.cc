@@ -49,6 +49,7 @@ ProcessHostImpl::ProcessHostImpl(RendererInfoMap* rendererInfoMap)
 : d_processHandle(base::kNullProcessHandle)
 , d_rendererInfoMap(rendererInfoMap)
 , d_lastRoutingId(0x10000)
+, d_receivedFinalSync(false)
 {
     DCHECK(d_rendererInfoMap);
 
@@ -214,14 +215,17 @@ void ProcessHostImpl::OnChannelConnected(int32 peer_pid)
 
 void ProcessHostImpl::OnChannelError()
 {
-    LOG(ERROR) << "channel error!";
+    if (!d_receivedFinalSync)
+        LOG(ERROR) << "channel error!";
 }
 
 // Control message handlers
 
-void ProcessHostImpl::onSync()
+void ProcessHostImpl::onSync(bool isFinalSync)
 {
     LOG(INFO) << "sync";
+    if (isFinalSync)
+        d_receivedFinalSync = true;
 }
 
 void ProcessHostImpl::onCreateNewHostChannel(int timeoutInMilliseconds,

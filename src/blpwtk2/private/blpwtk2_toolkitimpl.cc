@@ -209,7 +209,7 @@ void ToolkitImpl::shutdownThreads()
 
     if (Statics::isRendererMainThreadMode()) {
         // Make sure any messages posted to the ProcessHost have been handled.
-        d_processClient->Send(new BlpControlHostMsg_Sync());
+        d_processClient->Send(new BlpControlHostMsg_Sync(true));
         d_processClient.reset();
 
         if (d_browserThread.get()) {

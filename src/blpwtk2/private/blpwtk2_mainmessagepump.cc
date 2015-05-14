@@ -427,6 +427,10 @@ void MainMessagePump::handleWorkMessage()
 
     doWork();
     scheduleMoreWorkIfNecessary();
+
+    if (state_ && state_->should_quit) {
+        LOG(INFO) << "MessagePump state should_quit == true";
+    }
 }
 
 void MainMessagePump::handleTimerMessage()
@@ -438,6 +442,10 @@ void MainMessagePump::handleTimerMessage()
 
     doWork();
     scheduleMoreWorkIfNecessary();
+
+    if (state_ && state_->should_quit) {
+        LOG(INFO) << "MessagePump state should_quit == true";
+    }
 }
 
 // static

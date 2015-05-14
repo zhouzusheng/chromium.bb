@@ -119,14 +119,14 @@ std::string ProcessHostImpl::channelInfo() const
 
 void ProcessHostImpl::addRoute(int routingId, ProcessHostListener* listener)
 {
-    DLOG(INFO) << "Added route: routingId(" << routingId << ")";
+    LOG(INFO) << "Adding route: routingId(" << routingId << ")";
     d_routes.AddWithID(listener, routingId);
 }
 
 void ProcessHostImpl::removeRoute(int routingId)
 {
     d_routes.Remove(routingId);
-    DLOG(INFO) << "Removed route: routingId(" << routingId << ")";
+    LOG(INFO) << "Removed route: routingId(" << routingId << ")";
 }
 
 ProcessHostListener* ProcessHostImpl::findListener(int routingId)
@@ -182,9 +182,9 @@ bool ProcessHostImpl::OnMessageReceived(const IPC::Message& message)
             Send(reply);
         }
 
-        DLOG(INFO) << "message received, but no listener: routingId("
-                   << message.routing_id() << ") type(" << message.type()
-                   << ")";
+        LOG(WARNING) << "message received, but no listener: routingId("
+                     << message.routing_id() << ") type(" << message.type()
+                     << ")";
         return true;
     }
 
@@ -198,7 +198,7 @@ void ProcessHostImpl::OnBadMessageReceived(const IPC::Message& message)
 
 void ProcessHostImpl::OnChannelConnected(int32 peer_pid)
 {
-    DLOG(INFO) << "channel connected: peer_pid(" << peer_pid << ")";
+    LOG(INFO) << "channel connected: peer_pid(" << peer_pid << ")";
     if (peer_pid == base::GetCurrentProcId()) {
         d_processHandle = base::GetCurrentProcessHandle();
         CHECK(d_processHandle != base::kNullProcessHandle);
@@ -221,7 +221,7 @@ void ProcessHostImpl::OnChannelError()
 
 void ProcessHostImpl::onSync()
 {
-    DLOG(INFO) << "sync";
+    LOG(INFO) << "sync";
 }
 
 void ProcessHostImpl::onCreateNewHostChannel(int timeoutInMilliseconds,
@@ -246,6 +246,7 @@ void ProcessHostImpl::onProfileNew(int routingId,
                                    bool diskCacheEnabled,
                                    bool cookiePersistenceEnabled)
 {
+    LOG(INFO) << "onProfileNew routingId(" << routingId << ")";
     new ProfileHost(this,
                     routingId,
                     dataDir,
@@ -255,6 +256,7 @@ void ProcessHostImpl::onProfileNew(int routingId,
 
 void ProcessHostImpl::onProfileDestroy(int routingId)
 {
+    LOG(INFO) << "onProfileDestroy routingId(" << routingId << ")";
     ProfileHost* profileHost =
         static_cast<ProfileHost*>(findListener(routingId));
     DCHECK(profileHost);
@@ -263,6 +265,7 @@ void ProcessHostImpl::onProfileDestroy(int routingId)
 
 void ProcessHostImpl::onWebViewNew(const BlpWebViewHostMsg_NewParams& params)
 {
+    LOG(INFO) << "onWebViewNew routingId(" << params.routingId << ")";
     ProfileHost* profileHost =
         static_cast<ProfileHost*>(findListener(params.profileId));
     DCHECK(profileHost);
@@ -304,6 +307,7 @@ void ProcessHostImpl::onWebViewNew(const BlpWebViewHostMsg_NewParams& params)
 
 void ProcessHostImpl::onWebViewDestroy(int routingId)
 {
+    LOG(INFO) << "onWebViewDestroy routingId(" << routingId << ")";
     WebViewHost* webViewHost =
         static_cast<WebViewHost*>(findListener(routingId));
     DCHECK(webViewHost);

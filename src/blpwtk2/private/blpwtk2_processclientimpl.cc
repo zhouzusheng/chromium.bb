@@ -52,14 +52,14 @@ ProcessClientImpl::~ProcessClientImpl()
 
 void ProcessClientImpl::addRoute(int routingId, IPC::Listener* listener)
 {
-    DLOG(INFO) << "Added route: routingId(" << routingId << ")";
+    LOG(INFO) << "Adding route: routingId(" << routingId << ")";
     d_routes.AddWithID(listener, routingId);
 }
 
 void ProcessClientImpl::removeRoute(int routingId)
 {
     d_routes.Remove(routingId);
-    DLOG(INFO) << "Removed route: routingId(" << routingId << ")";
+    LOG(INFO) << "Removed route: routingId(" << routingId << ")";
 }
 
 IPC::Listener* ProcessClientImpl::findListener(int routingId)
@@ -99,9 +99,9 @@ bool ProcessClientImpl::OnMessageReceived(const IPC::Message& message)
             Send(reply);
         }
 
-        DLOG(INFO) << "message received, but no listener: routingId("
-                   << message.routing_id() << ") type(" << message.type()
-                   << ")";
+        LOG(WARNING) << "message received, but no listener: routingId("
+                     << message.routing_id() << ") type(" << message.type()
+                     << ")";
         return true;
     }
 
@@ -110,7 +110,7 @@ bool ProcessClientImpl::OnMessageReceived(const IPC::Message& message)
 
 void ProcessClientImpl::OnChannelConnected(int32 peer_pid)
 {
-    DLOG(INFO) << "channel connected: peer_pid(" << peer_pid << ")";
+    LOG(INFO) << "channel connected: peer_pid(" << peer_pid << ")";
 }
 
 void ProcessClientImpl::OnChannelError()
@@ -128,6 +128,7 @@ void ProcessClientImpl::OnBadMessageReceived(const IPC::Message& message)
 void ProcessClientImpl::onSetInProcessRendererChannelName(
     const std::string& channelName)
 {
+    LOG(INFO) << "onSetInProcessRendererChannelName(" << channelName << ")";
     InProcessRenderer::setChannelName(channelName);
 }
 

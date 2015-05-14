@@ -60,18 +60,18 @@ ProcessHostManager::~ProcessHostManager()
     base::PlatformThread::Join(d_threadHandle);
 
     if (!d_connectedProcessHosts.empty()) {
-        DLOG(INFO) << "deleting ProcessHost for "
-                   << d_connectedProcessHosts.size()
-                   << " connected processes";
+        LOG(WARNING) << "deleting ProcessHost for "
+                     << d_connectedProcessHosts.size()
+                     << " connected processes";
         for (size_t i = 0; i < d_connectedProcessHosts.size(); ++i) {
             deleteProcessHost(d_connectedProcessHosts[i]->d_host);
         }
     }
 
     if (!d_unconnectedProcessHosts.empty()) {
-        DLOG(INFO) << "deleting ProcessHost for "
-                   << d_unconnectedProcessHosts.size()
-                   << " unconnected processes";
+        LOG(WARNING) << "deleting ProcessHost for "
+                     << d_unconnectedProcessHosts.size()
+                     << " unconnected processes";
 
         typedef std::list<UnconnectedProcessHostEntry>::iterator Iterator;
         base::AutoLock guard(d_lock);
@@ -132,11 +132,11 @@ void ProcessHostManager::timerExpired()
                 continue;
             }
 
-            DLOG(INFO) << "deleting ProcessHost because nothing connected";
+            LOG(WARNING) << "deleting ProcessHost because nothing connected";
             deleteProcessHost(it->d_host);
         }
         else {
-            DLOG(INFO) << "moving ProcessHost to connected list";
+            LOG(INFO) << "moving ProcessHost to connected list";
 
             d_connectedProcessHosts.push_back(
                 new ConnectedProcessHostEntry(it->d_host, handle));
@@ -187,7 +187,7 @@ void ProcessHostManager::ThreadMain()
                     d_connectedProcessHosts.begin() + processIndex);
             }
 
-            DLOG(INFO) << "deleting ProcessHost because peer has terminated";
+            LOG(WARNING) << "deleting ProcessHost because peer has terminated";
 
             DCHECK(Statics::browserMainMessageLoop);
             Statics::browserMainMessageLoop->PostTask(

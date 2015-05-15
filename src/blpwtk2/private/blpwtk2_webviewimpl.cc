@@ -306,7 +306,11 @@ void WebViewImpl::print()
     printViewManager->PrintNow();
 }
 
-void WebViewImpl::drawContents(int x, int y, int width, int height, int scaleX, int scaleY, NativeDeviceContext deviceContext)
+void WebViewImpl::drawContents(const NativeRect &srcRegion,
+                               const NativeRect &destRegion,
+                               int dpiMultiplier,
+                               const StringRef &styleClass,
+                               NativeDeviceContext deviceContext)
 {
     NOTREACHED() << "drawContents() not supported in WebViewImpl";
 }

@@ -223,7 +223,6 @@ void testGetPicture(blpwtk2::NativeView hwnd, blpwtk2::WebView* webView, int sca
     // is removed and CFX_WindowsDevice::CreateDriver creates a driver that
     // issues device-independent commands, we can switch the test driver to use
     // EMF files instead.
-    //
 
     int left = 0, top = 0, width = 0, height = 0;
 
@@ -290,7 +289,10 @@ void testGetPicture(blpwtk2::NativeView hwnd, blpwtk2::WebView* webView, int sca
 #endif
 
     // Draw the contents of the webview onto the device context
-    webView->drawContents(0, 0, width, height, scaleX, scaleY, deviceContext);
+    webView->drawContents(
+        { 0, 0, width, height },
+        { 0, 0, width * scaleX, height * scaleY },
+        2, "screen-grab", deviceContext);
 
 #ifdef USE_EMF
     HENHMETAFILE emf = CloseEnhMetaFile(deviceContext);

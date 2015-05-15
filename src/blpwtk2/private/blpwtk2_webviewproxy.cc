@@ -42,9 +42,7 @@
 #include <third_party/WebKit/public/web/WebFrame.h>
 #include <third_party/WebKit/public/web/WebInputEvent.h>
 #include <skia/ext/platform_canvas.h>
-#include <third_party/skia/src/pdf/SkPDFDevice.h>
-#include <third_party/skia/src/pdf/SkPDFDocument.h>
-#include <third_party/skia/src/pdf/SkPDFCanon.h>
+#include <third_party/skia/include/core/SkDocument.h>
 #include <third_party/skia/include/core/SkStream.h>
 #include <pdf/pdf.h>
 #include <ui/events/event.h>
@@ -170,7 +168,16 @@ void WebViewProxy::print()
     Send(new BlpWebViewHostMsg_Print(d_routingId));
 }
 
-void WebViewProxy::drawContents(int x, int y, int width, int height, int scaleX, int scaleY, NativeDeviceContext deviceContext)
+static inline SkScalar distance(SkScalar x, SkScalar y)
+{
+    return sqrt(x*x + y*y);
+}
+
+void WebViewProxy::drawContents(const NativeRect &srcRegion,
+                                const NativeRect &destRegion,
+                                int dpiMultiplier,
+                                const StringRef &styleClass,
+                                NativeDeviceContext deviceContext)
 {
     DCHECK(Statics::isRendererMainThreadMode());
     DCHECK(Statics::isInApplicationMainThread());
@@ -182,57 +189,48 @@ void WebViewProxy::drawContents(int x, int y, int width, int height, int scaleX,
     blink::WebFrame* webFrame = rv->GetWebView()->mainFrame();
     DCHECK(webFrame->isWebLocalFrame());
 
-    const int widthMM = GetDeviceCaps(deviceContext, HORZSIZE);
-    const int heightMM = GetDeviceCaps(deviceContext, VERTSIZE);
-    const int widthPixels = GetDeviceCaps(deviceContext, HORZRES);
-    const int heightPixels = GetDeviceCaps(deviceContext, VERTRES);
+    const int dpi =
+        25.4 *                                                                                      // millimeters / inch
+        distance(GetDeviceCaps(deviceContext, HORZRES), GetDeviceCaps(deviceContext, VERTRES)) /    // resolution
+        distance(GetDeviceCaps(deviceContext, HORZSIZE), GetDeviceCaps(deviceContext, VERTSIZE));   // size in millimeters
 
-    // Compute an average dpi rounded to the nearest integer
-    const double MM_over_inch = 25.4;
-    const double dpi_x = MM_over_inch * widthPixels / widthMM;
-    const double dpi_y = MM_over_inch * heightPixels / heightMM;
-    const int dpi = (dpi_x + dpi_y + 0.5) / 2;
+    const int destWidth = destRegion.right - destRegion.left;
+    const int destHeight = destRegion.bottom - destRegion.top;
 
     std::vector<char> pdf_data;
+    size_t pdf_data_size;
     {
         SkDynamicMemoryWStream pdf_stream;
         {
-            SkPDFCanon canon;
-            SkPDFDocument document;
-            {
-                // Create a skia device that will generate a PDF
-                skia::RefPtr<SkPDFDevice> device = skia::AdoptRef(SkPDFDevice::Create(
-                    SkISize::Make(width * scaleX, height * scaleY),
-                    dpi,
-                    &canon));
-                DCHECK(device);
+            skia::RefPtr<SkDocument> document = skia::AdoptRef(SkDocument::CreatePDF(&pdf_stream, dpi * dpiMultiplier));
+            SkCanvas *canvas = document->beginPage(destWidth, destHeight);
+            const int srcWidth = srcRegion.right - srcRegion.left;
+            const int srcHeight = srcRegion.bottom - srcRegion.top;
 
-                // Create a scaled canvas that is backed by the metafile and draw the contents
-                // of the web frame into it
-                SkCanvas canvas(device.get());
-                canvas.scale(scaleX, scaleY);
-                webFrame->drawInCanvas(blink::WebRect(x, y, width, height), &canvas);
-                canvas.flush();
+            canvas->scale(static_cast<SkScalar>(destWidth) / srcWidth, static_cast<SkScalar>(destHeight) / srcHeight);
 
-                document.appendPage(device.get());
-            }
-            document.emitPDF(&pdf_stream);
+            webFrame->drawInCanvas(blink::WebRect(srcRegion.left, srcRegion.top, srcWidth, srcHeight),
+                                    blink::WebString::fromUTF8(styleClass.data(), styleClass.length()),
+                                    canvas);
+            canvas->flush();
+            document->endPage();
         }
-        pdf_data.reserve(pdf_stream.getOffset());
+        pdf_data_size = pdf_stream.getOffset();
+        pdf_data.reserve(pdf_data_size);
         pdf_data.push_back(0);
         pdf_stream.copyTo(&pdf_data[0]);
     }
 
     chrome_pdf::RenderPDFPageToDC(
         pdf_data.data(),
-        pdf_data.capacity(),
+        pdf_data_size,
         0,
         deviceContext,
         dpi,
-        0,
-        0,
-        width * scaleX,
-        height * scaleY,
+        destRegion.left,
+        destRegion.top,
+        destWidth,
+        destHeight,
         false,
         false,
         false,

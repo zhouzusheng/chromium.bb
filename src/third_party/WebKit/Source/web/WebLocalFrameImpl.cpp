@@ -1537,7 +1537,7 @@ WebString WebLocalFrameImpl::layerTreeAsText(bool showDebugInfo) const
 }
 
 
-void WebLocalFrameImpl::drawInCanvas(const WebRect& rect, WebCanvas* canvas) const
+void WebLocalFrameImpl::drawInCanvas(const WebRect& rect, const WebString& styleClass, WebCanvas* canvas) const
 {
     IntRect intRect(rect);
     GraphicsContext graphicsContext(canvas, nullptr);
@@ -1547,9 +1547,33 @@ void WebLocalFrameImpl::drawInCanvas(const WebRect& rect, WebCanvas* canvas) con
 
     FrameView *view = frameView();
     PaintBehavior paintBehavior = view->paintBehavior();
+
+    const blink::WebString classAttribute("class");
+    WTF::String originalStyleClass;
+
+    if (!styleClass.isEmpty()) {
+        if (document().body().hasAttribute(classAttribute)) {
+            originalStyleClass = document().body().getAttribute(classAttribute);
+            document().body().setAttribute(classAttribute, WTF::String(originalStyleClass + " " + WTF::String(styleClass)));
+        }
+        else {
+            document().body().setAttribute(classAttribute, styleClass);
+        }
+        view->updateLayoutAndStyleForPainting();
+    }
+
     view->setPaintBehavior(paintBehavior | PaintBehaviorFlattenCompositingLayers);
     view->paintContents(&graphicsContext, intRect);
     view->setPaintBehavior(paintBehavior);
+
+    if (!styleClass.isEmpty()) {
+        if (!originalStyleClass.isEmpty()) {
+            document().body().setAttribute(classAttribute, originalStyleClass);
+        }
+        else {
+            document().body().removeAttribute(classAttribute);
+        }
+    }
 }
 
 // WebLocalFrameImpl public ---------------------------------------------------------

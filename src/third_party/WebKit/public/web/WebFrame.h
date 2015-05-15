@@ -672,7 +672,7 @@ public:
 
     // Draws the contents of the web frame at the specified region onto the
     // specified canvas
-    virtual void drawInCanvas(const WebRect& rect, WebCanvas* canvas) const = 0;
+    virtual void drawInCanvas(const WebRect& rect, const WebString& customCSS, WebCanvas* canvas) const = 0;
 
 #if BLINK_IMPLEMENTATION
     static WebFrame* fromFrame(Frame*);

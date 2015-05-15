@@ -135,8 +135,10 @@ class WebViewImpl : public WebView,
     void print() override;
     void handleInputEvents(const InputEvent *events, size_t eventsCount) override;
     void setDelegate(WebViewDelegate* delegate) override;
-    void drawContents(int x, int y, int width, int height,
-                      int scaleX, int scaleY,
+    void drawContents(const NativeRect &srcRegion,
+                      const NativeRect &destRegion,
+                      int dpiMultiplier,
+                      const StringRef &styleClass,
                       NativeDeviceContext deviceContext) override;
 
   private:

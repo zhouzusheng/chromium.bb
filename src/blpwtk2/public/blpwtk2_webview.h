@@ -229,8 +229,10 @@ public:
     virtual void setDelegate(WebViewDelegate* delegate) = 0;
 
     // Draw the specified region of the main web frame onto the draw context.
-    virtual void drawContents(int x, int y, int width, int height,
-                              int scaleX, int scaleY,
+    virtual void drawContents(const NativeRect &srcRegion,
+                              const NativeRect &destRegion,
+                              int dpiMultiplier,
+                              const StringRef &styleClass,
                               NativeDeviceContext deviceContext) = 0;
 
 protected:

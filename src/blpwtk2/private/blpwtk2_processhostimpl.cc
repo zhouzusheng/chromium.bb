@@ -215,8 +215,12 @@ void ProcessHostImpl::OnChannelConnected(int32 peer_pid)
 
 void ProcessHostImpl::OnChannelError()
 {
-    if (!d_receivedFinalSync)
+    if (!d_receivedFinalSync) {
         LOG(ERROR) << "channel error!";
+        if (Statics::channelErrorHandler) {
+            Statics::channelErrorHandler(1);
+        }
+    }
 }
 
 // Control message handlers

@@ -24,6 +24,7 @@
 
 #include <blpwtk2_control_messages.h>
 #include <blpwtk2_inprocessrenderer.h>
+#include <blpwtk2_statics.h>
 
 #include <ipc/ipc_sync_channel.h>
 
@@ -116,6 +117,9 @@ void ProcessClientImpl::OnChannelConnected(int32 peer_pid)
 void ProcessClientImpl::OnChannelError()
 {
     LOG(ERROR) << "channel error!";
+    if (Statics::channelErrorHandler) {
+        Statics::channelErrorHandler(1);
+    }
 }
 
 void ProcessClientImpl::OnBadMessageReceived(const IPC::Message& message)

@@ -432,6 +432,7 @@ scoped_ptr<SyncChannel> SyncChannel::Create(
     const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
     bool create_pipe_now,
     base::WaitableEvent* shutdown_event) {
+  LOG(INFO) << "Creating SyncChannel: " << channel_handle.name;
   scoped_ptr<SyncChannel> channel =
       Create(listener, ipc_task_runner, shutdown_event);
   channel->Init(channel_handle, mode, create_pipe_now);

@@ -42,6 +42,8 @@ typedef HWND NativeView;
 typedef HFONT NativeFont;
 typedef void* NativeViewForTransit;
 typedef MSG NativeMsg;
+typedef HDC NativeDeviceContext;
+typedef RECT NativeRect;
 
 }  // close namespace blpwtk2
 

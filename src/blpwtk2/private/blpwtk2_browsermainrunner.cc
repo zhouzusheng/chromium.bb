@@ -79,7 +79,7 @@ int getRemoteDebuggingPort()
             temp_port > 0 && temp_port < 65535) {
                 port = temp_port;
         } else {
-            DLOG(WARNING) << "Invalid http debugger port number " << temp_port;
+            LOG(WARNING) << "Invalid http debugger port number " << temp_port;
         }
     }
     return port;

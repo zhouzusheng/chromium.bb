@@ -75,7 +75,7 @@ class ProcessHostImpl : public ProcessHost,
     void OnChannelError() override;
 
     // Control message handlers
-    void onSync();
+    void onSync(bool isFinalSync);
     void onCreateNewHostChannel(int timeoutInMilliseconds,
                                 std::string* channelInfo);
     void onClearWebCache();
@@ -94,6 +94,7 @@ class ProcessHostImpl : public ProcessHost,
     RendererInfo d_inProcessRendererInfo;
     IDMap<ProcessHostListener> d_routes;
     int d_lastRoutingId;
+    bool d_receivedFinalSync;
 
     DISALLOW_COPY_AND_ASSIGN(ProcessHostImpl);
 };

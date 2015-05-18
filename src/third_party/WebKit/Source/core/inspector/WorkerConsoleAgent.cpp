@@ -73,12 +73,14 @@ ConsoleMessageStorage* WorkerConsoleAgent::messageStorage()
 
 void WorkerConsoleAgent::enableStackCapturingIfNeeded()
 {
-    ScriptController::setCaptureCallStackForUncaughtExceptions(true);
+    if (ScriptController::s_stackCaptureControlledByInspector)
+        ScriptController::setCaptureCallStackForUncaughtExceptions_bb(true);
 }
 
 void WorkerConsoleAgent::disableStackCapturingIfNeeded()
 {
-    ScriptController::setCaptureCallStackForUncaughtExceptions(false);
+    if (ScriptController::s_stackCaptureControlledByInspector)
+        ScriptController::setCaptureCallStackForUncaughtExceptions_bb(false);
 }
 
 void WorkerConsoleAgent::addInspectedNode(ErrorString* error, int)

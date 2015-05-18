@@ -25,6 +25,7 @@
 
 #include <blpwtk2_config.h>
 #include <blpwtk2_threadmode.h>
+#include <blpwtk2_toolkitcreateparams.h>
 #include <blpwtk2_pumpmode.h>
 
 #include <base/threading/platform_thread.h>
@@ -82,6 +83,9 @@ struct Statics {
 
     // The single ProcessHostManager instance.
     static ProcessHostManager* processHostManager;
+
+    // The external handler that will be invoked whenever a channel error occurs.
+    static ToolkitCreateParams::ChannelErrorHandler channelErrorHandler;
 
     // Whether or not devtools is available.
     static bool hasDevTools;

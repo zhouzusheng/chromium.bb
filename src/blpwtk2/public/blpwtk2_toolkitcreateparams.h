@@ -62,6 +62,10 @@ class ToolkitCreateParams {
                                             const StringRef& message,
                                             const StringRef& stack_trace);
 
+    // The callback function that will be invoked whenever a channel error
+    // happens.
+    typedef void(*ChannelErrorHandler)(int reserved);
+
     BLPWTK2_EXPORT ToolkitCreateParams();
     BLPWTK2_EXPORT ToolkitCreateParams(const ToolkitCreateParams&);
     BLPWTK2_EXPORT ~ToolkitCreateParams();
@@ -83,6 +87,9 @@ class ToolkitCreateParams {
     // Use this method to install a custom log message handler for the
     // Web Console. This handler is only used for in-process renderers.
     BLPWTK2_EXPORT void setConsoleLogMessageHandler(ConsoleLogMessageHandler handler);
+
+    // Use this method to install a channel error handler.
+    BLPWTK2_EXPORT void setChannelErrorHandler(ChannelErrorHandler handler);
 
     // By default, the in-process renderer is enabled.  This uses some
     // additional resources, even if in-process WebViews are not created.  Call
@@ -158,6 +165,7 @@ class ToolkitCreateParams {
     PumpMode::Value pumpMode() const;
     LogMessageHandler logMessageHandler() const;
     ConsoleLogMessageHandler consoleLogMessageHandler() const;
+    ChannelErrorHandler channelErrorHandler() const;
     bool isInProcessRendererDisabled() const;
     bool isMaxSocketsPerProxySet() const;
     int maxSocketsPerProxy() const;

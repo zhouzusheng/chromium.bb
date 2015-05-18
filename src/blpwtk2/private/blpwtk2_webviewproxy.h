@@ -121,6 +121,11 @@ class WebViewProxy : public WebView,
     void print() override;
     void handleInputEvents(const InputEvent *events, size_t eventsCount) override;
     void setDelegate(WebViewDelegate* delegate) override;
+    void drawContents(const NativeRect &srcRegion,
+                      const NativeRect &destRegion,
+                      int dpiMultiplier,
+                      const StringRef &styleClass,
+                      NativeDeviceContext deviceContext) override;
 
   private:
     // Destructor is private.  Calling destroy() will delete the object.

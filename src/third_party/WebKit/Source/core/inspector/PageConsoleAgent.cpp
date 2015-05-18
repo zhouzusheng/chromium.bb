@@ -124,15 +124,15 @@ void PageConsoleAgent::workerTerminated(WorkerInspectorProxy* workerInspectorPro
 
 void PageConsoleAgent::enableStackCapturingIfNeeded()
 {
-    if (!s_enabledAgentCount)
-        ScriptController::setCaptureCallStackForUncaughtExceptions(true);
+    if (!s_enabledAgentCount && ScriptController::s_stackCaptureControlledByInspector)
+        ScriptController::setCaptureCallStackForUncaughtExceptions_bb(true);
     ++s_enabledAgentCount;
 }
 
 void PageConsoleAgent::disableStackCapturingIfNeeded()
 {
-    if (!(--s_enabledAgentCount))
-        ScriptController::setCaptureCallStackForUncaughtExceptions(false);
+    if (!(--s_enabledAgentCount) && ScriptController::s_stackCaptureControlledByInspector)
+        ScriptController::setCaptureCallStackForUncaughtExceptions_bb(false);
 }
 
 class InspectableNode final : public InjectedScriptHost::InspectableObject {

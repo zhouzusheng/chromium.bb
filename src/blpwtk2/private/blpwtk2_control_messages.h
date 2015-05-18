@@ -33,7 +33,8 @@
 // ============== Messages from client to host ======================
 
 // This syncs the ProcessClient with the ProcessHost.
-IPC_SYNC_MESSAGE_CONTROL0_0(BlpControlHostMsg_Sync)
+IPC_SYNC_MESSAGE_CONTROL1_0(BlpControlHostMsg_Sync,
+                            bool /*isFinalSync*/)
 
 // Create a new ProcessHost and return the channelId.
 IPC_SYNC_MESSAGE_CONTROL1_1(BlpControlHostMsg_CreateNewHostChannel,

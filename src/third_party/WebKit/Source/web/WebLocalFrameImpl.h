@@ -223,6 +223,7 @@ public:
 
     virtual bool selectionStartHasSpellingMarkerFor(int from, int length) const override;
     virtual WebString layerTreeAsText(bool showDebugInfo = false) const override;
+    virtual void drawInCanvas(const WebRect& rect, const WebString& styleClass, WebCanvas* canvas) const override;
 
     // WebLocalFrame methods:
     virtual void initializeToReplaceRemoteFrame(WebRemoteFrame*) override;

@@ -348,8 +348,8 @@ void InProcessResourceLoaderBridge::Cancel()
 
 void InProcessResourceLoaderBridge::SyncLoad(content::SyncLoadResponse* response)
 {
-    DLOG(ERROR) << "Synchronous requests not supported: url("
-                << d_context->url() << ")";
+    LOG(ERROR) << "Synchronous requests not supported: url("
+               << d_context->url() << ")";
     response->error_code = net::ERR_FAILED;
 }
 

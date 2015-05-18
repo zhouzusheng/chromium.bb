@@ -131,6 +131,7 @@ Toolkit* ToolkitFactory::create(const ToolkitCreateParams& params)
     Statics::pumpMode = params.pumpMode();
     Statics::inProcessResourceLoader = params.inProcessResourceLoader();
     Statics::isInProcessRendererDisabled = params.isInProcessRendererDisabled();
+    Statics::channelErrorHandler = params.channelErrorHandler();
 
     g_logMessageHandler = params.logMessageHandler();
     if (g_logMessageHandler) {

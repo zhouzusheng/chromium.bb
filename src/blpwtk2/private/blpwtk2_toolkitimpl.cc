@@ -55,6 +55,7 @@
 #include <content/public/browser/render_process_host.h>
 #include <content/public/common/content_switches.h>
 #include <sandbox/win/src/win_utils.h>
+#include <third_party/WebKit/public/web/WebScriptController.h>
 
 extern HANDLE g_instDLL;  // set in DllMain
 
@@ -89,7 +90,7 @@ ToolkitImpl::ToolkitImpl(const StringRef& dictionaryPath,
     g_instance = this;
 
     // If host channel is set, we must not be in ORIGINAL thread mode.
-    DCHECK(d_hostChannel.empty() || !Statics::isOriginalThreadMode());
+    CHECK(d_hostChannel.empty() || !Statics::isOriginalThreadMode());
 
     if (!d_hostChannel.empty()) {
         // If another process is our host, then explicitly disable sandbox
@@ -100,6 +101,7 @@ ToolkitImpl::ToolkitImpl(const StringRef& dictionaryPath,
         d_mainDelegate.appendCommandLineSwitch(switches::kNoSandbox);
     }
 
+    blink::WebScriptController::setStackCaptureControlledByInspector(false);
     d_mainDelegate.setRendererInfoMap(&d_rendererInfoMap);
     base::MessageLoop::InitMessagePumpForUIFactory(&messagePumpForUIFactory);
 }
@@ -113,7 +115,7 @@ ToolkitImpl::~ToolkitImpl()
 
 void ToolkitImpl::startupThreads()
 {
-    DCHECK(!d_threadsStarted);
+    CHECK(!d_threadsStarted);
 
     ChannelInfo hostChannelInfo;
     if (d_hostChannel.empty()) {
@@ -143,14 +145,16 @@ void ToolkitImpl::startupThreads()
     mainParams.instance = (HINSTANCE)g_instDLL;
     mainParams.sandbox_info = &d_sandboxInfo;
     int rc = d_mainRunner->Initialize(mainParams);
-    DCHECK(-1 == rc);  // it returns -1 for success!!
+    CHECK(-1 == rc);  // it returns -1 for success!!
 
     if (!d_dictionaryPath.empty()) {
+        LOG(INFO) << "Setting dictionary path: " << d_dictionaryPath;
         base::ThreadRestrictions::ScopedAllowIO allowIO;
         PathService::Override(chrome::DIR_APP_DICTIONARIES, base::FilePath::FromUTF8Unsafe(d_dictionaryPath));
     }
 
     if (Statics::isRendererMainThreadMode()) {
+        LOG(INFO) << "isRendererMainThreadMode";
         new base::MessageLoop(base::MessageLoop::TYPE_UI);
         if (d_hostChannel.empty()) {
             d_browserThread.reset(new BrowserThread(&d_sandboxInfo));
@@ -158,12 +162,16 @@ void ToolkitImpl::startupThreads()
     }
     else {
         DCHECK(Statics::isOriginalThreadMode());
+        LOG(INFO) << "isOriginalThreadMode";
         d_browserMainRunner.reset(new BrowserMainRunner(&d_sandboxInfo));
     }
 
-    if (!Statics::isInProcessRendererDisabled)
+    if (!Statics::isInProcessRendererDisabled) {
+        LOG(INFO) << "Initializing InProcessRenderer";
         InProcessRenderer::init();
+    }
 
+    LOG(INFO) << "Initializing MainMessagePump";
     MainMessagePump::current()->init();
 
     if (Statics::isRendererMainThreadMode()) {
@@ -179,26 +187,33 @@ void ToolkitImpl::startupThreads()
                 FROM_HERE,
                 base::Bind(&ToolkitImpl::createInProcessHost,
                            base::Unretained(this)));
+            LOG(INFO) << "Waiting for ProcessHost on the browser thread";
             d_browserThread->sync();
-            DCHECK(d_inProcessHost.get());
+            CHECK(d_inProcessHost.get());
+            LOG(INFO) << "ProcessHost on the browser thread has been initialized";
             channelId = d_inProcessHost->channelId();
         }
         else {
             channelId = hostChannelInfo.d_channelId;
         }
 
+        LOG(INFO) << "Creating ProcessClient for in-process renderer";
         d_processClient.reset(
             new ProcessClientImpl(channelId,
                                   InProcessRenderer::ipcTaskRunner()));
     }
 
     d_threadsStarted = true;
+
+    LOG(INFO) << "Threads have started!";
 }
 
 void ToolkitImpl::shutdownThreads()
 {
-    DCHECK(!d_threadsStopped);
-    DCHECK(d_threadsStarted);
+    CHECK(!d_threadsStopped);
+    CHECK(d_threadsStarted);
+
+    LOG(INFO) << "Shutting down threads...";
 
     if (d_defaultProfile) {
         d_defaultProfile->destroy();
@@ -207,7 +222,7 @@ void ToolkitImpl::shutdownThreads()
 
     if (Statics::isRendererMainThreadMode()) {
         // Make sure any messages posted to the ProcessHost have been handled.
-        d_processClient->Send(new BlpControlHostMsg_Sync());
+        d_processClient->Send(new BlpControlHostMsg_Sync(true));
         d_processClient.reset();
 
         if (d_browserThread.get()) {

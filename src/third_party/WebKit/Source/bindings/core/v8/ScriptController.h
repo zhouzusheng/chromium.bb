@@ -72,6 +72,11 @@ public:
         DoNotExecuteScriptWhenScriptsDisabled
     };
 
+    // Set this to false if callstack capturing should always happen.  By default, this
+    // is true, which means callstack capturing only happens when the inspector is open
+    // (which is the default upstream behavior).
+    static bool s_stackCaptureControlledByInspector;
+
     static PassOwnPtrWillBeRawPtr<ScriptController> create(LocalFrame* frame)
     {
         return adoptPtrWillBeNoop(new ScriptController(frame));
@@ -122,7 +127,8 @@ public:
 
     static bool canAccessFromCurrentOrigin(LocalFrame*);
 
-    static void setCaptureCallStackForUncaughtExceptions(bool);
+    // SHEZ: Renamed this function to prevent new upstream code from calling this.
+    static void setCaptureCallStackForUncaughtExceptions_bb(bool);
     void collectIsolatedContexts(Vector<std::pair<ScriptState*, SecurityOrigin*>>&);
 
     bool canExecuteScripts(ReasonForCallingCanExecuteScripts);

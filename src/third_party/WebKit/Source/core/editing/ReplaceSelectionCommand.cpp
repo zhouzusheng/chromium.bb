@@ -909,6 +909,7 @@ void ReplaceSelectionCommand::doApply()
     VisiblePosition visibleEnd = selection.visibleEnd();
 
     bool selectionEndWasEndOfParagraph = isEndOfParagraph(visibleEnd);
+    bool selectionEndWasEndOfBlock = isEndOfBlock(visibleEnd);
     bool selectionStartWasStartOfParagraph = isStartOfParagraph(visibleStart);
 
     Node* startBlock = enclosingBlock(visibleStart.deepEquivalent().deprecatedNode());
@@ -946,7 +947,7 @@ void ReplaceSelectionCommand::doApply()
         // If the selection included an entire paragraph, then the previous deleteSelection
         // command would have deleted the end of the paragraph separator.  If we are inserting
         // in nested mode, then we should add back a paragraph separator.
-        if (m_insertNested && selectionStartWasStartOfParagraph && selectionEndWasEndOfParagraph) {
+        if (m_insertNested && selectionStartWasStartOfParagraph && selectionEndWasEndOfParagraph && !selectionEndWasEndOfBlock) {
             insertParagraphSeparator();
             setEndingSelection(endingSelection().visibleStart().previous());
             visibleStart = endingSelection().visibleStart();

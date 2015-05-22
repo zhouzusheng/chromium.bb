@@ -70,6 +70,9 @@ WebViewProxy::WebViewProxy(ProcessClient* processClient,
 , d_gotRenderViewInfo(false)
 , d_ncDragNeedsAck(false)
 {
+    LOG(INFO) << "Creating WebViewProxy, routingId=" << routingId
+              << ", initiallyVisible=" << initiallyVisible;
+
     DCHECK(Statics::isInApplicationMainThread());
     DCHECK(profileProxy);
     DCHECK(d_processClient);
@@ -102,6 +105,8 @@ WebViewProxy::WebViewProxy(ProcessClient* processClient,
 , d_gotRenderViewInfo(false)
 , d_ncDragNeedsAck(false)
 {
+    LOG(INFO) << "Creating WebViewProxy from existing, routingId=" << routingId;
+
     profileProxy->incrementWebViewCount();
     d_processClient->addRoute(d_routingId, this);
 }
@@ -113,6 +118,8 @@ WebViewProxy::~WebViewProxy()
 void WebViewProxy::destroy()
 {
     DCHECK(Statics::isInApplicationMainThread());
+
+    LOG(INFO) << "Destroying WebViewProxy, routingId=" << d_routingId;
 
     if (d_nativeWebView) {
         ::SetParent(d_nativeWebView, d_nativeHiddenView);
@@ -149,6 +156,7 @@ void WebViewProxy::loadUrl(const StringRef& url)
 {
     DCHECK(Statics::isInApplicationMainThread());
     std::string surl(url.data(), url.length());
+    LOG(INFO) << "WebViewProxy, routingId=" << d_routingId << ", loadUrl=" << surl;
     Send(new BlpWebViewHostMsg_LoadUrl(d_routingId, surl));
 }
 
@@ -342,6 +350,8 @@ void WebViewProxy::loadInspector(WebView* inspectedView)
     DCHECK(inspectedView);
     WebViewProxy* inspectedViewProxy
         = static_cast<WebViewProxy*>(inspectedView);
+    LOG(INFO) << "WebViewProxy, routingId=" << d_routingId
+              << ", loading inspector for " << inspectedViewProxy->routingId();
     Send(new BlpWebViewHostMsg_LoadInspector(d_routingId,
                                              inspectedViewProxy->routingId()));
 }
@@ -356,30 +366,35 @@ void WebViewProxy::inspectElementAt(const POINT& point)
 void WebViewProxy::reload(bool ignoreCache)
 {
     DCHECK(Statics::isInApplicationMainThread());
+    LOG(INFO) << "WebViewProxy, routingId=" << d_routingId << ", reload";
     Send(new BlpWebViewHostMsg_Reload(d_routingId, ignoreCache));
 }
 
 void WebViewProxy::goBack()
 {
     DCHECK(Statics::isInApplicationMainThread());
+    LOG(INFO) << "WebViewProxy, routingId=" << d_routingId << ", goBack";
     Send(new BlpWebViewHostMsg_GoBack(d_routingId));
 }
 
 void WebViewProxy::goForward()
 {
     DCHECK(Statics::isInApplicationMainThread());
+    LOG(INFO) << "WebViewProxy, routingId=" << d_routingId << ", goForward";
     Send(new BlpWebViewHostMsg_GoForward(d_routingId));
 }
 
 void WebViewProxy::stop()
 {
     DCHECK(Statics::isInApplicationMainThread());
+    LOG(INFO) << "WebViewProxy, routingId=" << d_routingId << ", stop";
     Send(new BlpWebViewHostMsg_Stop(d_routingId));
 }
 
 void WebViewProxy::takeKeyboardFocus()
 {
     DCHECK(Statics::isInApplicationMainThread());
+    LOG(INFO) << "WebViewProxy, routingId=" << d_routingId << ", takeKeyboardFocus";
     if (d_nativeWebView) {
         ::SetFocus(d_nativeWebView);
     }
@@ -391,6 +406,8 @@ void WebViewProxy::takeKeyboardFocus()
 void WebViewProxy::setLogicalFocus(bool focused)
 {
     DCHECK(Statics::isInApplicationMainThread());
+    LOG(INFO) << "WebViewProxy, routingId=" << d_routingId
+              << ", setLogicalFocus " << (focused ? "true" : "false");
     if (d_gotRenderViewInfo) {
         // If we have the renderer in-process, then set the logical focus
         // immediately so that handleInputEvents will work as expected.
@@ -407,12 +424,14 @@ void WebViewProxy::setLogicalFocus(bool focused)
 void WebViewProxy::show()
 {
     DCHECK(Statics::isInApplicationMainThread());
+    LOG(INFO) << "WebViewProxy, routingId=" << d_routingId << ", show";
     Send(new BlpWebViewHostMsg_Show(d_routingId));
 }
 
 void WebViewProxy::hide()
 {
     DCHECK(Statics::isInApplicationMainThread());
+    LOG(INFO) << "WebViewProxy, routingId=" << d_routingId << ", hide";
     Send(new BlpWebViewHostMsg_Hide(d_routingId));
 }
 
@@ -420,6 +439,8 @@ void WebViewProxy::setParent(NativeView parent)
 {
     DCHECK(Statics::isInApplicationMainThread());
 
+    LOG(INFO) << "WebViewProxy, routingId=" << d_routingId
+              << ", setParent=" << (void*)parent;
     if (d_nativeWebView) {
         ::SetParent(d_nativeWebView, parent ? parent : d_nativeHiddenView);
     }
@@ -852,6 +873,8 @@ void WebViewProxy::onGotNewRenderViewRoutingId(int renderViewRoutingId)
 
     d_gotRenderViewInfo = true;
     d_renderViewRoutingId = renderViewRoutingId;
+    LOG(INFO) << "WebViewProxy, routingId=" << d_routingId
+              << ", gotRenderViewInfo, renderViewRoutingId=" << renderViewRoutingId;
 }
 
 }  // close namespace blpwtk2

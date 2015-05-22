@@ -170,7 +170,11 @@ class Toolkit {
     // processes.
     virtual void clearWebCache() = 0;
 
-protected:
+    // By default, timers on hidden pages are aligned so that they fire once per
+    // second at most.  This API changes that alignment interval.
+    virtual void setTimerHiddenPageAlignmentInterval(double) = 0;
+
+  protected:
     // Destroy this Toolkit object.  Note that clients of blpwtk2 should use
     // the 'destroy()' method, instead of deleting the object directly.
     virtual ~Toolkit();

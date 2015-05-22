@@ -84,6 +84,7 @@ class ToolkitImpl : public Toolkit {
     bool preHandleMessage(const NativeMsg* msg) override;
     void postHandleMessage(const NativeMsg* msg) override;
     void clearWebCache() override;
+    void setTimerHiddenPageAlignmentInterval(double) override;
 
   private:
     void createInProcessHost();

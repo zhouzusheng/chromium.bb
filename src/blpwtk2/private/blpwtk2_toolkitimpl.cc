@@ -55,6 +55,7 @@
 #include <content/public/browser/render_process_host.h>
 #include <content/public/common/content_switches.h>
 #include <sandbox/win/src/win_utils.h>
+#include <third_party/WebKit/public/web/WebKit.h>
 #include <third_party/WebKit/public/web/WebScriptController.h>
 
 extern HANDLE g_instDLL;  // set in DllMain
@@ -486,6 +487,11 @@ void ToolkitImpl::clearWebCache()
     else {
         content::RenderProcessHost::ClearWebCacheOnAllRenderers();
     }
+}
+
+void ToolkitImpl::setTimerHiddenPageAlignmentInterval(double interval)
+{
+    blink::setTimerHiddenPageAlignmentInterval(interval);
 }
 
 }  // close namespace blpwtk2

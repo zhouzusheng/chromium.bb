@@ -38,6 +38,7 @@
 #include "core/Init.h"
 #include "core/animation/AnimationClock.h"
 #include "core/dom/Microtask.h"
+#include "core/frame/DOMTimer.h"
 #include "core/frame/Settings.h"
 #include "core/page/Page.h"
 #include "core/workers/WorkerGlobalScopeProxy.h"
@@ -264,6 +265,11 @@ void setFontAntialiasingEnabledForTest(bool value)
 bool fontAntialiasingEnabledForTest()
 {
     return LayoutTestSupport::isFontAntialiasingEnabledForTest();
+}
+
+void setTimerHiddenPageAlignmentInterval(double interval)
+{
+    DOMTimer::setHiddenPageAlignmentInterval(interval);
 }
 
 void enableLogChannel(const char* name)

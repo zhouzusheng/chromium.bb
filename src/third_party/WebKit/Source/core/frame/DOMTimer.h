@@ -52,6 +52,7 @@ public:
     virtual void stop() override;
 
     // The following are essentially constants. All intervals are in seconds.
+    static void setHiddenPageAlignmentInterval(double);
     static double hiddenPageAlignmentInterval();
     static double visiblePageAlignmentInterval();
 

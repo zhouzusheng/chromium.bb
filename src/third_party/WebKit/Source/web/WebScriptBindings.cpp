@@ -31,8 +31,12 @@
 #include "config.h"
 #include "public/web/WebScriptBindings.h"
 
+#include "bindings/core/v8/DOMWrapperWorld.h"
+#include "bindings/core/v8/ScriptState.h"
 #include "bindings/core/v8/V8Binding.h"
 #include "public/platform/WebString.h"
+
+#include <v8.h>
 
 namespace blink {
 
@@ -44,6 +48,17 @@ v8::Local<v8::String> WebScriptBindings::toV8String(const WebString& string, v8:
 WebString WebScriptBindings::toWebString(v8::Handle<v8::String> v8String)
 {
     return v8StringToWebCoreString<String>(v8String, Externalize);
+}
+
+v8::Local<v8::Context> WebScriptBindings::createWebScriptContext()
+{
+    v8::Isolate* isolate = v8::Isolate::GetCurrent();
+    v8::EscapableHandleScope hs(isolate);
+    v8::Local<v8::Context> context = v8::Context::New(isolate);
+
+    PassRefPtr<ScriptState> scriptState = ScriptState::create(context, &DOMWrapperWorld::mainWorld());
+
+    return hs.Escape(context);
 }
 
 } // namespace blink

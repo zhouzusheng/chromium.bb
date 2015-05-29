@@ -25,6 +25,10 @@
 
 #include <blpwtk2_config.h>
 
+namespace aura {
+class Window;
+}
+
 namespace blpwtk2 {
 
 class NativeViewWidget;
@@ -54,6 +58,10 @@ class NativeViewWidgetDelegate {
     // Called when the user is finishes dragging in a non-client region.  This is
     // only called if the previous OnNCDragBegin returned true.
     virtual void OnNCDragEnd() = 0;
+
+    // Called to get the default activation window.  Returning NULL will use
+    // the widget's root view's window.
+    virtual aura::Window* GetDefaultActivationWindow() = 0;
 
   protected:
     virtual ~NativeViewWidgetDelegate();

@@ -376,10 +376,20 @@ void DesktopNativeWidgetAura::HandleActivationChanged(bool active) {
           GetWidget()->GetFocusManager()->GetFocusedView() ?
               GetWidget()->GetFocusManager()->GetFocusedView() :
                   GetWidget()->GetFocusManager()->GetStoredFocusView();
-      if (!view_for_activation)
-        view_for_activation = GetWidget()->GetRootView();
-      activation_client->ActivateWindow(
-          view_for_activation->GetWidget()->GetNativeView());
+      aura::Window* window_for_activation;
+      if (!view_for_activation) {
+        window_for_activation = GetWidget()->widget_delegate()
+            ? GetWidget()->widget_delegate()->GetDefaultActivationWindow()
+            : NULL;
+        if (!window_for_activation) {
+          view_for_activation = GetWidget()->GetRootView();
+          window_for_activation = view_for_activation->GetWidget()->GetNativeView();
+        }
+      }
+      else {
+        window_for_activation = view_for_activation->GetWidget()->GetNativeView();
+      }
+      activation_client->ActivateWindow(window_for_activation);
     }
   } else {
     // If we're not active we need to deactivate the corresponding

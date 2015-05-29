@@ -958,6 +958,15 @@ void WebViewImpl::OnNCDragEnd()
     }
 }
 
+aura::Window* WebViewImpl::GetDefaultActivationWindow()
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    content::RenderWidgetHostView* rwhv = d_webContents->GetRenderWidgetHostView();
+    if (rwhv)
+        return rwhv->GetNativeView();
+    return NULL;
+}
+
 bool WebViewImpl::ShouldSetKeyboardFocusOnMouseDown()
 {
     DCHECK(Statics::isInBrowserMainThread());

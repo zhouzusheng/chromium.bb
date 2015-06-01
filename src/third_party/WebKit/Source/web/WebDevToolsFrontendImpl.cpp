@@ -70,6 +70,7 @@ WebDevToolsFrontendImpl::WebDevToolsFrontendImpl(
 
 WebDevToolsFrontendImpl::~WebDevToolsFrontendImpl()
 {
+    ASSERT(!m_devtoolsHost);
 }
 
 void WebDevToolsFrontendImpl::didClearWindowObject(WebLocalFrameImpl* frame)

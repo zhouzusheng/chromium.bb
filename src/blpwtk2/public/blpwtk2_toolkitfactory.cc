@@ -33,6 +33,7 @@
 #include <base/strings/string16.h>
 #include <base/strings/utf_string_conversions.h>
 #include <content/public/common/dwrite_font_platform_win.h>
+#include <content/public/renderer/render_font_warmup_win.h>
 #include <content/renderer/render_frame_impl.h>
 #include <net/http/http_network_session.h>
 #include <net/socket/client_socket_pool_manager.h>
@@ -132,6 +133,7 @@ Toolkit* ToolkitFactory::create(const ToolkitCreateParams& params)
     Statics::inProcessResourceLoader = params.inProcessResourceLoader();
     Statics::isInProcessRendererDisabled = params.isInProcessRendererDisabled();
     Statics::channelErrorHandler = params.channelErrorHandler();
+    content::DisableDWriteFactoryPatching();
 
     g_logMessageHandler = params.logMessageHandler();
     if (g_logMessageHandler) {

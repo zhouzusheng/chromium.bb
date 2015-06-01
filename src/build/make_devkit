@@ -91,8 +91,10 @@ def copyIncludeFiles(destDir):
       [os.path.join(srcDir, 'blpwtk2', 'public'),
        os.path.join(srcDir, 'out', 'Debug', 'gen', 'blpwtk2', 'public')])
 
-  copyIncludeFilesFrom(os.path.join(destDir, 'include', 'v8'),
-                       [os.path.join(srcDir, 'v8', 'include')])
+  copyIncludeFilesFrom(
+      os.path.join(destDir, 'include', 'v8'),
+      [os.path.join(srcDir, 'v8', 'include'),
+       os.path.join(srcDir, 'out', 'Debug', 'gen', 'blpv8', 'public')])
 
 
 def copyBin(destDir, version):
@@ -103,10 +105,11 @@ def copyBin(destDir, version):
     'blpwtk2_subprocess' + productAppend + '.exe',
     'content_shell.exe',
     'blpv8' + productAppend + '.dll',
+    'natives_blob' + productAppend + '.bin',
+    'snapshot_blob' + productAppend + '.bin',
     'blpwtk2' + productAppend + '.dll',
     'blpcr_egl' + productAppend + '.dll',
     'blpcr_glesv2' + productAppend + '.dll',
-    'blppdfium' + productAppend + '.dll',
     'ffmpegsumo' + productAppend + '.dll',
     'd3dcompiler_47.dll',
     'icudtl.dat',
@@ -120,8 +123,6 @@ def copyBin(destDir, version):
     'blpcr_egl' + productAppend + '.map',
     'blpcr_glesv2' + productAppend + '.pdb',
     'blpcr_glesv2' + productAppend + '.map',
-    'blppdfium' + productAppend + '.pdb',
-    'blppdfium' + productAppend + '.map',
     'ffmpegsumo' + productAppend + '.pdb',
     'ffmpegsumo' + productAppend + '.map',
     'blpwtk2_subprocess' + productAppend + '.pdb',

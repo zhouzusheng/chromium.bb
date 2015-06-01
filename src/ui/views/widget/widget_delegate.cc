@@ -169,6 +169,10 @@ bool WidgetDelegate::OnNCDragBegin(int hit_test_code) {
   return false;
 }
 
+aura::Window* WidgetDelegate::GetDefaultActivationWindow() {
+  return NULL;
+}
+
 bool WidgetDelegate::WidgetHasHitTestMask() const {
   return false;
 }

@@ -172,5 +172,12 @@ void NativeViewWidget::OnNCDragEnd()
         d_delegate->OnNCDragEnd();
 }
 
+aura::Window* NativeViewWidget::GetDefaultActivationWindow()
+{
+    if (d_delegate)
+        return d_delegate->GetDefaultActivationWindow();
+    return NULL;
+}
+
 }  // close namespace blpwtk2
 

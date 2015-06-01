@@ -38,6 +38,7 @@
 #include <content/public/renderer/render_thread.h>
 #include <net/base/net_errors.h>
 #include <skia/ext/fontmgr_default_win.h>
+#include <third_party/skia/include/ports/SkFontMgr.h>
 #include <third_party/WebKit/public/platform/WebURLError.h>
 #include <third_party/WebKit/public/platform/WebURLRequest.h>
 #include <third_party/WebKit/public/web/WebPluginParams.h>
@@ -50,6 +51,9 @@ ContentRendererClientImpl::ContentRendererClientImpl()
     if (gfx::win::ShouldUseDirectWrite()) {
         SkFontMgr* fontMgr = content::GetPreSandboxWarmupFontMgr();
         SetDefaultSkiaFactory(fontMgr);
+        SkTypeface* typeface =
+            fontMgr->legacyCreateTypeface("Times New Roman", 0);
+        content::DoPreSandboxWarmupForTypeface(typeface);
     }
 }
 

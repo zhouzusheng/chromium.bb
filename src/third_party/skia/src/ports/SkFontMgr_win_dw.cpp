@@ -732,6 +732,22 @@ SkTypeface* SkFontStyleSet_DirectWrite::matchStyle(const SkFontStyle& pattern) {
 ////////////////////////////////////////////////////////////////////////////////
 #include "SkTypeface_win.h"
 
+static IDWriteFontCollection* g_fontCollectionToUse = NULL;
+SK_API void SkFontMgr_SetFontCollectionToUse(IDWriteFontCollection* fontCollection) {
+  g_fontCollectionToUse = fontCollection;
+}
+
+SK_API HRESULT SkFontMgr_GetFontCollectionToUse(IDWriteFontCollection** fontCollection, IDWriteFactory* factory) {
+  // If g_fontCollectionToUse has not been set (which will be the case for
+  // renderers in subprocesses), then use GetSystemFontCollection, which has
+  // been patched to return our custom font collection.
+  if (!g_fontCollectionToUse)
+    return factory->GetSystemFontCollection(fontCollection, FALSE);
+  *fontCollection = g_fontCollectionToUse;
+  g_fontCollectionToUse->AddRef();
+  return S_OK;
+}
+
 SK_API SkFontMgr* SkFontMgr_New_DirectWrite(IDWriteFactory* factory) {
     if (NULL == factory) {
         factory = sk_get_dwrite_factory();
@@ -741,7 +757,7 @@ SK_API SkFontMgr* SkFontMgr_New_DirectWrite(IDWriteFactory* factory) {
     }
 
     SkTScopedComPtr<IDWriteFontCollection> sysFontCollection;
-    HRNM(factory->GetSystemFontCollection(&sysFontCollection, FALSE),
+    HRNM(SkFontMgr_GetFontCollectionToUse(&sysFontCollection, factory),
          "Could not get system font collection.");
 
     WCHAR localeNameStorage[LOCALE_NAME_MAX_LENGTH];

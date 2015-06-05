@@ -124,6 +124,11 @@ public:
     BLINK_EXPORT void hideTransitionElements(const WebString& cssSelector);
     BLINK_EXPORT void showTransitionElements(const WebString& cssSelector);
 
+    // Bloomberg-specific extensions
+#define BB_HAS_WEB_DOCUMENT_EXTENSIONS
+    BLINK_EXPORT WebString bbHeaderText() const;
+    BLINK_EXPORT WebString bbFooterText() const;
+
     // Accessibility support. These methods should only be called on the
     // top-level document, because one accessibility cache spans all of
     // the documents on the page.

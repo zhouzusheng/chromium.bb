@@ -749,6 +749,12 @@ public:
     String domain() const;
     void setDomain(const String& newDomain, ExceptionState&);
 
+    // Bloomberg-specific extensions
+    String bbHeaderText() const { return m_bbHeaderText; }
+    void setBbHeaderText(const String& value) { m_bbHeaderText = value; }
+    String bbFooterText() const { return m_bbFooterText; }
+    void setBbFooterText(const String& value) { m_bbFooterText = value; }
+
     String lastModified() const;
 
     // The cookieURL is used to query the cookie database for this document's
@@ -1281,6 +1287,10 @@ private:
     WillBeHeapVector<RefPtrWillBeMember<HTMLScriptElement>> m_currentScriptStack;
 
     OwnPtr<TransformSource> m_transformSource;
+
+    // Bloomberg-specific extensions
+    String m_bbHeaderText;
+    String m_bbFooterText;
 
     String m_xmlEncoding;
     String m_xmlVersion;

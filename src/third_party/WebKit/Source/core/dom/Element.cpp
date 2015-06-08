@@ -884,7 +884,7 @@ void Element::bbRequestSpellCheck()
         }
         else if (element->isTextFormControl()) {
             HTMLElement* innerElement = toHTMLTextFormControlElement(element)->innerEditorElement();
-            if (innerElement && innerElement->hasEditableStyle()) {
+            if (innerElement && innerElement->hasEditableStyle() && innerElement->isSpellCheckingEnabled()) {
                 VisiblePosition startPos(firstPositionInNode(innerElement));
                 VisiblePosition endPos(lastPositionInNode(innerElement));
                 RefPtr<Range> rangeToCheck = Range::create(innerElement->document(), startPos.deepEquivalent(), endPos.deepEquivalent());
@@ -892,7 +892,7 @@ void Element::bbRequestSpellCheck()
             }
             element = ElementTraversal::nextSkippingChildren(*element, stayWithin);
         }
-        else if (element->hasEditableStyle()) {
+        else if (element->hasEditableStyle() && element->isSpellCheckingEnabled()) {
             VisiblePosition startPos(firstPositionInNode(element));
             VisiblePosition endPos(lastPositionInNode(element));
             RefPtr<Range> rangeToCheck = Range::create(element->document(), startPos.deepEquivalent(), endPos.deepEquivalent());

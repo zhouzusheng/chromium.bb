@@ -168,14 +168,22 @@ void SetupSignalHandlers() {
 
 #endif  // OS_POSIX && !OS_IOS
 
+static bool g_peekMessageHackDisabled = false;
+// static
+void ContentMainRunner::DisablePeekMessageHack() {
+  g_peekMessageHackDisabled = true;
+}
+
 void CommonSubprocessInit(const std::string& process_type) {
 #if defined(OS_WIN)
-  // HACK: Let Windows know that we have started.  This is needed to suppress
-  // the IDC_APPSTARTING cursor from being displayed for a prolonged period
-  // while a subprocess is starting.
-  PostThreadMessage(GetCurrentThreadId(), WM_NULL, 0, 0);
-  MSG msg;
-  PeekMessage(&msg, NULL, 0, 0, PM_REMOVE);
+  if (!g_peekMessageHackDisabled) {
+    // HACK: Let Windows know that we have started.  This is needed to suppress
+    // the IDC_APPSTARTING cursor from being displayed for a prolonged period
+    // while a subprocess is starting.
+    PostThreadMessage(GetCurrentThreadId(), WM_NULL, 0, 0);
+    MSG msg;
+    PeekMessage(&msg, NULL, 0, 0, PM_REMOVE);
+  }
 #endif
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
   // Various things break when you're using a locale where the decimal

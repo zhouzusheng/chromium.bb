@@ -103,6 +103,7 @@ ToolkitImpl::ToolkitImpl(const StringRef& dictionaryPath,
         d_mainDelegate.appendCommandLineSwitch(switches::kNoSandbox);
     }
 
+    content::ContentMainRunner::DisablePeekMessageHack();
     blink::WebScriptController::setStackCaptureControlledByInspector(false);
     d_mainDelegate.setRendererInfoMap(&d_rendererInfoMap);
     base::MessageLoop::InitMessagePumpForUIFactory(&messagePumpForUIFactory);

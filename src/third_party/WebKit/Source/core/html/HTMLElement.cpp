@@ -353,12 +353,12 @@ void HTMLElement::parseAttribute(const QualifiedName& name, const AtomicString& 
     } else {
         if (name == contenteditableAttr) {
             if (value.isNull() || equalIgnoringCase(value, "false")) {
-                RefPtr<Range> range = Range::create(document());
-
-                TrackExceptionState es;
-                range->selectNode(this, es);
-                if (!es.hadException())
+                if (document().frame()) {
+                    VisiblePosition startPos(firstPositionInNode(this));
+                    VisiblePosition endPos(lastPositionInNode(this));
+                    RefPtr<Range> range = Range::create(document(), startPos.deepEquivalent(), endPos.deepEquivalent());
                     document().frame()->spellChecker().clearMisspellingsAndBadGrammar(VisibleSelection(range.get()));
+                }
             }
         }
 

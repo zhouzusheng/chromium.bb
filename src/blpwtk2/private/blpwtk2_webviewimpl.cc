@@ -315,6 +315,12 @@ void WebViewImpl::drawContents(const NativeRect &srcRegion,
     NOTREACHED() << "drawContents() not supported in WebViewImpl";
 }
 
+String WebViewImpl::getLayoutTreeAsText(int flags) const
+{
+    NOTREACHED() << "getLayoutTreeAsText() not supported in WebViewImpl";
+    return String();
+}
+
 void WebViewImpl::handleInputEvents(const InputEvent *events, size_t eventsCount)
 {
     NOTREACHED() << "handleInputEvents() not supported in WebViewImpl";

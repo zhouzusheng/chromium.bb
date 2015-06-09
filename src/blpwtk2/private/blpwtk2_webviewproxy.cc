@@ -181,6 +181,21 @@ static inline SkScalar distance(SkScalar x, SkScalar y)
     return sqrt(x*x + y*y);
 }
 
+String WebViewProxy::getLayoutTreeAsText(int flags) const
+{
+    DCHECK(Statics::isRendererMainThreadMode());
+    DCHECK(Statics::isInApplicationMainThread());
+    DCHECK(d_isMainFrameAccessible)
+        << "You should wait for didFinishLoad";
+    DCHECK(d_gotRenderViewInfo);
+
+    content::RenderView* rv = content::RenderView::FromRoutingID(d_renderViewRoutingId);
+    blink::WebFrame* webFrame = rv->GetWebView()->mainFrame();
+    DCHECK(webFrame->isWebLocalFrame());
+
+    return fromWebString(webFrame->layoutTreeAsText(flags));
+}
+
 void WebViewProxy::drawContents(const NativeRect &srcRegion,
                                 const NativeRect &destRegion,
                                 int dpiMultiplier,

@@ -34,7 +34,7 @@
 
 #include "core/HTMLNames.h"
 #include "core/html/HTMLProgressElement.h"
-#include "core/rendering/RenderProgress.h"
+#include "core/layout/LayoutProgress.h"
 
 namespace blink {
 
@@ -50,10 +50,10 @@ HTMLProgressElement* ProgressShadowElement::progressElement() const
     return toHTMLProgressElement(shadowHost());
 }
 
-bool ProgressShadowElement::rendererIsNeeded(const LayoutStyle& style)
+bool ProgressShadowElement::layoutObjectIsNeeded(const ComputedStyle& style)
 {
-    LayoutObject* progressRenderer = progressElement()->renderer();
-    return progressRenderer && !progressRenderer->style()->hasAppearance() && HTMLDivElement::rendererIsNeeded(style);
+    LayoutObject* progressRenderer = progressElement()->layoutObject();
+    return progressRenderer && !progressRenderer->style()->hasAppearance() && HTMLDivElement::layoutObjectIsNeeded(style);
 }
 
 inline ProgressInnerElement::ProgressInnerElement(Document& document)
@@ -63,18 +63,18 @@ inline ProgressInnerElement::ProgressInnerElement(Document& document)
 
 DEFINE_NODE_FACTORY(ProgressInnerElement)
 
-LayoutObject* ProgressInnerElement::createRenderer(const LayoutStyle&)
+LayoutObject* ProgressInnerElement::createLayoutObject(const ComputedStyle&)
 {
-    return new RenderProgress(this);
+    return new LayoutProgress(this);
 }
 
-bool ProgressInnerElement::rendererIsNeeded(const LayoutStyle& style)
+bool ProgressInnerElement::layoutObjectIsNeeded(const ComputedStyle& style)
 {
     if (progressElement()->hasOpenShadowRoot())
-        return HTMLDivElement::rendererIsNeeded(style);
+        return HTMLDivElement::layoutObjectIsNeeded(style);
 
-    LayoutObject* progressRenderer = progressElement()->renderer();
-    return progressRenderer && !progressRenderer->style()->hasAppearance() && HTMLDivElement::rendererIsNeeded(style);
+    LayoutObject* progressRenderer = progressElement()->layoutObject();
+    return progressRenderer && !progressRenderer->style()->hasAppearance() && HTMLDivElement::layoutObjectIsNeeded(style);
 }
 
 inline ProgressBarElement::ProgressBarElement(Document& document)

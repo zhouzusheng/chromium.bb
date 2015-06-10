@@ -33,7 +33,7 @@ namespace blink {
 
 class CSSValue;
 class FontSelector;
-class LayoutStyle;
+class ComputedStyle;
 
 class FontBuilder {
     STACK_ALLOCATED();
@@ -53,6 +53,7 @@ public:
 
     void setWeight(FontWeight);
     void setSize(const FontDescription::Size&);
+    void setSizeAdjust(const float aspectValue);
     void setStretch(FontStretch);
     void setFamilyDescription(const FontDescription::FamilyDescription&);
     void setFeatureSettings(PassRefPtr<FontFeatureSettings>);
@@ -65,9 +66,9 @@ public:
     void setFontSmoothing(FontSmoothingMode);
 
     // FIXME: These need to just vend a Font object eventually.
-    void createFont(PassRefPtrWillBeRawPtr<FontSelector>, LayoutStyle&);
+    void createFont(PassRefPtrWillBeRawPtr<FontSelector>, ComputedStyle&);
 
-    void createFontForDocument(PassRefPtrWillBeRawPtr<FontSelector>, LayoutStyle&);
+    void createFontForDocument(PassRefPtrWillBeRawPtr<FontSelector>, ComputedStyle&);
 
     bool fontDirty() const { return m_flags; }
 
@@ -75,6 +76,7 @@ public:
     static FontFeatureSettings* initialFeatureSettings() { return nullptr; }
     static FontDescription::GenericFamilyType initialGenericFamily() { return FontDescription::StandardFamily; }
     static FontDescription::Size initialSize() { return FontDescription::Size(FontSize::initialKeywordSize(), 0.0f, false); }
+    static float initialSizeAdjust() { return FontSizeAdjustNone; }
     static TextRenderingMode initialTextRendering() { return AutoTextRendering; }
     static FontVariant initialVariant() { return FontVariantNormal; }
     static FontDescription::VariantLigatures initialVariantLigatures() { return FontDescription::VariantLigatures(); }
@@ -88,11 +90,12 @@ private:
 
     void setFamilyDescription(FontDescription&, const FontDescription::FamilyDescription&);
     void setSize(FontDescription&, const FontDescription::Size&);
-    void updateOrientation(FontDescription&, const LayoutStyle&);
+    void updateOrientation(FontDescription&, const ComputedStyle&);
     // This function fixes up the default font size if it detects that the current generic font family has changed. -dwh
     void checkForGenericFamilyChange(const FontDescription&, FontDescription&);
-    void updateSpecifiedSize(FontDescription&, const LayoutStyle&);
-    void updateComputedSize(FontDescription&, const LayoutStyle&);
+    void updateSpecifiedSize(FontDescription&, const ComputedStyle&);
+    void updateComputedSize(FontDescription&, const ComputedStyle&);
+    void updateAdjustedSize(FontDescription&, const ComputedStyle&, FontSelector*);
 
     float getComputedSizeFromSpecifiedSize(FontDescription&, float effectiveZoom, float specifiedSize);
 
@@ -107,6 +110,7 @@ private:
         FeatureSettings,
         Script,
         Style,
+        SizeAdjust,
         Variant,
         VariantLigatures,
         TextRendering,

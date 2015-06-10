@@ -23,6 +23,7 @@
 #ifndef Resource_h
 #define Resource_h
 
+#include "core/CoreExport.h"
 #include "core/fetch/CachedMetadataHandler.h"
 #include "core/fetch/ResourceLoaderOptions.h"
 #include "platform/Timer.h"
@@ -41,7 +42,6 @@
 
 namespace blink {
 
-class ExecutionContext;
 struct FetchInitiatorInfo;
 class CachedMetadata;
 class ResourceClient;
@@ -55,8 +55,8 @@ class SharedBuffer;
 // A resource that is held in the cache. Classes who want to use this object should derive
 // from ResourceClient, to get the function calls in case the requested data has arrived.
 // This class also does the actual communication with the loader to obtain the resource from the network.
-class Resource : public NoBaseWillBeGarbageCollectedFinalized<Resource> {
-    WTF_MAKE_NONCOPYABLE(Resource); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+class CORE_EXPORT Resource : public NoBaseWillBeGarbageCollectedFinalized<Resource> {
+    WTF_MAKE_NONCOPYABLE(Resource); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(Resource);
     friend class InspectorResource;
 
 public:
@@ -176,8 +176,10 @@ public:
     void finish();
 
     // FIXME: Remove the stringless variant once all the callsites' error messages are updated.
-    bool passesAccessControlCheck(ExecutionContext*, SecurityOrigin*);
-    bool passesAccessControlCheck(ExecutionContext*, SecurityOrigin*, String& errorDescription);
+    bool passesAccessControlCheck(SecurityOrigin*) const;
+    bool passesAccessControlCheck(SecurityOrigin*, String& errorDescription) const;
+
+    bool isEligibleForIntegrityCheck(SecurityOrigin*) const;
 
     void clearLoader();
 
@@ -227,6 +229,10 @@ public:
     Resource* resourceToRevalidate() const { return m_resourceToRevalidate; }
     void setResourceToRevalidate(Resource*);
     bool hasCacheControlNoStoreHeader();
+
+    double currentAge() const;
+    double freshnessLifetime();
+    double stalenessLifetime();
 
     bool isPurgeable() const;
     bool wasPurged() const;
@@ -349,8 +355,6 @@ private:
     bool unlock();
 
     bool hasRightHandleCountApartFromCache(unsigned targetCount) const;
-
-    void failBeforeStarting();
 
     void setCachedMetadata(unsigned dataTypeID, const char*, size_t, CachedMetadataHandler::CacheType);
     void clearCachedMetadata(CachedMetadataHandler::CacheType);

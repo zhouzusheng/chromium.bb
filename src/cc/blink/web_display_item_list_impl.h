@@ -8,19 +8,24 @@
 #include "base/memory/ref_counted.h"
 #include "cc/blink/cc_blink_export.h"
 #include "cc/resources/display_item_list.h"
-#include "third_party/WebKit/public/platform/WebBlendMode.h"
-#include "third_party/WebKit/public/platform/WebContentLayerClient.h"
 #include "third_party/WebKit/public/platform/WebDisplayItemList.h"
-#include "third_party/WebKit/public/platform/WebFloatPoint.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
 #include "third_party/skia/include/core/SkRegion.h"
+#include "third_party/skia/include/core/SkXfermode.h"
 #include "ui/gfx/geometry/point_f.h"
 
+class SkColorFilter;
 class SkImageFilter;
 class SkMatrix44;
 class SkPath;
 class SkPicture;
 class SkRRect;
+
+namespace blink {
+class WebFilterOperations;
+struct WebFloatRect;
+struct WebRect;
+}
 
 namespace cc_blink {
 
@@ -45,9 +50,11 @@ class WebDisplayItemListImpl : public blink::WebDisplayItemList {
   virtual void appendEndFloatClipItem();
   virtual void appendTransformItem(const SkMatrix44& matrix);
   virtual void appendEndTransformItem();
-  virtual void appendTransparencyItem(float opacity,
-                                      blink::WebBlendMode blend_mode);
-  virtual void appendEndTransparencyItem();
+  virtual void appendCompositingItem(float opacity,
+                                     SkXfermode::Mode,
+                                     SkRect* bounds,
+                                     SkColorFilter*);
+  virtual void appendEndCompositingItem();
   virtual void appendFilterItem(const blink::WebFilterOperations& filters,
                                 const blink::WebFloatRect& bounds);
   virtual void appendEndFilterItem();

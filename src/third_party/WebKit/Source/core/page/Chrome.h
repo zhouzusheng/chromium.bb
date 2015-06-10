@@ -61,7 +61,7 @@ public:
 
     // HostWindow methods.
     virtual void invalidateRect(const IntRect&) override;
-    virtual IntRect rootViewToScreen(const IntRect&) const override;
+    virtual IntRect viewportToScreen(const IntRect&) const override;
     virtual blink::WebScreenInfo screenInfo() const override;
 
     virtual void scheduleAnimation() override;
@@ -85,10 +85,6 @@ public:
     void focusedNodeChanged(Node*, Node*) const;
 
     void show(NavigationPolicy = NavigationPolicyIgnore) const;
-
-    bool canRunModal() const;
-    bool canRunModalNow() const;
-    void runModal() const;
 
     void setWindowFeatures(const WindowFeatures&) const;
 

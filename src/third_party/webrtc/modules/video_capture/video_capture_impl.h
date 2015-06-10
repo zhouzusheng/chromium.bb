@@ -17,6 +17,7 @@
 
 #include "webrtc/common_video/interface/i420_video_frame.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
+#include "webrtc/common_video/rotation.h"
 #include "webrtc/modules/video_capture/include/video_capture.h"
 #include "webrtc/modules/video_capture/video_capture_config.h"
 #include "webrtc/system_wrappers/interface/tick_util.h"
@@ -81,14 +82,11 @@ public:
     virtual int32_t Process();
 
     // Implement VideoCaptureExternal
-    // |capture_time| must be specified in the NTP time format in milliseconds.
+    // |capture_time| must be specified in NTP time format in milliseconds.
     virtual int32_t IncomingFrame(uint8_t* videoFrame,
                                   size_t videoFrameLength,
                                   const VideoCaptureCapability& frameInfo,
                                   int64_t captureTime = 0);
-
-    virtual int32_t IncomingI420VideoFrame(I420VideoFrame* video_frame,
-                                           int64_t captureTime = 0);
 
     // Platform dependent
     virtual int32_t StartCapture(const VideoCaptureCapability& capability)
@@ -106,8 +104,7 @@ public:
 protected:
     VideoCaptureImpl(const int32_t id);
     virtual ~VideoCaptureImpl();
-    int32_t DeliverCapturedFrame(I420VideoFrame& captureFrame,
-                                 int64_t capture_time);
+    int32_t DeliverCapturedFrame(I420VideoFrame& captureFrame);
 
     int32_t _id; // Module ID
     char* _deviceUniqueId; // current Device unique name;
@@ -132,15 +129,10 @@ private:
 
     TickTime _lastProcessFrameCount;
     TickTime _incomingFrameTimes[kFrameRateCountHistorySize];// timestamp for local captured frames
-    VideoRotationMode _rotateFrame; //Set if the frame should be rotated by the capture module.
+    VideoRotation _rotateFrame;  // Set if the frame should be rotated by the
+                                 // capture module.
 
     I420VideoFrame _captureFrame;
-
-    // Used to make sure incoming timestamp is increasing for every frame.
-    int64_t last_capture_time_;
-
-    // Delta used for translating between NTP and internal timestamps.
-    const int64_t delta_ntp_internal_ms_;
 
     // Indicate whether rotation should be applied before delivered externally.
     bool apply_rotation_;

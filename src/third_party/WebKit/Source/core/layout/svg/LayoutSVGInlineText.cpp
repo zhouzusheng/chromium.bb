@@ -60,7 +60,7 @@ static PassRefPtr<StringImpl> applySVGWhitespaceRules(PassRefPtr<StringImpl> str
 }
 
 LayoutSVGInlineText::LayoutSVGInlineText(Node* n, PassRefPtr<StringImpl> string)
-    : RenderText(n, applySVGWhitespaceRules(string, false))
+    : LayoutText(n, applySVGWhitespaceRules(string, false))
     , m_scalingFactor(1)
     , m_layoutAttributes(this)
 {
@@ -68,14 +68,14 @@ LayoutSVGInlineText::LayoutSVGInlineText(Node* n, PassRefPtr<StringImpl> string)
 
 void LayoutSVGInlineText::setTextInternal(PassRefPtr<StringImpl> text)
 {
-    RenderText::setTextInternal(text);
-    if (LayoutSVGText* textRenderer = LayoutSVGText::locateLayoutSVGTextAncestor(this))
-        textRenderer->subtreeTextDidChange(this);
+    LayoutText::setTextInternal(text);
+    if (LayoutSVGText* textLayoutObject = LayoutSVGText::locateLayoutSVGTextAncestor(this))
+        textLayoutObject->subtreeTextDidChange(this);
 }
 
-void LayoutSVGInlineText::styleDidChange(StyleDifference diff, const LayoutStyle* oldStyle)
+void LayoutSVGInlineText::styleDidChange(StyleDifference diff, const ComputedStyle* oldStyle)
 {
-    RenderText::styleDidChange(diff, oldStyle);
+    LayoutText::styleDidChange(diff, oldStyle);
     updateScaledFont();
 
     bool newPreserves = style() ? style()->whiteSpace() == PRE : false;
@@ -89,8 +89,8 @@ void LayoutSVGInlineText::styleDidChange(StyleDifference diff, const LayoutStyle
         return;
 
     // The text metrics may be influenced by style changes.
-    if (LayoutSVGText* textRenderer = LayoutSVGText::locateLayoutSVGTextAncestor(this))
-        textRenderer->setNeedsLayoutAndFullPaintInvalidation();
+    if (LayoutSVGText* textLayoutObject = LayoutSVGText::locateLayoutSVGTextAncestor(this))
+        textLayoutObject->setNeedsLayoutAndFullPaintInvalidation(LayoutInvalidationReason::StyleChange);
 }
 
 InlineTextBox* LayoutSVGInlineText::createTextBox(int start, unsigned short length)
@@ -157,7 +157,7 @@ PositionWithAffinity LayoutSVGInlineText::positionForPoint(const LayoutPoint& po
 
     float baseline = m_scaledFont.fontMetrics().floatAscent();
 
-    RenderBlock* containingBlock = this->containingBlock();
+    LayoutBlock* containingBlock = this->containingBlock();
     ASSERT(containingBlock);
 
     // Map local point to absolute point, as the character origins stored in the text fragments use absolute coordinates.
@@ -208,13 +208,13 @@ void LayoutSVGInlineText::updateScaledFont()
     computeNewScaledFontForStyle(this, style(), m_scalingFactor, m_scaledFont);
 }
 
-void LayoutSVGInlineText::computeNewScaledFontForStyle(LayoutObject* renderer, const LayoutStyle* style, float& scalingFactor, Font& scaledFont)
+void LayoutSVGInlineText::computeNewScaledFontForStyle(LayoutObject* layoutObject, const ComputedStyle* style, float& scalingFactor, Font& scaledFont)
 {
     ASSERT(style);
-    ASSERT(renderer);
+    ASSERT(layoutObject);
 
     // Alter font-size to the right on-screen value to avoid scaling the glyphs themselves, except when GeometricPrecision is specified.
-    scalingFactor = SVGLayoutSupport::calculateScreenFontSizeScalingFactor(renderer);
+    scalingFactor = SVGLayoutSupport::calculateScreenFontSizeScalingFactor(layoutObject);
     if (style->effectiveZoom() == 1 && (scalingFactor == 1 || !scalingFactor)) {
         scalingFactor = 1;
         scaledFont = style->font();
@@ -226,15 +226,15 @@ void LayoutSVGInlineText::computeNewScaledFontForStyle(LayoutObject* renderer, c
 
     FontDescription fontDescription(style->fontDescription());
 
-    Document& document = renderer->document();
+    Document& document = layoutObject->document();
     // FIXME: We need to better handle the case when we compute very small fonts below (below 1pt).
     fontDescription.setComputedSize(FontSize::getComputedSizeFromSpecifiedSize(&document, scalingFactor, fontDescription.isAbsoluteSize(), fontDescription.specifiedSize(), DoNotUseSmartMinimumForFontSize));
 
     scaledFont = Font(fontDescription);
-    scaledFont.update(document.styleEngine()->fontSelector());
+    scaledFont.update(document.styleEngine().fontSelector());
 }
 
-LayoutRect LayoutSVGInlineText::clippedOverflowRectForPaintInvalidation(const LayoutLayerModelObject* paintInvalidationContainer, const PaintInvalidationState* paintInvalidationState) const
+LayoutRect LayoutSVGInlineText::clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* paintInvalidationState) const
 {
     // FIXME: The following works because LayoutSVGBlock has forced slow rect mapping of the paintInvalidationState.
     // Should let this really work with paintInvalidationState's fast mapping and remove the assert.
@@ -244,7 +244,7 @@ LayoutRect LayoutSVGInlineText::clippedOverflowRectForPaintInvalidation(const La
 
 PassRefPtr<StringImpl> LayoutSVGInlineText::originalText() const
 {
-    RefPtr<StringImpl> result = RenderText::originalText();
+    RefPtr<StringImpl> result = LayoutText::originalText();
     if (!result)
         return nullptr;
     return applySVGWhitespaceRules(result, style() && style()->whiteSpace() == PRE);

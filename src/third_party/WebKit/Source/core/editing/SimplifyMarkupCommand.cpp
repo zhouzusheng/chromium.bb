@@ -26,11 +26,11 @@
 #include "config.h"
 #include "core/editing/SimplifyMarkupCommand.h"
 
-#include "core/dom/NodeLayoutStyle.h"
+#include "core/dom/NodeComputedStyle.h"
 #include "core/dom/NodeTraversal.h"
+#include "core/layout/LayoutInline.h"
 #include "core/layout/LayoutObject.h"
-#include "core/layout/style/LayoutStyle.h"
-#include "core/rendering/RenderInline.h"
+#include "core/style/ComputedStyle.h"
 
 namespace blink {
 
@@ -55,7 +55,7 @@ void SimplifyMarkupCommand::doApply()
         ContainerNode* startingNode = node->parentNode();
         if (!startingNode)
             continue;
-        LayoutStyle* startingStyle = startingNode->layoutStyle();
+        const ComputedStyle* startingStyle = startingNode->computedStyle();
         if (!startingStyle)
             continue;
         ContainerNode* currentNode = startingNode;
@@ -68,7 +68,7 @@ void SimplifyMarkupCommand::doApply()
             if (!currentNode)
                 break;
 
-            if (!currentNode->renderer() || !currentNode->renderer()->isRenderInline() || toRenderInline(currentNode->renderer())->alwaysCreateLineBoxes())
+            if (!currentNode->layoutObject() || !currentNode->layoutObject()->isLayoutInline() || toLayoutInline(currentNode->layoutObject())->alwaysCreateLineBoxes())
                 continue;
 
             if (currentNode->firstChild() != currentNode->lastChild()) {
@@ -76,7 +76,7 @@ void SimplifyMarkupCommand::doApply()
                 break;
             }
 
-            if (!currentNode->layoutStyle()->visualInvalidationDiff(*startingStyle).hasDifference())
+            if (!currentNode->computedStyle()->visualInvalidationDiff(*startingStyle).hasDifference())
                 topNodeWithStartingStyle = currentNode;
 
         }

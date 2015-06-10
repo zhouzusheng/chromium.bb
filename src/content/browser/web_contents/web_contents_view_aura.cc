@@ -45,7 +45,6 @@
 #include "net/base/filename_util.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/aura/client/aura_constants.h"
-#include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/window.h"
@@ -457,6 +456,12 @@ int ConvertAuraEventFlagsToWebInputEventModifiers(int aura_event_flags) {
     web_input_event_modifiers |= blink::WebInputEvent::AltKey;
   if (aura_event_flags & ui::EF_COMMAND_DOWN)
     web_input_event_modifiers |= blink::WebInputEvent::MetaKey;
+  if (aura_event_flags & ui::EF_LEFT_MOUSE_BUTTON)
+    web_input_event_modifiers |= blink::WebInputEvent::LeftButtonDown;
+  if (aura_event_flags & ui::EF_MIDDLE_MOUSE_BUTTON)
+    web_input_event_modifiers |= blink::WebInputEvent::MiddleButtonDown;
+  if (aura_event_flags & ui::EF_RIGHT_MOUSE_BUTTON)
+    web_input_event_modifiers |= blink::WebInputEvent::RightButtonDown;
   return web_input_event_modifiers;
 }
 
@@ -823,7 +828,7 @@ void WebContentsViewAura::PrepareOverscrollWindow() {
   overscroll_window_.reset(new aura::Window(overscroll_delegate));
   overscroll_window_->SetType(ui::wm::WINDOW_TYPE_CONTROL);
   overscroll_window_->SetTransparent(true);
-  overscroll_window_->Init(aura::WINDOW_LAYER_TEXTURED);
+  overscroll_window_->Init(ui::LAYER_TEXTURED);
   overscroll_window_->layer()->SetMasksToBounds(false);
   overscroll_window_->SetName("OverscrollOverlay");
 
@@ -1078,7 +1083,7 @@ void WebContentsViewAura::CreateView(
   window_->set_owned_by_parent(false);
   window_->SetType(ui::wm::WINDOW_TYPE_CONTROL);
   window_->SetTransparent(false);
-  window_->Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  window_->Init(ui::LAYER_NOT_DRAWN);
   window_->AddObserver(this);
   aura::Window* root_window = context ? context->GetRootWindow() : NULL;
   if (root_window) {
@@ -1196,6 +1201,11 @@ void WebContentsViewAura::ShowContextMenu(RenderFrameHost* render_frame_host,
     touch_editable_->EndTouchEditing(false);
   }
   if (delegate_) {
+    RenderWidgetHostViewAura* view = ToRenderWidgetHostViewAura(
+        web_contents_->GetRenderWidgetHostView());
+    if (view)
+      view->OnShowContextMenu();
+
     delegate_->ShowContextMenu(render_frame_host, params);
     // WARNING: we may have been deleted during the call to ShowContextMenu().
   }
@@ -1234,18 +1244,11 @@ void WebContentsViewAura::StartDragging(
     gfx::NativeView content_native_view = GetContentNativeView();
     base::MessageLoop::ScopedNestableTaskAllower allow(
         base::MessageLoop::current());
-
-    gfx::Point root_point(event_info.event_location);
-    aura::client::ScreenPositionClient* spc =
-        aura::client::GetScreenPositionClient(root_window);
-    if (spc)
-      spc->ConvertPointFromScreen(root_window, &root_point);
-
     result_op = aura::client::GetDragDropClient(root_window)
         ->StartDragAndDrop(data,
                            root_window,
                            content_native_view,
-                           root_point,
+                           event_info.event_location,
                            ConvertFromWeb(operations),
                            event_info.event_source);
   }
@@ -1474,7 +1477,7 @@ bool WebContentsViewAura::CanFocus() {
 void WebContentsViewAura::OnCaptureLost() {
 }
 
-void WebContentsViewAura::OnPaint(gfx::Canvas* canvas) {
+void WebContentsViewAura::OnPaint(const ui::PaintContext& context) {
 }
 
 void WebContentsViewAura::OnDeviceScaleFactorChanged(

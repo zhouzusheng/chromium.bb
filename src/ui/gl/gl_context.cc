@@ -4,9 +4,12 @@
 
 #include <string>
 
+#include "base/bind.h"
+#include "base/cancelable_callback.h"
 #include "base/command_line.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
+#include "base/strings/string_util.h"
 #include "base/threading/thread_local.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_context.h"
@@ -15,6 +18,7 @@
 #include "ui/gl/gl_surface.h"
 #include "ui/gl/gl_switches.h"
 #include "ui/gl/gl_version_info.h"
+#include "ui/gl/gpu_timing.h"
 
 namespace gfx {
 
@@ -40,8 +44,15 @@ void GLContext::ScopedReleaseCurrent::Cancel() {
 
 GLContext::GLContext(GLShareGroup* share_group) :
     share_group_(share_group),
+    state_dirtied_externally_(false),
     swap_interval_(1),
-    force_swap_interval_zero_(false) {
+    force_swap_interval_zero_(false),
+    state_dirtied_callback_(
+        base::Bind(&GLContext::SetStateWasDirtiedExternally,
+        // Note that if this is not unretained, it will create a cycle (and
+        // will never be freed.
+        base::Unretained(this),
+        true)) {
   if (!share_group_.get())
     share_group_ = new GLShareGroup;
 
@@ -74,8 +85,22 @@ void GLContext::SetUnbindFboOnMakeCurrent() {
 
 std::string GLContext::GetExtensions() {
   DCHECK(IsCurrent(NULL));
-  const char* ext = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
-  return std::string(ext ? ext : "");
+  if (gfx::GetGLImplementation() !=
+      gfx::kGLImplementationDesktopGLCoreProfile) {
+    const char* ext = reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
+    return std::string(ext ? ext : "");
+  }
+
+  std::vector<std::string> exts;
+  GLint num_extensions = 0;
+  glGetIntegerv(GL_NUM_EXTENSIONS, &num_extensions);
+  for (GLint i = 0; i < num_extensions; ++i) {
+    const char* extension = reinterpret_cast<const char*>(
+        glGetStringi(GL_EXTENSIONS, i));
+    DCHECK(extension != NULL);
+    exts.push_back(extension);
+  }
+  return JoinString(exts, " ");
 }
 
 std::string GLContext::GetGLVersion() {
@@ -90,6 +115,24 @@ std::string GLContext::GetGLRenderer() {
   const char *renderer =
       reinterpret_cast<const char*>(glGetString(GL_RENDERER));
   return std::string(renderer ? renderer : "");
+}
+
+base::Closure GLContext::GetStateWasDirtiedExternallyCallback() {
+  return state_dirtied_callback_.callback();
+}
+
+void GLContext::RestoreStateIfDirtiedExternally() {
+  NOTREACHED();
+}
+
+bool GLContext::GetStateWasDirtiedExternally() const {
+  DCHECK(virtual_gl_api_);
+  return state_dirtied_externally_;
+}
+
+void GLContext::SetStateWasDirtiedExternally(bool dirtied_externally) {
+  DCHECK(virtual_gl_api_);
+  state_dirtied_externally_ = dirtied_externally;
 }
 
 bool GLContext::HasExtension(const char* name) {
@@ -107,7 +150,9 @@ const GLVersionInfo* GLContext::GetVersionInfo() {
     std::string version = GetGLVersion();
     std::string renderer = GetGLRenderer();
     version_info_ =
-        make_scoped_ptr(new GLVersionInfo(version.c_str(), renderer.c_str()));
+        make_scoped_ptr(new GLVersionInfo(
+            version.c_str(), renderer.c_str(),
+            GetExtensions().c_str()));
   }
   return version_info_.get();
 }
@@ -211,6 +256,13 @@ void GLContext::SetRealGLApi() {
 
 GLContextReal::GLContextReal(GLShareGroup* share_group)
     : GLContext(share_group) {}
+
+scoped_refptr<gfx::GPUTimingClient> GLContextReal::CreateGPUTimingClient() {
+  if (!gpu_timing_) {
+    gpu_timing_.reset(new gfx::GPUTiming(this));
+  }
+  return gpu_timing_->CreateGPUTimingClient();
+}
 
 GLContextReal::~GLContextReal() {}
 

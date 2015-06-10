@@ -65,7 +65,7 @@ void RasterizeAndRecordBenchmark::DidUpdateLayers(LayerTreeHost* host) {
   host_ = host;
   LayerTreeHostCommon::CallFunctionForSubtree(
       host->root_layer(),
-      base::Bind(&RasterizeAndRecordBenchmark::Run, base::Unretained(this)));
+      [this](Layer* layer) { layer->RunMicroBenchmark(this); });
 
   DCHECK(!results_.get());
   results_ = make_scoped_ptr(new base::DictionaryValue);
@@ -100,10 +100,6 @@ scoped_ptr<MicroBenchmarkImpl> RasterizeAndRecordBenchmark::CreateBenchmarkImpl(
       settings_.get(),
       base::Bind(&RasterizeAndRecordBenchmark::RecordRasterResults,
                  weak_ptr_factory_.GetWeakPtr())));
-}
-
-void RasterizeAndRecordBenchmark::Run(Layer* layer) {
-  layer->RunMicroBenchmark(this);
 }
 
 void RasterizeAndRecordBenchmark::RunOnLayer(PictureLayer* layer) {
@@ -229,9 +225,11 @@ void RasterizeAndRecordBenchmark::RunOnDisplayListLayer(
         min_time = duration;
     }
 
-    record_results_.bytes_used += memory_used;
-    record_results_.pixels_recorded +=
-        visible_content_rect.width() * visible_content_rect.height();
+    if (mode_index == RecordingSource::RECORD_NORMALLY) {
+      record_results_.bytes_used += memory_used;
+      record_results_.pixels_recorded +=
+          visible_content_rect.width() * visible_content_rect.height();
+    }
     record_results_.total_best_time[mode_index] += min_time;
   }
 }

@@ -28,8 +28,6 @@
 
 """Functions shared by various parts of the code generator.
 
-Extends IdlTypeBase type with |enum_validation_expression| property.
-
 Design doc: http://www.chromium.org/developers/design-documents/idl-compiler
 """
 
@@ -118,15 +116,6 @@ def uncapitalize(name):
 ################################################################################
 # C++
 ################################################################################
-
-def enum_validation_expression(idl_type):
-    # FIXME: Add IdlEnumType, move property to derived type, and remove this check
-    if not idl_type.is_enum:
-        return None
-    return ' || '.join(['string == "%s"' % enum_value
-                        for enum_value in idl_type.enum_values])
-IdlTypeBase.enum_validation_expression = property(enum_validation_expression)
-
 
 def scoped_name(interface, definition, base_name):
     if 'ImplementedInPrivateScript' in definition.extended_attributes:
@@ -248,6 +237,7 @@ def deprecate_as(member):
 
 # [Exposed]
 EXPOSED_EXECUTION_CONTEXT_METHOD = {
+    'CompositorWorker': 'isCompositorWorkerGlobalScope',
     'DedicatedWorker': 'isDedicatedWorkerGlobalScope',
     'ServiceWorker': 'isServiceWorkerGlobalScope',
     'SharedWorker': 'isSharedWorkerGlobalScope',
@@ -257,6 +247,7 @@ EXPOSED_EXECUTION_CONTEXT_METHOD = {
 
 
 EXPOSED_WORKERS = set([
+    'CompositorWorker',
     'DedicatedWorker',
     'SharedWorker',
     'ServiceWorker',
@@ -369,12 +360,18 @@ def cpp_name_or_partial(interface):
 
 
 # [MeasureAs]
-def measure_as(definition_or_member):
+def measure_as(definition_or_member, interface):
     extended_attributes = definition_or_member.extended_attributes
-    if 'MeasureAs' not in extended_attributes:
-        return None
-    includes.add('core/frame/UseCounter.h')
-    return extended_attributes['MeasureAs']
+    if 'MeasureAs' in extended_attributes:
+        includes.add('core/frame/UseCounter.h')
+        return lambda suffix: extended_attributes['MeasureAs']
+    if 'Measure' in extended_attributes:
+        includes.add('core/frame/UseCounter.h')
+        measure_as_name = capitalize(definition_or_member.name)
+        if interface is not None:
+            measure_as_name = '%s_%s' % (capitalize(interface.name), measure_as_name)
+        return lambda suffix: 'V8%s_%s' % (measure_as_name, suffix)
+    return None
 
 
 # [PerContextEnabled]
@@ -403,9 +400,19 @@ def runtime_enabled_function_name(definition_or_member):
 
 # [Unforgeable]
 def is_unforgeable(interface, member):
-    return ('Unforgeable' in interface.extended_attributes or
-            'Unforgeable' in member.extended_attributes)
+    return (('Unforgeable' in interface.extended_attributes or
+             'Unforgeable' in member.extended_attributes) and
+            not member.is_static)
 
+
+# [TypeChecking=Interface] / [LegacyInterfaceTypeChecking]
+def is_legacy_interface_type_checking(interface, member):
+    if not ('TypeChecking' in interface.extended_attributes or
+            'TypeChecking' in member.extended_attributes):
+        return True
+    if 'LegacyInterfaceTypeChecking' in member.extended_attributes:
+        return True
+    return False
 
 ################################################################################
 # Indexed properties

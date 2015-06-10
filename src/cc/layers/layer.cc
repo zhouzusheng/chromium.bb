@@ -18,6 +18,7 @@
 #include "cc/animation/keyframed_animation_curve.h"
 #include "cc/animation/layer_animation_controller.h"
 #include "cc/base/simple_enclosed_region.h"
+#include "cc/debug/frame_viewer_instrumentation.h"
 #include "cc/layers/layer_client.h"
 #include "cc/layers/layer_impl.h"
 #include "cc/layers/scrollbar_layer_interface.h"
@@ -52,6 +53,7 @@ Layer::Layer()
       transform_tree_index_(-1),
       opacity_tree_index_(-1),
       clip_tree_index_(-1),
+      should_flatten_transform_from_property_tree_(false),
       should_scroll_on_main_thread_(false),
       have_wheel_event_handlers_(false),
       have_scroll_event_handlers_(false),
@@ -375,6 +377,13 @@ bool Layer::HasAncestor(const Layer* ancestor) const {
 void Layer::RequestCopyOfOutput(
     scoped_ptr<CopyOutputRequest> request) {
   DCHECK(IsPropertyChangeAllowed());
+  if (void* source = request->source()) {
+    auto it = std::find_if(
+        copy_requests_.begin(), copy_requests_.end(),
+        [source](const CopyOutputRequest* x) { return x->source() == source; });
+    if (it != copy_requests_.end())
+      copy_requests_.erase(it);
+  }
   if (request->IsEmpty())
     return;
   copy_requests_.push_back(request.Pass());
@@ -896,12 +905,7 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
   layer->SetContentBounds(content_bounds());
   layer->SetContentsScale(contents_scale_x(), contents_scale_y());
 
-  bool is_tracing;
-  TRACE_EVENT_CATEGORY_GROUP_ENABLED(
-      TRACE_DISABLED_BY_DEFAULT("cc.debug") "," TRACE_DISABLED_BY_DEFAULT(
-          "devtools.timeline.layers"),
-      &is_tracing);
-  if (is_tracing)
+  if (frame_viewer_instrumentation::IsTracingLayerTreeSnapshots())
     layer->SetDebugInfo(TakeDebugInfo());
 
   layer->SetDoubleSided(double_sided_);
@@ -1204,6 +1208,12 @@ void Layer::RemoveAnimation(int animation_id) {
   SetNeedsCommit();
 }
 
+void Layer::RemoveAnimation(int animation_id,
+                            Animation::TargetProperty property) {
+  layer_animation_controller_->RemoveAnimation(animation_id, property);
+  SetNeedsCommit();
+}
+
 void Layer::SetLayerAnimationControllerForTest(
     scoped_refptr<LayerAnimationController> controller) {
   layer_animation_controller_->RemoveValueObserver(this);
@@ -1288,6 +1298,8 @@ gfx::Transform Layer::screen_space_transform_from_property_trees(
   if (transform_tree_index() >= 0) {
     gfx::Transform ssxform = tree.Node(transform_tree_index())->data.to_screen;
     xform.ConcatTransform(ssxform);
+    if (should_flatten_transform_from_property_tree_)
+      xform.FlattenTo2d();
   }
   xform.Scale(1.0 / contents_scale_x(), 1.0 / contents_scale_y());
   return xform;
@@ -1307,8 +1319,26 @@ gfx::Transform Layer::draw_transform_from_property_trees(
     // If you're not the root, or you don't own a surface, you need to apply
     // your local offset.
     xform = node->data.to_target;
+    if (should_flatten_transform_from_property_tree_)
+      xform.FlattenTo2d();
     xform.Translate(offset_to_transform_parent().x(),
                     offset_to_transform_parent().y());
+    // A fixed-position layer does not necessarily have the same render target
+    // as its transform node. In particular, its transform node may be an
+    // ancestor of its render target's transform node. For example, given layer
+    // tree R->S->F, suppose F is fixed and S owns a render surface (e.g., say S
+    // has opacity 0.9 and both S and F draw content). Then F's transform node
+    // is the root node, so the target space transform from that node is defined
+    // with respect to the root render surface. But F will render to S's
+    // surface, so must apply a change of basis transform to the target space
+    // transform from its transform node.
+    if (position_constraint_.is_fixed_position()) {
+      gfx::Transform tree_target_to_render_target;
+      tree.ComputeTransform(node->data.content_target_id,
+                            render_target()->transform_tree_index(),
+                            &tree_target_to_render_target);
+      xform.ConcatTransform(tree_target_to_render_target);
+    }
   } else {
     // Surfaces need to apply their sublayer scale.
     xform.Scale(target_node->data.sublayer_scale.x(),
@@ -1318,11 +1348,37 @@ gfx::Transform Layer::draw_transform_from_property_trees(
   return xform;
 }
 
+float Layer::DrawOpacityFromPropertyTrees(const OpacityTree& tree) const {
+  if (!render_target())
+    return 0.f;
+
+  const OpacityNode* target_node =
+      tree.Node(render_target()->opacity_tree_index());
+  const OpacityNode* node = tree.Node(opacity_tree_index());
+  if (node == target_node)
+    return 1.f;
+
+  float draw_opacity = 1.f;
+  while (node != target_node) {
+    draw_opacity *= node->data;
+    node = tree.parent(node);
+  }
+  return draw_opacity;
+}
+
 void Layer::SetFrameTimingRequests(
     const std::vector<FrameTimingRequest>& requests) {
   frame_timing_requests_ = requests;
   frame_timing_requests_dirty_ = true;
   SetNeedsCommit();
+}
+
+void Layer::DidBeginTracing() {
+  // We'll be dumping layer trees as part of trace, so make sure
+  // PushPropertiesTo() propagates layer debug info to the impl
+  // side -- otherwise this won't happen for the the layers that
+  // remain unchanged since tracing started.
+  SetNeedsPushProperties();
 }
 
 }  // namespace cc

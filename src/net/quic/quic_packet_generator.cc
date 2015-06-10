@@ -118,11 +118,6 @@ void QuicPacketGenerator::SetShouldSendAck(bool also_send_stop_waiting) {
   SendQueuedFrames(false);
 }
 
-void QuicPacketGenerator::SetShouldSendStopWaiting() {
-  should_send_stop_waiting_ = true;
-  SendQueuedFrames(false);
-}
-
 void QuicPacketGenerator::AddControlFrame(const QuicFrame& frame) {
   queued_control_frames_.push_back(frame);
   SendQueuedFrames(false);
@@ -177,12 +172,8 @@ QuicConsumedData QuicPacketGenerator::ConsumeData(
     ++frames_created;
 
     // We want to track which packet this stream frame ends up in.
-    if (FLAGS_quic_attach_ack_notifiers_to_packets) {
-      if (notifier != nullptr) {
-        ack_notifiers_.push_back(notifier);
-      }
-    } else {
-      frame.stream_frame->notifier = notifier;
+    if (notifier != nullptr) {
+      ack_notifiers_.push_back(notifier);
     }
 
     if (!AddFrame(frame)) {
@@ -405,10 +396,8 @@ void QuicPacketGenerator::SerializeAndSendPacket() {
   DCHECK(serialized_packet.packet);
 
   // There may be AckNotifiers interested in this packet.
-  if (FLAGS_quic_attach_ack_notifiers_to_packets) {
-    serialized_packet.notifiers.swap(ack_notifiers_);
-    ack_notifiers_.clear();
-  }
+  serialized_packet.notifiers.swap(ack_notifiers_);
+  ack_notifiers_.clear();
 
   delegate_->OnSerializedPacket(serialized_packet);
   MaybeSendFecPacketAndCloseGroup(/*force=*/false);
@@ -431,7 +420,7 @@ QuicByteCount QuicPacketGenerator::max_packet_length() const {
 }
 
 void QuicPacketGenerator::set_max_packet_length(QuicByteCount length) {
-  packet_creator_.set_max_packet_length(length);
+  packet_creator_.SetMaxPacketLength(length);
 }
 
 QuicEncryptedPacket* QuicPacketGenerator::SerializeVersionNegotiationPacket(
@@ -467,6 +456,11 @@ void QuicPacketGenerator::SetConnectionIdLength(uint32 length) {
 
 void QuicPacketGenerator::set_encryption_level(EncryptionLevel level) {
   packet_creator_.set_encryption_level(level);
+}
+
+void QuicPacketGenerator::SetEncrypter(EncryptionLevel level,
+                                       QuicEncrypter* encrypter) {
+  packet_creator_.SetEncrypter(level, encrypter);
 }
 
 }  // namespace net

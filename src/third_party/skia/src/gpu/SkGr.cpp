@@ -11,6 +11,7 @@
 #include "SkColorFilter.h"
 #include "SkConfig8888.h"
 #include "SkData.h"
+#include "SkErrorInternals.h"
 #include "SkMessageBus.h"
 #include "SkPixelRef.h"
 #include "SkResourceCache.h"
@@ -162,7 +163,7 @@ public:
 private:
     GrUniqueKeyInvalidatedMessage fMsg;
 
-    void onChange() SK_OVERRIDE {
+    void onChange() override {
         SkMessageBus<GrUniqueKeyInvalidatedMessage>::Post(fMsg);
     }
 };
@@ -198,9 +199,7 @@ GrTexture* stretch_texture_to_next_pot(GrTexture* inputTexture, Stretch stretch,
 
     // Either it's a cache miss or the original wasn't cached to begin with.
     GrSurfaceDesc rtDesc = inputTexture->desc();
-    rtDesc.fFlags =  rtDesc.fFlags |
-                     kRenderTarget_GrSurfaceFlag |
-                     kNoStencil_GrSurfaceFlag;
+    rtDesc.fFlags =  rtDesc.fFlags | kRenderTarget_GrSurfaceFlag;
     rtDesc.fWidth  = GrNextPow2(rtDesc.fWidth);
     rtDesc.fHeight = GrNextPow2(rtDesc.fHeight);
     rtDesc.fConfig = GrMakePixelConfigUncompressed(rtDesc.fConfig);
@@ -245,9 +244,8 @@ GrTexture* stretch_texture_to_next_pot(GrTexture* inputTexture, Stretch stretch,
     SkRect rect = SkRect::MakeWH(SkIntToScalar(rtDesc.fWidth), SkIntToScalar(rtDesc.fHeight));
     SkRect localRect = SkRect::MakeWH(1.f, 1.f);
 
-    GrContext::AutoClip ac(context, GrContext::AutoClip::kWideOpen_InitialClip);
-    context->drawNonAARectToRect(stretched->asRenderTarget(), paint, SkMatrix::I(), rect,
-                                 localRect);
+    context->drawNonAARectToRect(stretched->asRenderTarget(), GrClip::WideOpen(), paint,
+                                 SkMatrix::I(), rect, localRect);
 
     return stretched;
 }
@@ -367,8 +365,12 @@ static GrTexture* load_yuv_texture(GrContext* ctx, const GrUniqueKey& optionalKe
     for (int i = 0; i < 3; ++i) {
         yuvDesc.fWidth  = yuvInfo.fSize[i].fWidth;
         yuvDesc.fHeight = yuvInfo.fSize[i].fHeight;
-        yuvTextures[i].reset(
-            ctx->refScratchTexture(yuvDesc, GrContext::kApprox_ScratchTexMatch));
+        bool needsExactTexture =
+            (yuvDesc.fWidth  != yuvInfo.fSize[0].fWidth) ||
+            (yuvDesc.fHeight != yuvInfo.fSize[0].fHeight);
+        yuvTextures[i].reset(ctx->refScratchTexture(yuvDesc,
+            needsExactTexture ? GrContext::kExact_ScratchTexMatch :
+                                GrContext::kApprox_ScratchTexMatch));
         if (!yuvTextures[i] ||
             !yuvTextures[i]->writePixels(0, 0, yuvDesc.fWidth, yuvDesc.fHeight,
                                          yuvDesc.fConfig, planes[i], yuvInfo.fRowBytes[i])) {
@@ -377,9 +379,7 @@ static GrTexture* load_yuv_texture(GrContext* ctx, const GrUniqueKey& optionalKe
     }
 
     GrSurfaceDesc rtDesc = desc;
-    rtDesc.fFlags = rtDesc.fFlags |
-                    kRenderTarget_GrSurfaceFlag |
-                    kNoStencil_GrSurfaceFlag;
+    rtDesc.fFlags = rtDesc.fFlags | kRenderTarget_GrSurfaceFlag;
 
     GrTexture* result = create_texture_for_bmp(ctx, optionalKey, rtDesc, pixelRef, NULL, 0);
     if (!result) {
@@ -396,8 +396,8 @@ static GrTexture* load_yuv_texture(GrContext* ctx, const GrUniqueKey& optionalKe
     paint.addColorProcessor(yuvToRgbProcessor);
     SkRect r = SkRect::MakeWH(SkIntToScalar(yuvInfo.fSize[0].fWidth),
                               SkIntToScalar(yuvInfo.fSize[0].fHeight));
-    GrContext::AutoClip ac(ctx, GrContext::AutoClip::kWideOpen_InitialClip);
-    ctx->drawRect(renderTarget, paint, SkMatrix::I(), r);
+
+    ctx->drawRect(renderTarget, GrClip::WideOpen(), paint, SkMatrix::I(), r);
 
     return result;
 }
@@ -565,8 +565,9 @@ GrTexture* GrRefCachedBitmapTexture(GrContext* ctx,
         return result;
     }
 
-    SkDebugf("---- failed to create texture for cache [%d %d]\n",
-                bitmap.width(), bitmap.height());
+    SkErrorInternals::SetError( kInternalError_SkError,
+                                "---- failed to create texture for cache [%d %d]\n",
+                                bitmap.width(), bitmap.height());
 
     return NULL;
 }
@@ -593,6 +594,8 @@ GrPixelConfig SkImageInfo2GrPixelConfig(SkColorType ct, SkAlphaType, SkColorProf
             return kBGRA_8888_GrPixelConfig;
         case kIndex_8_SkColorType:
             return kIndex_8_GrPixelConfig;
+        case kGray_8_SkColorType:
+            return kAlpha_8_GrPixelConfig; // TODO: gray8 support on gpu
     }
     SkASSERT(0);    // shouldn't get here
     return kUnknown_GrPixelConfig;
@@ -665,9 +668,12 @@ void SkPaint2GrPaintNoShader(GrContext* context, GrRenderTarget* rt, const SkPai
             SkColor filtered = colorFilter->filterColor(skPaint.getColor());
             grPaint->setColor(SkColor2GrColor(filtered));
         } else {
-            SkAutoTUnref<GrFragmentProcessor> fp(colorFilter->asFragmentProcessor(context));
-            if (fp.get()) {
-                grPaint->addColorProcessor(fp);
+            SkTDArray<GrFragmentProcessor*> array;
+            if (colorFilter->asFragmentProcessors(context, &array)) {
+                for (int i = 0; i < array.count(); ++i) {
+                    grPaint->addColorProcessor(array[i]);
+                    array[i]->unref();
+                }
             }
         }
     }
@@ -710,8 +716,6 @@ void SkPaint2GrPaintShader(GrContext* context, GrRenderTarget* rt, const SkPaint
     // asFragmentProcessor(). Since these calls get passed back to the client, we don't really
     // want them messing around with the context.
     {
-        GrContext::AutoClip ac(context, GrContext::AutoClip::kWideOpen_InitialClip);
-
         // Allow the shader to modify paintColor and also create an effect to be installed as
         // the first color effect on the GrPaint.
         GrFragmentProcessor* fp = NULL;

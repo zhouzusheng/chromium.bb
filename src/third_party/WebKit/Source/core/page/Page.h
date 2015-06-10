@@ -21,12 +21,15 @@
 #ifndef Page_h
 #define Page_h
 
+#include "core/CoreExport.h"
 #include "core/dom/ViewportDescription.h"
 #include "core/frame/LocalFrame.h"
+#include "core/frame/OriginsUsingFeatures.h"
 #include "core/frame/SettingsDelegate.h"
 #include "core/frame/UseCounter.h"
 #include "core/page/PageAnimator.h"
 #include "core/page/PageLifecycleNotifier.h"
+#include "core/page/PageLifecycleObserver.h"
 #include "core/page/PageVisibilityState.h"
 #include "platform/Supplementable.h"
 #include "platform/geometry/LayoutRect.h"
@@ -53,8 +56,6 @@ class EditorClient;
 class FocusController;
 class Frame;
 class FrameHost;
-class InspectorClient;
-class InspectorController;
 class PluginData;
 class PointerLockController;
 class ScrollingCoordinator;
@@ -67,7 +68,7 @@ typedef uint64_t LinkHash;
 
 float deviceScaleFactor(LocalFrame*);
 
-class Page final : public NoBaseWillBeGarbageCollectedFinalized<Page>, public WillBeHeapSupplementable<Page>, public PageLifecycleNotifier, public SettingsDelegate {
+class CORE_EXPORT Page final : public NoBaseWillBeGarbageCollectedFinalized<Page>, public WillBeHeapSupplementable<Page>, public PageLifecycleNotifier, public SettingsDelegate {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Page);
     WTF_MAKE_NONCOPYABLE(Page);
     friend class Settings;
@@ -76,7 +77,7 @@ public:
 
     // It is up to the platform to ensure that non-null clients are provided where required.
     struct PageClients {
-        WTF_MAKE_NONCOPYABLE(PageClients); WTF_MAKE_FAST_ALLOCATED;
+        WTF_MAKE_NONCOPYABLE(PageClients); WTF_MAKE_FAST_ALLOCATED(PageClients);
     public:
         PageClients();
         ~PageClients();
@@ -85,7 +86,6 @@ public:
         ContextMenuClient* contextMenuClient;
         EditorClient* editorClient;
         DragClient* dragClient;
-        InspectorClient* inspectorClient;
         SpellCheckerClient* spellCheckerClient;
     };
 
@@ -135,7 +135,6 @@ public:
     DragController& dragController() const { return *m_dragController; }
     FocusController& focusController() const { return *m_focusController; }
     ContextMenuController& contextMenuController() const { return *m_contextMenuController; }
-    InspectorController& inspectorController() const { return *m_inspectorController; }
     PointerLockController& pointerLockController() const { return *m_pointerLockController; }
     ValidationMessageClient& validationMessageClient() const { return *m_validationMessageClient; }
     void setValidationMessageClient(PassOwnPtrWillBeRawPtr<ValidationMessageClient>);
@@ -148,6 +147,7 @@ public:
     Settings& settings() const { return *m_settings; }
 
     UseCounter& useCounter() { return m_useCounter; }
+    OriginsUsingFeatures& originsUsingFeatures() { return m_originsUsingFeatures; }
 
     void setTabKeyCyclesThroughElements(bool b) { m_tabKeyCyclesThroughElements = b; }
     bool tabKeyCyclesThroughElements() const { return m_tabKeyCyclesThroughElements; }
@@ -198,7 +198,7 @@ public:
 
     static void networkStateChanged(bool online);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
     void willBeDestroyed();
 
 private:
@@ -218,7 +218,6 @@ private:
     const OwnPtrWillBeMember<DragController> m_dragController;
     const OwnPtrWillBeMember<FocusController> m_focusController;
     const OwnPtrWillBeMember<ContextMenuController> m_contextMenuController;
-    const OwnPtrWillBeMember<InspectorController> m_inspectorController;
     const OwnPtrWillBeMember<PointerLockController> m_pointerLockController;
     OwnPtr<ScrollingCoordinator> m_scrollingCoordinator;
     const OwnPtrWillBeMember<UndoStack> m_undoStack;
@@ -244,6 +243,7 @@ private:
     OwnPtrWillBeMember<ValidationMessageClient> m_validationMessageClient;
 
     UseCounter m_useCounter;
+    OriginsUsingFeatures m_originsUsingFeatures;
 
     bool m_openedByDOM;
 

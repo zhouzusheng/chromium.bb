@@ -248,7 +248,7 @@ class RenderWidget::ScreenMetricsEmulator {
   // Scale and offset used to convert between host coordinates
   // and webwidget coordinates.
   float scale() { return scale_; }
-  gfx::Point offset() { return offset_; }
+  gfx::PointF offset() { return offset_; }
   gfx::Rect applied_widget_rect() const { return applied_widget_rect_; }
   gfx::Rect original_screen_rect() const { return original_view_screen_rect_; }
   const WebScreenInfo& original_screen_info() { return original_screen_info_; }
@@ -278,7 +278,7 @@ class RenderWidget::ScreenMetricsEmulator {
 
   // The computed scale and offset used to fit widget into browser window.
   float scale_;
-  gfx::Point offset_;
+  gfx::PointF offset_;
 
   // Widget rect as passed to webwidget.
   gfx::Rect applied_widget_rect_;
@@ -314,7 +314,7 @@ RenderWidget::ScreenMetricsEmulator::~ScreenMetricsEmulator() {
   widget_->screen_info_ = original_screen_info_;
 
   widget_->SetDeviceScaleFactor(original_screen_info_.deviceScaleFactor);
-  widget_->SetScreenMetricsEmulationParameters(0.f, gfx::Point(), 1.f);
+  widget_->SetScreenMetricsEmulationParameters(false, params_);
   widget_->view_screen_rect_ = original_view_screen_rect_;
   widget_->window_screen_rect_ = original_window_screen_rect_;
   widget_->Resize(original_size_,
@@ -392,8 +392,11 @@ void RenderWidget::ScreenMetricsEmulator::Apply(
   //   even when emulating different scale factor;
   // - in order to fit into view, WebView applies offset and scale to the
   //   root layer.
-  widget_->SetScreenMetricsEmulationParameters(
-      original_screen_info_.deviceScaleFactor, offset_, scale_);
+  blink::WebDeviceEmulationParams modified_params = params_;
+  modified_params.deviceScaleFactor = original_screen_info_.deviceScaleFactor;
+  modified_params.offset = blink::WebFloatPoint(offset_.x(), offset_.y());
+  modified_params.scale = scale_;
+  widget_->SetScreenMetricsEmulationParameters(true, modified_params);
 
   widget_->SetDeviceScaleFactor(applied_device_scale_factor);
   widget_->view_screen_rect_ = applied_widget_rect_;
@@ -656,18 +659,6 @@ void RenderWidget::WasSwappedOut() {
   RenderProcess::current()->ReleaseProcess();
 }
 
-void RenderWidget::EnableScreenMetricsEmulation(
-    const WebDeviceEmulationParams& params) {
-  if (!screen_metrics_emulator_)
-    screen_metrics_emulator_.reset(new ScreenMetricsEmulator(this, params));
-  else
-    screen_metrics_emulator_->ChangeEmulationParams(params);
-}
-
-void RenderWidget::DisableScreenMetricsEmulation() {
-  screen_metrics_emulator_.reset();
-}
-
 void RenderWidget::SetPopupOriginAdjustmentsForEmulation(
     ScreenMetricsEmulator* emulator) {
   popup_origin_scale_for_emulation_ = emulator->scale();
@@ -686,9 +677,8 @@ gfx::Rect RenderWidget::AdjustValidationMessageAnchor(const gfx::Rect& anchor) {
 }
 
 void RenderWidget::SetScreenMetricsEmulationParameters(
-    float device_scale_factor,
-    const gfx::Point& root_layer_offset,
-    float root_layer_scale) {
+    bool enabled,
+    const blink::WebDeviceEmulationParams& params) {
   // This is only supported in RenderView.
   NOTREACHED();
 }
@@ -732,6 +722,10 @@ bool RenderWidget::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewMsg_Close, OnClose)
     IPC_MESSAGE_HANDLER(ViewMsg_CreatingNew_ACK, OnCreatingNewAck)
     IPC_MESSAGE_HANDLER(ViewMsg_Resize, OnResize)
+    IPC_MESSAGE_HANDLER(ViewMsg_EnableDeviceEmulation,
+                        OnEnableDeviceEmulation)
+    IPC_MESSAGE_HANDLER(ViewMsg_DisableDeviceEmulation,
+                        OnDisableDeviceEmulation)
     IPC_MESSAGE_HANDLER(ViewMsg_ColorProfile, OnColorProfile)
     IPC_MESSAGE_HANDLER(ViewMsg_ChangeResizeRect, OnChangeResizeRect)
     IPC_MESSAGE_HANDLER(ViewMsg_WasHidden, OnWasHidden)
@@ -778,7 +772,7 @@ void RenderWidget::Resize(const gfx::Size& new_size,
                           const gfx::Size& visible_viewport_size,
                           const gfx::Rect& resizer_rect,
                           bool is_fullscreen,
-                          ResizeAck resize_ack) {
+                          const ResizeAck resize_ack) {
   if (resizing_mode_selector_->NeverUsesSynchronousResize()) {
     // A resize ack shouldn't be requested if we have not ACK'd the previous
     // one.
@@ -792,8 +786,6 @@ void RenderWidget::Resize(const gfx::Size& new_size,
 
   if (compositor_) {
     compositor_->setViewportSize(new_size, physical_backing_size);
-    compositor_->SetTopControlsShrinkBlinkSize(top_controls_shrink_blink_size);
-    compositor_->SetTopControlsHeight(top_controls_height);
   }
 
   physical_backing_size_ = physical_backing_size;
@@ -818,8 +810,6 @@ void RenderWidget::Resize(const gfx::Size& new_size,
     // ensures that we only resize as fast as we can paint.  We only need to
     // send an ACK if we are resized to a non-empty rect.
     webwidget_->resize(new_size);
-  } else if (!resizing_mode_selector_->is_synchronous_mode()) {
-    resize_ack = NO_RESIZE_ACK;
   }
 
   webwidget()->resizePinchViewport(gfx::Size(
@@ -827,9 +817,10 @@ void RenderWidget::Resize(const gfx::Size& new_size,
       visible_viewport_size.height()));
 
   if (new_size.IsEmpty() || physical_backing_size.IsEmpty()) {
-    // For empty size or empty physical_backing_size, there is no next paint
-    // (along with which to send the ack) until they are set to non-empty.
-    resize_ack = NO_RESIZE_ACK;
+    // In this case there is no paint/composite and therefore no
+    // ViewHostMsg_UpdateRect to send the resize ack with. We'd need to send the
+    // ack through a fake ViewHostMsg_UpdateRect or a different message.
+    DCHECK_EQ(resize_ack, NO_RESIZE_ACK);
   }
 
   // Send the Resize_ACK flag once we paint again if requested.
@@ -912,10 +903,22 @@ void RenderWidget::OnResize(const ViewMsg_Resize_Params& params) {
          params.visible_viewport_size,
          params.resizer_rect,
          params.is_fullscreen,
-         SEND_RESIZE_ACK);
+         params.needs_resize_ack ? SEND_RESIZE_ACK : NO_RESIZE_ACK);
 
   if (orientation_changed)
     OnOrientationChange();
+}
+
+void RenderWidget::OnEnableDeviceEmulation(
+   const blink::WebDeviceEmulationParams& params) {
+  if (!screen_metrics_emulator_)
+    screen_metrics_emulator_.reset(new ScreenMetricsEmulator(this, params));
+  else
+    screen_metrics_emulator_->ChangeEmulationParams(params);
+}
+
+void RenderWidget::OnDisableDeviceEmulation() {
+  screen_metrics_emulator_.reset();
 }
 
 void RenderWidget::OnColorProfile(const std::vector<char>& color_profile) {
@@ -1395,6 +1398,8 @@ void RenderWidget::didBecomeReadyForAdditionalInput() {
 }
 
 void RenderWidget::DidCommitCompositorFrame() {
+  FOR_EACH_OBSERVER(RenderFrameImpl, render_frames_,
+                    DidCommitCompositorFrame());
   FOR_EACH_OBSERVER(RenderFrameProxy, render_frame_proxies_,
                     DidCommitCompositorFrame());
 #if defined(VIDEO_HOLE)

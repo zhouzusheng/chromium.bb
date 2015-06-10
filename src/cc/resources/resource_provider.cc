@@ -871,6 +871,8 @@ base::TimeTicks ResourceProvider::EstimatedUploadCompletionTime(
 
 ResourceProvider::Resource* ResourceProvider::GetResource(ResourceId id) {
   DCHECK(thread_checker_.CalledOnValidThread());
+  // Try to differentiate GetResource with a bad id vs with no id.
+  CHECK(id);
   ResourceMap::iterator it = resources_.find(id);
   CHECK(it != resources_.end());
   return &it->second;
@@ -898,11 +900,9 @@ const ResourceProvider::Resource* ResourceProvider::LockForRead(ResourceId id) {
 
     GLES2Interface* gl = ContextGL();
     DCHECK(gl);
-    resource->gl_id = texture_id_allocator_->NextId();
-    GLC(gl, gl->BindTexture(resource->target, resource->gl_id));
-    GLC(gl,
-        gl->ConsumeTextureCHROMIUM(resource->mailbox.target(),
-                                   resource->mailbox.name()));
+    resource->gl_id =
+        GLC(gl, gl->CreateAndConsumeTextureCHROMIUM(resource->mailbox.target(),
+                                                    resource->mailbox.name()));
   }
 
   if (!resource->pixels && resource->has_shared_bitmap_id &&
@@ -1131,7 +1131,6 @@ ResourceProvider::ScopedWriteLockGr::~ScopedWriteLockGr() {
 }
 
 void ResourceProvider::ScopedWriteLockGr::InitSkSurface(
-    bool use_worker_context,
     bool use_distance_field_text,
     bool can_use_lcd_text,
     int msaa_sample_count) {
@@ -1146,6 +1145,7 @@ void ResourceProvider::ScopedWriteLockGr::InitSkSurface(
   desc.fTextureHandle = resource_->gl_id;
   desc.fSampleCnt = msaa_sample_count;
 
+  bool use_worker_context = true;
   class GrContext* gr_context =
       resource_provider_->GrContext(use_worker_context);
   skia::RefPtr<GrTexture> gr_texture =
@@ -1595,9 +1595,6 @@ void ResourceProvider::TransferResource(GLES2Interface* gl,
     LazyCreate(source);
     DCHECK(source->gl_id);
     DCHECK(source->origin == Resource::INTERNAL);
-    GLC(gl,
-        gl->BindTexture(resource->mailbox_holder.texture_target,
-                        source->gl_id));
     if (source->image_id) {
       DCHECK(source->dirty_image);
       BindImageForSampling(source);
@@ -1605,9 +1602,10 @@ void ResourceProvider::TransferResource(GLES2Interface* gl,
     // This is a resource allocated by the compositor, we need to produce it.
     // Don't set a sync point, the caller will do it.
     GLC(gl, gl->GenMailboxCHROMIUM(resource->mailbox_holder.mailbox.name));
-    GLC(gl,
-        gl->ProduceTextureCHROMIUM(resource->mailbox_holder.texture_target,
-                                   resource->mailbox_holder.mailbox.name));
+    GLC(gl, gl->ProduceTextureDirectCHROMIUM(
+                source->gl_id, resource->mailbox_holder.texture_target,
+                resource->mailbox_holder.mailbox.name));
+
     source->mailbox = TextureMailbox(resource->mailbox_holder);
   } else {
     DCHECK(source->mailbox.IsTexture());
@@ -2107,15 +2105,11 @@ void ResourceProvider::CopyResource(ResourceId source_id, ResourceId dest_id) {
   }
   DCHECK(!dest_resource->image_id);
   dest_resource->allocated = true;
-  gl->CopyTextureCHROMIUM(dest_resource->target,
-                          source_resource->gl_id,
-                          dest_resource->gl_id,
-                          0,
-                          GLInternalFormat(dest_resource->format),
-                          GLDataType(dest_resource->format));
+  gl->CopySubTextureCHROMIUM(dest_resource->target, source_resource->gl_id,
+                             dest_resource->gl_id, 0, 0);
   if (source_resource->gl_read_lock_query_id) {
     // End query and create a read lock fence that will prevent access to
-    // source resource until CopyTextureCHROMIUM command has completed.
+// source resource until CopySubTextureCHROMIUM command has completed.
 #if defined(OS_CHROMEOS)
     gl->EndQueryEXT(GL_COMMANDS_ISSUED_CHROMIUM);
 #else

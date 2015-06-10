@@ -7,7 +7,6 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "ppapi/c/dev/ppb_messaging_deprecated.h"
 #include "ppapi/c/dev/ppb_url_util_dev.h"
 #include "ppapi/c/pp_bool.h"
 #include "ppapi/c/pp_completion_callback.h"
@@ -121,11 +120,6 @@ class PPB_Instance_API {
                                          void* user_data,
                                          const PPP_MessageHandler_0_2* handler,
                                          PP_Resource message_loop) = 0;
-  virtual int32_t RegisterMessageHandler_1_1_Deprecated(
-      PP_Instance instance,
-      void* user_data,
-      const PPP_MessageHandler_0_1_Deprecated* handler,
-      PP_Resource message_loop) = 0;
   virtual void UnregisterMessageHandler(PP_Instance instance) = 0;
 
   // Mouse cursor.
@@ -186,11 +180,11 @@ class PPB_Instance_API {
                                        PP_Var session_id_var,
                                        PP_Time new_expiry_time) = 0;
   virtual void SessionClosed(PP_Instance instance, PP_Var session_id_var) = 0;
-  virtual void SessionError(PP_Instance instance,
-                            PP_Var session_id_var,
-                            PP_CdmExceptionCode exception_code,
-                            uint32 system_code,
-                            PP_Var error_description_var) = 0;
+  virtual void LegacySessionError(PP_Instance instance,
+                                  PP_Var session_id_var,
+                                  PP_CdmExceptionCode exception_code,
+                                  uint32 system_code,
+                                  PP_Var error_description_var) = 0;
   virtual void DeliverBlock(PP_Instance instance,
                             PP_Resource decrypted_block,
                             const PP_DecryptedBlockInfo* block_info) = 0;

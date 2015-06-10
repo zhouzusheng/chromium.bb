@@ -22,6 +22,7 @@
 namespace prefs {
 
 // Profile prefs. Please add Local State prefs below instead.
+extern const char kChildAccountStatusKnown[];
 extern const char kDefaultApps[];
 extern const char kDefaultAppsInstalled[];
 extern const char kDisableScreenshots[];
@@ -149,12 +150,9 @@ extern const char kSearchSuggestEnabled[];
 extern const char kContextualSearchEnabled[];
 #endif
 extern const char kConfirmToQuitEnabled[];
-extern const char kCookieBehavior[];  // OBSOLETE
 extern const char kPromptForDownload[];
 extern const char kAlternateErrorPagesEnabled[];
-extern const char kDnsStartupPrefetchList[];  // OBSOLETE
 extern const char kDnsPrefetchingStartupList[];
-extern const char kDnsHostReferralList[];  // OBSOLETE
 extern const char kDnsPrefetchingHostReferralList[];
 extern const char kDisableSpdy[];
 extern const char kHttpServerProperties[];
@@ -165,7 +163,6 @@ extern const char kDisabledSchemes[];
 extern const char kLastPolicyCheckTime[];
 #endif
 extern const char kInstantUIZeroSuggestUrlPrefix[];
-extern const char kMultipleProfilePrefMigration[];
 extern const char kNetworkPredictionEnabled[];
 extern const char kNetworkPredictionOptions[];
 extern const char kDefaultAppsInstallState[];
@@ -260,7 +257,6 @@ extern const char kAttestationEnabled[];
 extern const char kAttestationExtensionWhitelist[];
 extern const char kTouchHudProjectionEnabled[];
 extern const char kOpenNetworkConfiguration[];
-extern const char kRAConsentFirstTime[];
 extern const char kMultiProfileNeverShowIntro[];
 extern const char kMultiProfileWarningShowDismissed[];
 extern const char kMultiProfileUserBehavior[];
@@ -272,6 +268,7 @@ extern const char kCurrentWallpaperAppName[];
 extern const char kFileSystemProviderMounted[];
 extern const char kTouchVirtualKeyboardEnabled[];
 extern const char kWakeOnWifiSsid[];
+extern const char kCaptivePortalAuthenticationIgnoresProxy[];
 #endif  // defined(OS_CHROMEOS)
 extern const char kIpcDisabledMessages[];
 extern const char kShowHomeButton[];
@@ -417,6 +414,8 @@ extern const char kZeroSuggestCachedResults[];
 #if defined(ENABLE_EXTENSIONS) && !defined(OS_ANDROID) && !defined(OS_IOS)
 extern const char kCopresenceAuthenticatedDeviceId[];
 extern const char kCopresenceAnonymousDeviceId[];
+extern const char kToolbarIconSurfacingBubbleAcknowledged[];
+extern const char kToolbarIconSurfacingBubbleLastShowTime[];
 #endif
 
 #if defined(ENABLE_WEBRTC)
@@ -786,7 +785,6 @@ extern const char kAppListAppLaunchCount[];
 extern const char kAppLauncherHasBeenEnabled[];
 extern const char kAppListEnableMethod[];
 extern const char kAppListEnableTime[];
-extern const char kAppLauncherIsEnabled[];
 extern const char kAppLauncherShortcutVersion[];
 extern const char kShowAppLauncherPromo[];
 extern const char kAppLauncherDriveAppMapping[];
@@ -817,9 +815,7 @@ extern const char kEasyUnlockHardlockState[];
 extern const char kEasyUnlockLocalStateTpmKeys[];
 extern const char kEasyUnlockLocalStateUserPrefs[];
 
-extern const char kPasswordBubbleTimeStamp[];
 extern const char kPasswordBubbleNopesCount[];
-extern const char kPasswordBubbleLastInteractions[];
 
 extern const char kRecoveryComponentNeedsElevation[];
 

@@ -27,12 +27,14 @@ class AudioEncoder {
         : encoded_bytes(0),
           encoded_timestamp(0),
           payload_type(0),
-          send_even_if_empty(false) {}
+          send_even_if_empty(false),
+          speech(true) {}
 
     size_t encoded_bytes;
     uint32_t encoded_timestamp;
     int payload_type;
     bool send_even_if_empty;
+    bool speech;
   };
 
   // This is the main struct for auxiliary encoding information. Each encoded
@@ -56,22 +58,28 @@ class AudioEncoder {
 
   // Accepts one 10 ms block of input audio (i.e., sample_rate_hz() / 100 *
   // num_channels() samples). Multi-channel audio must be sample-interleaved.
-  // If successful, the encoder produces zero or more bytes of output in
-  // |encoded|, and provides the number of encoded bytes in |encoded_bytes|.
-  // In case of error, false is returned, otherwise true. It is an error for the
-  // encoder to attempt to produce more than |max_encoded_bytes| bytes of
-  // output.
-  bool Encode(uint32_t rtp_timestamp,
-              const int16_t* audio,
-              size_t num_samples_per_channel,
-              size_t max_encoded_bytes,
-              uint8_t* encoded,
-              EncodedInfo* info);
+  // The encoder produces zero or more bytes of output in |encoded| and
+  // returns additional encoding information.
+  // The caller is responsible for making sure that |max_encoded_bytes| is
+  // not smaller than the number of bytes actually produced by the encoder.
+  EncodedInfo Encode(uint32_t rtp_timestamp,
+                     const int16_t* audio,
+                     size_t num_samples_per_channel,
+                     size_t max_encoded_bytes,
+                     uint8_t* encoded);
 
   // Return the input sample rate in Hz and the number of input channels.
   // These are constants set at instantiation time.
   virtual int SampleRateHz() const = 0;
   virtual int NumChannels() const = 0;
+
+  // Return the maximum number of bytes that can be produced by the encoder
+  // at each Encode() call. The caller can use the return value to determine
+  // the size of the buffer that needs to be allocated. This value is allowed
+  // to depend on encoder parameters like bitrate, frame size etc., so if
+  // any of these change, the caller of Encode() is responsible for checking
+  // that the buffer is large enough by calling MaxEncodedBytes() again.
+  virtual size_t MaxEncodedBytes() const = 0;
 
   // Returns the rate with which the RTP timestamps are updated. By default,
   // this is the same as sample_rate_hz().
@@ -98,11 +106,10 @@ class AudioEncoder {
   virtual void SetProjectedPacketLossRate(double fraction) {}
 
  protected:
-  virtual bool EncodeInternal(uint32_t rtp_timestamp,
-                              const int16_t* audio,
-                              size_t max_encoded_bytes,
-                              uint8_t* encoded,
-                              EncodedInfo* info) = 0;
+  virtual EncodedInfo EncodeInternal(uint32_t rtp_timestamp,
+                                     const int16_t* audio,
+                                     size_t max_encoded_bytes,
+                                     uint8_t* encoded) = 0;
 };
 
 }  // namespace webrtc

@@ -25,6 +25,7 @@
 #ifndef LayoutTableSection_h
 #define LayoutTableSection_h
 
+#include "core/CoreExport.h"
 #include "core/layout/LayoutTable.h"
 #include "wtf/Vector.h"
 
@@ -63,7 +64,7 @@ private:
 class LayoutTableCell;
 class LayoutTableRow;
 
-class LayoutTableSection final : public RenderBox {
+class CORE_EXPORT LayoutTableSection final : public LayoutBox {
 public:
     LayoutTableSection(Element*);
     virtual ~LayoutTableSection();
@@ -207,15 +208,15 @@ public:
     void rowLogicalHeightChanged(LayoutTableRow*);
 
     void removeCachedCollapsedBorders(const LayoutTableCell*);
-    void setCachedCollapsedBorder(const LayoutTableCell*, CollapsedBorderSide, CollapsedBorderValue);
-    CollapsedBorderValue& cachedCollapsedBorder(const LayoutTableCell*, CollapsedBorderSide);
+    bool setCachedCollapsedBorder(const LayoutTableCell*, CollapsedBorderSide, const CollapsedBorderValue&);
+    const CollapsedBorderValue& cachedCollapsedBorder(const LayoutTableCell*, CollapsedBorderSide) const;
 
     // distributeExtraLogicalHeightToRows methods return the *consumed* extra logical height.
     // FIXME: We may want to introduce a structure holding the in-flux layout information.
     int distributeExtraLogicalHeightToRows(int extraLogicalHeight);
 
     static LayoutTableSection* createAnonymousWithParentRenderer(const LayoutObject*);
-    virtual RenderBox* createAnonymousBoxWithSameTypeAs(const LayoutObject* parent) const override
+    virtual LayoutBox* createAnonymousBoxWithSameTypeAs(const LayoutObject* parent) const override
     {
         return createAnonymousWithParentRenderer(parent);
     }
@@ -230,17 +231,17 @@ public:
     HashSet<LayoutTableCell*>& overflowingCells() { return m_overflowingCells; }
     bool hasMultipleCellLevels() { return m_hasMultipleCellLevels; }
 
+    virtual const char* name() const override { return isAnonymous() ? "LayoutTableSection (anonymous)" : "LayoutTableSection"; }
+
 protected:
-    virtual void styleDidChange(StyleDifference, const LayoutStyle* oldStyle) override;
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override;
+    virtual void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override;
+    virtual bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override;
 
 private:
     virtual LayoutObjectChildList* virtualChildren() override { return children(); }
     virtual const LayoutObjectChildList* virtualChildren() const override { return children(); }
 
-    virtual const char* renderName() const override { return (isAnonymous() || isPseudoElement()) ? "LayoutTableSection (anonymous)" : "LayoutTableSection"; }
-
-    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectTableSection || RenderBox::isOfType(type); }
+    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectTableSection || LayoutBox::isOfType(type); }
 
     virtual void willBeRemovedFromTree() override;
 
@@ -311,7 +312,8 @@ private:
 
     // This map holds the collapsed border values for cells with collapsed borders.
     // It is held at LayoutTableSection level to spare memory consumption by table cells.
-    HashMap<pair<const LayoutTableCell*, int>, CollapsedBorderValue> m_cellsCollapsedBorders;
+    using CellsCollapsedBordersMap = HashMap<pair<const LayoutTableCell*, int>, CollapsedBorderValue>;
+    CellsCollapsedBordersMap m_cellsCollapsedBorders;
 };
 
 DEFINE_LAYOUT_OBJECT_TYPE_CASTS(LayoutTableSection, isTableSection());

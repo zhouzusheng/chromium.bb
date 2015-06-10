@@ -48,7 +48,6 @@
 #include "core/events/KeyboardEvent.h"
 #include "core/events/MouseEvent.h"
 #include "core/events/PageTransitionEvent.h"
-#include "core/fetch/FetchContext.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/fetch/ResourceLoader.h"
 #include "core/frame/LocalDOMWindow.h"
@@ -62,15 +61,14 @@
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/inspector/ConsoleMessage.h"
-#include "core/inspector/InspectorController.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/loader/DocumentLoadTiming.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FormState.h"
 #include "core/loader/FormSubmission.h"
-#include "core/loader/FrameFetchContext.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/loader/FrameLoaderClient.h"
+#include "core/loader/MixedContentChecker.h"
 #include "core/loader/ProgressTracker.h"
 #include "core/loader/appcache/ApplicationCacheHost.h"
 #include "core/page/Chrome.h"
@@ -115,7 +113,6 @@ FrameLoader::FrameLoader(LocalFrame* frame)
     : m_frame(frame)
     , m_progressTracker(ProgressTracker::create(frame))
     , m_loadType(FrameLoadTypeStandard)
-    , m_fetchContext(FrameFetchContext::create(frame))
     , m_inStopAllLoaders(false)
     , m_checkTimer(this, &FrameLoader::checkTimerFired)
     , m_didAccessInitialDocument(false)
@@ -130,11 +127,10 @@ FrameLoader::~FrameLoader()
     ASSERT(!m_progressTracker);
 }
 
-void FrameLoader::trace(Visitor* visitor)
+DEFINE_TRACE(FrameLoader)
 {
     visitor->trace(m_frame);
     visitor->trace(m_progressTracker);
-    visitor->trace(m_fetchContext);
     visitor->trace(m_currentItem);
     visitor->trace(m_provisionalItem);
     visitor->trace(m_deferredHistoryLoad);
@@ -193,11 +189,7 @@ void FrameLoader::saveScrollState()
         return;
 
     m_currentItem->setScrollPoint(m_frame->view()->scrollPosition());
-
-    if (m_frame->settings()->pinchVirtualViewportEnabled())
-        m_currentItem->setPinchViewportScrollPoint(m_frame->host()->pinchViewport().visibleRect().location());
-    else
-        m_currentItem->setPinchViewportScrollPoint(FloatPoint(-1, -1));
+    m_currentItem->setPinchViewportScrollPoint(m_frame->host()->pinchViewport().visibleRect().location());
 
     if (m_frame->isMainFrame())
         m_currentItem->setPageScaleFactor(m_frame->page()->pageScaleFactor());
@@ -350,7 +342,7 @@ void FrameLoader::receivedFirstData()
     if (!m_stateMachine.committedMultipleRealLoads() && m_loadType == FrameLoadTypeStandard)
         m_stateMachine.advanceTo(FrameLoaderStateMachine::CommittedMultipleRealLoads);
 
-    client()->dispatchDidCommitLoad(m_frame, m_currentItem.get(), historyCommitType);
+    client()->dispatchDidCommitLoad(m_currentItem.get(), historyCommitType);
 
     TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "CommitLoad", "data", InspectorCommitLoadEvent::data(m_frame));
     InspectorInstrumentation::didCommitLoad(m_frame, m_documentLoader.get());
@@ -415,7 +407,8 @@ void FrameLoader::finishedParsing()
     // Check if the scrollbars are really needed for the content.
     // If not, remove them, relayout, and repaint.
     m_frame->view()->restoreScrollbar();
-    scrollToFragmentWithParentBoundary(m_frame->document()->url());
+    if (!documentLoader()->initialScrollState().didRestoreFromHistory)
+        scrollToFragmentWithParentBoundary(m_frame->document()->url());
 }
 
 void FrameLoader::loadDone()
@@ -495,15 +488,15 @@ void FrameLoader::checkCompleted()
 
     m_frame->navigationScheduler().startTimer();
 
-    // Retry restoring scroll offset since finishing the load event disables content
-    // size clamping.
-    restoreScrollPositionAndViewState();
     if (m_frame->view())
         m_frame->view()->handleLoadCompleted();
 
     if (shouldSendCompleteNotifications(m_frame)) {
         m_loadType = FrameLoadTypeStandard;
         m_progressTracker->progressCompleted();
+        // Retry restoring scroll offset since finishing loading disables content
+        // size clamping.
+        restoreScrollPositionAndViewState();
         m_frame->localDOMWindow()->finishedLoading();
 
         // Report mobile vs. desktop page statistics. This will only report on Android.
@@ -1020,9 +1013,8 @@ void FrameLoader::restoreScrollPositionAndViewState()
     // page height increases, 3. ignore clamp detection after load completes
     // because that may be because the page will never reach its previous
     // height.
-    float mainFrameScale = m_frame->settings()->pinchVirtualViewportEnabled() ? 1 : m_currentItem->pageScaleFactor();
-    bool canRestoreWithoutClamping = view->clampOffsetAtScale(m_currentItem->scrollPoint(), mainFrameScale) == m_currentItem->scrollPoint();
-    bool canRestoreWithoutAnnoyingUser = !view->wasScrolledByUser() && (canRestoreWithoutClamping || m_frame->document()->loadEventFinished());
+    bool canRestoreWithoutClamping = view->clampOffsetAtScale(m_currentItem->scrollPoint(), 1) == m_currentItem->scrollPoint();
+    bool canRestoreWithoutAnnoyingUser = !view->wasScrolledByUser() && (canRestoreWithoutClamping || m_frame->isLoading());
     if (!canRestoreWithoutAnnoyingUser)
         return;
 
@@ -1032,17 +1024,13 @@ void FrameLoader::restoreScrollPositionAndViewState()
 
         m_frame->page()->setPageScaleFactor(m_currentItem->pageScaleFactor(), frameScrollOffset);
 
-        if (m_frame->settings()->pinchVirtualViewportEnabled()) {
-            // If the pinch viewport's offset is (-1, -1) it means the history item
-            // is an old version of HistoryItem so distribute the scroll between
-            // the main frame and the pinch viewport as best as we can.
-            // FIXME(bokan): This legacy distribution can be removed once the virtual viewport
-            // pinch path is enabled on all platforms for at least one release.
-            if (pinchViewportOffset.x() == -1 && pinchViewportOffset.y() == -1)
-                pinchViewportOffset = FloatPoint(frameScrollOffset - view->scrollPosition());
+        // If the pinch viewport's offset is (-1, -1) it means the history item
+        // is an old version of HistoryItem so distribute the scroll between
+        // the main frame and the pinch viewport as best as we can.
+        if (pinchViewportOffset.x() == -1 && pinchViewportOffset.y() == -1)
+            pinchViewportOffset = FloatPoint(frameScrollOffset - view->scrollPosition());
 
-            m_frame->host()->pinchViewport().setLocation(pinchViewportOffset);
-        }
+        m_frame->host()->pinchViewport().setLocation(pinchViewportOffset);
     } else {
         view->setScrollPositionNonProgrammatically(m_currentItem->scrollPoint());
     }
@@ -1051,6 +1039,7 @@ void FrameLoader::restoreScrollPositionAndViewState()
         if (ScrollingCoordinator* scrollingCoordinator = m_frame->page()->scrollingCoordinator())
             scrollingCoordinator->frameViewRootLayerDidChange(view);
     }
+    documentLoader()->initialScrollState().didRestoreFromHistory = true;
 }
 
 String FrameLoader::userAgent(const KURL& url) const
@@ -1095,8 +1084,9 @@ void FrameLoader::receivedMainResourceError(DocumentLoader* loader, const Resour
         m_frame->deprecatedLocalOwner()->renderFallbackContent();
     }
 
+    HistoryCommitType historyCommitType = loadTypeToCommitType(m_loadType);
     if (loader == m_provisionalDocumentLoader) {
-        client()->dispatchDidFailProvisionalLoad(error);
+        client()->dispatchDidFailProvisionalLoad(error, historyCommitType);
         if (loader != m_provisionalDocumentLoader)
             return;
         m_provisionalDocumentLoader->detachFromFrame();
@@ -1107,7 +1097,7 @@ void FrameLoader::receivedMainResourceError(DocumentLoader* loader, const Resour
         if (m_frame->document()->parser())
             m_frame->document()->parser()->stopParsing();
         if (!m_provisionalDocumentLoader && m_frame->isLoading()) {
-            client()->dispatchDidFailLoad(error);
+            client()->dispatchDidFailLoad(error, historyCommitType);
             m_progressTracker->progressCompleted();
         }
     }
@@ -1156,7 +1146,7 @@ bool FrameLoader::shouldClose()
         return true;
 
     // Store all references to each subframe in advance since beforeunload's event handler may modify frame
-    WillBeHeapVector<RefPtrWillBeMember<LocalFrame> > targetFrames;
+    WillBeHeapVector<RefPtrWillBeMember<LocalFrame>> targetFrames;
     targetFrames.append(m_frame);
     for (Frame* child = m_frame->tree().firstChild(); child; child = child->tree().traverseNext(m_frame)) {
         // FIXME: There is not yet any way to dispatch events to out-of-process frames.
@@ -1410,21 +1400,39 @@ bool FrameLoader::shouldEnforceStrictMixedContentChecking() const
     if (!parentFrame->isLocalFrame())
         return true;
 
+    ASSERT(toLocalFrame(parentFrame)->document());
     return toLocalFrame(parentFrame)->document()->shouldEnforceStrictMixedContentChecking();
 }
 
-SecurityContext::InsecureContentPolicy FrameLoader::insecureContentPolicy() const
+SecurityContext::InsecureRequestsPolicy FrameLoader::insecureRequestsPolicy() const
 {
     Frame* parentFrame = m_frame->tree().parent();
     if (!parentFrame)
-        return SecurityContext::InsecureContentDoNotUpgrade;
+        return SecurityContext::InsecureRequestsDoNotUpgrade;
 
-    // FIXME: We need a way to propagate insecure content policy flags to
+    // FIXME: We need a way to propagate insecure requests policy flags to
     // out-of-process frames. For now, we'll always use default behavior.
     if (!parentFrame->isLocalFrame())
-        return SecurityContext::InsecureContentDoNotUpgrade;
+        return SecurityContext::InsecureRequestsDoNotUpgrade;
 
-    return toLocalFrame(parentFrame)->document()->insecureContentPolicy();
+    ASSERT(toLocalFrame(parentFrame)->document());
+    return toLocalFrame(parentFrame)->document()->insecureRequestsPolicy();
+}
+
+SecurityContext::InsecureNavigationsSet* FrameLoader::insecureNavigationsToUpgrade() const
+{
+    ASSERT(m_frame);
+    Frame* parentFrame = m_frame->tree().parent();
+    if (!parentFrame)
+        return nullptr;
+
+    // FIXME: We need a way to propagate insecure requests policy flags to
+    // out-of-process frames. For now, we'll always use default behavior.
+    if (!parentFrame->isLocalFrame())
+        return nullptr;
+
+    ASSERT(toLocalFrame(parentFrame)->document());
+    return toLocalFrame(parentFrame)->document()->insecureNavigationsToUpgrade();
 }
 
 } // namespace blink

@@ -48,12 +48,10 @@ class Image9 : public ImageD3D
     virtual gl::Error loadCompressedData(const gl::Box &area, const void *input);
 
     virtual gl::Error copy(const gl::Offset &destOffset, const gl::Rectangle &sourceArea, RenderTargetD3D *source);
-    virtual gl::Error copy(const gl::Offset &destOffset, const gl::Rectangle &sourceArea,
+    virtual gl::Error copy(const gl::Offset &destOffset, const gl::Box &sourceArea,
                            const gl::ImageIndex &sourceIndex, TextureStorage *source);
 
   private:
-    DISALLOW_COPY_AND_ASSIGN(Image9);
-
     gl::Error getSurface(IDirect3DSurface9 **outSurface);
 
     gl::Error createSurface();

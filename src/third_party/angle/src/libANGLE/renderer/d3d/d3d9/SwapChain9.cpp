@@ -18,7 +18,9 @@ namespace rx
 SwapChain9::SwapChain9(Renderer9 *renderer, NativeWindow nativeWindow, HANDLE shareHandle,
                        GLenum backBufferFormat, GLenum depthBufferFormat)
     : mRenderer(renderer),
-      SwapChainD3D(nativeWindow, shareHandle, backBufferFormat, depthBufferFormat)
+      SwapChainD3D(nativeWindow, shareHandle, backBufferFormat, depthBufferFormat),
+      mColorRenderTarget(this, false),
+      mDepthStencilRenderTarget(this, true)
 {
     mSwapChain = NULL;
     mBackBuffer = NULL;
@@ -154,8 +156,10 @@ EGLint SwapChain9::reset(int backbufferWidth, int backbufferHeight, EGLint swapI
 
     const d3d9::TextureFormat &depthBufferd3dFormatInfo = d3d9::GetTextureFormatInfo(mDepthBufferFormat);
 
+    // Don't create a swapchain for NULLREF devices
+    D3DDEVTYPE deviceType = mRenderer->getD3D9DeviceType();
     EGLNativeWindowType window = mNativeWindow.getNativeWindow();
-    if (window)
+    if (window && deviceType != D3DDEVTYPE_NULLREF)
     {
         D3DPRESENT_PARAMETERS presentParameters = {0};
         presentParameters.AutoDepthStencilFormat = depthBufferd3dFormatInfo.renderFormat;

@@ -14,12 +14,13 @@ class TransformationMatrix;
 
 class Transform3DRecorder {
 public:
-    Transform3DRecorder(GraphicsContext&, DisplayItemClient, const TransformationMatrix&);
+    Transform3DRecorder(GraphicsContext&, const DisplayItemClientWrapper&, DisplayItem::Type, const TransformationMatrix&);
     ~Transform3DRecorder();
 
 private:
     GraphicsContext& m_context;
-    DisplayItemClient m_client;
+    DisplayItemClientWrapper m_client;
+    DisplayItem::Type m_type;
     bool m_skipRecordingForIdentityTransform;
 };
 

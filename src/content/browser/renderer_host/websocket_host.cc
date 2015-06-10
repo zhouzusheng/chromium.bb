@@ -92,8 +92,7 @@ class WebSocketEventHandler : public net::WebSocketEventInterface {
 
   // net::WebSocketEventInterface implementation
 
-  ChannelState OnAddChannelResponse(bool fail,
-                                    const std::string& selected_subprotocol,
+  ChannelState OnAddChannelResponse(const std::string& selected_subprotocol,
                                     const std::string& extensions) override;
   ChannelState OnDataFrame(bool fin,
                            WebSocketMessageType type,
@@ -156,16 +155,15 @@ WebSocketEventHandler::~WebSocketEventHandler() {
 }
 
 ChannelState WebSocketEventHandler::OnAddChannelResponse(
-    bool fail,
     const std::string& selected_protocol,
     const std::string& extensions) {
   DVLOG(3) << "WebSocketEventHandler::OnAddChannelResponse"
-           << " routing_id=" << routing_id_ << " fail=" << fail
+           << " routing_id=" << routing_id_
            << " selected_protocol=\"" << selected_protocol << "\""
            << " extensions=\"" << extensions << "\"";
 
   return StateCast(dispatcher_->SendAddChannelResponse(
-      routing_id_, fail, selected_protocol, extensions));
+      routing_id_, selected_protocol, extensions));
 }
 
 ChannelState WebSocketEventHandler::OnDataFrame(
@@ -314,10 +312,15 @@ void WebSocketEventHandler::SSLErrorHandlerDelegate::ContinueSSLRequest() {
 
 WebSocketHost::WebSocketHost(int routing_id,
                              WebSocketDispatcherHost* dispatcher,
-                             net::URLRequestContext* url_request_context)
+                             net::URLRequestContext* url_request_context,
+                             base::TimeDelta delay)
     : dispatcher_(dispatcher),
       url_request_context_(url_request_context),
-      routing_id_(routing_id) {
+      routing_id_(routing_id),
+      delay_(delay),
+      pending_flow_control_quota_(0),
+      handshake_succeeded_(false),
+      weak_ptr_factory_(this) {
   DVLOG(1) << "WebSocketHost: created routing_id=" << routing_id;
 }
 
@@ -351,11 +354,56 @@ void WebSocketHost::OnAddChannelRequest(
            << origin.string() << "\"";
 
   DCHECK(!channel_);
+  if (delay_ > base::TimeDelta()) {
+    base::MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&WebSocketHost::AddChannel,
+                   weak_ptr_factory_.GetWeakPtr(),
+                   socket_url,
+                   requested_protocols,
+                   origin,
+                   render_frame_id),
+        delay_);
+  } else {
+    AddChannel(socket_url, requested_protocols, origin, render_frame_id);
+  }
+  // |this| may have been deleted here.
+}
+
+void WebSocketHost::AddChannel(
+    const GURL& socket_url,
+    const std::vector<std::string>& requested_protocols,
+    const url::Origin& origin,
+    int render_frame_id) {
+  DVLOG(3) << "WebSocketHost::AddChannel"
+           << " routing_id=" << routing_id_ << " socket_url=\"" << socket_url
+           << "\" requested_protocols=\""
+           << JoinString(requested_protocols, ", ") << "\" origin=\""
+           << origin.string() << "\"";
+
+  DCHECK(!channel_);
+
   scoped_ptr<net::WebSocketEventInterface> event_interface(
       new WebSocketEventHandler(dispatcher_, routing_id_, render_frame_id));
   channel_.reset(
       new net::WebSocketChannel(event_interface.Pass(), url_request_context_));
+
+  if (pending_flow_control_quota_ > 0) {
+    // channel_->SendFlowControl(pending_flow_control_quota_) must be called
+    // after channel_->SendAddChannelRequest() below.
+    // We post OnFlowControl() here using |weak_ptr_factory_| instead of
+    // calling SendFlowControl directly, because |this| may have been deleted
+    // after channel_->SendAddChannelRequest().
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&WebSocketHost::OnFlowControl,
+                   weak_ptr_factory_.GetWeakPtr(),
+                   pending_flow_control_quota_));
+    pending_flow_control_quota_ = 0;
+  }
+
   channel_->SendAddChannelRequest(socket_url, requested_protocols, origin);
+  // |this| may have been deleted here.
 }
 
 void WebSocketHost::OnSendFrame(bool fin,
@@ -373,7 +421,14 @@ void WebSocketHost::OnFlowControl(int64 quota) {
   DVLOG(3) << "WebSocketHost::OnFlowControl"
            << " routing_id=" << routing_id_ << " quota=" << quota;
 
-  DCHECK(channel_);
+  if (!channel_) {
+    // WebSocketChannel is not yet created due to the delay introduced by
+    // per-renderer WebSocket throttling.
+    // SendFlowControl() is called after WebSocketChannel is created.
+    pending_flow_control_quota_ += quota;
+    return;
+  }
+
   channel_->SendFlowControl(quota);
 }
 
@@ -384,7 +439,18 @@ void WebSocketHost::OnDropChannel(bool was_clean,
            << " routing_id=" << routing_id_ << " was_clean=" << was_clean
            << " code=" << code << " reason=\"" << reason << "\"";
 
-  DCHECK(channel_);
+  if (!channel_) {
+    // WebSocketChannel is not yet created due to the delay introduced by
+    // per-renderer WebSocket throttling.
+    WebSocketDispatcherHost::WebSocketHostState result =
+        dispatcher_->DoDropChannel(routing_id_,
+                                   false,
+                                   net::kWebSocketErrorAbnormalClosure,
+                                   "");
+    DCHECK_EQ(WebSocketDispatcherHost::WEBSOCKET_HOST_DELETED, result);
+    return;
+  }
+
   // TODO(yhirano): Handle |was_clean| appropriately.
   channel_->StartClosingHandshake(code, reason);
 }

@@ -17,6 +17,7 @@
 namespace content {
 
 class FrameTreeNode;
+class NavigationControllerImpl;
 class NavigationURLLoader;
 class ResourceRequestBody;
 class SiteInstanceImpl;
@@ -52,12 +53,17 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
     FAILED,
   };
 
+  // Helper function to determine if the navigation request to |url| should be
+  // sent to the network stack.
+  static bool ShouldMakeNetworkRequest(const GURL& url);
+
   // Creates a request for a browser-intiated navigation.
   static scoped_ptr<NavigationRequest> CreateBrowserInitiated(
       FrameTreeNode* frame_tree_node,
       const NavigationEntryImpl& entry,
       FrameMsg_Navigate_Type::Value navigation_type,
-      base::TimeTicks navigation_start);
+      base::TimeTicks navigation_start,
+      NavigationControllerImpl* controller);
 
   // Creates a request for a renderer-intiated navigation.
   // Note: |body| is sent to the IO thread when calling BeginNavigation, and
@@ -66,21 +72,25 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
       FrameTreeNode* frame_tree_node,
       const CommonNavigationParams& common_params,
       const BeginNavigationParams& begin_params,
-      scoped_refptr<ResourceRequestBody> body);
+      scoped_refptr<ResourceRequestBody> body,
+      int current_history_list_offset,
+      int current_history_list_length);
 
   ~NavigationRequest() override;
 
-  // Called on the UI thread by the Navigator to start the navigation on the IO
-  // thread.
+  // Called on the UI thread by the Navigator to start the navigation. Returns
+  // whether a request was made on the IO thread.
   // TODO(clamy): see if ResourceRequestBody could be un-refcounted to avoid
   // threading subtleties.
-  void BeginNavigation();
+  bool BeginNavigation();
 
   const CommonNavigationParams& common_params() const { return common_params_; }
 
   const BeginNavigationParams& begin_params() const { return begin_params_; }
 
-  const CommitNavigationParams& commit_params() const { return commit_params_; }
+  const RequestNavigationParams& request_params() const {
+    return request_params_;
+  }
 
   NavigationURLLoader* loader_for_testing() const { return loader_.get(); }
 
@@ -113,7 +123,7 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
   NavigationRequest(FrameTreeNode* frame_tree_node,
                     const CommonNavigationParams& common_params,
                     const BeginNavigationParams& begin_params,
-                    const CommitNavigationParams& commit_params,
+                    const RequestNavigationParams& request_params,
                     scoped_refptr<ResourceRequestBody> body,
                     bool browser_initiated,
                     const NavigationEntryImpl* navitation_entry);
@@ -136,7 +146,7 @@ class CONTENT_EXPORT NavigationRequest : public NavigationURLLoaderDelegate {
   // redirects.
   CommonNavigationParams common_params_;
   const BeginNavigationParams begin_params_;
-  const CommitNavigationParams commit_params_;
+  const RequestNavigationParams request_params_;
   const bool browser_initiated_;
 
   NavigationState state_;

@@ -37,8 +37,8 @@
 #include "core/html/HTMLTextAreaElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/layout/LayoutImage.h"
+#include "core/layout/LayoutTextFragment.h"
 #include "core/page/FrameTree.h"
-#include "core/rendering/RenderTextFragment.h"
 #include "core/svg/SVGElement.h"
 #include "platform/scroll/Scrollbar.h"
 
@@ -47,26 +47,30 @@ namespace blink {
 using namespace HTMLNames;
 
 HitTestResult::HitTestResult()
-    : m_isOverWidget(false)
+    : m_hitTestRequest(HitTestRequest::ReadOnly | HitTestRequest::Active)
+    , m_isOverWidget(false)
 {
 }
 
-HitTestResult::HitTestResult(const LayoutPoint& point)
+HitTestResult::HitTestResult(const HitTestRequest& request, const LayoutPoint& point)
     : m_hitTestLocation(point)
+    , m_hitTestRequest(request)
     , m_pointInInnerNodeFrame(point)
     , m_isOverWidget(false)
 {
 }
 
-HitTestResult::HitTestResult(const LayoutPoint& centerPoint, unsigned topPadding, unsigned rightPadding, unsigned bottomPadding, unsigned leftPadding)
+HitTestResult::HitTestResult(const HitTestRequest& request, const LayoutPoint& centerPoint, unsigned topPadding, unsigned rightPadding, unsigned bottomPadding, unsigned leftPadding)
     : m_hitTestLocation(centerPoint, topPadding, rightPadding, bottomPadding, leftPadding)
+    , m_hitTestRequest(request)
     , m_pointInInnerNodeFrame(centerPoint)
     , m_isOverWidget(false)
 {
 }
 
-HitTestResult::HitTestResult(const HitTestLocation& other)
+HitTestResult::HitTestResult(const HitTestRequest& otherRequest, const HitTestLocation& other)
     : m_hitTestLocation(other)
+    , m_hitTestRequest(otherRequest)
     , m_pointInInnerNodeFrame(m_hitTestLocation.point())
     , m_isOverWidget(false)
 {
@@ -74,6 +78,7 @@ HitTestResult::HitTestResult(const HitTestLocation& other)
 
 HitTestResult::HitTestResult(const HitTestResult& other)
     : m_hitTestLocation(other.m_hitTestLocation)
+    , m_hitTestRequest(other.m_hitTestRequest)
     , m_innerNode(other.innerNode())
     , m_innerPossiblyPseudoNode(other.m_innerPossiblyPseudoNode)
     , m_innerNonSharedNode(other.innerNonSharedNode())
@@ -83,8 +88,8 @@ HitTestResult::HitTestResult(const HitTestResult& other)
     , m_scrollbar(other.scrollbar())
     , m_isOverWidget(other.isOverWidget())
 {
-    // Only copy the NodeSet in case of rect hit test.
-    m_rectBasedTestResult = adoptPtrWillBeNoop(other.m_rectBasedTestResult ? new NodeSet(*other.m_rectBasedTestResult) : 0);
+    // Only copy the NodeSet in case of list hit test.
+    m_listBasedTestResult = adoptPtrWillBeNoop(other.m_listBasedTestResult ? new NodeSet(*other.m_listBasedTestResult) : 0);
 }
 
 HitTestResult::~HitTestResult()
@@ -94,6 +99,7 @@ HitTestResult::~HitTestResult()
 HitTestResult& HitTestResult::operator=(const HitTestResult& other)
 {
     m_hitTestLocation = other.m_hitTestLocation;
+    m_hitTestRequest = other.m_hitTestRequest;
     m_innerNode = other.innerNode();
     m_innerPossiblyPseudoNode = other.innerPossiblyPseudoNode();
     m_innerNonSharedNode = other.innerNonSharedNode();
@@ -103,8 +109,8 @@ HitTestResult& HitTestResult::operator=(const HitTestResult& other)
     m_scrollbar = other.scrollbar();
     m_isOverWidget = other.isOverWidget();
 
-    // Only copy the NodeSet in case of rect hit test.
-    m_rectBasedTestResult = adoptPtrWillBeNoop(other.m_rectBasedTestResult ? new NodeSet(*other.m_rectBasedTestResult) : 0);
+    // Only copy the NodeSet in case of list hit test.
+    m_listBasedTestResult = adoptPtrWillBeNoop(other.m_listBasedTestResult ? new NodeSet(*other.m_listBasedTestResult) : 0);
 
     return *this;
 }
@@ -117,7 +123,7 @@ DEFINE_TRACE(HitTestResult)
     visitor->trace(m_innerURLElement);
     visitor->trace(m_scrollbar);
 #if ENABLE(OILPAN)
-    visitor->trace(m_rectBasedTestResult);
+    visitor->trace(m_listBasedTestResult);
 #endif
 }
 
@@ -125,7 +131,7 @@ PositionWithAffinity HitTestResult::position() const
 {
     if (!m_innerPossiblyPseudoNode)
         return PositionWithAffinity();
-    LayoutObject* renderer = this->renderer();
+    LayoutObject* renderer = this->layoutObject();
     if (!renderer)
         return PositionWithAffinity();
     if (m_innerPossiblyPseudoNode->isPseudoElement() && m_innerPossiblyPseudoNode->pseudoId() == BEFORE)
@@ -133,9 +139,9 @@ PositionWithAffinity HitTestResult::position() const
     return renderer->positionForPoint(localPoint());
 }
 
-LayoutObject* HitTestResult::renderer() const
+LayoutObject* HitTestResult::layoutObject() const
 {
-    return m_innerNode ? m_innerNode->renderer() : 0;
+    return m_innerNode ? m_innerNode->layoutObject() : 0;
 }
 
 void HitTestResult::setToShadowHostIfInClosedShadowRoot()
@@ -211,7 +217,7 @@ String HitTestResult::spellingToolTip(TextDirection& dir) const
     if (!marker)
         return String();
 
-    if (LayoutObject* renderer = m_innerNonSharedNode->renderer())
+    if (LayoutObject* renderer = m_innerNonSharedNode->layoutObject())
         dir = renderer->style()->direction();
     return marker->description();
 }
@@ -225,7 +231,7 @@ String HitTestResult::title(TextDirection& dir) const
         if (titleNode->isElementNode()) {
             String title = toElement(titleNode)->title();
             if (!title.isNull()) {
-                if (LayoutObject* renderer = titleNode->renderer())
+                if (LayoutObject* renderer = titleNode->layoutObject())
                     dir = renderer->style()->direction();
                 return title;
             }
@@ -257,11 +263,11 @@ Image* HitTestResult::image() const
     if (!m_innerNonSharedNode)
         return 0;
 
-    LayoutObject* renderer = m_innerNonSharedNode->renderer();
+    LayoutObject* renderer = m_innerNonSharedNode->layoutObject();
     if (renderer && renderer->isImage()) {
         LayoutImage* image = toLayoutImage(renderer);
         if (image->cachedImage() && !image->cachedImage()->errorOccurred())
-            return image->cachedImage()->imageForRenderer(image);
+            return image->cachedImage()->imageForLayoutObject(image);
     }
 
     return 0;
@@ -271,7 +277,7 @@ IntRect HitTestResult::imageRect() const
 {
     if (!image())
         return IntRect();
-    return m_innerNonSharedNode->renderBox()->absoluteContentQuad().enclosingBoundingBox();
+    return m_innerNonSharedNode->layoutBox()->absoluteContentQuad().enclosingBoundingBox();
 }
 
 KURL HitTestResult::absoluteImageURL() const
@@ -279,7 +285,7 @@ KURL HitTestResult::absoluteImageURL() const
     if (!m_innerNonSharedNode)
         return KURL();
 
-    LayoutObject* renderer = m_innerNonSharedNode->renderer();
+    LayoutObject* renderer = m_innerNonSharedNode->layoutObject();
     if (!(renderer && renderer->isImage()))
         return KURL();
 
@@ -309,7 +315,7 @@ HTMLMediaElement* HitTestResult::mediaElement() const
     if (!m_innerNonSharedNode)
         return 0;
 
-    if (!(m_innerNonSharedNode->renderer() && m_innerNonSharedNode->renderer()->isMedia()))
+    if (!(m_innerNonSharedNode->layoutObject() && m_innerNonSharedNode->layoutObject()->isMedia()))
         return 0;
 
     if (isHTMLMediaElement(*m_innerNonSharedNode))
@@ -331,9 +337,9 @@ bool HitTestResult::isLiveLink() const
 
 bool HitTestResult::isMisspelled() const
 {
-    if (!innerNode() || !innerNode()->renderer())
+    if (!innerNode() || !innerNode()->layoutObject())
         return false;
-    VisiblePosition pos(innerNode()->renderer()->positionForPoint(localPoint()));
+    VisiblePosition pos(innerNode()->layoutObject()->positionForPoint(localPoint()));
     if (pos.isNull())
         return false;
     return m_innerNonSharedNode->document().markers().markersInRange(
@@ -372,35 +378,39 @@ bool HitTestResult::isContentEditable() const
     return m_innerNonSharedNode->hasEditableStyle();
 }
 
-bool HitTestResult::addNodeToRectBasedTestResult(Node* node, const HitTestRequest& request, const HitTestLocation& locationInContainer, const LayoutRect& rect)
+bool HitTestResult::addNodeToListBasedTestResult(Node* node, const HitTestLocation& locationInContainer, const LayoutRect& rect)
 {
-    // If it is not a rect-based hit test, this method has to be no-op.
-    // Return false, so the hit test stops.
-    if (!isRectBasedTest())
+    // If not a list-based test, this function should be a no-op.
+    if (!hitTestRequest().listBased())
         return false;
 
     // If node is null, return true so the hit test can continue.
     if (!node)
         return true;
 
-    mutableRectBasedTestResult().add(node);
+    mutableListBasedTestResult().add(node);
 
-    bool regionFilled = rect.contains(locationInContainer.boundingBox());
+    if (hitTestRequest().penetratingList())
+        return true;
+
+    bool regionFilled = rect.contains(LayoutRect(locationInContainer.boundingBox()));
     return !regionFilled;
 }
 
-bool HitTestResult::addNodeToRectBasedTestResult(Node* node, const HitTestRequest& request, const HitTestLocation& locationInContainer, const FloatRect& rect)
+bool HitTestResult::addNodeToListBasedTestResult(Node* node, const HitTestLocation& locationInContainer, const FloatRect& rect)
 {
-    // If it is not a rect-based hit test, this method has to be no-op.
-    // Return false, so the hit test stops.
-    if (!isRectBasedTest())
+    // If not a list-based test, this function should be a no-op.
+    if (!hitTestRequest().listBased())
         return false;
 
     // If node is null, return true so the hit test can continue.
     if (!node)
         return true;
 
-    mutableRectBasedTestResult().add(node);
+    mutableListBasedTestResult().add(node);
+
+    if (hitTestRequest().penetratingList())
+        return true;
 
     bool regionFilled = rect.contains(locationInContainer.boundingBox());
     return !regionFilled;
@@ -408,7 +418,7 @@ bool HitTestResult::addNodeToRectBasedTestResult(Node* node, const HitTestReques
 
 void HitTestResult::append(const HitTestResult& other)
 {
-    ASSERT(isRectBasedTest() && other.isRectBasedTest());
+    ASSERT(hitTestRequest().listBased());
 
     if (!m_scrollbar && other.scrollbar()) {
         setScrollbar(other.scrollbar());
@@ -424,25 +434,25 @@ void HitTestResult::append(const HitTestResult& other)
         m_isOverWidget = other.isOverWidget();
     }
 
-    if (other.m_rectBasedTestResult) {
-        NodeSet& set = mutableRectBasedTestResult();
-        for (NodeSet::const_iterator it = other.m_rectBasedTestResult->begin(), last = other.m_rectBasedTestResult->end(); it != last; ++it)
+    if (other.m_listBasedTestResult) {
+        NodeSet& set = mutableListBasedTestResult();
+        for (NodeSet::const_iterator it = other.m_listBasedTestResult->begin(), last = other.m_listBasedTestResult->end(); it != last; ++it)
             set.add(it->get());
     }
 }
 
-const HitTestResult::NodeSet& HitTestResult::rectBasedTestResult() const
+const HitTestResult::NodeSet& HitTestResult::listBasedTestResult() const
 {
-    if (!m_rectBasedTestResult)
-        m_rectBasedTestResult = adoptPtrWillBeNoop(new NodeSet);
-    return *m_rectBasedTestResult;
+    if (!m_listBasedTestResult)
+        m_listBasedTestResult = adoptPtrWillBeNoop(new NodeSet);
+    return *m_listBasedTestResult;
 }
 
-HitTestResult::NodeSet& HitTestResult::mutableRectBasedTestResult()
+HitTestResult::NodeSet& HitTestResult::mutableListBasedTestResult()
 {
-    if (!m_rectBasedTestResult)
-        m_rectBasedTestResult = adoptPtrWillBeNoop(new NodeSet);
-    return *m_rectBasedTestResult;
+    if (!m_listBasedTestResult)
+        m_listBasedTestResult = adoptPtrWillBeNoop(new NodeSet);
+    return *m_listBasedTestResult;
 }
 
 void HitTestResult::resolveRectBasedTest(Node* resolvedInnerNode, const LayoutPoint& resolvedPointInMainFrame)
@@ -454,12 +464,12 @@ void HitTestResult::resolveRectBasedTest(Node* resolvedInnerNode, const LayoutPo
     m_innerNode = nullptr;
     m_innerNonSharedNode = nullptr;
     m_innerPossiblyPseudoNode = nullptr;
-    m_rectBasedTestResult = nullptr;
+    m_listBasedTestResult = nullptr;
 
     // Update the HitTestResult as if the supplied node had been hit in normal point-based hit-test.
     // Note that we don't know the local point after a rect-based hit-test, but we never use
     // it so shouldn't bother with the cost of computing it.
-    resolvedInnerNode->renderer()->updateHitTestResult(*this, LayoutPoint());
+    resolvedInnerNode->layoutObject()->updateHitTestResult(*this, LayoutPoint());
     ASSERT(!isRectBasedTest());
 }
 

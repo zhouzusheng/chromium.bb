@@ -9,9 +9,9 @@
 #include "bindings/core/v8/ScriptPromiseResolver.h"
 #include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
+#include "core/dom/DOMArrayBuffer.h"
 #include "core/fileapi/FileReaderLoader.h"
 #include "core/fileapi/FileReaderLoaderClient.h"
-#include "core/streams/ReadableStreamImpl.h"
 #include "platform/blob/BlobData.h"
 #include "platform/heap/Handle.h"
 #include "wtf/RefPtr.h"
@@ -19,6 +19,7 @@
 namespace blink {
 
 class BodyStreamBuffer;
+class ReadableByteStream;
 class ScriptState;
 
 class Body
@@ -37,6 +38,11 @@ public:
         ResponseAsJSON,
         ResponseAsText
     };
+    enum LockBodyOption {
+        LockBodyOptionNone,
+        // Setting "body passed" flag in addition to acquiring a lock.
+        PassBody,
+    };
     explicit Body(ExecutionContext*);
     virtual ~Body() { }
 
@@ -45,17 +51,17 @@ public:
     ScriptPromise formData(ScriptState*);
     ScriptPromise json(ScriptState*);
     ScriptPromise text(ScriptState*);
-    ReadableStream* body();
+    ReadableByteStream* body();
 
-    // Sets the bodyUsed flag to true. This signifies that the contents of the
-    // body have been consumed and cannot be accessed again.
-    void setBodyUsed();
     bool bodyUsed() const;
+    void lockBody(LockBodyOption = LockBodyOptionNone);
 
-    bool streamAccessed() const;
+    // Returns true if the body stream is (possibly partially) consumed.
+    bool isBodyConsumed() const;
+    void refreshBody();
 
     // Creates a new BodyStreamBuffer to drain the data from the ReadableStream.
-    BodyStreamBuffer* createDrainingStream(bool* dataLost);
+    BodyStreamBuffer* createDrainingStream();
 
     // ActiveDOMObject override.
     virtual void stop() override;
@@ -63,9 +69,7 @@ public:
 
     DECLARE_VIRTUAL_TRACE();
 
-protected:
-    // Copy constructor for clone() implementations
-    explicit Body(const Body&);
+    BodyStreamBuffer* bufferForTest() const { return buffer(); }
 
 private:
     class ReadableStreamSource;
@@ -91,7 +95,7 @@ private:
     // FIXME: We should seek a cleaner way to handle the data.
     virtual PassRefPtr<BlobDataHandle> blobDataHandle() const = 0;
     virtual BodyStreamBuffer* buffer() const = 0;
-    virtual String contentTypeForBuffer() const = 0;
+    virtual String mimeType() const = 0;
 
     void didFinishLoadingViaStream(PassRefPtr<DOMArrayBuffer>);
 
@@ -100,7 +104,7 @@ private:
     ResponseType m_responseType;
     RefPtrWillBeMember<ScriptPromiseResolver> m_resolver;
     Member<ReadableStreamSource> m_streamSource;
-    Member<ReadableStreamImpl<ReadableStreamChunkTypeTraits<DOMArrayBuffer>>> m_stream;
+    Member<ReadableByteStream> m_stream;
 };
 
 } // namespace blink

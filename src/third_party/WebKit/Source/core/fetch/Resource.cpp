@@ -24,9 +24,9 @@
 #include "config.h"
 #include "core/fetch/Resource.h"
 
-#include "core/FetchInitiatorTypeNames.h"
 #include "core/fetch/CachedMetadata.h"
 #include "core/fetch/CrossOriginAccessControl.h"
+#include "core/fetch/FetchInitiatorTypeNames.h"
 #include "core/fetch/MemoryCache.h"
 #include "core/fetch/ResourceClient.h"
 #include "core/fetch/ResourceClientWalker.h"
@@ -34,7 +34,6 @@
 #include "core/fetch/ResourceLoader.h"
 #include "core/fetch/ResourcePtr.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/loader/LinkLoader.h"
 #include "platform/Logging.h"
 #include "platform/SharedBuffer.h"
 #include "platform/TraceEvent.h"
@@ -87,7 +86,7 @@ static inline bool shouldUpdateHeaderAfterRevalidation(const AtomicString& heade
             return false;
     }
     for (size_t i = 0; i < WTF_ARRAY_LENGTH(headerPrefixesToIgnoreAfterRevalidation); i++) {
-        if (header.startsWith(headerPrefixesToIgnoreAfterRevalidation[i], false))
+        if (header.startsWith(headerPrefixesToIgnoreAfterRevalidation[i], TextCaseInsensitive))
             return false;
     }
     return true;
@@ -212,19 +211,8 @@ DEFINE_TRACE(Resource)
     visitor->trace(m_proxyResource);
 }
 
-void Resource::failBeforeStarting()
-{
-    WTF_LOG(ResourceLoading, "Cannot start loading '%s'", url().string().latin1().data());
-    error(Resource::LoadError);
-}
-
 void Resource::load(ResourceFetcher* fetcher, const ResourceLoaderOptions& options)
 {
-    if (!fetcher->frame()) {
-        failBeforeStarting();
-        return;
-    }
-
     m_options = options;
     m_loading = true;
 
@@ -321,15 +309,21 @@ void Resource::finish()
         m_status = Cached;
 }
 
-bool Resource::passesAccessControlCheck(ExecutionContext* context, SecurityOrigin* securityOrigin)
+bool Resource::passesAccessControlCheck(SecurityOrigin* securityOrigin) const
 {
     String ignoredErrorDescription;
-    return passesAccessControlCheck(context, securityOrigin, ignoredErrorDescription);
+    return passesAccessControlCheck(securityOrigin, ignoredErrorDescription);
 }
 
-bool Resource::passesAccessControlCheck(ExecutionContext* context, SecurityOrigin* securityOrigin, String& errorDescription)
+bool Resource::passesAccessControlCheck(SecurityOrigin* securityOrigin, String& errorDescription) const
 {
-    return blink::passesAccessControlCheck(context, m_response, resourceRequest().allowStoredCredentials() ? AllowStoredCredentials : DoNotAllowStoredCredentials, securityOrigin, errorDescription);
+    return blink::passesAccessControlCheck(m_response, resourceRequest().allowStoredCredentials() ? AllowStoredCredentials : DoNotAllowStoredCredentials, securityOrigin, errorDescription);
+}
+
+bool Resource::isEligibleForIntegrityCheck(SecurityOrigin* securityOrigin) const
+{
+    String errorDescription;
+    return securityOrigin->canRequest(resourceRequest().url()) || passesAccessControlCheck(securityOrigin, errorDescription);
 }
 
 static double currentAge(const ResourceResponse& response, double responseTimestamp)
@@ -342,6 +336,11 @@ static double currentAge(const ResourceResponse& response, double responseTimest
     double correctedReceivedAge = std::isfinite(ageValue) ? std::max(apparentAge, ageValue) : apparentAge;
     double residentTime = currentTime() - responseTimestamp;
     return correctedReceivedAge + residentTime;
+}
+
+double Resource::currentAge() const
+{
+    return blink::currentAge(m_response, m_responseTimestamp);
 }
 
 static double freshnessLifetime(ResourceResponse& response, double responseTimestamp)
@@ -371,6 +370,16 @@ static double freshnessLifetime(ResourceResponse& response, double responseTimes
         return (creationTime - lastModifiedValue) * 0.1;
     // If no cache headers are present, the specification leaves the decision to the UA. Other browsers seem to opt for 0.
     return 0;
+}
+
+double Resource::freshnessLifetime()
+{
+    return blink::freshnessLifetime(m_response, m_responseTimestamp);
+}
+
+double Resource::stalenessLifetime()
+{
+    return m_response.cacheControlStaleWhileRevalidate();
 }
 
 static bool canUseResponse(ResourceResponse& response, double responseTimestamp)
@@ -439,13 +448,6 @@ void Resource::responseReceived(const ResourceResponse& response, PassOwnPtr<Web
     String encoding = response.textEncodingName();
     if (!encoding.isNull())
         setEncoding(encoding);
-
-    if (m_loader) {
-        ResourceFetcher* fetcher = ResourceFetcher::toResourceFetcher(m_loader->host());
-        if (fetcher && fetcher->frame()) {
-            LinkLoader::loadLinkFromHeader(response.httpHeaderField("Link"), fetcher->frame()->document());
-        }
-    }
 
     if (!m_resourceToRevalidate)
         return;

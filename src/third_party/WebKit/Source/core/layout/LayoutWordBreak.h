@@ -27,17 +27,17 @@
 #ifndef LayoutWordBreak_h
 #define LayoutWordBreak_h
 
-#include "core/rendering/RenderText.h"
+#include "core/layout/LayoutText.h"
 
 namespace blink {
 
 class HTMLElement;
 
-class LayoutWordBreak final : public RenderText {
+class LayoutWordBreak final : public LayoutText {
 public:
     explicit LayoutWordBreak(HTMLElement*);
 
-    virtual const char* renderName() const override;
+    virtual const char* name() const override { return "LayoutWordBreak"; }
     virtual bool isWordBreak() const override;
 };
 

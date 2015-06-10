@@ -135,6 +135,12 @@ void ComputeInputLatencyHistograms(WebInputEvent::Type type,
   }
 }
 
+// Touch to scroll latency that is mostly under 1 second.
+#define UMA_HISTOGRAM_TOUCH_TO_SCROLL_LATENCY(name, start, end)               \
+  UMA_HISTOGRAM_CUSTOM_COUNTS(                                                \
+      name, (end.event_time - start.event_time).InMicroseconds(), 1, 1000000, \
+      100)
+
 // Long scroll latency component that is mostly under 200ms.
 #define UMA_HISTOGRAM_SCROLL_LATENCY_LONG(name, start, end)        \
   UMA_HISTOGRAM_CUSTOM_COUNTS(                                     \
@@ -150,10 +156,12 @@ void ComputeInputLatencyHistograms(WebInputEvent::Type type,
     1, 50000, 50)
 
 void ComputeScrollLatencyHistograms(
-    const LatencyInfo::LatencyComponent& swap_component,
+    const LatencyInfo::LatencyComponent& gpu_swap_begin_component,
+    const LatencyInfo::LatencyComponent& gpu_swap_end_component,
     int64 latency_component_id,
-    const ui::LatencyInfo& latency) {
-  DCHECK(!swap_component.event_time.is_null());
+    const LatencyInfo& latency) {
+  DCHECK(!gpu_swap_begin_component.event_time.is_null());
+  DCHECK(!gpu_swap_end_component.event_time.is_null());
   LatencyInfo::LatencyComponent first_original_component, original_component;
   if (latency.FindLatency(
           ui::INPUT_EVENT_LATENCY_FIRST_SCROLL_UPDATE_ORIGINAL_COMPONENT,
@@ -162,11 +170,14 @@ void ComputeScrollLatencyHistograms(
     // first scroll event in a sequence and the original timestamp of that
     // scroll event's underlying touch event.
     for (size_t i = 0; i < first_original_component.event_count; i++) {
-      UMA_HISTOGRAM_CUSTOM_COUNTS(
+      UMA_HISTOGRAM_TOUCH_TO_SCROLL_LATENCY(
+          "Event.Latency.TouchToFirstScrollUpdateSwapBegin",
+          first_original_component, gpu_swap_begin_component);
+      // TODO(brianderson): Remove this version once we have enough overlapping
+      // data with the metric above. crbug.com/478845
+      UMA_HISTOGRAM_TOUCH_TO_SCROLL_LATENCY(
           "Event.Latency.TouchToFirstScrollUpdateSwap",
-          (swap_component.event_time - first_original_component.event_time)
-              .InMicroseconds(),
-          1, 1000000, 100);
+          first_original_component, gpu_swap_end_component);
     }
     original_component = first_original_component;
   } else if (!latency.FindLatency(
@@ -179,11 +190,14 @@ void ComputeScrollLatencyHistograms(
   // created (averaged if there are multiple) to when the scroll gesture
   // results in final frame swap.
   for (size_t i = 0; i < original_component.event_count; i++) {
-    UMA_HISTOGRAM_CUSTOM_COUNTS(
-        "Event.Latency.TouchToScrollUpdateSwap",
-        (swap_component.event_time - original_component.event_time)
-            .InMicroseconds(),
-        1, 1000000, 100);
+    UMA_HISTOGRAM_TOUCH_TO_SCROLL_LATENCY(
+        "Event.Latency.TouchToScrollUpdateSwapBegin", original_component,
+        gpu_swap_begin_component);
+    // TODO(brianderson): Remove this version once we have enough overlapping
+    // data with the metric above. crbug.com/478845
+    UMA_HISTOGRAM_TOUCH_TO_SCROLL_LATENCY(
+        "Event.Latency.TouchToScrollUpdateSwap", original_component,
+        gpu_swap_end_component);
   }
 
   // TODO(miletus): Add validation for making sure the following components
@@ -235,17 +249,13 @@ void ComputeScrollLatencyHistograms(
       "Event.Latency.ScrollUpdate.RendererSwapToBrowserNotified",
       renderer_swap_component, browser_received_swap_component);
 
-  LatencyInfo::LatencyComponent gpu_swap_component;
-  if (!latency.FindLatency(ui::INPUT_EVENT_GPU_SWAP_BUFFER_COMPONENT,
-                           0, &gpu_swap_component))
-    return;
-
   UMA_HISTOGRAM_SCROLL_LATENCY_LONG(
       "Event.Latency.ScrollUpdate.BrowserNotifiedToBeforeGpuSwap",
-      browser_received_swap_component, gpu_swap_component);
+      browser_received_swap_component, gpu_swap_begin_component);
 
   UMA_HISTOGRAM_SCROLL_LATENCY_SHORT("Event.Latency.ScrollUpdate.GpuSwap",
-                                     gpu_swap_component, swap_component);
+                                     gpu_swap_begin_component,
+                                     gpu_swap_end_component);
 }
 
 // LatencyComponents generated in the renderer must have component IDs
@@ -257,8 +267,7 @@ void AddLatencyInfoComponentIds(LatencyInfo* latency,
   auto lc = latency->latency_components.begin();
   while (lc != latency->latency_components.end()) {
     ui::LatencyComponentType component_type = lc->first.first;
-    if (component_type == ui::WINDOW_SNAPSHOT_FRAME_NUMBER_COMPONENT ||
-        component_type == ui::WINDOW_OLD_SNAPSHOT_FRAME_NUMBER_COMPONENT) {
+    if (component_type == ui::WINDOW_SNAPSHOT_FRAME_NUMBER_COMPONENT) {
       // Generate a new component entry with the correct component ID
       auto key = std::make_pair(component_type, latency_component_id);
       new_components[key] = lc->second;
@@ -389,11 +398,17 @@ void RenderWidgetHostLatencyTracker::OnSwapCompositorFrame(
 }
 
 void RenderWidgetHostLatencyTracker::OnFrameSwapped(
-    const ui::LatencyInfo& latency) {
-  LatencyInfo::LatencyComponent swap_component;
+    const LatencyInfo& latency) {
+  LatencyInfo::LatencyComponent gpu_swap_end_component;
   if (!latency.FindLatency(
           ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0,
-          &swap_component)) {
+          &gpu_swap_end_component)) {
+    return;
+  }
+
+  LatencyInfo::LatencyComponent gpu_swap_begin_component;
+  if (!latency.FindLatency(ui::INPUT_EVENT_GPU_SWAP_BUFFER_COMPONENT, 0,
+                           &gpu_swap_begin_component)) {
     return;
   }
 
@@ -401,33 +416,27 @@ void RenderWidgetHostLatencyTracker::OnFrameSwapped(
   if (latency.FindLatency(ui::TAB_SHOW_COMPONENT, latency_component_id_,
                           &tab_switch_component)) {
     base::TimeDelta delta =
-        swap_component.event_time - tab_switch_component.event_time;
+        gpu_swap_end_component.event_time - tab_switch_component.event_time;
     for (size_t i = 0; i < tab_switch_component.event_count; i++) {
       UMA_HISTOGRAM_TIMES("MPArch.RWH_TabSwitchPaintDuration", delta);
     }
   }
 
-  LatencyInfo::LatencyComponent rwh_component;
   if (!latency.FindLatency(ui::INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT,
-                           latency_component_id_, &rwh_component)) {
+                           latency_component_id_, nullptr)) {
     return;
   }
 
-  ComputeScrollLatencyHistograms(swap_component, latency_component_id_,
+  ComputeScrollLatencyHistograms(gpu_swap_begin_component,
+                                 gpu_swap_end_component, latency_component_id_,
                                  latency);
 
-  ui::LatencyInfo::LatencyComponent gpu_swap_component;
-  if (!latency.FindLatency(ui::INPUT_EVENT_GPU_SWAP_BUFFER_COMPONENT, 0,
-                           &gpu_swap_component)) {
-    return;
-  }
-
-  ui::LatencyInfo::LatencyComponent browser_swap_component;
+  LatencyInfo::LatencyComponent browser_swap_component;
   if (latency.FindLatency(
           ui::INPUT_EVENT_BROWSER_RECEIVED_RENDERER_SWAP_COMPONENT, 0,
           &browser_swap_component)) {
     base::TimeDelta delta =
-        gpu_swap_component.event_time - browser_swap_component.event_time;
+        gpu_swap_begin_component.event_time - browser_swap_component.event_time;
     browser_composite_latency_history_.InsertSample(delta);
   }
 }

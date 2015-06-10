@@ -52,12 +52,6 @@
         'accelerators/platform_accelerator_cocoa.mm',
         'android/ui_base_jni_registrar.cc',
         'android/ui_base_jni_registrar.h',
-        'android/view_android.cc',
-        'android/view_android.h',
-        'android/window_android.cc',
-        'android/window_android.h',
-        'android/window_android_compositor.h',
-        'android/window_android_observer.h',
         'base_window.cc',
         'base_window.h',
         'clipboard/clipboard.cc',
@@ -202,6 +196,10 @@
         'idle/idle_win.cc',
         'idle/screensaver_window_finder_x11.cc',
         'idle/screensaver_window_finder_x11.h',
+        'ios/cru_context_menu_controller.h',
+        'ios/cru_context_menu_controller.mm',
+        'ios/cru_context_menu_holder.h',
+        'ios/cru_context_menu_holder.mm',
         'l10n/formatter.cc',
         'l10n/formatter.h',
         'l10n/l10n_font_util.cc',
@@ -581,6 +579,7 @@
           ],
           'dependencies': [
             '../../cc/cc.gyp:cc',
+            '../android/ui_android.gyp:ui_java',
             'ui_base_jni_headers',
           ],
           'link_settings': {
@@ -588,11 +587,6 @@
               '-ljnigraphics',
             ],
           },
-        }],
-        ['OS=="android" and android_webview_build==0', {
-          'dependencies': [
-            '../android/ui_android.gyp:ui_java',
-          ],
         }],
         ['OS=="android" and use_aura==0', {
           'sources!': [
@@ -702,8 +696,6 @@
              '../android/java/src/org/chromium/ui/base/ResourceBundle.java',
              '../android/java/src/org/chromium/ui/base/SelectFileDialog.java',
              '../android/java/src/org/chromium/ui/base/TouchDevice.java',
-             '../android/java/src/org/chromium/ui/base/ViewAndroid.java',
-             '../android/java/src/org/chromium/ui/base/WindowAndroid.java',
            ],
            'variables': {
              'jni_gen_package': 'ui',

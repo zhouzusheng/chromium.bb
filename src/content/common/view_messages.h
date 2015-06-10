@@ -24,6 +24,7 @@
 #include "content/public/common/file_chooser_file_info.h"
 #include "content/public/common/file_chooser_params.h"
 #include "content/public/common/menu_item.h"
+#include "content/public/common/message_port_types.h"
 #include "content/public/common/page_state.h"
 #include "content/public/common/page_zoom.h"
 #include "content/public/common/referrer.h"
@@ -41,6 +42,7 @@
 #include "third_party/WebKit/public/platform/WebFloatPoint.h"
 #include "third_party/WebKit/public/platform/WebFloatRect.h"
 #include "third_party/WebKit/public/platform/WebScreenInfo.h"
+#include "third_party/WebKit/public/web/WebDeviceEmulationParams.h"
 #include "third_party/WebKit/public/web/WebFindOptions.h"
 #include "third_party/WebKit/public/web/WebMediaPlayerAction.h"
 #include "third_party/WebKit/public/web/WebPluginAction.h"
@@ -72,6 +74,8 @@
 
 #define IPC_MESSAGE_START ViewMsgStart
 
+IPC_ENUM_TRAITS_MAX_VALUE(blink::WebDeviceEmulationParams::ScreenPosition,
+                          blink::WebDeviceEmulationParams::ScreenPositionLast)
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebMediaPlayerAction::Type,
                           blink::WebMediaPlayerAction::Type::TypeLast)
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebPluginAction::Type,
@@ -136,6 +140,20 @@ IPC_STRUCT_TRAITS_BEGIN(blink::WebFloatRect)
   IPC_STRUCT_TRAITS_MEMBER(y)
   IPC_STRUCT_TRAITS_MEMBER(width)
   IPC_STRUCT_TRAITS_MEMBER(height)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(blink::WebSize)
+  IPC_STRUCT_TRAITS_MEMBER(width)
+  IPC_STRUCT_TRAITS_MEMBER(height)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(blink::WebDeviceEmulationParams)
+  IPC_STRUCT_TRAITS_MEMBER(screenPosition)
+  IPC_STRUCT_TRAITS_MEMBER(deviceScaleFactor)
+  IPC_STRUCT_TRAITS_MEMBER(viewSize)
+  IPC_STRUCT_TRAITS_MEMBER(fitToView)
+  IPC_STRUCT_TRAITS_MEMBER(offset)
+  IPC_STRUCT_TRAITS_MEMBER(scale)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(blink::WebScreenInfo)
@@ -233,6 +251,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::RendererPreferences)
   IPC_STRUCT_TRAITS_MEMBER(disable_client_blocked_error_page)
   IPC_STRUCT_TRAITS_MEMBER(plugin_fullscreen_allowed)
   IPC_STRUCT_TRAITS_MEMBER(use_video_overlay_for_embedded_encrypted_video)
+  IPC_STRUCT_TRAITS_MEMBER(use_view_overlay_for_all_video)
   IPC_STRUCT_TRAITS_MEMBER(caption_font_family_name)
   IPC_STRUCT_TRAITS_MEMBER(caption_font_height)
   IPC_STRUCT_TRAITS_MEMBER(small_caption_font_family_name)
@@ -243,6 +262,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::RendererPreferences)
   IPC_STRUCT_TRAITS_MEMBER(status_font_height)
   IPC_STRUCT_TRAITS_MEMBER(message_font_family_name)
   IPC_STRUCT_TRAITS_MEMBER(message_font_height)
+  IPC_STRUCT_TRAITS_MEMBER(network_contry_iso)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::CookieData)
@@ -446,6 +466,9 @@ IPC_STRUCT_BEGIN(ViewMsg_Resize_Params)
   IPC_STRUCT_MEMBER(gfx::Rect, resizer_rect)
   // Indicates whether a page is fullscreen or not.
   IPC_STRUCT_MEMBER(bool, is_fullscreen)
+  // If set, requests the renderer to reply with a ViewHostMsg_UpdateRect
+  // with the ViewHostMsg_UpdateRect_Flags::IS_RESIZE_ACK bit set in flags.
+  IPC_STRUCT_MEMBER(bool, needs_resize_ack)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(ViewMsg_New_Params)
@@ -532,7 +555,7 @@ IPC_STRUCT_BEGIN(ViewMsg_PostMessage_Params)
   IPC_STRUCT_MEMBER(base::string16, target_origin)
 
   // Information about the MessagePorts this message contains.
-  IPC_STRUCT_MEMBER(std::vector<int>, message_port_ids)
+  IPC_STRUCT_MEMBER(std::vector<content::TransferredMessagePort>, message_ports)
   IPC_STRUCT_MEMBER(std::vector<int>, new_routing_ids)
 IPC_STRUCT_END()
 
@@ -615,6 +638,13 @@ IPC_MESSAGE_ROUTED0(ViewMsg_Close)
 IPC_MESSAGE_ROUTED1(ViewMsg_Resize,
                     ViewMsg_Resize_Params /* params */)
 
+// Enables device emulation. See WebDeviceEmulationParams for description.
+IPC_MESSAGE_ROUTED1(ViewMsg_EnableDeviceEmulation,
+                    blink::WebDeviceEmulationParams /* params */)
+
+// Disables device emulation, enabled previously by EnableDeviceEmulation.
+IPC_MESSAGE_ROUTED0(ViewMsg_DisableDeviceEmulation)
+
 // Sent to inform the renderer of its screen device color profile. An empty
 // profile tells the renderer use the default sRGB color profile.
 IPC_MESSAGE_ROUTED1(ViewMsg_ColorProfile,
@@ -685,6 +715,9 @@ IPC_MESSAGE_ROUTED2(ViewMsg_PluginActionAt,
 // Posts a message from a frame in another process to the current renderer.
 IPC_MESSAGE_ROUTED1(ViewMsg_PostMessageEvent,
                     ViewMsg_PostMessage_Params)
+
+// Resets the page scale for the current main frame to the default page scale.
+IPC_MESSAGE_ROUTED0(ViewMsg_ResetPageScale)
 
 // Change the zoom level for the current main frame.  If the level actually
 // changes, a ViewHostMsg_DidZoomURL message will be sent back to the browser
@@ -890,12 +923,6 @@ IPC_MESSAGE_CONTROL1(ViewMsg_TempCrashWithData,
 IPC_MESSAGE_ROUTED1(ViewMsg_ReleaseDisambiguationPopupBitmap,
                     cc::SharedBitmapId /* id */)
 
-// Notifies the renderer that a snapshot has been retrieved.
-IPC_MESSAGE_ROUTED3(ViewMsg_WindowSnapshotCompleted,
-                    int /* snapshot_id */,
-                    gfx::Size /* size */,
-                    std::vector<unsigned char> /* png */)
-
 // Fetches complete rendered content of a web page as plain text.
 IPC_MESSAGE_ROUTED0(ViewMsg_GetRenderedText)
 
@@ -1061,11 +1088,6 @@ IPC_MESSAGE_ROUTED2(ViewHostMsg_ShowWidget,
 // Message to show a full screen widget.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_ShowFullscreenWidget,
                     int /* route_id */)
-
-// This message is sent after ViewHostMsg_ShowView to cause the RenderView
-// to run in a modal fashion until it is closed.
-IPC_SYNC_MESSAGE_ROUTED1_0(ViewHostMsg_RunModal,
-                           int /* opener_id */)
 
 // Indicates the renderer is ready in response to a ViewMsg_New or
 // a ViewMsg_CreatingNew_ACK.
@@ -1432,6 +1454,10 @@ IPC_MESSAGE_ROUTED2(ViewHostMsg_DidZoomURL,
                     double /* zoom_level */,
                     GURL /* url */)
 
+// Sent when the renderer changes its page scale factor and whether or not the
+// page scale factor is one changes.
+IPC_MESSAGE_ROUTED1(ViewHostMsg_PageScaleFactorIsOneChanged, bool /* is_one */)
+
 // Updates the minimum/maximum allowed zoom percent for this tab from the
 // default values.  If |remember| is true, then the zoom setting is applied to
 // other pages in the site and is saved, otherwise it only applies to this
@@ -1450,9 +1476,6 @@ IPC_MESSAGE_ROUTED3(
     uint32 /* output_surface_id */,
     cc::CompositorFrame /* frame */,
     std::vector<IPC::Message> /* messages_to_deliver_with_frame */)
-
-// Sent by the compositor when a flinging animation is stopped.
-IPC_MESSAGE_ROUTED0(ViewHostMsg_DidStopFlinging)
 
 //---------------------------------------------------------------------------
 // Request for cryptographic operation messages:

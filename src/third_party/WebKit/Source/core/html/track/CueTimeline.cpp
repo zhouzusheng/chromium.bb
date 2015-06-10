@@ -26,16 +26,20 @@ CueTimeline::CueTimeline(HTMLMediaElement& mediaElement)
 void CueTimeline::addCues(TextTrack* track, const TextTrackCueList* cues)
 {
     ASSERT(track->mode() != TextTrack::disabledKeyword());
-
-    TrackDisplayUpdateScope scope(*this);
     for (size_t i = 0; i < cues->length(); ++i)
-        addCue(cues->item(i)->track(), cues->item(i));
+        addCueInternal(cues->item(i));
+    updateActiveCues(mediaElement().currentTime());
 }
 
 void CueTimeline::addCue(TextTrack* track, PassRefPtrWillBeRawPtr<TextTrackCue> cue)
 {
     ASSERT(track->mode() != TextTrack::disabledKeyword());
+    addCueInternal(cue);
+    updateActiveCues(mediaElement().currentTime());
+}
 
+void CueTimeline::addCueInternal(PassRefPtrWillBeRawPtr<TextTrackCue> cue)
+{
     // Negative duration cues need be treated in the interval tree as
     // zero-length cues.
     double endTime = std::max(cue->startTime(), cue->endTime());
@@ -43,17 +47,22 @@ void CueTimeline::addCue(TextTrack* track, PassRefPtrWillBeRawPtr<TextTrackCue> 
     CueInterval interval = m_cueTree.createInterval(cue->startTime(), endTime, cue.get());
     if (!m_cueTree.contains(interval))
         m_cueTree.add(interval);
-    updateActiveCues(mediaElement().currentTime());
 }
 
 void CueTimeline::removeCues(TextTrack*, const TextTrackCueList* cues)
 {
-    TrackDisplayUpdateScope scope(*this);
     for (size_t i = 0; i < cues->length(); ++i)
-        removeCue(cues->item(i)->track(), cues->item(i));
+        removeCueInternal(cues->item(i));
+    updateActiveCues(mediaElement().currentTime());
 }
 
 void CueTimeline::removeCue(TextTrack*, PassRefPtrWillBeRawPtr<TextTrackCue> cue)
+{
+    removeCueInternal(cue);
+    updateActiveCues(mediaElement().currentTime());
+}
+
+void CueTimeline::removeCueInternal(PassRefPtrWillBeRawPtr<TextTrackCue> cue)
 {
     // Negative duration cues need to be treated in the interval tree as
     // zero-length cues.
@@ -64,6 +73,7 @@ void CueTimeline::removeCue(TextTrack*, PassRefPtrWillBeRawPtr<TextTrackCue> cue
 
     size_t index = m_currentlyActiveCues.find(interval);
     if (index != kNotFound) {
+        ASSERT(cue->isActive());
         m_currentlyActiveCues.remove(index);
         cue->setIsActive(false);
         // Since the cue will be removed from the media element and likely the
@@ -71,7 +81,12 @@ void CueTimeline::removeCue(TextTrack*, PassRefPtrWillBeRawPtr<TextTrackCue> cue
         // removal shouldn't be done.
         cue->removeDisplayTree(TextTrackCue::DontNotifyRegion);
     }
-    updateActiveCues(mediaElement().currentTime());
+}
+
+void CueTimeline::hideCues(TextTrack*, const TextTrackCueList* cues)
+{
+    for (size_t i = 0; i < cues->length(); ++i)
+        cues->item(i)->removeDisplayTree();
 }
 
 static bool trackIndexCompare(TextTrack* a, TextTrack* b)
@@ -95,7 +110,7 @@ static bool eventTimeCueCompare(const std::pair<double, TextTrackCue*>& a, const
     // 12 - Further sort tasks in events that have the same time by the
     // relative text track cue order of the text track cues associated
     // with these tasks.
-    return a.second->cueIndex() - b.second->cueIndex() < 0;
+    return a.second->cueIndex() < b.second->cueIndex();
 }
 
 static PassRefPtrWillBeRawPtr<Event> createEventWithTarget(const AtomicString& eventName, PassRefPtrWillBeRawPtr<EventTarget> eventTarget)
@@ -116,6 +131,8 @@ void CueTimeline::updateActiveCues(double movieTime)
         return;
 
     HTMLMediaElement& mediaElement = this->mediaElement();
+
+    // https://html.spec.whatwg.org/#time-marches-on
 
     // 1 - Let current cues be a list of cues, initialized to contain all the
     // cues of all the hidden, showing, or showing by default text tracks of the
@@ -189,9 +206,13 @@ void CueTimeline::updateActiveCues(double movieTime)
     }
 
     for (CueInterval currentCue : currentCues) {
-        currentCue.data()->updateDisplayTree(movieTime);
-
-        if (!currentCue.data()->isActive())
+        // Notify any cues that are already active of the current time to mark
+        // past and future nodes. Any inactive cues have an empty display state;
+        // they will be notified of the current time when the display state is
+        // updated.
+        if (currentCue.data()->isActive())
+            currentCue.data()->updatePastAndFutureNodes(movieTime);
+        else
             activeSetChanged = true;
     }
 
@@ -315,9 +336,7 @@ void CueTimeline::updateActiveCues(double movieTime)
 
     // Update the current active cues.
     m_currentlyActiveCues = currentCues;
-
-    if (activeSetChanged)
-        mediaElement.updateTextTrackDisplay();
+    mediaElement.updateTextTrackDisplay();
 }
 
 void CueTimeline::beginIgnoringUpdateRequests()

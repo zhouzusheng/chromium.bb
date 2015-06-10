@@ -25,6 +25,7 @@
 #ifndef LayoutImage_h
 #define LayoutImage_h
 
+#include "core/CoreExport.h"
 #include "core/layout/LayoutImageResource.h"
 #include "core/layout/LayoutReplaced.h"
 
@@ -33,7 +34,7 @@ namespace blink {
 class HTMLAreaElement;
 class HTMLMapElement;
 
-class LayoutImage : public LayoutReplaced {
+class CORE_EXPORT LayoutImage : public LayoutReplaced {
 public:
     // These are the paddings to use when displaying either alt text or an image.
     static const unsigned short paddingWidth = 4;
@@ -67,9 +68,11 @@ public:
             imageChanged(m_imageResource->imagePtr());
     }
 
+    virtual const char* name() const override { return "LayoutImage"; }
+
 protected:
     virtual bool needsPreferredWidthsRecalculation() const override final;
-    virtual RenderBox* embeddedContentBox() const override final;
+    virtual LayoutBox* embeddedContentBox() const override final;
     virtual void computeIntrinsicRatioInformation(FloatSize& intrinsicSize, double& intrinsicRatio) const override final;
 
     virtual void imageChanged(WrappedImagePtr, const IntRect* = 0) override;
@@ -81,9 +84,9 @@ protected:
 
     virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectLayoutImage || LayoutReplaced::isOfType(type); }
 
-private:
-    virtual const char* renderName() const override { return "LayoutImage"; }
+    virtual PaintInvalidationReason invalidatePaintIfNeeded(PaintInvalidationState&, const LayoutBoxModelObject&) override;
 
+private:
     virtual bool isImage() const override { return true; }
 
     virtual void paintReplaced(const PaintInfo&, const LayoutPoint&) override;
@@ -96,7 +99,7 @@ private:
     virtual LayoutUnit minimumReplacedHeight() const override;
 
     virtual void notifyFinished(Resource*) override final;
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override final;
+    virtual bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override final;
 
     virtual bool boxShadowShouldBeAppliedToBackground(BackgroundBleedAvoidance, InlineFlowBox*) const override final;
 
@@ -104,6 +107,9 @@ private:
     void updateIntrinsicSizeIfNeeded(const LayoutSize&);
     // Update the size of the image to be rendered. Object-fit may cause this to be different from the CSS box's content rect.
     void updateInnerContentRect();
+
+    // Returns true if the image intersects the viewport visible to the user.
+    bool intersectsVisibleViewport();
 
     // Text to display as long as the image isn't available.
     OwnPtr<LayoutImageResource> m_imageResource;

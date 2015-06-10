@@ -71,14 +71,6 @@ ServiceWorkerResponse::ServiceWorkerResponse(
 
 ServiceWorkerResponse::~ServiceWorkerResponse() {}
 
-ServiceWorkerCacheQueryParams::ServiceWorkerCacheQueryParams()
-    : ignore_search(false),
-      ignore_method(false),
-      ignore_vary(false),
-      prefix_match(false) {}
-
-ServiceWorkerBatchOperation::ServiceWorkerBatchOperation() {}
-
 ServiceWorkerObjectInfo::ServiceWorkerObjectInfo()
     : handle_id(kInvalidServiceWorkerHandleId),
       state(blink::WebServiceWorkerStateUnknown),
@@ -87,6 +79,11 @@ ServiceWorkerObjectInfo::ServiceWorkerObjectInfo()
 ServiceWorkerRegistrationObjectInfo::ServiceWorkerRegistrationObjectInfo()
     : handle_id(kInvalidServiceWorkerRegistrationHandleId),
       registration_id(kInvalidServiceWorkerRegistrationId) {
+}
+
+ServiceWorkerClientQueryOptions::ServiceWorkerClientQueryOptions()
+    : client_type(blink::WebServiceWorkerClientTypeWindow),
+      include_uncontrolled(false) {
 }
 
 }  // namespace content

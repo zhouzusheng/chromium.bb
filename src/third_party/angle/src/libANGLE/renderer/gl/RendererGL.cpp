@@ -9,9 +9,10 @@
 #include "libANGLE/renderer/gl/RendererGL.h"
 
 #include "common/debug.h"
+#include "libANGLE/Data.h"
+#include "libANGLE/Surface.h"
 #include "libANGLE/renderer/gl/BufferGL.h"
 #include "libANGLE/renderer/gl/CompilerGL.h"
-#include "libANGLE/renderer/gl/DefaultAttachmentGL.h"
 #include "libANGLE/renderer/gl/FenceNVGL.h"
 #include "libANGLE/renderer/gl/FenceSyncGL.h"
 #include "libANGLE/renderer/gl/FramebufferGL.h"
@@ -20,93 +21,120 @@
 #include "libANGLE/renderer/gl/QueryGL.h"
 #include "libANGLE/renderer/gl/RenderbufferGL.h"
 #include "libANGLE/renderer/gl/ShaderGL.h"
+#include "libANGLE/renderer/gl/StateManagerGL.h"
+#include "libANGLE/renderer/gl/SurfaceGL.h"
 #include "libANGLE/renderer/gl/TextureGL.h"
 #include "libANGLE/renderer/gl/TransformFeedbackGL.h"
 #include "libANGLE/renderer/gl/VertexArrayGL.h"
+#include "libANGLE/renderer/gl/renderergl_utils.h"
 
 namespace rx
 {
 
 RendererGL::RendererGL(const FunctionsGL *functions)
     : Renderer(),
-      mFunctions(functions)
+      mFunctions(functions),
+      mStateManager(nullptr)
 {
     ASSERT(mFunctions);
+    mStateManager = new StateManagerGL(mFunctions, getRendererCaps());
 }
 
 RendererGL::~RendererGL()
-{}
+{
+    SafeDelete(mStateManager);
+}
 
 gl::Error RendererGL::flush()
 {
-    UNIMPLEMENTED();
-    return gl::Error(GL_INVALID_OPERATION);
+    mFunctions->flush();
+    return gl::Error(GL_NO_ERROR);
 }
 
 gl::Error RendererGL::finish()
 {
-    UNIMPLEMENTED();
-    return gl::Error(GL_INVALID_OPERATION);
+    mFunctions->finish();
+    return gl::Error(GL_NO_ERROR);
 }
 
 gl::Error RendererGL::drawArrays(const gl::Data &data, GLenum mode,
                                  GLint first, GLsizei count, GLsizei instances)
 {
-    UNIMPLEMENTED();
-    return gl::Error(GL_INVALID_OPERATION);
+    gl::Error error = mStateManager->setDrawArraysState(data, first, count);
+    if (error.isError())
+    {
+        return error;
+    }
+
+    mFunctions->drawArrays(mode, first, count);
+
+    return gl::Error(GL_NO_ERROR);
 }
 
 gl::Error RendererGL::drawElements(const gl::Data &data, GLenum mode, GLsizei count, GLenum type,
                                    const GLvoid *indices, GLsizei instances,
                                    const RangeUI &indexRange)
 {
-    UNIMPLEMENTED();
-    return gl::Error(GL_INVALID_OPERATION);
+    if (instances > 0)
+    {
+        UNIMPLEMENTED();
+    }
+
+    const GLvoid *drawIndexPointer = nullptr;
+    gl::Error error = mStateManager->setDrawElementsState(data, count, type, indices, &drawIndexPointer);
+    if (error.isError())
+    {
+        return error;
+    }
+
+    mFunctions->drawElements(mode, count, type, drawIndexPointer);
+
+    return gl::Error(GL_NO_ERROR);
 }
 
 CompilerImpl *RendererGL::createCompiler(const gl::Data &data)
 {
-    return new CompilerGL();
+    return new CompilerGL(data);
 }
 
 ShaderImpl *RendererGL::createShader(GLenum type)
 {
-    return new ShaderGL();
+    return new ShaderGL(type, mFunctions);
 }
 
 ProgramImpl *RendererGL::createProgram()
 {
-    return new ProgramGL();
+    return new ProgramGL(mFunctions, mStateManager);
 }
 
-DefaultAttachmentImpl *RendererGL::createDefaultAttachment(GLenum type, egl::Surface *surface)
+FramebufferImpl *RendererGL::createDefaultFramebuffer(const gl::Framebuffer::Data &data)
 {
-    return new DefaultAttachmentGL();
+    return new FramebufferGL(data, mFunctions, mStateManager, true);
 }
 
-FramebufferImpl *RendererGL::createFramebuffer()
+FramebufferImpl *RendererGL::createFramebuffer(const gl::Framebuffer::Data &data)
 {
-    return new FramebufferGL();
+    return new FramebufferGL(data, mFunctions, mStateManager, false);
 }
 
 TextureImpl *RendererGL::createTexture(GLenum target)
 {
-    return new TextureGL();
+    return new TextureGL(target, mFunctions, mStateManager);
 }
 
 RenderbufferImpl *RendererGL::createRenderbuffer()
 {
-    return new RenderbufferGL();
+    return new RenderbufferGL(mFunctions, mStateManager);
 }
 
 BufferImpl *RendererGL::createBuffer()
 {
-    return new BufferGL();
+    return new BufferGL(mFunctions, mStateManager);
 }
 
 VertexArrayImpl *RendererGL::createVertexArray()
 {
-    return new VertexArrayGL();
+    return new VertexArrayGL(mFunctions, mStateManager);
 }
 
 QueryImpl *RendererGL::createQuery(GLenum type)
@@ -166,74 +194,13 @@ std::string RendererGL::getVendorString() const
 
 std::string RendererGL::getRendererDescription() const
 {
-    UNIMPLEMENTED();
+    //UNIMPLEMENTED();
     return std::string();
 }
 
 void RendererGL::generateCaps(gl::Caps *outCaps, gl::TextureCapsMap* outTextureCaps, gl::Extensions *outExtensions) const
 {
-    // Set some minimum GLES2 caps, TODO: query for real GL caps
-    outCaps->maxElementIndex = static_cast<GLint64>(std::numeric_limits<unsigned int>::max());
-    outCaps->max3DTextureSize = 0;
-    outCaps->max2DTextureSize = 1024;
-    outCaps->maxCubeMapTextureSize = outCaps->max2DTextureSize;
-    outCaps->maxArrayTextureLayers = 1;
-    outCaps->maxLODBias = 0.0f;
-    outCaps->maxRenderbufferSize = outCaps->max2DTextureSize;
-    outCaps->maxDrawBuffers = 1;
-    outCaps->maxColorAttachments = 1;
-    outCaps->maxViewportWidth = outCaps->max2DTextureSize;
-    outCaps->maxViewportHeight = outCaps->maxViewportWidth;
-    outCaps->minAliasedPointSize = 1.0f;
-    outCaps->maxAliasedPointSize = 1.0f;
-    outCaps->minAliasedLineWidth = 1.0f;
-    outCaps->maxAliasedLineWidth = 1.0f;
-    outCaps->maxElementsIndices = 0;
-    outCaps->maxElementsVertices = 0;
-    outCaps->maxServerWaitTimeout = 0;
-    outCaps->maxVertexAttributes = 16;
-    outCaps->maxVertexUniformVectors = 256;
-    outCaps->maxVertexUniformVectors = outCaps->maxVertexUniformVectors * 4;
-    outCaps->maxVertexUniformBlocks = 0;
-    outCaps->maxVertexOutputComponents = 16;
-    outCaps->maxVertexTextureImageUnits = outCaps->maxTextureImageUnits;
-    outCaps->maxFragmentUniformVectors = 256;
-    outCaps->maxFragmentUniformComponents = outCaps->maxFragmentUniformVectors * 4;
-    outCaps->maxFragmentUniformBlocks = 0;
-    outCaps->maxFragmentInputComponents = outCaps->maxVertexOutputComponents;
-    outCaps->maxTextureImageUnits = 16;
-    outCaps->minProgramTexelOffset = 0;
-    outCaps->maxProgramTexelOffset = 0;
-    outCaps->maxUniformBufferBindings = 0;
-    outCaps->maxUniformBlockSize = 0;
-    outCaps->uniformBufferOffsetAlignment = 0;
-    outCaps->maxCombinedUniformBlocks = 0;
-    outCaps->maxCombinedVertexUniformComponents = 0;
-    outCaps->maxCombinedFragmentUniformComponents = 0;
-    outCaps->maxVaryingComponents = 0;
-    outCaps->maxVaryingVectors = outCaps->maxVertexOutputComponents / 4;
-    outCaps->maxCombinedTextureImageUnits = outCaps->maxVertexTextureImageUnits + outCaps->maxTextureImageUnits;
-    outCaps->maxTransformFeedbackInterleavedComponents = 0;
-    outCaps->maxTransformFeedbackSeparateAttributes = 0;
-    outCaps->maxTransformFeedbackSeparateComponents = 0;
-
-    gl::TextureCaps supportedTextureFormat;
-    supportedTextureFormat.texturable = true;
-    supportedTextureFormat.filterable = true;
-    supportedTextureFormat.renderable = true;
-
-    outTextureCaps->insert(GL_RGB565, supportedTextureFormat);
-    outTextureCaps->insert(GL_RGBA4, supportedTextureFormat);
-    outTextureCaps->insert(GL_RGB5_A1, supportedTextureFormat);
-    outTextureCaps->insert(GL_RGB8_OES, supportedTextureFormat);
-    outTextureCaps->insert(GL_RGBA8_OES, supportedTextureFormat);
-
-    outTextureCaps->insert(GL_DEPTH_COMPONENT16, supportedTextureFormat);
-    outTextureCaps->insert(GL_STENCIL_INDEX8, supportedTextureFormat);
-
-    outExtensions->setTextureExtensionSupport(*outTextureCaps);
-    outExtensions->textureNPOT = true;
-    outExtensions->textureStorage = true;
+    nativegl_gl::GenerateCaps(mFunctions, outCaps, outTextureCaps, outExtensions);
 }
 
 Workarounds RendererGL::generateWorkarounds() const

@@ -18,12 +18,13 @@
 
 namespace media {
 
+class KeySystems;
 class MediaPermission;
 
 class MEDIA_EXPORT WebEncryptedMediaClientImpl
     : public blink::WebEncryptedMediaClient {
  public:
-  WebEncryptedMediaClientImpl(scoped_ptr<CdmFactory> cdm_factory,
+  WebEncryptedMediaClientImpl(CdmFactory* cdm_factory,
                               MediaPermission* media_permission);
   virtual ~WebEncryptedMediaClientImpl();
 
@@ -34,6 +35,8 @@ class MEDIA_EXPORT WebEncryptedMediaClientImpl
   // Create the CDM for |key_system| and |security_origin|. The caller owns
   // the created cdm (passed back using |result|).
   void CreateCdm(const blink::WebString& key_system,
+                 bool allow_distinctive_identifier,
+                 bool allow_persistent_state,
                  const blink::WebSecurityOrigin& security_origin,
                  blink::WebContentDecryptionModuleResult result);
 
@@ -58,7 +61,8 @@ class MEDIA_EXPORT WebEncryptedMediaClientImpl
   typedef base::ScopedPtrHashMap<std::string, Reporter> Reporters;
   Reporters reporters_;
 
-  scoped_ptr<CdmFactory> cdm_factory_;
+  const KeySystems& key_systems_;
+  CdmFactory* cdm_factory_;
   MediaPermission* media_permission_;
 
   base::WeakPtrFactory<WebEncryptedMediaClientImpl> weak_factory_;

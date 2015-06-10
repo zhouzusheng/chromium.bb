@@ -17,7 +17,6 @@
 #include "cc/quads/tile_draw_quad.h"
 #include "cc/resources/layer_tiling_data.h"
 #include "cc/trees/occlusion.h"
-#include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/geometry/quad_f.h"
 
@@ -241,8 +240,8 @@ void TiledLayerImpl::AppendQuads(RenderPass* render_pass,
 
         CheckerboardDrawQuad* checkerboard_quad =
             render_pass->CreateAndAppendDrawQuad<CheckerboardDrawQuad>();
-        checkerboard_quad->SetNew(
-            shared_quad_state, tile_rect, visible_tile_rect, checker_color);
+        checkerboard_quad->SetNew(shared_quad_state, tile_rect,
+                                  visible_tile_rect, checker_color, 1.f);
         append_quads_data->num_missing_tiles++;
         continue;
       }

@@ -103,6 +103,7 @@
       'msvs_disabled_warnings': [4267, ],
     },
     {
+      # GN version: //gpu/command_buffer/client:gles2_c_lib_nocheck
       # Same as gles2_c_lib except with no parameter checking. Required for
       # OpenGL ES 2.0 conformance tests.
       'target_name': 'gles2_c_lib_nocheck',
@@ -129,7 +130,7 @@
       'type': '<(gtest_target_type)',
       'includes': [
         '../third_party/angle/build/common_defines.gypi',
-        '../third_party/angle/tests/angle_unittests.gypi',
+        '../third_party/angle/src/tests/angle_unittests.gypi',
       ],
       'dependencies': [
         '../base/base.gyp:base',
@@ -139,8 +140,7 @@
         '..',
         '../third_party/angle/include',
       ],
-      'sources':
-      [
+      'sources': [
         'angle_unittest_main.cc',
       ],
     },
@@ -220,6 +220,7 @@
         'command_buffer/service/gles2_cmd_decoder_unittest_attribs.cc',
         'command_buffer/service/gles2_cmd_decoder_unittest_base.cc',
         'command_buffer/service/gles2_cmd_decoder_unittest_base.h',
+        'command_buffer/service/gles2_cmd_decoder_unittest_buffers.cc',
         'command_buffer/service/gles2_cmd_decoder_unittest_context_state.cc',
         'command_buffer/service/gles2_cmd_decoder_unittest_drawing.cc',
         'command_buffer/service/gles2_cmd_decoder_unittest_extensions.cc',
@@ -287,6 +288,7 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/base.gyp:test_support_base',
+        '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
         '../testing/perf/perf_test.gyp:perf_test',
         '../ui/gfx/gfx.gyp:gfx_geometry',
@@ -297,6 +299,23 @@
         'perftests/measurements.cc',
         'perftests/run_all_tests.cc',
         'perftests/texture_upload_perftest.cc',
+      ],
+      'conditions': [
+        ['OS == "android"',
+          {
+            'dependencies': [
+              '../testing/android/native_test.gyp:native_test_native_code',
+            ],
+          }
+        ],
+        # See http://crbug.com/162998#c4 for why this is needed.
+        ['OS=="linux" and use_allocator!="none"',
+          {
+            'dependencies': [
+              '../base/allocator/allocator.gyp:allocator',
+            ],
+          }
+        ],
       ],
     },
     {
@@ -668,6 +687,17 @@
           },
           'includes': [ '../build/apk_test.gypi' ],
         },
+        {
+          'target_name': 'gpu_perftests_apk',
+          'type': 'none',
+          'dependencies': [
+            'gpu_perftests',
+          ],
+          'variables': {
+            'test_suite_name': 'gpu_perftests',
+          },
+          'includes': [ '../build/apk_test.gypi' ],
+        },
       ],
     }],
     ['OS == "win"', {
@@ -680,14 +710,28 @@
             '../base/base.gyp:base',
             '../base/base.gyp:test_support_base',
           ],
-          'includes':
-          [
+          'includes': [
             '../third_party/angle/build/common_defines.gypi',
-            '../third_party/angle/tests/angle_end2end_tests.gypi',
+            '../third_party/angle/src/tests/angle_end2end_tests.gypi',
           ],
-          'sources':
-          [
+          'sources': [
             'angle_end2end_tests_main.cc',
+          ],
+        },
+        {
+          # TODO(jmadill): port this target to the GN build.
+          'target_name': 'angle_perftests',
+          'type': '<(gtest_target_type)',
+          'dependencies': [
+            '../base/base.gyp:base',
+            '../base/base.gyp:test_support_base',
+          ],
+          'includes': [
+            '../third_party/angle/build/common_defines.gypi',
+            '../third_party/angle/src/tests/angle_perftests.gypi',
+          ],
+          'sources': [
+            'angle_perftests_main.cc',
           ],
         },
       ],

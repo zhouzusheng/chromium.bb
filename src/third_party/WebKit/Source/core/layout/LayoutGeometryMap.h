@@ -36,8 +36,8 @@
 
 namespace blink {
 
-class Layer;
-class LayoutLayerModelObject;
+class DeprecatedPaintLayer;
+class LayoutBoxModelObject;
 class TransformationMatrix;
 class TransformState;
 
@@ -56,16 +56,16 @@ public:
     }
 
     // Map to a container. Will assert that the container has been pushed onto this map.
-    // A null container maps through the RenderView (including its scale transform, if any).
-    // If the container is the RenderView, the scroll offset is applied, but not the scale.
-    FloatPoint mapToContainer(const FloatPoint&, const LayoutLayerModelObject*) const;
-    FloatQuad mapToContainer(const FloatRect&, const LayoutLayerModelObject*) const;
+    // A null container maps through the LayoutView (including its scale transform, if any).
+    // If the container is the LayoutView, the scroll offset is applied, but not the scale.
+    FloatPoint mapToContainer(const FloatPoint&, const LayoutBoxModelObject*) const;
+    FloatQuad mapToContainer(const FloatRect&, const LayoutBoxModelObject*) const;
 
     // Called by code walking the renderer or layer trees.
-    void pushMappingsToAncestor(const Layer*, const Layer* ancestorLayer);
-    void popMappingsToAncestor(const Layer*);
-    void pushMappingsToAncestor(const LayoutObject*, const LayoutLayerModelObject* ancestorRenderer);
-    void popMappingsToAncestor(const LayoutLayerModelObject*);
+    void pushMappingsToAncestor(const DeprecatedPaintLayer*, const DeprecatedPaintLayer* ancestorLayer);
+    void popMappingsToAncestor(const DeprecatedPaintLayer*);
+    void pushMappingsToAncestor(const LayoutObject*, const LayoutBoxModelObject* ancestorRenderer);
+    void popMappingsToAncestor(const LayoutBoxModelObject*);
 
     // The following methods should only be called by renderers inside a call to pushMappingsToAncestor().
 
@@ -75,7 +75,7 @@ public:
     void push(const LayoutObject*, const TransformationMatrix&, bool accumulatingTransform = false, bool isNonUniform = false, bool isFixedPosition = false, bool hasTransform = false, LayoutSize offsetForFixedPosition = LayoutSize());
 
 private:
-    void mapToContainer(TransformState&, const LayoutLayerModelObject* container = 0) const;
+    void mapToContainer(TransformState&, const LayoutBoxModelObject* container = 0) const;
 
     void stepInserted(const LayoutGeometryMapStep&);
     void stepRemoved(const LayoutGeometryMapStep&);
@@ -89,7 +89,7 @@ private:
 #endif
 
 #if ENABLE(ASSERT)
-    bool isTopmostRenderView(const LayoutObject* renderer) const;
+    bool isTopmostLayoutView(const LayoutObject* renderer) const;
 #endif
 
     typedef Vector<LayoutGeometryMapStep, 32> LayoutGeometryMapSteps;

@@ -105,7 +105,9 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   // This requests the layer and its subtree be rendered and given to the
   // callback. If the copy is unable to be produced (the layer is destroyed
-  // first), then the callback is called with a nullptr/empty result.
+  // first), then the callback is called with a nullptr/empty result. If the
+  // request's source property is set, any prior uncommitted requests having the
+  // same source will be aborted.
   void RequestCopyOfOutput(scoped_ptr<CopyOutputRequest> request);
   bool HasCopyRequest() const {
     return !copy_requests_.empty();
@@ -173,6 +175,10 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   void SetIsContainerForFixedPositionLayers(bool container);
   bool IsContainerForFixedPositionLayers() const;
+
+  gfx::Vector2dF FixedContainerSizeDelta() const {
+    return gfx::Vector2dF();
+  }
 
   void SetPositionConstraint(const LayerPositionConstraint& constraint);
   const LayerPositionConstraint& position_constraint() const {
@@ -410,6 +416,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   bool AddAnimation(scoped_ptr<Animation> animation);
   void PauseAnimation(int animation_id, double time_offset);
   void RemoveAnimation(int animation_id);
+  void RemoveAnimation(int animation_id, Animation::TargetProperty property);
 
   LayerAnimationController* layer_animation_controller() {
     return layer_animation_controller_.get();
@@ -472,8 +479,10 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   void set_transform_tree_index(int index) { transform_tree_index_ = index; }
   void set_clip_tree_index(int index) { clip_tree_index_ = index; }
+  void set_opacity_tree_index(int index) { opacity_tree_index_ = index; }
   int clip_tree_index() const { return clip_tree_index_; }
   int transform_tree_index() const { return transform_tree_index_; }
+  int opacity_tree_index() const { return opacity_tree_index_; }
 
   void set_offset_to_transform_parent(gfx::Vector2dF offset) {
     offset_to_transform_parent_ = offset;
@@ -499,6 +508,11 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
       const TransformTree& tree) const;
   gfx::Transform draw_transform_from_property_trees(
       const TransformTree& tree) const;
+  float DrawOpacityFromPropertyTrees(const OpacityTree& tree) const;
+
+  void set_should_flatten_transform_from_property_tree(bool should_flatten) {
+    should_flatten_transform_from_property_tree_ = should_flatten;
+  }
 
   // TODO(vollick): These values are temporary and will be removed as soon as
   // render surface determinations are moved out of CDP. They only exist because
@@ -513,6 +527,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   // Sets new frame timing requests for this layer.
   void SetFrameTimingRequests(const std::vector<FrameTimingRequest>& requests);
+
+  void DidBeginTracing();
 
  protected:
   friend class LayerImpl;
@@ -650,6 +666,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   int opacity_tree_index_;
   int clip_tree_index_;
   gfx::Vector2dF offset_to_transform_parent_;
+  bool should_flatten_transform_from_property_tree_ : 1;
   bool should_scroll_on_main_thread_ : 1;
   bool have_wheel_event_handlers_ : 1;
   bool have_scroll_event_handlers_ : 1;

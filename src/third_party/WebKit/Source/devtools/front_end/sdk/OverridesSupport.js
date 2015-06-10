@@ -178,7 +178,7 @@ WebInspector.OverridesSupport.GeolocationPosition.parseUserInput = function(lati
 WebInspector.OverridesSupport.GeolocationPosition.clearGeolocationOverride = function()
 {
     for (var target of WebInspector.targetManager.targets())
-        target.pageAgent().clearGeolocationOverride();
+        target.emulationAgent().clearGeolocationOverride();
 }
 
 /**
@@ -245,12 +245,6 @@ WebInspector.OverridesSupport.DeviceOrientation.parseUserInput = function(alphaS
     return new WebInspector.OverridesSupport.DeviceOrientation(alpha, beta, gamma);
 }
 
-WebInspector.OverridesSupport.DeviceOrientation._clearDeviceOrientationOverride = function()
-{
-    for (var target of WebInspector.targetManager.targets())
-        target.pageAgent().clearDeviceOrientationOverride();
-}
-
 /**
  * @param {string} value
  * @return {string}
@@ -278,13 +272,30 @@ WebInspector.OverridesSupport.NetworkThroughputUnlimitedValue = -1;
 /** @typedef {{id: string, title: string, throughput: number, latency: number}} */
 WebInspector.OverridesSupport.NetworkConditionsPreset;
 
+/**
+ * @param {!WebInspector.Target} target
+ * @return {boolean}
+ */
+WebInspector.OverridesSupport.targetSupportsEmulation = function(target)
+{
+    return target.isPage();
+}
+
+/**
+ * @return {!Array.<!WebInspector.Target>}
+ */
+WebInspector.OverridesSupport.targetsSupportingEmulation = function()
+{
+    return WebInspector.targetManager.targets().filter(WebInspector.OverridesSupport.targetSupportsEmulation);
+}
+
 WebInspector.OverridesSupport.prototype = {
     /**
      * @return {boolean}
      */
     canEmulate: function()
     {
-        return !!this._target && this._target.canEmulate();
+        return !!this._target && this._targetCanEmulate;
     },
 
     /**
@@ -304,7 +315,7 @@ WebInspector.OverridesSupport.prototype = {
             this.settings._emulationEnabled.set(enabled);
             this.dispatchEventToListeners(WebInspector.OverridesSupport.Events.EmulationStateChanged);
             if (enabled && this.settings.emulateResolution.get())
-                this._target.pageAgent().resetScrollAndPageScaleFactor();
+                this._target.emulationAgent().resetScrollAndPageScaleFactor();
         }
     },
 
@@ -361,7 +372,7 @@ WebInspector.OverridesSupport.prototype = {
         if (this._initialized) {
             this._deviceMetricsChanged();
             this._userAgentChanged();
-            this._target.pageAgent().resetScrollAndPageScaleFactor();
+            this._target.emulationAgent().resetScrollAndPageScaleFactor();
         }
     },
 
@@ -412,8 +423,14 @@ WebInspector.OverridesSupport.prototype = {
             this._emulateTouchEventsChanged();
     },
 
-    applyInitialOverrides: function()
+    /**
+     * @param {function()=} callback
+     */
+    applyInitialOverrides: function(callback)
     {
+        if (callback)
+            this._applyInitialOverridesCallback = callback;
+
         if (!this._target) {
             this._applyInitialOverridesOnTargetAdded = true;
             return;
@@ -454,29 +471,34 @@ WebInspector.OverridesSupport.prototype = {
         WebInspector.settings.showMetricsRulers.addChangeListener(this._showRulersChanged, this);
         this._showRulersChanged();
 
-        if (!this.emulationEnabled())
-            return;
+        if (this.emulationEnabled()) {
+            if (this.settings.overrideDeviceOrientation.get())
+                this._deviceOrientationChanged();
 
-        if (this.settings.overrideDeviceOrientation.get())
-            this._deviceOrientationChanged();
+            if (this.settings.overrideGeolocation.get())
+                this._geolocationPositionChanged();
 
-        if (this.settings.overrideGeolocation.get())
-            this._geolocationPositionChanged();
+            if (this.settings.emulateTouch.get())
+                this._emulateTouchEventsChanged();
 
-        if (this.settings.emulateTouch.get())
-            this._emulateTouchEventsChanged();
+            if (this.settings.overrideCSSMedia.get())
+                this._cssMediaChanged();
 
-        if (this.settings.overrideCSSMedia.get())
-            this._cssMediaChanged();
+            this._deviceMetricsChanged();
+            if (this.settings.emulateResolution.get())
+                this._target.emulationAgent().resetScrollAndPageScaleFactor();
 
-        this._deviceMetricsChanged();
-        if (this.settings.emulateResolution.get())
-            this._target.pageAgent().resetScrollAndPageScaleFactor();
+            this._userAgentChanged();
 
-        this._userAgentChanged();
+            if (this.networkThroughputIsLimited())
+                this._networkConditionsChanged();
+        }
 
-        if (this.networkThroughputIsLimited())
-            this._networkConditionsChanged();
+        if (this._applyInitialOverridesCallback) {
+            var callbackCopy = this._applyInitialOverridesCallback;
+            delete this._applyInitialOverridesCallback;
+            callbackCopy();
+        }
     },
 
     _userAgentChanged: function()
@@ -580,7 +602,7 @@ WebInspector.OverridesSupport.prototype = {
          */
         function setDeviceMetricsOverride(finishCallback)
         {
-            this._target.pageAgent().setDeviceMetricsOverride(
+            this._target.emulationAgent().setDeviceMetricsOverride(
                 overrideWidth, overrideHeight, this.settings.emulateResolution.get() ? this.settings.deviceScaleFactor.get() : 0,
                 this.settings.emulateMobile.get(), this._pageResizer ? false : this.settings.deviceFitWindow.get(), scale, 0, 0,
                 apiCallback.bind(this, finishCallback));
@@ -592,7 +614,7 @@ WebInspector.OverridesSupport.prototype = {
          */
         function clearDeviceMetricsOverride(finishCallback)
         {
-            this._target.pageAgent().clearDeviceMetricsOverride(apiCallback.bind(this, finishCallback));
+            this._target.emulationAgent().clearDeviceMetricsOverride(apiCallback.bind(this, finishCallback));
         }
 
         /**
@@ -626,35 +648,36 @@ WebInspector.OverridesSupport.prototype = {
     _geolocationPositionChanged: function()
     {
         if (!this.emulationEnabled() || !this.settings.overrideGeolocation.get()) {
-            for (var target of WebInspector.targetManager.targets())
-                target.pageAgent().clearGeolocationOverride();
+            for (var target of WebInspector.OverridesSupport.targetsSupportingEmulation())
+                target.emulationAgent().clearGeolocationOverride();
             return;
         }
         var geolocation = WebInspector.OverridesSupport.GeolocationPosition.parseSetting(this.settings.geolocationOverride.get());
-        for (var target of WebInspector.targetManager.targets()) {
+        for (var target of WebInspector.OverridesSupport.targetsSupportingEmulation()) {
             if (geolocation.error)
-                target.pageAgent().setGeolocationOverride();
+                target.emulationAgent().setGeolocationOverride();
             else
-                target.pageAgent().setGeolocationOverride(geolocation.latitude, geolocation.longitude, 150);
+                target.emulationAgent().setGeolocationOverride(geolocation.latitude, geolocation.longitude, 150);
         }
     },
 
     _deviceOrientationChanged: function()
     {
         if (!this.emulationEnabled() || !this.settings.overrideDeviceOrientation.get()) {
-            WebInspector.OverridesSupport.DeviceOrientation._clearDeviceOrientationOverride();
+            for (var target of WebInspector.OverridesSupport.targetsSupportingEmulation())
+                target.deviceOrientationAgent().clearDeviceOrientationOverride();
             return;
         }
 
         var deviceOrientation = WebInspector.OverridesSupport.DeviceOrientation.parseSetting(this.settings.deviceOrientationOverride.get());
-        for (var target of WebInspector.targetManager.targets())
-            target.pageAgent().setDeviceOrientationOverride(deviceOrientation.alpha, deviceOrientation.beta, deviceOrientation.gamma);
+        for (var target of WebInspector.OverridesSupport.targetsSupportingEmulation())
+            target.deviceOrientationAgent().setDeviceOrientationOverride(deviceOrientation.alpha, deviceOrientation.beta, deviceOrientation.gamma);
     },
 
     _emulateTouchEventsChanged: function()
     {
         var emulateTouch = this.emulationEnabled() && this.settings.emulateTouch.get() && !this._touchEmulationSuspended;
-        for (var target of WebInspector.targetManager.targets())
+        for (var target of WebInspector.OverridesSupport.targetsSupportingEmulation())
             target.domModel.emulateTouchEventObjects(emulateTouch, this.settings.emulateMobile.get() ? "mobile" : "desktop");
     },
 
@@ -662,8 +685,8 @@ WebInspector.OverridesSupport.prototype = {
     {
         var enabled = this.emulationEnabled() && this.settings.overrideCSSMedia.get();
 
-        for (var target of WebInspector.targetManager.targets()) {
-            target.pageAgent().setEmulatedMedia(enabled ? this.settings.emulatedCSSMedia.get() : "");
+        for (var target of WebInspector.OverridesSupport.targetsSupportingEmulation()) {
+            target.emulationAgent().setEmulatedMedia(enabled ? this.settings.emulatedCSSMedia.get() : "");
             target.cssModel.mediaQueryResultChanged();
         }
     },
@@ -762,14 +785,32 @@ WebInspector.OverridesSupport.prototype = {
     {
         if (this._target)
             return;
-        this._target = target;
-        target.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.MainFrameNavigated, this._onMainFrameNavigated, this);
 
-        if (this._applyInitialOverridesOnTargetAdded) {
-            delete this._applyInitialOverridesOnTargetAdded;
-            this.applyInitialOverrides();
+        if (WebInspector.OverridesSupport.targetSupportsEmulation(target))
+            target.emulationAgent().canEmulate(canEmulateCallback.bind(this));
+        else
+            canEmulateCallback.call(this, null, false);
+
+        /**
+         * @this {WebInspector.OverridesSupport}
+         * @param {?Protocol.Error} error
+         * @param {boolean} canEmulate
+         */
+        function canEmulateCallback(error, canEmulate)
+        {
+            if (this._target || error)
+                return;
+
+            this._target = target;
+            this._targetCanEmulate = canEmulate;
+            target.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.MainFrameNavigated, this._onMainFrameNavigated, this);
+
+            if (this._applyInitialOverridesOnTargetAdded) {
+                delete this._applyInitialOverridesOnTargetAdded;
+                this.applyInitialOverrides();
+            }
+            this.dispatchEventToListeners(WebInspector.OverridesSupport.Events.EmulationStateChanged);
         }
-        this.dispatchEventToListeners(WebInspector.OverridesSupport.Events.EmulationStateChanged);
     },
 
     swapDimensions: function()

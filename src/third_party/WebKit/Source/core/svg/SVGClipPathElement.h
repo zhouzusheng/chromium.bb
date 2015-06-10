@@ -47,13 +47,12 @@ private:
 
     virtual bool needsPendingResourceHandling() const override { return false; }
 
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
     virtual void svgAttributeChanged(const QualifiedName&) override;
     virtual void childrenChanged(const ChildrenChange&) override;
 
-    virtual LayoutObject* createRenderer(const LayoutStyle&) override;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
 
-    RefPtrWillBeMember<SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType> > m_clipPathUnits;
+    RefPtrWillBeMember<SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>> m_clipPathUnits;
 };
 
 } // namespace blink

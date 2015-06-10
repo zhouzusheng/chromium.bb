@@ -19,6 +19,16 @@ NavigatorConnectContextImpl::~NavigatorConnectContextImpl() {
 
 void NavigatorConnectContextImpl::AddFactory(
     scoped_ptr<NavigatorConnectServiceFactory> factory) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  BrowserThread::PostTask(
+      BrowserThread::IO, FROM_HERE,
+      base::Bind(&NavigatorConnectContextImpl::AddFactoryOnIOThread, this,
+                 base::Passed(&factory)));
+}
+
+void NavigatorConnectContextImpl::AddFactoryOnIOThread(
+    scoped_ptr<NavigatorConnectServiceFactory> factory) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   service_factories_.push_back(factory.release());
 }
 
@@ -26,6 +36,7 @@ void NavigatorConnectContextImpl::Connect(
     NavigatorConnectClient client,
     MessagePortMessageFilter* message_port_message_filter,
     const ConnectCallback& callback) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   // Create a new message channel. Client port is setup to talk to client
   // process, service port is initially setup without a delegate.
   MessagePortService* message_port_service = MessagePortService::GetInstance();
@@ -57,10 +68,8 @@ void NavigatorConnectContextImpl::Connect(
 
   if (!factory) {
     // No factories found.
-    // Destroy ports since connection failed.
-    message_port_service->Destroy(client_port);
-    message_port_service->Destroy(service_port);
-    callback.Run(MSG_ROUTING_NONE, MSG_ROUTING_NONE, false);
+    OnConnectResult(client, client_port, client_port_route_id, callback,
+                    nullptr, false);
     return;
   }
 
@@ -75,17 +84,22 @@ void NavigatorConnectContextImpl::OnConnectResult(
     int client_message_port_id,
     int client_port_route_id,
     const ConnectCallback& callback,
-    MessagePortDelegate* delegate) {
+    MessagePortDelegate* delegate,
+    bool data_as_values) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   if (delegate) {
     // Update service side port with delegate.
     MessagePortService::GetInstance()->UpdateMessagePort(
         client.message_port_id, delegate, client.message_port_id);
-    callback.Run(client_message_port_id, client_port_route_id, true);
+    TransferredMessagePort port;
+    port.id = client_message_port_id;
+    port.send_messages_as_values = data_as_values;
+    callback.Run(port, client_port_route_id, true);
   } else {
     // Destroy ports since connection failed.
     MessagePortService::GetInstance()->Destroy(client.message_port_id);
     MessagePortService::GetInstance()->Destroy(client_message_port_id);
-    callback.Run(MSG_ROUTING_NONE, MSG_ROUTING_NONE, false);
+    callback.Run(TransferredMessagePort(), MSG_ROUTING_NONE, false);
   }
 }
 

@@ -264,13 +264,13 @@ WebInspector.BezierEditor.prototype = {
         const numberOnionSlices = 20;
 
         var keyframes = [{ offset: 0, transform: "translateX(0px)", easing: this._bezier.asCSSText(), opacity: 1 },
-            { offset: 0.9, transform: "translateX(210px)", opacity: 1 },
-            { offset: 1, transform: "translateX(210px)", opacity: 0 }];
+            { offset: 0.9, transform: "translateX(218px)", opacity: 1 },
+            { offset: 1, transform: "translateX(218px)", opacity: 0 }];
         this._previewAnimation = this._previewElement.animate(keyframes, animationDuration);
         this._previewOnion.removeChildren();
         for (var i = 0; i <= numberOnionSlices; i++) {
             var slice = this._previewOnion.createChild("div", "bezier-preview-animation");
-            var player = slice.animate([{ transform: "translateX(0px)", easing: this._bezier.asCSSText() }, { transform: "translateX(210px)" }],
+            var player = slice.animate([{ transform: "translateX(0px)", easing: this._bezier.asCSSText() }, { transform: "translateX(218px)" }],
                 { duration: animationDuration, fill: "forwards" });
             player.pause();
             player.currentTime = animationDuration * i / numberOnionSlices;
@@ -278,105 +278,4 @@ WebInspector.BezierEditor.prototype = {
     },
 
     __proto__: WebInspector.VBox.prototype
-}
-
-/**
- * @constructor
- * @extends {WebInspector.StylesPopoverIcon}
- * @param {!WebInspector.StylePropertyTreeElementBase} treeElement
- * @param {?WebInspector.StylesPopoverHelper} stylesPopoverHelper
- * @param {?WebInspector.BezierEditor} bezierEditor
- * @param {!Element} nameElement
- * @param {!Element} valueElement
- * @param {string} text
- */
-WebInspector.BezierIcon = function(treeElement, stylesPopoverHelper, bezierEditor, nameElement, valueElement, text)
-{
-    WebInspector.StylesPopoverIcon.call(this, treeElement, stylesPopoverHelper, nameElement, valueElement, text);
-
-    this._stylesPopoverHelper = stylesPopoverHelper;
-    this._bezierEditor = bezierEditor;
-    this._boundBezierChanged = this._bezierChanged.bind(this);
-}
-
-WebInspector.BezierIcon.prototype = {
-    /**
-     * @override
-     * @return {?WebInspector.View}
-     */
-    view: function()
-    {
-        return this._bezierEditor;
-    },
-
-    /**
-     * @return {!Node}
-     */
-    icon: function()
-    {
-        /**
-         * @return {!Element}
-         */
-        function createIcon()
-        {
-            var icon = container.createSVGChild("svg", "popover-icon bezier-icon");
-            icon.setAttribute("height", 10);
-            icon.setAttribute("width", 10);
-            var g = icon.createSVGChild("g");
-            var path = g.createSVGChild("path");
-            path.setAttribute("d", "M2,8 C2,3 8,7 8,2");
-            return icon;
-        }
-
-        var container = createElement("nobr");
-        this._iconElement = createIcon();
-        this._iconElement.addEventListener("click", this._iconClick.bind(this), false);
-        this._bezierValueElement = container.createChild("span");
-        this._bezierValueElement.textContent = this._text;
-        return container;
-    },
-
-    /**
-     * @override
-     * @param {!Event} event
-     * @return {boolean}
-     */
-    toggle: function(event)
-    {
-        event.consume(true);
-
-        if (!this.editable() || !this._stylesPopoverHelper)
-            return false;
-
-        if (this._stylesPopoverHelper.isShowing()) {
-            this._stylesPopoverHelper.hide(true);
-        } else {
-            this._bezierEditor.setBezier(WebInspector.Geometry.CubicBezier.parse(this._text));
-            this._stylesPopoverHelper.show(this._bezierEditor, this._iconElement);
-            this._bezierEditor.addEventListener(WebInspector.BezierEditor.Events.BezierChanged, this._boundBezierChanged);
-        }
-
-        return this._stylesPopoverHelper.isShowing();
-    },
-
-    /**
-     * @param {!WebInspector.Event} event
-     */
-    _bezierChanged: function(event)
-    {
-        this._bezierValueElement.textContent = /** @type {string} */ (event.data);
-        this._valueChanged();
-    },
-
-    /**
-     * @override
-     * @param {!WebInspector.Event} event
-     */
-    popoverHidden: function(event)
-    {
-        this._bezierEditor.removeEventListener(WebInspector.BezierEditor.Events.BezierChanged, this._boundBezierChanged);
-        WebInspector.StylesPopoverIcon.prototype.popoverHidden.call(this, event);
-    },
-
-    __proto__: WebInspector.StylesPopoverIcon.prototype
 }

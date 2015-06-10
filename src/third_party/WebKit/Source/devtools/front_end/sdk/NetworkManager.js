@@ -42,7 +42,8 @@ WebInspector.NetworkManager = function(target)
     target.registerNetworkDispatcher(this._dispatcher);
     if (WebInspector.settings.cacheDisabled.get())
         this._networkAgent.setCacheDisabled(true);
-
+    if (WebInspector.settings.monitoringXHREnabled.get())
+        this._networkAgent.setMonitoringXHREnabled(true);
     this._networkAgent.enable();
 
     WebInspector.settings.cacheDisabled.addChangeListener(this._cacheDisabledSettingChanged, this);
@@ -60,70 +61,58 @@ WebInspector.NetworkManager._MIMETypes = {
     "text/xml":                    {"document": true},
     "text/plain":                  {"document": true},
     "application/xhtml+xml":       {"document": true},
+    "image/svg+xml":               {"document": true},
     "text/css":                    {"stylesheet": true},
     "text/xsl":                    {"stylesheet": true},
-    "image/jpg":                   {"image": true},
-    "image/jpeg":                  {"image": true},
-    "image/pjpeg":                 {"image": true},
-    "image/png":                   {"image": true},
-    "image/gif":                   {"image": true},
-    "image/bmp":                   {"image": true},
-    "image/svg+xml":               {"image": true, "font": true, "document": true},
-    "image/vnd.microsoft.icon":    {"image": true},
-    "image/webp":                  {"image": true},
-    "image/x-icon":                {"image": true},
-    "image/x-xbitmap":             {"image": true},
-    "font/ttf":                    {"font": true},
-    "font/otf":                    {"font": true},
-    "font/woff":                   {"font": true},
-    "font/woff2":                  {"font": true},
-    "font/truetype":               {"font": true},
-    "font/opentype":               {"font": true},
-    "application/octet-stream":    {"font": true, "image": true},
-    "application/font-woff":       {"font": true},
-    "application/font-woff2":      {"font": true},
-    "application/x-font-woff":     {"font": true},
-    "application/x-font-type1":    {"font": true},
-    "application/x-font-ttf":      {"font": true},
-    "application/x-truetype-font": {"font": true},
-    "text/javascript":             {"script": true},
-    "text/ecmascript":             {"script": true},
-    "application/javascript":      {"script": true},
-    "application/ecmascript":      {"script": true},
-    "application/x-javascript":    {"script": true},
-    "application/json":            {"script": true},
-    "text/javascript1.1":          {"script": true},
-    "text/javascript1.2":          {"script": true},
-    "text/javascript1.3":          {"script": true},
-    "text/jscript":                {"script": true},
-    "text/livescript":             {"script": true},
     "text/vtt":                    {"texttrack": true},
-}
-
-// Keep in sync with kDevToolsRequestInitiator defined in InspectorResourceAgent.cpp
-WebInspector.NetworkManager._devToolsRequestHeader = "X-DevTools-Request-Initiator";
-
-/**
- * @param {?WebInspector.NetworkRequest} request
- * @return {boolean}
- */
-WebInspector.NetworkManager.hasDevToolsRequestHeader = function(request)
-{
-    return !!request && !!request.requestHeaderValue(WebInspector.NetworkManager._devToolsRequestHeader);
 }
 
 /**
  * @param {string} url
- * @param {!NetworkAgent.Headers|undefined} headers
- * @param {function(?Protocol.Error, number, !NetworkAgent.Headers, string)} callback
+ * @param {?Object.<string, string>} headers
+ * @param {function(number, !Object.<string, string>, string)} callback
  */
 WebInspector.NetworkManager.loadResourceForFrontend = function(url, headers, callback)
 {
-    var target = WebInspector.targetManager.mainTarget();
-    if (target)
-        target.networkAgent().loadResourceForFrontend(url, headers, callback);
-    else
-        callback("No target to load resource available", 0, {}, "");
+    var stream = new WebInspector.StringOutputStream();
+    WebInspector.NetworkManager.loadResourceAsStream(url, headers, stream, mycallback);
+
+    /**
+     * @param {number} statusCode
+     * @param {!Object.<string, string>} headers
+     */
+    function mycallback(statusCode, headers)
+    {
+        callback(statusCode, headers, stream.data());
+    }
+}
+
+/**
+ * @param {string} url
+ * @param {?Object.<string, string>} headers
+ * @param {!WebInspector.OutputStream} stream
+ * @param {function(number, !Object.<string, string>)=} callback
+ */
+WebInspector.NetworkManager.loadResourceAsStream = function(url, headers, stream, callback)
+{
+    var rawHeaders = [];
+    if (headers) {
+        for (var key in headers)
+            rawHeaders.push(key + ": " + headers[key]);
+    }
+    var streamId = WebInspector.Streams.bindOutputStream(stream);
+
+    InspectorFrontendHost.loadNetworkResource(url, rawHeaders.join("\r\n"), streamId, mycallback);
+
+    /**
+     * @param {!InspectorFrontendHostAPI.LoadNetworkResourceResult} response
+     */
+    function mycallback(response)
+    {
+        if (callback)
+            callback(response.statusCode, response.headers || {});
+        WebInspector.Streams.discardOutputStream(streamId);
+    }
 }
 
 WebInspector.NetworkManager.prototype = {
@@ -265,12 +254,11 @@ WebInspector.NetworkDispatcher.prototype = {
             return true;
 
         var resourceType = networkRequest.resourceType();
-        if (resourceType === undefined
-            || resourceType === WebInspector.resourceTypes.Other
-            || resourceType === WebInspector.resourceTypes.Media
-            || resourceType === WebInspector.resourceTypes.XHR
-            || resourceType === WebInspector.resourceTypes.WebSocket)
+        if (resourceType !== WebInspector.resourceTypes.Stylesheet &&
+            resourceType !== WebInspector.resourceTypes.Document &&
+            resourceType !== WebInspector.resourceTypes.TextTrack) {
             return true;
+        }
 
         if (!networkRequest.mimeType)
             return true; // Might be not known for cached resources with null responses.
@@ -289,11 +277,12 @@ WebInspector.NetworkDispatcher.prototype = {
      * @param {string} documentURL
      * @param {!NetworkAgent.Request} request
      * @param {!NetworkAgent.Timestamp} time
+     * @param {!NetworkAgent.Timestamp} wallTime
      * @param {!NetworkAgent.Initiator} initiator
      * @param {!NetworkAgent.Response=} redirectResponse
      * @param {!PageAgent.ResourceType=} resourceType
      */
-    requestWillBeSent: function(requestId, frameId, loaderId, documentURL, request, time, initiator, redirectResponse, resourceType)
+    requestWillBeSent: function(requestId, frameId, loaderId, documentURL, request, time, wallTime, initiator, redirectResponse, resourceType)
     {
         var networkRequest = this._inflightRequestsById[requestId];
         if (networkRequest) {
@@ -306,7 +295,7 @@ WebInspector.NetworkDispatcher.prototype = {
             networkRequest = this._createNetworkRequest(requestId, frameId, loaderId, request.url, documentURL, initiator);
         networkRequest.hasNetworkData = true;
         this._updateNetworkRequestWithRequest(networkRequest, request);
-        networkRequest.setIssueTime(time);
+        networkRequest.setIssueTime(time, wallTime);
         networkRequest.setResourceType(WebInspector.resourceTypes[resourceType]);
 
         this._startNetworkRequest(networkRequest);
@@ -430,9 +419,10 @@ WebInspector.NetworkDispatcher.prototype = {
      * @override
      * @param {!NetworkAgent.RequestId} requestId
      * @param {!NetworkAgent.Timestamp} time
+     * @param {!NetworkAgent.Timestamp} wallTime
      * @param {!NetworkAgent.WebSocketRequest} request
      */
-    webSocketWillSendHandshakeRequest: function(requestId, time, request)
+    webSocketWillSendHandshakeRequest: function(requestId, time, wallTime, request)
     {
         var networkRequest = this._inflightRequestsById[requestId];
         if (!networkRequest)
@@ -440,7 +430,7 @@ WebInspector.NetworkDispatcher.prototype = {
 
         networkRequest.requestMethod = "GET";
         networkRequest.setRequestHeaders(this._headersMapToHeadersArray(request.headers));
-        networkRequest.setIssueTime(time);
+        networkRequest.setIssueTime(time, wallTime);
 
         this._updateNetworkRequest(networkRequest);
     },

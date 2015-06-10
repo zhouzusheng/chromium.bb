@@ -170,6 +170,7 @@ void PepperWebPluginImpl::paint(WebCanvas* canvas, const WebRect& rect) {
 void PepperWebPluginImpl::updateGeometry(
     const WebRect& window_rect,
     const WebRect& clip_rect,
+    const WebRect& unobscured_rect,
     const WebVector<WebRect>& cut_outs_rects,
     bool is_visible) {
   plugin_rect_ = window_rect;
@@ -177,7 +178,7 @@ void PepperWebPluginImpl::updateGeometry(
     std::vector<gfx::Rect> cut_outs;
     for (size_t i = 0; i < cut_outs_rects.size(); ++i)
       cut_outs.push_back(cut_outs_rects[i]);
-    instance_->ViewChanged(plugin_rect_, clip_rect, cut_outs);
+    instance_->ViewChanged(plugin_rect_, clip_rect, unobscured_rect, cut_outs);
   }
 }
 

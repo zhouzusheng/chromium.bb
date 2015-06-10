@@ -36,7 +36,6 @@ public:
     virtual void setName(const WebString&) override;
     virtual WebVector<WebIconURL> iconURLs(int iconTypesMask) const override;
     virtual void setRemoteWebLayer(WebLayer*) override;
-    virtual void setPermissionClient(WebPermissionClient*) override;
     virtual void setSharedWorkerRepositoryClient(WebSharedWorkerRepositoryClient*) override;
     virtual void setCanHaveScrollbars(bool) override;
     virtual WebSize scrollOffset() const override;
@@ -66,7 +65,7 @@ public:
     virtual void addMessageToConsole(const WebConsoleMessage&) override;
     virtual void collectGarbage() override;
     virtual bool checkIfRunInsecureContent(const WebURL&) const override;
-    virtual v8::Handle<v8::Value> executeScriptAndReturnValue(
+    virtual v8::Local<v8::Value> executeScriptAndReturnValue(
         const WebScriptSource&) override;
     virtual void executeScriptInIsolatedWorld(
         int worldID, const WebScriptSource* sourcesIn, unsigned numSources,
@@ -119,7 +118,7 @@ public:
     virtual bool selectWordAroundCaret() override;
     virtual void selectRange(const WebPoint& base, const WebPoint& extent) override;
     virtual void selectRange(const WebRange&) override;
-    virtual void moveRangeSelection(const WebPoint& base, const WebPoint& extent) override;
+    virtual void moveRangeSelection(const WebPoint& base, const WebPoint& extent, WebFrame::TextGranularity = CharacterGranularity) override;
     virtual void moveCaretSelection(const WebPoint&) override;
     virtual bool setEditableSelectionOffsets(int start, int end) override;
     virtual bool setCompositionFromExistingText(int compositionStart, int compositionEnd, const WebVector<WebCompositionUnderline>& underlines) override;
@@ -170,8 +169,6 @@ public:
     virtual WebString layerTreeAsText(bool showDebugInfo = false) const override;
 
     virtual WebLocalFrame* createLocalChild(const WebString& name, WebSandboxFlags, WebFrameClient*) override;
-    // FIXME(alexmos): remove once Chrome side is updated to use sandbox flags.
-    virtual WebRemoteFrame* createRemoteChild(const WebString& name, WebRemoteFrameClient*) override;
     virtual WebRemoteFrame* createRemoteChild(const WebString& name, WebSandboxFlags, WebRemoteFrameClient*) override;
 
     void initializeCoreFrame(FrameHost*, FrameOwner*, const AtomicString& name);
@@ -188,6 +185,7 @@ public:
     virtual void setReplicatedOrigin(const WebSecurityOrigin&) const override;
     virtual void setReplicatedSandboxFlags(WebSandboxFlags) const override;
     virtual void setReplicatedName(const WebString&) const override;
+    virtual void DispatchLoadEventForFrameOwner() const override;
 
     void didStartLoading() override;
     void didStopLoading() override;

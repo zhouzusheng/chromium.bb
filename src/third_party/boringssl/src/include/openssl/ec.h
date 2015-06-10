@@ -107,17 +107,14 @@ OPENSSL_EXPORT EC_GROUP *EC_GROUP_new_by_curve_name(int nid);
 /* EC_GROUP_free frees |group| and the data that it points to. */
 OPENSSL_EXPORT void EC_GROUP_free(EC_GROUP *group);
 
-/* EC_GROUP_copy sets |*dest| equal to |*src|. It returns one on success and
- * zero otherwise. */
-OPENSSL_EXPORT int EC_GROUP_copy(EC_GROUP *dest, const EC_GROUP *src);
-
 /* EC_GROUP_dup returns a fresh |EC_GROUP| which is equal to |a| or NULL on
  * error. */
 OPENSSL_EXPORT EC_GROUP *EC_GROUP_dup(const EC_GROUP *a);
 
-/* EC_GROUP_cmp returns one if |a| and |b| are the same group and zero
+/* EC_GROUP_cmp returns zero if |a| and |b| are the same group and non-zero
  * otherwise. */
-OPENSSL_EXPORT int EC_GROUP_cmp(const EC_GROUP *a, const EC_GROUP *b);
+OPENSSL_EXPORT int EC_GROUP_cmp(const EC_GROUP *a, const EC_GROUP *b,
+                                BN_CTX *ignored);
 
 /* EC_GROUP_get0_generator returns a pointer to the internal |EC_POINT| object
  * in |group| that specifies the generator for the group. */

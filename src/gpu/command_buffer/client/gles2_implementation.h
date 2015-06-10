@@ -240,6 +240,9 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   bool GetActiveUniformsivHelper(
       GLuint program, GLsizei count, const GLuint* indices,
       GLenum pname, GLint* params);
+  bool GetSyncivHelper(
+      GLsync sync, GLenum pname, GLsizei bufsize, GLsizei* length,
+      GLint* values);
 
   void FreeUnusedSharedMemory();
   void FreeEverything();
@@ -557,6 +560,7 @@ class GLES2_IMPL_EXPORT GLES2Implementation
 
   // Helpers for query functions.
   bool GetHelper(GLenum pname, GLint* params);
+  GLuint GetBoundBufferHelper(GLenum target);
   bool GetBooleanvHelper(GLenum pname, GLboolean* params);
   bool GetBufferParameterivHelper(GLenum target, GLenum pname, GLint* params);
   bool GetFloatvHelper(GLenum pname, GLfloat* params);
@@ -655,6 +659,13 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   void CheckGLError() { }
   void FailGLError(GLenum /* error */) { }
 #endif
+
+  void RemoveMappedBufferRangeByTarget(GLenum target);
+  void RemoveMappedBufferRangeById(GLuint buffer);
+  void ClearMappedBufferRangeMap();
+
+  void DrawElementsImpl(GLenum mode, GLsizei count, GLenum type,
+                        const void* indices, const char* func_name);
 
   GLES2Util util_;
   GLES2CmdHelper* helper_;
@@ -763,6 +774,10 @@ class GLES2_IMPL_EXPORT GLES2Implementation
 
   typedef std::map<const void*, MappedBuffer> MappedBufferMap;
   MappedBufferMap mapped_buffers_;
+
+  // TODO(zmo): Consolidate |mapped_buffers_| and |mapped_buffer_range_map_|.
+  typedef base::hash_map<GLuint, MappedBuffer> MappedBufferRangeMap;
+  MappedBufferRangeMap mapped_buffer_range_map_;
 
   typedef std::map<const void*, MappedTexture> MappedTextureMap;
   MappedTextureMap mapped_textures_;

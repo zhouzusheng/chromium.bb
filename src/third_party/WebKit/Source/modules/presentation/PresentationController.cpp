@@ -6,12 +6,13 @@
 #include "modules/presentation/PresentationController.h"
 
 #include "core/frame/LocalFrame.h"
+#include "modules/presentation/PresentationSession.h"
 #include "public/platform/modules/presentation/WebPresentationClient.h"
 
 namespace blink {
 
 PresentationController::PresentationController(LocalFrame& frame, WebPresentationClient* client)
-    : FrameDestructionObserver(&frame)
+    : LocalFrameLifecycleObserver(&frame)
     , m_client(client)
 {
     if (m_client)
@@ -52,7 +53,7 @@ DEFINE_TRACE(PresentationController)
 {
     visitor->trace(m_presentation);
     WillBeHeapSupplement<LocalFrame>::trace(visitor);
-    FrameDestructionObserver::trace(visitor);
+    LocalFrameLifecycleObserver::trace(visitor);
 }
 
 void PresentationController::didChangeAvailability(bool available)
@@ -72,6 +73,50 @@ void PresentationController::updateAvailableChangeWatched(bool watched)
 {
     if (m_client)
         m_client->updateAvailableChangeWatched(watched);
+}
+
+void PresentationController::didStartDefaultSession(WebPresentationSessionClient* sessionClient)
+{
+    if (!m_presentation) {
+        PresentationSession::dispose(sessionClient);
+        return;
+    }
+
+    PresentationSession* session = PresentationSession::take(sessionClient, m_presentation);
+    m_presentation->didStartDefaultSession(session);
+}
+
+void PresentationController::didChangeSessionState(WebPresentationSessionClient* sessionClient, WebPresentationSessionState state)
+{
+    if (m_presentation)
+        m_presentation->didChangeSessionState(sessionClient, state);
+    else
+        PresentationSession::dispose(sessionClient);
+}
+
+void PresentationController::startSession(const String& presentationUrl, const String& presentationId, WebPresentationSessionClientCallbacks* callbacks)
+{
+    if (!m_client) {
+        delete callbacks;
+        return;
+    }
+    m_client->startSession(presentationUrl, presentationId, callbacks);
+}
+
+void PresentationController::joinSession(const String& presentationUrl, const String& presentationId, WebPresentationSessionClientCallbacks* callbacks)
+{
+    if (!m_client) {
+        delete callbacks;
+        return;
+    }
+    m_client->joinSession(presentationUrl, presentationId, callbacks);
+}
+
+void PresentationController::closeSession(const String& url, const String& presentationId)
+{
+    if (!m_client)
+        return;
+    m_client->closeSession(url, presentationId);
 }
 
 void PresentationController::setPresentation(Presentation* presentation)

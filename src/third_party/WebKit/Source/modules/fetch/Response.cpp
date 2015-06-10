@@ -210,8 +210,9 @@ Response* Response::create(ExecutionContext* context, Blob* body, const Response
             r->m_response->headerList()->append("Content-Type", body->type());
     }
 
-    // FIXME: "8. Set |r|'s MIME type to the result of extracting a MIME type
-    //        from |r|'s response's header list."
+    // "8. Set |r|'s MIME type to the result of extracting a MIME type
+    // from |r|'s response's header list."
+    r->m_response->setMIMEType(r->m_response->headerList()->extractMIMEType());
 
     // "9. Return |r|."
     return r;
@@ -232,9 +233,11 @@ Response* Response::create(ExecutionContext* context, const WebServiceWorkerResp
     return r;
 }
 
-Response* Response::createClone(const Response& cloneFrom)
+Response* Response::error(ExecutionContext* context)
 {
-    Response* r = new Response(cloneFrom);
+    FetchResponseData* responseData = FetchResponseData::createNetworkErrorResponse();
+    Response* r = new Response(context, responseData);
+    r->m_headers->setGuard(Headers::ImmutableGuard);
     r->suspendIfNeeded();
     return r;
 }
@@ -301,20 +304,20 @@ Response* Response::clone(ExceptionState& exceptionState)
         exceptionState.throwTypeError("Response body is already used");
         return nullptr;
     }
-    // FIXME: We throw an error while cloning the Response which body was
-    // partially read. But in Request case, we don't. When the behavior of the
-    // partially read streams will be well defined in the spec, we have to
-    // implement the behavior correctly.
-    if (streamAccessed()) {
-        bool dataLost = false;
-        BodyStreamBuffer* drainingStream = createDrainingStream(&dataLost);
-        if (dataLost) {
-            exceptionState.throwTypeError("Cloning the Response which body was partially read is not supported.");
-            return nullptr;
-        }
+    if (isBodyConsumed()) {
+        BodyStreamBuffer* drainingStream = createDrainingStream();
         m_response->replaceBodyStreamBuffer(drainingStream);
     }
-    return Response::createClone(*this);
+    // Lock the old body and set |body| property to the new one.
+    lockBody();
+    refreshBody();
+
+    FetchResponseData* response = m_response->clone();
+    Headers* headers = Headers::create(response->headerList());
+    headers->setGuard(m_headers->guard());
+    Response* r = new Response(executionContext(), response, headers);
+    r->suspendIfNeeded();
+    return r;
 }
 
 void Response::populateWebServiceWorkerResponse(WebServiceWorkerResponse& response)
@@ -330,13 +333,6 @@ Response::Response(ExecutionContext* context)
     m_headers->setGuard(Headers::ResponseGuard);
 }
 
-Response::Response(const Response& clone_from)
-    : Body(clone_from)
-    , m_response(clone_from.m_response->clone())
-    , m_headers(Headers::create(m_response->headerList()))
-{
-}
-
 Response::Response(ExecutionContext* context, FetchResponseData* response)
     : Body(context)
     , m_response(response)
@@ -344,6 +340,9 @@ Response::Response(ExecutionContext* context, FetchResponseData* response)
 {
     m_headers->setGuard(Headers::ResponseGuard);
 }
+
+Response::Response(ExecutionContext* context, FetchResponseData* response, Headers* headers)
+    : Body(context) , m_response(response) , m_headers(headers) { }
 
 bool Response::hasBody() const
 {
@@ -360,9 +359,9 @@ BodyStreamBuffer* Response::buffer() const
     return m_response->buffer();
 }
 
-String Response::contentTypeForBuffer() const
+String Response::mimeType() const
 {
-    return m_response->contentTypeForBuffer();
+    return m_response->mimeType();
 }
 
 PassRefPtr<BlobDataHandle> Response::internalBlobDataHandle() const
@@ -375,9 +374,9 @@ BodyStreamBuffer* Response::internalBuffer() const
     return m_response->internalBuffer();
 }
 
-String Response::internalContentTypeForBuffer() const
+String Response::internalMIMEType() const
 {
-    return m_response->internalContentTypeForBuffer();
+    return m_response->internalMIMEType();
 }
 
 DEFINE_TRACE(Response)

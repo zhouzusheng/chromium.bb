@@ -22,19 +22,22 @@
 #ifndef LayoutTextControl_h
 #define LayoutTextControl_h
 
-#include "core/rendering/RenderBlockFlow.h"
-#include "core/rendering/RenderFlexibleBox.h"
+#include "core/CoreExport.h"
+#include "core/layout/LayoutBlockFlow.h"
+#include "core/layout/LayoutFlexibleBox.h"
 
 namespace blink {
 
 class HTMLTextFormControlElement;
 
-class LayoutTextControl : public RenderBlockFlow {
+class CORE_EXPORT LayoutTextControl : public LayoutBlockFlow {
 public:
     virtual ~LayoutTextControl();
 
     HTMLTextFormControlElement* textFormControlElement() const;
-    virtual PassRefPtr<LayoutStyle> createInnerEditorStyle(const LayoutStyle& startStyle) const = 0;
+    virtual PassRefPtr<ComputedStyle> createInnerEditorStyle(const ComputedStyle& startStyle) const = 0;
+
+    virtual const char* name() const override { return "LayoutTextControl"; }
 
 protected:
     LayoutTextControl(HTMLTextFormControlElement*);
@@ -44,9 +47,9 @@ protected:
     HTMLElement* innerEditorElement() const;
 
     int scrollbarThickness() const;
-    void adjustInnerEditorStyle(LayoutStyle& textBlockStyle) const;
+    void adjustInnerEditorStyle(ComputedStyle& textBlockStyle) const;
 
-    virtual void styleDidChange(StyleDifference, const LayoutStyle* oldStyle) override;
+    virtual void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override;
 
     void hitInnerEditorElement(HitTestResult&, const LayoutPoint& pointInContainer, const LayoutPoint& accumulatedOffset);
 
@@ -69,13 +72,12 @@ protected:
     // element as an implementation detail which would normally be affected by this.
     virtual int inlineBlockBaseline(LineDirectionMode direction) const override { return lastLineBoxBaseline(direction); }
 
-    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectTextControl || RenderBlockFlow::isOfType(type); }
+    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectTextControl || LayoutBlockFlow::isOfType(type); }
 
 private:
-    virtual const char* renderName() const override { return "LayoutTextControl"; }
     virtual void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const override final;
     virtual void computePreferredLogicalWidths() override final;
-    virtual void removeLeftoverAnonymousBlock(RenderBlock*) override final { }
+    virtual void removeLeftoverAnonymousBlock(LayoutBlock*) override final { }
     virtual bool avoidsFloats() const override final { return true; }
     virtual bool canHaveGeneratedChildren() const override final { return false; }
 
@@ -89,21 +91,21 @@ private:
 DEFINE_LAYOUT_OBJECT_TYPE_CASTS(LayoutTextControl, isTextControl());
 
 // Renderer for our inner container, for <search> and others.
-// We can't use RenderFlexibleBox directly, because flexboxes have a different
+// We can't use LayoutFlexibleBox directly, because flexboxes have a different
 // baseline definition, and then inputs of different types wouldn't line up
 // anymore.
-class LayoutTextControlInnerContainer final : public RenderFlexibleBox {
+class LayoutTextControlInnerContainer final : public LayoutFlexibleBox {
 public:
     explicit LayoutTextControlInnerContainer(Element* element)
-        : RenderFlexibleBox(element)
+        : LayoutFlexibleBox(element)
     { }
     virtual ~LayoutTextControlInnerContainer() { }
 
     virtual int baselinePosition(FontBaseline baseline, bool firstLine, LineDirectionMode direction, LinePositionMode position) const override
     {
-        return RenderBlock::baselinePosition(baseline, firstLine, direction, position);
+        return LayoutBlock::baselinePosition(baseline, firstLine, direction, position);
     }
-    virtual int firstLineBoxBaseline() const override { return RenderBlock::firstLineBoxBaseline(); }
+    virtual int firstLineBoxBaseline() const override { return LayoutBlock::firstLineBoxBaseline(); }
     virtual int inlineBlockBaseline(LineDirectionMode direction) const override { return lastLineBoxBaseline(direction); }
 };
 

@@ -25,9 +25,10 @@
 #ifndef LayoutTableCell_h
 #define LayoutTableCell_h
 
+#include "core/CoreExport.h"
+#include "core/layout/LayoutBlockFlow.h"
 #include "core/layout/LayoutTableRow.h"
 #include "core/layout/LayoutTableSection.h"
-#include "core/rendering/RenderBlockFlow.h"
 #include "platform/LengthFunctions.h"
 
 namespace blink {
@@ -39,7 +40,7 @@ enum IncludeBorderColorOrNot { DoNotIncludeBorderColor, IncludeBorderColor };
 
 class SubtreeLayoutScope;
 
-class LayoutTableCell final : public RenderBlockFlow {
+class CORE_EXPORT LayoutTableCell final : public LayoutBlockFlow {
 public:
     explicit LayoutTableCell(Element*);
 
@@ -121,7 +122,7 @@ public:
     virtual int borderBefore() const override;
     virtual int borderAfter() const override;
 
-    void collectBorderValues(LayoutTable::CollapsedBorderValues&) const;
+    void collectBorderValues(LayoutTable::CollapsedBorderValues&);
     static void sortBorderValues(LayoutTable::CollapsedBorderValues&);
 
     virtual void layout() override;
@@ -147,7 +148,7 @@ public:
     virtual LayoutUnit paddingRight() const override;
 
     // FIXME: For now we just assume the cell has the same block flow direction as the table. It's likely we'll
-    // create an extra anonymous RenderBlock to handle mixing directionality anyway, in which case we can lock
+    // create an extra anonymous LayoutBlock to handle mixing directionality anyway, in which case we can lock
     // the block flow directionality of the cells to the table's directionality.
     virtual LayoutUnit paddingBefore() const override;
     virtual LayoutUnit paddingAfter() const override;
@@ -161,7 +162,7 @@ public:
 
     static LayoutTableCell* createAnonymous(Document*);
     static LayoutTableCell* createAnonymousWithParentRenderer(const LayoutObject*);
-    virtual RenderBox* createAnonymousBoxWithSameTypeAs(const LayoutObject* parent) const override
+    virtual LayoutBox* createAnonymousBoxWithSameTypeAs(const LayoutObject* parent) const override
     {
         return createAnonymousWithParentRenderer(parent);
     }
@@ -171,7 +172,7 @@ public:
     // This means we can safely use the same style in all cases to simplify our code.
     // FIXME: Eventually this function should replaced by style() once we support direction
     // on all table parts and writing-mode on cells.
-    const LayoutStyle& styleForCellFlow() const
+    const ComputedStyle& styleForCellFlow() const
     {
         return row()->styleRef();
     }
@@ -214,16 +215,17 @@ public:
         return !table()->cellAfter(this) || !table()->cellBefore(this);
     }
 #endif
+
+    virtual const char* name() const override { return isAnonymous() ? "LayoutTableCell (anonymous)" : "LayoutTableCell"; }
+
 protected:
-    virtual void styleDidChange(StyleDifference, const LayoutStyle* oldStyle) override;
+    virtual void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override;
     virtual void computePreferredLogicalWidths() override;
 
-    virtual void addLayerHitTestRects(LayerHitTestRects&, const Layer* currentCompositedLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const override;
+    virtual void addLayerHitTestRects(LayerHitTestRects&, const DeprecatedPaintLayer* currentCompositedLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const override;
 
 private:
-    virtual const char* renderName() const override { return (isAnonymous() || isPseudoElement()) ? "LayoutTableCell (anonymous)" : "LayoutTableCell"; }
-
-    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectTableCell || RenderBlockFlow::isOfType(type); }
+    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectTableCell || LayoutBlockFlow::isOfType(type); }
 
     virtual void willBeRemovedFromTree() override;
 
@@ -235,8 +237,8 @@ private:
     virtual bool boxShadowShouldBeAppliedToBackground(BackgroundBleedAvoidance, InlineFlowBox*) const override;
 
     virtual LayoutSize offsetFromContainer(const LayoutObject*, const LayoutPoint&, bool* offsetDependsOnPoint = 0) const override;
-    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutLayerModelObject* paintInvalidationContainer, const PaintInvalidationState* = 0) const override;
-    virtual void mapRectToPaintInvalidationBacking(const LayoutLayerModelObject* paintInvalidationContainer, LayoutRect&, const PaintInvalidationState*) const override;
+    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* = 0) const override;
+    virtual void mapRectToPaintInvalidationBacking(const LayoutBoxModelObject* paintInvalidationContainer, LayoutRect&, const PaintInvalidationState*) const override;
 
     int borderHalfLeft(bool outer) const;
     int borderHalfRight(bool outer) const;
@@ -254,11 +256,6 @@ private:
 
     bool hasStartBorderAdjoiningTable() const;
     bool hasEndBorderAdjoiningTable() const;
-
-    CollapsedBorderValue collapsedStartBorder(IncludeBorderColorOrNot = IncludeBorderColor) const;
-    CollapsedBorderValue collapsedEndBorder(IncludeBorderColorOrNot = IncludeBorderColor) const;
-    CollapsedBorderValue collapsedBeforeBorder(IncludeBorderColorOrNot = IncludeBorderColor) const;
-    CollapsedBorderValue collapsedAfterBorder(IncludeBorderColorOrNot = IncludeBorderColor) const;
 
     CollapsedBorderValue computeCollapsedStartBorder(IncludeBorderColorOrNot = IncludeBorderColor) const;
     CollapsedBorderValue computeCollapsedEndBorder(IncludeBorderColorOrNot = IncludeBorderColor) const;

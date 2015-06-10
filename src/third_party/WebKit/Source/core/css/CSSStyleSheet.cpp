@@ -51,7 +51,7 @@ public:
         return adoptPtrWillBeNoop(new StyleSheetCSSRuleList(sheet));
     }
 
-    virtual void trace(Visitor* visitor) override
+    DEFINE_INLINE_VIRTUAL_TRACE()
     {
         visitor->trace(m_styleSheet);
         CSSRuleList::trace(visitor);
@@ -231,8 +231,6 @@ void CSSStyleSheet::setMediaQueries(PassRefPtrWillBeRawPtr<MediaQuerySet> mediaQ
     if (m_mediaCSSOMWrapper && m_mediaQueries)
         m_mediaCSSOMWrapper->reattach(m_mediaQueries.get());
 
-    // Add warning message to inspector whenever dpi/dpcm values are used for "screen" media.
-    reportMediaQueryWarningIfNeeded(ownerDocument(), m_mediaQueries.get());
 }
 
 unsigned CSSStyleSheet::length() const
@@ -275,6 +273,8 @@ bool CSSStyleSheet::canAccessRules() const
     if (!document)
         return true;
     if (document->securityOrigin()->canRequest(baseURL))
+        return true;
+    if (m_allowRuleAccessFromOrigin && document->securityOrigin()->canAccess(m_allowRuleAccessFromOrigin.get()))
         return true;
     return false;
 }
@@ -407,6 +407,11 @@ Document* CSSStyleSheet::ownerDocument() const
     return root->ownerNode() ? &root->ownerNode()->document() : 0;
 }
 
+void CSSStyleSheet::setAllowRuleAccessFromOrigin(PassRefPtr<SecurityOrigin> allowedOrigin)
+{
+    m_allowRuleAccessFromOrigin = allowedOrigin;
+}
+
 void CSSStyleSheet::clearChildRuleCSSOMWrappers()
 {
     m_childRuleCSSOMWrappers.clear();
@@ -438,7 +443,7 @@ void CSSStyleSheet::setLoadCompleted(bool completed)
         m_contents->clientLoadStarted(this);
 }
 
-void CSSStyleSheet::trace(Visitor* visitor)
+DEFINE_TRACE(CSSStyleSheet)
 {
     visitor->trace(m_contents);
     visitor->trace(m_mediaQueries);

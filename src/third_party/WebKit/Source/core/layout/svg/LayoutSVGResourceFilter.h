@@ -34,7 +34,7 @@
 namespace blink {
 
 class FilterData final : public NoBaseWillBeGarbageCollectedFinalized<FilterData> {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(FilterData);
 public:
     /*
      * The state transitions should follow the following:
@@ -56,6 +56,8 @@ public:
         return adoptPtrWillBeNoop(new FilterData());
     }
 
+    void dispose();
+
     DECLARE_TRACE();
 
     RefPtrWillBeMember<SVGFilter> filter;
@@ -76,18 +78,13 @@ public:
     virtual ~LayoutSVGResourceFilter();
     virtual void destroy() override;
 
-    virtual bool isChildAllowed(LayoutObject*, const LayoutStyle&) const override;
+    virtual bool isChildAllowed(LayoutObject*, const ComputedStyle&) const override;
 
-    virtual const char* renderName() const override { return "LayoutSVGResourceFilter"; }
+    virtual const char* name() const override { return "LayoutSVGResourceFilter"; }
     virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectSVGResourceFilter || LayoutSVGResourceContainer::isOfType(type); }
 
     virtual void removeAllClientsFromCache(bool markForInvalidation = true) override;
     virtual void removeClientFromCache(LayoutObject*, bool markForInvalidation = true) override;
-
-    // Returns the context that should be used to paint the filter contents, or
-    // null if the content should not be recorded.
-    GraphicsContext* prepareEffect(LayoutObject*, GraphicsContext*);
-    void finishEffect(LayoutObject*, GraphicsContext*);
 
     FloatRect resourceBoundingBox(const LayoutObject*);
 
@@ -101,8 +98,13 @@ public:
     static const LayoutSVGResourceType s_resourceType = FilterResourceType;
     virtual LayoutSVGResourceType resourceType() const override { return s_resourceType; }
 
+    FilterData* getFilterDataForLayoutObject(LayoutObject* object) { return m_filter.get(object); }
+    void setFilterDataForLayoutObject(LayoutObject* object, PassOwnPtrWillBeRawPtr<FilterData> filterData) { m_filter.set(object, filterData); }
+
 private:
-    typedef WillBePersistentHeapHashMap<LayoutObject*, OwnPtrWillBeMember<FilterData>> FilterMap;
+    void disposeFilterMap();
+
+    using FilterMap = WillBePersistentHeapHashMap<LayoutObject*, OwnPtrWillBeMember<FilterData>>;
     FilterMap m_filter;
 };
 

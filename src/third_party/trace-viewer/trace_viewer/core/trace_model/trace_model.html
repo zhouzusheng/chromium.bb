@@ -11,6 +11,7 @@ found in the LICENSE file.
 <link rel="import" href="/base/task.html">
 <link rel="import" href="/base/ui/overlay.html">
 <link rel="import" href="/core/filter.html">
+<link rel="import" href="/core/auditor.html">
 <link rel="import" href="/core/importer/empty_importer.html">
 <link rel="import" href="/core/importer/importer.html">
 <link rel="import" href="/core/trace_model/kernel.html">
@@ -21,6 +22,8 @@ found in the LICENSE file.
 <link rel="import" href="/core/trace_model/flow_event.html">
 <link rel="import" href="/core/trace_model/global_memory_dump.html">
 <link rel="import" href="/core/trace_model/process_memory_dump.html">
+<link rel="import" href="/core/trace_model/alert.html">
+<link rel="import" href="/core/trace_model/interaction_record.html">
 
 <script>
 'use strict';
@@ -54,6 +57,11 @@ tv.exportTo('tv.c', function() {
     // importers run in which more data can be added to the model, before it is
     // finalized.
     this.customizeModelCallback = undefined;
+
+    var auditorTypes = tv.c.Auditor.getAllRegisteredTypeInfos();
+    this.auditorConstructors = auditorTypes.map(function(typeInfo) {
+      return typeInfo.constructor;
+    });
   }
 
   ImportOptions.fromArguments = function(args, argsStartIndex) {
@@ -76,6 +84,12 @@ tv.exportTo('tv.c', function() {
     return options;
   }
 
+  function ClockSyncRecord(name, ts, args) {
+    this.name = name;
+    this.ts = ts;
+    this.args = args;
+  }
+
   /**
    * Builds a model from an array of TraceEvent objects.
    * @param {Object=} opt_eventData Data from a single trace to be imported into
@@ -92,11 +106,13 @@ tv.exportTo('tv.c', function() {
     this.bounds = new tv.b.Range();
     this.instantEvents = [];
     this.flowEvents = [];
+    this.clockSyncRecords = [];
 
     this.stackFrames = {};
     this.samples = [];
 
-    this.eventContainerByStableId_ = {}; // stableId -> EventContainer
+    this.alerts = [];
+    this.interaction_records = [];
 
     this.flowIntervalTree = new tv.b.IntervalTree(
         function(s) { return s.start; },
@@ -140,14 +156,6 @@ tv.exportTo('tv.c', function() {
       return this.processes[pid];
     },
 
-    /**
-     * @return {Process} Gets an EventContainer for a specified stableId.
-     * Returns undefined if the stableId doesn't exist.
-     */
-    getEventContainerByStableId: function(stableId) {
-      return this.eventContainerByStableId_[stableId];
-    },
-
     pushInstantEvent: function(instantEvent) {
       this.instantEvents.push(instantEvent);
     },
@@ -157,6 +165,16 @@ tv.exportTo('tv.c', function() {
         throw new Error('Stack frame already exists');
       this.stackFrames[stackFrame.id] = stackFrame;
       return stackFrame;
+    },
+
+    addInteractionRecord: function(ir1) {
+      this.interaction_records.push(ir1);
+    },
+
+    getClockSyncRecordsNamed: function(name) {
+      return this.clockSyncRecords.filter(function(x) {
+        return x.name === name;
+      });
     },
 
     /**
@@ -187,6 +205,15 @@ tv.exportTo('tv.c', function() {
 
       for (var i = 0; i < this.globalMemoryDumps.length; i++)
         this.globalMemoryDumps[i].addBoundsToRange(this.bounds);
+
+      this.alerts.forEach(function(alert) {
+        this.bounds.addValue(alert.start);
+        this.bounds.addValue(alert.end);
+      }, this);
+      this.interaction_records.forEach(function(ir) {
+        this.bounds.addValue(ir.start);
+        this.bounds.addValue(ir.end);
+      }, this);
     },
 
     shiftWorldToZero: function() {
@@ -205,6 +232,12 @@ tv.exportTo('tv.c', function() {
         var sample = this.samples[i];
         sample.start -= timeBase;
       }
+      this.alerts.forEach(function(alert) {
+        alert.start -= timeBase;
+      });
+      this.interaction_records.forEach(function(ir) {
+        ir.start -= timeBase;
+      });
 
       for (var i = 0; i < this.globalMemoryDumps.length; i++)
         this.globalMemoryDumps[i].shiftTimestampsForward(-timeBase);
@@ -471,13 +504,6 @@ tv.exportTo('tv.c', function() {
         }, this);
       }, this);
 
-      // Build map between stableId and EventContainer.
-      lastTask = lastTask.after(function(task) {
-        this.iterateAllEventContainers(function(obj) {
-          this.eventContainerByStableId_[obj.stableId] = obj;
-        }.bind(this));
-      }, this);
-
       // Run preinit.
       lastTask = lastTask.after(function() {
         progressMeter.update('Initializing objects (step 1/2)...');
@@ -553,6 +579,27 @@ tv.exportTo('tv.c', function() {
           this.processes[pid].initializeObjects();
       }, this);
 
+      // Run audits.
+      lastTask = lastTask.after(function() {
+        progressMeter.update('Running auditors...');
+        var auditors = options.auditorConstructors.map(
+          function(auditorConstructor) {
+            return new auditorConstructor(this);
+          }, this);
+        auditors.forEach(function(auditor) {
+          auditor.runAudit();
+        });
+
+        this.interaction_records.sort(function(x, y) {
+          return x.start - y.start;
+        });
+        this.alerts.sort(function(x, y) {
+          return x.start - y.start;
+        });
+
+        this.updateBounds();
+      }, this);
+
       // Cleanup.
       lastTask.after(function() {
         this.importing_ = false;
@@ -622,6 +669,8 @@ tv.exportTo('tv.c', function() {
   };
 
   return {
+    ImportOptions: ImportOptions,
+    ClockSyncRecord: ClockSyncRecord,
     TraceModel: TraceModel
   };
 });

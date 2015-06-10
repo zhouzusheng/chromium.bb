@@ -36,11 +36,13 @@ class WebServiceWorkerRegistrationImpl;
 struct ServiceWorkerObjectInfo;
 struct ServiceWorkerRegistrationObjectInfo;
 struct ServiceWorkerVersionAttributes;
+struct TransferredMessagePort;
 
 // This class manages communication with the browser process about
 // registration of the service worker, exposed to renderer and worker
 // scripts through methods like navigator.registerServiceWorker().
-class ServiceWorkerDispatcher : public WorkerTaskRunner::Observer {
+class CONTENT_EXPORT ServiceWorkerDispatcher
+    : public WorkerTaskRunner::Observer {
  public:
   typedef blink::WebServiceWorkerProvider::WebServiceWorkerRegistrationCallbacks
       WebServiceWorkerRegistrationCallbacks;
@@ -50,6 +52,9 @@ class ServiceWorkerDispatcher : public WorkerTaskRunner::Observer {
   typedef
       blink::WebServiceWorkerProvider::WebServiceWorkerGetRegistrationCallbacks
       WebServiceWorkerGetRegistrationCallbacks;
+  typedef blink::WebServiceWorkerProvider::
+      WebServiceWorkerGetRegistrationForReadyCallbacks
+          WebServiceWorkerGetRegistrationForReadyCallbacks;
 
   explicit ServiceWorkerDispatcher(ThreadSafeSender* thread_safe_sender);
   ~ServiceWorkerDispatcher() override;
@@ -73,6 +78,10 @@ class ServiceWorkerDispatcher : public WorkerTaskRunner::Observer {
       int provider_id,
       const GURL& document_url,
       WebServiceWorkerRegistrationCallbacks* callbacks);
+
+  void GetRegistrationForReady(
+      int provider_id,
+      WebServiceWorkerGetRegistrationForReadyCallbacks* callbacks);
 
   // Called when a new provider context for a document is created. Usually
   // this happens when a new document is being loaded, and is called much
@@ -104,14 +113,6 @@ class ServiceWorkerDispatcher : public WorkerTaskRunner::Observer {
       const ServiceWorkerObjectInfo& info,
       bool adopt_handle);
 
-  // Finds a WebServiceWorkerRegistrationImpl for the specified registration.
-  // If it's not found, returns NULL. If |adopt_handle| is true,
-  // a ServiceWorkerRegistrationHandleReference will be adopted for the
-  // registration.
-  WebServiceWorkerRegistrationImpl* FindServiceWorkerRegistration(
-      const ServiceWorkerRegistrationObjectInfo& info,
-      bool adopt_handle);
-
   // Creates a WebServiceWorkerRegistrationImpl for the specified registration
   // and transfers its ownership to the caller. If |adopt_handle| is true, a
   // ServiceWorkerRegistrationHandleReference will be adopted for the
@@ -136,6 +137,8 @@ class ServiceWorkerDispatcher : public WorkerTaskRunner::Observer {
       IDMapOwnPointer> UnregistrationCallbackMap;
   typedef IDMap<WebServiceWorkerGetRegistrationCallbacks,
       IDMapOwnPointer> GetRegistrationCallbackMap;
+  typedef IDMap<WebServiceWorkerGetRegistrationForReadyCallbacks,
+      IDMapOwnPointer> GetRegistrationForReadyCallbackMap;
 
   typedef std::map<int, blink::WebServiceWorkerProviderClient*>
       ProviderClientMap;
@@ -145,6 +148,7 @@ class ServiceWorkerDispatcher : public WorkerTaskRunner::Observer {
   typedef std::map<int, WebServiceWorkerRegistrationImpl*>
       RegistrationObjectMap;
 
+  friend class ServiceWorkerDispatcherTest;
   friend class WebServiceWorkerImpl;
   friend class WebServiceWorkerRegistrationImpl;
 
@@ -173,6 +177,11 @@ class ServiceWorkerDispatcher : public WorkerTaskRunner::Observer {
                             int request_id,
                             const ServiceWorkerRegistrationObjectInfo& info,
                             const ServiceWorkerVersionAttributes& attrs);
+  void OnDidGetRegistrationForReady(
+      int thread_id,
+      int request_id,
+      const ServiceWorkerRegistrationObjectInfo& info,
+      const ServiceWorkerVersionAttributes& attrs);
   void OnRegistrationError(int thread_id,
                            int request_id,
                            blink::WebServiceWorkerError::ErrorType error_type,
@@ -195,20 +204,17 @@ class ServiceWorkerDispatcher : public WorkerTaskRunner::Observer {
                               int changed_mask,
                               const ServiceWorkerVersionAttributes& attributes);
   void OnUpdateFound(int thread_id,
-                     const ServiceWorkerRegistrationObjectInfo& info);
+                     int registration_handle_id);
   void OnSetControllerServiceWorker(int thread_id,
                                     int provider_id,
                                     const ServiceWorkerObjectInfo& info,
                                     bool should_notify_controllerchange);
-  void OnPostMessage(int thread_id,
-                     int provider_id,
-                     const base::string16& message,
-                     const std::vector<int>& sent_message_port_ids,
-                     const std::vector<int>& new_routing_ids);
-
-  void SetReadyRegistration(
+  void OnPostMessage(
+      int thread_id,
       int provider_id,
-      int registration_handle_id);
+      const base::string16& message,
+      const std::vector<TransferredMessagePort>& sent_message_ports,
+      const std::vector<int>& new_routing_ids);
 
   // Keeps map from handle_id to ServiceWorker object.
   void AddServiceWorker(int handle_id, WebServiceWorkerImpl* worker);
@@ -221,6 +227,11 @@ class ServiceWorkerDispatcher : public WorkerTaskRunner::Observer {
   void RemoveServiceWorkerRegistration(
       int registration_handle_id);
 
+  // Returns an existing registration or new one filled in with version
+  // attributes. This function assumes given |info| and |attrs| retain handle
+  // references and always adopts them.
+  // TODO(nhiroki): This assumption seems to impair readability. We could
+  // explictly pass ServiceWorker(Registration)HandleReference instead.
   WebServiceWorkerRegistrationImpl* FindOrCreateRegistration(
       const ServiceWorkerRegistrationObjectInfo& info,
       const ServiceWorkerVersionAttributes& attrs);
@@ -228,6 +239,7 @@ class ServiceWorkerDispatcher : public WorkerTaskRunner::Observer {
   RegistrationCallbackMap pending_registration_callbacks_;
   UnregistrationCallbackMap pending_unregistration_callbacks_;
   GetRegistrationCallbackMap pending_get_registration_callbacks_;
+  GetRegistrationForReadyCallbackMap get_for_ready_callbacks_;
 
   ProviderClientMap provider_clients_;
   ProviderContextMap provider_contexts_;

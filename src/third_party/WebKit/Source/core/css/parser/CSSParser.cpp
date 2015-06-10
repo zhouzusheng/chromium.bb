@@ -18,28 +18,22 @@
 
 namespace blink {
 
-CSSParser::CSSParser(const CSSParserContext& context)
-    : m_bisonParser(context)
-{
-}
-
-bool CSSParser::parseDeclaration(MutableStylePropertySet* propertySet, const String& declaration, CSSParserObserver* observer, StyleSheetContents* styleSheet)
+bool CSSParser::parseDeclarationList(const CSSParserContext& context, MutableStylePropertySet* propertySet, const String& declaration, CSSParserObserver* observer, StyleSheetContents* styleSheet)
 {
     // FIXME: Add inspector observer support in the new CSS parser
     if (!observer && RuntimeEnabledFeatures::newCSSParserEnabled())
-        return CSSParserImpl::parseDeclaration(propertySet, declaration, m_bisonParser.m_context);
-    return m_bisonParser.parseDeclaration(propertySet, declaration, observer, styleSheet);
+        return CSSParserImpl::parseDeclarationList(propertySet, declaration, context);
+    return BisonCSSParser(context).parseDeclaration(propertySet, declaration, observer, styleSheet);
 }
 
-void CSSParser::parseSelector(const String& selector, CSSSelectorList& selectorList)
+void CSSParser::parseSelector(const CSSParserContext& context, const String& selector, CSSSelectorList& selectorList)
 {
     if (RuntimeEnabledFeatures::newCSSParserEnabled()) {
-        Vector<CSSParserToken> tokens;
-        CSSTokenizer::tokenize(selector, tokens);
-        CSSSelectorParser::parseSelector(tokens, m_bisonParser.m_context, starAtom, nullptr, selectorList);
+        CSSTokenizer::Scope scope(selector);
+        CSSSelectorParser::parseSelector(scope.tokenRange(), context, starAtom, nullptr, selectorList);
         return;
     }
-    m_bisonParser.parseSelector(selector, selectorList);
+    BisonCSSParser(context).parseSelector(selector, selectorList);
 }
 
 PassRefPtrWillBeRawPtr<StyleRuleBase> CSSParser::parseRule(const CSSParserContext& context, StyleSheetContents* styleSheet, const String& rule)
@@ -105,7 +99,7 @@ PassRefPtrWillBeRawPtr<ImmutableStylePropertySet> CSSParser::parseInlineStyleDec
     return BisonCSSParser::parseInlineStyleDeclaration(styleString, element);
 }
 
-PassOwnPtr<Vector<double> > CSSParser::parseKeyframeKeyList(const String& keyList)
+PassOwnPtr<Vector<double>> CSSParser::parseKeyframeKeyList(const String& keyList)
 {
     if (RuntimeEnabledFeatures::newCSSParserEnabled())
         return CSSParserImpl::parseKeyframeKeyList(keyList);
@@ -124,10 +118,9 @@ PassRefPtrWillBeRawPtr<StyleRuleKeyframe> CSSParser::parseKeyframeRule(const CSS
 bool CSSParser::parseSupportsCondition(const String& condition)
 {
     if (RuntimeEnabledFeatures::newCSSParserEnabled()) {
-        Vector<CSSParserToken> tokens;
-        CSSTokenizer::tokenize(condition, tokens);
-        CSSParserImpl parser(strictCSSParserContext(), "");
-        return CSSSupportsParser::supportsCondition(tokens, parser) == CSSSupportsParser::Supported;
+        CSSTokenizer::Scope scope(condition);
+        CSSParserImpl parser(strictCSSParserContext());
+        return CSSSupportsParser::supportsCondition(scope.tokenRange(), parser) == CSSSupportsParser::Supported;
     }
     return BisonCSSParser(CSSParserContext(HTMLStandardMode, 0)).parseSupportsCondition(condition);
 }

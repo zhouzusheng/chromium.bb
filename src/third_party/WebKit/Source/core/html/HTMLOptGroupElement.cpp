@@ -26,7 +26,7 @@
 #include "core/html/HTMLOptGroupElement.h"
 
 #include "core/HTMLNames.h"
-#include "core/dom/NodeLayoutStyle.h"
+#include "core/dom/NodeComputedStyle.h"
 #include "core/dom/Text.h"
 #include "core/editing/htmlediting.h"
 #include "core/html/HTMLContentElement.h"
@@ -98,23 +98,31 @@ void HTMLOptGroupElement::detach(const AttachContext& context)
     HTMLElement::detach(context);
 }
 
-void HTMLOptGroupElement::updateNonLayoutStyle()
+bool HTMLOptGroupElement::supportsFocus() const
 {
-    m_style = originalStyleForRenderer();
-    if (renderer()) {
+    RefPtrWillBeRawPtr<HTMLSelectElement> select = ownerSelectElement();
+    if (select && select->usesMenuList())
+        return false;
+    return HTMLElement::supportsFocus();
+}
+
+void HTMLOptGroupElement::updateNonComputedStyle()
+{
+    m_style = originalStyleForLayoutObject();
+    if (layoutObject()) {
         if (HTMLSelectElement* select = ownerSelectElement())
             select->updateListOnRenderer();
     }
 }
 
-LayoutStyle* HTMLOptGroupElement::nonRendererStyle() const
+ComputedStyle* HTMLOptGroupElement::nonLayoutObjectComputedStyle() const
 {
     return m_style.get();
 }
 
-PassRefPtr<LayoutStyle> HTMLOptGroupElement::customStyleForRenderer()
+PassRefPtr<ComputedStyle> HTMLOptGroupElement::customStyleForLayoutObject()
 {
-    updateNonLayoutStyle();
+    updateNonComputedStyle();
     return m_style;
 }
 

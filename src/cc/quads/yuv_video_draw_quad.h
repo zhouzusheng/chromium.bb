@@ -8,7 +8,6 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "cc/base/cc_export.h"
-#include "cc/layers/video_layer_impl.h"
 #include "cc/quads/draw_quad.h"
 
 namespace cc {
@@ -31,7 +30,8 @@ class CC_EXPORT YUVVideoDrawQuad : public DrawQuad {
               const gfx::Rect& opaque_rect,
               const gfx::Rect& visible_rect,
               const gfx::RectF& tex_coord_rect,
-              const gfx::Size& tex_size,
+              const gfx::Size& ya_tex_size,
+              const gfx::Size& uv_tex_size,
               unsigned y_plane_resource_id,
               unsigned u_plane_resource_id,
               unsigned v_plane_resource_id,
@@ -44,7 +44,8 @@ class CC_EXPORT YUVVideoDrawQuad : public DrawQuad {
               const gfx::Rect& visible_rect,
               bool needs_blending,
               const gfx::RectF& tex_coord_rect,
-              const gfx::Size& tex_size,
+              const gfx::Size& ya_tex_size,
+              const gfx::Size& uv_tex_size,
               unsigned y_plane_resource_id,
               unsigned u_plane_resource_id,
               unsigned v_plane_resource_id,
@@ -53,7 +54,8 @@ class CC_EXPORT YUVVideoDrawQuad : public DrawQuad {
 
   gfx::RectF tex_coord_rect;
   // Empty texture size implies no clamping of texture coordinates.
-  gfx::Size tex_size;
+  gfx::Size ya_tex_size;
+  gfx::Size uv_tex_size;
   unsigned y_plane_resource_id;
   unsigned u_plane_resource_id;
   unsigned v_plane_resource_id;

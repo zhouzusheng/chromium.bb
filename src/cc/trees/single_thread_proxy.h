@@ -23,6 +23,7 @@ class BeginFrameSource;
 class ContextProvider;
 class LayerTreeHost;
 class LayerTreeHostSingleThreadClient;
+class ResourceUpdateQueue;
 
 class CC_EXPORT SingleThreadProxy : public Proxy,
                                     NON_EXPORTED_BASE(LayerTreeHostImplClient),
@@ -59,9 +60,9 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   size_t MaxPartialTextureUpdates() const override;
   void ForceSerializeOnSwapBuffers() override;
   bool SupportsImplScrolling() const override;
-  void AsValueInto(base::trace_event::TracedValue* state) const override;
   bool MainFrameWillHappenForTesting() override;
   void SetChildrenNeedBeginFrames(bool children_need_begin_frames) override;
+  void SetAuthoritativeVSyncInterval(const base::TimeDelta& interval) override;
 
   // SchedulerClient implementation
   void WillBeginImplFrame(const BeginFrameArgs& args) override;
@@ -73,6 +74,7 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   void ScheduledActionActivateSyncTree() override;
   void ScheduledActionBeginOutputSurfaceCreation() override;
   void ScheduledActionPrepareTiles() override;
+  void ScheduledActionInvalidateOutputSurface() override;
   void DidAnticipatedDrawTimeChange(base::TimeTicks time) override;
   base::TimeDelta DrawDurationEstimate() override;
   base::TimeDelta BeginMainFrameToCommitDurationEstimate() override;
@@ -86,8 +88,8 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   void DidLoseOutputSurfaceOnImplThread() override;
   void CommitVSyncParameters(base::TimeTicks timebase,
                              base::TimeDelta interval) override;
-  void SetEstimatedParentDrawTime(base::TimeDelta draw_time) override {}
-  void SetMaxSwapsPendingOnImplThread(int max) override {}
+  void SetEstimatedParentDrawTime(base::TimeDelta draw_time) override;
+  void SetMaxSwapsPendingOnImplThread(int max) override;
   void DidSwapBuffersOnImplThread() override;
   void DidSwapBuffersCompleteOnImplThread() override;
   void OnCanDrawStateChanged(bool can_draw) override;
@@ -104,11 +106,13 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
                                                int priority_cutoff) override;
   bool IsInsideDraw() override;
   void RenewTreePriority() override {}
-  void PostDelayedScrollbarFadeOnImplThread(const base::Closure& start_fade,
+  void PostDelayedAnimationTaskOnImplThread(const base::Closure& task,
                                             base::TimeDelta delay) override {}
   void DidActivateSyncTree() override;
   void DidPrepareTiles() override;
   void DidCompletePageScaleAnimationOnImplThread() override;
+  void OnDrawForOutputSurface() override;
+
   void SetDebugState(const LayerTreeDebugState& debug_state) override {}
 
   void RequestNewOutputSurface();

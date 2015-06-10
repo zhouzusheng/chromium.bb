@@ -13,6 +13,7 @@
 #include "GrPaint.h"
 #include "GrPathRenderer.h"
 #include "GrRenderTarget.h"
+#include "GrRenderTargetPriv.h"
 #include "GrStencilBuffer.h"
 #include "GrSWMaskHelper.h"
 #include "SkRasterClip.h"
@@ -29,10 +30,12 @@ typedef SkClipStack::Element Element;
 namespace {
 // set up the draw state to enable the aa clipping mask. Besides setting up the
 // stage matrix this also alters the vertex layout
-void setup_drawstate_aaclip(const SkIRect &devBound,
-                            GrPipelineBuilder* pipelineBuilder,
-                            GrTexture* result) {
-    SkASSERT(pipelineBuilder);
+void setup_drawstate_aaclip(GrPipelineBuilder* pipelineBuilder,
+                            GrTexture* result,
+                            GrPipelineBuilder::AutoRestoreFragmentProcessors* arfp,
+                            const SkIRect &devBound) {
+    SkASSERT(pipelineBuilder && arfp);
+    arfp->set(pipelineBuilder);
 
     SkMatrix mat;
     // We use device coords to compute the texture coordinates. We set our matrix to be a
@@ -109,7 +112,7 @@ bool GrClipMaskManager::useSWOnlyPath(const GrPipelineBuilder* pipelineBuilder,
 }
 
 bool GrClipMaskManager::installClipEffects(GrPipelineBuilder* pipelineBuilder,
-                                           GrPipelineBuilder::AutoRestoreEffects* are,
+                                           GrPipelineBuilder::AutoRestoreFragmentProcessors* arfp,
                                            const GrReducedClip::ElementList& elements,
                                            const SkVector& clipToRTOffset,
                                            const SkRect* drawBounds) {
@@ -119,7 +122,7 @@ bool GrClipMaskManager::installClipEffects(GrPipelineBuilder* pipelineBuilder,
         boundsInClipSpace.offset(-clipToRTOffset.fX, -clipToRTOffset.fY);
     }
 
-    are->set(pipelineBuilder);
+    arfp->set(pipelineBuilder);
     GrRenderTarget* rt = pipelineBuilder->getRenderTarget();
     GrReducedClip::ElementList::Iter iter(elements);
     bool failed = false;
@@ -162,13 +165,13 @@ bool GrClipMaskManager::installClipEffects(GrPipelineBuilder* pipelineBuilder,
                         invert ? kInverseFillAA_GrProcessorEdgeType : kFillAA_GrProcessorEdgeType;
             } else {
                 edgeType =
-                        invert ? kInverseFillBW_GrProcessorEdgeType : kFillBW_GrProcessorEdgeType;
+invert ? kInverseFillBW_GrProcessorEdgeType : kFillBW_GrProcessorEdgeType;
             }
             SkAutoTUnref<GrFragmentProcessor> fp;
             switch (iter.get()->getType()) {
                 case SkClipStack::Element::kPath_Type:
                     fp.reset(GrConvexPolyEffect::Create(edgeType, iter.get()->getPath(),
-                        &clipToRTOffset));
+                                                        &clipToRTOffset));
                     break;
                 case SkClipStack::Element::kRRect_Type: {
                     SkRRect rrect = iter.get()->getRRect();
@@ -196,7 +199,7 @@ bool GrClipMaskManager::installClipEffects(GrPipelineBuilder* pipelineBuilder,
     }
 
     if (failed) {
-        are->set(NULL);
+        arfp->set(NULL);
     }
     return !failed;
 }
@@ -205,10 +208,9 @@ bool GrClipMaskManager::installClipEffects(GrPipelineBuilder* pipelineBuilder,
 // sort out what kind of clip mask needs to be created: alpha, stencil,
 // scissor, or entirely software
 bool GrClipMaskManager::setupClipping(GrPipelineBuilder* pipelineBuilder,
-                                      GrPipelineBuilder::AutoRestoreEffects* are,
+                                      GrPipelineBuilder::AutoRestoreFragmentProcessors* arfp,
                                       GrPipelineBuilder::AutoRestoreStencil* ars,
                                       GrScissorState* scissorState,
-                                      const GrClipData* clipDataIn,
                                       const SkRect* devBounds) {
     fCurrClipMaskType = kNone_ClipMaskType;
     if (kRespectClip_StencilClipMode == fClipMode) {
@@ -216,38 +218,57 @@ bool GrClipMaskManager::setupClipping(GrPipelineBuilder* pipelineBuilder,
     }
 
     GrReducedClip::ElementList elements(16);
-    int32_t genID;
-    GrReducedClip::InitialState initialState;
+    int32_t genID = 0;
+    GrReducedClip::InitialState initialState = GrReducedClip::kAllIn_InitialState;
     SkIRect clipSpaceIBounds;
-    bool requiresAA;
+    bool requiresAA = false;
     GrRenderTarget* rt = pipelineBuilder->getRenderTarget();
 
     // GrDrawTarget should have filtered this for us
     SkASSERT(rt);
 
-    bool ignoreClip = !pipelineBuilder->isClipState() || clipDataIn->fClipStack->isWideOpen();
-    if (!ignoreClip) {
-        SkIRect clipSpaceRTIBounds = SkIRect::MakeWH(rt->width(), rt->height());
-        clipSpaceRTIBounds.offset(clipDataIn->fOrigin);
-        GrReducedClip::ReduceClipStack(*clipDataIn->fClipStack,
-                                       clipSpaceRTIBounds,
-                                       &elements,
-                                       &genID,
-                                       &initialState,
-                                       &clipSpaceIBounds,
-                                       &requiresAA);
-        if (elements.isEmpty()) {
-            if (GrReducedClip::kAllIn_InitialState == initialState) {
-                ignoreClip = clipSpaceIBounds == clipSpaceRTIBounds;
-            } else {
-                return false;
-            }
-        }
-    }
-
-    if (ignoreClip) {
+    SkIRect clipSpaceRTIBounds = SkIRect::MakeWH(rt->width(), rt->height());
+    const GrClip& clip = pipelineBuilder->clip();
+    if (clip.isWideOpen(clipSpaceRTIBounds)) {
         this->setPipelineBuilderStencil(pipelineBuilder, ars);
         return true;
+    }
+
+    // The clip mask manager always draws with a single IRect so we special case that logic here
+    // Image filters just use a rect, so we also special case that logic
+    switch (clip.clipType()) {
+        case GrClip::kWideOpen_ClipType:
+            SkFAIL("Should have caught this with clip.isWideOpen()");
+            return true;
+        case GrClip::kIRect_ClipType: {
+            SkIRect scissor = clip.irect();
+            if (scissor.intersect(clipSpaceRTIBounds)) {
+                scissorState->set(scissor);
+                this->setPipelineBuilderStencil(pipelineBuilder, ars);
+                return true;
+            }
+            return false;
+        }
+        case GrClip::kClipStack_ClipType: {
+            clipSpaceRTIBounds.offset(clip.origin());
+            GrReducedClip::ReduceClipStack(*clip.clipStack(),
+                                            clipSpaceRTIBounds,
+                                            &elements,
+                                            &genID,
+                                            &initialState,
+                                            &clipSpaceIBounds,
+                                            &requiresAA);
+            if (elements.isEmpty()) {
+                if (GrReducedClip::kAllIn_InitialState == initialState) {
+                    if (clipSpaceIBounds == clipSpaceRTIBounds) {
+                        this->setPipelineBuilderStencil(pipelineBuilder, ars);
+                        return true;
+                    }
+                } else {
+                    return false;
+                }
+            }
+        } break;
     }
 
     // An element count of 4 was chosen because of the common pattern in Blink of:
@@ -259,13 +280,13 @@ bool GrClipMaskManager::setupClipping(GrPipelineBuilder* pipelineBuilder,
     // configuration's relative costs of switching RTs to generate a mask vs
     // longer shaders.
     if (elements.count() <= 4) {
-        SkVector clipToRTOffset = { SkIntToScalar(-clipDataIn->fOrigin.fX),
-                                    SkIntToScalar(-clipDataIn->fOrigin.fY) };
+        SkVector clipToRTOffset = { SkIntToScalar(-clip.origin().fX),
+                                    SkIntToScalar(-clip.origin().fY) };
         if (elements.isEmpty() ||
-            (requiresAA && this->installClipEffects(pipelineBuilder, are, elements, clipToRTOffset,
+            (requiresAA && this->installClipEffects(pipelineBuilder, arfp, elements, clipToRTOffset,
                                                     devBounds))) {
             SkIRect scissorSpaceIBounds(clipSpaceIBounds);
-            scissorSpaceIBounds.offset(-clipDataIn->fOrigin);
+            scissorSpaceIBounds.offset(-clip.origin());
             if (NULL == devBounds ||
                 !SkRect::Make(scissorSpaceIBounds).contains(*devBounds)) {
                 scissorState->set(scissorSpaceIBounds);
@@ -302,11 +323,12 @@ bool GrClipMaskManager::setupClipping(GrPipelineBuilder* pipelineBuilder,
         }
 
         if (result) {
+            arfp->set(pipelineBuilder);
             // The mask's top left coord should be pinned to the rounded-out top left corner of
             // clipSpace bounds. We determine the mask's position WRT to the render target here.
             SkIRect rtSpaceMaskBounds = clipSpaceIBounds;
-            rtSpaceMaskBounds.offset(-clipDataIn->fOrigin);
-            setup_drawstate_aaclip(rtSpaceMaskBounds, pipelineBuilder, result);
+            rtSpaceMaskBounds.offset(-clip.origin());
+            setup_drawstate_aaclip(pipelineBuilder, result, arfp, rtSpaceMaskBounds);
             this->setPipelineBuilderStencil(pipelineBuilder, ars);
             return true;
         }
@@ -321,7 +343,7 @@ bool GrClipMaskManager::setupClipping(GrPipelineBuilder* pipelineBuilder,
     fAACache.reset();
 
     // use the stencil clip if we can't represent the clip as a rectangle.
-    SkIPoint clipSpaceToStencilSpaceOffset = -clipDataIn->fOrigin;
+    SkIPoint clipSpaceToStencilSpaceOffset = -clip.origin();
     this->createStencilClipMask(rt,
                                 genID,
                                 initialState,
@@ -457,8 +479,13 @@ void GrClipMaskManager::mergeMask(GrPipelineBuilder* pipelineBuilder,
                                       GrTextureDomain::MakeTexelDomain(srcMask, srcBound),
                                       GrTextureDomain::kDecal_Mode,
                                       GrTextureParams::kNone_FilterMode))->unref();
+    // We need this AGP until everything is in GrBatch
+    GrDrawTarget::AutoGeometryPush agp(fClipTarget);
+
     // The color passed in here does not matter since the coverageSetOpXP won't read it.
-    fClipTarget->drawSimpleRect(pipelineBuilder, GrColor_WHITE, SkMatrix::I(),
+    fClipTarget->drawSimpleRect(pipelineBuilder,
+                                GrColor_WHITE,
+                                SkMatrix::I(),
                                 SkRect::Make(dstBound));
 }
 
@@ -555,7 +582,7 @@ GrTexture* GrClipMaskManager::createAlphaClipMask(int32_t elementsGenID,
     // The second pass that zeros the stencil buffer renders the rect maskSpaceIBounds so the first
     // pass must not set values outside of this bounds or stencil values outside the rect won't be
     // cleared.
-    GrDrawTarget::AutoClipRestore acr(fClipTarget, maskSpaceIBounds);
+    GrClip clip(maskSpaceIBounds);
     SkAutoTUnref<GrTexture> temp;
 
     // walk through each clip element and perform its set op
@@ -566,6 +593,7 @@ GrTexture* GrClipMaskManager::createAlphaClipMask(int32_t elementsGenID,
         if (invert || SkRegion::kIntersect_Op == op || SkRegion::kReverseDifference_Op == op) {
             GrPipelineBuilder pipelineBuilder;
 
+            pipelineBuilder.setClip(clip);
             GrPathRenderer* pr = NULL;
             bool useTemp = !this->canStencilAndDrawElement(&pipelineBuilder, result, &pr, element);
             GrTexture* dst;
@@ -645,6 +673,9 @@ GrTexture* GrClipMaskManager::createAlphaClipMask(int32_t elementsGenID,
                                              0x0000,
                                              0xffff);
                 backgroundPipelineBuilder.setStencil(kDrawOutsideElement);
+
+                // We need this AGP until everything is in GrBatch
+                GrDrawTarget::AutoGeometryPush agp(fClipTarget);
                 // The color passed in here does not matter since the coverageSetOpXP won't read it.
                 fClipTarget->drawSimpleRect(&backgroundPipelineBuilder, GrColor_WHITE, translate,
                                             clipSpaceIBounds);
@@ -675,8 +706,7 @@ bool GrClipMaskManager::createStencilClipMask(GrRenderTarget* rt,
     SkASSERT(kNone_ClipMaskType == fCurrClipMaskType);
     SkASSERT(rt);
 
-    // TODO: dynamically attach a SB when needed.
-    GrStencilBuffer* stencilBuffer = rt->getStencilBuffer();
+    GrStencilBuffer* stencilBuffer = rt->renderTargetPriv().attachStencilBuffer();
     if (NULL == stencilBuffer) {
         return false;
     }
@@ -694,7 +724,7 @@ bool GrClipMaskManager::createStencilClipMask(GrRenderTarget* rt,
         // We set the current clip to the bounds so that our recursive draws are scissored to them.
         SkIRect stencilSpaceIBounds(clipSpaceIBounds);
         stencilSpaceIBounds.offset(clipSpaceToStencilOffset);
-        GrDrawTarget::AutoClipRestore acr(fClipTarget, stencilSpaceIBounds);
+        GrClip clip(stencilSpaceIBounds);
 
         int clipBit = stencilBuffer->bits();
         SkASSERT((clipBit <= 16) && "Ganesh only handles 16b or smaller stencil buffers");
@@ -710,6 +740,7 @@ bool GrClipMaskManager::createStencilClipMask(GrRenderTarget* rt,
             const Element* element = iter.get();
 
             GrPipelineBuilder pipelineBuilder;
+            pipelineBuilder.setClip(clip);
             pipelineBuilder.setRenderTarget(rt);
 
             pipelineBuilder.setDisableColorXPFactory();
@@ -781,18 +812,23 @@ bool GrClipMaskManager::createStencilClipMask(GrRenderTarget* rt,
                                              0xffff);
                 if (Element::kRect_Type == element->getType()) {
                     *pipelineBuilder.stencil() = gDrawToStencil;
-                    fClipTarget->drawSimpleRect(&pipelineBuilder, GrColor_WHITE, viewMatrix,
+
+                    // We need this AGP until everything is in GrBatch
+                    GrDrawTarget::AutoGeometryPush agp(fClipTarget);
+                    fClipTarget->drawSimpleRect(&pipelineBuilder,
+                                                GrColor_WHITE,
+                                                viewMatrix,
                                                 element->getRect());
                 } else {
                     if (!clipPath.isEmpty()) {
                         GrDrawTarget::AutoGeometryPush agp(fClipTarget);
                         if (canRenderDirectToStencil) {
                             *pipelineBuilder.stencil() = gDrawToStencil;
-                            pr->drawPath(fClipTarget, &pipelineBuilder, GrColor_WHITE, viewMatrix,
-                                         clipPath, stroke, false);
+                            pr->drawPath(fClipTarget, &pipelineBuilder, GrColor_WHITE,
+                                         viewMatrix, clipPath, stroke, false);
                         } else {
-                            pr->stencilPath(fClipTarget, &pipelineBuilder, viewMatrix, clipPath,
-                                            stroke);
+                            pr->stencilPath(fClipTarget, &pipelineBuilder, viewMatrix,
+                                            clipPath, stroke);
                         }
                     }
                 }
@@ -807,17 +843,26 @@ bool GrClipMaskManager::createStencilClipMask(GrRenderTarget* rt,
 
                 if (canDrawDirectToClip) {
                     if (Element::kRect_Type == element->getType()) {
-                        fClipTarget->drawSimpleRect(&pipelineBuilderCopy, GrColor_WHITE, viewMatrix,
+                        // We need this AGP until everything is in GrBatch
+                        GrDrawTarget::AutoGeometryPush agp(fClipTarget);
+                        fClipTarget->drawSimpleRect(&pipelineBuilderCopy,
+                                                    GrColor_WHITE,
+                                                    viewMatrix,
                                                     element->getRect());
                     } else {
                         GrDrawTarget::AutoGeometryPush agp(fClipTarget);
-                        pr->drawPath(fClipTarget, &pipelineBuilderCopy, GrColor_WHITE, viewMatrix,
-                                     clipPath, stroke, false);
+                        pr->drawPath(fClipTarget, &pipelineBuilderCopy, GrColor_WHITE,
+                                     viewMatrix, clipPath, stroke, false);
                     }
                 } else {
+                    // We need this AGP until everything is in GrBatch
+                    GrDrawTarget::AutoGeometryPush agp(fClipTarget);
+
                     // The view matrix is setup to do clip space -> stencil space translation, so
                     // draw rect in clip space.
-                    fClipTarget->drawSimpleRect(&pipelineBuilderCopy, GrColor_WHITE, viewMatrix,
+                    fClipTarget->drawSimpleRect(&pipelineBuilderCopy,
+                                                GrColor_WHITE,
+                                                viewMatrix,
                                                 SkRect::Make(clipSpaceIBounds));
                 }
             }
@@ -905,9 +950,9 @@ void GrClipMaskManager::setPipelineBuilderStencil(GrPipelineBuilder* pipelineBui
         settings = pipelineBuilder->getStencil();
     }
 
-    // TODO: dynamically attach a stencil buffer
     int stencilBits = 0;
-    GrStencilBuffer* stencilBuffer = pipelineBuilder->getRenderTarget()->getStencilBuffer();
+    GrRenderTarget* rt = pipelineBuilder->getRenderTarget();
+    GrStencilBuffer* stencilBuffer = rt->renderTargetPriv().attachStencilBuffer();
     if (stencilBuffer) {
         stencilBits = stencilBuffer->bits();
     }
@@ -1084,7 +1129,6 @@ void GrClipMaskManager::setClipTarget(GrClipTarget* clipTarget) {
 
 void GrClipMaskManager::adjustPathStencilParams(const GrStencilBuffer* stencilBuffer,
                                                 GrStencilSettings* settings) {
-    // TODO: dynamically attach a stencil buffer
     if (stencilBuffer) {
         int stencilBits = stencilBuffer->bits();
         this->adjustStencilParams(settings, fClipMode, stencilBits);

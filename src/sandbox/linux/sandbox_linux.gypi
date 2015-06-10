@@ -137,6 +137,8 @@
         'bpf_dsl/syscall_set.cc',
         'bpf_dsl/syscall_set.h',
         'bpf_dsl/trap_registry.h',
+        'bpf_dsl/verifier.cc',
+        'bpf_dsl/verifier.h',
         'seccomp-bpf/die.cc',
         'seccomp-bpf/die.h',
         'seccomp-bpf/errorcode.cc',
@@ -147,8 +149,6 @@
         'seccomp-bpf/syscall.h',
         'seccomp-bpf/trap.cc',
         'seccomp-bpf/trap.h',
-        'seccomp-bpf/verifier.cc',
-        'seccomp-bpf/verifier.h',
       ],
       'dependencies': [
         '../base/base.gyp:base',
@@ -266,8 +266,8 @@
             'services/namespace_utils.h',
           ],
           'dependencies': [
-            # for capabilities.cc.
-            '../build/linux/system.gyp:libcap',
+            # for capability.h.
+            'sandbox_services_headers',
           ],
         }],
       ],
@@ -286,6 +286,7 @@
         'system_headers/android_ucontext.h',
         'system_headers/arm64_linux_syscalls.h',
         'system_headers/arm_linux_syscalls.h',
+        'system_headers/capability.h',
         'system_headers/linux_seccomp.h',
         'system_headers/linux_syscalls.h',
         'system_headers/mips_linux_syscalls.h',

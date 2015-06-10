@@ -25,6 +25,7 @@
 #define SVGLayoutSupport_h
 
 #include "core/layout/svg/LayoutSVGResourcePaintServer.h"
+#include "platform/graphics/DashArray.h"
 
 namespace blink {
 
@@ -37,10 +38,11 @@ class PaintInvalidationState;
 class LayoutRect;
 struct PaintInfo;
 class LayoutGeometryMap;
-class LayoutLayerModelObject;
+class LayoutBoxModelObject;
 class LayoutObject;
-class LayoutStyle;
+class ComputedStyle;
 class LayoutSVGRoot;
+class SVGLengthContext;
 class StrokeData;
 class TransformState;
 
@@ -71,20 +73,22 @@ public:
 
     static void computeContainerBoundingBoxes(const LayoutObject* container, FloatRect& objectBoundingBox, bool& objectBoundingBoxValid, FloatRect& strokeBoundingBox, FloatRect& paintInvalidationBoundingBox);
 
-    // Important functions used by nearly all SVG renderers centralizing coordinate transformations / paint invalidation rect calculations
-    static LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutObject*, const LayoutLayerModelObject* paintInvalidationContainer, const PaintInvalidationState*);
+    // Important functions used by nearly all SVG layoutObjects centralizing coordinate transformations / paint invalidation rect calculations
+    static LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutObject*, const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState*);
     static const LayoutSVGRoot& mapRectToSVGRootForPaintInvalidation(const LayoutObject*, const FloatRect& localPaintInvalidationRect, LayoutRect&);
-    static void mapLocalToContainer(const LayoutObject*, const LayoutLayerModelObject* paintInvalidationContainer, TransformState&, bool* wasFixed = 0, const PaintInvalidationState* = 0);
-    static const LayoutObject* pushMappingToContainer(const LayoutObject*, const LayoutLayerModelObject* ancestorToStopAt, LayoutGeometryMap&);
+    static void mapLocalToContainer(const LayoutObject*, const LayoutBoxModelObject* paintInvalidationContainer, TransformState&, bool* wasFixed = 0, const PaintInvalidationState* = 0);
+    static const LayoutObject* pushMappingToContainer(const LayoutObject*, const LayoutBoxModelObject* ancestorToStopAt, LayoutGeometryMap&);
 
-    // Shared between SVG renderers and resources.
-    static void applyStrokeStyleToContext(GraphicsContext&, const LayoutStyle&, const LayoutObject&);
-    static void applyStrokeStyleToStrokeData(StrokeData&, const LayoutStyle&, const LayoutObject&);
+    // Shared between SVG layoutObjects and resources.
+    static void applyStrokeStyleToContext(GraphicsContext&, const ComputedStyle&, const LayoutObject&);
+    static void applyStrokeStyleToStrokeData(StrokeData&, const ComputedStyle&, const LayoutObject&);
 
-    // Update the GC state (on |paintInfo.context|) for painting |renderer|
+    static DashArray resolveSVGDashArray(const SVGDashArray&, const ComputedStyle&, const SVGLengthContext&);
+
+    // Update the GC state (on |paintInfo.context|) for painting |layoutObject|
     // using |style|. |resourceMode| is used to decide between fill/stroke.
     // Previous state will be saved (if needed) using |stateSaver|.
-    static bool updateGraphicsContext(const PaintInfo&, GraphicsContextStateSaver&, const LayoutStyle&, LayoutObject&, LayoutSVGResourceMode, const AffineTransform* additionalPaintServerTransform = 0);
+    static bool updateGraphicsContext(const PaintInfo&, GraphicsContextStateSaver&, const ComputedStyle&, LayoutObject&, LayoutSVGResourceMode, const AffineTransform* additionalPaintServerTransform = 0);
 
     // Determines if any ancestor's transform has changed.
     static bool transformToRootChanged(LayoutObject*);
@@ -93,11 +97,11 @@ public:
     static const LayoutSVGRoot* findTreeRootObject(const LayoutObject*);
 
     // Helper method for determining if a LayoutObject marked as text (isText()== true)
-    // can/will be rendered as part of a <text>.
-    static bool isRenderableTextNode(const LayoutObject*);
+    // can/will be laid out as part of a <text>.
+    static bool isLayoutableTextNode(const LayoutObject*);
 
-    // Determines whether a svg node should isolate or not based on LayoutStyle.
-    static bool willIsolateBlendingDescendantsForStyle(const LayoutStyle&);
+    // Determines whether a svg node should isolate or not based on ComputedStyle.
+    static bool willIsolateBlendingDescendantsForStyle(const ComputedStyle&);
     static bool willIsolateBlendingDescendantsForObject(const LayoutObject*);
     template<typename LayoutObjectType>
     static bool computeHasNonIsolatedBlendingDescendants(const LayoutObjectType*);

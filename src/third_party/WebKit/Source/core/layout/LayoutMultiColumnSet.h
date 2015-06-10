@@ -60,19 +60,20 @@ namespace blink {
 // group has its own column height, but the column height is uniform within a group.
 class LayoutMultiColumnSet : public LayoutRegion {
 public:
-    static LayoutMultiColumnSet* createAnonymous(LayoutFlowThread&, const LayoutStyle& parentStyle);
+    static LayoutMultiColumnSet* createAnonymous(LayoutFlowThread&, const ComputedStyle& parentStyle);
 
     const MultiColumnFragmentainerGroup& firstFragmentainerGroup() const { return m_fragmentainerGroups.first(); }
     const MultiColumnFragmentainerGroup& lastFragmentainerGroup() const { return m_fragmentainerGroups.last(); }
     MultiColumnFragmentainerGroup& fragmentainerGroupAtFlowThreadOffset(LayoutUnit);
     const MultiColumnFragmentainerGroup& fragmentainerGroupAtFlowThreadOffset(LayoutUnit) const;
+    const MultiColumnFragmentainerGroup& fragmentainerGroupAtVisualPoint(const LayoutPoint&) const;
 
     virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectLayoutMultiColumnSet || LayoutRegion::isOfType(type); }
 
     virtual LayoutUnit pageLogicalWidth() const final { return flowThread()->logicalWidth(); }
     virtual LayoutUnit pageLogicalHeight() const final;
 
-    RenderBlockFlow* multiColumnBlockFlow() const { return toRenderBlockFlow(parent()); }
+    LayoutBlockFlow* multiColumnBlockFlow() const { return toLayoutBlockFlow(parent()); }
     LayoutMultiColumnFlowThread* multiColumnFlowThread() const
     {
         ASSERT_WITH_SECURITY_IMPLICATION(!flowThread() || flowThread()->isLayoutMultiColumnFlowThread());
@@ -94,6 +95,8 @@ public:
     // Find the column that contains the given block offset, and return the translation needed to
     // get from flow thread coordinates to visual coordinates.
     LayoutSize flowThreadTranslationAtOffset(LayoutUnit) const;
+
+    LayoutPoint visualPointToFlowThreadPoint(const LayoutPoint& visualPoint) const;
 
     void updateMinimumColumnHeight(LayoutUnit offsetInFlowThread, LayoutUnit height);
 
@@ -139,12 +142,14 @@ public:
     // page.
     LayoutUnit pageLogicalTopForOffset(LayoutUnit offset) const;
 
-    void collectLayerFragments(LayerFragments&, const LayoutRect& layerBoundingBox, const LayoutRect& dirtyRect);
+    void collectLayerFragments(DeprecatedPaintLayerFragments&, const LayoutRect& layerBoundingBox, const LayoutRect& dirtyRect);
 
     LayoutUnit columnGap() const;
 
     // The "CSS actual" value of column-count. This includes overflowing columns, if any.
     unsigned actualColumnCount() const;
+
+    virtual const char* name() const override { return "LayoutMultiColumnSet"; }
 
 protected:
     LayoutMultiColumnSet(LayoutFlowThread*);
@@ -156,12 +161,11 @@ private:
     virtual bool isSelfCollapsingBlock() const override { return false; }
 
     virtual void computeLogicalHeight(LayoutUnit logicalHeight, LayoutUnit logicalTop, LogicalExtentComputedValues&) const override;
+    virtual PositionWithAffinity positionForPoint(const LayoutPoint&) override;
 
     virtual void paintObject(const PaintInfo&, const LayoutPoint& paintOffset) override;
 
     virtual void addOverflowFromChildren() override;
-
-    virtual const char* renderName() const override;
 
     virtual LayoutRect flowThreadPortionRect() const override;
 

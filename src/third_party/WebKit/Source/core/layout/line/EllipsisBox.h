@@ -42,7 +42,7 @@ public:
     }
 
     virtual void paint(const PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom) override;
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom) override;
+    virtual bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom) override;
     void setSelectionState(LayoutObject::SelectionState s) { m_selectionState = s; }
     IntRect selectionRect();
 
@@ -50,6 +50,8 @@ public:
     virtual LayoutObject::SelectionState selectionState() const override { return m_selectionState; }
     const AtomicString& ellipsisStr() { return m_str; }
     InlineBox* markupBox() const;
+
+    virtual const char* boxName() const override;
 
 private:
 

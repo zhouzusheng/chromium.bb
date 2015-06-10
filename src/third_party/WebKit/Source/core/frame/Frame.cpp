@@ -30,6 +30,7 @@
 #include "config.h"
 #include "core/frame/Frame.h"
 
+#include "bindings/core/v8/WindowProxyManager.h"
 #include "core/dom/DocumentType.h"
 #include "core/events/Event.h"
 #include "core/frame/LocalDOMWindow.h"
@@ -62,7 +63,7 @@ Frame::~Frame()
 #endif
 }
 
-void Frame::trace(Visitor* visitor)
+DEFINE_TRACE(Frame)
 {
     visitor->trace(m_treeNode);
     visitor->trace(m_host);
@@ -146,6 +147,17 @@ ChromeClient& Frame::chromeClient() const
     if (Page* page = this->page())
         return page->chrome().client();
     return emptyChromeClient();
+}
+
+void Frame::finishSwapFrom(Frame* old)
+{
+    WindowProxyManager* oldManager = old->windowProxyManager();
+    // FIXME: In the future, the Blink API layer will be calling detach() on the
+    // old frame prior to completing the swap. However, detach calls
+    // clearForClose() instead of clearForNavigation(). Make sure this doesn't
+    // become a no-op when that lands, since it's important to detach the global.
+    oldManager->clearForNavigation();
+    windowProxyManager()->takeGlobalFrom(oldManager);
 }
 
 Frame* Frame::findFrameForNavigation(const AtomicString& name, Frame& activeFrame)
@@ -246,11 +258,11 @@ Frame* Frame::findUnsafeParentScrollPropagationBoundary()
     return nullptr;
 }
 
-LayoutPart* Frame::ownerRenderer() const
+LayoutPart* Frame::ownerLayoutObject() const
 {
     if (!deprecatedLocalOwner())
         return nullptr;
-    LayoutObject* object = deprecatedLocalOwner()->renderer();
+    LayoutObject* object = deprecatedLocalOwner()->layoutObject();
     if (!object)
         return nullptr;
     // FIXME: If <object> is ever fixed to disassociate itself from frames

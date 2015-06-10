@@ -74,7 +74,7 @@ private:
 SVGTextMetricsCalculator::SVGTextMetricsCalculator(LayoutSVGInlineText* text)
     : m_text(text)
     , m_bidiRun(0)
-    , m_run(SVGTextMetrics::constructTextRun(text, 0, text->textLength()))
+    , m_run(SVGTextMetrics::constructTextRun(text, 0, text->textLength(), text->styleRef().direction()))
     , m_isComplexText(false)
     , m_totalWidth(0)
 {
@@ -97,7 +97,7 @@ SVGTextMetricsCalculator::~SVGTextMetricsCalculator()
 
 void SVGTextMetricsCalculator::setupBidiRuns()
 {
-    const LayoutStyle& style = m_text->styleRef();
+    const ComputedStyle& style = m_text->styleRef();
     m_textDirection = style.direction();
     if (isOverride(style.unicodeBidi()))
         return;
@@ -136,7 +136,7 @@ SVGTextMetrics SVGTextMetricsCalculator::computeMetricsForCharacterComplex(unsig
     ASSERT(startPosition <= textPosition);
     SVGTextMetrics complexStartToCurrentMetrics = SVGTextMetrics::measureCharacterRange(m_text, startPosition, textPosition - startPosition + metricsLength, m_textDirection);
     // Frequent case for Arabic text: when measuring a single character the arabic isolated form is taken
-    // when rendering the glyph "in context" (with it's surrounding characters) it changes due to shaping.
+    // when laying out the glyph "in context" (with it's surrounding characters) it changes due to shaping.
     // So whenever currentWidth != currentMetrics.width(), we are processing a text run whose length is
     // not equal to the sum of the individual lengths of the glyphs, when measuring them isolated.
     float currentWidth = complexStartToCurrentMetrics.width() - m_totalWidth;
@@ -179,13 +179,13 @@ struct MeasureTextData {
     unsigned valueListPosition;
 };
 
-static void measureTextRenderer(LayoutSVGInlineText* text, MeasureTextData* data, bool processRenderer)
+static void measureTextLayoutObject(LayoutSVGInlineText* text, MeasureTextData* data, bool processLayoutObject)
 {
     ASSERT(text);
 
     SVGTextLayoutAttributes* attributes = text->layoutAttributes();
     Vector<SVGTextMetrics>* textMetricsValues = &attributes->textMetricsValues();
-    if (processRenderer) {
+    if (processLayoutObject) {
         if (data->allCharactersMap)
             attributes->clear();
         else
@@ -207,14 +207,14 @@ static void measureTextRenderer(LayoutSVGInlineText* text, MeasureTextData* data
 
         bool characterIsWhiteSpace = calculator.characterIsWhiteSpace(textPosition);
         if (characterIsWhiteSpace && !preserveWhiteSpace && data->lastCharacterWasWhiteSpace) {
-            if (processRenderer)
+            if (processLayoutObject)
                 textMetricsValues->append(SVGTextMetrics(SVGTextMetrics::SkippedSpaceMetrics));
             if (data->allCharactersMap)
                 skippedCharacters += currentMetrics.length();
             continue;
         }
 
-        if (processRenderer) {
+        if (processLayoutObject) {
             if (data->allCharactersMap) {
                 const SVGCharacterDataMap::const_iterator it = data->allCharactersMap->find(data->valueListPosition + textPosition - skippedCharacters - surrogatePairCharacters + 1);
                 if (it != data->allCharactersMap->end())
@@ -241,7 +241,7 @@ static void walkTree(LayoutSVGText* start, LayoutSVGInlineText* stopAtLeaf, Meas
     while (child) {
         if (child->isSVGInlineText()) {
             LayoutSVGInlineText* text = toLayoutSVGInlineText(child);
-            measureTextRenderer(text, data, !stopAtLeaf || stopAtLeaf == text);
+            measureTextLayoutObject(text, data, !stopAtLeaf || stopAtLeaf == text);
             if (stopAtLeaf && stopAtLeaf == text)
                 return;
         } else if (child->isSVGInline()) {
@@ -255,7 +255,7 @@ static void walkTree(LayoutSVGText* start, LayoutSVGInlineText* stopAtLeaf, Meas
     }
 }
 
-void SVGTextMetricsBuilder::measureTextRenderer(LayoutSVGInlineText* text)
+void SVGTextMetricsBuilder::measureTextLayoutObject(LayoutSVGInlineText* text)
 {
     ASSERT(text);
 

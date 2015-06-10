@@ -30,8 +30,8 @@
 #ifndef LayoutFlowThread_h
 #define LayoutFlowThread_h
 
-#include "core/layout/LayerFragment.h"
-#include "core/rendering/RenderBlockFlow.h"
+#include "core/layout/LayoutBlockFlow.h"
+#include "core/paint/DeprecatedPaintLayerFragment.h"
 #include "wtf/ListHashSet.h"
 
 namespace blink {
@@ -47,7 +47,7 @@ typedef ListHashSet<LayoutMultiColumnSet*> LayoutMultiColumnSetList;
 // and nodeAtPoint methods to this object. Each LayoutRegion will actually be a viewPort
 // of the LayoutFlowThread.
 
-class LayoutFlowThread: public RenderBlockFlow {
+class LayoutFlowThread: public LayoutBlockFlow {
 public:
     LayoutFlowThread();
     virtual ~LayoutFlowThread() { };
@@ -62,19 +62,19 @@ public:
 
     // Always create a Layer for the LayoutFlowThread so that we
     // can easily avoid drawing the children directly.
-    virtual LayerType layerTypeRequired() const override final { return NormalLayer; }
+    virtual DeprecatedPaintLayerType layerTypeRequired() const override final { return NormalDeprecatedPaintLayer; }
 
     // Skip past a column spanner during flow thread layout. Spanners are not laid out inside the
     // flow thread, since the flow thread is not in a spanner's containing block chain (since the
     // containing block is the multicol container). If the spanner follows right after a column set
     // (as opposed to following another spanner), we may have to stretch the flow thread to ensure
     // completely filled columns in the preceding column set. Return this adjustment, if any.
-    virtual LayoutUnit skipColumnSpanner(RenderBox*, LayoutUnit logicalTopInFlowThread) { return LayoutUnit(); }
+    virtual LayoutUnit skipColumnSpanner(LayoutBox*, LayoutUnit logicalTopInFlowThread) { return LayoutUnit(); }
 
     virtual void flowThreadDescendantWasInserted(LayoutObject*) { }
     virtual void flowThreadDescendantWillBeRemoved(LayoutObject*) { }
 
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override final;
+    virtual bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override final;
 
     virtual void addRegionToThread(LayoutMultiColumnSet*) = 0;
     virtual void removeRegionFromThread(LayoutMultiColumnSet*);
@@ -87,7 +87,7 @@ public:
     void invalidateRegions();
     bool hasValidRegionInfo() const { return !m_regionsInvalidated && !m_multiColumnSetList.isEmpty(); }
 
-    virtual void mapRectToPaintInvalidationBacking(const LayoutLayerModelObject* paintInvalidationContainer, LayoutRect&, const PaintInvalidationState*) const override;
+    virtual void mapRectToPaintInvalidationBacking(const LayoutBoxModelObject* paintInvalidationContainer, LayoutRect&, const PaintInvalidationState*) const override;
 
     LayoutUnit pageLogicalHeightForOffset(LayoutUnit);
     LayoutUnit pageRemainingLogicalHeightForOffset(LayoutUnit, PageBoundaryRule = IncludePageBoundary);
@@ -106,7 +106,7 @@ public:
     virtual bool isPageLogicalHeightKnown() const { return true; }
     bool pageLogicalSizeChanged() const { return m_pageLogicalSizeChanged; }
 
-    void collectLayerFragments(LayerFragments&, const LayoutRect& layerBoundingBox, const LayoutRect& dirtyRect);
+    void collectLayerFragments(DeprecatedPaintLayerFragments&, const LayoutRect& layerBoundingBox, const LayoutRect& dirtyRect);
 
     // Return the visual bounding box based on the supplied flow-thread bounding box. Both
     // rectangles are completely physical in terms of writing mode.
@@ -117,14 +117,16 @@ public:
         return flowThreadPoint + columnOffset(flowThreadPoint);
     }
 
+    virtual LayoutPoint visualPointToFlowThreadPoint(const LayoutPoint& visualPoint) const = 0;
+
     // Used to estimate the maximum height of the flow thread.
     static LayoutUnit maxLogicalHeight() { return LayoutUnit::max() / 2; }
 
     virtual LayoutMultiColumnSet* columnSetAtBlockOffset(LayoutUnit) const = 0;
 
-protected:
-    virtual const char* renderName() const = 0;
+    virtual const char* name() const = 0;
 
+protected:
     void generateColumnSetIntervalTree();
 
     LayoutMultiColumnSetList m_multiColumnSetList;

@@ -50,9 +50,6 @@ class CONTENT_EXPORT FrameTree {
             RenderFrameHostManager::Delegate* manager_delegate);
   ~FrameTree();
 
-  // Returns the FrameTreeNode with the given |frame_tree_node_id|.
-  static FrameTreeNode* GloballyFindByID(int64 frame_tree_node_id);
-
   FrameTreeNode* root() const { return root_.get(); }
 
   // Returns the FrameTreeNode with the given |frame_tree_node_id| if it is part
@@ -128,6 +125,19 @@ class CONTENT_EXPORT FrameTree {
   // the number drops to zero, we call Shutdown on the RenderViewHost.
   void RegisterRenderFrameHost(RenderFrameHostImpl* render_frame_host);
   void UnregisterRenderFrameHost(RenderFrameHostImpl* render_frame_host);
+
+  // This is only meant to be called by FrameTreeNode. Triggers calling
+  // the listener installed by SetFrameRemoveListener.
+  void FrameRemoved(FrameTreeNode* frame);
+
+  // Returns this FrameTree's total load progress.
+  double GetLoadProgress();
+
+  // Resets the load progress on all nodes in this FrameTree.
+  void ResetLoadProgress();
+
+  // Returns true if at least one of the nodes in this FrameTree is loading.
+  bool IsLoading();
 
  private:
   typedef base::hash_map<int, RenderViewHostImpl*> RenderViewHostMap;

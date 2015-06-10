@@ -12,6 +12,7 @@
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
+#include "media/base/eme_constants.h"
 #include "media/base/media_export.h"
 #include "url/gurl.h"
 
@@ -103,7 +104,7 @@ class MEDIA_EXPORT MediaKeys{
   //    called after the |promise| is resolved.
   virtual void CreateSessionAndGenerateRequest(
       SessionType session_type,
-      const std::string& init_data_type,
+      EmeInitDataType init_data_type,
       const uint8* init_data,
       int init_data_length,
       scoped_ptr<NewSessionCdmPromise> promise) = 0;
@@ -163,7 +164,8 @@ typedef base::Callback<void(const std::string& session_id)> SessionClosedCB;
 typedef base::Callback<void(const std::string& session_id,
                             MediaKeys::Exception exception,
                             uint32 system_code,
-                            const std::string& error_message)> SessionErrorCB;
+                            const std::string& error_message)>
+    LegacySessionErrorCB;
 
 typedef base::Callback<void(const std::string& session_id,
                             bool has_additional_usable_key,

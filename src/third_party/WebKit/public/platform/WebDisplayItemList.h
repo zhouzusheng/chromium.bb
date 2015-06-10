@@ -12,12 +12,11 @@
 #include "WebSize.h"
 #include "WebVector.h"
 
+#include "third_party/skia/include/core/SkColorFilter.h"
 #include "third_party/skia/include/core/SkRRect.h"
 #include "third_party/skia/include/core/SkRegion.h"
+#include "third_party/skia/include/core/SkXfermode.h"
 #include "third_party/skia/include/utils/SkMatrix44.h"
-
-// FIXME: Remove this once references to this macro in chromium are removed.
-#define FILTER_DISPLAY_ITEM_USES_FILTER_OPERATIONS 1
 
 class SkImageFilter;
 class SkMatrix44;
@@ -28,8 +27,8 @@ class WebFilterOperations;
 
 // An ordered list of items representing content to be rendered (stored in
 // 'drawing' items) and operations to be performed when rendering this content
-// (stored in 'clip', 'transform', 'transparency', and 'filter' items). See
-// http://dev.chromium.org/blink/slimming-paint for more details.
+// (stored in 'clip', 'transform', 'filter', etc...). For more details see:
+// http://dev.chromium.org/blink/slimming-paint.
 class WebDisplayItemList {
 public:
     virtual ~WebDisplayItemList() { }
@@ -45,8 +44,9 @@ public:
     virtual void appendEndFloatClipItem() = 0;
     virtual void appendTransformItem(const SkMatrix44&) = 0;
     virtual void appendEndTransformItem() = 0;
-    virtual void appendTransparencyItem(float opacity, WebBlendMode) = 0;
-    virtual void appendEndTransparencyItem() = 0;
+    virtual void appendCompositingItem(float opacity,
+        SkXfermode::Mode, SkRect* bounds, SkColorFilter*) = 0;
+    virtual void appendEndCompositingItem() = 0;
 
     virtual void appendFilterItem(const WebFilterOperations&, const WebFloatRect& bounds) = 0;
     virtual void appendEndFilterItem() = 0;

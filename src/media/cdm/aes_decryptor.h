@@ -41,7 +41,7 @@ class MEDIA_EXPORT AesDecryptor : public MediaKeys,
                             scoped_ptr<SimpleCdmPromise> promise) override;
   void CreateSessionAndGenerateRequest(
       SessionType session_type,
-      const std::string& init_data_type,
+      EmeInitDataType init_data_type,
       const uint8* init_data,
       int init_data_length,
       scoped_ptr<NewSessionCdmPromise> promise) override;
@@ -60,9 +60,7 @@ class MEDIA_EXPORT AesDecryptor : public MediaKeys,
 
   // CdmContext implementation.
   Decryptor* GetDecryptor() override;
-#if defined(ENABLE_BROWSER_CDMS)
   int GetCdmId() const override;
-#endif  // defined(ENABLE_BROWSER_CDMS)
 
   // Decryptor implementation.
   void RegisterNewKeyCB(StreamType stream_type,
@@ -125,6 +123,9 @@ class MEDIA_EXPORT AesDecryptor : public MediaKeys,
   // Gets a DecryptionKey associated with |key_id|. The AesDecryptor still owns
   // the key. Returns NULL if no key is associated with |key_id|.
   DecryptionKey* GetKey(const std::string& key_id) const;
+
+  // Determines if |key_id| is already specified for |session_id|.
+  bool HasKey(const std::string& session_id, const std::string& key_id);
 
   // Deletes all keys associated with |session_id|.
   void DeleteKeysForSession(const std::string& session_id);

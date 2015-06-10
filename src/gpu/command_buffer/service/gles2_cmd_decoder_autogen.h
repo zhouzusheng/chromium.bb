@@ -1752,6 +1752,44 @@ error::Error GLES2DecoderImpl::HandleGetShaderiv(uint32_t immediate_data_size,
   return error::kNoError;
 }
 
+error::Error GLES2DecoderImpl::HandleGetSynciv(uint32_t immediate_data_size,
+                                               const void* cmd_data) {
+  if (!unsafe_es3_apis_enabled())
+    return error::kUnknownCommand;
+  const gles2::cmds::GetSynciv& c =
+      *static_cast<const gles2::cmds::GetSynciv*>(cmd_data);
+  (void)c;
+  GLuint sync = static_cast<GLuint>(c.sync);
+  GLenum pname = static_cast<GLenum>(c.pname);
+  typedef cmds::GetSynciv::Result Result;
+  GLsizei num_values = 0;
+  GetNumValuesReturnedForGLGet(pname, &num_values);
+  Result* result = GetSharedMemoryAs<Result*>(
+      c.values_shm_id, c.values_shm_offset, Result::ComputeSize(num_values));
+  GLint* values = result ? result->GetData() : NULL;
+  if (values == NULL) {
+    return error::kOutOfBounds;
+  }
+  LOCAL_COPY_REAL_GL_ERRORS_TO_WRAPPER("GetSynciv");
+  // Check that the client initialized the result.
+  if (result->size != 0) {
+    return error::kInvalidArguments;
+  }
+  GLsync service_sync = 0;
+  if (!group_->GetSyncServiceId(sync, &service_sync)) {
+    LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "glGetSynciv", "invalid sync id");
+    return error::kNoError;
+  }
+  glGetSynciv(service_sync, pname, num_values, nullptr, values);
+  GLenum error = glGetError();
+  if (error == GL_NO_ERROR) {
+    result->SetNumResults(num_values);
+  } else {
+    LOCAL_SET_GL_ERROR(error, "GetSynciv", "");
+  }
+  return error::kNoError;
+}
+
 error::Error GLES2DecoderImpl::HandleGetTexParameterfv(
     uint32_t immediate_data_size,
     const void* cmd_data) {
@@ -4292,7 +4330,6 @@ error::Error GLES2DecoderImpl::HandleCopyTextureCHROMIUM(
   GLenum target = static_cast<GLenum>(c.target);
   GLenum source_id = static_cast<GLenum>(c.source_id);
   GLenum dest_id = static_cast<GLenum>(c.dest_id);
-  GLint level = static_cast<GLint>(c.level);
   GLint internalformat = static_cast<GLint>(c.internalformat);
   GLenum dest_type = static_cast<GLenum>(c.dest_type);
   if (!validators_->texture_internal_format.IsValid(internalformat)) {
@@ -4305,8 +4342,22 @@ error::Error GLES2DecoderImpl::HandleCopyTextureCHROMIUM(
                                     "dest_type");
     return error::kNoError;
   }
-  DoCopyTextureCHROMIUM(target, source_id, dest_id, level, internalformat,
-                        dest_type);
+  DoCopyTextureCHROMIUM(target, source_id, dest_id, internalformat, dest_type);
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderImpl::HandleCopySubTextureCHROMIUM(
+    uint32_t immediate_data_size,
+    const void* cmd_data) {
+  const gles2::cmds::CopySubTextureCHROMIUM& c =
+      *static_cast<const gles2::cmds::CopySubTextureCHROMIUM*>(cmd_data);
+  (void)c;
+  GLenum target = static_cast<GLenum>(c.target);
+  GLenum source_id = static_cast<GLenum>(c.source_id);
+  GLenum dest_id = static_cast<GLenum>(c.dest_id);
+  GLint xoffset = static_cast<GLint>(c.xoffset);
+  GLint yoffset = static_cast<GLint>(c.yoffset);
+  DoCopySubTextureCHROMIUM(target, source_id, dest_id, xoffset, yoffset);
   return error::kNoError;
 }
 
@@ -4818,6 +4869,14 @@ bool GLES2DecoderImpl::SetCapabilityState(GLenum cap, bool enabled) {
       if (state_.enable_flags.cached_stencil_test != enabled ||
           state_.ignore_cached_state) {
         framebuffer_state_.clear_state_dirty = true;
+      }
+      return false;
+    case GL_RASTERIZER_DISCARD:
+      state_.enable_flags.rasterizer_discard = enabled;
+      if (state_.enable_flags.cached_rasterizer_discard != enabled ||
+          state_.ignore_cached_state) {
+        state_.enable_flags.cached_rasterizer_discard = enabled;
+        return true;
       }
       return false;
     default:

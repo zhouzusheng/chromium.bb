@@ -24,16 +24,12 @@
 #include "core/svg/SVGMaskElement.h"
 #include "core/svg/SVGUnitTypes.h"
 #include "platform/geometry/FloatRect.h"
-#include "platform/geometry/IntSize.h"
-#include "platform/graphics/ImageBuffer.h"
-
-#include "wtf/HashMap.h"
-#include "wtf/OwnPtr.h"
 
 class SkPicture;
 
 namespace blink {
 
+class AffineTransform;
 class GraphicsContext;
 
 class LayoutSVGResourceMasker final : public LayoutSVGResourceContainer {
@@ -41,13 +37,10 @@ public:
     explicit LayoutSVGResourceMasker(SVGMaskElement*);
     virtual ~LayoutSVGResourceMasker();
 
-    virtual const char* renderName() const override { return "LayoutSVGResourceMasker"; }
+    virtual const char* name() const override { return "LayoutSVGResourceMasker"; }
 
     virtual void removeAllClientsFromCache(bool markForInvalidation = true) override;
     virtual void removeClientFromCache(LayoutObject*, bool markForInvalidation = true) override;
-
-    bool prepareEffect(LayoutObject*, GraphicsContext*);
-    void finishEffect(LayoutObject*, GraphicsContext*);
 
     FloatRect resourceBoundingBox(const LayoutObject*);
 
@@ -57,10 +50,10 @@ public:
     static const LayoutSVGResourceType s_resourceType = MaskerResourceType;
     virtual LayoutSVGResourceType resourceType() const override { return s_resourceType; }
 
+    PassRefPtr<const SkPicture> createContentPicture(AffineTransform&, const FloatRect&);
+
 private:
     void calculateMaskContentPaintInvalidationRect();
-    void drawMaskForRenderer(GraphicsContext*, const FloatRect& targetBoundingBox);
-    void createPicture(GraphicsContext*);
 
     RefPtr<const SkPicture> m_maskContentPicture;
     FloatRect m_maskContentBoundaries;

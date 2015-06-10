@@ -17,10 +17,10 @@
 #include "SkPaint.h"
 #include "SkPath.h"
 #include "SkPathOps.h"
+#include "SkPDFBitmap.h"
 #include "SkPDFFont.h"
 #include "SkPDFFormXObject.h"
 #include "SkPDFGraphicState.h"
-#include "SkPDFImage.h"
 #include "SkPDFResourceDict.h"
 #include "SkPDFShader.h"
 #include "SkPDFStream.h"
@@ -33,7 +33,6 @@
 #include "SkTextFormatParams.h"
 #include "SkTemplates.h"
 #include "SkTypefacePriv.h"
-#include "SkTSet.h"
 
 #define DPI_FOR_RASTER_SCALE_ONE 72
 
@@ -566,13 +565,19 @@ void GraphicStackState::updateDrawingState(const GraphicStateEntry& state) {
     }
 }
 
-SkBaseDevice* SkPDFDevice::onCreateCompatibleDevice(const CreateInfo& cinfo) {
+static bool not_supported_for_layers(const SkPaint& layerPaint) {
     // PDF does not support image filters, so render them on CPU.
     // Note that this rendering is done at "screen" resolution (100dpi), not
     // printer resolution.
     // FIXME: It may be possible to express some filters natively using PDF
     // to improve quality and file size (http://skbug.com/3043)
-    if (kImageFilter_Usage == cinfo.fUsage) {
+
+    // TODO: should we return true if there is a colorfilter?
+    return layerPaint.getImageFilter() != NULL;
+}
+
+SkBaseDevice* SkPDFDevice::onCreateDevice(const CreateInfo& cinfo, const SkPaint* layerPaint) {
+    if (layerPaint && not_supported_for_layers(*layerPaint)) {
         return SkBitmapDevice::Create(cinfo.fInfo);
     }
     SkISize size = SkISize::Make(cinfo.fInfo.width(), cinfo.fInfo.height());
@@ -700,7 +705,6 @@ SkPDFDevice::SkPDFDevice(SkISize pageSize,
     , fContentSize(pageSize)
     , fExistingClipRegion(SkIRect::MakeSize(pageSize))
     , fAnnotations(NULL)
-    , fResourceDict(NULL)
     , fLastContentEntry(NULL)
     , fLastMarginContentEntry(NULL)
     , fDrawingArea(kContent_DrawingArea)
@@ -730,7 +734,6 @@ SkPDFDevice::~SkPDFDevice() {
 
 void SkPDFDevice::init() {
     fAnnotations = NULL;
-    fResourceDict = NULL;
     fContentEntries.free();
     fLastContentEntry = NULL;
     fMarginContentEntries.free();
@@ -747,7 +750,6 @@ void SkPDFDevice::cleanUp(bool clearFontUsage) {
     fFontResources.unrefAll();
     fShaderResources.unrefAll();
     SkSafeUnref(fAnnotations);
-    SkSafeUnref(fResourceDict);
     fNamedDestinations.deleteAll();
 
     if (clearFontUsage) {
@@ -1244,44 +1246,41 @@ void SkPDFDevice::setDrawingArea(DrawingArea drawingArea) {
     fDrawingArea = drawingArea;
 }
 
-SkPDFResourceDict* SkPDFDevice::getResourceDict() {
-    if (NULL == fResourceDict) {
-        fResourceDict = SkNEW(SkPDFResourceDict);
-
-        if (fGraphicStateResources.count()) {
-            for (int i = 0; i < fGraphicStateResources.count(); i++) {
-                fResourceDict->insertResourceAsReference(
-                        SkPDFResourceDict::kExtGState_ResourceType,
-                        i, fGraphicStateResources[i]);
-            }
-        }
-
-        if (fXObjectResources.count()) {
-            for (int i = 0; i < fXObjectResources.count(); i++) {
-                fResourceDict->insertResourceAsReference(
-                        SkPDFResourceDict::kXObject_ResourceType,
-                        i, fXObjectResources[i]);
-            }
-        }
-
-        if (fFontResources.count()) {
-            for (int i = 0; i < fFontResources.count(); i++) {
-                fResourceDict->insertResourceAsReference(
-                        SkPDFResourceDict::kFont_ResourceType,
-                        i, fFontResources[i]);
-            }
-        }
-
-        if (fShaderResources.count()) {
-            SkAutoTUnref<SkPDFDict> patterns(new SkPDFDict());
-            for (int i = 0; i < fShaderResources.count(); i++) {
-                fResourceDict->insertResourceAsReference(
-                        SkPDFResourceDict::kPattern_ResourceType,
-                        i, fShaderResources[i]);
-            }
+SkPDFResourceDict* SkPDFDevice::createResourceDict() const {
+    SkAutoTUnref<SkPDFResourceDict> resourceDict(SkNEW(SkPDFResourceDict));
+    if (fGraphicStateResources.count()) {
+        for (int i = 0; i < fGraphicStateResources.count(); i++) {
+            resourceDict->insertResourceAsReference(
+                    SkPDFResourceDict::kExtGState_ResourceType,
+                    i, fGraphicStateResources[i]);
         }
     }
-    return fResourceDict;
+
+    if (fXObjectResources.count()) {
+        for (int i = 0; i < fXObjectResources.count(); i++) {
+            resourceDict->insertResourceAsReference(
+                    SkPDFResourceDict::kXObject_ResourceType,
+                    i, fXObjectResources[i]);
+        }
+    }
+
+    if (fFontResources.count()) {
+        for (int i = 0; i < fFontResources.count(); i++) {
+            resourceDict->insertResourceAsReference(
+                    SkPDFResourceDict::kFont_ResourceType,
+                    i, fFontResources[i]);
+        }
+    }
+
+    if (fShaderResources.count()) {
+        SkAutoTUnref<SkPDFDict> patterns(new SkPDFDict());
+        for (int i = 0; i < fShaderResources.count(); i++) {
+            resourceDict->insertResourceAsReference(
+                    SkPDFResourceDict::kPattern_ResourceType,
+                    i, fShaderResources[i]);
+        }
+    }
+    return resourceDict.detach();
 }
 
 const SkTDArray<SkPDFFont*>& SkPDFDevice::getFontResources() const {
@@ -1301,10 +1300,10 @@ SkPDFArray* SkPDFDevice::copyMediaBox() const {
     return mediaBox;
 }
 
-SkStream* SkPDFDevice::content() const {
-    SkMemoryStream* result = new SkMemoryStream;
-    result->setData(this->copyContentToData())->unref();
-    return result;
+SkStreamAsset* SkPDFDevice::content() const {
+    SkDynamicMemoryWStream buffer;
+    this->writeContent(&buffer);
+    return buffer.detachAsStream();
 }
 
 void SkPDFDevice::copyContentEntriesToData(ContentEntry* entry,
@@ -1321,17 +1320,15 @@ void SkPDFDevice::copyContentEntriesToData(ContentEntry* entry,
         gsState.updateMatrix(entry->fState.fMatrix);
         gsState.updateDrawingState(entry->fState);
 
-        SkAutoDataUnref copy(entry->fContent.copyToData());
-        data->write(copy->data(), copy->size());
+        entry->fContent.writeToStream(data);
         entry = entry->fNext.get();
     }
     gsState.drainStack();
 }
 
-SkData* SkPDFDevice::copyContentToData() const {
-    SkDynamicMemoryWStream data;
+void SkPDFDevice::writeContent(SkWStream* out) const {
     if (fInitialTransform.getType() != SkMatrix::kIdentity_Mask) {
-        SkPDFUtils::AppendTransform(fInitialTransform, &data);
+        SkPDFUtils::AppendTransform(fInitialTransform, out);
     }
 
     // TODO(aayushkumar): Apply clip along the margins.  Currently, webkit
@@ -1339,7 +1336,7 @@ SkData* SkPDFDevice::copyContentToData() const {
     // that currently acts as our clip.
     // Also, think about adding a transform here (or assume that the values
     // sent across account for that)
-    SkPDFDevice::copyContentEntriesToData(fMarginContentEntries.get(), &data);
+    SkPDFDevice::copyContentEntriesToData(fMarginContentEntries.get(), out);
 
     // If the content area is the entire page, then we don't need to clip
     // the content area (PDF area clips to the page size).  Otherwise,
@@ -1348,14 +1345,10 @@ SkData* SkPDFDevice::copyContentToData() const {
     if (fPageSize != fContentSize) {
         SkRect r = SkRect::MakeWH(SkIntToScalar(this->width()),
                                   SkIntToScalar(this->height()));
-        emit_clip(NULL, &r, &data);
+        emit_clip(NULL, &r, out);
     }
 
-    SkPDFDevice::copyContentEntriesToData(fContentEntries.get(), &data);
-
-    // potentially we could cache this SkData, and only rebuild it if we
-    // see that our state has changed.
-    return data.copyToData();
+    SkPDFDevice::copyContentEntriesToData(fContentEntries.get(), out);
 }
 
 #ifdef SK_PDF_USE_PATHOPS
@@ -1540,7 +1533,7 @@ void SkPDFDevice::defineNamedDestination(SkData* nameData, const SkPoint& point,
         SkNEW_ARGS(NamedDestination, (nameData, translatedPoint)));
 }
 
-void SkPDFDevice::appendDestinations(SkPDFDict* dict, SkPDFObject* page) {
+void SkPDFDevice::appendDestinations(SkPDFDict* dict, SkPDFObject* page) const {
     int nDest = fNamedDestinations.count();
     for (int i = 0; i < nDest; i++) {
         NamedDestination* dest = fNamedDestinations[i];
@@ -1576,8 +1569,7 @@ void SkPDFDevice::drawFormXObjectWithMask(int xObjectIndex,
         return;
     }
 
-    SkAutoTUnref<SkPDFGraphicState> sMaskGS(
-        SkPDFGraphicState::GetSMaskGraphicState(
+    SkAutoTUnref<SkPDFObject> sMaskGS(SkPDFGraphicState::GetSMaskGraphicState(
             mask, invertClip, SkPDFGraphicState::kAlpha_SMaskMode));
 
     SkMatrix identity;
@@ -1948,7 +1940,7 @@ void SkPDFDevice::populateGraphicStateEntryFromPaint(
     }
 }
 
-int SkPDFDevice::addGraphicStateResource(SkPDFGraphicState* gs) {
+int SkPDFDevice::addGraphicStateResource(SkPDFObject* gs) {
     // Assumes that gs has been canonicalized (so we can directly compare
     // pointers).
     int result = fGraphicStateResources.find(gs);
@@ -2126,7 +2118,7 @@ void SkPDFDevice::internalDrawBitmap(const SkMatrix& origMatrix,
     if (content.needShape()) {
         SkPath shape;
         shape.addRect(SkRect::MakeWH(SkIntToScalar(subset.width()),
-                                     SkIntToScalar( subset.height())));
+                                     SkIntToScalar(subset.height())));
         shape.transform(matrix);
         content.setShape(shape);
     }
@@ -2134,8 +2126,12 @@ void SkPDFDevice::internalDrawBitmap(const SkMatrix& origMatrix,
         return;
     }
 
-    SkAutoTUnref<SkPDFObject> image(
-            SkPDFCreateImageObject(fCanon, *bitmap, subset));
+    SkBitmap subsetBitmap;
+    // Should extractSubset be done by the SkPDFDevice?
+    if (!bitmap->extractSubset(&subsetBitmap, subset)) {
+        return;
+    }
+    SkAutoTUnref<SkPDFObject> image(SkPDFBitmap::Create(fCanon, subsetBitmap));
     if (!image) {
         return;
     }

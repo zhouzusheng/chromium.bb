@@ -39,7 +39,7 @@ static LayoutObject* firstLayoutObjectForDirectionalityDetermination(
     LayoutObject* next = current;
     while (current) {
         if (isIsolated(current->style()->unicodeBidi())
-            && (current->isRenderInline() || current->isRenderBlock())) {
+            && (current->isLayoutInline() || current->isLayoutBlock())) {
             if (current != root)
                 current = 0;
             else
@@ -55,7 +55,7 @@ static LayoutObject* firstLayoutObjectForDirectionalityDetermination(
     while (current) {
         next = 0;
         if (isIteratorTarget(current) && !(current->isText()
-            && toRenderText(current)->isAllCollapsibleWhitespace()))
+            && toLayoutText(current)->isAllCollapsibleWhitespace()))
             break;
 
         if (!isIteratorTarget(current)
@@ -156,7 +156,7 @@ void constructBidiRunsForLine(InlineBidiResolver& topResolver,
         // change enterIsolate to take a LayoutObject and do this logic there,
         // but that would be a layering violation for BidiResolver (which knows
         // nothing about LayoutObject).
-        RenderInline* isolatedInline = toRenderInline(
+        LayoutInline* isolatedInline = toLayoutInline(
             highestContainingIsolateWithinRoot(startObj, currentRoot));
         ASSERT(isolatedInline);
 

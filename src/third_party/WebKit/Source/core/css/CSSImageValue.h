@@ -46,8 +46,8 @@ public:
     }
     ~CSSImageValue();
 
-    StyleFetchedImage* cachedImage(ResourceFetcher*, const ResourceLoaderOptions&);
-    StyleFetchedImage* cachedImage(ResourceFetcher* fetcher) { return cachedImage(fetcher, ResourceFetcher::defaultResourceOptions()); }
+    StyleFetchedImage* cachedImage(Document*, const ResourceLoaderOptions&);
+    StyleFetchedImage* cachedImage(Document* document) { return cachedImage(document, ResourceFetcher::defaultResourceOptions()); }
     // Returns a StyleFetchedImage if the image is cached already, otherwise a StylePendingImage.
     StyleImage* cachedOrPendingImage();
 
@@ -68,7 +68,7 @@ public:
 
     void setInitiator(const AtomicString& name) { m_initiatorName = name; }
 
-    void traceAfterDispatch(Visitor*);
+    DECLARE_TRACE_AFTER_DISPATCH();
     void restoreCachedResourceIfNeeded(Document&);
 
 private:

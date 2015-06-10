@@ -18,7 +18,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/timer_slack.h"
 #include "base/metrics/field_trial.h"
-#include "base/process/kill.h"
+#include "base/process/process.h"
 #include "base/process/process_handle.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -49,12 +49,14 @@
 #include "content/child/thread_safe_sender.h"
 #include "content/child/websocket_dispatcher.h"
 #include "content/common/child_process_messages.h"
+#include "content/common/in_process_child_thread_params.h"
 #include "content/public/common/content_switches.h"
 #include "ipc/ipc_logging.h"
 #include "ipc/ipc_switches.h"
 #include "ipc/ipc_sync_channel.h"
 #include "ipc/ipc_sync_message_filter.h"
 #include "ipc/mojo/ipc_channel_mojo.h"
+#include "ipc/mojo/scoped_ipc_support.h"
 
 #if defined(OS_WIN)
 #include "content/common/handle_enumerator_win.h"
@@ -203,25 +205,87 @@ ChildThread* ChildThread::Get() {
   return ChildThreadImpl::current();
 }
 
+// Mojo client channel delegate to be used in single process mode.
+class ChildThreadImpl::SingleProcessChannelDelegate
+    : public IPC::ChannelMojo::Delegate {
+ public:
+  explicit SingleProcessChannelDelegate(
+      scoped_refptr<base::SequencedTaskRunner> io_runner)
+      : io_runner_(io_runner), weak_factory_(this) {}
+
+  ~SingleProcessChannelDelegate() override {}
+
+  base::WeakPtr<IPC::ChannelMojo::Delegate> ToWeakPtr() override {
+    return weak_factory_.GetWeakPtr();
+  }
+
+  scoped_refptr<base::TaskRunner> GetIOTaskRunner() override {
+    return io_runner_;
+  }
+
+  void OnChannelCreated(base::WeakPtr<IPC::ChannelMojo> channel) override {}
+
+  void DeleteSoon() {
+    io_runner_->PostTask(
+        FROM_HERE,
+        base::Bind(&base::DeletePointer<SingleProcessChannelDelegate>,
+                   base::Unretained(this)));
+  }
+
+ private:
+  scoped_refptr<base::SequencedTaskRunner> io_runner_;
+  base::WeakPtrFactory<IPC::ChannelMojo::Delegate> weak_factory_;
+
+  DISALLOW_COPY_AND_ASSIGN(SingleProcessChannelDelegate);
+};
+
+void ChildThreadImpl::SingleProcessChannelDelegateDeleter::operator()(
+    SingleProcessChannelDelegate* delegate) const {
+  delegate->DeleteSoon();
+}
+
 ChildThreadImpl::Options::Options()
     : channel_name(base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
           switches::kProcessChannelID)),
-      use_mojo_channel(false),
-      in_browser_process(false) {
-}
-
-ChildThreadImpl::Options::Options(bool mojo)
-    : channel_name(base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-          switches::kProcessChannelID)),
-      use_mojo_channel(mojo),
-      in_browser_process(true) {
-}
-
-ChildThreadImpl::Options::Options(std::string name, bool mojo)
-    : channel_name(name), use_mojo_channel(mojo), in_browser_process(true) {
+      use_mojo_channel(false) {
 }
 
 ChildThreadImpl::Options::~Options() {
+}
+
+ChildThreadImpl::Options::Builder::Builder() {
+}
+
+ChildThreadImpl::Options::Builder&
+ChildThreadImpl::Options::Builder::InBrowserProcess(
+    const InProcessChildThreadParams& params) {
+  options_.browser_process_io_runner = params.io_runner();
+  options_.channel_name = params.channel_name();
+  return *this;
+}
+
+ChildThreadImpl::Options::Builder&
+ChildThreadImpl::Options::Builder::UseMojoChannel(bool use_mojo_channel) {
+  options_.use_mojo_channel = use_mojo_channel;
+  return *this;
+}
+
+ChildThreadImpl::Options::Builder&
+ChildThreadImpl::Options::Builder::WithChannelName(
+    const std::string& channel_name) {
+  options_.channel_name = channel_name;
+  return *this;
+}
+
+ChildThreadImpl::Options::Builder&
+ChildThreadImpl::Options::Builder::AddStartupFilter(
+    IPC::MessageFilter* filter) {
+  options_.startup_filters.push_back(filter);
+  return *this;
+}
+
+ChildThreadImpl::Options ChildThreadImpl::Options::Builder::Build() {
+  return options_;
 }
 
 ChildThreadImpl::ChildThreadMessageRouter::ChildThreadMessageRouter(
@@ -234,24 +298,38 @@ bool ChildThreadImpl::ChildThreadMessageRouter::Send(IPC::Message* msg) {
 
 ChildThreadImpl::ChildThreadImpl()
     : router_(this),
-      in_browser_process_(false),
       channel_connected_factory_(this) {
-  Init(Options());
+  Init(Options::Builder().Build());
 }
 
 ChildThreadImpl::ChildThreadImpl(const Options& options)
     : router_(this),
-      in_browser_process_(options.in_browser_process),
+      browser_process_io_runner_(options.browser_process_io_runner),
       channel_connected_factory_(this) {
   Init(options);
+}
+
+scoped_refptr<base::SequencedTaskRunner> ChildThreadImpl::GetIOTaskRunner() {
+  if (IsInBrowserProcess())
+    return browser_process_io_runner_;
+  return ChildProcess::current()->io_message_loop_proxy();
 }
 
 void ChildThreadImpl::ConnectChannel(bool use_mojo_channel) {
   bool create_pipe_now = true;
   if (use_mojo_channel) {
     VLOG(1) << "Mojo is enabled on child";
-    channel_->Init(IPC::ChannelMojo::CreateClientFactory(channel_name_),
-                   create_pipe_now);
+    scoped_refptr<base::SequencedTaskRunner> io_task_runner = GetIOTaskRunner();
+    DCHECK(io_task_runner);
+    if (IsInBrowserProcess())
+      single_process_channel_delegate_.reset(
+          new SingleProcessChannelDelegate(io_task_runner));
+    ipc_support_.reset(new IPC::ScopedIPCSupport(io_task_runner));
+    channel_->Init(
+        IPC::ChannelMojo::CreateClientFactory(
+            single_process_channel_delegate_.get(),
+            channel_name_),
+        create_pipe_now);
     return;
   }
 
@@ -275,11 +353,11 @@ void ChildThreadImpl::Init(const Options& options) {
       this, ChildProcess::current()->io_message_loop_proxy(),
       ChildProcess::current()->GetShutDownEvent());
 #ifdef IPC_MESSAGE_LOG_ENABLED
-  if (!in_browser_process_)
+  if (!IsInBrowserProcess())
     IPC::Logging::GetInstance()->SetIPCSender(this);
 #endif
 
-  mojo_application_.reset(new MojoApplication);
+  mojo_application_.reset(new MojoApplication(GetIOTaskRunner()));
 
   sync_message_filter_ =
       new IPC::SyncMessageFilter(ChildProcess::current()->GetShutDownEvent());
@@ -399,6 +477,10 @@ void ChildThreadImpl::Init(const Options& options) {
 }
 
 ChildThreadImpl::~ChildThreadImpl() {
+  // ChildDiscardableSharedMemoryManager has to be destroyed while
+  // |thread_safe_sender_| is still valid.
+  discardable_shared_memory_manager_.reset();
+
 #if defined(OS_ANDROID)
   {
     base::AutoLock lock(g_lazy_child_thread_lock.Get());
@@ -568,10 +650,10 @@ void ChildThreadImpl::OnSetProfilerStatus(ThreadData::Status status) {
 
 void ChildThreadImpl::OnGetChildProfilerData(int sequence_number) {
   tracked_objects::ProcessDataSnapshot process_data;
-  ThreadData::Snapshot(false, &process_data);
+  ThreadData::Snapshot(&process_data);
 
-  Send(new ChildProcessHostMsg_ChildProfilerData(sequence_number,
-                                                 process_data));
+  Send(
+      new ChildProcessHostMsg_ChildProfilerData(sequence_number, process_data));
 }
 
 void ChildThreadImpl::OnDumpHandles() {
@@ -641,7 +723,11 @@ void ChildThreadImpl::OnProcessFinalRelease() {
 
 void ChildThreadImpl::EnsureConnected() {
   VLOG(0) << "ChildThreadImpl::EnsureConnected()";
-  base::KillProcess(base::GetCurrentProcessHandle(), 0, false);
+  base::Process::Current().Terminate(0, false);
+}
+
+bool ChildThreadImpl::IsInBrowserProcess() const {
+  return browser_process_io_runner_;
 }
 
 void ChildThreadImpl::OnProcessBackgrounded(bool background) {

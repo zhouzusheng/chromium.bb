@@ -20,8 +20,6 @@
 #include "content/public/common/referrer.h"
 #include "ui/base/page_transition_types.h"
 
-struct FrameMsg_Navigate_Params;
-
 namespace content {
 class BrowserContext;
 class CrossProcessFrameConnector;
@@ -137,6 +135,11 @@ class CONTENT_EXPORT RenderFrameHostManager : public NotificationObserver {
     virtual void NotifySwappedFromRenderManager(RenderFrameHost* old_host,
                                                 RenderFrameHost* new_host,
                                                 bool is_main_frame) = 0;
+    // TODO(nasko): This should be removed once extensions no longer use
+    // NotificationService. See https://crbug.com/462682.
+    virtual void NotifyMainFrameSwappedFromRenderManager(
+        RenderViewHost* old_host,
+        RenderViewHost* new_host) = 0;
     virtual NavigationControllerImpl&
         GetControllerForRenderManager() = 0;
 
@@ -325,6 +328,12 @@ class CONTENT_EXPORT RenderFrameHostManager : public NotificationObserver {
   // its routing id.
   int CreateRenderFrameProxy(SiteInstance* instance);
 
+  // Creates proxies for a new child frame at FrameTreeNode |child| in all
+  // SiteInstances for which the current frame has proxies.  This method is
+  // called on the parent of a new child frame before the child leaves the
+  // SiteInstance.
+  void CreateProxiesForChildFrame(FrameTreeNode* child);
+
   // Sets the passed passed interstitial as the currently showing interstitial.
   // |interstitial_page| should be non NULL (use the remove_interstitial_page
   // method to unset the interstitial) and no interstitial page should be set
@@ -403,6 +412,10 @@ class CONTENT_EXPORT RenderFrameHostManager : public NotificationObserver {
   // is responsible for has started or stopped loading a document.
   void OnDidStartLoading();
   void OnDidStopLoading();
+
+  // Send updated frame name to all frame proxies when the frame changes its
+  // window.name property.
+  void OnDidUpdateName(const std::string& name);
 
   void EnsureRenderViewInitialized(FrameTreeNode* source,
                                    RenderViewHostImpl* render_view_host,
@@ -547,6 +560,14 @@ class CONTENT_EXPORT RenderFrameHostManager : public NotificationObserver {
   // If PlzNavigate is enabled the method will set the speculative (not pending)
   // RenderFrameHost to be the active one.
   void CommitPending();
+
+  // Helper to call CommitPending() in all necessary cases.
+  void CommitPendingIfNecessary(RenderFrameHostImpl* render_frame_host,
+                                bool was_caused_by_user_gesture);
+
+  // Commits any pending sandbox flag updates when the renderer's frame
+  // navigates.
+  void CommitPendingSandboxFlags();
 
   // Runs the unload handler in the old RenderFrameHost, after the new
   // RenderFrameHost has committed.  |old_render_frame_host| will either be

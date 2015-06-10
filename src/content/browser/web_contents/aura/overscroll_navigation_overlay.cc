@@ -15,6 +15,7 @@
 #include "ui/base/layout.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animation_observer.h"
+#include "ui/compositor/paint_context.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image_png_rep.h"
@@ -57,7 +58,8 @@ class ImageLayerDelegate : public ui::LayerDelegate {
 
  private:
   // Overridden from ui::LayerDelegate:
-  void OnPaintLayer(gfx::Canvas* canvas) override {
+  void OnPaintLayer(const ui::PaintContext& context) override {
+    gfx::Canvas* canvas = context.canvas();
     if (image_.IsEmpty()) {
       canvas->DrawColor(SK_ColorWHITE);
     } else {
@@ -304,7 +306,7 @@ void OverscrollNavigationOverlay::DidFirstVisuallyNonEmptyPaint() {
   }
 }
 
-void OverscrollNavigationOverlay::DidStopLoading(RenderViewHost* host) {
+void OverscrollNavigationOverlay::DidStopLoading() {
   // Don't compare URLs in this case - it's possible they won't match if
   // a gesture-nav initiated navigation was interrupted by some other in-site
   // navigation ((e.g., from a script, or from a bookmark).

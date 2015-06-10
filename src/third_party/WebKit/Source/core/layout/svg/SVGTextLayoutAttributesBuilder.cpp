@@ -34,7 +34,7 @@ SVGTextLayoutAttributesBuilder::SVGTextLayoutAttributesBuilder()
 {
 }
 
-void SVGTextLayoutAttributesBuilder::buildLayoutAttributesForTextRenderer(LayoutSVGInlineText* text)
+void SVGTextLayoutAttributesBuilder::buildLayoutAttributesForText(LayoutSVGInlineText* text)
 {
     ASSERT(text);
 
@@ -76,10 +76,10 @@ bool SVGTextLayoutAttributesBuilder::buildLayoutAttributesForForSubtree(LayoutSV
     return true;
 }
 
-void SVGTextLayoutAttributesBuilder::rebuildMetricsForTextRenderer(LayoutSVGInlineText* text)
+void SVGTextLayoutAttributesBuilder::rebuildMetricsForTextLayoutObject(LayoutSVGInlineText* text)
 {
     ASSERT(text);
-    SVGTextMetricsBuilder::measureTextRenderer(text);
+    SVGTextMetricsBuilder::measureTextLayoutObject(text);
 }
 
 static inline void processLayoutSVGInlineText(LayoutSVGInlineText* text, unsigned& atCharacter, UChar& lastCharacter)
@@ -100,7 +100,7 @@ static inline void processLayoutSVGInlineText(LayoutSVGInlineText* text, unsigne
     }
 }
 
-void SVGTextLayoutAttributesBuilder::collectTextPositioningElements(RenderBoxModelObject& start, UChar& lastCharacter)
+void SVGTextLayoutAttributesBuilder::collectTextPositioningElements(LayoutBoxModelObject& start, UChar& lastCharacter)
 {
     ASSERT(!start.isSVGText() || m_textPositions.isEmpty());
 

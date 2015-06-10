@@ -12,6 +12,7 @@
 #include "base/memory/shared_memory.h"
 #include "base/memory/weak_ptr.h"
 #include "base/power_monitor/power_monitor.h"
+#include "base/sequenced_task_runner.h"
 #include "base/tracked_objects.h"
 #include "content/child/mojo/mojo_application.h"
 #include "content/common/content_export.h"
@@ -29,6 +30,7 @@ class TraceMemoryController;
 
 namespace IPC {
 class MessageFilter;
+class ScopedIPCSupport;
 class SyncChannel;
 class SyncMessageFilter;
 }  // namespace IPC
@@ -45,6 +47,7 @@ class ChildHistogramMessageFilter;
 class ChildResourceMessageFilter;
 class ChildSharedBitmapManager;
 class FileSystemDispatcher;
+class InProcessChildThreadParams;
 class NavigatorConnectDispatcher;
 class NotificationDispatcher;
 class PushDispatcher;
@@ -61,17 +64,7 @@ class CONTENT_EXPORT ChildThreadImpl
     : public IPC::Listener,
       virtual public ChildThread {
  public:
-  struct CONTENT_EXPORT Options {
-    Options();
-    explicit Options(bool mojo);
-    Options(std::string name, bool mojo);
-    ~Options();
-
-    std::string channel_name;
-    bool use_mojo_channel;
-    bool in_browser_process;
-    std::vector<IPC::MessageFilter*> startup_filters;
-  };
+  struct CONTENT_EXPORT Options;
 
   // Creates the thread.
   ChildThreadImpl();
@@ -207,6 +200,9 @@ class CONTENT_EXPORT ChildThreadImpl
   void OnChannelConnected(int32 peer_pid) override;
   void OnChannelError() override;
 
+  bool IsInBrowserProcess() const;
+  scoped_refptr<base::SequencedTaskRunner> GetIOTaskRunner();
+
  private:
   class ChildThreadMessageRouter : public MessageRouter {
    public:
@@ -239,6 +235,15 @@ class CONTENT_EXPORT ChildThreadImpl
 
   void EnsureConnected();
 
+  class SingleProcessChannelDelegate;
+  class SingleProcessChannelDelegateDeleter {
+   public:
+    void operator()(SingleProcessChannelDelegate* delegate) const;
+  };
+
+  scoped_ptr<IPC::ScopedIPCSupport> ipc_support_;
+  scoped_ptr<SingleProcessChannelDelegate, SingleProcessChannelDelegateDeleter>
+      single_process_channel_delegate_;
   scoped_ptr<MojoApplication> mojo_application_;
 
   std::string channel_name_;
@@ -298,11 +303,42 @@ class CONTENT_EXPORT ChildThreadImpl
 
   scoped_refptr<NavigatorConnectDispatcher> navigator_connect_dispatcher_;
 
-  bool in_browser_process_;
+  scoped_refptr<base::SequencedTaskRunner> browser_process_io_runner_;
 
   base::WeakPtrFactory<ChildThreadImpl> channel_connected_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ChildThreadImpl);
+};
+
+struct ChildThreadImpl::Options {
+  ~Options();
+
+  class Builder;
+
+  std::string channel_name;
+  bool use_mojo_channel;
+  scoped_refptr<base::SequencedTaskRunner> browser_process_io_runner;
+  std::vector<IPC::MessageFilter*> startup_filters;
+
+ private:
+  Options();
+};
+
+class ChildThreadImpl::Options::Builder {
+ public:
+  Builder();
+
+  Builder& InBrowserProcess(const InProcessChildThreadParams& params);
+  Builder& UseMojoChannel(bool use_mojo_channel);
+  Builder& WithChannelName(const std::string& channel_name);
+  Builder& AddStartupFilter(IPC::MessageFilter* filter);
+
+  Options Build();
+
+ private:
+  struct Options options_;
+
+  DISALLOW_COPY_AND_ASSIGN(Builder);
 };
 
 }  // namespace content

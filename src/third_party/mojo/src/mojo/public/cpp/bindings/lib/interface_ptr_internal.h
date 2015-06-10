@@ -7,6 +7,7 @@
 
 #include <algorithm>  // For |std::swap()|.
 
+#include "mojo/public/cpp/bindings/interface_ptr_info.h"
 #include "mojo/public/cpp/bindings/lib/filter_chain.h"
 #include "mojo/public/cpp/bindings/lib/message_header_validator.h"
 #include "mojo/public/cpp/bindings/lib/router.h"
@@ -20,12 +21,13 @@ namespace internal {
 template <typename Interface>
 class InterfacePtrState {
  public:
-  InterfacePtrState() : proxy_(nullptr), router_(nullptr), waiter_(nullptr) {}
+  InterfacePtrState()
+      : proxy_(nullptr), router_(nullptr), waiter_(nullptr), version_(0u) {}
 
   ~InterfacePtrState() {
     // Destruction order matters here. We delete |proxy_| first, even though
-    // |router_| may have a reference to it, so that |~Interface| may have a
-    // shot at generating new outbound messages (ie, invoking client methods).
+    // |router_| may have a reference to it, so that destructors for any request
+    // callbacks still pending can interact with the InterfacePtr.
     delete proxy_;
     delete router_;
   }
@@ -37,21 +39,28 @@ class InterfacePtrState {
     return proxy_;
   }
 
+  uint32_t version() const { return version_; }
+
   void Swap(InterfacePtrState* other) {
-    std::swap(other->proxy_, proxy_);
-    std::swap(other->router_, router_);
+    using std::swap;
+    swap(other->proxy_, proxy_);
+    swap(other->router_, router_);
     handle_.swap(other->handle_);
-    std::swap(other->waiter_, waiter_);
+    swap(other->waiter_, waiter_);
+    swap(other->version_, version_);
   }
 
-  void Bind(ScopedMessagePipeHandle handle, const MojoAsyncWaiter* waiter) {
+  void Bind(InterfacePtrInfo<Interface> info, const MojoAsyncWaiter* waiter) {
     MOJO_DCHECK(!proxy_);
     MOJO_DCHECK(!router_);
     MOJO_DCHECK(!handle_.is_valid());
     MOJO_DCHECK(!waiter_);
+    MOJO_DCHECK(version_ == 0u);
+    MOJO_DCHECK(info.is_valid());
 
-    handle_ = handle.Pass();
+    handle_ = info.PassHandle();
     waiter_ = waiter;
+    version_ = info.version();
   }
 
   bool WaitForIncomingMethodCall() {
@@ -61,22 +70,14 @@ class InterfacePtrState {
     return router_->WaitForIncomingMessage();
   }
 
-  ScopedMessagePipeHandle PassMessagePipe() {
-    if (router_)
-      return router_->PassMessagePipe();
-
-    waiter_ = nullptr;
-    return handle_.Pass();
+  // After this method is called, the object is in an invalid state and
+  // shouldn't be reused.
+  InterfacePtrInfo<Interface> PassInterface() {
+    return InterfacePtrInfo<Interface>(
+        router_ ? router_->PassMessagePipe() : handle_.Pass(), version_);
   }
 
   bool is_bound() const { return handle_.is_valid() || router_; }
-
-  void set_client(typename Interface::Client* client) {
-    ConfigureProxyIfNecessary();
-
-    MOJO_DCHECK(proxy_);
-    proxy_->stub.set_sink(client);
-  }
 
   bool encountered_error() const {
     return router_ ? router_->encountered_error() : false;
@@ -95,15 +96,7 @@ class InterfacePtrState {
   }
 
  private:
-  class ProxyWithStub : public Interface::Proxy_ {
-   public:
-    explicit ProxyWithStub(MessageReceiverWithResponder* receiver)
-        : Interface::Proxy_(receiver) {}
-    typename Interface::Client::Stub_ stub;
-
-   private:
-    MOJO_DISALLOW_COPY_AND_ASSIGN(ProxyWithStub);
-  };
+  using Proxy = typename Interface::Proxy_;
 
   void ConfigureProxyIfNecessary() {
     // The proxy has been configured.
@@ -119,26 +112,24 @@ class InterfacePtrState {
 
     FilterChain filters;
     filters.Append<MessageHeaderValidator>();
-    filters.Append<typename Interface::Client::RequestValidator_>();
     filters.Append<typename Interface::ResponseValidator_>();
 
     router_ = new Router(handle_.Pass(), filters.Pass(), waiter_);
     waiter_ = nullptr;
 
-    ProxyWithStub* proxy = new ProxyWithStub(router_);
-    router_->set_incoming_receiver(&proxy->stub);
-
-    proxy_ = proxy;
+    proxy_ = new Proxy(router_);
   }
 
-  ProxyWithStub* proxy_;
+  Proxy* proxy_;
   Router* router_;
 
   // |proxy_| and |router_| are not initialized until read/write with the
-  // message pipe handle is needed. Before that, |handle_| and |waiter_| store
-  // the arguments of Bind().
+  // message pipe handle is needed. |handle_| and |waiter_| are valid between
+  // the Bind() call and the initialization of |proxy_| and |router_|.
   ScopedMessagePipeHandle handle_;
   const MojoAsyncWaiter* waiter_;
+
+  uint32_t version_;
 
   MOJO_DISALLOW_COPY_AND_ASSIGN(InterfacePtrState);
 };

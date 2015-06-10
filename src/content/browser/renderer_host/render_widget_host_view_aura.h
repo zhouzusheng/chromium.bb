@@ -35,7 +35,6 @@
 #include "ui/gfx/display_observer.h"
 #include "ui/gfx/geometry/insets.h"
 #include "ui/gfx/geometry/rect.h"
-#include "ui/wm/public/activation_change_observer.h"
 #include "ui/wm/public/activation_delegate.h"
 
 namespace aura {
@@ -86,7 +85,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
       public aura::WindowTreeHostObserver,
       public aura::WindowDelegate,
       public aura::client::ActivationDelegate,
-      public aura::client::ActivationChangeObserver,
       public aura::client::FocusChangeObserver,
       public aura::client::CursorClientObserver {
  public:
@@ -285,7 +283,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
       const gfx::Point& location) override;
   bool CanFocus() override;
   void OnCaptureLost() override;
-  void OnPaint(gfx::Canvas* canvas) override;
+  void OnPaint(const ui::PaintContext& context) override;
   void OnDeviceScaleFactorChanged(float device_scale_factor) override;
   void OnWindowDestroying(aura::Window* window) override;
   void OnWindowDestroyed(aura::Window* window) override;
@@ -302,10 +300,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 
   // Overridden from aura::client::ActivationDelegate:
   bool ShouldActivate() const override;
-
-  // Overridden from aura::client::ActivationChangeObserver:
-  void OnWindowActivated(aura::Window* gained_activation,
-                         aura::Window* lost_activation) override;
 
   // Overridden from aura::client::CursorClientObserver:
   void OnCursorVisibilityChanged(bool is_visible) override;
@@ -356,6 +350,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
     return overscroll_controller_.get();
   }
 
+  // Called when the context menu is about to be displayed.
+  void OnShowContextMenu();
+
  protected:
   ~RenderWidgetHostViewAura() override;
 
@@ -388,6 +385,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, SoftwareDPIChange);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
                            UpdateCursorIfOverSelf);
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraCopyRequestTest,
+                           DedupeFrameSubscriberRequests);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraCopyRequestTest,
                            DestroyedAfterCopyRequest);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
@@ -495,6 +494,11 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void SetKeyboardFocus();
 
   RenderFrameHostImpl* GetFocusedFrame();
+
+  // Returns true if the |event| passed in can be forwarded to the renderer.
+  bool CanRendererHandleEvent(const ui::MouseEvent* event,
+                              bool mouse_locked,
+                              bool selection_popup);
 
   // The model object.
   RenderWidgetHostImpl* host_;
@@ -622,6 +626,10 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // the LegacyRenderWidgetHostHWND instance again as that would be a futile
   // exercise.
   bool legacy_window_destroyed_;
+
+  // Set to true when a context menu is being displayed. Reset to false when
+  // a mouse leave is received in this context.
+  bool showing_context_menu_;
 #endif
 
   bool has_snapped_to_boundary_;

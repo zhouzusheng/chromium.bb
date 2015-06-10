@@ -55,7 +55,6 @@ class ImageData;
 class ImageBuffer;
 class ImageBufferSurface;
 class IntSize;
-class RecordingImageBufferFallbackSurfaceFactory;
 
 class CanvasObserver : public WillBeGarbageCollectedMixin {
     DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(CanvasObserver);
@@ -118,7 +117,6 @@ public:
     void paint(GraphicsContext*, const LayoutRect&);
 
     GraphicsContext* drawingContext() const; // Deprecated: use drawingCanvas
-    GraphicsContext* existingDrawingContext() const; // Deprecated: use existingDrawingCanvas
     SkCanvas* drawingCanvas() const;
     SkCanvas* existingDrawingCanvas() const;
 
@@ -178,13 +176,12 @@ private:
     explicit HTMLCanvasElement(Document&);
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
-    virtual LayoutObject* createRenderer(const LayoutStyle&) override;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
     virtual void didRecalcStyle(StyleRecalcChange) override;
     virtual bool areAuthorShadowsAllowed() const override { return false; }
 
     void reset();
 
-    PassOwnPtr<RecordingImageBufferFallbackSurfaceFactory> createSurfaceFactory(const IntSize& deviceSize, int* msaaSampleCount) const;
     PassOwnPtr<ImageBufferSurface> createImageBufferSurface(const IntSize& deviceSize, int* msaaSampleCount);
     void createImageBuffer();
     void createImageBufferInternal(PassOwnPtr<ImageBufferSurface> externalSurface);

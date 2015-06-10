@@ -28,7 +28,6 @@ namespace net {
 class QuicCryptoStream;
 class QuicFlowController;
 class ReliableQuicStream;
-class SSLInfo;
 class VisitorShim;
 
 namespace test {
@@ -197,12 +196,9 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
     return goaway_sent_;
   }
 
-  // Gets the SSL connection information.
-  virtual bool GetSSLInfo(SSLInfo* ssl_info) const;
-
   QuicErrorCode error() const { return error_; }
 
-  bool is_server() const { return connection_->is_server(); }
+  Perspective perspective() const { return connection_->perspective(); }
 
   QuicFlowController* flow_controller() { return flow_controller_.get(); }
 
@@ -219,6 +215,7 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
 
   size_t get_max_open_streams() const { return max_open_streams_; }
 
+  // Used in Chrome.
   const QuicHeadersStream* headers_stream() { return headers_stream_.get(); }
 
  protected:

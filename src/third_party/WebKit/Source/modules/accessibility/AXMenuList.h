@@ -26,16 +26,16 @@
 #ifndef AXMenuList_h
 #define AXMenuList_h
 
-#include "modules/accessibility/AXRenderObject.h"
+#include "modules/accessibility/AXLayoutObject.h"
 
 namespace blink {
 
 class AXObjectCacheImpl;
-class RenderMenuList;
+class LayoutMenuList;
 
-class AXMenuList final : public AXRenderObject {
+class AXMenuList final : public AXLayoutObject {
 public:
-    static PassRefPtr<AXMenuList> create(RenderMenuList* renderer, AXObjectCacheImpl*);
+    static PassRefPtr<AXMenuList> create(LayoutMenuList* layoutObject, AXObjectCacheImpl*);
 
     virtual bool isCollapsed() const override;
     virtual AccessibilityExpanded isExpanded() const override final;
@@ -44,10 +44,10 @@ public:
     void didUpdateActiveOption(int optionIndex);
 
 private:
-    AXMenuList(RenderMenuList*, AXObjectCacheImpl*);
+    AXMenuList(LayoutMenuList*, AXObjectCacheImpl*);
 
     virtual bool isMenuList() const override { return true; }
-    virtual AccessibilityRole roleValue() const override { return PopUpButtonRole; }
+    virtual AccessibilityRole roleValue() const override;
     virtual bool canSetFocusAttribute() const override;
 
     virtual void addChildren() override;

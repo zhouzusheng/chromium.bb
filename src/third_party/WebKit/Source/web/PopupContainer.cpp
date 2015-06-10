@@ -206,7 +206,7 @@ IntRect PopupContainer::layoutAndCalculateWidgetRect(int targetControlHeight, co
     float pageScaleFactor = m_frameView->frame().page()->pageScaleFactor();
     int popupX = round((popupInitialCoordinate.x() + rightOffset) * pageScaleFactor);
     int popupY = round((popupInitialCoordinate.y() + verticalForRTLOffset) * pageScaleFactor);
-    widgetRectInScreen = chromeClient().rootViewToScreen(IntRect(popupX, popupY, targetSize.width(), targetSize.height()));
+    widgetRectInScreen = chromeClient().viewportToScreen(IntRect(popupX, popupY, targetSize.width(), targetSize.height()));
 
     // If we have multiple screens and the browser rect is in one screen, we
     // have to clip the window width to the screen width.
@@ -240,7 +240,7 @@ void PopupContainer::showPopup(FrameView* view)
 
 void PopupContainer::hidePopup()
 {
-    m_listBox->abandon();
+    m_listBox->cancel();
 }
 
 void PopupContainer::notifyPopupHidden()
@@ -262,7 +262,7 @@ void PopupContainer::notifyPopupHidden()
     // torn down -- the connection to the FrameHost has been snipped &
     // there's no page. Hence the null check.
     //
-    // In a non-Oilpan setting, the RenderMenuList that controls/owns
+    // In a non-Oilpan setting, the LayoutMenuList that controls/owns
     // the PopupMenuChromium object and this PopupContainer is torn
     // down and destructed before the frame and frame owner, hence the
     // page will always be available in that setting and this will
@@ -353,12 +353,12 @@ bool PopupContainer::handleKeyEvent(const PlatformKeyboardEvent& event)
 
 void PopupContainer::hide()
 {
-    m_listBox->abandon();
+    m_listBox->cancel();
 }
 
 void PopupContainer::paint(GraphicsContext* gc, const IntRect& paintRect)
 {
-    TransformRecorder transformRecorder(*gc, displayItemClient(), AffineTransform::translation(x(),  y()));
+    TransformRecorder transformRecorder(*gc, *this, AffineTransform::translation(x(),  y()));
     IntRect adjustedPaintRect = intersection(paintRect, frameRect());
     adjustedPaintRect.moveBy(-location());
 
@@ -368,7 +368,7 @@ void PopupContainer::paint(GraphicsContext* gc, const IntRect& paintRect)
 
 void PopupContainer::paintBorder(GraphicsContext* gc, const IntRect& rect)
 {
-    DrawingRecorder drawingRecorder(gc, displayItemClient(), DisplayItem::PopupContainerBorder, boundsRect());
+    DrawingRecorder drawingRecorder(*gc, *this, DisplayItem::PopupContainerBorder, boundsRect());
     if (drawingRecorder.canUseCachedDrawing())
         return;
 
@@ -395,7 +395,7 @@ void PopupContainer::showInRect(const FloatQuad& controlPosition, const IntSize&
     // we need. Subtract border size so that usually the container will be
     // displayed exactly the same width as the select box.
     m_listBox->setBaseWidth(std::max(controlSize.width() - borderSize * 2, 0));
-    m_listBox->setOriginalIndex(m_listBox->m_popupClient->selectedIndex());
+    m_listBox->setSelectedIndex(m_listBox->m_popupClient->selectedIndex());
     m_listBox->updateFromElement();
 
     // We set the selected item in updateFromElement(), and disregard the
@@ -406,13 +406,13 @@ void PopupContainer::showInRect(const FloatQuad& controlPosition, const IntSize&
     // Save and convert the controlPosition to main window coords. Each point is converted separately
     // to window coordinates because the control could be in a transformed webview and then each point
     // would be transformed by a different delta.
-    m_controlPosition.setP1(v->contentsToWindow(IntPoint(controlPosition.p1().x(), controlPosition.p1().y())));
-    m_controlPosition.setP2(v->contentsToWindow(IntPoint(controlPosition.p2().x(), controlPosition.p2().y())));
-    m_controlPosition.setP3(v->contentsToWindow(IntPoint(controlPosition.p3().x(), controlPosition.p3().y())));
-    m_controlPosition.setP4(v->contentsToWindow(IntPoint(controlPosition.p4().x(), controlPosition.p4().y())));
+    m_controlPosition.setP1(v->contentsToRootFrame(IntPoint(controlPosition.p1().x(), controlPosition.p1().y())));
+    m_controlPosition.setP2(v->contentsToRootFrame(IntPoint(controlPosition.p2().x(), controlPosition.p2().y())));
+    m_controlPosition.setP3(v->contentsToRootFrame(IntPoint(controlPosition.p3().x(), controlPosition.p3().y())));
+    m_controlPosition.setP4(v->contentsToRootFrame(IntPoint(controlPosition.p4().x(), controlPosition.p4().y())));
 
     FloatRect controlBounds = m_controlPosition.boundingBox();
-    controlBounds.moveBy(-v->page()->frameHost().pinchViewport().location());
+    controlBounds = v->page()->frameHost().pinchViewport().mainViewToViewportCSSPixels(controlBounds);
     m_controlPosition = controlBounds;
 
     m_controlSize = controlSize;

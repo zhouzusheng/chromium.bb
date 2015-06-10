@@ -80,12 +80,11 @@ private:
     virtual bool needsPendingResourceHandling() const override { return false; }
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
     virtual void svgAttributeChanged(const QualifiedName&) override;
     virtual void childrenChanged(const ChildrenChange&) override;
 
-    virtual LayoutObject* createRenderer(const LayoutStyle&) override;
-    virtual bool rendererIsNeeded(const LayoutStyle&) override { return true; }
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
+    virtual bool layoutObjectIsNeeded(const ComputedStyle&) override { return true; }
 
     virtual bool selfHasRelativeLengths() const override;
 
@@ -94,7 +93,7 @@ private:
     RefPtrWillBeMember<SVGAnimatedLength> m_markerWidth;
     RefPtrWillBeMember<SVGAnimatedLength> m_markerHeight;
     RefPtrWillBeMember<SVGAnimatedAngle> m_orientAngle;
-    RefPtrWillBeMember<SVGAnimatedEnumeration<SVGMarkerUnitsType> > m_markerUnits;
+    RefPtrWillBeMember<SVGAnimatedEnumeration<SVGMarkerUnitsType>> m_markerUnits;
 };
 
 } // namespace blink

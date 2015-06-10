@@ -30,6 +30,7 @@
 
 #include "webrtc/base/basictypes.h"
 #include "webrtc/base/stream.h"
+#include "webrtc/common_video/interface/video_frame_buffer.h"
 #include "webrtc/common_video/rotation.h"
 
 namespace cricket {
@@ -49,8 +50,6 @@ class VideoFrame {
   // |dh| is destination height, like |dw|, but must be a positive number.
   // Returns whether the function succeeded or failed.
 
-  // TODO(guoweis): remove the implementation and the next Reset once chrome
-  // gets the code.
   virtual bool Reset(uint32 fourcc,
                      int w,
                      int h,
@@ -62,10 +61,10 @@ class VideoFrame {
                      size_t pixel_height,
                      int64_t elapsed_time,
                      int64_t time_stamp,
-                     webrtc::VideoRotation rotation) {
-    return false;
-  }
+                     webrtc::VideoRotation rotation,
+                     bool apply_rotation) = 0;
 
+  // TODO(guoweis): Remove this once all external implementations are updated.
   virtual bool Reset(uint32 fourcc,
                      int w,
                      int h,
@@ -80,12 +79,14 @@ class VideoFrame {
                      int rotation) {
     return Reset(fourcc, w, h, dw, dh, sample, sample_size, pixel_width,
                  pixel_height, elapsed_time, time_stamp,
-                 static_cast<webrtc::VideoRotation>(rotation));
+                 static_cast<webrtc::VideoRotation>(rotation), true);
   }
 
   // Basic accessors.
+  // Note this is the width and height without rotation applied.
   virtual size_t GetWidth() const = 0;
   virtual size_t GetHeight() const = 0;
+
   size_t GetChromaWidth() const { return (GetWidth() + 1) / 2; }
   size_t GetChromaHeight() const { return (GetHeight() + 1) / 2; }
   size_t GetChromaSize() const { return GetUPitch() * GetChromaHeight(); }
@@ -106,6 +107,11 @@ class VideoFrame {
   // longer in use, so the underlying resource can be freed.
   virtual void* GetNativeHandle() const = 0;
 
+  // Returns the underlying video frame buffer. This function is ok to call
+  // multiple times, but the returned object will refer to the same memory.
+  virtual rtc::scoped_refptr<webrtc::VideoFrameBuffer> GetVideoFrameBuffer()
+      const = 0;
+
   // For retrieving the aspect ratio of each pixel. Usually this is 1x1, but
   // the aspect_ratio_idc parameter of H.264 can specify non-square pixels.
   virtual size_t GetPixelWidth() const = 0;
@@ -123,8 +129,6 @@ class VideoFrame {
   virtual webrtc::VideoRotation GetVideoRotation() const {
     return webrtc::kVideoRotation_0;
   }
-  // TODO(guoweis): Remove the skeleton implementation once chrome is updated.
-  virtual void SetRotation(webrtc::VideoRotation rotation) {}
 
   // Make a shallow copy of the frame. The frame buffer itself is not copied.
   // Both the current and new VideoFrame will share a single reference-counted
@@ -132,9 +136,12 @@ class VideoFrame {
   virtual VideoFrame *Copy() const = 0;
 
   // Since VideoFrame supports shallow copy and the internal frame buffer might
-  // be shared, in case VideoFrame needs exclusive access of the frame buffer,
-  // user can call MakeExclusive() to make sure the frame buffer is exclusive
-  // accessable to the current object.  This might mean a deep copy of the frame
+  // be shared, this function can be used to check exclusive ownership.
+  virtual bool IsExclusive() const = 0;
+
+  // In case VideoFrame needs exclusive access of the frame buffer, user can
+  // call MakeExclusive() to make sure the frame buffer is exclusively
+  // accessible to the current object.  This might mean a deep copy of the frame
   // buffer if it is currently shared by other objects.
   virtual bool MakeExclusive() = 0;
 
@@ -155,12 +162,16 @@ class VideoFrame {
   // Writes the frame into the target VideoFrame.
   virtual void CopyToFrame(VideoFrame* target) const;
 
+  // Return a copy of frame which has its pending rotation applied. The
+  // ownership of the returned frame is held by this frame.
+  virtual const VideoFrame* GetCopyWithRotationApplied() const = 0;
+
   // Writes the frame into the given stream and returns the StreamResult.
   // See webrtc/base/stream.h for a description of StreamResult and error.
   // Error may be NULL. If a non-success value is returned from
   // StreamInterface::Write(), we immediately return with that value.
-  virtual rtc::StreamResult Write(rtc::StreamInterface *stream,
-                                        int *error);
+  virtual rtc::StreamResult Write(rtc::StreamInterface* stream,
+                                  int* error) const;
 
   // Converts the I420 data to RGB of a certain type such as ARGB and ABGR.
   // Returns the frame's actual size, regardless of whether it was written or

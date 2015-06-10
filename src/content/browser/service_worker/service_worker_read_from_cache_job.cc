@@ -12,6 +12,7 @@
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_disk_cache.h"
 #include "content/browser/service_worker/service_worker_metrics.h"
+#include "content/public/browser/browser_thread.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_request_headers.h"
@@ -75,11 +76,6 @@ void ServiceWorkerReadFromCacheJob::Kill() {
 }
 
 net::LoadState ServiceWorkerReadFromCacheJob::GetLoadState() const {
-  // TODO(pkasting): Remove ScopedTracker below once crbug.com/455952 is
-  // fixed.
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "455952 ServiceWorkerReadFromCacheJob::GetLoadState"));
   if (reader_.get() && reader_->IsReadPending())
     return net::LOAD_STATE_READING_RESPONSE;
   return net::LOAD_STATE_IDLE;
@@ -162,7 +158,7 @@ void ServiceWorkerReadFromCacheJob::OnReadInfoComplete(int result) {
     DCHECK_LT(result, 0);
     ServiceWorkerMetrics::CountReadResponseResult(
         ServiceWorkerMetrics::READ_HEADERS_ERROR);
-    NotifyDone(net::URLRequestStatus(net::URLRequestStatus::FAILED, result));
+    Done(net::URLRequestStatus(net::URLRequestStatus::FAILED, result));
     return;
   }
   DCHECK_GE(result, 0);
@@ -203,14 +199,27 @@ void ServiceWorkerReadFromCacheJob::SetupRangeResponse(int resource_size) {
       range_requested_, resource_size, true /* replace status line */);
 }
 
+void ServiceWorkerReadFromCacheJob::Done(const net::URLRequestStatus& status) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  if (!status.is_success()) {
+    // TODO(falken): Retry before evicting.
+    if (context_) {
+      ServiceWorkerRegistration* registration =
+          context_->GetLiveRegistration(version_->registration_id());
+      registration->DeleteVersion(version_);
+    }
+  }
+  NotifyDone(status);
+}
+
 void ServiceWorkerReadFromCacheJob::OnReadComplete(int result) {
   ServiceWorkerMetrics::ReadResponseResult check_result;
   if (result == 0) {
     check_result = ServiceWorkerMetrics::READ_OK;
-    NotifyDone(net::URLRequestStatus());
+    Done(net::URLRequestStatus());
   } else if (result < 0) {
     check_result = ServiceWorkerMetrics::READ_DATA_ERROR;
-    NotifyDone(net::URLRequestStatus(net::URLRequestStatus::FAILED, result));
+    Done(net::URLRequestStatus(net::URLRequestStatus::FAILED, result));
   } else {
     check_result = ServiceWorkerMetrics::READ_OK;
     SetStatus(net::URLRequestStatus());  // Clear the IO_PENDING status

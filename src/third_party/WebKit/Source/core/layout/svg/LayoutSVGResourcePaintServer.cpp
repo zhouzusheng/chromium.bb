@@ -23,7 +23,7 @@
 #include "config.h"
 #include "core/layout/svg/LayoutSVGResourcePaintServer.h"
 
-#include "core/layout/style/LayoutStyle.h"
+#include "core/style/ComputedStyle.h"
 #include "core/layout/svg/SVGResources.h"
 #include "core/layout/svg/SVGResourcesCache.h"
 #include "platform/graphics/GraphicsContext.h"
@@ -81,10 +81,10 @@ void SVGPaintServer::prependTransform(const AffineTransform& transform)
         m_gradient->setGradientSpaceTransform(transform * m_gradient->gradientSpaceTransform());
 }
 
-static SVGPaintDescription requestPaint(const LayoutObject& object, const LayoutStyle& style, LayoutSVGResourceMode mode)
+static SVGPaintDescription requestPaint(const LayoutObject& object, const ComputedStyle& style, LayoutSVGResourceMode mode)
 {
     // If we have no style at all, ignore it.
-    const SVGLayoutStyle& svgStyle = style.svgStyle();
+    const SVGComputedStyle& svgStyle = style.svgStyle();
 
     // If we have no fill/stroke, return 0.
     if (mode == ApplyToFillMode) {
@@ -153,16 +153,16 @@ static SVGPaintDescription requestPaint(const LayoutObject& object, const Layout
     return SVGPaintDescription(uriResource);
 }
 
-SVGPaintServer SVGPaintServer::requestForRenderer(const LayoutObject& renderer, const LayoutStyle& style, LayoutSVGResourceMode resourceMode)
+SVGPaintServer SVGPaintServer::requestForLayoutObject(const LayoutObject& layoutObject, const ComputedStyle& style, LayoutSVGResourceMode resourceMode)
 {
     ASSERT(resourceMode == ApplyToFillMode || resourceMode == ApplyToStrokeMode);
 
-    SVGPaintDescription paintDescription = requestPaint(renderer, style, resourceMode);
+    SVGPaintDescription paintDescription = requestPaint(layoutObject, style, resourceMode);
     if (!paintDescription.isValid)
         return invalid();
     if (!paintDescription.resource)
         return SVGPaintServer(paintDescription.color);
-    SVGPaintServer paintServer = paintDescription.resource->preparePaintServer(renderer);
+    SVGPaintServer paintServer = paintDescription.resource->preparePaintServer(layoutObject);
     if (paintServer.isValid())
         return paintServer;
     if (paintDescription.hasFallback)
@@ -170,9 +170,9 @@ SVGPaintServer SVGPaintServer::requestForRenderer(const LayoutObject& renderer, 
     return invalid();
 }
 
-bool SVGPaintServer::existsForRenderer(const LayoutObject& renderer, const LayoutStyle& style, LayoutSVGResourceMode resourceMode)
+bool SVGPaintServer::existsForLayoutObject(const LayoutObject& layoutObject, const ComputedStyle& style, LayoutSVGResourceMode resourceMode)
 {
-    return requestPaint(renderer, style, resourceMode).isValid;
+    return requestPaint(layoutObject, style, resourceMode).isValid;
 }
 
 LayoutSVGResourcePaintServer::LayoutSVGResourcePaintServer(SVGElement* element)
@@ -184,9 +184,9 @@ LayoutSVGResourcePaintServer::~LayoutSVGResourcePaintServer()
 {
 }
 
-SVGPaintDescription LayoutSVGResourcePaintServer::requestPaintDescription(const LayoutObject& renderer, const LayoutStyle& style, LayoutSVGResourceMode resourceMode)
+SVGPaintDescription LayoutSVGResourcePaintServer::requestPaintDescription(const LayoutObject& layoutObject, const ComputedStyle& style, LayoutSVGResourceMode resourceMode)
 {
-    return requestPaint(renderer, style, resourceMode);
+    return requestPaint(layoutObject, style, resourceMode);
 }
 
 }

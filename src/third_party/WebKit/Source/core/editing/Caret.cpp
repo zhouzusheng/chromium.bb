@@ -32,9 +32,9 @@
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/html/HTMLTextFormControlElement.h"
-#include "core/layout/Layer.h"
-#include "core/rendering/RenderBlock.h"
-#include "core/rendering/RenderView.h"
+#include "core/layout/LayoutBlock.h"
+#include "core/layout/LayoutView.h"
+#include "core/paint/DeprecatedPaintLayer.h"
 #include "platform/graphics/GraphicsContext.h"
 
 namespace blink {
@@ -104,7 +104,7 @@ void DragCaretController::nodeWillBeRemoved(Node& node)
     if (!removingNodeRemovesPosition(node, m_position.deepEquivalent()))
         return;
 
-    m_position.deepEquivalent().document()->renderView()->clearSelection();
+    m_position.deepEquivalent().document()->layoutView()->clearSelection();
     clear();
 }
 
@@ -123,21 +123,21 @@ static inline bool caretRendersInsideNode(Node* node)
     return node && !isRenderedTableElement(node) && !editingIgnoresContent(node);
 }
 
-RenderBlock* CaretBase::caretRenderer(Node* node)
+LayoutBlock* CaretBase::caretRenderer(Node* node)
 {
     if (!node)
         return 0;
 
-    LayoutObject* renderer = node->renderer();
+    LayoutObject* renderer = node->layoutObject();
     if (!renderer)
         return 0;
 
     // if caretNode is a block and caret is inside it then caret should be painted by that block
-    bool paintedByBlock = renderer->isRenderBlock() && caretRendersInsideNode(node);
-    return paintedByBlock ? toRenderBlock(renderer) : renderer->containingBlock();
+    bool paintedByBlock = renderer->isLayoutBlock() && caretRendersInsideNode(node);
+    return paintedByBlock ? toLayoutBlock(renderer) : renderer->containingBlock();
 }
 
-static void mapCaretRectToCaretPainter(LayoutObject* caretRenderer, RenderBlock* caretPainter, LayoutRect& caretRect)
+static void mapCaretRectToCaretPainter(LayoutObject* caretRenderer, LayoutBlock* caretPainter, LayoutRect& caretRect)
 {
     // FIXME: This shouldn't be called on un-rooted subtrees.
     // FIXME: This should probably just use mapLocalToContainer.
@@ -167,7 +167,7 @@ bool CaretBase::updateCaretRect(Document* document, const PositionWithAffinity& 
     if (caretPosition.position().isNull())
         return false;
 
-    ASSERT(caretPosition.position().deprecatedNode()->renderer());
+    ASSERT(caretPosition.position().deprecatedNode()->layoutObject());
 
     // First compute a rect local to the renderer at the selection start.
     LayoutObject* renderer;
@@ -175,7 +175,7 @@ bool CaretBase::updateCaretRect(Document* document, const PositionWithAffinity& 
 
     // Get the renderer that will be responsible for painting the caret
     // (which is either the renderer we just found, or one of its containers).
-    RenderBlock* caretPainter = caretRenderer(caretPosition.position().deprecatedNode());
+    LayoutBlock* caretPainter = caretRenderer(caretPosition.position().deprecatedNode());
 
     mapCaretRectToCaretPainter(renderer, caretPainter, m_caretLocalRect);
 
@@ -187,14 +187,14 @@ bool CaretBase::updateCaretRect(Document* document, const VisiblePosition& caret
     return updateCaretRect(document, PositionWithAffinity(caretPosition.deepEquivalent(), caretPosition.affinity()));
 }
 
-RenderBlock* DragCaretController::caretRenderer() const
+LayoutBlock* DragCaretController::caretRenderer() const
 {
     return CaretBase::caretRenderer(m_position.deepEquivalent().deprecatedNode());
 }
 
 IntRect CaretBase::absoluteBoundsForLocalRect(Node* node, const LayoutRect& rect) const
 {
-    RenderBlock* caretPainter = caretRenderer(node);
+    LayoutBlock* caretPainter = caretRenderer(node);
     if (!caretPainter)
         return IntRect();
 
@@ -205,7 +205,7 @@ IntRect CaretBase::absoluteBoundsForLocalRect(Node* node, const LayoutRect& rect
 
 void CaretBase::invalidateLocalCaretRect(Node* node, const LayoutRect& rect)
 {
-    RenderBlock* caretPainter = caretRenderer(node);
+    LayoutBlock* caretPainter = caretRenderer(node);
     if (!caretPainter)
         return;
 
@@ -215,7 +215,7 @@ void CaretBase::invalidateLocalCaretRect(Node* node, const LayoutRect& rect)
     inflatedRect.inflate(1);
 
     // FIXME: We should use mapLocalToContainer() since we know we're not un-rooted.
-    mapCaretRectToCaretPainter(node->renderer(), caretPainter, inflatedRect);
+    mapCaretRectToCaretPainter(node->layoutObject(), caretPainter, inflatedRect);
 
     // FIXME: We should not allow paint invalidation out of paint invalidation state. crbug.com/457415
     DisablePaintInvalidationStateAsserts disabler;
@@ -230,7 +230,7 @@ bool CaretBase::shouldRepaintCaret(Node& node) const
     return node.isContentEditable() || (node.parentNode() && node.parentNode()->isContentEditable());
 }
 
-bool CaretBase::shouldRepaintCaret(const RenderView* view) const
+bool CaretBase::shouldRepaintCaret(const LayoutView* view) const
 {
     ASSERT(view);
     if (FrameView* frameView = view->frameView()) {
@@ -245,7 +245,7 @@ void CaretBase::invalidateCaretRect(Node* node, bool caretRectChanged)
     if (caretRectChanged)
         return;
 
-    if (RenderView* view = node->document().renderView()) {
+    if (LayoutView* view = node->document().layoutView()) {
         if (node->isContentEditable(Node::UserSelectAllIsAlwaysNonEditable) || shouldRepaintCaret(view))
             invalidateLocalCaretRect(node, localCaretRectWithoutUpdate());
     }
@@ -257,7 +257,7 @@ void CaretBase::paintCaret(Node* node, GraphicsContext* context, const LayoutPoi
         return;
 
     LayoutRect drawingRect = localCaretRectWithoutUpdate();
-    if (RenderBlock* renderer = caretRenderer(node))
+    if (LayoutBlock* renderer = caretRenderer(node))
         renderer->flipForWritingMode(drawingRect);
     drawingRect.moveBy(roundedIntPoint(paintOffset));
     LayoutRect caret = intersection(drawingRect, clipRect);
@@ -272,8 +272,8 @@ void CaretBase::paintCaret(Node* node, GraphicsContext* context, const LayoutPoi
     else
         element = node->parentElement();
 
-    if (element && element->renderer())
-        caretColor = element->renderer()->resolveColor(CSSPropertyColor);
+    if (element && element->layoutObject())
+        caretColor = element->layoutObject()->resolveColor(CSSPropertyColor);
 
     context->fillRect(caret, caretColor);
 }

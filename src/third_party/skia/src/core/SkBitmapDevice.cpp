@@ -25,7 +25,7 @@ static bool valid_for_bitmap_device(const SkImageInfo& info,
     // TODO: can we stop supporting kUnknown in SkBitmkapDevice?
     if (kUnknown_SkColorType == info.colorType()) {
         if (newAlphaType) {
-            *newAlphaType = kIgnore_SkAlphaType;
+            *newAlphaType = kUnknown_SkAlphaType;
         }
         return true;
     }
@@ -110,7 +110,7 @@ void SkBitmapDevice::replaceBitmapBackendForRasterSurface(const SkBitmap& bm) {
     fBitmap.lockPixels();
 }
 
-SkBaseDevice* SkBitmapDevice::onCreateCompatibleDevice(const CreateInfo& cinfo) {
+SkBaseDevice* SkBitmapDevice::onCreateDevice(const CreateInfo& cinfo, const SkPaint*) {
     SkDeviceProperties leaky(cinfo.fPixelGeometry);
     return SkBitmapDevice::Create(cinfo.fInfo, &leaky);
 }

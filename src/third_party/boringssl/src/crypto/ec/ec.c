@@ -426,7 +426,7 @@ void EC_GROUP_free(EC_GROUP *group) {
   OPENSSL_free(group);
 }
 
-int EC_GROUP_copy(EC_GROUP *dest, const EC_GROUP *src) {
+int ec_group_copy(EC_GROUP *dest, const EC_GROUP *src) {
   if (dest->meth->group_copy == 0) {
     OPENSSL_PUT_ERROR(EC, EC_GROUP_copy, ERR_R_SHOULD_NOT_HAVE_BEEN_CALLED);
     return 0;
@@ -482,7 +482,7 @@ EC_GROUP *EC_GROUP_dup(const EC_GROUP *a) {
   if (t == NULL) {
     return NULL;
   }
-  if (!EC_GROUP_copy(t, a)) {
+  if (!ec_group_copy(t, a)) {
     goto err;
   }
 
@@ -499,11 +499,10 @@ err:
   }
 }
 
-int EC_GROUP_cmp(const EC_GROUP *a, const EC_GROUP *b) {
-  if (a->curve_name == NID_undef || b->curve_name == NID_undef) {
-    return 0;
-  }
-  return a->curve_name == b->curve_name;
+int EC_GROUP_cmp(const EC_GROUP *a, const EC_GROUP *b, BN_CTX *ignored) {
+  return a->curve_name == NID_undef ||
+         b->curve_name == NID_undef ||
+         a->curve_name != b->curve_name;
 }
 
 const EC_POINT *EC_GROUP_get0_generator(const EC_GROUP *group) {

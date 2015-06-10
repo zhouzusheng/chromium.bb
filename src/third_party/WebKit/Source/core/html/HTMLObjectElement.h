@@ -32,7 +32,7 @@ class HTMLFormElement;
 
 class HTMLObjectElement final : public HTMLPlugInElement, public FormAssociatedElement {
     DEFINE_WRAPPERTYPEINFO();
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(HTMLObjectElement);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN_NESTED(HTMLObjectElement, HTMLFrameOwnerElement);
 public:
     static PassRefPtrWillBeRawPtr<HTMLObjectElement> create(Document&, HTMLFormElement*, bool createdByParser);
     virtual ~HTMLObjectElement();
@@ -82,7 +82,6 @@ private:
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
     virtual void removedFrom(ContainerNode*) override;
 
-    virtual bool rendererIsNeeded(const LayoutStyle&) override;
     virtual void didMoveToNewDocument(Document& oldDocument) override;
 
     virtual void childrenChanged(const ChildrenChange&) override;

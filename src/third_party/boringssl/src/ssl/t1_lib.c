@@ -133,16 +133,12 @@ const SSL3_ENC_METHOD TLSv1_enc_data = {
     tls1_generate_master_secret,
     tls1_change_cipher_state,
     tls1_final_finish_mac,
-    TLS1_FINISH_MAC_LENGTH,
     tls1_cert_verify_mac,
     TLS_MD_CLIENT_FINISH_CONST,TLS_MD_CLIENT_FINISH_CONST_SIZE,
     TLS_MD_SERVER_FINISH_CONST,TLS_MD_SERVER_FINISH_CONST_SIZE,
     tls1_alert_code,
     tls1_export_keying_material,
     0,
-    SSL3_HM_HEADER_LENGTH,
-    ssl3_set_handshake_header,
-    ssl3_handshake_write,
 };
 
 const SSL3_ENC_METHOD TLSv1_1_enc_data = {
@@ -152,16 +148,12 @@ const SSL3_ENC_METHOD TLSv1_1_enc_data = {
     tls1_generate_master_secret,
     tls1_change_cipher_state,
     tls1_final_finish_mac,
-    TLS1_FINISH_MAC_LENGTH,
     tls1_cert_verify_mac,
     TLS_MD_CLIENT_FINISH_CONST,TLS_MD_CLIENT_FINISH_CONST_SIZE,
     TLS_MD_SERVER_FINISH_CONST,TLS_MD_SERVER_FINISH_CONST_SIZE,
     tls1_alert_code,
     tls1_export_keying_material,
     SSL_ENC_FLAG_EXPLICIT_IV,
-    SSL3_HM_HEADER_LENGTH,
-    ssl3_set_handshake_header,
-    ssl3_handshake_write,
 };
 
 const SSL3_ENC_METHOD TLSv1_2_enc_data = {
@@ -171,7 +163,6 @@ const SSL3_ENC_METHOD TLSv1_2_enc_data = {
     tls1_generate_master_secret,
     tls1_change_cipher_state,
     tls1_final_finish_mac,
-    TLS1_FINISH_MAC_LENGTH,
     tls1_cert_verify_mac,
     TLS_MD_CLIENT_FINISH_CONST,TLS_MD_CLIENT_FINISH_CONST_SIZE,
     TLS_MD_SERVER_FINISH_CONST,TLS_MD_SERVER_FINISH_CONST_SIZE,
@@ -179,9 +170,6 @@ const SSL3_ENC_METHOD TLSv1_2_enc_data = {
     tls1_export_keying_material,
     SSL_ENC_FLAG_EXPLICIT_IV|SSL_ENC_FLAG_SIGALGS|SSL_ENC_FLAG_SHA256_PRF
             |SSL_ENC_FLAG_TLS1_2_CIPHERS,
-    SSL3_HM_HEADER_LENGTH,
-    ssl3_set_handshake_header,
-    ssl3_handshake_write,
 };
 
 static int compare_uint16_t(const void *p1, const void *p2) {
@@ -618,23 +606,22 @@ done:
 }
 
 int tls1_check_ec_tmp_key(SSL *s) {
-  uint16_t curve_id;
-  EC_KEY *ec = s->cert->ecdh_tmp;
-
-  if (s->cert->ecdh_tmp_auto) {
-    /* Need a shared curve */
-    return tls1_get_shared_curve(s) != NID_undef;
+  if (s->cert->ecdh_nid != NID_undef) {
+    /* If the curve is preconfigured, ECDH is acceptable iff the peer supports
+     * the curve. */
+    uint16_t curve_id;
+    return tls1_ec_nid2curve_id(&curve_id, s->cert->ecdh_nid) &&
+           tls1_check_curve_id(s, curve_id);
   }
 
-  if (!ec) {
-    if (s->cert->ecdh_tmp_cb) {
-      return 1;
-    }
-    return 0;
+  if (s->cert->ecdh_tmp_cb != NULL) {
+    /* Assume the callback will provide an acceptable curve. */
+    return 1;
   }
 
-  return tls1_curve_params_from_ec_key(&curve_id, NULL, ec) &&
-         tls1_check_curve_id(s, curve_id);
+  /* Otherwise, the curve gets selected automatically. ECDH is acceptable iff
+   * there is a shared curve. */
+  return tls1_get_shared_curve(s) != NID_undef;
 }
 
 /* List of supported signature algorithms and hashes. Should make this
@@ -812,7 +799,7 @@ uint8_t *ssl_add_clienthello_tlsext(SSL *s, uint8_t *buf, uint8_t *limit,
 
       alg_k = c->algorithm_mkey;
       alg_a = c->algorithm_auth;
-      if ((alg_k & SSL_kEECDH) || (alg_a & SSL_aECDSA)) {
+      if ((alg_k & SSL_kECDHE) || (alg_a & SSL_aECDSA)) {
         using_ecc = 1;
         break;
       }
@@ -1120,7 +1107,7 @@ uint8_t *ssl_add_serverhello_tlsext(SSL *s, uint8_t *buf, uint8_t *limit) {
   int next_proto_neg_seen;
   unsigned long alg_k = s->s3->tmp.new_cipher->algorithm_mkey;
   unsigned long alg_a = s->s3->tmp.new_cipher->algorithm_auth;
-  int using_ecc = (alg_k & SSL_kEECDH) || (alg_a & SSL_aECDSA);
+  int using_ecc = (alg_k & SSL_kECDHE) || (alg_a & SSL_aECDSA);
   using_ecc = using_ecc && (s->s3->tmp.peer_ecpointformatlist != NULL);
 
   /* don't add extensions for SSLv3, unless doing secure renegotiation */
@@ -1369,12 +1356,14 @@ static int ssl_scan_clienthello_tlsext(SSL *s, CBS *cbs, int *out_alert) {
   if (s->cert->peer_sigalgs) {
     OPENSSL_free(s->cert->peer_sigalgs);
     s->cert->peer_sigalgs = NULL;
+    s->cert->peer_sigalgslen = 0;
   }
 
   /* Clear any shared signature algorithms */
   if (s->cert->shared_sigalgs) {
     OPENSSL_free(s->cert->shared_sigalgs);
     s->cert->shared_sigalgs = NULL;
+    s->cert->shared_sigalgslen = 0;
   }
 
   /* Clear ECC extensions */
@@ -1587,7 +1576,7 @@ static int ssl_scan_clienthello_tlsext(SSL *s, CBS *cbs, int *out_alert) {
       }
       /* If sigalgs received and no shared algorithms fatal error. */
       if (s->cert->peer_sigalgs && !s->cert->shared_sigalgs) {
-        OPENSSL_PUT_ERROR(SSL, ssl_add_serverhello_tlsext,
+        OPENSSL_PUT_ERROR(SSL, ssl_scan_clienthello_tlsext,
                           SSL_R_NO_SHARED_SIGATURE_ALGORITHMS);
         *out_alert = SSL_AD_ILLEGAL_PARAMETER;
         return 0;
@@ -1990,7 +1979,7 @@ static int ssl_check_serverhello_tlsext(SSL *s) {
    * uncompressed. */
   unsigned long alg_k = s->s3->tmp.new_cipher->algorithm_mkey;
   unsigned long alg_a = s->s3->tmp.new_cipher->algorithm_auth;
-  if (((alg_k & SSL_kEECDH) || (alg_a & SSL_aECDSA)) &&
+  if (((alg_k & SSL_kECDHE) || (alg_a & SSL_aECDSA)) &&
       !tls1_check_point_format(s, TLSEXT_ECPOINTFORMAT_uncompressed)) {
     OPENSSL_PUT_ERROR(SSL, ssl_check_serverhello_tlsext,
                       SSL_R_TLS_INVALID_ECPOINTFORMAT_LIST);
@@ -2002,7 +1991,7 @@ static int ssl_check_serverhello_tlsext(SSL *s) {
     ret = s->ctx->tlsext_servername_callback(s, &al,
                                              s->ctx->tlsext_servername_arg);
   } else if (s->initial_ctx != NULL &&
-           s->initial_ctx->tlsext_servername_callback != 0) {
+             s->initial_ctx->tlsext_servername_callback != 0) {
     ret = s->initial_ctx->tlsext_servername_callback(
         s, &al, s->initial_ctx->tlsext_servername_arg);
   }
@@ -2411,6 +2400,7 @@ static int tls1_set_shared_sigalgs(SSL *s) {
   if (c->shared_sigalgs) {
     OPENSSL_free(c->shared_sigalgs);
     c->shared_sigalgs = NULL;
+    c->shared_sigalgslen = 0;
   }
 
   /* If client use client signature algorithms if not NULL */
@@ -2461,21 +2451,12 @@ int tls1_process_sigalgs(SSL *s, const CBS *sigalgs) {
     return 1;
   }
 
-  /* Length must be even */
-  if (CBS_len(sigalgs) % 2 != 0) {
+  if (CBS_len(sigalgs) % 2 != 0 ||
+      !CBS_stow(sigalgs, &c->peer_sigalgs, &c->peer_sigalgslen) ||
+      !tls1_set_shared_sigalgs(s)) {
     return 0;
   }
 
-  /* Should never happen */
-  if (!c) {
-    return 0;
-  }
-
-  if (!CBS_stow(sigalgs, &c->peer_sigalgs, &c->peer_sigalgslen)) {
-    return 0;
-  }
-
-  tls1_set_shared_sigalgs(s);
   return 1;
 }
 

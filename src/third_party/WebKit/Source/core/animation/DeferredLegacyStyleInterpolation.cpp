@@ -5,7 +5,7 @@
 #include "config.h"
 #include "core/animation/DeferredLegacyStyleInterpolation.h"
 
-#include "core/animation/ActiveAnimations.h"
+#include "core/animation/ElementAnimations.h"
 #include "core/animation/css/CSSAnimatableValueFactory.h"
 #include "core/css/CSSImageValue.h"
 #include "core/css/CSSPrimitiveValue.h"
@@ -21,21 +21,18 @@ namespace blink {
 
 void DeferredLegacyStyleInterpolation::apply(StyleResolverState& state) const
 {
-    if (m_outdated || !state.element()->activeAnimations() || !state.element()->activeAnimations()->isAnimationStyleChange()) {
-        RefPtrWillBeRawPtr<AnimatableValue> startAnimatableValue = nullptr;
-        RefPtrWillBeRawPtr<AnimatableValue> endAnimatableValue = nullptr;
+    if (m_outdated || !state.element()->elementAnimations() || !state.element()->elementAnimations()->isAnimationStyleChange()) {
+        RefPtrWillBeRawPtr<AnimatableValue> startAnimatableValue;
+        RefPtrWillBeRawPtr<AnimatableValue> endAnimatableValue;
 
-        // Call CSSAnimatableValueFactory::create before calling createAnimatableValueSnapshot because the latter modifies the
-        // style of the StyleResolverState.
-        if (!m_startCSSValue)
-            startAnimatableValue = CSSAnimatableValueFactory::create(m_id, state.styleRef());
-        if (!m_endCSSValue)
-            endAnimatableValue = CSSAnimatableValueFactory::create(m_id, state.styleRef());
-
-        if (m_startCSSValue)
-            startAnimatableValue = StyleResolver::createAnimatableValueSnapshot(state, m_id, *m_startCSSValue);
-        if (m_endCSSValue)
-            endAnimatableValue = StyleResolver::createAnimatableValueSnapshot(state, m_id, *m_endCSSValue);
+        // Snapshot underlying values for neutral keyframes first because non-neutral keyframes will mutate the StyleResolverState.
+        if (!m_endCSSValue) {
+            endAnimatableValue = StyleResolver::createAnimatableValueSnapshot(state, m_id, m_endCSSValue.get());
+            startAnimatableValue = StyleResolver::createAnimatableValueSnapshot(state, m_id, m_startCSSValue.get());
+        } else {
+            startAnimatableValue = StyleResolver::createAnimatableValueSnapshot(state, m_id, m_startCSSValue.get());
+            endAnimatableValue = StyleResolver::createAnimatableValueSnapshot(state, m_id, m_endCSSValue.get());
+        }
 
         m_innerInterpolation = LegacyStyleInterpolation::create(startAnimatableValue, endAnimatableValue, m_id);
         m_outdated = false;
@@ -151,7 +148,7 @@ bool DeferredLegacyStyleInterpolation::interpolationRequiresStyleResolve(const C
     return false;
 }
 
-void DeferredLegacyStyleInterpolation::trace(Visitor* visitor)
+DEFINE_TRACE(DeferredLegacyStyleInterpolation)
 {
     visitor->trace(m_startCSSValue);
     visitor->trace(m_endCSSValue);

@@ -7,6 +7,7 @@
 
 #include "GrPipelineBuilder.h"
 
+#include "GrBatch.h"
 #include "GrBlend.h"
 #include "GrPaint.h"
 #include "GrPipeline.h"
@@ -32,6 +33,7 @@ GrPipelineBuilder& GrPipelineBuilder::operator=(const GrPipelineBuilder& that) {
     fXPFactory.reset(SkRef(that.getXPFactory()));
     fColorStages = that.fColorStages;
     fCoverageStages = that.fCoverageStages;
+    fClip = that.fClip;
 
     fColorProcInfoValid = that.fColorProcInfoValid;
     fCoverageProcInfoValid = that.fCoverageProcInfoValid;
@@ -46,7 +48,7 @@ GrPipelineBuilder& GrPipelineBuilder::operator=(const GrPipelineBuilder& that) {
     return *this;
 }
 
-void GrPipelineBuilder::setFromPaint(const GrPaint& paint, GrRenderTarget* rt) {
+void GrPipelineBuilder::setFromPaint(const GrPaint& paint, GrRenderTarget* rt, const GrClip& clip) {
     SkASSERT(0 == fBlockEffectRemovalCnt || 0 == this->numFragmentStages());
 
     fColorStages.reset();
@@ -69,34 +71,17 @@ void GrPipelineBuilder::setFromPaint(const GrPaint& paint, GrRenderTarget* rt) {
     fStencilSettings.setDisabled();
     fFlagBits = 0;
 
-    // Enable the clip bit
-    this->enableState(GrPipelineBuilder::kClip_StateBit);
+    fClip = clip;
 
     this->setState(GrPipelineBuilder::kDither_StateBit, paint.isDither());
-    this->setState(GrPipelineBuilder::kHWAntialias_StateBit, paint.isAntiAlias());
+    this->setState(GrPipelineBuilder::kHWAntialias_StateBit,
+                   rt->isMultisampled() && paint.isAntiAlias());
 
     fColorProcInfoValid = false;
     fCoverageProcInfoValid = false;
 
     fColorCache = GrColor_ILLEGAL;
     fCoverageCache = GrColor_ILLEGAL;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-bool GrPipelineBuilder::canUseFracCoveragePrimProc(GrColor color,
-                                                   const GrDrawTargetCaps& caps) const {
-    if (caps.dualSourceBlendingSupport()) {
-        return true;
-    }
-
-    this->calcColorInvariantOutput(color);
-
-    // The coverage isn't actually white, its unknown, but this will produce the same effect
-    // TODO we want to cache the result of this call, but we can probably clean up the interface
-    // so we don't have to pass in a seemingly known coverage
-    this->calcCoverageInvariantOutput(GrColor_WHITE);
-    return this->getXPFactory()->canApplyCoverage(fColorProcInfo, fCoverageProcInfo);
 }
 
 //////////////////////////////////////////////////////////////////////////////s
@@ -107,13 +92,13 @@ bool GrPipelineBuilder::willXPNeedDstCopy(const GrDrawTargetCaps& caps,
     return this->getXPFactory()->willNeedDstCopy(caps, colorPOI, coveragePOI);
 }
 
-void GrPipelineBuilder::AutoRestoreEffects::set(GrPipelineBuilder* pipelineBuilder) {
+void GrPipelineBuilder::AutoRestoreFragmentProcessors::set(GrPipelineBuilder* pipelineBuilder) {
     if (fPipelineBuilder) {
-        int m = fPipelineBuilder->numColorStages() - fColorEffectCnt;
+        int m = fPipelineBuilder->numColorFragmentStages() - fColorEffectCnt;
         SkASSERT(m >= 0);
         fPipelineBuilder->fColorStages.pop_back_n(m);
 
-        int n = fPipelineBuilder->numCoverageStages() - fCoverageEffectCnt;
+        int n = fPipelineBuilder->numCoverageFragmentStages() - fCoverageEffectCnt;
         SkASSERT(n >= 0);
         fPipelineBuilder->fCoverageStages.pop_back_n(n);
         if (m + n > 0) {
@@ -124,8 +109,8 @@ void GrPipelineBuilder::AutoRestoreEffects::set(GrPipelineBuilder* pipelineBuild
     }
     fPipelineBuilder = pipelineBuilder;
     if (NULL != pipelineBuilder) {
-        fColorEffectCnt = pipelineBuilder->numColorStages();
-        fCoverageEffectCnt = pipelineBuilder->numCoverageStages();
+        fColorEffectCnt = pipelineBuilder->numColorFragmentStages();
+        fCoverageEffectCnt = pipelineBuilder->numCoverageFragmentStages();
         SkDEBUGCODE(++pipelineBuilder->fBlockEffectRemovalCnt;)
     }
 }
@@ -156,25 +141,25 @@ bool GrPipelineBuilder::willBlendWithDst(const GrPrimitiveProcessor* pp) const {
 }
 
 void GrPipelineBuilder::calcColorInvariantOutput(const GrPrimitiveProcessor* pp) const {
-    fColorProcInfo.calcColorWithPrimProc(pp, fColorStages.begin(), this->numColorStages());
+    fColorProcInfo.calcColorWithPrimProc(pp, fColorStages.begin(), this->numColorFragmentStages());
     fColorProcInfoValid = false;
 
 }
 
 void GrPipelineBuilder::calcCoverageInvariantOutput(const GrPrimitiveProcessor* pp) const {
     fCoverageProcInfo.calcCoverageWithPrimProc(pp, fCoverageStages.begin(),
-                                               this->numCoverageStages());
+                                               this->numCoverageFragmentStages());
     fCoverageProcInfoValid = false;
 }
 
 void GrPipelineBuilder::calcColorInvariantOutput(const GrBatch* batch) const {
-    fColorProcInfo.calcColorWithBatch(batch, fColorStages.begin(), this->numColorStages());
+    fColorProcInfo.calcColorWithBatch(batch, fColorStages.begin(), this->numColorFragmentStages());
     fColorProcInfoValid = false;
 }
 
 void GrPipelineBuilder::calcCoverageInvariantOutput(const GrBatch* batch) const {
     fCoverageProcInfo.calcCoverageWithBatch(batch, fCoverageStages.begin(),
-                                            this->numCoverageStages());
+                                            this->numCoverageFragmentStages());
     fCoverageProcInfoValid = false;
 }
 
@@ -182,8 +167,8 @@ void GrPipelineBuilder::calcCoverageInvariantOutput(const GrBatch* batch) const 
 void GrPipelineBuilder::calcColorInvariantOutput(GrColor color) const {
     if (!fColorProcInfoValid || color != fColorCache) {
         GrColorComponentFlags flags = kRGBA_GrColorComponentFlags;
-        fColorProcInfo.calcWithInitialValues(fColorStages.begin(), this->numColorStages(), color,
-                                             flags, false);
+        fColorProcInfo.calcWithInitialValues(fColorStages.begin(),this->numColorFragmentStages(),
+                                             color, flags, false);
         fColorProcInfoValid = true;
         fColorCache = color;
     }
@@ -193,7 +178,7 @@ void GrPipelineBuilder::calcCoverageInvariantOutput(GrColor coverage) const {
     if (!fCoverageProcInfoValid || coverage != fCoverageCache) {
         GrColorComponentFlags flags = kRGBA_GrColorComponentFlags;
         fCoverageProcInfo.calcWithInitialValues(fCoverageStages.begin(),
-                                                this->numCoverageStages(), coverage, flags,
+                                                this->numCoverageFragmentStages(), coverage, flags,
                                                 true);
         fCoverageProcInfoValid = true;
         fCoverageCache = coverage;

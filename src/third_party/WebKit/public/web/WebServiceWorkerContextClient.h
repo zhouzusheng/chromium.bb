@@ -31,7 +31,6 @@
 #ifndef WebServiceWorkerContextClient_h
 #define WebServiceWorkerContextClient_h
 
-#include "WebWorkerPermissionClientProxy.h"
 #include "public/platform/WebMessagePortChannel.h"
 #include "public/platform/WebServiceWorkerClientsClaimCallbacks.h"
 #include "public/platform/WebServiceWorkerClientsInfo.h"
@@ -42,8 +41,8 @@
 namespace blink {
 
 struct WebCrossOriginServiceWorkerClient;
+struct WebServiceWorkerClientQueryOptions;
 class WebDataSource;
-class WebServiceWorkerCacheStorage;
 class WebServiceWorkerContextProxy;
 class WebServiceWorkerNetworkProvider;
 class WebServiceWorkerProvider;
@@ -61,9 +60,6 @@ class WebString;
 class WebServiceWorkerContextClient {
 public:
     virtual ~WebServiceWorkerContextClient() { }
-
-    // ServiceWorker specific method.
-    virtual WebServiceWorkerCacheStorage* cacheStorage() { return nullptr; }
 
     // ServiceWorker specific method. Called when script accesses the
     // the |scope| attribute of the ServiceWorkerGlobalScope. Immutable per spec.
@@ -157,7 +153,7 @@ public:
     // should delete the callbacks after calling either onSuccess or onError.
     // WebServiceWorkerClientsInfo and WebServiceWorkerError ownerships are
     // passed to the WebServiceWorkerClientsCallbacks implementation.
-    virtual void getClients(WebServiceWorkerClientsCallbacks*) { BLINK_ASSERT_NOT_REACHED(); }
+    virtual void getClients(const WebServiceWorkerClientQueryOptions&, WebServiceWorkerClientsCallbacks* callbacks) { BLINK_ASSERT_NOT_REACHED(); }
 
     // Ownership of the passed callbacks is transferred to the callee, callee
     // should delete the callbacks after calling either onSuccess or onError.
@@ -173,7 +169,7 @@ public:
 
     // Callee receives ownership of the passed vector.
     // FIXME: Blob refs should be passed to maintain ref counts. crbug.com/351753
-    virtual void postMessageToClient(int clientID, const WebString&, WebMessagePortChannelArray*) { BLINK_ASSERT_NOT_REACHED(); }
+    virtual void postMessageToClient(const WebString& uuid, const WebString&, WebMessagePortChannelArray*) { BLINK_ASSERT_NOT_REACHED(); }
 
     // Callee receives ownership of the passed vector.
     // FIXME: Blob refs should be passed to maintain ref counts. crbug.com/351753
@@ -189,7 +185,7 @@ public:
 
     // Ownership of the passed callbacks is transferred to the callee, callee
     // should delete the callback after calling either onSuccess or onError.
-    virtual void focus(int cliendID, WebServiceWorkerClientCallbacks*) { BLINK_ASSERT_NOT_REACHED(); }
+    virtual void focus(const WebString& uuid, WebServiceWorkerClientCallbacks*) { BLINK_ASSERT_NOT_REACHED(); }
 };
 
 } // namespace blink

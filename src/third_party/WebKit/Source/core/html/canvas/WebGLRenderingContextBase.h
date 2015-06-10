@@ -30,14 +30,13 @@
 #include "bindings/core/v8/ScriptState.h"
 #include "bindings/core/v8/ScriptValue.h"
 #include "bindings/core/v8/ScriptWrappable.h"
-#include "core/dom/ActiveDOMObject.h"
 #include "core/dom/DOMTypedArray.h"
 #include "core/html/canvas/CanvasRenderingContext.h"
 #include "core/html/canvas/WebGLContextAttributes.h"
 #include "core/html/canvas/WebGLExtensionName.h"
 #include "core/html/canvas/WebGLVertexArrayObjectOES.h"
+#include "core/layout/LayoutBoxModelObject.h"
 #include "core/page/Page.h"
-#include "core/rendering/RenderBoxModelObject.h"
 #include "platform/Timer.h"
 #include "platform/graphics/GraphicsTypes3D.h"
 #include "platform/graphics/ImageBuffer.h"
@@ -104,8 +103,8 @@ class WebGLVertexArrayObjectOES;
 class WebGLRenderingContextLostCallback;
 class WebGLRenderingContextErrorMessageCallback;
 
-class WebGLRenderingContextBase: public CanvasRenderingContext, public ActiveDOMObject, public Page::MultisamplingChangedObserver, public ScriptWrappable {
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(WebGLRenderingContextBase);
+class WebGLRenderingContextBase : public CanvasRenderingContext, public Page::MultisamplingChangedObserver, public ScriptWrappable {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN_NESTED(WebGLRenderingContextBase, CanvasRenderingContext);
 public:
     virtual ~WebGLRenderingContextBase();
 
@@ -363,10 +362,6 @@ public:
 
     unsigned maxVertexAttribs() const { return m_maxVertexAttribs; }
 
-    // ActiveDOMObject notifications
-    virtual bool hasPendingActivity() const override;
-    virtual void stop() override;
-
     // GL_CHROMIUM_subscribe_uniform
     PassRefPtrWillBeRawPtr<CHROMIUMValuebuffer> createValuebufferCHROMIUM();
     void deleteValuebufferCHROMIUM(CHROMIUMValuebuffer*);
@@ -390,7 +385,7 @@ public:
         DECLARE_TRACE();
     };
 
-    void setFilterLevel(SkPaint::FilterLevel);
+    void setFilterQuality(SkFilterQuality);
 
 protected:
     friend class WebGLDrawBuffers;
@@ -423,6 +418,7 @@ protected:
     virtual void setIsHidden(bool) override;
     bool paintRenderingResultsToCanvas(SourceDrawingBuffer) override;
     virtual blink::WebLayer* platformLayer() const override;
+    void stop() override;
 
     bool isWebGL2OrHigher() { return version() >= 2; }
 
@@ -882,7 +878,7 @@ protected:
     bool validateBlendFuncFactors(const char* functionName, GLenum src, GLenum dst);
 
     // Helper function to validate a GL capability.
-    bool validateCapability(const char* functionName, GLenum);
+    virtual bool validateCapability(const char* functionName, GLenum);
 
     // Helper function to validate input parameters for uniform functions.
     bool validateUniformParameters(const char* functionName, const WebGLUniformLocation*, DOMFloat32Array*, GLsizei mod);
@@ -894,6 +890,8 @@ protected:
     // Helper function to validate the target for bufferData.
     // Return the current bound buffer to target, or 0 if the target is invalid.
     WebGLBuffer* validateBufferDataTarget(const char* functionName, GLenum target);
+
+    virtual bool validateAndUpdateBufferBindTarget(const char* functionName, GLenum target, WebGLBuffer*);
 
     // Helper function for tex{Sub}Image2D to make sure image is ready and wouldn't taint Origin.
     bool validateHTMLImageElement(const char* functionName, HTMLImageElement*, ExceptionState&);

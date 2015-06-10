@@ -13,7 +13,7 @@
 
 namespace blink {
 
-FloatClipRecorder::FloatClipRecorder(GraphicsContext& context, DisplayItemClient client, PaintPhase paintPhase, const FloatRect& clipRect)
+FloatClipRecorder::FloatClipRecorder(GraphicsContext& context, const DisplayItemClientWrapper& client, PaintPhase paintPhase, const FloatRect& clipRect)
     : m_context(context)
     , m_client(client)
     , m_clipType(DisplayItem::paintPhaseToFloatClipType(paintPhase))
@@ -23,7 +23,7 @@ FloatClipRecorder::FloatClipRecorder(GraphicsContext& context, DisplayItemClient
         m_context.displayItemList()->add(FloatClipDisplayItem::create(m_client, m_clipType, clipRect));
     } else {
         FloatClipDisplayItem clipDisplayItem(m_client, m_clipType, clipRect);
-        clipDisplayItem.replay(&m_context);
+        clipDisplayItem.replay(m_context);
     }
 }
 
@@ -35,7 +35,7 @@ FloatClipRecorder::~FloatClipRecorder()
         m_context.displayItemList()->add(EndFloatClipDisplayItem::create(m_client, endType));
     } else {
         EndFloatClipDisplayItem endClipDisplayItem(m_client, endType);
-        endClipDisplayItem.replay(&m_context);
+        endClipDisplayItem.replay(m_context);
     }
 }
 

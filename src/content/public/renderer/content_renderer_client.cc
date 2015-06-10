@@ -190,10 +190,15 @@ bool ContentRendererClient::ShouldEnableSiteIsolationPolicy() const {
   return true;
 }
 
-blink::WebWorkerPermissionClientProxy*
-ContentRendererClient::CreateWorkerPermissionClientProxy(
+blink::WebWorkerContentSettingsClientProxy*
+ContentRendererClient::CreateWorkerContentSettingsClientProxy(
     RenderFrame* render_frame, blink::WebFrame* frame) {
   return nullptr;
+}
+
+bool ContentRendererClient::IsPluginAllowedToUseCameraDeviceAPI(
+    const GURL& url) {
+  return false;
 }
 
 bool ContentRendererClient::IsPluginAllowedToUseCompositorAPI(const GURL& url) {

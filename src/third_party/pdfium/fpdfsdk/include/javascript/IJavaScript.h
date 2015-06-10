@@ -7,6 +7,13 @@
 #ifndef _IJAVASCRIPT_H_
 #define _IJAVASCRIPT_H_
 
+#include "../../../core/include/fxcrt/fx_basic.h"
+
+class CPDF_Bookmark;
+class CPDF_FormField;
+class CPDFSDK_Annot;
+class CPDFSDK_Document;
+
 class IFXJS_Context
 {
 public:
@@ -74,16 +81,7 @@ public:
 	virtual IFXJS_Context*		GetCurrentContext() = 0;
 
 	virtual void				SetReaderDocument(CPDFSDK_Document* pReaderDoc) = 0;
-	virtual	CPDFSDK_Document*	GetReaderDocument() = 0;	
-
-	virtual void				GetObjectNames(CFX_WideStringArray& array) = 0;
-	virtual void				GetObjectConsts(const CFX_WideString& swObjName, CFX_WideStringArray& array) = 0;
-	virtual void				GetObjectProps(const CFX_WideString& swObjName, CFX_WideStringArray& array) = 0;
-	virtual void				GetObjectMethods(const CFX_WideString& swObjName, CFX_WideStringArray& array) = 0;
-
-	virtual void				Exit() = 0;
-	virtual void				Enter() = 0;
-	virtual FX_BOOL				IsEntered() = 0;
+	virtual	CPDFSDK_Document*	GetReaderDocument() = 0;
 
 protected:
          ~IFXJS_Runtime() { }

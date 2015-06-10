@@ -68,12 +68,7 @@
     '../third_party/skia/src/sfnt/SkOTUtils.cpp',
     '../third_party/skia/src/sfnt/SkOTUtils.h',
 
-    '../third_party/skia/src/utils/debugger/SkDebugCanvas.cpp',
-    '../third_party/skia/src/utils/debugger/SkDebugCanvas.h',
-    '../third_party/skia/src/utils/debugger/SkDrawCommand.cpp',
-    '../third_party/skia/src/utils/debugger/SkDrawCommand.h',
-    '../third_party/skia/src/utils/debugger/SkObjectParser.cpp',
-    '../third_party/skia/src/utils/debugger/SkObjectParser.h',
+    '../third_party/skia/include/core/SkFontStyle.h',
 
     '../third_party/skia/include/images/SkMovie.h',
     '../third_party/skia/include/images/SkPageFlipper.h',
@@ -81,7 +76,6 @@
     '../third_party/skia/include/ports/SkFontConfigInterface.h',
     '../third_party/skia/include/ports/SkFontMgr.h',
     '../third_party/skia/include/ports/SkFontMgr_indirect.h',
-    '../third_party/skia/include/ports/SkFontStyle.h',
     '../third_party/skia/include/ports/SkRemotableFontMgr.h',
     '../third_party/skia/include/ports/SkTypeface_win.h',
   ],
@@ -101,7 +95,6 @@
   '../third_party/skia/include/utils/SkLayer.h',
   '../third_party/skia/include/utils/SkMeshUtils.h',
   '../third_party/skia/include/utils/SkNinePatch.h',
-  '../third_party/skia/include/utils/SkParse.h',
   '../third_party/skia/include/utils/SkParsePaint.h',
   '../third_party/skia/include/utils/SkParsePath.h',
   '../third_party/skia/include/utils/SkRandom.h',
@@ -123,8 +116,6 @@
   '../third_party/skia/src/utils/SkMeshUtils.cpp',
   '../third_party/skia/src/utils/SkNinePatch.cpp',
   '../third_party/skia/src/utils/SkOSFile.cpp',
-  '../third_party/skia/src/utils/SkParse.cpp',
-  '../third_party/skia/src/utils/SkParseColor.cpp',
   '../third_party/skia/src/utils/SkParsePath.cpp',
   '../third_party/skia/src/utils/SkPathUtils.cpp',
   '../third_party/skia/src/utils/SkSHA1.cpp',
@@ -362,9 +353,6 @@
 
   'direct_dependent_settings': {
     'include_dirs': [
-      #temporary until we can hide SkFontHost
-      '../third_party/skia/src/core',
-
       '../third_party/skia/include/core',
       '../third_party/skia/include/effects',
       '../third_party/skia/include/pdf',

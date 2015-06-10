@@ -24,6 +24,7 @@
 #include "config.h"
 #include "core/layout/svg/LayoutSVGContainer.h"
 
+#include "core/layout/LayoutAnalyzer.h"
 #include "core/layout/svg/SVGLayoutSupport.h"
 #include "core/layout/svg/SVGResources.h"
 #include "core/layout/svg/SVGResourcesCache.h"
@@ -47,6 +48,7 @@ LayoutSVGContainer::~LayoutSVGContainer()
 void LayoutSVGContainer::layout()
 {
     ASSERT(needsLayout());
+    LayoutAnalyzer::Scope analyzer(*this);
 
     // Allow LayoutSVGViewportContainer to update its viewport.
     calcViewport();
@@ -100,7 +102,7 @@ bool LayoutSVGContainer::selfWillPaint()
     return resources && resources->filter();
 }
 
-void LayoutSVGContainer::styleDidChange(StyleDifference diff, const LayoutStyle* oldStyle)
+void LayoutSVGContainer::styleDidChange(StyleDifference diff, const ComputedStyle* oldStyle)
 {
     LayoutSVGModelObject::styleDidChange(diff, oldStyle);
 
@@ -160,7 +162,7 @@ void LayoutSVGContainer::updateCachedBoundaries()
     SVGLayoutSupport::intersectPaintInvalidationRectWithResources(this, m_paintInvalidationBoundingBox);
 }
 
-bool LayoutSVGContainer::nodeAtFloatPoint(const HitTestRequest& request, HitTestResult& result, const FloatPoint& pointInParent, HitTestAction hitTestAction)
+bool LayoutSVGContainer::nodeAtFloatPoint(HitTestResult& result, const FloatPoint& pointInParent, HitTestAction hitTestAction)
 {
     // Give LayoutSVGViewportContainer a chance to apply its viewport clip
     if (!pointIsInsideViewportClip(pointInParent))
@@ -171,7 +173,7 @@ bool LayoutSVGContainer::nodeAtFloatPoint(const HitTestRequest& request, HitTest
         return false;
 
     for (LayoutObject* child = lastChild(); child; child = child->previousSibling()) {
-        if (child->nodeAtFloatPoint(request, result, localPoint, hitTestAction)) {
+        if (child->nodeAtFloatPoint(result, localPoint, hitTestAction)) {
             updateHitTestResult(result, roundedLayoutPoint(localPoint));
             return true;
         }

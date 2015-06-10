@@ -31,7 +31,7 @@
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/layout/LayoutObject.h"
 #include "core/layout/LayoutQuote.h"
-#include "core/layout/style/ContentData.h"
+#include "core/style/ContentData.h"
 
 namespace blink {
 
@@ -91,9 +91,9 @@ PseudoElement::PseudoElement(Element* parent, PseudoId pseudoId)
     setHasCustomStyleCallbacks();
 }
 
-PassRefPtr<LayoutStyle> PseudoElement::customStyleForRenderer()
+PassRefPtr<ComputedStyle> PseudoElement::customStyleForLayoutObject()
 {
-    return parentOrShadowHostElement()->renderer()->getCachedPseudoStyle(m_pseudoId);
+    return parentOrShadowHostElement()->layoutObject()->getCachedPseudoStyle(m_pseudoId);
 }
 
 void PseudoElement::dispose()
@@ -114,21 +114,21 @@ void PseudoElement::dispose()
 
 void PseudoElement::attach(const AttachContext& context)
 {
-    ASSERT(!renderer());
+    ASSERT(!layoutObject());
 
     Element::attach(context);
 
-    LayoutObject* renderer = this->renderer();
+    LayoutObject* renderer = this->layoutObject();
     if (!renderer)
         return;
 
-    LayoutStyle& style = renderer->mutableStyleRef();
+    ComputedStyle& style = renderer->mutableStyleRef();
     if (style.styleType() != BEFORE && style.styleType() != AFTER)
         return;
     ASSERT(style.contentData());
 
     for (const ContentData* content = style.contentData(); content; content = content->next()) {
-        LayoutObject* child = content->createRenderer(document(), style);
+        LayoutObject* child = content->createLayoutObject(document(), style);
         if (renderer->isChildAllowed(child, style)) {
             renderer->addChild(child);
             if (child->isQuote())
@@ -138,19 +138,19 @@ void PseudoElement::attach(const AttachContext& context)
     }
 }
 
-bool PseudoElement::rendererIsNeeded(const LayoutStyle& style)
+bool PseudoElement::layoutObjectIsNeeded(const ComputedStyle& style)
 {
     return pseudoElementRendererIsNeeded(&style);
 }
 
 void PseudoElement::didRecalcStyle(StyleRecalcChange)
 {
-    if (!renderer())
+    if (!layoutObject())
         return;
 
     // The renderers inside pseudo elements are anonymous so they don't get notified of recalcStyle and must have
     // the style propagated downward manually similar to LayoutObject::propagateStyleToAnonymousChildren.
-    LayoutObject* renderer = this->renderer();
+    LayoutObject* renderer = this->layoutObject();
     for (LayoutObject* child = renderer->nextInPreOrder(renderer); child; child = child->nextInPreOrder(renderer)) {
         // We only manage the style for the generated content items.
         if (!child->isText() && !child->isQuote() && !child->isImage())

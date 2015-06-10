@@ -87,21 +87,17 @@ public:
 
     virtual bool canProcessDrag() const { return false; }
 
+    // TODO(schenney): Make this pure virtual when chromium changes land
+    virtual void layoutPluginIfNeeded() { }
     virtual void paint(WebCanvas*, const WebRect&) = 0;
 
     // Coordinates are relative to the containing window.
     virtual void updateGeometry(
-        const WebRect& frameRect, const WebRect& clipRect,
-        const WebVector<WebRect>& cutOutsRects, bool isVisible) = 0;
+        const WebRect& windowRect, const WebRect& clipRect,
+        const WebRect& unobscuredRect, const WebVector<WebRect>& cutOutsRects,
+        bool isVisible) = 0;
 
-    // FIXME: Remove this once the Blink embedder has been updated to use
-    // the new version of updateFocus.
-    virtual void updateFocus(bool focused) { }
-
-    virtual void updateFocus(bool focused, WebFocusType)
-    {
-        updateFocus(focused);
-    }
+    virtual void updateFocus(bool focused, WebFocusType) = 0;
 
     virtual void updateVisibility(bool) = 0;
 

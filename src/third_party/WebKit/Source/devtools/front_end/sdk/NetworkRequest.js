@@ -217,12 +217,14 @@ WebInspector.NetworkRequest.prototype = {
     },
 
     /**
-     * @param {number} x
+     * @param {number} monotonicTime
+     * @param {number} wallTime
      */
-    setIssueTime: function(x)
+    setIssueTime: function(monotonicTime, wallTime)
     {
-        this._issueTime = x;
-        this._startTime = x;
+        this._issueTime = monotonicTime;
+        this._wallIssueTime = wallTime;
+        this._startTime = monotonicTime;
     },
 
     /**
@@ -231,6 +233,15 @@ WebInspector.NetworkRequest.prototype = {
     issueTime: function()
     {
         return this._issueTime;
+    },
+
+    /**
+     * @param {number} monotonicTime
+     * @return {number}
+     */
+    pseudoWallTime: function(monotonicTime)
+    {
+        return this._wallIssueTime ? this._wallIssueTime - this._issueTime + monotonicTime : monotonicTime;
     },
 
     /**
@@ -923,9 +934,12 @@ WebInspector.NetworkRequest.prototype = {
     asDataURL: function()
     {
         var content = this._content;
-        if (!this._contentEncoded)
-            content = window.btoa(content);
-        return WebInspector.Resource.contentAsDataURL(content, this.mimeType, true);
+        var charset = null;
+        if (!this._contentEncoded) {
+            content = content.toBase64();
+            charset = "utf-8";
+        }
+        return WebInspector.Resource.contentAsDataURL(content, this.mimeType, true, charset);
     },
 
     _innerRequestContent: function()
@@ -1013,7 +1027,7 @@ WebInspector.NetworkRequest.prototype = {
      */
     addFrameError: function(errorMessage, time)
     {
-        this._addFrame({ type: WebInspector.NetworkRequest.WebSocketFrameType.Error, text: errorMessage, time: time, opCode: -1, mask: false });
+        this._addFrame({ type: WebInspector.NetworkRequest.WebSocketFrameType.Error, text: errorMessage, time: this.pseudoWallTime(time), opCode: -1, mask: false });
     },
 
     /**
@@ -1024,7 +1038,7 @@ WebInspector.NetworkRequest.prototype = {
     addFrame: function(response, time, sent)
     {
         var type = sent ? WebInspector.NetworkRequest.WebSocketFrameType.Send : WebInspector.NetworkRequest.WebSocketFrameType.Receive;
-        this._addFrame({ type: type, text: response.payloadData, time: time, opCode: response.opcode, mask: response.mask });
+        this._addFrame({ type: type, text: response.payloadData, time: this.pseudoWallTime(time), opCode: response.opcode, mask: response.mask });
     },
 
     /**
@@ -1052,7 +1066,7 @@ WebInspector.NetworkRequest.prototype = {
      */
     addEventSourceMessage: function(time, eventName, eventId, data)
     {
-        var message = {time: time, eventName: eventName, eventId: eventId, data: data};
+        var message = {time: this.pseudoWallTime(time), eventName: eventName, eventId: eventId, data: data};
         this._eventSourceMessages.push(message);
         this.dispatchEventToListeners(WebInspector.NetworkRequest.Events.EventSourceMessageAdded, message);
     },

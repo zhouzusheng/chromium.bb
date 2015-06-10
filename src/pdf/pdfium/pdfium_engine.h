@@ -93,6 +93,8 @@ class PDFiumEngine : public PDFEngine,
   virtual std::string GetPageAsJSON(int index);
   virtual bool GetPrintScaling();
   virtual int GetCopiesToPrint();
+  virtual int GetDuplexType();
+  virtual bool GetPageSizeAndUniformity(pp::Size* size);
   virtual void AppendBlankPages(int num_pages);
   virtual void AppendPage(PDFEngine* engine, int index);
   virtual pp::Point GetScrollPosition();
@@ -310,10 +312,12 @@ class PDFiumEngine : public PDFEngine,
   PDFiumPage::Area GetCharIndex(const pp::MouseInputEvent& event,
                                 int* page_index,
                                 int* char_index,
+                                int* form_type,
                                 PDFiumPage::LinkTarget* target);
   PDFiumPage::Area GetCharIndex(const pp::Point& point,
                                 int* page_index,
                                 int* char_index,
+                                int* form_type,
                                 PDFiumPage::LinkTarget* target);
 
   void OnSingleClick(int page_index, int char_index);

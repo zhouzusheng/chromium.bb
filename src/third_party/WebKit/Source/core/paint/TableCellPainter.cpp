@@ -9,11 +9,11 @@
 #include "core/layout/PaintInfo.h"
 #include "core/paint/BlockPainter.h"
 #include "core/paint/BoxPainter.h"
-#include "core/paint/RenderDrawingRecorder.h"
+#include "core/paint/LayoutObjectDrawingRecorder.h"
 
 namespace blink {
 
-inline CollapsedBorderValue TableCellPainter::cachedCollapsedLeftBorder(const LayoutStyle& styleForCellFlow) const
+inline CollapsedBorderValue TableCellPainter::cachedCollapsedLeftBorder(const ComputedStyle& styleForCellFlow) const
 {
     if (styleForCellFlow.isHorizontalWritingMode()) {
         return styleForCellFlow.isLeftToRightDirection() ?  m_layoutTableCell.section()->cachedCollapsedBorder(&m_layoutTableCell, CBSStart)
@@ -23,7 +23,7 @@ inline CollapsedBorderValue TableCellPainter::cachedCollapsedLeftBorder(const La
         : m_layoutTableCell.section()->cachedCollapsedBorder(&m_layoutTableCell, CBSBefore);
 }
 
-inline CollapsedBorderValue TableCellPainter::cachedCollapsedRightBorder(const LayoutStyle& styleForCellFlow) const
+inline CollapsedBorderValue TableCellPainter::cachedCollapsedRightBorder(const ComputedStyle& styleForCellFlow) const
 {
     if (styleForCellFlow.isHorizontalWritingMode()) {
         return styleForCellFlow.isLeftToRightDirection() ?  m_layoutTableCell.section()->cachedCollapsedBorder(&m_layoutTableCell, CBSEnd)
@@ -33,14 +33,14 @@ inline CollapsedBorderValue TableCellPainter::cachedCollapsedRightBorder(const L
         : m_layoutTableCell.section()->cachedCollapsedBorder(&m_layoutTableCell, CBSAfter);
 }
 
-inline CollapsedBorderValue TableCellPainter::cachedCollapsedTopBorder(const LayoutStyle& styleForCellFlow) const
+inline CollapsedBorderValue TableCellPainter::cachedCollapsedTopBorder(const ComputedStyle& styleForCellFlow) const
 {
     if (styleForCellFlow.isHorizontalWritingMode())
         return styleForCellFlow.isFlippedBlocksWritingMode() ?  m_layoutTableCell.section()->cachedCollapsedBorder(&m_layoutTableCell, CBSAfter) : m_layoutTableCell.section()->cachedCollapsedBorder(&m_layoutTableCell, CBSBefore);
     return styleForCellFlow.isLeftToRightDirection() ?  m_layoutTableCell.section()->cachedCollapsedBorder(&m_layoutTableCell, CBSStart) : m_layoutTableCell.section()->cachedCollapsedBorder(&m_layoutTableCell, CBSEnd);
 }
 
-inline CollapsedBorderValue TableCellPainter::cachedCollapsedBottomBorder(const LayoutStyle& styleForCellFlow) const
+inline CollapsedBorderValue TableCellPainter::cachedCollapsedBottomBorder(const ComputedStyle& styleForCellFlow) const
 {
     if (styleForCellFlow.isHorizontalWritingMode()) {
         return styleForCellFlow.isFlippedBlocksWritingMode() ?  m_layoutTableCell.section()->cachedCollapsedBorder(&m_layoutTableCell, CBSBefore)
@@ -122,20 +122,24 @@ void TableCellPainter::paintCollapsedBorders(const PaintInfo& paintInfo, const L
         return;
 
     LayoutRect paintRect = paintBounds(paintOffset, AddOffsetFromParent);
-    if (paintRect.y() - m_layoutTableCell.table()->outerBorderTop() >= paintInfo.rect.maxY())
+
+    LayoutRect drawingCullRect(paintRect);
+    drawingCullRect.expandEdges(m_layoutTableCell.table()->outerBorderTop(), m_layoutTableCell.table()->outerBorderRight(),
+        m_layoutTableCell.table()->outerBorderBottom(), m_layoutTableCell.table()->outerBorderLeft());
+    if (drawingCullRect.y() >= paintInfo.rect.maxY())
         return;
 
-    if (paintRect.maxY() + m_layoutTableCell.table()->outerBorderBottom() <= paintInfo.rect.y())
+    if (drawingCullRect.maxY() <= paintInfo.rect.y())
         return;
 
     if (!m_layoutTableCell.table()->currentBorderValue())
         return;
 
-    RenderDrawingRecorder recorder(paintInfo.context, m_layoutTableCell, paintInfo.phase, paintRect);
+    LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutTableCell, paintInfo.phase, drawingCullRect);
     if (recorder.canUseCachedDrawing())
         return;
 
-    const LayoutStyle& styleForCellFlow = m_layoutTableCell.styleForCellFlow();
+    const ComputedStyle& styleForCellFlow = m_layoutTableCell.styleForCellFlow();
     CollapsedBorderValue leftVal = cachedCollapsedLeftBorder(styleForCellFlow);
     CollapsedBorderValue rightVal = cachedCollapsedRightBorder(styleForCellFlow);
     CollapsedBorderValue topVal = cachedCollapsedTopBorder(styleForCellFlow);
@@ -225,7 +229,7 @@ void TableCellPainter::paintBoxDecorationBackground(const PaintInfo& paintInfo, 
         return;
 
     LayoutRect paintRect = paintBounds(paintOffset, DoNotAddOffsetFromParent);
-    RenderDrawingRecorder recorder(paintInfo.context, m_layoutTableCell, DisplayItem::BoxDecorationBackground, pixelSnappedIntRect(paintRect));
+    LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutTableCell, DisplayItem::BoxDecorationBackground, pixelSnappedIntRect(paintRect));
     if (recorder.canUseCachedDrawing())
         return;
 

@@ -405,7 +405,7 @@ void LogResourceRequestTimeOnUI(
     int render_process_id,
     int render_frame_id,
     const GURL& url) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   RenderFrameHostImpl* host =
       RenderFrameHostImpl::FromID(render_process_id, render_frame_id);
   if (host != NULL) {
@@ -436,7 +436,7 @@ ResourceDispatcherHostImpl::ResourceDispatcherHostImpl()
       filter_(NULL),
       delegate_(NULL),
       allow_cross_origin_auth_prompt_(false) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(!g_resource_dispatcher_host);
   g_resource_dispatcher_host = this;
 
@@ -498,7 +498,7 @@ void ResourceDispatcherHostImpl::ResumeResponseDeferredAtStart(
 
 void ResourceDispatcherHostImpl::CancelRequestsForContext(
     ResourceContext* context) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(context);
 
   CHECK(ContainsKey(active_resource_contexts_, context));
@@ -692,7 +692,7 @@ void ResourceDispatcherHostImpl::ClearLoginDelegateForRequest(
 }
 
 void ResourceDispatcherHostImpl::Shutdown() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   BrowserThread::PostTask(BrowserThread::IO,
                           FROM_HERE,
                           base::Bind(&ResourceDispatcherHostImpl::OnShutdown,
@@ -903,7 +903,7 @@ void ResourceDispatcherHostImpl::OnInit() {
 }
 
 void ResourceDispatcherHostImpl::OnShutdown() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   is_shutdown_ = true;
   pending_loaders_.clear();
@@ -957,7 +957,7 @@ bool ResourceDispatcherHostImpl::OnMessageReceived(
     GlobalRequestID id(filter_->child_id(), request_id);
     DelegateMap::iterator it = delegate_map_.find(id);
     if (it != delegate_map_.end()) {
-      ObserverList<ResourceMessageDelegate>::Iterator del_it(*it->second);
+      ObserverList<ResourceMessageDelegate>::Iterator del_it(it->second);
       ResourceMessageDelegate* delegate;
       while (!handled && (delegate = del_it.GetNext()) != NULL) {
         handled = delegate->OnMessageReceived(message);
@@ -977,10 +977,6 @@ void ResourceDispatcherHostImpl::OnRequestResource(
     int routing_id,
     int request_id,
     const ResourceHostMsg_Request& request_data) {
-  // TODO(pkasting): Remove ScopedTracker below once crbug.com/456331 is fixed.
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "456331 ResourceDispatcherHostImpl::OnRequestResource"));
   // When logging time-to-network only care about main frame and non-transfer
   // navigations.
   if (request_data.resource_type == RESOURCE_TYPE_MAIN_FRAME &&
@@ -1064,7 +1060,7 @@ void ResourceDispatcherHostImpl::UpdateRequestForTransfer(
     DelegateMap::iterator it = delegate_map_.find(old_request_id);
     if (it != delegate_map_.end()) {
       // Tell each delegate that the request ID has changed.
-      ObserverList<ResourceMessageDelegate>::Iterator del_it(*it->second);
+      ObserverList<ResourceMessageDelegate>::Iterator del_it(it->second);
       ResourceMessageDelegate* delegate;
       while ((delegate = del_it.GetNext()) != NULL) {
         delegate->set_request_id(new_request_id);
@@ -1096,10 +1092,6 @@ void ResourceDispatcherHostImpl::BeginRequest(
     const ResourceHostMsg_Request& request_data,
     IPC::Message* sync_result,  // only valid for sync
     int route_id) {
-  // TODO(pkasting): Remove ScopedTracker below once crbug.com/456331 is fixed.
-  tracked_objects::ScopedTracker tracking_profile1(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "456331 ResourceDispatcherHostImpl::BeginRequest1"));
   int process_type = filter_->process_type();
   int child_id = filter_->child_id();
 
@@ -1119,36 +1111,25 @@ void ResourceDispatcherHostImpl::BeginRequest(
 
   // If the request that's coming in is being transferred from another process,
   // we want to reuse and resume the old loader rather than start a new one.
-  {
-    // TODO(pkasting): Remove ScopedTracker below once crbug.com/456331 is
-    // fixed.
-    tracked_objects::ScopedTracker tracking_profile2(
-        FROM_HERE_WITH_EXPLICIT_FUNCTION(
-            "456331 ResourceDispatcherHostImpl::BeginRequest2"));
-    LoaderMap::iterator it = pending_loaders_.find(
-        GlobalRequestID(request_data.transferred_request_child_id,
-                        request_data.transferred_request_request_id));
-    if (it != pending_loaders_.end()) {
-      // If the request is transferring to a new process, we can update our
-      // state and let it resume with its existing ResourceHandlers.
-      if (it->second->is_transferring()) {
-        linked_ptr<ResourceLoader> deferred_loader = it->second;
-        UpdateRequestForTransfer(child_id, route_id, request_id,
-                                 request_data, deferred_loader);
+  LoaderMap::iterator it = pending_loaders_.find(
+      GlobalRequestID(request_data.transferred_request_child_id,
+                      request_data.transferred_request_request_id));
+  if (it != pending_loaders_.end()) {
+    // If the request is transferring to a new process, we can update our
+    // state and let it resume with its existing ResourceHandlers.
+    if (it->second->is_transferring()) {
+      linked_ptr<ResourceLoader> deferred_loader = it->second;
+      UpdateRequestForTransfer(child_id, route_id, request_id,
+                                request_data, deferred_loader);
 
-        deferred_loader->CompleteTransfer();
-      } else {
-        RecordAction(base::UserMetricsAction("BadMessageTerminate_RDH"));
-        filter_->BadMessageReceived();
-      }
-      return;
+      deferred_loader->CompleteTransfer();
+    } else {
+      RecordAction(base::UserMetricsAction("BadMessageTerminate_RDH"));
+      filter_->BadMessageReceived();
     }
+    return;
   }
 
-  // TODO(pkasting): Remove ScopedTracker below once crbug.com/456331 is fixed.
-  tracked_objects::ScopedTracker tracking_profile3(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "456331 ResourceDispatcherHostImpl::BeginRequest3"));
   ResourceContext* resource_context = NULL;
   net::URLRequestContext* request_context = NULL;
   filter_->GetContexts(request_data, &resource_context, &request_context);
@@ -1171,17 +1152,10 @@ void ResourceDispatcherHostImpl::BeginRequest(
     return;
   }
 
-  // TODO(pkasting): Remove ScopedTracker below once crbug.com/456331 is fixed.
-  tracked_objects::ScopedTracker tracking_profile4(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "456331 ResourceDispatcherHostImpl::BeginRequest4"));
   // Construct the request.
-  net::CookieStore* cookie_store =
-      GetContentClient()->browser()->OverrideCookieStoreForRenderProcess(
-          child_id);
   scoped_ptr<net::URLRequest> new_request;
   new_request = request_context->CreateRequest(
-      request_data.url, request_data.priority, NULL, cookie_store);
+      request_data.url, request_data.priority, NULL);
 
   new_request->set_method(request_data.method);
   new_request->set_first_party_for_cookies(
@@ -1201,10 +1175,6 @@ void ResourceDispatcherHostImpl::BeginRequest(
   headers.AddHeadersFromString(request_data.headers);
   new_request->SetExtraRequestHeaders(headers);
 
-  // TODO(pkasting): Remove ScopedTracker below once crbug.com/456331 is fixed.
-  tracked_objects::ScopedTracker tracking_profile5(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "456331 ResourceDispatcherHostImpl::BeginRequest5"));
   storage::BlobStorageContext* blob_context =
       GetBlobStorageContext(filter_->blob_storage_context());
   // Resolve elements from request_body and prepare upload data.
@@ -1228,10 +1198,6 @@ void ResourceDispatcherHostImpl::BeginRequest(
             .get()));
   }
 
-  // TODO(pkasting): Remove ScopedTracker below once crbug.com/456331 is fixed.
-  tracked_objects::ScopedTracker tracking_profile6(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "456331 ResourceDispatcherHostImpl::BeginRequest6"));
   bool allow_download = request_data.allow_download &&
       IsResourceTypeFrame(request_data.resource_type);
   bool do_not_prompt_for_login = request_data.do_not_prompt_for_login;
@@ -1307,10 +1273,6 @@ void ResourceDispatcherHostImpl::BeginRequest(
             new_request->url()));
   }
 
-  // TODO(pkasting): Remove ScopedTracker below once crbug.com/456331 is fixed.
-  tracked_objects::ScopedTracker tracking_profile7(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "456331 ResourceDispatcherHostImpl::BeginRequest7"));
   // Initialize the service worker handler for the request. We don't use
   // ServiceWorker for synchronous loads to avoid renderer deadlocks.
   ServiceWorkerRequestHandler::InitializeHandler(
@@ -1351,6 +1313,10 @@ scoped_ptr<ResourceHandler> ResourceDispatcherHostImpl::CreateResourceHandler(
     int process_type,
     int child_id,
     ResourceContext* resource_context) {
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/456331 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "456331 ResourceDispatcherHostImpl::CreateResourceHandler"));
   // Construct the IPC resource handler.
   scoped_ptr<ResourceHandler> handler;
   if (sync_result) {
@@ -1593,6 +1559,10 @@ void ResourceDispatcherHostImpl::OnAudioRenderHostStreamStateChanged(
     int child_id,
     int route_id,
     bool is_playing) {
+  // The ResourceDispatcherHost may have already been shut down.
+  // See http://crbug.com/455098
+  if (!scheduler_)
+    return;
   scheduler_->OnAudibilityChanged(child_id, route_id, is_playing);
 }
 
@@ -1625,13 +1595,8 @@ void ResourceDispatcherHostImpl::BeginSaveFile(
     return;
   }
 
-  net::CookieStore* cookie_store =
-      GetContentClient()->browser()->OverrideCookieStoreForRenderProcess(
-          child_id);
   scoped_ptr<net::URLRequest> request(
-      request_context->CreateRequest(url, net::DEFAULT_PRIORITY, NULL,
-                                     cookie_store));
-
+      request_context->CreateRequest(url, net::DEFAULT_PRIORITY, NULL));
   request->set_method("GET");
   SetReferrerForRequest(request.get(), referrer);
 
@@ -1934,12 +1899,9 @@ void ResourceDispatcherHostImpl::BeginNavigationRequest(
   // requests that have the ignore limits flag set.
   DCHECK(!(load_flags & net::LOAD_IGNORE_LIMITS));
 
-  // TODO(davidben): OverrideCookieStoreForRenderProcess handling for
-  // prerender. There may not be a renderer process yet, so we need to use the
-  // ResourceContext or something.
   scoped_ptr<net::URLRequest> new_request;
   new_request = request_context->CreateRequest(
-      info.common_params.url, net::HIGHEST, nullptr, nullptr);
+      info.common_params.url, net::HIGHEST, nullptr);
 
   new_request->set_method(info.begin_params.method);
   new_request->set_first_party_for_cookies(
@@ -2064,10 +2026,6 @@ int ResourceDispatcherHostImpl::CalculateApproximateMemoryCost(
 void ResourceDispatcherHostImpl::BeginRequestInternal(
     scoped_ptr<net::URLRequest> request,
     scoped_ptr<ResourceHandler> handler) {
-  // TODO(pkasting): Remove ScopedTracker below once crbug.com/456331 is fixed.
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "456331 ResourceDispatcherHostImpl::BeginRequestInternal"));
   DCHECK(!request->is_pending());
   ResourceRequestInfoImpl* info =
       ResourceRequestInfoImpl::ForRequest(request.get());
@@ -2120,6 +2078,10 @@ void ResourceDispatcherHostImpl::BeginRequestInternal(
 void ResourceDispatcherHostImpl::StartLoading(
     ResourceRequestInfoImpl* info,
     const linked_ptr<ResourceLoader>& loader) {
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/456331 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "456331 ResourceDispatcherHostImpl::StartLoading"));
   pending_loaders_[info->GetGlobalRequestID()] = loader;
 
   loader->StartRequest();
@@ -2161,7 +2123,12 @@ bool ResourceDispatcherHostImpl::LoadInfoIsMoreInteresting(const LoadInfo& a,
 // static
 void ResourceDispatcherHostImpl::UpdateLoadInfoOnUIThread(
     scoped_ptr<LoadInfoMap> info_map) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  // TODO(erikchen): Remove ScopedTracker below once http://crbug.com/466285
+  // is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "466285 ResourceDispatcherHostImpl::UpdateLoadInfoOnUIThread"));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   for (const auto& load_info : *info_map) {
     RenderViewHostImpl* view = RenderViewHostImpl::FromID(
         load_info.first.child_id, load_info.first.route_id);
@@ -2187,6 +2154,7 @@ ResourceDispatcherHostImpl::GetLoadInfoForAllRoutes() {
 
     net::URLRequest* request = loader.second->request();
     net::UploadProgress upload_progress = request->GetUploadProgress();
+
     LoadInfo load_info;
     load_info.url = request->url();
     load_info.load_state = request->GetLoadState();
@@ -2195,6 +2163,7 @@ ResourceDispatcherHostImpl::GetLoadInfoForAllRoutes() {
 
     GlobalRoutingID id(loader.second->GetRequestInfo()->GetGlobalRoutingID());
     LoadInfoMap::iterator existing = info_map->find(id);
+
     if (existing == info_map->end() ||
         LoadInfoIsMoreInteresting(load_info, existing->second)) {
       (*info_map)[id] = load_info;
@@ -2208,12 +2177,16 @@ void ResourceDispatcherHostImpl::UpdateLoadInfo() {
   // fixed.
   tracked_objects::ScopedTracker tracking_profile(
       FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "455952 ResourceDispatcherHostImpl::UpdateLoadStates"));
+          "455952 ResourceDispatcherHostImpl::UpdateLoadInfo"));
 
   scoped_ptr<LoadInfoMap> info_map(GetLoadInfoForAllRoutes());
 
   if (info_map->empty())
     return;
+
+  tracked_objects::ScopedTracker tracking_profile2(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "455952 ResourceDispatcherHostImpl::UpdateLoadInfo2"));
 
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
@@ -2223,7 +2196,7 @@ void ResourceDispatcherHostImpl::UpdateLoadInfo() {
 
 void ResourceDispatcherHostImpl::BlockRequestsForRoute(int child_id,
                                                        int route_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   GlobalRoutingID key(child_id, route_id);
   DCHECK(blocked_loaders_map_.find(key) == blocked_loaders_map_.end()) <<
       "BlockRequestsForRoute called  multiple time for the same RVH";
@@ -2301,7 +2274,7 @@ bool ResourceDispatcherHostImpl::IsTransferredNavigation(
 
 ResourceLoader* ResourceDispatcherHostImpl::GetLoader(
     const GlobalRequestID& id) const {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   LoaderMap::const_iterator i = pending_loaders_.find(id);
   if (i == pending_loaders_.end())

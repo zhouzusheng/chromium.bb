@@ -49,6 +49,8 @@ public:
 
     HTMLMediaElement* mediaElement() const;
 
+    virtual const char* name() const override { return "LayoutMedia"; }
+
 protected:
     virtual void layout() override;
 
@@ -58,15 +60,14 @@ private:
     virtual LayoutObjectChildList* virtualChildren() override final { return children(); }
     virtual const LayoutObjectChildList* virtualChildren() const override final { return children(); }
 
-    virtual LayerType layerTypeRequired() const override { return NormalLayer; }
+    virtual DeprecatedPaintLayerType layerTypeRequired() const override { return NormalDeprecatedPaintLayer; }
 
     // FIXME: LayoutMedia::layout makes assumptions about what children are allowed
     // so we can't support generated content.
     virtual bool canHaveGeneratedChildren() const override final { return false; }
     virtual bool canHaveChildren() const override final { return true; }
-    virtual bool isChildAllowed(LayoutObject*, const LayoutStyle&) const override final;
+    virtual bool isChildAllowed(LayoutObject*, const ComputedStyle&) const override final;
 
-    virtual const char* renderName() const override { return "LayoutMedia"; }
     virtual bool isImage() const override final { return false; }
     virtual void paintReplaced(const PaintInfo&, const LayoutPoint&) override;
 

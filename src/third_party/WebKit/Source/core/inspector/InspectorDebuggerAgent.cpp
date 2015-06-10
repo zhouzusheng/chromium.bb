@@ -42,7 +42,6 @@
 #include "core/inspector/ContentSearchUtils.h"
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InjectedScriptManager.h"
-#include "core/inspector/InspectorPageAgent.h"
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/inspector/JavaScriptCallFrame.h"
@@ -87,7 +86,6 @@ static const char condition[] = "condition";
 static const char skipStackPattern[] = "skipStackPattern";
 static const char skipContentScripts[] = "skipContentScripts";
 static const char skipAllPauses[] = "skipAllPauses";
-static const char skipAllPausesExpiresOnReload[] = "skipAllPausesExpiresOnReload";
 
 };
 
@@ -139,9 +137,8 @@ static PassRefPtrWillBeRawPtr<ScriptCallStack> toScriptCallStack(const ScriptVal
 }
 
 InspectorDebuggerAgent::InspectorDebuggerAgent(InjectedScriptManager* injectedScriptManager)
-    : InspectorBaseAgent<InspectorDebuggerAgent>("Debugger")
+    : InspectorBaseAgent<InspectorDebuggerAgent, InspectorFrontend::Debugger>("Debugger")
     , m_injectedScriptManager(injectedScriptManager)
-    , m_frontend(0)
     , m_pausedScriptState(nullptr)
     , m_breakReason(InspectorFrontend::Debugger::Reason::Other)
     , m_scheduledDebuggerStep(NoStep)
@@ -149,7 +146,7 @@ InspectorDebuggerAgent::InspectorDebuggerAgent(InjectedScriptManager* injectedSc
     , m_javaScriptPauseScheduled(false)
     , m_steppingFromFramework(false)
     , m_pausingOnNativeEvent(false)
-    , m_inAsyncOperationForStepInto(false)
+    , m_pausingOnAsyncOperation(false)
     , m_listener(nullptr)
     , m_skippedStepFrameCount(0)
     , m_recursionLevelForStepOut(0)
@@ -163,7 +160,7 @@ InspectorDebuggerAgent::InspectorDebuggerAgent(InjectedScriptManager* injectedSc
     , m_nestedAsyncCallCount(0)
     , m_currentAsyncOperationId(unknownAsyncOperationId)
     , m_pendingTraceAsyncOperationCompleted(false)
-    , m_performingAsyncStepIn(false)
+    , m_startingStepIntoAsync(false)
 {
     m_promiseTracker = PromiseTracker::create(this);
     m_v8AsyncCallTracker = V8AsyncCallTracker::create(this);
@@ -205,8 +202,6 @@ void InspectorDebuggerAgent::disable()
     m_state->setBoolean(DebuggerAgentState::promiseTrackerEnabled, false);
     m_instrumentingAgents->setInspectorDebuggerAgent(0);
 
-    scriptDebugServer().clearBreakpoints();
-    scriptDebugServer().clearCompiledScripts();
     stopListeningScriptDebugServer();
     clear();
 
@@ -229,7 +224,7 @@ void InspectorDebuggerAgent::enable(ErrorString*)
     enable();
     m_state->setBoolean(DebuggerAgentState::debuggerEnabled, true);
 
-    ASSERT(m_frontend);
+    ASSERT(frontend());
 }
 
 void InspectorDebuggerAgent::disable(ErrorString*)
@@ -273,7 +268,7 @@ void InspectorDebuggerAgent::internalSetAsyncCallStackDepth(int depth)
 void InspectorDebuggerAgent::restore()
 {
     if (enabled()) {
-        m_frontend->globalObjectCleared();
+        frontend()->globalObjectCleared();
         enable();
         long pauseState = m_state->getLong(DebuggerAgentState::pauseOnExceptionsState);
         String error;
@@ -282,33 +277,9 @@ void InspectorDebuggerAgent::restore()
         increaseCachedSkipStackGeneration();
         m_skipContentScripts = m_state->getBoolean(DebuggerAgentState::skipContentScripts);
         m_skipAllPauses = m_state->getBoolean(DebuggerAgentState::skipAllPauses);
-        if (m_skipAllPauses && m_state->getBoolean(DebuggerAgentState::skipAllPausesExpiresOnReload)) {
-            m_skipAllPauses = false;
-            m_state->setBoolean(DebuggerAgentState::skipAllPauses, false);
-        }
         internalSetAsyncCallStackDepth(m_state->getLong(DebuggerAgentState::asyncCallStackDepth));
         promiseTracker().setEnabled(m_state->getBoolean(DebuggerAgentState::promiseTrackerEnabled), m_state->getBoolean(DebuggerAgentState::promiseTrackerCaptureStacks));
     }
-}
-
-void InspectorDebuggerAgent::setFrontend(InspectorFrontend* frontend)
-{
-    m_frontend = frontend->debugger();
-}
-
-void InspectorDebuggerAgent::clearFrontend()
-{
-    m_frontend = nullptr;
-
-    if (!enabled())
-        return;
-
-    disable();
-
-    // FIXME: due to m_state->mute() hack in InspectorController, debuggerEnabled is actually set to false only
-    // in InspectorState, but not in cookie. That's why after navigation debuggerEnabled will be true,
-    // but after front-end re-open it will still be false.
-    m_state->setBoolean(DebuggerAgentState::debuggerEnabled, false);
 }
 
 void InspectorDebuggerAgent::setBreakpointsActive(ErrorString*, bool active)
@@ -316,19 +287,10 @@ void InspectorDebuggerAgent::setBreakpointsActive(ErrorString*, bool active)
     scriptDebugServer().setBreakpointsActivated(active);
 }
 
-void InspectorDebuggerAgent::setSkipAllPauses(ErrorString*, bool skipped, const bool* untilReload)
+void InspectorDebuggerAgent::setSkipAllPauses(ErrorString*, bool skipped)
 {
     m_skipAllPauses = skipped;
     m_state->setBoolean(DebuggerAgentState::skipAllPauses, m_skipAllPauses);
-    m_state->setBoolean(DebuggerAgentState::skipAllPausesExpiresOnReload, asBool(untilReload));
-}
-
-void InspectorDebuggerAgent::pageDidCommitLoad()
-{
-    if (m_state->getBoolean(DebuggerAgentState::skipAllPausesExpiresOnReload)) {
-        m_skipAllPauses = false;
-        m_state->setBoolean(DebuggerAgentState::skipAllPauses, m_skipAllPauses);
-    }
 }
 
 bool InspectorDebuggerAgent::isPaused()
@@ -350,7 +312,7 @@ static PassRefPtr<JSONObject> buildObjectForBreakpointCookie(const String& url, 
     breakpointObject->setNumber(DebuggerAgentState::columnNumber, columnNumber);
     breakpointObject->setString(DebuggerAgentState::condition, condition);
     breakpointObject->setBoolean(DebuggerAgentState::isRegex, isRegex);
-    return breakpointObject;
+    return breakpointObject.release();
 }
 
 static bool matches(const String& url, const String& pattern, bool isRegex)
@@ -607,7 +569,7 @@ PassRefPtr<TypeBuilder::Debugger::Location> InspectorDebuggerAgent::resolveBreak
     return location;
 }
 
-void InspectorDebuggerAgent::searchInContent(ErrorString* error, const String& scriptId, const String& query, const bool* const optionalCaseSensitive, const bool* const optionalIsRegex, RefPtr<Array<blink::TypeBuilder::Page::SearchMatch> >& results)
+void InspectorDebuggerAgent::searchInContent(ErrorString* error, const String& scriptId, const String& query, const bool* const optionalCaseSensitive, const bool* const optionalIsRegex, RefPtr<Array<blink::TypeBuilder::Debugger::SearchMatch>>& results)
 {
     ScriptsMap::iterator it = m_scripts.find(scriptId);
     if (it != m_scripts.end())
@@ -630,8 +592,7 @@ void InspectorDebuggerAgent::setScriptSource(ErrorString* error, RefPtr<TypeBuil
     String url = it->value.url();
     if (url.isEmpty())
         return;
-    if (InspectorPageAgent* pageAgent = m_instrumentingAgents->inspectorPageAgent())
-        pageAgent->addEditedResourceContent(url, newContent);
+    m_editedScripts.set(url, newContent);
 }
 
 void InspectorDebuggerAgent::restartFrame(ErrorString* errorString, const String& callFrameId, RefPtr<Array<CallFrame> >& newCallFrames, RefPtr<JSONObject>& result, RefPtr<StackTrace>& asyncStackTrace)
@@ -661,13 +622,8 @@ void InspectorDebuggerAgent::getScriptSource(ErrorString* error, const String& s
     }
 
     String url = it->value.url();
-    if (!url.isEmpty()) {
-        if (InspectorPageAgent* pageAgent = m_instrumentingAgents->inspectorPageAgent()) {
-            bool success = pageAgent->getEditedResourceContent(url, scriptSource);
-            if (success)
-                return;
-        }
-    }
+    if (!url.isEmpty() && getEditedScript(url, scriptSource))
+        return;
     *scriptSource = it->value.source();
 }
 
@@ -843,13 +799,9 @@ void InspectorDebuggerAgent::stepIntoAsync(ErrorString* errorString)
         *errorString = "Can only perform operation if async call stacks are enabled.";
         return;
     }
-    m_inAsyncOperationForStepInto = false;
-    m_asyncOperationsForStepInto.clear();
-    m_performingAsyncStepIn = true;
-    m_scheduledDebuggerStep = NoStep;
-    m_steppingFromFramework = isTopCallFrameBlackboxed();
-    m_injectedScriptManager->releaseObjectGroup(InspectorDebuggerAgent::backtraceObjectGroup);
-    scriptDebugServer().continueProgram();
+    clearStepIntoAsync();
+    m_startingStepIntoAsync = true;
+    stepInto(errorString);
 }
 
 void InspectorDebuggerAgent::setPauseOnExceptions(ErrorString* errorString, const String& stringPauseState)
@@ -1075,8 +1027,8 @@ void InspectorDebuggerAgent::getPromiseById(ErrorString* errorString, int promis
 
 void InspectorDebuggerAgent::didUpdatePromise(InspectorFrontend::Debugger::EventType::Enum eventType, PassRefPtr<TypeBuilder::Debugger::PromiseDetails> promise)
 {
-    if (m_frontend)
-        m_frontend->promiseUpdated(eventType, promise);
+    if (frontend())
+        frontend()->promiseUpdated(eventType, promise);
 }
 
 int InspectorDebuggerAgent::traceAsyncOperationStarting(const String& description)
@@ -1097,10 +1049,21 @@ int InspectorDebuggerAgent::traceAsyncOperationStarting(const String& descriptio
     m_asyncOperations.set(m_lastAsyncOperationId, chain);
     if (chain)
         m_asyncOperationNotifications.add(m_lastAsyncOperationId);
-    if (m_performingAsyncStepIn) {
-        if (m_inAsyncOperationForStepInto || m_asyncOperationsForStepInto.isEmpty())
-            m_asyncOperationsForStepInto.add(m_lastAsyncOperationId);
+
+    if (m_startingStepIntoAsync) {
+        // We have successfully started a StepIntoAsync, so revoke the debugger's StepInto
+        // and wait for the corresponding async operation breakpoint.
+        ASSERT(m_pausingAsyncOperations.isEmpty());
+        m_pausingAsyncOperations.add(m_lastAsyncOperationId);
+        m_startingStepIntoAsync = false;
+        m_scheduledDebuggerStep = NoStep;
+        scriptDebugServer().clearStepping();
+    } else if (m_pausingOnAsyncOperation) {
+        m_pausingAsyncOperations.add(m_lastAsyncOperationId);
     }
+
+    if (m_pausedScriptState)
+        flushAsyncOperationEvents(nullptr);
     return m_lastAsyncOperationId;
 }
 
@@ -1114,27 +1077,32 @@ void InspectorDebuggerAgent::traceAsyncCallbackStarting(int operationId)
     if (chain && (!recursionLevel || (recursionLevel == 1 && Microtask::performingCheckpoint(isolate)))) {
         // There can be still an old m_currentAsyncCallChain set if we start running Microtasks
         // right after executing a JS callback but before the corresponding traceAsyncCallbackCompleted().
-        // In this case just call traceAsyncCallbackCompleted() now, and the subsequent one will be ignored.
+        // In this case just call traceAsyncCallbackCompleted() now, and the subsequent ones will be ignored.
+        //
+        // The nested levels count may be greater than 1, for example, when events are guarded via custom
+        // traceAsync* calls, like in window.postMessage(). In this case there will be a willHandleEvent
+        // instrumentation with unknownAsyncOperationId bumping up the nested levels count.
         if (m_currentAsyncCallChain) {
-            ASSERT(m_nestedAsyncCallCount == 1);
+            ASSERT(m_nestedAsyncCallCount >= 1);
             ASSERT(recursionLevel == 1 && Microtask::performingCheckpoint(isolate));
+            m_nestedAsyncCallCount = 1;
             traceAsyncCallbackCompleted();
         }
 
         // Current AsyncCallChain corresponds to the bottommost JS call frame.
+        ASSERT(!m_currentAsyncCallChain);
         m_currentAsyncCallChain = chain;
         m_currentAsyncOperationId = operationId;
         m_pendingTraceAsyncOperationCompleted = false;
         m_nestedAsyncCallCount = 1;
-        if (!m_performingAsyncStepIn)
-            return;
-        if (!m_asyncOperationsForStepInto.contains(operationId))
-            return;
-        m_inAsyncOperationForStepInto = true;
-        m_scheduledDebuggerStep = StepInto;
-        m_skippedStepFrameCount = 0;
-        m_recursionLevelForStepFrame = 0;
-        scriptDebugServer().setPauseOnNextStatement(true);
+
+        if (m_pausingAsyncOperations.contains(operationId) || m_asyncOperationBreakpoints.contains(operationId)) {
+            m_pausingOnAsyncOperation = true;
+            m_scheduledDebuggerStep = StepInto;
+            m_skippedStepFrameCount = 0;
+            m_recursionLevelForStepFrame = 0;
+            scriptDebugServer().setPauseOnNextStatement(true);
+        }
     } else {
         if (m_currentAsyncCallChain)
             ++m_nestedAsyncCallCount;
@@ -1149,14 +1117,12 @@ void InspectorDebuggerAgent::traceAsyncCallbackCompleted()
     --m_nestedAsyncCallCount;
     if (!m_nestedAsyncCallCount) {
         clearCurrentAsyncOperation();
-        if (!m_performingAsyncStepIn)
+        if (!m_pausingOnAsyncOperation)
             return;
-        if (!m_inAsyncOperationForStepInto)
-            return;
-        m_inAsyncOperationForStepInto = false;
+        m_pausingOnAsyncOperation = false;
         m_scheduledDebuggerStep = NoStep;
         scriptDebugServer().setPauseOnNextStatement(false);
-        if (m_asyncOperationsForStepInto.isEmpty())
+        if (m_startingStepIntoAsync && m_pausingAsyncOperations.isEmpty())
             clearStepIntoAsync();
     }
 }
@@ -1176,20 +1142,22 @@ void InspectorDebuggerAgent::traceAsyncOperationCompleted(int operationId)
             }
         }
         m_asyncOperations.remove(operationId);
-        m_asyncOperationsForStepInto.remove(operationId);
+        m_asyncOperationBreakpoints.remove(operationId);
+        m_pausingAsyncOperations.remove(operationId);
         shouldNotify = !m_asyncOperationNotifications.take(operationId);
     }
-    if (m_performingAsyncStepIn) {
-        if (!m_inAsyncOperationForStepInto && m_asyncOperationsForStepInto.isEmpty())
+    if (m_startingStepIntoAsync) {
+        if (!m_pausingOnAsyncOperation && m_pausingAsyncOperations.isEmpty())
             clearStepIntoAsync();
     }
-    if (m_frontend && shouldNotify)
-        m_frontend->asyncOperationCompleted(operationId);
+    if (frontend() && shouldNotify)
+        frontend()->asyncOperationCompleted(operationId);
 }
 
-void InspectorDebuggerAgent::flushPendingAsyncOperationNotifications()
+void InspectorDebuggerAgent::flushAsyncOperationEvents(ErrorString*)
 {
-    ASSERT(m_frontend);
+    if (!frontend())
+        return;
 
     for (int operationId : m_asyncOperationNotifications) {
         RefPtrWillBeRawPtr<AsyncCallChain> chain = m_asyncOperations.get(operationId);
@@ -1222,7 +1190,7 @@ void InspectorDebuggerAgent::flushPendingAsyncOperationNotifications()
         }
 
         if (operation)
-            m_frontend->asyncOperationStarted(operation.release());
+            frontend()->asyncOperationStarted(operation.release());
     }
 
     m_asyncOperationNotifications.clear();
@@ -1247,6 +1215,37 @@ void InspectorDebuggerAgent::resetAsyncCallTracker()
         listener->resetAsyncOperations();
     m_asyncOperations.clear();
     m_asyncOperationNotifications.clear();
+    m_asyncOperationBreakpoints.clear();
+}
+
+void InspectorDebuggerAgent::setAsyncOperationBreakpoint(ErrorString* errorString, int operationId)
+{
+    if (!trackingAsyncCalls()) {
+        *errorString = "Can only perform operation while tracking async call stacks.";
+        return;
+    }
+    if (operationId <= 0) {
+        *errorString = "Wrong async operation id.";
+        return;
+    }
+    if (!m_asyncOperations.contains(operationId)) {
+        *errorString = "Unknown async operation id.";
+        return;
+    }
+    m_asyncOperationBreakpoints.add(operationId);
+}
+
+void InspectorDebuggerAgent::removeAsyncOperationBreakpoint(ErrorString* errorString, int operationId)
+{
+    if (!trackingAsyncCalls()) {
+        *errorString = "Can only perform operation while tracking async call stacks.";
+        return;
+    }
+    if (operationId <= 0) {
+        *errorString = "Wrong async operation id.";
+        return;
+    }
+    m_asyncOperationBreakpoints.remove(operationId);
 }
 
 void InspectorDebuggerAgent::scriptExecutionBlockedByCSP(const String& directiveText)
@@ -1332,6 +1331,14 @@ void InspectorDebuggerAgent::changeJavaScriptRecursionLevel(int step)
     }
 }
 
+bool InspectorDebuggerAgent::getEditedScript(const String& url, String* content)
+{
+    if (!m_editedScripts.contains(url))
+        return false;
+    *content = m_editedScripts.get(url);
+    return true;
+}
+
 PassRefPtr<Array<CallFrame> > InspectorDebuggerAgent::currentCallFrames()
 {
     if (!m_pausedScriptState || m_currentCallStack.isEmpty())
@@ -1398,22 +1405,9 @@ PassRefPtrWillBeRawPtr<ScriptAsyncCallStack> InspectorDebuggerAgent::currentAsyn
 String InspectorDebuggerAgent::sourceMapURLForScript(const Script& script, CompileResult compileResult)
 {
     bool hasSyntaxError = compileResult != CompileSuccess;
-    if (hasSyntaxError) {
-        String sourceMapURL = ContentSearchUtils::findSourceMapURL(script.source(), ContentSearchUtils::JavaScriptMagicComment);
-        if (!sourceMapURL.isEmpty())
-            return sourceMapURL;
-    }
-
-    if (!script.sourceMappingURL().isEmpty())
+    if (!hasSyntaxError)
         return script.sourceMappingURL();
-
-    if (script.url().isEmpty())
-        return String();
-
-    InspectorPageAgent* pageAgent = m_instrumentingAgents->inspectorPageAgent();
-    if (!pageAgent)
-        return String();
-    return pageAgent->resourceSourceMapURL(script.url());
+    return ContentSearchUtils::findSourceMapURL(script.source(), ContentSearchUtils::JavaScriptMagicComment);
 }
 
 // ScriptDebugListener functions
@@ -1437,9 +1431,9 @@ void InspectorDebuggerAgent::didParseSource(const String& scriptId, const Script
     const bool* isInternalScriptParam = isInternalScript ? &isInternalScript : nullptr;
     const bool* hasSourceURLParam = hasSourceURL ? &hasSourceURL : nullptr;
     if (!hasSyntaxError)
-        m_frontend->scriptParsed(scriptId, scriptURL, script.startLine(), script.startColumn(), script.endLine(), script.endColumn(), isContentScriptParam, isInternalScriptParam, sourceMapURLParam, hasSourceURLParam);
+        frontend()->scriptParsed(scriptId, scriptURL, script.startLine(), script.startColumn(), script.endLine(), script.endColumn(), isContentScriptParam, isInternalScriptParam, sourceMapURLParam, hasSourceURLParam);
     else
-        m_frontend->scriptFailedToParse(scriptId, scriptURL, script.startLine(), script.startColumn(), script.endLine(), script.endColumn(), isContentScriptParam, isInternalScriptParam, sourceMapURLParam, hasSourceURLParam);
+        frontend()->scriptFailedToParse(scriptId, scriptURL, script.startLine(), script.startColumn(), script.endLine(), script.endColumn(), isContentScriptParam, isInternalScriptParam, sourceMapURLParam, hasSourceURLParam);
 
     m_scripts.set(scriptId, script);
 
@@ -1461,7 +1455,7 @@ void InspectorDebuggerAgent::didParseSource(const String& scriptId, const Script
         breakpointObject->getString(DebuggerAgentState::condition, &breakpoint.condition);
         RefPtr<TypeBuilder::Debugger::Location> location = resolveBreakpoint(cookie.key, scriptId, breakpoint, UserBreakpointSource);
         if (location)
-            m_frontend->breakpointResolved(cookie.key, location);
+            frontend()->breakpointResolved(cookie.key, location);
     }
 }
 
@@ -1499,6 +1493,10 @@ ScriptDebugListener::SkipPauseRequest InspectorDebuggerAgent::didPause(ScriptSta
             m_breakAuxData = injectedScript.wrapObject(exception, InspectorDebuggerAgent::backtraceObjectGroup)->openAccessors();
             // m_breakAuxData might be null after this.
         }
+    } else if (m_pausingOnAsyncOperation) {
+        m_breakReason = InspectorFrontend::Debugger::Reason::AsyncOperation;
+        m_breakAuxData = JSONObject::create();
+        m_breakAuxData->setNumber("operationId", m_currentAsyncOperationId);
     }
 
     RefPtr<Array<String> > hitBreakpointIds = Array<String>::create();
@@ -1516,9 +1514,9 @@ ScriptDebugListener::SkipPauseRequest InspectorDebuggerAgent::didPause(ScriptSta
     }
 
     if (!m_asyncOperationNotifications.isEmpty())
-        flushPendingAsyncOperationNotifications();
+        flushAsyncOperationEvents(nullptr);
 
-    m_frontend->paused(currentCallFrames(), m_breakReason, m_breakAuxData, hitBreakpointIds, currentAsyncStackTrace());
+    frontend()->paused(currentCallFrames(), m_breakReason, m_breakAuxData, hitBreakpointIds, currentAsyncStackTrace());
     m_scheduledDebuggerStep = NoStep;
     m_javaScriptPauseScheduled = false;
     m_steppingFromFramework = false;
@@ -1539,7 +1537,7 @@ void InspectorDebuggerAgent::didContinue()
     m_pausedScriptState = nullptr;
     m_currentCallStack = ScriptValue();
     clearBreakDetails();
-    m_frontend->resumed();
+    frontend()->resumed();
 }
 
 bool InspectorDebuggerAgent::canBreakProgram()
@@ -1583,9 +1581,9 @@ void InspectorDebuggerAgent::clear()
 
 void InspectorDebuggerAgent::clearStepIntoAsync()
 {
-    m_performingAsyncStepIn = false;
-    m_asyncOperationsForStepInto.clear();
-    m_inAsyncOperationForStepInto = false;
+    m_startingStepIntoAsync = false;
+    m_pausingOnAsyncOperation = false;
+    m_pausingAsyncOperations.clear();
 }
 
 bool InspectorDebuggerAgent::assertPaused(ErrorString* errorString)
@@ -1622,8 +1620,13 @@ void InspectorDebuggerAgent::reset()
     m_breakpointIdToDebugServerBreakpointIds.clear();
     resetAsyncCallTracker();
     promiseTracker().clear();
-    if (m_frontend)
-        m_frontend->globalObjectCleared();
+    if (frontend())
+        frontend()->globalObjectCleared();
+}
+
+void InspectorDebuggerAgent::resetModifiedSources()
+{
+    m_editedScripts.clear();
 }
 
 DEFINE_TRACE(InspectorDebuggerAgent)

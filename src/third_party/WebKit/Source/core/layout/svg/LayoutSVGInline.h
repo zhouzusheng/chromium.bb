@@ -21,19 +21,19 @@
 #ifndef LayoutSVGInline_h
 #define LayoutSVGInline_h
 
-#include "core/rendering/RenderInline.h"
+#include "core/layout/LayoutInline.h"
 
 namespace blink {
 
-class LayoutSVGInline : public RenderInline {
+class LayoutSVGInline : public LayoutInline {
 public:
     explicit LayoutSVGInline(Element*);
 
-    virtual const char* renderName() const override { return "LayoutSVGInline"; }
-    virtual LayerType layerTypeRequired() const override final { return NoLayer; }
-    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectSVG || type == LayoutObjectSVGInline || RenderInline::isOfType(type); }
+    virtual const char* name() const override { return "LayoutSVGInline"; }
+    virtual DeprecatedPaintLayerType layerTypeRequired() const override final { return NoDeprecatedPaintLayer; }
+    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectSVG || type == LayoutObjectSVGInline || LayoutInline::isOfType(type); }
 
-    virtual bool isChildAllowed(LayoutObject*, const LayoutStyle&) const override;
+    virtual bool isChildAllowed(LayoutObject*, const ComputedStyle&) const override;
 
     // Chapter 10.4 of the SVG Specification say that we should use the
     // object bounding box of the parent text element.
@@ -44,16 +44,16 @@ public:
     virtual FloatRect strokeBoundingBox() const override final;
     virtual FloatRect paintInvalidationRectInLocalCoordinates() const override final;
 
-    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutLayerModelObject* paintInvalidationContainer, const PaintInvalidationState* = 0) const override final;
-    virtual void mapLocalToContainer(const LayoutLayerModelObject* paintInvalidationContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0, const PaintInvalidationState* = 0) const override final;
-    virtual const LayoutObject* pushMappingToContainer(const LayoutLayerModelObject* ancestorToStopAt, LayoutGeometryMap&) const override final;
+    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* = 0) const override final;
+    virtual void mapLocalToContainer(const LayoutBoxModelObject* paintInvalidationContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0, const PaintInvalidationState* = 0) const override final;
+    virtual const LayoutObject* pushMappingToContainer(const LayoutBoxModelObject* ancestorToStopAt, LayoutGeometryMap&) const override final;
     virtual void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed) const override final;
 
 private:
     virtual InlineFlowBox* createInlineFlowBox() override final;
 
     virtual void willBeDestroyed() override final;
-    virtual void styleDidChange(StyleDifference, const LayoutStyle* oldStyle) override final;
+    virtual void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override final;
 
     virtual void addChild(LayoutObject* child, LayoutObject* beforeChild = 0) override final;
     virtual void removeChild(LayoutObject*) override final;

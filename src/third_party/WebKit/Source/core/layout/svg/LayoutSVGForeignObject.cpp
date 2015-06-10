@@ -24,10 +24,10 @@
 #include "core/layout/svg/LayoutSVGForeignObject.h"
 
 #include "core/layout/HitTestResult.h"
+#include "core/layout/LayoutView.h"
 #include "core/layout/svg/SVGLayoutSupport.h"
 #include "core/layout/svg/SVGResourcesCache.h"
 #include "core/paint/SVGForeignObjectPainter.h"
-#include "core/rendering/RenderView.h"
 #include "core/svg/SVGForeignObjectElement.h"
 
 namespace blink {
@@ -42,7 +42,7 @@ LayoutSVGForeignObject::~LayoutSVGForeignObject()
 {
 }
 
-bool LayoutSVGForeignObject::isChildAllowed(LayoutObject* child, const LayoutStyle& style) const
+bool LayoutSVGForeignObject::isChildAllowed(LayoutObject* child, const ComputedStyle& style) const
 {
     // Disallow arbitary SVG content. Only allow proper <svg xmlns="svgNS"> subdocuments.
     return !child->isSVG() || child->isSVGRoot();
@@ -93,20 +93,24 @@ void LayoutSVGForeignObject::layout()
 
     // Cache viewport boundaries
     SVGLengthContext lengthContext(foreign);
-    FloatPoint viewportLocation(foreign->x()->currentValue()->value(lengthContext), foreign->y()->currentValue()->value(lengthContext));
-    m_viewport = FloatRect(viewportLocation, FloatSize(foreign->width()->currentValue()->value(lengthContext), foreign->height()->currentValue()->value(lengthContext)));
+    FloatPoint viewportLocation(
+        lengthContext.valueForLength(styleRef().svgStyle().x(), styleRef(), SVGLengthMode::Width),
+        lengthContext.valueForLength(styleRef().svgStyle().y(), styleRef(), SVGLengthMode::Height));
+    m_viewport = FloatRect(viewportLocation, FloatSize(
+        lengthContext.valueForLength(styleRef().width(), styleRef(), SVGLengthMode::Width),
+        lengthContext.valueForLength(styleRef().height(), styleRef(), SVGLengthMode::Height)));
     if (!updateCachedBoundariesInParents)
         updateCachedBoundariesInParents = oldViewport != m_viewport;
 
     // Set box origin to the foreignObject x/y translation, so positioned objects in XHTML content get correct
-    // positions. A regular RenderBoxModelObject would pull this information from LayoutStyle - in SVG those
+    // positions. A regular LayoutBoxModelObject would pull this information from ComputedStyle - in SVG those
     // properties are ignored for non <svg> elements, so we mimic what happens when specifying them through CSS.
 
     // FIXME: Investigate in location rounding issues - only affects LayoutSVGForeignObject & LayoutSVGText
     setLocation(roundedIntPoint(viewportLocation));
 
     bool layoutChanged = everHadLayout() && selfNeedsLayout();
-    RenderBlock::layout();
+    LayoutBlock::layout();
     ASSERT(!needsLayout());
 
     // If our bounds changed, notify the parents.
@@ -118,7 +122,7 @@ void LayoutSVGForeignObject::layout()
         SVGResourcesCache::clientLayoutChanged(this);
 }
 
-bool LayoutSVGForeignObject::nodeAtFloatPoint(const HitTestRequest& request, HitTestResult& result, const FloatPoint& pointInParent, HitTestAction hitTestAction)
+bool LayoutSVGForeignObject::nodeAtFloatPoint(HitTestResult& result, const FloatPoint& pointInParent, HitTestAction hitTestAction)
 {
     // Embedded content is drawn in the foreground phase.
     if (hitTestAction != HitTestForeground)
@@ -136,9 +140,9 @@ bool LayoutSVGForeignObject::nodeAtFloatPoint(const HitTestRequest& request, Hit
 
     // FOs establish a stacking context, so we need to hit-test all layers.
     HitTestLocation hitTestLocation(roundedLayoutPoint(localPoint));
-    return RenderBlock::nodeAtPoint(request, result, hitTestLocation, LayoutPoint(), HitTestForeground)
-        || RenderBlock::nodeAtPoint(request, result, hitTestLocation, LayoutPoint(), HitTestFloat)
-        || RenderBlock::nodeAtPoint(request, result, hitTestLocation, LayoutPoint(), HitTestChildBlockBackgrounds);
+    return LayoutBlock::nodeAtPoint(result, hitTestLocation, LayoutPoint(), HitTestForeground)
+        || LayoutBlock::nodeAtPoint(result, hitTestLocation, LayoutPoint(), HitTestFloat)
+        || LayoutBlock::nodeAtPoint(result, hitTestLocation, LayoutPoint(), HitTestChildBlockBackgrounds);
 }
 
 }

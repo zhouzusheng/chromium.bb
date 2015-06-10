@@ -32,13 +32,13 @@ public:
     Path layoutPath() const;
     float startOffset() const;
 
-    virtual bool isChildAllowed(LayoutObject*, const LayoutStyle&) const override;
+    virtual bool isChildAllowed(LayoutObject*, const ComputedStyle&) const override;
 
     virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectSVGTextPath || LayoutSVGInline::isOfType(type); }
 
-private:
-    virtual const char* renderName() const override { return "LayoutSVGTextPath"; }
+    virtual const char* name() const override { return "LayoutSVGTextPath"; }
 
+private:
     Path m_layoutPath;
 };
 

@@ -200,6 +200,13 @@ void DrawElements(GLenum mode,
                   GLenum type,
                   const void* indices) override;
 
+void DrawRangeElements(GLenum mode,
+                       GLuint start,
+                       GLuint end,
+                       GLsizei count,
+                       GLenum type,
+                       const void* indices) override;
+
 void Enable(GLenum cap) override;
 
 GLsync FenceSync(GLenum condition, GLbitfield flags) override;
@@ -341,6 +348,12 @@ void GetShaderSource(GLuint shader,
                      char* source) override;
 
 const GLubyte* GetString(GLenum name) override;
+
+void GetSynciv(GLsync sync,
+               GLenum pname,
+               GLsizei bufsize,
+               GLsizei* length,
+               GLint* values) override;
 
 void GetTexParameterfv(GLenum target, GLenum pname, GLfloat* params) override;
 
@@ -794,6 +807,13 @@ void* MapBufferSubDataCHROMIUM(GLuint target,
 
 void UnmapBufferSubDataCHROMIUM(const void* mem) override;
 
+void* MapBufferRange(GLenum target,
+                     GLintptr offset,
+                     GLsizeiptr size,
+                     GLbitfield access) override;
+
+GLboolean UnmapBuffer(GLenum target) override;
+
 void* MapTexSubImage2DCHROMIUM(GLenum target,
                                GLint level,
                                GLint xoffset,
@@ -867,9 +887,14 @@ void TexImageIOSurface2DCHROMIUM(GLenum target,
 void CopyTextureCHROMIUM(GLenum target,
                          GLenum source_id,
                          GLenum dest_id,
-                         GLint level,
                          GLint internalformat,
                          GLenum dest_type) override;
+
+void CopySubTextureCHROMIUM(GLenum target,
+                            GLenum source_id,
+                            GLenum dest_id,
+                            GLint xoffset,
+                            GLint yoffset) override;
 
 void DrawArraysInstancedANGLE(GLenum mode,
                               GLint first,

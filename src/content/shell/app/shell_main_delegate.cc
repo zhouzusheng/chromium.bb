@@ -154,8 +154,11 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
     command_line.AppendSwitch(switches::kProcessPerTab);
     command_line.AppendSwitch(switches::kEnableLogging);
     command_line.AppendSwitch(switches::kAllowFileAccessFromFiles);
-    command_line.AppendSwitchASCII(switches::kUseGL,
-                                   gfx::kGLImplementationOSMesaName);
+    // only default to osmesa if the flag isn't already specified.
+    if (!command_line.HasSwitch(switches::kUseGL)) {
+      command_line.AppendSwitchASCII(switches::kUseGL,
+                                     gfx::kGLImplementationOSMesaName);
+    }
     command_line.AppendSwitch(switches::kSkipGpuDataLoading);
     command_line.AppendSwitchASCII(switches::kTouchEvents,
                                    switches::kTouchEventsEnabled);
@@ -189,8 +192,6 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
     // TODO: crbug.com/311404 Make layout tests work w/ delegated renderer.
     command_line.AppendSwitch(switches::kDisableDelegatedRenderer);
     command_line.AppendSwitch(cc::switches::kCompositeToMailbox);
-
-    command_line.AppendSwitch(switches::kEnableFileCookies);
 
     command_line.AppendSwitch(switches::kEnablePreciseMemoryInfo);
 

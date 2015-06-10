@@ -13,7 +13,7 @@
 #include "libANGLE/Display.h"
 #include "libANGLE/Surface.h"
 #include "libANGLE/renderer/gl/wgl/FunctionsWGL.h"
-#include "libANGLE/renderer/gl/wgl/SurfaceWGL.h"
+#include "libANGLE/renderer/gl/wgl/WindowSurfaceWGL.h"
 #include "libANGLE/renderer/gl/wgl/wgl_utils.h"
 
 #include <EGL/eglext.h>
@@ -26,12 +26,12 @@ namespace rx
 class FunctionsGLWindows : public FunctionsGL
 {
   public:
-    FunctionsGLWindows(HMODULE openGLModule)
-        : mOpenGLModule(openGLModule)
-        , mGetProcAddressWGL(nullptr)
+    FunctionsGLWindows(HMODULE openGLModule, PFNWGLGETPROCADDRESSPROC getProcAddressWGL)
+        : mOpenGLModule(openGLModule),
+          mGetProcAddressWGL(getProcAddressWGL)
     {
         ASSERT(mOpenGLModule);
-        mGetProcAddressWGL = reinterpret_cast<PFNWGLGETPROCADDRESSPROC>(GetProcAddress(mOpenGLModule, "wglGetProcAddress"));
+        ASSERT(mGetProcAddressWGL);
     }
 
     virtual ~FunctionsGLWindows()
@@ -41,17 +41,15 @@ class FunctionsGLWindows : public FunctionsGL
   private:
     void *loadProcAddress(const std::string &function) override
     {
-        void *proc = mGetProcAddressWGL(function.c_str());
+        void *proc = reinterpret_cast<void*>(mGetProcAddressWGL(function.c_str()));
         if (!proc)
         {
-            proc = GetProcAddress(mOpenGLModule, function.c_str());
+            proc = reinterpret_cast<void*>(GetProcAddress(mOpenGLModule, function.c_str()));
         }
         return proc;
     }
 
     HMODULE mOpenGLModule;
-
-    typedef PROC(WINAPI *PFNWGLGETPROCADDRESSPROC)(LPCSTR);
     PFNWGLGETPROCADDRESSPROC mGetProcAddressWGL;
 };
 
@@ -133,7 +131,7 @@ egl::Error DisplayWGL::initialize(egl::Display *display)
 
     HWND dummyWindow = CreateWindowExA(WS_EX_NOPARENTNOTIFY,
                                        reinterpret_cast<const char *>(mWindowClass),
-                                       "",
+                                       "ANGLE Dummy Window",
                                        WS_OVERLAPPEDWINDOW,
                                        CW_USEDEFAULT,
                                        CW_USEDEFAULT,
@@ -210,7 +208,7 @@ egl::Error DisplayWGL::initialize(egl::Display *display)
 
     mWindow = CreateWindowExA(WS_EX_NOPARENTNOTIFY,
                               reinterpret_cast<const char *>(mWindowClass),
-                              "",
+                              "ANGLE Intermediate Window",
                               WS_OVERLAPPEDWINDOW,
                               CW_USEDEFAULT,
                               CW_USEDEFAULT,
@@ -245,11 +243,7 @@ egl::Error DisplayWGL::initialize(egl::Display *display)
     if (mFunctionsWGL->createContextAttribsARB)
     {
         int flags = 0;
-        // TODO: also allow debug contexts through a user flag
-#if !defined(NDEBUG)
-        flags |= WGL_CONTEXT_DEBUG_BIT_ARB;
-#endif
-
+        // TODO: allow debug contexts
         // TODO: handle robustness
 
         int mask = 0;
@@ -310,7 +304,7 @@ egl::Error DisplayWGL::initialize(egl::Display *display)
     mGLVersionMajor = versionString[0] - '0';
     mGLVersionMinor = versionString[2] - '0';
 
-    mFunctionsGL = new FunctionsGLWindows(mOpenGLModule);
+    mFunctionsGL = new FunctionsGLWindows(mOpenGLModule, mFunctionsWGL->getProcAddress);
     mFunctionsGL->initialize(mGLVersionMajor, mGLVersionMinor);
 
     return DisplayGL::initialize(display);
@@ -343,8 +337,7 @@ void DisplayWGL::terminate()
 egl::Error DisplayWGL::createWindowSurface(const egl::Config *configuration, EGLNativeWindowType window,
                                            const egl::AttributeMap &attribs, SurfaceImpl **outSurface)
 {
-    SurfaceWGL *surface = new SurfaceWGL(mDisplay, configuration, EGL_FALSE, EGL_FALSE, EGL_NO_TEXTURE, EGL_NO_TEXTURE,
-                                         window, mWindowClass, mPixelFormat, mWGLContext, mFunctionsWGL);
+    WindowSurfaceWGL *surface = new WindowSurfaceWGL(window, mWindowClass, mPixelFormat, mWGLContext, mFunctionsWGL);
     egl::Error error = surface->initialize();
     if (error.isError())
     {
@@ -370,15 +363,11 @@ egl::Error DisplayWGL::createPbufferFromClientBuffer(const egl::Config *configur
     return egl::Error(EGL_BAD_DISPLAY);
 }
 
-egl::Error DisplayWGL::makeCurrent(egl::Surface *drawSurface, egl::Surface *readSurface, gl::Context *context)
+egl::Error DisplayWGL::createPixmapSurface(const egl::Config *configuration, NativePixmapType nativePixmap,
+                                           const egl::AttributeMap &attribs, SurfaceImpl **outSurface)
 {
-    if (!drawSurface)
-    {
-        return egl::Error(EGL_SUCCESS);
-    }
-
-    SurfaceWGL *wglDrawSurface = SurfaceWGL::makeSurfaceWGL(drawSurface->getImplementation());
-    return wglDrawSurface->makeCurrent();
+    UNIMPLEMENTED();
+    return egl::Error(EGL_BAD_DISPLAY);
 }
 
 egl::ConfigSet DisplayWGL::generateConfigs() const
@@ -398,8 +387,8 @@ egl::ConfigSet DisplayWGL::generateConfigs() const
     DescribePixelFormat(mDeviceContext, mPixelFormat, sizeof(pixelFormatDescriptor), &pixelFormatDescriptor);
 
     egl::Config config;
-    config.renderTargetFormat = GL_NONE; // TODO
-    config.depthStencilFormat = GL_NONE; // TODO
+    config.renderTargetFormat = GL_RGBA8; // TODO: use the bit counts to determine the format
+    config.depthStencilFormat = GL_DEPTH24_STENCIL8; // TODO: use the bit counts to determine the format
     config.bufferSize = pixelFormatDescriptor.cColorBits;
     config.redSize = pixelFormatDescriptor.cRedBits;
     config.greenSize = pixelFormatDescriptor.cGreenBits;
@@ -443,13 +432,13 @@ egl::ConfigSet DisplayWGL::generateConfigs() const
 
 bool DisplayWGL::isDeviceLost() const
 {
-    UNIMPLEMENTED();
+    //UNIMPLEMENTED();
     return false;
 }
 
 bool DisplayWGL::testDeviceLost()
 {
-    UNIMPLEMENTED();
+    //UNIMPLEMENTED();
     return false;
 }
 
@@ -466,7 +455,7 @@ bool DisplayWGL::isValidNativeWindow(EGLNativeWindowType window) const
 
 std::string DisplayWGL::getVendorString() const
 {
-    UNIMPLEMENTED();
+    //UNIMPLEMENTED();
     return "";
 }
 
@@ -477,7 +466,7 @@ const FunctionsGL *DisplayWGL::getFunctionsGL() const
 
 void DisplayWGL::generateExtensions(egl::DisplayExtensions *outExtensions) const
 {
-    UNIMPLEMENTED();
+    //UNIMPLEMENTED();
 }
 
 void DisplayWGL::generateCaps(egl::Caps *outCaps) const

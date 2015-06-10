@@ -53,9 +53,12 @@ PassRefPtrWillBeRawPtr<CSSRule> StyleRuleBase::createCSSOMWrapper(CSSRule* paren
     return createCSSOMWrapper(0, parentRule);
 }
 
-void StyleRuleBase::trace(Visitor* visitor)
+DEFINE_TRACE(StyleRuleBase)
 {
     switch (type()) {
+    case Charset:
+        toStyleRuleCharset(this)->traceAfterDispatch(visitor);
+        return;
     case Style:
         toStyleRule(this)->traceAfterDispatch(visitor);
         return;
@@ -86,6 +89,8 @@ void StyleRuleBase::trace(Visitor* visitor)
     case Viewport:
         toStyleRuleViewport(this)->traceAfterDispatch(visitor);
         return;
+    case Unknown:
+        break;
     }
     ASSERT_NOT_REACHED();
 }
@@ -93,6 +98,9 @@ void StyleRuleBase::trace(Visitor* visitor)
 void StyleRuleBase::finalizeGarbageCollectedObject()
 {
     switch (type()) {
+    case Charset:
+        toStyleRuleCharset(this)->~StyleRuleCharset();
+        return;
     case Style:
         toStyleRule(this)->~StyleRule();
         return;
@@ -123,6 +131,8 @@ void StyleRuleBase::finalizeGarbageCollectedObject()
     case Viewport:
         toStyleRuleViewport(this)->~StyleRuleViewport();
         return;
+    case Unknown:
+        return;
     }
     ASSERT_NOT_REACHED();
 }
@@ -130,6 +140,9 @@ void StyleRuleBase::finalizeGarbageCollectedObject()
 void StyleRuleBase::destroy()
 {
     switch (type()) {
+    case Charset:
+        delete toStyleRuleCharset(this);
+        return;
     case Style:
         delete toStyleRule(this);
         return;
@@ -160,6 +173,8 @@ void StyleRuleBase::destroy()
     case Viewport:
         delete toStyleRuleViewport(this);
         return;
+    case Unknown:
+        return;
     }
     ASSERT_NOT_REACHED();
 }
@@ -185,8 +200,10 @@ PassRefPtrWillBeRawPtr<StyleRuleBase> StyleRuleBase::copy() const
         return toStyleRuleKeyframes(this)->copy();
     case Viewport:
         return toStyleRuleViewport(this)->copy();
+    case Charset:
     case Keyframe:
     case Namespace:
+    case Unknown:
         ASSERT_NOT_REACHED();
         return nullptr;
     }
@@ -225,6 +242,8 @@ PassRefPtrWillBeRawPtr<CSSRule> StyleRuleBase::createCSSOMWrapper(CSSStyleSheet*
         break;
     case Keyframe:
     case Namespace:
+    case Charset:
+    case Unknown:
         ASSERT_NOT_REACHED();
         return nullptr;
     }
@@ -266,7 +285,7 @@ void StyleRule::setProperties(PassRefPtrWillBeRawPtr<StylePropertySet> propertie
     m_properties = properties;
 }
 
-void StyleRule::traceAfterDispatch(Visitor* visitor)
+DEFINE_TRACE_AFTER_DISPATCH(StyleRule)
 {
     visitor->trace(m_properties);
     StyleRuleBase::traceAfterDispatch(visitor);
@@ -300,7 +319,7 @@ void StyleRulePage::setProperties(PassRefPtrWillBeRawPtr<StylePropertySet> prope
     m_properties = properties;
 }
 
-void StyleRulePage::traceAfterDispatch(Visitor* visitor)
+DEFINE_TRACE_AFTER_DISPATCH(StyleRulePage)
 {
     visitor->trace(m_properties);
     StyleRuleBase::traceAfterDispatch(visitor);
@@ -333,13 +352,13 @@ void StyleRuleFontFace::setProperties(PassRefPtrWillBeRawPtr<StylePropertySet> p
     m_properties = properties;
 }
 
-void StyleRuleFontFace::traceAfterDispatch(Visitor* visitor)
+DEFINE_TRACE_AFTER_DISPATCH(StyleRuleFontFace)
 {
     visitor->trace(m_properties);
     StyleRuleBase::traceAfterDispatch(visitor);
 }
 
-StyleRuleGroup::StyleRuleGroup(Type type, WillBeHeapVector<RefPtrWillBeMember<StyleRuleBase> >& adoptRule)
+StyleRuleGroup::StyleRuleGroup(Type type, WillBeHeapVector<RefPtrWillBeMember<StyleRuleBase>>& adoptRule)
     : StyleRuleBase(type)
 {
     m_childRules.swap(adoptRule);
@@ -363,13 +382,13 @@ void StyleRuleGroup::wrapperRemoveRule(unsigned index)
     m_childRules.remove(index);
 }
 
-void StyleRuleGroup::traceAfterDispatch(Visitor* visitor)
+DEFINE_TRACE_AFTER_DISPATCH(StyleRuleGroup)
 {
     visitor->trace(m_childRules);
     StyleRuleBase::traceAfterDispatch(visitor);
 }
 
-StyleRuleMedia::StyleRuleMedia(PassRefPtrWillBeRawPtr<MediaQuerySet> media, WillBeHeapVector<RefPtrWillBeMember<StyleRuleBase> >& adoptRules)
+StyleRuleMedia::StyleRuleMedia(PassRefPtrWillBeRawPtr<MediaQuerySet> media, WillBeHeapVector<RefPtrWillBeMember<StyleRuleBase>>& adoptRules)
     : StyleRuleGroup(Media, adoptRules)
     , m_mediaQueries(media)
 {
@@ -382,13 +401,13 @@ StyleRuleMedia::StyleRuleMedia(const StyleRuleMedia& o)
         m_mediaQueries = o.m_mediaQueries->copy();
 }
 
-void StyleRuleMedia::traceAfterDispatch(Visitor* visitor)
+DEFINE_TRACE_AFTER_DISPATCH(StyleRuleMedia)
 {
     visitor->trace(m_mediaQueries);
     StyleRuleGroup::traceAfterDispatch(visitor);
 }
 
-StyleRuleSupports::StyleRuleSupports(const String& conditionText, bool conditionIsSupported, WillBeHeapVector<RefPtrWillBeMember<StyleRuleBase> >& adoptRules)
+StyleRuleSupports::StyleRuleSupports(const String& conditionText, bool conditionIsSupported, WillBeHeapVector<RefPtrWillBeMember<StyleRuleBase>>& adoptRules)
     : StyleRuleGroup(Supports, adoptRules)
     , m_conditionText(conditionText)
     , m_conditionIsSupported(conditionIsSupported)
@@ -429,7 +448,7 @@ void StyleRuleViewport::setProperties(PassRefPtrWillBeRawPtr<StylePropertySet> p
     m_properties = properties;
 }
 
-void StyleRuleViewport::traceAfterDispatch(Visitor* visitor)
+DEFINE_TRACE_AFTER_DISPATCH(StyleRuleViewport)
 {
     visitor->trace(m_properties);
     StyleRuleBase::traceAfterDispatch(visitor);

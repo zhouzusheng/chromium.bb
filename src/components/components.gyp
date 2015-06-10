@@ -22,17 +22,18 @@
     'crx_file.gypi',
     'data_reduction_proxy.gypi',
     'device_event_log.gypi',
-    'network_hints.gypi',
     'dom_distiller.gypi',
     'domain_reliability.gypi',
     'enhanced_bookmarks.gypi',
     'error_page.gypi',
     'favicon.gypi',
     'favicon_base.gypi',
+    'gcm_driver.gypi',
     'google.gypi',
     'handoff.gypi',
     'history.gypi',
     'infobars.gypi',
+    'invalidation.gypi',
     'json_schema.gypi',
     'keyed_service.gypi',
     'language_usage_metrics.gypi',
@@ -40,7 +41,9 @@
     'login.gypi',
     'metrics.gypi',
     'navigation_metrics.gypi',
+    'network_hints.gypi',
     'network_time.gypi',
+    'omnibox.gypi',
     'onc.gypi',
     'os_crypt.gypi',
     'ownership.gypi',
@@ -51,12 +54,15 @@
     'pref_registry.gypi',
     'query_parser.gypi',
     'rappor.gypi',
+    'renderer_context_menu.gypi',
     'search.gypi',
+    'search_engines.gypi',
     'search_provider_logos.gypi',
     'sessions.gypi',
     'signin.gypi',
     'startup_metric_utils.gypi',
     'suggestions.gypi',
+    'sync_driver.gypi',
     'translate.gypi',
     'ui_zoom.gypi',
     'update_client.gypi',
@@ -65,13 +71,15 @@
     'user_prefs.gypi',
     'variations.gypi',
     'wallpaper.gypi',
-    'webdata.gypi',
     'web_resource.gypi',
+    'webdata.gypi',
+    'webdata_services.gypi',
   ],
   'conditions': [
     ['OS != "ios"', {
       'includes': [
         'app_modal.gypi',
+        'browsing_data.gypi',
         'cdm.gypi',
         'navigation_interception.gypi',
         'plugins.gypi',
@@ -80,6 +88,7 @@
         'web_cache.gypi',
         'web_contents_delegate_android.gypi',
         'web_modal.gypi',
+        'webui_generator.gypi',
       ],
     }],
     ['OS == "ios"', {
@@ -88,15 +97,11 @@
         'webp_transcode.gypi',
       ],
     }],
-    ['OS != "android"', {
-      'includes': [
-        'feedback.gypi',
-      ]
-    }],
     ['OS != "ios" and OS != "android"', {
       'includes': [
         'audio_modem.gypi',
         'copresence.gypi',
+        'feedback.gypi',
         'proximity_auth.gypi',
         'storage_monitor.gypi',
       ]
@@ -127,19 +132,6 @@
     ['toolkit_views==1', {
       'includes': [
         'constrained_window.gypi',
-      ],
-    }],
-    ['android_webview_build == 0', {
-      # Android WebView fails to build if a dependency on these targets is
-      # introduced.
-      'includes': [
-        'gcm_driver.gypi',
-        'omnibox.gypi',
-        'renderer_context_menu.gypi',
-        'search_engines.gypi',
-        'sync_driver.gypi',
-        'invalidation.gypi',
-        'webdata_services.gypi',
       ],
     }],
     ['enable_basic_printing==1 or enable_print_preview==1', {

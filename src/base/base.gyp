@@ -103,6 +103,7 @@
             }],
           ],
           'dependencies': [
+            'base_java',
             'base_jni_headers',
             '../third_party/ashmem/ashmem.gyp:ashmem',
           ],
@@ -116,11 +117,6 @@
           ],
           'includes': [
             '../build/android/cpufeatures.gypi',
-          ],
-        }],
-        ['OS == "android" and _toolset == "target" and android_webview_build == 0', {
-          'dependencies': [
-            'base_java',
           ],
         }],
         ['os_bsd==1', {
@@ -188,6 +184,14 @@
               },
             },
           },
+          'copies': [
+            {
+              'destination': '<(PRODUCT_DIR)/',
+              'files': [
+                '../build/win/dbghelp_xp/dbghelp.dll',
+              ],
+            },
+          ],
         }],
         ['OS == "mac" or (OS == "ios" and _toolset == "host")', {
           'link_settings': {
@@ -374,12 +378,18 @@
       # TODO(pasko): Remove this target when crbug.com/424562 is fixed.
       # GN: //base:protect_file_posix
       'target_name': 'protect_file_posix',
-      'type': 'static_library',
-      'dependencies': [
-        'base',
-      ],
-      'sources': [
-        'files/protect_file_posix.cc',
+      'conditions': [
+        ['os_posix == 1', {
+          'type': 'static_library',
+          'dependencies': [
+            'base',
+          ],
+          'sources': [
+            'files/protect_file_posix.cc',
+          ],
+        }, {
+          'type': 'none',
+        }],
       ],
     },
     {
@@ -527,8 +537,6 @@
         'mac/scoped_sending_event_unittest.mm',
         'md5_unittest.cc',
         'memory/aligned_memory_unittest.cc',
-        'memory/discardable_memory_manager_unittest.cc',
-        'memory/discardable_memory_unittest.cc',
         'memory/discardable_shared_memory_unittest.cc',
         'memory/linked_ptr_unittest.cc',
         'memory/ref_counted_memory_unittest.cc',
@@ -583,6 +591,7 @@
         'process/process_metrics_unittest_ios.cc',
         'process/process_unittest.cc',
         'process/process_util_unittest.cc',
+        'profiler/stack_sampling_profiler_unittest.cc',
         'profiler/tracked_time_unittest.cc',
         'rand_util_unittest.cc',
         'scoped_clear_errno_unittest.cc',
@@ -644,14 +653,6 @@
         'timer/mock_timer_unittest.cc',
         'timer/timer_unittest.cc',
         'tools_sanity_unittest.cc',
-        'trace_event/memory_dump_manager_unittest.cc',
-        'trace_event/process_memory_totals_dump_provider_unittest.cc',
-        'trace_event/trace_event_argument_unittest.cc',
-        'trace_event/trace_event_memory_unittest.cc',
-        'trace_event/trace_event_synthetic_delay_unittest.cc',
-        'trace_event/trace_event_system_stats_monitor_unittest.cc',
-        'trace_event/trace_event_unittest.cc',
-        'trace_event/trace_event_win_unittest.cc',
         'tracked_objects_unittest.cc',
         'tuple_unittest.cc',
         'values_unittest.cc',
@@ -676,6 +677,7 @@
         'win/startup_information_unittest.cc',
         'win/win_util_unittest.cc',
         'win/wrapped_window_proc_unittest.cc',
+        '<@(trace_event_test_sources)',
       ],
       'dependencies': [
         'base',
@@ -818,19 +820,20 @@
             ['include', '^sys_string_conversions_mac_unittest\\.mm$'],
           ],
         }],
-        ['OS == "android" and _toolset == "target"', {
-          'sources': [
-            'memory/discardable_memory_ashmem_allocator_unittest.cc',
-          ],
-        }],
         ['OS == "android"', {
           'sources/': [
             ['include', '^debug/proc_maps_linux_unittest\\.cc$'],
           ],
         }],
+        # Enable more direct string conversions on platforms with native utf8
+        # strings
+        ['OS=="mac" or OS=="ios" or <(chromeos)==1 or <(chromecast)==1', {
+          'defines': ['SYSTEM_NATIVE_UTF8'],
+        }],
       ],  # target_conditions
     },
     {
+      # GN: //base:base_perftests
       'target_name': 'base_perftests',
       'type': '<(gtest_target_type)',
       'dependencies': [
@@ -853,6 +856,7 @@
       ],
     },
     {
+      # GN: //base:base_i18n_perftests
       'target_name': 'base_i18n_perftests',
       'type': '<(gtest_target_type)',
       'dependencies': [
@@ -876,6 +880,7 @@
         'base_i18n',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
+        '../third_party/icu/icu.gyp:icuuc',
         '../third_party/libxml/libxml.gyp:libxml',
         'third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
       ],
@@ -915,6 +920,8 @@
         'test/gtest_xml_util.h',
         'test/histogram_tester.cc',
         'test/histogram_tester.h',
+        'test/ios/wait_util.h',
+        'test/ios/wait_util.mm',
         'test/launcher/test_launcher.cc',
         'test/launcher/test_launcher.h',
         'test/launcher/test_result.cc',
@@ -928,6 +935,8 @@
         'test/mock_chrome_application_mac.mm',
         'test/mock_devices_changed_observer.cc',
         'test/mock_devices_changed_observer.h',
+        'test/mock_log.cc',
+        'test/mock_log.h',
         'test/multiprocess_test.cc',
         'test/multiprocess_test.h',
         'test/multiprocess_test_android.cc',
@@ -957,6 +966,8 @@
         'test/simple_test_tick_clock.h',
         'test/task_runner_test_template.cc',
         'test/task_runner_test_template.h',
+        'test/test_discardable_memory_allocator.cc',
+        'test/test_discardable_memory_allocator.h',
         'test/test_file_util.cc',
         'test/test_file_util.h',
         'test/test_file_util_android.cc',
@@ -1057,6 +1068,7 @@
     ['OS!="ios"', {
       'targets': [
         {
+          # GN: //base:check_example
           'target_name': 'check_example',
           'type': 'executable',
           'sources': [
@@ -1323,6 +1335,7 @@
           'type': 'none',
           'sources': [
             'android/java/src/org/chromium/base/ApplicationStatus.java',
+            'android/java/src/org/chromium/base/AnimationFrameTimeHistogram.java',
             'android/java/src/org/chromium/base/BuildInfo.java',
             'android/java/src/org/chromium/base/CommandLine.java',
             'android/java/src/org/chromium/base/ContentUriUtils.java',
@@ -1397,15 +1410,9 @@
             'base_java_library_process_type',
             'base_java_memory_pressure_level',
             'base_native_libraries_gen',
+            '../third_party/jsr-305/jsr-305.gyp:jsr_305_javalib',
           ],
           'includes': [ '../build/java.gypi' ],
-          'conditions': [
-            ['android_webview_build==0', {
-              'dependencies': [
-                '../third_party/jsr-305/jsr-305.gyp:jsr_305_javalib',
-              ],
-            }]
-          ],
         },
         {
           # GN: //base:base_java_unittest_support
@@ -1475,25 +1482,18 @@
           # GN: //base/android/linker:chromium_android_linker
           'target_name': 'chromium_android_linker',
           'type': 'shared_library',
-          'conditions': [
-            # Avoid breaking the webview build because it
-            # does not have <(android_ndk_root)/crazy_linker.gyp.
-            # Note that webview never uses the linker anyway.
-            ['android_webview_build == 0', {
-              'sources': [
-                'android/linker/linker_jni.cc',
-              ],
-              # The crazy linker is never instrumented.
-              'cflags!': [
-                '-finstrument-functions',
-              ],
-              'dependencies': [
-                # The NDK contains the crazy_linker here:
-                #   '<(android_ndk_root)/crazy_linker.gyp:crazy_linker'
-                # However, we use our own fork.  See bug 384700.
-                '../third_party/android_crazy_linker/crazy_linker.gyp:crazy_linker',
-              ],
-            }],
+          'sources': [
+            'android/linker/linker_jni.cc',
+          ],
+          # The crazy linker is never instrumented.
+          'cflags!': [
+            '-finstrument-functions',
+          ],
+          'dependencies': [
+            # The NDK contains the crazy_linker here:
+            #   '<(android_ndk_root)/crazy_linker.gyp:crazy_linker'
+            # However, we use our own fork.  See bug 384700.
+            '../third_party/android_crazy_linker/crazy_linker.gyp:crazy_linker',
           ],
         },
         {
@@ -1534,6 +1534,28 @@
           'msvs_settings': {
             'VCLinkerTool': {
               'SubSystem': '2',         # Set /SUBSYSTEM:WINDOWS
+            },
+          },
+        },
+        {
+          # Target to manually rebuild pe_image_test.dll which is checked into
+          # base/test/data/pe_image.
+          'target_name': 'pe_image_test',
+          'type': 'shared_library',
+          'sources': [
+            'win/pe_image_test.cc',
+          ],
+          'msvs_settings': {
+            'VCLinkerTool': {
+              'SubSystem': '2',         # Set /SUBSYSTEM:WINDOWS
+              'DelayLoadDLLs': [
+                'cfgmgr32.dll',
+                'shell32.dll',
+              ],
+              'AdditionalDependencies': [
+                'cfgmgr32.lib',
+                'shell32.lib',
+              ],
             },
           },
         },

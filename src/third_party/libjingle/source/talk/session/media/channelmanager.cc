@@ -149,10 +149,10 @@ ChannelManager::~ChannelManager() {
     // shutdown.
     ShutdownSrtp();
   }
-  // Always delete the media engine on the worker thread to match how it was
-  // created.
+  // Some deletes need to be on the worker thread for thread safe destruction,
+  // this includes the media engine and capture manager.
   worker_thread_->Invoke<void>(Bind(
-      &ChannelManager::DeleteMediaEngine_w, this));
+      &ChannelManager::DestructorDeletes_w, this));
 }
 
 bool ChannelManager::SetVideoRtxEnabled(bool enable) {
@@ -310,9 +310,10 @@ void ChannelManager::Terminate() {
   initialized_ = false;
 }
 
-void ChannelManager::DeleteMediaEngine_w() {
+void ChannelManager::DestructorDeletes_w() {
   ASSERT(worker_thread_ == rtc::Thread::Current());
   media_engine_.reset(NULL);
+  capture_manager_.reset(NULL);
 }
 
 void ChannelManager::Terminate_w() {
@@ -814,6 +815,23 @@ void ChannelManager::SetVideoLogging(int level, const char* filter) {
   } else {
     media_engine_->SetVideoLogging(level, filter);
   }
+}
+
+std::vector<cricket::VideoFormat> ChannelManager::GetSupportedFormats(
+    VideoCapturer* capturer) const {
+  ASSERT(capturer != NULL);
+  std::vector<VideoFormat> formats;
+  worker_thread_->Invoke<void>(rtc::Bind(&ChannelManager::GetSupportedFormats_w,
+                                         this, capturer, &formats));
+  return formats;
+}
+
+void ChannelManager::GetSupportedFormats_w(
+    VideoCapturer* capturer,
+    std::vector<cricket::VideoFormat>* out_formats) const {
+  const std::vector<VideoFormat>* formats = capturer->GetSupportedFormats();
+  if (formats != NULL)
+    *out_formats = *formats;
 }
 
 // TODO(janahan): For now pass this request through the mediaengine to the

@@ -40,9 +40,6 @@
         'geometry/point_f.h',
         'geometry/quad_f.cc',
         'geometry/quad_f.h',
-        'geometry/r_tree.h',
-        'geometry/r_tree_base.cc',
-        'geometry/r_tree_base.h',
         'geometry/rect.cc',
         'geometry/rect.h',
         'geometry/rect_conversions.cc',
@@ -163,7 +160,7 @@
         'font.h',
         'font_fallback.h',
         'font_fallback_linux.cc',
-        'font_fallback_mac.cc',
+        'font_fallback_mac.mm',
         'font_fallback_win.cc',
         'font_fallback_win.h',
         'font_list.cc',
@@ -212,10 +209,16 @@
         'image/image_util_ios.mm',
         'interpolated_transform.cc',
         'interpolated_transform.h',
+        'ios/NSString+CrStringDrawing.h',
+        'ios/NSString+CrStringDrawing.mm',
+        'ios/uikit_util.h',
+        'ios/uikit_util.mm',
         'linux_font_delegate.cc',
         'linux_font_delegate.h',
         'mac/coordinate_conversion.h',
         'mac/coordinate_conversion.mm',
+        'mac/nswindow_frame_controls.h',
+        'mac/nswindow_frame_controls.mm',
         'mac/scoped_ns_disable_screen_updates.h',
         'native_widget_types.h',
         'nine_image_painter.cc',
@@ -313,12 +316,13 @@
       ],
       'conditions': [
         ['OS=="ios"', {
-          'dependencies': [
-            '<(DEPTH)/ui/ios/ui_ios.gyp:ui_ios',
-          ],
-          # iOS only uses a subset of UI.
-          'sources/': [
-            ['exclude', '^codec/jpeg_codec\\.cc$'],
+          # Linkable dependents need to set the linker flag '-ObjC' in order to
+          # use the categories in this target (e.g. NSString+CrStringDrawing.h).
+          'link_settings': {
+            'xcode_settings': {'OTHER_LDFLAGS': ['-ObjC']},
+          },
+          'sources!': [
+            'codec/jpeg_codec.cc',
           ],
         }, {
           'dependencies': [
@@ -355,6 +359,7 @@
           ],
           'dependencies': [
             'gfx_jni_headers',
+            '<(DEPTH)/base/base.gyp:base_java',
           ],
           'link_settings': {
             'libraries': [
@@ -377,11 +382,6 @@
         ['OS=="android" and use_aura==1', {
           'sources!': [
             'screen_android.cc',
-          ],
-        }],
-        ['OS=="android" and android_webview_build==0', {
-          'dependencies': [
-            '<(DEPTH)/base/base.gyp:base_java',
           ],
         }],
         ['OS=="android" or OS=="ios"', {

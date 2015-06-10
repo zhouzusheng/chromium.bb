@@ -56,8 +56,6 @@ public:
     virtual void enable(ErrorString*) override;
     virtual void disable(ErrorString*) override;
 
-    virtual bool isWorkerAgent() override { return false; }
-
     void workerTerminated(WorkerInspectorProxy*);
 
     void workerConsoleAgentEnabled(WorkerGlobalScopeProxy*);
@@ -71,7 +69,6 @@ protected:
 private:
     PageConsoleAgent(InjectedScriptManager*, InspectorDOMAgent*, InspectorPageAgent*);
     virtual void clearMessages(ErrorString*) override;
-    virtual void addInspectedNode(ErrorString*, int nodeId) override;
 
     RawPtrWillBeMember<InspectorDOMAgent> m_inspectorDOMAgent;
     RawPtrWillBeMember<InspectorPageAgent> m_pageAgent;

@@ -46,6 +46,7 @@ class AudioRendererHost;
 class BrowserCdmManager;
 class BrowserDemuxerAndroid;
 class GpuMessageFilter;
+class InProcessChildThreadParams;
 class MessagePortMessageFilter;
 class MojoApplicationHost;
 class NotificationMessageFilter;
@@ -63,7 +64,7 @@ class StoragePartition;
 class StoragePartitionImpl;
 
 typedef base::Thread* (*RendererMainThreadFactoryFunction)(
-    const std::string& id);
+    const InProcessChildThreadParams& params);
 
 // Implements a concrete RenderProcessHost for the browser process for talking
 // to actual renderer processes (as opposed to mocks).
@@ -102,7 +103,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
   void RemoveRoute(int32 routing_id) override;
   void AddObserver(RenderProcessHostObserver* observer) override;
   void RemoveObserver(RenderProcessHostObserver* observer) override;
-  void ReceivedBadMessage() override;
+  void ShutdownForBadMessage() override;
   void WidgetRestored() override;
   void WidgetHidden() override;
   int VisibleWidgetCount() const override;
@@ -301,6 +302,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
  private:
   friend class VisitRelayingRenderProcessHost;
+  friend class ChildProcessLauncherBrowserTest_ChildSpawnFail_Test;
 
   scoped_ptr<IPC::ChannelProxy> CreateChannelProxy(
       const std::string& channel_id);

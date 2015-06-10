@@ -27,20 +27,28 @@ class CONTENT_EXPORT WebSchedulerImpl : public blink::WebScheduler {
   ~WebSchedulerImpl() override;
 
   virtual bool shouldYieldForHighPriorityWork();
+  virtual bool canExceedIdleDeadlineIfRequired();
   virtual void postIdleTask(const blink::WebTraceLocation& location,
-                            blink::WebScheduler::IdleTask* task);
+                            blink::WebThread::IdleTask* task);
+  virtual void postNonNestableIdleTask(const blink::WebTraceLocation& location,
+                                       blink::WebThread::IdleTask* task);
+  virtual void postIdleTaskAfterWakeup(const blink::WebTraceLocation& location,
+                                       blink::WebThread::IdleTask* task);
   virtual void postLoadingTask(const blink::WebTraceLocation& location,
                                blink::WebThread::Task* task);
-  virtual void shutdown();
+  virtual void postTimerTask(const blink::WebTraceLocation& location,
+                             blink::WebThread::Task* task,
+                             long long delayMs);
 
  private:
-  static void runIdleTask(scoped_ptr<blink::WebScheduler::IdleTask> task,
+  static void runIdleTask(scoped_ptr<blink::WebThread::IdleTask> task,
                           base::TimeTicks deadline);
   static void runTask(scoped_ptr<blink::WebThread::Task> task);
 
   RendererScheduler* renderer_scheduler_;
   scoped_refptr<SingleThreadIdleTaskRunner> idle_task_runner_;
   scoped_refptr<base::SingleThreadTaskRunner> loading_task_runner_;
+  scoped_refptr<base::SingleThreadTaskRunner> timer_task_runner_;
 };
 
 }  // namespace content

@@ -3,6 +3,9 @@
 # found in the LICENSE file.
 
 {
+  'includes': [
+    'trace_event/trace_event.gypi',
+  ],
   'target_defaults': {
     'variables': {
       'base_target': 0,
@@ -17,6 +20,8 @@
           'allocator/allocator_extension.h',
           'allocator/type_profiler_control.cc',
           'allocator/type_profiler_control.h',
+          'android/animation_frame_time_histogram.cc',
+          'android/animation_frame_time_histogram.h',
           'android/application_status_listener.cc',
           'android/application_status_listener.h',
           'android/base_jni_onload.cc',
@@ -44,7 +49,6 @@
           'android/jni_android.h',
           'android/jni_array.cc',
           'android/jni_array.h',
-          'android/jni_onload_delegate.h',
           'android/jni_registrar.cc',
           'android/jni_registrar.h',
           'android/jni_string.cc',
@@ -317,18 +321,8 @@
           'memory/aligned_memory.h',
           'memory/discardable_memory.cc',
           'memory/discardable_memory.h',
-          'memory/discardable_memory_android.cc',
-          'memory/discardable_memory_emulated.cc',
-          'memory/discardable_memory_emulated.h',
-          'memory/discardable_memory_linux.cc',
-          'memory/discardable_memory_mac.cc',
-          'memory/discardable_memory_manager.cc',
-          'memory/discardable_memory_manager.h',
-          'memory/discardable_memory_shmem.cc',
-          'memory/discardable_memory_shmem.h',
-          'memory/discardable_memory_shmem_allocator.cc',
-          'memory/discardable_memory_shmem_allocator.h',
-          'memory/discardable_memory_win.cc',
+          'memory/discardable_memory_allocator.cc',
+          'memory/discardable_memory_allocator.h',
           'memory/discardable_shared_memory.cc',
           'memory/discardable_shared_memory.h',
           'memory/linked_ptr.h',
@@ -397,6 +391,7 @@
           'metrics/user_metrics_action.h',
           'move.h',
           'native_library.h',
+          'native_library_ios.mm',
           'native_library_mac.mm',
           'native_library_posix.cc',
           'native_library_win.cc',
@@ -494,6 +489,10 @@
           'profiler/scoped_profile.h',
           'profiler/scoped_tracker.cc',
           'profiler/scoped_tracker.h',
+          'profiler/stack_sampling_profiler.cc',
+          'profiler/stack_sampling_profiler.h',
+          'profiler/stack_sampling_profiler_posix.cc',
+          'profiler/stack_sampling_profiler_win.cc',
           'profiler/tracked_time.cc',
           'profiler/tracked_time.h',
           'rand_util.cc',
@@ -609,6 +608,8 @@
           'threading/non_thread_safe_impl.h',
           'threading/platform_thread.h',
           'threading/platform_thread_android.cc',
+          'threading/platform_thread_internal_posix.cc',
+          'threading/platform_thread_internal_posix.h',
           'threading/platform_thread_linux.cc',
           'threading/platform_thread_mac.mm',
           'threading/platform_thread_posix.cc',
@@ -667,30 +668,6 @@
           'timer/mock_timer.h',
           'timer/timer.cc',
           'timer/timer.h',
-          'trace_event/memory_dump_manager.cc',
-          'trace_event/memory_dump_manager.h',
-          'trace_event/memory_dump_provider.h',
-          'trace_event/process_memory_dump.cc',
-          'trace_event/process_memory_dump.h',
-          'trace_event/process_memory_totals.cc',
-          'trace_event/process_memory_totals.h',
-          'trace_event/process_memory_totals_dump_provider.cc',
-          'trace_event/process_memory_totals_dump_provider.h',
-          'trace_event/trace_event.h',
-          'trace_event/trace_event_android.cc',
-          'trace_event/trace_event_argument.cc',
-          'trace_event/trace_event_argument.h',
-          'trace_event/trace_event_impl.cc',
-          'trace_event/trace_event_impl.h',
-          'trace_event/trace_event_impl_constants.cc',
-          'trace_event/trace_event_memory.cc',
-          'trace_event/trace_event_memory.h',
-          'trace_event/trace_event_synthetic_delay.cc',
-          'trace_event/trace_event_synthetic_delay.h',
-          'trace_event/trace_event_system_stats_monitor.cc',
-          'trace_event/trace_event_system_stats_monitor.h',
-          'trace_event/trace_event_win.cc',
-          'trace_event/trace_event_win.h',
           'tracked_objects.cc',
           'tracked_objects.h',
           'tracking_info.cc',
@@ -753,6 +730,7 @@
           'win/windows_version.h',
           'win/wrapped_window_proc.cc',
           'win/wrapped_window_proc.h',
+          '<@(trace_event_sources)',
         ],
         'defines': [
           'BASE_IMPLEMENTATION',
@@ -824,14 +802,6 @@
               ['include', '^threading/platform_thread_linux\\.cc$'],
             ],
           }],
-          ['OS == "android" and _toolset == "target" and >(nacl_untrusted_build)==0', {
-           'sources': [
-             'memory/discardable_memory_ashmem.cc',
-             'memory/discardable_memory_ashmem.h',
-             'memory/discardable_memory_ashmem_allocator.cc',
-             'memory/discardable_memory_ashmem_allocator.h',
-           ],
-          }],
           ['OS == "android" and >(nacl_untrusted_build)==0', {
             'sources!': [
               'base_paths_posix.cc',
@@ -867,13 +837,6 @@
               ['include', '^threading/platform_thread_linux\\.cc$'],
             ],
           }],
-          ['OS == "android" and <(android_webview_build)==1', {
-            'defines': [
-               # WebView builds as part of the system which already has sincos;
-               # avoid defining it again as it causes a linker warning.
-               'ANDROID_SINCOS_PROVIDED',
-            ],
-          }],
           ['<(chromeos) == 1', {
             'sources!': [
               'power_monitor/power_monitor_device_source_posix.cc',
@@ -896,7 +859,6 @@
               ['include', '^mac/scoped_mach_vm\\.'],
               ['include', '^mac/scoped_nsautorelease_pool\\.'],
               ['include', '^mac/scoped_nsobject\\.'],
-              ['include', '^memory/discardable_memory_mac\\.'],
               ['include', '^message_loop/message_pump_mac\\.'],
               ['include', '^strings/sys_string_conversions_mac\\.'],
               ['include', '^threading/platform_thread_mac\\.'],
@@ -908,6 +870,8 @@
               ['include', '^process/.*_ios\.(cc|mm)$'],
               ['include', '^process/memory_stubs\.cc$'],
               ['include', '^process/process_handle_posix\.cc$'],
+              ['include', '^process/process_metrics\\.cc$'],
+              ['exclude', '^threading/platform_thread_internal_posix\\.(h|cc)'],
               ['exclude', 'files/file_path_watcher_fsevents.cc'],
               ['exclude', 'files/file_path_watcher_fsevents.h'],
               ['include', 'files/file_path_watcher_mac.cc'],
@@ -974,15 +938,12 @@
             ],
           }],
           ['(OS == "mac" or OS == "ios") and >(nacl_untrusted_build)==0', {
-            'sources': [
-              'memory/discardable_memory_mach.cc',
-              'memory/discardable_memory_mach.h',
-            ],
             'sources/': [
-              ['exclude', '^files/file_path_watcher_stub\\.cc$'],
               ['exclude', '^base_paths_posix\\.cc$'],
+              ['exclude', '^files/file_path_watcher_stub\\.cc$'],
               ['exclude', '^native_library_posix\\.cc$'],
               ['exclude', '^strings/sys_string_conversions_posix\\.cc$'],
+              ['exclude', '^threading/platform_thread_internal_posix\\.cc$'],
             ],
           }],
           ['<(os_bsd)==1 and >(nacl_untrusted_build)==0', {

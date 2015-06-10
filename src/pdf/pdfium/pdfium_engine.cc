@@ -33,6 +33,7 @@
 #include "ppapi/cpp/url_response_info.h"
 #include "ppapi/cpp/var.h"
 #include "ppapi/cpp/var_dictionary.h"
+#include "printing/units.h"
 #include "third_party/pdfium/fpdfsdk/include/fpdf_ext.h"
 #include "third_party/pdfium/fpdfsdk/include/fpdf_flatten.h"
 #include "third_party/pdfium/fpdfsdk/include/fpdf_searchex.h"
@@ -44,6 +45,11 @@
 #include "third_party/pdfium/fpdfsdk/include/pdfwindow/PDFWindow.h"
 #include "third_party/pdfium/fpdfsdk/include/pdfwindow/PWL_FontMap.h"
 #include "ui/events/keycodes/keyboard_codes.h"
+
+using printing::ConvertUnit;
+using printing::ConvertUnitDouble;
+using printing::kPointsPerInch;
+using printing::kPixelsPerInch;
 
 namespace chrome_pdf {
 
@@ -90,28 +96,12 @@ const uint32 kPendingPageColor = 0xFFEEEEEE;
 // painting the scrollbars > 60 Hz.
 #define kMaxInitialProgressivePaintTimeMs 10
 
-// Copied from printing/units.cc because we don't want to depend on printing
-// since it brings in libpng which causes duplicate symbols with PDFium.
-const int kPointsPerInch = 72;
-const int kPixelsPerInch = 96;
-
 struct ClipBox {
   float left;
   float right;
   float top;
   float bottom;
 };
-
-int ConvertUnit(int value, int old_unit, int new_unit) {
-  // With integer arithmetic, to divide a value with correct rounding, you need
-  // to add half of the divisor value to the dividend value. You need to do the
-  // reverse with negative number.
-  if (value >= 0) {
-    return ((value * new_unit) + (old_unit / 2)) / old_unit;
-  } else {
-    return ((value * new_unit) - (old_unit / 2)) / old_unit;
-  }
-}
 
 std::vector<uint32_t> GetPageNumbersFromPrintPageNumberRange(
     const PP_PrintPageNumberRange_Dev* page_ranges,
@@ -1398,11 +1388,12 @@ FPDF_DOCUMENT PDFiumEngine::CreateSinglePageRasterPdf(
                         print_settings.orientation,
                         FPDF_ANNOT | FPDF_PRINTING | FPDF_NO_CATCH);
 
-  double ratio_x = (static_cast<double>(bitmap_size.width()) * kPointsPerInch) /
-                   print_settings.dpi;
-  double ratio_y =
-      (static_cast<double>(bitmap_size.height()) * kPointsPerInch) /
-      print_settings.dpi;
+  double ratio_x = ConvertUnitDouble(bitmap_size.width(),
+                                     print_settings.dpi,
+                                     kPointsPerInch);
+  double ratio_y = ConvertUnitDouble(bitmap_size.height(),
+                                     print_settings.dpi,
+                                     kPointsPerInch);
 
   // Add the bitmap to an image object and add the image object to the output
   // page.
@@ -1450,10 +1441,10 @@ pp::Buffer_Dev PDFiumEngine::PrintPagesAsRasterPDF(
                                                source_page_height));
 
     int width_in_pixels = ConvertUnit(source_page_width,
-                                      static_cast<int>(kPointsPerInch),
+                                      kPointsPerInch,
                                       print_settings.dpi);
     int height_in_pixels = ConvertUnit(source_page_height,
-                                       static_cast<int>(kPointsPerInch),
+                                       kPointsPerInch,
                                        print_settings.dpi);
 
     pp::Rect rect(width_in_pixels, height_in_pixels);
@@ -1614,25 +1605,27 @@ void PDFiumEngine::PrintEnd() {
   FORM_DoDocumentAAction(form_, FPDFDOC_AACTION_DP);
 }
 
-PDFiumPage::Area PDFiumEngine::GetCharIndex(
-    const pp::MouseInputEvent& event, int* page_index,
-    int* char_index, PDFiumPage::LinkTarget* target) {
+PDFiumPage::Area PDFiumEngine::GetCharIndex(const pp::MouseInputEvent& event,
+                                            int* page_index,
+                                            int* char_index,
+                                            int* form_type,
+                                            PDFiumPage::LinkTarget* target) {
   // First figure out which page this is in.
   pp::Point mouse_point = event.GetPosition();
-  pp::Point point(
-      static_cast<int>((mouse_point.x() + position_.x()) / current_zoom_),
-      static_cast<int>((mouse_point.y() + position_.y()) / current_zoom_));
-  return GetCharIndex(point, page_index, char_index, target);
+  return GetCharIndex(mouse_point, page_index, char_index, form_type, target);
 }
 
-PDFiumPage::Area PDFiumEngine::GetCharIndex(
-    const pp::Point& point,
-    int* page_index,
-    int* char_index,
-    PDFiumPage::LinkTarget* target) {
+PDFiumPage::Area PDFiumEngine::GetCharIndex(const pp::Point& point,
+                                            int* page_index,
+                                            int* char_index,
+                                            int* form_type,
+                                            PDFiumPage::LinkTarget* target) {
   int page = -1;
+  pp::Point point_in_page(
+      static_cast<int>((point.x() + position_.x()) / current_zoom_),
+      static_cast<int>((point.y() + position_.y()) / current_zoom_));
   for (size_t i = 0; i < visible_pages_.size(); ++i) {
-    if (pages_[visible_pages_[i]]->rect().Contains(point)) {
+    if (pages_[visible_pages_[i]]->rect().Contains(point_in_page)) {
       page = visible_pages_[i];
       break;
     }
@@ -1648,15 +1641,11 @@ PDFiumPage::Area PDFiumEngine::GetCharIndex(
   }
 
   *page_index = page;
-  return pages_[page]->GetCharIndex(point, current_rotation_, char_index,
-                                    target);
+  return pages_[page]->GetCharIndex(
+      point_in_page, current_rotation_, char_index, form_type, target);
 }
 
 bool PDFiumEngine::OnMouseDown(const pp::MouseInputEvent& event) {
-  if (event.GetButton() != PP_INPUTEVENT_MOUSEBUTTON_LEFT &&
-      event.GetButton() != PP_INPUTEVENT_MOUSEBUTTON_RIGHT) {
-    return false;
-  }
   if (event.GetButton() == PP_INPUTEVENT_MOUSEBUTTON_RIGHT) {
     if (!selection_.size())
       return false;
@@ -1672,15 +1661,18 @@ bool PDFiumEngine::OnMouseDown(const pp::MouseInputEvent& event) {
     selection_.clear();
     return true;
   }
+  if (event.GetButton() != PP_INPUTEVENT_MOUSEBUTTON_LEFT)
+    return false;
 
   SelectionChangeInvalidator selection_invalidator(this);
   selection_.clear();
 
   int page_index = -1;
   int char_index = -1;
+  int form_type = FPDF_FORMFIELD_UNKNOWN;
   PDFiumPage::LinkTarget target;
-  PDFiumPage::Area area = GetCharIndex(event, &page_index,
-                                       &char_index, &target);
+  PDFiumPage::Area area =
+      GetCharIndex(event, &page_index, &char_index, &form_type, &target);
   mouse_down_state_.Set(area, target);
 
   // Decide whether to open link or not based on user action in mouse up and
@@ -1701,16 +1693,14 @@ bool PDFiumEngine::OnMouseDown(const pp::MouseInputEvent& event) {
     DeviceToPage(page_index, point.x(), point.y(), &page_x, &page_y);
 
     FORM_OnLButtonDown(form_, pages_[page_index]->GetPage(), 0, page_x, page_y);
-    int control = FPDPage_HasFormFieldAtPoint(
-        form_, pages_[page_index]->GetPage(), page_x, page_y);
-    if (control > FPDF_FORMFIELD_UNKNOWN) {  // returns -1 sometimes...
+    if (form_type > FPDF_FORMFIELD_UNKNOWN) {  // returns -1 sometimes...
+      mouse_down_state_.Set(PDFiumPage::NONSELECTABLE_AREA, target);
+      bool is_valid_control = (form_type == FPDF_FORMFIELD_TEXTFIELD ||
+                               form_type == FPDF_FORMFIELD_COMBOBOX);
 #ifdef PDF_USE_XFA
-    client_->FormTextFieldFocusChange(control == FPDF_FORMFIELD_TEXTFIELD ||
-        control == FPDF_FORMFIELD_COMBOBOX || control == FPDF_FORMFIELD_XFA);
-#else
-    client_->FormTextFieldFocusChange(control == FPDF_FORMFIELD_TEXTFIELD ||
-        control == FPDF_FORMFIELD_COMBOBOX);
+      is_valid_control |= (form_type == FPDF_FORMFIELD_XFA);
 #endif
+      client_->FormTextFieldFocusChange(is_valid_control);
       return true;  // Return now before we get into the selection code.
     }
   }
@@ -1769,9 +1759,10 @@ bool PDFiumEngine::OnMouseUp(const pp::MouseInputEvent& event) {
 
   int page_index = -1;
   int char_index = -1;
+  int form_type = FPDF_FORMFIELD_UNKNOWN;
   PDFiumPage::LinkTarget target;
   PDFiumPage::Area area =
-      GetCharIndex(event, &page_index, &char_index, &target);
+      GetCharIndex(event, &page_index, &char_index, &form_type, &target);
 
   // Open link on mouse up for same link for which mouse down happened earlier.
   if (mouse_down_state_.Matches(area, target)) {
@@ -1801,9 +1792,10 @@ bool PDFiumEngine::OnMouseUp(const pp::MouseInputEvent& event) {
 bool PDFiumEngine::OnMouseMove(const pp::MouseInputEvent& event) {
   int page_index = -1;
   int char_index = -1;
+  int form_type = FPDF_FORMFIELD_UNKNOWN;
   PDFiumPage::LinkTarget target;
   PDFiumPage::Area area =
-      GetCharIndex(event, &page_index, &char_index, &target);
+      GetCharIndex(event, &page_index, &char_index, &form_type, &target);
 
   // Clear |mouse_down_state_| if mouse moves away from where the mouse down
   // happened.
@@ -1822,7 +1814,21 @@ bool PDFiumEngine::OnMouseMove(const pp::MouseInputEvent& event) {
         break;
       case PDFiumPage::NONSELECTABLE_AREA:
       default:
-        cursor = PP_CURSORTYPE_POINTER;
+        switch (form_type) {
+          case FPDF_FORMFIELD_PUSHBUTTON:
+          case FPDF_FORMFIELD_CHECKBOX:
+          case FPDF_FORMFIELD_RADIOBUTTON:
+          case FPDF_FORMFIELD_COMBOBOX:
+          case FPDF_FORMFIELD_LISTBOX:
+            cursor = PP_CURSORTYPE_HAND;
+            break;
+          case FPDF_FORMFIELD_TEXTFIELD:
+            cursor = PP_CURSORTYPE_IBEAM;
+            break;
+          default:
+            cursor = PP_CURSORTYPE_POINTER;
+            break;
+        }
         break;
     }
 
@@ -1830,24 +1836,7 @@ bool PDFiumEngine::OnMouseMove(const pp::MouseInputEvent& event) {
       double page_x, page_y;
       pp::Point point = event.GetPosition();
       DeviceToPage(page_index, point.x(), point.y(), &page_x, &page_y);
-
       FORM_OnMouseMove(form_, pages_[page_index]->GetPage(), 0, page_x, page_y);
-      int control = FPDPage_HasFormFieldAtPoint(
-          form_, pages_[page_index]->GetPage(), page_x, page_y);
-      switch (control) {
-        case FPDF_FORMFIELD_PUSHBUTTON:
-        case FPDF_FORMFIELD_CHECKBOX:
-        case FPDF_FORMFIELD_RADIOBUTTON:
-        case FPDF_FORMFIELD_COMBOBOX:
-        case FPDF_FORMFIELD_LISTBOX:
-          cursor = PP_CURSORTYPE_HAND;
-          break;
-        case FPDF_FORMFIELD_TEXTFIELD:
-          cursor = PP_CURSORTYPE_IBEAM;
-          break;
-        default:
-          break;
-      }
     }
 
     client_->UpdateCursor(cursor);
@@ -2321,15 +2310,16 @@ std::string PDFiumEngine::GetSelectedText() {
 }
 
 std::string PDFiumEngine::GetLinkAtPosition(const pp::Point& point) {
+  std::string url;
   int temp;
+  int page_index = -1;
+  int form_type = FPDF_FORMFIELD_UNKNOWN;
   PDFiumPage::LinkTarget target;
-  pp::Point point_in_page(
-      static_cast<int>((point.x() + position_.x()) / current_zoom_),
-      static_cast<int>((point.y() + position_.y()) / current_zoom_));
-  PDFiumPage::Area area = GetCharIndex(point_in_page, &temp, &temp, &target);
+  PDFiumPage::Area area =
+      GetCharIndex(point, &page_index, &temp, &form_type, &target);
   if (area == PDFiumPage::WEBLINK_AREA)
-    return target.url;
-  return std::string();
+    url = target.url;
+  return url;
 }
 
 bool PDFiumEngine::IsSelecting() {
@@ -2467,6 +2457,28 @@ int PDFiumEngine::GetCopiesToPrint() {
   return FPDF_VIEWERREF_GetNumCopies(doc_);
 }
 
+int PDFiumEngine::GetDuplexType() {
+  return static_cast<int>(FPDF_VIEWERREF_GetDuplex(doc_));
+}
+
+bool PDFiumEngine::GetPageSizeAndUniformity(pp::Size* size) {
+  if (pages_.empty())
+    return false;
+
+  pp::Size page_size = GetPageSize(0);
+  for (size_t i = 1; i < pages_.size(); ++i) {
+    if (page_size != GetPageSize(i))
+      return false;
+  }
+
+  // Convert |page_size| back to points.
+  size->set_width(
+      ConvertUnit(page_size.width(), kPixelsPerInch, kPointsPerInch));
+  size->set_height(
+      ConvertUnit(page_size.height(), kPixelsPerInch, kPointsPerInch));
+  return true;
+}
+
 void PDFiumEngine::AppendBlankPages(int num_pages) {
   DCHECK(num_pages != 0);
 
@@ -2507,10 +2519,12 @@ void PDFiumEngine::AppendBlankPages(int num_pages) {
     pp::Rect page_rect(page_rects[i]);
     page_rect.Inset(kPageShadowLeft, kPageShadowTop,
                     kPageShadowRight, kPageShadowBottom);
-    double width_in_points =
-        page_rect.width() * kPointsPerInch / kPixelsPerInch;
-    double height_in_points =
-        page_rect.height() * kPointsPerInch / kPixelsPerInch;
+    double width_in_points = ConvertUnitDouble(page_rect.width(),
+                                               kPixelsPerInch,
+                                               kPointsPerInch);
+    double height_in_points = ConvertUnitDouble(page_rect.height(),
+                                                kPixelsPerInch,
+                                                kPointsPerInch);
     FPDFPage_New(doc_, i, width_in_points, height_in_points);
     pages_.push_back(new PDFiumPage(this, i, page_rect, true));
   }
@@ -2794,9 +2808,9 @@ pp::Size PDFiumEngine::GetPageSize(int index) {
 
   if (rv) {
     int width_in_pixels = static_cast<int>(
-        width_in_points * kPixelsPerInch / kPointsPerInch);
+        ConvertUnitDouble(width_in_points, kPointsPerInch, kPixelsPerInch));
     int height_in_pixels = static_cast<int>(
-        height_in_points * kPixelsPerInch / kPointsPerInch);
+        ConvertUnitDouble(height_in_points, kPointsPerInch, kPixelsPerInch));
     if (current_rotation_ % 2 == 1)
       std::swap(width_in_pixels, height_in_pixels);
     size = pp::Size(width_in_pixels, height_in_pixels);
@@ -3781,10 +3795,12 @@ namespace {
 int CalculatePosition(FPDF_PAGE page,
                       const PDFiumEngineExports::RenderingSettings& settings,
                       pp::Rect* dest) {
-  int page_width = static_cast<int>(
-      FPDF_GetPageWidth(page) * settings.dpi_x / kPointsPerInch);
-  int page_height = static_cast<int>(
-      FPDF_GetPageHeight(page) * settings.dpi_y / kPointsPerInch);
+  int page_width = static_cast<int>(ConvertUnitDouble(FPDF_GetPageWidth(page),
+                                                      kPointsPerInch,
+                                                      settings.dpi_x));
+  int page_height = static_cast<int>(ConvertUnitDouble(FPDF_GetPageHeight(page),
+                                                       kPointsPerInch,
+                                                       settings.dpi_y));
 
   // Start by assuming that we will draw exactly to the bounds rect
   // specified.

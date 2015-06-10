@@ -26,6 +26,7 @@
       },
       'dependencies': [
         '<(webrtc_root)/base/base.gyp:rtc_base_approved',
+        '<(webrtc_root)/common.gyp:webrtc_common',
         '<(webrtc_root)/common_audio/common_audio.gyp:common_audio',
         '<(webrtc_root)/modules/modules.gyp:iSAC',
         '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
@@ -81,10 +82,13 @@
         'audio_buffer.h',
         'audio_processing_impl.cc',
         'audio_processing_impl.h',
+        'beamformer/beamformer.h',
         'beamformer/complex_matrix.h',
         'beamformer/covariance_matrix_generator.cc',
         'beamformer/covariance_matrix_generator.h',
         'beamformer/matrix.h',
+        'beamformer/nonlinear_beamformer.cc',
+        'beamformer/nonlinear_beamformer.h',
         'common.h',
         'echo_cancellation_impl.cc',
         'echo_cancellation_impl.h',
@@ -125,8 +129,6 @@
         'utility/delay_estimator_internal.h',
         'utility/delay_estimator_wrapper.c',
         'utility/delay_estimator_wrapper.h',
-        'utility/fft4g.c',
-        'utility/fft4g.h',
         'voice_detection_impl.cc',
         'voice_detection_impl.h',
       ],
@@ -175,13 +177,6 @@
             'ns/windows_private.h',
           ],
         }],
-        ['rtc_use_openmax_dl==1', {
-          'defines': ['WEBRTC_BEAMFORMER'],
-          'sources': [
-            'beamformer/beamformer.cc',
-            'beamformer/beamformer.h',
-          ],
-        }],
         ['target_arch=="ia32" or target_arch=="x64"', {
           'dependencies': ['audio_processing_sse2',],
         }],
@@ -193,7 +188,7 @@
             'aecm/aecm_core_mips.c',
           ],
           'conditions': [
-            ['mips_fpu==1', {
+            ['mips_float_abi=="hard"', {
               'sources': [
                 'aec/aec_core_mips.c',
                 'aec/aec_rdft_mips.c',

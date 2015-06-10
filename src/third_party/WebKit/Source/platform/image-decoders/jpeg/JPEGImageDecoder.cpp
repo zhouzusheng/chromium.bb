@@ -74,19 +74,9 @@ inline J_COLOR_SPACE rgbOutputColorSpace() { return JCS_RGB; }
 inline bool colorSpaceHasAlpha(J_COLOR_SPACE) { return false; }
 #endif
 
-#if USE(LOW_QUALITY_IMAGE_NO_JPEG_DITHERING)
-inline J_DCT_METHOD dctMethod() { return JDCT_IFAST; }
-inline J_DITHER_MODE ditherMode() { return JDITHER_NONE; }
-#else
 inline J_DCT_METHOD dctMethod() { return JDCT_ISLOW; }
 inline J_DITHER_MODE ditherMode() { return JDITHER_FS; }
-#endif
-
-#if USE(LOW_QUALITY_IMAGE_NO_JPEG_FANCY_UPSAMPLING)
-inline bool doFancyUpsampling() { return false; }
-#else
 inline bool doFancyUpsampling() { return true; }
-#endif
 
 namespace {
 
@@ -310,7 +300,7 @@ static yuv_subsampling yuvSubsampling(const jpeg_decompress_struct& info)
 }
 
 class JPEGImageReader {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED(JPEGImageReader);
 public:
     JPEGImageReader(JPEGImageDecoder* decoder)
         : m_decoder(decoder)

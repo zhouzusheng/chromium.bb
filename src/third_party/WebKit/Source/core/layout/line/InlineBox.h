@@ -21,9 +21,9 @@
 #ifndef InlineBox_h
 #define InlineBox_h
 
+#include "core/layout/LayoutBoxModelObject.h"
 #include "core/layout/LayoutObject.h"
 #include "core/layout/line/FloatToLayoutUnit.h"
-#include "core/rendering/RenderBoxModelObject.h"
 #include "platform/graphics/paint/DisplayItemClient.h"
 #include "platform/text/TextDirection.h"
 
@@ -44,7 +44,7 @@ public:
         : m_next(0)
         , m_prev(0)
         , m_parent(0)
-        , m_renderer(obj)
+        , m_layoutObject(obj)
         , m_logicalWidth()
 #if ENABLE(ASSERT)
         , m_hasBadParent(false)
@@ -57,7 +57,7 @@ public:
         : m_next(next)
         , m_prev(prev)
         , m_parent(parent)
-        , m_renderer(obj)
+        , m_layoutObject(obj)
         , m_topLeft(topLeft)
         , m_logicalWidth(logicalWidth)
         , m_bitfields(firstLine, constructed, dirty, extracted, isHorizontal)
@@ -69,7 +69,7 @@ public:
 
     virtual ~InlineBox();
 
-    virtual void destroy() { delete this; }
+    virtual void destroy();
 
     virtual void deleteLine();
     virtual void extractLine();
@@ -101,7 +101,7 @@ public:
     }
 
     virtual void paint(const PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom);
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom);
+    virtual bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom);
 
     // InlineBoxes are allocated out of the rendering partition.
     void* operator new(size_t);
@@ -113,8 +113,10 @@ public:
 
     virtual void showBox(int = 0) const;
     virtual void showLineTreeAndMark(const InlineBox* = 0, const char* = 0, const InlineBox* = 0, const char* = 0, const LayoutObject* = 0, int = 0) const;
-    virtual const char* boxName() const;
 #endif
+
+    virtual const char* boxName() const;
+    virtual String debugName() const;
 
     bool isText() const { return m_bitfields.isText(); }
     void setIsText(bool isText) { m_bitfields.setIsText(isText); }
@@ -179,7 +181,7 @@ public:
     InlineBox* nextLeafChildIgnoringLineBreak() const;
     InlineBox* prevLeafChildIgnoringLineBreak() const;
 
-    LayoutObject& renderer() const { return m_renderer; }
+    LayoutObject& layoutObject() const { return m_layoutObject; }
 
     InlineFlowBox* parent() const
     {
@@ -276,19 +278,25 @@ public:
 
     int expansion() const { return m_bitfields.expansion(); }
 
-    bool visibleToHitTestRequest(const HitTestRequest& request) const { return renderer().visibleToHitTestRequest(request); }
+    bool visibleToHitTestRequest(const HitTestRequest& request) const { return layoutObject().visibleToHitTestRequest(request); }
 
-    EVerticalAlign verticalAlign() const { return renderer().style(m_bitfields.firstLine())->verticalAlign(); }
+    EVerticalAlign verticalAlign() const { return layoutObject().style(m_bitfields.firstLine())->verticalAlign(); }
 
     // Use with caution! The type is not checked!
-    RenderBoxModelObject* boxModelObject() const
+    LayoutBoxModelObject* boxModelObject() const
     {
-        if (!renderer().isText())
-            return toRenderBoxModelObject(&renderer());
+        if (!layoutObject().isText())
+            return toLayoutBoxModelObject(&layoutObject());
         return 0;
     }
 
     FloatPointWillBeLayoutPoint locationIncludingFlipping();
+
+    // Converts from a rect in the logical space of the InlineBox to one in the physical space
+    // of the containing block. The logical space of an InlineBox may be transposed for vertical text and
+    // flipped for right-to-left text.
+    LayoutRect logicalRectToPhysicalRect(const LayoutRect&);
+
     void flipForWritingMode(FloatRect&);
     FloatPoint flipForWritingMode(const FloatPoint&);
     void flipForWritingMode(LayoutRect&);
@@ -381,11 +389,15 @@ public:
 #undef ADD_BOOLEAN_BITFIELD
 
 private:
+    // Converts the given (top-left) position from the logical space of the InlineBox to the physical space of the
+    // containing block. The size indicates the size of the box whose point is being flipped.
+    FloatPointWillBeLayoutPoint logicalPositionToPhysicalPoint(const FloatPoint&, const FloatSize&);
+
     InlineBox* m_next; // The next element on the same line as us.
     InlineBox* m_prev; // The previous element on the same line as us.
 
     InlineFlowBox* m_parent; // The box that contains us.
-    LayoutObject& m_renderer;
+    LayoutObject& m_layoutObject;
 
 protected:
     // For RootInlineBox

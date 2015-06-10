@@ -54,7 +54,7 @@ private:
 };
 
 class DocumentMarkerController final : public NoBaseWillBeGarbageCollected<DocumentMarkerController> {
-    WTF_MAKE_NONCOPYABLE(DocumentMarkerController); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_NONCOPYABLE(DocumentMarkerController); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(DocumentMarkerController);
     DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(DocumentMarkerController);
 public:
 
@@ -91,7 +91,7 @@ public:
     DocumentMarkerVector markers();
     Vector<IntRect> renderedRectsForMarkers(DocumentMarker::MarkerType);
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 #ifndef NDEBUG
     void showMarkers() const;

@@ -48,13 +48,12 @@ public:
     static PassOwnPtrWillBeRawPtr<ServiceWorkerGlobalScopeClient> create(WebServiceWorkerContextClient&);
     virtual ~ServiceWorkerGlobalScopeClientImpl();
 
-    virtual void getClients(WebServiceWorkerClientsCallbacks*) override;
+    virtual void getClients(const WebServiceWorkerClientQueryOptions&, WebServiceWorkerClientsCallbacks*) override;
     virtual void openWindow(const WebURL&, WebServiceWorkerClientCallbacks*) override;
     virtual void setCachedMetadata(const WebURL&, const char*, size_t) override;
     virtual void clearCachedMetadata(const WebURL&) override;
 
     virtual WebURL scope() const override;
-    virtual WebServiceWorkerCacheStorage* cacheStorage() const override;
 
     virtual void didHandleActivateEvent(int eventID, WebServiceWorkerEventResult) override;
     virtual void didHandleFetchEvent(int fetchEventID) override;
@@ -64,11 +63,11 @@ public:
     virtual void didHandlePushEvent(int pushEventID, WebServiceWorkerEventResult) override;
     virtual void didHandleSyncEvent(int syncEventID) override;
     virtual void didHandleCrossOriginConnectEvent(int connectEventID, bool acceptConnect) override;
-    virtual void postMessageToClient(int clientID, const WebString& message, PassOwnPtr<WebMessagePortChannelArray>) override;
+    virtual void postMessageToClient(const WebString& clientUUID, const WebString& message, PassOwnPtr<WebMessagePortChannelArray>) override;
     virtual void postMessageToCrossOriginClient(const WebCrossOriginServiceWorkerClient&, const WebString& message, PassOwnPtr<WebMessagePortChannelArray>) override;
     virtual void skipWaiting(WebServiceWorkerSkipWaitingCallbacks*) override;
     virtual void claim(WebServiceWorkerClientsClaimCallbacks*) override;
-    virtual void focus(int clientID, WebServiceWorkerClientCallbacks*) override;
+    virtual void focus(const WebString& clientUUID, WebServiceWorkerClientCallbacks*) override;
 
     DEFINE_INLINE_VIRTUAL_TRACE() { ServiceWorkerGlobalScopeClient::trace(visitor); }
 

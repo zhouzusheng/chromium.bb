@@ -45,18 +45,19 @@
 
 namespace blink {
 
-PassOwnPtrWillBeRawPtr<PageDebuggerAgent> PageDebuggerAgent::create(PageScriptDebugServer* pageScriptDebugServer, InspectorPageAgent* pageAgent, InjectedScriptManager* injectedScriptManager, InspectorOverlay* overlay)
+PassOwnPtrWillBeRawPtr<PageDebuggerAgent> PageDebuggerAgent::create(PageScriptDebugServer* pageScriptDebugServer, InspectorPageAgent* pageAgent, InjectedScriptManager* injectedScriptManager, InspectorOverlay* overlay, int debuggerId)
 {
-    return adoptPtrWillBeNoop(new PageDebuggerAgent(pageScriptDebugServer, pageAgent, injectedScriptManager, overlay));
+    return adoptPtrWillBeNoop(new PageDebuggerAgent(pageScriptDebugServer, pageAgent, injectedScriptManager, overlay, debuggerId));
 }
 
-PageDebuggerAgent::PageDebuggerAgent(PageScriptDebugServer* pageScriptDebugServer, InspectorPageAgent* pageAgent, InjectedScriptManager* injectedScriptManager, InspectorOverlay* overlay)
+PageDebuggerAgent::PageDebuggerAgent(PageScriptDebugServer* pageScriptDebugServer, InspectorPageAgent* pageAgent, InjectedScriptManager* injectedScriptManager, InspectorOverlay* overlay, int debuggerId)
     : InspectorDebuggerAgent(injectedScriptManager)
     , m_pageScriptDebugServer(pageScriptDebugServer)
     , m_pageAgent(pageAgent)
     , m_overlay(overlay)
+    , m_debuggerId(debuggerId)
 {
-    m_overlay->overlayHost()->setListener(this);
+    m_overlay->setListener(this);
 }
 
 PageDebuggerAgent::~PageDebuggerAgent()
@@ -67,6 +68,7 @@ DEFINE_TRACE(PageDebuggerAgent)
 {
     visitor->trace(m_pageScriptDebugServer);
     visitor->trace(m_pageAgent);
+    visitor->trace(m_overlay);
     InspectorDebuggerAgent::trace(visitor);
 }
 
@@ -84,7 +86,7 @@ void PageDebuggerAgent::disable()
 
 void PageDebuggerAgent::startListeningScriptDebugServer()
 {
-    scriptDebugServer().addListener(this, m_pageAgent->inspectedFrame());
+    scriptDebugServer().addListener(this, m_pageAgent->inspectedFrame(), m_debuggerId);
 }
 
 void PageDebuggerAgent::stopListeningScriptDebugServer()
@@ -150,11 +152,9 @@ void PageDebuggerAgent::didClearDocumentOfWindowObject(LocalFrame* frame)
     reset();
 }
 
-void PageDebuggerAgent::didCommitLoad(LocalFrame* frame, DocumentLoader* loader)
+void PageDebuggerAgent::didCommitLoadForLocalFrame(LocalFrame*)
 {
-    if (loader->frame() == m_pageAgent->inspectedFrame())
-        pageDidCommitLoad();
+    resetModifiedSources();
 }
 
 } // namespace blink
-

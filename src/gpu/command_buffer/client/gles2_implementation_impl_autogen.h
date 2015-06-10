@@ -1286,6 +1286,46 @@ void GLES2Implementation::GetShaderSource(GLuint shader,
   }
   CheckGLError();
 }
+void GLES2Implementation::GetSynciv(GLsync sync,
+                                    GLenum pname,
+                                    GLsizei bufsize,
+                                    GLsizei* length,
+                                    GLint* values) {
+  GPU_CLIENT_SINGLE_THREAD_CHECK();
+  GPU_CLIENT_VALIDATE_DESTINATION_OPTIONAL_INITALIZATION(GLsizei, length);
+  GPU_CLIENT_VALIDATE_DESTINATION_INITALIZATION(GLint, values);
+  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glGetSynciv(" << sync << ", "
+                     << GLES2Util::GetStringSyncParameter(pname) << ", "
+                     << bufsize << ", " << static_cast<const void*>(length)
+                     << ", " << static_cast<const void*>(values) << ")");
+  if (bufsize < 0) {
+    SetGLError(GL_INVALID_VALUE, "glGetSynciv", "bufsize < 0");
+    return;
+  }
+  TRACE_EVENT0("gpu", "GLES2Implementation::GetSynciv");
+  if (GetSyncivHelper(sync, pname, bufsize, length, values)) {
+    return;
+  }
+  typedef cmds::GetSynciv::Result Result;
+  Result* result = GetResultAs<Result*>();
+  if (!result) {
+    return;
+  }
+  result->SetNumResults(0);
+  helper_->GetSynciv(ToGLuint(sync), pname, GetResultShmId(),
+                     GetResultShmOffset());
+  WaitForCmd();
+  result->CopyResult(values);
+  GPU_CLIENT_LOG_CODE_BLOCK({
+    for (int32_t i = 0; i < result->GetNumResults(); ++i) {
+      GPU_CLIENT_LOG("  " << i << ": " << result->GetData()[i]);
+    }
+  });
+  if (length) {
+    *length = result->GetNumResults();
+  }
+  CheckGLError();
+}
 void GLES2Implementation::GetTexParameterfv(GLenum target,
                                             GLenum pname,
                                             GLfloat* params) {
@@ -3068,18 +3108,32 @@ void GLES2Implementation::TexImageIOSurface2DCHROMIUM(GLenum target,
 void GLES2Implementation::CopyTextureCHROMIUM(GLenum target,
                                               GLenum source_id,
                                               GLenum dest_id,
-                                              GLint level,
                                               GLint internalformat,
                                               GLenum dest_type) {
   GPU_CLIENT_SINGLE_THREAD_CHECK();
   GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glCopyTextureCHROMIUM("
                      << GLES2Util::GetStringEnum(target) << ", "
                      << GLES2Util::GetStringEnum(source_id) << ", "
-                     << GLES2Util::GetStringEnum(dest_id) << ", " << level
-                     << ", " << internalformat << ", "
+                     << GLES2Util::GetStringEnum(dest_id) << ", "
+                     << internalformat << ", "
                      << GLES2Util::GetStringPixelType(dest_type) << ")");
-  helper_->CopyTextureCHROMIUM(target, source_id, dest_id, level,
-                               internalformat, dest_type);
+  helper_->CopyTextureCHROMIUM(target, source_id, dest_id, internalformat,
+                               dest_type);
+  CheckGLError();
+}
+
+void GLES2Implementation::CopySubTextureCHROMIUM(GLenum target,
+                                                 GLenum source_id,
+                                                 GLenum dest_id,
+                                                 GLint xoffset,
+                                                 GLint yoffset) {
+  GPU_CLIENT_SINGLE_THREAD_CHECK();
+  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glCopySubTextureCHROMIUM("
+                     << GLES2Util::GetStringEnum(target) << ", "
+                     << GLES2Util::GetStringEnum(source_id) << ", "
+                     << GLES2Util::GetStringEnum(dest_id) << ", " << xoffset
+                     << ", " << yoffset << ")");
+  helper_->CopySubTextureCHROMIUM(target, source_id, dest_id, xoffset, yoffset);
   CheckGLError();
 }
 

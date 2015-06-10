@@ -53,13 +53,13 @@ class StyleSheet;
 class StyleSheetContents;
 
 class StyleEngine final : public CSSFontSelectorClient  {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(StyleEngine);
 public:
 
     class IgnoringPendingStylesheet : public TemporaryChange<bool> {
     public:
-        IgnoringPendingStylesheet(StyleEngine* engine)
-            : TemporaryChange<bool>(engine->m_ignorePendingStylesheets, true)
+        IgnoringPendingStylesheet(StyleEngine& engine)
+            : TemporaryChange<bool>(engine.m_ignorePendingStylesheets, true)
         {
         }
     };
@@ -74,13 +74,13 @@ public:
     void detachFromDocument();
 #endif
 
-    const WillBeHeapVector<RefPtrWillBeMember<StyleSheet> >& styleSheetsForStyleSheetList(TreeScope&);
-    const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >& activeAuthorStyleSheets() const;
+    const WillBeHeapVector<RefPtrWillBeMember<StyleSheet>>& styleSheetsForStyleSheetList(TreeScope&);
+    const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet>>& activeAuthorStyleSheets() const;
 
-    const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >& documentAuthorStyleSheets() const { return m_authorStyleSheets; }
-    const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >& injectedAuthorStyleSheets() const;
+    const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet>>& documentAuthorStyleSheets() const { return m_authorStyleSheets; }
+    const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet>>& injectedAuthorStyleSheets() const;
 
-    const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> > activeStyleSheetsForInspector() const;
+    const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet>> activeStyleSheetsForInspector() const;
 
     void modifiedStyleSheet(StyleSheet*);
     void addStyleSheetCandidateNode(Node*, bool createdByParser);
@@ -157,7 +157,7 @@ public:
     CSSFontSelector* fontSelector() { return m_fontSelector.get(); }
     void setFontSelector(PassRefPtrWillBeRawPtr<CSSFontSelector>);
 
-    void removeFontFaceRules(const WillBeHeapVector<RawPtrWillBeMember<const StyleRuleFontFace> >&);
+    void removeFontFaceRules(const WillBeHeapVector<RawPtrWillBeMember<const StyleRuleFontFace>>&);
     void clearFontCache();
     // updateGenericFontFamilySettings is used from WebSettingsImpl.
     void updateGenericFontFamilySettings();
@@ -176,7 +176,7 @@ public:
 
     void platformColorsChanged();
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     // CSSFontSelectorClient implementation.
@@ -232,7 +232,7 @@ private:
         TreeScope* operator[](size_t i) { return m_treeScopes[i]; }
         const TreeScope* operator[](size_t i) const { return m_treeScopes[i]; }
 
-        void trace(Visitor*);
+        DECLARE_TRACE();
 
     private:
         WillBeHeapVector<RawPtrWillBeMember<TreeScope>, 16> m_treeScopes;
@@ -267,14 +267,14 @@ private:
     // elements and when it is safe to execute scripts.
     int m_pendingStylesheets;
 
-    mutable WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> > m_injectedAuthorStyleSheets;
+    mutable WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet>> m_injectedAuthorStyleSheets;
     mutable bool m_injectedStyleSheetCacheValid;
 
-    WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> > m_authorStyleSheets;
+    WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet>> m_authorStyleSheets;
 
     OwnPtrWillBeMember<DocumentStyleSheetCollection> m_documentStyleSheetCollection;
 
-    typedef WillBeHeapHashMap<RawPtrWillBeWeakMember<TreeScope>, OwnPtrWillBeMember<ShadowTreeStyleSheetCollection> > StyleSheetCollectionMap;
+    typedef WillBeHeapHashMap<RawPtrWillBeWeakMember<TreeScope>, OwnPtrWillBeMember<ShadowTreeStyleSheetCollection>> StyleSheetCollectionMap;
     StyleSheetCollectionMap m_styleSheetCollectionMap;
 
     bool m_documentScopeDirty;
@@ -297,7 +297,7 @@ private:
 
     RefPtrWillBeMember<CSSFontSelector> m_fontSelector;
 
-    WillBeHeapHashMap<AtomicString, RawPtrWillBeMember<StyleSheetContents> > m_textToSheetCache;
+    WillBeHeapHashMap<AtomicString, RawPtrWillBeMember<StyleSheetContents>> m_textToSheetCache;
     WillBeHeapHashMap<RawPtrWillBeMember<StyleSheetContents>, AtomicString> m_sheetToTextCache;
 };
 

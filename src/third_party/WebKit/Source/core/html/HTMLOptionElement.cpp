@@ -29,8 +29,9 @@
 
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/HTMLNames.h"
+#include "core/dom/AXObjectCache.h"
 #include "core/dom/Document.h"
-#include "core/dom/NodeLayoutStyle.h"
+#include "core/dom/NodeComputedStyle.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/ScriptLoader.h"
 #include "core/dom/Text.h"
@@ -53,6 +54,15 @@ HTMLOptionElement::HTMLOptionElement(Document& document)
     , m_isSelected(false)
 {
     setHasCustomStyleCallbacks();
+}
+
+// An explicit empty destructor should be in HTMLOptionElement.cpp, because
+// if an implicit destructor is used or an empty destructor is defined in
+// HTMLOptionElement.h, when including HTMLOptionElement.h,
+// msvc tries to expand the destructor and causes
+// a compile error because of lack of ComputedStyle definition.
+HTMLOptionElement::~HTMLOptionElement()
+{
 }
 
 PassRefPtrWillBeRawPtr<HTMLOptionElement> HTMLOptionElement::create(Document& document)
@@ -87,7 +97,7 @@ void HTMLOptionElement::attach(const AttachContext& context)
         ASSERT(!m_style || m_style == context.resolvedStyle);
         m_style = context.resolvedStyle;
     } else {
-        updateNonLayoutStyle();
+        updateNonComputedStyle();
         optionContext.resolvedStyle = m_style.get();
     }
     HTMLElement::attach(optionContext);
@@ -97,6 +107,14 @@ void HTMLOptionElement::detach(const AttachContext& context)
 {
     m_style.clear();
     HTMLElement::detach(context);
+}
+
+bool HTMLOptionElement::supportsFocus() const
+{
+    RefPtrWillBeRawPtr<HTMLSelectElement> select = ownerSelectElement();
+    if (select && select->usesMenuList())
+        return false;
+    return HTMLElement::supportsFocus();
 }
 
 String HTMLOptionElement::text() const
@@ -186,8 +204,8 @@ void HTMLOptionElement::parseAttribute(const QualifiedName& name, const AtomicSt
         if (oldDisabled != m_disabled) {
             pseudoStateChanged(CSSSelector::PseudoDisabled);
             pseudoStateChanged(CSSSelector::PseudoEnabled);
-            if (renderer() && renderer()->style()->hasAppearance())
-                LayoutTheme::theme().stateChanged(renderer(), EnabledControlState);
+            if (layoutObject() && layoutObject()->style()->hasAppearance())
+                LayoutTheme::theme().stateChanged(layoutObject(), EnabledControlState);
         }
     } else if (name == selectedAttr) {
         if (bool willBeSelected = !value.isNull())
@@ -247,8 +265,19 @@ void HTMLOptionElement::setSelectedState(bool selected)
     m_isSelected = selected;
     pseudoStateChanged(CSSSelector::PseudoChecked);
 
-    if (HTMLSelectElement* select = ownerSelectElement())
+    if (HTMLSelectElement* select = ownerSelectElement()) {
         select->invalidateSelectedItems();
+
+        if (AXObjectCache* cache = document().existingAXObjectCache()) {
+            // If there is a layoutObject (most common), fire accessibility notifications
+            // only when it's a listbox (and not a menu list). If there's no layoutObject,
+            // fire them anyway just to be safe (to make sure the AX tree is in sync).
+            if (!select->layoutObject() || select->layoutObject()->isListBox()) {
+                cache->listboxOptionStateChanged(this);
+                cache->listboxSelectedChildrenChanged(select);
+            }
+        }
+    }
 }
 
 void HTMLOptionElement::childrenChanged(const ChildrenChange& change)
@@ -284,21 +313,21 @@ void HTMLOptionElement::setLabel(const AtomicString& label)
     setAttribute(labelAttr, label);
 }
 
-void HTMLOptionElement::updateNonLayoutStyle()
+void HTMLOptionElement::updateNonComputedStyle()
 {
-    m_style = originalStyleForRenderer();
+    m_style = originalStyleForLayoutObject();
     if (HTMLSelectElement* select = ownerSelectElement())
         select->updateListOnRenderer();
 }
 
-LayoutStyle* HTMLOptionElement::nonRendererStyle() const
+ComputedStyle* HTMLOptionElement::nonLayoutObjectComputedStyle() const
 {
     return m_style.get();
 }
 
-PassRefPtr<LayoutStyle> HTMLOptionElement::customStyleForRenderer()
+PassRefPtr<ComputedStyle> HTMLOptionElement::customStyleForLayoutObject()
 {
-    updateNonLayoutStyle();
+    updateNonComputedStyle();
     return m_style;
 }
 
@@ -309,7 +338,7 @@ void HTMLOptionElement::didRecalcStyle(StyleRecalcChange change)
 
     // FIXME: We ask our owner select to repaint regardless of which property changed.
     if (HTMLSelectElement* select = ownerSelectElement()) {
-        if (LayoutObject* renderer = select->renderer())
+        if (LayoutObject* renderer = select->layoutObject())
             renderer->setShouldDoFullPaintInvalidation();
     }
 }
@@ -407,7 +436,7 @@ bool HTMLOptionElement::isDisplayNone() const
         Element* parent = parentElement();
         ASSERT(parent);
         if (isHTMLOptGroupElement(*parent)) {
-            LayoutStyle* parentStyle = parent->layoutStyle() ? parent->layoutStyle() : parent->computedStyle();
+            const ComputedStyle* parentStyle = parent->computedStyle() ? parent->computedStyle() : parent->ensureComputedStyle();
             return !parentStyle || parentStyle->display() == NONE;
         }
     }

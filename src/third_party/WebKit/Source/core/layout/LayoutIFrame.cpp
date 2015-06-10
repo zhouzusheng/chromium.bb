@@ -30,7 +30,8 @@
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLIFrameElement.h"
-#include "core/rendering/RenderView.h"
+#include "core/layout/LayoutAnalyzer.h"
+#include "core/layout/LayoutView.h"
 
 namespace blink {
 
@@ -51,16 +52,17 @@ bool LayoutIFrame::isInlineBlockOrInlineTable() const
     return isInline();
 }
 
-LayerType LayoutIFrame::layerTypeRequired() const
+DeprecatedPaintLayerType LayoutIFrame::layerTypeRequired() const
 {
     if (style()->resize() != RESIZE_NONE)
-        return NormalLayer;
+        return NormalDeprecatedPaintLayer;
     return LayoutPart::layerTypeRequired();
 }
 
 void LayoutIFrame::layout()
 {
     ASSERT(needsLayout());
+    LayoutAnalyzer::Scope analyzer(*this);
 
     updateLogicalWidth();
     // No kids to layout as a replaced element.

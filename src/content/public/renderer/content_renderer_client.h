@@ -47,7 +47,7 @@ class WebSpeechSynthesizer;
 class WebSpeechSynthesizerClient;
 class WebThemeEngine;
 class WebURLRequest;
-class WebWorkerPermissionClientProxy;
+class WebWorkerContentSettingsClientProxy;
 struct WebPluginParams;
 struct WebURLError;
 }
@@ -106,7 +106,7 @@ class CONTENT_EXPORT ContentRendererClient {
       const blink::WebPluginParams& params,
       blink::WebPlugin** plugin);
 
-  // Creates a replacement plug-in that is shown when the plug-in at |file_path|
+  // Creates a replacement plugin that is shown when the plugin at |file_path|
   // couldn't be loaded. This allows the embedder to show a custom placeholder.
   virtual blink::WebPlugin* CreatePluginReplacement(
       RenderFrame* render_frame,
@@ -233,12 +233,6 @@ class CONTENT_EXPORT ContentRendererClient {
                                const GURL& first_party_for_cookies,
                                GURL* new_url);
 
-  // See the corresponding functions in blink::WebFrameClient.
-  virtual void DidCreateScriptContext(blink::WebFrame* frame,
-                                      v8::Handle<v8::Context> context,
-                                      int extension_group,
-                                      int world_id) {}
-
   // See blink::Platform.
   virtual unsigned long long VisitedLinkHash(const char* canonical_url,
                                              size_t length);
@@ -281,9 +275,12 @@ class CONTENT_EXPORT ContentRendererClient {
   virtual bool ShouldEnableSiteIsolationPolicy() const;
 
   // Creates a permission client proxy for in-renderer worker.
-  virtual blink::WebWorkerPermissionClientProxy*
-      CreateWorkerPermissionClientProxy(RenderFrame* render_frame,
-                                        blink::WebFrame* frame);
+  virtual blink::WebWorkerContentSettingsClientProxy*
+      CreateWorkerContentSettingsClientProxy(RenderFrame* render_frame,
+                                             blink::WebFrame* frame);
+
+  // Returns true if the page at |url| can use Pepper CameraDevice APIs.
+  virtual bool IsPluginAllowedToUseCameraDeviceAPI(const GURL& url);
 
   // Returns true if the page at |url| can use Pepper Compositor APIs.
   virtual bool IsPluginAllowedToUseCompositorAPI(const GURL& url);

@@ -30,6 +30,7 @@ class BeginFrameSource;
 class ContextProvider;
 class InputHandlerClient;
 class LayerTreeHost;
+class PrioritizedResourceManager;
 class ResourceUpdateQueue;
 class Scheduler;
 class ScopedThreadProxy;
@@ -142,6 +143,10 @@ class CC_EXPORT ThreadProxy : public Proxy,
 
     scoped_ptr<BeginFrameSource> external_begin_frame_source;
 
+    // Values used to keep track of frame durations. Used only in frame timing.
+    BeginFrameArgs last_begin_main_frame_args;
+    BeginFrameArgs last_processed_begin_main_frame_args;
+
     scoped_ptr<LayerTreeHostImpl> layer_tree_host_impl;
     base::WeakPtrFactory<ThreadProxy> weak_factory;
   };
@@ -175,9 +180,9 @@ class CC_EXPORT ThreadProxy : public Proxy,
   void ForceSerializeOnSwapBuffers() override;
   bool SupportsImplScrolling() const override;
   void SetDebugState(const LayerTreeDebugState& debug_state) override;
-  void AsValueInto(base::trace_event::TracedValue* value) const override;
   bool MainFrameWillHappenForTesting() override;
   void SetChildrenNeedBeginFrames(bool children_need_begin_frames) override;
+  void SetAuthoritativeVSyncInterval(const base::TimeDelta& interval) override;
 
   // LayerTreeHostImplClient implementation
   void UpdateRendererCapabilitiesOnImplThread() override;
@@ -205,11 +210,12 @@ class CC_EXPORT ThreadProxy : public Proxy,
                                                int priority_cutoff) override;
   bool IsInsideDraw() override;
   void RenewTreePriority() override;
-  void PostDelayedScrollbarFadeOnImplThread(const base::Closure& start_fade,
+  void PostDelayedAnimationTaskOnImplThread(const base::Closure& task,
                                             base::TimeDelta delay) override;
   void DidActivateSyncTree() override;
   void DidPrepareTiles() override;
   void DidCompletePageScaleAnimationOnImplThread() override;
+  void OnDrawForOutputSurface() override;
 
   // SchedulerClient implementation
   void WillBeginImplFrame(const BeginFrameArgs& args) override;
@@ -221,6 +227,7 @@ class CC_EXPORT ThreadProxy : public Proxy,
   void ScheduledActionActivateSyncTree() override;
   void ScheduledActionBeginOutputSurfaceCreation() override;
   void ScheduledActionPrepareTiles() override;
+  void ScheduledActionInvalidateOutputSurface() override;
   void DidAnticipatedDrawTimeChange(base::TimeTicks time) override;
   base::TimeDelta DrawDurationEstimate() override;
   base::TimeDelta BeginMainFrameToCommitDurationEstimate() override;
@@ -279,8 +286,6 @@ class CC_EXPORT ThreadProxy : public Proxy,
   void ForceSerializeOnSwapBuffersOnImplThread(CompletionEvent* completion);
   void MainFrameWillHappenOnImplThreadForTesting(CompletionEvent* completion,
                                                  bool* main_frame_will_happen);
-  void AsValueOnImplThread(CompletionEvent* completion,
-                           base::trace_event::TracedValue* state) const;
   void SetSwapUsedIncompleteTileOnImplThread(bool used_incomplete_tile);
   void MainThreadHasStoppedFlingingOnImplThread();
   void SetInputThrottledUntilCommitOnImplThread(bool is_throttled);

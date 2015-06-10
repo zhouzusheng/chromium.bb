@@ -26,10 +26,9 @@ namespace blink {
 
 inline SVGViewElement::SVGViewElement(Document& document)
     : SVGElement(SVGNames::viewTag, document)
+    , SVGFitToViewBox(this)
     , m_viewTarget(SVGStaticStringList::create(this, SVGNames::viewTargetAttr))
 {
-    SVGFitToViewBox::initialize(this);
-
     addToPropertyMap(m_viewTarget);
 }
 
@@ -47,7 +46,7 @@ void SVGViewElement::parseAttribute(const QualifiedName& name, const AtomicStrin
     if (SVGZoomAndPan::parseAttribute(name, value))
         return;
 
-    parseAttributeNew(name, value);
+    SVGElement::parseAttribute(name, value);
 }
 
 } // namespace blink

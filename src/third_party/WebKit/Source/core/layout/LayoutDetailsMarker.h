@@ -21,11 +21,11 @@
 #ifndef LayoutDetailsMarker_h
 #define LayoutDetailsMarker_h
 
-#include "core/rendering/RenderBlockFlow.h"
+#include "core/layout/LayoutBlockFlow.h"
 
 namespace blink {
 
-class LayoutDetailsMarker final : public RenderBlockFlow {
+class LayoutDetailsMarker final : public LayoutBlockFlow {
 public:
     LayoutDetailsMarker(Element*);
 
@@ -33,9 +33,10 @@ public:
 
     Orientation orientation() const;
 
+    virtual const char* name() const override { return "LayoutDetailsMarker"; }
+
 private:
-    virtual const char* renderName() const override { return "LayoutDetailsMarker"; }
-    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectDetailsMarker || RenderBlockFlow::isOfType(type); }
+    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectDetailsMarker || LayoutBlockFlow::isOfType(type); }
     virtual void paint(const PaintInfo&, const LayoutPoint&) override;
 
     bool isOpen() const;

@@ -35,7 +35,7 @@
 #include "core/css/RuleFeature.h"
 #include "core/css/StyleRule.h"
 #include "core/css/StyleSheetContents.h"
-#include "core/css/resolver/StyleResolver.h" // For MatchRequest.
+#include "core/css/resolver/MatchRequest.h"
 #include "core/css/resolver/ViewportStyleResolver.h"
 #include "core/dom/Document.h"
 #include "core/dom/StyleEngine.h"
@@ -86,7 +86,7 @@ void ScopedStyleResolver::addFontFaceRules(const RuleSet& ruleSet)
         return;
 
     Document& document = treeScope().document();
-    CSSFontSelector* cssFontSelector = document.styleEngine()->fontSelector();
+    CSSFontSelector* cssFontSelector = document.styleEngine().fontSelector();
     const WillBeHeapVector<RawPtrWillBeMember<StyleRuleFontFace>> fontFaceRules = ruleSet.fontFaceRules();
     for (auto& fontFaceRule : fontFaceRules) {
         if (RefPtrWillBeRawPtr<FontFace> fontFace = FontFace::create(&document, fontFaceRule))
@@ -203,15 +203,15 @@ void ScopedStyleResolver::matchPageRules(PageRuleCollector& collector)
         collector.matchPageRules(&m_authorStyleSheets[i]->contents()->ruleSet());
 }
 
-void ScopedStyleResolver::collectViewportRulesTo(StyleResolver* resolver) const
+void ScopedStyleResolver::collectViewportRulesTo(ViewportStyleResolver* resolver) const
 {
     if (!m_scope->rootNode().isDocumentNode())
         return;
     for (size_t i = 0; i < m_authorStyleSheets.size(); ++i)
-        resolver->viewportStyleResolver()->collectViewportRules(&m_authorStyleSheets[i]->contents()->ruleSet(), ViewportStyleResolver::AuthorOrigin);
+        resolver->collectViewportRules(&m_authorStyleSheets[i]->contents()->ruleSet(), ViewportStyleResolver::AuthorOrigin);
 }
 
-void ScopedStyleResolver::trace(Visitor* visitor)
+DEFINE_TRACE(ScopedStyleResolver)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_scope);
@@ -249,7 +249,7 @@ void ScopedStyleResolver::addTreeBoundaryCrossingRules(const RuleSet& authorRule
     m_treeBoundaryCrossingRuleSet->append(RuleSubSet::create(parentStyleSheet, sheetIndex, ruleSetForScope.release()));
 }
 
-void ScopedStyleResolver::RuleSubSet::trace(Visitor* visitor)
+DEFINE_TRACE(ScopedStyleResolver::RuleSubSet)
 {
     visitor->trace(m_ruleSet);
 }

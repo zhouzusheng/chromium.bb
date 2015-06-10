@@ -61,11 +61,11 @@
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/layout/LayoutObject.h"
 #include "core/layout/LayoutObjectInlines.h"
+#include "core/layout/LayoutText.h"
+#include "core/layout/LayoutTextFragment.h"
 #include "core/layout/line/InlineTextBox.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/page/Page.h"
-#include "core/rendering/RenderText.h"
-#include "core/rendering/RenderTextFragment.h"
 #include "platform/fonts/Font.h"
 #include "platform/fonts/GlyphBuffer.h"
 #include "platform/fonts/shaping/SimpleShaper.h"
@@ -428,8 +428,7 @@ CSSMediaRule* InspectorCSSAgent::asCSSMediaRule(CSSRule* rule)
 }
 
 InspectorCSSAgent::InspectorCSSAgent(InspectorDOMAgent* domAgent, InspectorPageAgent* pageAgent, InspectorResourceAgent* resourceAgent)
-    : InspectorBaseAgent<InspectorCSSAgent>("CSS")
-    , m_frontend(0)
+    : InspectorBaseAgent<InspectorCSSAgent, InspectorFrontend::CSS>("CSS")
     , m_domAgent(domAgent)
     , m_pageAgent(pageAgent)
     , m_resourceAgent(resourceAgent)
@@ -448,20 +447,6 @@ InspectorCSSAgent::~InspectorCSSAgent()
     ASSERT(!m_domAgent);
     reset();
 #endif
-}
-
-void InspectorCSSAgent::setFrontend(InspectorFrontend* frontend)
-{
-    ASSERT(!m_frontend);
-    m_frontend = frontend->css();
-}
-
-void InspectorCSSAgent::clearFrontend()
-{
-    ASSERT(m_frontend);
-    ErrorString error;
-    disable(&error);
-    m_frontend = nullptr;
 }
 
 void InspectorCSSAgent::discardAgent()
@@ -538,16 +523,18 @@ void InspectorCSSAgent::disable(ErrorString*)
     m_state->setBoolean(CSSAgentState::cssAgentEnabled, false);
 }
 
-void InspectorCSSAgent::didCommitLoadForMainFrame()
+void InspectorCSSAgent::didCommitLoadForLocalFrame(LocalFrame* frame)
 {
-    reset();
-    m_pageAgent->clearEditedResourcesContent();
+    if (frame == m_pageAgent->inspectedFrame()) {
+        reset();
+        m_editedStyleSheets.clear();
+    }
 }
 
 void InspectorCSSAgent::mediaQueryResultChanged()
 {
     flushPendingProtocolNotifications();
-    m_frontend->mediaQueryResultChanged();
+    frontend()->mediaQueryResultChanged();
 }
 
 void InspectorCSSAgent::willMutateRules()
@@ -631,8 +618,8 @@ void InspectorCSSAgent::setActiveStyleSheets(Document* document, const WillBeHea
         documentCSSStyleSheets->remove(cssStyleSheet);
         if (m_idToInspectorStyleSheet.contains(inspectorStyleSheet->id())) {
             String id = unbindStyleSheet(inspectorStyleSheet.get());
-            if (m_frontend && !isInitialFrontendLoad)
-                m_frontend->styleSheetRemoved(id);
+            if (frontend() && !isInitialFrontendLoad)
+                frontend()->styleSheetRemoved(id);
         }
     }
 
@@ -641,8 +628,8 @@ void InspectorCSSAgent::setActiveStyleSheets(Document* document, const WillBeHea
         if (isNew) {
             InspectorStyleSheet* newStyleSheet = bindStyleSheet(cssStyleSheet);
             documentCSSStyleSheets->add(cssStyleSheet);
-            if (m_frontend)
-                m_frontend->styleSheetAdded(newStyleSheet->buildObjectForStyleSheetInfo());
+            if (frontend())
+                frontend()->styleSheetAdded(newStyleSheet->buildObjectForStyleSheetInfo());
         }
     }
 
@@ -654,6 +641,19 @@ void InspectorCSSAgent::documentDetached(Document* document)
 {
     m_invalidatedDocuments.remove(document);
     setActiveStyleSheets(document, WillBeHeapVector<RawPtrWillBeMember<CSSStyleSheet> >(), ExistingFrontendRefresh);
+}
+
+void InspectorCSSAgent::addEditedStyleSheet(const String& url, const String& content)
+{
+    m_editedStyleSheets.set(url, content);
+}
+
+bool InspectorCSSAgent::getEditedStyleSheet(const String& url, String* content)
+{
+    if (!m_editedStyleSheets.contains(url))
+        return false;
+    *content = m_editedStyleSheets.get(url);
+    return true;
 }
 
 bool InspectorCSSAgent::forcePseudoState(Element* element, CSSSelector::PseudoType pseudoType)
@@ -797,10 +797,10 @@ void InspectorCSSAgent::getComputedStyleForNode(ErrorString* errorString, int no
     style = inspectorStyle->buildArrayForComputedStyle();
 }
 
-void InspectorCSSAgent::collectPlatformFontsForRenderer(RenderText* renderer, HashCountedSet<String>* fontStats)
+void InspectorCSSAgent::collectPlatformFontsForRenderer(LayoutText* renderer, HashCountedSet<String>* fontStats)
 {
     for (InlineTextBox* box = renderer->firstTextBox(); box; box = box->nextTextBox()) {
-        const LayoutStyle& style = renderer->styleRef(box->isFirstLineStyle());
+        const ComputedStyle& style = renderer->styleRef(box->isFirstLineStyle());
         const Font& font = style.font();
         TextRun run = box->constructTextRunForInspector(style, font);
         SimpleShaper shaper(&font, run);
@@ -827,18 +827,18 @@ void InspectorCSSAgent::getPlatformFontsForNode(ErrorString* errorString, int no
 
     WillBeHeapVector<RawPtrWillBeMember<Text> > textNodes;
     if (node->nodeType() == Node::TEXT_NODE) {
-        if (node->renderer())
+        if (node->layoutObject())
             textNodes.append(toText(node));
     } else {
         for (Node* child = node->firstChild(); child; child = child->nextSibling()) {
-            if (child->nodeType() == Node::TEXT_NODE && child->renderer())
+            if (child->nodeType() == Node::TEXT_NODE && child->layoutObject())
                 textNodes.append(toText(child));
         }
     }
 
     HashCountedSet<String> fontStats;
     for (size_t i = 0; i < textNodes.size(); ++i) {
-        RenderText* renderer = textNodes[i]->renderer();
+        LayoutText* renderer = textNodes[i]->layoutObject();
         collectPlatformFontsForRenderer(renderer, &fontStats);
 
         if (!renderer->isTextFragment())
@@ -855,7 +855,7 @@ void InspectorCSSAgent::getPlatformFontsForNode(ErrorString* errorString, int no
 
         // The first-letter pseudoElement only has one child, which is the
         // first-letter renderer.
-        collectPlatformFontsForRenderer(toRenderText(previous->slowFirstChild()), &fontStats);
+        collectPlatformFontsForRenderer(toLayoutText(previous->slowFirstChild()), &fontStats);
     }
 
     platformFonts = TypeBuilder::Array<TypeBuilder::CSS::PlatformFontUsage>::create();
@@ -1274,7 +1274,7 @@ Element* InspectorCSSAgent::elementForId(ErrorString* errorString, int nodeId)
 // static
 void InspectorCSSAgent::collectAllDocumentStyleSheets(Document* document, WillBeHeapVector<RawPtrWillBeMember<CSSStyleSheet> >& result)
 {
-    const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> > activeStyleSheets = document->styleEngine()->activeStyleSheetsForInspector();
+    const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet>> activeStyleSheets = document->styleEngine().activeStyleSheetsForInspector();
     for (const auto& style : activeStyleSheets) {
         CSSStyleSheet* styleSheet = style.get();
         InspectorCSSAgent::collectStyleSheets(styleSheet, result);
@@ -1519,7 +1519,7 @@ void InspectorCSSAgent::didModifyDOMAttr(Element* element)
 void InspectorCSSAgent::styleSheetChanged(InspectorStyleSheetBase* styleSheet)
 {
     flushPendingProtocolNotifications();
-    m_frontend->styleSheetChanged(styleSheet->id());
+    frontend()->styleSheetChanged(styleSheet->id());
 }
 
 void InspectorCSSAgent::willReparseStyleSheet()

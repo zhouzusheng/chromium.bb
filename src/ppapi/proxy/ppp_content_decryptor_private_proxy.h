@@ -32,7 +32,9 @@ class PPP_ContentDecryptor_Private_Proxy : public InterfaceProxy {
 
   // Message handlers.
   void OnMsgInitialize(PP_Instance instance,
-                       SerializedVarReceiveInput key_system);
+                       SerializedVarReceiveInput key_system,
+                       PP_Bool allow_distinctive_identifier,
+                       PP_Bool allow_persistent_state);
   void OnMsgSetServerCertificate(PP_Instance instance,
                                  uint32_t promise_id,
                                  std::vector<uint8_t> server_certificate);
@@ -40,7 +42,7 @@ class PPP_ContentDecryptor_Private_Proxy : public InterfaceProxy {
       PP_Instance instance,
       uint32_t promise_id,
       PP_SessionType session_type,
-      SerializedVarReceiveInput init_data_type,
+      PP_InitDataType init_data_type,
       SerializedVarReceiveInput init_data);
   void OnMsgLoadSession(PP_Instance instance,
                         uint32_t promise_id,

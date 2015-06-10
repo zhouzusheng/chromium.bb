@@ -36,7 +36,7 @@
 #include "core/html/HTMLSummaryElement.h"
 #include "core/html/shadow/DetailsMarkerControl.h"
 #include "core/html/shadow/ShadowElementNames.h"
-#include "core/rendering/RenderBlockFlow.h"
+#include "core/layout/LayoutBlockFlow.h"
 #include "platform/text/PlatformLocale.h"
 
 namespace blink {
@@ -75,9 +75,9 @@ void HTMLDetailsElement::dispatchPendingEvent(DetailsEventSender* eventSender)
 }
 
 
-LayoutObject* HTMLDetailsElement::createRenderer(const LayoutStyle&)
+LayoutObject* HTMLDetailsElement::createLayoutObject(const ComputedStyle&)
 {
-    return new RenderBlockFlow(this);
+    return new LayoutBlockFlow(this);
 }
 
 void HTMLDetailsElement::didAddClosedShadowRoot(ShadowRoot& root)
@@ -135,8 +135,8 @@ void HTMLDetailsElement::parseAttribute(const QualifiedName& name, const AtomicS
         ASSERT(summary);
 
         Element* control = toHTMLSummaryElement(summary)->markerControl();
-        if (control && control->renderer())
-            control->renderer()->setShouldDoFullPaintInvalidation();
+        if (control && control->layoutObject())
+            control->layoutObject()->setShouldDoFullPaintInvalidation();
 
         return;
     }

@@ -11,6 +11,10 @@
 #include "content/public/renderer/render_frame_observer.h"
 #include "third_party/WebKit/public/platform/modules/presentation/WebPresentationClient.h"
 
+namespace blink {
+class WebString;
+}  // namespace blink
+
 namespace content {
 
 // PresentationDispatcher is a delegate for Presentation API messages used by
@@ -27,10 +31,39 @@ class CONTENT_EXPORT PresentationDispatcher
   virtual void setController(
       blink::WebPresentationController* controller);
   virtual void updateAvailableChangeWatched(bool watched);
+  virtual void startSession(
+      const blink::WebString& presentationUrl,
+      const blink::WebString& presentationId,
+      blink::WebPresentationSessionClientCallbacks* callback);
+  virtual void joinSession(
+      const blink::WebString& presentationUrl,
+      const blink::WebString& presentationId,
+      blink::WebPresentationSessionClientCallbacks* callback);
+  virtual void closeSession(
+      const blink::WebString& presentationUrl,
+      const blink::WebString& presentationId);
 
-  void OnScreenAvailabilityChanged(bool available);
+  // RenderFrameObserver
+  void DidChangeDefaultPresentation() override;
+
+  void OnScreenAvailabilityChanged(
+      const std::string& presentation_url,
+      bool available);
+  void OnSessionCreated(
+      blink::WebPresentationSessionClientCallbacks* callback,
+      presentation::PresentationSessionInfoPtr session_info,
+      presentation::PresentationErrorPtr error);
+  void OnDefaultSessionStarted(
+      presentation::PresentationSessionInfoPtr session_info);
+  void OnSessionStateChange(
+      presentation::PresentationSessionInfoPtr session_info,
+      presentation::PresentationSessionState session_state);
 
   void ConnectToPresentationServiceIfNeeded();
+
+  void DoUpdateAvailableChangeWatched(
+      const std::string& presentation_url,
+      bool watched);
 
   // Used as a weak reference. Can be null since lifetime is bound to the frame.
   blink::WebPresentationController* controller_;

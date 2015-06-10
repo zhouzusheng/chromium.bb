@@ -45,7 +45,7 @@ class SVGSVGElement final : public SVGGraphicsElement,
                             public SVGFitToViewBox,
                             public SVGZoomAndPan {
     DEFINE_WRAPPERTYPEINFO();
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SVGSVGElement);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN_NESTED(SVGSVGElement, SVGGraphicsElement);
 public:
     DECLARE_NODE_FACTORY(SVGSVGElement);
 
@@ -110,6 +110,7 @@ public:
     AffineTransform viewBoxToViewTransform(float viewWidth, float viewHeight) const;
 
     void setupInitialView(const String& fragmentIdentifier, Element* anchorNode);
+    bool zoomAndPanEnabled() const;
 
     bool hasIntrinsicWidth() const;
     bool hasIntrinsicHeight() const;
@@ -130,8 +131,8 @@ private:
     virtual bool isPresentationAttributeWithSVGDOM(const QualifiedName&) const override;
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
 
-    virtual bool rendererIsNeeded(const LayoutStyle&) override;
-    virtual LayoutObject* createRenderer(const LayoutStyle&) override;
+    virtual bool layoutObjectIsNeeded(const ComputedStyle&) override;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
 
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
     virtual void removedFrom(ContainerNode*) override;

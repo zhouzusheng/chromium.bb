@@ -36,7 +36,6 @@
 #include "bindings/core/v8/ScriptSourceCode.h"
 #include "bindings/core/v8/V8Binding.h"
 #include "bindings/core/v8/V8ScriptRunner.h"
-#include "bindings/core/v8/V8Window.h"
 #include "bindings/core/v8/WindowProxy.h"
 #include "core/frame/FrameConsole.h"
 #include "core/frame/FrameHost.h"
@@ -50,54 +49,42 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/TemporaryChange.h"
+#include "wtf/ThreadingPrimitives.h"
 #include "wtf/text/StringBuilder.h"
 
 namespace blink {
 
-static LocalFrame* retrieveFrameWithGlobalObjectCheck(v8::Handle<v8::Context> context)
+static LocalFrame* retrieveFrameWithGlobalObjectCheck(v8::Local<v8::Context> context)
 {
-    if (context.IsEmpty())
-        return 0;
-
-    // FIXME: This is a temporary hack for crbug.com/345014.
-    // Currently it's possible that V8 can trigger Debugger::ProcessDebugEvent for a context
-    // that is being initialized (i.e., inside Context::New() of the context).
-    // We should fix the V8 side so that it won't trigger the event for a half-baked context
-    // because there is no way in the embedder side to check if the context is half-baked or not.
-    if (isMainThread() && DOMWrapperWorld::windowIsBeingInitialized())
-        return 0;
-
-    v8::Handle<v8::Value> global = V8Window::findInstanceInPrototypeChain(context->Global(), context->GetIsolate());
-    if (global.IsEmpty())
-        return 0;
-
     return toLocalFrame(toFrameIfNotDetached(context));
 }
 
-PageScriptDebugServer& PageScriptDebugServer::shared()
-{
-    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<PageScriptDebugServer>, server, (adoptPtrWillBeNoop(new PageScriptDebugServer())));
-    return *server;
-}
+PageScriptDebugServer* PageScriptDebugServer::s_instance = nullptr;
 
-v8::Isolate* PageScriptDebugServer::s_mainThreadIsolate = 0;
-
-void PageScriptDebugServer::setMainThreadIsolate(v8::Isolate* isolate)
-{
-    s_mainThreadIsolate = isolate;
-}
-
-PageScriptDebugServer::PageScriptDebugServer()
-    : ScriptDebugServer(s_mainThreadIsolate)
+PageScriptDebugServer::PageScriptDebugServer(PassOwnPtr<ClientMessageLoop> clientMessageLoop, v8::Isolate* isolate)
+    : ScriptDebugServer(isolate)
+    , m_clientMessageLoop(clientMessageLoop)
     , m_pausedFrame(nullptr)
 {
+    MutexLocker locker(creationMutex());
+    ASSERT(!s_instance);
+    s_instance = this;
 }
 
 PageScriptDebugServer::~PageScriptDebugServer()
 {
+    MutexLocker locker(creationMutex());
+    ASSERT(s_instance == this);
+    s_instance = nullptr;
 }
 
-void PageScriptDebugServer::trace(Visitor* visitor)
+Mutex& PageScriptDebugServer::creationMutex()
+{
+    AtomicallyInitializedStaticReference(Mutex, mutex, (new Mutex));
+    return mutex;
+}
+
+DEFINE_TRACE(PageScriptDebugServer)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_listenersMap);
@@ -106,7 +93,13 @@ void PageScriptDebugServer::trace(Visitor* visitor)
     ScriptDebugServer::trace(visitor);
 }
 
-void PageScriptDebugServer::addListener(ScriptDebugListener* listener, LocalFrame* localFrameRoot)
+void PageScriptDebugServer::setContextDebugData(v8::Local<v8::Context> context, const String& type, int contextDebugId)
+{
+    String debugData = "[" + type + "," + String::number(contextDebugId) + "]";
+    ScriptDebugServer::setContextDebugData(context, debugData);
+}
+
+void PageScriptDebugServer::addListener(ScriptDebugListener* listener, LocalFrame* localFrameRoot, int contextDebugId)
 {
     ASSERT(localFrameRoot == localFrameRoot->localFrameRoot());
 
@@ -114,33 +107,11 @@ void PageScriptDebugServer::addListener(ScriptDebugListener* listener, LocalFram
     if (!scriptController.canExecuteScripts(NotAboutToExecuteScript))
         return;
 
-    v8::HandleScope scope(m_isolate);
-
-    if (!m_listenersMap.size()) {
-        v8::Debug::SetDebugEventListener(&PageScriptDebugServer::v8DebugEventCallback, v8::External::New(m_isolate, this));
-        ensureDebuggerScriptCompiled();
-    }
-
-    v8::Local<v8::Context> debuggerContext = v8::Debug::GetDebugContext();
-    v8::Context::Scope contextScope(debuggerContext);
-
-    v8::Local<v8::Object> debuggerScript = m_debuggerScript.newLocal(m_isolate);
-    ASSERT(!debuggerScript->IsUndefined());
+    if (m_listenersMap.isEmpty())
+        enable();
     m_listenersMap.set(localFrameRoot, listener);
-
-    WindowProxy* windowProxy = scriptController.existingWindowProxy(DOMWrapperWorld::mainWorld());
-    if (!windowProxy || !windowProxy->isContextInitialized())
-        return;
-    v8::Local<v8::Context> context = windowProxy->context();
-    v8::Handle<v8::Function> getScriptsFunction = v8::Local<v8::Function>::Cast(debuggerScript->Get(v8AtomicString(m_isolate, "getScripts")));
-    v8::Handle<v8::Value> argv[] = { V8PerContextDebugData::contextDebugData(context) };
-    v8::Handle<v8::Value> value = V8ScriptRunner::callInternalFunction(getScriptsFunction, debuggerScript, WTF_ARRAY_LENGTH(argv), argv, m_isolate);
-    if (value.IsEmpty())
-        return;
-    ASSERT(!value->IsUndefined() && value->IsArray());
-    v8::Handle<v8::Array> scriptsArray = v8::Handle<v8::Array>::Cast(value);
-    for (unsigned i = 0; i < scriptsArray->Length(); ++i)
-        dispatchDidParseSource(listener, v8::Handle<v8::Object>::Cast(scriptsArray->Get(v8::Integer::New(m_isolate, i))), CompileSuccess);
+    String contextDataSubstring = "," + String::number(contextDebugId) + "]";
+    reportCompiledScripts(contextDataSubstring, listener);
 }
 
 void PageScriptDebugServer::removeListener(ScriptDebugListener* listener, LocalFrame* localFrame)
@@ -153,21 +124,21 @@ void PageScriptDebugServer::removeListener(ScriptDebugListener* listener, LocalF
 
     m_listenersMap.remove(localFrame);
 
-    if (m_listenersMap.isEmpty()) {
-        discardDebuggerScript();
-        v8::Debug::SetDebugEventListener(0);
-        // FIXME: Remove all breakpoints set by the agent.
-    }
+    if (m_listenersMap.isEmpty())
+        disable();
 }
 
-void PageScriptDebugServer::interruptAndRun(PassOwnPtr<Task> task)
+PageScriptDebugServer* PageScriptDebugServer::instance()
 {
-    ScriptDebugServer::interruptAndRun(s_mainThreadIsolate, task);
+    ASSERT(isMainThread());
+    return s_instance;
 }
 
-void PageScriptDebugServer::setClientMessageLoop(PassOwnPtr<ClientMessageLoop> clientMessageLoop)
+void PageScriptDebugServer::interruptMainThreadAndRun(PassOwnPtr<Task> task)
 {
-    m_clientMessageLoop = clientMessageLoop;
+    MutexLocker locker(creationMutex());
+    if (s_instance)
+        s_instance->interruptAndRun(task);
 }
 
 void PageScriptDebugServer::compileScript(ScriptState* scriptState, const String& expression, const String& sourceURL, bool persistScript, String* scriptId, String* exceptionDetailsText, int* lineNumber, int* columnNumber, RefPtrWillBeRawPtr<ScriptCallStack>* stackTrace)
@@ -204,18 +175,18 @@ void PageScriptDebugServer::runScript(ScriptState* scriptState, const String& sc
     TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "UpdateCounters", "data", InspectorUpdateCountersEvent::data());
 }
 
-ScriptDebugListener* PageScriptDebugServer::getDebugListenerForContext(v8::Handle<v8::Context> context)
+ScriptDebugListener* PageScriptDebugServer::getDebugListenerForContext(v8::Local<v8::Context> context)
 {
-    v8::HandleScope scope(m_isolate);
+    v8::HandleScope scope(context->GetIsolate());
     LocalFrame* frame = retrieveFrameWithGlobalObjectCheck(context);
     if (!frame)
         return 0;
     return m_listenersMap.get(frame->localFrameRoot());
 }
 
-void PageScriptDebugServer::runMessageLoopOnPause(v8::Handle<v8::Context> context)
+void PageScriptDebugServer::runMessageLoopOnPause(v8::Local<v8::Context> context)
 {
-    v8::HandleScope scope(m_isolate);
+    v8::HandleScope scope(context->GetIsolate());
     LocalFrame* frame = retrieveFrameWithGlobalObjectCheck(context);
     m_pausedFrame = frame->localFrameRoot();
 

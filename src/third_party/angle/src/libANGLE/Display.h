@@ -33,7 +33,7 @@ namespace egl
 {
 class Surface;
 
-class Display final
+class Display final : angle::NonCopyable
 {
   public:
     ~Display();
@@ -54,6 +54,8 @@ class Display final
     Error createPbufferSurface(const Config *configuration, const AttributeMap &attribs, Surface **outSurface);
     Error createPbufferFromClientBuffer(const Config *configuration, EGLClientBuffer shareHandle, const AttributeMap &attribs,
                                         Surface **outSurface);
+    Error createPixmapSurface(const Config *configuration, NativePixmapType nativePixmap, const AttributeMap &attribs,
+                              Surface **outSurface);
 
     Error createContext(const Config *configuration, gl::Context *shareContext, const AttributeMap &attribs,
                         gl::Context **outContext);
@@ -67,9 +69,10 @@ class Display final
     bool isValidConfig(const Config *config) const;
     bool isValidContext(gl::Context *context) const;
     bool isValidSurface(egl::Surface *surface) const;
-    bool hasExistingWindowSurface(EGLNativeWindowType window) const;
     bool isValidNativeWindow(EGLNativeWindowType window) const;
-    bool isValidNativeDisplay(EGLNativeDisplayType display) const;
+
+    static bool isValidNativeDisplay(EGLNativeDisplayType display);
+    static bool hasExistingWindowSurface(EGLNativeWindowType window);
 
     bool isDeviceLost() const;
     bool testDeviceLost();
@@ -84,12 +87,12 @@ class Display final
     const AttributeMap &getAttributeMap() const { return mAttributeMap; }
     EGLNativeDisplayType getNativeDisplayId() const { return mDisplayId; }
 
+    rx::DisplayImpl *getImplementation() { return mImplementation; }
+
   private:
-    DISALLOW_COPY_AND_ASSIGN(Display);
+    Display(EGLNativeDisplayType displayId);
 
-    Display(rx::DisplayImpl *impl, EGLNativeDisplayType displayId);
-
-    void setAttributes(const AttributeMap &attribMap);
+    void setAttributes(rx::DisplayImpl *impl, const AttributeMap &attribMap);
 
     Error restoreLostDevice();
 

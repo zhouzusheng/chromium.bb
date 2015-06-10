@@ -33,7 +33,6 @@
 
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
-#include "core/inspector/InspectorClient.h"
 #include "core/inspector/InspectorPageAgent.h"
 #include "core/page/Chrome.h"
 #include "core/page/EventHandler.h"
@@ -83,16 +82,17 @@ public:
 void ConvertInspectorPoint(blink::LocalFrame* frame, const blink::IntPoint& point, blink::IntPoint* convertedPoint, blink::IntPoint* globalPoint)
 {
     *convertedPoint = frame->view()->convertToContainingWindow(point);
-    *globalPoint = frame->page()->chrome().rootViewToScreen(blink::IntRect(point, blink::IntSize(0, 0))).location();
+    *globalPoint = frame->page()->chrome().viewportToScreen(blink::IntRect(point, blink::IntSize(0, 0))).location();
 }
 
 } // namespace
 
 namespace blink {
 
-InspectorInputAgent::InspectorInputAgent(InspectorPageAgent* pageAgent, InspectorClient* client)
-    : InspectorBaseAgent<InspectorInputAgent>("Input")
-    , m_pageAgent(pageAgent), m_client(client)
+InspectorInputAgent::InspectorInputAgent(InspectorPageAgent* pageAgent, Client* client)
+    : InspectorBaseAgent<InspectorInputAgent, InspectorFrontend::Input>("Input")
+    , m_pageAgent(pageAgent)
+    , m_client(client)
 {
 }
 
@@ -129,6 +129,11 @@ void InspectorInputAgent::dispatchKeyEvent(ErrorString* error, const String& typ
         asBool(isSystemKey),
         static_cast<PlatformEvent::Modifiers>(modifiers ? *modifiers : 0),
         timestamp ? *timestamp : currentTime());
+
+    if (!m_client) {
+        *error = "Not supported";
+        return;
+    }
     m_client->dispatchKeyEvent(event);
 }
 
@@ -180,6 +185,10 @@ void InspectorInputAgent::dispatchMouseEvent(ErrorString* error, const String& t
         PlatformMouseEvent::RealOrIndistinguishable,
         timestamp ? *timestamp : currentTime());
 
+    if (!m_client) {
+        *error = "Not supported";
+        return;
+    }
     m_client->dispatchMouseEvent(event);
 }
 

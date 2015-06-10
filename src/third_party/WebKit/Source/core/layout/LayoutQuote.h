@@ -22,29 +22,30 @@
 #ifndef LayoutQuote_h
 #define LayoutQuote_h
 
-#include "core/layout/style/LayoutStyle.h"
-#include "core/layout/style/LayoutStyleConstants.h"
-#include "core/layout/style/QuotesData.h"
-#include "core/rendering/RenderInline.h"
+#include "core/layout/LayoutInline.h"
+#include "core/style/ComputedStyle.h"
+#include "core/style/ComputedStyleConstants.h"
+#include "core/style/QuotesData.h"
 
 namespace blink {
 
 class Document;
-class RenderTextFragment;
+class LayoutTextFragment;
 
-class LayoutQuote final : public RenderInline {
+class LayoutQuote final : public LayoutInline {
 public:
     LayoutQuote(Document*, const QuoteType);
     virtual ~LayoutQuote();
     void attachQuote();
 
+    virtual const char* name() const override { return "LayoutQuote"; };
+
 private:
     void detachQuote();
 
     virtual void willBeDestroyed() override;
-    virtual const char* renderName() const override { return "LayoutQuote"; };
-    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectQuote || RenderInline::isOfType(type); }
-    virtual void styleDidChange(StyleDifference, const LayoutStyle*) override;
+    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectQuote || LayoutInline::isOfType(type); }
+    virtual void styleDidChange(StyleDifference, const ComputedStyle*) override;
     virtual void willBeRemovedFromTree() override;
 
     String computeText() const;
@@ -53,7 +54,7 @@ private:
     void updateDepth();
     bool isAttached() { return m_attached; }
 
-    RenderTextFragment* findFragmentChild() const;
+    LayoutTextFragment* findFragmentChild() const;
 
     QuoteType m_type;
     int m_depth;

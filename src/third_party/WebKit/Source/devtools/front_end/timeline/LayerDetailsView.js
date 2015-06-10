@@ -134,7 +134,8 @@ WebInspector.LayerDetailsView.prototype = {
 
     _onPaintProfilerButtonClicked: function()
     {
-        this.dispatchEventToListeners(WebInspector.LayerDetailsView.Events.PaintProfilerRequested, this._selection.traceEvent);
+        var traceEvent = this._selection.type() === WebInspector.LayerView.Selection.Type.Tile ? /** @type {!WebInspector.LayerView.TileSelection} */ (this._selection).traceEvent() : null;
+        this.dispatchEventToListeners(WebInspector.LayerDetailsView.Events.PaintProfilerRequested, traceEvent);
     },
 
     /**
@@ -168,12 +169,12 @@ WebInspector.LayerDetailsView.prototype = {
         this._sizeCell.textContent = WebInspector.UIString("%d × %d (at %d,%d)", layer.width(), layer.height(), layer.offsetX(), layer.offsetY());
         this._paintCountCell.parentElement.classList.toggle("hidden", !layer.paintCount());
         this._paintCountCell.textContent = layer.paintCount();
-        const bytesPerPixel = 4;
-        this._memoryEstimateCell.textContent = Number.bytesToString(layer.invisible() ? 0 : layer.width() * layer.height() * bytesPerPixel);
+        this._memoryEstimateCell.textContent = Number.bytesToString(layer.gpuMemoryUsage());
         layer.requestCompositingReasons(this._updateCompositingReasons.bind(this));
         this._scrollRectsCell.removeChildren();
         layer.scrollRects().forEach(this._createScrollRectElement.bind(this));
-        this._paintProfilerButton.classList.toggle("hidden", !this._selection.traceEvent);
+        var traceEvent = this._selection.type() === WebInspector.LayerView.Selection.Type.Tile ? /** @type {!WebInspector.LayerView.TileSelection} */ (this._selection).traceEvent() : null;
+        this._paintProfilerButton.classList.toggle("hidden", !traceEvent);
     },
 
     _buildContent: function()

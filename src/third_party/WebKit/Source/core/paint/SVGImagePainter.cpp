@@ -11,8 +11,8 @@
 #include "core/layout/svg/LayoutSVGImage.h"
 #include "core/layout/svg/SVGLayoutSupport.h"
 #include "core/paint/GraphicsContextAnnotator.h"
+#include "core/paint/LayoutObjectDrawingRecorder.h"
 #include "core/paint/ObjectPainter.h"
-#include "core/paint/RenderDrawingRecorder.h"
 #include "core/paint/SVGPaintContext.h"
 #include "core/paint/TransformRecorder.h"
 #include "core/svg/SVGImageElement.h"
@@ -33,11 +33,11 @@ void SVGImagePainter::paint(const PaintInfo& paintInfo)
     FloatRect boundingBox = m_renderSVGImage.paintInvalidationRectInLocalCoordinates();
 
     PaintInfo paintInfoBeforeFiltering(paintInfo);
-    TransformRecorder transformRecorder(*paintInfoBeforeFiltering.context, m_renderSVGImage.displayItemClient(), m_renderSVGImage.localToParentTransform());
+    TransformRecorder transformRecorder(*paintInfoBeforeFiltering.context, m_renderSVGImage, m_renderSVGImage.localToParentTransform());
     {
         SVGPaintContext paintContext(m_renderSVGImage, paintInfoBeforeFiltering);
         if (paintContext.applyClipMaskAndFilterIfNecessary()) {
-            RenderDrawingRecorder recorder(paintContext.paintInfo().context, m_renderSVGImage, paintContext.paintInfo().phase, boundingBox);
+            LayoutObjectDrawingRecorder recorder(*paintContext.paintInfo().context, m_renderSVGImage, paintContext.paintInfo().phase, boundingBox);
             if (!recorder.canUseCachedDrawing()) {
                 if (m_renderSVGImage.style()->svgStyle().bufferedRendering() != BR_STATIC) {
                     paintForeground(paintContext.paintInfo());
@@ -55,8 +55,10 @@ void SVGImagePainter::paint(const PaintInfo& paintInfo)
         }
     }
 
-    if (m_renderSVGImage.style()->outlineWidth())
-        ObjectPainter(m_renderSVGImage).paintOutline(paintInfoBeforeFiltering, LayoutRect(boundingBox));
+    if (m_renderSVGImage.style()->outlineWidth()) {
+        LayoutRect layoutBoundingBox(boundingBox);
+        ObjectPainter(m_renderSVGImage).paintOutline(paintInfoBeforeFiltering, layoutBoundingBox, layoutBoundingBox);
+    }
 }
 
 void SVGImagePainter::paintForeground(const PaintInfo& paintInfo)

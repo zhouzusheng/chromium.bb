@@ -265,21 +265,9 @@ SSL *SSL_new(SSL_CTX *ctx) {
   s->mode = ctx->mode;
   s->max_cert_list = ctx->max_cert_list;
 
-  if (ctx->cert != NULL) {
-    /* Earlier library versions used to copy the pointer to the CERT, not its
-     * contents; only when setting new parameters for the per-SSL copy,
-     * ssl_cert_new would be called (and the direct reference to the
-     * per-SSL_CTX settings would be lost, but those still were indirectly
-     * accessed for various purposes, and for that reason they used to be known
-     * as s->ctx->default_cert). Now we don't look at the SSL_CTX's CERT after
-     * having duplicated it once. */
-
-    s->cert = ssl_cert_dup(ctx->cert);
-    if (s->cert == NULL) {
-      goto err;
-    }
-  } else {
-    s->cert = NULL; /* Cannot really happen (see SSL_CTX_new) */
+  s->cert = ssl_cert_dup(ctx->cert);
+  if (s->cert == NULL) {
+    goto err;
   }
 
   s->read_ahead = ctx->read_ahead;
@@ -908,7 +896,7 @@ int SSL_accept(SSL *s) {
   }
 
   if (s->handshake_func != s->method->ssl_accept) {
-    OPENSSL_PUT_ERROR(SSL, SSL_connect, ERR_R_INTERNAL_ERROR);
+    OPENSSL_PUT_ERROR(SSL, SSL_accept, ERR_R_INTERNAL_ERROR);
     return -1;
   }
 
@@ -1156,37 +1144,19 @@ long SSL_CTX_ctrl(SSL_CTX *ctx, int cmd, long larg, void *parg) {
       return lh_SSL_SESSION_num_items(ctx->sessions);
 
     case SSL_CTRL_SESS_CONNECT:
-      return ctx->stats.sess_connect;
-
     case SSL_CTRL_SESS_CONNECT_GOOD:
-      return ctx->stats.sess_connect_good;
-
     case SSL_CTRL_SESS_CONNECT_RENEGOTIATE:
-      return ctx->stats.sess_connect_renegotiate;
-
     case SSL_CTRL_SESS_ACCEPT:
-      return ctx->stats.sess_accept;
-
     case SSL_CTRL_SESS_ACCEPT_GOOD:
-      return ctx->stats.sess_accept_good;
-
     case SSL_CTRL_SESS_ACCEPT_RENEGOTIATE:
-      return ctx->stats.sess_accept_renegotiate;
-
     case SSL_CTRL_SESS_HIT:
-      return ctx->stats.sess_hit;
-
     case SSL_CTRL_SESS_CB_HIT:
-      return ctx->stats.sess_cb_hit;
-
     case SSL_CTRL_SESS_MISSES:
-      return ctx->stats.sess_miss;
-
     case SSL_CTRL_SESS_TIMEOUTS:
-      return ctx->stats.sess_timeout;
-
     case SSL_CTRL_SESS_CACHE_FULL:
-      return ctx->stats.sess_cache_full;
+      /* Statistics are no longer supported.
+       * TODO(davidben): Try to remove the accessors altogether. */
+      return 0;
 
     case SSL_CTRL_OPTIONS:
       return ctx->options |= larg;
@@ -1411,7 +1381,7 @@ int ssl_cipher_list_to_bytes(SSL *s, STACK_OF(SSL_CIPHER) *sk, uint8_t *p) {
     s2n(SSL3_CK_SCSV & 0xffff, p);
   }
 
-  if (s->fallback_scsv) {
+  if (s->mode & SSL_MODE_SEND_FALLBACK_SCSV) {
     s2n(SSL3_CK_FALLBACK_SCSV & 0xffff, p);
   }
 
@@ -1809,8 +1779,6 @@ SSL_CTX *SSL_CTX_new(const SSL_METHOD *meth) {
   ret->get_session_cb = 0;
   ret->generate_session_id = 0;
 
-  memset((char *)&ret->stats, 0, sizeof(ret->stats));
-
   ret->references = 1;
   ret->quiet_shutdown = 0;
 
@@ -2031,7 +1999,6 @@ void ssl_get_compatible_server_ciphers(SSL *s, unsigned long *out_mask_k,
   int rsa_enc, rsa_sign, dh_tmp;
   unsigned long mask_k, mask_a;
   int have_ecc_cert, ecdsa_ok;
-  int have_ecdh_tmp;
   X509 *x;
 
   if (c == NULL) {
@@ -2043,7 +2010,6 @@ void ssl_get_compatible_server_ciphers(SSL *s, unsigned long *out_mask_k,
 
   dh_tmp = (c->dh_tmp != NULL || c->dh_tmp_cb != NULL);
 
-  have_ecdh_tmp = (c->ecdh_tmp || c->ecdh_tmp_cb || c->ecdh_tmp_auto);
   rsa_enc = ssl_has_key(s, SSL_PKEY_RSA_ENC);
   rsa_sign = ssl_has_key(s, SSL_PKEY_RSA_SIGN);
   have_ecc_cert = ssl_has_key(s, SSL_PKEY_ECC);
@@ -2054,7 +2020,7 @@ void ssl_get_compatible_server_ciphers(SSL *s, unsigned long *out_mask_k,
     mask_k |= SSL_kRSA;
   }
   if (dh_tmp) {
-    mask_k |= SSL_kEDH;
+    mask_k |= SSL_kDHE;
   }
   if (rsa_enc || rsa_sign) {
     mask_a |= SSL_aRSA;
@@ -2081,8 +2047,8 @@ void ssl_get_compatible_server_ciphers(SSL *s, unsigned long *out_mask_k,
 
   /* If we are considering an ECC cipher suite that uses an ephemeral EC
    * key, check it. */
-  if (have_ecdh_tmp && tls1_check_ec_tmp_key(s)) {
-    mask_k |= SSL_kEECDH;
+  if (tls1_check_ec_tmp_key(s)) {
+    mask_k |= SSL_kECDHE;
   }
 
   /* PSK requires a server callback. */
@@ -2176,55 +2142,62 @@ EVP_PKEY *ssl_get_sign_pkey(SSL *s, const SSL_CIPHER *cipher) {
 }
 
 void ssl_update_cache(SSL *s, int mode) {
-  int i;
-
-  /* If the session_id_length is 0, we are not supposed to cache it, and it
-   * would be rather hard to do anyway :-) */
+  /* Never cache sessions with empty session IDs. */
   if (s->session->session_id_length == 0) {
     return;
   }
 
-  i = s->initial_ctx->session_cache_mode;
-  if ((i & mode) && !s->hit &&
-      ((i & SSL_SESS_CACHE_NO_INTERNAL_STORE) ||
-       SSL_CTX_add_session(s->initial_ctx, s->session)) &&
-      s->initial_ctx->new_session_cb != NULL) {
-    if (!s->initial_ctx->new_session_cb(s, SSL_SESSION_up_ref(s->session))) {
+  SSL_CTX *ctx = s->initial_ctx;
+  if ((ctx->session_cache_mode & mode) == mode && !s->hit &&
+      ((ctx->session_cache_mode & SSL_SESS_CACHE_NO_INTERNAL_STORE) ||
+       SSL_CTX_add_session(ctx, s->session)) &&
+      ctx->new_session_cb != NULL) {
+    /* Note: |new_session_cb| is called whether the internal session cache is
+     * used or not. */
+    if (!ctx->new_session_cb(s, SSL_SESSION_up_ref(s->session))) {
       SSL_SESSION_free(s->session);
     }
   }
 
-  /* auto flush every 255 connections */
-  if ((!(i & SSL_SESS_CACHE_NO_AUTO_CLEAR)) && ((i & mode) == mode)) {
-    if ((((mode & SSL_SESS_CACHE_CLIENT)
-              ? s->initial_ctx->stats.sess_connect_good
-              : s->initial_ctx->stats.sess_accept_good) &
-         0xff) == 0xff) {
-      SSL_CTX_flush_sessions(s->initial_ctx, (unsigned long)time(NULL));
+  if (!(ctx->session_cache_mode & SSL_SESS_CACHE_NO_AUTO_CLEAR) &&
+      !(ctx->session_cache_mode & SSL_SESS_CACHE_NO_INTERNAL_STORE) &&
+      (ctx->session_cache_mode & mode) == mode) {
+    /* Automatically flush the internal session cache every 255 connections. */
+    int flush_cache = 0;
+    CRYPTO_w_lock(CRYPTO_LOCK_SSL_CTX);
+    ctx->handshakes_since_cache_flush++;
+    if (ctx->handshakes_since_cache_flush >= 255) {
+      flush_cache = 1;
+      ctx->handshakes_since_cache_flush = 0;
+    }
+    CRYPTO_w_unlock(CRYPTO_LOCK_SSL_CTX);
+
+    if (flush_cache) {
+      SSL_CTX_flush_sessions(ctx, (unsigned long)time(NULL));
     }
   }
 }
 
-int SSL_get_error(const SSL *s, int i) {
+int SSL_get_error(const SSL *s, int ret_code) {
   int reason;
-  unsigned long l;
+  uint32_t err;
   BIO *bio;
 
-  if (i > 0) {
+  if (ret_code > 0) {
     return SSL_ERROR_NONE;
   }
 
   /* Make things return SSL_ERROR_SYSCALL when doing SSL_do_handshake etc,
    * where we do encode the error */
-  l = ERR_peek_error();
-  if (l != 0) {
-    if (ERR_GET_LIB(l) == ERR_LIB_SYS) {
+  err = ERR_peek_error();
+  if (err != 0) {
+    if (ERR_GET_LIB(err) == ERR_LIB_SYS) {
       return SSL_ERROR_SYSCALL;
     }
     return SSL_ERROR_SSL;
   }
 
-  if (i == 0) {
+  if (ret_code == 0) {
     if ((s->shutdown & SSL_RECEIVED_SHUTDOWN) &&
         (s->s3->warn_alert == SSL_AD_CLOSE_NOTIFY)) {
       /* The socket was cleanly shut down with a close_notify. */
@@ -2637,15 +2610,16 @@ void SSL_set_tmp_dh_callback(SSL *ssl, DH *(*dh)(SSL *ssl, int is_export,
 }
 
 void SSL_CTX_set_tmp_ecdh_callback(SSL_CTX *ctx,
-                                   EC_KEY *(*ecdh)(SSL *ssl, int is_export,
-                                                   int keylength)) {
-  SSL_CTX_callback_ctrl(ctx, SSL_CTRL_SET_TMP_ECDH_CB, (void (*)(void))ecdh);
+                                   EC_KEY *(*callback)(SSL *ssl, int is_export,
+                                                       int keylength)) {
+  SSL_CTX_callback_ctrl(ctx, SSL_CTRL_SET_TMP_ECDH_CB,
+                        (void (*)(void))callback);
 }
 
 void SSL_set_tmp_ecdh_callback(SSL *ssl,
-                               EC_KEY *(*ecdh)(SSL *ssl, int is_export,
-                                               int keylength)) {
-  SSL_callback_ctrl(ssl, SSL_CTRL_SET_TMP_ECDH_CB, (void (*)(void))ecdh);
+                               EC_KEY *(*callback)(SSL *ssl, int is_export,
+                                                   int keylength)) {
+  SSL_callback_ctrl(ssl, SSL_CTRL_SET_TMP_ECDH_CB, (void (*)(void))callback);
 }
 
 int SSL_CTX_use_psk_identity_hint(SSL_CTX *ctx, const char *identity_hint) {
@@ -2900,7 +2874,7 @@ int ssl3_can_false_start(const SSL *s) {
       SSL_version(s) >= TLS1_2_VERSION &&
       (s->s3->alpn_selected || s->s3->next_proto_neg_seen) &&
       cipher != NULL &&
-      cipher->algorithm_mkey == SSL_kEECDH &&
+      cipher->algorithm_mkey == SSL_kECDHE &&
       (cipher->algorithm_enc == SSL_AES128GCM ||
        cipher->algorithm_enc == SSL_AES256GCM ||
        cipher->algorithm_enc == SSL_CHACHA20POLY1305);
@@ -2914,17 +2888,13 @@ const SSL3_ENC_METHOD *ssl3_get_enc_method(uint16_t version) {
     case TLS1_VERSION:
       return &TLSv1_enc_data;
 
+    case DTLS1_VERSION:
     case TLS1_1_VERSION:
       return &TLSv1_1_enc_data;
 
+    case DTLS1_2_VERSION:
     case TLS1_2_VERSION:
       return &TLSv1_2_enc_data;
-
-    case DTLS1_VERSION:
-      return &DTLSv1_enc_data;
-
-    case DTLS1_2_VERSION:
-      return &DTLSv1_2_enc_data;
 
     default:
       return NULL;
@@ -2973,7 +2943,7 @@ uint16_t ssl3_get_mutual_version(SSL *s, uint16_t client_version) {
     if (client_version <= DTLS1_2_VERSION && !(s->options & SSL_OP_NO_DTLSv1_2)) {
       version = DTLS1_2_VERSION;
     } else if (client_version <= DTLS1_VERSION &&
-             !(s->options & SSL_OP_NO_DTLSv1)) {
+               !(s->options & SSL_OP_NO_DTLSv1)) {
       version = DTLS1_VERSION;
     }
 
@@ -3126,6 +3096,25 @@ int SSL_cache_hit(SSL *s) { return s->hit; }
 
 int SSL_is_server(SSL *s) { return s->server; }
 
+void SSL_CTX_set_dos_protection_cb(
+    SSL_CTX *ctx, int (*cb)(const struct ssl_early_callback_ctx *)) {
+  ctx->dos_protection_cb = cb;
+}
+
 void SSL_enable_fastradio_padding(SSL *s, char on_off) {
   s->fastradio_padding = on_off;
+}
+
+const SSL_CIPHER *SSL_get_cipher_by_value(uint16_t value) {
+  return ssl3_get_cipher_by_value(value);
+}
+
+int SSL_get_rc4_state(const SSL *ssl, const RC4_KEY **read_key,
+                      const RC4_KEY **write_key) {
+  if (ssl->aead_read_ctx == NULL || ssl->aead_write_ctx == NULL) {
+    return 0;
+  }
+
+  return EVP_AEAD_CTX_get_rc4_state(&ssl->aead_read_ctx->ctx, read_key) &&
+         EVP_AEAD_CTX_get_rc4_state(&ssl->aead_write_ctx->ctx, write_key);
 }

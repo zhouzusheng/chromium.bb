@@ -7,6 +7,7 @@
 
 #include "public/platform/WebCallbacks.h"
 #include "public/platform/WebPageVisibilityState.h"
+#include "public/platform/WebServiceWorkerClientType.h"
 #include "public/platform/WebURL.h"
 #include "public/platform/WebURLRequest.h"
 #include "public/platform/WebVector.h"
@@ -17,19 +18,20 @@ struct WebServiceWorkerError;
 
 struct WebServiceWorkerClientInfo {
     WebServiceWorkerClientInfo()
-        : clientID(0)
-        , pageVisibilityState(WebPageVisibilityStateLast)
+        : pageVisibilityState(WebPageVisibilityStateLast)
         , isFocused(false)
         , frameType(WebURLRequest::FrameTypeNone)
+        , clientType(WebServiceWorkerClientTypeWindow)
     {
     }
 
-    int clientID;
+    WebString uuid;
 
     WebPageVisibilityState pageVisibilityState;
     bool isFocused;
     WebURL url;
     WebURLRequest::FrameType frameType;
+    WebServiceWorkerClientType clientType;
 };
 
 struct WebServiceWorkerClientsInfo {

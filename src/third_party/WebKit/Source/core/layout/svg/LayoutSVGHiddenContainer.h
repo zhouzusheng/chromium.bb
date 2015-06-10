@@ -32,7 +32,7 @@ class LayoutSVGHiddenContainer : public LayoutSVGContainer {
 public:
     explicit LayoutSVGHiddenContainer(SVGElement*);
 
-    virtual const char* renderName() const override { return "LayoutSVGHiddenContainer"; }
+    virtual const char* name() const override { return "LayoutSVGHiddenContainer"; }
 
 protected:
     virtual void layout() override;
@@ -41,10 +41,10 @@ protected:
 
 private:
     virtual void paint(const PaintInfo&, const LayoutPoint&) override final;
-    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutLayerModelObject*, const PaintInvalidationState* = 0) const override final { return LayoutRect(); }
+    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject*, const PaintInvalidationState* = 0) const override final { return LayoutRect(); }
     virtual void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed) const override final;
 
-    virtual bool nodeAtFloatPoint(const HitTestRequest&, HitTestResult&, const FloatPoint& pointInParent, HitTestAction) override final;
+    virtual bool nodeAtFloatPoint(HitTestResult&, const FloatPoint& pointInParent, HitTestAction) override final;
 };
 }
 

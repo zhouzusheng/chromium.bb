@@ -26,7 +26,6 @@
 #include "core/layout/svg/SVGLayoutSupport.h"
 
 #include "core/frame/FrameHost.h"
-#include "core/layout/Layer.h"
 #include "core/layout/LayoutGeometryMap.h"
 #include "core/layout/PaintInfo.h"
 #include "core/layout/SubtreeLayoutScope.h"
@@ -40,6 +39,7 @@
 #include "core/layout/svg/LayoutSVGViewportContainer.h"
 #include "core/layout/svg/SVGResources.h"
 #include "core/layout/svg/SVGResourcesCache.h"
+#include "core/paint/DeprecatedPaintLayer.h"
 #include "core/svg/SVGElement.h"
 #include "platform/geometry/TransformState.h"
 
@@ -49,10 +49,10 @@ static inline LayoutRect enclosingIntRectIfNotEmpty(const FloatRect& rect)
 {
     if (rect.isEmpty())
         return LayoutRect();
-    return enclosingIntRect(rect);
+    return LayoutRect(enclosingIntRect(rect));
 }
 
-LayoutRect SVGLayoutSupport::clippedOverflowRectForPaintInvalidation(const LayoutObject* object, const LayoutLayerModelObject* paintInvalidationContainer, const PaintInvalidationState* paintInvalidationState)
+LayoutRect SVGLayoutSupport::clippedOverflowRectForPaintInvalidation(const LayoutObject* object, const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* paintInvalidationState)
 {
     // Return early for any cases where we don't actually paint
     if (object->style()->visibility() != VISIBLE && !object->enclosingLayer()->hasVisibleContent())
@@ -104,7 +104,7 @@ const LayoutSVGRoot& SVGLayoutSupport::mapRectToSVGRootForPaintInvalidation(cons
     return svgRoot;
 }
 
-void SVGLayoutSupport::mapLocalToContainer(const LayoutObject* object, const LayoutLayerModelObject* paintInvalidationContainer, TransformState& transformState, bool* wasFixed, const PaintInvalidationState* paintInvalidationState)
+void SVGLayoutSupport::mapLocalToContainer(const LayoutObject* object, const LayoutBoxModelObject* paintInvalidationContainer, TransformState& transformState, bool* wasFixed, const PaintInvalidationState* paintInvalidationState)
 {
     transformState.applyTransform(object->localToParentTransform());
 
@@ -127,7 +127,7 @@ void SVGLayoutSupport::mapLocalToContainer(const LayoutObject* object, const Lay
     parent->mapLocalToContainer(paintInvalidationContainer, transformState, mode, wasFixed, paintInvalidationState);
 }
 
-const LayoutObject* SVGLayoutSupport::pushMappingToContainer(const LayoutObject* object, const LayoutLayerModelObject* ancestorToStopAt, LayoutGeometryMap& geometryMap)
+const LayoutObject* SVGLayoutSupport::pushMappingToContainer(const LayoutObject* object, const LayoutBoxModelObject* ancestorToStopAt, LayoutGeometryMap& geometryMap)
 {
     ASSERT_UNUSED(ancestorToStopAt, ancestorToStopAt != object);
 
@@ -176,7 +176,7 @@ void SVGLayoutSupport::computeContainerBoundingBoxes(const LayoutObject* contain
         if (current->isSVGHiddenContainer())
             continue;
 
-        // Don't include elements in the union that do not render.
+        // Don't include elements in the union that do not layout.
         if (current->isSVGShape() && toLayoutSVGShape(current)->isShapeEmpty())
             continue;
 
@@ -265,9 +265,9 @@ void SVGLayoutSupport::layoutChildren(LayoutObject* start, bool selfNeedsLayout)
         // Resource containers are nasty: they can invalidate clients outside the current SubtreeLayoutScope.
         // Since they only care about viewport size changes (to resolve their relative lengths), we trigger
         // their invalidation directly from SVGSVGElement::svgAttributeChange() or at a higher
-        // SubtreeLayoutScope (in RenderView::layout()).
+        // SubtreeLayoutScope (in LayoutView::layout()).
         if (forceLayout && !child->isSVGResourceContainer())
-            layoutScope.setNeedsLayout(child);
+            layoutScope.setNeedsLayout(child, LayoutInvalidationReason::SvgChanged);
 
         // Lay out any referenced resources before the child.
         layoutResourcesIfNeeded(child);
@@ -292,22 +292,22 @@ bool SVGLayoutSupport::isOverflowHidden(const LayoutObject* object)
     return object->style()->overflowX() == OHIDDEN || object->style()->overflowX() == OSCROLL;
 }
 
-void SVGLayoutSupport::intersectPaintInvalidationRectWithResources(const LayoutObject* renderer, FloatRect& paintInvalidationRect)
+void SVGLayoutSupport::intersectPaintInvalidationRectWithResources(const LayoutObject* layoutObject, FloatRect& paintInvalidationRect)
 {
-    ASSERT(renderer);
+    ASSERT(layoutObject);
 
-    SVGResources* resources = SVGResourcesCache::cachedResourcesForLayoutObject(renderer);
+    SVGResources* resources = SVGResourcesCache::cachedResourcesForLayoutObject(layoutObject);
     if (!resources)
         return;
 
     if (LayoutSVGResourceFilter* filter = resources->filter())
-        paintInvalidationRect = filter->resourceBoundingBox(renderer);
+        paintInvalidationRect = filter->resourceBoundingBox(layoutObject);
 
     if (LayoutSVGResourceClipper* clipper = resources->clipper())
-        paintInvalidationRect.intersect(clipper->resourceBoundingBox(renderer));
+        paintInvalidationRect.intersect(clipper->resourceBoundingBox(layoutObject));
 
     if (LayoutSVGResourceMasker* masker = resources->masker())
-        paintInvalidationRect.intersect(masker->resourceBoundingBox(renderer));
+        paintInvalidationRect.intersect(masker->resourceBoundingBox(layoutObject));
 }
 
 bool SVGLayoutSupport::filtersForceContainerLayout(LayoutObject* object)
@@ -348,55 +348,49 @@ bool SVGLayoutSupport::transformToUserSpaceAndCheckClipping(LayoutObject* object
     return pointInClippingArea(object, localPoint);
 }
 
-void SVGLayoutSupport::applyStrokeStyleToContext(GraphicsContext& context, const LayoutStyle& style, const LayoutObject& object)
+DashArray SVGLayoutSupport::resolveSVGDashArray(const SVGDashArray& svgDashArray, const ComputedStyle& style, const SVGLengthContext& lengthContext)
+{
+    DashArray dashArray;
+    for (const Length& dashLength : svgDashArray.vector())
+        dashArray.append(lengthContext.valueForLength(dashLength, style));
+    return dashArray;
+}
+
+void SVGLayoutSupport::applyStrokeStyleToContext(GraphicsContext& context, const ComputedStyle& style, const LayoutObject& object)
 {
     ASSERT(object.node());
     ASSERT(object.node()->isSVGElement());
 
-    const SVGLayoutStyle& svgStyle = style.svgStyle();
+    const SVGComputedStyle& svgStyle = style.svgStyle();
 
     SVGLengthContext lengthContext(toSVGElement(object.node()));
-    context.setStrokeThickness(svgStyle.strokeWidth()->value(lengthContext));
+    context.setStrokeThickness(lengthContext.valueForLength(svgStyle.strokeWidth()));
     context.setLineCap(svgStyle.capStyle());
     context.setLineJoin(svgStyle.joinStyle());
     context.setMiterLimit(svgStyle.strokeMiterLimit());
 
-    RefPtrWillBeRawPtr<SVGLengthList> dashes = svgStyle.strokeDashArray();
-    DashArray dashArray;
-    if (!dashes->isEmpty()) {
-        SVGLengthList::ConstIterator it = dashes->begin();
-        SVGLengthList::ConstIterator itEnd = dashes->end();
-        for (; it != itEnd; ++it)
-            dashArray.append(it->value(lengthContext));
-    }
-    context.setLineDash(dashArray, svgStyle.strokeDashOffset()->value(lengthContext));
+    DashArray dashArray = resolveSVGDashArray(*svgStyle.strokeDashArray(), style, lengthContext);
+    context.setLineDash(dashArray, lengthContext.valueForLength(svgStyle.strokeDashOffset(), style));
 }
 
-void SVGLayoutSupport::applyStrokeStyleToStrokeData(StrokeData& strokeData, const LayoutStyle& style, const LayoutObject& object)
+void SVGLayoutSupport::applyStrokeStyleToStrokeData(StrokeData& strokeData, const ComputedStyle& style, const LayoutObject& object)
 {
     ASSERT(object.node());
     ASSERT(object.node()->isSVGElement());
 
-    const SVGLayoutStyle& svgStyle = style.svgStyle();
+    const SVGComputedStyle& svgStyle = style.svgStyle();
 
     SVGLengthContext lengthContext(toSVGElement(object.node()));
-    strokeData.setThickness(svgStyle.strokeWidth()->value(lengthContext));
+    strokeData.setThickness(lengthContext.valueForLength(svgStyle.strokeWidth()));
     strokeData.setLineCap(svgStyle.capStyle());
     strokeData.setLineJoin(svgStyle.joinStyle());
     strokeData.setMiterLimit(svgStyle.strokeMiterLimit());
 
-    RefPtrWillBeRawPtr<SVGLengthList> dashes = svgStyle.strokeDashArray();
-    DashArray dashArray;
-    if (!dashes->isEmpty()) {
-        SVGLengthList::ConstIterator it = dashes->begin();
-        SVGLengthList::ConstIterator itEnd = dashes->end();
-        for (; it != itEnd; ++it)
-            dashArray.append(it->value(lengthContext));
-    }
-    strokeData.setLineDash(dashArray, svgStyle.strokeDashOffset()->value(lengthContext));
+    DashArray dashArray = resolveSVGDashArray(*svgStyle.strokeDashArray(), style, lengthContext);
+    strokeData.setLineDash(dashArray, lengthContext.valueForLength(svgStyle.strokeDashOffset(), style));
 }
 
-bool SVGLayoutSupport::updateGraphicsContext(const PaintInfo& paintInfo, GraphicsContextStateSaver& stateSaver, const LayoutStyle& style, LayoutObject& renderer, LayoutSVGResourceMode resourceMode, const AffineTransform* additionalPaintServerTransform)
+bool SVGLayoutSupport::updateGraphicsContext(const PaintInfo& paintInfo, GraphicsContextStateSaver& stateSaver, const ComputedStyle& style, LayoutObject& layoutObject, LayoutSVGResourceMode resourceMode, const AffineTransform* additionalPaintServerTransform)
 {
     ASSERT(paintInfo.context == stateSaver.context());
 
@@ -404,39 +398,39 @@ bool SVGLayoutSupport::updateGraphicsContext(const PaintInfo& paintInfo, Graphic
     if (paintInfo.isRenderingClipPathAsMaskImage()) {
         if (resourceMode == ApplyToStrokeMode)
             return false;
-        context.setFillColor(SVGLayoutStyle::initialFillPaintColor());
+        context.setFillColor(SVGComputedStyle::initialFillPaintColor());
         return true;
     }
 
-    SVGPaintServer paintServer = SVGPaintServer::requestForRenderer(renderer, style, resourceMode);
+    SVGPaintServer paintServer = SVGPaintServer::requestForLayoutObject(layoutObject, style, resourceMode);
     if (!paintServer.isValid())
         return false;
 
     if (additionalPaintServerTransform && paintServer.isTransformDependent())
         paintServer.prependTransform(*additionalPaintServerTransform);
 
-    const SVGLayoutStyle& svgStyle = style.svgStyle();
+    const SVGComputedStyle& svgStyle = style.svgStyle();
     float paintAlpha = resourceMode == ApplyToFillMode ? svgStyle.fillOpacity() : svgStyle.strokeOpacity();
     paintServer.apply(context, resourceMode, paintAlpha, stateSaver);
 
     if (resourceMode == ApplyToFillMode)
         context.setFillRule(svgStyle.fillRule());
     else
-        applyStrokeStyleToContext(context, style, renderer);
+        applyStrokeStyleToContext(context, style, layoutObject);
 
     return true;
 }
 
-bool SVGLayoutSupport::isRenderableTextNode(const LayoutObject* object)
+bool SVGLayoutSupport::isLayoutableTextNode(const LayoutObject* object)
 {
     ASSERT(object->isText());
-    // <br> is marked as text, but is not handled by the SVG rendering code-path.
+    // <br> is marked as text, but is not handled by the SVG layout code-path.
     return object->isSVGInlineText() && !toLayoutSVGInlineText(object)->hasEmptyText();
 }
 
-bool SVGLayoutSupport::willIsolateBlendingDescendantsForStyle(const LayoutStyle& style)
+bool SVGLayoutSupport::willIsolateBlendingDescendantsForStyle(const ComputedStyle& style)
 {
-    const SVGLayoutStyle& svgStyle = style.svgStyle();
+    const SVGComputedStyle& svgStyle = style.svgStyle();
 
     return style.hasIsolation() || style.opacity() < 1 || style.hasBlendMode()
         || svgStyle.hasFilter() || svgStyle.hasMasker() || svgStyle.hasClipper();
@@ -474,28 +468,28 @@ SubtreeContentTransformScope::~SubtreeContentTransformScope()
     currentContentTransformation() = m_savedContentTransformation;
 }
 
-float SVGLayoutSupport::calculateScreenFontSizeScalingFactor(const LayoutObject* renderer)
+float SVGLayoutSupport::calculateScreenFontSizeScalingFactor(const LayoutObject* layoutObject)
 {
     // FIXME: trying to compute a device space transform at record time is wrong. All clients
     // should be updated to avoid relying on this information, and the method should be removed.
 
-    ASSERT(renderer);
-    // We're about to possibly clear renderer, so save the deviceScaleFactor now.
-    float deviceScaleFactor = renderer->document().frameHost()->deviceScaleFactor();
+    ASSERT(layoutObject);
+    // We're about to possibly clear the layoutObject, so save the deviceScaleFactor now.
+    float deviceScaleFactor = layoutObject->document().frameHost()->deviceScaleFactor();
 
-    // Walk up the render tree, accumulating SVG transforms.
+    // Walk up the layout tree, accumulating SVG transforms.
     AffineTransform ctm = currentContentTransformation();
-    while (renderer) {
-        ctm = renderer->localToParentTransform() * ctm;
-        if (renderer->isSVGRoot())
+    while (layoutObject) {
+        ctm = layoutObject->localToParentTransform() * ctm;
+        if (layoutObject->isSVGRoot())
             break;
-        renderer = renderer->parent();
+        layoutObject = layoutObject->parent();
     }
 
     // Continue walking up the layer tree, accumulating CSS transforms.
     // FIXME: this queries layer compositing state - which is not
     // supported during layout. Hence, the result may not include all CSS transforms.
-    Layer* layer = renderer ? renderer->enclosingLayer() : 0;
+    DeprecatedPaintLayer* layer = layoutObject ? layoutObject->enclosingLayer() : 0;
     while (layer && layer->isAllowedToQueryCompositingState()) {
         // We can stop at compositing layers, to match the backing resolution.
         // FIXME: should we be computing the transform to the nearest composited layer,

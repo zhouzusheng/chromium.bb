@@ -12,7 +12,6 @@ namespace blink {
 
 bool DoubleStyleInterpolation::canCreateFrom(const CSSValue& value)
 {
-    ASSERT(value.isPrimitiveValue());
     return value.isPrimitiveValue() && (toCSSPrimitiveValue(value).isNumber() || toCSSPrimitiveValue(value).isAngle());
 }
 
@@ -41,7 +40,7 @@ PassRefPtrWillBeRawPtr<CSSValue> DoubleStyleInterpolation::interpolableValueToDo
         doubleValue = clampTo<float>(doubleValue, 0, 1);
         break;
     case RangeOpacityFIXME:
-        doubleValue = clampTo<float>(doubleValue, 0, nextafter(1, 0));
+        doubleValue = clampTo<float>(doubleValue, 0, nextafterf(1, 0));
         break;
     case RangeFloor:
         doubleValue = floor(doubleValue);
@@ -76,7 +75,7 @@ void DoubleStyleInterpolation::apply(StyleResolverState& state) const
     StyleBuilder::applyProperty(m_id, state, interpolableValueToMotionRotation(m_cachedValue.get(), m_flag).get());
 }
 
-void DoubleStyleInterpolation::trace(Visitor* visitor)
+DEFINE_TRACE(DoubleStyleInterpolation)
 {
     StyleInterpolation::trace(visitor);
 }

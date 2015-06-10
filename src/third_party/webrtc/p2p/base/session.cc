@@ -46,15 +46,14 @@ TransportChannel* TransportProxy::GetChannel(int component) {
   return GetChannelProxy(component);
 }
 
-TransportChannel* TransportProxy::CreateChannel(const std::string& name,
-                                                int component) {
+TransportChannel* TransportProxy::CreateChannel(int component) {
   ASSERT(rtc::Thread::Current() == worker_thread_);
   ASSERT(GetChannel(component) == NULL);
   ASSERT(!transport_->get()->HasChannel(component));
 
   // We always create a proxy in case we need to change out the transport later.
   TransportChannelProxy* channel_proxy =
-      new TransportChannelProxy(content_name(), name, component);
+      new TransportChannelProxy(content_name(), component);
   channels_[component] = channel_proxy;
 
   // If we're already negotiated, create an impl and hook it up to the proxy
@@ -137,43 +136,9 @@ void TransportProxy::AddUnsentCandidates(const Candidates& candidates) {
   }
 }
 
-bool TransportProxy::GetChannelNameFromComponent(
-    int component, std::string* channel_name) const {
-  const TransportChannelProxy* channel = GetChannelProxy(component);
-  if (channel == NULL) {
-    return false;
-  }
-
-  *channel_name = channel->name();
-  return true;
-}
-
-bool TransportProxy::GetComponentFromChannelName(
-    const std::string& channel_name, int* component) const {
-  const TransportChannelProxy* channel = GetChannelProxyByName(channel_name);
-  if (channel == NULL) {
-    return false;
-  }
-
-  *component = channel->component();
-  return true;
-}
-
 TransportChannelProxy* TransportProxy::GetChannelProxy(int component) const {
   ChannelMap::const_iterator iter = channels_.find(component);
   return (iter != channels_.end()) ? iter->second : NULL;
-}
-
-TransportChannelProxy* TransportProxy::GetChannelProxyByName(
-    const std::string& name) const {
-  for (ChannelMap::const_iterator iter = channels_.begin();
-       iter != channels_.end();
-       ++iter) {
-    if (iter->second->name() == name) {
-      return iter->second;
-    }
-  }
-  return NULL;
 }
 
 void TransportProxy::CreateChannelImpl(int component) {
@@ -496,13 +461,12 @@ bool BaseSession::PushdownRemoteTransportDescription(
 }
 
 TransportChannel* BaseSession::CreateChannel(const std::string& content_name,
-                                             const std::string& channel_name,
                                              int component) {
   // We create the proxy "on demand" here because we need to support
   // creating channels at any time, even before we send or receive
   // initiate messages, which is before we create the transports.
   TransportProxy* transproxy = GetOrCreateTransportProxy(content_name);
-  return transproxy->CreateChannel(channel_name, component);
+  return transproxy->CreateChannel(component);
 }
 
 TransportChannel* BaseSession::GetChannel(const std::string& content_name,
@@ -573,23 +537,6 @@ TransportProxy* BaseSession::GetTransportProxy(
   return (iter != transports_.end()) ? iter->second : NULL;
 }
 
-TransportProxy* BaseSession::GetTransportProxy(const Transport* transport) {
-  for (TransportMap::iterator iter = transports_.begin();
-       iter != transports_.end(); ++iter) {
-    TransportProxy* transproxy = iter->second;
-    if (transproxy->impl() == transport) {
-      return transproxy;
-    }
-  }
-  return NULL;
-}
-
-TransportProxy* BaseSession::GetFirstTransportProxy() {
-  if (transports_.empty())
-    return NULL;
-  return transports_.begin()->second;
-}
-
 void BaseSession::DestroyTransportProxy(
     const std::string& content_name) {
   TransportMap::iterator iter = transports_.find(content_name);
@@ -605,27 +552,6 @@ cricket::Transport* BaseSession::CreateTransport(
   return new cricket::DtlsTransport<P2PTransport>(
       signaling_thread(), worker_thread(), content_name,
       port_allocator(), identity_);
-}
-
-bool BaseSession::GetStats(SessionStats* stats) {
-  for (TransportMap::iterator iter = transports_.begin();
-       iter != transports_.end(); ++iter) {
-    std::string proxy_id = iter->second->content_name();
-    // We are ignoring not-yet-instantiated transports.
-    if (iter->second->impl()) {
-      std::string transport_id = iter->second->impl()->content_name();
-      stats->proxy_to_transport[proxy_id] = transport_id;
-      if (stats->transport_stats.find(transport_id)
-          == stats->transport_stats.end()) {
-        TransportStats subinfos;
-        if (!iter->second->impl()->GetStats(&subinfos)) {
-          return false;
-        }
-        stats->transport_stats[transport_id] = subinfos;
-      }
-    }
-  }
-  return true;
 }
 
 void BaseSession::SetState(State state) {
@@ -700,8 +626,9 @@ bool BaseSession::MaybeEnableMuxingSupport() {
   for (TransportMap::iterator iter = transports_.begin();
        iter != transports_.end(); ++iter) {
     ASSERT(iter->second->negotiated());
-    if (!iter->second->negotiated())
+    if (!iter->second->negotiated()) {
       return false;
+    }
   }
 
   // If both sides agree to BUNDLE, mux all the specified contents onto the
@@ -711,56 +638,63 @@ bool BaseSession::MaybeEnableMuxingSupport() {
   // BUNDLE the same way?
   bool candidates_allocated = IsCandidateAllocationDone();
   const ContentGroup* local_bundle_group =
-      local_description()->GetGroupByName(GROUP_TYPE_BUNDLE);
+      local_description_->GetGroupByName(GROUP_TYPE_BUNDLE);
   const ContentGroup* remote_bundle_group =
-      remote_description()->GetGroupByName(GROUP_TYPE_BUNDLE);
-  if (local_bundle_group && remote_bundle_group &&
-      local_bundle_group->FirstContentName()) {
-    const std::string* content_name = local_bundle_group->FirstContentName();
-    const ContentInfo* content =
-        local_description_->GetContentByName(*content_name);
-    if (!content) {
-      LOG(LS_WARNING) << "Content \"" << *content_name
-                      << "\" referenced in BUNDLE group is not present";
-      return false;
-    }
-
-    if (!SetSelectedProxy(content->name, local_bundle_group)) {
+      remote_description_->GetGroupByName(GROUP_TYPE_BUNDLE);
+  if (local_bundle_group && remote_bundle_group) {
+    if (!BundleContentGroup(local_bundle_group)) {
       LOG(LS_WARNING) << "Failed to set up BUNDLE";
       return false;
     }
 
     // If we weren't done gathering before, we might be done now, as a result
     // of enabling mux.
-    LOG(LS_INFO) << "Enabling BUNDLE, bundling onto transport: "
-                 << *content_name;
     if (!candidates_allocated) {
       MaybeCandidateAllocationDone();
     }
   } else {
-    LOG(LS_INFO) << "No BUNDLE information, not bundling.";
+    LOG(LS_INFO) << "BUNDLE group missing from remote or local description.";
   }
   return true;
 }
 
-bool BaseSession::SetSelectedProxy(const std::string& content_name,
-                                   const ContentGroup* muxed_group) {
-  TransportProxy* selected_proxy = GetTransportProxy(content_name);
-  if (!selected_proxy) {
+bool BaseSession::BundleContentGroup(const ContentGroup* bundle_group) {
+  const std::string* content_name = bundle_group->FirstContentName();
+  if (!content_name) {
+    LOG(LS_INFO) << "No content names specified in BUNDLE group.";
+    return true;
+  }
+
+  const ContentInfo* content =
+      local_description_->GetContentByName(*content_name);
+  if (!content) {
+    LOG(LS_WARNING) << "Content \"" << *content_name
+                    << "\" referenced in BUNDLE group"
+                    << " not present in local description";
     return false;
   }
 
-  ASSERT(selected_proxy->negotiated());
+  TransportProxy* selected_proxy = GetTransportProxy(*content_name);
+  if (!selected_proxy) {
+    LOG(LS_WARNING) << "No transport found for content \""
+                    << *content_name << "\".";
+    return false;
+  }
+
   for (TransportMap::iterator iter = transports_.begin();
        iter != transports_.end(); ++iter) {
     // If content is part of the mux group, then repoint its proxy at the
     // transport object that we have chosen to mux onto. If the proxy
     // is already pointing at the right object, it will be a no-op.
-    if (muxed_group->HasContentName(iter->first) &&
+    if (bundle_group->HasContentName(iter->first) &&
         !iter->second->SetupMux(selected_proxy)) {
+      LOG(LS_WARNING) << "Failed to bundle " << iter->first << " to "
+                      << *content_name;
       return false;
     }
+    LOG(LS_INFO) << "Bundling " << iter->first << " to " << *content_name;
   }
+
   return true;
 }
 

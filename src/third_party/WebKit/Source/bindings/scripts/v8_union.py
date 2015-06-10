@@ -143,12 +143,12 @@ def member_context(member, interfaces_info):
         'cpp_value_to_v8_value': member.cpp_value_to_v8_value(
             cpp_value='impl.getAs%s()' % member.name, isolate='isolate',
             creation_context='creationContext'),
-        'enum_validation_expression': member.enum_validation_expression,
+        'enum_values': member.enum_values,
         'is_traceable': member.is_traceable,
         'rvalue_cpp_type': member.cpp_type_args(used_as_rvalue_type=True),
         'specific_type_enum': 'SpecificType' + member.name,
         'type_name': member.name,
         'v8_value_to_local_cpp_value': member.v8_value_to_local_cpp_value(
             {}, 'v8Value', 'cppValue', isolate='isolate',
-            needs_exception_state_for_string=True, restricted_float=True),
+            use_exception_state=True, restricted_float=True),
     }

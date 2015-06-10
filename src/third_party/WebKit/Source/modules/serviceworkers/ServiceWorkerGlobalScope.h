@@ -39,7 +39,6 @@
 
 namespace blink {
 
-class CacheStorage;
 class Dictionary;
 class Request;
 class ScriptPromise;
@@ -56,7 +55,7 @@ typedef RequestOrUSVString RequestInfo;
 class ServiceWorkerGlobalScope final : public WorkerGlobalScope {
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<ServiceWorkerGlobalScope> create(ServiceWorkerThread*, PassOwnPtrWillBeRawPtr<WorkerThreadStartupData>);
+    static PassRefPtrWillBeRawPtr<ServiceWorkerGlobalScope> create(ServiceWorkerThread*, PassOwnPtr<WorkerThreadStartupData>);
 
     virtual ~ServiceWorkerGlobalScope();
     virtual bool isServiceWorkerGlobalScope() const override { return true; }
@@ -67,8 +66,6 @@ public:
     // ServiceWorkerGlobalScope.idl
     ServiceWorkerClients* clients();
     ServiceWorkerRegistration* registration();
-
-    CacheStorage* caches(ExecutionContext*);
 
     ScriptPromise fetch(ScriptState*, const RequestInfo&, const Dictionary&, ExceptionState&);
 
@@ -97,16 +94,19 @@ private:
     class SkipWaitingCallback;
 
     ServiceWorkerGlobalScope(const KURL&, const String& userAgent, ServiceWorkerThread*, double timeOrigin, const SecurityOrigin*, PassOwnPtrWillBeRawPtr<WorkerClients>);
-    virtual void importScripts(const Vector<String>& urls, ExceptionState&) override;
-    virtual PassOwnPtr<CachedMetadataHandler> createWorkerScriptCachedMetadataHandler(const KURL& scriptURL, const Vector<char>* metaData);
-    virtual void logExceptionToConsole(const String& errorMessage, int scriptId, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtrWillBeRawPtr<ScriptCallStack>) override;
+    void importScripts(const Vector<String>& urls, ExceptionState&) override;
+    PassOwnPtr<CachedMetadataHandler> createWorkerScriptCachedMetadataHandler(const KURL& scriptURL, const Vector<char>* metaData) override;
+    void logExceptionToConsole(const String& errorMessage, int scriptId, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtrWillBeRawPtr<ScriptCallStack>) override;
+    void scriptLoaded(size_t scriptSize, size_t cachedMetadataSize) override;
 
     PersistentWillBeMember<ServiceWorkerClients> m_clients;
     PersistentWillBeMember<ServiceWorkerRegistration> m_registration;
-    PersistentWillBeMember<CacheStorage> m_caches;
     bool m_didEvaluateScript;
     bool m_hadErrorInTopLevelEventHandler;
     unsigned m_eventNestingLevel;
+    size_t m_scriptCount;
+    size_t m_scriptTotalSize;
+    size_t m_scriptCachedMetadataTotalSize;
 };
 
 } // namespace blink

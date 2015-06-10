@@ -31,7 +31,7 @@
 #include "core/css/Rect.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/Node.h"
-#include "core/layout/style/LayoutStyle.h"
+#include "core/style/ComputedStyle.h"
 #include "platform/Decimal.h"
 #include "platform/LayoutUnit.h"
 #include "platform/fonts/FontMetrics.h"
@@ -98,6 +98,7 @@ static inline bool isValidCSSUnitTypeForDoubleConversion(CSSPrimitiveValue::Unit
     case CSSPrimitiveValue::CSS_QUAD:
     case CSSPrimitiveValue::CSS_RGBCOLOR:
     case CSSPrimitiveValue::CSS_SHAPE:
+    case CSSPrimitiveValue::CSS_CUSTOM_IDENT:
     case CSSPrimitiveValue::CSS_STRING:
     case CSSPrimitiveValue::CSS_UNICODE_RANGE:
     case CSSPrimitiveValue::CSS_UNKNOWN:
@@ -150,6 +151,11 @@ StringToUnitTable& unitTable()
 }
 
 } // namespace
+
+float CSSPrimitiveValue::clampToCSSLengthRange(double value)
+{
+    return clampTo<float>(value, minValueForCssLength, maxValueForCssLength);
+}
 
 void CSSPrimitiveValue::initUnitTable()
 {
@@ -308,7 +314,7 @@ CSSPrimitiveValue::CSSPrimitiveValue(const String& str, UnitType type)
         m_value.string->ref();
 }
 
-CSSPrimitiveValue::CSSPrimitiveValue(const LengthSize& lengthSize, const LayoutStyle& style)
+CSSPrimitiveValue::CSSPrimitiveValue(const LengthSize& lengthSize, const ComputedStyle& style)
     : CSSValue(PrimitiveClass)
 {
     init(lengthSize, style);
@@ -394,7 +400,7 @@ CSSPrimitiveValue::CSSPrimitiveValue(const Length& length, float zoom)
     }
 }
 
-void CSSPrimitiveValue::init(const LengthSize& lengthSize, const LayoutStyle& style)
+void CSSPrimitiveValue::init(const LengthSize& lengthSize, const ComputedStyle& style)
 {
     m_primitiveUnitType = CSS_PAIR;
     m_hasCachedCSSText = false;
@@ -451,6 +457,7 @@ CSSPrimitiveValue::~CSSPrimitiveValue()
 void CSSPrimitiveValue::cleanup()
 {
     switch (static_cast<UnitType>(m_primitiveUnitType)) {
+    case CSS_CUSTOM_IDENT:
     case CSS_STRING:
     case CSS_URI:
     case CSS_ATTR:
@@ -584,7 +591,7 @@ template<> unsigned CSSPrimitiveValue::computeLength(const CSSToLengthConversion
 
 template<> Length CSSPrimitiveValue::computeLength(const CSSToLengthConversionData& conversionData)
 {
-    return Length(clampTo<float>(computeLengthDouble(conversionData), minValueForCssLength, maxValueForCssLength), Fixed);
+    return Length(clampToCSSLengthRange(computeLengthDouble(conversionData)), Fixed);
 }
 
 template<> short CSSPrimitiveValue::computeLength(const CSSToLengthConversionData& conversionData)
@@ -766,11 +773,24 @@ Length CSSPrimitiveValue::convertToLength(const CSSToLengthConversionData& conve
     return Length(cssCalcValue()->toCalcValue(conversionData));
 }
 
-double CSSPrimitiveValue::getDoubleValue(UnitType unitType) const
+// TODO(timloh): This function doesn't make much sense since we need a
+// CSSToLengthConversionData to convert an arbitrary <length>s to pixels.
+// We should see if this can be removed.
+double CSSPrimitiveValue::deprecatedGetDoubleValue() const
 {
-    double result = 0;
-    getDoubleValueInternal(unitType, &result);
-    return result;
+    // Returns the double value in pixels
+    if (!isValidCSSUnitTypeForDoubleConversion(static_cast<UnitType>(m_primitiveUnitType)))
+        return 0;
+
+    UnitType type = primitiveType();
+    if (type == CSS_NUMBER)
+        type = CSS_PX;
+    UnitCategory category = unitCategory(type);
+    ASSERT(category != UOther);
+
+    if (category != ULength)
+        return 0;
+    return getDoubleValue() * conversionToCanonicalUnitsScaleFactor(type);
 }
 
 double CSSPrimitiveValue::getDoubleValue() const
@@ -800,56 +820,6 @@ CSSPrimitiveValue::UnitType CSSPrimitiveValue::canonicalUnitTypeForCategory(Unit
     default:
         return CSS_UNKNOWN;
     }
-}
-
-bool CSSPrimitiveValue::getDoubleValueInternal(UnitType requestedUnitType, double* result) const
-{
-    if (!isValidCSSUnitTypeForDoubleConversion(static_cast<UnitType>(m_primitiveUnitType)) || !isValidCSSUnitTypeForDoubleConversion(requestedUnitType))
-        return false;
-
-    UnitType sourceUnitType = primitiveType();
-    if (requestedUnitType == sourceUnitType) {
-        *result = getDoubleValue();
-        return true;
-    }
-
-    UnitCategory sourceCategory = unitCategory(sourceUnitType);
-    ASSERT(sourceCategory != UOther);
-
-    UnitType targetUnitType = requestedUnitType;
-    UnitCategory targetCategory = unitCategory(targetUnitType);
-    ASSERT(targetCategory != UOther);
-
-    // Cannot convert between unrelated unit categories if one of them is not UNumber.
-    if (sourceCategory != targetCategory && sourceCategory != UNumber && targetCategory != UNumber)
-        return false;
-
-    if (targetCategory == UNumber) {
-        // We interpret conversion to CSS_NUMBER as conversion to a canonical unit in this value's category.
-        targetUnitType = canonicalUnitTypeForCategory(sourceCategory);
-        if (targetUnitType == CSS_UNKNOWN)
-            return false;
-    }
-
-    if (sourceUnitType == CSS_NUMBER) {
-        // We interpret conversion from CSS_NUMBER in the same way as BisonCSSParser::validUnit() while using non-strict mode.
-        sourceUnitType = canonicalUnitTypeForCategory(targetCategory);
-        if (sourceUnitType == CSS_UNKNOWN)
-            return false;
-    }
-
-    double convertedValue = getDoubleValue();
-
-    // First convert the value from m_primitiveUnitType to canonical type.
-    double factor = conversionToCanonicalUnitsScaleFactor(sourceUnitType);
-    convertedValue *= factor;
-
-    // Now convert from canonical type to the target unitType.
-    factor = conversionToCanonicalUnitsScaleFactor(targetUnitType);
-    convertedValue /= factor;
-
-    *result = convertedValue;
-    return true;
 }
 
 bool CSSPrimitiveValue::unitTypeToLengthUnitType(UnitType unitType, LengthUnitType& lengthType)
@@ -928,16 +898,17 @@ CSSPrimitiveValue::UnitType CSSPrimitiveValue::lengthUnitTypeToUnitType(LengthUn
 String CSSPrimitiveValue::getStringValue() const
 {
     switch (m_primitiveUnitType) {
-        case CSS_STRING:
-        case CSS_ATTR:
-        case CSS_URI:
-            return m_value.string;
-        case CSS_VALUE_ID:
-            return valueName(m_value.valueID);
-        case CSS_PROPERTY_ID:
-            return propertyName(m_value.propertyID);
-        default:
-            break;
+    case CSS_CUSTOM_IDENT:
+    case CSS_STRING:
+    case CSS_ATTR:
+    case CSS_URI:
+        return m_value.string;
+    case CSS_VALUE_ID:
+        return valueName(m_value.valueID);
+    case CSS_PROPERTY_ID:
+        return propertyName(m_value.propertyID);
+    default:
+        break;
     }
 
     return String();
@@ -1022,6 +993,7 @@ const char* CSSPrimitiveValue::unitTypeToString(UnitType type)
     case CSS_VMAX:
         return "vmax";
     case CSS_UNKNOWN:
+    case CSS_CUSTOM_IDENT:
     case CSS_STRING:
     case CSS_URI:
     case CSS_VALUE_ID:
@@ -1045,7 +1017,7 @@ const char* CSSPrimitiveValue::unitTypeToString(UnitType type)
     return "";
 }
 
-String CSSPrimitiveValue::customCSSText(CSSTextFormattingFlags formattingFlag) const
+String CSSPrimitiveValue::customCSSText() const
 {
     if (m_hasCachedCSSText) {
         ASSERT(cssTextCache().contains(this));
@@ -1087,8 +1059,11 @@ String CSSPrimitiveValue::customCSSText(CSSTextFormattingFlags formattingFlag) c
         case CSS_VMAX:
             text = formatNumber(m_value.num, unitTypeToString((UnitType)m_primitiveUnitType));
             break;
+        case CSS_CUSTOM_IDENT:
+            text = quoteCSSStringIfNeeded(m_value.string);
+            break;
         case CSS_STRING:
-            text = formattingFlag == AlwaysQuoteCSSString ? quoteCSSString(m_value.string) : quoteCSSStringIfNeeded(m_value.string);
+            text = quoteCSSString(m_value.string);
             break;
         case CSS_URI:
             text = "url(" + quoteCSSURLIfNeeded(m_value.string) + ")";
@@ -1202,6 +1177,7 @@ bool CSSPrimitiveValue::equals(const CSSPrimitiveValue& other) const
         return propertyName(m_value.propertyID) == propertyName(other.m_value.propertyID);
     case CSS_VALUE_ID:
         return valueName(m_value.valueID) == valueName(other.m_value.valueID);
+    case CSS_CUSTOM_IDENT:
     case CSS_STRING:
     case CSS_URI:
     case CSS_ATTR:
@@ -1225,7 +1201,7 @@ bool CSSPrimitiveValue::equals(const CSSPrimitiveValue& other) const
     return false;
 }
 
-void CSSPrimitiveValue::traceAfterDispatch(Visitor* visitor)
+DEFINE_TRACE_AFTER_DISPATCH(CSSPrimitiveValue)
 {
 #if ENABLE(OILPAN)
     switch (m_primitiveUnitType) {

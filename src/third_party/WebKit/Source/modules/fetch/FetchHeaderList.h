@@ -21,13 +21,13 @@ class FetchHeaderList final : public GarbageCollectedFinalized<FetchHeaderList> 
 public:
     typedef std::pair<String, String> Header;
     static FetchHeaderList* create();
-    FetchHeaderList* createCopy();
+    FetchHeaderList* clone();
 
     ~FetchHeaderList();
     void append(const String&, const String&);
     void set(const String&, const String&);
     // FIXME: Implement parse()
-    // FIXME: Implement extractMIMEType()
+    String extractMIMEType() const;
 
     size_t size() const;
     void remove(const String&);

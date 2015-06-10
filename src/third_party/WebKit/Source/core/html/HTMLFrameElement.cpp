@@ -42,13 +42,13 @@ inline HTMLFrameElement::HTMLFrameElement(Document& document)
 
 DEFINE_NODE_FACTORY(HTMLFrameElement)
 
-bool HTMLFrameElement::rendererIsNeeded(const LayoutStyle&)
+bool HTMLFrameElement::layoutObjectIsNeeded(const ComputedStyle&)
 {
     // For compatibility, frames render even when display: none is set.
     return isURLAllowed();
 }
 
-LayoutObject* HTMLFrameElement::createRenderer(const LayoutStyle&)
+LayoutObject* HTMLFrameElement::createLayoutObject(const ComputedStyle&)
 {
     return new LayoutFrame(this);
 }
@@ -75,8 +75,8 @@ void HTMLFrameElement::parseAttribute(const QualifiedName& name, const AtomicStr
         m_frameBorderSet = !value.isNull();
         // FIXME: If we are already attached, this has no effect.
     } else if (name == noresizeAttr) {
-        if (renderer())
-            renderer()->updateFromElement();
+        if (layoutObject())
+            layoutObject()->updateFromElement();
     } else
         HTMLFrameElementBase::parseAttribute(name, value);
 }

@@ -52,11 +52,11 @@ public:
 
     enum Origin { UserAgentOrigin, AuthorOrigin };
 
+    void collectViewportRules();
     void collectViewportRules(RuleSet*, Origin);
-
     void resolve();
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     explicit ViewportStyleResolver(Document*);

@@ -5,6 +5,7 @@
 {
   'targets': [
     {
+      # GN version: //ppapi:ppapi_tests
       'target_name': 'ppapi_tests',
       'type': 'loadable_module',
       'include_dirs': [
@@ -106,6 +107,7 @@
     },
 
     {
+      # GN version: //ppapi:ppapi_perftests
       'target_name': 'ppapi_perftests',
       'type': 'executable',
       'variables': {
@@ -132,6 +134,7 @@
       ],
     },
     {
+      # GN version: //ppapi:ppapi_unittests
       'target_name': 'ppapi_unittests',
       'type': 'executable',
       'variables': {
@@ -153,6 +156,7 @@
         '../ui/surface/surface.gyp:surface',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'host/resource_message_filter_unittest.cc',
         'proxy/device_enumeration_resource_helper_unittest.cc',
         'proxy/file_chooser_resource_unittest.cc',
@@ -174,7 +178,9 @@
         'proxy/raw_var_data_unittest.cc',
         'proxy/serialized_var_unittest.cc',
         'proxy/talk_resource_unittest.cc',
+        'proxy/tracked_callback_unittest.cc',
         'proxy/video_decoder_resource_unittest.cc',
+        'proxy/video_encoder_resource_unittest.cc',
         'proxy/websocket_resource_unittest.cc',
         'shared_impl/media_stream_audio_track_shared_unittest.cc',
         'shared_impl/media_stream_buffer_manager_unittest.cc',
@@ -183,7 +189,6 @@
         'shared_impl/resource_tracker_unittest.cc',
         'shared_impl/thread_aware_callback_unittest.cc',
         'shared_impl/time_conversion_unittest.cc',
-        'shared_impl/tracked_callback_unittest.cc',
         'shared_impl/var_tracker_unittest.cc',
       ],
       'conditions': [
@@ -494,6 +499,16 @@
       'sources': [
         'examples/video_decode/testdata.h',
         'examples/video_decode/video_decode_dev.cc',
+      ],
+    },
+    {
+      'target_name': 'ppapi_example_video_encode',
+      'dependencies': [
+        'ppapi_example_skeleton',
+        'ppapi.gyp:ppapi_cpp',
+      ],
+      'sources': [
+        'examples/video_encode/video_encode.cc',
       ],
     },
     {

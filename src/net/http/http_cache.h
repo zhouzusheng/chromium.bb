@@ -72,11 +72,6 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
   enum Mode {
     // Normal mode just behaves like a standard web cache.
     NORMAL = 0,
-    // Record mode caches everything for purposes of offline playback.
-    RECORD,
-    // Playback mode replays from a cache without considering any
-    // standard invalidations.
-    PLAYBACK,
     // Disables reads and writes from the cache.
     // Equivalent to setting LOAD_DISABLE_CACHE on every request.
     DISABLE
@@ -203,9 +198,6 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
   // Called whenever an external cache in the system reuses the resource
   // referred to by |url| and |http_method|.
   void OnExternalCacheHit(const GURL& url, const std::string& http_method);
-
-  // Initializes the Infinite Cache, if selected by the field trial.
-  void InitializeInfiniteCache(const base::FilePath& path);
 
   // Causes all transactions created after this point to effectively bypass
   // the cache lock whenever there is lock contention.

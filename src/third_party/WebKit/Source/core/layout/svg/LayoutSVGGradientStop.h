@@ -34,7 +34,7 @@ public:
     explicit LayoutSVGGradientStop(SVGStopElement*);
     virtual ~LayoutSVGGradientStop();
 
-    virtual const char* renderName() const override { return "LayoutSVGGradientStop"; }
+    virtual const char* name() const override { return "LayoutSVGGradientStop"; }
     virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectSVG || type == LayoutObjectSVGGradientStop || LayoutObject::isOfType(type); }
 
     virtual void layout() override;
@@ -42,13 +42,13 @@ public:
     // This overrides are needed to prevent ASSERTs on <svg><stop /></svg>
     // LayoutObject's default implementations ASSERT_NOT_REACHED()
     // https://bugs.webkit.org/show_bug.cgi?id=20400
-    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutLayerModelObject*, const PaintInvalidationState* = 0) const override { return LayoutRect(); }
+    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject*, const PaintInvalidationState* = 0) const override { return LayoutRect(); }
     virtual FloatRect objectBoundingBox() const override { return FloatRect(); }
     virtual FloatRect strokeBoundingBox() const override { return FloatRect(); }
     virtual FloatRect paintInvalidationRectInLocalCoordinates() const override { return FloatRect(); }
 
 protected:
-    virtual void styleDidChange(StyleDifference, const LayoutStyle* oldStyle) override;
+    virtual void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override;
 
 private:
     SVGGradientElement* gradientElement() const;

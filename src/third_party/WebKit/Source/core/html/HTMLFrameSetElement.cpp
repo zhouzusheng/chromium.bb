@@ -147,14 +147,14 @@ void HTMLFrameSetElement::parseAttribute(const QualifiedName& name, const Atomic
         HTMLElement::parseAttribute(name, value);
 }
 
-bool HTMLFrameSetElement::rendererIsNeeded(const LayoutStyle& style)
+bool HTMLFrameSetElement::layoutObjectIsNeeded(const ComputedStyle& style)
 {
     // For compatibility, frames render even when display: none is set.
     // However, we delay creating a renderer until stylesheets have loaded.
     return style.isStyleAvailable();
 }
 
-LayoutObject* HTMLFrameSetElement::createRenderer(const LayoutStyle& style)
+LayoutObject* HTMLFrameSetElement::createLayoutObject(const ComputedStyle& style)
 {
     if (style.hasContent())
         return LayoutObject::createObject(this, style);
@@ -183,8 +183,8 @@ void HTMLFrameSetElement::attach(const AttachContext& context)
 
 void HTMLFrameSetElement::defaultEventHandler(Event* evt)
 {
-    if (evt->isMouseEvent() && !m_noresize && renderer() && renderer()->isFrameSet()) {
-        if (toLayoutFrameSet(renderer())->userResize(toMouseEvent(evt))) {
+    if (evt->isMouseEvent() && !m_noresize && layoutObject() && layoutObject()->isFrameSet()) {
+        if (toLayoutFrameSet(layoutObject())->userResize(toMouseEvent(evt))) {
             evt->setDefaultHandled();
             return;
         }
@@ -203,8 +203,8 @@ Node::InsertionNotificationRequest HTMLFrameSetElement::insertedInto(ContainerNo
 
 void HTMLFrameSetElement::willRecalcStyle(StyleRecalcChange)
 {
-    if (needsStyleRecalc() && renderer()) {
-        renderer()->setNeedsLayoutAndFullPaintInvalidation();
+    if (needsStyleRecalc() && layoutObject()) {
+        layoutObject()->setNeedsLayoutAndFullPaintInvalidation(LayoutInvalidationReason::StyleChange);
         clearNeedsStyleRecalc();
     }
 }

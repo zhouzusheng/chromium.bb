@@ -8,18 +8,18 @@
 #include "core/layout/ClipRects.h"
 
 #if ENABLE(ASSERT)
-#include "core/rendering/RenderBox.h" // For OverlayScrollbarSizeRelevancy.
+#include "core/layout/LayoutBox.h" // For OverlayScrollbarSizeRelevancy.
 #endif
 
 namespace blink {
 
-class Layer;
+class DeprecatedPaintLayer;
 
 enum ClipRectsCacheSlot {
     // Relative to the ancestor treated as the root (e.g. transformed layer). Used for hit testing.
     RootRelativeClipRects,
 
-    // Relative to the RenderView's layer. Used for compositing overlap testing.
+    // Relative to the LayoutView's layer. Used for compositing overlap testing.
     AbsoluteClipRects,
 
     // Relative to painting ancestor. Used for painting.
@@ -31,7 +31,7 @@ enum ClipRectsCacheSlot {
 };
 
 class ClipRectsCache {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED(ClipRectsCache);
 public:
     struct Entry {
         Entry()
@@ -42,7 +42,7 @@ public:
         {
         }
 
-        const Layer* root;
+        const DeprecatedPaintLayer* root;
         RefPtr<ClipRects> clipRects;
 #if ENABLE(ASSERT)
         OverlayScrollbarSizeRelevancy scrollbarRelevancy;

@@ -30,14 +30,20 @@
 #include "cc/output/output_surface_client.h"
 #include "cc/output/renderer.h"
 #include "cc/quads/render_pass.h"
-#include "cc/resources/rasterizer.h"
 #include "cc/resources/resource_provider.h"
 #include "cc/resources/tile_manager.h"
+#include "cc/resources/ui_resource_client.h"
 #include "cc/scheduler/commit_earlyout_reason.h"
 #include "cc/scheduler/draw_result.h"
+#include "cc/trees/layer_tree_settings.h"
+#include "cc/trees/proxy.h"
 #include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/geometry/rect.h"
+
+namespace gfx {
+class ScrollOffset;
+}
 
 namespace cc {
 
@@ -59,11 +65,14 @@ class RenderingStatsInstrumentation;
 class ResourcePool;
 class ScrollElasticityHelper;
 class ScrollbarLayerImplBase;
+class SwapPromise;
+class SwapPromiseMonitor;
 class TextureMailboxDeleter;
 class TopControlsManager;
 class UIResourceBitmap;
 class UIResourceRequest;
-struct RendererCapabilitiesImpl;
+struct ScrollAndScaleSet;
+class Viewport;
 
 enum class GpuRasterizationStatus {
   ON,
@@ -103,14 +112,16 @@ class LayerTreeHostImplClient {
       int priority_cutoff) = 0;
   virtual bool IsInsideDraw() = 0;
   virtual void RenewTreePriority() = 0;
-  virtual void PostDelayedScrollbarFadeOnImplThread(
-      const base::Closure& start_fade,
-      base::TimeDelta delay) = 0;
+  virtual void PostDelayedAnimationTaskOnImplThread(const base::Closure& task,
+                                                    base::TimeDelta delay) = 0;
   virtual void DidActivateSyncTree() = 0;
   virtual void DidPrepareTiles() = 0;
 
   // Called when page scale animation has completed on the impl thread.
   virtual void DidCompletePageScaleAnimationOnImplThread() = 0;
+
+  // Called when output surface asks for a draw.
+  virtual void OnDrawForOutputSurface() = 0;
 
  protected:
   virtual ~LayerTreeHostImplClient() {}
@@ -134,6 +145,7 @@ class CC_EXPORT LayerTreeHostImpl
       RenderingStatsInstrumentation* rendering_stats_instrumentation,
       SharedBitmapManager* shared_bitmap_manager,
       gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
+      TaskGraphRunner* task_graph_runner,
       int id);
   ~LayerTreeHostImpl() override;
 
@@ -258,9 +270,13 @@ class CC_EXPORT LayerTreeHostImpl
   void SetIsLikelyToRequireADraw(bool is_likely_to_require_a_draw) override;
 
   // ScrollbarAnimationControllerClient implementation.
-  void PostDelayedScrollbarFade(const base::Closure& start_fade,
-                                base::TimeDelta delay) override;
-  void SetNeedsScrollbarAnimationFrame() override;
+  void StartAnimatingScrollbarAnimationController(
+      ScrollbarAnimationController* controller) override;
+  void StopAnimatingScrollbarAnimationController(
+      ScrollbarAnimationController* controller) override;
+  void PostDelayedScrollbarAnimationTask(const base::Closure& task,
+                                         base::TimeDelta delay) override;
+  void SetNeedsRedrawForScrollbarAnimation() override;
 
   // OutputSurfaceClient implementation.
   void DeferredInitialize() override;
@@ -281,6 +297,7 @@ class CC_EXPORT LayerTreeHostImpl
   void ReclaimResources(const CompositorFrameAck* ack) override;
   void SetMemoryPolicy(const ManagedMemoryPolicy& policy) override;
   void SetTreeActivationCallback(const base::Closure& callback) override;
+  void OnDraw() override;
 
   // Called from LayerTreeImpl.
   void OnCanDrawStateChangedForTree();
@@ -297,15 +314,13 @@ class CC_EXPORT LayerTreeHostImpl
 
   virtual bool InitializeRenderer(scoped_ptr<OutputSurface> output_surface);
   TileManager* tile_manager() { return tile_manager_.get(); }
-  void SetUseGpuRasterization(bool use_gpu);
+  bool CanUseGpuRasterization();
+  void SetGpuRasterizationStatus(
+      GpuRasterizationStatus gpu_rasterization_status);
   bool use_gpu_rasterization() const { return use_gpu_rasterization_; }
 
   GpuRasterizationStatus gpu_rasterization_status() const {
     return gpu_rasterization_status_;
-  }
-  void set_gpu_rasterization_status(
-      GpuRasterizationStatus gpu_rasterization_status) {
-    gpu_rasterization_status_ = gpu_rasterization_status;
   }
 
   bool create_low_res_tiling() const {
@@ -313,7 +328,6 @@ class CC_EXPORT LayerTreeHostImpl
   }
   ResourcePool* resource_pool() { return resource_pool_.get(); }
   Renderer* renderer() { return renderer_.get(); }
-  Rasterizer* rasterizer() { return rasterizer_.get(); }
   const RendererCapabilitiesImpl& GetRendererCapabilities() const;
 
   virtual bool SwapBuffers(const FrameData& frame);
@@ -376,10 +390,6 @@ class CC_EXPORT LayerTreeHostImpl
   const gfx::Transform& DrawTransform() const;
 
   scoped_ptr<ScrollAndScaleSet> ProcessScrollDeltas();
-
-  bool needs_animate_layers() const {
-    return !animation_registrar_->active_animation_controllers().empty();
-  }
 
   void set_max_memory_needed_bytes(size_t bytes) {
     max_memory_needed_bytes_ = bytes;
@@ -451,14 +461,10 @@ class CC_EXPORT LayerTreeHostImpl
     return begin_impl_frame_interval_;
   }
 
-  void AsValueInto(base::trace_event::TracedValue* value) const;
   void AsValueWithFrameInto(FrameData* frame,
                             base::trace_event::TracedValue* value) const;
-  scoped_refptr<base::trace_event::ConvertableToTraceFormat> AsValue() const;
   scoped_refptr<base::trace_event::ConvertableToTraceFormat> AsValueWithFrame(
       FrameData* frame) const;
-  scoped_refptr<base::trace_event::ConvertableToTraceFormat>
-  ActivationStateAsValue() const;
   void ActivationStateAsValueInto(base::trace_event::TracedValue* value) const;
 
   bool page_scale_animation_active() const { return !!page_scale_animation_; }
@@ -500,6 +506,8 @@ class CC_EXPORT LayerTreeHostImpl
   void GetPictureLayerImplPairs(std::vector<PictureLayerImpl::Pair>* layers,
                                 bool need_valid_tile_priorities) const;
 
+  // TODO(weiliangc): Replace RequiresHighResToDraw with scheduler waits for
+  // ReadyToDraw. crbug.com/469175
   void SetRequiresHighResToDraw() { requires_high_res_to_draw_ = true; }
   void ResetRequiresHighResToDraw() { requires_high_res_to_draw_ = false; }
   bool RequiresHighResToDraw() const { return requires_high_res_to_draw_; }
@@ -507,7 +515,6 @@ class CC_EXPORT LayerTreeHostImpl
   // Only valid for synchronous (non-scheduled) single-threaded case.
   void SynchronouslyInitializeAllTiles();
 
-  virtual scoped_ptr<Rasterizer> CreateRasterizer();
   virtual void CreateResourceAndTileTaskWorkerPool(
       scoped_ptr<TileTaskWorkerPool>* tile_task_worker_pool,
       scoped_ptr<ResourcePool>* resource_pool,
@@ -519,6 +526,24 @@ class CC_EXPORT LayerTreeHostImpl
     return frame_timing_tracker_.get();
   }
 
+  gfx::Vector2dF ScrollLayer(LayerImpl* layer_impl,
+                             const gfx::Vector2dF& delta,
+                             const gfx::Point& viewport_point,
+                             bool is_wheel_scroll);
+
+  // Record main frame timing information.
+  // |start_of_main_frame_args| is the BeginFrameArgs of the beginning of the
+  // main frame (ie the frame that kicked off the main frame).
+  // |expected_next_main_frame_args| is the BeginFrameArgs of the frame that
+  // follows the completion of the main frame (whether it is activation or some
+  // other completion, such as early out). Note that if there is a main frame
+  // scheduled in that frame, then this BeginFrameArgs will become the main
+  // frame args. However, if no such frame is scheduled, then this _would_ be
+  // the main frame args if it was scheduled.
+  void RecordMainFrameTiming(
+      const BeginFrameArgs& start_of_main_frame_args,
+      const BeginFrameArgs& expected_next_main_frame_args);
+
  protected:
   LayerTreeHostImpl(
       const LayerTreeSettings& settings,
@@ -527,20 +552,25 @@ class CC_EXPORT LayerTreeHostImpl
       RenderingStatsInstrumentation* rendering_stats_instrumentation,
       SharedBitmapManager* shared_bitmap_manager,
       gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
+      TaskGraphRunner* task_graph_runner,
       int id);
-
 
   // Virtual for testing.
   virtual void AnimateLayers(base::TimeTicks monotonic_time);
-  const AnimationRegistrar::AnimationControllerMap&
-      active_animation_controllers() const {
-    return animation_registrar_->active_animation_controllers();
+
+  bool is_likely_to_require_a_draw() const {
+    return is_likely_to_require_a_draw_;
   }
 
   LayerTreeHostImplClient* client_;
   Proxy* proxy_;
 
  private:
+  gfx::Vector2dF ScrollLayerWithViewportSpaceDelta(
+      LayerImpl* layer_impl,
+      const gfx::PointF& viewport_point,
+      const gfx::Vector2dF& viewport_delta);
+
   void CreateAndSetRenderer();
   void CreateAndSetTileManager();
   void DestroyTileManager();
@@ -549,6 +579,8 @@ class CC_EXPORT LayerTreeHostImpl
   void EnforceZeroBudget(bool zero_budget);
 
   bool IsSynchronousSingleThreaded() const;
+
+  Viewport* viewport() { return viewport_.get(); }
 
   // Scroll by preferring to move the outer viewport first, only moving the
   // inner if the outer is at its scroll extents.
@@ -559,14 +591,6 @@ class CC_EXPORT LayerTreeHostImpl
   void AnimatePageScale(base::TimeTicks monotonic_time);
   void AnimateScrollbars(base::TimeTicks monotonic_time);
   void AnimateTopControls(base::TimeTicks monotonic_time);
-
-  bool ShouldTopControlsConsumeScroll(const gfx::Vector2dF& scroll_delta) const;
-
-  gfx::Vector2dF ScrollLayerWithViewportSpaceDelta(
-      LayerImpl* layer_impl,
-      float scale_from_viewport_to_screen_space,
-      const gfx::PointF& viewport_point,
-      const gfx::Vector2dF& viewport_delta);
 
   void TrackDamageForAllSurfaces(
       LayerImpl* root_draw_layer,
@@ -583,9 +607,6 @@ class CC_EXPORT LayerTreeHostImpl
 
   bool HandleMouseOverScrollbar(LayerImpl* layer_impl,
                                 const gfx::PointF& device_viewport_point);
-
-  void AnimateScrollbarsRecursive(LayerImpl* layer,
-                                  base::TimeTicks time);
 
   LayerImpl* FindScrollLayerForDeviceViewportPoint(
       const gfx::PointF& device_viewport_point,
@@ -605,6 +626,12 @@ class CC_EXPORT LayerTreeHostImpl
   void NotifySwapPromiseMonitorsOfSetNeedsRedraw();
   void NotifySwapPromiseMonitorsOfForwardingToMainThread();
 
+  void ScrollAnimationCreate(LayerImpl* layer_impl,
+                             const gfx::ScrollOffset& target_offset,
+                             const gfx::ScrollOffset& current_offset);
+  bool ScrollAnimationUpdateTarget(LayerImpl* layer_impl,
+                                   const gfx::Vector2dF& scroll_delta);
+
   typedef base::hash_map<UIResourceId, UIResourceData>
       UIResourceMap;
   UIResourceMap ui_resource_map_;
@@ -618,12 +645,12 @@ class CC_EXPORT LayerTreeHostImpl
 
   // |resource_provider_| and |tile_manager_| can be NULL, e.g. when using tile-
   // free rendering - see OutputSurface::ForcedDrawToSoftwareDevice().
+  // |tile_manager_| can also be NULL when raster_enabled is false.
   scoped_ptr<ResourceProvider> resource_provider_;
   scoped_ptr<TileManager> tile_manager_;
   bool use_gpu_rasterization_;
   GpuRasterizationStatus gpu_rasterization_status_;
   scoped_ptr<TileTaskWorkerPool> tile_task_worker_pool_;
-  scoped_ptr<Rasterizer> rasterizer_;
   scoped_ptr<ResourcePool> resource_pool_;
   scoped_ptr<ResourcePool> staging_resource_pool_;
   scoped_ptr<Renderer> renderer_;
@@ -716,6 +743,7 @@ class CC_EXPORT LayerTreeHostImpl
   base::TimeDelta begin_impl_frame_interval_;
 
   scoped_ptr<AnimationRegistrar> animation_registrar_;
+  std::set<ScrollbarAnimationController*> scrollbar_animation_controllers_;
 
   RenderingStatsInstrumentation* rendering_stats_instrumentation_;
   MicroBenchmarkControllerImpl micro_benchmark_controller_;
@@ -726,6 +754,7 @@ class CC_EXPORT LayerTreeHostImpl
 
   SharedBitmapManager* shared_bitmap_manager_;
   gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager_;
+  TaskGraphRunner* task_graph_runner_;
   int id_;
 
   std::set<SwapPromiseMonitor*> swap_promise_monitor_;
@@ -735,6 +764,8 @@ class CC_EXPORT LayerTreeHostImpl
   bool is_likely_to_require_a_draw_;
 
   scoped_ptr<FrameTimingTracker> frame_timing_tracker_;
+
+  scoped_ptr<Viewport> viewport_;
 
   DISALLOW_COPY_AND_ASSIGN(LayerTreeHostImpl);
 };

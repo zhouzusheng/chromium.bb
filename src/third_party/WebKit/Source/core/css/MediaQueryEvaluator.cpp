@@ -42,16 +42,15 @@
 #include "core/css/MediaValuesDynamic.h"
 #include "core/css/PointerProperties.h"
 #include "core/css/resolver/MediaQueryResult.h"
-#include "core/dom/NodeLayoutStyle.h"
+#include "core/dom/NodeComputedStyle.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/frame/UseCounter.h"
 #include "core/inspector/InspectorInstrumentation.h"
-#include "core/layout/compositing/LayerCompositor.h"
-#include "core/layout/style/LayoutStyle.h"
-#include "core/rendering/RenderView.h"
+#include "core/layout/LayoutView.h"
+#include "core/style/ComputedStyle.h"
 #include "platform/PlatformScreen.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/geometry/FloatRect.h"
@@ -143,7 +142,7 @@ bool MediaQueryEvaluator::eval(const MediaQuerySet* querySet, MediaQueryResultLi
     if (!querySet)
         return true;
 
-    const WillBeHeapVector<OwnPtrWillBeMember<MediaQuery> >& queries = querySet->queryVector();
+    const WillBeHeapVector<OwnPtrWillBeMember<MediaQuery>>& queries = querySet->queryVector();
     if (!queries.size())
         return true; // Empty query list evaluates to true.
 

@@ -54,7 +54,6 @@
 #include "net/socket/ssl_client_socket.h"
 #include "net/socket/ssl_client_socket_pool.h"
 #include "net/socket/transport_client_socket_pool.h"
-#include "net/spdy/hpack_huffman_aggregator.h"
 #include "net/spdy/spdy_http_stream.h"
 #include "net/spdy/spdy_session.h"
 #include "net/spdy/spdy_session_pool.h"
@@ -79,7 +78,11 @@ void ProcessAlternateProtocol(
   std::string alternate_protocol_str;
   while (headers.EnumerateHeader(&iter, kAlternateProtocolHeader,
                                  &alternate_protocol_str)) {
-    alternate_protocol_values.push_back(alternate_protocol_str);
+    base::TrimWhitespaceASCII(alternate_protocol_str, base::TRIM_ALL,
+                              &alternate_protocol_str);
+    if (!alternate_protocol_str.empty()) {
+      alternate_protocol_values.push_back(alternate_protocol_str);
+    }
   }
 
   session->http_stream_factory()->ProcessAlternateProtocol(
@@ -100,6 +103,15 @@ base::Value* NetLogSSLVersionFallbackCallback(
   dict->SetInteger("net_error", net_error);
   dict->SetInteger("version_before", version_before);
   dict->SetInteger("version_after", version_after);
+  return dict;
+}
+
+base::Value* NetLogSSLCipherFallbackCallback(const GURL* url,
+                                             int net_error,
+                                             NetLog::LogLevel /* log_level */) {
+  base::DictionaryValue* dict = new base::DictionaryValue();
+  dict->SetString("host_and_port", GetHostAndPort(*url));
+  dict->SetInteger("net_error", net_error);
   return dict;
 }
 
@@ -1054,14 +1066,6 @@ int HttpNetworkTransaction::DoReadHeadersComplete(int result) {
     stream_->GetSSLInfo(&response_.ssl_info);
 
   headers_valid_ = true;
-
-  if (session_->huffman_aggregator()) {
-    session_->huffman_aggregator()->AggregateTransactionCharacterCounts(
-        *request_,
-        request_headers_,
-        proxy_info_.proxy_server(),
-        *response_.headers.get());
-  }
   return OK;
 }
 
@@ -1244,6 +1248,21 @@ void HttpNetworkTransaction::HandleClientAuthError(int error) {
 int HttpNetworkTransaction::HandleSSLHandshakeError(int error) {
   DCHECK(request_);
   HandleClientAuthError(error);
+
+  // Accept deprecated cipher suites, but only on a fallback. This makes UMA
+  // reflect servers require a deprecated cipher rather than merely prefer
+  // it. This, however, has no security benefit until the ciphers are actually
+  // removed.
+  if (!server_ssl_config_.enable_deprecated_cipher_suites &&
+      (error == ERR_SSL_VERSION_OR_CIPHER_MISMATCH ||
+       error == ERR_CONNECTION_CLOSED || error == ERR_CONNECTION_RESET)) {
+    net_log_.AddEvent(
+        NetLog::TYPE_SSL_CIPHER_FALLBACK,
+        base::Bind(&NetLogSSLCipherFallbackCallback, &request_->url, error));
+    server_ssl_config_.enable_deprecated_cipher_suites = true;
+    ResetConnectionAndRequestForResend();
+    return OK;
+  }
 
   bool should_fallback = false;
   uint16 version_max = server_ssl_config_.version_max;

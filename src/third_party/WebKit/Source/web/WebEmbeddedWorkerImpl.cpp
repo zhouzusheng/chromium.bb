@@ -60,12 +60,12 @@
 #include "public/web/WebServiceWorkerNetworkProvider.h"
 #include "public/web/WebSettings.h"
 #include "public/web/WebView.h"
-#include "public/web/WebWorkerPermissionClientProxy.h"
+#include "public/web/WebWorkerContentSettingsClientProxy.h"
 #include "web/ServiceWorkerGlobalScopeClientImpl.h"
 #include "web/ServiceWorkerGlobalScopeProxy.h"
 #include "web/WebDataSourceImpl.h"
 #include "web/WebLocalFrameImpl.h"
-#include "web/WorkerPermissionClient.h"
+#include "web/WorkerContentSettingsClient.h"
 #include "wtf/Functional.h"
 
 namespace blink {
@@ -126,9 +126,9 @@ private:
     RefPtr<ContentSecurityPolicy> m_contentSecurityPolicy;
 };
 
-WebEmbeddedWorker* WebEmbeddedWorker::create(WebServiceWorkerContextClient* client, WebWorkerPermissionClientProxy* permissionClient)
+WebEmbeddedWorker* WebEmbeddedWorker::create(WebServiceWorkerContextClient* client, WebWorkerContentSettingsClientProxy* contentSettingsClient)
 {
-    return new WebEmbeddedWorkerImpl(adoptPtr(client), adoptPtr(permissionClient));
+    return new WebEmbeddedWorkerImpl(adoptPtr(client), adoptPtr(contentSettingsClient));
 }
 
 static HashSet<WebEmbeddedWorkerImpl*>& runningWorkerInstances()
@@ -137,9 +137,9 @@ static HashSet<WebEmbeddedWorkerImpl*>& runningWorkerInstances()
     return set;
 }
 
-WebEmbeddedWorkerImpl::WebEmbeddedWorkerImpl(PassOwnPtr<WebServiceWorkerContextClient> client, PassOwnPtr<WebWorkerPermissionClientProxy> permissionClient)
+WebEmbeddedWorkerImpl::WebEmbeddedWorkerImpl(PassOwnPtr<WebServiceWorkerContextClient> client, PassOwnPtr<WebWorkerContentSettingsClientProxy> ContentSettingsClient)
     : m_workerContextClient(client)
-    , m_permissionClient(permissionClient)
+    , m_contentSettingsClient(ContentSettingsClient)
     , m_workerInspectorProxy(WorkerInspectorProxy::create())
     , m_webView(0)
     , m_mainFrame(0)
@@ -268,7 +268,7 @@ void WebEmbeddedWorkerImpl::postMessageToPageInspector(const String& message)
 
 void WebEmbeddedWorkerImpl::postTaskToLoader(PassOwnPtr<ExecutionContextTask> task)
 {
-    toWebLocalFrameImpl(m_mainFrame)->frame()->document()->postTask(task);
+    toWebLocalFrameImpl(m_mainFrame)->frame()->document()->postTask(FROM_HERE, task);
 }
 
 bool WebEmbeddedWorkerImpl::postTaskToWorkerGlobalScope(PassOwnPtr<ExecutionContextTask> task)
@@ -276,7 +276,7 @@ bool WebEmbeddedWorkerImpl::postTaskToWorkerGlobalScope(PassOwnPtr<ExecutionCont
     if (m_askedToTerminate || !m_workerThread)
         return false;
 
-    m_workerThread->postTask(task);
+    m_workerThread->postTask(FROM_HERE, task);
     return !m_workerThread->terminated();
 }
 
@@ -408,7 +408,7 @@ void WebEmbeddedWorkerImpl::startWorkerThread()
     SecurityOrigin* starterOrigin = document->securityOrigin();
 
     OwnPtrWillBeRawPtr<WorkerClients> workerClients = WorkerClients::create();
-    providePermissionClientToWorker(workerClients.get(), m_permissionClient.release());
+    provideContentSettingsClientToWorker(workerClients.get(), m_contentSettingsClient.release());
     provideServiceWorkerGlobalScopeClientToWorker(workerClients.get(), ServiceWorkerGlobalScopeClientImpl::create(*m_workerContextClient));
     provideServiceWorkerContainerClientToWorker(workerClients.get(), adoptPtr(m_workerContextClient->createServiceWorkerProvider()));
 
@@ -416,7 +416,7 @@ void WebEmbeddedWorkerImpl::startWorkerThread()
     document->initContentSecurityPolicy(m_mainScriptLoader->releaseContentSecurityPolicy());
 
     KURL scriptURL = m_mainScriptLoader->url();
-    OwnPtrWillBeRawPtr<WorkerThreadStartupData> startupData =
+    OwnPtr<WorkerThreadStartupData> startupData =
         WorkerThreadStartupData::create(
             scriptURL,
             m_workerStartData.userAgent,

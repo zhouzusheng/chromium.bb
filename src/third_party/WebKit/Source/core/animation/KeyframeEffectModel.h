@@ -60,7 +60,7 @@ public:
         void appendKeyframe(PassOwnPtrWillBeRawPtr<Keyframe::PropertySpecificKeyframe>);
         const PropertySpecificKeyframeVector& keyframes() const { return m_keyframes; }
 
-        void trace(Visitor*);
+        DECLARE_TRACE();
 
     private:
         void removeRedundantKeyframes();
@@ -77,7 +77,7 @@ public:
 
     using KeyframeVector = WillBeHeapVector<RefPtrWillBeMember<Keyframe>>;
     const KeyframeVector& getFrames() const { return m_keyframes; }
-    // FIXME: Implement setFrames()
+    void setFrames(KeyframeVector& keyframes);
 
     const PropertySpecificKeyframeVector& getPropertySpecificKeyframes(CSSPropertyID id) const
     {
@@ -99,19 +99,12 @@ public:
         return m_hasSyntheticKeyframes;
     }
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     // FIXME: This is a hack used to resolve CSSValues to AnimatableValues while we have a valid handle on an element.
-    // This should be removed once StringKeyframes no longer uses InterpolableAnimatableValues.
-    void forceConversionsToAnimatableValues(Element* element)
-    {
-        ensureKeyframeGroups();
-        ensureInterpolationEffect(element);
-    }
-
-    // FIXME: Remove this once CompositorAnimations no longer depends on AnimatableValues
-    void snapshotCompositableProperties(const Element*, const LayoutStyle&);
-    void updateNeutralKeyframeAnimatableValues(CSSPropertyID, PassRefPtrWillBeRawPtr<AnimatableValue>);
+    // This should be removed once AnimatableValues are obsolete.
+    void forceConversionsToAnimatableValues(Element&, const ComputedStyle* baseStyle);
+    bool updateNeutralKeyframeAnimatableValues(CSSPropertyID, PassRefPtrWillBeRawPtr<AnimatableValue>);
 
     template<typename T>
     inline void forEachInterpolation(const T& callback) { m_interpolationEffect->forEachInterpolation(callback); }
@@ -134,7 +127,8 @@ protected:
 
     // Lazily computes the groups of property-specific keyframes.
     void ensureKeyframeGroups() const;
-    void ensureInterpolationEffect(Element* = nullptr) const;
+    void ensureInterpolationEffect(Element* = nullptr, const ComputedStyle* baseStyle = nullptr) const;
+    void snapshotCompositableProperties(Element&, const ComputedStyle* baseStyle);
 
     KeyframeVector m_keyframes;
     // The spec describes filtering the normalized keyframes at sampling time

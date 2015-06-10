@@ -20,7 +20,7 @@ WindowProxyManager::~WindowProxyManager()
 {
 }
 
-void WindowProxyManager::trace(Visitor* visitor)
+DEFINE_TRACE(WindowProxyManager)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_frame);
@@ -81,6 +81,13 @@ void WindowProxyManager::collectIsolatedContexts(Vector<std::pair<ScriptState*, 
             continue;
         result.append(std::make_pair(isolatedWorldWindowProxy->scriptState(), origin));
     }
+}
+
+void WindowProxyManager::takeGlobalFrom(WindowProxyManager* other)
+{
+    m_windowProxy->takeGlobalFrom(other->m_windowProxy.get());
+    for (auto& entry : other->m_isolatedWorlds)
+        windowProxy(entry.value->world())->takeGlobalFrom(entry.value.get());
 }
 
 WindowProxyManager::WindowProxyManager(Frame& frame)

@@ -38,6 +38,7 @@
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/events/Event.h"
+#include "core/frame/Settings.h"
 #include "core/frame/UseCounter.h"
 #include "core/html/HTMLDivElement.h"
 #include "core/html/track/TextTrack.h"
@@ -136,6 +137,14 @@ static bool isInvalidPercentage(double value, ExceptionState& exceptionState)
     return false;
 }
 
+// Sets inline CSS properties on passed in element if value is not an empty string
+static void setInlineStylePropertyIfNotEmpty(Element& element,
+    CSSPropertyID propertyID, const String& value)
+{
+    if (!value.isEmpty())
+        element.setInlineStyleProperty(propertyID, value);
+}
+
 VTTCueBox::VTTCueBox(Document& document, VTTCue* cue)
     : HTMLDivElement(document)
     , m_cue(cue)
@@ -206,7 +215,7 @@ void VTTCueBox::applyCSSProperties(const VTTDisplayParameters& displayParameters
     }
 }
 
-LayoutObject* VTTCueBox::createRenderer(const LayoutStyle&)
+LayoutObject* VTTCueBox::createLayoutObject(const ComputedStyle&)
 {
     return new LayoutVTTCue(this);
 }
@@ -231,6 +240,7 @@ VTTCue::VTTCue(Document& document, double startTime, double endTime, const Strin
     , m_displayTreeShouldChange(true)
 {
     UseCounter::count(document, UseCounter::VTTCue);
+    m_cueBackgroundBox->setShadowPseudoId(cueShadowPseudoId());
 }
 
 VTTCue::~VTTCue()
@@ -252,13 +262,6 @@ String VTTCue::toString() const
     return String::format("%p id=%s interval=%f-->%f cue=%s)", this, id().utf8().data(), startTime(), endTime(), text().utf8().data());
 }
 #endif
-
-VTTCueBox& VTTCue::ensureDisplayTree()
-{
-    if (!m_displayTree)
-        m_displayTree = VTTCueBox::create(document(), this);
-    return *m_displayTree;
-}
 
 void VTTCue::cueDidChange()
 {
@@ -750,16 +753,30 @@ VTTDisplayParameters VTTCue::calculateDisplayParameters() const
     return displayParameters;
 }
 
-void VTTCue::markFutureAndPastNodes(ContainerNode* root, double previousTimestamp, double movieTime)
+void VTTCue::updatePastAndFutureNodes(double movieTime)
 {
     DEFINE_STATIC_LOCAL(const String, timestampTag, ("timestamp"));
 
+    ASSERT(isActive());
+
+    // An active cue may still not have a display tree, e.g. if its track is
+    // hidden or if the track belongs to an audio element.
+    if (!m_displayTree)
+        return;
+
+    // FIXME: Per spec it's possible for neither :past nor :future to match, but
+    // as implemented here and in SelectorChecker they are simply each others
+    // negations. For a cue with no internal timestamps, :past will match but
+    // should not per spec. :future is correct, however. See the spec bug to
+    // determine what the correct behavior should be:
+    // https://www.w3.org/Bugs/Public/show_bug.cgi?id=28237
+
     bool isPastNode = true;
-    double currentTimestamp = previousTimestamp;
+    double currentTimestamp = startTime();
     if (currentTimestamp > movieTime)
         isPastNode = false;
 
-    for (Node& child : NodeTraversal::descendantsOf(*root)) {
+    for (Node& child : NodeTraversal::descendantsOf(*m_displayTree)) {
         if (child.nodeName() == timestampTag) {
             double currentTimestamp;
             bool check = VTTParser::collectTimeStamp(child.nodeValue(), currentTimestamp);
@@ -778,69 +795,39 @@ void VTTCue::markFutureAndPastNodes(ContainerNode* root, double previousTimestam
     }
 }
 
-void VTTCue::updateDisplayTree(double movieTime)
-{
-    // The display tree may contain WebVTT timestamp objects representing
-    // timestamps (processing instructions), along with displayable nodes.
-
-    if (!track()->isRendered())
-        return;
-
-    // Clear the contents of the set.
-    m_cueBackgroundBox->removeChildren();
-
-    // Update the two sets containing past and future WebVTT objects.
-    createVTTNodeTree();
-    RefPtrWillBeRawPtr<DocumentFragment> referenceTree = DocumentFragment::create(document());
-    m_vttNodeTree->cloneChildNodes(referenceTree.get());
-    markFutureAndPastNodes(referenceTree.get(), startTime(), movieTime);
-    m_cueBackgroundBox->appendChild(referenceTree, ASSERT_NO_EXCEPTION);
-}
-
 PassRefPtrWillBeRawPtr<VTTCueBox> VTTCue::getDisplayTree()
 {
-    RefPtrWillBeRawPtr<VTTCueBox> displayTree(ensureDisplayTree());
-    if (!m_displayTreeShouldChange || !track()->isRendered())
-        return displayTree.release();
+    ASSERT(track() && track()->isRendered() && isActive());
+
+    if (!m_displayTree) {
+        m_displayTree = VTTCueBox::create(document(), this);
+        m_displayTree->appendChild(m_cueBackgroundBox);
+    }
+
+    ASSERT(m_displayTree->firstChild() == m_cueBackgroundBox);
+
+    if (!m_displayTreeShouldChange) {
+        // Apply updated user style overrides for text tracks when display tree doesn't change.
+        // This ensures that the track settings are refreshed when the video is
+        // replayed or when the user slides back to an already rendered track.
+        applyUserOverrideCSSProperties();
+        return m_displayTree;
+    }
 
     createVTTNodeTree();
 
-    // 10.1 - 10.10
+    m_cueBackgroundBox->removeChildren();
+    m_vttNodeTree->cloneChildNodes(m_cueBackgroundBox.get());
+
     VTTDisplayParameters displayParameters = calculateDisplayParameters();
+    m_displayTree->applyCSSProperties(displayParameters);
 
-    // 10.11. Apply the terms of the CSS specifications to nodes within the
-    // following constraints, thus obtaining a set of CSS boxes positioned
-    // relative to an initial containing block:
-    displayTree->removeChildren();
-
-    // The document tree is the tree of WebVTT Node Objects rooted at nodes.
-
-    // The children of the nodes must be wrapped in an anonymous box whose
-    // 'display' property has the value 'inline'. This is the WebVTT cue
-    // background box.
-
-    // Note: This is contained by default in m_cueBackgroundBox.
-    m_cueBackgroundBox->setShadowPseudoId(cueShadowPseudoId());
-    displayTree->appendChild(m_cueBackgroundBox);
-
-    // FIXME(BUG 79916): Runs of children of WebVTT Ruby Objects that are not
-    // WebVTT Ruby Text Objects must be wrapped in anonymous boxes whose
-    // 'display' property has the value 'ruby-base'.
-
-    // FIXME(BUG 79916): Text runs must be wrapped according to the CSS
-    // line-wrapping rules, except that additionally, regardless of the value of
-    // the 'white-space' property, lines must be wrapped at the edge of their
-    // containing blocks, even if doing so requires splitting a word where there
-    // is no line breaking opportunity. (Thus, normally text wraps as needed,
-    // but if there is a particularly long word, it does not overflow as it
-    // normally would in CSS, it is instead forcibly wrapped at the box's edge.)
-    displayTree->applyCSSProperties(displayParameters);
+    // Apply user override settings for text tracks
+    applyUserOverrideCSSProperties();
 
     m_displayTreeShouldChange = false;
 
-    // 10.15. Let cue's text track cue display state have the CSS boxes in
-    // boxes.
-    return displayTree.release();
+    return m_displayTree;
 }
 
 void VTTCue::removeDisplayTree(RemovalNotification removalNotification)
@@ -858,6 +845,8 @@ void VTTCue::removeDisplayTree(RemovalNotification removalNotification)
 
 void VTTCue::updateDisplay(HTMLDivElement& container)
 {
+    ASSERT(track() && track()->isRendered() && isActive());
+
     UseCounter::count(document(), UseCounter::VTTCueRender);
 
     if (m_writingDirection != Horizontal)
@@ -1106,6 +1095,28 @@ void VTTCue::parseSettings(const String& inputString)
 
     if (!lineIsAuto() || m_cueSize != 100 || m_writingDirection != Horizontal)
         m_regionId = emptyString();
+}
+
+void VTTCue::applyUserOverrideCSSProperties()
+{
+    Settings* settings = document().settings();
+    if (!settings)
+        return;
+
+    setInlineStylePropertyIfNotEmpty(*m_cueBackgroundBox,
+        CSSPropertyBackgroundColor, settings->textTrackBackgroundColor());
+    setInlineStylePropertyIfNotEmpty(*m_cueBackgroundBox,
+        CSSPropertyFontFamily, settings->textTrackFontFamily());
+    setInlineStylePropertyIfNotEmpty(*m_cueBackgroundBox,
+        CSSPropertyFontStyle, settings->textTrackFontStyle());
+    setInlineStylePropertyIfNotEmpty(*m_cueBackgroundBox,
+        CSSPropertyFontVariant, settings->textTrackFontVariant());
+    setInlineStylePropertyIfNotEmpty(*m_cueBackgroundBox,
+        CSSPropertyColor, settings->textTrackTextColor());
+    setInlineStylePropertyIfNotEmpty(*m_cueBackgroundBox,
+        CSSPropertyTextShadow, settings->textTrackTextShadow());
+    setInlineStylePropertyIfNotEmpty(*m_cueBackgroundBox,
+        CSSPropertyFontSize, settings->textTrackTextSize());
 }
 
 ExecutionContext* VTTCue::executionContext() const

@@ -34,13 +34,15 @@ class ContentDecryptor_Private {
   // TODO(tomfinegan): This could be optimized to pass pp::Var instead of
   // strings. The change would allow the CDM wrapper to reuse vars when
   // replying to the browser.
-  virtual void Initialize(const std::string& key_system) = 0;
+  virtual void Initialize(const std::string& key_system,
+                          bool allow_distinctive_identifier,
+                          bool allow_persistent_state) = 0;
   virtual void SetServerCertificate(uint32_t promise_id,
                                     pp::VarArrayBuffer server_certificate) = 0;
   virtual void CreateSessionAndGenerateRequest(
       uint32_t promise_id,
       PP_SessionType session_type,
-      const std::string& init_data_type,
+      PP_InitDataType init_data_type,
       pp::VarArrayBuffer init_data) = 0;
   virtual void LoadSession(uint32_t promise_id,
                            PP_SessionType session_type,
@@ -89,10 +91,10 @@ class ContentDecryptor_Private {
   void SessionExpirationChange(const std::string& session_id,
                                PP_Time new_expiry_time);
   void SessionClosed(const std::string& session_id);
-  void SessionError(const std::string& session_id,
-                    PP_CdmExceptionCode exception_code,
-                    uint32_t system_code,
-                    const std::string& error_description);
+  void LegacySessionError(const std::string& session_id,
+                          PP_CdmExceptionCode exception_code,
+                          uint32_t system_code,
+                          const std::string& error_description);
 
   // The plugin must not hold a reference to the encrypted buffer resource
   // provided to Decrypt() when it calls this method. The browser will reuse

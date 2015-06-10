@@ -12,12 +12,12 @@
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/trace_event_argument.h"
 #include "base/trace_event/trace_event_synthetic_delay.h"
-#include "cc/base/swap_promise.h"
 #include "cc/debug/benchmark_instrumentation.h"
 #include "cc/debug/devtools_instrumentation.h"
 #include "cc/input/input_handler.h"
 #include "cc/output/context_provider.h"
 #include "cc/output/output_surface.h"
+#include "cc/output/swap_promise.h"
 #include "cc/quads/draw_quad.h"
 #include "cc/resources/prioritized_resource_manager.h"
 #include "cc/scheduler/commit_earlyout_reason.h"
@@ -366,6 +366,16 @@ void ThreadProxy::DidSwapBuffersCompleteOnImplThread() {
 
 void ThreadProxy::WillBeginImplFrame(const BeginFrameArgs& args) {
   impl().layer_tree_host_impl->WillBeginImplFrame(args);
+  if (impl().last_processed_begin_main_frame_args.IsValid()) {
+    // Last processed begin main frame args records the frame args that we sent
+    // to the main thread for the last frame that we've processed. If that is
+    // set, that means the current frame is one past the frame in which we've
+    // finished the processing.
+    impl().layer_tree_host_impl->RecordMainFrameTiming(
+        impl().last_processed_begin_main_frame_args,
+        impl().layer_tree_host_impl->CurrentBeginFrameArgs());
+    impl().last_processed_begin_main_frame_args = BeginFrameArgs();
+  }
 }
 
 void ThreadProxy::OnCanDrawStateChanged(bool can_draw) {
@@ -691,6 +701,10 @@ void ThreadProxy::ScheduledActionSendBeginMainFrame() {
       impl().layer_tree_host_impl->memory_allocation_priority_cutoff();
   begin_main_frame_state->evicted_ui_resources =
       impl().layer_tree_host_impl->EvictedUIResourcesExist();
+  // TODO(vmpstr): This needs to be fixed if
+  // main_frame_before_activation_enabled is set, since we might run this code
+  // twice before recording a duration. crbug.com/469824
+  impl().last_begin_main_frame_args = begin_main_frame_state->begin_frame_args;
   Proxy::MainThreadTaskRunner()->PostTask(
       FROM_HERE,
       base::Bind(&ThreadProxy::BeginMainFrame,
@@ -935,8 +949,11 @@ void ThreadProxy::BeginMainFrameAbortedOnImplThread(
   DCHECK(impl().scheduler->CommitPending());
   DCHECK(!impl().layer_tree_host_impl->pending_tree());
 
-  if (CommitEarlyOutHandledCommit(reason))
+  if (CommitEarlyOutHandledCommit(reason)) {
     SetInputThrottledUntilCommitOnImplThread(false);
+    impl().last_processed_begin_main_frame_args =
+        impl().last_begin_main_frame_args;
+  }
   impl().layer_tree_host_impl->BeginMainFrameAborted(reason);
   impl().scheduler->BeginMainFrameAborted(reason);
 }
@@ -1114,6 +1131,12 @@ DrawResult ThreadProxy::ScheduledActionDrawAndSwapForced() {
   return DrawSwapInternal(forced_draw);
 }
 
+void ThreadProxy::ScheduledActionInvalidateOutputSurface() {
+  TRACE_EVENT0("cc", "ThreadProxy::ScheduledActionInvalidateOutputSurface");
+  DCHECK(impl().layer_tree_host_impl->output_surface());
+  impl().layer_tree_host_impl->output_surface()->Invalidate();
+}
+
 void ThreadProxy::DidAnticipatedDrawTimeChange(base::TimeTicks time) {
   if (impl().current_resource_update_controller)
     impl().current_resource_update_controller->PerformMoreUpdates(time);
@@ -1136,6 +1159,11 @@ void ThreadProxy::DidBeginImplFrameDeadline() {
 }
 
 void ThreadProxy::SendBeginFramesToChildren(const BeginFrameArgs& args) {
+  NOTREACHED() << "Only used by SingleThreadProxy";
+}
+
+void ThreadProxy::SetAuthoritativeVSyncInterval(
+    const base::TimeDelta& interval) {
   NOTREACHED() << "Only used by SingleThreadProxy";
 }
 
@@ -1165,13 +1193,13 @@ void ThreadProxy::InitializeImplOnImplThread(CompletionEvent* completion) {
   DCHECK(IsImplThread());
   impl().layer_tree_host_impl =
       layer_tree_host()->CreateLayerTreeHostImpl(this);
-  SchedulerSettings scheduler_settings(layer_tree_host()->settings());
+  SchedulerSettings scheduler_settings(
+      layer_tree_host()->settings().ToSchedulerSettings());
   impl().scheduler = Scheduler::Create(
                          this,
                          scheduler_settings,
                          impl().layer_tree_host_id,
                          ImplThreadTaskRunner(),
-                         base::PowerMonitor::Get(),
                          impl().external_begin_frame_source.Pass());
   impl().scheduler->SetVisible(impl().layer_tree_host_impl->visible());
   impl_thread_weak_ptr_ = impl().weak_factory.GetWeakPtr();
@@ -1252,31 +1280,6 @@ ThreadProxy::BeginMainFrameAndCommitState::BeginMainFrameAndCommitState()
       evicted_ui_resources(false) {}
 
 ThreadProxy::BeginMainFrameAndCommitState::~BeginMainFrameAndCommitState() {}
-
-void ThreadProxy::AsValueInto(base::trace_event::TracedValue* state) const {
-  CompletionEvent completion;
-  {
-    DebugScopedSetMainThreadBlocked main_thread_blocked(
-        const_cast<ThreadProxy*>(this));
-    scoped_refptr<base::trace_event::TracedValue> state_refptr(state);
-    Proxy::ImplThreadTaskRunner()->PostTask(
-        FROM_HERE,
-        base::Bind(&ThreadProxy::AsValueOnImplThread,
-                   impl_thread_weak_ptr_,
-                   &completion,
-                   state_refptr));
-    completion.Wait();
-  }
-}
-
-void ThreadProxy::AsValueOnImplThread(
-    CompletionEvent* completion,
-    base::trace_event::TracedValue* state) const {
-  state->BeginDictionary("layer_tree_host_impl");
-  impl().layer_tree_host_impl->AsValueInto(state);
-  state->EndDictionary();
-  completion->Signal();
-}
 
 bool ThreadProxy::MainFrameWillHappenForTesting() {
   DCHECK(IsMainThread());
@@ -1362,10 +1365,10 @@ void ThreadProxy::RenewTreePriority() {
   }
 }
 
-void ThreadProxy::PostDelayedScrollbarFadeOnImplThread(
-    const base::Closure& start_fade,
+void ThreadProxy::PostDelayedAnimationTaskOnImplThread(
+    const base::Closure& task,
     base::TimeDelta delay) {
-  Proxy::ImplThreadTaskRunner()->PostDelayedTask(FROM_HERE, start_fade, delay);
+  Proxy::ImplThreadTaskRunner()->PostDelayedTask(FROM_HERE, task, delay);
 }
 
 void ThreadProxy::DidActivateSyncTree() {
@@ -1381,6 +1384,8 @@ void ThreadProxy::DidActivateSyncTree() {
   }
 
   impl().timing_history.DidActivateSyncTree();
+  impl().last_processed_begin_main_frame_args =
+      impl().last_begin_main_frame_args;
 }
 
 void ThreadProxy::DidPrepareTiles() {
@@ -1393,6 +1398,11 @@ void ThreadProxy::DidCompletePageScaleAnimationOnImplThread() {
   Proxy::MainThreadTaskRunner()->PostTask(
       FROM_HERE, base::Bind(&ThreadProxy::DidCompletePageScaleAnimation,
                             main_thread_weak_ptr_));
+}
+
+void ThreadProxy::OnDrawForOutputSurface() {
+  DCHECK(IsImplThread());
+  impl().scheduler->OnDrawForOutputSurface();
 }
 
 }  // namespace cc

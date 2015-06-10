@@ -74,6 +74,27 @@ void BufferManager::StopTracking(Buffer* buffer) {
   --buffer_count_;
 }
 
+Buffer::MappedRange::MappedRange(
+    GLintptr offset, GLsizeiptr size, GLenum access, void* pointer,
+    scoped_refptr<gpu::Buffer> shm)
+    : offset(offset),
+      size(size),
+      access(access),
+      pointer(pointer),
+      shm(shm) {
+  DCHECK(pointer);
+  DCHECK(shm.get() && GetShmPointer());
+}
+
+Buffer::MappedRange::~MappedRange() {
+}
+
+void* Buffer::MappedRange::GetShmPointer() const {
+  DCHECK(shm.get());
+  return shm->GetDataAddress(static_cast<unsigned int>(offset),
+                             static_cast<unsigned int>(size));
+}
+
 Buffer::Buffer(BufferManager* manager, GLuint service_id)
     : manager_(manager),
       size_(0),
@@ -119,6 +140,7 @@ void Buffer::SetInfo(
       memset(shadow_.get(), 0, size);
     }
   }
+  mapped_range_.reset(nullptr);
 }
 
 bool Buffer::CheckRange(
@@ -397,12 +419,23 @@ bool BufferManager::SetTarget(Buffer* buffer, GLenum target) {
 // Since one BufferManager can be shared by multiple decoders, ContextState is
 // passed in each time and not just passed in during initialization.
 Buffer* BufferManager::GetBufferInfoForTarget(
-    ContextState* state, GLenum target) {
-  DCHECK(target == GL_ARRAY_BUFFER || target == GL_ELEMENT_ARRAY_BUFFER);
-  if (target == GL_ARRAY_BUFFER) {
-    return state->bound_array_buffer.get();
-  } else {
-    return state->vertex_attrib_manager->element_array_buffer();
+    ContextState* state, GLenum target) const {
+  switch (target) {
+    case GL_ARRAY_BUFFER:
+      return state->bound_array_buffer.get();
+    case GL_ELEMENT_ARRAY_BUFFER:
+      return state->vertex_attrib_manager->element_array_buffer();
+    case GL_COPY_READ_BUFFER:
+    case GL_COPY_WRITE_BUFFER:
+    case GL_PIXEL_PACK_BUFFER:
+    case GL_PIXEL_UNPACK_BUFFER:
+    case GL_TRANSFORM_FEEDBACK_BUFFER:
+    case GL_UNIFORM_BUFFER:
+      NOTIMPLEMENTED();
+      return nullptr;
+    default:
+      NOTREACHED();
+      return nullptr;
   }
 }
 

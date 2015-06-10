@@ -5,23 +5,25 @@
 #ifndef PresentationController_h
 #define PresentationController_h
 
-#include "core/frame/FrameDestructionObserver.h"
+#include "core/frame/LocalFrameLifecycleObserver.h"
 #include "modules/presentation/Presentation.h"
 #include "platform/Supplementable.h"
 #include "platform/heap/Handle.h"
+#include "public/platform/modules/presentation/WebPresentationClient.h"
 #include "public/platform/modules/presentation/WebPresentationController.h"
 
 namespace blink {
 
 class LocalFrame;
-class WebPresentationClient;
+class WebPresentationSessionClient;
+enum class WebPresentationSessionState;
 
 // The coordinator between the various page exposed properties and the content
 // layer represented via |WebPresentationClient|.
 class PresentationController final
     : public NoBaseWillBeGarbageCollectedFinalized<PresentationController>
     , public WillBeHeapSupplement<LocalFrame>
-    , public FrameDestructionObserver
+    , public LocalFrameLifecycleObserver
     , public WebPresentationController {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(PresentationController);
     WTF_MAKE_NONCOPYABLE(PresentationController);
@@ -41,10 +43,21 @@ public:
     // Implementation of WebPresentationController.
     virtual void didChangeAvailability(bool available) override;
     virtual bool isAvailableChangeWatched() const override;
+    virtual void didStartDefaultSession(WebPresentationSessionClient*) override;
+    virtual void didChangeSessionState(WebPresentationSessionClient*, WebPresentationSessionState) override;
 
     // Called when the first listener was added to or the last listener was removed from the
     // |availablechange| event.
     void updateAvailableChangeWatched(bool watched);
+
+    // Called when the frame wants to start a new presentation.
+    void startSession(const String& presentationUrl, const String& presentationId, WebPresentationSessionClientCallbacks*);
+
+    // Called when the frame wants to join an existing presentation.
+    void joinSession(const String& presentationUrl, const String& presentationId, WebPresentationSessionClientCallbacks*);
+
+    // Called when the frame wants to close an existing presentation.
+    void closeSession(const String& url, const String& presentationId);
 
     // Connects the |Presentation| object with this controller.
     void setPresentation(Presentation*);
@@ -52,7 +65,7 @@ public:
 private:
     PresentationController(LocalFrame&, WebPresentationClient*);
 
-    // Implementation of FrameDestructionObserver.
+    // Implementation of LocalFrameLifecycleObserver.
     virtual void willDetachFrameHost() override;
 
     WebPresentationClient* m_client;

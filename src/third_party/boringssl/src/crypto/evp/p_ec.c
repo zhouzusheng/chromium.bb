@@ -241,7 +241,8 @@ static int pkey_ec_ctrl(EVP_PKEY_CTX *ctx, int type, int p1, void *p2) {
       return 1;
 
     default:
-      return -2;
+      OPENSSL_PUT_ERROR(EVP, pkey_ec_ctrl, EVP_R_COMMAND_NOT_SUPPORTED);
+      return 0;
   }
 }
 

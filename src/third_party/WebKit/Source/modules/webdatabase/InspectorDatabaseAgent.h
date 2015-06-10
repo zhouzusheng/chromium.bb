@@ -45,7 +45,7 @@ class Page;
 
 typedef String ErrorString;
 
-class InspectorDatabaseAgent final : public InspectorBaseAgent<InspectorDatabaseAgent>, public InspectorBackendDispatcher::DatabaseCommandHandler {
+class InspectorDatabaseAgent final : public InspectorBaseAgent<InspectorDatabaseAgent, InspectorFrontend::Database>, public InspectorBackendDispatcher::DatabaseCommandHandler {
 public:
     static PassOwnPtrWillBeRawPtr<InspectorDatabaseAgent> create(Page* page)
     {
@@ -54,15 +54,12 @@ public:
     virtual ~InspectorDatabaseAgent();
     DECLARE_VIRTUAL_TRACE();
 
-    virtual void setFrontend(InspectorFrontend*) override;
-    virtual void clearFrontend() override;
-    virtual void restore() override;
-
-    virtual void didCommitLoadForMainFrame() override;
+    void disable(ErrorString*) override;
+    void restore() override;
+    void didCommitLoadForLocalFrame(LocalFrame*) override;
 
     // Called from the front-end.
     virtual void enable(ErrorString*) override;
-    virtual void disable(ErrorString*) override;
     virtual void getDatabaseTableNames(ErrorString*, const String& databaseId, RefPtr<TypeBuilder::Array<String>>& names) override;
     virtual void executeSQL(ErrorString*, const String& databaseId, const String& query, PassRefPtrWillBeRawPtr<ExecuteSQLCallback>) override;
 
@@ -73,7 +70,7 @@ private:
     Database* databaseForId(const String& databaseId);
     InspectorDatabaseResource* findByFileName(const String& fileName);
 
-    InspectorFrontend::Database* m_frontend;
+    Page* m_page;
     typedef PersistentHeapHashMapWillBeHeapHashMap<String, Member<InspectorDatabaseResource>> DatabaseResourcesHeapMap;
     DatabaseResourcesHeapMap m_resources;
     bool m_enabled;

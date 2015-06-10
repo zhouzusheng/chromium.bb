@@ -28,6 +28,14 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipeProducerDispatcher : public Dispatcher {
   // |Dispatcher| public methods:
   Type GetType() const override;
 
+  // The "opposite" of |SerializeAndClose()|. (Typically this is called by
+  // |Dispatcher::Deserialize()|.)
+  static scoped_refptr<DataPipeProducerDispatcher>
+  Deserialize(Channel* channel, const void* source, size_t size);
+
+  // Get access to the |DataPipe| for testing.
+  DataPipe* GetDataPipeForTest() { return data_pipe_.get(); }
+
  private:
   ~DataPipeProducerDispatcher() override;
 
@@ -50,6 +58,14 @@ class MOJO_SYSTEM_IMPL_EXPORT DataPipeProducerDispatcher : public Dispatcher {
                                    HandleSignalsState* signals_state) override;
   void RemoveAwakableImplNoLock(Awakable* awakable,
                                 HandleSignalsState* signals_state) override;
+  void StartSerializeImplNoLock(Channel* channel,
+                                size_t* max_size,
+                                size_t* max_platform_handles) override;
+  bool EndSerializeAndCloseImplNoLock(
+      Channel* channel,
+      void* destination,
+      size_t* actual_size,
+      embedder::PlatformHandleVector* platform_handles) override;
   bool IsBusyNoLock() const override;
 
   // Protected by |lock()|:

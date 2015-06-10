@@ -282,7 +282,6 @@ WebServiceWorkerCache::QueryParams Cache::toWebQueryParams(const CacheQueryOptio
     webQueryParams.ignoreSearch = options.ignoreSearch();
     webQueryParams.ignoreMethod = options.ignoreMethod();
     webQueryParams.ignoreVary = options.ignoreVary();
-    webQueryParams.prefixMatch = options.prefixMatch();
     webQueryParams.cacheName = options.cacheName();
     return webQueryParams;
 }
@@ -365,24 +364,18 @@ ScriptPromise Cache::putImpl(ScriptState* scriptState, Request* request, Respons
         return ScriptPromise::reject(scriptState, V8ThrowException::createTypeError(scriptState->isolate(), "Response body is already used"));
 
     if (request->hasBody())
-        request->setBodyUsed();
+        request->lockBody(Body::PassBody);
     if (response->hasBody())
-        response->setBodyUsed();
+        response->lockBody(Body::PassBody);
 
     RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
     const ScriptPromise promise = resolver->promise();
     if (BodyStreamBuffer* buffer = response->internalBuffer()) {
-        if (buffer == response->buffer() && response->streamAccessed()) {
-            bool dataLost = false;
-            buffer = response->createDrainingStream(&dataLost);
-            if (dataLost) {
-                resolver->reject(DOMException::create(NotSupportedError, "Storing the Response which .body is partially read is not supported."));
-                return promise;
-            }
-        }
+        if (buffer == response->buffer() && response->isBodyConsumed())
+            buffer = response->createDrainingStream();
         // If the response body type is stream, read the all data and create the
         // blob handle and dispatch the put batch asynchronously.
-        buffer->readAllAndCreateBlobHandle(response->internalContentTypeForBuffer(), new AsyncPutBatch(resolver, this, request, response));
+        buffer->readAllAndCreateBlobHandle(response->internalMIMEType(), new AsyncPutBatch(resolver, this, request, response));
         return promise;
     }
     WebVector<WebServiceWorkerCache::BatchOperation> batchOperations(size_t(1));

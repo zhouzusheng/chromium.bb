@@ -30,10 +30,10 @@
 #include "config.h"
 #include "core/loader/DocumentLoader.h"
 
-#include "core/FetchInitiatorTypeNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentParser.h"
 #include "core/events/Event.h"
+#include "core/fetch/FetchInitiatorTypeNames.h"
 #include "core/fetch/MemoryCache.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/fetch/ResourceLoader.h"
@@ -44,8 +44,8 @@
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/html/parser/HTMLDocumentParser.h"
 #include "core/html/parser/TextResourceDecoder.h"
-#include "core/html/parser/ThreadedDataReceiver.h"
 #include "core/inspector/InspectorInstrumentation.h"
+#include "core/loader/FrameFetchContext.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/LinkLoader.h"
@@ -55,6 +55,7 @@
 #include "core/frame/Settings.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "platform/Logging.h"
+#include "platform/ThreadedDataReceiver.h"
 #include "platform/UserGestureIndicator.h"
 #include "platform/mhtml/ArchiveResource.h"
 #include "platform/mhtml/ArchiveResourceCollection.h"
@@ -77,7 +78,7 @@ static bool isArchiveMIMEType(const String& mimeType)
 
 DocumentLoader::DocumentLoader(LocalFrame* frame, const ResourceRequest& req, const SubstituteData& substituteData)
     : m_frame(frame)
-    , m_fetcher(ResourceFetcher::create(this))
+    , m_fetcher(FrameFetchContext::createContextAndFetcher(this))
     , m_originalRequest(req)
     , m_substituteData(substituteData)
     , m_request(req)
@@ -106,7 +107,7 @@ ResourceLoader* DocumentLoader::mainResourceLoader() const
 DocumentLoader::~DocumentLoader()
 {
     ASSERT(!m_frame || !isLoading());
-    m_fetcher->clearDocumentLoader();
+    static_cast<FrameFetchContext&>(m_fetcher->context()).clearDocumentLoader();
     clearMainResourceHandle();
     m_applicationCacheHost->dispose();
 }
@@ -275,7 +276,7 @@ bool DocumentLoader::shouldContinueForNavigationPolicy(const ResourceRequest& re
     // If we're loading content into a subframe, check against the parent's Content Security Policy
     // and kill the load if that check fails, unless we should bypass the main world's CSP.
     // FIXME: CSP checks are broken for OOPI. For now, this policy always allows frames with a remote parent...
-    if ((shouldCheckMainWorldContentSecurityPolicy == CheckContentSecurityPolicy) && (m_frame->deprecatedLocalOwner() && !m_frame->deprecatedLocalOwner()->document().contentSecurityPolicy()->allowChildFrameFromSource(request.url()))) {
+    if ((shouldCheckMainWorldContentSecurityPolicy == CheckContentSecurityPolicy) && (m_frame->deprecatedLocalOwner() && !m_frame->deprecatedLocalOwner()->document().contentSecurityPolicy()->allowChildFrameFromSource(request.url(), request.followedRedirect() ? ContentSecurityPolicy::DidRedirect : ContentSecurityPolicy::DidNotRedirect))) {
         // Fire a load event, as timing attacks would otherwise reveal that the
         // frame was blocked. This way, it looks like every other cross-origin
         // page load.

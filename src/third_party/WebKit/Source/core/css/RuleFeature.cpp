@@ -206,7 +206,7 @@ RuleFeature::RuleFeature(StyleRule* rule, unsigned selectorIndex, bool hasDocume
 {
 }
 
-void RuleFeature::trace(Visitor* visitor)
+DEFINE_TRACE(RuleFeature)
 {
     visitor->trace(rule);
 }
@@ -311,11 +311,10 @@ void RuleFeatureSet::updateInvalidationSetsForContentAttribute(const RuleData& r
     if (!contentValue->isValueList())
         return;
 
-    for (CSSValueListIterator i = contentValue; i.hasMore(); i.advance()) {
-        CSSValue* item = i.value();
+    for (auto& item : toCSSValueList(*contentValue)) {
         if (!item->isPrimitiveValue())
             continue;
-        CSSPrimitiveValue* primitiveItem = toCSSPrimitiveValue(item);
+        CSSPrimitiveValue* primitiveItem = toCSSPrimitiveValue(item.get());
         if (!primitiveItem->isAttr())
             continue;
         ensureAttributeInvalidationSet(AtomicString(primitiveItem->getStringValue()));
@@ -638,7 +637,7 @@ StyleInvalidator& RuleFeatureSet::styleInvalidator()
     return m_styleInvalidator;
 }
 
-void RuleFeatureSet::trace(Visitor* visitor)
+DEFINE_TRACE(RuleFeatureSet)
 {
 #if ENABLE(OILPAN)
     visitor->trace(siblingRules);

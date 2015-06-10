@@ -13,6 +13,7 @@
 #include "modules/serviceworkers/ServiceWorkerError.h"
 #include "modules/serviceworkers/ServiceWorkerGlobalScopeClient.h"
 #include "modules/serviceworkers/ServiceWorkerWindowClient.h"
+#include "public/platform/WebServiceWorkerClientQueryOptions.h"
 #include "public/platform/WebServiceWorkerClientsInfo.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
@@ -21,27 +22,45 @@ namespace blink {
 
 namespace {
 
-    class ClientArray {
-    public:
-        typedef blink::WebServiceWorkerClientsInfo WebType;
-        static HeapVector<Member<ServiceWorkerClient>> take(ScriptPromiseResolver*, WebType* webClientsRaw)
-        {
-            OwnPtr<WebType> webClients = adoptPtr(webClientsRaw);
-            HeapVector<Member<ServiceWorkerClient>> clients;
-            for (size_t i = 0; i < webClients->clients.size(); ++i) {
-                clients.append(ServiceWorkerWindowClient::create(webClients->clients[i]));
-            }
-            return clients;
+class ClientArray {
+public:
+    typedef blink::WebServiceWorkerClientsInfo WebType;
+    static HeapVector<Member<ServiceWorkerClient>> take(ScriptPromiseResolver*, WebType* webClientsRaw)
+    {
+        OwnPtr<WebType> webClients = adoptPtr(webClientsRaw);
+        HeapVector<Member<ServiceWorkerClient>> clients;
+        for (size_t i = 0; i < webClients->clients.size(); ++i) {
+            const WebServiceWorkerClientInfo& client = webClients->clients[i];
+            if (client.clientType == WebServiceWorkerClientTypeWindow)
+                clients.append(ServiceWorkerWindowClient::create(client));
+            else
+                clients.append(ServiceWorkerClient::create(client));
         }
-        static void dispose(WebType* webClientsRaw)
-        {
-            delete webClientsRaw;
-        }
+        return clients;
+    }
+    static void dispose(WebType* webClientsRaw)
+    {
+        delete webClientsRaw;
+    }
 
-    private:
-        WTF_MAKE_NONCOPYABLE(ClientArray);
-        ClientArray() = delete;
-    };
+private:
+    WTF_MAKE_NONCOPYABLE(ClientArray);
+    ClientArray() = delete;
+};
+
+WebServiceWorkerClientType getClientType(const String& type)
+{
+    if (type == "window")
+        return WebServiceWorkerClientTypeWindow;
+    if (type == "worker")
+        return WebServiceWorkerClientTypeWorker;
+    if (type == "sharedworker")
+        return WebServiceWorkerClientTypeSharedWorker;
+    if (type == "all")
+        return WebServiceWorkerClientTypeAll;
+    ASSERT_NOT_REACHED();
+    return WebServiceWorkerClientTypeWindow;
+}
 
 } // namespace
 
@@ -64,19 +83,10 @@ ScriptPromise ServiceWorkerClients::matchAll(ScriptState* scriptState, const Cli
     RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
 
-    if (options.includeUncontrolled()) {
-        // FIXME: Currently we don't support includeUncontrolled=true.
-        resolver->reject(DOMException::create(NotSupportedError, "includeUncontrolled parameter of getAll is not supported."));
-        return promise;
-    }
-
-    if (options.type() != "window") {
-        // FIXME: Currently we only support WindowClients.
-        resolver->reject(DOMException::create(NotSupportedError, "type parameter of getAll is not supported."));
-        return promise;
-    }
-
-    ServiceWorkerGlobalScopeClient::from(executionContext)->getClients(new CallbackPromiseAdapter<ClientArray, ServiceWorkerError>(resolver));
+    WebServiceWorkerClientQueryOptions webOptions;
+    webOptions.clientType = getClientType(options.type());
+    webOptions.includeUncontrolled = options.includeUncontrolled();
+    ServiceWorkerGlobalScopeClient::from(executionContext)->getClients(webOptions, new CallbackPromiseAdapter<ClientArray, ServiceWorkerError>(resolver));
     return promise;
 }
 
@@ -108,8 +118,8 @@ ScriptPromise ServiceWorkerClients::openWindow(ScriptState* scriptState, const S
         return promise;
     }
 
-    if (!context->securityOrigin()->canRequest(parsedUrl)) {
-        resolver->reject(DOMException::create(SecurityError, "'" + parsedUrl.elidedString() + "' is not same-origin with the Worker."));
+    if (!context->securityOrigin()->canDisplay(parsedUrl)) {
+        resolver->reject(DOMException::create(SecurityError, "'" + parsedUrl.elidedString() + "' cannot be opened."));
         return promise;
     }
 

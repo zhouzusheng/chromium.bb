@@ -41,7 +41,7 @@ class ShaderD3D : public ShaderImpl
     unsigned int getInterfaceBlockRegister(const std::string &blockName) const;
     void appendDebugInfo(const std::string &info) { mDebugInfo += info; }
 
-    D3DWorkaroundType getD3DWorkarounds() const;
+    void generateWorkarounds(D3DCompilerWorkarounds *workarounds) const;
     int getShaderVersion() const { return mShaderVersion; }
     bool usesDepthRange() const { return mUsesDepthRange; }
     bool usesPointSize() const { return mUsesPointSize; }
@@ -53,8 +53,6 @@ class ShaderD3D : public ShaderImpl
     virtual bool compile(gl::Compiler *compiler, const std::string &source);
 
   private:
-    DISALLOW_COPY_AND_ASSIGN(ShaderD3D);
-
     void compileToHLSL(ShHandle compiler, const std::string &source);
     void parseVaryings(ShHandle compiler);
 
@@ -78,6 +76,7 @@ class ShaderD3D : public ShaderImpl
     bool mUsesDiscardRewriting;
     bool mUsesNestedBreak;
     bool mUsesDeferredInit;
+    bool mRequiresIEEEStrictCompiling;
 
     ShShaderOutput mCompilerOutputType;
     std::string mDebugInfo;

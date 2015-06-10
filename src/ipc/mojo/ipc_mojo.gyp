@@ -40,8 +40,12 @@
         'ipc_mojo_handle_attachment.h',
         'ipc_mojo_message_helper.cc',
         'ipc_mojo_message_helper.h',
+        'ipc_mojo_param_traits.cc',
+        'ipc_mojo_param_traits.h',
         'ipc_message_pipe_reader.cc',
         'ipc_message_pipe_reader.h',
+        'scoped_ipc_support.cc',
+        'scoped_ipc_support.h',
       ],
       # TODO(gregoryd): direct_dependent_settings should be shared with the
       # 64-bit target, but it doesn't work due to a bug in gyp

@@ -35,7 +35,7 @@ enum LayoutSVGResourceType {
     ClipperResourceType
 };
 
-class Layer;
+class DeprecatedPaintLayer;
 
 class LayoutSVGResourceContainer : public LayoutSVGHiddenContainer {
 public:
@@ -46,7 +46,7 @@ public:
     virtual void removeClientFromCache(LayoutObject*, bool markForInvalidation = true) = 0;
 
     virtual void layout() override;
-    virtual void styleDidChange(StyleDifference, const LayoutStyle* oldStyle) override final;
+    virtual void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override final;
     virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectSVGResourceContainer || LayoutSVGHiddenContainer::isOfType(type); }
 
     virtual LayoutSVGResourceType resourceType() const = 0;
@@ -61,12 +61,14 @@ public:
 
     void idChanged();
     void addClientLayer(Node*);
-    void addClientLayer(Layer*);
-    void removeClientLayer(Layer*);
+    void addClientLayer(DeprecatedPaintLayer*);
+    void removeClientLayer(DeprecatedPaintLayer*);
 
     void invalidateCacheAndMarkForLayout(SubtreeLayoutScope* = 0);
 
     static void markForLayoutAndParentResourceInvalidation(LayoutObject*, bool needsLayout = true);
+
+    void clearInvalidationMask() { m_invalidationMask = 0; }
 
 protected:
     // When adding modes, make sure we don't overflow m_invalidationMask below.
@@ -81,8 +83,6 @@ protected:
     void markAllClientsForInvalidation(InvalidationMode);
     void markAllClientLayersForInvalidation();
     void markClientForInvalidation(LayoutObject*, InvalidationMode);
-
-    void clearInvalidationMask() { m_invalidationMask = 0; }
 
     bool m_isInLayout;
 
@@ -103,7 +103,7 @@ private:
     // 22 padding bits available
 
     HashSet<LayoutObject*> m_clients;
-    HashSet<Layer*> m_clientLayers;
+    HashSet<DeprecatedPaintLayer*> m_clientLayers;
 };
 
 inline LayoutSVGResourceContainer* getLayoutSVGResourceContainerById(TreeScope& treeScope, const AtomicString& id)
@@ -111,18 +111,18 @@ inline LayoutSVGResourceContainer* getLayoutSVGResourceContainerById(TreeScope& 
     if (id.isEmpty())
         return 0;
 
-    if (LayoutSVGResourceContainer* renderResource = treeScope.document().accessSVGExtensions().resourceById(id))
-        return renderResource;
+    if (LayoutSVGResourceContainer* layoutResource = treeScope.document().accessSVGExtensions().resourceById(id))
+        return layoutResource;
 
     return 0;
 }
 
-template<typename Renderer>
-Renderer* getLayoutSVGResourceById(TreeScope& treeScope, const AtomicString& id)
+template<typename Layout>
+Layout* getLayoutSVGResourceById(TreeScope& treeScope, const AtomicString& id)
 {
     if (LayoutSVGResourceContainer* container = getLayoutSVGResourceContainerById(treeScope, id)) {
-        if (container->resourceType() == Renderer::s_resourceType)
-            return static_cast<Renderer*>(container);
+        if (container->resourceType() == Layout::s_resourceType)
+            return static_cast<Layout*>(container);
     }
     return 0;
 }

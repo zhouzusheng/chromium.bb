@@ -15,11 +15,16 @@
 #include "base/strings/string16.h"
 #include "base/tuple.h"
 #include "base/values.h"
-#include "chrome/common/safe_browsing/zip_analyzer.h"
+#include "chrome/common/safe_browsing/zip_analyzer_results.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_platform_file.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/ipc/gfx_param_traits.h"
+
+#if defined(FULL_SAFE_BROWSING)
+#include "chrome/common/safe_browsing/ipc_protobuf_message_macros.h"
+#include "chrome/common/safe_browsing/protobuf_message_param_traits.h"
+#endif
 
 // Singly-included section for typedefs.
 #ifndef CHROME_COMMON_CHROME_UTILITY_MESSAGES_H_
@@ -37,12 +42,72 @@ typedef std::vector<Tuple<base::string16, base::string16>>
 #define IPC_MESSAGE_START ChromeUtilityMsgStart
 
 #if defined(FULL_SAFE_BROWSING)
+IPC_ENUM_TRAITS_VALIDATE(
+    safe_browsing::ClientDownloadRequest_DownloadType,
+    safe_browsing::ClientDownloadRequest_DownloadType_IsValid(value))
+
+IPC_PROTOBUF_MESSAGE_TRAITS_BEGIN(safe_browsing::ClientDownloadRequest_Digests)
+  IPC_PROTOBUF_MESSAGE_TRAITS_OPTIONAL_COMPLEX_MEMBER(sha256)
+  IPC_PROTOBUF_MESSAGE_TRAITS_OPTIONAL_COMPLEX_MEMBER(sha1)
+  IPC_PROTOBUF_MESSAGE_TRAITS_OPTIONAL_COMPLEX_MEMBER(md5)
+IPC_PROTOBUF_MESSAGE_TRAITS_END()
+
+IPC_PROTOBUF_MESSAGE_TRAITS_BEGIN(
+    safe_browsing::ClientDownloadRequest_CertificateChain_Element)
+  IPC_PROTOBUF_MESSAGE_TRAITS_OPTIONAL_COMPLEX_MEMBER(certificate)
+IPC_PROTOBUF_MESSAGE_TRAITS_END()
+
+IPC_PROTOBUF_MESSAGE_TRAITS_BEGIN(
+    safe_browsing::ClientDownloadRequest_CertificateChain)
+  IPC_PROTOBUF_MESSAGE_TRAITS_REPEATED_COMPLEX_MEMBER(element)
+IPC_PROTOBUF_MESSAGE_TRAITS_END()
+
+IPC_PROTOBUF_MESSAGE_TRAITS_BEGIN(
+    safe_browsing::ClientDownloadRequest_SignatureInfo)
+  IPC_PROTOBUF_MESSAGE_TRAITS_REPEATED_COMPLEX_MEMBER(certificate_chain)
+  IPC_PROTOBUF_MESSAGE_TRAITS_OPTIONAL_FUNDAMENTAL_MEMBER(trusted)
+  IPC_PROTOBUF_MESSAGE_TRAITS_REPEATED_COMPLEX_MEMBER(signed_data)
+IPC_PROTOBUF_MESSAGE_TRAITS_END()
+
+IPC_PROTOBUF_MESSAGE_TRAITS_BEGIN(
+    safe_browsing::ClientDownloadRequest_PEImageHeaders_DebugData)
+  IPC_PROTOBUF_MESSAGE_TRAITS_OPTIONAL_COMPLEX_MEMBER(directory_entry)
+  IPC_PROTOBUF_MESSAGE_TRAITS_OPTIONAL_COMPLEX_MEMBER(raw_data)
+IPC_PROTOBUF_MESSAGE_TRAITS_END()
+
+IPC_PROTOBUF_MESSAGE_TRAITS_BEGIN(
+    safe_browsing::ClientDownloadRequest_PEImageHeaders)
+  IPC_PROTOBUF_MESSAGE_TRAITS_OPTIONAL_COMPLEX_MEMBER(dos_header)
+  IPC_PROTOBUF_MESSAGE_TRAITS_OPTIONAL_COMPLEX_MEMBER(file_header)
+  IPC_PROTOBUF_MESSAGE_TRAITS_OPTIONAL_COMPLEX_MEMBER(optional_headers32)
+  IPC_PROTOBUF_MESSAGE_TRAITS_OPTIONAL_COMPLEX_MEMBER(optional_headers64)
+  IPC_PROTOBUF_MESSAGE_TRAITS_REPEATED_COMPLEX_MEMBER(section_header)
+  IPC_PROTOBUF_MESSAGE_TRAITS_OPTIONAL_COMPLEX_MEMBER(export_section_data)
+  IPC_PROTOBUF_MESSAGE_TRAITS_REPEATED_COMPLEX_MEMBER(debug_data)
+IPC_PROTOBUF_MESSAGE_TRAITS_END()
+
+IPC_PROTOBUF_MESSAGE_TRAITS_BEGIN(
+    safe_browsing::ClientDownloadRequest_ImageHeaders)
+  IPC_PROTOBUF_MESSAGE_TRAITS_OPTIONAL_COMPLEX_MEMBER(pe_headers)
+IPC_PROTOBUF_MESSAGE_TRAITS_END()
+
+IPC_PROTOBUF_MESSAGE_TRAITS_BEGIN(
+    safe_browsing::ClientDownloadRequest_ArchivedBinary)
+  IPC_PROTOBUF_MESSAGE_TRAITS_OPTIONAL_COMPLEX_MEMBER(file_basename)
+  IPC_PROTOBUF_MESSAGE_TRAITS_OPTIONAL_FUNDAMENTAL_MEMBER(download_type)
+  IPC_PROTOBUF_MESSAGE_TRAITS_OPTIONAL_COMPLEX_MEMBER(digests)
+  IPC_PROTOBUF_MESSAGE_TRAITS_OPTIONAL_FUNDAMENTAL_MEMBER(length)
+  IPC_PROTOBUF_MESSAGE_TRAITS_OPTIONAL_COMPLEX_MEMBER(signature)
+  IPC_PROTOBUF_MESSAGE_TRAITS_OPTIONAL_COMPLEX_MEMBER(image_headers)
+IPC_PROTOBUF_MESSAGE_TRAITS_END()
+
 IPC_STRUCT_TRAITS_BEGIN(safe_browsing::zip_analyzer::Results)
   IPC_STRUCT_TRAITS_MEMBER(success)
   IPC_STRUCT_TRAITS_MEMBER(has_executable)
   IPC_STRUCT_TRAITS_MEMBER(has_archive)
+  IPC_STRUCT_TRAITS_MEMBER(archived_binary)
 IPC_STRUCT_TRAITS_END()
-#endif
+#endif  // FULL_SAFE_BROWSING
 
 #if defined(OS_WIN)
 IPC_STRUCT_BEGIN(ChromeUtilityMsg_GetSaveFileName_Params)
@@ -65,14 +130,16 @@ IPC_MESSAGE_CONTROL1(ChromeUtilityMsg_ParseJSON,
                      std::string /* JSON to parse */)
 
 // Tell the utility process to decode the given image data.
-IPC_MESSAGE_CONTROL2(ChromeUtilityMsg_DecodeImage,
+IPC_MESSAGE_CONTROL3(ChromeUtilityMsg_DecodeImage,
                      std::vector<unsigned char> /* encoded image contents */,
-                     bool /* shrink image if needed for IPC msg limit */)
+                     bool /* shrink image if needed for IPC msg limit */,
+                     int /* delegate id */)
 
 // Tell the utility process to decode the given JPEG image data with a robust
 // libjpeg codec.
-IPC_MESSAGE_CONTROL1(ChromeUtilityMsg_RobustJPEGDecodeImage,
-                     std::vector<unsigned char>)  // encoded image contents
+IPC_MESSAGE_CONTROL2(ChromeUtilityMsg_RobustJPEGDecodeImage,
+                     std::vector<unsigned char> /* encoded image contents*/,
+                     int /* delegate id */)
 
 // Tell the utility process to patch the given |input_file| using |patch_file|
 // and place the output in |output_file|. The patch should use the bsdiff
@@ -105,9 +172,11 @@ IPC_MESSAGE_CONTROL0(ChromeUtilityMsg_StartupPing)
 
 #if defined(FULL_SAFE_BROWSING)
 // Tells the utility process to analyze a zip file for malicious download
-// protection.
-IPC_MESSAGE_CONTROL1(ChromeUtilityMsg_AnalyzeZipFileForDownloadProtection,
-                     IPC::PlatformFileForTransit /* zip_file */)
+// protection, providing a file that can be used temporarily to analyze binaries
+// contained therein.
+IPC_MESSAGE_CONTROL2(ChromeUtilityMsg_AnalyzeZipFileForDownloadProtection,
+                     IPC::PlatformFileForTransit /* zip_file */,
+                     IPC::PlatformFileForTransit /* temp_file */)
 #endif
 
 #if defined(OS_WIN)
@@ -137,13 +206,6 @@ IPC_MESSAGE_CONTROL1(ChromeUtilityMsg_GetSaveFileName,
                      ChromeUtilityMsg_GetSaveFileName_Params /* params */)
 #endif  // defined(OS_WIN)
 
-#if defined(OS_ANDROID)
-// Instructs the utility process to detect support for seccomp-bpf,
-// and the result is reported through
-// ChromeUtilityHostMsg_DetectSeccompSupport_Result.
-IPC_MESSAGE_CONTROL0(ChromeUtilityMsg_DetectSeccompSupport)
-#endif
-
 //------------------------------------------------------------------------------
 // Utility process host messages:
 // These are messages from the utility process to the browser.
@@ -168,11 +230,13 @@ IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_UnpackWebResource_Failed,
                      std::string /* error_message, if any */)
 
 // Reply when the utility process has succeeded in decoding the image.
-IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_DecodeImage_Succeeded,
-                     SkBitmap)  // decoded image
+IPC_MESSAGE_CONTROL2(ChromeUtilityHostMsg_DecodeImage_Succeeded,
+                     SkBitmap /* decoded image */,
+                     int /* delegate id */)
 
 // Reply when an error occurred decoding the image.
-IPC_MESSAGE_CONTROL0(ChromeUtilityHostMsg_DecodeImage_Failed)
+IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_DecodeImage_Failed,
+                     int /* delegate id */)
 
 // Reply when a file has been patched.
 IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_PatchFile_Finished, int /* result */)
@@ -207,12 +271,3 @@ IPC_MESSAGE_CONTROL2(ChromeUtilityHostMsg_GetSaveFileName_Result,
 IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_BuildDirectWriteFontCache,
                      base::FilePath /* cache file path */)
 #endif  // defined(OS_WIN)
-
-#if defined(OS_ANDROID)
-// Reply to ChromeUtilityMsg_DetectSeccompSupport to report the level
-// of kernel support for seccomp-bpf.
-IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_DetectSeccompSupport_ResultPrctl,
-                     bool /* seccomp prctl supported */)
-IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_DetectSeccompSupport_ResultSyscall,
-                     bool /* seccomp syscall supported */)
-#endif

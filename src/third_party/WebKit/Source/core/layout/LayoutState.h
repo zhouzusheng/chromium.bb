@@ -34,20 +34,20 @@
 namespace blink {
 
 class ForceHorriblySlowRectMapping;
-class RenderBox;
+class LayoutBox;
 class LayoutFlowThread;
 class LayoutObject;
-class RenderView;
+class LayoutView;
 
 class LayoutState {
     WTF_MAKE_NONCOPYABLE(LayoutState);
 public:
-    // Constructor for root LayoutState created by RenderView
-    LayoutState(LayoutUnit pageLogicalHeight, bool pageLogicalHeightChanged, RenderView&);
+    // Constructor for root LayoutState created by LayoutView
+    LayoutState(LayoutUnit pageLogicalHeight, bool pageLogicalHeightChanged, LayoutView&);
     // Constructor for sub-tree layout
     explicit LayoutState(LayoutObject& root);
 
-    LayoutState(RenderBox&, const LayoutSize& offset, LayoutUnit pageLogicalHeight = 0, bool pageHeightLogicalChanged = false, ColumnInfo* = 0, bool containingBlockLogicalWidthChanged = false);
+    LayoutState(LayoutBox&, const LayoutSize& offset, LayoutUnit pageLogicalHeight = 0, bool pageHeightLogicalChanged = false, ColumnInfo* = 0, bool containingBlockLogicalWidthChanged = false);
 
     ~LayoutState();
 
@@ -57,9 +57,9 @@ public:
 
     // The page logical offset is the object's offset from the top of the page in the page progression
     // direction (so an x-offset in vertical text and a y-offset for horizontal text).
-    LayoutUnit pageLogicalOffset(const RenderBox&, const LayoutUnit& childLogicalOffset) const;
+    LayoutUnit pageLogicalOffset(const LayoutBox&, const LayoutUnit& childLogicalOffset) const;
 
-    void addForcedColumnBreak(const RenderBox&, const LayoutUnit& childLogicalOffset);
+    void addForcedColumnBreak(const LayoutBox&, const LayoutUnit& childLogicalOffset);
 
     void setColumnInfo(ColumnInfo* columnInfo) { m_columnInfo = columnInfo; }
 
@@ -75,9 +75,12 @@ public:
 
     LayoutFlowThread* flowThread() const { return m_flowThread; }
 
+    // Used to temporarily set m_flowThread to nullptr. Needed because of crbug.com/370461 (list item markers).
+    void setFlowThread(LayoutFlowThread* flowThread) { m_flowThread = flowThread; }
+
     ColumnInfo* columnInfo() const { return m_columnInfo; }
 
-    LayoutObject& renderer() const { return m_renderer; }
+    LayoutObject& layoutObject() const { return m_renderer; }
 
 private:
     friend class ForceHorriblySlowRectMapping;

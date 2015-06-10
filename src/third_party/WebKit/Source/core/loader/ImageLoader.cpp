@@ -156,7 +156,7 @@ ImageLoader::~ImageLoader()
         errorEventSender().cancelEvent(this);
 }
 
-void ImageLoader::trace(Visitor* visitor)
+DEFINE_TRACE(ImageLoader)
 {
     visitor->trace(m_element);
 }
@@ -204,17 +204,6 @@ static void configureRequest(FetchRequest& request, ImageLoader::BypassMainWorld
     AtomicString crossOriginMode = element.fastGetAttribute(HTMLNames::crossoriginAttr);
     if (!crossOriginMode.isNull())
         request.setCrossOriginAccessControl(element.document().securityOrigin(), crossOriginMode);
-}
-
-ResourcePtr<ImageResource> ImageLoader::createImageResourceForImageDocument(Document& document, FetchRequest& request)
-{
-    bool autoLoadOtherImages = document.fetcher()->autoLoadImages();
-    document.fetcher()->setAutoLoadImages(false);
-    ResourcePtr<ImageResource> newImage = new ImageResource(request.resourceRequest());
-    newImage->setLoading(true);
-    document.fetcher()->m_documentResources.set(newImage->url(), newImage.get());
-    document.fetcher()->setAutoLoadImages(autoLoadOtherImages);
-    return newImage;
 }
 
 inline void ImageLoader::dispatchErrorEvent()
@@ -274,10 +263,18 @@ void ImageLoader::doUpdateFromElement(BypassMainWorldBehavior bypassBehavior, Up
         FetchRequest request(resourceRequest, element()->localName(), resourceLoaderOptions);
         configureRequest(request, bypassBehavior, *m_element);
 
-        if (m_loadingImageDocument)
-            newImage = createImageResourceForImageDocument(document, request);
-        else
-            newImage = document.fetcher()->fetchImage(request);
+        // Prevent the immediate creation of a ResourceLoader (and therefore a network
+        // request) for ImageDocument loads. In this case, the image contents have already
+        // been requested as a main resource and ImageDocumentParser will take care of
+        // funneling the main resource bytes into the ImageResource.
+        if (m_loadingImageDocument) {
+            request.setDefer(FetchRequest::DeferredByClient);
+            request.setContentSecurityCheck(DoNotCheckContentSecurityPolicy);
+        }
+
+        newImage = document.fetcher()->fetchImage(request);
+        if (m_loadingImageDocument && newImage)
+            newImage->setLoading(true);
 
         if (!newImage && !pageIsBeingDismissed(&document)) {
             crossSiteOrCSPViolationOccurred(imageSourceURL);
@@ -294,8 +291,11 @@ void ImageLoader::doUpdateFromElement(BypassMainWorldBehavior bypassBehavior, Up
     }
 
     ImageResource* oldImage = m_image.get();
-    if (newImage != oldImage) {
-        sourceImageChanged();
+    if (updateBehavior == UpdateSizeChanged && m_element->layoutObject() && m_element->layoutObject()->isImage() && newImage == oldImage) {
+        toLayoutImage(m_element->layoutObject())->intrinsicSizeChanged();
+    } else {
+        if (newImage != oldImage)
+            sourceImageChanged();
 
         if (m_hasPendingLoadEvent) {
             loadEventSender().cancelEvent(this);
@@ -323,8 +323,6 @@ void ImageLoader::doUpdateFromElement(BypassMainWorldBehavior bypassBehavior, Up
 
         if (oldImage)
             oldImage->removeClient(this);
-    } else if (updateBehavior == UpdateSizeChanged && m_element->renderer() && m_element->renderer()->isImage()) {
-        toLayoutImage(m_element->renderer())->intrinsicSizeChanged();
     }
 
     if (LayoutImageResource* imageResource = layoutImageResource())
@@ -438,7 +436,7 @@ void ImageLoader::notifyFinished(Resource* resource)
 
 LayoutImageResource* ImageLoader::layoutImageResource()
 {
-    LayoutObject* renderer = m_element->renderer();
+    LayoutObject* renderer = m_element->layoutObject();
 
     if (!renderer)
         return 0;

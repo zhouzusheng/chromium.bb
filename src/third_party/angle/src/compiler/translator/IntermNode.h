@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <queue>
 
+#include "common/angleutils.h"
 #include "compiler/translator/Common.h"
 #include "compiler/translator/Types.h"
 #include "compiler/translator/ConstantUnion.h"
@@ -32,6 +33,8 @@ class TIntermBinary;
 class TIntermUnary;
 class TIntermConstantUnion;
 class TIntermSelection;
+class TIntermSwitch;
+class TIntermCase;
 class TIntermTyped;
 class TIntermSymbol;
 class TIntermLoop;
@@ -65,6 +68,8 @@ class TIntermNode
     virtual TIntermBinary *getAsBinaryNode() { return 0; }
     virtual TIntermUnary *getAsUnaryNode() { return 0; }
     virtual TIntermSelection *getAsSelectionNode() { return 0; }
+    virtual TIntermSwitch *getAsSwitchNode() { return 0; }
+    virtual TIntermCase *getAsCaseNode() { return 0; }
     virtual TIntermSymbol *getAsSymbolNode() { return 0; }
     virtual TIntermLoop *getAsLoopNode() { return 0; }
     virtual TIntermRaw *getAsRawNode() { return 0; }
@@ -378,7 +383,7 @@ class TIntermUnary : public TIntermOperator
 
     void setOperand(TIntermTyped *operand) { mOperand = operand; }
     TIntermTyped *getOperand() { return mOperand; }
-    bool promote(TInfoSink &);
+    void promote(const TType *funcReturnType);
 
     void setUseEmulatedFunction() { mUseEmulatedFunction = true; }
     bool getUseEmulatedFunction() { return mUseEmulatedFunction; }
@@ -452,7 +457,7 @@ class TIntermAggregate : public TIntermOperator
 };
 
 //
-// For if tests.  Simplified since there is no switch statement.
+// For if tests.
 //
 class TIntermSelection : public TIntermTyped
 {
@@ -488,6 +493,58 @@ protected:
     TIntermNode *mFalseBlock;
 };
 
+//
+// Switch statement.
+//
+class TIntermSwitch : public TIntermNode
+{
+  public:
+    TIntermSwitch(TIntermTyped *init, TIntermAggregate *statementList)
+        : TIntermNode(),
+          mInit(init),
+          mStatementList(statementList)
+    {
+    }
+
+    void traverse(TIntermTraverser *it) override;
+    bool replaceChildNode(
+        TIntermNode *original, TIntermNode *replacement) override;
+
+    TIntermSwitch *getAsSwitchNode() override { return this; }
+
+    TIntermAggregate *getStatementList() { return mStatementList; }
+    void setStatementList(TIntermAggregate *statementList) { mStatementList = statementList; }
+
+  protected:
+    TIntermTyped *mInit;
+    TIntermAggregate *mStatementList;
+};
+
+//
+// Case label.
+//
+class TIntermCase : public TIntermNode
+{
+  public:
+    TIntermCase(TIntermTyped *condition)
+        : TIntermNode(),
+          mCondition(condition)
+    {
+    }
+
+    void traverse(TIntermTraverser *it) override;
+    bool replaceChildNode(
+        TIntermNode *original, TIntermNode *replacement) override;
+
+    TIntermCase *getAsCaseNode() override { return this; }
+
+    bool hasCondition() const { return mCondition != nullptr; }
+    TIntermTyped *getCondition() const { return mCondition; }
+
+  protected:
+    TIntermTyped *mCondition;
+};
+
 enum Visit
 {
     PreVisit,
@@ -503,7 +560,7 @@ enum Visit
 // When using this, just fill in the methods for nodes you want visited.
 // Return false from a pre-visit to skip visiting that node's subtree.
 //
-class TIntermTraverser
+class TIntermTraverser : angle::NonCopyable
 {
   public:
     POOL_ALLOCATOR_NEW_DELETE();
@@ -524,6 +581,8 @@ class TIntermTraverser
     virtual bool visitBinary(Visit, TIntermBinary *) { return true; }
     virtual bool visitUnary(Visit, TIntermUnary *) { return true; }
     virtual bool visitSelection(Visit, TIntermSelection *) { return true; }
+    virtual bool visitSwitch(Visit, TIntermSwitch *) { return true; }
+    virtual bool visitCase(Visit, TIntermCase *) { return true; }
     virtual bool visitAggregate(Visit, TIntermAggregate *) { return true; }
     virtual bool visitLoop(Visit, TIntermLoop *) { return true; }
     virtual bool visitBranch(Visit, TIntermBranch *) { return true; }
@@ -610,7 +669,7 @@ class TMaxDepthTraverser : public TIntermTraverser
     virtual bool visitLoop(Visit, TIntermLoop *) { return depthCheck(); }
     virtual bool visitBranch(Visit, TIntermBranch *) { return depthCheck(); }
 
-protected:
+  protected:
     bool depthCheck() const { return mMaxDepth < mDepthLimit; }
 
     int mDepthLimit;

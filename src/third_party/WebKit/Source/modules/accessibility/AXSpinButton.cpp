@@ -48,10 +48,10 @@ AXSpinButton::~AXSpinButton()
 
 LayoutRect AXSpinButton::elementRect() const
 {
-    if (!m_spinButtonElement || !m_spinButtonElement->renderer())
+    if (!m_spinButtonElement || !m_spinButtonElement->layoutObject())
         return LayoutRect();
 
-    return m_spinButtonElement->renderer()->absoluteFocusRingBoundingBoxRect();
+    return LayoutRect(m_spinButtonElement->layoutObject()->absoluteFocusRingBoundingBoxRect());
 }
 
 void AXSpinButton::detach()
@@ -110,7 +110,7 @@ PassRefPtr<AXSpinButtonPart> AXSpinButtonPart::create(AXObjectCacheImpl* axObjec
 
 LayoutRect AXSpinButtonPart::elementRect() const
 {
-    // FIXME: This logic should exist in the render tree or elsewhere, but there is no
+    // FIXME: This logic should exist in the layout tree or elsewhere, but there is no
     // relationship that exists that can be queried.
 
     LayoutRect parentRect = parentObject()->elementRect();

@@ -12,6 +12,7 @@
 #include <map>
 
 #include "webrtc/base/constructormagic.h"
+#include "webrtc/base/scoped_ptr.h"
 #include "webrtc/base/thread_annotations.h"
 #include "webrtc/modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
 #include "webrtc/modules/remote_bitrate_estimator/inter_arrival.h"
@@ -22,7 +23,6 @@
 #include "webrtc/system_wrappers/interface/clock.h"
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
 #include "webrtc/system_wrappers/interface/logging.h"
-#include "webrtc/system_wrappers/interface/scoped_ptr.h"
 #include "webrtc/typedefs.h"
 
 namespace webrtc {
@@ -111,23 +111,23 @@ class RemoteBitrateEstimatorAbsSendTimeImpl : public RemoteBitrateEstimator {
                                         uint32_t min_bitrate_bps);
   virtual ~RemoteBitrateEstimatorAbsSendTimeImpl() {}
 
-  virtual void IncomingPacketFeedbackVector(
-      const std::vector<PacketInfo>& packet_feedback_vector) OVERRIDE;
+  void IncomingPacketFeedbackVector(
+      const std::vector<PacketInfo>& packet_feedback_vector) override;
 
-  virtual void IncomingPacket(int64_t arrival_time_ms,
-                              size_t payload_size,
-                              const RTPHeader& header) OVERRIDE;
+  void IncomingPacket(int64_t arrival_time_ms,
+                      size_t payload_size,
+                      const RTPHeader& header) override;
   // This class relies on Process() being called periodically (at least once
   // every other second) for streams to be timed out properly. Therefore it
   // shouldn't be detached from the ProcessThread except if it's about to be
   // deleted.
-  virtual int32_t Process() OVERRIDE;
-  virtual int64_t TimeUntilNextProcess() OVERRIDE;
-  virtual void OnRttUpdate(int64_t rtt) OVERRIDE;
-  virtual void RemoveStream(unsigned int ssrc) OVERRIDE;
-  virtual bool LatestEstimate(std::vector<unsigned int>* ssrcs,
-                              unsigned int* bitrate_bps) const OVERRIDE;
-  virtual bool GetStats(ReceiveBandwidthEstimatorStats* output) const OVERRIDE;
+  int32_t Process() override;
+  int64_t TimeUntilNextProcess() override;
+  void OnRttUpdate(int64_t rtt) override;
+  void RemoveStream(unsigned int ssrc) override;
+  bool LatestEstimate(std::vector<unsigned int>* ssrcs,
+                      unsigned int* bitrate_bps) const override;
+  bool GetStats(ReceiveBandwidthEstimatorStats* output) const override;
 
  private:
   typedef std::map<unsigned int, int64_t> Ssrcs;
@@ -179,15 +179,15 @@ class RemoteBitrateEstimatorAbsSendTimeImpl : public RemoteBitrateEstimator {
   bool IsBitrateImproving(int probe_bitrate_bps) const
       EXCLUSIVE_LOCKS_REQUIRED(crit_sect_.get());
 
-  scoped_ptr<CriticalSectionWrapper> crit_sect_;
+  rtc::scoped_ptr<CriticalSectionWrapper> crit_sect_;
   RemoteBitrateObserver* observer_ GUARDED_BY(crit_sect_.get());
   Clock* clock_;
   Ssrcs ssrcs_ GUARDED_BY(crit_sect_.get());
-  scoped_ptr<InterArrival> inter_arrival_ GUARDED_BY(crit_sect_.get());
+  rtc::scoped_ptr<InterArrival> inter_arrival_ GUARDED_BY(crit_sect_.get());
   OveruseEstimator estimator_ GUARDED_BY(crit_sect_.get());
   OveruseDetector detector_ GUARDED_BY(crit_sect_.get());
   RateStatistics incoming_bitrate_ GUARDED_BY(crit_sect_.get());
-  scoped_ptr<RemoteRateControl> remote_rate_ GUARDED_BY(crit_sect_.get());
+  rtc::scoped_ptr<RemoteRateControl> remote_rate_ GUARDED_BY(crit_sect_.get());
   int64_t last_process_time_;
   std::vector<int> recent_propagation_delta_ms_ GUARDED_BY(crit_sect_.get());
   std::vector<int64_t> recent_update_time_ms_ GUARDED_BY(crit_sect_.get());

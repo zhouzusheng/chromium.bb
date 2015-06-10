@@ -102,11 +102,6 @@ void ServiceWorkerWriteToCacheJob::Kill() {
 }
 
 net::LoadState ServiceWorkerWriteToCacheJob::GetLoadState() const {
-  // TODO(pkasting): Remove ScopedTracker below once crbug.com/455952 is
-  // fixed.
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "455952 ServiceWorkerWriteToCacheJob::GetLoadState"));
   if (writer_ && writer_->IsWritePending())
     return net::LOAD_STATE_WAITING_FOR_APPCACHE;
   if (net_request_)
@@ -176,10 +171,7 @@ void ServiceWorkerWriteToCacheJob::InitNetRequest(
     int extra_load_flags) {
   DCHECK(request());
   net_request_ = request()->context()->CreateRequest(
-      request()->url(),
-      request()->priority(),
-      this,
-      this->GetCookieStore());
+      request()->url(), request()->priority(), this);
   net_request_->set_first_party_for_cookies(
       request()->first_party_for_cookies());
   net_request_->SetReferrer(request()->referrer());

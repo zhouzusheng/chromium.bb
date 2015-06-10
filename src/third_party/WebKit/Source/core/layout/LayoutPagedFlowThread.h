@@ -15,12 +15,12 @@ namespace blink {
 // inherit from that one.
 class LayoutPagedFlowThread : public LayoutMultiColumnFlowThread {
 public:
-    static LayoutPagedFlowThread* createAnonymous(Document&, const LayoutStyle& parentStyle);
+    static LayoutPagedFlowThread* createAnonymous(Document&, const ComputedStyle& parentStyle);
 
-    RenderBlockFlow* pagedBlockFlow() const { return toRenderBlockFlow(parent()); }
+    LayoutBlockFlow* pagedBlockFlow() const { return toLayoutBlockFlow(parent()); }
 
     virtual bool isLayoutPagedFlowThread() const override { return true; }
-    virtual const char* renderName() const override;
+    virtual const char* name() const override { return "LayoutPagedFlowThread"; }
     virtual bool needsNewWidth() const override;
     virtual void updateLogicalWidth() override;
     virtual void layout();

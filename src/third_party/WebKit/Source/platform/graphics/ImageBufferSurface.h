@@ -52,13 +52,8 @@ class WebLayer;
 class FloatRect;
 class GraphicsContext;
 
-enum OpacityMode {
-    NonOpaque,
-    Opaque,
-};
-
 class PLATFORM_EXPORT ImageBufferSurface {
-    WTF_MAKE_NONCOPYABLE(ImageBufferSurface); WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(ImageBufferSurface); WTF_MAKE_FAST_ALLOCATED(ImageBufferSurface);
 public:
     virtual ~ImageBufferSurface();
 
@@ -71,7 +66,6 @@ public:
     virtual WebLayer* layer() const { return 0; };
     virtual bool isAccelerated() const { return false; }
     virtual bool isRecording() const { return false; }
-    virtual bool needsClipTracking() const { return false; }
     virtual Platform3DObject getBackingTexture() const { return 0; }
     virtual void didModifyBackingTexture() { }
     virtual bool cachedBitmapEnabled() const { return false; }
@@ -79,7 +73,7 @@ public:
     virtual const SkBitmap& cachedBitmap() const;
     virtual void invalidateCachedBitmap() { }
     virtual void updateCachedBitmapIfNeeded() { }
-    virtual void setFilterLevel(SkPaint::FilterLevel) { }
+    virtual void setFilterQuality(SkFilterQuality) { }
     virtual void setIsHidden(bool) { }
     virtual void setImageBuffer(ImageBuffer*) { }
     virtual PassRefPtr<SkPicture> getPicture();

@@ -13,10 +13,10 @@ namespace trace_event {
 
 class TracedValue;
 
-// Dump provider which collects process-wide memory stats.
+// Data model for process-wide memory stats.
 class BASE_EXPORT ProcessMemoryTotals {
  public:
-  ProcessMemoryTotals() {}
+  ProcessMemoryTotals() : resident_set_bytes_(0) {}
 
   // Called at trace generation time to populate the TracedValue.
   void AsValueInto(TracedValue* value) const;

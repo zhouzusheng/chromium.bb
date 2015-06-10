@@ -331,8 +331,10 @@ const GLVersionInfo* GetGLVersionInfo() {
 void InitializeDynamicGLBindingsGL(GLContext* context) {
   g_driver_gl.InitializeCustomDynamicBindings(context);
   DCHECK(context && context->IsCurrent(NULL) && !g_version_info);
-  g_version_info = new GLVersionInfo(context->GetGLVersion().c_str(),
-      context->GetGLRenderer().c_str());
+  g_version_info = new GLVersionInfo(
+      context->GetGLVersion().c_str(),
+      context->GetGLRenderer().c_str(),
+      context->GetExtensions().c_str());
 }
 
 void InitializeDebugGLBindingsGL() {
@@ -435,8 +437,7 @@ void VirtualGLApi::Initialize(DriverGL* driver, GLContext* real_context) {
   real_context_ = real_context;
 
   DCHECK(real_context->IsCurrent(NULL));
-  std::string ext_string(
-      reinterpret_cast<const char*>(driver_->fn.glGetStringFn(GL_EXTENSIONS)));
+  std::string ext_string = real_context->GetExtensions();
   std::vector<std::string> ext;
   Tokenize(ext_string, " ", &ext);
 
@@ -466,11 +467,15 @@ bool VirtualGLApi::MakeCurrent(GLContext* virtual_context, GLSurface* surface) {
     }
   }
 
+  bool state_dirtied_externally = real_context_->GetStateWasDirtiedExternally();
+  real_context_->SetStateWasDirtiedExternally(false);
+
   DCHECK_EQ(real_context_, GLContext::GetRealCurrent());
   DCHECK(real_context_->IsCurrent(NULL));
   DCHECK(virtual_context->IsCurrent(surface));
 
-  if (switched_contexts || virtual_context != current_context_) {
+  if (state_dirtied_externally || switched_contexts ||
+      virtual_context != current_context_) {
 #if DCHECK_IS_ON()
     GLenum error = glGetErrorFn();
     // Accepting a context loss error here enables using debug mode to work on
@@ -485,7 +490,7 @@ bool VirtualGLApi::MakeCurrent(GLContext* virtual_context, GLSurface* surface) {
     SetGLToRealGLApi();
     if (virtual_context->GetGLStateRestorer()->IsInitialized()) {
       virtual_context->GetGLStateRestorer()->RestoreState(
-          (current_context_ && !switched_contexts)
+          (current_context_ && !state_dirtied_externally && !switched_contexts)
               ? current_context_->GetGLStateRestorer()
               : NULL);
     }

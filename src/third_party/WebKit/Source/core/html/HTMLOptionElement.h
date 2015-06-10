@@ -25,6 +25,7 @@
 #ifndef HTMLOptionElement_h
 #define HTMLOptionElement_h
 
+#include "core/CoreExport.h"
 #include "core/html/HTMLElement.h"
 
 namespace blink {
@@ -32,8 +33,9 @@ namespace blink {
 class ExceptionState;
 class HTMLDataListElement;
 class HTMLSelectElement;
+class ComputedStyle;
 
-class HTMLOptionElement final : public HTMLElement {
+class CORE_EXPORT HTMLOptionElement final : public HTMLElement {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<HTMLOptionElement> create(Document&);
@@ -74,8 +76,9 @@ public:
 
 private:
     explicit HTMLOptionElement(Document&);
+    ~HTMLOptionElement();
 
-    virtual bool rendererIsFocusable() const override { return true; }
+    virtual bool supportsFocus() const override;
     virtual void attach(const AttachContext& = AttachContext()) override;
     virtual void detach(const AttachContext& = AttachContext()) override;
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
@@ -86,9 +89,9 @@ private:
     virtual void childrenChanged(const ChildrenChange&) override;
 
     // <option> never has a renderer so we manually manage a cached style.
-    void updateNonLayoutStyle();
-    virtual LayoutStyle* nonRendererStyle() const override;
-    virtual PassRefPtr<LayoutStyle> customStyleForRenderer() override;
+    void updateNonComputedStyle();
+    virtual ComputedStyle* nonLayoutObjectComputedStyle() const override;
+    virtual PassRefPtr<ComputedStyle> customStyleForLayoutObject() override;
     virtual void didRecalcStyle(StyleRecalcChange) override;
     virtual void didAddClosedShadowRoot(ShadowRoot&) override;
 
@@ -98,7 +101,7 @@ private:
 
     bool m_disabled;
     bool m_isSelected;
-    RefPtr<LayoutStyle> m_style;
+    RefPtr<ComputedStyle> m_style;
 };
 
 } // namespace blink

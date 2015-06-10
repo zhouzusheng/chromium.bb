@@ -184,6 +184,39 @@
       ],
     },
     {
+      # GN version: //ui/events/blink
+      'target_name': 'blink',
+      'type': 'static_library',
+      'dependencies': [
+        '../../third_party/WebKit/public/blink_headers.gyp:blink_headers',
+        '../gfx/gfx.gyp:gfx_geometry',
+        'events',
+        'gesture_detection',
+      ],
+      'sources': [
+        # Note: sources list duplicated in GN build.
+        'blink/blink_event_util.cc',
+        'blink/blink_event_util.h',
+      ],
+    },
+    {
+      # GN version: //ui/events/gestures/blink
+      'target_name': 'gestures_blink',
+      'type': 'static_library',
+      'dependencies': [
+        '../../base/base.gyp:base',
+        '../../third_party/WebKit/public/blink_headers.gyp:blink_headers',
+        '../gfx/gfx.gyp:gfx_geometry',
+        'events',
+        'gesture_detection',
+      ],
+      'sources': [
+        # Note: sources list duplicated in GN build.
+        'gestures/blink/web_gesture_curve_impl.cc',
+        'gestures/blink/web_gesture_curve_impl.h',
+      ],
+    },
+    {
       # GN version: //ui/events:gesture_detection
       'target_name': 'gesture_detection',
       'type': '<(component)',
@@ -314,6 +347,7 @@
         'events_base',
         'events_test_support',
         'gesture_detection',
+        'gestures_blink',
         'platform/events_platform.gyp:events_platform',
       ],
       'sources': [
@@ -334,6 +368,7 @@
         'gesture_detection/snap_scroll_controller_unittest.cc',
         'gesture_detection/touch_disposition_gesture_filter_unittest.cc',
         'gesture_detection/velocity_tracker_unittest.cc',
+        'gestures/blink/web_gesture_curve_impl_unittest.cc',
         'gestures/fling_curve_unittest.cc',
         'gestures/gesture_provider_aura_unittest.cc',
         'gestures/motion_event_aura_unittest.cc',
@@ -357,9 +392,12 @@
             'ozone/chromeos/cursor_controller_unittest.cc',
             'ozone/evdev/event_converter_evdev_impl_unittest.cc',
             'ozone/evdev/event_converter_test_util.cc',
+            'ozone/evdev/event_device_info_unittest.cc',
+            'ozone/evdev/event_device_test_util.cc',
             'ozone/evdev/input_injector_evdev_unittest.cc',
             'ozone/evdev/tablet_event_converter_evdev_unittest.cc',
             'ozone/evdev/touch_event_converter_evdev_unittest.cc',
+            'ozone/evdev/touch_noise/touch_noise_finder_unittest.cc',
           ],
           'dependencies': [
             'ozone/events_ozone.gyp:events_ozone',

@@ -25,10 +25,10 @@ GraphicsContextState::GraphicsContextState()
     m_strokePaint.setStrokeCap(SkPaint::kDefault_Cap);
     m_strokePaint.setStrokeJoin(SkPaint::kDefault_Join);
     m_strokePaint.setStrokeMiter(SkFloatToScalar(m_strokeData.miterLimit()));
-    m_strokePaint.setFilterLevel(WebCoreInterpolationQualityToSkFilterLevel(m_interpolationQuality));
+    m_strokePaint.setFilterQuality(WebCoreInterpolationQualityToSkFilterQuality(m_interpolationQuality));
     m_strokePaint.setAntiAlias(m_shouldAntialias);
     m_fillPaint.setColor(applyAlpha(m_fillColor.rgb()));
-    m_fillPaint.setFilterLevel(WebCoreInterpolationQualityToSkFilterLevel(m_interpolationQuality));
+    m_fillPaint.setFilterQuality(WebCoreInterpolationQualityToSkFilterQuality(m_interpolationQuality));
     m_fillPaint.setAntiAlias(m_shouldAntialias);
 }
 
@@ -104,13 +104,6 @@ void GraphicsContextState::setStrokeGradient(const PassRefPtr<Gradient> gradient
     m_strokePaint.setShader(m_strokeGradient->shader());
 }
 
-void GraphicsContextState::clearStrokeGradient()
-{
-    m_strokeGradient.clear();
-    ASSERT(!m_strokePattern);
-    m_strokePaint.setColor(applyAlpha(m_strokeColor.rgb()));
-}
-
 void GraphicsContextState::setStrokePattern(const PassRefPtr<Pattern> pattern, float alpha)
 {
     m_strokeColor = Color::black;
@@ -118,13 +111,6 @@ void GraphicsContextState::setStrokePattern(const PassRefPtr<Pattern> pattern, f
     m_strokePattern = pattern;
     m_strokePaint.setColor(scaleAlpha(applyAlpha(SK_ColorBLACK), alpha));
     m_strokePaint.setShader(m_strokePattern->shader());
-}
-
-void GraphicsContextState::clearStrokePattern()
-{
-    m_strokePattern.clear();
-    ASSERT(!m_strokeGradient);
-    m_strokePaint.setColor(applyAlpha(m_strokeColor.rgb()));
 }
 
 void GraphicsContextState::setLineCap(LineCap cap)
@@ -163,13 +149,6 @@ void GraphicsContextState::setFillGradient(const PassRefPtr<Gradient> gradient, 
     m_fillPaint.setShader(m_fillGradient->shader());
 }
 
-void GraphicsContextState::clearFillGradient()
-{
-    m_fillGradient.clear();
-    ASSERT(!m_fillPattern);
-    m_fillPaint.setColor(applyAlpha(m_fillColor.rgb()));
-}
-
 void GraphicsContextState::setFillPattern(const PassRefPtr<Pattern> pattern, float alpha)
 {
     m_fillColor = Color::black;
@@ -177,13 +156,6 @@ void GraphicsContextState::setFillPattern(const PassRefPtr<Pattern> pattern, flo
     m_fillPattern = pattern;
     m_fillPaint.setColor(scaleAlpha(applyAlpha(SK_ColorBLACK), alpha));
     m_fillPaint.setShader(m_fillPattern->shader());
-}
-
-void GraphicsContextState::clearFillPattern()
-{
-    m_fillPattern.clear();
-    ASSERT(!m_fillGradient);
-    m_fillPaint.setColor(applyAlpha(m_fillColor.rgb()));
 }
 
 // Shadow. (This will need tweaking if we use draw loopers for other things.)
@@ -240,8 +212,8 @@ void GraphicsContextState::setCompositeOperation(SkXfermode::Mode xferMode)
 void GraphicsContextState::setInterpolationQuality(InterpolationQuality quality)
 {
     m_interpolationQuality = quality;
-    m_strokePaint.setFilterLevel(WebCoreInterpolationQualityToSkFilterLevel(quality));
-    m_fillPaint.setFilterLevel(WebCoreInterpolationQualityToSkFilterLevel(quality));
+    m_strokePaint.setFilterQuality(WebCoreInterpolationQualityToSkFilterQuality(quality));
+    m_fillPaint.setFilterQuality(WebCoreInterpolationQualityToSkFilterQuality(quality));
 }
 
 void GraphicsContextState::setShouldAntialias(bool shouldAntialias)

@@ -31,6 +31,7 @@
     ['OS == "win"', {
       'targets': [
         {
+          # GN: //content:content_startup_helper_win
           'target_name': 'content_startup_helper_win',
           'type': 'static_library',
           'include_dirs': [
@@ -436,6 +437,7 @@
             '../third_party/mojo/mojo_public.gyp:mojo_bindings_java',
             '../ui/android/ui_android.gyp:ui_java',
             '../ui/touch_selection/ui_touch_selection.gyp:selection_event_type_java',
+            '../ui/touch_selection/ui_touch_selection.gyp:touch_handle_orientation_java',
             '../third_party/WebKit/public/blink_headers.gyp:blink_headers_java',
             'common_aidl',
             'console_message_level_java',

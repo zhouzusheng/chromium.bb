@@ -41,53 +41,53 @@ function handleArgumentsTimeout() {
  */
 function ListPicker(element, config) {
     Picker.call(this, element, config);
+    window.pagePopupController.selectFontsFromOwnerDocument(document);
     this._selectElement = createElement("select");
     this._element.appendChild(this._selectElement);
     this._layout();
     this._selectElement.focus();
-    this._selectElement.addEventListener("mouseover", this._handleMouseOver.bind(this), false);
     this._selectElement.addEventListener("mouseup", this._handleMouseUp.bind(this), false);
+    this._selectElement.addEventListener("touchstart", this._handleTouchStart.bind(this), false);
     this._selectElement.addEventListener("keydown", this._handleKeyDown.bind(this), false);
     this._selectElement.addEventListener("change", this._handleChange.bind(this), false);
     window.addEventListener("message", this._handleWindowMessage.bind(this), false);
     window.addEventListener("mousemove", this._handleWindowMouseMove.bind(this), false);
+    window.addEventListener("touchmove", this._handleWindowTouchMove.bind(this), false);
+    window.addEventListener("touchend", this._handleWindowTouchEnd.bind(this), false);
     this.lastMousePositionX = Infinity;
     this.lastMousePositionY = Infinity;
+    this._selectionSetByMouseHover = false;
 
-    // Not sure why but we need to delay this call so that offsetHeight is
-    // accurate. We wait for the window to resize to work around an issue
-    // of immediate resize requests getting mixed up.
-    this._handleWindowDidHideBound = this._handleWindowDidHide.bind(this);
-    window.addEventListener("didHide", this._handleWindowDidHideBound, false);
-    hideWindow();
+    this._trackingTouchId = null;
+
+    this._handleWindowDidHide();
 }
 ListPicker.prototype = Object.create(Picker.prototype);
 
 ListPicker.prototype._handleWindowDidHide = function() {
     this._fixWindowSize();
     var selectedOption = this._selectElement.options[this._selectElement.selectedIndex];
-    selectedOption.scrollIntoView(false);
+    if (selectedOption)
+        selectedOption.scrollIntoView(false);
     window.removeEventListener("didHide", this._handleWindowDidHideBound, false);
 };
 
 ListPicker.prototype._handleWindowMessage = function(event) {
     eval(event.data);
-    if (window.updateData.type === "update")
-        this._update(window.updateData);
+    if (window.updateData.type === "update") {
+        this._config.children = window.updateData.children;
+        this._update();
+    }
     delete window.updateData;
 };
 
 ListPicker.prototype._handleWindowMouseMove = function (event) {
     this.lastMousePositionX = event.clientX;
     this.lastMousePositionY = event.clientY;
-};
-
-ListPicker.prototype._handleMouseOver = function(event) {
-    if (event.toElement.tagName !== "OPTION")
-        return;
-    var savedScrollTop = this._selectElement.scrollTop;
-    event.toElement.selected = true;
-    this._selectElement.scrollTop = savedScrollTop;
+    this._highlightOption(event.target);
+    this._selectionSetByMouseHover = true;
+    // Prevent the select element from firing change events for mouse input.
+    event.preventDefault();
 };
 
 ListPicker.prototype._handleMouseUp = function(event) {
@@ -96,8 +96,56 @@ ListPicker.prototype._handleMouseUp = function(event) {
     window.pagePopupController.setValueAndClosePopup(0, this._selectElement.value);
 };
 
+ListPicker.prototype._handleTouchStart = function(event) {
+    if (this._trackingTouchId !== null)
+        return;
+    var touch = event.touches[0];
+    this._trackingTouchId = touch.identifier;
+    this._highlightOption(touch.target);
+    this._selectionSetByMouseHover = false;
+};
+
+ListPicker.prototype._handleWindowTouchMove = function(event) {
+    if (this._trackingTouchId === null)
+        return;
+    var touch = this._getTouchForId(event.touches, this._trackingTouchId);
+    if (!touch)
+        return;
+    this._highlightOption(document.elementFromPoint(touch.clientX, touch.clientY));
+    this._selectionSetByMouseHover = false;
+};
+
+ListPicker.prototype._handleWindowTouchEnd = function(event) {
+    if (this._trackingTouchId === null)
+        return;
+    var touch = this._getTouchForId(event.changedTouches, this._trackingTouchId);
+    if (!touch)
+        return;
+    var target = document.elementFromPoint(touch.clientX, touch.clientY)
+    if (target.tagName === "OPTION")
+        window.pagePopupController.setValueAndClosePopup(0, this._selectElement.value);
+    this._trackingTouchId = null;
+};
+
+ListPicker.prototype._getTouchForId = function (touchList, id) {
+    for (var i = 0; i < touchList.length; i++) {
+        if (touchList[i].identifier === id)
+            return touchList[i];
+    }
+    return null;
+};
+
+ListPicker.prototype._highlightOption = function(target) {
+    if (target.tagName !== "OPTION" || target.selected)
+        return;
+    var savedScrollTop = this._selectElement.scrollTop;
+    target.selected = true;
+    this._selectElement.scrollTop = savedScrollTop;
+};
+
 ListPicker.prototype._handleChange = function(event) {
     window.pagePopupController.setValue(this._selectElement.value);
+    this._selectionSetByMouseHover = false;
 };
 
 ListPicker.prototype._handleKeyDown = function(event) {
@@ -132,23 +180,44 @@ ListPicker.prototype._fixWindowSize = function() {
     var maxHeight = this._selectElement.offsetHeight;
     this._selectElement.style.height = "0";
     var heightOutsideOfContent = this._selectElement.offsetHeight - this._selectElement.clientHeight;
-    var desiredWindowHeight = this._selectElement.scrollHeight + heightOutsideOfContent;
-    this._selectElement.style.height = desiredWindowHeight + "px";
-    // scrollHeight returns floored value so we needed this check.
-    if (this._hasVerticalScrollbar())
-        desiredWindowHeight += 1;
-    if (desiredWindowHeight > maxHeight)
+    var noScrollHeight = Math.round(this._calculateScrollHeight() + heightOutsideOfContent);
+    var desiredWindowHeight = noScrollHeight;
+    var desiredWindowWidth = this._selectElement.offsetWidth;
+    var expectingScrollbar = false;
+    if (desiredWindowHeight > maxHeight) {
         desiredWindowHeight = maxHeight;
-    var desiredWindowWidth = Math.max(this._config.anchorRectInScreen.width, this._selectElement.offsetWidth);
+        // Setting overflow to auto does not increase width for the scrollbar
+        // so we need to do it manually.
+        desiredWindowWidth += getScrollbarWidth();
+        expectingScrollbar = true;
+    }
+    desiredWindowWidth = Math.max(this._config.anchorRectInScreen.width, desiredWindowWidth);
     var windowRect = adjustWindowRect(desiredWindowWidth, desiredWindowHeight, this._selectElement.offsetWidth, 0);
+    // If the available screen space is smaller than maxHeight, we will get an unexpected scrollbar.
+    if (!expectingScrollbar && windowRect.height < noScrollHeight) {
+        desiredWindowWidth = windowRect.width + getScrollbarWidth();
+        windowRect = adjustWindowRect(desiredWindowWidth, windowRect.height, windowRect.width, windowRect.height);
+    }
     this._selectElement.style.width = windowRect.width + "px";
     this._selectElement.style.height = windowRect.height + "px";
     this._element.style.height = windowRect.height + "px";
     setWindowRect(windowRect);
 };
 
-ListPicker.prototype._hasVerticalScrollbar = function() {
-    return this._selectElement.scrollWidth > this._selectElement.clientWidth;
+ListPicker.prototype._calculateScrollHeight = function() {
+    // Element.scrollHeight returns an integer value but this calculate the
+    // actual fractional value.
+    var top = Infinity;
+    var bottom = -Infinity;
+    for (var i = 0; i < this._selectElement.children.length; i++) {
+        var rect = this._selectElement.children[i].getBoundingClientRect();
+        // Skip hidden elements.
+        if (rect.width === 0 && rect.height === 0)
+            continue;
+        top = Math.min(top, rect.top);
+        bottom = Math.max(bottom, rect.bottom);
+    }
+    return Math.max(bottom - top, 0);
 };
 
 ListPicker.prototype._listItemCount = function() {
@@ -156,62 +225,79 @@ ListPicker.prototype._listItemCount = function() {
 };
 
 ListPicker.prototype._layout = function() {
-    for (var i = 0; i < this._config.children.length; ++i) {
-        this._selectElement.appendChild(this._createItemElement(this._config.children[i]));
-    }
+    if (this._config.isRTL)
+        this._element.classList.add("rtl");
+    this._selectElement.style.backgroundColor = this._config.backgroundColor;
+    this._updateChildren(this._selectElement, this._config);
     this._selectElement.value = this._config.selectedIndex;
 };
 
-ListPicker.prototype._update = function(data) {
-    this._config.children = data.children;
+ListPicker.prototype._update = function() {
+    var scrollPosition = this._selectElement.scrollTop;
     var oldValue = this._selectElement.value;
-    while (this._selectElement.firstChild) {
-        this._selectElement.removeChild(this._selectElement.firstChild);
+    this._layout();
+    this._selectElement.scrollTop = scrollPosition;
+    var optionUnderMouse = null;
+    if (this._selectionSetByMouseHover) {
+        var elementUnderMouse = document.elementFromPoint(this.lastMousePositionX, this.lastMousePositionY);
+        optionUnderMouse = elementUnderMouse && elementUnderMouse.closest("option");
     }
-    for (var i = 0; i < this._config.children.length; ++i) {
-        this._selectElement.appendChild(this._createItemElement(this._config.children[i]));
-    }
-    this._selectElement.value = this._config.selectedIndex;
-    var elementUnderMouse = document.elementFromPoint(this.lastMousePositionX, this.lastMousePositionY);
-    var optionUnderMouse = elementUnderMouse && elementUnderMouse.closest("option");
     if (optionUnderMouse)
         optionUnderMouse.selected = true;
     else
         this._selectElement.value = oldValue;
-    this._fixWindowSize();
+    this._selectElement.scrollTop = scrollPosition;
+    this.dispatchEvent("didUpdate");
+};
+
+/**
+ * @param {!Element} parent Select element or optgroup element.
+ * @param {!Object} config
+ */
+ListPicker.prototype._updateChildren = function(parent, config) {
+    var outOfDateIndex = 0;
+    for (var i = 0; i < config.children.length; ++i) {
+        var childConfig = config.children[i];
+        var item = this._findReusableItem(parent, childConfig, outOfDateIndex) || this._createItemElement(childConfig);
+        this._configureItem(item, childConfig, parent.tagName === "OPTGROUP");
+        if (outOfDateIndex < parent.children.length)
+            parent.insertBefore(item, parent.children[outOfDateIndex]);
+        else
+            parent.appendChild(item);
+        outOfDateIndex++;
+    }
+    var unused = parent.children.length - outOfDateIndex;
+    for (var i = 0; i < unused; i++) {
+        parent.removeChild(parent.lastElementChild);
+    }
+};
+
+ListPicker.prototype._findReusableItem = function(parent, config, startIndex) {
+    if (startIndex >= parent.children.length)
+        return null;
+    var tagName = "OPTION";
+    if (config.type === "optgroup")
+        tagName = "OPTGROUP";
+    else if (config.type === "separator")
+        tagName = "HR";
+    for (var i = startIndex; i < parent.children.length; i++) {
+        var child = parent.children[i];
+        if (tagName === child.tagName) {
+            return child;
+        }
+    }
+    return null;
 };
 
 ListPicker.prototype._createItemElement = function(config) {
-    if (config.type === "option") {
-        var option = createElement("option");
-        option.appendChild(document.createTextNode(config.label));
-        option.value = config.value;
-        option.title = config.title;
-        option.disabled = config.disabled;
-        option.setAttribute("aria-label", config.ariaLabel);
-        this._applyItemStyle(option, config.style);
-        this._selectElement.appendChild(option);
-        return option;
-    } else if (config.type === "optgroup") {
-        var optgroup = createElement("optgroup");
-        optgroup.label = config.label;
-        optgroup.title = config.title;
-        optgroup.disabled = config.disabled;
-        optgroup.setAttribute("aria-label", config.ariaLabel);
-        this._applyItemStyle(optgroup, config.style);
-        for (var i = 0; i < config.children.length; ++i) {
-            optgroup.appendChild(this._createItemElement(config.children[i]));
-        }
-        this._selectElement.appendChild(optgroup);
-        return optgroup;
-    } else if (config.type === "separator") {
-        var hr = createElement("hr");
-        hr.title = config.title;
-        hr.disabled = config.disabled;
-        hr.setAttribute("aria-label", config.ariaLabel);
-        this._applyItemStyle(hr, config.style);
-        return hr;
-    }
+    var element;
+    if (config.type === "option")
+        element = createElement("option");
+    else if (config.type === "optgroup")
+        element = createElement("optgroup");
+    else if (config.type === "separator")
+        element = createElement("hr");
+    return element;
 };
 
 ListPicker.prototype._applyItemStyle = function(element, styleConfig) {
@@ -220,11 +306,45 @@ ListPicker.prototype._applyItemStyle = function(element, styleConfig) {
     element.style.fontSize = styleConfig.fontSize + "px";
     element.style.fontWeight = styleConfig.fontWeight;
     element.style.fontFamily = styleConfig.fontFamily.join(",");
+    element.style.fontStyle = styleConfig.fontStyle;
+    element.style.fontVariant = styleConfig.fontVariant;
     element.style.visibility = styleConfig.visibility;
     element.style.display = styleConfig.display;
     element.style.direction = styleConfig.direction;
     element.style.unicodeBidi = styleConfig.unicodeBidi;
-    element.style.zoom = styleConfig.zoom;
+};
+
+ListPicker.prototype._configureItem = function(element, config, inGroup) {
+    if (config.type === "option") {
+        element.label = config.label;
+        element.value = config.value;
+        element.title = config.title;
+        element.disabled = config.disabled;
+        element.setAttribute("aria-label", config.ariaLabel);
+        element.style.webkitPaddingStart = this._config.paddingStart + "px";
+        if (inGroup) {
+            element.style.webkitMarginStart = (- this._config.paddingStart) + "px";
+            // Should be synchronized with padding-end in listPicker.css.
+            element.style.webkitMarginEnd = "-2px";
+        }
+    } else if (config.type === "optgroup") {
+        element.label = config.label;
+        element.title = config.title;
+        element.disabled = config.disabled;
+        element.setAttribute("aria-label", config.ariaLabel);
+        this._updateChildren(element, config);
+        element.style.webkitPaddingStart = this._config.paddingStart + "px";
+    } else if (config.type === "separator") {
+        element.title = config.title;
+        element.disabled = config.disabled;
+        element.setAttribute("aria-label", config.ariaLabel);
+        if (inGroup) {
+            element.style.webkitMarginStart = (- this._config.paddingStart) + "px";
+            // Should be synchronized with padding-end in listPicker.css.
+            element.style.webkitMarginEnd = "-2px";
+        }
+    }
+    this._applyItemStyle(element, config.style);
 };
 
 if (window.dialogArguments) {

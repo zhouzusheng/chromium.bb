@@ -54,7 +54,7 @@ struct CONTENT_EXPORT RendererPreferences {
   bool use_bitmaps;
 
   // The type of subpixel rendering to use for text.
-  // Currently only used by Linux.
+  // Currently only used by Linux and Windows.
   gfx::FontRenderParams::SubpixelRendering subpixel_rendering;
 
   // Whether subpixel positioning should be used, permitting fractional X
@@ -131,6 +131,10 @@ struct CONTENT_EXPORT RendererPreferences {
   // encrypted video.  Currently only used by Android.
   bool use_video_overlay_for_embedded_encrypted_video;
 
+  // Use video-overlay (hole-punching) should be used for all video, not just
+  // encrypted video.  Currently only used by Android.
+  bool use_view_overlay_for_all_video;
+
   // The default system font settings for caption, small caption, menu and
   // status messages. Used only by Windows.
   base::string16 caption_font_family_name;
@@ -147,6 +151,9 @@ struct CONTENT_EXPORT RendererPreferences {
 
   base::string16 message_font_family_name;
   int32 message_font_height;
+
+  // Contry iso of the mobile network for content detection purpose.
+  std::string network_contry_iso;
 };
 
 }  // namespace content

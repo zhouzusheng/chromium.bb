@@ -66,18 +66,18 @@ public:
         return SkNEW_ARGS(AAFillRectBatch, (geometry, indexBuffer));
     }
 
-    const char* name() const SK_OVERRIDE { return "AAFillRectBatch"; }
+    const char* name() const override { return "AAFillRectBatch"; }
 
-    void getInvariantOutputColor(GrInitInvariantOutput* out) const SK_OVERRIDE {
+    void getInvariantOutputColor(GrInitInvariantOutput* out) const override {
         // When this is called on a batch, there is only one geometry bundle
         out->setKnownFourComponents(fGeoData[0].fColor);
     }
 
-    void getInvariantOutputCoverage(GrInitInvariantOutput* out) const SK_OVERRIDE {
+    void getInvariantOutputCoverage(GrInitInvariantOutput* out) const override {
         out->setUnknownSingleComponent();
     }
 
-    void initBatchTracker(const GrPipelineInfo& init) SK_OVERRIDE {
+    void initBatchTracker(const GrPipelineInfo& init) override {
         // Handle any color overrides
         if (init.fColorIgnored) {
             fGeoData[0].fColor = GrColor_ILLEGAL;
@@ -93,7 +93,7 @@ public:
         fBatch.fCanTweakAlphaForCoverage = init.fCanTweakAlphaForCoverage;
     }
 
-    void generateGeometry(GrBatchTarget* batchTarget, const GrPipeline* pipeline) SK_OVERRIDE {
+    void generateGeometry(GrBatchTarget* batchTarget, const GrPipeline* pipeline) override {
         bool canTweakAlphaForCoverage = this->canTweakAlphaForCoverage();
 
         SkMatrix localMatrix;
@@ -133,6 +133,11 @@ public:
                                                               vertexCount,
                                                               &vertexBuffer,
                                                               &firstVertex);
+
+        if (!vertices) {
+            SkDebugf("Could not allocate vertices\n");
+            return;
+        }
 
         for (int i = 0; i < instanceCount; i++) {
             const Geometry& args = fGeoData[i];
@@ -185,7 +190,7 @@ private:
     bool colorIgnored() const { return fBatch.fColorIgnored; }
     const SkMatrix& viewMatrix() const { return fGeoData[0].fViewMatrix; }
 
-    bool onCombineIfPossible(GrBatch* t) SK_OVERRIDE {
+    bool onCombineIfPossible(GrBatch* t) override {
         AAFillRectBatch* that = t->cast<AAFillRectBatch>();
 
         SkASSERT(this->usesLocalCoords() == that->usesLocalCoords());
@@ -445,11 +450,16 @@ void GrAARectRenderer::geometryFillAARect(GrDrawTarget* target,
                                           const SkMatrix& viewMatrix,
                                           const SkRect& rect,
                                           const SkRect& devRect) {
-    if (NULL == fAAFillRectIndexBuffer) {
+    if (!fAAFillRectIndexBuffer) {
         fAAFillRectIndexBuffer = fGpu->createInstancedIndexBuffer(gFillAARectIdx,
                                                                   kIndicesPerAAFillRect,
                                                                   kNumAAFillRectsInIndexBuffer,
                                                                   kVertsPerAAFillRect);
+    }
+
+    if (!fAAFillRectIndexBuffer) {
+        SkDebugf("Unable to create index buffer\n");
+        return;
     }
 
     AAFillRectBatch::Geometry geometry;
@@ -511,8 +521,7 @@ void GrAARectRenderer::strokeAARect(GrDrawTarget* target,
     }
 
     if (spare <= 0 && miterStroke) {
-        this->fillAARect(target, pipelineBuilder, color, viewMatrix, devOutside,
-                         devOutside);
+        this->fillAARect(target, pipelineBuilder, color, viewMatrix, devOutside, devOutside);
         return;
     }
 
@@ -549,18 +558,18 @@ public:
         return SkNEW_ARGS(AAStrokeRectBatch, (geometry, viewMatrix, indexBuffer));
     }
 
-    const char* name() const SK_OVERRIDE { return "AAStrokeRect"; }
+    const char* name() const override { return "AAStrokeRect"; }
 
-    void getInvariantOutputColor(GrInitInvariantOutput* out) const SK_OVERRIDE {
+    void getInvariantOutputColor(GrInitInvariantOutput* out) const override {
         // When this is called on a batch, there is only one geometry bundle
         out->setKnownFourComponents(fGeoData[0].fColor);
     }
 
-    void getInvariantOutputCoverage(GrInitInvariantOutput* out) const SK_OVERRIDE {
+    void getInvariantOutputCoverage(GrInitInvariantOutput* out) const override {
         out->setUnknownSingleComponent();
     }
 
-    void initBatchTracker(const GrPipelineInfo& init) SK_OVERRIDE {
+    void initBatchTracker(const GrPipelineInfo& init) override {
         // Handle any color overrides
         if (init.fColorIgnored) {
             fGeoData[0].fColor = GrColor_ILLEGAL;
@@ -577,7 +586,7 @@ public:
         fBatch.fCanTweakAlphaForCoverage = init.fCanTweakAlphaForCoverage;
     }
 
-    void generateGeometry(GrBatchTarget* batchTarget, const GrPipeline* pipeline) SK_OVERRIDE {
+    void generateGeometry(GrBatchTarget* batchTarget, const GrPipeline* pipeline) override {
         bool canTweakAlphaForCoverage = this->canTweakAlphaForCoverage();
 
         // Local matrix is ignored if we don't have local coords.  If we have localcoords we only
@@ -588,8 +597,8 @@ public:
             return;
         }
 
-        SkAutoTUnref<const GrGeometryProcessor>gp(create_fill_rect_gp(canTweakAlphaForCoverage,
-                                                                      localMatrix));
+        SkAutoTUnref<const GrGeometryProcessor> gp(create_fill_rect_gp(canTweakAlphaForCoverage,
+                                                                       localMatrix));
 
         batchTarget->initDraw(gp, pipeline);
 
@@ -623,6 +632,11 @@ public:
                                                               vertexCount,
                                                               &vertexBuffer,
                                                               &firstVertex);
+
+        if (!vertices) {
+            SkDebugf("Could not allocate vertices\n");
+            return;
+        }
 
         for (int i = 0; i < instanceCount; i++) {
             const Geometry& args = fGeoData[i];
@@ -681,7 +695,7 @@ private:
     const SkMatrix& viewMatrix() const { return fBatch.fViewMatrix; }
     bool miterStroke() const { return fBatch.fMiterStroke; }
 
-    bool onCombineIfPossible(GrBatch* t) SK_OVERRIDE {
+    bool onCombineIfPossible(GrBatch* t) override {
         AAStrokeRectBatch* that = t->cast<AAStrokeRectBatch>();
 
         // TODO batch across miterstroke changes
@@ -847,7 +861,7 @@ void GrAARectRenderer::geometryStrokeAARect(GrDrawTarget* target,
                                             const SkRect& devInside,
                                             bool miterStroke) {
     GrIndexBuffer* indexBuffer = this->aaStrokeRectIndexBuffer(miterStroke);
-    if (NULL == indexBuffer) {
+    if (!indexBuffer) {
         SkDebugf("Failed to create index buffer!\n");
         return;
     }
@@ -877,8 +891,7 @@ void GrAARectRenderer::fillAANestedRects(GrDrawTarget* target,
     viewMatrix.mapPoints((SkPoint*)&devInside, (const SkPoint*)&rects[1], 2);
 
     if (devInside.isEmpty()) {
-        this->fillAARect(target, pipelineBuilder, color, viewMatrix, devOutside,
-                         devOutside);
+        this->fillAARect(target, pipelineBuilder, color, viewMatrix, devOutside, devOutside);
         return;
     }
 

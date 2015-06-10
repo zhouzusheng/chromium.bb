@@ -37,13 +37,14 @@ public:
     explicit LayoutHTMLCanvas(HTMLCanvasElement*);
 
     virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectCanvas || LayoutReplaced::isOfType(type); }
-    virtual LayerType layerTypeRequired() const override;
-    virtual PaintInvalidationReason invalidatePaintIfNeeded(const PaintInvalidationState&, const LayoutLayerModelObject&) override final;
+    virtual DeprecatedPaintLayerType layerTypeRequired() const override;
+    virtual PaintInvalidationReason invalidatePaintIfNeeded(PaintInvalidationState&, const LayoutBoxModelObject&) override final;
 
     void canvasSizeChanged();
 
+    virtual const char* name() const override { return "LayoutHTMLCanvas"; }
+
 private:
-    virtual const char* renderName() const override { return "LayoutHTMLCanvas"; }
     virtual void paintReplaced(const PaintInfo&, const LayoutPoint&) override;
     virtual void intrinsicSizeChanged() override { canvasSizeChanged(); }
 

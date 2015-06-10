@@ -34,6 +34,7 @@ class MessageLoop;
 namespace content {
 class FlingCurveConfiguration;
 class NotificationDispatcher;
+class PermissionDispatcher;
 class PushDispatcher;
 class ThreadSafeSender;
 class WebBluetoothImpl;
@@ -139,6 +140,7 @@ class CONTENT_EXPORT BlinkPlatformImpl
   virtual void suddenTerminationChanged(bool enabled) { }
   virtual double currentTime();
   virtual double monotonicallyIncreasingTime();
+  virtual double systemTraceTime();
   virtual void cryptographicallyRandomValues(
       unsigned char* buffer, size_t length);
   virtual void setSharedTimerFiredFunction(void (*func)());
@@ -149,16 +151,15 @@ class CONTENT_EXPORT BlinkPlatformImpl
       blink::WebGestureDevice device_source,
       const blink::WebFloatPoint& velocity,
       const blink::WebSize& cumulative_scroll);
-  virtual void didStartWorkerRunLoop(
-      const blink::WebWorkerRunLoop& runLoop);
-  virtual void didStopWorkerRunLoop(
-      const blink::WebWorkerRunLoop& runLoop);
+  virtual void didStartWorkerRunLoop();
+  virtual void didStopWorkerRunLoop();
   virtual blink::WebCrypto* crypto();
   virtual blink::WebGeofencingProvider* geofencingProvider();
   virtual blink::WebBluetooth* bluetooth();
   virtual blink::WebNotificationManager* notificationManager();
   virtual blink::WebPushProvider* pushProvider();
   virtual blink::WebNavigatorConnectProvider* navigatorConnectProvider();
+  virtual blink::WebPermissionClient* permissionClient();
 
   void SuspendSharedTimer();
   void ResumeSharedTimer();
@@ -170,14 +171,15 @@ class CONTENT_EXPORT BlinkPlatformImpl
   virtual int domEnumFromCodeString(const blink::WebString& codeString);
 
  private:
-  static void DestroyCurrentThread(void*);
-
   void DoTimeout() {
     if (shared_timer_func_ && !shared_timer_suspended_)
       shared_timer_func_();
   }
 
   void InternalInit();
+  void UpdateWebThreadTLS(blink::WebThread* thread);
+
+  bool IsMainThread() const;
 
   scoped_refptr<base::SingleThreadTaskRunner> MainTaskRunnerForCurrentThread();
 
@@ -197,6 +199,7 @@ class CONTENT_EXPORT BlinkPlatformImpl
   scoped_refptr<ThreadSafeSender> thread_safe_sender_;
   scoped_refptr<NotificationDispatcher> notification_dispatcher_;
   scoped_refptr<PushDispatcher> push_dispatcher_;
+  scoped_ptr<PermissionDispatcher> permission_client_;
 };
 
 }  // namespace content

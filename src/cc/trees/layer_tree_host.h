@@ -21,8 +21,6 @@
 #include "cc/animation/animation_events.h"
 #include "cc/base/cc_export.h"
 #include "cc/base/scoped_ptr_vector.h"
-#include "cc/base/swap_promise.h"
-#include "cc/base/swap_promise_monitor.h"
 #include "cc/debug/micro_benchmark.h"
 #include "cc/debug/micro_benchmark_controller.h"
 #include "cc/input/input_handler.h"
@@ -31,6 +29,8 @@
 #include "cc/input/top_controls_state.h"
 #include "cc/layers/layer_lists.h"
 #include "cc/output/output_surface.h"
+#include "cc/output/renderer_capabilities.h"
+#include "cc/output/swap_promise.h"
 #include "cc/resources/resource_format.h"
 #include "cc/resources/scoped_ui_resource.h"
 #include "cc/surfaces/surface_sequence.h"
@@ -38,6 +38,7 @@
 #include "cc/trees/layer_tree_host_common.h"
 #include "cc/trees/layer_tree_settings.h"
 #include "cc/trees/proxy.h"
+#include "cc/trees/swap_promise_monitor.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/geometry/rect.h"
 
@@ -60,30 +61,13 @@ class RenderingStatsInstrumentation;
 class ResourceProvider;
 class ResourceUpdateQueue;
 class SharedBitmapManager;
+class TaskGraphRunner;
 class TopControlsManager;
 class UIResourceRequest;
 struct PendingPageScaleAnimation;
 struct RenderingStats;
 struct ScrollAndScaleSet;
 enum class GpuRasterizationStatus;
-
-// Provides information on an Impl's rendering capabilities back to the
-// LayerTreeHost.
-struct CC_EXPORT RendererCapabilities {
-  RendererCapabilities(ResourceFormat best_texture_format,
-                       bool allow_partial_texture_updates,
-                       int max_texture_size,
-                       bool using_shared_memory_resources);
-
-  RendererCapabilities();
-  ~RendererCapabilities();
-
-  // Duplicate any modification to this list to RendererCapabilitiesImpl.
-  ResourceFormat best_texture_format;
-  bool allow_partial_texture_updates;
-  int max_texture_size;
-  bool using_shared_memory_resources;
-};
 
 class CC_EXPORT LayerTreeHost {
  public:
@@ -92,6 +76,7 @@ class CC_EXPORT LayerTreeHost {
       LayerTreeHostClient* client,
       SharedBitmapManager* shared_bitmap_manager,
       gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
+      TaskGraphRunner* task_graph_runner,
       const LayerTreeSettings& settings,
       scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
       scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner,
@@ -102,6 +87,7 @@ class CC_EXPORT LayerTreeHost {
       LayerTreeHostSingleThreadClient* single_thread_client,
       SharedBitmapManager* shared_bitmap_manager,
       gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
+      TaskGraphRunner* task_graph_runner,
       const LayerTreeSettings& settings,
       scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
       scoped_ptr<BeginFrameSource> external_begin_frame_source);
@@ -207,12 +193,10 @@ class CC_EXPORT LayerTreeHost {
     return has_gpu_rasterization_trigger_;
   }
   void SetHasGpuRasterizationTrigger(bool has_trigger);
-  bool UseGpuRasterization() const;
   GpuRasterizationStatus GetGpuRasterizationStatus() const;
 
   void SetViewportSize(const gfx::Size& device_viewport_size);
-  void SetTopControlsShrinkBlinkSize(bool shrink);
-  void SetTopControlsHeight(float height);
+  void SetTopControlsHeight(float height, bool shrink);
   void SetTopControlsShownRatio(float ratio);
 
   gfx::Size device_viewport_size() const { return device_viewport_size_; }
@@ -273,9 +257,6 @@ class CC_EXPORT LayerTreeHost {
     return animation_registrar_.get();
   }
 
-  // Obtains a thorough dump of the LayerTreeHost as a value.
-  void AsValueInto(base::trace_event::TracedValue* value) const;
-
   bool in_paint_layer_contents() const { return in_paint_layer_contents_; }
 
   // CreateUIResource creates a resource given a bitmap.  The bitmap is
@@ -324,10 +305,13 @@ class CC_EXPORT LayerTreeHost {
   void SetChildrenNeedBeginFrames(bool children_need_begin_frames) const;
   void SendBeginFramesToChildren(const BeginFrameArgs& args) const;
 
+  void SetAuthoritativeVSyncInterval(const base::TimeDelta& interval);
+
  protected:
   LayerTreeHost(LayerTreeHostClient* client,
                 SharedBitmapManager* shared_bitmap_manager,
                 gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
+                TaskGraphRunner* task_graph_runner,
                 const LayerTreeSettings& settings);
   void InitializeThreaded(
       scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
@@ -461,6 +445,7 @@ class CC_EXPORT LayerTreeHost {
 
   SharedBitmapManager* shared_bitmap_manager_;
   gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager_;
+  TaskGraphRunner* task_graph_runner_;
 
   ScopedPtrVector<SwapPromise> swap_promise_list_;
   std::set<SwapPromiseMonitor*> swap_promise_monitor_;

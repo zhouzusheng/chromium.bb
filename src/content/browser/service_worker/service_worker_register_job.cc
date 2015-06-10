@@ -260,7 +260,7 @@ void ServiceWorkerRegisterJob::RegisterAndContinue() {
 
   set_registration(new ServiceWorkerRegistration(
       pattern_, context_->storage()->NewRegistrationId(), context_));
-  AssociateProviderHostsToRegistration(registration());
+  AddRegistrationToMatchingProviderHosts(registration());
   UpdateAndContinue();
 }
 
@@ -333,23 +333,16 @@ void ServiceWorkerRegisterJob::OnStartWorkerFinished(
   }
 
   // "If serviceWorker fails to start up..." then reject the promise with an
-  // error and abort. When there is a main script network error, the status will
-  // be updated to a more specific one.
+  // error and abort.
+  if (status == SERVICE_WORKER_ERROR_TIMEOUT) {
+    Complete(status, "Timed out while trying to start the Service Worker.");
+    return;
+  }
+
   const net::URLRequestStatus& main_script_status =
       new_version()->script_cache_map()->main_script_status();
   std::string message;
   if (main_script_status.status() != net::URLRequestStatus::SUCCESS) {
-    switch (main_script_status.error()) {
-      case net::ERR_INSECURE_RESPONSE:
-      case net::ERR_UNSAFE_REDIRECT:
-        status = SERVICE_WORKER_ERROR_SECURITY;
-        break;
-      case net::ERR_ABORTED:
-        status = SERVICE_WORKER_ERROR_ABORT;
-        break;
-      default:
-        status = SERVICE_WORKER_ERROR_NETWORK;
-    }
     message = new_version()->script_cache_map()->main_script_status_message();
     if (message.empty())
       message = kFetchScriptError;
@@ -377,7 +370,6 @@ void ServiceWorkerRegisterJob::InstallAndContinue() {
 
   // "Fire an event named install..."
   new_version()->DispatchInstallEvent(
-      -1,
       base::Bind(&ServiceWorkerRegisterJob::OnInstallFinished,
                  weak_factory_.GetWeakPtr()));
 
@@ -390,8 +382,6 @@ void ServiceWorkerRegisterJob::InstallAndContinue() {
 
 void ServiceWorkerRegisterJob::OnInstallFinished(
     ServiceWorkerStatusCode status) {
-  // TODO(kinuko,falken): For some error cases (e.g. ServiceWorker is
-  // unexpectedly terminated) we may want to retry sending the event again.
   if (status != SERVICE_WORKER_OK) {
     // "8. If installFailed is true, then:..."
     Complete(status);
@@ -457,6 +447,8 @@ void ServiceWorkerRegisterJob::CompleteInternal(
       if (should_uninstall_on_failure_)
         registration()->ClearWhenReady();
       if (new_version()) {
+        if (status != SERVICE_WORKER_ERROR_EXISTS)
+          new_version()->ReportError(status, status_message);
         registration()->UnsetVersion(new_version());
         new_version()->Doom();
       }
@@ -476,6 +468,8 @@ void ServiceWorkerRegisterJob::CompleteInternal(
   if (registration()) {
     context_->storage()->NotifyDoneInstallingRegistration(
         registration(), new_version(), status);
+    if (registration()->waiting_version() || registration()->active_version())
+      registration()->set_is_uninstalled(false);
   }
   if (new_version())
     new_version()->embedded_worker()->RemoveListener(this);
@@ -505,7 +499,12 @@ void ServiceWorkerRegisterJob::OnPausedAfterDownload() {
       registration()->waiting_version() ?
           registration()->waiting_version() :
           registration()->active_version();
-  DCHECK(most_recent_version.get());
+
+  if (!most_recent_version) {
+    OnCompareScriptResourcesComplete(SERVICE_WORKER_OK, false /* are_equal */);
+    return;
+  }
+
   int64 most_recent_script_id =
       most_recent_version->script_cache_map()->LookupResourceId(script_url_);
   int64 new_script_id =
@@ -547,18 +546,19 @@ void ServiceWorkerRegisterJob::OnCompareScriptResourcesComplete(
   new_version()->embedded_worker()->RemoveListener(this);
 }
 
-void ServiceWorkerRegisterJob::AssociateProviderHostsToRegistration(
+void ServiceWorkerRegisterJob::AddRegistrationToMatchingProviderHosts(
     ServiceWorkerRegistration* registration) {
   DCHECK(registration);
   for (scoped_ptr<ServiceWorkerContextCore::ProviderHostIterator> it =
            context_->GetProviderHostIterator();
        !it->IsAtEnd(); it->Advance()) {
     ServiceWorkerProviderHost* host = it->GetProviderHost();
-    if (ServiceWorkerUtils::ScopeMatches(registration->pattern(),
-                                         host->document_url())) {
-      if (host->CanAssociateRegistration(registration))
-        host->AssociateRegistration(registration);
-    }
+    if (host->IsHostToRunningServiceWorker())
+      continue;
+    if (!ServiceWorkerUtils::ScopeMatches(registration->pattern(),
+                                          host->document_url()))
+      continue;
+    host->AddMatchingRegistration(registration);
   }
 }
 

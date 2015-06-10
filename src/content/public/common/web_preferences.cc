@@ -86,6 +86,11 @@ WebPreferences::WebPreferences()
       minimum_font_size(0),
       minimum_logical_font_size(6),
       default_encoding("ISO-8859-1"),
+#if defined(OS_WIN)
+      context_menu_on_mouse_up(true),
+#else
+      context_menu_on_mouse_up(false),
+#endif
       javascript_enabled(true),
       web_security_enabled(true),
       javascript_can_open_windows_automatically(true),
@@ -182,7 +187,6 @@ WebPreferences::WebPreferences()
       spatial_navigation_enabled(false),
       pinch_virtual_viewport_enabled(false),
       pinch_overlay_scrollbar_thickness(0),
-      rubber_banding_on_compositor_thread(false),
       use_solid_color_scrollbars(false),
       navigate_on_drag_drop(true),
       v8_cache_options(V8_CACHE_OPTIONS_DEFAULT),
@@ -214,6 +218,9 @@ WebPreferences::WebPreferences()
 #if defined(OS_ANDROID)
       default_minimum_page_scale_factor(0.25f),
       default_maximum_page_scale_factor(5.f)
+#elif defined(OS_MACOSX)
+      default_minimum_page_scale_factor(1.f),
+      default_maximum_page_scale_factor(3.f)
 #else
       default_minimum_page_scale_factor(1.f),
       default_maximum_page_scale_factor(4.f)

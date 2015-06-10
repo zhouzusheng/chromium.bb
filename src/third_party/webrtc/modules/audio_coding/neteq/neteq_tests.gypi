@@ -147,6 +147,7 @@
       'type': 'executable',
       'dependencies': [
         'neteq',
+        'webrtc_opus',
       ],
       'sources': [
         'test/audio_classifier_test.cc',
@@ -188,7 +189,7 @@
     },
 
     {
-      'target_name': 'neteq_opus_fec_quality_test',
+      'target_name': 'neteq_opus_quality_test',
       'type': 'executable',
       'dependencies': [
         'neteq',
@@ -199,7 +200,7 @@
         '<(webrtc_root)/test/test.gyp:test_support_main',
       ],
       'sources': [
-        'test/neteq_opus_fec_quality_test.cc',
+        'test/neteq_opus_quality_test.cc',
       ],
     },
 
@@ -234,6 +235,7 @@
         'iLBC',
         'iSAC',
         'CNG',
+        '<(webrtc_root)/common.gyp:webrtc_common',
         '<(DEPTH)/testing/gtest.gyp:gtest',
       ],
       'direct_dependent_settings': {

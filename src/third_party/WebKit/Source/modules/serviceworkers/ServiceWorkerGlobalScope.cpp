@@ -44,7 +44,6 @@
 #include "core/workers/WorkerThreadStartupData.h"
 #include "modules/EventTargetModules.h"
 #include "modules/fetch/GlobalFetch.h"
-#include "modules/serviceworkers/CacheStorage.h"
 #include "modules/serviceworkers/InspectorServiceWorkerCacheAgent.h"
 #include "modules/serviceworkers/ServiceWorkerClients.h"
 #include "modules/serviceworkers/ServiceWorkerGlobalScopeClient.h"
@@ -53,7 +52,9 @@
 #include "modules/serviceworkers/ServiceWorkerThread.h"
 #include "modules/serviceworkers/WaitUntilObserver.h"
 #include "platform/network/ResourceRequest.h"
+#include "platform/weborigin/DatabaseIdentifier.h"
 #include "platform/weborigin/KURL.h"
+#include "public/platform/Platform.h"
 #include "public/platform/WebServiceWorkerSkipWaitingCallbacks.h"
 #include "public/platform/WebURL.h"
 #include "wtf/CurrentTime.h"
@@ -76,8 +77,10 @@ private:
     RefPtrWillBePersistent<ScriptPromiseResolver> m_resolver;
 };
 
-PassRefPtrWillBeRawPtr<ServiceWorkerGlobalScope> ServiceWorkerGlobalScope::create(ServiceWorkerThread* thread, PassOwnPtrWillBeRawPtr<WorkerThreadStartupData> startupData)
+PassRefPtrWillBeRawPtr<ServiceWorkerGlobalScope> ServiceWorkerGlobalScope::create(ServiceWorkerThread* thread, PassOwnPtr<WorkerThreadStartupData> startupData)
 {
+    // Note: startupData is finalized on return. After the relevant parts has been
+    // passed along to the created 'context'.
     RefPtrWillBeRawPtr<ServiceWorkerGlobalScope> context = adoptRefWillBeNoop(new ServiceWorkerGlobalScope(startupData->m_scriptURL, startupData->m_userAgent, thread, monotonicallyIncreasingTime(), startupData->m_starterOrigin, startupData->m_workerClients.release()));
 
     context->setV8CacheOptions(startupData->m_v8CacheOptions);
@@ -91,6 +94,9 @@ ServiceWorkerGlobalScope::ServiceWorkerGlobalScope(const KURL& url, const String
     , m_didEvaluateScript(false)
     , m_hadErrorInTopLevelEventHandler(false)
     , m_eventNestingLevel(0)
+    , m_scriptCount(0)
+    , m_scriptTotalSize(0)
+    , m_scriptCachedMetadataTotalSize(0)
 {
     workerInspectorController()->registerModuleAgent(InspectorServiceWorkerCacheAgent::create(this));
 }
@@ -101,14 +107,13 @@ ServiceWorkerGlobalScope::~ServiceWorkerGlobalScope()
 
 void ServiceWorkerGlobalScope::didEvaluateWorkerScript()
 {
+    if (Platform* platform = Platform::current()) {
+        platform->histogramCustomCounts("ServiceWorker.ScriptCount", m_scriptCount, 1, 1000, 50);
+        platform->histogramCustomCounts("ServiceWorker.ScriptTotalSize", m_scriptTotalSize, 1000, 5000000, 50);
+        if (m_scriptCachedMetadataTotalSize)
+            platform->histogramCustomCounts("ServiceWorker.ScriptCachedMetadataTotalSize", m_scriptCachedMetadataTotalSize, 1000, 50000000, 50);
+    }
     m_didEvaluateScript = true;
-}
-
-CacheStorage* ServiceWorkerGlobalScope::caches(ExecutionContext* context)
-{
-    if (!m_caches)
-        m_caches = CacheStorage::create(ServiceWorkerGlobalScopeClient::from(context)->cacheStorage());
-    return m_caches;
 }
 
 ScriptPromise ServiceWorkerGlobalScope::fetch(ScriptState* scriptState, const RequestInfo& input, const Dictionary& init, ExceptionState& exceptionState)
@@ -201,7 +206,6 @@ DEFINE_TRACE(ServiceWorkerGlobalScope)
 {
     visitor->trace(m_clients);
     visitor->trace(m_registration);
-    visitor->trace(m_caches);
     WorkerGlobalScope::trace(visitor);
 }
 
@@ -211,7 +215,7 @@ void ServiceWorkerGlobalScope::importScripts(const Vector<String>& urls, Excepti
     // and get added to and retrieved from the ServiceWorker's script cache.
     // FIXME: Revisit in light of the solution to crbug/388375.
     for (Vector<String>::const_iterator it = urls.begin(); it != urls.end(); ++it)
-        MemoryCache::removeURLFromCache(this->executionContext(), completeURL(*it));
+        executionContext()->removeURLFromMemoryCache(completeURL(*it));
     WorkerGlobalScope::importScripts(urls, exceptionState);
 }
 
@@ -227,6 +231,13 @@ void ServiceWorkerGlobalScope::logExceptionToConsole(const String& errorMessage,
     consoleMessage->setScriptId(scriptId);
     consoleMessage->setCallStack(callStack);
     addMessageToWorkerConsole(consoleMessage.release());
+}
+
+void ServiceWorkerGlobalScope::scriptLoaded(size_t scriptSize, size_t cachedMetadataSize)
+{
+    ++m_scriptCount;
+    m_scriptTotalSize += scriptSize;
+    m_scriptCachedMetadataTotalSize += cachedMetadataSize;
 }
 
 } // namespace blink

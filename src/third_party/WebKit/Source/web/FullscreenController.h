@@ -31,7 +31,7 @@
 #ifndef FullscreenController_h
 #define FullscreenController_h
 
-#include "core/rendering/RenderFullScreen.h"
+#include "core/layout/LayoutFullScreen.h"
 #include "platform/geometry/FloatPoint.h"
 #include "platform/geometry/IntSize.h"
 #include "platform/heap/Handle.h"
@@ -64,6 +64,8 @@ protected:
     explicit FullscreenController(WebViewImpl*);
 
 private:
+    void updatePageScaleConstraints(bool removeConstraints);
+
     WebViewImpl* m_webViewImpl;
 
     float m_exitFullscreenPageScaleFactor;

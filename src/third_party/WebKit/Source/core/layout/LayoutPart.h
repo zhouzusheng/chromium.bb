@@ -23,13 +23,14 @@
 #ifndef LayoutPart_h
 #define LayoutPart_h
 
+#include "core/CoreExport.h"
 #include "core/layout/LayoutReplaced.h"
 #include "platform/Widget.h"
 
 namespace blink {
 
-// Renderer for frames via LayoutFrame and LayoutIFrame, and plug-ins via LayoutEmbeddedObject.
-class LayoutPart : public LayoutReplaced {
+// Renderer for frames via LayoutFrame and LayoutIFrame, and plugins via LayoutEmbeddedObject.
+class CORE_EXPORT LayoutPart : public LayoutReplaced {
 public:
     explicit LayoutPart(Element*);
     virtual ~LayoutPart();
@@ -38,7 +39,7 @@ public:
 
     virtual bool needsPreferredWidthsRecalculation() const override final;
 
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override;
+    virtual bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override;
 
     void ref() { ++m_refCount; }
     void deref();
@@ -54,9 +55,9 @@ public:
     virtual void paintContents(const PaintInfo&, const LayoutPoint&);
 
 protected:
-    virtual LayerType layerTypeRequired() const override;
+    virtual DeprecatedPaintLayerType layerTypeRequired() const override;
 
-    virtual void styleDidChange(StyleDifference, const LayoutStyle* oldStyle) override final;
+    virtual void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override final;
     virtual void layout() override;
     virtual void paint(const PaintInfo&, const LayoutPoint&) override;
     virtual CursorDirective getCursor(const LayoutPoint&, Cursor&) const override final;
@@ -69,7 +70,7 @@ private:
 
     bool setWidgetGeometry(const LayoutRect&);
 
-    bool nodeAtPointOverWidget(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction);
+    bool nodeAtPointOverWidget(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction);
 
     int m_refCount;
 };

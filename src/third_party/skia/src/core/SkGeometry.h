@@ -10,21 +10,6 @@
 
 #include "SkMatrix.h"
 
-/** An XRay is a half-line that runs from the specific point/origin to
-    +infinity in the X direction. e.g. XRay(3,5) is the half-line
-    (3,5)....(infinity, 5)
- */
-typedef SkPoint SkXRay;
-
-/** Given a line segment from pts[0] to pts[1], and an xray, return true if
-    they intersect. Optional outgoing "ambiguous" argument indicates
-    whether the answer is ambiguous because the query occurred exactly at
-    one of the endpoints' y coordinates, indicating that another query y
-    coordinate is preferred for robustness.
-*/
-bool SkXRayCrossesLine(const SkXRay& pt, const SkPoint pts[2],
-                       bool* ambiguous = NULL);
-
 /** Given a quadratic equation Ax^2 + Bx + C = 0, return 0, 1, 2 roots for the
     equation.
 */
@@ -32,13 +17,13 @@ int SkFindUnitQuadRoots(SkScalar A, SkScalar B, SkScalar C, SkScalar roots[2]);
 
 ///////////////////////////////////////////////////////////////////////////////
 
+SkPoint SkEvalQuadAt(const SkPoint src[3], SkScalar t);
+SkPoint SkEvalQuadTangentAt(const SkPoint src[3], SkScalar t);
+
 /** Set pt to the point on the src quadratic specified by t. t must be
     0 <= t <= 1.0
 */
-void SkEvalQuadAt(const SkPoint src[3], SkScalar t, SkPoint* pt,
-                  SkVector* tangent = NULL);
-void SkEvalQuadAtHalf(const SkPoint src[3], SkPoint* pt,
-                      SkVector* tangent = NULL);
+void SkEvalQuadAt(const SkPoint src[3], SkScalar t, SkPoint* pt, SkVector* tangent = NULL);
 
 /** Given a src quadratic bezier, chop it at the specified t value,
     where 0 < t < 1, and return the two new quadratics in dst:
@@ -109,6 +94,7 @@ void SkEvalCubicAt(const SkPoint src[4], SkScalar t, SkPoint* locOrNull,
     dst[0..3] and dst[3..6]
 */
 void SkChopCubicAt(const SkPoint src[4], SkPoint dst[7], SkScalar t);
+
 /** Given a src cubic bezier, chop it at the specified t values,
     where 0 < t < 1, and return the new cubics in dst:
     dst[0..3],dst[3..6],...,dst[3*t_count..3*(t_count+1)]
@@ -158,36 +144,6 @@ int SkChopCubicAtInflections(const SkPoint src[4], SkPoint dst[10]);
 int SkFindCubicMaxCurvature(const SkPoint src[4], SkScalar tValues[3]);
 int SkChopCubicAtMaxCurvature(const SkPoint src[4], SkPoint dst[13],
                               SkScalar tValues[3] = NULL);
-
-/** Given a monotonic cubic bezier, determine whether an xray intersects the
-    cubic.
-    By definition the cubic is open at the starting point; in other
-    words, if pt.fY is equivalent to cubic[0].fY, and pt.fX is to the
-    left of the curve, the line is not considered to cross the curve,
-    but if it is equal to cubic[3].fY then it is considered to
-    cross.
-    Optional outgoing "ambiguous" argument indicates whether the answer is
-    ambiguous because the query occurred exactly at one of the endpoints' y
-    coordinates, indicating that another query y coordinate is preferred
-    for robustness.
- */
-bool SkXRayCrossesMonotonicCubic(const SkXRay& pt, const SkPoint cubic[4],
-                                 bool* ambiguous = NULL);
-
-/** Given an arbitrary cubic bezier, return the number of times an xray crosses
-    the cubic. Valid return values are [0..3]
-    By definition the cubic is open at the starting point; in other
-    words, if pt.fY is equivalent to cubic[0].fY, and pt.fX is to the
-    left of the curve, the line is not considered to cross the curve,
-    but if it is equal to cubic[3].fY then it is considered to
-    cross.
-    Optional outgoing "ambiguous" argument indicates whether the answer is
-    ambiguous because the query occurred exactly at one of the endpoints' y
-    coordinates or at a tangent point, indicating that another query y
-    coordinate is preferred for robustness.
- */
-int SkNumXRayCrossingsForCubic(const SkXRay& pt, const SkPoint cubic[4],
-                               bool* ambiguous = NULL);
 
 enum SkCubicType {
     kSerpentine_SkCubicType,
@@ -262,6 +218,9 @@ struct SkConic {
     void evalAt(SkScalar t, SkPoint* pos, SkVector* tangent = NULL) const;
     void chopAt(SkScalar t, SkConic dst[2]) const;
     void chop(SkConic dst[2]) const;
+
+    SkPoint evalAt(SkScalar t) const;
+    SkVector evalTangentAt(SkScalar t) const;
 
     void computeAsQuadError(SkVector* err) const;
     bool asQuadTol(SkScalar tol) const;

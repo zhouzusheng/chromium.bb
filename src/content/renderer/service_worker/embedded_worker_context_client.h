@@ -61,9 +61,9 @@ class EmbeddedWorkerContextClient
   // WebServiceWorkerContextClient overrides, some of them are just dispatched
   // on to script_context_.
   virtual blink::WebURL scope() const;
-  virtual blink::WebServiceWorkerCacheStorage* cacheStorage();
   virtual void didPauseAfterDownload();
-  virtual void getClients(blink::WebServiceWorkerClientsCallbacks*);
+  virtual void getClients(const blink::WebServiceWorkerClientQueryOptions&,
+                          blink::WebServiceWorkerClientsCallbacks*);
   virtual void openWindow(const blink::WebURL&,
                           blink::WebServiceWorkerClientCallbacks*);
   virtual void setCachedMetadata(const blink::WebURL&,
@@ -114,14 +114,14 @@ class EmbeddedWorkerContextClient
   virtual blink::WebServiceWorkerProvider* createServiceWorkerProvider();
 
   virtual void postMessageToClient(
-      int client_id,
+      const blink::WebString& uuid,
       const blink::WebString& message,
       blink::WebMessagePortChannelArray* channels);
   virtual void postMessageToCrossOriginClient(
       const blink::WebCrossOriginServiceWorkerClient& client,
       const blink::WebString& message,
       blink::WebMessagePortChannelArray* channels);
-  virtual void focus(int client_id,
+  virtual void focus(const blink::WebString& uuid,
                      blink::WebServiceWorkerClientCallbacks*);
   virtual void skipWaiting(
       blink::WebServiceWorkerSkipWaitingCallbacks* callbacks);

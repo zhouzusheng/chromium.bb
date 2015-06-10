@@ -8,9 +8,12 @@
 #include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
+#include "base/timer/timer.h"
 #include "content/common/content_export.h"
 #include "content/public/renderer/plugin_instance_throttler.h"
 #include "ppapi/shared_impl/ppb_view_shared.h"
+#include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace blink {
 class WebInputEvent;
@@ -24,7 +27,7 @@ class RenderFrameImpl;
 class CONTENT_EXPORT PluginInstanceThrottlerImpl
     : public PluginInstanceThrottler {
  public:
-  PluginInstanceThrottlerImpl(bool power_saver_enabled);
+  PluginInstanceThrottlerImpl();
 
   ~PluginInstanceThrottlerImpl() override;
 
@@ -36,6 +39,8 @@ class CONTENT_EXPORT PluginInstanceThrottlerImpl
   void MarkPluginEssential(PowerSaverUnthrottleMethod method) override;
   void SetHiddenForPlaceholder(bool hidden) override;
   blink::WebPlugin* GetWebPlugin() const override;
+  const gfx::Size& GetSize() const override;
+  void NotifyAudioThrottled() override;
 
   void SetWebPlugin(blink::WebPlugin* web_plugin);
 
@@ -44,15 +49,13 @@ class CONTENT_EXPORT PluginInstanceThrottlerImpl
   }
 
   bool power_saver_enabled() const {
-    return state_ == THROTTLER_STATE_AWAITING_KEYFRAME ||
-           state_ == THROTTLER_STATE_PLUGIN_THROTTLED;
+    return state_ != THROTTLER_STATE_MARKED_ESSENTIAL;
   }
 
-  // Throttler needs to be initialized with the real plugin's view bounds.
   void Initialize(RenderFrameImpl* frame,
                   const GURL& content_origin,
                   const std::string& plugin_module_name,
-                  const blink::WebRect& bounds);
+                  const gfx::Size& unobscured_size);
 
   // Called when the plugin flushes it's graphics context. Supplies the
   // throttler with a candidate to use as the representative keyframe.
@@ -65,8 +68,6 @@ class CONTENT_EXPORT PluginInstanceThrottlerImpl
   friend class PluginInstanceThrottlerImplTest;
 
   enum ThrottlerState {
-    // Power saver is disabled, but the plugin instance is still peripheral.
-    THROTTLER_STATE_POWER_SAVER_DISABLED,
     // Plugin has been found to be peripheral, Plugin Power Saver is enabled,
     // and throttler is awaiting a representative keyframe.
     THROTTLER_STATE_AWAITING_KEYFRAME,
@@ -80,6 +81,7 @@ class CONTENT_EXPORT PluginInstanceThrottlerImpl
   // simply suspend the plugin where it's at. Chosen arbitrarily.
   static const int kMaximumFramesToExamine;
 
+  void AudioThrottledFrameTimeout();
   void EngageThrottle();
 
   ThrottlerState state_;
@@ -88,11 +90,23 @@ class CONTENT_EXPORT PluginInstanceThrottlerImpl
 
   blink::WebPlugin* web_plugin_;
 
+  // Holds a reference to the last received frame. This doesn't actually copy
+  // the pixel data, but rather increments the reference count to the pixels.
+  SkBitmap last_received_frame_;
+
   // Number of consecutive interesting frames we've encountered.
   int consecutive_interesting_frames_;
 
   // Number of frames we've examined to find a keyframe.
   int frames_examined_;
+
+  // Plugin's unobscured dimensions as of initialization.
+  gfx::Size unobscured_size_;
+
+  // Video plugins with throttled audio often stop generating frames.
+  // This timer is so we don't wait forever for candidate poster frames.
+  bool audio_throttled_;
+  base::DelayTimer<PluginInstanceThrottlerImpl> audio_throttled_frame_timeout_;
 
   ObserverList<Observer> observer_list_;
 

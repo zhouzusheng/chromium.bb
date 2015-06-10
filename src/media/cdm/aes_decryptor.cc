@@ -248,7 +248,7 @@ void AesDecryptor::SetServerCertificate(const uint8* certificate_data,
 
 void AesDecryptor::CreateSessionAndGenerateRequest(
     SessionType session_type,
-    const std::string& init_data_type,
+    EmeInitDataType init_data_type,
     const uint8* init_data,
     int init_data_length,
     scoped_ptr<NewSessionCdmPromise> promise) {
@@ -263,20 +263,35 @@ void AesDecryptor::CreateSessionAndGenerateRequest(
   // when prefixed EME is removed (http://crbug.com/249976).
   if (init_data && init_data_length) {
     std::vector<std::vector<uint8>> keys;
-    if (init_data_type == "webm") {
-      // |init_data| is simply the key needed.
-      keys.push_back(
-          std::vector<uint8>(init_data, init_data + init_data_length));
-    } else if (init_data_type == "cenc") {
-      // |init_data| is a set of 0 or more concatenated 'pssh' boxes.
-      if (!GetKeyIdsForCommonSystemId(init_data, init_data_length, &keys)) {
-        promise->reject(NOT_SUPPORTED_ERROR, 0, "No supported PSSH box found.");
-        return;
+    switch (init_data_type) {
+      case EmeInitDataType::WEBM:
+        // |init_data| is simply the key needed.
+        keys.push_back(
+            std::vector<uint8>(init_data, init_data + init_data_length));
+        break;
+      case EmeInitDataType::CENC:
+        // |init_data| is a set of 0 or more concatenated 'pssh' boxes.
+        if (!GetKeyIdsForCommonSystemId(init_data, init_data_length, &keys)) {
+          promise->reject(NOT_SUPPORTED_ERROR, 0,
+                          "No supported PSSH box found.");
+          return;
+        }
+        break;
+      case EmeInitDataType::KEYIDS: {
+        std::string init_data_string(init_data, init_data + init_data_length);
+        std::string error_message;
+        if (!ExtractKeyIdsFromKeyIdsInitData(init_data_string, &keys,
+                                             &error_message)) {
+          promise->reject(NOT_SUPPORTED_ERROR, 0, error_message);
+          return;
+        }
+        break;
       }
-    } else {
-      // TODO(jrummell): Support init_data_type == "keyids".
-      promise->reject(NOT_SUPPORTED_ERROR, 0, "init_data_type not supported.");
-      return;
+      default:
+        NOTREACHED();
+        promise->reject(NOT_SUPPORTED_ERROR, 0,
+                        "init_data_type not supported.");
+        return;
     }
     CreateLicenseRequest(keys, session_type, &message);
   }
@@ -327,6 +342,7 @@ void AesDecryptor::UpdateSession(const std::string& session_id,
     return;
   }
 
+  bool key_added = false;
   for (KeyIdAndKeyPairs::iterator it = keys.begin(); it != keys.end(); ++it) {
     if (it->second.length() !=
         static_cast<size_t>(DecryptConfig::kDecryptionKeySize)) {
@@ -334,6 +350,12 @@ void AesDecryptor::UpdateSession(const std::string& session_id,
       promise->reject(INVALID_ACCESS_ERROR, 0, "Invalid key length.");
       return;
     }
+
+    // If this key_id doesn't currently exist in this session,
+    // a new key is added.
+    if (!HasKey(session_id, it->first))
+      key_added = true;
+
     if (!AddDecryptionKey(session_id, it->first, it->second)) {
       promise->reject(INVALID_ACCESS_ERROR, 0, "Unable to add key.");
       return;
@@ -367,9 +389,7 @@ void AesDecryptor::UpdateSession(const std::string& session_id,
     }
   }
 
-  // Assume that at least 1 new key has been successfully added and thus
-  // sending true for |has_additional_usable_key|. http://crbug.com/448219.
-  session_keys_change_cb_.Run(session_id, true, keys_info.Pass());
+  session_keys_change_cb_.Run(session_id, key_added, keys_info.Pass());
 }
 
 void AesDecryptor::CloseSession(const std::string& session_id,
@@ -413,11 +433,9 @@ Decryptor* AesDecryptor::GetDecryptor() {
   return this;
 }
 
-#if defined(ENABLE_BROWSER_CDMS)
 int AesDecryptor::GetCdmId() const {
   return kInvalidCdmId;
 }
-#endif  // defined(ENABLE_BROWSER_CDMS)
 
 void AesDecryptor::RegisterNewKeyCB(StreamType stream_type,
                                     const NewKeyCB& new_key_cb) {
@@ -537,6 +555,16 @@ AesDecryptor::DecryptionKey* AesDecryptor::GetKey(
 
   // Return the key from the "latest" session_id entry.
   return key_id_found->second->LatestDecryptionKey();
+}
+
+bool AesDecryptor::HasKey(const std::string& session_id,
+                          const std::string& key_id) {
+  base::AutoLock auto_lock(key_map_lock_);
+  KeyIdToSessionKeysMap::const_iterator key_id_found = key_map_.find(key_id);
+  if (key_id_found == key_map_.end())
+    return false;
+
+  return key_id_found->second->Contains(session_id);
 }
 
 void AesDecryptor::DeleteKeysForSession(const std::string& session_id) {

@@ -61,30 +61,6 @@ enum CaptureAlarm {
   AlarmCleared = 1
 };
 
-struct ViEVideoFrameI420 {
-  ViEVideoFrameI420() {
-    y_plane = NULL;
-    u_plane = NULL;
-    v_plane = NULL;
-    y_pitch = 0;
-    u_pitch = 0;
-    v_pitch = 0;
-    width = 0;
-    height = 0;
-  }
-
-  unsigned char* y_plane;
-  unsigned char* u_plane;
-  unsigned char* v_plane;
-
-  int y_pitch;
-  int u_pitch;
-  int v_pitch;
-
-  unsigned short width;
-  unsigned short height;
-};
-
 // This class declares an abstract interface to be used when implementing
 // a user-defined capture device. This interface is not meant to be
 // implemented by the user. Instead, the user should call AllocateCaptureDevice
@@ -98,22 +74,7 @@ class WEBRTC_DLLEXPORT ViEExternalCapture {
 
   // This method is called by the user to deliver a new captured frame to
   // VideoEngine.
-  // |capture_time| must be specified in the NTP time format in milliseconds.
-  virtual int IncomingFrame(unsigned char* video_frame,
-                            size_t video_frame_length,
-                            unsigned short width,
-                            unsigned short height,
-                            RawVideoType video_type,
-                            unsigned long long capture_time = 0) = 0;
-
-  // This method is specifically for delivering a new captured I420 frame to
-  // VideoEngine.
-  // |capture_time| must be specified in the NTP time format in milliseconds.
-  virtual int IncomingFrameI420(
-      const ViEVideoFrameI420& video_frame,
-      unsigned long long capture_time = 0) = 0;
-
-  virtual void SwapFrame(I420VideoFrame* frame) {}
+  virtual void IncomingFrame(const I420VideoFrame& frame) = 0;
 };
 
 // This class declares an abstract interface for a user defined observer. It is

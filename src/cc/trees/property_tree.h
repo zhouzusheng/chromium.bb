@@ -47,7 +47,6 @@ struct CC_EXPORT TransformNodeData {
   gfx::Transform post_local;
 
   gfx::Transform to_parent;
-  gfx::Transform from_parent;
 
   gfx::Transform to_target;
   gfx::Transform from_target;
@@ -69,7 +68,14 @@ struct CC_EXPORT TransformNodeData {
   bool is_animated;
   bool to_screen_is_animated;
 
-  bool flattens;
+  // Flattening, when needed, is only applied to a node's inherited transform,
+  // never to its local transform.
+  bool flattens_inherited_transform;
+
+  // This is true if the to_parent transform at every node on the path to the
+  // root is flat.
+  bool node_and_ancestors_are_flat;
+
   bool scrolls;
 
   bool needs_sublayer_scale;
@@ -81,9 +87,14 @@ struct CC_EXPORT TransformNodeData {
   // TODO(vollick): will be moved when accelerated effects are implemented.
   gfx::Vector2dF scroll_offset;
 
+  // We scroll snap where possible, but this has an effect on scroll
+  // compensation: the snap is yet more scrolling that must be compensated for.
+  // This value stores the snapped amount for this purpose.
+  gfx::Vector2dF scroll_snap;
+
   void set_to_parent(const gfx::Transform& transform) {
     to_parent = transform;
-    is_invertible = to_parent.GetInverse(&from_parent);
+    is_invertible = to_parent.IsInvertible();
   }
 };
 
@@ -99,6 +110,8 @@ struct CC_EXPORT ClipNodeData {
 };
 
 typedef TreeNode<ClipNodeData> ClipNode;
+
+typedef TreeNode<float> OpacityNode;
 
 template <typename T>
 class CC_EXPORT PropertyTree {
@@ -181,6 +194,8 @@ class CC_EXPORT TransformTree final : public PropertyTree<TransformNode> {
 };
 
 class CC_EXPORT ClipTree final : public PropertyTree<ClipNode> {};
+
+class CC_EXPORT OpacityTree final : public PropertyTree<OpacityNode> {};
 
 }  // namespace cc
 

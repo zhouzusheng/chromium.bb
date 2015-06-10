@@ -15,9 +15,9 @@
 #include "net/base/address_list.h"
 #include "net/base/completion_callback.h"
 #include "net/base/host_port_pair.h"
-#include "net/base/net_log.h"
 #include "net/base/network_change_notifier.h"
 #include "net/cert/cert_database.h"
+#include "net/log/net_log.h"
 #include "net/proxy/proxy_server.h"
 #include "net/quic/network_connection.h"
 #include "net/quic/quic_config.h"
@@ -75,7 +75,6 @@ class NET_EXPORT_PRIVATE QuicStreamRequest {
  private:
   QuicStreamFactory* factory_;
   HostPortPair host_port_pair_;
-  bool is_https_;
   BoundNetLog net_log_;
   CompletionCallback callback_;
   scoped_ptr<QuicHttpStream> stream_;
@@ -105,11 +104,13 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
       bool enable_port_selection,
       bool always_require_handshake_confirmation,
       bool disable_connection_pooling,
-      int load_server_info_timeout,
       float load_server_info_timeout_srtt_multiplier,
-      bool enable_truncated_connection_ids,
       bool enable_connection_racing,
+      bool enable_non_blocking_io,
       bool disable_disk_cache,
+      int max_number_of_lossy_connections,
+      float packet_loss_threshold,
+      int socket_receive_buffer_size,
       const QuicTagVector& connection_options);
   ~QuicStreamFactory() override;
 
@@ -124,6 +125,15 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
              base::StringPiece method,
              const BoundNetLog& net_log,
              QuicStreamRequest* request);
+
+  // Returns false if |packet_loss_rate| is less than |packet_loss_threshold_|
+  // otherwise it returns true and closes the session and marks QUIC as recently
+  // broken for the port of the session. Increments
+  // |number_of_lossy_connections_| by port.
+  bool OnHandshakeConfirmed(QuicClientSession* session, float packet_loss_rate);
+
+  // Returns true if QUIC is disabled for this port.
+  bool IsQuicDisabled(uint16 port);
 
   // Called by a session when it becomes idle.
   void OnIdleSession(QuicClientSession* session);
@@ -249,8 +259,8 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   int64 GetServerNetworkStatsSmoothedRttInMicroseconds(
       const QuicServerId& server_id) const;
 
-  // Helped methods.
-  bool WasAlternateProtocolRecentlyBroken(const QuicServerId& server_id) const;
+  // Helper methods.
+  bool WasQuicRecentlyBroken(const QuicServerId& server_id) const;
   bool CryptoConfigCacheIsEmpty(const QuicServerId& server_id);
 
   // Initializes the cached state associated with |server_id| in
@@ -311,34 +321,42 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   // Set if we do not want connection pooling.
   bool disable_connection_pooling_;
 
-  // Specifies the timeout in milliseconds to wait for loading of QUIC server
-  // information. If we don't want to timeout, set
-  // |load_server_info_timeout_ms_| to 0.
-  int load_server_info_timeout_ms_;
-
   // Specifies the ratio between time to load QUIC server information from disk
   // cache to 'smoothed RTT'. This ratio is used to calculate the timeout in
   // milliseconds to wait for loading of QUIC server information. If we don't
   // want to timeout, set |load_server_info_timeout_srtt_multiplier_| to 0.
   float load_server_info_timeout_srtt_multiplier_;
 
-  // Set this for setting config's BytesForConnectionIdToSend (TCID param) to 0.
-  bool enable_truncated_connection_ids_;
-
   // Set if we want to race connections - one connection that sends
   // INCHOATE_HELLO and another connection that sends CHLO after loading server
   // config from the disk cache.
   bool enable_connection_racing_;
 
+  // Set if experimental non-blocking IO should be used on windows sockets.
+  bool enable_non_blocking_io_;
+
   // Set if we do not want to load server config from the disk cache.
   bool disable_disk_cache_;
 
-  // Each profile will (probably) have a unique port_seed_ value.  This value is
-  // used to help seed a pseudo-random number generator (PortSuggester) so that
-  // we consistently (within this profile) suggest the same ephemeral port when
-  // we re-connect to any given server/port.  The differences between profiles
-  // (probablistically) prevent two profiles from colliding in their ephemeral
-  // port requests.
+  // Set if we want to disable QUIC when there is high packet loss rate.
+  // Specifies the maximum number of connections with high packet loss in a row
+  // after which QUIC will be disabled.
+  int max_number_of_lossy_connections_;
+  // Specifies packet loss rate in fraction after which a connection is closed
+  // and is considered as a lossy connection.
+  float packet_loss_threshold_;
+  // Count number of lossy connections by port.
+  std::map<uint16, int> number_of_lossy_connections_;
+
+  // Size of the UDP receive buffer.
+  int socket_receive_buffer_size_;
+
+  // Each profile will (probably) have a unique port_seed_ value.  This value
+  // is used to help seed a pseudo-random number generator (PortSuggester) so
+  // that we consistently (within this profile) suggest the same ephemeral
+  // port when we re-connect to any given server/port.  The differences between
+  // profiles (probablistically) prevent two profiles from colliding in their
+  // ephemeral port requests.
   uint64 port_seed_;
 
   // Local address of socket that was created in CreateSession.

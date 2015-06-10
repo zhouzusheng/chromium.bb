@@ -27,14 +27,14 @@
 #define SimplifiedBackwardsTextIterator_h
 
 #include "core/dom/Range.h"
-#include "core/editing/iterators/BitStack.h"
+#include "core/editing/iterators/FullyClippedStateStack.h"
 #include "core/editing/iterators/TextIteratorFlags.h"
 #include "platform/heap/Heap.h"
 
 namespace blink {
 
-class RenderText;
-class RenderTextFragment;
+class LayoutText;
+class LayoutTextFragment;
 
 // Iterates through the DOM range, returning all the text, and 0-length boundaries
 // at points where replaced elements break up the text flow. The text comes back in
@@ -72,7 +72,7 @@ private:
     void init(Node* startNode, Node* endNode, int startOffset, int endOffset);
     void exitNode();
     bool handleTextNode();
-    RenderText* handleFirstLetter(int& startOffset, int& offsetInNode);
+    LayoutText* handleFirstLetter(int& startOffset, int& offsetInNode);
     bool handleReplacedElement();
     bool handleNonTextNode();
     void emitCharacter(UChar, Node*, int startOffset, int endOffset);
@@ -84,7 +84,7 @@ private:
     int m_offset;
     bool m_handledNode;
     bool m_handledChildren;
-    BitStack m_fullyClippedStack;
+    FullyClippedStateStack m_fullyClippedStack;
 
     // End of the range.
     RawPtrWillBeMember<Node> m_startNode;

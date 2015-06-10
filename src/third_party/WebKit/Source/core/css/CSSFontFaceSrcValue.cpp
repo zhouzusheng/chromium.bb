@@ -26,13 +26,14 @@
 #include "config.h"
 #include "core/css/CSSFontFaceSrcValue.h"
 
-#include "core/FetchInitiatorTypeNames.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/Document.h"
 #include "core/dom/Node.h"
+#include "core/fetch/FetchInitiatorTypeNames.h"
 #include "core/fetch/FetchRequest.h"
 #include "core/fetch/FontResource.h"
 #include "core/fetch/ResourceFetcher.h"
+#include "core/loader/MixedContentChecker.h"
 #include "platform/fonts/FontCache.h"
 #include "platform/fonts/FontCustomPlatformData.h"
 #include "platform/weborigin/SecurityPolicy.h"
@@ -45,7 +46,7 @@ bool CSSFontFaceSrcValue::isSupportedFormat() const
     // Normally we would just check the format, but in order to avoid conflicts with the old WinIE style of font-face,
     // we will also check to see if the URL ends with .eot.  If so, we'll go ahead and assume that we shouldn't load it.
     if (m_format.isEmpty())
-        return m_resource.startsWith("data:", false) || !m_resource.endsWith(".eot", false);
+        return m_resource.startsWith("data:", TextCaseInsensitive) || !m_resource.endsWith(".eot", TextCaseInsensitive);
 
     return FontCustomPlatformData::supportsFormat(m_format);
 }
@@ -109,7 +110,8 @@ void CSSFontFaceSrcValue::restoreCachedResourceIfNeeded(Document* document)
 
     FetchRequest request(ResourceRequest(resourceURL), FetchInitiatorTypeNames::css);
     request.setContentSecurityCheck(m_shouldCheckContentSecurityPolicy);
-    document->fetcher()->maybeNotifyInsecureContent(m_fetched.get());
+    MixedContentChecker::shouldBlockFetch(document->frame(), m_fetched->lastResourceRequest(),
+        m_fetched->lastResourceRequest().url(), MixedContentChecker::SendReport);
     document->fetcher()->requestLoadStarted(m_fetched.get(), request, ResourceFetcher::ResourceLoadingFromCache);
 }
 

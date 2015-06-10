@@ -17,6 +17,7 @@ class GURL;
 
 namespace base {
 class FilePath;
+class Time;
 }
 
 namespace storage {
@@ -38,6 +39,7 @@ class BrowserPluginGuestManager;
 class DownloadManager;
 class DownloadManagerDelegate;
 class IndexedDBContext;
+class PermissionManager;
 class PushMessagingService;
 class ResourceContext;
 class SiteInstance;
@@ -87,6 +89,14 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   static void CreateMemoryBackedBlob(BrowserContext* browser_context,
                                      const char* data, size_t length,
                                      const BlobCallback& callback);
+
+  // |callback| returns a nullptr scoped_ptr on failure.
+  static void CreateFileBackedBlob(BrowserContext* browser_context,
+                                   const base::FilePath& path,
+                                   int64_t offset,
+                                   int64_t size,
+                                   const base::Time& expected_modification_time,
+                                   const BlobCallback& callback);
 
   // Delivers a push message with |data| to the Service Worker identified by
   // |origin| and |service_worker_registration_id|.
@@ -172,6 +182,10 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   // Returns the SSL host state decisions for this context. The context may
   // return nullptr, implementing the default exception storage strategy.
   virtual SSLHostStateDelegate* GetSSLHostStateDelegate() = 0;
+
+  // Returns the PermissionManager associated with that context if any, nullptr
+  // otherwise.
+  virtual PermissionManager* GetPermissionManager() = 0;
 };
 
 }  // namespace content

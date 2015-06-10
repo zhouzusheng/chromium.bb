@@ -16,10 +16,8 @@
 #include "base/memory/scoped_vector.h"
 #include "base/values.h"
 #include "content/public/browser/certificate_request_result_type.h"
-#include "content/public/browser/permission_type.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/media_stream_request.h"
-#include "content/public/common/permission_status.mojom.h"
 #include "content/public/common/resource_type.h"
 #include "content/public/common/socket_permission_request.h"
 #include "content/public/common/window_container_type.h"
@@ -57,7 +55,6 @@ class ImageSkia;
 
 namespace net {
 class CookieOptions;
-class CookieStore;
 class NetLog;
 class SSLCertRequestInfo;
 class SSLInfo;
@@ -82,6 +79,7 @@ class FileSystemBackend;
 
 namespace content {
 
+enum class PermissionType;
 class AccessTokenStore;
 class BrowserChildProcessHost;
 class BrowserContext;
@@ -89,6 +87,7 @@ class BrowserMainParts;
 class BrowserPluginGuestDelegate;
 class BrowserPpapiHost;
 class BrowserURLHandler;
+class ClientCertificateDelegate;
 class DevToolsManagerDelegate;
 class ExternalVideoSurfaceContainer;
 class LocationProvider;
@@ -400,14 +399,14 @@ class CONTENT_EXPORT ContentBrowserClient {
                                      const base::Callback<void(bool)>& callback,
                                      CertificateRequestResultType* result) {}
 
-  // Selects a SSL client certificate and returns it to the |callback|. If no
-  // certificate was selected nullptr is returned to the |callback|. Note:
-  // |callback| may be called synchronously or asynchronously.
+  // Selects a SSL client certificate and returns it to the |delegate|. Note:
+  // |delegate| may be called synchronously or asynchronously.
+  //
+  // TODO(davidben): Move this hook to WebContentsDelegate.
   virtual void SelectClientCertificate(
-      int render_process_id,
-      int render_frame_id,
+      WebContents* web_contents,
       net::SSLCertRequestInfo* cert_request_info,
-      const base::Callback<void(net::X509Certificate*)>& callback);
+      scoped_ptr<ClientCertificateDelegate> delegate);
 
   // Adds a new installable certificate or private key.
   // Typically used to install an X.509 user certificate.
@@ -427,35 +426,6 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Notifications to the user. The embedder can return a nullptr if they don't
   // support this functionality. May be called from any thread.
   virtual PlatformNotificationService* GetPlatformNotificationService();
-
-  virtual void RequestPermission(
-      PermissionType permission,
-      WebContents* web_contents,
-      int bridge_id,
-      const GURL& requesting_frame,
-      bool user_gesture,
-      const base::Callback<void(bool)>& result_callback);
-
-  virtual void CancelPermissionRequest(PermissionType permission,
-                                       WebContents* web_contents,
-                                       int bridge_id,
-                                       const GURL& requesting_frame) {}
-
-  virtual void RegisterPermissionUsage(PermissionType permission,
-                                       WebContents* web_contents,
-                                       const GURL& frame_url,
-                                       const GURL& main_frame_url) {}
-
-  virtual PermissionStatus GetPermissionStatus(
-      PermissionType permission,
-      BrowserContext* browser_context,
-      const GURL& requesting_origin,
-      const GURL& embedding_origin);
-
-  virtual void ResetPermission(PermissionType permission,
-                               BrowserContext* browser_context,
-                               const GURL& requesting_origin,
-                               const GURL& embedding_origin) {}
 
   // Returns true if the given page is allowed to open a window of the given
   // type. If true is returned, |no_javascript_access| will indicate whether
@@ -505,10 +475,10 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual void BrowserURLHandlerCreated(BrowserURLHandler* handler) {}
 
   // Clears browser cache.
-  virtual void ClearCache(RenderViewHost* rvh) {}
+  virtual void ClearCache(RenderFrameHost* rfh) {}
 
   // Clears browser cookies.
-  virtual void ClearCookies(RenderViewHost* rvh) {}
+  virtual void ClearCookies(RenderFrameHost* rfh) {}
 
   // Returns the default download directory.
   // This can be called on any thread.
@@ -586,12 +556,6 @@ class CONTENT_EXPORT ContentBrowserClient {
       BrowserContext* browser_context,
       const GURL& url);
 
-  // Returns a special cookie store to use for a given render process, or
-  // nullptr if the default cookie store should be used.
-  // This is called on the IO thread.
-  virtual net::CookieStore* OverrideCookieStoreForRenderProcess(
-      int render_process_id);
-
   // Checks if |security_origin| has permission to access the microphone or
   // camera. Note that this does not query the user. |type| must be
   // MEDIA_DEVICE_AUDIO_CAPTURE or MEDIA_DEVICE_VIDEO_CAPTURE.
@@ -625,6 +589,9 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual void OpenURL(BrowserContext* browser_context,
                        const OpenURLParams& params,
                        const base::Callback<void(WebContents*)>& callback);
+
+  // Allows the embedder to record |metric| for a specific |url|.
+  virtual void RecordURLMetric(const std::string& metric, const GURL& url) {}
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
   // Populates |mappings| with all files that need to be mapped before launching

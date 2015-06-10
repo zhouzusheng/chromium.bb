@@ -26,6 +26,7 @@
 #ifndef AXObjectCache_h
 #define AXObjectCache_h
 
+#include "core/CoreExport.h"
 #include "core/dom/Document.h"
 
 typedef unsigned AXID;
@@ -33,12 +34,14 @@ typedef unsigned AXID;
 namespace blink {
 class AXObject;
 class FrameView;
+class HTMLOptionElement;
+class HTMLSelectElement;
+class LayoutMenuList;
 class Page;
-class RenderMenuList;
 class Widget;
 
-class AXObjectCache {
-    WTF_MAKE_NONCOPYABLE(AXObjectCache); WTF_MAKE_FAST_ALLOCATED;
+class CORE_EXPORT AXObjectCache {
+    WTF_MAKE_NONCOPYABLE(AXObjectCache); WTF_MAKE_FAST_ALLOCATED(AXObjectCache);
 public:
     static AXObjectCache* create(Document&);
 
@@ -62,6 +65,7 @@ public:
         AXLoadComplete,
         AXLocationChanged,
         AXMenuListItemSelected,
+        AXMenuListItemUnselected,
         AXMenuListValueChanged,
         AXRowCollapsed,
         AXRowCountChanged,
@@ -81,7 +85,9 @@ public:
     virtual void childrenChanged(Node*) = 0;
     virtual void childrenChanged(LayoutObject*) = 0;
     virtual void checkedStateChanged(Node*) = 0;
-    virtual void selectedChildrenChanged(Node*) = 0;
+    virtual void listboxOptionStateChanged(HTMLOptionElement*) = 0;
+    virtual void listboxSelectedChildrenChanged(HTMLSelectElement*) = 0;
+    virtual void listboxActiveIndexChanged(HTMLSelectElement*) = 0;
 
     virtual void remove(LayoutObject*) = 0;
     virtual void remove(Node*) = 0;
@@ -100,7 +106,7 @@ public:
     virtual void handleEditableTextContentChanged(Node*) = 0;
     virtual void handleTextFormControlChanged(Node*) = 0;
     virtual void handleValueChanged(Node*) = 0;
-    virtual void handleUpdateActiveMenuOption(RenderMenuList*, int optionIndex) = 0;
+    virtual void handleUpdateActiveMenuOption(LayoutMenuList*, int optionIndex) = 0;
     virtual void handleLoadComplete(Document*) = 0;
     virtual void handleLayoutComplete(Document*) = 0;
 
@@ -132,7 +138,7 @@ private:
     static AXObjectCacheCreateFunction m_createFunction;
 };
 
-class ScopedAXObjectCache {
+class CORE_EXPORT ScopedAXObjectCache {
     WTF_MAKE_NONCOPYABLE(ScopedAXObjectCache);
 public:
     explicit ScopedAXObjectCache(Document&);

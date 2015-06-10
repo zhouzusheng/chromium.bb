@@ -35,9 +35,9 @@
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSReflectionDirection.h"
 #include "core/css/CSSToLengthConversionData.h"
-#include "core/layout/style/SVGLayoutStyleDefs.h"
-#include "core/layout/style/LineClampValue.h"
-#include "core/layout/style/LayoutStyleConstants.h"
+#include "core/style/SVGComputedStyleDefs.h"
+#include "core/style/LineClampValue.h"
+#include "core/style/ComputedStyleConstants.h"
 #include "platform/Length.h"
 #include "platform/ThemeTypes.h"
 #include "platform/fonts/FontDescription.h"
@@ -1423,7 +1423,6 @@ template<> inline CSSPrimitiveValue::operator EFloat() const
     case CSSValueRight:
         return RightFloat;
     case CSSValueNone:
-    case CSSValueCenter: // Non-standard CSS value.
         return NoFloat;
     default:
         break;

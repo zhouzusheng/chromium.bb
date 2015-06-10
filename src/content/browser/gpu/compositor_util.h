@@ -17,6 +17,10 @@ namespace content {
 // flags, or platform default).
 CONTENT_EXPORT bool IsPinchVirtualViewportEnabled();
 
+// Returns true if property tree verification is enabled (via flags or platform
+// default).
+CONTENT_EXPORT bool IsPropertyTreeVerificationEnabled();
+
 // Returns true if delegated-renderer is on (via flags, or platform default).
 CONTENT_EXPORT bool IsDelegatedRendererEnabled();
 
@@ -41,10 +45,6 @@ CONTENT_EXPORT int GpuRasterizationMSAASampleCount();
 
 // Returns true if force-gpu-rasterization is on (via flags) for the renderer.
 CONTENT_EXPORT bool IsForceGpuRasterizationEnabled();
-
-// Returns true if threaded GPU rasterization is on (via flags) for the
-// renderer.
-CONTENT_EXPORT bool IsThreadedGpuRasterizationEnabled();
 
 // Returns the number of raster threads to use for compositing.
 CONTENT_EXPORT int NumberOfRendererRasterThreads();

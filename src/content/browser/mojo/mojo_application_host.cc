@@ -63,9 +63,18 @@ bool MojoApplicationHost::Init() {
 
   mojo::embedder::PlatformChannelPair channel_pair;
 
+  scoped_refptr<base::TaskRunner> io_task_runner;
+  if (io_task_runner_override_) {
+    io_task_runner = io_task_runner_override_;
+  } else {
+    io_task_runner =
+        BrowserThread::UnsafeGetMessageLoopForThread(BrowserThread::IO)
+          ->task_runner();
+  }
+
   mojo::ScopedMessagePipeHandle message_pipe = channel_init_.Init(
       PlatformFileFromScopedPlatformHandle(channel_pair.PassServerHandle()),
-      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
+      io_task_runner);
   if (!message_pipe.is_valid())
     return false;
 
@@ -91,6 +100,16 @@ void MojoApplicationHost::Activate(IPC::Sender* sender,
 
 void MojoApplicationHost::WillDestroySoon() {
   channel_init_.WillDestroySoon();
+}
+
+void MojoApplicationHost::ShutdownOnIOThread() {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  channel_init_.ShutdownOnIOThread();
+}
+
+void MojoApplicationHost::OverrideIOTaskRunnerForTest(
+    scoped_refptr<base::TaskRunner> io_task_runner) {
+  io_task_runner_override_ = io_task_runner;
 }
 
 }  // namespace content

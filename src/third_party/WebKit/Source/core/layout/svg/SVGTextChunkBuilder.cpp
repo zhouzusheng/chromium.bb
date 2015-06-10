@@ -18,12 +18,12 @@
  */
 
 #include "config.h"
-
 #include "core/layout/svg/SVGTextChunkBuilder.h"
 
 #include "core/layout/svg/LayoutSVGInlineText.h"
 #include "core/layout/svg/line/SVGInlineTextBox.h"
 #include "core/svg/SVGLengthContext.h"
+#include "core/svg/SVGTextContentElement.h"
 
 namespace blink {
 
@@ -85,11 +85,11 @@ void SVGTextChunkBuilder::addTextChunk(Vector<SVGInlineTextBox*>& lineLayoutBoxe
     SVGInlineTextBox* textBox = lineLayoutBoxes[boxStart];
     ASSERT(textBox);
 
-    LayoutSVGInlineText& textRenderer = toLayoutSVGInlineText(textBox->renderer());
+    LayoutSVGInlineText& textRenderer = toLayoutSVGInlineText(textBox->layoutObject());
 
-    const LayoutStyle& style = toLayoutSVGInlineText(textBox->renderer()).styleRef();
+    const ComputedStyle& style = toLayoutSVGInlineText(textBox->layoutObject()).styleRef();
 
-    const SVGLayoutStyle& svgStyle = style.svgStyle();
+    const SVGComputedStyle& svgStyle = style.svgStyle();
 
     // Build chunk style flags.
     unsigned chunkStyle = SVGTextChunk::DefaultStyle;

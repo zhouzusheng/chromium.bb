@@ -31,6 +31,7 @@ Alexey Korepanov <alexkorep@gmail.com>
 Alexis Menard <alexis.menard@intel.com>
 Alfredo Hernandez <ahernandez.miralles@gmail.com>
 Ali Vathi <ali.akbar@gmail.com>
+Ambarish Rapte <ambarish.r@samsung.com>
 Amit Sarkar <amit.srkr@samsung.com>
 Amogh Bihani <amogh.bihani@samsung.com>
 Amruth Raj <amruthraj@motorola.com>
@@ -91,6 +92,7 @@ Changbin Shao <changbin.shao@intel.com>
 Changjun Yang <changjun.yang@intel.com>
 Chansik Yun <chansik.yun@gmail.com>
 Chaobin Zhang <zhchbin@gmail.com>
+Chris Greene <cwgreene@amazon.com>
 Chris Harrelson <chrishtr@gmail.com>
 Chris Nardi <hichris123@gmail.com>
 Chris Vasselli <clindsay@gmail.com>
@@ -109,6 +111,7 @@ Daniel Carvalho Liedke <dliedke@gmail.com>
 Daniel Imms <daniimms@amazon.com>
 Daniel Johnson <danielj41@gmail.com>
 Daniel Nishi <dhnishi@gmail.com>
+Daniel Platz <daplatz@googlemail.com>
 Daniel Shaulov <dshaulov@ptc.com>
 Daniel Trebbien <dtrebbien@gmail.com>
 Darshini KN <kn.darshini@samsung.com>
@@ -133,6 +136,7 @@ Dongjun Kim <djmix.kim@samsung.com>
 Dongseong Hwang <dongseong.hwang@intel.com>
 Dongwoo Joshua Im <dw.im@samsung.com>
 Douglas F. Turner <doug.turner@gmail.com>
+Dustin Doloff <doloffd@amazon.com>
 Ebrahim Byagowi <ebraminio@gmail.com>
 Eduardo Lima (Etrunko) <eduardo.lima@intel.com>
 Edward Crossman <tedoc2000@gmail.com>
@@ -169,6 +173,7 @@ Glenn Adams <glenn@chromium.org>
 Gnanasekar Somanathan <gnanasekar.s@samsung.com>
 Gordana Cmiljanovic <gordana.cmiljanovic@imgtec.com>
 Goutham Jagannatha <wrm364@motorola.com>
+Graham Yoakum <gyoakum@skobalt.com>
 Gregory Davis <gpdavis.chromium@gmail.com>
 Grzegorz Czajkowski <g.czajkowski@samsung.com>
 Guangzhen Li <guangzhen.li@intel.com>
@@ -189,6 +194,7 @@ Hongbo Min <hongbo.min@intel.com>
 Horia Olaru <horia.olaru@gmail.com>
 Horia Olaru <olaru@adobe.com>
 Hosung You <hosung.you@samsung.com>
+Huayong Xu <huayong.xu@samsung.com>
 Hugo Holgersson <hugo.holgersson@sonymobile.com>
 Hwanseung Lee <rucifer1217@gmail.com>
 Hyunki Baik <hyunki.baik@samsung.com>
@@ -210,6 +216,7 @@ James Wei <james.wei@intel.com>
 James Willcox <jwillcox@litl.com>
 Janwar Dinata <j.dinata@gmail.com>
 Jared Shumway <jaredshumway94@gmail.com>
+Jared Sohn <jared.sohn@gmail.com>
 Jared Wein <weinjared@gmail.com>
 Jay Soffian <jaysoffian@gmail.com>
 Jeado Ko <haibane84@gmail.com>
@@ -236,6 +243,7 @@ John Yani <vanuan@gmail.com>
 John Yoo <nearbyh13@gmail.com>
 Johnson Lin <johnson.lin@intel.com>
 Jonathan Frazer <listedegarde@gmail.com>
+Jonathan Garbee <jonathan@garbee.me>
 Jonathan Hacker <jhacker@arcanefour.com>
 Jongsoo Lee <leejongsoo@gmail.com>
 Joone Hur <joone.hur@intel.com>
@@ -251,6 +259,7 @@ Julien Racle <jracle@logitech.com>
 Jun Jiang <jun.a.jiang@intel.com>
 Junchao Han <junchao.han@intel.com>
 JungJik Lee <jungjik.lee@samsung.com>
+Jungkee Song <jungkee.song@samsung.com>
 Junmin Zhu <junmin.zhu@intel.com>
 Kal Conley <kcconley@gmail.com>
 Kalyan Kondapally <kalyan.kondapally@intel.com>
@@ -421,11 +430,13 @@ Ruiyi Luo <luoruiyi2008@gmail.com>
 Ryan Ackley <ryanackley@gmail.com>
 Ryan Norton <rnorton10@gmail.com>
 Ryan Sleevi <ryan-chromium-dev@sleevi.com>
+Ryan Yoakum <ryoakum@skobalt.com>
 Ryuan Choi <ryuan.choi@samsung.com>
 Saikrishna Arcot <saiarcot895@gmail.com>
 Salvatore Iovene <salvatore.iovene@intel.com>
 Sam Larison <qufighter@gmail.com>
 Sam McDonald <sam@sammcd.com>
+Sanghyun Park <sh919.park@samsung.com>
 Sanjoy Pal <ncj674@motorola.com>
 Sanjoy Pal <sanjoy.pal@samsung.com>
 Sanne Wouda <sanne.wouda@gmail.com>
@@ -449,6 +460,7 @@ Shez Baig <sbaig1@bloomberg.net>
 Shiliu Wang <aofdwsl@gmail.com>
 Shiliu Wang <shiliu.wang@intel.com>
 Shilpa Shri <shilpa.shri@samsung.com>
+Shivakumar JM <shiva.jm@samsung.com>
 Shouqun Liu <shouqun.liu@intel.com>
 Shreeram Kushwaha <shreeram.k@samsung.com>
 Shreyas Gopal <shreyas.g@samsung.com>
@@ -483,6 +495,7 @@ Teodora Novkovic <teodora.petrovic@gmail.com>
 Thiago Farina <thiago.farina@gmail.com>
 Thiago Marcos P. Santos <thiago.santos@intel.com>
 Thomas Butter <tbutter@gmail.com>
+Thomas Conti <tomc@amazon.com>
 Tiago Vignatti <tiago.vignatti@intel.com>
 Tim Ansell <mithro@mithis.com>
 Timo Reimann <ttr314@googlemail.com>
@@ -492,6 +505,7 @@ U. Artie Eoff <ullysses.a.eoff@intel.com>
 Umar Hansa <umar.hansa@gmail.com>
 Vamshikrishna Yellenki <vamshi@motorola.com>
 Vani Hegde <vani.hegde@samsung.com>
+Vartul Katiyar <vartul.k@samsung.com>
 Vedran Šajatović <vedran.sajatovic@gmail.com>
 Vernon Tang <vt@foilhead.net>
 Viatcheslav Ostapenko <sl.ostapenko@samsung.com>
@@ -501,6 +515,7 @@ Vinay Anantharaman <vinaya@adobe.com>
 Vipul Bhasin <vipul.bhasin@gmail.com>
 Visa Putkinen <v.putkinen@partner.samsung.com>
 Vivek Galatage <vivek.vg@samsung.com>
+Wesley Lancel <wesleylancel@gmail.com>
 Will Hirsch <chromium@willhirsch.co.uk>
 William Xie <william.xie@intel.com>
 Xiang Long <xiang.long@intel.com>
@@ -515,6 +530,7 @@ Yang Gu <yang.gu@intel.com>
 Yarin Kaul <yarin.kaul@gmail.com>
 Ye Liu <cbakgly@gmail.com>
 Yi Shen <yi.shen@samsung.com>
+Yi Sun <ratsunny@gmail.com>
 Yoav Weiss <yoav@yoav.ws>
 Yoav Zilberberg <yoav.zilberberg@gmail.com>
 Yong Shin <sy3620@gmail.com>
@@ -530,6 +546,7 @@ Zhaoze Zhou <zhaoze.zhou@partner.samsung.com>
 Zheng Chuang <zhengchuangscu@gmail.com>
 Zhenyu Liang <zhenyu.liang@intel.com>
 Zhenyu Shan <zhenyu.shan@intel.com>
+Zhuoyu Qian <zhuoyu.qian@samsung.com>
 Ziran Sun <ziran.sun@samsung.com>
 Zoltan Herczeg <zherczeg.u-szeged@partner.samsung.com>
 Zsolt Borbely <zsborbely.u-szeged@partner.samsung.com>
@@ -540,6 +557,8 @@ Peng Hu <penghu@tencent.com>
 WenSheng He <wensheng.he@samsung.com>
 Raghu Ram Nagaraj <r.nagaraj@samsung.com>
 Chanho Park <parkch98@gmail.com>
+Payal Pandey <payal.pandey@samsung.com>
+Kenneth Strickland <ken.strickland@gmail.com>
 
 BlackBerry Limited <*@blackberry.com>
 Code Aurora Forum <*@codeaurora.org>
@@ -548,6 +567,7 @@ Google Inc. <*@google.com>
 Igalia S.L. <*@igalia.com>
 NVIDIA Corporation <*@nvidia.com>
 Opera Software ASA <*@opera.com>
+TeamSpeak Systems GmbH <*@teamspeak.com>
 The Chromium Authors <*@chromium.org>
 The MathWorks, Inc. <binod.pant@mathworks.com>
 Torchmobile Inc.

@@ -13,11 +13,11 @@
 
 #include <vector>
 
+#include "webrtc/base/scoped_ptr.h"
 #include "webrtc/call.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/modules/video_render/include/video_render_defines.h"
 #include "webrtc/system_wrappers/interface/clock.h"
-#include "webrtc/system_wrappers/interface/scoped_ptr.h"
 #include "webrtc/video/encoded_frame_callback_adapter.h"
 #include "webrtc/video/receive_statistics_proxy.h"
 #include "webrtc/video/transport_adapter.h"
@@ -49,25 +49,25 @@ class VideoReceiveStream : public webrtc::VideoReceiveStream,
                      int base_channel);
   virtual ~VideoReceiveStream();
 
-  virtual void Start() override;
-  virtual void Stop() override;
-  virtual Stats GetStats() const override;
+  void Start() override;
+  void Stop() override;
+  Stats GetStats() const override;
 
   // Overrides I420FrameCallback.
-  virtual void FrameCallback(I420VideoFrame* video_frame) override;
+  void FrameCallback(I420VideoFrame* video_frame) override;
 
   // Overrides ExternalRenderer.
-  virtual int FrameSizeChange(unsigned int width,
-                              unsigned int height,
-                              unsigned int number_of_streams) override;
-  virtual int DeliverFrame(unsigned char* buffer,
-                           size_t buffer_size,
-                           uint32_t timestamp,
-                           int64_t ntp_time_ms,
-                           int64_t render_time_ms,
-                           void* handle) override;
-  virtual int DeliverI420Frame(const I420VideoFrame& webrtc_frame) override;
-  virtual bool IsTextureSupported() override;
+  int FrameSizeChange(unsigned int width,
+                      unsigned int height,
+                      unsigned int number_of_streams) override;
+  int DeliverFrame(unsigned char* buffer,
+                   size_t buffer_size,
+                   uint32_t timestamp,
+                   int64_t ntp_time_ms,
+                   int64_t render_time_ms,
+                   void* handle) override;
+  int DeliverI420Frame(const I420VideoFrame& webrtc_frame) override;
+  bool IsTextureSupported() override;
 
   void SignalNetworkState(Call::NetworkState state);
 
@@ -90,7 +90,7 @@ class VideoReceiveStream : public webrtc::VideoReceiveStream,
   ViERTP_RTCP* rtp_rtcp_;
   ViEImageProcess* image_process_;
 
-  scoped_ptr<ReceiveStatisticsProxy> stats_proxy_;
+  rtc::scoped_ptr<ReceiveStatisticsProxy> stats_proxy_;
 
   int channel_;
 };

@@ -33,6 +33,7 @@
 
 #include "base/base_export.h"
 #include "base/basictypes.h"
+#include "base/numerics/safe_math.h"
 #include "build/build_config.h"
 
 #if defined(OS_MACOSX)
@@ -140,50 +141,54 @@ class BASE_EXPORT TimeDelta {
 
   // Computations with other deltas.
   TimeDelta operator+(TimeDelta other) const {
-    return TimeDelta(delta_ + other.delta_);
+    return TimeDelta(SaturatedAdd(other.delta_));
   }
   TimeDelta operator-(TimeDelta other) const {
-    return TimeDelta(delta_ - other.delta_);
+    return TimeDelta(SaturatedSub(other.delta_));
   }
 
   TimeDelta& operator+=(TimeDelta other) {
-    delta_ += other.delta_;
+    delta_ = SaturatedAdd(other.delta_);
     return *this;
   }
   TimeDelta& operator-=(TimeDelta other) {
-    delta_ -= other.delta_;
+    delta_ = SaturatedSub(other.delta_);
     return *this;
   }
   TimeDelta operator-() const {
     return TimeDelta(-delta_);
   }
 
-  // Computations with ints, note that we only allow multiplicative operations
-  // with ints, and additive operations with other deltas.
-  TimeDelta operator*(int64 a) const {
-    return TimeDelta(delta_ * a);
+  // Computations with numeric types.
+  template<typename T>
+  TimeDelta operator*(T a) const {
+    CheckedNumeric<int64> rv(delta_);
+    rv *= a;
+    return TimeDelta(FromCheckedNumeric(rv));
   }
-  TimeDelta operator/(int64 a) const {
-    return TimeDelta(delta_ / a);
+  template<typename T>
+  TimeDelta operator/(T a) const {
+    CheckedNumeric<int64> rv(delta_);
+    rv /= a;
+    return TimeDelta(FromCheckedNumeric(rv));
   }
-  TimeDelta& operator*=(int64 a) {
-    delta_ *= a;
+  template<typename T>
+  TimeDelta& operator*=(T a) {
+    CheckedNumeric<int64> rv(delta_);
+    rv *= a;
+    delta_ = FromCheckedNumeric(rv);
     return *this;
   }
-  TimeDelta& operator/=(int64 a) {
-    delta_ /= a;
+  template<typename T>
+  TimeDelta& operator/=(T a) {
+    CheckedNumeric<int64> rv(delta_);
+    rv /= a;
+    delta_ = FromCheckedNumeric(rv);
     return *this;
-  }
-  int64 operator/(TimeDelta a) const {
-    return delta_ / a.delta_;
   }
 
-  // Multiplicative computations with floats.
-  TimeDelta multiply_by(double a) const {
-    return TimeDelta(delta_ * a);
-  }
-  TimeDelta divide_by(double a) const {
-    return TimeDelta(delta_ / a);
+  int64 operator/(TimeDelta a) const {
+    return delta_ / a.delta_;
   }
 
   // Defined below because it depends on the definition of the other classes.
@@ -213,7 +218,6 @@ class BASE_EXPORT TimeDelta {
  private:
   friend class Time;
   friend class TimeTicks;
-  friend TimeDelta operator*(int64 a, TimeDelta td);
 
   // Constructs a delta given the duration in microseconds. This is private
   // to avoid confusion by callers with an integer constructor. Use
@@ -221,12 +225,20 @@ class BASE_EXPORT TimeDelta {
   explicit TimeDelta(int64 delta_us) : delta_(delta_us) {
   }
 
+  // Add or subtract |value| from this delta.
+  int64 SaturatedAdd(int64 value) const;
+  int64 SaturatedSub(int64 value) const;
+
+  // Clamp |value| on overflow and underflow conditions.
+  static int64 FromCheckedNumeric(const CheckedNumeric<int64> value);
+
   // Delta in microseconds.
   int64 delta_;
 };
 
-inline TimeDelta operator*(int64 a, TimeDelta td) {
-  return TimeDelta(a * td.delta_);
+template<typename T>
+inline TimeDelta operator*(T a, TimeDelta td) {
+  return td * a;
 }
 
 // For logging use only.
@@ -237,13 +249,16 @@ BASE_EXPORT std::ostream& operator<<(std::ostream& os, TimeDelta time_delta);
 // Represents a wall clock time in UTC.
 class BASE_EXPORT Time {
  public:
+  static const int64 kHoursPerDay = 24;
   static const int64 kMillisecondsPerSecond = 1000;
+  static const int64 kMillisecondsPerDay = kMillisecondsPerSecond * 60 * 60 *
+                                           kHoursPerDay;
   static const int64 kMicrosecondsPerMillisecond = 1000;
   static const int64 kMicrosecondsPerSecond = kMicrosecondsPerMillisecond *
                                               kMillisecondsPerSecond;
   static const int64 kMicrosecondsPerMinute = kMicrosecondsPerSecond * 60;
   static const int64 kMicrosecondsPerHour = kMicrosecondsPerMinute * 60;
-  static const int64 kMicrosecondsPerDay = kMicrosecondsPerHour * 24;
+  static const int64 kMicrosecondsPerDay = kMicrosecondsPerHour * kHoursPerDay;
   static const int64 kMicrosecondsPerWeek = kMicrosecondsPerDay * 7;
   static const int64 kNanosecondsPerMicrosecond = 1000;
   static const int64 kNanosecondsPerSecond = kNanosecondsPerMicrosecond *
@@ -452,20 +467,20 @@ class BASE_EXPORT Time {
 
   // Modify by some time delta.
   Time& operator+=(TimeDelta delta) {
-    us_ += delta.delta_;
+    us_ = delta.SaturatedAdd(us_);
     return *this;
   }
   Time& operator-=(TimeDelta delta) {
-    us_ -= delta.delta_;
+    us_ = -delta.SaturatedSub(us_);
     return *this;
   }
 
   // Return a new time modified by some delta.
   Time operator+(TimeDelta delta) const {
-    return Time(us_ + delta.delta_);
+    return Time(delta.SaturatedAdd(us_));
   }
   Time operator-(TimeDelta delta) const {
-    return Time(us_ - delta.delta_);
+    return Time(-delta.SaturatedSub(us_));
   }
 
   // Comparison operators
@@ -584,7 +599,7 @@ inline TimeDelta TimeDelta::FromMicroseconds(int64 us) {
 }
 
 inline Time TimeDelta::operator+(Time t) const {
-  return Time(t.us_ + delta_);
+  return Time(SaturatedAdd(t.us_));
 }
 
 // For logging use only.
@@ -666,6 +681,11 @@ class BASE_EXPORT TimeTicks {
     return ticks_ == 0;
   }
 
+  // Returns true if the time delta is the maximum delta.
+  bool is_max() const {
+    return ticks_ == std::numeric_limits<int64>::max();
+  }
+
   // Converts an integer value representing TimeTicks to a class. This is used
   // when deserializing a |TimeTicks| structure, using a value known to be
   // compatible. It is not provided as a constructor because the integer type
@@ -706,20 +726,20 @@ class BASE_EXPORT TimeTicks {
 
   // Modify by some time delta.
   TimeTicks& operator+=(TimeDelta delta) {
-    ticks_ += delta.delta_;
+    ticks_ = delta.SaturatedAdd(ticks_);
     return *this;
   }
   TimeTicks& operator-=(TimeDelta delta) {
-    ticks_ -= delta.delta_;
+    ticks_ = -delta.SaturatedSub(ticks_);
     return *this;
   }
 
   // Return a new TimeTicks modified by some delta.
   TimeTicks operator+(TimeDelta delta) const {
-    return TimeTicks(ticks_ + delta.delta_);
+    return TimeTicks(delta.SaturatedAdd(ticks_));
   }
   TimeTicks operator-(TimeDelta delta) const {
-    return TimeTicks(ticks_ - delta.delta_);
+    return TimeTicks(-delta.SaturatedSub(ticks_));
   }
 
   // Comparison operators
@@ -760,7 +780,7 @@ class BASE_EXPORT TimeTicks {
 };
 
 inline TimeTicks TimeDelta::operator+(TimeTicks t) const {
-  return TimeTicks(t.ticks_ + delta_);
+  return TimeTicks(SaturatedAdd(t.ticks_));
 }
 
 // For logging use only.

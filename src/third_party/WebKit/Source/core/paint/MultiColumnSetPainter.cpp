@@ -9,7 +9,7 @@
 #include "core/layout/PaintInfo.h"
 #include "core/paint/BlockPainter.h"
 #include "core/paint/BoxPainter.h"
-#include "core/paint/RenderDrawingRecorder.h"
+#include "core/paint/LayoutObjectDrawingRecorder.h"
 #include "platform/geometry/LayoutPoint.h"
 
 namespace blink {
@@ -23,7 +23,7 @@ void MultiColumnSetPainter::paintObject(const PaintInfo& paintInfo, const Layout
 
     // FIXME: Right now we're only painting in the foreground phase.
     // Columns should technically respect phases and allow for background/float/foreground overlap etc., just like
-    // RenderBlocks do. Note this is a pretty minor issue, since the old column implementation clipped columns
+    // LayoutBlocks do. Note this is a pretty minor issue, since the old column implementation clipped columns
     // anyway, thus making it impossible for them to overlap one another. It's also really unlikely that the columns
     // would overlap another block.
     if (!m_renderMultiColumnSet.flowThread() || !m_renderMultiColumnSet.isValid() || (paintInfo.phase != PaintPhaseForeground && paintInfo.phase != PaintPhaseSelection))
@@ -37,7 +37,7 @@ void MultiColumnSetPainter::paintColumnRules(const PaintInfo& paintInfo, const L
     if (m_renderMultiColumnSet.flowThread()->isLayoutPagedFlowThread())
         return;
 
-    const LayoutStyle& blockStyle = m_renderMultiColumnSet.multiColumnBlockFlow()->styleRef();
+    const ComputedStyle& blockStyle = m_renderMultiColumnSet.multiColumnBlockFlow()->styleRef();
     const Color& ruleColor = m_renderMultiColumnSet.resolveColor(blockStyle, CSSPropertyWebkitColumnRuleColor);
     bool ruleTransparent = blockStyle.columnRuleIsTransparent();
     EBorderStyle ruleStyle = blockStyle.columnRuleStyle();
@@ -51,7 +51,9 @@ void MultiColumnSetPainter::paintColumnRules(const PaintInfo& paintInfo, const L
     if (colCount <= 1)
         return;
 
-    RenderDrawingRecorder drawingRecorder(paintInfo.context, m_renderMultiColumnSet, DisplayItem::ColumnRules, m_renderMultiColumnSet.visualOverflowRect());
+    LayoutRect paintRect = m_renderMultiColumnSet.visualOverflowRect();
+    paintRect.moveBy(paintOffset);
+    LayoutObjectDrawingRecorder drawingRecorder(*paintInfo.context, m_renderMultiColumnSet, DisplayItem::ColumnRules, paintRect);
     if (drawingRecorder.canUseCachedDrawing())
         return;
 

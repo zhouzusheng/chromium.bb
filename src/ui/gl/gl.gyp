@@ -113,6 +113,8 @@
         'gpu_switching_manager.cc',
         'gpu_switching_manager.h',
         'gpu_switching_observer.h',
+        'gpu_timing.cc',
+        'gpu_timing.h',
         'scoped_binders.cc',
         'scoped_binders.h',
         'scoped_make_current.cc',
@@ -184,6 +186,8 @@
         }],
         ['OS=="win"', {
           'sources': [
+            'angle_platform_impl.cc',
+            'angle_platform_impl.h',
             'gl_bindings_autogen_wgl.cc',
             'gl_bindings_autogen_wgl.h',
             'gl_context_wgl.cc',
@@ -232,6 +236,7 @@
         ['OS=="android"', {
           'dependencies': [
             'gl_jni_headers',
+            '../android/ui_android.gyp:ui_java',
           ],
           'sources': [
             'gl_image_surface_texture.cc',
@@ -257,11 +262,6 @@
           'dependencies': [
             '../ozone/ozone.gyp:ozone',
             '../ozone/ozone.gyp:ozone_base',
-          ],
-        }],
-        ['OS=="android" and android_webview_build==0', {
-          'dependencies': [
-            '../android/ui_android.gyp:ui_java',
           ],
         }],
       ],

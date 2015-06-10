@@ -10,7 +10,7 @@
 
 namespace blink {
 
-WebGraphicsContextImpl::WebGraphicsContextImpl(GraphicsContext& graphicsContext, DisplayItemClient client, DisplayItem::Type type)
+WebGraphicsContextImpl::WebGraphicsContextImpl(GraphicsContext& graphicsContext, const DisplayItemClientWrapper& client, DisplayItem::Type type)
     : m_graphicsContext(graphicsContext)
     , m_client(client)
     , m_type(type)
@@ -30,7 +30,9 @@ WebCanvas* WebGraphicsContextImpl::beginDrawing(const WebFloatRect& bounds)
     ASSERT(!m_hasBegunDrawing);
     m_hasBegunDrawing = true;
 #endif
-    m_drawingRecorder = adoptPtr(new DrawingRecorder(&m_graphicsContext, m_client, m_type, bounds));
+    m_drawingRecorder = adoptPtr(new DrawingRecorder(m_graphicsContext, m_client, m_type, bounds));
+
+    ASSERT(!m_drawingRecorder->canUseCachedDrawing());
 
     WebCanvas* canvas = m_graphicsContext.canvas();
     ASSERT(canvas);

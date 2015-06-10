@@ -23,36 +23,40 @@
 #ifndef StyleResourceLoader_h
 #define StyleResourceLoader_h
 
-#include "wtf/OwnPtr.h"
-#include "wtf/PassRefPtr.h"
+#include "platform/heap/Handle.h"
+#include "wtf/Forward.h"
 
 namespace blink {
 
 class ElementStyleResources;
-class LayoutStyle;
-class ResourceFetcher;
+class Document;
+class ComputedStyle;
+class RenderStyle;
 class ShapeValue;
 class StyleImage;
 class StylePendingImage;
 
 // Manages loading of resources, requested by the stylesheets.
 // Expects the same lifetime as StyleResolver, because
-// it expects ResourceFetcher to never change.
-class StyleResourceLoader {
-WTF_MAKE_NONCOPYABLE(StyleResourceLoader);
+// it expects Document to never change.
+class StyleResourceLoader final {
+    WTF_MAKE_NONCOPYABLE(StyleResourceLoader);
+    DISALLOW_ALLOCATION();
 public:
-    explicit StyleResourceLoader(ResourceFetcher*);
+    explicit StyleResourceLoader(Document*);
 
-    void loadPendingResources(LayoutStyle*, ElementStyleResources&);
+    void loadPendingResources(ComputedStyle*, ElementStyleResources&);
+
+    DECLARE_TRACE();
 
 private:
-    void loadPendingSVGDocuments(LayoutStyle*, ElementStyleResources&);
+    void loadPendingSVGDocuments(ComputedStyle*, ElementStyleResources&);
 
     PassRefPtr<StyleImage> loadPendingImage(StylePendingImage*, float deviceScaleFactor);
-    void loadPendingImages(LayoutStyle*, ElementStyleResources&);
-    void loadPendingShapeImage(LayoutStyle*, ShapeValue*, float deviceScaleFactor);
+    void loadPendingImages(ComputedStyle*, ElementStyleResources&);
+    void loadPendingShapeImage(ComputedStyle*, ShapeValue*, float deviceScaleFactor);
 
-    ResourceFetcher* m_fetcher;
+    RawPtrWillBeMember<Document> m_document;
 };
 
 } // namespace blink

@@ -39,6 +39,7 @@ namespace blink {
 
 typedef WTF::HashMap<const char*, Image*> MediaControlImageMap;
 static MediaControlImageMap* gMediaControlImageMap = 0;
+static double kCurrentTimeBufferedDelta = 1.0;
 
 static Image* platformResource(const char* name)
 {
@@ -129,7 +130,7 @@ static Image* getMediaSliderThumb()
     return mediaSliderThumb;
 }
 
-static void paintRoundedSliderBackground(const IntRect& rect, const LayoutStyle&, GraphicsContext* context)
+static void paintRoundedSliderBackground(const IntRect& rect, const ComputedStyle&, GraphicsContext* context)
 {
     int borderRadius = rect.height() / 2;
     IntSize radii(borderRadius, borderRadius);
@@ -137,7 +138,7 @@ static void paintRoundedSliderBackground(const IntRect& rect, const LayoutStyle&
     context->fillRoundedRect(rect, radii, radii, radii, radii, sliderBackgroundColor);
 }
 
-static void paintSliderRangeHighlight(const IntRect& rect, const LayoutStyle& style, GraphicsContext* context, int startPosition, int endPosition, Color startColor, Color endColor)
+static void paintSliderRangeHighlight(const IntRect& rect, const ComputedStyle& style, GraphicsContext* context, int startPosition, int endPosition, Color startColor, Color endColor)
 {
     // Calculate border radius; need to avoid being smaller than half the slider height
     // because of https://bugs.webkit.org/show_bug.cgi?id=30143.
@@ -199,7 +200,7 @@ static bool paintMediaSlider(LayoutObject* object, const PaintInfo& paintInfo, c
     if (!mediaElement)
         return false;
 
-    const LayoutStyle& style = object->styleRef();
+    const ComputedStyle& style = object->styleRef();
     GraphicsContext* context = paintInfo.context;
 
     paintRoundedSliderBackground(rect, style, context);
@@ -215,7 +216,15 @@ static bool paintMediaSlider(LayoutObject* object, const PaintInfo& paintInfo, c
     for (unsigned i = 0; i < bufferedTimeRanges->length(); ++i) {
         float start = bufferedTimeRanges->start(i, ASSERT_NO_EXCEPTION);
         float end = bufferedTimeRanges->end(i, ASSERT_NO_EXCEPTION);
-        if (std::isnan(start) || std::isnan(end) || start > currentTime || end < currentTime)
+        // The delta is there to avoid corner cases when buffered
+        // ranges is out of sync with current time because of
+        // asynchronous media pipeline and current time caching in
+        // HTMLMediaElement.
+        // This is related to https://www.w3.org/Bugs/Public/show_bug.cgi?id=28125
+        // FIXME: Remove this workaround when WebMediaPlayer
+        // has an asynchronous pause interface.
+        if (std::isnan(start) || std::isnan(end)
+            || start > currentTime + kCurrentTimeBufferedDelta || end < currentTime)
             continue;
         int startPosition = int(start * rect.width() / duration);
         int currentPosition = int(currentTime * rect.width() / duration);
@@ -270,7 +279,7 @@ static bool paintMediaVolumeSlider(LayoutObject* object, const PaintInfo& paintI
         return false;
 
     GraphicsContext* context = paintInfo.context;
-    const LayoutStyle& style = object->styleRef();
+    const ComputedStyle& style = object->styleRef();
 
     paintRoundedSliderBackground(rect, style, context);
 
@@ -400,10 +409,7 @@ bool LayoutMediaControls::paintMediaControlsPart(MediaControlElementType part, L
     case MediaCurrentTimeDisplay:
     case MediaTimeRemainingDisplay:
     case MediaControlsPanel:
-    case MediaStatusDisplay:
     case MediaHideClosedCaptionsButton:
-    case MediaTextTrackDisplayContainer:
-    case MediaTextTrackDisplay:
     case MediaFullScreenVolumeSlider:
     case MediaFullScreenVolumeSliderThumb:
         ASSERT_NOT_REACHED();
@@ -415,7 +421,7 @@ bool LayoutMediaControls::paintMediaControlsPart(MediaControlElementType part, L
 const int mediaSliderThumbHeight = 24;
 const int mediaVolumeSliderThumbHeight = 24;
 
-void LayoutMediaControls::adjustMediaSliderThumbSize(LayoutStyle& style)
+void LayoutMediaControls::adjustMediaSliderThumbSize(ComputedStyle& style)
 {
     static Image* mediaSliderThumb = platformResource("mediaplayerSliderThumb");
     static Image* mediaVolumeSliderThumb = platformResource("mediaplayerVolumeSliderThumb");

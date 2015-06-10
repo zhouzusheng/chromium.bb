@@ -152,8 +152,6 @@ WebInspector.ScreencastView.prototype = {
         this._imageElement.src = "data:image/jpg;base64," + base64Data;
         this._pageScaleFactor = metadata.pageScaleFactor;
         this._screenOffsetTop = metadata.offsetTop;
-        this._deviceWidth = metadata.deviceWidth;
-        this._deviceHeight = metadata.deviceHeight;
         this._scrollOffsetX = metadata.scrollOffsetX;
         this._scrollOffsetY = metadata.scrollOffsetY;
 
@@ -393,9 +391,10 @@ WebInspector.ScreencastView.prototype = {
      * @override
      * @param {?WebInspector.DOMNode} node
      * @param {?DOMAgent.HighlightConfig} config
+     * @param {!DOMAgent.BackendNodeId=} backendNodeId
      * @param {!RuntimeAgent.RemoteObjectId=} objectId
      */
-    highlightDOMNode: function(node, config, objectId)
+    highlightDOMNode: function(node, config, backendNodeId, objectId)
     {
         this._highlightNode = node;
         this._highlightConfig = config;
@@ -440,8 +439,8 @@ WebInspector.ScreencastView.prototype = {
         function scaleQuad(quad)
         {
             for (var i = 0; i < quad.length; i += 2) {
-                quad[i] = quad[i] * this._pageScaleFactor * this._screenZoom;
-                quad[i + 1] = (quad[i + 1] * this._pageScaleFactor + this._screenOffsetTop) * this._screenZoom;
+                quad[i] = quad[i] * this._screenZoom;
+                quad[i + 1] = (quad[i + 1] + this._screenOffsetTop) * this._screenZoom;
             }
         }
 

@@ -26,32 +26,20 @@
 #ifndef DocumentLifecycleNotifier_h
 #define DocumentLifecycleNotifier_h
 
+#include "core/CoreExport.h"
 #include "platform/LifecycleNotifier.h"
-#include "wtf/HashSet.h"
-#include "wtf/PassOwnPtr.h"
-#include "wtf/TemporaryChange.h"
 
 namespace blink {
 
 class Document;
 class DocumentLifecycleObserver;
 
-class DocumentLifecycleNotifier : public LifecycleNotifier<Document> {
+class CORE_EXPORT DocumentLifecycleNotifier : public LifecycleNotifier<Document, DocumentLifecycleObserver> {
 public:
     void notifyDocumentWasDetached();
 #if !ENABLE(OILPAN)
     void notifyDocumentWasDisposed();
 #endif
-
-    virtual void addObserver(Observer*) override final;
-    virtual void removeObserver(Observer*) override final;
-
-protected:
-    explicit DocumentLifecycleNotifier(Document*);
-
-private:
-    using DocumentObserverSet = HashSet<DocumentLifecycleObserver*>;
-    DocumentObserverSet m_documentObservers;
 };
 
 } // namespace blink

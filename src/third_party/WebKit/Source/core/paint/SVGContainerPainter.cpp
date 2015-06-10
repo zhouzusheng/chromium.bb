@@ -32,12 +32,12 @@ void SVGContainerPainter::paint(const PaintInfo& paintInfo)
         return;
 
     PaintInfo paintInfoBeforeFiltering(paintInfo);
-    TransformRecorder transformRecorder(*paintInfoBeforeFiltering.context, m_renderSVGContainer.displayItemClient(), m_renderSVGContainer.localToParentTransform());
+    TransformRecorder transformRecorder(*paintInfoBeforeFiltering.context, m_renderSVGContainer, m_renderSVGContainer.localToParentTransform());
     {
         OwnPtr<FloatClipRecorder> clipRecorder;
         if (m_renderSVGContainer.isSVGViewportContainer() && SVGLayoutSupport::isOverflowHidden(&m_renderSVGContainer)) {
             FloatRect viewport = m_renderSVGContainer.localToParentTransform().inverse().mapRect(toLayoutSVGViewportContainer(m_renderSVGContainer).viewport());
-            clipRecorder = adoptPtr(new FloatClipRecorder(*paintInfoBeforeFiltering.context, m_renderSVGContainer.displayItemClient(), paintInfoBeforeFiltering.phase, viewport));
+            clipRecorder = adoptPtr(new FloatClipRecorder(*paintInfoBeforeFiltering.context, m_renderSVGContainer, paintInfoBeforeFiltering.phase, viewport));
         }
 
         SVGPaintContext paintContext(m_renderSVGContainer, paintInfoBeforeFiltering);
@@ -52,8 +52,10 @@ void SVGContainerPainter::paint(const PaintInfo& paintInfo)
         }
     }
 
-    if (paintInfoBeforeFiltering.phase == PaintPhaseForeground && m_renderSVGContainer.style()->outlineWidth() && m_renderSVGContainer.style()->visibility() == VISIBLE)
-        ObjectPainter(m_renderSVGContainer).paintOutline(paintInfoBeforeFiltering, LayoutRect(m_renderSVGContainer.paintInvalidationRectInLocalCoordinates()));
+    if (paintInfoBeforeFiltering.phase == PaintPhaseForeground && m_renderSVGContainer.style()->outlineWidth() && m_renderSVGContainer.style()->visibility() == VISIBLE) {
+        LayoutRect layoutBoundingBox(m_renderSVGContainer.paintInvalidationRectInLocalCoordinates());
+        ObjectPainter(m_renderSVGContainer).paintOutline(paintInfoBeforeFiltering, layoutBoundingBox, layoutBoundingBox);
+    }
 }
 
 } // namespace blink

@@ -31,8 +31,8 @@
 #ifndef LayoutRuby_h
 #define LayoutRuby_h
 
-#include "core/rendering/RenderBlockFlow.h"
-#include "core/rendering/RenderInline.h"
+#include "core/layout/LayoutBlockFlow.h"
+#include "core/layout/LayoutInline.h"
 
 namespace blink {
 
@@ -51,7 +51,7 @@ namespace blink {
 // Generated :before/:after content is shunted into anonymous inline blocks
 
 // <ruby> when used as 'display:inline'
-class LayoutRubyAsInline final : public RenderInline {
+class LayoutRubyAsInline final : public LayoutInline {
 public:
     LayoutRubyAsInline(Element*);
     virtual ~LayoutRubyAsInline();
@@ -59,17 +59,18 @@ public:
     virtual void addChild(LayoutObject* child, LayoutObject* beforeChild = 0) override;
     virtual void removeChild(LayoutObject* child) override;
 
+    virtual const char* name() const override { return "LayoutRuby (inline)"; }
+
 protected:
-    virtual void styleDidChange(StyleDifference, const LayoutStyle* oldStyle) override;
+    virtual void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override;
 
 private:
-    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectRuby || RenderInline::isOfType(type); }
-    virtual const char* renderName() const override { return "LayoutRuby (inline)"; }
+    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectRuby || LayoutInline::isOfType(type); }
     virtual bool createsAnonymousWrapper() const override { return true; }
 };
 
 // <ruby> when used as 'display:block' or 'display:inline-block'
-class LayoutRubyAsBlock final : public RenderBlockFlow {
+class LayoutRubyAsBlock final : public LayoutBlockFlow {
 public:
     LayoutRubyAsBlock(Element*);
     virtual ~LayoutRubyAsBlock();
@@ -77,14 +78,15 @@ public:
     virtual void addChild(LayoutObject* child, LayoutObject* beforeChild = 0) override;
     virtual void removeChild(LayoutObject* child) override;
 
+    virtual const char* name() const override { return "LayoutRuby (block)"; }
+
 protected:
-    virtual void styleDidChange(StyleDifference, const LayoutStyle* oldStyle) override;
+    virtual void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override;
 
 private:
-    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectRuby || RenderBlockFlow::isOfType(type); }
-    virtual const char* renderName() const override { return "LayoutRuby (block)"; }
+    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectRuby || LayoutBlockFlow::isOfType(type); }
     virtual bool createsAnonymousWrapper() const override { return true; }
-    virtual void removeLeftoverAnonymousBlock(RenderBlock*) override { ASSERT_NOT_REACHED(); }
+    virtual void removeLeftoverAnonymousBlock(LayoutBlock*) override { ASSERT_NOT_REACHED(); }
 };
 
 } // namespace blink

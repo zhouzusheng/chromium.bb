@@ -6,6 +6,7 @@
 
 #include "content/browser/frame_host/frame_tree.h"
 #include "content/browser/frame_host/frame_tree_node.h"
+#include "content/browser/frame_host/navigation_controller_impl.h"
 #include "content/browser/frame_host/navigation_request_info.h"
 #include "content/browser/frame_host/navigator.h"
 #include "content/browser/loader/navigation_url_loader.h"
@@ -50,11 +51,19 @@ int LoadFlagFromNavigationType(FrameMsg_Navigate_Type::Value navigation_type) {
 }  // namespace
 
 // static
+bool NavigationRequest::ShouldMakeNetworkRequest(const GURL& url) {
+  // Data urls should not make network requests.
+  // TODO(clamy): same document navigations should not make network requests.
+  return !url.SchemeIs(url::kDataScheme);
+}
+
+// static
 scoped_ptr<NavigationRequest> NavigationRequest::CreateBrowserInitiated(
     FrameTreeNode* frame_tree_node,
     const NavigationEntryImpl& entry,
     FrameMsg_Navigate_Type::Value navigation_type,
-    base::TimeTicks navigation_start) {
+    base::TimeTicks navigation_start,
+    NavigationControllerImpl* controller) {
   std::string method = entry.GetHasPostData() ? "POST" : "GET";
 
   // Copy existing headers and add necessary headers that may not be present
@@ -76,27 +85,14 @@ scoped_ptr<NavigationRequest> NavigationRequest::CreateBrowserInitiated(
         entry.GetBrowserInitiatedPostData()->size());
   }
 
-  FrameMsg_UILoadMetricsReportType::Value report_type =
-      FrameMsg_UILoadMetricsReportType::NO_REPORT;
-  base::TimeTicks ui_timestamp = base::TimeTicks();
-#if defined(OS_ANDROID)
-  if (!entry.intent_received_timestamp().is_null())
-    report_type = FrameMsg_UILoadMetricsReportType::REPORT_INTENT;
-  ui_timestamp = entry.intent_received_timestamp();
-#endif
-
   scoped_ptr<NavigationRequest> navigation_request(new NavigationRequest(
-      frame_tree_node,
-      CommonNavigationParams(entry.GetURL(), entry.GetReferrer(),
-                             entry.GetTransitionType(), navigation_type,
-                             !entry.IsViewSourceMode(),ui_timestamp,
-                             report_type),
+      frame_tree_node, entry.ConstructCommonNavigationParams(navigation_type),
       BeginNavigationParams(method, headers.ToString(),
-                            LoadFlagFromNavigationType(navigation_type),
-                            false),
-      CommitNavigationParams(entry.GetPageState(),
-                             entry.GetIsOverridingUserAgent(),
-                             navigation_start),
+                            LoadFlagFromNavigationType(navigation_type), false),
+      entry.ConstructRequestNavigationParams(
+          navigation_start, controller->GetIndexOfEntry(&entry),
+          controller->GetLastCommittedEntryIndex(),
+          controller->GetEntryCount()),
       request_body, true, &entry));
   return navigation_request.Pass();
 }
@@ -106,16 +102,21 @@ scoped_ptr<NavigationRequest> NavigationRequest::CreateRendererInitiated(
     FrameTreeNode* frame_tree_node,
     const CommonNavigationParams& common_params,
     const BeginNavigationParams& begin_params,
-    scoped_refptr<ResourceRequestBody> body) {
+    scoped_refptr<ResourceRequestBody> body,
+    int current_history_list_offset,
+    int current_history_list_length) {
   // TODO(clamy): Check if some PageState should be provided here.
   // TODO(clamy): See how we should handle override of the user agent when the
   // navigation may start in a renderer and commit in another one.
   // TODO(clamy): See if the navigation start time should be measured in the
   // renderer and sent to the browser instead of being measured here.
-  scoped_ptr<NavigationRequest> navigation_request(new NavigationRequest(
-      frame_tree_node, common_params, begin_params,
-      CommitNavigationParams(PageState(), false, base::TimeTicks::Now()),
-      body, false, nullptr));
+  // TODO(clamy): The pending history list offset should be properly set.
+  RequestNavigationParams request_params;
+  request_params.current_history_list_offset = current_history_list_offset;
+  request_params.current_history_list_length = current_history_list_length;
+  scoped_ptr<NavigationRequest> navigation_request(
+      new NavigationRequest(frame_tree_node, common_params, begin_params,
+                            request_params, body, false, nullptr));
   return navigation_request.Pass();
 }
 
@@ -123,14 +124,14 @@ NavigationRequest::NavigationRequest(
     FrameTreeNode* frame_tree_node,
     const CommonNavigationParams& common_params,
     const BeginNavigationParams& begin_params,
-    const CommitNavigationParams& commit_params,
+    const RequestNavigationParams& request_params,
     scoped_refptr<ResourceRequestBody> body,
     bool browser_initiated,
     const NavigationEntryImpl* entry)
     : frame_tree_node_(frame_tree_node),
       common_params_(common_params),
       begin_params_(begin_params),
-      commit_params_(commit_params),
+      request_params_(request_params),
       browser_initiated_(browser_initiated),
       state_(NOT_STARTED),
       restore_type_(NavigationEntryImpl::RESTORE_NONE),
@@ -158,13 +159,24 @@ NavigationRequest::NavigationRequest(
 NavigationRequest::~NavigationRequest() {
 }
 
-void NavigationRequest::BeginNavigation() {
+bool NavigationRequest::BeginNavigation() {
   DCHECK(!loader_);
   DCHECK(state_ == NOT_STARTED || state_ == WAITING_FOR_RENDERER_RESPONSE);
   state_ = STARTED;
-  loader_ = NavigationURLLoader::Create(
-      frame_tree_node_->navigator()->GetController()->GetBrowserContext(),
-      frame_tree_node_->frame_tree_node_id(), info_.Pass(), this);
+
+  if (ShouldMakeNetworkRequest(common_params_.url)) {
+    loader_ = NavigationURLLoader::Create(
+        frame_tree_node_->navigator()->GetController()->GetBrowserContext(),
+        frame_tree_node_->frame_tree_node_id(), info_.Pass(), this);
+    return true;
+  }
+
+  // There is no need to make a network request for this navigation, so commit
+  // it immediately.
+  state_ = RESPONSE_STARTED;
+  frame_tree_node_->navigator()->CommitNavigation(
+      frame_tree_node_, nullptr, scoped_ptr<StreamHandle>());
+  return false;
 
   // TODO(davidben): Fire (and add as necessary) observer methods such as
   // DidStartProvisionalLoadForFrame for the navigation.

@@ -12,7 +12,7 @@
 #include "base/debug/alias.h"
 #include "base/logging.h"
 #include "base/memory/shared_memory.h"
-#include "base/metrics/histogram.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/time/time.h"
 #include "content/browser/devtools/devtools_netlog_observer.h"
@@ -28,8 +28,8 @@
 #include "content/public/common/resource_response.h"
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
-#include "net/base/net_log.h"
 #include "net/base/net_util.h"
+#include "net/log/net_log.h"
 #include "net/url_request/redirect_info.h"
 
 using base::TimeTicks;
@@ -57,11 +57,6 @@ void InitializeResourceBufferConstants() {
   GetNumericArg("resource-buffer-size", &kBufferSize);
   GetNumericArg("resource-buffer-min-allocation-size", &kMinAllocationSize);
   GetNumericArg("resource-buffer-max-allocation-size", &kMaxAllocationSize);
-}
-
-int CalcUsedPercentage(int bytes_read, int buffer_size) {
-  double ratio = static_cast<double>(bytes_read) / buffer_size;
-  return static_cast<int>(ratio * 100.0 + 0.5);  // Round to nearest integer.
 }
 
 }  // namespace
@@ -114,13 +109,6 @@ void AsyncResourceHandler::OnFollowRedirect(int request_id) {
     return;
   }
 
-  if (!redirect_start_time_.is_null()) {
-    UMA_HISTOGRAM_TIMES("Net.AsyncResourceHandler_RedirectHopTime",
-                        TimeTicks::Now() - redirect_start_time_);
-    // Reset start time.
-    redirect_start_time_ = TimeTicks();
-  }
-
   ResumeIfDeferred();
 }
 
@@ -150,8 +138,6 @@ bool AsyncResourceHandler::OnRequestRedirected(
   const ResourceRequestInfoImpl* info = GetRequestInfo();
   if (!info->filter())
     return false;
-
-  redirect_start_time_ = TimeTicks::Now();
 
   *defer = did_defer_ = true;
   OnDefer();
@@ -256,9 +242,6 @@ bool AsyncResourceHandler::OnWillRead(scoped_refptr<net::IOBuffer>* buf,
   *buf = new DependentIOBuffer(buffer_.get(), memory);
   *buf_size = allocation_size_;
 
-  UMA_HISTOGRAM_CUSTOM_COUNTS(
-      "Net.AsyncResourceHandler_SharedIOBuffer_Alloc",
-      *buf_size, 0, kMaxAllocationSize, 100);
   return true;
 }
 
@@ -273,13 +256,6 @@ bool AsyncResourceHandler::OnReadCompleted(int bytes_read, bool* defer) {
     return false;
 
   buffer_->ShrinkLastAllocation(bytes_read);
-
-  UMA_HISTOGRAM_CUSTOM_COUNTS(
-      "Net.AsyncResourceHandler_SharedIOBuffer_Used",
-      bytes_read, 0, kMaxAllocationSize, 100);
-  UMA_HISTOGRAM_PERCENTAGE(
-      "Net.AsyncResourceHandler_SharedIOBuffer_UsedPercentage",
-      CalcUsedPercentage(bytes_read, allocation_size_));
 
   if (!sent_first_data_msg_) {
     base::SharedMemoryHandle handle;
@@ -300,14 +276,8 @@ bool AsyncResourceHandler::OnReadCompleted(int bytes_read, bool* defer) {
   filter->Send(new ResourceMsg_DataReceived(
       GetRequestID(), data_offset, bytes_read, encoded_data_length));
   ++pending_data_count_;
-  UMA_HISTOGRAM_CUSTOM_COUNTS(
-      "Net.AsyncResourceHandler_PendingDataCount",
-      pending_data_count_, 0, 100, 100);
 
   if (!buffer_->CanAllocate()) {
-    UMA_HISTOGRAM_CUSTOM_COUNTS(
-        "Net.AsyncResourceHandler_PendingDataCount_WhenFull",
-        pending_data_count_, 0, 100, 100);
     *defer = did_defer_ = true;
     OnDefer();
   }

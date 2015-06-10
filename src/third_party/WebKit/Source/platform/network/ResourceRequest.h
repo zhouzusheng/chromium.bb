@@ -56,7 +56,7 @@ enum InputToLoadPerfMetricReportPolicy {
 struct CrossThreadResourceRequestData;
 
 class PLATFORM_EXPORT ResourceRequest {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED(ResourceRequest);
 public:
     class ExtraData : public RefCounted<ExtraData> {
     public:
@@ -228,6 +228,9 @@ public:
     InputToLoadPerfMetricReportPolicy inputPerfMetricReportPolicy() const { return m_inputPerfMetricReportPolicy; }
     void setInputPerfMetricReportPolicy(InputToLoadPerfMetricReportPolicy inputPerfMetricReportPolicy) { m_inputPerfMetricReportPolicy = inputPerfMetricReportPolicy; }
 
+    void setFollowedRedirect(bool followed) { m_followedRedirect = followed; };
+    bool followedRedirect() const { return m_followedRedirect; };
+
 private:
     void initialize(const KURL&);
 
@@ -268,6 +271,8 @@ private:
     mutable CacheControlHeader m_cacheControlHeaderCache;
 
     static double s_defaultTimeoutInterval;
+
+    bool m_followedRedirect;
 };
 
 bool equalIgnoringHeaderFields(const ResourceRequest&, const ResourceRequest&);
@@ -276,7 +281,7 @@ inline bool operator==(const ResourceRequest& a, const ResourceRequest& b) { ret
 inline bool operator!=(ResourceRequest& a, const ResourceRequest& b) { return !(a == b); }
 
 struct CrossThreadResourceRequestData {
-    WTF_MAKE_NONCOPYABLE(CrossThreadResourceRequestData); WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(CrossThreadResourceRequestData); WTF_MAKE_FAST_ALLOCATED(CrossThreadResourceRequestData);
 public:
     CrossThreadResourceRequestData() { }
     KURL m_url;
@@ -310,6 +315,7 @@ public:
     double m_uiStartTime;
     bool m_originatesFromReservedIPRange;
     InputToLoadPerfMetricReportPolicy m_inputPerfMetricReportPolicy;
+    bool m_followedRedirect;
 };
 
 unsigned initializeMaximumHTTPConnectionCountPerHost();

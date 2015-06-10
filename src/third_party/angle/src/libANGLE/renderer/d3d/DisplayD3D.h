@@ -29,6 +29,8 @@ class DisplayD3D : public DisplayImpl
                                     SurfaceImpl **outSurface) override;
     egl::Error createPbufferFromClientBuffer(const egl::Config *configuration, EGLClientBuffer shareHandle,
                                              const egl::AttributeMap &attribs, SurfaceImpl **outSurface) override;
+    egl::Error createPixmapSurface(const egl::Config *configuration, NativePixmapType nativePixmap,
+                                   const egl::AttributeMap &attribs, SurfaceImpl **outSurface) override;
 
     egl::Error createContext(const egl::Config *config, const gl::Context *shareContext, const egl::AttributeMap &attribs,
                              gl::Context **outContext) override;
@@ -46,8 +48,6 @@ class DisplayD3D : public DisplayImpl
     std::string getVendorString() const override;
 
   private:
-    DISALLOW_COPY_AND_ASSIGN(DisplayD3D);
-
     void generateExtensions(egl::DisplayExtensions *outExtensions) const override;
     void generateCaps(egl::Caps *outCaps) const override;
 

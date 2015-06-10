@@ -53,6 +53,7 @@ class HTMLImportChild final : public HTMLImport {
 public:
     HTMLImportChild(const KURL&, HTMLImportLoader*, SyncMode);
     virtual ~HTMLImportChild();
+    void dispose();
 
     HTMLLinkElement* link() const;
     const KURL& url() const { return m_url; }
@@ -61,13 +62,12 @@ public:
     void didShareLoader();
     void didStartLoading();
 #if !ENABLE(OILPAN)
-    void importDestroyed();
     WeakPtr<HTMLImportChild> weakPtr() { return m_weakFactory.createWeakPtr(); }
 #endif
 
     // HTMLImport
     virtual Document* document() const override;
-    virtual bool isDone() const override;
+    virtual bool hasFinishedLoading() const override;
     virtual HTMLImportLoader* loader() const override;
     virtual void stateWillChange() override;
     virtual void stateDidChange() override;

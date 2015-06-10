@@ -1942,9 +1942,14 @@ STDMETHODIMP BrowserAccessibilityWin::get_caretOffset(LONG* offset) {
   if (!offset)
     return E_INVALIDARG;
 
+  // IA2 spec says that caret offset should be -1 if the object is not focused.
+  if (manager()->GetFocus(this) != this) {
+    *offset = -1;
+    return S_FALSE;
+  }
+
   *offset = 0;
-  if (GetRole() == ui::AX_ROLE_TEXT_FIELD ||
-      GetRole() == ui::AX_ROLE_TEXT_AREA) {
+  if (IsEditableText()) {
     int sel_start = 0;
     if (GetIntAttribute(ui::AX_ATTR_TEXT_SEL_START,
                         &sel_start))
@@ -1999,8 +2004,7 @@ STDMETHODIMP BrowserAccessibilityWin::get_nSelections(LONG* n_selections) {
     return E_INVALIDARG;
 
   *n_selections = 0;
-  if (GetRole() == ui::AX_ROLE_TEXT_FIELD ||
-      GetRole() == ui::AX_ROLE_TEXT_AREA) {
+  if (IsEditableText()) {
     int sel_start = 0;
     int sel_end = 0;
     if (GetIntAttribute(ui::AX_ATTR_TEXT_SEL_START,
@@ -2022,10 +2026,13 @@ STDMETHODIMP BrowserAccessibilityWin::get_selection(LONG selection_index,
   if (!start_offset || !end_offset || selection_index != 0)
     return E_INVALIDARG;
 
+  LONG n_selections = 0;
+  if (FAILED(get_nSelections(&n_selections)) || n_selections < 1)
+    return E_INVALIDARG;
+
   *start_offset = 0;
   *end_offset = 0;
-  if (GetRole() == ui::AX_ROLE_TEXT_FIELD ||
-      GetRole() == ui::AX_ROLE_TEXT_AREA) {
+  if (IsEditableText()) {
     int sel_start = 0;
     int sel_end = 0;
     if (GetIntAttribute(
@@ -2091,6 +2098,15 @@ STDMETHODIMP BrowserAccessibilityWin::get_textAtOffset(
   if (!start_offset || !end_offset || !text)
     return E_INVALIDARG;
 
+  const base::string16& text_str = TextForIAccessibleText();
+  HandleSpecialTextOffset(text_str, &offset);
+  if (offset < 0)
+    return E_INVALIDARG;
+
+  LONG text_len = text_str.length();
+  if (offset > text_len)
+    return E_INVALIDARG;
+
   // The IAccessible2 spec says we don't have to implement the "sentence"
   // boundary type, we can just let the screenreader handle it.
   if (boundary_type == IA2_TEXT_BOUNDARY_SENTENCE) {
@@ -2100,7 +2116,14 @@ STDMETHODIMP BrowserAccessibilityWin::get_textAtOffset(
     return S_FALSE;
   }
 
-  const base::string16& text_str = TextForIAccessibleText();
+  // According to the IA2 Spec, only line boundaries should succeed when
+  // the offset is one past the end of the text.
+  if (offset == text_len && boundary_type != IA2_TEXT_BOUNDARY_LINE) {
+    *start_offset = 0;
+    *end_offset = 0;
+    *text = nullptr;
+    return S_FALSE;
+  }
 
   *start_offset = FindBoundary(
       text_str, boundary_type, offset, ui::BACKWARDS_DIRECTION);
@@ -3560,6 +3583,11 @@ LONG BrowserAccessibilityWin::FindBoundary(
     LONG start_offset,
     ui::TextBoundaryDirection direction) {
   HandleSpecialTextOffset(text, &start_offset);
+  if (ia2_boundary == IA2_TEXT_BOUNDARY_WORD &&
+      GetRole() == ui::AX_ROLE_TEXT_FIELD) {
+    return GetWordStartBoundary(static_cast<int>(start_offset), direction);
+  }
+
   ui::TextBoundaryType boundary = IA2TextBoundaryToTextBoundary(ia2_boundary);
   const std::vector<int32>& line_breaks = GetIntListAttribute(
       ui::AX_ATTR_LINE_BREAKS);
@@ -3840,10 +3868,6 @@ void BrowserAccessibilityWin::InitRoleAndState() {
       ia_role = ROLE_SYSTEM_TEXT;
       ia2_role = IA2_ROLE_LABEL;
       break;
-    case ui::AX_ROLE_SEARCH:
-      ia_role = ROLE_SYSTEM_GROUPING;
-      ia2_role = IA2_ROLE_SECTION;
-      break;
     case ui::AX_ROLE_LINK:
       ia_role = ROLE_SYSTEM_LINK;
       ia_state |= STATE_SYSTEM_LINKED;
@@ -3981,6 +4005,10 @@ void BrowserAccessibilityWin::InitRoleAndState() {
     case ui::AX_ROLE_SCROLL_BAR:
       ia_role = ROLE_SYSTEM_SCROLLBAR;
       break;
+    case ui::AX_ROLE_SEARCH:
+      ia_role = ROLE_SYSTEM_GROUPING;
+      ia2_role = IA2_ROLE_SECTION;
+      break;
     case ui::AX_ROLE_SLIDER:
       ia_role = ROLE_SYSTEM_SLIDER;
       break;
@@ -4003,6 +4031,10 @@ void BrowserAccessibilityWin::InitRoleAndState() {
       break;
     case ui::AX_ROLE_SVG_ROOT:
       ia_role = ROLE_SYSTEM_GRAPHIC;
+      break;
+    case ui::AX_ROLE_SWITCH:
+      role_name = L"switch";
+      ia2_role = IA2_ROLE_TOGGLE_BUTTON;
       break;
     case ui::AX_ROLE_TAB:
       ia_role = ROLE_SYSTEM_PAGETAB;
@@ -4039,6 +4071,7 @@ void BrowserAccessibilityWin::InitRoleAndState() {
       ia2_state |= IA2_STATE_SELECTABLE_TEXT;
       break;
     case ui::AX_ROLE_TEXT_FIELD:
+    case ui::AX_ROLE_SEARCH_BOX:
       ia_role = ROLE_SYSTEM_TEXT;
       ia2_state |= IA2_STATE_SINGLE_LINE;
       ia2_state |= IA2_STATE_EDITABLE;

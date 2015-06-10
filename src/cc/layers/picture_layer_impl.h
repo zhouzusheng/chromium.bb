@@ -5,7 +5,7 @@
 #ifndef CC_LAYERS_PICTURE_LAYER_IMPL_H_
 #define CC_LAYERS_PICTURE_LAYER_IMPL_H_
 
-#include <set>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -61,6 +61,7 @@ class CC_EXPORT PictureLayerImpl
   void ReleaseResources() override;
   void RecreateResources() override;
   skia::RefPtr<SkPicture> GetPicture() override;
+  Region GetInvalidationRegion() override;
 
   // PictureLayerTilingClient overrides.
   scoped_refptr<Tile> CreateTile(float contents_scale,
@@ -76,6 +77,9 @@ class CC_EXPORT PictureLayerImpl
   bool RequiresHighResToDraw() const override;
   gfx::Rect GetEnclosingRectInTargetSpace() const override;
 
+  void set_gpu_raster_max_texture_size(gfx::Size gpu_raster_max_texture_size) {
+    gpu_raster_max_texture_size_ = gpu_raster_max_texture_size;
+  }
   void UpdateRasterSource(scoped_refptr<RasterSource> raster_source,
                           Region* new_invalidation,
                           const PictureLayerTilingSet* pending_set);
@@ -131,7 +135,8 @@ class CC_EXPORT PictureLayerImpl
   bool ShouldAdjustRasterScaleDuringScaleAnimations() const;
 
   void GetDebugBorderProperties(SkColor* color, float* width) const override;
-  void GetAllTilesForTracing(std::set<const Tile*>* tiles) const override;
+  void GetAllTilesAndPrioritiesForTracing(
+      std::map<const Tile*, TilePriority>* tile_map) const override;
   void AsValueInto(base::trace_event::TracedValue* dict) const override;
 
   virtual void UpdateIdealScales();
@@ -170,6 +175,8 @@ class CC_EXPORT PictureLayerImpl
   // frame that has a valid viewport for prioritizing tiles.
   gfx::Rect visible_rect_for_tile_priority_;
   gfx::Rect viewport_rect_for_tile_priority_in_content_space_;
+
+  gfx::Size gpu_raster_max_texture_size_;
 
   // List of tilings that were used last time we appended quads. This can be
   // used as an optimization not to remove tilings if they are still being

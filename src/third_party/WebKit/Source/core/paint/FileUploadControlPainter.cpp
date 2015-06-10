@@ -5,11 +5,11 @@
 #include "config.h"
 #include "core/paint/FileUploadControlPainter.h"
 
+#include "core/layout/LayoutButton.h"
+#include "core/layout/LayoutFileUploadControl.h"
 #include "core/layout/PaintInfo.h"
 #include "core/layout/TextRunConstructor.h"
-#include "core/paint/RenderDrawingRecorder.h"
-#include "core/rendering/RenderButton.h"
-#include "core/rendering/RenderFileUploadControl.h"
+#include "core/paint/LayoutObjectDrawingRecorder.h"
 #include "platform/graphics/paint/ClipRecorder.h"
 
 namespace blink {
@@ -29,7 +29,7 @@ void FileUploadControlPainter::paintObject(const PaintInfo& paintInfo, const Lay
             m_renderFileUploadControl.size() + LayoutSize(0, -m_renderFileUploadControl.borderWidth() + buttonShadowHeight)));
         if (clipRect.isEmpty())
             return;
-        clipRecorder = adoptPtr(new ClipRecorder(m_renderFileUploadControl.displayItemClient(), paintInfo.context, DisplayItem::ClipFileUploadControlRect, clipRect));
+        clipRecorder = adoptPtr(new ClipRecorder(*paintInfo.context, m_renderFileUploadControl, DisplayItem::ClipFileUploadControlRect, LayoutRect(clipRect)));
     }
 
     if (paintInfo.phase == PaintPhaseForeground) {
@@ -44,8 +44,8 @@ void FileUploadControlPainter::paintObject(const PaintInfo& paintInfo, const Lay
         if (!button)
             return;
 
-        int buttonWidth = (button && button->renderBox()) ? button->renderBox()->pixelSnappedWidth() : 0;
-        LayoutUnit buttonAndSpacingWidth = buttonWidth + RenderFileUploadControl::afterButtonSpacing;
+        int buttonWidth = (button && button->layoutBox()) ? button->layoutBox()->pixelSnappedWidth() : 0;
+        LayoutUnit buttonAndSpacingWidth = buttonWidth + LayoutFileUploadControl::afterButtonSpacing;
         float textWidth = font.width(textRun);
         LayoutUnit textX;
         if (m_renderFileUploadControl.style()->isLeftToRightDirection())
@@ -56,7 +56,7 @@ void FileUploadControlPainter::paintObject(const PaintInfo& paintInfo, const Lay
         LayoutUnit textY = 0;
         // We want to match the button's baseline
         // FIXME: Make this work with transforms.
-        if (RenderButton* buttonRenderer = toRenderButton(button->renderer()))
+        if (LayoutButton* buttonRenderer = toLayoutButton(button->layoutObject()))
             textY = paintOffset.y() + m_renderFileUploadControl.borderTop() + m_renderFileUploadControl.paddingTop() + buttonRenderer->baselinePosition(AlphabeticBaseline, true, HorizontalLine, PositionOnContainingLine);
         else
             textY = m_renderFileUploadControl.baselinePosition(AlphabeticBaseline, true, HorizontalLine, PositionOnContainingLine);
@@ -66,7 +66,7 @@ void FileUploadControlPainter::paintObject(const PaintInfo& paintInfo, const Lay
             textWidth, m_renderFileUploadControl.style()->fontMetrics().height());
 
         // Draw the filename.
-        RenderDrawingRecorder recorder(paintInfo.context, m_renderFileUploadControl, paintInfo.phase, textRunPaintInfo.bounds);
+        LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_renderFileUploadControl, paintInfo.phase, textRunPaintInfo.bounds);
         if (!recorder.canUseCachedDrawing()) {
             paintInfo.context->setFillColor(m_renderFileUploadControl.resolveColor(CSSPropertyColor));
             paintInfo.context->drawBidiText(font, textRunPaintInfo, FloatPoint(roundToInt(textX), roundToInt(textY)));
@@ -74,7 +74,7 @@ void FileUploadControlPainter::paintObject(const PaintInfo& paintInfo, const Lay
     }
 
     // Paint the children.
-    m_renderFileUploadControl.RenderBlockFlow::paintObject(paintInfo, paintOffset);
+    m_renderFileUploadControl.LayoutBlockFlow::paintObject(paintInfo, paintOffset);
 }
 
 } // namespace blink

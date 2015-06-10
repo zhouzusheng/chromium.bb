@@ -74,6 +74,8 @@ void FullscreenController::didEnterFullScreen()
         m_exitFullscreenPageScaleFactor = m_webViewImpl->pageScaleFactor();
         m_exitFullscreenScrollOffset = m_webViewImpl->mainFrame()->scrollOffset();
         m_exitFullscreenPinchViewportOffset = m_webViewImpl->pinchViewportOffset();
+
+        updatePageScaleConstraints(false);
         m_webViewImpl->setPageScaleFactor(1.0f);
         m_webViewImpl->setMainFrameScrollOffset(IntPoint());
         m_webViewImpl->setPinchViewportOffset(FloatPoint());
@@ -116,6 +118,7 @@ void FullscreenController::didExitFullScreen()
                     m_webViewImpl->layerTreeView()->setHasTransparentBackground(m_webViewImpl->isTransparent());
 
                 if (m_exitFullscreenPageScaleFactor) {
+                    updatePageScaleConstraints(true);
                     m_webViewImpl->setPageScaleFactor(m_exitFullscreenPageScaleFactor);
                     m_webViewImpl->setMainFrameScrollOffset(IntPoint(m_exitFullscreenScrollOffset));
                     m_webViewImpl->setPinchViewportOffset(m_exitFullscreenPinchViewportOffset);
@@ -172,9 +175,23 @@ void FullscreenController::updateSize()
     if (!isFullscreen())
         return;
 
-    RenderFullScreen* renderer = Fullscreen::from(*m_fullScreenFrame->document()).fullScreenRenderer();
+    updatePageScaleConstraints(false);
+
+    LayoutFullScreen* renderer = Fullscreen::from(*m_fullScreenFrame->document()).fullScreenRenderer();
     if (renderer)
         renderer->updateStyle();
+}
+
+void FullscreenController::updatePageScaleConstraints(bool removeConstraints)
+{
+    PageScaleConstraints fullscreenConstraints;
+    if (!removeConstraints) {
+        fullscreenConstraints = PageScaleConstraints(1.0, 1.0, 1.0);
+        fullscreenConstraints.layoutSize = IntSize(m_webViewImpl->size());
+    }
+    m_webViewImpl->pageScaleConstraintsSet().setFullscreenConstraints(fullscreenConstraints);
+    m_webViewImpl->pageScaleConstraintsSet().computeFinalConstraints();
+    m_webViewImpl->updateMainFrameLayoutSize();
 }
 
 DEFINE_TRACE(FullscreenController)

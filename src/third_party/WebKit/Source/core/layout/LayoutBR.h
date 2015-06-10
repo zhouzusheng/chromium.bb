@@ -21,7 +21,7 @@
 #ifndef LayoutBR_h
 #define LayoutBR_h
 
-#include "core/rendering/RenderText.h"
+#include "core/layout/LayoutText.h"
 
 /*
  * The whole class here is a hack to get <br> working, as long as we don't have support for
@@ -29,14 +29,14 @@
  */
 namespace blink {
 
-class LayoutBR final : public RenderText {
+class LayoutBR final : public LayoutText {
 public:
     explicit LayoutBR(Node*);
     virtual ~LayoutBR();
 
-    virtual const char* renderName() const override { return "LayoutBR"; }
+    virtual const char* name() const override { return "LayoutBR"; }
 
-    virtual LayoutRect selectionRectForPaintInvalidation(const LayoutLayerModelObject* /*paintInvalidationContainer*/) const override { return LayoutRect(); }
+    virtual LayoutRect selectionRectForPaintInvalidation(const LayoutBoxModelObject* /*paintInvalidationContainer*/) const override { return LayoutRect(); }
 
     virtual float width(unsigned /*from*/, unsigned /*len*/, const Font&, float /*xPos*/, TextDirection, HashSet<const SimpleFontData*>* = 0 /*fallbackFonts*/ , GlyphOverflow* = 0) const override { return 0; }
     virtual float width(unsigned /*from*/, unsigned /*len*/, float /*xpos*/, TextDirection, bool = false /*firstLine*/, HashSet<const SimpleFontData*>* = 0 /*fallbackFonts*/, GlyphOverflow* = 0) const override { return 0; }
@@ -44,7 +44,7 @@ public:
     int lineHeight(bool firstLine) const;
 
     // overrides
-    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectBr || RenderText::isOfType(type); }
+    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectBr || LayoutText::isOfType(type); }
 
     virtual int caretMinOffset() const override;
     virtual int caretMaxOffset() const override;
@@ -52,7 +52,7 @@ public:
     virtual PositionWithAffinity positionForPoint(const LayoutPoint&) override final;
 
 protected:
-    virtual void styleDidChange(StyleDifference, const LayoutStyle* oldStyle) override;
+    virtual void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override;
 };
 
 DEFINE_LAYOUT_OBJECT_TYPE_CASTS(LayoutBR, isBR());

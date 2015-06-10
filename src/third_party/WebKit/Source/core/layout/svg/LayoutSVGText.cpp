@@ -31,9 +31,11 @@
 #include "core/editing/PositionWithAffinity.h"
 #include "core/layout/HitTestRequest.h"
 #include "core/layout/HitTestResult.h"
+#include "core/layout/LayoutAnalyzer.h"
+#include "core/layout/LayoutState.h"
 #include "core/layout/PaintInfo.h"
 #include "core/layout/PointerEventsHitRules.h"
-#include "core/layout/style/ShadowList.h"
+#include "core/style/ShadowList.h"
 #include "core/layout/svg/LayoutSVGInline.h"
 #include "core/layout/svg/LayoutSVGInlineText.h"
 #include "core/layout/svg/LayoutSVGRoot.h"
@@ -67,9 +69,9 @@ LayoutSVGText::~LayoutSVGText()
     ASSERT(m_layoutAttributes.isEmpty());
 }
 
-bool LayoutSVGText::isChildAllowed(LayoutObject* child, const LayoutStyle&) const
+bool LayoutSVGText::isChildAllowed(LayoutObject* child, const ComputedStyle&) const
 {
-    return child->isSVGInline() || (child->isText() && SVGLayoutSupport::isRenderableTextNode(child));
+    return child->isSVGInline() || (child->isText() && SVGLayoutSupport::isLayoutableTextNode(child));
 }
 
 LayoutSVGText* LayoutSVGText::locateLayoutSVGTextAncestor(LayoutObject* start)
@@ -152,7 +154,7 @@ void LayoutSVGText::subtreeChildWasAdded(LayoutObject* child)
     FontCachePurgePreventer fontCachePurgePreventer;
 
     // The positioning elements cache doesn't include the new 'child' yet. Clear the
-    // cache, as the next buildLayoutAttributesForTextRenderer() call rebuilds it.
+    // cache, as the next buildLayoutAttributesForText() call rebuilds it.
     m_layoutAttributesBuilder.clearTextPositioningElements();
 
     if (!child->isSVGInlineText() && !child->isSVGInline())
@@ -179,10 +181,10 @@ void LayoutSVGText::subtreeChildWasAdded(LayoutObject* child)
             findPreviousAndNextAttributes(this, attributes->context(), previous, next);
 
             if (previous)
-                m_layoutAttributesBuilder.buildLayoutAttributesForTextRenderer(previous->context());
-            m_layoutAttributesBuilder.buildLayoutAttributesForTextRenderer(attributes->context());
+                m_layoutAttributesBuilder.buildLayoutAttributesForText(previous->context());
+            m_layoutAttributesBuilder.buildLayoutAttributesForText(attributes->context());
             if (next)
-                m_layoutAttributesBuilder.buildLayoutAttributesForTextRenderer(next->context());
+                m_layoutAttributesBuilder.buildLayoutAttributesForText(next->context());
             break;
         }
     }
@@ -221,7 +223,7 @@ void LayoutSVGText::subtreeChildWillBeRemoved(LayoutObject* child, Vector<SVGTex
 
     checkLayoutAttributesConsistency(this, m_layoutAttributes);
 
-    // The positioning elements cache depends on the size of each text renderer in the
+    // The positioning elements cache depends on the size of each text layoutObject in the
     // subtree. If this changes, clear the cache. It's going to be rebuilt below.
     m_layoutAttributesBuilder.clearTextPositioningElements();
     if (m_layoutAttributes.isEmpty() || !child->isSVGInlineText())
@@ -252,10 +254,10 @@ void LayoutSVGText::subtreeChildWasRemoved(const Vector<SVGTextLayoutAttributes*
     }
 
     // This is called immediately after subtreeChildWillBeDestroyed, once the LayoutSVGInlineText::willBeDestroyed() method
-    // passes on to the base class, which removes us from the render tree. At this point we can update the layout attributes.
+    // passes on to the base class, which removes us from the layout tree. At this point we can update the layout attributes.
     unsigned size = affectedAttributes.size();
     for (unsigned i = 0; i < size; ++i)
-        m_layoutAttributesBuilder.buildLayoutAttributesForTextRenderer(affectedAttributes[i]->context());
+        m_layoutAttributesBuilder.buildLayoutAttributesForText(affectedAttributes[i]->context());
 }
 
 void LayoutSVGText::subtreeStyleDidChange()
@@ -266,11 +268,11 @@ void LayoutSVGText::subtreeStyleDidChange()
     checkLayoutAttributesConsistency(this, m_layoutAttributes);
 
     // Only update the metrics cache, but not the text positioning element cache
-    // nor the layout attributes cached in the leaf #text renderers.
+    // nor the layout attributes cached in the leaf #text layoutObjects.
     FontCachePurgePreventer fontCachePurgePreventer;
     for (LayoutObject* descendant = firstChild(); descendant; descendant = descendant->nextInPreOrder(this)) {
         if (descendant->isSVGInlineText())
-            m_layoutAttributesBuilder.rebuildMetricsForTextRenderer(toLayoutSVGInlineText(descendant));
+            m_layoutAttributesBuilder.rebuildMetricsForTextLayoutObject(toLayoutSVGInlineText(descendant));
     }
 }
 
@@ -287,14 +289,14 @@ void LayoutSVGText::subtreeTextDidChange(LayoutSVGInlineText* text)
     // Always protect the cache before clearing text positioning elements when the cache will subsequently be rebuilt.
     FontCachePurgePreventer fontCachePurgePreventer;
 
-    // The positioning elements cache depends on the size of each text renderer in the
+    // The positioning elements cache depends on the size of each text layoutObject in the
     // subtree. If this changes, clear the cache. It's going to be rebuilt below.
     m_layoutAttributesBuilder.clearTextPositioningElements();
 
     checkLayoutAttributesConsistency(this, m_layoutAttributes);
     for (LayoutObject* descendant = text; descendant; descendant = descendant->nextInPreOrder(text)) {
         if (descendant->isSVGInlineText())
-            m_layoutAttributesBuilder.buildLayoutAttributesForTextRenderer(toLayoutSVGInlineText(descendant));
+            m_layoutAttributesBuilder.buildLayoutAttributesForText(toLayoutSVGInlineText(descendant));
     }
 }
 
@@ -306,13 +308,14 @@ static inline void updateFontInAllDescendants(LayoutObject* start, SVGTextLayout
         LayoutSVGInlineText* text = toLayoutSVGInlineText(descendant);
         text->updateScaledFont();
         if (builder)
-            builder->rebuildMetricsForTextRenderer(text);
+            builder->rebuildMetricsForTextLayoutObject(text);
     }
 }
 
 void LayoutSVGText::layout()
 {
     ASSERT(needsLayout());
+    LayoutAnalyzer::Scope analyzer(*this);
 
     subtreeStyleDidChange();
 
@@ -360,8 +363,8 @@ void LayoutSVGText::layout()
 
     checkLayoutAttributesConsistency(this, m_layoutAttributes);
 
-    // Reduced version of RenderBlock::layoutBlock(), which only takes care of SVG text.
-    // All if branches that could cause early exit in RenderBlocks layoutBlock() method are turned into assertions.
+    // Reduced version of LayoutBlock::layoutBlock(), which only takes care of SVG text.
+    // All if branches that could cause early exit in LayoutBlocks layoutBlock() method are turned into assertions.
     ASSERT(!isInline());
     ASSERT(!simplifiedLayout());
     ASSERT(!scrollsOverflow());
@@ -384,6 +387,7 @@ void LayoutSVGText::layout()
     LayoutUnit afterEdge = borderAfter() + paddingAfter() + scrollbarLogicalHeight();
     setLogicalHeight(beforeEdge);
 
+    LayoutState state(*this, locationOffset());
     LayoutUnit paintInvalidationLogicalTop = 0;
     LayoutUnit paintInvalidationLogicalBottom = 0;
     layoutInlineChildren(true, paintInvalidationLogicalTop, paintInvalidationLogicalBottom, afterEdge);
@@ -412,9 +416,9 @@ RootInlineBox* LayoutSVGText::createRootInlineBox()
     return box;
 }
 
-bool LayoutSVGText::nodeAtFloatPoint(const HitTestRequest& request, HitTestResult& result, const FloatPoint& pointInParent, HitTestAction hitTestAction)
+bool LayoutSVGText::nodeAtFloatPoint(HitTestResult& result, const FloatPoint& pointInParent, HitTestAction hitTestAction)
 {
-    PointerEventsHitRules hitRules(PointerEventsHitRules::SVG_TEXT_HITTESTING, request, style()->pointerEvents());
+    PointerEventsHitRules hitRules(PointerEventsHitRules::SVG_TEXT_HITTESTING, result.hitTestRequest(), style()->pointerEvents());
     bool isVisible = (style()->visibility() == VISIBLE);
     if (isVisible || !hitRules.requireVisible) {
         if ((hitRules.canHitBoundingBox && !objectBoundingBox().isEmpty())
@@ -428,7 +432,7 @@ bool LayoutSVGText::nodeAtFloatPoint(const HitTestRequest& request, HitTestResul
                 return false;
 
             HitTestLocation hitTestLocation(LayoutPoint(flooredIntPoint(localPoint)));
-            return RenderBlock::nodeAtPoint(request, result, hitTestLocation, LayoutPoint(), hitTestAction);
+            return LayoutBlock::nodeAtPoint(result, hitTestLocation, LayoutPoint(), hitTestAction);
         }
     }
 
@@ -448,7 +452,7 @@ PositionWithAffinity LayoutSVGText::positionForPoint(const LayoutPoint& pointInC
     if (!closestBox)
         return createPositionWithAffinity(0, DOWNSTREAM);
 
-    return closestBox->renderer().positionForPoint(LayoutPoint(pointInContents.x(), closestBox->y()));
+    return closestBox->layoutObject().positionForPoint(LayoutPoint(pointInContents.x(), closestBox->y()));
 }
 
 void LayoutSVGText::absoluteQuads(Vector<FloatQuad>& quads, bool* wasFixed) const
@@ -464,14 +468,14 @@ void LayoutSVGText::paint(const PaintInfo& paintInfo, const LayoutPoint&)
 FloatRect LayoutSVGText::strokeBoundingBox() const
 {
     FloatRect strokeBoundaries = objectBoundingBox();
-    const SVGLayoutStyle& svgStyle = style()->svgStyle();
+    const SVGComputedStyle& svgStyle = style()->svgStyle();
     if (!svgStyle.hasStroke())
         return strokeBoundaries;
 
     ASSERT(node());
     ASSERT(node()->isSVGElement());
     SVGLengthContext lengthContext(toSVGElement(node()));
-    strokeBoundaries.inflate(svgStyle.strokeWidth()->value(lengthContext));
+    strokeBoundaries.inflate(lengthContext.valueForLength(svgStyle.strokeWidth()));
     return strokeBoundaries;
 }
 

@@ -56,9 +56,21 @@ bool SVGFEComponentTransferElement::isSupportedAttribute(const QualifiedName& at
     return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
-void SVGFEComponentTransferElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
+void SVGFEComponentTransferElement::svgAttributeChanged(const QualifiedName& attrName)
 {
-    parseAttributeNew(name, value);
+    if (!isSupportedAttribute(attrName)) {
+        SVGFilterPrimitiveStandardAttributes::svgAttributeChanged(attrName);
+        return;
+    }
+
+    SVGElement::InvalidationGuard invalidationGuard(this);
+
+    if (attrName == SVGNames::inAttr) {
+        invalidate();
+        return;
+    }
+
+    ASSERT_NOT_REACHED();
 }
 
 PassRefPtrWillBeRawPtr<FilterEffect> SVGFEComponentTransferElement::build(SVGFilterBuilder* filterBuilder, Filter* filter)

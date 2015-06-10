@@ -773,13 +773,17 @@ void ServiceWorkerStorage::GetUserDataForAllRegistrations(
     const std::string& key,
     const ServiceWorkerStorage::GetUserDataForAllRegistrationsCallback&
         callback) {
-  DCHECK(state_ == INITIALIZED || state_ == DISABLED) << state_;
-  if (IsDisabled() || !context_) {
-    RunSoon(FROM_HERE,
-            base::Bind(callback, std::vector<std::pair<int64, std::string>>(),
-                       SERVICE_WORKER_ERROR_FAILED));
+  if (!LazyInitialize(
+          base::Bind(&ServiceWorkerStorage::GetUserDataForAllRegistrations,
+                     weak_factory_.GetWeakPtr(), key, callback))) {
+    if (state_ != INITIALIZING || !context_) {
+      RunSoon(FROM_HERE,
+              base::Bind(callback, std::vector<std::pair<int64, std::string>>(),
+                         SERVICE_WORKER_ERROR_FAILED));
+    }
     return;
   }
+  DCHECK_EQ(INITIALIZED, state_);
 
   if (key.empty()) {
     RunSoon(FROM_HERE,
@@ -1126,10 +1130,14 @@ void ServiceWorkerStorage::DidGetRegistrations(
 
     if (registration_data.is_active) {
       info.active_version.status = ServiceWorkerVersion::ACTIVATED;
+      info.active_version.script_url = registration_data.script;
       info.active_version.version_id = registration_data.version_id;
+      info.active_version.registration_id = registration_data.registration_id;
     } else {
       info.waiting_version.status = ServiceWorkerVersion::INSTALLED;
+      info.waiting_version.script_url = registration_data.script;
       info.waiting_version.version_id = registration_data.version_id;
+      info.waiting_version.registration_id = registration_data.registration_id;
     }
     infos.push_back(info);
   }

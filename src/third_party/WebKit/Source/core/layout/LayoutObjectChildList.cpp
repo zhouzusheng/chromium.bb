@@ -28,11 +28,11 @@
 #include "core/layout/LayoutObjectChildList.h"
 
 #include "core/dom/AXObjectCache.h"
-#include "core/layout/Layer.h"
 #include "core/layout/LayoutCounter.h"
 #include "core/layout/LayoutObject.h"
-#include "core/layout/style/LayoutStyle.h"
-#include "core/rendering/RenderView.h"
+#include "core/layout/LayoutView.h"
+#include "core/style/ComputedStyle.h"
+#include "core/paint/DeprecatedPaintLayer.h"
 
 namespace blink {
 
@@ -47,7 +47,7 @@ void LayoutObjectChildList::destroyLeftoverChildren()
 
         // Destroy any anonymous children remaining in the render tree, as well as implicit (shadow) DOM elements like those used in the engine-based text fields.
         if (firstChild()->node())
-            firstChild()->node()->setRenderer(0);
+            firstChild()->node()->setLayoutObject(nullptr);
         firstChild()->destroy();
     }
 }
@@ -58,21 +58,21 @@ LayoutObject* LayoutObjectChildList::removeChildNode(LayoutObject* owner, Layout
     ASSERT(this == owner->virtualChildren());
 
     if (oldChild->isFloatingOrOutOfFlowPositioned())
-        toRenderBox(oldChild)->removeFloatingOrPositionedChildFromBlockLists();
+        toLayoutBox(oldChild)->removeFloatingOrPositionedChildFromBlockLists();
 
     {
         // So that we'll get the appropriate dirty bit set (either that a normal flow child got yanked or
         // that a positioned child got yanked). We also issue paint invalidations, so that the area exposed when the child
         // disappears gets paint invalidated properly.
         if (!owner->documentBeingDestroyed() && notifyRenderer && oldChild->everHadLayout()) {
-            oldChild->setNeedsLayoutAndPrefWidthsRecalc();
+            oldChild->setNeedsLayoutAndPrefWidthsRecalc(LayoutInvalidationReason::RemovedFromLayout);
             invalidatePaintOnRemoval(*oldChild);
         }
     }
 
     // If we have a line box wrapper, delete it.
     if (oldChild->isBox())
-        toRenderBox(oldChild)->deleteLineBoxWrapper();
+        toLayoutBox(oldChild)->deleteLineBoxWrapper();
 
     // If oldChild is the start or end of the selection, then clear the selection to
     // avoid problems of invalid pointers.
@@ -117,7 +117,7 @@ void LayoutObjectChildList::insertChildNode(LayoutObject* owner, LayoutObject* n
 {
     ASSERT(!newChild->parent());
     ASSERT(this == owner->virtualChildren());
-    ASSERT(!owner->isRenderBlockFlow() || (!newChild->isTableSection() && !newChild->isTableRow() && !newChild->isTableCell()));
+    ASSERT(!owner->isLayoutBlockFlow() || (!newChild->isTableSection() && !newChild->isTableRow() && !newChild->isTableCell()));
 
     while (beforeChild && beforeChild->parent() && beforeChild->parent() != owner)
         beforeChild = beforeChild->parent();
@@ -156,7 +156,7 @@ void LayoutObjectChildList::insertChildNode(LayoutObject* owner, LayoutObject* n
         LayoutCounter::rendererSubtreeAttached(newChild);
     }
 
-    newChild->setNeedsLayoutAndPrefWidthsRecalc();
+    newChild->setNeedsLayoutAndPrefWidthsRecalc(LayoutInvalidationReason::AddedToLayout);
     newChild->setShouldDoFullPaintInvalidation(PaintInvalidationRendererInsertion);
     if (!owner->normalChildNeedsLayout())
         owner->setChildNeedsLayout(); // We may supply the static position for an absolute positioned child.
@@ -177,7 +177,10 @@ void LayoutObjectChildList::invalidatePaintOnRemoval(const LayoutObject& oldChil
     DisableCompositingQueryAsserts disabler;
     // FIXME: We should not allow paint invalidation out of paint invalidation state. crbug.com/457415
     DisablePaintInvalidationStateAsserts paintInvalidationAssertDisabler;
-    oldChild.invalidatePaintUsingContainer(oldChild.containerForPaintInvalidation(), oldChild.previousPaintInvalidationRect(), PaintInvalidationRendererRemoval);
+    const LayoutBoxModelObject* paintInvalidationContainer = oldChild.containerForPaintInvalidation();
+    oldChild.invalidatePaintUsingContainer(paintInvalidationContainer, oldChild.previousPaintInvalidationRect(), PaintInvalidationRendererRemoval);
+    if (RuntimeEnabledFeatures::slimmingPaintEnabled())
+        oldChild.invalidateDisplayItemClients(*paintInvalidationContainer);
 }
 
 } // namespace blink

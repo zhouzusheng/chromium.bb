@@ -39,14 +39,8 @@ void StripTrailingDot(GURL* gurl) {
 
 namespace net {
 
-// Workaround for http://crbug.com/437794; remove when fixed.
-#if defined(OS_IOS)
-// static
-bool SdchManager::g_sdch_enabled_ = false;
-#else
 // static
 bool SdchManager::g_sdch_enabled_ = true;
-#endif
 
 // static
 bool SdchManager::g_secure_scheme_supported_ = true;
@@ -249,7 +243,7 @@ void SdchManager::DictionarySet::AddDictionary(
   dictionaries_[server_hash] = dictionary;
 }
 
-SdchManager::SdchManager() {
+SdchManager::SdchManager() : factory_(this) {
   DCHECK(thread_checker_.CalledOnValidThread());
 }
 
@@ -624,6 +618,11 @@ SdchProblemCode SdchManager::RemoveSdchDictionary(
 scoped_ptr<SdchManager::DictionarySet>
 SdchManager::CreateEmptyDictionarySetForTesting() {
   return scoped_ptr<DictionarySet>(new DictionarySet).Pass();
+}
+
+// For investigation of http://crbug.com/454198; remove when resolved.
+base::WeakPtr<SdchManager> SdchManager::GetWeakPtr() {
+  return factory_.GetWeakPtr();
 }
 
 // static

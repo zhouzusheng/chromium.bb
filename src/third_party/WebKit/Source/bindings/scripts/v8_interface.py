@@ -48,7 +48,7 @@ from v8_types import cpp_ptr_type, cpp_template_type
 import v8_utilities
 from v8_utilities import (cpp_name_or_partial, capitalize, conditional_string, cpp_name, gc_type,
                           has_extended_attribute_value, runtime_enabled_function_name,
-                          extended_attribute_value_as_list)
+                          extended_attribute_value_as_list, is_legacy_interface_type_checking)
 
 
 INTERFACE_H_INCLUDES = frozenset([
@@ -62,7 +62,6 @@ INTERFACE_H_INCLUDES = frozenset([
 INTERFACE_CPP_INCLUDES = frozenset([
     'bindings/core/v8/ExceptionState.h',
     'bindings/core/v8/V8DOMConfiguration.h',
-    'bindings/core/v8/V8HiddenValue.h',
     'bindings/core/v8/V8ObjectConstructor.h',
     'core/dom/ContextFeatures.h',
     'core/dom/Document.h',
@@ -193,7 +192,7 @@ def interface_context(interface):
                 is_active_dom_object or
                 is_dependent_lifetime)
             else 'Independent',
-        'measure_as': v8_utilities.measure_as(interface),  # [MeasureAs]
+        'measure_as': v8_utilities.measure_as(interface, None),  # [MeasureAs]
         'parent_interface': parent_interface,
         'pass_cpp_type': cpp_template_type(
             cpp_ptr_type('PassRefPtr', 'RawPtr', this_gc_type),
@@ -255,7 +254,7 @@ def interface_context(interface):
         'named_constructor': named_constructor,
     })
 
-    constants = [constant_context(constant) for constant in interface.constants]
+    constants = [constant_context(constant, interface) for constant in interface.constants]
 
     special_getter_constants = []
     runtime_enabled_constants = []
@@ -467,19 +466,39 @@ def interface_context(interface):
         # FIXME: maplike<> and setlike<> should also imply the presence of a
         # 'size' attribute.
 
+    # Serializer
+    if interface.serializer:
+        serializer = interface.serializer
+        serializer_ext_attrs = serializer.extended_attributes.copy()
+        if serializer.operation:
+            return_type = serializer.operation.idl_type
+            implemented_as = serializer.operation.name
+        else:
+            return_type = IdlType('any')
+            implemented_as = None
+            if 'CallWith' not in serializer_ext_attrs:
+                serializer_ext_attrs['CallWith'] = 'ScriptState'
+        methods.append(generated_method(
+            return_type=return_type,
+            name='toJSON',
+            extended_attributes=serializer_ext_attrs,
+            implemented_as=implemented_as))
+
     # Stringifier
     if interface.stringifier:
         stringifier = interface.stringifier
         stringifier_ext_attrs = stringifier.extended_attributes.copy()
         if stringifier.attribute:
-            stringifier_ext_attrs['ImplementedAs'] = stringifier.attribute.name
+            implemented_as = stringifier.attribute.name
         elif stringifier.operation:
-            stringifier_ext_attrs['ImplementedAs'] = stringifier.operation.name
+            implemented_as = stringifier.operation.name
+        else:
+            implemented_as = 'toString'
         methods.append(generated_method(
             return_type=IdlType('DOMString'),
             name='toString',
             extended_attributes=stringifier_ext_attrs,
-            implemented_as='toString'))
+            implemented_as=implemented_as))
 
     conditionally_enabled_methods = []
     custom_registration_methods = []
@@ -564,13 +583,13 @@ def interface_context(interface):
 
 
 # [DeprecateAs], [Reflect], [RuntimeEnabled]
-def constant_context(constant):
+def constant_context(constant, interface):
     extended_attributes = constant.extended_attributes
     return {
         'cpp_class': extended_attributes.get('PartialInterfaceImplementedAs'),
         'deprecate_as': v8_utilities.deprecate_as(constant),  # [DeprecateAs]
         'idl_type': constant.idl_type.name,
-        'measure_as': v8_utilities.measure_as(constant),  # [MeasureAs]
+        'measure_as': v8_utilities.measure_as(constant, interface),  # [MeasureAs]
         'name': constant.name,
         # FIXME: use 'reflected_name' as correct 'name'
         'reflected_name': extended_attributes.get('Reflect', constant.name),
@@ -681,7 +700,7 @@ def overloads_context(interface, overloads):
 
     # Check and fail if overloads disagree about whether the return type
     # is a Promise or not.
-    promise_overload_count = sum(1 for method in overloads if method.get('idl_type') == 'Promise')
+    promise_overload_count = sum(1 for method in overloads if method.get('returns_promise'))
     if promise_overload_count not in (0, len(overloads)):
         raise ValueError('Overloads of %s have conflicting Promise/non-Promise types'
                          % (name))
@@ -1229,16 +1248,21 @@ def property_getter(getter, cpp_arguments):
             return 'result.isNull()'
         if idl_type.is_interface_type:
             return '!result'
+        if idl_type.base_type in ('any', 'object'):
+            return 'result.isEmpty()'
         return ''
 
     idl_type = getter.idl_type
     extended_attributes = getter.extended_attributes
+    is_call_with_script_state = v8_utilities.has_extended_attribute_value(getter, 'CallWith', 'ScriptState')
     is_raises_exception = 'RaisesException' in extended_attributes
     use_output_parameter_for_result = idl_type.use_output_parameter_for_result
 
     # FIXME: make more generic, so can use v8_methods.cpp_value
     cpp_method_name = 'impl->%s' % cpp_name(getter)
 
+    if is_call_with_script_state:
+        cpp_arguments.insert(0, 'scriptState')
     if is_raises_exception:
         cpp_arguments.append('exceptionState')
     if use_output_parameter_for_result:
@@ -1250,6 +1274,7 @@ def property_getter(getter, cpp_arguments):
         'cpp_type': idl_type.cpp_type,
         'cpp_value': cpp_value,
         'do_not_check_security': 'DoNotCheckSecurity' in extended_attributes,
+        'is_call_with_script_state': is_call_with_script_state,
         'is_custom':
             'Custom' in extended_attributes and
             (not extended_attributes['Custom'] or
@@ -1273,24 +1298,26 @@ def property_setter(setter, interface):
 
     idl_type = setter.arguments[1].idl_type
     extended_attributes = setter.extended_attributes
+    is_call_with_script_state = v8_utilities.has_extended_attribute_value(setter, 'CallWith', 'ScriptState')
     is_raises_exception = 'RaisesException' in extended_attributes
-    restricted_float = (
-        has_extended_attribute_value(interface, 'TypeChecking', 'Unrestricted') or
-        has_extended_attribute_value(setter, 'TypeChecking', 'Unrestricted'))
+
+    # [TypeChecking=Interface] / [LegacyInterfaceTypeChecking]
+    has_type_checking_interface = (
+        not is_legacy_interface_type_checking(interface, setter) and
+        idl_type.is_wrapper_type)
+
     return {
         'has_exception_state': (is_raises_exception or
                                 idl_type.v8_conversion_needs_exception_state),
-        'has_type_checking_interface':
-            (has_extended_attribute_value(interface, 'TypeChecking', 'Interface') or
-             has_extended_attribute_value(setter, 'TypeChecking', 'Interface')) and
-            idl_type.is_wrapper_type,
+        'has_type_checking_interface': has_type_checking_interface,
         'idl_type': idl_type.base_type,
+        'is_call_with_script_state': is_call_with_script_state,
         'is_custom': 'Custom' in extended_attributes,
         'is_nullable': idl_type.is_nullable,
         'is_raises_exception': is_raises_exception,
         'name': cpp_name(setter),
         'v8_value_to_local_cpp_value': idl_type.v8_value_to_local_cpp_value(
-            extended_attributes, 'v8Value', 'propertyValue', restricted_float),
+            extended_attributes, 'v8Value', 'propertyValue'),
     }
 
 
@@ -1299,12 +1326,10 @@ def property_deleter(deleter):
         return None
 
     idl_type = deleter.idl_type
-    if str(idl_type) != 'boolean':
-        raise Exception(
-            'Only deleters with boolean type are allowed, but type is "%s"' %
-            idl_type)
     extended_attributes = deleter.extended_attributes
+    is_call_with_script_state = v8_utilities.has_extended_attribute_value(deleter, 'CallWith', 'ScriptState')
     return {
+        'is_call_with_script_state': is_call_with_script_state,
         'is_custom': 'Custom' in extended_attributes,
         'is_raises_exception': 'RaisesException' in extended_attributes,
         'name': cpp_name(deleter),

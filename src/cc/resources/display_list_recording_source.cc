@@ -26,13 +26,16 @@ const int kOpCountThatIsOkToAnalyze = 10;
 
 namespace cc {
 
-DisplayListRecordingSource::DisplayListRecordingSource()
+DisplayListRecordingSource::DisplayListRecordingSource(
+    const gfx::Size& grid_cell_size)
     : slow_down_raster_scale_factor_for_debug_(0),
+      gather_pixel_refs_(false),
       requires_clear_(false),
       is_solid_color_(false),
       solid_color_(SK_ColorTRANSPARENT),
       background_color_(SK_ColorTRANSPARENT),
       pixel_record_distance_(kPixelDistanceToRecord),
+      grid_cell_size_(grid_cell_size),
       is_suitable_for_gpu_rasterization_(true) {
 }
 
@@ -112,7 +115,16 @@ bool DisplayListRecordingSource::UpdateAndExpandInvalidation(
 
   DetermineIfSolidColor();
   display_list_->EmitTraceSnapshot();
+
+  display_list_->CreateAndCacheSkPicture();
+  if (gather_pixel_refs_)
+    display_list_->GatherPixelRefs(grid_cell_size_);
+
   return true;
+}
+
+void DisplayListRecordingSource::DidMoveToNewCompositor() {
+  // No invalidation history to worry about here.
 }
 
 gfx::Size DisplayListRecordingSource::GetSize() const {
@@ -126,6 +138,10 @@ void DisplayListRecordingSource::SetEmptyBounds() {
 
 void DisplayListRecordingSource::SetSlowdownRasterScaleFactor(int factor) {
   slow_down_raster_scale_factor_for_debug_ = factor;
+}
+
+void DisplayListRecordingSource::SetGatherPixelRefs(bool gather_pixel_refs) {
+  gather_pixel_refs_ = gather_pixel_refs;
 }
 
 void DisplayListRecordingSource::SetBackgroundColor(SkColor background_color) {

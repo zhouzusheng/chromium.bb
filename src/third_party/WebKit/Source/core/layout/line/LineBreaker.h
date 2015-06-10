@@ -36,7 +36,7 @@ struct LayoutTextInfo;
 class LineBreaker {
 public:
     friend class BreakingContext;
-    LineBreaker(RenderBlockFlow* block)
+    LineBreaker(LayoutBlockFlow* block)
         : m_block(block)
     {
         reset();
@@ -46,17 +46,17 @@ public:
         FloatingObject* lastFloatFromPreviousLine, WordMeasurements&);
 
     bool lineWasHyphenated() { return m_hyphenated; }
-    const Vector<RenderBox*>& positionedObjects() { return m_positionedObjects; }
+    const Vector<LayoutBox*>& positionedObjects() { return m_positionedObjects; }
     EClear clear() { return m_clear; }
 private:
     void reset();
 
     void skipLeadingWhitespace(InlineBidiResolver&, LineInfo&, FloatingObject* lastFloatFromPreviousLine, LineWidth&);
 
-    RenderBlockFlow* m_block;
+    LayoutBlockFlow* m_block;
     bool m_hyphenated;
     EClear m_clear;
-    Vector<RenderBox*> m_positionedObjects;
+    Vector<LayoutBox*> m_positionedObjects;
 };
 
 }

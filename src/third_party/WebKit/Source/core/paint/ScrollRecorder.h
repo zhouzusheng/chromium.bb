@@ -17,14 +17,14 @@ class GraphicsContext;
 // Emits display items which represent a region which is scrollable, so that it
 // can be translated by the scroll offset.
 class ScrollRecorder {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED(ScrollRecorder);
 public:
-    ScrollRecorder(GraphicsContext*, DisplayItemClient, PaintPhase, const IntSize& currentOffset);
+    ScrollRecorder(GraphicsContext&, const DisplayItemClientWrapper&, PaintPhase, const IntSize& currentOffset);
     ~ScrollRecorder();
 private:
-    DisplayItemClient m_client;
+    DisplayItemClientWrapper m_client;
     DisplayItem::Type m_beginItemType;
-    GraphicsContext* m_context;
+    GraphicsContext& m_context;
 };
 
 } // namespace blink

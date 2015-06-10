@@ -8,7 +8,7 @@
 #include "core/html/HTMLCanvasElement.h"
 #include "core/layout/LayoutHTMLCanvas.h"
 #include "core/layout/PaintInfo.h"
-#include "core/paint/RenderDrawingRecorder.h"
+#include "core/paint/LayoutObjectDrawingRecorder.h"
 #include "platform/geometry/LayoutPoint.h"
 #include "platform/graphics/paint/ClipRecorder.h"
 
@@ -22,6 +22,10 @@ void HTMLCanvasPainter::paintReplaced(const PaintInfo& paintInfo, const LayoutPo
     contentRect.moveBy(paintOffset);
     LayoutRect paintRect = m_layoutHTMLCanvas.replacedContentRect();
     paintRect.moveBy(paintOffset);
+
+    LayoutObjectDrawingRecorder drawingRecorder(*context, m_layoutHTMLCanvas, paintInfo.phase, contentRect);
+    if (drawingRecorder.canUseCachedDrawing())
+        return;
 
     bool clip = !contentRect.contains(paintRect);
     if (clip) {

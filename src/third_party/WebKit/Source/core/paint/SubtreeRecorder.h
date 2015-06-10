@@ -20,7 +20,7 @@ class LayoutObject;
 // for the paint phase.
 class SubtreeRecorder {
 public:
-    SubtreeRecorder(GraphicsContext*, const LayoutObject& root, PaintPhase);
+    SubtreeRecorder(GraphicsContext&, const LayoutObject& root, PaintPhase);
 
     ~SubtreeRecorder();
 
@@ -33,8 +33,6 @@ public:
     void begin();
 
 private:
-    void addDisplayItem(PassOwnPtr<DisplayItem>);
-
     DisplayItemList* m_displayItemList;
     const LayoutObject& m_subtreeRoot;
     const PaintPhase m_paintPhase;

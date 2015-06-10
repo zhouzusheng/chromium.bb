@@ -40,8 +40,9 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAudioSink
   // Possible types of error raised by Audio Sink object.
   enum ErrorCode {
     ERROR_UNSUPPORTED_PLATFORM,  // A2DP sink not supported on current platform.
-    ERROR_INVALID_ADAPTER,       // BluetoothAdapter not presented/powered.
-    ERROR_NOT_REGISTERED,        // BluetoothAudioSink not registered.
+    ERROR_INVALID_ADAPTER,  // BluetoothAdapter not present/powered.
+    ERROR_NOT_REGISTERED,  // BluetoothAudioSink not registered.
+    ERROR_NOT_UNREGISTERED,  // BluetoothAudioSink not unregistered.
   };
 
   // Options to configure an A2DP audio sink.
@@ -72,14 +73,25 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAudioSink
         BluetoothAudioSink* audio_sink,
         uint16_t volume) = 0;
 
-    // TODO(mcchou): Add method to monitor the availability of audio data during
-    // the streaming. This method should associate with BluetoothAudioSink
-    // specific IOBuffer wrapping fd, read_mtu and write_mtu.
+    // Called when there is audio data available. |audio_sink| indicates the
+    // object being changed. |data| is the pointer to the audio data and |size|
+    // is the number of bytes in |data|. |read_mtu| is the max size of the RTP
+    // packet. This method provides the raw audio data which hasn't been
+    // processed, so RTP assembling and SBC decoding need to be handled in order
+    // to get PCM data.
+    virtual void BluetoothAudioSinkDataAvailable(BluetoothAudioSink* audio_sink,
+                                                 char* data,
+                                                 size_t size,
+                                                 uint16_t read_mtu) = 0;
   };
 
   // The ErrorCallback is used for the methods that can fail in which case it
   // is called.
   typedef base::Callback<void(ErrorCode)> ErrorCallback;
+
+  // Possible volumes for media transport are 0-127, and 128 is used to
+  // represent invalid volume.
+  static const uint16_t kInvalidVolume;
 
   // Unregisters the audio sink. An audio sink will unregister itself
   // automatically in its destructor, but calling Unregister is recommended,
@@ -95,6 +107,9 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAudioSink
 
   // Getters for state and volume.
   virtual State GetState() const = 0;
+
+  // Returns the current volume level of the audio sink. The valid volumes are
+  // 0-127, and |kInvalidVolume| is returned instead if the volume is unknown.
   virtual uint16_t GetVolume() const = 0;
 
  protected:

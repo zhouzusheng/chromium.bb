@@ -32,11 +32,13 @@ struct TParseContext {
             shaderSpec(spec),
             compileOptions(options),
             treeRoot(0),
-            loopNestingLevel(0),
+            mLoopNestingLevel(0),
             structNestingLevel(0),
+            mSwitchNestingLevel(0),
             currentFunctionType(NULL),
-            functionReturnsValue(false),
+            mFunctionReturnsValue(false),
             checksPrecisionErrors(checksPrecErrors),
+            fragmentPrecisionHigh(false),
             defaultMatrixPacking(EmpColumnMajor),
             defaultBlockStorage(EbsShared),
             diagnostics(is),
@@ -51,10 +53,11 @@ struct TParseContext {
     int shaderVersion;
     int compileOptions;
     TIntermNode* treeRoot;       // root of parse tree being created
-    int loopNestingLevel;        // 0 if outside all loops
+    int mLoopNestingLevel;       // 0 if outside all loops
     int structNestingLevel;      // incremented while parsing a struct declaration
+    int mSwitchNestingLevel;     // 0 if outside all switch statements
     const TType* currentFunctionType;  // the return type of the function that's currently being parsed
-    bool functionReturnsValue;   // true if a non-void function has a return
+    bool mFunctionReturnsValue;  // true if a non-void function has a return
     bool checksPrecisionErrors;  // true if an error will be generated when a variable is declared without precision, explicit or implicit.
     bool fragmentPrecisionHigh;  // true if highp precision is supported in the fragment language.
     TLayoutMatrixPacking defaultMatrixPacking;
@@ -108,6 +111,7 @@ struct TParseContext {
     bool extensionErrorCheck(const TSourceLoc& line, const TString&);
     bool singleDeclarationErrorCheck(TPublicType &publicType, const TSourceLoc& identifierLocation, const TString &identifier);
     bool layoutLocationErrorCheck(const TSourceLoc& location, const TLayoutQualifier &layoutQualifier);
+    bool functionCallLValueErrorCheck(const TFunction *fnCandidate, TIntermAggregate *);
 
     const TPragma& pragma() const { return directiveHandler.pragma(); }
     const TExtensionBehavior& extensionBehavior() const { return directiveHandler.extensionBehavior(); }
@@ -163,12 +167,38 @@ struct TParseContext {
 
     bool structNestingErrorCheck(const TSourceLoc& line, const TField& field);
 
+    TIntermSwitch *addSwitch(TIntermTyped *init, TIntermAggregate *statementList, const TSourceLoc &loc);
+    TIntermCase *addCase(TIntermTyped *condition, const TSourceLoc &loc);
+    TIntermCase *addDefault(const TSourceLoc &loc);
+
     TIntermTyped *addUnaryMath(TOperator op, TIntermTyped *child, const TSourceLoc &);
     TIntermTyped *addUnaryMathLValue(TOperator op, TIntermTyped *child, const TSourceLoc &);
     TIntermTyped *addBinaryMath(TOperator op, TIntermTyped *left, TIntermTyped *right,
         const TSourceLoc &);
     TIntermTyped *addBinaryMathBooleanResult(TOperator op, TIntermTyped *left, TIntermTyped *right,
         const TSourceLoc &);
+    TIntermTyped *addAssign(TOperator op, TIntermTyped *left, TIntermTyped *right,
+        const TSourceLoc &loc);
+
+    TIntermBranch *addBranch(TOperator op, const TSourceLoc &loc);
+    TIntermBranch *addBranch(TOperator op, TIntermTyped *returnValue, const TSourceLoc &loc);
+
+    TIntermTyped *addFunctionCallOrMethod(TFunction *fnCall, TIntermNode *node,
+        const TSourceLoc &loc, bool *fatalError);
+
+  private:
+    TIntermTyped *addBinaryMathInternal(TOperator op, TIntermTyped *left, TIntermTyped *right,
+        const TSourceLoc &loc);
+    TIntermTyped *createAssign(TOperator op, TIntermTyped *left, TIntermTyped *right,
+        const TSourceLoc &loc);
+    // The funcReturnType parameter is expected to be non-null when the operation is a built-in function.
+    // It is expected to be null for other unary operators.
+    TIntermTyped *createUnaryMath(TOperator op, TIntermTyped *child, const TSourceLoc &loc,
+        const TType *funcReturnType);
+
+    // Return true if the checks pass
+    bool binaryOpCommonCheck(TOperator op, TIntermTyped *left, TIntermTyped *right,
+        const TSourceLoc &loc);
 };
 
 int PaParseStrings(size_t count, const char* const string[], const int length[],

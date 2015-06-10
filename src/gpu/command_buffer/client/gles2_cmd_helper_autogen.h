@@ -949,6 +949,16 @@ void GetString(GLenum name, uint32_t bucket_id) {
   }
 }
 
+void GetSynciv(GLuint sync,
+               GLenum pname,
+               uint32_t values_shm_id,
+               uint32_t values_shm_offset) {
+  gles2::cmds::GetSynciv* c = GetCmdSpace<gles2::cmds::GetSynciv>();
+  if (c) {
+    c->Init(sync, pname, values_shm_id, values_shm_offset);
+  }
+}
+
 void GetTexParameterfv(GLenum target,
                        GLenum pname,
                        uint32_t params_shm_id,
@@ -2216,6 +2226,28 @@ void EnableFeatureCHROMIUM(GLuint bucket_id,
   }
 }
 
+void MapBufferRange(GLenum target,
+                    GLintptr offset,
+                    GLsizeiptr size,
+                    GLbitfield access,
+                    uint32_t data_shm_id,
+                    uint32_t data_shm_offset,
+                    uint32_t result_shm_id,
+                    uint32_t result_shm_offset) {
+  gles2::cmds::MapBufferRange* c = GetCmdSpace<gles2::cmds::MapBufferRange>();
+  if (c) {
+    c->Init(target, offset, size, access, data_shm_id, data_shm_offset,
+            result_shm_id, result_shm_offset);
+  }
+}
+
+void UnmapBuffer(GLenum target) {
+  gles2::cmds::UnmapBuffer* c = GetCmdSpace<gles2::cmds::UnmapBuffer>();
+  if (c) {
+    c->Init(target);
+  }
+}
+
 void ResizeCHROMIUM(GLuint width, GLuint height, GLfloat scale_factor) {
   gles2::cmds::ResizeCHROMIUM* c = GetCmdSpace<gles2::cmds::ResizeCHROMIUM>();
   if (c) {
@@ -2302,13 +2334,24 @@ void TexImageIOSurface2DCHROMIUM(GLenum target,
 void CopyTextureCHROMIUM(GLenum target,
                          GLenum source_id,
                          GLenum dest_id,
-                         GLint level,
                          GLint internalformat,
                          GLenum dest_type) {
   gles2::cmds::CopyTextureCHROMIUM* c =
       GetCmdSpace<gles2::cmds::CopyTextureCHROMIUM>();
   if (c) {
-    c->Init(target, source_id, dest_id, level, internalformat, dest_type);
+    c->Init(target, source_id, dest_id, internalformat, dest_type);
+  }
+}
+
+void CopySubTextureCHROMIUM(GLenum target,
+                            GLenum source_id,
+                            GLenum dest_id,
+                            GLint xoffset,
+                            GLint yoffset) {
+  gles2::cmds::CopySubTextureCHROMIUM* c =
+      GetCmdSpace<gles2::cmds::CopySubTextureCHROMIUM>();
+  if (c) {
+    c->Init(target, source_id, dest_id, xoffset, yoffset);
   }
 }
 

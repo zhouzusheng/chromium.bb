@@ -53,10 +53,9 @@ private:
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
     virtual void removedFrom(ContainerNode*) override;
 
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
     virtual void svgAttributeChanged(const QualifiedName&) override;
 
-    virtual bool rendererIsNeeded(const LayoutStyle&) override { return false; }
+    virtual bool layoutObjectIsNeeded(const ComputedStyle&) override { return false; }
     void notifyParentOfPathChange(ContainerNode*);
 
 };

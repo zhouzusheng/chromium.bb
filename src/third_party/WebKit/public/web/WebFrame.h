@@ -66,7 +66,6 @@ class WebElement;
 class WebLayer;
 class WebLocalFrame;
 class WebPerformance;
-class WebPermissionClient;
 class WebRange;
 class WebRemoteFrame;
 class WebSecurityOrigin;
@@ -76,6 +75,7 @@ class WebURL;
 class WebURLLoader;
 class WebURLRequest;
 class WebView;
+enum class WebSandboxFlags;
 struct WebConsoleMessage;
 struct WebFindOptions;
 struct WebFloatPoint;
@@ -161,11 +161,16 @@ public:
     virtual void setRemoteWebLayer(WebLayer*) = 0;
 
     // Initializes the various client interfaces.
-    virtual void setPermissionClient(WebPermissionClient*) = 0;
     virtual void setSharedWorkerRepositoryClient(WebSharedWorkerRepositoryClient*) = 0;
 
     // The security origin of this frame.
     BLINK_EXPORT WebSecurityOrigin securityOrigin() const;
+
+    // Updates the sandbox flags in the frame's FrameOwner.  This is used when
+    // this frame's parent is in another process and it dynamically updates
+    // this frame's sandbox flags.  The flags won't take effect until the next
+    // navigation.
+    BLINK_EXPORT void setFrameOwnerSandboxFlags(WebSandboxFlags);
 
     // Geometry -----------------------------------------------------------
 
@@ -312,7 +317,7 @@ public:
     // Executes script in the context of the current page and returns the value
     // that the script evaluated to.
     // DEPRECATED: Use WebLocalFrame::requestExecuteScriptAndReturnValue.
-    virtual v8::Handle<v8::Value> executeScriptAndReturnValue(
+    virtual v8::Local<v8::Value> executeScriptAndReturnValue(
         const WebScriptSource&) = 0;
 
     // worldID must be > 0 (as 0 represents the main world).
@@ -426,12 +431,11 @@ public:
 
     virtual WebRange markedRange() const = 0;
 
-    // Returns the frame rectangle in window coordinate space of the given text
-    // range.
+    // Returns the text range rectangle in the viepwort coordinate space.
     virtual bool firstRectForCharacterRange(unsigned location, unsigned length, WebRect&) const = 0;
 
     // Returns the index of a character in the Frame's text stream at the given
-    // point. The point is in the window coordinate space. Will return
+    // point. The point is in the viewport coordinate space. Will return
     // WTF::notFound if the point is invalid.
     virtual size_t characterIndexForPoint(const WebPoint&) const = 0;
 
@@ -468,10 +472,12 @@ public:
 
     virtual void selectRange(const WebRange&) = 0;
 
-    // Move the current selection to the provided window point/points. If the
+    // Move the current selection to the provided viewport point/points. If the
     // current selection is editable, the new selection will be restricted to
     // the root editable element.
-    virtual void moveRangeSelection(const WebPoint& base, const WebPoint& extent) = 0;
+    // |TextGranularity| represents character wrapping granularity. If
+    // WordGranularity is set, WebFrame extends selection to wrap word.
+    virtual void moveRangeSelection(const WebPoint& base, const WebPoint& extent, WebFrame::TextGranularity = CharacterGranularity) = 0;
     virtual void moveCaretSelection(const WebPoint&) = 0;
 
     virtual bool setEditableSelectionOffsets(int start, int end) = 0;

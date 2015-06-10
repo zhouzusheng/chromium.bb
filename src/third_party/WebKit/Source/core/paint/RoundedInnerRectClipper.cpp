@@ -5,20 +5,20 @@
 #include "config.h"
 #include "core/paint/RoundedInnerRectClipper.h"
 
+#include "core/layout/LayoutBox.h"
 #include "core/layout/PaintInfo.h"
-#include "core/rendering/RenderBox.h"
 #include "platform/graphics/paint/ClipDisplayItem.h"
 #include "platform/graphics/paint/DisplayItemList.h"
 
 namespace blink {
 
-RoundedInnerRectClipper::RoundedInnerRectClipper(LayoutObject& renderer, const PaintInfo& paintInfo, const LayoutRect& rect, const FloatRoundedRect& clipRect, RoundedInnerRectClipperBehavior behavior)
-    : m_renderer(renderer)
+RoundedInnerRectClipper::RoundedInnerRectClipper(LayoutObject& layoutObject, const PaintInfo& paintInfo, const LayoutRect& rect, const FloatRoundedRect& clipRect, RoundedInnerRectClipperBehavior behavior)
+    : m_layoutObject(layoutObject)
     , m_paintInfo(paintInfo)
     , m_useDisplayItemList(RuntimeEnabledFeatures::slimmingPaintEnabled() && behavior == ApplyToDisplayListIfEnabled)
     , m_clipType(m_useDisplayItemList ? m_paintInfo.displayItemTypeForClipping() : DisplayItem::ClipBoxPaintPhaseFirst)
 {
-    OwnPtr<ClipDisplayItem> clipDisplayItem = ClipDisplayItem::create(renderer.displayItemClient(), m_clipType, LayoutRect::infiniteIntRect());
+    OwnPtr<ClipDisplayItem> clipDisplayItem = ClipDisplayItem::create(layoutObject, m_clipType, LayoutRect::infiniteIntRect());
 
     if (clipRect.isRenderable()) {
         clipDisplayItem->roundedRectClips().append(clipRect);
@@ -53,7 +53,7 @@ RoundedInnerRectClipper::RoundedInnerRectClipper(LayoutObject& renderer, const P
         ASSERT(m_paintInfo.context->displayItemList());
         m_paintInfo.context->displayItemList()->add(clipDisplayItem.release());
     } else {
-        clipDisplayItem->replay(paintInfo.context);
+        clipDisplayItem->replay(*paintInfo.context);
     }
 }
 
@@ -62,11 +62,11 @@ RoundedInnerRectClipper::~RoundedInnerRectClipper()
     DisplayItem::Type endType = DisplayItem::clipTypeToEndClipType(m_clipType);
     if (m_useDisplayItemList) {
         ASSERT(m_paintInfo.context->displayItemList());
-        OwnPtr<EndClipDisplayItem> endClipDisplayItem = EndClipDisplayItem::create(m_renderer.displayItemClient(), endType);
+        OwnPtr<EndClipDisplayItem> endClipDisplayItem = EndClipDisplayItem::create(m_layoutObject, endType);
         m_paintInfo.context->displayItemList()->add(endClipDisplayItem.release());
     } else {
-        EndClipDisplayItem endClipDisplayItem(m_renderer.displayItemClient(), endType);
-        endClipDisplayItem.replay(m_paintInfo.context);
+        EndClipDisplayItem endClipDisplayItem(m_layoutObject, endType);
+        endClipDisplayItem.replay(*m_paintInfo.context);
     }
 }
 

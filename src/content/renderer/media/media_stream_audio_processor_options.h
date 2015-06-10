@@ -45,6 +45,7 @@ class CONTENT_EXPORT MediaAudioConstraints {
   static const char kGoogHighpassFilter[];
   static const char kGoogTypingNoiseDetection[];
   static const char kGoogAudioMirroring[];
+  static const char kGoogAudioProcessing48kHzSupport[];
 
   // Merge |constraints| with |kDefaultAudioConstraints|. For any key which
   // exists in both, the value from |constraints| is maintained, including its
@@ -65,21 +66,22 @@ class CONTENT_EXPORT MediaAudioConstraints {
   // default value of the constraint.
   // Note, for constraint of |kEchoCancellation| or |kGoogEchoCancellation|,
   // clients should use GetEchoCancellationProperty().
-  bool GetProperty(const std::string& key);
+  bool GetProperty(const std::string& key) const;
 
   // Gets the property of echo cancellation defined in |constraints_|. The
   // returned value depends on a combination of |effects_|, |kEchoCancellation|
   // and |kGoogEchoCancellation| in |constraints_|.
-  bool GetEchoCancellationProperty();
+  bool GetEchoCancellationProperty() const;
 
   // Returns true if all the mandatory constraints in |constraints_| are valid;
   // Otherwise return false.
-  bool IsValid();
+  bool IsValid() const;
 
  private:
   // Gets the default value of constraint named by |key| in |constraints|.
   bool GetDefaultValueForConstraint(
-      const blink::WebMediaConstraints& constraints, const std::string& key);
+      const blink::WebMediaConstraints& constraints,
+      const std::string& key) const;
 
   const blink::WebMediaConstraints constraints_;
   const int effects_;
@@ -96,14 +98,9 @@ class CONTENT_EXPORT EchoInformation {
   void UpdateAecDelayStats(webrtc::EchoCancellation* echo_cancellation);
 
  private:
-  // Updates UMA histograms with an interval of 5 seconds.
-  void LogAecDelayStats();
-
-  // Counters to be able to aquire a 5 second aggregated metric out of 1 second
-  // aggregated webrtc::EchoCancellation::GetEchoDelayMetrics() queries.
+  // Counter to track 5 seconds of processed 10 ms chunks in order to query a
+  // new metric from webrtc::EchoCancellation::GetEchoDelayMetrics().
   int num_chunks_;
-  int num_queries_;
-  float echo_fraction_poor_delays_;
 
   DISALLOW_COPY_AND_ASSIGN(EchoInformation);
 };

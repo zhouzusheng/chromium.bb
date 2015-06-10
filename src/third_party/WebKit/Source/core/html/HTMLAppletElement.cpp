@@ -34,8 +34,8 @@
 #include "core/frame/Settings.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/layout/LayoutApplet.h"
+#include "core/layout/LayoutBlockFlow.h"
 #include "core/plugins/PluginPlaceholder.h"
-#include "core/rendering/RenderBlockFlow.h"
 #include "platform/Widget.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityOrigin.h"
@@ -83,20 +83,20 @@ bool HTMLAppletElement::hasLegalLinkAttribute(const QualifiedName& name) const
     return name == codebaseAttr || HTMLPlugInElement::hasLegalLinkAttribute(name);
 }
 
-bool HTMLAppletElement::rendererIsNeeded(const LayoutStyle& style)
+bool HTMLAppletElement::layoutObjectIsNeeded(const ComputedStyle& style)
 {
     if (!fastHasAttribute(codeAttr) && !hasOpenShadowRoot())
         return false;
-    return HTMLPlugInElement::rendererIsNeeded(style);
+    return HTMLPlugInElement::layoutObjectIsNeeded(style);
 }
 
-LayoutObject* HTMLAppletElement::createRenderer(const LayoutStyle& style)
+LayoutObject* HTMLAppletElement::createLayoutObject(const ComputedStyle& style)
 {
     if (!canEmbedJava() || hasOpenShadowRoot())
         return LayoutObject::createObject(this, style);
 
     if (usePlaceholderContent())
-        return new RenderBlockFlow(this);
+        return new LayoutBlockFlow(this);
 
     return new LayoutApplet(this);
 }
@@ -227,7 +227,7 @@ bool HTMLAppletElement::canEmbedURL(const KURL& url) const
     }
 
     if (!document().contentSecurityPolicy()->allowObjectFromSource(url)
-        || !document().contentSecurityPolicy()->allowPluginType(m_serviceType, m_serviceType, url)) {
+        || !document().contentSecurityPolicy()->allowPluginTypeForDocument(document(), m_serviceType, m_serviceType, url)) {
         layoutEmbeddedObject()->setPluginUnavailabilityReason(LayoutEmbeddedObject::PluginBlockedByContentSecurityPolicy);
         return false;
     }

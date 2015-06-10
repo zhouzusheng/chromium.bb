@@ -30,7 +30,6 @@
 #define EmptyClients_h
 
 #include "core/editing/UndoStep.h"
-#include "core/inspector/InspectorClient.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/ContextMenuClient.h"
@@ -64,7 +63,7 @@
 namespace blink {
 
 class EmptyChromeClient : public ChromeClient {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED(EmptyChromeClient);
 public:
     virtual ~EmptyChromeClient() { }
     virtual void chromeDestroyed() override { }
@@ -84,9 +83,6 @@ public:
     virtual void focusedFrameChanged(LocalFrame*) override { }
     virtual Page* createWindow(LocalFrame*, const FrameLoadRequest&, const WindowFeatures&, NavigationPolicy, ShouldSendReferrer) override { return 0; }
     virtual void show(NavigationPolicy) override { }
-
-    virtual bool canRunModal() override { return false; }
-    virtual void runModal() override { }
 
     virtual void setToolbarsVisible(bool) override { }
     virtual bool toolbarsVisible() override { return false; }
@@ -127,7 +123,7 @@ public:
     virtual void invalidateRect(const IntRect&) override { }
     virtual void scheduleAnimation() override { }
 
-    virtual IntRect rootViewToScreen(const IntRect& r) const override { return r; }
+    virtual IntRect viewportToScreen(const IntRect& r) const override { return r; }
     virtual blink::WebScreenInfo screenInfo() const override { return blink::WebScreenInfo(); }
     virtual void contentsSizeChanged(LocalFrame*, const IntSize&) const override { }
 
@@ -152,7 +148,7 @@ public:
     virtual void needTouchEvents(bool) override { }
     virtual void setTouchAction(TouchAction touchAction) override { };
 
-    virtual void didAssociateFormControls(const WillBeHeapVector<RefPtrWillBeMember<Element> >&, LocalFrame* frame) override { }
+    virtual void didAssociateFormControls(const WillBeHeapVector<RefPtrWillBeMember<Element>>&, LocalFrame* frame) override { }
 
     virtual void annotatedRegionsChanged() override { }
     virtual bool paintCustomOverhangArea(GraphicsContext*, const IntRect&, const IntRect&, const IntRect&) override { return false; }
@@ -160,7 +156,7 @@ public:
 };
 
 class EmptyFrameLoaderClient : public FrameLoaderClient {
-    WTF_MAKE_NONCOPYABLE(EmptyFrameLoaderClient); WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(EmptyFrameLoaderClient); WTF_MAKE_FAST_ALLOCATED(EmptyFrameLoaderClient);
 public:
     EmptyFrameLoaderClient() { }
     virtual ~EmptyFrameLoaderClient() {  }
@@ -176,6 +172,7 @@ public:
     virtual Frame* nextSibling() const override { return 0; }
     virtual Frame* firstChild() const override { return 0; }
     virtual Frame* lastChild() const override { return 0; }
+    virtual void willBeDetached() override { }
     virtual void detached() override { }
 
     virtual void dispatchWillSendRequest(DocumentLoader*, unsigned long, ResourceRequest&, const ResourceResponse&) override { }
@@ -189,9 +186,9 @@ public:
     virtual void dispatchDidStartProvisionalLoad(bool isTransitionNavigation, double triggeringEventTime) override { }
     virtual void dispatchDidReceiveTitle(const String&) override { }
     virtual void dispatchDidChangeIcons(IconType) override { }
-    virtual void dispatchDidCommitLoad(LocalFrame*, HistoryItem*, HistoryCommitType) override { }
-    virtual void dispatchDidFailProvisionalLoad(const ResourceError&) override { }
-    virtual void dispatchDidFailLoad(const ResourceError&) override { }
+    virtual void dispatchDidCommitLoad(HistoryItem*, HistoryCommitType) override { }
+    virtual void dispatchDidFailProvisionalLoad(const ResourceError&, HistoryCommitType) override { }
+    virtual void dispatchDidFailLoad(const ResourceError&, HistoryCommitType) override { }
     virtual void dispatchDidFinishDocumentLoad() override { }
     virtual void dispatchDidFinishLoad() override { }
     virtual void dispatchDidFirstVisuallyNonEmptyLayout() override { }
@@ -222,7 +219,7 @@ public:
     virtual void didDetectXSS(const KURL&, bool) override { }
     virtual void didDispatchPingLoader(const KURL&) override { }
     virtual void selectorMatchChanged(const Vector<String>&, const Vector<String>&) override { }
-    virtual PassRefPtrWillBeRawPtr<LocalFrame> createFrame(const KURL&, const AtomicString&, HTMLFrameOwnerElement*, ContentSecurityPolicyDisposition) override;
+    virtual PassRefPtrWillBeRawPtr<LocalFrame> createFrame(const FrameLoadRequest&, const AtomicString&, HTMLFrameOwnerElement*) override;
     virtual PassOwnPtrWillBeRawPtr<PluginPlaceholder> createPluginPlaceholder(Document&, const KURL&, const Vector<String>& paramNames, const Vector<String>& paramValues, const String& mimeType, bool loadManually) override;
     virtual PassRefPtrWillBeRawPtr<Widget> createPlugin(HTMLPlugInElement*, const KURL&, const Vector<String>&, const Vector<String>&, const String&, bool, DetachedPluginPolicy) override;
     virtual bool canCreatePluginWithoutRenderer(const String& mimeType) const override { return false; }
@@ -260,7 +257,7 @@ public:
 };
 
 class EmptySpellCheckerClient : public SpellCheckerClient {
-    WTF_MAKE_NONCOPYABLE(EmptySpellCheckerClient); WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(EmptySpellCheckerClient); WTF_MAKE_FAST_ALLOCATED(EmptySpellCheckerClient);
 public:
     EmptySpellCheckerClient() { }
     virtual ~EmptySpellCheckerClient() { }
@@ -280,7 +277,7 @@ private:
 };
 
 class EmptyEditorClient final : public EditorClient {
-    WTF_MAKE_NONCOPYABLE(EmptyEditorClient); WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(EmptyEditorClient); WTF_MAKE_FAST_ALLOCATED(EmptyEditorClient);
 public:
     EmptyEditorClient() { }
     virtual ~EmptyEditorClient() { }
@@ -295,7 +292,7 @@ public:
 };
 
 class EmptyContextMenuClient final : public ContextMenuClient {
-    WTF_MAKE_NONCOPYABLE(EmptyContextMenuClient); WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(EmptyContextMenuClient); WTF_MAKE_FAST_ALLOCATED(EmptyContextMenuClient);
 public:
     EmptyContextMenuClient() { }
     virtual ~EmptyContextMenuClient() {  }
@@ -304,22 +301,12 @@ public:
 };
 
 class EmptyDragClient final : public DragClient {
-    WTF_MAKE_NONCOPYABLE(EmptyDragClient); WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(EmptyDragClient); WTF_MAKE_FAST_ALLOCATED(EmptyDragClient);
 public:
     EmptyDragClient() { }
     virtual ~EmptyDragClient() {}
     virtual DragDestinationAction actionMaskForDrag(DragData*) override { return DragDestinationActionNone; }
     virtual void startDrag(DragImage*, const IntPoint&, const IntPoint&, DataTransfer*, LocalFrame*, bool) override { }
-};
-
-class EmptyInspectorClient final : public InspectorClient {
-    WTF_MAKE_NONCOPYABLE(EmptyInspectorClient); WTF_MAKE_FAST_ALLOCATED;
-public:
-    EmptyInspectorClient() { }
-    virtual ~EmptyInspectorClient() { }
-
-    virtual void highlight() override { }
-    virtual void hideHighlight() override { }
 };
 
 void fillWithEmptyClients(Page::PageClients&);

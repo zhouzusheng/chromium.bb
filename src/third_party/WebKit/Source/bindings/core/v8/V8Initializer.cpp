@@ -120,9 +120,9 @@ static String extractResourceName(v8::Handle<v8::Message> message, const Documen
     return shouldUseDocumentURL ? document->url() : toCoreString(resourceName.As<v8::String>());
 }
 
-static String extractMessageForConsole(v8::Handle<v8::Value> data)
+static String extractMessageForConsole(v8::Isolate* isolate, v8::Handle<v8::Value> data)
 {
-    if (V8DOMWrapper::isDOMWrapper(data)) {
+    if (V8DOMWrapper::isWrapper(isolate, data)) {
         v8::Handle<v8::Object> obj = v8::Handle<v8::Object>::Cast(data);
         const WrapperTypeInfo* type = toWrapperTypeInfo(obj);
         if (V8DOMException::wrapperTypeInfo.isSubclass(type)) {
@@ -137,12 +137,6 @@ static String extractMessageForConsole(v8::Handle<v8::Value> data)
 static void messageHandlerInMainThread(v8::Handle<v8::Message> message, v8::Handle<v8::Value> data)
 {
     ASSERT(isMainThread());
-    // It's possible that messageHandlerInMainThread() is invoked while we're initializing a window.
-    // In that half-baked situation, we don't have a valid context nor a valid world,
-    // so just return immediately.
-    if (DOMWrapperWorld::windowIsBeingInitialized())
-        return;
-
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
     // If called during context initialization, there will be no entered window.
     LocalDOMWindow* enteredWindow = enteredDOMWindow(isolate);
@@ -158,7 +152,7 @@ static void messageHandlerInMainThread(v8::Handle<v8::Message> message, v8::Hand
     String errorMessage = toCoreStringWithNullCheck(message->Get());
     RefPtrWillBeRawPtr<ErrorEvent> event = ErrorEvent::create(errorMessage, resourceName, message->GetLineNumber(), message->GetStartColumn() + 1, &scriptState->world());
 
-    String messageForConsole = extractMessageForConsole(data);
+    String messageForConsole = extractMessageForConsole(isolate, data);
     if (!messageForConsole.isEmpty())
         event->setUnsanitizedMessage("Uncaught " + messageForConsole);
 
@@ -203,35 +197,19 @@ void V8Initializer::reportRejectedPromisesOnMainThread()
 static void promiseRejectHandlerInMainThread(v8::PromiseRejectMessage data)
 {
     ASSERT(isMainThread());
-
     if (data.GetEvent() != v8::kPromiseRejectWithNoHandler)
         return;
-
-    // It's possible that promiseRejectHandlerInMainThread() is invoked while we're initializing a window.
-    // In that half-baked situation, we don't have a valid context nor a valid world,
-    // so just return immediately.
-    if (DOMWrapperWorld::windowIsBeingInitialized())
-        return;
-
     v8::Handle<v8::Promise> promise = data.GetPromise();
 
-    // Bail out if called during context initialization.
     v8::Isolate* isolate = promise->GetIsolate();
-    v8::Handle<v8::Context> context = isolate->GetCurrentContext();
-    if (context.IsEmpty())
-        return;
-    v8::Handle<v8::Value> global = V8Window::findInstanceInPrototypeChain(context->Global(), context->GetIsolate());
-    if (global.IsEmpty())
-        return;
-
     // There is no entered window during microtask callbacks from V8,
     // thus we call toDOMWindow() instead of enteredDOMWindow().
-    LocalDOMWindow* window = toLocalDOMWindow(toDOMWindow(context));
+    LocalDOMWindow* window = currentDOMWindow(isolate);
     if (!window || !window->isCurrentlyDisplayedInFrame())
         return;
 
     v8::Handle<v8::Value> exception = data.GetValue();
-    if (V8DOMWrapper::isDOMWrapper(exception)) {
+    if (V8DOMWrapper::isWrapper(isolate, exception)) {
         // Try to get the stack & location from a wrapped exception object (e.g. DOMException).
         ASSERT(exception->IsObject());
         v8::Handle<v8::Object> obj = v8::Handle<v8::Object>::Cast(exception);
@@ -259,11 +237,11 @@ static void promiseRejectHandlerInMainThread(v8::PromiseRejectMessage data)
         errorMessage = "Uncaught " + String::number(exception.As<v8::Integer>()->Value());
     }
 
-    String messageForConsole = extractMessageForConsole(data.GetValue());
+    String messageForConsole = extractMessageForConsole(isolate, data.GetValue());
     if (!messageForConsole.isEmpty())
         errorMessage = "Uncaught " + messageForConsole;
 
-    ScriptState* scriptState = ScriptState::from(context);
+    ScriptState* scriptState = ScriptState::current(isolate);
     rejectedPromisesOnMainThread().add(scriptState, data, errorMessage, resourceName, scriptId, lineNumber, columnNumber, callStack);
 }
 
@@ -324,34 +302,26 @@ static bool codeGenerationCheckCallbackInMainThread(v8::Local<v8::Context> conte
 {
     if (ExecutionContext* executionContext = toExecutionContext(context)) {
         if (ContentSecurityPolicy* policy = toDocument(executionContext)->contentSecurityPolicy())
-            return policy->allowEval(ScriptState::from(context));
+            return policy->allowEval(ScriptState::from(context), ContentSecurityPolicy::SendReport, ContentSecurityPolicy::WillThrowException);
     }
     return false;
-}
-
-static void idleGCTaskInMainThread(double deadlineSeconds);
-
-static void postIdleGCTaskMainThread()
-{
-    if (RuntimeEnabledFeatures::v8IdleTasksEnabled()) {
-        Scheduler* scheduler = Scheduler::shared();
-        if (scheduler)
-            scheduler->postIdleTask(FROM_HERE, WTF::bind<double>(idleGCTaskInMainThread));
-    }
 }
 
 static void idleGCTaskInMainThread(double deadlineSeconds)
 {
     ASSERT(isMainThread());
     ASSERT(RuntimeEnabledFeatures::v8IdleTasksEnabled());
+    bool gcFinished = false;
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
-    // FIXME: Change V8's API to take a deadline - http://crbug.com/417668
-    double idleTimeInSeconds = deadlineSeconds - Platform::current()->monotonicallyIncreasingTime();
-    int idleTimeInMillis = static_cast<int>(idleTimeInSeconds * 1000);
-    if (idleTimeInMillis > 0)
-        isolate->IdleNotification(idleTimeInMillis);
-    // FIXME: only repost if there is more work to do.
-    postIdleGCTaskMainThread();
+    if (deadlineSeconds > Platform::current()->monotonicallyIncreasingTime())
+        gcFinished = isolate->IdleNotificationDeadline(deadlineSeconds);
+
+    Scheduler* scheduler = Scheduler::shared();
+    ASSERT(scheduler);
+    if (gcFinished)
+        scheduler->postIdleTaskAfterWakeup(FROM_HERE, WTF::bind<double>(idleGCTaskInMainThread));
+    else
+        scheduler->postIdleTask(FROM_HERE, WTF::bind<double>(idleGCTaskInMainThread));
 }
 
 static void timerTraceProfilerInMainThread(const char* name, int status)
@@ -419,7 +389,8 @@ void V8Initializer::initializeMainThreadIfNeeded()
     v8::V8::SetFailedAccessCheckCallbackFunction(failedAccessCheckCallbackInMainThread);
     v8::V8::SetAllowCodeGenerationFromStringsCallback(codeGenerationCheckCallbackInMainThread);
 
-    postIdleGCTaskMainThread();
+    if (RuntimeEnabledFeatures::v8IdleTasksEnabled())
+        Scheduler::shared()->postIdleTask(FROM_HERE, WTF::bind<double>(idleGCTaskInMainThread));
 
     isolate->SetEventLogger(timerTraceProfilerInMainThread);
     isolate->SetPromiseRejectCallback(promiseRejectHandlerInMainThread);

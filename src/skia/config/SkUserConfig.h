@@ -79,6 +79,10 @@
 //#define SK_DEBUG
 //#define SK_RELEASE
 
+#ifdef DCHECK_ALWAYS_ON
+    #undef SK_RELEASE
+    #define SK_DEBUG
+#endif
 
 /*  If, in debugging mode, Skia needs to stop (presumably to invoke a debugger)
     it will call SK_CRASH(). If this is not defined it, it is defined in
@@ -241,32 +245,48 @@ SK_API void SkDebugf_FileLine(const char* file, int line, bool fatal,
 #   define SK_SUPPORT_LEGACY_GETTOPDEVICE
 #endif
 
+#ifndef    SK_LEGACY_DRAWPICTURECALLBACK
+#   define SK_LEGACY_DRAWPICTURECALLBACK
+#endif
+
 #ifndef    SK_SUPPORT_LEGACY_GETDEVICE
 #   define SK_SUPPORT_LEGACY_GETDEVICE
+#endif
+
+#ifndef    SK_SUPPORT_LEGACY_SCALAR_XFERMODES
+#   define SK_SUPPORT_LEGACY_SCALAR_XFERMODES
 #endif
 
 #ifndef    SK_SUPPORT_LEGACY_PUBLIC_IMAGEINFO_FIELDS
 #   define SK_SUPPORT_LEGACY_PUBLIC_IMAGEINFO_FIELDS
 #endif
 
+#ifndef    SK_SUPPORT_LEGACY_SCALAR_MAPPOINTS
+#   define SK_SUPPORT_LEGACY_SCALAR_MAPPOINTS
+#endif
+
 #ifndef    SK_IGNORE_ETC1_SUPPORT
 #   define SK_IGNORE_ETC1_SUPPORT
 #endif
 
-#ifndef    SK_SUPPORT_LEGACY_MIPMAP_EFFECTIVE_SCALE
-#   define SK_SUPPORT_LEGACY_MIPMAP_EFFECTIVE_SCALE
+#ifndef    SK_SUPPORT_LEGACY_BOOL_ONGETINFO
+#   define SK_SUPPORT_LEGACY_BOOL_ONGETINFO
 #endif
 
 #ifndef    SK_IGNORE_GPU_DITHER
 #   define SK_IGNORE_GPU_DITHER
 #endif
 
-#ifndef SK_SUPPORT_LEGACY_ARCTO_QUADS
-#   define SK_SUPPORT_LEGACY_ARCTO_QUADS
+#ifndef    SK_SUPPORT_LEGACY_INT_COLORMATRIX
+#   define SK_SUPPORT_LEGACY_INT_COLORMATRIX
 #endif
 
-#ifndef SK_SUPPORT_LEGACY_ADDOVAL
-#   define SK_SUPPORT_LEGACY_ADDOVAL
+#ifndef    SK_SUPPORT_LEGACY_PATHOP_ENUMS
+#   define SK_SUPPORT_LEGACY_PATHOP_ENUMS
+#endif
+
+#ifndef    SK_LEGACY_STROKE_CURVES
+#   define SK_LEGACY_STROKE_CURVES
 #endif
 
 ///////////////////////// Imported from BUILD.gn and skia_common.gypi

@@ -39,9 +39,8 @@
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/Image.h"
 #include "platform/graphics/ImageBuffer.h"
-#include "platform/graphics/paint/DisplayItemList.h"
+#include "platform/graphics/paint/DisplayItemListContextRecorder.h"
 #include "platform/graphics/paint/DrawingRecorder.h"
-#include "platform/graphics/skia/NativeImageSkia.h"
 #include "platform/text/BidiTextRun.h"
 #include "platform/text/StringTruncator.h"
 #include "platform/text/TextRun.h"
@@ -75,8 +74,8 @@ PassOwnPtr<DragImage> DragImage::create(Image* image, RespectImageOrientationEnu
     if (!image)
         return nullptr;
 
-    RefPtr<NativeImageSkia> bitmap = image->nativeImageForCurrentFrame();
-    if (!bitmap)
+    SkBitmap bitmap;
+    if (!image->bitmapForCurrentFrame(&bitmap))
         return nullptr;
 
     if (image->isBitmapImage()) {
@@ -99,14 +98,14 @@ PassOwnPtr<DragImage> DragImage::create(Image* image, RespectImageOrientationEnu
             skBitmap.eraseColor(SK_ColorTRANSPARENT);
             SkCanvas canvas(skBitmap);
             canvas.concat(affineTransformToSkMatrix(orientation.transformFromDefault(sizeRespectingOrientation)));
-            canvas.drawBitmapRect(bitmap->bitmap(), 0, destRect);
+            canvas.drawBitmapRect(bitmap, 0, destRect);
 
             return adoptPtr(new DragImage(skBitmap, deviceScaleFactor, interpolationQuality));
         }
     }
 
     SkBitmap skBitmap;
-    if (!bitmap->bitmap().copyTo(&skBitmap, kN32_SkColorType))
+    if (!bitmap.copyTo(&skBitmap, kN32_SkColorType))
         return nullptr;
     return adoptPtr(new DragImage(skBitmap, deviceScaleFactor, interpolationQuality));
 }
@@ -171,53 +170,44 @@ PassOwnPtr<DragImage> DragImage::create(const KURL& url, const String& inLabel, 
     if (!buffer)
         return nullptr;
 
-    OwnPtr<GraphicsContext> extraGraphicsContext;
-    OwnPtr<DisplayItemList> displayItemList;
-    GraphicsContext* context;
-    if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
-        displayItemList = DisplayItemList::create();
-        extraGraphicsContext = adoptPtr(new GraphicsContext(0, displayItemList.get()));
-        context = extraGraphicsContext.get();
-    } else {
-        context = buffer->context();
-    }
-
     {
+        DisplayItemListContextRecorder contextRecorder(*buffer->context());
+        GraphicsContext& paintContext = contextRecorder.context();
+
         IntRect rect(IntPoint(), imageSize);
-        DrawingRecorder drawingRecorder(context, buffer->displayItemClient(), DisplayItem::DragImage, rect);
-        context->scale(deviceScaleFactor, deviceScaleFactor);
+        DrawingRecorder drawingRecorder(paintContext, *buffer, DisplayItem::DragImage, rect);
+        if (!drawingRecorder.canUseCachedDrawing()) {
+            paintContext.scale(deviceScaleFactor, deviceScaleFactor);
 
-        const float DragLabelRadius = 5;
-        const IntSize radii(DragLabelRadius, DragLabelRadius);
+            const float DragLabelRadius = 5;
+            const IntSize radii(DragLabelRadius, DragLabelRadius);
 
-        const Color backgroundColor(140, 140, 140);
-        context->fillRoundedRect(rect, radii, radii, radii, radii, backgroundColor);
+            const Color backgroundColor(140, 140, 140);
+            paintContext.fillRoundedRect(rect, radii, radii, radii, radii, backgroundColor);
 
-        // Draw the text
-        if (drawURLString) {
-            if (clipURLString)
-                urlString = StringTruncator::centerTruncate(urlString, imageSize.width() - (kDragLabelBorderX * 2.0f), urlFont);
-            IntPoint textPos(kDragLabelBorderX, imageSize.height() - (kLabelBorderYOffset + urlFont.fontMetrics().descent()));
-            TextRun textRun(urlString);
-            context->drawText(urlFont, TextRunPaintInfo(textRun), textPos);
+            // Draw the text
+            if (drawURLString) {
+                if (clipURLString)
+                    urlString = StringTruncator::centerTruncate(urlString, imageSize.width() - (kDragLabelBorderX * 2.0f), urlFont);
+                IntPoint textPos(kDragLabelBorderX, imageSize.height() - (kLabelBorderYOffset + urlFont.fontMetrics().descent()));
+                TextRun textRun(urlString);
+                paintContext.drawText(urlFont, TextRunPaintInfo(textRun), textPos);
+            }
+
+            if (clipLabelString)
+                label = StringTruncator::rightTruncate(label, imageSize.width() - (kDragLabelBorderX * 2.0f), labelFont);
+
+            bool hasStrongDirectionality;
+            TextRun textRun = textRunWithDirectionality(label, &hasStrongDirectionality);
+            IntPoint textPos(kDragLabelBorderX, kDragLabelBorderY + labelFont.fontDescription().computedPixelSize());
+            if (hasStrongDirectionality && textRun.direction() == RTL) {
+                float textWidth = labelFont.width(textRun);
+                int availableWidth = imageSize.width() - kDragLabelBorderX * 2;
+                textPos.setX(availableWidth - ceilf(textWidth));
+            }
+            paintContext.drawBidiText(labelFont, TextRunPaintInfo(textRun), FloatPoint(textPos));
         }
-
-        if (clipLabelString)
-            label = StringTruncator::rightTruncate(label, imageSize.width() - (kDragLabelBorderX * 2.0f), labelFont);
-
-        bool hasStrongDirectionality;
-        TextRun textRun = textRunWithDirectionality(label, hasStrongDirectionality);
-        IntPoint textPos(kDragLabelBorderX, kDragLabelBorderY + labelFont.fontDescription().computedPixelSize());
-        if (hasStrongDirectionality && textRun.direction() == RTL) {
-            float textWidth = labelFont.width(textRun);
-            int availableWidth = imageSize.width() - kDragLabelBorderX * 2;
-            textPos.setX(availableWidth - ceilf(textWidth));
-        }
-        context->drawBidiText(labelFont, TextRunPaintInfo(textRun), FloatPoint(textPos));
     }
-
-    if (RuntimeEnabledFeatures::slimmingPaintEnabled())
-        displayItemList->replay(buffer->context());
 
     RefPtr<Image> image = buffer->copyImage();
     return DragImage::create(image.get(), DoNotRespectImageOrientation, deviceScaleFactor);

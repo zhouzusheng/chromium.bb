@@ -31,7 +31,7 @@
 #include "core/frame/UseCounter.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/shadow/ProgressShadowElement.h"
-#include "core/rendering/RenderProgress.h"
+#include "core/layout/LayoutProgress.h"
 
 namespace blink {
 
@@ -58,21 +58,21 @@ PassRefPtrWillBeRawPtr<HTMLProgressElement> HTMLProgressElement::create(Document
     return progress.release();
 }
 
-LayoutObject* HTMLProgressElement::createRenderer(const LayoutStyle& style)
+LayoutObject* HTMLProgressElement::createLayoutObject(const ComputedStyle& style)
 {
     if (!style.hasAppearance() || hasOpenShadowRoot())
         return LayoutObject::createObject(this, style);
-    return new RenderProgress(this);
+    return new LayoutProgress(this);
 }
 
-RenderProgress* HTMLProgressElement::renderProgress() const
+LayoutProgress* HTMLProgressElement::layoutProgress() const
 {
-    if (renderer() && renderer()->isProgress())
-        return toRenderProgress(renderer());
+    if (layoutObject() && layoutObject()->isProgress())
+        return toLayoutProgress(layoutObject());
 
-    LayoutObject* layoutObject = closedShadowRoot()->firstChild()->renderer();
+    LayoutObject* layoutObject = closedShadowRoot()->firstChild()->layoutObject();
     ASSERT_WITH_SECURITY_IMPLICATION(!layoutObject || layoutObject->isProgress());
-    return toRenderProgress(layoutObject);
+    return toLayoutProgress(layoutObject);
 }
 
 void HTMLProgressElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -88,7 +88,7 @@ void HTMLProgressElement::parseAttribute(const QualifiedName& name, const Atomic
 void HTMLProgressElement::attach(const AttachContext& context)
 {
     LabelableElement::attach(context);
-    if (RenderProgress* render = renderProgress())
+    if (LayoutProgress* render = layoutProgress())
         render->updateFromElement();
 }
 
@@ -138,7 +138,7 @@ bool HTMLProgressElement::isDeterminate() const
 void HTMLProgressElement::didElementStateChange()
 {
     m_value->setWidthPercentage(position() * 100);
-    if (RenderProgress* render = renderProgress()) {
+    if (LayoutProgress* render = layoutProgress()) {
         bool wasDeterminate = render->isDeterminate();
         render->updateFromElement();
         if (wasDeterminate != isDeterminate())

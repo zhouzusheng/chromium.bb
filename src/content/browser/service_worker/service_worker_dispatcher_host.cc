@@ -163,6 +163,8 @@ bool ServiceWorkerDispatcherHost::OnMessageReceived(
                         OnUnregisterServiceWorker)
     IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_GetRegistration,
                         OnGetRegistration)
+    IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_GetRegistrationForReady,
+                        OnGetRegistrationForReady)
     IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_ProviderCreated,
                         OnProviderCreated)
     IPC_MESSAGE_HANDLER(ServiceWorkerHostMsg_ProviderDestroyed,
@@ -232,6 +234,22 @@ void ServiceWorkerDispatcherHost::RegisterServiceWorkerRegistrationHandle(
     scoped_ptr<ServiceWorkerRegistrationHandle> handle) {
   int handle_id = handle->handle_id();
   registration_handles_.AddWithID(handle.release(), handle_id);
+}
+
+ServiceWorkerHandle* ServiceWorkerDispatcherHost::FindServiceWorkerHandle(
+    int provider_id,
+    int64 version_id) {
+  for (IDMap<ServiceWorkerHandle, IDMapOwnPointer>::iterator iter(&handles_);
+       !iter.IsAtEnd(); iter.Advance()) {
+    ServiceWorkerHandle* handle = iter.GetCurrentValue();
+    DCHECK(handle);
+    DCHECK(handle->version());
+    if (handle->provider_id() == provider_id &&
+        handle->version()->version_id() == version_id) {
+      return handle;
+    }
+  }
+  return NULL;
 }
 
 ServiceWorkerRegistrationHandle*
@@ -492,10 +510,39 @@ void ServiceWorkerDispatcherHost::OnGetRegistration(
                  request_id));
 }
 
+void ServiceWorkerDispatcherHost::OnGetRegistrationForReady(
+    int thread_id,
+    int request_id,
+    int provider_id) {
+  TRACE_EVENT0("ServiceWorker",
+               "ServiceWorkerDispatcherHost::OnGetRegistrationForReady");
+  if (!GetContext())
+    return;
+  ServiceWorkerProviderHost* provider_host =
+      GetContext()->GetProviderHost(render_process_id_, provider_id);
+  if (!provider_host) {
+    BadMessageReceived();
+    return;
+  }
+  if (!provider_host->IsContextAlive())
+    return;
+
+  TRACE_EVENT_ASYNC_BEGIN0(
+      "ServiceWorker",
+      "ServiceWorkerDispatcherHost::GetRegistrationForReady",
+      request_id);
+
+  if (!provider_host->GetRegistrationForReady(base::Bind(
+          &ServiceWorkerDispatcherHost::GetRegistrationForReadyComplete,
+          this, thread_id, request_id, provider_host->AsWeakPtr()))) {
+    BadMessageReceived();
+  }
+}
+
 void ServiceWorkerDispatcherHost::OnPostMessageToWorker(
     int handle_id,
     const base::string16& message,
-    const std::vector<int>& sent_message_port_ids) {
+    const std::vector<TransferredMessagePort>& sent_message_ports) {
   TRACE_EVENT0("ServiceWorker",
                "ServiceWorkerDispatcherHost::OnPostMessageToWorker");
   if (!GetContext())
@@ -508,7 +555,7 @@ void ServiceWorkerDispatcherHost::OnPostMessageToWorker(
   }
 
   handle->version()->DispatchMessageEvent(
-      message, sent_message_port_ids,
+      message, sent_message_ports,
       base::Bind(&ServiceWorkerUtils::NoOpStatusCallback));
 }
 
@@ -598,7 +645,8 @@ ServiceWorkerDispatcherHost::FindRegistrationHandle(int provider_id,
        iter.Advance()) {
     ServiceWorkerRegistrationHandle* handle = iter.GetCurrentValue();
     DCHECK(handle);
-    if (handle->provider_id() == provider_id && handle->registration() &&
+    DCHECK(handle->registration());
+    if (handle->provider_id() == provider_id &&
         handle->registration()->id() == registration_id) {
       return handle;
     }
@@ -615,15 +663,12 @@ void ServiceWorkerDispatcherHost::GetRegistrationObjectInfoAndVersionAttributes(
     GetOrCreateRegistrationHandle(provider_host, registration);
   *info = handle->GetObjectInfo();
 
-  attrs->installing =
-      provider_host->CreateAndRegisterServiceWorkerHandle(
-          registration->installing_version());
-  attrs->waiting =
-      provider_host->CreateAndRegisterServiceWorkerHandle(
-          registration->waiting_version());
-  attrs->active =
-      provider_host->CreateAndRegisterServiceWorkerHandle(
-          registration->active_version());
+  attrs->installing = provider_host->GetOrCreateServiceWorkerHandle(
+      registration->installing_version());
+  attrs->waiting = provider_host->GetOrCreateServiceWorkerHandle(
+      registration->waiting_version());
+  attrs->active = provider_host->GetOrCreateServiceWorkerHandle(
+      registration->active_version());
 }
 
 void ServiceWorkerDispatcherHost::RegistrationComplete(
@@ -908,6 +953,30 @@ void ServiceWorkerDispatcherHost::GetRegistrationComplete(
 
   Send(new ServiceWorkerMsg_DidGetRegistration(
       thread_id, request_id, info, attrs));
+}
+
+void ServiceWorkerDispatcherHost::GetRegistrationForReadyComplete(
+    int thread_id,
+    int request_id,
+    base::WeakPtr<ServiceWorkerProviderHost> provider_host,
+    ServiceWorkerRegistration* registration) {
+  DCHECK(registration);
+  TRACE_EVENT_ASYNC_END1("ServiceWorker",
+                         "ServiceWorkerDispatcherHost::GetRegistrationForReady",
+                         request_id,
+                         "Registration ID",
+                         registration ? registration->id()
+                             : kInvalidServiceWorkerRegistrationId);
+
+  if (!GetContext())
+    return;
+
+  ServiceWorkerRegistrationObjectInfo info;
+  ServiceWorkerVersionAttributes attrs;
+  GetRegistrationObjectInfoAndVersionAttributes(
+      provider_host, registration, &info, &attrs);
+  Send(new ServiceWorkerMsg_DidGetRegistrationForReady(
+        thread_id, request_id, info, attrs));
 }
 
 void ServiceWorkerDispatcherHost::SendRegistrationError(

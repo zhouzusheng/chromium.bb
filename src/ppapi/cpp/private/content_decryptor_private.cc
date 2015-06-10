@@ -25,7 +25,9 @@ static const char kPPPContentDecryptorInterface[] =
     PPP_CONTENTDECRYPTOR_PRIVATE_INTERFACE;
 
 void Initialize(PP_Instance instance,
-                PP_Var key_system_arg) {
+                PP_Var key_system_arg,
+                PP_Bool allow_distinctive_identifier,
+                PP_Bool allow_persistent_state) {
   void* object =
       Instance::GetPerInstanceObject(instance, kPPPContentDecryptorInterface);
   if (!object)
@@ -36,7 +38,9 @@ void Initialize(PP_Instance instance,
     return;
 
   static_cast<ContentDecryptor_Private*>(object)->Initialize(
-      key_system_var.AsString());
+      key_system_var.AsString(),
+      PP_ToBool(allow_distinctive_identifier),
+      PP_ToBool(allow_persistent_state));
 }
 
 void SetServerCertificate(PP_Instance instance,
@@ -59,15 +63,11 @@ void SetServerCertificate(PP_Instance instance,
 void CreateSessionAndGenerateRequest(PP_Instance instance,
                                      uint32_t promise_id,
                                      PP_SessionType session_type,
-                                     PP_Var init_data_type_arg,
+                                     PP_InitDataType init_data_type,
                                      PP_Var init_data_arg) {
   void* object =
       Instance::GetPerInstanceObject(instance, kPPPContentDecryptorInterface);
   if (!object)
-    return;
-
-  pp::Var init_data_type_var(pp::PASS_REF, init_data_type_arg);
-  if (!init_data_type_var.is_string())
     return;
 
   pp::Var init_data_var(pp::PASS_REF, init_data_arg);
@@ -77,8 +77,7 @@ void CreateSessionAndGenerateRequest(PP_Instance instance,
 
   static_cast<ContentDecryptor_Private*>(object)
       ->CreateSessionAndGenerateRequest(promise_id, session_type,
-                                        init_data_type_var.AsString(),
-                                        init_data_array_buffer);
+                                        init_data_type, init_data_array_buffer);
 }
 
 void LoadSession(PP_Instance instance,
@@ -354,7 +353,7 @@ void ContentDecryptor_Private::SessionClosed(const std::string& session_id) {
   }
 }
 
-void ContentDecryptor_Private::SessionError(
+void ContentDecryptor_Private::LegacySessionError(
     const std::string& session_id,
     PP_CdmExceptionCode exception_code,
     uint32_t system_code,
@@ -362,7 +361,7 @@ void ContentDecryptor_Private::SessionError(
   if (has_interface<PPB_ContentDecryptor_Private>()) {
     pp::Var session_id_var(session_id);
     pp::Var error_description_var(error_description);
-    get_interface<PPB_ContentDecryptor_Private>()->SessionError(
+    get_interface<PPB_ContentDecryptor_Private>()->LegacySessionError(
         associated_instance_.pp_instance(), session_id_var.pp_var(),
         exception_code, system_code, error_description_var.pp_var());
   }

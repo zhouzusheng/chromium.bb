@@ -10,9 +10,11 @@
 #include "core/dom/DOMException.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
-#include "modules/encryptedmedia/EncryptedMediaRequest.h"
+#include "modules/encryptedmedia/EncryptedMediaUtils.h"
+#include "modules/encryptedmedia/MediaKeySession.h"
 #include "modules/encryptedmedia/MediaKeySystemAccess.h"
 #include "modules/encryptedmedia/MediaKeysController.h"
+#include "platform/EncryptedMediaRequest.h"
 #include "platform/Logging.h"
 #include "platform/network/ParsedContentType.h"
 #include "public/platform/WebEncryptedMediaClient.h"
@@ -27,11 +29,11 @@ namespace blink {
 
 namespace {
 
-static WebVector<WebString> convertInitDataTypes(const Vector<String>& initDataTypes)
+static WebVector<WebEncryptedMediaInitDataType> convertInitDataTypes(const Vector<String>& initDataTypes)
 {
-    WebVector<WebString> result(initDataTypes.size());
+    WebVector<WebEncryptedMediaInitDataType> result(initDataTypes.size());
     for (size_t i = 0; i < initDataTypes.size(); ++i)
-        result[i] = initDataTypes[i];
+        result[i] = EncryptedMediaUtils::convertToInitDataType(initDataTypes[i]);
     return result;
 }
 
@@ -66,6 +68,14 @@ static WebMediaKeySystemConfiguration::Requirement convertMediaKeysRequirement(c
     return WebMediaKeySystemConfiguration::Requirement::Optional;
 }
 
+static WebVector<WebEncryptedMediaSessionType> convertSessionTypes(const Vector<String>& sessionTypes)
+{
+    WebVector<WebEncryptedMediaSessionType> result(sessionTypes.size());
+    for (size_t i = 0; i < sessionTypes.size(); ++i)
+        result[i] = EncryptedMediaUtils::convertToSessionType(sessionTypes[i]);
+    return result;
+}
+
 // This class allows capabilities to be checked and a MediaKeySystemAccess
 // object to be created asynchronously.
 class MediaKeySystemAccessInitializer final : public EncryptedMediaRequest {
@@ -98,16 +108,28 @@ MediaKeySystemAccessInitializer::MediaKeySystemAccessInitializer(ScriptState* sc
     for (size_t i = 0; i < supportedConfigurations.size(); ++i) {
         const MediaKeySystemConfiguration& config = supportedConfigurations[i];
         WebMediaKeySystemConfiguration webConfig;
-        if (config.hasInitDataTypes())
+        if (config.hasInitDataTypes()) {
+            webConfig.hasInitDataTypes = true;
             webConfig.initDataTypes = convertInitDataTypes(config.initDataTypes());
-        if (config.hasAudioCapabilities())
+        }
+        if (config.hasAudioCapabilities()) {
+            webConfig.hasAudioCapabilities = true;
             webConfig.audioCapabilities = convertCapabilities(config.audioCapabilities());
-        if (config.hasVideoCapabilities())
+        }
+        if (config.hasVideoCapabilities()) {
+            webConfig.hasVideoCapabilities = true;
             webConfig.videoCapabilities = convertCapabilities(config.videoCapabilities());
+        }
         ASSERT(config.hasDistinctiveIdentifier());
         webConfig.distinctiveIdentifier = convertMediaKeysRequirement(config.distinctiveIdentifier());
         ASSERT(config.hasPersistentState());
         webConfig.persistentState = convertMediaKeysRequirement(config.persistentState());
+        if (config.hasSessionTypes()) {
+            webConfig.hasSessionTypes = true;
+            webConfig.sessionTypes = convertSessionTypes(config.sessionTypes());
+        }
+        // If |label| is not present, it will be a null string.
+        webConfig.label = config.label();
         m_supportedConfigurations[i] = webConfig;
     }
 }

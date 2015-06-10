@@ -30,6 +30,7 @@
 
 #include "core/HTMLNames.h"
 #include "core/dom/Document.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/events/Event.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/LocalFrame.h"
@@ -38,10 +39,10 @@
 #include "core/html/HTMLIFrameElement.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/inspector/ConsoleMessage.h"
+#include "core/layout/LayoutFullScreen.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/EventHandler.h"
-#include "core/rendering/RenderFullScreen.h"
 #include "platform/UserGestureIndicator.h"
 
 namespace blink {
@@ -329,7 +330,7 @@ void Fullscreen::exitFullscreen()
     // 3. Let descendants be all the doc's descendant browsing context's documents with a non-empty fullscreen
     // element stack (if any), ordered so that the child of the doc is last and the document furthest
     // away from the doc is first.
-    WillBeHeapDeque<RefPtrWillBeMember<Document> > descendants;
+    WillBeHeapDeque<RefPtrWillBeMember<Document>> descendants;
     for (Frame* descendant = document()->frame() ? document()->frame()->tree().traverseNext() : 0; descendant; descendant = descendant->tree().traverseNext()) {
         if (!descendant->isLocalFrame())
             continue;
@@ -426,18 +427,18 @@ void Fullscreen::didEnterFullScreenForElement(Element* element)
     m_fullScreenElement = element;
 
     // Create a placeholder block for a the full-screen element, to keep the page from reflowing
-    // when the element is removed from the normal flow. Only do this for a RenderBox, as only
+    // when the element is removed from the normal flow. Only do this for a LayoutBox, as only
     // a box will have a frameRect. The placeholder will be created in setFullScreenRenderer()
     // during layout.
-    LayoutObject* renderer = m_fullScreenElement->renderer();
+    LayoutObject* renderer = m_fullScreenElement->layoutObject();
     bool shouldCreatePlaceholder = renderer && renderer->isBox();
     if (shouldCreatePlaceholder) {
-        m_savedPlaceholderFrameRect = toRenderBox(renderer)->frameRect();
-        m_savedPlaceholderLayoutStyle = LayoutStyle::clone(renderer->styleRef());
+        m_savedPlaceholderFrameRect = toLayoutBox(renderer)->frameRect();
+        m_savedPlaceholderComputedStyle = ComputedStyle::clone(renderer->styleRef());
     }
 
     if (m_fullScreenElement != document()->documentElement())
-        RenderFullScreen::wrapRenderer(renderer, renderer ? renderer->parent() : 0, document());
+        LayoutFullScreen::wrapRenderer(renderer, renderer ? renderer->parent() : 0, document());
 
     m_fullScreenElement->setContainsFullScreenElementOnAncestorsCrossingFrameBoundaries(true);
 
@@ -484,16 +485,16 @@ void Fullscreen::didExitFullScreenForElement(Element*)
     from(*exitingDocument).m_eventQueueTimer.startOneShot(0, FROM_HERE);
 }
 
-void Fullscreen::setFullScreenRenderer(RenderFullScreen* renderer)
+void Fullscreen::setFullScreenRenderer(LayoutFullScreen* renderer)
 {
     if (renderer == m_fullScreenRenderer)
         return;
 
-    if (renderer && m_savedPlaceholderLayoutStyle) {
-        renderer->createPlaceholder(m_savedPlaceholderLayoutStyle.release(), m_savedPlaceholderFrameRect);
+    if (renderer && m_savedPlaceholderComputedStyle) {
+        renderer->createPlaceholder(m_savedPlaceholderComputedStyle.release(), m_savedPlaceholderFrameRect);
     } else if (renderer && m_fullScreenRenderer && m_fullScreenRenderer->placeholder()) {
-        RenderBlock* placeholder = m_fullScreenRenderer->placeholder();
-        renderer->createPlaceholder(LayoutStyle::clone(placeholder->styleRef()), placeholder->frameRect());
+        LayoutBlock* placeholder = m_fullScreenRenderer->placeholder();
+        renderer->createPlaceholder(ComputedStyle::clone(placeholder->styleRef()), placeholder->frameRect());
     }
 
     if (m_fullScreenRenderer)
@@ -544,7 +545,7 @@ void Fullscreen::eventQueueTimerFired(Timer<Fullscreen>*)
     // document will be detached and GC'd. We protect it here to make sure we
     // can finish the function successfully.
     RefPtrWillBeRawPtr<Document> protectDocument(document());
-    WillBeHeapDeque<RefPtrWillBeMember<Event> > eventQueue;
+    WillBeHeapDeque<RefPtrWillBeMember<Event>> eventQueue;
     m_eventQueue.swap(eventQueue);
 
     while (!eventQueue.isEmpty()) {
@@ -602,7 +603,7 @@ void Fullscreen::pushFullscreenElementStack(Element& element, RequestType reques
     m_fullScreenElementStack.append(std::make_pair(&element, requestType));
 }
 
-void Fullscreen::trace(Visitor* visitor)
+DEFINE_TRACE(Fullscreen)
 {
     visitor->trace(m_fullScreenElement);
     visitor->trace(m_fullScreenElementStack);

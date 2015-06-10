@@ -156,13 +156,12 @@ void ServiceWorkerControlleeRequestHandler::PrepareForMainResource(
   // registration while we're finding an existing registration.
   provider_host_->SetAllowAssociation(false);
 
-  GURL stripped_url = net::SimplifyUrlForRequest(request->url());
-  provider_host_->SetDocumentUrl(stripped_url);
+  stripped_url_ = net::SimplifyUrlForRequest(request->url());
+  provider_host_->SetDocumentUrl(stripped_url_);
   provider_host_->SetTopmostFrameUrl(request->first_party_for_cookies());
   context_->storage()->FindRegistrationForDocument(
-      stripped_url,
-      base::Bind(&self::DidLookupRegistrationForMainResource,
-                 weak_factory_.GetWeakPtr()));
+      stripped_url_, base::Bind(&self::DidLookupRegistrationForMainResource,
+                                weak_factory_.GetWeakPtr()));
 }
 
 void
@@ -238,9 +237,10 @@ ServiceWorkerControlleeRequestHandler::DidLookupRegistrationForMainResource(
     return;
   }
 
-  ServiceWorkerMetrics::CountControlledPageLoad();
+  ServiceWorkerMetrics::CountControlledPageLoad(stripped_url_);
 
-  provider_host_->AssociateRegistration(registration.get());
+  provider_host_->AssociateRegistration(registration.get(),
+                                        false /* notify_controllerchange */);
   job_->ForwardToServiceWorker();
   TRACE_EVENT_ASYNC_END2(
       "ServiceWorker",
@@ -263,9 +263,10 @@ void ServiceWorkerControlleeRequestHandler::OnVersionStatusChanged(
     return;
   }
 
-  ServiceWorkerMetrics::CountControlledPageLoad();
+  ServiceWorkerMetrics::CountControlledPageLoad(stripped_url_);
 
-  provider_host_->AssociateRegistration(registration);
+  provider_host_->AssociateRegistration(registration,
+                                        false /* notify_controllerchange */);
   job_->ForwardToServiceWorker();
 }
 

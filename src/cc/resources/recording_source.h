@@ -39,12 +39,15 @@ class CC_EXPORT RecordingSource {
                                            int frame_number,
                                            RecordingMode recording_mode) = 0;
 
+  virtual void DidMoveToNewCompositor() = 0;
+
   virtual scoped_refptr<RasterSource> CreateRasterSource(
       bool can_use_lcd_text) const = 0;
 
   virtual gfx::Size GetSize() const = 0;
   virtual void SetEmptyBounds() = 0;
   virtual void SetSlowdownRasterScaleFactor(int factor) = 0;
+  virtual void SetGatherPixelRefs(bool gather_pixel_refs) = 0;
   virtual void SetBackgroundColor(SkColor background_color) = 0;
   virtual void SetRequiresClear(bool requires_clear) = 0;
   virtual bool IsSuitableForGpuRasterization() const = 0;

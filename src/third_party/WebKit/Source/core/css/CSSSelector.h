@@ -23,7 +23,7 @@
 #define CSSSelector_h
 
 #include "core/dom/QualifiedName.h"
-#include "core/layout/style/LayoutStyleConstants.h"
+#include "core/style/ComputedStyleConstants.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 
@@ -79,7 +79,7 @@ namespace blink {
     // shadow DOM.
 
     class CSSSelector {
-        WTF_MAKE_FAST_ALLOCATED;
+        WTF_MAKE_FAST_ALLOCATED(CSSSelector);
     public:
         CSSSelector();
         CSSSelector(const CSSSelector&);

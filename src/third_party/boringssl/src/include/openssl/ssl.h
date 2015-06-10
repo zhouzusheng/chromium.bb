@@ -178,8 +178,10 @@ extern "C" {
 #define SSL_TXT_aNULL "aNULL"
 
 #define SSL_TXT_kRSA "kRSA"
-#define SSL_TXT_kEDH "kEDH"
-#define SSL_TXT_kEECDH "kEECDH"
+#define SSL_TXT_kDHE "kDHE"
+#define SSL_TXT_kEDH "kEDH" /* same as "kDHE" */
+#define SSL_TXT_kECDHE "kECDHE"
+#define SSL_TXT_kEECDH "kEECDH" /* same as "kECDHE" */
 #define SSL_TXT_kPSK "kPSK"
 
 #define SSL_TXT_aRSA "aRSA"
@@ -187,11 +189,13 @@ extern "C" {
 #define SSL_TXT_aPSK "aPSK"
 
 #define SSL_TXT_DH "DH"
-#define SSL_TXT_EDH "EDH" /* same as "kEDH:-ADH" */
+#define SSL_TXT_DHE "DHE" /* same as "kDHE:-ADH" */
+#define SSL_TXT_EDH "EDH" /* same as "DHE" */
 #define SSL_TXT_ADH "ADH"
 #define SSL_TXT_RSA "RSA"
 #define SSL_TXT_ECDH "ECDH"
-#define SSL_TXT_EECDH "EECDH" /* same as "kEECDH:-AECDH" */
+#define SSL_TXT_ECDHE "ECDHE" /* same as "kECDHE:-AECDH" */
+#define SSL_TXT_EECDH "EECDH" /* same as "ECDHE" */
 #define SSL_TXT_AECDH "AECDH"
 #define SSL_TXT_ECDSA "ECDSA"
 #define SSL_TXT_PSK "PSK"
@@ -400,7 +404,7 @@ typedef struct timeval OPENSSL_timeval;
 #define SSL_OP_NO_COMPRESSION 0x00020000L
 /* Permit unsafe legacy renegotiation */
 #define SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION 0x00040000L
-/* If set, always create a new key when using tmp_ecdh parameters */
+/* SSL_OP_SINGLE_ECDH_USE does nothing. */
 #define SSL_OP_SINGLE_ECDH_USE 0x00080000L
 /* If set, always create a new key when using tmp_dh parameters */
 #define SSL_OP_SINGLE_DH_USE 0x00100000L
@@ -493,6 +497,16 @@ typedef struct timeval OPENSSL_timeval;
  * fail with SSL_R_SESSION_MAY_NOT_BE_CREATED. This can be used to enforce that
  * session resumption is used for a given SSL*. */
 #define SSL_MODE_NO_SESSION_CREATION 0x00000200L
+
+/* SSL_MODE_SEND_SERVERHELLO_TIME sends TLS_FALLBACK_SCSV in the ClientHello.
+ * To be set only by applications that reconnect with a downgraded protocol
+ * version; see https://tools.ietf.org/html/draft-ietf-tls-downgrade-scsv-05
+ * for details.
+ *
+ * DO NOT ENABLE THIS if your application attempts a normal handshake. Only use
+ * this in explicit fallback retries, following the guidance in
+ * draft-ietf-tls-downgrade-scsv-05. */
+#define SSL_MODE_SEND_FALLBACK_SCSV 0x00000400L
 
 /* Note: SSL[_CTX]_set_{options,mode} use |= op on the previous value, they
  * cannot be used to clear bits. */
@@ -688,6 +702,10 @@ struct ssl_ctx_st {
   struct ssl_session_st *session_cache_head;
   struct ssl_session_st *session_cache_tail;
 
+  /* handshakes_since_cache_flush is the number of successful handshakes since
+   * the last cache flush. */
+  int handshakes_since_cache_flush;
+
   /* This can have one of 2 values, ored together,
    * SSL_SESS_CACHE_CLIENT,
    * SSL_SESS_CACHE_SERVER,
@@ -710,26 +728,6 @@ struct ssl_ctx_st {
   void (*remove_session_cb)(struct ssl_ctx_st *ctx, SSL_SESSION *sess);
   SSL_SESSION *(*get_session_cb)(struct ssl_st *ssl, uint8_t *data, int len,
                                  int *copy);
-
-  /* TODO(agl): remove the stats stuff. */
-  struct {
-    int sess_connect;             /* SSL new conn - started */
-    int sess_connect_renegotiate; /* SSL reneg - requested */
-    int sess_connect_good;        /* SSL new conne/reneg - finished */
-    int sess_accept;              /* SSL new accept - started */
-    int sess_accept_renegotiate;  /* SSL reneg - requested */
-    int sess_accept_good;         /* SSL accept/reneg - finished */
-    int sess_miss;                /* session lookup misses  */
-    int sess_timeout;             /* reuse attempt on timeouted session */
-    int sess_cache_full;          /* session removed due to full cache */
-    int sess_hit;                 /* session reuse actually done */
-    int sess_cb_hit;              /* session-id that was not
-                                   * in the cache was
-                                   * passed back via the callback.  This
-                                   * indicates that the application is
-                                   * supplying session-id's from other
-                                   * processes - spooky :-) */
-  } stats;
 
   int references;
 
@@ -795,8 +793,14 @@ struct ssl_ctx_st {
    * before the decision whether to resume a session is made. It may return one
    * to continue the handshake or zero to cause the handshake loop to return
    * with an error and cause SSL_get_error to return
-   * SSL_ERROR_PENDING_CERTIFICATE. */
+   * SSL_ERROR_PENDING_CERTIFICATE. Note: when the handshake loop is resumed, it
+   * will not call the callback a second time. */
   int (*select_certificate_cb)(const struct ssl_early_callback_ctx *);
+
+  /* dos_protection_cb is called once the resumption decision for a ClientHello
+   * has been made. It returns one to continue the handshake or zero to
+   * abort. */
+  int (*dos_protection_cb) (const struct ssl_early_callback_ctx *);
 
   /* quiet_shutdown is true if the connection should not send a close_notify on
    * shutdown. */
@@ -1328,10 +1332,6 @@ struct ssl_st {
                     * 2 if we are a server and are inside a handshake
                     * (i.e. not just sending a HelloRequest) */
 
-  /* fallback_scsv is non-zero iff we are sending the TLS_FALLBACK_SCSV cipher
-   * suite value. Only applies to a client. */
-  char fallback_scsv;
-
   /* fastradio_padding, if true, causes ClientHellos to be padded to 1024
    * bytes. This ensures that the cellular radio is fast forwarded to DCH (high
    * data rate) state in 3G networks. */
@@ -1595,7 +1595,6 @@ DECLARE_PEM_rw(SSL_SESSION, SSL_SESSION)
 #define SSL_CTRL_GET_CURVES 90
 #define SSL_CTRL_SET_CURVES 91
 #define SSL_CTRL_SET_CURVES_LIST 92
-#define SSL_CTRL_SET_ECDH_AUTO 94
 #define SSL_CTRL_SET_SIGALGS 97
 #define SSL_CTRL_SET_SIGALGS_LIST 98
 #define SSL_CTRL_CERT_FLAGS 99
@@ -1617,8 +1616,6 @@ DECLARE_PEM_rw(SSL_SESSION, SSL_SESSION)
 #define SSL_CTRL_CHANNEL_ID 117
 #define SSL_CTRL_GET_CHANNEL_ID 118
 #define SSL_CTRL_SET_CHANNEL_ID 119
-
-#define SSL_CTRL_FALLBACK_SCSV 120
 
 /* DTLSv1_get_timeout queries the next DTLS handshake timeout. If there is a
  * timeout in progress, it sets |*((OPENSSL_timeval*)arg)| to the time remaining
@@ -1658,6 +1655,12 @@ DECLARE_PEM_rw(SSL_SESSION, SSL_SESSION)
   SSL_CTX_ctrl(ctx, SSL_CTRL_SET_TMP_RSA, 0, (char *)rsa)
 #define SSL_CTX_set_tmp_dh(ctx, dh) \
   SSL_CTX_ctrl(ctx, SSL_CTRL_SET_TMP_DH, 0, (char *)dh)
+
+/* SSL_CTX_set_tmp_ecdh configures |ctx| to use the curve from |ecdh| (a const
+ * EC_KEY *) as the curve for ephemeral ECDH keys. For historical reasons, this
+ * API expects an |EC_KEY|, but only the curve is used. It returns one on
+ * success and zero on error. If unset, an appropriate curve will be chosen
+ * automatically. (This is recommended.) */
 #define SSL_CTX_set_tmp_ecdh(ctx, ecdh) \
   SSL_CTX_ctrl(ctx, SSL_CTRL_SET_TMP_ECDH, 0, (char *)ecdh)
 
@@ -1666,6 +1669,12 @@ DECLARE_PEM_rw(SSL_SESSION, SSL_SESSION)
   SSL_ctrl(ssl, SSL_CTRL_SET_TMP_RSA, 0, (char *)rsa)
 #define SSL_set_tmp_dh(ssl, dh) \
   SSL_ctrl(ssl, SSL_CTRL_SET_TMP_DH, 0, (char *)dh)
+
+/* SSL_set_tmp_ecdh configures |ssl| to use the curve from |ecdh| (a const
+ * EC_KEY *) as the curve for ephemeral ECDH keys. For historical reasons, this
+ * API expects an |EC_KEY|, but only the curve is used. It returns one on
+ * success and zero on error. If unset, an appropriate curve will be chosen
+ * automatically. (This is recommended.) */
 #define SSL_set_tmp_ecdh(ssl, ecdh) \
   SSL_ctrl(ssl, SSL_CTRL_SET_TMP_ECDH, 0, (char *)ecdh)
 
@@ -1756,10 +1765,6 @@ DECLARE_PEM_rw(SSL_SESSION, SSL_SESSION)
   SSL_ctrl(ctx, SSL_CTRL_SET_CURVES, clistlen, (char *)clist)
 #define SSL_set1_curves_list(ctx, s) \
   SSL_ctrl(ctx, SSL_CTRL_SET_CURVES_LIST, 0, (char *)s)
-#define SSL_CTX_set_ecdh_auto(ctx, onoff) \
-  SSL_CTX_ctrl(ctx, SSL_CTRL_SET_ECDH_AUTO, onoff, NULL)
-#define SSL_set_ecdh_auto(s, onoff) \
-  SSL_ctrl(s, SSL_CTRL_SET_ECDH_AUTO, onoff, NULL)
 
 #define SSL_CTX_set1_sigalgs(ctx, slist, slistlen) \
   SSL_CTX_ctrl(ctx, SSL_CTRL_SET_SIGALGS, slistlen, (int *)slist)
@@ -1795,9 +1800,6 @@ DECLARE_PEM_rw(SSL_SESSION, SSL_SESSION)
 
 #define SSL_get0_ec_point_formats(s, plst) \
   SSL_ctrl(s, SSL_CTRL_GET_EC_POINT_FORMATS, 0, (char *)plst)
-
-#define SSL_enable_fallback_scsv(s) \
-  SSL_ctrl(s, SSL_CTRL_FALLBACK_SCSV, 0, NULL)
 
 OPENSSL_EXPORT int SSL_CTX_set_cipher_list(SSL_CTX *, const char *str);
 OPENSSL_EXPORT int SSL_CTX_set_cipher_list_tls11(SSL_CTX *, const char *str);
@@ -2212,10 +2214,34 @@ OPENSSL_EXPORT void SSL_CTX_set_tmp_dh_callback(
 OPENSSL_EXPORT void SSL_set_tmp_dh_callback(SSL *ssl,
                                             DH *(*dh)(SSL *ssl, int is_export,
                                                       int keylength));
+
+/* SSL_CTX_set_tmp_ecdh_callback configures |ctx| to use |callback| to determine
+ * the curve for ephemeral ECDH keys. |callback| should ignore |is_export| and
+ * |keylength| and return an |EC_KEY| of the selected curve or NULL on
+ * error. Only the curve is used, so the |EC_KEY| needn't have a generated
+ * keypair.
+ *
+ * If the callback is unset, an appropriate curve will be chosen automatically.
+ * (This is recommended.)
+ *
+ * WARNING: The caller does not take ownership of the resulting |EC_KEY|, so
+ * |callback| must save and release the object elsewhere. */
 OPENSSL_EXPORT void SSL_CTX_set_tmp_ecdh_callback(
-    SSL_CTX *ctx, EC_KEY *(*ecdh)(SSL *ssl, int is_export, int keylength));
+    SSL_CTX *ctx, EC_KEY *(*callback)(SSL *ssl, int is_export, int keylength));
+
+/* SSL_set_tmp_ecdh_callback configures |ssl| to use |callback| to determine the
+ * curve for ephemeral ECDH keys. |callback| should ignore |is_export| and
+ * |keylength| and return an |EC_KEY| of the selected curve or NULL on
+ * error. Only the curve is used, so the |EC_KEY| needn't have a generated
+ * keypair.
+ *
+ * If the callback is unset, an appropriate curve will be chosen automatically.
+ * (This is recommended.)
+ *
+ * WARNING: The caller does not take ownership of the resulting |EC_KEY|, so
+ * |callback| must save and release the object elsewhere. */
 OPENSSL_EXPORT void SSL_set_tmp_ecdh_callback(
-    SSL *ssl, EC_KEY *(*ecdh)(SSL *ssl, int is_export, int keylength));
+    SSL *ssl, EC_KEY *(*callback)(SSL *ssl, int is_export, int keylength));
 
 OPENSSL_EXPORT const void *SSL_get_current_compression(SSL *s);
 OPENSSL_EXPORT const void *SSL_get_current_expansion(SSL *s);
@@ -2226,6 +2252,12 @@ OPENSSL_EXPORT int SSL_COMP_add_compression_method(int id, void *cm);
 OPENSSL_EXPORT int SSL_cache_hit(SSL *s);
 OPENSSL_EXPORT int SSL_is_server(SSL *s);
 
+/* SSL_CTX_set_dos_protection_cb sets a callback that is called once the
+ * resumption decision for a ClientHello has been made. It can return 1 to
+ * allow the handshake to continue or zero to cause the handshake to abort. */
+OPENSSL_EXPORT void SSL_CTX_set_dos_protection_cb(
+    SSL_CTX *ctx, int (*cb)(const struct ssl_early_callback_ctx *));
+
 /* SSL_get_structure_sizes returns the sizes of the SSL, SSL_CTX and
  * SSL_SESSION structures so that a test can ensure that outside code agrees on
  * these values. */
@@ -2234,6 +2266,26 @@ OPENSSL_EXPORT void SSL_get_structure_sizes(size_t *ssl_size,
                                             size_t *ssl_session_size);
 
 OPENSSL_EXPORT void ERR_load_SSL_strings(void);
+
+/* SSL_get_cipher_by_value returns the structure representing a TLS cipher
+ * suite based on its assigned number, or NULL if unknown. See
+ * https://www.iana.org/assignments/tls-parameters/tls-parameters.xhtml#tls-parameters-4. */
+OPENSSL_EXPORT const SSL_CIPHER *SSL_get_cipher_by_value(uint16_t value);
+
+/* SSL_get_rc4_state sets |*read_key| and |*write_key| to the RC4 states for
+ * the read and write directions. It returns one on success or zero if |ssl|
+ * isn't using an RC4-based cipher suite. */
+OPENSSL_EXPORT int SSL_get_rc4_state(const SSL *ssl, const RC4_KEY **read_key,
+                                     const RC4_KEY **write_key);
+
+
+/* Deprecated functions. */
+
+/* SSL_CTX_set_ecdh_auto returns one. */
+#define SSL_CTX_set_ecdh_auto(ctx, onoff) 1
+
+/* SSL_set_ecdh_auto returns one. */
+#define SSL_set_ecdh_auto(ssl, onoff) 1
 
 
 /* Android compatibility section.
@@ -2248,6 +2300,15 @@ OPENSSL_EXPORT int SSL_set_session_ticket_ext(SSL *s, void *ext_data,
                                               int ext_len);
 OPENSSL_EXPORT int SSL_set_session_secret_cb(SSL *s, void *cb, void *arg);
 OPENSSL_EXPORT int SSL_set_session_ticket_ext_cb(SSL *s, void *cb, void *arg);
+OPENSSL_EXPORT int SSL_set_ssl_method(SSL *s, const SSL_METHOD *method);
+
+#define OPENSSL_VERSION_TEXT "BoringSSL"
+
+#define SSLEAY_VERSION 0
+
+/* SSLeay_version is a compatibility function that returns the string
+ * "BoringSSL". */
+OPENSSL_EXPORT const char *SSLeay_version(int unused);
 
 
 #ifdef  __cplusplus
@@ -2421,6 +2482,9 @@ OPENSSL_EXPORT int SSL_set_session_ticket_ext_cb(SSL *s, void *cb, void *arg);
 #define SSL_F_tls1_export_keying_material 260
 #define SSL_F_tls1_prf 261
 #define SSL_F_tls1_setup_key_block 262
+#define SSL_F_dtls1_get_buffered_message 263
+#define SSL_F_dtls1_process_fragment 264
+#define SSL_F_dtls1_hm_fragment_new 265
 #define SSL_R_APP_DATA_IN_HANDSHAKE 100
 #define SSL_R_ATTEMPT_TO_REUSE_SESSION_IN_DIFFERENT_CONTEXT 101
 #define SSL_R_BAD_ALERT 102
@@ -2592,6 +2656,7 @@ OPENSSL_EXPORT int SSL_set_session_ticket_ext_cb(SSL *s, void *cb, void *arg);
 #define SSL_R_WRONG_VERSION_NUMBER 268
 #define SSL_R_X509_LIB 269
 #define SSL_R_X509_VERIFICATION_SETUP_PROBLEMS 270
+#define SSL_R_FRAGMENT_MISMATCH 271
 #define SSL_R_SSLV3_ALERT_CLOSE_NOTIFY 1000
 #define SSL_R_SSLV3_ALERT_UNEXPECTED_MESSAGE 1010
 #define SSL_R_SSLV3_ALERT_BAD_RECORD_MAC 1020

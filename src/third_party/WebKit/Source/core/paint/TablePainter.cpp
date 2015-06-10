@@ -8,12 +8,12 @@
 #include "core/layout/LayoutTable.h"
 #include "core/layout/LayoutTableSection.h"
 #include "core/layout/PaintInfo.h"
-#include "core/layout/style/CollapsedBorderValue.h"
+#include "core/style/CollapsedBorderValue.h"
 #include "core/paint/BoxClipper.h"
 #include "core/paint/BoxPainter.h"
 #include "core/paint/GraphicsContextAnnotator.h"
+#include "core/paint/LayoutObjectDrawingRecorder.h"
 #include "core/paint/ObjectPainter.h"
-#include "core/paint/RenderDrawingRecorder.h"
 #include "core/paint/ScopeRecorder.h"
 
 namespace blink {
@@ -42,21 +42,20 @@ void TablePainter::paintObject(const PaintInfo& paintInfo, const LayoutPoint& pa
     info.updatePaintingRootForChildren(&m_layoutTable);
 
     for (LayoutObject* child = m_layoutTable.firstChild(); child; child = child->nextSibling()) {
-        if (child->isBox() && !toRenderBox(child)->hasSelfPaintingLayer() && (child->isTableSection() || child->isTableCaption())) {
-            LayoutPoint childPoint = m_layoutTable.flipForWritingModeForChild(toRenderBox(child), paintOffset);
+        if (child->isBox() && !toLayoutBox(child)->hasSelfPaintingLayer() && (child->isTableSection() || child->isTableCaption())) {
+            LayoutPoint childPoint = m_layoutTable.flipForWritingModeForChild(toLayoutBox(child), paintOffset);
             child->paint(info, childPoint);
         }
     }
 
     if (m_layoutTable.collapseBorders() && paintPhase == PaintPhaseChildBlockBackground && m_layoutTable.style()->visibility() == VISIBLE) {
-        m_layoutTable.recalcCollapsedBorders();
         // Using our cached sorted styles, we then do individual passes,
         // painting each style of border from lowest precedence to highest precedence.
         info.phase = PaintPhaseCollapsedTableBorders;
         LayoutTable::CollapsedBorderValues collapsedBorders = m_layoutTable.collapsedBorders();
         size_t count = collapsedBorders.size();
         for (size_t i = 0; i < count; ++i) {
-            ScopeRecorder scopeRecorder(info.context, m_layoutTable);
+            ScopeRecorder scopeRecorder(*info.context, m_layoutTable);
             // FIXME: pass this value into children rather than storing temporarily on the LayoutTable object.
             m_layoutTable.setCurrentBorderValue(&collapsedBorders[i]);
             for (LayoutTableSection* section = m_layoutTable.bottomSection(); section; section = m_layoutTable.sectionAbove(section)) {
@@ -68,8 +67,11 @@ void TablePainter::paintObject(const PaintInfo& paintInfo, const LayoutPoint& pa
     }
 
     // Paint outline.
-    if ((paintPhase == PaintPhaseOutline || paintPhase == PaintPhaseSelfOutline) && m_layoutTable.style()->hasOutline() && m_layoutTable.style()->visibility() == VISIBLE)
-        ObjectPainter(m_layoutTable).paintOutline(paintInfo, LayoutRect(paintOffset, m_layoutTable.size()));
+    if ((paintPhase == PaintPhaseOutline || paintPhase == PaintPhaseSelfOutline) && m_layoutTable.style()->hasOutline() && m_layoutTable.style()->visibility() == VISIBLE) {
+        LayoutRect overflowRect(m_layoutTable.visualOverflowRect());
+        overflowRect.moveBy(paintOffset);
+        ObjectPainter(m_layoutTable).paintOutline(paintInfo, LayoutRect(paintOffset, m_layoutTable.size()), overflowRect);
+    }
 }
 
 void TablePainter::paintBoxDecorationBackground(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
@@ -89,7 +91,7 @@ void TablePainter::paintMask(const PaintInfo& paintInfo, const LayoutPoint& pain
 
     LayoutRect rect(paintOffset, m_layoutTable.size());
     m_layoutTable.subtractCaptionRect(rect);
-    RenderDrawingRecorder recorder(paintInfo.context, m_layoutTable, paintInfo.phase, pixelSnappedIntRect(rect));
+    LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutTable, paintInfo.phase, pixelSnappedIntRect(rect));
     if (!recorder.canUseCachedDrawing())
         BoxPainter(m_layoutTable).paintMaskImages(paintInfo, rect);
 }

@@ -36,27 +36,27 @@
 
 namespace blink {
 
-// Most renderers in the SVG rendering tree will inherit from this class
+// Most layoutObjects in the SVG layout tree will inherit from this class
 // but not all. (e.g. LayoutSVGForeignObject, LayoutSVGBlock) thus methods
-// required by SVG renders need to be declared on LayoutObject, but shared
+// required by SVG layoutObjects need to be declared on LayoutObject, but shared
 // logic can go in this class or in SVGLayoutSupport.
 
 class LayoutSVGModelObject : public LayoutObject {
 public:
     explicit LayoutSVGModelObject(SVGElement*);
 
-    virtual bool isChildAllowed(LayoutObject*, const LayoutStyle&) const override;
+    virtual bool isChildAllowed(LayoutObject*, const ComputedStyle&) const override;
 
-    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutLayerModelObject* paintInvalidationContainer, const PaintInvalidationState* = 0) const override;
+    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* = 0) const override;
 
     virtual FloatRect paintInvalidationRectInLocalCoordinates() const override final { return m_paintInvalidationBoundingBox; }
 
     virtual void absoluteRects(Vector<IntRect>&, const LayoutPoint& accumulatedOffset) const override final;
     virtual void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed) const override;
 
-    virtual void mapLocalToContainer(const LayoutLayerModelObject* paintInvalidationContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0, const PaintInvalidationState* = 0) const override final;
-    virtual const LayoutObject* pushMappingToContainer(const LayoutLayerModelObject* ancestorToStopAt, LayoutGeometryMap&) const override final;
-    virtual void styleDidChange(StyleDifference, const LayoutStyle* oldStyle) override;
+    virtual void mapLocalToContainer(const LayoutBoxModelObject* paintInvalidationContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0, const PaintInvalidationState* = 0) const override final;
+    virtual const LayoutObject* pushMappingToContainer(const LayoutBoxModelObject* ancestorToStopAt, LayoutGeometryMap&) const override final;
+    virtual void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override;
 
     virtual void computeLayerHitTestRects(LayerHitTestRects&) const override final;
 
@@ -65,7 +65,7 @@ public:
     virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectSVG || LayoutObject::isOfType(type); }
 
 protected:
-    virtual void addLayerHitTestRects(LayerHitTestRects&, const Layer* currentCompositedLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const override final;
+    virtual void addLayerHitTestRects(LayerHitTestRects&, const DeprecatedPaintLayer* currentCompositedLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const override final;
     virtual void willBeDestroyed() override;
 
 private:
@@ -73,10 +73,10 @@ private:
     void node() const = delete;
 
     // This method should never be called, SVG uses a different nodeAtPoint method
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override final;
+    virtual bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override final;
     virtual IntRect absoluteFocusRingBoundingBoxRect() const override final;
 
-    virtual void invalidateTreeIfNeeded(const PaintInvalidationState&) override final;
+    virtual void invalidateTreeIfNeeded(PaintInvalidationState&) override final;
 
 protected:
     FloatRect m_paintInvalidationBoundingBox;

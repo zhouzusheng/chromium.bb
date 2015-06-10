@@ -16,7 +16,6 @@
 #include "base/time/time.h"
 #include "content/child/webmessageportchannel_impl.h"
 #include "content/common/service_worker/service_worker_types.h"
-#include "content/renderer/service_worker/service_worker_cache_storage_dispatcher.h"
 #include "third_party/WebKit/public/platform/WebGeofencingEventType.h"
 #include "third_party/WebKit/public/platform/WebMessagePortChannel.h"
 #include "third_party/WebKit/public/platform/WebServiceWorkerClientsClaimCallbacks.h"
@@ -28,6 +27,7 @@
 namespace blink {
 struct WebCircularGeofencingRegion;
 struct WebCrossOriginServiceWorkerClient;
+struct WebServiceWorkerClientQueryOptions;
 class WebServiceWorkerContextProxy;
 }
 
@@ -72,21 +72,22 @@ class ServiceWorkerScriptContext {
                           blink::WebServiceWorkerEventResult result);
   void DidHandleSyncEvent(int request_id);
   void DidHandleCrossOriginConnectEvent(int request_id, bool accept_connection);
-  void GetClientDocuments(
+  void GetClients(
+      const blink::WebServiceWorkerClientQueryOptions& options,
       blink::WebServiceWorkerClientsCallbacks* callbacks);
   void OpenWindow(const GURL& url,
                   blink::WebServiceWorkerClientCallbacks* callbacks);
   void SetCachedMetadata(const GURL& url, const char* data, size_t size);
   void ClearCachedMetadata(const GURL& url);
-  void PostMessageToDocument(
-      int client_id,
+  void PostMessageToClient(
+      const base::string16& uuid,
       const base::string16& message,
       scoped_ptr<blink::WebMessagePortChannelArray> channels);
   void PostCrossOriginMessageToClient(
       const blink::WebCrossOriginServiceWorkerClient& client,
       const base::string16& message,
       scoped_ptr<blink::WebMessagePortChannelArray> channels);
-  void FocusClient(int client_id,
+  void FocusClient(const base::string16& uuid,
                    blink::WebServiceWorkerClientCallbacks* callback);
   void SkipWaiting(blink::WebServiceWorkerSkipWaitingCallbacks* callbacks);
   void ClaimClients(blink::WebServiceWorkerClientsClaimCallbacks* callbacks);
@@ -97,10 +98,6 @@ class ServiceWorkerScriptContext {
   // Get routing_id for sending message to the ServiceWorkerVersion
   // in the browser process.
   int GetRoutingID() const;
-
-  blink::WebServiceWorkerCacheStorage* cache_storage() {
-    return cache_storage_dispatcher_.get();
-  }
 
  private:
   typedef IDMap<blink::WebServiceWorkerClientsCallbacks, IDMapOwnPointer>
@@ -113,7 +110,7 @@ class ServiceWorkerScriptContext {
       SkipWaitingCallbacksMap;
 
   void OnActivateEvent(int request_id);
-  void OnInstallEvent(int request_id, int active_version_id);
+  void OnInstallEvent(int request_id);
   void OnFetchEvent(int request_id, const ServiceWorkerFetchRequest& request);
   void OnSyncEvent(int request_id);
   void OnNotificationClickEvent(
@@ -127,19 +124,20 @@ class ServiceWorkerScriptContext {
                          const blink::WebCircularGeofencingRegion& region);
   void OnCrossOriginConnectEvent(int request_id,
                                  const NavigatorConnectClient& client);
-  void OnPostMessage(const base::string16& message,
-                     const std::vector<int>& sent_message_port_ids,
-                     const std::vector<int>& new_routing_ids);
+  void OnPostMessage(
+      const base::string16& message,
+      const std::vector<TransferredMessagePort>& sent_message_ports,
+      const std::vector<int>& new_routing_ids);
   void OnCrossOriginMessageToWorker(
       const NavigatorConnectClient& client,
       const base::string16& message,
-      const std::vector<int>& sent_message_port_ids,
+      const std::vector<TransferredMessagePort>& sent_message_ports,
       const std::vector<int>& new_routing_ids);
-  void OnDidGetClientDocuments(
+  void OnDidGetClients(
       int request_id, const std::vector<ServiceWorkerClientInfo>& clients);
   void OnOpenWindowResponse(int request_id,
                             const ServiceWorkerClientInfo& client);
-  void OnOpenWindowError(int request_id);
+  void OnOpenWindowError(int request_id, const std::string& message);
   void OnFocusClientResponse(int request_id,
                              const ServiceWorkerClientInfo& client);
   void OnDidSkipWaiting(int request_id);
@@ -147,8 +145,7 @@ class ServiceWorkerScriptContext {
   void OnClaimClientsError(int request_id,
                            blink::WebServiceWorkerError::ErrorType error_type,
                            const base::string16& message);
-
-  scoped_ptr<ServiceWorkerCacheStorageDispatcher> cache_storage_dispatcher_;
+  void OnPing();
 
   // Not owned; embedded_context_ owns this.
   EmbeddedWorkerContextClient* embedded_context_;

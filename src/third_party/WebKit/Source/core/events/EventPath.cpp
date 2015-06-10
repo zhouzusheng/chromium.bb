@@ -35,7 +35,6 @@
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/events/TouchEvent.h"
 #include "core/events/TouchEventContext.h"
-#include "core/events/WindowEventContext.h"
 
 namespace blink {
 
@@ -69,6 +68,21 @@ EventPath::EventPath(Node& node, Event* event)
     : m_node(node)
     , m_event(event)
 {
+    initialize();
+}
+
+void EventPath::initializeWith(Node& node, Event* event)
+{
+    m_node = &node;
+    m_event = event;
+    m_windowEventContext = nullptr;
+    m_nodeEventContexts.clear();
+    m_treeScopeEventContexts.clear();
+    initialize();
+}
+
+void EventPath::initialize()
+{
     calculatePath();
     calculateAdjustedTargets();
     calculateTreeScopePrePostOrderNumbers();
@@ -83,7 +97,7 @@ void EventPath::calculatePath()
 {
     ASSERT(m_node);
     ASSERT(m_nodeEventContexts.isEmpty());
-    m_node->document().updateDistributionForNodeIfNeeded(const_cast<Node*>(m_node.get()));
+    m_node->updateDistribution();
 
     Node* current = m_node;
     addNodeEventContext(*current);

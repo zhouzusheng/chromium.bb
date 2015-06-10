@@ -62,7 +62,7 @@ public:
 
     // "base class" methods for all the elements which render as paths
     virtual void toClipPath(Path&);
-    virtual LayoutObject* createRenderer(const LayoutStyle&) override;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
 
     virtual bool isValid() const override final { return SVGTests::isValid(document()); }
 
@@ -80,7 +80,6 @@ protected:
     virtual bool supportsFocus() const override { return Element::supportsFocus() || hasFocusEventListeners(); }
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
     virtual void svgAttributeChanged(const QualifiedName&) override;
 
     RefPtrWillBeMember<SVGAnimatedTransformList> m_transform;

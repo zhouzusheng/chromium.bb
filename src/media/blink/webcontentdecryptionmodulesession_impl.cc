@@ -17,6 +17,7 @@
 #include "media/blink/cdm_result_promise.h"
 #include "media/blink/cdm_session_adapter.h"
 #include "media/blink/new_session_cdm_result_promise.h"
+#include "media/blink/webmediaplayer_util.h"
 #include "third_party/WebKit/public/platform/WebData.h"
 #include "third_party/WebKit/public/platform/WebEncryptedMediaKeyInformation.h"
 #include "third_party/WebKit/public/platform/WebString.h"
@@ -30,12 +31,6 @@ const char kGenerateRequestUMAName[] = "GenerateRequest";
 const char kLoadSessionUMAName[] = "LoadSession";
 const char kRemoveSessionUMAName[] = "RemoveSession";
 const char kUpdateSessionUMAName[] = "UpdateSession";
-
-// TODO(jrummell): Pass an enum from blink. http://crbug.com/418239.
-const char kTemporarySessionType[] = "temporary";
-const char kPersistentLicenseSessionType[] = "persistent-license";
-const char kPersistentReleaseMessageSessionType[] =
-    "persistent-release-message";
 
 static blink::WebContentDecryptionModuleSession::Client::MessageType
 convertMessageType(MediaKeys::MessageType message_type) {
@@ -68,10 +63,32 @@ static blink::WebEncryptedMediaKeyInformation::KeyStatus convertStatus(
     case media::CdmKeyInformation::OUTPUT_NOT_ALLOWED:
       return blink::WebEncryptedMediaKeyInformation::KeyStatus::
           OutputNotAllowed;
+    case media::CdmKeyInformation::OUTPUT_DOWNSCALED:
+      return blink::WebEncryptedMediaKeyInformation::KeyStatus::
+          OutputDownscaled;
+    case media::CdmKeyInformation::KEY_STATUS_PENDING:
+      return blink::WebEncryptedMediaKeyInformation::KeyStatus::StatusPending;
   }
 
   NOTREACHED();
   return blink::WebEncryptedMediaKeyInformation::KeyStatus::InternalError;
+}
+
+static MediaKeys::SessionType convertSessionType(
+    blink::WebEncryptedMediaSessionType session_type) {
+  switch (session_type) {
+    case blink::WebEncryptedMediaSessionType::Temporary:
+      return MediaKeys::TEMPORARY_SESSION;
+    case blink::WebEncryptedMediaSessionType::PersistentLicense:
+      return MediaKeys::PERSISTENT_LICENSE_SESSION;
+    case blink::WebEncryptedMediaSessionType::PersistentReleaseMessage:
+      return MediaKeys::PERSISTENT_RELEASE_MESSAGE_SESSION;
+    case blink::WebEncryptedMediaSessionType::Unknown:
+      break;
+  }
+
+  NOTREACHED();
+  return MediaKeys::TEMPORARY_SESSION;
 }
 
 WebContentDecryptionModuleSessionImpl::WebContentDecryptionModuleSessionImpl(
@@ -94,65 +111,48 @@ blink::WebString WebContentDecryptionModuleSessionImpl::sessionId() const {
 }
 
 void WebContentDecryptionModuleSessionImpl::initializeNewSession(
-    const blink::WebString& init_data_type,
-    const uint8* init_data,
+    blink::WebEncryptedMediaInitDataType init_data_type,
+    const unsigned char* init_data,
     size_t init_data_length,
-    const blink::WebString& session_type,
+    blink::WebEncryptedMediaSessionType session_type,
     blink::WebContentDecryptionModuleResult result) {
   DCHECK(session_id_.empty());
-
-  // TODO(ddorwin): Guard against this in supported types check and remove this.
-  // Chromium only supports ASCII MIME types.
-  if (!base::IsStringASCII(init_data_type)) {
-    NOTREACHED();
-    std::string message = "The initialization data type " +
-                          init_data_type.utf8() +
-                          " is not supported by the key system.";
-    result.completeWithError(
-        blink::WebContentDecryptionModuleExceptionNotSupportedError, 0,
-        blink::WebString::fromUTF8(message));
-    return;
-  }
-
-  std::string init_data_type_as_ascii = base::UTF16ToASCII(init_data_type);
-  DLOG_IF(WARNING, init_data_type_as_ascii.find('/') != std::string::npos)
-      << "init_data_type '" << init_data_type_as_ascii
-      << "' may be a MIME type";
 
   // Step 5 from https://w3c.github.io/encrypted-media/#generateRequest.
   // 5. If the Key System implementation represented by this object's cdm
   //    implementation value does not support initDataType as an Initialization
   //    Data Type, return a promise rejected with a new DOMException whose name
   //    is NotSupportedError. String comparison is case-sensitive.
+  EmeInitDataType eme_init_data_type = ConvertToEmeInitDataType(init_data_type);
   if (!IsSupportedKeySystemWithInitDataType(adapter_->GetKeySystem(),
-                                            init_data_type_as_ascii)) {
-    std::string message = "The initialization data type " +
-                          init_data_type_as_ascii +
-                          " is not supported by the key system.";
+                                            eme_init_data_type)) {
+    std::string message =
+        "The initialization data type is not supported by the key system.";
     result.completeWithError(
         blink::WebContentDecryptionModuleExceptionNotSupportedError, 0,
         blink::WebString::fromUTF8(message));
     return;
   }
 
-  MediaKeys::SessionType session_type_enum;
-  if (session_type == kPersistentLicenseSessionType) {
-    session_type_enum = MediaKeys::PERSISTENT_LICENSE_SESSION;
-  } else if (session_type == kPersistentReleaseMessageSessionType) {
-    session_type_enum = MediaKeys::PERSISTENT_RELEASE_MESSAGE_SESSION;
-  } else {
-    DCHECK(session_type == kTemporarySessionType);
-    session_type_enum = MediaKeys::TEMPORARY_SESSION;
-  }
-
   adapter_->InitializeNewSession(
-      init_data_type_as_ascii, init_data,
-      base::saturated_cast<int>(init_data_length), session_type_enum,
+      eme_init_data_type, init_data,
+      base::saturated_cast<int>(init_data_length),
+      convertSessionType(session_type),
       scoped_ptr<NewSessionCdmPromise>(new NewSessionCdmResultPromise(
           result, adapter_->GetKeySystemUMAPrefix() + kGenerateRequestUMAName,
           base::Bind(
               &WebContentDecryptionModuleSessionImpl::OnSessionInitialized,
               base::Unretained(this)))));
+}
+
+// TODO(jrummell): Remove this. http://crbug.com/418239.
+void WebContentDecryptionModuleSessionImpl::initializeNewSession(
+    const blink::WebString& init_data_type,
+    const uint8* init_data,
+    size_t init_data_length,
+    const blink::WebString& session_type,
+    blink::WebContentDecryptionModuleResult result) {
+  NOTREACHED();
 }
 
 void WebContentDecryptionModuleSessionImpl::load(

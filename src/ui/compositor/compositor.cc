@@ -11,15 +11,16 @@
 #include "base/command_line.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/strings/string_util.h"
 #include "base/sys_info.h"
 #include "base/trace_event/trace_event.h"
-#include "cc/base/latency_info_swap_promise.h"
 #include "cc/base/switches.h"
 #include "cc/input/input_handler.h"
 #include "cc/layers/layer.h"
 #include "cc/output/begin_frame_args.h"
 #include "cc/output/context_provider.h"
+#include "cc/output/latency_info_swap_promise.h"
 #include "cc/scheduler/begin_frame_source.h"
 #include "cc/surfaces/surface_id_allocator.h"
 #include "cc/trees/layer_tree_host.h"
@@ -73,14 +74,11 @@ Compositor::Compositor(gfx::AcceleratedWidget widget,
       root_layer_(NULL),
       widget_(widget),
       surface_id_allocator_(context_factory->CreateSurfaceIdAllocator()),
-      compositor_thread_loop_(context_factory->GetCompositorMessageLoop()),
       task_runner_(task_runner),
       vsync_manager_(new CompositorVSyncManager()),
       device_scale_factor_(0.0f),
       last_started_frame_(0),
       last_ended_frame_(0),
-      num_failed_recreate_attempts_(0),
-      disable_schedule_composite_(false),
       locks_will_time_out_(true),
       compositor_lock_(NULL),
       layer_animator_collection_(this),
@@ -108,8 +106,6 @@ Compositor::Compositor(gfx::AcceleratedWidget widget,
   settings.per_tile_painting_enabled = true;
 #endif
 #if defined(OS_WIN)
-  settings.disable_hi_res_timer_tasks_on_battery =
-      !context_factory_->DoesCreateTestContexts();
   settings.renderer_settings.finish_rendering_on_resize = true;
 #endif
 
@@ -136,27 +132,20 @@ Compositor::Compositor(gfx::AcceleratedWidget widget,
 
   settings.impl_side_painting = IsUIImplSidePaintingEnabled();
   settings.use_zero_copy = IsUIZeroCopyEnabled();
+  settings.use_one_copy = IsUIOneCopyEnabled();
+  settings.use_image_texture_target = context_factory_->GetImageTextureTarget();
+  // Note: gathering of pixel refs is only needed when using multiple
+  // raster threads.
+  settings.gather_pixel_refs = false;
+
+  settings.use_compositor_animation_timelines =
+      command_line->HasSwitch(switches::kUIEnableCompositorAnimationTimelines);
 
   base::TimeTicks before_create = base::TimeTicks::Now();
-  if (compositor_thread_loop_.get()) {
-    host_ = cc::LayerTreeHost::CreateThreaded(
-        this,
-        context_factory_->GetSharedBitmapManager(),
-        context_factory_->GetGpuMemoryBufferManager(),
-        settings,
-        task_runner_,
-        compositor_thread_loop_,
-        nullptr);
-  } else {
-    host_ = cc::LayerTreeHost::CreateSingleThreaded(
-        this,
-        this,
-        context_factory_->GetSharedBitmapManager(),
-        context_factory_->GetGpuMemoryBufferManager(),
-        settings,
-        task_runner_,
-        nullptr);
-  }
+  host_ = cc::LayerTreeHost::CreateSingleThreaded(
+      this, this, context_factory_->GetSharedBitmapManager(),
+      context_factory_->GetGpuMemoryBufferManager(),
+      context_factory_->GetTaskGraphRunner(), settings, task_runner_, nullptr);
   UMA_HISTOGRAM_TIMES("GPU.CreateBrowserCompositor",
                       base::TimeTicks::Now() - before_create);
   host_->SetRootLayer(root_web_layer_);
@@ -172,6 +161,8 @@ Compositor::~Compositor() {
 
   FOR_EACH_OBSERVER(CompositorObserver, observer_list_,
                     OnCompositingShuttingDown(this));
+
+  DCHECK(begin_frame_observer_list_.empty());
 
   if (root_layer_)
     root_layer_->SetCompositor(NULL);
@@ -300,6 +291,33 @@ bool Compositor::HasAnimationObserver(
   return animation_observer_list_.HasObserver(observer);
 }
 
+void Compositor::AddBeginFrameObserver(CompositorBeginFrameObserver* observer) {
+  DCHECK(std::find(begin_frame_observer_list_.begin(),
+                   begin_frame_observer_list_.end(), observer) ==
+         begin_frame_observer_list_.end());
+
+  if (begin_frame_observer_list_.empty())
+    host_->SetChildrenNeedBeginFrames(true);
+
+  if (missed_begin_frame_args_.IsValid())
+    observer->OnSendBeginFrame(missed_begin_frame_args_);
+
+  begin_frame_observer_list_.push_back(observer);
+}
+
+void Compositor::RemoveBeginFrameObserver(
+    CompositorBeginFrameObserver* observer) {
+  auto it = std::find(begin_frame_observer_list_.begin(),
+                      begin_frame_observer_list_.end(), observer);
+  DCHECK(it != begin_frame_observer_list_.end());
+  begin_frame_observer_list_.erase(it);
+
+  if (begin_frame_observer_list_.empty()) {
+    host_->SetChildrenNeedBeginFrames(false);
+    missed_begin_frame_args_ = cc::BeginFrameArgs();
+  }
+}
+
 void Compositor::BeginMainFrame(const cc::BeginFrameArgs& args) {
   FOR_EACH_OBSERVER(CompositorAnimationObserver,
                     animation_observer_list_,
@@ -317,27 +335,22 @@ void Compositor::Layout() {
 }
 
 void Compositor::RequestNewOutputSurface() {
-  bool fallback =
-      num_failed_recreate_attempts_ >= OUTPUT_SURFACE_RETRIES_BEFORE_FALLBACK;
-  context_factory_->CreateOutputSurface(weak_ptr_factory_.GetWeakPtr(),
-                                        fallback);
+  // TODO(robliao): Remove ScopedTracker below once https://crbug.com/466870
+  // is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "466870 Compositor::RequestNewOutputSurface"));
+
+  context_factory_->CreateOutputSurface(weak_ptr_factory_.GetWeakPtr());
 }
 
 void Compositor::DidInitializeOutputSurface() {
-  num_failed_recreate_attempts_ = 0;
 }
 
 void Compositor::DidFailToInitializeOutputSurface() {
-  num_failed_recreate_attempts_++;
-
-  // Tolerate a certain number of recreation failures to work around races
-  // in the output-surface-lost machinery.
-  if (num_failed_recreate_attempts_ >= MAX_OUTPUT_SURFACE_RETRIES)
-    LOG(FATAL) << "Failed to create a fallback OutputSurface.";
-
-  base::MessageLoop::current()->PostTask(
-      FROM_HERE, base::Bind(&Compositor::RequestNewOutputSurface,
-                            weak_ptr_factory_.GetWeakPtr()));
+  // The OutputSurface should already be bound/initialized before being given to
+  // the Compositor.
+  NOTREACHED();
 }
 
 void Compositor::DidCommit() {
@@ -351,14 +364,6 @@ void Compositor::DidCommitAndDrawFrame() {
 }
 
 void Compositor::DidCompleteSwapBuffers() {
-  // DidPostSwapBuffers is a SingleThreadProxy-only feature.  Synthetically
-  // generate OnCompositingStarted messages for the threaded case so that
-  // OnCompositingStarted/OnCompositingEnded messages match.
-  if (compositor_thread_loop_.get()) {
-    base::TimeTicks start_time = gfx::FrameTime::Now();
-    FOR_EACH_OBSERVER(CompositorObserver, observer_list_,
-                      OnCompositingStarted(this, start_time));
-  }
   FOR_EACH_OBSERVER(CompositorObserver, observer_list_,
                     OnCompositingEnded(this));
 }
@@ -373,6 +378,14 @@ void Compositor::DidAbortSwapBuffers() {
   FOR_EACH_OBSERVER(CompositorObserver,
                     observer_list_,
                     OnCompositingAborted(this));
+}
+
+void Compositor::SendBeginFramesToChildren(const cc::BeginFrameArgs& args) {
+  for (auto observer : begin_frame_observer_list_)
+    observer->OnSendBeginFrame(args);
+
+  missed_begin_frame_args_ = args;
+  missed_begin_frame_args_.type = cc::BeginFrameArgs::MISSED;
 }
 
 const cc::LayerTreeDebugState& Compositor::GetLayerTreeDebugState() const {

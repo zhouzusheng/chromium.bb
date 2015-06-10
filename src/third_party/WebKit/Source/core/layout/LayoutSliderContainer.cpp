@@ -37,14 +37,14 @@
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/html/shadow/SliderThumbElement.h"
+#include "core/layout/LayoutFlexibleBox.h"
 #include "core/layout/LayoutSlider.h"
 #include "core/layout/LayoutTheme.h"
-#include "core/rendering/RenderFlexibleBox.h"
 
 namespace blink {
 
 LayoutSliderContainer::LayoutSliderContainer(SliderContainerElement* element)
-    : RenderFlexibleBox(element)
+    : LayoutFlexibleBox(element)
 {
 }
 
@@ -57,8 +57,8 @@ inline static Decimal sliderPosition(HTMLInputElement* element)
 
 inline static bool hasVerticalAppearance(HTMLInputElement* input)
 {
-    ASSERT(input->renderer());
-    const LayoutStyle& sliderStyle = input->renderer()->styleRef();
+    ASSERT(input->layoutObject());
+    const ComputedStyle& sliderStyle = input->layoutObject()->styleRef();
 
     return sliderStyle.appearance() == SliderVerticalPart;
 }
@@ -68,7 +68,7 @@ void LayoutSliderContainer::computeLogicalHeight(LayoutUnit logicalHeight, Layou
     HTMLInputElement* input = toHTMLInputElement(node()->shadowHost());
     bool isVertical = hasVerticalAppearance(input);
 
-    if (input->renderer()->isSlider() && !isVertical && input->list()) {
+    if (input->layoutObject()->isSlider() && !isVertical && input->list()) {
         int offsetFromCenter = LayoutTheme::theme().sliderTickOffsetFromTrackCenter();
         LayoutUnit trackHeight = 0;
         if (offsetFromCenter < 0) {
@@ -84,7 +84,7 @@ void LayoutSliderContainer::computeLogicalHeight(LayoutUnit logicalHeight, Layou
         // FIXME: The trackHeight should have been added before updateLogicalHeight was called to avoid this hack.
         setIntrinsicContentLogicalHeight(trackHeight);
 
-        RenderBox::computeLogicalHeight(trackHeight, logicalTop, computedValues);
+        LayoutBox::computeLogicalHeight(trackHeight, logicalTop, computedValues);
         return;
     }
     if (isVertical)
@@ -93,26 +93,26 @@ void LayoutSliderContainer::computeLogicalHeight(LayoutUnit logicalHeight, Layou
     // FIXME: The trackHeight should have been added before updateLogicalHeight was called to avoid this hack.
     setIntrinsicContentLogicalHeight(logicalHeight);
 
-    RenderBox::computeLogicalHeight(logicalHeight, logicalTop, computedValues);
+    LayoutBox::computeLogicalHeight(logicalHeight, logicalTop, computedValues);
 }
 
 void LayoutSliderContainer::layout()
 {
     HTMLInputElement* input = toHTMLInputElement(node()->shadowHost());
     bool isVertical = hasVerticalAppearance(input);
-    style()->setFlexDirection(isVertical ? FlowColumn : FlowRow);
+    mutableStyleRef().setFlexDirection(isVertical ? FlowColumn : FlowRow);
     TextDirection oldTextDirection = style()->direction();
     if (isVertical) {
         // FIXME: Work around rounding issues in RTL vertical sliders. We want them to
         // render identically to LTR vertical sliders. We can remove this work around when
         // subpixel rendering is enabled on all ports.
-        style()->setDirection(LTR);
+        mutableStyleRef().setDirection(LTR);
     }
 
     Element* thumbElement = input->closedShadowRoot()->getElementById(ShadowElementNames::sliderThumb());
     Element* trackElement = input->closedShadowRoot()->getElementById(ShadowElementNames::sliderTrack());
-    RenderBox* thumb = thumbElement ? thumbElement->renderBox() : 0;
-    RenderBox* track = trackElement ? trackElement->renderBox() : 0;
+    LayoutBox* thumb = thumbElement ? thumbElement->layoutBox() : 0;
+    LayoutBox* track = trackElement ? trackElement->layoutBox() : 0;
 
     SubtreeLayoutScope layoutScope(*this);
     // Force a layout to reset the position of the thumb so the code below doesn't move the thumb to the wrong place.
@@ -120,9 +120,9 @@ void LayoutSliderContainer::layout()
     if (track)
         layoutScope.setChildNeedsLayout(track);
 
-    RenderFlexibleBox::layout();
+    LayoutFlexibleBox::layout();
 
-    style()->setDirection(oldTextDirection);
+    mutableStyleRef().setDirection(oldTextDirection);
     // These should always exist, unless someone mutates the shadow DOM (e.g., in the inspector).
     if (!thumb || !track)
         return;

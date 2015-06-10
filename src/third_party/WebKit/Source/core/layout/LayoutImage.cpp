@@ -39,12 +39,12 @@
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLMapElement.h"
 #include "core/layout/HitTestResult.h"
-#include "core/layout/Layer.h"
+#include "core/layout/LayoutPart.h"
+#include "core/layout/LayoutView.h"
 #include "core/layout/PaintInfo.h"
 #include "core/layout/TextRunConstructor.h"
 #include "core/page/Page.h"
 #include "core/paint/ImagePainter.h"
-#include "core/rendering/RenderView.h"
 #include "core/svg/graphics/SVGImage.h"
 #include "platform/fonts/Font.h"
 #include "platform/fonts/FontCache.h"
@@ -128,7 +128,7 @@ void LayoutImage::updateInnerContentRect()
     LayoutRect containerRect = replacedContentRect();
     IntSize containerSize(containerRect.width(), containerRect.height());
     if (!containerSize.isEmpty())
-        m_imageResource->setContainerSizeForRenderer(containerSize);
+        m_imageResource->setContainerSizeForLayoutObject(containerSize);
 }
 
 void LayoutImage::invalidatePaintAndMarkForLayoutIfNeeded()
@@ -157,7 +157,7 @@ void LayoutImage::invalidatePaintAndMarkForLayoutIfNeeded()
     bool containingBlockNeedsToRecomputePreferredSize = style()->logicalWidth().isPercent() || style()->logicalMaxWidth().isPercent()  || style()->logicalMinWidth().isPercent();
 
     if (imageSourceHasChangedSize && (!imageSizeIsConstrained || containingBlockNeedsToRecomputePreferredSize)) {
-        setNeedsLayoutAndFullPaintInvalidation();
+        setNeedsLayoutAndFullPaintInvalidation(LayoutInvalidationReason::SizeChanged);
         return;
     }
 
@@ -175,6 +175,30 @@ void LayoutImage::invalidatePaintAndMarkForLayoutIfNeeded()
     // Tell any potential compositing layers that the image needs updating.
     contentChanged(ImageChanged);
 }
+
+bool LayoutImage::intersectsVisibleViewport()
+{
+    LayoutRect rect = visualOverflowRect();
+    LayoutView* layoutView = view();
+    while (layoutView->frame()->ownerLayoutObject())
+        layoutView = layoutView->frame()->ownerLayoutObject()->view();
+    mapRectToPaintInvalidationBacking(layoutView, rect, 0);
+    return rect.intersects(LayoutRect(layoutView->frameView()->visualViewportRect()));
+}
+
+PaintInvalidationReason LayoutImage::invalidatePaintIfNeeded(PaintInvalidationState& paintInvalidationState, const LayoutBoxModelObject& paintInvalidationContainer)
+{
+    if (!RuntimeEnabledFeatures::slimmingPaintEnabled())
+        return LayoutReplaced::invalidatePaintIfNeeded(paintInvalidationState, paintInvalidationContainer);
+
+    if (!imageResource() || !imageResource()->image() || !imageResource()->image()->maybeAnimated()
+        || intersectsVisibleViewport()) {
+        return LayoutReplaced::invalidatePaintIfNeeded(paintInvalidationState, paintInvalidationContainer);
+    }
+
+    return PaintInvalidationDelayedFull;
+}
+
 
 void LayoutImage::notifyFinished(Resource* newImage)
 {
@@ -216,7 +240,7 @@ void LayoutImage::areaElementFocusChanged(HTMLAreaElement* areaElement)
 
 bool LayoutImage::boxShadowShouldBeAppliedToBackground(BackgroundBleedAvoidance bleedAvoidance, InlineFlowBox*) const
 {
-    if (!RenderBoxModelObject::boxShadowShouldBeAppliedToBackground(bleedAvoidance))
+    if (!LayoutBoxModelObject::boxShadowShouldBeAppliedToBackground(bleedAvoidance))
         return false;
 
     return !const_cast<LayoutImage*>(this)->boxDecorationBackgroundIsKnownToBeObscured();
@@ -238,7 +262,7 @@ bool LayoutImage::foregroundIsKnownToBeOpaqueInRect(const LayoutRect& localRect,
     if ((backgroundClip == BorderFillBox || backgroundClip == PaddingFillBox) && style()->hasPadding())
         return false;
     // Object-position may leave parts of the content box empty, regardless of the value of object-fit.
-    if (style()->objectPosition() != LayoutStyle::initialObjectPosition())
+    if (style()->objectPosition() != ComputedStyle::initialObjectPosition())
         return false;
     // Object-fit may leave parts of the content box empty.
     ObjectFit objectFit = style()->objectFit();
@@ -270,10 +294,10 @@ HTMLMapElement* LayoutImage::imageMap() const
     return i ? i->treeScope().getImageMap(i->fastGetAttribute(usemapAttr)) : 0;
 }
 
-bool LayoutImage::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction hitTestAction)
+bool LayoutImage::nodeAtPoint(HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction hitTestAction)
 {
-    HitTestResult tempResult(result.hitTestLocation());
-    bool inside = LayoutReplaced::nodeAtPoint(request, tempResult, locationInContainer, accumulatedOffset, hitTestAction);
+    HitTestResult tempResult(result.hitTestRequest(), result.hitTestLocation());
+    bool inside = LayoutReplaced::nodeAtPoint(tempResult, locationInContainer, accumulatedOffset, hitTestAction);
 
     if (tempResult.innerNode() && node()) {
         if (HTMLMapElement* map = imageMap()) {
@@ -287,7 +311,7 @@ bool LayoutImage::nodeAtPoint(const HitTestRequest& request, HitTestResult& resu
         }
     }
 
-    if (!inside && result.isRectBasedTest())
+    if (!inside && result.hitTestRequest().listBased())
         result.append(tempResult);
     if (inside)
         result = tempResult;
@@ -306,7 +330,7 @@ bool LayoutImage::updateImageLoadingPriorities()
         return false;
 
     LayoutRect viewBounds = viewRect();
-    LayoutRect objectBounds = absoluteContentBox();
+    LayoutRect objectBounds = LayoutRect(absoluteContentBox());
 
     // The object bounds might be empty right now, so intersects will fail since it doesn't deal
     // with empty rects. Use LayoutRect::contains in that case.
@@ -338,7 +362,7 @@ void LayoutImage::computeIntrinsicRatioInformation(FloatSize& intrinsicSize, dou
     if (intrinsicSize.isEmpty() && (m_imageResource->imageHasRelativeWidth() || m_imageResource->imageHasRelativeHeight())) {
         LayoutObject* containingBlock = isOutOfFlowPositioned() ? container() : this->containingBlock();
         if (containingBlock->isBox()) {
-            RenderBox* box = toRenderBox(containingBlock);
+            LayoutBox* box = toLayoutBox(containingBlock);
             intrinsicSize.setWidth(box->availableLogicalWidth().toFloat());
             intrinsicSize.setHeight(box->availableLogicalHeight(IncludeMarginBorderPadding).toFloat());
         }
@@ -358,7 +382,7 @@ bool LayoutImage::needsPreferredWidthsRecalculation() const
     return embeddedContentBox();
 }
 
-RenderBox* LayoutImage::embeddedContentBox() const
+LayoutBox* LayoutImage::embeddedContentBox() const
 {
     if (!m_imageResource)
         return 0;

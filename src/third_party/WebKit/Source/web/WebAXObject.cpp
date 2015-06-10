@@ -39,9 +39,9 @@
 #include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/PinchViewport.h"
-#include "core/layout/style/LayoutStyle.h"
+#include "core/layout/LayoutView.h"
+#include "core/style/ComputedStyle.h"
 #include "core/page/EventHandler.h"
-#include "core/rendering/RenderView.h"
 #include "core/page/Page.h"
 #include "modules/accessibility/AXObject.h"
 #include "modules/accessibility/AXTable.h"
@@ -707,15 +707,7 @@ WebAXObject WebAXObject::hitTest(const WebPoint& point) const
     if (isDetached())
         return WebAXObject();
 
-    // FIXME: This is being cleaned up in https://codereview.chromium.org/967213004/ to use
-    // centralized methods to convert between coordinate spaces. However, this is a bug that needs
-    // to be merged back to M42 so it needs an isolated, low-impact fix. This hack will be removed
-    // in the above CL.
-    PinchViewport& pinchViewport = m_private->documentFrameView()->page()->frameHost().pinchViewport();
-    FloatPoint pointInRootFrame(point.x, point.y);
-    pointInRootFrame.moveBy(pinchViewport.location());
-
-    IntPoint contentsPoint = m_private->documentFrameView()->windowToContents(flooredIntPoint(pointInRootFrame));
+    IntPoint contentsPoint = m_private->documentFrameView()->soonToBeRemovedUnscaledViewportToContents(point);
     RefPtr<AXObject> hit = m_private->accessibilityHitTest(contentsPoint);
 
     if (hit)
@@ -989,7 +981,7 @@ bool WebAXObject::hasComputedStyle() const
     if (!node)
         return false;
 
-    return node->computedStyle();
+    return node->ensureComputedStyle();
 }
 
 WebString WebAXObject::computedStyleDisplay() const
@@ -1005,11 +997,11 @@ WebString WebAXObject::computedStyleDisplay() const
     if (!node)
         return WebString();
 
-    LayoutStyle* layoutStyle = node->computedStyle();
-    if (!layoutStyle)
+    const ComputedStyle* computedStyle = node->ensureComputedStyle();
+    if (!computedStyle)
         return WebString();
 
-    return WebString(CSSPrimitiveValue::create(layoutStyle->display())->getStringValue());
+    return WebString(CSSPrimitiveValue::create(computedStyle->display())->getStringValue());
 }
 
 bool WebAXObject::accessibilityIsIgnored() const

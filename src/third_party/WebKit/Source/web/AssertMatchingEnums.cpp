@@ -47,7 +47,7 @@
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/shadow/TextControlInnerElements.h"
 #include "core/layout/compositing/CompositedSelectionBound.h"
-#include "core/layout/style/LayoutStyleConstants.h"
+#include "core/style/ComputedStyleConstants.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/FrameLoaderTypes.h"
 #include "core/loader/NavigationPolicy.h"
@@ -161,6 +161,7 @@ STATIC_ASSERT_MATCHING_ENUM(WebAXEventLiveRegionChanged, AXObjectCache::AXLiveRe
 STATIC_ASSERT_MATCHING_ENUM(WebAXEventLoadComplete, AXObjectCache::AXLoadComplete);
 STATIC_ASSERT_MATCHING_ENUM(WebAXEventLocationChanged, AXObjectCache::AXLocationChanged);
 STATIC_ASSERT_MATCHING_ENUM(WebAXEventMenuListItemSelected, AXObjectCache::AXMenuListItemSelected);
+STATIC_ASSERT_MATCHING_ENUM(WebAXEventMenuListItemUnselected, AXObjectCache::AXMenuListItemUnselected);
 STATIC_ASSERT_MATCHING_ENUM(WebAXEventMenuListValueChanged, AXObjectCache::AXMenuListValueChanged);
 STATIC_ASSERT_MATCHING_ENUM(WebAXEventRowCollapsed, AXObjectCache::AXRowCollapsed);
 STATIC_ASSERT_MATCHING_ENUM(WebAXEventRowCountChanged, AXObjectCache::AXRowCountChanged);
@@ -265,6 +266,7 @@ STATIC_ASSERT_MATCHING_ENUM(WebAXRoleScrollArea, ScrollAreaRole);
 STATIC_ASSERT_MATCHING_ENUM(WebAXRoleScrollBar, ScrollBarRole);
 STATIC_ASSERT_MATCHING_ENUM(WebAXRoleSeamlessWebArea, SeamlessWebAreaRole);
 STATIC_ASSERT_MATCHING_ENUM(WebAXRoleSearch, SearchRole);
+STATIC_ASSERT_MATCHING_ENUM(WebAXRoleSearchBox, SearchBoxRole);
 STATIC_ASSERT_MATCHING_ENUM(WebAXRoleSlider, SliderRole);
 STATIC_ASSERT_MATCHING_ENUM(WebAXRoleSliderThumb, SliderThumbRole);
 STATIC_ASSERT_MATCHING_ENUM(WebAXRoleSpinButtonPart, SpinButtonPartRole);
@@ -272,6 +274,7 @@ STATIC_ASSERT_MATCHING_ENUM(WebAXRoleSpinButton, SpinButtonRole);
 STATIC_ASSERT_MATCHING_ENUM(WebAXRoleSplitter, SplitterRole);
 STATIC_ASSERT_MATCHING_ENUM(WebAXRoleStaticText, StaticTextRole);
 STATIC_ASSERT_MATCHING_ENUM(WebAXRoleStatus, StatusRole);
+STATIC_ASSERT_MATCHING_ENUM(WebAXRoleSwitch, SwitchRole);
 STATIC_ASSERT_MATCHING_ENUM(WebAXRoleTabGroup, TabGroupRole);
 STATIC_ASSERT_MATCHING_ENUM(WebAXRoleTabList, TabListRole);
 STATIC_ASSERT_MATCHING_ENUM(WebAXRoleTabPanel, TabPanelRole);

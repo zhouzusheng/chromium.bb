@@ -9,18 +9,19 @@
 #include "base/containers/hash_tables.h"
 #include "base/lazy_instance.h"
 #include "base/metrics/histogram.h"
-#include "base/metrics/user_metrics_action.h"
 #include "base/process/kill.h"
 #include "base/time/time.h"
 #include "content/browser/accessibility/accessibility_mode_helper.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
 #include "content/browser/accessibility/browser_accessibility_state_impl.h"
+#include "content/browser/bad_message.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/frame_host/cross_process_frame_connector.h"
 #include "content/browser/frame_host/cross_site_transferring_request.h"
 #include "content/browser/frame_host/frame_accessibility.h"
 #include "content/browser/frame_host/frame_tree.h"
 #include "content/browser/frame_host/frame_tree_node.h"
+#include "content/browser/frame_host/navigation_request.h"
 #include "content/browser/frame_host/navigator.h"
 #include "content/browser/frame_host/navigator_impl.h"
 #include "content/browser/frame_host/render_frame_host_delegate.h"
@@ -52,6 +53,8 @@
 #include "content/public/browser/browser_plugin_guest_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
+#include "content/public/browser/permission_manager.h"
+#include "content/public/browser/permission_type.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/stream_handle.h"
@@ -60,6 +63,7 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
+#include "content/public/renderer/isolated_world_ids.h"
 #include "ui/accessibility/ax_tree.h"
 #include "url/gurl.h"
 
@@ -80,6 +84,9 @@ namespace {
 
 // The next value to use for the accessibility reset token.
 int g_next_accessibility_reset_token = 1;
+
+// The next value to use for the javascript callback id.
+int g_next_javascript_callback_id = 1;
 
 // The (process id, routing id) pair that identifies one RenderFrame.
 typedef std::pair<int32, int32> RenderFrameHostID;
@@ -118,7 +125,7 @@ RenderFrameHost* RenderFrameHost::FromID(int render_process_id,
 // static
 RenderFrameHostImpl* RenderFrameHostImpl::FromID(int process_id,
                                                  int routing_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   RoutingIDFrameMap* frames = g_routing_id_frame_map.Pointer();
   RoutingIDFrameMap::iterator it = frames->find(
       RenderFrameHostID(process_id, routing_id));
@@ -146,6 +153,7 @@ RenderFrameHostImpl::RenderFrameHostImpl(SiteInstance* site_instance,
       navigations_suspended_(false),
       is_waiting_for_beforeunload_ack_(false),
       unload_ack_is_for_navigation_(false),
+      is_loading_(false),
       accessibility_reset_token_(0),
       accessibility_reset_count_(0),
       no_create_browser_accessibility_manager_for_testing_(false),
@@ -181,7 +189,7 @@ RenderFrameHostImpl::~RenderFrameHostImpl() {
   g_routing_id_frame_map.Get().erase(
       RenderFrameHostID(GetProcess()->GetID(), routing_id_));
 
-  if (delegate_)
+  if (delegate_ && render_frame_created_)
     delegate_->RenderFrameDeleted(this);
 
   FrameAccessibility::GetInstance()->OnRenderFrameHostDestroyed(this);
@@ -259,8 +267,7 @@ void RenderFrameHostImpl::ExecuteJavaScript(
 void RenderFrameHostImpl::ExecuteJavaScript(
      const base::string16& javascript,
      const JavaScriptResultCallback& callback) {
-  static int next_id = 1;
-  int key = next_id++;
+  int key = g_next_javascript_callback_id++;
   Send(new FrameMsg_JavaScriptExecuteRequest(routing_id_,
                                              javascript,
                                              key, true));
@@ -272,6 +279,23 @@ void RenderFrameHostImpl::ExecuteJavaScriptForTests(
   Send(new FrameMsg_JavaScriptExecuteRequestForTests(routing_id_,
                                                      javascript,
                                                      0, false));
+}
+
+void RenderFrameHostImpl::ExecuteJavaScriptInIsolatedWorld(
+    const base::string16& javascript,
+    const JavaScriptResultCallback& callback,
+    int world_id) {
+  if (world_id <= ISOLATED_WORLD_ID_GLOBAL ||
+      world_id > ISOLATED_WORLD_ID_MAX) {
+    // Return if the world_id is not valid.
+    NOTREACHED();
+    return;
+  }
+
+  int key = g_next_javascript_callback_id++;
+  Send(new FrameMsg_JavaScriptExecuteRequestInIsolatedWorld(
+      routing_id_, javascript, key, true, world_id));
+  javascript_callbacks_.insert(std::make_pair(key, callback));
 }
 
 RenderViewHost* RenderFrameHostImpl::GetRenderViewHost() {
@@ -361,11 +385,15 @@ bool RenderFrameHostImpl::OnMessageReceived(const IPC::Message &msg) {
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidAccessInitialDocument,
                         OnDidAccessInitialDocument)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidDisownOpener, OnDidDisownOpener)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_DidChangeName, OnDidChangeName)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidAssignPageId, OnDidAssignPageId)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_DidChangeSandboxFlags,
+                        OnDidChangeSandboxFlags)
     IPC_MESSAGE_HANDLER(FrameHostMsg_UpdateTitle, OnUpdateTitle)
     IPC_MESSAGE_HANDLER(FrameHostMsg_UpdateEncoding, OnUpdateEncoding)
     IPC_MESSAGE_HANDLER(FrameHostMsg_BeginNavigation,
                         OnBeginNavigation)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_DispatchLoad, OnDispatchLoad)
     IPC_MESSAGE_HANDLER(FrameHostMsg_TextSurroundingSelectionResponse,
                         OnTextSurroundingSelectionResponse)
     IPC_MESSAGE_HANDLER(AccessibilityHostMsg_Events, OnAccessibilityEvents)
@@ -612,6 +640,15 @@ bool RenderFrameHostImpl::IsRenderFrameLive() {
 }
 
 void RenderFrameHostImpl::SetRenderFrameCreated(bool created) {
+  // If the current status is different than the new status, the delegate
+  // needs to be notified.
+  if (delegate_ && (created != render_frame_created_)) {
+    if (created)
+      delegate_->RenderFrameCreated(this);
+    else
+      delegate_->RenderFrameDeleted(this);
+  }
+
   render_frame_created_ = created;
   if (created && render_widget_host_)
     render_widget_host_->InitForFrame();
@@ -662,14 +699,14 @@ void RenderFrameHostImpl::OnCreateChildFrame(int new_routing_id,
   if (!new_frame)
     return;
 
+  // Set sandbox flags for the new frame.  The flags are committed immediately,
+  // since they should apply to the initial empty document in the frame.
+  new_frame->frame_tree_node()->set_sandbox_flags(sandbox_flags);
+  new_frame->frame_tree_node()->CommitPendingSandboxFlags();
+
   // We know that the RenderFrame has been created in this case, immediately
   // after the CreateChildFrame IPC was sent.
   new_frame->SetRenderFrameCreated(true);
-
-  new_frame->frame_tree_node()->set_sandbox_flags(sandbox_flags);
-
-  if (delegate_)
-    delegate_->RenderFrameCreated(new_frame);
 }
 
 void RenderFrameHostImpl::OnDetach() {
@@ -791,9 +828,9 @@ void RenderFrameHostImpl::OnDidCommitProvisionalLoad(const IPC::Message& msg) {
   if (!CanCommitURL(validated_params.url)) {
     VLOG(1) << "Blocked URL " << validated_params.url.spec();
     validated_params.url = GURL(url::kAboutBlankURL);
-    RecordAction(base::UserMetricsAction("CanCommitURL_BlockedAndKilled"));
     // Kills the process.
-    process->ReceivedBadMessage();
+    bad_message::ReceivedBadMessage(process,
+                                    bad_message::RFH_CAN_COMMIT_URL_BLOCKED);
   }
 
   // Without this check, an evil renderer can trick the browser into creating
@@ -815,7 +852,8 @@ void RenderFrameHostImpl::OnDidCommitProvisionalLoad(const IPC::Message& msg) {
   // filenames it can't access in a future session restore.
   if (!render_view_host_->CanAccessFilesOfPageState(
           validated_params.page_state)) {
-    GetProcess()->ReceivedBadMessage();
+    bad_message::ReceivedBadMessage(
+        GetProcess(), bad_message::RFH_CAN_ACCESS_FILES_OF_PAGE_STATE);
     return;
   }
 
@@ -828,7 +866,7 @@ void RenderFrameHostImpl::OnDidDropNavigation() {
   // the spinner to start, even if the renderer didn't yet begin the load. If it
   // turns out that the renderer dropped the navigation, we need to turn off the
   // spinner.
-  delegate_->DidStopLoading(this);
+  delegate_->DidStopLoading();
 }
 
 RenderWidgetHostImpl* RenderFrameHostImpl::GetRenderWidgetHost() {
@@ -1037,9 +1075,6 @@ void RenderFrameHostImpl::OnRenderProcessGone(int status, int exit_code) {
         static_cast<base::TerminationStatus>(status);
   }
 
-  SetRenderFrameCreated(false);
-  InvalidateMojoConnection();
-
   // Reset frame tree state associated with this process.  This must happen
   // before RenderViewTerminated because observers expect the subframes of any
   // affected frames to be cleared first.
@@ -1048,6 +1083,11 @@ void RenderFrameHostImpl::OnRenderProcessGone(int status, int exit_code) {
   // not be reset.
   if (!is_swapped_out())
     frame_tree_node_->ResetForNewProcess();
+
+  // Reset state for the current RenderFrameHost once the FrameTreeNode has been
+  // reset.
+  SetRenderFrameCreated(false);
+  InvalidateMojoConnection();
 
   if (frame_tree_node_->IsMainFrame()) {
     // RenderViewHost/RenderWidgetHost needs to reset some stuff.
@@ -1166,10 +1206,46 @@ void RenderFrameHostImpl::OnDidDisownOpener() {
   delegate_->DidDisownOpener(this);
 }
 
+void RenderFrameHostImpl::OnDidChangeName(const std::string& name) {
+  frame_tree_node()->SetFrameName(name);
+  delegate_->DidChangeName(this, name);
+}
+
 void RenderFrameHostImpl::OnDidAssignPageId(int32 page_id) {
   // Update the RVH's current page ID so that future IPCs from the renderer
   // correspond to the new page.
   render_view_host_->page_id_ = page_id;
+}
+
+void RenderFrameHostImpl::OnDidChangeSandboxFlags(int32 frame_routing_id,
+                                                  SandboxFlags flags) {
+  FrameTree* frame_tree = frame_tree_node()->frame_tree();
+  FrameTreeNode* child =
+      frame_tree->FindByRoutingID(GetProcess()->GetID(), frame_routing_id);
+  if (!child)
+    return;
+
+  // Ensure that a frame can only update sandbox flags for its immediate
+  // children.  If this is not the case, the renderer is considered malicious
+  // and is killed.
+  if (child->parent() != frame_tree_node()) {
+    bad_message::ReceivedBadMessage(GetProcess(),
+                                    bad_message::RFH_SANDBOX_FLAGS);
+    return;
+  }
+
+  child->set_sandbox_flags(flags);
+
+  // Notify the RenderFrame if it lives in a different process from its
+  // parent. The frame's proxies in other processes also need to learn about
+  // the updated sandbox flags, but these notifications are sent later in
+  // RenderFrameHostManager::CommitPendingSandboxFlags(), when the frame
+  // navigates and the new sandbox flags take effect.
+  RenderFrameHost* child_rfh = child->current_frame_host();
+  if (child_rfh->GetSiteInstance() != GetSiteInstance()) {
+    child_rfh->Send(
+        new FrameMsg_DidUpdateSandboxFlags(child_rfh->GetRoutingID(), flags));
+  }
 }
 
 void RenderFrameHostImpl::OnUpdateTitle(
@@ -1201,6 +1277,22 @@ void RenderFrameHostImpl::OnBeginNavigation(
       switches::kEnableBrowserSideNavigation));
   frame_tree_node()->navigator()->OnBeginNavigation(
       frame_tree_node(), common_params, begin_params, body);
+}
+
+void RenderFrameHostImpl::OnDispatchLoad() {
+  CHECK(base::CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kSitePerProcess));
+  // Only frames with an out-of-process parent frame should be sending this
+  // message.
+  RenderFrameProxyHost* proxy =
+      frame_tree_node()->render_manager()->GetProxyToParent();
+  if (!proxy) {
+    bad_message::ReceivedBadMessage(GetProcess(),
+                                    bad_message::RFH_NO_PROXY_TO_PARENT);
+    return;
+  }
+
+  proxy->Send(new FrameMsg_DispatchLoad(proxy->GetRoutingID()));
 }
 
 void RenderFrameHostImpl::OnAccessibilityEvents(
@@ -1443,19 +1535,22 @@ bool RenderFrameHostImpl::CanCommitURL(const GURL& url) {
   return GetContentClient()->browser()->CanCommitURL(GetProcess(), url);
 }
 
-void RenderFrameHostImpl::Navigate(const FrameMsg_Navigate_Params& params) {
+void RenderFrameHostImpl::Navigate(
+    const CommonNavigationParams& common_params,
+    const StartNavigationParams& start_params,
+    const RequestNavigationParams& request_params) {
   TRACE_EVENT0("navigation", "RenderFrameHostImpl::Navigate");
   // Browser plugin guests are not allowed to navigate outside web-safe schemes,
   // so do not grant them the ability to request additional URLs.
   if (!GetProcess()->IsIsolatedGuest()) {
     ChildProcessSecurityPolicyImpl::GetInstance()->GrantRequestURL(
-        GetProcess()->GetID(), params.common_params.url);
-    if (params.common_params.url.SchemeIs(url::kDataScheme) &&
-        params.base_url_for_data_url.SchemeIs(url::kFileScheme)) {
+        GetProcess()->GetID(), common_params.url);
+    if (common_params.url.SchemeIs(url::kDataScheme) &&
+        common_params.base_url_for_data_url.SchemeIs(url::kFileScheme)) {
       // If 'data:' is used, and we have a 'file:' base url, grant access to
       // local files.
       ChildProcessSecurityPolicyImpl::GetInstance()->GrantRequestURL(
-          GetProcess()->GetID(), params.base_url_for_data_url);
+          GetProcess()->GetID(), common_params.base_url_for_data_url);
     }
   }
 
@@ -1463,9 +1558,8 @@ void RenderFrameHostImpl::Navigate(const FrameMsg_Navigate_Params& params) {
   // file access.  If this is a different process, we will need to grant the
   // access again.  The files listed in the page state are validated when they
   // are received from the renderer to prevent abuse.
-  if (params.commit_params.page_state.IsValid()) {
-    render_view_host_->GrantFileAccessFromPageState(
-        params.commit_params.page_state);
+  if (request_params.page_state.IsValid()) {
+    render_view_host_->GrantFileAccessFromPageState(request_params.page_state);
   }
 
   // Only send the message if we aren't suspended at the start of a cross-site
@@ -1476,13 +1570,15 @@ void RenderFrameHostImpl::Navigate(const FrameMsg_Navigate_Params& params) {
     // second navigation occurs, RenderFrameHostManager will cancel this pending
     // RFH and create a new pending RFH.
     DCHECK(!suspended_nav_params_.get());
-    suspended_nav_params_.reset(new FrameMsg_Navigate_Params(params));
+    suspended_nav_params_.reset(
+        new NavigationParams(common_params, start_params, request_params));
   } else {
     // Get back to a clean state, in case we start a new navigation without
     // completing a RFH swap or unload handler.
     SetState(RenderFrameHostImpl::STATE_DEFAULT);
 
-    Send(new FrameMsg_Navigate(routing_id_, params));
+    Send(new FrameMsg_Navigate(routing_id_, common_params, start_params,
+                               request_params));
   }
 
   // Force the throbber to start. We do this because Blink's "started
@@ -1496,21 +1592,16 @@ void RenderFrameHostImpl::Navigate(const FrameMsg_Navigate_Params& params) {
   //
   // Blink doesn't send throb notifications for JavaScript URLs, so we
   // don't want to either.
-  if (!params.common_params.url.SchemeIs(url::kJavaScriptScheme))
+  if (!common_params.url.SchemeIs(url::kJavaScriptScheme))
     delegate_->DidStartLoading(this, true);
 }
 
 void RenderFrameHostImpl::NavigateToURL(const GURL& url) {
-  FrameMsg_Navigate_Params params;
-  params.common_params.url = url;
-  params.common_params.transition = ui::PAGE_TRANSITION_LINK;
-  params.common_params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
-  params.commit_params.browser_navigation_start = base::TimeTicks::Now();
-  params.page_id = -1;
-  params.pending_history_list_offset = -1;
-  params.current_history_list_offset = -1;
-  params.current_history_list_length = 0;
-  Navigate(params);
+  CommonNavigationParams common_params(
+      url, Referrer(), ui::PAGE_TRANSITION_LINK, FrameMsg_Navigate_Type::NORMAL,
+      true, base::TimeTicks::Now(), FrameMsg_UILoadMetricsReportType::NO_REPORT,
+      GURL(), GURL());
+  Navigate(common_params, StartNavigationParams(), RequestNavigationParams());
 }
 
 void RenderFrameHostImpl::OpenURL(const FrameHostMsg_OpenURL_Params& params,
@@ -1597,9 +1688,10 @@ void RenderFrameHostImpl::JavaScriptDialogClosed(
   // leave the current page. In this case, use the regular timeout value used
   // during the (before)unload handling.
   if (is_waiting) {
-    render_view_host_->StartHangMonitorTimeout(TimeDelta::FromMilliseconds(
-        success ? RenderViewHostImpl::kUnloadTimeoutMS
-                : render_view_host_->hung_renderer_delay_ms_));
+    render_view_host_->StartHangMonitorTimeout(
+        success
+            ? TimeDelta::FromMilliseconds(RenderViewHostImpl::kUnloadTimeoutMS)
+            : render_view_host_->hung_renderer_delay_);
   }
 
   FrameHostMsg_RunJavaScriptMessage::WriteReplyParams(reply_msg,
@@ -1621,7 +1713,9 @@ void RenderFrameHostImpl::CommitNavigation(
     ResourceResponse* response,
     scoped_ptr<StreamHandle> body,
     const CommonNavigationParams& common_params,
-    const CommitNavigationParams& commit_params) {
+    const RequestNavigationParams& request_params) {
+  DCHECK((response && body.get()) ||
+          !NavigationRequest::ShouldMakeNetworkRequest(common_params.url));
   // TODO(clamy): Check if we have to add security checks for the browser plugin
   // guests.
 
@@ -1629,9 +1723,11 @@ void RenderFrameHostImpl::CommitNavigation(
   // completing a RFH swap or unload handler.
   SetState(RenderFrameHostImpl::STATE_DEFAULT);
 
-  Send(new FrameMsg_CommitNavigation(
-      routing_id_, response->head, body->GetURL(),
-      common_params, commit_params));
+  const GURL body_url = body.get() ? body->GetURL() : GURL();
+  const ResourceResponseHead head = response ?
+      response->head : ResourceResponseHead();
+  Send(new FrameMsg_CommitNavigation(routing_id_, head, body_url, common_params,
+                                     request_params));
   // TODO(clamy): Check if we should start the throbber for non javascript urls
   // here.
 
@@ -1732,6 +1828,12 @@ void RenderFrameHostImpl::SetAccessibilityMode(AccessibilityMode mode) {
 void RenderFrameHostImpl::SetAccessibilityCallbackForTesting(
     const base::Callback<void(ui::AXEvent, int)>& callback) {
   accessibility_testing_callback_ = callback;
+}
+
+void RenderFrameHostImpl::SetTextTrackSettings(
+    const FrameMsg_TextTrackSettings_Params& params) {
+  DCHECK(!GetParent());
+  Send(new FrameMsg_SetTextTrackSettings(routing_id_, params));
 }
 
 const ui::AXTree* RenderFrameHostImpl::GetAXTreeForTesting() {
@@ -1846,9 +1948,12 @@ void RenderFrameHostImpl::SetNavigationsSuspended(
     SetState(RenderFrameHostImpl::STATE_DEFAULT);
 
     DCHECK(!proceed_time.is_null());
-    suspended_nav_params_->commit_params.browser_navigation_start =
+    suspended_nav_params_->request_params.browser_navigation_start =
         proceed_time;
-    Send(new FrameMsg_Navigate(routing_id_, *suspended_nav_params_));
+    Send(new FrameMsg_Navigate(routing_id_,
+                               suspended_nav_params_->common_params,
+                               suspended_nav_params_->start_params,
+                               suspended_nav_params_->request_params));
     suspended_nav_params_.reset();
   }
 }
@@ -1864,12 +1969,16 @@ void RenderFrameHostImpl::CancelSuspendedNavigations() {
 }
 
 void RenderFrameHostImpl::DidUseGeolocationPermission() {
-  RenderFrameHost* top_frame = frame_tree_node()->frame_tree()->GetMainFrame();
-  GetContentClient()->browser()->RegisterPermissionUsage(
-      PERMISSION_GEOLOCATION,
-      delegate_->GetAsWebContents(),
+  PermissionManager* permission_manager =
+      GetSiteInstance()->GetBrowserContext()->GetPermissionManager();
+  if (!permission_manager)
+    return;
+
+  permission_manager->RegisterPermissionUsage(
+      PermissionType::GEOLOCATION,
       GetLastCommittedURL().GetOrigin(),
-      top_frame->GetLastCommittedURL().GetOrigin());
+      frame_tree_node()->frame_tree()->GetMainFrame()
+          ->GetLastCommittedURL().GetOrigin());
 }
 
 }  // namespace content

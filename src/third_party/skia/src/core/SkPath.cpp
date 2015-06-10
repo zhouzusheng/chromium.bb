@@ -863,6 +863,7 @@ void SkPath::addPoly(const SkPoint pts[], int count, bool close) {
 
     if (close) {
         ed.growForVerb(kClose_Verb);
+        fLastMoveToIndex ^= ~fLastMoveToIndex >> (8 * sizeof(fLastMoveToIndex) - 1);
     }
 
     DIRTY_AFTER_EDIT;
@@ -923,17 +924,6 @@ static void angles_to_unit_vectors(SkScalar startAngle, SkScalar sweepAngle,
     *dir = sweepAngle > 0 ? kCW_SkRotationDirection : kCCW_SkRotationDirection;
 }
 
-#ifdef SK_SUPPORT_LEGACY_ARCTO_QUADS
-static int build_arc_points(const SkRect& oval, const SkVector& start, const SkVector& stop,
-                            SkRotationDirection dir, SkPoint pts[kSkBuildQuadArcStorage]) {
-    SkMatrix    matrix;
-
-    matrix.setScale(SkScalarHalf(oval.width()), SkScalarHalf(oval.height()));
-    matrix.postTranslate(oval.centerX(), oval.centerY());
-
-    return SkBuildQuadArc(start, stop, dir, &matrix, pts);
-}
-#else
 /**
  *  If this returns 0, then the caller should just line-to the singlePt, else it should
  *  ignore singlePt and append the specified number of conics.
@@ -952,7 +942,6 @@ static int build_arc_conics(const SkRect& oval, const SkVector& start, const SkV
     }
     return count;
 }
-#endif
 
 void SkPath::addRoundRect(const SkRect& rect, const SkScalar radii[],
                           Direction dir) {
@@ -1073,50 +1062,6 @@ void SkPath::addOval(const SkRect& oval, Direction dir) {
 
     SkAutoPathBoundsUpdate apbu(this, oval);
 
-#ifdef SK_SUPPORT_LEGACY_ADDOVAL
-    SkScalar    cx = oval.centerX();
-    SkScalar    cy = oval.centerY();
-    SkScalar    rx = SkScalarHalf(oval.width());
-    SkScalar    ry = SkScalarHalf(oval.height());
-
-    SkScalar    sx = SkScalarMul(rx, SK_ScalarTanPIOver8);
-    SkScalar    sy = SkScalarMul(ry, SK_ScalarTanPIOver8);
-    SkScalar    mx = SkScalarMul(rx, SK_ScalarRoot2Over2);
-    SkScalar    my = SkScalarMul(ry, SK_ScalarRoot2Over2);
-
-    /*
-     To handle imprecision in computing the center and radii, we revert to
-     the provided bounds when we can (i.e. use oval.fLeft instead of cx-rx)
-     to ensure that we don't exceed the oval's bounds *ever*, since we want
-     to use oval for our fast-bounds, rather than have to recompute it.
-     */
-    const SkScalar L = oval.fLeft;      // cx - rx
-    const SkScalar T = oval.fTop;       // cy - ry
-    const SkScalar R = oval.fRight;     // cx + rx
-    const SkScalar B = oval.fBottom;    // cy + ry
-
-    this->incReserve(17);   // 8 quads + close
-    this->moveTo(R, cy);
-    if (dir == kCCW_Direction) {
-        this->quadTo(      R, cy - sy, cx + mx, cy - my);
-        this->quadTo(cx + sx,       T, cx     ,       T);
-        this->quadTo(cx - sx,       T, cx - mx, cy - my);
-        this->quadTo(      L, cy - sy,       L, cy     );
-        this->quadTo(      L, cy + sy, cx - mx, cy + my);
-        this->quadTo(cx - sx,       B, cx     ,       B);
-        this->quadTo(cx + sx,       B, cx + mx, cy + my);
-        this->quadTo(      R, cy + sy,       R, cy     );
-    } else {
-        this->quadTo(      R, cy + sy, cx + mx, cy + my);
-        this->quadTo(cx + sx,       B, cx     ,       B);
-        this->quadTo(cx - sx,       B, cx - mx, cy + my);
-        this->quadTo(      L, cy + sy,       L, cy     );
-        this->quadTo(      L, cy - sy, cx - mx, cy - my);
-        this->quadTo(cx - sx,       T, cx     ,       T);
-        this->quadTo(cx + sx,       T, cx + mx, cy - my);
-        this->quadTo(      R, cy - sy,       R, cy     );
-    }
-#else
     const SkScalar L = oval.fLeft;
     const SkScalar T = oval.fTop;
     const SkScalar R = oval.fRight;
@@ -1138,7 +1083,6 @@ void SkPath::addOval(const SkRect& oval, Direction dir) {
         this->conicTo(L, T, cx, T, weight);
         this->conicTo(R, T, R, cy, weight);
     }
-#endif
     this->close();
 
     SkPathRef::Editor ed(&fPathRef);
@@ -1174,17 +1118,6 @@ void SkPath::arcTo(const SkRect& oval, SkScalar startAngle, SkScalar sweepAngle,
     SkRotationDirection dir;
     angles_to_unit_vectors(startAngle, sweepAngle, &startV, &stopV, &dir);
 
-#ifdef SK_SUPPORT_LEGACY_ARCTO_QUADS
-    SkPoint pts[kSkBuildQuadArcStorage];
-    int count = build_arc_points(oval, startV, stopV, dir, pts);
-    SkASSERT((count & 1) == 1);
-
-    this->incReserve(count);
-    forceMoveTo ? this->moveTo(pts[0]) : this->lineTo(pts[0]);
-    for (int i = 1; i < count; i += 2) {
-        this->quadTo(pts[i], pts[i+1]);
-    }
-#else
     SkPoint singlePt;
     SkConic conics[SkConic::kMaxConicsForArc];
     int count = build_arc_conics(oval, startV, stopV, dir, conics, &singlePt);
@@ -1198,7 +1131,6 @@ void SkPath::arcTo(const SkRect& oval, SkScalar startAngle, SkScalar sweepAngle,
     } else {
         forceMoveTo ? this->moveTo(singlePt) : this->lineTo(singlePt);
     }
-#endif
 }
 
 void SkPath::addArc(const SkRect& oval, SkScalar startAngle, SkScalar sweepAngle) {
@@ -2098,29 +2030,10 @@ static bool almost_equal(SkScalar compA, SkScalar compB) {
     return aBits < bBits + epsilon && bBits < aBits + epsilon;
 }
 
-static DirChange direction_change(const SkPoint& lastPt, const SkVector& curPt,
-                                  const SkVector& lastVec, const SkVector& curVec) {
-    SkScalar cross = SkPoint::CrossProduct(lastVec, curVec);
-
-    SkScalar smallest = SkTMin(curPt.fX, SkTMin(curPt.fY, SkTMin(lastPt.fX, lastPt.fY)));
-    SkScalar largest = SkTMax(curPt.fX, SkTMax(curPt.fY, SkTMax(lastPt.fX, lastPt.fY)));
-    largest = SkTMax(largest, -smallest);
-
-    if (!almost_equal(largest, largest + cross)) {
-        int sign = SkScalarSignAsInt(cross);
-        if (sign) {
-            return (1 == sign) ? kRight_DirChange : kLeft_DirChange;
-        }
-    }
-
-    if (!SkScalarNearlyZero(lastVec.lengthSqd(), SK_ScalarNearlyZero*SK_ScalarNearlyZero) &&
-        !SkScalarNearlyZero(curVec.lengthSqd(), SK_ScalarNearlyZero*SK_ScalarNearlyZero) &&
-        lastVec.dot(curVec) < 0.0f) {
-        return kBackwards_DirChange;
-    }
-
-    return kStraight_DirChange;
+static bool approximately_zero_when_compared_to(double x, double y) {
+    return x == 0 || fabs(x) < fabs(y * FLT_EPSILON);
 }
+
 
 // only valid for a single contour
 struct Convexicator {
@@ -2128,7 +2041,8 @@ struct Convexicator {
     : fPtCount(0)
     , fConvexity(SkPath::kConvex_Convexity)
     , fDirection(SkPath::kUnknown_Direction)
-    , fIsFinite(true) {
+    , fIsFinite(true)
+    , fIsCurve(false) {
         fExpectedDir = kInvalid_DirChange;
         // warnings
         fLastPt.set(0, 0);
@@ -2159,6 +2073,7 @@ struct Convexicator {
             if (!SkScalarIsFinite(lengthSqd)) {
                 fIsFinite = false;
             } else if (!SkScalarNearlyZero(lengthSqd, SK_ScalarNearlyZero*SK_ScalarNearlyZero)) {
+                fPriorPt = fLastPt;
                 fLastPt = fCurrPt;
                 fCurrPt = pt;
                 if (++fPtCount == 2) {
@@ -2188,14 +2103,56 @@ struct Convexicator {
         }
     }
 
+    DirChange directionChange(const SkVector& curVec) {
+        SkScalar cross = SkPoint::CrossProduct(fLastVec, curVec);
+
+        SkScalar smallest = SkTMin(fCurrPt.fX, SkTMin(fCurrPt.fY, SkTMin(fLastPt.fX, fLastPt.fY)));
+        SkScalar largest = SkTMax(fCurrPt.fX, SkTMax(fCurrPt.fY, SkTMax(fLastPt.fX, fLastPt.fY)));
+        largest = SkTMax(largest, -smallest);
+
+        if (!almost_equal(largest, largest + cross)) {
+            int sign = SkScalarSignAsInt(cross);
+            if (sign) {
+                return (1 == sign) ? kRight_DirChange : kLeft_DirChange;
+            }
+        }
+
+        if (cross) {
+            double dLastVecX = SkScalarToDouble(fLastPt.fX) - SkScalarToDouble(fPriorPt.fX);
+            double dLastVecY = SkScalarToDouble(fLastPt.fY) - SkScalarToDouble(fPriorPt.fY);
+            double dCurrVecX = SkScalarToDouble(fCurrPt.fX) - SkScalarToDouble(fLastPt.fX);
+            double dCurrVecY = SkScalarToDouble(fCurrPt.fY) - SkScalarToDouble(fLastPt.fY);
+            double dCross = dLastVecX * dCurrVecY - dLastVecY * dCurrVecX;
+            if (!approximately_zero_when_compared_to(dCross, SkScalarToDouble(largest))) {
+                int sign = SkScalarSignAsInt(SkDoubleToScalar(dCross));
+                if (sign) {
+                    return (1 == sign) ? kRight_DirChange : kLeft_DirChange;
+                }
+            }
+        }
+
+        if (!SkScalarNearlyZero(fLastVec.lengthSqd(), SK_ScalarNearlyZero*SK_ScalarNearlyZero) &&
+            !SkScalarNearlyZero(curVec.lengthSqd(), SK_ScalarNearlyZero*SK_ScalarNearlyZero) &&
+            fLastVec.dot(curVec) < 0.0f) {
+            return kBackwards_DirChange;
+        }
+
+        return kStraight_DirChange;
+    }
+
+
     bool isFinite() const {
         return fIsFinite;
+    }
+
+    void setCurve(bool isCurve) {
+        fIsCurve = isCurve;
     }
 
 private:
     void addVec(const SkVector& vec) {
         SkASSERT(vec.fX || vec.fY);
-        DirChange dir = direction_change(fLastPt, fCurrPt, fLastVec, vec);
+        DirChange dir = this->directionChange(vec);
         switch (dir) {
             case kLeft_DirChange:       // fall through
             case kRight_DirChange:
@@ -2212,6 +2169,10 @@ private:
             case kStraight_DirChange:
                 break;
             case kBackwards_DirChange:
+                if (fIsCurve) {
+                    fConvexity = SkPath::kConcave_Convexity;
+                    fDirection = SkPath::kUnknown_Direction;
+                }
                 fLastVec = vec;
                 break;
             case kInvalid_DirChange:
@@ -2220,6 +2181,7 @@ private:
         }
     }
 
+    SkPoint             fPriorPt;
     SkPoint             fLastPt;
     SkPoint             fCurrPt;
     // fLastVec does not necessarily start at fLastPt. We only advance it when the cross product
@@ -2231,6 +2193,7 @@ private:
     SkPath::Direction   fDirection;
     int                 fDx, fDy, fSx, fSy;
     bool                fIsFinite;
+    bool                fIsCurve;
 };
 
 SkPath::Convexity SkPath::internalGetConvexity() const {
@@ -2254,13 +2217,23 @@ SkPath::Convexity SkPath::internalGetConvexity() const {
                     return kConcave_Convexity;
                 }
                 pts[1] = pts[0];
+                // fall through
+            case kLine_Verb:
                 count = 1;
+                state.setCurve(false);
                 break;
-            case kLine_Verb: count = 1; break;
-            case kQuad_Verb: count = 2; break;
-            case kConic_Verb: count = 2; break;
-            case kCubic_Verb: count = 3; break;
+            case kQuad_Verb:
+                // fall through
+            case kConic_Verb:
+                // fall through
+            case kCubic_Verb:
+                count = 2 + (kCubic_Verb == verb);
+                // As an additional enhancement, this could set curve true only
+                // if the curve is nonlinear
+                state.setCurve(true);
+                break;
             case kClose_Verb:
+                state.setCurve(false);
                 state.close();
                 count = 0;
                 break;

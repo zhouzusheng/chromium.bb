@@ -15,6 +15,7 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/content_switches.h"
 #include "content/shell/browser/shell_download_manager_delegate.h"
+#include "content/shell/browser/shell_permission_manager.h"
 #include "content/shell/common/shell_switches.h"
 
 #include "base/prefs/json_pref_store.h"
@@ -218,6 +219,12 @@ PushMessagingService* ShellBrowserContext::GetPushMessagingService() {
 
 SSLHostStateDelegate* ShellBrowserContext::GetSSLHostStateDelegate() {
   return NULL;
+}
+
+PermissionManager* ShellBrowserContext::GetPermissionManager() {
+  if (!permission_manager_.get())
+    permission_manager_.reset(new ShellPermissionManager());
+  return permission_manager_.get();
 }
 
 }  // namespace content

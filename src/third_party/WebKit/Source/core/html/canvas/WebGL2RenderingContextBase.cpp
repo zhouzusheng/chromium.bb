@@ -31,7 +31,7 @@ namespace {
 
 const GLuint webGLTimeoutIgnored = 0xFFFFFFFF;
 
-Platform3DObject objectOrZero(const WebGLObject* object)
+WGC3Dsync syncObjectOrZero(const WebGLSync* object)
 {
     return object ? object->object() : 0;
 }
@@ -91,8 +91,22 @@ ScriptValue WebGL2RenderingContextBase::getInternalformatParameter(ScriptState* 
     if (isContextLost())
         return ScriptValue::createNull(scriptState);
 
-    notImplemented();
-    return ScriptValue::createNull(scriptState);
+    switch (pname) {
+    case GL_SAMPLES:
+        {
+            GLint length = -1;
+            webContext()->getInternalformativ(target, internalformat, GL_NUM_SAMPLE_COUNTS, 1, &length);
+            if (length <= 0)
+                return WebGLAny(scriptState, DOMInt32Array::create(0));
+
+            scoped_ptr<GLint[]> values(new GLint[length]);
+            webContext()->getInternalformativ(target, internalformat, GL_SAMPLES, length, values.get());
+            return WebGLAny(scriptState, DOMInt32Array::create(values.get(), length));
+        }
+    default:
+        synthesizeGLError(GL_INVALID_ENUM, "getInternalformatParameter", "invalid parameter name");
+        return ScriptValue::createNull(scriptState);
+    }
 }
 
 void WebGL2RenderingContextBase::invalidateFramebuffer(GLenum target, Vector<GLenum>& attachments)
@@ -595,10 +609,15 @@ void WebGL2RenderingContextBase::drawElementsInstanced(GLenum mode, GLsizei coun
 
 void WebGL2RenderingContextBase::drawRangeElements(GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, GLintptr offset)
 {
-    if (isContextLost())
+    if (!validateDrawElements("drawRangeElements", mode, count, type, offset))
         return;
 
-    notImplemented();
+    clearIfComposited();
+
+    handleTextureCompleteness("drawRangeElements", true);
+    webContext()->drawRangeElements(mode, start, end, count, type, static_cast<GLintptr>(offset));
+    handleTextureCompleteness("drawRangeElements", false);
+    markContextChanged(CanvasChanged);
 }
 
 void WebGL2RenderingContextBase::drawBuffers(const Vector<GLenum>& buffers)
@@ -642,21 +661,19 @@ bool WebGL2RenderingContextBase::validateClearBuffer(const char* functionName, G
     case GL_COLOR:
     case GL_FRONT:
     case GL_BACK:
-    case GL_FRONT_AND_BACK: {
+    case GL_FRONT_AND_BACK:
         if (size < 4) {
             synthesizeGLError(GL_INVALID_VALUE, functionName, "invalid array size");
             return false;
         }
         break;
-    }
     case GL_DEPTH:
-    case GL_STENCIL: {
+    case GL_STENCIL:
         if (size < 1) {
             synthesizeGLError(GL_INVALID_VALUE, functionName, "invalid array size");
             return false;
         }
         break;
-    }
     default:
         synthesizeGLError(GL_INVALID_ENUM, functionName, "invalid buffer");
         return false;
@@ -772,8 +789,23 @@ ScriptValue WebGL2RenderingContextBase::getQueryParameter(ScriptState* scriptSta
     if (isContextLost() || !validateWebGLObject("getQueryParameter", query))
         return ScriptValue::createNull(scriptState);
 
-    notImplemented();
-    return ScriptValue::createNull(scriptState);
+    switch (pname) {
+    case GL_QUERY_RESULT:
+        {
+            GLuint value;
+            webContext()->getQueryObjectuivEXT(objectOrZero(query), pname, &value);
+            return WebGLAny(scriptState, value);
+        }
+    case GL_QUERY_RESULT_AVAILABLE:
+        {
+            GLuint value;
+            webContext()->getQueryObjectuivEXT(objectOrZero(query), pname, &value);
+            return WebGLAny(scriptState, value == GL_TRUE);
+        }
+    default:
+        synthesizeGLError(GL_INVALID_ENUM, "getQueryParameter", "invalid parameter name");
+        return ScriptValue::createNull(scriptState);
+    }
 }
 
 PassRefPtrWillBeRawPtr<WebGLSampler> WebGL2RenderingContextBase::createSampler()
@@ -882,7 +914,7 @@ GLenum WebGL2RenderingContextBase::clientWaitSync(WebGLSync* sync, GLbitfield fl
         return GL_WAIT_FAILED;
 
     GLuint64 timeout64 = (timeout == webGLTimeoutIgnored ? GL_TIMEOUT_IGNORED : timeout);
-    return webContext()->clientWaitSync(objectOrZero(sync), flags, timeout64);
+    return webContext()->clientWaitSync(syncObjectOrZero(sync), flags, timeout64);
 }
 
 void WebGL2RenderingContextBase::waitSync(WebGLSync* sync, GLbitfield flags, GLuint timeout)
@@ -891,7 +923,7 @@ void WebGL2RenderingContextBase::waitSync(WebGLSync* sync, GLbitfield flags, GLu
         return;
 
     GLuint64 timeout64 = (timeout == webGLTimeoutIgnored ? GL_TIMEOUT_IGNORED : timeout);
-    webContext()->waitSync(objectOrZero(sync), flags, timeout64);
+    webContext()->waitSync(syncObjectOrZero(sync), flags, timeout64);
 }
 
 ScriptValue WebGL2RenderingContextBase::getSyncParameter(ScriptState* scriptState, WebGLSync* sync, GLenum pname)
@@ -899,8 +931,21 @@ ScriptValue WebGL2RenderingContextBase::getSyncParameter(ScriptState* scriptStat
     if (isContextLost() || !validateWebGLObject("getSyncParameter", sync))
         return ScriptValue::createNull(scriptState);
 
-    notImplemented();
-    return ScriptValue::createNull(scriptState);
+    switch (pname) {
+    case GL_OBJECT_TYPE:
+    case GL_SYNC_STATUS:
+    case GL_SYNC_CONDITION:
+    case GL_SYNC_FLAGS:
+        {
+            GLint value = 0;
+            GLsizei length = -1;
+            webContext()->getSynciv(syncObjectOrZero(sync), pname, 1, &length, &value);
+            return WebGLAny(scriptState, static_cast<unsigned>(value));
+        }
+    default:
+        synthesizeGLError(GL_INVALID_ENUM, "getSyncParameter", "invalid parameter name");
+        return ScriptValue::createNull(scriptState);
+    }
 }
 
 PassRefPtrWillBeRawPtr<WebGLTransformFeedback> WebGL2RenderingContextBase::createTransformFeedback()
@@ -954,7 +999,14 @@ void WebGL2RenderingContextBase::transformFeedbackVaryings(WebGLProgram* program
     if (isContextLost() || !validateWebGLObject("transformFeedbackVaryings", program))
         return;
 
-    notImplemented();
+    Vector<CString> keepAlive; // Must keep these instances alive while looking at their data
+    Vector<const char*> varyingStrings;
+    for (size_t i = 0; i < varyings.size(); ++i) {
+        keepAlive.append(varyings[i].ascii());
+        varyingStrings.append(keepAlive.last().data());
+    }
+
+    webContext()->transformFeedbackVaryings(objectOrZero(program), varyings.size(), varyingStrings.data(), bufferMode);
 }
 
 PassRefPtrWillBeRawPtr<WebGLActiveInfo> WebGL2RenderingContextBase::getTransformFeedbackVarying(WebGLProgram* program, GLuint index)
@@ -987,7 +1039,7 @@ void WebGL2RenderingContextBase::bindBufferBase(GLenum target, GLuint index, Web
     if (isContextLost() || !validateWebGLObject("bindBufferBase", buffer))
         return;
 
-    notImplemented();
+    webContext()->bindBufferBase(target, index, objectOrZero(buffer));
 }
 
 void WebGL2RenderingContextBase::bindBufferRange(GLenum target, GLuint index, WebGLBuffer* buffer, GLintptr offset, GLsizeiptr size)
@@ -995,7 +1047,7 @@ void WebGL2RenderingContextBase::bindBufferRange(GLenum target, GLuint index, We
     if (isContextLost() || !validateWebGLObject("bindBufferRange", buffer))
         return;
 
-    notImplemented();
+    webContext()->bindBufferRange(target, index, objectOrZero(buffer), offset, size);
 }
 
 ScriptValue WebGL2RenderingContextBase::getIndexedParameter(ScriptState* scriptState, GLenum target, GLuint index)
@@ -1003,8 +1055,24 @@ ScriptValue WebGL2RenderingContextBase::getIndexedParameter(ScriptState* scriptS
     if (isContextLost())
         return ScriptValue::createNull(scriptState);
 
-    notImplemented();
-    return ScriptValue::createNull(scriptState);
+    switch (target) {
+    case GL_TRANSFORM_FEEDBACK_BUFFER_BINDING:
+    case GL_UNIFORM_BUFFER_BINDING:
+        notImplemented();
+        return ScriptValue::createNull(scriptState);
+    case GL_TRANSFORM_FEEDBACK_BUFFER_SIZE:
+    case GL_TRANSFORM_FEEDBACK_BUFFER_START:
+    case GL_UNIFORM_BUFFER_SIZE:
+    case GL_UNIFORM_BUFFER_START:
+        {
+            GLint64 value = -1;
+            webContext()->getInteger64i_v(target, index, &value);
+            return WebGLAny(scriptState, value);
+        }
+    default:
+        synthesizeGLError(GL_INVALID_ENUM, "getIndexedParameter", "invalid parameter name");
+        return ScriptValue::createNull(scriptState);
+    }
 }
 
 Vector<GLuint> WebGL2RenderingContextBase::getUniformIndices(WebGLProgram* program, const Vector<String>& uniformNames)
@@ -1013,10 +1081,15 @@ Vector<GLuint> WebGL2RenderingContextBase::getUniformIndices(WebGLProgram* progr
     if (isContextLost() || !validateWebGLObject("getUniformIndices", program))
         return result;
 
-    notImplemented();
-    // FIXME: copy uniform names into array of const char*
-    /*result.resize(uniformNames.size());
-    webContext()->getUniformIndices(objectOrZero(program), uniformNames.size(), uniformNames.data(), result.data());*/
+    Vector<CString> keepAlive; // Must keep these instances alive while looking at their data
+    Vector<const char*> uniformStrings;
+    for (size_t i = 0; i < uniformNames.size(); ++i) {
+        keepAlive.append(uniformNames[i].ascii());
+        uniformStrings.append(keepAlive.last().data());
+    }
+
+    result.resize(uniformNames.size());
+    webContext()->getUniformIndices(objectOrZero(program), uniformStrings.size(), uniformStrings.data(), result.data());
     return result;
 }
 
@@ -1049,32 +1122,30 @@ ScriptValue WebGL2RenderingContextBase::getActiveUniformBlockParameter(ScriptSta
     switch (pname) {
     case GL_UNIFORM_BLOCK_BINDING:
     case GL_UNIFORM_BLOCK_DATA_SIZE:
-    case GL_UNIFORM_BLOCK_ACTIVE_UNIFORMS: {
-        GLint intValue = 0;
-        webContext()->getActiveUniformBlockiv(objectOrZero(program), uniformBlockIndex, pname, &intValue);
-        return WebGLAny(scriptState, static_cast<unsigned>(intValue));
-    }
-    case GL_UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES: {
-        GLint uniformCount = 0;
-        webContext()->getActiveUniformBlockiv(objectOrZero(program), uniformBlockIndex, GL_UNIFORM_BLOCK_ACTIVE_UNIFORMS, &uniformCount);
-
-        Vector<GLint> signedIndices(uniformCount);
-        Vector<GLuint> indices(uniformCount);
-        webContext()->getActiveUniformBlockiv(objectOrZero(program), uniformBlockIndex, pname, signedIndices.data());
-        for (GLint i = 0; i < uniformCount; ++i) {
-            indices[i] = static_cast<unsigned>(signedIndices[i]);
+    case GL_UNIFORM_BLOCK_ACTIVE_UNIFORMS:
+        {
+            GLint intValue = 0;
+            webContext()->getActiveUniformBlockiv(objectOrZero(program), uniformBlockIndex, pname, &intValue);
+            return WebGLAny(scriptState, static_cast<unsigned>(intValue));
         }
+    case GL_UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES:
+        {
+            GLint uniformCount = 0;
+            webContext()->getActiveUniformBlockiv(objectOrZero(program), uniformBlockIndex, GL_UNIFORM_BLOCK_ACTIVE_UNIFORMS, &uniformCount);
 
-        return WebGLAny(scriptState, DOMUint32Array::create(indices.data(), indices.size()));
-    }
+            Vector<GLint> indices(uniformCount);
+            webContext()->getActiveUniformBlockiv(objectOrZero(program), uniformBlockIndex, pname, indices.data());
+            return WebGLAny(scriptState, DOMUint32Array::create(reinterpret_cast<GLuint*>(indices.data()), indices.size()));
+        }
     case GL_UNIFORM_BLOCK_REFERENCED_BY_VERTEX_SHADER:
-    case GL_UNIFORM_BLOCK_REFERENCED_BY_FRAGMENT_SHADER: {
-        GLint boolValue = 0;
-        webContext()->getActiveUniformBlockiv(objectOrZero(program), uniformBlockIndex, pname, &boolValue);
-        return WebGLAny(scriptState, static_cast<bool>(boolValue));
-    }
+    case GL_UNIFORM_BLOCK_REFERENCED_BY_FRAGMENT_SHADER:
+        {
+            GLint boolValue = 0;
+            webContext()->getActiveUniformBlockiv(objectOrZero(program), uniformBlockIndex, pname, &boolValue);
+            return WebGLAny(scriptState, static_cast<bool>(boolValue));
+        }
     default:
-        synthesizeGLError(GL_INVALID_ENUM, "getActiveUniformBlockParameter", "invalid pname");
+        synthesizeGLError(GL_INVALID_ENUM, "getActiveUniformBlockParameter", "invalid parameter name");
         return ScriptValue::createNull(scriptState);
     }
 }
@@ -1084,8 +1155,17 @@ String WebGL2RenderingContextBase::getActiveUniformBlockName(WebGLProgram* progr
     if (isContextLost() || !validateWebGLObject("getActiveUniformBlockName", program))
         return String();
 
-    notImplemented();
-    return String();
+    GLint maxNameLength = -1;
+    webContext()->getProgramiv(objectOrZero(program), GL_ACTIVE_UNIFORM_BLOCK_MAX_NAME_LENGTH, &maxNameLength);
+    if (maxNameLength <= 0) {
+        // This state indicates that there are no active uniform blocks
+        synthesizeGLError(GL_INVALID_VALUE, "getActiveUniformBlockName", "invalid uniform block index");
+        return String();
+    }
+    scoped_ptr<GLchar[]> name(new GLchar[maxNameLength]);
+    GLsizei length;
+    webContext()->getActiveUniformBlockName(objectOrZero(program), uniformBlockIndex, maxNameLength, &length, name.get());
+    return String(name.get(), length);
 }
 
 void WebGL2RenderingContextBase::uniformBlockBinding(WebGLProgram* program, GLuint uniformBlockIndex, GLuint uniformBlockBinding)
@@ -1147,6 +1227,46 @@ void WebGL2RenderingContextBase::bindVertexArray(WebGLVertexArrayObjectOES* vert
         webContext()->bindVertexArrayOES(0);
         setBoundVertexArrayObject(nullptr);
     }
+}
+
+bool WebGL2RenderingContextBase::validateCapability(const char* functionName, GLenum cap)
+{
+    switch (cap) {
+    case GL_RASTERIZER_DISCARD:
+        return true;
+    default:
+        return WebGLRenderingContextBase::validateCapability(functionName, cap);
+    }
+}
+
+bool WebGL2RenderingContextBase::validateAndUpdateBufferBindTarget(const char* functionName, GLenum target, WebGLBuffer* buffer)
+{
+    if (buffer && buffer->getTarget() && (buffer->getTarget() == GL_ELEMENT_ARRAY_BUFFER || target == GL_ELEMENT_ARRAY_BUFFER) && buffer->getTarget() != target) {
+        synthesizeGLError(GL_INVALID_OPERATION, functionName, "element array buffers can not be bound to a different target");
+        return false;
+    }
+
+    switch (target) {
+    case GL_ARRAY_BUFFER:
+        m_boundArrayBuffer = buffer;
+        break;
+    case GL_ELEMENT_ARRAY_BUFFER:
+        m_boundVertexArrayObject->setElementArrayBuffer(buffer);
+        break;
+    case GL_TRANSFORM_FEEDBACK_BUFFER:
+    case GL_COPY_READ_BUFFER:
+    case GL_COPY_WRITE_BUFFER:
+    case GL_PIXEL_PACK_BUFFER:
+    case GL_PIXEL_UNPACK_BUFFER:
+    case GL_UNIFORM_BUFFER:
+        // FIXME: Some of these ES3 buffer targets may require additional state tracking.
+        break;
+    default:
+        synthesizeGLError(GL_INVALID_ENUM, functionName, "invalid target");
+        return false;
+    }
+
+    return true;
 }
 
 DEFINE_TRACE(WebGL2RenderingContextBase)

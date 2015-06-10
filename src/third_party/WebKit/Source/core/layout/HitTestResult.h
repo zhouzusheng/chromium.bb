@@ -22,6 +22,7 @@
 #ifndef HitTestResult_h
 #define HitTestResult_h
 
+#include "core/CoreExport.h"
 #include "core/layout/HitTestLocation.h"
 #include "core/layout/HitTestRequest.h"
 #include "platform/geometry/FloatQuad.h"
@@ -46,16 +47,16 @@ class LayoutObject;
 class PositionWithAffinity;
 class Scrollbar;
 
-class HitTestResult {
+class CORE_EXPORT HitTestResult {
     DISALLOW_ALLOCATION();
 public:
     typedef WillBeHeapListHashSet<RefPtrWillBeMember<Node>> NodeSet;
 
     HitTestResult();
-    HitTestResult(const LayoutPoint&);
+    HitTestResult(const HitTestRequest&, const LayoutPoint&);
     // Pass positive padding values to perform a rect-based hit test.
-    HitTestResult(const LayoutPoint& centerPoint, unsigned topPadding, unsigned rightPadding, unsigned bottomPadding, unsigned leftPadding);
-    HitTestResult(const HitTestLocation&);
+    HitTestResult(const HitTestRequest&, const LayoutPoint& centerPoint, unsigned topPadding, unsigned rightPadding, unsigned bottomPadding, unsigned leftPadding);
+    HitTestResult(const HitTestRequest&, const HitTestLocation&);
     HitTestResult(const HitTestResult&);
     ~HitTestResult();
     HitTestResult& operator=(const HitTestResult&);
@@ -90,11 +91,12 @@ public:
     void setLocalPoint(const LayoutPoint& p) { m_localPoint = p; }
 
     PositionWithAffinity position() const;
-    LayoutObject* renderer() const;
+    LayoutObject* layoutObject() const;
 
     void setToShadowHostIfInClosedShadowRoot();
 
     const HitTestLocation& hitTestLocation() const { return m_hitTestLocation; }
+    const HitTestRequest& hitTestRequest() const { return m_hitTestRequest; }
 
     void setInnerNode(Node*);
     void setInnerNonSharedNode(Node*);
@@ -117,25 +119,26 @@ public:
     bool isContentEditable() const;
 
     bool isOverLink() const;
-    // Returns true if it is rect-based hit test and needs to continue until the rect is fully
-    // enclosed by the boundaries of a node.
-    bool addNodeToRectBasedTestResult(Node*, const HitTestRequest&, const HitTestLocation& pointInContainer, const LayoutRect& = LayoutRect());
-    bool addNodeToRectBasedTestResult(Node*, const HitTestRequest&, const HitTestLocation& pointInContainer, const FloatRect&);
+
+    // Return true if the test is a list-based test and we should continue testing.
+    bool addNodeToListBasedTestResult(Node*, const HitTestLocation& pointInContainer, const LayoutRect& = LayoutRect());
+    bool addNodeToListBasedTestResult(Node*, const HitTestLocation& pointInContainer, const FloatRect&);
     void append(const HitTestResult&);
 
-    // If m_rectBasedTestResult is 0 then set it to a new NodeSet. Return *m_rectBasedTestResult. Lazy allocation makes
+    // If m_listBasedTestResult is 0 then set it to a new NodeSet. Return *m_listBasedTestResult. Lazy allocation makes
     // sense because the NodeSet is seldom necessary, and it's somewhat expensive to allocate and initialize. This method does
-    // the same thing as mutableRectBasedTestResult(), but here the return value is const.
-    const NodeSet& rectBasedTestResult() const;
+    // the same thing as mutableListBasedTestResult(), but here the return value is const.
+    const NodeSet& listBasedTestResult() const;
 
     // Collapse the rect-based test result into a single target at the specified location.
     void resolveRectBasedTest(Node* resolvedInnerNode, const LayoutPoint& resolvedPointInMainFrame);
 
 private:
-    NodeSet& mutableRectBasedTestResult(); // See above.
+    NodeSet& mutableListBasedTestResult(); // See above.
     HTMLMediaElement* mediaElement() const;
 
     HitTestLocation m_hitTestLocation;
+    HitTestRequest m_hitTestRequest;
 
     RefPtrWillBeMember<Node> m_innerNode;
     RefPtrWillBeMember<Node> m_innerPossiblyPseudoNode;
@@ -148,7 +151,7 @@ private:
     RefPtrWillBeMember<Scrollbar> m_scrollbar;
     bool m_isOverWidget; // Returns true if we are over a widget (and not in the border/padding area of a LayoutPart for example).
 
-    mutable OwnPtrWillBeMember<NodeSet> m_rectBasedTestResult;
+    mutable OwnPtrWillBeMember<NodeSet> m_listBasedTestResult;
 };
 
 } // namespace blink

@@ -280,6 +280,8 @@ InputHandlerProxy::EventDisposition InputHandlerProxy::HandleInputEvent(
       if (gesture_pinch_on_impl_thread_) {
         const WebGestureEvent& gesture_event =
             static_cast<const WebGestureEvent&>(event);
+        if (gesture_event.data.pinchUpdate.zoomDisabled)
+            return DROP_EVENT;
         input_handler_->PinchGestureUpdate(
             gesture_event.data.pinchUpdate.scale,
             gfx::Point(gesture_event.x, gesture_event.y));
@@ -537,6 +539,7 @@ InputHandlerProxy::EventDisposition InputHandlerProxy::HandleGestureFlingStart(
                            "InputHandlerProxy::HandleGestureFling::"
                            "scroll_on_main_thread",
                            TRACE_EVENT_SCOPE_THREAD);
+      gesture_scroll_on_impl_thread_ = false;
       fling_may_be_active_on_main_thread_ = true;
       return DID_NOT_HANDLE;
     }
@@ -545,6 +548,7 @@ InputHandlerProxy::EventDisposition InputHandlerProxy::HandleGestureFlingStart(
           "input",
           "InputHandlerProxy::HandleGestureFling::ignored",
           TRACE_EVENT_SCOPE_THREAD);
+      gesture_scroll_on_impl_thread_ = false;
       if (gesture_event.sourceDevice == blink::WebGestureDeviceTouchpad) {
         // We still pass the curve to the main thread if there's nothing
         // scrollable, in case something

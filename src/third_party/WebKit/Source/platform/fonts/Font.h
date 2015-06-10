@@ -43,6 +43,8 @@
 #undef Complex
 #endif
 
+class SkCanvas;
+class SkPaint;
 class SkTextBlob;
 struct SkPoint;
 
@@ -54,7 +56,6 @@ class FontData;
 class FontMetrics;
 class FontSelector;
 class GlyphBuffer;
-class GraphicsContext;
 class TextRun;
 struct TextRunPaintInfo;
 
@@ -82,7 +83,6 @@ struct GlyphOverflow {
     bool computeBounds;
 };
 
-
 class PLATFORM_EXPORT Font {
 public:
     Font();
@@ -100,10 +100,9 @@ public:
     void update(PassRefPtrWillBeRawPtr<FontSelector>) const;
 
     enum CustomFontNotReadyAction { DoNotPaintIfFontNotReady, UseFallbackIfFontNotReady };
-    void drawText(GraphicsContext*, const TextRunPaintInfo&, const FloatPoint&) const;
-    float drawUncachedText(GraphicsContext*, const TextRunPaintInfo&, const FloatPoint&,
-        CustomFontNotReadyAction) const;
-    void drawEmphasisMarks(GraphicsContext*, const TextRunPaintInfo&, const AtomicString& mark, const FloatPoint&) const;
+    void drawText(SkCanvas*, const TextRunPaintInfo&, const FloatPoint&, float deviceScaleFactor, const SkPaint&) const;
+    void drawBidiText(SkCanvas*, const TextRunPaintInfo&, const FloatPoint&, CustomFontNotReadyAction, float deviceScaleFactor, const SkPaint&) const;
+    void drawEmphasisMarks(SkCanvas*, const TextRunPaintInfo&, const AtomicString& mark, const FloatPoint&, float deviceScaleFactor, const SkPaint&) const;
 
     float width(const TextRun&, HashSet<const SimpleFontData*>* fallbackFonts = 0, GlyphOverflow* = 0) const;
 
@@ -124,12 +123,8 @@ public:
 
     const SimpleFontData* primaryFont() const;
     const FontData* fontDataAt(unsigned) const;
-    inline GlyphData glyphDataForCharacter(UChar32& c, bool mirror, bool spaceNormalize = false, FontDataVariant variant = AutoVariant) const
-    {
-        return glyphDataAndPageForCharacter(c, mirror, spaceNormalize, variant).first;
-    }
 
-    std::pair<GlyphData, GlyphPage*> glyphDataAndPageForCharacter(UChar32&, bool mirror, bool normalizeSpace = false, FontDataVariant = AutoVariant) const;
+    GlyphData glyphDataForCharacter(UChar32&, bool mirror, bool normalizeSpace = false, FontDataVariant = AutoVariant) const;
     bool primaryFontHasGlyphForCharacter(UChar32) const;
 
     CodePath codePath(const TextRunPaintInfo&) const;
@@ -138,20 +133,16 @@ private:
     enum ForTextEmphasisOrNot { NotForTextEmphasis, ForTextEmphasis };
 
     // Returns the total advance.
-    float buildGlyphBuffer(const TextRunPaintInfo&, GlyphBuffer&, ForTextEmphasisOrNot = NotForTextEmphasis) const;
-    PassTextBlobPtr buildTextBlob(const GlyphBuffer&, const FloatRect& bounds) const;
-    SkPaint textFillPaint(GraphicsContext*, const SimpleFontData*) const;
-    SkPaint textStrokePaint(GraphicsContext*, const SimpleFontData*, bool isFilling) const;
-    void paintGlyphs(GraphicsContext*, const SimpleFontData*, const Glyph glyphs[], unsigned numGlyphs,
-        const SkPoint pos[], const FloatRect& textRect) const;
-    void paintGlyphsHorizontal(GraphicsContext*, const SimpleFontData*, const Glyph glyphs[], unsigned numGlyphs,
-        const SkScalar xpos[], SkScalar constY, const FloatRect& textRect) const;
-    void paintGlyphsVertical(GraphicsContext*, const SimpleFontData*, const GlyphBuffer&,
-        unsigned from, unsigned numGlyphs, const FloatPoint&, const FloatRect&) const;
-    void drawGlyphs(GraphicsContext*, const SimpleFontData*, const GlyphBuffer&, unsigned from, unsigned numGlyphs, const FloatPoint&, const FloatRect& textRect) const;
-    void drawTextBlob(GraphicsContext*, const SkTextBlob*, const SkPoint& origin) const;
-    void drawGlyphBuffer(GraphicsContext*, const TextRunPaintInfo&, const GlyphBuffer&, const FloatPoint&) const;
-    void drawEmphasisMarks(GraphicsContext*, const TextRunPaintInfo&, const GlyphBuffer&, const AtomicString&, const FloatPoint&) const;
+    float buildGlyphBuffer(const TextRunPaintInfo&, GlyphBuffer&, const GlyphData* emphasisData = nullptr) const;
+    PassTextBlobPtr buildTextBlob(const GlyphBuffer&) const;
+    void paintGlyphs(SkCanvas*, const SkPaint&, const SimpleFontData*, const Glyph glyphs[], unsigned numGlyphs,
+        const SkPoint pos[], const FloatRect& textRect, float deviceScaleFactor) const;
+    void paintGlyphsHorizontal(SkCanvas*, const SkPaint&, const SimpleFontData*, const Glyph glyphs[], unsigned numGlyphs,
+        const SkScalar xpos[], SkScalar constY, const FloatRect& textRect, float deviceScaleFactor) const;
+    void drawGlyphs(SkCanvas*, const SkPaint&, const SimpleFontData*, const GlyphBuffer&, unsigned from, unsigned numGlyphs,
+        const FloatPoint&, const FloatRect& textRect, float deviceScaleFactor) const;
+    void drawTextBlob(SkCanvas*, const SkPaint&, const SkTextBlob*, const SkPoint& origin) const;
+    void drawGlyphBuffer(SkCanvas*, const SkPaint&, const TextRunPaintInfo&, const GlyphBuffer&, const FloatPoint&, float deviceScaleFactor) const;
     float floatWidthForSimpleText(const TextRun&, HashSet<const SimpleFontData*>* fallbackFonts = 0, IntRectOutsets* glyphBounds = 0) const;
     int offsetForPositionForSimpleText(const TextRun&, float position, bool includePartialGlyphs) const;
     FloatRect selectionRectForSimpleText(const TextRun&, const FloatPoint&, int h, int from, int to, bool accountForGlyphBounds) const;
@@ -167,14 +158,10 @@ private:
 public:
     FontSelector* fontSelector() const;
 
-    FontFallbackList* fontList() const { return m_fontFallbackList.get(); }
-
     void willUseFontData(UChar32) const;
 
-    bool loadingCustomFonts() const
-    {
-        return m_fontFallbackList && m_fontFallbackList->loadingCustomFonts();
-    }
+    bool loadingCustomFonts() const;
+    bool isFallbackValid() const;
 
 private:
     bool shouldSkipDrawing() const

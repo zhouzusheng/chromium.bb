@@ -54,7 +54,9 @@ void LayoutSVGRect::updateShapeFromElement()
     ASSERT(rect);
 
     SVGLengthContext lengthContext(rect);
-    FloatSize boundingBoxSize(rect->width()->currentValue()->value(lengthContext), rect->height()->currentValue()->value(lengthContext));
+    FloatSize boundingBoxSize(
+        lengthContext.valueForLength(styleRef().width(), styleRef(), SVGLengthMode::Width),
+        lengthContext.valueForLength(styleRef().height(), styleRef(), SVGLengthMode::Height));
 
     // Spec: "A negative value is an error."
     if (boundingBoxSize.width() < 0 || boundingBoxSize.height() < 0)
@@ -64,8 +66,8 @@ void LayoutSVGRect::updateShapeFromElement()
     if (!boundingBoxSize.isEmpty()) {
         // Fallback to LayoutSVGShape and path-based hit detection if the rect
         // has rounded corners or a non-scaling or non-simple stroke.
-        if (rect->rx()->currentValue()->value(lengthContext) > 0
-            || rect->ry()->currentValue()->value(lengthContext) > 0
+        if (lengthContext.valueForLength(styleRef().svgStyle().rx(), styleRef(), SVGLengthMode::Width) > 0
+            || lengthContext.valueForLength(styleRef().svgStyle().ry(), styleRef(), SVGLengthMode::Height) > 0
             || hasNonScalingStroke()
             || !definitelyHasSimpleStroke()) {
             LayoutSVGShape::updateShapeFromElement();
@@ -76,8 +78,8 @@ void LayoutSVGRect::updateShapeFromElement()
 
     m_fillBoundingBox = FloatRect(
         FloatPoint(
-            lengthContext.valueForLength(style()->svgStyle().x(), LengthModeWidth),
-            lengthContext.valueForLength(style()->svgStyle().y(), LengthModeHeight)),
+            lengthContext.valueForLength(styleRef().svgStyle().x(), styleRef(), SVGLengthMode::Width),
+            lengthContext.valueForLength(styleRef().svgStyle().y(), styleRef(), SVGLengthMode::Height)),
         boundingBoxSize);
 
     // To decide if the stroke contains a point we create two rects which represent the inner and
@@ -117,7 +119,7 @@ bool LayoutSVGRect::shapeDependentFillContains(const FloatPoint& point, const Wi
 // Returns true if the stroke is continuous and definitely uses miter joins.
 bool LayoutSVGRect::definitelyHasSimpleStroke() const
 {
-    const SVGLayoutStyle& svgStyle = style()->svgStyle();
+    const SVGComputedStyle& svgStyle = style()->svgStyle();
 
     // The four angles of a rect are 90 degrees. Using the formula at:
     // http://www.w3.org/TR/SVG/painting.html#StrokeMiterlimitProperty

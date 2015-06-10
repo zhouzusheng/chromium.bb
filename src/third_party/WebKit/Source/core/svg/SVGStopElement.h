@@ -42,11 +42,10 @@ public:
 private:
     explicit SVGStopElement(Document&);
 
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
     virtual void svgAttributeChanged(const QualifiedName&) override;
 
-    virtual LayoutObject* createRenderer(const LayoutStyle&) override;
-    virtual bool rendererIsNeeded(const LayoutStyle&) override;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
+    virtual bool layoutObjectIsNeeded(const ComputedStyle&) override;
 
     RefPtrWillBeMember<SVGAnimatedNumber> m_offset;
 };

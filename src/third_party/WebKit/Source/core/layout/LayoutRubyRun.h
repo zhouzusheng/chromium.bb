@@ -31,7 +31,7 @@
 #ifndef LayoutRubyRun_h
 #define LayoutRubyRun_h
 
-#include "core/rendering/RenderBlockFlow.h"
+#include "core/layout/LayoutBlockFlow.h"
 
 namespace blink {
 
@@ -41,7 +41,7 @@ class LayoutRubyText;
 // LayoutRubyRun are 'inline-block/table' like objects,and wrap a single pairing of a ruby base with its ruby text(s).
 // See LayoutRuby.h for further comments on the structure
 
-class LayoutRubyRun final : public RenderBlockFlow {
+class LayoutRubyRun final : public LayoutBlockFlow {
 public:
     virtual ~LayoutRubyRun();
 
@@ -54,7 +54,7 @@ public:
     virtual LayoutObject* layoutSpecialExcludedChild(bool relayoutChildren, SubtreeLayoutScope&) override;
     virtual void layout() override;
 
-    virtual bool isChildAllowed(LayoutObject*, const LayoutStyle&) const override;
+    virtual bool isChildAllowed(LayoutObject*, const ComputedStyle&) const override;
     virtual void addChild(LayoutObject* child, LayoutObject* beforeChild = 0) override;
     virtual void removeChild(LayoutObject* child) override;
 
@@ -62,16 +62,17 @@ public:
 
     static LayoutRubyRun* staticCreateRubyRun(const LayoutObject* parentRuby);
 
+    virtual const char* name() const override { return "LayoutRubyRun (anonymous)"; }
+
 protected:
     LayoutRubyBase* createRubyBase() const;
 
 private:
     LayoutRubyRun();
 
-    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectRubyRun || RenderBlockFlow::isOfType(type); }
-    virtual const char* renderName() const override { return "LayoutRubyRun (anonymous)"; }
+    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectRubyRun || LayoutBlockFlow::isOfType(type); }
     virtual bool createsAnonymousWrapper() const override { return true; }
-    virtual void removeLeftoverAnonymousBlock(RenderBlock*) override { }
+    virtual void removeLeftoverAnonymousBlock(LayoutBlock*) override { }
 };
 
 DEFINE_LAYOUT_OBJECT_TYPE_CASTS(LayoutRubyRun, isRubyRun());

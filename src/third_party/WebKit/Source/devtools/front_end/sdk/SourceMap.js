@@ -91,18 +91,24 @@ WebInspector.SourceMap = function(sourceMappingURL, payload)
  */
 WebInspector.SourceMap.load = function(sourceMapURL, compiledURL, callback)
 {
-    var headers = {};
-    WebInspector.NetworkManager.loadResourceForFrontend(sourceMapURL, headers, contentLoaded);
+    var parsedURL = new WebInspector.ParsedURL(sourceMapURL);
+    if (parsedURL.isDataURL()) {
+        var xhr = new XMLHttpRequest();
+        xhr.open("GET", sourceMapURL, false);
+        xhr.send(null);
+        contentLoaded(xhr.status, {}, xhr.responseText);
+        return;
+    }
+    WebInspector.NetworkManager.loadResourceForFrontend(sourceMapURL, null, contentLoaded);
 
     /**
-     * @param {?Protocol.Error} error
      * @param {number} statusCode
-     * @param {!NetworkAgent.Headers} headers
+     * @param {!Object.<string, string>} headers
      * @param {string} content
      */
-    function contentLoaded(error, statusCode, headers, content)
+    function contentLoaded(statusCode, headers, content)
     {
-        if (error || !content || statusCode >= 400) {
+        if (!content || statusCode >= 400) {
             callback(null);
             return;
         }

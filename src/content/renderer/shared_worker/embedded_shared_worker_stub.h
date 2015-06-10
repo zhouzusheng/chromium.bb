@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_RENDERER_SHARED_WORKER_EMBEDDED_SHARED_WORKER_STUB_H
-#define CONTENT_RENDERER_SHARED_WORKER_EMBEDDED_SHARED_WORKER_STUB_H
+#ifndef CONTENT_RENDERER_SHARED_WORKER_EMBEDDED_SHARED_WORKER_STUB_H_
+#define CONTENT_RENDERER_SHARED_WORKER_EMBEDDED_SHARED_WORKER_STUB_H_
 
 #include <vector>
 
@@ -22,7 +22,7 @@ class WebMessagePortChannel;
 class WebNotificationPresenter;
 class WebSecurityOrigin;
 class WebSharedWorker;
-class WebWorkerPermissionClientProxy;
+class WebWorkerContentSettingsClientProxy;
 }
 
 namespace content {
@@ -55,8 +55,8 @@ class EmbeddedSharedWorkerStub : public IPC::Listener,
   virtual blink::WebNotificationPresenter* notificationPresenter() override;
   virtual blink::WebApplicationCacheHost* createApplicationCacheHost(
       blink::WebApplicationCacheHostClient*) override;
-  virtual blink::WebWorkerPermissionClientProxy*
-      createWorkerPermissionClientProxy(
+  virtual blink::WebWorkerContentSettingsClientProxy*
+      createWorkerContentSettingsClientProxy(
           const blink::WebSecurityOrigin& origin) override;
   virtual blink::WebServiceWorkerNetworkProvider*
       createServiceWorkerNetworkProvider(blink::WebDataSource*) override;
@@ -94,4 +94,4 @@ class EmbeddedSharedWorkerStub : public IPC::Listener,
 
 }  // namespace content
 
-#endif  // CONTENT_RENDERER_SHARED_WORKER_EMBEDDED_SHARED_WORKER_STUB_H
+#endif  // CONTENT_RENDERER_SHARED_WORKER_EMBEDDED_SHARED_WORKER_STUB_H_

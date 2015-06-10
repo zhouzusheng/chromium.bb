@@ -35,7 +35,7 @@
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
-#include "core/layout/style/LayoutStyle.h"
+#include "core/style/ComputedStyle.h"
 #include "core/layout/svg/LayoutSVGRoot.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/page/Chrome.h"
@@ -52,11 +52,11 @@
 #include "platform/LengthFunctions.h"
 #include "platform/TraceEvent.h"
 #include "platform/geometry/IntRect.h"
-#include "platform/graphics/GraphicsContextStateSaver.h"
+#include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/ImageBuffer.h"
 #include "platform/graphics/ImageObserver.h"
 #include "platform/graphics/paint/ClipRecorder.h"
-#include "platform/graphics/paint/DisplayItemList.h"
+#include "platform/graphics/paint/DisplayItemListContextRecorder.h"
 #include "third_party/skia/include/core/SkPicture.h"
 #include "wtf/PassRefPtr.h"
 
@@ -143,7 +143,7 @@ void SVGImage::setContainerSize(const IntSize& size)
     FrameView* view = frameView();
     view->resize(this->containerSize());
 
-    LayoutSVGRoot* renderer = toLayoutSVGRoot(rootElement->renderer());
+    LayoutSVGRoot* renderer = toLayoutSVGRoot(rootElement->layoutObject());
     if (!renderer)
         return;
     renderer->setContainerSize(size);
@@ -155,7 +155,7 @@ IntSize SVGImage::containerSize() const
     if (!rootElement)
         return IntSize();
 
-    LayoutSVGRoot* renderer = toLayoutSVGRoot(rootElement->renderer());
+    LayoutSVGRoot* renderer = toLayoutSVGRoot(rootElement->layoutObject());
     if (!renderer)
         return IntSize();
 
@@ -177,6 +177,13 @@ IntSize SVGImage::containerSize() const
         else if (intrinsicSize.width() && !intrinsicSize.height())
             intrinsicSize.setHeight(intrinsicSize.width() / intrinsicRatio);
     }
+
+    // TODO(davve): In order to maintain aspect ratio the intrinsic
+    // size is faked from the viewBox as a last resort. This may cause
+    // unwanted side effects. Preferably we should be able to signal
+    // the intrinsic ratio in another way.
+    if (intrinsicSize.isEmpty())
+        intrinsicSize = rootElement->currentViewBoxRect().size();
 
     if (!intrinsicSize.isEmpty())
         return expandedIntSize(intrinsicSize);
@@ -208,18 +215,19 @@ void SVGImage::drawForContainer(GraphicsContext* context, const FloatSize contai
     draw(context, dstRect, scaledSrc, compositeOp, DoNotRespectImageOrientation);
 }
 
-PassRefPtr<NativeImageSkia> SVGImage::nativeImageForCurrentFrame()
+bool SVGImage::bitmapForCurrentFrame(SkBitmap* bitmap)
 {
     if (!m_page)
-        return nullptr;
+        return false;
 
     OwnPtr<ImageBuffer> buffer = ImageBuffer::create(size());
     if (!buffer)
-        return nullptr;
+        return false;
 
     drawForContainer(buffer->context(), size(), 1, rect(), rect(), SkXfermode::kSrcOver_Mode);
 
-    return NativeImageSkia::create(buffer->bitmap());
+    *bitmap = buffer->bitmap();
+    return true;
 }
 
 void SVGImage::drawPatternForContainer(GraphicsContext* context, const FloatSize containerSize,
@@ -243,17 +251,16 @@ void SVGImage::drawPatternForContainer(GraphicsContext* context, const FloatSize
     // for example must be applied atomically during the final fill/composite phase).
     GraphicsContext recordingContext(nullptr, displayItemList.get());
     recordingContext.beginRecording(spacedTile);
-
     {
         // When generating an expanded tile, make sure we don't draw into the spacing area.
         OwnPtr<FloatClipRecorder> clipRecorder;
         if (tile != spacedTile)
-            clipRecorder = adoptPtr(new FloatClipRecorder(recordingContext, displayItemClient(), PaintPhaseForeground, tile));
+            clipRecorder = adoptPtr(new FloatClipRecorder(recordingContext, *this, PaintPhaseForeground, tile));
         drawForContainer(&recordingContext, containerSize, zoom, tile, srcRect, SkXfermode::kSrcOver_Mode);
     }
 
     if (displayItemList)
-        displayItemList->replay(&recordingContext);
+        displayItemList->commitNewDisplayItemsAndReplay(recordingContext);
 
     RefPtr<const SkPicture> tilePicture = recordingContext.endRecording();
 
@@ -277,19 +284,29 @@ void SVGImage::draw(GraphicsContext* context, const FloatRect& dstRect, const Fl
 
     float opacity = context->getNormalizedAlpha() / 255.f;
 
-    OwnPtr<DisplayItemList> displayItemList;
-    if (RuntimeEnabledFeatures::slimmingPaintEnabled())
-        displayItemList = DisplayItemList::create();
-    GraphicsContext recordingContext(nullptr, displayItemList.get());
+    // TODO(fmalita): this recorder is only needed because CompositingRecorder below appears to be
+    // dropping the current color filter on the floor. Find a proper fix and get rid of it.
+    GraphicsContext recordingContext(nullptr, nullptr);
     recordingContext.beginRecording(dstRect);
 
+
+    FrameView* view = frameView();
+    view->resize(containerSize());
+
+    // Always call scrollToFragment, even if the url is empty, because
+    // there may have been a previous url/fragment that needs to be reset.
+    view->scrollToFragment(m_url);
+
     {
-        ClipRecorder clipRecorder(displayItemClient(), &recordingContext, DisplayItem::ClipNodeImage, enclosingIntRect(dstRect));
+        DisplayItemListContextRecorder contextRecorder(recordingContext);
+        GraphicsContext& paintContext = contextRecorder.context();
+
+        ClipRecorder clipRecorder(paintContext, *this, DisplayItem::ClipNodeImage, LayoutRect(enclosingIntRect(dstRect)));
 
         bool hasCompositing = compositeOp != SkXfermode::kSrcOver_Mode;
         OwnPtr<CompositingRecorder> compositingRecorder;
         if (hasCompositing || opacity < 1)
-            compositingRecorder = adoptPtr(new CompositingRecorder(&recordingContext, displayItemClient(), compositeOperatorFromSkia(compositeOp), blendModeFromSkia(compositeOp), opacity));
+            compositingRecorder = adoptPtr(new CompositingRecorder(paintContext, *this, compositeOp, opacity));
 
         // We can only draw the entire frame, clipped to the rect we want. So compute where the top left
         // of the image would be if we were drawing without clipping, and translate accordingly.
@@ -298,22 +315,12 @@ void SVGImage::draw(GraphicsContext* context, const FloatRect& dstRect, const Fl
         FloatPoint destOffset = dstRect.location() - topLeftOffset;
         AffineTransform transform = AffineTransform::translation(destOffset.x(), destOffset.y());
         transform.scale(scale.width(), scale.height());
-        TransformRecorder transformRecorder(recordingContext, displayItemClient(), transform);
-
-        FrameView* view = frameView();
-        view->resize(containerSize());
-
-        // Always call scrollToFragment, even if the url is empty, because
-        // there may have been a previous url/fragment that needs to be reset.
-        view->scrollToFragment(m_url);
+        TransformRecorder transformRecorder(paintContext, *this, transform);
 
         view->updateLayoutAndStyleForPainting();
-        view->paint(&recordingContext, enclosingIntRect(srcRect));
+        view->paint(&paintContext, enclosingIntRect(srcRect));
         ASSERT(!view->needsLayout());
     }
-
-    if (displayItemList)
-        displayItemList->replay(&recordingContext);
     RefPtr<const SkPicture> recording = recordingContext.endRecording();
     context->drawPicture(recording.get());
 
@@ -326,12 +333,12 @@ void SVGImage::draw(GraphicsContext* context, const FloatRect& dstRect, const Fl
     startAnimation();
 }
 
-RenderBox* SVGImage::embeddedContentBox() const
+LayoutBox* SVGImage::embeddedContentBox() const
 {
     SVGSVGElement* rootElement = svgRootElement(m_page.get());
     if (!rootElement)
         return 0;
-    return toRenderBox(rootElement->renderer());
+    return toLayoutBox(rootElement->layoutObject());
 }
 
 FrameView* SVGImage::frameView() const

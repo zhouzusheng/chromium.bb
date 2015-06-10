@@ -32,6 +32,7 @@
 #ifndef FrameLoader_h
 #define FrameLoader_h
 
+#include "core/CoreExport.h"
 #include "core/dom/IconURL.h"
 #include "core/dom/SandboxFlags.h"
 #include "core/dom/SecurityContext.h"
@@ -40,19 +41,16 @@
 #include "core/loader/FrameLoaderStateMachine.h"
 #include "core/loader/FrameLoaderTypes.h"
 #include "core/loader/HistoryItem.h"
-#include "core/loader/MixedContentChecker.h"
 #include "core/loader/NavigationPolicy.h"
 #include "platform/Timer.h"
 #include "platform/heap/Handle.h"
 #include "platform/network/ResourceRequest.h"
 #include "wtf/Forward.h"
 #include "wtf/HashSet.h"
-#include "wtf/OwnPtr.h"
 
 namespace blink {
 
 class DocumentLoader;
-class FetchContext;
 class Frame;
 class FrameLoaderClient;
 class ProgressTracker;
@@ -64,7 +62,7 @@ struct FrameLoadRequest;
 
 bool isBackForwardLoadType(FrameLoadType);
 
-class FrameLoader final {
+class CORE_EXPORT FrameLoader final {
     WTF_MAKE_NONCOPYABLE(FrameLoader);
     DISALLOW_ALLOCATION();
 public:
@@ -108,7 +106,6 @@ public:
     DocumentLoader* documentLoader() const { return m_documentLoader.get(); }
     DocumentLoader* policyDocumentLoader() const { return m_policyDocumentLoader.get(); }
     DocumentLoader* provisionalDocumentLoader() const { return m_provisionalDocumentLoader.get(); }
-    FetchContext& fetchContext() const { return *m_fetchContext; }
 
     void receivedMainResourceError(DocumentLoader*, const ResourceError&);
 
@@ -144,7 +141,8 @@ public:
 
     bool shouldEnforceStrictMixedContentChecking() const;
 
-    SecurityContext::InsecureContentPolicy insecureContentPolicy() const;
+    SecurityContext::InsecureRequestsPolicy insecureRequestsPolicy() const;
+    SecurityContext::InsecureNavigationsSet* insecureNavigationsToUpgrade() const;
 
     Frame* opener();
     void setOpener(LocalFrame*);
@@ -178,7 +176,7 @@ public:
 
     void restoreScrollPositionAndViewState();
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     void checkTimerFired(Timer<FrameLoader>*);
@@ -223,7 +221,6 @@ private:
     RefPtr<DocumentLoader> m_documentLoader;
     RefPtr<DocumentLoader> m_provisionalDocumentLoader;
     RefPtr<DocumentLoader> m_policyDocumentLoader;
-    OwnPtrWillBeMember<FetchContext> m_fetchContext;
 
     RefPtrWillBeMember<HistoryItem> m_currentItem;
     RefPtrWillBeMember<HistoryItem> m_provisionalItem;
@@ -242,7 +239,7 @@ private:
 
         bool isValid() { return m_item; }
 
-        void trace(Visitor* visitor)
+        DEFINE_INLINE_TRACE()
         {
             visitor->trace(m_item);
         }

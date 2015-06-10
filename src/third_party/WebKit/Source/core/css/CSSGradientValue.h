@@ -69,7 +69,7 @@ public:
         return !m_color;
     }
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 };
 
 } // namespace blink
@@ -96,8 +96,6 @@ public:
 
     void appendCSSTextForDeprecatedColorStops(StringBuilder&) const;
 
-    void sortStopsIfNeeded();
-
     bool isRepeating() const { return m_repeating; }
 
     CSSGradientType gradientType() const { return m_gradientType; }
@@ -108,9 +106,9 @@ public:
     bool isPending() const { return false; }
     bool knownToBeOpaque(const LayoutObject*) const;
 
-    void loadSubimages(ResourceFetcher*) { }
+    void loadSubimages(Document*) { }
 
-    void traceAfterDispatch(Visitor*);
+    DECLARE_TRACE_AFTER_DISPATCH();
 
 protected:
     CSSGradientValue(ClassType classType, CSSGradientRepeat repeat, CSSGradientType gradientType)
@@ -134,7 +132,8 @@ protected:
     {
     }
 
-    void addStops(Gradient*, const CSSToLengthConversionData&, float maxLengthForRepeat, const LayoutObject&);
+    void addStops(Gradient*, const CSSToLengthConversionData&, const LayoutObject&);
+    void addDeprecatedStops(Gradient*, const LayoutObject&);
 
     // Resolve points/radii to front end values.
     FloatPoint computeEndPoint(CSSPrimitiveValue*, CSSPrimitiveValue*, const CSSToLengthConversionData&, const IntSize&);
@@ -157,7 +156,7 @@ protected:
 
 DEFINE_CSS_VALUE_TYPE_CASTS(CSSGradientValue, isGradientValue());
 
-class CSSLinearGradientValue : public CSSGradientValue {
+class CSSLinearGradientValue final : public CSSGradientValue {
 public:
 
     static PassRefPtrWillBeRawPtr<CSSLinearGradientValue> create(CSSGradientRepeat repeat, CSSGradientType gradientType = CSSLinearGradient)
@@ -179,7 +178,7 @@ public:
 
     bool equals(const CSSLinearGradientValue&) const;
 
-    void traceAfterDispatch(Visitor*);
+    DECLARE_TRACE_AFTER_DISPATCH();
 
 private:
     CSSLinearGradientValue(CSSGradientRepeat repeat, CSSGradientType gradientType = CSSLinearGradient)
@@ -198,7 +197,7 @@ private:
 
 DEFINE_CSS_VALUE_TYPE_CASTS(CSSLinearGradientValue, isLinearGradientValue());
 
-class CSSRadialGradientValue : public CSSGradientValue {
+class CSSRadialGradientValue final : public CSSGradientValue {
 public:
     static PassRefPtrWillBeRawPtr<CSSRadialGradientValue> create(CSSGradientRepeat repeat, CSSGradientType gradientType = CSSRadialGradient)
     {
@@ -226,7 +225,7 @@ public:
 
     bool equals(const CSSRadialGradientValue&) const;
 
-    void traceAfterDispatch(Visitor*);
+    DECLARE_TRACE_AFTER_DISPATCH();
 
 private:
     CSSRadialGradientValue(CSSGradientRepeat repeat, CSSGradientType gradientType = CSSRadialGradient)

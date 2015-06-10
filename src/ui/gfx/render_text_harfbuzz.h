@@ -70,6 +70,8 @@ struct GFX_EXPORT TextRunHarfBuzz {
   skia::RefPtr<SkTypeface> skia_face;
   FontRenderParams render_params;
   int font_size;
+  int baseline_offset;
+  int baseline_type;
   int font_style;
   bool strike;
   bool diagonal_strike;
@@ -135,6 +137,7 @@ class GFX_EXPORT RenderTextHarfBuzz : public RenderText {
 
   // RenderText:
   scoped_ptr<RenderText> CreateInstanceOfSameType() const override;
+  bool MultilineSupported() const override;
   const base::string16& GetDisplayText() override;
   Size GetStringSize() override;
   SizeF GetStringSizeF() override;
@@ -164,6 +167,7 @@ class GFX_EXPORT RenderTextHarfBuzz : public RenderText {
   friend class RenderTextTest;
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Multiline_HorizontalAlignment);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Multiline_NormalWidth);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Multiline_WordWrapBehavior);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, HarfBuzz_RunDirection);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, HarfBuzz_HorizontalPositions);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest,
@@ -174,6 +178,7 @@ class GFX_EXPORT RenderTextHarfBuzz : public RenderText {
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, HarfBuzz_SubglyphGraphemePartition);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, HarfBuzz_NonExistentFont);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, HarfBuzz_UniscribeFallback);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, HarfBuzz_UnicodeFallback);
 
   // Specify the width of a glyph for test. The width of glyphs is very
   // platform-dependent and environment-dependent. Otherwise multiline test
@@ -233,12 +238,6 @@ class GFX_EXPORT RenderTextHarfBuzz : public RenderText {
 
   // ICU grapheme iterator for the layout text. Can be NULL in case of an error.
   base::i18n::BreakIterator* GetGraphemeIterator();
-
-  // Convert an index in |text_| to the index in |given_text|. The
-  // |given_text| should be either |display_text_| or |layout_text_|
-  // depending on the elide state.
-  size_t TextIndexToGivenTextIndex(const base::string16& given_text,
-                                   size_t index);
 
   // Returns the current run list, |display_run_list_| if the text is
   // elided, or |layout_run_list_| otherwise.

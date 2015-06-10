@@ -38,13 +38,13 @@
 namespace blink {
 
 class PageRuleCollector;
-class StyleResolver;
 class StyleSheetContents;
+class ViewportStyleResolver;
 
-// This class selects a LayoutStyle for a given element based on a collection of stylesheets.
+// This class selects a ComputedStyle for a given element based on a collection of stylesheets.
 class ScopedStyleResolver final : public NoBaseWillBeGarbageCollected<ScopedStyleResolver> {
     WTF_MAKE_NONCOPYABLE(ScopedStyleResolver);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(ScopedStyleResolver);
 public:
     static PassOwnPtrWillBeRawPtr<ScopedStyleResolver> create(TreeScope& scope)
     {
@@ -65,9 +65,9 @@ public:
     void matchPageRules(PageRuleCollector&);
     void collectFeaturesTo(RuleFeatureSet&, HashSet<const StyleSheetContents*>& visitedSharedStyleSheetContents) const;
     void resetAuthorStyle();
-    void collectViewportRulesTo(StyleResolver*) const;
+    void collectViewportRulesTo(ViewportStyleResolver*) const;
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     explicit ScopedStyleResolver(TreeScope& scope)
@@ -98,7 +98,7 @@ private:
         unsigned m_parentIndex;
         OwnPtrWillBeMember<RuleSet> m_ruleSet;
 
-        void trace(Visitor*);
+        DECLARE_TRACE();
 
     private:
         RuleSubSet(CSSStyleSheet* sheet, unsigned index, PassOwnPtrWillBeRawPtr<RuleSet> rules)

@@ -48,6 +48,11 @@ static unsigned long long toIntegerMilliseconds(double seconds)
     return static_cast<unsigned long long>(seconds * 1000.0);
 }
 
+static double toDoubleSeconds(unsigned long long integerMilliseconds)
+{
+    return integerMilliseconds / 1000.0;
+}
+
 PerformanceTiming::PerformanceTiming(LocalFrame* frame)
     : DOMWindowProperty(frame)
 {
@@ -354,7 +359,16 @@ unsigned long long PerformanceTiming::monotonicTimeToIntegerMilliseconds(double 
     return toIntegerMilliseconds(timing->monotonicTimeToPseudoWallTime(monotonicSeconds));
 }
 
-void PerformanceTiming::trace(Visitor* visitor)
+double PerformanceTiming::integerMillisecondsToMonotonicTime(unsigned long long integerMilliseconds) const
+{
+    const DocumentLoadTiming* timing = documentLoadTiming();
+    if (!timing)
+        return 0;
+
+    return timing->pseudoWallTimeToMonotonicTime(toDoubleSeconds(integerMilliseconds));
+}
+
+DEFINE_TRACE(PerformanceTiming)
 {
     DOMWindowProperty::trace(visitor);
 }

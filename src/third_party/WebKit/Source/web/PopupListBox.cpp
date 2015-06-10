@@ -73,9 +73,7 @@ static const TimeStamp typeAheadTimeoutMs = 1000;
 
 PopupListBox::PopupListBox(PopupMenuClient* client, bool deviceSupportsTouch, PopupContainer* container)
     : m_deviceSupportsTouch(deviceSupportsTouch)
-    , m_originalIndex(0)
     , m_selectedIndex(0)
-    , m_acceptedIndexOnAbandon(-1)
     , m_visibleRows(0)
     , m_baseWidth(0)
     , m_maxHeight(defaultMaxHeight)
@@ -109,7 +107,7 @@ DEFINE_TRACE(PopupListBox)
 
 bool PopupListBox::handleMouseDownEvent(const PlatformMouseEvent& event)
 {
-    Scrollbar* scrollbar = scrollbarAtWindowPoint(event.position());
+    Scrollbar* scrollbar = scrollbarAtRootFramePoint(event.position());
     if (scrollbar) {
         m_capturingScrollbar = scrollbar;
         m_capturingScrollbar->mouseDown(event);
@@ -117,7 +115,7 @@ bool PopupListBox::handleMouseDownEvent(const PlatformMouseEvent& event)
     }
 
     if (!isPointInBounds(event.position()))
-        abandon();
+        cancel();
 
     return true;
 }
@@ -129,7 +127,7 @@ bool PopupListBox::handleMouseMoveEvent(const PlatformMouseEvent& event)
         return true;
     }
 
-    Scrollbar* scrollbar = scrollbarAtWindowPoint(event.position());
+    Scrollbar* scrollbar = scrollbarAtRootFramePoint(event.position());
     if (m_lastScrollbarUnderMouse != scrollbar) {
         // Send mouse exited to the old scrollbar.
         if (m_lastScrollbarUnderMouse)
@@ -175,7 +173,7 @@ bool PopupListBox::handleMouseReleaseEvent(const PlatformMouseEvent& event)
 bool PopupListBox::handleWheelEvent(const PlatformWheelEvent& event)
 {
     if (!isPointInBounds(event.position())) {
-        abandon();
+        cancel();
         return true;
     }
 
@@ -212,7 +210,7 @@ bool PopupListBox::handleKeyEvent(const PlatformKeyboardEvent& event)
 
     switch (event.windowsVirtualKeyCode()) {
     case VKEY_ESCAPE:
-        abandon(); // may delete this
+        cancel(); // may delete this
         return true;
     case VKEY_RETURN:
         if (m_selectedIndex == -1)  {
@@ -253,16 +251,7 @@ bool PopupListBox::handleKeyEvent(const PlatformKeyboardEvent& event)
         return true;
     }
 
-    if (m_originalIndex != m_selectedIndex) {
-        // Keyboard events should update the selection immediately (but we don't
-        // want to fire the onchange event until the popup is closed, to match
-        // IE). We change the original index so we revert to that when the
-        // popup is closed.
-        m_acceptedIndexOnAbandon = m_selectedIndex;
-
-        setOriginalIndex(m_selectedIndex);
-        m_popupClient->setTextFromItem(m_selectedIndex);
-    }
+    m_popupClient->provisionalSelectionChanged(m_selectedIndex);
     if (event.windowsVirtualKeyCode() == VKEY_TAB) {
         // TAB is a special case as it should select the current item if any and
         // advance focus.
@@ -271,8 +260,7 @@ bool PopupListBox::handleKeyEvent(const PlatformKeyboardEvent& event)
             // Return false so the TAB key event is propagated to the page.
             return false;
         }
-        // Call abandon() so we honor m_acceptedIndexOnAbandon if set.
-        abandon();
+        cancel();
         // Return false so the TAB key event is propagated to the page.
         return false;
     }
@@ -357,8 +345,8 @@ void PopupListBox::typeAheadFind(const PlatformKeyboardEvent& event)
 
 void PopupListBox::paint(GraphicsContext* gc, const IntRect& rect)
 {
-    ClipRecorder frameClip(displayItemClient(), gc, DisplayItem::ClipPopupListBoxFrame, frameRect());
-    TransformRecorder transformRecorder(*gc, displayItemClient(), AffineTransform::translation(x(), y()));
+    ClipRecorder frameClip(*gc, *this, DisplayItem::ClipPopupListBoxFrame, LayoutRect(frameRect()));
+    TransformRecorder transformRecorder(*gc, *this, AffineTransform::translation(x(), y()));
     IntRect paintRect = intersection(rect, frameRect());
     paintRect.moveBy(-location());
 
@@ -370,7 +358,7 @@ void PopupListBox::paint(GraphicsContext* gc, const IntRect& rect)
         // happens.
         if (shouldPlaceVerticalScrollbarOnLeft() && verticalScrollbar() && !verticalScrollbar()->isOverlayScrollbar())
             scrollOffset.expand(-verticalScrollbar()->width(), 0);
-        ScrollRecorder scroll(gc, displayItemClient(), PaintPhase::PaintPhaseForeground, scrollOffset);
+        ScrollRecorder scroll(*gc, *this, PaintPhase::PaintPhaseForeground, scrollOffset);
         IntRect scrolledPaintRect = paintRect;
         scrolledPaintRect.move(scrollOffset);
 
@@ -380,7 +368,7 @@ void PopupListBox::paint(GraphicsContext* gc, const IntRect& rect)
             paintRow(gc, scrolledPaintRect, i);
     } else {
         // Special case for an empty popup.
-        DrawingRecorder drawingRecorder(gc, displayItemClient(), DisplayItem::PopupListBoxBackground, boundsRect());
+        DrawingRecorder drawingRecorder(*gc, *this, DisplayItem::PopupListBoxBackground, boundsRect());
         if (!drawingRecorder.canUseCachedDrawing())
             gc->fillRect(boundsRect(), Color::white);
     }
@@ -396,13 +384,13 @@ static const int optionRowHeightForTouch = 28;
 
 void PopupListBox::paintRow(GraphicsContext* gc, const IntRect& rect, int rowIndex)
 {
-    // This code is based largely on RenderListBox::paint* methods.
+    // This code is based largely on LayoutListBox::paint* methods.
 
     IntRect rowRect = getRowBounds(rowIndex);
     if (!rowRect.intersects(rect))
         return;
 
-    DrawingRecorder drawingRecorder(gc, m_items[rowIndex]->displayItemClient(), DisplayItem::PopupListBoxRow, rowRect);
+    DrawingRecorder drawingRecorder(*gc, *m_items[rowIndex], DisplayItem::PopupListBoxRow, rowRect);
     if (drawingRecorder.canUseCachedDrawing())
         return;
 
@@ -498,19 +486,14 @@ Font PopupListBox::getRowFont(int rowIndex) const
     return itemFont;
 }
 
-void PopupListBox::abandon()
+void PopupListBox::cancel()
 {
     RefPtrWillBeRawPtr<PopupListBox> protect(this);
 
-    m_selectedIndex = m_originalIndex;
-
     hidePopup();
 
-    if (m_acceptedIndexOnAbandon >= 0) {
-        if (m_popupClient)
-            m_popupClient->valueChanged(m_acceptedIndexOnAbandon);
-        m_acceptedIndexOnAbandon = -1;
-    }
+    if (m_popupClient)
+        m_popupClient->popupDidCancel();
 }
 
 int PopupListBox::pointToRowIndex(const IntPoint& point)
@@ -532,10 +515,6 @@ int PopupListBox::pointToRowIndex(const IntPoint& point)
 
 bool PopupListBox::acceptIndex(int index)
 {
-    // Clear m_acceptedIndexOnAbandon once user accepts the selected index.
-    if (m_acceptedIndexOnAbandon >= 0)
-        m_acceptedIndexOnAbandon = -1;
-
     if (index >= numItems())
         return false;
 
@@ -577,11 +556,6 @@ void PopupListBox::selectIndex(int index)
         m_popupClient->selectionChanged(m_selectedIndex);
     } else if (!isSelectable)
         clearSelection();
-}
-
-void PopupListBox::setOriginalIndex(int index)
-{
-    m_originalIndex = m_selectedIndex = index;
 }
 
 int PopupListBox::getRowHeight(int index) const
@@ -733,8 +707,8 @@ void PopupListBox::updateFromElement()
         m_items[i]->displayNone = style.isDisplayNone();
     }
 
-    if (m_originalIndex != m_popupClient->selectedIndex() || m_selectedIndex >= static_cast<int>(m_items.size()))
-        setOriginalIndex(m_popupClient->selectedIndex());
+    if (m_selectedIndex >= static_cast<int>(m_items.size()))
+        m_selectedIndex = m_popupClient->selectedIndex();
 
     layout();
 }
@@ -912,10 +886,10 @@ void PopupListBox::setHasVerticalScrollbar(bool hasBar)
     }
 }
 
-Scrollbar* PopupListBox::scrollbarAtWindowPoint(const IntPoint& windowPoint)
+Scrollbar* PopupListBox::scrollbarAtRootFramePoint(const IntPoint& pointInRootFrame)
 {
     return m_verticalScrollbar && m_verticalScrollbar->frameRect().contains(
-        convertFromContainingWindow(windowPoint)) ? m_verticalScrollbar.get() : 0;
+        convertFromContainingWindow(pointInRootFrame)) ? m_verticalScrollbar.get() : 0;
 }
 
 IntRect PopupListBox::contentsToWindow(const IntRect& contentsRect) const

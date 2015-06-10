@@ -21,7 +21,7 @@
 #include "core/svg/SVGFEDiffuseLightingElement.h"
 
 #include "core/layout/LayoutObject.h"
-#include "core/layout/style/LayoutStyle.h"
+#include "core/style/ComputedStyle.h"
 #include "core/svg/SVGParserUtilities.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
 #include "platform/graphics/filters/FEDiffuseLighting.h"
@@ -66,17 +66,12 @@ bool SVGFEDiffuseLightingElement::isSupportedAttribute(const QualifiedName& attr
     return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
-void SVGFEDiffuseLightingElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
-{
-    parseAttributeNew(name, value);
-}
-
 bool SVGFEDiffuseLightingElement::setFilterEffectAttribute(FilterEffect* effect, const QualifiedName& attrName)
 {
     FEDiffuseLighting* diffuseLighting = static_cast<FEDiffuseLighting*>(effect);
 
     if (attrName == SVGNames::lighting_colorAttr) {
-        LayoutObject* renderer = this->renderer();
+        LayoutObject* renderer = this->layoutObject();
         ASSERT(renderer);
         ASSERT(renderer->style());
         return diffuseLighting->setLightingColor(renderer->style()->svgStyle().lightingColor());
@@ -159,7 +154,7 @@ PassRefPtrWillBeRawPtr<FilterEffect> SVGFEDiffuseLightingElement::build(SVGFilte
     if (!lightNode)
         return nullptr;
 
-    LayoutObject* renderer = this->renderer();
+    LayoutObject* renderer = this->layoutObject();
     if (!renderer)
         return nullptr;
 

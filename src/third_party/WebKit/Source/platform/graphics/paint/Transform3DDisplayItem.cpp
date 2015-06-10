@@ -11,26 +11,24 @@
 
 namespace blink {
 
-void BeginTransform3DDisplayItem::replay(GraphicsContext* context)
+void BeginTransform3DDisplayItem::replay(GraphicsContext& context)
 {
-    context->save();
-    context->concatCTM(m_transform.toAffineTransform());
+    context.save();
+    context.concatCTM(m_transform.toAffineTransform());
 }
 
 void BeginTransform3DDisplayItem::appendToWebDisplayItemList(WebDisplayItemList* list) const
 {
-    // TODO: convert to SkMatrix44 in a BeginTransform3DItem
-    list->appendTransformItem(affineTransformToSkMatrix(m_transform.toAffineTransform()));
+    list->appendTransformItem(TransformationMatrix::toSkMatrix44(m_transform));
 }
 
-void EndTransform3DDisplayItem::replay(GraphicsContext* context)
+void EndTransform3DDisplayItem::replay(GraphicsContext& context)
 {
-    context->restore();
+    context.restore();
 }
 
 void EndTransform3DDisplayItem::appendToWebDisplayItemList(WebDisplayItemList* list) const
 {
-    // TODO: convert to End3DTransformItem
     list->appendEndTransformItem();
 }
 

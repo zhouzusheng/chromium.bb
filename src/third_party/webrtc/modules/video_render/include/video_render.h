@@ -52,8 +52,8 @@ public:
      */
     static void DestroyVideoRender(VideoRender* module);
 
-    virtual int64_t TimeUntilNextProcess() OVERRIDE = 0;
-    virtual int32_t Process() OVERRIDE = 0;
+    int64_t TimeUntilNextProcess() override = 0;
+    int32_t Process() override = 0;
 
     /**************************************************************************
      *
@@ -155,13 +155,6 @@ public:
     virtual int32_t
             RegisterRawFrameCallback(const uint32_t streamId,
                                      VideoRenderCallback* callbackObj) = 0;
-
-    /*
-     * This method is usefull to get last rendered frame for the stream specified
-     */
-    virtual int32_t
-            GetLastRenderedFrame(const uint32_t streamId,
-                                 I420VideoFrame &frame) const = 0;
 
     /**************************************************************************
      *

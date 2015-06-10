@@ -37,6 +37,7 @@
 #include "core/animation/css/CSSAnimatableValueFactory.h"
 #include "core/animation/css/CSSPropertyEquality.h"
 #include "core/css/resolver/StyleResolver.h"
+#include "core/dom/Document.h"
 #include "platform/animation/AnimationUtilities.h"
 #include "platform/geometry/FloatBox.h"
 #include "platform/transforms/TransformationMatrix.h"
@@ -54,6 +55,14 @@ PropertySet KeyframeEffectModelBase::properties() const
     return result;
 }
 
+void KeyframeEffectModelBase::setFrames(KeyframeVector& keyframes)
+{
+    // TODO(samli): Should also notify/invalidate the player
+    m_keyframes = keyframes;
+    m_keyframeGroups = nullptr;
+    m_interpolationEffect = nullptr;
+}
+
 void KeyframeEffectModelBase::sample(int iteration, double fraction, double iterationDuration, OwnPtrWillBeRawPtr<WillBeHeapVector<RefPtrWillBeMember<Interpolation>>>& result) const
 {
     ASSERT(iteration >= 0);
@@ -64,45 +73,43 @@ void KeyframeEffectModelBase::sample(int iteration, double fraction, double iter
     return m_interpolationEffect->getActiveInterpolations(fraction, iterationDuration, result);
 }
 
-void KeyframeEffectModelBase::snapshotCompositableProperties(const Element* element, const LayoutStyle& style)
+void KeyframeEffectModelBase::forceConversionsToAnimatableValues(Element& element, const ComputedStyle* baseStyle)
 {
-    ASSERT(isStringKeyframeEffectModel());
+    ensureKeyframeGroups();
+    snapshotCompositableProperties(element, baseStyle);
+    ensureInterpolationEffect(&element, baseStyle);
+}
 
+void KeyframeEffectModelBase::snapshotCompositableProperties(Element& element, const ComputedStyle* baseStyle)
+{
     ensureKeyframeGroups();
     for (CSSPropertyID property : CompositorAnimations::CompositableProperties) {
-        if (affects(property)) {
-            for (auto& keyframe : m_keyframeGroups->get(property)->m_keyframes) {
-                auto& stringKeyframe = toStringPropertySpecificKeyframe(*keyframe);
-                if (!stringKeyframe.value()) {
-                    stringKeyframe.setAnimatableValue(CSSAnimatableValueFactory::create(property, style));
-                } else {
-                    ASSERT(!stringKeyframe.getAnimatableValue());
-                    stringKeyframe.setAnimatableValue(StyleResolver::createAnimatableValueSnapshot(const_cast<Element&>(*element), property, *stringKeyframe.value()));
-                }
-            }
-        }
+        if (!affects(property))
+            continue;
+        for (auto& keyframe : m_keyframeGroups->get(property)->m_keyframes)
+            keyframe->populateAnimatableValue(property, element, baseStyle);
     }
 }
 
-void KeyframeEffectModelBase::updateNeutralKeyframeAnimatableValues(CSSPropertyID property, PassRefPtrWillBeRawPtr<AnimatableValue> value)
+bool KeyframeEffectModelBase::updateNeutralKeyframeAnimatableValues(CSSPropertyID property, PassRefPtrWillBeRawPtr<AnimatableValue> value)
 {
     ASSERT(CompositorAnimations::isCompositableProperty(property));
 
     if (!value)
-        return;
+        return false;
 
     ensureKeyframeGroups();
     auto& keyframes = m_keyframeGroups->get(property)->m_keyframes;
-
     ASSERT(keyframes.size() >= 2);
-    ASSERT(!toStringPropertySpecificKeyframe(*keyframes[0]).value() || !toStringPropertySpecificKeyframe(*keyframes[keyframes.size() - 1]).value());
 
-    if (!toStringPropertySpecificKeyframe(*keyframes.first()).value())
-        toStringPropertySpecificKeyframe(*keyframes.first()).setAnimatableValue(value);
-    if (!toStringPropertySpecificKeyframe(*keyframes.last()).value())
-        toStringPropertySpecificKeyframe(*keyframes.last()).setAnimatableValue(value);
+    auto& first = toStringPropertySpecificKeyframe(*keyframes.first());
+    auto& last = toStringPropertySpecificKeyframe(*keyframes.last());
 
-    // FIXME: Handle neutral keyframes that are not at 0% or 100%.
+    if (!first.value())
+        first.setAnimatableValue(value);
+    if (!last.value())
+        last.setAnimatableValue(value);
+    return !first.value() || !last.value();
 }
 
 KeyframeEffectModelBase::KeyframeVector KeyframeEffectModelBase::normalizedKeyframes(const KeyframeVector& keyframes)
@@ -177,7 +184,7 @@ void KeyframeEffectModelBase::ensureKeyframeGroups() const
     }
 }
 
-void KeyframeEffectModelBase::ensureInterpolationEffect(Element* element) const
+void KeyframeEffectModelBase::ensureInterpolationEffect(Element* element, const ComputedStyle* baseStyle) const
 {
     if (m_interpolationEffect)
         return;
@@ -191,7 +198,7 @@ void KeyframeEffectModelBase::ensureInterpolationEffect(Element* element) const
             if (applyTo == 1)
                 applyTo = std::numeric_limits<double>::infinity();
 
-            m_interpolationEffect->addInterpolationsFromKeyframes(entry.key, element, *keyframes[i], *keyframes[i + 1], applyFrom, applyTo);
+            m_interpolationEffect->addInterpolationsFromKeyframes(entry.key, element, baseStyle, *keyframes[i], *keyframes[i + 1], applyFrom, applyTo);
         }
     }
 }
@@ -208,7 +215,7 @@ bool KeyframeEffectModelBase::isReplaceOnly()
     return true;
 }
 
-void KeyframeEffectModelBase::trace(Visitor* visitor)
+DEFINE_TRACE(KeyframeEffectModelBase)
 {
     visitor->trace(m_keyframes);
 #if ENABLE(OILPAN)
@@ -268,7 +275,7 @@ bool KeyframeEffectModelBase::PropertySpecificKeyframeGroup::addSyntheticKeyfram
     return addedSyntheticKeyframe;
 }
 
-void KeyframeEffectModelBase::PropertySpecificKeyframeGroup::trace(Visitor* visitor)
+DEFINE_TRACE(KeyframeEffectModelBase::PropertySpecificKeyframeGroup)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_keyframes);

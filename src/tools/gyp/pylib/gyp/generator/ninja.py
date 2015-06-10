@@ -62,17 +62,7 @@ generator_additional_path_sections = []
 generator_extra_sources_for_rules = []
 generator_filelist_paths = None
 
-# TODO: figure out how to not build extra host objects in the non-cross-compile
-# case when this is enabled, and enable unconditionally.
-generator_supports_multiple_toolsets = (
-  os.environ.get('GYP_CROSSCOMPILE') or
-  os.environ.get('AR_host') or
-  os.environ.get('CC_host') or
-  os.environ.get('CXX_host') or
-  os.environ.get('AR_target') or
-  os.environ.get('CC_target') or
-  os.environ.get('CXX_target'))
-
+generator_supports_multiple_toolsets = gyp.common.CrossCompileRequested()
 
 def StripPrefix(arg, prefix):
   if arg.startswith(prefix):
@@ -340,6 +330,9 @@ class NinjaWriter(object):
       obj += '.' + self.toolset
 
     path_dir, path_basename = os.path.split(path)
+    assert not os.path.isabs(path_dir), (
+        "'%s' can not be absolute path (see crbug.com/462153)." % path_dir)
+
     if qualified:
       path_basename = self.name + '.' + path_basename
     return os.path.normpath(os.path.join(obj, self.base_dir, path_dir,
@@ -773,8 +766,10 @@ class NinjaWriter(object):
         self.xcode_settings, map(self.GypPathToNinja, resources)):
       output = self.ExpandSpecial(output)
       if os.path.splitext(output)[-1] != '.xcassets':
+        isBinary = self.xcode_settings.IsBinaryOutputFormat(self.config_name)
         self.ninja.build(output, 'mac_tool', res,
-                         variables=[('mactool_cmd', 'copy-bundle-resource')])
+                         variables=[('mactool_cmd', 'copy-bundle-resource'), \
+                                    ('binary', isBinary)])
         bundle_depends.append(output)
       else:
         xcassets.append(res)
@@ -854,8 +849,10 @@ class NinjaWriter(object):
 
     keys = self.xcode_settings.GetExtraPlistItems(self.config_name)
     keys = QuoteShellArgument(json.dumps(keys), self.flavor)
+    isBinary = self.xcode_settings.IsBinaryOutputFormat(self.config_name)
     self.ninja.build(out, 'copy_infoplist', info_plist,
-                     variables=[('env', env), ('keys', keys)])
+                     variables=[('env', env), ('keys', keys),
+                                ('binary', isBinary)])
     bundle_depends.append(out)
 
   def WriteSources(self, ninja_file, config_name, config, sources, predepends,
@@ -2203,7 +2200,7 @@ def GenerateOutputForConfig(target_list, target_dicts, data, params,
     master_ninja.rule(
       'copy_infoplist',
       description='COPY INFOPLIST $in',
-      command='$env ./gyp-mac-tool copy-info-plist $in $out $keys')
+      command='$env ./gyp-mac-tool copy-info-plist $in $out $binary $keys')
     master_ninja.rule(
       'merge_infoplist',
       description='MERGE INFOPLISTS $in',
@@ -2215,7 +2212,7 @@ def GenerateOutputForConfig(target_list, target_dicts, data, params,
     master_ninja.rule(
       'mac_tool',
       description='MACTOOL $mactool_cmd $in',
-      command='$env ./gyp-mac-tool $mactool_cmd $in $out')
+      command='$env ./gyp-mac-tool $mactool_cmd $in $out $binary')
     master_ninja.rule(
       'package_framework',
       description='PACKAGE FRAMEWORK $out, POSTBUILDS',

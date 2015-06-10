@@ -38,10 +38,10 @@ namespace content {
 class ServiceWorkerContextCore;
 class ServiceWorkerDiskCache;
 class ServiceWorkerRegistration;
-class ServiceWorkerRegistrationInfo;
 class ServiceWorkerResponseMetadataWriter;
 class ServiceWorkerResponseReader;
 class ServiceWorkerResponseWriter;
+struct ServiceWorkerRegistrationInfo;
 
 // This class provides an interface to store and retrieve ServiceWorker
 // registration data.
@@ -294,6 +294,8 @@ class CONTENT_EXPORT ServiceWorkerStorage
   base::FilePath GetDatabasePath();
   base::FilePath GetDiskCachePath();
 
+  // Loads the registration data from backend storage. This must be called
+  // before any method that requires registration data.
   bool LazyInitialize(
       const base::Closure& callback);
   void DidReadInitialData(

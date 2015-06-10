@@ -36,7 +36,7 @@
 #include "content/renderer/render_thread_impl.h"
 #include "content/renderer/render_view_impl.h"
 #include "jingle/glue/thread_wrapper.h"
-#include "media/filters/gpu_video_accelerator_factories.h"
+#include "media/renderers/gpu_video_accelerator_factories.h"
 #include "third_party/WebKit/public/platform/WebMediaConstraints.h"
 #include "third_party/WebKit/public/platform/WebMediaStream.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
@@ -119,10 +119,12 @@ class P2PPortAllocatorFactory : public webrtc::PortAllocatorFactoryInterface {
   P2PPortAllocatorFactory(P2PSocketDispatcher* socket_dispatcher,
                           rtc::NetworkManager* network_manager,
                           rtc::PacketSocketFactory* socket_factory,
+                          const GURL& origin,
                           bool enable_multiple_routes)
       : socket_dispatcher_(socket_dispatcher),
         network_manager_(network_manager),
         socket_factory_(socket_factory),
+        origin_(origin),
         enable_multiple_routes_(enable_multiple_routes) {}
 
   cricket::PortAllocator* CreatePortAllocator(
@@ -152,7 +154,8 @@ class P2PPortAllocatorFactory : public webrtc::PortAllocatorFactoryInterface {
     config.enable_multiple_routes = enable_multiple_routes_;
 
     return new P2PPortAllocator(
-        socket_dispatcher_.get(), network_manager_, socket_factory_, config);
+        socket_dispatcher_.get(), network_manager_,
+        socket_factory_, config, origin_);
   }
 
  protected:
@@ -164,7 +167,9 @@ class P2PPortAllocatorFactory : public webrtc::PortAllocatorFactoryInterface {
   // PeerConnectionDependencyFactory.
   rtc::NetworkManager* network_manager_;
   rtc::PacketSocketFactory* socket_factory_;
-
+  // The origin URL of the WebFrame that created the
+  // P2PPortAllocatorFactory.
+  GURL origin_;
   // When false, only 'any' address (all 0s) will be bound for address
   // discovery.
   bool enable_multiple_routes_;
@@ -197,7 +202,7 @@ PeerConnectionDependencyFactory::CreateRTCPeerConnectionHandler(
 }
 
 bool PeerConnectionDependencyFactory::InitializeMediaStreamAudioSource(
-    int render_view_id,
+    int render_frame_id,
     const blink::WebMediaConstraints& audio_constraints,
     MediaStreamAudioSource* source_data) {
   DVLOG(1) << "InitializeMediaStreamAudioSources()";
@@ -213,9 +218,8 @@ bool PeerConnectionDependencyFactory::InitializeMediaStreamAudioSource(
   HarmonizeConstraintsAndEffects(&constraints,
                                  &device_info.device.input.effects);
 
-  scoped_refptr<WebRtcAudioCapturer> capturer(
-      CreateAudioCapturer(render_view_id, device_info, audio_constraints,
-                          source_data));
+  scoped_refptr<WebRtcAudioCapturer> capturer(CreateAudioCapturer(
+      render_frame_id, device_info, audio_constraints, source_data));
   if (!capturer.get()) {
     const std::string log_string =
         "PCDF::InitializeMediaStreamAudioSource: fails to create capturer";
@@ -415,6 +419,7 @@ PeerConnectionDependencyFactory::CreatePeerConnection(
   scoped_refptr<P2PPortAllocatorFactory> pa_factory =
       new rtc::RefCountedObject<P2PPortAllocatorFactory>(
           p2p_socket_dispatcher_.get(), network_manager_, socket_factory_.get(),
+          GURL(web_frame->document().url().spec()).GetOrigin(),
           enable_multiple_routes);
 
   PeerConnectionIdentityService* identity_service =
@@ -499,7 +504,7 @@ PeerConnectionDependencyFactory::CreateWebAudioSource(
   DVLOG(1) << "PeerConnectionDependencyFactory::CreateWebAudioSource()";
 
   scoped_refptr<WebAudioCapturerSource>
-      webaudio_capturer_source(new WebAudioCapturerSource());
+      webaudio_capturer_source(new WebAudioCapturerSource(*source));
   MediaStreamAudioSource* source_data = new MediaStreamAudioSource();
 
   // Use the current default capturer for the WebAudio track so that the
@@ -610,20 +615,19 @@ void PeerConnectionDependencyFactory::CleanupPeerConnectionFactory() {
 
 scoped_refptr<WebRtcAudioCapturer>
 PeerConnectionDependencyFactory::CreateAudioCapturer(
-    int render_view_id,
+    int render_frame_id,
     const StreamDeviceInfo& device_info,
     const blink::WebMediaConstraints& constraints,
     MediaStreamAudioSource* audio_source) {
   // TODO(xians): Handle the cases when gUM is called without a proper render
   // view, for example, by an extension.
-  DCHECK_GE(render_view_id, 0);
+  DCHECK_GE(render_frame_id, 0);
 
   EnsureWebRtcAudioDeviceImpl();
   DCHECK(GetWebRtcAudioDevice());
-  return WebRtcAudioCapturer::CreateCapturer(render_view_id, device_info,
-                                             constraints,
-                                             GetWebRtcAudioDevice(),
-                                             audio_source);
+  return WebRtcAudioCapturer::CreateCapturer(
+      render_frame_id, device_info, constraints, GetWebRtcAudioDevice(),
+      audio_source);
 }
 
 scoped_refptr<base::MessageLoopProxy>

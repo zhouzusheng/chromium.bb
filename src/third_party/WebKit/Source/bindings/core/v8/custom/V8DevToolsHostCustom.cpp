@@ -38,7 +38,6 @@
 #include "core/dom/Document.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/inspector/DevToolsHost.h"
-#include "core/inspector/InspectorController.h"
 #include "core/inspector/InspectorFrontendClient.h"
 #include "platform/ContextMenu.h"
 #include "public/platform/Platform.h"
@@ -93,9 +92,9 @@ static bool populateContextMenuItems(const v8::Local<v8::Array>& itemArray, Cont
             TOSTRING_DEFAULT(V8StringResource<TreatNullAsNullString>, labelString, label, false);
             ContextMenuItem menuItem((typeString == "checkbox" ? CheckableActionType : ActionType), typedId, labelString, String());
             if (checked->IsBoolean())
-                menuItem.setChecked(checked->ToBoolean(isolate)->Value());
+                menuItem.setChecked(checked.As<v8::Boolean>()->Value());
             if (enabled->IsBoolean())
-                menuItem.setEnabled(enabled->ToBoolean(isolate)->Value());
+                menuItem.setEnabled(enabled.As<v8::Boolean>()->Value());
             menu.appendItem(menuItem);
         }
     }
@@ -132,8 +131,8 @@ void V8DevToolsHost::showContextMenuAtPointMethodCustom(const v8::FunctionCallba
 
     ExceptionState exceptionState(ExceptionState::ExecutionContext, "showContextMenuAtPoint", "DevToolsHost", info.Holder(), info.GetIsolate());
 
-    TONATIVE_VOID_EXCEPTIONSTATE(float, x, toRestrictedFloat(info[0], exceptionState), exceptionState);
-    TONATIVE_VOID_EXCEPTIONSTATE(float, y, toRestrictedFloat(info[1], exceptionState), exceptionState);
+    TONATIVE_VOID_EXCEPTIONSTATE(float, x, toRestrictedFloat(info.GetIsolate(), info[0], exceptionState), exceptionState);
+    TONATIVE_VOID_EXCEPTIONSTATE(float, y, toRestrictedFloat(info.GetIsolate(), info[1], exceptionState), exceptionState);
 
     v8::Local<v8::Value> array = v8::Local<v8::Value>::Cast(info[2]);
     if (!array->IsArray())

@@ -32,7 +32,7 @@
 #include "core/html/HTMLFormControlsCollection.h"
 #include "core/html/HTMLLegendElement.h"
 #include "core/html/HTMLObjectElement.h"
-#include "core/rendering/RenderFieldset.h"
+#include "core/layout/LayoutFieldset.h"
 #include "wtf/StdLibExtras.h"
 
 namespace blink {
@@ -76,15 +76,6 @@ bool HTMLFieldSetElement::isValidElement()
     return true;
 }
 
-void HTMLFieldSetElement::setNeedsValidityCheck()
-{
-    // For now unconditionally order style recalculation, which triggers
-    // validity recalculation. In the near future, consider implement validity
-    // cache and recalculate style only if it changed.
-    pseudoStateChanged(CSSSelector::PseudoValid);
-    pseudoStateChanged(CSSSelector::PseudoInvalid);
-}
-
 void HTMLFieldSetElement::invalidateDisabledStateUnder(Element& base)
 {
     for (HTMLFormControlElement& element : Traversal<HTMLFormControlElement>::descendantsOf(base))
@@ -116,9 +107,9 @@ const AtomicString& HTMLFieldSetElement::formControlType() const
     return fieldset;
 }
 
-LayoutObject* HTMLFieldSetElement::createRenderer(const LayoutStyle&)
+LayoutObject* HTMLFieldSetElement::createLayoutObject(const ComputedStyle&)
 {
-    return new RenderFieldset(this);
+    return new LayoutFieldset(this);
 }
 
 HTMLLegendElement* HTMLFieldSetElement::legend() const

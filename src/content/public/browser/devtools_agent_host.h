@@ -29,6 +29,9 @@ class CONTENT_EXPORT DevToolsAgentHost
     // Agent host associated with WebContents.
     TYPE_WEB_CONTENTS,
 
+    // Agent host associated with RenderFrameHost.
+    TYPE_FRAME,
+
     // Agent host associated with shared worker.
     TYPE_SHARED_WORKER,
 
@@ -78,8 +81,8 @@ class CONTENT_EXPORT DevToolsAgentHost
   // Returns true if there is a client attached.
   virtual bool IsAttached() = 0;
 
-  // Sends a message to the agent.
-  virtual void DispatchProtocolMessage(const std::string& message) = 0;
+  // Sends a message to the agent. Returns true if the message is handled.
+  virtual bool DispatchProtocolMessage(const std::string& message) = 0;
 
   // Starts inspecting element at position (|x|, |y|) in the specified page.
   virtual void InspectElement(int x, int y) = 0;

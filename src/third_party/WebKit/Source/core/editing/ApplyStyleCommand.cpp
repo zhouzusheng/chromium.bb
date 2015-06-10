@@ -47,7 +47,7 @@
 #include "core/html/HTMLFontElement.h"
 #include "core/html/HTMLSpanElement.h"
 #include "core/layout/LayoutObject.h"
-#include "core/rendering/RenderText.h"
+#include "core/layout/LayoutText.h"
 #include "platform/heap/Handle.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/StringBuilder.h"
@@ -262,8 +262,8 @@ void ApplyStyleCommand::applyBlockStyle(EditingStyle *style)
     Node& scope = NodeTraversal::highestAncestorOrSelf(*visibleStart.deepEquivalent().deprecatedNode());
     RefPtrWillBeRawPtr<Range> startRange = Range::create(document(), firstPositionInNode(&scope), visibleStart.deepEquivalent().parentAnchoredEquivalent());
     RefPtrWillBeRawPtr<Range> endRange = Range::create(document(), firstPositionInNode(&scope), visibleEnd.deepEquivalent().parentAnchoredEquivalent());
-    int startIndex = TextIterator::rangeLength(startRange.get(), true);
-    int endIndex = TextIterator::rangeLength(endRange.get(), true);
+    int startIndex = TextIterator::rangeLength(startRange->startPosition(), startRange->endPosition(), true);
+    int endIndex = TextIterator::rangeLength(endRange->startPosition(), endRange->endPosition(), true);
 
     VisiblePosition paragraphStart(startOfParagraph(visibleStart));
     VisiblePosition nextParagraphStart(endOfParagraph(paragraphStart).next());
@@ -395,7 +395,7 @@ void ApplyStyleCommand::applyRelativeFontStyleChange(EditingStyle* style)
             if (!elementFullySelected(toHTMLElement(*node), start, end))
                 continue;
             element = toHTMLElement(node);
-        } else if (node->isTextNode() && node->renderer() && node->parentNode() != lastStyledNode) {
+        } else if (node->isTextNode() && node->layoutObject() && node->parentNode() != lastStyledNode) {
             // Last styled node was not parent node of this text node, but we wish to style this
             // text node. To make this possible, add a style span to surround this text node.
             RefPtrWillBeRawPtr<HTMLSpanElement> span = createStyleSpanElement(document());
@@ -785,10 +785,10 @@ void ApplyStyleCommand::applyInlineStyleToNodeRange(EditingStyle* style, PassRef
     for (RefPtrWillBeRawPtr<Node> next; node && node != pastEndNode; node = next) {
         next = NodeTraversal::next(*node);
 
-        if (!node->renderer() || !node->hasEditableStyle())
+        if (!node->layoutObject() || !node->hasEditableStyle())
             continue;
 
-        if (!node->rendererIsRichlyEditable() && node->isHTMLElement()) {
+        if (!node->layoutObjectIsRichlyEditable() && node->isHTMLElement()) {
             HTMLElement* element = toHTMLElement(node);
             // This is a plaintext-only region. Only proceed if it's fully selected.
             // pastEndNode is the node after the last fully selected node, so if it's inside node then
@@ -1024,7 +1024,7 @@ void ApplyStyleCommand::applyInlineStyleToPushDown(Node* node, EditingStyle* sty
 
     node->document().updateRenderTreeIfNeeded();
 
-    if (!style || style->isEmpty() || !node->renderer() || isHTMLIFrameElement(*node))
+    if (!style || style->isEmpty() || !node->layoutObject() || isHTMLIFrameElement(*node))
         return;
 
     RefPtrWillBeRawPtr<EditingStyle> newInlineStyle = style;
@@ -1035,12 +1035,12 @@ void ApplyStyleCommand::applyInlineStyleToPushDown(Node* node, EditingStyle* sty
 
     // Since addInlineStyleIfNeeded can't add styles to block-flow render objects, add style attribute instead.
     // FIXME: applyInlineStyleToRange should be used here instead.
-    if ((node->renderer()->isRenderBlockFlow() || node->hasChildren()) && node->isHTMLElement()) {
+    if ((node->layoutObject()->isLayoutBlockFlow() || node->hasChildren()) && node->isHTMLElement()) {
         setNodeAttribute(toHTMLElement(node), styleAttr, AtomicString(newInlineStyle->style()->asText()));
         return;
     }
 
-    if (node->renderer()->isText() && toRenderText(node->renderer())->isAllCollapsibleWhitespace())
+    if (node->layoutObject()->isText() && toLayoutText(node->layoutObject())->isAllCollapsibleWhitespace())
         return;
 
     // We can't wrap node with the styled element here because new styled element will never be removed if we did.
@@ -1544,7 +1544,7 @@ float ApplyStyleCommand::computedFontSize(Node* node)
     if (!value)
         return 0;
 
-    return value->getFloatValue(CSSPrimitiveValue::CSS_PX);
+    return clampTo<float>(value->deprecatedGetDoubleValue());
 }
 
 void ApplyStyleCommand::joinChildTextNodes(ContainerNode* node, const Position& start, const Position& end)

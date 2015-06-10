@@ -23,6 +23,7 @@
 #ifndef HTMLAreaElement_h
 #define HTMLAreaElement_h
 
+#include "core/CoreExport.h"
 #include "core/html/HTMLAnchorElement.h"
 #include "platform/geometry/LayoutRect.h"
 
@@ -32,7 +33,7 @@ class HitTestResult;
 class HTMLImageElement;
 class Path;
 
-class HTMLAreaElement final : public HTMLAnchorElement {
+class CORE_EXPORT HTMLAreaElement final : public HTMLAnchorElement {
     DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(HTMLAreaElement);
@@ -49,11 +50,12 @@ public:
 
 private:
     explicit HTMLAreaElement(Document&);
+    ~HTMLAreaElement();
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
     virtual bool isKeyboardFocusable() const override;
     virtual bool isMouseFocusable() const override;
-    virtual bool rendererIsFocusable() const override;
+    virtual bool layoutObjectIsFocusable() const override;
     virtual void updateFocusAppearance(bool /*restorePreviousSelection*/) override;
     virtual void setFocus(bool) override;
 

@@ -24,9 +24,9 @@
 #include "config.h"
 #include "core/layout/FloatingObjects.h"
 
-#include "core/rendering/RenderBlockFlow.h"
-#include "core/rendering/RenderBox.h"
-#include "core/rendering/RenderView.h"
+#include "core/layout/LayoutBlockFlow.h"
+#include "core/layout/LayoutBox.h"
+#include "core/layout/LayoutView.h"
 
 using namespace WTF;
 
@@ -41,7 +41,7 @@ struct SameSizeAsFloatingObject {
 
 static_assert(sizeof(FloatingObject) == sizeof(SameSizeAsFloatingObject), "FloatingObject should stay small");
 
-FloatingObject::FloatingObject(RenderBox* renderer)
+FloatingObject::FloatingObject(LayoutBox* renderer)
     : m_renderer(renderer)
     , m_originatingLine(0)
     , m_paginationStrut(0)
@@ -60,7 +60,7 @@ FloatingObject::FloatingObject(RenderBox* renderer)
         m_type = FloatRight;
 }
 
-FloatingObject::FloatingObject(RenderBox* renderer, Type type, const LayoutRect& frameRect, bool shouldPaint, bool isDescendant)
+FloatingObject::FloatingObject(LayoutBox* renderer, Type type, const LayoutRect& frameRect, bool shouldPaint, bool isDescendant)
     : m_renderer(renderer)
     , m_originatingLine(0)
     , m_frameRect(frameRect)
@@ -75,7 +75,7 @@ FloatingObject::FloatingObject(RenderBox* renderer, Type type, const LayoutRect&
 {
 }
 
-PassOwnPtr<FloatingObject> FloatingObject::create(RenderBox* renderer)
+PassOwnPtr<FloatingObject> FloatingObject::create(LayoutBox* renderer)
 {
     OwnPtr<FloatingObject> newObj = adoptPtr(new FloatingObject(renderer));
     newObj->setShouldPaint(!renderer->hasSelfPaintingLayer()); // If a layer exists, the float will paint itself. Otherwise someone else will.
@@ -86,12 +86,12 @@ PassOwnPtr<FloatingObject> FloatingObject::create(RenderBox* renderer)
 
 PassOwnPtr<FloatingObject> FloatingObject::copyToNewContainer(LayoutSize offset, bool shouldPaint, bool isDescendant) const
 {
-    return adoptPtr(new FloatingObject(renderer(), type(), LayoutRect(frameRect().location() - offset, frameRect().size()), shouldPaint, isDescendant));
+    return adoptPtr(new FloatingObject(layoutObject(), type(), LayoutRect(frameRect().location() - offset, frameRect().size()), shouldPaint, isDescendant));
 }
 
 PassOwnPtr<FloatingObject> FloatingObject::unsafeClone() const
 {
-    OwnPtr<FloatingObject> cloneObject = adoptPtr(new FloatingObject(renderer(), type(), m_frameRect, m_shouldPaint, m_isDescendant));
+    OwnPtr<FloatingObject> cloneObject = adoptPtr(new FloatingObject(layoutObject(), type(), m_frameRect, m_shouldPaint, m_isDescendant));
     cloneObject->m_paginationStrut = m_paginationStrut;
     cloneObject->m_isPlaced = m_isPlaced;
     return cloneObject.release();
@@ -102,7 +102,7 @@ class ComputeFloatOffsetAdapter {
 public:
     typedef FloatingObjectInterval IntervalType;
 
-    ComputeFloatOffsetAdapter(const RenderBlockFlow* renderer, int lineTop, int lineBottom, LayoutUnit offset)
+    ComputeFloatOffsetAdapter(const LayoutBlockFlow* renderer, int lineTop, int lineBottom, LayoutUnit offset)
         : m_renderer(renderer)
         , m_lineTop(lineTop)
         , m_lineBottom(lineBottom)
@@ -122,7 +122,7 @@ public:
 protected:
     virtual bool updateOffsetIfNeeded(const FloatingObject&) = 0;
 
-    const RenderBlockFlow* m_renderer;
+    const LayoutBlockFlow* m_renderer;
     int m_lineTop;
     int m_lineBottom;
     LayoutUnit m_offset;
@@ -132,7 +132,7 @@ protected:
 template <FloatingObject::Type FloatTypeValue>
 class ComputeFloatOffsetForFloatLayoutAdapter : public ComputeFloatOffsetAdapter<FloatTypeValue> {
 public:
-    ComputeFloatOffsetForFloatLayoutAdapter(const RenderBlockFlow* renderer, LayoutUnit lineTop, LayoutUnit lineBottom, LayoutUnit offset)
+    ComputeFloatOffsetForFloatLayoutAdapter(const LayoutBlockFlow* renderer, LayoutUnit lineTop, LayoutUnit lineBottom, LayoutUnit offset)
         : ComputeFloatOffsetAdapter<FloatTypeValue>(renderer, lineTop, lineBottom, offset)
     {
     }
@@ -148,7 +148,7 @@ protected:
 template <FloatingObject::Type FloatTypeValue>
 class ComputeFloatOffsetForLineLayoutAdapter : public ComputeFloatOffsetAdapter<FloatTypeValue> {
 public:
-    ComputeFloatOffsetForLineLayoutAdapter(const RenderBlockFlow* renderer, LayoutUnit lineTop, LayoutUnit lineBottom, LayoutUnit offset)
+    ComputeFloatOffsetForLineLayoutAdapter(const LayoutBlockFlow* renderer, LayoutUnit lineTop, LayoutUnit lineBottom, LayoutUnit offset)
         : ComputeFloatOffsetAdapter<FloatTypeValue>(renderer, lineTop, lineBottom, offset)
     {
     }
@@ -168,12 +168,12 @@ void FloatingObjects::clearLineBoxTreePointers()
     // Clear references to originating lines, since the lines are being deleted
     FloatingObjectSetIterator end = m_set.end();
     for (FloatingObjectSetIterator it = m_set.begin(); it != end; ++it) {
-        ASSERT(!((*it)->originatingLine()) || (*it)->originatingLine()->renderer() == m_renderer);
+        ASSERT(!((*it)->originatingLine()) || (*it)->originatingLine()->layoutObject() == m_renderer);
         (*it)->setOriginatingLine(0);
     }
 }
 
-FloatingObjects::FloatingObjects(const RenderBlockFlow* renderer, bool horizontalWritingMode)
+FloatingObjects::FloatingObjects(const LayoutBlockFlow* renderer, bool horizontalWritingMode)
     : m_placedFloatsTree(UninitializedTree)
     , m_leftObjectsCount(0)
     , m_rightObjectsCount(0)
@@ -273,7 +273,7 @@ void FloatingObjects::moveAllToFloatInfoMap(RendererToFloatInfoMap& map)
 {
     while (!m_set.isEmpty()) {
         OwnPtr<FloatingObject> floatingObject = m_set.takeFirst();
-        RenderBox* renderer = floatingObject->renderer();
+        LayoutBox* renderer = floatingObject->layoutObject();
         map.add(renderer, floatingObject.release());
     }
     clear();
@@ -484,7 +484,7 @@ template<>
 inline bool ComputeFloatOffsetForLineLayoutAdapter<FloatingObject::FloatLeft>::updateOffsetIfNeeded(const FloatingObject& floatingObject)
 {
     LayoutUnit logicalRight = m_renderer->logicalRightForFloat(&floatingObject);
-    if (ShapeOutsideInfo* shapeOutside = floatingObject.renderer()->shapeOutsideInfo()) {
+    if (ShapeOutsideInfo* shapeOutside = floatingObject.layoutObject()->shapeOutsideInfo()) {
         ShapeOutsideDeltas shapeDeltas = shapeOutside->computeDeltasForContainingBlockLine(*m_renderer, floatingObject, m_lineTop, m_lineBottom - m_lineTop);
         if (!shapeDeltas.lineOverlapsShape())
             return false;
@@ -503,7 +503,7 @@ template<>
 inline bool ComputeFloatOffsetForLineLayoutAdapter<FloatingObject::FloatRight>::updateOffsetIfNeeded(const FloatingObject& floatingObject)
 {
     LayoutUnit logicalLeft = m_renderer->logicalLeftForFloat(&floatingObject);
-    if (ShapeOutsideInfo* shapeOutside = floatingObject.renderer()->shapeOutsideInfo()) {
+    if (ShapeOutsideInfo* shapeOutside = floatingObject.layoutObject()->shapeOutsideInfo()) {
         ShapeOutsideDeltas shapeDeltas = shapeOutside->computeDeltasForContainingBlockLine(*m_renderer, floatingObject, m_lineTop, m_lineBottom - m_lineTop);
         if (!shapeDeltas.lineOverlapsShape())
             return false;

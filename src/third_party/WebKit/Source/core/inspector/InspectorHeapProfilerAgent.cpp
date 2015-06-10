@@ -67,10 +67,8 @@ PassOwnPtrWillBeRawPtr<InspectorHeapProfilerAgent> InspectorHeapProfilerAgent::c
 }
 
 InspectorHeapProfilerAgent::InspectorHeapProfilerAgent(InjectedScriptManager* injectedScriptManager)
-    : InspectorBaseAgent<InspectorHeapProfilerAgent>("HeapProfiler")
+    : InspectorBaseAgent<InspectorHeapProfilerAgent, InspectorFrontend::HeapProfiler>("HeapProfiler")
     , m_injectedScriptManager(injectedScriptManager)
-    , m_frontend(0)
-    , m_nextUserInitiatedHeapSnapshotNumber(1)
 {
 }
 
@@ -78,27 +76,10 @@ InspectorHeapProfilerAgent::~InspectorHeapProfilerAgent()
 {
 }
 
-void InspectorHeapProfilerAgent::setFrontend(InspectorFrontend* frontend)
-{
-    m_frontend = frontend->heapprofiler();
-}
-
-void InspectorHeapProfilerAgent::clearFrontend()
-{
-    m_frontend = 0;
-
-    m_nextUserInitiatedHeapSnapshotNumber = 1;
-    stopTrackingHeapObjectsInternal();
-    m_injectedScriptManager->injectedScriptHost()->clearInspectedObjects();
-
-    ErrorString error;
-    disable(&error);
-}
-
 void InspectorHeapProfilerAgent::restore()
 {
     if (m_state->getBoolean(HeapProfilerAgentState::heapProfilerEnabled))
-        m_frontend->resetProfiles();
+        frontend()->resetProfiles();
     if (m_state->getBoolean(HeapProfilerAgentState::heapObjectsTrackingEnabled))
         startTrackingHeapObjectsInternal(m_state->getBoolean(HeapProfilerAgentState::allocationTrackingEnabled));
 }
@@ -159,21 +140,21 @@ void InspectorHeapProfilerAgent::startTrackingHeapObjects(ErrorString*, const bo
 
 void InspectorHeapProfilerAgent::requestHeapStatsUpdate()
 {
-    if (!m_frontend)
+    if (!frontend())
         return;
     HeapStatsStream stream(this);
     SnapshotObjectId lastSeenObjectId = ScriptProfiler::requestHeapStatsUpdate(&stream);
-    m_frontend->lastSeenObjectId(lastSeenObjectId, WTF::currentTimeMS());
+    frontend()->lastSeenObjectId(lastSeenObjectId, WTF::currentTimeMS());
 }
 
 void InspectorHeapProfilerAgent::pushHeapStatsUpdate(const uint32_t* const data, const int size)
 {
-    if (!m_frontend)
+    if (!frontend())
         return;
     RefPtr<TypeBuilder::Array<int> > statsDiff = TypeBuilder::Array<int>::create();
     for (int i = 0; i < size; ++i)
         statsDiff->addItem(data[i]);
-    m_frontend->heapStatsUpdate(statsDiff.release());
+    frontend()->heapStatsUpdate(statsDiff.release());
 }
 
 void InspectorHeapProfilerAgent::stopTrackingHeapObjects(ErrorString* error, const bool* reportProgress)
@@ -251,9 +232,8 @@ void InspectorHeapProfilerAgent::takeHeapSnapshot(ErrorString* errorString, cons
         int m_totalWork;
     };
 
-    String title = "Snapshot " + String::number(m_nextUserInitiatedHeapSnapshotNumber++);
-    HeapSnapshotProgress progress(asBool(reportProgress) ? m_frontend : 0);
-    RefPtr<ScriptHeapSnapshot> snapshot = ScriptProfiler::takeHeapSnapshot(title, &progress);
+    HeapSnapshotProgress progress(asBool(reportProgress) ? frontend() : 0);
+    RefPtr<ScriptHeapSnapshot> snapshot = ScriptProfiler::takeHeapSnapshot(&progress);
     if (!snapshot) {
         *errorString = "Failed to take heap snapshot";
         return;
@@ -273,8 +253,8 @@ void InspectorHeapProfilerAgent::takeHeapSnapshot(ErrorString* errorString, cons
         InspectorFrontend::HeapProfiler* m_frontend;
     };
 
-    if (m_frontend) {
-        OutputStream stream(m_frontend);
+    if (frontend()) {
+        OutputStream stream(frontend());
         snapshot->writeJSON(&stream);
     }
 }
@@ -300,6 +280,28 @@ void InspectorHeapProfilerAgent::getObjectByHeapObjectId(ErrorString* error, con
     result = injectedScript.wrapObject(heapObject, objectGroup ? *objectGroup : "");
     if (!result)
         *error = "Failed to wrap object";
+}
+
+class InspectableHeapObject final : public InjectedScriptHost::InspectableObject {
+public:
+    explicit InspectableHeapObject(unsigned heapObjectId) : m_heapObjectId(heapObjectId) { }
+    virtual ScriptValue get(ScriptState*) override
+    {
+        return ScriptProfiler::objectByHeapObjectId(m_heapObjectId);
+    }
+private:
+    unsigned m_heapObjectId;
+};
+
+void InspectorHeapProfilerAgent::addInspectedHeapObject(ErrorString* errorString, const String& inspectedHeapObjectId)
+{
+    bool ok;
+    unsigned id = inspectedHeapObjectId.toUInt(&ok);
+    if (!ok) {
+        *errorString = "Invalid heap snapshot object id";
+        return;
+    }
+    m_injectedScriptManager->injectedScriptHost()->addInspectedObject(adoptPtr(new InspectableHeapObject(id)));
 }
 
 void InspectorHeapProfilerAgent::getHeapObjectId(ErrorString* errorString, const String& objectId, String* heapSnapshotObjectId)

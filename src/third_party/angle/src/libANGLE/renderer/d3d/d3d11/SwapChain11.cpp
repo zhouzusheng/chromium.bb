@@ -24,7 +24,9 @@ namespace rx
 SwapChain11::SwapChain11(Renderer11 *renderer, NativeWindow nativeWindow, HANDLE shareHandle,
                          GLenum backBufferFormat, GLenum depthBufferFormat)
     : mRenderer(renderer),
-      SwapChainD3D(nativeWindow, shareHandle, backBufferFormat, depthBufferFormat)
+      SwapChainD3D(nativeWindow, shareHandle, backBufferFormat, depthBufferFormat),
+      mColorRenderTarget(this, renderer, false),
+      mDepthStencilRenderTarget(this, renderer, true)
 {
     mSwapChain = NULL;
     mBackBufferTexture = NULL;
@@ -222,7 +224,7 @@ EGLint SwapChain11::resetOffscreenTexture(int backbufferWidth, int backbufferHei
     offscreenSRVDesc.Format = backbufferFormatInfo.srvFormat;
     offscreenSRVDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
     offscreenSRVDesc.Texture2D.MostDetailedMip = 0;
-    offscreenSRVDesc.Texture2D.MipLevels = -1;
+    offscreenSRVDesc.Texture2D.MipLevels = static_cast<UINT>(-1);
 
     result = device->CreateShaderResourceView(mOffscreenTexture, &offscreenSRVDesc, &mOffscreenSRView);
     ASSERT(SUCCEEDED(result));
@@ -284,7 +286,7 @@ EGLint SwapChain11::resetOffscreenTexture(int backbufferWidth, int backbufferHei
             depthStencilSRVDesc.Format = depthBufferFormatInfo.srvFormat;
             depthStencilSRVDesc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
             depthStencilSRVDesc.Texture2D.MostDetailedMip = 0;
-            depthStencilSRVDesc.Texture2D.MipLevels = -1;
+            depthStencilSRVDesc.Texture2D.MipLevels = static_cast<UINT>(-1);
 
             result = device->CreateShaderResourceView(mDepthStencilTexture, &depthStencilSRVDesc, &mDepthStencilSRView);
             ASSERT(SUCCEEDED(result));

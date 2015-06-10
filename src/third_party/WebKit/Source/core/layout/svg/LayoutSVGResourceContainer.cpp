@@ -20,12 +20,12 @@
 #include "config.h"
 #include "core/layout/svg/LayoutSVGResourceContainer.h"
 
-#include "core/layout/Layer.h"
 #include "core/layout/svg/LayoutSVGResourceClipper.h"
 #include "core/layout/svg/LayoutSVGResourceFilter.h"
 #include "core/layout/svg/LayoutSVGResourceMasker.h"
 #include "core/layout/svg/SVGResources.h"
 #include "core/layout/svg/SVGResourcesCache.h"
+#include "core/paint/DeprecatedPaintLayer.h"
 
 #include "wtf/TemporaryChange.h"
 
@@ -74,7 +74,7 @@ void LayoutSVGResourceContainer::willBeDestroyed()
         svgExtensionsFromElement(element()).removeResource(m_id);
 }
 
-void LayoutSVGResourceContainer::styleDidChange(StyleDifference diff, const LayoutStyle* oldStyle)
+void LayoutSVGResourceContainer::styleDidChange(StyleDifference diff, const ComputedStyle* oldStyle)
 {
     LayoutSVGHiddenContainer::styleDidChange(diff, oldStyle);
 
@@ -131,8 +131,8 @@ void LayoutSVGResourceContainer::markAllClientsForInvalidation(InvalidationMode 
 
 void LayoutSVGResourceContainer::markAllClientLayersForInvalidation()
 {
-    HashSet<Layer*>::iterator layerEnd = m_clientLayers.end();
-    for (HashSet<Layer*>::iterator it = m_clientLayers.begin(); it != layerEnd; ++it)
+    HashSet<DeprecatedPaintLayer*>::iterator layerEnd = m_clientLayers.end();
+    for (HashSet<DeprecatedPaintLayer*>::iterator it = m_clientLayers.begin(); it != layerEnd; ++it)
         (*it)->filterNeedsPaintInvalidation();
 }
 
@@ -171,20 +171,20 @@ void LayoutSVGResourceContainer::removeClient(LayoutObject* client)
 void LayoutSVGResourceContainer::addClientLayer(Node* node)
 {
     ASSERT(node);
-    if (!node->renderer() || !node->renderer()->hasLayer())
+    if (!node->layoutObject() || !node->layoutObject()->hasLayer())
         return;
-    m_clientLayers.add(toLayoutLayerModelObject(node->renderer())->layer());
+    m_clientLayers.add(toLayoutBoxModelObject(node->layoutObject())->layer());
     clearInvalidationMask();
 }
 
-void LayoutSVGResourceContainer::addClientLayer(Layer* client)
+void LayoutSVGResourceContainer::addClientLayer(DeprecatedPaintLayer* client)
 {
     ASSERT(client);
     m_clientLayers.add(client);
     clearInvalidationMask();
 }
 
-void LayoutSVGResourceContainer::removeClientLayer(Layer* client)
+void LayoutSVGResourceContainer::removeClientLayer(DeprecatedPaintLayer* client)
 {
     ASSERT(client);
     m_clientLayers.remove(client);
@@ -195,7 +195,7 @@ void LayoutSVGResourceContainer::invalidateCacheAndMarkForLayout(SubtreeLayoutSc
     if (selfNeedsLayout())
         return;
 
-    setNeedsLayoutAndFullPaintInvalidation(MarkContainingBlockChain, layoutScope);
+    setNeedsLayoutAndFullPaintInvalidation(LayoutInvalidationReason::SvgResourceInvalidated, MarkContainerChain, layoutScope);
 
     if (everHadLayout())
         removeAllClientsFromCache();
@@ -219,14 +219,14 @@ void LayoutSVGResourceContainer::registerResource()
     for (SVGDocumentExtensions::SVGPendingElements::const_iterator it = clients->begin(); it != end; ++it) {
         ASSERT((*it)->hasPendingResources());
         extensions.clearHasPendingResourcesIfPossible(*it);
-        LayoutObject* renderer = (*it)->renderer();
-        if (!renderer)
+        LayoutObject* layoutObject = (*it)->layoutObject();
+        if (!layoutObject)
             continue;
 
         StyleDifference diff;
         diff.setNeedsFullLayout();
-        SVGResourcesCache::clientStyleChanged(renderer, diff, renderer->styleRef());
-        renderer->setNeedsLayoutAndFullPaintInvalidation();
+        SVGResourcesCache::clientStyleChanged(layoutObject, diff, layoutObject->styleRef());
+        layoutObject->setNeedsLayoutAndFullPaintInvalidation(LayoutInvalidationReason::SvgResourceInvalidated);
     }
 }
 
@@ -259,13 +259,13 @@ static inline void removeFromCacheAndInvalidateDependencies(LayoutObject* object
 
     SVGElementSet::iterator end = dependencies->end();
     for (SVGElementSet::iterator it = dependencies->begin(); it != end; ++it) {
-        if (LayoutObject* renderer = (*it)->renderer()) {
+        if (LayoutObject* layoutObject = (*it)->layoutObject()) {
             if (UNLIKELY(!invalidatingDependencies->add(*it).isNewEntry)) {
                 // Reference cycle: we are in process of invalidating this dependant.
                 continue;
             }
 
-            LayoutSVGResourceContainer::markForLayoutAndParentResourceInvalidation(renderer, needsLayout);
+            LayoutSVGResourceContainer::markForLayoutAndParentResourceInvalidation(layoutObject, needsLayout);
             invalidatingDependencies->remove(*it);
         }
     }
@@ -277,7 +277,7 @@ void LayoutSVGResourceContainer::markForLayoutAndParentResourceInvalidation(Layo
     ASSERT(object->node());
 
     if (needsLayout && !object->documentBeingDestroyed())
-        object->setNeedsLayoutAndFullPaintInvalidation();
+        object->setNeedsLayoutAndFullPaintInvalidation(LayoutInvalidationReason::SvgResourceInvalidated);
 
     removeFromCacheAndInvalidateDependencies(object, needsLayout);
 

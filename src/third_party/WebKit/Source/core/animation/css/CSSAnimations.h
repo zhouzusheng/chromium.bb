@@ -58,16 +58,16 @@ public:
     const AtomicString getAnimationNameForInspector(const AnimationPlayer&);
     bool isTransitionAnimationForInspector(const AnimationPlayer&) const;
 
-    static const StylePropertyShorthand& animatableProperties();
+    static const StylePropertyShorthand& propertiesForTransitionAll();
     static bool isAllowedAnimation(CSSPropertyID);
-    static PassOwnPtrWillBeRawPtr<CSSAnimationUpdate> calculateUpdate(const Element* animatingElement, Element&, const LayoutStyle&, LayoutStyle* parentStyle, StyleResolver*);
+    static PassOwnPtrWillBeRawPtr<CSSAnimationUpdate> calculateUpdate(const Element* animatingElement, Element&, const ComputedStyle&, ComputedStyle* parentStyle, StyleResolver*);
 
     void setPendingUpdate(PassOwnPtrWillBeRawPtr<CSSAnimationUpdate> update) { m_pendingUpdate = update; }
     void maybeApplyPendingUpdate(Element*);
     bool isEmpty() const { return m_animations.isEmpty() && m_transitions.isEmpty() && !m_pendingUpdate; }
     void cancel();
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     class RunningAnimation final : public RefCountedWillBeGarbageCollectedFinalized<RunningAnimation> {
@@ -87,7 +87,7 @@ private:
             specifiedTiming = update.specifiedTiming;
         }
 
-        void trace(Visitor* visitor)
+        DEFINE_INLINE_TRACE()
         {
             visitor->trace(player);
             visitor->trace(styleRule);
@@ -102,7 +102,7 @@ private:
     struct RunningTransition {
         ALLOW_ONLY_INLINE_ALLOCATION();
     public:
-        void trace(Visitor* visitor)
+        DEFINE_INLINE_TRACE()
         {
             visitor->trace(player);
             visitor->trace(from);
@@ -124,9 +124,9 @@ private:
 
     WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<Interpolation>> m_previousActiveInterpolationsForAnimations;
 
-    static void calculateAnimationUpdate(CSSAnimationUpdate*, const Element* animatingElement, Element&, const LayoutStyle&, LayoutStyle* parentStyle, StyleResolver*);
-    static void calculateTransitionUpdate(CSSAnimationUpdate*, const Element* animatingElement, const LayoutStyle&);
-    static void calculateTransitionUpdateForProperty(CSSPropertyID, CSSPropertyID eventId, const CSSTransitionData&, size_t transitionIndex, const LayoutStyle& oldStyle, const LayoutStyle&, const TransitionMap* activeTransitions, CSSAnimationUpdate*, const Element*);
+    static void calculateAnimationUpdate(CSSAnimationUpdate*, const Element* animatingElement, Element&, const ComputedStyle&, ComputedStyle* parentStyle, StyleResolver*);
+    static void calculateTransitionUpdate(CSSAnimationUpdate*, const Element* animatingElement, const ComputedStyle&);
+    static void calculateTransitionUpdateForProperty(CSSPropertyID, CSSPropertyID eventId, const CSSTransitionData&, size_t transitionIndex, const ComputedStyle& oldStyle, const ComputedStyle&, const TransitionMap* activeTransitions, CSSAnimationUpdate*, const Element*);
 
     static void calculateAnimationActiveInterpolations(CSSAnimationUpdate*, const Element* animatingElement, double timelineCurrentTime);
     static void calculateTransitionActiveInterpolations(CSSAnimationUpdate*, const Element* animatingElement, double timelineCurrentTime);
@@ -142,7 +142,7 @@ private:
         }
         virtual bool requiresIterationEvents(const AnimationNode&) override;
         virtual void onEventCondition(const AnimationNode&) override;
-        virtual void trace(Visitor*) override;
+        DECLARE_VIRTUAL_TRACE();
 
     private:
         const Element& animationTarget() const { return *m_animationTarget; }
@@ -166,7 +166,7 @@ private:
         }
         virtual bool requiresIterationEvents(const AnimationNode&) override { return false; }
         virtual void onEventCondition(const AnimationNode&) override;
-        virtual void trace(Visitor*) override;
+        DECLARE_VIRTUAL_TRACE();
 
     private:
         const Element& transitionTarget() const { return *m_transitionTarget; }

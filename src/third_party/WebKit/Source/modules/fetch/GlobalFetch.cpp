@@ -46,7 +46,7 @@ public:
         Request* r = Request::create(m_stopDetector->executionContext(), input, init, exceptionState);
         if (exceptionState.hadException())
             return ScriptPromise();
-        return m_fetchManager->fetch(scriptState, r->request());
+        return m_fetchManager->fetch(scriptState, r->passRequestData());
     }
 
     DEFINE_INLINE_VIRTUAL_TRACE()
@@ -83,7 +83,7 @@ private:
 
         // Having a raw pointer is safe, because |m_fetchManager| is owned by
         // the owner of this object.
-        GC_PLUGIN_IGNORE("crbug.com/444740") RawPtrWillBeMember<FetchManager> m_fetchManager;
+        RawPtrWillBeMember<FetchManager> m_fetchManager;
     };
 
     explicit GlobalFetchImpl(ExecutionContext* executionContext)

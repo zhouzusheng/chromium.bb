@@ -68,6 +68,15 @@
 #  endif
 #endif
 
+// As usual, there are two ways to increase alignment... the MSVC way and the everyone-else way.
+#ifndef SK_STRUCT_ALIGN
+    #ifdef _MSC_VER
+        #define SK_STRUCT_ALIGN(N) __declspec(align(N))
+    #else
+        #define SK_STRUCT_ALIGN(N) __attribute__((aligned(N)))
+    #endif
+#endif
+
 #if !defined(SK_SUPPORT_GPU)
 #  define SK_SUPPORT_GPU 1
 #endif
@@ -223,18 +232,6 @@
          SK_ ## C3 ## 32_SHIFT == 24)
 #endif
 
-//////////////////////////////////////////////////////////////////////
-
-// TODO: rebaseline as needed so we can remove this flag entirely.
-//  - all platforms have int64_t now
-//  - we have slightly different fixed math results because of this check
-//    since we don't define this for linux/android
-#if defined(SK_BUILD_FOR_WIN32) || defined(SK_BUILD_FOR_MAC)
-#  ifndef SkLONGLONG
-#    define SkLONGLONG int64_t
-#  endif
-#endif
-
 //////////////////////////////////////////////////////////////////////////////////////////////
 #ifndef SK_BUILD_FOR_WINCE
 #  include <string.h>
@@ -282,29 +279,6 @@
 #    define new DEBUG_CLIENTBLOCK
 #  else
 #    define DEBUG_CLIENTBLOCK
-#  endif
-#endif
-
-//////////////////////////////////////////////////////////////////////
-
-#ifndef SK_OVERRIDE
-#  if defined(_MSC_VER)
-#    define SK_OVERRIDE override
-#  elif defined(__clang__)
-     // Using __attribute__((override)) on clang does not appear to always work.
-     // Clang defaults to C++03 and warns about using override. Squelch that. Intentionally no
-     // push/pop here so all users of SK_OVERRIDE ignore the warning too. This is like passing
-     // -Wno-c++11-extensions, except that GCC won't die (because it won't see this pragma).
-#    pragma clang diagnostic ignored "-Wc++11-extensions"
-#
-#    if __has_feature(cxx_override_control)
-#      define SK_OVERRIDE override
-#    elif defined(__has_extension) && __has_extension(cxx_override_control)
-#      define SK_OVERRIDE override
-#    endif
-#  endif
-#  ifndef SK_OVERRIDE
-#    define SK_OVERRIDE
 #  endif
 #endif
 
@@ -380,7 +354,7 @@
 //////////////////////////////////////////////////////////////////////
 
 #ifndef SK_EGL
-#  if defined(SK_BUILD_FOR_ANDROID) || defined(SK_BUILD_FOR_NACL)
+#  if defined(SK_BUILD_FOR_ANDROID)
 #    define SK_EGL 1
 #  else
 #    define SK_EGL 0

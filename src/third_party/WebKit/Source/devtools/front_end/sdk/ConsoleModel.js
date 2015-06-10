@@ -55,9 +55,6 @@ WebInspector.ConsoleModel.Events = {
 WebInspector.ConsoleModel.prototype = {
     _enableAgent: function()
     {
-        if (WebInspector.settings.monitoringXHREnabled.get())
-            this._consoleAgent.setMonitoringXHREnabled(true);
-
         this._enablingConsole = true;
 
         /**
@@ -71,21 +68,10 @@ WebInspector.ConsoleModel.prototype = {
     },
 
     /**
-     * @return {boolean}
-     */
-    enablingConsole: function()
-    {
-        return !!this._enablingConsole;
-    },
-
-    /**
      * @param {!WebInspector.ConsoleMessage} msg
      */
     addMessage: function(msg)
     {
-        if (WebInspector.NetworkManager.hasDevToolsRequestHeader(msg.request))
-            return;
-
         msg.index = this._messages.length;
         this._messages.push(msg);
         this._incrementErrorWarningCount(msg);

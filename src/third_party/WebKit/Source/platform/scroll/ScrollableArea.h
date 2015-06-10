@@ -84,12 +84,6 @@ public:
     bool constrainsScrollingToContentEdge() const { return m_constrainsScrollingToContentEdge; }
     void setConstrainsScrollingToContentEdge(bool constrainsScrollingToContentEdge) { m_constrainsScrollingToContentEdge = constrainsScrollingToContentEdge; }
 
-    void setVerticalScrollElasticity(ScrollElasticity scrollElasticity) { m_verticalScrollElasticity = scrollElasticity; }
-    ScrollElasticity verticalScrollElasticity() const { return static_cast<ScrollElasticity>(m_verticalScrollElasticity); }
-
-    void setHorizontalScrollElasticity(ScrollElasticity scrollElasticity) { m_horizontalScrollElasticity = scrollElasticity; }
-    ScrollElasticity horizontalScrollElasticity() const { return static_cast<ScrollElasticity>(m_horizontalScrollElasticity); }
-
     bool inLiveResize() const { return m_inLiveResize; }
     void willStartLiveResize();
     void willEndLiveResize();
@@ -196,9 +190,6 @@ public:
     // Returns the bounding box of this scrollable area, in the coordinate system of the enclosing scroll view.
     virtual IntRect scrollableAreaBoundingBox() const = 0;
 
-    virtual bool isRubberBandInProgress() const { return false; }
-    virtual bool rubberBandingOnCompositorThread() const { return false; }
-
     virtual bool scrollAnimatorEnabled() const { return false; }
 
     // NOTE: Only called from Internals for testing.
@@ -263,6 +254,7 @@ public:
     void cancelProgrammaticScrollAnimation();
 
     DisplayItemClient displayItemClient() const { return toDisplayItemClient(this); }
+    virtual String debugName() const { return "ScrollableArea"; }
 
 protected:
     ScrollableArea();
@@ -312,9 +304,6 @@ private:
     unsigned m_constrainsScrollingToContentEdge : 1;
 
     unsigned m_inLiveResize : 1;
-
-    unsigned m_verticalScrollElasticity : 2; // ScrollElasticity
-    unsigned m_horizontalScrollElasticity : 2; // ScrollElasticity
 
     unsigned m_scrollbarOverlayStyle : 2; // ScrollbarOverlayStyle
 

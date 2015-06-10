@@ -33,17 +33,12 @@ namespace blink {
 
 class DynamicsCompressor;
 
-class DynamicsCompressorNode final : public AudioNode {
-    DEFINE_WRAPPERTYPEINFO();
+class DynamicsCompressorHandler final : public AudioHandler {
 public:
-    static DynamicsCompressorNode* create(AudioContext* context, float sampleRate)
-    {
-        return new DynamicsCompressorNode(context, sampleRate);
-    }
+    DynamicsCompressorHandler(AudioNode&, float sampleRate);
+    virtual ~DynamicsCompressorHandler();
 
-    virtual ~DynamicsCompressorNode();
-
-    // AudioNode
+    // AudioHandler
     virtual void dispose() override;
     virtual void process(size_t framesToProcess) override;
     virtual void initialize() override;
@@ -66,8 +61,6 @@ private:
     virtual double tailTime() const override;
     virtual double latencyTime() const override;
 
-    DynamicsCompressorNode(AudioContext*, float sampleRate);
-
     OwnPtr<DynamicsCompressor> m_dynamicsCompressor;
     Member<AudioParam> m_threshold;
     Member<AudioParam> m_knee;
@@ -75,6 +68,23 @@ private:
     Member<AudioParam> m_reduction;
     Member<AudioParam> m_attack;
     Member<AudioParam> m_release;
+};
+
+class DynamicsCompressorNode final : public AudioNode {
+    DEFINE_WRAPPERTYPEINFO();
+public:
+    static DynamicsCompressorNode* create(AudioContext*, float sampleRate);
+
+    AudioParam* threshold() const;
+    AudioParam* knee() const;
+    AudioParam* ratio() const;
+    AudioParam* reduction() const;
+    AudioParam* attack() const;
+    AudioParam* release() const;
+
+private:
+    DynamicsCompressorNode(AudioContext&, float sampleRate);
+    DynamicsCompressorHandler& dynamicsCompressorHandler() const;
 };
 
 } // namespace blink

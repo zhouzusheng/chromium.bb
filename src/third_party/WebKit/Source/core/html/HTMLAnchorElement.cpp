@@ -25,35 +25,19 @@
 #include "core/html/HTMLAnchorElement.h"
 
 #include "bindings/core/v8/V8DOMActivityLogger.h"
-#include "core/dom/Attribute.h"
-#include "core/editing/FrameSelection.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/MouseEvent.h"
 #include "core/frame/FrameHost.h"
-#include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
-#include "core/frame/UseCounter.h"
-#include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/layout/LayoutImage.h"
 #include "core/loader/FrameLoadRequest.h"
-#include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
-#include "core/loader/FrameLoaderTypes.h"
 #include "core/loader/PingLoader.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
-#include "platform/PlatformMouseEvent.h"
 #include "platform/network/NetworkHints.h"
-#include "platform/network/ResourceRequest.h"
-#include "platform/weborigin/KnownPorts.h"
-#include "platform/weborigin/SecurityOrigin.h"
-#include "platform/weborigin/SecurityPolicy.h"
-#include "public/platform/Platform.h"
-#include "public/platform/WebURL.h"
-#include "public/platform/WebURLRequest.h"
-#include "wtf/text/StringBuilder.h"
 
 namespace blink {
 
@@ -96,6 +80,13 @@ void HTMLAnchorElement::dispatchFocusEvent(Element* oldFocusedElement, WebFocusT
     HTMLElement::dispatchFocusEvent(oldFocusedElement, type);
 }
 
+void HTMLAnchorElement::dispatchBlurEvent(Element* newFocusedElement, WebFocusType type)
+{
+    if (type != WebFocusTypePage)
+        m_wasFocusedByMouse = false;
+    HTMLElement::dispatchBlurEvent(newFocusedElement, type);
+}
+
 bool HTMLAnchorElement::isMouseFocusable() const
 {
     if (isLink())
@@ -131,9 +122,9 @@ static void appendServerMapMousePosition(StringBuilder& url, Event* event)
     if (!imageElement.isServerMap())
         return;
 
-    if (!imageElement.renderer() || !imageElement.renderer()->isLayoutImage())
+    if (!imageElement.layoutObject() || !imageElement.layoutObject()->isLayoutImage())
         return;
-    LayoutImage* renderer = toLayoutImage(imageElement.renderer());
+    LayoutImage* renderer = toLayoutImage(imageElement.layoutObject());
 
     // FIXME: This should probably pass true for useTransforms.
     FloatPoint absolutePosition = renderer->absoluteToLocal(FloatPoint(toMouseEvent(event)->pageX(), toMouseEvent(event)->pageY()));
@@ -289,7 +280,7 @@ bool HTMLAnchorElement::hasRel(uint32_t relation) const
 void HTMLAnchorElement::setRel(const AtomicString& value)
 {
     m_linkRelations = 0;
-    SpaceSplitString newLinkRelations(value, true);
+    SpaceSplitString newLinkRelations(value, SpaceSplitString::ShouldFoldCase);
     // FIXME: Add link relations as they are implemented
     if (newLinkRelations.contains("noreferrer"))
         m_linkRelations |= RelationNoReferrer;
@@ -319,7 +310,7 @@ void HTMLAnchorElement::sendPings(const KURL& destinationURL) const
 
     UseCounter::count(document(), UseCounter::HTMLAnchorElementPingAttribute);
 
-    SpaceSplitString pingURLs(pingValue, false);
+    SpaceSplitString pingURLs(pingValue, SpaceSplitString::ShouldNotFoldCase);
     for (unsigned i = 0; i < pingURLs.size(); i++)
         PingLoader::sendLinkAuditPing(document().frame(), document().completeURL(pingURLs[i]), destinationURL);
 }

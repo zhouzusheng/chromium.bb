@@ -27,6 +27,7 @@
 
 #include "talk/media/base/videoframefactory.h"
 
+#include <algorithm>
 #include "talk/media/base/videocapturer.h"
 
 namespace cricket {
@@ -46,9 +47,16 @@ VideoFrame* VideoFrameFactory::CreateAliasedFrame(
     return cropped_input_frame.release();
   }
 
-  // Create and stretch the output frame if it has not been created yet or its
-  // size is not same as the expected.
-  if (!output_frame_ ||
+  // If the frame is rotated, we need to switch the width and height.
+  if (apply_rotation_ &&
+      (input_frame->GetRotation() == webrtc::kVideoRotation_90 ||
+       input_frame->GetRotation() == webrtc::kVideoRotation_270)) {
+    std::swap(output_width, output_height);
+  }
+
+  // Create and stretch the output frame if it has not been created yet, is
+  // still in use by others, or its size is not same as the expected.
+  if (!output_frame_ || !output_frame_->IsExclusive() ||
       output_frame_->GetWidth() != static_cast<size_t>(output_width) ||
       output_frame_->GetHeight() != static_cast<size_t>(output_height)) {
     output_frame_.reset(

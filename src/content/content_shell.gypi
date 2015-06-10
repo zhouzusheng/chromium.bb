@@ -118,8 +118,12 @@
         # 'shell/browser/layout_test/layout_test_javascript_dialog_manager.h',
         # 'shell/browser/layout_test/layout_test_message_filter.cc',
         # 'shell/browser/layout_test/layout_test_message_filter.h',
+        # 'shell/browser/layout_test/layout_test_navigator_connect_service_factory.cc',
+        # 'shell/browser/layout_test/layout_test_navigator_connect_service_factory.h',
         # 'shell/browser/layout_test/layout_test_notification_manager.cc',
         # 'shell/browser/layout_test/layout_test_notification_manager.h',
+        # 'shell/browser/layout_test/layout_test_permission_manager.h',
+        # 'shell/browser/layout_test/layout_test_permission_manager.cc',
         # 'shell/browser/layout_test/layout_test_push_messaging_service.cc',
         # 'shell/browser/layout_test/layout_test_push_messaging_service.h',
         # 'shell/browser/layout_test/layout_test_resource_dispatcher_host_delegate.cc',
@@ -167,6 +171,8 @@
         'shell/browser/shell_net_log.h',
         'shell/browser/shell_network_delegate.cc',
         'shell/browser/shell_network_delegate.h',
+        'shell/browser/shell_permission_manager.cc',
+        'shell/browser/shell_permission_manager.h',
         'shell/browser/shell_platform_data_aura.cc',
         'shell/browser/shell_platform_data_aura.h',
         'shell/browser/shell_plugin_service_filter.cc',
@@ -250,10 +256,6 @@
         # 'shell/renderer/test_runner/mock_credential_manager_client.h',
         # 'shell/renderer/test_runner/mock_grammar_check.cc',
         # 'shell/renderer/test_runner/mock_grammar_check.h',
-        # 'shell/renderer/test_runner/mock_presentation_client.cc',
-        # 'shell/renderer/test_runner/mock_presentation_client.h',
-        # 'shell/renderer/test_runner/mock_presentation_service.cc',
-        # 'shell/renderer/test_runner/mock_presentation_service.h',
         # 'shell/renderer/test_runner/mock_screen_orientation_client.cc',
         # 'shell/renderer/test_runner/mock_screen_orientation_client.h',
         # 'shell/renderer/test_runner/mock_spell_check.cc',
@@ -290,9 +292,9 @@
         # 'shell/renderer/test_runner/text_input_controller.h',
         # 'shell/renderer/test_runner/web_ax_object_proxy.cc',
         # 'shell/renderer/test_runner/web_ax_object_proxy.h',
+        # 'shell/renderer/test_runner/web_content_settings.cc',
+        # 'shell/renderer/test_runner/web_content_settings.h',
         # 'shell/renderer/test_runner/web_frame_test_proxy.h',
-        # 'shell/renderer/test_runner/web_permissions.cc',
-        # 'shell/renderer/test_runner/web_permissions.h',
         # 'shell/renderer/test_runner/web_task.cc',
         # 'shell/renderer/test_runner/web_task.h',
         # 'shell/renderer/test_runner/web_test_delegate.h',
@@ -353,7 +355,7 @@
             'copy_test_netscape_plugin',
           ],
         }],  # OS=="android"
-        ['os_posix == 1 and OS != "mac" and android_webview_build != 1', {
+        ['os_posix == 1 and OS != "mac"', {
           'dependencies': [
             '../components/components.gyp:breakpad_host',
           ],
@@ -497,6 +499,7 @@
         'content_shell_resources',
         '<(DEPTH)/net/net.gyp:net_resources',
         '<(DEPTH)/third_party/WebKit/public/blink_resources.gyp:blink_resources',
+        '<(DEPTH)/third_party/WebKit/public/blink_resources.gyp:blink_image_resources',
         '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
         '<(DEPTH)/ui/strings/ui_strings.gyp:ui_strings',
       ],
@@ -523,6 +526,7 @@
           'variables': {
             'pak_inputs': [
               '<(SHARED_INTERMEDIATE_DIR)/blink/public/resources/blink_resources.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/blink/public/resources/blink_image_resources_100_percent.pak',
               '<(SHARED_INTERMEDIATE_DIR)/content/app/resources/content_resources_100_percent.pak',
               '<(SHARED_INTERMEDIATE_DIR)/content/app/strings/content_strings_en-US.pak',
               '<(SHARED_INTERMEDIATE_DIR)/content/browser/tracing/tracing_resources.pak',
@@ -677,13 +681,11 @@
           ],
         }],  # OS=="mac"
         ['OS=="android"', {
+          'dependencies': [
+          ],
           'dependencies!': [
           ],
         }],  # OS=="android"
-        ['OS=="android" and android_webview_build==0', {
-          'dependencies': [
-          ],
-        }],  # OS=="android" and android_webview_build==0
       ],
     },
     {

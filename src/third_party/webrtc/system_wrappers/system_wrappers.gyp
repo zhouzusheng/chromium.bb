@@ -13,6 +13,7 @@
       'target_name': 'system_wrappers',
       'type': 'static_library',
       'dependencies': [
+        '<(webrtc_root)/common.gyp:webrtc_common',
         '../base/base.gyp:rtc_base_approved',
       ],
       'sources': [
@@ -38,7 +39,6 @@
         'interface/ref_count.h',
         'interface/rtp_to_ntp.h',
         'interface/rw_lock_wrapper.h',
-        'interface/scoped_ptr.h',
         'interface/scoped_refptr.h',
         'interface/scoped_vector.h',
         'interface/sleep.h',
@@ -114,11 +114,6 @@
         }, {
           'sources!': [ 'source/data_log.cc', ],
         },],
-        ['rtc_use_direct_trace==1', {
-          'defines': [
-            'WEBRTC_DIRECT_TRACE',
-          ],
-        }],
         ['OS=="android"', {
           'defines': [
             'WEBRTC_THREAD_RR',

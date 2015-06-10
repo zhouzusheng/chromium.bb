@@ -28,14 +28,14 @@
 
 #include "core/fetch/ImageResource.h"
 #include "core/fetch/ResourcePtr.h"
-#include "core/layout/style/StyleImage.h"
+#include "core/style/StyleImage.h"
 
 namespace blink {
 
 class LayoutObject;
 
 class LayoutImageResource {
-    WTF_MAKE_NONCOPYABLE(LayoutImageResource); WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(LayoutImageResource); WTF_MAKE_FAST_ALLOCATED(LayoutImageResource);
 public:
     virtual ~LayoutImageResource();
 
@@ -55,11 +55,11 @@ public:
 
     virtual PassRefPtr<Image> image(int /* width */ = 0, int /* height */ = 0) const
     {
-        return m_cachedImage ? m_cachedImage->imageForRenderer(m_renderer) : Image::nullImage();
+        return m_cachedImage ? m_cachedImage->imageForLayoutObject(m_renderer) : Image::nullImage();
     }
     virtual bool errorOccurred() const { return m_cachedImage && m_cachedImage->errorOccurred(); }
 
-    virtual void setContainerSizeForRenderer(const IntSize&);
+    virtual void setContainerSizeForLayoutObject(const IntSize&);
     virtual bool imageHasRelativeWidth() const { return m_cachedImage ? m_cachedImage->imageHasRelativeWidth() : false; }
     virtual bool imageHasRelativeHeight() const { return m_cachedImage ? m_cachedImage->imageHasRelativeHeight() : false; }
 

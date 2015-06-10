@@ -7,36 +7,36 @@
 
 namespace blink {
 
-static void copyMarginProperties(LayoutStyle& placeholderStyle, const LayoutStyle& spannerStyle)
+static void copyMarginProperties(ComputedStyle& placeholderStyle, const ComputedStyle& spannerStyle)
 {
     // We really only need the block direction margins, but there are no setters for that in
-    // LayoutStyle. Just copy all margin sides. The inline ones don't matter anyway.
+    // ComputedStyle. Just copy all margin sides. The inline ones don't matter anyway.
     placeholderStyle.setMarginLeft(spannerStyle.marginLeft());
     placeholderStyle.setMarginRight(spannerStyle.marginRight());
     placeholderStyle.setMarginTop(spannerStyle.marginTop());
     placeholderStyle.setMarginBottom(spannerStyle.marginBottom());
 }
 
-LayoutMultiColumnSpannerPlaceholder* LayoutMultiColumnSpannerPlaceholder::createAnonymous(const LayoutStyle& parentStyle, RenderBox& rendererInFlowThread)
+LayoutMultiColumnSpannerPlaceholder* LayoutMultiColumnSpannerPlaceholder::createAnonymous(const ComputedStyle& parentStyle, LayoutBox& rendererInFlowThread)
 {
     LayoutMultiColumnSpannerPlaceholder* newSpanner = new LayoutMultiColumnSpannerPlaceholder(&rendererInFlowThread);
     Document& document = rendererInFlowThread.document();
     newSpanner->setDocumentForAnonymous(&document);
-    RefPtr<LayoutStyle> newStyle = LayoutStyle::createAnonymousStyleWithDisplay(parentStyle, BLOCK);
+    RefPtr<ComputedStyle> newStyle = ComputedStyle::createAnonymousStyleWithDisplay(parentStyle, BLOCK);
     copyMarginProperties(*newStyle, rendererInFlowThread.styleRef());
     newSpanner->setStyle(newStyle);
     return newSpanner;
 }
 
-LayoutMultiColumnSpannerPlaceholder::LayoutMultiColumnSpannerPlaceholder(RenderBox* rendererInFlowThread)
-    : RenderBox(0)
+LayoutMultiColumnSpannerPlaceholder::LayoutMultiColumnSpannerPlaceholder(LayoutBox* rendererInFlowThread)
+    : LayoutBox(0)
     , m_rendererInFlowThread(rendererInFlowThread)
 {
 }
 
 void LayoutMultiColumnSpannerPlaceholder::updateMarginProperties()
 {
-    RefPtr<LayoutStyle> newStyle = LayoutStyle::clone(styleRef());
+    RefPtr<ComputedStyle> newStyle = ComputedStyle::clone(styleRef());
     copyMarginProperties(*newStyle, m_rendererInFlowThread->styleRef());
     setStyle(newStyle);
 }
@@ -45,7 +45,7 @@ void LayoutMultiColumnSpannerPlaceholder::willBeRemovedFromTree()
 {
     if (m_rendererInFlowThread)
         m_rendererInFlowThread->clearSpannerPlaceholder();
-    RenderBox::willBeRemovedFromTree();
+    LayoutBox::willBeRemovedFromTree();
 }
 
 bool LayoutMultiColumnSpannerPlaceholder::needsPreferredWidthsRecalculation() const
@@ -91,11 +91,11 @@ void LayoutMultiColumnSpannerPlaceholder::computeLogicalHeight(LayoutUnit, Layou
     computedValues.m_margins.m_after = marginAfter();
 }
 
-void LayoutMultiColumnSpannerPlaceholder::invalidateTreeIfNeeded(const PaintInvalidationState& paintInvalidationState)
+void LayoutMultiColumnSpannerPlaceholder::invalidateTreeIfNeeded(PaintInvalidationState& paintInvalidationState)
 {
     PaintInvalidationState newPaintInvalidationState(paintInvalidationState, *this, paintInvalidationState.paintInvalidationContainer());
     m_rendererInFlowThread->invalidateTreeIfNeeded(newPaintInvalidationState);
-    RenderBox::invalidateTreeIfNeeded(paintInvalidationState);
+    LayoutBox::invalidateTreeIfNeeded(paintInvalidationState);
 }
 
 void LayoutMultiColumnSpannerPlaceholder::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
@@ -104,14 +104,9 @@ void LayoutMultiColumnSpannerPlaceholder::paint(const PaintInfo& paintInfo, cons
         m_rendererInFlowThread->paint(paintInfo, paintOffset);
 }
 
-bool LayoutMultiColumnSpannerPlaceholder::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction action)
+bool LayoutMultiColumnSpannerPlaceholder::nodeAtPoint(HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction action)
 {
-    return !m_rendererInFlowThread->hasSelfPaintingLayer() && m_rendererInFlowThread->nodeAtPoint(request, result, locationInContainer, accumulatedOffset, action);
-}
-
-const char* LayoutMultiColumnSpannerPlaceholder::renderName() const
-{
-    return "LayoutMultiColumnSpannerPlaceholder";
+    return !m_rendererInFlowThread->hasSelfPaintingLayer() && m_rendererInFlowThread->nodeAtPoint(result, locationInContainer, accumulatedOffset, action);
 }
 
 }

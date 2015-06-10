@@ -22,17 +22,17 @@
 #define InlineFlowBox_h
 
 #include "core/layout/LayoutObjectInlines.h"
+#include "core/layout/OverflowModel.h"
 #include "core/layout/line/FloatToLayoutUnit.h"
 #include "core/layout/line/InlineBox.h"
-#include "core/layout/style/ShadowData.h"
-#include "core/rendering/RenderOverflow.h"
+#include "core/style/ShadowData.h"
 
 namespace blink {
 
 class HitTestRequest;
 class HitTestResult;
 class InlineTextBox;
-class RenderLineBoxList;
+class LineBoxList;
 class SimpleFontData;
 class VerticalPositionCache;
 
@@ -77,8 +77,8 @@ public:
 
 #ifndef NDEBUG
     virtual void showLineTreeAndMark(const InlineBox* = 0, const char* = 0, const InlineBox* = 0, const char* = 0, const LayoutObject* = 0, int = 0) const override;
-    virtual const char* boxName() const override;
 #endif
+    virtual const char* boxName() const override;
 
     InlineFlowBox* prevLineBox() const { return m_prevLineBox; }
     InlineFlowBox* nextLineBox() const { return m_nextLineBox; }
@@ -118,11 +118,11 @@ public:
     IntRect roundedFrameRect() const;
 
     virtual void paint(const PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom) override;
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom) override;
+    virtual bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom) override;
 
     bool boxShadowCanBeAppliedToBackground(const FillLayer&) const;
 
-    virtual RenderLineBoxList* rendererLineBoxes() const;
+    virtual LineBoxList* lineBoxes() const;
 
     // logicalLeft = left in a horizontal line and top in a vertical line.
     LayoutUnit marginBorderPaddingLogicalLeft() const { return marginLogicalLeft() + borderLogicalLeft() + paddingLogicalLeft(); }
@@ -143,13 +143,13 @@ public:
     {
         if (!includeLogicalLeftEdge())
             return 0;
-        return isHorizontal() ? renderer().style(isFirstLineStyle())->borderLeftWidth() : renderer().style(isFirstLineStyle())->borderTopWidth();
+        return isHorizontal() ? layoutObject().style(isFirstLineStyle())->borderLeftWidth() : layoutObject().style(isFirstLineStyle())->borderTopWidth();
     }
     int borderLogicalRight() const
     {
         if (!includeLogicalRightEdge())
             return 0;
-        return isHorizontal() ? renderer().style(isFirstLineStyle())->borderRightWidth() : renderer().style(isFirstLineStyle())->borderBottomWidth();
+        return isHorizontal() ? layoutObject().style(isFirstLineStyle())->borderRightWidth() : layoutObject().style(isFirstLineStyle())->borderBottomWidth();
     }
     int paddingLogicalLeft() const
     {
@@ -190,7 +190,7 @@ public:
     void adjustMaxAscentAndDescent(int& maxAscent, int& maxDescent, int maxPositionTop, int maxPositionBottom);
     void placeBoxesInBlockDirection(LayoutUnit logicalTop, LayoutUnit maxHeight, int maxAscent, bool strictMode, LayoutUnit& lineTop, LayoutUnit& lineBottom, LayoutUnit& selectionBottom, bool& setLineTop, LayoutUnit& lineTopIncludingMargins, LayoutUnit& lineBottomIncludingMargins, bool& hasAnnotationsBefore, bool& hasAnnotationsAfter, FontBaseline);
     void flipLinesInBlockDirection(LayoutUnit lineTop, LayoutUnit lineBottom);
-    bool requiresIdeographicBaseline(const GlyphOverflowAndFallbackFontsMap&) const;
+    FontBaseline dominantBaseline() const;
 
     LayoutUnit computeOverAnnotationAdjustment(LayoutUnit allowedPosition) const;
     LayoutUnit computeUnderAnnotationAdjustment(LayoutUnit allowedPosition) const;
@@ -235,7 +235,7 @@ public:
     LayoutRect logicalLayoutOverflowRect(LayoutUnit lineTop, LayoutUnit lineBottom) const
     {
         LayoutRect result = layoutOverflowRect(lineTop, lineBottom);
-        if (!renderer().isHorizontalWritingMode())
+        if (!layoutObject().isHorizontalWritingMode())
             result = result.transposedRect();
         return result;
     }
@@ -263,7 +263,7 @@ public:
     LayoutRect logicalVisualOverflowRect(LayoutUnit lineTop, LayoutUnit lineBottom) const
     {
         LayoutRect result = visualOverflowRect(lineTop, lineBottom);
-        if (!renderer().isHorizontalWritingMode())
+        if (!layoutObject().isHorizontalWritingMode())
             result = result.transposedRect();
         return result;
     }
@@ -304,7 +304,7 @@ private:
     void setVisualOverflow(const LayoutRect&, const LayoutRect&);
 
 protected:
-    OwnPtr<RenderOverflow> m_overflow;
+    OwnPtr<OverflowModel> m_overflow;
 
     virtual bool isInlineFlowBox() const override final { return true; }
 

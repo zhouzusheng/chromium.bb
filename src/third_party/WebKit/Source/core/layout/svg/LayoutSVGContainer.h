@@ -42,7 +42,7 @@ public:
     LayoutObject* lastChild() const { ASSERT(children() == virtualChildren()); return children()->lastChild(); }
 
     virtual void paint(const PaintInfo&, const LayoutPoint&) override;
-    virtual void styleDidChange(StyleDifference, const LayoutStyle* oldStyle) override;
+    virtual void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override;
     virtual void setNeedsBoundariesUpdate() override final { m_needsBoundariesUpdate = true; }
     virtual bool didTransformToRootUpdate() { return false; }
     bool isObjectBoundingBoxValid() const { return m_objectBoundingBoxValid; }
@@ -50,23 +50,25 @@ public:
     bool selfWillPaint();
 
     virtual bool hasNonIsolatedBlendingDescendants() const override final;
+
+    virtual const char* name() const override { return "LayoutSVGContainer"; }
+
+    virtual FloatRect objectBoundingBox() const override final { return m_objectBoundingBox; }
+
 protected:
     virtual LayoutObjectChildList* virtualChildren() override final { return children(); }
     virtual const LayoutObjectChildList* virtualChildren() const override final { return children(); }
 
     virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectSVGContainer || LayoutSVGModelObject::isOfType(type); }
-    virtual const char* renderName() const override { return "LayoutSVGContainer"; }
-
     virtual void layout() override;
 
     virtual void addChild(LayoutObject* child, LayoutObject* beforeChild = 0) override final;
     virtual void removeChild(LayoutObject*) override final;
     virtual void addFocusRingRects(Vector<LayoutRect>&, const LayoutPoint& additionalOffset) const override final;
 
-    virtual FloatRect objectBoundingBox() const override final { return m_objectBoundingBox; }
     virtual FloatRect strokeBoundingBox() const override final { return m_strokeBoundingBox; }
 
-    virtual bool nodeAtFloatPoint(const HitTestRequest&, HitTestResult&, const FloatPoint& pointInParent, HitTestAction) override;
+    virtual bool nodeAtFloatPoint(HitTestResult&, const FloatPoint& pointInParent, HitTestAction) override;
 
     // Allow LayoutSVGTransformableContainer to hook in at the right time in layout().
     virtual bool calculateLocalTransform() { return false; }

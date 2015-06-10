@@ -137,7 +137,7 @@ void PropertySetCSSStyleDeclaration::deref()
 }
 #endif
 
-void PropertySetCSSStyleDeclaration::trace(Visitor* visitor)
+DEFINE_TRACE(PropertySetCSSStyleDeclaration)
 {
     visitor->trace(m_propertySet);
     AbstractPropertySetCSSStyleDeclaration::trace(visitor);
@@ -160,13 +160,12 @@ String AbstractPropertySetCSSStyleDeclaration::cssText() const
     return propertySet().asText();
 }
 
-void AbstractPropertySetCSSStyleDeclaration::setCSSText(const String& text, ExceptionState& exceptionState)
+void AbstractPropertySetCSSStyleDeclaration::setCSSText(const String& text, ExceptionState&)
 {
     StyleAttributeMutationScope mutationScope(this);
     willMutate();
 
-    // FIXME: Detect syntax errors and set exceptionState.
-    propertySet().parseDeclaration(text, contextStyleSheet());
+    propertySet().parseDeclarationList(text, contextStyleSheet());
 
     didMutate(PropertyChanged);
 
@@ -279,7 +278,7 @@ bool AbstractPropertySetCSSStyleDeclaration::cssPropertyMatches(CSSPropertyID pr
     return propertySet().propertyMatches(propertyID, propertyValue);
 }
 
-void AbstractPropertySetCSSStyleDeclaration::trace(Visitor* visitor)
+DEFINE_TRACE(AbstractPropertySetCSSStyleDeclaration)
 {
     CSSStyleDeclaration::trace(visitor);
 }
@@ -346,7 +345,7 @@ void StyleRuleCSSStyleDeclaration::reattach(MutableStylePropertySet& propertySet
 #endif
 }
 
-void StyleRuleCSSStyleDeclaration::trace(Visitor* visitor)
+DEFINE_TRACE(StyleRuleCSSStyleDeclaration)
 {
     visitor->trace(m_parentRule);
     PropertySetCSSStyleDeclaration::trace(visitor);
@@ -388,7 +387,7 @@ void InlineCSSStyleDeclaration::deref()
 }
 #endif
 
-void InlineCSSStyleDeclaration::trace(Visitor* visitor)
+DEFINE_TRACE(InlineCSSStyleDeclaration)
 {
     visitor->trace(m_parentElement);
     AbstractPropertySetCSSStyleDeclaration::trace(visitor);

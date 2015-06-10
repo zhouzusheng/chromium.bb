@@ -42,6 +42,10 @@ public:
 
     virtual FilterEffectType filterEffectType() const override { return FilterEffectTypeImage; }
 
+    // feImage does not perform color interpolation of any kind, so doesn't
+    // depend on the value of color-interpolation-filters.
+    virtual void setOperatingColorSpace(ColorSpace) override { }
+
     virtual TextStream& externalRepresentation(TextStream&, int indention) const override;
     virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) override;
 
@@ -51,9 +55,9 @@ private:
     virtual ~FEImage() { }
     FEImage(Filter*, PassRefPtr<Image>, PassRefPtrWillBeRawPtr<SVGPreserveAspectRatio>);
     FEImage(Filter*, TreeScope&, const String&, PassRefPtrWillBeRawPtr<SVGPreserveAspectRatio>);
-    LayoutObject* referencedRenderer() const;
+    LayoutObject* referencedLayoutObject() const;
 
-    PassRefPtr<SkImageFilter> createImageFilterForRenderer(LayoutObject* rendererer, SkiaImageFilterBuilder*);
+    PassRefPtr<SkImageFilter> createImageFilterForLayoutObject(LayoutObject&, SkiaImageFilterBuilder*);
 
     RefPtr<Image> m_image;
 

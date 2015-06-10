@@ -52,16 +52,16 @@ SubtreeLayoutScope::~SubtreeLayoutScope()
 #endif
 }
 
-void SubtreeLayoutScope::setNeedsLayout(LayoutObject* descendant)
+void SubtreeLayoutScope::setNeedsLayout(LayoutObject* descendant, LayoutInvalidationReasonForTracing reason)
 {
     ASSERT(descendant->isDescendantOf(&m_root));
-    descendant->setNeedsLayout(MarkContainingBlockChain, this);
+    descendant->setNeedsLayout(reason, MarkContainerChain, this);
 }
 
 void SubtreeLayoutScope::setChildNeedsLayout(LayoutObject* descendant)
 {
     ASSERT(descendant->isDescendantOf(&m_root));
-    descendant->setChildNeedsLayout(MarkContainingBlockChain, this);
+    descendant->setChildNeedsLayout(MarkContainerChain, this);
 }
 
 void SubtreeLayoutScope::addRendererToLayout(LayoutObject* renderer)

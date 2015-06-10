@@ -52,7 +52,7 @@ static const double finalProgressValue = 0.9; // 1.0 - initialProgressValue
 static const int progressItemDefaultEstimatedLength = 1024 * 16;
 
 struct ProgressItem {
-    WTF_MAKE_NONCOPYABLE(ProgressItem); WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(ProgressItem); WTF_MAKE_FAST_ALLOCATED(ProgressItem);
 public:
     ProgressItem(long long length)
         : bytesReceived(0)
@@ -84,7 +84,7 @@ ProgressTracker::~ProgressTracker()
 {
 }
 
-void ProgressTracker::trace(Visitor* visitor)
+DEFINE_TRACE(ProgressTracker)
 {
     visitor->trace(m_frame);
 }

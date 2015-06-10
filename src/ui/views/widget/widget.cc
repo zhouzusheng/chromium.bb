@@ -15,6 +15,7 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/layer.h"
+#include "ui/compositor/paint_context.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
 #include "ui/gfx/image/image_skia.h"
@@ -112,7 +113,7 @@ Widget::InitParams::InitParams()
       parent(NULL),
       native_widget(NULL),
       desktop_window_tree_host(NULL),
-      layer_type(aura::WINDOW_LAYER_TEXTURED),
+      layer_type(ui::LAYER_TEXTURED),
       context(NULL),
       force_show_in_taskbar(false) {
 }
@@ -135,7 +136,7 @@ Widget::InitParams::InitParams(Type type)
       parent(NULL),
       native_widget(NULL),
       desktop_window_tree_host(NULL),
-      layer_type(aura::WINDOW_LAYER_TEXTURED),
+      layer_type(ui::LAYER_TEXTURED),
       context(NULL),
       force_show_in_taskbar(false) {
 }
@@ -357,8 +358,10 @@ void Widget::Init(const InitParams& in_params) {
     non_client_view_->set_client_view(widget_delegate_->CreateClientView(this));
     non_client_view_->SetOverlayView(widget_delegate_->CreateOverlayView());
     SetContentsView(non_client_view_);
-    // Initialize the window's title before setting the window's initial bounds;
-    // the frame view's preferred height may depend on the presence of a title.
+    // Initialize the window's icon and title before setting the window's
+    // initial bounds; the frame view's preferred height may depend on the
+    // presence of an icon or a title.
+    UpdateWindowIcon();
     UpdateWindowTitle();
     non_client_view_->ResetWindowControls();
     SetInitialBounds(params.bounds);
@@ -1064,14 +1067,12 @@ void Widget::OnNativeWidgetActivationChanged(bool active) {
     non_client_view()->frame_view()->SchedulePaint();
 }
 
-void Widget::OnNativeFocus(gfx::NativeView old_focused_view) {
-  WidgetFocusManager::GetInstance()->OnWidgetFocusEvent(old_focused_view,
-                                                        GetNativeView());
+void Widget::OnNativeFocus() {
+  WidgetFocusManager::GetInstance()->OnNativeFocusChanged(GetNativeView());
 }
 
-void Widget::OnNativeBlur(gfx::NativeView new_focused_view) {
-  WidgetFocusManager::GetInstance()->OnWidgetFocusEvent(GetNativeView(),
-                                                        new_focused_view);
+void Widget::OnNativeBlur() {
+  WidgetFocusManager::GetInstance()->OnNativeFocusChanged(nullptr);
 }
 
 void Widget::OnNativeWidgetVisibilityChanging(bool visible) {
@@ -1179,11 +1180,12 @@ bool Widget::OnNativeWidgetPaintAccelerated(const gfx::Rect& dirty_region) {
   return true;
 }
 
-void Widget::OnNativeWidgetPaint(gfx::Canvas* canvas) {
+void Widget::OnNativeWidgetPaint(const ui::PaintContext& context) {
   // On Linux Aura, we can get here during Init() because of the
   // SetInitialBounds call.
-  if (native_widget_initialized_)
-    GetRootView()->Paint(canvas, CullSet());
+  if (!native_widget_initialized_)
+    return;
+  GetRootView()->Paint(context);
 }
 
 int Widget::GetNonClientComponent(const gfx::Point& point) {

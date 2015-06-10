@@ -13,10 +13,10 @@
 
 #include <vector>
 
+#include "webrtc/base/scoped_ptr.h"
 #include "webrtc/base/thread_annotations.h"
 #include "webrtc/modules/audio_coding/codecs/audio_decoder.h"
 #include "webrtc/modules/audio_coding/codecs/audio_encoder.h"
-#include "webrtc/system_wrappers/interface/scoped_ptr.h"
 
 namespace webrtc {
 
@@ -35,7 +35,6 @@ class AudioEncoderDecoderIsacT : public AudioEncoder, public AudioDecoder {
     Config();
     bool IsOk() const;
     int payload_type;
-    int red_payload_type;
     int sample_rate_hz;
     int frame_size_ms;
     int bit_rate;  // Limit on the short-term average bit rate, in bits/second.
@@ -53,7 +52,6 @@ class AudioEncoderDecoderIsacT : public AudioEncoder, public AudioDecoder {
     ConfigAdaptive();
     bool IsOk() const;
     int payload_type;
-    int red_payload_type;
     int sample_rate_hz;
     int initial_frame_size_ms;
     int initial_bit_rate;
@@ -64,42 +62,40 @@ class AudioEncoderDecoderIsacT : public AudioEncoder, public AudioDecoder {
 
   explicit AudioEncoderDecoderIsacT(const Config& config);
   explicit AudioEncoderDecoderIsacT(const ConfigAdaptive& config);
-  virtual ~AudioEncoderDecoderIsacT() OVERRIDE;
-
-  void UpdateDecoderSampleRate(int sample_rate_hz);
+  ~AudioEncoderDecoderIsacT() override;
 
   // AudioEncoder public methods.
-  virtual int SampleRateHz() const OVERRIDE;
-  virtual int NumChannels() const OVERRIDE;
-  virtual int Num10MsFramesInNextPacket() const OVERRIDE;
-  virtual int Max10MsFramesInAPacket() const OVERRIDE;
+  int SampleRateHz() const override;
+  int NumChannels() const override;
+  size_t MaxEncodedBytes() const override;
+  int Num10MsFramesInNextPacket() const override;
+  int Max10MsFramesInAPacket() const override;
 
   // AudioDecoder methods.
-  virtual int Decode(const uint8_t* encoded,
-                     size_t encoded_len,
-                     int16_t* decoded,
-                     SpeechType* speech_type) OVERRIDE;
-  virtual int DecodeRedundant(const uint8_t* encoded,
-                              size_t encoded_len,
-                              int16_t* decoded,
-                              SpeechType* speech_type) OVERRIDE;
-  virtual bool HasDecodePlc() const OVERRIDE;
-  virtual int DecodePlc(int num_frames, int16_t* decoded) OVERRIDE;
-  virtual int Init() OVERRIDE;
-  virtual int IncomingPacket(const uint8_t* payload,
-                             size_t payload_len,
-                             uint16_t rtp_sequence_number,
-                             uint32_t rtp_timestamp,
-                             uint32_t arrival_timestamp) OVERRIDE;
-  virtual int ErrorCode() OVERRIDE;
+  bool HasDecodePlc() const override;
+  int DecodePlc(int num_frames, int16_t* decoded) override;
+  int Init() override;
+  int IncomingPacket(const uint8_t* payload,
+                     size_t payload_len,
+                     uint16_t rtp_sequence_number,
+                     uint32_t rtp_timestamp,
+                     uint32_t arrival_timestamp) override;
+  int ErrorCode() override;
+  size_t Channels() const override { return 1; }
 
  protected:
   // AudioEncoder protected method.
-  virtual bool EncodeInternal(uint32_t rtp_timestamp,
-                              const int16_t* audio,
-                              size_t max_encoded_bytes,
-                              uint8_t* encoded,
-                              EncodedInfo* info) OVERRIDE;
+  EncodedInfo EncodeInternal(uint32_t rtp_timestamp,
+                             const int16_t* audio,
+                             size_t max_encoded_bytes,
+                             uint8_t* encoded) override;
+
+  // AudioDecoder protected method.
+  int DecodeInternal(const uint8_t* encoded,
+                     size_t encoded_len,
+                     int sample_rate_hz,
+                     int16_t* decoded,
+                     SpeechType* speech_type) override;
 
  private:
   // This value is taken from STREAM_SIZE_MAX_60 for iSAC float (60 ms) and
@@ -107,17 +103,18 @@ class AudioEncoderDecoderIsacT : public AudioEncoder, public AudioDecoder {
   static const size_t kSufficientEncodeBufferSizeBytes = 400;
 
   const int payload_type_;
-  const int red_payload_type_;
 
   // iSAC encoder/decoder state, guarded by a mutex to ensure that encode calls
   // from one thread won't clash with decode calls from another thread.
   // Note: PT_GUARDED_BY is disabled since it is not yet supported by clang.
-  const scoped_ptr<CriticalSectionWrapper> state_lock_;
+  const rtc::scoped_ptr<CriticalSectionWrapper> state_lock_;
   typename T::instance_type* isac_state_
       GUARDED_BY(state_lock_) /* PT_GUARDED_BY(lock_)*/;
 
+  int decoder_sample_rate_hz_ GUARDED_BY(state_lock_);
+
   // Must be acquired before state_lock_.
-  const scoped_ptr<CriticalSectionWrapper> lock_;
+  const rtc::scoped_ptr<CriticalSectionWrapper> lock_;
 
   // Have we accepted input but not yet emitted it in a packet?
   bool packet_in_progress_ GUARDED_BY(lock_);
@@ -127,14 +124,6 @@ class AudioEncoderDecoderIsacT : public AudioEncoder, public AudioDecoder {
 
   // Timestamp of the previously encoded packet.
   uint32_t last_encoded_timestamp_ GUARDED_BY(lock_);
-
-  // Redundant encoding from last time.
-  // Note: If has_redundant_encoder is false, we set the array length to 1,
-  // since zero-length arrays are not supported by all compilers.
-  uint8_t redundant_payload_[T::has_redundant_encoder
-                                 ? kSufficientEncodeBufferSizeBytes
-                                 : 1] GUARDED_BY(lock_);
-  size_t redundant_length_bytes_ GUARDED_BY(lock_);
 
   DISALLOW_COPY_AND_ASSIGN(AudioEncoderDecoderIsacT);
 };

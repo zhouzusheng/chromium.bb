@@ -24,7 +24,6 @@ namespace content {
 
 class BrowserContext;
 class DevToolsFrameTraceRecorder;
-class DevToolsProtocolHandler;
 class RenderFrameHost;
 class RenderFrameHostImpl;
 
@@ -34,11 +33,13 @@ class PowerSaveBlockerImpl;
 
 namespace devtools {
 namespace dom { class DOMHandler; }
+namespace emulation { class EmulationHandler; }
 namespace input { class InputHandler; }
 namespace inspector { class InspectorHandler; }
 namespace network { class NetworkHandler; }
 namespace page { class PageHandler; }
 namespace power { class PowerHandler; }
+namespace service_worker { class ServiceWorkerHandler; }
 namespace tracing { class TracingHandler; }
 }
 
@@ -47,6 +48,8 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
       private WebContentsObserver,
       public NotificationObserver {
  public:
+  static void AddAllAgentHosts(DevToolsAgentHost::List* result);
+
   static void OnCancelPendingNavigation(RenderFrameHost* pending,
                                         RenderFrameHost* current);
 
@@ -71,8 +74,12 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
   explicit RenderFrameDevToolsAgentHost(RenderFrameHost*);
   ~RenderFrameDevToolsAgentHost() override;
 
+  static scoped_refptr<DevToolsAgentHost> GetOrCreateFor(RenderFrameHost* host);
+  static void AppendAgentHostForFrameIfApplicable(
+      DevToolsAgentHost::List* result,
+      RenderFrameHost* host);
+
   // IPCDevToolsAgentHost overrides.
-  void DispatchProtocolMessage(const std::string& message) override;
   void SendMessageToAgent(IPC::Message* msg) override;
   void OnClientAttached() override;
   void OnClientDetached() override;
@@ -82,7 +89,7 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
                                   RenderFrameHost* new_host) override;
   void RenderFrameHostChanged(RenderFrameHost* old_host,
                               RenderFrameHost* new_host) override;
-  void RenderFrameDeleted(RenderFrameHost* rvh) override;
+  void FrameDeleted(RenderFrameHost* rfh) override;
   void RenderProcessGone(base::TerminationStatus status) override;
   bool OnMessageReceived(const IPC::Message& message,
                          RenderFrameHost* render_frame_host) override;
@@ -92,6 +99,10 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
   void TitleWasSet(NavigationEntry* entry, bool explicit_set) override;
   void NavigationEntryCommitted(
       const LoadCommittedDetails& load_details) override;
+  void DidCommitProvisionalLoadForFrame(
+      RenderFrameHost* render_frame_host,
+      const GURL& url,
+      ui::PageTransition transition_type) override;
 
   // NotificationObserver overrides:
   void Observe(int type,
@@ -110,12 +121,14 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
   bool OnSetTouchEventEmulationEnabled(const IPC::Message& message);
 
   void OnDispatchOnInspectorFrontend(const DevToolsMessageChunk& message);
-  void DispatchOnInspectorFrontend(const std::string& message);
 
   void ClientDetachedFromRenderer();
 
   void InnerOnClientAttached();
   void InnerClientDetachedFromRenderer();
+
+  bool IsChildFrame();
+  void DestroyOnRenderFrameGone();
 
   RenderFrameHostImpl* render_frame_host_;
   scoped_ptr<devtools::dom::DOMHandler> dom_handler_;
@@ -124,8 +137,10 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
   scoped_ptr<devtools::network::NetworkHandler> network_handler_;
   scoped_ptr<devtools::page::PageHandler> page_handler_;
   scoped_ptr<devtools::power::PowerHandler> power_handler_;
+  scoped_ptr<devtools::service_worker::ServiceWorkerHandler>
+      service_worker_handler_;
   scoped_ptr<devtools::tracing::TracingHandler> tracing_handler_;
-  scoped_ptr<DevToolsProtocolHandler> protocol_handler_;
+  scoped_ptr<devtools::emulation::EmulationHandler> emulation_handler_;
   scoped_ptr<DevToolsFrameTraceRecorder> frame_trace_recorder_;
 #if defined(OS_ANDROID)
   scoped_ptr<PowerSaveBlockerImpl> power_save_blocker_;

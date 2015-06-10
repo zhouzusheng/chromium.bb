@@ -11,6 +11,7 @@
 #include "base/debug/profiler.h"
 #include "base/files/file_util.h"
 #include "base/hash.h"
+#include "base/metrics/sparse_histogram.h"
 #include "base/path_service.h"
 #include "base/process/launch.h"
 #include "base/strings/string_util.h"
@@ -28,6 +29,7 @@
 #include "sandbox/win/src/process_mitigations.h"
 #include "sandbox/win/src/sandbox.h"
 #include "sandbox/win/src/sandbox_nt_util.h"
+#include "sandbox/win/src/sandbox_policy_base.h"
 #include "sandbox/win/src/win_utils.h"
 #include "ui/gfx/win/direct_write.h"
 
@@ -80,6 +82,7 @@ const wchar_t* const kTroublesomeDlls[] = {
   L"npggNT.des",                  // GameGuard 2008.
   L"npggNT.dll",                  // GameGuard (older).
   L"oawatch.dll",                 // Online Armor.
+  L"pastali32.dll",               // PastaLeads.
   L"pavhook.dll",                 // Panda Internet Security.
   L"pavlsphook.dll",              // Panda Antivirus.
   L"pavshook.dll",                // Panda Antivirus.
@@ -724,6 +727,7 @@ base::Process StartSandboxedProcess(
                cmd_line->GetProgram().value().c_str(),
                cmd_line->GetCommandLineString().c_str(),
                policy, &temp_process_info);
+  DWORD last_error = ::GetLastError();
   policy->Release();
   base::win::ScopedProcessInformation target(temp_process_info);
 
@@ -732,7 +736,16 @@ base::Process StartSandboxedProcess(
   if (sandbox::SBOX_ALL_OK != result) {
     if (result == sandbox::SBOX_ERROR_GENERIC)
       DPLOG(ERROR) << "Failed to launch process";
-    else
+    else if (result == sandbox::SBOX_ERROR_CREATE_PROCESS) {
+      // TODO(shrikant): Remove this special case handling after determining
+      // cause for lowbox/createprocess errors.
+      sandbox::PolicyBase* policy_base =
+          static_cast<sandbox::PolicyBase*>(policy);
+      UMA_HISTOGRAM_SPARSE_SLOWLY(policy_base->GetLowBoxSid() ?
+                                      "Process.Sandbox.Lowbox.Launch.Error" :
+                                      "Process.Sandbox.Launch.Error",
+                                  last_error);
+    } else
       DLOG(ERROR) << "Failed to launch process. Error: " << result;
     return base::Process();
   }

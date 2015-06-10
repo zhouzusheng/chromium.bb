@@ -75,13 +75,13 @@ QuicPacketCreator::QuicPacketCreator(QuicConnectionId connection_id,
       sequence_number_(0),
       should_fec_protect_(false),
       fec_group_number_(0),
-      send_version_in_packet_(!framer->is_server()),
-      max_packet_length_(kDefaultMaxPacketSize),
+      send_version_in_packet_(framer->perspective() == Perspective::IS_CLIENT),
       max_packets_per_fec_group_(kDefaultMaxPacketsPerFecGroup),
       connection_id_length_(PACKET_8BYTE_CONNECTION_ID),
       next_sequence_number_length_(PACKET_1BYTE_SEQUENCE_NUMBER),
       sequence_number_length_(next_sequence_number_length_),
       packet_size_(0) {
+  SetMaxPacketLength(kDefaultMaxPacketSize);
   framer_->set_fec_builder(this);
 }
 
@@ -94,6 +94,19 @@ void QuicPacketCreator::OnBuiltFecProtectedPayload(
     DCHECK_NE(0u, header.fec_group);
     fec_group_->Update(encryption_level_, header, payload);
   }
+}
+
+void QuicPacketCreator::SetEncrypter(EncryptionLevel level,
+                                     QuicEncrypter* encrypter) {
+  framer_->SetEncrypter(level, encrypter);
+  max_plaintext_size_ = framer_->GetMaxPlaintextSize(max_packet_length_);
+}
+
+void QuicPacketCreator::SetMaxPacketLength(QuicByteCount length) {
+  // |max_packet_length_| should not be changed mid-packet or mid-FEC group.
+  DCHECK(fec_group_.get() == nullptr && queued_frames_.empty());
+  max_packet_length_ = length;
+  max_plaintext_size_ = framer_->GetMaxPlaintextSize(max_packet_length_);
 }
 
 void QuicPacketCreator::set_max_packets_per_fec_group(
@@ -329,11 +342,9 @@ size_t QuicPacketCreator::ExpansionOnNewFrame() const {
 }
 
 size_t QuicPacketCreator::BytesFree() const {
-  const size_t max_plaintext_size =
-      framer_->GetMaxPlaintextSize(max_packet_length_);
-  DCHECK_GE(max_plaintext_size, PacketSize());
-  return max_plaintext_size - min(max_plaintext_size, PacketSize()
-                                  + ExpansionOnNewFrame());
+  DCHECK_GE(max_plaintext_size_, PacketSize());
+  return max_plaintext_size_ - min(max_plaintext_size_, PacketSize()
+                                   + ExpansionOnNewFrame());
 }
 
 size_t QuicPacketCreator::PacketSize() const {
@@ -363,14 +374,12 @@ SerializedPacket QuicPacketCreator::SerializePacket() {
 
   MaybeAddPadding();
 
-  size_t max_plaintext_size =
-      framer_->GetMaxPlaintextSize(max_packet_length_);
-  DCHECK_GE(max_plaintext_size, packet_size_);
+  DCHECK_GE(max_plaintext_size_, packet_size_);
   // ACK Frames will be truncated due to length only if they're the only frame
-  // in the packet, and if packet_size_ was set to max_plaintext_size. If
+  // in the packet, and if packet_size_ was set to max_plaintext_size_. If
   // truncation due to length occurred, then GetSerializedFrameLength will have
   // returned all bytes free.
-  bool possibly_truncated_by_length = packet_size_ == max_plaintext_size &&
+  bool possibly_truncated_by_length = packet_size_ == max_plaintext_size_ &&
       queued_frames_.size() == 1 &&
       queued_frames_.back().type == ACK_FRAME;
   char buffer[kMaxPacketSize];
@@ -399,9 +408,7 @@ SerializedPacket QuicPacketCreator::SerializePacket() {
       framer_->EncryptPacket(encryption_level_, sequence_number_, *packet);
   if (encrypted == nullptr) {
     LOG(DFATAL) << "Failed to encrypt packet number " << sequence_number_;
-    SerializedPacket kNoPacket(0, PACKET_1BYTE_SEQUENCE_NUMBER, nullptr, 0,
-                               nullptr);
-    return kNoPacket;
+    return NoPacket();
   }
 
   packet_size_ = 0;
@@ -416,9 +423,7 @@ SerializedPacket QuicPacketCreator::SerializeFec() {
   if (fec_group_.get() == nullptr || fec_group_->NumReceivedPackets() <= 0) {
     LOG(DFATAL) << "SerializeFEC called but no group or zero packets in group.";
     // TODO(jri): Make this a public method of framer?
-    SerializedPacket kNoPacket(0, PACKET_1BYTE_SEQUENCE_NUMBER, nullptr, 0,
-                               nullptr);
-    return kNoPacket;
+    return NoPacket();
   }
   DCHECK_EQ(0u, queued_frames_.size());
   QuicPacketHeader header;
@@ -438,9 +443,7 @@ SerializedPacket QuicPacketCreator::SerializeFec() {
       framer_->EncryptPacket(encryption_level_, sequence_number_, *packet);
   if (encrypted == nullptr) {
     LOG(DFATAL) << "Failed to encrypt packet number " << sequence_number_;
-    SerializedPacket kNoPacket(0, PACKET_1BYTE_SEQUENCE_NUMBER, nullptr, 0,
-                               nullptr);
-    return kNoPacket;
+    return NoPacket();
   }
   SerializedPacket serialized(
       header.packet_sequence_number,
@@ -450,16 +453,9 @@ SerializedPacket QuicPacketCreator::SerializeFec() {
   return serialized;
 }
 
-SerializedPacket QuicPacketCreator::SerializeConnectionClose(
-    QuicConnectionCloseFrame* close_frame) {
-  QuicFrames frames;
-  frames.push_back(QuicFrame(close_frame));
-  return SerializeAllFrames(frames);
-}
-
 QuicEncryptedPacket* QuicPacketCreator::SerializeVersionNegotiationPacket(
     const QuicVersionVector& supported_versions) {
-  DCHECK(framer_->is_server());
+  DCHECK_EQ(Perspective::IS_SERVER, framer_->perspective());
   QuicPacketPublicHeader header;
   header.connection_id = connection_id_;
   header.reset_flag = false;
@@ -470,6 +466,10 @@ QuicEncryptedPacket* QuicPacketCreator::SerializeVersionNegotiationPacket(
   DCHECK(encrypted);
   DCHECK_GE(max_packet_length_, encrypted->length());
   return encrypted;
+}
+
+SerializedPacket QuicPacketCreator::NoPacket() {
+  return SerializedPacket(0, PACKET_1BYTE_SEQUENCE_NUMBER, nullptr, 0, nullptr);
 }
 
 void QuicPacketCreator::FillPacketHeader(QuicFecGroupNumber fec_group,
@@ -514,7 +514,8 @@ bool QuicPacketCreator::AddFrame(const QuicFrame& frame,
 
   if (save_retransmittable_frames && ShouldRetransmit(frame)) {
     if (queued_retransmittable_frames_.get() == nullptr) {
-      queued_retransmittable_frames_.reset(new RetransmittableFrames());
+      queued_retransmittable_frames_.reset(
+          new RetransmittableFrames(encryption_level_));
     }
     if (frame.type == STREAM_FRAME) {
       queued_frames_.push_back(

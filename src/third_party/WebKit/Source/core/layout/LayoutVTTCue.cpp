@@ -26,14 +26,15 @@
 #include "config.h"
 #include "core/layout/LayoutVTTCue.h"
 
+#include "core/html/shadow/MediaControls.h"
 #include "core/html/track/vtt/VTTCue.h"
+#include "core/layout/LayoutInline.h"
 #include "core/layout/LayoutState.h"
-#include "core/rendering/RenderInline.h"
 
 namespace blink {
 
 LayoutVTTCue::LayoutVTTCue(VTTCueBox* element)
-    : RenderBlockFlow(element)
+    : LayoutBlockFlow(element)
     , m_cue(element->getCue())
 {
 }
@@ -41,8 +42,9 @@ LayoutVTTCue::LayoutVTTCue(VTTCueBox* element)
 class SnapToLinesLayouter {
     STACK_ALLOCATED();
 public:
-    SnapToLinesLayouter(LayoutVTTCue& cueBox, float linePosition)
+    SnapToLinesLayouter(LayoutVTTCue& cueBox, const IntRect& controlsRect, float linePosition)
         : m_cueBox(cueBox)
+        , m_controlsRect(controlsRect)
         , m_linePosition(linePosition)
     {
     }
@@ -64,14 +66,15 @@ private:
 
     LayoutPoint m_specifiedPosition;
     LayoutVTTCue& m_cueBox;
+    IntRect m_controlsRect;
     float m_linePosition;
 };
 
 InlineFlowBox* SnapToLinesLayouter::findFirstLineBox() const
 {
-    if (!m_cueBox.firstChild()->isRenderInline())
+    if (!m_cueBox.firstChild()->isLayoutInline())
         return nullptr;
-    return toRenderInline(m_cueBox.firstChild())->firstLineBox();
+    return toLayoutInline(m_cueBox.firstChild())->firstLineBox();
 }
 
 LayoutUnit SnapToLinesLayouter::computeInitialPositionAdjustment(LayoutUnit& step) const
@@ -97,7 +100,7 @@ LayoutUnit SnapToLinesLayouter::computeInitialPositionAdjustment(LayoutUnit& ste
 
     // 11. If line position is less than zero...
     if (linePosition < 0) {
-        RenderBlock* parentBlock = m_cueBox.containingBlock();
+        LayoutBlock* parentBlock = m_cueBox.containingBlock();
 
         // Horizontal / Vertical: ... then increase position by the
         // height / width of the video's rendering area ...
@@ -116,12 +119,16 @@ bool SnapToLinesLayouter::isOutside() const
 
 bool SnapToLinesLayouter::isOverlapping() const
 {
+    IntRect cueBoxRect = m_cueBox.absoluteBoundingBoxRect();
     for (LayoutObject* box = m_cueBox.previousSibling(); box; box = box->previousSibling()) {
         IntRect boxRect = box->absoluteBoundingBoxRect();
 
-        if (m_cueBox.absoluteBoundingBoxRect().intersects(boxRect))
+        if (cueBoxRect.intersects(boxRect))
             return true;
     }
+
+    if (cueBoxRect.intersects(m_controlsRect))
+        return true;
 
     return false;
 }
@@ -304,7 +311,7 @@ void LayoutVTTCue::adjustForTopAndBottomMarginBorderAndPadding()
 
 void LayoutVTTCue::layout()
 {
-    RenderBlockFlow::layout();
+    LayoutBlockFlow::layout();
 
     // If WebVTT Regions are used, the regular WebVTT layout algorithm is no
     // longer necessary, since cues having the region parameter set do not have
@@ -317,9 +324,22 @@ void LayoutVTTCue::layout()
 
     LayoutState state(*this, locationOffset());
 
+    // Determine the area covered by the media controls, if any. If the controls
+    // are present, they are the next sibling of the text track container, which
+    // is our parent. (LayoutMedia ensures that the media controls are laid out
+    // before text tracks, so that the layout is up-to-date here.)
+    ASSERT(parent()->node()->isTextTrackContainer());
+    IntRect controlsRect;
+    if (LayoutObject* parentSibling = parent()->nextSibling()) {
+        // Only a part of the media controls is used for overlap avoidance.
+        MediaControls* controls = toMediaControls(parentSibling->node());
+        if (LayoutObject* controlsLayout = controls->layoutObjectForTextTrackLayout())
+            controlsRect = controlsLayout->absoluteBoundingBoxRect();
+    }
+
     // http://dev.w3.org/html5/webvtt/#dfn-apply-webvtt-cue-settings - step 13.
     if (m_cue->snapToLines()) {
-        SnapToLinesLayouter(*this, m_cue->calculateComputedLinePosition()).layout();
+        SnapToLinesLayouter(*this, controlsRect, m_cue->calculateComputedLinePosition()).layout();
 
         adjustForTopAndBottomMarginBorderAndPadding();
     } else {
@@ -328,4 +348,3 @@ void LayoutVTTCue::layout()
 }
 
 } // namespace blink
-

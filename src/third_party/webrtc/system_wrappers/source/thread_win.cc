@@ -54,11 +54,10 @@ void SetThreadName(DWORD dwThreadID, LPCSTR szThreadName) {
 
 }
 
-ThreadWindows::ThreadWindows(ThreadRunFunction func, ThreadObj obj,
-                             ThreadPriority prio, const char* thread_name)
+ThreadWindows::ThreadWindows(ThreadRunFunction func, void* obj,
+                             const char* thread_name)
     : run_function_(func),
       obj_(obj),
-      prio_(prio),
       stop_(false),
       thread_(NULL),
       name_(thread_name ? thread_name : "webrtc") {
@@ -81,7 +80,7 @@ DWORD WINAPI ThreadWindows::StartThread(void* param) {
   return 0;
 }
 
-bool ThreadWindows::Start(unsigned int& id) {
+bool ThreadWindows::Start() {
   DCHECK(main_thread_.CalledOnValidThread());
   DCHECK(!thread_);
 
@@ -98,30 +97,6 @@ bool ThreadWindows::Start(unsigned int& id) {
     return false;
   }
 
-  id = thread_id;
-
-  if (prio_ != kNormalPriority) {
-    int priority = THREAD_PRIORITY_NORMAL;
-    switch (prio_) {
-      case kLowPriority:
-        priority = THREAD_PRIORITY_BELOW_NORMAL;
-        break;
-      case kHighPriority:
-        priority = THREAD_PRIORITY_ABOVE_NORMAL;
-        break;
-      case kHighestPriority:
-        priority = THREAD_PRIORITY_HIGHEST;
-        break;
-      case kRealtimePriority:
-        priority = THREAD_PRIORITY_TIME_CRITICAL;
-        break;
-      default:
-        break;
-    }
-
-    SetThreadPriority(thread_, priority);
-  }
-
   return true;
 }
 
@@ -136,6 +111,11 @@ bool ThreadWindows::Stop() {
   }
 
   return true;
+}
+
+bool ThreadWindows::SetPriority(ThreadPriority priority) {
+  DCHECK(main_thread_.CalledOnValidThread());
+  return thread_ && SetThreadPriority(thread_, priority);
 }
 
 void ThreadWindows::Run() {

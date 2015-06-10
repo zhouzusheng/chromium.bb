@@ -240,6 +240,7 @@ WebInspector.EmulatedDevice.fromOverridesDevice = function(device, title, type)
     result.horizontal.height = device.width;
     result.deviceScaleFactor = device.deviceScaleFactor;
     result.userAgent = device.userAgent;
+    result.capabilities = [];
     if (device.touch)
         result.capabilities.push(WebInspector.EmulatedDevice.Capability.Touch);
     if (device.mobile)
@@ -650,7 +651,7 @@ WebInspector.EmulatedDevicesList.prototype = {
         for (var i = 0; i < to.length; ++i) {
             var title = to[i].title;
             if (deviceById.has(title))
-                to[i].copyShowFrom(deviceById.get(title));
+                to[i].copyShowFrom(/** @type {!WebInspector.EmulatedDevice} */ (deviceById.get(title)));
         }
     },
 

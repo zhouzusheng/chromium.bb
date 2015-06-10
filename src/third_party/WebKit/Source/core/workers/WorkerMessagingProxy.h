@@ -27,6 +27,7 @@
 #ifndef WorkerMessagingProxy_h
 #define WorkerMessagingProxy_h
 
+#include "core/CoreExport.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/workers/WorkerGlobalScopeProxy.h"
 #include "core/workers/WorkerLoaderProxy.h"
@@ -40,17 +41,17 @@
 namespace blink {
 
 class WorkerObjectProxy;
-class DedicatedWorkerThread;
+class WorkerThread;
 class ExecutionContext;
 class Worker;
 class WorkerClients;
 class WorkerInspectorProxy;
 
-class WorkerMessagingProxy final
+class CORE_EXPORT WorkerMessagingProxy
     : public WorkerGlobalScopeProxy
     , private WorkerLoaderProxyProvider {
     WTF_MAKE_NONCOPYABLE(WorkerMessagingProxy);
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED(WorkerMessagingProxy);
 public:
     WorkerMessagingProxy(Worker*, PassOwnPtrWillBeRawPtr<WorkerClients>);
 
@@ -75,10 +76,15 @@ public:
     void workerGlobalScopeClosed();
     void workerThreadTerminated();
 
-    void workerThreadCreated(PassRefPtr<DedicatedWorkerThread>);
+    void workerThreadCreated(PassRefPtr<WorkerThread>);
 
 protected:
     virtual ~WorkerMessagingProxy();
+
+    virtual PassRefPtr<WorkerThread> createWorkerThread(double originTime, PassOwnPtr<WorkerThreadStartupData>);
+
+    PassRefPtr<WorkerLoaderProxy> loaderProxy() { return m_loaderProxy; }
+    WorkerObjectProxy& workerObjectProxy() { return *m_workerObjectProxy.get(); }
 
 private:
     static void workerObjectDestroyedInternal(ExecutionContext*, WorkerMessagingProxy*);
@@ -94,7 +100,7 @@ private:
     OwnPtr<WorkerObjectProxy> m_workerObjectProxy;
     Worker* m_workerObject;
     bool m_mayBeDestroyed;
-    RefPtr<DedicatedWorkerThread> m_workerThread;
+    RefPtr<WorkerThread> m_workerThread;
 
     unsigned m_unconfirmedMessageCount; // Unconfirmed messages from worker object to worker thread.
     bool m_workerThreadHadPendingActivity; // The latest confirmation from worker thread reported that it was still active.

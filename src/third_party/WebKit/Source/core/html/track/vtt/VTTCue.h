@@ -65,7 +65,7 @@ public:
 private:
     VTTCueBox(Document&, VTTCue*);
 
-    virtual LayoutObject* createRenderer(const LayoutStyle&) override;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
 
     RawPtrWillBeMember<VTTCue> m_cue;
 };
@@ -103,6 +103,9 @@ public:
 
     void parseSettings(const String&);
 
+    // Applies CSS override style from user settings.
+    void applyUserOverrideCSSProperties();
+
     PassRefPtrWillBeRawPtr<DocumentFragment> getCueAsHTML();
 
     const String& regionId() const { return m_regionId; }
@@ -110,10 +113,9 @@ public:
 
     virtual void updateDisplay(HTMLDivElement& container) override;
 
-    virtual void updateDisplayTree(double movieTime) override;
-    virtual void removeDisplayTree(RemovalNotification) override;
+    virtual void updatePastAndFutureNodes(double movieTime) override;
 
-    void markFutureAndPastNodes(ContainerNode*, double previousTimestamp, double movieTime);
+    virtual void removeDisplayTree(RemovalNotification) override;
 
     float calculateComputedLinePosition() const;
 
@@ -148,7 +150,6 @@ private:
 
     Document& document() const;
 
-    VTTCueBox& ensureDisplayTree();
     PassRefPtrWillBeRawPtr<VTTCueBox> getDisplayTree();
 
     virtual void cueDidChange() override;

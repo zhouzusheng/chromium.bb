@@ -58,7 +58,6 @@ protected:
     SVGFilterPrimitiveStandardAttributes(const QualifiedName&, Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
     virtual void svgAttributeChanged(const QualifiedName&) override;
     virtual void childrenChanged(const ChildrenChange&) override;
 
@@ -68,8 +67,8 @@ protected:
 private:
     virtual bool isFilterEffect() const override final { return true; }
 
-    virtual LayoutObject* createRenderer(const LayoutStyle&) override;
-    virtual bool rendererIsNeeded(const LayoutStyle&) override final;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
+    virtual bool layoutObjectIsNeeded(const ComputedStyle&) override final;
 
     RefPtrWillBeMember<SVGAnimatedLength> m_x;
     RefPtrWillBeMember<SVGAnimatedLength> m_y;

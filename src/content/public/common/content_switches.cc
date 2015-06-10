@@ -14,11 +14,6 @@ const char kAcceleratedCanvas2dMSAASampleCount[] = "canvas-msaa-sample-count";
 // override for developers who need the old behavior for testing.
 const char kAllowFileAccessFromFiles[]      = "allow-file-access-from-files";
 
-// Allows frames with an https origin to use WebSockets with an insecure URL
-// (ws://).
-const char kAllowInsecureWebSocketFromHttpsOrigin[] =
-    "allow-insecure-websocket-from-https-origin";
-
 // Allows loopback interface to be added in network list for peer connection.
 const char kAllowLoopbackInPeerConnection[] =
     "allow-loopback-in-peer-connection";
@@ -131,6 +126,9 @@ const char kDisableGpu[]                    = "disable-gpu";
 // Prevent the compositor from using its GPU implementation.
 const char kDisableGpuCompositing[]         = "disable-gpu-compositing";
 
+// Disable proactive early init of GPU process.
+const char kDisableGpuEarlyInit[]           = "disable-gpu-early-init";
+
 // Disable the limit on the number of times the GPU process may be restarted
 // This switch is intended only for tests.
 extern const char kDisableGpuProcessCrashLimit[] =
@@ -156,6 +154,11 @@ const char kDisableGpuWatchdog[]            = "disable-gpu-watchdog";
 // unload handlers on a page to prevent the tab from closing, but the Task
 // Manager can be used to terminate the offending process in this case.
 const char kDisableHangMonitor[]            = "disable-hang-monitor";
+
+// Disable hiding the close buttons of inactive tabs when the tabstrip is in
+// stacked mode.
+const char kDisableHideInactiveStackedTabCloseButtons[] =
+    "disable-hide-inactive-stacked-tab-close-buttons";
 
 // Disable the RenderThread's HistogramCustomizer.
 const char kDisableHistogramCustomizer[]    = "disable-histogram-customizer";
@@ -204,10 +207,13 @@ const char kDisableOneCopy[]                = "disable-one-copy";
 // Disable Pepper3D.
 const char kDisablePepper3d[]               = "disable-pepper-3d";
 
+// Disables the Permissions API.
+const char kDisablePermissionsAPI[]         = "disable-permissions-api";
+
 // Disables compositor-accelerated touch-screen pinch gestures.
 const char kDisablePinch[]                  = "disable-pinch";
 
-// Disable discovering third-party plug-ins. Effectively loading only
+// Disable discovering third-party plugins. Effectively loading only
 // ones shipped with the browser plus third-party ones as specified by
 // --extra-plugin-dir and --load-plugin switches.
 const char kDisablePluginsDiscovery[]       = "disable-plugins-discovery";
@@ -259,6 +265,9 @@ const char kDisableV8IdleTasks[]            = "disable-v8-idle-tasks";
 // Don't enforce the same-origin policy. (Used by people testing their sites.)
 const char kDisableWebSecurity[]            = "disable-web-security";
 
+// Disables Blink's XSSAuditor. The XSSAuditor mitigates reflective XSS.
+const char kDisableXSSAuditor[]             = "disable-xss-auditor";
+
 // Specifies if the |DOMAutomationController| needs to be bound in the
 // renderer. This binding happens on per-frame basis and hence can potentially
 // be a performance bottleneck. One should only enable it when automating dom
@@ -279,6 +288,10 @@ const char kDisableAcceleratedJpegDecoding[] =
 // ** DO NOT use this flag unless you know what you are doing. **
 const char kEnableBleedingEdgeRenderingFastPaths[] =
     "enable-bleeding-edge-rendering-fast-paths";
+
+// Enables new cc/animation system (Project Heaviside). crbug.com/394772
+const char kEnableCompositorAnimationTimelines[] =
+    "enable-compositor-animation-timelines";
 
 // Enables LCD text.
 const char kEnableLCDText[]                 = "enable-lcd-text";
@@ -336,10 +349,6 @@ const char kEnableExperimentalCanvasFeatures[] =
 // Enables Web Platform features that are in development.
 const char kEnableExperimentalWebPlatformFeatures[] =
     "enable-experimental-web-platform-features";
-
-// By default, cookies are not allowed on file://. They are needed for testing,
-// for example page cycler and layout tests. See bug 1157243.
-const char kEnableFileCookies[]             = "enable-file-cookies";
 
 // Enables TRACE for GL calls in the renderer.
 const char kEnableGpuClientTracing[]        = "enable-gpu-client-tracing";
@@ -416,6 +425,11 @@ const char kEnableSmoothScrolling[]         = "enable-smooth-scrolling";
 // Enable spatial navigation
 const char kEnableSpatialNavigation[]       = "enable-spatial-navigation";
 
+// Enables implementation of the Cache-Control: stale-while-revalidate directive
+// which permits servers to allow the use of stale resources while revalidation
+// proceeds in the background.
+const char kEnableStaleWhileRevalidate[]    = "enable-stale-while-revalidate";
+
 // Enables StatsTable, logging statistics to a global named shared memory table.
 const char kEnableStatsTable[]              = "enable-stats-table";
 
@@ -484,9 +498,6 @@ const char kEnableWebGLDraftExtensions[] = "enable-webgl-draft-extensions";
 // Enables WebGL rendering into a scanout buffer for overlay support.
 const char kEnableWebGLImageChromium[] = "enable-webgl-image-chromium";
 
-// Enables Web MIDI API.
-const char kEnableWebMIDI[]                 = "enable-web-midi";
-
 // Enable rasterizer that writes directly to GPU memory associated with tiles.
 const char kEnableZeroCopy[]                = "enable-zero-copy";
 
@@ -512,14 +523,6 @@ const char kForceGpuRasterization[]        = "force-gpu-rasterization";
 // Requires MSAA support on GPU to have an effect. 0 disables MSAA.
 const char kGpuRasterizationMSAASampleCount[] =
     "gpu-rasterization-msaa-sample-count";
-
-// Enable threaded GPU rasterization.
-const char kEnableThreadedGpuRasterization[] =
-    "enable-threaded-gpu-rasterization";
-
-// Disable threaded GPU rasterization.  Overrides enable.
-const char kDisableThreadedGpuRasterization[] =
-    "disable-threaded-gpu-rasterization";
 
 // Force renderer accessibility to be on instead of enabling it on demand when
 // a screen reader is detected. The disable-renderer-accessibility switch
@@ -764,11 +767,6 @@ const char kTabCaptureDownscaleQuality[]    = "tab-capture-downscale-quality";
 // Upscale defaults to "best".
 const char kTabCaptureUpscaleQuality[]      = "tab-capture-upscale-quality";
 
-// Options for hiding the close buttons of inactive tabs when touch
-// is used to interact with the tabstrip.
-const char kTabCloseButtonsHiddenWithTouch[] =
-    "tab-close-buttons-hidden-with-touch";
-
 // Allows for forcing socket connections to http/https to use fixed ports.
 const char kTestingFixedHttpPort[]          = "testing-fixed-http-port";
 const char kTestingFixedHttpsPort[]         = "testing-fixed-https-port";
@@ -820,9 +818,6 @@ const char kTraceUploadURL[]                = "trace-upload-url";
 extern const char kUIPrioritizeInGpuProcess[] =
     "ui-prioritize-in-gpu-process";
 
-// Overrides the preferred discardable memory implementation.
-const char kUseDiscardableMemory[] = "use-discardable-memory";
-
 // Bypass the media stream infobar by selecting the default device for media
 // streams (e.g. WebRTC). Works with --use-fake-device-for-media-stream.
 const char kUseFakeUIForMediaStream[]     = "use-fake-ui-for-media-stream";
@@ -843,6 +838,9 @@ const char kUseNormalPriorityForTileTaskWorkerThreads[] =
 
 // Use the new surfaces system to handle compositor delegation.
 const char kUseSurfaces[] = "use-surfaces";
+
+// Disable the use of the new surfaces system to handle compositor delegation.
+const char kDisableSurfaces[] = "disable-surfaces";
 
 // The contents of this flag are prepended to the utility process command line.
 // Useful values might be "valgrind" or "xterm -e gdb --args".
@@ -888,9 +886,18 @@ const char kDisableWebRtcHWEncoding[]       = "disable-webrtc-hw-encoding";
 // Enables H264 HW encode acceleration for WebRTC.
 const char kEnableWebRtcHWH264Encoding[]    = "enable-webrtc-hw-h264-encoding";
 
+// Enables Origin header in Stun messages for WebRTC.
+const char kEnableWebRtcStunOrigin[]        = "enable-webrtc-stun-origin";
+
 // Override the maximum framerate as can be specified in calls to getUserMedia.
 // This flag expects a value.  Example: --max-gum-fps=17.5
 const char kWebRtcMaxCaptureFramerate[]     = "max-gum-fps";
+
+#if defined(OS_LINUX) || defined(OS_MACOSX)
+// Enables Video Capture Device captured data uploaded to Texture for zero-copy
+// capture pipeline.
+const char kEnableWebRtcCaptureToTexture[] = "enable-webrtc-capture-to-texture";
+#endif
 #endif
 
 #if defined(OS_ANDROID)
@@ -913,10 +920,6 @@ const char kDisableScreenOrientationLock[]  = "disable-screen-orientation-lock";
 // WebRTC is enabled by default on Android.
 const char kDisableWebRTC[]                 = "disable-webrtc";
 
-// Always use the video overlay for the embedded video.
-// This switch is intended only for tests.
-const char kForceUseOverlayEmbeddedVideo[] = "force-use-overlay-embedded-video";
-
 // The telephony region (ISO country code) to use in phone number detection.
 const char kNetworkCountryIso[] = "network-country-iso";
 
@@ -927,6 +930,10 @@ const char kRemoteDebuggingSocketName[]     = "remote-debugging-socket-name";
 // Java debugger is attached.
 const char kRendererWaitForJavaDebugger[] = "renderer-wait-for-java-debugger";
 #endif
+
+// Enable the aggressive flushing of DOM Storage to minimize data loss.
+const char kEnableAggressiveDOMStorageFlushing[] =
+    "enable-aggressive-domstorage-flushing";
 
 // Disable web audio API.
 const char kDisableWebAudio[]               = "disable-webaudio";
@@ -952,12 +959,6 @@ const char kEnableSpeechDispatcher[] = "enable-speech-dispatcher";
 // accelerated compositing is disabled. See http://crbug.com/122430.
 const char kDisableCoreAnimationPlugins[] =
     "disable-core-animation-plugins";
-
-// Force all input events to be handled by Blink on thread. This will be removed
-// once compositor thread events have stuck.
-// http://crbug.com/138003
-extern const char kDisableThreadedEventHandlingMac[] =
-    "disable-threaded-event-handling-mac";
 #endif
 
 #if defined(OS_WIN)
@@ -983,11 +984,6 @@ const char kFontCacheSharedMemSuffix[] = "font-cache-shared-mem-suffix";
 
 // Enables the use of NPAPI plugins.
 const char kEnableNpapi[]                   = "enable-npapi";
-
-#if defined(ENABLE_PLUGINS)
-// Enables the plugin power saver feature.
-const char kEnablePluginPowerSaver[] = "enable-plugin-power-saver";
-#endif
 
 // Don't dump stuff here, follow the same order as the header.
 

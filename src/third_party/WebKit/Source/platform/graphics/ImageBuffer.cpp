@@ -43,7 +43,6 @@
 #include "platform/graphics/UnacceleratedImageBufferSurface.h"
 #include "platform/graphics/gpu/DrawingBuffer.h"
 #include "platform/graphics/gpu/Extensions3DUtil.h"
-#include "platform/graphics/skia/NativeImageSkia.h"
 #include "platform/graphics/skia/SkiaUtils.h"
 #include "platform/image-encoders/skia/JPEGImageEncoder.h"
 #include "platform/image-encoders/skia/PNGImageEncoder.h"
@@ -170,10 +169,10 @@ static SkBitmap deepSkBitmapCopy(const SkBitmap& bitmap)
 PassRefPtr<Image> ImageBuffer::copyImage(BackingStoreCopy copyBehavior, ScaleBehavior) const
 {
     if (!isSurfaceValid())
-        return BitmapImage::create(NativeImageSkia::create());
+        return BitmapImage::create(SkBitmap());
 
     const SkBitmap& bitmap = m_surface->bitmap();
-    return BitmapImage::create(NativeImageSkia::create(copyBehavior == CopyBackingStore ? deepSkBitmapCopy(bitmap) : bitmap));
+    return BitmapImage::create(copyBehavior == CopyBackingStore ? deepSkBitmapCopy(bitmap) : bitmap);
 }
 
 BackingStoreCopy ImageBuffer::fastCopyImageMode()
@@ -218,7 +217,7 @@ bool ImageBuffer::copyToPlatformTexture(WebGraphicsContext3D* context, Platform3
 
     // The canvas is stored in an inverted position, so the flip semantics are reversed.
     context->pixelStorei(GC3D_UNPACK_FLIP_Y_CHROMIUM, !flipY);
-    context->copyTextureCHROMIUM(GL_TEXTURE_2D, sourceTexture, texture, level, internalFormat, destType);
+    context->copyTextureCHROMIUM(GL_TEXTURE_2D, sourceTexture, texture, internalFormat, destType);
 
     context->pixelStorei(GC3D_UNPACK_FLIP_Y_CHROMIUM, false);
     context->pixelStorei(GC3D_UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM, false);
@@ -328,7 +327,8 @@ bool ImageBuffer::getImageData(Multiply multiplied, const IntRect& rect, WTF::Ar
     SkImageInfo info = SkImageInfo::Make(rect.width(), rect.height(), kRGBA_8888_SkColorType, alphaType);
 
     m_surface->willAccessPixels();
-    context()->readPixels(info, result.data(), 4 * rect.width(), rect.x(), rect.y());
+    ASSERT(canvas());
+    canvas()->readPixels(info, result.data(), 4 * rect.width(), rect.x(), rect.y());
     result.transfer(contents);
     return true;
 }

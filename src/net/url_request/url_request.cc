@@ -23,12 +23,12 @@
 #include "net/base/load_flags.h"
 #include "net/base/load_timing_info.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_log.h"
 #include "net/base/network_change_notifier.h"
 #include "net/base/network_delegate.h"
 #include "net/base/upload_data_stream.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_util.h"
+#include "net/log/net_log.h"
 #include "net/ssl/ssl_cert_request_info.h"
 #include "net/url_request/redirect_info.h"
 #include "net/url_request/url_request_context.h"
@@ -37,6 +37,8 @@
 #include "net/url_request/url_request_job_manager.h"
 #include "net/url_request/url_request_netlog_params.h"
 #include "net/url_request/url_request_redirect_job.h"
+#include "url/gurl.h"
+#include "url/origin.h"
 
 using base::Time;
 using std::string;
@@ -54,6 +56,8 @@ void StripPostSpecificHeaders(HttpRequestHeaders* headers) {
   // These are headers that may be attached to a POST.
   headers->RemoveHeader(HttpRequestHeaders::kContentLength);
   headers->RemoveHeader(HttpRequestHeaders::kContentType);
+  // TODO(jww): This is Origin header removal is probably layering violation and
+  // should be refactored into //content. See https://crbug.com/471397.
   headers->RemoveHeader(HttpRequestHeaders::kOrigin);
 }
 
@@ -157,7 +161,7 @@ void URLRequest::Delegate::OnAuthRequired(URLRequest* request,
 void URLRequest::Delegate::OnCertificateRequested(
     URLRequest* request,
     SSLCertRequestInfo* cert_request_info) {
-  request->Cancel();
+  request->CancelWithError(ERR_SSL_CLIENT_AUTH_CERT_NEEDED);
 }
 
 void URLRequest::Delegate::OnSSLCertificateError(URLRequest* request,
@@ -213,7 +217,6 @@ void URLRequest::AppendChunkToUpload(const char* bytes,
 }
 
 void URLRequest::set_upload(scoped_ptr<UploadDataStream> upload) {
-  DCHECK(!upload->is_chunked());
   upload_data_stream_ = upload.Pass();
 }
 
@@ -265,10 +268,6 @@ int64 URLRequest::GetTotalReceivedBytes() const {
 }
 
 LoadStateWithParam URLRequest::GetLoadState() const {
-  // TODO(pkasting): Remove ScopedTracker below once crbug.com/455952 is
-  // fixed.
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION("455952 URLRequest::GetLoadState"));
   // The !blocked_by_.empty() check allows |this| to report it's blocked on a
   // delegate before it has been started.
   if (calling_delegate_ || !blocked_by_.empty()) {
@@ -524,13 +523,12 @@ URLRequest::URLRequest(const GURL& url,
                        RequestPriority priority,
                        Delegate* delegate,
                        const URLRequestContext* context,
-                       CookieStore* cookie_store,
                        NetworkDelegate* network_delegate)
     : context_(context),
       network_delegate_(network_delegate ? network_delegate
                                          : context->network_delegate()),
-      net_log_(BoundNetLog::Make(context->net_log(),
-                                 NetLog::SOURCE_URL_REQUEST)),
+      net_log_(
+          BoundNetLog::Make(context->net_log(), NetLog::SOURCE_URL_REQUEST)),
       url_chain_(1, url),
       method_("GET"),
       referrer_policy_(CLEAR_REFERRER_ON_TRANSITION_FROM_SECURE_TO_INSECURE),
@@ -549,8 +547,7 @@ URLRequest::URLRequest(const GURL& url,
       has_notified_completion_(false),
       received_response_content_length_(0),
       creation_time_(base::TimeTicks::Now()),
-      notified_before_network_start_(false),
-      cookie_store_(cookie_store ? cookie_store : context->cookie_store()) {
+      notified_before_network_start_(false) {
   // Sanity check out environment.
   DCHECK(base::MessageLoop::current())
       << "The current base::MessageLoop must exist";
@@ -945,6 +942,29 @@ int URLRequest::Redirect(const RedirectInfo& redirect_info) {
     }
     upload_data_stream_.reset();
     method_ = redirect_info.new_method;
+  }
+
+  // Cross-origin redirects should not result in an Origin header value that is
+  // equal to the original request's Origin header. This is necessary to prevent
+  // a reflection of POST requests to bypass CSRF protections. If the header was
+  // not set to "null", a POST request from origin A to a malicious origin M
+  // could be redirected by M back to A.
+  //
+  // In the Section 4.2, Step 4.10 of the Fetch spec
+  // (https://fetch.spec.whatwg.org/#concept-http-fetch), it states that on
+  // cross-origin 301, 302, 303, 307, and 308 redirects, the user agent should
+  // set the request's origin to an "opaque identifier," which serializes to
+  // "null." This matches Firefox and IE behavior, although it supercedes the
+  // suggested behavior in RFC 6454, "The Web Origin Concept."
+  //
+  // See also https://crbug.com/465517.
+  //
+  // TODO(jww): This is probably layering violation and should be refactored
+  // into //content. See https://crbug.com/471397.
+  if (redirect_info.new_url.GetOrigin() != url().GetOrigin() &&
+      extra_request_headers_.HasHeader(HttpRequestHeaders::kOrigin)) {
+    extra_request_headers_.SetHeader(HttpRequestHeaders::kOrigin,
+                                     url::Origin().string());
   }
 
   referrer_ = redirect_info.new_referrer;

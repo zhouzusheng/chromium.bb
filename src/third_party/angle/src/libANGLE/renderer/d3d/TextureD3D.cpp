@@ -11,6 +11,7 @@
 #include "common/mathutil.h"
 #include "common/utilities.h"
 #include "libANGLE/Buffer.h"
+#include "libANGLE/Config.h"
 #include "libANGLE/Framebuffer.h"
 #include "libANGLE/Surface.h"
 #include "libANGLE/Texture.h"
@@ -160,6 +161,12 @@ gl::Error TextureD3D::setImage(const gl::ImageIndex &index, GLenum type,
                                const gl::PixelUnpackState &unpack, const uint8_t *pixels,
                                ptrdiff_t layerOffset)
 {
+    if (unpack.skipRows != 0 || unpack.skipPixels != 0 || unpack.imageHeight != 0 || unpack.skipImages != 0)
+    {
+        UNIMPLEMENTED();
+        return gl::Error(GL_INVALID_OPERATION, "unimplemented pixel store state");
+    }
+
     ImageD3D *image = getImage(index);
     ASSERT(image);
 
@@ -243,6 +250,12 @@ gl::Error TextureD3D::subImage(const gl::ImageIndex &index, const gl::Box &area,
 gl::Error TextureD3D::setCompressedImage(const gl::ImageIndex &index, const gl::PixelUnpackState &unpack,
                                          const uint8_t *pixels, ptrdiff_t layerOffset)
 {
+    if (unpack.skipRows != 0 || unpack.skipPixels != 0 || unpack.imageHeight != 0 || unpack.skipImages != 0)
+    {
+        UNIMPLEMENTED();
+        return gl::Error(GL_INVALID_OPERATION, "unimplemented pixel store state");
+    }
+
     // We no longer need the "GLenum format" parameter to TexImage to determine what data format "pixels" contains.
     // From our image internal format we know how many channels to expect, and "type" gives the format of pixel's components.
     const uint8_t *pixelData = NULL;
@@ -274,6 +287,12 @@ gl::Error TextureD3D::subImageCompressed(const gl::ImageIndex &index, const gl::
                                          const gl::PixelUnpackState &unpack, const uint8_t *pixels,
                                          ptrdiff_t layerOffset)
 {
+    if (unpack.skipRows != 0 || unpack.skipPixels != 0 || unpack.imageHeight != 0 || unpack.skipImages != 0)
+    {
+        UNIMPLEMENTED();
+        return gl::Error(GL_INVALID_OPERATION, "unimplemented pixel store state");
+    }
+
     const uint8_t *pixelData = NULL;
     gl::Error error = GetUnpackPointer(unpack, pixels, layerOffset, &pixelData);
     if (error.isError())
@@ -402,7 +421,7 @@ gl::Error TextureD3D::generateMipmaps()
                 gl::ImageIndex srcIndex = getImageIndex(0, layer);
 
                 ImageD3D *image = getImage(srcIndex);
-                gl::Rectangle area(0, 0, image->getWidth(), image->getHeight());
+                gl::Box area(0, 0, 0, image->getWidth(), image->getHeight(), image->getDepth());
                 gl::Offset offset(0, 0, 0);
                 gl::Error error = image->copy(offset, area, srcIndex, mTexStorage);
                 if (error.isError())
@@ -684,6 +703,12 @@ gl::Error TextureD3D_2D::setSubImage(GLenum target, size_t level, const gl::Box 
 {
     ASSERT(target == GL_TEXTURE_2D && area.depth == 1 && area.z == 0);
 
+    if (unpack.skipRows != 0 || unpack.skipPixels != 0 || unpack.imageHeight != 0 || unpack.skipImages != 0)
+    {
+        UNIMPLEMENTED();
+        return gl::Error(GL_INVALID_OPERATION, "unimplemented pixel store state");
+    }
+
     gl::ImageIndex index = gl::ImageIndex::Make2D(level);
     if (isFastUnpackable(unpack, getInternalFormat(level)) && isLevelComplete(level))
     {
@@ -870,7 +895,7 @@ gl::Error TextureD3D_2D::setStorage(GLenum target, size_t levels, GLenum interna
 
 void TextureD3D_2D::bindTexImage(egl::Surface *surface)
 {
-    GLenum internalformat = surface->getFormat();
+    GLenum internalformat = surface->getConfig()->renderTargetFormat;
 
     gl::Extents size(surface->getWidth(), surface->getHeight(), 1);
     mImageArray[0]->redefine(GL_TEXTURE_2D, internalformat, size, true);
@@ -1300,7 +1325,9 @@ gl::Error TextureD3D_Cube::copyImage(GLenum target, size_t level, const gl::Rect
     gl::ImageIndex index = gl::ImageIndex::MakeCube(target, level);
     gl::Offset destOffset(0, 0, 0);
 
-    if (!canCreateRenderTargetForImage(index))
+    // If the zero max LOD workaround is active, then we can't sample from individual layers of the framebuffer in shaders,
+    // so we should use the non-rendering copy path.
+    if (!canCreateRenderTargetForImage(index) || mRenderer->getWorkarounds().zeroMaxLodWorkaround)
     {
         gl::Error error = mImageArray[faceIndex][level]->copy(destOffset, sourceArea, source);
         if (error.isError())
@@ -1342,7 +1369,9 @@ gl::Error TextureD3D_Cube::copySubImage(GLenum target, size_t level, const gl::O
 
     gl::ImageIndex index = gl::ImageIndex::MakeCube(target, level);
 
-    if (!canCreateRenderTargetForImage(index))
+    // If the zero max LOD workaround is active, then we can't sample from individual layers of the framebuffer in shaders,
+    // so we should use the non-rendering copy path.
+    if (!canCreateRenderTargetForImage(index) || mRenderer->getWorkarounds().zeroMaxLodWorkaround)
     {
         gl::Error error = mImageArray[faceIndex][level]->copy(destOffset, sourceArea, source);
         if (error.isError())

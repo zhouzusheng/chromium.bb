@@ -24,7 +24,7 @@
 #include "core/layout/svg/SVGLayoutSupport.h"
 #include "core/paint/SVGPaintContext.h"
 #include "core/svg/SVGElement.h"
-#include "platform/graphics/GraphicsContextStateSaver.h"
+#include "platform/graphics/paint/DisplayItemList.h"
 #include "platform/transforms/AffineTransform.h"
 #include "third_party/skia/include/core/SkPicture.h"
 
@@ -52,108 +52,61 @@ void LayoutSVGResourceMasker::removeClientFromCache(LayoutObject* client, bool m
     markClientForInvalidation(client, markForInvalidation ? BoundariesInvalidation : ParentOnlyInvalidation);
 }
 
-bool LayoutSVGResourceMasker::prepareEffect(LayoutObject* object, GraphicsContext* context)
+PassRefPtr<const SkPicture> LayoutSVGResourceMasker::createContentPicture(AffineTransform& contentTransformation, const FloatRect& targetBoundingBox)
 {
-    ASSERT(object);
-    ASSERT(context);
-    ASSERT(style());
-    ASSERT_WITH_SECURITY_IMPLICATION(!needsLayout());
-
-    clearInvalidationMask();
-
-    FloatRect paintInvalidationRect = object->paintInvalidationRectInLocalCoordinates();
-    if (paintInvalidationRect.isEmpty() || !element()->hasChildren())
-        return false;
-
-    // Content layer start.
-    context->beginTransparencyLayer(1, &paintInvalidationRect);
-
-    return true;
-}
-
-void LayoutSVGResourceMasker::finishEffect(LayoutObject* object, GraphicsContext* context)
-{
-    ASSERT(object);
-    ASSERT(context);
-    ASSERT(style());
-    ASSERT_WITH_SECURITY_IMPLICATION(!needsLayout());
-
-    FloatRect paintInvalidationRect = object->paintInvalidationRectInLocalCoordinates();
-
-    const SVGLayoutStyle& svgStyle = style()->svgStyle();
-    ColorFilter maskLayerFilter = svgStyle.maskType() == MT_LUMINANCE
-        ? ColorFilterLuminanceToAlpha : ColorFilterNone;
-    ColorFilter maskContentFilter = svgStyle.colorInterpolation() == CI_LINEARRGB
-        ? ColorFilterSRGBToLinearRGB : ColorFilterNone;
-
-    // Mask layer start.
-    context->beginLayer(1, SkXfermode::kDstIn_Mode, &paintInvalidationRect, maskLayerFilter);
-    {
-        // Draw the mask with color conversion (when needed).
-        GraphicsContextStateSaver maskContentSaver(*context);
-        context->setColorFilter(maskContentFilter);
-
-        drawMaskForRenderer(context, object->objectBoundingBox());
-    }
-
-    // Transfer mask layer -> content layer (DstIn)
-    context->endLayer();
-    // Transfer content layer -> backdrop (SrcOver)
-    context->endLayer();
-}
-
-void LayoutSVGResourceMasker::drawMaskForRenderer(GraphicsContext* context, const FloatRect& targetBoundingBox)
-{
-    ASSERT(context);
-
-    AffineTransform contentTransformation;
     SVGUnitTypes::SVGUnitType contentUnits = toSVGMaskElement(element())->maskContentUnits()->currentValue()->enumValue();
     if (contentUnits == SVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX) {
         contentTransformation.translate(targetBoundingBox.x(), targetBoundingBox.y());
         contentTransformation.scaleNonUniform(targetBoundingBox.width(), targetBoundingBox.height());
-        context->concatCTM(contentTransformation);
     }
 
-    if (!m_maskContentPicture) {
-        SubtreeContentTransformScope contentTransformScope(contentTransformation);
-        createPicture(context);
-    }
+    if (m_maskContentPicture)
+        return m_maskContentPicture;
 
-    context->drawPicture(m_maskContentPicture.get());
-}
-
-void LayoutSVGResourceMasker::createPicture(GraphicsContext* context)
-{
-    ASSERT(context);
+    SubtreeContentTransformScope contentTransformScope(contentTransformation);
 
     // Using strokeBoundingBox (instead of paintInvalidationRectInLocalCoordinates) to avoid the intersection
     // with local clips/mask, which may yield incorrect results when mixing objectBoundingBox and
     // userSpaceOnUse units (http://crbug.com/294900).
     FloatRect bounds = strokeBoundingBox();
-    context->beginRecording(bounds);
+
+    OwnPtr<DisplayItemList> displayItemList;
+    if (RuntimeEnabledFeatures::slimmingPaintEnabled())
+        displayItemList = DisplayItemList::create();
+    GraphicsContext context(nullptr, displayItemList.get());
+    context.beginRecording(bounds);
+
+    ColorFilter maskContentFilter = style()->svgStyle().colorInterpolation() == CI_LINEARRGB
+        ? ColorFilterSRGBToLinearRGB : ColorFilterNone;
+    context.setColorFilter(maskContentFilter);
+
     for (SVGElement* childElement = Traversal<SVGElement>::firstChild(*element()); childElement; childElement = Traversal<SVGElement>::nextSibling(*childElement)) {
-        LayoutObject* renderer = childElement->renderer();
-        if (!renderer)
+        LayoutObject* layoutObject = childElement->layoutObject();
+        if (!layoutObject)
             continue;
-        const LayoutStyle* style = renderer->style();
+        const ComputedStyle* style = layoutObject->style();
         if (!style || style->display() == NONE || style->visibility() != VISIBLE)
             continue;
 
-        SVGPaintContext::paintSubtree(context, renderer);
+        SVGPaintContext::paintSubtree(&context, layoutObject);
     }
-    m_maskContentPicture = context->endRecording();
+
+    if (displayItemList)
+        displayItemList->commitNewDisplayItemsAndReplay(context);
+    m_maskContentPicture = context.endRecording();
+    return m_maskContentPicture;
 }
 
 void LayoutSVGResourceMasker::calculateMaskContentPaintInvalidationRect()
 {
     for (SVGElement* childElement = Traversal<SVGElement>::firstChild(*element()); childElement; childElement = Traversal<SVGElement>::nextSibling(*childElement)) {
-        LayoutObject* renderer = childElement->renderer();
-        if (!renderer)
+        LayoutObject* layoutObject = childElement->layoutObject();
+        if (!layoutObject)
             continue;
-        const LayoutStyle* style = renderer->style();
+        const ComputedStyle* style = layoutObject->style();
         if (!style || style->display() == NONE || style->visibility() != VISIBLE)
             continue;
-        m_maskContentBoundaries.unite(renderer->localToParentTransform().mapRect(renderer->paintInvalidationRectInLocalCoordinates()));
+        m_maskContentBoundaries.unite(layoutObject->localToParentTransform().mapRect(layoutObject->paintInvalidationRectInLocalCoordinates()));
     }
 }
 

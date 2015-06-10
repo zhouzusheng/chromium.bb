@@ -16,7 +16,7 @@
 #include "compiler/translator/IntermNode.h"
 #include "compiler/translator/ParseContext.h"
 
-class BuiltInFunctionEmulatorHLSL;
+class BuiltInFunctionEmulator;
 
 namespace sh
 {
@@ -47,7 +47,7 @@ class OutputHLSL : public TIntermTraverser
     TInfoSinkBase &getInfoSink() { ASSERT(!mInfoSinkStack.empty()); return *mInfoSinkStack.top(); }
 
   protected:
-    void header(const BuiltInFunctionEmulatorHLSL *builtInFunctionEmulator);
+    void header(const BuiltInFunctionEmulator *builtInFunctionEmulator);
 
     // Visit AST nodes and output their code to the body stream
     void visitSymbol(TIntermSymbol*);
@@ -56,6 +56,8 @@ class OutputHLSL : public TIntermTraverser
     bool visitBinary(Visit visit, TIntermBinary*);
     bool visitUnary(Visit visit, TIntermUnary*);
     bool visitSelection(Visit visit, TIntermSelection*);
+    bool visitSwitch(Visit visit, TIntermSwitch *);
+    bool visitCase(Visit visit, TIntermCase *);
     bool visitAggregate(Visit visit, TIntermAggregate*);
     bool visitLoop(Visit visit, TIntermLoop*);
     bool visitBranch(Visit visit, TIntermBranch*);
@@ -63,13 +65,19 @@ class OutputHLSL : public TIntermTraverser
     void traverseStatements(TIntermNode *node);
     bool isSingleStatement(TIntermNode *node);
     bool handleExcessiveLoop(TIntermLoop *node);
-    void outputTriplet(Visit visit, const TString &preString, const TString &inString, const TString &postString);
+
+    // Emit one of three strings depending on traverse phase. Called with literal strings so using const char* instead of TString.
+    void outputTriplet(Visit visit, const char *preString, const char *inString, const char *postString, TInfoSinkBase &out);
+    void outputTriplet(Visit visit, const char *preString, const char *inString, const char *postString);
     void outputLineDirective(int line);
     TString argumentString(const TIntermSymbol *symbol);
     int vectorSize(const TType &type) const;
 
-    void outputConstructor(Visit visit, const TType &type, const TString &name, const TIntermSequence *parameters);
+    // Emit constructor. Called with literal names so using const char* instead of TString.
+    void outputConstructor(Visit visit, const TType &type, const char *name, const TIntermSequence *parameters);
     const ConstantUnion *writeConstantUnion(const TType &type, const ConstantUnion *constUnion);
+
+    void outputEqual(Visit visit, const TType &type, TOperator op, TInfoSinkBase &out);
 
     void writeEmulatedFunctionTriplet(Visit visit, const char *preStr);
     void makeFlaggedStructMaps(const std::vector<TIntermTyped *> &flaggedStructs);
@@ -80,6 +88,8 @@ class OutputHLSL : public TIntermTraverser
 
     // Returns the function name
     TString addStructEqualityFunction(const TStructure &structure);
+    TString addArrayEqualityFunction(const TType &type);
+    TString addArrayAssignmentFunction(const TType &type);
 
     sh::GLenum mShaderType;
     int mShaderVersion;
@@ -98,6 +108,7 @@ class OutputHLSL : public TIntermTraverser
 
     // A stack is useful when we want to traverse in the header, or in helper functions, but not always
     // write to the body. Instead use an InfoSink stack to keep our current state intact.
+    // TODO (jmadill): Just passing an InfoSink in function parameters would be simpler.
     std::stack<TInfoSinkBase *> mInfoSinkStack;
 
     ReferencedSymbols mReferencedUniforms;
@@ -150,6 +161,8 @@ class OutputHLSL : public TIntermTraverser
     bool mUsesXor;
     bool mUsesDiscardRewriting;
     bool mUsesNestedBreak;
+    bool mRequiresIEEEStrictCompiling;
+
 
     int mNumRenderTargets;
 
@@ -174,16 +187,33 @@ class OutputHLSL : public TIntermTraverser
     // these static globals after we initialize our other globals.
     std::vector<std::pair<TIntermSymbol*, TIntermTyped*>> mDeferredGlobalInitializers;
 
-    // A list of structure equality comparison functions. It's important to preserve the order at
-    // which we add the functions, since nested structures call each other recursively.
-    struct StructEqualityFunction
+    struct HelperFunction
     {
-        const TStructure *structure;
         TString functionName;
         TString functionDefinition;
+
+        virtual ~HelperFunction() {}
     };
 
-    std::vector<StructEqualityFunction> mStructEqualityFunctions;
+    // A list of all equality comparison functions. It's important to preserve the order at
+    // which we add the functions, since nested structures call each other recursively, and
+    // structure equality functions may need to call array equality functions and vice versa.
+    // The ownership of the pointers is maintained by the type-specific arrays.
+    std::vector<HelperFunction*> mEqualityFunctions;
+
+    struct StructEqualityFunction : public HelperFunction
+    {
+        const TStructure *structure;
+    };
+    std::vector<StructEqualityFunction*> mStructEqualityFunctions;
+
+    struct ArrayHelperFunction : public HelperFunction
+    {
+        TType type;
+    };
+    std::vector<ArrayHelperFunction*> mArrayEqualityFunctions;
+
+    std::vector<ArrayHelperFunction> mArrayAssignmentFunctions;
 };
 
 }

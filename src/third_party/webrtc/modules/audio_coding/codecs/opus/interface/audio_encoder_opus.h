@@ -39,32 +39,37 @@ class AudioEncoderOpus final : public AudioEncoder {
     bool fec_enabled;
     int max_playback_rate_hz;
     int complexity;
+    bool dtx_enabled;
   };
 
   explicit AudioEncoderOpus(const Config& config);
-  virtual ~AudioEncoderOpus() OVERRIDE;
+  ~AudioEncoderOpus() override;
 
-  virtual int SampleRateHz() const OVERRIDE;
-  virtual int NumChannels() const OVERRIDE;
-  virtual int Num10MsFramesInNextPacket() const OVERRIDE;
-  virtual int Max10MsFramesInAPacket() const OVERRIDE;
+  int SampleRateHz() const override;
+  int NumChannels() const override;
+  size_t MaxEncodedBytes() const override;
+  int Num10MsFramesInNextPacket() const override;
+  int Max10MsFramesInAPacket() const override;
   void SetTargetBitrate(int bits_per_second) override;
   void SetProjectedPacketLossRate(double fraction) override;
+
   double packet_loss_rate() const { return packet_loss_rate_; }
   ApplicationMode application() const { return application_; }
+  bool dtx_enabled() const { return dtx_enabled_; }
 
  protected:
-  virtual bool EncodeInternal(uint32_t rtp_timestamp,
-                              const int16_t* audio,
-                              size_t max_encoded_bytes,
-                              uint8_t* encoded,
-                              EncodedInfo* info) OVERRIDE;
+  EncodedInfo EncodeInternal(uint32_t rtp_timestamp,
+                             const int16_t* audio,
+                             size_t max_encoded_bytes,
+                             uint8_t* encoded) override;
 
  private:
   const int num_10ms_frames_per_packet_;
   const int num_channels_;
   const int payload_type_;
   const ApplicationMode application_;
+  int bitrate_bps_;
+  const bool dtx_enabled_;
   const int samples_per_10ms_frame_;
   std::vector<int16_t> input_buffer_;
   OpusEncInst* inst_;

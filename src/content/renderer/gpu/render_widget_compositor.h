@@ -9,12 +9,12 @@
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "base/values.h"
-#include "cc/base/swap_promise.h"
-#include "cc/base/swap_promise_monitor.h"
 #include "cc/input/top_controls_state.h"
+#include "cc/output/swap_promise.h"
 #include "cc/trees/layer_tree_host_client.h"
 #include "cc/trees/layer_tree_host_single_thread_client.h"
 #include "cc/trees/layer_tree_settings.h"
+#include "cc/trees/swap_promise_monitor.h"
 #include "content/common/content_export.h"
 #include "content/renderer/gpu/compositor_dependencies.h"
 #include "third_party/WebKit/public/platform/WebLayerTreeView.h"
@@ -52,11 +52,6 @@ class CONTENT_EXPORT RenderWidgetCompositor
   bool BeginMainFrameRequested() const;
   void SetNeedsDisplayOnAllLayers();
   void SetRasterizeOnlyVisibleContent();
-  void UpdateTopControlsState(cc::TopControlsState constraints,
-                              cc::TopControlsState current,
-                              bool animate);
-  void SetTopControlsShrinkBlinkSize(bool shrink);
-  void SetTopControlsHeight(float height);
   void SetNeedsRedrawRect(gfx::Rect damage_rect);
   // Like setNeedsRedraw but forces the frame to be drawn, without early-outs.
   // Redraw will be forced after the next commit
@@ -130,10 +125,12 @@ class CONTENT_EXPORT RenderWidgetCompositor
   virtual void setShowDebugBorders(bool show);
   virtual void setContinuousPaintingEnabled(bool enabled);
   virtual void setShowScrollBottleneckRects(bool show);
-  virtual void setTopControlsShownRatio(float);
 
-  // TODO(aelias): Delete after Blink roll
-  virtual void setTopControlsContentOffset(float);
+  virtual void updateTopControlsState(blink::WebTopControlsState constraints,
+                              blink::WebTopControlsState current,
+                              bool animate);
+  virtual void setTopControlsHeight(float height, bool shrink);
+  virtual void setTopControlsShownRatio(float);
 
   // cc::LayerTreeHostClient implementation.
   void WillBeginMainFrame() override;

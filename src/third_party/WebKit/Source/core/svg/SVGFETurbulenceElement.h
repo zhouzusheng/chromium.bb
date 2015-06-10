@@ -58,15 +58,14 @@ private:
     explicit SVGFETurbulenceElement(Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
     virtual bool setFilterEffectAttribute(FilterEffect*, const QualifiedName& attrName) override;
     virtual void svgAttributeChanged(const QualifiedName&) override;
     virtual PassRefPtrWillBeRawPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) override;
 
     RefPtrWillBeMember<SVGAnimatedNumberOptionalNumber> m_baseFrequency;
     RefPtrWillBeMember<SVGAnimatedNumber> m_seed;
-    RefPtrWillBeMember<SVGAnimatedEnumeration<SVGStitchOptions> > m_stitchTiles;
-    RefPtrWillBeMember<SVGAnimatedEnumeration<TurbulenceType> > m_type;
+    RefPtrWillBeMember<SVGAnimatedEnumeration<SVGStitchOptions>> m_stitchTiles;
+    RefPtrWillBeMember<SVGAnimatedEnumeration<TurbulenceType>> m_type;
     RefPtrWillBeMember<SVGAnimatedInteger> m_numOctaves;
 };
 

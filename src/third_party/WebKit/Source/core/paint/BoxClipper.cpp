@@ -5,9 +5,9 @@
 #include "config.h"
 #include "core/paint/BoxClipper.h"
 
-#include "core/layout/Layer.h"
+#include "core/layout/LayoutBox.h"
 #include "core/layout/PaintInfo.h"
-#include "core/rendering/RenderBox.h"
+#include "core/paint/DeprecatedPaintLayer.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/graphics/paint/ClipDisplayItem.h"
@@ -15,7 +15,7 @@
 
 namespace blink {
 
-BoxClipper::BoxClipper(RenderBox& box, const PaintInfo& paintInfo, const LayoutPoint& accumulatedOffset, ContentsClipBehavior contentsClipBehavior)
+BoxClipper::BoxClipper(LayoutBox& box, const PaintInfo& paintInfo, const LayoutPoint& accumulatedOffset, ContentsClipBehavior contentsClipBehavior)
     : m_pushedClip(false)
     , m_accumulatedOffset(accumulatedOffset)
     , m_paintInfo(paintInfo)
@@ -55,15 +55,16 @@ BoxClipper::BoxClipper(RenderBox& box, const PaintInfo& paintInfo, const LayoutP
     if (RuntimeEnabledFeatures::slimmingPaintEnabled())
         m_clipType = m_paintInfo.displayItemTypeForClipping();
 
-    OwnPtr<ClipDisplayItem> clipDisplayItem = ClipDisplayItem::create(m_box.displayItemClient(), m_clipType, pixelSnappedIntRect(clipRect));
+    OwnPtr<ClipDisplayItem> clipDisplayItem = ClipDisplayItem::create(m_box, m_clipType, pixelSnappedIntRect(clipRect));
     if (hasBorderRadius)
         clipDisplayItem->roundedRectClips().append(clipRoundedRect);
 
     if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
         ASSERT(m_paintInfo.context->displayItemList());
         m_paintInfo.context->displayItemList()->add(clipDisplayItem.release());
-    } else
-        clipDisplayItem->replay(paintInfo.context);
+    } else {
+        clipDisplayItem->replay(*paintInfo.context);
+    }
 
     m_pushedClip = true;
 }
@@ -77,12 +78,12 @@ BoxClipper::~BoxClipper()
 
     DisplayItem::Type endType = DisplayItem::clipTypeToEndClipType(m_clipType);
     if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
-        OwnPtr<EndClipDisplayItem> endClipDisplayItem = EndClipDisplayItem::create(m_box.displayItemClient(), endType);
+        OwnPtr<EndClipDisplayItem> endClipDisplayItem = EndClipDisplayItem::create(m_box, endType);
         ASSERT(m_paintInfo.context->displayItemList());
         m_paintInfo.context->displayItemList()->add(endClipDisplayItem.release());
     } else {
-        EndClipDisplayItem endClipDisplayItem(m_box.displayItemClient(), endType);
-        endClipDisplayItem.replay(m_paintInfo.context);
+        EndClipDisplayItem endClipDisplayItem(m_box, endType);
+        endClipDisplayItem.replay(*m_paintInfo.context);
     }
 }
 

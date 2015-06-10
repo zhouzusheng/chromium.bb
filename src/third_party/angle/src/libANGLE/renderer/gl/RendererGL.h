@@ -14,6 +14,7 @@
 namespace rx
 {
 class FunctionsGL;
+class StateManagerGL;
 
 class RendererGL : public Renderer
 {
@@ -36,8 +37,8 @@ class RendererGL : public Renderer
     ProgramImpl *createProgram() override;
 
     // Framebuffer creation
-    DefaultAttachmentImpl *createDefaultAttachment(GLenum type, egl::Surface *surface) override;
-    FramebufferImpl *createFramebuffer() override;
+    FramebufferImpl *createDefaultFramebuffer(const gl::Framebuffer::Data &data) override;
+    FramebufferImpl *createFramebuffer(const gl::Framebuffer::Data &data) override;
 
     // Texture creation
     TextureImpl *createTexture(GLenum target) override;
@@ -70,12 +71,11 @@ class RendererGL : public Renderer
     std::string getRendererDescription() const override;
 
   private:
-    DISALLOW_COPY_AND_ASSIGN(RendererGL);
-
     void generateCaps(gl::Caps *outCaps, gl::TextureCapsMap* outTextureCaps, gl::Extensions *outExtensions) const override;
     Workarounds generateWorkarounds() const override;
 
     const FunctionsGL *mFunctions;
+    StateManagerGL *mStateManager;
 };
 
 }

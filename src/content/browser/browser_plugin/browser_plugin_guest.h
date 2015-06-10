@@ -28,6 +28,7 @@
 #include "content/common/edit_command.h"
 #include "content/common/input/input_event_ack_state.h"
 #include "content/public/browser/browser_plugin_guest_delegate.h"
+#include "content/public/browser/guest_host.h"
 #include "content/public/browser/readback_types.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "third_party/WebKit/public/platform/WebFocusType.h"
@@ -39,10 +40,7 @@
 #include "ui/base/ime/text_input_type.h"
 #include "ui/gfx/geometry/rect.h"
 
-class GuestSizer;
-class SkBitmap;
 struct BrowserPluginHostMsg_Attach_Params;
-struct BrowserPluginHostMsg_ResizeGuest_Params;
 struct FrameHostMsg_CompositorFrameSwappedACK_Params;
 struct FrameHostMsg_ReclaimCompositorResources_Params;
 struct FrameMsg_CompositorFrameSwapped_Params;
@@ -65,6 +63,7 @@ class BrowserPluginGuestManager;
 class RenderViewHostImpl;
 class RenderWidgetHost;
 class RenderWidgetHostView;
+class RenderWidgetHostViewBase;
 class SiteInstance;
 struct DropData;
 
@@ -78,7 +77,7 @@ struct DropData;
 // A BrowserPluginGuest can also create a new unattached guest via
 // CreateNewWindow. The newly created guest will live in the same partition,
 // which means it can share storage and can script this guest.
-class CONTENT_EXPORT BrowserPluginGuest : public GuestSizer,
+class CONTENT_EXPORT BrowserPluginGuest : public GuestHost,
                                           public WebContentsObserver {
  public:
   ~BrowserPluginGuest() override;
@@ -133,6 +132,10 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestSizer,
   WebContentsImpl* CreateNewGuestWindow(
       const WebContents::CreateParams& params);
 
+  // Creates, if necessary, and returns the routing ID of a proxy for the guest
+  // in the owner's renderer process.
+  int GetGuestProxyRoutingID();
+
   // Returns the identifier that uniquely identifies a browser plugin guest
   // within an embedder.
   int browser_plugin_instance_id() const { return browser_plugin_instance_id_; }
@@ -167,8 +170,11 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestSizer,
   bool OnMessageReceived(const IPC::Message& message,
                          RenderFrameHost* render_frame_host) override;
 
-  // GuestSizer implementation.
+  // GuestHost implementation.
+  int LoadURLWithParams(
+      const NavigationController::LoadURLParams& load_params) override;
   void SizeContents(const gfx::Size& new_size) override;
+  void WillDestroy() override;
 
   // Exposes the protected web_contents() from WebContentsObserver.
   WebContentsImpl* GetWebContents() const;
@@ -230,8 +236,6 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestSizer,
                      WebContentsImpl* web_contents,
                      BrowserPluginGuestDelegate* delegate);
 
-  void WillDestroy();
-
   void InitInternal(const BrowserPluginHostMsg_Attach_Params& params,
                     WebContentsImpl* owner_web_contents);
 
@@ -266,9 +270,6 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestSizer,
                    bool privileged);
   void OnLockMouseAck(int instance_id, bool succeeded);
   // Resizes the guest's web contents.
-  void OnResizeGuest(
-      int browser_plugin_instance_id,
-      const BrowserPluginHostMsg_ResizeGuest_Params& params);
   void OnSetFocus(int instance_id,
                   bool focused,
                   blink::WebFocusType focus_type);
@@ -341,6 +342,8 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestSizer,
   // Forwards all messages from the |pending_messages_| queue to the embedder.
   void SendQueuedMessages();
 
+  void SendTextInputTypeChangedToView(RenderWidgetHostViewBase* guest_rwhv);
+
   // The last tooltip that was set with SetTooltipText().
   base::string16 current_tooltip_text_;
 
@@ -352,7 +355,6 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestSizer,
 
   // An identifier that uniquely identifies a browser plugin within an embedder.
   int browser_plugin_instance_id_;
-  float guest_device_scale_factor_;
   gfx::Rect guest_window_rect_;
   bool focused_;
   bool mouse_locked_;
@@ -371,8 +373,6 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestSizer,
 
   // Last seen size of guest contents (by SwapCompositorFrame).
   gfx::Size last_seen_view_size_;
-  // Last seen size of BrowserPlugin (by OnResizeGuest).
-  gfx::Size last_seen_browser_plugin_size_;
 
   bool is_in_destruction_;
 
@@ -395,6 +395,9 @@ class CONTENT_EXPORT BrowserPluginGuest : public GuestSizer,
   bool seen_embedder_system_drag_ended_;
   // Whether or not our embedder has seen a DragSourceEndedAt() call.
   bool seen_embedder_drag_source_ended_at_;
+
+  // Indicates the URL dragged into the guest if any.
+  GURL dragged_url_;
 
   // Guests generate frames and send a CompositorFrameSwapped (CFS) message
   // indicating the next frame is ready to be positioned and composited.

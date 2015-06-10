@@ -6,6 +6,7 @@ found in the LICENSE file.
 -->
 
 <link rel="import" href="/core/trace_model/timed_event.html">
+<link rel="import" href="/core/analysis/util.html">
 
 <script>
 'use strict';
@@ -19,10 +20,11 @@ tv.exportTo('tv.c.trace_model', function() {
    * processes.
    * @constructor
    */
-  function GlobalMemoryDump(model, start) {
+  function GlobalMemoryDump(model, start, opt_args) {
     tv.c.trace_model.TimedEvent.call(this, start);
     this.model = model;
     this.processMemoryDumps = {};
+    this.args = opt_args;
   };
 
   GlobalMemoryDump.prototype = {
@@ -46,8 +48,22 @@ tv.exportTo('tv.c.trace_model', function() {
         obj[key] = this[key];
       }
       return obj;
+    },
+
+    get userFriendlyName() {
+      return 'Global memory dump ' + ' at ' +
+          tv.c.analysis.tsString(this.start);
     }
   };
+
+  tv.c.trace_model.EventRegistry.register(
+      GlobalMemoryDump,
+      {
+        name: 'globalMemoryDump',
+        pluralName: 'globalMemoryDumps',
+        singleViewElementName: 'tv-c-single-global-memory-dump-sub-view',
+        multiViewElementName: 'tv-c-multi-global-memory-dump-sub-view'
+      });
 
   return {
     GlobalMemoryDump: GlobalMemoryDump

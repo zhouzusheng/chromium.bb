@@ -31,12 +31,12 @@
 #include "config.h"
 #include "core/layout/svg/LayoutSVGModelObject.h"
 
-#include "core/layout/Layer.h"
+#include "core/layout/LayoutView.h"
 #include "core/layout/svg/LayoutSVGContainer.h"
 #include "core/layout/svg/LayoutSVGRoot.h"
 #include "core/layout/svg/SVGLayoutSupport.h"
 #include "core/layout/svg/SVGResourcesCache.h"
-#include "core/rendering/RenderView.h"
+#include "core/paint/DeprecatedPaintLayer.h"
 #include "core/svg/SVGGraphicsElement.h"
 
 namespace blink {
@@ -46,22 +46,22 @@ LayoutSVGModelObject::LayoutSVGModelObject(SVGElement* node)
 {
 }
 
-bool LayoutSVGModelObject::isChildAllowed(LayoutObject* child, const LayoutStyle&) const
+bool LayoutSVGModelObject::isChildAllowed(LayoutObject* child, const ComputedStyle&) const
 {
-    return child->isSVG() && !(child->isSVGInline() || child->isSVGInlineText());
+    return child->isSVG() && !(child->isSVGInline() || child->isSVGInlineText() || child->isSVGGradientStop());
 }
 
-LayoutRect LayoutSVGModelObject::clippedOverflowRectForPaintInvalidation(const LayoutLayerModelObject* paintInvalidationContainer, const PaintInvalidationState* paintInvalidationState) const
+LayoutRect LayoutSVGModelObject::clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* paintInvalidationState) const
 {
     return SVGLayoutSupport::clippedOverflowRectForPaintInvalidation(this, paintInvalidationContainer, paintInvalidationState);
 }
 
-void LayoutSVGModelObject::mapLocalToContainer(const LayoutLayerModelObject* paintInvalidationContainer, TransformState& transformState, MapCoordinatesFlags, bool* wasFixed, const PaintInvalidationState* paintInvalidationState) const
+void LayoutSVGModelObject::mapLocalToContainer(const LayoutBoxModelObject* paintInvalidationContainer, TransformState& transformState, MapCoordinatesFlags, bool* wasFixed, const PaintInvalidationState* paintInvalidationState) const
 {
     SVGLayoutSupport::mapLocalToContainer(this, paintInvalidationContainer, transformState, wasFixed, paintInvalidationState);
 }
 
-const LayoutObject* LayoutSVGModelObject::pushMappingToContainer(const LayoutLayerModelObject* ancestorToStopAt, LayoutGeometryMap& geometryMap) const
+const LayoutObject* LayoutSVGModelObject::pushMappingToContainer(const LayoutBoxModelObject* ancestorToStopAt, LayoutGeometryMap& geometryMap) const
 {
     return SVGLayoutSupport::pushMappingToContainer(this, ancestorToStopAt, geometryMap);
 }
@@ -90,12 +90,12 @@ void LayoutSVGModelObject::computeLayerHitTestRects(LayerHitTestRects& rects) co
     SVGLayoutSupport::findTreeRootObject(this)->computeLayerHitTestRects(rects);
 }
 
-void LayoutSVGModelObject::addLayerHitTestRects(LayerHitTestRects&, const Layer* currentLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const
+void LayoutSVGModelObject::addLayerHitTestRects(LayerHitTestRects&, const DeprecatedPaintLayer* currentLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const
 {
     // We don't walk into SVG trees at all - just report their container.
 }
 
-void LayoutSVGModelObject::styleDidChange(StyleDifference diff, const LayoutStyle* oldStyle)
+void LayoutSVGModelObject::styleDidChange(StyleDifference diff, const ComputedStyle* oldStyle)
 {
     if (diff.needsFullLayout()) {
         setNeedsBoundariesUpdate();
@@ -113,7 +113,7 @@ void LayoutSVGModelObject::styleDidChange(StyleDifference diff, const LayoutStyl
     SVGResourcesCache::clientStyleChanged(this, diff, styleRef());
 }
 
-bool LayoutSVGModelObject::nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation&, const LayoutPoint&, HitTestAction)
+bool LayoutSVGModelObject::nodeAtPoint(HitTestResult&, const HitTestLocation&, const LayoutPoint&, HitTestAction)
 {
     ASSERT_NOT_REACHED();
     return false;
@@ -126,7 +126,7 @@ IntRect LayoutSVGModelObject::absoluteFocusRingBoundingBoxRect() const
     return localToAbsoluteQuad(FloatQuad(paintInvalidationRectInLocalCoordinates())).enclosingBoundingBox();
 }
 
-void LayoutSVGModelObject::invalidateTreeIfNeeded(const PaintInvalidationState& paintInvalidationState)
+void LayoutSVGModelObject::invalidateTreeIfNeeded(PaintInvalidationState& paintInvalidationState)
 {
     ASSERT(!needsLayout());
 

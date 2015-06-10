@@ -11,7 +11,7 @@
 #include "bindings/core/v8/ScriptValue.h"
 #include "bindings/core/v8/ScriptWrappable.h"
 #include "bindings/core/v8/V8Binding.h"
-#include "core/dom/ActiveDOMObject.h"
+#include "core/CoreExport.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
@@ -21,16 +21,15 @@ namespace blink {
 
 class DOMException;
 class ExceptionState;
-class ExclusiveStreamReader;
+class ExecutionContext;
+class ReadableStreamReader;
 class UnderlyingSource;
 
-class ReadableStream : public GarbageCollectedFinalized<ReadableStream>, public ScriptWrappable, public ActiveDOMObject {
+class CORE_EXPORT ReadableStream : public GarbageCollectedFinalized<ReadableStream>, public ScriptWrappable {
     DEFINE_WRAPPERTYPEINFO();
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ReadableStream);
 public:
     enum State {
         Readable,
-        Waiting,
         Closed,
         Errored,
     };
@@ -38,7 +37,7 @@ public:
     // After ReadableStream construction, |didSourceStart| must be called when
     // |source| initialization succeeds and |error| must be called when
     // |source| initialization fails.
-    ReadableStream(ExecutionContext*, UnderlyingSource* /* source */);
+    explicit ReadableStream(UnderlyingSource* /* source */);
     virtual ~ReadableStream();
 
     bool isStarted() const { return m_isStarted; }
@@ -47,41 +46,34 @@ public:
     State stateInternal() const { return m_state; }
     DOMException* storedException() { return m_exception.get(); }
 
-    // |stateString|, |read| and |ready| are affected by an exclusive lock. Use
-    // |stateInternal|, |readInternal| and |readyInternal| if you want to avoid
-    // that.
-    String stateString() const;
-    ScriptValue read(ScriptState*, ExceptionState&);
-    ScriptPromise ready(ScriptState*);
+    virtual ScriptPromise read(ScriptState*) = 0;
+    ScriptPromise cancel(ScriptState*);
     ScriptPromise cancel(ScriptState*, ScriptValue reason);
-    ScriptPromise closed(ScriptState*);
+    ScriptPromise cancelInternal(ScriptState*, ScriptValue reason);
 
-    virtual ScriptValue readInternal(ScriptState*, ExceptionState&) = 0;
-    ScriptPromise readyInternal(ScriptState*);
+    virtual bool hasPendingReads() const = 0;
+    virtual void resolveAllPendingReadsAsDone() = 0;
+    virtual void rejectAllPendingReads(PassRefPtrWillBeRawPtr<DOMException>) = 0;
 
     void close();
     void error(PassRefPtrWillBeRawPtr<DOMException>);
 
     void didSourceStart();
 
-    // This function is not a getter. It creates an ExclusiveStreamReader and
+    // This function is not a getter. It creates an ReadableStreamReader and
     // returns it.
-    ExclusiveStreamReader* getReader(ExceptionState&);
-    // Only ExclusiveStreamReader methods should call this function.
-    void setReader(ExclusiveStreamReader*);
-    bool isLockedTo(const ExclusiveStreamReader* reader) const { return m_reader == reader; }
+    ReadableStreamReader* getReader(ExecutionContext*, ExceptionState&);
+    // Only ReadableStreamReader methods should call this function.
+    void setReader(ReadableStreamReader*);
 
-    bool hasPendingActivity() const override;
-    void stop() override;
+    bool isLocked() const { return m_reader; }
+    bool isLockedTo(const ReadableStreamReader* reader) const { return m_reader == reader; }
+
     DECLARE_VIRTUAL_TRACE();
-
-    // Returns the string representation of the given State.
-    static String stateToString(State);
 
 protected:
     bool enqueuePreliminaryCheck();
     bool enqueuePostAction();
-    void readInternalPreliminaryCheck(ExceptionState&);
     void readInternalPostAction();
 
 private:
@@ -94,6 +86,7 @@ private:
     virtual bool shouldApplyBackpressure() = 0;
 
     void callPullIfNeeded();
+    void closeInternal();
 
     Member<UnderlyingSource> m_source;
     bool m_isStarted;
@@ -101,11 +94,8 @@ private:
     bool m_isPulling;
     State m_state;
 
-    Member<WaitPromise> m_ready;
-    Member<ClosedPromise> m_closed;
-
     RefPtrWillBeMember<DOMException> m_exception;
-    Member<ExclusiveStreamReader> m_reader;
+    Member<ReadableStreamReader> m_reader;
 };
 
 } // namespace blink

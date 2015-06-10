@@ -30,7 +30,7 @@
 #include "modules/indexeddb/IDBFactory.h"
 
 #include "bindings/core/v8/ExceptionState.h"
-#include "bindings/modules/v8/IDBBindingUtilities.h"
+#include "bindings/modules/v8/V8BindingForModules.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "modules/indexeddb/IDBDatabase.h"
@@ -155,8 +155,8 @@ IDBOpenDBRequest* IDBFactory::deleteDatabase(ScriptState* scriptState, const Str
 
 short IDBFactory::cmp(ScriptState* scriptState, const ScriptValue& firstValue, const ScriptValue& secondValue, ExceptionState& exceptionState)
 {
-    IDBKey* first = scriptValueToIDBKey(scriptState->isolate(), firstValue);
-    IDBKey* second = scriptValueToIDBKey(scriptState->isolate(), secondValue);
+    IDBKey* first = ScriptValue::to<IDBKey*>(scriptState->isolate(), firstValue, exceptionState);
+    IDBKey* second = ScriptValue::to<IDBKey*>(scriptState->isolate(), secondValue, exceptionState);
 
     ASSERT(first);
     ASSERT(second);

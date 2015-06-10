@@ -13,16 +13,18 @@ namespace blink {
 // descendant of the flow thread, but due to its out-of-flow nature, we need something on the
 // outside to take care of its positioning and sizing. LayoutMultiColumnSpannerPlaceholder objects
 // are siblings of LayoutMultiColumnSet objects, i.e. direct children of the multicol container.
-class LayoutMultiColumnSpannerPlaceholder final : public RenderBox {
+class LayoutMultiColumnSpannerPlaceholder final : public LayoutBox {
 public:
-    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectLayoutMultiColumnSpannerPlaceholder || RenderBox::isOfType(type); }
+    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectLayoutMultiColumnSpannerPlaceholder || LayoutBox::isOfType(type); }
 
-    static LayoutMultiColumnSpannerPlaceholder* createAnonymous(const LayoutStyle& parentStyle, RenderBox&);
+    static LayoutMultiColumnSpannerPlaceholder* createAnonymous(const ComputedStyle& parentStyle, LayoutBox&);
 
-    LayoutFlowThread* flowThread() const { return toRenderBlockFlow(parent())->multiColumnFlowThread(); }
+    LayoutFlowThread* flowThread() const { return toLayoutBlockFlow(parent())->multiColumnFlowThread(); }
 
-    RenderBox* rendererInFlowThread() const { return m_rendererInFlowThread; }
+    LayoutBox* rendererInFlowThread() const { return m_rendererInFlowThread; }
     void updateMarginProperties();
+
+    virtual const char* name() const override { return "LayoutMultiColumnSpannerPlaceholder"; }
 
 protected:
     virtual void willBeRemovedFromTree() override;
@@ -31,15 +33,14 @@ protected:
     virtual LayoutUnit maxPreferredLogicalWidth() const override;
     virtual void layout() override;
     virtual void computeLogicalHeight(LayoutUnit logicalHeight, LayoutUnit logicalTop, LogicalExtentComputedValues&) const override;
-    virtual void invalidateTreeIfNeeded(const PaintInvalidationState&) override;
+    virtual void invalidateTreeIfNeeded(PaintInvalidationState&) override;
     virtual void paint(const PaintInfo&, const LayoutPoint& paintOffset) override;
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override;
-    virtual const char* renderName() const override;
+    virtual bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override;
 
 private:
-    LayoutMultiColumnSpannerPlaceholder(RenderBox*);
+    LayoutMultiColumnSpannerPlaceholder(LayoutBox*);
 
-    RenderBox* m_rendererInFlowThread; // The actual column-span:all renderer inside the flow thread.
+    LayoutBox* m_rendererInFlowThread; // The actual column-span:all renderer inside the flow thread.
 };
 
 DEFINE_LAYOUT_OBJECT_TYPE_CASTS(LayoutMultiColumnSpannerPlaceholder, isLayoutMultiColumnSpannerPlaceholder());

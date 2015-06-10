@@ -9,6 +9,7 @@
 #include "cc/base/cc_export.h"
 #include "cc/debug/layer_tree_debug_state.h"
 #include "cc/output/renderer_settings.h"
+#include "cc/scheduler/scheduler_settings.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/geometry/size.h"
 
@@ -21,13 +22,12 @@ class CC_EXPORT LayerTreeSettings {
 
   RendererSettings renderer_settings;
   bool impl_side_painting;
+  bool raster_enabled;
   bool throttle_frame_production;
   bool single_thread_proxy_scheduler;
   bool use_external_begin_frame_source;
-  bool forward_begin_frames_to_children;
   bool main_frame_before_activation_enabled;
   bool using_synchronous_renderer_compositor;
-  bool disable_hi_res_timer_tasks_on_battery;
   bool report_overscroll_only_for_scrollable_axes;
   bool per_tile_painting_enabled;
   bool accelerated_animation_enabled;
@@ -37,7 +37,6 @@ class CC_EXPORT LayerTreeSettings {
   bool gpu_rasterization_forced;
   int gpu_rasterization_msaa_sample_count;
   float gpu_rasterization_skewport_target_time_in_seconds;
-  bool threaded_gpu_rasterization_enabled;
   bool create_low_res_tiling;
 
   enum ScrollbarAnimator {
@@ -83,8 +82,12 @@ class CC_EXPORT LayerTreeSettings {
   bool record_full_layer;
   bool use_display_lists;
   bool verify_property_trees;
+  bool gather_pixel_refs;
+  bool use_compositor_animation_timelines;
 
   LayerTreeDebugState initial_debug_state;
+
+  SchedulerSettings ToSchedulerSettings() const;
 };
 
 }  // namespace cc

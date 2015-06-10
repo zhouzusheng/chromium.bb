@@ -520,6 +520,27 @@
         value1_name, static_cast<int>(value1_val), \
         value2_name, static_cast<int>(value2_val))
 
+// TRACE_EVENT_SAMPLE_* events are injected by the sampling profiler.
+#define TRACE_EVENT_SAMPLE_WITH_TID_AND_TIMESTAMP0(category_group, name,       \
+                                                   thread_id, timestamp)       \
+  INTERNAL_TRACE_EVENT_ADD_WITH_ID_TID_AND_TIMESTAMP(                          \
+      TRACE_EVENT_PHASE_SAMPLE, category_group, name, 0, thread_id, timestamp, \
+      TRACE_EVENT_FLAG_NONE)
+
+#define TRACE_EVENT_SAMPLE_WITH_TID_AND_TIMESTAMP1(                            \
+    category_group, name, thread_id, timestamp, arg1_name, arg1_val)           \
+  INTERNAL_TRACE_EVENT_ADD_WITH_ID_TID_AND_TIMESTAMP(                          \
+      TRACE_EVENT_PHASE_SAMPLE, category_group, name, 0, thread_id, timestamp, \
+      TRACE_EVENT_FLAG_NONE, arg1_name, arg1_val)
+
+#define TRACE_EVENT_SAMPLE_WITH_TID_AND_TIMESTAMP2(category_group, name,       \
+                                                   thread_id, timestamp,       \
+                                                   arg1_name, arg1_val,        \
+                                                   arg2_name, arg2_val)        \
+  INTERNAL_TRACE_EVENT_ADD_WITH_ID_TID_AND_TIMESTAMP(                          \
+      TRACE_EVENT_PHASE_SAMPLE, category_group, name, 0, thread_id, timestamp, \
+      TRACE_EVENT_FLAG_NONE, arg1_name, arg1_val, arg2_name, arg2_val)
+
 // ASYNC_STEP_* APIs should be only used by legacy code. New code should
 // consider using NESTABLE_ASYNC_* APIs to describe substeps within an async
 // event.
@@ -660,16 +681,20 @@
 // events.
 // - category and name strings must have application lifetime (statics or
 //   literals). They may not include " chars.
-// - |id| is used to match the NESTABLE_ASYNC_BEGIN event with the
-//   NESTABLE_ASYNC_END event. Events are considered to match if their
-//   category_group, name and id values all match. |id| must either be a
-//   pointer or an integer value up to 64 bits. If it's a pointer, the bits
-//   will be xored with a hash of the process ID so that the same pointer on two
-//   different processes will not collide.
+// - A pair of NESTABLE_ASYNC_BEGIN event and NESTABLE_ASYNC_END event is
+//   considered as a match if their category_group, name and id all match.
+// - |id| must either be a pointer or an integer value up to 64 bits.
+//   If it's a pointer, the bits will be xored with a hash of the process ID so
+//   that the same pointer on two different processes will not collide.
+// - |id| is used to match a child NESTABLE_ASYNC event with its parent
+//   NESTABLE_ASYNC event. Therefore, events in the same nested event tree must
+//   be logged using the same id and category_group.
 //
-// Unmatched NESTABLE_ASYNC_END event will be parsed as an instant event,
-// and unmatched NESTABLE_ASYNC_BEGIN event will be parsed as an event that
-// ends at the last NESTABLE_ASYNC_END event of that |id|.
+// Unmatched NESTABLE_ASYNC_END event will be parsed as an event that starts
+// at the first NESTABLE_ASYNC event of that id, and unmatched
+// NESTABLE_ASYNC_BEGIN event will be parsed as an event that ends at the last
+// NESTABLE_ASYNC event of that id. Corresponding warning messages for
+// unmatched events will be shown in the analysis view.
 
 // Records a single NESTABLE_ASYNC_BEGIN event called "name" immediately, with 2
 // associated arguments. If the category is not enabled, then this does nothing.
@@ -1008,7 +1033,8 @@ TRACE_EVENT_API_CLASS_EXPORT extern \
             phase, INTERNAL_TRACE_EVENT_UID(category_group_enabled), \
             name, trace_event_trace_id.data(), \
             thread_id, base::TimeTicks::FromInternalValue(timestamp), \
-            trace_event_flags, ##__VA_ARGS__); \
+            trace_event_flags | TRACE_EVENT_FLAG_EXPLICIT_TIMESTAMP, \
+            ##__VA_ARGS__); \
       } \
     } while (0)
 
@@ -1038,6 +1064,7 @@ TRACE_EVENT_API_CLASS_EXPORT extern \
 #define TRACE_EVENT_PHASE_CREATE_OBJECT ('N')
 #define TRACE_EVENT_PHASE_SNAPSHOT_OBJECT ('O')
 #define TRACE_EVENT_PHASE_DELETE_OBJECT ('D')
+#define TRACE_EVENT_PHASE_MEMORY_DUMP ('v')
 
 // Flags for changing the behavior of TRACE_EVENT_API_ADD_TRACE_EVENT.
 #define TRACE_EVENT_FLAG_NONE         (static_cast<unsigned char>(0))
@@ -1045,9 +1072,11 @@ TRACE_EVENT_API_CLASS_EXPORT extern \
 #define TRACE_EVENT_FLAG_HAS_ID       (static_cast<unsigned char>(1 << 1))
 #define TRACE_EVENT_FLAG_MANGLE_ID    (static_cast<unsigned char>(1 << 2))
 #define TRACE_EVENT_FLAG_SCOPE_OFFSET (static_cast<unsigned char>(1 << 3))
+#define TRACE_EVENT_FLAG_SCOPE_EXTRA  (static_cast<unsigned char>(1 << 4))
+#define TRACE_EVENT_FLAG_EXPLICIT_TIMESTAMP (static_cast<unsigned char>(1 << 5))
 
 #define TRACE_EVENT_FLAG_SCOPE_MASK   (static_cast<unsigned char>( \
-    TRACE_EVENT_FLAG_SCOPE_OFFSET | (TRACE_EVENT_FLAG_SCOPE_OFFSET << 1)))
+    TRACE_EVENT_FLAG_SCOPE_OFFSET | TRACE_EVENT_FLAG_SCOPE_EXTRA))
 
 // Type values for identifying types in the TraceValue union.
 #define TRACE_VALUE_TYPE_BOOL         (static_cast<unsigned char>(1))
@@ -1603,4 +1632,4 @@ template<typename IDType> class TraceScopedTrackableObject {
 }  // namespace trace_event
 }  // namespace base
 
-#endif /* BASE_TRACE_EVENT_TRACE_EVENT_H_ */
+#endif  // BASE_TRACE_EVENT_TRACE_EVENT_H_

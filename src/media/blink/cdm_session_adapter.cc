@@ -28,6 +28,8 @@ CdmSessionAdapter::~CdmSessionAdapter() {}
 
 bool CdmSessionAdapter::Initialize(CdmFactory* cdm_factory,
                                    const std::string& key_system,
+                                   bool allow_distinctive_identifier,
+                                   bool allow_persistent_state,
                                    const GURL& security_origin) {
   key_system_ = key_system;
   key_system_uma_prefix_ =
@@ -35,10 +37,11 @@ bool CdmSessionAdapter::Initialize(CdmFactory* cdm_factory,
 
   base::WeakPtr<CdmSessionAdapter> weak_this = weak_ptr_factory_.GetWeakPtr();
   media_keys_ = cdm_factory->Create(
-      key_system, security_origin,
+      key_system, allow_distinctive_identifier, allow_persistent_state,
+      security_origin,
       base::Bind(&CdmSessionAdapter::OnSessionMessage, weak_this),
       base::Bind(&CdmSessionAdapter::OnSessionClosed, weak_this),
-      base::Bind(&CdmSessionAdapter::OnSessionError, weak_this),
+      base::Bind(&CdmSessionAdapter::OnLegacySessionError, weak_this),
       base::Bind(&CdmSessionAdapter::OnSessionKeysChange, weak_this),
       base::Bind(&CdmSessionAdapter::OnSessionExpirationUpdate, weak_this));
   return media_keys_.get() != nullptr;
@@ -73,7 +76,7 @@ void CdmSessionAdapter::UnregisterSession(const std::string& session_id) {
 }
 
 void CdmSessionAdapter::InitializeNewSession(
-    const std::string& init_data_type,
+    EmeInitDataType init_data_type,
     const uint8* init_data,
     int init_data_length,
     MediaKeys::SessionType session_type,
@@ -160,10 +163,11 @@ void CdmSessionAdapter::OnSessionClosed(const std::string& session_id) {
     session->OnSessionClosed();
 }
 
-void CdmSessionAdapter::OnSessionError(const std::string& session_id,
-                                       MediaKeys::Exception exception_code,
-                                       uint32 system_code,
-                                       const std::string& error_message) {
+void CdmSessionAdapter::OnLegacySessionError(
+    const std::string& session_id,
+    MediaKeys::Exception exception_code,
+    uint32 system_code,
+    const std::string& error_message) {
   // Error events not used by unprefixed EME.
   // TODO(jrummell): Remove when prefixed EME removed.
 }

@@ -26,8 +26,9 @@
 #define LayoutTable_h
 
 #include "core/CSSPropertyNames.h"
-#include "core/layout/style/CollapsedBorderValue.h"
-#include "core/rendering/RenderBlock.h"
+#include "core/CoreExport.h"
+#include "core/layout/LayoutBlock.h"
+#include "core/style/CollapsedBorderValue.h"
 #include "wtf/Vector.h"
 
 namespace blink {
@@ -36,11 +37,11 @@ class LayoutTableCol;
 class LayoutTableCaption;
 class LayoutTableCell;
 class LayoutTableSection;
-class LayoutTableAlgorithm;
+class TableLayoutAlgorithm;
 
 enum SkipEmptySectionsValue { DoNotSkipEmptySections, SkipEmptySections };
 
-class LayoutTable final : public RenderBlock {
+class CORE_EXPORT LayoutTable final : public LayoutBlock {
 public:
     explicit LayoutTable(Element*);
     virtual ~LayoutTable();
@@ -200,8 +201,8 @@ public:
     }
 
     // Override paddingStart/End to return pixel values to match behavor of LayoutTableCell.
-    virtual LayoutUnit paddingEnd() const override { return static_cast<int>(RenderBlock::paddingEnd()); }
-    virtual LayoutUnit paddingStart() const override { return static_cast<int>(RenderBlock::paddingStart()); }
+    virtual LayoutUnit paddingEnd() const override { return static_cast<int>(LayoutBlock::paddingEnd()); }
+    virtual LayoutUnit paddingStart() const override { return static_cast<int>(LayoutBlock::paddingStart()); }
 
     LayoutUnit bordersPaddingAndSpacingInRowDirection() const
     {
@@ -226,7 +227,7 @@ public:
         if (documentBeingDestroyed())
             return;
         m_needsSectionRecalc = true;
-        setNeedsLayoutAndFullPaintInvalidation();
+        setNeedsLayoutAndFullPaintInvalidation(LayoutInvalidationReason::TableChanged);
     }
 
     LayoutTableSection* sectionAbove(const LayoutTableSection*, SkipEmptySectionsValue = DoNotSkipEmptySections) const;
@@ -238,11 +239,7 @@ public:
     LayoutTableCell* cellAfter(const LayoutTableCell*) const;
 
     typedef Vector<CollapsedBorderValue> CollapsedBorderValues;
-    void invalidateCollapsedBorders()
-    {
-        m_collapsedBordersValid = false;
-        m_collapsedBorders.clear();
-    }
+    void invalidateCollapsedBorders();
 
     // FIXME: This method should be moved into TablePainter.
     const CollapsedBorderValue* currentBorderValue() const { return m_currentBorder; }
@@ -257,7 +254,7 @@ public:
     }
 
     static LayoutTable* createAnonymousWithParentRenderer(const LayoutObject*);
-    virtual RenderBox* createAnonymousBoxWithSameTypeAs(const LayoutObject* parent) const override
+    virtual LayoutBox* createAnonymousBoxWithSameTypeAs(const LayoutObject* parent) const override
     {
         return createAnonymousWithParentRenderer(parent);
     }
@@ -274,24 +271,28 @@ public:
 
     virtual void paintMask(const PaintInfo&, const LayoutPoint&) override final;
 
-    const CollapsedBorderValues& collapsedBorders() { return m_collapsedBorders; }
+    const CollapsedBorderValues& collapsedBorders()
+    {
+        ASSERT(m_collapsedBordersValid);
+        return m_collapsedBorders;
+    }
+
     void subtractCaptionRect(LayoutRect&) const;
-    void recalcCollapsedBorders();
+
+    virtual const char* name() const override { return "LayoutTable"; }
 
 protected:
-    virtual void styleDidChange(StyleDifference, const LayoutStyle* oldStyle) override;
+    virtual void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override;
     virtual void simplifiedNormalFlowLayout() override;
 
 private:
-    virtual const char* renderName() const override { return "LayoutTable"; }
-
-    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectTable || RenderBlock::isOfType(type); }
+    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectTable || LayoutBlock::isOfType(type); }
 
     virtual void paintObject(const PaintInfo&, const LayoutPoint&) override;
     virtual void layout() override;
     virtual void computeIntrinsicLogicalWidths(LayoutUnit& minWidth, LayoutUnit& maxWidth) const override;
     virtual void computePreferredLogicalWidths() override;
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override;
+    virtual bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override;
 
     virtual int baselinePosition(FontBaseline, bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const override;
     virtual int firstLineBoxBaseline() const override;
@@ -316,6 +317,8 @@ private:
 
     void distributeExtraLogicalHeight(int extraLogicalHeight);
 
+    void recalcCollapsedBordersIfNeeded();
+
     mutable Vector<int> m_columnPos;
     mutable Vector<ColumnStruct> m_columns;
     mutable Vector<LayoutTableCaption*> m_captions;
@@ -325,7 +328,7 @@ private:
     mutable LayoutTableSection* m_foot;
     mutable LayoutTableSection* m_firstBody;
 
-    OwnPtr<LayoutTableAlgorithm> m_tableLayout;
+    OwnPtr<TableLayoutAlgorithm> m_tableLayout;
 
     CollapsedBorderValues m_collapsedBorders;
     const CollapsedBorderValue* m_currentBorder;

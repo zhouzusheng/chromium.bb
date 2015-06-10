@@ -41,6 +41,17 @@ SpellcheckService::SpellcheckService(content::BrowserContext* context)
   PrefService* prefs = user_prefs::UserPrefs::Get(context);
   pref_change_registrar_.Init(prefs);
 
+  std::string language_code;
+  std::string country_code;
+  chrome::spellcheck_common::GetISOLanguageCountryCodeFromLocale(
+      prefs->GetString(prefs::kSpellCheckDictionary),
+      &language_code,
+      &country_code);
+
+  // SHEZ: Remove feedback sender
+  // feedback_sender_.reset(new spellcheck::FeedbackSender(
+  //     context->GetRequestContext(), language_code, country_code));
+
   pref_change_registrar_.Add(
       prefs::kEnableAutoSpellCorrect,
       base::Bind(&SpellcheckService::OnEnableAutoSpellCorrectChanged,
@@ -72,6 +83,10 @@ SpellcheckService::SpellcheckService(content::BrowserContext* context)
 SpellcheckService::~SpellcheckService() {
   // Remove pref observers
   pref_change_registrar_.RemoveAll();
+}
+
+base::WeakPtr<SpellcheckService> SpellcheckService::GetWeakPtr() {
+  return weak_ptr_factory_.GetWeakPtr();
 }
 
 // static
@@ -183,6 +198,11 @@ SpellcheckHunspellDictionary* SpellcheckService::GetHunspellDictionary() {
   return hunspell_dictionary_.get();
 }
 
+// SHEZ: Remove feedback sender
+// spellcheck::FeedbackSender* SpellcheckService::GetFeedbackSender() {
+//   return feedback_sender_.get();
+// }
+
 bool SpellcheckService::LoadExternalDictionary(std::string language,
                                                std::string locale,
                                                std::string path,
@@ -278,6 +298,13 @@ void SpellcheckService::OnSpellCheckDictionaryChanged() {
       dictionary, context_->GetRequestContext(), this));
   hunspell_dictionary_->AddObserver(this);
   hunspell_dictionary_->Load();
+  std::string language_code;
+  std::string country_code;
+  chrome::spellcheck_common::GetISOLanguageCountryCodeFromLocale(
+      dictionary, &language_code, &country_code);
+  // SHEZ: Remove feedback sender
+  // feedback_sender_->OnLanguageCountryChange(language_code, country_code);
+  // UpdateFeedbackSenderState();
 }
 
 void SpellcheckService::OnUseSpellingServiceChanged() {
@@ -285,4 +312,16 @@ void SpellcheckService::OnUseSpellingServiceChanged() {
       prefs::kSpellCheckUseSpellingService);
   if (metrics_)
     metrics_->RecordSpellingServiceStats(enabled);
+  // SHEZ: Remove feedback sender
+  // UpdateFeedbackSenderState();
 }
+
+// SHEZ: Remove feedback sender
+// void SpellcheckService::UpdateFeedbackSenderState() {
+//   if (SpellingServiceClient::IsAvailable(
+//           context_, SpellingServiceClient::SPELLCHECK)) {
+//     feedback_sender_->StartFeedbackCollection();
+//   } else {
+//     feedback_sender_->StopFeedbackCollection();
+//   }
+// }

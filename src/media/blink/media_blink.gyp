@@ -94,6 +94,7 @@
         '../../base/base.gyp:base',
         '../../cc/cc.gyp:cc',
         '../../cc/blink/cc_blink.gyp:cc_blink',
+        '../../gin/gin.gyp:gin',
         '../../net/net.gyp:net',
         '../../third_party/WebKit/public/blink.gyp:blink',
         '../../ui/gfx/gfx.gyp:gfx',

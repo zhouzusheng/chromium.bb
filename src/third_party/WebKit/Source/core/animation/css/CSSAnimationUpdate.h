@@ -41,7 +41,7 @@ public:
         {
         }
 
-        void trace(Visitor* visitor)
+        DEFINE_INLINE_TRACE()
         {
             visitor->trace(animation);
             visitor->trace(styleRule);
@@ -72,7 +72,7 @@ public:
         {
         }
 
-        void trace(Visitor* visitor)
+        DEFINE_INLINE_TRACE()
         {
             visitor->trace(player);
             visitor->trace(animation);
@@ -117,7 +117,7 @@ public:
         {
         }
 
-        void trace(Visitor* visitor)
+        DEFINE_INLINE_TRACE()
         {
             visitor->trace(player);
             visitor->trace(effect);
@@ -151,11 +151,11 @@ public:
         m_animationsWithUpdates.append(UpdatedAnimation(name, player, animation, specifiedTiming, styleRule));
         m_suppressedAnimationPlayers.add(player);
     }
-    void updateAnimationStyle(AnimationPlayer* player, KeyframeEffectModelBase* effect, LayoutObject* renderer, const LayoutStyle& newStyle)
+    void updateAnimationStyle(AnimationPlayer* player, KeyframeEffectModelBase* effect, LayoutObject* renderer, const ComputedStyle& newStyle)
     {
         UpdatedAnimationStyle::CompositableStyleSnapshot snapshot;
         if (renderer) {
-            const LayoutStyle& oldStyle = renderer->styleRef();
+            const ComputedStyle& oldStyle = renderer->styleRef();
             if (!CSSPropertyEquality::propertiesEqual(CSSPropertyOpacity, oldStyle, newStyle) && effect->affects(CSSPropertyOpacity))
                 snapshot.opacity = CSSAnimatableValueFactory::create(CSSPropertyOpacity, newStyle);
             if (!CSSPropertyEquality::propertiesEqual(CSSPropertyTransform, oldStyle, newStyle) && effect->affects(CSSPropertyTransform))
@@ -192,7 +192,7 @@ public:
     struct NewTransition {
         ALLOW_ONLY_INLINE_ALLOCATION();
     public:
-        void trace(Visitor* visitor)
+        DEFINE_INLINE_TRACE()
         {
             visitor->trace(from);
             visitor->trace(to);
@@ -231,7 +231,7 @@ public:
             && m_activeInterpolationsForTransitions.isEmpty();
     }
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     // Order is significant since it defines the order in which new animations

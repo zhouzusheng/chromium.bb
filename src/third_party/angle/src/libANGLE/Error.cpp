@@ -16,54 +16,15 @@
 namespace gl
 {
 
-Error::Error(GLenum errorCode)
-    : mCode(errorCode),
-      mMessage(NULL)
-{
-}
-
 Error::Error(GLenum errorCode, const char *msg, ...)
     : mCode(errorCode),
-      mMessage(NULL)
+      mMessage(nullptr)
 {
     va_list vararg;
     va_start(vararg, msg);
     createMessageString();
     *mMessage = FormatString(msg, vararg);
     va_end(vararg);
-}
-
-Error::Error(const Error &other)
-    : mCode(other.mCode),
-      mMessage(NULL)
-{
-    if (other.mMessage != NULL)
-    {
-        createMessageString();
-        *mMessage = *(other.mMessage);
-    }
-}
-
-Error::~Error()
-{
-    SafeDelete(mMessage);
-}
-
-Error &Error::operator=(const Error &other)
-{
-    mCode = other.mCode;
-
-    if (other.mMessage != NULL)
-    {
-        createMessageString();
-        *mMessage = *(other.mMessage);
-    }
-    else
-    {
-        SafeDelete(mMessage);
-    }
-
-    return *this;
 }
 
 void Error::createMessageString() const
@@ -85,15 +46,10 @@ const std::string &Error::getMessage() const
 namespace egl
 {
 
-Error::Error(EGLint errorCode)
-    : mCode(errorCode),
-      mMessage(NULL)
-{
-}
-
 Error::Error(EGLint errorCode, const char *msg, ...)
     : mCode(errorCode),
-      mMessage(NULL)
+      mID(0),
+      mMessage(nullptr)
 {
     va_list vararg;
     va_start(vararg, msg);
@@ -102,39 +58,17 @@ Error::Error(EGLint errorCode, const char *msg, ...)
     va_end(vararg);
 }
 
-Error::Error(const Error &other)
-    : mCode(other.mCode),
-      mMessage(NULL)
+Error::Error(EGLint errorCode, EGLint id, const char *msg, ...)
+    : mCode(errorCode),
+      mID(id),
+      mMessage(nullptr)
 {
-    if (other.mMessage != NULL)
-    {
-        createMessageString();
-        *mMessage = *(other.mMessage);
-    }
+    va_list vararg;
+    va_start(vararg, msg);
+    createMessageString();
+    *mMessage = FormatString(msg, vararg);
+    va_end(vararg);
 }
-
-Error::~Error()
-{
-    SafeDelete(mMessage);
-}
-
-Error &Error::operator=(const Error &other)
-{
-    mCode = other.mCode;
-
-    if (other.mMessage != NULL)
-    {
-        createMessageString();
-        *mMessage = *(other.mMessage);
-    }
-    else
-    {
-        SafeDelete(mMessage);
-    }
-
-    return *this;
-}
-
 void Error::createMessageString() const
 {
     if (mMessage == nullptr)

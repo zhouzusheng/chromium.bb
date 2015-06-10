@@ -27,7 +27,7 @@ public:
                           const char* outputColor,
                           const char* inputColor,
                           const TransformedCoordsArray& coords,
-                          const TextureSamplerArray& samplers) SK_OVERRIDE {
+                          const TextureSamplerArray& samplers) override {
         // Using highp for GLES here in order to avoid some precision issues on specific GPUs.
         GrGLShaderVar tmpVar("tmpColor", kVec4f_GrSLType, 0, kHigh_GrSLPrecision);
         SkString tmpDecl;
@@ -181,8 +181,7 @@ void GrConfigConversionEffect::TestForPreservingPMConversions(GrContext* context
     }
 
     GrSurfaceDesc desc;
-    desc.fFlags = kRenderTarget_GrSurfaceFlag |
-                  kNoStencil_GrSurfaceFlag;
+    desc.fFlags = kRenderTarget_GrSurfaceFlag;
     desc.fWidth = 256;
     desc.fHeight = 256;
     desc.fConfig = kRGBA_8888_GrPixelConfig;
@@ -205,8 +204,6 @@ void GrConfigConversionEffect::TestForPreservingPMConversions(GrContext* context
         {kDivByAlpha_RoundDown_PMConversion, kMulByAlpha_RoundUp_PMConversion},
         {kDivByAlpha_RoundUp_PMConversion, kMulByAlpha_RoundDown_PMConversion},
     };
-
-    GrContext::AutoWideOpenIdentityDraw awoid(context);
 
     bool failed = true;
 
@@ -232,19 +229,31 @@ void GrConfigConversionEffect::TestForPreservingPMConversions(GrContext* context
 
         GrPaint paint1;
         paint1.addColorProcessor(pmToUPM1);
-        context->drawNonAARectToRect(readTex->asRenderTarget(), paint1, SkMatrix::I(), kDstRect,
+        context->drawNonAARectToRect(readTex->asRenderTarget(),
+                                     GrClip::WideOpen(),
+                                     paint1,
+                                     SkMatrix::I(),
+                                     kDstRect,
                                      kSrcRect);
 
         readTex->readPixels(0, 0, 256, 256, kRGBA_8888_GrPixelConfig, firstRead);
 
         GrPaint paint2;
         paint2.addColorProcessor(upmToPM);
-        context->drawNonAARectToRect(tempTex->asRenderTarget(), paint2, SkMatrix::I(), kDstRect,
+        context->drawNonAARectToRect(tempTex->asRenderTarget(),
+                                     GrClip::WideOpen(),
+                                     paint2,
+                                     SkMatrix::I(),
+                                     kDstRect,
                                      kSrcRect);
 
         GrPaint paint3;
         paint3.addColorProcessor(pmToUPM2);
-        context->drawNonAARectToRect(readTex->asRenderTarget(), paint3, SkMatrix::I(), kDstRect,
+        context->drawNonAARectToRect(readTex->asRenderTarget(),
+                                     GrClip::WideOpen(),
+                                     paint3,
+                                     SkMatrix::I(),
+                                     kDstRect,
                                      kSrcRect);
 
         readTex->readPixels(0, 0, 256, 256, kRGBA_8888_GrPixelConfig, secondRead);

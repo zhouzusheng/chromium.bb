@@ -39,10 +39,9 @@ public:
 private:
     explicit SVGFEMergeNodeElement(Document&);
 
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
     virtual void svgAttributeChanged(const QualifiedName&) override;
 
-    virtual bool rendererIsNeeded(const LayoutStyle&) override { return false; }
+    virtual bool layoutObjectIsNeeded(const ComputedStyle&) override { return false; }
 
     RefPtrWillBeMember<SVGAnimatedString> m_in1;
 };

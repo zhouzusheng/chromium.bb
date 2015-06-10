@@ -581,7 +581,7 @@ InspectorBackendClass.Connection.prototype = {
      */
     _dispatchConnectionErrorResponse: function(domain, methodName, callback)
     {
-        var error = { message: "Connection is closed", code:  InspectorBackendClass._DevToolsErrorCode, data: null};
+        var error = { message: "Connection is closed, can't dispatch pending " + methodName, code:  InspectorBackendClass._DevToolsErrorCode, data: null};
         var messageObject = {error: error};
         setTimeout(InspectorBackendClass.AgentPrototype.prototype.dispatchResponse.bind(this.agent(domain), messageObject, methodName, callback), 0);
     },
@@ -960,8 +960,10 @@ InspectorBackendClass.AgentPrototype.prototype = {
      */
     dispatchResponse: function(messageObject, methodName, callback)
     {
-        if (messageObject.error && messageObject.error.code !== InspectorBackendClass._DevToolsErrorCode && !InspectorBackendClass.Options.suppressRequestErrors && !this._suppressErrorLogging)
-            console.error("Request with id = " + messageObject.id + " failed. " + JSON.stringify(messageObject.error));
+        if (messageObject.error && messageObject.error.code !== InspectorBackendClass._DevToolsErrorCode && !InspectorBackendClass.Options.suppressRequestErrors && !this._suppressErrorLogging) {
+            var id = InspectorFrontendHost.isUnderTest() ? "##" : messageObject.id;
+            console.error("Request with id = " + id + " failed. " + JSON.stringify(messageObject.error));
+        }
 
         if (this._promisified) {
             callback(messageObject.error && messageObject.error.message, messageObject.result);

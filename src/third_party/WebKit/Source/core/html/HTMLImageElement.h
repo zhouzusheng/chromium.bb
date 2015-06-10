@@ -24,6 +24,7 @@
 #ifndef HTMLImageElement_h
 #define HTMLImageElement_h
 
+#include "core/CoreExport.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLImageLoader.h"
 #include "core/html/canvas/CanvasImageSource.h"
@@ -36,7 +37,7 @@ class HTMLFormElement;
 class ImageCandidate;
 class ShadowRoot;
 
-class HTMLImageElement final : public HTMLElement, public CanvasImageSource {
+class CORE_EXPORT HTMLImageElement final : public HTMLElement, public CanvasImageSource {
     DEFINE_WRAPPERTYPEINFO();
 public:
     class ViewportChangeListener;
@@ -113,7 +114,7 @@ protected:
     virtual bool useFallbackContent() const { return m_useFallbackContent; }
 
     virtual void didAddClosedShadowRoot(ShadowRoot&) override;
-    virtual PassRefPtr<LayoutStyle> customStyleForRenderer() override;
+    virtual PassRefPtr<ComputedStyle> customStyleForLayoutObject() override;
 private:
     virtual bool areAuthorShadowsAllowed() const override { return false; }
 
@@ -122,7 +123,7 @@ private:
     virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
 
     virtual void attach(const AttachContext& = AttachContext()) override;
-    virtual LayoutObject* createRenderer(const LayoutStyle&) override;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
 
     virtual bool canStartSelection() const override { return false; }
 

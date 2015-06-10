@@ -61,7 +61,7 @@ public:
         addMidpoint(midpoint);
     }
 
-    // When ignoring spaces, this needs to be called for objects that need line boxes such as RenderInlines or
+    // When ignoring spaces, this needs to be called for objects that need line boxes such as LayoutInlines or
     // hard line breaks to ensure that they're not ignored.
     void ensureLineBoxInsideIgnoredSpaces(LayoutObject* renderer)
     {
@@ -668,6 +668,14 @@ TextDirection BidiResolver<Iterator, Run>::determineParagraphDirectionality(bool
     }
     if (hasStrongDirectionality)
         *hasStrongDirectionality = false;
+    return LTR;
+}
+
+inline TextDirection directionForCharacter(UChar32 character)
+{
+    WTF::Unicode::Direction charDirection = WTF::Unicode::direction(character);
+    if (charDirection == WTF::Unicode::RightToLeft || charDirection == WTF::Unicode::RightToLeftArabic)
+        return RTL;
     return LTR;
 }
 

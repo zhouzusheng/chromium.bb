@@ -30,9 +30,10 @@
 #ifndef MediaControlElementTypes_h
 #define MediaControlElementTypes_h
 
+#include "core/CoreExport.h"
 #include "core/html/HTMLDivElement.h"
 #include "core/html/HTMLInputElement.h"
-#include "core/rendering/RenderBlock.h"
+#include "core/layout/LayoutBlock.h"
 
 namespace blink {
 
@@ -52,15 +53,12 @@ enum MediaControlElementType {
     MediaTimelineContainer,
     MediaCurrentTimeDisplay,
     MediaTimeRemainingDisplay,
-    MediaStatusDisplay,
     MediaControlsPanel,
     MediaVolumeSliderContainer,
     MediaVolumeSlider,
     MediaVolumeSliderThumb,
     MediaFullScreenVolumeSlider,
     MediaFullScreenVolumeSliderThumb,
-    MediaTextTrackDisplayContainer,
-    MediaTextTrackDisplay,
     MediaExitFullscreenButton,
     MediaOverlayPlayButton,
     MediaCastOffButton,
@@ -69,10 +67,10 @@ enum MediaControlElementType {
     MediaOverlayCastOnButton,
 };
 
-HTMLMediaElement* toParentMediaElement(Node*);
+CORE_EXPORT HTMLMediaElement* toParentMediaElement(Node*);
 inline HTMLMediaElement* toParentMediaElement(LayoutObject* renderer) { return toParentMediaElement(renderer->node()); }
 
-MediaControlElementType mediaControlElementType(Node*);
+CORE_EXPORT MediaControlElementType mediaControlElementType(Node*);
 
 // ----------------------------
 
@@ -116,7 +114,7 @@ private:
 // ----------------------------
 
 class MediaControlInputElement : public HTMLInputElement, public MediaControlElement {
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MediaControlInputElement);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN_NESTED(MediaControlInputElement, HTMLFormControlElement);
 public:
     DECLARE_VIRTUAL_TRACE();
 

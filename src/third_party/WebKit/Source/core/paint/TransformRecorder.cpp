@@ -12,7 +12,7 @@
 
 namespace blink {
 
-TransformRecorder::TransformRecorder(GraphicsContext& context, DisplayItemClient client, const AffineTransform& transform)
+TransformRecorder::TransformRecorder(GraphicsContext& context, const DisplayItemClientWrapper& client, const AffineTransform& transform)
     : m_context(context)
     , m_client(client)
 {
@@ -26,7 +26,7 @@ TransformRecorder::TransformRecorder(GraphicsContext& context, DisplayItemClient
         m_context.displayItemList()->add(BeginTransformDisplayItem::create(m_client, transform));
     } else {
         BeginTransformDisplayItem beginTransform(m_client, transform);
-        beginTransform.replay(&m_context);
+        beginTransform.replay(m_context);
     }
 }
 
@@ -40,7 +40,7 @@ TransformRecorder::~TransformRecorder()
         m_context.displayItemList()->add(EndTransformDisplayItem::create(m_client));
     } else {
         EndTransformDisplayItem endTransform(m_client);
-        endTransform.replay(&m_context);
+        endTransform.replay(m_context);
     }
 }
 

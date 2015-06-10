@@ -122,6 +122,12 @@ class WebContents : public PageNavigator,
     // Used to specify the location context which display the new view should
     // belong. This can be nullptr if not needed.
     gfx::NativeView context;
+
+    // Used to specify that the new WebContents creation is driven by the
+    // renderer process. In this case, the renderer-side objects, such as
+    // RenderFrame, have already been created on the renderer side, and
+    // WebContents construction should take this into account.
+    bool renderer_initiated_creation;
   };
 
   // Creates a new WebContents.
@@ -217,6 +223,10 @@ class WebContents : public PageNavigator,
   // Returns the currently active fullscreen widget. If there is none, returns
   // nullptr.
   virtual RenderWidgetHostView* GetFullscreenRenderWidgetHostView() const = 0;
+
+  // Returns the theme color for the underlying content as set by the
+  // theme-color meta tag.
+  virtual SkColor GetThemeColor() const = 0;
 
   // Create a WebUI page for the given url. In most cases, this doesn't need to
   // be called by embedders since content will create its own WebUI objects as
@@ -532,6 +542,9 @@ class WebContents : public PageNavigator,
   virtual int GetMinimumZoomPercent() const = 0;
   virtual int GetMaximumZoomPercent() const = 0;
 
+  // Set the renderer's page scale back to one.
+  virtual void ResetPageScale() = 0;
+
   // Gets the preferred size of the contents.
   virtual gfx::Size GetPreferredSize() const = 0;
 
@@ -571,15 +584,19 @@ class WebContents : public PageNavigator,
 
   // Sends a request to download the given image |url| and returns the unique
   // id of the download request. When the download is finished, |callback| will
-  // be called with the bitmaps received from the renderer. If |is_favicon| is
-  // true, the cookies are not sent and not accepted during download.
+  // be called with the bitmaps received from the renderer.
+  // If |is_favicon| is true, the cookies are not sent and not accepted during
+  // download.
   // Bitmaps with pixel sizes larger than |max_bitmap_size| are filtered out
   // from the bitmap results. If there are no bitmap results <=
   // |max_bitmap_size|, the smallest bitmap is resized to |max_bitmap_size| and
   // is the only result. A |max_bitmap_size| of 0 means unlimited.
+  // If |bypass_cache| is true, |url| is requested from the server even if it
+  // is present in the browser cache.
   virtual int DownloadImage(const GURL& url,
                             bool is_favicon,
                             uint32_t max_bitmap_size,
+                            bool bypass_cache,
                             const ImageDownloadCallback& callback) = 0;
 
   // Returns true if the WebContents is responsible for displaying a subframe

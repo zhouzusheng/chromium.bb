@@ -65,7 +65,7 @@ public:
 
     ~V8PerContextData();
 
-    v8::Handle<v8::Context> context() { return m_context.newLocal(m_isolate); }
+    v8::Local<v8::Context> context() { return m_context.newLocal(m_isolate); }
 
     // To create JS Wrapper objects, we create a cache of a 'boiler plate'
     // object, and then simply Clone that object each time we need a new one.
@@ -124,12 +124,6 @@ private:
     V8DOMActivityLogger* m_activityLogger;
 
     V8PersistentValueMap<String, v8::Value, false> m_compiledPrivateScript;
-};
-
-class V8PerContextDebugData {
-public:
-    static void setContextDebugData(v8::Handle<v8::Context>, const String& data);
-    static v8::Handle<v8::Value> contextDebugData(v8::Handle<v8::Context>);
 };
 
 } // namespace blink

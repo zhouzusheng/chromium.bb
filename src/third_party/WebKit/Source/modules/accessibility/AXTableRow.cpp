@@ -38,8 +38,8 @@ namespace blink {
 
 using namespace HTMLNames;
 
-AXTableRow::AXTableRow(LayoutObject* renderer, AXObjectCacheImpl* axObjectCache)
-    : AXRenderObject(renderer, axObjectCache)
+AXTableRow::AXTableRow(LayoutObject* layoutObject, AXObjectCacheImpl* axObjectCache)
+    : AXLayoutObject(layoutObject, axObjectCache)
 {
 }
 
@@ -47,15 +47,15 @@ AXTableRow::~AXTableRow()
 {
 }
 
-PassRefPtr<AXTableRow> AXTableRow::create(LayoutObject* renderer, AXObjectCacheImpl* axObjectCache)
+PassRefPtr<AXTableRow> AXTableRow::create(LayoutObject* layoutObject, AXObjectCacheImpl* axObjectCache)
 {
-    return adoptRef(new AXTableRow(renderer, axObjectCache));
+    return adoptRef(new AXTableRow(layoutObject, axObjectCache));
 }
 
 AccessibilityRole AXTableRow::determineAccessibilityRole()
 {
     if (!isTableRow())
-        return AXRenderObject::determineAccessibilityRole();
+        return AXLayoutObject::determineAccessibilityRole();
 
     if ((m_ariaRole = determineAriaRoleAttribute()) != UnknownRole)
         return m_ariaRole;
@@ -72,12 +72,6 @@ bool AXTableRow::isTableRow() const
     return true;
 }
 
-AXObject* AXTableRow::observableObject() const
-{
-    // This allows the table to be the one who sends notifications about tables.
-    return parentTable();
-}
-
 bool AXTableRow::computeAccessibilityIsIgnored() const
 {
     AXObjectInclusion decision = defaultObjectInclusion();
@@ -87,7 +81,7 @@ bool AXTableRow::computeAccessibilityIsIgnored() const
         return true;
 
     if (!isTableRow())
-        return AXRenderObject::computeAccessibilityIsIgnored();
+        return AXLayoutObject::computeAccessibilityIsIgnored();
 
     return false;
 }
@@ -103,42 +97,24 @@ AXObject* AXTableRow::parentTable() const
 
 AXObject* AXTableRow::headerObject()
 {
-    if (!m_renderer || !m_renderer->isTableRow())
+    AccessibilityChildrenVector headers;
+    headerObjectsForRow(headers);
+    if (!headers.size())
         return 0;
 
-    AccessibilityChildrenVector rowChildren = children();
-    if (!rowChildren.size())
-        return 0;
-
-    // check the first element in the row to see if it is a TH element
-    AXObject* cell = rowChildren[0].get();
-    if (!cell->isTableCell())
-        return 0;
-
-    LayoutObject* cellRenderer = toAXTableCell(cell)->renderer();
-    if (!cellRenderer)
-        return 0;
-
-    Node* cellNode = cellRenderer->node();
-    if (!cellNode || !cellNode->hasTagName(thTag))
-        return 0;
-
-    return cell;
+    return headers[0].get();
 }
 
 void AXTableRow::headerObjectsForRow(AccessibilityChildrenVector& headers)
 {
-    if (!m_renderer || !m_renderer->isTableRow())
+    if (!m_layoutObject || !m_layoutObject->isTableRow())
         return;
 
-    AccessibilityChildrenVector rowChildren = children();
-    unsigned childrenCount = rowChildren.size();
-    for (unsigned i = 0; i < childrenCount; i++) {
-        AXObject* cell = rowChildren[i].get();
+    for (const auto& cell : children()) {
         if (!cell->isTableCell())
             continue;
 
-        if (toAXTableCell(cell)->scanToDecideHeaderRole() == RowHeaderRole)
+        if (toAXTableCell(cell.get())->scanToDecideHeaderRole() == RowHeaderRole)
             headers.append(cell);
     }
 }

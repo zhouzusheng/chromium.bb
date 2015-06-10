@@ -27,11 +27,14 @@
 #ifndef LocalDOMWindow_h
 #define LocalDOMWindow_h
 
+#include "core/CoreExport.h"
+#include "core/dom/MessagePort.h"
 #include "core/events/EventTarget.h"
 #include "core/frame/DOMWindow.h"
 #include "core/frame/DOMWindowLifecycleNotifier.h"
-#include "core/frame/FrameDestructionObserver.h"
+#include "core/frame/DOMWindowLifecycleObserver.h"
 #include "core/frame/LocalFrame.h"
+#include "core/frame/LocalFrameLifecycleObserver.h"
 #include "platform/Supplementable.h"
 #include "platform/heap/Handle.h"
 
@@ -48,6 +51,7 @@ class EventQueue;
 class ExceptionState;
 class FrameConsole;
 class IntRect;
+class MessageEvent;
 class Page;
 class PostMessageTimer;
 class ScriptCallStack;
@@ -60,8 +64,9 @@ enum PageshowEventPersistence {
 
 // Note: if you're thinking of returning something DOM-related by reference,
 // please ping dcheng@chromium.org first. You probably don't want to do that.
-class LocalDOMWindow final : public DOMWindow, public WillBeHeapSupplementable<LocalDOMWindow>, public DOMWindowLifecycleNotifier {
+class CORE_EXPORT LocalDOMWindow final : public DOMWindow, public WillBeHeapSupplementable<LocalDOMWindow>, public DOMWindowLifecycleNotifier {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(LocalDOMWindow);
+    WILL_BE_USING_PRE_FINALIZER(LocalDOMWindow, dispose);
 public:
     static PassRefPtrWillBeRawPtr<Document> createDocument(const String& mimeType, const DocumentInit&, bool forceXHTML);
     static PassRefPtrWillBeRawPtr<LocalDOMWindow> create(LocalFrame& frame)
@@ -69,16 +74,16 @@ public:
         return adoptRefWillBeNoop(new LocalDOMWindow(frame));
     }
     virtual ~LocalDOMWindow();
+    void dispose();
 
     PassRefPtrWillBeRawPtr<Document> installNewDocument(const String& mimeType, const DocumentInit&, bool forceXHTML = false);
 
     // EventTarget overrides:
-    virtual const AtomicString& interfaceName() const override;
     virtual ExecutionContext* executionContext() const override;
     virtual LocalDOMWindow* toDOMWindow() override;
 
     // DOMWindow overrides:
-    void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
     bool isLocalDOMWindow() const override { return true; }
     virtual LocalFrame* frame() const override;
     Screen* screen() const override;
@@ -137,10 +142,10 @@ public:
     PassRefPtrWillBeRawPtr<MediaQueryList> matchMedia(const String&) override;
     PassRefPtrWillBeRawPtr<CSSStyleDeclaration> getComputedStyle(Element*, const String& pseudoElt) const override;
     PassRefPtrWillBeRawPtr<CSSRuleList> getMatchedCSSRules(Element*, const String& pseudoElt) const override;
-    int requestAnimationFrame(RequestAnimationFrameCallback*) override;
-    int webkitRequestAnimationFrame(RequestAnimationFrameCallback*) override;
+    int requestAnimationFrame(FrameRequestCallback*) override;
+    int webkitRequestAnimationFrame(FrameRequestCallback*) override;
     void cancelAnimationFrame(int id) override;
-    void postMessage(PassRefPtr<SerializedScriptValue> message, const MessagePortArray*, const String& targetOrigin, LocalDOMWindow* source, ExceptionState&) override;
+    void schedulePostMessage(PassRefPtrWillBeRawPtr<MessageEvent>, LocalDOMWindow* source, SecurityOrigin* target, PassRefPtrWillBeRawPtr<ScriptCallStack> stackTrace);
     String crossDomainAccessErrorMessage(LocalDOMWindow* callingWindow) override;
     String sanitizedCrossDomainAccessErrorMessage(LocalDOMWindow* callingWindow) override;
 
@@ -155,16 +160,11 @@ public:
 
     bool allowPopUp(); // Call on first window, not target window.
     static bool allowPopUp(LocalFrame& firstFrame);
-    static bool canShowModalDialogNow(const LocalFrame*);
 
     Element* frameElement() const;
 
     PassRefPtrWillBeRawPtr<DOMWindow> open(const String& urlString, const AtomicString& frameName, const String& windowFeaturesString,
         LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow);
-
-    typedef void (*PrepareDialogFunction)(LocalDOMWindow*, void* context);
-    void showModalDialog(const String& urlString, const String& dialogFeaturesString,
-        LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow, PrepareDialogFunction, void* functionContext);
 
     FrameConsole* frameConsole() const;
 
@@ -214,27 +214,27 @@ public:
     virtual v8::Handle<v8::Object> wrap(v8::Handle<v8::Object> creationContext, v8::Isolate*) override;
 
 private:
-    // Rather than simply inheriting FrameDestructionObserver like most other
-    // classes, LocalDOMWindow hides its FrameDestructionObserver with
+    // Rather than simply inheriting LocalFrameLifecycleObserver like most other
+    // classes, LocalDOMWindow hides its LocalFrameLifecycleObserver with
     // composition. This prevents conflicting overloads between DOMWindow, which
     // has a frame() accessor that returns Frame* for bindings code, and
-    // FrameDestructionObserver, which has a frame() accessor that returns a
+    // LocalFrameLifecycleObserver, which has a frame() accessor that returns a
     // LocalFrame*.
-    class WindowFrameObserver final : public NoBaseWillBeGarbageCollected<WindowFrameObserver>, public FrameDestructionObserver {
-        WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    class WindowFrameObserver final : public NoBaseWillBeGarbageCollected<WindowFrameObserver>, public LocalFrameLifecycleObserver {
+        WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(WindowFrameObserver);
         WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(WindowFrameObserver);
         DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(WindowFrameObserver);
     public:
         static PassOwnPtrWillBeRawPtr<WindowFrameObserver> create(LocalDOMWindow*, LocalFrame&);
 
-        virtual void trace(Visitor*) override;
+        DECLARE_VIRTUAL_TRACE();
 
     private:
         WindowFrameObserver(LocalDOMWindow*, LocalFrame&);
 
-        // FrameDestructionObserver overrides:
+        // LocalFrameLifecycleObserver overrides:
         void willDetachFrameHost() override;
-        void frameDestroyed() override;
+        void contextDestroyed() override;
 
         RawPtrWillBeMember<LocalDOMWindow> m_window;
     };
@@ -247,19 +247,8 @@ private:
     void clearDocument();
     void willDestroyDocumentInFrame();
 
-    // FIXME: Oilpan: the need for this internal method will fall
-    // away when EventTargets are no longer using refcounts and
-    // window properties are also on the heap. Inline the minimal
-    // do-not-broadcast handling then and remove the enum +
-    // removeAllEventListenersInternal().
-    enum BroadcastListenerRemoval {
-        DoNotBroadcastListenerRemoval,
-        DoBroadcastListenerRemoval
-    };
-
     void willDetachFrameHost();
     void frameDestroyed();
-    void removeAllEventListenersInternal(BroadcastListenerRemoval);
 
     OwnPtrWillBeMember<WindowFrameObserver> m_frameObserver;
     RefPtrWillBeMember<Document> m_document;

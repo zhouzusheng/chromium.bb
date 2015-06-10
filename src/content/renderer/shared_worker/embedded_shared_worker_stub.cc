@@ -16,7 +16,7 @@
 #include "content/child/webmessageportchannel_impl.h"
 #include "content/common/worker_messages.h"
 #include "content/renderer/render_thread_impl.h"
-#include "content/renderer/shared_worker/embedded_shared_worker_permission_client_proxy.h"
+#include "content/renderer/shared_worker/embedded_shared_worker_content_settings_client_proxy.h"
 #include "ipc/ipc_message_macros.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/public/web/WebDataSource.h"
@@ -220,10 +220,10 @@ EmbeddedSharedWorkerStub::createApplicationCacheHost(
   return app_cache_host_;
 }
 
-blink::WebWorkerPermissionClientProxy*
-    EmbeddedSharedWorkerStub::createWorkerPermissionClientProxy(
+blink::WebWorkerContentSettingsClientProxy*
+    EmbeddedSharedWorkerStub::createWorkerContentSettingsClientProxy(
     const blink::WebSecurityOrigin& origin) {
-  return new EmbeddedSharedWorkerPermissionClientProxy(
+  return new EmbeddedSharedWorkerContentSettingsClientProxy(
       GURL(origin.toString()),
       origin.isUnique(),
       route_id_,
@@ -237,7 +237,7 @@ EmbeddedSharedWorkerStub::createServiceWorkerNetworkProvider(
   // we can observe its requests.
   scoped_ptr<ServiceWorkerNetworkProvider> provider(
       new ServiceWorkerNetworkProvider(
-          MSG_ROUTING_NONE, SERVICE_WORKER_PROVIDER_FOR_CONTROLLEE));
+          MSG_ROUTING_NONE, SERVICE_WORKER_PROVIDER_FOR_SHARED_WORKER));
 
   // The provider is kept around for the lifetime of the DataSource
   // and ownership is transferred to the DataSource.
@@ -274,9 +274,11 @@ void EmbeddedSharedWorkerStub::ConnectToChannel(
 
 void EmbeddedSharedWorkerStub::OnConnect(int sent_message_port_id,
                                          int routing_id) {
+  TransferredMessagePort port;
+  port.id = sent_message_port_id;
   WebMessagePortChannelImpl* channel =
       new WebMessagePortChannelImpl(routing_id,
-                                    sent_message_port_id,
+                                    port,
                                     base::MessageLoopProxy::current().get());
   if (runing_) {
     ConnectToChannel(channel);

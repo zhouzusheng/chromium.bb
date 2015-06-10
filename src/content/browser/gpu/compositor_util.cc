@@ -179,6 +179,12 @@ bool IsPinchVirtualViewportEnabled() {
   return true;
 }
 
+bool IsPropertyTreeVerificationEnabled() {
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
+  return command_line.HasSwitch(cc::switches::kEnablePropertyTreeVerification);
+}
+
 bool IsDelegatedRendererEnabled() {
   const base::CommandLine& command_line =
       *base::CommandLine::ForCurrentProcess();
@@ -292,30 +298,22 @@ bool IsForceGpuRasterizationEnabled() {
   return command_line.HasSwitch(switches::kForceGpuRasterization);
 }
 
-bool IsThreadedGpuRasterizationEnabled() {
-  if (!IsImplSidePaintingEnabled())
-    return false;
-  if (!IsGpuRasterizationEnabled() && !IsForceGpuRasterizationEnabled())
-    return false;
-
-  const base::CommandLine& command_line =
-      *base::CommandLine::ForCurrentProcess();
-
-  if (command_line.HasSwitch(switches::kDisableThreadedGpuRasterization))
-    return false;
-
-  return true;
-}
-
 bool UseSurfacesEnabled() {
 #if defined(OS_ANDROID)
   return false;
-#else
+#endif
+  bool enabled = false;
+#if defined(USE_AURA) || defined(OS_MACOSX)
+  enabled = true;
+#endif
+
   const base::CommandLine& command_line =
       *base::CommandLine::ForCurrentProcess();
 
-  return command_line.HasSwitch(switches::kUseSurfaces);
-#endif
+  // Flags override.
+  enabled |= command_line.HasSwitch(switches::kUseSurfaces);
+  enabled &= !command_line.HasSwitch(switches::kDisableSurfaces);
+  return enabled;
 }
 
 int GpuRasterizationMSAASampleCount() {

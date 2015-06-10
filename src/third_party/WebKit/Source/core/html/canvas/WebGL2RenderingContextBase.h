@@ -24,7 +24,7 @@ class WebGLUniformLocation;
 class WebGLVertexArrayObject;
 
 class WebGL2RenderingContextBase : public WebGLRenderingContextBase {
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(WebGL2RenderingContextBase);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN_NESTED(WebGL2RenderingContextBase, WebGLRenderingContextBase);
 public:
     virtual ~WebGL2RenderingContextBase();
 
@@ -165,6 +165,10 @@ protected:
     WebGL2RenderingContextBase(HTMLCanvasElement*, PassOwnPtr<blink::WebGraphicsContext3D>, const WebGLContextAttributes& requestedAttributes);
 
     bool validateClearBuffer(const char* functionName, GLenum buffer, GLsizei length);
+
+    /* WebGLRenderingContextBase overrides */
+    bool validateCapability(const char* functionName, GLenum) override;
+    bool validateAndUpdateBufferBindTarget(const char* functionName, GLenum, WebGLBuffer*) override;
 };
 
 DEFINE_TYPE_CASTS(WebGL2RenderingContextBase, CanvasRenderingContext, context,

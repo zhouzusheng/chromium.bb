@@ -14,10 +14,13 @@
 namespace rx
 {
 
+class FunctionsGL;
+class StateManagerGL;
+
 class BufferGL : public BufferImpl
 {
   public:
-    BufferGL();
+    BufferGL(const FunctionsGL *functions, StateManagerGL *stateManager);
     ~BufferGL() override;
 
     gl::Error setData(const void* data, size_t size, GLenum usage) override;
@@ -25,14 +28,18 @@ class BufferGL : public BufferImpl
     gl::Error copySubData(BufferImpl* source, GLintptr sourceOffset, GLintptr destOffset, GLsizeiptr size) override;
     gl::Error map(size_t offset, size_t length, GLbitfield access, GLvoid **mapPtr) override;
     gl::Error unmap() override;
-    void markTransformFeedbackUsage() override;
 
     // This method may not have a corresponding GL-backed function. It is necessary
     // for validation, for certain indexed draw calls.
     gl::Error getData(const uint8_t **outData) override;
 
+    GLuint getBufferID() const;
+
   private:
-    DISALLOW_COPY_AND_ASSIGN(BufferGL);
+    const FunctionsGL *mFunctions;
+    StateManagerGL *mStateManager;
+
+    GLuint mBufferID;
 };
 
 }

@@ -137,6 +137,8 @@ const base::FilePath::CharType kSystemProfileDir[] = FPL("System Profile");
 const wchar_t kBrowserResourcesDll[] = L"chrome.dll";
 
 // filenames
+const base::FilePath::CharType kAffiliationDatabaseFileName[] =
+    FPL("Affiliation Database");
 const base::FilePath::CharType kCacheDirname[] = FPL("Cache");
 const base::FilePath::CharType kChannelIDFilename[] = FPL("Origin Bound Certs");
 const base::FilePath::CharType kCookieFilename[] = FPL("Cookies");
@@ -155,6 +157,8 @@ const base::FilePath::CharType kLocalStateFilename[] = FPL("Local State");
 const base::FilePath::CharType kLocalStorePoolName[] = FPL("LocalStorePool");
 const base::FilePath::CharType kLoginDataFileName[] = FPL("Login Data");
 const base::FilePath::CharType kMediaCacheDirname[] = FPL("Media Cache");
+const base::FilePath::CharType kNetworkPersistentStateFilename[] =
+    FPL("Network Persistent State");
 const base::FilePath::CharType kNewTabThumbnailsFilename[] =
     FPL("Top Thumbnails");
 const base::FilePath::CharType kPreferencesFilename[] = FPL("Preferences");
@@ -195,24 +199,6 @@ const base::FilePath::CharType kPepperFlashPluginFilename[] =
 // directory names
 const wchar_t kUserDataDirname[] = L"User Data";
 
-// We don't enable record mode in the released product because users could
-// potentially be tricked into running a product in record mode without
-// knowing it.  Enable in debug builds.  Playback mode is allowed always,
-// because it is useful for testing and not hazardous by itself.
-#ifndef NDEBUG
-// const bool kRecordModeEnabled = true;
-#else
-// const bool kRecordModeEnabled = false;
-#endif
-
-const bool kRecordModeEnabled = true;
-
-#if defined(OS_ANDROID) || defined(OS_IOS)
-const bool kEnableTouchIcon = true;
-#else
-const bool kEnableTouchIcon = false;
-#endif
-
 const float kMaxShareOfExtensionProcesses = 0.30f;
 
 #if defined(OS_LINUX)
@@ -231,6 +217,8 @@ const wchar_t kLaunchModeValue[] = L"launch_mode";
 // This is used by breakpad and the metrics reporting.
 const wchar_t kBrowserCrashDumpAttemptsRegistryPath[] =
     L"Software\\" PRODUCT_STRING_PATH L"\\BrowserCrashDumpAttempts";
+const wchar_t kBrowserCrashDumpAttemptsRegistryPathSxS[] =
+    L"Software\\" PRODUCT_STRING_PATH L"\\BrowserCrashDumpAttemptsSxS";
 // This is used by browser exit code metrics reporting.
 const wchar_t kBrowserExitCodesRegistryPath[] =
     L"Software\\" PRODUCT_STRING_PATH L"\\BrowserExitCodes";

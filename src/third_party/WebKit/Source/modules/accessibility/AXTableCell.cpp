@@ -37,8 +37,8 @@ namespace blink {
 
 using namespace HTMLNames;
 
-AXTableCell::AXTableCell(LayoutObject* renderer, AXObjectCacheImpl* axObjectCache)
-    : AXRenderObject(renderer, axObjectCache)
+AXTableCell::AXTableCell(LayoutObject* layoutObject, AXObjectCacheImpl* axObjectCache)
+    : AXLayoutObject(layoutObject, axObjectCache)
 {
 }
 
@@ -46,9 +46,9 @@ AXTableCell::~AXTableCell()
 {
 }
 
-PassRefPtr<AXTableCell> AXTableCell::create(LayoutObject* renderer, AXObjectCacheImpl* axObjectCache)
+PassRefPtr<AXTableCell> AXTableCell::create(LayoutObject* layoutObject, AXObjectCacheImpl* axObjectCache)
 {
-    return adoptRef(new AXTableCell(renderer, axObjectCache));
+    return adoptRef(new AXTableCell(layoutObject, axObjectCache));
 }
 
 bool AXTableCell::isTableHeaderCell() const
@@ -77,26 +77,26 @@ bool AXTableCell::computeAccessibilityIsIgnored() const
         return true;
 
     if (!isTableCell())
-        return AXRenderObject::computeAccessibilityIsIgnored();
+        return AXLayoutObject::computeAccessibilityIsIgnored();
 
     return false;
 }
 
 AXObject* AXTableCell::parentTable() const
 {
-    if (!m_renderer || !m_renderer->isTableCell())
+    if (!m_layoutObject || !m_layoutObject->isTableCell())
         return 0;
 
     // If the document no longer exists, we might not have an axObjectCache.
     if (!axObjectCache())
         return 0;
 
-    // Do not use getOrCreate. parentTable() can be called while the render tree is being modified
-    // by javascript, and creating a table element may try to access the render tree while in a bad state.
+    // Do not use getOrCreate. parentTable() can be called while the layout tree is being modified
+    // by javascript, and creating a table element may try to access the layout tree while in a bad state.
     // By using only get() implies that the AXTable must be created before AXTableCells. This should
     // always be the case when AT clients access a table.
     // https://bugs.webkit.org/show_bug.cgi?id=42652
-    return axObjectCache()->get(toLayoutTableCell(m_renderer)->table());
+    return axObjectCache()->get(toLayoutTableCell(m_layoutObject)->table());
 }
 
 bool AXTableCell::isTableCell() const
@@ -108,14 +108,18 @@ bool AXTableCell::isTableCell() const
     return true;
 }
 
-static AccessibilityRole decideRoleFromSibling(Node* siblingNode)
+static AccessibilityRole decideRoleFromSibling(LayoutTableCell* siblingCell)
 {
-    if (!siblingNode)
+    if (!siblingCell)
         return CellRole;
-    if (siblingNode->hasTagName(thTag))
-        return ColumnHeaderRole;
-    if (siblingNode->hasTagName(tdTag))
-        return RowHeaderRole;
+
+    if (Node* siblingNode = siblingCell->node()) {
+        if (siblingNode->hasTagName(thTag))
+            return ColumnHeaderRole;
+        if (siblingNode->hasTagName(tdTag))
+            return RowHeaderRole;
+    }
+
     return CellRole;
 }
 
@@ -132,25 +136,19 @@ AccessibilityRole AXTableCell::scanToDecideHeaderRole()
         return ColumnHeaderRole;
 
     // Check the previous cell and the next cell on the same row.
-    LayoutTableCell* layoutCell = toLayoutTableCell(m_renderer);
+    LayoutTableCell* layoutCell = toLayoutTableCell(m_layoutObject);
     AccessibilityRole headerRole = CellRole;
 
     // if header is preceded by header cells on the same row, then it is a
     // column header. If it is preceded by other cells then it's a row header.
-    if (LayoutTableCell* cell = layoutCell->previousCell()) {
-        Node* siblingNode = cell->node();
-        headerRole = decideRoleFromSibling(siblingNode);
-        if (headerRole != CellRole)
-            return headerRole;
-    }
+    if ((headerRole = decideRoleFromSibling(layoutCell->previousCell())) != CellRole)
+        return headerRole;
+
     // if header is followed by header cells on the same row, then it is a
     // column header. If it is followed by other cells then it's a row header.
-    if (LayoutTableCell* cell = layoutCell->nextCell()) {
-        Node* siblingNode = cell->node();
-        headerRole = decideRoleFromSibling(siblingNode);
-        if (headerRole != CellRole)
-            return headerRole;
-    }
+    if ((headerRole = decideRoleFromSibling(layoutCell->nextCell())) != CellRole)
+        return headerRole;
+
     // If there are no other cells on that row, then it is a column header.
     return ColumnHeaderRole;
 }
@@ -158,17 +156,17 @@ AccessibilityRole AXTableCell::scanToDecideHeaderRole()
 AccessibilityRole AXTableCell::determineAccessibilityRole()
 {
     if (!isTableCell())
-        return AXRenderObject::determineAccessibilityRole();
+        return AXLayoutObject::determineAccessibilityRole();
 
     return scanToDecideHeaderRole();
 }
 
 void AXTableCell::rowIndexRange(pair<unsigned, unsigned>& rowRange)
 {
-    if (!m_renderer || !m_renderer->isTableCell())
+    if (!m_layoutObject || !m_layoutObject->isTableCell())
         return;
 
-    LayoutTableCell* layoutCell = toLayoutTableCell(m_renderer);
+    LayoutTableCell* layoutCell = toLayoutTableCell(m_layoutObject);
     rowRange.first = layoutCell->rowIndex();
     rowRange.second = layoutCell->rowSpan();
 
@@ -192,10 +190,10 @@ void AXTableCell::rowIndexRange(pair<unsigned, unsigned>& rowRange)
 
 void AXTableCell::columnIndexRange(pair<unsigned, unsigned>& columnRange)
 {
-    if (!m_renderer || !m_renderer->isTableCell())
+    if (!m_layoutObject || !m_layoutObject->isTableCell())
         return;
 
-    LayoutTableCell* cell = toLayoutTableCell(m_renderer);
+    LayoutTableCell* cell = toLayoutTableCell(m_layoutObject);
     columnRange.first = cell->table()->colToEffCol(cell->col());
     columnRange.second = cell->table()->colToEffCol(cell->col() + cell->colSpan()) - columnRange.first;
 }
@@ -225,7 +223,7 @@ AXObject* AXTableCell::titleUIElement() const
     // Try to find if the first cell in this row is a <th>. If it is,
     // then it can act as the title ui element. (This is only in the
     // case when the table is not appearing as an AXTable.)
-    if (isTableCell() || !m_renderer || !m_renderer->isTableCell())
+    if (isTableCell() || !m_layoutObject || !m_layoutObject->isTableCell())
         return 0;
 
     // Table cells that are th cannot have title ui elements, since by definition
@@ -233,7 +231,7 @@ AXObject* AXTableCell::titleUIElement() const
     if (isTableHeaderCell())
         return 0;
 
-    LayoutTableCell* layoutCell = toLayoutTableCell(m_renderer);
+    LayoutTableCell* layoutCell = toLayoutTableCell(m_layoutObject);
 
     // If this cell is in the first column, there is no need to continue.
     int col = layoutCell->col();

@@ -27,6 +27,7 @@
 #ifndef TreeScope_h
 #define TreeScope_h
 
+#include "core/CoreExport.h"
 #include "core/dom/DocumentOrderedMap.h"
 #include "platform/heap/Handle.h"
 #include "wtf/text/AtomicString.h"
@@ -40,6 +41,7 @@ class Element;
 class HTMLLabelElement;
 class HTMLMapElement;
 class HitTestResult;
+class HitTestRequest;
 class IdTargetObserverRegistry;
 class ScopedStyleResolver;
 class Node;
@@ -47,7 +49,7 @@ class Node;
 // A class which inherits both Node and TreeScope must call clearRareData() in its destructor
 // so that the Node destructor no longer does problematic NodeList cache manipulation in
 // the destructor.
-class TreeScope : public WillBeGarbageCollectedMixin {
+class CORE_EXPORT TreeScope : public WillBeGarbageCollectedMixin {
 public:
     TreeScope* parentTreeScope() const { return m_parentTreeScope; }
 
@@ -56,7 +58,7 @@ public:
 
     Element* adjustedFocusedElement() const;
     Element* getElementById(const AtomicString&) const;
-    const WillBeHeapVector<RawPtrWillBeMember<Element> >& getAllElementsById(const AtomicString&) const;
+    const WillBeHeapVector<RawPtrWillBeMember<Element>>& getAllElementsById(const AtomicString&) const;
     bool hasElementWithId(const AtomicString& id) const;
     bool containsMultipleElementsWithId(const AtomicString& id) const;
     void addElementById(const AtomicString& elementId, Element*);
@@ -75,6 +77,7 @@ public:
     HTMLMapElement* getImageMap(const String& url) const;
 
     Element* elementFromPoint(int x, int y) const;
+    Vector<Element*> elementsFromPoint(int x, int y) const;
 
     // For accessibility.
     bool shouldCacheLabelsByForAttribute() const { return m_labelsByForAttribute; }
@@ -132,7 +135,7 @@ public:
 
     Element* getElementByAccessKey(const String& key) const;
 
-    virtual void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
 
     ScopedStyleResolver* scopedStyleResolver() const { return m_scopedStyleResolver.get(); }
     ScopedStyleResolver& ensureScopedStyleResolver();

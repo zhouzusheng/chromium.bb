@@ -62,16 +62,14 @@ void RTCVideoRenderer::Stop() {
 
 void RTCVideoRenderer::Play() {
   DCHECK(message_loop_proxy_->BelongsToCurrentThread());
-  if (state_ == PAUSED) {
+  if (state_ == PAUSED)
     state_ = STARTED;
-  }
 }
 
 void RTCVideoRenderer::Pause() {
   DCHECK(message_loop_proxy_->BelongsToCurrentThread());
-  if (state_ == STARTED) {
+  if (state_ == STARTED)
     state_ = PAUSED;
-  }
 }
 
 void RTCVideoRenderer::OnReadyStateChanged(
@@ -83,12 +81,10 @@ void RTCVideoRenderer::OnReadyStateChanged(
 
 void RTCVideoRenderer::OnVideoFrame(
     const scoped_refptr<media::VideoFrame>& frame,
-    const media::VideoCaptureFormat& format,
     const base::TimeTicks& estimated_capture_time) {
   DCHECK(message_loop_proxy_->BelongsToCurrentThread());
-  if (state_ != STARTED) {
+  if (state_ != STARTED)
     return;
-  }
 
   frame_size_ = frame->natural_size();
 
@@ -109,7 +105,7 @@ void RTCVideoRenderer::RenderSignalingFrame() {
   // originates from a video camera.
   scoped_refptr<media::VideoFrame> video_frame =
       media::VideoFrame::CreateBlackFrame(frame_size_);
-  OnVideoFrame(video_frame, media::VideoCaptureFormat(), base::TimeTicks());
+  OnVideoFrame(video_frame, base::TimeTicks());
 }
 
 }  // namespace content

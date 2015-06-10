@@ -34,10 +34,11 @@ class ServiceWorkerRequestHandler;
 class ServiceWorkerVersion;
 
 // This class is the browser-process representation of a service worker
-// provider. There is a provider per document and the lifetime of this
-// object is tied to the lifetime of its document in the renderer process.
+// provider. There is a provider per document or a worker and the lifetime
+// of this object is tied to the lifetime of its document or the worker
+// in the renderer process.
 // This class holds service worker state that is scoped to an individual
-// document.
+// document or a worker.
 //
 // Note this class can also host a running service worker, in which
 // case it will observe resource loads made directly by the service worker.
@@ -47,6 +48,8 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
  public:
   using GetClientInfoCallback =
       base::Callback<void(const ServiceWorkerClientInfo&)>;
+  using GetRegistrationForReadyCallback =
+      base::Callback<void(ServiceWorkerRegistration* reigstration)>;
 
   // If |render_frame_id| is MSG_ROUTING_NONE, this provider host works for the
   // worker context, i.e. ServiceWorker or SharedWorker.
@@ -61,6 +64,7 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
                             ServiceWorkerDispatcherHost* dispatcher_host);
   virtual ~ServiceWorkerProviderHost();
 
+  const std::string& client_uuid() const { return client_uuid_; }
   int process_id() const { return render_process_id_; }
   int provider_id() const { return provider_id_; }
   int frame_id() const { return render_frame_id_; }
@@ -102,9 +106,14 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   const GURL& topmost_frame_url() const { return topmost_frame_url_; }
 
   ServiceWorkerProviderType provider_type() const { return provider_type_; }
+  bool IsProviderForClient() const;
+  blink::WebServiceWorkerClientType client_type() const;
 
-  // Associates to |registration| to listen for its version change events.
-  void AssociateRegistration(ServiceWorkerRegistration* registration);
+  // Associates to |registration| to listen for its version change events and
+  // sets the controller. If |notify_controllerchange| is true, instructs the
+  // renderer to dispatch a 'controllerchange' event.
+  void AssociateRegistration(ServiceWorkerRegistration* registration,
+                             bool notify_controllerchange);
 
   // Clears the associated registration and stop listening to it.
   void DisassociateRegistration();
@@ -124,10 +133,12 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
       base::WeakPtr<storage::BlobStorageContext> blob_storage_context,
       scoped_refptr<ResourceRequestBody> body);
 
-  // Creates a ServiceWorkerHandle to retain |version| and returns a
-  // ServiceWorkerInfo with a newly created handle ID. The handle is held in
-  // the dispatcher host until its ref-count becomes zero.
-  ServiceWorkerObjectInfo CreateAndRegisterServiceWorkerHandle(
+  // Used to get a ServiceWorkerObjectInfo to send to the renderer. Finds an
+  // existing ServiceWorkerHandle, and increments its reference count, or else
+  // creates a new one (initialized to ref count 1). Returns the
+  // ServiceWorkerInfo from the handle. The renderer is expected to use
+  // ServiceWorkerHandleReference::Adopt to balance out the ref count.
+  ServiceWorkerObjectInfo GetOrCreateServiceWorkerHandle(
       ServiceWorkerVersion* version);
 
   // Returns true if |registration| can be associated with this provider.
@@ -143,8 +154,9 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   bool IsContextAlive();
 
   // Dispatches message event to the document.
-  void PostMessage(const base::string16& message,
-                   const std::vector<int>& sent_message_port_ids);
+  void PostMessage(
+      const base::string16& message,
+      const std::vector<TransferredMessagePort>& sent_message_ports);
 
   // Activates the WebContents associated with
   // { render_process_id_, render_frame_id_ }.
@@ -152,7 +164,13 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   void Focus(const GetClientInfoCallback& callback);
 
   // Asks the renderer to send back the document information.
-  void GetClientInfo(const GetClientInfoCallback& callback) const;
+  void GetWindowClientInfo(const GetClientInfoCallback& callback) const;
+
+  // Same as above but has to be called from the UI thread.
+  // It is taking the process and frame ids in parameter because |this| is meant
+  // to live on the IO thread.
+  static ServiceWorkerClientInfo GetWindowClientInfoOnUI(int render_process_id,
+                                                         int render_frame_id);
 
   // Adds reference of this host's process to the |pattern|, the reference will
   // be removed in destructor.
@@ -160,6 +178,11 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
 
   // |registration| claims the document to be controlled.
   void ClaimedByRegistration(ServiceWorkerRegistration* registration);
+
+  // Called by dispatcher host to get the registration for the "ready" property.
+  // Returns false if there's a completed or ongoing request for the document.
+  // https://slightlyoff.github.io/ServiceWorker/spec/service_worker/#navigator-service-worker-ready
+  bool GetRegistrationForReady(const GetRegistrationForReadyCallback& callback);
 
   // Methods to support cross site navigations.
   void PrepareForCrossSiteTransfer();
@@ -176,7 +199,7 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   // Sends event messages to the renderer. Events for the worker are queued up
   // until the worker thread id is known via SetReadyToSendMessagesToWorker().
   void SendUpdateFoundMessage(
-      const ServiceWorkerRegistrationObjectInfo& object_info);
+      int registration_handle_id);
   void SendSetVersionAttributesMessage(
       int registration_handle_id,
       ChangedVersionAttributesMask changed_mask,
@@ -190,6 +213,15 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   // Sets the worker thread id and flushes queued events.
   void SetReadyToSendMessagesToWorker(int render_thread_id);
 
+  void AddMatchingRegistration(ServiceWorkerRegistration* registration);
+  void RemoveMatchingRegistration(ServiceWorkerRegistration* registration);
+
+  // An optimized implementation of [[Match Service Worker Registration]]
+  // for current document.
+  ServiceWorkerRegistration* MatchRegistration() const;
+
+  void NotifyControllerActivationFailed();
+
  private:
   friend class ServiceWorkerProviderHostTest;
   friend class ServiceWorkerWriteToCacheJobTest;
@@ -198,13 +230,30 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerContextRequestHandlerTest,
                            UpdateAfter24Hours);
 
+  struct OneShotGetReadyCallback {
+    GetRegistrationForReadyCallback callback;
+    bool called;
+
+    explicit OneShotGetReadyCallback(
+        const GetRegistrationForReadyCallback& callback);
+    ~OneShotGetReadyCallback();
+  };
+
   // ServiceWorkerRegistration::Listener overrides.
+  void OnVersionAttributesChanged(
+      ServiceWorkerRegistration* registration,
+      ChangedVersionAttributesMask changed_mask,
+      const ServiceWorkerRegistrationInfo& info) override;
   void OnRegistrationFailed(ServiceWorkerRegistration* registration) override;
+  void OnRegistrationFinishedUninstalling(
+      ServiceWorkerRegistration* registration) override;
   void OnSkippedWaiting(ServiceWorkerRegistration* registration) override;
 
   // Sets the controller version field to |version| or if |version| is NULL,
-  // clears the field.
-  void SetControllerVersionAttribute(ServiceWorkerVersion* version);
+  // clears the field. If |notify_controllerchange| is true, instructs the
+  // renderer to dispatch a 'controller' change event.
+  void SetControllerVersionAttribute(ServiceWorkerVersion* version,
+                                     bool notify_controllerchange);
 
   void SendAssociateRegistrationMessage();
 
@@ -212,9 +261,12 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   void IncreaseProcessReference(const GURL& pattern);
   void DecreaseProcessReference(const GURL& pattern);
 
+  void ReturnRegistrationForReadyIfNeeded();
+
   bool IsReadyToSendMessages() const;
   void Send(IPC::Message* message) const;
 
+  std::string client_uuid_;
   int render_process_id_;
   int render_frame_id_;
   int render_thread_id_;
@@ -226,12 +278,19 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   std::vector<GURL> associated_patterns_;
   scoped_refptr<ServiceWorkerRegistration> associated_registration_;
 
+  // Keyed by registration scope URL length.
+  typedef std::map<size_t, scoped_refptr<ServiceWorkerRegistration>>
+      ServiceWorkerRegistrationMap;
+  // Contains all living registrations which has pattern this document's
+  // URL starts with.
+  ServiceWorkerRegistrationMap matching_registrations_;
+
+  scoped_ptr<OneShotGetReadyCallback> get_ready_callback_;
   scoped_refptr<ServiceWorkerVersion> controlling_version_;
   scoped_refptr<ServiceWorkerVersion> running_hosted_version_;
   base::WeakPtr<ServiceWorkerContextCore> context_;
   ServiceWorkerDispatcherHost* dispatcher_host_;
   bool allow_association_;
-  bool is_claiming_;
 
   std::vector<base::Closure> queued_events_;
 

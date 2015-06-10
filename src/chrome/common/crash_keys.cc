@@ -120,6 +120,11 @@ const char kZombieTrace[] = "zombie_dealloc_bt";
 }  // namespace mac
 #endif
 
+#if defined(KASKO)
+const char kKaskoGuid[] = "kasko-guid";
+const char kKaskoEquivalentGuid[] = "kasko-equivalent-guid";
+#endif
+
 size_t RegisterChromeCrashKeys() {
   // The following keys may be chunked by the underlying crash logging system,
   // but ultimately constitute a single key-value pair.
@@ -150,13 +155,13 @@ size_t RegisterChromeCrashKeys() {
     { kGPURenderer, kSmallSize },
 #endif
 
-    // base/:
-    { "dm-usage", kSmallSize },
-    { "total-dm-usage", kSmallSize },
     // content/:
+    { "discardable-memory-allocated", kSmallSize },
+    { "discardable-memory-free", kSmallSize },
     { kFontKeyName, kSmallSize},
     { "ppapi_path", kMediumSize },
     { "subresource_url", kLargeSize },
+    { "total-discardable-memory-allocated", kSmallSize },
 #if defined(OS_CHROMEOS)
     { kNumberOfUsers, kSmallSize },
 #endif
@@ -176,6 +181,10 @@ size_t RegisterChromeCrashKeys() {
     { "rwhvm_window", kMediumSize },
     // media/:
     { "VideoCaptureDeviceQTKit", kSmallSize },
+#endif
+#if defined(KASKO)
+    { kKaskoGuid, kSmallSize },
+    { kKaskoEquivalentGuid, kSmallSize },
 #endif
   };
 

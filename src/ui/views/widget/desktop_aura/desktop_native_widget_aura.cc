@@ -96,7 +96,7 @@ class DesktopNativeWidgetTopLevelHandler : public aura::WindowObserver {
         Widget::InitParams::TYPE_POPUP;
     init_params.bounds = bounds;
     init_params.ownership = Widget::InitParams::NATIVE_WIDGET_OWNS_WIDGET;
-    init_params.layer_type = aura::WINDOW_LAYER_NOT_DRAWN;
+    init_params.layer_type = ui::LAYER_NOT_DRAWN;
     init_params.activatable = full_screen ?
         Widget::InitParams::ACTIVATABLE_YES :
         Widget::InitParams::ACTIVATABLE_NO;
@@ -413,7 +413,7 @@ void DesktopNativeWidgetAura::InitNativeWidget(
   wm::SetShadowType(content_window_, wm::SHADOW_TYPE_NONE);
 
   content_window_container_ = new aura::Window(NULL);
-  content_window_container_->Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  content_window_container_->Init(ui::LAYER_NOT_DRAWN);
   content_window_container_->Show();
   content_window_container_->AddChild(content_window_);
 
@@ -1011,8 +1011,8 @@ void DesktopNativeWidgetAura::OnCaptureLost() {
   native_widget_delegate_->OnMouseCaptureLost();
 }
 
-void DesktopNativeWidgetAura::OnPaint(gfx::Canvas* canvas) {
-  native_widget_delegate_->OnNativeWidgetPaint(canvas);
+void DesktopNativeWidgetAura::OnPaint(const ui::PaintContext& context) {
+  native_widget_delegate_->OnNativeWidgetPaint(context);
 }
 
 void DesktopNativeWidgetAura::OnDeviceScaleFactorChanged(
@@ -1126,7 +1126,7 @@ void DesktopNativeWidgetAura::OnWindowFocused(aura::Window* gained_focus,
                                               aura::Window* lost_focus) {
   if (content_window_ == gained_focus) {
     desktop_window_tree_host_->OnNativeWidgetFocus();
-    native_widget_delegate_->OnNativeFocus(lost_focus);
+    native_widget_delegate_->OnNativeFocus();
 
     // If focus is moving from a descendant Window to |content_window_| then
     // native activation hasn't changed. Still, the InputMethod must be informed
@@ -1136,7 +1136,7 @@ void DesktopNativeWidgetAura::OnWindowFocused(aura::Window* gained_focus,
       input_method->OnFocus();
   } else if (content_window_ == lost_focus) {
     desktop_window_tree_host_->OnNativeWidgetBlur();
-    native_widget_delegate_->OnNativeBlur(gained_focus);
+    native_widget_delegate_->OnNativeBlur();
   }
 }
 

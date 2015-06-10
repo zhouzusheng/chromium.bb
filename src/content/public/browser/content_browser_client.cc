@@ -5,6 +5,7 @@
 #include "content/public/browser/content_browser_client.h"
 
 #include "base/files/file_path.h"
+#include "content/public/browser/client_certificate_delegate.h"
 #include "ui/gfx/image/image_skia.h"
 #include "url/gurl.h"
 
@@ -177,11 +178,9 @@ QuotaPermissionContext* ContentBrowserClient::CreateQuotaPermissionContext() {
 }
 
 void ContentBrowserClient::SelectClientCertificate(
-    int render_process_id,
-    int render_frame_id,
+    WebContents* web_contents,
     net::SSLCertRequestInfo* cert_request_info,
-    const base::Callback<void(net::X509Certificate*)>& callback) {
-  callback.Run(nullptr);
+    scoped_ptr<ClientCertificateDelegate> delegate) {
 }
 
 net::URLRequestContext* ContentBrowserClient::OverrideRequestContextForURL(
@@ -222,24 +221,6 @@ MediaObserver* ContentBrowserClient::GetMediaObserver() {
 PlatformNotificationService*
 ContentBrowserClient::GetPlatformNotificationService() {
   return nullptr;
-}
-
-void ContentBrowserClient::RequestPermission(
-    PermissionType permission,
-    WebContents* web_contents,
-    int bridge_id,
-    const GURL& requesting_frame,
-    bool user_gesture,
-    const base::Callback<void(bool)>& result_callback) {
-  result_callback.Run(true);
-}
-
-PermissionStatus ContentBrowserClient::GetPermissionStatus(
-    PermissionType permission,
-    BrowserContext* browser_context,
-    const GURL& requesting_origin,
-    const GURL& embedding_origin) {
-  return PERMISSION_STATUS_DENIED;
 }
 
 bool ContentBrowserClient::CanCreateWindow(
@@ -326,11 +307,6 @@ bool ContentBrowserClient::IsPluginAllowedToUseDevChannelAPIs(
     BrowserContext* browser_context,
     const GURL& url) {
   return false;
-}
-
-net::CookieStore* ContentBrowserClient::OverrideCookieStoreForRenderProcess(
-    int render_process_id) {
-  return nullptr;
 }
 
 bool ContentBrowserClient::CheckMediaAccessPermission(

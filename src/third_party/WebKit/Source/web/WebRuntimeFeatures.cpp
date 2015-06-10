@@ -58,6 +58,11 @@ void WebRuntimeFeatures::enableBlinkScheduler(bool enable)
     RuntimeEnabledFeatures::setBlinkSchedulerEnabled(enable);
 }
 
+void WebRuntimeFeatures::enableCompositorAnimationTimelines(bool enable)
+{
+    RuntimeEnabledFeatures::setCompositorAnimationTimelinesEnabled(enable);
+}
+
 void WebRuntimeFeatures::enableTestOnlyFeatures(bool enable)
 {
     RuntimeEnabledFeatures::setTestFeaturesEnabled(enable);
@@ -198,6 +203,11 @@ void WebRuntimeFeatures::enablePeerConnection(bool enable)
     RuntimeEnabledFeatures::setPeerConnectionEnabled(enable);
 }
 
+void WebRuntimeFeatures::enablePermissionsAPI(bool enable)
+{
+    RuntimeEnabledFeatures::setPermissionsEnabled(enable);
+}
+
 void WebRuntimeFeatures::enableRequestAutocomplete(bool enable)
 {
     RuntimeEnabledFeatures::setRequestAutocompleteEnabled(enable);
@@ -208,29 +218,14 @@ void WebRuntimeFeatures::enableScreenOrientation(bool enable)
     RuntimeEnabledFeatures::setScreenOrientationEnabled(enable);
 }
 
-void WebRuntimeFeatures::enableScriptedSpeech(bool enable)
-{
-    RuntimeEnabledFeatures::setScriptedSpeechEnabled(enable);
-}
-
 void WebRuntimeFeatures::enableServiceWorker(bool enable)
 {
     RuntimeEnabledFeatures::setServiceWorkerEnabled(enable);
 }
 
-void WebRuntimeFeatures::enableSessionStorage(bool enable)
-{
-    RuntimeEnabledFeatures::setSessionStorageEnabled(enable);
-}
-
 void WebRuntimeFeatures::enableSlimmingPaint(bool enable)
 {
     RuntimeEnabledFeatures::setSlimmingPaintEnabled(enable);
-}
-
-bool WebRuntimeFeatures::slimmingPaintDisplayItemCacheEnabled()
-{
-    return RuntimeEnabledFeatures::slimmingPaintDisplayItemCacheEnabled();
 }
 
 void WebRuntimeFeatures::enableTouch(bool enable)
@@ -288,11 +283,6 @@ void WebRuntimeFeatures::enablePreciseMemoryInfo(bool enable)
     RuntimeEnabledFeatures::setPreciseMemoryInfoEnabled(enable);
 }
 
-void WebRuntimeFeatures::enableShowModalDialog(bool enable)
-{
-    RuntimeEnabledFeatures::setShowModalDialogEnabled(enable);
-}
-
 void WebRuntimeFeatures::enableCredentialManagerAPI(bool enable)
 {
     RuntimeEnabledFeatures::setCredentialManagerEnabled(enable);
@@ -338,9 +328,19 @@ void WebRuntimeFeatures::enablePushMessagingHasPermission(bool enable)
     RuntimeEnabledFeatures::setPushMessagingHasPermissionEnabled(enable);
 }
 
+void WebRuntimeFeatures::enableStaleWhileRevalidateCacheControl(bool enable)
+{
+    RuntimeEnabledFeatures::setStaleWhileRevalidateCacheControlEnabled(enable);
+}
+
 void WebRuntimeFeatures::enableUnsafeES3APIs(bool enable)
 {
     RuntimeEnabledFeatures::setUnsafeES3APIsEnabled(enable);
+}
+
+void WebRuntimeFeatures::enableVRDevice(bool enable)
+{
+    RuntimeEnabledFeatures::setVRDeviceEnabled(enable);
 }
 
 } // namespace blink

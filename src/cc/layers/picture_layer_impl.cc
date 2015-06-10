@@ -130,6 +130,7 @@ void PictureLayerImpl::PushPropertiesTo(LayerImpl* base_layer) {
   DCHECK_LE(tilings_->num_tilings(),
             layer_tree_impl()->create_low_res_tiling() ? 2u : 1u);
 
+  layer_impl->set_gpu_raster_max_texture_size(gpu_raster_max_texture_size_);
   layer_impl->UpdateRasterSource(raster_source_, &invalidation_,
                                  tilings_.get());
   DCHECK(invalidation_.IsEmpty());
@@ -331,8 +332,8 @@ void PictureLayerImpl::AppendQuads(RenderPass* render_pass,
         CheckerboardDrawQuad* quad =
             render_pass->CreateAndAppendDrawQuad<CheckerboardDrawQuad>();
         SkColor color = DebugColors::DefaultCheckerboardColor();
-        quad->SetNew(
-            shared_quad_state, geometry_rect, visible_geometry_rect, color);
+        quad->SetNew(shared_quad_state, geometry_rect, visible_geometry_rect,
+                     color, draw_properties().device_scale_factor);
       } else {
         SkColor color = SafeOpaqueBackgroundColor();
         SolidColorDrawQuad* quad =
@@ -349,6 +350,8 @@ void PictureLayerImpl::AppendQuads(RenderPass* render_pass,
         ++missing_tile_count;
       }
       append_quads_data->approximated_visible_content_area +=
+          visible_geometry_rect.width() * visible_geometry_rect.height();
+      append_quads_data->checkerboarded_visible_content_area +=
           visible_geometry_rect.width() * visible_geometry_rect.height();
       continue;
     }
@@ -538,9 +541,15 @@ void PictureLayerImpl::UpdateRasterSource(
   // We could do this after doing UpdateTiles, which would avoid doing this for
   // tilings that are going to disappear on the pending tree (if scale changed).
   // But that would also be more complicated, so we just do it here for now.
-  tilings_->UpdateTilingsToCurrentRasterSource(
-      raster_source_, pending_set, invalidation_, MinimumContentsScale(),
-      MaximumContentsScale());
+  if (pending_set) {
+    tilings_->UpdateTilingsToCurrentRasterSourceForActivation(
+        raster_source_, pending_set, invalidation_, MinimumContentsScale(),
+        MaximumContentsScale());
+  } else {
+    tilings_->UpdateTilingsToCurrentRasterSourceForCommit(
+        raster_source_, invalidation_, MinimumContentsScale(),
+        MaximumContentsScale());
+  }
 }
 
 void PictureLayerImpl::UpdateCanUseLCDTextAfterCommit() {
@@ -559,10 +568,12 @@ void PictureLayerImpl::UpdateCanUseLCDTextAfterCommit() {
   // a new one must be created and all tiles recreated.
   scoped_refptr<RasterSource> new_raster_source =
       raster_source_->CreateCloneWithoutLCDText();
+  raster_source_.swap(new_raster_source);
+
   // Synthetically invalidate everything.
   gfx::Rect bounds_rect(bounds());
-  Region invalidation(bounds_rect);
-  UpdateRasterSource(new_raster_source, &invalidation, nullptr);
+  invalidation_ = Region(bounds_rect);
+  tilings_->UpdateRasterSourceDueToLCDChange(raster_source_, invalidation_);
   SetUpdateRect(bounds_rect);
 
   DCHECK(!RasterSourceUsesLCDText());
@@ -603,6 +614,15 @@ void PictureLayerImpl::RecreateResources() {
 
 skia::RefPtr<SkPicture> PictureLayerImpl::GetPicture() {
   return raster_source_->GetFlattenedPicture();
+}
+
+Region PictureLayerImpl::GetInvalidationRegion() {
+  // |invalidation_| gives the invalidation contained in the source frame, but
+  // is not cleared after drawing from the layer. However, update_rect() is
+  // cleared once the invalidation is drawn, which is useful for debugging
+  // visualizations. This method intersects the two to give a more exact
+  // representation of what was invalidated that is cleared after drawing.
+  return IntersectRegions(invalidation_, update_rect());
 }
 
 scoped_refptr<Tile> PictureLayerImpl::CreateTile(
@@ -680,8 +700,8 @@ gfx::Size PictureLayerImpl::CalculateTileSize(
     // For GPU rasterization, we pick an ideal tile size using the viewport
     // so we don't need any settings. The current approach uses 4 tiles
     // to cover the viewport vertically.
-    int viewport_width = layer_tree_impl()->device_viewport_size().width();
-    int viewport_height = layer_tree_impl()->device_viewport_size().height();
+    int viewport_width = gpu_raster_max_texture_size_.width();
+    int viewport_height = gpu_raster_max_texture_size_.height();
     default_tile_width = viewport_width;
     // Also, increase the height proportionally as the width decreases, and
     // pad by our border texels to make the tiles exactly match the viewport.
@@ -1163,11 +1183,11 @@ void PictureLayerImpl::GetDebugBorderProperties(
   *width = DebugColors::TiledContentLayerBorderWidth(layer_tree_impl());
 }
 
-void PictureLayerImpl::GetAllTilesForTracing(
-    std::set<const Tile*>* tiles) const {
+void PictureLayerImpl::GetAllTilesAndPrioritiesForTracing(
+    std::map<const Tile*, TilePriority>* tile_map) const {
   if (!tilings_)
     return;
-  tilings_->GetAllTilesForTracing(tiles);
+  tilings_->GetAllTilesAndPrioritiesForTracing(tile_map);
 }
 
 void PictureLayerImpl::AsValueInto(

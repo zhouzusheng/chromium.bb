@@ -11,8 +11,8 @@
 #include "base/strings/string_split.h"
 #include "content/common/content_switches_internal.h"
 #include "content/public/common/content_switches.h"
-#include "gpu/command_buffer/service/gpu_switches.h"
 #include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
+#include "ui/gl/gl_switches.h"
 #include "ui/native_theme/native_theme_switches.h"
 
 #if defined(OS_ANDROID)
@@ -29,6 +29,9 @@ using blink::WebRuntimeFeatures;
 namespace content {
 
 static void SetRuntimeFeatureDefaultsForPlatform() {
+  // Enable non-standard "apple-touch-icon" and "apple-touch-icon-precomposed".
+  WebRuntimeFeatures::enableTouchIconLoading(true);
+
 #if defined(OS_ANDROID)
   // MSE/EME implementation needs Android MediaCodec API.
   if (!media::MediaCodecBridge::IsAvailable()) {
@@ -52,7 +55,6 @@ static void SetRuntimeFeatureDefaultsForPlatform() {
   WebRuntimeFeatures::enableSharedWorker(false);
   // Android does not yet support NavigatorContentUtils.
   WebRuntimeFeatures::enableNavigatorContentUtils(false);
-  WebRuntimeFeatures::enableTouchIconLoading(true);
   WebRuntimeFeatures::enableOrientationEvent(true);
   WebRuntimeFeatures::enableFastMobileScrolling(true);
   WebRuntimeFeatures::enableMediaCapture(true);
@@ -133,9 +135,6 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kDisablePrefixedEncryptedMedia))
     WebRuntimeFeatures::enablePrefixedEncryptedMedia(false);
 
-  if (command_line.HasSwitch(switches::kEnableWebMIDI))
-    WebRuntimeFeatures::enableWebMIDI(true);
-
   if (command_line.HasSwitch(switches::kDisableFileSystem))
     WebRuntimeFeatures::enableFileSystem(false);
 
@@ -193,6 +192,15 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
 
   if (command_line.HasSwitch(switches::kEnablePushMessagingHasPermission))
     WebRuntimeFeatures::enablePushMessagingHasPermission(true);
+
+  if (command_line.HasSwitch(switches::kDisablePermissionsAPI))
+    WebRuntimeFeatures::enablePermissionsAPI(false);
+
+  // Delete "StaleWhileRevalidate" line from chrome_browser_field_trials.cc
+  // when this experiment is done.
+  if (base::FieldTrialList::FindFullName("StaleWhileRevalidate") == "Enabled" ||
+      command_line.HasSwitch(switches::kEnableStaleWhileRevalidate))
+    WebRuntimeFeatures::enableStaleWhileRevalidateCacheControl(true);
 
   if (command_line.HasSwitch(switches::kDisableV8IdleTasks))
     WebRuntimeFeatures::enableV8IdleTasks(false);

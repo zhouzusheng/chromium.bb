@@ -21,6 +21,7 @@
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font_fallback.h"
 #include "ui/gfx/font_render_params.h"
+#include "ui/gfx/geometry/safe_integer_conversions.h"
 #include "ui/gfx/harfbuzz_font_skia.h"
 #include "ui/gfx/range/range_f.h"
 #include "ui/gfx/utf16_indexing.h"
@@ -223,6 +224,7 @@ class HarfBuzzLineBreaker {
                       int min_baseline,
                       float min_height,
                       bool multiline,
+                      WordWrapBehavior word_wrap_behavior,
                       const base::string16& text,
                       const BreakList<size_t>* words,
                       const internal::TextRunList& run_list)
@@ -230,6 +232,7 @@ class HarfBuzzLineBreaker {
         min_baseline_(min_baseline),
         min_height_(min_height),
         multiline_(multiline),
+        word_wrap_behavior_(word_wrap_behavior),
         text_(text),
         words_(words),
         run_list_(run_list),
@@ -284,9 +287,10 @@ class HarfBuzzLineBreaker {
     // Break the run until it fits the current line.
     while (next_char < run.range.end()) {
       const size_t current_char = next_char;
+      size_t end_char = next_char;
       const bool skip_line =
-          BreakRunAtWidth(run, current_char, &width, &next_char);
-      AddSegment(run_index, Range(current_char, next_char),
+          BreakRunAtWidth(run, current_char, &width, &end_char, &next_char);
+      AddSegment(run_index, Range(current_char, end_char),
                  SkScalarToFloat(width));
       if (skip_line)
         AdvanceLine();
@@ -297,15 +301,16 @@ class HarfBuzzLineBreaker {
   // before available width using word break. If the current position is at the
   // beginning of a line, this function will not roll back to |start_char| and
   // |*next_char| will be greater than |start_char| (to avoid constructing empty
-  // lines).
+  // lines). It stores the end of the segment range to |end_char|, which can be
+  // smaller than |*next_char| for certain word wrapping behavior.
   // Returns whether to skip the line before |*next_char|.
-  // TODO(ckocagil): Check clusters to avoid breaking ligatures and diacritics.
   // TODO(ckocagil): We might have to reshape after breaking at ligatures.
   //                 See whether resolving the TODO above resolves this too.
   // TODO(ckocagil): Do not reserve width for whitespace at the end of lines.
   bool BreakRunAtWidth(const internal::TextRunHarfBuzz& run,
                        size_t start_char,
                        SkScalar* width,
+                       size_t* end_char,
                        size_t* next_char) {
     DCHECK(words_);
     DCHECK(run.range.Contains(Range(start_char, start_char + 1)));
@@ -316,16 +321,30 @@ class HarfBuzzLineBreaker {
     SkScalar word_width = 0;
     *width = 0;
 
-    for (size_t i = start_char; i < run.range.end(); ++i) {
+    Range char_range;
+    SkScalar truncated_width = 0;
+    for (size_t i = start_char; i < run.range.end(); i += char_range.length()) {
       // |word| holds the word boundary at or before |i|, and |next_word| holds
       // the word boundary right after |i|. Advance both |word| and |next_word|
       // when |i| reaches |next_word|.
       if (next_word != words_->breaks().end() && i >= next_word->first) {
+        if (*width > available_width) {
+          DCHECK_NE(WRAP_LONG_WORDS, word_wrap_behavior_);
+          *next_char = i;
+          if (word_wrap_behavior_ != TRUNCATE_LONG_WORDS)
+            *end_char = *next_char;
+          else
+            *width = truncated_width;
+          return true;
+        }
         word = next_word++;
         word_width = 0;
       }
 
-      Range glyph_range = run.CharRangeToGlyphRange(Range(i, i + 1));
+      Range glyph_range;
+      run.GetClusterAt(i, &char_range, &glyph_range);
+      DCHECK_LT(0U, char_range.length());
+
       SkScalar char_width = ((glyph_range.end() >= run.glyph_count)
                                  ? SkFloatToScalar(run.width)
                                  : run.positions[glyph_range.end()].x()) -
@@ -334,24 +353,35 @@ class HarfBuzzLineBreaker {
       *width += char_width;
       word_width += char_width;
 
+      // TODO(mukai): implement ELIDE_LONG_WORDS.
       if (*width > available_width) {
         if (line_x_ != 0 || word_width < *width) {
           // Roll back one word.
           *width -= word_width;
           *next_char = std::max(word->first, start_char);
-        } else if (char_width < *width) {
-          // Roll back one character.
-          *width -= char_width;
-          *next_char = i;
-        } else {
-          // Continue from the next character.
-          *next_char = i + 1;
+          *end_char = *next_char;
+          return true;
+        } else if (word_wrap_behavior_ == WRAP_LONG_WORDS) {
+          if (char_width < *width) {
+            // Roll back one character.
+            *width -= char_width;
+            *next_char = i;
+          } else {
+            // Continue from the next character.
+            *next_char = i + char_range.length();
+          }
+          *end_char = *next_char;
+          return true;
         }
-        return true;
+      } else {
+        *end_char = char_range.end();
+        truncated_width = *width;
       }
     }
 
-    *next_char = run.range.end();
+    if (word_wrap_behavior_ == TRUNCATE_LONG_WORDS)
+      *width = truncated_width;
+    *end_char = *next_char = run.range.end();
     return false;
   }
 
@@ -423,6 +453,7 @@ class HarfBuzzLineBreaker {
     paint.getFontMetrics(&metrics);
 
     line->size.set_width(line->size.width() + width);
+    // TODO(dschuyler): Account for stylized baselines in string sizing.
     max_descent_ = std::max(max_descent_, metrics.fDescent);
     // fAscent is always negative.
     max_ascent_ = std::max(max_ascent_, -metrics.fAscent);
@@ -443,6 +474,7 @@ class HarfBuzzLineBreaker {
   const int min_baseline_;
   const float min_height_;
   const bool multiline_;
+  const WordWrapBehavior word_wrap_behavior_;
   const base::string16& text_;
   const BreakList<size_t>* const words_;
   const internal::TextRunList& run_list_;
@@ -490,10 +522,13 @@ TextRunHarfBuzz::TextRunHarfBuzz()
       script(USCRIPT_INVALID_CODE),
       glyph_count(static_cast<size_t>(-1)),
       font_size(0),
+      baseline_offset(0),
+      baseline_type(0),
       font_style(0),
       strike(false),
       diagonal_strike(false),
-      underline(false) {}
+      underline(false) {
+}
 
 TextRunHarfBuzz::~TextRunHarfBuzz() {}
 
@@ -641,6 +676,10 @@ RenderTextHarfBuzz::~RenderTextHarfBuzz() {}
 
 scoped_ptr<RenderText> RenderTextHarfBuzz::CreateInstanceOfSameType() const {
   return make_scoped_ptr(new RenderTextHarfBuzz);
+}
+
+bool RenderTextHarfBuzz::MultilineSupported() const {
+  return true;
 }
 
 const base::string16& RenderTextHarfBuzz::GetDisplayText() {
@@ -985,7 +1024,8 @@ void RenderTextHarfBuzz::EnsureLayout() {
     HarfBuzzLineBreaker line_breaker(
         display_rect().width(), font_list().GetBaseline(),
         std::max(font_list().GetHeight(), min_line_height()), multiline(),
-        GetDisplayText(), multiline() ? &GetLineBreaks() : nullptr, *run_list);
+        word_wrap_behavior(), GetDisplayText(),
+        multiline() ? &GetLineBreaks() : nullptr, *run_list);
 
     // TODO(vadimt): Remove ScopedTracker below once crbug.com/431326 is fixed.
     tracked_objects::ScopedTracker tracking_profile3(
@@ -1039,7 +1079,7 @@ void RenderTextHarfBuzz::DrawVisualTextInternal(
                                      (glyphs_range.start() - j) :
                                      (glyphs_range.start() + j)];
         positions[j].offset(SkIntToScalar(origin.x()) + offset_x,
-                            SkIntToScalar(origin.y()));
+                            SkIntToScalar(origin.y() + run.baseline_offset));
       }
       for (BreakList<SkColor>::const_iterator it =
                colors().GetBreak(segment.char_range.start());
@@ -1148,17 +1188,21 @@ void RenderTextHarfBuzz::ItemizeTextToRuns(
   // Temporarily apply composition underlines and selection colors.
   ApplyCompositionAndSelectionStyles();
 
-  // Build the list of runs from the script items and ranged styles. Use an
-  // empty color BreakList to avoid breaking runs at color boundaries.
+  // Build the run list from the script items and ranged styles and baselines.
+  // Use an empty color BreakList to avoid breaking runs at color boundaries.
   BreakList<SkColor> empty_colors;
   empty_colors.SetMax(text.length());
-  internal::StyleIterator style(empty_colors, styles());
+  DCHECK_LE(text.size(), baselines().max());
+  for (const BreakList<bool>& style : styles())
+    DCHECK_LE(text.size(), style.max());
+  internal::StyleIterator style(empty_colors, baselines(), styles());
 
   for (size_t run_break = 0; run_break < text.length();) {
     internal::TextRunHarfBuzz* run = new internal::TextRunHarfBuzz;
     run->range.set_start(run_break);
     run->font_style = (style.style(BOLD) ? Font::BOLD : 0) |
                       (style.style(ITALIC) ? Font::ITALIC : 0);
+    run->baseline_type = style.baseline();
     run->strike = style.style(STRIKE);
     run->diagonal_strike = style.style(DIAGONAL_STRIKE);
     run->underline = style.style(UNDERLINE);
@@ -1227,6 +1271,31 @@ void RenderTextHarfBuzz::ShapeRun(const base::string16& text,
   const Font& primary_font = font_list().GetPrimaryFont();
   const std::string primary_family = primary_font.GetFontName();
   run->font_size = primary_font.GetFontSize();
+  run->baseline_offset = 0;
+  if (run->baseline_type != NORMAL_BASELINE) {
+    // Calculate a slightly smaller font. The ratio here is somewhat arbitrary.
+    // Proportions from 5/9 to 5/7 all look pretty good.
+    const float ratio = 5.0f / 9.0f;
+    run->font_size = gfx::ToRoundedInt(primary_font.GetFontSize() * ratio);
+    switch (run->baseline_type) {
+      case SUPERSCRIPT:
+        run->baseline_offset =
+            primary_font.GetCapHeight() - primary_font.GetHeight();
+        break;
+      case SUPERIOR:
+        run->baseline_offset =
+            gfx::ToRoundedInt(primary_font.GetCapHeight() * ratio) -
+            primary_font.GetCapHeight();
+        break;
+      case SUBSCRIPT:
+        run->baseline_offset =
+            primary_font.GetHeight() - primary_font.GetBaseline();
+        break;
+      case INFERIOR:  // Fall through.
+      default:
+        break;
+    }
+  }
 
   std::string best_family;
   FontRenderParams best_render_params;
@@ -1481,17 +1550,6 @@ base::i18n::BreakIterator* RenderTextHarfBuzz::GetGraphemeIterator() {
       grapheme_iterator_.reset();
   }
   return grapheme_iterator_.get();
-}
-
-size_t RenderTextHarfBuzz::TextIndexToGivenTextIndex(
-    const base::string16& given_text,
-    size_t index) {
-  DCHECK(given_text == layout_text() || given_text == display_text());
-  DCHECK_LE(index, text().length());
-  ptrdiff_t i = obscured() ? UTF16IndexToOffset(text(), 0, index) : index;
-  CHECK_GE(i, 0);
-  // Clamp indices to the length of the given layout or display text.
-  return std::min<size_t>(given_text.length(), i);
 }
 
 internal::TextRunList* RenderTextHarfBuzz::GetRunList() {

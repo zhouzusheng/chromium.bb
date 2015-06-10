@@ -8,7 +8,7 @@
 #ifndef GrDrawTarget_DEFINED
 #define GrDrawTarget_DEFINED
 
-#include "GrClipData.h"
+#include "GrClip.h"
 #include "GrClipMaskManager.h"
 #include "GrContext.h"
 #include "GrPathProcessor.h"
@@ -29,8 +29,9 @@
 #include "SkXfermode.h"
 
 class GrBatch;
-class GrClipData;
+class GrClip;
 class GrDrawTargetCaps;
+class GrGeometryProcessor;
 class GrPath;
 class GrPathRange;
 class GrPipeline;
@@ -53,23 +54,6 @@ public:
      * Gets the capabilities of the draw target.
      */
     const GrDrawTargetCaps* caps() const { return fCaps.get(); }
-
-    /**
-     * Sets the current clip to the region specified by clip. All draws will be
-     * clipped against this clip if kClip_StateBit is enabled.
-     *
-     * Setting the clip may (or may not) zero out the client's stencil bits.
-     *
-     * @param description of the clipping region
-     */
-    void setClip(const GrClipData* clip);
-
-    /**
-     * Gets the current clip.
-     *
-     * @return the clip.
-     */
-    const GrClipData* getClip() const;
 
     /**
      * There are two types of "sources" of geometry (vertices and indices) for
@@ -264,9 +248,7 @@ public:
                         const SkRect* devBounds = NULL);
 
     // TODO devbounds should live on the batch
-    void drawBatch(GrPipelineBuilder*,
-                   GrBatch*,
-                   const SkRect* devBounds = NULL);
+    void drawBatch(GrPipelineBuilder*, GrBatch*, const SkRect* devBounds = NULL);
 
     /**
      * Draws path into the stencil buffer. The fill must be either even/odd or
@@ -325,7 +307,6 @@ public:
                   const SkRect& rect,
                   const SkRect* localRect,
                   const SkMatrix* localMatrix) {
-        AutoGeometryPush agp(this);
         this->onDrawRect(pipelineBuilder, color, viewMatrix, rect, localRect, localMatrix);
     }
 
@@ -475,27 +456,6 @@ public:
 
     ////////////////////////////////////////////////////////////////////////////
 
-    class AutoClipRestore : public ::SkNoncopyable {
-    public:
-        AutoClipRestore(GrDrawTarget* target) {
-            fTarget = target;
-            fClip = fTarget->getClip();
-        }
-
-        AutoClipRestore(GrDrawTarget* target, const SkIRect& newClip);
-
-        ~AutoClipRestore() {
-            fTarget->setClip(fClip);
-        }
-    private:
-        GrDrawTarget*           fTarget;
-        const GrClipData*       fClip;
-        SkTLazy<SkClipStack>    fStack;
-        GrClipData              fReplacementClip;
-    };
-
-    ////////////////////////////////////////////////////////////////////////////
-
     /**
      * Saves the geometry src state at construction and restores in the destructor. It also saves
      * and then restores the vertex attrib state.
@@ -614,6 +574,8 @@ public:
     bool programUnitTest(int maxStages);
 
 protected:
+    friend class GrTargetCommands; // for PipelineInfo
+
     enum GeometrySrcType {
         kNone_GeometrySrcType,     //<! src has not been specified
         kReserved_GeometrySrcType, //<! src was set using reserve*Space
@@ -688,11 +650,12 @@ protected:
 
     struct PipelineInfo {
         PipelineInfo(GrPipelineBuilder* pipelineBuilder, GrScissorState* scissor,
-                     const GrPrimitiveProcessor* primProc, const SkRect* devBounds,
-                     GrDrawTarget* target);
+                     const GrPrimitiveProcessor* primProc,
+                     const SkRect* devBounds, GrDrawTarget* target);
 
         PipelineInfo(GrPipelineBuilder* pipelineBuilder, GrScissorState* scissor,
-                     const GrBatch* batch, const SkRect* devBounds, GrDrawTarget* target);
+                     const GrBatch* batch, const SkRect* devBounds,
+                     GrDrawTarget* target);
 
         bool willBlendWithDst(const GrPrimitiveProcessor* primProc) const {
             return fPipelineBuilder->willBlendWithDst(primProc);
@@ -726,7 +689,7 @@ private:
     void initCopySurfaceDstDesc(const GrSurface* src, GrSurfaceDesc* dstDesc) {
         if (!this->onInitCopySurfaceDstDesc(src, dstDesc)) {
             dstDesc->fOrigin = kDefault_GrSurfaceOrigin;
-            dstDesc->fFlags = kRenderTarget_GrSurfaceFlag | kNoStencil_GrSurfaceFlag;
+            dstDesc->fFlags = kRenderTarget_GrSurfaceFlag;
             dstDesc->fConfig = src->config();
         }
     }
@@ -829,16 +792,15 @@ private:
                                            GrStencilSettings*);
     virtual GrClipMaskManager* clipMaskManager() = 0;
     virtual bool setupClip(GrPipelineBuilder*,
-                           GrPipelineBuilder::AutoRestoreEffects* are,
-                           GrPipelineBuilder::AutoRestoreStencil* ars,
-                           GrScissorState* scissorState,
+                           GrPipelineBuilder::AutoRestoreFragmentProcessors*,
+                           GrPipelineBuilder::AutoRestoreStencil*,
+                           GrScissorState*,
                            const SkRect* devBounds) = 0;
 
     enum {
         kPreallocGeoSrcStateStackCnt = 4,
     };
     SkSTArray<kPreallocGeoSrcStateStackCnt, GeometrySrcState, true> fGeoSrcStateStack;
-    const GrClipData*                                               fClip;
     // The context owns us, not vice-versa, so this ptr is not ref'ed by DrawTarget.
     GrContext*                                                      fContext;
     // To keep track that we always have at least as many debug marker adds as removes
@@ -876,7 +838,7 @@ public:
      * Release any resources that are cached but not currently in use. This
      * is intended to give an application some recourse when resources are low.
      */
-    void purgeResources() SK_OVERRIDE {
+    void purgeResources() override {
         // The clip mask manager can rebuild all its clip masks so just
         // get rid of them all.
         fClipMaskManager.purgeResources();
@@ -886,13 +848,13 @@ protected:
     GrClipMaskManager           fClipMaskManager;
 
 private:
-    GrClipMaskManager* clipMaskManager() SK_OVERRIDE { return &fClipMaskManager; }
+    GrClipMaskManager* clipMaskManager() override { return &fClipMaskManager; }
 
     virtual bool setupClip(GrPipelineBuilder*,
-                           GrPipelineBuilder::AutoRestoreEffects* are,
-                           GrPipelineBuilder::AutoRestoreStencil* ars,
+                           GrPipelineBuilder::AutoRestoreFragmentProcessors*,
+                           GrPipelineBuilder::AutoRestoreStencil*,
                            GrScissorState* scissorState,
-                           const SkRect* devBounds) SK_OVERRIDE;
+                           const SkRect* devBounds) override;
 
     typedef GrDrawTarget INHERITED;
 };

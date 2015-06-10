@@ -36,11 +36,13 @@
 #include "core/dom/ActiveDOMObject.h"
 #include "core/dom/AddConsoleMessageTask.h"
 #include "core/dom/ContextLifecycleNotifier.h"
+#include "core/dom/CrossThreadTask.h"
 #include "core/dom/DOMURL.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/MessagePort.h"
 #include "core/events/ErrorEvent.h"
 #include "core/events/Event.h"
+#include "core/fetch/MemoryCache.h"
 #include "core/frame/DOMTimer.h"
 #include "core/frame/DOMTimerCoordinator.h"
 #include "core/inspector/ConsoleMessage.h"
@@ -53,6 +55,7 @@
 #include "core/workers/WorkerNavigator.h"
 #include "core/workers/WorkerClients.h"
 #include "core/workers/WorkerConsole.h"
+#include "core/workers/WorkerLoaderProxy.h"
 #include "core/workers/WorkerLocation.h"
 #include "core/workers/WorkerNavigator.h"
 #include "core/workers/WorkerReportingProxy.h"
@@ -86,7 +89,7 @@ WorkerGlobalScope::WorkerGlobalScope(const KURL& url, const String& userAgent, W
     : m_url(url)
     , m_userAgent(userAgent)
     , m_v8CacheOptions(V8CacheOptionsDefault)
-    , m_script(adoptPtr(new WorkerScriptController(*this)))
+    , m_script(adoptPtr(new WorkerScriptController(*this, thread->isolate())))
     , m_thread(thread)
     , m_workerInspectorController(adoptRefWillBeNoop(new WorkerInspectorController(this)))
     , m_closing(false)
@@ -106,6 +109,7 @@ WorkerGlobalScope::WorkerGlobalScope(const KURL& url, const String& userAgent, W
 
 WorkerGlobalScope::~WorkerGlobalScope()
 {
+    ASSERT(!m_script);
 }
 
 void WorkerGlobalScope::applyContentSecurityPolicyFromString(const String& policy, ContentSecurityPolicyHeaderType contentSecurityPolicyType)
@@ -178,7 +182,7 @@ void WorkerGlobalScope::close()
     // After m_closing is set, all the tasks in the queue continue to be fetched but only
     // tasks with isCleanupTask()==true will be executed.
     m_closing = true;
-    postTask(CloseWorkerGlobalScopeTask::create());
+    postTask(FROM_HERE, CloseWorkerGlobalScopeTask::create());
 }
 
 WorkerConsole* WorkerGlobalScope::console()
@@ -195,9 +199,9 @@ WorkerNavigator* WorkerGlobalScope::navigator() const
     return m_navigator.get();
 }
 
-void WorkerGlobalScope::postTask(PassOwnPtr<ExecutionContextTask> task)
+void WorkerGlobalScope::postTask(const WebTraceLocation& location, PassOwnPtr<ExecutionContextTask> task)
 {
-    thread()->postTask(task);
+    thread()->postTask(location, task);
 }
 
 // FIXME: Called twice, from WorkerThreadShutdownFinishTask and WorkerGlobalScope::dispose.
@@ -264,6 +268,7 @@ void WorkerGlobalScope::importScripts(const Vector<String>& urls, ExceptionState
         }
 
         InspectorInstrumentation::scriptImported(&executionContext, scriptLoader->identifier(), scriptLoader->script());
+        scriptLoaded(scriptLoader->script().length(), scriptLoader->cachedMetadata() ? scriptLoader->cachedMetadata()->size() : 0);
 
         RefPtrWillBeRawPtr<ErrorEvent> errorEvent = nullptr;
         OwnPtr<Vector<char>> cachedMetaData(scriptLoader->releaseCachedMetadata());
@@ -300,7 +305,7 @@ void WorkerGlobalScope::addConsoleMessage(PassRefPtrWillBeRawPtr<ConsoleMessage>
 {
     RefPtrWillBeRawPtr<ConsoleMessage> consoleMessage = prpConsoleMessage;
     if (!isContextThread()) {
-        postTask(AddConsoleMessageTask::create(consoleMessage->source(), consoleMessage->level(), consoleMessage->message()));
+        postTask(FROM_HERE, AddConsoleMessageTask::create(consoleMessage->source(), consoleMessage->level(), consoleMessage->message()));
         return;
     }
     thread()->workerReportingProxy().reportConsoleMessage(consoleMessage);
@@ -321,11 +326,6 @@ bool WorkerGlobalScope::isContextThread() const
 bool WorkerGlobalScope::isJSExecutionForbidden() const
 {
     return m_script->isExecutionForbidden();
-}
-
-bool WorkerGlobalScope::idleNotification()
-{
-    return script()->idleNotification();
 }
 
 WorkerEventQueue* WorkerGlobalScope::eventQueue() const
@@ -362,6 +362,16 @@ void WorkerGlobalScope::exceptionHandled(int exceptionId, bool isHandled)
     RefPtrWillBeRawPtr<ConsoleMessage> consoleMessage = m_pendingMessages.take(exceptionId);
     if (!isHandled)
         addConsoleMessage(consoleMessage.release());
+}
+
+void WorkerGlobalScope::removeURLFromMemoryCache(const KURL& url)
+{
+    m_thread->workerLoaderProxy()->postTaskToLoader(createCrossThreadTask(&WorkerGlobalScope::removeURLFromMemoryCacheInternal, url));
+}
+
+void WorkerGlobalScope::removeURLFromMemoryCacheInternal(ExecutionContext*, const KURL& url)
+{
+    memoryCache()->removeURLFromCache(url);
 }
 
 DEFINE_TRACE(WorkerGlobalScope)

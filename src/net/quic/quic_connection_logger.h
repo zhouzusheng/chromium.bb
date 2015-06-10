@@ -8,8 +8,8 @@
 #include <bitset>
 
 #include "net/base/ip_endpoint.h"
-#include "net/base/net_log.h"
 #include "net/base/network_change_notifier.h"
+#include "net/log/net_log.h"
 #include "net/quic/quic_connection.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_session.h"
@@ -76,6 +76,9 @@ class NET_EXPORT_PRIVATE QuicConnectionLogger
                                  int num_frames_received,
                                  int num_duplicate_frames_received);
   void OnCertificateVerified(const CertVerifyResult& result);
+
+  // Returns connection's overall packet loss rate in fraction.
+  float ReceivedPacketLossRate() const;
 
  private:
   friend class test::QuicConnectionLoggerPeer;

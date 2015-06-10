@@ -230,7 +230,7 @@ public:
     void updateLayoutAndStyleForPainting();
     void updateLayoutAndStyleIfNeededRecursive();
 
-    void invalidateTreeIfNeededRecursive();
+    void invalidateTreeIfNeededRecursive(bool cachedOffsetsEnabled);
 
     void incrementVisuallyNonEmptyCharacterCount(unsigned);
     void incrementVisuallyNonEmptyPixelCount(const IntSize&);
@@ -618,7 +618,7 @@ private:
     void scheduleOrPerformPostLayoutTasks();
     void performPostLayoutTasks();
 
-    void invalidateTreeIfNeeded();
+    void invalidateTreeIfNeeded(bool cachedOffsetsEnabled);
 
     void gatherDebugLayoutRects(LayoutObject* layoutRoot);
 

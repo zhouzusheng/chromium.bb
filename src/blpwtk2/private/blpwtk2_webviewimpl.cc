@@ -202,7 +202,7 @@ void WebViewImpl::handleFindRequest(const FindOnPageRequest& request)
     DCHECK(!d_wasDestroyed);
 
     if (!request.reqId) {
-        d_webContents->StopFinding(content::STOP_FIND_ACTION_CLEAR_SELECTION);
+        d_webContents->StopFinding(content::STOP_FIND_ACTION_ACTIVATE_SELECTION);
         return;
     }
     blink::WebFindOptions options;

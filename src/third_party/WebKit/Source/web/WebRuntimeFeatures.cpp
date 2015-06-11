@@ -83,6 +83,21 @@ bool WebRuntimeFeatures::isCompositedSelectionUpdateEnabled()
     return RuntimeEnabledFeatures::compositedSelectionUpdateEnabled();
 }
 
+void WebRuntimeFeatures::enableCSS3TextDecorations(bool enable)
+{
+    RuntimeEnabledFeatures::setCSS3TextDecorationsEnabled(enable);
+}
+
+void WebRuntimeFeatures::enableCSS3Text(bool enable)
+{
+    RuntimeEnabledFeatures::setCSS3TextEnabled(enable);
+}
+
+void WebRuntimeFeatures::enableCSSGridLayout(bool enable)
+{
+    RuntimeEnabledFeatures::setCSSGridLayoutEnabled(enable);
+}
+
 void WebRuntimeFeatures::enableDatabase(bool enable)
 {
     RuntimeEnabledFeatures::setDatabaseEnabled(enable);

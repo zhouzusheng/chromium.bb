@@ -130,6 +130,7 @@ public:
         int argc,
         v8::Handle<v8::Value> argv[]) override;
     virtual v8::Local<v8::Context> mainWorldScriptContext() const override;
+    virtual v8::Isolate* scriptIsolate() const override;
     virtual void reload(bool ignoreCache) override;
     virtual void reloadWithOverrideURL(const WebURL& overrideUrl, bool ignoreCache) override;
     virtual void loadRequest(const WebURLRequest&) override;
@@ -225,6 +226,7 @@ public:
 
     virtual bool selectionStartHasSpellingMarkerFor(int from, int length) const override;
     virtual WebString layerTreeAsText(bool showDebugInfo = false) const override;
+    virtual void drawInCanvas(const WebRect& rect, const WebString& styleClass, WebCanvas* canvas) const override;
 
     // WebLocalFrame methods:
     virtual void initializeToReplaceRemoteFrame(WebRemoteFrame*, const WebString& name, WebSandboxFlags) override;

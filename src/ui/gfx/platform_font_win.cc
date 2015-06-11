@@ -21,6 +21,7 @@
 #include "base/win/scoped_select_object.h"
 #include "base/win/win_util.h"
 #include "third_party/skia/include/core/SkTypeface.h"
+#include "third_party/skia/include/ports/SkTypeface_win.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/font_render_params.h"
@@ -90,7 +91,7 @@ HRESULT GetMatchingDirectWriteFont(const LOGFONT& font_info,
   // Get the matching font from the system font collection exposed by
   // DirectWrite.
   base::win::ScopedComPtr<IDWriteFontCollection> font_collection;
-  hr = factory->GetSystemFontCollection(font_collection.Receive());
+  hr = SkFontMgr_GetFontCollectionToUse(font_collection.Receive(), factory);
   if (FAILED(hr)) {
     CHECK(false);
     return hr;

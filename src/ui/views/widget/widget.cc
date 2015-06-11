@@ -500,6 +500,10 @@ void Widget::SetBounds(const gfx::Rect& bounds) {
   native_widget_->SetBounds(bounds);
 }
 
+void Widget::SetBoundsNoDPIAdjustment(const gfx::Rect& bounds) {
+  native_widget_->SetBoundsNoDPIAdjustment(bounds);
+}
+
 void Widget::SetSize(const gfx::Size& size) {
   native_widget_->SetSize(size);
 }
@@ -1188,6 +1192,22 @@ void Widget::OnNativeWidgetPaint(const ui::PaintContext& context) {
   GetRootView()->Paint(context);
 }
 
+bool Widget::OnNCHitTest(int* result, const gfx::Point& point) {
+  return widget_delegate_->OnNCHitTest(result, point);
+}
+
+bool Widget::OnNCDragBegin(int hit_test_code) {
+  return widget_delegate_->OnNCDragBegin(hit_test_code);
+}
+
+void Widget::OnNCDragMove() {
+  return widget_delegate_->OnNCDragMove();
+}
+
+void Widget::OnNCDragEnd() {
+  return widget_delegate_->OnNCDragEnd();
+}
+
 int Widget::GetNonClientComponent(const gfx::Point& point) {
   int component = non_client_view_ ?
       non_client_view_->NonClientHitTest(point) :
@@ -1522,6 +1542,11 @@ bool Widget::GetSavedWindowPlacement(gfx::Rect* bounds,
 }
 
 scoped_ptr<InputMethod> Widget::CreateInputMethod() {
+  if (!HasFocusManager()) {
+    // TODO(shez): Figure out why HasFocusManager is sometimes false
+    LOG(WARNING) << "HasFocusManager is false!";
+    return scoped_ptr<InputMethod>();
+  }
   scoped_ptr<InputMethod> input_method(native_widget_->CreateInputMethod());
   if (input_method.get())
     input_method->Init(this);

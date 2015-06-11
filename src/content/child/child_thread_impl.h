@@ -88,6 +88,10 @@ class CONTENT_EXPORT ChildThreadImpl
   void ReleaseCachedFonts() override;
 #endif
 
+  // Perform deferred channel initialization for the case where ChildThread
+  // was constructed with an empty channel_name.
+  void SetChannelName(const std::string& channel_name);
+
   IPC::SyncChannel* channel() { return channel_.get(); }
 
   MessageRouter* GetRouter();
@@ -215,6 +219,8 @@ class CONTENT_EXPORT ChildThreadImpl
   };
 
   void Init(const Options& options);
+  void InitChannel();
+  void InitManagers();
 
   // We create the channel first without connecting it so we can add filters
   // prior to any messages being received, then connect it afterwards.
@@ -267,6 +273,8 @@ class CONTENT_EXPORT ChildThreadImpl
   // attempt to communicate.
   bool on_channel_error_called_;
 
+  bool use_mojo_channel_;
+
   base::MessageLoop* message_loop_;
 
   scoped_ptr<FileSystemDispatcher> file_system_dispatcher_;
@@ -310,6 +318,8 @@ class CONTENT_EXPORT ChildThreadImpl
   DISALLOW_COPY_AND_ASSIGN(ChildThreadImpl);
 };
 
+// If the channel_name is empty, channel initialization will be deferred
+// until SetChannelName() is called.
 struct ChildThreadImpl::Options {
   ~Options();
 

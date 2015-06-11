@@ -856,8 +856,6 @@ void RenderThreadImpl::Shutdown() {
   if (blink_platform_impl_)
     blink::shutdown();
 
-  gpu_va_context_provider_ = 0;
-
   lazy_tls.Pointer()->Set(NULL);
 }
 

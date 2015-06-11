@@ -126,6 +126,7 @@ class WebViewProxy : public WebView,
                       int dpiMultiplier,
                       const StringRef &styleClass,
                       NativeDeviceContext deviceContext) override;
+    String getLayoutTreeAsText(int flags) const override;
 
   private:
     // Destructor is private.  Calling destroy() will delete the object.

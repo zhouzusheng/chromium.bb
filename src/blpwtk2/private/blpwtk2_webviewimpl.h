@@ -140,6 +140,7 @@ class WebViewImpl : public WebView,
                       int dpiMultiplier,
                       const StringRef &styleClass,
                       NativeDeviceContext deviceContext) override;
+    String getLayoutTreeAsText(int flags) const override;
 
   private:
     void createWidget(blpwtk2::NativeView parent);

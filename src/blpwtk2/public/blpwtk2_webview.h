@@ -27,6 +27,7 @@
 
 namespace blpwtk2 {
 
+class String;
 class StringRef;
 class WebFrame;
 class Profile;
@@ -234,6 +235,10 @@ public:
                               int dpiMultiplier,
                               const StringRef &styleClass,
                               NativeDeviceContext deviceContext) = 0;
+
+    // Get a text representation of the main web frame's layout tree. This is
+    // primarily used for debugging purposes only.
+    virtual String getLayoutTreeAsText(int flags) const = 0;
 
 protected:
     // Destroy this WebView.  Note that clients of blpwtk2 should use the

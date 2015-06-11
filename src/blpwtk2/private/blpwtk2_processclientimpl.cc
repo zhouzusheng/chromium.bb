@@ -32,13 +32,13 @@ namespace blpwtk2 {
 
 ProcessClientImpl::ProcessClientImpl(
     const std::string& channelId,
-    base::SingleThreadTaskRunner* ipcTaskRunner)
+    const scoped_refptr<base::SingleThreadTaskRunner>& ioTaskRunner)
 : d_shutdownEvent(true, false)
 {
     d_channel = IPC::SyncChannel::Create(channelId,
                                          IPC::Channel::MODE_CLIENT,
                                          this,
-                                         ipcTaskRunner,
+                                         ioTaskRunner,
                                          true,
                                          &d_shutdownEvent);
 }

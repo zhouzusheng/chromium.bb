@@ -24,6 +24,9 @@
 #define INCLUDED_BLPWTK2_INPROCESSRENDERER_H
 
 #include <blpwtk2_config.h>
+
+#include <base/memory/ref_counted.h>
+
 #include <string>
 
 namespace base {
@@ -45,8 +48,9 @@ namespace blpwtk2 {
 class InProcessRenderer {
   public:
     // Initialize the renderer.  This will initialize Blink on the main thread,
-    // or on a secondary thread, depending on the thread mode.
-    static void init();
+    // or on a secondary thread, depending on the thread mode.  The browserIOTaskRunner
+    // should be null if the browser is not in the same process.
+    static void init(const scoped_refptr<base::SingleThreadTaskRunner>& browserIOTaskRunner);
 
     // Perform any cleanup, such as shutting down the secondary thread if we
     // are in the original chromium thread mode.
@@ -54,7 +58,7 @@ class InProcessRenderer {
 
     // Return the task runner for the renderer's IO thread.  This can only be
     // called between calls to 'init()' and 'cleanup()'.
-    static base::SingleThreadTaskRunner* ipcTaskRunner();
+    static scoped_refptr<base::SingleThreadTaskRunner> ioTaskRunner();
 
     // Set the channel name that will be used by the render-process-host to
     // communicate with the in-process renderer.  This can only be called once

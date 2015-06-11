@@ -204,6 +204,7 @@ class CONTENT_EXPORT ChildThreadImpl
   void OnChannelConnected(int32 peer_pid) override;
   void OnChannelError() override;
 
+ public:  // SHEZ: Lets us access the IOTaskRunner from blpwtk2
   bool IsInBrowserProcess() const;
   scoped_refptr<base::SequencedTaskRunner> GetIOTaskRunner();
 

@@ -29,6 +29,7 @@
 
 #include <base/compiler_specific.h>
 #include <base/id_map.h>
+#include <base/memory/ref_counted.h>
 #include <base/memory/scoped_ptr.h>
 #include <base/synchronization/waitable_event.h>
 #include <ipc/ipc_listener.h>
@@ -49,7 +50,7 @@ class ProcessClientImpl : public ProcessClient,
                             private IPC::Listener {
   public:
     ProcessClientImpl(const std::string& channelId,
-                      base::SingleThreadTaskRunner* ipcTaskRunner);
+                      const scoped_refptr<base::SingleThreadTaskRunner>& ioTaskRunner);
     ~ProcessClientImpl();
 
     // ProcessClient overrides

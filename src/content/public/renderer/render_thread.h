@@ -37,6 +37,7 @@ class Extension;
 
 namespace content {
 
+class InProcessChildThreadParams;
 class RenderProcessObserver;
 class ResourceDispatcherDelegate;
 class ServiceRegistry;
@@ -48,11 +49,11 @@ class CONTENT_EXPORT RenderThread : virtual public ChildThread {
   static RenderThread* Get();
 
   // Initialize and cleanup the in-process renderer so that embedders can
-  // implement --single-process functionality.  The channel_id can be provided
-  // at init time, or later by calling SetInProcessRendererChannelName.
-  static void InitInProcessRenderer(const std::string& channel_id);
+  // implement --single-process functionality.  The channel_id inside 'params'
+  // can be provided at init time, or later by calling SetInProcessRendererChannelName.
+  static void InitInProcessRenderer(const InProcessChildThreadParams& params);
   static void SetInProcessRendererChannelName(const std::string& channel_id);
-  static base::SingleThreadTaskRunner* IPCTaskRunner();
+  static scoped_refptr<base::SingleThreadTaskRunner> IOTaskRunner();
   static void CleanUpInProcessRenderer();
 
   RenderThread();

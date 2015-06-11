@@ -57,6 +57,7 @@
 #include "content/common/database_messages.h"
 #include "content/common/dom_storage/dom_storage_messages.h"
 #include "content/common/frame_messages.h"
+#include "content/common/in_process_child_thread_params.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
 #include "content/common/gpu/gpu_messages.h"
@@ -407,11 +408,11 @@ class MemoryObserver : public base::MessageLoop::TaskObserver {
 };
 
 // static
-void RenderThread::InitInProcessRenderer(const std::string& channel_id)
+void RenderThread::InitInProcessRenderer(const InProcessChildThreadParams& params)
 {
   g_render_process = new RenderProcessImpl();
-  RenderThreadImpl* thread = new RenderThreadImpl(channel_id);
-  if (channel_id.empty()) {
+  RenderThreadImpl* thread = new RenderThreadImpl(params);
+  if (params.channel_name().empty()) {
     // Normally, WebKit is initialized in the browser's WebKit thread.  This is
     // necessary because there is code in the browser that depends on WebKit
     // being initialized at startup.  However, when running an in-process
@@ -433,9 +434,12 @@ void RenderThread::SetInProcessRendererChannelName(const std::string& channel_id
 }
 
 // static
-base::SingleThreadTaskRunner* RenderThread::IPCTaskRunner()
+scoped_refptr<base::SingleThreadTaskRunner> RenderThread::IOTaskRunner()
 {
-  return g_render_process->io_message_loop_proxy();
+  RenderThreadImpl* thread = RenderThreadImpl::current();
+  scoped_refptr<base::SequencedTaskRunner> str = thread->GetIOTaskRunner();
+  // TODO(SHEZ): Make thread->GetIOTaskRunner return SingleThreadTaskRunner to avoid this downcast?
+  return static_cast<base::SingleThreadTaskRunner*>(str.get());
 }
 
 // static

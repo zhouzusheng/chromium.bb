@@ -25,6 +25,7 @@
 #include <blpwtk2_statics.h>
 
 #include <base/message_loop/message_loop.h>
+#include <content/common/in_process_child_thread_params.h>
 #include <content/public/renderer/render_thread.h>
 #include <content/renderer/render_process_impl.h>
 #include <third_party/WebKit/public/web/WebRuntimeFeatures.h>
@@ -47,8 +48,9 @@ static void InitDirectWrite()
 
 class InProcessRendererThread : public base::Thread {
 public:
-    InProcessRendererThread()
+    InProcessRendererThread(const scoped_refptr<base::SingleThreadTaskRunner>& browserIOTaskRunner)
     : base::Thread("BlpInProcRenderer")
+    , d_browserIOTaskRunner(browserIOTaskRunner)
     {
         base::Thread::Options options;
         options.message_loop_type = base::MessageLoop::TYPE_UI;
@@ -65,7 +67,11 @@ private:
     {
         Statics::rendererMessageLoop = message_loop();
         InitDirectWrite();
-        content::RenderThread::InitInProcessRenderer("");
+        content::RenderThread::InitInProcessRenderer(
+            content::InProcessChildThreadParams("", d_browserIOTaskRunner));
+
+        // No longer need to hold on to this reference.
+        d_browserIOTaskRunner = nullptr;
     }
 
     // Called just after the message loop ends
@@ -75,12 +81,14 @@ private:
         Statics::rendererMessageLoop = 0;
     }
 
+    scoped_refptr<base::SingleThreadTaskRunner> d_browserIOTaskRunner;
+
     DISALLOW_COPY_AND_ASSIGN(InProcessRendererThread);
 };
 static InProcessRendererThread* g_inProcessRendererThread = 0;
 
 // static
-void InProcessRenderer::init()
+void InProcessRenderer::init(const scoped_refptr<base::SingleThreadTaskRunner>& browserIOTaskRunner)
 {
     DCHECK(Statics::isInApplicationMainThread());
     DCHECK(!g_inProcessRendererThread);
@@ -89,11 +97,12 @@ void InProcessRenderer::init()
     if (Statics::isRendererMainThreadMode()) {
         Statics::rendererMessageLoop = base::MessageLoop::current();
         InitDirectWrite();
-        content::RenderThread::InitInProcessRenderer("");
+        content::RenderThread::InitInProcessRenderer(
+            content::InProcessChildThreadParams("", browserIOTaskRunner));
     }
     else {
         DCHECK(Statics::isOriginalThreadMode());
-        g_inProcessRendererThread = new InProcessRendererThread();
+        g_inProcessRendererThread = new InProcessRendererThread(browserIOTaskRunner);
     }
 
     DCHECK(Statics::rendererMessageLoop);
@@ -120,11 +129,11 @@ void InProcessRenderer::cleanup()
 }
 
 // static
-base::SingleThreadTaskRunner* InProcessRenderer::ipcTaskRunner()
+scoped_refptr<base::SingleThreadTaskRunner> InProcessRenderer::ioTaskRunner()
 {
     DCHECK(Statics::isInApplicationMainThread());
     DCHECK(Statics::isRendererMainThreadMode());
-    return content::RenderThread::IPCTaskRunner();
+    return content::RenderThread::IOTaskRunner();
 }
 
 // static

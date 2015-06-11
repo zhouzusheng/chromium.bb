@@ -403,5 +403,10 @@ bool BrowserContextImpl::AllowDictionaryDownloads()
     return false;
 }
 
+content::PermissionManager* BrowserContextImpl::GetPermissionManager()
+{
+    return 0;
+}
+
 }  // close namespace blpwtk2
 

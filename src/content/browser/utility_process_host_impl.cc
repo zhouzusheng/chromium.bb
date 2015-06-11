@@ -347,7 +347,7 @@ void UtilityProcessHostImpl::OnProcessCrashed(int exit_code) {
 void UtilityProcessHostImpl::OnProcessLaunched() {
   if (mojo_application_host_) {
     base::ProcessHandle handle;
-    if (RenderProcessHost::run_renderer_in_process())
+    if (base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess))
       handle = base::GetCurrentProcessHandle();
     else
       handle = process_->GetData().handle;

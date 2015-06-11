@@ -109,6 +109,7 @@ class BrowserContextImpl : public content::BrowserContext,
     content::PushMessagingService* GetPushMessagingService() override;
     content::SSLHostStateDelegate* GetSSLHostStateDelegate() override;
     bool AllowDictionaryDownloads() override;
+    content::PermissionManager* GetPermissionManager() override;
 
   private:
     scoped_ptr<ResourceContextImpl> d_resourceContext;

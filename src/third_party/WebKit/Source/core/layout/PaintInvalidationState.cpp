@@ -14,9 +14,9 @@
 
 namespace blink {
 
-PaintInvalidationState::PaintInvalidationState(const RenderView& renderView)
+PaintInvalidationState::PaintInvalidationState(const RenderView& renderView, bool cachedOffsetsEnabled)
     : m_clipped(false)
-    , m_cachedOffsetsEnabled(true)
+    , m_cachedOffsetsEnabled(cachedOffsetsEnabled)
     , m_forceCheckForPaintInvalidation(false)
     , m_paintInvalidationContainer(*renderView.containerForPaintInvalidation())
 {

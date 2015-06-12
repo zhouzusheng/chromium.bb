@@ -202,7 +202,7 @@ void WebViewImpl::handleFindRequest(const FindOnPageRequest& request)
     DCHECK(!d_wasDestroyed);
 
     if (!request.reqId) {
-        d_webContents->StopFinding(content::STOP_FIND_ACTION_CLEAR_SELECTION);
+        d_webContents->StopFinding(content::STOP_FIND_ACTION_ACTIVATE_SELECTION);
         return;
     }
     blink::WebFindOptions options;
@@ -313,6 +313,12 @@ void WebViewImpl::drawContents(const NativeRect &srcRegion,
                                NativeDeviceContext deviceContext)
 {
     NOTREACHED() << "drawContents() not supported in WebViewImpl";
+}
+
+String WebViewImpl::getLayoutTreeAsText(int flags) const
+{
+    NOTREACHED() << "getLayoutTreeAsText() not supported in WebViewImpl";
+    return String();
 }
 
 void WebViewImpl::handleInputEvents(const InputEvent *events, size_t eventsCount)

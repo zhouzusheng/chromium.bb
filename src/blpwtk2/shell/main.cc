@@ -96,6 +96,7 @@ enum {
     IDM_TEST_LOGICAL_BLUR,
     IDM_TEST_PLAY_KEYBOARD_EVENTS,
     IDM_TEST_GET_PICTURE,
+    IDM_TEST_DUMP_LAYOUT_TREE,
     IDM_SPELLCHECK,
     IDM_SPELLCHECK_ENABLED,
     IDM_AUTOCORRECT,
@@ -313,6 +314,15 @@ void testGetPicture(blpwtk2::NativeView hwnd, blpwtk2::WebView* webView, int sca
     // Delete the device context
     DeleteDC(deviceContext);
 #endif
+}
+
+void testDumpLayoutTree(const blpwtk2::WebView* webView)
+{
+    const blpwtk2::String& text = webView->getLayoutTreeAsText(1);
+
+    std::ofstream file("renderTree.txt", std::ios::binary);
+    file << std::string(text.data(), text.length());
+    file.close();
 }
 
 class Shell : public blpwtk2::WebViewDelegate {
@@ -1370,6 +1380,9 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
         case IDM_TEST_GET_PICTURE:
             testGetPicture(shell->d_mainWnd, shell->d_webView, 2, 2);
             return 0;
+        case IDM_TEST_DUMP_LAYOUT_TREE:
+            testDumpLayoutTree(shell->d_webView);
+            break;
         case IDM_SPELLCHECK_ENABLED:
             g_spellCheckEnabled = !g_spellCheckEnabled;
             updateSpellCheckConfig(shell->d_profile);
@@ -1608,6 +1621,7 @@ Shell* createShell(blpwtk2::Profile* profile, blpwtk2::WebView* webView)
     AppendMenu(testMenu, MF_STRING, IDM_TEST_LOGICAL_BLUR, L"Test Logical Blur");
     AppendMenu(testMenu, MF_STRING, IDM_TEST_PLAY_KEYBOARD_EVENTS, L"Test Play Keyboard Events");
     AppendMenu(testMenu, MF_STRING, IDM_TEST_GET_PICTURE, L"Test Draw Picture");
+    AppendMenu(testMenu, MF_STRING, IDM_TEST_DUMP_LAYOUT_TREE, L"Dump Layout Tree");
     AppendMenu(menu, MF_POPUP, (UINT_PTR)testMenu, L"&Test");
     HMENU spellCheckMenu = CreateMenu();
     AppendMenu(spellCheckMenu, MF_STRING, IDM_SPELLCHECK_ENABLED, L"Enable &Spellcheck");

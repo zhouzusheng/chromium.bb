@@ -947,6 +947,7 @@ void ReplaceSelectionCommand::doApply()
 
     bool selectionEndWasEndOfParagraph = isEndOfParagraph(visibleEnd);
     bool selectionEndWasEndOfBlock = isEndOfBlock(visibleEnd);
+    bool selectionEndWasStartOfBlock = isStartOfBlock(visibleEnd.next());
     bool selectionStartWasStartOfParagraph = isStartOfParagraph(visibleStart);
 
     Element* enclosingBlockOfVisibleStart = enclosingBlock(visibleStart.deepEquivalent().deprecatedNode());
@@ -984,7 +985,12 @@ void ReplaceSelectionCommand::doApply()
         // If the selection included an entire paragraph, then the previous deleteSelection
         // command would have deleted the end of the paragraph separator.  If we are inserting
         // in nested mode, then we should add back a paragraph separator.
-        if (m_insertNested && selectionStartWasStartOfParagraph && selectionEndWasEndOfParagraph && !selectionEndWasEndOfBlock) {
+        if (m_insertNested && selectionStartWasStartOfParagraph && selectionEndWasEndOfParagraph && !selectionEndWasEndOfBlock &&
+            (selectionEndWasStartOfBlock || !isHTMLBRElement(endingSelection().start().anchorNode())) &&
+                // ^ Do not add new line if the selection ends at the end of a textnode whose nextSibling is <br>
+            visibleEnd.previous().deepEquivalent().containerNode() != visibleEnd.deepEquivalent().containerNode()
+                // ^ Do not add new line if the selection is followed by a '\n'
+            ) {
             insertParagraphSeparator();
             setEndingSelection(endingSelection().visibleStart().previous());
             visibleStart = endingSelection().visibleStart();

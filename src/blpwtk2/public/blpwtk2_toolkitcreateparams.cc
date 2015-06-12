@@ -48,6 +48,8 @@ struct ToolkitCreateParamsImpl {
     std::string d_dictionaryPath;
     std::string d_hostChannel;
     NativeFont d_tooltipFont;
+    NativeColor d_activeTextSearchHighlightColor;
+    NativeColor d_inactiveTextSearchHighlightColor;
     std::string d_headerFooterHTMLContent;
     bool d_printBackgroundGraphics;
     bool d_inProcessRendererDisabled;
@@ -61,6 +63,8 @@ struct ToolkitCreateParamsImpl {
     , d_maxSocketsPerProxy(-1)
     , d_inProcessResourceLoader(0)
     , d_tooltipFont(0)
+    , d_activeTextSearchHighlightColor(RGB(255, 150, 50))  // Orange
+    , d_inactiveTextSearchHighlightColor(RGB(255, 255, 0))  // Yellow
     , d_printBackgroundGraphics(false)
     , d_inProcessRendererDisabled(false)
     {
@@ -185,6 +189,16 @@ void ToolkitCreateParams::setTooltipStyle(NativeFont font)
     d_impl->d_tooltipFont = font;
 }
 
+void ToolkitCreateParams::setActiveTextSearchHighlightColor(NativeColor color)
+{
+    d_impl->d_activeTextSearchHighlightColor = color;
+}
+
+void ToolkitCreateParams::setInactiveTextSearchHighlightColor(NativeColor color)
+{
+    d_impl->d_inactiveTextSearchHighlightColor = color;
+}
+
 void ToolkitCreateParams::setHeaderFooterHTML(const StringRef& htmlContent)
 {
     d_impl->d_headerFooterHTMLContent.assign(htmlContent.data(),
@@ -277,6 +291,16 @@ StringRef ToolkitCreateParams::hostChannel() const
 NativeFont ToolkitCreateParams::tooltipFont() const
 {
     return d_impl->d_tooltipFont;
+}
+
+NativeColor ToolkitCreateParams::activeTextSearchHighlightColor() const
+{
+    return d_impl->d_activeTextSearchHighlightColor;
+}
+
+NativeColor ToolkitCreateParams::inactiveTextSearchHighlightColor() const
+{
+    return d_impl->d_inactiveTextSearchHighlightColor;
 }
 
 StringRef ToolkitCreateParams::headerFooterHTMLContent() const

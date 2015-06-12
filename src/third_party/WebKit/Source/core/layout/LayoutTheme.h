@@ -124,6 +124,8 @@ public:
     Color inactiveListBoxSelectionForegroundColor() const;
 
     // Highlighting colors for TextMatches.
+    static void setTextSearchHighlightColor(int activeR, int activeG, int activeB,
+                                            int inactiveR, int inactiveG, int inactiveB);
     virtual Color platformActiveTextSearchHighlightColor() const;
     virtual Color platformInactiveTextSearchHighlightColor() const;
 

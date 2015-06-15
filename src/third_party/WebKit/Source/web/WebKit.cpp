@@ -38,8 +38,10 @@
 #include "core/Init.h"
 #include "core/animation/AnimationClock.h"
 #include "core/dom/Microtask.h"
+#include "core/frame/DOMTimer.h"
 #include "core/frame/Settings.h"
 #include "core/page/Page.h"
+#include "core/layout/LayoutTheme.h"
 #include "core/workers/WorkerGlobalScopeProxy.h"
 #include "gin/public/v8_platform.h"
 #include "modules/InitModules.h"
@@ -83,10 +85,10 @@ public:
     }
 };
 
-class MainThreadTaskRunner: public WebThread::Task {
-    WTF_MAKE_NONCOPYABLE(MainThreadTaskRunner);
+class MainThreadTaskRunner_private : public WebThread::Task {
+    WTF_MAKE_NONCOPYABLE(MainThreadTaskRunner_private);
 public:
-    MainThreadTaskRunner(WTF::MainThreadFunction* function, void* context)
+    MainThreadTaskRunner_private(WTF::MainThreadFunction* function, void* context)
         : m_function(function)
         , m_context(context) { }
 
@@ -155,7 +157,7 @@ static void cryptographicallyRandomValues(unsigned char* buffer, size_t length)
 
 static void callOnMainThreadFunction(WTF::MainThreadFunction function, void* context)
 {
-    Platform::current()->mainThread()->postTask(FROM_HERE, new MainThreadTaskRunner(function, context));
+    Platform::current()->mainThread()->postTask(FROM_HERE, new MainThreadTaskRunner_private(function, context));
 }
 
 void initializeWithoutV8(Platform* platform)
@@ -269,6 +271,17 @@ void setFontAntialiasingEnabledForTest(bool value)
 bool fontAntialiasingEnabledForTest()
 {
     return LayoutTestSupport::isFontAntialiasingEnabledForTest();
+}
+
+void setTimerHiddenPageAlignmentInterval(double interval)
+{
+    DOMTimer::setHiddenPageAlignmentInterval(interval);
+}
+
+void setTextSearchHighlightColor(int activeR, int activeG, int activeB,
+                                 int inactiveR, int inactiveG, int inactiveB)
+{
+    LayoutTheme::setTextSearchHighlightColor(activeR, activeG, activeB, inactiveR, inactiveG, inactiveB);
 }
 
 void enableLogChannel(const char* name)

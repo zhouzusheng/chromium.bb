@@ -184,6 +184,12 @@ class ScopedCursorHider {
   DISALLOW_COPY_AND_ASSIGN(ScopedCursorHider);
 };
 
+// HACK(SHEZ): Adding this default implementation here so that we don't have to
+// HACK(SHEZ): go modifying all the WindowDelegate implementations.
+bool WindowDelegate::ShouldTryFocusOnMouseDown() const {
+  return true;
+}
+
 Window::Window(WindowDelegate* delegate)
     : host_(NULL),
       type_(ui::wm::WINDOW_TYPE_UNKNOWN),
@@ -669,6 +675,10 @@ Window* Window::GetToplevelWindow() {
       topmost_window_with_delegate = window;
   }
   return topmost_window_with_delegate;
+}
+
+bool Window::ShouldTryFocusOnMouseDown() const {
+  return !delegate_ || delegate_->ShouldTryFocusOnMouseDown();
 }
 
 void Window::Focus() {

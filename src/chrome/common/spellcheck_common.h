@@ -9,6 +9,8 @@
 #include <string>
 #include <vector>
 
+#include "ipc/ipc_platform_file.h"
+
 namespace base {
 class FilePath;
 }
@@ -40,8 +42,17 @@ static const size_t MAX_SYNCABLE_DICTIONARY_WORDS = 1300;
 // dictionary.
 static const size_t MAX_CUSTOM_DICTIONARY_WORD_BYTES = 99;
 
+// Flags for controlling autocorrect behavior.
+enum AutocorrectFlags {
+    AUTOCORRECT_NONE = 0,
+    AUTOCORRECT_WORD_MAP = 1 << 0,
+    AUTOCORRECT_SWAP_ADJACENT_CHARS = 1 << 1,
+};
+
 typedef std::vector<std::string> WordList;
 typedef std::set<std::string> WordSet;
+
+typedef std::pair<IPC::PlatformFileForTransit, std::string> FileLanguagePair;
 
 base::FilePath GetVersionedFileName(const std::string& input_language,
                                     const base::FilePath& dict_dir);

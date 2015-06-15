@@ -16,6 +16,10 @@ class CONTENT_EXPORT ContentMainRunner {
  public:
   virtual ~ContentMainRunner() {}
 
+  // Disables the hack where PeekMessage is used to suppress the
+  // IDC_APPSTARTING cursor from being displayed.
+  static void DisablePeekMessageHack();
+
   // Create a new ContentMainRunner object.
   static ContentMainRunner* Create();
 

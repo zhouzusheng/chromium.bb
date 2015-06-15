@@ -266,6 +266,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   bool IsRenderView() const override;
   bool OnMessageReceived(const IPC::Message& msg) override;
   void GotFocus() override;
+  void LostFocus() override;
   void LostCapture() override;
   void LostMouseLock() override;
   void SetIsLoading(bool is_loading) override;

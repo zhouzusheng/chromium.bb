@@ -44,7 +44,7 @@ namespace blink {
 // if available.
 const float kMaxSizeForEmbeddedBitmap = 24.0f;
 
-void FontPlatformData::setupPaint(SkPaint* paint, float, const Font*) const
+void FontPlatformData::setupPaint(SkPaint* paint, float, const Font* font) const
 {
     const float ts = m_textSize >= 0 ? m_textSize : 12;
     paint->setTextSize(SkFloatToScalar(m_textSize));
@@ -52,7 +52,27 @@ void FontPlatformData::setupPaint(SkPaint* paint, float, const Font*) const
     paint->setFakeBoldText(m_syntheticBold);
     paint->setTextSkewX(m_syntheticItalic ? -SK_Scalar1 / 4 : 0);
 
-    uint32_t textFlags = paintTextFlags();
+    uint32_t textFlags;
+    if (font) {
+        switch (font->fontDescription().fontSmoothing()) {
+        case NoSmoothing:
+            textFlags = 0;
+            break;
+        case Antialiased:
+            textFlags = SkPaint::kAntiAlias_Flag;
+            break;
+        case SubpixelAntialiased:
+            textFlags = (SkPaint::kAntiAlias_Flag | SkPaint::kLCDRenderText_Flag);
+            break;
+        default:
+            textFlags = paintTextFlags();
+            break;
+        }
+    }
+    else {
+        textFlags = paintTextFlags();
+    }
+
     uint32_t flags = paint->getFlags();
     static const uint32_t textFlagsMask = SkPaint::kAntiAlias_Flag |
         SkPaint::kLCDRenderText_Flag |

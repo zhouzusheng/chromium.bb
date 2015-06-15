@@ -3568,12 +3568,12 @@ LayoutRect LayoutBlock::localCaretRect(InlineBox* inlineBox, int caretOffset, La
             margin = isAfterLastChild ? box->marginRight() : box->marginLeft();
         }
         else if (child->isText()) {
-            inlineBox = isAfterLastChild ? toRenderText(child)->lastTextBox()
-                                         : toRenderText(child)->firstTextBox();
+            inlineBox = isAfterLastChild ? toLayoutText(child)->lastTextBox()
+                                         : toLayoutText(child)->firstTextBox();
         }
-        else if (child->isRenderInline()) {
-            inlineBox = isAfterLastChild ? toRenderInline(child)->lastLineBox()
-                                         : toRenderInline(child)->firstLineBox();
+        else if (child->isLayoutInline()) {
+            inlineBox = isAfterLastChild ? toLayoutInline(child)->lastLineBox()
+                                         : toLayoutInline(child)->firstLineBox();
         }
 
         if (!inlineBox) {

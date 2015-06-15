@@ -117,14 +117,23 @@ public:
     };
 
     struct FamilyDescription {
-        FamilyDescription(GenericFamilyType genericFamily) : genericFamily(genericFamily) { }
+        FamilyDescription(GenericFamilyType genericFamily)
+            : genericFamily(genericFamily)
+            , boldOverride(false)
+            , italicOverride(false)
+        {
+        }
         FamilyDescription(GenericFamilyType genericFamily, const FontFamily& family)
             : genericFamily(genericFamily)
             , family(family)
+            , boldOverride(false)
+            , italicOverride(false)
         {
         }
         GenericFamilyType genericFamily;
         FontFamily family;
+        bool boldOverride;
+        bool italicOverride;
     };
 
     const FontFamily& family() const { return m_familyList; }

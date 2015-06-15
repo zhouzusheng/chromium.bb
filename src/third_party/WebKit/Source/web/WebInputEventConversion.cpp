@@ -320,6 +320,7 @@ PlatformKeyboardEventBuilder::PlatformKeyboardEventBuilder(const WebKeyboardEven
     m_nativeVirtualKeyCode = e.nativeKeyCode;
     m_isKeypad = (e.modifiers & WebInputEvent::IsKeyPad);
     m_isSystemKey = e.isSystemKey;
+    m_bbIsNumLock = e.bbIsNumLock;
     m_code = Platform::current()->domCodeStringFromEnum(e.domCode);
 
     m_modifiers = toPlatformEventModifiers(e.modifiers);

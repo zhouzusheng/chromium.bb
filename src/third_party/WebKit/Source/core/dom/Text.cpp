@@ -309,7 +309,7 @@ bool Text::textRendererIsNeeded(const ComputedStyle& style, const LayoutObject& 
     if (!canHaveWhitespaceChildren(parent))
         return false;
 
-    if (style.preserveNewline()) // pre/pre-wrap/pre-line always make renderers.
+    if (style.preserveNewline()) // pre/pre-wrap/-bb-pre-wrap-text/pre-line always make renderers.
         return true;
 
     // childNeedsDistributionRecalc() here is rare, only happens JS calling surroundContents() etc. from DOMNodeInsertedIntoDocument etc.

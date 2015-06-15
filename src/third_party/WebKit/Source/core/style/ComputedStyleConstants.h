@@ -303,7 +303,7 @@ enum EAnimPlayState {
 };
 
 enum EWhiteSpace {
-    NORMAL, PRE, PRE_WRAP, PRE_LINE, NOWRAP, KHTML_NOWRAP
+    NORMAL, PRE, PRE_WRAP, BB_PRE_WRAP_TEXT, PRE_LINE, NOWRAP, KHTML_NOWRAP
 };
 
 // The order of this enum must match the order of the text align values in CSSValueKeywords.in.

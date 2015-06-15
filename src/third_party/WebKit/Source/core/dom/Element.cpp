@@ -75,6 +75,8 @@
 #include "core/dom/shadow/InsertionPoint.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/FrameSelection.h"
+#include "core/editing/SpellChecker.h"
+#include "core/editing/SpellCheckRequester.h"
 #include "core/editing/htmlediting.h"
 #include "core/editing/iterators/TextIterator.h"
 #include "core/editing/markup.h"
@@ -102,6 +104,7 @@
 #include "core/html/HTMLPlugInElement.h"
 #include "core/html/HTMLTableRowsCollection.h"
 #include "core/html/HTMLTemplateElement.h"
+#include "core/html/HTMLTextFormControlElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/layout/LayoutTextFragment.h"
@@ -947,6 +950,93 @@ void Element::scrollFrameTo(const ScrollToOptions& scrollToOptions)
     if (scrollToOptions.hasTop())
         scaledTop = scrollToOptions.top() * frame->pageZoomFactor();
     view->setScrollPosition(DoublePoint(scaledLeft, scaledTop), scrollBehavior);
+}
+
+void Element::bbRequestSpellCheck()
+{
+    if (!document().frame() ||
+        !document().frame()->spellChecker().isContinuousSpellCheckingEnabled()) {
+        return;
+    }
+
+    SpellCheckRequester& spellCheckRequester = document().frame()->spellChecker().spellCheckRequester();
+    Element* element = this;
+    Node* stayWithin = this;
+    while (element) {
+        if (element->isFrameOwnerElement()) {
+            Document* contentDocument = toHTMLFrameOwnerElement(element)->contentDocument();
+            if (contentDocument && contentDocument->documentElement()) {
+                contentDocument->documentElement()->bbRequestSpellCheck();
+            }
+            element = ElementTraversal::nextSkippingChildren(*element, stayWithin);
+        }
+        else if (element->isTextFormControl()) {
+            HTMLElement* innerElement = toHTMLTextFormControlElement(element)->innerEditorElement();
+            if (innerElement && innerElement->hasEditableStyle() && innerElement->isSpellCheckingEnabled()) {
+                VisiblePosition startPos(firstPositionInNode(innerElement));
+                VisiblePosition endPos(lastPositionInNode(innerElement));
+                RefPtr<Range> rangeToCheck = Range::create(innerElement->document(), startPos.deepEquivalent(), endPos.deepEquivalent());
+                spellCheckRequester.requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));
+            }
+            element = ElementTraversal::nextSkippingChildren(*element, stayWithin);
+        }
+        else if (element->hasEditableStyle() && element->isSpellCheckingEnabled()) {
+            VisiblePosition startPos(firstPositionInNode(element));
+            VisiblePosition endPos(lastPositionInNode(element));
+            RefPtr<Range> rangeToCheck = Range::create(element->document(), startPos.deepEquivalent(), endPos.deepEquivalent());
+            spellCheckRequester.requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));
+            element = ElementTraversal::nextSkippingChildren(*element, stayWithin);
+        }
+        else {
+            element = ElementTraversal::next(*element, stayWithin);
+        }
+    }
+}
+
+int Element::bbScrollLeftNoZoomAdjust()
+{
+    document().updateLayoutIgnorePendingStylesheets();
+    if (LayoutBox* lb = layoutBox())
+        return lb->scrollLeft();
+    return 0;
+}
+
+int Element::bbScrollTopNoZoomAdjust()
+{
+    document().updateLayoutIgnorePendingStylesheets();
+    if (LayoutBox* lb = layoutBox())
+        return lb->scrollTop();
+    return 0;
+}
+
+void Element::setBbScrollLeftNoZoomAdjust(int newLeft)
+{
+    document().updateLayoutIgnorePendingStylesheets();
+    if (LayoutBox* lb = layoutBox())
+        lb->setScrollLeft(newLeft);
+}
+
+void Element::setBbScrollTopNoZoomAdjust(int newTop)
+{
+    document().updateLayoutIgnorePendingStylesheets();
+    if (LayoutBox* lb = layoutBox())
+        lb->setScrollTop(newTop);
+}
+
+int Element::bbScrollWidthNoZoomAdjust()
+{
+    document().updateLayoutIgnorePendingStylesheets();
+    if (LayoutBox* lb = layoutBox())
+        return lb->scrollWidth();
+    return 0;
+}
+
+int Element::bbScrollHeightNoZoomAdjust()
+{
+    document().updateLayoutIgnorePendingStylesheets();
+    if (LayoutBox* lb = layoutBox())
+        return lb->scrollHeight();
+    return 0;
 }
 
 IntRect Element::boundsInViewportSpace()

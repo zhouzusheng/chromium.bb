@@ -43,6 +43,7 @@ public:
         , m_autoRepeat(false)
         , m_isKeypad(false)
         , m_isSystemKey(false)
+        , m_bbIsNumLock(false)
     {
     }
 
@@ -57,6 +58,7 @@ public:
         , m_autoRepeat(isAutoRepeat)
         , m_isKeypad(isKeypad)
         , m_isSystemKey(isSystemKey)
+        , m_bbIsNumLock(false)
     {
     }
 
@@ -88,6 +90,7 @@ public:
     bool isAutoRepeat() const { return m_autoRepeat; }
     bool isKeypad() const { return m_isKeypad; }
     bool isSystemKey() const { return m_isSystemKey; }
+    bool bbIsNumLock() const { return m_bbIsNumLock; }
 
     PLATFORM_EXPORT static bool currentCapsLockState();
     PLATFORM_EXPORT static void getCurrentModifierState(bool& shiftKey, bool& ctrlKey, bool& altKey, bool& metaKey);
@@ -102,6 +105,7 @@ protected:
     bool m_autoRepeat;
     bool m_isKeypad;
     bool m_isSystemKey;
+    bool m_bbIsNumLock;
 };
 
 } // namespace blink

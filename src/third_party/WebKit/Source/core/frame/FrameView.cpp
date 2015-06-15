@@ -2652,7 +2652,7 @@ void FrameView::invalidateTreeIfNeededRecursive(bool cachedOffsetsEnabled)
 
         bool childCachedOffsetsEnabled = cachedOffsetsEnabled;
         if (childCachedOffsetsEnabled) {
-            for (const LayoutObject* current = child->ownerRenderer(); current; current = current->parent()) {
+            for (const LayoutObject* current = child->ownerLayoutObject(); current; current = current->parent()) {
                 if (current->hasLayer() && !current->supportsPaintInvalidationStateCachedOffsets()) {
                     childCachedOffsetsEnabled = false;
                     break;

@@ -42,7 +42,7 @@ class ContextMenuClientImpl final : public ContextMenuClient {
 public:
     explicit ContextMenuClientImpl(WebViewImpl* webView) : m_webView(webView) { }
     virtual ~ContextMenuClientImpl() {}
-    virtual void showContextMenu(const ContextMenu*) override;
+    virtual void showContextMenu(const ContextMenu*, bool fromContextMenuKey) override;
     virtual void clearContextMenu() override;
 private:
     void populateCustomMenuItems(const ContextMenu*, WebContextMenuData*);

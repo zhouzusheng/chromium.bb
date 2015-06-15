@@ -22,6 +22,7 @@
 #ifndef TextBreakIterator_h
 #define TextBreakIterator_h
 
+#include "core/layout/style/LayoutStyleConstants.h"
 #include "platform/PlatformExport.h"
 #include "wtf/text/AtomicString.h"
 #include "wtf/unicode/Unicode.h"
@@ -162,18 +163,18 @@ public:
         m_cachedPriorContextLength = 0;
     }
 
-    inline bool isBreakable(int pos, int& nextBreakable, LineBreakType lineBreakType = LineBreakType::Normal)
+    inline bool isBreakable(int pos, int& nextBreakable, EWordBreak wordBreak, LineBreakType lineBreakType = LineBreakType::Normal)
     {
         if (pos > nextBreakable) {
             nextBreakable = lineBreakType == LineBreakType::BreakAll
                 ? nextBreakablePositionBreakAll(pos)
-                : nextBreakablePositionIgnoringNBSP(pos);
+                : nextBreakablePositionIgnoringNBSP(pos, wordBreak);
         }
         return pos == nextBreakable;
     }
 
 private:
-    int nextBreakablePositionIgnoringNBSP(int pos);
+    int nextBreakablePositionIgnoringNBSP(int pos, EWordBreak wordBreak);
     int nextBreakablePositionBreakAll(int pos);
 
     static const unsigned priorContextCapacity = 2;

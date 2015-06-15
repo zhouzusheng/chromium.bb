@@ -13,9 +13,9 @@
 
 namespace blink {
 
-PaintInvalidationState::PaintInvalidationState(const LayoutView& layoutView, Vector<LayoutObject*>& pendingDelayedPaintInvalidations)
+PaintInvalidationState::PaintInvalidationState(const LayoutView& layoutView, Vector<LayoutObject*>& pendingDelayedPaintInvalidations, bool cachedOffsetsEnabled)
     : m_clipped(false)
-    , m_cachedOffsetsEnabled(true)
+    , m_cachedOffsetsEnabled(cachedOffsetsEnabled)
     , m_forceCheckForPaintInvalidation(false)
     , m_paintInvalidationContainer(*layoutView.containerForPaintInvalidation())
     , m_pendingDelayedPaintInvalidations(pendingDelayedPaintInvalidations)

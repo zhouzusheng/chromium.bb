@@ -996,46 +996,46 @@ void Element::bbRequestSpellCheck()
 int Element::bbScrollLeftNoZoomAdjust()
 {
     document().updateLayoutIgnorePendingStylesheets();
-    if (RenderBox* rend = renderBox())
-        return rend->scrollLeft();
+    if (LayoutBox* lb = layoutBox())
+        return lb->scrollLeft();
     return 0;
 }
 
 int Element::bbScrollTopNoZoomAdjust()
 {
     document().updateLayoutIgnorePendingStylesheets();
-    if (RenderBox* rend = renderBox())
-        return rend->scrollTop();
+    if (LayoutBox* lb = layoutBox())
+        return lb->scrollTop();
     return 0;
 }
 
 void Element::setBbScrollLeftNoZoomAdjust(int newLeft)
 {
     document().updateLayoutIgnorePendingStylesheets();
-    if (RenderBox* rend = renderBox())
-        rend->setScrollLeft(newLeft);
+    if (LayoutBox* lb = layoutBox())
+        lb->setScrollLeft(newLeft);
 }
 
 void Element::setBbScrollTopNoZoomAdjust(int newTop)
 {
     document().updateLayoutIgnorePendingStylesheets();
-    if (RenderBox* rend = renderBox())
-        rend->setScrollTop(newTop);
+    if (LayoutBox* lb = layoutBox())
+        lb->setScrollTop(newTop);
 }
 
 int Element::bbScrollWidthNoZoomAdjust()
 {
     document().updateLayoutIgnorePendingStylesheets();
-    if (RenderBox* rend = renderBox())
-        return rend->scrollWidth();
+    if (LayoutBox* lb = layoutBox())
+        return lb->scrollWidth();
     return 0;
 }
 
 int Element::bbScrollHeightNoZoomAdjust()
 {
     document().updateLayoutIgnorePendingStylesheets();
-    if (RenderBox* rend = renderBox())
-        return rend->scrollHeight();
+    if (LayoutBox* lb = layoutBox())
+        return lb->scrollHeight();
     return 0;
 }
 

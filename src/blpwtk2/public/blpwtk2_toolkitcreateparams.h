@@ -153,6 +153,16 @@ class ToolkitCreateParams {
 
     BLPWTK2_EXPORT void setTooltipStyle(NativeFont font);
 
+    // Set the highlight color of the active item in text searches.  The default
+    // color is orange.  Note that this only works for in-process renderers
+    // currently.
+    BLPWTK2_EXPORT void setActiveTextSearchHighlightColor(NativeColor color);
+
+    // Set the highlight color for inactive items in text searches.  The default
+    // color is yellow.  Note that this only works for in-process renderers
+    // currently.
+    BLPWTK2_EXPORT void setInactiveTextSearchHighlightColor(NativeColor color);
+
     // This method is used to set the HTML file used to format header and
     // footer of printed pages.
     BLPWTK2_EXPORT void setHeaderFooterHTML(const StringRef& htmlContent);
@@ -177,6 +187,8 @@ class ToolkitCreateParams {
     StringRef dictionaryPath() const;
     StringRef hostChannel() const;
     NativeFont tooltipFont() const;
+    NativeColor activeTextSearchHighlightColor() const;
+    NativeColor inactiveTextSearchHighlightColor() const;
     StringRef headerFooterHTMLContent() const;
     bool isPrintBackgroundGraphicsEnabled() const;
 

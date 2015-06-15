@@ -38,6 +38,7 @@
 #include <net/http/http_network_session.h>
 #include <net/socket/client_socket_pool_manager.h>
 #include <printing/print_settings.h>
+#include <third_party/WebKit/public/web/WebKit.h>
 #include <ui/views/corewm/tooltip_win.h>
 
 namespace blpwtk2 {
@@ -134,6 +135,11 @@ Toolkit* ToolkitFactory::create(const ToolkitCreateParams& params)
     Statics::isInProcessRendererDisabled = params.isInProcessRendererDisabled();
     Statics::channelErrorHandler = params.channelErrorHandler();
     content::DisableDWriteFactoryPatching();
+
+    NativeColor activeSearchColor = params.activeTextSearchHighlightColor();
+    NativeColor inactiveSearchColor = params.inactiveTextSearchHighlightColor();
+    blink::setTextSearchHighlightColor(GetRValue(activeSearchColor), GetGValue(activeSearchColor), GetBValue(activeSearchColor),
+                                       GetRValue(inactiveSearchColor), GetGValue(inactiveSearchColor), GetBValue(inactiveSearchColor));
 
     g_logMessageHandler = params.logMessageHandler();
     if (g_logMessageHandler) {

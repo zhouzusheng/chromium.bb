@@ -44,6 +44,7 @@ typedef void* NativeViewForTransit;
 typedef MSG NativeMsg;
 typedef HDC NativeDeviceContext;
 typedef RECT NativeRect;
+typedef COLORREF NativeColor;
 
 }  // close namespace blpwtk2
 

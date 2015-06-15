@@ -72,7 +72,7 @@ static Node* findCommonIndentationBlock(Node* firstSibling, Node* lastSibling, N
 static bool hasVisibleChildren(Node* node)
 {
     for (Node* child = node->firstChild(); child; child = child->nextSibling()) {
-        if (child->renderer())
+        if (child->layoutObject())
             return true;
     }
     return false;

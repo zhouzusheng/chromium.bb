@@ -1547,6 +1547,10 @@ Color LayoutObject::selectionBackgroundColor() const
     if (!isSelectable())
         return Color::transparent;
 
+    // anonymous blocks don't have pseudo styles
+    if (isAnonymous() && parent())
+        return parent()->selectionBackgroundColor();
+
     if (RefPtr<ComputedStyle> pseudoStyle = getUncachedPseudoStyleFromParentOrShadowHost())
         return resolveColor(*pseudoStyle, CSSPropertyBackgroundColor).blendWithWhite();
     return frame()->selection().isFocusedAndActive() ?
@@ -1560,6 +1564,10 @@ Color LayoutObject::selectionColor(int colorProperty) const
     // don't override the foreground color with the selection foreground color.
     if (!isSelectable() || (frame()->view()->paintBehavior() & PaintBehaviorSelectionOnly))
         return resolveColor(colorProperty);
+
+    // anonymous blocks don't have pseudo styles
+    if (isAnonymous() && parent())
+        return parent()->selectionColor(colorProperty);
 
     if (RefPtr<ComputedStyle> pseudoStyle = getUncachedPseudoStyleFromParentOrShadowHost())
         return resolveColor(*pseudoStyle, colorProperty);

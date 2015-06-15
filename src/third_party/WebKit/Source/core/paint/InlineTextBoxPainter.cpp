@@ -5,6 +5,7 @@
 #include "config.h"
 #include "core/paint/InlineTextBoxPainter.h"
 
+#include "core/css/parser/CSSPropertyParser.h"
 #include "core/dom/DocumentMarkerController.h"
 #include "core/dom/RenderedDocumentMarker.h"
 #include "core/editing/CompositionUnderline.h"
@@ -429,7 +430,32 @@ void InlineTextBoxPainter::paintDocumentMarker(GraphicsContext* pt, const FloatP
         // In larger fonts, though, place the underline up near the baseline to prevent a big gap.
         underlineOffset = baseline + 2;
     }
-    pt->drawLineForDocumentMarker(FloatPoint(boxOrigin.x() + start, boxOrigin.y() + underlineOffset), width, lineStyleForMarkerType(marker->type()));
+
+    Color markerColor(255,0,0,255);
+    if (m_inlineTextBox.renderer().node()) {
+        const Element *element = m_inlineTextBox.renderer().node()->rootEditableElement();
+        if (element && element->hasAttributes()) {
+            AtomicString colorAttr = nullAtom;
+
+            if (colorAttr == nullAtom && marker->type() & DocumentMarker::Spelling) {
+                colorAttr = element->getAttribute(HTMLNames::data_marker_color_spellingAttr);
+            }
+            if (colorAttr == nullAtom && marker->type() & DocumentMarker::Grammar) {
+                colorAttr = element->getAttribute(HTMLNames::data_marker_color_grammarAttr);
+            }
+            if (colorAttr == nullAtom) {
+                colorAttr = element->getAttribute(HTMLNames::data_marker_color_defaultAttr);
+            }
+
+            if (colorAttr != nullAtom) {
+                RGBA32 rgba;
+                if (CSSPropertyParser::fastParseColor(rgba, colorAttr, false)) {
+                    markerColor.setRGB(rgba);
+                }
+            }
+        }
+    }
+    pt->drawLineForDocumentMarker(FloatPoint(boxOrigin.x() + start, boxOrigin.y() + underlineOffset), width, markerColor);
 }
 
 template <InlineTextBoxPainter::PaintOptions options>

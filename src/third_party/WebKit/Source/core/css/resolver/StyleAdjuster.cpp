@@ -246,9 +246,9 @@ void StyleAdjuster::adjustComputedStyle(ComputedStyle& style, const ComputedStyl
     if (e && e->hasTagName(htmlTag)) {
         if (e->document().frame() &&
             e->document().frame()->deprecatedLocalOwner() &&
-            e->document().frame()->deprecatedLocalOwner()->renderer()) {
+            e->document().frame()->deprecatedLocalOwner()->layoutObject()) {
             float ownerEffectiveZoom
-                = e->document().frame()->deprecatedLocalOwner()->renderer()->style()->effectiveZoom();
+                = e->document().frame()->deprecatedLocalOwner()->layoutObject()->style()->effectiveZoom();
             float childZoom = style.zoom();
             style.setEffectiveZoom(ownerEffectiveZoom * childZoom);
         }
@@ -258,11 +258,11 @@ void StyleAdjuster::adjustComputedStyle(ComputedStyle& style, const ComputedStyl
         HTMLIFrameElement* iframe = static_cast<HTMLIFrameElement*>(e);
         if (iframe->contentDocument() && iframe->contentDocument()->body() &&
             iframe->contentDocument()->body()->parentNode() &&
-            iframe->contentDocument()->body()->parentNode()->renderer()) {
+            iframe->contentDocument()->body()->parentNode()->layoutObject()) {
             Node* child = iframe->contentDocument()->body()->parentNode();
             float ownerEffectiveZoom = style.effectiveZoom();
-            float childZoom = child->renderer()->style()->zoom();
-            float childEffectiveZoom = child->renderer()->style()->effectiveZoom();
+            float childZoom = child->layoutObject()->style()->zoom();
+            float childEffectiveZoom = child->layoutObject()->style()->effectiveZoom();
             if (childEffectiveZoom != ownerEffectiveZoom * childZoom) {
                 child->setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::Zoom));
             }

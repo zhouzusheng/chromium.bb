@@ -42,7 +42,7 @@ private:
     template <PaintOptions>
     void paintSelection(GraphicsContext*, const FloatRect& boxRect, const ComputedStyle&, const Font&, Color textColor, LayoutTextCombine* = nullptr);
     void paintDecoration(GraphicsContext*, const FloatPoint& boxOrigin, TextDecoration);
-    void paintCompositionUnderline(GraphicsContext*, const FloatPoint& boxOrigin, const CompositionUnderline&);
+    void paintCompositionUnderline(GraphicsContext*, const FloatPoint& boxOrigin, const CompositionUnderline&, const Color& color);
     unsigned underlinePaintStart(const CompositionUnderline&);
     unsigned underlinePaintEnd(const CompositionUnderline&);
 

@@ -383,6 +383,7 @@ y animatable, svg, converter=convertLength
 -webkit-user-drag
 -webkit-user-modify inherited
 -webkit-user-select inherited
+-bb-rubberbandable inherited, name_for_methods=Rubberbandable
 white-space inherited
 widows animatable, inherited, type_name=short, custom_all
 width animatable, initial=initialSize, converter=convertLengthSizing

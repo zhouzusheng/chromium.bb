@@ -3016,11 +3016,19 @@ void LayoutBlockFlow::moveChildrenTo(LayoutBoxModelObject* toBoxModelObject, Lay
 LayoutUnit LayoutBlockFlow::logicalLeftSelectionOffset(const LayoutBlock* rootBlock, LayoutUnit position) const
 {
     LayoutUnit logicalLeft = logicalLeftOffsetForLine(position, false);
-    if (logicalLeft == logicalLeftOffsetForContent())
-        return LayoutBlock::logicalLeftSelectionOffset(rootBlock, position);
+    if (logicalLeft == logicalLeftOffsetForContent()) {
+        logicalLeft = LayoutBlock::logicalLeftSelectionOffset(rootBlock, position);
+        if (isListItem() && style()->isLeftToRightDirection()) {
+            logicalLeft += additionalMarginStart();
+        }
+        return logicalLeft;
+    }
 
     const LayoutBlock* cb = this;
     while (cb != rootBlock) {
+        if (cb->isListItem() && cb->style()->isLeftToRightDirection()) {
+            logicalLeft += cb->additionalMarginStart();
+        }
         logicalLeft += cb->logicalLeft();
         cb = cb->containingBlock();
     }
@@ -3030,11 +3038,19 @@ LayoutUnit LayoutBlockFlow::logicalLeftSelectionOffset(const LayoutBlock* rootBl
 LayoutUnit LayoutBlockFlow::logicalRightSelectionOffset(const LayoutBlock* rootBlock, LayoutUnit position) const
 {
     LayoutUnit logicalRight = logicalRightOffsetForLine(position, false);
-    if (logicalRight == logicalRightOffsetForContent())
-        return LayoutBlock::logicalRightSelectionOffset(rootBlock, position);
+    if (logicalRight == logicalRightOffsetForContent()) {
+        logicalRight = LayoutBlock::logicalRightSelectionOffset(rootBlock, position);
+        if (isListItem() && !style()->isLeftToRightDirection()) {
+            logicalRight -= additionalMarginStart();
+        }
+        return logicalRight;
+    }
 
     const LayoutBlock* cb = this;
     while (cb != rootBlock) {
+        if (cb->isListItem() && !cb->style()->isLeftToRightDirection()) {
+            logicalRight -= cb->additionalMarginStart();
+        }
         logicalRight += cb->logicalLeft();
         cb = cb->containingBlock();
     }

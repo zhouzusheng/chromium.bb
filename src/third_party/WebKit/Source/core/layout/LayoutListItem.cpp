@@ -265,6 +265,14 @@ static LayoutObject* firstNonMarkerChild(LayoutObject* parent)
     return result;
 }
 
+static LayoutObject* firstRenderText(LayoutObject* curr, LayoutObject* stayWithin)
+{
+    while (curr && !curr->isText()) {
+        curr = curr->nextInPreOrder(stayWithin);
+    }
+    return curr;
+}
+
 void LayoutListItem::updateMarkerLocationAndInvalidateWidth()
 {
     ASSERT(m_marker);
@@ -309,9 +317,20 @@ bool LayoutListItem::updateMarkerLocation()
             lineBoxParent = this;
     }
 
-    if (markerParent != lineBoxParent) {
+    bool fontsAreDifferent = false;
+    LayoutObject* firstNonMarker = firstNonMarkerChild(lineBoxParent);
+    LayoutObject* firstText = firstRenderText(firstNonMarker, lineBoxParent);
+    if (firstText && m_marker->style()->fontDescription() != firstText->style()->fontDescription()) {
+        fontsAreDifferent = true;
+    }
+
+    if (markerParent != lineBoxParent || fontsAreDifferent) {
         m_marker->remove();
-        lineBoxParent->addChild(m_marker, firstNonMarkerChild(lineBoxParent));
+        if (fontsAreDifferent) {
+            m_marker->style()->setFontDescription(firstText->style()->fontDescription());
+            m_marker->style()->font().update(m_marker->style()->font().fontSelector());
+        }
+        lineBoxParent->addChild(m_marker, firstNonMarker);
         m_marker->updateMarginsAndContent();
         // If markerParent is an anonymous block with no children, destroy it.
         if (markerParent && markerParent->isAnonymousBlock() && !toLayoutBlock(markerParent)->firstChild() && !toLayoutBlock(markerParent)->continuation())
@@ -320,6 +339,15 @@ bool LayoutListItem::updateMarkerLocation()
     }
 
     return false;
+}
+
+LayoutUnit LayoutListItem::additionalMarginStart() const
+{
+    if (!m_marker || m_marker->isInside())
+        return LayoutUnit();
+
+    const_cast<LayoutListItem*>(this)->updateMarkerLocationAndInvalidateWidth();
+    return m_marker->minPreferredLogicalWidth();
 }
 
 void LayoutListItem::layout()
@@ -357,7 +385,7 @@ void LayoutListItem::positionListMarker()
         }
 
         bool adjustOverflow = false;
-        LayoutUnit markerLogicalLeft;
+        LayoutUnit markerLogicalLeft = markerOldLogicalLeft;
         RootInlineBox& root = m_marker->inlineBoxWrapper()->root();
         bool hitSelfPaintingLayer = false;
 
@@ -366,9 +394,6 @@ void LayoutListItem::positionListMarker()
 
         // FIXME: Need to account for relative positioning in the layout overflow.
         if (style()->isLeftToRightDirection()) {
-            LayoutUnit leftLineOffset = logicalLeftOffsetForLine(blockOffset, logicalLeftOffsetForLine(blockOffset, false), false);
-            markerLogicalLeft = leftLineOffset - lineOffset - paddingStart() - borderStart() + m_marker->marginStart();
-            m_marker->inlineBoxWrapper()->adjustLineDirectionPosition((markerLogicalLeft - markerOldLogicalLeft).toFloat());
             for (InlineFlowBox* box = m_marker->inlineBoxWrapper()->parent(); box; box = box->parent()) {
                 LayoutRect newLogicalVisualOverflowRect = box->logicalVisualOverflowRect(lineTop, lineBottom);
                 LayoutRect newLogicalLayoutOverflowRect = box->logicalLayoutOverflowRect(lineTop, lineBottom);
@@ -389,9 +414,6 @@ void LayoutListItem::positionListMarker()
                     hitSelfPaintingLayer = true;
             }
         } else {
-            LayoutUnit rightLineOffset = logicalRightOffsetForLine(blockOffset, logicalRightOffsetForLine(blockOffset, false), false);
-            markerLogicalLeft = rightLineOffset - lineOffset + paddingStart() + borderStart() + m_marker->marginEnd();
-            m_marker->inlineBoxWrapper()->adjustLineDirectionPosition((markerLogicalLeft - markerOldLogicalLeft).toFloat());
             for (InlineFlowBox* box = m_marker->inlineBoxWrapper()->parent(); box; box = box->parent()) {
                 LayoutRect newLogicalVisualOverflowRect = box->logicalVisualOverflowRect(lineTop, lineBottom);
                 LayoutRect newLogicalLayoutOverflowRect = box->logicalLayoutOverflowRect(lineTop, lineBottom);

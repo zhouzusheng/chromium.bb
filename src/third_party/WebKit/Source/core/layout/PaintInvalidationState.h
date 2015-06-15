@@ -22,7 +22,7 @@ public:
     PaintInvalidationState(PaintInvalidationState& next, LayoutBoxModelObject& renderer, const LayoutBoxModelObject& paintInvalidationContainer);
     PaintInvalidationState(PaintInvalidationState& next, const LayoutSVGModelObject& renderer);
 
-    explicit PaintInvalidationState(const LayoutView&, Vector<LayoutObject*>& pendingDelayedPaintInvalidations);
+    explicit PaintInvalidationState(const LayoutView&, Vector<LayoutObject*>& pendingDelayedPaintInvalidations, bool);
 
     const LayoutRect& clipRect() const { return m_clipRect; }
     const LayoutSize& paintOffset() const { return m_paintOffset; }

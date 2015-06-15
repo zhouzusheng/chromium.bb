@@ -230,7 +230,7 @@ public:
     void updateLayoutAndStyleForPainting();
     void updateLayoutAndStyleIfNeededRecursive();
 
-    void invalidateTreeIfNeededRecursive();
+    void invalidateTreeIfNeededRecursive(bool cachedOffsetsEnabled);
     bool invalidateViewportConstrainedObjects();
 
     void incrementVisuallyNonEmptyCharacterCount(unsigned);
@@ -652,7 +652,7 @@ private:
     void scheduleOrPerformPostLayoutTasks();
     void performPostLayoutTasks();
 
-    void invalidateTreeIfNeeded(Vector<LayoutObject*>& pendingDelayedPaintInvalidations);
+    void invalidateTreeIfNeeded(Vector<LayoutObject*>& pendingDelayedPaintInvalidations, bool cachedOffsetsEnabled);
 
     DocumentLifecycle& lifecycle() const;
 

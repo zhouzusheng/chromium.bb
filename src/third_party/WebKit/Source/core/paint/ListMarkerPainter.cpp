@@ -189,7 +189,7 @@ void ListMarkerPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& pai
 
         const UChar suffix = m_layoutListMarker.listMarkerSuffix(type, m_layoutListMarker.listItem()->value());
         UChar suffixStr[1] = { suffix };
-        TextRun suffixRun = constructTextRun(&m_layoutListMarker, font, suffixStr, 2, m_layoutListMarker.styleRef(), m_layoutListMarker.style()->direction());
+        TextRun suffixRun = constructTextRun(&m_layoutListMarker, font, suffixStr, 1, m_layoutListMarker.styleRef(), m_layoutListMarker.style()->direction());
         TextRunPaintInfo suffixRunInfo(suffixRun);
         suffixRunInfo.bounds = marker;
 

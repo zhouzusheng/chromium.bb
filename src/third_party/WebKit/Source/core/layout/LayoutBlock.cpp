@@ -3090,7 +3090,7 @@ void LayoutBlock::computeBlockPreferredLogicalWidths(LayoutUnit& minLogicalWidth
             marginEnd += endMarginLength.value();
         // SHEZ: additionalMarginStart is treated as fixed margin
         if (child->isBox())
-            marginStart += toRenderBox(child)->additionalMarginStart();
+            marginStart += toLayoutBox(child)->additionalMarginStart();
         margin = marginStart + marginEnd;
 
         LayoutUnit childMinPreferredLogicalWidth, childMaxPreferredLogicalWidth;

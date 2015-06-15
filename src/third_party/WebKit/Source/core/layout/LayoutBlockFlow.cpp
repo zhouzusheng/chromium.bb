@@ -3039,7 +3039,7 @@ LayoutUnit LayoutBlockFlow::logicalRightSelectionOffset(const LayoutBlock* rootB
 {
     LayoutUnit logicalRight = logicalRightOffsetForLine(position, false);
     if (logicalRight == logicalRightOffsetForContent()) {
-        logicalRightOff = LayoutBlock::logicalRightSelectionOffset(rootBlock, position);
+        logicalRight = LayoutBlock::logicalRightSelectionOffset(rootBlock, position);
         if (isListItem() && !style()->isLeftToRightDirection()) {
             logicalRight -= additionalMarginStart();
         }

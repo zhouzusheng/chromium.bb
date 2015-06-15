@@ -2923,13 +2923,13 @@ void LayoutBlockFlow::getLineSelectionLogicalLeftAndRight(const LayoutBlock *roo
     if (ltr) {
         if (containsStartOfSelection) {
             InlineBox* firstBox = line->firstSelectedBox();
-            LayoutRect firstBoxSelRect = firstBox ? firstBox->renderer().selectionRectForPaintInvalidation(rootBlock) : LayoutRect();
+            LayoutRect firstBoxSelRect = firstBox ? firstBox->layoutObject().selectionRectForPaintInvalidation(rootBlock) : LayoutRect();
             if (!firstBoxSelRect.isEmpty())
                 logicalLeft = std::min(logicalLeft, firstBoxSelRect.x());
         }
         if (containsEndOfSelection) {
             InlineBox* lastBox = line->lastSelectedBox();
-            LayoutRect lastBoxSelRect = lastBox ? lastBox->renderer().selectionRectForPaintInvalidation(rootBlock) : LayoutRect();
+            LayoutRect lastBoxSelRect = lastBox ? lastBox->layoutObject().selectionRectForPaintInvalidation(rootBlock) : LayoutRect();
             if (!lastBoxSelRect.isEmpty())
                 logicalRight = std::min(logicalRight, lastBoxSelRect.maxX());
         }
@@ -2937,13 +2937,13 @@ void LayoutBlockFlow::getLineSelectionLogicalLeftAndRight(const LayoutBlock *roo
     else {
         if (containsStartOfSelection) {
             InlineBox* lastBox = line->lastSelectedBox();
-            LayoutRect lastBoxSelRect = lastBox ? lastBox->renderer().selectionRectForPaintInvalidation(rootBlock) : LayoutRect();
+            LayoutRect lastBoxSelRect = lastBox ? lastBox->layoutObject().selectionRectForPaintInvalidation(rootBlock) : LayoutRect();
             if (!lastBoxSelRect.isEmpty())
                 logicalRight = std::max(logicalRight, lastBoxSelRect.maxX());
         }
         if (containsEndOfSelection) {
             InlineBox* firstBox = line->firstSelectedBox();
-            LayoutRect firstBoxSelRect = firstBox ? firstBox->renderer().selectionRectForPaintInvalidation(rootBlock) : LayoutRect();
+            LayoutRect firstBoxSelRect = firstBox ? firstBox->layoutObject().selectionRectForPaintInvalidation(rootBlock) : LayoutRect();
             if (!firstBoxSelRect.isEmpty())
                 logicalLeft = std::max(logicalLeft, firstBoxSelRect.x());
         }

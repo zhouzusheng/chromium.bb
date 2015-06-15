@@ -420,6 +420,10 @@ inline bool LayoutBlockFlow::layoutBlockFlow(bool relayoutChildren, LayoutUnit &
         setPaginationStrut(0);
     }
 
+    if (hasColumns() && view()->layoutState()->columnInfo()) {
+        view()->layoutState()->columnInfo()->setSpanningHeaderSizeChanged(false);
+    }
+
     LayoutUnit beforeEdge = borderBefore() + paddingBefore();
     LayoutUnit afterEdge = borderAfter() + paddingAfter() + scrollbarLogicalHeight();
     LayoutUnit previousHeight = logicalHeight();
@@ -546,6 +550,12 @@ void LayoutBlockFlow::setLogicalTopForChild(LayoutBox& child, LayoutUnit logical
 
 void LayoutBlockFlow::layoutBlockChild(LayoutBox& child, MarginInfo& marginInfo, LayoutUnit& previousFloatLogicalBottom)
 {
+    ColumnInfo* columnInfo = view()->layoutState()->columnInfo();
+    LayoutBox* previousBox = child.previousSiblingBox();
+    bool previousBoxWasFirst = (previousBox == firstChildBox());
+    bool shouldSetSpanningHeaderInfo = hasColumns() && columnInfo && previousBoxWasFirst;
+    bool previousBoxIsSpanningHeader = previousBox && previousBox->style()->columnSpanCount() > 1 && !previousBox->style()->hasSpanAllColumns();
+
     LayoutUnit oldPosMarginBefore = maxPositiveMarginBefore();
     LayoutUnit oldNegMarginBefore = maxNegativeMarginBefore();
 
@@ -564,6 +574,14 @@ void LayoutBlockFlow::layoutBlockChild(LayoutBox& child, MarginInfo& marginInfo,
 
     // Go ahead and position the child as though it didn't collapse with the top.
     setLogicalTopForChild(child, logicalTopEstimate);
+    if (shouldSetSpanningHeaderInfo) {
+        // If the previous child was a spanning header in a multi-column layout, then store the logical top
+        // of the current child as the header "height".  The first line in any column within the column span
+        // will be pushed down by the logicalTop of the current child (this takes into account margin before/after
+        // from the previous child).
+        columnInfo->setSpanningHeaderColumnCount(previousBoxIsSpanningHeader ? previousBox->style()->columnSpanCount() : 1);
+        columnInfo->setSpanningHeaderHeight(previousBoxIsSpanningHeader ? logicalTopEstimate : 0);
+    }
 
     LayoutBlockFlow* childLayoutBlockFlow = child.isLayoutBlockFlow() ? toLayoutBlockFlow(&child) : 0;
     bool markDescendantsWithFloats = false;
@@ -621,6 +639,10 @@ void LayoutBlockFlow::layoutBlockChild(LayoutBox& child, MarginInfo& marginInfo,
     // clearFloatsIfNeeded can also mark the child as needing a layout even though we didn't move. This happens
     // when collapseMargins dynamically adds overhanging floats because of a child with negative margins.
     if (logicalTopAfterClear != logicalTopEstimate || child.needsLayout() || (paginated && childLayoutBlockFlow && childLayoutBlockFlow->shouldBreakAtLineToAvoidWidow())) {
+        if (shouldSetSpanningHeaderInfo) {
+            columnInfo->setSpanningHeaderHeight(previousBoxIsSpanningHeader ? logicalTopAfterClear : 0);
+        }
+
         SubtreeLayoutScope layoutScope(child);
         if (child.shrinkToAvoidFloats()) {
             // The child's width depends on the line width.
@@ -837,6 +859,18 @@ void LayoutBlockFlow::adjustLinePositionForPagination(RootInlineBox& lineBox, La
         return;
     }
     LayoutUnit remainingLogicalHeight = pageRemainingLogicalHeightForOffset(logicalOffset, ExcludePageBoundary);
+    LayoutUnit spanningHeaderHeight = 0;
+    if (view()->layoutState()->columnInfo()) {
+        ColumnInfo* colInfo = view()->layoutState()->columnInfo();
+        LayoutUnit totalOffset = logicalOffset + offsetFromLogicalTopOfFirstPage();
+        unsigned currentColumn = (totalOffset + lineHeight) / pageLogicalHeight;
+        if (currentColumn < colInfo->spanningHeaderColumnCount()) {
+            spanningHeaderHeight = colInfo->spanningHeaderHeight();
+            if (spanningHeaderHeight > 0 && remainingLogicalHeight == pageLogicalHeight && totalOffset > 0) {
+                remainingLogicalHeight = 0;
+            }
+        }
+    }
 
     int lineIndex = lineCount(&lineBox);
     if (remainingLogicalHeight < lineHeight || (shouldBreakAtLineToAvoidWidow() && lineBreakToAvoidWidow() == lineIndex)) {
@@ -853,10 +887,10 @@ void LayoutBlockFlow::adjustLinePositionForPagination(RootInlineBox& lineBox, La
         setPageBreak(logicalOffset, lineHeight - remainingLogicalHeight);
         if (((lineBox == firstRootBox() && totalLogicalHeight < pageLogicalHeightAtNewOffset) || (!style()->hasAutoOrphans() && style()->orphans() >= lineIndex))
             && !isOutOfFlowPositioned() && !isTableCell()) {
-            setPaginationStrut(remainingLogicalHeight + std::max<LayoutUnit>(0, logicalOffset));
+            setPaginationStrut(remainingLogicalHeight + spanningHeaderHeight + std::max<LayoutUnit>(0, logicalOffset));
         } else {
-            delta += remainingLogicalHeight;
-            lineBox.setPaginationStrut(remainingLogicalHeight);
+            delta += remainingLogicalHeight + spanningHeaderHeight;
+            lineBox.setPaginationStrut(remainingLogicalHeight + spanningHeaderHeight);
             lineBox.setIsFirstAfterPageBreak(true);
         }
     } else if (remainingLogicalHeight == pageLogicalHeight) {
@@ -882,8 +916,20 @@ LayoutUnit LayoutBlockFlow::adjustForUnsplittableChild(LayoutBox& child, LayoutU
     if (!pageLogicalHeight || childLogicalHeight > pageLogicalHeight)
         return logicalOffset;
     LayoutUnit remainingLogicalHeight = pageRemainingLogicalHeightForOffset(logicalOffset, ExcludePageBoundary);
+    LayoutUnit spanningHeaderHeight = 0;
+    if (view()->layoutState()->columnInfo()) {
+        ColumnInfo* colInfo = view()->layoutState()->columnInfo();
+        LayoutUnit totalOffset = logicalOffset + offsetFromLogicalTopOfFirstPage();
+        unsigned currentColumn = (totalOffset + childLogicalHeight) / pageLogicalHeight;
+        if (currentColumn < colInfo->spanningHeaderColumnCount()) {
+            spanningHeaderHeight = colInfo->spanningHeaderHeight();
+            if (spanningHeaderHeight > 0 && remainingLogicalHeight == pageLogicalHeight && totalOffset > 0) {
+                remainingLogicalHeight = 0;
+            }
+        }
+    }
     if (remainingLogicalHeight < childLogicalHeight)
-        return logicalOffset + remainingLogicalHeight;
+        return logicalOffset + remainingLogicalHeight + spanningHeaderHeight;
     return logicalOffset;
 }
 
@@ -1316,6 +1362,7 @@ LayoutUnit LayoutBlockFlow::collapseMargins(LayoutBox& child, MarginInfo& margin
     if (layoutState->isPaginated() && layoutState->pageLogicalHeight() && logicalTop > beforeCollapseLogicalTop) {
         LayoutUnit oldLogicalTop = logicalTop;
         logicalTop = std::min(logicalTop, nextPageLogicalTop(beforeCollapseLogicalTop));
+        logicalTop = adjustLogicalTopForSpanningHeader(&child, layoutState->columnInfo(), logicalTop);
         setLogicalHeight(logicalHeight() + (logicalTop - oldLogicalTop));
     }
 
@@ -1534,8 +1581,10 @@ LayoutUnit LayoutBlockFlow::estimateLogicalTopPosition(LayoutBox& child, const M
     // Adjust logicalTopEstimate down to the next page if the margins are so large that we don't fit on the current
     // page.
     LayoutState* layoutState = view()->layoutState();
-    if (layoutState->isPaginated() && layoutState->pageLogicalHeight() && logicalTopEstimate > logicalHeight())
+    if (layoutState->isPaginated() && layoutState->pageLogicalHeight() && logicalTopEstimate > logicalHeight()) {
         logicalTopEstimate = std::min(logicalTopEstimate, nextPageLogicalTop(logicalHeight()));
+        logicalTopEstimate = adjustLogicalTopForSpanningHeader(&child, layoutState->columnInfo(), logicalTopEstimate);
+    }
 
     logicalTopEstimate += getClearDelta(&child, logicalTopEstimate);
 
@@ -2470,6 +2519,9 @@ bool LayoutBlockFlow::positionNewFloats(LineWidth* width)
             // If we are unsplittable and don't fit, then we need to move down.
             // We include our margins as part of the unsplittable area.
             LayoutUnit newLogicalTop = adjustForUnsplittableChild(*childBox, floatLogicalLocation.y(), true);
+            if (layoutState->pageLogicalHeight()) {
+                newLogicalTop = adjustLogicalTopForSpanningHeader(childBox, layoutState->columnInfo(), newLogicalTop);
+            }
 
             // See if we have a pagination strut that is making us move down further.
             // Note that an unsplittable child can't also have a pagination strut, so this is
@@ -2760,7 +2812,7 @@ GapRects LayoutBlockFlow::selectionGaps(const LayoutBlock* rootBlock, const Layo
 
     GapRects result;
 
-    if (hasColumns() || hasTransformRelatedProperty() || style()->columnSpan())
+    if (hasColumns() || hasTransformRelatedProperty() || style()->hasSpanAllColumns())
         return result;
 
     if (childrenInline())

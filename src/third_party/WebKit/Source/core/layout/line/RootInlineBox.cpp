@@ -398,7 +398,7 @@ LayoutUnit RootInlineBox::selectionTop() const
             return selectionTop;
     }
 
-    return prevBottom;
+    return prevBottom + paginationStrut();
 }
 
 LayoutUnit RootInlineBox::selectionTopAdjustedForPrecedingBlock() const
@@ -449,7 +449,7 @@ LayoutUnit RootInlineBox::selectionBottom() const
             return selectionBottom;
     }
 
-    return nextTop;
+    return nextTop - nextRootBox()->paginationStrut();
 }
 
 LayoutUnit RootInlineBox::blockDirectionPointInLine() const

@@ -15,10 +15,10 @@
 #include <vector>
 
 #include "webrtc/base/constructormagic.h"
+#include "webrtc/base/scoped_ptr.h"
 #include "webrtc/base/thread_annotations.h"
 #include "webrtc/common_types.h"
 #include "webrtc/system_wrappers/interface/atomic32.h"
-#include "webrtc/system_wrappers/interface/scoped_ptr.h"
 
 namespace webrtc {
 
@@ -55,15 +55,9 @@ class PayloadRouter {
                     const RTPFragmentationHeader* fragmentation,
                     const RTPVideoHeader* rtp_video_hdr);
 
-  // Called when it's time to send a stored packet.
-  bool TimeToSendPacket(uint32_t ssrc,
-                        uint16_t sequence_number,
-                        int64_t capture_timestamp,
-                        bool retransmission);
-
-  // Called when it's time to send padding, returns the number of bytes actually
-  // sent.
-  size_t TimeToSendPadding(size_t bytes);
+  // Configures current target bitrate per module. 'stream_bitrates' is assumed
+  // to be in the same order as 'SetSendingRtpModules'.
+  void SetTargetSendBitrates(const std::vector<uint32_t>& stream_bitrates);
 
   // Returns the maximum allowed data payload length, given the configured MTU
   // and RTP headers.
@@ -75,7 +69,7 @@ class PayloadRouter {
  private:
   // TODO(mflodman): When the new video API has launched, remove crit_ and
   // assume rtp_modules_ will never change during a call.
-  scoped_ptr<CriticalSectionWrapper> crit_;
+  rtc::scoped_ptr<CriticalSectionWrapper> crit_;
 
   // Active sending RTP modules, in layer order.
   std::vector<RtpRtcp*> rtp_modules_ GUARDED_BY(crit_.get());

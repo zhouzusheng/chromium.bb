@@ -24,6 +24,7 @@
         'selection_event_type.h',
         'touch_handle.cc',
         'touch_handle.h',
+        'touch_handle_orientation.h',
         'touch_selection_controller.cc',
         'touch_selection_controller.h',
         'ui_touch_selection_export.h',

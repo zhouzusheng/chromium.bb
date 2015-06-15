@@ -26,8 +26,6 @@
 #include "core/inspector/ConsoleMessage.h"
 #include "core/layout/svg/SVGResourcesCache.h"
 #include "core/svg/SVGSVGElement.h"
-#include "core/svg/SVGViewSpec.h"
-#include "core/svg/SVGZoomAndPan.h"
 #include "core/svg/animation/SMILTimeContainer.h"
 #include "wtf/TemporaryChange.h"
 #include "wtf/text/AtomicString.h"
@@ -159,7 +157,7 @@ void SVGDocumentExtensions::addPendingResource(const AtomicString& id, Element* 
     if (id.isEmpty())
         return;
 
-    WillBeHeapHashMap<AtomicString, OwnPtrWillBeMember<SVGPendingElements> >::AddResult result = m_pendingResources.add(id, nullptr);
+    WillBeHeapHashMap<AtomicString, OwnPtrWillBeMember<SVGPendingElements>>::AddResult result = m_pendingResources.add(id, nullptr);
     if (result.isNewEntry)
         result.storedValue->value = adoptPtrWillBeNoop(new SVGPendingElements);
     result.storedValue->value->add(element);
@@ -325,15 +323,8 @@ void SVGDocumentExtensions::invalidateSVGRootsWithRelativeLengthDescendents(Subt
 
 bool SVGDocumentExtensions::zoomAndPanEnabled() const
 {
-    if (SVGSVGElement* svg = rootElement(*m_document)) {
-        if (svg->useCurrentView()) {
-            if (svg->currentView())
-                return svg->currentView()->zoomAndPan() == SVGZoomAndPanMagnify;
-        } else {
-            return svg->zoomAndPan() == SVGZoomAndPanMagnify;
-        }
-    }
-
+    if (SVGSVGElement* svg = rootElement(*m_document))
+        return svg->zoomAndPanEnabled();
     return false;
 }
 

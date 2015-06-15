@@ -42,6 +42,10 @@
 #include "core/html/HTMLMeterElement.h"
 #include "core/html/HTMLPlugInElement.h"
 #include "core/html/HTMLSelectElement.h"
+#include "core/html/HTMLTableCellElement.h"
+#include "core/html/HTMLTableElement.h"
+#include "core/html/HTMLTableRowElement.h"
+#include "core/html/HTMLTableSectionElement.h"
 #include "core/html/HTMLTextAreaElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/shadow/MediaControlElements.h"
@@ -160,7 +164,7 @@ void AXNodeObject::changeValueByStep(bool increase)
 
     setValue(String::number(value));
 
-    axObjectCache()->postNotification(node(), AXObjectCacheImpl::AXValueChanged, true);
+    axObjectCache()->postNotification(node(), AXObjectCacheImpl::AXValueChanged);
 }
 
 bool AXNodeObject::computeAccessibilityIsIgnored() const
@@ -181,6 +185,90 @@ bool AXNodeObject::computeAccessibilityIsIgnored() const
         return true;
 
     return m_role == UnknownRole;
+}
+
+static bool isListElement(Node* node)
+{
+    return isHTMLUListElement(*node) || isHTMLOListElement(*node) || isHTMLDListElement(*node);
+}
+
+static bool isPresentationRoleInTable(AXObject* parent, Node* child)
+{
+    Node* parentNode = parent->node();
+    if (!parentNode || !parentNode->isElementNode())
+        return false;
+
+    // AXTable determines the role as checking isTableXXX.
+    // If Table has explicit role including presentation, AXTable doesn't assign implicit Role
+    // to a whole Table. That's why we should check it based on node.
+    // Normal Table Tree is that
+    // cell(its role)-> tr(tr role)-> tfoot, tbody, thead(ignored role) -> table(table role).
+    // If table has presentation role, it will be like
+    // cell(group)-> tr(unknown) -> tfoot, tbody, thead(ignored) -> table(presentation).
+    if (isHTMLTableCellElement(child) && isHTMLTableRowElement(*parentNode))
+        return parent->hasInheritedPresentationalRole();
+
+    if (isHTMLTableRowElement(child) && isHTMLTableSectionElement(*parentNode)) {
+        // Because TableSections have ignored role, presentation should be checked with its parent node
+        AXObject* tableObject = parent->parentObject();
+        Node* tableNode = tableObject->node();
+        return isHTMLTableElement(tableNode) && tableObject->hasInheritedPresentationalRole();
+    }
+    return false;
+}
+
+static bool isRequiredOwnedElement(AXObject* parent, AccessibilityRole childRole, Node* childNode)
+{
+    Node* parentNode = parent->node();
+    if (!parentNode || !parentNode->isElementNode())
+        return false;
+
+    if (childRole == ListItemRole)
+        return isListElement(parentNode);
+    if (childRole == ListMarkerRole)
+        return isHTMLLIElement(*parentNode);
+    if (childRole == MenuItemCheckBoxRole || childRole ==  MenuItemRole || childRole ==  MenuItemRadioRole)
+        return isHTMLMenuElement(*parentNode);
+
+    if (isHTMLTableCellElement(childNode))
+        return isHTMLTableRowElement(*parentNode);
+    if (isHTMLTableRowElement(childNode))
+        return isHTMLTableSectionElement(*parentNode);
+
+    // In case of ListboxRole and it's child, ListBoxOptionRole,
+    // Inheritance of presentation role is handled in AXListBoxOption
+    // Because ListBoxOption Role doesn't have any child.
+    // If it's just ignored because of presentation, we can't see any AX tree related to ListBoxOption.
+    return false;
+}
+
+bool AXNodeObject::computeHasInheritedPresentationalRole() const
+{
+    // ARIA states if an item can get focus, it should not be presentational.
+    if (canSetFocusAttribute())
+        return false;
+
+    if (isPresentational())
+        return true;
+
+    // http://www.w3.org/TR/wai-aria/complete#presentation
+    // ARIA spec says that the user agent MUST apply an inherited role of presentation
+    // to any owned elements that do not have an explicit role defined.
+    if (ariaRoleAttribute() != UnknownRole)
+        return false;
+
+    AXObject* parent = parentObject();
+    if (!parent)
+        return false;
+
+    Node* curNode = node();
+    if (!parent->hasInheritedPresentationalRole()
+        && !isPresentationRoleInTable(parent, curNode))
+        return false;
+
+    // ARIA spec says that when a parent object is presentational and this object
+    // is a required owned element of that parent, then this object is also presentational.
+    return isRequiredOwnedElement(parent, roleValue(), curNode);
 }
 
 AccessibilityRole AXNodeObject::determineAccessibilityRoleUtil()
@@ -339,11 +427,8 @@ void AXNodeObject::elementsFromAttribute(WillBeHeapVector<RawPtrWillBeMember<Ele
     Vector<String> idVector;
     idList.split(' ', idVector);
 
-    unsigned size = idVector.size();
-    for (unsigned i = 0; i < size; ++i) {
-        AtomicString idName(idVector[i]);
-        Element* idElement = scope.getElementById(idName);
-        if (idElement)
+    for (const auto& idName : idVector) {
+        if (Element* idElement = scope.getElementById(AtomicString(idName)))
             elements.append(idElement);
     }
 }
@@ -671,7 +756,8 @@ bool AXNodeObject::isPasswordField() const
     if (!isHTMLInputElement(node))
         return false;
 
-    if (ariaRoleAttribute() != UnknownRole)
+    AccessibilityRole ariaRole = ariaRoleAttribute();
+    if (ariaRole != TextFieldRole && ariaRole != TextAreaRole && ariaRole != UnknownRole)
         return false;
 
     return toHTMLInputElement(node)->type() == InputTypeNames::password;
@@ -697,14 +783,19 @@ bool AXNodeObject::isChecked() const
     if (isHTMLInputElement(*node))
         return toHTMLInputElement(*node).shouldAppearChecked();
 
-    // Else, if this is an ARIA checkbox or radio OR ARIA role menuitemcheckbox
-    // or menuitemradio, respect the aria-checked attribute
-    AccessibilityRole ariaRole = ariaRoleAttribute();
-    if (ariaRole == RadioButtonRole || ariaRole == CheckBoxRole
-        || ariaRole == MenuItemCheckBoxRole || ariaRole == MenuItemRadioRole) {
+    // Else, if this is an ARIA role checkbox or radio or menuitemcheckbox
+    // or menuitemradio or switch, respect the aria-checked attribute
+    switch (ariaRoleAttribute()) {
+    case CheckBoxRole:
+    case MenuItemCheckBoxRole:
+    case MenuItemRadioRole:
+    case RadioButtonRole:
+    case SwitchRole:
         if (equalIgnoringCase(getAttribute(aria_checkedAttr), "true"))
             return true;
         return false;
+    default:
+        break;
     }
 
     // Otherwise it's not checked
@@ -727,7 +818,7 @@ bool AXNodeObject::isClickable() const
 
 bool AXNodeObject::isEnabled() const
 {
-    if (equalIgnoringCase(getAttribute(aria_disabledAttr), "true"))
+    if (isDescendantOfDisabledNode())
         return false;
 
     Node* node = this->node();
@@ -1288,13 +1379,13 @@ static bool shouldUseAccessibilityObjectInnerText(AXObject* obj)
 }
 
 // Returns true if |r1| and |r2| are both non-null and are contained within the
-// same RenderBox.
-static bool isSameRenderBox(LayoutObject* r1, LayoutObject* r2)
+// same LayoutBox.
+static bool isSameLayoutBox(LayoutObject* r1, LayoutObject* r2)
 {
     if (!r1 || !r2)
         return false;
-    RenderBox* b1 = r1->enclosingBox();
-    RenderBox* b2 = r2->enclosingBox();
+    LayoutBox* b1 = r1->enclosingBox();
+    LayoutBox* b2 = r2->enclosingBox();
     return b1 && b2 && b1 == b2;
 }
 
@@ -1321,13 +1412,13 @@ String AXNodeObject::textUnderElement(TextUnderElementMode mode) const
             }
         }
 
-        // If we're going between two renderers that are in separate RenderBoxes, add
+        // If we're going between two layoutObjects that are in separate LayoutBoxes, add
         // whitespace if it wasn't there already. Intuitively if you have
-        // <span>Hello</span><span>World</span>, those are part of the same RenderBox
+        // <span>Hello</span><span>World</span>, those are part of the same LayoutBox
         // so we should return "HelloWorld", but given <div>Hello</div><div>World</div> the
         // strings are in separate boxes so we should return "Hello World".
         if (previous && builder.length() && !isHTMLSpace(builder[builder.length() - 1])) {
-            if (!isSameRenderBox(child->renderer(), previous->renderer()))
+            if (!isSameLayoutBox(child->layoutObject(), previous->layoutObject()))
                 builder.append(' ');
         }
 
@@ -1404,8 +1495,8 @@ String AXNodeObject::title(TextUnderElementMode mode) const
             return label->innerText();
     }
 
-    // If this node isn't rendered, there's no inner text we can extract from a select element.
-    if (!isAXRenderObject() && isHTMLSelectElement(*node))
+    // If this node isn't laid out, there's no inner text we can extract from a select element.
+    if (!isAXLayoutObject() && isHTMLSelectElement(*node))
         return String();
 
     switch (roleValue()) {
@@ -1416,6 +1507,7 @@ String AXNodeObject::title(TextUnderElementMode mode) const
     case ButtonRole:
     case ToggleButtonRole:
     case CheckBoxRole:
+    case LineBreakRole:
     case ListBoxOptionRole:
     case ListItemRole:
     case MenuButtonRole:
@@ -1423,6 +1515,7 @@ String AXNodeObject::title(TextUnderElementMode mode) const
     case MenuItemCheckBoxRole:
     case MenuItemRadioRole:
     case RadioButtonRole:
+    case SwitchRole:
     case TabRole:
         return textUnderElement(mode);
     // SVGRoots should not use the text under itself as a title. That could include the text of objects like <text>.
@@ -1533,9 +1626,9 @@ LayoutRect AXNodeObject::elementRect() const
     if (node()->parentElement()->isInCanvasSubtree()) {
         LayoutRect rect;
 
-        for (Node* child = node()->firstChild(); child; child = child->nextSibling()) {
-            if (child->isHTMLElement()) {
-                if (AXObject* obj = axObjectCache()->get(child)) {
+        for (Node& child : NodeTraversal::childrenOf(*node())) {
+            if (child.isHTMLElement()) {
+                if (AXObject* obj = axObjectCache()->get(&child)) {
                     if (rect.isEmpty())
                         rect = obj->elementRect();
                     else
@@ -1555,7 +1648,7 @@ LayoutRect AXNodeObject::elementRect() const
     LayoutRect boundingBox;
 
     for (AXObject* positionProvider = parentObject(); positionProvider; positionProvider = positionProvider->parentObject()) {
-        if (positionProvider->isAXRenderObject()) {
+        if (positionProvider->isAXLayoutObject()) {
             LayoutRect parentRect = positionProvider->elementRect();
             boundingBox.setSize(LayoutSize(parentRect.width(), LayoutUnit(std::min(10.0f, parentRect.height().toFloat()))));
             boundingBox.setLocation(parentRect.location());
@@ -1626,15 +1719,15 @@ void AXNodeObject::addChildren()
 
     m_haveChildren = true;
 
-    // The only time we add children from the DOM tree to a node with a renderer is when it's a canvas.
-    if (renderer() && !isHTMLCanvasElement(*m_node))
+    // The only time we add children from the DOM tree to a node with a layoutObject is when it's a canvas.
+    if (layoutObject() && !isHTMLCanvasElement(*m_node))
         return;
 
-    for (Node* child = m_node->firstChild(); child; child = child->nextSibling())
-        addChild(axObjectCache()->getOrCreate(child));
+    for (Node& child : NodeTraversal::childrenOf(*m_node))
+        addChild(axObjectCache()->getOrCreate(&child));
 
-    for (unsigned i = 0; i < m_children.size(); ++i)
-        m_children[i].get()->setParent(this);
+    for (const auto& child : m_children)
+        child->setParent(this);
 }
 
 void AXNodeObject::addChild(AXObject* child)
@@ -1653,7 +1746,7 @@ void AXNodeObject::insertChild(AXObject* child, unsigned index)
     child->clearChildren();
 
     if (child->accessibilityIsIgnored()) {
-        AccessibilityChildrenVector children = child->children();
+        const auto& children = child->children();
         size_t length = children.size();
         for (size_t i = 0; i < length; ++i)
             m_children.insert(index + i, children[i]);
@@ -1665,10 +1758,10 @@ void AXNodeObject::insertChild(AXObject* child, unsigned index)
 
 bool AXNodeObject::canHaveChildren() const
 {
-    // If this is an AXRenderObject, then it's okay if this object
-    // doesn't have a node - there are some renderers that don't have associated
+    // If this is an AXLayoutObject, then it's okay if this object
+    // doesn't have a node - there are some layoutObjects that don't have associated
     // nodes, like scroll areas and css-generated text.
-    if (!node() && !isAXRenderObject())
+    if (!node() && !isAXLayoutObject())
         return false;
 
     // Elements that should not have children
@@ -1678,6 +1771,7 @@ bool AXNodeObject::canHaveChildren() const
     case PopUpButtonRole:
     case CheckBoxRole:
     case RadioButtonRole:
+    case SwitchRole:
     case TabRole:
     case ToggleButtonRole:
     case ListBoxOptionRole:
@@ -1746,7 +1840,7 @@ Element* AXNodeObject::anchorElement() const
     // search up the DOM tree for an anchor element
     // NOTE: this assumes that any non-image with an anchor is an HTMLAnchorElement
     for ( ; node; node = node->parentNode()) {
-        if (isHTMLAnchorElement(*node) || (node->renderer() && cache->getOrCreate(node->renderer())->isAnchor()))
+        if (isHTMLAnchorElement(*node) || (node->layoutObject() && cache->getOrCreate(node->layoutObject())->isAnchor()))
             return toElement(node);
     }
 
@@ -1777,7 +1871,7 @@ AXObject* AXNodeObject::correspondingControlForLabelElement() const
 
     // Make sure the corresponding control isn't a descendant of this label
     // that's in the middle of being destroyed.
-    if (correspondingControl->renderer() && !correspondingControl->renderer()->parent())
+    if (correspondingControl->layoutObject() && !correspondingControl->layoutObject()->parent())
         return 0;
 
     return axObjectCache()->getOrCreate(correspondingControl);
@@ -1839,14 +1933,14 @@ void AXNodeObject::decrement()
 void AXNodeObject::childrenChanged()
 {
     // This method is meant as a quick way of marking a portion of the accessibility tree dirty.
-    if (!node() && !renderer())
+    if (!node() && !layoutObject())
         return;
 
-    axObjectCache()->postNotification(this, document(), AXObjectCacheImpl::AXChildrenChanged, true);
+    axObjectCache()->postNotification(this, AXObjectCacheImpl::AXChildrenChanged);
 
     // Go up the accessibility parent chain, but only if the element already exists. This method is
-    // called during render layouts, minimal work should be done.
-    // If AX elements are created now, they could interrogate the render tree while it's in a funky state.
+    // called during layout, minimal work should be done.
+    // If AX elements are created now, they could interrogate the layout tree while it's in a funky state.
     // At the same time, process ARIA live region changes.
     for (AXObject* parent = this; parent; parent = parent->parentObjectIfExists()) {
         parent->setNeedsToUpdateChildren();
@@ -1856,12 +1950,12 @@ void AXNodeObject::childrenChanged()
 
         // If this element supports ARIA live regions, then notify the AT of changes.
         if (parent->isLiveRegion())
-            axObjectCache()->postNotification(parent, parent->document(), AXObjectCacheImpl::AXLiveRegionChanged, true);
+            axObjectCache()->postNotification(parent, AXObjectCacheImpl::AXLiveRegionChanged);
 
         // If this element is an ARIA text box or content editable, post a "value changed" notification on it
         // so that it behaves just like a native input element or textarea.
         if (isNonNativeTextControl())
-            axObjectCache()->postNotification(parent, parent->document(), AXObjectCacheImpl::AXValueChanged, true);
+            axObjectCache()->postNotification(parent, AXObjectCacheImpl::AXValueChanged);
     }
 }
 
@@ -1871,7 +1965,7 @@ void AXNodeObject::selectionChanged()
     // focused (to handle form controls, ARIA text boxes and contentEditable),
     // or the web area if the selection is just in the document somewhere.
     if (isFocused() || isWebArea())
-        axObjectCache()->postNotification(this, document(), AXObjectCacheImpl::AXSelectedTextChanged, true);
+        axObjectCache()->postNotification(this, AXObjectCacheImpl::AXSelectedTextChanged);
     else
         AXObject::selectionChanged(); // Calls selectionChanged on parent.
 }
@@ -1887,12 +1981,12 @@ void AXNodeObject::textChanged()
             continue;
 
         if (parent->isLiveRegion())
-            cache->postNotification(parentNode, AXObjectCacheImpl::AXLiveRegionChanged, true);
+            cache->postNotification(parentNode, AXObjectCacheImpl::AXLiveRegionChanged);
 
         // If this element is an ARIA text box or content editable, post a "value changed" notification on it
         // so that it behaves just like a native input element or textarea.
         if (parent->isNonNativeTextControl())
-            cache->postNotification(parentNode, AXObjectCacheImpl::AXValueChanged, true);
+            cache->postNotification(parentNode, AXObjectCacheImpl::AXValueChanged);
     }
 }
 
@@ -1979,9 +2073,8 @@ void AXNodeObject::ariaLabeledByText(Vector<AccessibilityText>& textOrder) const
         WillBeHeapVector<RawPtrWillBeMember<Element>> elements;
         ariaLabeledByElements(elements);
 
-        unsigned length = elements.size();
-        for (unsigned k = 0; k < length; k++) {
-            RefPtr<AXObject> axElement = axObjectCache()->getOrCreate(elements[k]);
+        for (const auto& element : elements) {
+            RefPtr<AXObject> axElement = axObjectCache()->getOrCreate(element);
             textOrder.append(AccessibilityText(ariaLabeledBy, AlternativeText, axElement));
         }
     }
@@ -1995,7 +2088,7 @@ void AXNodeObject::changeValueByPercent(float percentChange)
     value += range * (percentChange / 100);
     setValue(String::number(value));
 
-    axObjectCache()->postNotification(node(), AXObjectCacheImpl::AXValueChanged, true);
+    axObjectCache()->postNotification(node(), AXObjectCacheImpl::AXValueChanged);
 }
 
 } // namespace blink

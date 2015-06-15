@@ -87,13 +87,13 @@ void DisplayListRasterSource::PlaybackToSharedCanvas(
     SkCanvas* canvas,
     const gfx::Rect& canvas_rect,
     float contents_scale) const {
-  RasterCommon(canvas, NULL, canvas_rect, contents_scale, false);
+  RasterCommon(canvas, NULL, canvas_rect, contents_scale);
 }
 
 void DisplayListRasterSource::RasterForAnalysis(skia::AnalysisCanvas* canvas,
                                                 const gfx::Rect& canvas_rect,
                                                 float contents_scale) const {
-  RasterCommon(canvas, canvas, canvas_rect, contents_scale, true);
+  RasterCommon(canvas, canvas, canvas_rect, contents_scale);
 }
 
 void DisplayListRasterSource::PlaybackToCanvas(SkCanvas* canvas,
@@ -103,14 +103,13 @@ void DisplayListRasterSource::PlaybackToCanvas(SkCanvas* canvas,
       canvas, canvas_rect, gfx::Rect(size_), contents_scale, background_color_,
       clear_canvas_with_debug_color_, requires_clear_);
 
-  RasterCommon(canvas, NULL, canvas_rect, contents_scale, false);
+  RasterCommon(canvas, NULL, canvas_rect, contents_scale);
 }
 
 void DisplayListRasterSource::RasterCommon(SkCanvas* canvas,
                                            SkDrawPictureCallback* callback,
                                            const gfx::Rect& canvas_rect,
-                                           float contents_scale,
-                                           bool is_analysis) const {
+                                           float contents_scale) const {
   canvas->translate(-canvas_rect.x(), -canvas_rect.y());
   gfx::Rect content_rect =
       gfx::ToEnclosingRect(gfx::ScaleRect(gfx::Rect(size_), contents_scale));
@@ -160,7 +159,16 @@ void DisplayListRasterSource::GatherPixelRefs(
     const gfx::Rect& content_rect,
     float contents_scale,
     std::vector<SkPixelRef*>* pixel_refs) const {
-  // TODO(ajuma): Implement this.
+  DCHECK_EQ(0u, pixel_refs->size());
+
+  gfx::Rect layer_rect =
+      gfx::ScaleToEnclosingRect(content_rect, 1.0f / contents_scale);
+
+  PixelRefMap::Iterator iterator(layer_rect, display_list_.get());
+  while (iterator) {
+    pixel_refs->push_back(*iterator);
+    ++iterator;
+  }
 }
 
 bool DisplayListRasterSource::CoversRect(const gfx::Rect& content_rect,

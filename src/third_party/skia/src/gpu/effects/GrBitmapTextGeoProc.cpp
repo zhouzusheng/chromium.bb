@@ -26,7 +26,7 @@ public:
     GrGLBitmapTextGeoProc(const GrGeometryProcessor&, const GrBatchTracker&)
         : fColor(GrColor_ILLEGAL) {}
 
-    void onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) SK_OVERRIDE{
+    void onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) override{
         const GrBitmapTextGeoProc& cte = args.fGP.cast<GrBitmapTextGeoProc>();
         const BitmapTextBatchTracker& local = args.fBT.cast<BitmapTextBatchTracker>();
 
@@ -39,9 +39,15 @@ public:
         GrGLVertToFrag v(kVec2f_GrSLType);
         pb->addVarying("TextureCoords", &v);
         // this is only used with text, so our texture bounds always match the glyph atlas
-        vsBuilder->codeAppendf("%s = vec2(" GR_FONT_ATLAS_RECIP_WIDTH ", "
-                               GR_FONT_ATLAS_RECIP_HEIGHT ")*%s;", v.vsOut(),
-                               cte.inTextureCoords()->fName);
+        if (cte.maskFormat() == kA8_GrMaskFormat) {
+            vsBuilder->codeAppendf("%s = vec2(" GR_FONT_ATLAS_A8_RECIP_WIDTH ", "
+                                   GR_FONT_ATLAS_RECIP_HEIGHT ")*%s;", v.vsOut(),
+                                   cte.inTextureCoords()->fName);
+        } else {
+            vsBuilder->codeAppendf("%s = vec2(" GR_FONT_ATLAS_RECIP_WIDTH ", "
+                                   GR_FONT_ATLAS_RECIP_HEIGHT ")*%s;", v.vsOut(),
+                                   cte.inTextureCoords()->fName);
+        }
 
         // Setup pass through color
         this->setupColorPassThrough(pb, local.fInputColorType, args.fOutputColor, cte.inColor(),
@@ -72,7 +78,7 @@ public:
 
     virtual void setData(const GrGLProgramDataManager& pdman,
                          const GrPrimitiveProcessor& gp,
-                         const GrBatchTracker& bt) SK_OVERRIDE {
+                         const GrBatchTracker& bt) override {
         this->setUniformViewMatrix(pdman, gp.viewMatrix());
 
         const BitmapTextBatchTracker& local = bt.cast<BitmapTextBatchTracker>();

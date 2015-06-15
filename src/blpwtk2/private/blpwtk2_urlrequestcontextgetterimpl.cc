@@ -32,12 +32,12 @@
 #include <base/threading/worker_pool.h>
 #include <content/browser/net/sqlite_persistent_cookie_store.h>
 #include <content/public/browser/browser_thread.h>
-#include <content/public/browser/cookie_crypto_delegate.h>
 #include <content/public/common/content_switches.h>
 #include <content/public/common/url_constants.h>
 #include <net/cert/cert_verifier.h>
 #include <net/cookies/cookie_monster.h>
 #include <net/dns/mapped_host_resolver.h>
+#include <net/extras/sqlite/cookie_crypto_delegate.h>
 #include <net/http/http_auth_handler_factory.h>
 #include <net/http/http_cache.h>
 #include <net/http/http_network_layer.h>
@@ -189,7 +189,7 @@ void URLRequestContextGetterImpl::initialize()
                     content::BrowserThread::FILE),
                 true,
                 (storage::SpecialStoragePolicy*)0,
-                (content::CookieCryptoDelegate*)0);
+                (net::CookieCryptoDelegate*)0);
     }
 
     const base::CommandLine& cmdline = *base::CommandLine::ForCurrentProcess();

@@ -45,16 +45,15 @@ namespace blink {
 
 inline SVGUseElement::SVGUseElement(Document& document)
     : SVGGraphicsElement(SVGNames::useTag, document)
-    , m_x(SVGAnimatedLength::create(this, SVGNames::xAttr, SVGLength::create(LengthModeWidth), AllowNegativeLengths))
-    , m_y(SVGAnimatedLength::create(this, SVGNames::yAttr, SVGLength::create(LengthModeHeight), AllowNegativeLengths))
-    , m_width(SVGAnimatedLength::create(this, SVGNames::widthAttr, SVGLength::create(LengthModeWidth), ForbidNegativeLengths))
-    , m_height(SVGAnimatedLength::create(this, SVGNames::heightAttr, SVGLength::create(LengthModeHeight), ForbidNegativeLengths))
+    , SVGURIReference(this)
+    , m_x(SVGAnimatedLength::create(this, SVGNames::xAttr, SVGLength::create(SVGLengthMode::Width), AllowNegativeLengths))
+    , m_y(SVGAnimatedLength::create(this, SVGNames::yAttr, SVGLength::create(SVGLengthMode::Height), AllowNegativeLengths))
+    , m_width(SVGAnimatedLength::create(this, SVGNames::widthAttr, SVGLength::create(SVGLengthMode::Width), ForbidNegativeLengths))
+    , m_height(SVGAnimatedLength::create(this, SVGNames::heightAttr, SVGLength::create(SVGLengthMode::Height), ForbidNegativeLengths))
     , m_haveFiredLoadEvent(false)
     , m_needsShadowTreeRecreation(false)
     , m_svgLoadEventTimer(this, &SVGElement::svgLoadEventTimerFired)
 {
-    SVGURIReference::initialize(this);
-
     ASSERT(hasCustomStyleCallbacks());
 
     addToPropertyMap(m_x);
@@ -101,11 +100,6 @@ bool SVGUseElement::isSupportedAttribute(const QualifiedName& attrName)
         supportedAttributes.add(SVGNames::heightAttr);
     }
     return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
-}
-
-void SVGUseElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
-{
-    parseAttributeNew(name, value);
 }
 
 #if ENABLE(ASSERT)
@@ -223,7 +217,7 @@ void SVGUseElement::svgAttributeChanged(const QualifiedName& attrName)
             StyleChangeReasonForTracing::fromAttribute(attrName));
     }
 
-    LayoutObject* renderer = this->renderer();
+    LayoutObject* renderer = this->layoutObject();
     if (attrName == SVGNames::xAttr
         || attrName == SVGNames::yAttr
         || attrName == SVGNames::widthAttr
@@ -398,7 +392,7 @@ void SVGUseElement::buildShadowAndInstanceTree(SVGElement* target)
 
     // Do not allow self-referencing.
     // 'target' may be null, if it's a non SVG namespaced element.
-    if (!target || target == this)
+    if (!target || target == this || isDisallowedElement(target))
         return;
 
     // Set up root SVG element in shadow tree.
@@ -444,7 +438,7 @@ void SVGUseElement::buildShadowAndInstanceTree(SVGElement* target)
     updateRelativeLengthsInformation();
 }
 
-LayoutObject* SVGUseElement::createRenderer(const LayoutStyle&)
+LayoutObject* SVGUseElement::createLayoutObject(const ComputedStyle&)
 {
     return new LayoutSVGTransformableContainer(this);
 }
@@ -483,11 +477,11 @@ void SVGUseElement::toClipPath(Path& path)
     }
 }
 
-LayoutObject* SVGUseElement::rendererClipChild() const
+LayoutObject* SVGUseElement::layoutObjectClipChild() const
 {
     if (Node* n = closedShadowRoot()->firstChild()) {
         if (n->isSVGElement() && isDirectReference(toSVGElement(*n)))
-            return n->renderer();
+            return n->layoutObject();
     }
 
     return 0;
@@ -704,7 +698,7 @@ void SVGUseElement::invalidateShadowTree()
 void SVGUseElement::invalidateDependentShadowTrees()
 {
     // Recursively invalidate dependent <use> shadow trees
-    const WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> >& instances = instancesForElement();
+    const WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement>>& instances = instancesForElement();
     for (SVGElement* instance : instances) {
         if (SVGUseElement* element = instance->correspondingUseElement()) {
             ASSERT(element->inDocument());

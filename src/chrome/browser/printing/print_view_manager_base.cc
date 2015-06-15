@@ -4,6 +4,7 @@
 
 #include "chrome/browser/printing/print_view_manager_base.h"
 
+#include "base/auto_reset.h"
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_service.h"
@@ -36,6 +37,19 @@ using content::BrowserThread;
 namespace printing {
 
 namespace {
+
+void ShowWarningMessageBox(const base::string16& message) {
+  // Runs always on the UI thread.
+  static bool is_dialog_shown = false;
+  if (is_dialog_shown)
+    return;
+  // Block opening dialog from nested task.
+  base::AutoReset<bool> auto_reset(&is_dialog_shown, true);
+
+  // TODO(SHEZ): Replace this with a callback
+  // chrome::ShowMessageBox(nullptr, base::string16(), message,
+  //                        chrome::MESSAGE_BOX_TYPE_WARNING);
+}
 
 }  // namespace
 
@@ -192,10 +206,14 @@ void PrintViewManagerBase::OnPrintingFailed(int cookie) {
 }
 
 void PrintViewManagerBase::OnShowInvalidPrinterSettingsError() {
+  // TODO(SHEZ): Replace this with a callback
+  // base::MessageLoop::current()->PostTask(
+  //     FROM_HERE, base::Bind(&ShowWarningMessageBox,
+  //                           l10n_util::GetStringUTF16(
+  //                               IDS_PRINT_INVALID_PRINTER_SETTINGS)));
 }
 
-void PrintViewManagerBase::DidStartLoading(
-    content::RenderViewHost* render_view_host) {
+void PrintViewManagerBase::DidStartLoading() {
   UpdateScriptedPrintingBlocked();
 }
 

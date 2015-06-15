@@ -31,18 +31,23 @@ public:
     void removeCues(TextTrack*, const TextTrackCueList*);
     void removeCue(TextTrack*, PassRefPtrWillBeRawPtr<TextTrackCue>);
 
+    void hideCues(TextTrack*, const TextTrackCueList*);
+
     void updateActiveCues(double);
 
     bool ignoreUpdateRequests() const { return m_ignoreUpdate > 0; }
     void beginIgnoringUpdateRequests();
     void endIgnoringUpdateRequests();
 
-    CueList currentlyActiveCues() const { return m_currentlyActiveCues; }
+    const CueList& currentlyActiveCues() const { return m_currentlyActiveCues; }
 
     DECLARE_TRACE();
 
 private:
     HTMLMediaElement& mediaElement() const { return *m_mediaElement; }
+
+    void addCueInternal(PassRefPtrWillBeRawPtr<TextTrackCue>);
+    void removeCueInternal(PassRefPtrWillBeRawPtr<TextTrackCue>);
 
     RawPtrWillBeMember<HTMLMediaElement> m_mediaElement;
 

@@ -16,7 +16,6 @@ found in the LICENSE file.
     display: -webkit-flex;
     -webkit-flex-direction: column;
     font-family: sans-serif;
-    max-height: 420px;
     max-width: 640px;
     min-height: 0;
     min-width: 0;
@@ -99,8 +98,6 @@ found in the LICENSE file.
   .categories {
     font-size: 80%;
     padding: 10px;
-    overflow: auto;
-    max-height: 400px;
     -webkit-flex: 1 1 auto;
   }
 
@@ -162,8 +159,8 @@ tv.exportTo('tv.e.about_tracing', function() {
 
   var DEFAULT_PRESETS = [
     {title: 'Web developer',
-      categoryFilter: ['blink', 'cc', 'net', 'renderer.scheduler', 'toplevel',
-        'v8']},
+      categoryFilter: ['blink', 'cc', 'netlog', 'renderer.scheduler',
+        'toplevel', 'v8']},
     {title: 'Input latency',
       categoryFilter: ['benchmark', 'input', 'renderer.scheduler', 'toplevel']},
     {title: 'Rendering',
@@ -311,7 +308,8 @@ tv.exportTo('tv.e.about_tracing', function() {
     },
 
     usingPreset_: function() {
-      return this.currentlyChosenPreset_.length > 0;
+      return this.currentlyChosenPreset_.length > 0 ||
+             this.isPresetSelected_;
     },
 
     get currentlyChosenPreset() {
@@ -323,8 +321,10 @@ tv.exportTo('tv.e.about_tracing', function() {
         throw new Error('RecordSelectionDialog.currentlyChosenPreset:' +
             ' preset must be an array.');
       this.currentlyChosenPreset_ = preset;
+      this.isPresetSelected_ = false;
 
       if (this.currentlyChosenPreset_.length) {
+        this.isPresetSelected_ = true;
         this.changeEditCategoriesState_(false);
       } else {
         this.updateCategoryColumnView_(true);
@@ -360,7 +360,7 @@ tv.exportTo('tv.e.about_tracing', function() {
     },
 
     onClickEditCategories: function() {
-      if (!this.currentlyChosenPreset_.length)
+      if (!this.usingPreset_())
         return;
 
       if (!this.editCategoriesOpened_) {
@@ -557,7 +557,13 @@ tv.exportTo('tv.e.about_tracing', function() {
       // Change the current record mode to 'Manually select settings' from
       // preset mode if and only if currently user is in preset record mode
       // and user selects/deselects any category in 'Edit Categories' mode.
-      if (this.currentlyChosenPreset_.length) {
+      if (this.usingPreset_()) {
+        if (checkbox.checked) {
+          this.currentlyChosenPreset_.push(checkbox.value);
+        } else {
+          var pos = this.currentlyChosenPreset_.lastIndexOf(checkbox.value);
+          this.currentlyChosenPreset_.splice(pos, 1);
+        }
         var categoryEl = document.getElementById(
             'category-preset-Manually-select-settings');
         categoryEl.checked = true;

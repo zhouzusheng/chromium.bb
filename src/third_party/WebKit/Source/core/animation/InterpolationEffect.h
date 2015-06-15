@@ -28,7 +28,7 @@ public:
         m_interpolations.append(InterpolationRecord::create(interpolation, easing, start, end, applyFrom, applyTo));
     }
 
-    void addInterpolationsFromKeyframes(CSSPropertyID, Element*, Keyframe::PropertySpecificKeyframe& keyframeA, Keyframe::PropertySpecificKeyframe& keyframeB, double applyFrom, double applyTo);
+    void addInterpolationsFromKeyframes(CSSPropertyID, Element*, const ComputedStyle* baseStyle, Keyframe::PropertySpecificKeyframe& keyframeA, Keyframe::PropertySpecificKeyframe& keyframeB, double applyFrom, double applyTo);
 
     template<typename T>
     inline void forEachInterpolation(const T& callback)
@@ -37,7 +37,7 @@ public:
             callback(*record->m_interpolation);
     }
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 private:
     InterpolationEffect()
@@ -58,7 +58,7 @@ private:
             return adoptPtrWillBeNoop(new InterpolationRecord(interpolation, easing, start, end, applyFrom, applyTo));
         }
 
-        void trace(Visitor*);
+        DECLARE_TRACE();
 
     private:
         InterpolationRecord(PassRefPtrWillBeRawPtr<Interpolation> interpolation, PassRefPtr<TimingFunction> easing, double start, double end, double applyFrom, double applyTo)
@@ -72,7 +72,7 @@ private:
         }
     };
 
-    WillBeHeapVector<OwnPtrWillBeMember<InterpolationRecord> > m_interpolations;
+    WillBeHeapVector<OwnPtrWillBeMember<InterpolationRecord>> m_interpolations;
 };
 
 } // namespace blink

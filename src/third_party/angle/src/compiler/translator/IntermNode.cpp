@@ -244,6 +244,21 @@ bool TIntermSelection::replaceChildNode(
     return false;
 }
 
+bool TIntermSwitch::replaceChildNode(
+    TIntermNode *original, TIntermNode *replacement)
+{
+    REPLACE_IF_IS(mInit, TIntermTyped, original, replacement);
+    REPLACE_IF_IS(mStatementList, TIntermAggregate, original, replacement);
+    return false;
+}
+
+bool TIntermCase::replaceChildNode(
+    TIntermNode *original, TIntermNode *replacement)
+{
+    REPLACE_IF_IS(mCondition, TIntermTyped, original, replacement);
+    return false;
+}
+
 //
 // Say whether or not an operation node changes the value of a variable.
 //
@@ -313,108 +328,55 @@ bool TIntermOperator::isConstructor() const
 // Make sure the type of a unary operator is appropriate for its
 // combination of operation and operand type.
 //
-// Returns false in nothing makes sense.
-//
-bool TIntermUnary::promote(TInfoSink &)
+void TIntermUnary::promote(const TType *funcReturnType)
 {
     switch (mOp)
     {
-      case EOpLogicalNot:
-        if (mOperand->getBasicType() != EbtBool)
-            return false;
-        break;
-      // bit-wise not is already checked
-      case EOpBitwiseNot:
-        break;
-
-      case EOpNegative:
-      case EOpPositive:
-      case EOpPostIncrement:
-      case EOpPostDecrement:
-      case EOpPreIncrement:
-      case EOpPreDecrement:
-        if (mOperand->getBasicType() == EbtBool)
-            return false;
-        break;
-
-      // operators for built-ins are already type checked against their prototype
-      case EOpAny:
-      case EOpAll:
-      case EOpVectorLogicalNot:
+      case EOpFloatBitsToInt:
+      case EOpFloatBitsToUint:
       case EOpIntBitsToFloat:
       case EOpUintBitsToFloat:
+      case EOpPackSnorm2x16:
+      case EOpPackUnorm2x16:
+      case EOpPackHalf2x16:
       case EOpUnpackSnorm2x16:
       case EOpUnpackUnorm2x16:
+        mType.setPrecision(EbpHigh);
+        break;
       case EOpUnpackHalf2x16:
-        return true;
-
+        mType.setPrecision(EbpMedium);
+        break;
       default:
-        if (mOperand->getBasicType() != EbtFloat)
-            return false;
+        setType(mOperand->getType());
     }
 
-    setType(mOperand->getType());
-    mType.setQualifier(EvqTemporary);
+    if (funcReturnType != nullptr)
+    {
+        if (funcReturnType->getBasicType() == EbtBool)
+        {
+            // Bool types should not have precision.
+            setType(*funcReturnType);
+        }
+        else
+        {
+            // Precision of the node has been set based on the operand.
+            setTypePreservePrecision(*funcReturnType);
+        }
+    }
 
-    return true;
+    mType.setQualifier(EvqTemporary);
 }
 
 //
 // Establishes the type of the resultant operation, as well as
 // makes the operator the correct one for the operands.
 //
-// Returns false if operator can't work on operands.
+// For lots of operations it should already be established that the operand
+// combination is valid, but returns false if operator can't work on operands.
 //
 bool TIntermBinary::promote(TInfoSink &infoSink)
 {
-    // This function only handles scalars, vectors, and matrices.
-    if (mLeft->isArray() || mRight->isArray())
-    {
-        infoSink.info.message(EPrefixInternalError, getLine(),
-                              "Invalid operation for arrays");
-        return false;
-    }
-
-    // GLSL ES 2.0 does not support implicit type casting.
-    // So the basic type should usually match.
-    bool basicTypesMustMatch = true;
-
-    // Check ops which require integer / ivec parameters
-    switch (mOp)
-    {
-      case EOpBitShiftLeft:
-      case EOpBitShiftRight:
-      case EOpBitShiftLeftAssign:
-      case EOpBitShiftRightAssign:
-        // Unsigned can be bit-shifted by signed and vice versa, but we need to
-        // check that the basic type is an integer type.
-        basicTypesMustMatch = false;
-        if (!IsInteger(mLeft->getBasicType()) || !IsInteger(mRight->getBasicType()))
-        {
-            return false;
-        }
-        break;
-      case EOpBitwiseAnd:
-      case EOpBitwiseXor:
-      case EOpBitwiseOr:
-      case EOpBitwiseAndAssign:
-      case EOpBitwiseXorAssign:
-      case EOpBitwiseOrAssign:
-        // It is enough to check the type of only one operand, since later it
-        // is checked that the operand types match.
-        if (!IsInteger(mLeft->getBasicType()))
-        {
-            return false;
-        }
-        break;
-      default:
-        break;
-    }
-
-    if (basicTypesMustMatch && mLeft->getBasicType() != mRight->getBasicType())
-    {
-        return false;
-    }
+    ASSERT(mLeft->isArray() == mRight->isArray());
 
     //
     // Base assumption:  just make the type the same as the left
@@ -460,12 +422,9 @@ bool TIntermBinary::promote(TInfoSink &infoSink)
           // And and Or operate on conditionals
           //
           case EOpLogicalAnd:
+          case EOpLogicalXor:
           case EOpLogicalOr:
-            // Both operands must be of type bool.
-            if (mLeft->getBasicType() != EbtBool || mRight->getBasicType() != EbtBool)
-            {
-                return false;
-            }
+            ASSERT(mLeft->getBasicType() == EbtBool && mRight->getBasicType() == EbtBool);
             setType(TType(EbtBool, EbpUndefined));
             break;
 
@@ -602,6 +561,10 @@ bool TIntermBinary::promote(TInfoSink &infoSink)
 
       case EOpAssign:
       case EOpInitialize:
+        // No more additional checks are needed.
+        ASSERT((mLeft->getNominalSize() == mRight->getNominalSize()) &&
+            (mLeft->getSecondarySize() == mRight->getSecondarySize()));
+        break;
       case EOpAdd:
       case EOpSub:
       case EOpDiv:
@@ -644,10 +607,6 @@ bool TIntermBinary::promote(TInfoSink &infoSink)
                 mOp == EOpBitShiftLeft ||
                 mOp == EOpBitShiftRight))
                 return false;
-
-            // Operator cannot be of type pure assignment.
-            if (mOp == EOpAssign || mOp == EOpInitialize)
-                return false;
         }
 
         {
@@ -655,6 +614,11 @@ bool TIntermBinary::promote(TInfoSink &infoSink)
                 mLeft->getSecondarySize(), mRight->getSecondarySize());
             setType(TType(basicType, higherPrecision, EvqTemporary,
                           nominalSize, secondarySize));
+            if (mLeft->isArray())
+            {
+                ASSERT(mLeft->getArraySize() == mRight->getArraySize());
+                mType.setArraySize(mLeft->getArraySize());
+            }
         }
         break;
 
@@ -664,11 +628,8 @@ bool TIntermBinary::promote(TInfoSink &infoSink)
       case EOpGreaterThan:
       case EOpLessThanEqual:
       case EOpGreaterThanEqual:
-        if ((mLeft->getNominalSize() != mRight->getNominalSize()) ||
-            (mLeft->getSecondarySize() != mRight->getSecondarySize()))
-        {
-            return false;
-        }
+        ASSERT((mLeft->getNominalSize() == mRight->getNominalSize()) &&
+            (mLeft->getSecondarySize() == mRight->getSecondarySize()));
         setType(TType(EbtBool, EbpUndefined));
         break;
 

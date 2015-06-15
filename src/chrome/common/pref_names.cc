@@ -12,6 +12,11 @@ namespace prefs {
 // *************** PROFILE PREFS ***************
 // These are attached to the user profile
 
+
+// A bool pref that keeps whether the child status for this profile was already
+// successfully checked via ChildAccountService.
+const char kChildAccountStatusKnown[] = "child_account_status_known";
+
 // A string property indicating whether default apps should be installed
 // in this profile.  Use the value "install" to enable defaults apps, or
 // "noinstall" to disable them.  This property is usually set in the
@@ -361,14 +366,6 @@ const char kContextualSearchEnabled[] = "search.contextual_search_enabled";
 // window when the user is attempting to quit. Mac only.
 const char kConfirmToQuitEnabled[] = "browser.confirm_to_quit";
 
-// OBSOLETE.  Enum that specifies whether to enforce a third-party cookie
-// blocking policy.  This has been superseded by kDefaultContentSettings +
-// kBlockThirdPartyCookies.
-// 0 - allow all cookies.
-// 1 - block third-party cookies
-// 2 - block all cookies
-const char kCookieBehavior[] = "security.cookie_behavior";
-
 // Boolean which specifies whether we should ask the user if we should download
 // a file (true) or just download it automatically.
 const char kPromptForDownload[] = "download.prompt_for_download";
@@ -376,17 +373,9 @@ const char kPromptForDownload[] = "download.prompt_for_download";
 // A boolean pref set to true if we're using Link Doctor error pages.
 const char kAlternateErrorPagesEnabled[] = "alternate_error_pages.enabled";
 
-// OBSOLETE: new pref now stored with user prefs instead of profile, as
-// kDnsPrefetchingStartupList.
-const char kDnsStartupPrefetchList[] = "StartupDNSPrefetchList";
-
 // An adaptively identified list of domain names to be pre-fetched during the
 // next startup, based on what was actually needed during this startup.
 const char kDnsPrefetchingStartupList[] = "dns_prefetching.startup_list";
-
-// OBSOLETE: new pref now stored with user prefs instead of profile, as
-// kDnsPrefetchingHostReferralList.
-const char kDnsHostReferralList[] = "HostReferralList";
 
 // A list of host names used to fetch web pages, and their commonly used
 // sub-resource hostnames (and expected latency benefits from pre-resolving, or
@@ -420,16 +409,6 @@ const char kLastPolicyCheckTime[] = "policy.last_policy_check_time";
 // Prefix URL for the experimental Instant ZeroSuggest provider.
 const char kInstantUIZeroSuggestUrlPrefix[] =
     "instant_ui.zero_suggest_url_prefix";
-
-// Used to migrate preferences from local state to user preferences to
-// enable multiple profiles.
-// BITMASK with possible values (see browser_prefs.cc for enum):
-// 0: No preferences migrated.
-// 1: DNS preferences migrated: kDnsPrefetchingStartupList and HostReferralList
-// 2: Browser window preferences migrated: kDevToolsSplitLocation and
-//    kBrowserWindowPlacement
-const char kMultipleProfilePrefMigration[] =
-    "local_state.multiple_profile_prefs_version";
 
 // A boolean pref set to true if prediction of network actions is allowed.
 // Actions include DNS prefetching, TCP and SSL preconnection, prerendering
@@ -775,10 +754,6 @@ const char kTouchHudProjectionEnabled[] = "touch_hud.projection_enabled";
 // configuration is still stored in Shill.
 const char kOpenNetworkConfiguration[] = "onc";
 
-// A boolean pref that tracks whether the user has already given consent for
-// enabling remote attestation for content protection.
-const char kRAConsentFirstTime[] = "settings.privacy.ra_consent";
-
 // A boolean pref recording whether user has dismissed the multiprofile
 // itroduction dialog show.
 const char kMultiProfileNeverShowIntro[] =
@@ -832,6 +807,12 @@ const char kTouchVirtualKeyboardEnabled[] = "ui.touch_virtual_keyboard_enabled";
 // A boolean pref that controls whether wake on SSID is enabled.
 const char kWakeOnWifiSsid[] = "settings.internet.wake_on_wifi_ssid";
 
+// This is the policy CaptivePortalAuthenticationIgnoresProxy that allows to
+// open captive portal authentication pages in a separate window under
+// a temporary incognito profile ("signin profile" is used for this purpose),
+// which allows to bypass the user's proxy for captive portal authentication.
+const char kCaptivePortalAuthenticationIgnoresProxy[] =
+    "proxy.captive_portal_ignores_proxy";
 #endif  // defined(OS_CHROMEOS)
 
 // The disabled messages in IPC logging.
@@ -972,10 +953,10 @@ const char kPluginsAllowOutdated[] = "plugins.allow_outdated";
 const char kPluginsAlwaysAuthorize[] = "plugins.always_authorize";
 
 #if defined(ENABLE_PLUGIN_INSTALLATION)
-// Dictionary holding plug-ins metadata.
+// Dictionary holding plugins metadata.
 const char kPluginsMetadata[] = "plugins.metadata";
 
-// Last update time of plug-ins resource cache.
+// Last update time of plugins resource cache.
 const char kPluginsResourceCacheUpdate[] = "plugins.resource_cache_update";
 #endif
 
@@ -1179,26 +1160,26 @@ const char kMessageCenterDisabledSystemComponentIds[] =
 // by the user. Syncable.
 // Note: This is now read-only. The welcome notification writes the _local
 // version, below.
-extern const char kWelcomeNotificationDismissed[] =
+const char kWelcomeNotificationDismissed[] =
     "message_center.welcome_notification_dismissed";
 
 // Boolean pref indicating the Chrome Now welcome notification was dismissed
 // by the user on this machine.
-extern const char kWelcomeNotificationDismissedLocal[] =
+const char kWelcomeNotificationDismissedLocal[] =
     "message_center.welcome_notification_dismissed_local";
 
 // Boolean pref indicating the welcome notification was previously popped up.
-extern const char kWelcomeNotificationPreviouslyPoppedUp[] =
+const char kWelcomeNotificationPreviouslyPoppedUp[] =
     "message_center.welcome_notification_previously_popped_up";
 
 // Integer pref containing the expiration timestamp of the welcome notification.
-extern const char kWelcomeNotificationExpirationTimestamp[] =
+const char kWelcomeNotificationExpirationTimestamp[] =
     "message_center.welcome_notification_expiration_timestamp";
 
 // Boolean pref that determines whether the user can enter fullscreen mode.
 // Disabling fullscreen mode also makes kiosk mode unavailable on desktop
 // platforms.
-extern const char kFullscreenAllowed[] = "fullscreen.allowed";
+const char kFullscreenAllowed[] = "fullscreen.allowed";
 
 // Enable notifications for new devices on the local network that can be
 // registered to the user's account, e.g. Google Cloud Print printers.
@@ -1236,13 +1217,20 @@ const char kEasyUnlockShowTutorial[] = "easy_unlock.show_tutorial";
 // A cache of zero suggest results using JSON serialized into a string.
 const char kZeroSuggestCachedResults[] = "zerosuggest.cachedresults";
 
+#if defined(ENABLE_EXTENSIONS) && !defined(OS_ANDROID) && !defined(OS_IOS)
 // These device IDs are used by the copresence component, to uniquely identify
 // this device to the server. For privacy, authenticated and unauthenticated
 // calls are made using different device IDs.
-#if defined(ENABLE_EXTENSIONS) && !defined(OS_ANDROID) && !defined(OS_IOS)
 const char kCopresenceAuthenticatedDeviceId[] =
     "apps.copresence.auth_device_id";
 const char kCopresenceAnonymousDeviceId[] = "apps.copresence.unauth_device_id";
+
+// Used to indicate whether or not the toolbar redesign bubble has been shown
+// and acknowledged, and the last time the bubble was shown.
+const char kToolbarIconSurfacingBubbleAcknowledged[] =
+    "toolbar_icon_surfacing_bubble_acknowledged";
+const char kToolbarIconSurfacingBubbleLastShowTime[] =
+    "toolbar_icon_surfacing_bubble_show_time";
 #endif
 
 // Whether WebRTC should bind to individual NICs to explore all possible routing
@@ -1542,7 +1530,7 @@ const char kDisableVideoAndChat[] = "disable_video_chat";
 // Whether Extensions are enabled.
 const char kDisableExtensions[] = "extensions.disabled";
 
-// Whether the plugin finder that lets you install missing plug-ins is enabled.
+// Whether the plugin finder that lets you install missing plugins is enabled.
 const char kDisablePluginFinder[] = "plugins.disable_plugin_finder";
 
 // Customized app page names that appear on the New Tab Page.
@@ -1860,11 +1848,11 @@ const char kTimesHIDDialogShown[] = "HIDDialog.shown_how_many_times";
 
 // Dictionary of per-user Least Recently Used input method (used at login
 // screen).
-extern const char kUsersLRUInputMethod[] = "UsersLRUInputMethod";
+const char kUsersLRUInputMethod[] = "UsersLRUInputMethod";
 
 // A dictionary pref of the echo offer check flag. It sets offer info when
 // an offer is checked.
-extern const char kEchoCheckedOffers[] = "EchoCheckedOffers";
+const char kEchoCheckedOffers[] = "EchoCheckedOffers";
 
 // Key name of a dictionary in local state to store cached multiprofle user
 // behavior policy value.
@@ -1915,7 +1903,7 @@ const char kNewOobe[] = "NewOobe";
 
 // A boolean pref. If set to true, experimental webview based signin flow
 // activated.
-extern const char kWebviewSigninEnabled[] =
+const char kWebviewSigninEnabled[] =
     "webview_signin_enabled";
 #endif  // defined(OS_CHROMEOS)
 
@@ -2007,7 +1995,7 @@ const char kCloudPrintXmppPingTimeout[] = "cloud_print.xmpp_ping_timeout_sec";
 // Dictionary with settings stored by connector setup page.
 const char kCloudPrintUserSettings[] = "cloud_print.user_settings";
 // List of printers settings.
-extern const char kCloudPrintPrinters[] = "cloud_print.user_settings.printers";
+const char kCloudPrintPrinters[] = "cloud_print.user_settings.printers";
 // A boolean indicating whether submitting jobs to Google Cloud Print is
 // blocked by policy.
 const char kCloudPrintSubmitEnabled[] = "cloud_print.submit_enabled";
@@ -2194,12 +2182,6 @@ const char kAppListEnableMethod[] = "app_list.how_enabled";
 // The time that the app launcher was enabled. Cleared when UMA is recorded.
 const char kAppListEnableTime[] = "app_list.when_enabled";
 
-// TODO(calamity): remove this pref since app launcher will always be
-// installed.
-// Local state caching knowledge of whether the app launcher is installed.
-const char kAppLauncherIsEnabled[] =
-    "apps.app_launcher.should_show_apps_page";
-
 // Integer representing the version of the app launcher shortcut installed on
 // the system. Incremented, e.g., when embedded icons change.
 const char kAppLauncherShortcutVersion[] = "apps.app_launcher.shortcut_version";
@@ -2232,7 +2214,7 @@ const char kAppLaunchForMetroRestartProfile[] =
 const char kAppShortcutsVersion[] = "apps.shortcuts_version";
 
 // How often the bubble has been shown.
-extern const char kModuleConflictBubbleShown[] = "module_conflict.bubble_shown";
+const char kModuleConflictBubbleShown[] = "module_conflict.bubble_shown";
 
 // A string pref for storing the salt used to compute the pepper device ID.
 const char kDRMSalt[] = "settings.privacy.drm_salt";
@@ -2267,7 +2249,7 @@ const char kBrowserAddPersonEnabled[] = "profile.add_person_enabled";
 // Device identifier used by Easy Unlock stored in local state. This id will be
 // combined with a user id, before being registered with the CryptAuth server,
 // so it can't correlate users on the same device.
-extern const char kEasyUnlockDeviceId[] = "easy_unlock.device_id";
+const char kEasyUnlockDeviceId[] = "easy_unlock.device_id";
 
 // A dictionary that maps user id to hardlock state.
 const char kEasyUnlockHardlockState[] = "easy_unlock.hardlock_state";
@@ -2282,15 +2264,8 @@ const char kEasyUnlockLocalStateTpmKeys[] = "easy_unlock.public_tpm_keys";
 // their profile's Easy Unlock preferences.
 const char kEasyUnlockLocalStateUserPrefs[] = "easy_unlock.user_prefs";
 
-// The beginning of time span when we count user's "Nope" for the password
-// bubble.
-const char kPasswordBubbleTimeStamp[] = "password_bubble.timestamp";
-
 // The count of user's "Nope" for the password bubble.
 const char kPasswordBubbleNopesCount[] = "password_bubble.nopes";
-
-// Last user's interaction with the password bubble.
-const char kPasswordBubbleLastInteractions[] = "password_bubble.interactions";
 
 // Boolean that indicates whether elevation is needed to recover Chrome upgrade.
 const char kRecoveryComponentNeedsElevation[] =

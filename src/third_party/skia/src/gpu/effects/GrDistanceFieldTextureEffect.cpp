@@ -9,15 +9,17 @@
 #include "GrFontAtlasSizes.h"
 #include "GrInvariantOutput.h"
 #include "GrTexture.h"
+
 #include "SkDistanceFieldGen.h"
+
 #include "gl/GrGLProcessor.h"
 #include "gl/GrGLSL.h"
 #include "gl/GrGLTexture.h"
 #include "gl/GrGLGeometryProcessor.h"
 #include "gl/builders/GrGLProgramBuilder.h"
 
-// Assuming a radius of the diagonal of the fragment, hence a factor of sqrt(2)/2
-#define SK_DistanceFieldAAFactor     "0.7071"
+// Assuming a radius of a little less than the diagonal of the fragment
+#define SK_DistanceFieldAAFactor     "0.65"
 
 struct DistanceFieldBatchTracker {
     GrGPInput fInputColorType;
@@ -31,11 +33,11 @@ public:
                                    const GrBatchTracker&)
         : fColor(GrColor_ILLEGAL)
 #ifdef SK_GAMMA_APPLY_TO_A8
-        , fLuminance(-1.0f)
+        , fDistanceAdjust(-1.0f)
 #endif
         {}
 
-    void onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) SK_OVERRIDE{
+    void onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) override{
         const GrDistanceFieldTextureEffect& dfTexEffect =
                 args.fGP.cast<GrDistanceFieldTextureEffect>();
         const DistanceFieldBatchTracker& local = args.fBT.cast<DistanceFieldBatchTracker>();
@@ -50,15 +52,23 @@ public:
         vsBuilder->emitAttributes(dfTexEffect);
 
         GrGLVertToFrag st(kVec2f_GrSLType);
-        args.fPB->addVarying("IntTextureCoords", &st);
+        args.fPB->addVarying("IntTextureCoords", &st, kHigh_GrSLPrecision);
         vsBuilder->codeAppendf("%s = %s;", st.vsOut(), dfTexEffect.inTextureCoords()->fName);
         
         GrGLVertToFrag uv(kVec2f_GrSLType);
-        args.fPB->addVarying("TextureCoords", &uv);
+        args.fPB->addVarying("TextureCoords", &uv, kHigh_GrSLPrecision);
         // this is only used with text, so our texture bounds always match the glyph atlas
-        vsBuilder->codeAppendf("%s = vec2(" GR_FONT_ATLAS_RECIP_WIDTH ", "
+        vsBuilder->codeAppendf("%s = vec2(" GR_FONT_ATLAS_A8_RECIP_WIDTH ", "
                                GR_FONT_ATLAS_RECIP_HEIGHT ")*%s;", uv.vsOut(),
                                dfTexEffect.inTextureCoords()->fName);
+#ifdef SK_GAMMA_APPLY_TO_A8
+        // adjust based on gamma
+        const char* distanceAdjustUniName = NULL;
+        // width, height, 1/(3*width)
+        fDistanceAdjustUni = args.fPB->addUniform(GrGLProgramBuilder::kFragment_Visibility,
+            kFloat_GrSLType, kDefault_GrSLPrecision,
+            "DistanceAdjust", &distanceAdjustUniName);
+#endif
 
         // Setup pass through color
         this->setupColorPassThrough(pb, local.fInputColorType, args.fOutputColor,
@@ -83,69 +93,59 @@ public:
         fsBuilder->codeAppend(".r;\n");
         fsBuilder->codeAppend("\tfloat distance = "
                        SK_DistanceFieldMultiplier "*(texColor - " SK_DistanceFieldThreshold ");");
+#ifdef SK_GAMMA_APPLY_TO_A8
+        // adjust width based on gamma
+        fsBuilder->codeAppendf("distance -= %s;", distanceAdjustUniName);
+#endif
 
-        // we adjust for the effect of the transformation on the distance by using
-        // the length of the gradient of the texture coordinates. We use st coordinates
-        // to ensure we're mapping 1:1 from texel space to pixel space.
         fsBuilder->codeAppend(GrGLShaderVar::PrecisionString(kHigh_GrSLPrecision,
                                                              pb->ctxInfo().standard()));
-        fsBuilder->codeAppendf("vec2 st = %s;\n", st.fsIn());
-        fsBuilder->codeAppend("\tfloat afwidth;\n");
+        fsBuilder->codeAppendf("vec2 st = %s;", st.fsIn());
+        fsBuilder->codeAppend("float afwidth;");
         if (dfTexEffect.getFlags() & kSimilarity_DistanceFieldEffectFlag) {
+            // For uniform scale, we adjust for the effect of the transformation on the distance
+            // by using the length of the gradient of the texture coordinates. We use st coordinates
+            // to ensure we're mapping 1:1 from texel space to pixel space.
+
             // this gives us a smooth step across approximately one fragment
-            fsBuilder->codeAppend("\tafwidth = abs(" SK_DistanceFieldAAFactor "*dFdx(st.x));\n");
+            fsBuilder->codeAppend("afwidth = abs(" SK_DistanceFieldAAFactor "*dFdx(st.x));");
         } else {
-            fsBuilder->codeAppend("\tvec2 Jdx = dFdx(st);\n");
-            fsBuilder->codeAppend("\tvec2 Jdy = dFdy(st);\n");
+            // For general transforms, to determine the amount of correction we multiply a unit
+            // vector pointing along the SDF gradient direction by the Jacobian of the st coords
+            // (which is the inverse transform for this fragment) and take the length of the result.
+            fsBuilder->codeAppend("vec2 dist_grad = vec2(dFdx(distance), dFdy(distance));");
+            // the length of the gradient may be 0, so we need to check for this
+            // this also compensates for the Adreno, which likes to drop tiles on division by 0
+            fsBuilder->codeAppend("float dg_len2 = dot(dist_grad, dist_grad);");
+            fsBuilder->codeAppend("if (dg_len2 < 0.0001) {");
+            fsBuilder->codeAppend("dist_grad = vec2(0.7071, 0.7071);");
+            fsBuilder->codeAppend("} else {");
+            fsBuilder->codeAppend("dist_grad = dist_grad*inversesqrt(dg_len2);");
+            fsBuilder->codeAppend("}");
 
-            fsBuilder->codeAppend("\tvec2 uv_grad;\n");
-            if (args.fPB->ctxInfo().caps()->dropsTileOnZeroDivide()) {
-                // this is to compensate for the Adreno, which likes to drop tiles on division by 0
-                fsBuilder->codeAppend("\tfloat uv_len2 = dot(uv, uv);\n");
-                fsBuilder->codeAppend("\tif (uv_len2 < 0.0001) {\n");
-                fsBuilder->codeAppend("\t\tuv_grad = vec2(0.7071, 0.7071);\n");
-                fsBuilder->codeAppend("\t} else {\n");
-                fsBuilder->codeAppend("\t\tuv_grad = uv*inversesqrt(uv_len2);\n");
-                fsBuilder->codeAppend("\t}\n");
-            } else {
-                fsBuilder->codeAppend("\tuv_grad = normalize(uv);\n");
-            }
-            fsBuilder->codeAppend("\tvec2 grad = vec2(uv_grad.x*Jdx.x + uv_grad.y*Jdy.x,\n");
-            fsBuilder->codeAppend("\t                 uv_grad.x*Jdx.y + uv_grad.y*Jdy.y);\n");
+            fsBuilder->codeAppend("vec2 Jdx = dFdx(st);");
+            fsBuilder->codeAppend("vec2 Jdy = dFdy(st);");
+            fsBuilder->codeAppend("vec2 grad = vec2(dist_grad.x*Jdx.x + dist_grad.y*Jdy.x,");
+            fsBuilder->codeAppend("                 dist_grad.x*Jdx.y + dist_grad.y*Jdy.y);");
 
             // this gives us a smooth step across approximately one fragment
-            fsBuilder->codeAppend("\tafwidth = " SK_DistanceFieldAAFactor "*length(grad);\n");
+            fsBuilder->codeAppend("afwidth = " SK_DistanceFieldAAFactor "*length(grad);");
         }
-        fsBuilder->codeAppend("\tfloat val = smoothstep(-afwidth, afwidth, distance);\n");
-
-#ifdef SK_GAMMA_APPLY_TO_A8
-        // adjust based on gamma
-        const char* luminanceUniName = NULL;
-        // width, height, 1/(3*width)
-        fLuminanceUni = args.fPB->addUniform(GrGLProgramBuilder::kFragment_Visibility,
-                                             kFloat_GrSLType, kDefault_GrSLPrecision,
-                                             "Luminance", &luminanceUniName);
-
-        fsBuilder->codeAppendf("\tuv = vec2(val, %s);\n", luminanceUniName);
-        fsBuilder->codeAppend("\tvec4 gammaColor = ");
-        fsBuilder->appendTextureLookup(args.fSamplers[1], "uv", kVec2f_GrSLType);
-        fsBuilder->codeAppend(";\n");
-        fsBuilder->codeAppend("\tval = gammaColor.r;\n");
-#endif
+        fsBuilder->codeAppend("float val = smoothstep(-afwidth, afwidth, distance);");
 
         fsBuilder->codeAppendf("%s = vec4(val);", args.fOutputCoverage);
     }
 
     virtual void setData(const GrGLProgramDataManager& pdman,
                          const GrPrimitiveProcessor& proc,
-                         const GrBatchTracker& bt) SK_OVERRIDE {
+                         const GrBatchTracker& bt) override {
 #ifdef SK_GAMMA_APPLY_TO_A8
         const GrDistanceFieldTextureEffect& dfTexEffect =
                 proc.cast<GrDistanceFieldTextureEffect>();
-        float luminance = dfTexEffect.getLuminance();
-        if (luminance != fLuminance) {
-            pdman.set1f(fLuminanceUni, luminance);
-            fLuminance = luminance;
+        float distanceAdjust = dfTexEffect.getDistanceAdjust();
+        if (distanceAdjust != fDistanceAdjust) {
+            pdman.set1f(fDistanceAdjustUni, distanceAdjust);
+            fDistanceAdjust = distanceAdjust;
         }
 #endif
 
@@ -177,8 +177,8 @@ private:
     GrColor       fColor;
     UniformHandle fColorUniform;
 #ifdef SK_GAMMA_APPLY_TO_A8
-    UniformHandle fLuminanceUni;
-    float         fLuminance;
+    float         fDistanceAdjust;
+    UniformHandle fDistanceAdjustUni;
 #endif
 
     typedef GrGLGeometryProcessor INHERITED;
@@ -191,16 +191,13 @@ GrDistanceFieldTextureEffect::GrDistanceFieldTextureEffect(GrColor color,
                                                            GrTexture* texture,
                                                            const GrTextureParams& params,
 #ifdef SK_GAMMA_APPLY_TO_A8
-                                                           GrTexture* gamma,
-                                                           const GrTextureParams& gammaParams,
-                                                           float luminance,
+                                                           float distanceAdjust,
 #endif
                                                            uint32_t flags, bool opaqueVertexColors)
     : INHERITED(color, viewMatrix, SkMatrix::I(), opaqueVertexColors)
     , fTextureAccess(texture, params)
 #ifdef SK_GAMMA_APPLY_TO_A8
-    , fGammaTextureAccess(gamma, gammaParams)
-    , fLuminance(luminance)
+    , fDistanceAdjust(distanceAdjust)
 #endif
     , fFlags(flags & kNonLCD_DistanceFieldEffectMask)
     , fInColor(NULL) {
@@ -214,16 +211,13 @@ GrDistanceFieldTextureEffect::GrDistanceFieldTextureEffect(GrColor color,
     fInTextureCoords = &this->addVertexAttrib(Attribute("inTextureCoords",
                                                           kVec2s_GrVertexAttribType));
     this->addTextureAccess(&fTextureAccess);
-#ifdef SK_GAMMA_APPLY_TO_A8
-    this->addTextureAccess(&fGammaTextureAccess);
-#endif
 }
 
 bool GrDistanceFieldTextureEffect::onIsEqual(const GrGeometryProcessor& other) const {
     const GrDistanceFieldTextureEffect& cte = other.cast<GrDistanceFieldTextureEffect>();
     return
 #ifdef SK_GAMMA_APPLY_TO_A8
-           fLuminance == cte.fLuminance &&
+           fDistanceAdjust == cte.fDistanceAdjust &&
 #endif
            fFlags == cte.fFlags;
 }
@@ -244,7 +238,8 @@ GrDistanceFieldTextureEffect::createGLInstance(const GrBatchTracker& bt,
     return SkNEW_ARGS(GrGLDistanceFieldTextureEffect, (*this, bt));
 }
 
-void GrDistanceFieldTextureEffect::initBatchTracker(GrBatchTracker* bt, const GrPipelineInfo& init) const {
+void GrDistanceFieldTextureEffect::initBatchTracker(GrBatchTracker* bt,
+                                                    const GrPipelineInfo& init) const {
     DistanceFieldBatchTracker* local = bt->cast<DistanceFieldBatchTracker>();
     local->fInputColorType = GetColorInputType(&local->fColor, this->color(), init,
                                                SkToBool(fInColor));
@@ -272,10 +267,6 @@ GrGeometryProcessor* GrDistanceFieldTextureEffect::TestCreate(SkRandom* random,
                                                               GrTexture* textures[]) {
     int texIdx = random->nextBool() ? GrProcessorUnitTest::kSkiaPMTextureIdx :
                                       GrProcessorUnitTest::kAlphaTextureIdx;
-#ifdef SK_GAMMA_APPLY_TO_A8
-    int texIdx2 = random->nextBool() ? GrProcessorUnitTest::kSkiaPMTextureIdx :
-                                       GrProcessorUnitTest::kAlphaTextureIdx;
-#endif
     static const SkShader::TileMode kTileModes[] = {
         SkShader::kClamp_TileMode,
         SkShader::kRepeat_TileMode,
@@ -287,16 +278,11 @@ GrGeometryProcessor* GrDistanceFieldTextureEffect::TestCreate(SkRandom* random,
     };
     GrTextureParams params(tileModes, random->nextBool() ? GrTextureParams::kBilerp_FilterMode :
                                                            GrTextureParams::kNone_FilterMode);
-#ifdef SK_GAMMA_APPLY_TO_A8
-    GrTextureParams params2(tileModes, random->nextBool() ? GrTextureParams::kBilerp_FilterMode :
-                                                            GrTextureParams::kNone_FilterMode);
-#endif
 
     return GrDistanceFieldTextureEffect::Create(GrRandomColor(random),
                                                 GrProcessorUnitTest::TestMatrix(random),
                                                 textures[texIdx], params,
 #ifdef SK_GAMMA_APPLY_TO_A8
-                                                textures[texIdx2], params2,
                                                 random->nextF(),
 #endif
                                                 random->nextBool() ?
@@ -318,7 +304,7 @@ public:
                                           const GrBatchTracker&)
         : fColor(GrColor_ILLEGAL), fTextureSize(SkISize::Make(-1, -1)) {}
 
-    void onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) SK_OVERRIDE{
+    void onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) override{
         const GrDistanceFieldNoGammaTextureEffect& dfTexEffect =
                 args.fGP.cast<GrDistanceFieldNoGammaTextureEffect>();
 
@@ -335,7 +321,7 @@ public:
         vsBuilder->emitAttributes(dfTexEffect);
 
         GrGLVertToFrag v(kVec2f_GrSLType);
-        args.fPB->addVarying("TextureCoords", &v);
+        args.fPB->addVarying("TextureCoords", &v, kHigh_GrSLPrecision);
 
         // setup pass through color
         this->setupColorPassThrough(pb, local.fInputColorType, args.fOutputColor,
@@ -368,34 +354,35 @@ public:
         fsBuilder->codeAppend("float distance = "
             SK_DistanceFieldMultiplier "*(texColor - " SK_DistanceFieldThreshold ");");
 
-        // we adjust for the effect of the transformation on the distance by using
-        // the length of the gradient of the texture coordinates. We use st coordinates
-        // to ensure we're mapping 1:1 from texel space to pixel space.
         fsBuilder->codeAppend(GrGLShaderVar::PrecisionString(kHigh_GrSLPrecision,
                                                              pb->ctxInfo().standard()));
         fsBuilder->codeAppendf("vec2 st = uv*%s;", textureSizeUniName);
         fsBuilder->codeAppend("float afwidth;");
         if (dfTexEffect.getFlags() & kSimilarity_DistanceFieldEffectFlag) {
+            // For uniform scale, we adjust for the effect of the transformation on the distance
+            // by using the length of the gradient of the texture coordinates. We use st coordinates
+            // to ensure we're mapping 1:1 from texel space to pixel space.
+
             // this gives us a smooth step across approximately one fragment
             fsBuilder->codeAppend("afwidth = abs(" SK_DistanceFieldAAFactor "*dFdx(st.x));");
         } else {
+            // For general transforms, to determine the amount of correction we multiply a unit
+            // vector pointing along the SDF gradient direction by the Jacobian of the st coords
+            // (which is the inverse transform for this fragment) and take the length of the result.
+            fsBuilder->codeAppend("vec2 dist_grad = vec2(dFdx(distance), dFdy(distance));");
+            // the length of the gradient may be 0, so we need to check for this
+            // this also compensates for the Adreno, which likes to drop tiles on division by 0
+            fsBuilder->codeAppend("float dg_len2 = dot(dist_grad, dist_grad);");
+            fsBuilder->codeAppend("if (dg_len2 < 0.0001) {");
+            fsBuilder->codeAppend("dist_grad = vec2(0.7071, 0.7071);");
+            fsBuilder->codeAppend("} else {");
+            fsBuilder->codeAppend("dist_grad = dist_grad*inversesqrt(dg_len2);");
+            fsBuilder->codeAppend("}");
+
             fsBuilder->codeAppend("vec2 Jdx = dFdx(st);");
             fsBuilder->codeAppend("vec2 Jdy = dFdy(st);");
-
-            fsBuilder->codeAppend("vec2 uv_grad;");
-            if (args.fPB->ctxInfo().caps()->dropsTileOnZeroDivide()) {
-                // this is to compensate for the Adreno, which likes to drop tiles on division by 0
-                fsBuilder->codeAppend("float uv_len2 = dot(uv, uv);");
-                fsBuilder->codeAppend("if (uv_len2 < 0.0001) {");
-                fsBuilder->codeAppend("uv_grad = vec2(0.7071, 0.7071);");
-                fsBuilder->codeAppend("} else {");
-                fsBuilder->codeAppend("uv_grad = uv*inversesqrt(uv_len2);");
-                fsBuilder->codeAppend("}");
-            } else {
-                fsBuilder->codeAppend("uv_grad = normalize(uv);");
-            }
-            fsBuilder->codeAppend("vec2 grad = vec2(uv_grad.x*Jdx.x + uv_grad.y*Jdy.x,");
-            fsBuilder->codeAppend("                 uv_grad.x*Jdx.y + uv_grad.y*Jdy.y);");
+            fsBuilder->codeAppend("vec2 grad = vec2(dist_grad.x*Jdx.x + dist_grad.y*Jdy.x,");
+            fsBuilder->codeAppend("                 dist_grad.x*Jdx.y + dist_grad.y*Jdy.y);");
 
             // this gives us a smooth step across approximately one fragment
             fsBuilder->codeAppend("afwidth = " SK_DistanceFieldAAFactor "*length(grad);");
@@ -407,7 +394,7 @@ public:
 
     virtual void setData(const GrGLProgramDataManager& pdman,
                          const GrPrimitiveProcessor& proc,
-                         const GrBatchTracker& bt) SK_OVERRIDE {
+                         const GrBatchTracker& bt) override {
         SkASSERT(fTextureSizeUni.isValid());
 
         GrTexture* texture = proc.texture(0);
@@ -485,7 +472,8 @@ bool GrDistanceFieldNoGammaTextureEffect::onIsEqual(const GrGeometryProcessor& o
     return fFlags == cte.fFlags;
 }
 
-void GrDistanceFieldNoGammaTextureEffect::onGetInvariantOutputCoverage(GrInitInvariantOutput* out) const{
+void GrDistanceFieldNoGammaTextureEffect::onGetInvariantOutputCoverage(GrInitInvariantOutput* out)
+                                                                                             const {
     out->setUnknownSingleComponent();
 }
 
@@ -561,10 +549,11 @@ class GrGLDistanceFieldLCDTextureEffect : public GrGLGeometryProcessor {
 public:
     GrGLDistanceFieldLCDTextureEffect(const GrGeometryProcessor&,
                                       const GrBatchTracker&)
-    : fColor(GrColor_ILLEGAL)
-    , fTextColor(GrColor_ILLEGAL) {}
+        : fColor(GrColor_ILLEGAL) {
+        fDistanceAdjust = GrDistanceFieldLCDTextureEffect::DistanceAdjust::Make(1.0f, 1.0f, 1.0f);
+    }
 
-    void onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) SK_OVERRIDE{
+    void onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) override{
         const GrDistanceFieldLCDTextureEffect& dfTexEffect =
                 args.fGP.cast<GrDistanceFieldLCDTextureEffect>();
         const DistanceFieldLCDBatchTracker& local = args.fBT.cast<DistanceFieldLCDBatchTracker>();
@@ -576,13 +565,13 @@ public:
         vsBuilder->emitAttributes(dfTexEffect);
 
         GrGLVertToFrag st(kVec2f_GrSLType);
-        args.fPB->addVarying("IntTextureCoords", &st);
+        args.fPB->addVarying("IntTextureCoords", &st, kHigh_GrSLPrecision);
         vsBuilder->codeAppendf("%s = %s;", st.vsOut(), dfTexEffect.inTextureCoords()->fName);
         
         GrGLVertToFrag uv(kVec2f_GrSLType);
-        args.fPB->addVarying("TextureCoords", &uv);
+        args.fPB->addVarying("TextureCoords", &uv, kHigh_GrSLPrecision);
         // this is only used with text, so our texture bounds always match the glyph atlas
-        vsBuilder->codeAppendf("%s = vec2(" GR_FONT_ATLAS_RECIP_WIDTH ", "
+        vsBuilder->codeAppendf("%s = vec2(" GR_FONT_ATLAS_A8_RECIP_WIDTH ", "
                                GR_FONT_ATLAS_RECIP_HEIGHT ")*%s;", uv.vsOut(),
                                dfTexEffect.inTextureCoords()->fName);
         
@@ -648,82 +637,65 @@ public:
         fsBuilder->codeAppend("\tdistance = "
            "vec3(" SK_DistanceFieldMultiplier ")*(distance - vec3(" SK_DistanceFieldThreshold"));");
 
-        // we adjust for the effect of the transformation on the distance by using
-        // the length of the gradient of the texture coordinates. We use st coordinates
-        // to ensure we're mapping 1:1 from texel space to pixel space.
+        // adjust width based on gamma
+        const char* distanceAdjustUniName = NULL;
+        fDistanceAdjustUni = args.fPB->addUniform(GrGLProgramBuilder::kFragment_Visibility,
+            kVec3f_GrSLType, kDefault_GrSLPrecision,
+            "DistanceAdjust", &distanceAdjustUniName);
+        fsBuilder->codeAppendf("distance -= %s;", distanceAdjustUniName);
 
         // To be strictly correct, we should compute the anti-aliasing factor separately
         // for each color component. However, this is only important when using perspective
         // transformations, and even then using a single factor seems like a reasonable
         // trade-off between quality and speed.
-        fsBuilder->codeAppend("\tfloat afwidth;\n");
+        fsBuilder->codeAppend("float afwidth;");
         if (isUniformScale) {
-            // this gives us a smooth step across approximately one fragment
-            fsBuilder->codeAppend("\tafwidth = abs(" SK_DistanceFieldAAFactor "*dx);\n");
-        } else {
-            fsBuilder->codeAppend("\tvec2 uv_grad;\n");
-            if (args.fPB->ctxInfo().caps()->dropsTileOnZeroDivide()) {
-                // this is to compensate for the Adreno, which likes to drop tiles on division by 0
-                fsBuilder->codeAppend("\tfloat uv_len2 = dot(uv, uv);\n");
-                fsBuilder->codeAppend("\tif (uv_len2 < 0.0001) {\n");
-                fsBuilder->codeAppend("\t\tuv_grad = vec2(0.7071, 0.7071);\n");
-                fsBuilder->codeAppend("\t} else {\n");
-                fsBuilder->codeAppend("\t\tuv_grad = uv*inversesqrt(uv_len2);\n");
-                fsBuilder->codeAppend("\t}\n");
-            } else {
-                fsBuilder->codeAppend("\tuv_grad = normalize(uv);\n");
-            }
-            fsBuilder->codeAppend("\tvec2 grad = vec2(uv_grad.x*Jdx.x + uv_grad.y*Jdy.x,\n");
-            fsBuilder->codeAppend("\t                 uv_grad.x*Jdx.y + uv_grad.y*Jdy.y);\n");
+            // For uniform scale, we adjust for the effect of the transformation on the distance
+            // by using the length of the gradient of the texture coordinates. We use st coordinates
+            // to ensure we're mapping 1:1 from texel space to pixel space.
 
             // this gives us a smooth step across approximately one fragment
-            fsBuilder->codeAppend("\tafwidth = " SK_DistanceFieldAAFactor "*length(grad);\n");
+            fsBuilder->codeAppend("afwidth = abs(" SK_DistanceFieldAAFactor "*dx);");
+        } else {
+            // For general transforms, to determine the amount of correction we multiply a unit
+            // vector pointing along the SDF gradient direction by the Jacobian of the st coords
+            // (which is the inverse transform for this fragment) and take the length of the result.
+            fsBuilder->codeAppend("vec2 dist_grad = vec2(dFdx(distance.r), dFdy(distance.r));");
+            // the length of the gradient may be 0, so we need to check for this
+            // this also compensates for the Adreno, which likes to drop tiles on division by 0
+            fsBuilder->codeAppend("float dg_len2 = dot(dist_grad, dist_grad);");
+            fsBuilder->codeAppend("if (dg_len2 < 0.0001) {");
+            fsBuilder->codeAppend("dist_grad = vec2(0.7071, 0.7071);");
+            fsBuilder->codeAppend("} else {");
+            fsBuilder->codeAppend("dist_grad = dist_grad*inversesqrt(dg_len2);");
+            fsBuilder->codeAppend("}");
+            fsBuilder->codeAppend("vec2 grad = vec2(dist_grad.x*Jdx.x + dist_grad.y*Jdy.x,");
+            fsBuilder->codeAppend("                 dist_grad.x*Jdx.y + dist_grad.y*Jdy.y);");
+
+            // this gives us a smooth step across approximately one fragment
+            fsBuilder->codeAppend("afwidth = " SK_DistanceFieldAAFactor "*length(grad);");
         }
 
-        fsBuilder->codeAppend("\tvec4 val = vec4(smoothstep(vec3(-afwidth), vec3(afwidth), distance), 1.0);\n");
-
-        // adjust based on gamma
-        const char* textColorUniName = NULL;
-        fTextColorUni = args.fPB->addUniform(GrGLProgramBuilder::kFragment_Visibility,
-                                             kVec3f_GrSLType, kDefault_GrSLPrecision,
-                                             "TextColor", &textColorUniName);
-
-        fsBuilder->codeAppendf("\tuv = vec2(val.x, %s.x);\n", textColorUniName);
-        fsBuilder->codeAppend("float gammaColor = ");
-        fsBuilder->appendTextureLookup(args.fSamplers[1], "uv", kVec2f_GrSLType);
-        fsBuilder->codeAppend(".r;\n");
-        fsBuilder->codeAppend("\tval.x = gammaColor;\n");
-
-        fsBuilder->codeAppendf("\tuv = vec2(val.y, %s.y);\n", textColorUniName);
-        fsBuilder->codeAppend("\tgammaColor = ");
-        fsBuilder->appendTextureLookup(args.fSamplers[1], "uv", kVec2f_GrSLType);
-        fsBuilder->codeAppend(".r;\n");
-        fsBuilder->codeAppend("\tval.y = gammaColor;\n");
-
-        fsBuilder->codeAppendf("\tuv = vec2(val.z, %s.z);\n", textColorUniName);
-        fsBuilder->codeAppend("\tgammaColor = ");
-        fsBuilder->appendTextureLookup(args.fSamplers[1], "uv", kVec2f_GrSLType);
-        fsBuilder->codeAppend(".r;\n");
-        fsBuilder->codeAppend("\tval.z = gammaColor;\n");
+        fsBuilder->codeAppend(
+                      "vec4 val = vec4(smoothstep(vec3(-afwidth), vec3(afwidth), distance), 1.0);");
 
         fsBuilder->codeAppendf("%s = vec4(val);", args.fOutputCoverage);
     }
 
     virtual void setData(const GrGLProgramDataManager& pdman,
                          const GrPrimitiveProcessor& processor,
-                         const GrBatchTracker& bt) SK_OVERRIDE {
-        SkASSERT(fTextColorUni.isValid());
+                         const GrBatchTracker& bt) override {
+        SkASSERT(fDistanceAdjustUni.isValid());
 
         const GrDistanceFieldLCDTextureEffect& dfTexEffect =
                 processor.cast<GrDistanceFieldLCDTextureEffect>();
-        GrColor textColor = dfTexEffect.getTextColor();
-        if (textColor != fTextColor) {
-            static const float ONE_OVER_255 = 1.f / 255.f;
-            pdman.set3f(fTextColorUni,
-                        GrColorUnpackR(textColor) * ONE_OVER_255,
-                        GrColorUnpackG(textColor) * ONE_OVER_255,
-                        GrColorUnpackB(textColor) * ONE_OVER_255);
-            fTextColor = textColor;
+        GrDistanceFieldLCDTextureEffect::DistanceAdjust wa = dfTexEffect.getDistanceAdjust();
+        if (wa != fDistanceAdjust) {
+            pdman.set3f(fDistanceAdjustUni,
+                        wa.fR,
+                        wa.fG,
+                        wa.fB);
+            fDistanceAdjust = wa;
         }
 
         this->setUniformViewMatrix(pdman, processor.viewMatrix());
@@ -753,10 +725,10 @@ public:
     }
 
 private:
-    GrColor       fColor;
-    UniformHandle fColorUniform;
-    UniformHandle fTextColorUni;
-    SkColor       fTextColor;
+    GrColor                                      fColor;
+    UniformHandle                                fColorUniform;
+    GrDistanceFieldLCDTextureEffect::DistanceAdjust fDistanceAdjust;
+    UniformHandle                                fDistanceAdjustUni;
 
     typedef GrGLGeometryProcessor INHERITED;
 };
@@ -766,13 +738,11 @@ private:
 GrDistanceFieldLCDTextureEffect::GrDistanceFieldLCDTextureEffect(
                                                   GrColor color, const SkMatrix& viewMatrix,
                                                   GrTexture* texture, const GrTextureParams& params,
-                                                  GrTexture* gamma, const GrTextureParams& gParams,
-                                                  SkColor textColor,
+                                                  DistanceAdjust distanceAdjust,
                                                   uint32_t flags)
     : INHERITED(color, viewMatrix, SkMatrix::I())
     , fTextureAccess(texture, params)
-    , fGammaTextureAccess(gamma, gParams)
-    , fTextColor(textColor)
+    , fDistanceAdjust(distanceAdjust)
     , fFlags(flags & kLCD_DistanceFieldEffectMask){
     SkASSERT(!(flags & ~kLCD_DistanceFieldEffectMask) && (flags & kUseLCD_DistanceFieldEffectFlag));
     this->initClassID<GrDistanceFieldLCDTextureEffect>();
@@ -780,16 +750,16 @@ GrDistanceFieldLCDTextureEffect::GrDistanceFieldLCDTextureEffect(
     fInTextureCoords = &this->addVertexAttrib(Attribute("inTextureCoords",
                                                           kVec2s_GrVertexAttribType));
     this->addTextureAccess(&fTextureAccess);
-    this->addTextureAccess(&fGammaTextureAccess);
 }
 
 bool GrDistanceFieldLCDTextureEffect::onIsEqual(const GrGeometryProcessor& other) const {
     const GrDistanceFieldLCDTextureEffect& cte = other.cast<GrDistanceFieldLCDTextureEffect>();
-    return (fTextColor == cte.fTextColor &&
+    return (fDistanceAdjust == cte.fDistanceAdjust &&
             fFlags == cte.fFlags);
 }
 
-void GrDistanceFieldLCDTextureEffect::onGetInvariantOutputCoverage(GrInitInvariantOutput* out) const {
+void GrDistanceFieldLCDTextureEffect::onGetInvariantOutputCoverage(GrInitInvariantOutput* out)
+                                                                                             const {
     out->setUnknownFourComponents();
     out->setUsingLCDCoverage();
 }
@@ -834,8 +804,6 @@ GrGeometryProcessor* GrDistanceFieldLCDTextureEffect::TestCreate(SkRandom* rando
                                                                  GrTexture* textures[]) {
     int texIdx = random->nextBool() ? GrProcessorUnitTest::kSkiaPMTextureIdx :
                                       GrProcessorUnitTest::kAlphaTextureIdx;
-    int texIdx2 = random->nextBool() ? GrProcessorUnitTest::kSkiaPMTextureIdx :
-                                       GrProcessorUnitTest::kAlphaTextureIdx;
     static const SkShader::TileMode kTileModes[] = {
         SkShader::kClamp_TileMode,
         SkShader::kRepeat_TileMode,
@@ -847,19 +815,13 @@ GrGeometryProcessor* GrDistanceFieldLCDTextureEffect::TestCreate(SkRandom* rando
     };
     GrTextureParams params(tileModes, random->nextBool() ? GrTextureParams::kBilerp_FilterMode :
                            GrTextureParams::kNone_FilterMode);
-    GrTextureParams params2(tileModes, random->nextBool() ? GrTextureParams::kBilerp_FilterMode :
-                           GrTextureParams::kNone_FilterMode);
-    GrColor textColor = GrColorPackRGBA(random->nextULessThan(256),
-                                        random->nextULessThan(256),
-                                        random->nextULessThan(256),
-                                        random->nextULessThan(256));
+    DistanceAdjust wa = { 0.0f, 0.1f, -0.1f };
     uint32_t flags = kUseLCD_DistanceFieldEffectFlag;
     flags |= random->nextBool() ? kUniformScale_DistanceFieldEffectMask : 0;
     flags |= random->nextBool() ? kBGR_DistanceFieldEffectFlag : 0;
     return GrDistanceFieldLCDTextureEffect::Create(GrRandomColor(random),
                                                    GrProcessorUnitTest::TestMatrix(random),
                                                    textures[texIdx], params,
-                                                   textures[texIdx2], params2,
-                                                   textColor,
+                                                   wa,
                                                    flags);
 }

@@ -18,7 +18,6 @@
  */
 
 #include "config.h"
-
 #include "core/layout/svg/SVGTextLayoutEngine.h"
 
 #include "core/layout/svg/LayoutSVGInlineText.h"
@@ -28,6 +27,7 @@
 #include "core/layout/svg/line/SVGInlineTextBox.h"
 #include "core/svg/SVGElement.h"
 #include "core/svg/SVGLengthContext.h"
+#include "core/svg/SVGTextContentElement.h"
 
 // Set to a value > 0 to dump the text fragments
 #define DUMP_TEXT_FRAGMENTS 0
@@ -240,12 +240,12 @@ void SVGTextLayoutEngine::layoutInlineTextBox(SVGInlineTextBox* textBox)
 {
     ASSERT(textBox);
 
-    LayoutSVGInlineText& text = toLayoutSVGInlineText(textBox->renderer());
+    LayoutSVGInlineText& text = toLayoutSVGInlineText(textBox->layoutObject());
     ASSERT(text.parent());
     ASSERT(text.parent()->node());
     ASSERT(text.parent()->node()->isSVGElement());
 
-    const LayoutStyle& style = text.styleRef();
+    const ComputedStyle& style = text.styleRef();
 
     textBox->clearTextFragments();
     m_isVerticalText = style.svgStyle().isVerticalWritingMode();
@@ -422,17 +422,15 @@ void SVGTextLayoutEngine::advanceToNextVisualCharacter(const SVGTextMetrics& vis
     m_visualCharacterOffset += visualMetrics.length();
 }
 
-void SVGTextLayoutEngine::layoutTextOnLineOrPath(SVGInlineTextBox* textBox, const LayoutSVGInlineText& text, const LayoutStyle& style)
+void SVGTextLayoutEngine::layoutTextOnLineOrPath(SVGInlineTextBox* textBox, const LayoutSVGInlineText& text, const ComputedStyle& style)
 {
     if (m_inPathLayout && !m_textPathCalculator)
         return;
 
-    SVGElement* lengthContext = toSVGElement(text.parent()->node());
-
     LayoutObject* textParent = text.parent();
     bool definesTextLength = textParent ? parentDefinesTextLength(textParent) : false;
 
-    const SVGLayoutStyle& svgStyle = style.svgStyle();
+    const SVGComputedStyle& svgStyle = style.svgStyle();
 
     m_visualMetricsListOffset = 0;
     m_visualCharacterOffset = 0;
@@ -449,7 +447,7 @@ void SVGTextLayoutEngine::layoutTextOnLineOrPath(SVGInlineTextBox* textBox, cons
     bool applySpacingToNextCharacter = false;
 
     float lastAngle = 0;
-    float baselineShift = baselineLayout.calculateBaselineShift(svgStyle, lengthContext);
+    float baselineShift = baselineLayout.calculateBaselineShift(style);
     baselineShift -= baselineLayout.calculateAlignmentBaselineShift(m_isVerticalText, &text);
 
     // Main layout algorithm.

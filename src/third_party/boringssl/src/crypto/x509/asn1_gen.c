@@ -373,13 +373,18 @@ static int asn1_cb(const char *elem, int len, void *bitstr)
 		break;
 
 		case ASN1_GEN_FLAG_FORMAT:
+		if (!vstart)
+			{
+			OPENSSL_PUT_ERROR(ASN1, asn1_cb, ASN1_R_UNKNOWN_FORMAT);
+			return -1;
+			}
 		if (!strncmp(vstart, "ASCII", 5))
 			arg->format = ASN1_GEN_FORMAT_ASCII;
 		else if (!strncmp(vstart, "UTF8", 4))
 			arg->format = ASN1_GEN_FORMAT_UTF8;
 		else if (!strncmp(vstart, "HEX", 3))
 			arg->format = ASN1_GEN_FORMAT_HEX;
-		else if (!strncmp(vstart, "BITLIST", 3))
+		else if (!strncmp(vstart, "BITLIST", 7))
 			arg->format = ASN1_GEN_FORMAT_BITLIST;
 		else
 			{

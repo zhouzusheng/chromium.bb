@@ -128,6 +128,9 @@ interface InspectorInstrumentation {
     [DOM, Inline=FastReturn]
     void willPopShadowRoot([Keep] Element* host, ShadowRoot*);
 
+    [DOMDebugger]
+    void willSetInnerHTML(Element* element);
+
     [DOMDebugger, Inline=FastReturn]
     void willSendXMLHttpRequest(ExecutionContext*, const String& url);
 
@@ -207,7 +210,7 @@ interface InspectorInstrumentation {
     void didFireTimer(const InspectorInstrumentationCookie&);
 
     [Page, Inline=FastReturn]
-    void didLayout(LocalFrame*, LayoutObject* root);
+    void didLayout(LocalFrame*);
 
     [Page, Inline=FastReturn]
     void didScroll(LocalFrame*);
@@ -218,7 +221,7 @@ interface InspectorInstrumentation {
     [AsyncCallTracker, Inline=FastReturn]
     void didDispatchXHRLoadendEvent(ExecutionContext*, XMLHttpRequest*);
 
-    [Page, LayerTree, Inline=FastReturn]
+    [LayerTree, Inline=FastReturn]
     void didPaint([Keep] LayoutObject*, const GraphicsLayer*, GraphicsContext*, const LayoutRect&);
 
     [Resource, Inline=FastReturn]
@@ -232,12 +235,6 @@ interface InspectorInstrumentation {
 
     [Resource, Inline=FastReturn]
     void applyUserAgentOverride(LocalFrame*, String* userAgent);
-
-    [Page, Inline=FastReturn]
-    bool applyViewportStyleOverride(Document*, StyleResolver*);
-
-    [Page, Inline=FastReturn]
-    void applyEmulatedMedia(LocalFrame*, String* media);
 
     [Resource]
     void willSendRequest(LocalFrame*, unsigned long identifier, DocumentLoader*, ResourceRequest&, const ResourceResponse& redirectResponse, const FetchInitiatorInfo&);
@@ -258,7 +255,7 @@ interface InspectorInstrumentation {
     void didReceiveData([Keep] LocalFrame*, unsigned long identifier, const char* data, int dataLength, int encodedDataLength);
 
     [Resource]
-    void didFinishLoading(LocalFrame* frame, unsigned long identifier, DocumentLoader*, double finishTime, int64_t encodedDataLength);
+    void didFinishLoading(LocalFrame* frame, unsigned long identifier, double finishTime, int64_t encodedDataLength);
 
     [Resource]
     void didReceiveCORSRedirectResponse([Keep] LocalFrame*, unsigned long identifier, DocumentLoader*, const ResourceResponse&, ResourceLoader*);
@@ -284,7 +281,7 @@ interface InspectorInstrumentation {
     [Resource]
     void didFailXHRLoading(ExecutionContext*, XMLHttpRequest* xhr, ThreadableLoaderClient* client);
 
-    [Console, Resource]
+    [Resource]
     void didFinishXHRLoading([Keep] ExecutionContext*, XMLHttpRequest* xhr, ThreadableLoaderClient* client, unsigned long identifier, ScriptString sourceString, const AtomicString& method, const String& url);
 
     [Resource]
@@ -299,7 +296,7 @@ interface InspectorInstrumentation {
     [PageDebugger]
     void didStartProvisionalLoad([Keep] LocalFrame*);
 
-    [Inspector, DOM, Page]
+    [DOM, Page]
     void domContentLoadedEventFired([Keep] LocalFrame*);
 
     [Page]
@@ -311,7 +308,7 @@ interface InspectorInstrumentation {
     [Canvas, Page]
     void frameDetachedFromParent([Keep] LocalFrame*);
 
-    [Resource, DOM, Canvas, Page, PageDebugger]
+    [Resource, DOM, Canvas, Page]
     void didCommitLoad([Keep] LocalFrame*, DocumentLoader*);
 
     [DOM, Inline=FastReturn]
@@ -342,28 +339,22 @@ interface InspectorInstrumentation {
     void willDestroyResource(Resource* cachedResource);
 
     [AsyncCallTracker, DOMDebugger]
-    void didRequestAnimationFrame([Keep] Document*, int callbackId);
+    void didRequestAnimationFrame([Keep] ExecutionContext*, int callbackId);
 
     [AsyncCallTracker, DOMDebugger]
-    void didCancelAnimationFrame([Keep] Document*, int callbackId);
+    void didCancelAnimationFrame([Keep] ExecutionContext*, int callbackId);
 
     [AsyncCallTracker, DOMDebugger]
-    InspectorInstrumentationCookie willFireAnimationFrame([Keep] Document*, int callbackId);
+    InspectorInstrumentationCookie willFireAnimationFrame([Keep] ExecutionContext*, int callbackId);
 
     [AsyncCallTracker, Inline=FastReturn]
     void didFireAnimationFrame(const InspectorInstrumentationCookie&);
-
-    [DOMStorage, Inline=FastReturn]
-    void didDispatchDOMStorageEvent([Keep] LocalFrame*, const String& key, const String& oldValue, const String& newValue, StorageType storageType, SecurityOrigin* securityOrigin);
 
     [Worker]
     void didStartWorker(ExecutionContext*, WorkerInspectorProxy* proxy, const KURL& url);
 
     [Worker, PageConsole]
     void workerTerminated(ExecutionContext*, WorkerInspectorProxy* proxy);
-
-    [WorkerRuntime]
-    void willEvaluateWorkerScript([Keep] WorkerGlobalScope* context, int workerThreadStartMode);
 
     [Profiler]
     void willProcessTask(WorkerGlobalScope* context);
@@ -432,7 +423,10 @@ interface InspectorInstrumentation {
     void traceAsyncCallbackCompleted(const InspectorInstrumentationCookie&);
 
     [Animation, Inline=FastReturn]
-    void didCreateAnimationPlayer(Document*, AnimationPlayer& player);
+    void didCreateAnimationPlayer(Document*, AnimationPlayer* player);
+
+    [Animation, Inline=FastReturn]
+    void didCancelAnimationPlayer(Document*, AnimationPlayer* player);
 }
 
 interface InspectorConsoleInstrumentation {

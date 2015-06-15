@@ -78,7 +78,7 @@ class RasterBufferImpl : public RasterBuffer {
 const int kCopyFlushPeriod = 4;
 
 // Number of in-flight copy operations to allow.
-const int kMaxCopyOperations = 16;
+const int kMaxCopyOperations = 32;
 
 // Delay been checking for copy operations to complete.
 const int kCheckForCompletedCopyOperationsTickRateMs = 1;
@@ -321,9 +321,13 @@ OneCopyTileTaskWorkerPool::PlaybackAndScheduleCopyOnWorkerThread(
 
     gfx::GpuMemoryBuffer* gpu_memory_buffer = write_lock->GetGpuMemoryBuffer();
     if (gpu_memory_buffer) {
-      TileTaskWorkerPool::PlaybackToMemory(
-          gpu_memory_buffer->Map(), src->format(), src->size(),
-          gpu_memory_buffer->GetStride(), raster_source, rect, scale);
+      void* data = NULL;
+      bool rv = gpu_memory_buffer->Map(&data);
+      DCHECK(rv);
+      uint32 stride;
+      gpu_memory_buffer->GetStride(&stride);
+      TileTaskWorkerPool::PlaybackToMemory(data, src->format(), src->size(),
+                                           stride, raster_source, rect, scale);
       gpu_memory_buffer->Unmap();
     }
   }

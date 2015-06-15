@@ -10,18 +10,18 @@
 #ifndef SkPDFTypes_DEFINED
 #define SkPDFTypes_DEFINED
 
-#include "SkMutex.h"
+#include "SkPDFTypes.h"
 #include "SkRefCnt.h"
 #include "SkScalar.h"
 #include "SkString.h"
 #include "SkTDArray.h"
-#include "SkTSet.h"
+#include "SkTHash.h"
 #include "SkTypes.h"
 
-class SkPDFCatalog;
-class SkWStream;
-
+class SkPDFObjNumMap;
 class SkPDFObject;
+class SkPDFSubstituteMap;
+class SkWStream;
 
 /** \class SkPDFObject
 
@@ -39,16 +39,17 @@ public:
      *  @param stream   The writable output stream to send the output to.
      */
     // TODO(halcanary): make this method const
-    virtual void emitObject(SkWStream* stream, SkPDFCatalog* catalog) = 0;
+    virtual void emitObject(SkWStream* stream,
+                            const SkPDFObjNumMap& objNumMap,
+                            const SkPDFSubstituteMap& substitutes) = 0;
 
     /**
-     *  Adds all transitive dependencies of this object to resourceSet.
-     *
-     *  @param catalog Implementations should respect the catalog's
-     *                 object substitution map.
+     *  Adds all transitive dependencies of this object to the
+     *  catalog.  Implementations should respect the catalog's object
+     *  substitution map.
      */
-    virtual void addResources(SkTSet<SkPDFObject*>* resourceSet,
-                              SkPDFCatalog* catalog) const {}
+    virtual void addResources(SkPDFObjNumMap* catalog,
+                              const SkPDFSubstituteMap& substitutes) const {}
 
 private:
     typedef SkRefCnt INHERITED;
@@ -69,8 +70,11 @@ public:
     virtual ~SkPDFObjRef();
 
     // The SkPDFObject interface.
-    virtual void emitObject(SkWStream* stream, SkPDFCatalog* catalog) SK_OVERRIDE;
-    virtual void addResources(SkTSet<SkPDFObject*>*, SkPDFCatalog*) const SK_OVERRIDE;
+    virtual void emitObject(SkWStream* stream,
+                            const SkPDFObjNumMap& objNumMap,
+                            const SkPDFSubstituteMap& substitutes) override;
+    virtual void addResources(SkPDFObjNumMap*,
+                              const SkPDFSubstituteMap&) const override;
 
 private:
     SkAutoTUnref<SkPDFObject> fObj;
@@ -93,7 +97,9 @@ public:
     virtual ~SkPDFInt();
 
     // The SkPDFObject interface.
-    virtual void emitObject(SkWStream* stream, SkPDFCatalog* catalog) SK_OVERRIDE;
+    virtual void emitObject(SkWStream* stream,
+                            const SkPDFObjNumMap& objNumMap,
+                            const SkPDFSubstituteMap& substitutes) override;
 
 private:
     int32_t fValue;
@@ -116,7 +122,9 @@ public:
     virtual ~SkPDFBool();
 
     // The SkPDFObject interface.
-    virtual void emitObject(SkWStream* stream, SkPDFCatalog* catalog) SK_OVERRIDE;
+    virtual void emitObject(SkWStream* stream,
+                            const SkPDFObjNumMap& objNumMap,
+                            const SkPDFSubstituteMap& substitutes) override;
 
 private:
     bool fValue;
@@ -141,7 +149,9 @@ public:
     static void Append(SkScalar value, SkWStream* stream);
 
     // The SkPDFObject interface.
-    virtual void emitObject(SkWStream* stream, SkPDFCatalog* catalog) SK_OVERRIDE;
+    virtual void emitObject(SkWStream* stream,
+                            const SkPDFObjNumMap& objNumMap,
+                            const SkPDFSubstituteMap& substitutes) override;
 
 private:
     SkScalar fValue;
@@ -173,7 +183,9 @@ public:
     virtual ~SkPDFString();
 
     // The SkPDFObject interface.
-    virtual void emitObject(SkWStream* stream, SkPDFCatalog* catalog) SK_OVERRIDE;
+    virtual void emitObject(SkWStream* stream,
+                            const SkPDFObjNumMap& objNumMap,
+                            const SkPDFSubstituteMap& substitutes) override;
 
     static SkString FormatString(const char* input, size_t len);
     static SkString FormatString(const uint16_t* input, size_t len,
@@ -207,7 +219,9 @@ public:
     bool operator==(const SkPDFName& b) const;
 
     // The SkPDFObject interface.
-    virtual void emitObject(SkWStream* stream, SkPDFCatalog* catalog) SK_OVERRIDE;
+    virtual void emitObject(SkWStream* stream,
+                            const SkPDFObjNumMap& objNumMap,
+                            const SkPDFSubstituteMap& substitutes) override;
 
 private:
     static const size_t kMaxLen = 127;
@@ -233,8 +247,11 @@ public:
     virtual ~SkPDFArray();
 
     // The SkPDFObject interface.
-    virtual void emitObject(SkWStream* stream, SkPDFCatalog* catalog) SK_OVERRIDE;
-    virtual void addResources(SkTSet<SkPDFObject*>*, SkPDFCatalog*) const SK_OVERRIDE;
+    virtual void emitObject(SkWStream* stream,
+                            const SkPDFObjNumMap& objNumMap,
+                            const SkPDFSubstituteMap& substitutes) override;
+    virtual void addResources(SkPDFObjNumMap*,
+                              const SkPDFSubstituteMap&) const override;
 
     /** The size of the array.
      */
@@ -305,8 +322,11 @@ public:
     virtual ~SkPDFDict();
 
     // The SkPDFObject interface.
-    virtual void emitObject(SkWStream* stream, SkPDFCatalog* catalog) SK_OVERRIDE;
-    virtual void addResources(SkTSet<SkPDFObject*>*, SkPDFCatalog*) const SK_OVERRIDE;
+    virtual void emitObject(SkWStream* stream,
+                            const SkPDFObjNumMap& objNumMap,
+                            const SkPDFSubstituteMap& substitutes) override;
+    virtual void addResources(SkPDFObjNumMap*,
+                              const SkPDFSubstituteMap&) const override;
 
     /** The size of the dictionary.
      */
@@ -384,12 +404,60 @@ private:
 
     static const int kMaxLen = 4095;
 
-    mutable SkMutex fMutex;  // protects modifications to fValue
     SkTDArray<struct Rec> fValue;
 
     SkPDFObject* append(SkPDFName* key, SkPDFObject* value);
 
     typedef SkPDFObject INHERITED;
+};
+
+////////////////////////////////////////////////////////////////////////////////
+
+/** \class SkPDFSubstituteMap
+
+    The PDF Substitute Map manages substitute objects and owns the
+    substitutes.
+*/
+class SkPDFSubstituteMap : SkNoncopyable {
+public:
+    ~SkPDFSubstituteMap();
+    /** Set substitute object for the passed object.
+        Refs substitute.
+     */
+    void setSubstitute(SkPDFObject* original, SkPDFObject* substitute);
+
+    /** Find and return any substitute object set for the passed object. If
+     *  there is none, return the passed object.
+     */
+    SkPDFObject* getSubstitute(SkPDFObject* object) const;
+
+private:
+    SkTHashMap<SkPDFObject*, SkPDFObject*> fSubstituteMap;
+};
+
+/** \class SkPDFObjNumMap
+
+    The PDF Object Number Map manages object numbers.  It is used to
+    create the PDF cross reference table.
+*/
+class SkPDFObjNumMap : SkNoncopyable {
+public:
+    /** Add the passed object to the catalog.
+     *  @param obj         The object to add.
+     *  @return True iff the object was not already added to the catalog.
+     */
+    bool addObject(SkPDFObject* obj);
+
+    /** Get the object number for the passed object.
+     *  @param obj         The object of interest.
+     */
+    int32_t getObjectNumber(SkPDFObject* obj) const;
+
+    const SkTDArray<SkPDFObject*>& objects() const { return fObjects; }
+
+private:
+    SkTDArray<SkPDFObject*> fObjects;
+    SkTHashMap<SkPDFObject*, int32_t> fObjectNumbers;
 };
 
 #endif

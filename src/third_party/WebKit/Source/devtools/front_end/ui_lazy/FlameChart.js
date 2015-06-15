@@ -68,6 +68,7 @@ WebInspector.FlameChart = function(dataProvider, flameChartDelegate, isTopDown)
     this._canvas.tabIndex = 1;
     this.setDefaultFocusedElement(this._canvas);
     this._canvas.addEventListener("mousemove", this._onMouseMove.bind(this), false);
+    this._canvas.addEventListener("mouseout", this._onMouseOut.bind(this), false);
     this._canvas.addEventListener("mousewheel", this._onMouseWheel.bind(this), false);
     this._canvas.addEventListener("click", this._onClick.bind(this), false);
     this._canvas.addEventListener("keydown", this._onKeyDown.bind(this), false);
@@ -325,7 +326,7 @@ WebInspector.FlameChart.ColorGenerator.prototype = {
      */
     _generateColorForID: function(id)
     {
-        var hash = id.hashCode();
+        var hash = Math.abs(String.hashCode(id));
         var h = this._indexToValueInSpace(hash, this._hueSpace);
         var s = this._indexToValueInSpace(hash, this._satSpace);
         var l = this._indexToValueInSpace(hash, this._lightnessSpace);
@@ -657,11 +658,20 @@ WebInspector.FlameChart.prototype = {
         var inDividersBar = event.offsetY < WebInspector.FlameChart.DividersBarHeight;
         this._highlightedMarkerIndex = inDividersBar ? this._markerIndexAtPosition(event.offsetX) : -1;
         this._updateMarkerHighlight();
-        if (inDividersBar)
-            return;
 
-        var entryIndex = this._coordinatesToEntryIndex(event.offsetX, event.offsetY);
+        this._highlightEntry(this._coordinatesToEntryIndex(event.offsetX, event.offsetY));
+    },
 
+    _onMouseOut: function()
+    {
+        this._highlightEntry(-1);
+    },
+
+    /**
+     * @param {number} entryIndex
+     */
+    _highlightEntry: function(entryIndex)
+    {
         if (this._highlightedEntryIndex === entryIndex)
             return;
 
@@ -1040,7 +1050,7 @@ WebInspector.FlameChart.prototype = {
             var entryIndex = titleIndices[i];
             var entryStartTime = entryStartTimes[entryIndex];
             var barX = this._timeToPositionClipped(entryStartTime);
-            var barRight = this._timeToPositionClipped(entryStartTime + entryTotalTimes[entryIndex]) + 1;
+            var barRight = Math.min(this._timeToPositionClipped(entryStartTime + entryTotalTimes[entryIndex]), width) + 1;
             var barWidth = barRight - barX;
             var barLevel = entryLevels[entryIndex];
             var barY = this._levelToHeight(barLevel);
@@ -1341,7 +1351,6 @@ WebInspector.FlameChart.prototype = {
         this._pixelWindowWidth = this._offsetWidth - this._paddingLeft;
         this._totalPixels = Math.floor(this._pixelWindowWidth / this._windowWidth);
         this._pixelWindowLeft = Math.floor(this._totalPixels * this._windowLeft);
-        this._pixelWindowRight = Math.floor(this._totalPixels * this._windowRight);
 
         this._timeToPixel = this._totalPixels / this._totalTime;
         this._pixelToTime = this._totalTime / this._totalPixels;

@@ -709,17 +709,17 @@ public:
         return SkNEW_ARGS(AAHairlineBatch, (geometry, linesIndexBuffer, quadsIndexBuffer));
     }
 
-    const char* name() const SK_OVERRIDE { return "AAHairlineBatch"; }
+    const char* name() const override { return "AAHairlineBatch"; }
 
-    void getInvariantOutputColor(GrInitInvariantOutput* out) const SK_OVERRIDE {
+    void getInvariantOutputColor(GrInitInvariantOutput* out) const override {
         // When this is called on a batch, there is only one geometry bundle
         out->setKnownFourComponents(fGeoData[0].fColor);
     }
-    void getInvariantOutputCoverage(GrInitInvariantOutput* out) const SK_OVERRIDE {
+    void getInvariantOutputCoverage(GrInitInvariantOutput* out) const override {
         out->setUnknownSingleComponent();
     }
 
-    void initBatchTracker(const GrPipelineInfo& init) SK_OVERRIDE {
+    void initBatchTracker(const GrPipelineInfo& init) override {
         // Handle any color overrides
         if (init.fColorIgnored) {
             fGeoData[0].fColor = GrColor_ILLEGAL;
@@ -736,7 +736,7 @@ public:
         SkDEBUGCODE(fBatch.fDevBounds = fGeoData[0].fDevBounds;)
     }
 
-    void generateGeometry(GrBatchTarget* batchTarget, const GrPipeline* pipeline) SK_OVERRIDE;
+    void generateGeometry(GrBatchTarget* batchTarget, const GrPipeline* pipeline) override;
 
     SkSTArray<1, Geometry, true>* geoData() { return &fGeoData; }
 
@@ -754,7 +754,7 @@ private:
         fGeoData.push_back(geometry);
     }
 
-    bool onCombineIfPossible(GrBatch* t) SK_OVERRIDE {
+    bool onCombineIfPossible(GrBatch* t) override {
         AAHairlineBatch* that = t->cast<AAHairlineBatch>();
 
         if (this->viewMatrix().hasPerspective() != that->viewMatrix().hasPerspective()) {
@@ -895,6 +895,11 @@ void AAHairlineBatch::generateGeometry(GrBatchTarget* batchTarget, const GrPipel
                                                               &vertexBuffer,
                                                               &firstVertex);
 
+        if (!vertices) {
+            SkDebugf("Could not allocate vertices\n");
+            return;
+        }
+
         SkASSERT(lineGP->getVertexStride() == sizeof(LineVertex));
 
         LineVertex* verts = reinterpret_cast<LineVertex*>(vertices);
@@ -933,6 +938,11 @@ void AAHairlineBatch::generateGeometry(GrBatchTarget* batchTarget, const GrPipel
                                                               vertexCount,
                                                               &vertexBuffer,
                                                               &firstVertex);
+
+        if (!vertices) {
+            SkDebugf("Could not allocate vertices\n");
+            return;
+        }
 
         // Setup vertices
         BezierVertex* verts = reinterpret_cast<BezierVertex*>(vertices);
@@ -1021,6 +1031,11 @@ bool GrAAHairLinePathRenderer::onDrawPath(GrDrawTarget* target,
                                           const SkPath& path,
                                           const SkStrokeRec& stroke,
                                           bool) {
+    if (!fLinesIndexBuffer || !fQuadsIndexBuffer) {
+        SkDebugf("unable to allocate indices\n");
+        return false;
+    }
+
     SkScalar hairlineCoverage;
     uint8_t newCoverage = 0xff;
     if (IsStrokeHairlineOrEquivalent(stroke, viewMatrix, &hairlineCoverage)) {
@@ -1028,7 +1043,8 @@ bool GrAAHairLinePathRenderer::onDrawPath(GrDrawTarget* target,
     }
 
     SkIRect devClipBounds;
-    target->getClip()->getConservativeBounds(pipelineBuilder->getRenderTarget(), &devClipBounds);
+    pipelineBuilder->clip().getConservativeBounds(pipelineBuilder->getRenderTarget(),
+                                                  &devClipBounds);
 
     // This outset was determined experimentally by running skps and gms.  It probably could be a
     // bit tighter

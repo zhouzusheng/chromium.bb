@@ -36,7 +36,6 @@ ServiceWorkerWindowClient::ServiceWorkerWindowClient(const WebServiceWorkerClien
     : ServiceWorkerClient(info)
     , m_pageVisibilityState(info.pageVisibilityState)
     , m_isFocused(info.isFocused)
-    , m_frameType(info.frameType)
 {
 }
 
@@ -47,23 +46,6 @@ ServiceWorkerWindowClient::~ServiceWorkerWindowClient()
 String ServiceWorkerWindowClient::visibilityState() const
 {
     return pageVisibilityStateString(static_cast<PageVisibilityState>(m_pageVisibilityState));
-}
-
-String ServiceWorkerWindowClient::frameType() const
-{
-    switch (m_frameType) {
-    case WebURLRequest::FrameTypeAuxiliary:
-        return "auxiliary";
-    case WebURLRequest::FrameTypeNested:
-        return "nested";
-    case WebURLRequest::FrameTypeNone:
-        return "none";
-    case WebURLRequest::FrameTypeTopLevel:
-        return "top-level";
-    }
-
-    ASSERT_NOT_REACHED();
-    return String();
 }
 
 ScriptPromise ServiceWorkerWindowClient::focus(ScriptState* scriptState)
@@ -77,7 +59,7 @@ ScriptPromise ServiceWorkerWindowClient::focus(ScriptState* scriptState)
     }
     scriptState->executionContext()->consumeWindowInteraction();
 
-    ServiceWorkerGlobalScopeClient::from(scriptState->executionContext())->focus(id(), new CallbackPromiseAdapter<ServiceWorkerWindowClient, ServiceWorkerError>(resolver));
+    ServiceWorkerGlobalScopeClient::from(scriptState->executionContext())->focus(uuid(), new CallbackPromiseAdapter<ServiceWorkerWindowClient, ServiceWorkerError>(resolver));
     return promise;
 }
 

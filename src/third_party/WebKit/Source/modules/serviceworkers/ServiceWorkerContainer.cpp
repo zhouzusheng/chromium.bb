@@ -81,6 +81,23 @@ private:
     WTF_MAKE_NONCOPYABLE(GetRegistrationCallback);
 };
 
+class ServiceWorkerContainer::GetRegistrationForReadyCallback : public WebServiceWorkerProvider::WebServiceWorkerGetRegistrationForReadyCallbacks {
+public:
+    explicit GetRegistrationForReadyCallback(ReadyProperty* ready)
+        : m_ready(ready) { }
+    ~GetRegistrationForReadyCallback() { }
+    void onSuccess(WebServiceWorkerRegistration* registration) override
+    {
+        ASSERT(registration);
+        ASSERT(m_ready->state() == ReadyProperty::Pending);
+        if (m_ready->executionContext() && !m_ready->executionContext()->activeDOMObjectsAreStopped())
+            m_ready->resolve(ServiceWorkerRegistration::from(m_ready->executionContext(), registration));
+    }
+private:
+    Persistent<ReadyProperty> m_ready;
+    WTF_MAKE_NONCOPYABLE(GetRegistrationForReadyCallback);
+};
+
 ServiceWorkerContainer* ServiceWorkerContainer::create(ExecutionContext* executionContext)
 {
     return new ServiceWorkerContainer(executionContext);
@@ -102,7 +119,6 @@ void ServiceWorkerContainer::willBeDetachedFromFrame()
 DEFINE_TRACE(ServiceWorkerContainer)
 {
     visitor->trace(m_controller);
-    visitor->trace(m_readyRegistration);
     visitor->trace(m_ready);
     RefCountedGarbageCollectedEventTargetWithInlineData<ServiceWorkerContainer>::trace(visitor);
     ContextLifecycleObserver::trace(visitor);
@@ -119,8 +135,6 @@ ScriptPromise ServiceWorkerContainer::registerServiceWorker(ScriptState* scriptS
         return promise;
     }
 
-    // FIXME: This should use the container's execution context, not
-    // the callers.
     ExecutionContext* executionContext = scriptState->executionContext();
     RefPtr<SecurityOrigin> documentOrigin = executionContext->securityOrigin();
     String errorMessage;
@@ -135,7 +149,7 @@ ScriptPromise ServiceWorkerContainer::registerServiceWorker(ScriptState* scriptS
         return promise;
     }
 
-    KURL scriptURL = executionContext->completeURL(url);
+    KURL scriptURL = callingExecutionContext(scriptState->isolate())->completeURL(url);
     scriptURL.removeFragmentIdentifier();
     if (!documentOrigin->canRequest(scriptURL)) {
         RefPtr<SecurityOrigin> scriptOrigin = SecurityOrigin::create(scriptURL);
@@ -151,7 +165,7 @@ ScriptPromise ServiceWorkerContainer::registerServiceWorker(ScriptState* scriptS
     if (options.scope().isNull())
         patternURL = KURL(scriptURL, "./");
     else
-        patternURL = executionContext->completeURL(options.scope());
+        patternURL = callingExecutionContext(scriptState->isolate())->completeURL(options.scope());
     patternURL.removeFragmentIdentifier();
 
     if (!documentOrigin->canRequest(patternURL)) {
@@ -193,8 +207,6 @@ ScriptPromise ServiceWorkerContainer::getRegistration(ScriptState* scriptState, 
         return promise;
     }
 
-    // FIXME: This should use the container's execution context, not
-    // the callers.
     ExecutionContext* executionContext = scriptState->executionContext();
     RefPtr<SecurityOrigin> documentOrigin = executionContext->securityOrigin();
     String errorMessage;
@@ -209,7 +221,7 @@ ScriptPromise ServiceWorkerContainer::getRegistration(ScriptState* scriptState, 
         return promise;
     }
 
-    KURL completedURL = executionContext->completeURL(documentURL);
+    KURL completedURL = callingExecutionContext(scriptState->isolate())->completeURL(documentURL);
     completedURL.removeFragmentIdentifier();
     if (!documentOrigin->canRequest(completedURL)) {
         RefPtr<SecurityOrigin> documentURLOrigin = SecurityOrigin::create(completedURL);
@@ -237,6 +249,12 @@ ScriptPromise ServiceWorkerContainer::ready(ScriptState* callerState)
         return ScriptPromise::rejectWithDOMException(callerState, DOMException::create(NotSupportedError, "'ready' is only supported in pages."));
     }
 
+    if (!m_ready) {
+        m_ready = createReadyProperty();
+        if (m_provider)
+            m_provider->getRegistrationForReady(new GetRegistrationForReadyCallback(m_ready.get()));
+    }
+
     return m_ready->promise(callerState->world());
 }
 
@@ -258,26 +276,6 @@ void ServiceWorkerContainer::setController(WebServiceWorker* serviceWorker, bool
     m_controller = ServiceWorker::from(executionContext(), serviceWorker);
     if (shouldNotifyControllerChange)
         dispatchEvent(Event::create(EventTypeNames::controllerchange));
-}
-
-void ServiceWorkerContainer::setReadyRegistration(WebServiceWorkerRegistration* registration)
-{
-    if (!executionContext()) {
-        ServiceWorkerRegistration::dispose(registration);
-        return;
-    }
-
-    ServiceWorkerRegistration* readyRegistration = ServiceWorkerRegistration::from(executionContext(), registration);
-    ASSERT(readyRegistration->active());
-
-    if (m_readyRegistration) {
-        ASSERT(m_readyRegistration == readyRegistration);
-        ASSERT(m_ready->state() == ReadyProperty::Resolved);
-        return;
-    }
-
-    m_readyRegistration = readyRegistration;
-    m_ready->resolve(readyRegistration);
 }
 
 void ServiceWorkerContainer::dispatchMessageEvent(const WebString& message, const WebMessagePortChannelArray& webChannels)
@@ -321,8 +319,6 @@ ServiceWorkerContainer::ServiceWorkerContainer(ExecutionContext* executionContex
 
     if (!executionContext)
         return;
-
-    m_ready = createReadyProperty();
 
     if (ServiceWorkerContainerClient* client = ServiceWorkerContainerClient::from(executionContext)) {
         m_provider = client->provider();

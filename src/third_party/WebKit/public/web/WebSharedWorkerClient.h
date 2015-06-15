@@ -31,7 +31,7 @@
 #ifndef WebSharedWorkerClient_h
 #define WebSharedWorkerClient_h
 
-#include "../platform/WebMessagePortChannel.h"
+#include "public/platform/WebMessagePortChannel.h"
 
 namespace blink {
 
@@ -43,7 +43,7 @@ class WebSecurityOrigin;
 class WebServiceWorkerNetworkProvider;
 class WebString;
 class WebWorker;
-class WebWorkerPermissionClientProxy;
+class WebWorkerContentSettingsClientProxy;
 
 // Provides an interface back to the in-page script object for a worker.
 // All functions are expected to be called back on the thread that created
@@ -66,10 +66,10 @@ public:
     virtual WebApplicationCacheHost* createApplicationCacheHost(WebApplicationCacheHostClient*) = 0;
 
     // Called on the main thread during initialization.
-    // WebWorkerPermissionClientProxy should not retain the given
+    // WebWorkerContentSettingsClientProxy should not retain the given
     // WebSecurityOrigin, as the proxy instance is passed to worker thread
     // while WebSecurityOrigin is not thread safe.
-    virtual WebWorkerPermissionClientProxy* createWorkerPermissionClientProxy(const WebSecurityOrigin&) { return nullptr; }
+    virtual WebWorkerContentSettingsClientProxy* createWorkerContentSettingsClientProxy(const WebSecurityOrigin& origin) { return nullptr; }
 
     // Called on the main thread during initialization.
     // Ownership of the returned object is transferred to the caller.

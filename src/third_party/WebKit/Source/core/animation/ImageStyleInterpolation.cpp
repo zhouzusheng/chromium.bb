@@ -12,7 +12,7 @@ namespace blink {
 
 bool ImageStyleInterpolation::canCreateFrom(const CSSValue& value)
 {
-    return value.isImageValue();
+    return value.isImageValue() || value.isGradientValue();
 }
 
 void ImageStyleInterpolation::apply(StyleResolverState& state) const
@@ -32,7 +32,7 @@ void ImageStyleInterpolation::apply(StyleResolverState& state) const
     StyleBuilder::applyProperty(m_id, state, crossfadeValue.get());
 }
 
-void ImageStyleInterpolation::trace(Visitor* visitor)
+DEFINE_TRACE(ImageStyleInterpolation)
 {
     visitor->trace(m_initialImage);
     visitor->trace(m_finalImage);

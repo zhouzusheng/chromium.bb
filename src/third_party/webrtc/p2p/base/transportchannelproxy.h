@@ -34,11 +34,9 @@ class TransportChannelProxy : public TransportChannel,
                               public rtc::MessageHandler {
  public:
   TransportChannelProxy(const std::string& content_name,
-                        const std::string& name,
                         int component);
   virtual ~TransportChannelProxy();
 
-  const std::string& name() const { return name_; }
   TransportChannelImpl* impl() { return impl_; }
 
   virtual TransportChannelState GetState() const;
@@ -85,10 +83,9 @@ class TransportChannelProxy : public TransportChannel,
 
   typedef std::pair<rtc::Socket::Option, int> OptionPair;
   typedef std::vector<OptionPair> OptionList;
-  std::string name_;
   rtc::Thread* worker_thread_;
   TransportChannelImpl* impl_;
-  OptionList pending_options_;
+  OptionList options_;
   std::vector<std::string> pending_srtp_ciphers_;
 
   DISALLOW_EVIL_CONSTRUCTORS(TransportChannelProxy);

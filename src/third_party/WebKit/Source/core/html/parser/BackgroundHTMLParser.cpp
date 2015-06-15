@@ -26,12 +26,13 @@
 #include "config.h"
 #include "core/html/parser/BackgroundHTMLParser.h"
 
+#include "core/HTMLNames.h"
 #include "core/html/parser/HTMLDocumentParser.h"
 #include "core/html/parser/TextResourceDecoder.h"
 #include "core/html/parser/XSSAuditor.h"
 #include "platform/scheduler/ClosureRunnerTask.h"
 #include "platform/scheduler/Scheduler.h"
-#include "wtf/MainThread.h"
+#include "public/platform/Platform.h"
 #include "wtf/text/TextPosition.h"
 
 namespace blink {
@@ -143,7 +144,7 @@ void BackgroundHTMLParser::updateDocument(const String& decodedData)
         m_lastSeenEncodingData = encodingData;
 
         m_xssAuditor->setEncoding(encodingData.encoding());
-        callOnMainThread(bind(&HTMLDocumentParser::didReceiveEncodingDataFromBackgroundParser, m_parser, encodingData));
+        Platform::current()->mainThread()->postTask(FROM_HERE, bind(&HTMLDocumentParser::didReceiveEncodingDataFromBackgroundParser, m_parser, encodingData));
     }
 
     if (decodedData.isEmpty())

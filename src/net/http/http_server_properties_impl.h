@@ -17,12 +17,24 @@
 #include "base/threading/non_thread_safe.h"
 #include "base/values.h"
 #include "net/base/host_port_pair.h"
+#include "net/base/linked_hash_map.h"
 #include "net/base/net_export.h"
 #include "net/http/http_server_properties.h"
 
 namespace base {
 class ListValue;
 }
+
+namespace BASE_HASH_NAMESPACE {
+
+template <>
+struct hash<net::AlternativeService> {
+  size_t operator()(const net::AlternativeService& entry) const {
+    return entry.protocol ^ hash<std::string>()(entry.host) ^ entry.port;
+  }
+};
+
+}  // namespace BASE_HASH_NAMESPACE
 
 namespace net {
 
@@ -39,8 +51,8 @@ class NET_EXPORT HttpServerPropertiesImpl
   void InitializeSpdyServers(std::vector<std::string>* spdy_servers,
                              bool support_spdy);
 
-  void InitializeAlternateProtocolServers(
-      AlternateProtocolMap* alternate_protocol_servers);
+  void InitializeAlternativeServiceServers(
+      AlternativeServiceMap* alternate_protocol_servers);
 
   void InitializeSpdySettingsServers(SpdySettingsMap* spdy_settings_map);
 
@@ -58,12 +70,6 @@ class NET_EXPORT HttpServerPropertiesImpl
   // unittests.
   static std::string GetFlattenedSpdyServer(const HostPortPair& host_port_pair);
 
-  // Debugging to simulate presence of an AlternateProtocol.
-  // If we don't have an alternate protocol in the map for any given host/port
-  // pair, force this ProtocolPortPair.
-  static void ForceAlternateProtocol(const AlternateProtocolInfo& pair);
-  static void DisableForcedAlternateProtocol();
-
   // Returns the canonical host suffix for |host|, or std::string() if none
   // exists.
   std::string GetCanonicalSuffix(const std::string& host);
@@ -80,17 +86,23 @@ class NET_EXPORT HttpServerPropertiesImpl
   void SetHTTP11Required(const HostPortPair& server) override;
   void MaybeForceHTTP11(const HostPortPair& server,
                         SSLConfig* ssl_config) override;
-  AlternateProtocolInfo GetAlternateProtocol(
-      const HostPortPair& server) override;
-  void SetAlternateProtocol(const HostPortPair& server,
-                            uint16 alternate_port,
-                            AlternateProtocol alternate_protocol,
-                            double probability) override;
-  void SetBrokenAlternateProtocol(const HostPortPair& server) override;
-  bool WasAlternateProtocolRecentlyBroken(const HostPortPair& server) override;
-  void ConfirmAlternateProtocol(const HostPortPair& server) override;
-  void ClearAlternateProtocol(const HostPortPair& server) override;
-  const AlternateProtocolMap& alternate_protocol_map() const override;
+  AlternativeService GetAlternativeService(const HostPortPair& origin) override;
+  void SetAlternativeService(const HostPortPair& origin,
+                             const AlternativeService& alternative_service,
+                             double alternative_probability) override;
+  void MarkAlternativeServiceBroken(
+      const AlternativeService& alternative_service) override;
+  void MarkAlternativeServiceRecentlyBroken(
+      const AlternativeService& alternative_service) override;
+  bool IsAlternativeServiceBroken(
+      const AlternativeService& alternative_service) const override;
+  bool WasAlternativeServiceRecentlyBroken(
+      const AlternativeService& alternative_service) override;
+  void ConfirmAlternativeService(
+      const AlternativeService& alternative_service) override;
+  void ClearAlternativeService(const HostPortPair& origin) override;
+  const AlternativeServiceMap& alternative_service_map() const override;
+  base::Value* GetAlternativeServiceInfoAsValue() const override;
   void SetAlternateProtocolProbabilityThreshold(double threshold) override;
   const SettingsMap& GetSpdySettings(
       const HostPortPair& host_port_pair) override;
@@ -110,6 +122,8 @@ class NET_EXPORT HttpServerPropertiesImpl
   const ServerNetworkStatsMap& server_network_stats_map() const override;
 
  private:
+  friend class HttpServerPropertiesImplPeer;
+
   // |spdy_servers_map_| has flattened representation of servers (host, port)
   // that either support or not support SPDY protocol.
   typedef base::MRUCache<std::string, bool> SpdyServerHostPortMap;
@@ -117,50 +131,16 @@ class NET_EXPORT HttpServerPropertiesImpl
   typedef std::vector<std::string> CanonicalSufficList;
   typedef std::set<HostPortPair> Http11ServerHostPortSet;
 
-  // Server, port, and AlternateProtocol: an entity that can be broken.  (Once
-  // we use AlternativeService, the same AltSvc can be broken for one server but
-  // not for another depending on what certificate it can offer.)
-  struct BrokenAlternateProtocolEntry {
-    BrokenAlternateProtocolEntry(const BrokenAlternateProtocolEntry&) = default;
-    BrokenAlternateProtocolEntry(const HostPortPair& server,
-                                 uint16 port,
-                                 AlternateProtocol protocol)
-        : server(server), port(port), protocol(protocol) {}
-
-    bool operator<(const BrokenAlternateProtocolEntry& other) const {
-      if (!server.Equals(other.server))
-        return server < other.server;
-      if (port != other.port)
-        return port < other.port;
-      return protocol < other.protocol;
-    }
-
-    HostPortPair server;
-    uint16 port;
-    AlternateProtocol protocol;
-  };
-  // BrokenAlternateProtocolEntry with expiration time.
-  struct BrokenAlternateProtocolEntryWithTime {
-    BrokenAlternateProtocolEntryWithTime(
-        const BrokenAlternateProtocolEntry& broken_alternate_protocol_entry,
-        base::TimeTicks when)
-        : broken_alternate_protocol_entry(broken_alternate_protocol_entry),
-          when(when) {}
-
-    BrokenAlternateProtocolEntry broken_alternate_protocol_entry;
-    base::TimeTicks when;
-  };
-  // Deque of BrokenAlternateProtocolEntryWithTime items, ordered by expiration
-  // time.
-  typedef std::deque<BrokenAlternateProtocolEntryWithTime>
-      BrokenAlternateProtocolList;
-  // Map from (server, alternate protocol and port) to the number of
-  // times that alternate protocol has been marked broken for that server.
-  typedef std::map<BrokenAlternateProtocolEntry, int>
-      BrokenAlternateProtocolMap;
+  // Linked hash map from AlternativeService to expiration time.  This container
+  // is a queue with O(1) enqueue and dequeue, and a hash_map with O(1) lookup
+  // at the same time.
+  typedef linked_hash_map<AlternativeService, base::TimeTicks>
+      BrokenAlternativeServices;
+  // Map to the number of times each alternative service has been marked broken.
+  typedef std::map<AlternativeService, int> RecentlyBrokenAlternativeServices;
 
   // Return the iterator for |server|, or for its canonical host, or end.
-  AlternateProtocolMap::const_iterator GetAlternateProtocolIterator(
+  AlternativeServiceMap::const_iterator GetAlternateProtocolIterator(
       const HostPortPair& server);
 
   // Return the canonical host for |server|, or end if none exists.
@@ -173,9 +153,11 @@ class NET_EXPORT HttpServerPropertiesImpl
   SpdyServerHostPortMap spdy_servers_map_;
   Http11ServerHostPortSet http11_servers_;
 
-  AlternateProtocolMap alternate_protocol_map_;
-  BrokenAlternateProtocolList broken_alternate_protocol_list_;
-  BrokenAlternateProtocolMap broken_alternate_protocol_map_;
+  AlternativeServiceMap alternative_service_map_;
+  BrokenAlternativeServices broken_alternative_services_;
+  // Class invariant:  Every alternative service in broken_alternative_services_
+  // must also be in recently_broken_alternative_services_.
+  RecentlyBrokenAlternativeServices recently_broken_alternative_services_;
 
   IPAddressNumber last_quic_address_;
   SpdySettingsMap spdy_settings_map_;

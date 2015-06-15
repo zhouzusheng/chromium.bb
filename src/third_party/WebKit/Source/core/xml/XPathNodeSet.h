@@ -35,7 +35,7 @@ namespace blink {
 namespace XPath {
 
 class NodeSet : public NoBaseWillBeGarbageCollected<NodeSet> {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(NodeSet);
 public:
     static PassOwnPtrWillBeRawPtr<NodeSet> create() { return adoptPtrWillBeNoop(new NodeSet); }
     static PassOwnPtrWillBeRawPtr<NodeSet> create(const NodeSet&);
@@ -78,7 +78,7 @@ private:
 
     bool m_isSorted;
     bool m_subtreesAreDisjoint;
-    WillBeHeapVector<RefPtrWillBeMember<Node> > m_nodes;
+    WillBeHeapVector<RefPtrWillBeMember<Node>> m_nodes;
 };
 
 }

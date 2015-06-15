@@ -15,11 +15,7 @@ class SkBitmap;
 class SkData;
 class SkImageGenerator;
 
-//#define SK_SUPPORT_LEGACY_GET_PIXELS_ENUM
-
-#ifdef SK_SUPPORT_LEGACY_GET_PIXELS_ENUM
-    #define onGetPixelsEnum onGetPixels
-#endif
+//#define SK_SUPPORT_LEGACY_OPTIONLESS_GET_PIXELS
 
 /**
  *  Takes ownership of SkImageGenerator.  If this method fails for
@@ -69,15 +65,19 @@ public:
     SkData* refEncodedData() { return this->onRefEncodedData(); }
 
     /**
-     *  Return some information about the image, allowing the owner of
-     *  this object to allocate pixels.
-     *
-     *  Repeated calls to this function should give the same results,
-     *  allowing the PixelRef to be immutable.
-     *
-     *  @return false if anything goes wrong.
+     *  Return the ImageInfo associated with this generator.
      */
-    bool getInfo(SkImageInfo* info);
+#ifdef SK_SUPPORT_LEGACY_BOOL_ONGETINFO
+    SkImageInfo getInfo();
+    bool getInfo(SkImageInfo* info) {
+        if (info) {
+            *info = this->getInfo();
+        }
+        return true;
+    }
+#else
+    const SkImageInfo& getInfo() const { return fInfo; }
+#endif
 
     /**
      *  Used to describe the result of a call to getPixels().
@@ -123,6 +123,34 @@ public:
     };
 
     /**
+     *  Whether or not the memory passed to getPixels is zero initialized.
+     */
+    enum ZeroInitialized {
+        /**
+         *  The memory passed to getPixels is zero initialized. The SkCodec
+         *  may take advantage of this by skipping writing zeroes.
+         */
+        kYes_ZeroInitialized,
+        /**
+         *  The memory passed to getPixels has not been initialized to zero,
+         *  so the SkCodec must write all zeroes to memory.
+         *
+         *  This is the default. It will be used if no Options struct is used.
+         */
+        kNo_ZeroInitialized,
+    };
+
+    /**
+     *  Additional options to pass to getPixels.
+     */
+    struct Options {
+        Options()
+            : fZeroInitialized(kNo_ZeroInitialized) {}
+
+        ZeroInitialized fZeroInitialized;
+    };
+
+    /**
      *  Decode into the given pixels, a block of memory of size at
      *  least (info.fHeight - 1) * rowBytes + (info.fWidth *
      *  bytesPerPixel)
@@ -151,11 +179,12 @@ public:
      *
      *  @return Result kSuccess, or another value explaining the type of failure.
      */
-    Result getPixels(const SkImageInfo& info, void* pixels, size_t rowBytes,
+    Result getPixels(const SkImageInfo& info, void* pixels, size_t rowBytes, const Options*,
                      SkPMColor ctable[], int* ctableCount);
 
     /**
-     *  Simplified version of getPixels() that asserts that info is NOT kIndex8_SkColorType.
+     *  Simplified version of getPixels() that asserts that info is NOT kIndex8_SkColorType and
+     *  uses the default Options.
      */
     Result getPixels(const SkImageInfo& info, void* pixels, size_t rowBytes);
 
@@ -181,14 +210,28 @@ public:
     static SkImageGenerator* NewFromData(SkData*);
 
 protected:
-    virtual SkData* onRefEncodedData();
+#ifdef SK_SUPPORT_LEGACY_BOOL_ONGETINFO
+    SkImageGenerator() : fInfo(SkImageInfo::MakeUnknown(0, 0) ) {}
     virtual bool onGetInfo(SkImageInfo* info);
+#endif
+    SkImageGenerator(const SkImageInfo& info) : fInfo(info) {}
+
+    virtual SkData* onRefEncodedData();
+
+#ifdef SK_SUPPORT_LEGACY_OPTIONLESS_GET_PIXELS
     virtual Result onGetPixels(const SkImageInfo& info,
                                void* pixels, size_t rowBytes,
+                               SkPMColor ctable[], int* ctableCount);
+#endif
+    virtual Result onGetPixels(const SkImageInfo& info,
+                               void* pixels, size_t rowBytes, const Options&,
                                SkPMColor ctable[], int* ctableCount);
     virtual bool onGetYUV8Planes(SkISize sizes[3], void* planes[3], size_t rowBytes[3]);
     virtual bool onGetYUV8Planes(SkISize sizes[3], void* planes[3], size_t rowBytes[3],
                                  SkYUVColorSpace* colorSpace);
+
+private:
+    const SkImageInfo fInfo;
 };
 
 #endif  // SkImageGenerator_DEFINED

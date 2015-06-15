@@ -38,7 +38,7 @@ class ExceptionState;
 
 class DOMTokenList : public NoBaseWillBeGarbageCollectedFinalized<DOMTokenList>, public ScriptWrappable, public ValueIterable<String> {
     DEFINE_WRAPPERTYPEINFO();
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(DOMTokenList);
     WTF_MAKE_NONCOPYABLE(DOMTokenList);
 public:
     DOMTokenList() { }
@@ -64,7 +64,7 @@ public:
 
     virtual Element* element() { return 0; }
 
-    virtual void trace(Visitor*) { }
+    DEFINE_INLINE_VIRTUAL_TRACE() { }
 
 protected:
     virtual const AtomicString& value() const = 0;

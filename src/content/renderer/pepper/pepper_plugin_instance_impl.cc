@@ -9,15 +9,16 @@
 #include "base/logging.h"
 #include "base/memory/linked_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "base/metrics/histogram.h"
 #include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_offset_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
-#include "cc/base/latency_info_swap_promise.h"
 #include "cc/blink/web_layer_impl.h"
 #include "cc/layers/texture_layer.h"
+#include "cc/output/latency_info_swap_promise.h"
 #include "cc/trees/layer_tree_host.h"
 #include "content/common/content_constants_internal.h"
 #include "content/common/frame_messages.h"
@@ -344,7 +345,7 @@ bool IsReservedSystemInputEvent(const blink::WebInputEvent& event) {
 
 class PluginInstanceLockTarget : public MouseLockDispatcher::LockTarget {
  public:
-  PluginInstanceLockTarget(PepperPluginInstanceImpl* plugin)
+  explicit PluginInstanceLockTarget(PepperPluginInstanceImpl* plugin)
       : plugin_(plugin) {}
 
   void OnLockMouseACK(bool succeeded) override {
@@ -678,10 +679,17 @@ void PepperPluginInstanceImpl::Delete() {
   // If this is a NaCl plugin instance, shut down the NaCl plugin by calling
   // its DidDestroy. Don't call DidDestroy on the untrusted plugin instance,
   // since there is little that it can do at this point.
-  if (original_instance_interface_)
+  if (original_instance_interface_) {
+    base::TimeTicks start = base::TimeTicks::Now();
     original_instance_interface_->DidDestroy(pp_instance());
-  else
+    UMA_HISTOGRAM_CUSTOM_TIMES("NaCl.Perf.ShutdownTime.Total",
+                               base::TimeTicks::Now() - start,
+                               base::TimeDelta::FromMilliseconds(1),
+                               base::TimeDelta::FromSeconds(20),
+                               100);
+  } else {
     instance_interface_->DidDestroy(pp_instance());
+  }
   // Ensure we don't attempt to call functions on the destroyed instance.
   original_instance_interface_.reset();
   instance_interface_.reset();
@@ -809,19 +817,9 @@ bool PepperPluginInstanceImpl::Initialize(
   if (!render_frame_)
     return false;
 
-  if (is_flash_plugin_ && RenderThread::Get()) {
-    RenderThread::Get()->RecordAction(
-        base::UserMetricsAction("Flash.PluginInstanceCreated"));
-    blink::WebRect bounds = container()->element().boundsInViewportSpace();
-    RecordFlashSizeMetric(bounds.width, bounds.height);
-  }
-
   if (throttler) {
     throttler_ = throttler.Pass();
     throttler_->AddObserver(this);
-    throttler_->Initialize(render_frame_, plugin_url_.GetOrigin(),
-                           module()->name(),
-                           container()->element().boundsInViewportSpace());
   }
 
   message_channel_ = MessageChannel::Create(this, &message_channel_object_);
@@ -1233,8 +1231,9 @@ PP_Var PepperPluginInstanceImpl::GetInstanceObject(v8::Isolate* isolate) {
 }
 
 void PepperPluginInstanceImpl::ViewChanged(
-    const gfx::Rect& position,
+    const gfx::Rect& window,
     const gfx::Rect& clip,
+    const gfx::Rect& unobscured,
     const std::vector<gfx::Rect>& cut_outs_rects) {
   // WebKit can give weird (x,y) positions for empty clip rects (since the
   // position technically doesn't matter). But we want to make these
@@ -1244,9 +1243,11 @@ void PepperPluginInstanceImpl::ViewChanged(
   if (!clip.IsEmpty())
     new_clip = clip;
 
+  unobscured_rect_ = unobscured;
+
   cut_outs_rects_ = cut_outs_rects;
 
-  view_data_.rect = PP_FromGfxRect(position);
+  view_data_.rect = PP_FromGfxRect(window);
   view_data_.clip_rect = PP_FromGfxRect(clip);
   view_data_.device_scale = container_->deviceScaleFactor();
   view_data_.css_scale =
@@ -1288,7 +1289,12 @@ void PepperPluginInstanceImpl::ViewChanged(
 
   UpdateFlashFullscreenState(fullscreen_container_ != NULL);
 
-  SendDidChangeView();
+  // During plugin initialization, there are often re-layouts. Avoid sending
+  // intermediate sizes the plugin and throttler.
+  if (sent_initial_did_change_view_)
+    SendDidChangeView();
+  else
+    ScheduleAsyncDidChangeView();
 }
 
 void PepperPluginInstanceImpl::SetWebKitFocus(bool has_focus) {
@@ -1359,16 +1365,6 @@ int32_t PepperPluginInstanceImpl::RegisterMessageHandler(
     PP_Instance instance,
     void* user_data,
     const PPP_MessageHandler_0_2* handler,
-    PP_Resource message_loop) {
-  // Not supported in-process.
-  NOTIMPLEMENTED();
-  return PP_ERROR_FAILED;
-}
-
-int32_t PepperPluginInstanceImpl::RegisterMessageHandler_1_1_Deprecated(
-    PP_Instance instance,
-    void* user_data,
-    const PPP_MessageHandler_0_1_Deprecated* handler,
     PP_Resource message_loop) {
   // Not supported in-process.
   NOTIMPLEMENTED();
@@ -1634,9 +1630,28 @@ void PepperPluginInstanceImpl::SendAsyncDidChangeView() {
 }
 
 void PepperPluginInstanceImpl::SendDidChangeView() {
+  // An asynchronous view update is scheduled. Skip sending this update.
+  if (view_change_weak_ptr_factory_.HasWeakPtrs())
+    return;
+
   // Don't send DidChangeView to crashed plugins.
   if (module()->is_crashed())
     return;
+
+  // During the first view update, initialize the throttler.
+  if (!sent_initial_did_change_view_) {
+    if (is_flash_plugin_ && RenderThread::Get()) {
+      RenderThread::Get()->RecordAction(
+          base::UserMetricsAction("Flash.PluginInstanceCreated"));
+      RecordFlashSizeMetric(unobscured_rect_.width(),
+                            unobscured_rect_.height());
+    }
+
+    if (throttler_) {
+      throttler_->Initialize(render_frame_, plugin_url_.GetOrigin(),
+                             module()->name(), unobscured_rect_.size());
+    }
+  }
 
   ppapi::ViewData view_data = view_data_;
 
@@ -1650,9 +1665,7 @@ void PepperPluginInstanceImpl::SendDidChangeView() {
     view_data.clip_rect.size.height = 0;
   }
 
-  if (view_change_weak_ptr_factory_.HasWeakPtrs() ||
-      (sent_initial_did_change_view_ &&
-       last_sent_view_data_.Equals(view_data)))
+  if (sent_initial_did_change_view_ && last_sent_view_data_.Equals(view_data))
     return;  // Nothing to update.
 
   sent_initial_did_change_view_ = true;
@@ -1824,13 +1837,31 @@ bool PepperPluginInstanceImpl::GetPrintPresetOptionsFromDocument(
   }
 
   preset_options->isScalingDisabled = PP_ToBool(options.is_scaling_disabled);
+  switch (options.duplex) {
+    case PP_PRIVATEDUPLEXMODE_SIMPLEX:
+      preset_options->duplexMode = blink::WebSimplex;
+      break;
+    case PP_PRIVATEDUPLEXMODE_SHORT_EDGE:
+      preset_options->duplexMode = blink::WebShortEdge;
+      break;
+    case PP_PRIVATEDUPLEXMODE_LONG_EDGE:
+      preset_options->duplexMode = blink::WebLongEdge;
+      break;
+    default:
+      preset_options->duplexMode = blink::WebUnknownDuplexMode;
+      break;
+  }
   preset_options->copies = options.copies;
+  preset_options->isPageSizeUniform = PP_ToBool(options.is_page_size_uniform);
+  preset_options->uniformPageSize =
+      blink::WebSize(options.uniform_page_size.width,
+                     options.uniform_page_size.height);
 
   return true;
 }
 
 bool PepperPluginInstanceImpl::CanRotateView() {
-  if (!LoadPdfInterface())
+  if (!LoadPdfInterface() || module()->is_crashed())
     return false;
 
   return true;
@@ -2470,12 +2501,13 @@ void PepperPluginInstanceImpl::SessionClosed(PP_Instance instance,
   content_decryptor_delegate_->OnSessionClosed(session_id_var);
 }
 
-void PepperPluginInstanceImpl::SessionError(PP_Instance instance,
-                                            PP_Var session_id_var,
-                                            PP_CdmExceptionCode exception_code,
-                                            uint32 system_code,
-                                            PP_Var error_description_var) {
-  content_decryptor_delegate_->OnSessionError(
+void PepperPluginInstanceImpl::LegacySessionError(
+    PP_Instance instance,
+    PP_Var session_id_var,
+    PP_CdmExceptionCode exception_code,
+    uint32 system_code,
+    PP_Var error_description_var) {
+  content_decryptor_delegate_->OnLegacySessionError(
       session_id_var, exception_code, system_code, error_description_var);
 }
 
@@ -2569,7 +2601,6 @@ void PepperPluginInstanceImpl::SetTickmarks(PP_Instance instance,
                                             tickmarks[i].point.y,
                                             tickmarks[i].size.width,
                                             tickmarks[i].size.height);
-    ;
   }
   blink::WebFrame* frame = render_frame_->GetWebFrame();
   frame->setTickmarks(tickmarks_converted);
@@ -2598,7 +2629,6 @@ ppapi::Resource* PepperPluginInstanceImpl::GetSingletonResource(
   switch (id) {
     case ppapi::BROKER_SINGLETON_ID:
     case ppapi::BROWSER_FONT_SINGLETON_ID:
-    case ppapi::FILE_MAPPING_SINGLETON_ID:
     case ppapi::FLASH_CLIPBOARD_SINGLETON_ID:
     case ppapi::FLASH_FILE_SINGLETON_ID:
     case ppapi::FLASH_FULLSCREEN_SINGLETON_ID:
@@ -3131,7 +3161,8 @@ int32_t PepperPluginInstanceImpl::Navigate(
     return PP_ERROR_FAILED;
   }
   web_request.setFirstPartyForCookies(document.firstPartyForCookies());
-  web_request.setHasUserGesture(from_user_action);
+  if (IsProcessingUserGesture())
+    web_request.setHasUserGesture(true);
 
   GURL gurl(web_request.url());
   if (gurl.SchemeIs(url::kJavaScriptScheme)) {
@@ -3144,7 +3175,8 @@ int32_t PepperPluginInstanceImpl::Navigate(
 
     // TODO(viettrungluu): NPAPI sends the result back to the plugin -- do we
     // need that?
-    WebString result = container_->executeScriptURL(gurl, from_user_action);
+    blink::WebScopedUserGesture user_gesture(CurrentUserGestureToken());
+    WebString result = container_->executeScriptURL(gurl, false);
     return result.isNull() ? PP_ERROR_FAILED : PP_OK;
   }
 
@@ -3153,6 +3185,7 @@ int32_t PepperPluginInstanceImpl::Navigate(
     return PP_ERROR_BADARGUMENT;
 
   WebString target_str = WebString::fromUTF8(target);
+  blink::WebScopedUserGesture user_gesture(CurrentUserGestureToken());
   container_->loadFrameRequest(web_request, target_str, false, NULL);
   return PP_OK;
 }

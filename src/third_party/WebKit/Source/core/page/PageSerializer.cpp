@@ -57,8 +57,8 @@
 #include "core/html/HTMLMetaElement.h"
 #include "core/html/HTMLStyleElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
-#include "core/layout/style/StyleFetchedImage.h"
-#include "core/layout/style/StyleImage.h"
+#include "core/style/StyleFetchedImage.h"
+#include "core/style/StyleImage.h"
 #include "core/page/Page.h"
 #include "platform/SerializedResource.h"
 #include "platform/graphics/Image.h"
@@ -114,7 +114,7 @@ private:
 };
 
 SerializerMarkupAccumulator::SerializerMarkupAccumulator(PageSerializer* serializer, const Document& document, WillBeHeapVector<RawPtrWillBeMember<Node>>* nodes)
-    : MarkupAccumulator(nodes, ResolveAllURLs, nullptr)
+    : MarkupAccumulator(nodes, ResolveAllURLs, Position(), Position())
     , m_serializer(serializer)
     , m_document(&document)
 {
@@ -227,13 +227,13 @@ void PageSerializer::serializeFrame(LocalFrame* frame)
             HTMLImageElement& imageElement = toHTMLImageElement(element);
             KURL url = document.completeURL(imageElement.getAttribute(HTMLNames::srcAttr));
             ImageResource* cachedImage = imageElement.cachedImage();
-            addImageToResources(cachedImage, imageElement.renderer(), url);
+            addImageToResources(cachedImage, imageElement.layoutObject(), url);
         } else if (isHTMLInputElement(element)) {
             HTMLInputElement& inputElement = toHTMLInputElement(element);
             if (inputElement.type() == InputTypeNames::image && inputElement.imageLoader()) {
                 KURL url = inputElement.src();
                 ImageResource* cachedImage = inputElement.imageLoader()->image();
-                addImageToResources(cachedImage, inputElement.renderer(), url);
+                addImageToResources(cachedImage, inputElement.layoutObject(), url);
             }
         } else if (isHTMLLinkElement(element)) {
             HTMLLinkElement& linkElement = toHTMLLinkElement(element);
@@ -319,7 +319,7 @@ void PageSerializer::addImageToResources(ImageResource* image, LayoutObject* ima
     if (!image || image->image() == Image::nullImage() || image->errorOccurred())
         return;
 
-    RefPtr<SharedBuffer> data = imageRenderer ? image->imageForRenderer(imageRenderer)->data() : nullptr;
+    RefPtr<SharedBuffer> data = imageRenderer ? image->imageForLayoutObject(imageRenderer)->data() : nullptr;
     if (!data)
         data = image->image()->data();
 

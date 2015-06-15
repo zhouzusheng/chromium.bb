@@ -32,6 +32,7 @@
 #include "core/inspector/InspectorDOMDebuggerAgent.h"
 
 #include "core/InspectorFrontend.h"
+#include "core/dom/Element.h"
 #include "core/events/Event.h"
 #include "core/inspector/InspectorDOMAgent.h"
 #include "core/inspector/InspectorState.h"
@@ -60,6 +61,7 @@ namespace blink {
 static const char requestAnimationFrameEventName[] = "requestAnimationFrame";
 static const char cancelAnimationFrameEventName[] = "cancelAnimationFrame";
 static const char animationFrameFiredEventName[] = "animationFrameFired";
+static const char setInnerHTMLEventName[] = "setInnerHTML";
 static const char setTimerEventName[] = "setTimer";
 static const char clearTimerEventName[] = "clearTimer";
 static const char timerFiredEventName[] = "timerFired";
@@ -85,7 +87,7 @@ PassOwnPtrWillBeRawPtr<InspectorDOMDebuggerAgent> InspectorDOMDebuggerAgent::cre
 }
 
 InspectorDOMDebuggerAgent::InspectorDOMDebuggerAgent(InspectorDOMAgent* domAgent, InspectorDebuggerAgent* debuggerAgent)
-    : InspectorBaseAgent<InspectorDOMDebuggerAgent>("DOMDebugger")
+    : InspectorBaseAgent<InspectorDOMDebuggerAgent, InspectorFrontend::DOMDebugger>("DOMDebugger")
     , m_domAgent(domAgent)
     , m_debuggerAgent(debuggerAgent)
 {
@@ -97,6 +99,7 @@ InspectorDOMDebuggerAgent::~InspectorDOMDebuggerAgent()
 {
 #if !ENABLE(OILPAN)
     ASSERT(!m_debuggerAgent);
+    ASSERT(!m_domAgent);
     ASSERT(!m_instrumentingAgents->inspectorDOMDebuggerAgent());
 #endif
 }
@@ -120,7 +123,7 @@ void InspectorDOMDebuggerAgent::debuggerWasEnabled()
 
 void InspectorDOMDebuggerAgent::debuggerWasDisabled()
 {
-    disable();
+    disable(nullptr);
 }
 
 void InspectorDOMDebuggerAgent::domAgentWasEnabled()
@@ -131,24 +134,21 @@ void InspectorDOMDebuggerAgent::domAgentWasEnabled()
 
 void InspectorDOMDebuggerAgent::domAgentWasDisabled()
 {
-    disable();
+    disable(nullptr);
 }
 
-void InspectorDOMDebuggerAgent::disable()
+void InspectorDOMDebuggerAgent::disable(ErrorString*)
 {
     m_instrumentingAgents->setInspectorDOMDebuggerAgent(nullptr);
     clear();
-}
-
-void InspectorDOMDebuggerAgent::clearFrontend()
-{
-    disable();
 }
 
 void InspectorDOMDebuggerAgent::discardAgent()
 {
     m_debuggerAgent->setListener(nullptr);
     m_debuggerAgent = nullptr;
+    m_domAgent->setListener(nullptr);
+    m_domAgent = nullptr;
 }
 
 void InspectorDOMDebuggerAgent::setEventListenerBreakpoint(ErrorString* error, const String& eventName, const String* targetName)
@@ -355,6 +355,11 @@ void InspectorDOMDebuggerAgent::willModifyDOMAttr(Element* element, const Atomic
     }
 }
 
+void InspectorDOMDebuggerAgent::willSetInnerHTML()
+{
+    pauseOnNativeEventIfNeeded(preparePauseOnNativeEventData(setInnerHTMLEventName, 0), true);
+}
+
 void InspectorDOMDebuggerAgent::descriptionForDOMEvent(Node* target, int breakpointType, bool insertion, JSONObject* description)
 {
     ASSERT(hasBreakpoint(target, breakpointType));
@@ -483,17 +488,17 @@ void InspectorDOMDebuggerAgent::didRejectPromise()
     pauseOnNativeEventIfNeeded(preparePauseOnNativeEventData(promiseRejectedEventName, 0), true);
 }
 
-void InspectorDOMDebuggerAgent::didRequestAnimationFrame(Document*, int)
+void InspectorDOMDebuggerAgent::didRequestAnimationFrame(ExecutionContext*, int)
 {
     pauseOnNativeEventIfNeeded(preparePauseOnNativeEventData(requestAnimationFrameEventName, 0), true);
 }
 
-void InspectorDOMDebuggerAgent::didCancelAnimationFrame(Document*, int)
+void InspectorDOMDebuggerAgent::didCancelAnimationFrame(ExecutionContext*, int)
 {
     pauseOnNativeEventIfNeeded(preparePauseOnNativeEventData(cancelAnimationFrameEventName, 0), true);
 }
 
-void InspectorDOMDebuggerAgent::willFireAnimationFrame(Document*, int)
+void InspectorDOMDebuggerAgent::willFireAnimationFrame(ExecutionContext*, int)
 {
     pauseOnNativeEventIfNeeded(preparePauseOnNativeEventData(animationFrameFiredEventName, 0), false);
 }

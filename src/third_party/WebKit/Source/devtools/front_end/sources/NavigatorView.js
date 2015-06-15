@@ -649,13 +649,13 @@ WebInspector.NavigatorView._treeElementsCompare = function compare(treeElement1,
  * @param {string} type
  * @param {string} title
  * @param {!Array.<string>} iconClasses
- * @param {boolean} hasChildren
+ * @param {boolean} expandable
  * @param {boolean=} noIcon
  */
-WebInspector.BaseNavigatorTreeElement = function(type, title, iconClasses, hasChildren, noIcon)
+WebInspector.BaseNavigatorTreeElement = function(type, title, iconClasses, expandable, noIcon)
 {
     this._type = type;
-    TreeElement.call(this, "", null, hasChildren);
+    TreeElement.call(this, "", expandable);
     this._titleText = title;
     this._iconClasses = iconClasses;
     this._noIcon = noIcon;
@@ -849,8 +849,8 @@ WebInspector.NavigatorSourceTreeElement.prototype = {
         if (!this._uiSourceCode.canRename())
             return false;
         var isSelected = this === this.treeOutline.selectedTreeElement;
-        var document = this.treeOutline.childrenListElement.ownerDocument;
-        var isFocused = this.treeOutline.childrenListElement.isSelfOrAncestor(document.activeElement);
+        var document = this.treeOutline.element.ownerDocument;
+        var isFocused = this.treeOutline.element.isSelfOrAncestor(document.activeElement);
         return isSelected && isFocused && !WebInspector.isBeingEdited(this.treeOutline.element);
     },
 
@@ -953,7 +953,7 @@ WebInspector.NavigatorTreeNode = function(id)
 
 WebInspector.NavigatorTreeNode.prototype = {
     /**
-     * @return {!TreeContainerNode}
+     * @return {!TreeElement}
      */
     treeNode: function() { throw "Not implemented"; },
 
@@ -1093,11 +1093,11 @@ WebInspector.NavigatorRootTreeNode.prototype = {
 
     /**
      * @override
-     * @return {!TreeContainerNode}
+     * @return {!TreeElement}
      */
     treeNode: function()
     {
-        return this._navigatorView._scriptsTree;
+        return this._navigatorView._scriptsTree.rootElement();
     },
 
     __proto__: WebInspector.NavigatorTreeNode.prototype
@@ -1134,7 +1134,7 @@ WebInspector.NavigatorUISourceCodeTreeNode.prototype = {
 
     /**
      * @override
-     * @return {!TreeContainerNode}
+     * @return {!TreeElement}
      */
     treeNode: function()
     {
@@ -1269,7 +1269,7 @@ WebInspector.NavigatorUISourceCodeTreeNode.prototype = {
         {
             WebInspector.markBeingEdited(treeOutlineElement, false);
             this.updateTitle();
-            this._treeElement.treeOutline.childrenListElement.focus();
+            this._treeElement.treeOutline.focus();
             if (callback)
                 callback(committed);
         }
@@ -1306,7 +1306,7 @@ WebInspector.NavigatorFolderTreeNode = function(navigatorView, project, id, type
 WebInspector.NavigatorFolderTreeNode.prototype = {
     /**
      * @override
-     * @return {!TreeContainerNode}
+     * @return {!TreeElement}
      */
     treeNode: function()
     {

@@ -31,10 +31,11 @@
 #ifndef AbstractInlineTextBox_h
 #define AbstractInlineTextBox_h
 
+#include "core/CoreExport.h"
 #include "core/dom/Range.h"
+#include "core/layout/LayoutText.h"
 #include "core/layout/line/FloatToLayoutUnit.h"
 #include "core/layout/line/InlineTextBox.h"
-#include "core/rendering/RenderText.h"
 #include "wtf/HashMap.h"
 #include "wtf/RefPtr.h"
 
@@ -44,18 +45,18 @@ class InlineTextBox;
 
 // High-level abstraction of InlineTextBox to allow the accessibility module to
 // get information about InlineTextBoxes without tight coupling.
-class AbstractInlineTextBox : public RefCounted<AbstractInlineTextBox> {
+class CORE_EXPORT AbstractInlineTextBox : public RefCounted<AbstractInlineTextBox> {
 private:
-    AbstractInlineTextBox(RenderText* renderText, InlineTextBox* inlineTextBox)
+    AbstractInlineTextBox(LayoutText* renderText, InlineTextBox* inlineTextBox)
         : m_renderText(renderText)
         , m_inlineTextBox(inlineTextBox)
     {
     }
 
-    static PassRefPtr<AbstractInlineTextBox> getOrCreate(RenderText*, InlineTextBox*);
+    static PassRefPtr<AbstractInlineTextBox> getOrCreate(LayoutText*, InlineTextBox*);
     static void willDestroy(InlineTextBox*);
 
-    friend class RenderText;
+    friend class LayoutText;
     friend class InlineTextBox;
 
 public:
@@ -72,7 +73,7 @@ public:
         BottomToTop
     };
 
-    RenderText* renderText() const { return m_renderText; }
+    LayoutText* renderText() const { return m_renderText; }
 
     PassRefPtr<AbstractInlineTextBox> nextInlineTextBox() const;
     LayoutRect bounds() const;
@@ -86,7 +87,7 @@ private:
     void detach();
 
     // Weak ptrs; these are nulled when InlineTextBox::destroy() calls AbstractInlineTextBox::willDestroy.
-    RenderText* m_renderText;
+    LayoutText* m_renderText;
     InlineTextBox* m_inlineTextBox;
 
     typedef HashMap<InlineTextBox*, RefPtr<AbstractInlineTextBox>> InlineToAbstractInlineTextBoxHashMap;

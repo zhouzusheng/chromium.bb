@@ -30,7 +30,7 @@
 #define AXObjectCacheImpl_h
 
 #include "core/dom/AXObjectCache.h"
-#include "core/rendering/RenderText.h"
+#include "core/layout/LayoutText.h"
 #include "modules/accessibility/AXObject.h"
 #include "platform/Timer.h"
 #include "wtf/Forward.h"
@@ -54,7 +54,7 @@ struct TextMarkerData {
 
 // This class should only be used from inside the accessibility directory.
 class AXObjectCacheImpl : public AXObjectCache {
-    WTF_MAKE_NONCOPYABLE(AXObjectCacheImpl); WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(AXObjectCacheImpl); WTF_MAKE_FAST_ALLOCATED(AXObjectCacheImpl);
 public:
     static AXObjectCache* create(Document&);
 
@@ -67,7 +67,9 @@ public:
     virtual void childrenChanged(Node*) override;
     virtual void childrenChanged(LayoutObject*) override;
     virtual void checkedStateChanged(Node*) override;
-    virtual void selectedChildrenChanged(Node*) override;
+    virtual void listboxOptionStateChanged(HTMLOptionElement*);
+    virtual void listboxSelectedChildrenChanged(HTMLSelectElement*);
+    virtual void listboxActiveIndexChanged(HTMLSelectElement*);
 
     virtual void remove(LayoutObject*) override;
     virtual void remove(Node*) override;
@@ -86,7 +88,7 @@ public:
     virtual void handleTextFormControlChanged(Node*) override;
     virtual void handleEditableTextContentChanged(Node*) override;
     virtual void handleValueChanged(Node*) override;
-    virtual void handleUpdateActiveMenuOption(RenderMenuList*, int optionIndex) override;
+    virtual void handleUpdateActiveMenuOption(LayoutMenuList*, int optionIndex) override;
     virtual void handleLoadComplete(Document*) override;
     virtual void handleLayoutComplete(Document*) override;
 
@@ -94,7 +96,7 @@ public:
 
     virtual void clearWeakMembers(Visitor*) override;
 
-    virtual void inlineTextBoxesUpdated(LayoutObject* renderer) override;
+    virtual void inlineTextBoxesUpdated(LayoutObject*) override;
 
     // Called when the scroll offset changes.
     virtual void handleScrollPositionChanged(FrameView*) override;
@@ -133,13 +135,13 @@ public:
     void remove(AbstractInlineTextBox*);
 
     void childrenChanged(AXObject*);
-    void selectedChildrenChanged(LayoutObject*);
 
     void handleActiveDescendantChanged(Node*);
     void handleAriaRoleChanged(Node*);
     void handleAriaExpandedChange(Node*);
+    void handleAriaSelectedChanged(Node*);
 
-    void recomputeIsIgnored(LayoutObject* renderer);
+    void recomputeIsIgnored(LayoutObject*);
 
     bool accessibilityEnabled();
     bool inlineTextBoxAccessibilityEnabled();
@@ -153,9 +155,9 @@ public:
     // as long as the modification count hasn't changed.
     int modificationCount() const { return m_modificationCount; }
 
-    void postNotification(LayoutObject*, AXNotification, bool postToElement);
-    void postNotification(Node*, AXNotification, bool postToElement);
-    void postNotification(AXObject*, Document*, AXNotification, bool postToElement);
+    void postNotification(LayoutObject*, AXNotification);
+    void postNotification(Node*, AXNotification);
+    void postNotification(AXObject*, AXNotification);
 
 protected:
     void postPlatformNotification(AXObject*, AXNotification);

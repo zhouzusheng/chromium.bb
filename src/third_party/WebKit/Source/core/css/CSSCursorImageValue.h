@@ -46,7 +46,7 @@ public:
     String customCSSText() const;
 
     bool updateIfSVGCursorIsUsed(Element*);
-    StyleImage* cachedImage(ResourceFetcher*, float deviceScaleFactor);
+    StyleImage* cachedImage(Document*, float deviceScaleFactor);
     StyleImage* cachedOrPendingImage(float deviceScaleFactor);
 
 #if !ENABLE(OILPAN)
@@ -55,7 +55,7 @@ public:
 
     bool equals(const CSSCursorImageValue&) const;
 
-    void traceAfterDispatch(Visitor*);
+    DECLARE_TRACE_AFTER_DISPATCH();
 
 private:
     CSSCursorImageValue(PassRefPtrWillBeRawPtr<CSSValue> imageValue, bool hotSpotSpecified, const IntPoint& hotSpot);

@@ -37,9 +37,9 @@ LayoutTextControlMultiLine::~LayoutTextControlMultiLine()
 {
 }
 
-bool LayoutTextControlMultiLine::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction hitTestAction)
+bool LayoutTextControlMultiLine::nodeAtPoint(HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction hitTestAction)
 {
-    if (!LayoutTextControl::nodeAtPoint(request, result, locationInContainer, accumulatedOffset, hitTestAction))
+    if (!LayoutTextControl::nodeAtPoint(result, locationInContainer, accumulatedOffset, hitTestAction))
         return false;
 
     if (result.innerNode() == node() || result.innerNode() == innerEditorElement())
@@ -72,12 +72,12 @@ LayoutUnit LayoutTextControlMultiLine::computeControlLogicalHeight(LayoutUnit li
 
 int LayoutTextControlMultiLine::baselinePosition(FontBaseline baselineType, bool firstLine, LineDirectionMode direction, LinePositionMode linePositionMode) const
 {
-    return RenderBox::baselinePosition(baselineType, firstLine, direction, linePositionMode);
+    return LayoutBox::baselinePosition(baselineType, firstLine, direction, linePositionMode);
 }
 
-PassRefPtr<LayoutStyle> LayoutTextControlMultiLine::createInnerEditorStyle(const LayoutStyle& startStyle) const
+PassRefPtr<ComputedStyle> LayoutTextControlMultiLine::createInnerEditorStyle(const ComputedStyle& startStyle) const
 {
-    RefPtr<LayoutStyle> textBlockStyle = LayoutStyle::create();
+    RefPtr<ComputedStyle> textBlockStyle = ComputedStyle::create();
     textBlockStyle->inheritFrom(startStyle);
     adjustInnerEditorStyle(*textBlockStyle);
     textBlockStyle->setDisplay(BLOCK);
@@ -93,7 +93,7 @@ LayoutObject* LayoutTextControlMultiLine::layoutSpecialExcludedChild(bool relayo
         return 0;
     if (!placeholderRenderer->isBox())
         return placeholderRenderer;
-    RenderBox* placeholderBox = toRenderBox(placeholderRenderer);
+    LayoutBox* placeholderBox = toLayoutBox(placeholderRenderer);
     placeholderBox->style()->setLogicalWidth(Length(contentLogicalWidth() - placeholderBox->borderAndPaddingLogicalWidth(), Fixed));
     placeholderBox->layoutIfNeeded();
     placeholderBox->setX(borderLeft() + paddingLeft());

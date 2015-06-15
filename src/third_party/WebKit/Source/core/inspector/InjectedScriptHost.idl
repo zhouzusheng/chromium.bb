@@ -39,6 +39,7 @@
     [NotEnumerable, Unforgeable, Custom] void inspect(any objectId, object hints);
     [NotEnumerable, Unforgeable, Custom] any inspectedObject(long num);
     [NotEnumerable, Unforgeable, Custom] DOMString internalConstructorName(any obj);
+    [NotEnumerable, Unforgeable, Custom] boolean isDOMWrapper(any obj);
     [NotEnumerable, Unforgeable, Custom] boolean isHTMLAllCollection(any obj);
     [NotEnumerable, Unforgeable, Custom] boolean isTypedArray(any obj);
     [NotEnumerable, Unforgeable, Custom] DOMString subtype(any obj);
@@ -61,7 +62,8 @@
     [NotEnumerable, Unforgeable, Custom] any setFunctionVariableValue(Function functionObject, long scopeIndex, DOMString variableName, any newValue);
 
     // Accessors to InjectedScriptNative
-    [NotEnumerable, Unforgeable, Custom] long bind(any value);
-    [NotEnumerable, Unforgeable, Custom] void unbind(long id);
+    [NotEnumerable, Unforgeable, Custom] long bind(any value, DOMString groupName);
     [NotEnumerable, Unforgeable, Custom] any objectForId(long id);
+
+    [NotEnumerable, Unforgeable, Custom] DOMString idToObjectGroupName(long id);
 };

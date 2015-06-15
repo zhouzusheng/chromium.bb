@@ -14,7 +14,10 @@
 #include "core/frame/LocalFrame.h"
 #include "modules/EventTargetModules.h"
 #include "modules/presentation/AvailableChangeEvent.h"
+#include "modules/presentation/DefaultSessionStartEvent.h"
 #include "modules/presentation/PresentationController.h"
+#include "modules/presentation/PresentationSessionClientCallbacks.h"
+#include "public/platform/modules/presentation/WebPresentationSessionClient.h"
 
 namespace blink {
 
@@ -52,6 +55,7 @@ ExecutionContext* Presentation::executionContext() const
 DEFINE_TRACE(Presentation)
 {
     visitor->trace(m_session);
+    visitor->trace(m_openSessions);
     RefCountedGarbageCollectedEventTargetWithInlineData<Presentation>::trace(visitor);
     DOMWindowProperty::trace(visitor);
 }
@@ -65,7 +69,14 @@ ScriptPromise Presentation::startSession(ScriptState* state, const String& prese
 {
     RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(state);
     ScriptPromise promise = resolver->promise();
-    resolver->reject(DOMException::create(NotSupportedError, "The method is not supported yet."));
+
+    PresentationController* controller = presentationController();
+    if (!controller) {
+        resolver->reject(DOMException::create(InvalidStateError, "The object is no longer attached to the frame."));
+        return promise;
+    }
+    controller->startSession(presentationUrl, presentationId, new PresentationSessionClientCallbacks(resolver, this));
+
     return promise;
 }
 
@@ -73,7 +84,14 @@ ScriptPromise Presentation::joinSession(ScriptState* state, const String& presen
 {
     RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(state);
     ScriptPromise promise = resolver->promise();
-    resolver->reject(DOMException::create(NotSupportedError, "The method is not supported yet."));
+
+    PresentationController* controller = presentationController();
+    if (!controller) {
+        resolver->reject(DOMException::create(InvalidStateError, "The object is no longer attached to the frame."));
+        return promise;
+    }
+    controller->joinSession(presentationUrl, presentationId, new PresentationSessionClientCallbacks(resolver, this));
+
     return promise;
 }
 
@@ -129,11 +147,39 @@ bool Presentation::isAvailableChangeWatched() const
     return hasEventListeners(EventTypeNames::availablechange);
 }
 
+void Presentation::didStartDefaultSession(PresentationSession* session)
+{
+    dispatchEvent(DefaultSessionStartEvent::create(EventTypeNames::defaultsessionstart, session));
+}
+
+void Presentation::didChangeSessionState(WebPresentationSessionClient* sessionClient, WebPresentationSessionState sessionState)
+{
+    PresentationSession* session = findSession(sessionClient);
+    if (session)
+        session->didChangeState(sessionState);
+
+    PresentationSession::dispose(sessionClient);
+}
+
+void Presentation::registerSession(PresentationSession* session)
+{
+    m_openSessions.add(session);
+}
+
 PresentationController* Presentation::presentationController()
 {
     if (!frame())
         return nullptr;
     return PresentationController::from(*frame());
+}
+
+PresentationSession* Presentation::findSession(WebPresentationSessionClient* sessionClient)
+{
+    for (const auto& session : m_openSessions) {
+        if (session->matches(sessionClient))
+            return session.get();
+    }
+    return nullptr;
 }
 
 } // namespace blink

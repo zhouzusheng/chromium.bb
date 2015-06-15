@@ -45,8 +45,10 @@
 #include "core/layout/LayoutPart.h"
 #include "modules/accessibility/AXObject.h"
 #include "modules/accessibility/AXObjectCacheImpl.h"
+#include "platform/Task.h"
 #include "platform/Widget.h"
 #include "public/platform/WebString.h"
+#include "public/platform/WebSuspendableTask.h"
 #include "public/web/WebAXObject.h"
 #include "public/web/WebDOMEvent.h"
 #include "public/web/WebDocument.h"
@@ -59,6 +61,54 @@
 #include "web/WebPluginContainerImpl.h"
 
 namespace blink {
+
+namespace {
+
+class NodeDispatchEventTask: public blink::SuspendableTask {
+    WTF_MAKE_NONCOPYABLE(NodeDispatchEventTask);
+public:
+    NodeDispatchEventTask(const WebPrivatePtr<Node>& node, WebDOMEvent event)
+        : m_event(event)
+    {
+        m_node = node;
+    }
+
+    ~NodeDispatchEventTask()
+    {
+        m_node.reset();
+    }
+
+    void run() override
+    {
+        m_node->dispatchEvent(m_event);
+    }
+private:
+    WebPrivatePtr<Node> m_node;
+    WebDOMEvent m_event;
+};
+
+class NodeDispatchSimulatedClickTask: public blink::SuspendableTask {
+    WTF_MAKE_NONCOPYABLE(NodeDispatchSimulatedClickTask);
+public:
+    NodeDispatchSimulatedClickTask(const WebPrivatePtr<Node>& node)
+    {
+        m_node = node;
+    }
+
+    ~NodeDispatchSimulatedClickTask()
+    {
+        m_node.reset();
+    }
+
+    void run() override
+    {
+        m_node->dispatchSimulatedClick(nullptr);
+    }
+private:
+    WebPrivatePtr<Node> m_node;
+};
+
+} // namespace
 
 void WebNode::reset()
 {
@@ -173,16 +223,15 @@ bool WebNode::isElementNode() const
     return m_private->isElementNode();
 }
 
-bool WebNode::dispatchEvent(const WebDOMEvent& event)
+void WebNode::dispatchEvent(const WebDOMEvent& event)
 {
     if (!event.isNull())
-        return m_private->dispatchEvent(event);
-    return false;
+        m_private->executionContext()->postSuspendableTask(adoptPtr(new NodeDispatchEventTask(m_private, event)));
 }
 
 void WebNode::simulateClick()
 {
-    m_private->dispatchSimulatedClick(0);
+    m_private->executionContext()->postSuspendableTask(adoptPtr(new NodeDispatchSimulatedClickTask(m_private)));
 }
 
 WebElementCollection WebNode::getElementsByHTMLTagName(const WebString& tag) const
@@ -236,7 +285,7 @@ WebPluginContainer* WebNode::pluginContainer() const
         return 0;
     const Node& coreNode = *constUnwrap<Node>();
     if (isHTMLObjectElement(coreNode) || isHTMLEmbedElement(coreNode)) {
-        LayoutObject* object = coreNode.renderer();
+        LayoutObject* object = coreNode.layoutObject();
         if (object && object->isLayoutPart()) {
             Widget* widget = toLayoutPart(object)->widget();
             if (widget && widget->isPluginContainer())

@@ -2,6 +2,7 @@
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  * Copyright (C) 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011 Apple Inc. All rights reserved.
  * Copyright (C) 2013 Google Inc. All rights reserved.
+ * Copyright (C) 2015 Collabora Ltd. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -27,8 +28,8 @@
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/layout/LayoutTheme.h"
+#include "core/layout/LayoutView.h"
 #include "core/layout/TextAutosizer.h"
-#include "core/rendering/RenderView.h"
 #include "platform/FontFamilyNames.h"
 #include "platform/fonts/FontDescription.h"
 #include "platform/text/LocaleToScriptMapping.h"
@@ -121,6 +122,13 @@ void FontBuilder::setWeight(FontWeight fontWeight)
 void FontBuilder::setSize(const FontDescription::Size& size)
 {
     setSize(m_fontDescription, size);
+}
+
+void FontBuilder::setSizeAdjust(float aspectValue)
+{
+    set(PropertySetFlag::SizeAdjust);
+
+    m_fontDescription.setSizeAdjust(aspectValue);
 }
 
 void FontBuilder::setStretch(FontStretch fontStretch)
@@ -230,53 +238,33 @@ float FontBuilder::getComputedSizeFromSpecifiedSize(FontDescription& fontDescrip
     return FontSize::getComputedSizeFromSpecifiedSize(&m_document, zoomFactor, fontDescription.isAbsoluteSize(), specifiedSize);
 }
 
-static void getFontAndGlyphOrientation(const LayoutStyle& style, FontOrientation& fontOrientation, NonCJKGlyphOrientation& glyphOrientation)
+static FontOrientation fontOrientation(const ComputedStyle& style)
 {
-    if (style.isHorizontalWritingMode()) {
-        fontOrientation = Horizontal;
-        glyphOrientation = NonCJKGlyphOrientationVerticalRight;
-        return;
-    }
+    if (style.isHorizontalWritingMode())
+        return FontOrientation::Horizontal;
 
     switch (style.textOrientation()) {
     case TextOrientationVerticalRight:
-        fontOrientation = Vertical;
-        glyphOrientation = NonCJKGlyphOrientationVerticalRight;
-        return;
+        return FontOrientation::VerticalMixed;
     case TextOrientationUpright:
-        fontOrientation = Vertical;
-        glyphOrientation = NonCJKGlyphOrientationUpright;
-        return;
+        return FontOrientation::VerticalUpright;
     case TextOrientationSideways:
         if (style.writingMode() == LeftToRightWritingMode) {
             // FIXME: This should map to sideways-left, which is not supported yet.
-            fontOrientation = Vertical;
-            glyphOrientation = NonCJKGlyphOrientationVerticalRight;
-            return;
+            return FontOrientation::VerticalRotated;
         }
-        fontOrientation = Horizontal;
-        glyphOrientation = NonCJKGlyphOrientationVerticalRight;
-        return;
+        return FontOrientation::VerticalRotated;
     case TextOrientationSidewaysRight:
-        fontOrientation = Horizontal;
-        glyphOrientation = NonCJKGlyphOrientationVerticalRight;
-        return;
+        return FontOrientation::VerticalRotated;
     default:
         ASSERT_NOT_REACHED();
-        fontOrientation = Horizontal;
-        glyphOrientation = NonCJKGlyphOrientationVerticalRight;
-        return;
+        return FontOrientation::VerticalMixed;
     }
 }
 
-void FontBuilder::updateOrientation(FontDescription& description, const LayoutStyle& style)
+void FontBuilder::updateOrientation(FontDescription& description, const ComputedStyle& style)
 {
-    FontOrientation fontOrientation;
-    NonCJKGlyphOrientation glyphOrientation;
-    getFontAndGlyphOrientation(style, fontOrientation, glyphOrientation);
-
-    description.setNonCJKGlyphOrientation(glyphOrientation);
-    description.setOrientation(fontOrientation);
+    description.setOrientation(fontOrientation(style));
 }
 
 void FontBuilder::checkForGenericFamilyChange(const FontDescription& oldDescription, FontDescription& newDescription)
@@ -312,7 +300,7 @@ void FontBuilder::checkForGenericFamilyChange(const FontDescription& oldDescript
     newDescription.setSpecifiedSize(size);
 }
 
-void FontBuilder::updateSpecifiedSize(FontDescription& fontDescription, const LayoutStyle& style)
+void FontBuilder::updateSpecifiedSize(FontDescription& fontDescription, const ComputedStyle& style)
 {
     float specifiedSize = fontDescription.specifiedSize();
 
@@ -324,7 +312,34 @@ void FontBuilder::updateSpecifiedSize(FontDescription& fontDescription, const La
     checkForGenericFamilyChange(style.fontDescription(), fontDescription);
 }
 
-void FontBuilder::updateComputedSize(FontDescription& fontDescription, const LayoutStyle& style)
+void FontBuilder::updateAdjustedSize(FontDescription& fontDescription, const ComputedStyle& style, FontSelector* fontSelector)
+{
+    const float specifiedSize = fontDescription.specifiedSize();
+    if (!fontDescription.hasSizeAdjust() || !specifiedSize)
+        return;
+
+    // We need to create a temporal Font to get xHeight of a primary font.
+    // The aspect value is based on the xHeight of the font for the computed font size,
+    // so we need to reset the adjustedSize to computedSize. See FontDescription::effectiveFontSize.
+    fontDescription.setAdjustedSize(fontDescription.computedSize());
+
+    Font font(fontDescription);
+    font.update(fontSelector);
+    if (!font.fontMetrics().hasXHeight())
+        return;
+
+    const float sizeAdjust = fontDescription.sizeAdjust();
+    float aspectValue = font.fontMetrics().xHeight() / specifiedSize;
+    float adjustedSize = (sizeAdjust / aspectValue) * specifiedSize;
+    adjustedSize = getComputedSizeFromSpecifiedSize(fontDescription, style.effectiveZoom(), adjustedSize);
+
+    float multiplier = style.textAutosizingMultiplier();
+    if (multiplier > 1)
+        adjustedSize = TextAutosizer::computeAutosizedFontSize(adjustedSize, multiplier);
+    fontDescription.setAdjustedSize(adjustedSize);
+}
+
+void FontBuilder::updateComputedSize(FontDescription& fontDescription, const ComputedStyle& style)
 {
     float computedSize = getComputedSizeFromSpecifiedSize(fontDescription, style.effectiveZoom(), fontDescription.specifiedSize());
     float multiplier = style.textAutosizingMultiplier();
@@ -333,7 +348,7 @@ void FontBuilder::updateComputedSize(FontDescription& fontDescription, const Lay
     fontDescription.setComputedSize(computedSize);
 }
 
-void FontBuilder::createFont(PassRefPtrWillBeRawPtr<FontSelector> fontSelector, LayoutStyle& style)
+void FontBuilder::createFont(PassRefPtrWillBeRawPtr<FontSelector> fontSelector, ComputedStyle& style)
 {
     if (!m_flags)
         return;
@@ -349,6 +364,8 @@ void FontBuilder::createFont(PassRefPtrWillBeRawPtr<FontSelector> fontSelector, 
         description.setSpecifiedSize(m_fontDescription.specifiedSize());
         description.setIsAbsoluteSize(m_fontDescription.isAbsoluteSize());
     }
+    if (isSet(PropertySetFlag::SizeAdjust))
+        description.setSizeAdjust(m_fontDescription.sizeAdjust());
     if (isSet(PropertySetFlag::Weight))
         description.setWeight(m_fontDescription.weight());
     if (isSet(PropertySetFlag::Stretch))
@@ -376,13 +393,14 @@ void FontBuilder::createFont(PassRefPtrWillBeRawPtr<FontSelector> fontSelector, 
 
     updateSpecifiedSize(description, style);
     updateComputedSize(description, style);
+    updateAdjustedSize(description, style, fontSelector.get());
 
     style.setFontDescription(description);
     style.font().update(fontSelector);
     m_flags = 0;
 }
 
-void FontBuilder::createFontForDocument(PassRefPtrWillBeRawPtr<FontSelector> fontSelector, LayoutStyle& documentStyle)
+void FontBuilder::createFontForDocument(PassRefPtrWillBeRawPtr<FontSelector> fontSelector, ComputedStyle& documentStyle)
 {
     FontDescription fontDescription = FontDescription();
     fontDescription.setLocale(documentStyle.locale());
@@ -393,11 +411,7 @@ void FontBuilder::createFontForDocument(PassRefPtrWillBeRawPtr<FontSelector> fon
     updateSpecifiedSize(fontDescription, documentStyle);
     updateComputedSize(fontDescription, documentStyle);
 
-    FontOrientation fontOrientation;
-    NonCJKGlyphOrientation glyphOrientation;
-    getFontAndGlyphOrientation(documentStyle, fontOrientation, glyphOrientation);
-    fontDescription.setOrientation(fontOrientation);
-    fontDescription.setNonCJKGlyphOrientation(glyphOrientation);
+    updateOrientation(fontDescription, documentStyle);
     documentStyle.setFontDescription(fontDescription);
     documentStyle.font().update(fontSelector);
 }

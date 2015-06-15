@@ -28,7 +28,7 @@
 #include "core/loader/NavigationPolicy.h"
 #include "core/frame/ConsoleTypes.h"
 #include "core/html/forms/PopupMenuClient.h"
-#include "core/layout/style/LayoutStyleConstants.h"
+#include "core/style/ComputedStyleConstants.h"
 #include "platform/Cursor.h"
 #include "platform/HostWindow.h"
 #include "platform/PopupMenu.h"
@@ -61,6 +61,7 @@ class Node;
 class Page;
 class PagePopupDriver;
 class PopupMenuClient;
+class WebCompositorAnimationTimeline;
 
 struct CompositedSelectionBound;
 struct DateTimeChooserParameters;
@@ -96,9 +97,6 @@ public:
     virtual Page* createWindow(LocalFrame*, const FrameLoadRequest&, const WindowFeatures&, NavigationPolicy, ShouldSendReferrer) = 0;
     virtual void show(NavigationPolicy) = 0;
 
-    virtual bool canRunModal() = 0;
-    virtual void runModal() = 0;
-
     virtual void setToolbarsVisible(bool) = 0;
     virtual bool toolbarsVisible() = 0;
 
@@ -133,7 +131,7 @@ public:
 
     // Methods used by HostWindow.
     virtual void invalidateRect(const IntRect&) = 0;
-    virtual IntRect rootViewToScreen(const IntRect&) const = 0;
+    virtual IntRect viewportToScreen(const IntRect&) const = 0;
     virtual blink::WebScreenInfo screenInfo() const = 0;
     virtual void setCursor(const Cursor&) = 0;
     virtual void scheduleAnimation() = 0;
@@ -183,6 +181,9 @@ public:
     // it sets it for the WebViewImpl.
     virtual void attachRootGraphicsLayer(GraphicsLayer*, LocalFrame* localRoot) = 0;
 
+    virtual void attachCompositorAnimationTimeline(WebCompositorAnimationTimeline*, LocalFrame* localRoot) { }
+    virtual void detachCompositorAnimationTimeline(WebCompositorAnimationTimeline*, LocalFrame* localRoot) { }
+
     virtual void enterFullScreenForElement(Element*) { }
     virtual void exitFullScreenForElement(Element*) { }
 
@@ -193,7 +194,7 @@ public:
 
     virtual void setTouchAction(TouchAction) = 0;
 
-    // Checks if there is an opened popup, called by RenderMenuList::showPopup().
+    // Checks if there is an opened popup, called by LayoutMenuList::showPopup().
     virtual bool hasOpenedPopup() const = 0;
     virtual PassRefPtrWillBeRawPtr<PopupMenu> createPopupMenu(LocalFrame&, PopupMenuClient*) = 0;
     virtual DOMWindow* pagePopupWindowForTesting() const = 0;
@@ -223,6 +224,7 @@ public:
     virtual void didEndEditingOnTextField(HTMLInputElement&) { }
     virtual void handleKeyboardEventOnTextField(HTMLInputElement&, KeyboardEvent&) { }
     virtual void textFieldDataListChanged(HTMLInputElement&) { }
+    virtual void xhrSucceeded(LocalFrame*) { }
 
     // Input mehtod editor related functions.
     virtual void didCancelCompositionOnSelectionChange() { }
@@ -233,6 +235,8 @@ public:
     virtual void registerViewportLayers() const { }
 
     virtual void showUnhandledTapUIIfNeeded(IntPoint, Node*, bool) { }
+
+    virtual void didUpdateTopControls() const { }
 
 protected:
     virtual ~ChromeClient() { }

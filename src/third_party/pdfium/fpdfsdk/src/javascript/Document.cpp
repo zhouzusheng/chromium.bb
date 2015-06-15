@@ -16,7 +16,7 @@
 #include "../../include/javascript/app.h"
 #include "../../include/javascript/Field.h"
 #include "../../include/javascript/Icon.h"
-#include "../../include/javascript/Field.h"
+#include "../../include/javascript/resource.h"
 
 #include "../../../third_party/base/numerics/safe_math.h"
 
@@ -190,24 +190,20 @@ Document::~Document()
 }
 
 //the total number of fileds in document.
-FX_BOOL Document::numFields(OBJ_PROP_PARAMS)
+FX_BOOL Document::numFields(IFXJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError)
 {
-	if (!vp.IsGetting()) return FALSE;
-
-	ASSERT(m_pDocument != NULL);
-
+	if (vp.IsSetting()) {
+		CJS_Context* pContext = static_cast<CJS_Context*>(cc);
+		sError = JSGetStringFromID(pContext, IDS_STRING_JSREADONLY);
+		return FALSE;
+	}
 	CPDFSDK_InterForm *pInterForm = m_pDocument->GetInterForm();
-	ASSERT(pInterForm != NULL);
-
 	CPDF_InterForm *pPDFForm = pInterForm->GetInterForm();
-	ASSERT(pPDFForm != NULL);
-
 	vp << (int)pPDFForm->CountFields();
-
 	return TRUE;
 }
 
-FX_BOOL Document::dirty(OBJ_PROP_PARAMS)
+FX_BOOL Document::dirty(IFXJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError)
 {
 	ASSERT(m_pDocument != NULL);
 
@@ -233,7 +229,7 @@ FX_BOOL Document::dirty(OBJ_PROP_PARAMS)
 	return TRUE;
 }
 
-FX_BOOL Document::ADBE(OBJ_PROP_PARAMS)
+FX_BOOL Document::ADBE(IFXJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError)
 {
 	ASSERT(m_pDocument != NULL);
 
@@ -248,7 +244,7 @@ FX_BOOL Document::ADBE(OBJ_PROP_PARAMS)
 	return TRUE;
 }
 
-FX_BOOL Document::pageNum(OBJ_PROP_PARAMS)
+FX_BOOL Document::pageNum(IFXJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError)
 {
 	ASSERT(m_pDocument != NULL);
 
@@ -262,14 +258,10 @@ FX_BOOL Document::pageNum(OBJ_PROP_PARAMS)
 	else
 	{
 		int iPageCount = m_pDocument->GetPageCount();
-
 		int iPageNum = 0;
 		vp >> iPageNum;
 
 		CPDFDoc_Environment* pEnv = m_pDocument->GetEnv();
-		if(!pEnv)
-			return FALSE;
-
 		if (iPageNum >= 0 && iPageNum < iPageCount)
 		{
 			 pEnv->JS_docgotoPage(iPageNum);
@@ -293,31 +285,31 @@ FX_BOOL Document::ParserParams(JSObject* pObj,CJS_AnnotObj& annotobj)
 	return TRUE;
 }
 
-FX_BOOL Document::addAnnot(OBJ_METHOD_PARAMS)
+FX_BOOL Document::addAnnot(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	// Not supported.
 	return TRUE;
 }
 
-FX_BOOL Document::addField(OBJ_METHOD_PARAMS)
+FX_BOOL Document::addField(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	// Not supported.
 	return TRUE;
 }
 
-FX_BOOL Document::exportAsText(OBJ_METHOD_PARAMS)
+FX_BOOL Document::exportAsText(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	// Unsafe, not supported.
 	return TRUE;
 }
 
-FX_BOOL Document::exportAsFDF(OBJ_METHOD_PARAMS)
+FX_BOOL Document::exportAsFDF(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	// Unsafe, not supported.
 	return TRUE;
 }
 
-FX_BOOL Document::exportAsXFDF(OBJ_METHOD_PARAMS)
+FX_BOOL Document::exportAsXFDF(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	// Unsafe, not supported.
 	return TRUE;
@@ -327,7 +319,7 @@ FX_BOOL Document::exportAsXFDF(OBJ_METHOD_PARAMS)
 //comment:
 //note: the paremter cName, this is clue how to treat if the cName is not a valiable filed name in this document
 
-FX_BOOL Document::getField(OBJ_METHOD_PARAMS)
+FX_BOOL Document::getField(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	v8::Isolate* isolate = GetIsolate(cc);
 	ASSERT(m_pDocument != NULL);
@@ -368,7 +360,7 @@ FX_BOOL Document::getField(OBJ_METHOD_PARAMS)
 }
 
 //Gets the name of the nth field in the document
-FX_BOOL Document::getNthFieldName(OBJ_METHOD_PARAMS)
+FX_BOOL Document::getNthFieldName(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	ASSERT(m_pDocument != NULL);
 
@@ -389,19 +381,19 @@ FX_BOOL Document::getNthFieldName(OBJ_METHOD_PARAMS)
 	return TRUE;
 }
 
-FX_BOOL Document::importAnFDF(OBJ_METHOD_PARAMS)
+FX_BOOL Document::importAnFDF(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	// Unsafe, not supported.
 	return TRUE;
 }
 
-FX_BOOL Document::importAnXFDF(OBJ_METHOD_PARAMS)
+FX_BOOL Document::importAnXFDF(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	// Unsafe, not supported.
 	return TRUE;
 }
 
-FX_BOOL Document::importTextData(OBJ_METHOD_PARAMS)
+FX_BOOL Document::importTextData(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	// Unsafe, not supported.
 	return TRUE;
@@ -412,7 +404,7 @@ FX_BOOL Document::importTextData(OBJ_METHOD_PARAMS)
 //note:
 //int CPDFSDK_Document::mailForm(FX_BOOL bUI,String cto,string ccc,string cbcc,string cSubject,string cms);
 
-FX_BOOL Document::mailForm(OBJ_METHOD_PARAMS)
+FX_BOOL Document::mailForm(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	ASSERT(m_pDocument != NULL);
 
@@ -447,7 +439,7 @@ FX_BOOL Document::mailForm(OBJ_METHOD_PARAMS)
 	return TRUE;
 }
 
-FX_BOOL Document::print(OBJ_METHOD_PARAMS)
+FX_BOOL Document::print(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	CJS_Context* pContext = (CJS_Context*)cc;
 	ASSERT(pContext != NULL);
@@ -524,7 +516,7 @@ FX_BOOL Document::print(OBJ_METHOD_PARAMS)
 //comment:
 //note: if the filed name is not retional, adobe is dumb for it.
 
-FX_BOOL Document::removeField(OBJ_METHOD_PARAMS)
+FX_BOOL Document::removeField(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	ASSERT(m_pDocument != NULL);
 
@@ -578,7 +570,7 @@ FX_BOOL Document::removeField(OBJ_METHOD_PARAMS)
 //comment:
 //note: if the fields names r not rational, aodbe is dumb for it.
 
-FX_BOOL Document::resetForm(OBJ_METHOD_PARAMS)
+FX_BOOL Document::resetForm(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	ASSERT(m_pDocument != NULL);
 
@@ -639,14 +631,14 @@ FX_BOOL Document::resetForm(OBJ_METHOD_PARAMS)
 }
 
 
-FX_BOOL Document::saveAs(OBJ_METHOD_PARAMS)
+FX_BOOL Document::saveAs(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
   // Unsafe, not supported.
   return TRUE;
 }
 
 
-FX_BOOL Document::submitForm(OBJ_METHOD_PARAMS)
+FX_BOOL Document::submitForm(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	ASSERT(m_pDocument != NULL);
 
@@ -773,12 +765,12 @@ FX_BOOL Document::ExtractFolderName(CPDFSDK_Document *pDoc,CFX_ByteString &strFo
 	return FALSE;
 }
 
-FX_BOOL Document::bookmarkRoot(OBJ_PROP_PARAMS)
+FX_BOOL Document::bookmarkRoot(IFXJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError)
 {
 	return TRUE;
 }
 
-FX_BOOL Document::mailDoc(OBJ_METHOD_PARAMS)
+FX_BOOL Document::mailDoc(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	ASSERT(m_pDocument != NULL);
 
@@ -836,7 +828,7 @@ FX_BOOL Document::mailDoc(OBJ_METHOD_PARAMS)
 	return TRUE;
 }
 
-FX_BOOL Document::author(OBJ_PROP_PARAMS)
+FX_BOOL Document::author(IFXJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError)
 {
 	ASSERT(m_pDocument != NULL);
 
@@ -860,7 +852,7 @@ FX_BOOL Document::author(OBJ_PROP_PARAMS)
 	}
 }
 
-FX_BOOL Document::info(OBJ_PROP_PARAMS)
+FX_BOOL Document::info(IFXJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError)
 {
 	ASSERT(m_pDocument != NULL);
 
@@ -878,7 +870,7 @@ FX_BOOL Document::info(OBJ_PROP_PARAMS)
 	CFX_WideString cwTrapped		= pDictionary->GetUnicodeText("Trapped");
 
 	v8::Isolate* isolate = GetIsolate(cc);
-	if (!vp.IsSetting())
+	if (vp.IsGetting())
 	{
 		CJS_Context* pContext = (CJS_Context *)cc;
 		CJS_Runtime* pRuntime = pContext->GetJSRuntime();
@@ -919,7 +911,7 @@ FX_BOOL Document::info(OBJ_PROP_PARAMS)
 	}
 }
 
-FX_BOOL Document::creationDate(OBJ_PROP_PARAMS)
+FX_BOOL Document::creationDate(IFXJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError)
 {
 	ASSERT(m_pDocument != NULL);
 
@@ -944,7 +936,7 @@ FX_BOOL Document::creationDate(OBJ_PROP_PARAMS)
 	}
 }
 
-FX_BOOL Document::creator(OBJ_PROP_PARAMS)
+FX_BOOL Document::creator(IFXJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError)
 {
 	ASSERT(m_pDocument != NULL);
 
@@ -968,7 +960,7 @@ FX_BOOL Document::creator(OBJ_PROP_PARAMS)
 	}
 }
 
-FX_BOOL Document::delay(OBJ_PROP_PARAMS)
+FX_BOOL Document::delay(IFXJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError)
 {
 	if (vp.IsGetting())
 	{
@@ -1010,7 +1002,7 @@ FX_BOOL Document::delay(OBJ_PROP_PARAMS)
 	}
 }
 
-FX_BOOL Document::keywords(OBJ_PROP_PARAMS)
+FX_BOOL Document::keywords(IFXJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError)
 {
 	ASSERT(m_pDocument != NULL);
 
@@ -1034,7 +1026,7 @@ FX_BOOL Document::keywords(OBJ_PROP_PARAMS)
 	}
 }
 
-FX_BOOL Document::modDate(OBJ_PROP_PARAMS)
+FX_BOOL Document::modDate(IFXJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError)
 {
 	ASSERT(m_pDocument != NULL);
 
@@ -1058,7 +1050,7 @@ FX_BOOL Document::modDate(OBJ_PROP_PARAMS)
 	}
 }
 
-FX_BOOL Document::producer(OBJ_PROP_PARAMS)
+FX_BOOL Document::producer(IFXJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError)
 {
 	ASSERT(m_pDocument != NULL);
 
@@ -1082,7 +1074,7 @@ FX_BOOL Document::producer(OBJ_PROP_PARAMS)
 	}
 }
 
-FX_BOOL Document::subject(OBJ_PROP_PARAMS)
+FX_BOOL Document::subject(IFXJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError)
 {
 	ASSERT(m_pDocument != NULL);
 
@@ -1106,7 +1098,7 @@ FX_BOOL Document::subject(OBJ_PROP_PARAMS)
 	}
 }
 
-FX_BOOL Document::title(OBJ_PROP_PARAMS)
+FX_BOOL Document::title(IFXJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError)
 {
 	ASSERT(m_pDocument != NULL);
 
@@ -1133,46 +1125,46 @@ FX_BOOL Document::title(OBJ_PROP_PARAMS)
 	}
 }
 
-FX_BOOL Document::numPages(OBJ_PROP_PARAMS)
+FX_BOOL Document::numPages(IFXJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError)
 {
-	if (vp.IsGetting())
-	{
-		ASSERT(m_pDocument != NULL);
-		vp << m_pDocument->GetPageCount();
-		return TRUE;
-	}
-	else
-	{
+	if (vp.IsSetting()) {
+		CJS_Context* pContext = static_cast<CJS_Context*>(cc);
+		sError = JSGetStringFromID(pContext, IDS_STRING_JSREADONLY);
 		return FALSE;
 	}
+	vp << m_pDocument->GetPageCount();
+	return TRUE;
 }
 
-FX_BOOL Document::external(OBJ_PROP_PARAMS)
+FX_BOOL Document::external(IFXJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError)
 {
 	//In Chrome case,should always return true.
 	vp << TRUE;
 	return TRUE;
 }
 
-FX_BOOL Document::filesize(OBJ_PROP_PARAMS)
+FX_BOOL Document::filesize(IFXJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError)
 {
-	if (!vp.IsGetting())return FALSE;
-
+	if (vp.IsSetting()) {
+		CJS_Context* pContext = static_cast<CJS_Context*>(cc);
+		sError = JSGetStringFromID(pContext, IDS_STRING_JSREADONLY);
+		return FALSE;
+	}
 	vp << 0;
 	return TRUE;
 }
 
-FX_BOOL Document::mouseX(OBJ_PROP_PARAMS)
+FX_BOOL Document::mouseX(IFXJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError)
 {
 	return TRUE;
 }
 
-FX_BOOL Document::mouseY(OBJ_PROP_PARAMS)
+FX_BOOL Document::mouseY(IFXJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError)
 {
 	return TRUE;
 }
 
-FX_BOOL Document::baseURL(OBJ_PROP_PARAMS)
+FX_BOOL Document::baseURL(IFXJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError)
 {
 	if (vp.IsGetting())
 	{
@@ -1186,7 +1178,7 @@ FX_BOOL Document::baseURL(OBJ_PROP_PARAMS)
 	}
 }
 
-FX_BOOL Document::calculate(OBJ_PROP_PARAMS)
+FX_BOOL Document::calculate(IFXJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError)
 {
 	ASSERT(m_pDocument != NULL);
 
@@ -1211,13 +1203,14 @@ FX_BOOL Document::calculate(OBJ_PROP_PARAMS)
 	return TRUE;
 }
 
-FX_BOOL Document::documentFileName(OBJ_PROP_PARAMS)
+FX_BOOL Document::documentFileName(IFXJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError)
 {
-	if (!vp.IsGetting())
+	if (vp.IsSetting()) {
+		CJS_Context* pContext = static_cast<CJS_Context*>(cc);
+		sError = JSGetStringFromID(pContext, IDS_STRING_JSREADONLY);
 		return FALSE;
-
+	}
 	CFX_WideString wsFilePath = m_pDocument->GetPath();
-
 	FX_INT32 i = wsFilePath.GetLength() - 1;
 	for ( ; i >= 0; i-- )
 	{
@@ -1280,31 +1273,33 @@ CFX_WideString Document::CutString(CFX_WideString cbFrom)
 	return cbRet;
 }
 
-FX_BOOL Document::path(OBJ_PROP_PARAMS)
+FX_BOOL Document::path(IFXJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError)
 {
-	if (!vp.IsGetting()) return FALSE;
-
+	if (vp.IsSetting()) {
+		CJS_Context* pContext = static_cast<CJS_Context*>(cc);
+		sError = JSGetStringFromID(pContext, IDS_STRING_JSREADONLY);
+		return FALSE;
+	}
 	vp << app::SysPathToPDFPath(m_pDocument->GetPath());
-
 	return TRUE;
 }
 
-FX_BOOL Document::pageWindowRect(OBJ_PROP_PARAMS)
+FX_BOOL Document::pageWindowRect(IFXJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError)
 {
 	return TRUE;
 }
 
-FX_BOOL Document::layout(OBJ_PROP_PARAMS)
+FX_BOOL Document::layout(IFXJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError)
 {
 	return TRUE;
 }
 
-FX_BOOL Document::addLink(OBJ_METHOD_PARAMS)
+FX_BOOL Document::addLink(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	return TRUE;
 }
 
-FX_BOOL Document::closeDoc(OBJ_METHOD_PARAMS)
+FX_BOOL Document::closeDoc(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	ASSERT(m_pDocument != NULL);
 
@@ -1315,41 +1310,41 @@ FX_BOOL Document::closeDoc(OBJ_METHOD_PARAMS)
 	return TRUE;
 }
 
-FX_BOOL Document::getPageBox(OBJ_METHOD_PARAMS)
+FX_BOOL Document::getPageBox(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	return TRUE;
 }
 
 
-FX_BOOL Document::getAnnot(OBJ_METHOD_PARAMS)
+FX_BOOL Document::getAnnot(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	return TRUE;
 }
 
-FX_BOOL Document::getAnnots(OBJ_METHOD_PARAMS)
-{
-	vRet.SetNull();
-	return TRUE;
-}
-
-FX_BOOL Document::getAnnot3D(OBJ_METHOD_PARAMS)
+FX_BOOL Document::getAnnots(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	vRet.SetNull();
 	return TRUE;
 }
 
-FX_BOOL Document::getAnnots3D(OBJ_METHOD_PARAMS)
+FX_BOOL Document::getAnnot3D(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
+{
+	vRet.SetNull();
+	return TRUE;
+}
+
+FX_BOOL Document::getAnnots3D(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	vRet = VT_undefined;
 	return TRUE;
 }
 
-FX_BOOL Document::getOCGs(OBJ_METHOD_PARAMS)
+FX_BOOL Document::getOCGs(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	return TRUE;
 }
 
-FX_BOOL Document::getLinks(OBJ_METHOD_PARAMS)
+FX_BOOL Document::getLinks(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	return TRUE;
 }
@@ -1460,7 +1455,7 @@ void IconTree::DeleteIconElement(CFX_WideString swIconName)
 	}
 }
 
-FX_BOOL Document::addIcon(OBJ_METHOD_PARAMS)
+FX_BOOL Document::addIcon(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	if (params.size() != 2)return FALSE;
 
@@ -1489,10 +1484,13 @@ FX_BOOL Document::addIcon(OBJ_METHOD_PARAMS)
 	return TRUE;
 }
 
-FX_BOOL Document::icons(OBJ_PROP_PARAMS)
+FX_BOOL Document::icons(IFXJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError)
 {
-	if (vp.IsSetting())
+	if (vp.IsSetting()) {
+		CJS_Context* pContext = static_cast<CJS_Context*>(cc);
+		sError = JSGetStringFromID(pContext, IDS_STRING_JSREADONLY);
 		return FALSE;
+	}
 
 	if (!m_pIconTree)
 	{
@@ -1529,7 +1527,7 @@ FX_BOOL Document::icons(OBJ_PROP_PARAMS)
 	return TRUE;
 }
 
-FX_BOOL Document::getIcon(OBJ_METHOD_PARAMS)
+FX_BOOL Document::getIcon(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	if (params.size() != 1)return FALSE;
 	if(!m_pIconTree)
@@ -1565,7 +1563,7 @@ FX_BOOL Document::getIcon(OBJ_METHOD_PARAMS)
 	return FALSE;
 }
 
-FX_BOOL Document::removeIcon(OBJ_METHOD_PARAMS)
+FX_BOOL Document::removeIcon(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	if (params.size() != 1)return FALSE;
 	if(!m_pIconTree)
@@ -1574,18 +1572,18 @@ FX_BOOL Document::removeIcon(OBJ_METHOD_PARAMS)
 	return TRUE;
 }
 
-FX_BOOL Document::createDataObject(OBJ_METHOD_PARAMS)
+FX_BOOL Document::createDataObject(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
   // Unsafe, not implemented.
   return TRUE;
 }
 
-FX_BOOL Document::media(OBJ_PROP_PARAMS)
+FX_BOOL Document::media(IFXJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError)
 {
 	return TRUE;
 }
 
-FX_BOOL Document::calculateNow(OBJ_METHOD_PARAMS)
+FX_BOOL Document::calculateNow(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	ASSERT(m_pDocument != NULL);
 
@@ -1599,12 +1597,12 @@ FX_BOOL Document::calculateNow(OBJ_METHOD_PARAMS)
 	return TRUE;
 }
 
-FX_BOOL Document::Collab(OBJ_PROP_PARAMS)
+FX_BOOL Document::Collab(IFXJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError)
 {
 	return TRUE;
 }
 
-FX_BOOL Document::getPageNthWord(OBJ_METHOD_PARAMS)
+FX_BOOL Document::getPageNthWord(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	ASSERT(m_pDocument != NULL);
 
@@ -1619,7 +1617,8 @@ FX_BOOL Document::getPageNthWord(OBJ_METHOD_PARAMS)
 
 	if (nPageNo < 0 || nPageNo >= pDocument->GetPageCount())
 	{
-		//sError = JSGetStringFromID(IDS_STRING_JSPARAMERROR);
+		CJS_Context* pContext = static_cast<CJS_Context*>(cc);
+		sError = JSGetStringFromID(pContext, IDS_STRING_JSPARAMERROR);
 		return FALSE;
 	}
 
@@ -1666,7 +1665,7 @@ FX_BOOL Document::getPageNthWord(OBJ_METHOD_PARAMS)
 	return TRUE;
 }
 
-FX_BOOL Document::getPageNthWordQuads(OBJ_METHOD_PARAMS)
+FX_BOOL Document::getPageNthWordQuads(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	ASSERT(m_pDocument != NULL);
 
@@ -1675,7 +1674,7 @@ FX_BOOL Document::getPageNthWordQuads(OBJ_METHOD_PARAMS)
 	return FALSE;
 }
 
-FX_BOOL Document::getPageNumWords(OBJ_METHOD_PARAMS)
+FX_BOOL Document::getPageNumWords(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	ASSERT(m_pDocument != NULL);
 
@@ -1688,7 +1687,8 @@ FX_BOOL Document::getPageNumWords(OBJ_METHOD_PARAMS)
 
 	if (nPageNo < 0 || nPageNo >= pDocument->GetPageCount())
 	{
-		//sError = JSGetStringFromID(IDS_STRING_JSPARAMERROR);
+		CJS_Context* pContext = static_cast<CJS_Context*>(cc);
+		sError = JSGetStringFromID(pContext, IDS_STRING_JSPARAMERROR);
 		return FALSE;
 	}
 
@@ -1721,7 +1721,7 @@ FX_BOOL Document::getPageNumWords(OBJ_METHOD_PARAMS)
 	return TRUE;
 }
 
-FX_BOOL Document::getPrintParams(OBJ_METHOD_PARAMS)
+FX_BOOL Document::getPrintParams(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	CJS_Context* pContext = (CJS_Context*)cc;
 	ASSERT(pContext != NULL);
@@ -1811,7 +1811,7 @@ CFX_WideString Document::GetObjWordStr(CPDF_TextObject* pTextObj, int nWordIndex
 	return swRet;
 }
 
-FX_BOOL Document::zoom(OBJ_PROP_PARAMS)
+FX_BOOL Document::zoom(IFXJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError)
 {
 
 	return TRUE;
@@ -1827,12 +1827,12 @@ FX_BOOL Document::zoom(OBJ_PROP_PARAMS)
 (refW,	ReflowWidth)
 */
 
-FX_BOOL Document::zoomType(OBJ_PROP_PARAMS)
+FX_BOOL Document::zoomType(IFXJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError)
 {
 	return TRUE;
 }
 
-FX_BOOL Document::deletePages(OBJ_METHOD_PARAMS)
+FX_BOOL Document::deletePages(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	v8::Isolate* isolate = GetIsolate(cc);
 	ASSERT(m_pDocument != NULL);
@@ -1885,25 +1885,25 @@ FX_BOOL Document::deletePages(OBJ_METHOD_PARAMS)
 	return TRUE;
 }
 
-FX_BOOL Document::extractPages(OBJ_METHOD_PARAMS)
+FX_BOOL Document::extractPages(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
   // Unsafe, not supported.
   return TRUE;
 }
 
-FX_BOOL Document::insertPages(OBJ_METHOD_PARAMS)
+FX_BOOL Document::insertPages(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
   // Unsafe, not supported.
   return TRUE;
 }
 
-FX_BOOL Document::replacePages(OBJ_METHOD_PARAMS)
+FX_BOOL Document::replacePages(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
   // Unsafe, not supported.
   return TRUE;
 }
 
-FX_BOOL Document::getURL(OBJ_METHOD_PARAMS)
+FX_BOOL Document::getURL(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
   // Unsafe, not supported.
   return TRUE;

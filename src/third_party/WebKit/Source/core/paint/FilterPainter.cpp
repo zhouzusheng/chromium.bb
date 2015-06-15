@@ -6,10 +6,9 @@
 #include "core/paint/FilterPainter.h"
 
 #include "core/layout/FilterEffectRenderer.h"
-#include "core/layout/Layer.h"
+#include "core/layout/LayoutView.h"
+#include "core/paint/DeprecatedPaintLayer.h"
 #include "core/paint/LayerClipRecorder.h"
-#include "core/paint/LayerPainter.h"
-#include "core/rendering/RenderView.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/GraphicsLayer.h"
@@ -23,26 +22,26 @@
 
 namespace blink {
 
-FilterPainter::FilterPainter(Layer& renderLayer, GraphicsContext* context, const LayoutPoint& offsetFromRoot, const ClipRect& clipRect, LayerPaintingInfo& paintingInfo, PaintLayerFlags paintFlags,
+FilterPainter::FilterPainter(DeprecatedPaintLayer& layer, GraphicsContext* context, const LayoutPoint& offsetFromRoot, const ClipRect& clipRect, DeprecatedPaintLayerPaintingInfo& paintingInfo, PaintLayerFlags paintFlags,
     LayoutRect& rootRelativeBounds, bool& rootRelativeBoundsComputed)
     : m_filterInProgress(false)
     , m_context(context)
-    , m_renderer(renderLayer.renderer())
+    , m_layoutObject(layer.layoutObject())
 {
-    if (!renderLayer.filterRenderer() || !renderLayer.paintsWithFilters())
+    if (!layer.filterRenderer() || !layer.paintsWithFilters())
         return;
 
-    ASSERT(renderLayer.filterInfo());
+    ASSERT(layer.filterInfo());
 
     SkiaImageFilterBuilder builder(context);
-    RefPtrWillBeRawPtr<FilterEffect> lastEffect = renderLayer.filterRenderer()->lastEffect();
+    RefPtrWillBeRawPtr<FilterEffect> lastEffect = layer.filterRenderer()->lastEffect();
     lastEffect->determineFilterPrimitiveSubregion(MapRectForward);
-    RefPtr<ImageFilter> imageFilter = builder.build(lastEffect.get(), ColorSpaceDeviceRGB);
+    RefPtr<SkImageFilter> imageFilter = builder.build(lastEffect.get(), ColorSpaceDeviceRGB);
     if (!imageFilter)
         return;
 
     if (!rootRelativeBoundsComputed) {
-        rootRelativeBounds = renderLayer.physicalBoundingBoxIncludingReflectionAndStackingChildren(paintingInfo.rootLayer, offsetFromRoot);
+        rootRelativeBounds = layer.physicalBoundingBoxIncludingReflectionAndStackingChildren(paintingInfo.rootLayer, offsetFromRoot);
         rootRelativeBoundsComputed = true;
     }
 
@@ -55,22 +54,22 @@ FilterPainter::FilterPainter(Layer& renderLayer, GraphicsContext* context, const
     paintingInfo.clipToDirtyRect = false;
 
     if (clipRect.rect() != paintingInfo.paintDirtyRect || clipRect.hasRadius()) {
-        m_clipRecorder = adoptPtr(new LayerClipRecorder(renderLayer.renderer(), context, DisplayItem::ClipLayerFilter, clipRect, &paintingInfo, LayoutPoint(), paintFlags));
+        m_clipRecorder = adoptPtr(new LayerClipRecorder(*context, *layer.layoutObject(), DisplayItem::ClipLayerFilter, clipRect, &paintingInfo, LayoutPoint(), paintFlags));
     }
 
-    ASSERT(m_renderer);
+    ASSERT(m_layoutObject);
     if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
-        FilterOperations filterOperations(renderLayer.computeFilterOperations(m_renderer->styleRef()));
+        FilterOperations filterOperations(layer.computeFilterOperations(m_layoutObject->styleRef()));
         OwnPtr<WebFilterOperations> webFilterOperations = adoptPtr(Platform::current()->compositorSupport()->createFilterOperations());
         builder.buildFilterOperations(filterOperations, webFilterOperations.get());
-        OwnPtr<BeginFilterDisplayItem> filterDisplayItem = BeginFilterDisplayItem::create(m_renderer->displayItemClient(), imageFilter, rootRelativeBounds, webFilterOperations.release());
+        OwnPtr<BeginFilterDisplayItem> filterDisplayItem = BeginFilterDisplayItem::create(*m_layoutObject, imageFilter, rootRelativeBounds, webFilterOperations.release());
 
         ASSERT(context->displayItemList());
         context->displayItemList()->add(filterDisplayItem.release());
     } else {
-        OwnPtr<BeginFilterDisplayItem> filterDisplayItem = BeginFilterDisplayItem::create(m_renderer->displayItemClient(), imageFilter, rootRelativeBounds);
+        OwnPtr<BeginFilterDisplayItem> filterDisplayItem = BeginFilterDisplayItem::create(*m_layoutObject, imageFilter, rootRelativeBounds);
 
-        filterDisplayItem->replay(context);
+        filterDisplayItem->replay(*context);
     }
 
     m_filterInProgress = true;
@@ -81,12 +80,12 @@ FilterPainter::~FilterPainter()
     if (!m_filterInProgress)
         return;
 
-    OwnPtr<EndFilterDisplayItem> endFilterDisplayItem = EndFilterDisplayItem::create(m_renderer->displayItemClient());
+    OwnPtr<EndFilterDisplayItem> endFilterDisplayItem = EndFilterDisplayItem::create(*m_layoutObject);
     if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
         ASSERT(m_context->displayItemList());
         m_context->displayItemList()->add(endFilterDisplayItem.release());
     } else {
-        endFilterDisplayItem->replay(m_context);
+        endFilterDisplayItem->replay(*m_context);
     }
 }
 

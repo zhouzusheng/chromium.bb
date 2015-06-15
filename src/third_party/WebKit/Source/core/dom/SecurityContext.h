@@ -27,9 +27,13 @@
 #ifndef SecurityContext_h
 #define SecurityContext_h
 
+#include "core/CoreExport.h"
 #include "core/dom/SandboxFlags.h"
+#include "wtf/HashSet.h"
+#include "wtf/Noncopyable.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
+#include "wtf/text/StringHash.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
@@ -38,13 +42,15 @@ class SecurityOrigin;
 class ContentSecurityPolicy;
 class KURL;
 
-class SecurityContext {
+class CORE_EXPORT SecurityContext {
+    WTF_MAKE_NONCOPYABLE(SecurityContext);
 public:
-    // The ordering here is important: 'Upgrade' overrides 'Monitor', which overrides 'DoNotUpgrade'.
-    enum InsecureContentPolicy {
-        InsecureContentDoNotUpgrade = 0,
-        InsecureContentMonitor,
-        InsecureContentUpgrade
+    using InsecureNavigationsSet = HashSet<unsigned, WTF::AlreadyHashed>;
+
+    // The ordering here is important: 'Upgrade' overrides 'DoNotUpgrade'.
+    enum InsecureRequestsPolicy {
+        InsecureRequestsDoNotUpgrade = 0,
+        InsecureRequestsUpgrade
     };
 
     SecurityOrigin* securityOrigin() const { return m_securityOrigin.get(); }
@@ -65,8 +71,11 @@ public:
     void setHostedInReservedIPRange() { m_hostedInReservedIPRange = true; }
     bool isHostedInReservedIPRange() const { return m_hostedInReservedIPRange; }
 
-    void setInsecureContentPolicy(InsecureContentPolicy policy) { m_insecureContentPolicy = policy; }
-    InsecureContentPolicy insecureContentPolicy() const { return m_insecureContentPolicy; }
+    void setInsecureRequestsPolicy(InsecureRequestsPolicy policy) { m_insecureRequestsPolicy = policy; }
+    InsecureRequestsPolicy insecureRequestsPolicy() const { return m_insecureRequestsPolicy; }
+
+    void addInsecureNavigationUpgrade(unsigned hashedHost) { m_insecureNavigationsToUpgrade.add(hashedHost); }
+    InsecureNavigationsSet* insecureNavigationsToUpgrade() { return &m_insecureNavigationsToUpgrade; }
 
 protected:
     SecurityContext();
@@ -85,7 +94,8 @@ private:
     SandboxFlags m_sandboxFlags;
 
     bool m_hostedInReservedIPRange;
-    InsecureContentPolicy m_insecureContentPolicy;
+    InsecureRequestsPolicy m_insecureRequestsPolicy;
+    InsecureNavigationsSet m_insecureNavigationsToUpgrade;
 };
 
 } // namespace blink

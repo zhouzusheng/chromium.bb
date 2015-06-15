@@ -46,14 +46,13 @@ private:
     explicit SVGFEMorphologyElement(Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
     virtual bool setFilterEffectAttribute(FilterEffect*, const QualifiedName&) override;
     virtual void svgAttributeChanged(const QualifiedName&) override;
     virtual PassRefPtrWillBeRawPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) override;
 
     RefPtrWillBeMember<SVGAnimatedNumberOptionalNumber> m_radius;
     RefPtrWillBeMember<SVGAnimatedString> m_in1;
-    RefPtrWillBeMember<SVGAnimatedEnumeration<MorphologyOperatorType> > m_svgOperator;
+    RefPtrWillBeMember<SVGAnimatedEnumeration<MorphologyOperatorType>> m_svgOperator;
 };
 
 } // namespace blink

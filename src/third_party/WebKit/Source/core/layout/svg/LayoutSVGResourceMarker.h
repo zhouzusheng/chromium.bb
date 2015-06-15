@@ -35,7 +35,7 @@ public:
     explicit LayoutSVGResourceMarker(SVGMarkerElement*);
     virtual ~LayoutSVGResourceMarker();
 
-    virtual const char* renderName() const override { return "LayoutSVGResourceMarker"; }
+    virtual const char* name() const override { return "LayoutSVGResourceMarker"; }
 
     virtual void removeAllClientsFromCache(bool markForInvalidation = true) override;
     virtual void removeClientFromCache(LayoutObject*, bool markForInvalidation = true) override;
@@ -60,7 +60,7 @@ public:
     virtual LayoutSVGResourceType resourceType() const override { return s_resourceType; }
 
 private:
-    // Generates a transformation matrix usable to render marker content. Handles scaling the marker content
+    // Generates a transformation matrix usable to layout marker content. Handles scaling the marker content
     // acording to SVGs markerUnits="strokeWidth" concept, when a strokeWidth value != -1 is passed in.
     AffineTransform markerContentTransformation(const AffineTransform& contentTransformation, const FloatPoint& origin, float strokeWidth = -1) const;
 

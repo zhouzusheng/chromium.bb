@@ -22,11 +22,12 @@
 #ifndef LayoutReplaced_h
 #define LayoutReplaced_h
 
-#include "core/rendering/RenderBox.h"
+#include "core/CoreExport.h"
+#include "core/layout/LayoutBox.h"
 
 namespace blink {
 
-class LayoutReplaced : public RenderBox {
+class CORE_EXPORT LayoutReplaced : public LayoutBox {
 public:
     LayoutReplaced(Element*);
     LayoutReplaced(Element*, const LayoutSize& intrinsicSize);
@@ -69,24 +70,24 @@ protected:
 
     virtual void setSelectionState(SelectionState) override final;
 
-    virtual void styleDidChange(StyleDifference, const LayoutStyle* oldStyle) override;
+    virtual void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override;
 
     void setIntrinsicSize(const LayoutSize& intrinsicSize) { m_intrinsicSize = intrinsicSize; }
     virtual void intrinsicSizeChanged();
 
-    virtual RenderBox* embeddedContentBox() const { return 0; }
+    virtual LayoutBox* embeddedContentBox() const { return 0; }
 
 private:
     virtual void computePreferredLogicalWidths() override final;
 
-    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutLayerModelObject* paintInvalidationContainer, const PaintInvalidationState* = 0) const override;
+    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* = 0) const override;
 
     virtual PositionWithAffinity positionForPoint(const LayoutPoint&) override final;
 
     virtual bool canBeSelectionLeaf() const override { return true; }
 
-    virtual LayoutRect selectionRectForPaintInvalidation(const LayoutLayerModelObject* paintInvalidationContainer) const override final;
-    void computeAspectRatioInformationForRenderBox(RenderBox*, FloatSize& constrainedSize, double& intrinsicRatio) const;
+    virtual LayoutRect selectionRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer) const override final;
+    void computeAspectRatioInformationForLayoutBox(LayoutBox*, FloatSize& constrainedSize, double& intrinsicRatio) const;
 
     mutable LayoutSize m_intrinsicSize;
 };

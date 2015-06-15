@@ -31,21 +31,23 @@
 #include "config.h"
 #include "core/animation/CompositorAnimations.h"
 
-#include "core/animation/ActiveAnimations.h"
 #include "core/animation/AnimationNode.h"
 #include "core/animation/AnimationTranslationUtil.h"
+#include "core/animation/ElementAnimations.h"
 #include "core/animation/CompositorAnimationsImpl.h"
 #include "core/animation/animatable/AnimatableDouble.h"
 #include "core/animation/animatable/AnimatableFilterOperations.h"
 #include "core/animation/animatable/AnimatableTransform.h"
 #include "core/animation/animatable/AnimatableValue.h"
-#include "core/layout/Layer.h"
+#include "core/layout/LayoutBoxModelObject.h"
 #include "core/layout/LayoutObject.h"
-#include "core/layout/compositing/CompositedLayerMapping.h"
-#include "core/rendering/RenderBoxModelObject.h"
+#include "core/layout/compositing/CompositedDeprecatedPaintLayerMapping.h"
+#include "core/paint/DeprecatedPaintLayer.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/geometry/FloatBox.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebCompositorAnimation.h"
+#include "public/platform/WebCompositorAnimationPlayer.h"
 #include "public/platform/WebCompositorSupport.h"
 #include "public/platform/WebFilterAnimationCurve.h"
 #include "public/platform/WebFilterKeyframe.h"
@@ -97,13 +99,13 @@ bool hasIncompatibleAnimations(const Element& targetElement, const AnimationPlay
     const bool affectsTransform = effectToAdd.affects(CSSPropertyTransform);
     const bool affectsFilter = effectToAdd.affects(CSSPropertyWebkitFilter);
 
-    if (!targetElement.hasActiveAnimations())
+    if (!targetElement.hasAnimations())
         return false;
 
-    ActiveAnimations* activeAnimations = targetElement.activeAnimations();
-    ASSERT(activeAnimations);
+    ElementAnimations* elementAnimations = targetElement.elementAnimations();
+    ASSERT(elementAnimations);
 
-    for (const auto& entry : activeAnimations->players()) {
+    for (const auto& entry : elementAnimations->players()) {
         const AnimationPlayer* attachedPlayer = entry.key;
         if (!considerPlayerAsIncompatible(*attachedPlayer, playerToAdd))
             continue;
@@ -149,6 +151,9 @@ bool CompositorAnimations::getAnimatedBoundingBox(FloatBox& box, const Animation
         for (size_t j = 0; j < frames.size() - 1; ++j) {
             const AnimatableTransform* startTransform = toAnimatableTransform(frames[j]->getAnimatableValue().get());
             const AnimatableTransform* endTransform = toAnimatableTransform(frames[j+1]->getAnimatableValue().get());
+            if (!startTransform || !endTransform)
+                return false;
+
             // TODO: Add support for inflating modes other than Replace.
             if (frames[j]->composite() != AnimationEffect::CompositeReplace)
                 return false;
@@ -237,13 +242,13 @@ void CompositorAnimations::cancelIncompatibleAnimationsOnCompositor(const Elemen
     const bool affectsTransform = effectToAdd.affects(CSSPropertyTransform);
     const bool affectsFilter = effectToAdd.affects(CSSPropertyWebkitFilter);
 
-    if (!targetElement.hasActiveAnimations())
+    if (!targetElement.hasAnimations())
         return;
 
-    ActiveAnimations* activeAnimations = targetElement.activeAnimations();
-    ASSERT(activeAnimations);
+    ElementAnimations* elementAnimations = targetElement.elementAnimations();
+    ASSERT(elementAnimations);
 
-    for (const auto& entry : activeAnimations->players()) {
+    for (const auto& entry : elementAnimations->players()) {
         AnimationPlayer* attachedPlayer = entry.key;
         if (!considerPlayerAsIncompatible(*attachedPlayer, playerToAdd))
             continue;
@@ -257,18 +262,18 @@ void CompositorAnimations::cancelIncompatibleAnimationsOnCompositor(const Elemen
 
 bool CompositorAnimations::canStartAnimationOnCompositor(const Element& element)
 {
-    return element.renderer() && element.renderer()->compositingState() == PaintsIntoOwnBacking;
+    return element.layoutObject() && element.layoutObject()->compositingState() == PaintsIntoOwnBacking;
 }
 
-bool CompositorAnimations::startAnimationOnCompositor(const Element& element, int group, double startTime, double timeOffset, const Timing& timing, const AnimationPlayer* player, const AnimationEffect& effect, Vector<int>& startedAnimationIds, double playerPlaybackRate)
+bool CompositorAnimations::startAnimationOnCompositor(const Element& element, int group, double startTime, double timeOffset, const Timing& timing, const AnimationPlayer& player, const AnimationEffect& effect, Vector<int>& startedAnimationIds, double playerPlaybackRate)
 {
     ASSERT(startedAnimationIds.isEmpty());
-    ASSERT(isCandidateForAnimationOnCompositor(timing, element, player, effect, playerPlaybackRate));
+    ASSERT(isCandidateForAnimationOnCompositor(timing, element, &player, effect, playerPlaybackRate));
     ASSERT(canStartAnimationOnCompositor(element));
 
     const KeyframeEffectModelBase& keyframeEffect = toKeyframeEffectModelBase(effect);
 
-    Layer* layer = toRenderBoxModelObject(element.renderer())->layer();
+    DeprecatedPaintLayer* layer = toLayoutBoxModelObject(element.layoutObject())->layer();
     ASSERT(layer);
 
     Vector<OwnPtr<WebCompositorAnimation>> animations;
@@ -276,10 +281,14 @@ bool CompositorAnimations::startAnimationOnCompositor(const Element& element, in
     ASSERT(!animations.isEmpty());
     for (auto& animation : animations) {
         int id = animation->id();
-        if (!layer->compositedLayerMapping()->mainGraphicsLayer()->addAnimation(animation.release())) {
+        if (RuntimeEnabledFeatures::compositorAnimationTimelinesEnabled()) {
+            WebCompositorAnimationPlayer* compositorPlayer = player.compositorPlayer();
+            ASSERT(compositorPlayer);
+            compositorPlayer->addAnimation(animation.leakPtr());
+        } else if (!layer->compositedDeprecatedPaintLayerMapping()->mainGraphicsLayer()->addAnimation(animation.release())) {
             // FIXME: We should know ahead of time whether these animations can be started.
             for (int startedAnimationId : startedAnimationIds)
-                cancelAnimationOnCompositor(element, startedAnimationId);
+                cancelAnimationOnCompositor(element, player, startedAnimationId);
             startedAnimationIds.clear();
             return false;
         }
@@ -289,7 +298,7 @@ bool CompositorAnimations::startAnimationOnCompositor(const Element& element, in
     return true;
 }
 
-void CompositorAnimations::cancelAnimationOnCompositor(const Element& element, int id)
+void CompositorAnimations::cancelAnimationOnCompositor(const Element& element, const AnimationPlayer& player, int id)
 {
     if (!canStartAnimationOnCompositor(element)) {
         // When an element is being detached, we cancel any associated
@@ -299,10 +308,16 @@ void CompositorAnimations::cancelAnimationOnCompositor(const Element& element, i
         // compositing update.
         return;
     }
-    toRenderBoxModelObject(element.renderer())->layer()->compositedLayerMapping()->mainGraphicsLayer()->removeAnimation(id);
+    if (RuntimeEnabledFeatures::compositorAnimationTimelinesEnabled()) {
+        WebCompositorAnimationPlayer* compositorPlayer = player.compositorPlayer();
+        ASSERT(compositorPlayer);
+        compositorPlayer->removeAnimation(id);
+    } else {
+        toLayoutBoxModelObject(element.layoutObject())->layer()->compositedDeprecatedPaintLayerMapping()->mainGraphicsLayer()->removeAnimation(id);
+    }
 }
 
-void CompositorAnimations::pauseAnimationForTestingOnCompositor(const Element& element, int id, double pauseTime)
+void CompositorAnimations::pauseAnimationForTestingOnCompositor(const Element& element, const AnimationPlayer& player, int id, double pauseTime)
 {
     // FIXME: canStartAnimationOnCompositor queries compositingState, which is not necessarily up to date.
     // https://code.google.com/p/chromium/issues/detail?id=339847
@@ -312,7 +327,51 @@ void CompositorAnimations::pauseAnimationForTestingOnCompositor(const Element& e
         ASSERT_NOT_REACHED();
         return;
     }
-    toRenderBoxModelObject(element.renderer())->layer()->compositedLayerMapping()->mainGraphicsLayer()->pauseAnimation(id, pauseTime);
+    if (RuntimeEnabledFeatures::compositorAnimationTimelinesEnabled()) {
+        WebCompositorAnimationPlayer* compositorPlayer = player.compositorPlayer();
+        ASSERT(compositorPlayer);
+        compositorPlayer->pauseAnimation(id, pauseTime);
+    } else {
+        toLayoutBoxModelObject(element.layoutObject())->layer()->compositedDeprecatedPaintLayerMapping()->mainGraphicsLayer()->pauseAnimation(id, pauseTime);
+    }
+}
+
+bool CompositorAnimations::canAttachCompositedLayers(const Element& element, const AnimationPlayer& player)
+{
+    if (!RuntimeEnabledFeatures::compositorAnimationTimelinesEnabled())
+        return false;
+
+    if (!player.compositorPlayer())
+        return false;
+
+    if (!element.layoutObject() || !element.layoutObject()->isBoxModelObject())
+        return false;
+
+    DeprecatedPaintLayer* layer = toLayoutBoxModelObject(element.layoutObject())->layer();
+
+    if (!layer || !layer->isAllowedToQueryCompositingState()
+        || !layer->compositedDeprecatedPaintLayerMapping()
+        || !layer->compositedDeprecatedPaintLayerMapping()->mainGraphicsLayer())
+        return false;
+
+    if (!layer->compositedDeprecatedPaintLayerMapping()->mainGraphicsLayer()->platformLayer())
+        return false;
+
+    return true;
+}
+
+void CompositorAnimations::attachCompositedLayers(const Element& element, const AnimationPlayer& player)
+{
+    ASSERT(element.layoutObject());
+
+    DeprecatedPaintLayer* layer = toLayoutBoxModelObject(element.layoutObject())->layer();
+    ASSERT(layer);
+
+    WebCompositorAnimationPlayer* compositorPlayer = player.compositorPlayer();
+    ASSERT(compositorPlayer);
+
+    ASSERT(layer->compositedDeprecatedPaintLayerMapping());
+    compositorPlayer->attachLayer(layer->compositedDeprecatedPaintLayerMapping()->mainGraphicsLayer()->platformLayer());
 }
 
 // -----------------------------------------------------------------------
@@ -532,7 +591,7 @@ void CompositorAnimationsImpl::addKeyframesToCurve(WebCompositorAnimationCurve& 
     }
 }
 
-void CompositorAnimationsImpl::getAnimationOnCompositor(const Timing& timing, int group, double startTime, double timeOffset, const KeyframeEffectModelBase& effect, Vector<OwnPtr<WebCompositorAnimation> >& animations, double playerPlaybackRate)
+void CompositorAnimationsImpl::getAnimationOnCompositor(const Timing& timing, int group, double startTime, double timeOffset, const KeyframeEffectModelBase& effect, Vector<OwnPtr<WebCompositorAnimation>>& animations, double playerPlaybackRate)
 {
     ASSERT(animations.isEmpty());
     CompositorTiming compositorTiming;

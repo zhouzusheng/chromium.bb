@@ -107,11 +107,11 @@ void HTMLObjectElement::parseAttribute(const QualifiedName& name, const AtomicSt
         // FIXME: What is the right thing to do here? Should we supress the
         // reload stuff when a persistable widget-type is specified?
         reloadPluginOnAttributeChange(name);
-        if (!renderer())
+        if (!layoutObject())
             requestPluginCreationWithoutRendererIfPossible();
     } else if (name == dataAttr) {
         m_url = stripLeadingAndTrailingHTMLSpaces(value);
-        if (renderer() && isImageType()) {
+        if (layoutObject() && isImageType()) {
             setNeedsWidgetUpdate(true);
             if (!m_imageLoader)
                 m_imageLoader = HTMLImageLoader::create(this);
@@ -200,7 +200,7 @@ void HTMLObjectElement::parametersForPlugin(Vector<String>& paramNames, Vector<S
     // HTML5 says that an object resource's URL is specified by the object's data
     // attribute, not by a param element. However, for compatibility, allow the
     // resource's URL to be given by a param named "src", "movie", "code" or "url"
-    // if we know that resource points to a plug-in.
+    // if we know that resource points to a plugin.
     if (url.isEmpty() && !urlParameter.isEmpty()) {
         KURL completedURL = document().completeURL(urlParameter);
         bool useFallback;
@@ -226,11 +226,11 @@ bool HTMLObjectElement::hasFallbackContent() const
 
 bool HTMLObjectElement::hasValidClassId()
 {
-    if (MIMETypeRegistry::isJavaAppletMIMEType(m_serviceType) && classId().startsWith("java:", false))
+    if (MIMETypeRegistry::isJavaAppletMIMEType(m_serviceType) && classId().startsWith("java:", TextCaseInsensitive))
         return true;
 
     // HTML5 says that fallback content should be rendered if a non-empty
-    // classid is specified for which the UA can't find a suitable plug-in.
+    // classid is specified for which the UA can't find a suitable plugin.
     return classId().isEmpty();
 }
 
@@ -294,7 +294,7 @@ void HTMLObjectElement::updateWidgetInternal()
     }
 
     // FIXME: Is it possible to get here without a renderer now that we don't have beforeload events?
-    if (!renderer())
+    if (!layoutObject())
         return;
 
     if (!hasValidClassId() || !requestObject(url, serviceType, paramNames, paramValues)) {
@@ -303,14 +303,6 @@ void HTMLObjectElement::updateWidgetInternal()
         if (hasFallbackContent())
             renderFallbackContent();
     }
-}
-
-bool HTMLObjectElement::rendererIsNeeded(const LayoutStyle& style)
-{
-    // FIXME: This check should not be needed, detached documents never render!
-    if (!document().frame())
-        return false;
-    return HTMLPlugInElement::rendererIsNeeded(style);
 }
 
 Node::InsertionNotificationRequest HTMLObjectElement::insertedInto(ContainerNode* insertionPoint)

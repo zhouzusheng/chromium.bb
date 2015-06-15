@@ -59,8 +59,28 @@ void GL_APIENTRY DrawRangeElements(GLenum mode, GLuint start, GLuint end, GLsize
             return;
         }
 
-        // glDrawRangeElements
-        UNIMPLEMENTED();
+        rx::RangeUI indexRange;
+        if (!ValidateDrawElements(context, mode, count, type, indices, 0, &indexRange))
+        {
+            return;
+        }
+        if (indexRange.end > end || indexRange.start < start)
+        {
+            // GL spec says that behavior in this case is undefined - generating an error is fine.
+            context->recordError(Error(GL_INVALID_OPERATION));
+            return;
+        }
+
+        // As long as index validation is done, it doesn't matter whether the context receives a drawElements or
+        // a drawRangeElements call - the GL back-end is free to choose to call drawRangeElements based on the
+        // validated index range. If index validation is removed, adding drawRangeElements to the context interface
+        // should be reconsidered.
+        Error error = context->drawElements(mode, count, type, indices, 0, indexRange);
+        if (error.isError())
+        {
+            context->recordError(error);
+            return;
+        }
     }
 }
 
@@ -706,7 +726,7 @@ void GL_APIENTRY RenderbufferStorageMultisample(GLenum target, GLsizei samples, 
         }
 
         Renderbuffer *renderbuffer = context->getState().getCurrentRenderbuffer();
-        renderbuffer->setStorage(width, height, internalformat, samples);
+        renderbuffer->setStorageMultisample(samples, internalformat, width, height);
     }
 }
 
@@ -1379,8 +1399,6 @@ void GL_APIENTRY GetVertexAttribIiv(GLuint index, GLenum pname, GLint* params)
             return;
         }
 
-        const VertexAttribute &attribState = context->getState().getVertexAttribState(index);
-
         if (!ValidateGetVertexAttribParameters(context, pname))
         {
             return;
@@ -1396,6 +1414,7 @@ void GL_APIENTRY GetVertexAttribIiv(GLuint index, GLenum pname, GLint* params)
         }
         else
         {
+            const VertexAttribute &attribState = context->getState().getVertexArray()->getVertexAttribute(index);
             *params = QuerySingleVertexAttributeParameter<GLint>(attribState, pname);
         }
     }
@@ -1421,8 +1440,6 @@ void GL_APIENTRY GetVertexAttribIuiv(GLuint index, GLenum pname, GLuint* params)
             return;
         }
 
-        const VertexAttribute &attribState = context->getState().getVertexAttribState(index);
-
         if (!ValidateGetVertexAttribParameters(context, pname))
         {
             return;
@@ -1438,6 +1455,7 @@ void GL_APIENTRY GetVertexAttribIuiv(GLuint index, GLenum pname, GLuint* params)
         }
         else
         {
+            const VertexAttribute &attribState = context->getState().getVertexArray()->getVertexAttribute(index);
             *params = QuerySingleVertexAttributeParameter<GLuint>(attribState, pname);
         }
     }
@@ -2064,7 +2082,7 @@ void GL_APIENTRY GetActiveUniformsiv(GLuint program, GLsizei uniformCount, const
             return;
         }
 
-        if (uniformCount > 0)
+        if (uniformCount > programObject->getActiveUniformCount())
         {
             context->recordError(Error(GL_INVALID_VALUE));
             return;
@@ -3138,8 +3156,8 @@ void GL_APIENTRY GetProgramBinary(GLuint program, GLsizei bufSize, GLsizei* leng
             return;
         }
 
-        // glGetProgramBinary
-        UNIMPLEMENTED();
+        // TODO: Pipe through to the OES extension for now, needs proper validation
+        return GetProgramBinaryOES(program, bufSize, length, binaryFormat, binary);
     }
 }
 
@@ -3157,8 +3175,8 @@ void GL_APIENTRY ProgramBinary(GLuint program, GLenum binaryFormat, const GLvoid
             return;
         }
 
-        // glProgramBinary
-        UNIMPLEMENTED();
+        // TODO: Pipe through to the OES extension for now, needs proper validation
+        return ProgramBinaryOES(program, binaryFormat, binary, length);
     }
 }
 

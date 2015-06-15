@@ -76,7 +76,10 @@ public:
     unsigned long long loadEventStart() const;
     unsigned long long loadEventEnd() const;
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
+
+    unsigned long long monotonicTimeToIntegerMilliseconds(double) const;
+    double integerMillisecondsToMonotonicTime(unsigned long long) const;
 
 private:
     explicit PerformanceTiming(LocalFrame*);
@@ -85,8 +88,6 @@ private:
     DocumentLoader* documentLoader() const;
     DocumentLoadTiming* documentLoadTiming() const;
     ResourceLoadTiming* resourceLoadTiming() const;
-
-    unsigned long long monotonicTimeToIntegerMilliseconds(double) const;
 };
 
 } // namespace blink

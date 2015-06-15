@@ -1,4 +1,5 @@
 namespace="EventType"
+export="CORE_EXPORT"
 
 DOMActivate
 DOMCharacterDataModified
@@ -27,6 +28,7 @@ autocompleteerror
 availablechange
 beforecopy
 beforecut
+beforeinstallprompt
 beforepaste
 beforeunload
 beginEvent
@@ -63,6 +65,7 @@ cuechange
 cut
 datachannel
 dblclick
+defaultsessionstart
 devicelight
 devicemotion
 deviceorientation
@@ -218,6 +221,7 @@ visibilitychange
 voiceschanged
 volumechange
 waiting
+waitingforkey
 webglcontextcreationerror
 webglcontextlost
 webglcontextrestored

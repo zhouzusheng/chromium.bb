@@ -15,6 +15,7 @@
       'target_name': 'remote_bitrate_estimator',
       'type': 'static_library',
       'dependencies': [
+        '<(webrtc_root)/common.gyp:webrtc_common',
         '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
       ],
       'sources': [
@@ -63,7 +64,7 @@
           'target_name': 'bwe_rtp_to_text',
           'type': 'executable',
           'includes': [
-            '../rtp_rtcp/source/rtp_rtcp.gypi',
+            '../rtp_rtcp/rtp_rtcp.gypi',
           ],
           'dependencies': [
             '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
@@ -85,7 +86,7 @@
           'target_name': 'bwe_rtp_play',
           'type': 'executable',
           'includes': [
-            '../rtp_rtcp/source/rtp_rtcp.gypi',
+            '../rtp_rtcp/rtp_rtcp.gypi',
           ],
           'dependencies': [
             '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',

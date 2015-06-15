@@ -16,7 +16,7 @@ namespace sh
 {
 class StructureHLSL;
 
-class UniformHLSL
+class UniformHLSL : angle::NonCopyable
 {
   public:
     UniformHLSL(StructureHLSL *structureHLSL, ShShaderOutput outputType, const std::vector<Uniform> &uniforms);

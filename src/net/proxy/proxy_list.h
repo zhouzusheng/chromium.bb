@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "net/base/net_export.h"
-#include "net/base/net_log.h"
+#include "net/log/net_log.h"
 #include "net/proxy/proxy_retry_info.h"
 
 namespace base {
@@ -63,10 +63,11 @@ class NET_EXPORT_PRIVATE ProxyList {
   // this if !IsEmpty().
   const ProxyServer& Get() const;
 
-  // These references to the internal structure is provided to simplify IPC
-  // serialization.
-  std::vector<ProxyServer>& internalProxies() { return proxies_; }
-  const std::vector<ProxyServer>& internalProxies() const { return proxies_; }
+  // Returns all proxy servers in the list.
+  const std::vector<ProxyServer>& GetAll() const;
+
+  // This non-const reference is provided to simplify IPC serialization.
+  std::vector<ProxyServer>& GetAll() { return proxies_; }
 
   // Sets the list by parsing the pac result |pac_string|.
   // Some examples for |pac_string|:

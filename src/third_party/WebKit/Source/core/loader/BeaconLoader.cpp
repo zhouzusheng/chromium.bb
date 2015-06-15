@@ -5,12 +5,19 @@
 #include "config.h"
 #include "core/loader/BeaconLoader.h"
 
-#include "core/FetchInitiatorTypeNames.h"
 #include "core/dom/DOMArrayBufferView.h"
+#include "core/dom/Document.h"
+#include "core/fetch/CrossOriginAccessControl.h"
 #include "core/fetch/FetchContext.h"
+#include "core/fetch/FetchInitiatorTypeNames.h"
+#include "core/fetch/ResourceFetcher.h"
 #include "core/fileapi/File.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/DOMFormData.h"
+#include "core/inspector/ConsoleMessage.h"
+#include "core/loader/MixedContentChecker.h"
+#include "platform/exported/WrappedResourceRequest.h"
+#include "platform/exported/WrappedResourceResponse.h"
 #include "platform/network/FormData.h"
 #include "platform/network/ParsedContentType.h"
 #include "platform/network/ResourceRequest.h"
@@ -66,6 +73,9 @@ class BeaconLoader::Sender {
 public:
     static bool send(LocalFrame* frame, int allowance, const KURL& beaconURL, const Beacon& beacon, int& payloadLength)
     {
+        if (!frame->document())
+            return false;
+
         unsigned long long entitySize = beacon.size();
         if (allowance > 0 && static_cast<unsigned long long>(allowance) < entitySize)
             return false;
@@ -75,8 +85,11 @@ public:
         request.setHTTPMethod("POST");
         request.setHTTPHeaderField("Cache-Control", "max-age=0");
         request.setAllowStoredCredentials(true);
-        frame->loader().fetchContext().addAdditionalRequestHeaders(frame->document(), request, FetchSubresource);
-        frame->loader().fetchContext().setFirstPartyForCookies(request);
+        frame->document()->fetcher()->context().addAdditionalRequestHeaders(request, FetchSubresource);
+        frame->document()->fetcher()->context().setFirstPartyForCookies(request);
+
+        if (MixedContentChecker::shouldBlockFetch(frame, request, request.url()))
+            return false;
 
         payloadLength = entitySize;
         if (!beacon.serialize(request, allowance, payloadLength))
@@ -85,7 +98,9 @@ public:
         FetchInitiatorInfo initiatorInfo;
         initiatorInfo.name = FetchInitiatorTypeNames::beacon;
 
-        PingLoader::start(frame, request, initiatorInfo);
+        // Leak the loader, since it will kill itself as soon as it receives a response.
+        RefPtrWillBeRawPtr<BeaconLoader> loader = adoptRefWillBeNoop(new BeaconLoader(frame, request, initiatorInfo, AllowStoredCredentials));
+        loader->ref();
         return true;
     }
 };
@@ -112,6 +127,40 @@ bool BeaconLoader::sendBeacon(LocalFrame* frame, int allowance, const KURL& beac
 {
     BeaconData<decltype(data)> beacon(data);
     return Sender::send(frame, allowance, beaconURL, beacon, payloadLength);
+}
+
+BeaconLoader::BeaconLoader(LocalFrame* frame, ResourceRequest& request, const FetchInitiatorInfo& initiatorInfo, StoredCredentials credentialsAllowed)
+    : PingLoader(frame, request, initiatorInfo, credentialsAllowed)
+    , m_beaconOrigin(frame->document()->securityOrigin())
+{
+}
+
+void BeaconLoader::willSendRequest(WebURLLoader*, WebURLRequest& passedNewRequest, const WebURLResponse& passedRedirectResponse)
+{
+    passedNewRequest.setAllowStoredCredentials(true);
+    ResourceRequest& newRequest(passedNewRequest.toMutableResourceRequest());
+    const ResourceResponse& redirectResponse(passedRedirectResponse.toResourceResponse());
+
+    ASSERT(!newRequest.isNull());
+    ASSERT(!redirectResponse.isNull());
+
+    String errorDescription;
+    StoredCredentials withCredentials = AllowStoredCredentials;
+    ResourceLoaderOptions options;
+    if (!CrossOriginAccessControl::handleRedirect(m_beaconOrigin.get(), newRequest, redirectResponse, withCredentials, options, errorDescription)) {
+        if (page() && page()->mainFrame()) {
+            if (page()->mainFrame()->isLocalFrame()) {
+                LocalFrame* localFrame = toLocalFrame(page()->mainFrame());
+                if (localFrame->document())
+                    localFrame->document()->addConsoleMessage(ConsoleMessage::create(JSMessageSource, ErrorMessageLevel, errorDescription));
+            }
+        }
+        // Cancel the load and self destruct.
+        dispose();
+        return;
+    }
+    // FIXME: http://crbug.com/427429 is needed to correctly propagate
+    // updates of Origin: following this successful redirect.
 }
 
 namespace {
@@ -145,10 +194,9 @@ bool Beacon::serialize(Blob* data, ResourceRequest& request, int, int&)
 
     request.setHTTPBody(entityBody.release());
 
-    AtomicString contentType;
     const String& blobType = data->type();
     if (!blobType.isEmpty() && isValidContentType(blobType))
-        request.setHTTPContentType(AtomicString(contentType));
+        request.setHTTPContentType(AtomicString(blobType));
 
     return true;
 }

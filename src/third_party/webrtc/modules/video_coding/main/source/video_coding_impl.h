@@ -56,7 +56,9 @@ class VideoSender {
  public:
   typedef VideoCodingModule::SenderNackMode SenderNackMode;
 
-  VideoSender(Clock* clock, EncodedImageCallback* post_encode_callback);
+  VideoSender(Clock* clock,
+              EncodedImageCallback* post_encode_callback,
+              VideoEncoderRateObserver* encoder_rate_observer);
 
   ~VideoSender();
 
@@ -99,7 +101,7 @@ class VideoSender {
   int32_t RegisterSendStatisticsCallback(VCMSendStatisticsCallback* sendStats);
   int32_t RegisterVideoQMCallback(VCMQMSettingsCallback* videoQMSettings);
   int32_t RegisterProtectionCallback(VCMProtectionCallback* protection);
-  int32_t SetVideoProtection(VCMVideoProtection videoProtection, bool enable);
+  void SetVideoProtection(bool enable, VCMVideoProtection videoProtection);
 
   int32_t AddVideoFrame(const I420VideoFrame& videoFrame,
                         const VideoContentMetrics* _contentMetrics,
@@ -107,11 +109,6 @@ class VideoSender {
 
   int32_t IntraFrameRequest(int stream_index);
   int32_t EnableFrameDropper(bool enable);
-
-  int SetSenderNackMode(SenderNackMode mode);
-  int SetSenderReferenceSelection(bool enable);
-  int SetSenderFEC(bool enable);
-  int SetSenderKeyFramePeriod(int periodMs);
 
   int StartDebugRecording(const char* file_name_utf8);
   void StopDebugRecording();
@@ -125,9 +122,9 @@ class VideoSender {
  private:
   Clock* clock_;
 
-  scoped_ptr<DebugRecorder> recorder_;
+  rtc::scoped_ptr<DebugRecorder> recorder_;
 
-  scoped_ptr<CriticalSectionWrapper> process_crit_sect_;
+  rtc::scoped_ptr<CriticalSectionWrapper> process_crit_sect_;
   CriticalSectionWrapper* _sendCritSect;
   VCMGenericEncoder* _encoder;
   VCMEncodedFrameCallback _encodedFrameCallback;
@@ -219,9 +216,8 @@ class VideoReceiver {
   };
 
   Clock* const clock_;
-  scoped_ptr<CriticalSectionWrapper> process_crit_sect_;
+  rtc::scoped_ptr<CriticalSectionWrapper> process_crit_sect_;
   CriticalSectionWrapper* _receiveCritSect;
-  bool _receiverInited GUARDED_BY(_receiveCritSect);
   VCMTiming _timing;
   VCMReceiver _receiver;
   VCMDecodedFrameCallback _decodedFrameCallback;

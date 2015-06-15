@@ -29,7 +29,7 @@
 
 #include "core/HTMLNames.h"
 #include "core/dom/Document.h"
-#include "core/dom/NodeLayoutStyle.h"
+#include "core/dom/NodeComputedStyle.h"
 #include "core/events/MouseEvent.h"
 #include "core/events/TextEvent.h"
 #include "core/events/TextEventInputType.h"
@@ -37,8 +37,8 @@
 #include "core/html/HTMLInputElement.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/layout/LayoutTextControlSingleLine.h"
+#include "core/layout/LayoutView.h"
 #include "core/page/EventHandler.h"
-#include "core/rendering/RenderView.h"
 #include "platform/UserGestureIndicator.h"
 
 namespace blink {
@@ -57,7 +57,7 @@ PassRefPtrWillBeRawPtr<TextControlInnerContainer> TextControlInnerContainer::cre
     return element.release();
 }
 
-LayoutObject* TextControlInnerContainer::createRenderer(const LayoutStyle&)
+LayoutObject* TextControlInnerContainer::createLayoutObject(const ComputedStyle&)
 {
     return new LayoutTextControlInnerContainer(this);
 }
@@ -77,12 +77,12 @@ PassRefPtrWillBeRawPtr<EditingViewPortElement> EditingViewPortElement::create(Do
     return element.release();
 }
 
-PassRefPtr<LayoutStyle> EditingViewPortElement::customStyleForRenderer()
+PassRefPtr<ComputedStyle> EditingViewPortElement::customStyleForLayoutObject()
 {
     // FXIME: Move these styles to html.css.
 
-    RefPtr<LayoutStyle> style = LayoutStyle::create();
-    style->inheritFrom(shadowHost()->layoutStyleRef());
+    RefPtr<ComputedStyle> style = ComputedStyle::create();
+    style->inheritFrom(shadowHost()->computedStyleRef());
 
     style->setFlexGrow(1);
     style->setDisplay(BLOCK);
@@ -130,16 +130,16 @@ void TextControlInnerEditorElement::defaultEventHandler(Event* event)
         HTMLDivElement::defaultEventHandler(event);
 }
 
-LayoutObject* TextControlInnerEditorElement::createRenderer(const LayoutStyle&)
+LayoutObject* TextControlInnerEditorElement::createLayoutObject(const ComputedStyle&)
 {
     return new LayoutTextControlInnerBlock(this);
 }
 
-PassRefPtr<LayoutStyle> TextControlInnerEditorElement::customStyleForRenderer()
+PassRefPtr<ComputedStyle> TextControlInnerEditorElement::customStyleForLayoutObject()
 {
-    LayoutObject* parentRenderer = shadowHost()->renderer();
+    LayoutObject* parentRenderer = shadowHost()->layoutObject();
     if (!parentRenderer || !parentRenderer->isTextControl())
-        return originalStyleForRenderer();
+        return originalStyleForLayoutObject();
     LayoutTextControl* textControlRenderer = toLayoutTextControl(parentRenderer);
     return textControlRenderer->createInnerEditorStyle(textControlRenderer->styleRef());
 }

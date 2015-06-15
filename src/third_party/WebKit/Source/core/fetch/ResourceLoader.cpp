@@ -30,12 +30,13 @@
 #include "config.h"
 #include "core/fetch/ResourceLoader.h"
 
+#include "core/fetch/CSSStyleSheetResource.h"
 #include "core/fetch/Resource.h"
 #include "core/fetch/ResourceLoaderHost.h"
 #include "core/fetch/ResourcePtr.h"
-#include "core/html/parser/ThreadedDataReceiver.h"
 #include "platform/Logging.h"
 #include "platform/SharedBuffer.h"
+#include "platform/ThreadedDataReceiver.h"
 #include "platform/exported/WrappedResourceRequest.h"
 #include "platform/exported/WrappedResourceResponse.h"
 #include "platform/network/ResourceError.h"
@@ -277,6 +278,7 @@ void ResourceLoader::willSendRequest(blink::WebURLLoader*, blink::WebURLRequest&
     ASSERT(!newRequest.isNull());
     const ResourceResponse& redirectResponse(passedRedirectResponse.toResourceResponse());
     ASSERT(!redirectResponse.isNull());
+    newRequest.setFollowedRedirect(true);
     if (!m_host->canAccessRedirect(m_resource, newRequest, redirectResponse, m_options)) {
         cancel(ResourceError::cancelledDueToAccessCheckError(newRequest.url()));
         return;
@@ -354,7 +356,7 @@ void ResourceLoader::didReceiveResponse(blink::WebURLLoader*, const blink::WebUR
                 resource = m_resource->resourceToRevalidate();
             else
                 m_resource->setResponse(resourceResponse);
-            if (!m_host->canAccessResource(resource, m_options.securityOrigin.get(), response.url())) {
+            if (!m_host->canAccessResource(resource, m_options.securityOrigin.get(), response.url(), ResourceLoaderHost::ShouldLogAccessControlErrors)) {
                 m_host->didReceiveResponse(m_resource, resourceResponse);
                 cancel(ResourceError::cancelledDueToAccessCheckError(KURL(response.url())));
                 return;

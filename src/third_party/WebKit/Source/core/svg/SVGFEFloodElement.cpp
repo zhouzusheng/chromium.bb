@@ -23,8 +23,8 @@
 
 #include "core/SVGNames.h"
 #include "core/layout/LayoutObject.h"
-#include "core/layout/style/LayoutStyle.h"
-#include "core/layout/style/SVGLayoutStyle.h"
+#include "core/style/ComputedStyle.h"
+#include "core/style/SVGComputedStyle.h"
 
 namespace blink {
 
@@ -37,16 +37,15 @@ DEFINE_NODE_FACTORY(SVGFEFloodElement)
 
 bool SVGFEFloodElement::setFilterEffectAttribute(FilterEffect* effect, const QualifiedName& attrName)
 {
-    LayoutObject* renderer = this->renderer();
+    LayoutObject* renderer = this->layoutObject();
     ASSERT(renderer);
-    LayoutStyle* style = renderer->style();
-    ASSERT(style);
+    const ComputedStyle& style = renderer->styleRef();
     FEFlood* flood = static_cast<FEFlood*>(effect);
 
     if (attrName == SVGNames::flood_colorAttr)
-        return flood->setFloodColor(style->svgStyle().floodColor());
+        return flood->setFloodColor(style.svgStyle().floodColor());
     if (attrName == SVGNames::flood_opacityAttr)
-        return flood->setFloodOpacity(style->svgStyle().floodOpacity());
+        return flood->setFloodOpacity(style.svgStyle().floodOpacity());
 
     ASSERT_NOT_REACHED();
     return false;
@@ -54,12 +53,12 @@ bool SVGFEFloodElement::setFilterEffectAttribute(FilterEffect* effect, const Qua
 
 PassRefPtrWillBeRawPtr<FilterEffect> SVGFEFloodElement::build(SVGFilterBuilder*, Filter* filter)
 {
-    LayoutObject* renderer = this->renderer();
+    LayoutObject* renderer = this->layoutObject();
     if (!renderer)
         return nullptr;
 
     ASSERT(renderer->style());
-    const SVGLayoutStyle& svgStyle = renderer->style()->svgStyle();
+    const SVGComputedStyle& svgStyle = renderer->style()->svgStyle();
 
     Color color = svgStyle.floodColor();
     float opacity = svgStyle.floodOpacity();

@@ -28,9 +28,8 @@
 #include "core/events/Event.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
-#include "core/layout/Layer.h"
 #include "core/layout/LayoutPart.h"
-#include "core/layout/compositing/LayerCompositor.h"
+#include "core/loader/FrameLoadRequest.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/plugins/PluginView.h"
@@ -115,9 +114,9 @@ LayoutPart* HTMLFrameOwnerElement::layoutPart() const
 {
     // HTMLObjectElement and HTMLEmbedElement may return arbitrary renderers
     // when using fallback content.
-    if (!renderer() || !renderer()->isLayoutPart())
+    if (!layoutObject() || !layoutObject()->isLayoutPart())
         return nullptr;
-    return toLayoutPart(renderer());
+    return toLayoutPart(layoutObject());
 }
 
 void HTMLFrameOwnerElement::setContentFrame(Frame& frame)
@@ -184,6 +183,10 @@ DOMWindow* HTMLFrameOwnerElement::contentWindow() const
 void HTMLFrameOwnerElement::setSandboxFlags(SandboxFlags flags)
 {
     m_sandboxFlags = flags;
+    // Don't notify about updates if contentFrame() is null, for example when
+    // the subframe hasn't been created yet.
+    if (contentFrame())
+        document().frame()->loader().client()->didChangeSandboxFlags(contentFrame(), flags);
 }
 
 bool HTMLFrameOwnerElement::isKeyboardFocusable() const
@@ -217,7 +220,7 @@ void HTMLFrameOwnerElement::setWidget(PassRefPtrWillBeRawPtr<Widget> widget)
 
     m_widget = widget;
 
-    LayoutPart* layoutPart = toLayoutPart(renderer());
+    LayoutPart* layoutPart = toLayoutPart(layoutObject());
     if (!layoutPart)
         return;
 
@@ -238,7 +241,7 @@ Widget* HTMLFrameOwnerElement::ownedWidget() const
     return m_widget.get();
 }
 
-bool HTMLFrameOwnerElement::loadOrRedirectSubframe(const KURL& url, const AtomicString& frameName, bool lockBackForwardList, ContentSecurityPolicyDisposition shouldCheckContentSecurityPolicy)
+bool HTMLFrameOwnerElement::loadOrRedirectSubframe(const KURL& url, const AtomicString& frameName, bool lockBackForwardList)
 {
     RefPtrWillBeRawPtr<LocalFrame> parentFrame = document().frame();
     if (contentFrame()) {
@@ -254,7 +257,7 @@ bool HTMLFrameOwnerElement::loadOrRedirectSubframe(const KURL& url, const Atomic
     if (!SubframeLoadingDisabler::canLoadFrame(*this))
         return false;
 
-    return parentFrame->loader().client()->createFrame(url, frameName, this, shouldCheckContentSecurityPolicy);
+    return parentFrame->loader().client()->createFrame(FrameLoadRequest(&document(), url, "_self", CheckContentSecurityPolicy), frameName, this);
 }
 
 DEFINE_TRACE(HTMLFrameOwnerElement)

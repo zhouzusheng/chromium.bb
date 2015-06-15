@@ -6,7 +6,6 @@
 #define CONTENT_BROWSER_DEVTOOLS_WORKER_DEVTOOLS_AGENT_HOST_H_
 
 #include "content/browser/devtools/ipc_devtools_agent_host.h"
-#include "content/browser/devtools/worker_devtools_manager.h"
 #include "ipc/ipc_listener.h"
 
 namespace content {
@@ -17,7 +16,7 @@ class SharedWorkerInstance;
 class WorkerDevToolsAgentHost : public IPCDevToolsAgentHost,
                                 public IPC::Listener {
  public:
-  typedef WorkerDevToolsManager::WorkerId WorkerId;
+  typedef std::pair<int, int> WorkerId;
 
   // DevToolsAgentHost override.
   bool IsWorker() const override;
@@ -31,6 +30,9 @@ class WorkerDevToolsAgentHost : public IPCDevToolsAgentHost,
 
   // IPC::Listener implementation.
   bool OnMessageReceived(const IPC::Message& msg) override;
+
+  void PauseForDebugOnStart();
+  bool IsPausedForDebugOnStart();
 
   void WorkerReadyForInspection();
   void WorkerRestarted(WorkerId worker_id);
@@ -54,7 +56,6 @@ class WorkerDevToolsAgentHost : public IPCDevToolsAgentHost,
   void WorkerCreated();
   void OnDispatchOnInspectorFrontend(const DevToolsMessageChunk& message);
 
-  void set_state(WorkerState state) { state_ = state; }
   const WorkerId& worker_id() const { return worker_id_; }
 
  private:

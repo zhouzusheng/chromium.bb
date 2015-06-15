@@ -59,6 +59,7 @@
 
 #include <openssl/base.h>
 
+#include <openssl/aead.h>
 #include <openssl/asn1t.h>
 
 #if defined(__cplusplus)
@@ -97,7 +98,7 @@ struct evp_cipher_st {
   int (*cipher)(EVP_CIPHER_CTX *ctx, uint8_t *out, const uint8_t *in,
                 size_t inl);
 
-  int (*cleanup)(EVP_CIPHER_CTX *);
+  void (*cleanup)(EVP_CIPHER_CTX *);
 
   int (*ctrl)(EVP_CIPHER_CTX *, int type, int arg, void *ptr);
 };
@@ -117,6 +118,9 @@ struct evp_aead_st {
 
   int (*init)(struct evp_aead_ctx_st *, const uint8_t *key,
               size_t key_len, size_t tag_len);
+  int (*init_with_direction)(struct evp_aead_ctx_st *, const uint8_t *key,
+			     size_t key_len, size_t tag_len,
+			     enum evp_aead_direction_t dir);
   void (*cleanup)(struct evp_aead_ctx_st *);
 
   int (*seal)(const struct evp_aead_ctx_st *ctx, uint8_t *out,
@@ -128,6 +132,9 @@ struct evp_aead_st {
               size_t *out_len, size_t max_out_len, const uint8_t *nonce,
               size_t nonce_len, const uint8_t *in, size_t in_len,
               const uint8_t *ad, size_t ad_len);
+
+  int (*get_rc4_state)(const struct evp_aead_ctx_st *ctx,
+                       const RC4_KEY **out_key);
 };
 
 

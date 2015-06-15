@@ -30,12 +30,13 @@
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLFrameElementBase.h"
 #include "core/layout/HitTestResult.h"
-#include "core/layout/Layer.h"
+#include "core/layout/LayoutAnalyzer.h"
+#include "core/layout/LayoutView.h"
 #include "core/layout/svg/LayoutSVGRoot.h"
 #include "core/paint/BoxPainter.h"
+#include "core/paint/DeprecatedPaintLayer.h"
 #include "core/paint/PartPainter.h"
 #include "core/plugins/PluginView.h"
-#include "core/rendering/RenderView.h"
 
 namespace blink {
 
@@ -95,12 +96,12 @@ Widget* LayoutPart::widget() const
     return 0;
 }
 
-LayerType LayoutPart::layerTypeRequired() const
+DeprecatedPaintLayerType LayoutPart::layerTypeRequired() const
 {
-    LayerType type = LayoutReplaced::layerTypeRequired();
-    if (type != NoLayer)
+    DeprecatedPaintLayerType type = LayoutReplaced::layerTypeRequired();
+    if (type != NoDeprecatedPaintLayer)
         return type;
-    return ForcedLayer;
+    return ForcedDeprecatedPaintLayer;
 }
 
 bool LayoutPart::requiresAcceleratedCompositing() const
@@ -120,7 +121,7 @@ bool LayoutPart::requiresAcceleratedCompositing() const
         return true;
 
     if (Document* contentDocument = element->contentDocument()) {
-        if (RenderView* view = contentDocument->renderView())
+        if (LayoutView* view = contentDocument->layoutView())
             return view->usesCompositing();
     }
 
@@ -134,10 +135,10 @@ bool LayoutPart::needsPreferredWidthsRecalculation() const
     return embeddedContentBox();
 }
 
-bool LayoutPart::nodeAtPointOverWidget(const HitTestRequest& request, HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction action)
+bool LayoutPart::nodeAtPointOverWidget(HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction action)
 {
     bool hadResult = result.innerNode();
-    bool inside = LayoutReplaced::nodeAtPoint(request, result, locationInContainer, accumulatedOffset, action);
+    bool inside = LayoutReplaced::nodeAtPoint(result, locationInContainer, accumulatedOffset, action);
 
     // Check to see if we are really over the widget itself (and not just in the border/padding area).
     if ((inside || result.isRectBasedTest()) && !hadResult && result.innerNode() == node())
@@ -145,24 +146,24 @@ bool LayoutPart::nodeAtPointOverWidget(const HitTestRequest& request, HitTestRes
     return inside;
 }
 
-bool LayoutPart::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction action)
+bool LayoutPart::nodeAtPoint(HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction action)
 {
-    if (!widget() || !widget()->isFrameView() || !request.allowsChildFrameContent())
-        return nodeAtPointOverWidget(request, result, locationInContainer, accumulatedOffset, action);
+    if (!widget() || !widget()->isFrameView() || !result.hitTestRequest().allowsChildFrameContent())
+        return nodeAtPointOverWidget(result, locationInContainer, accumulatedOffset, action);
 
     FrameView* childFrameView = toFrameView(widget());
-    RenderView* childRoot = childFrameView->renderView();
+    LayoutView* childRoot = childFrameView->layoutView();
 
-    if (visibleToHitTestRequest(request) && childRoot) {
+    if (visibleToHitTestRequest(result.hitTestRequest()) && childRoot) {
         LayoutPoint adjustedLocation = accumulatedOffset + location();
         LayoutPoint contentOffset = LayoutPoint(borderLeft() + paddingLeft(), borderTop() + paddingTop()) - LayoutSize(childFrameView->scrollOffset());
         HitTestLocation newHitTestLocation(locationInContainer, -adjustedLocation - contentOffset);
-        HitTestRequest newHitTestRequest(request.type() | HitTestRequest::ChildFrameHitTest);
-        HitTestResult childFrameResult(newHitTestLocation);
+        HitTestRequest newHitTestRequest(result.hitTestRequest().type() | HitTestRequest::ChildFrameHitTest);
+        HitTestResult childFrameResult(newHitTestRequest, newHitTestLocation);
 
         bool isInsideChildFrame = childRoot->hitTest(newHitTestRequest, newHitTestLocation, childFrameResult);
 
-        if (newHitTestLocation.isRectBasedTest())
+        if (result.hitTestRequest().listBased())
             result.append(childFrameResult);
         else if (isInsideChildFrame)
             result = childFrameResult;
@@ -171,7 +172,7 @@ bool LayoutPart::nodeAtPoint(const HitTestRequest& request, HitTestResult& resul
             return true;
     }
 
-    return nodeAtPointOverWidget(request, result, locationInContainer, accumulatedOffset, action);
+    return nodeAtPointOverWidget(result, locationInContainer, accumulatedOffset, action);
 }
 
 CompositingReasons LayoutPart::additionalCompositingReasons() const
@@ -181,7 +182,7 @@ CompositingReasons LayoutPart::additionalCompositingReasons() const
     return CompositingReasonNone;
 }
 
-void LayoutPart::styleDidChange(StyleDifference diff, const LayoutStyle* oldStyle)
+void LayoutPart::styleDidChange(StyleDifference diff, const ComputedStyle* oldStyle)
 {
     LayoutReplaced::styleDidChange(diff, oldStyle);
     Widget* widget = this->widget();
@@ -203,6 +204,11 @@ void LayoutPart::styleDidChange(StyleDifference diff, const LayoutStyle* oldStyl
 void LayoutPart::layout()
 {
     ASSERT(needsLayout());
+    LayoutAnalyzer::Scope analyzer(*this);
+
+    if (Widget* widget = this->widget()) {
+        widget->layoutWidgetIfPossible();
+    }
 
     clearNeedsLayout();
 }
@@ -220,7 +226,7 @@ void LayoutPart::paintContents(const PaintInfo& paintInfo, const LayoutPoint& pa
 CursorDirective LayoutPart::getCursor(const LayoutPoint& point, Cursor& cursor) const
 {
     if (widget() && widget()->isPluginView()) {
-        // A plug-in is responsible for setting the cursor when the pointer is over it.
+        // A plugin is responsible for setting the cursor when the pointer is over it.
         return DoNotSetCursor;
     }
     return LayoutReplaced::getCursor(point, cursor);

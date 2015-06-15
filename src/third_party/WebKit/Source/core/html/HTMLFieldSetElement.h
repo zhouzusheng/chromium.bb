@@ -24,13 +24,14 @@
 #ifndef HTMLFieldSetElement_h
 #define HTMLFieldSetElement_h
 
+#include "core/CoreExport.h"
 #include "core/html/HTMLFormControlElement.h"
 
 namespace blink {
 
 class HTMLFormControlsCollection;
 
-class HTMLFieldSetElement final : public HTMLFormControlElement {
+class CORE_EXPORT HTMLFieldSetElement final : public HTMLFormControlElement {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<HTMLFieldSetElement> create(Document&, HTMLFormElement*);
@@ -41,8 +42,6 @@ public:
 
     const FormAssociatedElement::List& associatedElements() const;
 
-    void setNeedsValidityCheck();
-
 protected:
     virtual void disabledAttributeChanged() override;
 
@@ -51,7 +50,7 @@ private:
 
     virtual bool isEnumeratable() const override { return true; }
     virtual bool supportsFocus() const override;
-    virtual LayoutObject* createRenderer(const LayoutStyle&) override;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
     virtual const AtomicString& formControlType() const override;
     virtual bool recalcWillValidate() const override { return false; }
     virtual bool matchesValidityPseudoClasses() const override final;

@@ -50,8 +50,7 @@
 
 #include <sstream>
 
-// Can also be enabled by defining FORCE_REF_RAST in the project's predefined macros
-#define REF_RAST 0
+#include <EGL/eglext.h>
 
 #if !defined(ANGLE_COMPILE_OPTIMIZATION_LEVEL)
 #define ANGLE_COMPILE_OPTIMIZATION_LEVEL D3DCOMPILE_OPTIMIZATION_LEVEL3
@@ -80,6 +79,9 @@ enum
 Renderer9::Renderer9(egl::Display *display)
     : RendererD3D(display)
 {
+    // Initialize global annotator
+    gl::InitializeDebugAnnotations(&mAnnotator);
+
     mD3d9Module = NULL;
 
     mD3d9 = NULL;
@@ -91,11 +93,26 @@ Renderer9::Renderer9(egl::Display *display)
 
     mAdapter = D3DADAPTER_DEFAULT;
 
-    #if REF_RAST == 1 || defined(FORCE_REF_RAST)
-        mDeviceType = D3DDEVTYPE_REF;
-    #else
+    const egl::AttributeMap &attributes = display->getAttributeMap();
+    EGLint requestedDeviceType = attributes.get(EGL_PLATFORM_ANGLE_DEVICE_TYPE_ANGLE,
+                                                EGL_PLATFORM_ANGLE_DEVICE_TYPE_HARDWARE_ANGLE);
+    switch (requestedDeviceType)
+    {
+      case EGL_PLATFORM_ANGLE_DEVICE_TYPE_HARDWARE_ANGLE:
         mDeviceType = D3DDEVTYPE_HAL;
-    #endif
+        break;
+
+      case EGL_PLATFORM_ANGLE_DEVICE_TYPE_REFERENCE_ANGLE:
+        mDeviceType = D3DDEVTYPE_REF;
+        break;
+
+      case EGL_PLATFORM_ANGLE_DEVICE_TYPE_NULL_ANGLE:
+        mDeviceType = D3DDEVTYPE_NULLREF;
+        break;
+
+      default:
+        UNREACHABLE();
+    }
 
     mMaskedClearSavedState = NULL;
 
@@ -130,6 +147,8 @@ Renderer9::~Renderer9()
     }
 
     release();
+
+    gl::UninitializeDebugAnnotations();
 }
 
 void Renderer9::release()
@@ -164,7 +183,9 @@ egl::Error Renderer9::initialize()
 {
     if (!mCompiler.initialize())
     {
-        return egl::Error(EGL_NOT_INITIALIZED, "Compiler failed to initialize.");
+        return egl::Error(EGL_NOT_INITIALIZED,
+                          D3D9_INIT_COMPILER_ERROR,
+                          "Compiler failed to initialize.");
     }
 
     TRACE_EVENT0("gpu", "GetModuleHandle_d3d9");
@@ -172,7 +193,7 @@ egl::Error Renderer9::initialize()
 
     if (mD3d9Module == NULL)
     {
-        return egl::Error(EGL_NOT_INITIALIZED, "No D3D9 module found.");
+        return egl::Error(EGL_NOT_INITIALIZED, D3D9_INIT_MISSING_DEP, "No D3D9 module found.");
     }
 
     typedef HRESULT (WINAPI *Direct3DCreate9ExFunc)(UINT, IDirect3D9Ex**);
@@ -196,7 +217,7 @@ egl::Error Renderer9::initialize()
 
     if (!mD3d9)
     {
-        return egl::Error(EGL_NOT_INITIALIZED, "Could not create D3D9 device.");
+        return egl::Error(EGL_NOT_INITIALIZED, D3D9_INIT_MISSING_DEP, "Could not create D3D9 device.");
     }
 
     if (mDisplay->getNativeDisplayId() != nullptr)
@@ -222,7 +243,9 @@ egl::Error Renderer9::initialize()
             }
             else if (FAILED(result))   // D3DERR_OUTOFVIDEOMEMORY, E_OUTOFMEMORY, D3DERR_INVALIDDEVICE, or another error we can't recover from
             {
-                return egl::Error(EGL_NOT_INITIALIZED, "Failed to get device caps: Error code 0x%x\n", result);
+                return egl::Error(EGL_NOT_INITIALIZED,
+                                  D3D9_INIT_OTHER_ERROR,
+                                  "Failed to get device caps: Error code 0x%x\n", result);
             }
         }
     }
@@ -235,14 +258,18 @@ egl::Error Renderer9::initialize()
 
     if (mDeviceCaps.PixelShaderVersion < D3DPS_VERSION(minShaderModel, 0))
     {
-        return egl::Error(EGL_NOT_INITIALIZED, "Renderer does not support PS %u.%u.aborting!", minShaderModel, 0);
+        return egl::Error(EGL_NOT_INITIALIZED,
+                          D3D9_INIT_UNSUPPORTED_VERSION,
+                          "Renderer does not support PS %u.%u.aborting!", minShaderModel, 0);
     }
 
     // When DirectX9 is running with an older DirectX8 driver, a StretchRect from a regular texture to a render target texture is not supported.
     // This is required by Texture2D::ensureRenderTarget.
     if ((mDeviceCaps.DevCaps2 & D3DDEVCAPS2_CAN_STRETCHRECT_FROM_TEXTURES) == 0)
     {
-        return egl::Error(EGL_NOT_INITIALIZED, "Renderer does not support StretctRect from textures.");
+        return egl::Error(EGL_NOT_INITIALIZED,
+                          D3D9_INIT_UNSUPPORTED_STRETCHRECT,
+                          "Renderer does not support StretctRect from textures.");
     }
 
     {
@@ -267,7 +294,8 @@ egl::Error Renderer9::initialize()
     }
     if (result == D3DERR_OUTOFVIDEOMEMORY || result == E_OUTOFMEMORY || result == D3DERR_DEVICELOST)
     {
-        return egl::Error(EGL_BAD_ALLOC, "CreateDevice failed: device lost of out of memory");
+        return egl::Error(EGL_BAD_ALLOC, D3D9_INIT_OUT_OF_MEMORY,
+                          "CreateDevice failed: device lost of out of memory");
     }
 
     if (FAILED(result))
@@ -278,7 +306,8 @@ egl::Error Renderer9::initialize()
         if (FAILED(result))
         {
             ASSERT(result == D3DERR_OUTOFVIDEOMEMORY || result == E_OUTOFMEMORY || result == D3DERR_NOTAVAILABLE || result == D3DERR_DEVICELOST);
-            return egl::Error(EGL_BAD_ALLOC, "CreateDevice2 failed: device lost, not available, or of out of memory");
+            return egl::Error(EGL_BAD_ALLOC, D3D9_INIT_OUT_OF_MEMORY,
+                              "CreateDevice2 failed: device lost, not available, or of out of memory");
         }
     }
 
@@ -349,7 +378,7 @@ void Renderer9::initializeDevice()
 
     ASSERT(!mVertexDataManager && !mIndexDataManager);
     mVertexDataManager = new VertexDataManager(this);
-    mIndexDataManager = new IndexDataManager(this);
+    mIndexDataManager = new IndexDataManager(this, getRendererClass());
 }
 
 D3DPRESENT_PARAMETERS Renderer9::getDefaultPresentParameters()
@@ -831,7 +860,9 @@ gl::Error Renderer9::setTexture(gl::SamplerType type, int index, gl::Texture *te
     return gl::Error(GL_NO_ERROR);
 }
 
-gl::Error Renderer9::setUniformBuffers(const gl::Buffer* /*vertexUniformBuffers*/[], const gl::Buffer* /*fragmentUniformBuffers*/[])
+gl::Error Renderer9::setUniformBuffers(const gl::Data &/*data*/,
+                                       const GLint /*vertexUniformBuffers*/[],
+                                       const GLint /*fragmentUniformBuffers*/[])
 {
     // No effect in ES2/D3D9
     return gl::Error(GL_NO_ERROR);
@@ -1244,7 +1275,7 @@ gl::Error Renderer9::getNullColorbuffer(const gl::FramebufferAttachment *depthbu
     }
 
     gl::Renderbuffer *nullRenderbuffer = new gl::Renderbuffer(createRenderbuffer(), 0);
-    gl::Error error = nullRenderbuffer->setStorage(width, height, GL_NONE, 0);
+    gl::Error error = nullRenderbuffer->setStorage(GL_NONE, width, height);
     if (error.isError())
     {
         SafeDelete(nullRenderbuffer);
@@ -1945,7 +1976,8 @@ void Renderer9::applyUniformnbv(gl::LinkedUniform *targetUniform, const GLint *v
     applyUniformnfv(targetUniform, (GLfloat*)vector);
 }
 
-gl::Error Renderer9::clear(const gl::ClearParameters &clearParams, const gl::FramebufferAttachment *colorBuffer,
+gl::Error Renderer9::clear(const ClearParameters &clearParams,
+                           const gl::FramebufferAttachment *colorBuffer,
                            const gl::FramebufferAttachment *depthStencilBuffer)
 {
     if (clearParams.colorClearType != GL_FLOAT)
@@ -2454,7 +2486,7 @@ unsigned int Renderer9::getReservedFragmentUniformBuffers() const
 bool Renderer9::getShareHandleSupport() const
 {
     // PIX doesn't seem to support using share handles, so disable them.
-    return (mD3d9Ex != NULL) && !gl::perfActive();
+    return (mD3d9Ex != NULL) && !gl::DebugAnnotationsActive();
 }
 
 bool Renderer9::getPostSubBufferSupport() const
@@ -2590,45 +2622,14 @@ gl::Error Renderer9::createRenderTarget(int width, int height, GLenum format, GL
     return gl::Error(GL_NO_ERROR);
 }
 
-DefaultAttachmentImpl *Renderer9::createDefaultAttachment(GLenum type, egl::Surface *surface)
+FramebufferImpl *Renderer9::createDefaultFramebuffer(const gl::Framebuffer::Data &data)
 {
-    SurfaceD3D *surfaceD3D = GetImplAs<SurfaceD3D>(surface);
-    SwapChain9 *swapChain = SwapChain9::makeSwapChain9(surfaceD3D->getSwapChain());
-
-    switch (type)
-    {
-      case GL_BACK:
-        return new DefaultAttachmentD3D(new SurfaceRenderTarget9(swapChain, false));
-
-      case GL_DEPTH:
-        if (gl::GetInternalFormatInfo(swapChain->GetDepthBufferInternalFormat()).depthBits > 0)
-        {
-            return new DefaultAttachmentD3D(new SurfaceRenderTarget9(swapChain, true));
-        }
-        else
-        {
-            return NULL;
-        }
-
-      case GL_STENCIL:
-        if (gl::GetInternalFormatInfo(swapChain->GetDepthBufferInternalFormat()).stencilBits > 0)
-        {
-            return new DefaultAttachmentD3D(new SurfaceRenderTarget9(swapChain, true));
-        }
-        else
-        {
-            return NULL;
-        }
-
-      default:
-        UNREACHABLE();
-        return NULL;
-    }
+    return createFramebuffer(data);
 }
 
-FramebufferImpl *Renderer9::createFramebuffer()
+FramebufferImpl *Renderer9::createFramebuffer(const gl::Framebuffer::Data &data)
 {
-    return new Framebuffer9(this);
+    return new Framebuffer9(data, this);
 }
 
 CompilerImpl *Renderer9::createCompiler(const gl::Data &data)
@@ -2687,7 +2688,7 @@ gl::Error Renderer9::loadExecutable(const void *function, size_t length, ShaderT
 
 gl::Error Renderer9::compileToExecutable(gl::InfoLog &infoLog, const std::string &shaderHLSL, ShaderType type,
                                          const std::vector<gl::LinkedVarying> &transformFeedbackVaryings,
-                                         bool separatedOutputBuffers, D3DWorkaroundType workaround,
+                                         bool separatedOutputBuffers, const D3DCompilerWorkarounds &workarounds,
                                          ShaderExecutableD3D **outExectuable)
 {
     // Transform feedback is not supported in ES2 or D3D9
@@ -2712,17 +2713,16 @@ gl::Error Renderer9::compileToExecutable(gl::InfoLog &infoLog, const std::string
 
     UINT flags = ANGLE_COMPILE_OPTIMIZATION_LEVEL;
 
-    if (workaround == ANGLE_D3D_WORKAROUND_SKIP_OPTIMIZATION)
+    if (workarounds.skipOptimization)
     {
         flags = D3DCOMPILE_SKIP_OPTIMIZATION;
     }
-    else if (workaround == ANGLE_D3D_WORKAROUND_MAX_OPTIMIZATION)
+    else if (workarounds.useMaxOptimization)
     {
         flags = D3DCOMPILE_OPTIMIZATION_LEVEL3;
     }
-    else ASSERT(workaround == ANGLE_D3D_WORKAROUND_NONE);
 
-    if (gl::perfActive())
+    if (gl::DebugAnnotationsActive())
     {
 #ifndef NDEBUG
         flags = D3DCOMPILE_SKIP_OPTIMIZATION;

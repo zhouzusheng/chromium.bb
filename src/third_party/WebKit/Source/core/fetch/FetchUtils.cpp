@@ -17,13 +17,13 @@ namespace blink {
 namespace {
 
 class ForbiddenHeaderNames {
-    WTF_MAKE_NONCOPYABLE(ForbiddenHeaderNames); WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(ForbiddenHeaderNames); WTF_MAKE_FAST_ALLOCATED(ForbiddenHeaderNames);
 public:
     bool has(const String& name) const
     {
         return m_fixedNames.contains(name)
-            || name.startsWith(m_proxyHeaderPrefix, false)
-            || name.startsWith(m_secHeaderPrefix, false);
+            || name.startsWith(m_proxyHeaderPrefix, TextCaseInsensitive)
+            || name.startsWith(m_secHeaderPrefix, TextCaseInsensitive);
     }
 
     static const ForbiddenHeaderNames& get();

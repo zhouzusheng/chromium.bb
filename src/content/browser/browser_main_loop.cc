@@ -23,6 +23,7 @@
 #include "base/trace_event/trace_event.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/device_sensors/device_inertial_sensor_service.h"
+#include "content/browser/dom_storage/dom_storage_area.h"
 #include "content/browser/download/save_file_manager.h"
 #include "content/browser/gamepad/gamepad_service.h"
 #include "content/browser/gpu/browser_gpu_channel_host_factory.h"
@@ -41,6 +42,7 @@
 #include "content/browser/webui/content_web_ui_controller_factory.h"
 #include "content/browser/webui/url_data_manager.h"
 #include "content/common/content_switches_internal.h"
+#include "content/common/host_discardable_shared_memory_manager.h"
 #include "content/public/browser/browser_main_parts.h"
 #include "content/public/browser/browser_shutdown.h"
 #include "content/public/browser/content_browser_client.h"
@@ -354,7 +356,7 @@ class BrowserMainLoop::MemoryObserver : public base::MessageLoop::TaskObserver {
 // BrowserMainLoop construction / destruction =============================
 
 BrowserMainLoop* BrowserMainLoop::GetInstance() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   return g_current_browser_main_loop;
 }
 
@@ -462,6 +464,9 @@ void BrowserMainLoop::EarlyInitialization() {
       gfx::GpuMemoryBuffer::SCANOUT);
 #endif
 
+  base::DiscardableMemoryAllocator::SetInstance(
+      HostDiscardableSharedMemoryManager::current());
+
   if (parts_)
     parts_->PostEarlyInitialization();
 }
@@ -512,15 +517,6 @@ void BrowserMainLoop::MainMessageLoopStart() {
   {
     TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:MediaFeatures");
     media::InitializeCPUSpecificMediaFeatures();
-  }
-  {
-    TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:AudioMan");
-    audio_manager_.reset(media::AudioManager::Create(
-        MediaInternals::GetInstance()));
-  }
-  {
-    TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:MidiManager");
-    midi_manager_.reset(media::MidiManager::Create());
   }
   {
     TRACE_EVENT0("startup",
@@ -578,6 +574,13 @@ void BrowserMainLoop::MainMessageLoopStart() {
     TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:MemoryObserver");
     memory_observer_.reset(new MemoryObserver());
     base::MessageLoop::current()->AddTaskObserver(memory_observer_.get());
+  }
+
+  if (parsed_command_line_.HasSwitch(
+          switches::kEnableAggressiveDOMStorageFlushing)) {
+    TRACE_EVENT0("startup",
+                 "BrowserMainLoop::Subsystem:EnableAggressiveCommitDelay");
+    DOMStorageArea::EnableAggressiveCommitDelay();
   }
 
 #if defined(TCMALLOC_TRACE_MEMORY_SUPPORTED)
@@ -1040,10 +1043,9 @@ int BrowserMainLoop::BrowserThreadsStarted() {
 #if defined(OS_ANDROID)
   // Up the priority of anything that touches with display tasks
   // (this thread is UI thread, and io_thread_ is for IPCs).
-  io_thread_->SetPriority(base::kThreadPriority_Display);
-  base::PlatformThread::SetThreadPriority(
-      base::PlatformThread::CurrentHandle(),
-      base::kThreadPriority_Display);
+  io_thread_->SetPriority(base::ThreadPriority::DISPLAY);
+  base::PlatformThread::SetThreadPriority(base::PlatformThread::CurrentHandle(),
+                                          base::ThreadPriority::DISPLAY);
 
   // On Android, GLSurface::InitializeOneOff() must be called before
   // initalizing the GpuDataManagerImpl as it uses the GL bindings.
@@ -1065,7 +1067,8 @@ int BrowserMainLoop::BrowserThreadsStarted() {
   bool established_gpu_channel = false;
 #if defined(USE_AURA) || defined(OS_MACOSX)
   established_gpu_channel = true;
-  if (!GpuDataManagerImpl::GetInstance()->CanUseGpuBrowserCompositor()) {
+  if (!GpuDataManagerImpl::GetInstance()->CanUseGpuBrowserCompositor() ||
+      parsed_command_line_.HasSwitch(switches::kDisableGpuEarlyInit)) {
     established_gpu_channel = always_uses_gpu = false;
   }
   BrowserGpuChannelHostFactory::Initialize(established_gpu_channel);
@@ -1080,6 +1083,17 @@ int BrowserMainLoop::BrowserThreadsStarted() {
   established_gpu_channel = false;
   BrowserGpuChannelHostFactory::Initialize(established_gpu_channel);
 #endif
+
+  {
+    TRACE_EVENT0("startup", "BrowserThreadsStarted::Subsystem:AudioMan");
+    audio_manager_.reset(media::AudioManager::CreateWithHangTimer(
+        MediaInternals::GetInstance(), io_thread_->task_runner()));
+  }
+
+  {
+    TRACE_EVENT0("startup", "BrowserThreadsStarted::Subsystem:MidiManager");
+    midi_manager_.reset(media::MidiManager::Create());
+  }
 
 #if defined(OS_LINUX) && defined(USE_UDEV)
   device_monitor_linux_.reset(new DeviceMonitorLinux());

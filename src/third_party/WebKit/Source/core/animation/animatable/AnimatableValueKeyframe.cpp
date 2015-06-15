@@ -36,7 +36,7 @@ PassOwnPtrWillBeRawPtr<Keyframe::PropertySpecificKeyframe> AnimatableValueKeyfra
     return adoptPtrWillBeNoop(new PropertySpecificKeyframe(offset(), &easing(), propertyValue(property), composite()));
 }
 
-void AnimatableValueKeyframe::trace(Visitor* visitor)
+DEFINE_TRACE(AnimatableValueKeyframe)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_propertyValues);
@@ -62,7 +62,7 @@ PassOwnPtrWillBeRawPtr<Keyframe::PropertySpecificKeyframe> AnimatableValueKeyfra
     return adoptPtrWillBeNoop(theClone);
 }
 
-PassRefPtrWillBeRawPtr<Interpolation> AnimatableValueKeyframe::PropertySpecificKeyframe::maybeCreateInterpolation(CSSPropertyID property, Keyframe::PropertySpecificKeyframe& end, Element*) const
+PassRefPtrWillBeRawPtr<Interpolation> AnimatableValueKeyframe::PropertySpecificKeyframe::maybeCreateInterpolation(CSSPropertyID property, Keyframe::PropertySpecificKeyframe& end, Element*, const ComputedStyle*) const
 {
     AnimatableValuePropertySpecificKeyframe& to = toAnimatableValuePropertySpecificKeyframe(end);
     return LegacyStyleInterpolation::create(value(), to.value(), property);
@@ -73,7 +73,7 @@ PassOwnPtrWillBeRawPtr<Keyframe::PropertySpecificKeyframe> AnimatableValueKeyfra
     return adoptPtrWillBeNoop(new AnimatableValueKeyframe::PropertySpecificKeyframe(offset, easing, AnimatableValue::neutralValue(), AnimationEffect::CompositeAdd));
 }
 
-void AnimatableValueKeyframe::PropertySpecificKeyframe::trace(Visitor* visitor)
+DEFINE_TRACE(AnimatableValueKeyframe::PropertySpecificKeyframe)
 {
     visitor->trace(m_value);
     Keyframe::PropertySpecificKeyframe::trace(visitor);

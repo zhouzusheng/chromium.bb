@@ -15,11 +15,11 @@ namespace blink {
 
 class GraphicsContext;
 
-typedef Vector<OwnPtr<DisplayItem>> PaintList;
+typedef Vector<OwnPtr<DisplayItem>> DisplayItems;
 
 class PLATFORM_EXPORT DisplayItemList {
     WTF_MAKE_NONCOPYABLE(DisplayItemList);
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED(DisplayItemList);
 public:
     static PassOwnPtr<DisplayItemList> create() { return adoptPtr(new DisplayItemList); }
 
@@ -32,53 +32,76 @@ public:
     void beginScope(DisplayItemClient);
     void endScope(DisplayItemClient);
 
-    // Nust be called when a painting is finished.
-    void endNewPaints() { updatePaintList(); }
+    // Must be called when a painting is finished.
+    void commitNewDisplayItems();
 
     // Get the paint list generated after the last painting.
-    const PaintList& paintList() const;
+    const DisplayItems& displayItems() const;
 
     bool clientCacheIsValid(DisplayItemClient) const;
 
-    // Plays back the current PaintList() into the given context.
-    void replay(GraphicsContext*);
+    // Commits the new display items and plays back the updated display items into the given context.
+    void commitNewDisplayItemsAndReplay(GraphicsContext& context)
+    {
+        commitNewDisplayItems();
+        replay(context);
+    }
+
+#if ENABLE(ASSERT)
+    size_t newDisplayItemsSize() const { return m_newDisplayItems.size(); }
+#endif
 
 #ifndef NDEBUG
     void showDebugData() const;
 #endif
 
 protected:
-    DisplayItemList() { };
+    DisplayItemList() : m_validlyCachedClientsDirty(false) { }
 
 private:
-    friend class RenderDrawingRecorderTest;
-    friend class ViewDisplayListTest;
+    friend class DisplayItemListTest;
+    friend class DisplayItemListPaintTest;
+    friend class LayoutObjectDrawingRecorderTest;
 
-    void updatePaintList();
+    void updateValidlyCachedClientsIfNeeded() const;
 
 #ifndef NDEBUG
-    WTF::String paintListAsDebugString(const PaintList&) const;
+    WTF::String displayItemsAsDebugString(const DisplayItems&) const;
 #endif
 
     // Indices into PaintList of all DrawingDisplayItems and BeginSubtreeDisplayItems of each client.
-    typedef HashMap<DisplayItemClient, Vector<size_t>> DisplayItemIndicesByClientMap;
+    // Temporarily used during merge to find out-of-order display items.
+    using DisplayItemIndicesByClientMap = HashMap<DisplayItemClient, Vector<size_t>>;
 
-    static size_t findMatchingItem(const DisplayItem&, DisplayItem::Type, const DisplayItemIndicesByClientMap&, const PaintList&);
-    static void appendDisplayItem(PaintList&, DisplayItemIndicesByClientMap&, WTF::PassOwnPtr<DisplayItem>);
-    void copyCachedItems(const DisplayItem&, PaintList&, DisplayItemIndicesByClientMap&);
+    static size_t findMatchingItemFromIndex(const DisplayItem&, DisplayItem::Type matchingType, const DisplayItemIndicesByClientMap&, const DisplayItems&);
+    static void addItemToIndex(const DisplayItem&, size_t index, DisplayItemIndicesByClientMap&);
+    size_t findOutOfOrderCachedItem(size_t& currentDisplayItemsIndex, const DisplayItem&, DisplayItem::Type, DisplayItemIndicesByClientMap&);
+    size_t findOutOfOrderCachedItemForward(size_t& currentDisplayItemsIndex, const DisplayItem&, DisplayItem::Type, DisplayItemIndicesByClientMap&);
 
-    PaintList m_paintList;
-    DisplayItemIndicesByClientMap m_cachedDisplayItemIndicesByClient;
-    PaintList m_newPaints;
+    // The following two methods are for checking under-invalidations
+    // (when RuntimeEnabledFeatures::slimmingPaintUnderInvalidationCheckingEnabled).
+    void checkCachedDisplayItemIsUnchanged(const DisplayItem&, DisplayItemIndicesByClientMap&);
+    void checkNoRemainingCachedDisplayItems();
+
+    void replay(GraphicsContext&) const;
+
+    DisplayItems m_currentDisplayItems;
+    DisplayItems m_newDisplayItems;
+
+    // Contains all clients having valid cached paintings if updated.
+    // It's lazily updated in updateValidlyCachedClientsIfNeeded().
+    // FIXME: In the future we can replace this with client-side repaint flags
+    // to avoid the cost of building and querying the hash table.
+    mutable HashSet<DisplayItemClient> m_validlyCachedClients;
+    mutable bool m_validlyCachedClientsDirty;
 
     // Scope ids are allocated per client to ensure that the ids are stable for non-invalidated
     // clients between frames, so that we can use the id to match new display items to cached
     // display items.
     struct Scope {
-        Scope(DisplayItemClient c, int i, bool v) : client(c), id(i), cacheIsValid(v) { }
+        Scope(DisplayItemClient c, int i) : client(c), id(i) { }
         DisplayItemClient client;
         int id;
-        bool cacheIsValid;
     };
     typedef HashMap<DisplayItemClient, int> ClientScopeIdMap;
     ClientScopeIdMap m_clientScopeIdMap;

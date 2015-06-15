@@ -37,8 +37,8 @@
 #include "core/dom/NamedNodeMap.h"
 #include "core/dom/custom/CustomElementProcessingStack.h"
 #include "core/dom/shadow/ShadowRoot.h"
+#include "core/layout/LayoutBoxModelObject.h"
 #include "core/layout/LayoutObject.h"
-#include "core/rendering/RenderBoxModelObject.h"
 #include "public/platform/WebRect.h"
 #include "public/web/WebDocument.h"
 #include "wtf/PassRefPtr.h"
@@ -146,7 +146,7 @@ void WebElement::requestFullScreen()
 
 WebRect WebElement::boundsInViewportSpace()
 {
-    return unwrap<Element>()->boundsInRootViewSpace();
+    return unwrap<Element>()->boundsInViewportSpace();
 }
 
 void WebElement::requestSpellCheck()
@@ -165,11 +165,11 @@ WebImage WebElement::imageContents()
     if (!image)
         return WebImage();
 
-    RefPtr<NativeImageSkia> bitmap = image->nativeImageForCurrentFrame();
-    if (!bitmap)
+    SkBitmap bitmap;
+    if (!image->bitmapForCurrentFrame(&bitmap))
         return WebImage();
 
-    return bitmap->bitmap();
+    return WebImage(bitmap);
 }
 
 WebElement::WebElement(const PassRefPtrWillBeRawPtr<Element>& elem)

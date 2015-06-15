@@ -118,6 +118,7 @@ static bool hasDoubleValue(CSSPrimitiveValue::UnitType type)
     case CSSPrimitiveValue::CSS_FR:
         return true;
     case CSSPrimitiveValue::CSS_UNKNOWN:
+    case CSSPrimitiveValue::CSS_CUSTOM_IDENT:
     case CSSPrimitiveValue::CSS_STRING:
     case CSSPrimitiveValue::CSS_URI:
     case CSSPrimitiveValue::CSS_IDENT:
@@ -182,7 +183,7 @@ double CSSCalcValue::computeLengthPx(const CSSToLengthConversionData& conversion
 DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(CSSCalcExpressionNode)
 
 class CSSCalcPrimitiveValue final : public CSSCalcExpressionNode {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(CSSCalcPrimitiveValue);
 public:
 
     static PassRefPtrWillBeRawPtr<CSSCalcPrimitiveValue> create(PassRefPtrWillBeRawPtr<CSSPrimitiveValue> value, bool isInteger)
@@ -272,7 +273,7 @@ public:
     }
 
 
-    virtual void trace(Visitor* visitor) override
+    DEFINE_INLINE_VIRTUAL_TRACE()
     {
         visitor->trace(m_value);
         CSSCalcExpressionNode::trace(visitor);
@@ -538,7 +539,7 @@ public:
         return CSSPrimitiveValue::CSS_UNKNOWN;
     }
 
-    virtual void trace(Visitor* visitor) override
+    DEFINE_INLINE_VIRTUAL_TRACE()
     {
         visitor->trace(m_leftSide);
         visitor->trace(m_rightSide);
@@ -759,7 +760,7 @@ PassRefPtrWillBeRawPtr<CSSCalcValue> CSSCalcValue::create(PassRefPtrWillBeRawPtr
     return adoptRefWillBeNoop(new CSSCalcValue(expression, range));
 }
 
-void CSSCalcValue::traceAfterDispatch(Visitor* visitor)
+DEFINE_TRACE_AFTER_DISPATCH(CSSCalcValue)
 {
     visitor->trace(m_expression);
     CSSValue::traceAfterDispatch(visitor);

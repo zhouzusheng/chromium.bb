@@ -25,22 +25,6 @@
 namespace webrtc
 {
 
-// Converting the rotation mode from capturemodule's to I420VideoFrame's define.
-VideoRotation ConvertRotation(VideoRotationMode rotation) {
-  switch (rotation) {
-    case kRotateNone:
-      return kVideoRotation_0;
-    case kRotate90:
-      return kVideoRotation_90;
-    case kRotate180:
-      return kVideoRotation_180;
-    case kRotate270:
-      return kVideoRotation_270;
-  }
-  assert(false);
-  return kVideoRotation_0;
-}
-
 namespace videocapturemodule
 {
 VideoCaptureModule* VideoCaptureImpl::Create(
@@ -172,11 +156,7 @@ VideoCaptureImpl::VideoCaptureImpl(const int32_t id)
       _dataCallBack(NULL),
       _captureCallBack(NULL),
       _lastProcessFrameCount(TickTime::Now()),
-      _rotateFrame(kRotateNone),
-      last_capture_time_(0),
-      delta_ntp_internal_ms_(
-          Clock::GetRealTimeClock()->CurrentNtpInMilliseconds() -
-          TickTime::MillisecondTimestamp()),
+      _rotateFrame(kVideoRotation_0),
       apply_rotation_(true) {
     _requestedCapability.width = kDefaultWidth;
     _requestedCapability.height = kDefaultHeight;
@@ -231,8 +211,7 @@ int32_t VideoCaptureImpl::CaptureDelay()
     return _setCaptureDelay;
 }
 
-int32_t VideoCaptureImpl::DeliverCapturedFrame(I420VideoFrame& captureFrame,
-                                               int64_t capture_time) {
+int32_t VideoCaptureImpl::DeliverCapturedFrame(I420VideoFrame& captureFrame) {
   UpdateFrameCount();  // frame count used for local frame rate callback.
 
   const bool callOnCaptureDelayChanged = _setCaptureDelay != _captureDelay;
@@ -240,19 +219,6 @@ int32_t VideoCaptureImpl::DeliverCapturedFrame(I420VideoFrame& captureFrame,
   if (_setCaptureDelay != _captureDelay) {
       _setCaptureDelay = _captureDelay;
   }
-
-  // Set the capture time
-  if (capture_time != 0) {
-    captureFrame.set_render_time_ms(capture_time - delta_ntp_internal_ms_);
-  } else {
-    captureFrame.set_render_time_ms(TickTime::MillisecondTimestamp());
-  }
-
-  if (captureFrame.render_time_ms() == last_capture_time_) {
-    // We don't allow the same capture time for two frames, drop this one.
-    return -1;
-  }
-  last_capture_time_ = captureFrame.render_time_ms();
 
   if (_dataCallBack) {
     if (callOnCaptureDelayChanged) {
@@ -297,9 +263,13 @@ int32_t VideoCaptureImpl::IncomingFrame(
         int target_width = width;
         int target_height = height;
 
-        if (apply_rotation_) {
+        // SetApplyRotation doesn't take any lock. Make a local copy here.
+        bool apply_rotation = apply_rotation_;
+
+        if (apply_rotation) {
           // Rotating resolution when for 90/270 degree rotations.
-          if (_rotateFrame == kRotate90 || _rotateFrame == kRotate270) {
+          if (_rotateFrame == kVideoRotation_90 ||
+              _rotateFrame == kVideoRotation_270) {
             target_width = abs(height);
             target_height = width;
           }
@@ -323,8 +293,7 @@ int32_t VideoCaptureImpl::IncomingFrame(
         const int conversionResult = ConvertToI420(
             commonVideoType, videoFrame, 0, 0,  // No cropping
             width, height, videoFrameLength,
-            apply_rotation_ ? _rotateFrame : kRotateNone,
-            &_captureFrame);
+            apply_rotation ? _rotateFrame : kVideoRotation_0, &_captureFrame);
         if (conversionResult < 0)
         {
           LOG(LS_ERROR) << "Failed to convert capture frame from type "
@@ -332,13 +301,15 @@ int32_t VideoCaptureImpl::IncomingFrame(
             return -1;
         }
 
-        if (!apply_rotation_) {
-          _captureFrame.set_rotation(ConvertRotation(_rotateFrame));
+        if (!apply_rotation) {
+          _captureFrame.set_rotation(_rotateFrame);
         } else {
           _captureFrame.set_rotation(kVideoRotation_0);
         }
+        _captureFrame.set_ntp_time_ms(captureTime);
+        _captureFrame.set_render_time_ms(TickTime::MillisecondTimestamp());
 
-        DeliverCapturedFrame(_captureFrame, captureTime);
+        DeliverCapturedFrame(_captureFrame);
     }
     else // Encoded format
     {
@@ -349,35 +320,10 @@ int32_t VideoCaptureImpl::IncomingFrame(
     return 0;
 }
 
-int32_t VideoCaptureImpl::IncomingI420VideoFrame(I420VideoFrame* video_frame,
-                                                 int64_t captureTime) {
-
-  CriticalSectionScoped cs(&_apiCs);
-  CriticalSectionScoped cs2(&_callBackCs);
-  DeliverCapturedFrame(*video_frame, captureTime);
-
-  return 0;
-}
-
 int32_t VideoCaptureImpl::SetCaptureRotation(VideoRotation rotation) {
   CriticalSectionScoped cs(&_apiCs);
   CriticalSectionScoped cs2(&_callBackCs);
-  switch (rotation){
-    case kVideoRotation_0:
-      _rotateFrame = kRotateNone;
-      break;
-    case kVideoRotation_90:
-      _rotateFrame = kRotate90;
-      break;
-    case kVideoRotation_180:
-      _rotateFrame = kRotate180;
-      break;
-    case kVideoRotation_270:
-      _rotateFrame = kRotate270;
-      break;
-    default:
-      return -1;
-  }
+  _rotateFrame = rotation;
   return 0;
 }
 
@@ -392,8 +338,8 @@ void VideoCaptureImpl::EnableFrameRateCallback(const bool enable) {
 }
 
 bool VideoCaptureImpl::SetApplyRotation(bool enable) {
-  CriticalSectionScoped cs(&_apiCs);
-  CriticalSectionScoped cs2(&_callBackCs);
+  // We can't take any lock here as it'll cause deadlock with IncomingFrame.
+
   // The effect of this is the last caller wins.
   apply_rotation_ = enable;
   return true;

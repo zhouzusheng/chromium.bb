@@ -64,8 +64,10 @@
 #include <unistd.h>
 #else
 #pragma warning(push, 3)
-#include <WinSock2.h>
+#include <winsock2.h>
 #pragma warning(pop)
+
+#pragma comment(lib, "Ws2_32.lib")
 #endif
 
 #include "internal.h"

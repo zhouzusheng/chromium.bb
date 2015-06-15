@@ -11,9 +11,9 @@
 #ifndef WEBRTC_INTERNAL_BEAMFORMER_BLOCKER_H_
 #define WEBRTC_INTERNAL_BEAMFORMER_BLOCKER_H_
 
+#include "webrtc/base/scoped_ptr.h"
 #include "webrtc/common_audio/audio_ring_buffer.h"
 #include "webrtc/common_audio/channel_buffer.h"
-#include "webrtc/system_wrappers/interface/scoped_ptr.h"
 
 namespace webrtc {
 
@@ -58,6 +58,9 @@ class BlockerCallback {
 //
 // A small amount of delay is added to the first received chunk to deal with
 // the difference in chunk/block sizes. This delay is <= chunk_size.
+//
+// Ownership of window is retained by the caller.  That is, Blocker makes a
+// copy of window and does not attempt to delete it.
 class Blocker {
  public:
   Blocker(int chunk_size,
@@ -106,7 +109,7 @@ class Blocker {
   // Space for the output block (can't wrap because of overlap/add).
   ChannelBuffer<float> output_block_;
 
-  scoped_ptr<float[]> window_;
+  rtc::scoped_ptr<float[]> window_;
 
   // The amount of frames between the start of contiguous blocks. For example,
   // |shift_amount_| = |block_size_| / 2 for a Hann window.

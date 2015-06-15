@@ -117,8 +117,8 @@ OPENSSL_EXPORT void EVP_CIPHER_CTX_init(EVP_CIPHER_CTX *ctx);
  * |EVP_CIPHER_CTX_init| and returns it, or NULL on allocation failure. */
 OPENSSL_EXPORT EVP_CIPHER_CTX *EVP_CIPHER_CTX_new(void);
 
-/* EVP_CIPHER_CTX_cleanup frees any memory referenced by |ctx|. It returns one
- * on success and zero otherwise. */
+/* EVP_CIPHER_CTX_cleanup frees any memory referenced by |ctx|. It returns
+ * one. */
 OPENSSL_EXPORT int EVP_CIPHER_CTX_cleanup(EVP_CIPHER_CTX *ctx);
 
 /* EVP_CIPHER_CTX_free calls |EVP_CIPHER_CTX_cleanup| on |ctx| and then frees
@@ -530,6 +530,10 @@ OPENSSL_EXPORT const EVP_CIPHER *EVP_aes_192_cbc(void);
 #define CIPHER_F_aead_tls_seal 128
 #define CIPHER_F_aes_init_key 129
 #define CIPHER_F_aesni_init_key 130
+#define CIPHER_F_EVP_AEAD_CTX_init_with_direction 131
+#define CIPHER_F_aead_aes_ctr_hmac_sha256_init 132
+#define CIPHER_F_aead_aes_ctr_hmac_sha256_open 133
+#define CIPHER_F_aead_aes_ctr_hmac_sha256_seal 134
 #define CIPHER_R_AES_KEY_SETUP_FAILED 100
 #define CIPHER_R_BAD_DECRYPT 101
 #define CIPHER_R_BAD_KEY_LENGTH 102
@@ -554,5 +558,6 @@ OPENSSL_EXPORT const EVP_CIPHER *EVP_aes_192_cbc(void);
 #define CIPHER_R_UNSUPPORTED_NONCE_SIZE 121
 #define CIPHER_R_UNSUPPORTED_TAG_SIZE 122
 #define CIPHER_R_WRONG_FINAL_BLOCK_LENGTH 123
+#define CIPHER_R_NO_DIRECTION_SET 124
 
 #endif  /* OPENSSL_HEADER_CIPHER_H */

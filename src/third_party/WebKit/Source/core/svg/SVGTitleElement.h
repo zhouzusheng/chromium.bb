@@ -37,7 +37,7 @@ private:
     virtual void removedFrom(ContainerNode*) override;
     virtual void childrenChanged(const ChildrenChange&) override;
 
-    virtual bool rendererIsNeeded(const LayoutStyle&) override { return false; }
+    virtual bool layoutObjectIsNeeded(const ComputedStyle&) override { return false; }
 };
 
 } // namespace blink

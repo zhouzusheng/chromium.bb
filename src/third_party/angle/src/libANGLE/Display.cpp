@@ -55,14 +55,14 @@ DefaultPlatform *defaultPlatform = nullptr;
 
 void InitDefaultPlatformImpl()
 {
-    if (angle::Platform::current() == nullptr)
+    if (ANGLEPlatformCurrent() == nullptr)
     {
         if (defaultPlatform == nullptr)
         {
             defaultPlatform = new DefaultPlatform();
         }
 
-        angle::Platform::initialize(defaultPlatform);
+        ANGLEPlatformInitialize(defaultPlatform);
     }
 }
 
@@ -70,13 +70,22 @@ void DeinitDefaultPlatformImpl()
 {
     if (defaultPlatform != nullptr)
     {
-        if (angle::Platform::current() == defaultPlatform)
+        if (ANGLEPlatformCurrent() == defaultPlatform)
         {
-            angle::Platform::shutdown();
+            ANGLEPlatformShutdown();
         }
 
         SafeDelete(defaultPlatform);
     }
+}
+
+typedef std::map<EGLNativeWindowType, Surface*> WindowSurfaceMap;
+// Get a map of all EGL window surfaces to validate that no window has more than one EGL surface
+// associated with it.
+static WindowSurfaceMap *GetWindowSurfaces()
+{
+    static WindowSurfaceMap windowSurfaces;
+    return &windowSurfaces;
 }
 
 typedef std::map<EGLNativeDisplayType, Display*> DisplayMap;
@@ -84,6 +93,53 @@ static DisplayMap *GetDisplayMap()
 {
     static DisplayMap displays;
     return &displays;
+}
+
+rx::DisplayImpl *CreateDisplayImpl(const AttributeMap &attribMap)
+{
+    rx::DisplayImpl *impl = nullptr;
+    EGLint displayType = attribMap.get(EGL_PLATFORM_ANGLE_TYPE_ANGLE, EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE);
+    switch (displayType)
+    {
+      case EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE:
+#if defined(ANGLE_ENABLE_D3D9) || defined(ANGLE_ENABLE_D3D11)
+        // Default to D3D displays
+        impl = new rx::DisplayD3D();
+#else
+        // No display available
+        UNREACHABLE();
+#endif
+        break;
+
+      case EGL_PLATFORM_ANGLE_TYPE_D3D9_ANGLE:
+      case EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE:
+#if defined(ANGLE_ENABLE_D3D9) || defined(ANGLE_ENABLE_D3D11)
+        impl = new rx::DisplayD3D();
+#else
+        // A D3D display was requested on a platform that doesn't support it
+        UNREACHABLE();
+#endif
+        break;
+
+      case EGL_PLATFORM_ANGLE_TYPE_OPENGL_ANGLE:
+#if defined(ANGLE_ENABLE_OPENGL)
+#if defined(ANGLE_PLATFORM_WINDOWS)
+        impl = new rx::DisplayWGL();
+#else
+#error Unsupported OpenGL platform.
+#endif
+#else
+        UNREACHABLE();
+#endif
+        break;
+
+      default:
+        UNREACHABLE();
+        break;
+    }
+
+    ASSERT(impl != nullptr);
+    return impl;
 }
 
 }
@@ -101,81 +157,41 @@ Display *Display::getDisplay(EGLNativeDisplayType displayId, const AttributeMap 
     {
         display = iter->second;
     }
-    else
+
+    if (display == nullptr)
     {
-        rx::DisplayImpl *impl = nullptr;
-
-        EGLint displayType = attribMap.get(EGL_PLATFORM_ANGLE_TYPE_ANGLE, EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE);
-        switch (displayType)
-        {
-          case EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE:
-#if defined(ANGLE_ENABLE_D3D9) || defined(ANGLE_ENABLE_D3D11)
-            // Default to D3D displays
-            impl = new rx::DisplayD3D();
-#else
-            // No display available
-            UNREACHABLE();
-#endif
-            break;
-
-          case EGL_PLATFORM_ANGLE_TYPE_D3D9_ANGLE:
-          case EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE:
-#if defined(ANGLE_ENABLE_D3D9) || defined(ANGLE_ENABLE_D3D11)
-            impl = new rx::DisplayD3D();
-#else
-            // A D3D display was requested on a platform that doesn't support it
-            UNREACHABLE();
-#endif
-            break;
-
-          case EGL_PLATFORM_ANGLE_TYPE_OPENGL_ANGLE:
-#if defined(ANGLE_ENABLE_OPENGL)
-#if defined(ANGLE_PLATFORM_WINDOWS)
-            impl = new rx::DisplayWGL();
-#else
-#error Unsupported OpenGL platform.
-#endif
-#else
-            UNREACHABLE();
-#endif
-            break;
-
-          default:
-            UNREACHABLE();
-            break;
-        }
-
-        ASSERT(impl != nullptr);
-
-        display = new Display(impl, displayId);
-
         // Validate the native display
-        if (!display->isValidNativeDisplay(displayId))
+        if (!Display::isValidNativeDisplay(displayId))
         {
-            // Still returns success
-            SafeDelete(display);
             return NULL;
         }
 
+        display = new Display(displayId);
         displays->insert(std::make_pair(displayId, display));
     }
 
     // Apply new attributes if the display is not initialized yet.
     if (!display->isInitialized())
     {
-        display->setAttributes(attribMap);
+        rx::DisplayImpl* impl = CreateDisplayImpl(attribMap);
+        display->setAttributes(impl, attribMap);
     }
 
     return display;
 }
 
-Display::Display(rx::DisplayImpl *impl, EGLNativeDisplayType displayId)
-    : mImplementation(impl),
+Display::Display(EGLNativeDisplayType displayId)
+    : mImplementation(nullptr),
       mDisplayId(displayId),
       mAttributeMap(),
-      mInitialized(false)
+      mConfigSet(),
+      mContextSet(),
+      mInitialized(false),
+      mCaps(),
+      mDisplayExtensions(),
+      mDisplayExtensionString(),
+      mVendorString()
 {
-    ASSERT(mImplementation != nullptr);
 }
 
 Display::~Display()
@@ -192,13 +208,21 @@ Display::~Display()
     SafeDelete(mImplementation);
 }
 
-void Display::setAttributes(const AttributeMap &attribMap)
+void Display::setAttributes(rx::DisplayImpl *impl, const AttributeMap &attribMap)
 {
+    ASSERT(!mInitialized);
+
+    ASSERT(impl != nullptr);
+    SafeDelete(mImplementation);
+    mImplementation = impl;
+
     mAttributeMap = attribMap;
 }
 
 Error Display::initialize()
 {
+    ASSERT(mImplementation != nullptr);
+
     if (isInitialized())
     {
         return Error(EGL_SUCCESS);
@@ -312,8 +336,12 @@ Error Display::createWindowSurface(const Config *configuration, EGLNativeWindowT
     }
 
     ASSERT(surfaceImpl != nullptr);
-    Surface *surface = new Surface(surfaceImpl);
+    Surface *surface = new Surface(surfaceImpl, EGL_WINDOW_BIT, configuration, attribs);
     mImplementation->getSurfaceSet().insert(surface);
+
+    WindowSurfaceMap *windowSurfaces = GetWindowSurfaces();
+    ASSERT(windowSurfaces && windowSurfaces->find(window) == windowSurfaces->end());
+    windowSurfaces->insert(std::make_pair(window, surface));
 
     ASSERT(outSurface != nullptr);
     *outSurface = surface;
@@ -341,7 +369,7 @@ Error Display::createPbufferSurface(const Config *configuration, const Attribute
     }
 
     ASSERT(surfaceImpl != nullptr);
-    Surface *surface = new Surface(surfaceImpl);
+    Surface *surface = new Surface(surfaceImpl, EGL_PBUFFER_BIT, configuration, attribs);
     mImplementation->getSurfaceSet().insert(surface);
 
     ASSERT(outSurface != nullptr);
@@ -371,7 +399,37 @@ Error Display::createPbufferFromClientBuffer(const Config *configuration, EGLCli
     }
 
     ASSERT(surfaceImpl != nullptr);
-    Surface *surface = new Surface(surfaceImpl);
+    Surface *surface = new Surface(surfaceImpl, EGL_PBUFFER_BIT, configuration, attribs);
+    mImplementation->getSurfaceSet().insert(surface);
+
+    ASSERT(outSurface != nullptr);
+    *outSurface = surface;
+    return Error(EGL_SUCCESS);
+}
+
+Error Display::createPixmapSurface(const Config *configuration, NativePixmapType nativePixmap, const AttributeMap &attribs,
+                                   Surface **outSurface)
+{
+    ASSERT(isInitialized());
+
+    if (mImplementation->testDeviceLost())
+    {
+        Error error = restoreLostDevice();
+        if (error.isError())
+        {
+            return error;
+        }
+    }
+
+    rx::SurfaceImpl *surfaceImpl = nullptr;
+    Error error = mImplementation->createPixmapSurface(configuration, nativePixmap, attribs, &surfaceImpl);
+    if (error.isError())
+    {
+        return error;
+    }
+
+    ASSERT(surfaceImpl != nullptr);
+    Surface *surface = new Surface(surfaceImpl, EGL_PIXMAP_BIT, configuration, attribs);
     mImplementation->getSurfaceSet().insert(surface);
 
     ASSERT(outSurface != nullptr);
@@ -440,6 +498,25 @@ Error Display::restoreLostDevice()
 
 void Display::destroySurface(Surface *surface)
 {
+    if (surface->getType() == EGL_WINDOW_BIT)
+    {
+        WindowSurfaceMap *windowSurfaces = GetWindowSurfaces();
+        ASSERT(windowSurfaces);
+
+        bool surfaceRemoved = false;
+        for (WindowSurfaceMap::iterator iter = windowSurfaces->begin(); iter != windowSurfaces->end(); iter++)
+        {
+            if (iter->second == surface)
+            {
+                windowSurfaces->erase(iter);
+                surfaceRemoved = true;
+                break;
+            }
+        }
+
+        ASSERT(surfaceRemoved);
+    }
+
     mImplementation->destroySurface(surface);
 }
 
@@ -494,17 +571,12 @@ bool Display::isValidSurface(Surface *surface) const
     return mImplementation->getSurfaceSet().find(surface) != mImplementation->getSurfaceSet().end();
 }
 
-bool Display::hasExistingWindowSurface(EGLNativeWindowType window) const
+bool Display::hasExistingWindowSurface(EGLNativeWindowType window)
 {
-    for (const auto &surfaceIt : mImplementation->getSurfaceSet())
-    {
-        if (surfaceIt->getWindowHandle() == window)
-        {
-            return true;
-        }
-    }
+    WindowSurfaceMap *windowSurfaces = GetWindowSurfaces();
+    ASSERT(windowSurfaces);
 
-    return false;
+    return windowSurfaces->find(window) != windowSurfaces->end();
 }
 
 static ClientExtensions GenerateClientExtensions()
@@ -559,7 +631,7 @@ bool Display::isValidNativeWindow(EGLNativeWindowType window) const
     return mImplementation->isValidNativeWindow(window);
 }
 
-bool Display::isValidNativeDisplay(EGLNativeDisplayType display) const
+bool Display::isValidNativeDisplay(EGLNativeDisplayType display)
 {
     // TODO(jmadill): handle this properly
     if (display == EGL_DEFAULT_DISPLAY)

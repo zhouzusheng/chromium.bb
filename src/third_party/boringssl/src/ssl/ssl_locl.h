@@ -287,8 +287,8 @@
 
 /* Bits for algorithm_mkey (key exchange algorithm) */
 #define SSL_kRSA 0x00000001L   /* RSA key exchange */
-#define SSL_kEDH 0x00000002L   /* tmp DH key no DH cert */
-#define SSL_kEECDH 0x00000004L /* ephemeral ECDH */
+#define SSL_kDHE 0x00000002L   /* tmp DH key no DH cert */
+#define SSL_kECDHE 0x00000004L /* ephemeral ECDH */
 #define SSL_kPSK 0x00000008L   /* PSK */
 
 /* Bits for algorithm_auth (server authentication) */
@@ -364,7 +364,7 @@
 /* we have used 000001ff - 23 bits left to go */
 
 /* Check if an SSL structure is using DTLS */
-#define SSL_IS_DTLS(s) (s->enc_method->enc_flags & SSL_ENC_FLAG_DTLS)
+#define SSL_IS_DTLS(s) (s->method->is_dtls)
 /* See if we need explicit IV */
 #define SSL_USE_EXPLICIT_IV(s) \
   (s->enc_method->enc_flags & SSL_ENC_FLAG_EXPLICIT_IV)
@@ -390,7 +390,7 @@
 /* SSL_kRSA <- RSA_ENC | (RSA_TMP & RSA_SIGN) |
  * 	    <- (EXPORT & (RSA_ENC | RSA_TMP) & RSA_SIGN)
  * SSL_kDH  <- DH_ENC & (RSA_ENC | RSA_SIGN | DSA_SIGN)
- * SSL_kEDH <- RSA_ENC | RSA_SIGN | DSA_SIGN
+ * SSL_kDHE <- RSA_ENC | RSA_SIGN | DSA_SIGN
  * SSL_aRSA <- RSA_ENC | RSA_SIGN
  * SSL_aDSS <- DSA_SIGN */
 
@@ -401,9 +401,10 @@
 #define EXPLICIT_CHAR2_CURVE_TYPE 2
 #define NAMED_CURVE_TYPE 3
 
-/* Values for the |hash_message| parameter of |s->method->ssl_get_message|. */
-#define SSL_GET_MESSAGE_DONT_HASH_MESSAGE 0
-#define SSL_GET_MESSAGE_HASH_MESSAGE 1
+enum ssl_hash_message_t {
+  ssl_dont_hash_message,
+  ssl_hash_message,
+};
 
 typedef struct cert_pkey_st {
   X509 *x509;
@@ -433,11 +434,15 @@ typedef struct cert_st {
 
   DH *dh_tmp;
   DH *(*dh_tmp_cb)(SSL *ssl, int is_export, int keysize);
-  EC_KEY *ecdh_tmp;
-  /* Callback for generating ephemeral ECDH keys */
+
+  /* ecdh_nid, if not |NID_undef|, is the NID of the curve to use for ephemeral
+   * ECDH keys. If unset, |ecdh_tmp_cb| is consulted. */
+  int ecdh_nid;
+  /* ecdh_tmp_cb is a callback for selecting the curve to use for ephemeral ECDH
+   * keys. If NULL, a curve is selected automatically. See
+   * |SSL_CTX_set_tmp_ecdh_callback|. */
   EC_KEY *(*ecdh_tmp_cb)(SSL *ssl, int is_export, int keysize);
-  /* Select ECDH parameters automatically */
-  int ecdh_tmp_auto;
+
   /* Flags related to certificates */
   unsigned int cert_flags;
   CERT_PKEY pkeys[SSL_PKEY_NUM];
@@ -534,6 +539,8 @@ struct ssl_method_st {
 
 /* Used to hold functions for SSLv2 or SSLv3/TLSv1 functions */
 struct ssl_protocol_method_st {
+  /* is_dtls is one if the protocol is DTLS and zero otherwise. */
+  char is_dtls;
   int (*ssl_new)(SSL *s);
   void (*ssl_free)(SSL *s);
   int (*ssl_accept)(SSL *s);
@@ -545,7 +552,8 @@ struct ssl_protocol_method_st {
   int (*ssl_renegotiate)(SSL *s);
   int (*ssl_renegotiate_check)(SSL *s);
   long (*ssl_get_message)(SSL *s, int header_state, int body_state,
-                          int msg_type, long max, int hash_message, int *ok);
+                          int msg_type, long max,
+                          enum ssl_hash_message_t hash_message, int *ok);
   int (*ssl_read_bytes)(SSL *s, int type, uint8_t *buf, int len, int peek);
   int (*ssl_write_bytes)(SSL *s, int type, const void *buf_, int len);
   int (*ssl_dispatch_alert)(SSL *s);
@@ -554,9 +562,14 @@ struct ssl_protocol_method_st {
   int (*ssl_pending)(const SSL *s);
   int (*num_ciphers)(void);
   const SSL_CIPHER *(*get_cipher)(unsigned ncipher);
-  int (*ssl_version)(void);
   long (*ssl_callback_ctrl)(SSL *s, int cb_id, void (*fp)(void));
   long (*ssl_ctx_callback_ctrl)(SSL_CTX *s, int cb_id, void (*fp)(void));
+  /* Handshake header length */
+  unsigned int hhlen;
+  /* Set the handshake header */
+  int (*set_handshake_header)(SSL *s, int type, unsigned long len);
+  /* Write out handshake message */
+  int (*do_write)(SSL *s);
 };
 
 /* This is for the SSLv3/TLSv1.0 differences in crypto/hash stuff It is a bit
@@ -569,7 +582,6 @@ struct ssl3_enc_method {
   int (*generate_master_secret)(SSL *, uint8_t *, const uint8_t *, size_t);
   int (*change_cipher_state)(SSL *, int);
   int (*final_finish_mac)(SSL *, const char *, int, uint8_t *);
-  int finish_mac_length;
   int (*cert_verify_mac)(SSL *, int, uint8_t *);
   const char *client_finished_label;
   int client_finished_label_len;
@@ -580,20 +592,14 @@ struct ssl3_enc_method {
                                 const uint8_t *, size_t, int use_context);
   /* Various flags indicating protocol version requirements */
   unsigned int enc_flags;
-  /* Handshake header length */
-  unsigned int hhlen;
-  /* Set the handshake header */
-  int (*set_handshake_header)(SSL *s, int type, unsigned long len);
-  /* Write out handshake message */
-  int (*do_write)(SSL *s);
 };
 
-#define SSL_HM_HEADER_LENGTH(s) s->enc_method->hhlen
+#define SSL_HM_HEADER_LENGTH(s) s->method->hhlen
 #define ssl_handshake_start(s) \
-  (((uint8_t *)s->init_buf->data) + s->enc_method->hhlen)
+  (((uint8_t *)s->init_buf->data) + s->method->hhlen)
 #define ssl_set_handshake_header(s, htype, len) \
-  s->enc_method->set_handshake_header(s, htype, len)
-#define ssl_do_write(s) s->enc_method->do_write(s)
+  s->method->set_handshake_header(s, htype, len)
+#define ssl_do_write(s) s->method->do_write(s)
 
 /* Values for enc_flags */
 
@@ -603,11 +609,9 @@ struct ssl3_enc_method {
 #define SSL_ENC_FLAG_SIGALGS 0x2
 /* Uses SHA256 default PRF */
 #define SSL_ENC_FLAG_SHA256_PRF 0x4
-/* Is DTLS */
-#define SSL_ENC_FLAG_DTLS 0x8
 /* Allow TLS 1.2 ciphersuites: applies to DTLS 1.2 as well as TLS 1.2:
  * may apply to others in future. */
-#define SSL_ENC_FLAG_TLS1_2_CIPHERS 0x10
+#define SSL_ENC_FLAG_TLS1_2_CIPHERS 0x8
 
 /* ssl_aead_ctx_st contains information about an AEAD that is being used to
  * encrypt an SSL connection. */
@@ -638,14 +642,11 @@ extern const SSL3_ENC_METHOD TLSv1_enc_data;
 extern const SSL3_ENC_METHOD TLSv1_1_enc_data;
 extern const SSL3_ENC_METHOD TLSv1_2_enc_data;
 extern const SSL3_ENC_METHOD SSLv3_enc_data;
-extern const SSL3_ENC_METHOD DTLSv1_enc_data;
-extern const SSL3_ENC_METHOD DTLSv1_2_enc_data;
 
 void ssl_clear_cipher_ctx(SSL *s);
 int ssl_clear_bad_session(SSL *s);
 CERT *ssl_cert_new(void);
 CERT *ssl_cert_dup(CERT *cert);
-int ssl_cert_inst(CERT **o);
 void ssl_cert_clear_certs(CERT *c);
 void ssl_cert_free(CERT *c);
 SESS_CERT *ssl_sess_cert_new(void);
@@ -730,7 +731,7 @@ int ssl3_do_write(SSL *s, int type);
 int ssl3_send_alert(SSL *s, int level, int desc);
 int ssl3_get_req_cert_type(SSL *s, uint8_t *p);
 long ssl3_get_message(SSL *s, int header_state, int body_state, int msg_type,
-                      long max, int hash_message, int *ok);
+                      long max, enum ssl_hash_message_t hash_message, int *ok);
 
 /* ssl3_hash_current_message incorporates the current handshake message into the
  * handshake hash. It returns one on success and zero on allocation failure. */
@@ -809,16 +810,16 @@ int dtls1_send_change_cipher_spec(SSL *s, int a, int b);
 int dtls1_send_finished(SSL *s, int a, int b, const char *sender, int slen);
 int dtls1_read_failed(SSL *s, int code);
 int dtls1_buffer_message(SSL *s, int ccs);
-int dtls1_retransmit_message(SSL *s, unsigned short seq, unsigned long frag_off,
-                             int *found);
 int dtls1_get_queue_priority(unsigned short seq, int is_ccs);
 int dtls1_retransmit_buffered_messages(SSL *s);
 void dtls1_clear_record_buffer(SSL *s);
 void dtls1_get_message_header(uint8_t *data, struct hm_header_st *msg_hdr);
-void dtls1_get_ccs_header(uint8_t *data, struct ccs_header_st *ccs_hdr);
 void dtls1_reset_seq_numbers(SSL *s, int rw);
 int dtls1_check_timeout_num(SSL *s);
 int dtls1_handle_timeout(SSL *s);
+int dtls1_set_handshake_header(SSL *s, int type, unsigned long len);
+int dtls1_handshake_write(SSL *s);
+
 const SSL_CIPHER *dtls1_get_cipher(unsigned int u);
 void dtls1_start_timer(SSL *s);
 void dtls1_stop_timer(SSL *s);
@@ -869,7 +870,7 @@ long dtls1_ctrl(SSL *s, int cmd, long larg, void *parg);
 int dtls1_shutdown(SSL *s);
 
 long dtls1_get_message(SSL *s, int st1, int stn, int mt, long max,
-                       int hash_message, int *ok);
+                       enum ssl_hash_message_t hash_message, int *ok);
 int dtls1_get_record(SSL *s);
 int dtls1_dispatch_alert(SSL *s);
 

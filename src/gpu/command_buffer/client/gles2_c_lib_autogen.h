@@ -259,6 +259,15 @@ void GLES2DrawElements(GLenum mode,
                        const void* indices) {
   gles2::GetGLContext()->DrawElements(mode, count, type, indices);
 }
+void GLES2DrawRangeElements(GLenum mode,
+                            GLuint start,
+                            GLuint end,
+                            GLsizei count,
+                            GLenum type,
+                            const void* indices) {
+  gles2::GetGLContext()->DrawRangeElements(mode, start, end, count, type,
+                                           indices);
+}
 void GLES2Enable(GLenum cap) {
   gles2::GetGLContext()->Enable(cap);
 }
@@ -449,6 +458,13 @@ void GLES2GetShaderSource(GLuint shader,
 }
 const GLubyte* GLES2GetString(GLenum name) {
   return gles2::GetGLContext()->GetString(name);
+}
+void GLES2GetSynciv(GLsync sync,
+                    GLenum pname,
+                    GLsizei bufsize,
+                    GLsizei* length,
+                    GLint* values) {
+  gles2::GetGLContext()->GetSynciv(sync, pname, bufsize, length, values);
 }
 void GLES2GetTexParameterfv(GLenum target, GLenum pname, GLfloat* params) {
   gles2::GetGLContext()->GetTexParameterfv(target, pname, params);
@@ -1058,6 +1074,15 @@ void* GLES2MapBufferSubDataCHROMIUM(GLuint target,
 void GLES2UnmapBufferSubDataCHROMIUM(const void* mem) {
   gles2::GetGLContext()->UnmapBufferSubDataCHROMIUM(mem);
 }
+void* GLES2MapBufferRange(GLenum target,
+                          GLintptr offset,
+                          GLsizeiptr size,
+                          GLbitfield access) {
+  return gles2::GetGLContext()->MapBufferRange(target, offset, size, access);
+}
+GLboolean GLES2UnmapBuffer(GLenum target) {
+  return gles2::GetGLContext()->UnmapBuffer(target);
+}
 void* GLES2MapTexSubImage2DCHROMIUM(GLenum target,
                                     GLint level,
                                     GLint xoffset,
@@ -1151,11 +1176,18 @@ void GLES2TexImageIOSurface2DCHROMIUM(GLenum target,
 void GLES2CopyTextureCHROMIUM(GLenum target,
                               GLenum source_id,
                               GLenum dest_id,
-                              GLint level,
                               GLint internalformat,
                               GLenum dest_type) {
-  gles2::GetGLContext()->CopyTextureCHROMIUM(target, source_id, dest_id, level,
+  gles2::GetGLContext()->CopyTextureCHROMIUM(target, source_id, dest_id,
                                              internalformat, dest_type);
+}
+void GLES2CopySubTextureCHROMIUM(GLenum target,
+                                 GLenum source_id,
+                                 GLenum dest_id,
+                                 GLint xoffset,
+                                 GLint yoffset) {
+  gles2::GetGLContext()->CopySubTextureCHROMIUM(target, source_id, dest_id,
+                                                xoffset, yoffset);
 }
 void GLES2DrawArraysInstancedANGLE(GLenum mode,
                                    GLint first,
@@ -1543,6 +1575,10 @@ extern const NameToFunc g_gles2_function_table[] = {
      reinterpret_cast<GLES2FunctionPointer>(glDrawElements),
     },
     {
+     "glDrawRangeElements",
+     reinterpret_cast<GLES2FunctionPointer>(glDrawRangeElements),
+    },
+    {
      "glEnable",
      reinterpret_cast<GLES2FunctionPointer>(glEnable),
     },
@@ -1706,6 +1742,10 @@ extern const NameToFunc g_gles2_function_table[] = {
     {
      "glGetString",
      reinterpret_cast<GLES2FunctionPointer>(glGetString),
+    },
+    {
+     "glGetSynciv",
+     reinterpret_cast<GLES2FunctionPointer>(glGetSynciv),
     },
     {
      "glGetTexParameterfv",
@@ -2275,6 +2315,14 @@ extern const NameToFunc g_gles2_function_table[] = {
      reinterpret_cast<GLES2FunctionPointer>(glUnmapBufferSubDataCHROMIUM),
     },
     {
+     "glMapBufferRange",
+     reinterpret_cast<GLES2FunctionPointer>(glMapBufferRange),
+    },
+    {
+     "glUnmapBuffer",
+     reinterpret_cast<GLES2FunctionPointer>(glUnmapBuffer),
+    },
+    {
      "glMapTexSubImage2DCHROMIUM",
      reinterpret_cast<GLES2FunctionPointer>(glMapTexSubImage2DCHROMIUM),
     },
@@ -2348,6 +2396,10 @@ extern const NameToFunc g_gles2_function_table[] = {
     {
      "glCopyTextureCHROMIUM",
      reinterpret_cast<GLES2FunctionPointer>(glCopyTextureCHROMIUM),
+    },
+    {
+     "glCopySubTextureCHROMIUM",
+     reinterpret_cast<GLES2FunctionPointer>(glCopySubTextureCHROMIUM),
     },
     {
      "glDrawArraysInstancedANGLE",

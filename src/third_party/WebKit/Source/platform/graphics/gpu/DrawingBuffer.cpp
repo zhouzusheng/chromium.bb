@@ -149,7 +149,7 @@ DrawingBuffer::DrawingBuffer(PassOwnPtr<WebGraphicsContext3D> context,
     , m_packAlignment(4)
     , m_destructionInProgress(false)
     , m_isHidden(false)
-    , m_filterLevel(SkPaint::kLow_FilterLevel)
+    , m_filterQuality(kLow_SkFilterQuality)
 {
     // Used by browser tests to detect the use of a DrawingBuffer.
     TRACE_EVENT_INSTANT0("test_gpu", "DrawingBufferCreation");
@@ -203,12 +203,12 @@ void DrawingBuffer::setIsHidden(bool hidden)
         freeRecycledMailboxes();
 }
 
-void DrawingBuffer::setFilterLevel(SkPaint::FilterLevel filterLevel)
+void DrawingBuffer::setFilterQuality(SkFilterQuality filterQuality)
 {
-    if (m_filterLevel != filterLevel) {
-        m_filterLevel = filterLevel;
+    if (m_filterQuality != filterQuality) {
+        m_filterQuality = filterQuality;
         if (m_layer)
-            m_layer->setNearestNeighbor(filterLevel == SkPaint::kNone_FilterLevel);
+            m_layer->setNearestNeighbor(filterQuality == kNone_SkFilterQuality);
     }
 }
 
@@ -285,7 +285,7 @@ bool DrawingBuffer::prepareMailbox(WebExternalTextureMailbox* outMailbox, WebExt
             m_context->discardFramebufferEXT(GL_FRAMEBUFFER, 3, attachments);
         }
     } else {
-        m_context->copyTextureCHROMIUM(GL_TEXTURE_2D, m_colorBuffer.textureId, frontColorBufferMailbox->textureInfo.textureId, 0, GL_RGBA, GL_UNSIGNED_BYTE);
+        m_context->copyTextureCHROMIUM(GL_TEXTURE_2D, m_colorBuffer.textureId, frontColorBufferMailbox->textureInfo.textureId, GL_RGBA, GL_UNSIGNED_BYTE);
     }
 
     restoreFramebufferBinding();
@@ -499,7 +499,7 @@ bool DrawingBuffer::copyToPlatformTexture(WebGraphicsContext3D* context, Platfor
     context->pixelStorei(GC3D_UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM, unpackUnpremultiplyAlphaNeeded);
     context->pixelStorei(GC3D_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM, unpackPremultiplyAlphaNeeded);
     context->pixelStorei(GC3D_UNPACK_FLIP_Y_CHROMIUM, flipY);
-    context->copyTextureCHROMIUM(GL_TEXTURE_2D, sourceTexture, texture, level, internalFormat, destType);
+    context->copyTextureCHROMIUM(GL_TEXTURE_2D, sourceTexture, texture, internalFormat, destType);
     context->pixelStorei(GC3D_UNPACK_FLIP_Y_CHROMIUM, false);
     context->pixelStorei(GC3D_UNPACK_UNPREMULTIPLY_ALPHA_CHROMIUM, false);
     context->pixelStorei(GC3D_UNPACK_PREMULTIPLY_ALPHA_CHROMIUM, false);
@@ -525,7 +525,7 @@ WebLayer* DrawingBuffer::platformLayer()
         m_layer->setOpaque(!m_actualAttributes.alpha);
         m_layer->setBlendBackgroundColor(m_actualAttributes.alpha);
         m_layer->setPremultipliedAlpha(m_actualAttributes.premultipliedAlpha);
-        m_layer->setNearestNeighbor(m_filterLevel == SkPaint::kNone_FilterLevel);
+        m_layer->setNearestNeighbor(m_filterQuality == kNone_SkFilterQuality);
         GraphicsLayer::registerContentsLayer(m_layer->layer());
     }
 

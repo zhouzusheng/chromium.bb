@@ -12,6 +12,7 @@
 #include "SkRect.h"
 
 class GrStencilBuffer;
+class GrRenderTargetPriv;
 
 /**
  * GrRenderTarget represents a 2D buffer of pixels that can be rendered to.
@@ -25,8 +26,8 @@ public:
     SK_DECLARE_INST_COUNT(GrRenderTarget)
 
     // GrSurface overrides
-    GrRenderTarget* asRenderTarget() SK_OVERRIDE { return this; }
-    const GrRenderTarget* asRenderTarget() const  SK_OVERRIDE { return this; }
+    GrRenderTarget* asRenderTarget() override { return this; }
+    const GrRenderTarget* asRenderTarget() const  override { return this; }
 
     // GrRenderTarget
     /**
@@ -88,11 +89,9 @@ public:
     };
     virtual ResolveType getResolveType() const = 0;
 
-    /**
-     * GrStencilBuffer is not part of the public API.
-     */
-    GrStencilBuffer* getStencilBuffer() const { return fStencilBuffer; }
-    void setStencilBuffer(GrStencilBuffer* stencilBuffer);
+    // Provides access to functions that aren't part of the public API.
+    GrRenderTargetPriv renderTargetPriv();
+    const GrRenderTargetPriv renderTargetPriv() const;
 
 protected:
     GrRenderTarget(GrGpu* gpu, LifeCycle lifeCycle, const GrSurfaceDesc& desc)
@@ -102,10 +101,15 @@ protected:
     }
 
     // override of GrResource
-    void onAbandon() SK_OVERRIDE;
-    void onRelease() SK_OVERRIDE;
+    void onAbandon() override;
+    void onRelease() override;
 
 private:
+    // Checked when this object is asked to attach a stencil buffer.
+    virtual bool canAttemptStencilAttachment() const = 0;
+
+    friend class GrRenderTargetPriv;
+
     GrStencilBuffer*  fStencilBuffer;
 
     SkIRect           fResolveRect;

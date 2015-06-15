@@ -26,6 +26,7 @@
 #include "config.h"
 #include "core/layout/LayoutMultiColumnSet.h"
 
+#include "core/editing/PositionWithAffinity.h"
 #include "core/layout/LayoutMultiColumnFlowThread.h"
 #include "core/layout/MultiColumnFragmentainerGroup.h"
 #include "core/paint/MultiColumnSetPainter.h"
@@ -38,12 +39,12 @@ LayoutMultiColumnSet::LayoutMultiColumnSet(LayoutFlowThread* flowThread)
 {
 }
 
-LayoutMultiColumnSet* LayoutMultiColumnSet::createAnonymous(LayoutFlowThread& flowThread, const LayoutStyle& parentStyle)
+LayoutMultiColumnSet* LayoutMultiColumnSet::createAnonymous(LayoutFlowThread& flowThread, const ComputedStyle& parentStyle)
 {
     Document& document = flowThread.document();
     LayoutMultiColumnSet* renderer = new LayoutMultiColumnSet(&flowThread);
     renderer->setDocumentForAnonymous(&document);
-    renderer->setStyle(LayoutStyle::createAnonymousStyleWithDisplay(parentStyle, BLOCK));
+    renderer->setStyle(ComputedStyle::createAnonymousStyleWithDisplay(parentStyle, BLOCK));
     return renderer;
 }
 
@@ -54,6 +55,12 @@ MultiColumnFragmentainerGroup& LayoutMultiColumnSet::fragmentainerGroupAtFlowThr
 }
 
 const MultiColumnFragmentainerGroup& LayoutMultiColumnSet::fragmentainerGroupAtFlowThreadOffset(LayoutUnit) const
+{
+    // FIXME: implement this, once we have support for multiple rows.
+    return m_fragmentainerGroups.first();
+}
+
+const MultiColumnFragmentainerGroup& LayoutMultiColumnSet::fragmentainerGroupAtVisualPoint(const LayoutPoint&) const
 {
     // FIXME: implement this, once we have support for multiple rows.
     return m_fragmentainerGroups.first();
@@ -100,7 +107,7 @@ bool LayoutMultiColumnSet::heightIsAuto() const
     if (!flowThread->isLayoutPagedFlowThread()) {
         if (multiColumnBlockFlow()->style()->columnFill() == ColumnFillBalance)
             return true;
-        if (RenderBox* next = nextSiblingBox()) {
+        if (LayoutBox* next = nextSiblingBox()) {
             if (next->isLayoutMultiColumnSpannerPlaceholder()) {
                 // If we're followed by a spanner, we need to balance.
                 return true;
@@ -114,6 +121,12 @@ LayoutSize LayoutMultiColumnSet::flowThreadTranslationAtOffset(LayoutUnit blockO
 {
     const MultiColumnFragmentainerGroup& row = fragmentainerGroupAtFlowThreadOffset(blockOffset);
     return row.offsetFromColumnSet() + row.flowThreadTranslationAtOffset(blockOffset);
+}
+
+LayoutPoint LayoutMultiColumnSet::visualPointToFlowThreadPoint(const LayoutPoint& visualPoint) const
+{
+    const MultiColumnFragmentainerGroup& row = fragmentainerGroupAtVisualPoint(visualPoint);
+    return row.visualPointToFlowThreadPoint(visualPoint - row.offsetFromColumnSet());
 }
 
 void LayoutMultiColumnSet::updateMinimumColumnHeight(LayoutUnit offsetInFlowThread, LayoutUnit height)
@@ -185,9 +198,18 @@ void LayoutMultiColumnSet::computeLogicalHeight(LayoutUnit, LayoutUnit logicalTo
     computedValues.m_position = logicalTop;
 }
 
+PositionWithAffinity LayoutMultiColumnSet::positionForPoint(const LayoutPoint& point)
+{
+    // Convert the visual point to a flow thread point.
+    const MultiColumnFragmentainerGroup& row = fragmentainerGroupAtVisualPoint(point);
+    LayoutPoint flowThreadPoint = row.visualPointToFlowThreadPoint(point + row.offsetFromColumnSet());
+    // Then drill into the flow thread, where we'll find the actual content.
+    return flowThread()->positionForPoint(flowThreadPoint);
+}
+
 LayoutUnit LayoutMultiColumnSet::columnGap() const
 {
-    RenderBlockFlow* parentBlock = multiColumnBlockFlow();
+    LayoutBlockFlow* parentBlock = multiColumnBlockFlow();
     if (parentBlock->style()->hasNormalColumnGap())
         return parentBlock->style()->fontDescription().computedPixelSize(); // "1em" is recommended as the normal gap setting. Matches <p> margins.
     return parentBlock->style()->columnGap();
@@ -205,7 +227,7 @@ void LayoutMultiColumnSet::paintObject(const PaintInfo& paintInfo, const LayoutP
     MultiColumnSetPainter(*this).paintObject(paintInfo, paintOffset);
 }
 
-void LayoutMultiColumnSet::collectLayerFragments(LayerFragments& fragments, const LayoutRect& layerBoundingBox, const LayoutRect& dirtyRect)
+void LayoutMultiColumnSet::collectLayerFragments(DeprecatedPaintLayerFragments& fragments, const LayoutRect& layerBoundingBox, const LayoutRect& dirtyRect)
 {
     for (const auto& group : m_fragmentainerGroups)
         group.collectLayerFragments(fragments, layerBoundingBox, dirtyRect);
@@ -222,11 +244,6 @@ void LayoutMultiColumnSet::addOverflowFromChildren()
     addLayoutOverflow(overflowRect);
     if (!hasOverflowClip())
         addVisualOverflow(overflowRect);
-}
-
-const char* LayoutMultiColumnSet::renderName() const
-{
-    return "LayoutMultiColumnSet";
 }
 
 void LayoutMultiColumnSet::insertedIntoTree()

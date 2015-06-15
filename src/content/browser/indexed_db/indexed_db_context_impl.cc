@@ -273,6 +273,19 @@ base::ListValue* IndexedDBContextImpl::GetAllOriginsDetails() {
   return list.release();
 }
 
+int IndexedDBContextImpl::GetOriginBlobFileCount(const GURL& origin_url) {
+  DCHECK(TaskRunner()->RunsTasksOnCurrentThread());
+  int count = 0;
+  base::FileEnumerator file_enumerator(
+      GetBlobPath(storage::GetIdentifierFromOrigin(origin_url)), true,
+      base::FileEnumerator::FILES);
+  for (base::FilePath file_path = file_enumerator.Next(); !file_path.empty();
+       file_path = file_enumerator.Next()) {
+    count++;
+  }
+  return count;
+}
+
 int64 IndexedDBContextImpl::GetOriginDiskUsage(const GURL& origin_url) {
   DCHECK(TaskRunner()->RunsTasksOnCurrentThread());
   if (data_path_.empty() || !IsInOriginSet(origin_url))
@@ -546,7 +559,7 @@ void IndexedDBContextImpl::GotUsageAndQuota(const GURL& origin_url,
                                             storage::QuotaStatusCode status,
                                             int64 usage,
                                             int64 quota) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DCHECK(status == storage::kQuotaStatusOk ||
          status == storage::kQuotaErrorAbort)
       << "status was " << status;
@@ -581,7 +594,7 @@ void IndexedDBContextImpl::QueryAvailableQuota(const GURL& origin_url) {
     }
     return;
   }
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   if (!quota_manager_proxy() || !quota_manager_proxy()->quota_manager())
     return;
   quota_manager_proxy()->quota_manager()->GetUsageAndQuota(

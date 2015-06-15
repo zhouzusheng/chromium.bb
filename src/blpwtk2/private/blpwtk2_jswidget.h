@@ -52,9 +52,10 @@ class JsWidget : public blink::WebPlugin {
     NPObject* scriptableObject() override { return nullptr; }
     void paint(blink::WebCanvas*, const blink::WebRect&) override {}
     void updateGeometry(
-        const blink::WebRect& frameRect, const blink::WebRect& clipRect,
-        const blink::WebVector<blink::WebRect>& cutOutsRects, bool isVisible) override;
-    void updateFocus(bool) override {}
+        const blink::WebRect& windowRect, const blink::WebRect& clipRect,
+        const blink::WebRect& unobscuredRect, const blink::WebVector<blink::WebRect>& cutOutsRects,
+        bool isVisible) override;
+    void updateFocus(bool, blink::WebFocusType) override {}
     void updateVisibility(bool isVisible) override;
     bool acceptsInputEvents() override { return false; }
     bool handleInputEvent(const blink::WebInputEvent&, blink::WebCursorInfo&) override { return false; }

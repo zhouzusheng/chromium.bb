@@ -45,7 +45,7 @@ public:
 private:
     SearchInputType(HTMLInputElement&);
     void countUsage() override;
-    LayoutObject* createRenderer(const LayoutStyle&) const override;
+    LayoutObject* createLayoutObject(const ComputedStyle&) const override;
     const AtomicString& formControlType() const override;
     bool needsContainer() const override;
     void createShadowSubtree() override;
@@ -53,6 +53,7 @@ private:
     void didSetValueByUserEdit(ValueChangeState) override;
     bool supportsInputModeAttribute() const override;
     void updateView() override;
+    const AtomicString& defaultAutocapitalize() const override;
 
     void searchEventTimerFired(Timer<SearchInputType>*);
     bool searchEventsShouldBeDispatched() const;

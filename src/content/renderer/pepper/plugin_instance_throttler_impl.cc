@@ -26,15 +26,19 @@ const double kAcceptableFrameMaximumBoringness = 0.94;
 
 const int kMinimumConsecutiveInterestingFrames = 4;
 
+// When plugin audio is throttled, the plugin will sometimes stop generating
+// video frames. We use this timeout to prevent waiting forever for a good
+// poster image. Chosen arbitrarily.
+const int kAudioThrottledFrameTimeoutMilliseconds = 500;
+
 }  // namespace
 
 // static
 const int PluginInstanceThrottlerImpl::kMaximumFramesToExamine = 150;
 
 // static
-scoped_ptr<PluginInstanceThrottler> PluginInstanceThrottler::Create(
-    bool power_saver_enabled) {
-  return make_scoped_ptr(new PluginInstanceThrottlerImpl(power_saver_enabled));
+scoped_ptr<PluginInstanceThrottler> PluginInstanceThrottler::Create() {
+  return make_scoped_ptr(new PluginInstanceThrottlerImpl);
 }
 
 // static
@@ -45,14 +49,19 @@ void PluginInstanceThrottler::RecordUnthrottleMethodMetric(
       PluginInstanceThrottler::UNTHROTTLE_METHOD_NUM_ITEMS);
 }
 
-PluginInstanceThrottlerImpl::PluginInstanceThrottlerImpl(
-    bool power_saver_enabled)
-    : state_(power_saver_enabled ? THROTTLER_STATE_AWAITING_KEYFRAME
-                                 : THROTTLER_STATE_POWER_SAVER_DISABLED),
+PluginInstanceThrottlerImpl::PluginInstanceThrottlerImpl()
+    : state_(THROTTLER_STATE_AWAITING_KEYFRAME),
       is_hidden_for_placeholder_(false),
       web_plugin_(nullptr),
       consecutive_interesting_frames_(0),
       frames_examined_(0),
+      audio_throttled_(false),
+      audio_throttled_frame_timeout_(
+          FROM_HERE,
+          base::TimeDelta::FromMilliseconds(
+              kAudioThrottledFrameTimeoutMilliseconds),
+          this,
+          &PluginInstanceThrottlerImpl::EngageThrottle),
       weak_factory_(this) {
 }
 
@@ -101,6 +110,15 @@ blink::WebPlugin* PluginInstanceThrottlerImpl::GetWebPlugin() const {
   return web_plugin_;
 }
 
+const gfx::Size& PluginInstanceThrottlerImpl::GetSize() const {
+  return unobscured_size_;
+}
+
+void PluginInstanceThrottlerImpl::NotifyAudioThrottled() {
+  audio_throttled_ = true;
+  audio_throttled_frame_timeout_.Reset();
+}
+
 void PluginInstanceThrottlerImpl::SetWebPlugin(blink::WebPlugin* web_plugin) {
   DCHECK(!web_plugin_);
   web_plugin_ = web_plugin;
@@ -110,13 +128,16 @@ void PluginInstanceThrottlerImpl::Initialize(
     RenderFrameImpl* frame,
     const GURL& content_origin,
     const std::string& plugin_module_name,
-    const blink::WebRect& bounds) {
+    const gfx::Size& unobscured_size) {
+  unobscured_size_ = unobscured_size;
+
   // |frame| may be nullptr in tests.
   if (frame) {
     PluginPowerSaverHelper* helper = frame->plugin_power_saver_helper();
     bool cross_origin_main_content = false;
     if (!helper->ShouldThrottleContent(content_origin, plugin_module_name,
-                                       bounds.width, bounds.height,
+                                       unobscured_size.width(),
+                                       unobscured_size.height(),
                                        &cross_origin_main_content)) {
       state_ = THROTTLER_STATE_MARKED_ESSENTIAL;
 
@@ -148,16 +169,21 @@ void PluginInstanceThrottlerImpl::OnImageFlush(const SkBitmap* bitmap) {
   else
     consecutive_interesting_frames_ = 0;
 
+  // Does not make a copy, just takes a reference to the underlying pixel data.
+  last_received_frame_ = *bitmap;
+
+  if (audio_throttled_)
+    audio_throttled_frame_timeout_.Reset();
+
   if (frames_examined_ >= kMaximumFramesToExamine ||
       consecutive_interesting_frames_ >= kMinimumConsecutiveInterestingFrames) {
-    FOR_EACH_OBSERVER(Observer, observer_list_, OnKeyframeExtracted(bitmap));
     EngageThrottle();
   }
 }
 
 bool PluginInstanceThrottlerImpl::ConsumeInputEvent(
     const blink::WebInputEvent& event) {
-  // Always allow right-clicks through so users may verify it's a plug-in.
+  // Always allow right-clicks through so users may verify it's a plugin.
   // TODO(tommycli): We should instead show a custom context menu (probably
   // using PluginPlaceholder) so users aren't confused and try to click the
   // Flash-internal 'Play' menu item. This is a stopgap solution.
@@ -178,6 +204,14 @@ bool PluginInstanceThrottlerImpl::ConsumeInputEvent(
 void PluginInstanceThrottlerImpl::EngageThrottle() {
   if (state_ != THROTTLER_STATE_AWAITING_KEYFRAME)
     return;
+
+  if (!last_received_frame_.empty()) {
+    FOR_EACH_OBSERVER(Observer, observer_list_,
+                      OnKeyframeExtracted(&last_received_frame_));
+
+    // Release our reference to the underlying pixel data.
+    last_received_frame_.reset();
+  }
 
   state_ = THROTTLER_STATE_PLUGIN_THROTTLED;
   FOR_EACH_OBSERVER(Observer, observer_list_, OnThrottleStateChange());

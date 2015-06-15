@@ -19,7 +19,8 @@ WebContents::CreateParams::CreateParams(BrowserContext* context)
       render_process_affinity(SiteInstance::kNoProcessAffinity),
       initially_hidden(false),
       guest_delegate(nullptr),
-      context(nullptr) {}
+      context(nullptr),
+      renderer_initiated_creation(false) {}
 
 WebContents::CreateParams::CreateParams(
     BrowserContext* context, SiteInstance* site)
@@ -32,7 +33,8 @@ WebContents::CreateParams::CreateParams(
       render_process_affinity(SiteInstance::kNoProcessAffinity),
       initially_hidden(false),
       guest_delegate(nullptr),
-      context(nullptr) {}
+      context(nullptr),
+      renderer_initiated_creation(false) {}
 
 WebContents::CreateParams::~CreateParams() {
 }

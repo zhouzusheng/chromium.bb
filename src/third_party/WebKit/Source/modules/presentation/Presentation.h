@@ -10,6 +10,7 @@
 #include "core/frame/DOMWindowProperty.h"
 #include "modules/presentation/PresentationSession.h"
 #include "platform/heap/Handle.h"
+#include "platform/heap/Heap.h"
 
 namespace WTF {
 class String;
@@ -20,6 +21,8 @@ namespace blink {
 class LocalFrame;
 class PresentationController;
 class ScriptState;
+class WebPresentationSessionClient;
+enum class WebPresentationSessionState;
 
 // Implements the main entry point of the Presentation API corresponding to the Presentation.idl
 // See https://w3c.github.io/presentation-api/#navigatorpresentation for details.
@@ -45,6 +48,7 @@ public:
     ScriptPromise joinSession(ScriptState*, const String& presentationUrl, const String& presentationId);
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(availablechange);
+    DEFINE_ATTRIBUTE_EVENT_LISTENER(defaultsessionstart);
 
     // The embedder needs to keep track if anything is listening to the event so it could stop the
     // might be expensive screen discovery process.
@@ -56,6 +60,16 @@ public:
     void didChangeAvailability(bool available);
     // Queried by the controller if |availablechange| event has any listeners.
     bool isAvailableChangeWatched() const;
+
+    // Called when the |defaultsessionstart| event needs to be fired.
+    void didStartDefaultSession(PresentationSession*);
+
+    // Called when the |onstatechange| event needs to be fired to the right session.
+    void didChangeSessionState(WebPresentationSessionClient*, WebPresentationSessionState);
+
+    // Adds a session to the open sessions list.
+    void registerSession(PresentationSession*);
+
 private:
     explicit Presentation(LocalFrame*);
 
@@ -63,7 +77,14 @@ private:
     // Can return |nullptr| if the frame is detached from the document.
     PresentationController* presentationController();
 
+    // Returns the session that matches the WebPresentationSessionClient or null.
+    PresentationSession* findSession(WebPresentationSessionClient*);
+
+    // The session object provided to the presentation page. Not supported.
     Member<PresentationSession> m_session;
+
+    // The sessions opened for this frame.
+    HeapHashSet<Member<PresentationSession>> m_openSessions;
 };
 
 } // namespace blink

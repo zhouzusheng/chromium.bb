@@ -26,15 +26,13 @@
 #include "config.h"
 #include "core/layout/LayoutState.h"
 
-#include "core/layout/Layer.h"
 #include "core/layout/LayoutFlowThread.h"
-#include "core/rendering/RenderInline.h"
-#include "core/rendering/RenderView.h"
-#include "platform/Partitions.h"
+#include "core/layout/LayoutInline.h"
+#include "core/layout/LayoutView.h"
 
 namespace blink {
 
-LayoutState::LayoutState(LayoutUnit pageLogicalHeight, bool pageLogicalHeightChanged, RenderView& view)
+LayoutState::LayoutState(LayoutUnit pageLogicalHeight, bool pageLogicalHeightChanged, LayoutView& view)
     : m_isPaginated(pageLogicalHeight)
     , m_pageLogicalHeightChanged(pageLogicalHeightChanged)
     , m_containingBlockLogicalWidthChanged(false)
@@ -48,7 +46,7 @@ LayoutState::LayoutState(LayoutUnit pageLogicalHeight, bool pageLogicalHeightCha
     view.pushLayoutState(*this);
 }
 
-LayoutState::LayoutState(RenderBox& renderer, const LayoutSize& offset, LayoutUnit pageLogicalHeight, bool pageLogicalHeightChanged, ColumnInfo* columnInfo, bool containingBlockLogicalWidthChanged)
+LayoutState::LayoutState(LayoutBox& renderer, const LayoutSize& offset, LayoutUnit pageLogicalHeight, bool pageLogicalHeightChanged, ColumnInfo* columnInfo, bool containingBlockLogicalWidthChanged)
     : m_containingBlockLogicalWidthChanged(containingBlockLogicalWidthChanged)
     , m_columnInfo(columnInfo)
     , m_next(renderer.view()->layoutState())
@@ -67,8 +65,8 @@ LayoutState::LayoutState(RenderBox& renderer, const LayoutSize& offset, LayoutUn
 
     if (renderer.isOutOfFlowPositioned() && !fixed) {
         if (LayoutObject* container = renderer.container()) {
-            if (container->style()->hasInFlowPosition() && container->isRenderInline())
-                m_layoutOffset += toRenderInline(container)->offsetForInFlowPositionedInline(renderer);
+            if (container->style()->hasInFlowPosition() && container->isLayoutInline())
+                m_layoutOffset += toLayoutInline(container)->offsetForInFlowPositionedInline(renderer);
         }
     }
     // If we establish a new page height, then cache the offset to the top of the first page.
@@ -113,8 +111,8 @@ LayoutState::LayoutState(LayoutObject& root)
     , m_renderer(root)
 {
     ASSERT(!m_next);
-    // We'll end up pushing in RenderView itself, so don't bother adding it.
-    if (root.isRenderView())
+    // We'll end up pushing in LayoutView itself, so don't bother adding it.
+    if (root.isLayoutView())
         return;
 
     root.view()->pushLayoutState(*this);
@@ -139,14 +137,14 @@ void LayoutState::clearPaginationInformation()
     m_columnInfo = m_next->m_columnInfo;
 }
 
-LayoutUnit LayoutState::pageLogicalOffset(const RenderBox& child, const LayoutUnit& childLogicalOffset) const
+LayoutUnit LayoutState::pageLogicalOffset(const LayoutBox& child, const LayoutUnit& childLogicalOffset) const
 {
     if (child.isHorizontalWritingMode())
         return m_layoutOffset.height() + childLogicalOffset - m_pageOffset.height();
     return m_layoutOffset.width() + childLogicalOffset - m_pageOffset.width();
 }
 
-void LayoutState::addForcedColumnBreak(const RenderBox& child, const LayoutUnit& childLogicalOffset)
+void LayoutState::addForcedColumnBreak(const LayoutBox& child, const LayoutUnit& childLogicalOffset)
 {
     if (!m_columnInfo || m_columnInfo->columnHeight())
         return;

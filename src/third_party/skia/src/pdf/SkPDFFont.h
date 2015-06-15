@@ -14,12 +14,11 @@
 #include "SkBitSet.h"
 #include "SkPDFTypes.h"
 #include "SkTDArray.h"
-#include "SkThread.h"
 #include "SkTypeface.h"
 
 class SkPaint;
 class SkPDFCanon;
-class SkPDFCatalog;
+class SkPDFObjNumMap;
 class SkPDFFont;
 
 class SkPDFGlyphSet : SkNoncopyable {
@@ -151,11 +150,8 @@ public:
                          uint16_t searchGlyphID);
 
 protected:
-    SkPDFCanon* const fCanon;
-
     // Common constructor to handle common members.
-    SkPDFFont(SkPDFCanon* canon,
-              const SkAdvancedTypefaceMetrics* fontInfo,
+    SkPDFFont(const SkAdvancedTypefaceMetrics* fontInfo,
               SkTypeface* typeface,
               SkPDFDict* relatedFontDescriptor);
 

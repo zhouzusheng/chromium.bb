@@ -28,7 +28,6 @@ VideoReceiver::VideoReceiver(Clock* clock, EventFactory* event_factory)
     : clock_(clock),
       process_crit_sect_(CriticalSectionWrapper::CreateCriticalSection()),
       _receiveCritSect(CriticalSectionWrapper::CreateCriticalSection()),
-      _receiverInited(false),
       _timing(clock_),
       _receiver(&_timing, clock_, event_factory, true),
       _decodedFrameCallback(_timing, clock_),
@@ -46,7 +45,7 @@ VideoReceiver::VideoReceiver(Clock* clock, EventFactory* event_factory)
       _scheduleKeyRequest(false),
       max_nack_list_size_(0),
       pre_decode_image_callback_(NULL),
-      _codecDataBase(),
+      _codecDataBase(NULL),
       _receiveStatsTimer(1000, clock_),
       _retransmissionTimer(10, clock_),
       _keyRequestTimer(500, clock_) {
@@ -236,9 +235,12 @@ int32_t VideoReceiver::SetVideoProtection(VCMVideoProtection videoProtection,
     }
     case kProtectionNackSender:
     case kProtectionFEC:
-    case kProtectionPeriodicKeyFrames:
       // Ignore encoder modes.
       return VCM_OK;
+    case kProtectionNone:
+      // TODO(pbos): Implement like sender and remove enable parameter. Ignored
+      // for now.
+      break;
   }
   return VCM_OK;
 }
@@ -254,7 +256,6 @@ int32_t VideoReceiver::InitializeReceiver() {
     CriticalSectionScoped receive_cs(_receiveCritSect);
     _codecDataBase.ResetReceiver();
     _timing.Reset();
-    _receiverInited = true;
   }
 
   {
@@ -346,12 +347,6 @@ int32_t VideoReceiver::Decode(uint16_t maxWaitTimeMs) {
   bool supports_render_scheduling;
   {
     CriticalSectionScoped cs(_receiveCritSect);
-    if (!_receiverInited) {
-      return VCM_UNINITIALIZED;
-    }
-    if (!_codecDataBase.DecoderRegistered()) {
-      return VCM_NO_CODEC_REGISTERED;
-    }
     supports_render_scheduling = _codecDataBase.SupportsRenderScheduling();
   }
 

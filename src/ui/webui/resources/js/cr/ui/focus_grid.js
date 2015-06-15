@@ -64,7 +64,7 @@ cr.define('cr.ui', function() {
       // Only the clicked row should be active.
       var target = assertInstanceof(e.target, Node);
       this.focusGrid_.rows.forEach(function(row) {
-        row.makeRowActive(row.contains(target));
+        row.makeActive(row.contains(target));
       });
 
       return true;
@@ -146,22 +146,23 @@ cr.define('cr.ui', function() {
      */
     addRow: function(row) {
       row.delegate = row.delegate || this.delegate_;
+      this.rows.push(row);
+    },
 
-      if (this.rows.length == 0) {
-        // The first row should be active if no other row is focused.
-        row.makeRowActive(true);
-      } else if (row.contains(document.activeElement)) {
-        // The current row should be made active if it's the activeElement.
-        row.makeRowActive(true);
-        // Deactivate the first row.
-        this.rows[0].makeRowActive(false);
-      } else {
-        // All other rows should be inactive.
-        row.makeRowActive(false);
+    /**
+     * Makes sure that at least one row is active. Should be called once, after
+     * adding all rows to FocusGrid.
+     */
+    ensureRowActive: function() {
+      if (this.rows.length == 0)
+        return;
+
+      for (var i = 0; i < this.rows.length; ++i) {
+        if (this.rows[i].isActive())
+          return;
       }
 
-      // Add the row after its initial focus is set.
-      this.rows.push(row);
+      this.rows[0].makeActive(true);
     },
   };
 

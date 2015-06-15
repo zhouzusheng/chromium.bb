@@ -32,18 +32,17 @@ namespace blink {
 
 inline SVGPatternElement::SVGPatternElement(Document& document)
     : SVGElement(SVGNames::patternTag, document)
-    , m_x(SVGAnimatedLength::create(this, SVGNames::xAttr, SVGLength::create(LengthModeWidth), AllowNegativeLengths))
-    , m_y(SVGAnimatedLength::create(this, SVGNames::yAttr, SVGLength::create(LengthModeHeight), AllowNegativeLengths))
-    , m_width(SVGAnimatedLength::create(this, SVGNames::widthAttr, SVGLength::create(LengthModeWidth), ForbidNegativeLengths))
-    , m_height(SVGAnimatedLength::create(this, SVGNames::heightAttr, SVGLength::create(LengthModeHeight), ForbidNegativeLengths))
+    , SVGURIReference(this)
+    , SVGTests(this)
+    , SVGFitToViewBox(this)
+    , m_x(SVGAnimatedLength::create(this, SVGNames::xAttr, SVGLength::create(SVGLengthMode::Width), AllowNegativeLengths))
+    , m_y(SVGAnimatedLength::create(this, SVGNames::yAttr, SVGLength::create(SVGLengthMode::Height), AllowNegativeLengths))
+    , m_width(SVGAnimatedLength::create(this, SVGNames::widthAttr, SVGLength::create(SVGLengthMode::Width), ForbidNegativeLengths))
+    , m_height(SVGAnimatedLength::create(this, SVGNames::heightAttr, SVGLength::create(SVGLengthMode::Height), ForbidNegativeLengths))
     , m_patternTransform(SVGAnimatedTransformList::create(this, SVGNames::patternTransformAttr, SVGTransformList::create()))
     , m_patternUnits(SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>::create(this, SVGNames::patternUnitsAttr, SVGUnitTypes::SVG_UNIT_TYPE_OBJECTBOUNDINGBOX))
     , m_patternContentUnits(SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>::create(this, SVGNames::patternContentUnitsAttr, SVGUnitTypes::SVG_UNIT_TYPE_USERSPACEONUSE))
 {
-    SVGURIReference::initialize(this);
-    SVGTests::initialize(this);
-    SVGFitToViewBox::initialize(this);
-
     addToPropertyMap(m_x);
     addToPropertyMap(m_y);
     addToPropertyMap(m_width);
@@ -88,36 +87,6 @@ bool SVGPatternElement::isSupportedAttribute(const QualifiedName& attrName)
     return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
 }
 
-bool SVGPatternElement::isPresentationAttribute(const QualifiedName& attrName) const
-{
-    if (attrName == SVGNames::xAttr || attrName == SVGNames::yAttr)
-        return true;
-    return SVGElement::isPresentationAttribute(attrName);
-}
-
-bool SVGPatternElement::isPresentationAttributeWithSVGDOM(const QualifiedName& attrName) const
-{
-    if (attrName == SVGNames::xAttr || attrName == SVGNames::yAttr)
-        return true;
-    return SVGElement::isPresentationAttributeWithSVGDOM(attrName);
-}
-
-void SVGPatternElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStylePropertySet* style)
-{
-    RefPtrWillBeRawPtr<SVGAnimatedPropertyBase> property = propertyFromAttribute(name);
-    if (property == m_x)
-        addSVGLengthPropertyToPresentationAttributeStyle(style, CSSPropertyX, *m_x->currentValue());
-    else if (property == m_y)
-        addSVGLengthPropertyToPresentationAttributeStyle(style, CSSPropertyY, *m_y->currentValue());
-    else
-        SVGElement::collectStyleForPresentationAttribute(name, value, style);
-}
-
-void SVGPatternElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
-{
-    parseAttributeNew(name, value);
-}
-
 void SVGPatternElement::svgAttributeChanged(const QualifiedName& attrName)
 {
     if (!isSupportedAttribute(attrName)) {
@@ -128,19 +97,12 @@ void SVGPatternElement::svgAttributeChanged(const QualifiedName& attrName)
     SVGElement::InvalidationGuard invalidationGuard(this);
 
     if (attrName == SVGNames::xAttr
-        || attrName == SVGNames::yAttr) {
-        invalidateSVGPresentationAttributeStyle();
-        setNeedsStyleRecalc(LocalStyleChange,
-            StyleChangeReasonForTracing::fromAttribute(attrName));
-    }
-
-    if (attrName == SVGNames::xAttr
         || attrName == SVGNames::yAttr
         || attrName == SVGNames::widthAttr
         || attrName == SVGNames::heightAttr)
         updateRelativeLengthsInformation();
 
-    LayoutSVGResourceContainer* renderer = toLayoutSVGResourceContainer(this->renderer());
+    LayoutSVGResourceContainer* renderer = toLayoutSVGResourceContainer(this->layoutObject());
     if (renderer)
         renderer->invalidateCacheAndMarkForLayout();
 }
@@ -152,11 +114,11 @@ void SVGPatternElement::childrenChanged(const ChildrenChange& change)
     if (change.byParser)
         return;
 
-    if (LayoutObject* object = renderer())
-        object->setNeedsLayoutAndFullPaintInvalidation();
+    if (LayoutObject* object = layoutObject())
+        object->setNeedsLayoutAndFullPaintInvalidation(LayoutInvalidationReason::ChildChanged);
 }
 
-LayoutObject* SVGPatternElement::createRenderer(const LayoutStyle&)
+LayoutObject* SVGPatternElement::createLayoutObject(const ComputedStyle&)
 {
     return new LayoutSVGResourcePattern(this);
 }
@@ -199,7 +161,7 @@ static void setPatternAttributes(const SVGPatternElement* element, PatternAttrib
 
 void SVGPatternElement::collectPatternAttributes(PatternAttributes& attributes) const
 {
-    WillBeHeapHashSet<RawPtrWillBeMember<const SVGPatternElement> > processedPatterns;
+    WillBeHeapHashSet<RawPtrWillBeMember<const SVGPatternElement>> processedPatterns;
     const SVGPatternElement* current = this;
 
     while (true) {
@@ -208,18 +170,17 @@ void SVGPatternElement::collectPatternAttributes(PatternAttributes& attributes) 
 
         // Respect xlink:href, take attributes from referenced element
         Node* refNode = SVGURIReference::targetElementFromIRIString(current->hrefString(), treeScope());
-        if (isSVGPatternElement(refNode)) {
-            current = toSVGPatternElement(refNode);
 
-            // Cycle detection
-            if (processedPatterns.contains(current))
-                return;
-        } else {
-            return;
-        }
+        // Only consider attached SVG pattern elements.
+        if (!isSVGPatternElement(refNode) || !refNode->layoutObject())
+            break;
+
+        current = toSVGPatternElement(refNode);
+
+        // Cycle detection
+        if (processedPatterns.contains(current))
+            break;
     }
-
-    ASSERT_NOT_REACHED();
 }
 
 AffineTransform SVGPatternElement::localCoordinateSpaceTransform(SVGElement::CTMScope) const

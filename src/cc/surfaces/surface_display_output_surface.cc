@@ -4,6 +4,7 @@
 
 #include "cc/surfaces/surface_display_output_surface.h"
 
+#include "base/bind.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/compositor_frame_ack.h"
 #include "cc/surfaces/display.h"
@@ -24,10 +25,8 @@ SurfaceDisplayOutputSurface::SurfaceDisplayOutputSurface(
       allocator_(allocator) {
   capabilities_.delegated_rendering = true;
   capabilities_.max_frames_pending = 1;
+  capabilities_.adjust_deadline_for_parent = true;
   capabilities_.can_force_reclaim_resources = true;
-  // Frame always needs to be swapped because forced resource reclaiming
-  // destroys the Display's copy.
-  capabilities_.draw_and_swap_full_viewport_every_frame = true;
 }
 
 SurfaceDisplayOutputSurface::~SurfaceDisplayOutputSurface() {
@@ -46,7 +45,7 @@ void SurfaceDisplayOutputSurface::ReceivedVSyncParameters(
 void SurfaceDisplayOutputSurface::SwapBuffers(CompositorFrame* frame) {
   gfx::Size frame_size =
       frame->delegated_frame_data->render_pass_list.back()->output_rect.size();
-  if (frame_size != display_size_) {
+  if (frame_size.IsEmpty() || frame_size != display_size_) {
     if (!surface_id_.is_null()) {
       factory_.Destroy(surface_id_);
     }

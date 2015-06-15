@@ -42,6 +42,7 @@
 #include "media/blink/webmediasource_impl.h"
 #include "media/filters/chunk_demuxer.h"
 #include "media/filters/ffmpeg_demuxer.h"
+#include "third_party/WebKit/public/platform/WebEncryptedMediaTypes.h"
 #include "third_party/WebKit/public/platform/WebMediaSource.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
@@ -102,17 +103,12 @@ STATIC_ASSERT_MATCHING_ENUM(UseCredentials);
   (DCHECK(main_task_runner_->BelongsToCurrentThread()), \
   BindToCurrentLoop(base::Bind(function, AsWeakPtr(), arg1)))
 
-static void LogMediaSourceError(const scoped_refptr<MediaLog>& media_log,
-                                const std::string& error) {
-  media_log->AddEvent(media_log->CreateMediaSourceErrorEvent(error));
-}
-
 WebMediaPlayerImpl::WebMediaPlayerImpl(
     blink::WebLocalFrame* frame,
     blink::WebMediaPlayerClient* client,
     base::WeakPtr<WebMediaPlayerDelegate> delegate,
     scoped_ptr<RendererFactory> renderer_factory,
-    scoped_ptr<CdmFactory> cdm_factory,
+    CdmFactory* cdm_factory,
     const WebMediaPlayerParams& params)
     : frame_(frame),
       network_state_(WebMediaPlayer::NetworkStateEmpty),
@@ -142,7 +138,7 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
           BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnNaturalSizeChanged),
           BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnOpacityChanged))),
       encrypted_media_support_(
-          cdm_factory.Pass(),
+          cdm_factory,
           client,
           params.media_permission(),
           base::Bind(&WebMediaPlayerImpl::SetCdm, AsWeakPtr())),
@@ -587,6 +583,18 @@ bool WebMediaPlayerImpl::copyVideoTextureToPlatformTexture(
     unsigned int type,
     bool premultiply_alpha,
     bool flip_y) {
+  return copyVideoTextureToPlatformTexture(web_graphics_context, texture,
+                                           internal_format, type,
+                                           premultiply_alpha, flip_y);
+}
+
+bool WebMediaPlayerImpl::copyVideoTextureToPlatformTexture(
+    blink::WebGraphicsContext3D* web_graphics_context,
+    unsigned int texture,
+    unsigned int internal_format,
+    unsigned int type,
+    bool premultiply_alpha,
+    bool flip_y) {
   TRACE_EVENT0("media", "WebMediaPlayerImpl:copyVideoTextureToPlatformTexture");
 
   scoped_refptr<VideoFrame> video_frame =
@@ -603,8 +611,8 @@ bool WebMediaPlayerImpl::copyVideoTextureToPlatformTexture(
       static_cast<gpu_blink::WebGraphicsContext3DImpl*>(web_graphics_context)
           ->GetGLInterface();
   SkCanvasVideoRenderer::CopyVideoFrameTextureToGLTexture(
-      gl, video_frame.get(), texture, level, internal_format, type,
-      premultiply_alpha, flip_y);
+      gl, video_frame.get(), texture, internal_format, type, premultiply_alpha,
+      flip_y);
   return true;
 }
 
@@ -657,9 +665,9 @@ void WebMediaPlayerImpl::setContentDecryptionModule(
 }
 
 void WebMediaPlayerImpl::OnEncryptedMediaInitData(
-    const std::string& init_data_type,
+    EmeInitDataType init_data_type,
     const std::vector<uint8>& init_data) {
-  DCHECK(!init_data_type.empty());
+  DCHECK(init_data_type != EmeInitDataType::UNKNOWN);
 
   // Do not fire "encrypted" event if encrypted media is not enabled.
   // TODO(xhwang): Handle this in |client_|.
@@ -673,9 +681,18 @@ void WebMediaPlayerImpl::OnEncryptedMediaInitData(
 
   encrypted_media_support_.SetInitDataType(init_data_type);
 
-  const uint8* init_data_ptr = init_data.empty() ? nullptr : &init_data[0];
-  client_->encrypted(WebString::fromUTF8(init_data_type), init_data_ptr,
+  client_->encrypted(ConvertToWebInitDataType(init_data_type),
+                     vector_as_array(&init_data),
                      base::saturated_cast<unsigned int>(init_data.size()));
+}
+
+void WebMediaPlayerImpl::OnWaitingForDecryptionKey() {
+  client_->didBlockPlaybackWaitingForKey();
+
+  // TODO(jrummell): didResumePlaybackBlockedForKey() should only be called
+  // when a key has been successfully added (e.g. OnSessionKeysChange() with
+  // |has_additional_usable_key| = true). http://crbug.com/461903
+  client_->didResumePlaybackBlockedForKey();
 }
 
 void WebMediaPlayerImpl::SetCdm(CdmContext* cdm_context,
@@ -754,8 +771,7 @@ void WebMediaPlayerImpl::OnPipelineMetadata(
 
   pipeline_metadata_ = metadata;
 
-  UMA_HISTOGRAM_ENUMERATION("Media.VideoRotation",
-                            metadata.video_rotation,
+  UMA_HISTOGRAM_ENUMERATION("Media.VideoRotation", metadata.video_rotation,
                             VIDEO_ROTATION_MAX + 1);
   SetReadyState(WebMediaPlayer::ReadyStateHaveMetadata);
 
@@ -789,6 +805,11 @@ void WebMediaPlayerImpl::OnPipelineBufferingStateChanged(
   DCHECK_EQ(buffering_state, BUFFERING_HAVE_ENOUGH);
   SetReadyState(WebMediaPlayer::ReadyStateHaveEnoughData);
 
+  // Let the DataSource know we have enough data. It may use this information to
+  // release unused network connections.
+  if (data_source_)
+    data_source_->OnBufferingHaveEnough();
+
   // Blink expects a timeChanged() in response to a seek().
   if (should_notify_time_changed_)
     client_->timeChanged();
@@ -797,7 +818,7 @@ void WebMediaPlayerImpl::OnPipelineBufferingStateChanged(
 void WebMediaPlayerImpl::OnDemuxerOpened() {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
   client_->mediaSourceOpened(new WebMediaSourceImpl(
-      chunk_demuxer_, base::Bind(&LogMediaSourceError, media_log_)));
+      chunk_demuxer_, base::Bind(&MediaLog::AddLogEvent, media_log_)));
 }
 
 void WebMediaPlayerImpl::OnAddTextTrack(
@@ -867,7 +888,7 @@ void WebMediaPlayerImpl::StartPipeline() {
     DCHECK(!chunk_demuxer_);
     DCHECK(!data_source_);
 
-    mse_log_cb = base::Bind(&LogMediaSourceError, media_log_);
+    mse_log_cb = base::Bind(&MediaLog::AddLogEvent, media_log_);
 
     chunk_demuxer_ = new ChunkDemuxer(
         BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnDemuxerOpened),
@@ -889,7 +910,8 @@ void WebMediaPlayerImpl::StartPipeline() {
       BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnPipelineBufferingStateChanged),
       base::Bind(&WebMediaPlayerImpl::FrameReady, base::Unretained(this)),
       BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnDurationChanged),
-      BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnAddTextTrack));
+      BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnAddTextTrack),
+      BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnWaitingForDecryptionKey));
 }
 
 void WebMediaPlayerImpl::SetNetworkState(WebMediaPlayer::NetworkState state) {

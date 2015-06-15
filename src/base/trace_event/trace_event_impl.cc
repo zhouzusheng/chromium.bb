@@ -30,6 +30,7 @@
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread_id_name_manager.h"
+#include "base/threading/worker_pool.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/trace_event_synthetic_delay.h"
@@ -73,7 +74,7 @@ const size_t kTraceEventVectorBigBufferChunks =
     512000000 / kTraceBufferChunkSize;
 const size_t kTraceEventVectorBufferChunks = 256000 / kTraceBufferChunkSize;
 const size_t kTraceEventRingBufferChunks = kTraceEventVectorBufferChunks / 4;
-const size_t kTraceEventBatchChunks = 1000 / kTraceBufferChunkSize;
+const size_t kTraceEventBufferSizeInBytes = 100 * 1024;
 // Can store results for 30 seconds with 1 ms sampling interval.
 const size_t kMonitorTraceEventBufferChunks = 30000 / kTraceBufferChunkSize;
 // ECHO_TO_CONSOLE needs a small buffer to hold the unfinished COMPLETE events.
@@ -430,25 +431,22 @@ scoped_ptr<TraceBufferChunk> TraceBufferChunk::Clone() const {
 // and unlocks at the end of scope if locked.
 class TraceLog::OptionalAutoLock {
  public:
-  explicit OptionalAutoLock(Lock& lock)
-      : lock_(lock),
-        locked_(false) {
-  }
+  explicit OptionalAutoLock(Lock* lock) : lock_(lock), locked_(false) {}
 
   ~OptionalAutoLock() {
     if (locked_)
-      lock_.Release();
+      lock_->Release();
   }
 
   void EnsureAcquired() {
     if (!locked_) {
-      lock_.Acquire();
+      lock_->Acquire();
       locked_ = true;
     }
   }
 
  private:
-  Lock& lock_;
+  Lock* lock_;
   bool locked_;
   DISALLOW_COPY_AND_ASSIGN(OptionalAutoLock);
 };
@@ -624,7 +622,7 @@ void TraceEvent::Reset() {
 
 void TraceEvent::UpdateDuration(const TimeTicks& now,
                                 const TimeTicks& thread_now) {
-  DCHECK(duration_.ToInternalValue() == -1);
+  DCHECK_EQ(duration_.ToInternalValue(), -1);
   duration_ = now - timestamp_;
   thread_duration_ = thread_now - thread_timestamp_;
 }
@@ -1211,7 +1209,8 @@ TraceLog::TraceLog()
       event_callback_category_filter_(
           CategoryFilter::kDefaultCategoryFilterString),
       thread_shared_chunk_index_(0),
-      generation_(0) {
+      generation_(0),
+      use_worker_thread_(false) {
   // Trace is enabled or disabled on one thread while other threads are
   // accessing the enabled flag. We don't care whether edge-case events are
   // traced or not, so we allow races on the enabled flag to keep the trace
@@ -1684,7 +1683,9 @@ void TraceLog::SetEventCallbackDisabled() {
 //    - The message loop will be removed from thread_message_loops_;
 //    If this is the last message loop, finish the flush;
 // 4. If any thread hasn't finish its flush in time, finish the flush.
-void TraceLog::Flush(const TraceLog::OutputCallback& cb) {
+void TraceLog::Flush(const TraceLog::OutputCallback& cb,
+                     bool use_worker_thread) {
+  use_worker_thread_ = use_worker_thread;
   if (IsEnabled()) {
     // Can't flush when tracing is enabled because otherwise PostTask would
     // - generate more trace events;
@@ -1738,6 +1739,7 @@ void TraceLog::Flush(const TraceLog::OutputCallback& cb) {
   FinishFlush(generation);
 }
 
+// Usually it runs on a different thread.
 void TraceLog::ConvertTraceEventsToTraceFormat(
     scoped_ptr<TraceBuffer> logged_events,
     const TraceLog::OutputCallback& flush_output_callback) {
@@ -1752,19 +1754,17 @@ void TraceLog::ConvertTraceEventsToTraceFormat(
     scoped_refptr<RefCountedString> json_events_str_ptr =
         new RefCountedString();
 
-    for (size_t i = 0; i < kTraceEventBatchChunks; ++i) {
+    while (json_events_str_ptr->size() < kTraceEventBufferSizeInBytes) {
       const TraceBufferChunk* chunk = logged_events->NextChunk();
-      if (!chunk) {
-        has_more_events = false;
+      has_more_events = chunk != NULL;
+      if (!chunk)
         break;
-      }
       for (size_t j = 0; j < chunk->size(); ++j) {
-        if (i > 0 || j > 0)
+        if (json_events_str_ptr->size())
           json_events_str_ptr->data().append(",\n");
         chunk->GetEventAt(j)->AppendAsJSON(&(json_events_str_ptr->data()));
       }
     }
-
     flush_output_callback.Run(json_events_str_ptr, has_more_events);
   } while (has_more_events);
 }
@@ -1786,6 +1786,16 @@ void TraceLog::FinishFlush(int generation) {
     flush_message_loop_proxy_ = NULL;
     flush_output_callback = flush_output_callback_;
     flush_output_callback_.Reset();
+  }
+
+  if (use_worker_thread_ &&
+      WorkerPool::PostTask(
+          FROM_HERE,
+          Bind(&TraceLog::ConvertTraceEventsToTraceFormat,
+               Passed(&previous_logged_events),
+               flush_output_callback),
+          true)) {
+    return;
   }
 
   ConvertTraceEventsToTraceFormat(previous_logged_events.Pass(),
@@ -1914,7 +1924,8 @@ TraceEventHandle TraceLog::AddTraceEventWithThreadIdAndTimestamp(
     id ^= process_id_hash_;
 
   TimeTicks offset_event_timestamp = OffsetTimestamp(timestamp);
-  TimeTicks now = OffsetNow();
+  TimeTicks now = flags & TRACE_EVENT_FLAG_EXPLICIT_TIMESTAMP ?
+      OffsetNow() : offset_event_timestamp;
   TimeTicks thread_now = ThreadNow();
 
   ThreadLocalEventBuffer* thread_local_event_buffer = NULL;
@@ -1976,7 +1987,7 @@ TraceEventHandle TraceLog::AddTraceEventWithThreadIdAndTimestamp(
   std::string console_message;
   if (*category_group_enabled &
       (ENABLED_FOR_RECORDING | ENABLED_FOR_MONITORING)) {
-    OptionalAutoLock lock(lock_);
+    OptionalAutoLock lock(&lock_);
 
     TraceEvent* trace_event = NULL;
     if (thread_local_event_buffer) {
@@ -2035,9 +2046,6 @@ TraceEventHandle TraceLog::AddTraceEventWithThreadIdAndTimestamp(
     }
   }
 
-  // Use |now| instead of |offset_event_timestamp| to compute overhead, because
-  // event timestamp may be not the real time that we started to add the event
-  // (e.g. event with zero timestamp or that was generated some time ago).
   if (thread_local_event_buffer)
     thread_local_event_buffer->ReportOverhead(now, thread_now);
 
@@ -2132,7 +2140,7 @@ void TraceLog::UpdateTraceEventDuration(
 
   std::string console_message;
   if (*category_group_enabled & ENABLED_FOR_RECORDING) {
-    OptionalAutoLock lock(lock_);
+    OptionalAutoLock lock(&lock_);
 
     TraceEvent* trace_event = GetEventByHandleInternal(handle, &lock);
     if (trace_event) {
@@ -2492,18 +2500,35 @@ bool CategoryFilter::IsCategoryGroupEnabled(
   // Do a second pass to check for explicitly disabled categories
   // (those explicitly enabled have priority due to first pass).
   category_group_tokens.Reset();
+  bool category_group_disabled = false;
   while (category_group_tokens.GetNext()) {
     std::string category_group_token = category_group_tokens.token();
     for (StringList::const_iterator ci = excluded_.begin();
          ci != excluded_.end(); ++ci) {
-      if (MatchPattern(category_group_token.c_str(), ci->c_str()))
-        return false;
+      if (MatchPattern(category_group_token.c_str(), ci->c_str())) {
+        // Current token of category_group_name is present in excluded_list.
+        // Flag the exclusion and proceed further to check if any of the
+        // remaining categories of category_group_name is not present in the
+        // excluded_ list.
+        category_group_disabled = true;
+        break;
+      }
+      // One of the category of category_group_name is not present in
+      // excluded_ list. So, it has to be included_ list. Enable the
+      // category_group_name for recording.
+      category_group_disabled = false;
     }
+    // One of the categories present in category_group_name is not present in
+    // excluded_ list. Implies this category_group_name group can be enabled
+    // for recording, since one of its groups is enabled for recording.
+    if (!category_group_disabled)
+      break;
   }
   // If the category group is not excluded, and there are no included patterns
   // we consider this category group enabled, as long as it had categories
   // other than disabled-by-default.
-  return included_.empty() && had_enabled_by_default;
+  return !category_group_disabled &&
+         included_.empty() && had_enabled_by_default;
 }
 
 bool CategoryFilter::IsCategoryEnabled(const char* category_name) const {
@@ -2573,7 +2598,7 @@ namespace trace_event_internal {
 ScopedTraceBinaryEfficient::ScopedTraceBinaryEfficient(
     const char* category_group, const char* name) {
   // The single atom works because for now the category_group can only be "gpu".
-  DCHECK(strcmp(category_group, "gpu") == 0);
+  DCHECK_EQ(strcmp(category_group, "gpu"), 0);
   static TRACE_EVENT_API_ATOMIC_WORD atomic = 0;
   INTERNAL_TRACE_EVENT_GET_CATEGORY_INFO_CUSTOM_VARIABLES(
       category_group, atomic, category_group_enabled_);

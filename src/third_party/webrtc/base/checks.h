@@ -196,6 +196,9 @@ class FatalMessageVoidify {
 
 #endif  // WEBRTC_CHROMIUM_BUILD
 
+#define RTC_UNREACHABLE_CODE_HIT false
+#define RTC_NOTREACHED() DCHECK(RTC_UNREACHABLE_CODE_HIT)
+
 #define FATAL() rtc::FatalMessage(__FILE__, __LINE__).stream()
 // TODO(ajm): Consider adding NOTIMPLEMENTED and NOTREACHED macros when
 // base/logging.h and system_wrappers/logging.h are consolidated such that we

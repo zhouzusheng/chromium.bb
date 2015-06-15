@@ -57,7 +57,6 @@ PictureLayerTiling::PictureLayerTiling(
       raster_source_(raster_source),
       resolution_(NON_IDEAL_RESOLUTION),
       tiling_data_(gfx::Size(), gfx::Size(), kBorderTexels),
-      last_impl_frame_time_in_seconds_(0.0),
       can_require_tiles_for_activation_(false),
       current_content_to_screen_scale_(0.f),
       has_visible_rect_tiles_(false),
@@ -532,21 +531,24 @@ gfx::Rect PictureLayerTiling::ComputeSkewport(
   gfx::Rect skewport = visible_rect_in_content_space;
   if (skewport.IsEmpty())
     return skewport;
-  if (last_impl_frame_time_in_seconds_ == 0.0)
+
+  if (visible_rect_history_[1].frame_time_in_seconds == 0.0)
     return skewport;
 
-  double time_delta =
-      current_frame_time_in_seconds - last_impl_frame_time_in_seconds_;
+  double time_delta = current_frame_time_in_seconds -
+                      visible_rect_history_[1].frame_time_in_seconds;
   if (time_delta == 0.0)
     return skewport;
 
   double extrapolation_multiplier =
       skewport_target_time_in_seconds_ / time_delta;
 
-  int old_x = last_visible_rect_in_content_space_.x();
-  int old_y = last_visible_rect_in_content_space_.y();
-  int old_right = last_visible_rect_in_content_space_.right();
-  int old_bottom = last_visible_rect_in_content_space_.bottom();
+  int old_x = visible_rect_history_[1].visible_rect_in_content_space.x();
+  int old_y = visible_rect_history_[1].visible_rect_in_content_space.y();
+  int old_right =
+      visible_rect_history_[1].visible_rect_in_content_space.right();
+  int old_bottom =
+      visible_rect_history_[1].visible_rect_in_content_space.bottom();
 
   int new_x = visible_rect_in_content_space.x();
   int new_y = visible_rect_in_content_space.y();
@@ -591,9 +593,9 @@ bool PictureLayerTiling::ComputeTilePriorityRects(
       gfx::ScaleToEnclosingRect(viewport_in_layer_space, contents_scale_);
 
   if (tiling_size().IsEmpty()) {
-    last_impl_frame_time_in_seconds_ = current_frame_time_in_seconds;
+    UpdateVisibleRectHistory(current_frame_time_in_seconds,
+                             visible_rect_in_content_space);
     last_viewport_in_layer_space_ = viewport_in_layer_space;
-    last_visible_rect_in_content_space_ = visible_rect_in_content_space;
     return false;
   }
 
@@ -625,9 +627,9 @@ bool PictureLayerTiling::ComputeTilePriorityRects(
                                              content_to_screen_scale);
   soon_border_rect.Inset(-border, -border, -border, -border);
 
-  last_impl_frame_time_in_seconds_ = current_frame_time_in_seconds;
+  UpdateVisibleRectHistory(current_frame_time_in_seconds,
+                           visible_rect_in_content_space);
   last_viewport_in_layer_space_ = viewport_in_layer_space;
-  last_visible_rect_in_content_space_ = visible_rect_in_content_space;
 
   SetLiveTilesRect(eventually_rect);
   UpdateTilePriorityRects(
@@ -810,7 +812,8 @@ void PictureLayerTiling::UpdateTileAndTwinPriority(Tile* tile) const {
   WhichTree tree = client_->GetTree();
   WhichTree twin_tree = tree == ACTIVE_TREE ? PENDING_TREE : ACTIVE_TREE;
 
-  UpdateTilePriorityForTree(tile, tree);
+  tile->SetPriority(tree, ComputePriorityForTile(tile));
+  UpdateRequiredStateForTile(tile, tree);
 
   const PictureLayerTiling* twin_tiling =
       client_->GetPendingOrActiveTwinTiling(this);
@@ -824,24 +827,13 @@ void PictureLayerTiling::UpdateTileAndTwinPriority(Tile* tile) const {
     return;
   }
 
-  twin_tiling->UpdateTilePriorityForTree(tile, twin_tree);
+  tile->SetPriority(twin_tree, twin_tiling->ComputePriorityForTile(tile));
+  twin_tiling->UpdateRequiredStateForTile(tile, twin_tree);
 }
 
-void PictureLayerTiling::UpdateTilePriorityForTree(Tile* tile,
-                                                   WhichTree tree) const {
-  // TODO(vmpstr): This code should return the priority instead of setting it on
-  // the tile. This should be a part of the change to move tile priority from
-  // tiles into iterators.
-  TilePriority::PriorityBin max_tile_priority_bin =
-      client_->GetMaxTilePriorityBin();
-
-  DCHECK_EQ(TileAt(tile->tiling_i_index(), tile->tiling_j_index()), tile);
-  gfx::Rect tile_bounds =
-      tiling_data_.TileBounds(tile->tiling_i_index(), tile->tiling_j_index());
-
-  if (max_tile_priority_bin <= TilePriority::NOW &&
-      current_visible_rect_.Intersects(tile_bounds)) {
-    tile->SetPriority(tree, TilePriority(resolution_, TilePriority::NOW, 0));
+void PictureLayerTiling::UpdateRequiredStateForTile(Tile* tile,
+                                                    WhichTree tree) const {
+  if (tile->priority(tree).priority_bin == TilePriority::NOW) {
     if (tree == PENDING_TREE) {
       tile->set_required_for_activation(
           IsTileRequiredForActivationIfVisible(tile));
@@ -852,11 +844,35 @@ void PictureLayerTiling::UpdateTilePriorityForTree(Tile* tile,
     return;
   }
 
+  // Non-NOW bin tiles are not required or occluded.
   if (tree == PENDING_TREE)
     tile->set_required_for_activation(false);
   else
     tile->set_required_for_draw(false);
   tile->set_is_occluded(tree, false);
+}
+
+void PictureLayerTiling::VerifyAllTilesHaveCurrentRasterSource() const {
+#if DCHECK_IS_ON()
+  for (const auto& tile_pair : tiles_)
+    DCHECK_EQ(raster_source_.get(), tile_pair.second->raster_source());
+#endif
+}
+
+TilePriority PictureLayerTiling::ComputePriorityForTile(
+    const Tile* tile) const {
+  // TODO(vmpstr): See if this can be moved to iterators.
+  TilePriority::PriorityBin max_tile_priority_bin =
+      client_->GetMaxTilePriorityBin();
+
+  DCHECK_EQ(TileAt(tile->tiling_i_index(), tile->tiling_j_index()), tile);
+  gfx::Rect tile_bounds =
+      tiling_data_.TileBounds(tile->tiling_i_index(), tile->tiling_j_index());
+
+  if (max_tile_priority_bin <= TilePriority::NOW &&
+      current_visible_rect_.Intersects(tile_bounds)) {
+    return TilePriority(resolution_, TilePriority::NOW, 0);
+  }
 
   DCHECK_GT(current_content_to_screen_scale_, 0.f);
   float distance_to_visible =
@@ -866,27 +882,41 @@ void PictureLayerTiling::UpdateTilePriorityForTree(Tile* tile,
   if (max_tile_priority_bin <= TilePriority::SOON &&
       (current_soon_border_rect_.Intersects(tile_bounds) ||
        current_skewport_rect_.Intersects(tile_bounds))) {
-    tile->SetPriority(
-        tree,
-        TilePriority(resolution_, TilePriority::SOON, distance_to_visible));
-    return;
+    return TilePriority(resolution_, TilePriority::SOON, distance_to_visible);
   }
 
-  tile->SetPriority(
-      tree,
-      TilePriority(resolution_, TilePriority::EVENTUALLY, distance_to_visible));
+  return TilePriority(resolution_, TilePriority::EVENTUALLY,
+                      distance_to_visible);
 }
 
-void PictureLayerTiling::GetAllTilesForTracing(
-    std::set<const Tile*>* tiles) const {
-  for (TileMap::const_iterator it = tiles_.begin(); it != tiles_.end(); ++it)
-    tiles->insert(it->second.get());
+void PictureLayerTiling::GetAllTilesAndPrioritiesForTracing(
+    std::map<const Tile*, TilePriority>* tile_map) const {
+  const PictureLayerTiling* twin_tiling =
+      client_->GetPendingOrActiveTwinTiling(this);
+  for (const auto& tile_pair : tiles_) {
+    const Tile* tile = tile_pair.second.get();
+    const TilePriority& priority = ComputePriorityForTile(tile);
+    // If the tile is shared, it means the twin also has the same tile.
+    // Otherwise, use the default priority.
+    const TilePriority& twin_priority =
+        (twin_tiling && tile->is_shared())
+            ? twin_tiling->ComputePriorityForTile(tile)
+            : TilePriority();
+
+    // Store combined priority.
+    (*tile_map)[tile] = TilePriority(priority, twin_priority);
+  }
 }
 
 void PictureLayerTiling::AsValueInto(
     base::trace_event::TracedValue* state) const {
   state->SetInteger("num_tiles", tiles_.size());
   state->SetDouble("content_scale", contents_scale_);
+  MathUtil::AddToTracedValue("visible_rect", current_visible_rect_, state);
+  MathUtil::AddToTracedValue("skewport_rect", current_skewport_rect_, state);
+  MathUtil::AddToTracedValue("soon_rect", current_soon_border_rect_, state);
+  MathUtil::AddToTracedValue("eventually_rect", current_eventually_rect_,
+                             state);
   MathUtil::AddToTracedValue("tiling_size", tiling_size(), state);
 }
 

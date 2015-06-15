@@ -18,11 +18,10 @@ public:
     }
 
     // EventTarget overrides:
-    const AtomicString& interfaceName() const override;
     ExecutionContext* executionContext() const override;
 
     // DOMWindow overrides:
-    void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
     bool isRemoteDOMWindow() const override { return true; }
     RemoteFrame* frame() const override;
     Screen* screen() const override;
@@ -78,10 +77,9 @@ public:
     PassRefPtrWillBeRawPtr<MediaQueryList> matchMedia(const String&) override;
     PassRefPtrWillBeRawPtr<CSSStyleDeclaration> getComputedStyle(Element*, const String& pseudoElt) const override;
     PassRefPtrWillBeRawPtr<CSSRuleList> getMatchedCSSRules(Element*, const String& pseudoElt) const override;
-    int requestAnimationFrame(RequestAnimationFrameCallback*) override;
-    int webkitRequestAnimationFrame(RequestAnimationFrameCallback*) override;
+    int requestAnimationFrame(FrameRequestCallback*) override;
+    int webkitRequestAnimationFrame(FrameRequestCallback*) override;
     void cancelAnimationFrame(int id) override;
-    void postMessage(PassRefPtr<SerializedScriptValue> message, const MessagePortArray*, const String& targetOrigin, LocalDOMWindow* source, ExceptionState&) override;
     String sanitizedCrossDomainAccessErrorMessage(LocalDOMWindow* callingWindow) override;
     String crossDomainAccessErrorMessage(LocalDOMWindow* callingWindow) override;
 

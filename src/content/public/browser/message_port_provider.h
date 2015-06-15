@@ -16,6 +16,8 @@ namespace content {
 
 class MessagePortDelegate;
 class WebContents;
+struct MessagePortMessage;
+struct TransferredMessagePort;
 
 // An interface consisting of methods that can be called to use Message ports.
 class CONTENT_EXPORT MessagePortProvider {
@@ -26,11 +28,12 @@ class CONTENT_EXPORT MessagePortProvider {
   // See https://html.spec.whatwg.org/multipage/comms.html#messageevent for
   // further information on message events.
   // Should be called on UI thread.
-  static void PostMessageToFrame(WebContents* web_contents,
-                                 const base::string16& source_origin,
-                                 const base::string16& target_origin,
-                                 const base::string16& data,
-                                 const std::vector<int>& ports);
+  static void PostMessageToFrame(
+      WebContents* web_contents,
+      const base::string16& source_origin,
+      const base::string16& target_origin,
+      const base::string16& data,
+      const std::vector<TransferredMessagePort>& ports);
 
   // Creates a message channel and provide the ids of the message ports that are
   // associated with this message channel.
@@ -43,12 +46,33 @@ class CONTENT_EXPORT MessagePortProvider {
                                    int* port2);
 
   // Posts a MessageEvent to a message port associated with a message channel.
-  static void PostMessageToPort(int sender_port_id,
-                                const base::string16& data,
-                                const std::vector<int>& sent_ports);
+  // Should be called on IO thread.
+  static void PostMessageToPort(
+      int sender_port_id,
+      const MessagePortMessage& message,
+      const std::vector<TransferredMessagePort>& sent_ports);
+
+  // Close the message port. Should be called on IO thread.
+  static void ClosePort(int message_port_id);
+
+  // Queue up all the messages for this message port until ReleaseMessages
+  // is called. Should be called on IO thread.
+  static void HoldMessages(int message_port_id);
+
+  // Release any queued messages as a result of HoldMessages. Should be
+  // called on IO thread.
+  static void ReleaseMessages(int message_port_id);
 
   // Cleanup the message ports that belong to the closing delegate.
+  // Should be called on IO thread.
   static void OnMessagePortDelegateClosing(MessagePortDelegate * delegate);
+
+  // Update message port information when the message port is transferred
+  // from a different process. The updated message ports will have their
+  // routing numbers equal to the message port numbers.
+  // Should be called on IO thread.
+  static void UpdateMessagePort(int message_port_id,
+                                MessagePortDelegate* delegate);
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(MessagePortProvider);

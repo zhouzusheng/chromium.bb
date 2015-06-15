@@ -33,7 +33,8 @@ void SpellCheckMessageFilter::OverrideThreadForMessage(
   // The message filter overrides the thread for these messages because they
   // access spellcheck data.
   if (message.type() == SpellCheckHostMsg_RequestDictionary::ID ||
-      message.type() == SpellCheckHostMsg_NotifyChecked::ID)
+      message.type() == SpellCheckHostMsg_NotifyChecked::ID ||
+      message.type() == SpellCheckHostMsg_RespondDocumentMarkers::ID)
     *thread = BrowserThread::UI;
 #if !defined(OS_MACOSX)
   if (message.type() == SpellCheckHostMsg_CallSpellingService::ID)
@@ -48,6 +49,8 @@ bool SpellCheckMessageFilter::OnMessageReceived(const IPC::Message& message) {
                         OnSpellCheckerRequestDictionary)
     IPC_MESSAGE_HANDLER(SpellCheckHostMsg_NotifyChecked,
                         OnNotifyChecked)
+    IPC_MESSAGE_HANDLER(SpellCheckHostMsg_RespondDocumentMarkers,
+                        OnRespondDocumentMarkers)
 #if !defined(OS_MACOSX)
     IPC_MESSAGE_HANDLER(SpellCheckHostMsg_CallSpellingService,
                         OnCallSpellingService)
@@ -89,6 +92,18 @@ void SpellCheckMessageFilter::OnNotifyChecked(const base::string16& word,
     return;
   if (spellcheck->GetMetrics())
     spellcheck->GetMetrics()->RecordCheckedWordStats(word, misspelled);
+}
+
+void SpellCheckMessageFilter::OnRespondDocumentMarkers(
+    const std::vector<uint32>& markers) {
+  SpellcheckService* spellcheck = GetSpellcheckService();
+  // Spellcheck service may not be available for a renderer process that is
+  // shutting down.
+  if (!spellcheck)
+    return;
+  // SHEZ: Remove feedback-sender
+  // spellcheck->GetFeedbackSender()->OnReceiveDocumentMarkers(
+  //    render_process_id_, markers);
 }
 
 #if !defined(OS_MACOSX)

@@ -32,15 +32,18 @@
 #include "WebNonCopyable.h"
 #include "WebPrivateOwnPtr.h"
 #include "WebSize.h"
+#include "WebTopControlsState.h"
 
 class SkBitmap;
 
 namespace blink {
 
 class WebCompositeAndReadbackAsyncCallback;
+class WebCompositorAnimationTimeline;
 class WebLayer;
 struct WebPoint;
 struct WebSelectionBound;
+class WebWidget;
 
 class WebLayerTreeView {
 public:
@@ -52,6 +55,8 @@ public:
     virtual void setRootLayer(const WebLayer&) = 0;
     virtual void clearRootLayer() = 0;
 
+    virtual void attachCompositorAnimationTimeline(WebCompositorAnimationTimeline*) { }
+    virtual void detachCompositorAnimationTimeline(WebCompositorAnimationTimeline*) { }
 
     // View properties ---------------------------------------------------
 
@@ -85,6 +90,13 @@ public:
     // Sets the amount that the top controls are showing, from 0 (hidden) to 1
     // (fully shown).
     virtual void setTopControlsShownRatio(float) { }
+
+    // Update top controls permitted and current states
+    virtual void updateTopControlsState(WebTopControlsState constraints, WebTopControlsState current, bool animate) { }
+
+    // Set top controls height. If |shrinkViewport| is set to true, then Blink shrunk the viewport clip
+    // layers by the top controls height.
+    virtual void setTopControlsHeight(float height, bool shrinkViewport) { }
 
     // Flow control and scheduling ---------------------------------------
 

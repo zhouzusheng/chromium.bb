@@ -396,7 +396,7 @@ bool TypingCommand::makeEditableRootEmpty()
     if (root->firstChild() == root->lastChild()) {
         if (isHTMLBRElement(root->firstChild())) {
             // If there is a single child and it could be a placeholder, leave it alone.
-            if (root->renderer() && root->renderer()->isRenderBlockFlow())
+            if (root->layoutObject() && root->layoutObject()->isLayoutBlockFlow())
                 return false;
         }
     }

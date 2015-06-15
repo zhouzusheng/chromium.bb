@@ -142,23 +142,14 @@ static EC_KEY *eckey_type2param(int ptype, void *pval) {
     }
   } else if (ptype == V_ASN1_OBJECT) {
     ASN1_OBJECT *poid = pval;
-    EC_GROUP *group;
 
     /* type == V_ASN1_OBJECT => the parameters are given
      * by an asn1 OID */
-    eckey = EC_KEY_new();
+    eckey = EC_KEY_new_by_curve_name(OBJ_obj2nid(poid));
     if (eckey == NULL) {
       OPENSSL_PUT_ERROR(EVP, eckey_type2param, ERR_R_MALLOC_FAILURE);
       goto err;
     }
-    group = EC_GROUP_new_by_curve_name(OBJ_obj2nid(poid));
-    if (group == NULL) {
-      goto err;
-    }
-    if (EC_KEY_set_group(eckey, group) == 0) {
-      goto err;
-    }
-    EC_GROUP_free(group);
   } else {
     OPENSSL_PUT_ERROR(EVP, eckey_type2param, EVP_R_DECODE_ERROR);
     goto err;
@@ -382,7 +373,11 @@ static int ec_copy_parameters(EVP_PKEY *to, const EVP_PKEY *from) {
 static int ec_cmp_parameters(const EVP_PKEY *a, const EVP_PKEY *b) {
   const EC_GROUP *group_a = EC_KEY_get0_group(a->pkey.ec),
                  *group_b = EC_KEY_get0_group(b->pkey.ec);
-  return EC_GROUP_cmp(group_a, group_b);
+  if (EC_GROUP_cmp(group_a, group_b, NULL) != 0) {
+    /* mismatch */
+    return 0;
+  }
+  return 1;
 }
 
 static void int_ec_free(EVP_PKEY *pkey) { EC_KEY_free(pkey->pkey.ec); }

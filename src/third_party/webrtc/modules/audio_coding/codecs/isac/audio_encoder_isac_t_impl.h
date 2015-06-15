@@ -22,13 +22,11 @@
 namespace webrtc {
 
 const int kIsacPayloadType = 103;
-const int kInvalidPayloadType = -1;
 const int kDefaultBitRate = 32000;
 
 template <typename T>
 AudioEncoderDecoderIsacT<T>::Config::Config()
     : payload_type(kIsacPayloadType),
-      red_payload_type(kInvalidPayloadType),
       sample_rate_hz(16000),
       frame_size_ms(30),
       bit_rate(kDefaultBitRate),
@@ -67,7 +65,6 @@ bool AudioEncoderDecoderIsacT<T>::Config::IsOk() const {
 template <typename T>
 AudioEncoderDecoderIsacT<T>::ConfigAdaptive::ConfigAdaptive()
     : payload_type(kIsacPayloadType),
-      red_payload_type(kInvalidPayloadType),
       sample_rate_hz(16000),
       initial_frame_size_ms(30),
       initial_bit_rate(kDefaultBitRate),
@@ -107,11 +104,10 @@ bool AudioEncoderDecoderIsacT<T>::ConfigAdaptive::IsOk() const {
 template <typename T>
 AudioEncoderDecoderIsacT<T>::AudioEncoderDecoderIsacT(const Config& config)
     : payload_type_(config.payload_type),
-      red_payload_type_(config.red_payload_type),
       state_lock_(CriticalSectionWrapper::CreateCriticalSection()),
+      decoder_sample_rate_hz_(0),
       lock_(CriticalSectionWrapper::CreateCriticalSection()),
-      packet_in_progress_(false),
-      redundant_length_bytes_(0) {
+      packet_in_progress_(false) {
   CHECK(config.IsOk());
   CHECK_EQ(0, T::Create(&isac_state_));
   CHECK_EQ(0, T::EncoderInit(isac_state_, 1));
@@ -134,11 +130,10 @@ template <typename T>
 AudioEncoderDecoderIsacT<T>::AudioEncoderDecoderIsacT(
     const ConfigAdaptive& config)
     : payload_type_(config.payload_type),
-      red_payload_type_(config.red_payload_type),
       state_lock_(CriticalSectionWrapper::CreateCriticalSection()),
+      decoder_sample_rate_hz_(0),
       lock_(CriticalSectionWrapper::CreateCriticalSection()),
-      packet_in_progress_(false),
-      redundant_length_bytes_(0) {
+      packet_in_progress_(false) {
   CHECK(config.IsOk());
   CHECK_EQ(0, T::Create(&isac_state_));
   CHECK_EQ(0, T::EncoderInit(isac_state_, 0));
@@ -160,12 +155,6 @@ AudioEncoderDecoderIsacT<T>::~AudioEncoderDecoderIsacT() {
 }
 
 template <typename T>
-void AudioEncoderDecoderIsacT<T>::UpdateDecoderSampleRate(int sample_rate_hz) {
-  CriticalSectionScoped cs(state_lock_.get());
-  CHECK_EQ(0, T::SetDecSampRate(isac_state_, sample_rate_hz));
-}
-
-template <typename T>
 int AudioEncoderDecoderIsacT<T>::SampleRateHz() const {
   CriticalSectionScoped cs(state_lock_.get());
   return T::EncSampRate(isac_state_);
@@ -174,6 +163,11 @@ int AudioEncoderDecoderIsacT<T>::SampleRateHz() const {
 template <typename T>
 int AudioEncoderDecoderIsacT<T>::NumChannels() const {
   return 1;
+}
+
+template <typename T>
+size_t AudioEncoderDecoderIsacT<T>::MaxEncodedBytes() const {
+  return kSufficientEncodeBufferSizeBytes;
 }
 
 template <typename T>
@@ -190,11 +184,11 @@ int AudioEncoderDecoderIsacT<T>::Max10MsFramesInAPacket() const {
 }
 
 template <typename T>
-bool AudioEncoderDecoderIsacT<T>::EncodeInternal(uint32_t rtp_timestamp,
-                                                 const int16_t* audio,
-                                                 size_t max_encoded_bytes,
-                                                 uint8_t* encoded,
-                                                 EncodedInfo* info) {
+AudioEncoder::EncodedInfo AudioEncoderDecoderIsacT<T>::EncodeInternal(
+    uint32_t rtp_timestamp,
+    const int16_t* audio,
+    size_t max_encoded_bytes,
+    uint8_t* encoded) {
   CriticalSectionScoped cs_lock(lock_.get());
   if (!packet_in_progress_) {
     // Starting a new packet; remember the timestamp for later.
@@ -206,98 +200,53 @@ bool AudioEncoderDecoderIsacT<T>::EncodeInternal(uint32_t rtp_timestamp,
     CriticalSectionScoped cs(state_lock_.get());
     r = T::Encode(isac_state_, audio, encoded);
   }
-  if (r < 0) {
-    // An error occurred; propagate it to the caller.
-    packet_in_progress_ = false;
-    return false;
-  }
+  CHECK_GE(r, 0);
 
   // T::Encode doesn't allow us to tell it the size of the output
   // buffer. All we can do is check for an overrun after the fact.
   CHECK(static_cast<size_t>(r) <= max_encoded_bytes);
 
-  info->encoded_bytes = r;
   if (r == 0)
-    return true;
+    return EncodedInfo();
 
   // Got enough input to produce a packet. Return the saved timestamp from
   // the first chunk of input that went into the packet.
   packet_in_progress_ = false;
-  info->encoded_timestamp = packet_timestamp_;
-  info->payload_type = payload_type_;
-
-  if (!T::has_redundant_encoder)
-    return true;
-
-  if (redundant_length_bytes_ == 0) {
-    // Do not emit the first output frame when using redundant encoding.
-    info->encoded_bytes = 0;
-  } else {
-    // When a redundant payload from the last Encode call is available, the
-    // resulting payload consists of the primary encoding followed by the
-    // redundant encoding from last time.
-    const size_t primary_length = info->encoded_bytes;
-    memcpy(&encoded[primary_length], redundant_payload_,
-           redundant_length_bytes_);
-    // The EncodedInfo struct |info| will have one root node and two leaves.
-    // |info| will be implicitly cast to an EncodedInfoLeaf struct, effectively
-    // discarding the (empty) vector of redundant information. This is
-    // intentional.
-    info->redundant.push_back(*info);
-    EncodedInfoLeaf secondary_info;
-    secondary_info.payload_type = info->payload_type;
-    secondary_info.encoded_bytes = redundant_length_bytes_;
-    secondary_info.encoded_timestamp = last_encoded_timestamp_;
-    info->redundant.push_back(secondary_info);
-    info->encoded_bytes +=
-        redundant_length_bytes_;  // Sum of primary and secondary.
-    DCHECK_NE(red_payload_type_, kInvalidPayloadType)
-        << "Config.red_payload_type must be set for "
-           "AudioEncoderDecoderIsacRed.";
-    info->payload_type = red_payload_type_;
-  }
-  {
-    CriticalSectionScoped cs(state_lock_.get());
-    // Call the encoder's method to get redundant encoding.
-    redundant_length_bytes_ = T::GetRedPayload(isac_state_, redundant_payload_);
-  }
-  DCHECK_LE(redundant_length_bytes_, sizeof(redundant_payload_));
-  DCHECK_GE(redundant_length_bytes_, 0u);
-  last_encoded_timestamp_ = packet_timestamp_;
-  return true;
+  EncodedInfo info;
+  info.encoded_bytes = r;
+  info.encoded_timestamp = packet_timestamp_;
+  info.payload_type = payload_type_;
+  return info;
 }
 
 template <typename T>
-int AudioEncoderDecoderIsacT<T>::Decode(const uint8_t* encoded,
-                                        size_t encoded_len,
-                                        int16_t* decoded,
-                                        SpeechType* speech_type) {
+int AudioEncoderDecoderIsacT<T>::DecodeInternal(const uint8_t* encoded,
+                                                size_t encoded_len,
+                                                int sample_rate_hz,
+                                                int16_t* decoded,
+                                                SpeechType* speech_type) {
   CriticalSectionScoped cs(state_lock_.get());
+  // We want to crate the illusion that iSAC supports 48000 Hz decoding, while
+  // in fact it outputs 32000 Hz. This is the iSAC fullband mode.
+  if (sample_rate_hz == 48000)
+    sample_rate_hz = 32000;
+  CHECK(sample_rate_hz == 16000 || sample_rate_hz == 32000)
+      << "Unsupported sample rate " << sample_rate_hz;
+  if (sample_rate_hz != decoder_sample_rate_hz_) {
+    CHECK_EQ(0, T::SetDecSampRate(isac_state_, sample_rate_hz));
+    decoder_sample_rate_hz_ = sample_rate_hz;
+  }
   int16_t temp_type = 1;  // Default is speech.
   int16_t ret =
-      T::Decode(isac_state_, encoded, static_cast<int16_t>(encoded_len),
-                decoded, &temp_type);
-  *speech_type = ConvertSpeechType(temp_type);
-  return ret;
-}
-
-template <typename T>
-int AudioEncoderDecoderIsacT<T>::DecodeRedundant(const uint8_t* encoded,
-                                                 size_t encoded_len,
-                                                 int16_t* decoded,
-                                                 SpeechType* speech_type) {
-  CriticalSectionScoped cs(state_lock_.get());
-  int16_t temp_type = 1;  // Default is speech.
-  int16_t ret =
-      T::DecodeRcu(isac_state_, encoded, static_cast<int16_t>(encoded_len),
-                   decoded, &temp_type);
+      T::DecodeInternal(isac_state_, encoded, static_cast<int16_t>(encoded_len),
+                        decoded, &temp_type);
   *speech_type = ConvertSpeechType(temp_type);
   return ret;
 }
 
 template <typename T>
 bool AudioEncoderDecoderIsacT<T>::HasDecodePlc() const {
-  return true;
+  return false;
 }
 
 template <typename T>

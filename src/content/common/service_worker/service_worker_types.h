@@ -15,6 +15,7 @@
 #include "content/public/common/request_context_frame_type.h"
 #include "content/public/common/request_context_type.h"
 #include "third_party/WebKit/public/platform/WebPageVisibilityState.h"
+#include "third_party/WebKit/public/platform/WebServiceWorkerClientType.h"
 #include "third_party/WebKit/public/platform/WebServiceWorkerResponseType.h"
 #include "third_party/WebKit/public/platform/WebServiceWorkerState.h"
 #include "url/gurl.h"
@@ -54,8 +55,10 @@ static const int kInvalidServiceWorkerClientId = 0;
 enum ServiceWorkerProviderType {
   SERVICE_WORKER_PROVIDER_UNKNOWN,
 
-  // For Documents and SharedWorkers.
-  SERVICE_WORKER_PROVIDER_FOR_CONTROLLEE,
+  // For ServiceWorker clients.
+  SERVICE_WORKER_PROVIDER_FOR_WINDOW,
+  SERVICE_WORKER_PROVIDER_FOR_WORKER,
+  SERVICE_WORKER_PROVIDER_FOR_SHARED_WORKER,
 
   // For ServiceWorkers.
   SERVICE_WORKER_PROVIDER_FOR_CONTROLLER,
@@ -142,36 +145,6 @@ struct CONTENT_EXPORT ServiceWorkerResponse {
   GURL stream_url;
 };
 
-// Controls how requests are matched in the Cache API.
-struct CONTENT_EXPORT ServiceWorkerCacheQueryParams {
-  ServiceWorkerCacheQueryParams();
-
-  bool ignore_search;
-  bool ignore_method;
-  bool ignore_vary;
-  bool prefix_match;
-  base::string16 cache_name;
-};
-
-// The type of a single batch operation in the Cache API.
-enum ServiceWorkerCacheOperationType {
-  SERVICE_WORKER_CACHE_OPERATION_TYPE_UNDEFINED,
-  SERVICE_WORKER_CACHE_OPERATION_TYPE_PUT,
-  SERVICE_WORKER_CACHE_OPERATION_TYPE_DELETE,
-  SERVICE_WORKER_CACHE_OPERATION_TYPE_LAST =
-      SERVICE_WORKER_CACHE_OPERATION_TYPE_DELETE
-};
-
-// A single batch operation for the Cache API.
-struct CONTENT_EXPORT ServiceWorkerBatchOperation {
-  ServiceWorkerBatchOperation();
-
-  ServiceWorkerCacheOperationType operation_type;
-  ServiceWorkerFetchRequest request;
-  ServiceWorkerResponse response;
-  ServiceWorkerCacheQueryParams match_params;
-};
-
 // Represents initialization info for a WebServiceWorker object.
 struct CONTENT_EXPORT ServiceWorkerObjectInfo {
   ServiceWorkerObjectInfo();
@@ -181,7 +154,7 @@ struct CONTENT_EXPORT ServiceWorkerObjectInfo {
   int64 version_id;
 };
 
-struct ServiceWorkerRegistrationObjectInfo {
+struct CONTENT_EXPORT ServiceWorkerRegistrationObjectInfo {
   ServiceWorkerRegistrationObjectInfo();
   int handle_id;
   GURL scope;
@@ -216,6 +189,12 @@ class ChangedVersionAttributesMask {
 
  private:
   int changed_;
+};
+
+struct ServiceWorkerClientQueryOptions {
+  ServiceWorkerClientQueryOptions();
+  blink::WebServiceWorkerClientType client_type;
+  bool include_uncontrolled;
 };
 
 }  // namespace content

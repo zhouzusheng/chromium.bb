@@ -192,16 +192,16 @@ public:
 
     virtual ~GrColorCubeEffect();
 
-    const char* name() const SK_OVERRIDE { return "ColorCube"; }
+    const char* name() const override { return "ColorCube"; }
 
     virtual void getGLProcessorKey(const GrGLCaps& caps,
-                                   GrProcessorKeyBuilder* b) const SK_OVERRIDE;
+                                   GrProcessorKeyBuilder* b) const override;
 
-    GrGLFragmentProcessor* createGLInstance() const SK_OVERRIDE;
+    GrGLFragmentProcessor* createGLInstance() const override;
     int colorCubeSize() const { return fColorCubeAccess.getTexture()->width(); }
 
 
-    void onComputeInvariantOutput(GrInvariantOutput*) const SK_OVERRIDE;
+    void onComputeInvariantOutput(GrInvariantOutput*) const override;
 
     class GLProcessor : public GrGLFragmentProcessor {
     public:
@@ -213,11 +213,11 @@ public:
                               const char* outputColor,
                               const char* inputColor,
                               const TransformedCoordsArray&,
-                              const TextureSamplerArray&) SK_OVERRIDE;
+                              const TextureSamplerArray&) override;
 
         static inline void GenKey(const GrProcessor&, const GrGLCaps&, GrProcessorKeyBuilder*);
 
-        void setData(const GrGLProgramDataManager&, const GrProcessor&) SK_OVERRIDE;
+        void setData(const GrGLProgramDataManager&, const GrProcessor&) override;
 
     private:
         GrGLProgramDataManager::UniformHandle fColorCubeSizeUni;
@@ -227,7 +227,7 @@ public:
     };
 
 private:
-    bool onIsEqual(const GrFragmentProcessor&) const SK_OVERRIDE { return true; }
+    bool onIsEqual(const GrFragmentProcessor&) const override { return true; }
 
     GrColorCubeEffect(GrTexture* colorCube);
 
@@ -337,7 +337,8 @@ void GrColorCubeEffect::GLProcessor::GenKey(const GrProcessor& proc,
                                             const GrGLCaps&, GrProcessorKeyBuilder* b) {
 }
 
-GrFragmentProcessor* SkColorCubeFilter::asFragmentProcessor(GrContext* context) const {
+bool SkColorCubeFilter::asFragmentProcessors(GrContext* context,
+                                             SkTDArray<GrFragmentProcessor*>* array) const {
     static const GrUniqueKey::Domain kDomain = GrUniqueKey::GenerateDomain();
     GrUniqueKey key;
     GrUniqueKey::Builder builder(&key, kDomain, 2);
@@ -358,6 +359,13 @@ GrFragmentProcessor* SkColorCubeFilter::asFragmentProcessor(GrContext* context) 
         }
     }
 
-    return textureCube ? GrColorCubeEffect::Create(textureCube) : NULL;
+    GrFragmentProcessor* frag = textureCube ? GrColorCubeEffect::Create(textureCube) : NULL;
+    if (frag) {
+        if (array) {
+            *array->append() = frag;
+        }
+        return true;
+    }
+    return false;
 }
 #endif

@@ -340,6 +340,12 @@ NET_ERROR(SSL_CLIENT_AUTH_CERT_BAD_FORMAT, -164)
 // minimum fallback version, and thus fallback failed.
 NET_ERROR(SSL_FALLBACK_BEYOND_MINIMUM_VERSION, -165)
 
+// Resolving a hostname to an IP address list included the IPv4 address
+// "127.0.53.53". This is a special IP address which ICANN has recommended to
+// indicate there was a name collision, and alert admins to a potential
+// problem.
+NET_ERROR(ICANN_NAME_COLLISION, -166)
+
 // Certificate error codes
 //
 // The values of certificate error codes must be consecutive.
@@ -626,6 +632,9 @@ NET_ERROR(HTTP_1_1_REQUIRED, -365)
 
 // HTTP_1_1_REQUIRED error code received on HTTP/2 session to proxy.
 NET_ERROR(PROXY_HTTP_1_1_REQUIRED, -366)
+
+// The PAC script terminated fatally and must be reloaded.
+NET_ERROR(PAC_SCRIPT_TERMINATED, -367)
 
 // The cache does not have the requested entry.
 NET_ERROR(CACHE_MISS, -400)

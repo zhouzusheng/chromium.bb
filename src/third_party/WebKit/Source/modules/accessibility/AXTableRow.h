@@ -29,13 +29,13 @@
 #ifndef AXTableRow_h
 #define AXTableRow_h
 
-#include "modules/accessibility/AXRenderObject.h"
+#include "modules/accessibility/AXLayoutObject.h"
 
 namespace blink {
 
 class AXObjectCacheImpl;
 
-class AXTableRow : public AXRenderObject {
+class AXTableRow : public AXLayoutObject {
 
 protected:
     AXTableRow(LayoutObject*, AXObjectCacheImpl*);
@@ -65,7 +65,6 @@ protected:
 private:
     int m_rowIndex;
 
-    virtual AXObject* observableObject() const override final;
     virtual bool computeAccessibilityIsIgnored() const override final;
 };
 

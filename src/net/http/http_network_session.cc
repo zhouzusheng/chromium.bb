@@ -28,7 +28,6 @@
 #include "net/socket/client_socket_pool_manager_impl.h"
 #include "net/socket/next_proto.h"
 #include "net/socket/ssl_client_socket.h"
-#include "net/spdy/hpack_huffman_aggregator.h"
 #include "net/spdy/spdy_session_pool.h"
 
 namespace {
@@ -36,10 +35,6 @@ namespace {
 net::ClientSocketPoolManager* CreateSocketPoolManager(
     net::HttpNetworkSession::SocketPoolType pool_type,
     const net::HttpNetworkSession::Params& params) {
-  // TODO(michaeln): Remove ScopedTracker below once crbug.com/454983 is fixed
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "454983 CreateSocketPoolManager"));
   // TODO(yutak): Differentiate WebSocket pool manager and allow more
   // simultaneous connections for WebSockets.
   return new net::ClientSocketPoolManagerImpl(
@@ -49,8 +44,7 @@ net::ClientSocketPoolManager* CreateSocketPoolManager(
       params.host_resolver, params.cert_verifier, params.channel_id_service,
       params.transport_security_state, params.cert_transparency_verifier,
       params.cert_policy_enforcer, params.ssl_session_cache_shard,
-      params.ssl_config_service, params.enable_ssl_connect_job_waiting,
-      pool_type);
+      params.ssl_config_service, pool_type);
 }
 
 }  // unnamed namespace
@@ -71,7 +65,6 @@ HttpNetworkSession::Params::Params()
       network_delegate(NULL),
       net_log(NULL),
       host_mapping_rules(NULL),
-      enable_ssl_connect_job_waiting(false),
       ignore_certificate_errors(false),
       use_stale_while_revalidate(false),
       testing_fixed_http_port(0),
@@ -94,11 +87,13 @@ HttpNetworkSession::Params::Params()
       enable_quic_port_selection(true),
       quic_always_require_handshake_confirmation(false),
       quic_disable_connection_pooling(false),
-      quic_load_server_info_timeout_ms(0),
-      quic_load_server_info_timeout_srtt_multiplier(0.0f),
-      quic_enable_truncated_connection_ids(false),
+      quic_load_server_info_timeout_srtt_multiplier(0.25f),
       quic_enable_connection_racing(false),
+      quic_enable_non_blocking_io(false),
       quic_disable_disk_cache(false),
+      quic_max_number_of_lossy_connections(0),
+      quic_packet_loss_threshold(1.0f),
+      quic_socket_receive_buffer_size(kDefaultSocketReceiveBuffer),
       quic_clock(NULL),
       quic_random(NULL),
       quic_max_packet_length(kDefaultMaxPacketSize),
@@ -141,11 +136,13 @@ HttpNetworkSession::HttpNetworkSession(const Params& params)
           params.enable_quic_port_selection,
           params.quic_always_require_handshake_confirmation,
           params.quic_disable_connection_pooling,
-          params.quic_load_server_info_timeout_ms,
           params.quic_load_server_info_timeout_srtt_multiplier,
-          params.quic_enable_truncated_connection_ids,
           params.quic_enable_connection_racing,
+          params.quic_enable_non_blocking_io,
           params.quic_disable_disk_cache,
+          params.quic_max_number_of_lossy_connections,
+          params.quic_packet_loss_threshold,
+          params.quic_socket_receive_buffer_size,
           params.quic_connection_options),
       spdy_session_pool_(params.host_resolver,
                          params.ssl_config_service,
@@ -166,10 +163,6 @@ HttpNetworkSession::HttpNetworkSession(const Params& params)
   DCHECK(proxy_service_);
   DCHECK(ssl_config_service_.get());
   CHECK(http_server_properties_);
-  // TODO(michaeln): Remove ScopedTracker below once crbug.com/454983 is fixed
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "454983 HttpNetworkSession::HttpNetworkSession"));
 
   for (int i = ALTERNATE_PROTOCOL_MINIMUM_VALID_VERSION;
        i <= ALTERNATE_PROTOCOL_MAXIMUM_VALID_VERSION; ++i) {
@@ -199,10 +192,6 @@ HttpNetworkSession::HttpNetworkSession(const Params& params)
       enabled_protocols_[alternate - ALTERNATE_PROTOCOL_MINIMUM_VALID_VERSION] =
           true;
     }
-  }
-
-  if (HpackHuffmanAggregator::UseAggregator()) {
-    huffman_aggregator_.reset(new HpackHuffmanAggregator());
   }
 
   http_server_properties_->SetAlternateProtocolProbabilityThreshold(

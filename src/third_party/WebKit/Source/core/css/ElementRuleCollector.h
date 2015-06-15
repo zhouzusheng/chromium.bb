@@ -61,7 +61,7 @@ public:
     uint64_t position() const { return m_position; }
     unsigned specificity() const { return ruleData()->specificity() + m_specificity; }
     const CSSStyleSheet* parentStyleSheet() const { return m_parentStyleSheet; }
-    void trace(Visitor* visitor)
+    DEFINE_INLINE_TRACE()
     {
         visitor->trace(m_parentStyleSheet);
     }
@@ -88,25 +88,25 @@ class StyleRuleList final : public RefCountedWillBeGarbageCollected<StyleRuleLis
 public:
     static PassRefPtrWillBeRawPtr<StyleRuleList> create() { return adoptRefWillBeNoop(new StyleRuleList()); }
 
-    void trace(Visitor* visitor)
+    DEFINE_INLINE_TRACE()
     {
 #if ENABLE(OILPAN)
         visitor->trace(m_list);
 #endif
     }
 
-    WillBeHeapVector<RawPtrWillBeMember<StyleRule> > m_list;
+    WillBeHeapVector<RawPtrWillBeMember<StyleRule>> m_list;
 };
 
 // ElementRuleCollector is designed to be used as a stack object.
 // Create one, ask what rules the ElementResolveContext matches
 // and then let it go out of scope.
-// FIXME: Currently it modifies the LayoutStyle but should not!
+// FIXME: Currently it modifies the ComputedStyle but should not!
 class ElementRuleCollector {
     STACK_ALLOCATED();
     WTF_MAKE_NONCOPYABLE(ElementRuleCollector);
 public:
-    ElementRuleCollector(const ElementResolveContext&, const SelectorFilter&, LayoutStyle* = 0);
+    ElementRuleCollector(const ElementResolveContext&, const SelectorFilter&, ComputedStyle* = 0);
     ~ElementRuleCollector();
 
     void setMode(SelectorChecker::Mode mode) { m_mode = mode; }
@@ -157,7 +157,7 @@ private:
 private:
     const ElementResolveContext& m_context;
     const SelectorFilter& m_selectorFilter;
-    RefPtr<LayoutStyle> m_style; // FIXME: This can be mutated during matching!
+    RefPtr<ComputedStyle> m_style; // FIXME: This can be mutated during matching!
 
     PseudoStyleRequest m_pseudoStyleRequest;
     SelectorChecker::Mode m_mode;

@@ -13,7 +13,7 @@ namespace blink {
 
 class Page;
 
-class InspectorAccessibilityAgent : public InspectorBaseAgent<InspectorAccessibilityAgent>, public InspectorBackendDispatcher::AccessibilityCommandHandler {
+class InspectorAccessibilityAgent : public InspectorBaseAgent<InspectorAccessibilityAgent, InspectorFrontend::Accessibility>, public InspectorBackendDispatcher::AccessibilityCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorAccessibilityAgent);
 public:
     static PassOwnPtrWillBeRawPtr<InspectorAccessibilityAgent> create(Page* page)
@@ -22,7 +22,7 @@ public:
     }
 
     // Base agent methods.
-    void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     // Protocol methods.
     void getAXNode(ErrorString*, int nodeId, RefPtr<TypeBuilder::Accessibility::AXNode>& accessibilityNode) override;

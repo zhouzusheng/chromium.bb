@@ -10,7 +10,7 @@ namespace blink {
 void InterpolationEffect::getActiveInterpolations(double fraction, double iterationDuration, OwnPtrWillBeRawPtr<WillBeHeapVector<RefPtrWillBeMember<Interpolation>>>& result) const
 {
     if (!result)
-        result = adoptPtrWillBeNoop(new WillBeHeapVector<RefPtrWillBeMember<Interpolation> >());
+        result = adoptPtrWillBeNoop(new WillBeHeapVector<RefPtrWillBeMember<Interpolation>>());
 
     size_t existingSize = result->size();
     size_t resultIndex = 0;
@@ -32,15 +32,15 @@ void InterpolationEffect::getActiveInterpolations(double fraction, double iterat
         result->shrink(resultIndex);
 }
 
-void InterpolationEffect::addInterpolationsFromKeyframes(CSSPropertyID property, Element* element, Keyframe::PropertySpecificKeyframe& keyframeA, Keyframe::PropertySpecificKeyframe& keyframeB, double applyFrom, double applyTo)
+void InterpolationEffect::addInterpolationsFromKeyframes(CSSPropertyID property, Element* element, const ComputedStyle* baseStyle, Keyframe::PropertySpecificKeyframe& keyframeA, Keyframe::PropertySpecificKeyframe& keyframeB, double applyFrom, double applyTo)
 {
-    RefPtrWillBeRawPtr<Interpolation> interpolation = keyframeA.maybeCreateInterpolation(property, keyframeB, element);
+    RefPtrWillBeRawPtr<Interpolation> interpolation = keyframeA.maybeCreateInterpolation(property, keyframeB, element, baseStyle);
 
     if (interpolation) {
         addInterpolation(interpolation, &keyframeA.easing(), keyframeA.offset(), keyframeB.offset(), applyFrom, applyTo);
     } else {
-        RefPtrWillBeRawPtr<Interpolation> interpolationA = keyframeA.maybeCreateInterpolation(property, keyframeA, element);
-        RefPtrWillBeRawPtr<Interpolation> interpolationB = keyframeB.maybeCreateInterpolation(property, keyframeB, element);
+        RefPtrWillBeRawPtr<Interpolation> interpolationA = keyframeA.maybeCreateInterpolation(property, keyframeA, element, baseStyle);
+        RefPtrWillBeRawPtr<Interpolation> interpolationB = keyframeB.maybeCreateInterpolation(property, keyframeB, element, baseStyle);
 
         ASSERT(interpolationA);
         ASSERT(interpolationB);
@@ -73,12 +73,12 @@ void InterpolationEffect::addInterpolationsFromKeyframes(CSSPropertyID property,
     }
 }
 
-void InterpolationEffect::InterpolationRecord::trace(Visitor* visitor)
+DEFINE_TRACE(InterpolationEffect::InterpolationRecord)
 {
     visitor->trace(m_interpolation);
 }
 
-void InterpolationEffect::trace(Visitor* visitor)
+DEFINE_TRACE(InterpolationEffect)
 {
     visitor->trace(m_interpolations);
 }

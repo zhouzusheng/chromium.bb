@@ -7,7 +7,6 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
 #include "third_party/WebKit/public/platform/WebServiceWorkerProvider.h"
 
 namespace blink {
@@ -42,10 +41,8 @@ class WebServiceWorkerProviderImpl
 
   virtual void getRegistration(const blink::WebURL& document_url,
                                WebServiceWorkerGetRegistrationCallbacks*);
-
-  ServiceWorkerProviderContext* context() { return context_.get(); }
-
-  int provider_id() const { return provider_id_; }
+  virtual void getRegistrationForReady(
+      WebServiceWorkerGetRegistrationForReadyCallbacks*);
 
  private:
   void RemoveProviderClient();
@@ -53,7 +50,6 @@ class WebServiceWorkerProviderImpl
 
   scoped_refptr<ThreadSafeSender> thread_safe_sender_;
   scoped_refptr<ServiceWorkerProviderContext> context_;
-  const int provider_id_;
 
   DISALLOW_COPY_AND_ASSIGN(WebServiceWorkerProviderImpl);
 };

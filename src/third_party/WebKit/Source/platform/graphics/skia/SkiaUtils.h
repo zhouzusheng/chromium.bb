@@ -63,11 +63,11 @@ SkColor PLATFORM_EXPORT scaleAlpha(SkColor, float);
 // alpha is in the range [0, 256].
 SkColor PLATFORM_EXPORT scaleAlpha(SkColor, int);
 
-inline SkPaint::FilterLevel WebCoreInterpolationQualityToSkFilterLevel(InterpolationQuality quality)
+inline SkFilterQuality WebCoreInterpolationQualityToSkFilterQuality(InterpolationQuality quality)
 {
     // FIXME: this reflects existing client mappings, but should probably
     // be expanded to map higher level interpolations more accurately.
-    return quality != InterpolationNone ? SkPaint::kLow_FilterLevel : SkPaint::kNone_FilterLevel;
+    return quality != InterpolationNone ? kLow_SkFilterQuality : kNone_SkFilterQuality;
 }
 
 // Skia has problems when passed infinite, etc floats, filter them to 0.
@@ -128,6 +128,13 @@ InterpolationQuality computeInterpolationQuality(
     bool isDataComplete = true);
 
 bool shouldDrawAntiAliased(const GraphicsContext*, const SkRect& destRect);
+
+// This replicates the old skia behavior when it used to take radius for blur. Now it takes sigma.
+inline SkScalar skBlurRadiusToSigma(SkScalar radius)
+{
+    SkASSERT(radius >= 0);
+    return 0.288675f * radius + 0.5f;
+}
 
 } // namespace blink
 

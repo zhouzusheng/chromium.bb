@@ -44,7 +44,7 @@ namespace blink {
 // if available.
 const float kMaxSizeForEmbeddedBitmap = 24.0f;
 
-void FontPlatformData::setupPaint(SkPaint* paint, GraphicsContext* context, const Font*, const BBFontSmoothingOverride* fontSmoothingOverride) const
+void FontPlatformData::setupPaint(SkPaint* paint, float, const Font* font) const
 {
     const float ts = m_textSize >= 0 ? m_textSize : 12;
     paint->setTextSize(SkFloatToScalar(m_textSize));
@@ -53,14 +53,24 @@ void FontPlatformData::setupPaint(SkPaint* paint, GraphicsContext* context, cons
     paint->setTextSkewX(m_syntheticItalic ? -SK_Scalar1 / 4 : 0);
 
     uint32_t textFlags;
-    bool lcdExplicitlyRequested;
-    if (fontSmoothingOverride) {
-        textFlags = fontSmoothingOverride->textFlags;
-        lcdExplicitlyRequested = fontSmoothingOverride->lcdExplicitlyRequested;
+    if (font) {
+        switch (font->fontDescription().fontSmoothing()) {
+        case NoSmoothing:
+            textFlags = 0;
+            break;
+        case Antialiased:
+            textFlags = SkPaint::kAntiAlias_Flag;
+            break;
+        case SubpixelAntialiased:
+            textFlags = (SkPaint::kAntiAlias_Flag | SkPaint::kLCDRenderText_Flag);
+            break;
+        default:
+            textFlags = paintTextFlags();
+            break;
+        }
     }
     else {
         textFlags = paintTextFlags();
-        lcdExplicitlyRequested = false;
     }
 
     uint32_t flags = paint->getFlags();
@@ -90,17 +100,6 @@ void FontPlatformData::setupPaint(SkPaint* paint, GraphicsContext* context, cons
                 || LayoutTestSupport::isRunningLayoutTest()))
             flags |= SkPaint::kSubpixelText_Flag;
 
-        // Only set painting flags when we're actually painting.
-        // SHEZ: don't remove cleartype if it was explicitly requested
-        if (!lcdExplicitlyRequested && context && !context->couldUseLCDRenderedText()) {
-            textFlags &= ~SkPaint::kLCDRenderText_Flag;
-            // If we *just* clear our request for LCD, then GDI seems to
-            // sometimes give us AA text, and sometimes give us BW text. Since the
-            // original intent was LCD, we want to force AA (rather than BW), so we
-            // add a special bit to tell Skia to do its best to avoid the BW: by
-            // drawing LCD offscreen and downsampling that to AA.
-            textFlags |= SkPaint::kGenA8FromLCD_Flag;
-        }
         SkASSERT(!(textFlags & ~textFlagsMask));
         flags |= textFlags;
     }

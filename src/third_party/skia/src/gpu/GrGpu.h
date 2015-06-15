@@ -36,7 +36,7 @@ public:
     ////////////////////////////////////////////////////////////////////////////
 
     GrGpu(GrContext* context);
-    ~GrGpu() SK_OVERRIDE;
+    ~GrGpu() override;
 
     GrContext* getContext() { return fContext; }
     const GrContext* getContext() const { return fContext; }
@@ -358,6 +358,7 @@ public:
             fShaderCompilations = 0;
             fTextureCreates = 0;
             fTextureUploads = 0;
+            fStencilBufferCreates = 0;
         }
 
         int renderTargetBinds() const { return fRenderTargetBinds; }
@@ -368,6 +369,7 @@ public:
         void incTextureCreates() { fTextureCreates++; }
         int textureUploads() const { return fTextureUploads; }
         void incTextureUploads() { fTextureUploads++; }
+        void incStencilBufferCreates() { fStencilBufferCreates++; }
         void dump(SkString*);
 
     private:
@@ -375,12 +377,14 @@ public:
         int fShaderCompilations;
         int fTextureCreates;
         int fTextureUploads;
+        int fStencilBufferCreates;
 #else
         void dump(SkString*) {};
         void incRenderTargetBinds() {}
         void incShaderCompilations() {}
         void incTextureCreates() {}
         void incTextureUploads() {}
+        void incStencilBufferCreates() {}
 #endif
     };
 
@@ -404,6 +408,9 @@ public:
      */
     void saveActiveTraceMarkers();
     void restoreActiveTraceMarkers();
+
+    // Given a rt, find or create a stencil buffer and attach it
+    bool attachStencilBufferToRenderTarget(GrRenderTarget* target);
 
 protected:
     // Functions used to map clip-respecting stencil tests into normal
@@ -488,9 +495,6 @@ private:
 
     // clears target's entire stencil buffer to 0
     virtual void clearStencil(GrRenderTarget* target) = 0;
-
-    // Given a rt, find or create a stencil buffer and attach it
-    bool attachStencilBufferToRenderTarget(GrRenderTarget* target);
 
     virtual void didAddGpuTraceMarker() = 0;
     virtual void didRemoveGpuTraceMarker() = 0;

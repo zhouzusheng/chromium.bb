@@ -664,10 +664,11 @@ start:
 
   /* |change_cipher_spec is set when we receive a ChangeCipherSpec and reset by
    * ssl3_get_finished. */
-  if (s->s3->change_cipher_spec && rr->type != SSL3_RT_HANDSHAKE) {
-    /* We now have application data between CCS and Finished. Most likely the
-     * packets were reordered on their way, so buffer the application data for
-     * later processing rather than dropping the connection. */
+  if (s->s3->change_cipher_spec && rr->type != SSL3_RT_HANDSHAKE &&
+      rr->type != SSL3_RT_ALERT) {
+    /* We now have an unexpected record between CCS and Finished. Most likely
+     * the packets were reordered on their way, so buffer the application data
+     * for later processing rather than dropping the connection. */
     if (dtls1_buffer_record(s, &(s->d1->buffered_app_data), rr->seq_num) < 0) {
       OPENSSL_PUT_ERROR(SSL, dtls1_read_bytes, ERR_R_INTERNAL_ERROR);
       return -1;
@@ -728,7 +729,7 @@ start:
     /* Alerts may not be fragmented. */
     if (rr->length < 2) {
       al = SSL_AD_DECODE_ERROR;
-      OPENSSL_PUT_ERROR(SSL, ssl3_read_bytes, SSL_R_BAD_ALERT);
+      OPENSSL_PUT_ERROR(SSL, dtls1_read_bytes, SSL_R_BAD_ALERT);
       goto f_err;
     }
 
@@ -736,8 +737,8 @@ start:
       s->msg_callback(0, s->version, SSL3_RT_ALERT, &rr->data[rr->off], 2, s,
                       s->msg_callback_arg);
     }
-    uint8_t alert_level = rr->data[rr->off++];
-    uint8_t alert_descr = rr->data[rr->off++];
+    const uint8_t alert_level = rr->data[rr->off++];
+    const uint8_t alert_descr = rr->data[rr->off++];
     rr->length -= 2;
 
     if (s->info_callback != NULL) {
@@ -751,13 +752,13 @@ start:
       cb(s, SSL_CB_READ_ALERT, alert);
     }
 
-    if (alert_level == 1) { /* warning */
+    if (alert_level == SSL3_AL_WARNING) {
       s->s3->warn_alert = alert_descr;
       if (alert_descr == SSL_AD_CLOSE_NOTIFY) {
         s->shutdown |= SSL_RECEIVED_SHUTDOWN;
         return 0;
       }
-    } else if (alert_level == 2) { /* fatal */
+    } else if (alert_level == SSL3_AL_FATAL) {
       char tmp[16];
 
       s->rwstate = SSL_NOTHING;
@@ -786,16 +787,9 @@ start:
   }
 
   if (rr->type == SSL3_RT_CHANGE_CIPHER_SPEC) {
-    struct ccs_header_st ccs_hdr;
-    unsigned int ccs_hdr_len = DTLS1_CCS_HEADER_LENGTH;
-
-    dtls1_get_ccs_header(rr->data, &ccs_hdr);
-
-    /* 'Change Cipher Spec' is just a single byte, so we know
-     * exactly what the record payload has to look like */
-    /* XDTLS: check that epoch is consistent */
-    if ((rr->length != ccs_hdr_len) || (rr->off != 0) ||
-        (rr->data[0] != SSL3_MT_CCS)) {
+    /* 'Change Cipher Spec' is just a single byte, so we know exactly what the
+     * record payload has to look like */
+    if (rr->length != 1 || rr->off != 0 || rr->data[0] != SSL3_MT_CCS) {
       al = SSL_AD_ILLEGAL_PARAMETER;
       OPENSSL_PUT_ERROR(SSL, dtls1_read_bytes, SSL_R_BAD_CHANGE_CIPHER_SPEC);
       goto f_err;
@@ -834,20 +828,25 @@ start:
   if (rr->type == SSL3_RT_HANDSHAKE && !s->in_handshake) {
     if (rr->length < DTLS1_HM_HEADER_LENGTH) {
       al = SSL_AD_DECODE_ERROR;
-      OPENSSL_PUT_ERROR(SSL, ssl3_read_bytes, SSL_R_BAD_HANDSHAKE_RECORD);
+      OPENSSL_PUT_ERROR(SSL, dtls1_read_bytes, SSL_R_BAD_HANDSHAKE_RECORD);
       goto f_err;
     }
     struct hm_header_st msg_hdr;
     dtls1_get_message_header(&rr->data[rr->off], &msg_hdr);
 
-    /* Ignore the Finished, but retransmit our last flight of messages. If the
-     * peer sends the second Finished, they may not have received ours. */
+    /* Ignore a stray Finished from the previous handshake. */
     if (msg_hdr.type == SSL3_MT_FINISHED) {
-      if (dtls1_check_timeout_num(s) < 0) {
-        return -1;
+      if (msg_hdr.frag_off == 0) {
+        /* Retransmit our last flight of messages. If the peer sends the second
+         * Finished, they may not have received ours. Only do this for the
+         * first fragment, in case the Finished was fragmented. */
+        if (dtls1_check_timeout_num(s) < 0) {
+          return -1;
+        }
+
+        dtls1_retransmit_buffered_messages(s);
       }
 
-      dtls1_retransmit_buffered_messages(s);
       rr->length = 0;
       goto start;
     }

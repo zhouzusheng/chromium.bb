@@ -15,6 +15,7 @@ without changes to the corresponding grd file. -->
     <includes>
       <include name="IDR_WEBUI_I18N_PROCESS_JS" file="js/i18n_process.js" type="BINDATA" />
       <include name="IDR_WEBUI_I18N_TEMPLATE2_JS" file="js/i18n_template2.js" flattenhtml="true" type="BINDATA" />
+      <include name="IDR_WEBUI_I18N_TEMPLATE_POLYMER_JS" file="js/i18n_template_polymer.js" flattenhtml="true" type="BINDATA" />
       <include name="IDR_WEBUI_JSTEMPLATE_JS" file="js/jstemplate_compiled.js" flattenhtml="true" type="BINDATA" />
       <include name="IDR_WEBUI_ANALYTICS_JS" file="js/analytics.js" flattenhtml="true" type="BINDATA" />
       <!-- Roboto Font -->
@@ -202,6 +203,8 @@ without changes to the corresponding grd file. -->
                file="images/trash.png" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_CLOUDS"
                file="images/clouds.png" type="BINDATA" />
+
+      <part file="cr_elements_images.grdp" />
     </includes>
     <structures>
       <structure name="IDR_WEBUI_CSS_ALERT_OVERLAY"
@@ -258,8 +261,12 @@ without changes to the corresponding grd file. -->
                  file="js/action_link.js" type="chrome_html" />
       <structure name="IDR_WEBUI_JS_ASSERT"
                  file="js/assert.js" type="chrome_html" />
+      <structure name="IDR_WEBUI_HTML_ASSERT"
+                 file="html/assert.html" type="chrome_html" />
       <structure name="IDR_WEBUI_JS_CR"
                  file="js/cr.js" type="chrome_html" />
+      <structure name="IDR_WEBUI_HTML_CR"
+                 file="html/cr.html" type="chrome_html" />
       <structure name="IDR_WEBUI_JS_CR_EVENT_TARGET"
                  file="js/cr/event_target.js" type="chrome_html" />
       <structure name="IDR_WEBUI_JS_CR_LINK_CONTROLLER"

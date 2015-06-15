@@ -15,6 +15,12 @@
 #include <set>
 #endif
 
+// Define DISCARDABLE_SHARED_MEMORY_SHRINKING if platform supports shrinking
+// of discardable shared memory segments.
+#if defined(OS_POSIX) && !defined(OS_ANDROID)
+#define DISCARDABLE_SHARED_MEMORY_SHRINKING
+#endif
+
 namespace base {
 
 // Platform abstraction for discardable shared memory.
@@ -74,7 +80,7 @@ class BASE_EXPORT DiscardableSharedMemory {
   // must have been mapped via Map().
   void* memory() const;
 
-  // Returns the last know usage time for DiscardableSharedMemory object. This
+  // Returns the last known usage time for DiscardableSharedMemory object. This
   // may be earlier than the "true" usage time when memory has been used by a
   // different process. Returns NULL time if purged.
   Time last_known_usage() const { return last_known_usage_; }
@@ -84,7 +90,7 @@ class BASE_EXPORT DiscardableSharedMemory {
   // for two reasons; object might be locked or our last known usage timestamp
   // might be out of date. Last known usage time is updated to |current_time|
   // if locked or the actual last usage timestamp if unlocked. It is often
-  // neccesary to call this function twice for the object to successfully be
+  // necessary to call this function twice for the object to successfully be
   // purged. First call, updates |last_known_usage_|. Second call, successfully
   // purges the object using the updated |last_known_usage_|.
   // Note: there is no guarantee that multiple calls to this function will
@@ -92,12 +98,6 @@ class BASE_EXPORT DiscardableSharedMemory {
   // or another thread/process might be able to lock and unlock it in between
   // each call.
   bool Purge(Time current_time);
-
-  // Purge and release as much memory as possible to the OS.
-  // Note: The amount of memory that can be released to the OS is platform
-  // specific. Best case, all but one page is released. Worst case, nothing
-  // is released.
-  bool PurgeAndTruncate(Time current_time);
 
   // Returns true if memory is still resident.
   bool IsMemoryResident() const;
@@ -115,6 +115,12 @@ class BASE_EXPORT DiscardableSharedMemory {
                       SharedMemoryHandle* new_handle) {
     return shared_memory_.ShareToProcess(process_handle, new_handle);
   }
+
+#if defined(DISCARDABLE_SHARED_MEMORY_SHRINKING)
+  // Release as much memory as possible to the OS. The change in size will
+  // be reflected by the return value of mapped_size().
+  void Shrink();
+#endif
 
  private:
   // Virtual for tests.

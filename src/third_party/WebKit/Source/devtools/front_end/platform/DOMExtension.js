@@ -133,27 +133,11 @@ Node.prototype.traverseNextTextNode = function(stayWithin)
     var node = this.traverseNextNode(stayWithin);
     if (!node)
         return null;
-
-    while (node && node.nodeType !== Node.TEXT_NODE)
+    var nonTextTags = { "STYLE": 1, "SCRIPT": 1 };
+    while (node && (node.nodeType !== Node.TEXT_NODE || nonTextTags[node.parentElement.nodeName]))
         node = node.traverseNextNode(stayWithin);
 
     return node;
-}
-
-/**
- * @param {number} offset
- * @return {!{container: !Node, offset: number}}
- */
-Node.prototype.rangeBoundaryForOffset = function(offset)
-{
-    var node = this.traverseNextTextNode(this);
-    while (node && offset > node.nodeValue.length) {
-        offset -= node.nodeValue.length;
-        node = node.traverseNextTextNode(this);
-    }
-    if (!node)
-        return { container: this, offset: 0 };
-    return { container: node, offset: offset };
 }
 
 /**
@@ -244,9 +228,26 @@ Node.prototype.enclosingNodeOrSelfWithNodeName = function(nodeName)
  */
 Node.prototype.enclosingNodeOrSelfWithClass = function(className, stayWithin)
 {
+    return this.enclosingNodeOrSelfWithClassList([className], stayWithin);
+}
+
+/**
+ * @param {!Array.<string>} classNames
+ * @param {!Element=} stayWithin
+ * @return {?Element}
+ */
+Node.prototype.enclosingNodeOrSelfWithClassList = function(classNames, stayWithin)
+{
     for (var node = this; node && node !== stayWithin && node !== this.ownerDocument; node = node.parentNodeOrShadowHost()) {
-        if (node.nodeType === Node.ELEMENT_NODE && node.classList.contains(className))
-            return /** @type {!Element} */ (node);
+        if (node.nodeType === Node.ELEMENT_NODE) {
+            var containsAll = true;
+            for (var i = 0; i < classNames.length && containsAll; ++i) {
+                if (!node.classList.contains(classNames[i]))
+                    containsAll = false;
+            }
+            if (containsAll)
+                return /** @type {!Element} */ (node);
+        }
     }
     return null;
 }
@@ -358,6 +359,20 @@ function createElement(tagName, customElementType)
 }
 
 /**
+ * @param {string} type
+ * @param {boolean} bubbles
+ * @param {boolean} cancelable
+ * @return {!Event}
+ * @suppressGlobalPropertiesCheck
+ */
+function createEvent(type, bubbles, cancelable)
+{
+    var event = document.createEvent("Event");
+    event.initEvent(type, bubbles, cancelable);
+    return event;
+}
+
+/**
  * @param {number|string} data
  * @return {!Text}
  * @suppressGlobalPropertiesCheck
@@ -391,6 +406,30 @@ Document.prototype.createElementWithClass = function(elementName, className, cus
 function createElementWithClass(elementName, className, customElementType)
 {
     return document.createElementWithClass(elementName, className, customElementType);
+}
+
+/**
+ * @param {string} childType
+ * @param {string=} className
+ * @return {!Element}
+ */
+Document.prototype.createSVGElement = function(childType, className)
+{
+    var element = this.createElementNS("http://www.w3.org/2000/svg", childType);
+    if (className)
+        element.setAttribute("class", className);
+    return element;
+}
+
+/**
+ * @param {string} childType
+ * @param {string=} className
+ * @return {!Element}
+ * @suppressGlobalPropertiesCheck
+ */
+function createSVGElement(childType, className)
+{
+    return document.createSVGElement(childType, className);
 }
 
 /**
@@ -496,10 +535,8 @@ Element.prototype.scrollOffset = function()
  */
 Element.prototype.createSVGChild = function(childType, className)
 {
-    var child = this.ownerDocument.createElementNS("http://www.w3.org/2000/svg", childType);
+    var child = this.ownerDocument.createSVGElement(childType, className);
     this.appendChild(child);
-    if (className)
-        child.setAttribute("class", className);
     return child;
 }
 
@@ -744,26 +781,57 @@ Node.prototype.isSelfOrDescendant = function(node)
  */
 Node.prototype.traverseNextNode = function(stayWithin)
 {
-    if (this.firstChild)
-        return this.firstChild;
-
     if (this.shadowRoot)
         return this.shadowRoot;
 
-    if (stayWithin && this === stayWithin)
+    var distributedNodes = this.getDistributedNodes ? this.getDistributedNodes() : [];
+
+    if (distributedNodes.length)
+        return distributedNodes[0];
+
+    if (this.firstChild)
+        return this.firstChild;
+
+    var node = this;
+    while (node) {
+        if (stayWithin && node === stayWithin)
+            return null;
+
+        var sibling = nextSibling(node);
+        if (sibling)
+            return sibling;
+
+        node = insertionPoint(node) || node.parentNodeOrShadowHost();
+    }
+
+    /**
+     * @param {!Node} node
+     * @return {?Node}
+     */
+    function nextSibling(node)
+    {
+        var parent = insertionPoint(node);
+        if (!parent)
+            return node.nextSibling;
+        var distributedNodes = parent.getDistributedNodes ? parent.getDistributedNodes() : [];
+
+        var position = Array.prototype.indexOf.call(distributedNodes, node);
+        if (position + 1 < distributedNodes.length)
+            return distributedNodes[position + 1];
         return null;
+    }
 
-    var node = this.nextSibling;
-    if (node)
-        return node;
+    /**
+     * @param {!Node} node
+     * @return {?Node}
+     */
+    function insertionPoint(node)
+    {
+        var insertionPoints =  node.getDestinationInsertionPoints  ? node.getDestinationInsertionPoints() : [];
+        return insertionPoints.length > 0 ? insertionPoints[insertionPoints.length - 1] : null;
+    }
 
-    node = this;
-    while (node && !node.nextSibling && (!stayWithin || !node.parentNodeOrShadowHost() || node.parentNodeOrShadowHost() !== stayWithin))
-        node = node.parentNodeOrShadowHost();
-    if (!node)
-        return null;
-
-    return node.nextSibling;
+    return null;
 }
 
 /**
@@ -792,10 +860,10 @@ Node.prototype.setTextContentTruncatedIfNeeded = function(text, placeholder)
     // Huge texts in the UI reduce rendering performance drastically.
     // Moreover, Blink/WebKit uses <unsigned short> internally for storing text content
     // length, so texts longer than 65535 are inherently displayed incorrectly.
-    const maxTextContentLength = 65535;
+    const maxTextContentLength = 10000;
 
     if (typeof text === "string" && text.length > maxTextContentLength) {
-        this.textContent = typeof placeholder === "string" ? placeholder : text.trimEnd(maxTextContentLength);
+        this.textContent = typeof placeholder === "string" ? placeholder : text.trimMiddle(maxTextContentLength);
         return true;
     }
 

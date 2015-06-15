@@ -19,7 +19,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
 {
   "name": "gpu driver bug list",
   // Please update the version number whenever you change this file.
-  "version": "7.18",
+  "version": "8.07",
   "entries": [
     {
       "id": 1,
@@ -502,20 +502,20 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       },
       "gl_vendor": "ARM.*",
       "features": [
-        "disable_ext_discard_framebuffer"
+        "disable_discard_framebuffer"
       ]
     },
     {
       "id": 42,
-      "cr_bugs": [290876],
+      "cr_bugs": [290876, 488463],
       "description": "Framebuffer discarding causes flickering on older IMG drivers",
       "os": {
         "type": "android"
       },
       "gl_vendor": "Imagination.*",
-      "gl_renderer": "PowerVR SGX 540",
+      "gl_renderer": "PowerVR SGX 5.*",
       "features": [
-        "disable_ext_discard_framebuffer"
+        "disable_discard_framebuffer"
       ]
     },
     {
@@ -527,7 +527,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       },
       "gl_extensions": ".*GL_VIV_shader_binary.*",
       "features": [
-        "disable_ext_discard_framebuffer"
+        "disable_discard_framebuffer"
       ]
     },
     {
@@ -538,7 +538,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
         "type": "chromeos"
       },
       "features": [
-        "disable_ext_discard_framebuffer"
+        "disable_discard_framebuffer"
       ]
     },
     {
@@ -607,7 +607,8 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       },
       "gl_vendor": "Qualcomm.*",
       "features": [
-        "disable_multisampling"
+        "disable_chromium_framebuffer_multisample",
+        "disable_multisampled_render_to_texture"
       ]
     },
     {
@@ -677,7 +678,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       },
       "vendor_id": "0x1002",
       "features": [
-        "disable_multisampling"
+        "disable_chromium_framebuffer_multisample"
       ]
     },
     {
@@ -690,7 +691,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "vendor_id": "0x8086",
       "device_id": ["0x0152", "0x0156", "0x015a", "0x0162", "0x0166"],
       "features": [
-        "disable_multisampling"
+        "disable_chromium_framebuffer_multisample"
       ]
     },
     {
@@ -705,7 +706,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
         }
       },
       "features": [
-        "disable_multisampling"
+        "disable_chromium_framebuffer_multisample"
       ]
     },
     {
@@ -865,7 +866,7 @@ LONG_STRING_CONST(
       "gl_vendor": "ARM.*",
       "gl_renderer": ".*Mali-400.*",
       "features": [
-        "disable_multisampling"
+        "disable_multisampled_render_to_texture"
       ]
     },
     {
@@ -1103,7 +1104,7 @@ LONG_STRING_CONST(
       "gl_vendor": "Intel",
       "gl_renderer": "Intel.*BayTrail",
       "features": [
-        "disable_multisampling"
+        "disable_chromium_framebuffer_multisample"
       ]
     },
     {
@@ -1187,7 +1188,89 @@ LONG_STRING_CONST(
       "gl_vendor": "Qualcomm.*",
       "gl_renderer": ".*420",
       "features": [
-        "disable_fbo_invalidations"
+        "disable_discard_framebuffer"
+      ]
+    },
+    {
+      "id": 104,
+      "description": "EXT_occlusion_query hangs on MediaTek MT8135 pre-Lollipop",
+      "os": {
+        "type": "android",
+        "version": {
+          "op": "<",
+          "value": "5.0.0"
+        }
+      },
+      "gl_vendor": "Imagination.*",
+      "gl_renderer": "PowerVR Rogue Han",
+      "features": [
+        "disable_ext_occlusion_query"
+      ]
+    },
+    {
+      "id": 105,
+      "cr_bugs": [449488,451230],
+      "description": "Framebuffer discarding causes corruption on Mali-4xx",
+      "gl_renderer": "Mali-4.*",
+      "os": {
+        "type": "android"
+      },
+      "features": [
+        "disable_discard_framebuffer"
+      ]
+    },
+    {
+      "id": 107,
+      "description": "Workaround IMG PowerVR G6xxx drivers bugs",
+      "cr_bugs": [480992],
+      "os": {
+        "type": "android",
+        "version": {
+          "op": "between",
+          "value": "5.0.0",
+          "value2": "5.1.99"
+        }
+      },
+      "gl_vendor": "Imagination.*",
+      "gl_renderer": "PowerVR Rogue.*",
+      "driver_version": {
+        "op": "between",
+        "value": "1.3",
+        "value2": "1.4"
+      },
+      "features": [
+        "avoid_egl_image_target_texture_reuse",
+        "disable_egl_khr_wait_sync"
+      ]
+    },
+    {
+      "id": 110,
+      "description": "EGL Sync server causes crashes on Adreno 3xx drivers",
+      "cr_bugs": [482298],
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "Qualcomm.*",
+      "gl_renderer": "Adreno \\(TM\\) 3.*",
+      "driver_version": {
+        "op": "<",
+        "value": "95"
+      },
+      "features": [
+        "disable_egl_khr_wait_sync"
+      ]
+    },
+    {
+      "id": 117,
+      "description": "GL_KHR_blend_equation_advanced breaks blending on Adreno 4xx",
+      "cr_bugs": [488485],
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "Qualcomm.*",
+      "gl_renderer": ".*4\\d\\d",
+      "features": [
+        "disable_blend_equation_advanced"
       ]
     }
   ]

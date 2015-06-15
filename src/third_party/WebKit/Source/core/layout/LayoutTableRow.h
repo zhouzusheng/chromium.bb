@@ -32,7 +32,7 @@ namespace blink {
 static const unsigned unsetRowIndex = 0x7FFFFFFF;
 static const unsigned maxRowIndex = 0x7FFFFFFE; // 2,147,483,646
 
-class LayoutTableRow final : public RenderBox {
+class LayoutTableRow final : public LayoutBox {
 public:
     explicit LayoutTableRow(Element*);
 
@@ -50,7 +50,7 @@ public:
 
     static LayoutTableRow* createAnonymous(Document*);
     static LayoutTableRow* createAnonymousWithParentRenderer(const LayoutObject*);
-    virtual RenderBox* createAnonymousBoxWithSameTypeAs(const LayoutObject* parent) const override
+    virtual LayoutBox* createAnonymousBoxWithSameTypeAs(const LayoutObject* parent) const override
     {
         return createAnonymousWithParentRenderer(parent);
     }
@@ -90,39 +90,39 @@ public:
     const BorderValue& borderAdjoiningStartCell(const LayoutTableCell*) const;
     const BorderValue& borderAdjoiningEndCell(const LayoutTableCell*) const;
 
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override;
+    virtual bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override;
 
     void addOverflowFromCell(const LayoutTableCell*);
+
+    virtual const char* name() const override { return isAnonymous() ? "LayoutTableRow (anonymous)" : "LayoutTableRow"; }
 
 private:
     virtual LayoutObjectChildList* virtualChildren() override { return children(); }
     virtual const LayoutObjectChildList* virtualChildren() const override { return children(); }
 
-    virtual const char* renderName() const override { return (isAnonymous() || isPseudoElement()) ? "LayoutTableRow (anonymous)" : "LayoutTableRow"; }
-
-    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectTableRow || RenderBox::isOfType(type); }
+    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectTableRow || LayoutBox::isOfType(type); }
 
     virtual void willBeRemovedFromTree() override;
 
     virtual void addChild(LayoutObject* child, LayoutObject* beforeChild = 0) override;
     virtual void layout() override;
 
-    virtual LayerType layerTypeRequired() const override
+    virtual DeprecatedPaintLayerType layerTypeRequired() const override
     {
         if (hasTransformRelatedProperty() || hasHiddenBackface() || hasClipPath() || createsGroup() || style()->shouldCompositeForCurrentAnimations())
-            return NormalLayer;
+            return NormalDeprecatedPaintLayer;
 
         if (hasOverflowClip())
-            return OverflowClipLayer;
+            return OverflowClipDeprecatedPaintLayer;
 
-        return NoLayer;
+        return NoDeprecatedPaintLayer;
     }
 
     virtual void paint(const PaintInfo&, const LayoutPoint&) override;
 
     virtual void imageChanged(WrappedImagePtr, const IntRect* = 0) override;
 
-    virtual void styleDidChange(StyleDifference, const LayoutStyle* oldStyle) override;
+    virtual void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override;
 
     void nextSibling() const = delete;
     void previousSibling() const = delete;

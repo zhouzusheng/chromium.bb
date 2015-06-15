@@ -36,7 +36,7 @@ class Element;
 class LayoutRect;
 class LocalFrame;
 class Node;
-class Layer;
+class DeprecatedPaintLayer;
 class LayoutObject;
 class TextStream;
 
@@ -59,12 +59,12 @@ String externalRepresentation(Element*, LayoutAsTextBehavior = LayoutAsTextBehav
 void write(TextStream&, const LayoutObject&, int indent = 0, LayoutAsTextBehavior = LayoutAsTextBehaviorNormal);
 
 class LayoutTreeAsText {
-// FIXME: This is a cheesy hack to allow easy access to LayoutStyle colors.  It won't be needed if we convert
+// FIXME: This is a cheesy hack to allow easy access to ComputedStyle colors.  It won't be needed if we convert
 // it to use visitedDependentColor instead. (This just involves rebaselining many results though, so for now it's
 // not being done).
 public:
 static void writeLayoutObject(TextStream&, const LayoutObject&, LayoutAsTextBehavior);
-static void writeLayers(TextStream&, const Layer* rootLayer, Layer*, const LayoutRect& paintDirtyRect, int indent = 0, LayoutAsTextBehavior = LayoutAsTextBehaviorNormal);
+static void writeLayers(TextStream&, const DeprecatedPaintLayer* rootLayer, DeprecatedPaintLayer*, const LayoutRect& paintDirtyRect, int indent = 0, LayoutAsTextBehavior = LayoutAsTextBehaviorNormal);
 };
 
 // Helper function shared with SVGLayoutTreeAsText

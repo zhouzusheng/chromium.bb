@@ -27,12 +27,13 @@
 
 #include "core/frame/LocalFrame.h"
 #include "core/layout/HitTestResult.h"
-#include "core/layout/Layer.h"
+#include "core/layout/LayoutAnalyzer.h"
 #include "core/layout/LayoutPart.h"
+#include "core/layout/LayoutView.h"
 #include "core/layout/svg/SVGLayoutSupport.h"
 #include "core/layout/svg/SVGResourcesCache.h"
+#include "core/paint/DeprecatedPaintLayer.h"
 #include "core/paint/SVGRootPainter.h"
-#include "core/rendering/RenderView.h"
 #include "core/svg/SVGElement.h"
 #include "core/svg/SVGSVGElement.h"
 #include "core/svg/graphics/SVGImage.h"
@@ -102,9 +103,9 @@ bool LayoutSVGRoot::isEmbeddedThroughFrameContainingSVGDocument() const
     if (!frame)
         return false;
 
-    // If our frame has an owner renderer, we're embedded through eg. object/embed/iframe,
+    // If our frame has an owner layoutObject, we're embedded through eg. object/embed/iframe,
     // but we only negotiate if we're in an SVG document inside a embedded object (object/embed).
-    if (!frame->ownerRenderer() || !frame->ownerRenderer()->isEmbeddedObject())
+    if (!frame->ownerLayoutObject() || !frame->ownerLayoutObject()->isEmbeddedObject())
         return false;
     return frame->document()->isSVGDocument();
 }
@@ -161,6 +162,7 @@ LayoutUnit LayoutSVGRoot::computeReplacedLogicalHeight() const
 void LayoutSVGRoot::layout()
 {
     ASSERT(needsLayout());
+    LayoutAnalyzer::Scope analyzer(*this);
 
     bool needsLayout = selfNeedsLayout();
 
@@ -215,13 +217,13 @@ void LayoutSVGRoot::paintReplaced(const PaintInfo& paintInfo, const LayoutPoint&
 
 void LayoutSVGRoot::willBeDestroyed()
 {
-    RenderBlock::removePercentHeightDescendant(const_cast<LayoutSVGRoot*>(this));
+    LayoutBlock::removePercentHeightDescendant(const_cast<LayoutSVGRoot*>(this));
 
     SVGResourcesCache::clientDestroyed(this);
     LayoutReplaced::willBeDestroyed();
 }
 
-void LayoutSVGRoot::styleDidChange(StyleDifference diff, const LayoutStyle* oldStyle)
+void LayoutSVGRoot::styleDidChange(StyleDifference diff, const ComputedStyle* oldStyle)
 {
     if (diff.needsFullLayout())
         setNeedsBoundariesUpdate();
@@ -234,9 +236,9 @@ void LayoutSVGRoot::styleDidChange(StyleDifference diff, const LayoutStyle* oldS
     SVGResourcesCache::clientStyleChanged(this, diff, styleRef());
 }
 
-bool LayoutSVGRoot::isChildAllowed(LayoutObject* child, const LayoutStyle&) const
+bool LayoutSVGRoot::isChildAllowed(LayoutObject* child, const ComputedStyle&) const
 {
-    return child->isSVG() && !(child->isSVGInline() || child->isSVGInlineText());
+    return child->isSVG() && !(child->isSVGInline() || child->isSVGInlineText() || child->isSVGGradientStop());
 }
 
 void LayoutSVGRoot::addChild(LayoutObject* child, LayoutObject* beforeChild)
@@ -293,7 +295,7 @@ void LayoutSVGRoot::willBeRemovedFromTree()
     LayoutReplaced::willBeRemovedFromTree();
 }
 
-// RenderBox methods will expect coordinates w/o any transforms in coordinates
+// LayoutBox methods will expect coordinates w/o any transforms in coordinates
 // relative to our borderBox origin.  This method gives us exactly that.
 void LayoutSVGRoot::buildLocalToBorderBoxTransform()
 {
@@ -320,7 +322,7 @@ const AffineTransform& LayoutSVGRoot::localToParentTransform() const
     return m_localToParentTransform;
 }
 
-LayoutRect LayoutSVGRoot::clippedOverflowRectForPaintInvalidation(const LayoutLayerModelObject* paintInvalidationContainer, const PaintInvalidationState* paintInvalidationState) const
+LayoutRect LayoutSVGRoot::clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* paintInvalidationState) const
 {
     // This is an open-coded aggregate of SVGLayoutSupport::clippedOverflowRectForPaintInvalidation,
     // LayoutSVGRoot::mapRectToPaintInvalidationBacking and LayoutReplaced::clippedOverflowRectForPaintInvalidation.
@@ -341,7 +343,7 @@ LayoutRect LayoutSVGRoot::clippedOverflowRectForPaintInvalidation(const LayoutLa
 
     LayoutRect paintInvalidationRect = enclosingLayoutRect(contentPaintInvalidationRect);
     // If the box is decorated or is overflowing, extend it to include the border-box and overflow.
-    if (m_hasBoxDecorationBackground || hasRenderOverflow()) {
+    if (m_hasBoxDecorationBackground || hasOverflowModel()) {
         // The selectionRect can project outside of the overflowRect, so take their union
         // for paint invalidation to avoid selection painting glitches.
         LayoutRect decoratedPaintInvalidationRect = unionRect(localSelectionRect(false), visualOverflowRect());
@@ -349,19 +351,19 @@ LayoutRect LayoutSVGRoot::clippedOverflowRectForPaintInvalidation(const LayoutLa
     }
 
     // Compute the paint invalidation rect in the parent coordinate space.
-    LayoutRect rect = enclosingIntRect(paintInvalidationRect);
+    LayoutRect rect(enclosingIntRect(paintInvalidationRect));
     LayoutReplaced::mapRectToPaintInvalidationBacking(paintInvalidationContainer, rect, paintInvalidationState);
     return rect;
 }
 
-void LayoutSVGRoot::mapRectToPaintInvalidationBacking(const LayoutLayerModelObject* paintInvalidationContainer, LayoutRect& rect, const PaintInvalidationState* paintInvalidationState) const
+void LayoutSVGRoot::mapRectToPaintInvalidationBacking(const LayoutBoxModelObject* paintInvalidationContainer, LayoutRect& rect, const PaintInvalidationState* paintInvalidationState) const
 {
     // Note that we don't apply the border-box transform here - it's assumed
     // that whoever called us has done that already.
 
     // Apply initial viewport clip
     if (shouldApplyViewportClip())
-        rect.intersect(pixelSnappedBorderBoxRect());
+        rect.intersect(LayoutRect(pixelSnappedBorderBoxRect()));
 
     LayoutReplaced::mapRectToPaintInvalidationBacking(paintInvalidationContainer, rect, paintInvalidationState);
 }
@@ -369,9 +371,9 @@ void LayoutSVGRoot::mapRectToPaintInvalidationBacking(const LayoutLayerModelObje
 // This method expects local CSS box coordinates.
 // Callers with local SVG viewport coordinates should first apply the localToBorderBoxTransform
 // to convert from SVG viewport coordinates to local CSS box coordinates.
-void LayoutSVGRoot::mapLocalToContainer(const LayoutLayerModelObject* paintInvalidationContainer, TransformState& transformState, MapCoordinatesFlags mode, bool* wasFixed, const PaintInvalidationState* paintInvalidationState) const
+void LayoutSVGRoot::mapLocalToContainer(const LayoutBoxModelObject* paintInvalidationContainer, TransformState& transformState, MapCoordinatesFlags mode, bool* wasFixed, const PaintInvalidationState* paintInvalidationState) const
 {
-    ASSERT(mode & ~IsFixed); // We should have no fixed content in the SVG rendering tree.
+    ASSERT(mode & ~IsFixed); // We should have no fixed content in the SVG layout tree.
     // We used to have this ASSERT here, but we removed it when enabling layer squashing.
     // See http://crbug.com/364901
     // ASSERT(mode & UseTransforms); // mapping a point through SVG w/o respecting trasnforms is useless.
@@ -379,7 +381,7 @@ void LayoutSVGRoot::mapLocalToContainer(const LayoutLayerModelObject* paintInval
     LayoutReplaced::mapLocalToContainer(paintInvalidationContainer, transformState, mode | ApplyContainerFlip, wasFixed, paintInvalidationState);
 }
 
-const LayoutObject* LayoutSVGRoot::pushMappingToContainer(const LayoutLayerModelObject* ancestorToStopAt, LayoutGeometryMap& geometryMap) const
+const LayoutObject* LayoutSVGRoot::pushMappingToContainer(const LayoutBoxModelObject* ancestorToStopAt, LayoutGeometryMap& geometryMap) const
 {
     return LayoutReplaced::pushMappingToContainer(ancestorToStopAt, geometryMap);
 }
@@ -390,7 +392,7 @@ void LayoutSVGRoot::updateCachedBoundaries()
     SVGLayoutSupport::intersectPaintInvalidationRectWithResources(this, m_paintInvalidationBoundingBox);
 }
 
-bool LayoutSVGRoot::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction hitTestAction)
+bool LayoutSVGRoot::nodeAtPoint(HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction hitTestAction)
 {
     LayoutPoint pointInParent = locationInContainer.point() - toLayoutSize(accumulatedOffset);
     LayoutPoint pointInBorderBox = pointInParent - toLayoutSize(location());
@@ -405,9 +407,9 @@ bool LayoutSVGRoot::nodeAtPoint(const HitTestRequest& request, HitTestResult& re
 
             for (LayoutObject* child = lastChild(); child; child = child->previousSibling()) {
                 // FIXME: nodeAtFloatPoint() doesn't handle rect-based hit tests yet.
-                if (child->nodeAtFloatPoint(request, result, localPoint, hitTestAction)) {
+                if (child->nodeAtFloatPoint(result, localPoint, hitTestAction)) {
                     updateHitTestResult(result, pointInBorderBox);
-                    if (!result.addNodeToRectBasedTestResult(child->node(), request, locationInContainer))
+                    if (!result.addNodeToListBasedTestResult(child->node(), locationInContainer))
                         return true;
                 }
             }
@@ -415,7 +417,7 @@ bool LayoutSVGRoot::nodeAtPoint(const HitTestRequest& request, HitTestResult& re
     }
 
     // If we didn't early exit above, we've just hit the container <svg> element. Unlike SVG 1.1, 2nd Edition allows container elements to be hit.
-    if ((hitTestAction == HitTestBlockBackground || hitTestAction == HitTestChildBlockBackground) && visibleToHitTestRequest(request)) {
+    if ((hitTestAction == HitTestBlockBackground || hitTestAction == HitTestChildBlockBackground) && visibleToHitTestRequest(result.hitTestRequest())) {
         // Only return true here, if the last hit testing phase 'BlockBackground' (or 'ChildBlockBackground' - depending on context) is executed.
         // If we'd return true in the 'Foreground' phase, hit testing would stop immediately. For SVG only trees this doesn't matter.
         // Though when we have a <foreignObject> subtree we need to be able to detect hits on the background of a <div> element.
@@ -423,7 +425,7 @@ bool LayoutSVGRoot::nodeAtPoint(const HitTestRequest& request, HitTestResult& re
         LayoutRect boundsRect(accumulatedOffset + location(), size());
         if (locationInContainer.intersects(boundsRect)) {
             updateHitTestResult(result, pointInBorderBox);
-            if (!result.addNodeToRectBasedTestResult(node(), request, locationInContainer, boundsRect))
+            if (!result.addNodeToListBasedTestResult(node(), locationInContainer, boundsRect))
                 return true;
         }
     }

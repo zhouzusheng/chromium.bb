@@ -14,9 +14,10 @@
 namespace content {
 
 class MessagePortMessageFilter;
-struct NavigatorConnectClient;
 class NavigatorConnectService;
 class NavigatorConnectServiceFactory;
+struct NavigatorConnectClient;
+struct TransferredMessagePort;
 
 // Tracks all active navigator.connect connections, as well as available service
 // factories. Delegates connection requests to the correct factory and passes
@@ -25,8 +26,10 @@ class NavigatorConnectServiceFactory;
 // TODO(mek): Somehow clean up connections when the client side goes away.
 class NavigatorConnectContextImpl : public NavigatorConnectContext {
  public:
-  using ConnectCallback = base::Callback<
-      void(int message_port_id, int message_port_route_id, bool success)>;
+  using ConnectCallback =
+      base::Callback<void(const TransferredMessagePort& message_port,
+                          int message_port_route_id,
+                          bool success)>;
 
   explicit NavigatorConnectContextImpl();
 
@@ -43,12 +46,15 @@ class NavigatorConnectContextImpl : public NavigatorConnectContext {
  private:
   ~NavigatorConnectContextImpl() override;
 
+  void AddFactoryOnIOThread(scoped_ptr<NavigatorConnectServiceFactory> factory);
+
   // Callback called by service factories when a connection succeeded or failed.
   void OnConnectResult(const NavigatorConnectClient& client,
                        int client_message_port_id,
                        int client_port_route_id,
                        const ConnectCallback& callback,
-                       MessagePortDelegate* delegate);
+                       MessagePortDelegate* delegate,
+                       bool data_as_values);
 
   // List of factories to try to handle URLs.
   ScopedVector<NavigatorConnectServiceFactory> service_factories_;

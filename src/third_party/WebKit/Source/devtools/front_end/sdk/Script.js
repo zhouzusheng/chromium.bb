@@ -59,8 +59,6 @@ WebInspector.Script.Events = {
     SourceMapURLAdded: "SourceMapURLAdded",
 }
 
-WebInspector.Script.snippetSourceURLPrefix = "snippets:///";
-
 WebInspector.Script.sourceURLRegex = /\n[\040\t]*\/\/[@#]\ssourceURL=\s*(\S*?)\s*$/mg;
 
 /**
@@ -141,13 +139,13 @@ WebInspector.Script.prototype = {
      * @param {string} query
      * @param {boolean} caseSensitive
      * @param {boolean} isRegex
-     * @param {function(!Array.<!PageAgent.SearchMatch>)} callback
+     * @param {function(!Array.<!DebuggerAgent.SearchMatch>)} callback
      */
     searchInContent: function(query, caseSensitive, isRegex, callback)
     {
         /**
          * @param {?Protocol.Error} error
-         * @param {!Array.<!PageAgent.SearchMatch>} searchMatches
+         * @param {!Array.<!DebuggerAgent.SearchMatch>} searchMatches
          */
         function innerCallback(error, searchMatches)
         {
@@ -254,14 +252,6 @@ WebInspector.Script.prototype = {
     isAnonymousScript: function()
     {
         return !this.sourceURL;
-    },
-
-    /**
-     * @return {boolean}
-     */
-    isSnippet: function()
-    {
-        return !!this.sourceURL && this.sourceURL.startsWith(WebInspector.Script.snippetSourceURLPrefix);
     },
 
     /**

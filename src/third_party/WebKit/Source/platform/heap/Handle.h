@@ -46,23 +46,6 @@ namespace blink {
 
 template<typename T> class HeapTerminatedArray;
 
-// Template to determine if a class is a GarbageCollectedMixin by checking if it
-// has IsGarbageCollectedMixinMarker
-template<typename T>
-struct IsGarbageCollectedMixin {
-private:
-    typedef char YesType;
-    struct NoType {
-        char padding[8];
-    };
-
-    template <typename U> static YesType checkMarker(typename U::IsGarbageCollectedMixinMarker*);
-    template <typename U> static NoType checkMarker(...);
-
-public:
-    static const bool value = sizeof(checkMarker<T>(nullptr)) == sizeof(YesType);
-};
-
 template <typename T>
 struct IsGarbageCollectedType {
     using TrueType = char;
@@ -426,7 +409,32 @@ class CrossThreadPersistent : public Persistent<T, GlobalPersistents> {
 public:
     CrossThreadPersistent(T* raw) : Persistent<T, GlobalPersistents>(raw) { }
 
-    using Persistent<T, GlobalPersistents>::operator=;
+    CrossThreadPersistent& operator=(const CrossThreadPersistent& other)
+    {
+        Persistent<T, GlobalPersistents>::operator=(other);
+        return *this;
+    }
+
+    template<typename U>
+    CrossThreadPersistent& operator=(const Persistent<U, GlobalPersistents>& other)
+    {
+        Persistent<T, GlobalPersistents>::operator=(other);
+        return *this;
+    }
+
+    template<typename U>
+    CrossThreadPersistent& operator=(const Member<U>& other)
+    {
+        Persistent<T, GlobalPersistents>::operator=(other);
+        return *this;
+    }
+
+    template<typename U>
+    CrossThreadPersistent& operator=(const RawPtr<U>& other)
+    {
+        Persistent<T, GlobalPersistents>::operator=(other);
+        return *this;
+    }
 };
 
 // FIXME: derive affinity based on the collection.
@@ -775,6 +783,7 @@ public:
 #define RawPtrWillBeMember blink::Member
 #define RawPtrWillBePersistent blink::Persistent
 #define RawPtrWillBeWeakMember blink::WeakMember
+#define OwnPtrWillBeCrossThreadPersistent blink::CrossThreadPersistent
 #define OwnPtrWillBeMember blink::Member
 #define OwnPtrWillBePersistent blink::Persistent
 #define OwnPtrWillBeRawPtr WTF::RawPtr
@@ -824,7 +833,7 @@ template<typename T> T* adoptPtrWillBeNoop(T* ptr)
     return ptr;
 }
 
-#define WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED // do nothing when oilpan is enabled.
+#define WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(type) // do nothing when oilpan is enabled.
 #define DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(type) // do nothing
 #define DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(type) // do nothing
 #define DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(type) // do nothing
@@ -853,6 +862,7 @@ template<typename T> T* adoptPtrWillBeNoop(T* ptr)
 #define RawPtrWillBeMember WTF::RawPtr
 #define RawPtrWillBePersistent WTF::RawPtr
 #define RawPtrWillBeWeakMember WTF::RawPtr
+#define OwnPtrWillBeCrossThreadPersistent WTF::OwnPtr
 #define OwnPtrWillBeMember WTF::OwnPtr
 #define OwnPtrWillBePersistent WTF::OwnPtr
 #define OwnPtrWillBeRawPtr WTF::OwnPtr
@@ -891,7 +901,7 @@ template<typename T> T* adoptPtrWillBeNoop(T* ptr)
 template<typename T> PassRefPtrWillBeRawPtr<T> adoptRefWillBeNoop(T* ptr) { return adoptRef(ptr); }
 template<typename T> PassOwnPtrWillBeRawPtr<T> adoptPtrWillBeNoop(T* ptr) { return adoptPtr(ptr); }
 
-#define WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED WTF_MAKE_FAST_ALLOCATED
+#define WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(type) WTF_MAKE_FAST_ALLOCATED(type)
 #define DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(type) \
     public:                                            \
         ~type();                                       \
@@ -1028,7 +1038,6 @@ template <typename T, size_t inlineCapacity> struct VectorTraits<blink::HeapDequ
 };
 
 template<typename T> struct HashTraits<blink::Member<T>> : SimpleClassHashTraits<blink::Member<T>> {
-    static const bool needsDestruction = false;
     // FIXME: The distinction between PeekInType and PassInType is there for
     // the sake of the reference counting handles. When they are gone the two
     // types can be merged into PassInType.
@@ -1079,7 +1088,9 @@ template<typename T> struct HashTraits<blink::WeakMember<T>> : SimpleClassHashTr
 
     static PeekOutType peek(const blink::WeakMember<T>& value) { return value; }
     static PassOutType passOut(const blink::WeakMember<T>& value) { return value; }
-    static bool traceInCollection(blink::Visitor* visitor, blink::WeakMember<T>& weakMember, ShouldWeakPointersBeMarkedStrongly strongify)
+
+    template<typename VisitorDispatcher>
+    static bool traceInCollection(VisitorDispatcher visitor, blink::WeakMember<T>& weakMember, ShouldWeakPointersBeMarkedStrongly strongify)
     {
         if (strongify == WeakPointersActStrong) {
             visitor->trace(weakMember.get()); // Strongified visit.

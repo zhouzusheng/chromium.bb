@@ -8,28 +8,30 @@
 #include "SkPDFBitmap.h"
 #include "SkPDFCanon.h"
 #include "SkPDFFont.h"
-#include "SkPDFGraphicState.h"
 #include "SkPDFShader.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 
-SkPDFCanon::SkPDFCanon() {}
-
-SkPDFCanon::~SkPDFCanon() {}
+void SkPDFCanon::reset() {
+    for (int i = 0; i < fFontRecords.count(); ++i) {
+        fFontRecords[i].fFont->unref();
+    }
+    fFontRecords.reset();
+    fFunctionShaderRecords.unrefAll();
+    fFunctionShaderRecords.reset();
+    fAlphaShaderRecords.unrefAll();
+    fAlphaShaderRecords.reset();
+    fImageShaderRecords.unrefAll();
+    fImageShaderRecords.reset();
+    fGraphicStateRecords.foreach ([](WrapGS w) { w.fPtr->unref(); });
+    fGraphicStateRecords.reset();
+    fBitmapRecords.unrefAll();
+    fBitmapRecords.reset();
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
 template <class T> T* assert_ptr(T* p) { SkASSERT(p); return p; }
-
-template <typename T>
-bool remove_item(SkTDArray<T>* array, const T& elem) {
-    int i = array->find(elem);
-    if (i >= 0) {
-        array->removeShuffle(i);
-        return true;
-    }
-    return false;
-}
 
 // requires `bool T::equals(const U&) const`
 template <typename T, typename U>
@@ -66,19 +68,9 @@ SkPDFFont* SkPDFCanon::findFont(uint32_t fontID,
 
 void SkPDFCanon::addFont(SkPDFFont* font, uint32_t fontID, uint16_t fGlyphID) {
     SkPDFCanon::FontRec* rec = fFontRecords.push();
-    rec->fFont = font;
+    rec->fFont = SkRef(font);
     rec->fFontID = fontID;
     rec->fGlyphID = fGlyphID;
-}
-
-void SkPDFCanon::removeFont(SkPDFFont* pdfFont) {
-    for (int i = 0; i < fFontRecords.count(); i++) {
-        if (fFontRecords[i].fFont == pdfFont) {
-            fFontRecords.removeShuffle(i);
-            return;
-        }
-    }
-    // Not all SkPDFFonts are added to the Canon.
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -88,10 +80,7 @@ SkPDFFunctionShader* SkPDFCanon::findFunctionShader(
     return find_item(fFunctionShaderRecords, state);
 }
 void SkPDFCanon::addFunctionShader(SkPDFFunctionShader* pdfShader) {
-    fFunctionShaderRecords.push(assert_ptr(pdfShader));
-}
-void SkPDFCanon::removeFunctionShader(SkPDFFunctionShader* pdfShader) {
-    SkAssertResult(remove_item(&fFunctionShaderRecords, pdfShader));
+    fFunctionShaderRecords.push(SkRef(pdfShader));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -101,10 +90,7 @@ SkPDFAlphaFunctionShader* SkPDFCanon::findAlphaShader(
     return find_item(fAlphaShaderRecords, state);
 }
 void SkPDFCanon::addAlphaShader(SkPDFAlphaFunctionShader* pdfShader) {
-    fAlphaShaderRecords.push(assert_ptr(pdfShader));
-}
-void SkPDFCanon::removeAlphaShader(SkPDFAlphaFunctionShader* pdfShader) {
-    SkAssertResult(remove_item(&fAlphaShaderRecords, pdfShader));
+    fAlphaShaderRecords.push(SkRef(pdfShader));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -115,25 +101,22 @@ SkPDFImageShader* SkPDFCanon::findImageShader(
 }
 
 void SkPDFCanon::addImageShader(SkPDFImageShader* pdfShader) {
-    fImageShaderRecords.push(assert_ptr(pdfShader));
-}
-
-void SkPDFCanon::removeImageShader(SkPDFImageShader* pdfShader) {
-    SkAssertResult(remove_item(&fImageShaderRecords, pdfShader));
+    fImageShaderRecords.push(SkRef(pdfShader));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-SkPDFGraphicState* SkPDFCanon::findGraphicState(const SkPaint& paint) const {
-    return find_item(fGraphicStateRecords, paint);
+const SkPDFGraphicState* SkPDFCanon::findGraphicState(
+        const SkPDFGraphicState& key) const {
+    const WrapGS* ptr = fGraphicStateRecords.find(WrapGS(&key));
+    return ptr ? ptr->fPtr : NULL;
 }
 
-void SkPDFCanon::addGraphicState(SkPDFGraphicState* state) {
-    fGraphicStateRecords.push(assert_ptr(state));
-}
-
-void SkPDFCanon::removeGraphicState(SkPDFGraphicState* pdfGraphicState) {
-    SkAssertResult(remove_item(&fGraphicStateRecords, pdfGraphicState));
+void SkPDFCanon::addGraphicState(const SkPDFGraphicState* state) {
+    SkASSERT(state);
+    WrapGS w(SkRef(state));
+    SkASSERT(!fGraphicStateRecords.contains(w));
+    fGraphicStateRecords.add(w);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -143,9 +126,5 @@ SkPDFBitmap* SkPDFCanon::findBitmap(const SkBitmap& bm) const {
 }
 
 void SkPDFCanon::addBitmap(SkPDFBitmap* pdfBitmap) {
-    fBitmapRecords.push(assert_ptr(pdfBitmap));
-}
-
-void SkPDFCanon::removeBitmap(SkPDFBitmap* pdfBitmap) {
-    SkAssertResult(remove_item(&fBitmapRecords, pdfBitmap));
+    fBitmapRecords.push(SkRef(pdfBitmap));
 }

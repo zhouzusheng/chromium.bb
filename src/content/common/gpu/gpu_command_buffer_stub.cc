@@ -27,6 +27,7 @@
 #include "gpu/command_buffer/common/mailbox.h"
 #include "gpu/command_buffer/service/gl_context_virtual.h"
 #include "gpu/command_buffer/service/gl_state_restorer_impl.h"
+#include "gpu/command_buffer/service/image_factory.h"
 #include "gpu/command_buffer/service/image_manager.h"
 #include "gpu/command_buffer/service/logger.h"
 #include "gpu/command_buffer/service/mailbox_manager.h"
@@ -953,6 +954,24 @@ void GpuCommandBufferStub::OnCreateImage(int32 id,
   DCHECK(image_manager);
   if (image_manager->LookupImage(id)) {
     LOG(ERROR) << "Image already exists with same ID.";
+    return;
+  }
+
+  if (!gpu::ImageFactory::IsGpuMemoryBufferFormatSupported(
+          format, decoder_->GetCapabilities())) {
+    LOG(ERROR) << "Format is not supported.";
+    return;
+  }
+
+  if (!gpu::ImageFactory::IsImageSizeValidForGpuMemoryBufferFormat(size,
+                                                                   format)) {
+    LOG(ERROR) << "Invalid image size for format.";
+    return;
+  }
+
+  if (!gpu::ImageFactory::IsImageFormatCompatibleWithGpuMemoryBufferFormat(
+          internalformat, format)) {
+    LOG(ERROR) << "Incompatible image format.";
     return;
   }
 

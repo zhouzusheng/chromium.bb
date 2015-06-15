@@ -112,7 +112,9 @@ bool InitializePppDecryptorBuffer(PP_Instance instance,
 }
 
 void Initialize(PP_Instance instance,
-                PP_Var key_system) {
+                PP_Var key_system,
+                PP_Bool allow_distinctive_identifier,
+                PP_Bool allow_persistent_state) {
   HostDispatcher* dispatcher = HostDispatcher::GetForInstance(instance);
   if (!dispatcher) {
     NOTREACHED();
@@ -123,7 +125,9 @@ void Initialize(PP_Instance instance,
       new PpapiMsg_PPPContentDecryptor_Initialize(
           API_ID_PPP_CONTENT_DECRYPTOR_PRIVATE,
           instance,
-          SerializedVarSendInput(dispatcher, key_system)));
+          SerializedVarSendInput(dispatcher, key_system),
+          allow_distinctive_identifier,
+          allow_persistent_state));
 }
 
 void SetServerCertificate(PP_Instance instance,
@@ -163,7 +167,7 @@ void SetServerCertificate(PP_Instance instance,
 void CreateSessionAndGenerateRequest(PP_Instance instance,
                                      uint32_t promise_id,
                                      PP_SessionType session_type,
-                                     PP_Var init_data_type,
+                                     PP_InitDataType init_data_type,
                                      PP_Var init_data) {
   HostDispatcher* dispatcher = HostDispatcher::GetForInstance(instance);
   if (!dispatcher) {
@@ -174,7 +178,7 @@ void CreateSessionAndGenerateRequest(PP_Instance instance,
   dispatcher->Send(
       new PpapiMsg_PPPContentDecryptor_CreateSessionAndGenerateRequest(
           API_ID_PPP_CONTENT_DECRYPTOR_PRIVATE, instance, promise_id,
-          session_type, SerializedVarSendInput(dispatcher, init_data_type),
+          session_type, init_data_type,
           SerializedVarSendInput(dispatcher, init_data)));
 }
 
@@ -520,12 +524,16 @@ bool PPP_ContentDecryptor_Private_Proxy::OnMessageReceived(
 
 void PPP_ContentDecryptor_Private_Proxy::OnMsgInitialize(
     PP_Instance instance,
-    SerializedVarReceiveInput key_system) {
+    SerializedVarReceiveInput key_system,
+    PP_Bool allow_distinctive_identifier,
+    PP_Bool allow_persistent_state) {
   if (ppp_decryptor_impl_) {
     CallWhileUnlocked(
         ppp_decryptor_impl_->Initialize,
         instance,
-        ExtractReceivedVarAndAddRef(dispatcher(), &key_system));
+        ExtractReceivedVarAndAddRef(dispatcher(), &key_system),
+        allow_distinctive_identifier,
+        allow_persistent_state);
   }
 }
 
@@ -558,14 +566,12 @@ void PPP_ContentDecryptor_Private_Proxy::OnMsgCreateSessionAndGenerateRequest(
     PP_Instance instance,
     uint32_t promise_id,
     PP_SessionType session_type,
-    SerializedVarReceiveInput init_data_type,
+    PP_InitDataType init_data_type,
     SerializedVarReceiveInput init_data) {
   if (ppp_decryptor_impl_) {
-    CallWhileUnlocked(
-        ppp_decryptor_impl_->CreateSessionAndGenerateRequest, instance,
-        promise_id, session_type,
-        ExtractReceivedVarAndAddRef(dispatcher(), &init_data_type),
-        ExtractReceivedVarAndAddRef(dispatcher(), &init_data));
+    CallWhileUnlocked(ppp_decryptor_impl_->CreateSessionAndGenerateRequest,
+                      instance, promise_id, session_type, init_data_type,
+                      ExtractReceivedVarAndAddRef(dispatcher(), &init_data));
   }
 }
 

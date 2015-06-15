@@ -99,12 +99,12 @@ public:
     bool scrollableAreaScrollLayerDidChange(ScrollableArea*);
     void scrollableAreaScrollbarLayerDidChange(ScrollableArea*, ScrollbarOrientation);
     void setLayerIsContainerForFixedPositionLayers(GraphicsLayer*, bool);
-    void updateLayerPositionConstraint(Layer*);
+    void updateLayerPositionConstraint(DeprecatedPaintLayer*);
     void touchEventTargetRectsDidChange();
-    void willDestroyLayer(Layer*);
+    void willDestroyLayer(DeprecatedPaintLayer*);
 
-    void updateScrollParentForGraphicsLayer(GraphicsLayer* child, Layer* parent);
-    void updateClipParentForGraphicsLayer(GraphicsLayer* child, Layer* parent);
+    void updateScrollParentForGraphicsLayer(GraphicsLayer* child, DeprecatedPaintLayer* parent);
+    void updateClipParentForGraphicsLayer(GraphicsLayer* child, DeprecatedPaintLayer* parent);
 
     static String mainThreadScrollingReasonsAsText(MainThreadScrollingReasons);
     String mainThreadScrollingReasonsAsText() const;
@@ -131,7 +131,7 @@ protected:
     bool m_shouldScrollOnMainThreadDirty;
 
 private:
-    bool shouldUpdateAfterCompositingChange() const { return m_scrollGestureRegionIsDirty || m_touchEventTargetRectsAreDirty || frameViewIsDirty(); }
+    bool shouldUpdateAfterCompositingChange() const { return m_scrollGestureRegionIsDirty || m_touchEventTargetRectsAreDirty || m_shouldScrollOnMainThreadDirty || frameViewIsDirty(); }
 
     void setShouldUpdateScrollLayerPositionOnMainThread(MainThreadScrollingReasons);
 
@@ -150,7 +150,7 @@ private:
     using ScrollbarMap = HashMap<ScrollableArea*, OwnPtr<blink::WebScrollbarLayer>>;
     ScrollbarMap m_horizontalScrollbars;
     ScrollbarMap m_verticalScrollbars;
-    HashSet<const Layer*> m_layersWithTouchRects;
+    HashSet<const DeprecatedPaintLayer*> m_layersWithTouchRects;
     bool m_wasFrameScrollable;
 
     MainThreadScrollingReasons m_lastMainThreadScrollingReasons;

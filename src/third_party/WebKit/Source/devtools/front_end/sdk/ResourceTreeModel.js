@@ -72,7 +72,6 @@ WebInspector.ResourceTreeModel.EventTypes = {
     SecurityOriginRemoved: "SecurityOriginRemoved",
     ScreencastFrame: "ScreencastFrame",
     ScreencastVisibilityChanged: "ScreencastVisibilityChanged",
-    ViewportChanged: "ViewportChanged",
     ColorPicked: "ColorPicked"
 }
 
@@ -108,6 +107,12 @@ WebInspector.ResourceTreeModel.prototype = {
     {
         /** @type {!Object.<string, !WebInspector.ResourceTreeFrame>} */
         this._frames = {};
+
+        if (this.target().isDedicatedWorker()) {
+            this._cachedResourcesProcessed = true;
+            return;
+        }
+
         delete this._cachedResourcesProcessed;
         this._agent.getResourceTree(this._processCachedResources.bind(this));
     },
@@ -115,15 +120,19 @@ WebInspector.ResourceTreeModel.prototype = {
     _processCachedResources: function(error, mainFramePayload)
     {
         if (error) {
-            //FIXME: remove resourceTreeModel from worker
-            if (!this.target().isWorkerTarget())
-                console.error(JSON.stringify(error));
+            console.error(JSON.stringify(error));
             return;
         }
 
         this.dispatchEventToListeners(WebInspector.ResourceTreeModel.EventTypes.WillLoadCachedResources);
         this._inspectedPageURL = mainFramePayload.frame.url;
-        this._addFramesRecursively(null, mainFramePayload);
+
+        // Do not process SW resources.
+        if (this.target().isPage())
+            this._addFramesRecursively(null, mainFramePayload);
+        else
+            this._addSecurityOrigin(mainFramePayload.frame.securityOrigin);
+
         this._dispatchInspectedURLChanged();
         this._cachedResourcesProcessed = true;
         this.dispatchEventToListeners(WebInspector.ResourceTreeModel.EventTypes.CachedResourcesLoaded);
@@ -467,10 +476,7 @@ WebInspector.ResourceTreeModel.prototype = {
         var frameResource = this._createResourceFromFramePayload(framePayload, framePayload.url, WebInspector.resourceTypes.Document, framePayload.mimeType);
         if (frame.isMainFrame())
             this._inspectedPageURL = frameResource.url;
-        // FIXME(413891): This check could be removed once we stop to send frame tree for service/shared workers.
-        // This makes sure that the shadow page document resource does not hide the worker script resource (they have the same url).
-        if (!WebInspector.isWorkerFrontend())
-            frame.addResource(frameResource);
+        frame.addResource(frameResource);
 
         for (var i = 0; frameTreePayload.childFrames && i < frameTreePayload.childFrames.length; ++i)
             this._addFramesRecursively(frame, frameTreePayload.childFrames[i]);
@@ -874,15 +880,6 @@ WebInspector.PageDispatcher.prototype = {
 
     /**
      * @override
-     * @param {boolean} isEnabled
-     */
-    scriptsEnabled: function(isEnabled)
-    {
-        WebInspector.settings.javaScriptDisabled.set(!isEnabled);
-    },
-
-    /**
-     * @override
      * @param {string} data
      * @param {!PageAgent.ScreencastFrameMetadata=} metadata
      * @param {number=} frameNumber
@@ -899,15 +896,6 @@ WebInspector.PageDispatcher.prototype = {
     screencastVisibilityChanged: function(visible)
     {
         this._resourceTreeModel.dispatchEventToListeners(WebInspector.ResourceTreeModel.EventTypes.ScreencastVisibilityChanged, {visible:visible});
-    },
-
-    /**
-     * @override
-     * @param {!PageAgent.Viewport=} viewport
-     */
-    viewportChanged: function(viewport)
-    {
-        this._resourceTreeModel.dispatchEventToListeners(WebInspector.ResourceTreeModel.EventTypes.ViewportChanged, viewport);
     },
 
     /**

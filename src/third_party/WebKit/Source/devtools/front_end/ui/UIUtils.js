@@ -752,7 +752,7 @@ WebInspector.setToolbarColors = function(document, backgroundColor, color)
         WebInspector._themeStyleElement = createElement("style");
         document.head.appendChild(WebInspector._themeStyleElement);
     }
-    var colorWithAlpha = WebInspector.Color.parse(color).setAlpha(0.8).asString(WebInspector.Color.Format.RGBA);
+    var colorWithAlpha = WebInspector.Color.parse(color).setAlpha(0.9).asString(WebInspector.Color.Format.RGBA);
     var prefix = WebInspector.isMac() ? "body:not(.undocked)" : "body";
     WebInspector._themeStyleElement.textContent =
         String.sprintf(
@@ -803,19 +803,6 @@ WebInspector.highlightSearchResult = function(element, offset, length, domChange
 WebInspector.highlightSearchResults = function(element, resultRanges, changes)
 {
     return WebInspector.highlightRangesWithStyleClass(element, resultRanges, WebInspector.highlightedSearchResultClassName, changes);
-}
-
-/**
- * @param {!Element} element
- * @param {string} styleClass
- */
-WebInspector.removeSearchResultsHighlight = function(element, styleClass)
-{
-    var highlightBits = element.querySelectorAll("." + styleClass);
-    for (var i = 0; i < highlightBits.length; ++i) {
-        var span = highlightBits[i];
-        span.parentElement.replaceChild(createTextNode(span.textContent), span);
-    }
 }
 
 /**
@@ -1188,52 +1175,6 @@ WebInspector.LongClickController.prototype = {
 }
 
 /**
- * @param {string} url
- * @param {string=} linkText
- * @param {string=} classes
- * @return {!Element}
- */
-WebInspector.createExternalAnchor = function(url, linkText, classes)
-{
-    var anchor = createElementWithClass("a", "link");
-    var href = sanitizeHref(url);
-
-    if (href)
-        anchor.href = href;
-    anchor.title = url;
-
-    if (!linkText)
-        linkText = url;
-
-    anchor.className = classes;
-    anchor.textContent = linkText;
-    anchor.setAttribute("target", "_blank");
-
-    /**
-     * @param {!Event} event
-     */
-    function clickHandler(event)
-    {
-        event.consume(true);
-        InspectorFrontendHost.openInNewTab(anchor.href);
-    }
-
-    anchor.addEventListener("click", clickHandler, false);
-
-    return anchor;
-}
-
-/**
- * @param {string} article
- * @param {string} title
- * @return {!Element}
- */
-WebInspector.createDocumentationAnchor = function(article, title)
-{
-    return WebInspector.createExternalAnchor("https://developer.chrome.com/devtools/docs/" + article, title);
-}
-
-/**
  * @param {!Window} window
  */
 WebInspector.initializeUIUtils = function(window)
@@ -1257,12 +1198,13 @@ WebInspector.beautifyFunctionName = function(name)
  * @param {string} localName
  * @param {string} typeExtension
  * @param {!Object} prototype
+ * @return {function()}
  * @suppressGlobalPropertiesCheck
  * @template T
  */
 function registerCustomElement(localName, typeExtension, prototype)
 {
-    document.registerElement(typeExtension, {
+    return document.registerElement(typeExtension, {
         prototype: Object.create(prototype),
         extends: localName
     });

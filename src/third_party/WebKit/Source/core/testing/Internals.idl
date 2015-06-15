@@ -27,7 +27,7 @@
 [
     DoNotCheckConstants,
     GarbageCollected,
-    TypeChecking=Unrestricted,
+    TypeChecking=Interface,
 ] interface Internals {
     DOMString address(Node node);
 
@@ -167,6 +167,7 @@
     const unsigned short LAYER_TREE_INCLUDES_ROOT_LAYER = 8;
     const unsigned short LAYER_TREE_INCLUDES_CLIP_AND_SCROLL_PARENTS = 16;
     const unsigned short LAYER_TREE_INCLUDES_SCROLL_BLOCKS_ON = 32;
+    const unsigned short LAYER_TREE_INCLUDES_PAINT_INVALIDATION_OBJECTS = 64;
     [RaisesException, TypeChecking=Interface] DOMString layerTreeAsText(Document document, optional unsigned short flags);
     [RaisesException, TypeChecking=Interface] DOMString elementLayerTreeAsText(Element element, optional unsigned short flags);
 
@@ -223,7 +224,7 @@
     // |node| should be Document, HTMLIFrameElement, or unspecified.
     // If |node| is an HTMLIFrameElement, it assumes node.contentDocument is
     // specified without security checks. Unspecified means this document.
-    [RaisesException] void updateLayoutIgnorePendingStylesheetsAndRunPostLayoutTasks(optional Node node);
+    [RaisesException] void updateLayoutIgnorePendingStylesheetsAndRunPostLayoutTasks(optional Node? node = null);
 
     [RaisesException, TypeChecking=Interface] void forceFullRepaint(Document document);
 
@@ -243,6 +244,7 @@
 
     [TypeChecking=Interface] DOMString getImageSourceURL(Element element);
 
+    [TypeChecking=Interface] DOMString selectMenuListText(HTMLSelectElement select);
     [TypeChecking=Interface] boolean isSelectPopupVisible(Node node);
     boolean selectPopupItemStyleIsRtl(Node select, long itemIndex);
     long selectPopupItemStyleFontHeight(Node select, long itemIndex);
@@ -272,6 +274,7 @@
     DOMString textSurroundingNode(Node node, long x, long y, unsigned long maxLength);
 
     void setFocused(boolean focused);
+    void setInitialFocus(boolean reverse);
 
     [TypeChecking=Interface] boolean ignoreLayoutWithPendingStylesheets(Document document);
 
@@ -283,7 +286,7 @@
     // This function is for testing HitRegions on Canvas2D.
     unsigned long countHitRegions(CanvasRenderingContext2D context);
 
-    [TypeChecking=Interface] ClientRect boundsInRootViewSpace(Element element);
+    [TypeChecking=Interface] ClientRect boundsInViewportSpace(Element element);
     DOMString serializeNavigationMarkup();
     DOMString[] getTransitionElementIds();
     ClientRectList getTransitionElementRects();
@@ -298,6 +301,11 @@
     UnionTypesTest unionTypesTest();
 
     void forceBlinkGCWithoutV8GC();
+
+    DOMString selectedHTMLForClipboard();
+    DOMString selectedTextForClipboard();
+
+    void setVisualViewportOffset(long x, long y);
 
     iterable<long>;
 };

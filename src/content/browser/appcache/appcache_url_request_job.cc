@@ -21,10 +21,10 @@
 #include "content/browser/appcache/appcache_service_impl.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_log.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_util.h"
+#include "net/log/net_log.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_status.h"
 
@@ -382,11 +382,6 @@ void AppCacheURLRequestJob::Kill() {
 }
 
 net::LoadState AppCacheURLRequestJob::GetLoadState() const {
-  // TODO(pkasting): Remove ScopedTracker below once crbug.com/455952 is
-  // fixed.
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "455952 AppCacheURLRequestJob::GetLoadState"));
   if (!has_been_started())
     return net::LOAD_STATE_IDLE;
   if (!has_delivery_orders())

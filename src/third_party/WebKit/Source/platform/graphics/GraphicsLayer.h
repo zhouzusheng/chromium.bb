@@ -83,7 +83,7 @@ typedef Vector<GraphicsLayer*, 64> GraphicsLayerVector;
 // which may have associated transformation and animations.
 
 class PLATFORM_EXPORT GraphicsLayer : public GraphicsContextPainter, public WebCompositorAnimationDelegate, public WebLayerScrollClient, public WebLayerClient {
-    WTF_MAKE_NONCOPYABLE(GraphicsLayer); WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(GraphicsLayer); WTF_MAKE_FAST_ALLOCATED(GraphicsLayer);
 public:
     static PassOwnPtr<GraphicsLayer> create(GraphicsLayerFactory*, GraphicsLayerClient*);
 
@@ -188,7 +188,7 @@ public:
 
     void setFilters(const FilterOperations&);
 
-    void setFilterLevel(SkPaint::FilterLevel);
+    void setFilterQuality(SkFilterQuality);
 
     // Some GraphicsLayers paint only the foreground or the background content
     void setPaintingPhase(GraphicsLayerPaintingPhase);
@@ -198,6 +198,8 @@ public:
     void setNeedsDisplayInRect(const IntRect&, PaintInvalidationReason);
 
     void setContentsNeedsDisplay();
+
+    void invalidateDisplayItemClient(const DisplayItemClientWrapper&);
 
     // Set that the position/size of the contents (image or video).
     void setContentsRect(const IntRect&);
@@ -227,8 +229,10 @@ public:
     // pointers for the layers and timing data will be included in the returned string.
     String layerTreeAsText(LayerTreeFlags = LayerTreeNormal) const;
 
+    bool isTrackingPaintInvalidations() const { return m_client->isTrackingPaintInvalidations(); }
     void resetTrackedPaintInvalidations();
-    void addRepaintRect(const FloatRect&);
+    void trackPaintInvalidationRect(const FloatRect&);
+    void trackPaintInvalidationObject(const String&);
 
     void addLinkHighlight(LinkHighlightClient*);
     void removeLinkHighlight(LinkHighlightClient*);
@@ -258,6 +262,11 @@ public:
 
     // Exposed for tests.
     virtual WebLayer* contentsLayer() const { return m_contentsLayer; }
+
+#ifndef NDEBUG
+    DisplayItemClient displayItemClient() const { return toDisplayItemClient(this); }
+    String debugName() const { return m_client->debugName(this) + " debug red fill"; }
+#endif
 
 protected:
     String debugName(WebLayer*) const;
@@ -293,8 +302,6 @@ private:
     void setupContentsLayer(WebLayer*);
     void clearContentsLayerIfUnregistered();
     WebLayer* contentsLayerIfRegistered();
-
-    DisplayItemClient displayItemClient() const { return toDisplayItemClient(this); }
 
     GraphicsLayerClient* m_client;
 

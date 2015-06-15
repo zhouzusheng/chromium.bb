@@ -12,6 +12,8 @@
 
 #include <stdlib.h>  // srand
 
+#include "webrtc/modules/rtp_rtcp/interface/rtp_cvo.h"
+#include "webrtc/modules/rtp_rtcp/source/byte_io.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_sender_audio.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_sender_video.h"
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
@@ -26,6 +28,8 @@ const size_t kMaxPaddingLength = 224;
 const int kSendSideDelayWindowMs = 1000;
 
 namespace {
+
+const size_t kRtpHeaderLength = 12;
 
 const char* FrameTypeToString(FrameType frame_type) {
   switch (frame_type) {
@@ -73,7 +77,7 @@ class BitrateAggregator {
         : aggregator_(aggregator) {}
 
     // Implements Bitrate::Observer.
-    virtual void BitrateUpdated(const BitrateStatistics& stats) OVERRIDE {
+    void BitrateUpdated(const BitrateStatistics& stats) override {
       statistics_ = stats;
       aggregator_.OnStatsUpdated();
     }
@@ -124,6 +128,9 @@ RTPSender::RTPSender(int32_t id,
       rtp_header_extension_map_(),
       transmission_time_offset_(0),
       absolute_send_time_(0),
+      rotation_(kVideoRotation_0),
+      cvo_mode_(kCVONone),
+      transport_sequence_number_(0),
       // NACK.
       nack_byte_count_times_(),
       nack_byte_count_(),
@@ -246,10 +253,30 @@ int32_t RTPSender::SetAbsoluteSendTime(uint32_t absolute_send_time) {
   return 0;
 }
 
+void RTPSender::SetVideoRotation(VideoRotation rotation) {
+  CriticalSectionScoped cs(send_critsect_.get());
+  rotation_ = rotation;
+}
+
+int32_t RTPSender::SetTransportSequenceNumber(uint16_t sequence_number) {
+  CriticalSectionScoped cs(send_critsect_.get());
+  transport_sequence_number_ = sequence_number;
+  return 0;
+}
+
 int32_t RTPSender::RegisterRtpHeaderExtension(RTPExtensionType type,
                                               uint8_t id) {
   CriticalSectionScoped cs(send_critsect_.get());
+  if (type == kRtpExtensionVideoRotation) {
+    cvo_mode_ = kCVOInactive;
+    return rtp_header_extension_map_.RegisterInactive(type, id);
+  }
   return rtp_header_extension_map_.Register(type, id);
+}
+
+bool RTPSender::IsRtpHeaderExtensionRegistered(RTPExtensionType type) {
+  CriticalSectionScoped cs(send_critsect_.get());
+  return rtp_header_extension_map_.IsRegistered(type);
 }
 
 int32_t RTPSender::DeregisterRtpHeaderExtension(RTPExtensionType type) {
@@ -440,6 +467,16 @@ int32_t RTPSender::CheckPayloadType(int8_t payload_type,
   return 0;
 }
 
+RTPSenderInterface::CVOMode RTPSender::ActivateCVORtpHeaderExtension() {
+  if (cvo_mode_ == kCVOInactive) {
+    CriticalSectionScoped cs(send_critsect_.get());
+    if (rtp_header_extension_map_.SetActive(kRtpExtensionVideoRotation, true)) {
+      cvo_mode_ = kCVOActivated;
+    }
+  }
+  return cvo_mode_;
+}
+
 int32_t RTPSender::SendOutgoingData(FrameType frame_type,
                                     int8_t payload_type,
                                     uint32_t capture_timestamp,
@@ -448,7 +485,7 @@ int32_t RTPSender::SendOutgoingData(FrameType frame_type,
                                     size_t payload_size,
                                     const RTPFragmentationHeader* fragmentation,
                                     VideoCodecInformation* codec_info,
-                                    const RTPVideoTypeHeader* rtp_type_hdr) {
+                                    const RTPVideoHeader* rtp_hdr) {
   uint32_t ssrc;
   {
     // Drop this packet if we're not sending media packets.
@@ -481,12 +518,10 @@ int32_t RTPSender::SendOutgoingData(FrameType frame_type,
     if (frame_type == kFrameEmpty)
       return 0;
 
-    ret_val = video_->SendVideo(video_type, frame_type, payload_type,
-                                capture_timestamp, capture_time_ms,
-                                payload_data, payload_size,
-                                fragmentation, codec_info,
-                                rtp_type_hdr);
-
+    ret_val =
+        video_->SendVideo(video_type, frame_type, payload_type,
+                          capture_timestamp, capture_time_ms, payload_data,
+                          payload_size, fragmentation, codec_info, rtp_hdr);
   }
 
   CriticalSectionScoped cs(statistics_crit_.get());
@@ -1040,7 +1075,7 @@ void RTPSender::ProcessBitrate() {
 
 size_t RTPSender::RTPHeaderLength() const {
   CriticalSectionScoped lock(send_critsect_.get());
-  size_t rtp_header_length = 12;
+  size_t rtp_header_length = kRtpHeaderLength;
   rtp_header_length += sizeof(uint32_t) * csrcs_.size();
   rtp_header_length += RtpHeaderExtensionTotalLength();
   return rtp_header_length;
@@ -1054,17 +1089,20 @@ uint16_t RTPSender::IncrementSequenceNumber() {
 void RTPSender::ResetDataCounters() {
   uint32_t ssrc;
   uint32_t ssrc_rtx;
+  bool report_rtx;
   {
     CriticalSectionScoped ssrc_lock(send_critsect_.get());
     ssrc = ssrc_;
     ssrc_rtx = ssrc_rtx_;
+    report_rtx = rtx_ != kRtxOff;
   }
   CriticalSectionScoped lock(statistics_crit_.get());
   rtp_stats_ = StreamDataCounters();
   rtx_rtp_stats_ = StreamDataCounters();
   if (rtp_stats_callback_) {
     rtp_stats_callback_->DataCountersUpdated(rtp_stats_, ssrc);
-    rtp_stats_callback_->DataCountersUpdated(rtx_rtp_stats_, ssrc_rtx);
+    if (report_rtx)
+      rtp_stats_callback_->DataCountersUpdated(rtx_rtp_stats_, ssrc_rtx);
   }
 }
 
@@ -1087,15 +1125,15 @@ size_t RTPSender::CreateRtpHeader(uint8_t* header,
   if (marker_bit) {
     header[1] |= kRtpMarkerBitMask;  // Marker bit is set.
   }
-  RtpUtility::AssignUWord16ToBuffer(header + 2, sequence_number);
-  RtpUtility::AssignUWord32ToBuffer(header + 4, timestamp);
-  RtpUtility::AssignUWord32ToBuffer(header + 8, ssrc);
-  int32_t rtp_header_length = 12;
+  ByteWriter<uint16_t>::WriteBigEndian(header + 2, sequence_number);
+  ByteWriter<uint32_t>::WriteBigEndian(header + 4, timestamp);
+  ByteWriter<uint32_t>::WriteBigEndian(header + 8, ssrc);
+  int32_t rtp_header_length = kRtpHeaderLength;
 
   if (csrcs.size() > 0) {
     uint8_t *ptr = &header[rtp_header_length];
     for (size_t i = 0; i < csrcs.size(); ++i) {
-      RtpUtility::AssignUWord32ToBuffer(ptr, csrcs[i]);
+      ByteWriter<uint32_t>::WriteBigEndian(ptr, csrcs[i]);
       ptr += 4;
     }
     header[0] = (header[0] & 0xf0) | csrcs.size();
@@ -1104,7 +1142,8 @@ size_t RTPSender::CreateRtpHeader(uint8_t* header,
     rtp_header_length += sizeof(uint32_t) * csrcs.size();
   }
 
-  uint16_t len = BuildRTPHeaderExtension(header + rtp_header_length);
+  uint16_t len =
+      BuildRTPHeaderExtension(header + rtp_header_length, marker_bit);
   if (len > 0) {
     header[0] |= 0x10;  // Set extension bit.
     rtp_header_length += len;
@@ -1138,7 +1177,8 @@ int32_t RTPSender::BuildRTPheader(uint8_t* data_buffer,
                          timestamp_, sequence_number, csrcs_);
 }
 
-uint16_t RTPSender::BuildRTPHeaderExtension(uint8_t* data_buffer) const {
+uint16_t RTPSender::BuildRTPHeaderExtension(uint8_t* data_buffer,
+                                            bool marker_bit) const {
   if (rtp_header_extension_map_.Size() <= 0) {
     return 0;
   }
@@ -1155,7 +1195,8 @@ uint16_t RTPSender::BuildRTPHeaderExtension(uint8_t* data_buffer) const {
   const uint32_t kHeaderLength = kRtpOneByteHeaderLength;
 
   // Add extension ID (0xBEDE).
-  RtpUtility::AssignUWord16ToBuffer(data_buffer, kRtpOneByteHeaderExtensionId);
+  ByteWriter<uint16_t>::WriteBigEndian(data_buffer,
+                                       kRtpOneByteHeaderExtensionId);
 
   // Add extensions.
   uint16_t total_block_length = 0;
@@ -1163,18 +1204,22 @@ uint16_t RTPSender::BuildRTPHeaderExtension(uint8_t* data_buffer) const {
   RTPExtensionType type = rtp_header_extension_map_.First();
   while (type != kRtpExtensionNone) {
     uint8_t block_length = 0;
+    uint8_t* extension_data = &data_buffer[kHeaderLength + total_block_length];
     switch (type) {
       case kRtpExtensionTransmissionTimeOffset:
-        block_length = BuildTransmissionTimeOffsetExtension(
-            data_buffer + kHeaderLength + total_block_length);
+        block_length = BuildTransmissionTimeOffsetExtension(extension_data);
         break;
       case kRtpExtensionAudioLevel:
-        block_length = BuildAudioLevelExtension(
-            data_buffer + kHeaderLength + total_block_length);
+        block_length = BuildAudioLevelExtension(extension_data);
         break;
       case kRtpExtensionAbsoluteSendTime:
-        block_length = BuildAbsoluteSendTimeExtension(
-            data_buffer + kHeaderLength + total_block_length);
+        block_length = BuildAbsoluteSendTimeExtension(extension_data);
+        break;
+      case kRtpExtensionVideoRotation:
+        block_length = BuildVideoRotationExtension(extension_data);
+        break;
+      case kRtpExtensionTransportSequenceNumber:
+        block_length = BuildTransportSequenceNumberExtension(extension_data);
         break;
       default:
         assert(false);
@@ -1186,10 +1231,16 @@ uint16_t RTPSender::BuildRTPHeaderExtension(uint8_t* data_buffer) const {
     // No extension added.
     return 0;
   }
+  // Add padding elements until we've filled a 32 bit block.
+  size_t padding_bytes =
+      RtpUtility::Word32Align(total_block_length) - total_block_length;
+  if (padding_bytes > 0) {
+    memset(&data_buffer[kHeaderLength + total_block_length], 0, padding_bytes);
+    total_block_length += padding_bytes;
+  }
   // Set header length (in number of Word32, header excluded).
-  assert(total_block_length % 4 == 0);
-  RtpUtility::AssignUWord16ToBuffer(data_buffer + kPosLength,
-                                    total_block_length / 4);
+  ByteWriter<uint16_t>::WriteBigEndian(data_buffer + kPosLength,
+                                       total_block_length / 4);
   // Total added length.
   return kHeaderLength + total_block_length;
 }
@@ -1223,8 +1274,8 @@ uint8_t RTPSender::BuildTransmissionTimeOffsetExtension(
   size_t pos = 0;
   const uint8_t len = 2;
   data_buffer[pos++] = (id << 4) + len;
-  RtpUtility::AssignUWord24ToBuffer(data_buffer + pos,
-                                    transmission_time_offset_);
+  ByteWriter<int32_t, 3>::WriteBigEndian(data_buffer + pos,
+                                         transmission_time_offset_);
   pos += 3;
   assert(pos == kTransmissionTimeOffsetLength);
   return kTransmissionTimeOffsetLength;
@@ -1237,16 +1288,12 @@ uint8_t RTPSender::BuildAudioLevelExtension(uint8_t* data_buffer) const {
   //
   // The form of the audio level extension block:
   //
-  //    0                   1                   2                   3
-  //    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-  //    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-  //    |  ID   | len=0 |V|   level     |      0x00     |      0x00     |
-  //    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+  //    0                   1
+  //    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5
+  //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+  //   |  ID   | len=0 |V|   level     |
+  //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
   //
-  // Note that we always include 2 pad bytes, which will result in legal and
-  // correctly parsed RTP, but may be a bit wasteful if more short extensions
-  // are implemented. Right now the pad bytes would anyway be required at end
-  // of the extension block, so it makes no difference.
 
   // Get id defined by user.
   uint8_t id;
@@ -1258,9 +1305,6 @@ uint8_t RTPSender::BuildAudioLevelExtension(uint8_t* data_buffer) const {
   const uint8_t len = 0;
   data_buffer[pos++] = (id << 4) + len;
   data_buffer[pos++] = (1 << 7) + 0;     // Voice, 0 dBov.
-  data_buffer[pos++] = 0;                // Padding.
-  data_buffer[pos++] = 0;                // Padding.
-  // kAudioLevelLength is including pad bytes.
   assert(pos == kAudioLevelLength);
   return kAudioLevelLength;
 }
@@ -1292,10 +1336,101 @@ uint8_t RTPSender::BuildAbsoluteSendTimeExtension(uint8_t* data_buffer) const {
   size_t pos = 0;
   const uint8_t len = 2;
   data_buffer[pos++] = (id << 4) + len;
-  RtpUtility::AssignUWord24ToBuffer(data_buffer + pos, absolute_send_time_);
+  ByteWriter<uint32_t, 3>::WriteBigEndian(data_buffer + pos,
+                                          absolute_send_time_);
   pos += 3;
   assert(pos == kAbsoluteSendTimeLength);
   return kAbsoluteSendTimeLength;
+}
+
+uint8_t RTPSender::BuildVideoRotationExtension(uint8_t* data_buffer) const {
+  // Coordination of Video Orientation in RTP streams.
+  //
+  // Coordination of Video Orientation consists in signaling of the current
+  // orientation of the image captured on the sender side to the receiver for
+  // appropriate rendering and displaying.
+  //
+  //    0                   1
+  //    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5
+  //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+  //   |  ID   | len=0 |0 0 0 0 C F R R|
+  //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+  //
+
+  // Get id defined by user.
+  uint8_t id;
+  if (rtp_header_extension_map_.GetId(kRtpExtensionVideoRotation, &id) != 0) {
+    // Not registered.
+    return 0;
+  }
+  size_t pos = 0;
+  const uint8_t len = 0;
+  data_buffer[pos++] = (id << 4) + len;
+  data_buffer[pos++] = ConvertVideoRotationToCVOByte(rotation_);
+  assert(pos == kVideoRotationLength);
+  return kVideoRotationLength;
+}
+
+uint8_t RTPSender::BuildTransportSequenceNumberExtension(
+    uint8_t* data_buffer) const {
+  //   0                   1                   2
+  //   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3
+  //  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+  //  |  ID   | L=1   |transport wide sequence number |
+  //  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+  // Get id defined by user.
+  uint8_t id;
+  if (rtp_header_extension_map_.GetId(kRtpExtensionTransportSequenceNumber,
+                                      &id) != 0) {
+    // Not registered.
+    return 0;
+  }
+  size_t pos = 0;
+  const uint8_t len = 1;
+  data_buffer[pos++] = (id << 4) + len;
+  ByteWriter<uint16_t>::WriteBigEndian(data_buffer + pos,
+                                       transport_sequence_number_);
+  pos += 2;
+  assert(pos == kTransportSequenceNumberLength);
+  return kTransportSequenceNumberLength;
+}
+
+bool RTPSender::FindHeaderExtensionPosition(RTPExtensionType type,
+                                            const uint8_t* rtp_packet,
+                                            size_t rtp_packet_length,
+                                            const RTPHeader& rtp_header,
+                                            size_t* position) const {
+  // Get length until start of header extension block.
+  int extension_block_pos =
+      rtp_header_extension_map_.GetLengthUntilBlockStartInBytes(type);
+  if (extension_block_pos < 0) {
+    LOG(LS_WARNING) << "Failed to find extension position for " << type
+                    << " as it is not registered.";
+    return false;
+  }
+
+  HeaderExtension header_extension(type);
+
+  size_t block_pos =
+      kRtpHeaderLength + rtp_header.numCSRCs + extension_block_pos;
+  if (rtp_packet_length < block_pos + header_extension.length ||
+      rtp_header.headerLength < block_pos + header_extension.length) {
+    LOG(LS_WARNING) << "Failed to find extension position for " << type
+                    << " as the length is invalid.";
+    return false;
+  }
+
+  // Verify that header contains extension.
+  if (!((rtp_packet[kRtpHeaderLength + rtp_header.numCSRCs] == 0xBE) &&
+        (rtp_packet[kRtpHeaderLength + rtp_header.numCSRCs + 1] == 0xDE))) {
+    LOG(LS_WARNING) << "Failed to find extension position for " << type
+                    << "as hdr extension not found.";
+    return false;
+  }
+
+  *position = block_pos;
+  return true;
 }
 
 void RTPSender::UpdateTransmissionTimeOffset(uint8_t* rtp_packet,
@@ -1310,30 +1445,15 @@ void RTPSender::UpdateTransmissionTimeOffset(uint8_t* rtp_packet,
     // Not registered.
     return;
   }
-  // Get length until start of header extension block.
-  int extension_block_pos =
-      rtp_header_extension_map_.GetLengthUntilBlockStartInBytes(
-          kRtpExtensionTransmissionTimeOffset);
-  if (extension_block_pos < 0) {
-    LOG(LS_WARNING)
-        << "Failed to update transmission time offset, not registered.";
+
+  size_t block_pos = 0;
+  if (!FindHeaderExtensionPosition(kRtpExtensionTransmissionTimeOffset,
+                                   rtp_packet, rtp_packet_length, rtp_header,
+                                   &block_pos)) {
+    LOG(LS_WARNING) << "Failed to update transmission time offset.";
     return;
   }
-  size_t block_pos = 12 + rtp_header.numCSRCs + extension_block_pos;
-  if (rtp_packet_length < block_pos + kTransmissionTimeOffsetLength ||
-      rtp_header.headerLength <
-          block_pos + kTransmissionTimeOffsetLength) {
-    LOG(LS_WARNING)
-        << "Failed to update transmission time offset, invalid length.";
-    return;
-  }
-  // Verify that header contains extension.
-  if (!((rtp_packet[12 + rtp_header.numCSRCs] == 0xBE) &&
-        (rtp_packet[12 + rtp_header.numCSRCs + 1] == 0xDE))) {
-    LOG(LS_WARNING) << "Failed to update transmission time offset, hdr "
-                       "extension not found.";
-    return;
-  }
+
   // Verify first byte in block.
   const uint8_t first_block_byte = (id << 4) + 2;
   if (rtp_packet[block_pos] != first_block_byte) {
@@ -1341,8 +1461,8 @@ void RTPSender::UpdateTransmissionTimeOffset(uint8_t* rtp_packet,
     return;
   }
   // Update transmission offset field (converting to a 90 kHz timestamp).
-  RtpUtility::AssignUWord24ToBuffer(rtp_packet + block_pos + 1,
-                                    time_diff_ms * 90);  // RTP timestamp.
+  ByteWriter<int32_t, 3>::WriteBigEndian(rtp_packet + block_pos + 1,
+                                         time_diff_ms * 90);  // RTP timestamp.
 }
 
 bool RTPSender::UpdateAudioLevel(uint8_t* rtp_packet,
@@ -1358,26 +1478,14 @@ bool RTPSender::UpdateAudioLevel(uint8_t* rtp_packet,
     // Not registered.
     return false;
   }
-  // Get length until start of header extension block.
-  int extension_block_pos =
-      rtp_header_extension_map_.GetLengthUntilBlockStartInBytes(
-          kRtpExtensionAudioLevel);
-  if (extension_block_pos < 0) {
-    // The feature is not enabled.
+
+  size_t block_pos = 0;
+  if (!FindHeaderExtensionPosition(kRtpExtensionAudioLevel, rtp_packet,
+                                   rtp_packet_length, rtp_header, &block_pos)) {
+    LOG(LS_WARNING) << "Failed to update audio level.";
     return false;
   }
-  size_t block_pos = 12 + rtp_header.numCSRCs + extension_block_pos;
-  if (rtp_packet_length < block_pos + kAudioLevelLength ||
-      rtp_header.headerLength < block_pos + kAudioLevelLength) {
-    LOG(LS_WARNING) << "Failed to update audio level, invalid length.";
-    return false;
-  }
-  // Verify that header contains extension.
-  if (!((rtp_packet[12 + rtp_header.numCSRCs] == 0xBE) &&
-        (rtp_packet[12 + rtp_header.numCSRCs + 1] == 0xDE))) {
-    LOG(LS_WARNING) << "Failed to update audio level, hdr extension not found.";
-    return false;
-  }
+
   // Verify first byte in block.
   const uint8_t first_block_byte = (id << 4) + 0;
   if (rtp_packet[block_pos] != first_block_byte) {
@@ -1385,6 +1493,44 @@ bool RTPSender::UpdateAudioLevel(uint8_t* rtp_packet,
     return false;
   }
   rtp_packet[block_pos + 1] = (is_voiced ? 0x80 : 0x00) + (dBov & 0x7f);
+  return true;
+}
+
+bool RTPSender::UpdateVideoRotation(uint8_t* rtp_packet,
+                                    size_t rtp_packet_length,
+                                    const RTPHeader& rtp_header,
+                                    VideoRotation rotation) const {
+  CriticalSectionScoped cs(send_critsect_.get());
+
+  // Get id.
+  uint8_t id = 0;
+  if (rtp_header_extension_map_.GetId(kRtpExtensionVideoRotation, &id) != 0) {
+    // Not registered.
+    return false;
+  }
+
+  size_t block_pos = 0;
+  if (!FindHeaderExtensionPosition(kRtpExtensionVideoRotation, rtp_packet,
+                                   rtp_packet_length, rtp_header, &block_pos)) {
+    LOG(LS_WARNING) << "Failed to update video rotation (CVO).";
+    return false;
+  }
+  // Get length until start of header extension block.
+  int extension_block_pos =
+      rtp_header_extension_map_.GetLengthUntilBlockStartInBytes(
+          kRtpExtensionVideoRotation);
+  if (extension_block_pos < 0) {
+    // The feature is not enabled.
+    return false;
+  }
+
+  // Verify first byte in block.
+  const uint8_t first_block_byte = (id << 4) + 0;
+  if (rtp_packet[block_pos] != first_block_byte) {
+    LOG(LS_WARNING) << "Failed to update CVO.";
+    return false;
+  }
+  rtp_packet[block_pos + 1] = ConvertVideoRotationToCVOByte(rotation);
   return true;
 }
 
@@ -1409,15 +1555,16 @@ void RTPSender::UpdateAbsoluteSendTime(uint8_t* rtp_packet,
     // The feature is not enabled.
     return;
   }
-  size_t block_pos = 12 + rtp_header.numCSRCs + extension_block_pos;
+  size_t block_pos =
+      kRtpHeaderLength + rtp_header.numCSRCs + extension_block_pos;
   if (rtp_packet_length < block_pos + kAbsoluteSendTimeLength ||
       rtp_header.headerLength < block_pos + kAbsoluteSendTimeLength) {
     LOG(LS_WARNING) << "Failed to update absolute send time, invalid length.";
     return;
   }
   // Verify that header contains extension.
-  if (!((rtp_packet[12 + rtp_header.numCSRCs] == 0xBE) &&
-        (rtp_packet[12 + rtp_header.numCSRCs + 1] == 0xDE))) {
+  if (!((rtp_packet[kRtpHeaderLength + rtp_header.numCSRCs] == 0xBE) &&
+        (rtp_packet[kRtpHeaderLength + rtp_header.numCSRCs + 1] == 0xDE))) {
     LOG(LS_WARNING)
         << "Failed to update absolute send time, hdr extension not found.";
     return;
@@ -1430,8 +1577,8 @@ void RTPSender::UpdateAbsoluteSendTime(uint8_t* rtp_packet,
   }
   // Update absolute send time field (convert ms to 24-bit unsigned with 18 bit
   // fractional part).
-  RtpUtility::AssignUWord24ToBuffer(rtp_packet + block_pos + 1,
-                                    ((now_ms << 18) / 1000) & 0x00ffffff);
+  ByteWriter<uint32_t, 3>::WriteBigEndian(rtp_packet + block_pos + 1,
+                                          ((now_ms << 18) / 1000) & 0x00ffffff);
 }
 
 void RTPSender::SetSendingStatus(bool enabled) {
@@ -1614,9 +1761,9 @@ int32_t RTPSender::SetGenericFECStatus(bool enable,
                                      payload_type_fec);
 }
 
-int32_t RTPSender::GenericFECStatus(
-    bool *enable, uint8_t *payload_type_red,
-    uint8_t *payload_type_fec) const {
+int32_t RTPSender::GenericFECStatus(bool* enable,
+                                    uint8_t* payload_type_red,
+                                    uint8_t* payload_type_fec) const {
   if (audio_configured_) {
     return -1;
   }
@@ -1656,15 +1803,15 @@ void RTPSender::BuildRtxPacket(uint8_t* buffer, size_t* length,
 
   // Replace sequence number.
   uint8_t *ptr = data_buffer_rtx + 2;
-  RtpUtility::AssignUWord16ToBuffer(ptr, sequence_number_rtx_++);
+  ByteWriter<uint16_t>::WriteBigEndian(ptr, sequence_number_rtx_++);
 
   // Replace SSRC.
   ptr += 6;
-  RtpUtility::AssignUWord32ToBuffer(ptr, ssrc_rtx_);
+  ByteWriter<uint32_t>::WriteBigEndian(ptr, ssrc_rtx_);
 
   // Add OSN (original sequence number).
   ptr = data_buffer_rtx + rtp_header.headerLength;
-  RtpUtility::AssignUWord16ToBuffer(ptr, rtp_header.sequenceNumber);
+  ByteWriter<uint16_t>::WriteBigEndian(ptr, rtp_header.sequenceNumber);
   ptr += 2;
 
   // Add original payload data.

@@ -628,7 +628,7 @@ void GL_APIENTRY Clear(GLbitfield mask)
             return;
         }
 
-        Error error = framebufferObject->clear(context->getState(), mask);
+        Error error = framebufferObject->clear(context->getData(), mask);
         if (error.isError())
         {
             context->recordError(error);
@@ -645,7 +645,7 @@ void GL_APIENTRY ClearColor(GLclampf red, GLclampf green, GLclampf blue, GLclamp
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        context->getState().setClearColor(red, green, blue, alpha);
+        context->getState().setColorClearValue(red, green, blue, alpha);
     }
 }
 
@@ -656,7 +656,7 @@ void GL_APIENTRY ClearDepthf(GLclampf depth)
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        context->getState().setClearDepth(depth);
+        context->getState().setDepthClearValue(depth);
     }
 }
 
@@ -667,7 +667,7 @@ void GL_APIENTRY ClearStencil(GLint s)
     Context *context = GetValidGlobalContext();
     if (context)
     {
-        context->getState().setClearStencil(s);
+        context->getState().setStencilClearValue(s);
     }
 }
 
@@ -2366,39 +2366,66 @@ void GL_APIENTRY GetShaderPrecisionFormat(GLenum shadertype, GLenum precisiontyp
         switch (shadertype)
         {
           case GL_VERTEX_SHADER:
+            switch (precisiontype)
+            {
+              case GL_LOW_FLOAT:
+                context->getCaps().vertexLowpFloat.get(range, precision);
+                break;
+              case GL_MEDIUM_FLOAT:
+                context->getCaps().vertexMediumpFloat.get(range, precision);
+                break;
+              case GL_HIGH_FLOAT:
+                context->getCaps().vertexHighpFloat.get(range, precision);
+                break;
+
+              case GL_LOW_INT:
+                context->getCaps().vertexLowpInt.get(range, precision);
+                break;
+              case GL_MEDIUM_INT:
+                context->getCaps().vertexMediumpInt.get(range, precision);
+                break;
+              case GL_HIGH_INT:
+                context->getCaps().vertexHighpInt.get(range, precision);
+                break;
+
+              default:
+                context->recordError(Error(GL_INVALID_ENUM));
+                return;
+            }
+            break;
           case GL_FRAGMENT_SHADER:
-            break;
+            switch (precisiontype)
+            {
+              case GL_LOW_FLOAT:
+                context->getCaps().fragmentLowpFloat.get(range, precision);
+                break;
+              case GL_MEDIUM_FLOAT:
+                context->getCaps().fragmentMediumpFloat.get(range, precision);
+                break;
+              case GL_HIGH_FLOAT:
+                context->getCaps().fragmentHighpFloat.get(range, precision);
+                break;
 
+              case GL_LOW_INT:
+                context->getCaps().fragmentLowpInt.get(range, precision);
+                break;
+              case GL_MEDIUM_INT:
+                context->getCaps().fragmentMediumpInt.get(range, precision);
+                break;
+              case GL_HIGH_INT:
+                context->getCaps().fragmentHighpInt.get(range, precision);
+                break;
+
+              default:
+                context->recordError(Error(GL_INVALID_ENUM));
+                return;
+            }
+            break;
           default:
             context->recordError(Error(GL_INVALID_ENUM));
             return;
         }
 
-        switch (precisiontype)
-        {
-          case GL_LOW_FLOAT:
-          case GL_MEDIUM_FLOAT:
-          case GL_HIGH_FLOAT:
-            // Assume IEEE 754 precision
-            range[0] = 127;
-            range[1] = 127;
-            *precision = 23;
-            break;
-
-          case GL_LOW_INT:
-          case GL_MEDIUM_INT:
-          case GL_HIGH_INT:
-            // Some (most) hardware only supports single-precision floating-point numbers,
-            // which can accurately represent integers up to +/-16777216
-            range[0] = 24;
-            range[1] = 24;
-            *precision = 0;
-            break;
-
-          default:
-            context->recordError(Error(GL_INVALID_ENUM));
-            return;
-        }
     }
 }
 
@@ -2829,7 +2856,6 @@ void GL_APIENTRY GetVertexAttribfv(GLuint index, GLenum pname, GLfloat* params)
             return;
         }
 
-        const VertexAttribute &attribState = context->getState().getVertexAttribState(index);
         if (!ValidateGetVertexAttribParameters(context, pname))
         {
             return;
@@ -2845,6 +2871,7 @@ void GL_APIENTRY GetVertexAttribfv(GLuint index, GLenum pname, GLfloat* params)
         }
         else
         {
+            const VertexAttribute &attribState = context->getState().getVertexArray()->getVertexAttribute(index);
             *params = QuerySingleVertexAttributeParameter<GLfloat>(attribState, pname);
         }
     }
@@ -2863,8 +2890,6 @@ void GL_APIENTRY GetVertexAttribiv(GLuint index, GLenum pname, GLint* params)
             return;
         }
 
-        const VertexAttribute &attribState = context->getState().getVertexAttribState(index);
-
         if (!ValidateGetVertexAttribParameters(context, pname))
         {
             return;
@@ -2881,6 +2906,7 @@ void GL_APIENTRY GetVertexAttribiv(GLuint index, GLenum pname, GLint* params)
         }
         else
         {
+            const VertexAttribute &attribState = context->getState().getVertexArray()->getVertexAttribute(index);
             *params = QuerySingleVertexAttributeParameter<GLint>(attribState, pname);
         }
     }
@@ -3145,6 +3171,14 @@ void GL_APIENTRY PixelStorei(GLenum pname, GLint param)
             }
         }
 
+        if (param < 0)
+        {
+            context->recordError(Error(GL_INVALID_VALUE, "Cannot use negative values in PixelStorei"));
+            return;
+        }
+
+        State &state = context->getState();
+
         switch (pname)
         {
           case GL_UNPACK_ALIGNMENT:
@@ -3154,7 +3188,7 @@ void GL_APIENTRY PixelStorei(GLenum pname, GLint param)
                 return;
             }
 
-            context->getState().setUnpackAlignment(param);
+            state.setUnpackAlignment(param);
             break;
 
           case GL_PACK_ALIGNMENT:
@@ -3164,27 +3198,51 @@ void GL_APIENTRY PixelStorei(GLenum pname, GLint param)
                 return;
             }
 
-            context->getState().setPackAlignment(param);
+            state.setPackAlignment(param);
             break;
 
           case GL_PACK_REVERSE_ROW_ORDER_ANGLE:
-            context->getState().setPackReverseRowOrder(param != 0);
+            state.setPackReverseRowOrder(param != 0);
             break;
 
           case GL_UNPACK_ROW_LENGTH:
             ASSERT(context->getClientVersion() >= 3);
-            context->getState().setUnpackRowLength(param);
+            state.setUnpackRowLength(param);
             break;
 
           case GL_UNPACK_IMAGE_HEIGHT:
+            ASSERT(context->getClientVersion() >= 3);
+            state.getUnpackState().imageHeight = param;
+            break;
+
           case GL_UNPACK_SKIP_IMAGES:
+            ASSERT(context->getClientVersion() >= 3);
+            state.getUnpackState().skipImages = param;
+            break;
+
           case GL_UNPACK_SKIP_ROWS:
+            ASSERT(context->getClientVersion() >= 3);
+            state.getUnpackState().skipRows = param;
+            break;
+
           case GL_UNPACK_SKIP_PIXELS:
+            ASSERT(context->getClientVersion() >= 3);
+            state.getUnpackState().skipPixels = param;
+            break;
+
           case GL_PACK_ROW_LENGTH:
+            ASSERT(context->getClientVersion() >= 3);
+            state.getPackState().rowLength = param;
+            break;
+
           case GL_PACK_SKIP_ROWS:
+            ASSERT(context->getClientVersion() >= 3);
+            state.getPackState().skipRows = param;
+            break;
+
           case GL_PACK_SKIP_PIXELS:
             ASSERT(context->getClientVersion() >= 3);
-            UNIMPLEMENTED();
+            state.getPackState().skipPixels = param;
             break;
 
           default:
@@ -3273,7 +3331,7 @@ void GL_APIENTRY RenderbufferStorage(GLenum target, GLenum internalformat, GLsiz
         }
 
         Renderbuffer *renderbuffer = context->getState().getCurrentRenderbuffer();
-        Error error = renderbuffer->setStorage(width, height, internalformat, 0);
+        Error error = renderbuffer->setStorage(internalformat, width, height);
         if (error.isError())
         {
             context->recordError(error);

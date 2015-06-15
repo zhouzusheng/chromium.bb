@@ -88,8 +88,9 @@ void JsWidget::destroy()
 }
 
 void JsWidget::updateGeometry(
-    const blink::WebRect& frameRect, const blink::WebRect& clipRect,
-    const blink::WebVector<blink::WebRect>& cutOutsRects, bool isVisible)
+    const blink::WebRect& windowRect, const blink::WebRect& clipRect,
+    const blink::WebRect& unobscuredRect, const blink::WebVector<blink::WebRect>& cutOutsRects,
+    bool isVisible)
 {
     v8::Isolate* isolate = d_frame->scriptIsolate();
 
@@ -99,8 +100,9 @@ void JsWidget::updateGeometry(
     v8::Context::Scope contextScope(context);
 
     v8::Handle<v8::Object> detailObj = v8::Object::New(isolate);
-    detailObj->Set(v8::String::NewFromUtf8(isolate, "frameRect"), toV8(isolate, frameRect));
+    detailObj->Set(v8::String::NewFromUtf8(isolate, "windowRect"), toV8(isolate, windowRect));
     detailObj->Set(v8::String::NewFromUtf8(isolate, "clipRect"), toV8(isolate, clipRect));
+    detailObj->Set(v8::String::NewFromUtf8(isolate, "unobscuredRect"), toV8(isolate, unobscuredRect));
     detailObj->Set(v8::String::NewFromUtf8(isolate, "isVisible"), v8::Boolean::New(isolate, isVisible));
 
     v8::Handle<v8::Array> cutOutsRectsV8 = v8::Array::New(isolate, cutOutsRects.size());
@@ -108,6 +110,9 @@ void JsWidget::updateGeometry(
         cutOutsRectsV8->Set(i, toV8(isolate, cutOutsRects[i]));
     }
     detailObj->Set(v8::String::NewFromUtf8(isolate, "cutOutsRects"), cutOutsRectsV8);
+
+    // TODO: Remove once clients are updated.
+    detailObj->Set(v8::String::NewFromUtf8(isolate, "frameRect"), toV8(isolate, windowRect));
 
     blink::WebDOMCustomEvent event = blink::WebDOMCustomEvent::create();
     event.initCustomEvent("bbOnUpdateGeometry", false, false,

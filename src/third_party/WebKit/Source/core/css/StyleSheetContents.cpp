@@ -22,7 +22,6 @@
 #include "core/css/StyleSheetContents.h"
 
 #include "core/css/CSSStyleSheet.h"
-#include "core/css/MediaList.h"
 #include "core/css/StylePropertySet.h"
 #include "core/css/StyleRule.h"
 #include "core/css/StyleRuleImport.h"
@@ -167,11 +166,8 @@ void StyleSheetContents::parserAppendRule(PassRefPtrWillBeRawPtr<StyleRuleBase> 
         return;
     }
 
-    // Add warning message to inspector if dpi/dpcm values are used for screen media.
-    if (rule->isMediaRule()) {
+    if (rule->isMediaRule())
         setHasMediaQueries();
-        reportMediaQueryWarningIfNeeded(singleOwnerDocument(), toStyleRuleMedia(rule.get())->mediaQueries());
-    }
 
     m_childRules.append(rule);
 }
@@ -293,6 +289,13 @@ void StyleSheetContents::parseAuthorStyleSheet(const CSSStyleSheetResource* cach
     bool hasValidMIMEType = false;
     String sheetText = cachedStyleSheet->sheetText(enforceMIMEType, &hasValidMIMEType);
 
+    const ResourceResponse& response = cachedStyleSheet->response();
+    m_sourceMapURL = response.httpHeaderField("SourceMap");
+    if (m_sourceMapURL.isEmpty()) {
+        // Try to get deprecated header.
+        m_sourceMapURL = response.httpHeaderField("X-SourceMap");
+    }
+
     CSSParserContext context(parserContext(), UseCounter::getFrom(this));
     CSSParser::parseSheet(context, this, sheetText, TextPosition::minimumPosition(), 0, true);
 
@@ -308,17 +311,15 @@ void StyleSheetContents::parseAuthorStyleSheet(const CSSStyleSheetResource* cach
     }
 }
 
-bool StyleSheetContents::parseString(const String& sheetText)
+void StyleSheetContents::parseString(const String& sheetText)
 {
-    return parseStringAtPosition(sheetText, TextPosition::minimumPosition(), false);
+    parseStringAtPosition(sheetText, TextPosition::minimumPosition(), false);
 }
 
-bool StyleSheetContents::parseStringAtPosition(const String& sheetText, const TextPosition& startPosition, bool createdByParser)
+void StyleSheetContents::parseStringAtPosition(const String& sheetText, const TextPosition& startPosition, bool createdByParser)
 {
     CSSParserContext context(parserContext(), UseCounter::getFrom(this));
     CSSParser::parseSheet(context, this, sheetText, startPosition, 0, createdByParser);
-
-    return true;
 }
 
 bool StyleSheetContents::isLoading() const
@@ -368,7 +369,7 @@ void StyleSheetContents::checkLoaded()
     // When a sheet is loaded it is moved from the set of loading clients
     // to the set of completed clients. We therefore need the copy in order to
     // not modify the set while iterating it.
-    WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> > loadingClients;
+    WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet>> loadingClients;
     copyToVector(m_loadingClients, loadingClients);
 
     for (unsigned i = 0; i < loadingClients.size(); ++i) {
@@ -378,7 +379,7 @@ void StyleSheetContents::checkLoaded()
         // sheetLoaded might be invoked after its owner node is removed from document.
         if (RefPtrWillBeRawPtr<Node> ownerNode = loadingClients[i]->ownerNode()) {
             if (loadingClients[i]->sheetLoaded())
-                ownerNode->notifyLoadedSheetAndAllCriticalSubresources(m_didLoadErrorOccur);
+                ownerNode->notifyLoadedSheetAndAllCriticalSubresources(m_didLoadErrorOccur ? Node::ErrorOccurredLoadingSubresource : Node::NoErrorLoadingSubresource);
         }
     }
 }
@@ -403,7 +404,7 @@ void StyleSheetContents::startLoadingDynamicSheet()
     // completed state to the loading state which modifies the set of
     // completed clients. We therefore need the copy in order to not
     // modify the set of completed clients while iterating it.
-    WillBeHeapVector<RawPtrWillBeMember<CSSStyleSheet> > completedClients;
+    WillBeHeapVector<RawPtrWillBeMember<CSSStyleSheet>> completedClients;
     copyToVector(root->m_completedClients, completedClients);
     for (unsigned i = 0; i < completedClients.size(); ++i)
         completedClients[i]->startLoadingDynamicSheet();
@@ -444,7 +445,7 @@ KURL StyleSheetContents::completeURL(const String& url) const
     return m_parserContext.completeURL(url);
 }
 
-static bool childRulesHaveFailedOrCanceledSubresources(const WillBeHeapVector<RefPtrWillBeMember<StyleRuleBase> >& rules)
+static bool childRulesHaveFailedOrCanceledSubresources(const WillBeHeapVector<RefPtrWillBeMember<StyleRuleBase>>& rules)
 {
     for (unsigned i = 0; i < rules.size(); ++i) {
         const StyleRuleBase* rule = rules[i].get();
@@ -461,8 +462,10 @@ static bool childRulesHaveFailedOrCanceledSubresources(const WillBeHeapVector<Re
             if (childRulesHaveFailedOrCanceledSubresources(toStyleRuleMedia(rule)->childRules()))
                 return true;
             break;
+        case StyleRuleBase::Charset:
         case StyleRuleBase::Import:
         case StyleRuleBase::Namespace:
+        case StyleRuleBase::Unknown:
             ASSERT_NOT_REACHED();
         case StyleRuleBase::Page:
         case StyleRuleBase::Keyframes:
@@ -546,7 +549,7 @@ void StyleSheetContents::clientLoadStarted(CSSStyleSheet* sheet)
 void StyleSheetContents::removeSheetFromCache(Document* document)
 {
     ASSERT(document);
-    document->styleEngine()->removeSheet(this);
+    document->styleEngine().removeSheet(this);
 }
 
 void StyleSheetContents::addedToMemoryCache()
@@ -578,11 +581,11 @@ RuleSet& StyleSheetContents::ensureRuleSet(const MediaQueryEvaluator& medium, Ad
     return *m_ruleSet.get();
 }
 
-static void clearResolvers(WillBeHeapHashSet<RawPtrWillBeWeakMember<CSSStyleSheet> >& clients)
+static void clearResolvers(WillBeHeapHashSet<RawPtrWillBeWeakMember<CSSStyleSheet>>& clients)
 {
     for (const auto& sheet : clients) {
         if (Document* document = sheet->ownerDocument())
-            document->styleEngine()->clearResolver();
+            document->styleEngine().clearResolver();
     }
 }
 
@@ -604,11 +607,11 @@ void StyleSheetContents::clearRuleSet()
     m_ruleSet.clear();
 }
 
-static void removeFontFaceRules(WillBeHeapHashSet<RawPtrWillBeWeakMember<CSSStyleSheet> >& clients, const StyleRuleFontFace* fontFaceRule)
+static void removeFontFaceRules(WillBeHeapHashSet<RawPtrWillBeWeakMember<CSSStyleSheet>>& clients, const StyleRuleFontFace* fontFaceRule)
 {
     for (const auto& sheet : clients) {
         if (Node* ownerNode = sheet->ownerNode())
-            ownerNode->document().styleEngine()->removeFontFaceRules(WillBeHeapVector<RawPtrWillBeMember<const StyleRuleFontFace> >(1, fontFaceRule));
+            ownerNode->document().styleEngine().removeFontFaceRules(WillBeHeapVector<RawPtrWillBeMember<const StyleRuleFontFace>>(1, fontFaceRule));
     }
 }
 
@@ -619,7 +622,7 @@ void StyleSheetContents::notifyRemoveFontFaceRule(const StyleRuleFontFace* fontF
     removeFontFaceRules(root->m_completedClients, fontFaceRule);
 }
 
-static void findFontFaceRulesFromRules(const WillBeHeapVector<RefPtrWillBeMember<StyleRuleBase> >& rules, WillBeHeapVector<RawPtrWillBeMember<const StyleRuleFontFace> >& fontFaceRules)
+static void findFontFaceRulesFromRules(const WillBeHeapVector<RefPtrWillBeMember<StyleRuleBase>>& rules, WillBeHeapVector<RawPtrWillBeMember<const StyleRuleFontFace>>& fontFaceRules)
 {
     for (unsigned i = 0; i < rules.size(); ++i) {
         StyleRuleBase* rule = rules[i].get();
@@ -635,7 +638,7 @@ static void findFontFaceRulesFromRules(const WillBeHeapVector<RefPtrWillBeMember
     }
 }
 
-void StyleSheetContents::findFontFaceRules(WillBeHeapVector<RawPtrWillBeMember<const StyleRuleFontFace> >& fontFaceRules)
+void StyleSheetContents::findFontFaceRules(WillBeHeapVector<RawPtrWillBeMember<const StyleRuleFontFace>>& fontFaceRules)
 {
     for (unsigned i = 0; i < m_importRules.size(); ++i) {
         if (!m_importRules[i]->styleSheet())
@@ -646,7 +649,7 @@ void StyleSheetContents::findFontFaceRules(WillBeHeapVector<RawPtrWillBeMember<c
     findFontFaceRulesFromRules(childRules(), fontFaceRules);
 }
 
-void StyleSheetContents::trace(Visitor* visitor)
+DEFINE_TRACE(StyleSheetContents)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_ownerRule);

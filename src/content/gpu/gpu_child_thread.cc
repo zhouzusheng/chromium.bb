@@ -45,17 +45,17 @@ bool GpuProcessLogMessageHandler(int severity,
 }
 
 ChildThreadImpl::Options GetOptions() {
-  ChildThreadImpl::Options options;
+  ChildThreadImpl::Options::Builder builder;
 
 #if defined(USE_OZONE)
   IPC::MessageFilter* message_filter = ui::OzonePlatform::GetInstance()
                                            ->GetGpuPlatformSupport()
                                            ->GetMessageFilter();
   if (message_filter)
-    options.startup_filters.push_back(message_filter);
+    builder.AddStartupFilter(message_filter);
 #endif
 
-  return options;
+  return builder.Build();
 }
 
 }  // namespace
@@ -76,8 +76,10 @@ GpuChildThread::GpuChildThread(GpuWatchdogThread* watchdog_thread,
   g_thread_safe_sender.Get() = thread_safe_sender();
 }
 
-GpuChildThread::GpuChildThread(const std::string& channel_id)
-    : ChildThreadImpl(Options(channel_id, false)),
+GpuChildThread::GpuChildThread(const InProcessChildThreadParams& params)
+    : ChildThreadImpl(ChildThreadImpl::Options::Builder()
+                          .InBrowserProcess(params)
+                          .Build()),
       dead_on_arrival_(false),
       in_browser_process_(true) {
 #if defined(OS_WIN)
@@ -164,9 +166,8 @@ void GpuChildThread::OnInitialize() {
   }
 
 #if defined(OS_ANDROID)
-  base::PlatformThread::SetThreadPriority(
-      base::PlatformThread::CurrentHandle(),
-      base::kThreadPriority_Display);
+  base::PlatformThread::SetThreadPriority(base::PlatformThread::CurrentHandle(),
+                                          base::ThreadPriority::DISPLAY);
 #endif
 
   // We don't need to pipe log messages if we are running the GPU thread in

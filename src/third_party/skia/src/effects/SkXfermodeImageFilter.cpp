@@ -22,9 +22,8 @@
 
 SkXfermodeImageFilter::SkXfermodeImageFilter(SkXfermode* mode,
                                              SkImageFilter* inputs[2],
-                                             const CropRect* cropRect,
-                                             uint32_t uniqueID)
-  : INHERITED(2, inputs, cropRect, uniqueID), fMode(mode) {
+                                             const CropRect* cropRect)
+  : INHERITED(2, inputs, cropRect), fMode(mode) {
     SkSafeRef(fMode);
 }
 
@@ -35,7 +34,7 @@ SkXfermodeImageFilter::~SkXfermodeImageFilter() {
 SkFlattenable* SkXfermodeImageFilter::CreateProc(SkReadBuffer& buffer) {
     SK_IMAGEFILTER_UNFLATTEN_COMMON(common, 2);
     SkAutoTUnref<SkXfermode> mode(buffer.readXfermode());
-    return Create(mode, common.getInput(0), common.getInput(1), &common.cropRect(), common.uniqueID());
+    return Create(mode, common.getInput(0), common.getInput(1), &common.cropRect());
 }
 
 void SkXfermodeImageFilter::flatten(SkWriteBuffer& buffer) const {
@@ -145,7 +144,7 @@ bool SkXfermodeImageFilter::filterImageGPU(Proxy* proxy,
     GrFragmentProcessor* xferProcessor = NULL;
 
     GrSurfaceDesc desc;
-    desc.fFlags = kRenderTarget_GrSurfaceFlag | kNoStencil_GrSurfaceFlag;
+    desc.fFlags = kRenderTarget_GrSurfaceFlag;
     desc.fWidth = src.width();
     desc.fHeight = src.height();
     desc.fConfig = kSkia8888_GrPixelConfig;
@@ -172,7 +171,7 @@ bool SkXfermodeImageFilter::filterImageGPU(Proxy* proxy,
     GrPaint paint;
     paint.addColorTextureProcessor(foregroundTex, foregroundMatrix);
     paint.addColorProcessor(xferProcessor)->unref();
-    context->drawRect(dst->asRenderTarget(), paint, SkMatrix::I(), srcRect);
+    context->drawRect(dst->asRenderTarget(), GrClip::WideOpen(), paint, SkMatrix::I(), srcRect);
 
     offset->fX = backgroundOffset.fX;
     offset->fY = backgroundOffset.fY;

@@ -25,11 +25,12 @@
 #include "core/layout/LayoutReplaced.h"
 
 #include "core/editing/PositionWithAffinity.h"
-#include "core/layout/Layer.h"
+#include "core/layout/LayoutAnalyzer.h"
+#include "core/layout/LayoutBlock.h"
 #include "core/layout/LayoutImage.h"
+#include "core/layout/LayoutView.h"
+#include "core/paint/DeprecatedPaintLayer.h"
 #include "core/paint/ReplacedPainter.h"
-#include "core/rendering/RenderBlock.h"
-#include "core/rendering/RenderView.h"
 #include "platform/LengthFunctions.h"
 
 namespace blink {
@@ -38,14 +39,14 @@ const int LayoutReplaced::defaultWidth = 300;
 const int LayoutReplaced::defaultHeight = 150;
 
 LayoutReplaced::LayoutReplaced(Element* element)
-    : RenderBox(element)
+    : LayoutBox(element)
     , m_intrinsicSize(defaultWidth, defaultHeight)
 {
     setReplaced(true);
 }
 
 LayoutReplaced::LayoutReplaced(Element* element, const LayoutSize& intrinsicSize)
-    : RenderBox(element)
+    : LayoutBox(element)
     , m_intrinsicSize(intrinsicSize)
 {
     setReplaced(true);
@@ -60,15 +61,15 @@ void LayoutReplaced::willBeDestroyed()
     if (!documentBeingDestroyed() && parent())
         parent()->dirtyLinesFromChangedChild(this);
 
-    RenderBox::willBeDestroyed();
+    LayoutBox::willBeDestroyed();
 }
 
-void LayoutReplaced::styleDidChange(StyleDifference diff, const LayoutStyle* oldStyle)
+void LayoutReplaced::styleDidChange(StyleDifference diff, const ComputedStyle* oldStyle)
 {
-    RenderBox::styleDidChange(diff, oldStyle);
+    LayoutBox::styleDidChange(diff, oldStyle);
 
     bool hadStyle = (oldStyle != 0);
-    float oldZoom = hadStyle ? oldStyle->effectiveZoom() : LayoutStyle::initialZoom();
+    float oldZoom = hadStyle ? oldStyle->effectiveZoom() : ComputedStyle::initialZoom();
     if (style() && style()->effectiveZoom() != oldZoom)
         intrinsicSizeChanged();
 }
@@ -76,6 +77,7 @@ void LayoutReplaced::styleDidChange(StyleDifference diff, const LayoutStyle* old
 void LayoutReplaced::layout()
 {
     ASSERT(needsLayout());
+    LayoutAnalyzer::Scope analyzer(*this);
 
     LayoutRect oldContentRect = replacedContentRect();
 
@@ -100,7 +102,7 @@ void LayoutReplaced::intrinsicSizeChanged()
     int scaledWidth = static_cast<int>(defaultWidth * style()->effectiveZoom());
     int scaledHeight = static_cast<int>(defaultHeight * style()->effectiveZoom());
     m_intrinsicSize = LayoutSize(scaledWidth, scaledHeight);
-    setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
+    setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(LayoutInvalidationReason::SizeChanged);
 }
 
 void LayoutReplaced::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
@@ -172,7 +174,7 @@ static inline bool rendererHasAspectRatio(const LayoutObject* renderer)
     return renderer->isImage() || renderer->isCanvas() || renderer->isVideo();
 }
 
-void LayoutReplaced::computeAspectRatioInformationForRenderBox(RenderBox* contentRenderer, FloatSize& constrainedSize, double& intrinsicRatio) const
+void LayoutReplaced::computeAspectRatioInformationForLayoutBox(LayoutBox* contentRenderer, FloatSize& constrainedSize, double& intrinsicRatio) const
 {
     FloatSize intrinsicSize;
     if (contentRenderer) {
@@ -210,8 +212,8 @@ void LayoutReplaced::computeAspectRatioInformationForRenderBox(RenderBox* conten
     if (intrinsicRatio && !intrinsicSize.isEmpty() && style()->logicalWidth().isAuto() && style()->logicalHeight().isAuto()) {
         // We can't multiply or divide by 'intrinsicRatio' here, it breaks tests, like fast/images/zoomed-img-size.html, which
         // can only be fixed once subpixel precision is available for things like intrinsicWidth/Height - which include zoom!
-        constrainedSize.setWidth(RenderBox::computeReplacedLogicalHeight() * intrinsicSize.width() / intrinsicSize.height());
-        constrainedSize.setHeight(RenderBox::computeReplacedLogicalWidth() * intrinsicSize.height() / intrinsicSize.width());
+        constrainedSize.setWidth(LayoutBox::computeReplacedLogicalHeight() * intrinsicSize.width() / intrinsicSize.height());
+        constrainedSize.setHeight(LayoutBox::computeReplacedLogicalWidth() * intrinsicSize.height() / intrinsicSize.width());
     }
 }
 
@@ -220,10 +222,14 @@ LayoutRect LayoutReplaced::replacedContentRect(const LayoutSize* overriddenIntri
     LayoutRect contentRect = contentBoxRect();
     ObjectFit objectFit = style()->objectFit();
 
-    if (objectFit == ObjectFitFill && style()->objectPosition() == LayoutStyle::initialObjectPosition()) {
+    if (objectFit == ObjectFitFill && style()->objectPosition() == ComputedStyle::initialObjectPosition()) {
         return contentRect;
     }
 
+    // TODO(davve): intrinsicSize doubles as both intrinsic size and intrinsic ratio. In the case of
+    // SVG images this isn't correct since they can have intrinsic ratio but no intrinsic size. In
+    // order to maintain aspect ratio, the intrinsic size for SVG might be faked from the aspect
+    // ratio, see SVGImage::containerSize().
     LayoutSize intrinsicSize = overriddenIntrinsicSize ? *overriddenIntrinsicSize : this->intrinsicSize();
     if (!intrinsicSize.width() || !intrinsicSize.height())
         return contentRect;
@@ -271,12 +277,12 @@ LayoutUnit LayoutReplaced::computeReplacedLogicalWidth(ShouldComputePreferred sh
     if (style()->logicalWidth().isSpecified() || style()->logicalWidth().isIntrinsic())
         return computeReplacedLogicalWidthRespectingMinMaxWidth(computeReplacedLogicalWidthUsing(style()->logicalWidth()), shouldComputePreferred);
 
-    RenderBox* contentRenderer = embeddedContentBox();
+    LayoutBox* contentRenderer = embeddedContentBox();
 
     // 10.3.2 Inline, replaced elements: http://www.w3.org/TR/CSS21/visudet.html#inline-replaced-width
     double intrinsicRatio = 0;
     FloatSize constrainedSize;
-    computeAspectRatioInformationForRenderBox(contentRenderer, constrainedSize, intrinsicRatio);
+    computeAspectRatioInformationForLayoutBox(contentRenderer, constrainedSize, intrinsicRatio);
 
     if (style()->logicalWidth().isAuto()) {
         bool computedHeightIsAuto = hasAutoHeightOrContainingBlockWithAutoHeight();
@@ -334,12 +340,12 @@ LayoutUnit LayoutReplaced::computeReplacedLogicalHeight() const
     if (hasReplacedLogicalHeight())
         return computeReplacedLogicalHeightRespectingMinMaxHeight(computeReplacedLogicalHeightUsing(style()->logicalHeight()));
 
-    RenderBox* contentRenderer = embeddedContentBox();
+    LayoutBox* contentRenderer = embeddedContentBox();
 
     // 10.6.2 Inline, replaced elements: http://www.w3.org/TR/CSS21/visudet.html#inline-replaced-height
     double intrinsicRatio = 0;
     FloatSize constrainedSize;
-    computeAspectRatioInformationForRenderBox(contentRenderer, constrainedSize, intrinsicRatio);
+    computeAspectRatioInformationForLayoutBox(contentRenderer, constrainedSize, intrinsicRatio);
 
     bool widthIsAuto = style()->logicalWidth().isAuto();
     bool hasIntrinsicHeight = constrainedSize.height() > 0;
@@ -378,7 +384,7 @@ void LayoutReplaced::computePreferredLogicalWidths()
     else
         m_minPreferredLogicalWidth = m_maxPreferredLogicalWidth = computeReplacedLogicalWidth(ComputePreferred);
 
-    const LayoutStyle& styleToUse = styleRef();
+    const ComputedStyle& styleToUse = styleRef();
     if (styleToUse.logicalWidth().isPercent() || styleToUse.logicalMaxWidth().isPercent())
         m_minPreferredLogicalWidth = 0;
 
@@ -423,10 +429,10 @@ PositionWithAffinity LayoutReplaced::positionForPoint(const LayoutPoint& point)
         return createPositionWithAffinity(1, DOWNSTREAM);
     }
 
-    return RenderBox::positionForPoint(point);
+    return LayoutBox::positionForPoint(point);
 }
 
-LayoutRect LayoutReplaced::selectionRectForPaintInvalidation(const LayoutLayerModelObject* paintInvalidationContainer) const
+LayoutRect LayoutReplaced::selectionRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer) const
 {
     ASSERT(!needsLayout());
 
@@ -438,7 +444,7 @@ LayoutRect LayoutReplaced::selectionRectForPaintInvalidation(const LayoutLayerMo
     // FIXME: groupedMapping() leaks the squashing abstraction.
     // TODO(shez): Investigate why layer() is sometimes null here.
     if (paintInvalidationContainer->layer() && paintInvalidationContainer->layer()->groupedMapping())
-        Layer::mapRectToPaintBackingCoordinates(paintInvalidationContainer, rect);
+        DeprecatedPaintLayer::mapRectToPaintBackingCoordinates(paintInvalidationContainer, rect);
     return rect;
 }
 
@@ -462,7 +468,7 @@ LayoutRect LayoutReplaced::localSelectionRect(bool checkWhetherSelected) const
 void LayoutReplaced::setSelectionState(SelectionState state)
 {
     // The selection state for our containing block hierarchy is updated by the base class call.
-    RenderBox::setSelectionState(state);
+    LayoutBox::setSelectionState(state);
 
     if (!inlineBoxWrapper())
         return;
@@ -498,7 +504,7 @@ bool LayoutReplaced::isSelected() const
     ASSERT(0);
     return false;
 }
-LayoutRect LayoutReplaced::clippedOverflowRectForPaintInvalidation(const LayoutLayerModelObject* paintInvalidationContainer, const PaintInvalidationState* paintInvalidationState) const
+LayoutRect LayoutReplaced::clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* paintInvalidationState) const
 {
     if (style()->visibility() != VISIBLE && !enclosingLayer()->hasVisibleContent())
         return LayoutRect();

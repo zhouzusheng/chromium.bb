@@ -30,14 +30,14 @@
 #include "core/frame/LocalFrame.h"
 #include "core/frame/FrameView.h"
 #include "core/layout/line/InlineTextBox.h"
-#include "core/layout/Layer.h"
+#include "core/layout/LayoutBlock.h"
 #include "core/layout/LayoutIFrame.h"
 #include "core/layout/LayoutObject.h"
+#include "core/layout/LayoutText.h"
+#include "core/layout/LayoutView.h"
 #include "core/layout/TextRunConstructor.h"
 #include "core/page/Page.h"
-#include "core/rendering/RenderBlock.h"
-#include "core/rendering/RenderText.h"
-#include "core/rendering/RenderView.h"
+#include "core/paint/DeprecatedPaintLayer.h"
 #include "wtf/text/StringBuilder.h"
 
 #include "public/web/WebViewClient.h"
@@ -112,7 +112,7 @@ class RubberbandLayerContext {
     double m_translateY;
     double m_scaleX;
     double m_scaleY;
-    RenderBlock* m_colBlock;
+    LayoutBlock* m_colBlock;
     LayoutPoint m_colBlockAbsTopLeft;
 
     RubberbandLayerContext()
@@ -142,24 +142,24 @@ class RubberbandContext {
   public:
     const RubberbandContext* m_parent;
     RubberbandLayerContext* m_layerContext;
-    const LayoutObject* m_renderer;
-    const RenderBlock* m_containingBlock;
+    const LayoutObject* m_layoutObject;
+    const LayoutBlock* m_containingBlock;
     LayoutPoint m_layoutTopLeft;  // relative to the layer's top-left
 
     RubberbandContext()
     : m_parent(0)
     , m_layerContext(0)
-    , m_renderer(0)
+    , m_layoutObject(0)
     , m_containingBlock(0)
     {
     }
 
-    explicit RubberbandContext(const RubberbandContext* parent, const LayoutObject* renderer)
+    explicit RubberbandContext(const RubberbandContext* parent, const LayoutObject* layoutObject)
     : m_parent(parent)
-    , m_renderer(renderer)
-    , m_containingBlock(renderer ? renderer->containingBlock() : 0)
+    , m_layoutObject(layoutObject)
+    , m_containingBlock(layoutObject ? layoutObject->containingBlock() : 0)
     {
-        if (m_renderer && m_renderer->hasLayer()) {
+        if (m_layoutObject && m_layoutObject->hasLayer()) {
             m_layerContext = new RubberbandLayerContext(parent->m_layerContext);
         }
         else {
@@ -170,7 +170,7 @@ class RubberbandContext {
 
     ~RubberbandContext()
     {
-        if (m_renderer && m_renderer->hasLayer())
+        if (m_layoutObject && m_layoutObject->hasLayer())
             delete m_layerContext;
     }
 
@@ -221,17 +221,17 @@ static bool isSupportedTransform(const TransformationMatrix& matrix)
         && 0.0 < matrix.m11() && 0.0 < matrix.m22();
 }
 
-static bool isTextRubberbandable(LayoutObject* renderer)
+static bool isTextRubberbandable(LayoutObject* layoutObject)
 {
-    return !renderer->style()
-        || RUBBERBANDABLE_TEXT == renderer->style()->rubberbandable()
-        || RUBBERBANDABLE_TEXT_WITH_LEADING_TAB == renderer->style()->rubberbandable();
+    return !layoutObject->style()
+        || RUBBERBANDABLE_TEXT == layoutObject->style()->rubberbandable()
+        || RUBBERBANDABLE_TEXT_WITH_LEADING_TAB == layoutObject->style()->rubberbandable();
 }
 
-static bool isTextWithLeadingTab(LayoutObject* renderer)
+static bool isTextWithLeadingTab(LayoutObject* layoutObject)
 {
-    return !renderer->style()
-        || RUBBERBANDABLE_TEXT_WITH_LEADING_TAB == renderer->style()->rubberbandable();
+    return !layoutObject->style()
+        || RUBBERBANDABLE_TEXT_WITH_LEADING_TAB == layoutObject->style()->rubberbandable();
 }
 
 template <typename CHAR_TYPE>
@@ -263,8 +263,8 @@ void WebViewImpl::rubberbandWalkFrame(const RubberbandContext& context, LocalFra
 
     FrameView* view = frame->view();
 
-    LayoutObject* renderer = frame->contentRenderer();
-    if (!renderer || !renderer->hasLayer())
+    LayoutObject* layoutObject = frame->contentRenderer();
+    if (!layoutObject || !layoutObject->hasLayer())
         return;
 
     RubberbandContext localContext(&context, 0);
@@ -299,16 +299,16 @@ void WebViewImpl::rubberbandWalkFrame(const RubberbandContext& context, LocalFra
     layerContext.m_frameScrollOffset.expand(view->scrollOffset().width() * layerContext.m_scaleX,
                                             view->scrollOffset().height() * layerContext.m_scaleY);
 
-    rubberbandWalkRenderObject(localContext, renderer);
+    rubberbandWalkLayoutObject(localContext, layoutObject);
 }
 
-void WebViewImpl::rubberbandWalkRenderObject(const RubberbandContext& context, LayoutObject* renderer)
+void WebViewImpl::rubberbandWalkLayoutObject(const RubberbandContext& context, LayoutObject* layoutObject)
 {
-    RubberbandContext localContext(&context, renderer);
+    RubberbandContext localContext(&context, layoutObject);
 
-    if (renderer->hasLayer()) {
-        ASSERT(renderer->isLayoutLayerModelObject());
-        Layer* layer = toLayoutLayerModelObject(renderer)->layer();
+    if (layoutObject->hasLayer()) {
+        ASSERT(layoutObject->isLayoutBoxModelObject());
+        DeprecatedPaintLayer* layer = toLayoutBoxModelObject(layoutObject)->layer();
         RubberbandLayerContext& layerContext = *localContext.m_layerContext;
 
         if (layer->hasTransformRelatedProperty()) {
@@ -328,9 +328,9 @@ void WebViewImpl::rubberbandWalkRenderObject(const RubberbandContext& context, L
         }
 
         // TODO: how should we clip layers that are in columns?
-        if (layer->renderer()->style() && !layerContext.m_colBlock) {
-            bool isClippedX = isClipped(layer->renderer()->style()->overflowX());
-            bool isClippedY = isClipped(layer->renderer()->style()->overflowY());
+        if (layer->layoutObject()->style() && !layerContext.m_colBlock) {
+            bool isClippedX = isClipped(layer->layoutObject()->style()->overflowX());
+            bool isClippedY = isClipped(layer->layoutObject()->style()->overflowY());
             if (isClippedX || isClippedY) {
                 LayoutPoint minXminY = localContext.calcAbsPoint(LayoutPoint::zero());
                 if (isClippedX) {
@@ -357,9 +357,9 @@ void WebViewImpl::rubberbandWalkRenderObject(const RubberbandContext& context, L
     }
     else if (localContext.m_containingBlock != context.m_containingBlock) {
         ASSERT(localContext.m_containingBlock);
-        const RenderBlock* cb = localContext.m_containingBlock;
+        const LayoutBlock* cb = localContext.m_containingBlock;
         const RubberbandContext* cbContext = &context;
-        while (cbContext->m_renderer != cb) {
+        while (cbContext->m_layoutObject != cb) {
             ASSERT(cbContext->m_parent);
             cbContext = cbContext->m_parent;
         }
@@ -377,44 +377,44 @@ void WebViewImpl::rubberbandWalkRenderObject(const RubberbandContext& context, L
         localContext.m_layoutTopLeft.moveBy(offset);
     }
 
-    bool isVisible = !renderer->style() || renderer->style()->visibility() == VISIBLE;
+    bool isVisible = !layoutObject->style() || layoutObject->style()->visibility() == VISIBLE;
 
-    if (renderer->isBox()) {
-        RenderBox* renderBox = toRenderBox(renderer);
+    if (layoutObject->isBox()) {
+        LayoutBox* layoutBox = toLayoutBox(layoutObject);
 
-        // HACK: RenderTableSection is not a containing block, but the cell
-        //       positions seem to be relative to RenderTableSection instead of
-        //       RenderTable.  This hack moves the top-left corner by the x,y
-        //       position of the RenderTableSection.
-        if (renderer->isTableSection() && !renderer->hasLayer()) {
-            localContext.m_layoutTopLeft.move(renderBox->frameRect().x(), renderBox->frameRect().y());
+        // HACK: LayoutTableSection is not a containing block, but the cell
+        //       positions seem to be relative to LayoutTableSection instead of
+        //       LayoutTable.  This hack moves the top-left corner by the x,y
+        //       position of the LayoutTableSection.
+        if (layoutObject->isTableSection() && !layoutObject->hasLayer()) {
+            localContext.m_layoutTopLeft.move(layoutBox->frameRect().x(), layoutBox->frameRect().y());
         }
 
-        if (renderer->isLayoutIFrame() && isVisible) {
-            LayoutIFrame* renderIFrame = toLayoutIFrame(renderer);
-            if (renderIFrame->widget() && renderIFrame->widget()->isFrameView()) {
-                FrameView* frameView = static_cast<FrameView*>(renderIFrame->widget());
+        if (layoutObject->isLayoutIFrame() && isVisible) {
+            LayoutIFrame* layoutIFrame = toLayoutIFrame(layoutObject);
+            if (layoutIFrame->widget() && layoutIFrame->widget()->isFrameView()) {
+                FrameView* frameView = static_cast<FrameView*>(layoutIFrame->widget());
                 LayoutPoint topLeft;
-                if (!renderer->hasLayer()) {
-                    topLeft.move((localContext.m_layoutTopLeft.x() + renderBox->frameRect().x()) * context.m_layerContext->m_scaleX,
-                                 (localContext.m_layoutTopLeft.y() + renderBox->frameRect().y()) * context.m_layerContext->m_scaleY);
+                if (!layoutObject->hasLayer()) {
+                    topLeft.move((localContext.m_layoutTopLeft.x() + layoutBox->frameRect().x()) * context.m_layerContext->m_scaleX,
+                                 (localContext.m_layoutTopLeft.y() + layoutBox->frameRect().y()) * context.m_layerContext->m_scaleY);
                 }
-                topLeft.move((renderBox->borderLeft() + renderBox->paddingLeft()) * localContext.m_layerContext->m_scaleX,
-                             (renderBox->borderTop() + renderBox->paddingTop()) * localContext.m_layerContext->m_scaleY);
+                topLeft.move((layoutBox->borderLeft() + layoutBox->paddingLeft()) * localContext.m_layerContext->m_scaleX,
+                             (layoutBox->borderTop() + layoutBox->paddingTop()) * localContext.m_layerContext->m_scaleY);
                 rubberbandWalkFrame(localContext, &frameView->frame(), topLeft);
             }
         }
 
-        if (renderer->hasColumns() && renderer->isRenderBlock()) {
+        if (layoutObject->hasColumns() && layoutObject->isLayoutBlock()) {
             localContext.m_layerContext->m_colBlockAbsTopLeft = localContext.calcAbsPoint(LayoutPoint::zero());
-            localContext.m_layerContext->m_colBlock = toRenderBlock(renderer);
+            localContext.m_layerContext->m_colBlock = toLayoutBlock(layoutObject);
         }
     }
-    else if (renderer->isText() && isVisible && isTextRubberbandable(renderer)) {
-        RenderText* renderText = toRenderText(renderer);
+    else if (layoutObject->isText() && isVisible && isTextRubberbandable(layoutObject)) {
+        LayoutText* layoutText = toLayoutText(layoutObject);
 
-        WTF::String text(renderText->text());
-        for (InlineTextBox* textBox = renderText->firstTextBox(); textBox; textBox = textBox->nextTextBox()) {
+        WTF::String text(layoutText->text());
+        for (InlineTextBox* textBox = layoutText->firstTextBox(); textBox; textBox = textBox->nextTextBox()) {
             LayoutUnit textBoxTop = textBox->root().lineTop();
             LayoutUnit textBoxHeight = textBox->root().lineBottom() - textBoxTop;
             LayoutUnit textBoxLeft = textBox->x();
@@ -431,7 +431,7 @@ void WebViewImpl::rubberbandWalkRenderObject(const RubberbandContext& context, L
                 candidate.m_clipRect.intersect(localContext.m_layerContext->m_clipRect);
                 candidate.m_text = text;
                 candidate.m_isLTR = textBox->isLeftToRightDirection();
-                candidate.m_useLeadingTab = isTextWithLeadingTab(renderText);
+                candidate.m_useLeadingTab = isTextWithLeadingTab(layoutText);
                 candidate.m_start = textBox->start();
                 candidate.m_len = textBox->len();
                 int end = candidate.m_start + candidate.m_len;
@@ -446,18 +446,18 @@ void WebViewImpl::rubberbandWalkRenderObject(const RubberbandContext& context, L
                 }
 
                 {
-                    const Font& font = renderer->style()->font();
+                    const Font& font = layoutObject->style()->font();
                     UChar space = ' ';
                     candidate.m_spaceWidth = font.width(
-                        constructTextRun(renderer, font, &space, 1, renderer->styleRef(), candidate.m_isLTR ? LTR : RTL));
+                        constructTextRun(layoutObject, font, &space, 1, layoutObject->styleRef(), candidate.m_isLTR ? LTR : RTL));
                     candidate.m_spaceWidth *= localContext.m_layerContext->m_scaleX;
                 }
             }
         }
     }
 
-    for (LayoutObject* child = renderer->slowFirstChild(); child; child = child->nextSibling()) {
-        rubberbandWalkRenderObject(localContext, child);
+    for (LayoutObject* child = layoutObject->slowFirstChild(); child; child = child->nextSibling()) {
+        rubberbandWalkLayoutObject(localContext, child);
     }
 }
 
@@ -465,7 +465,7 @@ WTF::String WebViewImpl::getTextInRubberbandImpl(const WebRect& rcOrig)
 {
     ASSERT(isRubberbanding());
 
-    LayoutRect rc = rcOrig;
+    LayoutRect rc(rcOrig);
 
     RubberbandStateImpl* stateImpl = m_rubberbandState->m_impl;
 
@@ -765,7 +765,7 @@ WebRect WebViewImpl::expandRubberbandRect(const WebRect& rcOrig)
 {
     ASSERT(isRubberbanding());
 
-    LayoutRect rc = rcOrig;
+    LayoutRect rc(rcOrig);
 
     RubberbandStateImpl* stateImpl = m_rubberbandState->m_impl;
 
@@ -867,7 +867,7 @@ WebString WebViewImpl::getTextInRubberband(const WebRect& rc)
     RubberbandContext context;
     RubberbandLayerContext layerContext;
     context.m_layerContext = &layerContext;
-    layerContext.m_clipRect = (IntRect)rc;
+    layerContext.m_clipRect = LayoutRect(rc);
     rubberbandWalkFrame(context, m_page->deprecatedLocalMainFrame(), LayoutPoint());
     WTF::String result = getTextInRubberbandImpl(rc);
     m_rubberbandState.clear();

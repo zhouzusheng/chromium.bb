@@ -223,7 +223,7 @@
       'sources': [
         '<(SHARED_INTERMEDIATE_DIR)/libraries.cc',
         '<(SHARED_INTERMEDIATE_DIR)/experimental-libraries.cc',
-        '../../src/snapshot-empty.cc',
+        '../../src/snapshot/snapshot-empty.cc',
       ],
       'conditions': [
         ['want_separate_host_toolset==1', {
@@ -281,8 +281,8 @@
             '../..',
           ],
           'sources': [
-            '../../src/natives-external.cc',
-            '../../src/snapshot-external.cc',
+            '../../src/snapshot/natives-external.cc',
+            '../../src/snapshot/snapshot-external.cc',
           ],
           'actions': [
             {
@@ -456,9 +456,7 @@
         '../../src/compiler/frame.h',
         '../../src/compiler/gap-resolver.cc',
         '../../src/compiler/gap-resolver.h',
-        '../../src/compiler/generic-algorithm.h',
         '../../src/compiler/graph-builder.h',
-        '../../src/compiler/graph-inl.h',
         '../../src/compiler/graph-reducer.cc',
         '../../src/compiler/graph-reducer.h',
         '../../src/compiler/graph-replay.cc',
@@ -487,6 +485,8 @@
         '../../src/compiler/js-intrinsic-lowering.h',
         '../../src/compiler/js-operator.cc',
         '../../src/compiler/js-operator.h',
+        '../../src/compiler/js-type-feedback.cc',
+        '../../src/compiler/js-type-feedback.h',
         '../../src/compiler/js-typed-lowering.cc',
         '../../src/compiler/js-typed-lowering.h',
         '../../src/compiler/jump-threading.cc',
@@ -494,6 +494,8 @@
         '../../src/compiler/linkage-impl.h',
         '../../src/compiler/linkage.cc',
         '../../src/compiler/linkage.h',
+        '../../src/compiler/liveness-analyzer.cc',
+        '../../src/compiler/liveness-analyzer.h',
         '../../src/compiler/load-elimination.cc',
         '../../src/compiler/load-elimination.h',
         '../../src/compiler/loop-analysis.cc',
@@ -513,6 +515,7 @@
         '../../src/compiler/node-cache.h',
         '../../src/compiler/node-marker.cc',
         '../../src/compiler/node-marker.h',
+        '../../src/compiler/node-matchers.cc',
         '../../src/compiler/node-matchers.h',
         '../../src/compiler/node-properties.cc',
         '../../src/compiler/node-properties.h',
@@ -553,6 +556,8 @@
         '../../src/compiler/simplified-operator.h',
         '../../src/compiler/source-position.cc',
         '../../src/compiler/source-position.h',
+        '../../src/compiler/state-values-utils.cc',
+        '../../src/compiler/state-values-utils.h',
         '../../src/compiler/typer.cc',
         '../../src/compiler/typer.h',
         '../../src/compiler/value-numbering-reducer.cc',
@@ -770,7 +775,6 @@
         '../../src/modules.cc',
         '../../src/modules.h',
         '../../src/msan.h',
-        '../../src/natives.h',
         '../../src/objects-debug.cc',
         '../../src/objects-inl.h',
         '../../src/objects-printer.cc',
@@ -782,6 +786,8 @@
         '../../src/ostreams.h',
         '../../src/parser.cc',
         '../../src/parser.h',
+        '../../src/pending-compilation-error-handler.cc',
+        '../../src/pending-compilation-error-handler.h',
         '../../src/perf-jit.cc',
         '../../src/perf-jit.h',
         '../../src/preparse-data-format.h',
@@ -851,20 +857,23 @@
         '../../src/scopeinfo.h',
         '../../src/scopes.cc',
         '../../src/scopes.h',
-        '../../src/serialize.cc',
-        '../../src/serialize.h',
         '../../src/small-pointer-list.h',
         '../../src/smart-pointers.h',
-        '../../src/snapshot.h',
-        '../../src/snapshot-common.cc',
-        '../../src/snapshot-source-sink.cc',
-        '../../src/snapshot-source-sink.h',
+        '../../src/snapshot/natives.h',
+        '../../src/snapshot/serialize.cc',
+        '../../src/snapshot/serialize.h',
+        '../../src/snapshot/snapshot.h',
+        '../../src/snapshot/snapshot-common.cc',
+        '../../src/snapshot/snapshot-source-sink.cc',
+        '../../src/snapshot/snapshot-source-sink.h',
         '../../src/string-builder.cc',
         '../../src/string-builder.h',
         '../../src/string-search.cc',
         '../../src/string-search.h',
         '../../src/string-stream.cc',
         '../../src/string-stream.h',
+        '../../src/strings-storage.cc',
+        '../../src/strings-storage.h',
         '../../src/strtod.cc',
         '../../src/strtod.h',
         '../../src/ic/stub-cache.cc',
@@ -1377,6 +1386,7 @@
               ['nacl_target_arch=="none"', {
                 'link_settings': {
                   'libraries': [
+                    '-ldl',
                     '-lrt'
                   ],
                 },
@@ -1396,6 +1406,11 @@
             'sources': [
               '../../src/base/platform/platform-posix.cc'
             ],
+            'link_settings': {
+              'libraries': [
+                '-ldl'
+              ]
+            },
             'conditions': [
               ['host_os=="mac"', {
                 'target_conditions': [
@@ -1688,8 +1703,8 @@
           '../../src/array.js',
           '../../src/string.js',
           '../../src/uri.js',
-          '../../src/third_party/fdlibm/fdlibm.js',
           '../../src/math.js',
+          '../../src/third_party/fdlibm/fdlibm.js',
           '../../src/date.js',
           '../../src/regexp.js',
           '../../src/arraybuffer.js',
@@ -1707,19 +1722,19 @@
           '../../src/debug-debugger.js',
           '../../src/mirror-debugger.js',
           '../../src/liveedit-debugger.js',
+          '../../src/templates.js',
           '../../src/macros.py',
         ],
         'experimental_library_files': [
           '../../src/macros.py',
           '../../src/proxy.js',
           '../../src/generator.js',
-          '../../src/harmony-string.js',
           '../../src/harmony-array.js',
           '../../src/harmony-array-includes.js',
           '../../src/harmony-tostring.js',
           '../../src/harmony-typedarray.js',
-          '../../src/harmony-templates.js',
-          '../../src/harmony-regexp.js'
+          '../../src/harmony-regexp.js',
+          '../../src/harmony-reflect.js'
         ],
         'libraries_bin_file': '<(SHARED_INTERMEDIATE_DIR)/libraries.bin',
         'libraries_experimental_bin_file': '<(SHARED_INTERMEDIATE_DIR)/libraries-experimental.bin',
@@ -1815,7 +1830,7 @@
         '../..',
       ],
       'sources': [
-        '../../src/mksnapshot.cc',
+        '../../src/snapshot/mksnapshot.cc',
       ],
       'conditions': [
         ['v8_enable_i18n_support==1', {

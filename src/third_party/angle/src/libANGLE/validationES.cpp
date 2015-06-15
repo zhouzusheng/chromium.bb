@@ -92,7 +92,8 @@ bool ValidTexture2DDestinationTarget(const Context *context, GLenum target)
 
 bool ValidFramebufferTarget(GLenum target)
 {
-    META_ASSERT(GL_DRAW_FRAMEBUFFER_ANGLE == GL_DRAW_FRAMEBUFFER && GL_READ_FRAMEBUFFER_ANGLE == GL_READ_FRAMEBUFFER);
+    static_assert(GL_DRAW_FRAMEBUFFER_ANGLE == GL_DRAW_FRAMEBUFFER && GL_READ_FRAMEBUFFER_ANGLE == GL_READ_FRAMEBUFFER,
+                  "ANGLE framebuffer enums must equal the ES3 framebuffer enums.");
 
     switch (target)
     {
@@ -209,8 +210,8 @@ bool ValidCompressedImageSize(const Context *context, GLenum internalFormat, GLs
 
 bool ValidQueryType(const Context *context, GLenum queryType)
 {
-    META_ASSERT(GL_ANY_SAMPLES_PASSED == GL_ANY_SAMPLES_PASSED_EXT);
-    META_ASSERT(GL_ANY_SAMPLES_PASSED_CONSERVATIVE == GL_ANY_SAMPLES_PASSED_CONSERVATIVE_EXT);
+    static_assert(GL_ANY_SAMPLES_PASSED == GL_ANY_SAMPLES_PASSED_EXT, "GL extension enums not equal.");
+    static_assert(GL_ANY_SAMPLES_PASSED_CONSERVATIVE == GL_ANY_SAMPLES_PASSED_CONSERVATIVE_EXT, "GL extension enums not equal.");
 
     switch (queryType)
     {
@@ -524,7 +525,7 @@ bool ValidateBlitFramebufferParameters(gl::Context *context, GLint srcX0, GLint 
             GLenum readInternalFormat = readColorBuffer->getInternalFormat();
             const InternalFormat &readFormatInfo = GetInternalFormatInfo(readInternalFormat);
 
-            for (unsigned int i = 0; i < gl::IMPLEMENTATION_MAX_DRAW_BUFFERS; i++)
+            for (GLuint i = 0; i < context->getCaps().maxColorAttachments; i++)
             {
                 if (drawFramebuffer->isEnabledColorAttachment(i))
                 {
@@ -580,7 +581,7 @@ bool ValidateBlitFramebufferParameters(gl::Context *context, GLint srcX0, GLint 
                     return false;
                 }
 
-                for (unsigned int colorAttachment = 0; colorAttachment < gl::IMPLEMENTATION_MAX_DRAW_BUFFERS; colorAttachment++)
+                for (GLuint colorAttachment = 0; colorAttachment < context->getCaps().maxColorAttachments; ++colorAttachment)
                 {
                     if (drawFramebuffer->isEnabledColorAttachment(colorAttachment))
                     {
@@ -679,7 +680,8 @@ bool ValidateGetVertexAttribParameters(Context *context, GLenum pname)
       case GL_VERTEX_ATTRIB_ARRAY_DIVISOR:
         // Don't verify ES3 context because GL_VERTEX_ATTRIB_ARRAY_DIVISOR_ANGLE uses
         // the same constant.
-        META_ASSERT(GL_VERTEX_ATTRIB_ARRAY_DIVISOR == GL_VERTEX_ATTRIB_ARRAY_DIVISOR_ANGLE);
+        static_assert(GL_VERTEX_ATTRIB_ARRAY_DIVISOR == GL_VERTEX_ATTRIB_ARRAY_DIVISOR_ANGLE,
+                      "ANGLE extension enums not equal to GL enums.");
         return true;
 
       case GL_VERTEX_ATTRIB_ARRAY_INTEGER:
@@ -1123,11 +1125,13 @@ bool ValidateStateQuery(gl::Context *context, GLenum pname, GLenum *nativeType, 
         return false;
     }
 
+    const Caps &caps = context->getCaps();
+
     if (pname >= GL_DRAW_BUFFER0 && pname <= GL_DRAW_BUFFER15)
     {
         unsigned int colorAttachment = (pname - GL_DRAW_BUFFER0);
 
-        if (colorAttachment >= context->getCaps().maxDrawBuffers)
+        if (colorAttachment >= caps.maxDrawBuffers)
         {
             context->recordError(Error(GL_INVALID_OPERATION));
             return false;
@@ -1140,7 +1144,7 @@ bool ValidateStateQuery(gl::Context *context, GLenum pname, GLenum *nativeType, 
       case GL_TEXTURE_BINDING_CUBE_MAP:
       case GL_TEXTURE_BINDING_3D:
       case GL_TEXTURE_BINDING_2D_ARRAY:
-        if (context->getState().getActiveSampler() >= context->getCaps().maxCombinedTextureImageUnits)
+        if (context->getState().getActiveSampler() >= caps.maxCombinedTextureImageUnits)
         {
             context->recordError(Error(GL_INVALID_OPERATION));
             return false;
@@ -1432,6 +1436,36 @@ static bool ValidateDrawBase(Context *context, GLenum mode, GLsizei count, GLsiz
         }
     }
 
+    // Uniform buffer validation
+    for (unsigned int uniformBlockIndex = 0; uniformBlockIndex < program->getActiveUniformBlockCount(); uniformBlockIndex++)
+    {
+        const gl::UniformBlock *uniformBlock = program->getUniformBlockByIndex(uniformBlockIndex);
+        GLuint blockBinding = program->getUniformBlockBinding(uniformBlockIndex);
+        const gl::Buffer *uniformBuffer = state.getIndexedUniformBuffer(blockBinding);
+
+        if (!uniformBuffer)
+        {
+            // undefined behaviour
+            context->recordError(Error(GL_INVALID_OPERATION, "It is undefined behaviour to have a used but unbound uniform buffer."));
+            return false;
+        }
+
+        size_t uniformBufferSize = state.getIndexedUniformBufferSize(blockBinding);
+
+        if (uniformBufferSize == 0)
+        {
+            // Bind the whole buffer.
+            uniformBufferSize = uniformBuffer->getSize();
+        }
+
+        if (uniformBufferSize < uniformBlock->dataSize)
+        {
+            // undefined behaviour
+            context->recordError(Error(GL_INVALID_OPERATION, "It is undefined behaviour to use a uniform buffer that is too small."));
+            return false;
+        }
+    }
+
     // No-op if zero count
     return (count > 0);
 }
@@ -1553,7 +1587,7 @@ bool ValidateDrawElements(Context *context, GLenum mode, GLsizei count, GLenum t
     }
 
     const gl::VertexArray *vao = state.getVertexArray();
-    const gl::Buffer *elementArrayBuffer = vao->getElementArrayBuffer();
+    gl::Buffer *elementArrayBuffer = vao->getElementArrayBuffer();
     if (!indices && !elementArrayBuffer)
     {
         context->recordError(Error(GL_INVALID_OPERATION));
@@ -1595,7 +1629,7 @@ bool ValidateDrawElements(Context *context, GLenum mode, GLsizei count, GLenum t
     if (elementArrayBuffer)
     {
         uintptr_t offset = reinterpret_cast<uintptr_t>(indices);
-        if (!elementArrayBuffer->getIndexRangeCache()->findRange(type, offset, count, indexRangeOut, NULL))
+        if (!elementArrayBuffer->getIndexRangeCache()->findRange(type, offset, count, indexRangeOut))
         {
             rx::BufferImpl *bufferImpl = elementArrayBuffer->getImplementation();
             const uint8_t *dataPointer = NULL;
@@ -1608,6 +1642,7 @@ bool ValidateDrawElements(Context *context, GLenum mode, GLsizei count, GLenum t
 
             const uint8_t *offsetPointer = dataPointer + offset;
             *indexRangeOut = rx::IndexRangeCache::ComputeRange(type, offsetPointer, count);
+            elementArrayBuffer->getIndexRangeCache()->addRange(type, offset, count, *indexRangeOut);
         }
     }
     else

@@ -31,26 +31,27 @@
 #include "core/frame/FrameView.h"
 #include "core/html/HTMLTableElement.h"
 #include "core/layout/HitTestResult.h"
-#include "core/layout/Layer.h"
-#include "core/layout/LayoutTableAlgorithmAuto.h"
-#include "core/layout/LayoutTableAlgorithmFixed.h"
+#include "core/layout/LayoutAnalyzer.h"
 #include "core/layout/LayoutTableCaption.h"
 #include "core/layout/LayoutTableCell.h"
 #include "core/layout/LayoutTableCol.h"
 #include "core/layout/LayoutTableSection.h"
+#include "core/layout/LayoutView.h"
 #include "core/layout/SubtreeLayoutScope.h"
+#include "core/layout/TableLayoutAlgorithmAuto.h"
+#include "core/layout/TableLayoutAlgorithmFixed.h"
 #include "core/layout/TextAutosizer.h"
-#include "core/layout/style/StyleInheritedData.h"
+#include "core/style/StyleInheritedData.h"
 #include "core/paint/BoxPainter.h"
+#include "core/paint/DeprecatedPaintLayer.h"
 #include "core/paint/TablePainter.h"
-#include "core/rendering/RenderView.h"
 
 namespace blink {
 
 using namespace HTMLNames;
 
 LayoutTable::LayoutTable(Element* element)
-    : RenderBlock(element)
+    : LayoutBlock(element)
     , m_head(0)
     , m_foot(0)
     , m_firstBody(0)
@@ -74,9 +75,9 @@ LayoutTable::~LayoutTable()
 {
 }
 
-void LayoutTable::styleDidChange(StyleDifference diff, const LayoutStyle* oldStyle)
+void LayoutTable::styleDidChange(StyleDifference diff, const ComputedStyle* oldStyle)
 {
-    RenderBlock::styleDidChange(diff, oldStyle);
+    LayoutBlock::styleDidChange(diff, oldStyle);
     propagateStyleToAnonymousChildren();
 
     bool oldFixedTableLayout = oldStyle ? oldStyle->isFixedTableLayout() : false;
@@ -93,9 +94,9 @@ void LayoutTable::styleDidChange(StyleDifference diff, const LayoutStyle* oldSty
         // According to the CSS2 spec, you only use fixed table layout if an
         // explicit width is specified on the table.  Auto width implies auto table layout.
         if (style()->isFixedTableLayout())
-            m_tableLayout = adoptPtr(new LayoutTableAlgorithmFixed(this));
+            m_tableLayout = adoptPtr(new TableLayoutAlgorithmFixed(this));
         else
-            m_tableLayout = adoptPtr(new LayoutTableAlgorithmAuto(this));
+            m_tableLayout = adoptPtr(new TableLayoutAlgorithmAuto(this));
     }
 
     // If border was changed, invalidate collapsed borders cache.
@@ -172,7 +173,7 @@ void LayoutTable::addChild(LayoutObject* child, LayoutObject* beforeChild)
         if (beforeChild && beforeChild->parent() != this)
             beforeChild = splitAnonymousBoxesAroundChild(beforeChild);
 
-        RenderBox::addChild(child, beforeChild);
+        LayoutBox::addChild(child, beforeChild);
         return;
     }
 
@@ -209,7 +210,7 @@ void LayoutTable::addChild(LayoutObject* child, LayoutObject* beforeChild)
 
 void LayoutTable::addChildIgnoringContinuation(LayoutObject* newChild, LayoutObject* beforeChild)
 {
-    // We need to bypass the RenderBlock implementation and instead do a normal addChild() (or we
+    // We need to bypass the LayoutBlock implementation and instead do a normal addChild() (or we
     // won't get there at all), so that any missing anonymous table part renderers are
     // inserted. Otherwise we might end up with an insane render tree with inlines or blocks as
     // direct children of a table, which will break assumptions made all over the code, which may
@@ -266,7 +267,7 @@ void LayoutTable::updateLogicalWidth()
         setMarginEnd(computedValues.m_margins.m_end);
     }
 
-    RenderBlock* cb = containingBlock();
+    LayoutBlock* cb = containingBlock();
 
     LayoutUnit availableLogicalWidth = containingBlockLogicalWidthForContent() + (isOutOfFlowPositioned() ? cb->paddingLogicalWidth() : LayoutUnit(0));
     bool hasPerpendicularContainingBlock = cb->style()->isHorizontalWritingMode() != style()->isHorizontalWritingMode();
@@ -283,8 +284,8 @@ void LayoutTable::updateLogicalWidth()
 
         // Subtract out our margins to get the available content width.
         LayoutUnit availableContentLogicalWidth = std::max<LayoutUnit>(0, containerWidthInInlineDirection - marginTotal);
-        if (shrinkToAvoidFloats() && cb->isRenderBlockFlow() && toRenderBlockFlow(cb)->containsFloats() && !hasPerpendicularContainingBlock)
-            availableContentLogicalWidth = shrinkLogicalWidthToAvoidFloats(marginStart, marginEnd, toRenderBlockFlow(cb));
+        if (shrinkToAvoidFloats() && cb->isLayoutBlockFlow() && toLayoutBlockFlow(cb)->containsFloats() && !hasPerpendicularContainingBlock)
+            availableContentLogicalWidth = shrinkLogicalWidthToAvoidFloats(marginStart, marginEnd, toLayoutBlockFlow(cb));
 
         // Ensure we aren't bigger than our available width.
         setLogicalWidth(std::min<int>(availableContentLogicalWidth, maxPreferredLogicalWidth()));
@@ -321,7 +322,7 @@ void LayoutTable::updateLogicalWidth()
     ASSERT(logicalWidth().toInt() >= minPreferredLogicalWidth().toInt());
 }
 
-// This method takes a LayoutStyle's logical width, min-width, or max-width length and computes its actual value.
+// This method takes a ComputedStyle's logical width, min-width, or max-width length and computes its actual value.
 LayoutUnit LayoutTable::convertStyleLogicalWidthToComputedWidth(const Length& styleLogicalWidth, LayoutUnit availableWidth)
 {
     if (styleLogicalWidth.isIntrinsic())
@@ -406,18 +407,22 @@ void LayoutTable::simplifiedNormalFlowLayout()
 
     for (LayoutTableSection* section = topSection(); section; section = sectionBelow(section)) {
         section->layoutIfNeeded();
+        section->layoutRows();
         section->computeOverflowFromCells();
     }
+
+    recalcCollapsedBordersIfNeeded();
 }
 
 void LayoutTable::layout()
 {
     ASSERT(needsLayout());
+    LayoutAnalyzer::Scope analyzer(*this);
 
     if (simplifiedLayout())
         return;
 
-    // Note: LayoutTable is handled differently than other RenderBlocks and the LayoutScope
+    // Note: LayoutTable is handled differently than other LayoutBlocks and the LayoutScope
     //       must be created before the table begins laying out.
     TextAutosizer::LayoutScope textAutosizerLayoutScope(this);
 
@@ -443,7 +448,7 @@ void LayoutTable::layout()
 
         if (logicalWidth() != oldLogicalWidth) {
             for (unsigned i = 0; i < m_captions.size(); i++)
-                layouter.setNeedsLayout(m_captions[i]);
+                layouter.setNeedsLayout(m_captions[i], LayoutInvalidationReason::TableChanged);
         }
         // FIXME: The optimisation below doesn't work since the internal table
         // layout could have changed. We need to add a flag to the table
@@ -461,7 +466,7 @@ void LayoutTable::layout()
 
         for (LayoutObject* child = firstChild(); child; child = child->nextSibling()) {
             if (!child->needsLayout() && child->isBox())
-                toRenderBox(child)->markForPaginationRelayoutIfNeeded(layouter);
+                toLayoutBox(child)->markForPaginationRelayoutIfNeeded(layouter);
             if (child->isTableSection()) {
                 LayoutTableSection* section = toLayoutTableSection(child);
                 if (m_columnLogicalWidthChanged)
@@ -580,14 +585,24 @@ void LayoutTable::layout()
     if (view()->layoutState()->pageLogicalHeight())
         setPageLogicalOffset(view()->layoutState()->pageLogicalOffset(*this, logicalTop()));
 
+    recalcCollapsedBordersIfNeeded();
+
     m_columnLogicalWidthChanged = false;
     clearNeedsLayout();
 }
 
-// Collect all the unique border values that we want to paint in a sorted list.
-void LayoutTable::recalcCollapsedBorders()
+void LayoutTable::invalidateCollapsedBorders()
 {
-    if (m_collapsedBordersValid)
+    m_collapsedBordersValid = false;
+    m_collapsedBorders.clear();
+
+    setNeedsSimplifiedNormalFlowLayout();
+}
+
+// Collect all the unique border values that we want to paint in a sorted list.
+void LayoutTable::recalcCollapsedBordersIfNeeded()
+{
+    if (m_collapsedBordersValid || !collapseBorders())
         return;
     m_collapsedBordersValid = true;
     m_collapsedBorders.clear();
@@ -616,8 +631,9 @@ void LayoutTable::addOverflowFromChildren()
         int topBorderOverflow = borderTop() - outerBorderTop();
         IntRect borderOverflowRect(leftBorderOverflow, topBorderOverflow, rightBorderOverflow - leftBorderOverflow, bottomBorderOverflow - topBorderOverflow);
         if (borderOverflowRect != pixelSnappedBorderBoxRect()) {
-            addLayoutOverflow(borderOverflowRect);
-            addVisualOverflow(borderOverflowRect);
+            LayoutRect borderLayoutRect(borderOverflowRect);
+            addLayoutOverflow(borderLayoutRect);
+            addVisualOverflow(borderLayoutRect);
         }
     }
 
@@ -690,7 +706,7 @@ void LayoutTable::computePreferredLogicalWidths()
     for (unsigned i = 0; i < m_captions.size(); i++)
         m_minPreferredLogicalWidth = std::max(m_minPreferredLogicalWidth, m_captions[i]->minPreferredLogicalWidth());
 
-    const LayoutStyle& styleToUse = styleRef();
+    const ComputedStyle& styleToUse = styleRef();
     // FIXME: This should probably be checking for isSpecified since you should be able to use percentage or calc values for min-width.
     if (styleToUse.logicalMinWidth().isFixed() && styleToUse.logicalMinWidth().value() > 0) {
         m_maxPreferredLogicalWidth = std::max(m_maxPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse.logicalMinWidth().value()));
@@ -889,7 +905,7 @@ void LayoutTable::recalcSections() const
 int LayoutTable::calcBorderStart() const
 {
     if (!collapseBorders())
-        return RenderBlock::borderStart();
+        return LayoutBlock::borderStart();
 
     // Determined by the first cell of the first row. See the CSS 2.1 spec, section 17.6.2.
     if (!numEffCols())
@@ -943,7 +959,7 @@ int LayoutTable::calcBorderStart() const
 int LayoutTable::calcBorderEnd() const
 {
     if (!collapseBorders())
-        return RenderBlock::borderEnd();
+        return LayoutBlock::borderEnd();
 
     // Determined by the last cell of the first row. See the CSS 2.1 spec, section 17.6.2.
     if (!numEffCols())
@@ -1008,7 +1024,7 @@ int LayoutTable::borderBefore() const
         recalcSectionsIfNeeded();
         return outerBorderBefore();
     }
-    return RenderBlock::borderBefore();
+    return LayoutBlock::borderBefore();
 }
 
 int LayoutTable::borderAfter() const
@@ -1017,7 +1033,7 @@ int LayoutTable::borderAfter() const
         recalcSectionsIfNeeded();
         return outerBorderAfter();
     }
-    return RenderBlock::borderAfter();
+    return LayoutBlock::borderAfter();
 }
 
 int LayoutTable::outerBorderBefore() const
@@ -1252,7 +1268,7 @@ int LayoutTable::baselinePosition(FontBaseline baselineType, bool firstLine, Lin
         return baseline;
     }
 
-    return RenderBox::baselinePosition(baselineType, firstLine, direction, linePositionMode);
+    return LayoutBox::baselinePosition(baselineType, firstLine, direction, linePositionMode);
 }
 
 int LayoutTable::inlineBlockBaseline(LineDirectionMode) const
@@ -1286,7 +1302,7 @@ int LayoutTable::firstLineBoxBaseline() const
 
 LayoutRect LayoutTable::overflowClipRect(const LayoutPoint& location, OverlayScrollbarSizeRelevancy relevancy)
 {
-    LayoutRect rect = RenderBlock::overflowClipRect(location, relevancy);
+    LayoutRect rect = LayoutBlock::overflowClipRect(location, relevancy);
 
     // If we have a caption, expand the clip to include the caption.
     // FIXME: Technically this is wrong, but it's virtually impossible to fix this
@@ -1307,16 +1323,16 @@ LayoutRect LayoutTable::overflowClipRect(const LayoutPoint& location, OverlayScr
     return rect;
 }
 
-bool LayoutTable::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction action)
+bool LayoutTable::nodeAtPoint(HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction action)
 {
     LayoutPoint adjustedLocation = accumulatedOffset + location();
 
     // Check kids first.
     if (!hasOverflowClip() || locationInContainer.intersects(overflowClipRect(adjustedLocation))) {
         for (LayoutObject* child = lastChild(); child; child = child->previousSibling()) {
-            if (child->isBox() && !toRenderBox(child)->hasSelfPaintingLayer() && (child->isTableSection() || child->isTableCaption())) {
-                LayoutPoint childPoint = flipForWritingModeForChild(toRenderBox(child), adjustedLocation);
-                if (child->nodeAtPoint(request, result, locationInContainer, childPoint, action)) {
+            if (child->isBox() && !toLayoutBox(child)->hasSelfPaintingLayer() && (child->isTableSection() || child->isTableCaption())) {
+                LayoutPoint childPoint = flipForWritingModeForChild(toLayoutBox(child), adjustedLocation);
+                if (child->nodeAtPoint(result, locationInContainer, childPoint, action)) {
                     updateHitTestResult(result, toLayoutPoint(locationInContainer.point() - childPoint));
                     return true;
                 }
@@ -1326,9 +1342,9 @@ bool LayoutTable::nodeAtPoint(const HitTestRequest& request, HitTestResult& resu
 
     // Check our bounds next.
     LayoutRect boundsRect(adjustedLocation, size());
-    if (visibleToHitTestRequest(request) && (action == HitTestBlockBackground || action == HitTestChildBlockBackground) && locationInContainer.intersects(boundsRect)) {
+    if (visibleToHitTestRequest(result.hitTestRequest()) && (action == HitTestBlockBackground || action == HitTestChildBlockBackground) && locationInContainer.intersects(boundsRect)) {
         updateHitTestResult(result, flipForWritingMode(locationInContainer.point() - toLayoutSize(adjustedLocation)));
-        if (!result.addNodeToRectBasedTestResult(node(), request, locationInContainer, boundsRect))
+        if (!result.addNodeToListBasedTestResult(node(), locationInContainer, boundsRect))
             return true;
     }
 
@@ -1337,7 +1353,7 @@ bool LayoutTable::nodeAtPoint(const HitTestRequest& request, HitTestResult& resu
 
 LayoutTable* LayoutTable::createAnonymousWithParentRenderer(const LayoutObject* parent)
 {
-    RefPtr<LayoutStyle> newStyle = LayoutStyle::createAnonymousStyleWithDisplay(parent->styleRef(), TABLE);
+    RefPtr<ComputedStyle> newStyle = ComputedStyle::createAnonymousStyleWithDisplay(parent->styleRef(), TABLE);
     LayoutTable* newTable = new LayoutTable(0);
     newTable->setDocumentForAnonymous(&parent->document());
     newTable->setStyle(newStyle.release());

@@ -5,11 +5,11 @@ Use of this source code is governed by a BSD-style license that can be
 found in the LICENSE file.
 -->
 
+<link rel="import" href="/core/trace_model/event_container.html">
 <link rel="import" href="/core/trace_model/slice.html">
-<link rel="import" href="/core/color_scheme.html">
 <link rel="import" href="/core/filter.html">
+<link rel="import" href="/base/ui/color_scheme.html">
 <link rel="import" href="/base/guid.html">
-<link rel="import" href="/base/range.html">
 
 <script>
 'use strict';
@@ -120,7 +120,7 @@ tv.exportTo('tv.c.trace_model', function() {
           throw new Error('Slices must be added in increasing timestamp order');
       }
 
-      var colorId = tv.b.ui.getStringColorId(title);
+      var colorId = tv.b.ui.getColorIdForGeneralPurposeString(title);
       var slice = new this.sliceConstructor(category, title, colorId, ts,
                                             opt_args ? opt_args : {}, null,
                                             opt_tts);
@@ -191,7 +191,7 @@ tv.exportTo('tv.c.trace_model', function() {
      */
     pushCompleteSlice: function(category, title, ts, duration, tts,
                                 cpuDuration, opt_args) {
-      var colorId = tv.b.ui.getStringColorId(title);
+      var colorId = tv.b.ui.getColorIdForGeneralPurposeString(title);
       var slice = new this.sliceConstructor(category, title, colorId, ts,
                                             opt_args ? opt_args : {},
                                             duration, tts, cpuDuration);
@@ -256,6 +256,16 @@ tv.exportTo('tv.c.trace_model', function() {
 
     iterateAllEventContainers: function(callback) {
       callback(this);
+    },
+
+    getSlicesOfName: function(title) {
+      var slices = [];
+      for (var i = 0; i < this.slices.length; i++) {
+        if (this.slices[i].title == title) {
+          slices.push(this.slices[i]);
+        }
+      }
+      return slices;
     },
 
     toJSON: function() {

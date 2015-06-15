@@ -34,6 +34,7 @@ class PrefRegistrySimple;
 class PrefService;
 class Profile;
 class ProfileManager;
+class PromoResourceService;
 class SafeBrowsingService;
 class StatusTray;
 class WatchDogThread;
@@ -80,10 +81,6 @@ class BrowserPolicyConnector;
 class PolicyService;
 }
 
-namespace prerender {
-class PrerenderTracker;
-}
-
 namespace printing {
 class BackgroundPrintingManager;
 class PrintJobManager;
@@ -125,6 +122,7 @@ class BrowserProcess {
   virtual PrefService* local_state() = 0;
   virtual net::URLRequestContextGetter* system_request_context() = 0;
   virtual chrome_variations::VariationsService* variations_service() = 0;
+  virtual PromoResourceService* promo_resource_service() = 0;
 
   virtual BrowserProcessPlatformPart* platform_part() = 0;
 
@@ -218,8 +216,6 @@ class BrowserProcess {
 #endif
 
   virtual ChromeNetLog* net_log() = 0;
-
-  virtual prerender::PrerenderTracker* prerender_tracker() = 0;
 
   virtual component_updater::ComponentUpdateService* component_updater() = 0;
 

@@ -166,11 +166,6 @@
                         ['exclude', 'x11/'],
                     ]
                 }],
-                ['OS!="android"', {
-                    'sources/': [
-                        ['exclude', 'WebInputEventFactoryAndroid.cpp$'],
-                    ],
-                }],
                 ['OS=="mac"', {
                     'link_settings': {
                         'libraries': [
@@ -182,11 +177,6 @@
                     'sources/': [
                         ['exclude', 'WebInputEventFactoryMac.mm$'],
                         ['exclude', 'mac/WebScrollbarTheme.cpp$'],
-                    ],
-                }],
-                ['OS!="win"', {
-                    'sources/': [
-                        ['exclude', 'WebInputEventFactoryWin.cpp$'],
                     ],
                 }],
                 ['use_default_render_theme==0', {

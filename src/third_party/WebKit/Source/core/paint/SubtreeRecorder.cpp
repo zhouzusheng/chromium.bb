@@ -13,13 +13,13 @@
 
 namespace blink {
 
-SubtreeRecorder::SubtreeRecorder(GraphicsContext* context, const LayoutObject& subtreeRoot, PaintPhase paintPhase)
-    : m_displayItemList(context->displayItemList())
+SubtreeRecorder::SubtreeRecorder(GraphicsContext& context, const LayoutObject& subtreeRoot, PaintPhase paintPhase)
+    : m_displayItemList(context.displayItemList())
     , m_subtreeRoot(subtreeRoot)
     , m_paintPhase(paintPhase)
     , m_begun(false)
 {
-    if (!RuntimeEnabledFeatures::slimmingPaintEnabled() || !RuntimeEnabledFeatures::slimmingPaintDisplayItemCacheEnabled())
+    if (!RuntimeEnabledFeatures::slimmingPaintEnabled())
         return;
 
     ASSERT(m_displayItemList);
@@ -27,30 +27,20 @@ SubtreeRecorder::SubtreeRecorder(GraphicsContext* context, const LayoutObject& s
 
 SubtreeRecorder::~SubtreeRecorder()
 {
-    if (!RuntimeEnabledFeatures::slimmingPaintEnabled() || !RuntimeEnabledFeatures::slimmingPaintDisplayItemCacheEnabled())
+    if (!RuntimeEnabledFeatures::slimmingPaintEnabled())
         return;
 
     if (m_begun)
-        addDisplayItem(EndSubtreeDisplayItem::create(m_subtreeRoot.displayItemClient(), DisplayItem::paintPhaseToEndSubtreeType(m_paintPhase)));
-    else if (m_displayItemList->clientCacheIsValid(m_subtreeRoot.displayItemClient()))
-        addDisplayItem(SubtreeCachedDisplayItem::create(m_subtreeRoot.displayItemClient(), DisplayItem::paintPhaseToSubtreeCachedType(m_paintPhase)));
+        m_displayItemList->add(EndSubtreeDisplayItem::create(m_subtreeRoot, DisplayItem::paintPhaseToEndSubtreeType(m_paintPhase)));
 }
 
 void SubtreeRecorder::begin()
 {
-    if (!RuntimeEnabledFeatures::slimmingPaintEnabled() || !RuntimeEnabledFeatures::slimmingPaintDisplayItemCacheEnabled())
+    if (!RuntimeEnabledFeatures::slimmingPaintEnabled())
         return;
 
-    addDisplayItem(BeginSubtreeDisplayItem::create(m_subtreeRoot.displayItemClient(), DisplayItem::paintPhaseToBeginSubtreeType(m_paintPhase)));
+    m_displayItemList->add(BeginSubtreeDisplayItem::create(m_subtreeRoot, DisplayItem::paintPhaseToBeginSubtreeType(m_paintPhase)));
     m_begun = true;
-}
-
-void SubtreeRecorder::addDisplayItem(PassOwnPtr<DisplayItem> displayItem)
-{
-#ifndef NDEBUG
-    displayItem->setClientDebugString(String::format("subtreeRoot: \"%p %s\"", &m_subtreeRoot, m_subtreeRoot.debugName().utf8().data()));
-#endif
-    m_displayItemList->add(displayItem);
 }
 
 } // namespace blink

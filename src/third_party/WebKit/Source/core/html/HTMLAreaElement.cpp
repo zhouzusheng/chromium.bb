@@ -23,11 +23,12 @@
 #include "core/html/HTMLAreaElement.h"
 
 #include "core/HTMLNames.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLMapElement.h"
 #include "core/layout/HitTestResult.h"
 #include "core/layout/LayoutImage.h"
-#include "core/rendering/RenderView.h"
+#include "core/layout/LayoutView.h"
 #include "platform/LengthFunctions.h"
 #include "platform/graphics/Path.h"
 #include "platform/transforms/AffineTransform.h"
@@ -40,6 +41,15 @@ inline HTMLAreaElement::HTMLAreaElement(Document& document)
     : HTMLAnchorElement(areaTag, document)
     , m_lastSize(-1, -1)
     , m_shape(Unknown)
+{
+}
+
+// An explicit empty destructor should be in HTMLAreaElement.cpp, because
+// if an implicit destructor is used or an empty destructor is defined in
+// HTMLAreaElement.h, when including HTMLAreaElement.h, msvc tries to expand
+// the destructor and causes a compile error because of lack of blink::Path
+// definition.
+HTMLAreaElement::~HTMLAreaElement()
 {
 }
 
@@ -189,10 +199,10 @@ bool HTMLAreaElement::isMouseFocusable() const
     return isFocusable();
 }
 
-bool HTMLAreaElement::rendererIsFocusable() const
+bool HTMLAreaElement::layoutObjectIsFocusable() const
 {
     HTMLImageElement* image = imageElement();
-    if (!image || !image->renderer() || image->renderer()->style()->visibility() != VISIBLE)
+    if (!image || !image->layoutObject() || image->layoutObject()->style()->visibility() != VISIBLE)
         return false;
 
     return supportsFocus() && Element::tabIndex() >= 0;
@@ -209,7 +219,7 @@ void HTMLAreaElement::setFocus(bool shouldBeFocused)
     if (!imageElement)
         return;
 
-    LayoutObject* renderer = imageElement->renderer();
+    LayoutObject* renderer = imageElement->layoutObject();
     if (!renderer || !renderer->isImage())
         return;
 

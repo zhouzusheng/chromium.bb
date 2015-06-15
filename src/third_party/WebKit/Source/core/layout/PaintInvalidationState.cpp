@@ -5,40 +5,41 @@
 #include "config.h"
 #include "core/layout/PaintInvalidationState.h"
 
-#include "core/layout/Layer.h"
+#include "core/layout/LayoutInline.h"
+#include "core/layout/LayoutView.h"
 #include "core/layout/svg/LayoutSVGModelObject.h"
 #include "core/layout/svg/LayoutSVGRoot.h"
-#include "core/rendering/RenderInline.h"
-#include "core/rendering/RenderView.h"
-#include "platform/Partitions.h"
+#include "core/paint/DeprecatedPaintLayer.h"
 
 namespace blink {
 
-PaintInvalidationState::PaintInvalidationState(const RenderView& renderView, bool cachedOffsetsEnabled)
+PaintInvalidationState::PaintInvalidationState(const LayoutView& layoutView, Vector<LayoutObject*>& pendingDelayedPaintInvalidations, bool cachedOffsetsEnabled)
     : m_clipped(false)
     , m_cachedOffsetsEnabled(cachedOffsetsEnabled)
     , m_forceCheckForPaintInvalidation(false)
-    , m_paintInvalidationContainer(*renderView.containerForPaintInvalidation())
+    , m_paintInvalidationContainer(*layoutView.containerForPaintInvalidation())
+    , m_pendingDelayedPaintInvalidations(pendingDelayedPaintInvalidations)
 {
-    bool establishesPaintInvalidationContainer = renderView == m_paintInvalidationContainer;
+    bool establishesPaintInvalidationContainer = layoutView == m_paintInvalidationContainer;
     if (!establishesPaintInvalidationContainer) {
-        if (!renderView.supportsPaintInvalidationStateCachedOffsets()) {
+        if (!layoutView.supportsPaintInvalidationStateCachedOffsets()) {
             m_cachedOffsetsEnabled = false;
             return;
         }
-        FloatPoint point = renderView.localToContainerPoint(FloatPoint(), &m_paintInvalidationContainer, TraverseDocumentBoundaries);
+        FloatPoint point = layoutView.localToContainerPoint(FloatPoint(), &m_paintInvalidationContainer, TraverseDocumentBoundaries);
         m_paintOffset = LayoutSize(point.x(), point.y());
     }
-    m_clipRect = renderView.viewRect();
+    m_clipRect = layoutView.viewRect();
     m_clipRect.move(m_paintOffset);
     m_clipped = true;
 }
 
-PaintInvalidationState::PaintInvalidationState(const PaintInvalidationState& next, LayoutLayerModelObject& renderer, const LayoutLayerModelObject& paintInvalidationContainer)
+PaintInvalidationState::PaintInvalidationState(PaintInvalidationState& next, LayoutBoxModelObject& renderer, const LayoutBoxModelObject& paintInvalidationContainer)
     : m_clipped(false)
     , m_cachedOffsetsEnabled(true)
     , m_forceCheckForPaintInvalidation(next.m_forceCheckForPaintInvalidation)
     , m_paintInvalidationContainer(paintInvalidationContainer)
+    , m_pendingDelayedPaintInvalidations(next.pendingDelayedPaintInvalidationTargets())
 {
     // FIXME: SVG could probably benefit from a stack-based optimization like html does. crbug.com/391054
     bool establishesPaintInvalidationContainer = renderer == m_paintInvalidationContainer;
@@ -57,14 +58,14 @@ PaintInvalidationState::PaintInvalidationState(const PaintInvalidationState& nex
                 FloatPoint fixedOffset = renderer.localToContainerPoint(FloatPoint(), &m_paintInvalidationContainer, TraverseDocumentBoundaries);
                 m_paintOffset = LayoutSize(fixedOffset.x(), fixedOffset.y());
             } else {
-                LayoutSize offset = renderer.isBox() && !renderer.isTableRow() ? toRenderBox(renderer).locationOffset() : LayoutSize();
+                LayoutSize offset = renderer.isBox() && !renderer.isTableRow() ? toLayoutBox(renderer).locationOffset() : LayoutSize();
                 m_paintOffset = next.m_paintOffset + offset;
             }
 
             if (renderer.isOutOfFlowPositioned() && !fixed) {
                 if (LayoutObject* container = renderer.container()) {
-                    if (container->style()->hasInFlowPosition() && container->isRenderInline())
-                        m_paintOffset += toRenderInline(container)->offsetForInFlowPositionedInline(toRenderBox(renderer));
+                    if (container->style()->hasInFlowPosition() && container->isLayoutInline())
+                        m_paintOffset += toLayoutInline(container)->offsetForInFlowPositionedInline(toLayoutBox(renderer));
                 }
             }
 
@@ -89,13 +90,14 @@ PaintInvalidationState::PaintInvalidationState(const PaintInvalidationState& nex
     // FIXME: <http://bugs.webkit.org/show_bug.cgi?id=13443> Apply control clip if present.
 }
 
-PaintInvalidationState::PaintInvalidationState(const PaintInvalidationState& next, const LayoutSVGModelObject& renderer)
+PaintInvalidationState::PaintInvalidationState(PaintInvalidationState& next, const LayoutSVGModelObject& renderer)
     : m_clipped(next.m_clipped)
     , m_cachedOffsetsEnabled(next.m_cachedOffsetsEnabled)
     , m_forceCheckForPaintInvalidation(next.m_forceCheckForPaintInvalidation)
     , m_clipRect(next.m_clipRect)
     , m_paintOffset(next.m_paintOffset)
     , m_paintInvalidationContainer(next.m_paintInvalidationContainer)
+    , m_pendingDelayedPaintInvalidations(next.pendingDelayedPaintInvalidationTargets())
 {
     ASSERT(renderer != m_paintInvalidationContainer);
 
@@ -119,7 +121,7 @@ void PaintInvalidationState::applyClipIfNeeded(const LayoutObject& renderer)
     if (!renderer.hasOverflowClip())
         return;
 
-    const RenderBox& box = toRenderBox(renderer);
+    const LayoutBox& box = toLayoutBox(renderer);
 
     // Do not clip scroll layer contents because the compositor expects the whole layer
     // to be always invalidated in-time.

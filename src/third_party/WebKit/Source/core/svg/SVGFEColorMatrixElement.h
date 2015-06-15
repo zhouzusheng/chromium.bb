@@ -46,14 +46,13 @@ private:
     explicit SVGFEColorMatrixElement(Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
     virtual bool setFilterEffectAttribute(FilterEffect*, const QualifiedName&) override;
     virtual void svgAttributeChanged(const QualifiedName&) override;
     virtual PassRefPtrWillBeRawPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) override;
 
     RefPtrWillBeMember<SVGAnimatedNumberList> m_values;
     RefPtrWillBeMember<SVGAnimatedString> m_in1;
-    RefPtrWillBeMember<SVGAnimatedEnumeration<ColorMatrixType> > m_type;
+    RefPtrWillBeMember<SVGAnimatedEnumeration<ColorMatrixType>> m_type;
 };
 
 } // namespace blink

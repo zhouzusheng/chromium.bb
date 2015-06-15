@@ -31,10 +31,10 @@
 
 namespace blink {
 
-bool LayoutSVGInline::isChildAllowed(LayoutObject* child, const LayoutStyle& style) const
+bool LayoutSVGInline::isChildAllowed(LayoutObject* child, const ComputedStyle& style) const
 {
     if (child->isText())
-        return SVGLayoutSupport::isRenderableTextNode(child);
+        return SVGLayoutSupport::isLayoutableTextNode(child);
 
     if (isSVGAElement(*node())) {
         // Disallow direct descendant 'a'.
@@ -45,11 +45,11 @@ bool LayoutSVGInline::isChildAllowed(LayoutObject* child, const LayoutStyle& sty
     if (!child->isSVGInline() && !child->isSVGInlineText())
         return false;
 
-    return RenderInline::isChildAllowed(child, style);
+    return LayoutInline::isChildAllowed(child, style);
 }
 
 LayoutSVGInline::LayoutSVGInline(Element* element)
-    : RenderInline(element)
+    : LayoutInline(element)
 {
     setAlwaysCreateLineBoxes();
 }
@@ -85,17 +85,17 @@ FloatRect LayoutSVGInline::paintInvalidationRectInLocalCoordinates() const
     return FloatRect();
 }
 
-LayoutRect LayoutSVGInline::clippedOverflowRectForPaintInvalidation(const LayoutLayerModelObject* paintInvalidationContainer, const PaintInvalidationState* paintInvalidationState) const
+LayoutRect LayoutSVGInline::clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* paintInvalidationState) const
 {
     return SVGLayoutSupport::clippedOverflowRectForPaintInvalidation(this, paintInvalidationContainer, paintInvalidationState);
 }
 
-void LayoutSVGInline::mapLocalToContainer(const LayoutLayerModelObject* paintInvalidationContainer, TransformState& transformState, MapCoordinatesFlags, bool* wasFixed, const PaintInvalidationState* paintInvalidationState) const
+void LayoutSVGInline::mapLocalToContainer(const LayoutBoxModelObject* paintInvalidationContainer, TransformState& transformState, MapCoordinatesFlags, bool* wasFixed, const PaintInvalidationState* paintInvalidationState) const
 {
     SVGLayoutSupport::mapLocalToContainer(this, paintInvalidationContainer, transformState, wasFixed, paintInvalidationState);
 }
 
-const LayoutObject* LayoutSVGInline::pushMappingToContainer(const LayoutLayerModelObject* ancestorToStopAt, LayoutGeometryMap& geometryMap) const
+const LayoutObject* LayoutSVGInline::pushMappingToContainer(const LayoutBoxModelObject* ancestorToStopAt, LayoutGeometryMap& geometryMap) const
 {
     return SVGLayoutSupport::pushMappingToContainer(this, ancestorToStopAt, geometryMap);
 }
@@ -114,21 +114,21 @@ void LayoutSVGInline::absoluteQuads(Vector<FloatQuad>& quads, bool* wasFixed) co
 void LayoutSVGInline::willBeDestroyed()
 {
     SVGResourcesCache::clientDestroyed(this);
-    RenderInline::willBeDestroyed();
+    LayoutInline::willBeDestroyed();
 }
 
-void LayoutSVGInline::styleDidChange(StyleDifference diff, const LayoutStyle* oldStyle)
+void LayoutSVGInline::styleDidChange(StyleDifference diff, const ComputedStyle* oldStyle)
 {
     if (diff.needsFullLayout())
         setNeedsBoundariesUpdate();
 
-    RenderInline::styleDidChange(diff, oldStyle);
+    LayoutInline::styleDidChange(diff, oldStyle);
     SVGResourcesCache::clientStyleChanged(this, diff, styleRef());
 }
 
 void LayoutSVGInline::addChild(LayoutObject* child, LayoutObject* beforeChild)
 {
-    RenderInline::addChild(child, beforeChild);
+    LayoutInline::addChild(child, beforeChild);
     SVGResourcesCache::clientWasAddedToTree(child, child->styleRef());
 
     if (LayoutSVGText* textRenderer = LayoutSVGText::locateLayoutSVGTextAncestor(this))
@@ -141,12 +141,12 @@ void LayoutSVGInline::removeChild(LayoutObject* child)
 
     LayoutSVGText* textRenderer = LayoutSVGText::locateLayoutSVGTextAncestor(this);
     if (!textRenderer) {
-        RenderInline::removeChild(child);
+        LayoutInline::removeChild(child);
         return;
     }
     Vector<SVGTextLayoutAttributes*, 2> affectedAttributes;
     textRenderer->subtreeChildWillBeRemoved(child, affectedAttributes);
-    RenderInline::removeChild(child);
+    LayoutInline::removeChild(child);
     textRenderer->subtreeChildWasRemoved(affectedAttributes);
 }
 

@@ -55,7 +55,7 @@ public:
     ScriptSourceCode(PassRefPtrWillBeRawPtr<ScriptStreamer>, ScriptResource*);
 
     ~ScriptSourceCode();
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
     bool isEmpty() const { return m_source.isEmpty(); }
 
@@ -68,6 +68,7 @@ public:
     const KURL& url() const;
     int startLine() const { return m_startPosition.m_line.oneBasedInt(); }
     const TextPosition& startPosition() const { return m_startPosition; }
+    String sourceMapUrl() const;
 
     ScriptStreamer* streamer() const { return m_streamer.get(); }
 

@@ -18,6 +18,7 @@ namespace blink {
 
 class StyleRule;
 class StyleRuleBase;
+class StyleRuleCharset;
 class StyleRuleFontFace;
 class StyleRuleImport;
 class StyleRuleKeyframe;
@@ -35,7 +36,7 @@ class MutableStylePropertySet;
 class CSSParserImpl {
     STACK_ALLOCATED();
 public:
-    CSSParserImpl(const CSSParserContext&, const String&, StyleSheetContents* = nullptr);
+    CSSParserImpl(const CSSParserContext&, StyleSheetContents* = nullptr);
 
     enum AllowedRulesType {
         // As per css-syntax, css-cascade and css-namespaces, @charset rules
@@ -52,7 +53,7 @@ public:
 
     static bool parseValue(MutableStylePropertySet*, CSSPropertyID, const String&, bool important, const CSSParserContext&);
     static PassRefPtrWillBeRawPtr<ImmutableStylePropertySet> parseInlineStyleDeclaration(const String&, Element*);
-    static bool parseDeclaration(MutableStylePropertySet*, const String&, const CSSParserContext&);
+    static bool parseDeclarationList(MutableStylePropertySet*, const String&, const CSSParserContext&);
     static PassRefPtrWillBeRawPtr<StyleRuleBase> parseRule(const String&, const CSSParserContext&, AllowedRulesType);
     static void parseStyleSheet(const String&, const CSSParserContext&, StyleSheetContents*);
 
@@ -67,13 +68,15 @@ private:
         KeyframesRuleList
     };
 
+    // Returns whether the first encountered rule was valid
     template<typename T>
-    void consumeRuleList(CSSParserTokenRange, RuleListType, T callback);
+    bool consumeRuleList(CSSParserTokenRange, RuleListType, T callback);
 
     // These two functions update the range they're given
     PassRefPtrWillBeRawPtr<StyleRuleBase> consumeAtRule(CSSParserTokenRange&, AllowedRulesType);
     PassRefPtrWillBeRawPtr<StyleRuleBase> consumeQualifiedRule(CSSParserTokenRange&, AllowedRulesType);
 
+    static PassRefPtrWillBeRawPtr<StyleRuleCharset> consumeCharsetRule(CSSParserTokenRange prelude);
     PassRefPtrWillBeRawPtr<StyleRuleImport> consumeImportRule(CSSParserTokenRange prelude);
     PassRefPtrWillBeRawPtr<StyleRuleNamespace> consumeNamespaceRule(CSSParserTokenRange prelude); // This can set m_defaultNamespace
     PassRefPtrWillBeRawPtr<StyleRuleMedia> consumeMediaRule(CSSParserTokenRange prelude, CSSParserTokenRange block);
@@ -86,17 +89,15 @@ private:
     PassRefPtrWillBeRawPtr<StyleRuleKeyframe> consumeKeyframeStyleRule(CSSParserTokenRange prelude, CSSParserTokenRange block);
     PassRefPtrWillBeRawPtr<StyleRule> consumeStyleRule(CSSParserTokenRange prelude, CSSParserTokenRange block);
 
-    // FIXME: We should use a CSSRule::Type here
-    void consumeDeclarationList(CSSParserTokenRange, CSSRuleSourceData::Type);
-    void consumeDeclaration(CSSParserTokenRange, CSSRuleSourceData::Type);
-    void consumeDeclarationValue(CSSParserTokenRange, CSSPropertyID, bool important, CSSRuleSourceData::Type);
+    void consumeDeclarationList(CSSParserTokenRange, StyleRule::Type);
+    void consumeDeclaration(CSSParserTokenRange, StyleRule::Type);
+    void consumeDeclarationValue(CSSParserTokenRange, CSSPropertyID, bool important, StyleRule::Type);
 
     static PassOwnPtr<Vector<double>> consumeKeyframeKeyList(CSSParserTokenRange);
 
     // FIXME: Can we build StylePropertySets directly?
     // FIXME: Investigate using a smaller inline buffer
     WillBeHeapVector<CSSProperty, 256> m_parsedProperties;
-    Vector<CSSParserToken> m_tokens;
     CSSParserContext m_context;
 
     AtomicString m_defaultNamespace;

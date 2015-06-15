@@ -33,7 +33,7 @@
 namespace blink {
 
 class ColumnInfo {
-    WTF_MAKE_NONCOPYABLE(ColumnInfo); WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(ColumnInfo); WTF_MAKE_FAST_ALLOCATED(ColumnInfo);
 public:
     ColumnInfo()
         : m_desiredColumnWidth(0)
@@ -65,7 +65,7 @@ public:
     unsigned columnCount() const { return m_columnCount; }
     LayoutUnit columnHeight() const { return m_columnHeight; }
 
-    // Set our count and height.  This is enough info for a RenderBlock to compute page rects
+    // Set our count and height.  This is enough info for a LayoutBlock to compute page rects
     // dynamically.
     void setColumnCountAndHeight(int count, LayoutUnit height)
     {

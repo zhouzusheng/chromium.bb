@@ -11,11 +11,14 @@
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "modules/encryptedmedia/ContentDecryptionModuleResultPromise.h"
+#include "modules/encryptedmedia/EncryptedMediaUtils.h"
+#include "modules/encryptedmedia/MediaKeySession.h"
 #include "modules/encryptedmedia/MediaKeys.h"
 #include "modules/encryptedmedia/MediaKeysController.h"
 #include "platform/Logging.h"
 #include "platform/Timer.h"
 #include "public/platform/WebContentDecryptionModule.h"
+#include "public/platform/WebEncryptedMediaTypes.h"
 #include "public/platform/WebMediaKeySystemConfiguration.h"
 
 namespace blink {
@@ -32,7 +35,7 @@ class NewCdmResultPromise : public ContentDecryptionModuleResultPromise {
     WTF_MAKE_NONCOPYABLE(NewCdmResultPromise);
 
 public:
-    NewCdmResultPromise(ScriptState* scriptState, const String& keySystem, const blink::WebVector<blink::WebString>& supportedSessionTypes)
+    NewCdmResultPromise(ScriptState* scriptState, const String& keySystem, const blink::WebVector<blink::WebEncryptedMediaSessionType>& supportedSessionTypes)
         : ContentDecryptionModuleResultPromise(scriptState)
         , m_keySystem(keySystem)
         , m_supportedSessionTypes(supportedSessionTypes)
@@ -56,17 +59,17 @@ public:
 
 private:
     const String m_keySystem;
-    const blink::WebVector<blink::WebString> m_supportedSessionTypes;
+    blink::WebVector<blink::WebEncryptedMediaSessionType> m_supportedSessionTypes;
 };
 
 // These methods are the inverses of those with the same names in
 // NavigatorRequestMediaKeySystemAccess.
-static Vector<String> convertInitDataTypes(const WebVector<WebString>& initDataTypes)
+static Vector<String> convertInitDataTypes(const WebVector<WebEncryptedMediaInitDataType>& initDataTypes)
 {
     Vector<String> result;
     result.reserveCapacity(initDataTypes.size());
     for (size_t i = 0; i < initDataTypes.size(); i++)
-        result.append(initDataTypes[i]);
+        result.append(EncryptedMediaUtils::convertFromInitDataType(initDataTypes[i]));
     return result;
 }
 
@@ -98,6 +101,15 @@ static String convertMediaKeysRequirement(WebMediaKeySystemConfiguration::Requir
     return "not-allowed";
 }
 
+static Vector<String> convertSessionTypes(const WebVector<WebEncryptedMediaSessionType>& sessionTypes)
+{
+    Vector<String> result;
+    result.reserveCapacity(sessionTypes.size());
+    for (size_t i = 0; i < sessionTypes.size(); i++)
+        result.append(EncryptedMediaUtils::convertFromSessionType(sessionTypes[i]));
+    return result;
+}
+
 } // namespace
 
 MediaKeySystemAccess::MediaKeySystemAccess(const String& keySystem, PassOwnPtr<WebContentDecryptionModuleAccess> access)
@@ -113,11 +125,24 @@ MediaKeySystemAccess::~MediaKeySystemAccess()
 void MediaKeySystemAccess::getConfiguration(MediaKeySystemConfiguration& result)
 {
     WebMediaKeySystemConfiguration configuration = m_access->getConfiguration();
-    result.setInitDataTypes(convertInitDataTypes(configuration.initDataTypes));
-    result.setAudioCapabilities(convertCapabilities(configuration.audioCapabilities));
-    result.setVideoCapabilities(convertCapabilities(configuration.videoCapabilities));
+
+    // |initDataTypes|, |audioCapabilities|, and |videoCapabilities| can only be
+    // empty if they were not present in the requested configuration.
+    if (!configuration.initDataTypes.isEmpty())
+        result.setInitDataTypes(convertInitDataTypes(configuration.initDataTypes));
+    if (!configuration.audioCapabilities.isEmpty())
+        result.setAudioCapabilities(convertCapabilities(configuration.audioCapabilities));
+    if (!configuration.videoCapabilities.isEmpty())
+        result.setVideoCapabilities(convertCapabilities(configuration.videoCapabilities));
+
+    // |distinctiveIdentifier|, |persistentState|, and |sessionTypes| are always
+    // set by requestMediaKeySystemAccess().
     result.setDistinctiveIdentifier(convertMediaKeysRequirement(configuration.distinctiveIdentifier));
     result.setPersistentState(convertMediaKeysRequirement(configuration.persistentState));
+    result.setSessionTypes(convertSessionTypes(configuration.sessionTypes));
+
+    // |label| will (and should) be a null string if it was not set.
+    result.setLabel(configuration.label);
 }
 
 ScriptPromise MediaKeySystemAccess::createMediaKeys(ScriptState* scriptState)
@@ -145,7 +170,7 @@ ScriptPromise MediaKeySystemAccess::createMediaKeys(ScriptState* scriptState)
     return promise;
 }
 
-void MediaKeySystemAccess::trace(Visitor*)
+DEFINE_TRACE(MediaKeySystemAccess)
 {
 }
 

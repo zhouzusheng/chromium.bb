@@ -14,6 +14,10 @@ class WebPlugin;
 struct WebPluginParams;
 }
 
+namespace gfx {
+class Size;
+}
+
 class GURL;
 class SkBitmap;
 
@@ -64,7 +68,7 @@ class CONTENT_EXPORT PluginInstanceThrottler {
     virtual void OnThrottlerDestroyed() {}
   };
 
-  static scoped_ptr<PluginInstanceThrottler> Create(bool power_saver_enabled);
+  static scoped_ptr<PluginInstanceThrottler> Create();
 
   static void RecordUnthrottleMethodMetric(PowerSaverUnthrottleMethod method);
 
@@ -83,6 +87,13 @@ class CONTENT_EXPORT PluginInstanceThrottler {
   virtual void SetHiddenForPlaceholder(bool hidden) = 0;
 
   virtual blink::WebPlugin* GetWebPlugin() const = 0;
+
+  // Gets the throttler's best estimate of the plugin's visible dimensions.
+  virtual const gfx::Size& GetSize() const = 0;
+
+  // Throttler needs to know when the plugin audio is throttled, as this may
+  // prevent the plugin from generating new frames.
+  virtual void NotifyAudioThrottled() = 0;
 
  protected:
   PluginInstanceThrottler() {}

@@ -236,6 +236,9 @@ class CodeGeneratorV8(CodeGeneratorBase):
         cpp_template = self.jinja_env.get_template(cpp_template_filename)
 
         template_context = interface_context(interface)
+        if not interface.is_partial:
+            template_context['header_includes'].add(self.info_provider.include_path_for_export)
+            template_context['exported'] = self.info_provider.specifier_for_export
         # Add the include for interface itself
         if IdlType(interface_name).is_typed_array:
             template_context['header_includes'].add('core/dom/DOMTypedArray.h')
@@ -255,13 +258,15 @@ class CodeGeneratorV8(CodeGeneratorBase):
         interfaces_info = self.info_provider.interfaces_info
         header_template = self.jinja_env.get_template('dictionary_v8.h')
         cpp_template = self.jinja_env.get_template('dictionary_v8.cpp')
+        interface_info = interfaces_info[dictionary_name]
         template_context = v8_dictionary.dictionary_context(
             dictionary, interfaces_info)
-        interface_info = interfaces_info[dictionary_name]
         include_paths = interface_info.get('dependencies_include_paths')
         # Add the include for interface itself
         if interface_info['include_path']:
             template_context['header_includes'].add(interface_info['include_path'])
+        template_context['header_includes'].add(self.info_provider.include_path_for_export)
+        template_context['exported'] = self.info_provider.specifier_for_export
         header_text, cpp_text = render_template(
             include_paths, header_template, cpp_template, template_context)
         header_path, cpp_path = self.output_paths(dictionary_name)
@@ -292,6 +297,7 @@ class CodeGeneratorDictionaryImpl(CodeGeneratorBase):
         cpp_template = self.jinja_env.get_template('dictionary_impl.cpp')
         template_context = v8_dictionary.dictionary_impl_context(
             dictionary, interfaces_info)
+        template_context['exported'] = self.info_provider.specifier_for_export
         include_paths = interface_info.get('dependencies_include_paths')
         # Add union containers header file to header_includes rather than
         # cpp file so that union containers can be used in dictionary headers.
@@ -300,6 +306,7 @@ class CodeGeneratorDictionaryImpl(CodeGeneratorBase):
         include_paths = [header for header in include_paths
                          if header not in union_container_headers]
         template_context['header_includes'].update(union_container_headers)
+        template_context['header_includes'].add(self.info_provider.include_path_for_export)
         header_text, cpp_text = render_template(
             include_paths, header_template, cpp_template, template_context)
         header_path, cpp_path = self.output_paths(
@@ -333,9 +340,11 @@ class CodeGeneratorUnionType(object):
             union_types, self.info_provider.interfaces_info)
         template_context['code_generator'] = module_pyname
         capitalized_component = self.target_component.capitalize()
+        template_context['exported'] = self.info_provider.specifier_for_export
         template_context['header_filename'] = 'bindings/%s/v8/UnionTypes%s.h' % (
             self.target_component, capitalized_component)
         template_context['macro_guard'] = 'UnionType%s_h' % capitalized_component
+        additional_header_includes = [self.info_provider.include_path_for_export]
 
         # Add UnionTypesCore.h as a dependency when we generate modules union types
         # because we only generate union type containers which are used by both
@@ -343,9 +352,11 @@ class CodeGeneratorUnionType(object):
         # FIXME: This is an ad hoc workaround and we need a general way to
         # handle core <-> modules dependency.
         if self.target_component == 'modules':
-            template_context['header_includes'] = sorted(
-                template_context['header_includes'] +
-                ['bindings/core/v8/UnionTypesCore.h'])
+            additional_header_includes.append(
+                'bindings/core/v8/UnionTypesCore.h')
+
+        template_context['header_includes'] = sorted(
+            template_context['header_includes'] + additional_header_includes)
 
         header_text = header_template.render(template_context)
         cpp_text = cpp_template.render(template_context)

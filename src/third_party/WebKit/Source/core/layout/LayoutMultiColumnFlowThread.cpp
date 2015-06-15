@@ -47,11 +47,11 @@ LayoutMultiColumnFlowThread::~LayoutMultiColumnFlowThread()
 {
 }
 
-LayoutMultiColumnFlowThread* LayoutMultiColumnFlowThread::createAnonymous(Document& document, const LayoutStyle& parentStyle)
+LayoutMultiColumnFlowThread* LayoutMultiColumnFlowThread::createAnonymous(Document& document, const ComputedStyle& parentStyle)
 {
     LayoutMultiColumnFlowThread* renderer = new LayoutMultiColumnFlowThread();
     renderer->setDocumentForAnonymous(&document);
-    renderer->setStyle(LayoutStyle::createAnonymousStyleWithDisplay(parentStyle, BLOCK));
+    renderer->setStyle(ComputedStyle::createAnonymousStyleWithDisplay(parentStyle, BLOCK));
     return renderer;
 }
 
@@ -75,7 +75,7 @@ LayoutMultiColumnSet* LayoutMultiColumnFlowThread::lastMultiColumnSet() const
 
 static LayoutObject* firstRendererInSet(LayoutMultiColumnSet* multicolSet)
 {
-    RenderBox* sibling = multicolSet->previousSiblingMultiColumnBox();
+    LayoutBox* sibling = multicolSet->previousSiblingMultiColumnBox();
     if (!sibling)
         return multicolSet->flowThread()->firstChild();
     // Adjacent column content sets should not occur. We would have no way of figuring out what each
@@ -86,7 +86,7 @@ static LayoutObject* firstRendererInSet(LayoutMultiColumnSet* multicolSet)
 
 static LayoutObject* lastRendererInSet(LayoutMultiColumnSet* multicolSet)
 {
-    RenderBox* sibling = multicolSet->nextSiblingMultiColumnBox();
+    LayoutBox* sibling = multicolSet->nextSiblingMultiColumnBox();
     if (!sibling)
         return 0; // By right we should return lastLeafChild() here, but the caller doesn't care, so just return 0.
     // Adjacent column content sets should not occur. We would have no way of figuring out what each
@@ -130,7 +130,7 @@ LayoutMultiColumnSpannerPlaceholder* LayoutMultiColumnFlowThread::containingColu
 
     // Before we spend time on searching the ancestry, see if there's a quick way to determine
     // whether there might be any spanners at all.
-    RenderBox* firstBox = firstMultiColumnBox();
+    LayoutBox* firstBox = firstMultiColumnBox();
     if (!firstBox || (firstBox == lastMultiColumnBox() && firstBox->isLayoutMultiColumnSet()))
         return 0;
 
@@ -144,7 +144,7 @@ LayoutMultiColumnSpannerPlaceholder* LayoutMultiColumnFlowThread::containingColu
 
 void LayoutMultiColumnFlowThread::populate()
 {
-    RenderBlockFlow* multicolContainer = multiColumnBlockFlow();
+    LayoutBlockFlow* multicolContainer = multiColumnBlockFlow();
     ASSERT(!nextSibling());
     // Reparent children preceding the flow thread into the flow thread. It's multicol content
     // now. At this point there's obviously nothing after the flow thread, but renderers (column
@@ -154,11 +154,11 @@ void LayoutMultiColumnFlowThread::populate()
 
 void LayoutMultiColumnFlowThread::evacuateAndDestroy()
 {
-    RenderBlockFlow* multicolContainer = multiColumnBlockFlow();
+    LayoutBlockFlow* multicolContainer = multiColumnBlockFlow();
     m_isBeingEvacuated = true;
 
     // Remove all sets and spanners.
-    while (RenderBox* columnBox = firstMultiColumnBox()) {
+    while (LayoutBox* columnBox = firstMultiColumnBox()) {
         ASSERT(columnBox->isAnonymous());
         columnBox->destroy();
     }
@@ -202,6 +202,18 @@ bool LayoutMultiColumnFlowThread::needsNewWidth() const
     return newWidth != logicalWidth();
 }
 
+LayoutPoint LayoutMultiColumnFlowThread::visualPointToFlowThreadPoint(const LayoutPoint& visualPoint) const
+{
+    LayoutUnit blockOffset = isHorizontalWritingMode() ? visualPoint.y() : visualPoint.x();
+    const LayoutMultiColumnSet* columnSet = nullptr;
+    for (const LayoutMultiColumnSet* candidate = firstMultiColumnSet(); candidate; candidate = candidate->nextSiblingMultiColumnSet()) {
+        columnSet = candidate;
+        if (candidate->logicalBottom() > blockOffset)
+            break;
+    }
+    return columnSet ? columnSet->visualPointToFlowThreadPoint(toLayoutPoint(visualPoint + location() - columnSet->location())) : visualPoint;
+}
+
 LayoutMultiColumnSet* LayoutMultiColumnFlowThread::columnSetAtBlockOffset(LayoutUnit offset) const
 {
     if (m_lastSetWorkedOn) {
@@ -232,7 +244,7 @@ void LayoutMultiColumnFlowThread::layoutColumns(bool relayoutChildren, SubtreeLa
 
     m_needsColumnHeightsRecalculation = false;
     if (!needsLayout()) {
-        // Just before the multicol container (our parent RenderBlockFlow) finishes laying out, it
+        // Just before the multicol container (our parent LayoutBlockFlow) finishes laying out, it
         // will call recalculateColumnHeights() on us unconditionally, but we only want that method
         // to do any work if we actually laid out the flow thread. Otherwise, the balancing
         // machinery would kick in needlessly, and trigger additional layout passes. Furthermore, we
@@ -241,7 +253,7 @@ void LayoutMultiColumnFlowThread::layoutColumns(bool relayoutChildren, SubtreeLa
         return;
     }
 
-    for (RenderBox* columnBox = firstMultiColumnBox(); columnBox; columnBox = columnBox->nextSiblingMultiColumnBox()) {
+    for (LayoutBox* columnBox = firstMultiColumnBox(); columnBox; columnBox = columnBox->nextSiblingMultiColumnBox()) {
         if (!columnBox->isLayoutMultiColumnSet()) {
             ASSERT(columnBox->isLayoutMultiColumnSpannerPlaceholder()); // no other type is expected.
             m_needsColumnHeightsRecalculation = true;
@@ -301,8 +313,8 @@ void LayoutMultiColumnFlowThread::columnRuleStyleDidChange()
 
 void LayoutMultiColumnFlowThread::calculateColumnCountAndWidth(LayoutUnit& width, unsigned& count) const
 {
-    RenderBlock* columnBlock = multiColumnBlockFlow();
-    const LayoutStyle* columnStyle = columnBlock->style();
+    LayoutBlock* columnBlock = multiColumnBlockFlow();
+    const ComputedStyle* columnStyle = columnBlock->style();
     LayoutUnit availableWidth = columnBlock->contentLogicalWidth();
     LayoutUnit columnGap = columnBlock->columnGap();
     LayoutUnit computedColumnWidth = max<LayoutUnit>(1, LayoutUnit(columnStyle->columnWidth()));
@@ -321,11 +333,11 @@ void LayoutMultiColumnFlowThread::calculateColumnCountAndWidth(LayoutUnit& width
     }
 }
 
-void LayoutMultiColumnFlowThread::createAndInsertMultiColumnSet(RenderBox* insertBefore)
+void LayoutMultiColumnFlowThread::createAndInsertMultiColumnSet(LayoutBox* insertBefore)
 {
-    RenderBlockFlow* multicolContainer = multiColumnBlockFlow();
+    LayoutBlockFlow* multicolContainer = multiColumnBlockFlow();
     LayoutMultiColumnSet* newSet = LayoutMultiColumnSet::createAnonymous(*this, multicolContainer->styleRef());
-    multicolContainer->RenderBlock::addChild(newSet, insertBefore);
+    multicolContainer->LayoutBlock::addChild(newSet, insertBefore);
     invalidateRegions();
 
     // We cannot handle immediate column set siblings (and there's no need for it, either).
@@ -334,11 +346,11 @@ void LayoutMultiColumnFlowThread::createAndInsertMultiColumnSet(RenderBox* inser
     ASSERT(!newSet->nextSiblingMultiColumnBox() || !newSet->nextSiblingMultiColumnBox()->isLayoutMultiColumnSet());
 }
 
-void LayoutMultiColumnFlowThread::createAndInsertSpannerPlaceholder(RenderBox* spanner, RenderBox* insertBefore)
+void LayoutMultiColumnFlowThread::createAndInsertSpannerPlaceholder(LayoutBox* spanner, LayoutBox* insertBefore)
 {
-    RenderBlockFlow* multicolContainer = multiColumnBlockFlow();
+    LayoutBlockFlow* multicolContainer = multiColumnBlockFlow();
     LayoutMultiColumnSpannerPlaceholder* newPlaceholder = LayoutMultiColumnSpannerPlaceholder::createAnonymous(multicolContainer->styleRef(), *spanner);
-    multicolContainer->RenderBlock::addChild(newPlaceholder, insertBefore);
+    multicolContainer->LayoutBlock::addChild(newPlaceholder, insertBefore);
     spanner->setSpannerPlaceholder(*newPlaceholder);
 }
 
@@ -355,13 +367,13 @@ bool LayoutMultiColumnFlowThread::descendantIsValidColumnSpanner(LayoutObject* d
     if (!descendant->style()->hasSpanAllColumns() || !descendant->isBox() || descendant->isInline() || descendant->isFloatingOrOutOfFlowPositioned())
         return false;
 
-    if (!descendant->containingBlock()->isRenderBlockFlow()) {
+    if (!descendant->containingBlock()->isLayoutBlockFlow()) {
         // Needs to be in a block-flow container, and not e.g. a table.
         return false;
     }
 
     // This looks like a spanner, but if we're inside something unbreakable, it's not to be treated as one.
-    for (RenderBlock* ancestor = descendant->containingBlock(); ancestor; ancestor = ancestor->containingBlock()) {
+    for (LayoutBlock* ancestor = descendant->containingBlock(); ancestor; ancestor = ancestor->containingBlock()) {
         if (ancestor->isLayoutFlowThread()) {
             ASSERT(ancestor == this);
             return true;
@@ -380,11 +392,6 @@ bool LayoutMultiColumnFlowThread::descendantIsValidColumnSpanner(LayoutObject* d
     }
     ASSERT_NOT_REACHED();
     return false;
-}
-
-const char* LayoutMultiColumnFlowThread::renderName() const
-{
-    return "LayoutMultiColumnFlowThread";
 }
 
 void LayoutMultiColumnFlowThread::addRegionToThread(LayoutMultiColumnSet* columnSet)
@@ -410,12 +417,12 @@ void LayoutMultiColumnFlowThread::willBeRemovedFromTree()
     LayoutFlowThread::willBeRemovedFromTree();
 }
 
-LayoutUnit LayoutMultiColumnFlowThread::skipColumnSpanner(RenderBox* renderer, LayoutUnit logicalTopInFlowThread)
+LayoutUnit LayoutMultiColumnFlowThread::skipColumnSpanner(LayoutBox* renderer, LayoutUnit logicalTopInFlowThread)
 {
     ASSERT(renderer->isColumnSpanAll());
     LayoutMultiColumnSpannerPlaceholder* placeholder = renderer->spannerPlaceholder();
     LayoutUnit adjustment;
-    RenderBox* previousColumnBox = placeholder->previousSiblingMultiColumnBox();
+    LayoutBox* previousColumnBox = placeholder->previousSiblingMultiColumnBox();
     if (previousColumnBox && previousColumnBox->isLayoutMultiColumnSet()) {
         // Pad flow thread offset to a column boundary, so that any column content that's supposed
         // to come after the spanner doesn't bleed into the column row preceding the spanner.
@@ -429,7 +436,7 @@ LayoutUnit LayoutMultiColumnFlowThread::skipColumnSpanner(RenderBox* renderer, L
         }
         previousSet->endFlow(logicalTopInFlowThread);
     }
-    RenderBox* nextColumnBox = placeholder->nextSiblingMultiColumnBox();
+    LayoutBox* nextColumnBox = placeholder->nextSiblingMultiColumnBox();
     if (nextColumnBox && nextColumnBox->isLayoutMultiColumnSet()) {
         LayoutMultiColumnSet* nextSet = toLayoutMultiColumnSet(nextColumnBox);
         m_lastSetWorkedOn = nextSet;
@@ -452,7 +459,7 @@ void LayoutMultiColumnFlowThread::flowThreadDescendantWasInserted(LayoutObject* 
             continue; // Inside a column spanner. Nothing to do, then.
         if (descendantIsValidColumnSpanner(renderer)) {
             // This renderer is a spanner, so it needs to establish a spanner placeholder.
-            RenderBox* insertBefore = 0;
+            LayoutBox* insertBefore = 0;
             LayoutMultiColumnSet* setToSplit = 0;
             if (nextRenderer) {
                 // The spanner is inserted before something. Figure out what this entails. If the
@@ -477,7 +484,7 @@ void LayoutMultiColumnFlowThread::flowThreadDescendantWasInserted(LayoutObject* 
                         // a new spanner placeholder between them.
                         setToSplit = findSetRendering(previousRenderer);
                         ASSERT(setToSplit == findSetRendering(nextRenderer));
-                        setToSplit->setNeedsLayoutAndFullPaintInvalidation();
+                        setToSplit->setNeedsLayoutAndFullPaintInvalidation(LayoutInvalidationReason::ColumnsChanged);
                         insertBefore = setToSplit->nextSiblingMultiColumnBox();
                         // We've found out which set that needs to be split. Now proceed to
                         // inserting the spanner placeholder, and then insert a second column set.
@@ -485,7 +492,7 @@ void LayoutMultiColumnFlowThread::flowThreadDescendantWasInserted(LayoutObject* 
                 }
                 ASSERT(setToSplit || insertBefore);
             }
-            createAndInsertSpannerPlaceholder(toRenderBox(renderer), insertBefore);
+            createAndInsertSpannerPlaceholder(toLayoutBox(renderer), insertBefore);
             if (setToSplit)
                 createAndInsertMultiColumnSet(insertBefore);
             continue;
@@ -494,7 +501,7 @@ void LayoutMultiColumnFlowThread::flowThreadDescendantWasInserted(LayoutObject* 
         if (nextRenderer) {
             if (LayoutMultiColumnSpannerPlaceholder* placeholder = nextRenderer->spannerPlaceholder()) {
                 // If inserted right before a spanner, we need to make sure that there's a set for us there.
-                RenderBox* previous = placeholder->previousSiblingMultiColumnBox();
+                LayoutBox* previous = placeholder->previousSiblingMultiColumnBox();
                 if (!previous || !previous->isLayoutMultiColumnSet())
                     createAndInsertMultiColumnSet(placeholder);
             } else {
@@ -505,7 +512,7 @@ void LayoutMultiColumnFlowThread::flowThreadDescendantWasInserted(LayoutObject* 
             }
         } else {
             // Inserting at the end. Then we just need to make sure that there's a column set at the end.
-            RenderBox* lastColumnBox = lastMultiColumnBox();
+            LayoutBox* lastColumnBox = lastMultiColumnBox();
             if (!lastColumnBox || !lastColumnBox->isLayoutMultiColumnSet())
                 createAndInsertMultiColumnSet();
         }
@@ -530,13 +537,13 @@ void LayoutMultiColumnFlowThread::flowThreadDescendantWillBeRemoved(LayoutObject
             continue;
         }
         next = renderer->nextInPreOrderAfterChildren(descendant); // It's a spanner. Its children are of no interest to us.
-        if (RenderBox* nextColumnBox = placeholder->nextSiblingMultiColumnBox()) {
-            RenderBox* previousColumnBox = placeholder->previousSiblingMultiColumnBox();
+        if (LayoutBox* nextColumnBox = placeholder->nextSiblingMultiColumnBox()) {
+            LayoutBox* previousColumnBox = placeholder->previousSiblingMultiColumnBox();
             if (nextColumnBox && nextColumnBox->isLayoutMultiColumnSet()
                 && previousColumnBox && previousColumnBox->isLayoutMultiColumnSet()) {
                 // Need to merge two column sets.
                 nextColumnBox->destroy();
-                previousColumnBox->setNeedsLayout();
+                previousColumnBox->setNeedsLayout(LayoutInvalidationReason::ColumnsChanged);
                 invalidateRegions();
             }
         }
@@ -587,8 +594,8 @@ void LayoutMultiColumnFlowThread::computePreferredLogicalWidths()
     // The min/max intrinsic widths calculated really tell how much space elements need when
     // laid out inside the columns. In order to eventually end up with the desired column width,
     // we need to convert them to values pertaining to the multicol container.
-    const RenderBlockFlow* multicolContainer = multiColumnBlockFlow();
-    const LayoutStyle* multicolStyle = multicolContainer->style();
+    const LayoutBlockFlow* multicolContainer = multiColumnBlockFlow();
+    const ComputedStyle* multicolStyle = multicolContainer->style();
     int columnCount = multicolStyle->hasAutoColumnCount() ? 1 : multicolStyle->columnCount();
     LayoutUnit columnWidth;
     LayoutUnit gapExtra = (columnCount - 1) * multicolContainer->columnGap();

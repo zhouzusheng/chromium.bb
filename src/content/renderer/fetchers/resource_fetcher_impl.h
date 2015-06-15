@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_RENDERER_FETCHERS_RESOURCE_FETCHER_H_
-#define CONTENT_RENDERER_FETCHERS_RESOURCE_FETCHER_H_
+#ifndef CONTENT_RENDERER_FETCHERS_RESOURCE_FETCHER_IMPL_H_
+#define CONTENT_RENDERER_FETCHERS_RESOURCE_FETCHER_IMPL_H_
 
 #include <string>
 
@@ -35,6 +35,7 @@ class ResourceFetcherImpl : public ResourceFetcher,
   void SetBody(const std::string& body) override;
   void SetHeader(const std::string& header, const std::string& value) override;
   void SetSkipServiceWorker(bool skip_service_worker) override;
+  void SetCachePolicy(blink::WebURLRequest::CachePolicy policy) override;
   void SetLoaderOptions(const blink::WebURLLoaderOptions& options) override;
   void Start(blink::WebFrame* frame,
              blink::WebURLRequest::RequestContext request_context,
@@ -77,4 +78,4 @@ class ResourceFetcherImpl : public ResourceFetcher,
 
 }  // namespace content
 
-#endif  // CONTENT_RENDERER_FETCHERS_RESOURCE_FETCHER_H_
+#endif  // CONTENT_RENDERER_FETCHERS_RESOURCE_FETCHER_IMPL_H_

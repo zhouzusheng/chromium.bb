@@ -5,19 +5,17 @@
 #ifndef ScopeRecorder_h
 #define ScopeRecorder_h
 
-#include "core/layout/PaintPhase.h"
 #include "wtf/PassOwnPtr.h"
 
 namespace blink {
 
-class DisplayItem;
 class DisplayItemList;
 class GraphicsContext;
 class LayoutObject;
 
 class ScopeRecorder {
 public:
-    ScopeRecorder(GraphicsContext*, const LayoutObject&);
+    ScopeRecorder(GraphicsContext&, const LayoutObject&);
     ~ScopeRecorder();
 
 private:

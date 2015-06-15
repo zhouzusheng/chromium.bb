@@ -36,6 +36,7 @@
 #include "core/css/CSSShadowValue.h"
 #include "core/css/Pair.h"
 #include "core/css/Rect.h"
+#include "core/svg/SVGElement.h"
 #include "core/svg/SVGURIReference.h"
 
 namespace blink {
@@ -63,7 +64,7 @@ PassRefPtr<StyleReflection> StyleBuilderConverter::convertBoxReflect(StyleResolv
 {
     if (value->isPrimitiveValue()) {
         ASSERT(toCSSPrimitiveValue(value)->getValueID() == CSSValueNone);
-        return LayoutStyle::initialBoxReflect();
+        return ComputedStyle::initialBoxReflect();
     }
 
     CSSReflectValue* reflectValue = toCSSReflectValue(value);
@@ -156,15 +157,11 @@ FontDescription::FamilyDescription StyleBuilderConverter::convertFontFamily(Styl
     FontDescription::FamilyDescription desc(FontDescription::NoFamily);
     FontFamily* currFamily = nullptr;
 
-    for (CSSValueListIterator i = value; i.hasMore(); i.advance()) {
-        CSSValue* item = i.value();
-        if (!item->isPrimitiveValue())
-            continue;
-
+    for (auto& family : toCSSValueList(*value)) {
         FontDescription::GenericFamilyType genericFamily = FontDescription::NoFamily;
         AtomicString familyName;
 
-        if (!convertFontFamilyName(state, toCSSPrimitiveValue(item), genericFamily, familyName, desc.boldOverride, desc.italicOverride))
+        if (!convertFontFamilyName(state, toCSSPrimitiveValue(family.get()), genericFamily, familyName, desc.boldOverride, desc.italicOverride))
             continue;
 
         if (!currFamily) {
@@ -204,7 +201,7 @@ static float computeFontSize(StyleResolverState& state, CSSPrimitiveValue* primi
     float em = state.parentStyle()->specifiedFontSize();
     float rem = state.rootElementStyle() ? state.rootElementStyle()->specifiedFontSize() : 1.0f;
     CSSToLengthConversionData::FontSizes fontSizes(em, rem, &state.parentStyle()->font());
-    CSSToLengthConversionData::ViewportSize viewportSize(state.document().renderView());
+    CSSToLengthConversionData::ViewportSize viewportSize(state.document().layoutView());
 
     CSSToLengthConversionData conversionData(state.style(), fontSizes, viewportSize, 1.0f);
     if (primitiveValue->isLength())
@@ -253,6 +250,16 @@ FontDescription::Size StyleBuilderConverter::convertFontSize(StyleResolverState&
         return FontDescription::Size(0, (primitiveValue->getFloatValue() * parentSize.value / 100.0f), parentIsAbsoluteSize);
 
     return FontDescription::Size(0, computeFontSize(state, primitiveValue, parentSize), parentIsAbsoluteSize || !primitiveValue->isFontRelativeLength());
+}
+
+float StyleBuilderConverter::convertFontSizeAdjust(StyleResolverState& state, CSSValue* value)
+{
+    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
+    if (primitiveValue->getValueID() == CSSValueNone)
+        return FontBuilder::initialSizeAdjust();
+
+    ASSERT(primitiveValue->isNumber());
+    return primitiveValue->getFloatValue();
 }
 
 FontWeight StyleBuilderConverter::convertFontWeight(StyleResolverState& state, CSSValue* value)
@@ -357,7 +364,7 @@ GridAutoFlow StyleBuilderConverter::convertGridAutoFlow(StyleResolverState&, CSS
         return AutoFlowRowDense;
     default:
         ASSERT_NOT_REACHED();
-        return LayoutStyle::initialGridAutoFlow();
+        return ComputedStyle::initialGridAutoFlow();
     }
 }
 
@@ -389,26 +396,26 @@ GridPosition StyleBuilderConverter::convertGridPosition(StyleResolverState&, CSS
     int gridLineNumber = 1;
     String gridLineName;
 
-    CSSValueListIterator it = values;
-    CSSPrimitiveValue* currentValue = toCSSPrimitiveValue(it.value());
+    auto it = values->begin();
+    CSSPrimitiveValue* currentValue = toCSSPrimitiveValue(it->get());
     if (currentValue->getValueID() == CSSValueSpan) {
         isSpanPosition = true;
-        it.advance();
-        currentValue = it.hasMore() ? toCSSPrimitiveValue(it.value()) : 0;
+        ++it;
+        currentValue = it != values->end() ? toCSSPrimitiveValue(it->get()) : 0;
     }
 
     if (currentValue && currentValue->isNumber()) {
         gridLineNumber = currentValue->getIntValue();
-        it.advance();
-        currentValue = it.hasMore() ? toCSSPrimitiveValue(it.value()) : 0;
+        ++it;
+        currentValue = it != values->end() ? toCSSPrimitiveValue(it->get()) : 0;
     }
 
     if (currentValue && currentValue->isString()) {
         gridLineName = currentValue->getStringValue();
-        it.advance();
+        ++it;
     }
 
-    ASSERT(!it.hasMore());
+    ASSERT(it == values->end());
     if (isSpanPosition)
         position.setSpanPosition(gridLineNumber, gridLineName);
     else
@@ -441,12 +448,10 @@ bool StyleBuilderConverter::convertGridTrackList(CSSValue* value, Vector<GridTra
         return false;
 
     size_t currentNamedGridLine = 0;
-    for (CSSValueListIterator i = value; i.hasMore(); i.advance()) {
-        CSSValue* currValue = i.value();
+    for (auto& currValue : *toCSSValueList(value)) {
         if (currValue->isGridLineNamesValue()) {
-            CSSGridLineNamesValue* lineNamesValue = toCSSGridLineNamesValue(currValue);
-            for (CSSValueListIterator j = lineNamesValue; j.hasMore(); j.advance()) {
-                String namedGridLine = toCSSPrimitiveValue(j.value())->getStringValue();
+            for (auto& namedGridLineValue : toCSSGridLineNamesValue(*currValue)) {
+                String namedGridLine = toCSSPrimitiveValue(namedGridLineValue.get())->getStringValue();
                 NamedGridLinesMap::AddResult result = namedGridLines.add(namedGridLine, Vector<size_t>());
                 result.storedValue->value.append(currentNamedGridLine);
                 OrderedNamedGridLines::AddResult orderedInsertionResult = orderedNamedGridLines.add(currentNamedGridLine, Vector<String>());
@@ -456,7 +461,7 @@ bool StyleBuilderConverter::convertGridTrackList(CSSValue* value, Vector<GridTra
         }
 
         ++currentNamedGridLine;
-        trackSizes.append(convertGridTrackSize(state, currValue));
+        trackSizes.append(convertGridTrackSize(state, currValue.get()));
     }
 
     // The parser should have rejected any <track-list> without any <track-size> as
@@ -507,19 +512,17 @@ Length StyleBuilderConverter::convertLength(const StyleResolverState& state, CSS
     return toCSSPrimitiveValue(value)->convertToLength(state.cssToLengthConversionData());
 }
 
+UnzoomedLength StyleBuilderConverter::convertUnzoomedLength(const StyleResolverState& state, CSSValue* value)
+{
+    return UnzoomedLength(toCSSPrimitiveValue(value)->convertToLength(state.cssToLengthConversionData().copyWithAdjustedZoom(1.0f)));
+}
+
 Length StyleBuilderConverter::convertLengthOrAuto(const StyleResolverState& state, CSSValue* value)
 {
     CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
     if (primitiveValue->getValueID() == CSSValueAuto)
         return Length(Auto);
     return primitiveValue->convertToLength(state.cssToLengthConversionData());
-}
-
-Length StyleBuilderConverter::convertLengthUnzoomed(const StyleResolverState& state, CSSValue* value)
-{
-    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-    CSSToLengthConversionData conversionData = state.cssToLengthConversionData().copyWithAdjustedZoom(1.0f);
-    return primitiveValue->convertToLength(conversionData);
 }
 
 Length StyleBuilderConverter::convertLengthSizing(StyleResolverState& state, CSSValue* value)
@@ -598,7 +601,7 @@ Length StyleBuilderConverter::convertLineHeight(StyleResolverState& state, CSSVa
     }
 
     ASSERT(primitiveValue->getValueID() == CSSValueNormal);
-    return LayoutStyle::initialLineHeight();
+    return ComputedStyle::initialLineHeight();
 }
 
 float StyleBuilderConverter::convertNumberOrPercentage(StyleResolverState& state, CSSValue* value)
@@ -644,7 +647,7 @@ float StyleBuilderConverter::convertPerspective(StyleResolverState& state, CSSVa
     CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
 
     if (primitiveValue->getValueID() == CSSValueNone)
-        return LayoutStyle::initialPerspective();
+        return ComputedStyle::initialPerspective();
 
     // CSSPropertyWebkitPerspective accepts unitless numbers.
     if (primitiveValue->isNumber()) {
@@ -821,14 +824,14 @@ float StyleBuilderConverter::convertSpacing(StyleResolverState& state, CSSValue*
     return primitiveValue->computeLength<float>(state.cssToLengthConversionData());
 }
 
-PassRefPtrWillBeRawPtr<SVGLengthList> StyleBuilderConverter::convertStrokeDasharray(StyleResolverState&, CSSValue* value)
+PassRefPtr<SVGDashArray> StyleBuilderConverter::convertStrokeDasharray(StyleResolverState& state, CSSValue* value)
 {
     if (!value->isValueList())
-        return SVGLayoutStyle::initialStrokeDashArray();
+        return SVGComputedStyle::initialStrokeDashArray();
 
     CSSValueList* dashes = toCSSValueList(value);
 
-    RefPtrWillBeRawPtr<SVGLengthList> array = SVGLengthList::create();
+    RefPtr<SVGDashArray> array = SVGDashArray::create();
     size_t length = dashes->length();
     for (size_t i = 0; i < length; ++i) {
         CSSValue* currValue = dashes->item(i);
@@ -836,7 +839,7 @@ PassRefPtrWillBeRawPtr<SVGLengthList> StyleBuilderConverter::convertStrokeDashar
             continue;
 
         CSSPrimitiveValue* dash = toCSSPrimitiveValue(dashes->item(i));
-        array->append(SVGLength::fromCSSPrimitiveValue(dash));
+        array->append(convertLength(state, dash));
     }
 
     return array.release();
@@ -857,11 +860,6 @@ Color StyleBuilderConverter::convertSVGColor(StyleResolverState& state, CSSValue
         return primitiveValue->getRGBA32Value();
     ASSERT(primitiveValue->getValueID() == CSSValueCurrentcolor);
     return state.style()->color();
-}
-
-PassRefPtrWillBeRawPtr<SVGLength> StyleBuilderConverter::convertSVGLength(StyleResolverState&, CSSValue* value)
-{
-    return SVGLength::fromCSSPrimitiveValue(toCSSPrimitiveValue(value));
 }
 
 float StyleBuilderConverter::convertTextStrokeWidth(StyleResolverState& state, CSSValue* value)

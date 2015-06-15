@@ -35,7 +35,6 @@
 #include "core/editing/VisibleSelection.h"
 #include "core/editing/WritingDirection.h"
 #include "core/editing/iterators/TextIterator.h"
-#include "core/frame/FrameDestructionObserver.h"
 #include "platform/PasteMode.h"
 #include "platform/heap/Handle.h"
 
@@ -267,7 +266,7 @@ private:
     bool canSmartReplaceWithPasteboard(Pasteboard*);
     void pasteAsPlainTextWithPasteboard(Pasteboard*);
     void pasteWithPasteboard(Pasteboard*);
-    void writeSelectionToPasteboard(Pasteboard*, Range*, const String& plainText);
+    void writeSelectionToPasteboard();
     bool dispatchCPPEvent(const AtomicString&, DataTransferAccessPolicy, PasteMode = AllMimeTypes);
 
     void revealSelectionAfterEditingOperation(const ScrollAlignment& = ScrollAlignment::alignCenterIfNeeded, RevealExtentOption = DoNotRevealExtent);

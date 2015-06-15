@@ -36,7 +36,7 @@ public:
 private:
     virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectTextArea || LayoutTextControl::isOfType(type); }
 
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override;
+    virtual bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override;
 
     virtual float getAvgCharWidth(AtomicString family) override;
     virtual LayoutUnit preferredContentLogicalWidth(float charWidth) const override;
@@ -45,7 +45,7 @@ private:
     virtual int baselinePosition(FontBaseline, bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const override;
     virtual int inlineBlockBaseline(LineDirectionMode) const override { return -1; }
 
-    virtual PassRefPtr<LayoutStyle> createInnerEditorStyle(const LayoutStyle& startStyle) const override;
+    virtual PassRefPtr<ComputedStyle> createInnerEditorStyle(const ComputedStyle& startStyle) const override;
     virtual LayoutObject* layoutSpecialExcludedChild(bool relayoutChildren, SubtreeLayoutScope&) override;
 };
 

@@ -22,7 +22,7 @@
 #ifndef TextBreakIterator_h
 #define TextBreakIterator_h
 
-#include "core/layout/style/LayoutStyleConstants.h"
+#include "core/style/ComputedStyleConstants.h"
 #include "platform/PlatformExport.h"
 #include "wtf/text/AtomicString.h"
 #include "wtf/unicode/Unicode.h"

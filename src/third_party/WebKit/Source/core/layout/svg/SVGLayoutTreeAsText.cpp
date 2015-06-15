@@ -270,13 +270,13 @@ static void writeSVGPaintingResource(TextStream& ts, const SVGPaintDescription& 
 
 static void writeStyle(TextStream& ts, const LayoutObject& object)
 {
-    const LayoutStyle& style = object.styleRef();
-    const SVGLayoutStyle& svgStyle = style.svgStyle();
+    const ComputedStyle& style = object.styleRef();
+    const SVGComputedStyle& svgStyle = style.svgStyle();
 
     if (!object.localTransform().isIdentity())
         writeNameValuePair(ts, "transform", object.localTransform());
-    writeIfNotDefault(ts, "image rendering", style.imageRendering(), LayoutStyle::initialImageRendering());
-    writeIfNotDefault(ts, "opacity", style.opacity(), LayoutStyle::initialOpacity());
+    writeIfNotDefault(ts, "image rendering", style.imageRendering(), ComputedStyle::initialImageRendering());
+    writeIfNotDefault(ts, "opacity", style.opacity(), ComputedStyle::initialOpacity());
     if (object.isSVGShape()) {
         const LayoutSVGShape& shape = static_cast<const LayoutSVGShape&>(object);
         ASSERT(shape.element());
@@ -288,15 +288,9 @@ static void writeStyle(TextStream& ts, const LayoutObject& object)
             writeSVGPaintingResource(ts, strokePaintDescription);
 
             SVGLengthContext lengthContext(shape.element());
-            double dashOffset = svgStyle.strokeDashOffset()->value(lengthContext);
-            double strokeWidth = svgStyle.strokeWidth()->value(lengthContext);
-            RefPtrWillBeRawPtr<SVGLengthList> dashes = svgStyle.strokeDashArray();
-
-            DashArray dashArray;
-            SVGLengthList::ConstIterator it = dashes->begin();
-            SVGLengthList::ConstIterator itEnd = dashes->end();
-            for (; it != itEnd; ++it)
-                dashArray.append(it->value(lengthContext));
+            double dashOffset = lengthContext.valueForLength(svgStyle.strokeDashOffset(), style);
+            double strokeWidth = lengthContext.valueForLength(svgStyle.strokeWidth());
+            DashArray dashArray = SVGLayoutSupport::resolveSVGDashArray(*svgStyle.strokeDashArray(), style, lengthContext);
 
             writeIfNotDefault(ts, "opacity", svgStyle.strokeOpacity(), 1.0f);
             writeIfNotDefault(ts, "stroke width", strokeWidth, 1.0);
@@ -405,10 +399,10 @@ static inline void writeSVGInlineTextBox(TextStream& ts, SVGInlineTextBox* textB
     if (fragments.isEmpty())
         return;
 
-    LayoutSVGInlineText& textRenderer = toLayoutSVGInlineText(textBox->renderer());
+    LayoutSVGInlineText& textLayoutObject = toLayoutSVGInlineText(textBox->layoutObject());
 
-    const SVGLayoutStyle& svgStyle = textRenderer.style()->svgStyle();
-    String text = textBox->renderer().text();
+    const SVGComputedStyle& svgStyle = textLayoutObject.style()->svgStyle();
+    String text = textBox->layoutObject().text();
 
     unsigned fragmentsSize = fragments.size();
     for (unsigned i = 0; i < fragmentsSize; ++i) {
@@ -456,7 +450,7 @@ static inline void writeSVGInlineTextBox(TextStream& ts, SVGInlineTextBox* textB
     }
 }
 
-static inline void writeSVGInlineTextBoxes(TextStream& ts, const RenderText& text, int indent)
+static inline void writeSVGInlineTextBoxes(TextStream& ts, const LayoutText& text, int indent)
 {
     for (InlineTextBox* box = text.firstTextBox(); box; box = box->nextTextBox()) {
         if (!box->isSVGInlineTextBox())
@@ -469,7 +463,7 @@ static inline void writeSVGInlineTextBoxes(TextStream& ts, const RenderText& tex
 static void writeStandardPrefix(TextStream& ts, const LayoutObject& object, int indent)
 {
     writeIndent(ts, indent);
-    ts << object.renderName();
+    ts << object.decoratedName();
 
     if (object.node())
         ts << " {" << object.node()->nodeName() << "}";
@@ -536,7 +530,7 @@ void writeSVGResourceContainer(TextStream& ts, const LayoutObject& object, int i
     } else if (resource->resourceType() == PatternResourceType) {
         LayoutSVGResourcePattern* pattern = static_cast<LayoutSVGResourcePattern*>(resource);
 
-        // Dump final results that are used for rendering. No use in asking SVGPatternElement for its patternUnits(), as it may
+        // Dump final results that are used for layout. No use in asking SVGPatternElement for its patternUnits(), as it may
         // link to other patterns using xlink:href, we need to build the full inheritance chain, aka. collectPatternProperties()
         PatternAttributes attributes;
         toSVGPatternElement(pattern->element())->collectPatternAttributes(attributes);
@@ -551,7 +545,7 @@ void writeSVGResourceContainer(TextStream& ts, const LayoutObject& object, int i
     } else if (resource->resourceType() == LinearGradientResourceType) {
         LayoutSVGResourceLinearGradient* gradient = static_cast<LayoutSVGResourceLinearGradient*>(resource);
 
-        // Dump final results that are used for rendering. No use in asking SVGGradientElement for its gradientUnits(), as it may
+        // Dump final results that are used for layout. No use in asking SVGGradientElement for its gradientUnits(), as it may
         // link to other gradients using xlink:href, we need to build the full inheritance chain, aka. collectGradientProperties()
         LinearGradientAttributes attributes;
         toSVGLinearGradientElement(gradient->element())->collectGradientAttributes(attributes);
@@ -561,7 +555,7 @@ void writeSVGResourceContainer(TextStream& ts, const LayoutObject& object, int i
     }  else if (resource->resourceType() == RadialGradientResourceType) {
         LayoutSVGResourceRadialGradient* gradient = toLayoutSVGResourceRadialGradient(resource);
 
-        // Dump final results that are used for rendering. No use in asking SVGGradientElement for its gradientUnits(), as it may
+        // Dump final results that are used for layout. No use in asking SVGGradientElement for its gradientUnits(), as it may
         // link to other gradients using xlink:href, we need to build the full inheritance chain, aka. collectGradientProperties()
         RadialGradientAttributes attributes;
         toSVGRadialGradientElement(gradient->element())->collectGradientAttributes(attributes);
@@ -643,12 +637,12 @@ void writeSVGGradientStop(TextStream& ts, const LayoutSVGGradientStop& stop, int
 
 void writeResources(TextStream& ts, const LayoutObject& object, int indent)
 {
-    const LayoutStyle& style = object.styleRef();
-    const SVGLayoutStyle& svgStyle = style.svgStyle();
+    const ComputedStyle& style = object.styleRef();
+    const SVGComputedStyle& svgStyle = style.svgStyle();
 
     // FIXME: We want to use SVGResourcesCache to determine which resources are present, instead of quering the resource <-> id cache.
     // For now leave the DRT output as is, but later on we should change this so cycles are properly ignored in the DRT output.
-    LayoutObject& renderer = const_cast<LayoutObject&>(object);
+    LayoutObject& layoutObject = const_cast<LayoutObject&>(object);
     if (!svgStyle.maskerResource().isEmpty()) {
         if (LayoutSVGResourceMasker* masker = getLayoutSVGResourceById<LayoutSVGResourceMasker>(object.document(), svgStyle.maskerResource())) {
             writeIndent(ts, indent);
@@ -656,7 +650,7 @@ void writeResources(TextStream& ts, const LayoutObject& object, int indent)
             writeNameAndQuotedValue(ts, "masker", svgStyle.maskerResource());
             ts << " ";
             writeStandardPrefix(ts, *masker, 0);
-            ts << " " << masker->resourceBoundingBox(&renderer) << "\n";
+            ts << " " << masker->resourceBoundingBox(&layoutObject) << "\n";
         }
     }
     if (!svgStyle.clipperResource().isEmpty()) {
@@ -666,7 +660,7 @@ void writeResources(TextStream& ts, const LayoutObject& object, int indent)
             writeNameAndQuotedValue(ts, "clipPath", svgStyle.clipperResource());
             ts << " ";
             writeStandardPrefix(ts, *clipper, 0);
-            ts << " " << clipper->resourceBoundingBox(&renderer) << "\n";
+            ts << " " << clipper->resourceBoundingBox(&layoutObject) << "\n";
         }
     }
     if (!svgStyle.filterResource().isEmpty()) {
@@ -676,7 +670,7 @@ void writeResources(TextStream& ts, const LayoutObject& object, int indent)
             writeNameAndQuotedValue(ts, "filter", svgStyle.filterResource());
             ts << " ";
             writeStandardPrefix(ts, *filter, 0);
-            ts << " " << filter->resourceBoundingBox(&renderer) << "\n";
+            ts << " " << filter->resourceBoundingBox(&layoutObject) << "\n";
         }
     }
 }

@@ -63,17 +63,17 @@ V8LazyEventListener::V8LazyEventListener(const AtomicString& functionName, const
 }
 
 template<typename T>
-v8::Handle<v8::Object> toObjectWrapper(T* domObject, ScriptState* scriptState)
+v8::Local<v8::Object> toObjectWrapper(T* domObject, ScriptState* scriptState)
 {
     if (!domObject)
         return v8::Object::New(scriptState->isolate());
-    v8::Handle<v8::Value> value = toV8(domObject, scriptState->context()->Global(), scriptState->isolate());
+    v8::Local<v8::Value> value = toV8(domObject, scriptState->context()->Global(), scriptState->isolate());
     if (value.IsEmpty())
         return v8::Object::New(scriptState->isolate());
     return v8::Local<v8::Object>::New(scriptState->isolate(), value.As<v8::Object>());
 }
 
-v8::Local<v8::Value> V8LazyEventListener::callListenerFunction(ScriptState* scriptState, v8::Handle<v8::Value> jsEvent, Event* event)
+v8::Local<v8::Value> V8LazyEventListener::callListenerFunction(ScriptState* scriptState, v8::Local<v8::Value> jsEvent, Event* event)
 {
     v8::Local<v8::Object> listenerObject = getListenerObject(scriptState->executionContext());
     if (listenerObject.IsEmpty())
@@ -94,7 +94,7 @@ v8::Local<v8::Value> V8LazyEventListener::callListenerFunction(ScriptState* scri
     if (!frame->script().canExecuteScripts(AboutToExecuteScript))
         return v8::Local<v8::Value>();
 
-    v8::Handle<v8::Value> parameters[1] = { jsEvent };
+    v8::Local<v8::Value> parameters[1] = { jsEvent };
     return frame->script().callFunction(handlerFunction, receiver, WTF_ARRAY_LENGTH(parameters), parameters);
 }
 
@@ -158,10 +158,10 @@ void V8LazyEventListener::prepareListenerObject(ExecutionContext* executionConte
             "};"
         "}}}})";
 
-    v8::Handle<v8::String> codeExternalString = v8String(isolate(), code);
+    v8::Local<v8::String> codeExternalString = v8String(isolate(), code);
 
-    v8::Local<v8::Value> result = V8ScriptRunner::compileAndRunInternalScript(codeExternalString, isolate(), m_sourceURL, m_position);
-    if (result.IsEmpty())
+    v8::Local<v8::Value> result;
+    if (!V8ScriptRunner::compileAndRunInternalScript(codeExternalString, isolate(), m_sourceURL, m_position).ToLocal(&result))
         return;
 
     // Call the outer function to get the inner function.
@@ -173,23 +173,23 @@ void V8LazyEventListener::prepareListenerObject(ExecutionContext* executionConte
     if (m_node && m_node->isHTMLElement())
         formElement = toHTMLElement(m_node)->formOwner();
 
-    v8::Handle<v8::Object> nodeWrapper = toObjectWrapper<Node>(m_node, scriptState);
-    v8::Handle<v8::Object> formWrapper = toObjectWrapper<HTMLFormElement>(formElement, scriptState);
-    v8::Handle<v8::Object> documentWrapper = toObjectWrapper<Document>(m_node ? m_node->ownerDocument() : 0, scriptState);
+    v8::Local<v8::Object> nodeWrapper = toObjectWrapper<Node>(m_node, scriptState);
+    v8::Local<v8::Object> formWrapper = toObjectWrapper<HTMLFormElement>(formElement, scriptState);
+    v8::Local<v8::Object> documentWrapper = toObjectWrapper<Document>(m_node ? m_node->ownerDocument() : 0, scriptState);
 
     v8::Local<v8::Object> thisObject = v8::Object::New(isolate());
     if (thisObject.IsEmpty())
         return;
-    if (!thisObject->ForceSet(v8::Integer::New(isolate(), 0), nodeWrapper))
+    if (!v8CallBoolean(thisObject->ForceSet(scriptState->context(), v8::Integer::New(isolate(), 0), nodeWrapper)))
         return;
-    if (!thisObject->ForceSet(v8::Integer::New(isolate(), 1), formWrapper))
+    if (!v8CallBoolean(thisObject->ForceSet(scriptState->context(), v8::Integer::New(isolate(), 1), formWrapper)))
         return;
-    if (!thisObject->ForceSet(v8::Integer::New(isolate(), 2), documentWrapper))
+    if (!v8CallBoolean(thisObject->ForceSet(scriptState->context(), v8::Integer::New(isolate(), 2), documentWrapper)))
         return;
 
     // FIXME: Remove this code when we stop doing the 'with' hack above.
-    v8::Local<v8::Value> innerValue = V8ScriptRunner::callInternalFunction(intermediateFunction, thisObject, 0, 0, isolate());
-    if (innerValue.IsEmpty() || !innerValue->IsFunction())
+    v8::Local<v8::Value> innerValue;
+    if (!V8ScriptRunner::callInternalFunction(intermediateFunction, thisObject, 0, 0, isolate()).ToLocal(&innerValue) || !innerValue->IsFunction())
         return;
 
     v8::Local<v8::Function> wrappedFunction = innerValue.As<v8::Function>();

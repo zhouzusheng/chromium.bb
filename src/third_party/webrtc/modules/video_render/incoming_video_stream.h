@@ -31,7 +31,7 @@ class IncomingVideoStream : public VideoRenderCallback {
   // Get callback to deliver frames to the module.
   VideoRenderCallback* ModuleCallback();
   virtual int32_t RenderFrame(const uint32_t stream_id,
-                              I420VideoFrame& video_frame);
+                              const I420VideoFrame& video_frame);
 
   // Set callback to the platform dependent code.
   int32_t SetRenderCallback(VideoRenderCallback* render_callback);
@@ -49,8 +49,6 @@ class IncomingVideoStream : public VideoRenderCallback {
   // Properties.
   uint32_t StreamId() const;
   uint32_t IncomingRate() const;
-
-  int32_t GetLastRenderedFrame(I420VideoFrame& video_frame) const;
 
   int32_t SetStartImage(const I420VideoFrame& video_frame);
 
@@ -74,7 +72,7 @@ class IncomingVideoStream : public VideoRenderCallback {
   CriticalSectionWrapper& stream_critsect_;
   CriticalSectionWrapper& thread_critsect_;
   CriticalSectionWrapper& buffer_critsect_;
-  ThreadWrapper* incoming_render_thread_;
+  rtc::scoped_ptr<ThreadWrapper> incoming_render_thread_;
   EventWrapper& deliver_buffer_event_;
   bool running_;
 
@@ -89,7 +87,7 @@ class IncomingVideoStream : public VideoRenderCallback {
   uint32_t incoming_rate_;
   int64_t last_rate_calculation_time_ms_;
   uint16_t num_frames_since_last_calculation_;
-  I420VideoFrame last_rendered_frame_;
+  int64_t last_render_time_ms_;
   I420VideoFrame temp_frame_;
   I420VideoFrame start_image_;
   I420VideoFrame timeout_image_;

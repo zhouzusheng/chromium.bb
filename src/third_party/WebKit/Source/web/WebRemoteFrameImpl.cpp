@@ -115,11 +115,6 @@ void WebRemoteFrameImpl::setRemoteWebLayer(WebLayer* webLayer)
     frame()->setRemotePlatformLayer(webLayer);
 }
 
-void WebRemoteFrameImpl::setPermissionClient(WebPermissionClient*)
-{
-    ASSERT_NOT_REACHED();
-}
-
 void WebRemoteFrameImpl::setSharedWorkerRepositoryClient(WebSharedWorkerRepositoryClient*)
 {
     ASSERT_NOT_REACHED();
@@ -272,11 +267,11 @@ bool WebRemoteFrameImpl::checkIfRunInsecureContent(const WebURL&) const
     return false;
 }
 
-v8::Handle<v8::Value> WebRemoteFrameImpl::executeScriptAndReturnValue(
+v8::Local<v8::Value> WebRemoteFrameImpl::executeScriptAndReturnValue(
     const WebScriptSource&)
 {
     ASSERT_NOT_REACHED();
-    return v8::Handle<v8::Value>();
+    return v8::Local<v8::Value>();
 }
 
 void WebRemoteFrameImpl::executeScriptInIsolatedWorld(
@@ -518,7 +513,7 @@ void WebRemoteFrameImpl::selectRange(const WebRange&)
     ASSERT_NOT_REACHED();
 }
 
-void WebRemoteFrameImpl::moveRangeSelection(const WebPoint& base, const WebPoint& extent)
+void WebRemoteFrameImpl::moveRangeSelection(const WebPoint& base, const WebPoint& extent, WebFrame::TextGranularity granularity)
 {
     ASSERT_NOT_REACHED();
 }
@@ -733,7 +728,7 @@ void WebRemoteFrameImpl::drawInCanvas(const WebRect& rect, const WebString& styl
 WebLocalFrame* WebRemoteFrameImpl::createLocalChild(const WebString& name, WebSandboxFlags sandboxFlags, WebFrameClient* client)
 {
     WebLocalFrameImpl* child = toWebLocalFrameImpl(WebLocalFrame::create(client));
-    WillBeHeapHashMap<WebFrame*, OwnPtrWillBeMember<FrameOwner> >::AddResult result =
+    WillBeHeapHashMap<WebFrame*, OwnPtrWillBeMember<FrameOwner>>::AddResult result =
         m_ownersForChildren.add(child, RemoteBridgeFrameOwner::create(child, static_cast<SandboxFlags>(sandboxFlags)));
     appendChild(child);
     // FIXME: currently this calls LocalFrame::init() on the created LocalFrame, which may
@@ -752,12 +747,6 @@ void WebRemoteFrameImpl::initializeCoreFrame(FrameHost* host, FrameOwner* owner,
     setCoreFrame(RemoteFrame::create(&m_frameClient, host, owner));
     frame()->createView();
     m_frame->tree().setName(name, nullAtom);
-}
-
-// FIXME(alexmos): remove once Chrome side is updated to use sandbox flags.
-WebRemoteFrame* WebRemoteFrameImpl::createRemoteChild(const WebString& name, WebRemoteFrameClient* client)
-{
-    return createRemoteChild(name, WebSandboxFlags::None, client);
 }
 
 WebRemoteFrame* WebRemoteFrameImpl::createRemoteChild(const WebString& name, WebSandboxFlags sandboxFlags, WebRemoteFrameClient* client)
@@ -807,6 +796,12 @@ void WebRemoteFrameImpl::setReplicatedName(const WebString& name) const
 {
     ASSERT(frame());
     frame()->tree().setName(name, nullAtom);
+}
+
+void WebRemoteFrameImpl::DispatchLoadEventForFrameOwner() const
+{
+    ASSERT(frame()->owner()->isLocal());
+    frame()->owner()->dispatchLoad();
 }
 
 void WebRemoteFrameImpl::didStartLoading()

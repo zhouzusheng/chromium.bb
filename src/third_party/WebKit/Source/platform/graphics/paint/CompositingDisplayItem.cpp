@@ -12,34 +12,35 @@
 
 namespace blink {
 
-void BeginCompositingDisplayItem::replay(GraphicsContext* context)
+void BeginCompositingDisplayItem::replay(GraphicsContext& context)
 {
-    context->beginLayer(m_opacity, WebCoreCompositeToSkiaComposite(m_compositeOp, m_blendMode));
+    context.beginLayer(m_opacity, m_xferMode, m_hasBounds ? &m_bounds : nullptr, m_colorFilter);
 }
 
 void BeginCompositingDisplayItem::appendToWebDisplayItemList(WebDisplayItemList* list) const
 {
-    // FIXME: Change this to appendCompositingItem.
-    list->appendTransparencyItem(m_opacity, m_blendMode);
+    SkRect bounds = WebCoreFloatRectToSKRect(m_bounds);
+    list->appendCompositingItem(m_opacity, m_xferMode, m_hasBounds ? &bounds : nullptr, GraphicsContext::WebCoreColorFilterToSkiaColorFilter(m_colorFilter).get());
 }
 
 #ifndef NDEBUG
 void BeginCompositingDisplayItem::dumpPropertiesAsDebugString(WTF::StringBuilder& stringBuilder) const
 {
     DisplayItem::dumpPropertiesAsDebugString(stringBuilder);
-    stringBuilder.append(WTF::String::format(", compositingOp: %d, blendMode: %d, opacity: %f", m_compositeOp, m_blendMode, m_opacity));
+    stringBuilder.append(WTF::String::format(", xferMode: %d, opacity: %f", m_xferMode, m_opacity));
+    if (m_hasBounds)
+        stringBuilder.append(WTF::String::format(", bounds: [%f, %f, %f, %f]", m_bounds.location().x(), m_bounds.location().y(), m_bounds.size().width(), m_bounds.size().height()));
 }
 #endif
 
-void EndCompositingDisplayItem::replay(GraphicsContext* context)
+void EndCompositingDisplayItem::replay(GraphicsContext& context)
 {
-    context->endLayer();
+    context.endLayer();
 }
 
 void EndCompositingDisplayItem::appendToWebDisplayItemList(WebDisplayItemList* list) const
 {
-    // FIXME: Change this to appendEndCompositingItem.
-    list->appendEndTransparencyItem();
+    list->appendEndCompositingItem();
 }
 
 } // namespace blink

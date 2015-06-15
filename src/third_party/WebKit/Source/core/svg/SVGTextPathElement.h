@@ -45,7 +45,7 @@ template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGTextPath
 class SVGTextPathElement final : public SVGTextContentElement,
                                  public SVGURIReference {
     DEFINE_WRAPPERTYPEINFO();
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SVGTextPathElement);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN_NESTED(SVGTextPathElement, SVGGraphicsElement);
 public:
     // Forward declare enumerations in the W3C naming scheme, for IDL generation.
     enum {
@@ -79,14 +79,14 @@ private:
     bool isSupportedAttribute(const QualifiedName&);
     virtual void svgAttributeChanged(const QualifiedName&) override;
 
-    virtual LayoutObject* createRenderer(const LayoutStyle&) override;
-    virtual bool rendererIsNeeded(const LayoutStyle&) override;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
+    virtual bool layoutObjectIsNeeded(const ComputedStyle&) override;
 
     virtual bool selfHasRelativeLengths() const override;
 
     RefPtrWillBeMember<SVGAnimatedLength> m_startOffset;
-    RefPtrWillBeMember<SVGAnimatedEnumeration<SVGTextPathMethodType> > m_method;
-    RefPtrWillBeMember<SVGAnimatedEnumeration<SVGTextPathSpacingType> > m_spacing;
+    RefPtrWillBeMember<SVGAnimatedEnumeration<SVGTextPathMethodType>> m_method;
+    RefPtrWillBeMember<SVGAnimatedEnumeration<SVGTextPathSpacingType>> m_spacing;
 };
 
 } // namespace blink

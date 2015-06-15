@@ -30,17 +30,17 @@
 #include "core/html/HTMLDimension.h"
 #include "core/html/HTMLFrameSetElement.h"
 #include "core/layout/LayoutFrame.h"
+#include "core/layout/LayoutView.h"
 #include "core/layout/PaintInfo.h"
 #include "core/page/EventHandler.h"
 #include "core/paint/FrameSetPainter.h"
-#include "core/rendering/RenderView.h"
 #include "platform/Cursor.h"
 #include "platform/graphics/GraphicsContext.h"
 
 namespace blink {
 
 LayoutFrameSet::LayoutFrameSet(HTMLFrameSetElement* frameSet)
-    : RenderBox(frameSet)
+    : LayoutBox(frameSet)
     , m_isResizing(false)
     , m_isChildResizing(false)
 {
@@ -380,7 +380,7 @@ void LayoutFrameSet::layout()
 
     positionFrames();
 
-    RenderBox::layout();
+    LayoutBox::layout();
 
     computeEdgeInfo();
 
@@ -389,7 +389,7 @@ void LayoutFrameSet::layout()
     clearNeedsLayout();
 }
 
-static void clearNeedsLayoutOnHiddenFrames(RenderBox* frame)
+static void clearNeedsLayoutOnHiddenFrames(LayoutBox* frame)
 {
     for (; frame; frame = frame->nextSiblingBox()) {
         frame->setWidth(0);
@@ -401,7 +401,7 @@ static void clearNeedsLayoutOnHiddenFrames(RenderBox* frame)
 
 void LayoutFrameSet::positionFrames()
 {
-    RenderBox* child = firstChildBox();
+    LayoutBox* child = firstChildBox();
     if (!child)
         return;
 
@@ -421,7 +421,7 @@ void LayoutFrameSet::positionFrames()
             // has to be resized and itself resize its contents
             if (size != child->size()) {
                 child->setSize(size);
-                child->setNeedsLayoutAndFullPaintInvalidation();
+                child->setNeedsLayoutAndFullPaintInvalidation(LayoutInvalidationReason::SizeChanged);
                 child->layout();
             }
 
@@ -461,7 +461,7 @@ void LayoutFrameSet::continueResizing(GridAxis& axis, int position)
         return;
     axis.m_deltas[axis.m_splitBeingResized - 1] += delta;
     axis.m_deltas[axis.m_splitBeingResized] -= delta;
-    setNeedsLayoutAndFullPaintInvalidation();
+    setNeedsLayoutAndFullPaintInvalidation(LayoutInvalidationReason::SizeChanged);
 }
 
 bool LayoutFrameSet::userResize(MouseEvent* evt)
@@ -555,7 +555,7 @@ int LayoutFrameSet::hitTestSplit(const GridAxis& axis, int position) const
     return noSplit;
 }
 
-bool LayoutFrameSet::isChildAllowed(LayoutObject* child, const LayoutStyle&) const
+bool LayoutFrameSet::isChildAllowed(LayoutObject* child, const ComputedStyle&) const
 {
     return child->isFrame() || child->isFrameSet();
 }
@@ -571,7 +571,7 @@ CursorDirective LayoutFrameSet::getCursor(const LayoutPoint& point, Cursor& curs
         cursor = columnResizeCursor();
         return SetCursor;
     }
-    return RenderBox::getCursor(point, cursor);
+    return LayoutBox::getCursor(point, cursor);
 }
 
 } // namespace blink

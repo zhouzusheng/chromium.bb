@@ -18,6 +18,7 @@
         'libyuv/include',
       ],
       'dependencies': [
+        '<(webrtc_root)/common.gyp:webrtc_common',
         '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
       ],
       'direct_dependent_settings': {
@@ -38,17 +39,17 @@
         }],
       ],
       'sources': [
+        'interface/i420_buffer_pool.h',
         'interface/i420_video_frame.h',
         'interface/native_handle.h',
-        'interface/texture_video_frame.h',
+        'interface/video_frame_buffer.h',
+        'i420_buffer_pool.cc',
         'i420_video_frame.cc',
         'libyuv/include/webrtc_libyuv.h',
         'libyuv/include/scaler.h',
         'libyuv/webrtc_libyuv.cc',
         'libyuv/scaler.cc',
-        'plane.h',
-        'plane.cc',
-        'texture_video_frame.cc'
+        'video_frame_buffer.cc',
       ],
     },
   ],  # targets

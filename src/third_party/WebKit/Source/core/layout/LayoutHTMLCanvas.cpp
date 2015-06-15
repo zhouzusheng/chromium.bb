@@ -30,10 +30,10 @@
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLCanvasElement.h"
 #include "core/html/canvas/CanvasRenderingContext.h"
+#include "core/layout/LayoutView.h"
 #include "core/layout/PaintInfo.h"
 #include "core/page/Page.h"
 #include "core/paint/HTMLCanvasPainter.h"
-#include "core/rendering/RenderView.h"
 
 namespace blink {
 
@@ -45,9 +45,9 @@ LayoutHTMLCanvas::LayoutHTMLCanvas(HTMLCanvasElement* element)
     view()->frameView()->setIsVisuallyNonEmpty();
 }
 
-LayerType LayoutHTMLCanvas::layerTypeRequired() const
+DeprecatedPaintLayerType LayoutHTMLCanvas::layerTypeRequired() const
 {
-    return NormalLayer;
+    return NormalDeprecatedPaintLayer;
 }
 
 void LayoutHTMLCanvas::paintReplaced(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
@@ -78,12 +78,12 @@ void LayoutHTMLCanvas::canvasSizeChanged()
         return;
 
     if (!selfNeedsLayout())
-        setNeedsLayout();
+        setNeedsLayout(LayoutInvalidationReason::SizeChanged);
 }
 
-PaintInvalidationReason LayoutHTMLCanvas::invalidatePaintIfNeeded(const PaintInvalidationState& paintInvalidationState, const LayoutLayerModelObject& paintInvalidationContainer)
+PaintInvalidationReason LayoutHTMLCanvas::invalidatePaintIfNeeded(PaintInvalidationState& paintInvalidationState, const LayoutBoxModelObject& paintInvalidationContainer)
 {
-    PaintInvalidationReason reason = RenderBox::invalidatePaintIfNeeded(paintInvalidationState, paintInvalidationContainer);
+    PaintInvalidationReason reason = LayoutBox::invalidatePaintIfNeeded(paintInvalidationState, paintInvalidationContainer);
     HTMLCanvasElement* element = toHTMLCanvasElement(node());
     if (element->isDirty()) {
         element->doDeferredPaintInvalidation();

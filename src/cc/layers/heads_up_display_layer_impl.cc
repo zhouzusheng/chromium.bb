@@ -20,9 +20,6 @@
 #include "cc/trees/layer_tree_host_impl.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "skia/ext/platform_canvas.h"
-#include "third_party/khronos/GLES2/gl2.h"
-#include "third_party/khronos/GLES2/gl2ext.h"
-#include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/core/SkTypeface.h"
 #include "third_party/skia/include/effects/SkColorMatrixFilter.h"
@@ -300,7 +297,18 @@ void HeadsUpDisplayLayerImpl::DrawHudContents(SkCanvas* canvas) {
   if (debug_state.ShowMemoryStats())
     DrawMemoryDisplay(canvas, 0, area.bottom(), SkMaxScalar(area.width(), 150));
 }
+int HeadsUpDisplayLayerImpl::MeasureText(SkPaint* paint,
+                                         const std::string& text,
+                                         int size) const {
+  const bool anti_alias = paint->isAntiAlias();
+  paint->setAntiAlias(true);
+  paint->setTextSize(size);
+  paint->setTypeface(typeface_.get());
+  SkScalar text_width = paint->measureText(text.c_str(), text.length());
 
+  paint->setAntiAlias(anti_alias);
+  return SkScalarCeilToInt(text_width);
+}
 void HeadsUpDisplayLayerImpl::DrawText(SkCanvas* canvas,
                                        SkPaint* paint,
                                        const std::string& text,
@@ -558,23 +566,23 @@ SkRect HeadsUpDisplayLayerImpl::DrawGpuRasterizationStatus(SkCanvas* canvas,
   SkColor color = SK_ColorRED;
   switch (layer_tree_impl()->GetGpuRasterizationStatus()) {
     case GpuRasterizationStatus::ON:
-      status = "GPU raster: on";
+      status = "on";
       color = SK_ColorGREEN;
       break;
     case GpuRasterizationStatus::ON_FORCED:
-      status = "GPU raster: on (forced)";
+      status = "on (forced)";
       color = SK_ColorGREEN;
       break;
     case GpuRasterizationStatus::OFF_DEVICE:
-      status = "GPU raster: off (device)";
+      status = "off (device)";
       color = SK_ColorRED;
       break;
     case GpuRasterizationStatus::OFF_VIEWPORT:
-      status = "GPU raster: off (viewport)";
+      status = "off (viewport)";
       color = SK_ColorYELLOW;
       break;
     case GpuRasterizationStatus::OFF_CONTENT:
-      status = "GPU raster: off (content)";
+      status = "off (content)";
       color = SK_ColorYELLOW;
       break;
   }
@@ -585,17 +593,20 @@ SkRect HeadsUpDisplayLayerImpl::DrawGpuRasterizationStatus(SkCanvas* canvas,
   const int kPadding = 4;
   const int kFontHeight = 13;
 
-  const int height = kFontHeight + 2 * kPadding;
+  const int height = 2 * kFontHeight + 3 * kPadding;
   const int left = bounds().width() - width - right;
   const SkRect area = SkRect::MakeXYWH(left, top, width, height);
 
   SkPaint paint = CreatePaint();
   DrawGraphBackground(canvas, &paint, area);
 
-  SkPoint gpu_status_pos = SkPoint::Make(left + kPadding, top + kFontHeight);
+  SkPoint gpu_status_pos = SkPoint::Make(left + width - kPadding,
+                                         top + 2 * kFontHeight + 2 * kPadding);
 
   paint.setColor(color);
-  DrawText(canvas, &paint, status, SkPaint::kLeft_Align, kFontHeight,
+  DrawText(canvas, &paint, "GPU raster: ", SkPaint::kLeft_Align, kFontHeight,
+           left + kPadding, top + kFontHeight + kPadding);
+  DrawText(canvas, &paint, status, SkPaint::kRight_Align, kFontHeight,
            gpu_status_pos);
 
   return area;
@@ -607,31 +618,34 @@ SkRect HeadsUpDisplayLayerImpl::DrawPaintTimeDisplay(
     int right,
     int top) const {
   const int kPadding = 4;
-  const int kFontHeight = 15;
+  const int kFontHeight = 14;
 
   const int kGraphWidth = paint_time_counter->HistorySize();
   const int kGraphHeight = 40;
 
-  const int width = kGraphWidth + 2 * kPadding;
+  SkPaint paint = CreatePaint();
+
+  const std::string title = "Compositor frame time (ms)";
+  int title_text_width = MeasureText(&paint, title, kFontHeight);
+  int contents_width = std::max(title_text_width, kGraphWidth);
+
+  const int width = contents_width + 2 * kPadding;
   const int height =
       kFontHeight + kGraphHeight + 4 * kPadding + 2 + kFontHeight + kPadding;
   const int left = bounds().width() - width - right;
 
   const SkRect area = SkRect::MakeXYWH(left, top, width, height);
 
-  SkPaint paint = CreatePaint();
   DrawGraphBackground(canvas, &paint, area);
 
-  SkRect text_bounds = SkRect::MakeXYWH(
-      left + kPadding, top + kPadding, kGraphWidth, kFontHeight);
-  SkRect text_bounds2 = SkRect::MakeXYWH(left + kPadding,
-                                         text_bounds.bottom() + kPadding,
-                                         kGraphWidth,
-                                         kFontHeight);
-  SkRect graph_bounds = SkRect::MakeXYWH(left + kPadding,
+  SkRect text_bounds = SkRect::MakeXYWH(left + kPadding, top + kPadding,
+                                        contents_width, kFontHeight);
+  SkRect text_bounds2 =
+      SkRect::MakeXYWH(left + kPadding, text_bounds.bottom() + kPadding,
+                       contents_width, kFontHeight);
+  SkRect graph_bounds = SkRect::MakeXYWH(left + (width - kGraphWidth) / 2,
                                          text_bounds2.bottom() + 2 * kPadding,
-                                         kGraphWidth,
-                                         kGraphHeight);
+                                         kGraphWidth, kGraphHeight);
 
   const std::string value_text =
       base::StringPrintf("%.1f", paint_time_graph_.value);
@@ -639,8 +653,8 @@ SkRect HeadsUpDisplayLayerImpl::DrawPaintTimeDisplay(
       "%.1f-%.1f", paint_time_graph_.min, paint_time_graph_.max);
 
   paint.setColor(DebugColors::PaintTimeDisplayTextAndGraphColor());
-  DrawText(canvas, &paint, "Compositor frame time (ms)", SkPaint::kLeft_Align,
-           kFontHeight, text_bounds.left(), text_bounds.bottom());
+  DrawText(canvas, &paint, title, SkPaint::kLeft_Align, kFontHeight,
+           text_bounds.left(), text_bounds.bottom());
   DrawText(canvas,
            &paint,
            value_text,

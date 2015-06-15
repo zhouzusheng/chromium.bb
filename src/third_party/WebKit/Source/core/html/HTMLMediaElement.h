@@ -26,6 +26,7 @@
 #ifndef HTMLMediaElement_h
 #define HTMLMediaElement_h
 
+#include "core/CoreExport.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/events/GenericEventQueue.h"
 #include "core/html/HTMLElement.h"
@@ -58,6 +59,7 @@ class MediaController;
 class MediaControls;
 class MediaError;
 class HTMLMediaSource;
+class TextTrackContainer;
 class TextTrackList;
 class TimeRanges;
 class URLRegistry;
@@ -67,7 +69,7 @@ class VideoTrackList;
 // But it can't be until the Chromium WebMediaPlayerClientImpl class is fixed so it
 // no longer depends on typecasting a MediaPlayerClient to an HTMLMediaElement.
 
-class HTMLMediaElement : public HTMLElement, public WillBeHeapSupplementable<HTMLMediaElement>, public MediaPlayerClient, public ActiveDOMObject {
+class CORE_EXPORT HTMLMediaElement : public HTMLElement, public WillBeHeapSupplementable<HTMLMediaElement>, public MediaPlayerClient, public ActiveDOMObject {
     DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(HTMLMediaElement);
 public:
@@ -110,7 +112,7 @@ public:
     NetworkState networkState() const;
 
     String preload() const;
-    MediaPlayer::Preload preloadType() const { return m_preload; }
+    MediaPlayer::Preload effectivePreloadType() const;
     void setPreload(const AtomicString&);
 
     PassRefPtrWillBeRawPtr<TimeRanges> buffered() const;
@@ -207,7 +209,6 @@ public:
     double lastSeekTime() const { return m_lastSeekTime; }
     void textTrackReadyStateChanged(TextTrack*);
 
-    void textTrackKindChanged(TextTrack*);
     void textTrackModeChanged(TextTrack*);
 
     // EventTarget function.
@@ -231,7 +232,13 @@ public:
     void connectedToRemoteDevice();
     void disconnectedFromRemoteDevice();
 
+    // Returns the MediaControls, or null if they have not been added yet.
+    // Note that this can be non-null even if there is no controls attribute.
     MediaControls* mediaControls() const;
+
+    // Notifies the media element that the media controls became visible, so
+    // that text track layout may be updated to avoid overlapping them.
+    void mediaControlsDidBecomeVisible();
 
     void sourceWasRemoved(HTMLSourceElement*);
     void sourceWasAdded(HTMLSourceElement*);
@@ -264,8 +271,6 @@ public:
     double effectiveMediaVolume() const;
 
 #if ENABLE(OILPAN)
-    bool isFinalizing() const { return m_isFinalizing; }
-
     // Oilpan: finalization of the media element is observable from its
     // attached MediaSource; it entering a closed state.
     //
@@ -305,8 +310,8 @@ private:
 
     virtual bool supportsFocus() const override final;
     virtual bool isMouseFocusable() const override final;
-    virtual bool rendererIsNeeded(const LayoutStyle&) override;
-    virtual LayoutObject* createRenderer(const LayoutStyle&) override;
+    virtual bool layoutObjectIsNeeded(const ComputedStyle&) override;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
     virtual InsertionNotificationRequest insertedInto(ContainerNode*) override final;
     virtual void didNotifySubtreeInsertionsToDocument() override;
     virtual void removedFrom(ContainerNode*) override final;
@@ -410,9 +415,10 @@ private:
     void invalidateCachedTime();
     void refreshCachedTime() const;
 
-    bool hasMediaControls() const;
     void ensureMediaControls();
     void configureMediaControls();
+
+    TextTrackContainer& ensureTextTrackContainer();
 
     virtual void* preDispatchEventHandler(Event*) override final;
 

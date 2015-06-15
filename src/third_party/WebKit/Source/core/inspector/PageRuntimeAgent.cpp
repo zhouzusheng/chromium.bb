@@ -32,13 +32,13 @@
 #include "core/inspector/PageRuntimeAgent.h"
 
 #include "bindings/core/v8/DOMWrapperWorld.h"
+#include "bindings/core/v8/PageScriptDebugServer.h"
 #include "bindings/core/v8/ScriptController.h"
 #include "bindings/core/v8/ScriptState.h"
 #include "core/frame/FrameConsole.h"
 #include "core/frame/LocalFrame.h"
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InjectedScriptManager.h"
-#include "core/inspector/InspectorClient.h"
 #include "core/inspector/InspectorPageAgent.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/page/Page.h"
@@ -48,9 +48,8 @@ namespace blink {
 
 static int s_nextDebuggerId = 1;
 
-PageRuntimeAgent::PageRuntimeAgent(InjectedScriptManager* injectedScriptManager, InspectorClient* client, ScriptDebugServer* scriptDebugServer, InspectorPageAgent* pageAgent)
-    : InspectorRuntimeAgent(injectedScriptManager, scriptDebugServer)
-    , m_client(client)
+PageRuntimeAgent::PageRuntimeAgent(InjectedScriptManager* injectedScriptManager, Client* client, ScriptDebugServer* scriptDebugServer, InspectorPageAgent* pageAgent)
+    : InspectorRuntimeAgent(injectedScriptManager, scriptDebugServer, client)
     , m_pageAgent(pageAgent)
     , m_mainWorldContextCreated(false)
     , m_debuggerId(s_nextDebuggerId++)
@@ -89,18 +88,13 @@ void PageRuntimeAgent::enable(ErrorString* errorString)
         reportExecutionContextCreation();
 }
 
-void PageRuntimeAgent::run(ErrorString* errorString)
-{
-    m_client->resumeStartup();
-}
-
 void PageRuntimeAgent::didClearDocumentOfWindowObject(LocalFrame* frame)
 {
     m_mainWorldContextCreated = true;
 
     if (!m_enabled)
         return;
-    ASSERT(m_frontend);
+    ASSERT(frontend());
 
     frame->script().initializeMainWorld();
 }
@@ -110,12 +104,12 @@ void PageRuntimeAgent::didCreateScriptContext(LocalFrame* frame, ScriptState* sc
     bool isMainWorld = worldId == MainWorldId;
 
     // Name the context for debugging.
-    String debugData = (isMainWorld ? "page," : "injected,") + String::number(m_debuggerId);
-    V8PerContextDebugData::setContextDebugData(scriptState->context(), debugData);
+    String type = isMainWorld ? "page" : "injected";
+    PageScriptDebugServer::setContextDebugData(scriptState->context(), type, m_debuggerId);
 
     if (!m_enabled)
         return;
-    ASSERT(m_frontend);
+    ASSERT(frontend());
     String originString = origin ? origin->toRawString() : "";
     String frameId = m_pageAgent->frameId(frame);
     addExecutionContextToFrontend(scriptState, isMainWorld, originString, frameId);
@@ -129,7 +123,7 @@ void PageRuntimeAgent::willReleaseScriptContext(LocalFrame* frame, ScriptState* 
         return;
     int id = it->value;
     m_scriptStateToId.remove(scriptState);
-    m_frontend->executionContextDestroyed(id);
+    frontend()->executionContextDestroyed(id);
 }
 
 InjectedScript PageRuntimeAgent::injectedScriptForEval(ErrorString* errorString, const int* executionContextId)

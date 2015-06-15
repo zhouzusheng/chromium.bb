@@ -29,8 +29,8 @@ namespace blink {
 
 class TextRun;
 
-// Renderer for embeds and objects, often, but not always, rendered via plug-ins.
-// For example, <embed src="foo.html"> does not invoke a plug-in.
+// Renderer for embeds and objects, often, but not always, rendered via plugins.
+// For example, <embed src="foo.html"> does not invoke a plugin.
 class LayoutEmbeddedObject : public LayoutPart {
 public:
     LayoutEmbeddedObject(Element*);
@@ -43,6 +43,10 @@ public:
     void setPluginUnavailabilityReason(PluginUnavailabilityReason);
     bool showsUnavailablePluginIndicator() const;
 
+    virtual const char* name() const override { return "LayoutEmbeddedObject"; }
+
+    const String& unavailablePluginReplacementText() const { return m_unavailablePluginReplacementText; }
+
 private:
     virtual void paintContents(const PaintInfo&, const LayoutPoint&) override final;
     virtual void paintReplaced(const PaintInfo&, const LayoutPoint&) override final;
@@ -50,15 +54,12 @@ private:
 
     virtual void layout() override final;
 
-    virtual const char* renderName() const override { return "LayoutEmbeddedObject"; }
     virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectEmbeddedObject || LayoutPart::isOfType(type); }
-    virtual RenderBox* embeddedContentBox() const override final;
+    virtual LayoutBox* embeddedContentBox() const override final;
 
-    virtual LayerType layerTypeRequired() const override final;
+    virtual DeprecatedPaintLayerType layerTypeRequired() const override final;
 
     virtual bool scroll(ScrollDirection, ScrollGranularity, float multiplier) override final;
-
-    bool getReplacementTextGeometry(const LayoutPoint& accumulatedOffset, FloatRect& contentRect, Path&, FloatRect& replacementTextRect, Font&, TextRun&, float& textWidth) const;
 
     virtual CompositingReasons additionalCompositingReasons() const override;
 

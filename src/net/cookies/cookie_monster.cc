@@ -53,7 +53,6 @@
 #include "base/callback.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/scoped_vector.h"
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
@@ -162,6 +161,20 @@ bool LRACookieSorter(const CookieMonster::CookieMap::iterator& it1,
   // To preserve the stability of the sort, in these cases prefer to delete
   // older cookies over newer ones.  CreationDate() is guaranteed to be unique.
   return it1->second->CreationDate() < it2->second->CreationDate();
+}
+
+// Compare cookies using name, domain and path, so that "equivalent" cookies
+// (per RFC 2965) are equal to each other.
+bool PartialDiffCookieSorter(const net::CanonicalCookie& a,
+                             const net::CanonicalCookie& b) {
+  return a.PartialCompare(b);
+}
+
+// This is a stricter ordering than PartialDiffCookieOrdering, where all fields
+// are used.
+bool FullDiffCookieSorter(const net::CanonicalCookie& a,
+                          const net::CanonicalCookie& b) {
+  return a.FullCompare(b);
 }
 
 // Our strategy to find duplicates is:
@@ -316,7 +329,7 @@ void RunAsync(scoped_refptr<base::TaskRunner> proxy,
 CookieMonster::CookieMonster(PersistentCookieStore* store,
                              CookieMonsterDelegate* delegate)
     : initialized_(false),
-      loaded_(store == NULL),
+      loaded_(false),
       store_(store),
       last_access_threshold_(
           TimeDelta::FromSeconds(kDefaultAccessUpdateThresholdSeconds)),
@@ -332,7 +345,7 @@ CookieMonster::CookieMonster(PersistentCookieStore* store,
                              CookieMonsterDelegate* delegate,
                              int last_access_threshold_milliseconds)
     : initialized_(false),
-      loaded_(store == NULL),
+      loaded_(false),
       store_(store),
       last_access_threshold_(base::TimeDelta::FromMilliseconds(
           last_access_threshold_milliseconds)),
@@ -414,6 +427,7 @@ class CookieMonster::SetCookieWithDetailsTask : public CookieMonsterTask {
                            const base::Time& expiration_time,
                            bool secure,
                            bool http_only,
+                           bool first_party_only,
                            CookiePriority priority,
                            const SetCookiesCallback& callback)
       : CookieMonsterTask(cookie_monster),
@@ -425,6 +439,7 @@ class CookieMonster::SetCookieWithDetailsTask : public CookieMonsterTask {
         expiration_time_(expiration_time),
         secure_(secure),
         http_only_(http_only),
+        first_party_only_(first_party_only),
         priority_(priority),
         callback_(callback) {}
 
@@ -443,6 +458,7 @@ class CookieMonster::SetCookieWithDetailsTask : public CookieMonsterTask {
   base::Time expiration_time_;
   bool secure_;
   bool http_only_;
+  bool first_party_only_;
   CookiePriority priority_;
   SetCookiesCallback callback_;
 
@@ -452,7 +468,7 @@ class CookieMonster::SetCookieWithDetailsTask : public CookieMonsterTask {
 void CookieMonster::SetCookieWithDetailsTask::Run() {
   bool success = this->cookie_monster()->SetCookieWithDetails(
       url_, name_, value_, domain_, path_, expiration_time_, secure_,
-      http_only_, priority_);
+      http_only_, first_party_only_, priority_);
   if (!callback_.is_null()) {
     this->InvokeCallback(base::Bind(&SetCookiesCallback::Run,
                                     base::Unretained(&callback_), success));
@@ -750,8 +766,55 @@ class CookieMonster::SetCookieWithOptionsTask : public CookieMonsterTask {
 };
 
 void CookieMonster::SetCookieWithOptionsTask::Run() {
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/456373 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "456373 CookieMonster::SetCookieWithOptionsTask::Run"));
   bool result = this->cookie_monster()->SetCookieWithOptions(url_, cookie_line_,
                                                              options_);
+  if (!callback_.is_null()) {
+    this->InvokeCallback(base::Bind(&SetCookiesCallback::Run,
+                                    base::Unretained(&callback_), result));
+  }
+}
+
+// Task class for SetAllCookies call.
+class CookieMonster::SetAllCookiesTask : public CookieMonsterTask {
+ public:
+  SetAllCookiesTask(CookieMonster* cookie_monster,
+                    const CookieList& list,
+                    const SetCookiesCallback& callback)
+      : CookieMonsterTask(cookie_monster), list_(list), callback_(callback) {}
+
+  // CookieMonsterTask:
+  void Run() override;
+
+ protected:
+  ~SetAllCookiesTask() override {}
+
+ private:
+  CookieList list_;
+  SetCookiesCallback callback_;
+
+  DISALLOW_COPY_AND_ASSIGN(SetAllCookiesTask);
+};
+
+void CookieMonster::SetAllCookiesTask::Run() {
+  CookieList positive_diff;
+  CookieList negative_diff;
+  CookieList old_cookies = this->cookie_monster()->GetAllCookies();
+  this->cookie_monster()->ComputeCookieDiff(&old_cookies, &list_,
+                                            &positive_diff, &negative_diff);
+
+  for (CookieList::const_iterator it = negative_diff.begin();
+       it != negative_diff.end(); ++it) {
+    this->cookie_monster()->DeleteCanonicalCookie(*it);
+  }
+
+  bool result = true;
+  if (positive_diff.size() > 0)
+    result = this->cookie_monster()->SetCanonicalCookies(list_);
+
   if (!callback_.is_null()) {
     this->InvokeCallback(base::Bind(&SetCookiesCallback::Run,
                                     base::Unretained(&callback_), result));
@@ -785,6 +848,10 @@ class CookieMonster::GetCookiesWithOptionsTask : public CookieMonsterTask {
 };
 
 void CookieMonster::GetCookiesWithOptionsTask::Run() {
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/456373 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "456373 CookieMonster::GetCookiesWithOptionsTask::Run"));
   std::string cookie =
       this->cookie_monster()->GetCookiesWithOptions(url_, options_);
   if (!callback_.is_null()) {
@@ -884,11 +951,12 @@ void CookieMonster::SetCookieWithDetailsAsync(
     const Time& expiration_time,
     bool secure,
     bool http_only,
+    bool first_party_only,
     CookiePriority priority,
     const SetCookiesCallback& callback) {
   scoped_refptr<SetCookieWithDetailsTask> task = new SetCookieWithDetailsTask(
       this, url, name, value, domain, path, expiration_time, secure, http_only,
-      priority, callback);
+      first_party_only, priority, callback);
   DoCookieTaskForURL(task, url);
 }
 
@@ -913,6 +981,7 @@ void CookieMonster::GetAllCookiesForURLAsync(
     const GetCookieListCallback& callback) {
   CookieOptions options;
   options.set_include_httponly();
+  options.set_include_first_party_only();
   scoped_refptr<GetAllCookiesForURLWithOptionsTask> task =
       new GetAllCookiesForURLWithOptionsTask(this, url, options, callback);
 
@@ -970,6 +1039,13 @@ void CookieMonster::DeleteCanonicalCookieAsync(
   scoped_refptr<DeleteCanonicalCookieTask> task =
       new DeleteCanonicalCookieTask(this, cookie, callback);
 
+  DoCookieTask(task);
+}
+
+void CookieMonster::SetAllCookiesAsync(const CookieList& list,
+                                       const SetCookiesCallback& callback) {
+  scoped_refptr<SetAllCookiesTask> task =
+      new SetAllCookiesTask(this, list, callback);
   DoCookieTask(task);
 }
 
@@ -1065,6 +1141,7 @@ bool CookieMonster::SetCookieWithDetails(const GURL& url,
                                          const base::Time& expiration_time,
                                          bool secure,
                                          bool http_only,
+                                         bool first_party_only,
                                          CookiePriority priority) {
   base::AutoLock autolock(lock_);
 
@@ -1077,13 +1154,14 @@ bool CookieMonster::SetCookieWithDetails(const GURL& url,
   scoped_ptr<CanonicalCookie> cc;
   cc.reset(CanonicalCookie::Create(url, name, value, domain, path,
                                    creation_time, expiration_time, secure,
-                                   http_only, priority));
+                                   http_only, first_party_only, priority));
 
   if (!cc.get())
     return false;
 
   CookieOptions options;
   options.set_include_httponly();
+  options.set_include_first_party_only();
   return SetCanonicalCookie(&cc, creation_time, options);
 }
 
@@ -1095,6 +1173,7 @@ bool CookieMonster::ImportCookies(const CookieList& list) {
     scoped_ptr<CanonicalCookie> cookie(new CanonicalCookie(*iter));
     net::CookieOptions options;
     options.set_include_httponly();
+    options.set_include_first_party_only();
     if (!SetCanonicalCookie(&cookie, cookie->CreationDate(), options))
       return false;
   }
@@ -1153,6 +1232,7 @@ CookieList CookieMonster::GetAllCookiesForURLWithOptions(
 CookieList CookieMonster::GetAllCookiesForURL(const GURL& url) {
   CookieOptions options;
   options.set_include_httponly();
+  options.set_first_party_url(url);
 
   return GetAllCookiesForURLWithOptions(url, options);
 }
@@ -1260,14 +1340,6 @@ void CookieMonster::SetCookieableSchemes(const char* const schemes[],
                              schemes + num_schemes);
 }
 
-void CookieMonster::SetEnableFileScheme(bool accept) {
-  // This assumes "file" is always at the end of the array. See the comment
-  // above kDefaultCookieableSchemes.
-  int num_schemes = accept ? kDefaultCookieableSchemesCount
-                           : kDefaultCookieableSchemesCount - 1;
-  SetCookieableSchemes(kDefaultCookieableSchemes, num_schemes);
-}
-
 void CookieMonster::SetKeepExpiredCookies() {
   keep_expired_cookies_ = true;
 }
@@ -1319,6 +1391,7 @@ void CookieMonster::DeleteCookie(const GURL& url,
 
   CookieOptions options;
   options.set_include_httponly();
+  options.set_include_first_party_only();
   // Get the cookies for this host and its domain(s).
   std::vector<CanonicalCookie*> cookies;
   FindCookiesForHostAndDomain(url, options, true, &cookies);
@@ -1413,14 +1486,6 @@ void CookieMonster::InitStore() {
   store_->Load(base::Bind(&CookieMonster::OnLoaded, this, TimeTicks::Now()));
 }
 
-void CookieMonster::ReportLoaded() {
-  // TODO(pkasting): Remove ScopedTracker below once crbug.com/457528 is fixed.
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION("457528 CookieMonster::ReportLoaded"));
-  if (delegate_.get())
-    delegate_->OnLoaded();
-}
-
 void CookieMonster::OnLoaded(TimeTicks beginning_time,
                              const std::vector<CanonicalCookie*>& cookies) {
   StoreLoadedCookies(cookies);
@@ -1428,8 +1493,6 @@ void CookieMonster::OnLoaded(TimeTicks beginning_time,
 
   // Invoke the task queue of cookie request.
   InvokeQueue();
-
-  ReportLoaded();
 }
 
 void CookieMonster::OnKeyLoaded(const std::string& key,
@@ -1442,10 +1505,6 @@ void CookieMonster::OnKeyLoaded(const std::string& key,
   // We need to do this repeatedly until no more tasks were added to the queue
   // during the period where we release the lock.
   while (true) {
-    // TODO(pkasting): Remove ScopedTracker below once crbug.com/456373 is
-    // fixed.
-    tracked_objects::ScopedTracker tracking_profile1(
-        FROM_HERE_WITH_EXPLICIT_FUNCTION("456373 CookieMonster::OnKeyLoaded1"));
     {
       base::AutoLock autolock(lock_);
       std::map<std::string,
@@ -1463,10 +1522,6 @@ void CookieMonster::OnKeyLoaded(const std::string& key,
       it->second.swap(tasks_pending_for_key);
     }
 
-    // TODO(pkasting): Remove ScopedTracker below once crbug.com/456373 is
-    // fixed.
-    tracked_objects::ScopedTracker tracking_profile2(
-        FROM_HERE_WITH_EXPLICIT_FUNCTION("456373 CookieMonster::OnKeyLoaded2"));
     while (!tasks_pending_for_key.empty()) {
       scoped_refptr<CookieMonsterTask> task = tasks_pending_for_key.front();
       task->Run();
@@ -1477,10 +1532,6 @@ void CookieMonster::OnKeyLoaded(const std::string& key,
 
 void CookieMonster::StoreLoadedCookies(
     const std::vector<CanonicalCookie*>& cookies) {
-  // TODO(pkasting): Remove ScopedTracker below once crbug.com/456373 is fixed.
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "456373 CookieMonster::StoreLoadedCookies"));
   // Initialize the store and sync in any saved persistent cookies.  We don't
   // care if it's expired, insert it so it can be garbage collected, removed,
   // and sync'd.
@@ -1538,9 +1589,6 @@ void CookieMonster::StoreLoadedCookies(
 }
 
 void CookieMonster::InvokeQueue() {
-  // TODO(pkasting): Remove ScopedTracker below once crbug.com/457528 is fixed.
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION("457528 CookieMonster::InvokeQueue"));
   while (true) {
     scoped_refptr<CookieMonsterTask> request_task;
     {
@@ -1578,7 +1626,7 @@ void CookieMonster::EnsureCookiesMapIsValid() {
 
   // Record how many duplicates were found in the database.
   // See InitializeHistograms() for details.
-  histogram_cookie_deletion_cause_->Add(num_duplicates_trimmed);
+  histogram_number_duplicate_db_cookies_->Add(num_duplicates_trimmed);
 }
 
 int CookieMonster::TrimDuplicateCookiesForKey(const std::string& key,
@@ -1764,6 +1812,10 @@ CookieMonster::CookieMap::iterator CookieMonster::InternalInsertCookie(
     const std::string& key,
     CanonicalCookie* cc,
     bool sync_to_store) {
+  // TODO(pkasting): Remove ScopedTracker below once crbug.com/456373 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "456373 CookieMonster::InternalInsertCookie"));
   lock_.AssertAcquired();
 
   if ((cc->IsPersistent() || persist_session_cookies_) && store_.get() &&
@@ -1775,6 +1827,13 @@ CookieMonster::CookieMap::iterator CookieMonster::InternalInsertCookie(
     delegate_->OnCookieChanged(*cc, false,
                                CookieMonsterDelegate::CHANGE_COOKIE_EXPLICIT);
   }
+
+  // See InitializeHistograms() for details.
+  int32_t sample = cc->IsFirstPartyOnly() ? 1 << COOKIE_TYPE_FIRSTPARTYONLY : 0;
+  sample |= cc->IsHttpOnly() ? 1 << COOKIE_TYPE_HTTPONLY : 0;
+  sample |= cc->IsSecure() ? 1 << COOKIE_TYPE_SECURE : 0;
+  histogram_cookie_type_->Add(sample);
+
   RunCallbacks(*cc, false);
 
   return inserted;
@@ -1843,6 +1902,21 @@ bool CookieMonster::SetCanonicalCookie(scoped_ptr<CanonicalCookie>* cc,
   // if a cookie was set, in the common case it will be used soon after,
   // and we will purge the expired cookies in GetCookies().
   GarbageCollect(creation_time, key);
+
+  return true;
+}
+
+bool CookieMonster::SetCanonicalCookies(const CookieList& list) {
+  base::AutoLock autolock(lock_);
+
+  net::CookieOptions options;
+  options.set_include_httponly();
+
+  for (CookieList::const_iterator it = list.begin(); it != list.end(); ++it) {
+    scoped_ptr<CanonicalCookie> canonical_cookie(new CanonicalCookie(*it));
+    if (!SetCanonicalCookie(&canonical_cookie, it->CreationDate(), options))
+      return false;
+  }
 
   return true;
 }
@@ -2214,6 +2288,9 @@ void CookieMonster::InitializeHistograms() {
   histogram_cookie_deletion_cause_ = base::LinearHistogram::FactoryGet(
       "Cookie.DeletionCause", 1, DELETE_COOKIE_LAST_ENTRY - 1,
       DELETE_COOKIE_LAST_ENTRY, base::Histogram::kUmaTargetedHistogramFlag);
+  histogram_cookie_type_ = base::LinearHistogram::FactoryGet(
+      "Cookie.Type", 1, COOKIE_TYPE_LAST_ENTRY - 1, COOKIE_TYPE_LAST_ENTRY,
+      base::Histogram::kUmaTargetedHistogramFlag);
 
   // From UMA_HISTOGRAM_{CUSTOM_,}TIMES
   histogram_time_blocked_on_load_ = base::Histogram::FactoryTimeGet(
@@ -2230,53 +2307,37 @@ Time CookieMonster::CurrentTime() {
                                    last_time_seen_.ToInternalValue() + 1));
 }
 
-bool CookieMonster::CopyCookiesForKeyToOtherCookieMonster(
-    std::string key,
-    CookieMonster* other) {
-  ScopedVector<CanonicalCookie> duplicated_cookies;
+void CookieMonster::ComputeCookieDiff(CookieList* old_cookies,
+                                      CookieList* new_cookies,
+                                      CookieList* cookies_to_add,
+                                      CookieList* cookies_to_delete) {
+  DCHECK(old_cookies);
+  DCHECK(new_cookies);
+  DCHECK(cookies_to_add);
+  DCHECK(cookies_to_delete);
+  DCHECK(cookies_to_add->empty());
+  DCHECK(cookies_to_delete->empty());
 
-  {
-    base::AutoLock autolock(lock_);
-    DCHECK(other);
-    if (!loaded_)
-      return false;
+  // Sort both lists.
+  // A set ordered by FullDiffCookieSorter is also ordered by
+  // PartialDiffCookieSorter.
+  std::sort(old_cookies->begin(), old_cookies->end(), FullDiffCookieSorter);
+  std::sort(new_cookies->begin(), new_cookies->end(), FullDiffCookieSorter);
 
-    for (CookieMapItPair its = cookies_.equal_range(key);
-         its.first != its.second; ++its.first) {
-      CookieMap::iterator curit = its.first;
-      CanonicalCookie* cc = curit->second;
+  // Select any old cookie for deletion if no new cookie has the same name,
+  // domain, and path.
+  std::set_difference(
+      old_cookies->begin(), old_cookies->end(), new_cookies->begin(),
+      new_cookies->end(),
+      std::inserter(*cookies_to_delete, cookies_to_delete->begin()),
+      PartialDiffCookieSorter);
 
-      duplicated_cookies.push_back(cc->Duplicate());
-    }
-  }
-
-  {
-    base::AutoLock autolock(other->lock_);
-    if (!other->loaded_)
-      return false;
-
-    // There must not exist any entries for the key to be copied in |other|.
-    CookieMapItPair its = other->cookies_.equal_range(key);
-    if (its.first != its.second)
-      return false;
-
-    // Store the copied cookies in |other|.
-    for (ScopedVector<CanonicalCookie>::const_iterator it =
-             duplicated_cookies.begin();
-         it != duplicated_cookies.end(); ++it) {
-      other->InternalInsertCookie(key, *it, true);
-    }
-
-    // Since the cookies are owned by |other| now, weak clear must be used.
-    duplicated_cookies.weak_clear();
-  }
-
-  return true;
-}
-
-bool CookieMonster::loaded() {
-  base::AutoLock autolock(lock_);
-  return loaded_;
+  // Select any new cookie for addition (or update) if no old cookie is exactly
+  // equivalent.
+  std::set_difference(new_cookies->begin(), new_cookies->end(),
+                      old_cookies->begin(), old_cookies->end(),
+                      std::inserter(*cookies_to_add, cookies_to_add->begin()),
+                      FullDiffCookieSorter);
 }
 
 scoped_ptr<CookieStore::CookieChangedSubscription>
@@ -2291,10 +2352,28 @@ CookieMonster::AddCallbackForCookie(const GURL& gurl,
       base::Bind(&RunAsync, base::MessageLoopProxy::current(), callback));
 }
 
+#if defined(OS_ANDROID)
+void CookieMonster::SetEnableFileScheme(bool accept) {
+  // This assumes "file" is always at the end of the array. See the comment
+  // above kDefaultCookieableSchemes.
+  //
+  // TODO(mkwst): We're keeping this method around to support the
+  // 'CookieManager::setAcceptFileSchemeCookies' method on Android's WebView;
+  // if/when we can deprecate and remove that method, we can remove this one
+  // as well. Until then, we'll just ensure that the method has no effect on
+  // non-android systems.
+  int num_schemes = accept ? kDefaultCookieableSchemesCount
+                           : kDefaultCookieableSchemesCount - 1;
+
+  SetCookieableSchemes(kDefaultCookieableSchemes, num_schemes);
+}
+#endif
+
 void CookieMonster::RunCallbacks(const CanonicalCookie& cookie, bool removed) {
   lock_.AssertAcquired();
   CookieOptions opts;
   opts.set_include_httponly();
+  opts.set_include_first_party_only();
   // Note that the callbacks in hook_map_ are wrapped with MakeAsync(), so they
   // are guaranteed to not take long - they just post a RunAsync task back to
   // the appropriate thread's message loop and return. It is important that this

@@ -71,12 +71,12 @@ DEFINE_TRACE(HTMLVideoElement)
     HTMLMediaElement::trace(visitor);
 }
 
-bool HTMLVideoElement::rendererIsNeeded(const LayoutStyle& style)
+bool HTMLVideoElement::layoutObjectIsNeeded(const ComputedStyle& style)
 {
-    return HTMLElement::rendererIsNeeded(style);
+    return HTMLElement::layoutObjectIsNeeded(style);
 }
 
-LayoutObject* HTMLVideoElement::createRenderer(const LayoutStyle&)
+LayoutObject* HTMLVideoElement::createLayoutObject(const ComputedStyle&)
 {
     return new LayoutVideo(this);
 }
@@ -90,8 +90,8 @@ void HTMLVideoElement::attach(const AttachContext& context)
         if (!m_imageLoader)
             m_imageLoader = HTMLImageLoader::create(this);
         m_imageLoader->updateFromElement();
-        if (renderer())
-            toLayoutImage(renderer())->imageResource()->setImageResource(m_imageLoader->image());
+        if (layoutObject())
+            toLayoutImage(layoutObject())->imageResource()->setImageResource(m_imageLoader->image());
     }
 }
 
@@ -115,16 +115,20 @@ bool HTMLVideoElement::isPresentationAttribute(const QualifiedName& name) const
 void HTMLVideoElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
     if (name == posterAttr) {
-        // Force a poster recalc by setting m_displayMode to Unknown directly before calling updateDisplayState.
-        HTMLMediaElement::setDisplayMode(Unknown);
-        updateDisplayState();
-        if (shouldDisplayPosterImage()) {
+        // In case the poster attribute is set after playback, don't update the
+        // display state, post playback the correct state will be picked up.
+        if (displayMode() < Video || !hasAvailableVideoFrame()) {
+            // Force a poster recalc by setting m_displayMode to Unknown directly before calling updateDisplayState.
+            HTMLMediaElement::setDisplayMode(Unknown);
+            updateDisplayState();
+        }
+        if (!posterImageURL().isEmpty()) {
             if (!m_imageLoader)
                 m_imageLoader = HTMLImageLoader::create(this);
             m_imageLoader->updateFromElement(ImageLoader::UpdateIgnorePreviousError);
         } else {
-            if (renderer())
-                toLayoutImage(renderer())->imageResource()->setImageResource(0);
+            if (layoutObject())
+                toLayoutImage(layoutObject())->imageResource()->setImageResource(0);
         }
         // Notify the player when the poster image URL changes.
         if (webMediaPlayer())
@@ -188,8 +192,8 @@ void HTMLVideoElement::setDisplayMode(DisplayMode mode)
 
     HTMLMediaElement::setDisplayMode(mode);
 
-    if (renderer() && displayMode() != oldMode)
-        renderer()->updateFromElement();
+    if (layoutObject() && displayMode() != oldMode)
+        layoutObject()->updateFromElement();
 }
 
 void HTMLVideoElement::updateDisplayState()

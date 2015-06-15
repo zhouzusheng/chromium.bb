@@ -21,13 +21,14 @@
 #include "config.h"
 #include "core/css/CSSImageValue.h"
 
-#include "core/FetchInitiatorTypeNames.h"
 #include "core/css/CSSMarkup.h"
 #include "core/dom/Document.h"
+#include "core/fetch/FetchInitiatorTypeNames.h"
 #include "core/fetch/FetchRequest.h"
 #include "core/fetch/ImageResource.h"
-#include "core/layout/style/StyleFetchedImage.h"
-#include "core/layout/style/StylePendingImage.h"
+#include "core/style/StyleFetchedImage.h"
+#include "core/style/StylePendingImage.h"
+#include "core/loader/MixedContentChecker.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityPolicy.h"
 
@@ -54,9 +55,9 @@ StyleImage* CSSImageValue::cachedOrPendingImage()
     return m_image.get();
 }
 
-StyleFetchedImage* CSSImageValue::cachedImage(ResourceFetcher* fetcher, const ResourceLoaderOptions& options)
+StyleFetchedImage* CSSImageValue::cachedImage(Document* document, const ResourceLoaderOptions& options)
 {
-    ASSERT(fetcher);
+    ASSERT(document);
 
     if (!m_accessedImage) {
         m_accessedImage = true;
@@ -65,9 +66,9 @@ StyleFetchedImage* CSSImageValue::cachedImage(ResourceFetcher* fetcher, const Re
         request.mutableResourceRequest().setHTTPReferrer(SecurityPolicy::generateReferrer(m_referrer.referrerPolicy, request.url(), m_referrer.referrer));
 
         if (options.corsEnabled == IsCORSEnabled)
-            request.setCrossOriginAccessControl(fetcher->document()->securityOrigin(), options.allowCredentials, options.credentialsRequested);
+            request.setCrossOriginAccessControl(document->securityOrigin(), options.allowCredentials, options.credentialsRequested);
 
-        if (ResourcePtr<ImageResource> cachedImage = fetcher->fetchImage(request))
+        if (ResourcePtr<ImageResource> cachedImage = document->fetcher()->fetchImage(request))
             m_image = StyleFetchedImage::create(cachedImage.get());
     }
 
@@ -86,7 +87,8 @@ void CSSImageValue::restoreCachedResourceIfNeeded(Document& document)
         return;
 
     FetchRequest request(ResourceRequest(m_absoluteURL), m_initiatorName.isEmpty() ? FetchInitiatorTypeNames::css : m_initiatorName, resource->options());
-    document.fetcher()->maybeNotifyInsecureContent(resource);
+    MixedContentChecker::shouldBlockFetch(document.frame(), resource->lastResourceRequest(),
+        resource->lastResourceRequest().url(), MixedContentChecker::SendReport);
     document.fetcher()->requestLoadStarted(resource, request, ResourceFetcher::ResourceLoadingFromCache);
 }
 
@@ -114,7 +116,7 @@ bool CSSImageValue::knownToBeOpaque(const LayoutObject* renderer) const
     return m_image ? m_image->knownToBeOpaque(renderer) : false;
 }
 
-void CSSImageValue::traceAfterDispatch(Visitor* visitor)
+DEFINE_TRACE_AFTER_DISPATCH(CSSImageValue)
 {
     CSSValue::traceAfterDispatch(visitor);
 }

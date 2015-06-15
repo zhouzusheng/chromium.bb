@@ -171,6 +171,7 @@ SVGSMILElement::Condition::Condition(Type type, BeginOrEnd beginOrEnd, const Str
 
 SVGSMILElement::SVGSMILElement(const QualifiedName& tagName, Document& doc)
     : SVGElement(tagName, doc)
+    , SVGTests(this)
     , m_attributeName(anyQName())
     , m_targetElement(nullptr)
     , m_syncBaseConditionsConnected(false)
@@ -190,8 +191,6 @@ SVGSMILElement::SVGSMILElement(const QualifiedName& tagName, Document& doc)
     , m_cachedMin(invalidCachedTime)
     , m_cachedMax(invalidCachedTime)
 {
-    SVGTests::initialize(this);
-
     resolveFirstInterval();
 }
 
@@ -551,7 +550,7 @@ void SVGSMILElement::parseAttribute(const QualifiedName& name, const AtomicStrin
     } else if (name == SVGNames::onrepeatAttr) {
         setAttributeEventListener(EventTypeNames::repeatEvent, createAttributeEventListener(this, name, value, eventParameterName()));
     } else {
-        SVGElement::parseAttributeNew(name, value);
+        SVGElement::parseAttribute(name, value);
     }
 }
 
@@ -1237,7 +1236,7 @@ void SVGSMILElement::notifyDependentsIntervalChanged()
     ASSERT(m_interval.begin.isFinite());
     // |loopBreaker| is used to avoid infinite recursions which may be caused from:
     // |notifyDependentsIntervalChanged| -> |createInstanceTimesFromSyncbase| -> |add{Begin,End}Time| -> |{begin,end}TimeChanged| -> |notifyDependentsIntervalChanged|
-    // |loopBreaker| is defined as a Persistent<HeapHashSet<Member<SVGSMILElement> > >. This won't cause leaks because it is guaranteed to be empty after the root |notifyDependentsIntervalChanged| has exited.
+    // |loopBreaker| is defined as a Persistent<HeapHashSet<Member<SVGSMILElement>>>. This won't cause leaks because it is guaranteed to be empty after the root |notifyDependentsIntervalChanged| has exited.
     DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<WillBeHeapHashSet<RawPtrWillBeMember<SVGSMILElement>>>, loopBreaker, (adoptPtrWillBeNoop(new WillBeHeapHashSet<RawPtrWillBeMember<SVGSMILElement>>())));
     if (!loopBreaker->add(this).isNewEntry)
         return;
@@ -1339,7 +1338,7 @@ void SVGSMILElement::schedule()
 {
     ASSERT(!m_isScheduled);
 
-    if (!m_timeContainer || !m_targetElement || !hasValidAttributeName() || !hasValidAttributeType())
+    if (!m_timeContainer || !m_targetElement || !hasValidAttributeName() || !hasValidAttributeType() || !m_targetElement->inActiveDocument())
         return;
 
     m_timeContainer->schedule(this, m_targetElement, m_attributeName);

@@ -12,8 +12,8 @@
 #include "core/frame/RemoteFrameClient.h"
 #include "core/frame/RemoteFrameView.h"
 #include "core/html/HTMLFrameOwnerElement.h"
-#include "core/layout/Layer.h"
 #include "core/layout/LayoutPart.h"
+#include "core/paint/DeprecatedPaintLayer.h"
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/weborigin/SecurityPolicy.h"
 #include "public/platform/WebLayer.h"
@@ -38,7 +38,7 @@ RemoteFrame::~RemoteFrame()
 {
 }
 
-void RemoteFrame::trace(Visitor* visitor)
+DEFINE_TRACE(RemoteFrame)
 {
     visitor->trace(m_view);
     visitor->trace(m_domWindow);
@@ -75,9 +75,14 @@ void RemoteFrame::reload(ReloadPolicy reloadPolicy, ClientRedirectPolicy clientR
 
 void RemoteFrame::detach()
 {
+    // Frame::detach() requires the caller to keep a reference to this, since
+    // otherwise it may clear the last reference to this, causing it to be
+    // deleted, which can cause a use-after-free.
+    RefPtrWillBeRawPtr<RemoteFrame> protect(this);
     detachChildren();
     if (!client())
         return;
+    client()->willBeDetached();
     m_windowProxyManager->clearForClose();
     setView(nullptr);
     Frame::detach();
@@ -117,7 +122,7 @@ void RemoteFrame::createView()
         // FIXME: This is not the right place to clear the previous frame's
         // widget. We do it here because the LocalFrame cleanup after a swap is
         // still work in progress.
-        if (ownerRenderer()) {
+        if (ownerLayoutObject()) {
             HTMLFrameOwnerElement* owner = deprecatedLocalOwner();
             ASSERT(owner);
             owner->setWidget(nullptr);
@@ -129,7 +134,7 @@ void RemoteFrame::createView()
     RefPtrWillBeRawPtr<RemoteFrameView> view = RemoteFrameView::create(this);
     setView(view);
 
-    if (ownerRenderer()) {
+    if (ownerLayoutObject()) {
         HTMLFrameOwnerElement* owner = deprecatedLocalOwner();
         ASSERT(owner);
         owner->setWidget(view);
@@ -151,8 +156,8 @@ void RemoteFrame::setRemotePlatformLayer(WebLayer* layer)
 
     ASSERT(owner());
     toHTMLFrameOwnerElement(owner())->setNeedsCompositingUpdate();
-    if (LayoutPart* renderer = ownerRenderer())
-        renderer->layer()->updateSelfPaintingLayer();
+    if (LayoutPart* layoutObject = ownerLayoutObject())
+        layoutObject->layer()->updateSelfPaintingLayer();
 }
 
 } // namespace blink

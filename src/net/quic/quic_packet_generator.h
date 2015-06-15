@@ -114,9 +114,6 @@ class NET_EXPORT_PRIVATE QuicPacketGenerator {
   // CreateAckFrame() when the packet is serialized.
   void SetShouldSendAck(bool also_send_stop_waiting);
 
-  // Indicates that a STOP_WAITING frame should be sent.
-  void SetShouldSendStopWaiting();
-
   void AddControlFrame(const QuicFrame& frame);
 
   // Given some data, may consume part or all of it and pass it to the
@@ -180,6 +177,9 @@ class NET_EXPORT_PRIVATE QuicPacketGenerator {
   // set. OnFecTimeout should be called to send the FEC packet when the alarm
   // fires.
   QuicTime::Delta GetFecTimeout(QuicPacketSequenceNumber sequence_number);
+
+  // Sets the encrypter to use for the encryption level.
+  void SetEncrypter(EncryptionLevel level, QuicEncrypter* encrypter);
 
   // Sets the encryption level that will be applied to new packets.
   void set_encryption_level(EncryptionLevel level);

@@ -55,7 +55,7 @@ void WorkerDevToolsAgentHost::OnClientDetached() {
 
 bool WorkerDevToolsAgentHost::OnMessageReceived(
     const IPC::Message& msg) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(WorkerDevToolsAgentHost, msg)
   IPC_MESSAGE_HANDLER(DevToolsClientMsg_DispatchOnInspectorFrontend,
@@ -65,11 +65,17 @@ bool WorkerDevToolsAgentHost::OnMessageReceived(
   return handled;
 }
 
+void WorkerDevToolsAgentHost::PauseForDebugOnStart() {
+  DCHECK(state_ == WORKER_UNINSPECTED);
+  state_ = WORKER_PAUSED_FOR_DEBUG_ON_START;
+}
+
+bool WorkerDevToolsAgentHost::IsPausedForDebugOnStart() {
+  return state_ == WORKER_PAUSED_FOR_DEBUG_ON_START;
+}
+
 void WorkerDevToolsAgentHost::WorkerReadyForInspection() {
-  if (state_ == WORKER_PAUSED_FOR_DEBUG_ON_START) {
-    RenderProcessHost* rph = RenderProcessHost::FromID(worker_id_.first);
-    Inspect(rph->GetBrowserContext());
-  } else if (state_ == WORKER_PAUSED_FOR_REATTACH) {
+  if (state_ == WORKER_PAUSED_FOR_REATTACH) {
     DCHECK(IsAttached());
     state_ = WORKER_INSPECTED;
     AttachToWorker();
@@ -92,9 +98,9 @@ void WorkerDevToolsAgentHost::WorkerDestroyed() {
     base::Callback<void(const std::string&)> raw_message_callback(
         base::Bind(&WorkerDevToolsAgentHost::SendMessageToClient,
                 base::Unretained(this)));
-    devtools::worker::Client worker(raw_message_callback);
-    worker.DisconnectedFromWorker(
-        devtools::worker::DisconnectedFromWorkerParams::Create());
+    devtools::inspector::Client inspector(raw_message_callback);
+    inspector.TargetCrashed(
+        devtools::inspector::TargetCrashedParams::Create());
     DetachFromWorker();
   }
   state_ = WORKER_TERMINATED;

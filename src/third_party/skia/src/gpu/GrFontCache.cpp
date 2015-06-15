@@ -113,13 +113,23 @@ GrPlot* GrFontCache::addToAtlas(GrMaskFormat format, GrAtlas::ClientPlotUsage* u
     GrPixelConfig config = mask_format_to_pixel_config(format);
     int atlasIndex = mask_format_to_atlas_index(format);
     if (NULL == fAtlases[atlasIndex]) {
-        SkISize textureSize = SkISize::Make(GR_FONT_ATLAS_TEXTURE_WIDTH,
-                                            GR_FONT_ATLAS_TEXTURE_HEIGHT);
-        fAtlases[atlasIndex] = SkNEW_ARGS(GrAtlas, (fGpu, config, kNone_GrSurfaceFlags,
-                                                    textureSize,
-                                                    GR_FONT_ATLAS_NUM_PLOTS_X,
-                                                    GR_FONT_ATLAS_NUM_PLOTS_Y,
-                                                    true));
+        if (kA8_GrMaskFormat == format) {
+            SkISize textureSize = SkISize::Make(GR_FONT_ATLAS_A8_TEXTURE_WIDTH,
+                                                GR_FONT_ATLAS_TEXTURE_HEIGHT);
+            fAtlases[atlasIndex] = SkNEW_ARGS(GrAtlas, (fGpu, config, kNone_GrSurfaceFlags,
+                                                        textureSize,
+                                                        GR_FONT_ATLAS_A8_NUM_PLOTS_X,
+                                                        GR_FONT_ATLAS_NUM_PLOTS_Y,
+                                                        true));
+        } else {
+            SkISize textureSize = SkISize::Make(GR_FONT_ATLAS_TEXTURE_WIDTH,
+                                                GR_FONT_ATLAS_TEXTURE_HEIGHT);
+            fAtlases[atlasIndex] = SkNEW_ARGS(GrAtlas, (fGpu, config, kNone_GrSurfaceFlags,
+                                                        textureSize,
+                                                        GR_FONT_ATLAS_NUM_PLOTS_X,
+                                                        GR_FONT_ATLAS_NUM_PLOTS_Y,
+                                                        true));
+        }
     }
     return fAtlases[atlasIndex]->addToAtlas(usage, width, height, image, loc);
 }
@@ -248,7 +258,7 @@ GrTextStrike::~GrTextStrike() {
 GrGlyph* GrTextStrike::generateGlyph(GrGlyph::PackedID packed,
                                      GrFontScaler* scaler) {
     SkIRect bounds;
-    if (fUseDistanceField) {
+    if (GrGlyph::kDistance_MaskStyle == GrGlyph::UnpackMaskStyle(packed)) {
         if (!scaler->getPackedGlyphDFBounds(packed, &bounds)) {
             return NULL;
         }
@@ -280,8 +290,12 @@ void GrTextStrike::removePlot(const GrPlot* plot) {
 bool GrTextStrike::glyphTooLargeForAtlas(GrGlyph* glyph) {
     int width = glyph->fBounds.width();
     int height = glyph->fBounds.height();
-    int pad = fUseDistanceField ? 2 * SK_DistanceFieldPad : 0;
-    if (width + pad > GR_FONT_ATLAS_PLOT_WIDTH) {
+    bool useDistanceField =
+                       (GrGlyph::kDistance_MaskStyle == GrGlyph::UnpackMaskStyle(glyph->fPackedID));
+    int pad = useDistanceField ? 2 * SK_DistanceFieldPad : 0;
+    int plotWidth = (kA8_GrMaskFormat == glyph->fMaskFormat) ? GR_FONT_ATLAS_A8_PLOT_WIDTH
+                                                             : GR_FONT_ATLAS_PLOT_WIDTH;
+    if (width + pad > plotWidth) {
         return true;
     }
     if (height + pad > GR_FONT_ATLAS_PLOT_HEIGHT) {
@@ -309,7 +323,7 @@ bool GrTextStrike::addGlyphToAtlas(GrGlyph* glyph, GrFontScaler* scaler) {
     size_t size = glyph->fBounds.area() * bytesPerPixel;
     GrAutoMalloc<1024> storage(size);
 
-    if (fUseDistanceField) {
+    if (GrGlyph::kDistance_MaskStyle == GrGlyph::UnpackMaskStyle(glyph->fPackedID)) {
         if (!scaler->getPackedGlyphDFImage(glyph->fPackedID, glyph->width(),
                                            glyph->height(),
                                            storage.get())) {

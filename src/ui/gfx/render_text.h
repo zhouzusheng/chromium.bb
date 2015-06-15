@@ -109,15 +109,17 @@ class GFX_EXPORT SkiaTextRenderer {
   DISALLOW_COPY_AND_ASSIGN(SkiaTextRenderer);
 };
 
-// Internal helper class used by derived classes to iterate colors and styles.
+// Internal helper class used to iterate colors, baselines, and styles.
 class StyleIterator {
  public:
   StyleIterator(const BreakList<SkColor>& colors,
-                const std::vector<BreakList<bool> >& styles);
+                const BreakList<BaselineStyle>& baselines,
+                const std::vector<BreakList<bool>>& styles);
   ~StyleIterator();
 
   // Get the colors and styles at the current iterator position.
   SkColor color() const { return color_->second; }
+  BaselineStyle baseline() const { return baseline_->second; }
   bool style(TextStyle s) const { return style_[s]->second; }
 
   // Get the intersecting range of the current iterator set.
@@ -128,9 +130,11 @@ class StyleIterator {
 
  private:
   BreakList<SkColor> colors_;
+  BreakList<BaselineStyle> baselines_;
   std::vector<BreakList<bool> > styles_;
 
   BreakList<SkColor>::const_iterator color_;
+  BreakList<BaselineStyle>::const_iterator baseline_;
   std::vector<BreakList<bool>::const_iterator> style_;
 
   DISALLOW_COPY_AND_ASSIGN(StyleIterator);
@@ -203,6 +207,7 @@ class GFX_EXPORT RenderText {
 
   const base::string16& text() const { return text_; }
   void SetText(const base::string16& text);
+  void AppendText(const base::string16& text);
 
   HorizontalAlignment horizontal_alignment() const {
     return horizontal_alignment_;
@@ -251,10 +256,19 @@ class GFX_EXPORT RenderText {
   // cleared when SetText or SetObscured is called.
   void SetObscuredRevealIndex(int index);
 
-  // TODO(ckocagil): Multiline text rendering is currently only supported on
-  // Windows. Support other platforms.
+  // TODO(ckocagil): Multiline text rendering is not supported on Mac.
   bool multiline() const { return multiline_; }
   void SetMultiline(bool multiline);
+
+  // TODO(mukai): ELIDE_LONG_WORDS is not supported.
+  WordWrapBehavior word_wrap_behavior() const { return word_wrap_behavior_; }
+  void SetWordWrapBehavior(WordWrapBehavior behavior);
+
+  // Set whether newline characters should be replaced with newline symbols.
+  void SetReplaceNewlineCharsWithSymbols(bool replace);
+
+  // Returns true if this instance supports multiline rendering.
+  virtual bool MultilineSupported() const = 0;
 
   // TODO(ckocagil): Add vertical alignment and line spacing support instead.
   int min_line_height() const { return min_line_height_; }
@@ -266,7 +280,7 @@ class GFX_EXPORT RenderText {
   // WARNING: Only use this for system limits, it lacks complex text support.
   void set_truncate_length(size_t length) { truncate_length_ = length; }
 
-  // The layout text will be elided to fit |display_rect| using this behavior.
+  // The display text will be elided to fit |display_rect| using this behavior.
   void SetElideBehavior(ElideBehavior elide_behavior);
   ElideBehavior elide_behavior() const { return elide_behavior_; }
 
@@ -324,13 +338,17 @@ class GFX_EXPORT RenderText {
   // boundaries.
   void SelectWord();
 
-  const Range& GetCompositionRange() const;
   void SetCompositionRange(const Range& composition_range);
 
   // Set the text color over the entire text or a logical character range.
   // The |range| should be valid, non-reversed, and within [0, text().length()].
   void SetColor(SkColor value);
   void ApplyColor(SkColor value, const Range& range);
+
+  // Set the baseline style over the entire text or a logical character range.
+  // The |range| should be valid, non-reversed, and within [0, text().length()].
+  void SetBaselineStyle(BaselineStyle value);
+  void ApplyBaselineStyle(BaselineStyle value, const Range& range);
 
   // Set various text styles over the entire text or a logical character range.
   // The respective |style| is applied if |value| is true, or removed if false.
@@ -428,7 +446,7 @@ class GFX_EXPORT RenderText {
 
   // Sets shadows to drawn with text.
   void set_shadows(const ShadowValues& shadows) { shadows_ = shadows; }
-  const ShadowValues& shadows() { return shadows_; }
+  const ShadowValues& shadows() const { return shadows_; }
 
   typedef std::pair<Font, Range> FontSpan;
   // For testing purposes, returns which fonts were chosen for which parts of
@@ -446,6 +464,10 @@ class GFX_EXPORT RenderText {
   const Vector2d& GetUpdatedDisplayOffset();
   void SetDisplayOffset(int horizontal_offset);
 
+  // Returns the line offset from the origin after applying the text alignment
+  // and the display offset.
+  Vector2d GetLineOffset(size_t line_number);
+
  protected:
   RenderText();
 
@@ -456,6 +478,7 @@ class GFX_EXPORT RenderText {
   bool text_elided() const { return text_elided_; }
 
   const BreakList<SkColor>& colors() const { return colors_; }
+  const BreakList<BaselineStyle>& baselines() const { return baselines_; }
   const std::vector<BreakList<bool> >& styles() const { return styles_; }
 
   const std::vector<internal::Line>& lines() const { return lines_; }
@@ -553,10 +576,6 @@ class GFX_EXPORT RenderText {
   void ApplyCompositionAndSelectionStyles();
   void UndoCompositionAndSelectionStyles();
 
-  // Returns the line offset from the origin after applying the text alignment
-  // and the display offset.
-  Vector2d GetLineOffset(size_t line_number);
-
   // Convert points from the text space to the view space and back. Handles the
   // display area, display offset, application LTR/RTL mode and multiline.
   Point ToTextPoint(const Point& point);
@@ -581,6 +600,15 @@ class GFX_EXPORT RenderText {
   // |text|.
   base::i18n::TextDirection GetTextDirection(const base::string16& text);
 
+  // Convert an index in |text_| to the index in |given_text|. The
+  // |given_text| should be either |display_text_| or |layout_text_|
+  // depending on the elide state.
+  size_t TextIndexToGivenTextIndex(const base::string16& given_text,
+                                   size_t index);
+
+  // Adjust ranged styles to accommodate a new text length.
+  void UpdateStyleLengths();
+
   // A convenience function to check whether the glyph attached to the caret
   // is within the given range.
   static bool RangeContainsCaret(const Range& range,
@@ -589,9 +617,10 @@ class GFX_EXPORT RenderText {
 
  private:
   friend class RenderTextTest;
-  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, DefaultStyle);
-  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, SetColorAndStyle);
-  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, ApplyColorAndStyle);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, DefaultStyles);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, SetStyles);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, ApplyStyles);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, AppendTextKeepsStyles);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, ObscuredText);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, RevealObscuredText);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, ElidedText);
@@ -607,6 +636,7 @@ class GFX_EXPORT RenderText {
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Multiline_NormalWidth);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Multiline_SufficientWidth);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Multiline_Newline);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Multiline_WordWrapBehavior);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, NewlineWithoutMultilineFlag);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, GlyphBounds);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, HarfBuzz_GlyphBounds);
@@ -692,10 +722,11 @@ class GFX_EXPORT RenderText {
   // Composition text range.
   Range composition_range_;
 
-  // Color and style breaks, used to color and stylize ranges of text.
+  // Color, baseline, and style breaks, used to modify ranges of text.
   // BreakList positions are stored with text indices, not display indices.
   // TODO(msw): Expand to support cursor, selection, background, etc. colors.
   BreakList<SkColor> colors_;
+  BreakList<BaselineStyle> baselines_;
   std::vector<BreakList<bool> > styles_;
 
   // Breaks saved without temporary composition and selection styling.
@@ -733,6 +764,13 @@ class GFX_EXPORT RenderText {
   // Whether the text should be broken into multiple lines. Uses the width of
   // |display_rect_| as the width cap.
   bool multiline_;
+
+  // The wrap behavior when the text is broken into lines. Do nothing unless
+  // |multiline_| is set. The default value is IGNORE_LONG_WORDS.
+  WordWrapBehavior word_wrap_behavior_;
+
+  // Whether newline characters should be replaced with newline symbols.
+  bool replace_newline_chars_with_symbols_;
 
   // Set to true to suppress subpixel rendering due to non-font reasons (eg.
   // if the background is transparent). The default value is false.

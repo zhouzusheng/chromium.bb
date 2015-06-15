@@ -26,6 +26,7 @@
 #ifndef HTMLSelectElement_h
 #define HTMLSelectElement_h
 
+#include "core/CoreExport.h"
 #include "core/html/HTMLContentElement.h"
 #include "core/html/HTMLFormControlElementWithState.h"
 #include "core/html/HTMLOptionsCollection.h"
@@ -40,7 +41,7 @@ class HTMLOptionElement;
 class HTMLOptionElementOrHTMLOptGroupElement;
 class HTMLElementOrLong;
 
-class HTMLSelectElement final : public HTMLFormControlElementWithState, public TypeAheadDataSource {
+class CORE_EXPORT HTMLSelectElement final : public HTMLFormControlElementWithState, public TypeAheadDataSource {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<HTMLSelectElement> create(Document&);
@@ -138,7 +139,7 @@ private:
     virtual bool shouldShowFocusRingOnMouseFocus() const override;
 
     virtual void dispatchFocusEvent(Element* oldFocusedElement, WebFocusType) override;
-    virtual void dispatchBlurEvent(Element* newFocusedElemnet) override;
+    virtual void dispatchBlurEvent(Element* newFocusedElement, WebFocusType) override;
 
     virtual bool canStartSelection() const override { return false; }
 
@@ -153,7 +154,7 @@ private:
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
     virtual bool isPresentationAttribute(const QualifiedName&) const override;
 
-    virtual LayoutObject* createRenderer(const LayoutStyle&) override;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
     virtual bool appendFormData(FormDataList&, bool) override;
     virtual void didAddClosedShadowRoot(ShadowRoot&) override;
 

@@ -23,7 +23,6 @@ static inline bool isSimpleLengthPropertyID(CSSPropertyID propertyId, bool& acce
     case CSSPropertyWidth:
     case CSSPropertyMinHeight:
     case CSSPropertyMinWidth:
-    case CSSPropertyMotionPosition:
     case CSSPropertyPaddingBottom:
     case CSSPropertyPaddingLeft:
     case CSSPropertyPaddingRight:
@@ -37,14 +36,20 @@ static inline bool isSimpleLengthPropertyID(CSSPropertyID propertyId, bool& acce
     case CSSPropertyWebkitPaddingEnd:
     case CSSPropertyWebkitPaddingStart:
     case CSSPropertyShapeMargin:
+    case CSSPropertyR:
+    case CSSPropertyRx:
+    case CSSPropertyRy:
         acceptsNegativeNumbers = false;
         return true;
     case CSSPropertyBottom:
+    case CSSPropertyCx:
+    case CSSPropertyCy:
     case CSSPropertyLeft:
     case CSSPropertyMarginBottom:
     case CSSPropertyMarginLeft:
     case CSSPropertyMarginRight:
     case CSSPropertyMarginTop:
+    case CSSPropertyMotionOffset:
     case CSSPropertyRight:
     case CSSPropertyTop:
     case CSSPropertyWebkitMarginAfter:
@@ -206,8 +211,8 @@ bool CSSParserFastPaths::isValidKeywordPropertyAndValue(CSSPropertyID propertyId
             || (RuntimeEnabledFeatures::cssGridLayoutEnabled() && (valueID == CSSValueGrid || valueID == CSSValueInlineGrid));
     case CSSPropertyEmptyCells: // show | hide
         return valueID == CSSValueShow || valueID == CSSValueHide;
-    case CSSPropertyFloat: // left | right | none | center (for buggy CSS, maps to none)
-        return valueID == CSSValueLeft || valueID == CSSValueRight || valueID == CSSValueNone || valueID == CSSValueCenter;
+    case CSSPropertyFloat: // left | right | none
+        return valueID == CSSValueLeft || valueID == CSSValueRight || valueID == CSSValueNone;
     case CSSPropertyFontStyle: // normal | italic | oblique
         return valueID == CSSValueNormal || valueID == CSSValueItalic || valueID == CSSValueOblique;
     case CSSPropertyFontStretch: // normal | ultra-condensed | extra-condensed | condensed | semi-condensed | semi-expanded | expanded | extra-expanded | ultra-expanded

@@ -119,7 +119,7 @@ int ImmutableStylePropertySet::findPropertyIndex(CSSPropertyID propertyID) const
     return -1;
 }
 
-void ImmutableStylePropertySet::traceAfterDispatch(Visitor* visitor)
+DEFINE_TRACE_AFTER_DISPATCH(ImmutableStylePropertySet)
 {
     const RawPtrWillBeMember<CSSValue>* values = valueArray();
     for (unsigned i = 0; i < m_arraySize; i++)
@@ -156,7 +156,7 @@ PassRefPtrWillBeRawPtr<CSSValue> StylePropertySet::getPropertyCSSValue(CSSProper
     return propertyAt(foundPropertyIndex).value();
 }
 
-void StylePropertySet::trace(Visitor* visitor)
+DEFINE_TRACE(StylePropertySet)
 {
     if (m_isMutable)
         toMutableStylePropertySet(this)->traceAfterDispatch(visitor);
@@ -334,7 +334,7 @@ bool MutableStylePropertySet::setProperty(CSSPropertyID propertyID, CSSValueID i
     return true;
 }
 
-void MutableStylePropertySet::parseDeclaration(const String& styleDeclaration, StyleSheetContents* contextStyleSheet)
+void MutableStylePropertySet::parseDeclarationList(const String& styleDeclaration, StyleSheetContents* contextStyleSheet)
 {
     m_propertyVector.clear();
 
@@ -344,8 +344,7 @@ void MutableStylePropertySet::parseDeclaration(const String& styleDeclaration, S
         context.setMode(cssParserMode());
     }
 
-    CSSParser parser(context);
-    parser.parseDeclaration(this, styleDeclaration, 0, contextStyleSheet);
+    CSSParser::parseDeclarationList(context, this, styleDeclaration, 0, contextStyleSheet);
 }
 
 void MutableStylePropertySet::addParsedProperties(const WillBeHeapVector<CSSProperty, 256>& properties)
@@ -560,7 +559,7 @@ int MutableStylePropertySet::findPropertyIndex(CSSPropertyID propertyID) const
     return -1;
 }
 
-void MutableStylePropertySet::traceAfterDispatch(Visitor* visitor)
+DEFINE_TRACE_AFTER_DISPATCH(MutableStylePropertySet)
 {
     visitor->trace(m_cssomWrapper);
     visitor->trace(m_propertyVector);

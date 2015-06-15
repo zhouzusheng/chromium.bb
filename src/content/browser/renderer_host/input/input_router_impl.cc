@@ -88,11 +88,6 @@ InputRouterImpl::~InputRouterImpl() {
   STLDeleteElements(&pending_select_messages_);
 }
 
-void InputRouterImpl::Flush() {
-  flush_requested_ = true;
-  SignalFlushedIfNecessary();
-}
-
 bool InputRouterImpl::SendInput(scoped_ptr<IPC::Message> message) {
   DCHECK(IPC_MESSAGE_ID_CLASS(message->type()) == InputMsgStart);
   switch (message->type()) {
@@ -237,17 +232,26 @@ const NativeWebKeyboardEvent* InputRouterImpl::GetLastKeyboardEvent() const {
   return &key_queue_.front();
 }
 
-bool InputRouterImpl::ShouldForwardTouchEvent() const {
-  // Always send a touch event if the renderer has a touch-event handler or
-  // there are pending touch events.
-  return touch_event_queue_.has_handlers() || !touch_event_queue_.empty();
-}
-
 void InputRouterImpl::OnViewUpdated(int view_flags) {
   current_view_flags_ = view_flags;
 
   // A fixed page scale or mobile viewport should disable the touch ack timeout.
   UpdateTouchAckTimeoutEnabled();
+}
+
+void InputRouterImpl::RequestNotificationWhenFlushed() {
+  flush_requested_ = true;
+  SignalFlushedIfNecessary();
+}
+
+bool InputRouterImpl::HasPendingEvents() const {
+  return !touch_event_queue_.empty() ||
+         !gesture_event_queue_.empty() ||
+         !key_queue_.empty() ||
+         mouse_move_pending_ ||
+         mouse_wheel_pending_ ||
+         select_message_pending_ ||
+         move_caret_pending_;
 }
 
 bool InputRouterImpl::OnMessageReceived(const IPC::Message& message) {
@@ -263,6 +267,7 @@ bool InputRouterImpl::OnMessageReceived(const IPC::Message& message) {
                         OnHasTouchEventHandlers)
     IPC_MESSAGE_HANDLER(InputHostMsg_SetTouchAction,
                         OnSetTouchAction)
+    IPC_MESSAGE_HANDLER(InputHostMsg_DidStopFlinging, OnDidStopFlinging)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -491,6 +496,12 @@ void InputRouterImpl::OnSetTouchAction(TouchAction touch_action) {
   UpdateTouchAckTimeoutEnabled();
 }
 
+void InputRouterImpl::OnDidStopFlinging() {
+  // TODO(jdduke): Track fling status to allow flush notifications after a fling
+  // has terminated, crbug.com/483037.
+  client_->DidStopFlinging();
+}
+
 void InputRouterImpl::ProcessInputEventAck(
     WebInputEvent::Type event_type,
     InputEventAckState ack_result,
@@ -630,16 +641,6 @@ void InputRouterImpl::SignalFlushedIfNecessary() {
 
   flush_requested_ = false;
   client_->DidFlush();
-}
-
-bool InputRouterImpl::HasPendingEvents() const {
-  return !touch_event_queue_.empty() ||
-         !gesture_event_queue_.empty() ||
-         !key_queue_.empty() ||
-         mouse_move_pending_ ||
-         mouse_wheel_pending_ ||
-         select_message_pending_ ||
-         move_caret_pending_;
 }
 
 }  // namespace content

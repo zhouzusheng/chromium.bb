@@ -48,7 +48,28 @@ enum ShaderType
     SHADER_GEOMETRY
 };
 
-class RendererD3D : public Renderer
+enum RendererClass
+{
+    RENDERER_D3D11,
+    RENDERER_D3D9,
+};
+
+// Useful for unit testing
+class BufferFactoryD3D
+{
+  public:
+    BufferFactoryD3D() {}
+    virtual ~BufferFactoryD3D() {}
+
+    virtual VertexBuffer *createVertexBuffer() = 0;
+    virtual IndexBuffer *createIndexBuffer() = 0;
+
+    // TODO(jmadill): add VertexFormatCaps
+    virtual VertexConversionType getVertexConversionType(const gl::VertexFormat &vertexFormat) const = 0;
+    virtual GLenum getVertexComponentType(const gl::VertexFormat &vertexFormat) const = 0;
+};
+
+class RendererD3D : public Renderer, public BufferFactoryD3D
 {
   public:
     explicit RendererD3D(egl::Display *display);
@@ -84,7 +105,9 @@ class RendererD3D : public Renderer
     virtual gl::Error setSamplerState(gl::SamplerType type, int index, gl::Texture *texture, const gl::SamplerState &sampler) = 0;
     virtual gl::Error setTexture(gl::SamplerType type, int index, gl::Texture *texture) = 0;
 
-    virtual gl::Error setUniformBuffers(const gl::Buffer *vertexUniformBuffers[], const gl::Buffer *fragmentUniformBuffers[]) = 0;
+    virtual gl::Error setUniformBuffers(const gl::Data &data,
+                                        const GLint vertexUniformBuffers[],
+                                        const GLint fragmentUniformBuffers[]) = 0;
 
     virtual gl::Error setRasterizerState(const gl::RasterizerState &rasterState) = 0;
     virtual gl::Error setBlendState(const gl::Framebuffer *framebuffer, const gl::BlendState &blendState, const gl::ColorF &blendColor,
@@ -135,7 +158,7 @@ class RendererD3D : public Renderer
                                      bool separatedOutputBuffers, ShaderExecutableD3D **outExecutable) = 0;
     virtual gl::Error compileToExecutable(gl::InfoLog &infoLog, const std::string &shaderHLSL, ShaderType type,
                                           const std::vector<gl::LinkedVarying> &transformFeedbackVaryings,
-                                          bool separatedOutputBuffers, D3DWorkaroundType workaround,
+                                          bool separatedOutputBuffers, const D3DCompilerWorkarounds &workarounds,
                                           ShaderExecutableD3D **outExectuable) = 0;
     virtual UniformStorageD3D *createUniformStorage(size_t storageSize) = 0;
 
@@ -153,15 +176,11 @@ class RendererD3D : public Renderer
     virtual gl::Error fastCopyBufferToTexture(const gl::PixelUnpackState &unpack, unsigned int offset, RenderTargetD3D *destRenderTarget,
                                               GLenum destinationFormat, GLenum sourcePixelsType, const gl::Box &destArea) = 0;
 
-    virtual VertexConversionType getVertexConversionType(const gl::VertexFormat &vertexFormat) const = 0;
-    virtual GLenum getVertexComponentType(const gl::VertexFormat &vertexFormat) const = 0;
-
-    virtual VertexBuffer *createVertexBuffer() = 0;
-    virtual IndexBuffer *createIndexBuffer() = 0;
-
     // Device lost
     void notifyDeviceLost() override;
     virtual bool resetDevice() = 0;
+
+    virtual RendererClass getRendererClass() const = 0;
 
     gl::Error getScratchMemoryBuffer(size_t requestedSize, MemoryBuffer **bufferOut);
 
@@ -178,8 +197,6 @@ class RendererD3D : public Renderer
     bool mDeviceLost;
 
   private:
-    DISALLOW_COPY_AND_ASSIGN(RendererD3D);
-
     //FIXME(jmadill): std::array is currently prohibited by Chromium style guide
     typedef std::array<unsigned int, gl::IMPLEMENTATION_MAX_FRAMEBUFFER_ATTACHMENTS> FramebufferTextureSerialArray;
 
@@ -192,7 +209,6 @@ class RendererD3D : public Renderer
     gl::Error applyTextures(const gl::Data &data, gl::SamplerType shaderType,
                             const FramebufferTextureSerialArray &framebufferSerials, size_t framebufferSerialCount);
     gl::Error applyTextures(const gl::Data &data);
-    gl::Error applyUniformBuffers(const gl::Data &data);
 
     bool skipDraw(const gl::Data &data, GLenum drawMode);
     void markTransformFeedbackUsage(const gl::Data &data);

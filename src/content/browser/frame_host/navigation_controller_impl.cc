@@ -14,6 +14,7 @@
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
 #include "cc/base/switches.h"
+#include "content/browser/bad_message.h"
 #include "content/browser/browser_url_handler_impl.h"
 #include "content/browser/dom_storage/dom_storage_context_wrapper.h"
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
@@ -133,8 +134,10 @@ bool AreURLsInPageNavigation(const GURL& existing_url,
                         !prefs.web_security_enabled ||
                         (prefs.allow_universal_access_from_file_urls &&
                          existing_url.SchemeIs(url::kFileScheme));
-  if (!is_same_origin && renderer_says_in_page)
-      rfh->GetProcess()->ReceivedBadMessage();
+  if (!is_same_origin && renderer_says_in_page) {
+    bad_message::ReceivedBadMessage(rfh->GetProcess(),
+                                    bad_message::NC_IN_PAGE_NAVIGATION);
+  }
   return is_same_origin && renderer_says_in_page;
 }
 
@@ -1050,7 +1053,7 @@ void NavigationControllerImpl::RendererDidNavigateToNewPage(
   if (pending_entry_ &&
       (!pending_entry_->site_instance() ||
        pending_entry_->site_instance() == rfh->GetSiteInstance())) {
-    new_entry = new NavigationEntryImpl(*pending_entry_);
+    new_entry = pending_entry_->Clone();
 
     update_virtual_url = new_entry->update_virtual_url_with_url();
   } else {
@@ -1260,8 +1263,7 @@ void NavigationControllerImpl::RendererDidNavigateNewSubframe(
   // band with the actual navigations.
   DCHECK(GetLastCommittedEntry()) << "ClassifyNavigation should guarantee "
                                   << "that a last committed entry exists.";
-  NavigationEntryImpl* new_entry =
-      new NavigationEntryImpl(*GetLastCommittedEntry());
+  NavigationEntryImpl* new_entry = GetLastCommittedEntry()->Clone();
   new_entry->SetPageID(params.page_id);
   InsertOrReplaceEntry(new_entry, false);
 }
@@ -1293,6 +1295,18 @@ bool NavigationControllerImpl::RendererDidNavigateAutoSubframe(
     last_committed_entry_index_ = entry_index;
     DiscardNonCommittedEntriesInternal();
     return true;
+  }
+
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kSitePerProcess)) {
+    // This may be a "new auto" case where we add a new FrameNavigationEntry, or
+    // it may be a "history auto" case where we update an existing one.
+    int64 frame_tree_node_id = rfh->frame_tree_node()->frame_tree_node_id();
+    NavigationEntryImpl* last_committed = GetLastCommittedEntry();
+    last_committed->AddOrUpdateFrameEntry(frame_tree_node_id,
+                                          rfh->GetSiteInstance(),
+                                          params.url,
+                                          params.referrer);
   }
 
   // We do not need to discard the pending entry in this case, since we will
@@ -1579,7 +1593,7 @@ void NavigationControllerImpl::InsertOrReplaceEntry(NavigationEntryImpl* entry,
   DiscardNonCommittedEntriesInternal();
 
   int current_size = static_cast<int>(entries_.size());
-  DCHECK(current_size > 0 || !replace);
+  DCHECK_IMPLIES(replace, current_size > 0);
 
   if (current_size > 0) {
     // Prune any entries which are in front of the current entry.
@@ -1805,12 +1819,14 @@ void NavigationControllerImpl::InsertEntriesFrom(
   DCHECK_LE(max_index, source.GetEntryCount());
   size_t insert_index = 0;
   for (int i = 0; i < max_index; i++) {
-    // When cloning a tab, copy all entries except interstitial pages
-    if (source.entries_[i].get()->GetPageType() !=
-        PAGE_TYPE_INTERSTITIAL) {
+    // When cloning a tab, copy all entries except interstitial pages.
+    if (source.entries_[i].get()->GetPageType() != PAGE_TYPE_INTERSTITIAL) {
+      // TODO(creis): Once we start sharing FrameNavigationEntries between
+      // NavigationEntries, it will not be safe to share them with another tab.
+      // Must have a version of Clone that recreates them.
       entries_.insert(entries_.begin() + insert_index++,
                       linked_ptr<NavigationEntryImpl>(
-                          new NavigationEntryImpl(*source.entries_[i])));
+                          source.entries_[i]->Clone()));
     }
   }
 }

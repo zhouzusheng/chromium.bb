@@ -19,8 +19,8 @@
 
 namespace content {
 
-class ServiceWorkerRegistrationInfo;
 class ServiceWorkerVersion;
+struct ServiceWorkerRegistrationInfo;
 
 // This class represents a Service Worker registration. The scope is constant
 // for the life of the persistent registration. It's refcounted to facilitate
@@ -42,6 +42,8 @@ class CONTENT_EXPORT ServiceWorkerRegistration
         const ServiceWorkerRegistrationInfo& info) {}
     virtual void OnRegistrationFailed(
         ServiceWorkerRegistration* registration) {}
+    virtual void OnRegistrationFinishedUninstalling(
+        ServiceWorkerRegistration* registration) {}
     virtual void OnUpdateFound(
         ServiceWorkerRegistration* registration) {}
     virtual void OnSkippedWaiting(ServiceWorkerRegistration* registation) {}
@@ -58,6 +60,8 @@ class CONTENT_EXPORT ServiceWorkerRegistration
   void set_is_deleted(bool deleted) { is_deleted_ = deleted; }
 
   bool is_uninstalling() const { return is_uninstalling_; }
+
+  void set_is_uninstalled(bool uninstalled) { is_uninstalled_ = uninstalled; }
   bool is_uninstalled() const { return is_uninstalled_; }
 
   int64_t resources_total_size_bytes() const {
@@ -109,7 +113,7 @@ class CONTENT_EXPORT ServiceWorkerRegistration
 
   // Takes over control of provider hosts which are currently not controlled or
   // controlled by other registrations.
-  void ClaimClients(const StatusCallback& callback);
+  void ClaimClients();
 
   // Triggers the [[ClearRegistration]] algorithm when the currently
   // active version has no controllees. Deletes this registration
@@ -134,6 +138,10 @@ class CONTENT_EXPORT ServiceWorkerRegistration
                      const StatusCallback& callback);
   void ClearUserData(const std::string& key,
                      const StatusCallback& callback);
+
+  // Unsets the version and deletes its resources. Also deletes this
+  // registration from storage if there is no longer a stored version.
+  void DeleteVersion(const scoped_refptr<ServiceWorkerVersion>& version);
 
  private:
   friend class base::RefCounted<ServiceWorkerRegistration>;
@@ -164,14 +172,6 @@ class CONTENT_EXPORT ServiceWorkerRegistration
   void OnRestoreFinished(const StatusCallback& callback,
                          scoped_refptr<ServiceWorkerVersion> version,
                          ServiceWorkerStatusCode status);
-
-  void DidGetRegistrationsForClaimClients(
-      const StatusCallback& callback,
-      scoped_refptr<ServiceWorkerVersion> version,
-      const std::vector<ServiceWorkerRegistrationInfo>& registrations);
-  bool ShouldClaim(
-      ServiceWorkerProviderHost* provider_host,
-      const std::vector<ServiceWorkerRegistrationInfo>& registration_infos);
 
   const GURL pattern_;
   const int64 registration_id_;

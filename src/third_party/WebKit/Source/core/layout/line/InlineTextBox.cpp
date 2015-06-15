@@ -25,13 +25,13 @@
 
 #include "core/layout/HitTestResult.h"
 #include "core/layout/LayoutBR.h"
+#include "core/layout/LayoutBlock.h"
 #include "core/layout/LayoutRubyRun.h"
 #include "core/layout/LayoutRubyText.h"
 #include "core/layout/PaintInfo.h"
 #include "core/layout/line/AbstractInlineTextBox.h"
 #include "core/layout/line/EllipsisBox.h"
 #include "core/paint/InlineTextBoxPainter.h"
-#include "core/rendering/RenderBlock.h"
 #include "platform/fonts/FontCache.h"
 #include "platform/fonts/shaping/SimpleShaper.h"
 #include "wtf/Vector.h"
@@ -92,7 +92,7 @@ LayoutRect InlineTextBox::logicalOverflowRect() const
         // FIXME: the call to rawValue() below is temporary and should be removed once the transition
         // to LayoutUnit-based types is complete (crbug.com/321237). The call to enclosingIntRect()
         // should also likely be switched to LayoutUnit pixel-snapping.
-        return enclosingIntRect(logicalFrameRect().rawValue());
+        return LayoutRect(enclosingIntRect(logicalFrameRect().rawValue()));
     }
 
     return gTextBoxesWithOverflow->get(this);
@@ -110,20 +110,20 @@ int InlineTextBox::baselinePosition(FontBaseline baselineType) const
 {
     if (!isText() || !parent())
         return 0;
-    if (parent()->renderer() == renderer().parent())
+    if (parent()->layoutObject() == layoutObject().parent())
         return parent()->baselinePosition(baselineType);
-    return toRenderBoxModelObject(renderer().parent())->baselinePosition(baselineType, isFirstLineStyle(), isHorizontal() ? HorizontalLine : VerticalLine, PositionOnContainingLine);
+    return toLayoutBoxModelObject(layoutObject().parent())->baselinePosition(baselineType, isFirstLineStyle(), isHorizontal() ? HorizontalLine : VerticalLine, PositionOnContainingLine);
 }
 
 LayoutUnit InlineTextBox::lineHeight() const
 {
-    if (!isText() || !renderer().parent())
+    if (!isText() || !layoutObject().parent())
         return 0;
-    if (renderer().isBR())
-        return toLayoutBR(renderer()).lineHeight(isFirstLineStyle());
-    if (parent()->renderer() == renderer().parent())
+    if (layoutObject().isBR())
+        return toLayoutBR(layoutObject()).lineHeight(isFirstLineStyle());
+    if (parent()->layoutObject() == layoutObject().parent())
         return parent()->lineHeight();
-    return toRenderBoxModelObject(renderer().parent())->lineHeight(isFirstLineStyle(), isHorizontal() ? HorizontalLine : VerticalLine, PositionOnContainingLine);
+    return toLayoutBoxModelObject(layoutObject().parent())->lineHeight(isFirstLineStyle(), isHorizontal() ? HorizontalLine : VerticalLine, PositionOnContainingLine);
 }
 
 bool InlineTextBox::isSelected(int startPos, int endPos) const
@@ -137,16 +137,16 @@ bool InlineTextBox::isSelected(int startPos, int endPos) const
 
 LayoutObject::SelectionState InlineTextBox::selectionState() const
 {
-    LayoutObject::SelectionState state = renderer().selectionState();
+    LayoutObject::SelectionState state = layoutObject().selectionState();
     if (state == LayoutObject::SelectionStart || state == LayoutObject::SelectionEnd || state == LayoutObject::SelectionBoth) {
         int startPos, endPos;
-        renderer().selectionStartEnd(startPos, endPos);
+        layoutObject().selectionStartEnd(startPos, endPos);
         // The position after a hard line break is considered to be past its end.
         // See the corresponding code in InlineTextBox::isSelected.
         int lastSelectable = start() + len() - (isLineBreak() ? 1 : 0);
 
         // FIXME: Remove -webkit-line-break: LineBreakAfterWhiteSpace.
-        int endOfLineAdjustmentForCSSLineBreak = renderer().style()->lineBreak() == LineBreakAfterWhiteSpace ? -1 : 0;
+        int endOfLineAdjustmentForCSSLineBreak = layoutObject().style()->lineBreak() == LineBreakAfterWhiteSpace ? -1 : 0;
         bool start = (state != LayoutObject::SelectionEnd && startPos >= m_start && startPos <= m_start + m_len + endOfLineAdjustmentForCSSLineBreak);
         bool end = (state != LayoutObject::SelectionStart && endPos > m_start && endPos <= lastSelectable);
         if (start && end)
@@ -194,7 +194,7 @@ LayoutRect InlineTextBox::localSelectionRect(int startPos, int endPos)
 
     LayoutUnit selTop = root().selectionTop();
     LayoutUnit selHeight = root().selectionHeight();
-    const LayoutStyle& styleToUse = renderer().styleRef(isFirstLineStyle());
+    const ComputedStyle& styleToUse = layoutObject().styleRef(isFirstLineStyle());
     const Font& font = styleToUse.font();
 
     StringBuilder charactersWithHyphen;
@@ -204,11 +204,11 @@ LayoutRect InlineTextBox::localSelectionRect(int startPos, int endPos)
     FloatPointWillBeLayoutPoint startingPoint = FloatPointWillBeLayoutPoint(logicalLeft(), selTop.toFloat());
     LayoutRect r;
     if (sPos || ePos != static_cast<int>(m_len)) {
-        r = enclosingIntRect(font.selectionRectForText(textRun, startingPoint.toFloatPoint(), selHeight, sPos, ePos));
+        r = LayoutRect(enclosingIntRect(font.selectionRectForText(textRun, startingPoint.toFloatPoint(), selHeight, sPos, ePos)));
     } else { // Avoid computing the font width when the entire line box is selected as an optimization.
         // FIXME: the call to rawValue() below is temporary and should be removed once the transition
         // to LayoutUnit-based types is complete (crbug.com/321237)
-        r = enclosingIntRect(FloatRectWillBeLayoutRect(startingPoint, FloatSizeWillBeLayoutSize(m_logicalWidth, selHeight.toFloat())).rawValue());
+        r = LayoutRect(enclosingIntRect(FloatRectWillBeLayoutRect(startingPoint, FloatSizeWillBeLayoutSize(m_logicalWidth, selHeight.toFloat())).rawValue()));
     }
 
     LayoutUnit logicalWidth = r.width();
@@ -226,7 +226,7 @@ LayoutRect InlineTextBox::localSelectionRect(int startPos, int endPos)
 
 void InlineTextBox::deleteLine()
 {
-    renderer().removeTextBox(this);
+    layoutObject().removeTextBox(this);
     destroy();
 }
 
@@ -235,7 +235,7 @@ void InlineTextBox::extractLine()
     if (extracted())
         return;
 
-    renderer().extractTextBox(this);
+    layoutObject().extractTextBox(this);
 }
 
 void InlineTextBox::attachLine()
@@ -243,7 +243,7 @@ void InlineTextBox::attachLine()
     if (!extracted())
         return;
 
-    renderer().attachTextBox(this);
+    layoutObject().attachTextBox(this);
 }
 
 FloatWillBeLayoutUnit InlineTextBox::placeEllipsisBox(bool flowIsLTR, FloatWillBeLayoutUnit visibleLeftEdge, FloatWillBeLayoutUnit visibleRightEdge, FloatWillBeLayoutUnit ellipsisWidth, FloatWillBeLayoutUnit &truncatedWidth, bool& foundBox)
@@ -297,7 +297,7 @@ FloatWillBeLayoutUnit InlineTextBox::placeEllipsisBox(bool flowIsLTR, FloatWillB
 
         // If we got here that means that we were only partially truncated and we need to return the pixel offset at which
         // to place the ellipsis.
-        FloatWillBeLayoutUnit widthOfVisibleText = renderer().width(m_start, offset, textPos(), flowIsLTR ? LTR : RTL, isFirstLineStyle());
+        FloatWillBeLayoutUnit widthOfVisibleText = layoutObject().width(m_start, offset, textPos(), flowIsLTR ? LTR : RTL, isFirstLineStyle());
 
         // The ellipsis needs to be placed just after the last visible character.
         // Where "after" is defined by the flow directionality, not the inline
@@ -315,10 +315,10 @@ FloatWillBeLayoutUnit InlineTextBox::placeEllipsisBox(bool flowIsLTR, FloatWillB
 
 bool InlineTextBox::isLineBreak() const
 {
-    return renderer().isBR() || (renderer().style()->preserveNewline() && len() == 1 && (*renderer().text().impl())[start()] == '\n');
+    return layoutObject().isBR() || (layoutObject().style()->preserveNewline() && len() == 1 && (*layoutObject().text().impl())[start()] == '\n');
 }
 
-bool InlineTextBox::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit /* lineTop */, LayoutUnit /*lineBottom*/)
+bool InlineTextBox::nodeAtPoint(HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit /* lineTop */, LayoutUnit /*lineBottom*/)
 {
     if (isLineBreak())
         return false;
@@ -328,15 +328,15 @@ bool InlineTextBox::nodeAtPoint(const HitTestRequest& request, HitTestResult& re
     FloatRectWillBeLayoutRect rect(boxOrigin, size());
     // FIXME: both calls to rawValue() below is temporary and should be removed once the transition
     // to LayoutUnit-based types is complete (crbug.com/321237)
-    if (m_truncation != cFullTruncation && visibleToHitTestRequest(request) && locationInContainer.intersects(rect.rawValue())) {
-        renderer().updateHitTestResult(result, flipForWritingMode(locationInContainer.point() - toLayoutSize(accumulatedOffset)));
-        if (!result.addNodeToRectBasedTestResult(renderer().node(), request, locationInContainer, rect.rawValue()))
+    if (m_truncation != cFullTruncation && visibleToHitTestRequest(result.hitTestRequest()) && locationInContainer.intersects(rect.rawValue())) {
+        layoutObject().updateHitTestResult(result, flipForWritingMode(locationInContainer.point() - toLayoutSize(accumulatedOffset)));
+        if (!result.addNodeToListBasedTestResult(layoutObject().node(), locationInContainer, rect.rawValue()))
             return true;
     }
     return false;
 }
 
-bool InlineTextBox::getEmphasisMarkPosition(const LayoutStyle& style, TextEmphasisPosition& emphasisPosition) const
+bool InlineTextBox::getEmphasisMarkPosition(const ComputedStyle& style, TextEmphasisPosition& emphasisPosition) const
 {
     // This function returns true if there are text emphasis marks and they are suppressed by ruby text.
     if (style.textEmphasisMark() == TextEmphasisMarkNone)
@@ -346,7 +346,7 @@ bool InlineTextBox::getEmphasisMarkPosition(const LayoutStyle& style, TextEmphas
     if (emphasisPosition == TextEmphasisPositionUnder)
         return true; // Ruby text is always over, so it cannot suppress emphasis marks under.
 
-    RenderBlock* containingBlock = renderer().containingBlock();
+    LayoutBlock* containingBlock = layoutObject().containingBlock();
     if (!containingBlock->isRubyBase())
         return true; // This text is not inside a ruby base, so it does not have ruby text over it.
 
@@ -367,14 +367,14 @@ void InlineTextBox::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOf
 void InlineTextBox::selectionStartEnd(int& sPos, int& ePos) const
 {
     int startPos, endPos;
-    if (renderer().selectionState() == LayoutObject::SelectionInside) {
+    if (layoutObject().selectionState() == LayoutObject::SelectionInside) {
         startPos = 0;
-        endPos = renderer().textLength();
+        endPos = layoutObject().textLength();
     } else {
-        renderer().selectionStartEnd(startPos, endPos);
-        if (renderer().selectionState() == LayoutObject::SelectionStart)
-            endPos = renderer().textLength();
-        else if (renderer().selectionState() == LayoutObject::SelectionEnd)
+        layoutObject().selectionStartEnd(startPos, endPos);
+        if (layoutObject().selectionState() == LayoutObject::SelectionStart)
+            endPos = layoutObject().textLength();
+        else if (layoutObject().selectionState() == LayoutObject::SelectionEnd)
             startPos = 0;
     }
 
@@ -382,12 +382,12 @@ void InlineTextBox::selectionStartEnd(int& sPos, int& ePos) const
     ePos = std::min(endPos - m_start, (int)m_len);
 }
 
-void InlineTextBox::paintDocumentMarker(GraphicsContext* pt, const FloatPointWillBeLayoutPoint& boxOrigin, DocumentMarker* marker, const LayoutStyle& style, const Font& font, bool grammar)
+void InlineTextBox::paintDocumentMarker(GraphicsContext* pt, const FloatPointWillBeLayoutPoint& boxOrigin, DocumentMarker* marker, const ComputedStyle& style, const Font& font, bool grammar)
 {
     InlineTextBoxPainter(*this).paintDocumentMarker(pt, boxOrigin.toFloatPoint(), marker, style, font, grammar);
 }
 
-void InlineTextBox::paintTextMatchMarker(GraphicsContext* pt, const FloatPointWillBeLayoutPoint& boxOrigin, DocumentMarker* marker, const LayoutStyle& style, const Font& font)
+void InlineTextBox::paintTextMatchMarker(GraphicsContext* pt, const FloatPointWillBeLayoutPoint& boxOrigin, DocumentMarker* marker, const ComputedStyle& style, const Font& font)
 {
     InlineTextBoxPainter(*this).paintTextMatchMarker(pt, boxOrigin.toFloatPoint(), marker, style, font);
 }
@@ -404,7 +404,7 @@ int InlineTextBox::caretMaxOffset() const
 
 FloatWillBeLayoutUnit InlineTextBox::textPos() const
 {
-    // When computing the width of a text run, RenderBlock::computeInlineDirectionPositionsForLine() doesn't include the actual offset
+    // When computing the width of a text run, LayoutBlock::computeInlineDirectionPositionsForLine() doesn't include the actual offset
     // from the containing block edge in its measurement. textPos() should be consistent so the text are rendered in the same width.
     if (logicalLeft() == 0)
         return 0;
@@ -421,8 +421,8 @@ int InlineTextBox::offsetForPosition(FloatWillBeLayoutUnit lineOffset, bool incl
     if (lineOffset - logicalLeft() < 0)
         return isLeftToRightDirection() ? 0 : len();
 
-    RenderText& text = renderer();
-    const LayoutStyle& style = text.styleRef(isFirstLineStyle());
+    LayoutText& text = layoutObject();
+    const ComputedStyle& style = text.styleRef(isFirstLineStyle());
     const Font& font = style.font();
     return font.offsetForPosition(constructTextRun(style, font), lineOffset - logicalLeft(), includePartialGlyphs);
 }
@@ -435,8 +435,8 @@ FloatWillBeLayoutUnit InlineTextBox::positionForOffset(int offset) const
     if (isLineBreak())
         return logicalLeft();
 
-    RenderText& text = renderer();
-    const LayoutStyle& styleToUse = text.styleRef(isFirstLineStyle());
+    LayoutText& text = layoutObject();
+    const ComputedStyle& styleToUse = text.styleRef(isFirstLineStyle());
     const Font& font = styleToUse.font();
     int from = !isLeftToRightDirection() ? offset - m_start : 0;
     int to = !isLeftToRightDirection() ? m_len : offset - m_start;
@@ -472,7 +472,7 @@ void InlineTextBox::characterWidths(Vector<FloatWillBeLayoutUnit>& widths) const
 {
     FontCachePurgePreventer fontCachePurgePreventer;
 
-    const LayoutStyle& styleToUse = renderer().styleRef(isFirstLineStyle());
+    const ComputedStyle& styleToUse = layoutObject().styleRef(isFirstLineStyle());
     const Font& font = styleToUse.font();
 
     TextRun textRun = constructTextRun(styleToUse, font);
@@ -487,21 +487,21 @@ void InlineTextBox::characterWidths(Vector<FloatWillBeLayoutUnit>& widths) const
     }
 }
 
-TextRun InlineTextBox::constructTextRun(const LayoutStyle& style, const Font& font, StringBuilder* charactersWithHyphen) const
+TextRun InlineTextBox::constructTextRun(const ComputedStyle& style, const Font& font, StringBuilder* charactersWithHyphen) const
 {
-    ASSERT(renderer().text());
+    ASSERT(layoutObject().text());
 
-    StringView string = renderer().text().createView();
+    StringView string = layoutObject().text().createView();
     unsigned startPos = start();
     unsigned length = len();
 
     if (string.length() != length || startPos)
         string.narrow(startPos, length);
 
-    return constructTextRun(style, font, string, renderer().textLength() - startPos, charactersWithHyphen);
+    return constructTextRun(style, font, string, layoutObject().textLength() - startPos, charactersWithHyphen);
 }
 
-TextRun InlineTextBox::constructTextRun(const LayoutStyle& style, const Font& font, StringView string, int maximumLength, StringBuilder* charactersWithHyphen) const
+TextRun InlineTextBox::constructTextRun(const ComputedStyle& style, const Font& font, StringView string, int maximumLength, StringBuilder* charactersWithHyphen) const
 {
     if (charactersWithHyphen) {
         const AtomicString& hyphenString = style.hyphenString();
@@ -514,9 +514,9 @@ TextRun InlineTextBox::constructTextRun(const LayoutStyle& style, const Font& fo
 
     ASSERT(maximumLength >= static_cast<int>(string.length()));
 
-    TextRun run(string, textPos(), expansion(), expansionBehavior(), direction(), dirOverride() || style.rtlOrdering() == VisualOrder, !renderer().canUseSimpleFontCodePath());
+    TextRun run(string, textPos(), expansion(), expansionBehavior(), direction(), dirOverride() || style.rtlOrdering() == VisualOrder, !layoutObject().canUseSimpleFontCodePath());
     run.setTabSize(!style.collapseWhiteSpace(), style.tabSize());
-    run.setCodePath(renderer().canUseSimpleFontCodePath() ? TextRun::ForceSimple : TextRun::ForceComplex);
+    run.setCodePath(layoutObject().canUseSimpleFontCodePath() ? TextRun::ForceSimple : TextRun::ForceComplex);
     run.setTextJustify(style.textJustify());
 
     // Propagate the maximum length of the characters buffer to the TextRun, even when we're only processing a substring.
@@ -525,31 +525,40 @@ TextRun InlineTextBox::constructTextRun(const LayoutStyle& style, const Font& fo
     return run;
 }
 
-TextRun InlineTextBox::constructTextRunForInspector(const LayoutStyle& style, const Font& font) const
+TextRun InlineTextBox::constructTextRunForInspector(const ComputedStyle& style, const Font& font) const
 {
     return InlineTextBox::constructTextRun(style, font);
 }
-
-#ifndef NDEBUG
 
 const char* InlineTextBox::boxName() const
 {
     return "InlineTextBox";
 }
 
+String InlineTextBox::debugName() const
+{
+    return String(boxName()) + " '" + text() + "'";
+}
+
+String InlineTextBox::text() const
+{
+    return layoutObject().text().substring(start(), len());
+}
+
+#ifndef NDEBUG
+
 void InlineTextBox::showBox(int printedCharacters) const
 {
-    const RenderText& obj = renderer();
-    String value = obj.text();
-    value = value.substring(start(), len());
+    String value = text();
     value.replaceWithLiteral('\\', "\\\\");
     value.replaceWithLiteral('\n', "\\n");
     printedCharacters += fprintf(stderr, "%s %p", boxName(), this);
     for (; printedCharacters < showTreeCharacterOffset; printedCharacters++)
         fputc(' ', stderr);
-    printedCharacters = fprintf(stderr, "\t%s %p", obj.renderName(), &obj);
-    const int rendererCharacterOffset = 75;
-    for (; printedCharacters < rendererCharacterOffset; printedCharacters++)
+    const LayoutText& obj = layoutObject();
+    printedCharacters = fprintf(stderr, "\t%s %p", obj.name(), &obj);
+    const int layoutObjectCharacterOffset = 75;
+    for (; printedCharacters < layoutObjectCharacterOffset; printedCharacters++)
         fputc(' ', stderr);
     fprintf(stderr, "(%d,%d) \"%s\"\n", start(), start() + len(), value.utf8().data());
 }

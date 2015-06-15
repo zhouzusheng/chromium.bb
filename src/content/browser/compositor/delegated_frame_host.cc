@@ -159,33 +159,15 @@ void DelegatedFrameHost::CopyFromCompositingSurfaceToVideoFrame(
     return;
   }
 
-  // Try get a texture to reuse.
-  scoped_refptr<OwnedMailbox> subscriber_texture;
-  if (frame_subscriber_) {
-    if (!idle_frame_subscriber_textures_.empty()) {
-      subscriber_texture = idle_frame_subscriber_textures_.back();
-      idle_frame_subscriber_textures_.pop_back();
-    } else if (GLHelper* helper =
-                   ImageTransportFactory::GetInstance()->GetGLHelper()) {
-      subscriber_texture = new OwnedMailbox(helper);
-    }
-  }
-
   scoped_ptr<cc::CopyOutputRequest> request =
       cc::CopyOutputRequest::CreateRequest(base::Bind(
           &DelegatedFrameHost::
                CopyFromCompositingSurfaceHasResultForVideo,
           AsWeakPtr(),  // For caching the ReadbackYUVInterface on this class.
-          subscriber_texture,
+          nullptr,
           target,
           callback));
   request->set_area(src_subrect);
-  if (subscriber_texture.get()) {
-    request->SetTextureMailbox(
-        cc::TextureMailbox(subscriber_texture->mailbox(),
-                           subscriber_texture->target(),
-                           subscriber_texture->sync_point()));
-  }
   RequestCopyOfOutput(request.Pass());
 }
 
@@ -267,13 +249,42 @@ void DelegatedFrameHost::DidReceiveFrameFromRenderer(
 
   scoped_refptr<media::VideoFrame> frame;
   RenderWidgetHostViewFrameSubscriber::DeliverFrameCallback callback;
-  if (frame_subscriber()->ShouldCaptureFrame(damage_rect, present_time,
-                                             &frame, &callback)) {
-    CopyFromCompositingSurfaceToVideoFrame(
-        gfx::Rect(current_frame_size_in_dip_),
-        frame,
-        base::Bind(callback, present_time));
+  if (!frame_subscriber()->ShouldCaptureFrame(damage_rect, present_time,
+                                              &frame, &callback))
+    return;
+
+  // Get a texture to re-use; else, create a new one.
+  scoped_refptr<OwnedMailbox> subscriber_texture;
+  if (!idle_frame_subscriber_textures_.empty()) {
+    subscriber_texture = idle_frame_subscriber_textures_.back();
+    idle_frame_subscriber_textures_.pop_back();
+  } else if (GLHelper* helper =
+                 ImageTransportFactory::GetInstance()->GetGLHelper()) {
+    subscriber_texture = new OwnedMailbox(helper);
   }
+
+  scoped_ptr<cc::CopyOutputRequest> request =
+      cc::CopyOutputRequest::CreateRequest(base::Bind(
+          &DelegatedFrameHost::CopyFromCompositingSurfaceHasResultForVideo,
+          AsWeakPtr(),
+          subscriber_texture,
+          frame,
+          base::Bind(callback, present_time)));
+  // Setting the source in this copy request asks that the layer abort any prior
+  // uncommitted copy requests made on behalf of the same frame subscriber.
+  // This will not affect any of the copy requests spawned elsewhere from
+  // DelegatedFrameHost (e.g., a call to CopyFromCompositingSurface() for
+  // screenshots) since those copy requests do not specify |frame_subscriber()|
+  // as a source.
+  request->set_source(frame_subscriber());
+  request->set_area(gfx::Rect(current_frame_size_in_dip_));
+  if (subscriber_texture.get()) {
+    request->SetTextureMailbox(
+        cc::TextureMailbox(subscriber_texture->mailbox(),
+                           subscriber_texture->target(),
+                           subscriber_texture->sync_point()));
+  }
+  RequestCopyOfOutput(request.Pass());
 }
 
 void DelegatedFrameHost::SwapDelegatedFrame(
@@ -439,8 +450,7 @@ void DelegatedFrameHost::SwapDelegatedFrame(
     skipped_latency_info_list_.clear();
     AddOnCommitCallbackAndDisableLocks(
         base::Bind(&DelegatedFrameHost::SendDelegatedFrameAck,
-                   AsWeakPtr(),
-                   output_surface_id));
+                   AsWeakPtr(), output_surface_id));
   } else {
     AddOnCommitCallbackAndDisableLocks(base::Closure());
   }
@@ -611,7 +621,7 @@ void DelegatedFrameHost::PrepareTextureCopyOutputResult(
                  base::Passed(&release_callback),
                  base::Passed(&bitmap),
                  base::Passed(&bitmap_pixels_lock)),
-      GLHelper::SCALER_QUALITY_FAST);
+      GLHelper::SCALER_QUALITY_GOOD);
 }
 
 // static
@@ -727,11 +737,10 @@ void DelegatedFrameHost::CopyFromCompositingSurfaceHasResultForVideo(
   // coordinates and sizes even because we letterbox in YUV space
   // (see CopyRGBToVideoFrame). They need to be even for the UV samples to
   // line up correctly.
-  // The video frame's coded_size() and the result's size() are both physical
+  // The video frame's visible_rect() and the result's size() are both physical
   // pixels.
-  gfx::Rect region_in_frame =
-      media::ComputeLetterboxRegion(gfx::Rect(video_frame->coded_size()),
-                                    result->size());
+  gfx::Rect region_in_frame = media::ComputeLetterboxRegion(
+      video_frame->visible_rect(), result->size());
   region_in_frame = gfx::Rect(region_in_frame.x() & ~1,
                               region_in_frame.y() & ~1,
                               region_in_frame.width() & ~1,
@@ -744,8 +753,7 @@ void DelegatedFrameHost::CopyFromCompositingSurfaceHasResultForVideo(
     scoped_ptr<SkBitmap> bitmap = result->TakeBitmap();
     // Scale the bitmap to the required size, if necessary.
     SkBitmap scaled_bitmap;
-    if (result->size().width() != region_in_frame.width() ||
-        result->size().height() != region_in_frame.height()) {
+    if (result->size() != region_in_frame.size()) {
       skia::ImageOperations::ResizeMethod method =
           skia::ImageOperations::RESIZE_GOOD;
       scaled_bitmap = skia::ImageOperations::Resize(*bitmap.get(), method,
@@ -810,8 +818,7 @@ void DelegatedFrameHost::CopyFromCompositingSurfaceHasResultForVideo(
         gl_helper->CreateReadbackPipelineYUV(quality,
                                              result_rect.size(),
                                              result_rect,
-                                             video_frame->coded_size(),
-                                             region_in_frame,
+                                             region_in_frame.size(),
                                              true,
                                              true));
     yuv_readback_pipeline = dfh->yuv_readback_pipeline_.get();
@@ -828,6 +835,7 @@ void DelegatedFrameHost::CopyFromCompositingSurfaceHasResultForVideo(
   yuv_readback_pipeline->ReadbackYUV(texture_mailbox.mailbox(),
                                      texture_mailbox.sync_point(),
                                      video_frame.get(),
+                                     region_in_frame.origin(),
                                      finished_callback);
 }
 

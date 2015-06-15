@@ -27,8 +27,8 @@
 #include "core/layout/LayoutGeometryMap.h"
 
 #include "core/frame/LocalFrame.h"
-#include "core/layout/Layer.h"
-#include "core/rendering/RenderView.h"
+#include "core/layout/LayoutView.h"
+#include "core/paint/DeprecatedPaintLayer.h"
 #include "platform/geometry/TransformState.h"
 #include "wtf/TemporaryChange.h"
 
@@ -47,7 +47,7 @@ LayoutGeometryMap::~LayoutGeometryMap()
 {
 }
 
-void LayoutGeometryMap::mapToContainer(TransformState& transformState, const LayoutLayerModelObject* container) const
+void LayoutGeometryMap::mapToContainer(TransformState& transformState, const LayoutBoxModelObject* container) const
 {
     // If the mapping includes something like columns, we have to go via renderers.
     if (hasNonUniformStep()) {
@@ -64,7 +64,7 @@ void LayoutGeometryMap::mapToContainer(TransformState& transformState, const Lay
     for (int i = m_mapping.size() - 1; i >= 0; --i) {
         const LayoutGeometryMapStep& currentStep = m_mapping[i];
 
-        // If container is the root RenderView (step 0) we want to apply its fixed position offset.
+        // If container is the root LayoutView (step 0) we want to apply its fixed position offset.
         if (i > 0 && currentStep.m_renderer == container) {
 #if ENABLE(ASSERT)
             foundContainer = true;
@@ -80,10 +80,10 @@ void LayoutGeometryMap::mapToContainer(TransformState& transformState, const Lay
         else if (currentStep.m_isFixedPosition)
             inFixed = true;
 
-        ASSERT(!i == isTopmostRenderView(currentStep.m_renderer));
+        ASSERT(!i == isTopmostLayoutView(currentStep.m_renderer));
 
         if (!i) {
-            // A null container indicates mapping through the root RenderView, so including its transform (the page scale).
+            // A null container indicates mapping through the root LayoutView, so including its transform (the page scale).
             if (!container && currentStep.m_transform)
                 transformState.applyTransform(*currentStep.m_transform.get());
         } else {
@@ -95,7 +95,7 @@ void LayoutGeometryMap::mapToContainer(TransformState& transformState, const Lay
         }
 
         if (inFixed && !currentStep.m_offsetForFixedPosition.isZero()) {
-            ASSERT(currentStep.m_renderer->isRenderView());
+            ASSERT(currentStep.m_renderer->isLayoutView());
             transformState.move(currentStep.m_offsetForFixedPosition);
         }
     }
@@ -104,7 +104,7 @@ void LayoutGeometryMap::mapToContainer(TransformState& transformState, const Lay
     transformState.flatten();
 }
 
-FloatPoint LayoutGeometryMap::mapToContainer(const FloatPoint& p, const LayoutLayerModelObject* container) const
+FloatPoint LayoutGeometryMap::mapToContainer(const FloatPoint& p, const LayoutBoxModelObject* container) const
 {
     FloatPoint result;
 
@@ -119,7 +119,7 @@ FloatPoint LayoutGeometryMap::mapToContainer(const FloatPoint& p, const LayoutLa
 #if ENABLE(ASSERT)
     if (m_mapping.size() > 0) {
         const LayoutObject* lastRenderer = m_mapping.last().m_renderer;
-        const Layer* layer = lastRenderer->enclosingLayer();
+        const DeprecatedPaintLayer* layer = lastRenderer->enclosingLayer();
 
         // Bounds for invisible layers are intentionally not calculated, and are
         // therefore not necessarily expected to be correct here. This is ok,
@@ -141,7 +141,10 @@ void LayoutGeometryMap::dumpSteps() const
 {
     fprintf(stderr, "LayoutGeometryMap::dumpSteps accumulatedOffset=%d,%d\n", m_accumulatedOffset.width().toInt(), m_accumulatedOffset.height().toInt());
     for (int i = m_mapping.size() - 1; i >= 0; --i) {
-        fprintf(stderr, " [%d] %s: offset=%d,%d", i, m_mapping[i].m_renderer->debugName().ascii().data(), m_mapping[i].m_offset.width().toInt(), m_mapping[i].m_offset.height().toInt());
+        fprintf(stderr, " [%d] %s: offset=%d,%d", i,
+            m_mapping[i].m_renderer->debugName().ascii().data(),
+            m_mapping[i].m_offset.width().toInt(),
+            m_mapping[i].m_offset.height().toInt());
         if (m_mapping[i].m_hasTransform)
             fprintf(stderr, " hasTransform");
         fprintf(stderr, "\n");
@@ -149,7 +152,7 @@ void LayoutGeometryMap::dumpSteps() const
 }
 #endif
 
-FloatQuad LayoutGeometryMap::mapToContainer(const FloatRect& rect, const LayoutLayerModelObject* container) const
+FloatQuad LayoutGeometryMap::mapToContainer(const FloatRect& rect, const LayoutBoxModelObject* container) const
 {
     FloatQuad result;
 
@@ -165,7 +168,7 @@ FloatQuad LayoutGeometryMap::mapToContainer(const FloatRect& rect, const LayoutL
 #if ENABLE(ASSERT)
     if (m_mapping.size() > 0) {
         const LayoutObject* lastRenderer = m_mapping.last().m_renderer;
-        const Layer* layer = lastRenderer->enclosingLayer();
+        const DeprecatedPaintLayer* layer = lastRenderer->enclosingLayer();
 
         // Bounds for invisible layers are intentionally not calculated, and are
         // therefore not necessarily expected to be correct here. This is ok,
@@ -183,7 +186,7 @@ FloatQuad LayoutGeometryMap::mapToContainer(const FloatRect& rect, const LayoutL
     return result;
 }
 
-void LayoutGeometryMap::pushMappingsToAncestor(const LayoutObject* renderer, const LayoutLayerModelObject* ancestorRenderer)
+void LayoutGeometryMap::pushMappingsToAncestor(const LayoutObject* renderer, const LayoutBoxModelObject* ancestorRenderer)
 {
     // We need to push mappings in reverse order here, so do insertions rather than appends.
     TemporaryChange<size_t> positionChange(m_insertionPosition, m_mapping.size());
@@ -191,13 +194,13 @@ void LayoutGeometryMap::pushMappingsToAncestor(const LayoutObject* renderer, con
         renderer = renderer->pushMappingToContainer(ancestorRenderer, *this);
     } while (renderer && renderer != ancestorRenderer);
 
-    ASSERT(m_mapping.isEmpty() || isTopmostRenderView(m_mapping[0].m_renderer));
+    ASSERT(m_mapping.isEmpty() || isTopmostLayoutView(m_mapping[0].m_renderer));
 }
 
 static bool canMapBetweenRenderers(const LayoutObject* renderer, const LayoutObject* ancestor)
 {
     for (const LayoutObject* current = renderer; ; current = current->parent()) {
-        const LayoutStyle& style = current->styleRef();
+        const ComputedStyle& style = current->styleRef();
         if (style.position() == FixedPosition || style.isFlippedBlocksWritingMode())
             return false;
 
@@ -211,16 +214,16 @@ static bool canMapBetweenRenderers(const LayoutObject* renderer, const LayoutObj
     return true;
 }
 
-void LayoutGeometryMap::pushMappingsToAncestor(const Layer* layer, const Layer* ancestorLayer)
+void LayoutGeometryMap::pushMappingsToAncestor(const DeprecatedPaintLayer* layer, const DeprecatedPaintLayer* ancestorLayer)
 {
-    const LayoutObject* renderer = layer->renderer();
+    const LayoutObject* renderer = layer->layoutObject();
 
-    bool crossDocument = ancestorLayer && layer->renderer()->frame() != ancestorLayer->renderer()->frame();
+    bool crossDocument = ancestorLayer && layer->layoutObject()->frame() != ancestorLayer->layoutObject()->frame();
     ASSERT(!crossDocument || m_mapCoordinatesFlags & TraverseDocumentBoundaries);
 
     // We have to visit all the renderers to detect flipped blocks. This might defeat the gains
     // from mapping via layers.
-    bool canConvertInLayerTree = (ancestorLayer && !crossDocument) ? canMapBetweenRenderers(layer->renderer(), ancestorLayer->renderer()) : false;
+    bool canConvertInLayerTree = (ancestorLayer && !crossDocument) ? canMapBetweenRenderers(layer->layoutObject(), ancestorLayer->layoutObject()) : false;
 
 //    fprintf(stderr, "LayoutGeometryMap::pushMappingsToAncestor from layer %p to layer %p, canConvertInLayerTree=%d\n", layer, ancestorLayer, canConvertInLayerTree);
 
@@ -228,18 +231,18 @@ void LayoutGeometryMap::pushMappingsToAncestor(const Layer* layer, const Layer* 
         LayoutPoint layerOffset;
         layer->convertToLayerCoords(ancestorLayer, layerOffset);
 
-        // The RenderView must be pushed first.
+        // The LayoutView must be pushed first.
         if (!m_mapping.size()) {
-            ASSERT(ancestorLayer->renderer()->isRenderView());
-            pushMappingsToAncestor(ancestorLayer->renderer(), 0);
+            ASSERT(ancestorLayer->layoutObject()->isLayoutView());
+            pushMappingsToAncestor(ancestorLayer->layoutObject(), 0);
         }
 
         TemporaryChange<size_t> positionChange(m_insertionPosition, m_mapping.size());
-        bool accumulatingTransform = layer->renderer()->style()->preserves3D() || ancestorLayer->renderer()->style()->preserves3D();
+        bool accumulatingTransform = layer->layoutObject()->style()->preserves3D() || ancestorLayer->layoutObject()->style()->preserves3D();
         push(renderer, toLayoutSize(layerOffset), accumulatingTransform, /*isNonUniform*/ false, /*isFixedPosition*/ false, /*hasTransform*/ false);
         return;
     }
-    const LayoutLayerModelObject* ancestorRenderer = ancestorLayer ? ancestorLayer->renderer() : 0;
+    const LayoutBoxModelObject* ancestorRenderer = ancestorLayer ? ancestorLayer->layoutObject() : 0;
     pushMappingsToAncestor(renderer, ancestorRenderer);
 }
 
@@ -248,8 +251,8 @@ void LayoutGeometryMap::push(const LayoutObject* renderer, const LayoutSize& off
 //    fprintf(stderr, "LayoutGeometryMap::push %p %d,%d isNonUniform=%d\n", renderer, offsetFromContainer.width().toInt(), offsetFromContainer.height().toInt(), isNonUniform);
 
     ASSERT(m_insertionPosition != kNotFound);
-    ASSERT(!renderer->isRenderView() || !m_insertionPosition || m_mapCoordinatesFlags & TraverseDocumentBoundaries);
-    ASSERT(offsetForFixedPosition.isZero() || renderer->isRenderView());
+    ASSERT(!renderer->isLayoutView() || !m_insertionPosition || m_mapCoordinatesFlags & TraverseDocumentBoundaries);
+    ASSERT(offsetForFixedPosition.isZero() || renderer->isLayoutView());
 
     m_mapping.insert(m_insertionPosition, LayoutGeometryMapStep(renderer, accumulatingTransform, isNonUniform, isFixedPosition, hasTransform));
 
@@ -263,8 +266,8 @@ void LayoutGeometryMap::push(const LayoutObject* renderer, const LayoutSize& off
 void LayoutGeometryMap::push(const LayoutObject* renderer, const TransformationMatrix& t, bool accumulatingTransform, bool isNonUniform, bool isFixedPosition, bool hasTransform, LayoutSize offsetForFixedPosition)
 {
     ASSERT(m_insertionPosition != kNotFound);
-    ASSERT(!renderer->isRenderView() || !m_insertionPosition || m_mapCoordinatesFlags & TraverseDocumentBoundaries);
-    ASSERT(offsetForFixedPosition.isZero() || renderer->isRenderView());
+    ASSERT(!renderer->isLayoutView() || !m_insertionPosition || m_mapCoordinatesFlags & TraverseDocumentBoundaries);
+    ASSERT(offsetForFixedPosition.isZero() || renderer->isLayoutView());
 
     m_mapping.insert(m_insertionPosition, LayoutGeometryMapStep(renderer, accumulatingTransform, isNonUniform, isFixedPosition, hasTransform));
 
@@ -279,7 +282,7 @@ void LayoutGeometryMap::push(const LayoutObject* renderer, const TransformationM
     stepInserted(step);
 }
 
-void LayoutGeometryMap::popMappingsToAncestor(const LayoutLayerModelObject* ancestorRenderer)
+void LayoutGeometryMap::popMappingsToAncestor(const LayoutBoxModelObject* ancestorRenderer)
 {
     ASSERT(m_mapping.size());
 
@@ -289,9 +292,9 @@ void LayoutGeometryMap::popMappingsToAncestor(const LayoutLayerModelObject* ance
     }
 }
 
-void LayoutGeometryMap::popMappingsToAncestor(const Layer* ancestorLayer)
+void LayoutGeometryMap::popMappingsToAncestor(const DeprecatedPaintLayer* ancestorLayer)
 {
-    const LayoutLayerModelObject* ancestorRenderer = ancestorLayer ? ancestorLayer->renderer() : 0;
+    const LayoutBoxModelObject* ancestorRenderer = ancestorLayer ? ancestorLayer->layoutObject() : 0;
     popMappingsToAncestor(ancestorRenderer);
 }
 
@@ -330,12 +333,12 @@ void LayoutGeometryMap::stepRemoved(const LayoutGeometryMapStep& step)
 }
 
 #if ENABLE(ASSERT)
-bool LayoutGeometryMap::isTopmostRenderView(const LayoutObject* renderer) const
+bool LayoutGeometryMap::isTopmostLayoutView(const LayoutObject* renderer) const
 {
-    if (!renderer->isRenderView())
+    if (!renderer->isLayoutView())
         return false;
 
-    // If we're not working with multiple RenderViews, then any view is considered
+    // If we're not working with multiple LayoutViews, then any view is considered
     // "topmost" (to preserve original behavior).
     if (!(m_mapCoordinatesFlags & TraverseDocumentBoundaries))
         return true;

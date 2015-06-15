@@ -8,6 +8,8 @@
 #include "base/macros.h"
 #include "content/browser/service_worker/service_worker_database.h"
 
+class GURL;
+
 namespace content {
 
 class ServiceWorkerMetrics {
@@ -48,7 +50,17 @@ class ServiceWorkerMetrics {
   static void RecordDeleteAndStartOverResult(DeleteAndStartOverResult result);
 
   // Counts the number of page loads controlled by a Service Worker.
-  static void CountControlledPageLoad();
+  static void CountControlledPageLoad(const GURL& url);
+
+  // Records the result of trying to start a worker. |is_installed| indicates
+  // whether the version has been installed.
+  static void RecordStartWorkerStatus(ServiceWorkerStatusCode status,
+                                      bool is_installed);
+
+  // Records the time taken to successfully start a worker. |is_installed|
+  // indicates whether the version has been installed.
+  static void RecordStartWorkerTime(const base::TimeDelta& time,
+                                    bool is_installed);
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(ServiceWorkerMetrics);

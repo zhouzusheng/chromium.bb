@@ -14,7 +14,7 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_log.h"
+#include "net/log/net_log.h"
 
 using base::TimeDelta;
 
@@ -226,7 +226,7 @@ bool ClientSocketPoolBaseHelper::IsStalled() const {
   // which does not count.)
   for (GroupMap::const_iterator it = group_map_.begin();
        it != group_map_.end(); ++it) {
-    if (it->second->IsStalledOnPoolMaxSockets(max_sockets_per_group_))
+    if (it->second->CanUseAdditionalSocketSlot(max_sockets_per_group_))
       return true;
   }
   return false;
@@ -278,7 +278,7 @@ int ClientSocketPoolBaseHelper::RequestSocket(
     // call back in to |this|, which will cause all sorts of fun and exciting
     // re-entrancy issues if the socket pool is doing something else at the
     // time.
-    if (group->IsStalledOnPoolMaxSockets(max_sockets_per_group_)) {
+    if (group->CanUseAdditionalSocketSlot(max_sockets_per_group_)) {
       base::MessageLoop::current()->PostTask(
           FROM_HERE,
           base::Bind(
@@ -562,27 +562,27 @@ LoadState ClientSocketPoolBaseHelper::GetLoadState(
   if (ContainsKey(pending_callback_map_, handle))
     return LOAD_STATE_CONNECTING;
 
-  if (!ContainsKey(group_map_, group_name)) {
-    NOTREACHED() << "ClientSocketPool does not contain group: " << group_name
-                 << " for handle: " << handle;
+  GroupMap::const_iterator group_it = group_map_.find(group_name);
+  if (group_it == group_map_.end()) {
+    // TODO(mmenke):  This is actually reached in the wild, for unknown reasons.
+    // Would be great to understand why, and if it's a bug, fix it.  If not,
+    // should have a test for that case.
+    NOTREACHED();
     return LOAD_STATE_IDLE;
   }
 
-  // Can't use operator[] since it is non-const.
-  const Group& group = *group_map_.find(group_name)->second;
-
+  const Group& group = *group_it->second;
   if (group.HasConnectJobForHandle(handle)) {
-    // Just return the state  of the farthest along ConnectJob for the first
+    // Just return the state of the farthest along ConnectJob for the first
     // group.jobs().size() pending requests.
     LoadState max_state = LOAD_STATE_IDLE;
-    for (ConnectJobSet::const_iterator job_it = group.jobs().begin();
-         job_it != group.jobs().end(); ++job_it) {
-      max_state = std::max(max_state, (*job_it)->GetLoadState());
+    for (const auto& job : group.jobs()) {
+      max_state = std::max(max_state, job->GetLoadState());
     }
     return max_state;
   }
 
-  if (group.IsStalledOnPoolMaxSockets(max_sockets_per_group_))
+  if (group.CanUseAdditionalSocketSlot(max_sockets_per_group_))
     return LOAD_STATE_WAITING_FOR_STALLED_SOCKET_POOL;
   return LOAD_STATE_WAITING_FOR_AVAILABLE_SOCKET;
 }
@@ -636,9 +636,8 @@ base::DictionaryValue* ClientSocketPoolBaseHelper::GetInfoAsValue(
     }
     group_dict->Set("connect_jobs", connect_jobs_list);
 
-    group_dict->SetBoolean("is_stalled",
-                           group->IsStalledOnPoolMaxSockets(
-                               max_sockets_per_group_));
+    group_dict->SetBoolean("is_stalled", group->CanUseAdditionalSocketSlot(
+                                             max_sockets_per_group_));
     group_dict->SetBoolean("backup_job_timer_is_running",
                            group->BackupJobTimerIsRunning());
 
@@ -840,7 +839,7 @@ bool ClientSocketPoolBaseHelper::FindTopStalledGroup(
     Group* curr_group = i->second;
     if (!curr_group->has_pending_requests())
       continue;
-    if (curr_group->IsStalledOnPoolMaxSockets(max_sockets_per_group_)) {
+    if (curr_group->CanUseAdditionalSocketSlot(max_sockets_per_group_)) {
       if (!group)
         return true;
       has_stalled_group = true;
@@ -964,6 +963,15 @@ void ClientSocketPoolBaseHelper::ProcessPendingRequest(
     const std::string& group_name, Group* group) {
   const Request* next_request = group->GetNextPendingRequest();
   DCHECK(next_request);
+
+  // If the group has no idle sockets, and can't make use of an additional slot,
+  // either because it's at the limit or because it's at the socket per group
+  // limit, then there's nothing to do.
+  if (group->idle_sockets().empty() &&
+      !group->CanUseAdditionalSocketSlot(max_sockets_per_group_)) {
+    return;
+  }
+
   int rv = RequestSocketInternal(group_name, *next_request);
   if (rv != ERR_IO_PENDING) {
     scoped_ptr<const Request> request = group->PopNextPendingRequest();
@@ -1125,10 +1133,6 @@ void ClientSocketPoolBaseHelper::InvokeUserCallbackLater(
 
 void ClientSocketPoolBaseHelper::InvokeUserCallback(
     ClientSocketHandle* handle) {
-  // TODO(pkasting): Remove ScopedTracker below once crbug.com/455884 is fixed.
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "455884 ClientSocketPoolBaseHelper::InvokeUserCallback"));
   PendingCallbackMap::iterator it = pending_callback_map_.find(handle);
 
   // Exit if the request has already been cancelled.

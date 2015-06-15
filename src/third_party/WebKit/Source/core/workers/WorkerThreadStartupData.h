@@ -32,6 +32,7 @@
 #define WorkerThreadStartupData_h
 
 #include "bindings/core/v8/V8CacheOptions.h"
+#include "core/CoreExport.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/workers/WorkerClients.h"
 #include "core/workers/WorkerThread.h"
@@ -44,13 +45,13 @@ namespace blink {
 
 class WorkerClients;
 
-class WorkerThreadStartupData final : public NoBaseWillBeGarbageCollectedFinalized<WorkerThreadStartupData> {
+class CORE_EXPORT WorkerThreadStartupData final {
     WTF_MAKE_NONCOPYABLE(WorkerThreadStartupData);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED(WorkerThreadStartupData);
 public:
-    static PassOwnPtrWillBeRawPtr<WorkerThreadStartupData> create(const KURL& scriptURL, const String& userAgent, const String& sourceCode, PassOwnPtr<Vector<char>> cachedMetaData, WorkerThreadStartMode startMode, const String& contentSecurityPolicy, ContentSecurityPolicyHeaderType contentSecurityPolicyType, const SecurityOrigin* starterOrigin, PassOwnPtrWillBeRawPtr<WorkerClients> workerClients, V8CacheOptions v8CacheOptions = V8CacheOptionsDefault)
+    static PassOwnPtr<WorkerThreadStartupData> create(const KURL& scriptURL, const String& userAgent, const String& sourceCode, PassOwnPtr<Vector<char>> cachedMetaData, WorkerThreadStartMode startMode, const String& contentSecurityPolicy, ContentSecurityPolicyHeaderType contentSecurityPolicyType, const SecurityOrigin* starterOrigin, PassOwnPtrWillBeRawPtr<WorkerClients> workerClients, V8CacheOptions v8CacheOptions = V8CacheOptionsDefault)
     {
-        return adoptPtrWillBeNoop(new WorkerThreadStartupData(scriptURL, userAgent, sourceCode, cachedMetaData, startMode, contentSecurityPolicy, contentSecurityPolicyType, starterOrigin, workerClients, v8CacheOptions));
+        return adoptPtr(new WorkerThreadStartupData(scriptURL, userAgent, sourceCode, cachedMetaData, startMode, contentSecurityPolicy, contentSecurityPolicyType, starterOrigin, workerClients, v8CacheOptions));
     }
 
     ~WorkerThreadStartupData();
@@ -77,11 +78,17 @@ public:
     // See SecurityOrigin::transferPrivilegesFrom() for details on what
     // privileges are transferred.
     const SecurityOrigin* m_starterOrigin;
-    OwnPtrWillBeMember<WorkerClients> m_workerClients;
+
+    // This object is created and initialized on the thread creating
+    // a new worker context, but ownership of it and this WorkerThreadStartupData
+    // structure is passed along to the new worker thread, where it is finalized.
+    //
+    // Hence, CrossThreadPersistent<> is required to allow finalization
+    // to happen on a thread different than the thread creating the
+    // persistent reference.
+    OwnPtrWillBeCrossThreadPersistent<WorkerClients> m_workerClients;
 
     V8CacheOptions m_v8CacheOptions;
-
-    DECLARE_TRACE();
 
 private:
     WorkerThreadStartupData(const KURL& scriptURL, const String& userAgent, const String& sourceCode, PassOwnPtr<Vector<char>> cachedMetaData, WorkerThreadStartMode, const String& contentSecurityPolicy, ContentSecurityPolicyHeaderType contentSecurityPolicyType, const SecurityOrigin*, PassOwnPtrWillBeRawPtr<WorkerClients>, V8CacheOptions);

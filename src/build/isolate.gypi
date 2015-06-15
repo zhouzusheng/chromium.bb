@@ -80,6 +80,7 @@
         '--config-variable', 'chromeos=<(chromeos)',
         '--config-variable', 'component=<(component)',
         '--config-variable', 'disable_nacl=<(disable_nacl)',
+        '--config-variable', 'enable_plugins=<(enable_plugins)',
         '--config-variable', 'fastbuild=<(fastbuild)',
         '--config-variable', 'icu_use_data_file_flag=<(icu_use_data_file_flag)',
         # TODO(kbr): move this to chrome_tests.gypi:gles2_conform_tests_run
@@ -93,8 +94,11 @@
         '--config-variable', 'tsan=<(tsan)',
         '--config-variable', 'use_custom_libcxx=<(use_custom_libcxx)',
         '--config-variable', 'use_instrumented_libraries=<(use_instrumented_libraries)',
+        '--config-variable',
+        'use_prebuilt_instrumented_libraries=<(use_prebuilt_instrumented_libraries)',
         '--config-variable', 'use_openssl=<(use_openssl)',
         '--config-variable', 'use_ozone=<(use_ozone)',
+        '--config-variable', 'use_x11=<(use_x11)',
         '--config-variable', 'v8_use_external_startup_data=<(v8_use_external_startup_data)',
       ],
       'conditions': [

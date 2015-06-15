@@ -31,8 +31,8 @@
 #include "core/frame/UseCounter.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/shadow/MeterShadowElement.h"
+#include "core/layout/LayoutMeter.h"
 #include "core/layout/LayoutTheme.h"
-#include "core/rendering/RenderMeter.h"
 
 namespace blink {
 
@@ -55,11 +55,11 @@ PassRefPtrWillBeRawPtr<HTMLMeterElement> HTMLMeterElement::create(Document& docu
     return meter.release();
 }
 
-LayoutObject* HTMLMeterElement::createRenderer(const LayoutStyle& style)
+LayoutObject* HTMLMeterElement::createLayoutObject(const ComputedStyle& style)
 {
     if (hasOpenShadowRoot() || !LayoutTheme::theme().supportsMeter(style.appearance()))
         return LayoutObject::createObject(this, style);
-    return new RenderMeter(this);
+    return new LayoutMeter(this);
 }
 
 void HTMLMeterElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -182,17 +182,17 @@ void HTMLMeterElement::didElementStateChange()
 {
     m_value->setWidthPercentage(valueRatio()*100);
     m_value->updatePseudo();
-    if (RenderMeter* render = renderMeter())
+    if (LayoutMeter* render = layoutMeter())
         render->updateFromElement();
 }
 
-RenderMeter* HTMLMeterElement::renderMeter() const
+LayoutMeter* HTMLMeterElement::layoutMeter() const
 {
-    if (renderer() && renderer()->isMeter())
-        return toRenderMeter(renderer());
+    if (layoutObject() && layoutObject()->isMeter())
+        return toLayoutMeter(layoutObject());
 
-    LayoutObject* layoutObject = closedShadowRoot()->firstChild()->renderer();
-    return toRenderMeter(layoutObject);
+    LayoutObject* layoutObject = closedShadowRoot()->firstChild()->layoutObject();
+    return toLayoutMeter(layoutObject);
 }
 
 void HTMLMeterElement::didAddClosedShadowRoot(ShadowRoot& root)

@@ -32,7 +32,8 @@
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/InputTypeNames.h"
 #include "core/dom/AXObjectCache.h"
-#include "core/dom/NodeLayoutStyle.h"
+#include "core/dom/ExceptionCode.h"
+#include "core/dom/NodeComputedStyle.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/ScopedEventQueue.h"
 #include "core/fileapi/FileList.h"
@@ -507,7 +508,7 @@ bool InputType::canBeSuccessfulSubmitButton()
     return false;
 }
 
-bool InputType::rendererIsNeeded()
+bool InputType::layoutObjectIsNeeded()
 {
     return true;
 }
@@ -598,7 +599,7 @@ String InputType::sanitizeValue(const String& proposedValue) const
 void InputType::warnIfValueIsInvalidAndElementIsVisible(const String& value) const
 {
     // Don't warn if the value is set in Modernizr.
-    LayoutStyle* style = element().layoutStyle();
+    const ComputedStyle* style = element().computedStyle();
     if (style && style->visibility() != HIDDEN)
         warnIfValueIsInvalid(value);
 }
@@ -704,6 +705,17 @@ const QualifiedName& InputType::subResourceAttributeName() const
     return QualifiedName::null();
 }
 
+bool InputType::supportsAutocapitalize() const
+{
+    return false;
+}
+
+const AtomicString& InputType::defaultAutocapitalize() const
+{
+    DEFINE_STATIC_LOCAL(const AtomicString, none, ("none", AtomicString::ConstructFromLiteral));
+    return none;
+}
+
 bool InputType::shouldAppearIndeterminate() const
 {
     return false;
@@ -731,7 +743,7 @@ unsigned InputType::width() const
 
 TextDirection InputType::computedTextDirection()
 {
-    return element().computedStyle()->direction();
+    return element().ensureComputedStyle()->direction();
 }
 
 ColorChooserClient* InputType::colorChooserClient()
@@ -898,7 +910,7 @@ void InputType::stepUpFromRenderer(int n)
 
 void InputType::countUsageIfVisible(UseCounter::Feature feature) const
 {
-    if (LayoutStyle* style = element().layoutStyle()) {
+    if (const ComputedStyle* style = element().computedStyle()) {
         if (style->visibility() != HIDDEN)
             UseCounter::count(element().document(), feature);
     }

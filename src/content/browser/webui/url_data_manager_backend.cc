@@ -337,20 +337,11 @@ void URLRequestChromeJob::DataAvailable(base::RefCountedMemory* bytes) {
     int bytes_read;
     if (pending_buf_.get()) {
       CHECK(pending_buf_->data());
-      // TODO(pkasting): Remove ScopedTracker below once crbug.com/455423 is
-      // fixed.
-      tracked_objects::ScopedTracker tracking_profile(
-          FROM_HERE_WITH_EXPLICIT_FUNCTION(
-              "455423 URLRequestChromeJob::CompleteRead"));
       CompleteRead(pending_buf_.get(), pending_buf_size_, &bytes_read);
       pending_buf_ = NULL;
       NotifyReadComplete(bytes_read);
     }
   } else {
-    // TODO(pkasting): Remove ScopedTracker below once crbug.com/455423 is
-    // fixed.
-    tracked_objects::ScopedTracker tracking_profile(
-        FROM_HERE_WITH_EXPLICIT_FUNCTION("455423 URLRequestJob::NotifyDone"));
     // The request failed.
     NotifyDone(net::URLRequestStatus(net::URLRequestStatus::FAILED,
                                      net::ERR_FAILED));
@@ -380,15 +371,15 @@ bool URLRequestChromeJob::ReadRawData(net::IOBuffer* buf, int buf_size,
 
 void URLRequestChromeJob::CompleteRead(net::IOBuffer* buf, int buf_size,
                                        int* bytes_read) {
-  // http://crbug.com/373841
-  char url_buf[128];
-  base::strlcpy(url_buf, request_->url().spec().c_str(), arraysize(url_buf));
-  base::debug::Alias(url_buf);
-
   int remaining = static_cast<int>(data_->size()) - data_offset_;
   if (buf_size > remaining)
     buf_size = remaining;
   if (buf_size > 0) {
+    // TODO(pkasting): Remove ScopedTracker below once crbug.com/455423 is
+    // fixed.
+    tracked_objects::ScopedTracker tracking_profile(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION(
+            "455423 URLRequestChromeJob::CompleteRead memcpy"));
     memcpy(buf->data(), data_->front() + data_offset_, buf_size);
     data_offset_ += buf_size;
   }
@@ -449,7 +440,7 @@ namespace {
 void GetMimeTypeOnUI(URLDataSourceImpl* source,
                      const std::string& path,
                      const base::WeakPtr<URLRequestChromeJob>& job) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   std::string mime_type = source->source()->GetMimeType(path);
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
@@ -565,7 +556,7 @@ URLDataManagerBackend::CreateProtocolHandler(
 
 void URLDataManagerBackend::AddDataSource(
     URLDataSourceImpl* source) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DataSourceMap::iterator i = data_sources_.find(source->source_name());
   if (i != data_sources_.end()) {
     if (!source->source()->ShouldReplaceExistingSource())
@@ -725,10 +716,6 @@ void URLDataManagerBackend::RemoveRequest(URLRequestChromeJob* job) {
 
 void URLDataManagerBackend::DataAvailable(RequestID request_id,
                                           base::RefCountedMemory* bytes) {
-  // TODO(pkasting): Remove ScopedTracker below once crbug.com/455423 is fixed.
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "455423 URLDataManagerBackend::DataAvailable"));
   // Forward this data on to the pending net::URLRequest, if it exists.
   PendingRequestMap::iterator i = pending_requests_.find(request_id);
   if (i != pending_requests_.end()) {

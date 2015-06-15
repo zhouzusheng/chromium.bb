@@ -19,7 +19,6 @@
 #include "base/time/time.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/load_flags.h"
-#include "net/base/mime_util.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "net/base/network_delegate.h"
@@ -62,10 +61,8 @@ class URLRequestHttpJob::HttpFilterContext : public FilterContext {
   // FilterContext implementation.
   bool GetMimeType(std::string* mime_type) const override;
   bool GetURL(GURL* gurl) const override;
-  bool GetContentDisposition(std::string* disposition) const override;
   base::Time GetRequestTime() const override;
   bool IsCachedContent() const override;
-  bool IsDownload() const override;
   SdchManager::DictionarySet* SdchDictionariesAdvertised() const override;
   int64 GetByteReadCount() const override;
   int GetResponseCode() const override;
@@ -103,23 +100,12 @@ bool URLRequestHttpJob::HttpFilterContext::GetURL(GURL* gurl) const {
   return true;
 }
 
-bool URLRequestHttpJob::HttpFilterContext::GetContentDisposition(
-    std::string* disposition) const {
-  HttpResponseHeaders* headers = job_->GetResponseHeaders();
-  void *iter = NULL;
-  return headers->EnumerateHeader(&iter, "Content-Disposition", disposition);
-}
-
 base::Time URLRequestHttpJob::HttpFilterContext::GetRequestTime() const {
   return job_->request() ? job_->request()->request_time() : base::Time();
 }
 
 bool URLRequestHttpJob::HttpFilterContext::IsCachedContent() const {
   return job_->is_cached_content_;
-}
-
-bool URLRequestHttpJob::HttpFilterContext::IsDownload() const {
-  return (job_->request_info_.load_flags & LOAD_IS_DOWNLOAD) != 0;
 }
 
 SdchManager::DictionarySet*
@@ -615,7 +601,7 @@ void URLRequestHttpJob::AddCookieHeaderAndStart() {
   if (!request_)
     return;
 
-  CookieStore* cookie_store = GetCookieStore();
+  CookieStore* cookie_store = request_->context()->cookie_store();
   if (cookie_store && !(request_info_.load_flags & LOAD_DO_NOT_SEND_COOKIES)) {
     cookie_store->GetAllCookiesForURLAsync(
         request_->url(),
@@ -629,10 +615,18 @@ void URLRequestHttpJob::AddCookieHeaderAndStart() {
 void URLRequestHttpJob::DoLoadCookies() {
   CookieOptions options;
   options.set_include_httponly();
-  GetCookieStore()->GetCookiesWithOptionsAsync(
-      request_->url(), options,
-      base::Bind(&URLRequestHttpJob::OnCookiesLoaded,
-                 weak_factory_.GetWeakPtr()));
+
+  // TODO(mkwst): Drop this `if` once we decide whether or not to ship
+  // first-party cookies: https://crbug.com/459154
+  if (network_delegate() &&
+      network_delegate()->FirstPartyOnlyCookieExperimentEnabled())
+    options.set_first_party_url(request_->first_party_for_cookies());
+  else
+    options.set_include_first_party_only();
+
+  request_->context()->cookie_store()->GetCookiesWithOptionsAsync(
+      request_->url(), options, base::Bind(&URLRequestHttpJob::OnCookiesLoaded,
+                                           weak_factory_.GetWeakPtr()));
 }
 
 void URLRequestHttpJob::CheckCookiePolicyAndLoad(
@@ -709,7 +703,7 @@ void URLRequestHttpJob::SaveNextCookie() {
       new SharedBoolean(true);
 
   if (!(request_info_.load_flags & LOAD_DO_NOT_SAVE_COOKIES) &&
-      GetCookieStore() && response_cookies_.size() > 0) {
+      request_->context()->cookie_store() && response_cookies_.size() > 0) {
     CookieOptions options;
     options.set_include_httponly();
     options.set_server_time(response_date_);
@@ -727,7 +721,7 @@ void URLRequestHttpJob::SaveNextCookie() {
       if (CanSetCookie(
           response_cookies_[response_cookies_save_index_], &options)) {
         callback_pending->data = true;
-        GetCookieStore()->SetCookieWithOptionsAsync(
+        request_->context()->cookie_store()->SetCookieWithOptionsAsync(
             request_->url(), response_cookies_[response_cookies_save_index_],
             options, callback);
       }
@@ -995,11 +989,6 @@ void URLRequestHttpJob::SetExtraRequestHeaders(
 }
 
 LoadState URLRequestHttpJob::GetLoadState() const {
-  // TODO(pkasting): Remove ScopedTracker below once crbug.com/455952 is
-  // fixed.
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "455952 URLRequestHttpJob::GetLoadState"));
   return transaction_.get() ?
       transaction_->GetLoadState() : LOAD_STATE_IDLE;
 }

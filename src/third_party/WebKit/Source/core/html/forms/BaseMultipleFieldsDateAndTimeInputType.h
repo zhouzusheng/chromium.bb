@@ -61,7 +61,6 @@ protected:
     ~BaseMultipleFieldsDateAndTimeInputType() override;
 
     virtual void setupLayoutParameters(DateTimeEditElement::LayoutParameters&, const DateComponents&) const = 0;
-    bool shouldHaveSecondField(const DateComponents&) const;
 
 private:
     // DateTimeEditElement::EditControlOwner functions
@@ -96,7 +95,7 @@ private:
     // InputType functions
     String badInputText() const override;
     void blur() final;
-    PassRefPtr<LayoutStyle> customStyleForRenderer(PassRefPtr<LayoutStyle>) override;
+    PassRefPtr<ComputedStyle> customStyleForLayoutObject(PassRefPtr<ComputedStyle>) override;
     void createShadowSubtree() final;
     void destroyShadowSubtree() final;
     void disabledAttributeChanged() final;

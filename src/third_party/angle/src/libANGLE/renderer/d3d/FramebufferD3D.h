@@ -9,15 +9,14 @@
 #ifndef LIBANGLE_RENDERER_D3D_FRAMBUFFERD3D_H_
 #define LIBANGLE_RENDERER_D3D_FRAMBUFFERD3D_H_
 
-#include "libANGLE/renderer/DefaultAttachmentImpl.h"
-#include "libANGLE/renderer/FramebufferImpl.h"
-
 #include <vector>
 #include <cstdint>
 
+#include "libANGLE/angletypes.h"
+#include "libANGLE/renderer/FramebufferImpl.h"
+
 namespace gl
 {
-struct ClearParameters;
 class FramebufferAttachment;
 struct PixelPackState;
 }
@@ -27,35 +26,37 @@ namespace rx
 class RenderTargetD3D;
 class RendererD3D;
 
-class DefaultAttachmentD3D : public DefaultAttachmentImpl
+struct ClearParameters
 {
-  public:
-    DefaultAttachmentD3D(RenderTargetD3D *renderTarget);
-    virtual ~DefaultAttachmentD3D();
+    bool clearColor[gl::IMPLEMENTATION_MAX_DRAW_BUFFERS];
+    gl::ColorF colorFClearValue;
+    gl::ColorI colorIClearValue;
+    gl::ColorUI colorUIClearValue;
+    GLenum colorClearType;
+    bool colorMaskRed;
+    bool colorMaskGreen;
+    bool colorMaskBlue;
+    bool colorMaskAlpha;
 
-    static DefaultAttachmentD3D *makeDefaultAttachmentD3D(DefaultAttachmentImpl* impl);
+    bool clearDepth;
+    float depthClearValue;
 
-    virtual GLsizei getWidth() const override;
-    virtual GLsizei getHeight() const override;
-    virtual GLenum getInternalFormat() const override;
-    virtual GLsizei getSamples() const override;
+    bool clearStencil;
+    GLint stencilClearValue;
+    GLuint stencilWriteMask;
 
-    RenderTargetD3D *getRenderTarget() const;
-
-  private:
-    DISALLOW_COPY_AND_ASSIGN(DefaultAttachmentD3D);
-
-    RenderTargetD3D *mRenderTarget;
+    bool scissorEnabled;
+    gl::Rectangle scissor;
 };
 
 class FramebufferD3D : public FramebufferImpl
 {
   public:
-    FramebufferD3D(RendererD3D *renderer);
+    FramebufferD3D(const gl::Framebuffer::Data &data, RendererD3D *renderer);
     virtual ~FramebufferD3D();
 
     void setColorAttachment(size_t index, const gl::FramebufferAttachment *attachment) override;
-    void setDepthttachment(const gl::FramebufferAttachment *attachment) override;
+    void setDepthAttachment(const gl::FramebufferAttachment *attachment) override;
     void setStencilAttachment(const gl::FramebufferAttachment *attachment) override;
     void setDepthStencilAttachment(const gl::FramebufferAttachment *attachment) override;
 
@@ -65,7 +66,7 @@ class FramebufferD3D : public FramebufferImpl
     gl::Error invalidate(size_t count, const GLenum *attachments) override;
     gl::Error invalidateSub(size_t count, const GLenum *attachments, const gl::Rectangle &area) override;
 
-    gl::Error clear(const gl::State &state, GLbitfield mask) override;
+    gl::Error clear(const gl::Data &data, GLbitfield mask) override;
     gl::Error clearBufferfv(const gl::State &state, GLenum buffer, GLint drawbuffer, const GLfloat *values) override;
     gl::Error clearBufferuiv(const gl::State &state, GLenum buffer, GLint drawbuffer, const GLuint *values) override;
     gl::Error clearBufferiv(const gl::State &state, GLenum buffer, GLint drawbuffer, const GLint *values) override;
@@ -79,22 +80,18 @@ class FramebufferD3D : public FramebufferImpl
                    GLbitfield mask, GLenum filter, const gl::Framebuffer *sourceFramebuffer) override;
 
     GLenum checkStatus() const override;
-    const gl::FramebufferAttachment *getReadAttachment() const;
+
+    const gl::AttachmentList &getColorAttachmentsForRender(const Workarounds &workarounds) const;
 
   protected:
-    std::vector<const gl::FramebufferAttachment*> mColorBuffers;
-    const gl::FramebufferAttachment *mDepthbuffer;
-    const gl::FramebufferAttachment *mStencilbuffer;
-
-    std::vector<GLenum> mDrawBuffers;
-    GLenum mReadBuffer;
+    // Cache variable
+    mutable gl::AttachmentList mColorAttachmentsForRender;
+    mutable bool mInvalidateColorAttachmentCache;
 
   private:
-    DISALLOW_COPY_AND_ASSIGN(FramebufferD3D);
-
     RendererD3D *const mRenderer;
 
-    virtual gl::Error clear(const gl::State &state, const gl::ClearParameters &clearParams) = 0;
+    virtual gl::Error clear(const gl::State &state, const ClearParameters &clearParams) = 0;
 
     virtual gl::Error readPixels(const gl::Rectangle &area, GLenum format, GLenum type, size_t outputPitch,
                                  const gl::PixelPackState &pack, uint8_t *pixels) const = 0;

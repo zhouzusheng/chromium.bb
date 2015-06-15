@@ -13,7 +13,6 @@
 #include "content/child/service_worker/web_service_worker_registration_impl.h"
 #include "content/child/thread_safe_sender.h"
 #include "content/child/worker_task_runner.h"
-#include "content/common/platform_notification_messages.h"
 #include "content/public/common/platform_notification_data.h"
 #include "third_party/WebKit/public/platform/WebSerializedOrigin.h"
 #include "third_party/WebKit/public/platform/modules/notifications/WebNotificationDelegate.h"
@@ -114,6 +113,36 @@ void NotificationManager::showPersistent(
                  base::Passed(&owned_callbacks)));
 }
 
+void NotificationManager::getNotifications(
+    const blink::WebString& filter_tag,
+    blink::WebServiceWorkerRegistration* service_worker_registration,
+    blink::WebNotificationGetCallbacks* callbacks) {
+  DCHECK(service_worker_registration);
+  DCHECK(callbacks);
+
+  WebServiceWorkerRegistrationImpl* service_worker_registration_impl =
+      static_cast<WebServiceWorkerRegistrationImpl*>(
+          service_worker_registration);
+
+  GURL origin = GURL(service_worker_registration_impl->scope()).GetOrigin();
+  int64 service_worker_registration_id =
+      service_worker_registration_impl->registration_id();
+
+  // TODO(peter): GenerateNotificationId is more of a request id. Consider
+  // renaming the method in the NotificationDispatcher if this makes sense.
+  int request_id =
+      notification_dispatcher_->GenerateNotificationId(CurrentWorkerId());
+
+  pending_get_notification_requests_.AddWithID(callbacks, request_id);
+
+  thread_safe_sender_->Send(
+      new PlatformNotificationHostMsg_GetNotifications(
+          request_id,
+          service_worker_registration_id,
+          origin,
+          base::UTF16ToUTF8(filter_tag)));
+}
+
 void NotificationManager::close(blink::WebNotificationDelegate* delegate) {
   if (pending_notifications_.CancelPageNotificationFetches(delegate))
     return;
@@ -134,8 +163,10 @@ void NotificationManager::close(blink::WebNotificationDelegate* delegate) {
 }
 
 void NotificationManager::closePersistent(
+    const blink::WebSerializedOrigin& origin,
     const blink::WebString& persistent_notification_id) {
   thread_safe_sender_->Send(new PlatformNotificationHostMsg_ClosePersistent(
+      GURL(origin.string()),
       base::UTF16ToUTF8(persistent_notification_id)));
 }
 
@@ -167,8 +198,12 @@ bool NotificationManager::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(NotificationManager, message)
     IPC_MESSAGE_HANDLER(PlatformNotificationMsg_DidShow, OnDidShow);
+    IPC_MESSAGE_HANDLER(PlatformNotificationMsg_DidShowPersistent,
+                        OnDidShowPersistent)
     IPC_MESSAGE_HANDLER(PlatformNotificationMsg_DidClose, OnDidClose);
     IPC_MESSAGE_HANDLER(PlatformNotificationMsg_DidClick, OnDidClick);
+    IPC_MESSAGE_HANDLER(PlatformNotificationMsg_DidGetNotifications,
+                        OnDidGetNotifications)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -181,6 +216,22 @@ void NotificationManager::OnDidShow(int notification_id) {
     return;
 
   iter->second->dispatchShowEvent();
+}
+
+void NotificationManager::OnDidShowPersistent(int request_id, bool success) {
+  blink::WebNotificationShowCallbacks* callbacks =
+      pending_show_notification_requests_.Lookup(request_id);
+  DCHECK(callbacks);
+
+  if (!callbacks)
+    return;
+
+  if (success)
+    callbacks->onSuccess();
+  else
+    callbacks->onError();
+
+  pending_show_notification_requests_.Remove(request_id);
 }
 
 void NotificationManager::OnDidClose(int notification_id) {
@@ -198,6 +249,34 @@ void NotificationManager::OnDidClick(int notification_id) {
     return;
 
   iter->second->dispatchClickEvent();
+}
+
+void NotificationManager::OnDidGetNotifications(
+    int request_id,
+    const std::vector<PersistentNotificationInfo>& notification_infos) {
+  blink::WebNotificationGetCallbacks* callbacks =
+      pending_get_notification_requests_.Lookup(request_id);
+  DCHECK(callbacks);
+  if (!callbacks)
+    return;
+
+  scoped_ptr<blink::WebVector<blink::WebPersistentNotificationInfo>>
+      notifications(new blink::WebVector<blink::WebPersistentNotificationInfo>(
+          notification_infos.size()));
+
+  for (size_t i = 0; i < notification_infos.size(); ++i) {
+    blink::WebPersistentNotificationInfo web_notification_info;
+    web_notification_info.persistentNotificationId =
+        blink::WebString::fromUTF8(notification_infos[i].first);
+    web_notification_info.data =
+        ToWebNotificationData(notification_infos[i].second);
+
+    (*notifications)[i] = web_notification_info;
+  }
+
+  callbacks->onSuccess(notifications.release());
+
+  pending_get_notification_requests_.Remove(request_id);
 }
 
 void NotificationManager::DisplayPageNotification(
@@ -223,16 +302,21 @@ void NotificationManager::DisplayPersistentNotification(
     int64 service_worker_registration_id,
     scoped_ptr<blink::WebNotificationShowCallbacks> callbacks,
     const SkBitmap& icon) {
+  // TODO(peter): GenerateNotificationId is more of a request id. Consider
+  // renaming the method in the NotificationDispatcher if this makes sense.
+  int request_id =
+      notification_dispatcher_->GenerateNotificationId(CurrentWorkerId());
+
+  pending_show_notification_requests_.AddWithID(callbacks.release(),
+                                                request_id);
+
   thread_safe_sender_->Send(
       new PlatformNotificationHostMsg_ShowPersistent(
+          request_id,
           service_worker_registration_id,
           GURL(origin.string()),
           icon,
           ToPlatformNotificationData(notification_data)));
-
-  // There currently isn't a case in which the promise would be rejected per
-  // our implementation, so always resolve it here.
-  callbacks->onSuccess();
 }
 
 }  // namespace content

@@ -21,6 +21,7 @@
 #include "vpx/vp8cx.h"
 #include "vpx/vp8dx.h"
 
+#include "webrtc/base/checks.h"
 #include "webrtc/common.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/modules/interface/module_common_types.h"
@@ -208,9 +209,9 @@ int VP9EncoderImpl::InitAndSetControlSettings(const VideoCodec* inst) {
   if (vpx_codec_enc_init(encoder_, vpx_codec_vp9_cx(), config_, 0)) {
     return WEBRTC_VIDEO_CODEC_UNINITIALIZED;
   }
-  // Only positive speeds, currently: 0 - 7.
-  // O means slowest/best quality, 7 means fastest/lower quality.
-  cpu_speed_ = 6;
+  // Only positive speeds, currently: 0 - 8.
+  // O means slowest/best quality, 8 means fastest/lower quality.
+  cpu_speed_ = 7;
   // Note: some of these codec controls still use "VP8" in the control name.
   // TODO(marpan): Update this in the next/future libvpx version.
   vpx_codec_control(encoder_, VP8E_SET_CPUUSED, cpu_speed_);
@@ -223,11 +224,12 @@ int VP9EncoderImpl::InitAndSetControlSettings(const VideoCodec* inst) {
   // The number tile columns will be capped by the encoder based on image size
   // (minimum width of tile column is 256 pixels, maximum is 4096).
   vpx_codec_control(encoder_, VP9E_SET_TILE_COLUMNS, (config_->g_threads >> 1));
-  // TODO(marpan): Enable in future libvpx roll: waiting for SSE2 optimization.
-// #if !defined(WEBRTC_ARCH_ARM)
-  // vpx_codec_control(encoder_, VP9E_SET_NOISE_SENSITIVITY,
-  //                   inst->codecSpecific.VP9.denoisingOn ? 1 : 0);
-// #endif
+#if !defined(WEBRTC_ARCH_ARM)
+  // Note denoiser is still off by default until further testing/optimization,
+  // i.e., codecSpecific.VP9.denoisingOn == 0.
+  vpx_codec_control(encoder_, VP9E_SET_NOISE_SENSITIVITY,
+                    inst->codecSpecific.VP9.denoisingOn ? 1 : 0);
+#endif
   inited_ = true;
   return WEBRTC_VIDEO_CODEC_OK;
 }
@@ -264,6 +266,8 @@ int VP9EncoderImpl::Encode(const I420VideoFrame& input_image,
   if (frame_types && frame_types->size() > 0) {
     frame_type = (*frame_types)[0];
   }
+  DCHECK_EQ(input_image.width(), static_cast<int>(raw_->d_w));
+  DCHECK_EQ(input_image.height(), static_cast<int>(raw_->d_h));
   // Image in vpx_image_t format.
   // Input image is const. VPX's raw image is not defined as const.
   raw_->planes[VPX_PLANE_Y] = const_cast<uint8_t*>(input_image.buffer(kYPlane));
@@ -471,13 +475,9 @@ int VP9DecoderImpl::ReturnFrame(const vpx_image_t* img, uint32_t timestamp) {
     // Decoder OK and NULL image => No show frame.
     return WEBRTC_VIDEO_CODEC_NO_OUTPUT;
   }
-  int half_height = (img->d_h + 1) / 2;
-  int size_y = img->stride[VPX_PLANE_Y] * img->d_h;
-  int size_u = img->stride[VPX_PLANE_U] * half_height;
-  int size_v = img->stride[VPX_PLANE_V] * half_height;
-  decoded_image_.CreateFrame(size_y, img->planes[VPX_PLANE_Y],
-                             size_u, img->planes[VPX_PLANE_U],
-                             size_v, img->planes[VPX_PLANE_V],
+  decoded_image_.CreateFrame(img->planes[VPX_PLANE_Y],
+                             img->planes[VPX_PLANE_U],
+                             img->planes[VPX_PLANE_V],
                              img->d_w, img->d_h,
                              img->stride[VPX_PLANE_Y],
                              img->stride[VPX_PLANE_U],

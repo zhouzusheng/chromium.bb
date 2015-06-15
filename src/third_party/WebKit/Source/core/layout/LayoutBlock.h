@@ -329,7 +329,7 @@ protected:
     virtual void invalidatePaintOfSubtreesIfNeeded(PaintInvalidationState& childPaintInvalidationState) override;
 
 private:
-    LayoutUnit adjustLogicalTopForSpanningHeader(RenderBox* child,
+    LayoutUnit adjustLogicalTopForSpanningHeader(LayoutBox* child,
                                                  ColumnInfo* colInfo,
                                                  LayoutUnit logicalTop);
 

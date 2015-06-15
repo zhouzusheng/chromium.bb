@@ -551,7 +551,7 @@ void LayoutBlockFlow::setLogicalTopForChild(LayoutBox& child, LayoutUnit logical
 void LayoutBlockFlow::layoutBlockChild(LayoutBox& child, MarginInfo& marginInfo, LayoutUnit& previousFloatLogicalBottom)
 {
     ColumnInfo* columnInfo = view()->layoutState()->columnInfo();
-    RenderBox* previousBox = child.previousSiblingBox();
+    LayoutBox* previousBox = child.previousSiblingBox();
     bool previousBoxWasFirst = (previousBox == firstChildBox());
     bool shouldSetSpanningHeaderInfo = hasColumns() && columnInfo && previousBoxWasFirst;
     bool previousBoxIsSpanningHeader = previousBox && previousBox->style()->columnSpanCount() > 1 && !previousBox->style()->hasSpanAllColumns();

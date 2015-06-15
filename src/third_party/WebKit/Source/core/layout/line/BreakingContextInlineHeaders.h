@@ -553,6 +553,7 @@ inline bool BreakingContext::handleText(WordMeasurements& wordMeasurements, bool
     bool breakWords = m_currentStyle->breakWords() && ((m_autoWrap && !m_width.committedWidth()) || m_currWS == PRE);
     bool midWordBreak = false;
     bool breakAll = m_currentStyle->wordBreak() == BreakAllWordBreak && m_autoWrap;
+    EWordBreak effectiveWordBreak = m_currentStyle->autoWrap() ? m_currentStyle->wordBreak() : NormalWordBreak;
     float hyphenWidth = 0;
 
     if (isSVGText) {
@@ -606,7 +607,7 @@ inline bool BreakingContext::handleText(WordMeasurements& wordMeasurements, bool
         }
 
         int nextBreakablePosition = m_current.nextBreakablePosition();
-        bool betweenWords = c == '\n' || (m_currWS != PRE && !m_atStart && m_renderTextInfo.m_lineBreakIterator.isBreakable(m_current.offset(), nextBreakablePosition, breakAll ? LineBreakType::BreakAll : LineBreakType::Normal));
+        bool betweenWords = c == '\n' || (m_currWS != PRE && !m_atStart && m_renderTextInfo.m_lineBreakIterator.isBreakable(m_current.offset(), nextBreakablePosition, effectiveWordBreak, breakAll ? LineBreakType::BreakAll : LineBreakType::Normal));
         m_current.setNextBreakablePosition(nextBreakablePosition);
 
         if (betweenWords || midWordBreak) {

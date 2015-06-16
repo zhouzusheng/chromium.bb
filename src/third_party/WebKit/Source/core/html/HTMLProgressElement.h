@@ -21,14 +21,15 @@
 #ifndef HTMLProgressElement_h
 #define HTMLProgressElement_h
 
+#include "core/CoreExport.h"
 #include "core/html/LabelableElement.h"
 
 namespace blink {
 
 class ProgressValueElement;
-class RenderProgress;
+class LayoutProgress;
 
-class HTMLProgressElement final : public LabelableElement {
+class CORE_EXPORT HTMLProgressElement final : public LabelableElement {
     DEFINE_WRAPPERTYPEINFO();
 public:
     static const double IndeterminatePosition;
@@ -57,8 +58,8 @@ private:
     virtual bool shouldAppearIndeterminate() const override;
     virtual bool supportLabels() const override { return true; }
 
-    virtual LayoutObject* createRenderer(const LayoutStyle&) override;
-    RenderProgress* renderProgress() const;
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override;
+    LayoutProgress* layoutProgress() const;
 
     virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
 

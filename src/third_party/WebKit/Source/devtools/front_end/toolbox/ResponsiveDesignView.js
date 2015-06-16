@@ -30,7 +30,7 @@ WebInspector.ResponsiveDesignView = function(inspectedPagePlaceholder)
 
     WebInspector.zoomManager.addEventListener(WebInspector.ZoomManager.Events.ZoomChanged, this._onZoomChanged, this);
     WebInspector.overridesSupport.addEventListener(WebInspector.OverridesSupport.Events.EmulationStateChanged, this._emulationEnabledChanged, this);
-    WebInspector.targetManager.observeTargets(this);
+    WebInspector.targetManager.observeTargets(this, WebInspector.Target.Type.Page);
     this._emulationEnabledChanged();
 };
 
@@ -111,11 +111,10 @@ WebInspector.ResponsiveDesignView.prototype = {
      */
     targetAdded: function(target)
     {
-        // FIXME: adapt this to multiple targets.
         if (this._target)
             return;
         this._target = target;
-        target.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.ViewportChanged, this._viewportChanged, this);
+        target.registerEmulationDispatcher(new WebInspector.EmulationDispatcher(this));
     },
 
     /**
@@ -124,9 +123,6 @@ WebInspector.ResponsiveDesignView.prototype = {
      */
     targetRemoved: function(target)
     {
-        if (target !== this._target)
-            return;
-        target.resourceTreeModel.removeEventListener(WebInspector.ResourceTreeModel.EventTypes.ViewportChanged, this._viewportChanged, this);
     },
 
     _invalidateCache: function()
@@ -637,7 +633,7 @@ WebInspector.ResponsiveDesignView.prototype = {
         resolutionFieldset.createTextChild("\u00D7");
         resolutionFieldset.appendChild(WebInspector.SettingsUI.createSettingInputField("", WebInspector.overridesSupport.settings.deviceHeight, true, 4, "3em", WebInspector.OverridesSupport.deviceSizeValidator, true, true, WebInspector.UIString("\u2013")));
 
-        var swapButton = resolutionFieldset.createChild("div", "responsive-design-icon responsive-design-icon-swap");
+        var swapButton = resolutionFieldset.createChild("button", "responsive-design-icon responsive-design-icon-swap");
         swapButton.title = WebInspector.UIString("Swap dimensions");
         swapButton.addEventListener("click", WebInspector.overridesSupport.swapDimensions.bind(WebInspector.overridesSupport), false);
 
@@ -728,11 +724,10 @@ WebInspector.ResponsiveDesignView.prototype = {
     },
 
     /**
-     * @param {!WebInspector.Event} event
+     * @param {!EmulationAgent.Viewport=} viewport
      */
-    _viewportChanged: function(event)
+    _viewportChanged: function(viewport)
     {
-        var viewport = /** @type {?PageAgent.Viewport} */ (event.data);
         if (viewport) {
             this._viewport = viewport;
             this._viewport.minimumPageScaleFactor = Math.max(0.1, this._viewport.minimumPageScaleFactor);
@@ -771,7 +766,7 @@ WebInspector.ResponsiveDesignView.prototype = {
                 value = increase ? value * 1.1 : value / 1.1;
                 value = Math.min(this._viewport.maximumPageScaleFactor, value);
                 value = Math.max(this._viewport.minimumPageScaleFactor, value);
-                this._target.pageAgent().setPageScaleFactor(value);
+                this._target.emulationAgent().setPageScaleFactor(value);
             }
             finishCallback();
         }
@@ -788,10 +783,32 @@ WebInspector.ResponsiveDesignView.prototype = {
         function updatePageScaleFactor(finishCallback)
         {
             if (this._target && this._viewport && this._viewport.minimumPageScaleFactor <= 1 && this._viewport.maximumPageScaleFactor >= 1)
-                this._target.pageAgent().setPageScaleFactor(1);
+                this._target.emulationAgent().setPageScaleFactor(1);
             finishCallback();
         }
     },
 
     __proto__: WebInspector.VBox.prototype
 };
+
+
+/**
+ * @constructor
+ * @implements {EmulationAgent.Dispatcher}
+ * @param {!WebInspector.ResponsiveDesignView} responsiveDesignView
+ */
+WebInspector.EmulationDispatcher = function(responsiveDesignView)
+{
+    this._responsiveDesignView = responsiveDesignView;
+}
+
+WebInspector.EmulationDispatcher.prototype = {
+    /**
+     * @override
+     * @param {!EmulationAgent.Viewport=} viewport
+     */
+    viewportChanged: function(viewport)
+    {
+        this._responsiveDesignView._viewportChanged(viewport);
+    }
+}

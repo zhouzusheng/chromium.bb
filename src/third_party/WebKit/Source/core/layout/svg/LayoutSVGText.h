@@ -37,7 +37,7 @@ public:
     explicit LayoutSVGText(SVGTextElement*);
     virtual ~LayoutSVGText();
 
-    virtual bool isChildAllowed(LayoutObject*, const LayoutStyle&) const override;
+    virtual bool isChildAllowed(LayoutObject*, const ComputedStyle&) const override;
 
     void setNeedsPositioningValuesUpdate() { m_needsPositioningValuesUpdate = true; }
     virtual void setNeedsTransformUpdate() override { m_needsTransformUpdate = true; }
@@ -58,12 +58,13 @@ public:
 
     virtual const AffineTransform& localToParentTransform() const override { return m_localTransform; }
 
+    virtual const char* name() const override { return "LayoutSVGText"; }
+
 private:
-    virtual const char* renderName() const override { return "LayoutSVGText"; }
     virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectSVGText || LayoutSVGBlock::isOfType(type); }
 
     virtual void paint(const PaintInfo&, const LayoutPoint&) override;
-    virtual bool nodeAtFloatPoint(const HitTestRequest&, HitTestResult&, const FloatPoint& pointInParent, HitTestAction) override;
+    virtual bool nodeAtFloatPoint(HitTestResult&, const FloatPoint& pointInParent, HitTestAction) override;
     virtual PositionWithAffinity positionForPoint(const LayoutPoint&) override;
 
     virtual void layout() override;

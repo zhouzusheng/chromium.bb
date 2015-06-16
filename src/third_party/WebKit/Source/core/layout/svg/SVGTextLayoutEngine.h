@@ -30,7 +30,7 @@
 namespace blink {
 
 class LayoutObject;
-class LayoutStyle;
+class ComputedStyle;
 class LayoutSVGInlineText;
 class SVGInlineTextBox;
 
@@ -39,7 +39,7 @@ class SVGInlineTextBox;
 // The InlineBox tree was created, containing the text chunk information, necessary to apply
 // certain SVG specific text layout properties (text-length adjustments and text-anchor).
 // The second layout phase uses the SVGTextLayoutAttributes stored in the individual
-// LayoutSVGInlineText renderers to compute the final positions for each character
+// LayoutSVGInlineText layoutObjects to compute the final positions for each character
 // which are stored in the SVGInlineTextBox objects.
 
 class SVGTextLayoutEngine {
@@ -63,7 +63,7 @@ private:
     void recordTextFragment(SVGInlineTextBox*, const Vector<SVGTextMetrics>&);
     bool parentDefinesTextLength(LayoutObject*) const;
 
-    void layoutTextOnLineOrPath(SVGInlineTextBox*, const LayoutSVGInlineText&, const LayoutStyle&);
+    void layoutTextOnLineOrPath(SVGInlineTextBox*, const LayoutSVGInlineText&, const ComputedStyle&);
     void finalizeTransformMatrices(Vector<SVGInlineTextBox*>&);
 
     bool currentLogicalCharacterAttributes(SVGTextLayoutAttributes*&);

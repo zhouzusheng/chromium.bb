@@ -20,7 +20,6 @@ namespace webrtc {
 struct IsacFix {
   typedef ISACFIX_MainStruct instance_type;
   static const bool has_swb = false;
-  static const bool has_redundant_encoder = false;
   static const uint16_t kFixSampleRate = 16000;
   static inline int16_t Control(instance_type* inst,
                                 int32_t rate,
@@ -37,25 +36,17 @@ struct IsacFix {
   static inline int16_t Create(instance_type** inst) {
     return WebRtcIsacfix_Create(inst);
   }
-  static inline int16_t Decode(instance_type* inst,
-                               const uint8_t* encoded,
-                               int16_t len,
-                               int16_t* decoded,
-                               int16_t* speech_type) {
+  static inline int16_t DecodeInternal(instance_type* inst,
+                                       const uint8_t* encoded,
+                                       int16_t len,
+                                       int16_t* decoded,
+                                       int16_t* speech_type) {
     return WebRtcIsacfix_Decode(inst, encoded, len, decoded, speech_type);
   }
   static inline int16_t DecodePlc(instance_type* inst,
                                   int16_t* decoded,
                                   int16_t num_lost_frames) {
     return WebRtcIsacfix_DecodePlc(inst, decoded, num_lost_frames);
-  }
-  static inline int16_t DecodeRcu(instance_type* inst,
-                                  const uint8_t* encoded,
-                                  int16_t len,
-                                  int16_t* decoded,
-                                  int16_t* speech_type) {
-    // iSACfix has no DecodeRcu; just call the normal Decode.
-    return WebRtcIsacfix_Decode(inst, encoded, len, decoded, speech_type);
   }
   static inline int16_t DecoderInit(instance_type* inst) {
     return WebRtcIsacfix_DecoderInit(inst);
@@ -101,10 +92,6 @@ struct IsacFix {
                                          uint32_t arr_ts) {
     return WebRtcIsacfix_UpdateBwEstimate(inst, encoded, packet_size,
                                           rtp_seq_number, send_ts, arr_ts);
-  }
-  static inline int16_t GetRedPayload(instance_type* inst, uint8_t* encoded) {
-    FATAL() << "Should never be called.";
-    return -1;
   }
   static inline int16_t SetMaxPayloadSize(instance_type* inst,
                                           int16_t max_payload_size_bytes) {

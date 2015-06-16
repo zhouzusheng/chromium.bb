@@ -226,18 +226,22 @@ void InspectorDatabaseAgent::didOpenDatabase(Database* database, const String& d
     InspectorDatabaseResource* resource = InspectorDatabaseResource::create(database, domain, name, version);
     m_resources.set(resource->id(), resource);
     // Resources are only bound while visible.
-    if (m_frontend && m_enabled)
-        resource->bind(m_frontend);
+    if (frontend() && m_enabled)
+        resource->bind(frontend());
 }
 
-void InspectorDatabaseAgent::didCommitLoadForMainFrame()
+void InspectorDatabaseAgent::didCommitLoadForLocalFrame(LocalFrame* frame)
 {
+    // FIXME(dgozman): adapt this for out-of-process iframes.
+    if (frame != m_page->mainFrame())
+        return;
+
     m_resources.clear();
 }
 
 InspectorDatabaseAgent::InspectorDatabaseAgent(Page* page)
-    : InspectorBaseAgent<InspectorDatabaseAgent>("Database")
-    , m_frontend(0)
+    : InspectorBaseAgent<InspectorDatabaseAgent, InspectorFrontend::Database>("Database")
+    , m_page(page)
     , m_enabled(false)
 {
     DatabaseClient::fromPage(page)->setInspectorAgent(this);
@@ -245,17 +249,6 @@ InspectorDatabaseAgent::InspectorDatabaseAgent(Page* page)
 
 InspectorDatabaseAgent::~InspectorDatabaseAgent()
 {
-}
-
-void InspectorDatabaseAgent::setFrontend(InspectorFrontend* frontend)
-{
-    m_frontend = frontend->database();
-}
-
-void InspectorDatabaseAgent::clearFrontend()
-{
-    m_frontend = 0;
-    disable(0);
 }
 
 void InspectorDatabaseAgent::enable(ErrorString*)
@@ -267,7 +260,7 @@ void InspectorDatabaseAgent::enable(ErrorString*)
 
     DatabaseResourcesHeapMap::iterator databasesEnd = m_resources.end();
     for (DatabaseResourcesHeapMap::iterator it = m_resources.begin(); it != databasesEnd; ++it)
-        it->value->bind(m_frontend);
+        it->value->bind(frontend());
 }
 
 void InspectorDatabaseAgent::disable(ErrorString*)

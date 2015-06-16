@@ -37,6 +37,7 @@
 #include "core/dom/Element.h"
 #include "platform/Timer.h"
 #include "platform/heap/Handle.h"
+#include "public/platform/WebCompositorAnimationTimeline.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
@@ -58,7 +59,7 @@ public:
         virtual void cancelWake() = 0;
         virtual void serviceOnNextFrame() = 0;
         virtual ~PlatformTiming() { }
-        virtual void trace(Visitor*) { }
+        DEFINE_INLINE_VIRTUAL_TRACE() { }
     };
 
     static PassRefPtrWillBeRawPtr<AnimationTimeline> create(Document*, PassOwnPtrWillBeRawPtr<PlatformTiming> = nullptr);
@@ -97,13 +98,15 @@ public:
     void setPlaybackRate(double);
     double playbackRate() const;
 
+    WebCompositorAnimationTimeline* compositorTimeline() const { return m_compositorTimeline.get(); }
+
     Document* document() { return m_document.get(); }
 #if !ENABLE(OILPAN)
     void detachFromDocument();
 #endif
     void wake();
 
-    void trace(Visitor*);
+    DECLARE_TRACE();
 
 protected:
     AnimationTimeline(Document*, PassOwnPtrWillBeRawPtr<PlatformTiming>);
@@ -125,6 +128,8 @@ private:
     OwnPtrWillBeMember<PlatformTiming> m_timing;
     double m_lastCurrentTimeInternal;
 
+    OwnPtr<WebCompositorAnimationTimeline> m_compositorTimeline;
+
     class AnimationTimelineTiming final : public PlatformTiming {
     public:
         AnimationTimelineTiming(AnimationTimeline* timeline)
@@ -140,7 +145,7 @@ private:
 
         void timerFired(Timer<AnimationTimelineTiming>*) { m_timeline->wake(); }
 
-        virtual void trace(Visitor*) override;
+        DECLARE_VIRTUAL_TRACE();
 
     private:
         RawPtrWillBeMember<AnimationTimeline> m_timeline;

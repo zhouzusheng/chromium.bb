@@ -42,11 +42,6 @@ DEFINE_TRACE(SVGClipPathElement)
 
 DEFINE_NODE_FACTORY(SVGClipPathElement)
 
-void SVGClipPathElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
-{
-    parseAttributeNew(name, value);
-}
-
 void SVGClipPathElement::svgAttributeChanged(const QualifiedName& attrName)
 {
     if (attrName != SVGNames::clipPathUnitsAttr) {
@@ -56,7 +51,7 @@ void SVGClipPathElement::svgAttributeChanged(const QualifiedName& attrName)
 
     SVGElement::InvalidationGuard invalidationGuard(this);
 
-    LayoutSVGResourceContainer* renderer = toLayoutSVGResourceContainer(this->renderer());
+    LayoutSVGResourceContainer* renderer = toLayoutSVGResourceContainer(this->layoutObject());
     if (renderer)
         renderer->invalidateCacheAndMarkForLayout();
 }
@@ -68,11 +63,11 @@ void SVGClipPathElement::childrenChanged(const ChildrenChange& change)
     if (change.byParser)
         return;
 
-    if (LayoutObject* object = renderer())
-        object->setNeedsLayoutAndFullPaintInvalidation();
+    if (LayoutObject* object = layoutObject())
+        object->setNeedsLayoutAndFullPaintInvalidation(LayoutInvalidationReason::ChildChanged);
 }
 
-LayoutObject* SVGClipPathElement::createRenderer(const LayoutStyle&)
+LayoutObject* SVGClipPathElement::createLayoutObject(const ComputedStyle&)
 {
     return new LayoutSVGResourceClipper(this);
 }

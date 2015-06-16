@@ -40,11 +40,6 @@ DEFINE_TRACE(SVGPolyElement)
     SVGGeometryElement::trace(visitor);
 }
 
-void SVGPolyElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
-{
-    parseAttributeNew(name, value);
-}
-
 void SVGPolyElement::svgAttributeChanged(const QualifiedName& attrName)
 {
     if (attrName != SVGNames::pointsAttr) {
@@ -54,7 +49,7 @@ void SVGPolyElement::svgAttributeChanged(const QualifiedName& attrName)
 
     SVGElement::InvalidationGuard invalidationGuard(this);
 
-    LayoutSVGShape* renderer = toLayoutSVGShape(this->renderer());
+    LayoutSVGShape* renderer = toLayoutSVGShape(this->layoutObject());
     if (!renderer)
         return;
 

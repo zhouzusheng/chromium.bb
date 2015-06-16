@@ -152,8 +152,11 @@ void HTMLScriptRunner::executePendingScriptAndDispatchEvent(PendingScript& pendi
             scriptLoader->dispatchErrorEvent();
         else {
             ASSERT(isExecutingScript());
-            scriptLoader->executeScript(sourceCode, &compilationFinishTime);
-            element->dispatchEvent(createScriptLoadEvent());
+            if (!scriptLoader->executeScript(sourceCode, &compilationFinishTime)) {
+                scriptLoader->dispatchErrorEvent();
+            } else {
+                element->dispatchEvent(createScriptLoadEvent());
+            }
         }
     }
     // The exact value doesn't matter; valid time stamps are much bigger than this value.
@@ -279,8 +282,12 @@ void HTMLScriptRunner::requestParsingBlockingScript(Element* element)
     // We only care about a load callback if resource is not already
     // in the cache. Callers will attempt to run the m_parserBlockingScript
     // if possible before returning control to the parser.
-    if (!m_parserBlockingScript.isReady())
+    if (!m_parserBlockingScript.isReady()) {
+        if (m_document->frame())
+            ScriptStreamer::startStreaming(m_parserBlockingScript, PendingScript::ParsingBlocking, m_document->frame()->settings(), ScriptState::forMainWorld(m_document->frame()));
+
         m_parserBlockingScript.watchForLoad(this);
+    }
 }
 
 void HTMLScriptRunner::requestDeferredScript(Element* element)
@@ -288,6 +295,9 @@ void HTMLScriptRunner::requestDeferredScript(Element* element)
     PendingScript pendingScript;
     if (!requestPendingScript(pendingScript, element))
         return;
+
+    if (m_document->frame() && !pendingScript.isReady())
+        ScriptStreamer::startStreaming(pendingScript, PendingScript::Deferred, m_document->frame()->settings(), ScriptState::forMainWorld(m_document->frame()));
 
     ASSERT(pendingScript.resource());
     m_scriptsToExecuteAfterParsing.append(pendingScript);

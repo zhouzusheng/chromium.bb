@@ -34,12 +34,12 @@
 namespace blink {
 
 class CompositingReasonFinder;
-class Layer;
-class RenderView;
+class DeprecatedPaintLayer;
+class LayoutView;
 
 class CompositingRequirementsUpdater {
 public:
-    CompositingRequirementsUpdater(RenderView&, CompositingReasonFinder&);
+    CompositingRequirementsUpdater(LayoutView&, CompositingReasonFinder&);
     ~CompositingRequirementsUpdater();
 
     //  Recurse through the layers in z-index and overflow order (which is equivalent to painting order)
@@ -51,15 +51,15 @@ public:
     //      must be compositing so that its contents render over that child.
     //      This implies that its positive z-index children must also be compositing.
     //
-    void update(Layer* root);
+    void update(DeprecatedPaintLayer* root);
 
 private:
     class OverlapMap;
     class RecursionData;
 
-    void updateRecursive(Layer* ancestorLayer, Layer* currentLayer, OverlapMap&, RecursionData&, bool& descendantHas3DTransform, Vector<Layer*>& unclippedDescendants, IntRect& absoluteDecendantBoundingBox);
+    void updateRecursive(DeprecatedPaintLayer* ancestorLayer, DeprecatedPaintLayer* currentLayer, OverlapMap&, RecursionData&, bool& descendantHas3DTransform, Vector<DeprecatedPaintLayer*>& unclippedDescendants, IntRect& absoluteDecendantBoundingBox);
 
-    RenderView& m_renderView;
+    LayoutView& m_layoutView;
     CompositingReasonFinder& m_compositingReasonFinder;
 };
 

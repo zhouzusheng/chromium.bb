@@ -204,27 +204,28 @@ static int compute_rd_thresh_factor(int qindex, vpx_bit_depth_t bit_depth) {
   return MAX((int)(pow(q, RD_THRESH_POW) * 5.12), 8);
 }
 
-void vp9_initialize_me_consts(VP9_COMP *cpi, int qindex) {
+void vp9_initialize_me_consts(VP9_COMP *cpi, MACROBLOCK *x, int qindex) {
 #if CONFIG_VP9_HIGHBITDEPTH
   switch (cpi->common.bit_depth) {
     case VPX_BITS_8:
-      cpi->td.mb.sadperbit16 = sad_per_bit16lut_8[qindex];
-      cpi->td.mb.sadperbit4 = sad_per_bit4lut_8[qindex];
+      x->sadperbit16 = sad_per_bit16lut_8[qindex];
+      x->sadperbit4 = sad_per_bit4lut_8[qindex];
       break;
     case VPX_BITS_10:
-      cpi->td.mb.sadperbit16 = sad_per_bit16lut_10[qindex];
-      cpi->td.mb.sadperbit4 = sad_per_bit4lut_10[qindex];
+      x->sadperbit16 = sad_per_bit16lut_10[qindex];
+      x->sadperbit4 = sad_per_bit4lut_10[qindex];
       break;
     case VPX_BITS_12:
-      cpi->td.mb.sadperbit16 = sad_per_bit16lut_12[qindex];
-      cpi->td.mb.sadperbit4 = sad_per_bit4lut_12[qindex];
+      x->sadperbit16 = sad_per_bit16lut_12[qindex];
+      x->sadperbit4 = sad_per_bit4lut_12[qindex];
       break;
     default:
       assert(0 && "bit_depth should be VPX_BITS_8, VPX_BITS_10 or VPX_BITS_12");
   }
 #else
-  cpi->td.mb.sadperbit16 = sad_per_bit16lut_8[qindex];
-  cpi->td.mb.sadperbit4 = sad_per_bit4lut_8[qindex];
+  (void)cpi;
+  x->sadperbit16 = sad_per_bit16lut_8[qindex];
+  x->sadperbit4 = sad_per_bit4lut_8[qindex];
 #endif  // CONFIG_VP9_HIGHBITDEPTH
 }
 
@@ -279,9 +280,11 @@ void vp9_initialize_rd_consts(VP9_COMP *cpi) {
 
   set_block_thresholds(cm, rd);
 
-  if (!cpi->sf.use_nonrd_pick_mode || cm->frame_type == KEY_FRAME) {
+  if (!cpi->sf.use_nonrd_pick_mode || cm->frame_type == KEY_FRAME)
     fill_token_costs(x->token_costs, cm->fc->coef_probs);
 
+  if (cpi->sf.partition_search_type != VAR_BASED_PARTITION ||
+      cm->frame_type == KEY_FRAME) {
     for (i = 0; i < PARTITION_CONTEXTS; ++i)
       vp9_cost_tokens(cpi->partition_cost[i], get_partition_probs(cm, i),
                       vp9_partition_tree);
@@ -464,6 +467,7 @@ void vp9_mv_pred(VP9_COMP *cpi, MACROBLOCK *x,
   pred_mv[0] = mbmi->ref_mvs[ref_frame][0].as_mv;
   pred_mv[1] = mbmi->ref_mvs[ref_frame][1].as_mv;
   pred_mv[2] = x->pred_mv[ref_frame];
+  assert(num_mv_refs <= (int)(sizeof(pred_mv) / sizeof(pred_mv[0])));
 
   // Get the sad for each candidate reference mv.
   for (i = 0; i < num_mv_refs; ++i) {
@@ -530,12 +534,14 @@ int16_t* vp9_raster_block_offset_int16(BLOCK_SIZE plane_bsize,
   return base + vp9_raster_block_offset(plane_bsize, raster_block, stride);
 }
 
-const YV12_BUFFER_CONFIG *vp9_get_scaled_ref_frame(const VP9_COMP *cpi,
-                                                   int ref_frame) {
+YV12_BUFFER_CONFIG *vp9_get_scaled_ref_frame(const VP9_COMP *cpi,
+                                             int ref_frame) {
   const VP9_COMMON *const cm = &cpi->common;
-  const int ref_idx = cm->ref_frame_map[get_ref_frame_idx(cpi, ref_frame)];
   const int scaled_idx = cpi->scaled_ref_idx[ref_frame - 1];
-  return (scaled_idx != ref_idx) ? &cm->frame_bufs[scaled_idx].buf : NULL;
+  const int ref_idx = get_ref_frame_buf_idx(cpi, ref_frame);
+  return
+      (scaled_idx != ref_idx && scaled_idx != INVALID_IDX) ?
+          &cm->buffer_pool->frame_bufs[scaled_idx].buf : NULL;
 }
 
 int vp9_get_switchable_rate(const VP9_COMP *cpi, const MACROBLOCKD *const xd) {
@@ -569,10 +575,6 @@ void vp9_set_rd_speed_thresholds(VP9_COMP *cpi) {
   rd->thresh_mult[THR_NEWMV] += 1000;
   rd->thresh_mult[THR_NEWA] += 1000;
   rd->thresh_mult[THR_NEWG] += 1000;
-
-  // Adjust threshold only in real time mode, which only uses last
-  // reference frame.
-  rd->thresh_mult[THR_NEWMV] += sf->elevate_newmv_thresh;
 
   rd->thresh_mult[THR_NEARMV] += 1000;
   rd->thresh_mult[THR_NEARA] += 1000;

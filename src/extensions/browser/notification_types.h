@@ -108,7 +108,7 @@ enum NotificationType {
   // Sent by an ExtensionHost* when it has finished its initial page load,
   // including any external resources.
   // The details are an ExtensionHost* and the source is a BrowserContext*.
-  NOTIFICATION_EXTENSION_HOST_DID_STOP_LOADING,
+  NOTIFICATION_EXTENSION_HOST_DID_STOP_FIRST_LOAD,
 
   // Sent by an ExtensionHost* when its render view requests closing through
   // window.close(). The details are an ExtensionHost* and the source is a
@@ -156,14 +156,6 @@ enum NotificationType {
   // std::string containing an extension ID and a gfx::NativeWindow for the
   // associated window.
   NOTIFICATION_EXTENSION_COMMAND_PAGE_ACTION_MAC,
-
-  // A new extension RenderViewHost has been registered. The details are
-  // the RenderViewHost*.
-  NOTIFICATION_EXTENSION_VIEW_REGISTERED,
-
-  // An extension RenderViewHost has been unregistered. The details are
-  // the RenderViewHost*.
-  NOTIFICATION_EXTENSION_VIEW_UNREGISTERED,
 
   // Sent by an extension to notify the browser about the results of a unit
   // test.

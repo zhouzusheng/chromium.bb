@@ -31,6 +31,7 @@
 #include "core/dom/DOMException.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
+#include "modules/encryptedmedia/EncryptedMediaUtils.h"
 #include "modules/encryptedmedia/MediaKeySession.h"
 #include "modules/encryptedmedia/SimpleContentDecryptionModuleResultPromise.h"
 #include "platform/Logging.h"
@@ -64,7 +65,7 @@ public:
     {
     }
 
-    void trace(Visitor* visitor)
+    DEFINE_INLINE_TRACE()
     {
         visitor->trace(m_result);
     }
@@ -80,7 +81,7 @@ private:
     const RefPtr<DOMArrayBuffer> m_data;
 };
 
-MediaKeys::MediaKeys(ExecutionContext* context, const String& keySystem, const blink::WebVector<blink::WebString>& supportedSessionTypes, PassOwnPtr<WebContentDecryptionModule> cdm)
+MediaKeys::MediaKeys(ExecutionContext* context, const String& keySystem, const blink::WebVector<WebEncryptedMediaSessionType>& supportedSessionTypes, PassOwnPtr<WebContentDecryptionModule> cdm)
     : ContextLifecycleObserver(context)
     , m_keySystem(keySystem)
     , m_supportedSessionTypes(supportedSessionTypes)
@@ -99,7 +100,7 @@ MediaKeys::~MediaKeys()
     WTF_LOG(Media, "MediaKeys(%p)::~MediaKeys", this);
 }
 
-MediaKeySession* MediaKeys::createSession(ScriptState* scriptState, const String& sessionType, ExceptionState& exceptionState)
+MediaKeySession* MediaKeys::createSession(ScriptState* scriptState, const String& sessionTypeString, ExceptionState& exceptionState)
 {
     WTF_LOG(Media, "MediaKeys(%p)::createSession", this);
 
@@ -114,14 +115,8 @@ MediaKeySession* MediaKeys::createSession(ScriptState* scriptState, const String
     // 2. If the Key System implementation represented by this object's cdm
     //    implementation value does not support sessionType, throw a new
     //    DOMException whose name is NotSupportedError.
-    bool found = false;
-    for (size_t i = 0; i < m_supportedSessionTypes.size(); i++) {
-        if (m_supportedSessionTypes[i] == blink::WebString(sessionType)) {
-            found = true;
-            break;
-        }
-    }
-    if (!found)
+    WebEncryptedMediaSessionType sessionType = EncryptedMediaUtils::convertToSessionType(sessionTypeString);
+    if (!sessionTypeSupported(sessionType))
         exceptionState.throwDOMException(NotSupportedError, "Unsupported session type.");
 
     // 3. Let session be a new MediaKeySession object, and initialize it as
@@ -166,6 +161,16 @@ ScriptPromise MediaKeys::setServerCertificate(ScriptState* scriptState, const DO
     return promise;
 }
 
+bool MediaKeys::sessionTypeSupported(WebEncryptedMediaSessionType sessionType)
+{
+    for (size_t i = 0; i < m_supportedSessionTypes.size(); i++) {
+        if (m_supportedSessionTypes[i] == sessionType)
+            return true;
+    }
+
+    return false;
+}
+
 void MediaKeys::timerFired(Timer<MediaKeys>*)
 {
     ASSERT(m_pendingActions.size());
@@ -196,7 +201,7 @@ WebContentDecryptionModule* MediaKeys::contentDecryptionModule()
     return m_cdm.get();
 }
 
-void MediaKeys::trace(Visitor* visitor)
+DEFINE_TRACE(MediaKeys)
 {
     visitor->trace(m_pendingActions);
     ContextLifecycleObserver::trace(visitor);

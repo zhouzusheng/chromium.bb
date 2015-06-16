@@ -496,10 +496,10 @@ void ParamTraits<ProxyConfig>::Write(Message* m, const param_type& p)
     if (impl.has_pac_url()) {
         WriteParam(m, impl.pac_url().spec());
     }
-    WriteParam(m, impl.proxy_rules().proxies_for_http.internalProxies());
-    WriteParam(m, impl.proxy_rules().proxies_for_https.internalProxies());
-    WriteParam(m, impl.proxy_rules().proxies_for_ftp.internalProxies());
-    WriteParam(m, impl.proxy_rules().fallback_proxies.internalProxies());
+    WriteParam(m, impl.proxy_rules().proxies_for_http.GetAll());
+    WriteParam(m, impl.proxy_rules().proxies_for_https.GetAll());
+    WriteParam(m, impl.proxy_rules().proxies_for_ftp.GetAll());
+    WriteParam(m, impl.proxy_rules().fallback_proxies.GetAll());
     WriteParam(m, impl.proxy_rules().bypass_rules.ToString());
 }
 
@@ -515,13 +515,13 @@ bool ParamTraits<ProxyConfig>::Read(const Message* m, PickleIterator* iter, para
             return false;
         impl.set_pac_url(GURL(pacUrl));
     }
-    if (!ReadParam(m, iter, &impl.proxy_rules().proxies_for_http.internalProxies()))
+    if (!ReadParam(m, iter, &impl.proxy_rules().proxies_for_http.GetAll()))
         return false;
-    if (!ReadParam(m, iter, &impl.proxy_rules().proxies_for_https.internalProxies()))
+    if (!ReadParam(m, iter, &impl.proxy_rules().proxies_for_https.GetAll()))
         return false;
-    if (!ReadParam(m, iter, &impl.proxy_rules().proxies_for_ftp.internalProxies()))
+    if (!ReadParam(m, iter, &impl.proxy_rules().proxies_for_ftp.GetAll()))
         return false;
-    if (!ReadParam(m, iter, &impl.proxy_rules().fallback_proxies.internalProxies()))
+    if (!ReadParam(m, iter, &impl.proxy_rules().fallback_proxies.GetAll()))
         return false;
     std::string bypassRules;
     if (!ReadParam(m, iter, &bypassRules))
@@ -539,13 +539,13 @@ void ParamTraits<ProxyConfig>::Log(const param_type& p, std::string* l)
         LogParam(impl.pac_url().spec(), l);
         l->append(", ");
     }
-    LogParam(impl.proxy_rules().proxies_for_http.internalProxies(), l);
+    LogParam(impl.proxy_rules().proxies_for_http.GetAll(), l);
     l->append(", ");
-    LogParam(impl.proxy_rules().proxies_for_https.internalProxies(), l);
+    LogParam(impl.proxy_rules().proxies_for_https.GetAll(), l);
     l->append(", ");
-    LogParam(impl.proxy_rules().proxies_for_ftp.internalProxies(), l);
+    LogParam(impl.proxy_rules().proxies_for_ftp.GetAll(), l);
     l->append(", ");
-    LogParam(impl.proxy_rules().fallback_proxies.internalProxies(), l);
+    LogParam(impl.proxy_rules().fallback_proxies.GetAll(), l);
     l->append(", ");
     LogParam(impl.proxy_rules().bypass_rules.ToString(), l);
     l->append(")");

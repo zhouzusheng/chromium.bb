@@ -17,6 +17,7 @@
 
 #include "webrtc/base/platform_file.h"
 #include "webrtc/common.h"
+#include "webrtc/modules/audio_processing/beamformer/array_util.h"
 #include "webrtc/typedefs.h"
 
 struct AecCore;
@@ -24,7 +25,10 @@ struct AecCore;
 namespace webrtc {
 
 class AudioFrame;
+
+template<typename T>
 class Beamformer;
+
 class EchoCancellation;
 class EchoControlMobile;
 class GainControl;
@@ -84,16 +88,6 @@ struct ExperimentalNs {
   bool enabled;
 };
 
-// Coordinates in meters.
-struct Point {
-  Point(float x, float y, float z) {
-    c[0] = x;
-    c[1] = y;
-    c[2] = z;
-  }
-  float c[3];
-};
-
 // Use to enable beamforming. Must be provided through the constructor. It will
 // have no impact if used with AudioProcessing::SetExtraOptions().
 struct Beamforming {
@@ -103,6 +97,15 @@ struct Beamforming {
         array_geometry(array_geometry) {}
   const bool enabled;
   const std::vector<Point> array_geometry;
+};
+
+// Use to enable 48kHz support in audio processing. Must be provided through the
+// constructor. It will have no impact if used with
+// AudioProcessing::SetExtraOptions().
+struct AudioProcessing48kHzSupport {
+  AudioProcessing48kHzSupport() : enabled(false) {}
+  explicit AudioProcessing48kHzSupport(bool enabled) : enabled(enabled) {}
+  bool enabled;
 };
 
 static const int kAudioProcMaxNativeSampleRateHz = 32000;
@@ -201,7 +204,8 @@ class AudioProcessing {
   // Allows passing in an optional configuration at create-time.
   static AudioProcessing* Create(const Config& config);
   // Only for testing.
-  static AudioProcessing* Create(const Config& config, Beamformer* beamformer);
+  static AudioProcessing* Create(const Config& config,
+                                 Beamformer<float>* beamformer);
   virtual ~AudioProcessing() {}
 
   // Initializes internal states, while retaining all user settings. This

@@ -23,6 +23,22 @@ Dispatcher::Type DataPipeProducerDispatcher::GetType() const {
   return kTypeDataPipeProducer;
 }
 
+// static
+scoped_refptr<DataPipeProducerDispatcher>
+DataPipeProducerDispatcher::Deserialize(Channel* channel,
+                                        const void* source,
+                                        size_t size) {
+  scoped_refptr<DataPipe> data_pipe;
+  if (!DataPipe::ProducerDeserialize(channel, source, size, &data_pipe))
+    return nullptr;
+  DCHECK(data_pipe);
+
+  scoped_refptr<DataPipeProducerDispatcher> dispatcher(
+      new DataPipeProducerDispatcher());
+  dispatcher->Init(data_pipe);
+  return dispatcher;
+}
+
 DataPipeProducerDispatcher::~DataPipeProducerDispatcher() {
   // |Close()|/|CloseImplNoLock()| should have taken care of the pipe.
   DCHECK(!data_pipe_);
@@ -97,6 +113,27 @@ void DataPipeProducerDispatcher::RemoveAwakableImplNoLock(
     HandleSignalsState* signals_state) {
   lock().AssertAcquired();
   data_pipe_->ProducerRemoveAwakable(awakable, signals_state);
+}
+
+void DataPipeProducerDispatcher::StartSerializeImplNoLock(
+    Channel* channel,
+    size_t* max_size,
+    size_t* max_platform_handles) {
+  DCHECK(HasOneRef());  // Only one ref => no need to take the lock.
+  data_pipe_->ProducerStartSerialize(channel, max_size, max_platform_handles);
+}
+
+bool DataPipeProducerDispatcher::EndSerializeAndCloseImplNoLock(
+    Channel* channel,
+    void* destination,
+    size_t* actual_size,
+    embedder::PlatformHandleVector* platform_handles) {
+  DCHECK(HasOneRef());  // Only one ref => no need to take the lock.
+
+  bool rv = data_pipe_->ProducerEndSerialize(channel, destination, actual_size,
+                                             platform_handles);
+  data_pipe_ = nullptr;
+  return rv;
 }
 
 bool DataPipeProducerDispatcher::IsBusyNoLock() const {

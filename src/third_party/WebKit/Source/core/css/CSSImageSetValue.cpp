@@ -26,15 +26,16 @@
 #include "config.h"
 #include "core/css/CSSImageSetValue.h"
 
-#include "core/FetchInitiatorTypeNames.h"
 #include "core/css/CSSImageValue.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/dom/Document.h"
+#include "core/fetch/FetchInitiatorTypeNames.h"
 #include "core/fetch/FetchRequest.h"
 #include "core/fetch/ImageResource.h"
 #include "core/fetch/ResourceFetcher.h"
-#include "core/layout/style/StyleFetchedImageSet.h"
-#include "core/layout/style/StylePendingImage.h"
+#include "core/fetch/ResourceLoaderOptions.h"
+#include "core/style/StyleFetchedImageSet.h"
+#include "core/style/StylePendingImage.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityPolicy.h"
 #include "wtf/text/StringBuilder.h"
@@ -91,9 +92,9 @@ CSSImageSetValue::ImageWithScale CSSImageSetValue::bestImageForScaleFactor()
     return image;
 }
 
-StyleFetchedImageSet* CSSImageSetValue::cachedImageSet(ResourceFetcher* loader, float deviceScaleFactor, const ResourceLoaderOptions& options)
+StyleFetchedImageSet* CSSImageSetValue::cachedImageSet(Document* document, float deviceScaleFactor, const ResourceLoaderOptions& options)
 {
-    ASSERT(loader);
+    ASSERT(document);
 
     m_scaleFactor = deviceScaleFactor;
 
@@ -105,26 +106,24 @@ StyleFetchedImageSet* CSSImageSetValue::cachedImageSet(ResourceFetcher* loader, 
         // All forms of scale should be included: Page::pageScaleFactor(), LocalFrame::pageZoomFactor(),
         // and any CSS transforms. https://bugs.webkit.org/show_bug.cgi?id=81698
         ImageWithScale image = bestImageForScaleFactor();
-        if (Document* document = loader->document()) {
-            FetchRequest request(ResourceRequest(document->completeURL(image.imageURL)), FetchInitiatorTypeNames::css, options);
-            request.mutableResourceRequest().setHTTPReferrer(image.referrer);
+        FetchRequest request(ResourceRequest(document->completeURL(image.imageURL)), FetchInitiatorTypeNames::css, options);
+        request.mutableResourceRequest().setHTTPReferrer(image.referrer);
 
-            if (options.corsEnabled == IsCORSEnabled)
-                request.setCrossOriginAccessControl(loader->document()->securityOrigin(), options.allowCredentials, options.credentialsRequested);
+        if (options.corsEnabled == IsCORSEnabled)
+            request.setCrossOriginAccessControl(document->securityOrigin(), options.allowCredentials, options.credentialsRequested);
 
-            if (ResourcePtr<ImageResource> cachedImage = loader->fetchImage(request)) {
-                m_imageSet = StyleFetchedImageSet::create(cachedImage.get(), image.scaleFactor, this);
-                m_accessedBestFitImage = true;
-            }
+        if (ResourcePtr<ImageResource> cachedImage = document->fetcher()->fetchImage(request)) {
+            m_imageSet = StyleFetchedImageSet::create(cachedImage.get(), image.scaleFactor, this);
+            m_accessedBestFitImage = true;
         }
     }
 
     return (m_imageSet && m_imageSet->isImageResourceSet()) ? toStyleFetchedImageSet(m_imageSet) : 0;
 }
 
-StyleFetchedImageSet* CSSImageSetValue::cachedImageSet(ResourceFetcher* fetcher, float deviceScaleFactor)
+StyleFetchedImageSet* CSSImageSetValue::cachedImageSet(Document* document, float deviceScaleFactor)
 {
-    return cachedImageSet(fetcher, deviceScaleFactor, ResourceFetcher::defaultResourceOptions());
+    return cachedImageSet(document, deviceScaleFactor, ResourceFetcher::defaultResourceOptions());
 }
 
 StyleImage* CSSImageSetValue::cachedOrPendingImageSet(float deviceScaleFactor)

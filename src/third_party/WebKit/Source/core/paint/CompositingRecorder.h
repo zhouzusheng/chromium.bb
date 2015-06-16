@@ -5,6 +5,7 @@
 #ifndef CompositingRecorder_h
 #define CompositingRecorder_h
 
+#include "platform/geometry/FloatRect.h"
 #include "platform/graphics/GraphicsTypes.h"
 #include "platform/graphics/paint/DisplayItem.h"
 #include "public/platform/WebBlendMode.h"
@@ -16,13 +17,18 @@ class LayoutObject;
 
 class CompositingRecorder {
 public:
-    explicit CompositingRecorder(GraphicsContext*, DisplayItemClient, const CompositeOperator, const WebBlendMode&, const float);
+    CompositingRecorder(GraphicsContext&, const DisplayItemClientWrapper&, const SkXfermode::Mode, const float opacity, const FloatRect* bounds = 0, ColorFilter = ColorFilterNone);
 
     ~CompositingRecorder();
 
+    // FIXME: These helpers only exist to ease the transition to slimming paint
+    //        and should be removed once slimming paint is enabled by default.
+    static void beginCompositing(GraphicsContext&, const DisplayItemClientWrapper&, const SkXfermode::Mode, const float opacity, const FloatRect* bounds = 0, ColorFilter = ColorFilterNone);
+    static void endCompositing(GraphicsContext&, const DisplayItemClientWrapper&);
+
 private:
-    DisplayItemClient m_client;
-    GraphicsContext* m_graphicsContext;
+    DisplayItemClientWrapper m_client;
+    GraphicsContext& m_graphicsContext;
 };
 
 } // namespace blink

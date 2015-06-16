@@ -1,3 +1,7 @@
+# Copyright 2015 Google Inc.
+#
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
 # Include this gypi to include all 'gpu' files
 # The parent gyp/gypi file must define
 #       'skia_src_path'     e.g. skia/trunk/src
@@ -8,7 +12,7 @@
 {
   'variables': {
     'skgpu_sources': [
-      '<(skia_include_path)/gpu/GrClipData.h',
+      '<(skia_include_path)/gpu/GrClip.h',
       '<(skia_include_path)/gpu/GrColor.h',
       '<(skia_include_path)/gpu/GrConfig.h',
       '<(skia_include_path)/gpu/GrContext.h',
@@ -34,6 +38,7 @@
       '<(skia_include_path)/gpu/GrUserConfig.h',
       '<(skia_include_path)/gpu/GrXferProcessor.h',
 
+      '<(skia_include_path)/gpu/effects/GrConstColorProcessor.h',
       '<(skia_include_path)/gpu/effects/GrCoverageSetOpXP.h',
       '<(skia_include_path)/gpu/effects/GrCustomXfermode.h',
       '<(skia_include_path)/gpu/effects/GrPorterDuffXferProcessor.h',
@@ -53,11 +58,18 @@
       '<(skia_src_path)/gpu/GrAARectRenderer.cpp',
       '<(skia_src_path)/gpu/GrAARectRenderer.h',
       '<(skia_src_path)/gpu/GrAddPathRenderers_default.cpp',
+      '<(skia_src_path)/gpu/GrAutoLocaleSetter.h',
       '<(skia_src_path)/gpu/GrAllocator.h',
       '<(skia_src_path)/gpu/GrAtlas.cpp',
       '<(skia_src_path)/gpu/GrAtlas.h',
+      '<(skia_src_path)/gpu/GrAtlasTextContext.cpp',
+      '<(skia_src_path)/gpu/GrAtlasTextContext.h',
       '<(skia_src_path)/gpu/GrBatch.cpp',
       '<(skia_src_path)/gpu/GrBatch.h',
+      '<(skia_src_path)/gpu/GrBatchAtlas.cpp',
+      '<(skia_src_path)/gpu/GrBatchAtlas.h',
+      '<(skia_src_path)/gpu/GrBatchFontCache.cpp',
+      '<(skia_src_path)/gpu/GrBatchFontCache.h',
       '<(skia_src_path)/gpu/GrBatchTarget.cpp',
       '<(skia_src_path)/gpu/GrBatchTarget.h',
       '<(skia_src_path)/gpu/GrBitmapTextContext.cpp',
@@ -66,7 +78,7 @@
       '<(skia_src_path)/gpu/GrBlend.h',
       '<(skia_src_path)/gpu/GrBufferAllocPool.cpp',
       '<(skia_src_path)/gpu/GrBufferAllocPool.h',
-      '<(skia_src_path)/gpu/GrClipData.cpp',
+      '<(skia_src_path)/gpu/GrClip.cpp',
       '<(skia_src_path)/gpu/GrClipMaskCache.h',
       '<(skia_src_path)/gpu/GrClipMaskCache.cpp',
       '<(skia_src_path)/gpu/GrClipMaskManager.h',
@@ -97,6 +109,7 @@
       '<(skia_src_path)/gpu/GrGpuResourcePriv.h',
       '<(skia_src_path)/gpu/GrGpuResource.cpp',
       '<(skia_src_path)/gpu/GrGpuFactory.cpp',
+      '<(skia_src_path)/gpu/GrGpuFactory.h',
       '<(skia_src_path)/gpu/GrIndexBuffer.h',
       '<(skia_src_path)/gpu/GrInvariantOutput.cpp',
       '<(skia_src_path)/gpu/GrInOrderDrawBuffer.cpp',
@@ -149,6 +162,7 @@
       '<(skia_src_path)/gpu/GrRectanizer_skyline.h',
       '<(skia_src_path)/gpu/GrRedBlackTree.h',
       '<(skia_src_path)/gpu/GrRenderTarget.cpp',
+      '<(skia_src_path)/gpu/GrRenderTargetPriv.h',
       '<(skia_src_path)/gpu/GrReducedClip.cpp',
       '<(skia_src_path)/gpu/GrReducedClip.h',
       '<(skia_src_path)/gpu/GrResourceCache.cpp',
@@ -162,10 +176,14 @@
       '<(skia_src_path)/gpu/GrStencilBuffer.cpp',
       '<(skia_src_path)/gpu/GrStencilBuffer.h',
       '<(skia_src_path)/gpu/GrStrokeInfo.h',
+      '<(skia_src_path)/gpu/GrTargetCommands.cpp',
+      '<(skia_src_path)/gpu/GrTargetCommands.h',
       '<(skia_src_path)/gpu/GrTBSearch.h',
       '<(skia_src_path)/gpu/GrTraceMarker.cpp',
       '<(skia_src_path)/gpu/GrTraceMarker.h',
       '<(skia_src_path)/gpu/GrTracing.h',
+      '<(skia_src_path)/gpu/GrTessellatingPathRenderer.cpp',
+      '<(skia_src_path)/gpu/GrTessellatingPathRenderer.h',
       '<(skia_src_path)/gpu/GrSWMaskHelper.cpp',
       '<(skia_src_path)/gpu/GrSWMaskHelper.h',
       '<(skia_src_path)/gpu/GrSoftwarePathRenderer.cpp',
@@ -187,6 +205,7 @@
       '<(skia_src_path)/gpu/effects/Gr1DKernelEffect.h',
       '<(skia_src_path)/gpu/effects/GrConfigConversionEffect.cpp',
       '<(skia_src_path)/gpu/effects/GrConfigConversionEffect.h',
+      '<(skia_src_path)/gpu/effects/GrConstColorProcessor.cpp',
       '<(skia_src_path)/gpu/effects/GrCoverageSetOpXP.cpp',
       '<(skia_src_path)/gpu/effects/GrCustomXfermode.cpp',
       '<(skia_src_path)/gpu/effects/GrCustomXfermodePriv.h',
@@ -335,7 +354,6 @@
 
       # Sk files
       '<(skia_src_path)/gpu/gl/mac/SkCreatePlatformGLContext_mac.cpp',
-      '<(skia_src_path)/gpu/gl/nacl/SkCreatePlatformGLContext_nacl.cpp',
       '<(skia_src_path)/gpu/gl/win/SkCreatePlatformGLContext_win.cpp',
       '<(skia_src_path)/gpu/gl/glx/SkCreatePlatformGLContext_glx.cpp',
       '<(skia_src_path)/gpu/gl/egl/SkCreatePlatformGLContext_egl.cpp',
@@ -352,8 +370,8 @@
       '<(skia_src_path)/gpu/gl/angle/GrGLCreateANGLEInterface.cpp',
 
       # Sk files
+      '<(skia_include_path)/gpu/gl/angle/SkANGLEGLContext.h',
       '<(skia_src_path)/gpu/gl/angle/SkANGLEGLContext.cpp',
-      '<(skia_src_path)/gpu/gl/angle/SkANGLEGLContext.h',
     ],
     'skgpu_debug_gl_sources': [
       '<(skia_src_path)/gpu/gl/debug/GrGLCreateDebugInterface.cpp',

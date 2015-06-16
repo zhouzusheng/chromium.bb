@@ -484,6 +484,7 @@ public:
             // the entirety of the generative motion.
             bool previousUpdateInSequencePrevented;
             bool preventPropagation;
+            bool inertial;
         } scrollUpdate;
 
         struct {
@@ -498,6 +499,7 @@ public:
         } flingCancel;
 
         struct {
+            bool zoomDisabled;
             float scale;
         } pinchUpdate;
     } data;
@@ -536,11 +538,15 @@ public:
     // generated.
     bool causesScrollingIfUncanceled;
 
+    // A unique identifier for the touch event.
+    uint64_t uniqueTouchEventId;
+
     WebTouchEvent()
         : WebInputEvent(sizeof(WebTouchEvent))
         , touchesLength(0)
         , cancelable(true)
         , causesScrollingIfUncanceled(false)
+        , uniqueTouchEventId(0)
     {
     }
 };

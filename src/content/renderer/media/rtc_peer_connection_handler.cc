@@ -169,32 +169,49 @@ void GetSdpAndTypeFromSessionDescription(
   }
 }
 
-// Converter functions from WebKit types to libjingle types.
+// Converter functions from WebKit types to WebRTC types.
 
 void GetNativeRtcConfiguration(
-    const blink::WebRTCConfiguration& server_configuration,
-    webrtc::PeerConnectionInterface::RTCConfiguration* config) {
-  if (server_configuration.isNull() || !config)
+    const blink::WebRTCConfiguration& blink_config,
+    webrtc::PeerConnectionInterface::RTCConfiguration* webrtc_config) {
+  if (blink_config.isNull() || !webrtc_config)
     return;
-  for (size_t i = 0; i < server_configuration.numberOfServers(); ++i) {
+  for (size_t i = 0; i < blink_config.numberOfServers(); ++i) {
     webrtc::PeerConnectionInterface::IceServer server;
     const blink::WebRTCICEServer& webkit_server =
-        server_configuration.server(i);
+        blink_config.server(i);
     server.username = base::UTF16ToUTF8(webkit_server.username());
     server.password = base::UTF16ToUTF8(webkit_server.credential());
     server.uri = webkit_server.uri().spec();
-    config->servers.push_back(server);
+    webrtc_config->servers.push_back(server);
   }
 
-  switch (server_configuration.iceTransports()) {
+  switch (blink_config.iceTransports()) {
   case blink::WebRTCIceTransportsNone:
-    config->type = webrtc::PeerConnectionInterface::kNone;
+    webrtc_config->type = webrtc::PeerConnectionInterface::kNone;
     break;
   case blink::WebRTCIceTransportsRelay:
-    config->type = webrtc::PeerConnectionInterface::kRelay;
+    webrtc_config->type = webrtc::PeerConnectionInterface::kRelay;
     break;
   case blink::WebRTCIceTransportsAll:
-    config->type = webrtc::PeerConnectionInterface::kAll;
+    webrtc_config->type = webrtc::PeerConnectionInterface::kAll;
+    break;
+  default:
+    NOTREACHED();
+  }
+
+  switch (blink_config.bundlePolicy()) {
+  case blink::WebRTCBundlePolicyBalanced:
+    webrtc_config->bundle_policy =
+        webrtc::PeerConnectionInterface::kBundlePolicyBalanced;
+    break;
+  case blink::WebRTCBundlePolicyMaxBundle:
+    webrtc_config->bundle_policy =
+        webrtc::PeerConnectionInterface::kBundlePolicyMaxBundle;
+    break;
+  case blink::WebRTCBundlePolicyMaxCompat:
+    webrtc_config->bundle_policy =
+        webrtc::PeerConnectionInterface::kBundlePolicyMaxCompat;
     break;
   default:
     NOTREACHED();
@@ -262,6 +279,7 @@ class CreateSessionDescriptionRequest
 
     tracker_.TrackOnSuccess(desc);
     webkit_request_.requestSucceeded(CreateWebKitSessionDescription(desc));
+    webkit_request_.reset();
     delete desc;
   }
   void OnFailure(const std::string& error) override {
@@ -273,10 +291,13 @@ class CreateSessionDescriptionRequest
 
     tracker_.TrackOnFailure(error);
     webkit_request_.requestFailed(base::UTF8ToUTF16(error));
+    webkit_request_.reset();
   }
 
  protected:
-  ~CreateSessionDescriptionRequest() override {}
+  ~CreateSessionDescriptionRequest() override {
+    DCHECK(webkit_request_.isNull());
+  }
 
   const scoped_refptr<base::SingleThreadTaskRunner> main_thread_;
   blink::WebRTCSessionDescriptionRequest webkit_request_;
@@ -307,6 +328,7 @@ class SetSessionDescriptionRequest
     }
     tracker_.TrackOnSuccess(NULL);
     webkit_request_.requestSucceeded();
+    webkit_request_.reset();
   }
   void OnFailure(const std::string& error) override {
     if (!main_thread_->BelongsToCurrentThread()) {
@@ -316,10 +338,13 @@ class SetSessionDescriptionRequest
     }
     tracker_.TrackOnFailure(error);
     webkit_request_.requestFailed(base::UTF8ToUTF16(error));
+    webkit_request_.reset();
   }
 
  protected:
-  ~SetSessionDescriptionRequest() override {}
+  ~SetSessionDescriptionRequest() override {
+    DCHECK(webkit_request_.isNull());
+  }
 
  private:
   const scoped_refptr<base::SingleThreadTaskRunner> main_thread_;
@@ -359,7 +384,7 @@ class StatsResponse : public webrtc::StatsObserver {
  private:
   struct Report {
     Report(const StatsReport* report)
-        : thread_checker(), id(report->id().ToString()),
+        : thread_checker(), id(report->id()->ToString()),
           type(report->TypeToString()),  timestamp(report->timestamp()),
           values(report->values()) {
     }
@@ -406,10 +431,19 @@ class StatsResponse : public webrtc::StatsObserver {
     int idx = response->addReport(blink::WebString::fromUTF8(report.id),
                                   blink::WebString::fromUTF8(report.type),
                                   report.timestamp);
+    blink::WebString name, value_str;
     for (const auto& value : report.values) {
-      response->addStatistic(idx,
-          blink::WebString::fromUTF8(value->display_name()),
-          blink::WebString::fromUTF8(value->value));
+      const StatsReport::ValuePtr& v = value.second;
+      name = blink::WebString::fromUTF8(value.second->display_name());
+
+      if (v->type() == StatsReport::Value::kString)
+        value_str = blink::WebString::fromUTF8(v->string_val());
+      if (v->type() == StatsReport::Value::kStaticString)
+        value_str = blink::WebString::fromUTF8(v->static_string_val());
+      else
+        value_str = blink::WebString::fromUTF8(v->ToString());
+
+      response->addStatistic(idx, name, value_str);
     }
   }
 

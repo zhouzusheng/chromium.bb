@@ -12,11 +12,14 @@
 #include "base/containers/hash_tables.h"
 #include "base/values.h"
 #include "cc/base/scoped_ptr_vector.h"
-#include "cc/base/swap_promise.h"
 #include "cc/base/synced_property.h"
+#include "cc/input/layer_selection_bound.h"
 #include "cc/layers/layer_impl.h"
+#include "cc/output/begin_frame_args.h"
 #include "cc/output/renderer.h"
+#include "cc/output/swap_promise.h"
 #include "cc/resources/ui_resource_client.h"
+#include "cc/trees/layer_tree_host_impl.h"
 
 namespace base {
 namespace trace_event {
@@ -33,7 +36,6 @@ class HeadsUpDisplayLayerImpl;
 class LayerExternalScrollOffsetListener;
 class LayerScrollOffsetDelegate;
 class LayerTreeDebugState;
-class LayerTreeHostImpl;
 class LayerTreeImpl;
 class LayerTreeSettings;
 class MemoryHistory;
@@ -115,7 +117,8 @@ class CC_EXPORT LayerTreeImpl {
 
   // Tracing methods.
   // ---------------------------------------------------------------------------
-  void GetAllTilesForTracing(std::set<const Tile*>* tiles) const;
+  void GetAllTilesAndPrioritiesForTracing(
+      std::map<const Tile*, TilePriority>* tile_map) const;
   void AsValueInto(base::trace_event::TracedValue* dict) const;
 
   // Other public methods
@@ -240,7 +243,7 @@ class CC_EXPORT LayerTreeImpl {
 
   size_t NumLayers();
 
-  AnimationRegistrar* animationRegistrar() const;
+  AnimationRegistrar* GetAnimationRegistrar() const;
 
   void PushPersistedState(LayerTreeImpl* pending_tree);
 
@@ -331,6 +334,8 @@ class CC_EXPORT LayerTreeImpl {
       scoped_ptr<PendingPageScaleAnimation> pending_animation);
   scoped_ptr<PendingPageScaleAnimation> TakePendingPageScaleAnimation();
 
+  void GatherFrameTimingRequestIds(std::vector<int64_t>* request_ids);
+
   bool IsExternalFlingActive() const;
   void DidUpdateScrollOffset(int layer_id);
 
@@ -340,8 +345,6 @@ class CC_EXPORT LayerTreeImpl {
       scoped_refptr<SyncedProperty<ScaleGroup>> page_scale_factor,
       scoped_refptr<SyncedTopControls> top_controls_shown_ratio,
       scoped_refptr<SyncedElasticOverscroll> elastic_overscroll);
-  void ProcessLayersRecursive(LayerImpl* current,
-                              void (LayerImpl::*function)());
   float ClampPageScaleFactorToLimits(float page_scale_factor) const;
   void PushPageScaleFactorAndLimits(const float* page_scale_factor,
                                     float min_page_scale_factor,

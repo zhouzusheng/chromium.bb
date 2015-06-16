@@ -48,11 +48,11 @@ public:
     IntSize fixedSize(const LayoutObject*);
 
     bool isPending() const { return false; }
-    void loadSubimages(ResourceFetcher*) { }
+    void loadSubimages(Document*) { }
 
     bool equals(const CSSCanvasValue&) const;
 
-    void traceAfterDispatch(Visitor*);
+    DECLARE_TRACE_AFTER_DISPATCH();
 
 private:
     explicit CSSCanvasValue(const String& name)
@@ -84,7 +84,7 @@ private:
             m_ownerValue->canvasDestroyed(canvas);
         }
 #endif
-        virtual void trace(Visitor* visitor) override
+        DEFINE_INLINE_VIRTUAL_TRACE()
         {
             visitor->trace(m_ownerValue);
             CanvasObserver::trace(visitor);

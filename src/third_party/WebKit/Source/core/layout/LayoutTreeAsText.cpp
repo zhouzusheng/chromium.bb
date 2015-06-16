@@ -35,11 +35,15 @@
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/html/HTMLElement.h"
-#include "core/layout/Layer.h"
 #include "core/layout/LayoutDetailsMarker.h"
+#include "core/layout/LayoutFileUploadControl.h"
+#include "core/layout/LayoutInline.h"
+#include "core/layout/LayoutListItem.h"
+#include "core/layout/LayoutListMarker.h"
 #include "core/layout/LayoutPart.h"
 #include "core/layout/LayoutTableCell.h"
-#include "core/layout/compositing/CompositedLayerMapping.h"
+#include "core/layout/LayoutView.h"
+#include "core/layout/compositing/CompositedDeprecatedPaintLayerMapping.h"
 #include "core/layout/line/InlineTextBox.h"
 #include "core/layout/svg/LayoutSVGContainer.h"
 #include "core/layout/svg/LayoutSVGGradientStop.h"
@@ -50,11 +54,7 @@
 #include "core/layout/svg/LayoutSVGText.h"
 #include "core/layout/svg/SVGLayoutTreeAsText.h"
 #include "core/page/PrintContext.h"
-#include "core/rendering/RenderFileUploadControl.h"
-#include "core/rendering/RenderInline.h"
-#include "core/rendering/RenderListItem.h"
-#include "core/rendering/RenderListMarker.h"
-#include "core/rendering/RenderView.h"
+#include "core/paint/DeprecatedPaintLayer.h"
 #include "wtf/HexNumber.h"
 #include "wtf/Vector.h"
 #include "wtf/unicode/CharacterNames.h"
@@ -163,7 +163,7 @@ TextStream& operator<<(TextStream& ts, const Color& c)
 
 void LayoutTreeAsText::writeLayoutObject(TextStream& ts, const LayoutObject& o, LayoutAsTextBehavior behavior)
 {
-    ts << o.renderName();
+    ts << o.decoratedName();
 
     if (behavior & LayoutAsTextShowAddresses)
         ts << " " << static_cast<const void*>(&o);
@@ -182,22 +182,22 @@ void LayoutTreeAsText::writeLayoutObject(TextStream& ts, const LayoutObject& o, 
         }
     }
 
-    RenderBlock* cb = o.containingBlock();
+    LayoutBlock* cb = o.containingBlock();
     bool adjustForTableCells = cb ? cb->isTableCell() : false;
 
     LayoutRect r;
     if (o.isText()) {
         // FIXME: Would be better to dump the bounding box x and y rather than the first run's x and y, but that would involve updating
         // many test results.
-        const RenderText& text = toRenderText(o);
+        const LayoutText& text = toLayoutText(o);
         IntRect linesBox = text.linesBoundingBox();
-        r = IntRect(text.firstRunX(), text.firstRunY(), linesBox.width(), linesBox.height());
+        r = LayoutRect(IntRect(text.firstRunX(), text.firstRunY(), linesBox.width(), linesBox.height()));
         if (adjustForTableCells && !text.firstTextBox())
             adjustForTableCells = false;
-    } else if (o.isRenderInline()) {
+    } else if (o.isLayoutInline()) {
         // FIXME: Would be better not to just dump 0, 0 as the x and y here.
-        const RenderInline& inlineFlow = toRenderInline(o);
-        r = IntRect(0, 0, inlineFlow.linesBoundingBox().width(), inlineFlow.linesBoundingBox().height());
+        const LayoutInline& inlineFlow = toLayoutInline(o);
+        r = LayoutRect(IntRect(0, 0, inlineFlow.linesBoundingBox().width(), inlineFlow.linesBoundingBox().height()));
         adjustForTableCells = false;
     } else if (o.isTableCell()) {
         // FIXME: Deliberately dump the "inner" box of table cells, since that is what current results reflect.  We'd like
@@ -206,23 +206,23 @@ void LayoutTreeAsText::writeLayoutObject(TextStream& ts, const LayoutObject& o, 
         const LayoutTableCell& cell = toLayoutTableCell(o);
         r = LayoutRect(cell.location().x(), cell.location().y() + cell.intrinsicPaddingBefore(), cell.size().width(), cell.size().height() - cell.intrinsicPaddingBefore() - cell.intrinsicPaddingAfter());
     } else if (o.isBox()) {
-        r = toRenderBox(&o)->frameRect();
+        r = toLayoutBox(&o)->frameRect();
     }
 
     // FIXME: Temporary in order to ensure compatibility with existing layout test results.
     if (adjustForTableCells)
         r.move(0, -toLayoutTableCell(o.containingBlock())->intrinsicPaddingBefore());
 
-    if (o.isRenderView()) {
-        r.setWidth(toRenderView(o).viewWidth(IncludeScrollbars));
-        r.setHeight(toRenderView(o).viewHeight(IncludeScrollbars));
+    if (o.isLayoutView()) {
+        r.setWidth(toLayoutView(o).viewWidth(IncludeScrollbars));
+        r.setHeight(toLayoutView(o).viewHeight(IncludeScrollbars));
     }
 
     ts << " " << r;
 
     if (!(o.isText() && !o.isBR())) {
         if (o.isFileUploadControl())
-            ts << " " << quoteAndEscapeNonPrintables(toRenderFileUploadControl(&o)->fileTextValue());
+            ts << " " << quoteAndEscapeNonPrintables(toLayoutFileUploadControl(&o)->fileTextValue());
 
         if (o.parent()) {
             Color color = o.resolveColor(CSSPropertyColor);
@@ -252,7 +252,7 @@ void LayoutTreeAsText::writeLayoutObject(TextStream& ts, const LayoutObject& o, 
         if (!o.isBoxModelObject())
             return;
 
-        const RenderBoxModelObject& box = toRenderBoxModelObject(o);
+        const LayoutBoxModelObject& box = toLayoutBoxModelObject(o);
         if (box.borderTop() || box.borderRight() || box.borderBottom() || box.borderLeft()) {
             ts << " [border:";
 
@@ -326,7 +326,7 @@ void LayoutTreeAsText::writeLayoutObject(TextStream& ts, const LayoutObject& o, 
     }
 
     if (o.isListMarker()) {
-        String text = toRenderListMarker(o).text();
+        String text = toLayoutListMarker(o).text();
         if (!text.isEmpty()) {
             if (text.length() != 1) {
                 text = quoteAndEscapeNonPrintables(text);
@@ -404,7 +404,7 @@ void LayoutTreeAsText::writeLayoutObject(TextStream& ts, const LayoutObject& o, 
     }
 }
 
-static void writeTextRun(TextStream& ts, const RenderText& o, const InlineTextBox& run)
+static void writeTextRun(TextStream& ts, const LayoutText& o, const InlineTextBox& run)
 {
     // FIXME: For now use an "enclosingIntRect" model for x, y and logicalWidth, although this makes it harder
     // to detect any changes caused by the conversion to floating point. :(
@@ -470,7 +470,7 @@ void write(TextStream& ts, const LayoutObject& o, int indent, LayoutAsTextBehavi
     ts << "\n";
 
     if (o.isText() && !o.isBR()) {
-        const RenderText& text = toRenderText(o);
+        const LayoutText& text = toLayoutText(o);
         for (InlineTextBox* box = text.firstTextBox(); box; box = box->nextTextBox()) {
             writeIndent(ts, indent + 1);
             writeTextRun(ts, text, *box);
@@ -487,10 +487,10 @@ void write(TextStream& ts, const LayoutObject& o, int indent, LayoutAsTextBehavi
         Widget* widget = toLayoutPart(o).widget();
         if (widget && widget->isFrameView()) {
             FrameView* view = toFrameView(widget);
-            RenderView* root = view->renderView();
+            LayoutView* root = view->layoutView();
             if (root) {
                 view->layout();
-                Layer* layer = root->layer();
+                DeprecatedPaintLayer* layer = root->layer();
                 if (layer)
                     LayoutTreeAsText::writeLayers(ts, layer, layer, layer->rect(), indent + 1, behavior);
             }
@@ -504,7 +504,7 @@ enum LayerPaintPhase {
     LayerPaintPhaseForeground = 1
 };
 
-static void write(TextStream& ts, Layer& layer,
+static void write(TextStream& ts, DeprecatedPaintLayer& layer,
     const LayoutRect& layerBounds, const LayoutRect& backgroundClipRect, const LayoutRect& clipRect, const LayoutRect& outlineClipRect,
     LayerPaintPhase paintPhase = LayerPaintPhaseAll, int indent = 0, LayoutAsTextBehavior behavior = LayoutAsTextBehaviorNormal)
 {
@@ -514,19 +514,19 @@ static void write(TextStream& ts, Layer& layer,
     IntRect adjustedClipRect = pixelSnappedIntRect(clipRect);
     IntRect adjustedOutlineClipRect = pixelSnappedIntRect(outlineClipRect);
 
-    Settings* settings = layer.renderer()->document().settings();
-    bool reportFrameScrollInfo = layer.renderer()->isRenderView() && settings && !settings->rootLayerScrolls();
+    Settings* settings = layer.layoutObject()->document().settings();
+    bool reportFrameScrollInfo = layer.layoutObject()->isLayoutView() && settings && !settings->rootLayerScrolls();
 
     if (reportFrameScrollInfo) {
-        RenderView* renderView = toRenderView(layer.renderer());
+        LayoutView* layoutView = toLayoutView(layer.layoutObject());
 
-        adjustedLayoutBoundsWithScrollbars.setWidth(renderView->viewWidth(IncludeScrollbars));
-        adjustedLayoutBoundsWithScrollbars.setHeight(renderView->viewHeight(IncludeScrollbars));
+        adjustedLayoutBoundsWithScrollbars.setWidth(layoutView->viewWidth(IncludeScrollbars));
+        adjustedLayoutBoundsWithScrollbars.setHeight(layoutView->viewHeight(IncludeScrollbars));
     }
 
     writeIndent(ts, indent);
 
-    if (layer.renderer()->style()->visibility() == HIDDEN)
+    if (layer.layoutObject()->style()->visibility() == HIDDEN)
         ts << "hidden ";
 
     ts << "layer ";
@@ -547,10 +547,10 @@ static void write(TextStream& ts, Layer& layer,
     if (layer.isTransparent())
         ts << " transparent";
 
-    if (layer.renderer()->hasOverflowClip() || reportFrameScrollInfo) {
+    if (layer.layoutObject()->hasOverflowClip() || reportFrameScrollInfo) {
         ScrollableArea* scrollableArea;
         if (reportFrameScrollInfo)
-            scrollableArea = toRenderView(layer.renderer())->frameView();
+            scrollableArea = toLayoutView(layer.layoutObject())->frameView();
         else
             scrollableArea = layer.scrollableArea();
 
@@ -559,10 +559,10 @@ static void write(TextStream& ts, Layer& layer,
             ts << " scrollX " << adjustedScrollOffset.x();
         if (adjustedScrollOffset.y())
             ts << " scrollY " << adjustedScrollOffset.y();
-        if (layer.renderBox() && layer.renderBox()->pixelSnappedClientWidth() != layer.renderBox()->pixelSnappedScrollWidth())
-            ts << " scrollWidth " << layer.renderBox()->pixelSnappedScrollWidth();
-        if (layer.renderBox() && layer.renderBox()->pixelSnappedClientHeight() != layer.renderBox()->pixelSnappedScrollHeight())
-            ts << " scrollHeight " << layer.renderBox()->pixelSnappedScrollHeight();
+        if (layer.layoutBox() && layer.layoutBox()->pixelSnappedClientWidth() != layer.layoutBox()->pixelSnappedScrollWidth())
+            ts << " scrollWidth " << layer.layoutBox()->pixelSnappedScrollWidth();
+        if (layer.layoutBox() && layer.layoutBox()->pixelSnappedClientHeight() != layer.layoutBox()->pixelSnappedScrollHeight())
+            ts << " scrollHeight " << layer.layoutBox()->pixelSnappedScrollHeight();
     }
 
     if (paintPhase == LayerPaintPhaseBackground)
@@ -570,15 +570,15 @@ static void write(TextStream& ts, Layer& layer,
     else if (paintPhase == LayerPaintPhaseForeground)
         ts << " layerType: foreground only";
 
-    if (layer.renderer()->style()->hasBlendMode())
-        ts << " blendMode: " << compositeOperatorName(CompositeSourceOver, layer.renderer()->style()->blendMode());
+    if (layer.layoutObject()->style()->hasBlendMode())
+        ts << " blendMode: " << compositeOperatorName(CompositeSourceOver, layer.layoutObject()->style()->blendMode());
 
     if (behavior & LayoutAsTextShowCompositedLayers) {
-        if (layer.hasCompositedLayerMapping()) {
+        if (layer.hasCompositedDeprecatedPaintLayerMapping()) {
             ts << " (composited, bounds="
-                << layer.compositedLayerMapping()->compositedBounds()
+                << layer.compositedDeprecatedPaintLayerMapping()->compositedBounds()
                 << ", drawsContent="
-                << layer.compositedLayerMapping()->mainGraphicsLayer()->drawsContent()
+                << layer.compositedDeprecatedPaintLayerMapping()->mainGraphicsLayer()->drawsContent()
                 << (layer.shouldIsolateCompositedDescendants() ? ", isolatesCompositedBlending" : "")
                 << ")";
         }
@@ -587,10 +587,10 @@ static void write(TextStream& ts, Layer& layer,
     ts << "\n";
 
     if (paintPhase != LayerPaintPhaseBackground)
-        write(ts, *layer.renderer(), indent + 1, behavior);
+        write(ts, *layer.layoutObject(), indent + 1, behavior);
 }
 
-void LayoutTreeAsText::writeLayers(TextStream& ts, const Layer* rootLayer, Layer* layer,
+void LayoutTreeAsText::writeLayers(TextStream& ts, const DeprecatedPaintLayer* rootLayer, DeprecatedPaintLayer* layer,
     const LayoutRect& paintRect, int indent, LayoutAsTextBehavior behavior)
 {
     // Calculate the clip rects we should use.
@@ -603,7 +603,7 @@ void LayoutTreeAsText::writeLayers(TextStream& ts, const Layer* rootLayer, Layer
 
     bool shouldPaint = (behavior & LayoutAsTextShowAllLayers) ? true : layer->intersectsDamageRect(layerBounds, damageRect.rect(), rootLayer);
 
-    Vector<LayerStackingNode*>* negList = layer->stackingNode()->negZOrderList();
+    Vector<DeprecatedPaintLayerStackingNode*>* negList = layer->stackingNode()->negZOrderList();
     bool paintsBackgroundSeparately = negList && negList->size() > 0;
     if (shouldPaint && paintsBackgroundSeparately)
         write(ts, *layer, layerBounds, damageRect.rect(), clipRectToApply.rect(), outlineRect.rect(), LayerPaintPhaseBackground, indent, behavior);
@@ -622,7 +622,7 @@ void LayoutTreeAsText::writeLayers(TextStream& ts, const Layer* rootLayer, Layer
     if (shouldPaint)
         write(ts, *layer, layerBounds, damageRect.rect(), clipRectToApply.rect(), outlineRect.rect(), paintsBackgroundSeparately ? LayerPaintPhaseForeground : LayerPaintPhaseAll, indent, behavior);
 
-    if (Vector<LayerStackingNode*>* normalFlowList = layer->stackingNode()->normalFlowList()) {
+    if (Vector<DeprecatedPaintLayerStackingNode*>* normalFlowList = layer->stackingNode()->normalFlowList()) {
         int currIndent = indent;
         if (behavior & LayoutAsTextShowLayerNesting) {
             writeIndent(ts, indent);
@@ -633,7 +633,7 @@ void LayoutTreeAsText::writeLayers(TextStream& ts, const Layer* rootLayer, Layer
             writeLayers(ts, rootLayer, normalFlowList->at(i)->layer(), paintRect, currIndent, behavior);
     }
 
-    if (Vector<LayerStackingNode*>* posList = layer->stackingNode()->posZOrderList()) {
+    if (Vector<DeprecatedPaintLayerStackingNode*>* posList = layer->stackingNode()->posZOrderList()) {
         int currIndent = indent;
         if (behavior & LayoutAsTextShowLayerNesting) {
             writeIndent(ts, indent);
@@ -703,13 +703,13 @@ static void writeSelection(TextStream& ts, const LayoutObject* o)
     }
 }
 
-static String externalRepresentation(RenderBox* renderer, LayoutAsTextBehavior behavior)
+static String externalRepresentation(LayoutBox* renderer, LayoutAsTextBehavior behavior)
 {
     TextStream ts;
     if (!renderer->hasLayer())
         return ts.release();
 
-    Layer* layer = renderer->layer();
+    DeprecatedPaintLayer* layer = renderer->layer();
     LayoutTreeAsText::writeLayers(ts, layer, layer, layer->rect(), 0, behavior);
     writeSelection(ts, renderer);
     return ts.release();
@@ -726,9 +726,9 @@ String externalRepresentation(LocalFrame* frame, LayoutAsTextBehavior behavior)
 
     PrintContext printContext(frame);
     if (behavior & LayoutAsTextPrintingMode)
-        printContext.begin(toRenderBox(renderer)->size().width().toFloat());
+        printContext.begin(toLayoutBox(renderer)->size().width().toFloat());
 
-    return externalRepresentation(toRenderBox(renderer), behavior);
+    return externalRepresentation(toLayoutBox(renderer), behavior);
 }
 
 String externalRepresentation(Element* element, LayoutAsTextBehavior behavior)
@@ -738,11 +738,11 @@ String externalRepresentation(Element* element, LayoutAsTextBehavior behavior)
     if (!(behavior & LayoutAsTextDontUpdateLayout))
         element->document().updateLayout();
 
-    LayoutObject* renderer = element->renderer();
+    LayoutObject* renderer = element->layoutObject();
     if (!renderer || !renderer->isBox())
         return String();
 
-    return externalRepresentation(toRenderBox(renderer), behavior | LayoutAsTextShowAllLayers);
+    return externalRepresentation(toLayoutBox(renderer), behavior | LayoutAsTextShowAllLayers);
 }
 
 static void writeCounterValuesFromChildren(TextStream& stream, LayoutObject* parent, bool& isFirstCounter)
@@ -752,7 +752,7 @@ static void writeCounterValuesFromChildren(TextStream& stream, LayoutObject* par
             if (!isFirstCounter)
                 stream << " ";
             isFirstCounter = false;
-            String str(toRenderText(child)->text());
+            String str(toLayoutText(child)->text());
             stream << str;
         }
     }
@@ -779,11 +779,11 @@ String markerTextForListItem(Element* element)
     RefPtrWillBeRawPtr<Element> protector(element);
     element->document().updateLayout();
 
-    LayoutObject* renderer = element->renderer();
+    LayoutObject* renderer = element->layoutObject();
     if (!renderer || !renderer->isListItem())
         return String();
 
-    return toRenderListItem(renderer)->markerText();
+    return toLayoutListItem(renderer)->markerText();
 }
 
 } // namespace blink

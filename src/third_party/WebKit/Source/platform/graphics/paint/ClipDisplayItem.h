@@ -16,14 +16,14 @@
 namespace blink {
 
 class PLATFORM_EXPORT ClipDisplayItem : public PairedBeginDisplayItem {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED(ClipDisplayItem);
 public:
-    static PassOwnPtr<ClipDisplayItem> create(DisplayItemClient client, Type type, const IntRect& clipRect, SkRegion::Op operation = SkRegion::kIntersect_Op)
+    static PassOwnPtr<ClipDisplayItem> create(const DisplayItemClientWrapper& client, Type type, const IntRect& clipRect, SkRegion::Op operation = SkRegion::kIntersect_Op)
     {
         return adoptPtr(new ClipDisplayItem(client, type, clipRect, operation));
     }
 
-    ClipDisplayItem(DisplayItemClient client, Type type, const IntRect& clipRect, SkRegion::Op operation = SkRegion::kIntersect_Op)
+    ClipDisplayItem(const DisplayItemClientWrapper& client, Type type, const IntRect& clipRect, SkRegion::Op operation = SkRegion::kIntersect_Op)
         : PairedBeginDisplayItem(client, type)
         , m_clipRect(clipRect)
         , m_operation(operation)
@@ -31,7 +31,7 @@ public:
         ASSERT(isClipType(type));
     }
 
-    virtual void replay(GraphicsContext*) override;
+    virtual void replay(GraphicsContext&) override;
     virtual void appendToWebDisplayItemList(WebDisplayItemList*) const override;
 
     Vector<FloatRoundedRect>& roundedRectClips() { return m_roundedRectClips; }
@@ -46,20 +46,20 @@ private:
 };
 
 class PLATFORM_EXPORT EndClipDisplayItem : public PairedEndDisplayItem {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED(EndClipDisplayItem);
 public:
-    static PassOwnPtr<EndClipDisplayItem> create(DisplayItemClient client, Type type)
+    static PassOwnPtr<EndClipDisplayItem> create(const DisplayItemClientWrapper& client, Type type)
     {
         return adoptPtr(new EndClipDisplayItem(client, type));
     }
 
-    EndClipDisplayItem(DisplayItemClient client, Type type)
+    EndClipDisplayItem(const DisplayItemClientWrapper& client, Type type)
         : PairedEndDisplayItem(client, type)
     {
         ASSERT(isEndClipType(type));
     }
 
-    virtual void replay(GraphicsContext*) override;
+    virtual void replay(GraphicsContext&) override;
     virtual void appendToWebDisplayItemList(WebDisplayItemList*) const override;
 
 private:

@@ -7,6 +7,7 @@
 
 #include "core/css/CSSSelectorList.h"
 #include "core/css/StyleSheetContents.h"
+#include "core/frame/UseCounter.h"
 #include "platform/RuntimeEnabledFeatures.h"
 
 namespace blink {
@@ -14,11 +15,13 @@ namespace blink {
 void CSSSelectorParser::parseSelector(CSSParserTokenRange range, const CSSParserContext& context, const AtomicString& defaultNamespace, StyleSheetContents* styleSheet, CSSSelectorList& output)
 {
     CSSSelectorParser parser(context, defaultNamespace, styleSheet);
-    range.consumeWhitespaceAndComments();
+    range.consumeWhitespace();
     CSSSelectorList result;
     parser.consumeComplexSelectorList(range, result);
-    if (range.atEnd())
+    if (range.atEnd()) {
         output.adopt(result);
+        recordSelectorStats(context, output);
+    }
     ASSERT(!(output.isValid() && parser.m_failedParsing));
 }
 
@@ -38,7 +41,7 @@ void CSSSelectorParser::consumeComplexSelectorList(CSSParserTokenRange& range, C
         return;
     selectorList.append(selector.release());
     while (!range.atEnd() && range.peek().type() == CommaToken) {
-        range.consumeIncludingWhitespaceAndComments();
+        range.consumeIncludingWhitespace();
         selector = consumeComplexSelector(range);
         if (!selector)
             return;
@@ -51,9 +54,9 @@ void CSSSelectorParser::consumeComplexSelectorList(CSSParserTokenRange& range, C
 
 void CSSSelectorParser::consumeCompoundSelectorList(CSSParserTokenRange& range, CSSSelectorList& output)
 {
-    Vector<OwnPtr<CSSParserSelector> > selectorList;
+    Vector<OwnPtr<CSSParserSelector>> selectorList;
     OwnPtr<CSSParserSelector> selector = consumeCompoundSelector(range);
-    range.consumeWhitespaceAndComments();
+    range.consumeWhitespace();
     if (!selector)
         return;
     selectorList.append(selector.release());
@@ -61,9 +64,9 @@ void CSSSelectorParser::consumeCompoundSelectorList(CSSParserTokenRange& range, 
         // FIXME: This differs from the spec grammar:
         // Spec: compound_selector S* [ COMMA S* compound_selector ]* S*
         // Impl: compound_selector S* [ COMMA S* compound_selector S* ]*
-        range.consumeIncludingWhitespaceAndComments();
+        range.consumeIncludingWhitespace();
         selector = consumeCompoundSelector(range);
-        range.consumeWhitespaceAndComments();
+        range.consumeWhitespace();
         if (!selector)
             return;
         selectorList.append(selector.release());
@@ -157,11 +160,11 @@ bool CSSSelectorParser::consumeName(CSSParserTokenRange& range, AtomicString& na
 
     const CSSParserToken& firstToken = range.peek();
     if (firstToken.type() == IdentToken) {
-        name = AtomicString(firstToken.value());
-        range.consumeIncludingComments();
+        name = firstToken.value();
+        range.consume();
     } else if (firstToken.type() == DelimiterToken && firstToken.delimiter() == '*') {
         name = starAtom;
-        range.consumeIncludingComments();
+        range.consume();
     } else if (firstToken.type() == DelimiterToken && firstToken.delimiter() == '|') {
         // No namespace
     } else {
@@ -170,13 +173,13 @@ bool CSSSelectorParser::consumeName(CSSParserTokenRange& range, AtomicString& na
 
     if (range.peek().type() != DelimiterToken || range.peek().delimiter() != '|')
         return true;
-    range.consumeIncludingComments();
+    range.consume();
 
     hasNamespace = true;
     namespacePrefix = name;
-    const CSSParserToken& nameToken = range.consumeIncludingComments();
+    const CSSParserToken& nameToken = range.consume();
     if (nameToken.type() == IdentToken) {
-        name = AtomicString(nameToken.value());
+        name = nameToken.value();
     } else if (nameToken.type() == DelimiterToken && nameToken.delimiter() == '*') {
         name = starAtom;
     } else {
@@ -195,11 +198,11 @@ PassOwnPtr<CSSParserSelector> CSSSelectorParser::consumeId(CSSParserTokenRange& 
         return nullptr;
     OwnPtr<CSSParserSelector> selector = CSSParserSelector::create();
     selector->setMatch(CSSSelector::Id);
-    const String& value = range.consumeIncludingComments().value();
+    const AtomicString& value = range.consume().value();
     if (isQuirksModeBehavior(m_context.mode()))
-        selector->setValue(AtomicString(value.lower()));
+        selector->setValue(value.lower());
     else
-        selector->setValue(AtomicString(value));
+        selector->setValue(value);
     return selector.release();
 }
 
@@ -207,16 +210,16 @@ PassOwnPtr<CSSParserSelector> CSSSelectorParser::consumeClass(CSSParserTokenRang
 {
     ASSERT(range.peek().type() == DelimiterToken);
     ASSERT(range.peek().delimiter() == '.');
-    range.consumeIncludingComments();
+    range.consume();
     if (range.peek().type() != IdentToken)
         return nullptr;
     OwnPtr<CSSParserSelector> selector = CSSParserSelector::create();
     selector->setMatch(CSSSelector::Class);
-    const String& value = range.consumeIncludingComments().value();
+    const AtomicString& value = range.consume().value();
     if (isQuirksModeBehavior(m_context.mode()))
-        selector->setValue(AtomicString(value.lower()));
+        selector->setValue(value.lower());
     else
-        selector->setValue(AtomicString(value));
+        selector->setValue(value);
     return selector.release();
 }
 
@@ -224,8 +227,7 @@ PassOwnPtr<CSSParserSelector> CSSSelectorParser::consumeAttribute(CSSParserToken
 {
     ASSERT(range.peek().type() == LeftBracketToken);
     CSSParserTokenRange block = range.consumeBlock();
-    block.consumeWhitespaceAndComments();
-    range.consumeComments();
+    block.consumeWhitespace();
 
     AtomicString namespacePrefix;
     AtomicString attributeName;
@@ -250,10 +252,10 @@ PassOwnPtr<CSSParserSelector> CSSSelectorParser::consumeAttribute(CSSParserToken
 
     selector->setMatch(consumeAttributeMatch(block));
 
-    const CSSParserToken& attributeValue = block.consumeIncludingWhitespaceAndComments();
+    const CSSParserToken& attributeValue = block.consumeIncludingWhitespace();
     if (attributeValue.type() != IdentToken && attributeValue.type() != StringToken)
         return nullptr;
-    selector->setValue(AtomicString(attributeValue.value()));
+    selector->setValue(attributeValue.value());
     selector->setAttribute(qualifiedName, consumeAttributeFlags(block));
 
     if (!block.atEnd())
@@ -264,11 +266,11 @@ PassOwnPtr<CSSParserSelector> CSSSelectorParser::consumeAttribute(CSSParserToken
 PassOwnPtr<CSSParserSelector> CSSSelectorParser::consumePseudo(CSSParserTokenRange& range)
 {
     ASSERT(range.peek().type() == ColonToken);
-    range.consumeIncludingComments();
+    range.consume();
 
     int colons = 1;
     if (range.peek().type() == ColonToken) {
-        range.consumeIncludingComments();
+        range.consume();
         colons++;
     }
 
@@ -278,24 +280,23 @@ PassOwnPtr<CSSParserSelector> CSSSelectorParser::consumePseudo(CSSParserTokenRan
 
     OwnPtr<CSSParserSelector> selector = CSSParserSelector::create();
     selector->setMatch(colons == 1 ? CSSSelector::PseudoClass : CSSSelector::PseudoElement);
-    selector->setValue(AtomicString(token.value().lower()));
+    selector->setValue(AtomicString(String(token.value()).lower()));
 
     if (token.type() == IdentToken) {
-        range.consumeIncludingComments();
+        range.consume();
         if (selector->pseudoType() == CSSSelector::PseudoUnknown)
             return nullptr;
         return selector.release();
     }
 
     CSSParserTokenRange block = range.consumeBlock();
-    block.consumeWhitespaceAndComments();
-    range.consumeComments();
+    block.consumeWhitespace();
 
     if ((colons == 1
-        && (equalIgnoringCase(token.value(), "host")
-            || equalIgnoringCase(token.value(), "host-context")
-            || equalIgnoringCase(token.value(), "-webkit-any")))
-        || (colons == 2 && equalIgnoringCase(token.value(), "cue"))) {
+        && (token.valueEqualsIgnoringCase("host")
+            || token.valueEqualsIgnoringCase("host-context")
+            || token.valueEqualsIgnoringCase("-webkit-any")))
+        || (colons == 2 && token.valueEqualsIgnoringCase("cue"))) {
 
         CSSSelectorList* selectorList = new CSSSelectorList();
         consumeCompoundSelectorList(block, *selectorList);
@@ -308,36 +309,36 @@ PassOwnPtr<CSSParserSelector> CSSSelectorParser::consumePseudo(CSSParserTokenRan
         return selector.release();
     }
 
-    if (colons == 1 && equalIgnoringCase(token.value(), "not")) {
+    if (colons == 1 && token.valueEqualsIgnoringCase("not")) {
         OwnPtr<CSSParserSelector> innerSelector = consumeCompoundSelector(block);
         if (!innerSelector || !innerSelector->isSimple() || !block.atEnd())
             return nullptr;
-        Vector<OwnPtr<CSSParserSelector> > selectorVector;
+        Vector<OwnPtr<CSSParserSelector>> selectorVector;
         selectorVector.append(innerSelector.release());
         selector->adoptSelectorVector(selectorVector);
         return selector.release();
     }
 
-    if (colons == 1 && equalIgnoringCase(token.value(), "lang")) {
+    if (colons == 1 && token.valueEqualsIgnoringCase("lang")) {
         // FIXME: CSS Selectors Level 4 allows :lang(*-foo)
-        const CSSParserToken& ident = block.consumeIncludingWhitespaceAndComments();
+        const CSSParserToken& ident = block.consumeIncludingWhitespace();
         if (ident.type() != IdentToken || !block.atEnd())
             return nullptr;
-        selector->setArgument(AtomicString(ident.value()));
+        selector->setArgument(ident.value());
         selector->pseudoType(); // FIXME: Do we need to force the pseudo type to be cached?
         ASSERT(selector->pseudoType() == CSSSelector::PseudoLang);
         return selector.release();
     }
 
     if (colons == 1
-        && (equalIgnoringCase(token.value(), "nth-child")
-            || equalIgnoringCase(token.value(), "nth-last-child")
-            || equalIgnoringCase(token.value(), "nth-of-type")
-            || equalIgnoringCase(token.value(), "nth-last-of-type"))) {
+        && (token.valueEqualsIgnoringCase("nth-child")
+            || token.valueEqualsIgnoringCase("nth-last-child")
+            || token.valueEqualsIgnoringCase("nth-of-type")
+            || token.valueEqualsIgnoringCase("nth-last-of-type"))) {
         std::pair<int, int> ab;
         if (!consumeANPlusB(block, ab))
             return nullptr;
-        block.consumeWhitespaceAndComments();
+        block.consumeWhitespace();
         if (!block.atEnd())
             return nullptr;
         // FIXME: We shouldn't serialize here and reparse in CSSSelector!
@@ -367,9 +368,9 @@ PassOwnPtr<CSSParserSelector> CSSSelectorParser::consumePseudo(CSSParserTokenRan
 CSSSelector::Relation CSSSelectorParser::consumeCombinator(CSSParserTokenRange& range)
 {
     CSSSelector::Relation fallbackResult = CSSSelector::SubSelector;
-    while (range.peek().type() == WhitespaceToken || range.peek().type() == CommentToken) {
-        if (range.consume().type() == WhitespaceToken)
-            fallbackResult = CSSSelector::Descendant;
+    while (range.peek().type() == WhitespaceToken) {
+        range.consume();
+        fallbackResult = CSSSelector::Descendant;
     }
 
     if (range.peek().type() != DelimiterToken)
@@ -378,7 +379,7 @@ CSSSelector::Relation CSSSelectorParser::consumeCombinator(CSSParserTokenRange& 
     UChar delimiter = range.peek().delimiter();
 
     if (delimiter == '+' || delimiter == '~' || delimiter == '>') {
-        range.consumeIncludingWhitespaceAndComments();
+        range.consumeIncludingWhitespace();
         if (delimiter == '+')
             return CSSSelector::DirectAdjacent;
         if (delimiter == '~')
@@ -389,11 +390,11 @@ CSSSelector::Relation CSSSelectorParser::consumeCombinator(CSSParserTokenRange& 
     // Match /deep/
     if (delimiter != '/')
         return fallbackResult;
-    range.consumeIncludingComments();
-    const CSSParserToken& ident = range.consumeIncludingComments();
-    if (ident.type() != IdentToken || !equalIgnoringCase(ident.value(), "deep"))
+    range.consume();
+    const CSSParserToken& ident = range.consume();
+    if (ident.type() != IdentToken || !ident.valueEqualsIgnoringCase("deep"))
         m_failedParsing = true;
-    const CSSParserToken& slash = range.consumeIncludingWhitespaceAndComments();
+    const CSSParserToken& slash = range.consumeIncludingWhitespace();
     if (slash.type() != DelimiterToken || slash.delimiter() != '/')
         m_failedParsing = true;
     return CSSSelector::ShadowDeep;
@@ -401,7 +402,7 @@ CSSSelector::Relation CSSSelectorParser::consumeCombinator(CSSParserTokenRange& 
 
 CSSSelector::Match CSSSelectorParser::consumeAttributeMatch(CSSParserTokenRange& range)
 {
-    const CSSParserToken& token = range.consumeIncludingWhitespaceAndComments();
+    const CSSParserToken& token = range.consumeIncludingWhitespace();
     switch (token.type()) {
     case IncludeMatchToken:
         return CSSSelector::AttributeList;
@@ -426,8 +427,8 @@ CSSSelector::AttributeMatchType CSSSelectorParser::consumeAttributeFlags(CSSPars
 {
     if (range.peek().type() != IdentToken)
         return CSSSelector::CaseSensitive;
-    const CSSParserToken& flag = range.consumeIncludingWhitespaceAndComments();
-    if (flag.value() == "i") {
+    const CSSParserToken& flag = range.consumeIncludingWhitespace();
+    if (String(flag.value()) == "i") {
         if (RuntimeEnabledFeatures::cssAttributeCaseSensitivityEnabled() || isUASheetBehavior(m_context.mode()))
             return CSSSelector::CaseInsensitive;
     }
@@ -437,17 +438,17 @@ CSSSelector::AttributeMatchType CSSSelectorParser::consumeAttributeFlags(CSSPars
 
 bool CSSSelectorParser::consumeANPlusB(CSSParserTokenRange& range, std::pair<int, int>& result)
 {
-    const CSSParserToken& token = range.consumeIncludingComments();
+    const CSSParserToken& token = range.consume();
     if (token.type() == NumberToken && token.numericValueType() == IntegerValueType) {
         result = std::make_pair(0, static_cast<int>(token.numericValue()));
         return true;
     }
     if (token.type() == IdentToken) {
-        if (equalIgnoringCase(token.value(), "odd")) {
+        if (token.valueEqualsIgnoringCase("odd")) {
             result = std::make_pair(2, 1);
             return true;
         }
-        if (equalIgnoringCase(token.value(), "even")) {
+        if (token.valueEqualsIgnoringCase("even")) {
             result = std::make_pair(2, 0);
             return true;
         }
@@ -466,14 +467,14 @@ bool CSSSelectorParser::consumeANPlusB(CSSParserTokenRange& range, std::pair<int
     } else if (token.type() == IdentToken) {
         if (token.value()[0] == '-') {
             result.first = -1;
-            nString = token.value().substring(1);
+            nString = String(token.value()).substring(1);
         } else {
             result.first = 1;
             nString = token.value();
         }
     }
 
-    range.consumeWhitespaceAndComments();
+    range.consumeWhitespace();
 
     if (nString.isEmpty() || !isASCIIAlphaCaselessEqual(nString[0], 'n'))
         return false;
@@ -488,7 +489,7 @@ bool CSSSelectorParser::consumeANPlusB(CSSParserTokenRange& range, std::pair<int
 
     NumericSign sign = nString.length() == 1 ? NoSign : MinusSign;
     if (sign == NoSign && range.peek().type() == DelimiterToken) {
-        char delimiterSign = range.consumeIncludingWhitespaceAndComments().delimiter();
+        char delimiterSign = range.consumeIncludingWhitespace().delimiter();
         if (delimiterSign == '+')
             sign = PlusSign;
         else if (delimiterSign == '-')
@@ -612,6 +613,52 @@ PassOwnPtr<CSSParserSelector> CSSSelectorParser::rewriteSpecifiers(PassOwnPtr<CS
     }
     specifiers->appendTagHistory(CSSSelector::SubSelector, newSpecifier);
     return specifiers;
+}
+
+void CSSSelectorParser::recordSelectorStats(const CSSParserContext& context, const CSSSelectorList& selectorList)
+{
+    if (!context.useCounter())
+        return;
+
+    for (const CSSSelector* selector = selectorList.first(); selector; selector = CSSSelectorList::next(*selector)) {
+        for (const CSSSelector* current = selector; current ; current = current->tagHistory()) {
+            UseCounter::Feature feature = UseCounter::NumberOfFeatures;
+            switch (current->pseudoType()) {
+            case CSSSelector::PseudoUnresolved:
+                feature = UseCounter::CSSSelectorPseudoUnresolved;
+                break;
+            case CSSSelector::PseudoShadow:
+                feature = UseCounter::CSSSelectorPseudoShadow;
+                break;
+            case CSSSelector::PseudoContent:
+                feature = UseCounter::CSSSelectorPseudoContent;
+                break;
+            case CSSSelector::PseudoHost:
+                feature = UseCounter::CSSSelectorPseudoHost;
+                break;
+            case CSSSelector::PseudoHostContext:
+                feature = UseCounter::CSSSelectorPseudoHostContext;
+                break;
+            case CSSSelector::PseudoFullScreenDocument:
+                feature = UseCounter::CSSSelectorPseudoFullScreenDocument;
+                break;
+            case CSSSelector::PseudoFullScreenAncestor:
+                feature = UseCounter::CSSSelectorPseudoFullScreenAncestor;
+                break;
+            case CSSSelector::PseudoFullScreen:
+                feature = UseCounter::CSSSelectorPseudoFullScreen;
+                break;
+            default:
+                break;
+            }
+            if (feature != UseCounter::NumberOfFeatures)
+                context.useCounter()->count(feature);
+            if (current->relation() == CSSSelector::ShadowDeep)
+                context.useCounter()->count(UseCounter::CSSDeepCombinator);
+            if (current->selectorList())
+                recordSelectorStats(context, *current->selectorList());
+        }
+    }
 }
 
 } // namespace blink

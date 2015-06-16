@@ -103,7 +103,7 @@ static leveldb::Status OpenDB(
   options.create_if_missing = true;
   options.paranoid_checks = true;
   options.filter_policy = filter_policy->get();
-  options.reuse_logs = true;
+  options.reuse_logs = leveldb_env::kDefaultLogReuseOptionValue;
   options.compression = leveldb::kSnappyCompression;
 
   // For info about the troubles we've run into with this parameter, see:
@@ -199,9 +199,9 @@ static void ParseAndHistogramIOErrorDetails(const std::string& histogram_name,
 
   std::string error_histogram_name(histogram_name);
 
-  if (result == leveldb_env::METHOD_AND_PFE) {
+  if (result == leveldb_env::METHOD_AND_BFE) {
     DCHECK_LT(error, 0);
-    error_histogram_name.append(std::string(".PFE.") +
+    error_histogram_name.append(std::string(".BFE.") +
                                 leveldb_env::MethodIDToString(method));
     base::LinearHistogram::FactoryGet(
         error_histogram_name,

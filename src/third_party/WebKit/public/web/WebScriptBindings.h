@@ -37,7 +37,7 @@ namespace v8 {
 class Isolate;
 class String;
 class Context;
-template <class T> class Handle;
+template <class T> class Local;
 template <class T> class Local;
 }
 
@@ -52,7 +52,7 @@ public:
     BLINK_EXPORT static v8::Local<v8::String> toV8String(const WebString&, v8::Isolate*);
 
     // You can use v8::Value::toString() to get a v8::String, but remember to wrap that in a v8::TryCatch.
-    BLINK_EXPORT static WebString toWebString(v8::Handle<v8::String>);
+    BLINK_EXPORT static WebString toWebString(v8::Local<v8::String>);
 
     // Creates a V8 context that can access the DOM.
     BLINK_EXPORT static v8::Local<v8::Context> createWebScriptContext();

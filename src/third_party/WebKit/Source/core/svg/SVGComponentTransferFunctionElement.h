@@ -51,10 +51,9 @@ protected:
     SVGComponentTransferFunctionElement(const QualifiedName&, Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override final;
     virtual void svgAttributeChanged(const QualifiedName&) override final;
 
-    virtual bool rendererIsNeeded(const LayoutStyle&) override final { return false; }
+    virtual bool layoutObjectIsNeeded(const ComputedStyle&) override final { return false; }
 
 private:
     RefPtrWillBeMember<SVGAnimatedNumberList> m_tableValues;
@@ -63,7 +62,7 @@ private:
     RefPtrWillBeMember<SVGAnimatedNumber> m_amplitude;
     RefPtrWillBeMember<SVGAnimatedNumber> m_exponent;
     RefPtrWillBeMember<SVGAnimatedNumber> m_offset;
-    RefPtrWillBeMember<SVGAnimatedEnumeration<ComponentTransferType> > m_type;
+    RefPtrWillBeMember<SVGAnimatedEnumeration<ComponentTransferType>> m_type;
 };
 
 } // namespace blink

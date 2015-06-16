@@ -25,6 +25,7 @@
 #ifndef HTMLTextFormControlElement_h
 #define HTMLTextFormControlElement_h
 
+#include "core/CoreExport.h"
 #include "core/html/HTMLFormControlElementWithState.h"
 
 namespace blink {
@@ -38,7 +39,7 @@ enum TextFieldSelectionDirection { SelectionHasNoDirection, SelectionHasForwardD
 enum TextFieldEventBehavior { DispatchNoEvent, DispatchChangeEvent, DispatchInputAndChangeEvent };
 enum NeedToDispatchSelectEvent { DispatchSelectEvent, NotDispatchSelectEvent };
 
-class HTMLTextFormControlElement : public HTMLFormControlElementWithState {
+class CORE_EXPORT HTMLTextFormControlElement : public HTMLFormControlElementWithState {
 public:
     // Common flag for HTMLInputElement::tooLong(), HTMLTextAreaElement::tooLong(),
     // HTMLInputElement::tooShort() and HTMLTextAreaElement::tooShort().
@@ -79,6 +80,11 @@ public:
     void setSelectionRange(int start, int end, const String& direction);
     void setSelectionRange(int start, int end, TextFieldSelectionDirection = SelectionHasNoDirection, NeedToDispatchSelectEvent = DispatchSelectEvent, SelectionOption = ChangeSelection);
     PassRefPtrWillBeRawPtr<Range> selection() const;
+
+    virtual bool supportsAutocapitalize() const = 0;
+    virtual const AtomicString& defaultAutocapitalize() const = 0;
+    const AtomicString& autocapitalize() const;
+    void setAutocapitalize(const AtomicString&);
 
     virtual void dispatchFormControlChangeEvent() override final;
 
@@ -135,7 +141,7 @@ private:
     TextFieldSelectionDirection computeSelectionDirection() const;
 
     virtual void dispatchFocusEvent(Element* oldFocusedElement, WebFocusType) override final;
-    virtual void dispatchBlurEvent(Element* newFocusedElement) override final;
+    virtual void dispatchBlurEvent(Element* newFocusedElement, WebFocusType) override final;
     void scheduleSelectEvent();
 
     // Returns true if user-editable value is empty. Used to check placeholder visibility.

@@ -23,7 +23,7 @@
 #ifndef LayoutFrameSet_h
 #define LayoutFrameSet_h
 
-#include "core/rendering/RenderBox.h"
+#include "core/layout/LayoutBox.h"
 
 namespace blink {
 
@@ -53,7 +53,7 @@ private:
     Vector<bool> m_allowBorder;
 };
 
-class LayoutFrameSet final : public RenderBox {
+class LayoutFrameSet final : public LayoutBox {
 public:
     LayoutFrameSet(HTMLFrameSetElement*);
     virtual ~LayoutFrameSet();
@@ -95,19 +95,20 @@ public:
     const GridAxis& rows() { return m_rows; }
     const GridAxis& columns() { return m_cols; }
 
+    virtual const char* name() const override { return "LayoutFrameSet"; }
+
 private:
     static const int noSplit = -1;
 
     virtual LayoutObjectChildList* virtualChildren() override { return children(); }
     virtual const LayoutObjectChildList* virtualChildren() const override { return children(); }
 
-    virtual const char* renderName() const override { return "LayoutFrameSet"; }
-    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectFrameSet || RenderBox::isOfType(type); }
+    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectFrameSet || LayoutBox::isOfType(type); }
 
     virtual void layout() override;
     virtual void paint(const PaintInfo&, const LayoutPoint&) override;
     virtual void computePreferredLogicalWidths() override;
-    virtual bool isChildAllowed(LayoutObject*, const LayoutStyle&) const override;
+    virtual bool isChildAllowed(LayoutObject*, const ComputedStyle&) const override;
     virtual CursorDirective getCursor(const LayoutPoint&, Cursor&) const override;
 
     void setIsResizing(bool);

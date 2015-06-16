@@ -36,7 +36,7 @@ namespace rx
 class SurfaceImpl;
 struct ConfigDesc;
 
-class DisplayImpl
+class DisplayImpl : angle::NonCopyable
 {
   public:
     DisplayImpl();
@@ -51,6 +51,8 @@ class DisplayImpl
                                             SurfaceImpl **outSurface) = 0;
     virtual egl::Error createPbufferFromClientBuffer(const egl::Config *configuration, EGLClientBuffer shareHandle,
                                                      const egl::AttributeMap &attribs, SurfaceImpl **outSurface) = 0;
+    virtual egl::Error createPixmapSurface(const egl::Config *configuration, NativePixmapType nativePixmap,
+                                           const egl::AttributeMap &attribs, SurfaceImpl **outSurface) = 0;
     virtual egl::Error createContext(const egl::Config *config, const gl::Context *shareContext, const egl::AttributeMap &attribs,
                                      gl::Context **outContext) = 0;
 
@@ -82,8 +84,6 @@ class DisplayImpl
     SurfaceSet mSurfaceSet;
 
   private:
-    DISALLOW_COPY_AND_ASSIGN(DisplayImpl);
-
     virtual void generateExtensions(egl::DisplayExtensions *outExtensions) const = 0;
     virtual void generateCaps(egl::Caps *outCaps) const = 0;
 

@@ -25,7 +25,7 @@
 #include "core/dom/Document.h"
 #include "core/dom/StyleEngine.h"
 #include "core/editing/PositionWithAffinity.h"
-#include "core/rendering/RenderView.h"
+#include "core/layout/LayoutView.h"
 
 namespace blink {
 
@@ -36,7 +36,7 @@ static PassRefPtr<StringImpl> newlineString()
 }
 
 LayoutBR::LayoutBR(Node* node)
-    : RenderText(node, newlineString())
+    : LayoutText(node, newlineString())
 {
 }
 
@@ -46,13 +46,13 @@ LayoutBR::~LayoutBR()
 
 int LayoutBR::lineHeight(bool firstLine) const
 {
-    const LayoutStyle& style = styleRef(firstLine && document().styleEngine()->usesFirstLineRules());
+    const ComputedStyle& style = styleRef(firstLine && document().styleEngine().usesFirstLineRules());
     return style.computedLineHeight();
 }
 
-void LayoutBR::styleDidChange(StyleDifference diff, const LayoutStyle* oldStyle)
+void LayoutBR::styleDidChange(StyleDifference diff, const ComputedStyle* oldStyle)
 {
-    RenderText::styleDidChange(diff, oldStyle);
+    LayoutText::styleDidChange(diff, oldStyle);
 }
 
 int LayoutBR::caretMinOffset() const

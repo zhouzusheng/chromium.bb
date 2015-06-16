@@ -11,6 +11,10 @@
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_change_registrar.h"
+
+// SHEZ: Remove feedback sender
+// #include "chrome/browser/spellchecker/feedback_sender.h"
+
 #include "chrome/browser/spellchecker/spellcheck_custom_dictionary.h"
 #include "chrome/browser/spellchecker/spellcheck_hunspell_dictionary.h"
 #include "chrome/common/spellcheck_common.h"
@@ -56,6 +60,8 @@ class SpellcheckService : public KeyedService,
 
   explicit SpellcheckService(content::BrowserContext* context);
   ~SpellcheckService() override;
+
+  base::WeakPtr<SpellcheckService> GetWeakPtr();
 
   // This function computes a vector of strings which are to be displayed in
   // the context menu over a text area for changing spell check languages. It
@@ -151,6 +157,11 @@ class SpellcheckService : public KeyedService,
   // Notification handler for changes to prefs::kSpellCheckUseSpellingService.
   void OnUseSpellingServiceChanged();
 
+  // Enables the feedback sender if spelling server is available and enabled.
+  // Otherwise disables the feedback sender.
+  // SHEZ: Remove feedback sender
+  // void UpdateFeedbackSenderState();
+
   PrefChangeRegistrar pref_change_registrar_;
   content::NotificationRegistrar registrar_;
 
@@ -162,6 +173,9 @@ class SpellcheckService : public KeyedService,
   scoped_ptr<SpellcheckCustomDictionary> custom_dictionary_;
 
   ScopedVector<SpellcheckHunspellDictionary> hunspell_dictionaries_;
+
+  // SHEZ: Remove feedback sender
+  // scoped_ptr<spellcheck::FeedbackSender> feedback_sender_;
 
   base::WeakPtrFactory<SpellcheckService> weak_ptr_factory_;
 

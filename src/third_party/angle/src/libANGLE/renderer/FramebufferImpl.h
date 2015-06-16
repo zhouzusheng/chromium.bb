@@ -12,6 +12,7 @@
 #include "angle_gl.h"
 #include "common/angleutils.h"
 #include "libANGLE/Error.h"
+#include "libANGLE/Framebuffer.h"
 
 namespace gl
 {
@@ -24,14 +25,14 @@ struct Rectangle;
 namespace rx
 {
 
-class FramebufferImpl
+class FramebufferImpl : angle::NonCopyable
 {
   public:
-    FramebufferImpl() {}
-    virtual ~FramebufferImpl() {};
+    explicit FramebufferImpl(const gl::Framebuffer::Data &data) : mData(data) { }
+    virtual ~FramebufferImpl() { }
 
     virtual void setColorAttachment(size_t index, const gl::FramebufferAttachment *attachment) = 0;
-    virtual void setDepthttachment(const gl::FramebufferAttachment *attachment) = 0;
+    virtual void setDepthAttachment(const gl::FramebufferAttachment *attachment) = 0;
     virtual void setStencilAttachment(const gl::FramebufferAttachment *attachment) = 0;
     virtual void setDepthStencilAttachment(const gl::FramebufferAttachment *attachment) = 0;
 
@@ -41,7 +42,7 @@ class FramebufferImpl
     virtual gl::Error invalidate(size_t count, const GLenum *attachments) = 0;
     virtual gl::Error invalidateSub(size_t count, const GLenum *attachments, const gl::Rectangle &area) = 0;
 
-    virtual gl::Error clear(const gl::State &state, GLbitfield mask) = 0;
+    virtual gl::Error clear(const gl::Data &data, GLbitfield mask) = 0;
     virtual gl::Error clearBufferfv(const gl::State &state, GLenum buffer, GLint drawbuffer, const GLfloat *values) = 0;
     virtual gl::Error clearBufferuiv(const gl::State &state, GLenum buffer, GLint drawbuffer, const GLuint *values) = 0;
     virtual gl::Error clearBufferiv(const gl::State &state, GLenum buffer, GLint drawbuffer, const GLint *values) = 0;
@@ -56,8 +57,10 @@ class FramebufferImpl
 
     virtual GLenum checkStatus() const = 0;
 
-  private:
-    DISALLOW_COPY_AND_ASSIGN(FramebufferImpl);
+    const gl::Framebuffer::Data &getData() const { return mData; }
+
+  protected:
+    const gl::Framebuffer::Data &mData;
 };
 
 }

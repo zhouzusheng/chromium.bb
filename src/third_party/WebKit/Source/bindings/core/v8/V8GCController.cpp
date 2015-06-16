@@ -49,8 +49,8 @@
 #include "core/html/imports/HTMLImportsController.h"
 #include "core/inspector/InspectorTraceEvents.h"
 #include "core/svg/SVGElement.h"
-#include "platform/Partitions.h"
 #include "platform/TraceEvent.h"
+#include "wtf/Partitions.h"
 #include "wtf/Vector.h"
 #include <algorithm>
 
@@ -129,7 +129,7 @@ public:
         // during the GC prologue.
         ASSERT((*reinterpret_cast<v8::Handle<v8::Value>*>(value))->IsObject());
         v8::Handle<v8::Object>* wrapper = reinterpret_cast<v8::Handle<v8::Object>*>(value);
-        ASSERT(V8DOMWrapper::isDOMWrapper(*wrapper));
+        ASSERT(V8DOMWrapper::hasInternalFieldsSet(*wrapper));
         ASSERT(V8Node::hasInstance(*wrapper, m_isolate));
         Node* node = V8Node::toImpl(*wrapper);
         // A minor DOM GC can handle only node wrappers in the main world.
@@ -262,7 +262,7 @@ public:
         // during the GC prologue.
         ASSERT((*reinterpret_cast<v8::Handle<v8::Value>*>(value))->IsObject());
         v8::Handle<v8::Object>* wrapper = reinterpret_cast<v8::Handle<v8::Object>*>(value);
-        ASSERT(V8DOMWrapper::isDOMWrapper(*wrapper));
+        ASSERT(V8DOMWrapper::hasInternalFieldsSet(*wrapper));
 
         if (value->IsIndependent())
             return;
@@ -411,7 +411,7 @@ void V8GCController::gcEpilogue(v8::GCType type, v8::GCCallbackFlags flags)
         // to collect all garbage, you need to wait until the next event loop.
         // Regarding (2), it would be OK in practice to trigger only one GC per gcEpilogue, because
         // GCController.collectAll() forces 7 V8's GC.
-        Heap::collectGarbage(ThreadState::HeapPointersOnStack);
+        Heap::collectGarbage(ThreadState::HeapPointersOnStack, ThreadState::GCWithSweep, Heap::ForcedGCForTesting);
 
         // Forces a precise GC at the end of the current event loop.
         ThreadState::current()->setGCState(ThreadState::GCScheduledForTesting);
@@ -475,7 +475,7 @@ void V8GCController::reportDOMMemoryUsageToV8(v8::Isolate* isolate)
 
     static size_t lastUsageReportedToV8 = 0;
 
-    size_t currentUsage = Partitions::currentDOMMemoryUsage();
+    size_t currentUsage = WTF::Partitions::currentDOMMemoryUsage();
     int64_t diff = static_cast<int64_t>(currentUsage) - static_cast<int64_t>(lastUsageReportedToV8);
     isolate->AdjustAmountOfExternalAllocatedMemory(diff);
 
@@ -498,7 +498,7 @@ public:
         // during tracing.
         ASSERT((*reinterpret_cast<v8::Handle<v8::Value>*>(value))->IsObject());
         v8::Handle<v8::Object>* wrapper = reinterpret_cast<v8::Handle<v8::Object>*>(value);
-        ASSERT(V8DOMWrapper::isDOMWrapper(*wrapper));
+        ASSERT(V8DOMWrapper::hasInternalFieldsSet(*wrapper));
         if (m_visitor)
             toWrapperTypeInfo(*wrapper)->trace(m_visitor, toScriptWrappable(*wrapper));
     }

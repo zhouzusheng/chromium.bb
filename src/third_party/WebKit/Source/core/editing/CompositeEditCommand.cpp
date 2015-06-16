@@ -69,10 +69,10 @@
 #include "core/html/HTMLLIElement.h"
 #include "core/html/HTMLQuoteElement.h"
 #include "core/html/HTMLSpanElement.h"
+#include "core/layout/LayoutBlock.h"
+#include "core/layout/LayoutListItem.h"
+#include "core/layout/LayoutText.h"
 #include "core/layout/line/InlineTextBox.h"
-#include "core/rendering/RenderBlock.h"
-#include "core/rendering/RenderListItem.h"
-#include "core/rendering/RenderText.h"
 
 namespace blink {
 
@@ -627,7 +627,7 @@ bool CompositeEditCommand::canRebalance(const Position& position) const
     if (textNode->length() == 0)
         return false;
 
-    RenderText* renderer = textNode->renderer();
+    LayoutText* renderer = textNode->layoutObject();
     if (renderer && !renderer->style()->collapseWhiteSpace())
         return false;
 
@@ -696,7 +696,7 @@ void CompositeEditCommand::prepareWhitespaceAtPositionForSplit(Position& positio
 
     if (textNode->length() == 0)
         return;
-    RenderText* renderer = textNode->renderer();
+    LayoutText* renderer = textNode->layoutObject();
     if (renderer && !renderer->style()->collapseWhiteSpace())
         return;
 
@@ -739,7 +739,7 @@ void CompositeEditCommand::deleteInsignificantText(PassRefPtrWillBeRawPtr<Text> 
 
     document().updateLayout();
 
-    RenderText* textRenderer = textNode->renderer();
+    LayoutText* textRenderer = textNode->layoutObject();
     if (!textRenderer)
         return;
 
@@ -849,8 +849,8 @@ PassRefPtrWillBeRawPtr<HTMLBRElement> CompositeEditCommand::appendBlockPlacehold
 
     document().updateLayoutIgnorePendingStylesheets();
 
-    // Should assert isRenderBlockFlow || isInlineFlow when deletion improves. See 4244964.
-    ASSERT(container->renderer());
+    // Should assert isLayoutBlockFlow || isInlineFlow when deletion improves. See 4244964.
+    ASSERT(container->layoutObject());
 
     RefPtrWillBeRawPtr<HTMLBRElement> placeholder = createBlockPlaceholderElement(document());
     appendNode(placeholder, container);
@@ -862,8 +862,8 @@ PassRefPtrWillBeRawPtr<HTMLBRElement> CompositeEditCommand::insertBlockPlacehold
     if (pos.isNull())
         return nullptr;
 
-    // Should assert isRenderBlockFlow || isInlineFlow when deletion improves. See 4244964.
-    ASSERT(pos.deprecatedNode()->renderer());
+    // Should assert isLayoutBlockFlow || isInlineFlow when deletion improves. See 4244964.
+    ASSERT(pos.deprecatedNode()->layoutObject());
 
     RefPtrWillBeRawPtr<HTMLBRElement> placeholder = createBlockPlaceholderElement(document());
     insertNodeAt(placeholder, pos);
@@ -877,14 +877,14 @@ PassRefPtrWillBeRawPtr<HTMLBRElement> CompositeEditCommand::addBlockPlaceholderI
 
     document().updateLayoutIgnorePendingStylesheets();
 
-    LayoutObject* renderer = container->renderer();
-    if (!renderer || !renderer->isRenderBlockFlow())
+    LayoutObject* renderer = container->layoutObject();
+    if (!renderer || !renderer->isLayoutBlockFlow())
         return nullptr;
 
     // append the placeholder to make sure it follows
     // any unrendered blocks
-    RenderBlockFlow* block = toRenderBlockFlow(renderer);
-    if (block->size().height() == 0 || (block->isListItem() && toRenderListItem(block)->isEmpty()))
+    LayoutBlockFlow* block = toLayoutBlockFlow(renderer);
+    if (block->size().height() == 0 || (block->isListItem() && toLayoutListItem(block)->isEmpty()))
         return appendBlockPlaceholder(container);
 
     return nullptr;
@@ -941,7 +941,7 @@ PassRefPtrWillBeRawPtr<HTMLElement> CompositeEditCommand::moveParagraphContentsT
         if (upstreamStart.deprecatedNode() == editableRootForPosition(upstreamStart)) {
             // If the block is the root editable element and it contains no visible content, create a new
             // block but don't try and move content into it, since there's nothing for moveParagraphs to move.
-            if (!Position::hasRenderedNonAnonymousDescendantsWithHeight(upstreamStart.deprecatedNode()->renderer()))
+            if (!Position::hasRenderedNonAnonymousDescendantsWithHeight(upstreamStart.deprecatedNode()->layoutObject()))
                 return insertNewDefaultParagraphElementAt(upstreamStart);
         } else if (isBlock(upstreamEnd.deprecatedNode())) {
             if (!upstreamEnd.deprecatedNode()->isDescendantOf(upstreamStart.deprecatedNode())) {
@@ -1396,7 +1396,7 @@ bool CompositeEditCommand::breakOutOfEmptyMailBlockquotedParagraph()
 
     Position caretPos(caret.deepEquivalent().downstream());
     // A line break is either a br or a preserved newline.
-    ASSERT(isHTMLBRElement(caretPos.deprecatedNode()) || (caretPos.deprecatedNode()->isTextNode() && caretPos.deprecatedNode()->renderer()->style()->preserveNewline()));
+    ASSERT(isHTMLBRElement(caretPos.deprecatedNode()) || (caretPos.deprecatedNode()->isTextNode() && caretPos.deprecatedNode()->layoutObject()->style()->preserveNewline()));
 
     if (isHTMLBRElement(*caretPos.deprecatedNode()))
         removeNodeAndPruneAncestors(caretPos.deprecatedNode());

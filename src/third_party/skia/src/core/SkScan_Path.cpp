@@ -17,10 +17,6 @@
 #include "SkTemplates.h"
 #include "SkTSort.h"
 
-#ifdef SK_USE_LEGACY_AA_COVERAGE
-    #define SK_USE_STD_SORT_FOR_EDGES
-#endif
-
 #define kEDGE_HEAD_Y    SK_MinS32
 #define kEDGE_TAIL_Y    SK_MaxS32
 
@@ -327,7 +323,7 @@ public:
     }
 
     // overrides
-    void blitH(int x, int y, int width) SK_OVERRIDE {
+    void blitH(int x, int y, int width) override {
         int invWidth = x - fPrevX;
         if (invWidth > 0) {
             fBlitter->blitH(fPrevX, y, invWidth);
@@ -336,19 +332,19 @@ public:
     }
 
     // we do not expect to get called with these entrypoints
-    void blitAntiH(int, int, const SkAlpha[], const int16_t runs[]) SK_OVERRIDE {
+    void blitAntiH(int, int, const SkAlpha[], const int16_t runs[]) override {
         SkDEBUGFAIL("blitAntiH unexpected");
     }
-    void blitV(int x, int y, int height, SkAlpha alpha) SK_OVERRIDE {
+    void blitV(int x, int y, int height, SkAlpha alpha) override {
         SkDEBUGFAIL("blitV unexpected");
     }
-    void blitRect(int x, int y, int width, int height) SK_OVERRIDE {
+    void blitRect(int x, int y, int width, int height) override {
         SkDEBUGFAIL("blitRect unexpected");
     }
-    void blitMask(const SkMask&, const SkIRect& clip) SK_OVERRIDE {
+    void blitMask(const SkMask&, const SkIRect& clip) override {
         SkDEBUGFAIL("blitMask unexpected");
     }
-    const SkBitmap* justAnOpaqueColor(uint32_t* value) SK_OVERRIDE {
+    const SkBitmap* justAnOpaqueColor(uint32_t* value) override {
         SkDEBUGFAIL("justAnOpaqueColor unexpected");
         return NULL;
     }
@@ -368,27 +364,6 @@ static void PrePostInverseBlitterProc(SkBlitter* blitter, int y, bool isStart) {
 #pragma warning ( pop )
 #endif
 
-#ifdef SK_USE_STD_SORT_FOR_EDGES
-extern "C" {
-    static int edge_compare(const void* a, const void* b) {
-        const SkEdge* edgea = *(const SkEdge**)a;
-        const SkEdge* edgeb = *(const SkEdge**)b;
-
-        int valuea = edgea->fFirstY;
-        int valueb = edgeb->fFirstY;
-
-        if (valuea == valueb) {
-            valuea = edgea->fX;
-            valueb = edgeb->fX;
-        }
-
-        // this overflows if valuea >>> valueb or vice-versa
-        //     return valuea - valueb;
-        // do perform the slower but safe compares
-        return (valuea < valueb) ? -1 : (valuea > valueb);
-    }
-}
-#else
 static bool operator<(const SkEdge& a, const SkEdge& b) {
     int valuea = a.fFirstY;
     int valueb = b.fFirstY;
@@ -400,14 +375,9 @@ static bool operator<(const SkEdge& a, const SkEdge& b) {
 
     return valuea < valueb;
 }
-#endif
 
 static SkEdge* sort_edges(SkEdge* list[], int count, SkEdge** last) {
-#ifdef SK_USE_STD_SORT_FOR_EDGES
-    qsort(list, count, sizeof(SkEdge*), edge_compare);
-#else
     SkTQSort(list, list + count - 1);
-#endif
 
     // now make the edges linked in sorted order
     for (int i = 1; i < count; i++) {

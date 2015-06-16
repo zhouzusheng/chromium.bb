@@ -28,11 +28,9 @@ void GetServiceWorkerRegistrationStatusResponse(
 
     case SERVICE_WORKER_ERROR_START_WORKER_FAILED:
     case SERVICE_WORKER_ERROR_INSTALL_WORKER_FAILED:
+    case SERVICE_WORKER_ERROR_PROCESS_NOT_FOUND:
+    case SERVICE_WORKER_ERROR_SCRIPT_EVALUATE_FAILED:
       *error_type = WebServiceWorkerError::ErrorTypeInstall;
-      return;
-
-    case SERVICE_WORKER_ERROR_ACTIVATE_WORKER_FAILED:
-      *error_type = WebServiceWorkerError::ErrorTypeActivate;
       return;
 
     case SERVICE_WORKER_ERROR_NOT_FOUND:
@@ -47,13 +45,21 @@ void GetServiceWorkerRegistrationStatusResponse(
       *error_type = WebServiceWorkerError::ErrorTypeSecurity;
       return;
 
+    case SERVICE_WORKER_ERROR_TIMEOUT:
+      *error_type = WebServiceWorkerError::ErrorTypeTimeout;
+      return;
+
     case SERVICE_WORKER_ERROR_ABORT:
+      *error_type = WebServiceWorkerError::ErrorTypeAbort;
+      return;
+
+    case SERVICE_WORKER_ERROR_ACTIVATE_WORKER_FAILED:
     case SERVICE_WORKER_ERROR_IPC_FAILED:
     case SERVICE_WORKER_ERROR_FAILED:
-    case SERVICE_WORKER_ERROR_PROCESS_NOT_FOUND:
     case SERVICE_WORKER_ERROR_EXISTS:
     case SERVICE_WORKER_ERROR_EVENT_WAITUNTIL_REJECTED:
     case SERVICE_WORKER_ERROR_STATE:
+    case SERVICE_WORKER_ERROR_MAX_VALUE:
       // Unexpected, or should have bailed out before calling this, or we don't
       // have a corresponding blink error code yet.
       break;  // Fall through to NOTREACHED().

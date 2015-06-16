@@ -40,14 +40,14 @@
 
 namespace blink {
 
-class RenderInline;
-class LayoutLayerModelObject;
+class LayoutInline;
+class LayoutBoxModelObject;
 class LayoutObject;
 
 struct PaintInfo {
     PaintInfo(GraphicsContext* newContext, const IntRect& newRect, PaintPhase newPhase, PaintBehavior newPaintBehavior,
-        LayoutObject* newPaintingRoot = 0, ListHashSet<RenderInline*>* newOutlineObjects = 0,
-        const LayoutLayerModelObject* newPaintContainer = 0)
+        LayoutObject* newPaintingRoot = 0, ListHashSet<LayoutInline*>* newOutlineObjects = 0,
+        const LayoutBoxModelObject* newPaintContainer = 0)
         : context(newContext)
         , rect(newRect)
         , phase(newPhase)
@@ -83,10 +83,10 @@ struct PaintInfo {
 
     DisplayItem::Type displayItemTypeForClipping() const { return DisplayItem::paintPhaseToClipBoxType(phase); }
 
-    const LayoutLayerModelObject* paintContainer() const { return m_paintContainer; }
+    const LayoutBoxModelObject* paintContainer() const { return m_paintContainer; }
 
-    ListHashSet<RenderInline*>* outlineObjects() const { return m_outlineObjects; }
-    void setOutlineObjects(ListHashSet<RenderInline*>* objects) { m_outlineObjects = objects; }
+    ListHashSet<LayoutInline*>* outlineObjects() const { return m_outlineObjects; }
+    void setOutlineObjects(ListHashSet<LayoutInline*>* objects) { m_outlineObjects = objects; }
 
     // FIXME: Introduce setters/getters at some point. Requires a lot of changes throughout rendering/.
     GraphicsContext* context;
@@ -96,8 +96,8 @@ struct PaintInfo {
     LayoutObject* paintingRoot; // used to draw just one element and its visual kids
 
 private:
-    const LayoutLayerModelObject* m_paintContainer; // the layer object that originates the current painting
-    ListHashSet<RenderInline*>* m_outlineObjects; // used to list outlines that should be painted by a block with inline children
+    const LayoutBoxModelObject* m_paintContainer; // the box model object that originates the current painting
+    ListHashSet<LayoutInline*>* m_outlineObjects; // used to list outlines that should be painted by a block with inline children
 };
 
 } // namespace blink

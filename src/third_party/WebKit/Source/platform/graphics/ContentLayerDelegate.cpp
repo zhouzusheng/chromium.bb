@@ -43,7 +43,6 @@ namespace blink {
 
 ContentLayerDelegate::ContentLayerDelegate(GraphicsContextPainter* painter)
     : m_painter(painter)
-    , m_opaque(false)
 {
 }
 
@@ -59,45 +58,30 @@ void ContentLayerDelegate::paintContents(
     if (UNLIKELY(!annotationsEnabled))
         annotationsEnabled = EventTracer::getTraceCategoryEnabledFlag(TRACE_DISABLED_BY_DEFAULT("blink.graphics_context_annotations"));
 
-    GraphicsContext context(canvas, m_painter->displayItemList(),
+    DisplayItemList* displayItemList = m_painter->displayItemList();
+
+    if (displayItemList && paintingControl == WebContentLayerClient::DisplayListCachingDisabled)
+        displayItemList->invalidateAll();
+
+    GraphicsContext context(canvas, displayItemList,
         paintingControl == WebContentLayerClient::DisplayListConstructionDisabled ? GraphicsContext::FullyDisabled : GraphicsContext::NothingDisabled);
-    context.setCertainlyOpaque(m_opaque);
     if (*annotationsEnabled)
         context.setAnnotationMode(AnnotateAll);
 
     m_painter->paint(context, clip);
 
-    if (DisplayItemList* displayItemList = m_painter->displayItemList())
-        displayItemList->endNewPaints();
+    if (displayItemList)
+        displayItemList->commitNewDisplayItems();
 }
 
 void ContentLayerDelegate::paintContents(
     WebDisplayItemList* webDisplayItemList, const WebRect& clip,
     WebContentLayerClient::PaintingControlSetting paintingControl)
 {
-    // Once Slimming Paint is fully implemented, this method will no longer
-    // be needed since Blink will be in charge of creating the display list
-    // during the document lifecylcle.
+    paintContents(static_cast<SkCanvas*>(0), clip, paintingControl);
 
-    if (paintingControl == WebContentLayerClient::DisplayListCachingDisabled)
-        m_painter->displayItemList()->invalidateAll();
-
-    // Some layers don't yet produce display lists. To handle such layers, we
-    // create a canvas backed by an SkPicture, and manually insert this
-    // SkPicture into the WebDisplayItemList when the layer's display list is
-    // empty.
-    SkPictureRecorder recorder;
-    RefPtr<SkPicture> picture;
-    SkCanvas* canvas = recorder.beginRecording(clip.width, clip.height);
-    canvas->save();
-    canvas->translate(-clip.x, -clip.y);
-    canvas->clipRect(SkRect::MakeXYWH(clip.x, clip.y, clip.width, clip.height));
-    paintContents(canvas, clip, paintingControl);
-    canvas->restore();
-    picture = adoptRef(recorder.endRecording());
-
-    const PaintList& paintList = m_painter->displayItemList()->paintList();
-    for (PaintList::const_iterator it = paintList.begin(); it != paintList.end(); ++it)
+    const DisplayItems& paintList = m_painter->displayItemList()->displayItems();
+    for (DisplayItems::const_iterator it = paintList.begin(); it != paintList.end(); ++it)
         (*it)->appendToWebDisplayItemList(webDisplayItemList);
 }
 

@@ -29,6 +29,7 @@
 
 #include "bindings/core/v8/V8CacheOptions.h"
 #include "bindings/core/v8/WorkerScriptController.h"
+#include "core/CoreExport.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/events/EventListener.h"
 #include "core/events/EventTarget.h"
@@ -60,7 +61,7 @@ class WorkerLocation;
 class WorkerNavigator;
 class WorkerThread;
 
-class WorkerGlobalScope : public EventTargetWithInlineData, public RefCountedWillBeNoBase<WorkerGlobalScope>, public SecurityContext, public ExecutionContext, public WillBeHeapSupplementable<WorkerGlobalScope>, public DOMWindowBase64 {
+class CORE_EXPORT WorkerGlobalScope : public EventTargetWithInlineData, public RefCountedWillBeNoBase<WorkerGlobalScope>, public SecurityContext, public ExecutionContext, public WillBeHeapSupplementable<WorkerGlobalScope>, public DOMWindowBase64 {
     DEFINE_WRAPPERTYPEINFO();
     REFCOUNTED_EVENT_TARGET(WorkerGlobalScope);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(WorkerGlobalScope);
@@ -89,7 +90,7 @@ public:
 
     WorkerThread* thread() const { return m_thread; }
 
-    virtual void postTask(PassOwnPtr<ExecutionContextTask>) override final; // Executes the task on context's thread asynchronously.
+    virtual void postTask(const WebTraceLocation&, PassOwnPtr<ExecutionContextTask>) override final; // Executes the task on context's thread asynchronously.
 
     // WorkerGlobalScope
     WorkerGlobalScope* self() { return this; }
@@ -120,8 +121,6 @@ public:
 
     bool isClosing() { return m_closing; }
 
-    bool idleNotification();
-
     double timeOrigin() const { return m_timeOrigin; }
 
     WorkerClients* clients() { return m_workerClients.get(); }
@@ -134,6 +133,8 @@ public:
 
     void exceptionHandled(int exceptionId, bool isHandled);
 
+    virtual void scriptLoaded(size_t scriptSize, size_t cachedMetadataSize) { }
+
     DECLARE_VIRTUAL_TRACE();
 
 protected:
@@ -143,6 +144,8 @@ protected:
     virtual void logExceptionToConsole(const String& errorMessage, int scriptId, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtrWillBeRawPtr<ScriptCallStack>) override;
     void addMessageToWorkerConsole(PassRefPtrWillBeRawPtr<ConsoleMessage>);
     void setV8CacheOptions(V8CacheOptions v8CacheOptions) { m_v8CacheOptions = v8CacheOptions; }
+
+    void removeURLFromMemoryCache(const KURL&) override;
 
 private:
 #if !ENABLE(OILPAN)
@@ -157,6 +160,8 @@ private:
 
     virtual EventTarget* errorEventTarget() override final;
     virtual void didUpdateSecurityOrigin() override final { }
+
+    static void removeURLFromMemoryCacheInternal(ExecutionContext*, const KURL&);
 
     KURL m_url;
     String m_userAgent;

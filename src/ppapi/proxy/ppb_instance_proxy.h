@@ -85,11 +85,6 @@ class PPB_Instance_Proxy : public InterfaceProxy,
                                  void* user_data,
                                  const PPP_MessageHandler_0_2* handler,
                                  PP_Resource message_loop) override;
-  int32_t RegisterMessageHandler_1_1_Deprecated(
-      PP_Instance instance,
-      void* user_data,
-      const PPP_MessageHandler_0_1_Deprecated* handler,
-      PP_Resource message_loop) override;
   void UnregisterMessageHandler(PP_Instance instance) override;
   PP_Bool SetCursor(PP_Instance instance,
                     PP_MouseCursor_Type type,
@@ -145,11 +140,11 @@ class PPB_Instance_Proxy : public InterfaceProxy,
                                PP_Var session_id_var,
                                PP_Time new_expiry_time) override;
   void SessionClosed(PP_Instance instance, PP_Var session_id_var) override;
-  void SessionError(PP_Instance instance,
-                    PP_Var session_id_var,
-                    PP_CdmExceptionCode exception_code,
-                    uint32 system_code,
-                    PP_Var error_description_var) override;
+  void LegacySessionError(PP_Instance instance,
+                          PP_Var session_id_var,
+                          PP_CdmExceptionCode exception_code,
+                          uint32 system_code,
+                          PP_Var error_description_var) override;
   void DeliverBlock(PP_Instance instance,
                     PP_Resource decrypted_block,
                     const PP_DecryptedBlockInfo* block_info) override;
@@ -278,7 +273,7 @@ class PPB_Instance_Proxy : public InterfaceProxy,
       PP_Time new_expiry_time);
   virtual void OnHostMsgSessionClosed(PP_Instance instance,
                                       SerializedVarReceiveInput session_id);
-  virtual void OnHostMsgSessionError(
+  virtual void OnHostMsgLegacySessionError(
       PP_Instance instance,
       SerializedVarReceiveInput session_id,
       PP_CdmExceptionCode exception_code,

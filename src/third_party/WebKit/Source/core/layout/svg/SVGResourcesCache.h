@@ -20,7 +20,7 @@
 #ifndef SVGResourcesCache_h
 #define SVGResourcesCache_h
 
-#include "core/layout/style/StyleDifference.h"
+#include "core/style/StyleDifference.h"
 #include "wtf/FastAllocBase.h"
 #include "wtf/HashMap.h"
 #include "wtf/Noncopyable.h"
@@ -29,38 +29,38 @@
 namespace blink {
 
 class LayoutObject;
-class LayoutStyle;
+class ComputedStyle;
 class LayoutSVGResourceContainer;
 class SVGResources;
 
 class SVGResourcesCache {
-    WTF_MAKE_NONCOPYABLE(SVGResourcesCache); WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_NONCOPYABLE(SVGResourcesCache); WTF_MAKE_FAST_ALLOCATED(SVGResourcesCache);
 public:
     SVGResourcesCache();
     ~SVGResourcesCache();
 
     static SVGResources* cachedResourcesForLayoutObject(const LayoutObject*);
 
-    // Called from all SVG renderers addChild() methods.
-    static void clientWasAddedToTree(LayoutObject*, const LayoutStyle& newStyle);
+    // Called from all SVG layoutObjects addChild() methods.
+    static void clientWasAddedToTree(LayoutObject*, const ComputedStyle& newStyle);
 
-    // Called from all SVG renderers removeChild() methods.
+    // Called from all SVG layoutObjects removeChild() methods.
     static void clientWillBeRemovedFromTree(LayoutObject*);
 
-    // Called from all SVG renderers destroy() methods - except for LayoutSVGResourceContainer.
+    // Called from all SVG layoutObjects destroy() methods - except for LayoutSVGResourceContainer.
     static void clientDestroyed(LayoutObject*);
 
-    // Called from all SVG renderers layout() methods.
+    // Called from all SVG layoutObjects layout() methods.
     static void clientLayoutChanged(LayoutObject*);
 
-    // Called from all SVG renderers styleDidChange() methods.
-    static void clientStyleChanged(LayoutObject*, StyleDifference, const LayoutStyle& newStyle);
+    // Called from all SVG layoutObjects styleDidChange() methods.
+    static void clientStyleChanged(LayoutObject*, StyleDifference, const ComputedStyle& newStyle);
 
     // Called from LayoutSVGResourceContainer::willBeDestroyed().
     static void resourceDestroyed(LayoutSVGResourceContainer*);
 
 private:
-    void addResourcesFromLayoutObject(LayoutObject*, const LayoutStyle&);
+    void addResourcesFromLayoutObject(LayoutObject*, const ComputedStyle&);
     void removeResourcesFromLayoutObject(LayoutObject*);
 
     typedef HashMap<const LayoutObject*, OwnPtr<SVGResources>> CacheMap;

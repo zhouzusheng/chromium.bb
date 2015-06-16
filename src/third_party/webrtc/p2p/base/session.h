@@ -44,8 +44,7 @@ TransportWrapper;
 
 typedef std::map<int, TransportChannelProxy*> ChannelMap;
 
-class TransportProxy : public sigslot::has_slots<>,
-                       public CandidateTranslator {
+class TransportProxy : public sigslot::has_slots<> {
  public:
   TransportProxy(
       rtc::Thread* worker_thread,
@@ -82,8 +81,7 @@ class TransportProxy : public sigslot::has_slots<>,
   }
 
   TransportChannel* GetChannel(int component);
-  TransportChannel* CreateChannel(const std::string& channel_name,
-                                  int component);
+  TransportChannel* CreateChannel(int component);
   bool HasChannel(int component);
   void DestroyChannel(int component);
 
@@ -112,12 +110,6 @@ class TransportProxy : public sigslot::has_slots<>,
   void OnSignalingReady();
   bool OnRemoteCandidates(const Candidates& candidates, std::string* error);
 
-  // CandidateTranslator methods.
-  virtual bool GetChannelNameFromComponent(
-      int component, std::string* channel_name) const;
-  virtual bool GetComponentFromChannelName(
-      const std::string& channel_name, int* component) const;
-
   // Called when a transport signals that it has new candidates.
   void OnTransportCandidatesReady(cricket::Transport* transport,
                                   const Candidates& candidates) {
@@ -137,7 +129,6 @@ class TransportProxy : public sigslot::has_slots<>,
 
  private:
   TransportChannelProxy* GetChannelProxy(int component) const;
-  TransportChannelProxy* GetChannelProxyByName(const std::string& name) const;
 
   // Creates a new channel on the Transport which causes the reference
   // count to increment.
@@ -173,6 +164,8 @@ typedef std::map<std::string, TransportProxy*> TransportMap;
 typedef std::map<std::string, TransportStats> TransportStatsMap;
 typedef std::map<std::string, std::string> ProxyTransportMap;
 
+// TODO(pthatcher): Think of a better name for this.  We already have
+// a TransportStats in transport.h.  Perhaps TransportsStats?
 struct SessionStats {
   ProxyTransportMap proxy_to_transport;
   TransportStatsMap transport_stats;
@@ -311,7 +304,6 @@ class BaseSession : public sigslot::has_slots<>,
   // shouldn't be an issue since the main thread will be blocked in
   // Send when doing so.
   virtual TransportChannel* CreateChannel(const std::string& content_name,
-                                          const std::string& channel_name,
                                           int component);
 
   // Returns the channel with the given names.
@@ -324,10 +316,6 @@ class BaseSession : public sigslot::has_slots<>,
   // Send when doing so.
   virtual void DestroyChannel(const std::string& content_name,
                               int component);
-
-  // Returns stats for all channels of all transports.
-  // This avoids exposing the internal structures used to track them.
-  virtual bool GetStats(SessionStats* stats);
 
   rtc::SSLIdentity* identity() { return identity_; }
 
@@ -343,8 +331,6 @@ class BaseSession : public sigslot::has_slots<>,
   const TransportMap& transport_proxies() const { return transports_; }
   // Get a TransportProxy by content_name or transport. NULL if not found.
   TransportProxy* GetTransportProxy(const std::string& content_name);
-  TransportProxy* GetTransportProxy(const Transport* transport);
-  TransportProxy* GetFirstTransportProxy();
   void DestroyTransportProxy(const std::string& content_name);
   // TransportProxy is owned by session.  Return proxy just for convenience.
   TransportProxy* GetOrCreateTransportProxy(const std::string& content_name);
@@ -421,6 +407,13 @@ class BaseSession : public sigslot::has_slots<>,
   Error error_;
   std::string error_desc_;
 
+  // Fires the new description signal according to the current state.
+  virtual void SignalNewDescription();
+  // This method will delete the Transport and TransportChannelImpls
+  // and replace those with the Transport object of the first
+  // MediaContent in bundle_group.
+  bool BundleContentGroup(const ContentGroup* bundle_group);
+
  private:
   // Helper methods to push local and remote transport descriptions.
   bool PushdownLocalTransportDescription(
@@ -432,12 +425,6 @@ class BaseSession : public sigslot::has_slots<>,
 
   void MaybeCandidateAllocationDone();
 
-  // This method will delete the Transport and TransportChannelImpls and
-  // replace those with the selected Transport objects. Selection is done
-  // based on the content_name and in this case first MediaContent information
-  // is used for mux.
-  bool SetSelectedProxy(const std::string& content_name,
-                        const ContentGroup* muxed_group);
   // Log session state.
   void LogState(State old_state, State new_state);
 
@@ -446,9 +433,6 @@ class BaseSession : public sigslot::has_slots<>,
   static bool GetTransportDescription(const SessionDescription* description,
                                       const std::string& content_name,
                                       TransportDescription* info);
-
-  // Fires the new description signal according to the current state.
-  void SignalNewDescription();
 
   // Gets the ContentAction and ContentSource according to the session state.
   bool GetContentAction(ContentAction* action, ContentSource* source);

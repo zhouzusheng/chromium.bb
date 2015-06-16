@@ -54,6 +54,7 @@ void GrGLCaps::reset() {
     fFBFetchNeedsCustomOutput = false;
     fFBFetchColorName = NULL;
     fFBFetchExtensionString = NULL;
+    fFBMixedSamplesSupport = false;
 
     fReadPixelsSupportedCache.reset();
 }
@@ -99,6 +100,7 @@ GrGLCaps& GrGLCaps::operator= (const GrGLCaps& caps) {
     fFBFetchNeedsCustomOutput = caps.fFBFetchNeedsCustomOutput;
     fFBFetchColorName = caps.fFBFetchColorName;
     fFBFetchExtensionString = caps.fFBFetchExtensionString;
+    fFBMixedSamplesSupport = caps.fFBMixedSamplesSupport;
 
     return *this;
 }
@@ -337,8 +339,6 @@ bool GrGLCaps::init(const GrGLContextInfo& ctxInfo, const GrGLInterface* gli) {
         fMipMapSupport = fNPOTTextureTileSupport || ctxInfo.hasExtension("GL_IMG_texture_npot");
     }
 
-    fHWAALineSupport = (kGL_GrGLStandard == standard);
-
     GR_GL_GetIntegerv(gli, GR_GL_MAX_TEXTURE_SIZE, &fMaxTextureSize);
     GR_GL_GetIntegerv(gli, GR_GL_MAX_RENDERBUFFER_SIZE, &fMaxRenderTargetSize);
     // Our render targets are always created with textures as the color
@@ -372,6 +372,8 @@ bool GrGLCaps::init(const GrGLContextInfo& ctxInfo, const GrGLInterface* gli) {
     } else {
         fNvprSupport = kNone_NvprSupport;
     }
+
+    fFBMixedSamplesSupport = ctxInfo.hasExtension("GL_NV_framebuffer_mixed_samples");
 
     fGpuTracingSupport = ctxInfo.hasExtension("GL_EXT_debug_marker");
 
@@ -749,20 +751,13 @@ bool GrGLCaps::readPixelsSupported(const GrGLInterface* intf,
                                    GrGLenum format,
                                    GrGLenum type,
                                    GrGLenum currFboFormat) const {
-
-    ReadPixelsSupportedFormats::Key key = {format, type, currFboFormat};
-
-    ReadPixelsSupportedFormats* cachedValue = fReadPixelsSupportedCache.find(key);
-
-    if (NULL == cachedValue) {
-        bool value = doReadPixelsSupported(intf, format, type);
-        ReadPixelsSupportedFormats newValue(key, value);
-        fReadPixelsSupportedCache.add(newValue);
-
-        return newValue.value();
+    ReadPixelsSupportedFormat key = {format, type, currFboFormat};
+    if (const bool* supported = fReadPixelsSupportedCache.find(key)) {
+        return *supported;
     }
-
-    return cachedValue->value();
+    bool supported = this->doReadPixelsSupported(intf, format, type);
+    fReadPixelsSupportedCache.set(key, supported);
+    return supported;
 }
 
 void GrGLCaps::initFSAASupport(const GrGLContextInfo& ctxInfo, const GrGLInterface* gli) {

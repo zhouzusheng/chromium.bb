@@ -125,7 +125,7 @@ void RSA_free(RSA *rsa) {
   }
   METHOD_unref(rsa->meth);
 
-  CRYPTO_free_ex_data(CRYPTO_EX_INDEX_DSA, rsa, &rsa->ex_data);
+  CRYPTO_free_ex_data(CRYPTO_EX_INDEX_RSA, rsa, &rsa->ex_data);
 
   if (rsa->n != NULL) {
     BN_clear_free(rsa->n);
@@ -348,12 +348,6 @@ static const struct pkcs1_sig_prefix kPKCS1SigPrefixes[] = {
       0x04, 0x02, 0x03, 0x05, 0x00, 0x04, 0x40},
     },
     {
-     NID_ripemd160,
-     14,
-     {0x30, 0x20, 0x30, 0x08, 0x06, 0x06, 0x28, 0xcf, 0x06, 0x03, 0x00, 0x31,
-      0x04, 0x14},
-    },
-    {
      NID_undef, 0, {0},
     },
 };
@@ -375,7 +369,7 @@ static int pkcs1_prefixed_msg(uint8_t **out_msg, size_t *out_msg_len,
   if (hash_nid == NID_md5_sha1) {
     /* Special case: SSL signature, just check the length. */
     if (msg_len != SSL_SIG_LENGTH) {
-      OPENSSL_PUT_ERROR(RSA, RSA_sign, RSA_R_INVALID_MESSAGE_LENGTH);
+      OPENSSL_PUT_ERROR(RSA, pkcs1_prefixed_msg, RSA_R_INVALID_MESSAGE_LENGTH);
       return 0;
     }
 
@@ -395,19 +389,19 @@ static int pkcs1_prefixed_msg(uint8_t **out_msg, size_t *out_msg_len,
   }
 
   if (prefix == NULL) {
-    OPENSSL_PUT_ERROR(RSA, RSA_sign, RSA_R_UNKNOWN_ALGORITHM_TYPE);
+    OPENSSL_PUT_ERROR(RSA, pkcs1_prefixed_msg, RSA_R_UNKNOWN_ALGORITHM_TYPE);
     return 0;
   }
 
   signed_msg_len = prefix_len + msg_len;
   if (signed_msg_len < prefix_len) {
-    OPENSSL_PUT_ERROR(RSA, RSA_sign, RSA_R_TOO_LONG);
+    OPENSSL_PUT_ERROR(RSA, pkcs1_prefixed_msg, RSA_R_TOO_LONG);
     return 0;
   }
 
   signed_msg = OPENSSL_malloc(signed_msg_len);
   if (!signed_msg) {
-    OPENSSL_PUT_ERROR(RSA, RSA_sign, ERR_R_MALLOC_FAILURE);
+    OPENSSL_PUT_ERROR(RSA, pkcs1_prefixed_msg, ERR_R_MALLOC_FAILURE);
     return 0;
   }
 

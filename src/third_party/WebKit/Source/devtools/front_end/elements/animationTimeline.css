@@ -4,42 +4,31 @@
  * found in the LICENSE file.
  */
 
-.animation-row {
-    height: 40px;
+.animation-node-row {
     width: 100%;
     display: flex;
+    border-bottom: 1px dashed #ccc;
 }
 
 .animation-node-description {
     display: inline-block;
-    height: 100%;
-    vertical-align: top;
-    line-height: 40px;
     min-width: 200px;
     max-width: 200px;
     padding-left: 15px;
     overflow: hidden;
     border-right: 1px solid #ccc;
+    position: relative;
+    transform-style: preserve-3d;
+    line-height: 40px;
 }
 
-.animation-row:nth-child(odd) > .animation-node-description {
+.animation-node-row:nth-child(odd) {
     background-color: #f6f6f6;
 }
 
 .animation-timeline-row {
+    height: 40px;
     position: relative;
-    display: inline-block;
-    flex-grow: 1;
-}
-
-.animation-timeline-row > canvas {
-    position: absolute;
-    top: 0;
-    left: 0;
-}
-
-.animation-timeline-grid-row {
-    border-bottom: 1px dashed #ccc;
 }
 
 path.animation-keyframe {
@@ -50,6 +39,11 @@ line.animation-line {
     stroke-width: 3;
     stroke-linecap: round;
     fill: none;
+}
+
+line.animation-delay-line {
+    stroke-width: 2;
+    stroke-dasharray: 6, 4;
 }
 
 circle.animation-endpoint {
@@ -64,7 +58,7 @@ circle.animation-keyframe-point {
 .animation-name {
     position: absolute;
     top: 15px;
-    color: #777;
+    color: #333;
     text-align: center;
     margin-left: -8px;
 }
@@ -76,7 +70,6 @@ circle.animation-keyframe-point {
 
 .animation-control-replay {
     float: right;
-    content: url(Images/animationsReplay.png);
 }
 
 .animation-control-replay circle {
@@ -116,9 +109,8 @@ circle.animation-keyframe-point {
     background-color: black;
     opacity: 0.05;
     position: absolute;
-    left: 200px;
     height: 100%;
-    width: calc(100% - 200px);
+    width: 100%;
 }
 
 .view.component-root.platform-linux.vbox {
@@ -136,4 +128,84 @@ input.animation-playback-slider {
     margin-right: 8px;
     line-height: 24px;
     width: 34px;
+}
+
+.animation-scrubber {
+    opacity: 1;
+    position: absolute;
+    left: 200px;
+    height: calc(100% - 43px);
+    width: calc(100% - 200px);
+    top: 43px;
+    border-left: 1px solid rgba(0,0,0,0.5);
+}
+
+.animation-scrubber-head {
+    background-color: rgba(0, 0, 0, 0.5);
+    width: 50px;
+    height: 23px;
+    color: white;
+    line-height: 23px;
+    text-align: center;
+    border-radius: 5px;
+    position: relative;
+    top: -29px;
+    left: -25px;
+    font-size: 10px;
+}
+
+.animation-scrubber-arrow {
+    width: 21px;
+    height: 25px;
+    position: absolute;
+    top: -6px;
+    left: -7px;
+    -webkit-clip-path: polygon(0 0, 6px 6px, 12px 0px, 0px 0px);
+    background-color: rgba(0, 0, 0, 0.5);
+}
+
+.animation-timeline-end > .animation-scrubber-arrow {
+    visibility: hidden;
+}
+
+svg.animation-timeline-grid {
+    position: absolute;
+    left: 200px;
+}
+
+rect.animation-timeline-grid-line {
+    fill: #ccc;
+}
+
+.animation-timeline-row > svg.animation-ui {
+    position: absolute;
+}
+
+.animation-node-timeline {
+    flex-grow: 1;
+}
+
+.animation-node-description > div {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    max-height: 100%;
+}
+
+.animation-node-row.animation-node-removed {
+    background-color: #fff0f0;
+}
+
+svg.animation-ui g:first-child {
+    opacity: 1;
+}
+
+.animation-tail-iterations {
+    opacity: 0.5;
+}
+
+
+svg.animation-ui.animation-ui-canceled {
+    -webkit-filter: grayscale(100%) blur(1px);
+    transition: -webkit-filter 100ms cubic-bezier(0, 0, 0.2, 1);
 }

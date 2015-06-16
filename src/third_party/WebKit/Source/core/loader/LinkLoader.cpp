@@ -32,8 +32,8 @@
 #include "config.h"
 #include "core/loader/LinkLoader.h"
 
-#include "core/FetchInitiatorTypeNames.h"
 #include "core/dom/Document.h"
+#include "core/fetch/FetchInitiatorTypeNames.h"
 #include "core/fetch/FetchRequest.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/frame/Settings.h"
@@ -201,7 +201,7 @@ void LinkLoader::released()
     }
 }
 
-void LinkLoader::trace(Visitor* visitor)
+DEFINE_TRACE(LinkLoader)
 {
     visitor->trace(m_prerender);
 }

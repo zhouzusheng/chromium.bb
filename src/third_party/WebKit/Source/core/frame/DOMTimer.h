@@ -56,7 +56,7 @@ public:
     static double hiddenPageAlignmentInterval();
     static double visiblePageAlignmentInterval();
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     void dispose();
 

@@ -45,8 +45,8 @@ namespace blink {
 
 class Font;
 class LayoutObject;
-class LayoutStyle;
-class RenderText;
+class ComputedStyle;
+class LayoutText;
 
 enum TextRunFlag {
     DefaultTextRunFlags = 0,
@@ -57,15 +57,15 @@ enum TextRunFlag {
 typedef unsigned TextRunFlags;
 
 // Direction resolved from string value.
-TextRun constructTextRun(LayoutObject* context, const Font&, const String&, const LayoutStyle&, TextRunFlags = DefaultTextRunFlags);
-TextRun constructTextRun(LayoutObject* context, const Font&, const RenderText*, unsigned offset, unsigned length, const LayoutStyle&);
+TextRun constructTextRun(LayoutObject* context, const Font&, const String&, const ComputedStyle&, TextRunFlags = DefaultTextRunFlags);
+TextRun constructTextRun(LayoutObject* context, const Font&, const LayoutText*, unsigned offset, unsigned length, const ComputedStyle&);
 
 // Explicit direction.
-TextRun constructTextRun(LayoutObject*, const Font&, const String&, const LayoutStyle&, TextDirection, TextRunFlags = DefaultTextRunFlags);
-TextRun constructTextRun(LayoutObject*, const Font&, const RenderText*, const LayoutStyle&, TextDirection);
-TextRun constructTextRun(LayoutObject*, const Font&, const RenderText*, unsigned offset, unsigned length, const LayoutStyle&, TextDirection);
-TextRun constructTextRun(LayoutObject*, const Font&, const LChar*, int length, const LayoutStyle&, TextDirection);
-TextRun constructTextRun(LayoutObject*, const Font&, const UChar*, int length, const LayoutStyle&, TextDirection);
+TextRun constructTextRun(LayoutObject*, const Font&, const String&, const ComputedStyle&, TextDirection, TextRunFlags = DefaultTextRunFlags);
+TextRun constructTextRun(LayoutObject*, const Font&, const LayoutText*, const ComputedStyle&, TextDirection);
+TextRun constructTextRun(LayoutObject*, const Font&, const LayoutText*, unsigned offset, unsigned length, const ComputedStyle&, TextDirection);
+TextRun constructTextRun(LayoutObject*, const Font&, const LChar*, int length, const ComputedStyle&, TextDirection);
+TextRun constructTextRun(LayoutObject*, const Font&, const UChar*, int length, const ComputedStyle&, TextDirection);
 
 } // namespace blink
 

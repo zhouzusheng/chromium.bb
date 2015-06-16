@@ -33,6 +33,7 @@
 #include "core/frame/Settings.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/MediaController.h"
+#include "core/html/track/TextTrackContainer.h"
 #include "core/layout/LayoutTheme.h"
 
 namespace blink {
@@ -50,7 +51,6 @@ MediaControls::MediaControls(HTMLMediaElement& mediaElement)
     : HTMLDivElement(mediaElement.document())
     , m_mediaElement(&mediaElement)
     , m_panel(nullptr)
-    , m_textDisplayContainer(nullptr)
     , m_overlayPlayButton(nullptr)
     , m_overlayEnclosure(nullptr)
     , m_playButton(nullptr)
@@ -83,8 +83,6 @@ PassRefPtrWillBeRawPtr<MediaControls> MediaControls::create(HTMLMediaElement& me
 //
 // MediaControls                                       (-webkit-media-controls)
 // +-MediaControlOverlayEnclosureElement               (-webkit-media-controls-overlay-enclosure)
-// | +-MediaControlTextTrackContainerElement           (-webkit-media-text-track-container)
-// | | {when text tracks are enabled}
 // | +-MediaControlOverlayPlayButtonElement            (-webkit-media-controls-overlay-play-button)
 // | | {if mediaControlsOverlayPlayButtonEnabled}
 // | \-MediaControlCastButtonElement                   (-internal-media-controls-overlay-cast-button)
@@ -99,10 +97,6 @@ PassRefPtrWillBeRawPtr<MediaControls> MediaControls::create(HTMLMediaElement& me
 //     +-MediaControlToggleClosedCaptionsButtonElement (-webkit-media-controls-toggle-closed-captions-button)
 //     +-MediaControlCastButtonElement                 (-internal-media-controls-cast-button)
 //     \-MediaControlFullscreenButtonElement           (-webkit-media-controls-fullscreen-button)
-//
-// Most of the structure is built by MediaControls::initializeControls() - the
-// exception being MediaControlTextTrackContainerElement which is added
-// on-demand by MediaControls::createTextTrackDisplay().
 void MediaControls::initializeControls()
 {
     RefPtrWillBeRawPtr<MediaControlOverlayEnclosureElement> overlayEnclosure = MediaControlOverlayEnclosureElement::create(*this);
@@ -199,11 +193,16 @@ void MediaControls::reset()
     makeOpaque();
 }
 
+LayoutObject* MediaControls::layoutObjectForTextTrackLayout()
+{
+    return m_panel->layoutObject();
+}
+
 void MediaControls::show()
 {
     makeOpaque();
-    m_panel->setIsDisplayed(true);
     m_panel->show();
+    m_panel->setIsDisplayed(true);
     if (m_overlayPlayButton)
         m_overlayPlayButton->updateDisplayType();
 }
@@ -218,8 +217,8 @@ void MediaControls::mediaElementFocused()
 
 void MediaControls::hide()
 {
-    m_panel->setIsDisplayed(false);
     m_panel->hide();
+    m_panel->setIsDisplayed(false);
     if (m_overlayPlayButton)
         m_overlayPlayButton->hide();
 }
@@ -333,8 +332,8 @@ void MediaControls::updateCurrentTimeDisplay()
 void MediaControls::updateVolume()
 {
     m_muteButton->updateDisplayType();
-    if (m_muteButton->renderer())
-        m_muteButton->renderer()->setShouldDoFullPaintInvalidation();
+    if (m_muteButton->layoutObject())
+        m_muteButton->layoutObject()->setShouldDoFullPaintInvalidation();
 
     if (mediaElement().muted())
         m_volumeSlider->setVolume(0);
@@ -516,45 +515,10 @@ bool MediaControls::containsRelatedTarget(Event* event)
     return contains(relatedTarget->toNode());
 }
 
-void MediaControls::createTextTrackDisplay()
-{
-    if (m_textDisplayContainer)
-        return;
-
-    RefPtrWillBeRawPtr<MediaControlTextTrackContainerElement> textDisplayContainer = MediaControlTextTrackContainerElement::create(*this);
-    m_textDisplayContainer = textDisplayContainer.get();
-
-    // Insert it before (behind) all other control elements.
-    m_overlayEnclosure->insertBefore(textDisplayContainer.release(), m_overlayEnclosure->firstChild());
-}
-
-void MediaControls::showTextTrackDisplay()
-{
-    if (!m_textDisplayContainer)
-        createTextTrackDisplay();
-    m_textDisplayContainer->show();
-}
-
-void MediaControls::hideTextTrackDisplay()
-{
-    if (!m_textDisplayContainer)
-        createTextTrackDisplay();
-    m_textDisplayContainer->hide();
-}
-
-void MediaControls::updateTextTrackDisplay()
-{
-    if (!m_textDisplayContainer)
-        createTextTrackDisplay();
-
-    m_textDisplayContainer->updateDisplay();
-}
-
 DEFINE_TRACE(MediaControls)
 {
     visitor->trace(m_mediaElement);
     visitor->trace(m_panel);
-    visitor->trace(m_textDisplayContainer);
     visitor->trace(m_overlayPlayButton);
     visitor->trace(m_overlayEnclosure);
     visitor->trace(m_playButton);

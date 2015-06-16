@@ -86,17 +86,23 @@ class NET_EXPORT HttpServerPropertiesManager : public HttpServerProperties {
   void SetHTTP11Required(const HostPortPair& server) override;
   void MaybeForceHTTP11(const HostPortPair& server,
                         SSLConfig* ssl_config) override;
-  AlternateProtocolInfo GetAlternateProtocol(
-      const HostPortPair& server) override;
-  void SetAlternateProtocol(const HostPortPair& server,
-                            uint16 alternate_port,
-                            AlternateProtocol alternate_protocol,
-                            double alternate_probability) override;
-  void SetBrokenAlternateProtocol(const HostPortPair& server) override;
-  bool WasAlternateProtocolRecentlyBroken(const HostPortPair& server) override;
-  void ConfirmAlternateProtocol(const HostPortPair& server) override;
-  void ClearAlternateProtocol(const HostPortPair& server) override;
-  const AlternateProtocolMap& alternate_protocol_map() const override;
+  AlternativeService GetAlternativeService(const HostPortPair& origin) override;
+  void SetAlternativeService(const HostPortPair& origin,
+                             const AlternativeService& alternative_service,
+                             double alternative_probability) override;
+  void MarkAlternativeServiceBroken(
+      const AlternativeService& alternative_service) override;
+  void MarkAlternativeServiceRecentlyBroken(
+      const AlternativeService& alternative_service) override;
+  bool IsAlternativeServiceBroken(
+      const AlternativeService& alternative_service) const override;
+  bool WasAlternativeServiceRecentlyBroken(
+      const AlternativeService& alternative_service) override;
+  void ConfirmAlternativeService(
+      const AlternativeService& alternative_service) override;
+  void ClearAlternativeService(const HostPortPair& origin) override;
+  const AlternativeServiceMap& alternative_service_map() const override;
+  base::Value* GetAlternativeServiceInfoAsValue() const override;
   void SetAlternateProtocolProbabilityThreshold(double threshold) override;
   const SettingsMap& GetSpdySettings(
       const HostPortPair& host_port_pair) override;
@@ -140,14 +146,14 @@ class NET_EXPORT HttpServerPropertiesManager : public HttpServerProperties {
   void UpdateCacheFromPrefsOnNetworkThread(
       std::vector<std::string>* spdy_servers,
       SpdySettingsMap* spdy_settings_map,
-      AlternateProtocolMap* alternate_protocol_map,
+      AlternativeServiceMap* alternative_service_map,
       IPAddressNumber* last_quic_address,
       ServerNetworkStatsMap* server_network_stats_map,
       bool detected_corrupted_prefs);
 
   // These are used to delay updating the preferences when cached data in
   // |http_server_properties_impl_| is changing, and execute only one update per
-  // simultaneous spdy_servers or spdy_settings or alternate_protocol changes.
+  // simultaneous spdy_servers or spdy_settings or alternative_service changes.
   void ScheduleUpdatePrefsOnNetworkThread();
 
   // Starts the timers to update the prefs from cache. This are overridden in
@@ -169,7 +175,7 @@ class NET_EXPORT HttpServerPropertiesManager : public HttpServerProperties {
   // optional |completion| callback when finished. Protected for testing.
   void UpdatePrefsOnPrefThread(base::ListValue* spdy_server_list,
                                SpdySettingsMap* spdy_settings_map,
-                               AlternateProtocolMap* alternate_protocol_map,
+                               AlternativeServiceMap* alternative_service_map,
                                IPAddressNumber* last_quic_address,
                                ServerNetworkStatsMap* server_network_stats_map,
                                const base::Closure& completion);
@@ -182,20 +188,21 @@ class NET_EXPORT HttpServerPropertiesManager : public HttpServerProperties {
   void AddToSpdySettingsMap(const HostPortPair& server,
                             const base::DictionaryValue& server_dict,
                             SpdySettingsMap* spdy_settings_map);
-  AlternateProtocolInfo ParseAlternateProtocolDict(
-      const base::DictionaryValue& alternate_protocol_dict,
+  AlternativeServiceInfo ParseAlternativeServiceDict(
+      const base::DictionaryValue& alternative_service_dict,
       const std::string& server_str);
-  bool AddToAlternateProtocolMap(const HostPortPair& server,
-                                 const base::DictionaryValue& server_dict,
-                                 AlternateProtocolMap* alternate_protocol_map);
+  bool AddToAlternativeServiceMap(
+      const HostPortPair& server,
+      const base::DictionaryValue& server_dict,
+      AlternativeServiceMap* alternative_service_map);
   bool AddToNetworkStatsMap(const HostPortPair& server,
                             const base::DictionaryValue& server_dict,
                             ServerNetworkStatsMap* network_stats_map);
 
   void SaveSpdySettingsToServerPrefs(const SettingsMap* spdy_settings_map,
                                      base::DictionaryValue* server_pref_dict);
-  void SaveAlternateProtocolToServerPrefs(
-      const AlternateProtocolInfo* port_alternate_protocol,
+  void SaveAlternativeServiceToServerPrefs(
+      const AlternativeServiceInfo* alternative_service_info,
       base::DictionaryValue* server_pref_dict);
   void SaveNetworkStatsToServerPrefs(
       const ServerNetworkStats* server_network_stats,

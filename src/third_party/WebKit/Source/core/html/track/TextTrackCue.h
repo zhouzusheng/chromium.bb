@@ -70,21 +70,26 @@ public:
     bool pauseOnExit() const { return m_pauseOnExit; }
     void setPauseOnExit(bool);
 
-    int cueIndex();
+    unsigned cueIndex();
+    void updateCueIndex(unsigned cueIndex) { m_cueIndex = cueIndex; }
     void invalidateCueIndex();
 
     using EventTarget::dispatchEvent;
     virtual bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>) override;
 
-    bool isActive();
+    bool isActive() const { return m_isActive; }
     void setIsActive(bool active) { m_isActive = active; }
 
+    // Updates the display tree and appends it to container if it has not
+    // already been added.
     virtual void updateDisplay(HTMLDivElement& container) = 0;
 
-    // FIXME: Consider refactoring to eliminate or merge the following three members.
-    // https://code.google.com/p/chromium/issues/detail?id=322434
-    virtual void updateDisplayTree(double movieTime) = 0;
+    // Marks the nodes of the display tree as past or future relative to
+    // movieTime. If updateDisplay() has not been called there is no display
+    // tree and nothing is done.
+    virtual void updatePastAndFutureNodes(double movieTime) = 0;
 
+    // FIXME: Refactor to eliminate removeDisplayTree(). https://crbug.com/322434
     enum RemovalNotification {
         DontNotifyRegion,
         NotifyRegion
@@ -112,9 +117,10 @@ private:
     AtomicString m_id;
     double m_startTime;
     double m_endTime;
-    int m_cueIndex;
 
     RawPtrWillBeMember<TextTrack> m_track;
+
+    unsigned m_cueIndex;
 
     bool m_isActive : 1;
     bool m_pauseOnExit : 1;

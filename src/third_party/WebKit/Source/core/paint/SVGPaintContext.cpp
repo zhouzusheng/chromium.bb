@@ -26,14 +26,15 @@
 #include "core/paint/SVGPaintContext.h"
 
 #include "core/frame/FrameHost.h"
-#include "core/layout/Layer.h"
 #include "core/layout/PaintInfo.h"
 #include "core/layout/svg/LayoutSVGResourceFilter.h"
 #include "core/layout/svg/LayoutSVGResourceMasker.h"
 #include "core/layout/svg/SVGLayoutSupport.h"
 #include "core/layout/svg/SVGResources.h"
 #include "core/layout/svg/SVGResourcesCache.h"
-#include "core/paint/RenderDrawingRecorder.h"
+#include "core/paint/LayoutObjectDrawingRecorder.h"
+#include "core/paint/SVGFilterPainter.h"
+#include "core/paint/SVGMaskPainter.h"
 #include "platform/FloatConversion.h"
 
 namespace blink {
@@ -44,8 +45,9 @@ SVGPaintContext::~SVGPaintContext()
         ASSERT(SVGResourcesCache::cachedResourcesForLayoutObject(m_object));
         ASSERT(SVGResourcesCache::cachedResourcesForLayoutObject(m_object)->filter() == m_filter);
 
-        RenderDrawingRecorder recorder(m_originalPaintInfo->context, *m_object, DisplayItem::SVGFilter, LayoutRect::infiniteIntRect());
-        m_filter->finishEffect(m_object, m_originalPaintInfo->context);
+        LayoutObjectDrawingRecorder recorder(*m_originalPaintInfo->context, *m_object, DisplayItem::SVGFilter, LayoutRect::infiniteIntRect());
+        if (!recorder.canUseCachedDrawing())
+            SVGFilterPainter(*m_filter).finishEffect(*m_object, m_originalPaintInfo->context);
 
         // Reset the paint info after the filter effect has been completed.
         // This isn't strictly required (e.g., m_paintInfo.rect is not used
@@ -57,13 +59,13 @@ SVGPaintContext::~SVGPaintContext()
     if (m_masker) {
         ASSERT(SVGResourcesCache::cachedResourcesForLayoutObject(m_object));
         ASSERT(SVGResourcesCache::cachedResourcesForLayoutObject(m_object)->masker() == m_masker);
-        m_masker->finishEffect(m_object, m_paintInfo.context);
+        SVGMaskPainter(*m_masker).finishEffect(*m_object, m_paintInfo.context);
     }
 
     if (m_clipper) {
         ASSERT(SVGResourcesCache::cachedResourcesForLayoutObject(m_object));
         ASSERT(SVGResourcesCache::cachedResourcesForLayoutObject(m_object)->clipper() == m_clipper);
-        m_clipper->postApplyStatefulResource(m_object, m_paintInfo.context, m_clipperState);
+        SVGClipPainter(*m_clipper).postApplyStatefulResource(*m_object, m_paintInfo.context, m_clipperState);
     }
 }
 
@@ -96,7 +98,7 @@ bool SVGPaintContext::applyClipMaskAndFilterIfNecessary()
         return false;
 
     if (!isIsolationInstalled() && SVGLayoutSupport::isIsolationRequired(m_object))
-        m_compositingRecorder = adoptPtr(new CompositingRecorder(m_paintInfo.context, m_object->displayItemClient(), m_paintInfo.context->compositeOperationDeprecated(), WebBlendModeNormal, 1));
+        m_compositingRecorder = adoptPtr(new CompositingRecorder(*m_paintInfo.context, *m_object, SkXfermode::kSrcOver_Mode, 1));
 
     return true;
 }
@@ -109,14 +111,14 @@ void SVGPaintContext::applyCompositingIfNecessary()
     if (m_object->isSVGRoot())
         return;
 
-    const LayoutStyle& style = m_object->styleRef();
+    const ComputedStyle& style = m_object->styleRef();
     float opacity = style.opacity();
-    bool hasBlendMode = style.hasBlendMode() && m_object->isBlendingAllowed();
-    if (opacity < 1 || hasBlendMode) {
-        m_clipRecorder = adoptPtr(new FloatClipRecorder(*m_paintInfo.context, m_object->displayItemClient(), m_paintInfo.phase, m_object->paintInvalidationRectInLocalCoordinates()));
-        WebBlendMode blendMode = hasBlendMode ? style.blendMode() : WebBlendModeNormal;
-        CompositeOperator compositeOp = hasBlendMode ? CompositeSourceOver : m_paintInfo.context->compositeOperationDeprecated();
-        m_compositingRecorder = adoptPtr(new CompositingRecorder(m_paintInfo.context, m_object->displayItemClient(), compositeOp, blendMode, opacity));
+    WebBlendMode blendMode = style.hasBlendMode() && m_object->isBlendingAllowed() ?
+        style.blendMode() : WebBlendModeNormal;
+    if (opacity < 1 || blendMode != WebBlendModeNormal) {
+        m_clipRecorder = adoptPtr(new FloatClipRecorder(*m_paintInfo.context, *m_object, m_paintInfo.phase, m_object->paintInvalidationRectInLocalCoordinates()));
+        m_compositingRecorder = adoptPtr(new CompositingRecorder(*m_paintInfo.context, *m_object,
+            WebCoreCompositeToSkiaComposite(CompositeSourceOver, blendMode), opacity));
     }
 }
 
@@ -126,7 +128,7 @@ bool SVGPaintContext::applyClipIfNecessary(SVGResources* resources)
     // m_object->style()->clipPath() corresponds to '-webkit-clip-path'.
     // FIXME: We should unify the clip-path and -webkit-clip-path codepaths.
     if (LayoutSVGResourceClipper* clipper = resources ? resources->clipper() : nullptr) {
-        if (!clipper->applyStatefulResource(m_object, m_paintInfo.context, m_clipperState))
+        if (!SVGClipPainter(*clipper).applyStatefulResource(*m_object, m_paintInfo.context, m_clipperState))
             return false;
         m_clipper = clipper;
     } else {
@@ -135,7 +137,7 @@ bool SVGPaintContext::applyClipIfNecessary(SVGResources* resources)
             ShapeClipPathOperation* clipPath = toShapeClipPathOperation(clipPathOperation);
             if (!clipPath->isValid())
                 return false;
-            m_clipPathRecorder = adoptPtr(new ClipPathRecorder(*m_paintInfo.context, m_object->displayItemClient(), clipPath->path(m_object->objectBoundingBox()), clipPath->windRule()));
+            m_clipPathRecorder = adoptPtr(new ClipPathRecorder(*m_paintInfo.context, *m_object, clipPath->path(m_object->objectBoundingBox()), clipPath->windRule()));
         }
     }
     return true;
@@ -144,7 +146,7 @@ bool SVGPaintContext::applyClipIfNecessary(SVGResources* resources)
 bool SVGPaintContext::applyMaskIfNecessary(SVGResources* resources)
 {
     if (LayoutSVGResourceMasker* masker = resources ? resources->masker() : nullptr) {
-        if (!masker->prepareEffect(m_object, m_paintInfo.context))
+        if (!SVGMaskPainter(*masker).prepareEffect(*m_object, m_paintInfo.context))
             return false;
         m_masker = masker;
     }
@@ -158,7 +160,7 @@ bool SVGPaintContext::applyFilterIfNecessary(SVGResources* resources)
             return false;
     } else if (LayoutSVGResourceFilter* filter = resources->filter()) {
         m_filter = filter;
-        GraphicsContext* filterContext = filter->prepareEffect(m_object, m_paintInfo.context);
+        GraphicsContext* filterContext = SVGFilterPainter(*filter).prepareEffect(*m_object, m_paintInfo.context);
         if (!filterContext)
             return false;
 
@@ -180,7 +182,7 @@ bool SVGPaintContext::isIsolationInstalled() const
         return true;
     if (m_masker || m_filter)
         return true;
-    if (m_clipper && m_clipperState == LayoutSVGResourceClipper::ClipperAppliedMask)
+    if (m_clipper && m_clipperState == SVGClipPainter::ClipperAppliedMask)
         return true;
     return false;
 }

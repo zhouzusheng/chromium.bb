@@ -32,7 +32,6 @@
 
 namespace blink {
 
-class ResourceFetcher;
 class XSLImportRule;
 
 class XSLStyleSheet final : public StyleSheet {
@@ -73,8 +72,6 @@ public:
     void loadChildSheets();
     void loadChildSheet(const String& href);
 
-    ResourceFetcher* fetcher();
-
     Document* ownerDocument();
     virtual XSLStyleSheet* parentStyleSheet() const override { return m_parentStyleSheet; }
     void setParentStyleSheet(XSLStyleSheet*);
@@ -111,7 +108,7 @@ private:
     KURL m_finalURL;
     bool m_isDisabled;
 
-    WillBeHeapVector<OwnPtrWillBeMember<XSLImportRule> > m_children;
+    WillBeHeapVector<OwnPtrWillBeMember<XSLImportRule>> m_children;
 
     bool m_embedded;
     bool m_processed;

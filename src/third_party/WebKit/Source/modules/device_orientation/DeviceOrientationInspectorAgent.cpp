@@ -6,7 +6,6 @@
 #include "modules/device_orientation/DeviceOrientationInspectorAgent.h"
 
 #include "core/frame/LocalFrame.h"
-#include "core/inspector/InspectorController.h"
 #include "core/inspector/InspectorState.h"
 #include "core/page/Page.h"
 
@@ -33,7 +32,7 @@ DeviceOrientationInspectorAgent::~DeviceOrientationInspectorAgent()
 }
 
 DeviceOrientationInspectorAgent::DeviceOrientationInspectorAgent(Page& page)
-    : InspectorBaseAgent<DeviceOrientationInspectorAgent>("DeviceOrientation")
+    : InspectorBaseAgent<DeviceOrientationInspectorAgent, InspectorFrontend::DeviceOrientation>("DeviceOrientation")
     , m_page(page)
 {
 }
@@ -59,7 +58,7 @@ void DeviceOrientationInspectorAgent::clearDeviceOrientationOverride(ErrorString
     controller().clearOverride();
 }
 
-void DeviceOrientationInspectorAgent::clearFrontend()
+void DeviceOrientationInspectorAgent::disable(ErrorString*)
 {
     m_state->setBoolean(DeviceOrientationInspectorAgentState::overrideEnabled, false);
     controller().clearOverride();
@@ -75,8 +74,12 @@ void DeviceOrientationInspectorAgent::restore()
     }
 }
 
-void DeviceOrientationInspectorAgent::didCommitLoadForMainFrame()
+void DeviceOrientationInspectorAgent::didCommitLoadForLocalFrame(LocalFrame* frame)
 {
+    // FIXME(dgozman): adapt this for out-of-process iframes.
+    if (frame != m_page.mainFrame())
+        return;
+
     // New document in main frame - apply override there.
     // No need to cleanup previous one, as it's already gone.
     restore();

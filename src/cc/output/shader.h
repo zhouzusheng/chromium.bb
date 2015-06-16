@@ -59,6 +59,32 @@ enum BlendMode {
   LAST_BLEND_MODE = BLEND_MODE_LUMINOSITY
 };
 
+enum MaskMode {
+  NO_MASK = 0,
+  HAS_MASK = 1,
+  LAST_MASK_VALUE = HAS_MASK
+};
+
+struct ShaderLocations {
+  ShaderLocations();
+
+  int sampler = -1;
+  int quad = -1;
+  int edge = -1;
+  int viewport = -1;
+  int mask_sampler = -1;
+  int mask_tex_coord_scale = -1;
+  int mask_tex_coord_offset = -1;
+  int matrix = -1;
+  int alpha = -1;
+  int color_matrix = -1;
+  int color_offset = -1;
+  int tex_transform = -1;
+  int backdrop = -1;
+  int backdrop_rect = -1;
+  int original_backdrop = -1;
+};
+
 // Note: The highp_threshold_cache must be provided by the caller to make
 // the caching multi-thread/context safe in an easy low-overhead manner.
 // The caller must make sure to clear highp_threshold_cache to 0, so it can be
@@ -156,6 +182,7 @@ class VertexShaderPosTexTransform {
   std::string GetShaderString() const;
   static std::string GetShaderHead();
   static std::string GetShaderBody();
+  void FillLocations(ShaderLocations* locations) const;
 
   int matrix_location() const { return matrix_location_; }
   int tex_transform_location() const { return tex_transform_location_; }
@@ -228,6 +255,7 @@ class VertexShaderQuadTexTransformAA {
   std::string GetShaderString() const;
   static std::string GetShaderHead();
   static std::string GetShaderBody();
+  void FillLocations(ShaderLocations* locations) const;
 
   int matrix_location() const { return matrix_location_; }
   int viewport_location() const { return viewport_location_; }
@@ -325,11 +353,16 @@ class VertexShaderVideoTransform {
 class FragmentTexBlendMode {
  public:
   int backdrop_location() const { return backdrop_location_; }
+  int original_backdrop_location() const { return original_backdrop_location_; }
   int backdrop_rect_location() const { return backdrop_rect_location_; }
 
   BlendMode blend_mode() const { return blend_mode_; }
   void set_blend_mode(BlendMode blend_mode) { blend_mode_ = blend_mode; }
   bool has_blend_mode() const { return blend_mode_ != BLEND_MODE_NONE; }
+  void set_mask_for_background(bool mask_for_background) {
+    mask_for_background_ = mask_for_background;
+  }
+  bool mask_for_background() const { return mask_for_background_; }
 
  protected:
   FragmentTexBlendMode();
@@ -337,10 +370,12 @@ class FragmentTexBlendMode {
   std::string SetBlendModeFunctions(std::string shader_string) const;
 
   int backdrop_location_;
+  int original_backdrop_location_;
   int backdrop_rect_location_;
 
  private:
   BlendMode blend_mode_;
+  bool mask_for_background_;
 
   std::string GetHelperFunctions() const;
   std::string GetBlendFunction() const;
@@ -460,6 +495,7 @@ class FragmentShaderRGBATexAlpha : public FragmentTexAlphaBinding {
       TexCoordPrecision precision, SamplerType sampler) const;
   static std::string GetShaderHead();
   static std::string GetShaderBody();
+  void FillLocations(ShaderLocations* locations) const;
 };
 
 class FragmentShaderRGBATexColorMatrixAlpha
@@ -469,6 +505,7 @@ class FragmentShaderRGBATexColorMatrixAlpha
                               SamplerType sampler) const;
   static std::string GetShaderHead();
   static std::string GetShaderBody();
+  void FillLocations(ShaderLocations* locations) const;
 };
 
 class FragmentShaderRGBATexOpaque : public FragmentTexOpaqueBinding {
@@ -516,6 +553,7 @@ class FragmentShaderRGBATexAlphaAA : public FragmentTexBlendMode {
       TexCoordPrecision precision, SamplerType sampler) const;
   static std::string GetShaderHead();
   static std::string GetShaderBody();
+  void FillLocations(ShaderLocations* locations) const;
 
   int alpha_location() const { return alpha_location_; }
   int sampler_location() const { return sampler_location_; }
@@ -574,7 +612,7 @@ class FragmentShaderRGBATexAlphaMask : public FragmentTexBlendMode {
       TexCoordPrecision precision, SamplerType sampler) const;
   static std::string GetShaderHead();
   static std::string GetShaderBody();
-
+  void FillLocations(ShaderLocations* locations) const;
   void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
             int* base_uniform_index);
@@ -605,7 +643,7 @@ class FragmentShaderRGBATexAlphaMaskAA : public FragmentTexBlendMode {
       TexCoordPrecision precision, SamplerType sampler) const;
   static std::string GetShaderHead();
   static std::string GetShaderBody();
-
+  void FillLocations(ShaderLocations* locations) const;
   void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
             int* base_uniform_index);
@@ -637,7 +675,7 @@ class FragmentShaderRGBATexAlphaMaskColorMatrixAA
       TexCoordPrecision precision, SamplerType sampler) const;
   static std::string GetShaderHead();
   static std::string GetShaderBody();
-
+  void FillLocations(ShaderLocations* locations) const;
   void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
             int* base_uniform_index);
@@ -670,7 +708,7 @@ class FragmentShaderRGBATexAlphaColorMatrixAA : public FragmentTexBlendMode {
       TexCoordPrecision precision, SamplerType sampler) const;
   static std::string GetShaderHead();
   static std::string GetShaderBody();
-
+  void FillLocations(ShaderLocations* locations) const;
   void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
             int* base_uniform_index);
@@ -693,7 +731,7 @@ class FragmentShaderRGBATexAlphaMaskColorMatrix : public FragmentTexBlendMode {
       TexCoordPrecision precision, SamplerType sampler) const;
   static std::string GetShaderHead();
   static std::string GetShaderBody();
-
+  void FillLocations(ShaderLocations* locations) const;
   void Init(gpu::gles2::GLES2Interface* context,
             unsigned program,
             int* base_uniform_index);
@@ -736,7 +774,8 @@ class FragmentShaderYUVVideo : public FragmentTexBlendMode {
   int alpha_location() const { return alpha_location_; }
   int yuv_matrix_location() const { return yuv_matrix_location_; }
   int yuv_adj_location() const { return yuv_adj_location_; }
-  int clamp_rect_location() const { return clamp_rect_location_; }
+  int ya_clamp_rect_location() const { return ya_clamp_rect_location_; }
+  int uv_clamp_rect_location() const { return uv_clamp_rect_location_; }
 
  private:
   int y_texture_location_;
@@ -745,7 +784,8 @@ class FragmentShaderYUVVideo : public FragmentTexBlendMode {
   int alpha_location_;
   int yuv_matrix_location_;
   int yuv_adj_location_;
-  int clamp_rect_location_;
+  int ya_clamp_rect_location_;
+  int uv_clamp_rect_location_;
 
   DISALLOW_COPY_AND_ASSIGN(FragmentShaderYUVVideo);
 };
@@ -769,7 +809,8 @@ class FragmentShaderYUVAVideo : public FragmentTexBlendMode {
   int alpha_location() const { return alpha_location_; }
   int yuv_matrix_location() const { return yuv_matrix_location_; }
   int yuv_adj_location() const { return yuv_adj_location_; }
-  int clamp_rect_location() const { return clamp_rect_location_; }
+  int ya_clamp_rect_location() const { return ya_clamp_rect_location_; }
+  int uv_clamp_rect_location() const { return uv_clamp_rect_location_; }
 
  private:
   int y_texture_location_;
@@ -779,7 +820,8 @@ class FragmentShaderYUVAVideo : public FragmentTexBlendMode {
   int alpha_location_;
   int yuv_matrix_location_;
   int yuv_adj_location_;
-  int clamp_rect_location_;
+  int ya_clamp_rect_location_;
+  int uv_clamp_rect_location_;
 
   DISALLOW_COPY_AND_ASSIGN(FragmentShaderYUVAVideo);
 };

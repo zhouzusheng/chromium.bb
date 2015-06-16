@@ -80,9 +80,9 @@ def member_context(dictionary, member):
     idl_type.add_includes_for_type()
     unwrapped_idl_type = unwrap_nullable_if_needed(idl_type)
 
-    restricted_float = (
-        has_extended_attribute_value(dictionary, 'TypeChecking', 'Unrestricted') or
-        has_extended_attribute_value(member, 'TypeChecking', 'Unrestricted'))
+    if member.is_required and member.default_value:
+        raise Exception(
+            'Required member %s must not have a default value.' % member.name)
 
     def default_values():
         if not member.default_value:
@@ -108,20 +108,21 @@ def member_context(dictionary, member):
             creation_context='creationContext',
             extended_attributes=member.extended_attributes),
         'deprecate_as': v8_utilities.deprecate_as(member),
-        'enum_validation_expression': unwrapped_idl_type.enum_validation_expression,
+        'enum_type': idl_type.enum_type,
+        'enum_values': unwrapped_idl_type.enum_values,
         'has_method_name': has_method_name_for_dictionary_member(member),
         'idl_type': idl_type.base_type,
         'is_interface_type': idl_type.is_interface_type and not idl_type.is_dictionary,
         'is_nullable': idl_type.is_nullable,
         'is_object': unwrapped_idl_type.name == 'Object',
+        'is_required': member.is_required,
         'name': member.name,
         'setter_name': setter_name_for_dictionary_member(member),
         'null_setter_name': null_setter_name_for_dictionary_member(member),
-        'use_output_parameter_for_result': unwrapped_idl_type.use_output_parameter_for_result,
         'v8_default_value': v8_default_value,
         'v8_value_to_local_cpp_value': unwrapped_idl_type.v8_value_to_local_cpp_value(
             member.extended_attributes, member.name + 'Value',
-            member.name, isolate='isolate', restricted_float=restricted_float),
+            member.name, isolate='isolate', use_exception_state=True),
     }
 
 

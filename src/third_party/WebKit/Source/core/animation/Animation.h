@@ -40,6 +40,7 @@
 
 namespace blink {
 
+class AnimationTimingProperties;
 class Dictionary;
 class Element;
 class ExceptionState;
@@ -52,11 +53,8 @@ public:
 
     static PassRefPtrWillBeRawPtr<Animation> create(Element*, PassRefPtrWillBeRawPtr<AnimationEffect>, const Timing&, Priority = DefaultPriority, PassOwnPtrWillBeRawPtr<EventDelegate> = nullptr);
     // Web Animations API Bindings constructors.
-    static PassRefPtrWillBeRawPtr<Animation> create(Element*, PassRefPtrWillBeRawPtr<AnimationEffect>, const Dictionary& timingInputDictionary);
-    static PassRefPtrWillBeRawPtr<Animation> create(Element*, PassRefPtrWillBeRawPtr<AnimationEffect>, double duration);
-    static PassRefPtrWillBeRawPtr<Animation> create(Element*, PassRefPtrWillBeRawPtr<AnimationEffect>);
-    static PassRefPtrWillBeRawPtr<Animation> create(Element*, const Vector<Dictionary>& keyframeDictionaryVector, const Dictionary& timingInputDictionary, ExceptionState&);
     static PassRefPtrWillBeRawPtr<Animation> create(Element*, const Vector<Dictionary>& keyframeDictionaryVector, double duration, ExceptionState&);
+    static PassRefPtrWillBeRawPtr<Animation> create(Element*, const Vector<Dictionary>& keyframeDictionaryVector, const AnimationTimingProperties& timingInput, ExceptionState&);
     static PassRefPtrWillBeRawPtr<Animation> create(Element*, const Vector<Dictionary>& keyframeDictionaryVector, ExceptionState&);
 
     virtual ~Animation();
@@ -70,7 +68,6 @@ public:
     Priority priority() const { return m_priority; }
     Element* target() const { return m_target; }
 
-    void notifySampledEffectRemovedFromAnimationStack();
 #if !ENABLE(OILPAN)
     void notifyElementDestroyed();
 #endif
@@ -85,9 +82,12 @@ public:
     void cancelIncompatibleAnimationsOnCompositor();
     void pauseAnimationForTestingOnCompositor(double pauseTime);
 
+    bool canAttachCompositedLayers() const;
+    void attachCompositedLayers();
+
     void setCompositorAnimationIdsForTesting(const Vector<int>& compositorAnimationIds) { m_compositorAnimationIds = compositorAnimationIds; }
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     void downgradeToNormalAnimation() { m_priority = DefaultPriority; }
 

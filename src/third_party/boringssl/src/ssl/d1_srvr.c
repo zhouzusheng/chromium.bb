@@ -198,11 +198,9 @@ int dtls1_accept(SSL *s) {
           }
 
           s->state = SSL3_ST_SR_CLNT_HELLO_A;
-          s->ctx->stats.sess_accept++;
         } else {
           /* s->state == SSL_ST_RENEGOTIATE, * we will just send a
            * HelloRequest */
-          s->ctx->stats.sess_accept_renegotiate++;
           s->state = SSL3_ST_SW_HELLO_REQ_A;
         }
 
@@ -363,12 +361,6 @@ int dtls1_accept(SSL *s) {
       case SSL3_ST_SW_FLUSH:
         s->rwstate = SSL_WRITING;
         if (BIO_flush(s->wbio) <= 0) {
-          /* If the write error was fatal, stop trying */
-          if (!BIO_should_retry(s->wbio)) {
-            s->rwstate = SSL_NOTHING;
-            s->state = s->s3->tmp.next_state;
-          }
-
           ret = -1;
           goto end;
         }
@@ -496,8 +488,6 @@ int dtls1_accept(SSL *s) {
           s->new_session = 0;
 
           ssl_update_cache(s, SSL_SESS_CACHE_SERVER);
-
-          s->ctx->stats.sess_accept_good++;
 
           if (cb != NULL) {
             cb(s, SSL_CB_HANDSHAKE_DONE, 1);

@@ -36,7 +36,7 @@ namespace blink {
 using namespace HTMLNames;
 
 LayoutTableCol::LayoutTableCol(Element* element)
-    : RenderBox(element)
+    : LayoutBox(element)
     , m_span(1)
 {
     // init LayoutObject attributes
@@ -44,9 +44,9 @@ LayoutTableCol::LayoutTableCol(Element* element)
     updateFromElement();
 }
 
-void LayoutTableCol::styleDidChange(StyleDifference diff, const LayoutStyle* oldStyle)
+void LayoutTableCol::styleDidChange(StyleDifference diff, const ComputedStyle* oldStyle)
 {
-    RenderBox::styleDidChange(diff, oldStyle);
+    LayoutBox::styleDidChange(diff, oldStyle);
 
     // If border was changed, notify table.
     if (parent()) {
@@ -81,22 +81,22 @@ void LayoutTableCol::updateFromElement()
         m_span = !(style() && style()->display() == TABLE_COLUMN_GROUP);
     }
     if (m_span != oldSpan && style() && parent())
-        setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
+        setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(LayoutInvalidationReason::AttributeChanged);
 }
 
 void LayoutTableCol::insertedIntoTree()
 {
-    RenderBox::insertedIntoTree();
+    LayoutBox::insertedIntoTree();
     table()->addColumn(this);
 }
 
 void LayoutTableCol::willBeRemovedFromTree()
 {
-    RenderBox::willBeRemovedFromTree();
+    LayoutBox::willBeRemovedFromTree();
     table()->removeColumn(this);
 }
 
-bool LayoutTableCol::isChildAllowed(LayoutObject* child, const LayoutStyle& style) const
+bool LayoutTableCol::isChildAllowed(LayoutObject* child, const ComputedStyle& style) const
 {
     // We cannot use isTableColumn here as style() may return 0.
     return child->isLayoutTableCol() && style.display() == TABLE_COLUMN;
@@ -109,7 +109,7 @@ bool LayoutTableCol::canHaveChildren() const
     return isTableColumnGroup();
 }
 
-LayoutRect LayoutTableCol::clippedOverflowRectForPaintInvalidation(const LayoutLayerModelObject* paintInvalidationContainer, const PaintInvalidationState* paintInvalidationState) const
+LayoutRect LayoutTableCol::clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* paintInvalidationState) const
 {
     // For now, just paint invalidate the whole table.
     // FIXME: Find a better way to do this, e.g., need to paint invalidate all the cells that we

@@ -28,7 +28,7 @@ struct LinkResult
     LinkResult(bool linkSuccess, const gl::Error &error);
 };
 
-class ProgramImpl
+class ProgramImpl : angle::NonCopyable
 {
   public:
     typedef int SemanticIndexArray[gl::MAX_VERTEX_ATTRIBS];
@@ -94,7 +94,7 @@ class ProgramImpl
                                     const gl::Caps &caps) = 0;
 
     virtual gl::Error applyUniforms() = 0;
-    virtual gl::Error applyUniformBuffers(const std::vector<gl::Buffer*> boundBuffers, const gl::Caps &caps) = 0;
+    virtual gl::Error applyUniformBuffers(const gl::Data &data, GLuint uniformBlockBindings[]) = 0;
     virtual bool assignUniformBlockRegister(gl::InfoLog &infoLog, gl::UniformBlock *uniformBlock, GLenum shader,
                                             unsigned int registerIndex, const gl::Caps &caps) = 0;
 
@@ -123,8 +123,6 @@ class ProgramImpl
     virtual void reset();
 
   protected:
-    DISALLOW_COPY_AND_ASSIGN(ProgramImpl);
-
     std::vector<gl::LinkedUniform*> mUniforms;
     std::vector<gl::VariableLocation> mUniformIndex;
     std::vector<gl::UniformBlock*> mUniformBlocks;

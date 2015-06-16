@@ -12,9 +12,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/worker_pool.h"
 #include "content/browser/devtools/protocol/color_picker.h"
-#include "content/browser/devtools/protocol/frame_recorder.h"
-#include "content/browser/devtools/protocol/usage_and_quota_query.h"
-#include "content/browser/geolocation/geolocation_service_context.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/browser/web_contents/web_contents_impl.h"
@@ -26,8 +23,6 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/referrer.h"
-#include "content/public/common/url_constants.h"
-#include "storage/browser/quota/quota_manager.h"
 #include "third_party/WebKit/public/platform/WebScreenInfo.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/page_transition_types.h"
@@ -49,39 +44,6 @@ static int kDefaultScreenshotQuality = 80;
 static int kFrameRetryDelayMs = 100;
 static int kCaptureRetryLimit = 2;
 static int kMaxScreencastFramesInFlight = 2;
-
-ui::GestureProviderConfigType TouchEmulationConfigurationToType(
-    const std::string& protocol_value) {
-  ui::GestureProviderConfigType result =
-      ui::GestureProviderConfigType::CURRENT_PLATFORM;
-  if (protocol_value ==
-      set_touch_emulation_enabled::kConfigurationMobile) {
-    result = ui::GestureProviderConfigType::GENERIC_MOBILE;
-  }
-  if (protocol_value ==
-      set_touch_emulation_enabled::kConfigurationDesktop) {
-    result = ui::GestureProviderConfigType::GENERIC_DESKTOP;
-  }
-  return result;
-}
-
-void QueryUsageAndQuotaCompletedOnIOThread(
-    const UsageAndQuotaQuery::Callback& callback,
-    scoped_refptr<QueryUsageAndQuotaResponse> response) {
-  BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-                          base::Bind(callback, response));
-}
-
-void QueryUsageAndQuotaOnIOThread(
-    scoped_refptr<storage::QuotaManager> quota_manager,
-    const GURL& security_origin,
-    const UsageAndQuotaQuery::Callback& callback) {
-  new UsageAndQuotaQuery(
-      quota_manager,
-      security_origin,
-      base::Bind(&QueryUsageAndQuotaCompletedOnIOThread,
-                 callback));
-}
 
 std::string EncodeScreencastFrame(const SkBitmap& bitmap,
                                   const std::string& format,
@@ -125,7 +87,6 @@ typedef DevToolsProtocolClient::Response Response;
 
 PageHandler::PageHandler()
     : enabled_(false),
-      touch_emulation_enabled_(false),
       screencast_enabled_(false),
       screencast_quality_(kDefaultScreenshotQuality),
       screencast_max_width_(-1),
@@ -137,8 +98,8 @@ PageHandler::PageHandler()
       processing_screencast_frame_(false),
       color_picker_(new ColorPicker(base::Bind(
           &PageHandler::OnColorPicked, base::Unretained(this)))),
-      frame_recorder_(new FrameRecorder()),
       host_(nullptr),
+      screencast_listener_(nullptr),
       weak_factory_(this) {
 }
 
@@ -150,9 +111,7 @@ void PageHandler::SetRenderViewHost(RenderViewHostImpl* host) {
     return;
 
   color_picker_->SetRenderViewHost(host);
-  frame_recorder_->SetRenderViewHost(host);
   host_ = host;
-  UpdateTouchEventEmulationState();
 }
 
 void PageHandler::SetClient(scoped_ptr<Client> client) {
@@ -173,7 +132,6 @@ void PageHandler::OnSwapCompositorFrame(
   if (screencast_enabled_)
     InnerSwapCompositorFrame();
   color_picker_->OnSwapCompositorFrame();
-  frame_recorder_->OnSwapCompositorFrame();
 }
 
 void PageHandler::OnVisibilityChanged(bool visible) {
@@ -194,6 +152,10 @@ void PageHandler::DidDetachInterstitialPage() {
   client_->InterstitialHidden(InterstitialHiddenParams::Create());
 }
 
+void PageHandler::SetScreencastListener(ScreencastListener* listener) {
+  screencast_listener_ = listener;
+}
+
 Response PageHandler::Enable() {
   enabled_ = true;
   return Response::FallThrough();
@@ -201,10 +163,10 @@ Response PageHandler::Enable() {
 
 Response PageHandler::Disable() {
   enabled_ = false;
-  touch_emulation_enabled_ = false;
   screencast_enabled_ = false;
-  UpdateTouchEventEmulationState();
   color_picker_->SetEnabled(false);
+  if (screencast_listener_)
+    screencast_listener_->ScreencastEnabledChanged();
   return Response::FallThrough();
 }
 
@@ -284,59 +246,6 @@ Response PageHandler::NavigateToHistoryEntry(int entry_id) {
   return Response::InvalidParams("No entry with passed id");
 }
 
-Response PageHandler::SetGeolocationOverride(double* latitude,
-                                             double* longitude,
-                                             double* accuracy) {
-  if (!host_)
-    return Response::InternalError("Could not connect to view");
-
-  WebContentsImpl* web_contents = static_cast<WebContentsImpl*>(
-      WebContents::FromRenderViewHost(host_));
-  if (!web_contents)
-    return Response::InternalError("No WebContents to override");
-
-  GeolocationServiceContext* geolocation_context =
-      web_contents->GetGeolocationServiceContext();
-  scoped_ptr<Geoposition> geoposition(new Geoposition());
-  if (latitude && longitude && accuracy) {
-    geoposition->latitude = *latitude;
-    geoposition->longitude = *longitude;
-    geoposition->accuracy = *accuracy;
-    geoposition->timestamp = base::Time::Now();
-    if (!geoposition->Validate()) {
-      return Response::InternalError("Invalid geolocation");
-    }
-  } else {
-    geoposition->error_code = Geoposition::ERROR_CODE_POSITION_UNAVAILABLE;
-  }
-  geolocation_context->SetOverride(geoposition.Pass());
-  return Response::OK();
-}
-
-Response PageHandler::ClearGeolocationOverride() {
-  if (!host_)
-    return Response::InternalError("Could not connect to view");
-
-  WebContentsImpl* web_contents = static_cast<WebContentsImpl*>(
-      WebContents::FromRenderViewHost(host_));
-  if (!web_contents)
-    return Response::InternalError("No WebContents to override");
-
-  GeolocationServiceContext* geolocation_context =
-      web_contents->GetGeolocationServiceContext();
-  geolocation_context->ClearOverride();
-  return Response::OK();
-}
-
-Response PageHandler::SetTouchEmulationEnabled(
-    bool enabled, const std::string* configuration) {
-  touch_emulation_enabled_ = enabled;
-  touch_emulation_configuration_ =
-      configuration ? *configuration : std::string();
-  UpdateTouchEventEmulationState();
-  return Response::FallThrough();
-}
-
 Response PageHandler::CaptureScreenshot(DevToolsCommandId command_id) {
   if (!host_ || !host_->GetView())
     return Response::InternalError("Could not connect to view");
@@ -356,23 +265,6 @@ Response PageHandler::CanScreencast(bool* result) {
   return Response::OK();
 }
 
-Response PageHandler::CanEmulate(bool* result) {
-#if defined(OS_ANDROID)
-  *result = false;
-#else
-  if (host_) {
-    if (WebContents* web_contents = WebContents::FromRenderViewHost(host_)) {
-      *result = !web_contents->GetVisibleURL().SchemeIs(kChromeDevToolsScheme);
-    } else {
-      *result = true;
-    }
-  } else {
-    *result = true;
-  }
-#endif  // defined(OS_ANDROID)
-  return Response::OK();
-}
-
 Response PageHandler::StartScreencast(const std::string* format,
                                       const int* quality,
                                       const int* max_width,
@@ -388,7 +280,6 @@ Response PageHandler::StartScreencast(const std::string* format,
   screencast_max_width_ = max_width ? *max_width : -1;
   screencast_max_height_ = max_height ? *max_height : -1;
 
-  UpdateTouchEventEmulationState();
   bool visible = !host_->is_hidden();
   NotifyScreencastVisibility(visible);
   if (visible) {
@@ -397,26 +288,16 @@ Response PageHandler::StartScreencast(const std::string* format,
     else
       host_->Send(new ViewMsg_ForceRedraw(host_->GetRoutingID(), 0));
   }
+  if (screencast_listener_)
+    screencast_listener_->ScreencastEnabledChanged();
   return Response::FallThrough();
 }
 
 Response PageHandler::StopScreencast() {
   screencast_enabled_ = false;
-  UpdateTouchEventEmulationState();
+  if (screencast_listener_)
+    screencast_listener_->ScreencastEnabledChanged();
   return Response::FallThrough();
-}
-
-Response PageHandler::StartRecordingFrames(int max_frame_count) {
-  return frame_recorder_->StartRecordingFrames(max_frame_count);
-}
-
-Response PageHandler::StopRecordingFrames(DevToolsCommandId command_id) {
-  return frame_recorder_->StopRecordingFrames(base::Bind(
-      &PageHandler::OnFramesRecorded, base::Unretained(this), command_id));
-}
-
-Response PageHandler::CancelRecordingFrames() {
-  return frame_recorder_->CancelRecordingFrames();
 }
 
 Response PageHandler::ScreencastFrameAck(int frame_number) {
@@ -449,21 +330,6 @@ Response PageHandler::HandleJavaScriptDialog(bool accept,
 
 Response PageHandler::QueryUsageAndQuota(DevToolsCommandId command_id,
                                          const std::string& security_origin) {
-  if (!host_)
-    return Response::InternalError("Could not connect to view");
-
-  scoped_refptr<storage::QuotaManager> quota_manager =
-      host_->GetProcess()->GetStoragePartition()->GetQuotaManager();
-
-  BrowserThread::PostTask(
-      BrowserThread::IO,
-      FROM_HERE,
-      base::Bind(&QueryUsageAndQuotaOnIOThread,
-                 quota_manager,
-                 GURL(security_origin),
-                 base::Bind(&PageHandler::QueryUsageAndQuotaCompleted,
-                            weak_factory_.GetWeakPtr(),
-                            command_id)));
   return Response::OK();
 }
 
@@ -473,19 +339,6 @@ Response PageHandler::SetColorPickerEnabled(bool enabled) {
 
   color_picker_->SetEnabled(enabled);
   return Response::OK();
-}
-
-void PageHandler::UpdateTouchEventEmulationState() {
-  if (!host_)
-    return;
-  bool enabled = touch_emulation_enabled_ || screencast_enabled_;
-  ui::GestureProviderConfigType config_type =
-      TouchEmulationConfigurationToType(touch_emulation_configuration_);
-  host_->SetTouchEventEmulationEnabled(enabled, config_type);
-  WebContentsImpl* web_contents = static_cast<WebContentsImpl*>(
-      WebContents::FromRenderViewHost(host_));
-  if (web_contents)
-    web_contents->SetForceDisableOverscrollContent(enabled);
 }
 
 void PageHandler::NotifyScreencastVisibility(bool visible) {
@@ -626,18 +479,6 @@ void PageHandler::OnColorPicked(int r, int g, int b, int a) {
   scoped_refptr<dom::RGBA> color =
       dom::RGBA::Create()->set_r(r)->set_g(g)->set_b(b)->set_a(a);
   client_->ColorPicked(ColorPickedParams::Create()->set_color(color));
-}
-
-void PageHandler::OnFramesRecorded(
-    DevToolsCommandId command_id,
-    scoped_refptr<StopRecordingFramesResponse> response_data) {
-  client_->SendStopRecordingFramesResponse(command_id, response_data);
-}
-
-void PageHandler::QueryUsageAndQuotaCompleted(
-    DevToolsCommandId command_id,
-    scoped_refptr<QueryUsageAndQuotaResponse> response_data) {
-  client_->SendQueryUsageAndQuotaResponse(command_id, response_data);
 }
 
 }  // namespace page

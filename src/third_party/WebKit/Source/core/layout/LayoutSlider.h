@@ -21,14 +21,14 @@
 #ifndef LayoutSlider_h
 #define LayoutSlider_h
 
-#include "core/rendering/RenderFlexibleBox.h"
+#include "core/layout/LayoutFlexibleBox.h"
 
 namespace blink {
 
 class HTMLInputElement;
 class SliderThumbElement;
 
-class LayoutSlider final : public RenderFlexibleBox {
+class LayoutSlider final : public LayoutFlexibleBox {
 public:
     static const int defaultTrackLength;
 
@@ -37,9 +37,10 @@ public:
 
     bool inDragMode() const;
 
+    virtual const char* name() const override { return "LayoutSlider"; }
+
 private:
-    virtual const char* renderName() const override { return "LayoutSlider"; }
-    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectSlider || RenderFlexibleBox::isOfType(type); }
+    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectSlider || LayoutFlexibleBox::isOfType(type); }
 
     virtual int baselinePosition(FontBaseline, bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const override;
     virtual void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const override;

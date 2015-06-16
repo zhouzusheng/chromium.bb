@@ -31,13 +31,17 @@
 #include "config.h"
 #include "core/animation/AnimationTimeline.h"
 
-#include "core/animation/ActiveAnimations.h"
 #include "core/animation/AnimationClock.h"
+#include "core/animation/ElementAnimations.h"
 #include "core/dom/Document.h"
 #include "core/frame/FrameView.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/page/Page.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/TraceEvent.h"
+#include "public/platform/Platform.h"
+#include "public/platform/WebCompositorAnimationTimeline.h"
+#include "public/platform/WebCompositorSupport.h"
 
 namespace blink {
 
@@ -71,6 +75,9 @@ AnimationTimeline::AnimationTimeline(Document* document, PassOwnPtrWillBeRawPtr<
         m_timing = adoptPtrWillBeNoop(new AnimationTimelineTiming(this));
     else
         m_timing = timing;
+
+    if (RuntimeEnabledFeatures::compositorAnimationTimelinesEnabled() && Platform::current()->compositorSupport())
+        m_compositorTimeline = adoptPtr(Platform::current()->compositorSupport()->createAnimationTimeline());
 
     ASSERT(document);
 }
@@ -175,7 +182,7 @@ void AnimationTimeline::AnimationTimelineTiming::serviceOnNextFrame()
         m_timeline->m_document->view()->scheduleAnimation();
 }
 
-void AnimationTimeline::AnimationTimelineTiming::trace(Visitor* visitor)
+DEFINE_TRACE(AnimationTimeline::AnimationTimelineTiming)
 {
     visitor->trace(m_timeline);
     AnimationTimeline::PlatformTiming::trace(visitor);
@@ -308,7 +315,7 @@ void AnimationTimeline::detachFromDocument()
 }
 #endif
 
-void AnimationTimeline::trace(Visitor* visitor)
+DEFINE_TRACE(AnimationTimeline)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_document);

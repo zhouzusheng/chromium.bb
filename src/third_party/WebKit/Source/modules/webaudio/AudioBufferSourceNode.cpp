@@ -23,19 +23,17 @@
  */
 
 #include "config.h"
-
 #if ENABLE(WEB_AUDIO)
-
 #include "modules/webaudio/AudioBufferSourceNode.h"
 
 #include "bindings/core/v8/ExceptionMessages.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/frame/UseCounter.h"
-#include "platform/audio/AudioUtilities.h"
 #include "modules/webaudio/AudioContext.h"
 #include "modules/webaudio/AudioNodeOutput.h"
 #include "platform/FloatConversion.h"
+#include "platform/audio/AudioUtilities.h"
 #include "wtf/MainThread.h"
 #include "wtf/MathExtras.h"
 #include <algorithm>
@@ -49,13 +47,14 @@ const double DefaultGrainDuration = 0.020; // 20ms
 // to minimize linear interpolation aliasing.
 const double MaxRate = 1024;
 
-AudioBufferSourceNode* AudioBufferSourceNode::create(AudioContext* context, float sampleRate)
-{
-    return new AudioBufferSourceNode(context, sampleRate);
-}
+// Number of extra frames to use when determining if a source node can be stopped.  This should be
+// at least one rendering quantum, but we add one more quantum for good measure.  This doesn't need
+// to be extra precise, just more than one rendering quantum.  See |handleStoppableSourceNode()|.
+// FIXME: Expose the rendering quantum somehow instead of hardwiring a value here.
+const int kExtraStopFrames = 256;
 
-AudioBufferSourceNode::AudioBufferSourceNode(AudioContext* context, float sampleRate)
-    : AudioScheduledSourceNode(NodeTypeAudioBufferSource, context, sampleRate)
+AudioBufferSourceHandler::AudioBufferSourceHandler(AudioNode& node, float sampleRate)
+    : AudioScheduledSourceHandler(NodeTypeAudioBufferSource, node, sampleRate)
     , m_buffer(nullptr)
     , m_isLooping(false)
     , m_loopStart(0)
@@ -65,28 +64,28 @@ AudioBufferSourceNode::AudioBufferSourceNode(AudioContext* context, float sample
     , m_grainOffset(0.0)
     , m_grainDuration(DefaultGrainDuration)
 {
-    m_playbackRate = AudioParam::create(context, 1.0);
+    m_playbackRate = AudioParam::create(context(), 1.0);
 
     // Default to mono. A call to setBuffer() will set the number of output
     // channels to that of the buffer.
-    addOutput(AudioNodeOutput::create(this, 1));
+    addOutput(1);
 
     initialize();
 }
 
-AudioBufferSourceNode::~AudioBufferSourceNode()
+AudioBufferSourceHandler::~AudioBufferSourceHandler()
 {
     ASSERT(!isInitialized());
 }
 
-void AudioBufferSourceNode::dispose()
+void AudioBufferSourceHandler::dispose()
 {
     clearPannerNode();
     uninitialize();
-    AudioScheduledSourceNode::dispose();
+    AudioScheduledSourceHandler::dispose();
 }
 
-void AudioBufferSourceNode::process(size_t framesToProcess)
+void AudioBufferSourceHandler::process(size_t framesToProcess)
 {
     AudioBus* outputBus = output(0)->bus();
 
@@ -114,10 +113,7 @@ void AudioBufferSourceNode::process(size_t framesToProcess)
         size_t quantumFrameOffset;
         size_t bufferFramesToProcess;
 
-        updateSchedulingInfo(framesToProcess,
-                             outputBus,
-                             quantumFrameOffset,
-                             bufferFramesToProcess);
+        updateSchedulingInfo(framesToProcess, outputBus, quantumFrameOffset, bufferFramesToProcess);
 
         if (!bufferFramesToProcess) {
             outputBus->zero();
@@ -141,7 +137,7 @@ void AudioBufferSourceNode::process(size_t framesToProcess)
 }
 
 // Returns true if we're finished.
-bool AudioBufferSourceNode::renderSilenceAndFinishIfNotLooping(AudioBus*, unsigned index, size_t framesToProcess)
+bool AudioBufferSourceHandler::renderSilenceAndFinishIfNotLooping(AudioBus*, unsigned index, size_t framesToProcess)
 {
     if (!loop()) {
         // If we're not looping, then stop playing when we get to the end.
@@ -159,7 +155,7 @@ bool AudioBufferSourceNode::renderSilenceAndFinishIfNotLooping(AudioBus*, unsign
     return false;
 }
 
-bool AudioBufferSourceNode::renderFromBuffer(AudioBus* bus, unsigned destinationFrameOffset, size_t numberOfFrames)
+bool AudioBufferSourceHandler::renderFromBuffer(AudioBus* bus, unsigned destinationFrameOffset, size_t numberOfFrames)
 {
     ASSERT(context()->isAudioThread());
 
@@ -297,8 +293,9 @@ bool AudioBufferSourceNode::renderFromBuffer(AudioBus* bus, unsigned destination
                 if (loop()) {
                     // Make sure to wrap around at the end of the buffer.
                     readIndex2 = static_cast<unsigned>(virtualReadIndex + 1 - virtualDeltaFrames);
-                } else
+                } else {
                     readIndex2 = readIndex;
+                }
             }
 
             // Final sanity check on buffer access.
@@ -338,7 +335,7 @@ bool AudioBufferSourceNode::renderFromBuffer(AudioBus* bus, unsigned destination
 }
 
 
-void AudioBufferSourceNode::setBuffer(AudioBuffer* buffer, ExceptionState& exceptionState)
+void AudioBufferSourceHandler::setBuffer(AudioBuffer* buffer, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
 
@@ -391,12 +388,12 @@ void AudioBufferSourceNode::setBuffer(AudioBuffer* buffer, ExceptionState& excep
     m_buffer = buffer;
 }
 
-unsigned AudioBufferSourceNode::numberOfChannels()
+unsigned AudioBufferSourceHandler::numberOfChannels()
 {
     return output(0)->numberOfChannels();
 }
 
-void AudioBufferSourceNode::clampGrainParameters(const AudioBuffer* buffer)
+void AudioBufferSourceHandler::clampGrainParameters(const AudioBuffer* buffer)
 {
     ASSERT(buffer);
 
@@ -405,7 +402,12 @@ void AudioBufferSourceNode::clampGrainParameters(const AudioBuffer* buffer)
 
     m_grainOffset = clampTo(m_grainOffset, 0.0, bufferDuration);
 
-    if (loop()) {
+    // If the duration was not explicitly given, use the buffer duration to set the grain
+    // duration. Otherwise, we want to use the user-specified value, of course.
+    if (!m_isDurationGiven)
+        m_grainDuration = bufferDuration - m_grainOffset;
+
+    if (m_isDurationGiven && loop()) {
         // We're looping a grain with a grain duration specified. Schedule the loop to stop after
         // grainDuration seconds after starting, possibly running the loop multiple times if
         // grainDuration is larger than the buffer duration. The net effect is as if the user called
@@ -423,17 +425,22 @@ void AudioBufferSourceNode::clampGrainParameters(const AudioBuffer* buffer)
     m_virtualReadIndex = AudioUtilities::timeToSampleFrame(m_grainOffset, buffer->sampleRate());
 }
 
-void AudioBufferSourceNode::start(double when, ExceptionState& exceptionState)
+void AudioBufferSourceHandler::start(double when, ExceptionState& exceptionState)
 {
-    AudioScheduledSourceNode::start(when, exceptionState);
+    AudioScheduledSourceHandler::start(when, exceptionState);
 }
 
-void AudioBufferSourceNode::start(double when, double grainOffset, ExceptionState& exceptionState)
+void AudioBufferSourceHandler::start(double when, double grainOffset, ExceptionState& exceptionState)
 {
-    start(when, grainOffset, buffer() ? buffer()->duration() : 0, exceptionState);
+    startSource(when, grainOffset, buffer() ? buffer()->duration() : 0, false, exceptionState);
 }
 
-void AudioBufferSourceNode::start(double when, double grainOffset, double grainDuration, ExceptionState& exceptionState)
+void AudioBufferSourceHandler::start(double when, double grainOffset, double grainDuration, ExceptionState& exceptionState)
+{
+    startSource(when, grainOffset, grainDuration, true, exceptionState);
+}
+
+void AudioBufferSourceHandler::startSource(double when, double grainOffset, double grainDuration, bool isDurationGiven, ExceptionState& exceptionState)
 {
     ASSERT(isMainThread());
 
@@ -465,9 +472,16 @@ void AudioBufferSourceNode::start(double when, double grainOffset, double grainD
         return;
     }
 
+    m_isDurationGiven = isDurationGiven;
     m_isGrain = true;
     m_grainOffset = grainOffset;
     m_grainDuration = grainDuration;
+
+    // The node is started. Add a reference to keep us alive so that audio
+    // will eventually get played even if Javascript should drop all references
+    // to this node. The reference will get dropped when the source has finished
+    // playing.
+    context()->refNode(node());
 
     // If |when| < currentTime, the source must start now according to the spec.
     // So just set startTime to currentTime in this case to start the source now.
@@ -479,17 +493,19 @@ void AudioBufferSourceNode::start(double when, double grainOffset, double grainD
     m_playbackState = SCHEDULED_STATE;
 }
 
-double AudioBufferSourceNode::totalPitchRate()
+double AudioBufferSourceHandler::totalPitchRate()
 {
     double dopplerRate = 1.0;
     if (m_pannerNode)
-        dopplerRate = m_pannerNode->dopplerRate();
+        dopplerRate = m_pannerNode->pannerHandler().dopplerRate();
 
     // Incorporate buffer's sample-rate versus AudioContext's sample-rate.
     // Normally it's not an issue because buffers are loaded at the AudioContext's sample-rate, but we can handle it in any case.
     double sampleRateFactor = 1.0;
-    if (buffer())
-        sampleRateFactor = buffer()->sampleRate() / sampleRate();
+    if (buffer()) {
+        // Use doubles to compute this to full accuracy.
+        sampleRateFactor = buffer()->sampleRate() / static_cast<double>(sampleRate());
+    }
 
     double basePitchRate = playbackRate()->value();
 
@@ -509,37 +525,47 @@ double AudioBufferSourceNode::totalPitchRate()
     return totalRate;
 }
 
-bool AudioBufferSourceNode::propagatesSilence() const
+bool AudioBufferSourceHandler::propagatesSilence() const
 {
     return !isPlayingOrScheduled() || hasFinished() || !m_buffer;
 }
 
-void AudioBufferSourceNode::setPannerNode(PannerNode* pannerNode)
+void AudioBufferSourceHandler::setPannerNode(PannerNode* pannerNode)
 {
     if (m_pannerNode != pannerNode && !hasFinished()) {
         PannerNode* oldPannerNode(m_pannerNode.release());
         m_pannerNode = pannerNode;
         if (pannerNode)
-            pannerNode->makeConnection();
+            pannerNode->handler().makeConnection();
         if (oldPannerNode)
-            oldPannerNode->breakConnection();
+            oldPannerNode->handler().breakConnection();
     }
 }
 
-void AudioBufferSourceNode::clearPannerNode()
+void AudioBufferSourceHandler::clearPannerNode()
 {
     if (m_pannerNode) {
-        m_pannerNode->breakConnection();
+        m_pannerNode->handler().breakConnection();
         m_pannerNode.clear();
     }
 }
 
-void AudioBufferSourceNode::handleStoppableSourceNode()
+void AudioBufferSourceHandler::handleStoppableSourceNode()
 {
-    // If the source node is not looping, and we have a buffer, we can determine when the
-    // source would stop playing.
+    // If the source node is not looping, and we have a buffer, we can determine when the source
+    // would stop playing.  This is intended to handle the (uncommon) scenario where start() has
+    // been called but is never connected to the destination (directly or indirectly).  By stopping
+    // the node, the node can be collected.  Otherwise, the node will never get collected, leaking
+    // memory.
     if (!loop() && buffer() && isPlayingOrScheduled()) {
-        double stopTime = m_startTime + buffer()->duration();
+        // See crbug.com/478301. If a source node is started via start(), the source may not start
+        // at that time but one quantum (128 frames) later.  But we compute the stop time based on
+        // the start time and the duration, so we end up stopping one quantum early.  Thus, add a
+        // little extra time; we just need to stop the source sometime after it should have stopped
+        // if it hadn't already.  We don't need to be super precise on when to stop.
+        double extraStopTime = kExtraStopFrames / static_cast<double>(context()->sampleRate());
+        double stopTime = m_startTime + buffer()->duration() + extraStopTime;
+
         if (context()->currentTime() > stopTime) {
             // The context time has passed the time when the source nodes should have stopped
             // playing. Stop the node now and deref it. (But don't run the onEnded event because the
@@ -549,19 +575,101 @@ void AudioBufferSourceNode::handleStoppableSourceNode()
     }
 }
 
-void AudioBufferSourceNode::finish()
+void AudioBufferSourceHandler::finish()
 {
     clearPannerNode();
     ASSERT(!m_pannerNode);
-    AudioScheduledSourceNode::finish();
+    AudioScheduledSourceHandler::finish();
 }
 
-DEFINE_TRACE(AudioBufferSourceNode)
+DEFINE_TRACE(AudioBufferSourceHandler)
 {
     visitor->trace(m_buffer);
     visitor->trace(m_playbackRate);
     visitor->trace(m_pannerNode);
-    AudioScheduledSourceNode::trace(visitor);
+    AudioScheduledSourceHandler::trace(visitor);
+}
+
+// ----------------------------------------------------------------
+AudioBufferSourceNode::AudioBufferSourceNode(AudioContext& context, float sampleRate)
+    : AudioScheduledSourceNode(context)
+{
+    setHandler(new AudioBufferSourceHandler(*this, sampleRate));
+}
+
+AudioBufferSourceNode* AudioBufferSourceNode::create(AudioContext* context, float sampleRate)
+{
+    return new AudioBufferSourceNode(*context, sampleRate);
+}
+
+AudioBufferSourceHandler& AudioBufferSourceNode::audioBufferSourceHandler() const
+{
+    return static_cast<AudioBufferSourceHandler&>(handler());
+}
+
+AudioBuffer* AudioBufferSourceNode::buffer() const
+{
+    return audioBufferSourceHandler().buffer();
+}
+
+void AudioBufferSourceNode::setBuffer(AudioBuffer* newBuffer, ExceptionState& exceptionState)
+{
+    audioBufferSourceHandler().setBuffer(newBuffer, exceptionState);
+}
+
+AudioParam* AudioBufferSourceNode::playbackRate() const
+{
+    return audioBufferSourceHandler().playbackRate();
+}
+
+bool AudioBufferSourceNode::loop() const
+{
+    return audioBufferSourceHandler().loop();
+}
+
+void AudioBufferSourceNode::setLoop(bool loop)
+{
+    audioBufferSourceHandler().setLoop(loop);
+}
+
+double AudioBufferSourceNode::loopStart() const
+{
+    return audioBufferSourceHandler().loopStart();
+}
+
+void AudioBufferSourceNode::setLoopStart(double loopStart)
+{
+    audioBufferSourceHandler().setLoopStart(loopStart);
+}
+
+double AudioBufferSourceNode::loopEnd() const
+{
+    return audioBufferSourceHandler().loopEnd();
+}
+
+void AudioBufferSourceNode::setLoopEnd(double loopEnd)
+{
+    audioBufferSourceHandler().setLoopEnd(loopEnd);
+}
+
+void AudioBufferSourceNode::start(ExceptionState& exceptionState)
+{
+    audioBufferSourceHandler().start(exceptionState);
+}
+
+void AudioBufferSourceNode::start(double when, ExceptionState& exceptionState)
+{
+    audioBufferSourceHandler().start(when, exceptionState);
+}
+
+void AudioBufferSourceNode::start(double when, double grainOffset, ExceptionState& exceptionState)
+{
+    audioBufferSourceHandler().start(when, grainOffset, exceptionState);
+}
+
+void AudioBufferSourceNode::start(double when, double grainOffset, double grainDuration, ExceptionState& exceptionState)
+{
+    audioBufferSourceHandler().start(when, grainOffset, grainDuration, exceptionState);
 }
 
 } // namespace blink

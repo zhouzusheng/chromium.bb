@@ -31,55 +31,26 @@
 
 #include "core/css/StylePropertySet.h"
 #include "core/css/resolver/StyleResolverState.h"
-#include "core/layout/style/LayoutStyle.h"
+#include "core/style/ComputedStyle.h"
 
 namespace blink {
 
-#if ENABLE(OILPAN)
-bool CachedMatchedPropertiesHashTraits::traceInCollection(Visitor* visitor, Member<CachedMatchedProperties>& cachedProperties, WTF::ShouldWeakPointersBeMarkedStrongly strongify)
-{
-    // Only honor the cache's weakness semantics if the collection is traced
-    // with WeakPointersActWeak. Otherwise just trace the cachedProperties
-    // strongly, ie. call trace on it.
-    if (cachedProperties && strongify == WTF::WeakPointersActWeak) {
-        // A given cache entry is only kept alive if none of the MatchedProperties
-        // in the CachedMatchedProperties value contain a dead "properties" field.
-        // If there is a dead field the entire cache entry is removed.
-        for (const auto& matchedProperties : cachedProperties->matchedProperties) {
-            if (!visitor->isAlive(matchedProperties.properties)) {
-                // For now report the cache entry as dead. This might not
-                // be the final result if in a subsequent call for this entry,
-                // the "properties" field has been marked via another path.
-                return true;
-            }
-        }
-    }
-    // At this point none of the entries in the matchedProperties vector
-    // had a dead "properties" field so trace CachedMatchedProperties strongly.
-    // FIXME: traceInCollection is also called from WeakProcessing to check if the entry is dead.
-    // Avoid calling trace in that case by only calling trace when cachedProperties is not yet marked.
-    if (!visitor->isAlive(cachedProperties))
-        visitor->trace(cachedProperties);
-    return false;
-}
-#endif
-
-void CachedMatchedProperties::set(const LayoutStyle& style, const LayoutStyle& parentStyle, const MatchResult& matchResult)
+void CachedMatchedProperties::set(const ComputedStyle& style, const ComputedStyle& parentStyle, const MatchResult& matchResult)
 {
     matchedProperties.appendVector(matchResult.matchedProperties);
     ranges = matchResult.ranges;
 
-    // Note that we don't cache the original LayoutStyle instance. It may be further modified.
-    // The LayoutStyle in the cache is really just a holder for the substructures and never used as-is.
-    this->layoutStyle = LayoutStyle::clone(style);
-    this->parentLayoutStyle = LayoutStyle::clone(parentStyle);
+    // Note that we don't cache the original ComputedStyle instance. It may be further modified.
+    // The ComputedStyle in the cache is really just a holder for the substructures and never used as-is.
+    this->computedStyle = ComputedStyle::clone(style);
+    this->parentComputedStyle = ComputedStyle::clone(parentStyle);
 }
 
 void CachedMatchedProperties::clear()
 {
     matchedProperties.clear();
-    layoutStyle = nullptr;
-    parentLayoutStyle = nullptr;
+    computedStyle = nullptr;
+    parentComputedStyle = nullptr;
 }
 
 MatchedPropertiesCache::MatchedPropertiesCache()
@@ -103,7 +74,7 @@ const CachedMatchedProperties* MatchedPropertiesCache::find(unsigned hash, const
     size_t size = matchResult.matchedProperties.size();
     if (size != cacheItem->matchedProperties.size())
         return 0;
-    if (cacheItem->layoutStyle->insideLink() != styleResolverState.style()->insideLink())
+    if (cacheItem->computedStyle->insideLink() != styleResolverState.style()->insideLink())
         return 0;
     for (size_t i = 0; i < size; ++i) {
         if (matchResult.matchedProperties[i] != cacheItem->matchedProperties[i])
@@ -114,7 +85,7 @@ const CachedMatchedProperties* MatchedPropertiesCache::find(unsigned hash, const
     return cacheItem;
 }
 
-void MatchedPropertiesCache::add(const LayoutStyle& style, const LayoutStyle& parentStyle, unsigned hash, const MatchResult& matchResult)
+void MatchedPropertiesCache::add(const ComputedStyle& style, const ComputedStyle& parentStyle, unsigned hash, const MatchResult& matchResult)
 {
 #if !ENABLE(OILPAN)
     static const unsigned maxAdditionsBetweenSweeps = 100;
@@ -147,7 +118,7 @@ void MatchedPropertiesCache::clearViewportDependent()
     Vector<unsigned, 16> toRemove;
     for (const auto& cacheEntry : m_cache) {
         CachedMatchedProperties* cacheItem = cacheEntry.value.get();
-        if (cacheItem->layoutStyle->hasViewportUnits())
+        if (cacheItem->computedStyle->hasViewportUnits())
             toRemove.append(cacheEntry.key);
     }
     m_cache.removeAll(toRemove);
@@ -175,15 +146,15 @@ void MatchedPropertiesCache::sweep(Timer<MatchedPropertiesCache>*)
 }
 #endif
 
-bool MatchedPropertiesCache::isCacheable(const Element* element, const LayoutStyle& style, const LayoutStyle& parentStyle)
+bool MatchedPropertiesCache::isCacheable(const Element* element, const ComputedStyle& style, const ComputedStyle& parentStyle)
 {
     if (style.unique() || (style.styleType() != NOPSEUDO && parentStyle.unique()))
         return false;
     if (style.hasAppearance())
         return false;
-    if (style.zoom() != LayoutStyle::initialZoom())
+    if (style.zoom() != ComputedStyle::initialZoom())
         return false;
-    if (style.writingMode() != LayoutStyle::initialWritingMode())
+    if (style.writingMode() != ComputedStyle::initialWritingMode())
         return false;
     // The cache assumes static knowledge about which properties are inherited.
     if (parentStyle.hasExplicitlyInheritedProperties())
@@ -191,7 +162,7 @@ bool MatchedPropertiesCache::isCacheable(const Element* element, const LayoutSty
     return true;
 }
 
-void MatchedPropertiesCache::trace(Visitor* visitor)
+DEFINE_TRACE(MatchedPropertiesCache)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_cache);

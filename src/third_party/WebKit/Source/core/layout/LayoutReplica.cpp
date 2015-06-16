@@ -29,13 +29,12 @@
 #include "config.h"
 #include "core/layout/LayoutReplica.h"
 
-#include "core/layout/Layer.h"
 #include "core/paint/ReplicaPainter.h"
 
 namespace blink {
 
 LayoutReplica::LayoutReplica()
-    : RenderBox(0)
+    : LayoutBox(0)
 {
     // This is a hack. Replicas are synthetic, and don't pick up the attributes of the
     // renderers being replicated, so they always report that they are inline, non-replaced.

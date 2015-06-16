@@ -123,7 +123,7 @@
       },
       # TODO(pcc): Remove this once we properly support subtarget specific
       # code generation in LLVM (http://llvm.org/PR19416).
-      'cflags!': [ '-flto', ],
+      'cflags!': [ '-flto', '-fsanitize=cfi-vptr', ],
     },
   ],
 }

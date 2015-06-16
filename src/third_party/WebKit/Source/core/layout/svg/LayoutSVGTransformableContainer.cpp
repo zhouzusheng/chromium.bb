@@ -47,7 +47,7 @@ static bool hasValidPredecessor(const Node* node)
     return false;
 }
 
-bool LayoutSVGTransformableContainer::isChildAllowed(LayoutObject* child, const LayoutStyle& style) const
+bool LayoutSVGTransformableContainer::isChildAllowed(LayoutObject* child, const ComputedStyle& style) const
 {
     ASSERT(element());
     if (isSVGSwitchElement(*element())) {
@@ -74,7 +74,7 @@ bool LayoutSVGTransformableContainer::calculateLocalTransform()
     SVGGraphicsElement* element = toSVGGraphicsElement(this->element());
     ASSERT(element);
 
-    // If we're either the renderer for a <use> element, or for any <g> element inside the shadow
+    // If we're either the layoutObject for a <use> element, or for any <g> element inside the shadow
     // tree, that was created during the use/symbol/svg expansion in SVGUseElement. These containers
     // need to respect the translations induced by their corresponding use elements x/y attributes.
     SVGUseElement* useElement = 0;

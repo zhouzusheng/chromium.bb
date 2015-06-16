@@ -23,9 +23,9 @@
 #ifndef InlineTextBox_h
 #define InlineTextBox_h
 
+#include "core/layout/LayoutText.h" // so textRenderer() can be inline
 #include "core/layout/line/FloatToLayoutUnit.h"
 #include "core/layout/line/InlineBox.h"
-#include "core/rendering/RenderText.h" // so textRenderer() can be inline
 #include "platform/text/TextRun.h"
 #include "wtf/Forward.h"
 
@@ -50,7 +50,7 @@ public:
         setIsText(true);
     }
 
-    RenderText& renderer() const { return toRenderText(InlineBox::renderer()); }
+    LayoutText& layoutObject() const { return toLayoutText(InlineBox::layoutObject()); }
 
     virtual void destroy() override final;
 
@@ -81,7 +81,7 @@ public:
     virtual int baselinePosition(FontBaseline) const override final;
     virtual LayoutUnit lineHeight() const override final;
 
-    bool getEmphasisMarkPosition(const LayoutStyle&, TextEmphasisPosition&) const;
+    bool getEmphasisMarkPosition(const ComputedStyle&, TextEmphasisPosition&) const;
 
     LayoutRect logicalOverflowRect() const;
     void setLogicalOverflowRect(const LayoutRect&);
@@ -89,16 +89,19 @@ public:
     LayoutUnit logicalBottomVisualOverflow() const { return logicalOverflowRect().maxY(); }
 
     // charactersWithHyphen, if provided, must not be destroyed before the TextRun.
-    TextRun constructTextRun(const LayoutStyle&, const Font&, StringBuilder* charactersWithHyphen = 0) const;
-    TextRun constructTextRun(const LayoutStyle&, const Font&, StringView, int maximumLength, StringBuilder* charactersWithHyphen = 0) const;
+    TextRun constructTextRun(const ComputedStyle&, const Font&, StringBuilder* charactersWithHyphen = 0) const;
+    TextRun constructTextRun(const ComputedStyle&, const Font&, StringView, int maximumLength, StringBuilder* charactersWithHyphen = 0) const;
 
 #ifndef NDEBUG
     virtual void showBox(int = 0) const override;
-    virtual const char* boxName() const override;
 #endif
+    virtual const char* boxName() const override;
+    virtual String debugName() const override;
+
+    String text() const;
 
 public:
-    TextRun constructTextRunForInspector(const LayoutStyle&, const Font&) const;
+    TextRun constructTextRunForInspector(const ComputedStyle&, const Font&) const;
     virtual FloatRectWillBeLayoutRect calculateBoundaries() const override { return FloatRectWillBeLayoutRect(x(), y(), width(), height()); }
 
     virtual LayoutRect localSelectionRect(int startPos, int endPos);
@@ -106,12 +109,12 @@ public:
     void selectionStartEnd(int& sPos, int& ePos) const;
 
     // These functions both paint markers and update the DocumentMarker's renderedRect.
-    virtual void paintDocumentMarker(GraphicsContext*, const FloatPointWillBeLayoutPoint& boxOrigin, DocumentMarker*, const LayoutStyle&, const Font&, bool grammar);
-    virtual void paintTextMatchMarker(GraphicsContext*, const FloatPointWillBeLayoutPoint& boxOrigin, DocumentMarker*, const LayoutStyle&, const Font&);
+    virtual void paintDocumentMarker(GraphicsContext*, const FloatPointWillBeLayoutPoint& boxOrigin, DocumentMarker*, const ComputedStyle&, const Font&, bool grammar);
+    virtual void paintTextMatchMarker(GraphicsContext*, const FloatPointWillBeLayoutPoint& boxOrigin, DocumentMarker*, const ComputedStyle&, const Font&);
 
 protected:
     virtual void paint(const PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom) override;
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom) override;
+    virtual bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom) override;
 
 private:
     virtual void deleteLine() override final;

@@ -6,7 +6,7 @@
 #include "core/html/canvas/HitRegion.h"
 
 #include "core/dom/AXObjectCache.h"
-#include "core/rendering/RenderBoxModelObject.h"
+#include "core/layout/LayoutBoxModelObject.h"
 
 namespace blink {
 
@@ -23,7 +23,7 @@ HitRegion::HitRegion(const Path& path, const HitRegionOptions& options)
 
 void HitRegion::updateAccessibility(Element* canvas)
 {
-    if (!m_control || !canvas || !canvas->renderer() || !m_control->isDescendantOf(canvas))
+    if (!m_control || !canvas || !canvas->layoutObject() || !m_control->isDescendantOf(canvas))
         return;
 
     AXObjectCache* axObjectCache = m_control->document().existingAXObjectCache();
@@ -33,8 +33,8 @@ void HitRegion::updateAccessibility(Element* canvas)
     FloatRect boundingRect = m_path.boundingRect();
 
     // Offset by the canvas rect, taking border and padding into account.
-    RenderBoxModelObject* rbmo = canvas->renderBoxModelObject();
-    IntRect canvasRect = canvas->renderer()->absoluteBoundingBoxRect();
+    LayoutBoxModelObject* rbmo = canvas->layoutBoxModelObject();
+    IntRect canvasRect = canvas->layoutObject()->absoluteBoundingBoxRect();
     canvasRect.move(rbmo->borderLeft() + rbmo->paddingLeft(),
         rbmo->borderTop() + rbmo->paddingTop());
     LayoutRect elementRect = enclosingLayoutRect(boundingRect);

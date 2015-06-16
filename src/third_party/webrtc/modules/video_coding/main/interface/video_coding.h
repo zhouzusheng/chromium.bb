@@ -81,7 +81,8 @@ public:
         kReferenceSelection
     };
 
-    static VideoCodingModule* Create();
+    static VideoCodingModule* Create(
+        VideoEncoderRateObserver* encoder_rate_observer);
 
     static VideoCodingModule* Create(Clock* clock, EventFactory* event_factory);
 
@@ -191,8 +192,8 @@ public:
     // Return value      : VCM_OK, on success.
     //                     < 0,         on error.
     virtual int32_t RegisterExternalEncoder(VideoEncoder* externalEncoder,
-                                                  uint8_t payloadType,
-                                                  bool internalSource = false) = 0;
+                                            uint8_t payloadType,
+                                            bool internalSource = false) = 0;
 
     // API to get codec config parameters to be sent out-of-band to a receiver.
     //
@@ -380,8 +381,8 @@ public:
     // Return value      : VCM_OK, on success.
     //                     < 0,         on error.
     virtual int32_t RegisterExternalDecoder(VideoDecoder* externalDecoder,
-                                                  uint8_t payloadType,
-                                                  bool internalRenderTiming) = 0;
+                                            uint8_t payloadType,
+                                            bool internalRenderTiming) = 0;
 
     // Register a receive callback. Will be called whenever there is a new frame ready
     // for rendering.
@@ -526,38 +527,6 @@ public:
 
 
     // Robustness APIs
-
-    // Set the sender RTX/NACK mode.
-    // Input:
-    //      - mode       : the selected NACK mode.
-    //
-    // Return value      : VCM_OK, on success;
-    //                     < 0, on error.
-    virtual int SetSenderNackMode(SenderNackMode mode) = 0;
-
-    // Set the sender reference picture selection (RPS) mode.
-    // Input:
-    //      - enable     : true or false, for enable and disable, respectively.
-    //
-    // Return value      : VCM_OK, on success;
-    //                     < 0, on error.
-    virtual int SetSenderReferenceSelection(bool enable) = 0;
-
-    // Set the sender forward error correction (FEC) mode.
-    // Input:
-    //      - enable     : true or false, for enable and disable, respectively.
-    //
-    // Return value      : VCM_OK, on success;
-    //                     < 0, on error.
-    virtual int SetSenderFEC(bool enable) = 0;
-
-    // Set the key frame period, or disable periodic key frames (I-frames).
-    // Input:
-    //      - periodMs   : period in ms; <= 0 to disable periodic key frames.
-    //
-    // Return value      : VCM_OK, on success;
-    //                     < 0, on error.
-    virtual int SetSenderKeyFramePeriod(int periodMs) = 0;
 
     // Set the receiver robustness mode. The mode decides how the receiver
     // responds to losses in the stream. The type of counter-measure (soft or

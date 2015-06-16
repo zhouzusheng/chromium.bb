@@ -53,14 +53,18 @@ static WTF::String drawingTypeAsDebugString(DisplayItem::Type type)
     case DisplayItem::PopupListBoxBackground: return "DrawingPopupListBoxBackground";
     case DisplayItem::PopupListBoxRow: return "DrawingPopupListBoxRow";
     case DisplayItem::Resizer: return "DrawingResizer";
+    case DisplayItem::SVGClip: return "DrawingSVGClip";
     case DisplayItem::SVGFilter: return "DrawingSVGFilter";
+    case DisplayItem::SVGMask: return "DrawingSVGMask";
     case DisplayItem::ScrollbarCorner: return "DrawingScrollbarCorner";
     case DisplayItem::ScrollbarHorizontal: return "DrawingScrollbarHorizontal";
     case DisplayItem::ScrollbarTickMark: return "DrawingScrollbarTickMark";
     case DisplayItem::ScrollbarVertical: return "DrawingScrollbarVertical";
     case DisplayItem::SelectionGap: return "DrawingSelectionGap";
+    case DisplayItem::SelectionTint: return "DrawingSelectionTint";
     case DisplayItem::VideoBitmap: return "DrawingVideoBitmap";
     case DisplayItem::ViewBackground: return "DrawingViewBackground";
+    case DisplayItem::WebPlugin: return "DrawingWebPlugin";
     default:
         ASSERT_NOT_REACHED();
         return "Unknown";
@@ -94,6 +98,16 @@ static WTF::String clipTypeAsDebugString(DisplayItem::Type type)
     }
 }
 
+static String transform3DTypeAsDebugString(DisplayItem::Type type)
+{
+    switch (type) {
+    case DisplayItem::Transform3DElementTransform: return "Transform3DElementTransform";
+    default:
+        ASSERT_NOT_REACHED();
+        return "Unknown";
+    }
+}
+
 WTF::String DisplayItem::typeAsDebugString(Type type)
 {
     if (isDrawingType(type))
@@ -112,6 +126,11 @@ WTF::String DisplayItem::typeAsDebugString(Type type)
     PAINT_PHASE_BASED_DEBUG_STRINGS(Scroll);
     if (isEndScrollType(type))
         return "End" + typeAsDebugString(endScrollTypeToScrollType(type));
+
+    if (isTransform3DType(type))
+        return transform3DTypeAsDebugString(type);
+    if (isEndTransform3DType(type))
+        return "End" + transform3DTypeAsDebugString(endTransform3DTypeToTransform3DType(type));
 
     PAINT_PHASE_BASED_DEBUG_STRINGS(SubtreeCached);
     PAINT_PHASE_BASED_DEBUG_STRINGS(BeginSubtree);
@@ -143,12 +162,12 @@ WTF::String DisplayItem::asDebugString() const
 
 void DisplayItem::dumpPropertiesAsDebugString(WTF::StringBuilder& stringBuilder) const
 {
-    stringBuilder.append(String::format("client: \"%p\", ", client()));
+    stringBuilder.append(String::format("client: \"%p", client()));
     if (!clientDebugString().isEmpty()) {
+        stringBuilder.append(' ');
         stringBuilder.append(clientDebugString());
-        stringBuilder.append(", ");
     }
-    stringBuilder.append("type: \"");
+    stringBuilder.append("\", type: \"");
     stringBuilder.append(typeAsDebugString(type()));
     stringBuilder.append('"');
     if (m_id.scopeContainer)

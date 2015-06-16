@@ -42,7 +42,7 @@ public:
     GrGLuint textureFBOID() const { return fTexFBOID; }
 
     // override of GrRenderTarget
-    ResolveType getResolveType() const SK_OVERRIDE {
+    ResolveType getResolveType() const override {
         if (!this->isMultisampled() ||
             fRTFBOID == fTexFBOID) {
             // catches FBO 0 and non MSAA case
@@ -54,6 +54,9 @@ public:
         }
     }
 
+    /** When we don't own the FBO ID we don't attempt to modify its attachments. */
+    bool canAttemptStencilAttachment() const override { return !fIsWrapped; }
+
 protected:
     // The public constructor registers this object with the cache. However, only the most derived
     // class should register with the cache. This constructor does not do the registration and
@@ -63,11 +66,11 @@ protected:
 
     void init(const GrSurfaceDesc&, const IDDesc&);
 
-    void onAbandon() SK_OVERRIDE;
-    void onRelease() SK_OVERRIDE;
+    void onAbandon() override;
+    void onRelease() override;
 
     // In protected because subclass GrGLTextureRenderTarget calls this version.
-    size_t onGpuMemorySize() const SK_OVERRIDE;
+    size_t onGpuMemorySize() const override;
 
 private:
     GrGLuint      fRTFBOID;

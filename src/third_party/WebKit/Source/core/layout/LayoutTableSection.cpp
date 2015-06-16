@@ -27,13 +27,14 @@
 #include "core/layout/LayoutTableSection.h"
 
 #include "core/layout/HitTestResult.h"
+#include "core/layout/LayoutAnalyzer.h"
 #include "core/layout/LayoutTableCell.h"
 #include "core/layout/LayoutTableCol.h"
 #include "core/layout/LayoutTableRow.h"
+#include "core/layout/LayoutView.h"
 #include "core/layout/PaintInfo.h"
 #include "core/layout/SubtreeLayoutScope.h"
 #include "core/paint/TableSectionPainter.h"
-#include "core/rendering/RenderView.h"
 #include "wtf/HashSet.h"
 #include <limits>
 
@@ -78,7 +79,7 @@ row, const LayoutTableCell* cell)
 }
 
 LayoutTableSection::LayoutTableSection(Element* element)
-    : RenderBox(element)
+    : LayoutBox(element)
     , m_cCol(0)
     , m_cRow(0)
     , m_outerBorderStart(0)
@@ -97,9 +98,9 @@ LayoutTableSection::~LayoutTableSection()
 {
 }
 
-void LayoutTableSection::styleDidChange(StyleDifference diff, const LayoutStyle* oldStyle)
+void LayoutTableSection::styleDidChange(StyleDifference diff, const ComputedStyle* oldStyle)
 {
-    RenderBox::styleDidChange(diff, oldStyle);
+    LayoutBox::styleDidChange(diff, oldStyle);
     propagateStyleToAnonymousChildren();
 
     // If border was changed, notify table.
@@ -110,7 +111,7 @@ void LayoutTableSection::styleDidChange(StyleDifference diff, const LayoutStyle*
 
 void LayoutTableSection::willBeRemovedFromTree()
 {
-    RenderBox::willBeRemovedFromTree();
+    LayoutBox::willBeRemovedFromTree();
 
     // Preventively invalidate our cells as we may be re-inserted into
     // a new table which would require us to rebuild our structure.
@@ -174,7 +175,7 @@ void LayoutTableSection::addChild(LayoutObject* child, LayoutObject* beforeChild
         beforeChild = splitAnonymousBoxesAroundChild(beforeChild);
 
     ASSERT(!beforeChild || beforeChild->isTableRow());
-    RenderBox::addChild(child, beforeChild);
+    LayoutBox::addChild(child, beforeChild);
 }
 
 void LayoutTableSection::ensureRows(unsigned numRows)
@@ -808,6 +809,7 @@ int LayoutTableSection::calcRowLogicalHeight()
 void LayoutTableSection::layout()
 {
     ASSERT(needsLayout());
+    LayoutAnalyzer::Scope analyzer(*this);
     ASSERT(!needsCellRecalc());
     ASSERT(!table()->needsSectionRecalc());
 
@@ -948,7 +950,7 @@ int LayoutTableSection::distributeExtraLogicalHeightToRows(int extraLogicalHeigh
 
 static bool shouldFlexCellChild(LayoutObject* cellDescendant)
 {
-    return cellDescendant->isReplaced() || (cellDescendant->isBox() && toRenderBox(cellDescendant)->scrollsOverflow());
+    return cellDescendant->isReplaced() || (cellDescendant->isBox() && toLayoutBox(cellDescendant)->scrollsOverflow());
 }
 
 void LayoutTableSection::layoutRows()
@@ -958,6 +960,8 @@ void LayoutTableSection::layoutRows()
 #endif
 
     ASSERT(!needsLayout());
+
+    LayoutAnalyzer::Scope analyzer(*this);
 
     // FIXME: Changing the height without a layout can change the overflow so it seems wrong.
 
@@ -1188,7 +1192,7 @@ int LayoutTableSection::calcBlockDirectionOuterBorder(BlockBorderSide side) cons
         const CellStruct& current = cellAt(side == BorderBefore ? 0 : m_grid.size() - 1, c);
         if (current.inColSpan || !current.hasCells())
             continue;
-        const LayoutStyle& primaryCellStyle = current.primaryCell()->styleRef();
+        const ComputedStyle& primaryCellStyle = current.primaryCell()->styleRef();
         const BorderValue& cb = side == BorderBefore ? primaryCellStyle.borderBefore() : primaryCellStyle.borderAfter(); // FIXME: Make this work with perpendicular and flipped cells.
         // FIXME: Don't repeat for the same col group
         LayoutTableCol* colGroup = table()->colElement(c);
@@ -1246,8 +1250,8 @@ int LayoutTableSection::calcInlineDirectionOuterBorder(InlineBorderSide side) co
         if (!current.hasCells())
             continue;
         // FIXME: Don't repeat for the same cell
-        const LayoutStyle& primaryCellStyle = current.primaryCell()->styleRef();
-        const LayoutStyle& primaryCellParentStyle = current.primaryCell()->parent()->styleRef();
+        const ComputedStyle& primaryCellStyle = current.primaryCell()->styleRef();
+        const ComputedStyle& primaryCellParentStyle = current.primaryCell()->parent()->styleRef();
         const BorderValue& cb = side == BorderStart ? primaryCellStyle.borderStart() : primaryCellStyle.borderEnd(); // FIXME: Make this work with perpendicular and flipped cells.
         const BorderValue& rb = side == BorderStart ? primaryCellParentStyle.borderStart() : primaryCellParentStyle.borderEnd();
         if (cb.style() == BHIDDEN || rb.style() == BHIDDEN)
@@ -1444,7 +1448,7 @@ void LayoutTableSection::recalcCells()
     }
 
     m_grid.shrinkToFit();
-    setNeedsLayoutAndFullPaintInvalidation();
+    setNeedsLayoutAndFullPaintInvalidation(LayoutInvalidationReason::Unknown);
 }
 
 // FIXME: This function could be made O(1) in certain cases (like for the non-most-constrainive cells' case).
@@ -1540,7 +1544,7 @@ void LayoutTableSection::splitColumn(unsigned pos, unsigned first)
 }
 
 // Hit Testing
-bool LayoutTableSection::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction action)
+bool LayoutTableSection::nodeAtPoint(HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction action)
 {
     // If we have no children then we have nothing to do.
     if (!firstRow())
@@ -1561,7 +1565,7 @@ bool LayoutTableSection::nodeAtPoint(const HitTestRequest& request, HitTestResul
             // then we can remove this check.
             if (!row->hasSelfPaintingLayer()) {
                 LayoutPoint childPoint = flipForWritingModeForChild(row, adjustedLocation);
-                if (row->nodeAtPoint(request, result, locationInContainer, childPoint, action)) {
+                if (row->nodeAtPoint(result, locationInContainer, childPoint, action)) {
                     updateHitTestResult(result, toLayoutPoint(locationInContainer.point() - childPoint));
                     return true;
                 }
@@ -1572,7 +1576,7 @@ bool LayoutTableSection::nodeAtPoint(const HitTestRequest& request, HitTestResul
 
     recalcCellsIfNeeded();
 
-    LayoutRect hitTestRect = locationInContainer.boundingBox();
+    LayoutRect hitTestRect = LayoutRect(locationInContainer.boundingBox());
     hitTestRect.moveBy(-adjustedLocation);
 
     LayoutRect tableAlignedRect = logicalRectForWritingModeAndDirection(hitTestRect);
@@ -1592,15 +1596,15 @@ bool LayoutTableSection::nodeAtPoint(const HitTestRequest& request, HitTestResul
                 --i;
                 LayoutTableCell* cell = current.cells[i];
                 LayoutPoint cellPoint = flipForWritingModeForChild(cell, adjustedLocation);
-                if (static_cast<LayoutObject*>(cell)->nodeAtPoint(request, result, locationInContainer, cellPoint, action)) {
+                if (static_cast<LayoutObject*>(cell)->nodeAtPoint(result, locationInContainer, cellPoint, action)) {
                     updateHitTestResult(result, locationInContainer.point() - toLayoutSize(cellPoint));
                     return true;
                 }
             }
-            if (!result.isRectBasedTest())
+            if (!result.hitTestRequest().listBased())
                 break;
         }
-        if (!result.isRectBasedTest())
+        if (!result.hitTestRequest().listBased())
             break;
     }
 
@@ -1616,23 +1620,32 @@ void LayoutTableSection::removeCachedCollapsedBorders(const LayoutTableCell* cel
         m_cellsCollapsedBorders.remove(std::make_pair(cell, side));
 }
 
-void LayoutTableSection::setCachedCollapsedBorder(const LayoutTableCell* cell, CollapsedBorderSide side, CollapsedBorderValue border)
+bool LayoutTableSection::setCachedCollapsedBorder(const LayoutTableCell* cell, CollapsedBorderSide side, const CollapsedBorderValue& border)
 {
     ASSERT(table()->collapseBorders());
-    m_cellsCollapsedBorders.set(std::make_pair(cell, side), border);
+    CellsCollapsedBordersMap::iterator it = m_cellsCollapsedBorders.find(std::make_pair(cell, side));
+    if (it == m_cellsCollapsedBorders.end()) {
+        m_cellsCollapsedBorders.add(std::make_pair(cell, side), border);
+        return true;
+    }
+    if (!it->value.equals(border)) {
+        it->value = border;
+        return true;
+    }
+    return false;
 }
 
-CollapsedBorderValue& LayoutTableSection::cachedCollapsedBorder(const LayoutTableCell* cell, CollapsedBorderSide side)
+const CollapsedBorderValue& LayoutTableSection::cachedCollapsedBorder(const LayoutTableCell* cell, CollapsedBorderSide side) const
 {
     ASSERT(table()->collapseBorders());
-    HashMap<pair<const LayoutTableCell*, int>, CollapsedBorderValue>::iterator it = m_cellsCollapsedBorders.find(std::make_pair(cell, side));
+    CellsCollapsedBordersMap::const_iterator it = m_cellsCollapsedBorders.find(std::make_pair(cell, side));
     ASSERT_WITH_SECURITY_IMPLICATION(it != m_cellsCollapsedBorders.end());
     return it->value;
 }
 
 LayoutTableSection* LayoutTableSection::createAnonymousWithParentRenderer(const LayoutObject* parent)
 {
-    RefPtr<LayoutStyle> newStyle = LayoutStyle::createAnonymousStyleWithDisplay(parent->styleRef(), TABLE_ROW_GROUP);
+    RefPtr<ComputedStyle> newStyle = ComputedStyle::createAnonymousStyleWithDisplay(parent->styleRef(), TABLE_ROW_GROUP);
     LayoutTableSection* newSection = new LayoutTableSection(0);
     newSection->setDocumentForAnonymous(&parent->document());
     newSection->setStyle(newStyle.release());

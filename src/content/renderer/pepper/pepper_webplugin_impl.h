@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_RENDERER_PEPPER_PPEPPER_WEBPLUGIN_IMPL_H_
-#define CONTENT_RENDERER_PEPPER_PPEPPER_WEBPLUGIN_IMPL_H_
+#ifndef CONTENT_RENDERER_PEPPER_PEPPER_WEBPLUGIN_IMPL_H_
+#define CONTENT_RENDERER_PEPPER_PEPPER_WEBPLUGIN_IMPL_H_
 
 #include <string>
 #include <vector>
@@ -48,8 +48,9 @@ class PepperWebPluginImpl : public blink::WebPlugin {
   virtual bool getFormValue(blink::WebString& value);
   virtual void paint(blink::WebCanvas* canvas, const blink::WebRect& rect);
   virtual void updateGeometry(
-      const blink::WebRect& frame_rect,
+      const blink::WebRect& window_rect,
       const blink::WebRect& clip_rect,
+      const blink::WebRect& unobscured_rect,
       const blink::WebVector<blink::WebRect>& cut_outs_rects,
       bool is_visible);
   virtual void updateFocus(bool focused, blink::WebFocusType focus_type);
@@ -110,4 +111,4 @@ class PepperWebPluginImpl : public blink::WebPlugin {
 
 }  // namespace content
 
-#endif  // CONTENT_RENDERER_PEPPER_PPEPPER_WEBPLUGIN_IMPL_H_
+#endif  // CONTENT_RENDERER_PEPPER_PEPPER_WEBPLUGIN_IMPL_H_

@@ -153,14 +153,14 @@ bool SpdyFramerVisitorInterface::OnRstStreamFrameData(
 
 SpdyFramer::SpdyFramer(SpdyMajorVersion version)
     : current_frame_buffer_(new char[kControlFrameBufferSize]),
-      enable_compression_(true),
+      expect_continuation_(0),
       visitor_(NULL),
       debug_visitor_(NULL),
       display_protocol_("SPDY"),
       protocol_version_(version),
+      enable_compression_(true),
       syn_frame_processed_(false),
       probable_http_response_(false),
-      expect_continuation_(0),
       end_stream_when_done_(false) {
   DCHECK_GE(protocol_version_, SPDY_MIN_VERSION);
   DCHECK_LE(protocol_version_, SPDY_MAX_VERSION);
@@ -1197,8 +1197,8 @@ void SpdyFramer::WriteHeaderBlock(SpdyFrameBuilder* frame,
   SpdyHeaderBlock::const_iterator it;
   for (it = headers->begin(); it != headers->end(); ++it) {
     if (spdy_version < SPDY3) {
-      frame->WriteString(it->first);
-      frame->WriteString(it->second);
+      frame->WriteStringPiece16(it->first);
+      frame->WriteStringPiece16(it->second);
     } else {
       frame->WriteStringPiece32(it->first);
       frame->WriteStringPiece32(it->second);
@@ -1422,8 +1422,8 @@ size_t SpdyFramer::ProcessControlFrameBeforeHeaderBlock(const char* data,
             priority = priority >> 5;
           }
 
-         // Seek past unused byte; used to be credential slot in SPDY 3.
-         reader.Seek(1);
+          // Seek past unused byte; used to be credential slot in SPDY 3.
+          reader.Seek(1);
 
           DCHECK(reader.IsDoneReading());
           if (debug_visitor_) {
@@ -2968,7 +2968,9 @@ size_t SpdyFramer::GetNumberRequiredContinuationFrames(size_t size) {
   DCHECK_GT(protocol_version(), SPDY3);
   DCHECK_GT(size, kMaxControlFrameSize);
   size_t overflow = size - kMaxControlFrameSize;
-  return overflow / (kMaxControlFrameSize - GetContinuationMinimumSize()) + 1;
+  size_t payload_size = kMaxControlFrameSize - GetContinuationMinimumSize();
+  // This is ceiling(overflow/payload_size) using integer arithmetics.
+  return (overflow - 1) / payload_size + 1;
 }
 
 void SpdyFramer::WritePayloadWithContinuation(SpdyFrameBuilder* builder,
@@ -3214,8 +3216,8 @@ void SpdyFramer::SerializeNameValueBlockWithoutCompression(
        it != name_value_block.end();
        ++it) {
     if (protocol_version() <= SPDY2) {
-      builder->WriteString(it->first);
-      builder->WriteString(it->second);
+      builder->WriteStringPiece16(it->first);
+      builder->WriteStringPiece16(it->second);
     } else {
       builder->WriteStringPiece32(it->first);
       builder->WriteStringPiece32(it->second);

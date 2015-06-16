@@ -151,6 +151,12 @@ extern const char kZombieTrace[];
 }  // namespace mac
 #endif
 
+#if defined(KASKO)
+// Used to correlate a report sent via Kasko with one sent via Breakpad.
+extern const char kKaskoGuid[];
+extern const char kKaskoEquivalentGuid[];
+#endif
+
 }  // namespace crash_keys
 
 #endif  // CHROME_COMMON_CRASH_KEYS_H_

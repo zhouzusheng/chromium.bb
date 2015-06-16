@@ -26,14 +26,14 @@
 #ifndef LayoutTableCol_h
 #define LayoutTableCol_h
 
-#include "core/rendering/RenderBox.h"
+#include "core/layout/LayoutBox.h"
 
 namespace blink {
 
 class LayoutTable;
 class LayoutTableCell;
 
-class LayoutTableCol final : public RenderBox {
+class LayoutTableCol final : public LayoutBox {
 public:
     explicit LayoutTableCol(Element*);
 
@@ -78,26 +78,27 @@ public:
     const BorderValue& borderAdjoiningCellBefore(const LayoutTableCell*) const;
     const BorderValue& borderAdjoiningCellAfter(const LayoutTableCell*) const;
 
+    virtual const char* name() const override { return "LayoutTableCol"; }
+
 private:
     virtual LayoutObjectChildList* virtualChildren() override { return children(); }
     virtual const LayoutObjectChildList* virtualChildren() const override { return children(); }
 
-    virtual const char* renderName() const override { return "LayoutTableCol"; }
-    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectLayoutTableCol || RenderBox::isOfType(type); }
+    virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectLayoutTableCol || LayoutBox::isOfType(type); }
     virtual void updateFromElement() override;
     virtual void computePreferredLogicalWidths() override { ASSERT_NOT_REACHED(); }
 
     virtual void insertedIntoTree() override;
     virtual void willBeRemovedFromTree() override;
 
-    virtual bool isChildAllowed(LayoutObject*, const LayoutStyle&) const override;
+    virtual bool isChildAllowed(LayoutObject*, const ComputedStyle&) const override;
     virtual bool canHaveChildren() const override;
-    virtual LayerType layerTypeRequired() const override { return NoLayer; }
+    virtual DeprecatedPaintLayerType layerTypeRequired() const override { return NoDeprecatedPaintLayer; }
 
-    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutLayerModelObject* paintInvalidationContainer, const PaintInvalidationState* = 0) const override;
+    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* = 0) const override;
     virtual void imageChanged(WrappedImagePtr, const IntRect* = 0) override;
 
-    virtual void styleDidChange(StyleDifference, const LayoutStyle* oldStyle) override;
+    virtual void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override;
 
     LayoutTable* table() const;
 

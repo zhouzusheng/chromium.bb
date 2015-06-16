@@ -91,7 +91,7 @@ WebInspector.FileSystemView.prototype = {
 
     _refresh: function()
     {
-        this._directoryTree.children[0].refresh();
+        this._directoryTree.firstChild().refresh();
     },
 
     _confirmDelete: function()
@@ -116,7 +116,7 @@ WebInspector.FileSystemView.prototype = {
  */
 WebInspector.FileSystemView.EntryTreeElement = function(fileSystemView, entry)
 {
-    TreeElement.call(this, entry.name, null, entry.isDirectory);
+    TreeElement.call(this, entry.name, entry.isDirectory);
 
     this._entry = entry;
     this._fileSystemView = fileSystemView;
@@ -166,7 +166,7 @@ WebInspector.FileSystemView.EntryTreeElement.prototype = {
     _directoryContentReceived: function(errorCode, entries)
     {
         if (errorCode === FileError.NOT_FOUND_ERR) {
-            if (this.parent !== this.treeOutline)
+            if (this.parent)
                 this.parent.refresh();
             return;
         }
@@ -180,7 +180,7 @@ WebInspector.FileSystemView.EntryTreeElement.prototype = {
         if (this._view)
             this._view.showEntries(entries);
 
-        var oldChildren = this.children.slice(0);
+        var oldChildren = this.children().slice(0);
 
         var newEntryIndex = 0;
         var oldChildIndex = 0;

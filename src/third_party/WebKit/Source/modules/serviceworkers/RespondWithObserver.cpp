@@ -201,17 +201,10 @@ void RespondWithObserver::responseWasFulfilled(const ScriptValue& value)
         responseWasRejected();
         return;
     }
-    response->setBodyUsed();
+    response->lockBody(Body::PassBody);
     if (BodyStreamBuffer* buffer = response->internalBuffer()) {
-        if (buffer == response->buffer() && response->streamAccessed()) {
-            bool dataLost = false;
-            buffer = response->createDrainingStream(&dataLost);
-            if (dataLost) {
-                executionContext()->addConsoleMessage(ConsoleMessage::create(JSMessageSource, ErrorMessageLevel, "Returning the stream accessed Response to the page is not supported."));
-                responseWasRejected();
-                return;
-            }
-        }
+        if (buffer == response->buffer() && response->isBodyConsumed())
+            buffer = response->createDrainingStream();
         WebServiceWorkerResponse webResponse;
         response->populateWebServiceWorkerResponse(webResponse);
         RefPtrWillBeMember<Stream> outStream(Stream::create(executionContext(), ""));

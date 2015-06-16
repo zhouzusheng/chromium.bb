@@ -9,6 +9,7 @@
 #ifndef LIBANGLE_RENDERER_D3D_PROGRAMD3D_H_
 #define LIBANGLE_RENDERER_D3D_PROGRAMD3D_H_
 
+#include "compiler/translator/blocklayoutHLSL.h"
 #include "libANGLE/Constants.h"
 #include "libANGLE/renderer/ProgramImpl.h"
 #include "libANGLE/renderer/Workarounds.h"
@@ -80,7 +81,7 @@ class ProgramD3D : public ProgramImpl
 
     void initializeUniformStorage();
     gl::Error applyUniforms();
-    gl::Error applyUniformBuffers(const std::vector<gl::Buffer*> boundBuffers, const gl::Caps &caps);
+    gl::Error applyUniformBuffers(const gl::Data &data, GLuint uniformBlockBindings[]) override;
     bool assignUniformBlockRegister(gl::InfoLog &infoLog, gl::UniformBlock *uniformBlock, GLenum shader,
                                     unsigned int registerIndex, const gl::Caps &caps);
     void dirtyAllUniforms();
@@ -127,8 +128,6 @@ class ProgramD3D : public ProgramImpl
                                 int sortedSemanticIndices[gl::MAX_VERTEX_ATTRIBS]) const;
 
   private:
-    DISALLOW_COPY_AND_ASSIGN(ProgramD3D);
-
     class VertexExecutable
     {
       public:
@@ -204,10 +203,10 @@ class ProgramD3D : public ProgramImpl
     ShaderExecutableD3D *mGeometryExecutable;
 
     std::string mVertexHLSL;
-    D3DWorkaroundType mVertexWorkarounds;
+    D3DCompilerWorkarounds mVertexWorkarounds;
 
     std::string mPixelHLSL;
-    D3DWorkaroundType mPixelWorkarounds;
+    D3DCompilerWorkarounds mPixelWorkarounds;
     bool mUsesFragDepth;
     std::vector<PixelShaderOutputVariable> mPixelShaderKey;
 
@@ -223,6 +222,12 @@ class ProgramD3D : public ProgramImpl
     GLuint mUsedVertexSamplerRange;
     GLuint mUsedPixelSamplerRange;
     bool mDirtySamplerMapping;
+
+    // Cache for validateSamplers
+    std::vector<GLenum> mTextureUnitTypesCache;
+
+    // Cache for getPixelExecutableForFramebuffer
+    std::vector<GLenum> mPixelShaderOutputFormatCache;
 
     int mShaderVersion;
 

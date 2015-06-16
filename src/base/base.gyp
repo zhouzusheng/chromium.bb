@@ -126,6 +126,14 @@
               },
             },
           },
+          'copies': [
+            {
+              'destination': '<(PRODUCT_DIR)/',
+              'files': [
+                '../build/win/dbghelp_xp/dbghelp.dll',
+              ],
+            },
+          ],
         }],
         ['OS == "mac" or (OS == "ios" and _toolset == "host")', {
           'link_settings': {
@@ -302,12 +310,18 @@
       # TODO(pasko): Remove this target when crbug.com/424562 is fixed.
       # GN: //base:protect_file_posix
       'target_name': 'protect_file_posix',
-      'type': 'static_library',
-      'dependencies': [
-        'base',
-      ],
-      'sources': [
-        'files/protect_file_posix.cc',
+      'conditions': [
+        ['os_posix == 1', {
+          'type': 'static_library',
+          'dependencies': [
+            'base',
+          ],
+          'sources': [
+            'files/protect_file_posix.cc',
+          ],
+        }, {
+          'type': 'none',
+        }],
       ],
     },
     {
@@ -450,8 +464,6 @@
         'mac/scoped_sending_event_unittest.mm',
         'md5_unittest.cc',
         'memory/aligned_memory_unittest.cc',
-        'memory/discardable_memory_manager_unittest.cc',
-        'memory/discardable_memory_unittest.cc',
         'memory/discardable_shared_memory_unittest.cc',
         'memory/linked_ptr_unittest.cc',
         'memory/ref_counted_memory_unittest.cc',
@@ -506,6 +518,7 @@
         'process/process_metrics_unittest_ios.cc',
         'process/process_unittest.cc',
         'process/process_util_unittest.cc',
+        'profiler/stack_sampling_profiler_unittest.cc',
         'profiler/tracked_time_unittest.cc',
         'rand_util_unittest.cc',
         'scoped_clear_errno_unittest.cc',
@@ -567,14 +580,6 @@
         'timer/mock_timer_unittest.cc',
         'timer/timer_unittest.cc',
         'tools_sanity_unittest.cc',
-        'trace_event/memory_dump_manager_unittest.cc',
-        'trace_event/process_memory_totals_dump_provider_unittest.cc',
-        'trace_event/trace_event_argument_unittest.cc',
-        'trace_event/trace_event_memory_unittest.cc',
-        'trace_event/trace_event_synthetic_delay_unittest.cc',
-        'trace_event/trace_event_system_stats_monitor_unittest.cc',
-        'trace_event/trace_event_unittest.cc',
-        'trace_event/trace_event_win_unittest.cc',
         'tracked_objects_unittest.cc',
         'tuple_unittest.cc',
         'values_unittest.cc',
@@ -599,6 +604,7 @@
         'win/startup_information_unittest.cc',
         'win/win_util_unittest.cc',
         'win/wrapped_window_proc_unittest.cc',
+        '<@(trace_event_test_sources)',
       ],
       'dependencies': [
         'base',
@@ -738,15 +744,15 @@
             ['include', '^sys_string_conversions_mac_unittest\\.mm$'],
           ],
         }],
-        ['OS == "android" and _toolset == "target"', {
-          'sources': [
-            'memory/discardable_memory_ashmem_allocator_unittest.cc',
-          ],
-        }],
         ['OS == "android"', {
           'sources/': [
             ['include', '^debug/proc_maps_linux_unittest\\.cc$'],
           ],
+        }],
+        # Enable more direct string conversions on platforms with native utf8
+        # strings
+        ['OS=="mac" or OS=="ios" or <(chromeos)==1 or <(chromecast)==1', {
+          'defines': ['SYSTEM_NATIVE_UTF8'],
         }],
       ],  # target_conditions
     },
@@ -784,6 +790,7 @@
     ['OS!="ios"', {
       'targets': [
         {
+          # GN: //base:check_example
           'target_name': 'check_example',
           'type': 'executable',
           'sources': [
@@ -1047,6 +1054,28 @@
           'msvs_settings': {
             'VCLinkerTool': {
               'SubSystem': '2',         # Set /SUBSYSTEM:WINDOWS
+            },
+          },
+        },
+        {
+          # Target to manually rebuild pe_image_test.dll which is checked into
+          # base/test/data/pe_image.
+          'target_name': 'pe_image_test',
+          'type': 'shared_library',
+          'sources': [
+            'win/pe_image_test.cc',
+          ],
+          'msvs_settings': {
+            'VCLinkerTool': {
+              'SubSystem': '2',         # Set /SUBSYSTEM:WINDOWS
+              'DelayLoadDLLs': [
+                'cfgmgr32.dll',
+                'shell32.dll',
+              ],
+              'AdditionalDependencies': [
+                'cfgmgr32.lib',
+                'shell32.lib',
+              ],
             },
           },
         },

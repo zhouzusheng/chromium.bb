@@ -28,7 +28,7 @@
 #include "core/layout/LayoutMedia.h"
 
 #include "core/html/HTMLMediaElement.h"
-#include "core/rendering/RenderView.h"
+#include "core/layout/LayoutView.h"
 
 namespace blink {
 
@@ -53,32 +53,61 @@ void LayoutMedia::layout()
 
     LayoutImage::layout();
 
-    RenderBox* controlsRenderer = toRenderBox(m_children.firstChild());
-    if (!controlsRenderer)
-        return;
-
-    bool controlsNeedLayout = controlsRenderer->needsLayout();
     LayoutSize newSize = contentBoxRect().size();
-    if (newSize == oldSize && !controlsNeedLayout)
-        return;
 
     LayoutState state(*this, locationOffset());
 
-    controlsRenderer->setLocation(LayoutPoint(borderLeft(), borderTop()) + LayoutSize(paddingLeft(), paddingTop()));
-    controlsRenderer->style()->setHeight(Length(newSize.height(), Fixed));
-    controlsRenderer->style()->setWidth(Length(newSize.width(), Fixed));
-    controlsRenderer->forceLayout();
+    // Iterate the children in reverse order so that the media controls are laid
+    // out before the text track container. This is to ensure that the text
+    // track rendering has an up-to-date position of the media controls for
+    // overlap checking, see LayoutVTTCue.
+#if ENABLE(ASSERT)
+    bool seenTextTrackContainer = false;
+#endif
+    for (LayoutObject* child = m_children.lastChild(); child; child = child->previousSibling()) {
+#if ENABLE(ASSERT)
+        if (child->node()->isMediaControls())
+            ASSERT(!seenTextTrackContainer);
+        else if (child->node()->isTextTrackContainer())
+            seenTextTrackContainer = true;
+        else
+            ASSERT_NOT_REACHED();
+#endif
+
+        if (newSize == oldSize && !child->needsLayout())
+            continue;
+
+        LayoutBox* layoutBox = toLayoutBox(child);
+        layoutBox->setLocation(LayoutPoint(borderLeft(), borderTop()) + LayoutSize(paddingLeft(), paddingTop()));
+        // TODO(philipj): Remove the mutableStyleRef() and depend on CSS
+        // width/height: inherit to match the media element size.
+        layoutBox->mutableStyleRef().setHeight(Length(newSize.height(), Fixed));
+        layoutBox->mutableStyleRef().setWidth(Length(newSize.width(), Fixed));
+        layoutBox->forceLayout();
+    }
+
     clearNeedsLayout();
 }
 
-bool LayoutMedia::isChildAllowed(LayoutObject* child, const LayoutStyle&) const
+bool LayoutMedia::isChildAllowed(LayoutObject* child, const ComputedStyle&) const
 {
-    // The only allowed child is the media controls. The user agent stylesheet
-    // (mediaControls.css) has ::-webkit-media-controls { display: flex; }. If
-    // author style sets display: inline we would get an inline renderer as a
-    // child of replaced content, which is not supposed to be possible. This
-    // check can be removed if ::-webkit-media-controls is made internal.
-    return child->isFlexibleBox();
+    // Two types of child layout objects are allowed: media controls
+    // and the text track container. Filter children by node type.
+    ASSERT(child->node());
+
+    // The user agent stylesheet (mediaControls.css) has
+    // ::-webkit-media-controls { display: flex; }. If author style
+    // sets display: inline we would get an inline renderer as a child
+    // of replaced content, which is not supposed to be possible. This
+    // check can be removed if ::-webkit-media-controls is made
+    // internal.
+    if (child->node()->isMediaControls())
+        return child->isFlexibleBox();
+
+    if (child->node()->isTextTrackContainer())
+        return true;
+
+    return false;
 }
 
 void LayoutMedia::paintReplaced(const PaintInfo&, const LayoutPoint&)

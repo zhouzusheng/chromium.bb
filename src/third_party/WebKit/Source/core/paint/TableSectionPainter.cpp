@@ -12,8 +12,8 @@
 #include "core/layout/PaintInfo.h"
 #include "core/paint/BoxClipper.h"
 #include "core/paint/GraphicsContextAnnotator.h"
+#include "core/paint/LayoutObjectDrawingRecorder.h"
 #include "core/paint/ObjectPainter.h"
-#include "core/paint/RenderDrawingRecorder.h"
 #include "core/paint/TableCellPainter.h"
 #include "core/paint/TableRowPainter.h"
 
@@ -40,8 +40,11 @@ void TableSectionPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& p
         paintObject(paintInfo, adjustedPaintOffset);
     }
 
-    if ((paintInfo.phase == PaintPhaseOutline || paintInfo.phase == PaintPhaseSelfOutline) && m_layoutTableSection.style()->visibility() == VISIBLE)
-        ObjectPainter(m_layoutTableSection).paintOutline(paintInfo, LayoutRect(adjustedPaintOffset, m_layoutTableSection.size()));
+    if ((paintInfo.phase == PaintPhaseOutline || paintInfo.phase == PaintPhaseSelfOutline) && m_layoutTableSection.style()->visibility() == VISIBLE) {
+        LayoutRect visualOverflowRect(m_layoutTableSection.visualOverflowRect());
+        visualOverflowRect.moveBy(adjustedPaintOffset);
+        ObjectPainter(m_layoutTableSection).paintOutline(paintInfo, LayoutRect(adjustedPaintOffset, m_layoutTableSection.size()), visualOverflowRect);
+    }
 }
 
 static inline bool compareCellPositions(LayoutTableCell* elem1, LayoutTableCell* elem2)
@@ -61,7 +64,7 @@ static inline bool compareCellPositionsWithOverflowingCells(LayoutTableCell* ele
 
 void TableSectionPainter::paintObject(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
-    LayoutRect localPaintInvalidationRect = paintInfo.rect;
+    LayoutRect localPaintInvalidationRect = LayoutRect(paintInfo.rect);
     localPaintInvalidationRect.moveBy(-paintOffset);
 
     LayoutRect tableAlignedRect = m_layoutTableSection.logicalRectForWritingModeAndDirection(localPaintInvalidationRect);
@@ -171,7 +174,7 @@ void TableSectionPainter::paintCell(LayoutTableCell* cell, const PaintInfo& pain
 
         TableCellPainter tableCellPainter(*cell);
 
-        RenderDrawingRecorder recorder(paintInfo.context, *cell, paintPhase, tableCellPainter.paintBounds(paintOffset, TableCellPainter::AddOffsetFromParent));
+        LayoutObjectDrawingRecorder recorder(*paintInfo.context, *cell, paintPhase, tableCellPainter.paintBounds(paintOffset, TableCellPainter::AddOffsetFromParent));
         if (!recorder.canUseCachedDrawing()) {
             // Column groups and columns first.
             // FIXME: Columns and column groups do not currently support opacity, and they are being painted "too late" in

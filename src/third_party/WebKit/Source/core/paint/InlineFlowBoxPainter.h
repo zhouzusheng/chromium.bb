@@ -5,7 +5,7 @@
 #ifndef InlineFlowBoxPainter_h
 #define InlineFlowBoxPainter_h
 
-#include "core/layout/style/ShadowData.h"
+#include "core/style/ShadowData.h"
 #include "platform/graphics/GraphicsTypes.h"
 #include "platform/text/TextDirection.h"
 
@@ -19,7 +19,7 @@ class LayoutRect;
 class LayoutSize;
 class LayoutUnit;
 struct PaintInfo;
-class LayoutStyle;
+class ComputedStyle;
 
 class InlineFlowBoxPainter {
 public:
@@ -31,9 +31,16 @@ private:
     void paintMask(const PaintInfo&, const LayoutPoint&);
     void paintFillLayers(const PaintInfo&, const Color&, const FillLayer&, const LayoutRect&, SkXfermode::Mode = SkXfermode::kSrcOver_Mode);
     void paintFillLayer(const PaintInfo&, const Color&, const FillLayer&, const LayoutRect&, SkXfermode::Mode);
-    void paintBoxShadow(const PaintInfo&, const LayoutStyle&, ShadowStyle, const LayoutRect&);
+    void paintBoxShadow(const PaintInfo&, const ComputedStyle&, ShadowStyle, const LayoutRect&);
     LayoutRect roundedFrameRectClampedToLineTopAndBottomIfNeeded() const;
     LayoutRect paintRectForImageStrip(const LayoutPoint&, const LayoutSize&, TextDirection) const;
+
+    enum BorderPaintingType {
+        DontPaintBorders,
+        PaintBordersWithoutClip,
+        PaintBordersWithClip
+    };
+    BorderPaintingType getBorderPaintType(const LayoutRect& adjustedFrameRect, LayoutRect& adjustedClipRect) const;
 
     InlineFlowBox& m_inlineFlowBox;
 };

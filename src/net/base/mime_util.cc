@@ -342,7 +342,7 @@ static const char* const common_media_types[] = {
   "audio/x-wav",
 
 #if defined(OS_ANDROID)
-  // HLS. Supported by Android ICS and above.
+  // HLS.
   "application/vnd.apple.mpegurl",
   "application/x-mpegurl",
 #endif
@@ -486,16 +486,6 @@ static bool IsCodecSupportedOnAndroid(MimeUtil::Codec codec) {
 
   return false;
 }
-
-static bool IsMimeTypeSupportedOnAndroid(const std::string& mimeType) {
-  // HLS codecs are supported in ICS and above (API level 14)
-  if ((!mimeType.compare("application/vnd.apple.mpegurl") ||
-      !mimeType.compare("application/x-mpegurl")) &&
-      base::android::BuildInfo::GetInstance()->sdk_int() < 14) {
-    return false;
-  }
-  return true;
-}
 #endif
 
 struct MediaFormatStrict {
@@ -523,10 +513,18 @@ static const char kMP4AudioCodecsExpression[] =
     "mp4a.66,mp4a.67,mp4a.68,mp4a.69,mp4a.6B,mp4a.40.2,mp4a.40.02,mp4a.40.5,"
     "mp4a.40.05,mp4a.40.29";
 static const char kMP4VideoCodecsExpression[] =
+    // This is not a complete list of supported avc1 codecs. It is simply used
+    // to register support for the corresponding Codec enum. Instead of using
+    // strings in these three arrays, we should use the Codec enum values.
+    // This will avoid confusion and unnecessary parsing at runtime.
+    // kUnambiguousCodecStringMap/kAmbiguousCodecStringMap should be the only
+    // mapping from strings to codecs. See crbug.com/461009.
     "avc1.42E00A,avc1.4D400A,avc1.64000A,"
     "mp4a.66,mp4a.67,mp4a.68,mp4a.69,mp4a.6B,mp4a.40.2,mp4a.40.02,mp4a.40.5,"
     "mp4a.40.05,mp4a.40.29";
 
+// These containers are also included in
+// common_media_types/proprietary_media_types. See crbug.com/461012.
 static const MediaFormatStrict format_codec_mappings[] = {
     {"video/webm", "opus,vorbis,vp8,vp8.0,vp9,vp9.0"},
     {"audio/webm", "opus,vorbis"},
@@ -561,8 +559,9 @@ struct CodecIDMappings {
 // codec and profile being requested.
 //
 // The "mp4a" strings come from RFC 6381.
-static const CodecIDMappings kUnambiguousCodecIDs[] = {
+static const CodecIDMappings kUnambiguousCodecStringMap[] = {
     {"1", MimeUtil::PCM},  // We only allow this for WAV so it isn't ambiguous.
+    // avc1/avc3.XXXXXX may be unambiguous; handled by ParseH264CodecID().
     {"mp3", MimeUtil::MP3},
     {"mp4a.66", MimeUtil::MPEG2_AAC_MAIN},
     {"mp4a.67", MimeUtil::MPEG2_AAC_LC},
@@ -586,10 +585,11 @@ static const CodecIDMappings kUnambiguousCodecIDs[] = {
 // enough information to determine the codec and profile.
 // The codec in these entries indicate the codec and profile
 // we assume the user is trying to indicate.
-static const CodecIDMappings kAmbiguousCodecIDs[] = {
-  { "mp4a.40", MimeUtil::MPEG4_AAC_LC },
-  { "avc1", MimeUtil::H264_BASELINE },
-  { "avc3", MimeUtil::H264_BASELINE },
+static const CodecIDMappings kAmbiguousCodecStringMap[] = {
+    {"mp4a.40", MimeUtil::MPEG4_AAC_LC},
+    {"avc1", MimeUtil::H264_BASELINE},
+    {"avc3", MimeUtil::H264_BASELINE},
+    // avc1/avc3.XXXXXX may be ambiguous; handled by ParseH264CodecID().
 };
 
 MimeUtil::MimeUtil() : allow_proprietary_codecs_(false) {
@@ -635,10 +635,6 @@ void MimeUtil::InitializeMimeTypeMaps() {
   for (size_t i = 0; i < arraysize(supported_javascript_types); ++i)
     non_image_map_.insert(supported_javascript_types[i]);
   for (size_t i = 0; i < arraysize(common_media_types); ++i) {
-#if defined(OS_ANDROID)
-    if (!IsMimeTypeSupportedOnAndroid(common_media_types[i]))
-      continue;
-#endif
     non_image_map_.insert(common_media_types[i]);
   }
 #if defined(USE_PROPRIETARY_CODECS)
@@ -650,10 +646,6 @@ void MimeUtil::InitializeMimeTypeMaps() {
 
   // Initialize the supported media types.
   for (size_t i = 0; i < arraysize(common_media_types); ++i) {
-#if defined(OS_ANDROID)
-    if (!IsMimeTypeSupportedOnAndroid(common_media_types[i]))
-      continue;
-#endif
     media_map_.insert(common_media_types[i]);
   }
 #if defined(USE_PROPRIETARY_CODECS)
@@ -664,14 +656,14 @@ void MimeUtil::InitializeMimeTypeMaps() {
   for (size_t i = 0; i < arraysize(supported_javascript_types); ++i)
     javascript_map_.insert(supported_javascript_types[i]);
 
-  for (size_t i = 0; i < arraysize(kUnambiguousCodecIDs); ++i) {
-    string_to_codec_map_[kUnambiguousCodecIDs[i].codec_id] =
-        CodecEntry(kUnambiguousCodecIDs[i].codec, false);
+  for (size_t i = 0; i < arraysize(kUnambiguousCodecStringMap); ++i) {
+    string_to_codec_map_[kUnambiguousCodecStringMap[i].codec_id] =
+        CodecEntry(kUnambiguousCodecStringMap[i].codec, false);
   }
 
-  for (size_t i = 0; i < arraysize(kAmbiguousCodecIDs); ++i) {
-    string_to_codec_map_[kAmbiguousCodecIDs[i].codec_id] =
-        CodecEntry(kAmbiguousCodecIDs[i].codec, true);
+  for (size_t i = 0; i < arraysize(kAmbiguousCodecStringMap); ++i) {
+    string_to_codec_map_[kAmbiguousCodecStringMap[i].codec_id] =
+        CodecEntry(kAmbiguousCodecStringMap[i].codec, true);
   }
 
   // Initialize the strict supported media types.
@@ -1275,7 +1267,6 @@ void GetExtensionsFromHardCodedMappings(
     size_t mappings_len,
     const std::string& leading_mime_type,
     base::hash_set<base::FilePath::StringType>* extensions) {
-  base::FilePath::StringType extension;
   for (size_t i = 0; i < mappings_len; ++i) {
     if (StartsWithASCII(mappings[i].mime_type, leading_mime_type, false)) {
       std::vector<string> this_extensions;

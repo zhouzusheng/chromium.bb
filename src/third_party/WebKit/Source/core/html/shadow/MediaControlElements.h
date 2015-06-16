@@ -49,11 +49,12 @@ private:
     explicit MediaControlPanelElement(MediaControls&);
 
     virtual void defaultEventHandler(Event*) override;
+    virtual bool keepEventInNode(Event*) override;
 
     void startTimer();
     void stopTimer();
     void transitionTimerFired(Timer<MediaControlPanelElement>*);
-    virtual bool keepEventInNode(Event*) override;
+    void didBecomeVisible();
 
     bool m_isDisplayed;
     bool m_opaque;
@@ -235,25 +236,6 @@ public:
 private:
     explicit MediaControlCurrentTimeDisplayElement(MediaControls&);
 };
-
-// ----------------------------
-
-class MediaControlTextTrackContainerElement final : public MediaControlDivElement {
-public:
-    static PassRefPtrWillBeRawPtr<MediaControlTextTrackContainerElement> create(MediaControls&);
-
-    void updateDisplay();
-    void updateSizes();
-
-private:
-    explicit MediaControlTextTrackContainerElement(MediaControls&);
-
-    virtual LayoutObject* createRenderer(const LayoutStyle&) override;
-
-    IntRect m_videoDisplaySize;
-    float m_fontSize;
-};
-
 
 } // namespace blink
 

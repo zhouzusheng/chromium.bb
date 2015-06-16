@@ -6,6 +6,7 @@ found in the LICENSE file.
 -->
 
 <link rel="import" href="/core/trace_model/timed_event.html">
+<link rel="import" href="/core/analysis/util.html">
 
 <script>
 'use strict';
@@ -18,10 +19,11 @@ tv.exportTo('tv.c.trace_model', function() {
    * The ProcessMemoryDump represents a memory dump of a single process.
    * @constructor
    */
-  function ProcessMemoryDump(globalMemoryDump, process, start) {
+  function ProcessMemoryDump(globalMemoryDump, process, start, opt_args) {
     tv.c.trace_model.TimedEvent.call(this, start);
     this.process = process;
     this.globalMemoryDump = globalMemoryDump;
+    this.args = opt_args;
   };
 
   ProcessMemoryDump.prototype = {
@@ -45,8 +47,22 @@ tv.exportTo('tv.c.trace_model', function() {
         obj[key] = this[key];
       }
       return obj;
+    },
+
+    get userFriendlyName() {
+      return 'Process memory dump ' + ' at ' +
+          tv.c.analysis.tsString(this.start);
     }
   };
+
+  tv.c.trace_model.EventRegistry.register(
+      ProcessMemoryDump,
+      {
+        name: 'processMemoryDump',
+        pluralName: 'processMemoryDumps',
+        singleViewElementName: 'tv-c-single-process-memory-dump-sub-view',
+        multiViewElementName: 'tv-c-multi-process-memory-dump-sub-view'
+      });
 
   return {
     ProcessMemoryDump: ProcessMemoryDump

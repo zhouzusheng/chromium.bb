@@ -17,23 +17,19 @@ class ConvertableToTraceFormat;
 }
 
 namespace cc {
-class LayerTreeSettings;
 
 class CC_EXPORT SchedulerSettings {
  public:
   SchedulerSettings();
-  explicit SchedulerSettings(const LayerTreeSettings& settings);
   ~SchedulerSettings();
 
   bool use_external_begin_frame_source;
-  bool forward_begin_frames_to_children;
   bool main_frame_before_activation_enabled;
   bool impl_side_painting;
   bool timeout_and_draw_when_animation_checkerboards;
   int maximum_number_of_failed_draws_before_draw_is_forced_;
   bool using_synchronous_renderer_compositor;
   bool throttle_frame_production;
-  bool disable_hi_res_timer_tasks_on_battery;
 
   // In main thread low latency mode the entire
   // BeginMainFrame->Commit->Activation->Draw cycle should complete before

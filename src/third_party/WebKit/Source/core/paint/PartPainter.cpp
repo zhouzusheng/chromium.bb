@@ -5,12 +5,12 @@
 #include "config.h"
 #include "core/paint/PartPainter.h"
 
-#include "core/layout/Layer.h"
 #include "core/layout/LayoutPart.h"
 #include "core/layout/PaintInfo.h"
 #include "core/paint/BoxPainter.h"
+#include "core/paint/DeprecatedPaintLayer.h"
 #include "core/paint/GraphicsContextAnnotator.h"
-#include "core/paint/RenderDrawingRecorder.h"
+#include "core/paint/LayoutObjectDrawingRecorder.h"
 #include "core/paint/RoundedInnerRectClipper.h"
 #include "core/paint/ScrollableAreaPainter.h"
 #include "core/paint/TransformRecorder.h"
@@ -35,8 +35,11 @@ void PartPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffs
         return;
     }
 
+    LayoutRect visualOverflowRect(m_layoutPart.visualOverflowRect());
+    visualOverflowRect.moveBy(adjustedPaintOffset);
+
     if ((paintInfo.phase == PaintPhaseOutline || paintInfo.phase == PaintPhaseSelfOutline) && m_layoutPart.style()->hasOutline())
-        ObjectPainter(m_layoutPart).paintOutline(paintInfo, borderRect);
+        ObjectPainter(m_layoutPart).paintOutline(paintInfo, borderRect, visualOverflowRect);
 
     if (paintInfo.phase != PaintPhaseForeground)
         return;
@@ -61,8 +64,9 @@ void PartPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffs
         LayoutRect rect = m_layoutPart.localSelectionRect();
         rect.moveBy(adjustedPaintOffset);
         IntRect selectionRect = pixelSnappedIntRect(rect);
-        RenderDrawingRecorder recorder(paintInfo.context, m_layoutPart, paintInfo.phase, selectionRect);
-        paintInfo.context->fillRect(selectionRect, m_layoutPart.selectionBackgroundColor());
+        LayoutObjectDrawingRecorder drawingRecorder(*paintInfo.context, m_layoutPart, paintInfo.phase, selectionRect);
+        if (!drawingRecorder.canUseCachedDrawing())
+            paintInfo.context->fillRect(selectionRect, m_layoutPart.selectionBackgroundColor());
     }
 
     if (m_layoutPart.canResize())
@@ -85,8 +89,8 @@ void PartPainter::paintContents(const PaintInfo& paintInfo, const LayoutPoint& p
 
     IntSize widgetPaintOffset = paintLocation - widgetLocation;
     // When painting widgets into compositing layers, tx and ty are relative to the enclosing compositing layer,
-    // not the root. In this case, shift the CTM and adjust the paintRect to be root-relative to fix plug-in drawing.
-    TransformRecorder transform(*paintInfo.context, m_layoutPart.displayItemClient(),
+    // not the root. In this case, shift the CTM and adjust the paintRect to be root-relative to fix plugin drawing.
+    TransformRecorder transform(*paintInfo.context, m_layoutPart,
         AffineTransform::translation(widgetPaintOffset.width(), widgetPaintOffset.height()));
     paintRect.move(-widgetPaintOffset);
     widget->paint(paintInfo.context, paintRect);

@@ -31,10 +31,10 @@ namespace blink {
 
 inline SVGForeignObjectElement::SVGForeignObjectElement(Document& document)
     : SVGGraphicsElement(SVGNames::foreignObjectTag, document)
-    , m_x(SVGAnimatedLength::create(this, SVGNames::xAttr, SVGLength::create(LengthModeWidth), AllowNegativeLengths))
-    , m_y(SVGAnimatedLength::create(this, SVGNames::yAttr, SVGLength::create(LengthModeHeight), AllowNegativeLengths))
-    , m_width(SVGAnimatedLength::create(this, SVGNames::widthAttr, SVGLength::create(LengthModeWidth), ForbidNegativeLengths))
-    , m_height(SVGAnimatedLength::create(this, SVGNames::heightAttr, SVGLength::create(LengthModeHeight), ForbidNegativeLengths))
+    , m_x(SVGAnimatedLength::create(this, SVGNames::xAttr, SVGLength::create(SVGLengthMode::Width), AllowNegativeLengths))
+    , m_y(SVGAnimatedLength::create(this, SVGNames::yAttr, SVGLength::create(SVGLengthMode::Height), AllowNegativeLengths))
+    , m_width(SVGAnimatedLength::create(this, SVGNames::widthAttr, SVGLength::create(SVGLengthMode::Width), ForbidNegativeLengths))
+    , m_height(SVGAnimatedLength::create(this, SVGNames::heightAttr, SVGLength::create(SVGLengthMode::Height), ForbidNegativeLengths))
 {
     addToPropertyMap(m_x);
     addToPropertyMap(m_y);
@@ -65,11 +65,6 @@ bool SVGForeignObjectElement::isSupportedAttribute(const QualifiedName& attrName
         supportedAttributes.add(SVGNames::heightAttr);
     }
     return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
-}
-
-void SVGForeignObjectElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
-{
-    parseAttributeNew(name, value);
 }
 
 bool SVGForeignObjectElement::isPresentationAttribute(const QualifiedName& name) const
@@ -122,17 +117,17 @@ void SVGForeignObjectElement::svgAttributeChanged(const QualifiedName& attrName)
             isWidthHeightAttribute ? StyleChangeReasonForTracing::create(StyleChangeReason::SVGContainerSizeChange) : StyleChangeReasonForTracing::fromAttribute(attrName));
 
         updateRelativeLengthsInformation();
-        if (LayoutObject* renderer = this->renderer())
+        if (LayoutObject* renderer = this->layoutObject())
             markForLayoutAndParentResourceInvalidation(renderer);
     }
 }
 
-LayoutObject* SVGForeignObjectElement::createRenderer(const LayoutStyle&)
+LayoutObject* SVGForeignObjectElement::createLayoutObject(const ComputedStyle&)
 {
     return new LayoutSVGForeignObject(this);
 }
 
-bool SVGForeignObjectElement::rendererIsNeeded(const LayoutStyle& style)
+bool SVGForeignObjectElement::layoutObjectIsNeeded(const ComputedStyle& style)
 {
     // Suppress foreignObject renderers in SVG hidden containers.
     // (https://bugs.webkit.org/show_bug.cgi?id=87297)
@@ -141,13 +136,13 @@ bool SVGForeignObjectElement::rendererIsNeeded(const LayoutStyle& style)
     // parentOrShadowHostElement() instead.
     Element* ancestor = parentElement();
     while (ancestor && ancestor->isSVGElement()) {
-        if (ancestor->renderer() && ancestor->renderer()->isSVGHiddenContainer())
+        if (ancestor->layoutObject() && ancestor->layoutObject()->isSVGHiddenContainer())
             return false;
 
         ancestor = ancestor->parentElement();
     }
 
-    return SVGGraphicsElement::rendererIsNeeded(style);
+    return SVGGraphicsElement::layoutObjectIsNeeded(style);
 }
 
 bool SVGForeignObjectElement::selfHasRelativeLengths() const

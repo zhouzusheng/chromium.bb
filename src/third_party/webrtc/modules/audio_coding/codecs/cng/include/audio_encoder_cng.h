@@ -13,10 +13,10 @@
 
 #include <vector>
 
+#include "webrtc/base/scoped_ptr.h"
 #include "webrtc/common_audio/vad/include/vad.h"
 #include "webrtc/modules/audio_coding/codecs/audio_encoder.h"
 #include "webrtc/modules/audio_coding/codecs/cng/include/webrtc_cng.h"
-#include "webrtc/system_wrappers/interface/scoped_ptr.h"
 
 namespace webrtc {
 
@@ -44,35 +44,33 @@ class AudioEncoderCng final : public AudioEncoder {
 
   explicit AudioEncoderCng(const Config& config);
 
-  virtual ~AudioEncoderCng();
+  ~AudioEncoderCng() override;
 
-  virtual int SampleRateHz() const OVERRIDE;
-  virtual int NumChannels() const OVERRIDE;
+  int SampleRateHz() const override;
+  int NumChannels() const override;
+  size_t MaxEncodedBytes() const override;
   int RtpTimestampRateHz() const override;
-  virtual int Num10MsFramesInNextPacket() const OVERRIDE;
-  virtual int Max10MsFramesInAPacket() const OVERRIDE;
+  int Num10MsFramesInNextPacket() const override;
+  int Max10MsFramesInAPacket() const override;
   void SetTargetBitrate(int bits_per_second) override;
   void SetProjectedPacketLossRate(double fraction) override;
 
  protected:
-  virtual bool EncodeInternal(uint32_t rtp_timestamp,
-                              const int16_t* audio,
-                              size_t max_encoded_bytes,
-                              uint8_t* encoded,
-                              EncodedInfo* info) OVERRIDE;
+  EncodedInfo EncodeInternal(uint32_t rtp_timestamp,
+                             const int16_t* audio,
+                             size_t max_encoded_bytes,
+                             uint8_t* encoded) override;
 
  private:
   // Deleter for use with scoped_ptr. E.g., use as
-  //   scoped_ptr<CNG_enc_inst, CngInstDeleter> cng_inst_;
+  //   rtc::scoped_ptr<CNG_enc_inst, CngInstDeleter> cng_inst_;
   struct CngInstDeleter {
     inline void operator()(CNG_enc_inst* ptr) const { WebRtcCng_FreeEnc(ptr); }
   };
 
-  bool EncodePassive(uint8_t* encoded, size_t* encoded_bytes);
-
-  bool EncodeActive(size_t max_encoded_bytes,
-                    uint8_t* encoded,
-                    EncodedInfo* info);
+  EncodedInfo EncodePassive(size_t max_encoded_bytes, uint8_t* encoded);
+  EncodedInfo EncodeActive(size_t max_encoded_bytes, uint8_t* encoded);
+  size_t SamplesPer10msFrame() const;
 
   AudioEncoder* speech_encoder_;
   const int cng_payload_type_;
@@ -81,8 +79,8 @@ class AudioEncoderCng final : public AudioEncoder {
   uint32_t first_timestamp_in_buffer_;
   int frames_in_buffer_;
   bool last_frame_active_;
-  scoped_ptr<Vad> vad_;
-  scoped_ptr<CNG_enc_inst, CngInstDeleter> cng_inst_;
+  rtc::scoped_ptr<Vad> vad_;
+  rtc::scoped_ptr<CNG_enc_inst, CngInstDeleter> cng_inst_;
 };
 
 }  // namespace webrtc

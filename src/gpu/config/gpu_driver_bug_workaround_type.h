@@ -10,6 +10,8 @@
 #include "gpu/gpu_export.h"
 
 #define GPU_DRIVER_BUG_WORKAROUNDS(GPU_OP)                   \
+  GPU_OP(AVOID_EGL_IMAGE_TARGET_TEXTURE_REUSE,               \
+         avoid_egl_image_target_texture_reuse)               \
   GPU_OP(CLEAR_ALPHA_IN_READPIXELS,                          \
          clear_alpha_in_readpixels)                          \
   GPU_OP(CLEAR_UNIFORMS_BEFORE_FIRST_PROGRAM_USE,            \
@@ -22,6 +24,10 @@
          disable_arb_sync)                                   \
   GPU_OP(DISABLE_ASYNC_READPIXELS,                           \
          disable_async_readpixels)                           \
+  GPU_OP(DISABLE_BLEND_EQUATION_ADVANCED,                    \
+         disable_blend_equation_advanced)                    \
+  GPU_OP(DISABLE_CHROMIUM_FRAMEBUFFER_MULTISAMPLE,           \
+         disable_chromium_framebuffer_multisample)           \
   GPU_OP(DISABLE_D3D11,                                      \
          disable_d3d11)                                      \
   GPU_OP(DISABLE_DEPTH_TEXTURE,                              \
@@ -30,18 +36,16 @@
          disable_egl_khr_fence_sync)                         \
   GPU_OP(DISABLE_EGL_KHR_WAIT_SYNC,                          \
          disable_egl_khr_wait_sync)                          \
-  GPU_OP(DISABLE_EXT_DISCARD_FRAMEBUFFER,                    \
-         disable_ext_discard_framebuffer)                    \
+  GPU_OP(DISABLE_DISCARD_FRAMEBUFFER,                        \
+         disable_discard_framebuffer)                        \
   GPU_OP(DISABLE_EXT_DRAW_BUFFERS,                           \
          disable_ext_draw_buffers)                           \
   GPU_OP(DISABLE_EXT_OCCLUSION_QUERY,                        \
          disable_ext_occlusion_query)                        \
-  GPU_OP(DISABLE_FBO_INVALIDATIONS,                          \
-         disable_fbo_invalidations)                          \
   GPU_OP(DISABLE_MULTIMONITOR_MULTISAMPLING,                 \
          disable_multimonitor_multisampling)                 \
-  GPU_OP(DISABLE_MULTISAMPLING,                              \
-         disable_multisampling)                              \
+  GPU_OP(DISABLE_MULTISAMPLED_RENDER_TO_TEXTURE,             \
+         disable_multisampled_render_to_texture)             \
   GPU_OP(DISABLE_OES_STANDARD_DERIVATIVES,                   \
          disable_oes_standard_derivatives)                   \
   GPU_OP(DISABLE_POST_SUB_BUFFERS_FOR_ONSCREEN_SURFACES,     \

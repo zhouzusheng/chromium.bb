@@ -11,7 +11,7 @@
 #include "platform/graphics/BitmapImage.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/ImageBuffer.h"
-#include "platform/graphics/paint/DisplayItemList.h"
+#include "platform/graphics/paint/DisplayItemListContextRecorder.h"
 #include "platform/graphics/paint/DrawingRecorder.h"
 #include "wtf/RefPtr.h"
 
@@ -31,9 +31,13 @@ static inline PassRefPtr<Image> cropImage(Image* image, const IntRect& cropRect)
     if (!intersectRect.width() || !intersectRect.height())
         return nullptr;
 
+    SkBitmap bitmap;
+    if (!image->bitmapForCurrentFrame(&bitmap))
+        return nullptr;
+
     SkBitmap cropped;
-    image->nativeImageForCurrentFrame()->bitmap().extractSubset(&cropped, intersectRect);
-    return BitmapImage::create(NativeImageSkia::create(cropped));
+    bitmap.extractSubset(&cropped, intersectRect);
+    return BitmapImage::create(cropped);
 }
 
 ImageBitmap::ImageBitmap(HTMLImageElement* image, const IntRect& cropRect)
@@ -69,25 +73,16 @@ ImageBitmap::ImageBitmap(HTMLVideoElement* video, const IntRect& cropRect)
     if (!buffer)
         return;
 
-    OwnPtr<GraphicsContext> extraGraphicsContext;
-    OwnPtr<DisplayItemList> displayItemList;
-    GraphicsContext* context;
-    if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
-        displayItemList = DisplayItemList::create();
-        extraGraphicsContext = adoptPtr(new GraphicsContext(0, displayItemList.get()));
-        context = extraGraphicsContext.get();
-    } else {
-        context = buffer->context();
-    }
-
     {
-        DrawingRecorder recorder(context, buffer->displayItemClient(), DisplayItem::VideoBitmap, videoRect);
-        context->clip(dstRect);
-        context->translate(-srcRect.x(), -srcRect.y());
-    }
+        DisplayItemListContextRecorder contextRecorder(*buffer->context());
+        GraphicsContext& paintContext = contextRecorder.context();
 
-    if (RuntimeEnabledFeatures::slimmingPaintEnabled())
-        displayItemList->replay(buffer->context());
+        DrawingRecorder recorder(paintContext, *buffer, DisplayItem::VideoBitmap, videoRect);
+        if (!recorder.canUseCachedDrawing()) {
+            paintContext.clip(dstRect);
+            paintContext.translate(-srcRect.x(), -srcRect.y());
+        }
+    }
 
     video->paintCurrentFrameInContext(buffer->context(), videoRect);
     m_bitmap = buffer->copyImage(DontCopyBackingStore);
@@ -233,7 +228,7 @@ FloatSize ImageBitmap::sourceSize() const
     return FloatSize(width(), height());
 }
 
-void ImageBitmap::trace(Visitor* visitor)
+DEFINE_TRACE(ImageBitmap)
 {
     visitor->trace(m_imageElement);
     ImageLoaderClient::trace(visitor);

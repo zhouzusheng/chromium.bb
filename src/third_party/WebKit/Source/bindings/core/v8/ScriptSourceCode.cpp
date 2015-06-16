@@ -45,7 +45,7 @@ ScriptSourceCode::~ScriptSourceCode()
 {
 }
 
-void ScriptSourceCode::trace(Visitor* visitor)
+DEFINE_TRACE(ScriptSourceCode)
 {
     visitor->trace(m_streamer);
 }
@@ -58,6 +58,19 @@ const KURL& ScriptSourceCode::url() const
             m_url.removeFragmentIdentifier();
     }
     return m_url;
+}
+
+String ScriptSourceCode::sourceMapUrl() const
+{
+    if (!m_resource)
+        return String();
+    const ResourceResponse& response = m_resource->response();
+    String sourceMapUrl = response.httpHeaderField("SourceMap");
+    if (sourceMapUrl.isEmpty()) {
+        // Try to get deprecated header.
+        sourceMapUrl = response.httpHeaderField("X-SourceMap");
+    }
+    return sourceMapUrl;
 }
 
 void ScriptSourceCode::treatNullSourceAsEmpty()

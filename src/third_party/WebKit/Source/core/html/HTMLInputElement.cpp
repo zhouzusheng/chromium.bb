@@ -86,7 +86,7 @@ namespace blink {
 using namespace HTMLNames;
 
 class ListAttributeTargetObserver : public IdTargetObserver {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(ListAttributeTargetObserver);
 public:
     static PassOwnPtrWillBeRawPtr<ListAttributeTargetObserver> create(const AtomicString& id, HTMLInputElement*);
     DECLARE_VIRTUAL_TRACE();
@@ -413,7 +413,7 @@ void HTMLInputElement::updateTouchEventHandlerRegistry()
     ASSERT(m_inputTypeView);
 
     bool hasTouchEventHandler = m_inputTypeView->hasTouchEventHandler();
-    if (hasTouchEventHandler == m_hasTouchEventHandler)
+    if (hasTouchEventHandler == !!m_hasTouchEventHandler)
         return;
     // If the Document is being or has been stopped, don't register any handlers.
     if (document().frameHost() && document().lifecycle().state() < DocumentLifecycle::Stopping) {
@@ -731,8 +731,8 @@ void HTMLInputElement::parseAttribute(const QualifiedName& name, const AtomicStr
         int valueAsInteger;
         if (!value.isEmpty() && parseHTMLInteger(value, valueAsInteger) && valueAsInteger > 0)
             m_size = valueAsInteger;
-        if (m_size != oldSize && renderer())
-            renderer()->setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
+        if (m_size != oldSize && layoutObject())
+            layoutObject()->setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(LayoutInvalidationReason::AttributeChanged);
     } else if (name == altAttr)
         m_inputTypeView->altAttributeChanged();
     else if (name == srcAttr)
@@ -815,14 +815,14 @@ void HTMLInputElement::finishParsingChildren()
     }
 }
 
-bool HTMLInputElement::rendererIsNeeded(const LayoutStyle& style)
+bool HTMLInputElement::layoutObjectIsNeeded(const ComputedStyle& style)
 {
-    return m_inputType->rendererIsNeeded() && HTMLTextFormControlElement::rendererIsNeeded(style);
+    return m_inputType->layoutObjectIsNeeded() && HTMLTextFormControlElement::layoutObjectIsNeeded(style);
 }
 
-LayoutObject* HTMLInputElement::createRenderer(const LayoutStyle& style)
+LayoutObject* HTMLInputElement::createLayoutObject(const ComputedStyle& style)
 {
-    return m_inputTypeView->createRenderer(style);
+    return m_inputTypeView->createLayoutObject(style);
 }
 
 void HTMLInputElement::attach(const AttachContext& context)
@@ -911,16 +911,16 @@ void HTMLInputElement::setChecked(bool nowChecked, TextFieldEventBehavior eventB
 
     if (RadioButtonGroupScope* scope = radioButtonGroupScope())
         scope->updateCheckedState(this);
-    if (renderer() && renderer()->style()->hasAppearance())
-        LayoutTheme::theme().stateChanged(renderer(), CheckedControlState);
+    if (layoutObject() && layoutObject()->style()->hasAppearance())
+        LayoutTheme::theme().stateChanged(layoutObject(), CheckedControlState);
 
     setNeedsValidityCheck();
 
     // Ideally we'd do this from the render tree (matching
     // RenderTextView), but it's not possible to do it at the moment
     // because of the way the code is structured.
-    if (renderer()) {
-        if (AXObjectCache* cache = renderer()->document().existingAXObjectCache())
+    if (layoutObject()) {
+        if (AXObjectCache* cache = layoutObject()->document().existingAXObjectCache())
             cache->checkedStateChanged(this);
     }
 
@@ -948,8 +948,8 @@ void HTMLInputElement::setIndeterminate(bool newValue)
 
     pseudoStateChanged(CSSSelector::PseudoIndeterminate);
 
-    if (renderer() && renderer()->style()->hasAppearance())
-        LayoutTheme::theme().stateChanged(renderer(), CheckedControlState);
+    if (layoutObject() && layoutObject()->style()->hasAppearance())
+        LayoutTheme::theme().stateChanged(layoutObject(), CheckedControlState);
 }
 
 int HTMLInputElement::size() const
@@ -1027,7 +1027,7 @@ void HTMLInputElement::setSuggestedValue(const String& value)
 
 void HTMLInputElement::setEditingValue(const String& value)
 {
-    if (!renderer() || !isTextField())
+    if (!layoutObject() || !isTextField())
         return;
     setInnerEditorValue(value);
     subtreeHasChanged();
@@ -1428,11 +1428,11 @@ bool HTMLInputElement::canReceiveDroppedFiles() const
 
 void HTMLInputElement::setCanReceiveDroppedFiles(bool canReceiveDroppedFiles)
 {
-    if (m_canReceiveDroppedFiles == canReceiveDroppedFiles)
+    if (!!m_canReceiveDroppedFiles == canReceiveDroppedFiles)
         return;
     m_canReceiveDroppedFiles = canReceiveDroppedFiles;
-    if (renderer())
-        renderer()->updateFromElement();
+    if (layoutObject())
+        layoutObject()->updateFromElement();
 }
 
 String HTMLInputElement::sanitizeValue(const String& proposedValue) const
@@ -1701,6 +1701,16 @@ void HTMLInputElement::updateValueIfNeeded()
         setValue(newValue);
 }
 
+bool HTMLInputElement::supportsAutocapitalize() const
+{
+    return m_inputType->supportsAutocapitalize();
+}
+
+const AtomicString& HTMLInputElement::defaultAutocapitalize() const
+{
+    return m_inputType->defaultAutocapitalize();
+}
+
 String HTMLInputElement::defaultToolTip() const
 {
     return m_inputType->defaultToolTip();
@@ -1840,7 +1850,8 @@ bool HTMLInputElement::setupDateTimeChooserParameters(DateTimeChooserParameters&
         parameters.stepBase = 0;
     }
 
-    parameters.anchorRectInRootView = document().view()->contentsToRootView(pixelSnappedBoundingBox());
+    parameters.anchorRectInRootFrame = document().view()->contentsToRootFrame(pixelSnappedBoundingBox());
+    parameters.anchorRectInScreen = document().view()->contentsToScreen(pixelSnappedBoundingBox());
     parameters.currentValue = value();
     parameters.doubleValue = m_inputType->valueAsDouble();
     parameters.isAnchorElementRTL = m_inputType->computedTextDirection() == RTL;
@@ -1868,7 +1879,7 @@ bool HTMLInputElement::supportsInputModeAttribute() const
 
 void HTMLInputElement::setShouldRevealPassword(bool value)
 {
-    if (m_shouldRevealPassword == value)
+    if (!!m_shouldRevealPassword == value)
         return;
     m_shouldRevealPassword = value;
     lazyReattachIfAttached();
@@ -1884,9 +1895,9 @@ bool HTMLInputElement::supportsAutofocus() const
     return m_inputType->isInteractiveContent();
 }
 
-PassRefPtr<LayoutStyle> HTMLInputElement::customStyleForRenderer()
+PassRefPtr<ComputedStyle> HTMLInputElement::customStyleForLayoutObject()
 {
-    return m_inputTypeView->customStyleForRenderer(originalStyleForRenderer());
+    return m_inputTypeView->customStyleForLayoutObject(originalStyleForLayoutObject());
 }
 
 bool HTMLInputElement::shouldDispatchFormControlChangeEvent(String& oldValue, String& newValue)

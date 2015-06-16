@@ -18,7 +18,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
 {
   "name": "software rendering list",
   // Please update the version number whenever you change this file.
-  "version": "10.0",
+  "version": "10.7",
   "entries": [
     {
       "id": 1,
@@ -336,32 +336,6 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       ]
     },
     {
-      "id": 32,
-      "description": "Accelerated 2d canvas is disabled on Windows systems with low perf stats",
-      "cr_bugs": [116350, 151500],
-      "os": {
-        "type": "win"
-      },
-      "perf_overall": {
-        "op": "<",
-        "value": "3.5"
-      },
-      "exceptions": [
-        {
-          "perf_gaming": {
-            "op": ">",
-            "value": "3.5"
-          }
-        },
-        {
-          "cpu_info": "(?i).*Atom.*"
-        }
-      ],
-      "features": [
-        "accelerated_2d_canvas"
-      ]
-    },
-    {
       "id": 34,
       "description": "S3 Trio (used in Virtual PC) is not compatible",
       "cr_bugs": [119948],
@@ -578,6 +552,10 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       },
       "vendor_id": "0x10de",
       "driver_vendor": "NVIDIA",
+      "driver_version": {
+        "op": "<",
+        "value": "331.38"
+      },
       "features": [
         "accelerated_video_decode",
         "flash_3d",
@@ -1029,7 +1007,13 @@ LONG_STRING_CONST(
           "os": {
             "type": "android"
           },
-          "gl_renderer": "Adreno (TM) 3.*"
+          "gl_renderer": "Adreno \\(TM\\) 3.*"
+        },
+        {
+          "os": {
+            "type": "android"
+          },
+          "gl_renderer": "Mali-400.*"
         },
         {
           "os": {
@@ -1042,21 +1026,6 @@ LONG_STRING_CONST(
             "type": "android"
           },
           "gl_renderer": "VideoCore IV.*"
-        },
-        {
-          "os": {
-            "type": "android"
-          },
-          "gl_renderer": "Immersion.*"
-        },
-        {
-          "os": {
-            "type": "android",
-            "version": {
-              "op": ">=",
-              "value": "4.4.99"
-            }
-          }
         },
         {
           "os": {
@@ -1155,13 +1124,9 @@ LONG_STRING_CONST(
     {
       "id": 104,
       "description": "GPU raster broken on PowerVR Rogue",
-      "cr_bugs": [436331],
+      "cr_bugs": [436331, 483574],
       "os": {
-        "type": "android",
-        "version": {
-          "op": "<",
-          "value": "5.0"
-        }
+        "type": "android"
       },
       "gl_renderer": "PowerVR Rogue.*",
       "features": [
@@ -1177,6 +1142,23 @@ LONG_STRING_CONST(
         "type": "android"
       },
       "gl_renderer": "PowerVR SGX.*",
+      "features": [
+        "accelerated_2d_canvas",
+        "gpu_rasterization"
+      ]
+    },
+    {
+      "id": 106,
+      "description": "GPU raster broken on ES2-only Adreno 3xx drivers",
+      "cr_bugs": [480149],
+      "os": {
+        "type": "android"
+      },
+      "gl_renderer": "Adreno \\(TM\\) 3.*",
+      "gl_version": {
+         "op": "<=",
+         "value": "2.0"
+      },
       "features": [
         "accelerated_2d_canvas",
         "gpu_rasterization"

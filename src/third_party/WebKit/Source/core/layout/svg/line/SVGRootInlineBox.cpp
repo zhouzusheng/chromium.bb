@@ -73,11 +73,11 @@ void SVGRootInlineBox::layoutCharactersInTextBoxes(InlineFlowBox* start, SVGText
 {
     for (InlineBox* child = start->firstChild(); child; child = child->nextOnLine()) {
         if (child->isSVGInlineTextBox()) {
-            ASSERT(child->renderer().isSVGInlineText());
+            ASSERT(child->layoutObject().isSVGInlineText());
             characterLayout.layoutInlineTextBox(toSVGInlineTextBox(child));
         } else {
             // Skip generated content.
-            Node* node = child->renderer().node();
+            Node* node = child->layoutObject().node();
             if (!node)
                 continue;
 
@@ -89,7 +89,7 @@ void SVGRootInlineBox::layoutCharactersInTextBoxes(InlineFlowBox* start, SVGText
                 SVGTextLayoutEngine lineLayout(characterLayout.layoutAttributes());
                 layoutCharactersInTextBoxes(flowBox, lineLayout);
 
-                characterLayout.beginTextPathLayout(&child->renderer(), lineLayout);
+                characterLayout.beginTextPathLayout(&child->layoutObject(), lineLayout);
             }
 
             layoutCharactersInTextBoxes(flowBox, characterLayout);
@@ -105,7 +105,7 @@ void SVGRootInlineBox::layoutChildBoxes(InlineFlowBox* start, FloatRectWillBeLay
     for (InlineBox* child = start->firstChild(); child; child = child->nextOnLine()) {
         FloatRectWillBeLayoutRect boxRect;
         if (child->isSVGInlineTextBox()) {
-            ASSERT(child->renderer().isSVGInlineText());
+            ASSERT(child->layoutObject().isSVGInlineText());
 
             SVGInlineTextBox* textBox = toSVGInlineTextBox(child);
             boxRect = textBox->calculateBoundaries();
@@ -115,7 +115,7 @@ void SVGRootInlineBox::layoutChildBoxes(InlineFlowBox* start, FloatRectWillBeLay
             textBox->setLogicalHeight(boxRect.height());
         } else {
             // Skip generated content.
-            if (!child->renderer().node())
+            if (!child->layoutObject().node())
                 continue;
 
             SVGInlineFlowBox* flowBox = toSVGInlineFlowBox(child);
@@ -134,7 +134,7 @@ void SVGRootInlineBox::layoutChildBoxes(InlineFlowBox* start, FloatRectWillBeLay
 
 void SVGRootInlineBox::layoutRootBox(const FloatRectWillBeLayoutRect& childRect)
 {
-    RenderBlockFlow& parentBlock = block();
+    LayoutBlockFlow& parentBlock = block();
 
     // Finally, assign the root block position, now that all content is laid out.
     // FIXME: the call to enclosingLayoutRect() below is temporary and should be removed once
@@ -146,7 +146,7 @@ void SVGRootInlineBox::layoutRootBox(const FloatRectWillBeLayoutRect& childRect)
     // Position all children relative to the parent block.
     for (InlineBox* child = firstChild(); child; child = child->nextOnLine()) {
         // Skip generated content.
-        if (!child->renderer().node())
+        if (!child->layoutObject().node())
             continue;
         child->adjustPosition(-childRect.x(), -childRect.y());
     }
@@ -222,7 +222,7 @@ static inline void reverseInlineBoxRangeAndValueListsIfNeeded(void* userData, Ve
     ASSERT(userData);
     Vector<SVGTextLayoutAttributes*>& attributes = *reinterpret_cast<Vector<SVGTextLayoutAttributes*>*>(userData);
 
-    // This is a copy of std::reverse(first, last). It additionally assures that the metrics map within the renderers belonging to the InlineBoxes are reordered as well.
+    // This is a copy of std::reverse(first, last). It additionally assures that the metrics map within the layoutObjects belonging to the InlineBoxes are reordered as well.
     while (true)  {
         if (first == last || first == --last)
             return;
@@ -240,8 +240,8 @@ static inline void reverseInlineBoxRangeAndValueListsIfNeeded(void* userData, Ve
 
         // Reordering is only necessary for BiDi text that is _absolutely_ positioned.
         if (firstTextBox->len() == 1 && firstTextBox->len() == lastTextBox->len()) {
-            LayoutSVGInlineText& firstContext = toLayoutSVGInlineText(firstTextBox->renderer());
-            LayoutSVGInlineText& lastContext = toLayoutSVGInlineText(lastTextBox->renderer());
+            LayoutSVGInlineText& firstContext = toLayoutSVGInlineText(firstTextBox->layoutObject());
+            LayoutSVGInlineText& lastContext = toLayoutSVGInlineText(lastTextBox->layoutObject());
 
             SVGTextLayoutAttributes* firstAttributes = 0;
             SVGTextLayoutAttributes* lastAttributes = 0;

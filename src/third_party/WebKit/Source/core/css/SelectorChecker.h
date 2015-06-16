@@ -37,8 +37,8 @@ namespace blink {
 class CSSSelector;
 class ContainerNode;
 class Element;
-class RenderScrollbar;
-class LayoutStyle;
+class LayoutScrollbar;
+class ComputedStyle;
 
 class SelectorChecker {
     WTF_MAKE_NONCOPYABLE(SelectorChecker);
@@ -77,8 +77,8 @@ public:
         RawPtrWillBeMember<const ContainerNode> scope;
         VisitedMatchType visitedMatchType;
         PseudoId pseudoId;
-        LayoutStyle* elementStyle;
-        RawPtrWillBeMember<RenderScrollbar> scrollbar;
+        ComputedStyle* elementStyle;
+        RawPtrWillBeMember<LayoutScrollbar> scrollbar;
         ScrollbarPart scrollbarPart;
         unsigned isSubSelector : 1;
         unsigned hasScrollbarPseudo : 1;

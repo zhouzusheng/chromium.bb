@@ -40,10 +40,30 @@ using namespace HTMLNames;
 inline HTMLIFrameElement::HTMLIFrameElement(Document& document)
     : HTMLFrameElementBase(iframeTag, document)
     , m_didLoadNonEmptyDocument(false)
+    , m_sandbox(DOMSettableTokenList::create(this))
 {
 }
 
 DEFINE_NODE_FACTORY(HTMLIFrameElement)
+
+DEFINE_TRACE(HTMLIFrameElement)
+{
+    visitor->trace(m_sandbox);
+    HTMLFrameElementBase::trace(visitor);
+    DOMSettableTokenListObserver::trace(visitor);
+}
+
+HTMLIFrameElement::~HTMLIFrameElement()
+{
+#if !ENABLE(OILPAN)
+    m_sandbox->setObserver(nullptr);
+#endif
+}
+
+DOMSettableTokenList* HTMLIFrameElement::sandbox() const
+{
+    return m_sandbox.get();
+}
 
 bool HTMLIFrameElement::isPresentationAttribute(const QualifiedName& name) const
 {
@@ -97,22 +117,19 @@ void HTMLIFrameElement::parseAttribute(const QualifiedName& name, const AtomicSt
         }
         m_name = value;
     } else if (name == sandboxAttr) {
-        String invalidTokens;
-        setSandboxFlags(value.isNull() ? SandboxNone : parseSandboxPolicy(value, invalidTokens));
-        if (!invalidTokens.isNull())
-            document().addConsoleMessage(ConsoleMessage::create(OtherMessageSource, ErrorMessageLevel, "Error while parsing the 'sandbox' attribute: " + invalidTokens));
+        m_sandbox->setValue(value);
         UseCounter::count(document(), UseCounter::SandboxViaIFrame);
     } else {
         HTMLFrameElementBase::parseAttribute(name, value);
     }
 }
 
-bool HTMLIFrameElement::rendererIsNeeded(const LayoutStyle& style)
+bool HTMLIFrameElement::layoutObjectIsNeeded(const ComputedStyle& style)
 {
-    return isURLAllowed() && HTMLElement::rendererIsNeeded(style);
+    return isURLAllowed() && HTMLElement::layoutObjectIsNeeded(style);
 }
 
-LayoutObject* HTMLIFrameElement::createRenderer(const LayoutStyle&)
+LayoutObject* HTMLIFrameElement::createLayoutObject(const ComputedStyle&)
 {
     return new LayoutIFrame(this);
 }
@@ -144,6 +161,15 @@ void HTMLIFrameElement::removedFrom(ContainerNode* insertionPoint)
 bool HTMLIFrameElement::isInteractiveContent() const
 {
     return true;
+}
+
+void HTMLIFrameElement::valueChanged()
+{
+    String invalidTokens;
+    setSandboxFlags(m_sandbox->value().isNull() ? SandboxNone : parseSandboxPolicy(m_sandbox->tokens(), invalidTokens));
+    if (!invalidTokens.isNull())
+        document().addConsoleMessage(ConsoleMessage::create(OtherMessageSource, ErrorMessageLevel, "Error while parsing the 'sandbox' attribute: " + invalidTokens));
+    setSynchronizedLazyAttribute(sandboxAttr, m_sandbox->value());
 }
 
 }

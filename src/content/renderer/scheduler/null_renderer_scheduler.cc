@@ -6,40 +6,13 @@
 
 #include "base/bind.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "content/child/scheduler/null_idle_task_runner.h"
 
 namespace content {
 
-namespace {
-
-class NullIdleTaskRunner : public SingleThreadIdleTaskRunner {
- public:
-  NullIdleTaskRunner(scoped_refptr<base::SingleThreadTaskRunner> task_runner);
-  void PostIdleTask(const tracked_objects::Location& from_here,
-                    const IdleTask& idle_task) override;
-
- protected:
-  ~NullIdleTaskRunner() override;
-};
-
-}  // namespace
-
-NullIdleTaskRunner::NullIdleTaskRunner(
-    scoped_refptr<base::SingleThreadTaskRunner> task_runner)
-    : SingleThreadIdleTaskRunner(task_runner,
-                                 base::Callback<void(base::TimeTicks*)>()) {
-}
-
-NullIdleTaskRunner::~NullIdleTaskRunner() {
-}
-
-void NullIdleTaskRunner::PostIdleTask(
-    const tracked_objects::Location& from_here,
-    const IdleTask& idle_task) {
-}
-
 NullRendererScheduler::NullRendererScheduler()
     : task_runner_(base::MessageLoopProxy::current()),
-      idle_task_runner_(new NullIdleTaskRunner(task_runner_)) {
+      idle_task_runner_(new NullIdleTaskRunner()) {
 }
 
 NullRendererScheduler::~NullRendererScheduler() {
@@ -87,6 +60,20 @@ bool NullRendererScheduler::IsHighPriorityWorkAnticipated() {
 
 bool NullRendererScheduler::ShouldYieldForHighPriorityWork() {
   return false;
+}
+
+bool NullRendererScheduler::CanExceedIdleDeadlineIfRequired() const {
+  return false;
+}
+
+void NullRendererScheduler::AddTaskObserver(
+    base::MessageLoop::TaskObserver* task_observer) {
+  base::MessageLoop::current()->AddTaskObserver(task_observer);
+}
+
+void NullRendererScheduler::RemoveTaskObserver(
+    base::MessageLoop::TaskObserver* task_observer) {
+  base::MessageLoop::current()->RemoveTaskObserver(task_observer);
 }
 
 void NullRendererScheduler::Shutdown() {

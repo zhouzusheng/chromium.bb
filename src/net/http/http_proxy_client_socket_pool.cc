@@ -128,10 +128,6 @@ void HttpProxyConnectJob::GetAdditionalErrorState(ClientSocketHandle * handle) {
 }
 
 void HttpProxyConnectJob::OnIOComplete(int result) {
-  // TODO(pkasting): Remove ScopedTracker below once crbug.com/455884 is fixed.
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "455884 HttpProxyConnectJob::OnIOComplete"));
   int rv = DoLoop(result);
   if (rv != ERR_IO_PENDING) {
     NotifyProxyDelegateOfCompletion(rv);
@@ -444,18 +440,17 @@ HttpProxyClientSocketPool::HttpProxyConnectJobFactory::ConnectionTimeout(
 HttpProxyClientSocketPool::HttpProxyClientSocketPool(
     int max_sockets,
     int max_sockets_per_group,
-    ClientSocketPoolHistograms* histograms,
     TransportClientSocketPool* transport_pool,
     SSLClientSocketPool* ssl_pool,
     NetLog* net_log)
     : transport_pool_(transport_pool),
       ssl_pool_(ssl_pool),
-      base_(this, max_sockets, max_sockets_per_group, histograms,
+      base_(this,
+            max_sockets,
+            max_sockets_per_group,
             ClientSocketPool::unused_idle_socket_timeout(),
             ClientSocketPool::used_idle_socket_timeout(),
-            new HttpProxyConnectJobFactory(transport_pool,
-                                           ssl_pool,
-                                           net_log)) {
+            new HttpProxyConnectJobFactory(transport_pool, ssl_pool, net_log)) {
   // We should always have a |transport_pool_| except in unit tests.
   if (transport_pool_)
     base_.AddLowerLayeredPool(transport_pool_);
@@ -546,10 +541,6 @@ base::DictionaryValue* HttpProxyClientSocketPool::GetInfoAsValue(
 
 base::TimeDelta HttpProxyClientSocketPool::ConnectionTimeout() const {
   return base_.ConnectionTimeout();
-}
-
-ClientSocketPoolHistograms* HttpProxyClientSocketPool::histograms() const {
-  return base_.histograms();
 }
 
 bool HttpProxyClientSocketPool::IsStalled() const {

@@ -11,18 +11,18 @@
 #include "core/animation/Animation.h"
 #include "core/animation/AnimationPlayer.h"
 #include "core/css/invalidation/DescendantInvalidationSet.h"
+#include "core/dom/DOMNodeIds.h"
 #include "core/dom/StyleChangeReason.h"
 #include "core/events/Event.h"
 #include "core/fetch/CSSStyleSheetResource.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/inspector/IdentifiersFactory.h"
-#include "core/inspector/InspectorNodeIds.h"
 #include "core/inspector/ScriptCallStack.h"
-#include "core/layout/Layer.h"
 #include "core/layout/LayoutImage.h"
 #include "core/layout/LayoutObject.h"
 #include "core/page/Page.h"
+#include "core/paint/DeprecatedPaintLayer.h"
 #include "core/workers/WorkerThread.h"
 #include "core/xmlhttprequest/XMLHttpRequest.h"
 #include "platform/JSONValues.h"
@@ -58,7 +58,7 @@ void setCallStack(TracedValue* value)
 
 void setNodeInfo(TracedValue* value, Node* node, const char* idFieldName, const char* nameFieldName = nullptr)
 {
-    value->setInteger(idFieldName, InspectorNodeIds::idForNode(node));
+    value->setInteger(idFieldName, DOMNodeIds::idForNode(node));
     if (nameFieldName)
         value->setString(nameFieldName, node->debugName());
 }
@@ -270,7 +270,7 @@ PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorLayoutEvent::beginData
     unsigned needsLayoutObjects;
     unsigned totalObjects;
     LocalFrame& frame = frameView->frame();
-    frame.countObjectsNeedingLayout(needsLayoutObjects, totalObjects, isPartial);
+    frame.view()->countObjectsNeedingLayout(needsLayoutObjects, totalObjects, isPartial);
 
     RefPtr<TracedValue> value = TracedValue::create();
     value->setInteger("dirtyObjects", needsLayoutObjects);
@@ -321,12 +321,48 @@ PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorLayoutEvent::endData(L
     return value.release();
 }
 
-PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorLayoutInvalidationTrackingEvent::data(const LayoutObject* renderer)
+namespace LayoutInvalidationReason {
+const char Unknown[] = "Unknown";
+const char SizeChanged[] = "Size changed";
+const char AncestorMoved[] = "Ancestor moved";
+const char StyleChange[] = "Style changed";
+const char DomChanged[] = "DOM changed";
+const char TextChanged[] = "Text changed";
+const char PrintingChanged[] = "Printing changed";
+const char AttributeChanged[] = "Attribute changed";
+const char ColumnsChanged[] = "Attribute changed";
+const char ChildAnonymousBlockChanged[] = "Child anonymous block changed";
+const char AnonymousBlockChange[] = "Anonymous block change";
+const char Fullscreen[] = "Fullscreen change";
+const char ChildChanged[] = "Child changed";
+const char ListValueChange[] = "List value change";
+const char ImageChanged[] = "Image changed";
+const char LineBoxesChanged[] = "Line boxes changed";
+const char SliderValueChanged[] = "Slider value changed";
+const char AncestorMarginCollapsing[] = "Ancestor margin collapsing";
+const char FieldsetChanged[] = "Fieldset changed";
+const char TextAutosizing[] = "Text autosizing (font boosting)";
+const char SvgResourceInvalidated[] = "SVG resource invalidated";
+const char FloatDescendantChanged[] = "Floating descendant changed";
+const char CountersChanged[] = "Counters changed";
+const char GridChanged[] = "Grid changed";
+const char MenuWidthChanged[] = "Menu width changed";
+const char RemovedFromLayout[] = "Removed from layout";
+const char AddedToLayout[] = "Added to layout";
+const char TableChanged[] = "Table changed";
+const char PaddingChanged[] = "Padding changed";
+const char TextControlChanged[] = "Text control changed";
+const char SvgChanged[] = "SVG changed";
+const char ScrollbarChanged[] = "Scrollbar changed";
+} // namespace LayoutInvalidationReason
+
+PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorLayoutInvalidationTrackingEvent::data(const LayoutObject* renderer, LayoutInvalidationReasonForTracing reason)
 {
     ASSERT(renderer);
     RefPtr<TracedValue> value = TracedValue::create();
     value->setString("frame", toHexString(renderer->frame()));
     setGeneratingNodeInfo(value.get(), renderer, "nodeId", "nodeName");
+    value->setString("reason", reason);
     if (RefPtrWillBeRawPtr<ScriptCallStack> stackTrace = createScriptCallStack(maxInvalidationTrackingCallstackSize, true))
         stackTrace->toTracedValue(value.get(), "stackTrace");
     return value.release();
@@ -339,6 +375,19 @@ PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorPaintInvalidationTrack
     value->setString("frame", toHexString(renderer->frame()));
     setGeneratingNodeInfo(value.get(), paintContainer, "paintId");
     setGeneratingNodeInfo(value.get(), renderer, "nodeId", "nodeName");
+    return value.release();
+}
+
+PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorScrollInvalidationTrackingEvent::data(const LayoutObject& layoutObject)
+{
+    static const char ScrollInvalidationReason[] = "Scroll with viewport-constrained element";
+
+    RefPtr<TracedValue> value = TracedValue::create();
+    value->setString("frame", toHexString(layoutObject.frame()));
+    value->setString("reason", ScrollInvalidationReason);
+    setGeneratingNodeInfo(value.get(), &layoutObject, "nodeId", "nodeName");
+    if (RefPtrWillBeRawPtr<ScriptCallStack> stackTrace = createScriptCallStack(maxInvalidationTrackingCallstackSize, true))
+        stackTrace->toTracedValue(value.get(), "stackTrace");
     return value.release();
 }
 
@@ -426,11 +475,14 @@ PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorTimerFireEvent::data(E
     return genericTimerData(context, timerId);
 }
 
-PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorAnimationFrameEvent::data(Document* document, int callbackId)
+PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorAnimationFrameEvent::data(ExecutionContext* context, int callbackId)
 {
     RefPtr<TracedValue> value = TracedValue::create();
     value->setInteger("id", callbackId);
-    value->setString("frame", toHexString(document->frame()));
+    if (context->isDocument())
+        value->setString("frame", toHexString(toDocument(context)->frame()));
+    else if (context->isWorkerGlobalScope())
+        value->setString("worker", toHexString(toWorkerGlobalScope(context)));
     setCallStack(value.get());
     return value.release();
 }
@@ -498,10 +550,10 @@ static void localToPageQuad(const LayoutObject& renderer, const LayoutRect& rect
     LocalFrame* frame = renderer.frame();
     FrameView* view = frame->view();
     FloatQuad absolute = renderer.localToAbsoluteQuad(FloatQuad(rect));
-    quad->setP1(view->contentsToRootView(roundedIntPoint(absolute.p1())));
-    quad->setP2(view->contentsToRootView(roundedIntPoint(absolute.p2())));
-    quad->setP3(view->contentsToRootView(roundedIntPoint(absolute.p3())));
-    quad->setP4(view->contentsToRootView(roundedIntPoint(absolute.p4())));
+    quad->setP1(view->contentsToRootFrame(roundedIntPoint(absolute.p1())));
+    quad->setP2(view->contentsToRootFrame(roundedIntPoint(absolute.p2())));
+    quad->setP3(view->contentsToRootFrame(roundedIntPoint(absolute.p3())));
+    quad->setP4(view->contentsToRootFrame(roundedIntPoint(absolute.p4())));
 }
 
 const char InspectorLayerInvalidationTrackingEvent::SquashingLayerGeometryWasUpdated[] = "Squashing layer geometry was updated";
@@ -510,9 +562,9 @@ const char InspectorLayerInvalidationTrackingEvent::RemovedFromSquashingLayer[] 
 const char InspectorLayerInvalidationTrackingEvent::ReflectionLayerChanged[] = "Reflection layer change";
 const char InspectorLayerInvalidationTrackingEvent::NewCompositedLayer[] = "Assigned a new composited layer";
 
-PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorLayerInvalidationTrackingEvent::data(const Layer* layer, const char* reason)
+PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorLayerInvalidationTrackingEvent::data(const DeprecatedPaintLayer* layer, const char* reason)
 {
-    const LayoutObject* paintInvalidationContainer = layer->renderer()->containerForPaintInvalidation();
+    const LayoutObject* paintInvalidationContainer = layer->layoutObject()->containerForPaintInvalidation();
 
     RefPtr<TracedValue> value = TracedValue::create();
     value->setString("frame", toHexString(paintInvalidationContainer->frame()));
@@ -671,11 +723,11 @@ PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorTimeStampEvent::data(E
     return value.release();
 }
 
-PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorTracingSessionIdForWorkerEvent::data(const String& sessionId, int workerId, WorkerThread* workerThread)
+PassRefPtr<TraceEvent::ConvertableToTraceFormat> InspectorTracingSessionIdForWorkerEvent::data(const String& sessionId, const String& workerId, WorkerThread* workerThread)
 {
     RefPtr<TracedValue> value = TracedValue::create();
     value->setString("sessionId", sessionId);
-    value->setInteger("workerId", workerId);
+    value->setString("workerId", workerId);
     value->setDouble("workerThreadId", workerThread->platformThreadId());
     return value.release();
 }

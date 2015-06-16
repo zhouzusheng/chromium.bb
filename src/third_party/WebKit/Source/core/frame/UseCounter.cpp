@@ -492,11 +492,17 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyJustifyItems: return 455;
     case CSSPropertyScrollBlocksOn: return 456;
     case CSSPropertyMotionPath: return 457;
-    case CSSPropertyMotionPosition: return 458;
+    case CSSPropertyMotionOffset: return 458;
     case CSSPropertyMotionRotation: return 459;
     case CSSPropertyMotion: return 460;
     case CSSPropertyX: return 461;
     case CSSPropertyY: return 462;
+    case CSSPropertyRx: return 463;
+    case CSSPropertyRy: return 464;
+    case CSSPropertyFontSizeAdjust: return 465;
+    case CSSPropertyCx: return 466;
+    case CSSPropertyCy: return 467;
+    case CSSPropertyR: return 468;
 
     // 1. Add new features above this line (don't change the assigned numbers of the existing
     // items).
@@ -512,7 +518,7 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     return 0;
 }
 
-static int maximumCSSSampleId() { return 462; }
+static int maximumCSSSampleId() { return 468; }
 
 void UseCounter::muteForInspector()
 {
@@ -688,9 +694,6 @@ String UseCounter::deprecationMessage(Feature feature)
     case FileError:
         return "FileError is deprecated. Please use the 'name' or 'message' attributes of DOMError rather than 'code'.";
 
-    case ShowModalDialog:
-        return "showModalDialog is deprecated. Please use window.open and postMessage instead.";
-
     case CSSStyleSheetInsertRuleOptionalArg:
         return "Calling CSSStyleSheet.insertRule() with one argument is deprecated. Please pass the index argument as well: insertRule(x, 0).";
 
@@ -759,12 +762,6 @@ String UseCounter::deprecationMessage(Feature feature)
 
     case SyncXHRWithCredentials:
         return "Setting 'XMLHttpRequest.withCredentials' for synchronous requests is deprecated.";
-
-    case EventSourceURL:
-        return replacedBy("EventSource.URL", "EventSource.url");
-
-    case WebSocketURL:
-        return replacedBy("WebSocket.URL", "WebSocket.url");
 
     case HTMLTableElementVspace:
         return "The 'vspace' attribute on table is deprecated. Please use CSS margin-top and margin-bottom property instead.";
@@ -864,8 +861,12 @@ String UseCounter::deprecationMessage(Feature feature)
     case ServiceWorkerClientPostMessage:
         return "'Client.postMessage()' is an experimental API and may change. See https://github.com/slightlyoff/ServiceWorker/issues/609.";
 
-    case ServiceWorkerClientsGetAll:
-        return "'Clients.getAll()' is deprecated and will be removed soon. Please use 'Clients.matchAll()' instead.";
+    case AttrChildAccess:
+    case AttrChildChange:
+        return "Attr child nodes are deprecated and will be removed in M45, around August 2015. Please use 'Attr.value' instead.";
+
+    case CSSKeyframesRuleInsertRule:
+        return "'CSSKeyframesRule.insertRule()' is deprecated and will be removed in M45, around August 2015. Please use 'CSSKeyframesRule.appendRule()' instead.";
 
     // Features that aren't deprecated don't have a deprecation message.
     default:

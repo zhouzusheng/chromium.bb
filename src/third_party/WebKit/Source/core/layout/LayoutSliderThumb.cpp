@@ -33,28 +33,28 @@
 #include "core/layout/LayoutSliderThumb.h"
 
 #include "core/layout/LayoutTheme.h"
-#include "core/layout/style/LayoutStyle.h"
+#include "core/style/ComputedStyle.h"
 
 namespace blink {
 
 LayoutSliderThumb::LayoutSliderThumb(SliderThumbElement* element)
-    : RenderBlockFlow(element)
+    : LayoutBlockFlow(element)
 {
 }
 
-void LayoutSliderThumb::updateAppearance(const LayoutStyle& parentStyle)
+void LayoutSliderThumb::updateAppearance(const ComputedStyle& parentStyle)
 {
     if (parentStyle.appearance() == SliderVerticalPart)
-        style()->setAppearance(SliderThumbVerticalPart);
+        mutableStyleRef().setAppearance(SliderThumbVerticalPart);
     else if (parentStyle.appearance() == SliderHorizontalPart)
-        style()->setAppearance(SliderThumbHorizontalPart);
+        mutableStyleRef().setAppearance(SliderThumbHorizontalPart);
     else if (parentStyle.appearance() == MediaSliderPart)
-        style()->setAppearance(MediaSliderThumbPart);
+        mutableStyleRef().setAppearance(MediaSliderThumbPart);
     else if (parentStyle.appearance() == MediaVolumeSliderPart)
-        style()->setAppearance(MediaVolumeSliderThumbPart);
+        mutableStyleRef().setAppearance(MediaVolumeSliderThumbPart);
     else if (parentStyle.appearance() == MediaFullScreenVolumeSliderPart)
-        style()->setAppearance(MediaFullScreenVolumeSliderThumbPart);
-    if (style()->hasAppearance())
+        mutableStyleRef().setAppearance(MediaFullScreenVolumeSliderThumbPart);
+    if (styleRef().hasAppearance())
         LayoutTheme::theme().adjustSliderThumbSize(mutableStyleRef(), toElement(node()));
 }
 

@@ -327,6 +327,9 @@ bool TOutputTraverser::visitUnary(Visit visit, TIntermUnary *node)
       case EOpAbs:            out << "Absolute value";       break;
       case EOpSign:           out << "Sign";                 break;
       case EOpFloor:          out << "Floor";                break;
+      case EOpTrunc:          out << "Truncate";             break;
+      case EOpRound:          out << "Round";                break;
+      case EOpRoundEven:      out << "Round half even";      break;
       case EOpCeil:           out << "Ceiling";              break;
       case EOpFract:          out << "Fraction";             break;
       case EOpIsNan:          out << "Is not a number";      break;
@@ -421,6 +424,7 @@ bool TOutputTraverser::visitAggregate(Visit visit, TIntermAggregate *node)
       case EOpVectorNotEqual:   out << "NotEqual";                      break;
 
       case EOpMod:           out << "mod";         break;
+      case EOpModf:          out << "modf";        break;
       case EOpPow:           out << "pow";         break;
 
       case EOpAtan:          out << "arc tangent"; break;

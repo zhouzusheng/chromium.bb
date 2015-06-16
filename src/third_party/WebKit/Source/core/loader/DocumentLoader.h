@@ -56,7 +56,7 @@ namespace blink {
     class ThreadedDataReceiver;
 
     class DocumentLoader : public RefCounted<DocumentLoader>, private RawResourceClient {
-        WTF_MAKE_FAST_ALLOCATED;
+        WTF_MAKE_FAST_ALLOCATED(DocumentLoader);
     public:
         static PassRefPtr<DocumentLoader> create(LocalFrame* frame, const ResourceRequest& request, const SubstituteData& data)
         {
@@ -123,6 +123,18 @@ namespace blink {
         void appendRedirect(const KURL&);
 
         PassRefPtr<ContentSecurityPolicy> releaseContentSecurityPolicy() { return m_contentSecurityPolicy.release(); }
+
+
+        struct InitialScrollState {
+            InitialScrollState()
+                : didRestoreFromHistory(false)
+            {
+            }
+
+            // TODO(skobes): Move FrameView::m_wasScrolledByUser into here.
+            bool didRestoreFromHistory;
+        };
+        InitialScrollState& initialScrollState() { return m_initialScrollState; }
 
     protected:
         DocumentLoader(LocalFrame*, const ResourceRequest&, const SubstituteData&);
@@ -204,6 +216,7 @@ namespace blink {
         OwnPtrWillBePersistent<ApplicationCacheHost> m_applicationCacheHost;
 
         RefPtr<ContentSecurityPolicy> m_contentSecurityPolicy;
+        InitialScrollState m_initialScrollState;
     };
 }
 

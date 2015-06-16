@@ -28,9 +28,9 @@
 #include "core/CSSValueKeywords.h"
 #include "core/layout/LayoutMediaControls.h"
 #include "core/layout/LayoutObject.h"
+#include "core/layout/LayoutProgress.h"
 #include "core/layout/LayoutThemeFontProvider.h"
 #include "core/layout/PaintInfo.h"
-#include "core/rendering/RenderProgress.h"
 #include "platform/LayoutTestSupport.h"
 #include "platform/PlatformResourceLoader.h"
 #include "platform/graphics/Color.h"
@@ -101,7 +101,7 @@ LayoutThemeDefault::~LayoutThemeDefault()
 {
 }
 
-bool LayoutThemeDefault::supportsFocusRing(const LayoutStyle& style) const
+bool LayoutThemeDefault::supportsFocusRing(const ComputedStyle& style) const
 {
     if (useMockTheme()) {
         // Don't use focus rings for buttons when mocking controls.
@@ -132,15 +132,21 @@ Color LayoutThemeDefault::systemColor(CSSValueID cssValueId) const
 // Use the Windows style sheets to match their metrics.
 String LayoutThemeDefault::extraDefaultStyleSheet()
 {
+    String legacyOptionStyle;
+    if (!RuntimeEnabledFeatures::htmlPopupMenuEnabled()) {
+        // Option font must be inherited because we depend on computing the size
+        // of the <select> based on the size of the options, and they must use
+        // the same font for that computation to be correct.
+        legacyOptionStyle = "option { font: inherit !important; }";
+    }
     return LayoutTheme::extraDefaultStyleSheet()
         + loadResourceAsASCIIString("themeWin.css")
         + loadResourceAsASCIIString("themeChromiumSkia.css")
-#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
         + loadResourceAsASCIIString("themeChromium.css")
-        + loadResourceAsASCIIString("themeInputMultipleFields.css");
-#else
-        + loadResourceAsASCIIString("themeChromium.css");
+#if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
+        + loadResourceAsASCIIString("themeInputMultipleFields.css")
 #endif
+        + legacyOptionStyle;
 }
 
 String LayoutThemeDefault::extraQuirksStyleSheet()
@@ -210,7 +216,7 @@ int LayoutThemeDefault::sliderTickOffsetFromTrackCenter() const
     return -16;
 }
 
-void LayoutThemeDefault::adjustSliderThumbSize(LayoutStyle& style, Element* element) const
+void LayoutThemeDefault::adjustSliderThumbSize(ComputedStyle& style, Element* element) const
 {
     IntSize size = Platform::current()->themeEngine()->getSize(WebThemeEngine::PartSliderThumb);
 
@@ -267,7 +273,7 @@ bool LayoutThemeDefault::paintCheckbox(LayoutObject* o, const PaintInfo& i, cons
     return false;
 }
 
-void LayoutThemeDefault::setCheckboxSize(LayoutStyle& style) const
+void LayoutThemeDefault::setCheckboxSize(ComputedStyle& style) const
 {
     // If the width and height are both specified, then we have nothing to do.
     if (!style.width().isIntrinsicOrAuto() && !style.height().isAuto())
@@ -290,7 +296,7 @@ bool LayoutThemeDefault::paintRadio(LayoutObject* o, const PaintInfo& i, const I
     return false;
 }
 
-void LayoutThemeDefault::setRadioSize(LayoutStyle& style) const
+void LayoutThemeDefault::setRadioSize(ComputedStyle& style) const
 {
     // If the width and height are both specified, then we have nothing to do.
     if (!style.width().isIntrinsicOrAuto() && !style.height().isAuto())
@@ -348,7 +354,7 @@ bool LayoutThemeDefault::paintMenuList(LayoutObject* o, const PaintInfo& i, cons
 
     WebThemeEngine::ExtraParams extraParams;
     extraParams.menuList.arrowY = middle;
-    const RenderBox* box = toRenderBox(o);
+    const LayoutBox* box = toLayoutBox(o);
     // Match Chromium Win behaviour of showing all borders if any are shown.
     extraParams.menuList.hasBorder = box->borderRight() || box->borderLeft() || box->borderTop() || box->borderBottom();
     extraParams.menuList.hasBorderRadius = o->style()->hasBorderRadius();
@@ -399,7 +405,7 @@ bool LayoutThemeDefault::paintMenuListButton(LayoutObject* o, const PaintInfo& i
     extraParams.menuList.fillContentArea = false;
 
     if (useMockTheme()) {
-        const RenderBox* box = toRenderBox(o);
+        const LayoutBox* box = toLayoutBox(o);
         // The size and position of the drop-down button is different between
         // the mock theme and the regular aura theme.
         int spacingTop = box->borderTop() + box->paddingTop();
@@ -467,7 +473,7 @@ bool LayoutThemeDefault::paintSliderThumb(LayoutObject* o, const PaintInfo& i, c
     return false;
 }
 
-void LayoutThemeDefault::adjustInnerSpinButtonStyle(LayoutStyle& style, Element*) const
+void LayoutThemeDefault::adjustInnerSpinButtonStyle(ComputedStyle& style, Element*) const
 {
     IntSize size = Platform::current()->themeEngine()->getSize(WebThemeEngine::PartInnerSpinButton);
 
@@ -491,7 +497,7 @@ bool LayoutThemeDefault::paintProgressBar(LayoutObject* o, const PaintInfo& i, c
     if (!o->isProgress())
         return true;
 
-    RenderProgress* renderProgress = toRenderProgress(o);
+    LayoutProgress* renderProgress = toLayoutProgress(o);
     IntRect valueRect = progressValueRectFor(renderProgress, rect);
 
     WebThemeEngine::ExtraParams extraParams;
@@ -512,7 +518,7 @@ bool LayoutThemeDefault::shouldOpenPickerWithF4Key() const
     return true;
 }
 
-bool LayoutThemeDefault::shouldUseFallbackTheme(const LayoutStyle& style) const
+bool LayoutThemeDefault::shouldUseFallbackTheme(const ComputedStyle& style) const
 {
     if (useMockTheme()) {
         // The mock theme can't handle zoomed controls, so we fall back to the "fallback" theme.
@@ -523,7 +529,7 @@ bool LayoutThemeDefault::shouldUseFallbackTheme(const LayoutStyle& style) const
     return LayoutTheme::shouldUseFallbackTheme(style);
 }
 
-bool LayoutThemeDefault::supportsHover(const LayoutStyle& style) const
+bool LayoutThemeDefault::supportsHover(const ComputedStyle& style) const
 {
     return true;
 }
@@ -549,7 +555,7 @@ void LayoutThemeDefault::systemFont(CSSValueID systemFontID, FontStyle& fontStyl
     LayoutThemeFontProvider::systemFont(systemFontID, fontStyle, fontWeight, fontSize, fontFamily);
 }
 
-int LayoutThemeDefault::minimumMenuListSize(const LayoutStyle& style) const
+int LayoutThemeDefault::minimumMenuListSize(const ComputedStyle& style) const
 {
     return 0;
 }
@@ -566,11 +572,11 @@ IntRect center(const IntRect& original, int width, int height)
     return IntRect(x, y, width, height);
 }
 
-void LayoutThemeDefault::adjustButtonStyle(LayoutStyle& style, Element*) const
+void LayoutThemeDefault::adjustButtonStyle(ComputedStyle& style, Element*) const
 {
     if (style.appearance() == PushButtonPart) {
         // Ignore line-height.
-        style.setLineHeight(LayoutStyle::initialLineHeight());
+        style.setLineHeight(ComputedStyle::initialLineHeight());
     }
 }
 
@@ -579,10 +585,10 @@ bool LayoutThemeDefault::paintTextArea(LayoutObject* o, const PaintInfo& i, cons
     return paintTextField(o, i, r);
 }
 
-void LayoutThemeDefault::adjustSearchFieldStyle(LayoutStyle& style, Element*) const
+void LayoutThemeDefault::adjustSearchFieldStyle(ComputedStyle& style, Element*) const
 {
     // Ignore line-height.
-    style.setLineHeight(LayoutStyle::initialLineHeight());
+    style.setLineHeight(ComputedStyle::initialLineHeight());
 }
 
 bool LayoutThemeDefault::paintSearchField(LayoutObject* o, const PaintInfo& i, const IntRect& r)
@@ -590,7 +596,7 @@ bool LayoutThemeDefault::paintSearchField(LayoutObject* o, const PaintInfo& i, c
     return paintTextField(o, i, r);
 }
 
-void LayoutThemeDefault::adjustSearchFieldCancelButtonStyle(LayoutStyle& style, Element*) const
+void LayoutThemeDefault::adjustSearchFieldCancelButtonStyle(ComputedStyle& style, Element*) const
 {
     // Scale the button size based on the font size
     float fontScale = style.fontSize() / defaultControlFontPixelSize;
@@ -617,21 +623,21 @@ bool LayoutThemeDefault::paintSearchFieldCancelButton(LayoutObject* cancelButton
     if (!cancelButtonObject->node())
         return false;
     Node* input = cancelButtonObject->node()->shadowHost();
-    LayoutObject* baseRenderer = input ? input->renderer() : cancelButtonObject;
+    LayoutObject* baseRenderer = input ? input->layoutObject() : cancelButtonObject;
     if (!baseRenderer->isBox())
         return false;
-    RenderBox* inputRenderBox = toRenderBox(baseRenderer);
-    LayoutRect inputContentBox = inputRenderBox->contentBoxRect();
+    LayoutBox* inputLayoutBox = toLayoutBox(baseRenderer);
+    LayoutRect inputContentBox = inputLayoutBox->contentBoxRect();
 
     // Make sure the scaled button stays square and will fit in its parent's box.
     LayoutUnit cancelButtonSize = std::min(inputContentBox.width(), std::min<LayoutUnit>(inputContentBox.height(), r.height()));
     // Calculate cancel button's coordinates relative to the input element.
     // Center the button vertically.  Round up though, so if it has to be one pixel off-center, it will
     // be one pixel closer to the bottom of the field.  This tends to look better with the text.
-    LayoutRect cancelButtonRect(cancelButtonObject->offsetFromAncestorContainer(inputRenderBox).width(),
+    LayoutRect cancelButtonRect(cancelButtonObject->offsetFromAncestorContainer(inputLayoutBox).width(),
         inputContentBox.y() + (inputContentBox.height() - cancelButtonSize + 1) / 2,
         cancelButtonSize, cancelButtonSize);
-    IntRect paintingRect = convertToPaintingRect(inputRenderBox, cancelButtonObject, cancelButtonRect, r);
+    IntRect paintingRect = convertToPaintingRect(inputLayoutBox, cancelButtonObject, cancelButtonRect, r);
 
     DEFINE_STATIC_REF(Image, cancelImage, (Image::loadPlatformResource("searchCancel")));
     DEFINE_STATIC_REF(Image, cancelPressedImage, (Image::loadPlatformResource("searchCancelPressed")));
@@ -639,14 +645,14 @@ bool LayoutThemeDefault::paintSearchFieldCancelButton(LayoutObject* cancelButton
     return false;
 }
 
-void LayoutThemeDefault::adjustSearchFieldDecorationStyle(LayoutStyle& style, Element*) const
+void LayoutThemeDefault::adjustSearchFieldDecorationStyle(ComputedStyle& style, Element*) const
 {
     IntSize emptySize(1, 11);
     style.setWidth(Length(emptySize.width(), Fixed));
     style.setHeight(Length(emptySize.height(), Fixed));
 }
 
-void LayoutThemeDefault::adjustSearchFieldResultsDecorationStyle(LayoutStyle& style, Element*) const
+void LayoutThemeDefault::adjustSearchFieldResultsDecorationStyle(ComputedStyle& style, Element*) const
 {
     // Scale the decoration size based on the font size
     float fontScale = style.fontSize() / defaultControlFontPixelSize;
@@ -662,21 +668,21 @@ bool LayoutThemeDefault::paintSearchFieldResultsDecoration(LayoutObject* magnifi
     if (!magnifierObject->node())
         return false;
     Node* input = magnifierObject->node()->shadowHost();
-    LayoutObject* baseRenderer = input ? input->renderer() : magnifierObject;
+    LayoutObject* baseRenderer = input ? input->layoutObject() : magnifierObject;
     if (!baseRenderer->isBox())
         return false;
-    RenderBox* inputRenderBox = toRenderBox(baseRenderer);
-    LayoutRect inputContentBox = inputRenderBox->contentBoxRect();
+    LayoutBox* inputLayoutBox = toLayoutBox(baseRenderer);
+    LayoutRect inputContentBox = inputLayoutBox->contentBoxRect();
 
     // Make sure the scaled decoration stays square and will fit in its parent's box.
     LayoutUnit magnifierSize = std::min(inputContentBox.width(), std::min<LayoutUnit>(inputContentBox.height(), r.height()));
     // Calculate decoration's coordinates relative to the input element.
     // Center the decoration vertically.  Round up though, so if it has to be one pixel off-center, it will
     // be one pixel closer to the bottom of the field.  This tends to look better with the text.
-    LayoutRect magnifierRect(magnifierObject->offsetFromAncestorContainer(inputRenderBox).width(),
+    LayoutRect magnifierRect(magnifierObject->offsetFromAncestorContainer(inputLayoutBox).width(),
         inputContentBox.y() + (inputContentBox.height() - magnifierSize + 1) / 2,
         magnifierSize, magnifierSize);
-    IntRect paintingRect = convertToPaintingRect(inputRenderBox, magnifierObject, magnifierRect, r);
+    IntRect paintingRect = convertToPaintingRect(inputLayoutBox, magnifierObject, magnifierRect, r);
 
     DEFINE_STATIC_REF(Image, magnifierImage, (Image::loadPlatformResource("searchMagnifier")));
     paintInfo.context->drawImage(magnifierImage, paintingRect);
@@ -743,33 +749,33 @@ bool LayoutThemeDefault::paintMediaFullscreenButton(LayoutObject* object, const 
     return LayoutMediaControls::paintMediaControlsPart(MediaEnterFullscreenButton, object, paintInfo, rect);
 }
 
-void LayoutThemeDefault::adjustMenuListStyle(LayoutStyle& style, Element*) const
+void LayoutThemeDefault::adjustMenuListStyle(ComputedStyle& style, Element*) const
 {
     // Height is locked to auto on all browsers.
-    style.setLineHeight(LayoutStyle::initialLineHeight());
+    style.setLineHeight(ComputedStyle::initialLineHeight());
 }
 
-void LayoutThemeDefault::adjustMenuListButtonStyle(LayoutStyle& style, Element* e) const
+void LayoutThemeDefault::adjustMenuListButtonStyle(ComputedStyle& style, Element* e) const
 {
     adjustMenuListStyle(style, e);
 }
 
-int LayoutThemeDefault::popupInternalPaddingLeft(const LayoutStyle& style) const
+int LayoutThemeDefault::popupInternalPaddingLeft(const ComputedStyle& style) const
 {
     return menuListInternalPadding(style, LeftPadding);
 }
 
-int LayoutThemeDefault::popupInternalPaddingRight(const LayoutStyle& style) const
+int LayoutThemeDefault::popupInternalPaddingRight(const ComputedStyle& style) const
 {
     return menuListInternalPadding(style, RightPadding);
 }
 
-int LayoutThemeDefault::popupInternalPaddingTop(const LayoutStyle& style) const
+int LayoutThemeDefault::popupInternalPaddingTop(const ComputedStyle& style) const
 {
     return menuListInternalPadding(style, TopPadding);
 }
 
-int LayoutThemeDefault::popupInternalPaddingBottom(const LayoutStyle& style) const
+int LayoutThemeDefault::popupInternalPaddingBottom(const ComputedStyle& style) const
 {
     return menuListInternalPadding(style, BottomPadding);
 }
@@ -785,7 +791,7 @@ int LayoutThemeDefault::menuListArrowPadding() const
     return ScrollbarTheme::theme()->scrollbarThickness();
 }
 
-int LayoutThemeDefault::menuListInternalPadding(const LayoutStyle& style, int paddingType) const
+int LayoutThemeDefault::menuListInternalPadding(const ComputedStyle& style, int paddingType) const
 {
     // This internal padding is in addition to the user-supplied padding.
     // Matches the FF behavior.
@@ -793,7 +799,7 @@ int LayoutThemeDefault::menuListInternalPadding(const LayoutStyle& style, int pa
 
     // Reserve the space for right arrow here. The rest of the padding is
     // set by adjustMenuListStyle, since PopMenuWin.cpp uses the padding from
-    // RenderMenuList to lay out the individual items in the popup.
+    // LayoutMenuList to lay out the individual items in the popup.
     // If the MenuList actually has appearance "NoAppearance", then that means
     // we don't draw a button, so don't reserve space for it.
     const int barType = style.direction() == LTR ? RightPadding : LeftPadding;
@@ -815,13 +821,13 @@ static const int progressActivityBlocks = 5;
 static const int progressAnimationFrames = 10;
 static const double progressAnimationInterval = 0.125;
 
-IntRect LayoutThemeDefault::determinateProgressValueRectFor(RenderProgress* renderProgress, const IntRect& rect) const
+IntRect LayoutThemeDefault::determinateProgressValueRectFor(LayoutProgress* renderProgress, const IntRect& rect) const
 {
     int dx = rect.width() * renderProgress->position();
     return IntRect(rect.x(), rect.y(), dx, rect.height());
 }
 
-IntRect LayoutThemeDefault::indeterminateProgressValueRectFor(RenderProgress* renderProgress, const IntRect& rect) const
+IntRect LayoutThemeDefault::indeterminateProgressValueRectFor(LayoutProgress* renderProgress, const IntRect& rect) const
 {
 
     int valueWidth = rect.width() / progressActivityBlocks;
@@ -835,17 +841,17 @@ IntRect LayoutThemeDefault::indeterminateProgressValueRectFor(RenderProgress* re
     return IntRect(rect.x() + (1.0 - progress) * 2 * movableWidth, rect.y(), valueWidth, rect.height());
 }
 
-double LayoutThemeDefault::animationRepeatIntervalForProgressBar(RenderProgress*) const
+double LayoutThemeDefault::animationRepeatIntervalForProgressBar() const
 {
     return progressAnimationInterval;
 }
 
-double LayoutThemeDefault::animationDurationForProgressBar(RenderProgress* renderProgress) const
+double LayoutThemeDefault::animationDurationForProgressBar() const
 {
     return progressAnimationInterval * progressAnimationFrames * 2; // "2" for back and forth
 }
 
-IntRect LayoutThemeDefault::progressValueRectFor(RenderProgress* renderProgress, const IntRect& rect) const
+IntRect LayoutThemeDefault::progressValueRectFor(LayoutProgress* renderProgress, const IntRect& rect) const
 {
     return renderProgress->isDeterminate() ? determinateProgressValueRectFor(renderProgress, rect) : indeterminateProgressValueRectFor(renderProgress, rect);
 }

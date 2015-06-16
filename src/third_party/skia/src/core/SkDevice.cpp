@@ -8,6 +8,7 @@
 #include "SkDevice.h"
 #include "SkDeviceProperties.h"
 #include "SkDraw.h"
+#include "SkDrawFilter.h"
 #include "SkMetaData.h"
 #include "SkPatchUtils.h"
 #include "SkPathMeasure.h"
@@ -63,18 +64,18 @@ const SkBitmap& SkBaseDevice::accessBitmap(bool changePixels) {
 }
 
 SkPixelGeometry SkBaseDevice::CreateInfo::AdjustGeometry(const SkImageInfo& info,
-                                                         Usage usage,
+                                                         TileUsage tileUsage,
                                                          SkPixelGeometry geo) {
-    switch (usage) {
-        case kGeneral_Usage:
+    switch (tileUsage) {
+        case kPossible_TileUsage:
+            // (we think) for compatibility with old clients, we assume this layer can support LCD
+            // even though they may not have marked it as opaque... seems like we should update
+            // our callers (reed/robertphilips).
             break;
-        case kSaveLayer_Usage:
+        case kNever_TileUsage:
             if (info.alphaType() != kOpaque_SkAlphaType) {
                 geo = kUnknown_SkPixelGeometry;
             }
-            break;
-        case kImageFilter_Usage:
-            geo = kUnknown_SkPixelGeometry;
             break;
     }
     return geo;
@@ -85,7 +86,7 @@ void SkBaseDevice::initForRootLayer(SkPixelGeometry geo) {
     // anyway to document logically what is going on.
     //
     fLeakyProperties->setPixelGeometry(CreateInfo::AdjustGeometry(this->imageInfo(),
-                                                                  kGeneral_Usage,
+                                                                  kPossible_TileUsage,
                                                                   geo));
 }
 
@@ -121,17 +122,24 @@ void SkBaseDevice::drawPatch(const SkDraw& draw, const SkPoint cubics[12], const
 }
 
 void SkBaseDevice::drawTextBlob(const SkDraw& draw, const SkTextBlob* blob, SkScalar x, SkScalar y,
-                                const SkPaint &paint) {
+                                const SkPaint &paint, SkDrawFilter* drawFilter) {
 
     SkPaint runPaint = paint;
 
     SkTextBlob::RunIterator it(blob);
-    while (!it.done()) {
+    for (;!it.done(); it.next()) {
         size_t textLen = it.glyphCount() * sizeof(uint16_t);
         const SkPoint& offset = it.offset();
         // applyFontToPaint() always overwrites the exact same attributes,
-        // so it is safe to not re-seed the paint.
+        // so it is safe to not re-seed the paint for this reason.
         it.applyFontToPaint(&runPaint);
+
+        if (drawFilter && !drawFilter->filter(&runPaint, SkDrawFilter::kText_Type)) {
+            // A false return from filter() means we should abort the current draw.
+            runPaint = paint;
+            continue;
+        }
+
         runPaint.setFlags(this->filterTextFlags(runPaint));
 
         switch (it.positioning()) {
@@ -150,7 +158,10 @@ void SkBaseDevice::drawTextBlob(const SkDraw& draw, const SkTextBlob* blob, SkSc
             SkFAIL("unhandled positioning mode");
         }
 
-        it.next();
+        if (drawFilter) {
+            // A draw filter may change the paint arbitrarily, so we must re-seed in this case.
+            runPaint = paint;
+        }
     }
 }
 

@@ -121,14 +121,14 @@ ${forward_list}
 
 class InstrumentingAgents : public RefCountedWillBeGarbageCollectedFinalized<InstrumentingAgents> {
     WTF_MAKE_NONCOPYABLE(InstrumentingAgents);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(InstrumentingAgents);
 public:
     static PassRefPtrWillBeRawPtr<InstrumentingAgents> create()
     {
         return adoptRefWillBeNoop(new InstrumentingAgents());
     }
     ~InstrumentingAgents() { }
-    void trace(Visitor*);
+    DECLARE_TRACE();
     void reset();
 
 ${accessor_list}
@@ -154,7 +154,7 @@ InstrumentingAgents::InstrumentingAgents()
 {
 }
 
-void InstrumentingAgents::trace(Visitor* visitor)
+DEFINE_TRACE(InstrumentingAgents)
 {
     $trace_list
 }

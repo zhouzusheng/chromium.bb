@@ -51,9 +51,9 @@ public:
     virtual FloatRect objectBoundingBox() const override { return m_objectBoundingBox; }
     virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectSVGImage || LayoutSVGModelObject::isOfType(type); }
 
-private:
-    virtual const char* renderName() const override { return "LayoutSVGImage"; }
+    virtual const char* name() const override { return "LayoutSVGImage"; }
 
+private:
     virtual FloatRect strokeBoundingBox() const override { return m_objectBoundingBox; }
 
     virtual void addFocusRingRects(Vector<LayoutRect>&, const LayoutPoint& additionalOffset) const override;
@@ -65,7 +65,7 @@ private:
 
     FloatSize computeImageViewportSize(ImageResource&) const;
 
-    virtual bool nodeAtFloatPoint(const HitTestRequest&, HitTestResult&, const FloatPoint& pointInParent, HitTestAction) override;
+    virtual bool nodeAtFloatPoint(HitTestResult&, const FloatPoint& pointInParent, HitTestAction) override;
 
     virtual AffineTransform localTransform() const override { return m_localTransform; }
 

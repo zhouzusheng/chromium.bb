@@ -27,10 +27,10 @@
 #include "core/dom/ElementTraversal.h"
 #include "core/html/HTMLOListElement.h"
 #include "core/layout/CounterNode.h"
-#include "core/layout/style/LayoutStyle.h"
-#include "core/rendering/RenderListItem.h"
-#include "core/rendering/RenderListMarker.h"
-#include "core/rendering/RenderView.h"
+#include "core/layout/LayoutListItem.h"
+#include "core/layout/LayoutListMarker.h"
+#include "core/layout/LayoutView.h"
+#include "core/style/ComputedStyle.h"
 #include "wtf/StdLibExtras.h"
 
 #ifndef NDEBUG
@@ -41,7 +41,7 @@ namespace blink {
 
 using namespace HTMLNames;
 
-typedef HashMap<AtomicString, RefPtr<CounterNode> > CounterMap;
+typedef HashMap<AtomicString, RefPtr<CounterNode>> CounterMap;
 typedef HashMap<const LayoutObject*, OwnPtr<CounterMap>> CounterMaps;
 
 static CounterNode* makeCounterNode(LayoutObject&, const AtomicString& identifier, bool alwaysCreateCounter);
@@ -59,9 +59,9 @@ static LayoutObject* previousInPreOrder(const LayoutObject& object)
     Element* self = toElement(object.node());
     ASSERT(self);
     Element* previous = ElementTraversal::previousIncludingPseudo(*self);
-    while (previous && !previous->renderer())
+    while (previous && !previous->layoutObject())
         previous = ElementTraversal::previousIncludingPseudo(*previous);
-    return previous ? previous->renderer() : 0;
+    return previous ? previous->layoutObject() : 0;
 }
 
 // This function processes the renderer tree in the order of the DOM tree
@@ -71,12 +71,12 @@ static LayoutObject* previousSiblingOrParent(const LayoutObject& object)
     Element* self = toElement(object.node());
     ASSERT(self);
     Element* previous = ElementTraversal::pseudoAwarePreviousSibling(*self);
-    while (previous && !previous->renderer())
+    while (previous && !previous->layoutObject())
         previous = ElementTraversal::pseudoAwarePreviousSibling(*previous);
     if (previous)
-        return previous->renderer();
+        return previous->layoutObject();
     previous = self->parentElement();
-    return previous ? previous->renderer() : 0;
+    return previous ? previous->layoutObject() : 0;
 }
 
 static inline Element* parentElement(LayoutObject& object)
@@ -96,9 +96,9 @@ static LayoutObject* nextInPreOrder(const LayoutObject& object, const Element* s
     Element* self = toElement(object.node());
     ASSERT(self);
     Element* next = skipDescendants ? ElementTraversal::nextIncludingPseudoSkippingChildren(*self, stayWithin) : ElementTraversal::nextIncludingPseudo(*self, stayWithin);
-    while (next && !next->renderer())
+    while (next && !next->layoutObject())
         next = skipDescendants ? ElementTraversal::nextIncludingPseudoSkippingChildren(*next, stayWithin) : ElementTraversal::nextIncludingPseudo(*next, stayWithin);
-    return next ? next->renderer() : 0;
+    return next ? next->layoutObject() : 0;
 }
 
 static bool planCounter(LayoutObject& object, const AtomicString& identifier, bool& isReset, int& value)
@@ -111,13 +111,13 @@ static bool planCounter(LayoutObject& object, const AtomicString& identifier, bo
     // We must have a generating node or else we cannot have a counter.
     if (!generatingNode)
         return false;
-    const LayoutStyle& style = object.styleRef();
+    const ComputedStyle& style = object.styleRef();
 
     switch (style.styleType()) {
     case NOPSEUDO:
         // Sometimes nodes have more then one renderer. Only the first one gets the counter
         // LayoutTests/http/tests/css/counter-crash.html
-        if (generatingNode->renderer() != &object)
+        if (generatingNode->layoutObject() != &object)
             return false;
         break;
     case BEFORE:
@@ -136,8 +136,8 @@ static bool planCounter(LayoutObject& object, const AtomicString& identifier, bo
 
     if (identifier == "list-item") {
         if (object.isListItem()) {
-            if (toRenderListItem(object).hasExplicitValue()) {
-                value = toRenderListItem(object).explicitValue();
+            if (toLayoutListItem(object).hasExplicitValue()) {
+                value = toLayoutListItem(object).explicitValue();
                 isReset = true;
                 return true;
             }
@@ -270,7 +270,7 @@ static bool findPlaceForCounter(LayoutObject& counterOwner, const AtomicString& 
                         previousSiblingProtector = currentCounter;
                         // We are no longer interested in previous siblings of the currentRenderer or their children
                         // as counters they may have attached cannot be the previous sibling of the counter we are placing.
-                        currentRenderer = parentElement(*currentRenderer)->renderer();
+                        currentRenderer = parentElement(*currentRenderer)->layoutObject();
                         continue;
                     }
                 } else {
@@ -345,7 +345,7 @@ static CounterNode* makeCounterNode(LayoutObject& object, const AtomicString& id
 }
 
 LayoutCounter::LayoutCounter(Document* node, const CounterContent& counter)
-    : RenderText(node, StringImpl::empty())
+    : LayoutText(node, StringImpl::empty())
     , m_counter(counter)
     , m_counterNode(0)
     , m_nextForSameCounter(0)
@@ -363,19 +363,14 @@ void LayoutCounter::destroy()
         m_counterNode->removeRenderer(this);
         ASSERT(!m_counterNode);
     }
-    RenderText::destroy();
+    LayoutText::destroy();
 }
 
 void LayoutCounter::willBeDestroyed()
 {
     if (view())
         view()->removeLayoutCounter();
-    RenderText::willBeDestroyed();
-}
-
-const char* LayoutCounter::renderName() const
-{
-    return "LayoutCounter";
+    LayoutText::willBeDestroyed();
 }
 
 PassRefPtr<StringImpl> LayoutCounter::originalText() const
@@ -424,7 +419,7 @@ void LayoutCounter::invalidate()
     ASSERT(!m_counterNode);
     if (documentBeingDestroyed())
         return;
-    setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
+    setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(LayoutInvalidationReason::CountersChanged);
 }
 
 static void destroyCounterNodeWithoutMapRemoval(const AtomicString& identifier, CounterNode* node)
@@ -546,7 +541,7 @@ void LayoutCounter::rendererSubtreeAttached(LayoutObject* renderer)
         updateCounters(*descendant);
 }
 
-void LayoutCounter::rendererStyleChanged(LayoutObject& renderer, const LayoutStyle* oldStyle, const LayoutStyle& newStyle)
+void LayoutCounter::rendererStyleChanged(LayoutObject& renderer, const ComputedStyle* oldStyle, const ComputedStyle& newStyle)
 {
     Node* node = renderer.generatingNode();
     if (!node || node->needsAttach())

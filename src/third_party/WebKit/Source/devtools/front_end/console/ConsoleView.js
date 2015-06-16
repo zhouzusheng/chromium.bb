@@ -138,6 +138,7 @@ WebInspector.ConsoleView = function()
 
     this._prompt = new WebInspector.TextPromptWithHistory(WebInspector.ExecutionContextSelector.completionsForTextPromptInCurrentContext);
     this._prompt.setSuggestBoxEnabled(true);
+    this._prompt.setAutocompletionTimeout(0);
     this._prompt.renderAsBlock();
     var proxyElement = this._prompt.attach(this._promptElement);
     proxyElement.addEventListener("keydown", this._promptKeyDown.bind(this), false);
@@ -180,7 +181,7 @@ WebInspector.ConsoleView.prototype = {
     _initConsoleMessages: function()
     {
         var mainTarget = WebInspector.targetManager.mainTarget();
-        if (!WebInspector.isWorkerFrontend() && (!mainTarget || !mainTarget.resourceTreeModel.cachedResourcesLoaded())) {
+        if (!mainTarget || !mainTarget.resourceTreeModel.cachedResourcesLoaded()) {
             WebInspector.targetManager.addModelListener(WebInspector.ResourceTreeModel, WebInspector.ResourceTreeModel.EventTypes.CachedResourcesLoaded, this._onResourceTreeModelLoaded, this);
             return;
         }
@@ -253,7 +254,7 @@ WebInspector.ConsoleView.prototype = {
     {
         this._viewport.invalidate();
         target.runtimeModel.executionContexts().forEach(this._executionContextCreated, this);
-        if (WebInspector.targetManager.targets().length > 1 && !WebInspector.isWorkerFrontend())
+        if (WebInspector.targetManager.targets().length > 1 && WebInspector.targetManager.mainTarget().isPage())
             this._showAllMessagesCheckbox.element.classList.toggle("hidden", false);
     },
 
@@ -340,10 +341,13 @@ WebInspector.ConsoleView.prototype = {
                 var frame = executionContext.target().resourceTreeModel.frameForId(executionContext.frameId);
                 result =  frame ? frame.displayName() : (executionContext.origin || executionContext.name);
             } else {
-                result = WebInspector.displayNameForURL(executionContext.origin) || executionContext.name;
+                var parsedUrl = executionContext.origin.asParsedURL();
+                var name = parsedUrl? parsedUrl.lastPathComponentWithFragment() : executionContext.name;
+                result = executionContext.target().decorateLabel(name);
             }
-        } else
+        } else {
             result = "\u00a0\u00a0\u00a0\u00a0" + (executionContext.name || executionContext.origin);
+        }
 
         var maxLength = 50;
         return result.trimMiddle(maxLength);
@@ -365,7 +369,7 @@ WebInspector.ConsoleView.prototype = {
     {
         // FIXME(413886): We never want to show execution context for the main thread of shadow page in service/shared worker frontend.
         // This check could be removed once we do not send this context to frontend.
-        if (WebInspector.isWorkerFrontend() && executionContext.target() === WebInspector.targetManager.mainTarget())
+        if (executionContext.target().isServiceWorker())
             return;
 
         var newOption = createElement("option");
@@ -374,19 +378,20 @@ WebInspector.ConsoleView.prototype = {
         this._optionByExecutionContext.set(executionContext, newOption);
         var sameGroupExists = false;
         var options = this._executionContextSelector.selectElement().options;
-        var insertBeforeOption = null;
-        for (var i = 0; i < options.length; ++i) {
-            var optionContext = options[i].__executionContext;
-            var isSameGroup = executionContext.target() === optionContext.target() && executionContext.frameId === optionContext.frameId;
-            sameGroupExists |= isSameGroup;
-            if ((isSameGroup && WebInspector.ExecutionContext.comparator(optionContext, executionContext) > 0) || (sameGroupExists && !isSameGroup)) {
-                insertBeforeOption = options[i];
-                break;
-            }
-        }
-        this._executionContextSelector.selectElement().insertBefore(newOption, insertBeforeOption);
+        var contexts = Array.prototype.map.call(options, mapping);
+        var index = insertionIndexForObjectInListSortedByFunction(executionContext, contexts, WebInspector.ExecutionContext.comparator);
+        this._executionContextSelector.selectElement().insertBefore(newOption, options[index]);
         if (executionContext === WebInspector.context.flavor(WebInspector.ExecutionContext))
             this._executionContextSelector.select(newOption);
+
+        /**
+         * @param {!Element} option
+         * @return {!WebInspector.ExecutionContext}
+         */
+        function mapping(option)
+        {
+            return option.__executionContext;
+        }
     },
 
     /**
@@ -791,7 +796,7 @@ WebInspector.ConsoleView.prototype = {
     _monitoringXHREnabledSettingChanged: function(event)
     {
         var enabled = /** @type {boolean} */ (event.data);
-        WebInspector.targetManager.targets().forEach(function(target) {target.consoleAgent().setMonitoringXHREnabled(enabled);});
+        WebInspector.targetManager.targets().forEach(function(target) {target.networkAgent().setMonitoringXHREnabled(enabled);});
     },
 
     /**
@@ -903,53 +908,14 @@ WebInspector.ConsoleView.prototype = {
         if (!result)
             return;
 
-        var target = result.target();
-        /**
-         * @param {string=} url
-         * @param {number=} lineNumber
-         * @param {number=} columnNumber
-         */
-        function addMessage(url, lineNumber, columnNumber)
-        {
-            var level = wasThrown ? WebInspector.ConsoleMessage.MessageLevel.Error : WebInspector.ConsoleMessage.MessageLevel.Log;
-            var message;
-            if (!wasThrown)
-                message = new WebInspector.ConsoleMessage(target, WebInspector.ConsoleMessage.MessageSource.JS, level, "", WebInspector.ConsoleMessage.MessageType.Result, url, lineNumber, columnNumber, undefined, [result]);
-            else
-                message = new WebInspector.ConsoleMessage(target, WebInspector.ConsoleMessage.MessageSource.JS, level, exceptionDetails.text, WebInspector.ConsoleMessage.MessageType.Result, exceptionDetails.url, exceptionDetails.line, exceptionDetails.column, undefined, [WebInspector.UIString("Uncaught"), result], exceptionDetails.stackTrace, undefined, undefined, undefined, exceptionDetails.scriptId);
-            message.setOriginatingMessage(originatingConsoleMessage);
-            target.consoleModel.addMessage(message);
-        }
-
-        if (result.type !== "function") {
-            addMessage();
-            return;
-        }
-
-        result.functionDetails(didGetDetails);
-
-        /**
-         * @param {?WebInspector.DebuggerModel.FunctionDetails} response
-         */
-        function didGetDetails(response)
-        {
-            if (!response || !response.location) {
-                addMessage();
-                return;
-            }
-            var url;
-            var lineNumber;
-            var columnNumber;
-            var script = target.debuggerModel.scriptForId(response.location.scriptId);
-            if (script && script.sourceURL) {
-                url = script.sourceURL;
-                // FIXME(WK62725): Debugger line/column are 0-based, while console ones are 1-based.
-                lineNumber = response.location.lineNumber + 1;
-                columnNumber = response.location.columnNumber + 1;
-            }
-            // FIXME: this should be using live location.
-            addMessage(url, lineNumber, columnNumber);
-        }
+        var level = wasThrown ? WebInspector.ConsoleMessage.MessageLevel.Error : WebInspector.ConsoleMessage.MessageLevel.Log;
+        var message;
+        if (!wasThrown)
+            message = new WebInspector.ConsoleMessage(result.target(), WebInspector.ConsoleMessage.MessageSource.JS, level, "", WebInspector.ConsoleMessage.MessageType.Result, undefined, undefined, undefined, undefined, [result]);
+        else
+            message = new WebInspector.ConsoleMessage(result.target(), WebInspector.ConsoleMessage.MessageSource.JS, level, exceptionDetails.text, WebInspector.ConsoleMessage.MessageType.Result, exceptionDetails.url, exceptionDetails.line, exceptionDetails.column, undefined, [WebInspector.UIString("Uncaught"), result], exceptionDetails.stackTrace, undefined, undefined, undefined, exceptionDetails.scriptId);
+        message.setOriginatingMessage(originatingConsoleMessage);
+        result.target().consoleModel.addMessage(message);
     },
 
     /**
@@ -958,7 +924,6 @@ WebInspector.ConsoleView.prototype = {
      */
     _appendCommand: function(text, useCommandLineAPI)
     {
-
         this._prompt.setText("");
         var currentExecutionContext = WebInspector.context.flavor(WebInspector.ExecutionContext);
         if (currentExecutionContext)
@@ -1280,7 +1245,10 @@ WebInspector.ConsoleCommand = function(message, linkifier, nestingLevel)
 WebInspector.ConsoleCommand.prototype = {
     clearHighlights: function()
     {
-        WebInspector.removeSearchResultsHighlight(this._formattedCommand, WebInspector.highlightedSearchResultClassName);
+        if (this._higlightNodeChanges) {
+            WebInspector.revertDomChanges(this._higlightNodeChanges);
+            this._higlightNodeChanges = null;
+        }
     },
 
     /**
@@ -1331,9 +1299,10 @@ WebInspector.ConsoleCommand.prototype = {
     highlightMatches: function(ranges)
     {
         var highlightNodes = [];
-        if (this._formattedCommand) {
-            highlightNodes = WebInspector.highlightRangesWithStyleClass(this._formattedCommand, ranges, WebInspector.highlightedSearchResultClassName);
-        }
+        this._higlightNodeChanges = [];
+        if (this._formattedCommand)
+            highlightNodes = WebInspector.highlightRangesWithStyleClass(this._formattedCommand, ranges, WebInspector.highlightedSearchResultClassName, this._higlightNodeChanges);
+
         return highlightNodes;
     },
 

@@ -108,7 +108,7 @@ bool ZoomController::SetZoomLevelByClient(
   // Do not actually rescale the page in manual mode.
   if (zoom_mode_ == ZOOM_MODE_MANUAL) {
     // If the zoom level hasn't changed, early out to avoid sending an event.
-    if (zoom_level_ == zoom_level)
+    if (content::ZoomValuesEqual(zoom_level_, zoom_level))
       return true;
 
     double old_zoom_level = zoom_level_;
@@ -147,6 +147,9 @@ bool ZoomController::SetZoomLevelByClient(
   } else {
     if (!entry) {
       last_client_ = NULL;
+      // If we exit without triggering an update, we should clear event_data_,
+      // else we may later trigger a DCHECK(event_data_).
+      event_data_.reset();
       return false;
     }
     std::string host =
@@ -240,8 +243,10 @@ void ZoomController::SetZoomMode(ZoomMode new_mode) {
     }
     case ZOOM_MODE_DISABLED: {
       // The page needs to be zoomed back to default before disabling the zoom
+      double new_zoom_level = GetDefaultZoomLevel();
+      event_data_->new_zoom_level = new_zoom_level;
       zoom_map->SetTemporaryZoomLevel(render_process_id, render_view_id,
-                                      GetDefaultZoomLevel());
+                                      new_zoom_level);
       break;
     }
   }
@@ -330,27 +335,38 @@ void ZoomController::UpdateState(const std::string& host) {
     }
   }
 
-  // The zoom bubble should not be shown for zoom changes where the host is
-  // empty.
-  bool can_show_bubble = can_show_bubble_ && !host.empty();
-
   if (event_data_) {
     // For state changes initiated within the ZoomController, information about
     // the change should be sent.
     ZoomChangedEventData zoom_change_data = *event_data_;
     event_data_.reset();
-    zoom_change_data.can_show_bubble = can_show_bubble;
+    // The zoom bubble should not be shown for zoom changes where the host
+    // is empty.
+    zoom_change_data.can_show_bubble = can_show_bubble_ && !host.empty();
     FOR_EACH_OBSERVER(ZoomObserver, observers_,
                       OnZoomChanged(zoom_change_data));
   } else {
     // TODO(wjmaclean) Should we consider having HostZoomMap send both old and
     // new zoom levels here?
     double zoom_level = GetZoomLevel();
-    ZoomChangedEventData zoom_change_data(
-        web_contents(), zoom_level, zoom_level, zoom_mode_, can_show_bubble);
+    // We never show a zoom bubble for an event we didn't generate.
+    ZoomChangedEventData zoom_change_data(web_contents(), zoom_level,
+                                          zoom_level, zoom_mode_,
+                                          false /* can_show_bubble */);
     FOR_EACH_OBSERVER(ZoomObserver, observers_,
                       OnZoomChanged(zoom_change_data));
   }
+}
+
+void ZoomController::SetPageScaleFactorIsOneForTesting(bool is_one) {
+  int render_process_id = web_contents()->GetRenderProcessHost()->GetID();
+  int render_view_id = web_contents()->GetRenderViewHost()->GetRoutingID();
+  host_zoom_map_->SetPageScaleFactorIsOneForView(
+      render_process_id, render_view_id, is_one);
+}
+
+bool ZoomController::PageScaleFactorIsOne() const {
+  return content::HostZoomMap::PageScaleFactorIsOne(web_contents());
 }
 
 }  // namespace ui_zoom

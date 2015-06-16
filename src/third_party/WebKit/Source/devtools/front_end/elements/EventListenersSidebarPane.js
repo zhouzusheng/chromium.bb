@@ -34,6 +34,7 @@
 WebInspector.EventListenersSidebarPane = function()
 {
     WebInspector.ElementsSidebarPane.call(this, WebInspector.UIString("Event Listeners"));
+    this.registerRequiredCSS("components/objectValue.css");
     this.bodyElement.classList.add("events-pane");
 
     this._treeOutline = new TreeOutline(true);
@@ -168,7 +169,7 @@ WebInspector.EventListenersTreeElement = function(title, nodeId, linkifier)
     this._nodeId = nodeId;
     this._linkifier = linkifier;
 
-    TreeElement.call(this, title, null, true);
+    TreeElement.call(this, title);
     this.toggleOnClick = true;
     this.selectable = false;
 }
@@ -195,7 +196,7 @@ WebInspector.EventListenersTreeElement.prototype = {
  */
 WebInspector.EventListenerBar = function(eventListener, nodeId, linkifier)
 {
-    TreeElement.call(this, "", {}, true);
+    TreeElement.call(this, "", true);
 
     var target = eventListener.target();
     this._runtimeModel = target.runtimeModel;

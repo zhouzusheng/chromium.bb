@@ -34,7 +34,7 @@
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/HTMLNames.h"
-#include "core/dom/NodeLayoutStyle.h"
+#include "core/dom/NodeComputedStyle.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/FrameSelection.h"
 #include "core/editing/iterators/TextIterator.h"
@@ -47,12 +47,12 @@
 #include "core/html/HTMLInputElement.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/html/shadow/TextControlInnerElements.h"
-#include "core/layout/Layer.h"
 #include "core/layout/LayoutDetailsMarker.h"
 #include "core/layout/LayoutTextControlSingleLine.h"
 #include "core/layout/LayoutTheme.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
+#include "core/paint/DeprecatedPaintLayer.h"
 #include "platform/EventDispatchForbiddenScope.h"
 #include "wtf/text/WTFString.h"
 
@@ -65,7 +65,7 @@ private:
     inline DataListIndicatorElement(Document& document) : HTMLDivElement(document) { }
     inline HTMLInputElement* hostInput() const { return toHTMLInputElement(shadowHost()); }
 
-    virtual LayoutObject* createRenderer(const LayoutStyle&) override
+    virtual LayoutObject* createLayoutObject(const ComputedStyle&) override
     {
         return new LayoutDetailsMarker(this);
     }
@@ -227,13 +227,13 @@ void TextFieldInputType::forwardEvent(Event* event)
             return;
     }
 
-    if (element().renderer() && (event->isMouseEvent() || event->isDragEvent() || event->hasInterface(EventNames::WheelEvent) || event->type() == EventTypeNames::blur || event->type() == EventTypeNames::focus)) {
-        LayoutTextControlSingleLine* renderTextControl = toLayoutTextControlSingleLine(element().renderer());
+    if (element().layoutObject() && (event->isMouseEvent() || event->isDragEvent() || event->hasInterface(EventNames::WheelEvent) || event->type() == EventTypeNames::blur || event->type() == EventTypeNames::focus)) {
+        LayoutTextControlSingleLine* renderTextControl = toLayoutTextControlSingleLine(element().layoutObject());
         if (event->type() == EventTypeNames::blur) {
-            if (RenderBox* innerEditorRenderer = element().innerEditorElement()->renderBox()) {
-                // FIXME: This class has no need to know about Layer!
-                if (Layer* innerLayer = innerEditorRenderer->layer()) {
-                    if (LayerScrollableArea* innerScrollableArea = innerLayer->scrollableArea()) {
+            if (LayoutBox* innerEditorRenderer = element().innerEditorElement()->layoutBox()) {
+                // FIXME: This class has no need to know about DeprecatedPaintLayer!
+                if (DeprecatedPaintLayer* innerLayer = innerEditorRenderer->layer()) {
+                    if (DeprecatedPaintLayerScrollableArea* innerScrollableArea = innerLayer->scrollableArea()) {
                         IntSize scrollOffset(!renderTextControl->style()->isLeftToRightDirection() ? innerScrollableArea->scrollWidth().toInt() : 0, 0);
                         innerScrollableArea->scrollToOffset(scrollOffset, ScrollOffsetClamped);
                     }
@@ -268,7 +268,7 @@ bool TextFieldInputType::shouldSubmitImplicitly(Event* event)
     return (event->type() == EventTypeNames::textInput && event->hasInterface(EventNames::TextEvent) && toTextEvent(event)->data() == "\n") || InputType::shouldSubmitImplicitly(event);
 }
 
-LayoutObject* TextFieldInputType::createRenderer(const LayoutStyle&) const
+LayoutObject* TextFieldInputType::createLayoutObject(const ComputedStyle&) const
 {
     return new LayoutTextControlSingleLine(&element());
 }
@@ -484,7 +484,7 @@ String TextFieldInputType::convertFromVisibleValue(const String& visibleValue) c
 
 void TextFieldInputType::subtreeHasChanged()
 {
-    ASSERT(element().renderer());
+    ASSERT(element().layoutObject());
 
     bool wasChanged = element().wasChangedSinceLastFormControlChangeEvent();
     element().setChangedSinceLastFormControlChangeEvent(true);

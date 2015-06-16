@@ -41,6 +41,7 @@
 #include "ppapi/c/ppb_tcp_socket.h"
 #include "ppapi/c/ppb_text_input_controller.h"
 #include "ppapi/c/ppb_udp_socket.h"
+#include "ppapi/c/ppb_video_encoder.h"
 #include "ppapi/c/private/pp_content_decryptor.h"
 #include "ppapi/c/private/pp_private_font_charset.h"
 #include "ppapi/c/private/pp_video_capture_format.h"
@@ -91,7 +92,7 @@ IPC_ENUM_TRAITS_MAX_VALUE(ppapi::TCPSocketVersion,
 IPC_ENUM_TRAITS(PP_AudioSampleRate)
 IPC_ENUM_TRAITS_MAX_VALUE(PP_BlendMode, PP_BLENDMODE_LAST)
 IPC_ENUM_TRAITS_MAX_VALUE(PP_CdmExceptionCode, PP_CDMEXCEPTIONCODE_OUTPUTERROR)
-IPC_ENUM_TRAITS_MAX_VALUE(PP_CdmKeyStatus, PP_CDMKEYSTATUS_OUTPUTNOTALLOWED)
+IPC_ENUM_TRAITS_MAX_VALUE(PP_CdmKeyStatus, PP_CDMKEYSTATUS_STATUSPENDING)
 IPC_ENUM_TRAITS_MAX_VALUE(PP_CdmMessageType, PP_CDMMESSAGETYPE_LICENSE_RELEASE)
 IPC_ENUM_TRAITS(PP_DeviceType_Dev)
 IPC_ENUM_TRAITS(PP_DecryptorStreamType)
@@ -101,6 +102,7 @@ IPC_ENUM_TRAITS(PP_Flash_BrowserOperations_Permission)
 IPC_ENUM_TRAITS(PP_Flash_BrowserOperations_SettingType)
 IPC_ENUM_TRAITS(PP_FlashSetting)
 IPC_ENUM_TRAITS(PP_ImageDataFormat)
+IPC_ENUM_TRAITS_MAX_VALUE(PP_InitDataType, PP_INITDATATYPE_WEBM)
 IPC_ENUM_TRAITS(PP_InputEvent_MouseButton)
 IPC_ENUM_TRAITS(PP_InputEvent_Type)
 IPC_ENUM_TRAITS_MAX_VALUE(PP_IsolatedFileSystemType_Private,
@@ -112,6 +114,7 @@ IPC_ENUM_TRAITS_MAX_VALUE(PP_NetworkList_Type, PP_NETWORKLIST_TYPE_CELLULAR)
 IPC_ENUM_TRAITS(PP_PrintOrientation_Dev)
 IPC_ENUM_TRAITS(PP_PrintOutputFormat_Dev)
 IPC_ENUM_TRAITS(PP_PrintScalingOption_Dev)
+IPC_ENUM_TRAITS_MAX_VALUE(PP_PrivateDuplexMode_Dev, PP_PRIVATEDUPLEXMODE_LAST)
 IPC_ENUM_TRAITS(PP_PrivateFontCharset)
 IPC_ENUM_TRAITS(PP_ResourceImage)
 IPC_ENUM_TRAITS(PP_ResourceString)
@@ -128,7 +131,7 @@ IPC_ENUM_TRAITS(PP_TrueTypeFontWeight_Dev)
 IPC_ENUM_TRAITS(PP_TrueTypeFontWidth_Dev)
 IPC_ENUM_TRAITS(PP_TrueTypeFontCharset_Dev)
 IPC_ENUM_TRAITS_MAX_VALUE(PP_UDPSocket_Option,
-                          PP_UDPSOCKET_OPTION_RECV_BUFFER_SIZE)
+                          PP_UDPSOCKET_OPTION_MULTICAST_TTL)
 IPC_ENUM_TRAITS(PP_VideoDecodeError_Dev)
 IPC_ENUM_TRAITS(PP_VideoDecoder_Profile)
 IPC_ENUM_TRAITS_MAX_VALUE(PP_VideoFrame_Format, PP_VIDEOFRAME_FORMAT_LAST)
@@ -212,6 +215,9 @@ IPC_STRUCT_TRAITS_END()
 IPC_STRUCT_TRAITS_BEGIN(PP_PdfPrintPresetOptions_Dev)
   IPC_STRUCT_TRAITS_MEMBER(is_scaling_disabled)
   IPC_STRUCT_TRAITS_MEMBER(copies)
+  IPC_STRUCT_TRAITS_MEMBER(duplex)
+  IPC_STRUCT_TRAITS_MEMBER(is_page_size_uniform)
+  IPC_STRUCT_TRAITS_MEMBER(uniform_page_size)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(PP_URLComponent_Dev)
@@ -441,6 +447,14 @@ IPC_STRUCT_TRAITS_BEGIN(ppapi::PpapiNaClPluginArgs)
   IPC_STRUCT_TRAITS_MEMBER(keepalive_throttle_interval_milliseconds)
   IPC_STRUCT_TRAITS_MEMBER(switch_names)
   IPC_STRUCT_TRAITS_MEMBER(switch_values)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(PP_VideoProfileDescription)
+IPC_STRUCT_TRAITS_MEMBER(profile)
+IPC_STRUCT_TRAITS_MEMBER(max_resolution)
+IPC_STRUCT_TRAITS_MEMBER(max_framerate_numerator)
+IPC_STRUCT_TRAITS_MEMBER(max_framerate_denominator)
+IPC_STRUCT_TRAITS_MEMBER(acceleration)
 IPC_STRUCT_TRAITS_END()
 
 #if !defined(OS_NACL) && !defined(NACL_WIN64)
@@ -773,9 +787,11 @@ IPC_MESSAGE_ROUTED3(
     int32_t /* result */)
 
 // PPP_ContentDecryptor_Dev
-IPC_MESSAGE_ROUTED2(PpapiMsg_PPPContentDecryptor_Initialize,
+IPC_MESSAGE_ROUTED4(PpapiMsg_PPPContentDecryptor_Initialize,
                     PP_Instance /* instance */,
-                    ppapi::proxy::SerializedVar /* key_system, String */)
+                    ppapi::proxy::SerializedVar /* key_system, String */,
+                    PP_Bool /* allow_distinctive_identifier */,
+                    PP_Bool /* allow_persistent_state */)
 IPC_MESSAGE_ROUTED3(PpapiMsg_PPPContentDecryptor_SetServerCertificate,
                     PP_Instance /* instance */,
                     uint32_t /* promise_id */,
@@ -785,7 +801,7 @@ IPC_MESSAGE_ROUTED5(
     PP_Instance /* instance */,
     uint32_t /* promise_id */,
     PP_SessionType /* session_type */,
-    ppapi::proxy::SerializedVar /* init_data_type, String */,
+    PP_InitDataType /* init_data_type */,
     ppapi::proxy::SerializedVar /* init_data, ArrayBuffer */)
 IPC_MESSAGE_ROUTED4(PpapiMsg_PPPContentDecryptor_LoadSession,
                     PP_Instance /* instance */,
@@ -1149,7 +1165,7 @@ IPC_MESSAGE_ROUTED3(PpapiHostMsg_PPBInstance_SessionExpirationChange,
 IPC_MESSAGE_ROUTED2(PpapiHostMsg_PPBInstance_SessionClosed,
                     PP_Instance /* instance */,
                     ppapi::proxy::SerializedVar /* session_id, String */)
-IPC_MESSAGE_ROUTED5(PpapiHostMsg_PPBInstance_SessionError,
+IPC_MESSAGE_ROUTED5(PpapiHostMsg_PPBInstance_LegacySessionError,
                     PP_Instance /* instance */,
                     ppapi::proxy::SerializedVar /* session_id, String */,
                     PP_CdmExceptionCode /* exception_code */,
@@ -1766,6 +1782,12 @@ IPC_MESSAGE_CONTROL2(PpapiHostMsg_UDPSocket_SendTo,
 IPC_MESSAGE_CONTROL1(PpapiPluginMsg_UDPSocket_SendToReply,
                      int32_t /* bytes_written */)
 IPC_MESSAGE_CONTROL0(PpapiHostMsg_UDPSocket_Close)
+IPC_MESSAGE_CONTROL1(PpapiHostMsg_UDPSocket_JoinGroup,
+                     PP_NetAddress_Private /* net_addr */)
+IPC_MESSAGE_CONTROL0(PpapiPluginMsg_UDPSocket_JoinGroupReply)
+IPC_MESSAGE_CONTROL1(PpapiHostMsg_UDPSocket_LeaveGroup,
+                     PP_NetAddress_Private /* net_addr */)
+IPC_MESSAGE_CONTROL0(PpapiPluginMsg_UDPSocket_LeaveGroupReply)
 
 // URLLoader ------------------------------------------------------------------
 
@@ -1991,6 +2013,46 @@ IPC_MESSAGE_CONTROL0(PpapiHostMsg_VideoDecoder_Reset)
 IPC_MESSAGE_CONTROL0(PpapiPluginMsg_VideoDecoder_ResetReply)
 IPC_MESSAGE_CONTROL1(PpapiPluginMsg_VideoDecoder_NotifyError,
                      int32_t /* error */)
+
+// VideoEncoder ------------------------------------------------------
+
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_VideoEncoder_Create)
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_VideoEncoder_GetSupportedProfiles)
+IPC_MESSAGE_CONTROL1(PpapiPluginMsg_VideoEncoder_GetSupportedProfilesReply,
+                     std::vector<PP_VideoProfileDescription> /* results */)
+IPC_MESSAGE_CONTROL5(PpapiHostMsg_VideoEncoder_Initialize,
+                     PP_VideoFrame_Format /* input_format */,
+                     PP_Size /* input_visible_size */,
+                     PP_VideoProfile /* output_profile */,
+                     uint32_t /* initial_bitrate */,
+                     PP_HardwareAcceleration /* acceleration */)
+IPC_MESSAGE_CONTROL2(PpapiPluginMsg_VideoEncoder_InitializeReply,
+                     uint32_t /* input_frame_count */,
+                     PP_Size /* input_coded_size */)
+IPC_MESSAGE_CONTROL1(PpapiPluginMsg_VideoEncoder_BitstreamBuffers,
+                     uint32_t /* buffer_length */)
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_VideoEncoder_GetVideoFrames)
+IPC_MESSAGE_CONTROL3(PpapiPluginMsg_VideoEncoder_GetVideoFramesReply,
+                     uint32_t /* frame_count */,
+                     uint32_t /* frame_length */,
+                     PP_Size /* frame_size */)
+IPC_MESSAGE_CONTROL2(PpapiHostMsg_VideoEncoder_Encode,
+                     uint32_t /* frame_id */,
+                     bool /* force_keyframe */)
+IPC_MESSAGE_CONTROL1(PpapiPluginMsg_VideoEncoder_EncodeReply,
+                     uint32_t /* frame_id */)
+IPC_MESSAGE_CONTROL3(PpapiPluginMsg_VideoEncoder_BitstreamBufferReady,
+                     uint32_t /* buffer_id */,
+                     uint32_t /* buffer_size */,
+                     bool /* key_frame */)
+IPC_MESSAGE_CONTROL1(PpapiHostMsg_VideoEncoder_RecycleBitstreamBuffer,
+                     uint32_t /* buffer_id */)
+IPC_MESSAGE_CONTROL2(PpapiHostMsg_VideoEncoder_RequestEncodingParametersChange,
+                     uint32_t /* bitrate */,
+                     uint32_t /* framerate */)
+IPC_MESSAGE_CONTROL1(PpapiPluginMsg_VideoEncoder_NotifyError,
+                     int32_t /* error */)
+IPC_MESSAGE_CONTROL0(PpapiHostMsg_VideoEncoder_Close)
 
 #if !defined(OS_NACL) && !defined(NACL_WIN64)
 

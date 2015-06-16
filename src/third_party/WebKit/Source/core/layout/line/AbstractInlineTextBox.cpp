@@ -38,7 +38,7 @@ namespace blink {
 
 AbstractInlineTextBox::InlineToAbstractInlineTextBoxHashMap* AbstractInlineTextBox::gAbstractInlineTextBoxMap = 0;
 
-PassRefPtr<AbstractInlineTextBox> AbstractInlineTextBox::getOrCreate(RenderText* renderText, InlineTextBox* inlineTextBox)
+PassRefPtr<AbstractInlineTextBox> AbstractInlineTextBox::getOrCreate(LayoutText* renderText, InlineTextBox* inlineTextBox)
 {
     if (!inlineTextBox)
         return nullptr;
@@ -87,7 +87,7 @@ LayoutRect AbstractInlineTextBox::bounds() const
         return LayoutRect();
 
     FloatRect boundaries = m_inlineTextBox->calculateBoundaries().toFloatRect();
-    return m_renderText->localToAbsoluteQuad(boundaries).enclosingBoundingBox();
+    return LayoutRect(m_renderText->localToAbsoluteQuad(boundaries).enclosingBoundingBox());
 }
 
 unsigned AbstractInlineTextBox::len() const

@@ -28,7 +28,8 @@
 #include "config.h"
 #include "core/layout/svg/LayoutSVGShape.h"
 
-#include "core/layout/HitTestRequest.h"
+#include "core/layout/HitTestResult.h"
+#include "core/layout/LayoutAnalyzer.h"
 #include "core/layout/PointerEventsHitRules.h"
 #include "core/layout/svg/SVGLayoutSupport.h"
 #include "core/layout/svg/SVGPathData.h"
@@ -36,6 +37,7 @@
 #include "core/layout/svg/SVGResourcesCache.h"
 #include "core/paint/SVGShapePainter.h"
 #include "core/svg/SVGGraphicsElement.h"
+#include "core/svg/SVGLengthContext.h"
 #include "platform/geometry/FloatPoint.h"
 #include "platform/graphics/StrokeData.h"
 #include "wtf/MathExtras.h"
@@ -97,7 +99,7 @@ bool LayoutSVGShape::fillContains(const FloatPoint& point, bool requiresFill, co
     if (!m_fillBoundingBox.contains(point))
         return false;
 
-    if (requiresFill && !SVGPaintServer::existsForRenderer(*this, styleRef(), ApplyToFillMode))
+    if (requiresFill && !SVGPaintServer::existsForLayoutObject(*this, styleRef(), ApplyToFillMode))
         return false;
 
     return shapeDependentFillContains(point, fillRule);
@@ -108,7 +110,7 @@ bool LayoutSVGShape::strokeContains(const FloatPoint& point, bool requiresStroke
     if (!strokeBoundingBox().contains(point))
         return false;
 
-    if (requiresStroke && !SVGPaintServer::existsForRenderer(*this, styleRef(), ApplyToStrokeMode))
+    if (requiresStroke && !SVGPaintServer::existsForLayoutObject(*this, styleRef(), ApplyToStrokeMode))
         return false;
 
     return shapeDependentStrokeContains(point);
@@ -130,6 +132,7 @@ void LayoutSVGShape::updateLocalTransform()
 void LayoutSVGShape::layout()
 {
     bool updateCachedBoundariesInParents = false;
+    LayoutAnalyzer::Scope analyzer(*this);
 
     if (m_needsShapeUpdate || m_needsBoundariesUpdate) {
         updateShapeFromElement();
@@ -185,7 +188,7 @@ void LayoutSVGShape::addFocusRingRects(Vector<LayoutRect>& rects, const LayoutPo
         rects.append(rect);
 }
 
-bool LayoutSVGShape::nodeAtFloatPoint(const HitTestRequest& request, HitTestResult& result, const FloatPoint& pointInParent, HitTestAction hitTestAction)
+bool LayoutSVGShape::nodeAtFloatPoint(HitTestResult& result, const FloatPoint& pointInParent, HitTestAction hitTestAction)
 {
     // We only draw in the foreground phase, so we only hit-test then.
     if (hitTestAction != HitTestForeground)
@@ -195,8 +198,8 @@ bool LayoutSVGShape::nodeAtFloatPoint(const HitTestRequest& request, HitTestResu
     if (!SVGLayoutSupport::transformToUserSpaceAndCheckClipping(this, localToParentTransform(), pointInParent, localPoint))
         return false;
 
-    PointerEventsHitRules hitRules(PointerEventsHitRules::SVG_GEOMETRY_HITTESTING, request, style()->pointerEvents());
-    if (nodeAtFloatPointInternal(request, localPoint, hitRules)) {
+    PointerEventsHitRules hitRules(PointerEventsHitRules::SVG_GEOMETRY_HITTESTING, result.hitTestRequest(), style()->pointerEvents());
+    if (nodeAtFloatPointInternal(result.hitTestRequest(), localPoint, hitRules)) {
         updateHitTestResult(result, roundedLayoutPoint(localPoint));
         return true;
     }
@@ -208,7 +211,7 @@ bool LayoutSVGShape::nodeAtFloatPointInternal(const HitTestRequest& request, con
 {
     bool isVisible = (style()->visibility() == VISIBLE);
     if (isVisible || !hitRules.requireVisible) {
-        const SVGLayoutStyle& svgStyle = style()->svgStyle();
+        const SVGComputedStyle& svgStyle = style()->svgStyle();
         WindRule fillRule = svgStyle.fillRule();
         if (request.svgClipContent())
             fillRule = svgStyle.clipRule();
@@ -260,7 +263,7 @@ void LayoutSVGShape::updatePaintInvalidationBoundingBox()
 float LayoutSVGShape::strokeWidth() const
 {
     SVGLengthContext lengthContext(element());
-    return style()->svgStyle().strokeWidth()->value(lengthContext);
+    return lengthContext.valueForLength(style()->svgStyle().strokeWidth());
 }
 
 }

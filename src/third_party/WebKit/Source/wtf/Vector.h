@@ -22,6 +22,7 @@
 #define WTF_Vector_h
 
 #include "wtf/Alignment.h"
+#include "wtf/ConditionalDestructor.h"
 #include "wtf/ContainerAnnotations.h"
 #include "wtf/DefaultAllocator.h"
 #include "wtf/FastAllocBase.h"
@@ -29,9 +30,15 @@
 #include "wtf/NotFound.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/VectorTraits.h"
-#include "wtf/WTF.h"
 #include <string.h>
 #include <utility>
+
+// For ASAN builds, disable inline buffers completely as they cause various issues.
+#ifdef ANNOTATE_CONTIGUOUS_CONTAINER
+#define INLINE_CAPACITY 0
+#else
+#define INLINE_CAPACITY inlineCapacity
+#endif
 
 namespace WTF {
 
@@ -299,6 +306,17 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
             m_capacity = sizeToAllocate / sizeof(T);
         }
 
+        void allocateExpandedBuffer(size_t newCapacity)
+        {
+            ASSERT(newCapacity);
+            size_t sizeToAllocate = allocationSize(newCapacity);
+            if (hasInlineCapacity)
+                m_buffer = Allocator::template allocateInlineVectorBacking<T>(sizeToAllocate);
+            else
+                m_buffer = Allocator::template allocateExpandedVectorBacking<T>(sizeToAllocate);
+            m_capacity = sizeToAllocate / sizeof(T);
+        }
+
         size_t allocationSize(size_t capacity) const
         {
             return Allocator::Quantizer::template quantizedSize<T>(capacity);
@@ -496,6 +514,14 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
                 resetBufferPointer();
         }
 
+        void allocateExpandedBuffer(size_t newCapacity)
+        {
+            if (newCapacity > inlineCapacity)
+                Base::allocateExpandedBuffer(newCapacity);
+            else
+                resetBufferPointer();
+        }
+
         size_t allocationSize(size_t capacity) const
         {
             if (capacity <= inlineCapacity)
@@ -564,33 +590,11 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
         friend class Deque;
     };
 
-    template<typename T, size_t inlineCapacity, typename Allocator>
-    class Vector;
-
-    // VectorDestructorBase defines the destructor of a vector. This base is used in order to
-    // completely avoid creating a destructor for a vector that does not need to be destructed.
-    // By doing so, the clang compiler will have correct information about whether or not a
-    // vector has a trivial destructor and we use that in a compiler plugin to ensure the
-    // correctness of non-finalized garbage-collected classes and the use of VectorTraits::needsDestruction.
-
-    // All non-GC managed vectors and heap-allocated vectors with inlineCapacity
-    // need a destructor.  This destructor will simply call finalize on the
-    // actual vector type.
-    template<typename Derived, bool hasInlineCapacity, bool isGarbageCollected>
-    class VectorDestructorBase {
-    public:
-        ~VectorDestructorBase() { static_cast<Derived*>(this)->finalize(); }
-    };
-
-    // Heap-allocated vectors with no inlineCapacity never need a destructor.
-    template<typename Derived>
-    class VectorDestructorBase<Derived, false, true> { };
-
-    template<typename T, size_t inlineCapacity = 0, typename Allocator = DefaultAllocator>
-    class Vector : private VectorBuffer<T, inlineCapacity, Allocator>, public VectorDestructorBase<Vector<T, inlineCapacity, Allocator>, (inlineCapacity > 0), Allocator::isGarbageCollected> {
+    template<typename T, size_t inlineCapacity = 0, typename Allocator = DefaultAllocator> // Heap-allocated vectors with no inlineCapacity never need a destructor.
+    class Vector : private VectorBuffer<T, INLINE_CAPACITY, Allocator>, public ConditionalDestructor<Vector<T, INLINE_CAPACITY, Allocator>, (INLINE_CAPACITY == 0) && Allocator::isGarbageCollected> {
         WTF_USE_ALLOCATOR(Vector, Allocator);
     private:
-        typedef VectorBuffer<T, inlineCapacity, Allocator> Base;
+        typedef VectorBuffer<T, INLINE_CAPACITY, Allocator> Base;
         typedef VectorTypeOperations<T> TypeOperations;
 
     public:
@@ -632,7 +636,7 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
         // it is managed by the traced GC heap.
         void finalize()
         {
-            if (!inlineCapacity) {
+            if (!INLINE_CAPACITY) {
                 if (LIKELY(!Base::buffer()))
                     return;
             }
@@ -928,7 +932,7 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
         // We use a more aggressive expansion strategy for Vectors with inline storage.
         // This is because they are more likely to be on the stack, so the risk of heap bloat is minimized.
         // Furthermore, exceeding the inline capacity limit is not supposed to happen in the common case and may indicate a pathological condition or microbenchmark.
-        if (inlineCapacity) {
+        if (INLINE_CAPACITY) {
             expandedCapacity *= 2;
             // Check for integer overflow, which could happen in the 32-bit build.
             RELEASE_ASSERT(expandedCapacity > oldCapacity);
@@ -1004,7 +1008,10 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
         if (UNLIKELY(newCapacity <= capacity()))
             return;
         T* oldBuffer = begin();
-        T* oldEnd = end();
+        if (!oldBuffer) {
+            Base::allocateBuffer(newCapacity);
+            return;
+        }
 #ifdef ANNOTATE_CONTIGUOUS_CONTAINER
         size_t oldCapacity = capacity();
 #endif
@@ -1015,7 +1022,8 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
             ANNOTATE_CHANGE_CAPACITY(begin(), oldCapacity, m_size, capacity());
             return;
         }
-        Base::allocateBuffer(newCapacity);
+        T* oldEnd = end();
+        Base::allocateExpandedBuffer(newCapacity);
         ANNOTATE_NEW_BUFFER(begin(), capacity(), m_size);
         TypeOperations::move(oldBuffer, oldEnd, begin());
         ANNOTATE_DELETE_BUFFER(oldBuffer, oldCapacity, m_size);
@@ -1026,8 +1034,8 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
     inline void Vector<T, inlineCapacity, Allocator>::reserveInitialCapacity(size_t initialCapacity)
     {
         ASSERT(!m_size);
-        ASSERT(capacity() == inlineCapacity);
-        if (initialCapacity > inlineCapacity) {
+        ASSERT(capacity() == INLINE_CAPACITY);
+        if (initialCapacity > INLINE_CAPACITY) {
             ANNOTATE_DELETE_BUFFER(begin(), capacity(), m_size);
             Base::allocateBuffer(initialCapacity);
             ANNOTATE_NEW_BUFFER(begin(), capacity(), m_size);
@@ -1127,11 +1135,16 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
     template<typename T, size_t inlineCapacity, typename Allocator> template<typename U>
     ALWAYS_INLINE void Vector<T, inlineCapacity, Allocator>::uncheckedAppend(const U& val)
     {
+#ifdef ANNOTATE_CONTIGUOUS_CONTAINER
+        // Vectors in ASAN builds don't have inlineCapacity.
+        append(val);
+#else
         ASSERT(size() < capacity());
         ANNOTATE_CHANGE_SIZE(begin(), capacity(), m_size, m_size + 1);
         const U* ptr = &val;
         new (NotNull, end()) T(*ptr);
         ++m_size;
+#endif
     }
 
     template<typename T, size_t inlineCapacity, typename Allocator> template<typename U, size_t otherCapacity, typename OtherAllocator>

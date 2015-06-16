@@ -35,12 +35,12 @@ public:
     LayoutTextControlSingleLine(HTMLInputElement*);
     virtual ~LayoutTextControlSingleLine();
     // FIXME: Move createInnerEditorStyle() to TextControlInnerEditorElement.
-    virtual PassRefPtr<LayoutStyle> createInnerEditorStyle(const LayoutStyle& startStyle) const override final;
+    virtual PassRefPtr<ComputedStyle> createInnerEditorStyle(const ComputedStyle& startStyle) const override final;
 
     void capsLockStateMayHaveChanged();
 
 protected:
-    virtual void centerContainerIfNeeded(RenderBox*) const { }
+    virtual void centerContainerIfNeeded(LayoutBox*) const { }
     virtual LayoutUnit computeLogicalHeightLimit() const;
     Element* containerElement() const;
     Element* editingViewPortElement() const;
@@ -54,7 +54,7 @@ private:
     virtual void paint(const PaintInfo&, const LayoutPoint&) override;
     virtual void layout() override;
 
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override final;
+    virtual bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override final;
 
     virtual void autoscroll(const IntPoint&) override final;
 
@@ -71,7 +71,7 @@ private:
     virtual LayoutUnit preferredContentLogicalWidth(float charWidth) const override final;
     virtual LayoutUnit computeControlLogicalHeight(LayoutUnit lineHeight, LayoutUnit nonContentHeight) const override;
 
-    virtual void styleDidChange(StyleDifference, const LayoutStyle* oldStyle) override final;
+    virtual void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override final;
 
     bool textShouldBeTruncated() const;
 
@@ -85,9 +85,9 @@ DEFINE_LAYOUT_OBJECT_TYPE_CASTS(LayoutTextControlSingleLine, isTextField());
 
 // ----------------------------
 
-class LayoutTextControlInnerBlock : public RenderBlockFlow {
+class LayoutTextControlInnerBlock : public LayoutBlockFlow {
 public:
-    LayoutTextControlInnerBlock(Element* element) : RenderBlockFlow(element) { }
+    LayoutTextControlInnerBlock(Element* element) : LayoutBlockFlow(element) { }
     virtual int inlineBlockBaseline(LineDirectionMode direction) const override { return lastLineBoxBaseline(direction); }
 
 private:

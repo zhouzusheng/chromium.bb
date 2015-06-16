@@ -14,6 +14,7 @@
 #include "ui/base/dragdrop/drag_utils.h"
 #include "ui/base/touch/selection_bound.h"
 #include "ui/base/ui_base_switches_util.h"
+#include "ui/compositor/paint_context.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/events/event.h"
 #include "ui/events/keycodes/keyboard_codes.h"
@@ -268,6 +269,7 @@ Textfield::Textfield()
       selection_background_color_(SK_ColorBLUE),
       placeholder_text_color_(kDefaultPlaceholderTextColor),
       text_input_type_(ui::TEXT_INPUT_TYPE_TEXT),
+      text_input_flags_(0),
       performing_user_action_(false),
       skip_input_method_cancel_composition_(false),
       cursor_visible_(false),
@@ -306,6 +308,10 @@ void Textfield::SetTextInputType(ui::TextInputType type) {
   if (GetInputMethod())
     GetInputMethod()->OnTextInputTypeChanged(this);
   SchedulePaint();
+}
+
+void Textfield::SetTextInputFlags(int flags) {
+  text_input_flags_ = flags;
 }
 
 void Textfield::SetText(const base::string16& new_text) {
@@ -706,7 +712,7 @@ bool Textfield::OnKeyPressed(const ui::KeyEvent& event) {
 }
 
 ui::TextInputClient* Textfield::GetTextInputClient() {
-  return read_only_ ? NULL : this;
+  return this;
 }
 
 void Textfield::OnGestureEvent(ui::GestureEvent* event) {
@@ -1065,7 +1071,7 @@ void Textfield::WriteDragDataForView(View* sender,
   // Desktop Linux Aura does not yet support transparency in drag images.
   canvas->DrawColor(GetBackgroundColor());
 #endif
-  label.Paint(canvas.get(), views::CullSet());
+  label.Paint(ui::PaintContext(canvas.get()));
   const gfx::Vector2d kOffset(-15, 0);
   drag_utils::SetDragImageOnDataObject(*canvas, kOffset, data);
   if (controller_)
@@ -1431,16 +1437,7 @@ void Textfield::InsertChar(base::char16 ch, int flags) {
   if (GetTextInputType() == ui::TEXT_INPUT_TYPE_NONE || !should_insert_char)
     return;
 
-  OnBeforeUserAction();
-  skip_input_method_cancel_composition_ = true;
-  if (GetRenderText()->insert_mode())
-    model_->InsertChar(ch);
-  else
-    model_->ReplaceChar(ch);
-  skip_input_method_cancel_composition_ = false;
-
-  UpdateAfterChange(true, true);
-  OnAfterUserAction();
+  DoInsertChar(ch);
 
   if (text_input_type_ == ui::TEXT_INPUT_TYPE_PASSWORD &&
       password_reveal_duration_ != base::TimeDelta()) {
@@ -1476,7 +1473,7 @@ ui::TextInputMode Textfield::GetTextInputMode() const {
 }
 
 int Textfield::GetTextInputFlags() const {
-  return 0;
+  return text_input_flags_;
 }
 
 bool Textfield::CanComposeInline() const {
@@ -1494,13 +1491,14 @@ bool Textfield::GetCompositionCharacterBounds(uint32 index,
   DCHECK(rect);
   if (!HasCompositionText())
     return false;
-  gfx::RenderText* render_text = GetRenderText();
-  const gfx::Range& composition_range = render_text->GetCompositionRange();
+  gfx::Range composition_range;
+  model_->GetCompositionTextRange(&composition_range);
   DCHECK(!composition_range.is_empty());
 
   size_t text_index = composition_range.start() + index;
   if (composition_range.end() <= text_index)
     return false;
+  gfx::RenderText* render_text = GetRenderText();
   if (!render_text->IsValidCursorIndex(text_index)) {
     text_index = render_text->IndexOfAdjacentGrapheme(
         text_index, gfx::CURSOR_BACKWARD);
@@ -1623,6 +1621,19 @@ void Textfield::SetEditCommandForNextKeyEvent(int command_id) {
 
 ////////////////////////////////////////////////////////////////////////////////
 // Textfield, protected:
+
+void Textfield::DoInsertChar(base::char16 ch) {
+  OnBeforeUserAction();
+  skip_input_method_cancel_composition_ = true;
+  if (GetRenderText()->insert_mode())
+    model_->InsertChar(ch);
+  else
+    model_->ReplaceChar(ch);
+  skip_input_method_cancel_composition_ = false;
+
+  UpdateAfterChange(true, true);
+  OnAfterUserAction();
+}
 
 gfx::RenderText* Textfield::GetRenderText() const {
   return model_->render_text();

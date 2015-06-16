@@ -14,6 +14,7 @@
 #include "gl/GrGLSLPrettyPrint.h"
 #include "gl/GrGLUniformHandle.h"
 #include "gl/GrGLXferProcessor.h"
+#include "GrAutoLocaleSetter.h"
 #include "GrCoordTransform.h"
 #include "GrGLProgramBuilder.h"
 #include "GrTexture.h"
@@ -30,7 +31,7 @@ public:
     GrGLNvprProgramBuilder(GrGLGpu* gpu, const DrawArgs& args)
         : INHERITED(gpu, args) {}
 
-    GrGLProgram* createProgram(GrGLuint programID) SK_OVERRIDE {
+    GrGLProgram* createProgram(GrGLuint programID) override {
         // this is just for nvpr es, which has separable varyings that are plugged in after
         // building
         GrGLPathProcessor* pathProc =
@@ -53,6 +54,8 @@ private:
 const int GrGLProgramBuilder::kVarsPerBlock = 8;
 
 GrGLProgram* GrGLProgramBuilder::CreateProgram(const DrawArgs& args, GrGLGpu* gpu) {
+    GrAutoLocaleSetter als("C");
+
     // create a builder.  This will be handed off to effects so they can use it to add
     // uniforms, varyings, textures, etc
     SkAutoTDelete<GrGLProgramBuilder> builder(CreateProgramBuilder(args, gpu));
@@ -203,8 +206,9 @@ void GrGLProgramBuilder::emitAndInstallProcs(GrGLSLExpr4* inputColor, GrGLSLExpr
 
     fFragmentProcessors.reset(SkNEW(GrGLInstalledFragProcs));
     int numProcs = this->pipeline().numFragmentStages();
-    this->emitAndInstallFragProcs(0, this->pipeline().numColorStages(), inputColor);
-    this->emitAndInstallFragProcs(this->pipeline().numColorStages(), numProcs,  inputCoverage);
+    this->emitAndInstallFragProcs(0, this->pipeline().numColorFragmentStages(), inputColor);
+    this->emitAndInstallFragProcs(this->pipeline().numColorFragmentStages(), numProcs,
+                                  inputCoverage);
     this->emitAndInstallXferProc(*this->pipeline().getXferProcessor(), *inputColor, *inputCoverage);
 }
 

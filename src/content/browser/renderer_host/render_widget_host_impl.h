@@ -124,8 +124,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // uses RenderWidgetHost::AsRenderWidgetHostImpl().
   static RenderWidgetHostImpl* From(RenderWidgetHost* rwh);
 
-  void set_hung_renderer_delay_ms(const base::TimeDelta& timeout) {
-    hung_renderer_delay_ms_ = timeout.InMilliseconds();
+  void set_hung_renderer_delay(const base::TimeDelta& delay) {
+    hung_renderer_delay_ = delay;
   }
 
   // RenderWidgetHost implementation.
@@ -277,9 +277,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // responsive.
   void StopHangMonitorTimeout();
 
-  // Disables elastic overscroll effect if enabled.
-  void DisableElasticOverscroll();
-
   // Forwards the given message to the renderer. These are called by the view
   // when it has received a message.
   void ForwardGestureEventWithLatencyInfo(
@@ -314,9 +311,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
       const base::Callback<void(SyntheticGesture::Result)>& on_complete);
 
   void CancelUpdateTextDirection();
-
-  // Called when a mouse click/gesture tap activates the renderer.
-  virtual void OnPointerEventActivate();
 
   // Notifies the renderer whether or not the input method attached to this
   // process is activated.
@@ -383,9 +377,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   bool ShouldSetKeyboardFocusOnMouseDown() const;
   bool ShouldSetLogicalFocusOnMouseDown() const;
-
-  // Event queries delegated to the |input_router_|.
-  bool ShouldForwardTouchEvent() const;
 
   bool has_touch_handler() const { return has_touch_handler_; }
 
@@ -455,11 +446,11 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // suppress_next_char_events_.
   void SuppressNextCharEvents();
 
-  // Called by RenderWidgetHostView in response to OnSetNeedsFlushInput.
+  // Called by the view in response to a flush request.
   void FlushInput();
 
-  // InputRouterClient
-  void SetNeedsFlush() override;
+  // Request a flush signal from the view.
+  void SetNeedsFlush();
 
   // Indicates whether the renderer drives the RenderWidgetHosts's size or the
   // other way around.
@@ -489,12 +480,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
 
   // Don't check whether we expected a resize ack during layout tests.
   static void DisableResizeAckCheckForTesting();
-
-  void WindowSnapshotAsyncCallback(
-      int routing_id,
-      int snapshot_id,
-      gfx::Size snapshot_size,
-      scoped_refptr<base::RefCountedBytes> png_data);
 
   InputRouter* input_router() { return input_router_.get(); }
 
@@ -568,7 +553,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
                      const gfx::Size& max_size);
 
   // Fills in the |resize_params| struct.
-  void GetResizeParams(ViewMsg_Resize_Params* resize_params);
+  // Returns |false| if the update is redundant, |true| otherwise.
+  bool GetResizeParams(ViewMsg_Resize_Params* resize_params);
 
   // Sets the |resize_params| that were sent to the renderer bundled with the
   // request to create a new RenderWidget.
@@ -601,7 +587,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   bool renderer_initialized_;
 
   // This value indicates how long to wait before we consider a renderer hung.
-  int64 hung_renderer_delay_ms_;
+  base::TimeDelta hung_renderer_delay_;
 
  private:
   friend class MockRenderWidgetHost;
@@ -626,7 +612,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   void OnSetTooltipText(const base::string16& tooltip_text,
                         blink::WebTextDirection text_direction_hint);
   bool OnSwapCompositorFrame(const IPC::Message& message);
-  void OnFlingingStopped();
   void OnUpdateRect(const ViewHostMsg_UpdateRect_Params& params);
   void OnQueueSyntheticGesture(const SyntheticGesturePacket& gesture_packet);
   virtual void OnFocus();
@@ -682,6 +667,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   void OnHasTouchEventHandlers(bool has_handlers) override;
   void DidFlush() override;
   void DidOverscroll(const DidOverscrollParams& params) override;
+  void DidStopFlinging() override;
 
   // InputAckHandler
   void OnKeyboardEventAck(const NativeWebKeyboardEvent& event,
@@ -699,8 +685,6 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // Called when there is a new auto resize (using a post to avoid a stack
   // which may get in recursive loops).
   void DelayedAutoResized();
-
-  void WindowOldSnapshotReachedScreen(int snapshot_id);
 
   void WindowSnapshotReachedScreen(int snapshot_id);
 

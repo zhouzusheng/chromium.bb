@@ -32,11 +32,11 @@ LayoutSVGTSpan::LayoutSVGTSpan(Element* element)
 {
 }
 
-bool LayoutSVGTSpan::isChildAllowed(LayoutObject* child, const LayoutStyle&) const
+bool LayoutSVGTSpan::isChildAllowed(LayoutObject* child, const ComputedStyle&) const
 {
     // Always allow text (except empty textnodes and <br>).
     if (child->isText())
-        return SVGLayoutSupport::isRenderableTextNode(child);
+        return SVGLayoutSupport::isLayoutableTextNode(child);
 
     return child->isSVGInline() && !child->isSVGTextPath();
 }

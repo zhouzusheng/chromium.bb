@@ -60,6 +60,9 @@
         'services/namespace_sandbox_unittest.cc',
         'services/namespace_utils_unittest.cc',
       ],
+      'dependencies': [
+        '../build/linux/system.gyp:libcap'
+      ],
     }],
   ],
 }

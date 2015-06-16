@@ -34,6 +34,8 @@ class LayoutIFrame final : public LayoutPart {
 public:
     explicit LayoutIFrame(Element*);
 
+    virtual const char* name() const override { return "LayoutIFrame"; }
+
 private:
     virtual bool shouldComputeSizeAsReplaced() const override;
     virtual bool isInlineBlockOrInlineTable() const override;
@@ -42,9 +44,7 @@ private:
 
     virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectLayoutIFrame || LayoutPart::isOfType(type); }
 
-    virtual const char* renderName() const override { return "LayoutIFrame"; }
-
-    virtual LayerType layerTypeRequired() const override;
+    virtual DeprecatedPaintLayerType layerTypeRequired() const override;
 };
 
 DEFINE_LAYOUT_OBJECT_TYPE_CASTS(LayoutIFrame, isLayoutIFrame());

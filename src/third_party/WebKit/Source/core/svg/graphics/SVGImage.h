@@ -36,7 +36,7 @@ namespace blink {
 
 class FrameView;
 class Page;
-class RenderBox;
+class LayoutBox;
 class SVGImageChromeClient;
 class SVGImageForContainer;
 
@@ -49,7 +49,7 @@ public:
 
     static bool isInSVGImage(const Node*);
 
-    RenderBox* embeddedContentBox() const;
+    LayoutBox* embeddedContentBox() const;
 
     virtual bool isSVGImage() const override { return true; }
     virtual IntSize size() const override { return m_intrinsicSize; }
@@ -61,7 +61,7 @@ public:
     virtual void stopAnimation() override;
     virtual void resetAnimation() override;
 
-    virtual PassRefPtr<NativeImageSkia> nativeImageForCurrentFrame() override;
+    virtual bool bitmapForCurrentFrame(SkBitmap*) override;
 
     // Returns the SVG image document's frame.
     FrameView* frameView() const;
@@ -69,8 +69,11 @@ public:
     // Does the SVG image/document contain any animations?
     bool hasAnimations() const;
 
+    DisplayItemClient displayItemClient() const { return toDisplayItemClient(this); }
+    String debugName() const { return "SVGImage"; }
+
 private:
-    friend class AXRenderObject;
+    friend class AXLayoutObject;
     friend class SVGImageChromeClient;
     friend class SVGImageForContainer;
 
@@ -92,8 +95,6 @@ private:
 
     // FIXME: Implement this to be less conservative.
     virtual bool currentFrameKnownToBeOpaque() override { return false; }
-
-    DisplayItemClient displayItemClient() const { return toDisplayItemClient(this); }
 
     SVGImage(ImageObserver*);
     void draw(GraphicsContext*, const FloatRect& fromRect, const FloatRect& toRect, SkXfermode::Mode, RespectImageOrientationEnum) override;

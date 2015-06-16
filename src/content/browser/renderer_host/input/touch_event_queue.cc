@@ -365,7 +365,7 @@ TouchEventQueue::Config::Config()
 TouchEventQueue::TouchEventQueue(TouchEventQueueClient* client,
                                  const Config& config)
     : client_(client),
-      dispatching_touch_ack_(NULL),
+      dispatching_touch_ack_(false),
       dispatching_touch_(false),
       has_handlers_(true),
       has_handler_for_current_sequence_(false),
@@ -541,15 +541,6 @@ void TouchEventQueue::OnGestureScrollEvent(
       DCHECK(!touchmove_slop_suppressor_->suppressing_touchmoves())
           <<  "A touch handler should be offered a touchmove before scrolling.";
     }
-    if (!has_handler_for_current_sequence_ &&
-        !drop_remaining_touches_in_sequence_) {
-      // If no touch points have a consumer, prevent all subsequent touch events
-      // received during the scroll from reaching the renderer. This ensures
-      // that the first touchstart the renderer sees in any given sequence can
-      // always be preventDefault'ed (cancelable == true).
-      // TODO(jdduke): Revisit if touchstarts during scroll are made cancelable.
-      drop_remaining_touches_in_sequence_ = true;
-    }
 
     pending_async_touchmove_.reset();
 
@@ -621,7 +612,7 @@ void TouchEventQueue::FlushQueue() {
 }
 
 void TouchEventQueue::PopTouchEventToClient(InputEventAckState ack_result) {
-  AckTouchEventToClient(ack_result, PopTouchEvent(), NULL);
+  AckTouchEventToClient(ack_result, PopTouchEvent(), nullptr);
 }
 
 void TouchEventQueue::PopTouchEventToClient(
@@ -640,8 +631,7 @@ void TouchEventQueue::AckTouchEventToClient(
 
   // Note that acking the touch-event may result in multiple gestures being sent
   // to the renderer, or touch-events being queued.
-  base::AutoReset<const CoalescedWebTouchEvent*> dispatching_touch_ack(
-      &dispatching_touch_ack_, acked_event.get());
+  base::AutoReset<bool> dispatching_touch_ack(&dispatching_touch_ack_, true);
   acked_event->DispatchAckToClient(ack_result, optional_latency_info, client_);
 }
 

@@ -5,6 +5,7 @@
 #ifndef NET_QUIC_QUIC_FRAMER_H_
 #define NET_QUIC_QUIC_FRAMER_H_
 
+#include <string>
 #include <vector>
 
 #include "base/basictypes.h"
@@ -67,8 +68,8 @@ class NET_EXPORT_PRIVATE QuicFramerVisitorInterface {
   // Called if an error is detected in the QUIC protocol.
   virtual void OnError(QuicFramer* framer) = 0;
 
-  // Called only when |is_server_| is true and the the framer gets a packet with
-  // version flag true and the version on the packet doesn't match
+  // Called only when |perspective_| is IS_SERVER and the the framer gets a
+  // packet with version flag true and the version on the packet doesn't match
   // |quic_version_|. The visitor should return true after it updates the
   // version of the |framer_| to |received_version| or false to stop processing
   // this packet.
@@ -83,8 +84,8 @@ class NET_EXPORT_PRIVATE QuicFramerVisitorInterface {
   virtual void OnPublicResetPacket(
       const QuicPublicResetPacket& packet) = 0;
 
-  // Called only when |is_server_| is false and a version negotiation packet has
-  // been parsed.
+  // Called only when |perspective_| is IS_CLIENT and a version negotiation
+  // packet has been parsed.
   virtual void OnVersionNegotiationPacket(
       const QuicVersionNegotiationPacket& packet) = 0;
 
@@ -187,7 +188,7 @@ class NET_EXPORT_PRIVATE QuicFramer {
   // version in |supported_versions|.
   QuicFramer(const QuicVersionVector& supported_versions,
              QuicTime creation_time,
-             bool is_server);
+             Perspective perspective);
 
   virtual ~QuicFramer();
 
@@ -346,7 +347,6 @@ class NET_EXPORT_PRIVATE QuicFramer {
   // Changes the encrypter used for level |level| to |encrypter|. The function
   // takes ownership of |encrypter|.
   void SetEncrypter(EncryptionLevel level, QuicEncrypter* encrypter);
-  const QuicEncrypter* encrypter(EncryptionLevel level) const;
 
   // Returns a new encrypted packet, owned by the caller.
   QuicEncryptedPacket* EncryptPacket(EncryptionLevel level,
@@ -370,7 +370,7 @@ class NET_EXPORT_PRIVATE QuicFramer {
 
   void set_validate_flags(bool value) { validate_flags_ = value; }
 
-  bool is_server() const { return is_server_; }
+  Perspective perspective() const { return perspective_; }
 
   static QuicPacketEntropyHash GetPacketEntropyHash(
       const QuicPacketHeader& header);
@@ -460,6 +460,10 @@ class NET_EXPORT_PRIVATE QuicFramer {
 
   // The Append* methods attempt to write the provided header or frame using the
   // |writer|, and return true if successful.
+
+  // If header.public_header.version_flag is set, the version in the
+  // packet will be set -- but it will be set from quic_version_ not
+  // header.public_header.versions.
   bool AppendPacketHeader(const QuicPacketHeader& header,
                           QuicDataWriter* writer);
   bool AppendTypeByte(const QuicFrame& frame,
@@ -529,7 +533,7 @@ class NET_EXPORT_PRIVATE QuicFramer {
   scoped_ptr<QuicEncrypter> encrypter_[NUM_ENCRYPTION_LEVELS];
   // Tracks if the framer is being used by the entity that received the
   // connection or the entity that initiated it.
-  bool is_server_;
+  Perspective perspective_;
   // If false, skip validation that the public flags are set to legal values.
   bool validate_flags_;
   // The time this framer was created.  Time written to the wire will be

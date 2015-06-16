@@ -42,7 +42,7 @@ class LayoutSVGResourcePattern final : public LayoutSVGResourcePaintServer {
 public:
     explicit LayoutSVGResourcePattern(SVGPatternElement*);
 
-    virtual const char* renderName() const override { return "LayoutSVGResourcePattern"; }
+    virtual const char* name() const override { return "LayoutSVGResourcePattern"; }
 
     virtual void removeAllClientsFromCache(bool markForInvalidation = true) override;
     virtual void removeClientFromCache(LayoutObject*, bool markForInvalidation = true) override;
@@ -55,7 +55,7 @@ public:
 private:
     PassOwnPtr<PatternData> buildPatternData(const LayoutObject&);
     PassRefPtr<const SkPicture> asPicture(const FloatRect& tile, const AffineTransform&) const;
-    PatternData* patternForRenderer(const LayoutObject&);
+    PatternData* patternForLayoutObject(const LayoutObject&);
 
     bool m_shouldCollectPatternAttributes : 1;
 #if ENABLE(OILPAN)

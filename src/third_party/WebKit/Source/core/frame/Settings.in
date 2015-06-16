@@ -72,10 +72,7 @@ acceleratedCompositingEnabled initial=true, invalidate=AcceleratedCompositing
 
 shrinksStandaloneImagesToFit initial=true
 
-# FIXME: Does this do anything now that we don't support page cache?
-pageCacheSupportsPlugins initial=false
-
-offlineWebApplicationCacheEnabled initial=false
+offlineWebApplicationCacheEnabled initial=true
 usesEncodingDetector initial=false
 allowScriptsToCloseWindows initial=false
 regionBasedColumnsEnabled initial=false
@@ -86,7 +83,7 @@ regionBasedColumnsEnabled initial=false
 downloadableBinaryFontsEnabled initial=true
 
 xssAuditorEnabled initial=false
-unsafePluginPastingEnabled initial=true
+unsafePluginPastingEnabled initial=false
 treatIPAddressAsDomain initial=false
 
 preferCompositingToLCDTextEnabled initial=false, invalidate=AcceleratedCompositing
@@ -109,9 +106,6 @@ hyperlinkAuditingEnabled initial=false
 allowDisplayOfInsecureContent initial=true
 allowRunningOfInsecureContent initial=true
 
-# FIXME: Remove this temporary flag. See crbug.com/366483 for the target
-# milestone.
-allowConnectingInsecureWebSocket initial=false
 mediaControlsOverlayPlayButtonEnabled initial=false
 mediaPlaybackRequiresUserGesture initial=false
 
@@ -179,6 +173,9 @@ smartInsertDeleteEnabled initial=defaultSmartInsertDeleteEnabled
 selectTrailingWhitespaceEnabled initial=defaultSelectTrailingWhitespaceEnabled
 
 selectionIncludesAltImageText initial=false
+
+######## Settings used by Android WebView below ########
+
 useLegacyBackgroundSizeShorthandBehavior initial=false
 
 # This quirk is to maintain compatibility with Android apps built on
@@ -209,6 +206,19 @@ wideViewportQuirkEnabled initial=false
 # mode.
 forceZeroLayoutHeight initial=false, invalidate=ViewportDescription
 
+mainFrameClipsContent initial=true
+
+# For android.webkit.WebSettings.setUseWideViewport()
+# http://developer.android.com/reference/android/webkit/WebSettings.html#setUseWideViewPort(boolean)
+useWideViewport initial=true, invalidate=ViewportDescription
+
+# For android.webkit.WebSettings.setLoadWithOverviewMode()
+# http://developer.android.com/reference/android/webkit/WebSettings.html#setLoadWithOverviewMode(boolean)
+loadWithOverviewMode initial=true, invalidate=ViewportDescription
+
+######## End of settings used by Android WebView ########
+
+
 # Touch based text selection and editing on desktop.
 # crbug.com/304873 tracks removal once it's been enabled on all platforms.
 touchEditingEnabled initial=false
@@ -217,9 +227,7 @@ touchEditingEnabled initial=false
 # optimized for large screens).  Pinch-zoom generally is implemented mainly
 # outside of blink (in the compositor) and doesn't require any settings.
 # These settings are for an experimental modification to how pinch-zoom
-# behaves.  TODO(wjmaclean): link to design document.
-# crbug.com/304869 tracks removal.
-pinchVirtualViewportEnabled initial=false
+# behaves. crbug.com/304869 tracks removal.
 useSolidColorScrollbars initial=false
 pinchOverlayScrollbarThickness type=int, initial=0
 
@@ -228,19 +236,11 @@ pinchOverlayScrollbarThickness type=int, initial=0
 # crbug.com/133097
 rubberBandingOnCompositorThread initial=false
 
-mainFrameClipsContent initial=true
-
-
-# Presumably used by LayoutTests?  Unclear.
-useWideViewport initial=true, invalidate=ViewportDescription
-loadWithOverviewMode initial=true, invalidate=ViewportDescription
-
-
 # Font scale factor for accessibility, applied as part of text autosizing.
 accessibilityFontScaleFactor type=double, initial=1.0, invalidate=TextAutosizing
 
-# Only set by Layout Tests.
-mediaTypeOverride type=String, initial="screen", invalidate=MediaType
+# Only used by Layout Tests and inspector emulation.
+mediaTypeOverride type=String, initial="", invalidate=MediaQuery
 displayModeOverride type=WebDisplayMode, initial=WebDisplayModeUndefined, invalidate=MediaQuery
 
 # loadsImagesAutomatically only suppresses the network load of
@@ -263,8 +263,8 @@ layerSquashingEnabled initial=false
 
 # Clients that execute script should call ScriptController::canExecuteScripts()
 # instead of this function. ScriptController::canExecuteScripts() checks the
-# HTML sandbox, plug-in sandboxing, and other important details.
-scriptEnabled initial=false, invalidate=ScriptEnable
+# HTML sandbox, plugin sandboxing, and other important details.
+scriptEnabled initial=false
 
 # Compensates for poor text legibility on mobile devices. This value is
 # multiplied by the font scale factor when performing text autosizing of
@@ -316,3 +316,16 @@ disableReadingFromCanvas initial=false
 strictMixedContentChecking initial=false
 strictPowerfulFeatureRestrictions initial=false
 logDnsPrefetchAndPreconnect initial=false
+
+# If true, the UA styles will include viewportAndroid.css. It is used for
+# Android, and dynamically set by the inspector for mobile emulation.
+useMobileViewportStyle initial=false, invalidate=ViewportRule
+
+# User style overrides for captions and subtitles
+textTrackBackgroundColor type=String
+textTrackFontFamily type=String
+textTrackFontStyle type=String
+textTrackFontVariant type=String
+textTrackTextColor type=String
+textTrackTextShadow type=String
+textTrackTextSize type=String

@@ -31,7 +31,7 @@
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/NameNodeList.h"
 #include "core/dom/NodeChildRemovalTracker.h"
-#include "core/dom/NodeLayoutStyle.h"
+#include "core/dom/NodeComputedStyle.h"
 #include "core/dom/NodeRareData.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/SelectorQuery.h"
@@ -45,11 +45,11 @@
 #include "core/html/HTMLTagCollection.h"
 #include "core/html/RadioNodeList.h"
 #include "core/inspector/InspectorInstrumentation.h"
+#include "core/layout/LayoutInline.h"
+#include "core/layout/LayoutText.h"
 #include "core/layout/LayoutTheme.h"
+#include "core/layout/LayoutView.h"
 #include "core/layout/line/InlineTextBox.h"
-#include "core/rendering/RenderInline.h"
-#include "core/rendering/RenderText.h"
-#include "core/rendering/RenderView.h"
 #include "platform/EventDispatchForbiddenScope.h"
 #include "platform/ScriptForbiddenScope.h"
 
@@ -516,7 +516,7 @@ void ContainerNode::disconnectDescendantFrames()
     ChildFrameDisconnector(*this).disconnect();
 }
 
-void ContainerNode::trace(Visitor* visitor)
+DEFINE_TRACE(ContainerNode)
 {
     visitor->trace(m_firstChild);
     visitor->trace(m_lastChild);
@@ -607,7 +607,8 @@ void ContainerNode::parserRemoveChild(Node& oldChild)
     Node* prev = oldChild.previousSibling();
     Node* next = oldChild.nextSibling();
 
-    oldChild.updateAncestorConnectedSubframeCountForRemoval();
+    if (oldChild.connectedSubframeCount())
+        ChildFrameDisconnector(oldChild).disconnect();
 
     ChildListMutationScope(*this).willRemoveChild(oldChild);
     oldChild.notifyMutationObserversNodeWillDetach();
@@ -647,12 +648,14 @@ void ContainerNode::removeChildren(SubtreeModificationAction action)
         document().nodeChildrenWillBeRemoved(*this);
     }
 
+#if !ENABLE(OILPAN)
     // FIXME: Remove this NodeVector. Right now WebPluginContainerImpl::m_element is a
     // raw ptr which means the code below can drop the last ref to a plugin element and
     // then the code in UpdateSuspendScope::performDeferredWidgetTreeOperations will
     // try to destroy the plugin which will be a use-after-free. We should use a RefPtr
     // in the WebPluginContainerImpl instead.
     NodeVector removedChildren;
+#endif
     {
         HTMLFrameOwnerElement::UpdateSuspendScope suspendWidgetHierarchyUpdates;
 
@@ -660,11 +663,14 @@ void ContainerNode::removeChildren(SubtreeModificationAction action)
             EventDispatchForbiddenScope assertNoEventDispatch;
             ScriptForbiddenScope forbidScript;
 
+#if !ENABLE(OILPAN)
             removedChildren.reserveInitialCapacity(countChildren());
-
+#endif
             while (RefPtrWillBeRawPtr<Node> child = m_firstChild) {
                 removeBetween(0, child->nextSibling(), *child);
+#if !ENABLE(OILPAN)
                 removedChildren.append(child.get());
+#endif
                 notifyNodeRemoved(*child);
             }
         }
@@ -861,11 +867,11 @@ void ContainerNode::cloneChildNodes(ContainerNode *clone)
 
 bool ContainerNode::getUpperLeftCorner(FloatPoint& point) const
 {
-    if (!renderer())
+    if (!layoutObject())
         return false;
 
     // FIXME: What is this code really trying to do?
-    LayoutObject* o = renderer();
+    LayoutObject* o = layoutObject();
     if (!o->isInline() || o->isReplaced()) {
         point = o->localToAbsolute(FloatPoint(), UseTransforms);
         return true;
@@ -896,14 +902,14 @@ bool ContainerNode::getUpperLeftCorner(FloatPoint& point) const
             return true;
         }
 
-        if (p->node() && p->node() == this && o->isText() && !o->isBR() && !toRenderText(o)->firstTextBox()) {
+        if (p->node() && p->node() == this && o->isText() && !o->isBR() && !toLayoutText(o)->firstTextBox()) {
             // Do nothing - skip unrendered whitespace that is a child or next sibling of the anchor.
         } else if ((o->isText() && !o->isBR()) || o->isReplaced()) {
             point = FloatPoint();
-            if (o->isText() && toRenderText(o)->firstTextBox()) {
-                point.move(toRenderText(o)->linesBoundingBox().x(), toRenderText(o)->firstTextBox()->root().lineTop().toFloat());
+            if (o->isText() && toLayoutText(o)->firstTextBox()) {
+                point.move(toLayoutText(o)->linesBoundingBox().x(), toLayoutText(o)->firstTextBox()->root().lineTop().toFloat());
             } else if (o->isBox()) {
-                RenderBox* box = toRenderBox(o);
+                LayoutBox* box = toLayoutBox(o);
                 point.moveBy(box->location());
             }
             point = o->container()->localToAbsolute(point, UseTransforms);
@@ -925,15 +931,15 @@ static inline LayoutObject* endOfContinuations(LayoutObject* renderer)
     LayoutObject* prev = nullptr;
     LayoutObject* cur = renderer;
 
-    if (!cur->isRenderInline() && !cur->isRenderBlock())
+    if (!cur->isLayoutInline() && !cur->isLayoutBlock())
         return nullptr;
 
     while (cur) {
         prev = cur;
-        if (cur->isRenderInline())
-            cur = toRenderInline(cur)->continuation();
+        if (cur->isLayoutInline())
+            cur = toLayoutInline(cur)->continuation();
         else
-            cur = toRenderBlock(cur)->continuation();
+            cur = toLayoutBlock(cur)->continuation();
     }
 
     return prev;
@@ -941,12 +947,12 @@ static inline LayoutObject* endOfContinuations(LayoutObject* renderer)
 
 bool ContainerNode::getLowerRightCorner(FloatPoint& point) const
 {
-    if (!renderer())
+    if (!layoutObject())
         return false;
 
-    LayoutObject* o = renderer();
+    LayoutObject* o = layoutObject();
     if (!o->isInline() || o->isReplaced()) {
-        RenderBox* box = toRenderBox(o);
+        LayoutBox* box = toLayoutBox(o);
         point = o->localToAbsolute(FloatPoint(box->size()), UseTransforms);
         return true;
     }
@@ -956,7 +962,7 @@ bool ContainerNode::getLowerRightCorner(FloatPoint& point) const
     while (o) {
         if (LayoutObject* oLastChild = o->slowLastChild()) {
             o = oLastChild;
-        } else if (o != renderer() && o->previousSibling()) {
+        } else if (o != layoutObject() && o->previousSibling()) {
             o = o->previousSibling();
         } else {
             LayoutObject* prev = nullptr;
@@ -974,7 +980,7 @@ bool ContainerNode::getLowerRightCorner(FloatPoint& point) const
                     }
                 }
                 // Prevent to overrun out of own render tree
-                if (o == renderer()) {
+                if (o == layoutObject()) {
                     return false;
                 }
                 o = o->parent();
@@ -988,13 +994,13 @@ bool ContainerNode::getLowerRightCorner(FloatPoint& point) const
         if (o->isText() || o->isReplaced()) {
             point = FloatPoint();
             if (o->isText()) {
-                RenderText* text = toRenderText(o);
+                LayoutText* text = toLayoutText(o);
                 IntRect linesBox = text->linesBoundingBox();
                 if (!linesBox.maxX() && !linesBox.maxY())
                     continue;
                 point.moveBy(linesBox.maxXMaxYCorner());
             } else {
-                RenderBox* box = toRenderBox(o);
+                LayoutBox* box = toLayoutBox(o);
                 point.moveBy(box->frameRect().maxXMaxYCorner());
             }
             point = o->container()->localToAbsolute(point, UseTransforms);
@@ -1032,20 +1038,27 @@ void ContainerNode::focusStateChanged()
 {
     // If we're just changing the window's active state and the focused node has no
     // renderer we can just ignore the state change.
-    if (!renderer())
+    if (!layoutObject())
         return;
 
     if (styleChangeType() < SubtreeStyleChange) {
-        if (layoutStyle()->affectedByFocus() && layoutStyle()->hasPseudoStyle(FIRST_LETTER))
+        if (computedStyle()->affectedByFocus() && computedStyle()->hasPseudoStyle(FIRST_LETTER))
             setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Focus));
         else if (isElementNode() && toElement(this)->childrenOrSiblingsAffectedByFocus())
             document().ensureStyleResolver().ensureUpdatedRuleFeatureSet().scheduleStyleInvalidationForPseudoChange(CSSSelector::PseudoFocus, *toElement(this));
-        else if (layoutStyle()->affectedByFocus())
+        else if (computedStyle()->affectedByFocus())
             setNeedsStyleRecalc(LocalStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Focus));
     }
 
-    if (renderer() && renderer()->style()->hasAppearance())
-        LayoutTheme::theme().stateChanged(renderer(), FocusControlState);
+    if (layoutObject() && layoutObject()->style()->hasAppearance())
+        LayoutTheme::theme().stateChanged(layoutObject(), FocusControlState);
+
+    // If any of the shadow hosts above has :focus CSS style rule, this focus has to affect the
+    // style of the shadow host.
+    if (isInShadowTree()) {
+        if (Element* host = shadowHost())
+            host->focusStateChanged();
+    }
 }
 
 void ContainerNode::setFocus(bool received)
@@ -1057,7 +1070,7 @@ void ContainerNode::setFocus(bool received)
 
     focusStateChanged();
 
-    if (renderer() || received)
+    if (layoutObject() || received)
         return;
 
     // If :focus sets display: none, we lose focus but still need to recalc our style.
@@ -1075,18 +1088,18 @@ void ContainerNode::setActive(bool down)
     Node::setActive(down);
 
     // FIXME: Why does this not need to handle the display: none transition like :hover does?
-    if (renderer()) {
+    if (layoutObject()) {
         if (styleChangeType() < SubtreeStyleChange) {
-            if (layoutStyle()->affectedByActive() && layoutStyle()->hasPseudoStyle(FIRST_LETTER))
+            if (computedStyle()->affectedByActive() && computedStyle()->hasPseudoStyle(FIRST_LETTER))
                 setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Active));
             else if (isElementNode() && toElement(this)->childrenOrSiblingsAffectedByActive())
                 document().ensureStyleResolver().ensureUpdatedRuleFeatureSet().scheduleStyleInvalidationForPseudoChange(CSSSelector::PseudoActive, *toElement(this));
-            else if (layoutStyle()->affectedByActive())
+            else if (computedStyle()->affectedByActive())
                 setNeedsStyleRecalc(LocalStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Active));
         }
 
-        if (layoutStyle()->hasAppearance())
-            LayoutTheme::theme().stateChanged(renderer(), PressedControlState);
+        if (computedStyle()->hasAppearance())
+            LayoutTheme::theme().stateChanged(layoutObject(), PressedControlState);
     }
 }
 
@@ -1098,7 +1111,7 @@ void ContainerNode::setHovered(bool over)
     Node::setHovered(over);
 
     // If :hover sets display: none we lose our hover but still need to recalc our style.
-    if (!renderer()) {
+    if (!layoutObject()) {
         if (over)
             return;
         if (isElementNode() && toElement(this)->childrenOrSiblingsAffectedByHover() && styleChangeType() < SubtreeStyleChange)
@@ -1109,16 +1122,16 @@ void ContainerNode::setHovered(bool over)
     }
 
     if (styleChangeType() < SubtreeStyleChange) {
-        if (layoutStyle()->affectedByHover() && layoutStyle()->hasPseudoStyle(FIRST_LETTER))
+        if (computedStyle()->affectedByHover() && computedStyle()->hasPseudoStyle(FIRST_LETTER))
             setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Hover));
         else if (isElementNode() && toElement(this)->childrenOrSiblingsAffectedByHover())
             document().ensureStyleResolver().ensureUpdatedRuleFeatureSet().scheduleStyleInvalidationForPseudoChange(CSSSelector::PseudoHover, *toElement(this));
-        else if (layoutStyle()->affectedByHover())
+        else if (computedStyle()->affectedByHover())
             setNeedsStyleRecalc(LocalStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Hover));
     }
 
-    if (renderer()->style()->hasAppearance())
-        LayoutTheme::theme().stateChanged(renderer(), HoverControlState);
+    if (layoutObject()->style()->hasAppearance())
+        LayoutTheme::theme().stateChanged(layoutObject(), HoverControlState);
 }
 
 PassRefPtrWillBeRawPtr<HTMLCollection> ContainerNode::children()
@@ -1265,7 +1278,7 @@ void ContainerNode::recalcChildStyle(StyleRecalcChange change)
                 element->recalcStyle(change, lastTextNode);
             else if (element->supportsStyleSharing())
                 styleResolver.addToStyleSharingList(*element);
-            if (element->renderer())
+            if (element->layoutObject())
                 lastTextNode = nullptr;
         }
     }
@@ -1290,7 +1303,7 @@ void ContainerNode::checkForChildrenAdjacentRuleChanges()
             child->setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::SiblingSelector));
 
         if (childRulesChanged && hasDirectAdjacentRules)
-            forceCheckOfNextElementCount = document.styleEngine()->maxDirectAdjacentSelectors();
+            forceCheckOfNextElementCount = document.styleEngine().maxDirectAdjacentSelectors();
         else if (forceCheckOfNextElementCount)
             --forceCheckOfNextElementCount;
 

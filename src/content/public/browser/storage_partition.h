@@ -46,6 +46,7 @@ class DOMStorageContext;
 class GeofencingManager;
 class IndexedDBContext;
 class NavigatorConnectContext;
+class PlatformNotificationContext;
 class ServiceWorkerContext;
 class ZoomLevelDelegate;
 
@@ -72,6 +73,7 @@ class CONTENT_EXPORT StoragePartition {
   virtual HostZoomLevelContext* GetHostZoomLevelContext() = 0;
   virtual ZoomLevelDelegate* GetZoomLevelDelegate() = 0;
   virtual NavigatorConnectContext* GetNavigatorConnectContext() = 0;
+  virtual PlatformNotificationContext* GetPlatformNotificationContext() = 0;
 
   static const uint32 REMOVE_DATA_MASK_APPCACHE        = 1 << 0;
   static const uint32 REMOVE_DATA_MASK_COOKIES         = 1 << 1;
@@ -131,6 +133,11 @@ class CONTENT_EXPORT StoragePartition {
                          const base::Time begin,
                          const base::Time end,
                          const base::Closure& callback) = 0;
+
+  // Write any unwritten data to disk.
+  // Note: this method does not sync the data - it only ensures that any
+  // unwritten data has been written out to the filesystem.
+  virtual void Flush() = 0;
 
  protected:
   virtual ~StoragePartition() {}

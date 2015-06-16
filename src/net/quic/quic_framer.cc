@@ -15,6 +15,7 @@
 #include "net/quic/quic_data_writer.h"
 #include "net/quic/quic_flags.h"
 #include "net/quic/quic_socket_address_coder.h"
+#include "net/quic/quic_utils.h"
 
 using base::StringPiece;
 using std::map;
@@ -142,7 +143,7 @@ bool QuicFramerVisitorInterface::OnBlockedFrame(const QuicBlockedFrame& frame) {
 
 QuicFramer::QuicFramer(const QuicVersionVector& supported_versions,
                        QuicTime creation_time,
-                       bool is_server)
+                       Perspective perspective)
     : visitor_(nullptr),
       fec_builder_(nullptr),
       entropy_calculator_(nullptr),
@@ -153,7 +154,7 @@ QuicFramer::QuicFramer(const QuicVersionVector& supported_versions,
       decrypter_level_(ENCRYPTION_NONE),
       alternative_decrypter_level_(ENCRYPTION_NONE),
       alternative_decrypter_latch_(false),
-      is_server_(is_server),
+      perspective_(perspective),
       validate_flags_(true),
       creation_time_(creation_time),
       last_timestamp_(QuicTime::Delta::Zero()) {
@@ -531,7 +532,7 @@ bool QuicFramer::ProcessPacket(const QuicEncryptedPacket& packet) {
     return true;
   }
 
-  if (is_server_ && public_header.version_flag &&
+  if (perspective_ == Perspective::IS_SERVER && public_header.version_flag &&
       public_header.versions[0] != quic_version_) {
     if (!visitor_->OnProtocolVersionMismatch(public_header.versions[0])) {
       reader_.reset(nullptr);
@@ -540,7 +541,7 @@ bool QuicFramer::ProcessPacket(const QuicEncryptedPacket& packet) {
   }
 
   bool rv;
-  if (!is_server_ && public_header.version_flag) {
+  if (perspective_ == Perspective::IS_CLIENT && public_header.version_flag) {
     rv = ProcessVersionNegotiationPacket(&public_header);
   } else if (public_header.reset_flag) {
     rv = ProcessPublicResetPacket(public_header);
@@ -562,7 +563,7 @@ bool QuicFramer::ProcessPacket(const QuicEncryptedPacket& packet) {
 
 bool QuicFramer::ProcessVersionNegotiationPacket(
     QuicPacketPublicHeader* public_header) {
-  DCHECK(!is_server_);
+  DCHECK_EQ(Perspective::IS_CLIENT, perspective_);
   // Try reading at least once to raise error if the packet is invalid.
   do {
     QuicTag version;
@@ -744,8 +745,11 @@ bool QuicFramer::AppendPacketHeader(const QuicPacketHeader& header,
   last_serialized_connection_id_ = header.public_header.connection_id;
 
   if (header.public_header.version_flag) {
-    DCHECK(!is_server_);
-    writer->WriteUInt32(QuicVersionToQuicTag(quic_version_));
+    DCHECK_EQ(Perspective::IS_CLIENT, perspective_);
+    QuicTag tag = QuicVersionToQuicTag(quic_version_);
+    writer->WriteUInt32(tag);
+    DVLOG(1) << "version = " << quic_version_
+               << ", tag = '" << QuicUtils::TagToString(tag) << "'";
   }
 
   if (!AppendPacketSequenceNumber(header.public_header.sequence_number_length,
@@ -910,7 +914,7 @@ bool QuicFramer::ProcessPublicHeader(
 
   // Read the version only if the packet is from the client.
   // version flag from the server means version negotiation packet.
-  if (public_header->version_flag && is_server_) {
+  if (public_header->version_flag && perspective_ == Perspective::IS_SERVER) {
     QuicTag version_tag;
     if (!reader_->ReadUInt32(&version_tag)) {
       set_detailed_error("Unable to read protocol version.");
@@ -1607,13 +1611,6 @@ void QuicFramer::SetEncrypter(EncryptionLevel level,
   DCHECK_GE(level, 0);
   DCHECK_LT(level, NUM_ENCRYPTION_LEVELS);
   encrypter_[level].reset(encrypter);
-}
-
-const QuicEncrypter* QuicFramer::encrypter(EncryptionLevel level) const {
-  DCHECK_GE(level, 0);
-  DCHECK_LT(level, NUM_ENCRYPTION_LEVELS);
-  DCHECK(encrypter_[level].get() != nullptr);
-  return encrypter_[level].get();
 }
 
 QuicEncryptedPacket* QuicFramer::EncryptPacket(

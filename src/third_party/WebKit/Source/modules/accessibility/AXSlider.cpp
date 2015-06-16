@@ -39,23 +39,31 @@ namespace blink {
 
 using namespace HTMLNames;
 
-AXSlider::AXSlider(LayoutObject* renderer, AXObjectCacheImpl* axObjectCache)
-    : AXRenderObject(renderer, axObjectCache)
+AXSlider::AXSlider(LayoutObject* layoutObject, AXObjectCacheImpl* axObjectCache)
+    : AXLayoutObject(layoutObject, axObjectCache)
 {
 }
 
-PassRefPtr<AXSlider> AXSlider::create(LayoutObject* renderer, AXObjectCacheImpl* axObjectCache)
+PassRefPtr<AXSlider> AXSlider::create(LayoutObject* layoutObject, AXObjectCacheImpl* axObjectCache)
 {
-    return adoptRef(new AXSlider(renderer, axObjectCache));
+    return adoptRef(new AXSlider(layoutObject, axObjectCache));
+}
+
+AccessibilityRole AXSlider::roleValue() const
+{
+    AccessibilityRole ariaRole = ariaRoleAttribute();
+    if (ariaRole != UnknownRole)
+        return ariaRole;
+    return SliderRole;
 }
 
 AccessibilityOrientation AXSlider::orientation() const
 {
     // Default to horizontal in the unknown case.
-    if (!m_renderer)
+    if (!m_layoutObject)
         return AccessibilityOrientationHorizontal;
 
-    LayoutStyle* style = m_renderer->style();
+    const ComputedStyle* style = m_layoutObject->style();
     if (!style)
         return AccessibilityOrientationHorizontal;
 
@@ -109,7 +117,7 @@ AXObject* AXSlider::elementAccessibilityHitTest(const IntPoint& point) const
             return m_children[0].get();
     }
 
-    return axObjectCache()->getOrCreate(m_renderer);
+    return axObjectCache()->getOrCreate(m_layoutObject);
 }
 
 void AXSlider::setValue(const String& value)
@@ -127,7 +135,7 @@ void AXSlider::setValue(const String& value)
 
 HTMLInputElement* AXSlider::element() const
 {
-    return toHTMLInputElement(m_renderer->node());
+    return toHTMLInputElement(m_layoutObject->node());
 }
 
 AXSliderThumb::AXSliderThumb(AXObjectCacheImpl* axObjectCache)
@@ -145,10 +153,10 @@ LayoutRect AXSliderThumb::elementRect() const
     if (!m_parent)
         return LayoutRect();
 
-    LayoutObject* sliderRenderer = m_parent->renderer();
-    if (!sliderRenderer || !sliderRenderer->isSlider())
+    LayoutObject* sliderLayoutObject = m_parent->layoutObject();
+    if (!sliderLayoutObject || !sliderLayoutObject->isSlider())
         return LayoutRect();
-    return toElement(sliderRenderer->node())->closedShadowRoot()->getElementById(ShadowElementNames::sliderThumb())->boundingBox();
+    return toElement(sliderLayoutObject->node())->closedShadowRoot()->getElementById(ShadowElementNames::sliderThumb())->boundingBox();
 }
 
 bool AXSliderThumb::computeAccessibilityIsIgnored() const

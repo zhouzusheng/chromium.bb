@@ -29,8 +29,8 @@ namespace blink {
 
 inline SVGSymbolElement::SVGSymbolElement(Document& document)
     : SVGElement(SVGNames::symbolTag, document)
+    , SVGFitToViewBox(this)
 {
-    SVGFitToViewBox::initialize(this);
 }
 
 DEFINE_TRACE(SVGSymbolElement)
@@ -41,18 +41,13 @@ DEFINE_TRACE(SVGSymbolElement)
 
 DEFINE_NODE_FACTORY(SVGSymbolElement)
 
-void SVGSymbolElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
-{
-    parseAttributeNew(name, value);
-}
-
 void SVGSymbolElement::svgAttributeChanged(const QualifiedName& attrName)
 {
     if (SVGFitToViewBox::isKnownAttribute(attrName))
         invalidateInstances();
 }
 
-LayoutObject* SVGSymbolElement::createRenderer(const LayoutStyle&)
+LayoutObject* SVGSymbolElement::createLayoutObject(const ComputedStyle&)
 {
     return new LayoutSVGHiddenContainer(this);
 }

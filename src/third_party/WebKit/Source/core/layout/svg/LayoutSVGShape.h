@@ -79,6 +79,8 @@ public:
 
     virtual FloatRect objectBoundingBox() const override final { return m_fillBoundingBox; }
 
+    virtual const char* name() const override { return "LayoutSVGShape"; }
+
 protected:
     void clearPath() { m_path.clear(); }
     void createPath();
@@ -98,13 +100,11 @@ private:
     virtual const AffineTransform& localToParentTransform() const override final { return m_localTransform ? *m_localTransform : LayoutSVGModelObject::localToParentTransform(); }
 
     virtual bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectSVGShape || LayoutSVGModelObject::isOfType(type); }
-    virtual const char* renderName() const override { return "LayoutSVGShape"; }
-
     virtual void layout() override final;
     virtual void paint(const PaintInfo&, const LayoutPoint&) override final;
     virtual void addFocusRingRects(Vector<LayoutRect>&, const LayoutPoint& additionalOffset) const override final;
 
-    virtual bool nodeAtFloatPoint(const HitTestRequest&, HitTestResult&, const FloatPoint& pointInParent, HitTestAction) override final;
+    virtual bool nodeAtFloatPoint(HitTestResult&, const FloatPoint& pointInParent, HitTestAction) override final;
 
     virtual FloatRect strokeBoundingBox() const override final { return m_strokeBoundingBox; }
     FloatRect calculateObjectBoundingBox() const;

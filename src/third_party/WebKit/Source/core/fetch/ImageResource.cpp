@@ -29,7 +29,6 @@
 #include "core/fetch/ResourceClient.h"
 #include "core/fetch/ResourceClientWalker.h"
 #include "core/fetch/ResourceFetcher.h"
-#include "core/frame/FrameView.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/layout/LayoutObject.h"
 #include "core/svg/graphics/SVGImage.h"
@@ -131,7 +130,7 @@ void ImageResource::switchClientsToRevalidatedResource()
         Resource::switchClientsToRevalidatedResource();
         ImageResource* revalidatedImageResource = toImageResource(resourceToRevalidate());
         for (const auto& containerSizeRequest : switchContainerSizeRequests)
-            revalidatedImageResource->setContainerSizeForRenderer(containerSizeRequest.key, containerSizeRequest.value.first, containerSizeRequest.value.second);
+            revalidatedImageResource->setContainerSizeForLayoutObject(containerSizeRequest.key, containerSizeRequest.value.first, containerSizeRequest.value.second);
         return;
     }
 
@@ -195,7 +194,7 @@ blink::Image* ImageResource::image()
     return blink::Image::nullImage();
 }
 
-blink::Image* ImageResource::imageForRenderer(const LayoutObject* renderer)
+blink::Image* ImageResource::imageForLayoutObject(const LayoutObject* layoutObject)
 {
     ASSERT(!isPurgeable());
 
@@ -210,7 +209,7 @@ blink::Image* ImageResource::imageForRenderer(const LayoutObject* renderer)
         return blink::Image::nullImage();
 
     if (m_image->isSVGImage()) {
-        blink::Image* image = svgImageForRenderer(renderer);
+        blink::Image* image = svgImageForLayoutObject(layoutObject);
         if (image != blink::Image::nullImage())
             return image;
     }
@@ -218,14 +217,14 @@ blink::Image* ImageResource::imageForRenderer(const LayoutObject* renderer)
     return m_image.get();
 }
 
-void ImageResource::setContainerSizeForRenderer(const ImageResourceClient* renderer, const IntSize& containerSize, float containerZoom)
+void ImageResource::setContainerSizeForLayoutObject(const ImageResourceClient* layoutObject, const IntSize& containerSize, float containerZoom)
 {
     if (containerSize.isEmpty())
         return;
-    ASSERT(renderer);
+    ASSERT(layoutObject);
     ASSERT(containerZoom);
     if (!m_image) {
-        m_pendingContainerSizeRequests.set(renderer, SizeAndZoom(containerSize, containerZoom));
+        m_pendingContainerSizeRequests.set(layoutObject, SizeAndZoom(containerSize, containerZoom));
         return;
     }
     if (!m_image->isSVGImage()) {
@@ -235,7 +234,7 @@ void ImageResource::setContainerSizeForRenderer(const ImageResourceClient* rende
 
     FloatSize containerSizeWithoutZoom(containerSize);
     containerSizeWithoutZoom.scale(1 / containerZoom);
-    m_imageForContainerMap->set(renderer, SVGImageForContainer::create(toSVGImage(m_image.get()), containerSizeWithoutZoom, containerZoom));
+    m_imageForContainerMap->set(layoutObject, SVGImageForContainer::create(toSVGImage(m_image.get()), containerSizeWithoutZoom, containerZoom));
 }
 
 bool ImageResource::usesImageContainerSize() const
@@ -262,7 +261,7 @@ bool ImageResource::imageHasRelativeHeight() const
     return false;
 }
 
-LayoutSize ImageResource::imageSizeForRenderer(const LayoutObject* renderer, float multiplier, SizeType sizeType)
+LayoutSize ImageResource::imageSizeForLayoutObject(const LayoutObject* layoutObject, float multiplier, SizeType sizeType)
 {
     ASSERT(!isPurgeable());
 
@@ -271,10 +270,10 @@ LayoutSize ImageResource::imageSizeForRenderer(const LayoutObject* renderer, flo
 
     LayoutSize imageSize;
 
-    if (m_image->isBitmapImage() && (renderer && renderer->shouldRespectImageOrientation() == RespectImageOrientation))
+    if (m_image->isBitmapImage() && (layoutObject && layoutObject->shouldRespectImageOrientation() == RespectImageOrientation))
         imageSize = LayoutSize(toBitmapImage(m_image.get())->sizeRespectingOrientation());
     else if (m_image->isSVGImage() && sizeType == NormalSize)
-        imageSize = LayoutSize(svgImageSizeForRenderer(renderer));
+        imageSize = LayoutSize(svgImageSizeForLayoutObject(layoutObject));
     else
         imageSize = LayoutSize(m_image->size());
 
@@ -335,7 +334,7 @@ inline void ImageResource::createImage()
         // Send queued container size requests.
         if (m_image->usesContainerSize()) {
             for (const auto& containerSizeRequest : m_pendingContainerSizeRequests)
-                setContainerSizeForRenderer(containerSizeRequest.key, containerSizeRequest.value.first, containerSizeRequest.value.second);
+                setContainerSizeForLayoutObject(containerSizeRequest.key, containerSizeRequest.value.first, containerSizeRequest.value.second);
         }
         m_pendingContainerSizeRequests.clear();
     }
@@ -390,18 +389,6 @@ void ImageResource::updateImage(bool allDataReceived)
     }
 }
 
-void ImageResource::updateBitmapImages(HashSet<ImageResource*>& images, bool redecodeImages)
-{
-    for (ImageResource* imageResource : images) {
-        if (!imageResource->hasImage() || imageResource->image()->isNull())
-            continue;
-        BitmapImage* image = toBitmapImage(imageResource->image());
-        if (redecodeImages)
-            image->resetDecoder();
-        imageResource->updateImage(image->isAllDataReceived());
-    }
-}
-
 void ImageResource::finishOnePart()
 {
     if (m_loadingMultipartContent)
@@ -425,7 +412,7 @@ void ImageResource::responseReceived(const ResourceResponse& response, PassOwnPt
         finishOnePart();
     else if (response.isMultipart())
         m_loadingMultipartContent = true;
-    if (RuntimeEnabledFeatures::clientHintsDprEnabled()) {
+    if (RuntimeEnabledFeatures::clientHintsEnabled()) {
         m_devicePixelRatioHeaderValue = response.httpHeaderField("DPR").toFloat(&m_hasDevicePixelRatioHeaderValue);
         if (!m_hasDevicePixelRatioHeaderValue || m_devicePixelRatioHeaderValue <= 0.0) {
             m_devicePixelRatioHeaderValue = 1.0;
@@ -500,34 +487,37 @@ void ImageResource::changedInRect(const blink::Image* image, const IntRect& rect
     notifyObservers(&rect);
 }
 
-bool ImageResource::currentFrameKnownToBeOpaque(const LayoutObject* renderer)
+bool ImageResource::currentFrameKnownToBeOpaque(const LayoutObject* layoutObject)
 {
-    blink::Image* image = imageForRenderer(renderer);
+    blink::Image* image = imageForLayoutObject(layoutObject);
     if (image->isBitmapImage()) {
-        TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "PaintImage", "data", InspectorPaintImageEvent::data(renderer, *this));
-        image->nativeImageForCurrentFrame(); // force decode
+        TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "PaintImage", "data", InspectorPaintImageEvent::data(layoutObject, *this));
+        SkBitmap dummy;
+        if (!image->bitmapForCurrentFrame(&dummy)) { // force decode
+            // We don't care about failures here, since we don't use "dummy"
+        }
     }
     return image->currentFrameKnownToBeOpaque();
 }
 
-bool ImageResource::isAccessAllowed(ExecutionContext* context, SecurityOrigin* securityOrigin)
+bool ImageResource::isAccessAllowed(SecurityOrigin* securityOrigin)
 {
     if (response().wasFetchedViaServiceWorker())
         return response().serviceWorkerResponseType() != WebServiceWorkerResponseTypeOpaque;
     if (!image()->currentFrameHasSingleSecurityOrigin())
         return false;
-    if (passesAccessControlCheck(context, securityOrigin))
+    if (passesAccessControlCheck(securityOrigin))
         return true;
     return !securityOrigin->taintsCanvas(response().url());
 }
 
-IntSize ImageResource::svgImageSizeForRenderer(const LayoutObject* renderer) const
+IntSize ImageResource::svgImageSizeForLayoutObject(const LayoutObject* layoutObject) const
 {
     IntSize imageSize = m_image->size();
-    if (!renderer)
+    if (!layoutObject)
         return imageSize;
 
-    ImageForContainerMap::const_iterator it = m_imageForContainerMap->find(renderer);
+    ImageForContainerMap::const_iterator it = m_imageForContainerMap->find(layoutObject);
     if (it == m_imageForContainerMap->end())
         return imageSize;
 
@@ -538,19 +528,19 @@ IntSize ImageResource::svgImageSizeForRenderer(const LayoutObject* renderer) con
 
 // FIXME: This doesn't take into account the animation timeline so animations will not
 // restart on page load, nor will two animations in different pages have different timelines.
-Image* ImageResource::svgImageForRenderer(const LayoutObject* renderer)
+Image* ImageResource::svgImageForLayoutObject(const LayoutObject* layoutObject)
 {
-    if (!renderer)
+    if (!layoutObject)
         return Image::nullImage();
 
-    ImageForContainerMap::iterator it = m_imageForContainerMap->find(renderer);
+    ImageForContainerMap::iterator it = m_imageForContainerMap->find(layoutObject);
     if (it == m_imageForContainerMap->end())
         return Image::nullImage();
 
     RefPtr<SVGImageForContainer> imageForContainer = it->value;
     ASSERT(!imageForContainer->size().isEmpty());
 
-    Node* node = renderer->node();
+    Node* node = layoutObject->node();
     if (node && isHTMLImageElement(node)) {
         const AtomicString& urlString = toHTMLImageElement(node)->imageSourceURL();
         KURL url = node->document().completeURL(urlString);

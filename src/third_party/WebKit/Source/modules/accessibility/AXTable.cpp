@@ -48,8 +48,8 @@ namespace blink {
 
 using namespace HTMLNames;
 
-AXTable::AXTable(LayoutObject* renderer, AXObjectCacheImpl* axObjectCache)
-    : AXRenderObject(renderer, axObjectCache)
+AXTable::AXTable(LayoutObject* layoutObject, AXObjectCacheImpl* axObjectCache)
+    : AXLayoutObject(layoutObject, axObjectCache)
     , m_headerContainer(nullptr)
     , m_isAXTable(true)
 {
@@ -61,18 +61,18 @@ AXTable::~AXTable()
 
 void AXTable::init()
 {
-    AXRenderObject::init();
+    AXLayoutObject::init();
     m_isAXTable = isTableExposableThroughAccessibility();
 }
 
-PassRefPtr<AXTable> AXTable::create(LayoutObject* renderer, AXObjectCacheImpl* axObjectCache)
+PassRefPtr<AXTable> AXTable::create(LayoutObject* layoutObject, AXObjectCacheImpl* axObjectCache)
 {
-    return adoptRef(new AXTable(renderer, axObjectCache));
+    return adoptRef(new AXTable(layoutObject, axObjectCache));
 }
 
 bool AXTable::hasARIARole() const
 {
-    if (!m_renderer)
+    if (!m_layoutObject)
         return false;
 
     AccessibilityRole ariaRole = ariaRoleAttribute();
@@ -84,7 +84,7 @@ bool AXTable::hasARIARole() const
 
 bool AXTable::isAXTable() const
 {
-    if (!m_renderer)
+    if (!m_layoutObject)
         return false;
 
     return m_isAXTable;
@@ -101,7 +101,7 @@ static bool elementHasAriaRole(const Element* element)
 
 bool AXTable::isDataTable() const
 {
-    if (!m_renderer || !node())
+    if (!m_layoutObject || !node())
         return false;
 
     // Do not consider it a data table if it has an ARIA role.
@@ -119,7 +119,7 @@ bool AXTable::isDataTable() const
     // Unfortunately, there is no good way to determine the difference
     // between a "layout" table and a "data" table.
 
-    LayoutTable* table = toLayoutTable(m_renderer);
+    LayoutTable* table = toLayoutTable(m_layoutObject);
     Node* tableNode = table->node();
     if (!isHTMLTableElement(tableNode))
         return false;
@@ -182,7 +182,7 @@ bool AXTable::isDataTable() const
         return true;
 
     // Store the background color of the table to check against cell's background colors.
-    LayoutStyle* tableStyle = table->style();
+    const ComputedStyle* tableStyle = table->style();
     if (!tableStyle)
         return false;
     Color tableBGColor = tableStyle->visitedDependentColor(CSSPropertyBackgroundColor);
@@ -237,12 +237,12 @@ bool AXTable::isDataTable() const
                     return true;
             }
 
-            LayoutStyle* layoutStyle = cell->style();
-            if (!layoutStyle)
+            const ComputedStyle* computedStyle = cell->style();
+            if (!computedStyle)
                 continue;
 
             // If the empty-cells style is set, we'll call it a data table.
-            if (layoutStyle->emptyCells() == HIDE)
+            if (computedStyle->emptyCells() == HIDE)
                 return true;
 
             // If a cell has matching bordered sides, call it a (fully) bordered cell.
@@ -263,7 +263,7 @@ bool AXTable::isDataTable() const
 
             // If the cell has a different color from the table and there is cell spacing,
             // then it is probably a data table cell (spacing and colors take the place of borders).
-            Color cellColor = layoutStyle->visitedDependentColor(CSSPropertyBackgroundColor);
+            Color cellColor = computedStyle->visitedDependentColor(CSSPropertyBackgroundColor);
             if (table->hBorderSpacing() > 0 && table->vBorderSpacing() > 0
                 && tableBGColor != cellColor && cellColor.alpha() != 1)
                 backgroundDifferenceCellCount++;
@@ -275,12 +275,12 @@ bool AXTable::isDataTable() const
             // For the first 5 rows, cache the background color so we can check if this table has zebra-striped rows.
             if (row < 5 && row == alternatingRowColorCount) {
                 LayoutObject* layoutRow = cell->parent();
-                if (!layoutRow || !layoutRow->isBoxModelObject() || !toRenderBoxModelObject(layoutRow)->isTableRow())
+                if (!layoutRow || !layoutRow->isBoxModelObject() || !toLayoutBoxModelObject(layoutRow)->isTableRow())
                     continue;
-                LayoutStyle* rowLayoutStyle = layoutRow->style();
-                if (!rowLayoutStyle)
+                const ComputedStyle* rowComputedStyle = layoutRow->style();
+                if (!rowComputedStyle)
                     continue;
-                Color rowColor = rowLayoutStyle->visitedDependentColor(CSSPropertyBackgroundColor);
+                Color rowColor = rowComputedStyle->visitedDependentColor(CSSPropertyBackgroundColor);
                 alternatingRowColors[alternatingRowColorCount] = rowColor;
                 alternatingRowColorCount++;
             }
@@ -333,7 +333,7 @@ bool AXTable::isTableExposableThroughAccessibility() const
     // <table> should be exposed as an AXTable. The goal
     // is to only show "data" tables.
 
-    if (!m_renderer)
+    if (!m_layoutObject)
         return false;
 
     // If the developer assigned an aria role to this, then we
@@ -347,7 +347,7 @@ bool AXTable::isTableExposableThroughAccessibility() const
 
 void AXTable::clearChildren()
 {
-    AXRenderObject::clearChildren();
+    AXLayoutObject::clearChildren();
     m_rows.clear();
     m_columns.clear();
 
@@ -360,17 +360,17 @@ void AXTable::clearChildren()
 void AXTable::addChildren()
 {
     if (!isAXTable()) {
-        AXRenderObject::addChildren();
+        AXLayoutObject::addChildren();
         return;
     }
 
     ASSERT(!m_haveChildren);
 
     m_haveChildren = true;
-    if (!m_renderer || !m_renderer->isTable())
+    if (!m_layoutObject || !m_layoutObject->isTable())
         return;
 
-    LayoutTable* table = toLayoutTable(m_renderer);
+    LayoutTable* table = toLayoutTable(m_layoutObject);
     AXObjectCacheImpl* axCache = axObjectCache();
 
     Node* tableNode = table->node();
@@ -465,7 +465,7 @@ const AXObject::AccessibilityChildrenVector& AXTable::rows()
 
 void AXTable::columnHeaders(AccessibilityChildrenVector& headers)
 {
-    if (!m_renderer)
+    if (!m_layoutObject)
         return;
 
     updateChildrenIfNecessary();
@@ -476,7 +476,7 @@ void AXTable::columnHeaders(AccessibilityChildrenVector& headers)
 
 void AXTable::rowHeaders(AccessibilityChildrenVector& headers)
 {
-    if (!m_renderer)
+    if (!m_layoutObject)
         return;
 
     updateChildrenIfNecessary();
@@ -487,15 +487,14 @@ void AXTable::rowHeaders(AccessibilityChildrenVector& headers)
 
 void AXTable::cells(AXObject::AccessibilityChildrenVector& cells)
 {
-    if (!m_renderer)
+    if (!m_layoutObject)
         return;
 
     updateChildrenIfNecessary();
 
     int numRows = m_rows.size();
     for (int row = 0; row < numRows; ++row) {
-        AccessibilityChildrenVector rowChildren = m_rows[row]->children();
-        cells.appendVector(rowChildren);
+        cells.appendVector(m_rows[row]->children());
     }
 }
 
@@ -522,7 +521,7 @@ AXTableCell* AXTable::cellForColumnAndRow(unsigned column, unsigned row)
     // Iterate backwards through the rows in case the desired cell has a rowspan and exists in a previous row.
     for (unsigned rowIndexCounter = row + 1; rowIndexCounter > 0; --rowIndexCounter) {
         unsigned rowIndex = rowIndexCounter - 1;
-        AccessibilityChildrenVector children = m_rows[rowIndex]->children();
+        const auto& children = m_rows[rowIndex]->children();
         // Since some cells may have colspans, we have to check the actual range of each
         // cell to determine which is the right one.
         for (unsigned colIndexCounter = std::min(static_cast<unsigned>(children.size()), column + 1); colIndexCounter > 0; --colIndexCounter) {
@@ -550,7 +549,7 @@ AXTableCell* AXTable::cellForColumnAndRow(unsigned column, unsigned row)
 AccessibilityRole AXTable::roleValue() const
 {
     if (!isAXTable())
-        return AXRenderObject::roleValue();
+        return AXLayoutObject::roleValue();
 
     return TableRole;
 }
@@ -564,7 +563,7 @@ bool AXTable::computeAccessibilityIsIgnored() const
         return true;
 
     if (!isAXTable())
-        return AXRenderObject::computeAccessibilityIsIgnored();
+        return AXLayoutObject::computeAccessibilityIsIgnored();
 
     return false;
 }
@@ -572,14 +571,14 @@ bool AXTable::computeAccessibilityIsIgnored() const
 String AXTable::title(TextUnderElementMode mode) const
 {
     if (!isAXTable())
-        return AXRenderObject::title(mode);
+        return AXLayoutObject::title(mode);
 
     String title;
-    if (!m_renderer)
+    if (!m_layoutObject)
         return title;
 
     // see if there is a caption
-    Node* tableElement = m_renderer->node();
+    Node* tableElement = m_layoutObject->node();
     if (isHTMLTableElement(tableElement)) {
         HTMLTableCaptionElement* caption = toHTMLTableElement(tableElement)->caption();
         if (caption)
@@ -588,7 +587,7 @@ String AXTable::title(TextUnderElementMode mode) const
 
     // try the standard
     if (title.isEmpty())
-        title = AXRenderObject::title(mode);
+        title = AXLayoutObject::title(mode);
 
     return title;
 }

@@ -28,19 +28,20 @@
 #include "core/HTMLNames.h"
 #include "core/fetch/ImageResource.h"
 #include "core/layout/HitTestResult.h"
+#include "core/layout/LayoutAnalyzer.h"
 #include "core/layout/LayoutTableCell.h"
+#include "core/layout/LayoutView.h"
 #include "core/layout/PaintInfo.h"
 #include "core/layout/SubtreeLayoutScope.h"
-#include "core/layout/style/StyleInheritedData.h"
+#include "core/style/StyleInheritedData.h"
 #include "core/paint/TableRowPainter.h"
-#include "core/rendering/RenderView.h"
 
 namespace blink {
 
 using namespace HTMLNames;
 
 LayoutTableRow::LayoutTableRow(Element* element)
-    : RenderBox(element)
+    : LayoutBox(element)
     , m_rowIndex(unsetRowIndex)
 {
     // init LayoutObject attributes
@@ -49,12 +50,12 @@ LayoutTableRow::LayoutTableRow(Element* element)
 
 void LayoutTableRow::willBeRemovedFromTree()
 {
-    RenderBox::willBeRemovedFromTree();
+    LayoutBox::willBeRemovedFromTree();
 
     section()->setNeedsCellRecalc();
 }
 
-static bool borderWidthChanged(const LayoutStyle* oldStyle, const LayoutStyle* newStyle)
+static bool borderWidthChanged(const ComputedStyle* oldStyle, const ComputedStyle* newStyle)
 {
     return oldStyle->borderLeftWidth() != newStyle->borderLeftWidth()
         || oldStyle->borderTopWidth() != newStyle->borderTopWidth()
@@ -62,11 +63,11 @@ static bool borderWidthChanged(const LayoutStyle* oldStyle, const LayoutStyle* n
         || oldStyle->borderBottomWidth() != newStyle->borderBottomWidth();
 }
 
-void LayoutTableRow::styleDidChange(StyleDifference diff, const LayoutStyle* oldStyle)
+void LayoutTableRow::styleDidChange(StyleDifference diff, const ComputedStyle* oldStyle)
 {
     ASSERT(style()->display() == TABLE_ROW);
 
-    RenderBox::styleDidChange(diff, oldStyle);
+    LayoutBox::styleDidChange(diff, oldStyle);
     propagateStyleToAnonymousChildren();
 
     if (section() && oldStyle && style()->logicalHeight() != oldStyle->logicalHeight())
@@ -82,7 +83,7 @@ void LayoutTableRow::styleDidChange(StyleDifference diff, const LayoutStyle* old
             // If the border width changes on a row, we need to make sure the cells in the row know to lay out again.
             // This only happens when borders are collapsed, since they end up affecting the border sides of the cell
             // itself.
-            for (RenderBox* childBox = firstChildBox(); childBox; childBox = childBox->nextSiblingBox()) {
+            for (LayoutBox* childBox = firstChildBox(); childBox; childBox = childBox->nextSiblingBox()) {
                 if (!childBox->isTableCell())
                     continue;
                 childBox->setChildNeedsLayout();
@@ -149,7 +150,7 @@ void LayoutTableRow::addChild(LayoutObject* child, LayoutObject* beforeChild)
         section()->addCell(cell, this);
 
     ASSERT(!beforeChild || beforeChild->isTableCell());
-    RenderBox::addChild(cell, beforeChild);
+    LayoutBox::addChild(cell, beforeChild);
 
     if (beforeChild || nextRow())
         section()->setNeedsCellRecalc();
@@ -158,6 +159,7 @@ void LayoutTableRow::addChild(LayoutObject* child, LayoutObject* beforeChild)
 void LayoutTableRow::layout()
 {
     ASSERT(needsLayout());
+    LayoutAnalyzer::Scope analyzer(*this);
 
     // Table rows do not add translation.
     LayoutState state(*this, LayoutSize());
@@ -192,7 +194,7 @@ void LayoutTableRow::layout()
 }
 
 // Hit Testing
-bool LayoutTableRow::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction action)
+bool LayoutTableRow::nodeAtPoint(HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction action)
 {
     // Table rows cannot ever be hit tested.  Effectively they do not exist.
     // Just forward to our children always.
@@ -203,7 +205,7 @@ bool LayoutTableRow::nodeAtPoint(const HitTestRequest& request, HitTestResult& r
         // then we can remove this check.
         if (!cell->hasSelfPaintingLayer()) {
             LayoutPoint cellPoint = flipForWritingModeForChild(cell, accumulatedOffset);
-            if (cell->nodeAtPoint(request, result, locationInContainer, cellPoint, action)) {
+            if (cell->nodeAtPoint(result, locationInContainer, cellPoint, action)) {
                 updateHitTestResult(result, locationInContainer.point() - toLayoutSize(cellPoint));
                 return true;
             }
@@ -234,7 +236,7 @@ LayoutTableRow* LayoutTableRow::createAnonymous(Document* document)
 LayoutTableRow* LayoutTableRow::createAnonymousWithParentRenderer(const LayoutObject* parent)
 {
     LayoutTableRow* newRow = LayoutTableRow::createAnonymous(&parent->document());
-    RefPtr<LayoutStyle> newStyle = LayoutStyle::createAnonymousStyleWithDisplay(parent->styleRef(), TABLE_ROW);
+    RefPtr<ComputedStyle> newStyle = ComputedStyle::createAnonymousStyleWithDisplay(parent->styleRef(), TABLE_ROW);
     newRow->setStyle(newStyle.release());
     return newRow;
 }

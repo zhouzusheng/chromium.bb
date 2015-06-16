@@ -66,7 +66,7 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
 
   // The specified RenderFrame stopped loading a page. This corresponds to
   // Blink's notion of the throbber stopping.
-  virtual void DidStopLoading(RenderFrameHost* render_frame_host) {}
+  virtual void DidStopLoading() {}
 
   // The RenderFrameHost has been swapped out.
   virtual void SwappedOut(RenderFrameHost* render_frame_host) {}
@@ -103,6 +103,10 @@ class CONTENT_EXPORT RenderFrameHostDelegate {
   // Another page accessed the top-level initial empty document, which means it
   // is no longer safe to display a pending URL without risking a URL spoof.
   virtual void DidAccessInitialDocument() {}
+
+  // The frame changed its window.name property.
+  virtual void DidChangeName(RenderFrameHost* render_frame_host,
+                             const std::string& name) {}
 
   // The frame set its opener to null, disowning it for the lifetime of the
   // window. Only called for the top-level frame.

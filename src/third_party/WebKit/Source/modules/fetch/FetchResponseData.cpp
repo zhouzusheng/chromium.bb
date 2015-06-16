@@ -15,6 +15,68 @@ namespace blink {
 
 namespace {
 
+class BranchCanceller : public BodyStreamBuffer::Canceller {
+public:
+    static void create(BodyStreamBuffer* buffer, BranchCanceller** canceller1, BranchCanceller** canceller2)
+    {
+        auto context = new Context(buffer);
+        *canceller1 = new BranchCanceller(context, First);
+        *canceller2 = new BranchCanceller(context, Second);
+    }
+
+    void setBuffer(BodyStreamBuffer* buffer) { m_buffer = buffer; }
+
+    void cancel() override
+    {
+        if (m_tag == First) {
+            m_context->isFirstCancelled = true;
+        } else {
+            ASSERT(m_tag == Second);
+            m_context->isSecondCancelled = true;
+        }
+        ASSERT(m_buffer);
+        ASSERT(!m_buffer->isClosed());
+        ASSERT(!m_buffer->hasError());
+        m_buffer->close();
+        if (m_context->isFirstCancelled && m_context->isSecondCancelled)
+            m_context->buffer->cancel();
+    }
+
+    DEFINE_INLINE_VIRTUAL_TRACE()
+    {
+        visitor->trace(m_context);
+        visitor->trace(m_buffer);
+        BodyStreamBuffer::Canceller::trace(visitor);
+    }
+
+private:
+    enum Tag {
+        First,
+        Second,
+    };
+    class Context : public GarbageCollected<Context> {
+    public:
+        explicit Context(BodyStreamBuffer* buffer)
+            : buffer(buffer)
+            , isFirstCancelled(false)
+            , isSecondCancelled(false) { }
+
+        DEFINE_INLINE_VIRTUAL_TRACE()
+        {
+            visitor->trace(buffer);
+        }
+
+        Member<BodyStreamBuffer> buffer;
+        bool isFirstCancelled;
+        bool isSecondCancelled;
+    };
+
+    BranchCanceller(Context* context, Tag tag) : m_context(context), m_tag(tag) { }
+    Member<Context> m_context;
+    Member<BodyStreamBuffer> m_buffer;
+    Tag m_tag;
+};
+
 WebServiceWorkerResponseType fetchTypeToWebType(FetchResponseData::Type fetchType)
 {
     WebServiceWorkerResponseType webType = WebServiceWorkerResponseTypeDefault;
@@ -77,7 +139,7 @@ FetchResponseData* FetchResponseData::createBasicFilteredResponse()
     }
     response->m_blobDataHandle = m_blobDataHandle;
     response->m_buffer = m_buffer;
-    response->m_contentTypeForBuffer = m_contentTypeForBuffer;
+    response->m_mimeType = m_mimeType;
     response->m_internalResponse = this;
     return response;
 }
@@ -105,7 +167,7 @@ FetchResponseData* FetchResponseData::createCORSFilteredResponse()
     }
     response->m_blobDataHandle = m_blobDataHandle;
     response->m_buffer = m_buffer;
-    response->m_contentTypeForBuffer = m_contentTypeForBuffer;
+    response->m_mimeType = m_mimeType;
     response->m_internalResponse = this;
     return response;
 }
@@ -120,9 +182,9 @@ FetchResponseData* FetchResponseData::createOpaqueFilteredResponse()
     return response;
 }
 
-String FetchResponseData::contentTypeForBuffer() const
+String FetchResponseData::mimeType() const
 {
-    return m_contentTypeForBuffer;
+    return m_mimeType;
 }
 
 PassRefPtr<BlobDataHandle> FetchResponseData::internalBlobDataHandle() const
@@ -141,12 +203,12 @@ BodyStreamBuffer* FetchResponseData::internalBuffer() const
     return m_buffer;
 }
 
-String FetchResponseData::internalContentTypeForBuffer() const
+String FetchResponseData::internalMIMEType() const
 {
     if (m_internalResponse) {
-        return m_internalResponse->contentTypeForBuffer();
+        return m_internalResponse->mimeType();
     }
-    return m_contentTypeForBuffer;
+    return m_mimeType;
 }
 
 FetchResponseData* FetchResponseData::clone()
@@ -160,9 +222,9 @@ FetchResponseData* FetchResponseData::clone()
     newResponse->m_url = m_url;
     newResponse->m_status = m_status;
     newResponse->m_statusMessage = m_statusMessage;
-    newResponse->m_headerList = m_headerList->createCopy();
+    newResponse->m_headerList = m_headerList->clone();
     newResponse->m_blobDataHandle = m_blobDataHandle;
-    newResponse->m_contentTypeForBuffer = m_contentTypeForBuffer;
+    newResponse->m_mimeType = m_mimeType;
 
     switch (m_type) {
     case BasicType:
@@ -180,8 +242,13 @@ FetchResponseData* FetchResponseData::clone()
         if (!m_buffer)
             return newResponse;
         BodyStreamBuffer* original = m_buffer;
-        m_buffer = new BodyStreamBuffer();
-        newResponse->m_buffer = new BodyStreamBuffer();
+        BranchCanceller* canceller1 = nullptr;
+        BranchCanceller* canceller2 = nullptr;
+        BranchCanceller::create(original, &canceller1, &canceller2);
+        m_buffer = new BodyStreamBuffer(canceller1);
+        newResponse->m_buffer = new BodyStreamBuffer(canceller2);
+        canceller1->setBuffer(m_buffer);
+        canceller2->setBuffer(newResponse->m_buffer);
         original->startTee(m_buffer, newResponse->m_buffer);
         break;
     }

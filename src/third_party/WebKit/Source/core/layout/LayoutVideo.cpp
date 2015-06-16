@@ -29,9 +29,9 @@
 #include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/html/HTMLVideoElement.h"
+#include "core/layout/LayoutFullScreen.h"
 #include "core/layout/PaintInfo.h"
 #include "core/paint/VideoPainter.h"
-#include "core/rendering/RenderFullScreen.h"
 #include "public/platform/WebLayer.h"
 
 namespace blink {
@@ -74,7 +74,7 @@ void LayoutVideo::updateIntrinsicSize()
 
     setIntrinsicSize(size);
     setPreferredLogicalWidthsDirty();
-    setNeedsLayoutAndFullPaintInvalidation();
+    setNeedsLayoutAndFullPaintInvalidation(LayoutInvalidationReason::SizeChanged);
 }
 
 LayoutSize LayoutVideo::calculateIntrinsicSize()
@@ -201,13 +201,13 @@ bool LayoutVideo::supportsAcceleratedRendering() const
     return !!mediaElement()->platformLayer();
 }
 
-static const RenderBlock* rendererPlaceholder(const LayoutObject* renderer)
+static const LayoutBlock* rendererPlaceholder(const LayoutObject* renderer)
 {
     LayoutObject* parent = renderer->parent();
     if (!parent)
         return 0;
 
-    RenderFullScreen* fullScreen = parent->isRenderFullScreen() ? toRenderFullScreen(parent) : 0;
+    LayoutFullScreen* fullScreen = parent->isLayoutFullScreen() ? toLayoutFullScreen(parent) : 0;
     if (!fullScreen)
         return 0;
 
@@ -216,28 +216,28 @@ static const RenderBlock* rendererPlaceholder(const LayoutObject* renderer)
 
 LayoutUnit LayoutVideo::offsetLeft() const
 {
-    if (const RenderBlock* block = rendererPlaceholder(this))
+    if (const LayoutBlock* block = rendererPlaceholder(this))
         return block->offsetLeft();
     return LayoutMedia::offsetLeft();
 }
 
 LayoutUnit LayoutVideo::offsetTop() const
 {
-    if (const RenderBlock* block = rendererPlaceholder(this))
+    if (const LayoutBlock* block = rendererPlaceholder(this))
         return block->offsetTop();
     return LayoutMedia::offsetTop();
 }
 
 LayoutUnit LayoutVideo::offsetWidth() const
 {
-    if (const RenderBlock* block = rendererPlaceholder(this))
+    if (const LayoutBlock* block = rendererPlaceholder(this))
         return block->offsetWidth();
     return LayoutMedia::offsetWidth();
 }
 
 LayoutUnit LayoutVideo::offsetHeight() const
 {
-    if (const RenderBlock* block = rendererPlaceholder(this))
+    if (const LayoutBlock* block = rendererPlaceholder(this))
         return block->offsetHeight();
     return LayoutMedia::offsetHeight();
 }

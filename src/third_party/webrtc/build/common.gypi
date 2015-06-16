@@ -73,11 +73,6 @@
     # Remote bitrate estimator logging/plotting.
     'enable_bwe_test_logging%': 0,
 
-    # Adds video support to dependencies shared by voice and video engine.
-    # This should normally be enabled; the intended use is to disable only
-    # when building voice engine exclusively.
-    'enable_video%': 1,
-
     # Selects fixed-point code where possible.
     'prefer_fixed_point%': 0,
 
@@ -95,6 +90,8 @@
     'build_libvpx%': 1,
     'build_vp9%': 1,
     'build_ssl%': 1,
+    'build_openmax_dl%': 1,
+    'build_opus%': 1,
 
     # Disable by default
     'have_dbus_glib%': 0,
@@ -106,11 +103,6 @@
     'libvpx_dir%': '<(DEPTH)/third_party/libvpx',
     'libyuv_dir%': '<(DEPTH)/third_party/libyuv',
     'opus_dir%': '<(opus_dir)',
-
-    # Define MIPS architecture variant, MIPS DSP variant and MIPS FPU
-    # This may be subject to change in accordance to Chromium's MIPS flags
-    'mips_dsp_rev%': 0,
-    'mips_fpu%' : 1,
 
     # Use Java based audio layer as default for Android.
     # Change this setting to 1 to use Open SL audio instead.
@@ -126,10 +118,6 @@
     # choosing openssl or nss directly.  In practice, this can be used to
     # enable schannel on windows.
     'use_legacy_ssl_defaults%': 0,
-
-    # Directly call the trace callback instead of passing it to a logging
-    # thread. Used for components that provide their own threaded logging.
-    'rtc_use_direct_trace%': 0,
 
     'conditions': [
       ['build_with_chromium==1', {
@@ -192,8 +180,25 @@
       ['rtc_relative_path==1', {
         'defines': ['EXPAT_RELATIVE_PATH',],
       }],
-      ['enable_video==1', {
-        'defines': ['WEBRTC_MODULE_UTILITY_VIDEO',],
+      ['os_posix==1', {
+        'configurations': {
+          'Debug_Base': {
+            'defines': [
+              # Chromium's build/common.gypi defines _DEBUG for all posix
+              # _except_ for ios & mac.  The size of data types such as
+              # pthread_mutex_t varies between release and debug builds
+              # and is controlled via this flag.  Since we now share code
+              # between base/base.gyp and build/common.gypi (this file),
+              # both gyp(i) files, must consistently set this flag uniformly
+              # or else we'll run in to hard-to-figure-out problems where
+              # one compilation unit uses code from another but expects
+              # differently laid out types.
+              # For WebRTC, we want it there as well, because ASSERT and
+              # friends trigger off of it.
+              '_DEBUG',
+            ],
+          },
+        },
       }],
       ['build_with_chromium==1', {
         'defines': [
@@ -219,16 +224,6 @@
         ],
         'conditions': [
           ['os_posix==1', {
-            'configurations': {
-              'Debug_Base': {
-                'defines': [
-                  # Chromium's build/common.gypi defines this for all posix
-                  # _except_ for ios & mac.  We want it there as well, e.g.
-                  # because ASSERT and friends trigger off of it.
-                  '_DEBUG',
-                ],
-              },
-            },
             'conditions': [
               # -Wextra is currently disabled in Chromium's common.gypi. Enable
               # for targets that can handle it. For Android/arm64 right now
@@ -295,50 +290,25 @@
           'MIPS32_LE',
         ],
         'conditions': [
-          ['mips_fpu==1', {
+          ['mips_float_abi=="hard"', {
             'defines': [
               'MIPS_FPU_LE',
-            ],
-            'cflags': [
-              '-mhard-float',
-            ],
-          }, {
-            'cflags': [
-              '-msoft-float',
             ],
           }],
           ['mips_arch_variant=="r2"', {
             'defines': [
               'MIPS32_R2_LE',
             ],
-            'cflags': [
-              '-mips32r2',
-            ],
-            'cflags_cc': [
-              '-mips32r2',
-            ],
           }],
           ['mips_dsp_rev==1', {
             'defines': [
               'MIPS_DSP_R1_LE',
-            ],
-            'cflags': [
-              '-mdsp',
-            ],
-            'cflags_cc': [
-              '-mdsp',
             ],
           }],
           ['mips_dsp_rev==2', {
             'defines': [
               'MIPS_DSP_R1_LE',
               'MIPS_DSP_R2_LE',
-            ],
-            'cflags': [
-              '-mdspr2',
-            ],
-            'cflags_cc': [
-              '-mdspr2',
             ],
           }],
         ],

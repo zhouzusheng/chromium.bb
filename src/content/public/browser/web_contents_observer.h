@@ -244,8 +244,8 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
 
   // These two methods correspond to the points in time when the spinner of the
   // tab starts and stops spinning.
-  virtual void DidStartLoading(RenderViewHost* render_view_host) {}
-  virtual void DidStopLoading(RenderViewHost* render_view_host) {}
+  virtual void DidStartLoading() {}
+  virtual void DidStopLoading() {}
 
   // When WebContents::Stop() is called, the WebContents stops loading and then
   // invokes this method. If there are ongoing navigations, their respective
@@ -265,6 +265,10 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
 
   // Invoked when the main frame changes size.
   virtual void MainFrameWasResized(bool width_changed) {}
+
+  // Invoked when the given frame changes its window.name property.
+  virtual void FrameNameChanged(RenderFrameHost* render_frame_host,
+                                const std::string& name) {}
 
   // This methods is invoked when the title of the WebContents is set. If the
   // title was explicitly set, |explicit_set| is true, otherwise the title was
@@ -338,6 +342,12 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
 
   // Invoked when theme color is changed to |theme_color|.
   virtual void DidChangeThemeColor(SkColor theme_color) {}
+
+  // Invoked when media is playing.
+  virtual void MediaStartedPlaying() {}
+
+  // Invoked when media is paused.
+  virtual void MediaPaused() {}
 
   // Invoked if an IPC message is coming from a specific RenderFrameHost.
   virtual bool OnMessageReceived(const IPC::Message& message,

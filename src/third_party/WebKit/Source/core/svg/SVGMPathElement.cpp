@@ -31,8 +31,8 @@ namespace blink {
 
 inline SVGMPathElement::SVGMPathElement(Document& document)
     : SVGElement(SVGNames::mpathTag, document)
+    , SVGURIReference(this)
 {
-    SVGURIReference::initialize(this);
 }
 
 DEFINE_TRACE(SVGMPathElement)
@@ -95,11 +95,6 @@ void SVGMPathElement::removedFrom(ContainerNode* rootParent)
     notifyParentOfPathChange(rootParent);
     if (rootParent->inDocument())
         clearResourceReferences();
-}
-
-void SVGMPathElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
-{
-    parseAttributeNew(name, value);
 }
 
 void SVGMPathElement::svgAttributeChanged(const QualifiedName& attrName)

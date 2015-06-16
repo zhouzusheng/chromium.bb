@@ -8,7 +8,6 @@
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/logging.h"
-#include "base/process/kill.h"
 #include "base/process/process_handle.h"
 #include "base/task_runner.h"
 #include "content/browser/browser_child_process_host_impl.h"
@@ -43,7 +42,7 @@ class BrowserMessageFilter::Internal : public IPC::MessageFilter {
   }
 
   void OnChannelConnected(int32 peer_pid) override {
-    filter_->peer_process_ = base::Process::OpenWithExtraPriviles(peer_pid);
+    filter_->peer_process_ = base::Process::OpenWithExtraPrivileges(peer_pid);
     filter_->OnChannelConnected(peer_pid);
   }
 
@@ -184,8 +183,7 @@ void BrowserMessageFilter::BadMessageReceived() {
 
   BrowserChildProcessHostImpl::HistogramBadMessageTerminated(
       PROCESS_TYPE_RENDERER);
-  base::KillProcess(PeerHandle(), content::RESULT_CODE_KILLED_BAD_MESSAGE,
-                    false);
+  peer_process_.Terminate(content::RESULT_CODE_KILLED_BAD_MESSAGE, false);
 }
 
 BrowserMessageFilter::~BrowserMessageFilter() {

@@ -40,7 +40,6 @@
 #include "core/inspector/ScriptCallStack.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
-#include "core/timing/MemoryInfo.h"
 #include "platform/TraceEvent.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/WTFString.h"
@@ -56,10 +55,13 @@ Console::~Console()
 {
 }
 
-void Console::trace(Visitor* visitor)
+DEFINE_TRACE(Console)
 {
     ConsoleBase::trace(visitor);
     DOMWindowProperty::trace(visitor);
+#if ENABLE(OILPAN)
+    HeapSupplementable<Console>::trace(visitor);
+#endif
 }
 
 ExecutionContext* Console::context()
@@ -75,13 +77,6 @@ void Console::reportMessageToConsole(PassRefPtrWillBeRawPtr<ConsoleMessage> cons
         return;
 
     frame()->console().addMessage(consoleMessage);
-}
-
-PassRefPtrWillBeRawPtr<MemoryInfo> Console::memory() const
-{
-    // FIXME: Because we create a new object here each time,
-    // console.memory !== console.memory, which seems wrong.
-    return MemoryInfo::create();
 }
 
 } // namespace blink

@@ -94,6 +94,10 @@ tv.exportTo('tv.c', function() {
       this.rulerTrack_ = new tv.c.tracks.RulerTrack(this.viewport_);
       this.rulerTrackContainer_.appendChild(this.rulerTrack_);
 
+      this.upperModelTrack_ = new tv.c.tracks.TraceModelTrack(this.viewport_);
+      this.upperModelTrack_.upperMode = true;
+      this.rulerTrackContainer_.appendChild(this.upperModelTrack_);
+
       this.modelTrackContainer_ =
           new tv.c.tracks.DrawingContainer(this.viewport_);
       this.appendChild(this.modelTrackContainer_);
@@ -219,6 +223,7 @@ tv.exportTo('tv.c', function() {
 
     detach: function() {
       this.modelTrack_.detach();
+      this.upperModelTrack_.detach();
 
       for (var i = 0; i < this.boundListeners_.length; i++) {
         var binding = this.boundListeners_[i];
@@ -243,6 +248,7 @@ tv.exportTo('tv.c', function() {
       var modelInstanceChanged = this.model_ !== model;
       this.model_ = model;
       this.modelTrack_.model = model;
+      this.upperModelTrack_.model = model;
 
       // Set up a reasonable viewport.
       if (modelInstanceChanged)
@@ -252,7 +258,8 @@ tv.exportTo('tv.c', function() {
     },
 
     get hasVisibleContent() {
-      return this.modelTrack_.hasVisibleContent;
+      return this.modelTrack_.hasVisibleContent ||
+          this.upperModelTrack_.hasVisibleContent;
     },
 
     setInitialViewport_: function() {
@@ -291,6 +298,8 @@ tv.exportTo('tv.c', function() {
      */
     addAllObjectsMatchingFilterToSelectionAsTask: function(filter, selection) {
       return this.modelTrack_.addAllObjectsMatchingFilterToSelectionAsTask(
+          filter, selection);
+      this.upperModelTrack_.addAllObjectsMatchingFilterToSelection(
           filter, selection);
     },
 
@@ -596,6 +605,27 @@ tv.exportTo('tv.c', function() {
       var deltaX = tempDisplayTransform.panX - dt.panX;
       var animation = new tv.c.TimelineDisplayTransformPanAnimation(
           deltaX, 0);
+      this.viewport_.queueDisplayTransformAnimation(animation);
+    },
+
+    navToPosition: function(uiState) {
+      var location = uiState.location;
+      var scaleX = uiState.scaleX;
+      var track = location.containingTrack;
+
+      var worldCenter = location.xWorld;
+      var viewCenter = this.modelTrackContainer_.canvas.width / 5;
+      var zoomInRatio = scaleX /
+          this.viewport_.currentDisplayTransform.scaleX;
+
+      // Vertically scroll so track is in view.
+      track.scrollIntoViewIfNeeded();
+
+      // Perform zoom and panX animation.
+      var animation = new tv.c.TimelineDisplayTransformZoomToAnimation(
+          worldCenter, viewCenter,
+          this.viewport_.currentDisplayTransform.panY,
+          zoomInRatio);
       this.viewport_.queueDisplayTransformAnimation(animation);
     },
 

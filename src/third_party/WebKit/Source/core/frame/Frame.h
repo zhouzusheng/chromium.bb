@@ -28,6 +28,7 @@
 #ifndef Frame_h
 #define Frame_h
 
+#include "core/CoreExport.h"
 #include "core/frame/FrameTypes.h"
 #include "core/page/FrameTree.h"
 #include "platform/heap/Handle.h"
@@ -50,12 +51,13 @@ class Page;
 class SecurityContext;
 class Settings;
 class WindowProxy;
+class WindowProxyManager;
 
-class Frame : public RefCountedWillBeGarbageCollectedFinalized<Frame> {
+class CORE_EXPORT Frame : public RefCountedWillBeGarbageCollectedFinalized<Frame> {
 public:
     virtual ~Frame();
 
-    virtual void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
 
     virtual bool isLocalFrame() const { return false; }
     virtual bool isRemoteFrame() const { return false; }
@@ -93,10 +95,12 @@ public:
     Frame* findFrameForNavigation(const AtomicString& name, Frame& activeFrame);
     Frame* findUnsafeParentScrollPropagationBoundary();
 
+    void finishSwapFrom(Frame*);
+
     bool canNavigate(const Frame&);
     virtual void printNavigationErrorMessage(const Frame&, const char* reason) = 0;
 
-    LayoutPart* ownerRenderer() const; // Renderer for the element that contains this frame.
+    LayoutPart* ownerLayoutObject() const; // LayoutObject for the element that contains this frame.
 
     Settings* settings() const; // can be null
 
@@ -110,6 +114,8 @@ public:
 
 protected:
     Frame(FrameClient*, FrameHost*, FrameOwner*);
+
+    virtual WindowProxyManager* windowProxyManager() const = 0;
 
     mutable FrameTree m_treeNode;
 

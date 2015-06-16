@@ -11,6 +11,7 @@
 #include "core/layout/LayoutVideo.h"
 #include "core/layout/PaintInfo.h"
 #include "core/paint/ImagePainter.h"
+#include "core/paint/LayoutObjectDrawingRecorder.h"
 #include "platform/geometry/LayoutPoint.h"
 
 namespace blink {
@@ -22,7 +23,7 @@ void VideoPainter::paintReplaced(const PaintInfo& paintInfo, const LayoutPoint& 
     if (!displayingPoster && !mediaPlayer)
         return;
 
-    LayoutRect rect = m_layoutVideo.videoBox();
+    LayoutRect rect(m_layoutVideo.videoBox());
     if (rect.isEmpty())
         return;
     rect.moveBy(paintOffset);
@@ -30,6 +31,11 @@ void VideoPainter::paintReplaced(const PaintInfo& paintInfo, const LayoutPoint& 
     LayoutRect contentRect = m_layoutVideo.contentBoxRect();
     contentRect.moveBy(paintOffset);
     GraphicsContext* context = paintInfo.context;
+
+    LayoutObjectDrawingRecorder drawingRecorder(*context, m_layoutVideo, paintInfo.phase, contentRect);
+    if (drawingRecorder.canUseCachedDrawing())
+        return;
+
     bool clip = !contentRect.contains(rect);
     if (clip) {
         context->save();

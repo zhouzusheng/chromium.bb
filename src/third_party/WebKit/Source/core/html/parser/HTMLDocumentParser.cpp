@@ -39,11 +39,11 @@
 #include "core/html/parser/HTMLParserThread.h"
 #include "core/html/parser/HTMLScriptRunner.h"
 #include "core/html/parser/HTMLTreeBuilder.h"
-#include "core/html/parser/ThreadedDataReceiver.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/InspectorTraceEvents.h"
 #include "core/loader/DocumentLoader.h"
 #include "platform/SharedBuffer.h"
+#include "platform/ThreadedDataReceiver.h"
 #include "platform/TraceEvent.h"
 #include "platform/heap/Handle.h"
 #include "platform/scheduler/Scheduler.h"
@@ -662,11 +662,17 @@ void HTMLDocumentParser::pumpTokenizer()
 
     if (isWaitingForScripts()) {
         ASSERT(m_tokenizer->state() == HTMLTokenizer::DataState);
-        if (!m_preloadScanner) {
-            m_preloadScanner = adoptPtr(new HTMLPreloadScanner(m_options, document()->url(), createMediaValues(document())));
-            m_preloadScanner->appendToEnd(m_input.current());
+
+        ASSERT(m_preloader);
+        // TODO(kouhei): m_preloader should be always available for synchronous parsing case,
+        // adding paranoia if for speculative crash fix for crbug.com/465478
+        if (m_preloader) {
+            if (!m_preloadScanner) {
+                m_preloadScanner = adoptPtr(new HTMLPreloadScanner(m_options, document()->url(), createMediaValues(document())));
+                m_preloadScanner->appendToEnd(m_input.current());
+            }
+            m_preloadScanner->scan(m_preloader.get(), document()->baseElementURL());
         }
-        m_preloadScanner->scan(m_preloader.get(), document()->baseElementURL());
     }
 
     TRACE_EVENT_END1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ParseHTML", "endLine", m_input.current().currentLine().zeroBasedInt());
@@ -804,7 +810,7 @@ void HTMLDocumentParser::append(const String& inputSource)
     // pumpTokenizer can cause this parser to be detached from the Document,
     // but we need to ensure it isn't deleted yet.
     RefPtrWillBeRawPtr<HTMLDocumentParser> protect(this);
-    TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("net.debug"), "HTMLDocumentParser::append", "size", inputSource.length());
+    TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("blink.debug"), "HTMLDocumentParser::append", "size", inputSource.length());
     const SegmentedString source(inputSource);
 
     if (m_preloadScanner) {
@@ -1076,7 +1082,7 @@ void HTMLDocumentParser::appendBytes(const char* data, size_t length)
 
         OwnPtr<Vector<char>> buffer = adoptPtr(new Vector<char>(length));
         memcpy(buffer->data(), data, length);
-        TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("net.debug"), "HTMLDocumentParser::appendBytes", "size", (unsigned)length);
+        TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("blink.debug"), "HTMLDocumentParser::appendBytes", "size", (unsigned)length);
 
         HTMLParserThread::shared()->postTask(bind(&BackgroundHTMLParser::appendRawBytesFromMainThread, m_backgroundParser, buffer.release()));
         return;

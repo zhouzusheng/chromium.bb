@@ -28,12 +28,13 @@
 #include "core/HTMLNames.h"
 #include "core/css/StylePropertySet.h"
 #include "core/html/HTMLTableCellElement.h"
+#include "core/layout/LayoutAnalyzer.h"
 #include "core/layout/LayoutTableCol.h"
+#include "core/layout/LayoutView.h"
 #include "core/layout/PaintInfo.h"
 #include "core/layout/SubtreeLayoutScope.h"
-#include "core/layout/style/CollapsedBorderValue.h"
+#include "core/style/CollapsedBorderValue.h"
 #include "core/paint/TableCellPainter.h"
-#include "core/rendering/RenderView.h"
 #include "platform/geometry/FloatQuad.h"
 #include "platform/geometry/TransformState.h"
 #include "platform/graphics/GraphicsContextStateSaver.h"
@@ -42,7 +43,7 @@ namespace blink {
 
 using namespace HTMLNames;
 
-struct SameSizeAsLayoutTableCell : public RenderBlockFlow {
+struct SameSizeAsLayoutTableCell : public LayoutBlockFlow {
     unsigned bitfields;
     int paddings[2];
 };
@@ -51,7 +52,7 @@ static_assert(sizeof(LayoutTableCell) == sizeof(SameSizeAsLayoutTableCell), "Lay
 static_assert(sizeof(CollapsedBorderValue) == 8, "CollapsedBorderValue should stay small");
 
 LayoutTableCell::LayoutTableCell(Element* element)
-    : RenderBlockFlow(element)
+    : LayoutBlockFlow(element)
     , m_column(unsetColumnIndex)
     , m_cellWidthChanged(false)
     , m_intrinsicPaddingBefore(0)
@@ -64,7 +65,7 @@ LayoutTableCell::LayoutTableCell(Element* element)
 
 void LayoutTableCell::willBeRemovedFromTree()
 {
-    RenderBlockFlow::willBeRemovedFromTree();
+    LayoutBlockFlow::willBeRemovedFromTree();
 
     section()->setNeedsCellRecalc();
     section()->removeCachedCollapsedBorders(this);
@@ -101,7 +102,7 @@ void LayoutTableCell::colSpanOrRowSpanChanged()
 
     updateColAndRowSpanFlags();
 
-    setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
+    setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(LayoutInvalidationReason::AttributeChanged);
     if (parent() && section())
         section()->setNeedsCellRecalc();
 }
@@ -145,7 +146,7 @@ void LayoutTableCell::computePreferredLogicalWidths()
     // grids.  We must refresh those grids before the child cells try to use them.
     table()->recalcSectionsIfNeeded();
 
-    RenderBlockFlow::computePreferredLogicalWidths();
+    LayoutBlockFlow::computePreferredLogicalWidths();
     if (node() && style()->autoWrap()) {
         // See if nowrap was set.
         Length w = styleOrColLogicalWidth();
@@ -161,14 +162,14 @@ void LayoutTableCell::computePreferredLogicalWidths()
     }
 }
 
-void LayoutTableCell::addLayerHitTestRects(LayerHitTestRects& layerRects, const Layer* currentLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const
+void LayoutTableCell::addLayerHitTestRects(LayerHitTestRects& layerRects, const DeprecatedPaintLayer* currentLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const
 {
     LayoutPoint adjustedLayerOffset = layerOffset;
     // LayoutTableCell's location includes the offset of it's containing LayoutTableRow, so
     // we need to subtract that again here (as for LayoutTableCell::offsetFromContainer.
     if (parent())
         adjustedLayerOffset -= parentBox()->locationOffset();
-    RenderBox::addLayerHitTestRects(layerRects, currentLayer, adjustedLayerOffset, containerRect);
+    LayoutBox::addLayerHitTestRects(layerRects, currentLayer, adjustedLayerOffset, containerRect);
 }
 
 void LayoutTableCell::computeIntrinsicPadding(int rowHeight, SubtreeLayoutScope& layouter)
@@ -209,7 +210,7 @@ void LayoutTableCell::computeIntrinsicPadding(int rowHeight, SubtreeLayoutScope&
     // FIXME: Changing an intrinsic padding shouldn't trigger a relayout as it only shifts the cell inside the row but
     // doesn't change the logical height.
     if (intrinsicPaddingBefore != oldIntrinsicPaddingBefore || intrinsicPaddingAfter != oldIntrinsicPaddingAfter)
-        layouter.setNeedsLayout(this);
+        layouter.setNeedsLayout(this, LayoutInvalidationReason::PaddingChanged);
 }
 
 void LayoutTableCell::updateLogicalWidth()
@@ -221,7 +222,7 @@ void LayoutTableCell::setCellLogicalWidth(int tableLayoutLogicalWidth, SubtreeLa
     if (tableLayoutLogicalWidth == logicalWidth())
         return;
 
-    layouter.setNeedsLayout(this);
+    layouter.setNeedsLayout(this, LayoutInvalidationReason::SizeChanged);
 
     setLogicalWidth(tableLayoutLogicalWidth);
     setCellWidthChanged(true);
@@ -230,6 +231,7 @@ void LayoutTableCell::setCellLogicalWidth(int tableLayoutLogicalWidth, SubtreeLa
 void LayoutTableCell::layout()
 {
     ASSERT(needsLayout());
+    LayoutAnalyzer::Scope analyzer(*this);
 
     int oldCellBaseline = cellBaselinePosition();
     layoutBlock(cellWidthChanged());
@@ -242,7 +244,7 @@ void LayoutTableCell::layout()
         int newIntrinsicPaddingBefore = std::max<LayoutUnit>(0, intrinsicPaddingBefore() - std::max<LayoutUnit>(0, cellBaselinePosition() - oldCellBaseline));
         setIntrinsicPaddingBefore(newIntrinsicPaddingBefore);
         SubtreeLayoutScope layouter(*this);
-        layouter.setNeedsLayout(this);
+        layouter.setNeedsLayout(this, LayoutInvalidationReason::TableChanged);
         layoutBlock(cellWidthChanged());
     }
 
@@ -305,21 +307,21 @@ LayoutSize LayoutTableCell::offsetFromContainer(const LayoutObject* o, const Lay
 {
     ASSERT(o == container());
 
-    LayoutSize offset = RenderBlockFlow::offsetFromContainer(o, point, offsetDependsOnPoint);
+    LayoutSize offset = LayoutBlockFlow::offsetFromContainer(o, point, offsetDependsOnPoint);
     if (parent())
         offset -= parentBox()->locationOffset();
 
     return offset;
 }
 
-LayoutRect LayoutTableCell::clippedOverflowRectForPaintInvalidation(const LayoutLayerModelObject* paintInvalidationContainer, const PaintInvalidationState* paintInvalidationState) const
+LayoutRect LayoutTableCell::clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* paintInvalidationState) const
 {
     // If the table grid is dirty, we cannot get reliable information about adjoining cells,
     // so we ignore outside borders. This should not be a problem because it means that
     // the table is going to recalculate the grid, relayout and issue a paint invalidation of its current rect, which
     // includes any outside borders of this cell.
     if (!table()->collapseBorders() || table()->needsSectionRecalc())
-        return RenderBlockFlow::clippedOverflowRectForPaintInvalidation(paintInvalidationContainer, paintInvalidationState);
+        return LayoutBlockFlow::clippedOverflowRectForPaintInvalidation(paintInvalidationContainer, paintInvalidationState);
 
     bool rtl = !styleForCellFlow().isLeftToRightDirection();
     int outlineSize = style()->outlineSize();
@@ -358,14 +360,14 @@ LayoutRect LayoutTableCell::clippedOverflowRectForPaintInvalidation(const Layout
     return r;
 }
 
-void LayoutTableCell::mapRectToPaintInvalidationBacking(const LayoutLayerModelObject* paintInvalidationContainer, LayoutRect& r, const PaintInvalidationState* paintInvalidationState) const
+void LayoutTableCell::mapRectToPaintInvalidationBacking(const LayoutBoxModelObject* paintInvalidationContainer, LayoutRect& r, const PaintInvalidationState* paintInvalidationState) const
 {
     if (paintInvalidationContainer == this)
         return;
     r.setY(r.y());
     if ((!paintInvalidationState || !paintInvalidationState->canMapToContainer(paintInvalidationContainer)) && parent())
         r.moveBy(-parentBox()->location()); // Rows are in the same coordinate space, so don't add their offset in.
-    RenderBlockFlow::mapRectToPaintInvalidationBacking(paintInvalidationContainer, r, paintInvalidationState);
+    LayoutBlockFlow::mapRectToPaintInvalidationBacking(paintInvalidationContainer, r, paintInvalidationState);
 }
 
 LayoutUnit LayoutTableCell::cellBaselinePosition() const
@@ -379,11 +381,11 @@ LayoutUnit LayoutTableCell::cellBaselinePosition() const
     return paddingBefore() + borderBefore() + contentLogicalHeight();
 }
 
-void LayoutTableCell::styleDidChange(StyleDifference diff, const LayoutStyle* oldStyle)
+void LayoutTableCell::styleDidChange(StyleDifference diff, const ComputedStyle* oldStyle)
 {
     ASSERT(style()->display() == TABLE_CELL);
 
-    RenderBlockFlow::styleDidChange(diff, oldStyle);
+    LayoutBlockFlow::styleDidChange(diff, oldStyle);
     setHasBoxDecorationBackground(true);
 
     if (parent() && section() && oldStyle && style()->height() != oldStyle->height())
@@ -486,14 +488,6 @@ bool LayoutTableCell::hasEndBorderAdjoiningTable() const
     return (isStartColumn && !hasSameDirectionAsTable) || (isEndColumn && hasSameDirectionAsTable);
 }
 
-CollapsedBorderValue LayoutTableCell::collapsedStartBorder(IncludeBorderColorOrNot includeColor) const
-{
-    CollapsedBorderValue result = computeCollapsedStartBorder(includeColor);
-    if (includeColor)
-        section()->setCachedCollapsedBorder(this, CBSStart, result);
-    return result;
-}
-
 CollapsedBorderValue LayoutTableCell::computeCollapsedStartBorder(IncludeBorderColorOrNot includeColor) const
 {
     LayoutTable* table = this->table();
@@ -583,14 +577,6 @@ CollapsedBorderValue LayoutTableCell::computeCollapsedStartBorder(IncludeBorderC
             return result;
     }
 
-    return result;
-}
-
-CollapsedBorderValue LayoutTableCell::collapsedEndBorder(IncludeBorderColorOrNot includeColor) const
-{
-    CollapsedBorderValue result = computeCollapsedEndBorder(includeColor);
-    if (includeColor)
-        section()->setCachedCollapsedBorder(this, CBSEnd, result);
     return result;
 }
 
@@ -688,14 +674,6 @@ CollapsedBorderValue LayoutTableCell::computeCollapsedEndBorder(IncludeBorderCol
     return result;
 }
 
-CollapsedBorderValue LayoutTableCell::collapsedBeforeBorder(IncludeBorderColorOrNot includeColor) const
-{
-    CollapsedBorderValue result = computeCollapsedBeforeBorder(includeColor);
-    if (includeColor)
-        section()->setCachedCollapsedBorder(this, CBSBefore, result);
-    return result;
-}
-
 CollapsedBorderValue LayoutTableCell::computeCollapsedBeforeBorder(IncludeBorderColorOrNot includeColor) const
 {
     LayoutTable* table = this->table();
@@ -774,14 +752,6 @@ CollapsedBorderValue LayoutTableCell::computeCollapsedBeforeBorder(IncludeBorder
     return result;
 }
 
-CollapsedBorderValue LayoutTableCell::collapsedAfterBorder(IncludeBorderColorOrNot includeColor) const
-{
-    CollapsedBorderValue result = computeCollapsedAfterBorder(includeColor);
-    if (includeColor)
-        section()->setCachedCollapsedBorder(this, CBSAfter, result);
-    return result;
-}
-
 CollapsedBorderValue LayoutTableCell::computeCollapsedAfterBorder(IncludeBorderColorOrNot includeColor) const
 {
     LayoutTable* table = this->table();
@@ -854,49 +824,49 @@ CollapsedBorderValue LayoutTableCell::computeCollapsedAfterBorder(IncludeBorderC
 
 int LayoutTableCell::borderLeft() const
 {
-    return table()->collapseBorders() ? borderHalfLeft(false) : RenderBlockFlow::borderLeft();
+    return table()->collapseBorders() ? borderHalfLeft(false) : LayoutBlockFlow::borderLeft();
 }
 
 int LayoutTableCell::borderRight() const
 {
-    return table()->collapseBorders() ? borderHalfRight(false) : RenderBlockFlow::borderRight();
+    return table()->collapseBorders() ? borderHalfRight(false) : LayoutBlockFlow::borderRight();
 }
 
 int LayoutTableCell::borderTop() const
 {
-    return table()->collapseBorders() ? borderHalfTop(false) : RenderBlockFlow::borderTop();
+    return table()->collapseBorders() ? borderHalfTop(false) : LayoutBlockFlow::borderTop();
 }
 
 int LayoutTableCell::borderBottom() const
 {
-    return table()->collapseBorders() ? borderHalfBottom(false) : RenderBlockFlow::borderBottom();
+    return table()->collapseBorders() ? borderHalfBottom(false) : LayoutBlockFlow::borderBottom();
 }
 
 // FIXME: https://bugs.webkit.org/show_bug.cgi?id=46191, make the collapsed border drawing
 // work with different block flow values instead of being hard-coded to top-to-bottom.
 int LayoutTableCell::borderStart() const
 {
-    return table()->collapseBorders() ? borderHalfStart(false) : RenderBlockFlow::borderStart();
+    return table()->collapseBorders() ? borderHalfStart(false) : LayoutBlockFlow::borderStart();
 }
 
 int LayoutTableCell::borderEnd() const
 {
-    return table()->collapseBorders() ? borderHalfEnd(false) : RenderBlockFlow::borderEnd();
+    return table()->collapseBorders() ? borderHalfEnd(false) : LayoutBlockFlow::borderEnd();
 }
 
 int LayoutTableCell::borderBefore() const
 {
-    return table()->collapseBorders() ? borderHalfBefore(false) : RenderBlockFlow::borderBefore();
+    return table()->collapseBorders() ? borderHalfBefore(false) : LayoutBlockFlow::borderBefore();
 }
 
 int LayoutTableCell::borderAfter() const
 {
-    return table()->collapseBorders() ? borderHalfAfter(false) : RenderBlockFlow::borderAfter();
+    return table()->collapseBorders() ? borderHalfAfter(false) : LayoutBlockFlow::borderAfter();
 }
 
 int LayoutTableCell::borderHalfLeft(bool outer) const
 {
-    const LayoutStyle& styleForCellFlow = this->styleForCellFlow();
+    const ComputedStyle& styleForCellFlow = this->styleForCellFlow();
     if (styleForCellFlow.isHorizontalWritingMode())
         return styleForCellFlow.isLeftToRightDirection() ? borderHalfStart(outer) : borderHalfEnd(outer);
     return styleForCellFlow.isFlippedBlocksWritingMode() ? borderHalfAfter(outer) : borderHalfBefore(outer);
@@ -904,7 +874,7 @@ int LayoutTableCell::borderHalfLeft(bool outer) const
 
 int LayoutTableCell::borderHalfRight(bool outer) const
 {
-    const LayoutStyle& styleForCellFlow = this->styleForCellFlow();
+    const ComputedStyle& styleForCellFlow = this->styleForCellFlow();
     if (styleForCellFlow.isHorizontalWritingMode())
         return styleForCellFlow.isLeftToRightDirection() ? borderHalfEnd(outer) : borderHalfStart(outer);
     return styleForCellFlow.isFlippedBlocksWritingMode() ? borderHalfBefore(outer) : borderHalfAfter(outer);
@@ -912,7 +882,7 @@ int LayoutTableCell::borderHalfRight(bool outer) const
 
 int LayoutTableCell::borderHalfTop(bool outer) const
 {
-    const LayoutStyle& styleForCellFlow = this->styleForCellFlow();
+    const ComputedStyle& styleForCellFlow = this->styleForCellFlow();
     if (styleForCellFlow.isHorizontalWritingMode())
         return styleForCellFlow.isFlippedBlocksWritingMode() ? borderHalfAfter(outer) : borderHalfBefore(outer);
     return styleForCellFlow.isLeftToRightDirection() ? borderHalfStart(outer) : borderHalfEnd(outer);
@@ -920,7 +890,7 @@ int LayoutTableCell::borderHalfTop(bool outer) const
 
 int LayoutTableCell::borderHalfBottom(bool outer) const
 {
-    const LayoutStyle& styleForCellFlow = this->styleForCellFlow();
+    const ComputedStyle& styleForCellFlow = this->styleForCellFlow();
     if (styleForCellFlow.isHorizontalWritingMode())
         return styleForCellFlow.isFlippedBlocksWritingMode() ? borderHalfBefore(outer) : borderHalfAfter(outer);
     return styleForCellFlow.isLeftToRightDirection() ? borderHalfEnd(outer) : borderHalfStart(outer);
@@ -928,7 +898,7 @@ int LayoutTableCell::borderHalfBottom(bool outer) const
 
 int LayoutTableCell::borderHalfStart(bool outer) const
 {
-    CollapsedBorderValue border = collapsedStartBorder(DoNotIncludeBorderColor);
+    CollapsedBorderValue border = computeCollapsedStartBorder(DoNotIncludeBorderColor);
     if (border.exists())
         return (border.width() + ((styleForCellFlow().isLeftToRightDirection() ^ outer) ? 1 : 0)) / 2; // Give the extra pixel to top and left.
     return 0;
@@ -936,7 +906,7 @@ int LayoutTableCell::borderHalfStart(bool outer) const
 
 int LayoutTableCell::borderHalfEnd(bool outer) const
 {
-    CollapsedBorderValue border = collapsedEndBorder(DoNotIncludeBorderColor);
+    CollapsedBorderValue border = computeCollapsedEndBorder(DoNotIncludeBorderColor);
     if (border.exists())
         return (border.width() + ((styleForCellFlow().isLeftToRightDirection() ^ outer) ? 0 : 1)) / 2;
     return 0;
@@ -944,7 +914,7 @@ int LayoutTableCell::borderHalfEnd(bool outer) const
 
 int LayoutTableCell::borderHalfBefore(bool outer) const
 {
-    CollapsedBorderValue border = collapsedBeforeBorder(DoNotIncludeBorderColor);
+    CollapsedBorderValue border = computeCollapsedBeforeBorder(DoNotIncludeBorderColor);
     if (border.exists())
         return (border.width() + ((styleForCellFlow().isFlippedBlocksWritingMode() ^ outer) ? 0 : 1)) / 2; // Give the extra pixel to top and left.
     return 0;
@@ -952,7 +922,7 @@ int LayoutTableCell::borderHalfBefore(bool outer) const
 
 int LayoutTableCell::borderHalfAfter(bool outer) const
 {
-    CollapsedBorderValue border = collapsedAfterBorder(DoNotIncludeBorderColor);
+    CollapsedBorderValue border = computeCollapsedAfterBorder(DoNotIncludeBorderColor);
     if (border.exists())
         return (border.width() + ((styleForCellFlow().isFlippedBlocksWritingMode() ^ outer) ? 1 : 0)) / 2;
     return 0;
@@ -976,12 +946,27 @@ static void addBorderStyle(LayoutTable::CollapsedBorderValues& borderValues,
     borderValues.append(borderValue);
 }
 
-void LayoutTableCell::collectBorderValues(LayoutTable::CollapsedBorderValues& borderValues) const
+void LayoutTableCell::collectBorderValues(LayoutTable::CollapsedBorderValues& borderValues)
 {
-    addBorderStyle(borderValues, collapsedStartBorder());
-    addBorderStyle(borderValues, collapsedEndBorder());
-    addBorderStyle(borderValues, collapsedBeforeBorder());
-    addBorderStyle(borderValues, collapsedAfterBorder());
+    CollapsedBorderValue startBorder = computeCollapsedStartBorder();
+    CollapsedBorderValue endBorder = computeCollapsedEndBorder();
+    CollapsedBorderValue beforeBorder = computeCollapsedBeforeBorder();
+    CollapsedBorderValue afterBorder = computeCollapsedAfterBorder();
+    LayoutTableSection* section = this->section();
+    bool changed = section->setCachedCollapsedBorder(this, CBSStart, startBorder);
+    changed |= section->setCachedCollapsedBorder(this, CBSEnd, endBorder);
+    changed |= section->setCachedCollapsedBorder(this, CBSBefore, beforeBorder);
+    changed |= section->setCachedCollapsedBorder(this, CBSAfter, afterBorder);
+
+    // In slimming paint mode, we need to invalidate all cells with collapsed border changed.
+    // FIXME: Need a way to invalidate/repaint the borders only. crbug.com/451090#c5.
+    if (changed && RuntimeEnabledFeatures::slimmingPaintEnabled())
+        setShouldDoFullPaintInvalidation();
+
+    addBorderStyle(borderValues, startBorder);
+    addBorderStyle(borderValues, endBorder);
+    addBorderStyle(borderValues, beforeBorder);
+    addBorderStyle(borderValues, afterBorder);
 }
 
 static int compareBorderValuesForQSort(const void* pa, const void* pb)
@@ -1049,7 +1034,7 @@ LayoutTableCell* LayoutTableCell::createAnonymous(Document* document)
 LayoutTableCell* LayoutTableCell::createAnonymousWithParentRenderer(const LayoutObject* parent)
 {
     LayoutTableCell* newCell = LayoutTableCell::createAnonymous(&parent->document());
-    RefPtr<LayoutStyle> newStyle = LayoutStyle::createAnonymousStyleWithDisplay(parent->styleRef(), TABLE_CELL);
+    RefPtr<ComputedStyle> newStyle = ComputedStyle::createAnonymousStyleWithDisplay(parent->styleRef(), TABLE_CELL);
     newCell->setStyle(newStyle.release());
     return newCell;
 }

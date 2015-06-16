@@ -29,8 +29,6 @@
         ],
       },
       'sources': [
-        'channel_buffer.cc',
-        'channel_buffer.h',
         'audio_converter.cc',
         'audio_converter.h',
         'audio_ring_buffer.cc',
@@ -38,11 +36,21 @@
         'audio_util.cc',
         'blocker.cc',
         'blocker.h',
+        'channel_buffer.cc',
+        'channel_buffer.h',
+        'fft4g.c',
+        'fft4g.h',
         'fir_filter.cc',
         'fir_filter.h',
         'fir_filter_neon.h',
         'fir_filter_sse.h',
         'include/audio_util.h',
+        'lapped_transform.cc',
+        'lapped_transform.h',
+        'real_fourier.cc',
+        'real_fourier.h',
+        'real_fourier_ooura.cc',
+        'real_fourier_ooura.h',
         'resampler/include/push_resampler.h',
         'resampler/include/resampler.h',
         'resampler/push_resampler.cc',
@@ -113,13 +121,14 @@
       'conditions': [
         ['rtc_use_openmax_dl==1', {
           'sources': [
-            'lapped_transform.cc',
-            'lapped_transform.h',
-            'real_fourier.cc',
-            'real_fourier.h',
+            'real_fourier_openmax.cc',
+            'real_fourier_openmax.h',
           ],
-          'dependencies': [
-            '<(DEPTH)/third_party/openmax_dl/dl/dl.gyp:openmax_dl',
+          'defines': ['RTC_USE_OPENMAX_DL',],
+          'conditions': [
+            ['build_openmax_dl==1', {
+              'dependencies': ['<(DEPTH)/third_party/openmax_dl/dl/dl.gyp:openmax_dl',],
+            }],
           ],
         }],
         ['target_arch=="ia32" or target_arch=="x64"', {
@@ -145,6 +154,9 @@
               ],
             }],
           ],  # conditions
+        }],
+        ['target_arch=="arm64"', {
+          'dependencies': ['common_audio_neon',],
         }],
         ['target_arch=="mipsel" and mips_arch_variant!="r6" and android_webview_build==0', {
           'sources': [
@@ -194,7 +206,7 @@
         },
       ],  # targets
     }],
-    ['target_arch=="arm" and arm_version>=7', {
+    ['target_arch=="arm" and arm_version>=7 or target_arch=="arm64"', {
       'targets': [
         {
           'target_name': 'common_audio_neon',
@@ -203,9 +215,9 @@
           'sources': [
             'fir_filter_neon.cc',
             'resampler/sinc_resampler_neon.cc',
-            'signal_processing/cross_correlation_neon.S',
-            'signal_processing/downsample_fast_neon.S',
-            'signal_processing/min_max_operations_neon.S',
+            'signal_processing/cross_correlation_neon.c',
+            'signal_processing/downsample_fast_neon.c',
+            'signal_processing/min_max_operations_neon.c',
           ],
           'conditions': [
             # Disable LTO in common_audio_neon target due to compiler bug
@@ -234,6 +246,8 @@
             'audio_util_unittest.cc',
             'blocker_unittest.cc',
             'fir_filter_unittest.cc',
+            'lapped_transform_unittest.cc',
+            'real_fourier_unittest.cc',
             'resampler/resampler_unittest.cc',
             'resampler/push_resampler_unittest.cc',
             'resampler/push_sinc_resampler_unittest.cc',
@@ -255,10 +269,7 @@
           ],
           'conditions': [
             ['rtc_use_openmax_dl==1', {
-              'sources': [
-                'lapped_transform_unittest.cc',
-                'real_fourier_unittest.cc',
-              ],
+              'defines': ['RTC_USE_OPENMAX_DL',],
             }],
             ['OS=="android"', {
               'dependencies': [

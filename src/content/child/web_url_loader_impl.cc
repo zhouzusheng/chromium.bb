@@ -12,7 +12,6 @@
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/profiler/scoped_tracker.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/string_util.h"
 #include "base/time/time.h"
@@ -419,7 +418,7 @@ void WebURLLoaderImpl::Context::DidChangePriority(
 bool WebURLLoaderImpl::Context::AttachThreadedDataReceiver(
     blink::WebThreadedDataReceiver* threaded_data_receiver) {
   if (request_id_ != -1) {
-    resource_dispatcher_->AttachThreadedDataReceiver(
+    return resource_dispatcher_->AttachThreadedDataReceiver(
         request_id_, threaded_data_receiver);
   }
 
@@ -782,6 +781,11 @@ bool WebURLLoaderImpl::Context::CanHandleDataURLRequestLocally() const {
   if (request_.downloadToFile())
     return false;
 
+  // Data url requests from object tags may need to be intercepted as streams
+  // and so need to be sent to the browser.
+  if (request_.requestContext() == WebURLRequest::RequestContextObject)
+    return false;
+
   // Optimize for the case where we can handle a data URL locally.  We must
   // skip this for data URLs targetted at frames since those could trigger a
   // download.
@@ -900,11 +904,6 @@ MojoResult WebURLLoaderImpl::Context::WriteDataOnBodyStream(const char* data,
 }
 
 void WebURLLoaderImpl::Context::OnHandleGotWritable(MojoResult result) {
-  // TODO(pkasting): Remove ScopedTracker below once crbug.com/455434 is
-  // fixed.
-  tracked_objects::ScopedTracker tracking_profile(
-      FROM_HERE_WITH_EXPLICIT_FUNCTION(
-          "455434 WebURLLoaderImpl::Context::OnHandleGotWritable"));
   if (result != MOJO_RESULT_OK) {
     if (client_) {
       client_->didFail(loader_,
@@ -976,10 +975,7 @@ void WebURLLoaderImpl::PopulateURLResponse(const GURL& url,
                                            const ResourceResponseInfo& info,
                                            WebURLResponse* response) {
   response->setURL(url);
-  response->setResponseTime(info.response_time.ToDoubleT());
-  // FIXME: remove static cast once setResponseTime is no longer overloaded.
-  response->setResponseTime(
-      static_cast<long long>(info.response_time.ToInternalValue()));
+  response->setResponseTime(info.response_time.ToInternalValue());
   response->setMIMEType(WebString::fromUTF8(info.mime_type));
   response->setTextEncodingName(WebString::fromUTF8(info.charset));
   response->setExpectedContentLength(info.content_length);

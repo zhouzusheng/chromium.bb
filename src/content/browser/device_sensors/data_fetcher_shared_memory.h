@@ -61,8 +61,9 @@ class CONTENT_EXPORT DataFetcherSharedMemory
   class SensorEventSink;
   class SensorEventSinkMotion;
   class SensorEventSinkOrientation;
+  class SensorEventSinkLight;
 
-  virtual FetcherType GetType() const override;
+  FetcherType GetType() const override;
 
   bool RegisterForSensor(REFSENSOR_TYPE_ID sensor_type, ISensor** sensor,
       scoped_refptr<SensorEventSink> event_sink);
@@ -72,6 +73,7 @@ class CONTENT_EXPORT DataFetcherSharedMemory
   base::win::ScopedComPtr<ISensor> sensor_inclinometer_;
   base::win::ScopedComPtr<ISensor> sensor_accelerometer_;
   base::win::ScopedComPtr<ISensor> sensor_gyrometer_;
+  base::win::ScopedComPtr<ISensor> sensor_light_;
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(DataFetcherSharedMemory);

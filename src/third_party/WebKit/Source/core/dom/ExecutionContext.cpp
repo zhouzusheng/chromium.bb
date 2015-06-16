@@ -31,6 +31,7 @@
 #include "core/dom/ExecutionContextTask.h"
 #include "core/events/ErrorEvent.h"
 #include "core/events/EventTarget.h"
+#include "core/fetch/MemoryCache.h"
 #include "core/html/PublicURLManager.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/ScriptCallStack.h"
@@ -53,7 +54,7 @@ public:
         , m_callStack(callStack)
     {
     }
-    void trace(Visitor* visitor)
+    DEFINE_INLINE_TRACE()
     {
         visitor->trace(m_callStack);
     }
@@ -66,13 +67,13 @@ public:
 };
 
 ExecutionContext::ExecutionContext()
-    : ContextLifecycleNotifier(this)
-    , m_circularSequentialID(0)
+    : m_circularSequentialID(0)
     , m_inDispatchErrorEvent(false)
     , m_activeDOMObjectsAreSuspended(false)
     , m_activeDOMObjectsAreStopped(false)
     , m_strictMixedContentCheckingEnforced(false)
     , m_windowInteractionTokens(0)
+    , m_isRunSuspendableTasksScheduled(false)
 {
 }
 
@@ -100,9 +101,20 @@ void ExecutionContext::stopActiveDOMObjects()
     notifyStoppingActiveDOMObjects();
 }
 
-unsigned ExecutionContext::activeDOMObjectCount()
+void ExecutionContext::postSuspendableTask(PassOwnPtr<SuspendableTask> task)
 {
-    return activeDOMObjects().size();
+    m_suspendedTasks.append(task);
+    if (!m_activeDOMObjectsAreSuspended)
+        postTask(FROM_HERE, createSameThreadTask(&ExecutionContext::runSuspendableTasks, this));
+}
+
+void ExecutionContext::notifyContextDestroyed()
+{
+    Deque<OwnPtr<SuspendableTask>> suspendedTasks;
+    suspendedTasks.swap(m_suspendedTasks);
+    for (Deque<OwnPtr<SuspendableTask>>::iterator it = suspendedTasks.begin(); it != suspendedTasks.end(); ++it)
+        (*it)->contextDestroyed();
+    ContextLifecycleNotifier::notifyContextDestroyed();
 }
 
 void ExecutionContext::suspendScheduledTasks()
@@ -115,6 +127,11 @@ void ExecutionContext::resumeScheduledTasks()
 {
     resumeActiveDOMObjects();
     tasksWereResumed();
+    // We need finish stack unwiding before running next task because it can suspend this context.
+    if (m_isRunSuspendableTasksScheduled)
+        return;
+    m_isRunSuspendableTasksScheduled = true;
+    postTask(FROM_HERE, createSameThreadTask(&ExecutionContext::runSuspendableTasks, this));
 }
 
 void ExecutionContext::suspendActiveDOMObjectIfNeeded(ActiveDOMObject* object)
@@ -135,7 +152,7 @@ void ExecutionContext::reportException(PassRefPtrWillBeRawPtr<ErrorEvent> event,
     RefPtrWillBeRawPtr<ErrorEvent> errorEvent = event;
     if (m_inDispatchErrorEvent) {
         if (!m_pendingExceptions)
-            m_pendingExceptions = adoptPtrWillBeNoop(new WillBeHeapVector<OwnPtrWillBeMember<PendingException> >());
+            m_pendingExceptions = adoptPtrWillBeNoop(new WillBeHeapVector<OwnPtrWillBeMember<PendingException>>());
         m_pendingExceptions->append(adoptPtrWillBeNoop(new PendingException(errorEvent->messageForConsole(), errorEvent->lineno(), errorEvent->colno(), scriptId, errorEvent->filename(), callStack)));
         return;
     }
@@ -169,6 +186,15 @@ bool ExecutionContext::dispatchErrorEvent(PassRefPtrWillBeRawPtr<ErrorEvent> eve
     target->dispatchEvent(errorEvent);
     m_inDispatchErrorEvent = false;
     return errorEvent->defaultPrevented();
+}
+
+void ExecutionContext::runSuspendableTasks()
+{
+    m_isRunSuspendableTasksScheduled = false;
+    while (!m_activeDOMObjectsAreSuspended && m_suspendedTasks.size()) {
+        OwnPtr<SuspendableTask> task = m_suspendedTasks.takeFirst();
+        task->run();
+    }
 }
 
 int ExecutionContext::circularSequentialID()
@@ -206,11 +232,6 @@ KURL ExecutionContext::completeURL(const String& url) const
     return virtualCompleteURL(url);
 }
 
-bool ExecutionContext::isIteratingOverObservers() const
-{
-    return m_lifecycleNotifier && m_lifecycleNotifier->isIteratingOverObservers();
-}
-
 void ExecutionContext::allowWindowInteraction()
 {
     ++m_windowInteractionTokens;
@@ -231,7 +252,12 @@ bool ExecutionContext::isWindowInteractionAllowed() const
     return m_windowInteractionTokens > 0 || WindowFocusAllowedIndicator::windowFocusAllowed();
 }
 
-void ExecutionContext::trace(Visitor* visitor)
+void ExecutionContext::removeURLFromMemoryCache(const KURL& url)
+{
+    memoryCache()->removeURLFromCache(url);
+}
+
+DEFINE_TRACE(ExecutionContext)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_pendingExceptions);

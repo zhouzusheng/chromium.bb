@@ -32,11 +32,11 @@
 #include "core/editing/iterators/TextIterator.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLTextFormControlElement.h"
-#include "core/rendering/RenderTextFragment.h"
+#include "core/layout/LayoutTextFragment.h"
 
 namespace blink {
 
-static int collapsedSpaceLength(RenderText* renderer, int textEnd)
+static int collapsedSpaceLength(LayoutText* renderer, int textEnd)
 {
     const String& text = renderer->text();
     int length = text.length();
@@ -52,8 +52,8 @@ static int maxOffsetIncludingCollapsedSpaces(Node* node)
 {
     int offset = caretMaxOffset(node);
 
-    if (node->renderer() && node->renderer()->isText())
-        offset += collapsedSpaceLength(toRenderText(node->renderer()), offset);
+    if (node->layoutObject() && node->layoutObject()->isText())
+        offset += collapsedSpaceLength(toLayoutText(node->layoutObject()), offset);
 
     return offset;
 }
@@ -185,7 +185,7 @@ void SimplifiedBackwardsTextIterator::advance()
     while (m_node && !m_havePassedStartNode) {
         // Don't handle node if we start iterating at [node, 0].
         if (!m_handledNode && !(m_node == m_endNode && !m_endOffset)) {
-            LayoutObject* renderer = m_node->renderer();
+            LayoutObject* renderer = m_node->layoutObject();
             if (renderer && renderer->isText() && m_node->nodeType() == Node::TEXT_NODE) {
                 // FIXME: What about CDATA_SECTION_NODE?
                 if (renderer->style()->visibility() == VISIBLE && m_offset > 0)
@@ -253,7 +253,7 @@ bool SimplifiedBackwardsTextIterator::handleTextNode()
 {
     int startOffset;
     int offsetInNode;
-    RenderText* renderer = handleFirstLetter(startOffset, offsetInNode);
+    LayoutText* renderer = handleFirstLetter(startOffset, offsetInNode);
     if (!renderer)
         return true;
 
@@ -279,9 +279,9 @@ bool SimplifiedBackwardsTextIterator::handleTextNode()
     return !m_shouldHandleFirstLetter;
 }
 
-RenderText* SimplifiedBackwardsTextIterator::handleFirstLetter(int& startOffset, int& offsetInNode)
+LayoutText* SimplifiedBackwardsTextIterator::handleFirstLetter(int& startOffset, int& offsetInNode)
 {
-    RenderText* renderer = toRenderText(m_node->renderer());
+    LayoutText* renderer = toLayoutText(m_node->layoutObject());
     startOffset = (m_node == m_startNode) ? m_startOffset : 0;
 
     if (!renderer->isTextFragment()) {
@@ -289,7 +289,7 @@ RenderText* SimplifiedBackwardsTextIterator::handleFirstLetter(int& startOffset,
         return renderer;
     }
 
-    RenderTextFragment* fragment = toRenderTextFragment(renderer);
+    LayoutTextFragment* fragment = toLayoutTextFragment(renderer);
     int offsetAfterFirstLetter = fragment->start();
     if (startOffset >= offsetAfterFirstLetter) {
         ASSERT(!m_shouldHandleFirstLetter);
@@ -309,10 +309,10 @@ RenderText* SimplifiedBackwardsTextIterator::handleFirstLetter(int& startOffset,
     ASSERT(fragment->isRemainingTextRenderer());
     ASSERT(fragment->firstLetterPseudoElement());
 
-    LayoutObject* pseudoElementRenderer = fragment->firstLetterPseudoElement()->renderer();
+    LayoutObject* pseudoElementRenderer = fragment->firstLetterPseudoElement()->layoutObject();
     ASSERT(pseudoElementRenderer);
     ASSERT(pseudoElementRenderer->slowFirstChild());
-    RenderText* firstLetterRenderer = toRenderText(pseudoElementRenderer->slowFirstChild());
+    LayoutText* firstLetterRenderer = toLayoutText(pseudoElementRenderer->slowFirstChild());
 
     m_offset = firstLetterRenderer->caretMaxOffset();
     m_offset += collapsedSpaceLength(firstLetterRenderer, m_offset);

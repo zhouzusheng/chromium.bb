@@ -7,18 +7,22 @@
 
 #include <map>
 #include <set>
+#include <vector>
 
+#include "base/id_map.h"
 #include "base/memory/ref_counted.h"
 #include "base/single_thread_task_runner.h"
 #include "content/child/notifications/notification_dispatcher.h"
 #include "content/child/notifications/pending_notifications_tracker.h"
 #include "content/child/worker_task_runner.h"
+#include "content/common/platform_notification_messages.h"
 #include "third_party/WebKit/public/platform/modules/notifications/WebNotificationManager.h"
 
 class SkBitmap;
 
 namespace content {
 
+struct PlatformNotificationData;
 class ThreadSafeSender;
 
 class NotificationManager : public blink::WebNotificationManager,
@@ -45,8 +49,13 @@ class NotificationManager : public blink::WebNotificationManager,
       const blink::WebNotificationData& notification_data,
       blink::WebServiceWorkerRegistration* service_worker_registration,
       blink::WebNotificationShowCallbacks* callbacks);
+  virtual void getNotifications(
+      const blink::WebString& filter_tag,
+      blink::WebServiceWorkerRegistration* service_worker_registration,
+      blink::WebNotificationGetCallbacks* callbacks);
   virtual void close(blink::WebNotificationDelegate* delegate);
   virtual void closePersistent(
+      const blink::WebSerializedOrigin& origin,
       const blink::WebString& persistent_notification_id);
   virtual void notifyDelegateDestroyed(
       blink::WebNotificationDelegate* delegate);
@@ -64,8 +73,12 @@ class NotificationManager : public blink::WebNotificationManager,
 
   // IPC message handlers.
   void OnDidShow(int notification_id);
+  void OnDidShowPersistent(int request_id, bool success);
   void OnDidClose(int notification_id);
   void OnDidClick(int notification_id);
+  void OnDidGetNotifications(
+      int request_id,
+      const std::vector<PersistentNotificationInfo>& notification_infos);
 
   // To be called when a page notification is ready to be displayed. Will
   // inform the browser process about all available data. The |delegate|,
@@ -94,6 +107,14 @@ class NotificationManager : public blink::WebNotificationManager,
   // Tracker which stores all pending Notifications, both page and persistent
   // ones, until all their associated resources have been fetched.
   PendingNotificationsTracker pending_notifications_;
+
+  // Tracks pending requests for getting a list of notifications.
+  IDMap<blink::WebNotificationGetCallbacks, IDMapOwnPointer>
+      pending_get_notification_requests_;
+
+  // Tracks pending requests for displaying persistent notifications.
+  IDMap<blink::WebNotificationShowCallbacks, IDMapOwnPointer>
+      pending_show_notification_requests_;
 
   // Map to store the delegate associated with a notification request Id.
   std::map<int, blink::WebNotificationDelegate*> active_page_notifications_;

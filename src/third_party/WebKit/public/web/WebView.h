@@ -58,6 +58,7 @@ class WebSpellCheckClient;
 class WebString;
 class WebViewClient;
 struct WebActiveWheelFlingParameters;
+struct WebDeviceEmulationParams;
 struct WebMediaPlayerAction;
 struct WebPluginAction;
 struct WebPoint;
@@ -93,6 +94,7 @@ public:
 
     // Initializes the various client interfaces.
     virtual void setCredentialManagerClient(WebCredentialManagerClient*) = 0;
+    // TODO(dgozman): remove this one.
     virtual void setDevToolsAgentClient(WebDevToolsAgentClient*) = 0;
     virtual void setPrerendererClient(WebPrerendererClient*) = 0;
     virtual void setSpellCheckClient(WebSpellCheckClient*) = 0;
@@ -233,7 +235,7 @@ public:
     virtual void clearFocusedElement() = 0;
 
     // Scrolls the node currently in focus into |rect|, where |rect| is in
-    // window space. Returns true if an animation was started.
+    // viewport space. Returns true if an animation was started.
     virtual bool scrollFocusedNodeIntoRect(const WebRect&) { return false; }
 
     // Advance the focus of the WebView forward to the next element or to the
@@ -286,7 +288,7 @@ public:
     // Scales a page by a factor of scaleFactor and then sets a scroll position to (x, y).
     // setPageScaleFactor() magnifies and shrinks a page without affecting layout.
     // On the other hand, zooming affects layout of the page.
-    virtual void setPageScaleFactor(float scaleFactor, const WebPoint& origin) = 0;
+    virtual void setPageScaleFactor(float scaleFactor, const WebPoint& origin) { setPageScaleFactor(scaleFactor); }
 
     // TODO: Reevaluate if this is needed once all users are converted to using the
     // virtual viewport pinch model.
@@ -401,15 +403,15 @@ public:
         const WebDragData&,
         const WebPoint& clientPoint, const WebPoint& screenPoint,
         WebDragOperationsMask operationsAllowed,
-        int keyModifiers) = 0;
+        int modifiers) = 0;
     virtual WebDragOperation dragTargetDragOver(
         const WebPoint& clientPoint, const WebPoint& screenPoint,
         WebDragOperationsMask operationsAllowed,
-        int keyModifiers) = 0;
+        int modifiers) = 0;
     virtual void dragTargetDragLeave() = 0;
     virtual void dragTargetDrop(
         const WebPoint& clientPoint, const WebPoint& screenPoint,
-        int keyModifiers) = 0;
+        int modifiers) = 0;
 
     // Retrieves a list of spelling markers.
     virtual void spellingMarkers(WebVector<uint32_t>* markers) = 0;
@@ -424,19 +426,11 @@ public:
 
     // Developer tools -----------------------------------------------------
 
-    // Inspect a particular point in the WebView.  (x = -1 || y = -1) is a
-    // special case, meaning inspect the current page and not a specific
-    // point.
-    virtual void inspectElementAt(const WebPoint&) = 0;
+    // Enables device emulation as specified in params.
+    virtual void enableDeviceEmulation(const WebDeviceEmulationParams&) = 0;
 
-    // Set an override of device scale factor passed from WebView to
-    // compositor. Pass zero to cancel override. This is used to implement
-    // device metrics emulation.
-    virtual void setCompositorDeviceScaleFactorOverride(float) = 0;
-
-    // Set offset and scale on the root composited layer. This is used
-    // to implement device metrics emulation.
-    virtual void setRootLayerTransform(const WebSize& offset, float scale) = 0;
+    // Cancel emulation started via |enableDeviceEmulation| call.
+    virtual void disableDeviceEmulation() = 0;
 
     // The embedder may optionally engage a WebDevToolsAgent.  This may only
     // be set once per WebView.

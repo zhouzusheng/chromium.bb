@@ -28,7 +28,7 @@
 #include "platform/fonts/GlyphBuffer.h"
 #include "platform/fonts/Latin1TextIterator.h"
 #include "platform/fonts/SimpleFontData.h"
-#include "platform/text/SurrogatePairAwareTextIterator.h"
+#include "platform/fonts/UTF16TextIterator.h"
 #include "wtf/MathExtras.h"
 #include "wtf/unicode/CharacterNames.h"
 
@@ -37,16 +37,11 @@ using namespace Unicode;
 
 namespace blink {
 
-SimpleShaper::SimpleShaper(const Font* font, const TextRun& run,
-    HashSet<const SimpleFontData*>* fallbackFonts, FloatRect* bounds, bool forTextEmphasis)
-    : m_font(font)
-    , m_run(run)
+SimpleShaper::SimpleShaper(const Font* font, const TextRun& run, const GlyphData* emphasisData,
+    HashSet<const SimpleFontData*>* fallbackFonts, FloatRect* bounds)
+    : Shaper(font, run, emphasisData, fallbackFonts, bounds)
     , m_currentCharacter(0)
     , m_runWidthSoFar(0)
-    , m_isAfterExpansion(!run.allowsLeadingExpansion())
-    , m_fallbackFonts(fallbackFonts)
-    , m_glyphBoundingBox(bounds)
-    , m_forTextEmphasis(forTextEmphasis)
 {
     // If the padding is non-zero, count the number of spaces in the run
     // and divide that by the padding for per space addition.
@@ -87,15 +82,6 @@ float SimpleShaper::characterWidth(UChar32 character, const GlyphData& glyphData
         width *= m_run.horizontalGlyphStretch();
 
     return width;
-}
-
-void SimpleShaper::cacheFallbackFont(const SimpleFontData* fontData,
-    const SimpleFontData* primaryFont)
-{
-    if (fontData == primaryFont)
-        return;
-
-    m_fallbackFonts->add(fontData);
 }
 
 float SimpleShaper::adjustSpacing(float width, const CharacterData& charData)
@@ -144,16 +130,14 @@ unsigned SimpleShaper::advanceInternal(TextIterator& textIterator, GlyphBuffer* 
     bool hasExtraSpacing = (m_font->fontDescription().letterSpacing() || m_font->fontDescription().wordSpacing() || m_expansion)
         && !m_run.spacingDisabled();
 
-    const SimpleFontData* primaryFont = m_font->primaryFont();
-    const SimpleFontData* lastFontData = primaryFont;
+    const SimpleFontData* lastFontData = m_font->primaryFont();
     bool normalizeSpace = m_run.normalizeSpace();
-    FloatPoint glyphOrigin;
-    FloatRect glyphBounds;
+    const float initialRunWidth = m_runWidthSoFar;
 
     CharacterData charData;
-    while (textIterator.consume(charData.character, charData.clusterLength)) {
-        charData.characterOffset = textIterator.currentCharacter();
-
+    while (textIterator.consume(charData.character)) {
+        charData.characterOffset = textIterator.offset();
+        charData.clusterLength = textIterator.glyphLength();
         GlyphData glyphData = glyphDataForCharacter(charData, normalizeSpace);
 
         // Some fonts do not have a glyph for zero-width-space,
@@ -175,7 +159,7 @@ unsigned SimpleShaper::advanceInternal(TextIterator& textIterator, GlyphBuffer* 
 
         if (m_fallbackFonts && lastFontData != fontData && width) {
             lastFontData = fontData;
-            cacheFallbackFont(fontData, primaryFont);
+            trackNonPrimaryFallbackFont(fontData);
         }
 
         if (hasExtraSpacing && !spaceUsedAsZeroWidthSpace)
@@ -183,32 +167,30 @@ unsigned SimpleShaper::advanceInternal(TextIterator& textIterator, GlyphBuffer* 
 
         if (m_glyphBoundingBox) {
             ASSERT(glyphData.fontData);
-            glyphBounds = glyphData.fontData->boundsForGlyph(glyphData.glyph);
-            glyphBounds.move(glyphOrigin.x(), glyphOrigin.y());
+            FloatRect glyphBounds = glyphData.fontData->boundsForGlyph(glyphData.glyph);
+            // We are handling simple text run here, so Y-Offset will be zero.
+            // FIXME: Computing bounds relative to the initial advance seems odd. Are we adjusting
+            // these someplace else? If not, we'll end up with different bounds depending on how
+            // we segment our advance() calls.
+            glyphBounds.move(m_runWidthSoFar - initialRunWidth, 0);
             m_glyphBoundingBox->unite(glyphBounds);
         }
 
-        if (m_forTextEmphasis) {
-            if (!Character::canReceiveTextEmphasis(charData.character))
-                glyph = 0;
-
-            // The emphasis code expects mid-glyph offsets.
-            width /= 2;
-            m_runWidthSoFar += width;
+        if (glyphBuffer) {
+            if (!forTextEmphasis()) {
+                glyphBuffer->add(glyph, fontData, m_runWidthSoFar);
+            } else if (Character::canReceiveTextEmphasis(charData.character)) {
+                addEmphasisMark(glyphBuffer, m_runWidthSoFar + width / 2);
+            }
         }
 
-        if (glyphBuffer)
-            glyphBuffer->add(glyph, fontData, m_runWidthSoFar);
-
         // Advance past the character we just dealt with.
-        textIterator.advance(charData.clusterLength);
+        textIterator.advance();
         m_runWidthSoFar += width;
-        // We are handling simple text run here, so Y-Offset will be zero.
-        glyphOrigin += FloatSize(width, 0);
     }
 
-    unsigned consumedCharacters = textIterator.currentCharacter() - m_currentCharacter;
-    m_currentCharacter = textIterator.currentCharacter();
+    unsigned consumedCharacters = textIterator.offset() - m_currentCharacter;
+    m_currentCharacter = textIterator.offset();
 
     return consumedCharacters;
 }
@@ -224,11 +206,11 @@ unsigned SimpleShaper::advance(unsigned offset, GlyphBuffer* glyphBuffer)
         return 0;
 
     if (m_run.is8Bit()) {
-        Latin1TextIterator textIterator(m_run.data8(m_currentCharacter), m_currentCharacter, offset, length);
+        Latin1TextIterator textIterator(m_run.data8(m_currentCharacter), m_currentCharacter, offset);
         return advanceInternal(textIterator, glyphBuffer);
     }
 
-    SurrogatePairAwareTextIterator textIterator(m_run.data16(m_currentCharacter), m_currentCharacter, offset, length);
+    UTF16TextIterator textIterator(m_run.data16(m_currentCharacter), m_currentCharacter, offset, length);
     return advanceInternal(textIterator, glyphBuffer);
 }
 

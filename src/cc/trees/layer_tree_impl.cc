@@ -84,13 +84,32 @@ void LayerTreeImpl::Shutdown() {
 }
 
 void LayerTreeImpl::ReleaseResources() {
-  if (root_layer_)
-    ProcessLayersRecursive(root_layer_.get(), &LayerImpl::ReleaseResources);
+  if (root_layer_) {
+    LayerTreeHostCommon::CallFunctionForSubtree(
+        root_layer_.get(), [](LayerImpl* layer) { layer->ReleaseResources(); });
+  }
 }
 
 void LayerTreeImpl::RecreateResources() {
-  if (root_layer_)
-    ProcessLayersRecursive(root_layer_.get(), &LayerImpl::RecreateResources);
+  if (root_layer_) {
+    LayerTreeHostCommon::CallFunctionForSubtree(
+        root_layer_.get(),
+        [](LayerImpl* layer) { layer->RecreateResources(); });
+  }
+}
+
+void LayerTreeImpl::GatherFrameTimingRequestIds(
+    std::vector<int64_t>* request_ids) {
+  if (!root_layer_)
+    return;
+
+  // TODO(vmpstr): Early out if there are no requests on any of the layers. For
+  // that, we need to inform LayerTreeImpl whenever there are requests when we
+  // get them.
+  LayerTreeHostCommon::CallFunctionForSubtree(
+      root_layer_.get(), [request_ids](LayerImpl* layer) {
+        layer->GatherFrameTimingRequestIds(request_ids);
+      });
 }
 
 bool LayerTreeImpl::IsExternalFlingActive() const {
@@ -446,10 +465,6 @@ gfx::Rect LayerTreeImpl::RootScrollLayerDeviceViewportBounds() const {
                                            gfx::Rect(layer->content_bounds()));
 }
 
-static void ApplySentScrollDeltasFromAbortedCommitTo(LayerImpl* layer) {
-  layer->ApplySentScrollDeltasFromAbortedCommit();
-}
-
 void LayerTreeImpl::ApplySentScrollAndScaleDeltasFromAbortedCommit() {
   DCHECK(IsActiveTree());
 
@@ -461,7 +476,9 @@ void LayerTreeImpl::ApplySentScrollAndScaleDeltasFromAbortedCommit() {
     return;
 
   LayerTreeHostCommon::CallFunctionForSubtree(
-      root_layer(), base::Bind(&ApplySentScrollDeltasFromAbortedCommitTo));
+      root_layer(), [](LayerImpl* layer) {
+        layer->ApplySentScrollDeltasFromAbortedCommit();
+      });
 }
 
 void LayerTreeImpl::SetViewportLayersFromIds(
@@ -708,17 +725,6 @@ void LayerTreeImpl::PushPersistedState(LayerTreeImpl* pending_tree) {
           currently_scrolling_layer_ ? currently_scrolling_layer_->id() : 0));
 }
 
-static void DidBecomeActiveRecursive(LayerImpl* layer) {
-  layer->DidBecomeActive();
-  if (layer->mask_layer())
-    layer->mask_layer()->DidBecomeActive();
-  if (layer->replica_layer() && layer->replica_layer()->mask_layer())
-    layer->replica_layer()->mask_layer()->DidBecomeActive();
-
-  for (size_t i = 0; i < layer->children().size(); ++i)
-    DidBecomeActiveRecursive(layer->children()[i]);
-}
-
 void LayerTreeImpl::DidBecomeActive() {
   if (next_activation_forces_redraw_) {
     layer_tree_host_impl_->SetFullRootLayerDamage();
@@ -734,8 +740,10 @@ void LayerTreeImpl::DidBecomeActive() {
   // if we were in a good state.
   layer_tree_host_impl_->ResetRequiresHighResToDraw();
 
-  if (root_layer())
-    DidBecomeActiveRecursive(root_layer());
+  if (root_layer()) {
+    LayerTreeHostCommon::CallFunctionForSubtree(
+        root_layer(), [](LayerImpl* layer) { layer->DidBecomeActive(); });
+  }
 
   devtools_instrumentation::DidActivateLayerTree(layer_tree_host_impl_->id(),
                                                  source_frame_number_);
@@ -944,11 +952,12 @@ void LayerTreeImpl::SetNeedsRedraw() {
   layer_tree_host_impl_->SetNeedsRedraw();
 }
 
-AnimationRegistrar* LayerTreeImpl::animationRegistrar() const {
+AnimationRegistrar* LayerTreeImpl::GetAnimationRegistrar() const {
   return layer_tree_host_impl_->animation_registrar();
 }
 
-void LayerTreeImpl::GetAllTilesForTracing(std::set<const Tile*>* tiles) const {
+void LayerTreeImpl::GetAllTilesAndPrioritiesForTracing(
+    std::map<const Tile*, TilePriority>* tile_map) const {
   typedef LayerIterator<LayerImpl> LayerIteratorType;
   LayerIteratorType end = LayerIteratorType::End(&render_surface_layer_list_);
   for (LayerIteratorType it =
@@ -958,7 +967,7 @@ void LayerTreeImpl::GetAllTilesForTracing(std::set<const Tile*>* tiles) const {
     if (!it.represents_itself())
       continue;
     LayerImpl* layer_impl = *it;
-    layer_impl->GetAllTilesForTracing(tiles);
+    layer_impl->GetAllTilesAndPrioritiesForTracing(tile_map);
   }
 }
 
@@ -1178,18 +1187,6 @@ const std::vector<LayerImpl*>& LayerTreeImpl::LayersWithCopyOutputRequest()
   return layers_with_copy_output_request_;
 }
 
-void LayerTreeImpl::ProcessLayersRecursive(LayerImpl* current,
-                                           void (LayerImpl::*function)()) {
-  DCHECK(current);
-  (current->*function)();
-  if (current->mask_layer())
-    ProcessLayersRecursive(current->mask_layer(), function);
-  if (current->replica_layer())
-    ProcessLayersRecursive(current->replica_layer(), function);
-  for (size_t i = 0; i < current->children().size(); ++i)
-    ProcessLayersRecursive(current->children()[i], function);
-}
-
 template <typename LayerType>
 static inline bool LayerClipsSubtree(LayerType* layer) {
   return layer->masks_to_bounds() || layer->mask_layer();
@@ -1359,15 +1356,16 @@ static void FindClosestMatchingLayer(
 static bool ScrollsAnyDrawnRenderSurfaceLayerListMember(LayerImpl* layer) {
   if (!layer->scrollable())
     return false;
-  if (layer->IsDrawnRenderSurfaceLayerListMember())
+  if (layer->draw_properties().layer_or_descendant_is_drawn)
     return true;
+
   if (!layer->scroll_children())
     return false;
   for (std::set<LayerImpl*>::const_iterator it =
            layer->scroll_children()->begin();
        it != layer->scroll_children()->end();
        ++it) {
-    if ((*it)->IsDrawnRenderSurfaceLayerListMember())
+    if ((*it)->draw_properties().layer_or_descendant_is_drawn)
       return true;
   }
   return false;

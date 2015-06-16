@@ -28,47 +28,21 @@
 #include "core/dom/DocumentLifecycleNotifier.h"
 
 #include "core/dom/DocumentLifecycleObserver.h"
-#include "wtf/Assertions.h"
 
 namespace blink {
 
-DocumentLifecycleNotifier::DocumentLifecycleNotifier(Document* document)
-    : LifecycleNotifier<Document>(document)
-{
-}
-
-void DocumentLifecycleNotifier::addObserver(DocumentLifecycleNotifier::Observer* observer)
-{
-    if (observer->observerType() == Observer::DocumentLifecycleObserverType) {
-        RELEASE_ASSERT(m_iterating != IteratingOverDocumentObservers);
-        m_documentObservers.add(static_cast<DocumentLifecycleObserver*>(observer));
-    }
-
-    LifecycleNotifier<Document>::addObserver(observer);
-}
-
-void DocumentLifecycleNotifier::removeObserver(DocumentLifecycleNotifier::Observer* observer)
-{
-    if (observer->observerType() == Observer::DocumentLifecycleObserverType) {
-        RELEASE_ASSERT(m_iterating != IteratingOverDocumentObservers);
-        m_documentObservers.remove(static_cast<DocumentLifecycleObserver*>(observer));
-    }
-
-    LifecycleNotifier<Document>::removeObserver(observer);
-}
-
 void DocumentLifecycleNotifier::notifyDocumentWasDetached()
 {
-    TemporaryChange<IterationType> scope(m_iterating, IteratingOverDocumentObservers);
-    for (DocumentLifecycleObserver* observer : m_documentObservers)
+    TemporaryChange<IterationType> scope(m_iterating, IteratingOverAll);
+    for (DocumentLifecycleObserver* observer : m_observers)
         observer->documentWasDetached();
 }
 
 #if !ENABLE(OILPAN)
 void DocumentLifecycleNotifier::notifyDocumentWasDisposed()
 {
-    TemporaryChange<IterationType> scope(m_iterating, IteratingOverDocumentObservers);
-    for (DocumentLifecycleObserver* observer : m_documentObservers)
+    TemporaryChange<IterationType> scope(m_iterating, IteratingOverAll);
+    for (DocumentLifecycleObserver* observer : m_observers)
         observer->documentWasDisposed();
 }
 #endif

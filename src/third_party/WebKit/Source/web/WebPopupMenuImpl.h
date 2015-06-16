@@ -52,7 +52,7 @@ class WebTouchEvent;
 struct WebRect;
 
 class WebPopupMenuImpl : public WebPopupMenu, public PopupContainerClient, public WebContentLayerClient, public RefCounted<WebPopupMenuImpl> {
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED(WebPopupMenuImpl);
 public:
     // WebWidget functions:
     virtual void close() override final;
@@ -110,7 +110,7 @@ public:
     // HostWindow methods:
     virtual void invalidateRect(const IntRect&) override final;
     virtual void scheduleAnimation() override final;
-    virtual IntRect rootViewToScreen(const IntRect&) const override final;
+    virtual IntRect viewportToScreen(const IntRect&) const override final;
     virtual WebScreenInfo screenInfo() const override final;
 
     // PopupContainerClient methods:

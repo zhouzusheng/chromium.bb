@@ -41,6 +41,8 @@
 
 namespace blink {
 
+using PortState = MIDIAccessor::MIDIPortState;
+
 namespace {
 
 double now(ExecutionContext* context)
@@ -174,14 +176,16 @@ private:
 
 } // namespace
 
-MIDIOutput* MIDIOutput::create(MIDIAccess* access, unsigned portIndex, const String& id, const String& manufacturer, const String& name, const String& version, bool isActive)
+MIDIOutput* MIDIOutput::create(MIDIAccess* access, unsigned portIndex, const String& id, const String& manufacturer, const String& name, const String& version, PortState state)
 {
     ASSERT(access);
-    return new MIDIOutput(access, portIndex, id, manufacturer, name, version, isActive);
+    MIDIOutput* output = new MIDIOutput(access, portIndex, id, manufacturer, name, version, state);
+    output->suspendIfNeeded();
+    return output;
 }
 
-MIDIOutput::MIDIOutput(MIDIAccess* access, unsigned portIndex, const String& id, const String& manufacturer, const String& name, const String& version, bool isActive)
-    : MIDIPort(access, id, manufacturer, name, MIDIPortTypeOutput, version, isActive)
+MIDIOutput::MIDIOutput(MIDIAccess* access, unsigned portIndex, const String& id, const String& manufacturer, const String& name, const String& version, PortState state)
+    : MIDIPort(access, id, manufacturer, name, TypeOutput, version, state)
     , m_portIndex(portIndex)
 {
 }
@@ -194,6 +198,10 @@ void MIDIOutput::send(DOMUint8Array* array, double timestamp, ExceptionState& ex
 {
     if (timestamp == 0.0)
         timestamp = now(executionContext());
+
+    // Implicit open. It does nothing if the port is already opened.
+    // This should be performed even if |array| is invalid.
+    open();
 
     if (!array)
         return;

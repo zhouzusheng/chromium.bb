@@ -18,12 +18,8 @@ namespace content {
 
 SoftwareBrowserCompositorOutputSurface::SoftwareBrowserCompositorOutputSurface(
     scoped_ptr<cc::SoftwareOutputDevice> software_device,
-    int surface_id,
-    IDMap<BrowserCompositorOutputSurface>* output_surface_map,
     const scoped_refptr<ui::CompositorVSyncManager>& vsync_manager)
     : BrowserCompositorOutputSurface(software_device.Pass(),
-                                     surface_id,
-                                     output_surface_map,
                                      vsync_manager),
       weak_factory_(this) {
 }
@@ -34,9 +30,13 @@ SoftwareBrowserCompositorOutputSurface::
 
 void SoftwareBrowserCompositorOutputSurface::SwapBuffers(
     cc::CompositorFrame* frame) {
-  for (size_t i = 0; i < frame->metadata.latency_info.size(); i++) {
-    frame->metadata.latency_info[i].AddLatencyNumber(
-        ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0, 0);
+  base::TimeTicks swap_time = base::TimeTicks::Now();
+  for (auto& latency : frame->metadata.latency_info) {
+    latency.AddLatencyNumberWithTimestamp(
+        ui::INPUT_EVENT_GPU_SWAP_BUFFER_COMPONENT, 0, 0, swap_time, 1);
+    latency.AddLatencyNumberWithTimestamp(
+        ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0, 0,
+        swap_time, 1);
   }
   base::MessageLoop::current()->PostTask(
       FROM_HERE,

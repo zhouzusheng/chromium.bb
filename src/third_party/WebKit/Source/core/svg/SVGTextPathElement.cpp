@@ -49,12 +49,11 @@ template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGTextPath
 
 inline SVGTextPathElement::SVGTextPathElement(Document& document)
     : SVGTextContentElement(SVGNames::textPathTag, document)
-    , m_startOffset(SVGAnimatedLength::create(this, SVGNames::startOffsetAttr, SVGLength::create(LengthModeOther), AllowNegativeLengths))
+    , SVGURIReference(this)
+    , m_startOffset(SVGAnimatedLength::create(this, SVGNames::startOffsetAttr, SVGLength::create(SVGLengthMode::Width), AllowNegativeLengths))
     , m_method(SVGAnimatedEnumeration<SVGTextPathMethodType>::create(this, SVGNames::methodAttr, SVGTextPathMethodAlign))
     , m_spacing(SVGAnimatedEnumeration<SVGTextPathSpacingType>::create(this, SVGNames::spacingAttr, SVGTextPathSpacingExact))
 {
-    SVGURIReference::initialize(this);
-
     addToPropertyMap(m_startOffset);
     addToPropertyMap(m_method);
     addToPropertyMap(m_spacing);
@@ -112,19 +111,19 @@ void SVGTextPathElement::svgAttributeChanged(const QualifiedName& attrName)
     if (attrName == SVGNames::startOffsetAttr)
         updateRelativeLengthsInformation();
 
-    if (LayoutObject* object = renderer())
+    if (LayoutObject* object = layoutObject())
         markForLayoutAndParentResourceInvalidation(object);
 }
 
-LayoutObject* SVGTextPathElement::createRenderer(const LayoutStyle&)
+LayoutObject* SVGTextPathElement::createLayoutObject(const ComputedStyle&)
 {
     return new LayoutSVGTextPath(this);
 }
 
-bool SVGTextPathElement::rendererIsNeeded(const LayoutStyle& style)
+bool SVGTextPathElement::layoutObjectIsNeeded(const ComputedStyle& style)
 {
     if (parentNode() && (isSVGAElement(*parentNode()) || isSVGTextElement(*parentNode())))
-        return Element::rendererIsNeeded(style);
+        return Element::layoutObjectIsNeeded(style);
 
     return false;
 }

@@ -67,15 +67,19 @@ public:
         PopupListBoxBackground,
         PopupListBoxRow,
         Resizer,
+        SVGClip,
         SVGFilter,
+        SVGMask,
         ScrollbarCorner,
         ScrollbarHorizontal,
         ScrollbarTickMark,
         ScrollbarVertical,
         SelectionGap,
+        SelectionTint,
         VideoBitmap,
         ViewBackground,
-        DrawingLast = ViewBackground,
+        WebPlugin,
+        DrawingLast = WebPlugin,
 
         CachedFirst,
         CachedLast = CachedFirst + DrawingLast - DrawingFirst,
@@ -120,6 +124,12 @@ public:
         EndScrollFirst,
         EndScrollLast = EndScrollFirst + ScrollLast - ScrollFirst,
 
+        Transform3DFirst,
+        Transform3DElementTransform = Transform3DFirst,
+        Transform3DLast = Transform3DElementTransform,
+        EndTransform3DFirst,
+        EndTransform3DLast = EndTransform3DFirst + Transform3DLast - Transform3DFirst,
+
         BeginFilter,
         EndFilter,
         BeginCompositing,
@@ -149,7 +159,7 @@ public:
 
     virtual ~DisplayItem() { }
 
-    virtual void replay(GraphicsContext*) { }
+    virtual void replay(GraphicsContext&) { }
 
     DisplayItemClient client() const { return m_id.client; }
     Type type() const { return m_id.type; }
@@ -217,6 +227,8 @@ public:
     DEFINE_PAIRED_CATEGORY_METHODS(Scroll, scroll)
     DEFINE_PAINT_PHASE_CONVERSION_METHOD(Scroll)
 
+    DEFINE_PAIRED_CATEGORY_METHODS(Transform3D, transform3D);
+
     DEFINE_CATEGORY_METHODS(SubtreeCached)
     DEFINE_PAINT_PHASE_CONVERSION_METHOD(SubtreeCached)
     DEFINE_CATEGORY_METHODS(BeginSubtree)
@@ -238,24 +250,25 @@ public:
 
 #ifndef NDEBUG
     static WTF::String typeAsDebugString(DisplayItem::Type);
-
-    void setClientDebugString(const WTF::String& clientDebugString) { m_clientDebugString = clientDebugString; }
     const WTF::String& clientDebugString() const { return m_clientDebugString; }
-
     WTF::String asDebugString() const;
     virtual void dumpPropertiesAsDebugString(WTF::StringBuilder&) const;
 #endif
 
 protected:
-    DisplayItem(DisplayItemClient client, Type type)
-        : m_id(client, type)
-    {
-        ASSERT(client);
-    }
+    DisplayItem(const DisplayItemClientWrapper& client, Type type)
+        : m_id(client.displayItemClient(), type)
+#ifndef NDEBUG
+        , m_clientDebugString(client.debugName())
+#endif
+    { }
 
 private:
     struct Id {
-        Id(DisplayItemClient c, Type t) : client(c), type(t), scopeContainer(nullptr), scopeId(0) { }
+        Id(DisplayItemClient c, Type t) : client(c), type(t), scopeContainer(nullptr), scopeId(0)
+        {
+            ASSERT(c);
+        }
 
         const DisplayItemClient client;
         const Type type;
@@ -270,7 +283,7 @@ private:
 
 class PLATFORM_EXPORT PairedBeginDisplayItem : public DisplayItem {
 protected:
-    PairedBeginDisplayItem(DisplayItemClient client, Type type) : DisplayItem(client, type) { }
+    PairedBeginDisplayItem(const DisplayItemClientWrapper& client, Type type) : DisplayItem(client, type) { }
 
 private:
     virtual bool isBegin() const override final { return true; }
@@ -278,7 +291,7 @@ private:
 
 class PLATFORM_EXPORT PairedEndDisplayItem : public DisplayItem {
 protected:
-    PairedEndDisplayItem(DisplayItemClient client, Type type) : DisplayItem(client, type) { }
+    PairedEndDisplayItem(const DisplayItemClientWrapper& client, Type type) : DisplayItem(client, type) { }
 
 #if ENABLE(ASSERT)
     virtual bool isEndAndPairedWith(const DisplayItem& other) const override = 0;

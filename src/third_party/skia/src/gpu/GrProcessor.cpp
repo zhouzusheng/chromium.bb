@@ -12,7 +12,7 @@
 #include "GrInvariantOutput.h"
 #include "GrMemoryPool.h"
 #include "GrXferProcessor.h"
-#include "SkMutex.h"
+#include "SkSpinlock.h"
 
 #if SK_ALLOW_STATIC_GLOBAL_INITIALIZERS
 
@@ -49,7 +49,7 @@ GrProcessorTestFactory<GrGeometryProcessor>::GetFactories() {
  * we verify the count is as expected.  If a new factory is added, then these numbers must be
  * manually adjusted.
  */
-static const int kFPFactoryCount = 37;
+static const int kFPFactoryCount = 38;
 static const int kGPFactoryCount = 14;
 static const int kXPFactoryCount = 5;
 
@@ -97,17 +97,17 @@ const SkMatrix& TestMatrix(SkRandom* random) {
 }
 
 
-// We use a global pool protected by a mutex. Chrome may use the same GrContext on different
-// threads. The GrContext is not used concurrently on different threads and there is a memory
-// barrier between accesses of a context on different threads. Also, there may be multiple
+// We use a global pool protected by a mutex(spinlock). Chrome may use the same GrContext on
+// different threads. The GrContext is not used concurrently on different threads and there is a
+// memory barrier between accesses of a context on different threads. Also, there may be multiple
 // GrContexts and those contexts may be in use concurrently on different threads.
 namespace {
-SK_DECLARE_STATIC_MUTEX(gProcessorPoolMutex);
+SK_DECLARE_STATIC_SPINLOCK(gProcessorSpinlock);
 class MemoryPoolAccessor {
 public:
-    MemoryPoolAccessor() { gProcessorPoolMutex.acquire(); }
+    MemoryPoolAccessor() { gProcessorSpinlock.acquire(); }
 
-    ~MemoryPoolAccessor() { gProcessorPoolMutex.release(); }
+    ~MemoryPoolAccessor() { gProcessorSpinlock.release(); }
 
     GrMemoryPool* pool() const {
         static GrMemoryPool gPool(4096, 4096);

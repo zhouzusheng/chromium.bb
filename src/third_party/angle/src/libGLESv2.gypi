@@ -10,6 +10,7 @@
         [
             'common/MemoryBuffer.cpp',
             'common/MemoryBuffer.h',
+            'common/Optional.h',
             'common/angleutils.cpp',
             'common/angleutils.h',
             'common/debug.cpp',
@@ -65,6 +66,7 @@
             'libANGLE/Display.h',
             'libANGLE/Error.cpp',
             'libANGLE/Error.h',
+            'libANGLE/Error.inl',
             'libANGLE/Fence.cpp',
             'libANGLE/Fence.h',
             'libANGLE/Float16ToFloat32.cpp',
@@ -114,12 +116,12 @@
             'libANGLE/queryconversions.h',
             'libANGLE/renderer/BufferImpl.h',
             'libANGLE/renderer/CompilerImpl.h',
-            'libANGLE/renderer/DefaultAttachmentImpl.h',
             'libANGLE/renderer/DisplayImpl.cpp',
             'libANGLE/renderer/DisplayImpl.h',
             'libANGLE/renderer/FenceNVImpl.h',
             'libANGLE/renderer/FenceSyncImpl.h',
             'libANGLE/renderer/FramebufferImpl.h',
+            'libANGLE/renderer/ImplFactory.h',
             'libANGLE/renderer/IndexRangeCache.cpp',
             'libANGLE/renderer/IndexRangeCache.h',
             'libANGLE/renderer/ProgramImpl.cpp',
@@ -211,6 +213,8 @@
             'libANGLE/renderer/d3d/d3d9/Blit9.h',
             'libANGLE/renderer/d3d/d3d9/Buffer9.cpp',
             'libANGLE/renderer/d3d/d3d9/Buffer9.h',
+            'libANGLE/renderer/d3d/d3d9/DebugAnnotator9.cpp',
+            'libANGLE/renderer/d3d/d3d9/DebugAnnotator9.h',
             'libANGLE/renderer/d3d/d3d9/Fence9.cpp',
             'libANGLE/renderer/d3d/d3d9/Fence9.h',
             'libANGLE/renderer/d3d/d3d9/formatutils9.cpp',
@@ -258,6 +262,8 @@
             'libANGLE/renderer/d3d/d3d11/Clear11.h',
             'libANGLE/renderer/d3d/d3d11/copyvertex.h',
             'libANGLE/renderer/d3d/d3d11/copyvertex.inl',
+            'libANGLE/renderer/d3d/d3d11/DebugAnnotator11.cpp',
+            'libANGLE/renderer/d3d/d3d11/DebugAnnotator11.h',
             'libANGLE/renderer/d3d/d3d11/Fence11.cpp',
             'libANGLE/renderer/d3d/d3d11/Fence11.h',
             'libANGLE/renderer/d3d/d3d11/formatutils11.cpp',
@@ -368,8 +374,6 @@
             'libANGLE/renderer/gl/BufferGL.h',
             'libANGLE/renderer/gl/CompilerGL.cpp',
             'libANGLE/renderer/gl/CompilerGL.h',
-            'libANGLE/renderer/gl/DefaultAttachmentGL.cpp',
-            'libANGLE/renderer/gl/DefaultAttachmentGL.h',
             'libANGLE/renderer/gl/DisplayGL.cpp',
             'libANGLE/renderer/gl/DisplayGL.h',
             'libANGLE/renderer/gl/FenceNVGL.cpp',
@@ -390,6 +394,8 @@
             'libANGLE/renderer/gl/RendererGL.h',
             'libANGLE/renderer/gl/ShaderGL.cpp',
             'libANGLE/renderer/gl/ShaderGL.h',
+            'libANGLE/renderer/gl/StateManagerGL.cpp',
+            'libANGLE/renderer/gl/StateManagerGL.h',
             'libANGLE/renderer/gl/SurfaceGL.cpp',
             'libANGLE/renderer/gl/SurfaceGL.h',
             'libANGLE/renderer/gl/TextureGL.cpp',
@@ -400,6 +406,8 @@
             'libANGLE/renderer/gl/VertexArrayGL.h',
             'libANGLE/renderer/gl/functionsgl_enums.h',
             'libANGLE/renderer/gl/functionsgl_typedefs.h',
+            'libANGLE/renderer/gl/renderergl_utils.cpp',
+            'libANGLE/renderer/gl/renderergl_utils.h',
         ],
         'libangle_gl_wgl_sources':
         [
@@ -407,8 +415,9 @@
             'libANGLE/renderer/gl/wgl/DisplayWGL.h',
             'libANGLE/renderer/gl/wgl/FunctionsWGL.cpp',
             'libANGLE/renderer/gl/wgl/FunctionsWGL.h',
-            'libANGLE/renderer/gl/wgl/SurfaceWGL.cpp',
-            'libANGLE/renderer/gl/wgl/SurfaceWGL.h',
+            'libANGLE/renderer/gl/wgl/WindowSurfaceWGL.cpp',
+            'libANGLE/renderer/gl/wgl/WindowSurfaceWGL.h',
+            'libANGLE/renderer/gl/wgl/functionswgl_typedefs.h',
             'libANGLE/renderer/gl/wgl/wgl_utils.cpp',
             'libANGLE/renderer/gl/wgl/wgl_utils.h',
             'third_party/khronos/GL/wglext.h',
@@ -481,8 +490,8 @@
             {
                 'include_dirs':
                 [
-                    '.',
-                    '../include',
+                    '<(angle_path)/src',
+                    '<(angle_path)/include',
                 ],
                 'defines':
                 [
@@ -664,16 +673,6 @@
                                 'ANGLE_ENABLE_DEBUG_ANNOTATIONS',
                                 'ANGLE_GENERATE_SHADER_DEBUG_INFO'
                             ],
-                            'msvs_settings':
-                            {
-                                'VCLinkerTool':
-                                {
-                                    'AdditionalDependencies':
-                                    [
-                                        'd3d9.lib',
-                                    ]
-                                }
-                            },
                         },
                     },
                 }],

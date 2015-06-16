@@ -140,19 +140,15 @@ blink::WebURL EmbeddedWorkerContextClient::scope() const {
   return service_worker_scope_;
 }
 
-blink::WebServiceWorkerCacheStorage*
-    EmbeddedWorkerContextClient::cacheStorage() {
-  return script_context_->cache_storage();
-}
-
 void EmbeddedWorkerContextClient::didPauseAfterDownload() {
   Send(new EmbeddedWorkerHostMsg_DidPauseAfterDownload(embedded_worker_id_));
 }
 
 void EmbeddedWorkerContextClient::getClients(
+    const blink::WebServiceWorkerClientQueryOptions& options,
     blink::WebServiceWorkerClientsCallbacks* callbacks) {
   DCHECK(script_context_);
-  script_context_->GetClientDocuments(callbacks);
+  script_context_->GetClients(options, callbacks);
 }
 
 void EmbeddedWorkerContextClient::openWindow(
@@ -208,13 +204,6 @@ void EmbeddedWorkerContextClient::workerContextStarted(
       WorkerTaskRunner::Instance()->CurrentWorkerId(),
       provider_context_->provider_id()));
 
-  // Schedule a task to send back WorkerStarted asynchronously,
-  // so that at the time we send it we can be sure that the worker
-  // script has been evaluated and worker run loop has been started.
-  worker_task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(&EmbeddedWorkerContextClient::SendWorkerStarted,
-                 weak_factory_.GetWeakPtr()));
   TRACE_EVENT_ASYNC_STEP_INTO0(
       "ServiceWorker",
       "EmbeddedWorkerContextClient::StartingWorkerContext",
@@ -225,6 +214,13 @@ void EmbeddedWorkerContextClient::workerContextStarted(
 void EmbeddedWorkerContextClient::didEvaluateWorkerScript(bool success) {
   Send(new EmbeddedWorkerHostMsg_WorkerScriptEvaluated(
       embedded_worker_id_, success));
+
+  // Schedule a task to send back WorkerStarted asynchronously,
+  // so that at the time we send it we can be sure that the
+  // worker run loop has been started.
+  worker_task_runner_->PostTask(
+      FROM_HERE, base::Bind(&EmbeddedWorkerContextClient::SendWorkerStarted,
+                            weak_factory_.GetWeakPtr()));
 }
 
 void EmbeddedWorkerContextClient::willDestroyWorkerContext() {
@@ -389,12 +385,12 @@ EmbeddedWorkerContextClient::createServiceWorkerProvider() {
 }
 
 void EmbeddedWorkerContextClient::postMessageToClient(
-    int client_id,
+    const blink::WebString& uuid,
     const blink::WebString& message,
     blink::WebMessagePortChannelArray* channels) {
   DCHECK(script_context_);
-  script_context_->PostMessageToDocument(client_id, message,
-                                         make_scoped_ptr(channels));
+  script_context_->PostMessageToClient(
+      uuid, message, make_scoped_ptr(channels));
 }
 
 void EmbeddedWorkerContextClient::postMessageToCrossOriginClient(
@@ -407,9 +403,10 @@ void EmbeddedWorkerContextClient::postMessageToCrossOriginClient(
 }
 
 void EmbeddedWorkerContextClient::focus(
-    int client_id, blink::WebServiceWorkerClientCallbacks* callback) {
+    const blink::WebString& uuid,
+    blink::WebServiceWorkerClientCallbacks* callback) {
   DCHECK(script_context_);
-  script_context_->FocusClient(client_id, callback);
+  script_context_->FocusClient(uuid, callback);
 }
 
 void EmbeddedWorkerContextClient::skipWaiting(

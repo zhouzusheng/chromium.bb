@@ -11,6 +11,7 @@
 #include "base/path_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread.h"
+#include "content/public/browser/client_certificate_delegate.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/resource_dispatcher_host.h"
@@ -294,7 +295,10 @@ bool ShellContentBrowserClient::SupportsInProcessRenderer()
 void ShellContentBrowserClient::StartInProcessRendererThread(
     const std::string& channel_id) {
   DCHECK(!g_in_process_renderer_thread);
-  g_in_process_renderer_thread = CreateInProcessRendererThread(channel_id);
+
+  g_in_process_renderer_thread = CreateInProcessRendererThread(
+      InProcessChildThreadParams(channel_id,
+                                 BrowserThread::UnsafeGetMessageLoopForThread(BrowserThread::IO)->task_runner()));
 
   base::Thread::Options options;
 #if defined(OS_WIN) && !defined(OS_MACOSX)
@@ -345,6 +349,14 @@ WebContentsViewDelegate* ShellContentBrowserClient::GetWebContentsViewDelegate(
 QuotaPermissionContext*
 ShellContentBrowserClient::CreateQuotaPermissionContext() {
   return new ShellQuotaPermissionContext();
+}
+
+void ShellContentBrowserClient::SelectClientCertificate(
+    WebContents* web_contents,
+    net::SSLCertRequestInfo* cert_request_info,
+    scoped_ptr<ClientCertificateDelegate> delegate) {
+  if (!select_client_certificate_callback_.is_null())
+    select_client_certificate_callback_.Run();
 }
 
 SpeechRecognitionManagerDelegate*

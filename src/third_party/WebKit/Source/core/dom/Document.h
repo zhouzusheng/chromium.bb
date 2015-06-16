@@ -30,6 +30,7 @@
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "bindings/core/v8/ScriptValue.h"
+#include "core/CoreExport.h"
 #include "core/animation/AnimationClock.h"
 #include "core/animation/CompositorPendingAnimations.h"
 #include "core/dom/ContainerNode.h"
@@ -37,6 +38,7 @@
 #include "core/dom/DocumentInit.h"
 #include "core/dom/DocumentLifecycle.h"
 #include "core/dom/DocumentLifecycleNotifier.h"
+#include "core/dom/DocumentLifecycleObserver.h"
 #include "core/dom/DocumentSupplementable.h"
 #include "core/dom/DocumentTiming.h"
 #include "core/dom/ExecutionContext.h"
@@ -48,6 +50,7 @@
 #include "core/dom/custom/CustomElement.h"
 #include "core/frame/DOMTimerCoordinator.h"
 #include "core/frame/LocalDOMWindow.h"
+#include "core/frame/OriginsUsingFeatures.h"
 #include "core/html/CollectionType.h"
 #include "core/html/parser/ParserSynchronizationPolicy.h"
 #include "core/page/PageVisibilityState.h"
@@ -102,6 +105,7 @@ class FloatRect;
 class FormController;
 class Frame;
 class FrameHost;
+class FrameRequestCallback;
 class FrameView;
 class HTMLAllCollection;
 class HTMLCanvasElement;
@@ -130,8 +134,7 @@ class PlatformMouseEvent;
 class ProcessingInstruction;
 class QualifiedName;
 class Range;
-class RenderView;
-class RequestAnimationFrameCallback;
+class LayoutView;
 class ResourceFetcher;
 class SVGDocumentExtensions;
 class SVGUseElement;
@@ -209,7 +212,7 @@ public:
     void setObservedDocument(Document&);
 
 protected:
-    virtual void trace(Visitor*);
+    DECLARE_VIRTUAL_TRACE();
 
 private:
     void registerObserver(Document&);
@@ -218,7 +221,7 @@ private:
     RawPtrWillBeMember<Document> m_document;
 };
 
-class Document : public ContainerNode, public TreeScope, public SecurityContext, public ExecutionContext
+class CORE_EXPORT Document : public ContainerNode, public TreeScope, public SecurityContext, public ExecutionContext
     , public DocumentSupplementable, public DocumentLifecycleNotifier {
     DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Document);
@@ -314,6 +317,7 @@ public:
     bool regionBasedColumnsEnabled() const;
 
     Element* elementFromPoint(int x, int y) const;
+    Vector<Element*> elementsFromPoint(int x, int y) const;
     PassRefPtrWillBeRawPtr<Range> caretRangeFromPoint(int x, int y);
 
     String readyState() const;
@@ -419,7 +423,7 @@ public:
     // This is a DOM function.
     StyleSheetList* styleSheets();
 
-    StyleEngine* styleEngine() { return m_styleEngine.get(); }
+    StyleEngine& styleEngine() { ASSERT(m_styleEngine.get()); return *m_styleEngine.get(); }
 
     bool gotoAnchorNeededAfterStylesheetsLoad() { return m_gotoAnchorNeededAfterStylesheetsLoad; }
     void setGotoAnchorNeededAfterStylesheetsLoad(bool b) { m_gotoAnchorNeededAfterStylesheetsLoad = b; }
@@ -438,7 +442,7 @@ public:
     void scheduleUseShadowTreeUpdate(SVGUseElement&);
     void unscheduleUseShadowTreeUpdate(SVGUseElement&);
 
-    // FIXME: SVG filters should change to store the filter on the LayoutStyle
+    // FIXME: SVG filters should change to store the filter on the ComputedStyle
     // instead of the LayoutObject so we can get rid of this hack.
     void scheduleSVGFilterLayerUpdateHack(Element&);
     void unscheduleSVGFilterLayerUpdateHack(Element&);
@@ -465,7 +469,7 @@ public:
     // Special support for editing
     PassRefPtrWillBeRawPtr<Text> createEditingTextNode(const String&);
 
-    void setupFontBuilder(LayoutStyle& documentStyle);
+    void setupFontBuilder(ComputedStyle& documentStyle);
 
     bool needsRenderTreeUpdate() const;
     void updateRenderTreeIfNeeded() { updateRenderTree(NoChange); }
@@ -476,10 +480,8 @@ public:
         RunPostLayoutTasksSynchronously,
     };
     void updateLayoutIgnorePendingStylesheets(RunPostLayoutTasks = RunPostLayoutTasksAsyhnchronously);
-    PassRefPtr<LayoutStyle> styleForElementIgnoringPendingStylesheets(Element*);
-    PassRefPtr<LayoutStyle> styleForPage(int pageIndex);
-
-    void updateDistributionForNodeIfNeeded(Node*);
+    PassRefPtr<ComputedStyle> styleForElementIgnoringPendingStylesheets(Element*);
+    PassRefPtr<ComputedStyle> styleForPage(int pageIndex);
 
     // Returns true if page box (margin boxes and page borders) is visible.
     bool isPageBoxVisible(int pageIndex);
@@ -496,10 +498,10 @@ public:
     virtual void detach(const AttachContext& = AttachContext()) override;
     void prepareForDestruction();
 
-    // If you have a Document, use renderView() instead which is faster.
-    void renderer() const = delete;
+    // If you have a Document, use layoutView() instead which is faster.
+    void layoutObject() const = delete;
 
-    RenderView* renderView() const { return m_renderView; }
+    LayoutView* layoutView() const { return m_layoutView; }
 
     Document& axObjectCacheOwner() const;
     AXObjectCache* existingAXObjectCache() const;
@@ -633,7 +635,7 @@ public:
     void hoveredNodeDetached(Node*);
     void activeChainNodeDetached(Node*);
 
-    void updateHoverActiveState(const HitTestRequest&, Element*, const PlatformMouseEvent* = nullptr);
+    void updateHoverActiveState(const HitTestRequest&, Element*);
 
     // Updates for :target (CSS3 selector).
     void setCSSTarget(Element*);
@@ -706,8 +708,6 @@ public:
     }
     bool hasMutationObservers() const { return m_mutationObserverTypes; }
     void addMutationObserverTypes(MutationObserverOptions types) { m_mutationObserverTypes |= types; }
-
-    CSSStyleDeclaration* getOverrideStyle() { return 0; }
 
     /**
      * Handles a HTTP header equivalent set by a meta tag using <meta http-equiv="..." content="...">. This is called
@@ -795,7 +795,7 @@ public:
     // that as the style for the root element, rather than obtaining it on our own. The reason for
     // this is that style may not have been associated with the elements yet - in which case it may
     // have been calculated on the fly (without associating it with the actual element) somewhere.
-    Element* viewportDefiningElement(LayoutStyle* rootStyle = nullptr) const;
+    Element* viewportDefiningElement(const ComputedStyle* rootStyle = nullptr) const;
 
     DocumentMarkerController& markers() const { return *m_markers; }
 
@@ -809,9 +809,7 @@ public:
     KURL openSearchDescriptionURL();
 
     // designMode support
-    enum InheritedBool { off = false, on = true, inherit };
-    void setDesignMode(InheritedBool value);
-    bool inDesignMode() const;
+    bool inDesignMode() const { return m_designMode; }
     String designMode() const;
     void setDesignMode(const String&);
 
@@ -850,6 +848,10 @@ public:
     // Returns null if there is no such element.
     HTMLLinkElement* linkManifest() const;
 
+    // Returns the HTMLLinkElement currently in use for the default presentation URL.
+    // Returns null if there is no such element.
+    HTMLLinkElement* linkDefaultPresentation() const;
+
     void setUseSecureKeyboardEntryWhenActive(bool);
     bool useSecureKeyboardEntryWhenActive() const;
 
@@ -864,8 +866,8 @@ public:
     void parseDNSPrefetchControlHeader(const String&);
 
     // FIXME(crbug.com/305497): This should be removed once LocalDOMWindow is an ExecutionContext.
-    virtual void postTask(PassOwnPtr<ExecutionContextTask>) override; // Executes the task on context's thread asynchronously.
-    void postInspectorTask(PassOwnPtr<ExecutionContextTask>);
+    virtual void postTask(const WebTraceLocation&, PassOwnPtr<ExecutionContextTask>) override; // Executes the task on context's thread asynchronously.
+    void postInspectorTask(const WebTraceLocation&, PassOwnPtr<ExecutionContextTask>);
 
     virtual void tasksWereSuspended() override final;
     virtual void tasksWereResumed() override final;
@@ -955,7 +957,7 @@ public:
 
     const DocumentTiming& timing() const { return m_documentTiming; }
 
-    int requestAnimationFrame(RequestAnimationFrameCallback*);
+    int requestAnimationFrame(FrameRequestCallback*);
     void cancelAnimationFrame(int id);
     void serviceScriptedAnimations(double monotonicAnimationStartTime);
 
@@ -996,7 +998,6 @@ public:
 
     void didLoadAllScriptBlockingResources();
     void didRemoveAllPendingStylesheet();
-    void clearStyleResolver();
 
     bool inStyleRecalc() const { return m_lifecycle.state() == DocumentLifecycle::InStyleRecalc; }
 
@@ -1050,7 +1051,7 @@ public:
 
     void updateStyleInvalidationIfNeeded();
 
-    virtual void trace(Visitor*) override;
+    DECLARE_VIRTUAL_TRACE();
 
     bool hasSVGFilterElementsRequiringLayerUpdate() const { return m_layerUpdateSVGFilterElements.size(); }
     void didRecalculateStyleForElement() { ++m_styleRecalcElementCounter; }
@@ -1063,6 +1064,8 @@ public:
 
     virtual v8::Handle<v8::Object> wrap(v8::Handle<v8::Object> creationContext, v8::Isolate*) override;
     virtual v8::Handle<v8::Object> associateWithWrapper(v8::Isolate*, const WrapperTypeInfo*, v8::Handle<v8::Object> wrapper) override;
+
+    OriginsUsingFeatures::Value& originsUsingFeaturesValue() { return m_originsUsingFeaturesValue; }
 
 protected:
     Document(const DocumentInit&, DocumentClassFlags = DefaultDocumentClass);
@@ -1103,7 +1106,7 @@ private:
     void inheritHtmlAndBodyElementStyles(StyleRecalcChange);
 
     bool dirtyElementsForLayerUpdate();
-    void updateDistributionIfNeeded();
+
     void updateUseShadowTreesIfNeeded();
     void evaluateMediaQueryListIfNeeded();
 
@@ -1163,6 +1166,7 @@ private:
     void processHttpEquivSetCookie(const AtomicString& content);
     void processHttpEquivXFrameOptions(const AtomicString& content);
     void processHttpEquivContentSecurityPolicy(const AtomicString& equiv, const AtomicString& content);
+    void processHttpEquivAcceptCH(const AtomicString& content);
 
     bool haveStylesheetsLoaded() const;
 
@@ -1301,7 +1305,7 @@ private:
 
     DocumentEncodingData m_encodingData;
 
-    InheritedBool m_designMode;
+    bool m_designMode;
 
     WillBeHeapHashSet<RawPtrWillBeWeakMember<const LiveNodeListBase>> m_listsInvalidatedAtDocument;
 #if ENABLE(OILPAN)
@@ -1334,7 +1338,7 @@ private:
     bool m_isMobileDocument;
     bool m_isTransitionDocument;
 
-    RenderView* m_renderView;
+    LayoutView* m_layoutView;
 
 #if !ENABLE(OILPAN)
     WeakPtrFactory<Document> m_weakFactory;
@@ -1401,6 +1405,8 @@ private:
     int m_styleRecalcElementCounter;
 
     ParserSynchronizationPolicy m_parserSyncPolicy;
+
+    OriginsUsingFeatures::Value m_originsUsingFeaturesValue;
 };
 
 inline bool Document::shouldOverrideLegacyDescription(ViewportDescription::Type origin)

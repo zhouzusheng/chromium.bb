@@ -38,6 +38,7 @@
 #include "../platform/WebPoint.h"
 #include "../platform/WebRect.h"
 #include "../platform/WebSize.h"
+#include "../platform/WebTopControlsState.h"
 #include "WebBeginFrameArgs.h"
 #include "WebCompositionUnderline.h"
 #include "WebTextDirection.h"
@@ -92,6 +93,10 @@ public:
     // paint, although the client can rate-limit these calls.
     virtual void beginFrame(const WebBeginFrameArgs& frameTime) { }
 
+    // Called when the Widget contents has changed in such a way the layout must be
+    // redone, and any resulting paint invalidations issued.
+    virtual void setNeedsLayoutAndFullPaintInvalidation() { }
+
     // Called to layout the WebWidget. This MUST be called before Paint,
     // and it may result in calls to WebWidgetClient::didInvalidateRect.
     virtual void layout() { }
@@ -138,17 +143,6 @@ public:
     // thread.
     virtual void applyViewportDeltas(
         const WebSize& scrollDelta,
-        float scaleFactor,
-        float topControlsShownRatioDelta) { }
-
-    // Applies viewport related properties during a commit from the compositor
-    // thread.
-    // FIXME: Remove this version once CC side switches to use WebFloatSize version.
-    // crbug.com/414283.
-    virtual void applyViewportDeltas(
-        const WebSize& pinchViewportDelta,
-        const WebSize& mainFrameDelta,
-        const WebFloatSize& elasticOverscrollDelta,
         float scaleFactor,
         float topControlsShownRatioDelta) { }
 
@@ -278,6 +272,10 @@ public:
     // Notification about the top controls height.  If the boolean is true, then
     // the embedder shrunk the WebView size by the top controls height.
     virtual void setTopControlsHeight(float height, bool topControlsShrinkLayoutSize) { }
+
+    // Updates top controls constraints and current state. Allows embedder to
+    // control what are valid states for top controls and if it should animate.
+    virtual void updateTopControlsState(WebTopControlsState constraints, WebTopControlsState current, bool animate) { }
 
 protected:
     ~WebWidget() { }

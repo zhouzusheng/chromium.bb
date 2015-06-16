@@ -20,14 +20,15 @@
 #include "config.h"
 #include "core/layout/line/InlineBox.h"
 
+#include "core/layout/HitTestLocation.h"
+#include "core/layout/LayoutBlockFlow.h"
 #include "core/layout/LayoutObject.h"
 #include "core/layout/PaintInfo.h"
 #include "core/layout/line/InlineFlowBox.h"
 #include "core/layout/line/RootInlineBox.h"
 #include "core/paint/BlockPainter.h"
-#include "core/rendering/RenderBlockFlow.h"
-#include "platform/Partitions.h"
 #include "platform/fonts/FontMetrics.h"
+#include "wtf/Partitions.h"
 
 #ifndef NDEBUG
 #include <stdio.h>
@@ -58,6 +59,12 @@ InlineBox::~InlineBox()
 
 #endif
 
+void InlineBox::destroy()
+{
+    m_layoutObject.invalidateDisplayItemClient(*this);
+    delete this;
+}
+
 void InlineBox::remove(MarkLineBoxes markLineBoxes)
 {
     if (parent())
@@ -66,7 +73,7 @@ void InlineBox::remove(MarkLineBoxes markLineBoxes)
 
 void* InlineBox::operator new(size_t sz)
 {
-    return partitionAlloc(Partitions::getRenderingPartition(), sz);
+    return partitionAlloc(WTF::Partitions::getRenderingPartition(), sz);
 }
 
 void InlineBox::operator delete(void* ptr)
@@ -74,20 +81,25 @@ void InlineBox::operator delete(void* ptr)
     partitionFree(ptr);
 }
 
-#ifndef NDEBUG
 const char* InlineBox::boxName() const
 {
     return "InlineBox";
 }
 
+String InlineBox::debugName() const
+{
+    return boxName();
+}
+
+#ifndef NDEBUG
 void InlineBox::showTreeForThis() const
 {
-    renderer().showTreeForThis();
+    layoutObject().showTreeForThis();
 }
 
 void InlineBox::showLineTreeForThis() const
 {
-    renderer().containingBlock()->showLineTreeAndMark(this, "*");
+    layoutObject().containingBlock()->showLineTreeAndMark(this, "*");
 }
 
 void InlineBox::showLineTreeAndMark(const InlineBox* markedBox1, const char* markedLabel1, const InlineBox* markedBox2, const char* markedLabel2, const LayoutObject* obj, int depth) const
@@ -97,7 +109,7 @@ void InlineBox::showLineTreeAndMark(const InlineBox* markedBox1, const char* mar
         printedCharacters += fprintf(stderr, "%s", markedLabel1);
     if (this == markedBox2)
         printedCharacters += fprintf(stderr, "%s", markedLabel2);
-    if (&renderer() == obj)
+    if (&layoutObject() == obj)
         printedCharacters += fprintf(stderr, "*");
     for (; printedCharacters < depth * 2; printedCharacters++)
         fputc(' ', stderr);
@@ -111,9 +123,9 @@ void InlineBox::showBox(int printedCharacters) const
     for (; printedCharacters < showTreeCharacterOffset; printedCharacters++)
         fputc(' ', stderr);
     fprintf(stderr, "\t%s %p {pos=%g,%g size=%g,%g} baseline=%i/%i\n",
-        renderer().renderName(), &renderer(), x().toFloat(), y().toFloat(), width().toFloat(), height().toFloat(),
-        baselinePosition(AlphabeticBaseline),
-        baselinePosition(IdeographicBaseline));
+        layoutObject().decoratedName().ascii().data(), &layoutObject(),
+        x().toFloat(), y().toFloat(), width().toFloat(), height().toFloat(),
+        baselinePosition(AlphabeticBaseline), baselinePosition(IdeographicBaseline));
 }
 #endif
 
@@ -122,14 +134,14 @@ FloatWillBeLayoutUnit InlineBox::logicalHeight() const
     if (hasVirtualLogicalHeight())
         return virtualLogicalHeight();
 
-    if (renderer().isText())
-        return m_bitfields.isText() ? FloatWillBeLayoutUnit(renderer().style(isFirstLineStyle())->fontMetrics().height()) : FloatWillBeLayoutUnit();
-    if (renderer().isBox() && parent())
-        return isHorizontal() ? toRenderBox(renderer()).size().height() : toRenderBox(renderer()).size().width();
+    if (layoutObject().isText())
+        return m_bitfields.isText() ? FloatWillBeLayoutUnit(layoutObject().style(isFirstLineStyle())->fontMetrics().height()) : FloatWillBeLayoutUnit();
+    if (layoutObject().isBox() && parent())
+        return isHorizontal() ? toLayoutBox(layoutObject()).size().height() : toLayoutBox(layoutObject()).size().width();
 
     ASSERT(isInlineFlowBox());
-    RenderBoxModelObject* flowObject = boxModelObject();
-    const FontMetrics& fontMetrics = renderer().style(isFirstLineStyle())->fontMetrics();
+    LayoutBoxModelObject* flowObject = boxModelObject();
+    const FontMetrics& fontMetrics = layoutObject().style(isFirstLineStyle())->fontMetrics();
     FloatWillBeLayoutUnit result = fontMetrics.height();
     if (parent())
         result += flowObject->borderAndPaddingLogicalHeight();
@@ -148,12 +160,12 @@ LayoutUnit InlineBox::lineHeight() const
 
 int InlineBox::caretMinOffset() const
 {
-    return renderer().caretMinOffset();
+    return layoutObject().caretMinOffset();
 }
 
 int InlineBox::caretMaxOffset() const
 {
-    return renderer().caretMaxOffset();
+    return layoutObject().caretMaxOffset();
 }
 
 void InlineBox::dirtyLineBoxes()
@@ -165,31 +177,31 @@ void InlineBox::dirtyLineBoxes()
 
 void InlineBox::deleteLine()
 {
-    if (!m_bitfields.extracted() && renderer().isBox())
-        toRenderBox(renderer()).setInlineBoxWrapper(0);
+    if (!m_bitfields.extracted() && layoutObject().isBox())
+        toLayoutBox(layoutObject()).setInlineBoxWrapper(0);
     destroy();
 }
 
 void InlineBox::extractLine()
 {
     m_bitfields.setExtracted(true);
-    if (renderer().isBox())
-        toRenderBox(renderer()).setInlineBoxWrapper(0);
+    if (layoutObject().isBox())
+        toLayoutBox(layoutObject()).setInlineBoxWrapper(0);
 }
 
 void InlineBox::attachLine()
 {
     m_bitfields.setExtracted(false);
-    if (renderer().isBox())
-        toRenderBox(renderer()).setInlineBoxWrapper(this);
+    if (layoutObject().isBox())
+        toLayoutBox(layoutObject()).setInlineBoxWrapper(this);
 }
 
 void InlineBox::adjustPosition(FloatWillBeLayoutUnit dx, FloatWillBeLayoutUnit dy)
 {
     m_topLeft.move(dx, dy);
 
-    if (renderer().isReplaced())
-        toRenderBox(renderer()).move(dx, dy);
+    if (layoutObject().isReplaced())
+        toLayoutBox(layoutObject()).move(dx, dy);
 }
 
 void InlineBox::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset, LayoutUnit /* lineTop */, LayoutUnit /*lineBottom*/)
@@ -199,16 +211,24 @@ void InlineBox::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset
         BlockPainter::paintInlineBox(*this, paintInfo, paintOffset);
 }
 
-bool InlineBox::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit /* lineTop */, LayoutUnit /*lineBottom*/)
+bool InlineBox::nodeAtPoint(HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit /* lineTop */, LayoutUnit /*lineBottom*/)
 {
     // Hit test all phases of replaced elements atomically, as though the replaced element established its
     // own stacking context.  (See Appendix E.2, section 6.4 on inline block/table elements in the CSS2.1
     // specification.)
     LayoutPoint childPoint = accumulatedOffset;
-    if (parent()->renderer().hasFlippedBlocksWritingMode()) // Faster than calling containingBlock().
-        childPoint = renderer().containingBlock()->flipForWritingModeForChild(&toRenderBox(renderer()), childPoint);
+    if (parent()->layoutObject().hasFlippedBlocksWritingMode()) // Faster than calling containingBlock().
+        childPoint = layoutObject().containingBlock()->flipForWritingModeForChild(&toLayoutBox(layoutObject()), childPoint);
 
-    return renderer().hitTest(request, result, locationInContainer, childPoint);
+    if (layoutObject().style()->hasBorderRadius()) {
+        LayoutRect borderRect = logicalFrameRect();
+        borderRect.moveBy(accumulatedOffset);
+        FloatRoundedRect border = layoutObject().style()->getRoundedBorderFor(borderRect);
+        if (!locationInContainer.intersects(border))
+            return false;
+    }
+
+    return layoutObject().hitTest(result, locationInContainer, childPoint);
 }
 
 const RootInlineBox& InlineBox::root() const
@@ -280,13 +300,13 @@ InlineBox* InlineBox::prevLeafChildIgnoringLineBreak() const
 
 LayoutObject::SelectionState InlineBox::selectionState() const
 {
-    return renderer().selectionState();
+    return layoutObject().selectionState();
 }
 
 bool InlineBox::canAccommodateEllipsis(bool ltr, int blockEdge, int ellipsisWidth) const
 {
     // Non-replaced elements can always accommodate an ellipsis.
-    if (!renderer().isReplaced())
+    if (!layoutObject().isReplaced())
         return true;
 
     IntRect boxRect(left(), 0, m_logicalWidth, 10);
@@ -310,40 +330,55 @@ void InlineBox::clearKnownToHaveNoOverflow()
 
 FloatPointWillBeLayoutPoint InlineBox::locationIncludingFlipping()
 {
-    if (!UNLIKELY(renderer().hasFlippedBlocksWritingMode()))
-        return FloatPointWillBeLayoutPoint(x(), y());
+    return logicalPositionToPhysicalPoint(m_topLeft.toFloatPoint(), size().toFloatSize());
+}
 
-    RenderBlockFlow& block = root().block();
+FloatPointWillBeLayoutPoint InlineBox::logicalPositionToPhysicalPoint(const FloatPoint& point, const FloatSize& size)
+{
+    if (!UNLIKELY(layoutObject().hasFlippedBlocksWritingMode()))
+        return FloatPointWillBeLayoutPoint(point.x(), point.y());
+
+    LayoutBlockFlow& block = root().block();
     if (block.style()->isHorizontalWritingMode())
-        return FloatPointWillBeLayoutPoint(x(), block.size().height() - size().height() - y());
+        return FloatPointWillBeLayoutPoint(point.x(), block.size().height() - size.height() - point.y());
 
-    return FloatPointWillBeLayoutPoint(block.size().width() - size().width() - x(), y());
+    return FloatPointWillBeLayoutPoint(block.size().width() - size.width() - point.x(), point.y());
+}
+
+LayoutRect InlineBox::logicalRectToPhysicalRect(const LayoutRect& current)
+{
+    LayoutRect retval = current;
+    if (!isHorizontal()) {
+        retval = retval.transposedRect();
+    }
+    retval.setLocation(logicalPositionToPhysicalPoint(FloatPoint(retval.location()), FloatSize(retval.size())).toLayoutPoint());
+    return retval;
 }
 
 void InlineBox::flipForWritingMode(FloatRect& rect)
 {
-    if (!UNLIKELY(renderer().hasFlippedBlocksWritingMode()))
+    if (!UNLIKELY(layoutObject().hasFlippedBlocksWritingMode()))
         return;
     root().block().flipForWritingMode(rect);
 }
 
 FloatPoint InlineBox::flipForWritingMode(const FloatPoint& point)
 {
-    if (!UNLIKELY(renderer().hasFlippedBlocksWritingMode()))
+    if (!UNLIKELY(layoutObject().hasFlippedBlocksWritingMode()))
         return point;
     return root().block().flipForWritingMode(point);
 }
 
 void InlineBox::flipForWritingMode(LayoutRect& rect)
 {
-    if (!UNLIKELY(renderer().hasFlippedBlocksWritingMode()))
+    if (!UNLIKELY(layoutObject().hasFlippedBlocksWritingMode()))
         return;
     root().block().flipForWritingMode(rect);
 }
 
 LayoutPoint InlineBox::flipForWritingMode(const LayoutPoint& point)
 {
-    if (!UNLIKELY(renderer().hasFlippedBlocksWritingMode()))
+    if (!UNLIKELY(layoutObject().hasFlippedBlocksWritingMode()))
         return point;
     return root().block().flipForWritingMode(point);
 }

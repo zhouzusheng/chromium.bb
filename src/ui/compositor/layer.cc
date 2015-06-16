@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/auto_reset.h"
 #include "base/command_line.h"
 #include "base/json/json_writer.h"
 #include "base/lazy_instance.h"
@@ -28,6 +29,7 @@
 #include "ui/compositor/compositor_switches.h"
 #include "ui/compositor/dip_util.h"
 #include "ui/compositor/layer_animator.h"
+#include "ui/compositor/paint_context.h"
 #include "ui/gfx/animation/animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/display.h"
@@ -620,8 +622,11 @@ void Layer::SetShowSolidColorContent() {
   RecomputeDrawsContentAndUVRect();
 }
 
-void Layer::UpdateNinePatchLayerBitmap(const SkBitmap& bitmap) {
+void Layer::UpdateNinePatchLayerImage(const gfx::ImageSkia& image) {
   DCHECK(type_ == LAYER_NINE_PATCH && nine_patch_layer_.get());
+  nine_patch_layer_image_ = image;
+  SkBitmap bitmap = nine_patch_layer_image_.GetRepresentation(
+      device_scale_factor_).sk_bitmap();
   SkBitmap bitmap_copy;
   if (bitmap.isImmutable()) {
     bitmap_copy = bitmap;
@@ -633,9 +638,11 @@ void Layer::UpdateNinePatchLayerBitmap(const SkBitmap& bitmap) {
   nine_patch_layer_->SetBitmap(bitmap_copy);
 }
 
-void Layer::UpdateNinePatchLayerAperture(const gfx::Rect& aperture) {
+void Layer::UpdateNinePatchLayerAperture(const gfx::Rect& aperture_in_dip) {
   DCHECK(type_ == LAYER_NINE_PATCH && nine_patch_layer_.get());
-  nine_patch_layer_->SetAperture(aperture);
+  nine_patch_layer_aperture_ = aperture_in_dip;
+  gfx::Rect aperture_in_pixel = ConvertRectToPixel(this, aperture_in_dip);
+  nine_patch_layer_->SetAperture(aperture_in_pixel);
 }
 
 void Layer::UpdateNinePatchLayerBorder(const gfx::Rect& border) {
@@ -644,6 +651,14 @@ void Layer::UpdateNinePatchLayerBorder(const gfx::Rect& border) {
 }
 
 void Layer::SetColor(SkColor color) { GetAnimator()->SetColor(color); }
+
+SkColor Layer::GetTargetColor() {
+  return GetAnimator()->GetTargetColor();
+}
+
+SkColor Layer::background_color() const {
+  return cc_layer_->background_color();
+}
 
 bool Layer::SchedulePaint(const gfx::Rect& invalid_rect) {
   if ((type_ == LAYER_SOLID_COLOR && !texture_layer_.get()) ||
@@ -709,6 +724,10 @@ void Layer::OnDeviceScaleFactorChanged(float device_scale_factor) {
   device_scale_factor_ = device_scale_factor;
   RecomputeDrawsContentAndUVRect();
   RecomputePosition();
+  if (nine_patch_layer_) {
+    UpdateNinePatchLayerImage(nine_patch_layer_image_);
+    UpdateNinePatchLayerAperture(nine_patch_layer_aperture_);
+  }
   SchedulePaint(gfx::Rect(bounds_.size()));
   if (delegate_)
     delegate_->OnDeviceScaleFactorChanged(device_scale_factor);
@@ -737,7 +756,7 @@ void Layer::PaintContents(
   scoped_ptr<gfx::Canvas> canvas(gfx::Canvas::CreateCanvasWithoutScaling(
       sk_canvas, device_scale_factor_));
   if (delegate_)
-    delegate_->OnPaintLayer(canvas.get());
+    delegate_->OnPaintLayer(PaintContext(canvas.get(), clip));
 }
 
 scoped_refptr<cc::DisplayItemList> Layer::PaintContentsToDisplayList(

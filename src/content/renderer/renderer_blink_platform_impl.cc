@@ -40,6 +40,7 @@
 #include "content/public/common/webplugininfo.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/battery_status/battery_status_dispatcher.h"
+#include "content/renderer/cache_storage/webserviceworkercachestorage_impl.h"
 #include "content/renderer/device_sensors/device_light_event_pump.h"
 #include "content/renderer/device_sensors/device_motion_event_pump.h"
 #include "content/renderer/device_sensors/device_orientation_event_pump.h"
@@ -52,6 +53,7 @@
 #include "content/renderer/renderer_clipboard_delegate.h"
 #include "content/renderer/scheduler/renderer_scheduler.h"
 #include "content/renderer/scheduler/web_scheduler_impl.h"
+#include "content/renderer/scheduler/webthread_impl_for_scheduler.h"
 #include "content/renderer/screen_orientation/screen_orientation_observer.h"
 #include "content/renderer/webclipboard_impl.h"
 #include "content/renderer/webgraphicscontext3d_provider_impl.h"
@@ -65,6 +67,7 @@
 #include "media/filters/stream_parser_factory.h"
 #include "net/base/mime_util.h"
 #include "net/base/net_util.h"
+#include "storage/common/database/database_identifier.h"
 #include "storage/common/quota/quota_types.h"
 #include "third_party/WebKit/public/platform/WebBatteryStatusListener.h"
 #include "third_party/WebKit/public/platform/WebBlobRegistry.h"
@@ -110,7 +113,6 @@
 
 #if defined(OS_WIN)
 #include "content/common/child_process_messages.h"
-#include "third_party/WebKit/public/platform/win/WebSandboxSupport.h"
 #endif
 
 #if defined(USE_AURA)
@@ -187,19 +189,13 @@ class RendererBlinkPlatformImpl::FileUtilities : public WebFileUtilitiesImpl {
   scoped_refptr<ThreadSafeSender> thread_safe_sender_;
 };
 
-#if defined(OS_ANDROID)
-// WebKit doesn't use WebSandboxSupport on android so we don't need to
-// implement anything here.
-class RendererBlinkPlatformImpl::SandboxSupport {};
-#else
+#if !defined(OS_ANDROID) && !defined(OS_WIN)
 class RendererBlinkPlatformImpl::SandboxSupport
     : public blink::WebSandboxSupport {
  public:
   virtual ~SandboxSupport() {}
 
-#if defined(OS_WIN)
-  virtual bool ensureFontLoaded(HFONT);
-#elif defined(OS_MACOSX)
+#if defined(OS_MACOSX)
   virtual bool loadFont(
       NSFont* src_font,
       CGFontRef* container,
@@ -220,7 +216,7 @@ class RendererBlinkPlatformImpl::SandboxSupport
   std::map<int32_t, blink::WebFallbackFont> unicode_font_families_;
 #endif
 };
-#endif  // defined(OS_ANDROID)
+#endif  // !defined(OS_ANDROID) && !defined(OS_WIN)
 
 //------------------------------------------------------------------------------
 
@@ -228,6 +224,7 @@ RendererBlinkPlatformImpl::RendererBlinkPlatformImpl(
     RendererScheduler* renderer_scheduler)
     : BlinkPlatformImpl(renderer_scheduler->DefaultTaskRunner()),
       web_scheduler_(new WebSchedulerImpl(renderer_scheduler)),
+      main_thread_(new WebThreadImplForScheduler(renderer_scheduler)),
       clipboard_delegate_(new RendererClipboardDelegate),
       clipboard_(new WebClipboardImpl(clipboard_delegate_.get())),
       mime_registry_(new RendererBlinkPlatformImpl::MimeRegistry),
@@ -235,11 +232,13 @@ RendererBlinkPlatformImpl::RendererBlinkPlatformImpl(
       plugin_refresh_allowed_(true),
       default_task_runner_(renderer_scheduler->DefaultTaskRunner()),
       web_scrollbar_behavior_(new WebScrollbarBehaviorImpl) {
+#if !defined(OS_ANDROID) && !defined(OS_WIN)
   if (g_sandbox_enabled && sandboxEnabled()) {
     sandbox_support_.reset(new RendererBlinkPlatformImpl::SandboxSupport);
   } else {
     DVLOG(1) << "Disabling sandbox support for testing.";
   }
+#endif
 
   // ChildThread may not exist in some tests.
   if (ChildThreadImpl::current()) {
@@ -263,6 +262,12 @@ blink::WebScheduler* RendererBlinkPlatformImpl::scheduler() {
   return web_scheduler_.get();
 }
 
+blink::WebThread* RendererBlinkPlatformImpl::currentThread() {
+  if (main_thread_->isCurrentThread())
+    return main_thread_.get();
+  return BlinkPlatformImpl::currentThread();
+}
+
 blink::WebClipboard* RendererBlinkPlatformImpl::clipboard() {
   blink::WebClipboard* clipboard =
       GetContentClient()->renderer()->OverrideWebClipboard();
@@ -284,8 +289,8 @@ blink::WebFileUtilities* RendererBlinkPlatformImpl::fileUtilities() {
 }
 
 blink::WebSandboxSupport* RendererBlinkPlatformImpl::sandboxSupport() {
-#if defined(OS_ANDROID)
-  // WebKit doesn't use WebSandboxSupport on android.
+#if defined(OS_ANDROID) || defined(OS_WIN)
+  // These platforms do not require sandbox support.
   return NULL;
 #else
   return sandbox_support_.get();
@@ -340,18 +345,6 @@ RendererBlinkPlatformImpl::prescientNetworking() {
 }
 
 void RendererBlinkPlatformImpl::cacheMetadata(const blink::WebURL& url,
-                                              double response_time,
-                                              const char* data,
-                                              size_t size) {
-  // Let the browser know we generated cacheable metadata for this resource. The
-  // browser may cache it and return it on subsequent responses to speed
-  // the processing of this resource.
-  std::vector<char> copy(data, data + size);
-  RenderThread::Get()->Send(new ViewHostMsg_DidGenerateCacheableMetadata(
-      url, base::Time::FromDoubleT(response_time), copy));
-}
-
-void RendererBlinkPlatformImpl::cacheMetadata(const blink::WebURL& url,
                                               int64 response_time,
                                               const char* data,
                                               size_t size) {
@@ -396,6 +389,16 @@ WebStorageNamespace* RendererBlinkPlatformImpl::createLocalStorageNamespace() {
 
 WebIDBFactory* RendererBlinkPlatformImpl::idbFactory() {
   return web_idb_factory_.get();
+}
+
+//------------------------------------------------------------------------------
+
+blink::WebServiceWorkerCacheStorage* RendererBlinkPlatformImpl::cacheStorage(
+    const WebString& origin_identifier) {
+  const GURL origin =
+      storage::GetOriginFromIdentifier(origin_identifier.utf8());
+  return new WebServiceWorkerCacheStorageImpl(thread_safe_sender_.get(),
+                                              origin);
 }
 
 //------------------------------------------------------------------------------
@@ -523,16 +526,7 @@ bool RendererBlinkPlatformImpl::FileUtilities::SendSyncMessageFromAnyThread(
 
 //------------------------------------------------------------------------------
 
-#if defined(OS_WIN)
-
-bool RendererBlinkPlatformImpl::SandboxSupport::ensureFontLoaded(HFONT font) {
-  LOGFONT logfont;
-  GetObject(font, sizeof(LOGFONT), &logfont);
-  RenderThread::Get()->PreCacheFont(logfont);
-  return true;
-}
-
-#elif defined(OS_MACOSX)
+#if defined(OS_MACOSX)
 
 bool RendererBlinkPlatformImpl::SandboxSupport::loadFont(NSFont* src_font,
                                                          CGFontRef* out,
@@ -563,13 +557,7 @@ bool RendererBlinkPlatformImpl::SandboxSupport::loadFont(NSFont* src_font,
   return FontLoader::CGFontRefFromBuffer(font_data, font_data_size, out);
 }
 
-#elif defined(OS_ANDROID)
-
-// WebKit doesn't use WebSandboxSupport on android so we don't need to
-// implement anything here. This is cleaner to support than excluding the
-// whole class for android.
-
-#elif defined(OS_POSIX)
+#elif defined(OS_POSIX) && !defined(OS_ANDROID)
 
 void RendererBlinkPlatformImpl::SandboxSupport::getFallbackFontForCharacter(
     blink::WebUChar32 character,

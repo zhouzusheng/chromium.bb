@@ -145,6 +145,11 @@ static double monotonicallyIncreasingTimeFunction()
     return Platform::current()->monotonicallyIncreasingTime();
 }
 
+static double systemTraceTimeFunction()
+{
+    return Platform::current()->systemTraceTime();
+}
+
 static void cryptographicallyRandomValues(unsigned char* buffer, size_t length)
 {
     Platform::current()->cryptographicallyRandomValues(buffer, length);
@@ -164,7 +169,7 @@ void initializeWithoutV8(Platform* platform)
     Platform::initialize(platform);
 
     WTF::setRandomSource(cryptographicallyRandomValues);
-    WTF::initialize(currentTimeFunction, monotonicallyIncreasingTimeFunction);
+    WTF::initialize(currentTimeFunction, monotonicallyIncreasingTimeFunction, systemTraceTimeFunction);
     WTF::initializeMainThread(callOnMainThreadFunction);
     Heap::init();
 

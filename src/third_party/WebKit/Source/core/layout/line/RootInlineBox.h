@@ -29,14 +29,14 @@ namespace blink {
 
 class EllipsisBox;
 class HitTestResult;
-class RenderBlockFlow;
+class LayoutBlockFlow;
 
 struct BidiStatus;
 struct GapRects;
 
 class RootInlineBox : public InlineFlowBox {
 public:
-    explicit RootInlineBox(RenderBlockFlow&);
+    explicit RootInlineBox(LayoutBlockFlow&);
 
     virtual void destroy() override final;
 
@@ -77,7 +77,7 @@ public:
         m_selectionBottom = selectionBottom == LayoutUnit::min() ? bottom : selectionBottom;
     }
 
-    virtual RenderLineBoxList* rendererLineBoxes() const override final;
+    virtual LineBoxList* lineBoxes() const override final;
 
     LayoutObject* lineBreakObj() const { return m_lineBreakObj; }
     BidiStatus lineBreakBidiStatus() const;
@@ -106,7 +106,7 @@ public:
     virtual LayoutUnit lineHeight() const override final;
 
     virtual void paint(const PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom) override;
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom) override final;
+    virtual bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom) override final;
 
     using InlineBox::hasSelectedChildren;
     using InlineBox::setHasSelectedChildren;
@@ -115,23 +115,23 @@ public:
     InlineBox* firstSelectedBox() const;
     InlineBox* lastSelectedBox() const;
 
-    GapRects lineSelectionGap(const RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock, LayoutUnit selTop, LayoutUnit selHeight, const PaintInfo*) const;
+    GapRects lineSelectionGap(const LayoutBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock, LayoutUnit selTop, LayoutUnit selHeight, const PaintInfo*) const;
 
-    RenderBlockFlow& block() const;
+    LayoutBlockFlow& block() const;
 
     InlineBox* closestLeafChildForPoint(const LayoutPoint&, bool onlyEditableLeaves);
     InlineBox* closestLeafChildForLogicalLeftPosition(LayoutUnit, bool onlyEditableLeaves = false);
 
-    void appendFloat(RenderBox* floatingBox)
+    void appendFloat(LayoutBox* floatingBox)
     {
         ASSERT(!isDirty());
         if (m_floats)
             m_floats->append(floatingBox);
         else
-            m_floats= adoptPtr(new Vector<RenderBox*>(1, floatingBox));
+            m_floats= adoptPtr(new Vector<LayoutBox*>(1, floatingBox));
     }
 
-    Vector<RenderBox*>* floatsPtr() { ASSERT(!isDirty()); return m_floats.get(); }
+    Vector<LayoutBox*>* floatsPtr() { ASSERT(!isDirty()); return m_floats.get(); }
 
     virtual void extractLineBoxFromLayoutObject() override final;
     virtual void attachLineBoxToLayoutObject() override final;
@@ -176,9 +176,8 @@ public:
     Node* getLogicalStartBoxWithNode(InlineBox*&) const;
     Node* getLogicalEndBoxWithNode(InlineBox*&) const;
 
-#ifndef NDEBUG
     virtual const char* boxName() const override;
-#endif
+
 private:
     LayoutUnit beforeAnnotationsAdjustment() const;
 
@@ -192,7 +191,7 @@ private:
 
     // Floats hanging off the line are pushed into this vector during layout. It is only
     // good for as long as the line has not been marked dirty.
-    OwnPtr<Vector<RenderBox*>> m_floats;
+    OwnPtr<Vector<LayoutBox*>> m_floats;
 
     LayoutUnit m_lineTop;
     LayoutUnit m_lineBottom;

@@ -9,14 +9,12 @@
 
 #include "base/command_line.h"
 #include "base/logging.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/synchronization/lock.h"
 #include "base/sys_info.h"
 #include "base/time/time.h"
 #include "base/values.h"
-#include "cc/base/latency_info_swap_promise.h"
-#include "cc/base/latency_info_swap_promise_monitor.h"
-#include "cc/base/swap_promise.h"
 #include "cc/base/switches.h"
 #include "cc/blink/web_layer_impl.h"
 #include "cc/debug/layer_tree_debug_state.h"
@@ -26,8 +24,11 @@
 #include "cc/output/begin_frame_args.h"
 #include "cc/output/copy_output_request.h"
 #include "cc/output/copy_output_result.h"
+#include "cc/output/latency_info_swap_promise.h"
+#include "cc/output/swap_promise.h"
 #include "cc/resources/single_release_callback.h"
 #include "cc/scheduler/begin_frame_source.h"
+#include "cc/trees/latency_info_swap_promise_monitor.h"
 #include "cc/trees/layer_tree_host.h"
 #include "content/common/content_switches_internal.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
@@ -63,6 +64,7 @@ using blink::WebFloatPoint;
 using blink::WebRect;
 using blink::WebSelectionBound;
 using blink::WebSize;
+using blink::WebTopControlsState;
 
 namespace content {
 namespace {
@@ -107,7 +109,7 @@ cc::LayerSelectionBound ConvertWebSelectionBound(
   return cc_bound;
 }
 
-gfx::Size CalculateDefaultTileSize() {
+gfx::Size CalculateDefaultTileSize(RenderWidget* widget) {
   int default_tile_size = 256;
 #if defined(OS_ANDROID)
   // TODO(epenner): unify this for all platforms if it
@@ -150,8 +152,27 @@ gfx::Size CalculateDefaultTileSize() {
     if (numTiles >= 40)
       default_tile_size = 512;
   }
+#elif defined(OS_CHROMEOS)
+  // Use 512 for high DPI (dsf=2.0f) devices.
+  if (widget->screen_info().deviceScaleFactor >= 2.0f)
+    default_tile_size = 512;
 #endif
+
   return gfx::Size(default_tile_size, default_tile_size);
+}
+
+// Check cc::TopControlsState, and blink::WebTopControlsState
+// are kept in sync.
+static_assert(int(blink::WebTopControlsBoth) == int(cc::BOTH),
+              "mismatching enums: BOTH");
+static_assert(int(blink::WebTopControlsHidden) == int(cc::HIDDEN),
+              "mismatching enums: HIDDEN");
+static_assert(int(blink::WebTopControlsShown) == int(cc::SHOWN),
+              "mismatching enums: SHOWN");
+
+static cc::TopControlsState ConvertTopControlsState(
+    WebTopControlsState state) {
+  return static_cast<cc::TopControlsState>(state);
 }
 
 }  // namespace
@@ -195,14 +216,13 @@ void RenderWidgetCompositor::Initialize() {
       !compositor_deps_->IsElasticOverscrollEnabled();
   settings.accelerated_animation_enabled =
       !cmd->HasSwitch(cc::switches::kDisableThreadedAnimation);
-  if (cmd->HasSwitch(switches::kEnableSlimmingPaint)) {
-    settings.use_display_lists = true;
-    blink::WebRuntimeFeatures::enableSlimmingPaint(true);
-    settings.record_full_layer =
-        !blink::WebRuntimeFeatures::slimmingPaintDisplayItemCacheEnabled();
+  settings.use_display_lists = cmd->HasSwitch(switches::kEnableSlimmingPaint);
+  if (cmd->HasSwitch(switches::kEnableCompositorAnimationTimelines)) {
+    settings.use_compositor_animation_timelines = true;
+    blink::WebRuntimeFeatures::enableCompositorAnimationTimelines(true);
   }
 
-  settings.default_tile_size = CalculateDefaultTileSize();
+  settings.default_tile_size = CalculateDefaultTileSize(widget_);
   if (cmd->HasSwitch(switches::kDefaultTileWidth)) {
     int tile_width = 0;
     GetSwitchValueAsInt(*cmd,
@@ -246,11 +266,6 @@ void RenderWidgetCompositor::Initialize() {
   settings.gpu_rasterization_enabled =
       compositor_deps_->IsGpuRasterizationEnabled();
 
-  if (compositor_deps_->IsThreadedGpuRasterizationEnabled()) {
-    settings.threaded_gpu_rasterization_enabled = true;
-    settings.gpu_rasterization_skewport_target_time_in_seconds = 0.2f;
-  }
-
   settings.can_use_lcd_text = compositor_deps_->IsLcdTextEnabled();
   settings.use_distance_field_text =
       compositor_deps_->IsDistanceFieldTextEnabled();
@@ -259,6 +274,7 @@ void RenderWidgetCompositor::Initialize() {
   settings.enable_elastic_overscroll =
       compositor_deps_->IsElasticOverscrollEnabled();
   settings.use_image_texture_target = compositor_deps_->GetImageTextureTarget();
+  settings.gather_pixel_refs = compositor_deps_->IsGatherPixelRefsEnabled();
 
   if (cmd->HasSwitch(cc::switches::kTopControlsShowThreshold)) {
       std::string top_threshold_str =
@@ -280,6 +296,8 @@ void RenderWidgetCompositor::Initialize() {
 
   settings.use_pinch_virtual_viewport =
       cmd->HasSwitch(cc::switches::kEnablePinchVirtualViewport);
+  settings.verify_property_trees =
+      cmd->HasSwitch(cc::switches::kEnablePropertyTreeVerification);
   settings.renderer_settings.allow_antialiasing &=
       !cmd->HasSwitch(cc::switches::kDisableCompositedAntialiasing);
   settings.single_thread_proxy_scheduler =
@@ -430,6 +448,8 @@ void RenderWidgetCompositor::Initialize() {
       compositor_deps_->GetSharedBitmapManager();
   gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager =
       compositor_deps_->GetGpuMemoryBufferManager();
+  cc::TaskGraphRunner* task_graph_runner =
+      compositor_deps_->GetTaskGraphRunner();
 
   scoped_ptr<cc::BeginFrameSource> external_begin_frame_source;
   if (settings.use_external_begin_frame_source) {
@@ -439,13 +459,14 @@ void RenderWidgetCompositor::Initialize() {
 
   if (compositor_thread_task_runner.get()) {
     layer_tree_host_ = cc::LayerTreeHost::CreateThreaded(
-        this, shared_bitmap_manager, gpu_memory_buffer_manager, settings,
-        main_thread_compositor_task_runner, compositor_thread_task_runner,
-        external_begin_frame_source.Pass());
+        this, shared_bitmap_manager, gpu_memory_buffer_manager,
+        task_graph_runner, settings, main_thread_compositor_task_runner,
+        compositor_thread_task_runner, external_begin_frame_source.Pass());
   } else {
     layer_tree_host_ = cc::LayerTreeHost::CreateSingleThreaded(
-        this, this, shared_bitmap_manager, gpu_memory_buffer_manager, settings,
-        main_thread_compositor_task_runner, external_begin_frame_source.Pass());
+        this, this, shared_bitmap_manager, gpu_memory_buffer_manager,
+        task_graph_runner, settings, main_thread_compositor_task_runner,
+        external_begin_frame_source.Pass());
   }
   DCHECK(layer_tree_host_);
 }
@@ -469,23 +490,6 @@ void RenderWidgetCompositor::SetRasterizeOnlyVisibleContent() {
   cc::LayerTreeDebugState current = layer_tree_host_->debug_state();
   current.rasterize_only_visible_content = true;
   layer_tree_host_->SetDebugState(current);
-}
-
-void RenderWidgetCompositor::UpdateTopControlsState(
-    cc::TopControlsState constraints,
-    cc::TopControlsState current,
-    bool animate) {
-  layer_tree_host_->UpdateTopControlsState(constraints,
-                                           current,
-                                           animate);
-}
-
-void RenderWidgetCompositor::SetTopControlsShrinkBlinkSize(bool shrink) {
-  layer_tree_host_->SetTopControlsShrinkBlinkSize(shrink);
-}
-
-void RenderWidgetCompositor::SetTopControlsHeight(float height) {
-  layer_tree_host_->SetTopControlsHeight(height);
 }
 
 void RenderWidgetCompositor::SetNeedsRedrawRect(gfx::Rect damage_rect) {
@@ -706,8 +710,8 @@ void RenderWidgetCompositor::compositeAndReadbackAsync(
       cc::CopyOutputRequest::CreateBitmapRequest(
           base::Bind(&CompositeAndReadbackAsyncCallback, callback));
   // Force a commit to happen. The temporary copy output request will
-  // be installed after layout which will happen as a part of the commit, when
-  // there is guaranteed to be a root layer.
+  // be installed after layout which will happen as a part of the commit, for
+  // widgets that delay the creation of their output surface.
   bool threaded = !!compositor_deps_->GetCompositorImplThreadTaskRunner().get();
   if (!threaded &&
       !layer_tree_host_->settings().single_thread_proxy_scheduler) {
@@ -757,8 +761,17 @@ void RenderWidgetCompositor::setShowScrollBottleneckRects(bool show) {
   layer_tree_host_->SetDebugState(debug_state);
 }
 
-void RenderWidgetCompositor::setTopControlsContentOffset(float offset) {
-  setTopControlsShownRatio(offset);
+void RenderWidgetCompositor::updateTopControlsState(
+    WebTopControlsState constraints,
+    WebTopControlsState current,
+    bool animate) {
+  layer_tree_host_->UpdateTopControlsState(ConvertTopControlsState(constraints),
+                                           ConvertTopControlsState(current),
+                                           animate);
+}
+
+void RenderWidgetCompositor::setTopControlsHeight(float height, bool shrink) {
+    layer_tree_host_->SetTopControlsHeight(height, shrink);
 }
 
 void RenderWidgetCompositor::setTopControlsShownRatio(float ratio) {
@@ -790,9 +803,14 @@ void RenderWidgetCompositor::Layout() {
   widget_->webwidget()->layout();
 
   if (temporary_copy_output_request_) {
-    DCHECK(layer_tree_host_->root_layer());
-    layer_tree_host_->root_layer()->RequestCopyOfOutput(
-        temporary_copy_output_request_.Pass());
+    // For WebViewImpl, this will always have a root layer.  For other widgets,
+    // the widget may be closed before servicing this request, so ignore it.
+    if (cc::Layer* root_layer = layer_tree_host_->root_layer()) {
+      root_layer->RequestCopyOfOutput(temporary_copy_output_request_.Pass());
+    } else {
+      temporary_copy_output_request_->SendEmptyResult();
+      temporary_copy_output_request_ = nullptr;
+    }
   }
 }
 
@@ -826,6 +844,12 @@ void RenderWidgetCompositor::RequestNewOutputSurface() {
   // the CreateOutputSurface task.
   if (widget_->host_closing())
     return;
+
+  // TODO(robliao): Remove ScopedTracker below once https://crbug.com/466870
+  // is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "466870 RenderWidgetCompositor::RequestNewOutputSurface"));
 
   bool fallback =
       num_failed_recreate_attempts_ >= OUTPUT_SURFACE_RETRIES_BEFORE_FALLBACK;
@@ -895,6 +919,10 @@ void RenderWidgetCompositor::DidAbortSwapBuffers() {
 void RenderWidgetCompositor::RateLimitSharedMainThreadContext() {
   cc::ContextProvider* provider =
       compositor_deps_->GetSharedMainThreadContextProvider();
+  // provider can be NULL after the GPU process crashed enough times and we
+  // don't want to restart it any more (falling back to software).
+  if (!provider)
+    return;
   provider->ContextGL()->RateLimitOffscreenContextCHROMIUM();
 }
 

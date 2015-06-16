@@ -33,16 +33,16 @@
 
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
-#include "core/layout/compositing/LayerCompositor.h"
+#include "core/layout/LayoutView.h"
+#include "core/layout/compositing/DeprecatedPaintLayerCompositor.h"
 #include "core/page/AutoscrollController.h"
 #include "core/page/EventHandler.h"
 #include "core/page/Page.h"
 #include "core/paint/TransformRecorder.h"
-#include "core/rendering/RenderView.h"
 #include "platform/Logging.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/paint/ClipRecorder.h"
-#include "platform/graphics/paint/DisplayItemList.h"
+#include "platform/graphics/paint/DisplayItemListContextRecorder.h"
 #include "platform/graphics/paint/DrawingRecorder.h"
 #include "platform/transforms/AffineTransform.h"
 #include "public/web/WebInputEvent.h"
@@ -66,46 +66,39 @@ void PageWidgetDelegate::layout(Page& page, LocalFrame& root)
     page.animator().updateLayoutAndStyleForPainting(&root);
 }
 
-void PageWidgetDelegate::paint(Page& page, PageOverlayList* overlays, WebCanvas* canvas, const WebRect& rect, CanvasBackground background, LocalFrame& root)
+void PageWidgetDelegate::paint(Page& page, PageOverlayList* overlays, WebCanvas* canvas,
+    const WebRect& rect, LocalFrame& root)
 {
     if (rect.isEmpty())
         return;
 
-    OwnPtr<GraphicsContext> graphicsContext;
-    OwnPtr<DisplayItemList> displayItemList;
-    if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
-        displayItemList = DisplayItemList::create();
-        graphicsContext = adoptPtr(new GraphicsContext(nullptr, displayItemList.get()));
-    } else {
-        graphicsContext = adoptPtr(new GraphicsContext(canvas, nullptr));
-    }
+    GraphicsContext context(canvas, nullptr);
+    {
+        DisplayItemListContextRecorder contextRecorder(context);
+        GraphicsContext& paintContext = contextRecorder.context();
 
-    // FIXME: opaqueness and device scale factor settings are layering violations and should not
-    // be used within Blink paint code.
-    graphicsContext->setCertainlyOpaque(background == Opaque);
-    float scaleFactor = page.deviceScaleFactor();
-    graphicsContext->setDeviceScaleFactor(scaleFactor);
+        // FIXME: device scale factor settings are layering violations and should not
+        // be used within Blink paint code.
+        float scaleFactor = page.deviceScaleFactor();
+        paintContext.setDeviceScaleFactor(scaleFactor);
 
-    AffineTransform scale;
-    scale.scale(scaleFactor);
-    TransformRecorder scaleRecorder(*graphicsContext, root.displayItemClient(), scale);
+        AffineTransform scale;
+        scale.scale(scaleFactor);
+        TransformRecorder scaleRecorder(paintContext, root, scale);
 
-    IntRect dirtyRect(rect);
-    FrameView* view = root.view();
-    if (view) {
-        ClipRecorder clipRecorder(root.displayItemClient(), graphicsContext.get(), DisplayItem::PageWidgetDelegateClip, dirtyRect);
+        IntRect dirtyRect(rect);
+        FrameView* view = root.view();
+        if (view) {
+            ClipRecorder clipRecorder(paintContext, root, DisplayItem::PageWidgetDelegateClip, LayoutRect(dirtyRect));
 
-        view->paint(graphicsContext.get(), dirtyRect);
-        if (overlays)
-            overlays->paintWebFrame(*graphicsContext);
-    } else {
-        DrawingRecorder drawingRecorder(graphicsContext.get(), root.displayItemClient(), DisplayItem::PageWidgetDelegateBackgroundFallback, dirtyRect);
-        graphicsContext->fillRect(dirtyRect, Color::white);
-    }
-
-    if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
-        GraphicsContext canvasGraphicsContext(canvas, nullptr);
-        displayItemList->replay(&canvasGraphicsContext);
+            view->paint(&paintContext, dirtyRect);
+            if (overlays)
+                overlays->paintWebFrame(paintContext);
+        } else {
+            DrawingRecorder drawingRecorder(paintContext, root, DisplayItem::PageWidgetDelegateBackgroundFallback, dirtyRect);
+            if (!drawingRecorder.canUseCachedDrawing())
+                paintContext.fillRect(dirtyRect, Color::white);
+        }
     }
 }
 
@@ -174,15 +167,12 @@ bool PageWidgetDelegate::handleInputEvent(PageWidgetEventHandler& handler, const
         if (!root || !root->view())
             return false;
         return handler.handleTouchEvent(*root, static_cast<const WebTouchEvent&>(event));
-
     case WebInputEvent::GesturePinchBegin:
     case WebInputEvent::GesturePinchEnd:
     case WebInputEvent::GesturePinchUpdate:
-        // FIXME: Once PlatformGestureEvent is updated to support pinch, this
-        // should call handleGestureEvent, just like it currently does for
-        // gesture scroll.
+        // Touchscreen pinch events are currently not handled in main thread. Once they are,
+        // these should be passed to |handleGestureEvent| similar to gesture scroll events.
         return false;
-
     default:
         return false;
     }

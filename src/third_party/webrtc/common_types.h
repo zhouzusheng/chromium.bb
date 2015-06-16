@@ -56,8 +56,10 @@ class Config;
 class InStream
 {
 public:
+ // Reads |length| bytes from file to |buf|. Returns the number of bytes read
+ // or -1 on error.
     virtual int Read(void *buf, size_t len) = 0;
-    virtual int Rewind() {return -1;}
+    virtual int Rewind();
     virtual ~InStream() {}
 protected:
     InStream() {}
@@ -66,8 +68,10 @@ protected:
 class OutStream
 {
 public:
+ // Writes |length| bytes from |buf| to file. The actual writing may happen
+ // some time later. Call Flush() to force a write.
     virtual bool Write(const void *buf, size_t len) = 0;
-    virtual int Rewind() {return -1;}
+    virtual int Rewind();
     virtual ~OutStream() {}
 protected:
     OutStream() {}
@@ -137,7 +141,6 @@ enum FileFormats
 {
     kFileFormatWavFile        = 1,
     kFileFormatCompressedFile = 2,
-    kFileFormatAviFile        = 3,
     kFileFormatPreencodedFile = 4,
     kFileFormatPcm16kHzFile   = 7,
     kFileFormatPcm8kHzFile    = 8,
@@ -789,39 +792,29 @@ struct PacketTime {
 };
 
 struct RTPHeaderExtension {
-  RTPHeaderExtension()
-      : hasTransmissionTimeOffset(false),
-        transmissionTimeOffset(0),
-        hasAbsoluteSendTime(false),
-        absoluteSendTime(0),
-        hasAudioLevel(false),
-        audioLevel(0) {}
+  RTPHeaderExtension();
 
   bool hasTransmissionTimeOffset;
   int32_t transmissionTimeOffset;
   bool hasAbsoluteSendTime;
   uint32_t absoluteSendTime;
+  bool hasTransportSequenceNumber;
+  uint16_t transportSequenceNumber;
 
   // Audio Level includes both level in dBov and voiced/unvoiced bit. See:
   // https://datatracker.ietf.org/doc/draft-lennox-avt-rtp-audio-level-exthdr/
   bool hasAudioLevel;
   uint8_t audioLevel;
+
+  // For Coordination of Video Orientation. See
+  // http://www.etsi.org/deliver/etsi_ts/126100_126199/126114/12.07.00_60/
+  // ts_126114v120700p.pdf
+  bool hasVideoRotation;
+  uint8_t videoRotation;
 };
 
 struct RTPHeader {
-  RTPHeader()
-      : markerBit(false),
-        payloadType(0),
-        sequenceNumber(0),
-        timestamp(0),
-        ssrc(0),
-        numCSRCs(0),
-        paddingLength(0),
-        headerLength(0),
-        payload_type_frequency(0),
-        extension() {
-    memset(&arrOfCSRCs, 0, sizeof(arrOfCSRCs));
-  }
+  RTPHeader();
 
   bool markerBit;
   uint8_t payloadType;
@@ -870,7 +863,7 @@ struct RtpPacketCounter {
 
 // Data usage statistics for a (rtp) stream.
 struct StreamDataCounters {
-  StreamDataCounters() : first_packet_time_ms(-1) {}
+  StreamDataCounters();
 
   void Add(const StreamDataCounters& other) {
     transmitted.Add(other.transmitted);

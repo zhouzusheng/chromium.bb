@@ -27,7 +27,9 @@
 
 #include "core/layout/svg/LayoutSVGImage.h"
 
+#include "core/layout/HitTestResult.h"
 #include "core/layout/ImageQualityController.h"
+#include "core/layout/LayoutAnalyzer.h"
 #include "core/layout/LayoutImageResource.h"
 #include "core/layout/PointerEventsHitRules.h"
 #include "core/layout/svg/LayoutSVGResourceContainer.h"
@@ -77,13 +79,13 @@ FloatSize LayoutSVGImage::computeImageViewportSize(ImageResource& cachedImage) c
     return intrinsicRatio;
 }
 
-static bool containerSizeIsSetForRenderer(ImageResource& cachedImage, const LayoutObject* renderer)
+static bool containerSizeIsSetForLayoutObject(ImageResource& cachedImage, const LayoutObject* layoutObject)
 {
     const Image* image = cachedImage.image();
-    // If a container size has been specified for this renderer, then
-    // imageForRenderer() will return the SVGImageForContainer while image()
+    // If a container size has been specified for this layoutObject, then
+    // imageForLayoutObject() will return the SVGImageForContainer while image()
     // will return the underlying SVGImage.
-    return !image->isSVGImage() || image != cachedImage.imageForRenderer(renderer);
+    return !image->isSVGImage() || image != cachedImage.imageForLayoutObject(layoutObject);
 }
 
 bool LayoutSVGImage::updateImageViewport()
@@ -92,16 +94,20 @@ bool LayoutSVGImage::updateImageViewport()
     FloatRect oldBoundaries = m_objectBoundingBox;
 
     SVGLengthContext lengthContext(image);
-    m_objectBoundingBox = FloatRect(image->x()->currentValue()->value(lengthContext), image->y()->currentValue()->value(lengthContext), image->width()->currentValue()->value(lengthContext), image->height()->currentValue()->value(lengthContext));
+    m_objectBoundingBox = FloatRect(
+        lengthContext.valueForLength(styleRef().svgStyle().x(), styleRef(), SVGLengthMode::Width),
+        lengthContext.valueForLength(styleRef().svgStyle().y(), styleRef(), SVGLengthMode::Height),
+        lengthContext.valueForLength(styleRef().width(), styleRef(), SVGLengthMode::Width),
+        lengthContext.valueForLength(styleRef().height(), styleRef(), SVGLengthMode::Height));
     bool boundsChanged = oldBoundaries != m_objectBoundingBox;
 
     bool updatedViewport = false;
     ImageResource* cachedImage = m_imageResource->cachedImage();
     if (cachedImage && cachedImage->usesImageContainerSize()) {
         FloatSize imageViewportSize = computeImageViewportSize(*cachedImage);
-        if (LayoutSize(imageViewportSize) != m_imageResource->imageSize(style()->effectiveZoom())
-            || !containerSizeIsSetForRenderer(*cachedImage, this)) {
-            m_imageResource->setContainerSizeForRenderer(roundedIntSize(imageViewportSize));
+        if (LayoutSize(imageViewportSize) != m_imageResource->imageSize(styleRef().effectiveZoom())
+            || !containerSizeIsSetForLayoutObject(*cachedImage, this)) {
+            m_imageResource->setContainerSizeForLayoutObject(roundedIntSize(imageViewportSize));
             updatedViewport = true;
         }
     }
@@ -113,6 +119,7 @@ bool LayoutSVGImage::updateImageViewport()
 void LayoutSVGImage::layout()
 {
     ASSERT(needsLayout());
+    LayoutAnalyzer::Scope analyzer(*this);
 
     updateImageViewport();
 
@@ -147,13 +154,13 @@ void LayoutSVGImage::paint(const PaintInfo& paintInfo, const LayoutPoint&)
     SVGImagePainter(*this).paint(paintInfo);
 }
 
-bool LayoutSVGImage::nodeAtFloatPoint(const HitTestRequest& request, HitTestResult& result, const FloatPoint& pointInParent, HitTestAction hitTestAction)
+bool LayoutSVGImage::nodeAtFloatPoint(HitTestResult& result, const FloatPoint& pointInParent, HitTestAction hitTestAction)
 {
     // We only draw in the forground phase, so we only hit-test then.
     if (hitTestAction != HitTestForeground)
         return false;
 
-    PointerEventsHitRules hitRules(PointerEventsHitRules::SVG_IMAGE_HITTESTING, request, style()->pointerEvents());
+    PointerEventsHitRules hitRules(PointerEventsHitRules::SVG_IMAGE_HITTESTING, result.hitTestRequest(), style()->pointerEvents());
     bool isVisible = (style()->visibility() == VISIBLE);
     if (isVisible || !hitRules.requireVisible) {
         FloatPoint localPoint;

@@ -30,7 +30,7 @@ public:
     /**
      *  Return a non-zero, unique value representing the text blob.
      */
-    uint32_t uniqueID() const;
+    uint32_t uniqueID() const { return fUniqueID; }
 
     /**
      *  Serialize to a buffer.
@@ -91,13 +91,15 @@ private:
 
     static unsigned ScalarsPerGlyph(GlyphPositioning pos);
 
+    friend class GrAtlasTextContext;
+    friend class GrTextContext;
     friend class SkBaseDevice;
     friend class SkTextBlobBuilder;
     friend class TextBlobTester;
 
     const int        fRunCount;
     const SkRect     fBounds;
-    mutable uint32_t fUniqueID;
+    const uint32_t fUniqueID;
 
     SkDEBUGCODE(size_t fStorageSize;)
 

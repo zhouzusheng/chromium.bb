@@ -307,8 +307,12 @@ ScopedMessagePipeHandle CreateChannel(
 void DestroyChannelOnIOThread(ChannelInfo* channel_info) {
   DCHECK(channel_info);
   DCHECK(channel_info->channel_id);
-  DCHECK(g_channel_manager);
-  g_channel_manager->ShutdownChannelOnIOThread(channel_info->channel_id);
+  // SHEZ: g_channel_manager can be null when we destruct the RenderProcessImpl.
+  // SHEZ: Upstream chromium kills the renderer process before RenderProcessImpl destructor
+  // SHEZ: happens, which is why this DCHECK is never hit.
+  // DCHECK(g_channel_manager);
+  if (g_channel_manager)
+    g_channel_manager->ShutdownChannelOnIOThread(channel_info->channel_id);
   delete channel_info;
 }
 

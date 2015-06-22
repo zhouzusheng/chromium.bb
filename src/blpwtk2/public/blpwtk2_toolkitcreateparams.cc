@@ -51,6 +51,8 @@ struct ToolkitCreateParamsImpl {
     NativeColor d_activeTextSearchHighlightColor;
     NativeColor d_inactiveTextSearchHighlightColor;
     std::string d_headerFooterHTMLContent;
+    _invalid_parameter_handler d_invalidParameterHandler;
+    _purecall_handler d_purecallHandler;
     bool d_printBackgroundGraphics;
     bool d_inProcessRendererDisabled;
 
@@ -65,6 +67,8 @@ struct ToolkitCreateParamsImpl {
     , d_tooltipFont(0)
     , d_activeTextSearchHighlightColor(RGB(255, 150, 50))  // Orange
     , d_inactiveTextSearchHighlightColor(RGB(255, 255, 0))  // Yellow
+    , d_invalidParameterHandler(0)
+    , d_purecallHandler(0)
     , d_printBackgroundGraphics(false)
     , d_inProcessRendererDisabled(false)
     {
@@ -161,6 +165,16 @@ void ToolkitCreateParams::setInProcessResourceLoader(
 void ToolkitCreateParams::setDictionaryPath(const StringRef& path)
 {
     d_impl->d_dictionaryPath.assign(path.data(), path.length());
+}
+
+void ToolkitCreateParams::setInvalidParameterHandler(_invalid_parameter_handler handler)
+{
+    d_impl->d_invalidParameterHandler = handler;
+}
+
+void ToolkitCreateParams::setPurecallHandler(_purecall_handler handler)
+{
+    d_impl->d_purecallHandler = handler;
 }
 
 void ToolkitCreateParams::setHostChannel(const StringRef& channelInfoString)
@@ -281,6 +295,16 @@ ResourceLoader* ToolkitCreateParams::inProcessResourceLoader() const
 StringRef ToolkitCreateParams::dictionaryPath() const
 {
     return d_impl->d_dictionaryPath;
+}
+
+_invalid_parameter_handler ToolkitCreateParams::invalidParameterHandler() const
+{
+    return d_impl->d_invalidParameterHandler;
+}
+
+_purecall_handler ToolkitCreateParams::purecallHandler() const
+{
+    return d_impl->d_purecallHandler;
 }
 
 StringRef ToolkitCreateParams::hostChannel() const

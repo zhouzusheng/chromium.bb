@@ -972,7 +972,11 @@ bool DesktopWindowTreeHostWin::HandleScrollEvent(
 }
 
 void DesktopWindowTreeHostWin::HandleWindowSizeChanging() {
-  if (compositor() && need_synchronous_paint_) {
+  // SHEZ: Always DisableSwapUntilResize
+  // SHEZ: Removed the 'need_synchronous_paint_' check.  Upstream has
+  // SHEZ: cleaned this up properly in https://codereview.chromium.org/1148093007
+  // TODO(SHEZ): Remove this comment once we update to that commit.
+  if (compositor()) { // && need_synchronous_paint_) {
     compositor()->DisableSwapUntilResize();
     // If we received the window size changing notification due to a restore or
     // maximize operation, then we can reset the need_synchronous_paint_ flag

@@ -32,6 +32,7 @@
 #include <base/logging.h>  // for DCHECK
 #include <base/strings/string16.h>
 #include <base/strings/utf_string_conversions.h>
+#include <content/public/app/content_main_runner.h>
 #include <content/public/common/dwrite_font_platform_win.h>
 #include <content/public/renderer/render_font_warmup_win.h>
 #include <content/renderer/render_frame_impl.h>
@@ -152,6 +153,10 @@ Toolkit* ToolkitFactory::create(const ToolkitCreateParams& params)
     }
 
     views::corewm::TooltipWin::SetTooltipStyle(params.tooltipFont());
+
+    content::ContentMainRunner::SetCRTErrorHandlerFunctions(
+        params.invalidParameterHandler(),
+        params.purecallHandler());
 
     DCHECK(!Statics::inProcessResourceLoader ||
             Statics::isRendererMainThreadMode());

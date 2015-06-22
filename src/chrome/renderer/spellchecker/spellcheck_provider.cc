@@ -305,12 +305,20 @@ void SpellCheckProvider::EnableSpellcheck(bool enable) {
     return;
 
   WebFrame* frame = render_view()->GetWebView()->focusedFrame();
+  if (!frame)
+    return;
   frame->enableContinuousSpellChecking(enable);
   if (!enable) {
     frame->removeSpellingMarkers();
   }
   else {
-    frame->document().documentElement().requestSpellCheck();
+    blink::WebDocument document = frame->document();
+    if (document.isNull())
+      return;
+    blink::WebElement documentElement = document.documentElement();
+    if (documentElement.isNull())
+      return;
+    documentElement.requestSpellCheck();
   }
 }
 
@@ -319,8 +327,16 @@ void SpellCheckProvider::RequestSpellcheck() {
     return;
 
   WebFrame* frame = render_view()->GetWebView()->focusedFrame();
+  if (!frame)
+    return;
   DCHECK(frame->isContinuousSpellCheckingEnabled());
-  frame->document().documentElement().requestSpellCheck();
+  blink::WebDocument document = frame->document();
+  if (document.isNull())
+      return;
+  blink::WebElement documentElement = document.documentElement();
+  if (documentElement.isNull())
+      return;
+  documentElement.requestSpellCheck();
 }
 
 bool SpellCheckProvider::SatisfyRequestFromCache(

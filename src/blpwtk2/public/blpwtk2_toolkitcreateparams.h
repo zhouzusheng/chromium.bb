@@ -28,6 +28,8 @@
 #include <blpwtk2_pumpmode.h>
 #include <blpwtk2_threadmode.h>
 
+#include <stdlib.h>  // for _invalid_parameter_handler and _purecall_handler
+
 namespace blpwtk2 {
 
 class ResourceLoader;
@@ -134,6 +136,16 @@ class ToolkitCreateParams {
     // spellchecking is enabled in one of the Profile objects.
     BLPWTK2_EXPORT void setDictionaryPath(const StringRef& path);
 
+    // Set the CRT's invalid parameter handler.  If this is not set, then a
+    // default handler will be installed, which sets a breakpoint and exits
+    // the application.
+    BLPWTK2_EXPORT void setInvalidParameterHandler(_invalid_parameter_handler handler);
+
+    // Set the CRT's purecall handler.  If this is not set, then a default
+    // handler will be installed, which sets a breakpoint and exits the
+    // application.
+    BLPWTK2_EXPORT void setPurecallHandler(_purecall_handler handler);
+
     // By default, blpwtk2 will allocate new browser process resources for each
     // blpwtk2 process.  However, the 'Toolkit::createHostChannel' method can
     // be used to setup an IPC channel that this process can use to share the
@@ -185,6 +197,8 @@ class ToolkitCreateParams {
     StringRef sideLoadedFontAt(size_t index) const;
     ResourceLoader* inProcessResourceLoader() const;
     StringRef dictionaryPath() const;
+    _invalid_parameter_handler invalidParameterHandler() const;
+    _purecall_handler purecallHandler() const;
     StringRef hostChannel() const;
     NativeFont tooltipFont() const;
     NativeColor activeTextSearchHighlightColor() const;

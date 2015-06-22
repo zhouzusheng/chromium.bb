@@ -1585,7 +1585,7 @@ Shell* createShell(blpwtk2::Profile* profile, blpwtk2::WebView* webView)
     // Create the main window.
     HWND mainWnd = CreateWindow(L"ShellWClass",      // name of window class
                                 L"Sample",           // title-bar string
-                                WS_OVERLAPPEDWINDOW, // top-level window
+                                WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, // top-level window
                                 CW_USEDEFAULT,       // default horizontal position
                                 CW_USEDEFAULT,       // default vertical position
                                 1600,                // same width,

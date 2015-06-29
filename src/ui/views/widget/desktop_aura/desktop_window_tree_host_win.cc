@@ -813,6 +813,25 @@ void DesktopWindowTreeHostWin::HandleClientSizeChanged(
     OnHostResized(new_size);
 }
 
+bool DesktopWindowTreeHostWin::HandleNCHitTest(LRESULT* result, const gfx::Point& point) {
+  int intResult;
+  bool handled = native_widget_delegate_->OnNCHitTest(&intResult, point);
+  *result = intResult;
+  return handled;
+}
+
+bool DesktopWindowTreeHostWin::HandleNCDragBegin(int hit_test_code) {
+  return native_widget_delegate_->OnNCDragBegin(hit_test_code);
+}
+
+void DesktopWindowTreeHostWin::HandleNCDragMove() {
+  return native_widget_delegate_->OnNCDragMove();
+}
+
+void DesktopWindowTreeHostWin::HandleNCDragEnd() {
+  return native_widget_delegate_->OnNCDragEnd();
+}
+
 void DesktopWindowTreeHostWin::HandleFrameChanged() {
   SetWindowTransparency();
   // Replace the frame and layout the contents.
@@ -821,6 +840,11 @@ void DesktopWindowTreeHostWin::HandleFrameChanged() {
 
 void DesktopWindowTreeHostWin::HandleNativeFocus(HWND last_focused_window) {
   // TODO(beng): inform the native_widget_delegate_.
+
+  // If our HWND has WS_CHILD, treat WM_SETFOCUS like an activation change.
+  if (GetWindowLong(GetHWND(), GWL_STYLE) & WS_CHILD)
+    HandleActivationChanged(true);
+
   InputMethod* input_method = GetInputMethod();
   if (input_method)
     input_method->OnFocus();
@@ -828,6 +852,11 @@ void DesktopWindowTreeHostWin::HandleNativeFocus(HWND last_focused_window) {
 
 void DesktopWindowTreeHostWin::HandleNativeBlur(HWND focused_window) {
   // TODO(beng): inform the native_widget_delegate_.
+
+  // If our HWND has WS_CHILD, treat WM_KILLFOCUS like an activation change.
+  if (GetWindowLong(GetHWND(), GWL_STYLE) & WS_CHILD)
+    HandleActivationChanged(false);
+
   InputMethod* input_method = GetInputMethod();
   if (input_method)
     input_method->OnBlur();
@@ -943,7 +972,11 @@ bool DesktopWindowTreeHostWin::HandleScrollEvent(
 }
 
 void DesktopWindowTreeHostWin::HandleWindowSizeChanging() {
-  if (compositor() && need_synchronous_paint_) {
+  // SHEZ: Always DisableSwapUntilResize
+  // SHEZ: Removed the 'need_synchronous_paint_' check.  Upstream has
+  // SHEZ: cleaned this up properly in https://codereview.chromium.org/1148093007
+  // TODO(SHEZ): Remove this comment once we update to that commit.
+  if (compositor()) { // && need_synchronous_paint_) {
     compositor()->DisableSwapUntilResize();
     // If we received the window size changing notification due to a restore or
     // maximize operation, then we can reset the need_synchronous_paint_ flag

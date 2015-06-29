@@ -37,9 +37,23 @@
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/html/HTMLFrameElementBase.h"
+#include "core/page/Page.h"
 #include "platform/weborigin/SecurityOrigin.h"
 
 namespace blink {
+
+static bool bbIsDocumentSecurityEnabled(Document* targetDocument)
+{
+    ASSERT(targetDocument);
+
+    Page* page = targetDocument->page();
+
+    if (!page) {
+        return true;
+    }
+
+    return page->settings().webSecurityEnabled();
+}
 
 static bool isDocumentAccessibleFromDOMWindow(Document* targetDocument, LocalDOMWindow* callingWindow)
 {
@@ -47,7 +61,7 @@ static bool isDocumentAccessibleFromDOMWindow(Document* targetDocument, LocalDOM
         return false;
 
     if (!callingWindow)
-        return false;
+        return !bbIsDocumentSecurityEnabled(targetDocument);
 
     if (callingWindow->document()->securityOrigin()->canAccess(targetDocument->securityOrigin()))
         return true;

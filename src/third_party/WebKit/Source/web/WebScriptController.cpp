@@ -40,4 +40,9 @@ void WebScriptController::registerExtension(v8::Extension* extension)
     ScriptController::registerExtensionIfNeeded(extension);
 }
 
+void WebScriptController::setStackCaptureControlledByInspector(bool enable)
+{
+    ScriptController::s_stackCaptureControlledByInspector = enable;
+}
+
 } // namespace blink

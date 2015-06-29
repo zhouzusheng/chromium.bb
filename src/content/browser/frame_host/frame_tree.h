@@ -47,7 +47,8 @@ class CONTENT_EXPORT FrameTree {
             RenderFrameHostDelegate* render_frame_delegate,
             RenderViewHostDelegate* render_view_delegate,
             RenderWidgetHostDelegate* render_widget_delegate,
-            RenderFrameHostManager::Delegate* manager_delegate);
+            RenderFrameHostManager::Delegate* manager_delegate,
+            int render_process_affinity);
   ~FrameTree();
 
   FrameTreeNode* root() const { return root_.get(); }
@@ -106,6 +107,10 @@ class CONTENT_EXPORT FrameTree {
   // specific frame routing ID of the removed frame.
   void SetFrameRemoveListener(
       const base::Callback<void(RenderFrameHost*)>& on_frame_removed);
+
+  // Returns the render process affinity, or SiteInstance::kNoProcessAffinity
+  // if there is no affinity.
+  int RenderProcessAffinity() const { return render_process_affinity_; }
 
   // Creates a RenderViewHost for a new RenderFrameHost in the given
   // |site_instance|.  The RenderViewHost will have its Shutdown method called
@@ -171,6 +176,10 @@ class CONTENT_EXPORT FrameTree {
   // meantime, they are kept in this map, as they should not be reused (part of
   // their state is already gone away).
   RenderViewHostMultiMap render_view_host_pending_shutdown_map_;
+
+  // Render process affinity, or SiteInstance::kNoProcessAffinity if there is
+  // no affinity.
+  int render_process_affinity_;
 
   scoped_ptr<FrameTreeNode> root_;
 

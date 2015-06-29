@@ -342,7 +342,7 @@ size_t ExternalStreamingStream::FillBuffer(size_t position) {
           // chunk. This will only happen when the chunk was really small. We
           // don't handle the case where a UTF-8 character is split over several
           // chunks; in that case V8 won't crash, but it will be a parse error.
-          delete[] current_data_;
+          source_stream_->ReleaseData(current_data_);
           current_data_ = NULL;
           current_data_length_ = 0;
           current_data_offset_ = 0;
@@ -369,7 +369,7 @@ size_t ExternalStreamingStream::FillBuffer(size_t position) {
 
     // Did we use all the data in the data chunk?
     if (current_data_offset_ == current_data_length_) {
-      delete[] current_data_;
+      source_stream_->ReleaseData(current_data_);
       current_data_ = NULL;
       current_data_length_ = 0;
       current_data_offset_ = 0;

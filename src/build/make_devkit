@@ -112,7 +112,7 @@ def copyBin(destDir, version):
     'blpcr_glesv2' + productAppend + '.dll',
     'ffmpegsumo' + productAppend + '.dll',
     'd3dcompiler_47.dll',
-    'icudtl.dat',
+    'icudtl' + productAppend + '.dat',
     'blpwtk2_devtools' + productAppend + '.pak',
     'content_shell.pak',
     'blpv8' + productAppend + '.pdb',

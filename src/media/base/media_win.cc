@@ -15,6 +15,8 @@
 #include "base/metrics/sparse_histogram.h"
 #include "media/ffmpeg/ffmpeg_common.h"
 
+#include <blpwtk2_products.h>
+
 #pragma comment(lib, "delayimp.lib")
 
 namespace media {
@@ -28,7 +30,7 @@ bool InitializeMediaLibraryInternal(const base::FilePath& module_dir) {
 
   // Use alternate DLL search path so we don't load dependencies from the
   // system path.  Refer to http://crbug.com/35857
-  static const char kFFmpegDLL[] = "ffmpegsumo.dll";
+  static const char kFFmpegDLL[] = FFMPEGSUMO_DLL_NAME;
   HMODULE lib = ::LoadLibraryEx(
       module_dir.AppendASCII(kFFmpegDLL).value().c_str(), NULL,
       LOAD_WITH_ALTERED_SEARCH_PATH);

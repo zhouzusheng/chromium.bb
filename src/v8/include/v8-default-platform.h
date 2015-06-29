@@ -5,7 +5,15 @@
 #ifndef V8_LIBPLATFORM_LIBPLATFORM_H_
 #define V8_LIBPLATFORM_LIBPLATFORM_H_
 
-#include "include/v8-platform.h"
+#include "v8-platform.h"
+
+#ifdef BUILDING_V8_SHARED
+# define V8_LIBPLATFORM_EXPORT __declspec(dllexport)
+#elif USING_V8_SHARED
+# define V8_LIBPLATFORM_EXPORT __declspec(dllimport)
+#else
+# define V8_LIBPLATFORM_EXPORT
+#endif  // BUILDING_V8_SHARED
 
 namespace v8 {
 namespace platform {
@@ -18,6 +26,7 @@ namespace platform {
  * of zero is passed, a suitable default based on the current number of
  * processors online will be chosen.
  */
+V8_LIBPLATFORM_EXPORT
 v8::Platform* CreateDefaultPlatform(int thread_pool_size = 0);
 
 
@@ -29,6 +38,7 @@ v8::Platform* CreateDefaultPlatform(int thread_pool_size = 0);
  * not block if no task is pending. The |platform| has to be created using
  * |CreateDefaultPlatform|.
  */
+V8_LIBPLATFORM_EXPORT
 bool PumpMessageLoop(v8::Platform* platform, v8::Isolate* isolate);
 
 

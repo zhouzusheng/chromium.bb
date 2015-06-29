@@ -35,8 +35,8 @@
 
 namespace content {
 
-const int kDefaultTestWindowWidthDip = 800;
-const int kDefaultTestWindowHeightDip = 600;
+const int kDefaultTestWindowWidthDip = 1600;
+const int kDefaultTestWindowHeightDip = 1200;
 
 std::vector<Shell*> Shell::windows_;
 base::Callback<void(Shell*)> Shell::shell_created_callback_;
@@ -233,6 +233,7 @@ void Shell::UpdateNavigationControls(bool to_different_document) {
   int current_index = web_contents_->GetController().GetCurrentEntryIndex();
   int max_index = web_contents_->GetController().GetEntryCount() - 1;
 
+  PlatformEnableUIControl(NEW_BUTTON, !web_contents_->IsLoading());
   PlatformEnableUIControl(BACK_BUTTON, current_index > 0);
   PlatformEnableUIControl(FORWARD_BUTTON, current_index < max_index);
   PlatformEnableUIControl(PRINT_BUTTON, !web_contents_->IsLoading());

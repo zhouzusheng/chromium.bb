@@ -196,6 +196,11 @@ String WebViewProxy::getLayoutTreeAsText(int flags) const
     return fromWebString(webFrame->layoutTreeAsText(flags));
 }
 
+int WebViewProxy::getRoutingId() const
+{
+    return d_routingId;
+}
+
 void WebViewProxy::drawContents(const NativeRect &srcRegion,
                                 const NativeRect &destRegion,
                                 int dpiMultiplier,
@@ -366,9 +371,9 @@ void WebViewProxy::loadInspector(WebView* inspectedView)
     WebViewProxy* inspectedViewProxy
         = static_cast<WebViewProxy*>(inspectedView);
     LOG(INFO) << "routingId=" << d_routingId
-              << ", loading inspector for " << inspectedViewProxy->routingId();
+              << ", loading inspector for " << inspectedViewProxy->getRoutingId();
     Send(new BlpWebViewHostMsg_LoadInspector(d_routingId,
-                                             inspectedViewProxy->routingId()));
+                                             inspectedViewProxy->getRoutingId()));
 }
 
 void WebViewProxy::inspectElementAt(const POINT& point)

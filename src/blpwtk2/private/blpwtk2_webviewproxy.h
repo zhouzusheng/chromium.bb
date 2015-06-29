@@ -79,7 +79,6 @@ class WebViewProxy : public WebView,
                  int routingId,
                  ProfileProxy* profileProxy);
 
-    int routingId() const { return d_routingId; }
     void moveImpl(const gfx::Rect& rc);
 
     // ========== WebView overrides ================
@@ -127,6 +126,7 @@ class WebViewProxy : public WebView,
                       const StringRef &styleClass,
                       NativeDeviceContext deviceContext) override;
     String getLayoutTreeAsText(int flags) const override;
+    int getRoutingId() const override;
 
   private:
     // Destructor is private.  Calling destroy() will delete the object.

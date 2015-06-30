@@ -73,27 +73,32 @@ class BLPWTK2_EXPORT ProxyConfig {
     void addHttpProxy(ProxyType type,
                       const StringRef& host,
                       int port);
+    void clearHttpProxies();
 
     // proxies for https urls
     void addHttpsProxy(ProxyType type,
                        const StringRef& host,
                        int port);
+    void clearHttpsProxies();
 
     // proxies for ftp urls
     void addFtpProxy(ProxyType type,
                      const StringRef& host,
                      int port);
+    void clearFtpProxies();
 
     // proxies for all other url schemes
     void addFallbackProxy(ProxyType type,
                           const StringRef& host,
                           int port);
+    void clearFallbackProxies();
 
     // Rules for hostnames that will bypass this proxy configuration.  The
     // format of the rule string is documented here:
     //     http://src.chromium.org/viewvc/chrome/trunk/src/net/proxy/proxy_bypass_rules.h?revision=146163
     // starting at line 94.
     void addBypassRule(const StringRef& rule);
+    void clearBypassRules();
 
   private:
     friend ProxyConfigImpl* getProxyConfigImpl(ProxyConfig&);

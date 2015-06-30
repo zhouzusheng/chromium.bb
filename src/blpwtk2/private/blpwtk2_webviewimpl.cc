@@ -321,6 +321,12 @@ String WebViewImpl::getLayoutTreeAsText(int flags) const
     return String();
 }
 
+int WebViewImpl::getRoutingId() const
+{
+    NOTREACHED() << "getRoutingId() not supported in WebViewImpl";
+    return 0;
+}
+
 void WebViewImpl::handleInputEvents(const InputEvent *events, size_t eventsCount)
 {
     NOTREACHED() << "handleInputEvents() not supported in WebViewImpl";

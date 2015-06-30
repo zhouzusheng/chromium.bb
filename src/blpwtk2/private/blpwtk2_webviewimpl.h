@@ -141,6 +141,7 @@ class WebViewImpl : public WebView,
                       const StringRef &styleClass,
                       NativeDeviceContext deviceContext) override;
     String getLayoutTreeAsText(int flags) const override;
+    int getRoutingId() const override;
 
   private:
     void createWidget(blpwtk2::NativeView parent);

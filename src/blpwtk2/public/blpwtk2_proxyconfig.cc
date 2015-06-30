@@ -102,12 +102,22 @@ void ProxyConfig::addHttpProxy(ProxyType type,
         makeServer(type, host, port));
 }
 
+void ProxyConfig::clearHttpProxies()
+{
+    d_impl->d_config.proxy_rules().proxies_for_http.Clear();
+}
+
 void ProxyConfig::addHttpsProxy(ProxyType type,
                                 const StringRef& host,
                                 int port)
 {
     d_impl->d_config.proxy_rules().proxies_for_https.AddProxyServer(
         makeServer(type, host, port));
+}
+
+void ProxyConfig::clearHttpsProxies()
+{
+    d_impl->d_config.proxy_rules().proxies_for_https.Clear();
 }
 
 void ProxyConfig::addFtpProxy(ProxyType type,
@@ -118,6 +128,11 @@ void ProxyConfig::addFtpProxy(ProxyType type,
         makeServer(type, host, port));
 }
 
+void ProxyConfig::clearFtpProxies()
+{
+    d_impl->d_config.proxy_rules().proxies_for_ftp.Clear();
+}
+
 void ProxyConfig::addFallbackProxy(ProxyType type,
                                    const StringRef& host,
                                    int port)
@@ -126,10 +141,20 @@ void ProxyConfig::addFallbackProxy(ProxyType type,
         makeServer(type, host, port));
 }
 
+void ProxyConfig::clearFallbackProxies()
+{
+    d_impl->d_config.proxy_rules().fallback_proxies.Clear();
+}
+
 void ProxyConfig::addBypassRule(const StringRef& rule)
 {
     std::string srule(rule.data(), rule.length());
     d_impl->d_config.proxy_rules().bypass_rules.AddRuleFromString(srule);
+}
+
+void ProxyConfig::clearBypassRules()
+{
+    d_impl->d_config.proxy_rules().bypass_rules.Clear();
 }
 
 ProxyConfigImpl* getProxyConfigImpl(ProxyConfig& config)

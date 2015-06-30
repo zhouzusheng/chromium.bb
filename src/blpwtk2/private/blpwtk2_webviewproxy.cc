@@ -156,7 +156,7 @@ void WebViewProxy::loadUrl(const StringRef& url)
 {
     DCHECK(Statics::isInApplicationMainThread());
     std::string surl(url.data(), url.length());
-    LOG(INFO) << "WebViewProxy, routingId=" << d_routingId << ", loadUrl=" << surl;
+    LOG(INFO) << "routingId=" << d_routingId << ", loadUrl=" << surl;
     Send(new BlpWebViewHostMsg_LoadUrl(d_routingId, surl));
 }
 
@@ -194,6 +194,11 @@ String WebViewProxy::getLayoutTreeAsText(int flags) const
     DCHECK(webFrame->isWebLocalFrame());
 
     return fromWebString(webFrame->layoutTreeAsText(flags));
+}
+
+int WebViewProxy::getRoutingId() const
+{
+    return d_routingId;
 }
 
 void WebViewProxy::drawContents(const NativeRect &srcRegion,
@@ -365,10 +370,10 @@ void WebViewProxy::loadInspector(WebView* inspectedView)
     DCHECK(inspectedView);
     WebViewProxy* inspectedViewProxy
         = static_cast<WebViewProxy*>(inspectedView);
-    LOG(INFO) << "WebViewProxy, routingId=" << d_routingId
-              << ", loading inspector for " << inspectedViewProxy->routingId();
+    LOG(INFO) << "routingId=" << d_routingId
+              << ", loading inspector for " << inspectedViewProxy->getRoutingId();
     Send(new BlpWebViewHostMsg_LoadInspector(d_routingId,
-                                             inspectedViewProxy->routingId()));
+                                             inspectedViewProxy->getRoutingId()));
 }
 
 void WebViewProxy::inspectElementAt(const POINT& point)
@@ -381,35 +386,35 @@ void WebViewProxy::inspectElementAt(const POINT& point)
 void WebViewProxy::reload(bool ignoreCache)
 {
     DCHECK(Statics::isInApplicationMainThread());
-    LOG(INFO) << "WebViewProxy, routingId=" << d_routingId << ", reload";
+    LOG(INFO) << "routingId=" << d_routingId << ", reload";
     Send(new BlpWebViewHostMsg_Reload(d_routingId, ignoreCache));
 }
 
 void WebViewProxy::goBack()
 {
     DCHECK(Statics::isInApplicationMainThread());
-    LOG(INFO) << "WebViewProxy, routingId=" << d_routingId << ", goBack";
+    LOG(INFO) << "routingId=" << d_routingId << ", goBack";
     Send(new BlpWebViewHostMsg_GoBack(d_routingId));
 }
 
 void WebViewProxy::goForward()
 {
     DCHECK(Statics::isInApplicationMainThread());
-    LOG(INFO) << "WebViewProxy, routingId=" << d_routingId << ", goForward";
+    LOG(INFO) << "routingId=" << d_routingId << ", goForward";
     Send(new BlpWebViewHostMsg_GoForward(d_routingId));
 }
 
 void WebViewProxy::stop()
 {
     DCHECK(Statics::isInApplicationMainThread());
-    LOG(INFO) << "WebViewProxy, routingId=" << d_routingId << ", stop";
+    LOG(INFO) << "routingId=" << d_routingId << ", stop";
     Send(new BlpWebViewHostMsg_Stop(d_routingId));
 }
 
 void WebViewProxy::takeKeyboardFocus()
 {
     DCHECK(Statics::isInApplicationMainThread());
-    LOG(INFO) << "WebViewProxy, routingId=" << d_routingId << ", takeKeyboardFocus";
+    LOG(INFO) << "routingId=" << d_routingId << ", takeKeyboardFocus";
     if (d_nativeWebView) {
         ::SetFocus(d_nativeWebView);
     }
@@ -421,7 +426,7 @@ void WebViewProxy::takeKeyboardFocus()
 void WebViewProxy::setLogicalFocus(bool focused)
 {
     DCHECK(Statics::isInApplicationMainThread());
-    LOG(INFO) << "WebViewProxy, routingId=" << d_routingId
+    LOG(INFO) << "routingId=" << d_routingId
               << ", setLogicalFocus " << (focused ? "true" : "false");
     if (d_gotRenderViewInfo) {
         // If we have the renderer in-process, then set the logical focus
@@ -439,14 +444,14 @@ void WebViewProxy::setLogicalFocus(bool focused)
 void WebViewProxy::show()
 {
     DCHECK(Statics::isInApplicationMainThread());
-    LOG(INFO) << "WebViewProxy, routingId=" << d_routingId << ", show";
+    LOG(INFO) << "routingId=" << d_routingId << ", show";
     Send(new BlpWebViewHostMsg_Show(d_routingId));
 }
 
 void WebViewProxy::hide()
 {
     DCHECK(Statics::isInApplicationMainThread());
-    LOG(INFO) << "WebViewProxy, routingId=" << d_routingId << ", hide";
+    LOG(INFO) << "routingId=" << d_routingId << ", hide";
     Send(new BlpWebViewHostMsg_Hide(d_routingId));
 }
 
@@ -454,7 +459,7 @@ void WebViewProxy::setParent(NativeView parent)
 {
     DCHECK(Statics::isInApplicationMainThread());
 
-    LOG(INFO) << "WebViewProxy, routingId=" << d_routingId
+    LOG(INFO) << "routingId=" << d_routingId
               << ", setParent=" << (void*)parent;
     if (d_nativeWebView) {
         ::SetParent(d_nativeWebView, parent ? parent : d_nativeHiddenView);
@@ -481,6 +486,10 @@ void WebViewProxy::move(int left, int top, int width, int height)
     gfx::Rect rc(left, top, width, height);
     if (rc == d_lastMoveRect)
         return;
+
+    LOG(INFO) << "routingId=" << d_routingId
+              << ", move " << left << "," << top
+              << " " << width << "x" << height;
 
     d_lastMoveRect = rc;
     if (d_moveAckPending)
@@ -695,6 +704,9 @@ void WebViewProxy::onDidNavigateMainFramePostCommit(const std::string& url)
 
 void WebViewProxy::onDidFinishLoad(const std::string& url)
 {
+    LOG(INFO) << "routingId=" << d_routingId
+              << ", didFinishLoad url=" << url;
+
     d_isMainFrameAccessible = true;  // wait until we receive this
                                      // notification before we make the
                                      // mainFrame accessible
@@ -705,6 +717,9 @@ void WebViewProxy::onDidFinishLoad(const std::string& url)
 
 void WebViewProxy::onDidFailLoad(const std::string& url)
 {
+    LOG(INFO) << "routingId=" << d_routingId
+              << ", didFailLoad url=" << url;
+
     if (d_delegate)
         d_delegate->didFailLoad(this, url);
 }
@@ -888,7 +903,7 @@ void WebViewProxy::onGotNewRenderViewRoutingId(int renderViewRoutingId)
 
     d_gotRenderViewInfo = true;
     d_renderViewRoutingId = renderViewRoutingId;
-    LOG(INFO) << "WebViewProxy, routingId=" << d_routingId
+    LOG(INFO) << "routingId=" << d_routingId
               << ", gotRenderViewInfo, renderViewRoutingId=" << renderViewRoutingId;
 }
 

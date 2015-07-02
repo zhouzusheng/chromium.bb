@@ -36,6 +36,7 @@
 #include <content/public/common/dwrite_font_platform_win.h>
 #include <content/public/renderer/render_font_warmup_win.h>
 #include <content/renderer/render_frame_impl.h>
+#include <content/renderer/render_widget.h>
 #include <net/http/http_network_session.h>
 #include <net/socket/client_socket_pool_manager.h>
 #include <printing/print_settings.h>
@@ -163,6 +164,11 @@ Toolkit* ToolkitFactory::create(const ToolkitCreateParams& params)
 
     if (params.isMaxSocketsPerProxySet()) {
         setMaxSocketsPerProxy(params.maxSocketsPerProxy());
+    }
+
+    if (params.isInputHandlingTimeThrottlingThresholdMicrosecondsSet()) {
+        content::RenderWidget::SetInputHandlingTimeThrottlingThresholdMicroseconds(
+            params.inputHandlingTimeThrottlingThresholdMicroseconds());
     }
 
     ToolkitImpl* toolkit = new ToolkitImpl(params.dictionaryPath(),

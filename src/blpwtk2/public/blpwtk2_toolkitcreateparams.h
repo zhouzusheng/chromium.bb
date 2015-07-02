@@ -105,6 +105,12 @@ class ToolkitCreateParams {
     // behavior is undefined if 'count' is less than 1, or more than 99.
     BLPWTK2_EXPORT void setMaxSocketsPerProxy(int count);
 
+    // Set the threshold in which the mousemove and mousewheel events will be throttled
+    // by the compositor.  If the time it takes for the events to be handled is longer
+    // than this threshold, then the events will be throttled.  Note that this only
+    // affects in-process renderers.
+    BLPWTK2_EXPORT void setInputHandlingTimeThrottlingThresholdMicroseconds(int us);
+
     // Add the specified 'switchString' to the list of command-line switches.
     // A list of switches can be found at:
     // http://peter.sh/experiments/chromium-command-line-switches/
@@ -191,6 +197,8 @@ class ToolkitCreateParams {
     bool isInProcessRendererDisabled() const;
     bool isMaxSocketsPerProxySet() const;
     int maxSocketsPerProxy() const;
+    bool isInputHandlingTimeThrottlingThresholdMicrosecondsSet() const;
+    int inputHandlingTimeThrottlingThresholdMicroseconds() const;
     size_t numCommandLineSwitches() const;
     StringRef commandLineSwitchAt(size_t index) const;
     size_t numSideLoadedFonts() const;

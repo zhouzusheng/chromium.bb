@@ -24,11 +24,12 @@
 #define INCLUDED_BLPWTK2_WEBVIEW_H
 
 #include <blpwtk2_config.h>
+#include <blpwtk2_stringref.h>
 
 namespace blpwtk2 {
 
+class Blob;
 class String;
-class StringRef;
 class WebFrame;
 class Profile;
 class WebViewDelegate;
@@ -55,6 +56,31 @@ public:
         bool numLockOn;
         bool isLeft;
         bool isRight;
+    };
+
+    struct DrawParams {
+        enum RendererType {
+            RendererTypePDF,
+            RendererTypeBitmap
+        };
+
+        NativeRect   srcRegion;
+        NativeRect   destRegion;
+        StringRef    styleClass;
+        RendererType rendererType;
+
+        // The 'dpi' field is only applicable for PDF renderer and when the
+        // target is a Blob. When the target is a native device context, the
+        // DPI setting in the device context is used instead.
+        int dpi;
+
+        DrawParams()
+            : srcRegion({ 0 })
+            , destRegion({ 0 })
+            , rendererType(RendererTypePDF)
+            , dpi(72)
+        {
+        }
     };
 
     // Destroy the WebView and release any resources.  Do not use this WebView
@@ -230,11 +256,11 @@ public:
     virtual void setDelegate(WebViewDelegate* delegate) = 0;
 
     // Draw the specified region of the main web frame onto the draw context.
-    virtual void drawContents(const NativeRect &srcRegion,
-                              const NativeRect &destRegion,
-                              int dpiMultiplier,
-                              const StringRef &styleClass,
-                              NativeDeviceContext deviceContext) = 0;
+    virtual void drawContentsToDevice(NativeDeviceContext deviceContext,
+                                      const DrawParams& params) = 0;
+
+    // Draw the specified region of the main web frame onto a blob.
+    virtual void drawContentsToBlob(Blob *blob, const DrawParams& params) = 0;
 
     // Get a text representation of the main web frame's layout tree. This is
     // primarily used for debugging purposes only.

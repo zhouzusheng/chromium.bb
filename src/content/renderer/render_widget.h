@@ -117,6 +117,8 @@ class CONTENT_EXPORT RenderWidget
   // Creates a WebWidget based on the popup type.
   static blink::WebWidget* CreateWebWidget(RenderWidget* render_widget);
 
+  static void SetInputHandlingTimeThrottlingThresholdMicroseconds(int us);
+
   int32 routing_id() const { return routing_id_; }
   int32 surface_id() const { return surface_id_; }
   CompositorDependencies* compositor_deps() const { return compositor_deps_; }

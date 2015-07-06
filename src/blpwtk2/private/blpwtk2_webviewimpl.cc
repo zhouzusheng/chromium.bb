@@ -34,6 +34,7 @@
 #include <blpwtk2_webframeimpl.h>
 #include <blpwtk2_webviewdelegate.h>
 #include <blpwtk2_webviewimplclient.h>
+#include <blpwtk2_blob.h>
 
 #include <base/message_loop/message_loop.h>
 #include <base/strings/utf_string_conversions.h>
@@ -306,13 +307,14 @@ void WebViewImpl::print()
     printViewManager->PrintNow();
 }
 
-void WebViewImpl::drawContents(const NativeRect &srcRegion,
-                               const NativeRect &destRegion,
-                               int dpiMultiplier,
-                               const StringRef &styleClass,
-                               NativeDeviceContext deviceContext)
+void WebViewImpl::drawContentsToDevice(NativeDeviceContext deviceContext, const DrawParams& params)
 {
-    NOTREACHED() << "drawContents() not supported in WebViewImpl";
+    NOTREACHED() << "drawContentsToDevice() not supported in WebViewImpl";
+}
+
+void WebViewImpl::drawContentsToBlob(Blob *blob, const DrawParams& params)
+{
+    NOTREACHED() << "drawContentsToBlob() not supported in WebViewImpl";
 }
 
 String WebViewImpl::getLayoutTreeAsText(int flags) const

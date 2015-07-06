@@ -236,6 +236,8 @@
         'private/blpwtk2_webviewproxy.cc',
         'private/blpwtk2_webviewproxy.h',
         'public/blpwtk2.h',
+        'public/blpwtk2_blob.cc',
+        'public/blpwtk2_blob.h',
         'public/blpwtk2_config.h',
         'public/blpwtk2_constants.cc',
         'public/blpwtk2_constants.h',

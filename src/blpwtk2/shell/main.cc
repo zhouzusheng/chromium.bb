@@ -290,10 +290,14 @@ void testGetPicture(blpwtk2::NativeView hwnd, blpwtk2::WebView* webView, int sca
 #endif
 
     // Draw the contents of the webview onto the device context
-    webView->drawContents(
-        { 0, 0, width, height },
-        { 0, 0, width * scaleX, height * scaleY },
-        2, "screen-grab", deviceContext);
+    blpwtk2::WebView::DrawParams drawParams;
+    drawParams.srcRegion = { 0, 0, width, height };
+    drawParams.destRegion = { 0, 0, width * scaleX, height * scaleY };
+    drawParams.styleClass = "screen-grab";
+    drawParams.rendererType = blpwtk2::WebView::DrawParams::RendererTypePDF;
+    drawParams.dpi = 72;
+
+    webView->drawContentsToDevice(deviceContext, drawParams);
 
 #ifdef USE_EMF
     HENHMETAFILE emf = CloseEnhMetaFile(deviceContext);

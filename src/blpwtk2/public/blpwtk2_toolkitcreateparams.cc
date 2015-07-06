@@ -42,6 +42,7 @@ struct ToolkitCreateParamsImpl {
     ToolkitCreateParams::ConsoleLogMessageHandler d_consoleLogMessageHandler;
     ToolkitCreateParams::ChannelErrorHandler d_channelErrorHandler;
     int d_maxSocketsPerProxy;
+    int d_inputHandlingTimeThrottlingThresholdMicroseconds;
     std::vector<std::string> d_commandLineSwitches;
     std::vector<std::string> d_sideLoadedFonts;
     ResourceLoader* d_inProcessResourceLoader;
@@ -62,7 +63,8 @@ struct ToolkitCreateParamsImpl {
     , d_logMessageHandler(0)
     , d_consoleLogMessageHandler(0)
     , d_channelErrorHandler(0)
-    , d_maxSocketsPerProxy(-1)
+    , d_maxSocketsPerProxy(-1000)
+    , d_inputHandlingTimeThrottlingThresholdMicroseconds(-1000)
     , d_inProcessResourceLoader(0)
     , d_tooltipFont(0)
     , d_activeTextSearchHighlightColor(RGB(255, 150, 50))  // Orange
@@ -134,6 +136,11 @@ void ToolkitCreateParams::setMaxSocketsPerProxy(int count)
     DCHECK(1 <= count);
     DCHECK(99 >= count);
     d_impl->d_maxSocketsPerProxy = count;
+}
+
+void ToolkitCreateParams::setInputHandlingTimeThrottlingThresholdMicroseconds(int us)
+{
+    d_impl->d_inputHandlingTimeThrottlingThresholdMicroseconds = us;
 }
 
 void ToolkitCreateParams::appendCommandLineSwitch(const StringRef& switchString)
@@ -256,13 +263,24 @@ bool ToolkitCreateParams::isInProcessRendererDisabled() const
 
 bool ToolkitCreateParams::isMaxSocketsPerProxySet() const
 {
-    return -1 != d_impl->d_maxSocketsPerProxy;
+    return -1000 != d_impl->d_maxSocketsPerProxy;
 }
 
 int ToolkitCreateParams::maxSocketsPerProxy() const
 {
     DCHECK(isMaxSocketsPerProxySet());
     return d_impl->d_maxSocketsPerProxy;
+}
+
+bool ToolkitCreateParams::isInputHandlingTimeThrottlingThresholdMicrosecondsSet() const
+{
+    return -1000 != d_impl->d_inputHandlingTimeThrottlingThresholdMicroseconds;
+}
+
+int ToolkitCreateParams::inputHandlingTimeThrottlingThresholdMicroseconds() const
+{
+    DCHECK(isInputHandlingTimeThrottlingThresholdMicrosecondsSet());
+    return d_impl->d_inputHandlingTimeThrottlingThresholdMicroseconds;
 }
 
 size_t ToolkitCreateParams::numCommandLineSwitches() const

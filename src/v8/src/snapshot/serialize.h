@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef V8_SERIALIZE_H_
-#define V8_SERIALIZE_H_
+#ifndef V8_SNAPSHOT_SERIALIZE_H_
+#define V8_SNAPSHOT_SERIALIZE_H_
 
 #include "src/hashmap.h"
 #include "src/heap-profiler.h"
@@ -81,7 +81,10 @@ class AddressMapBase {
 
   inline static HashMap::Entry* LookupEntry(HashMap* map, HeapObject* obj,
                                             bool insert) {
-    return map->Lookup(Key(obj), Hash(obj), insert);
+    if (insert) {
+      map->LookupOrInsert(Key(obj), Hash(obj));
+    }
+    return map->Lookup(Key(obj), Hash(obj));
   }
 
  private:
@@ -299,27 +302,27 @@ class SerializerDeserializer: public ObjectVisitor {
   static int nop() { return kNop; }
 
   // No reservation for large object space necessary.
-  static const int kNumberOfPreallocatedSpaces = LO_SPACE;
+  static const int kNumberOfPreallocatedSpaces = LAST_PAGED_SPACE + 1;
   static const int kNumberOfSpaces = LAST_SPACE + 1;
 
  protected:
-  static bool CanBeDeferred(HeapObject* o) {
-    return !o->IsString() && !o->IsScript();
-  }
-
   // ---------- byte code range 0x00..0x7f ----------
   // Byte codes in this range represent Where, HowToCode and WhereToPoint.
   // Where the pointed-to object can be found:
+  // The static assert below will trigger when the number of preallocated spaces
+  // changed. If that happens, update the bytecode ranges in the comments below.
+  STATIC_ASSERT(5 == kNumberOfSpaces);
   enum Where {
-    // 0x00..0x05  Allocate new object, in specified space.
+    // 0x00..0x04  Allocate new object, in specified space.
     kNewObject = 0,
+    // 0x05        Unused (including 0x25, 0x45, 0x65).
     // 0x06        Unused (including 0x26, 0x46, 0x66).
     // 0x07        Unused (including 0x27, 0x47, 0x67).
-    // 0x08..0x0d  Reference to previous object from space.
+    // 0x08..0x0c  Reference to previous object from space.
     kBackref = 0x08,
     // 0x0e        Unused (including 0x2e, 0x4e, 0x6e).
     // 0x0f        Unused (including 0x2f, 0x4f, 0x6f).
-    // 0x10..0x15  Reference to previous object from space after skip.
+    // 0x10..0x14  Reference to previous object from space after skip.
     kBackrefWithSkip = 0x10,
     // 0x16        Unused (including 0x36, 0x56, 0x76).
     // 0x17        Unused (including 0x37, 0x57, 0x77).
@@ -370,8 +373,6 @@ class SerializerDeserializer: public ObjectVisitor {
   static const int kNop = 0x3d;
   // Move to next reserved chunk.
   static const int kNextChunk = 0x3e;
-  // Deferring object content.
-  static const int kDeferred = 0x3f;
   // A tag emitted at strategic points in the snapshot to delineate sections.
   // If the deserializer does not find these at the expected moments then it
   // is an indication that the snapshot and the VM do not fit together.
@@ -552,22 +553,22 @@ class Deserializer: public SerializerDeserializer {
     memcpy(dest, src, sizeof(*src));
   }
 
-  void DeserializeDeferredObjects();
+  // Allocation sites are present in the snapshot, and must be linked into
+  // a list at deserialization time.
+  void RelinkAllocationSite(AllocationSite* site);
 
   // Fills in some heap data in an area from start to end (non-inclusive).  The
   // space id is used for the write barrier.  The object_address is the address
   // of the object we are writing into, or NULL if we are not writing into an
   // object, i.e. if we are writing a series of tagged values that are not on
-  // the heap. Return false if the object content has been deferred.
-  bool ReadData(Object** start, Object** end, int space,
+  // the heap.
+  void ReadData(Object** start, Object** end, int space,
                 Address object_address);
   void ReadObject(int space_number, Object** write_back);
   Address Allocate(int space_index, int size);
 
   // Special handling for serialized code like hooking up internalized strings.
-  HeapObject* PostProcessNewObject(HeapObject* obj);
-
-  void RelinkAllocationSite(AllocationSite* obj);
+  HeapObject* ProcessNewObjectFromSerializedCode(HeapObject* obj);
 
   // This returns the address of an object that has been described in the
   // snapshot by chunk index and offset.
@@ -607,16 +608,18 @@ class Serializer : public SerializerDeserializer {
  public:
   Serializer(Isolate* isolate, SnapshotByteSink* sink);
   ~Serializer();
-  void VisitPointers(Object** start, Object** end) OVERRIDE;
+  void VisitPointers(Object** start, Object** end) override;
 
   void EncodeReservations(List<SerializedData::Reservation>* out) const;
-
-  void SerializeDeferredObjects();
 
   Isolate* isolate() const { return isolate_; }
 
   BackReferenceMap* back_reference_map() { return &back_reference_map_; }
   RootIndexMap* root_index_map() { return &root_index_map_; }
+
+#ifdef OBJECT_PRINT
+  void CountInstanceType(Map* map, int size);
+#endif  // OBJECT_PRINT
 
  protected:
   class ObjectSerializer : public ObjectVisitor {
@@ -631,7 +634,6 @@ class Serializer : public SerializerDeserializer {
           is_code_object_(o->IsCode()),
           code_has_been_output_(false) {}
     void Serialize();
-    void SerializeDeferred();
     void VisitPointers(Object** start, Object** end);
     void VisitEmbeddedPointer(RelocInfo* target);
     void VisitExternalReference(Address* p);
@@ -673,28 +675,11 @@ class Serializer : public SerializerDeserializer {
     bool code_has_been_output_;
   };
 
-  class RecursionScope {
-   public:
-    explicit RecursionScope(Serializer* serializer) : serializer_(serializer) {
-      serializer_->recursion_depth_++;
-    }
-    ~RecursionScope() { serializer_->recursion_depth_--; }
-    bool ExceedsMaximum() {
-      return serializer_->recursion_depth_ >= kMaxRecursionDepth;
-    }
-
-   private:
-    static const int kMaxRecursionDepth = 32;
-    Serializer* serializer_;
-  };
-
   virtual void SerializeObject(HeapObject* o, HowToCode how_to_code,
                                WhereToPoint where_to_point, int skip) = 0;
 
   void PutRoot(int index, HeapObject* object, HowToCode how, WhereToPoint where,
                int skip);
-
-  void PutBackReference(HeapObject* object, BackReference reference);
 
   // Returns true if the object was successfully serialized.
   bool SerializeKnownObject(HeapObject* obj, HowToCode how_to_code,
@@ -737,10 +722,7 @@ class Serializer : public SerializerDeserializer {
 
   SnapshotByteSink* sink() const { return sink_; }
 
-  void QueueDeferredObject(HeapObject* obj) {
-    DCHECK(back_reference_map_.Lookup(obj).is_valid());
-    deferred_objects_.Add(obj);
-  }
+  void OutputStatistics(const char* name);
 
   Isolate* isolate_;
 
@@ -750,11 +732,8 @@ class Serializer : public SerializerDeserializer {
   BackReferenceMap back_reference_map_;
   RootIndexMap root_index_map_;
 
-  int recursion_depth_;
-
   friend class Deserializer;
   friend class ObjectSerializer;
-  friend class RecursionScope;
   friend class SnapshotData;
 
  private:
@@ -773,8 +752,11 @@ class Serializer : public SerializerDeserializer {
 
   List<byte> code_buffer_;
 
-  // To handle stack overflow.
-  List<HeapObject*> deferred_objects_;
+#ifdef OBJECT_PRINT
+  static const int kInstanceTypes = 256;
+  int* instance_type_count_;
+  size_t* instance_type_size_;
+#endif  // OBJECT_PRINT
 
   DISALLOW_COPY_AND_ASSIGN(Serializer);
 };
@@ -791,10 +773,12 @@ class PartialSerializer : public Serializer {
     InitializeCodeAddressMap();
   }
 
+  ~PartialSerializer() { OutputStatistics("PartialSerializer"); }
+
   // Serialize the objects reachable from a single object pointer.
   void Serialize(Object** o);
   virtual void SerializeObject(HeapObject* o, HowToCode how_to_code,
-                               WhereToPoint where_to_point, int skip) OVERRIDE;
+                               WhereToPoint where_to_point, int skip) override;
 
  private:
   int PartialSnapshotCacheIndex(HeapObject* o);
@@ -804,9 +788,8 @@ class PartialSerializer : public Serializer {
     // unique ID, and deserializing several partial snapshots containing script
     // would cause dupes.
     DCHECK(!o->IsScript());
-    return o->IsName() || o->IsSharedFunctionInfo() ||
-           o->IsHeapNumber() || o->IsCode() ||
-           o->IsScopeInfo() ||
+    return o->IsName() || o->IsSharedFunctionInfo() || o->IsHeapNumber() ||
+           o->IsCode() || o->IsScopeInfo() || o->IsExecutableAccessorInfo() ||
            o->map() ==
                startup_serializer_->isolate()->heap()->fixed_cow_array_map();
   }
@@ -814,7 +797,7 @@ class PartialSerializer : public Serializer {
   void SerializeOutdatedContextsAsFixedArray();
 
   Serializer* startup_serializer_;
-  List<Context*> outdated_contexts_;
+  List<BackReference> outdated_contexts_;
   Object* global_object_;
   PartialCacheIndexMap partial_cache_index_map_;
   DISALLOW_COPY_AND_ASSIGN(PartialSerializer);
@@ -833,9 +816,11 @@ class StartupSerializer : public Serializer {
     InitializeCodeAddressMap();
   }
 
+  ~StartupSerializer() { OutputStatistics("StartupSerializer"); }
+
   // The StartupSerializer has to serialize the root array, which is slightly
   // different.
-  void VisitPointers(Object** start, Object** end) OVERRIDE;
+  void VisitPointers(Object** start, Object** end) override;
 
   // Serialize the current state of the heap.  The order is:
   // 1) Strong references.
@@ -843,11 +828,12 @@ class StartupSerializer : public Serializer {
   // 3) Weak references (e.g. the string table).
   virtual void SerializeStrongReferences();
   virtual void SerializeObject(HeapObject* o, HowToCode how_to_code,
-                               WhereToPoint where_to_point, int skip) OVERRIDE;
-  void SerializeWeakReferencesAndDeferred();
+                               WhereToPoint where_to_point, int skip) override;
+  void SerializeWeakReferences();
   void Serialize() {
     SerializeStrongReferences();
-    SerializeWeakReferencesAndDeferred();
+    SerializeWeakReferences();
+    Pad();
   }
 
  private:
@@ -888,8 +874,10 @@ class CodeSerializer : public Serializer {
     back_reference_map_.AddSourceString(source);
   }
 
+  ~CodeSerializer() { OutputStatistics("CodeSerializer"); }
+
   virtual void SerializeObject(HeapObject* o, HowToCode how_to_code,
-                               WhereToPoint where_to_point, int skip) OVERRIDE;
+                               WhereToPoint where_to_point, int skip) override;
 
   void SerializeBuiltin(int builtin_index, HowToCode how_to_code,
                         WhereToPoint where_to_point);
@@ -1013,4 +1001,4 @@ class SerializedCodeData : public SerializedData {
 };
 } }  // namespace v8::internal
 
-#endif  // V8_SERIALIZE_H_
+#endif  // V8_SNAPSHOT_SERIALIZE_H_

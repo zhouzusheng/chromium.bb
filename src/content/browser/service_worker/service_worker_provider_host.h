@@ -220,7 +220,7 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
   // for current document.
   ServiceWorkerRegistration* MatchRegistration() const;
 
-  void NotifyControllerActivationFailed();
+  void NotifyControllerLost();
 
  private:
   friend class ServiceWorkerProviderHostTest;
@@ -229,6 +229,8 @@ class CONTENT_EXPORT ServiceWorkerProviderHost
                            UpdateBefore24Hours);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerContextRequestHandlerTest,
                            UpdateAfter24Hours);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerContextRequestHandlerTest,
+                           UpdateForceBypassCache);
 
   struct OneShotGetReadyCallback {
     GetRegistrationForReadyCallback callback;

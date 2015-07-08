@@ -348,12 +348,14 @@ bool IsInstalled(ServiceWorkerVersion::Status status) {
   switch (status) {
     case ServiceWorkerVersion::NEW:
     case ServiceWorkerVersion::INSTALLING:
-    case ServiceWorkerVersion::REDUNDANT:
       return false;
     case ServiceWorkerVersion::INSTALLED:
     case ServiceWorkerVersion::ACTIVATING:
     case ServiceWorkerVersion::ACTIVATED:
       return true;
+    case ServiceWorkerVersion::REDUNDANT:
+      NOTREACHED() << "Cannot use REDUNDANT here.";
+      return false;
   }
   NOTREACHED() << "Unexpected status: " << status;
   return false;
@@ -364,25 +366,42 @@ bool IsInstalled(ServiceWorkerVersion::Status status) {
 const int ServiceWorkerVersion::kStartWorkerTimeoutMinutes = 5;
 const int ServiceWorkerVersion::kRequestTimeoutMinutes = 5;
 
+class ServiceWorkerVersion::ServiceWorkerEventMetrics {
+ public:
+  ServiceWorkerEventMetrics() {}
+  ~ServiceWorkerEventMetrics() {
+    ServiceWorkerMetrics::RecordEventStatus(fired_events, handled_events);
+  }
+
+  void RecordEventStatus(bool handled) {
+    ++fired_events;
+    if (handled)
+      ++handled_events;
+  }
+
+ private:
+  size_t fired_events = 0;
+  size_t handled_events = 0;
+  DISALLOW_COPY_AND_ASSIGN(ServiceWorkerEventMetrics);
+};
+
 ServiceWorkerVersion::ServiceWorkerVersion(
     ServiceWorkerRegistration* registration,
     const GURL& script_url,
     int64 version_id,
     base::WeakPtr<ServiceWorkerContextCore> context)
     : version_id_(version_id),
-      registration_id_(kInvalidServiceWorkerVersionId),
+      registration_id_(registration->id()),
       script_url_(script_url),
+      scope_(registration->pattern()),
       status_(NEW),
       context_(context),
       script_cache_map_(this, context),
       ping_state_(NOT_PINGING),
+      metrics_(new ServiceWorkerEventMetrics),
       weak_factory_(this) {
   DCHECK(context_);
   DCHECK(registration);
-  if (registration) {
-    registration_id_ = registration->id();
-    scope_ = registration->pattern();
-  }
   context_->AddLiveVersion(this);
   embedded_worker_ = context_->embedded_worker_registry()->CreateWorker();
   embedded_worker_->AddListener(this);
@@ -452,9 +471,16 @@ void ServiceWorkerVersion::StartWorker(
     bool pause_after_download,
     const StatusCallback& callback) {
   if (!context_) {
+    RecordStartWorkerResult(SERVICE_WORKER_ERROR_ABORT);
     RunSoon(base::Bind(callback, SERVICE_WORKER_ERROR_ABORT));
     return;
   }
+  if (is_redundant()) {
+    RecordStartWorkerResult(SERVICE_WORKER_ERROR_REDUNDANT);
+    RunSoon(base::Bind(callback, SERVICE_WORKER_ERROR_REDUNDANT));
+    return;
+  }
+  prestart_status_ = status_;
 
   // Ensure the live registration during starting worker so that the worker can
   // get associated with it in SWDispatcherHost::OnSetHostedVersionId().
@@ -506,7 +532,7 @@ void ServiceWorkerVersion::StartUpdate() {
       context_->GetLiveRegistration(registration_id_);
   if (!registration || !registration->GetNewestVersion())
     return;
-  context_->UpdateServiceWorker(registration);
+  context_->UpdateServiceWorker(registration, false /* force_bypass_cache */);
 }
 
 void ServiceWorkerVersion::DispatchMessageEvent(
@@ -643,26 +669,24 @@ void ServiceWorkerVersion::DispatchSyncEvent(const StatusCallback& callback) {
 
 void ServiceWorkerVersion::DispatchNotificationClickEvent(
     const StatusCallback& callback,
-    const std::string& notification_id,
+    int64_t persistent_notification_id,
     const PlatformNotificationData& notification_data) {
   DCHECK_EQ(ACTIVATED, status()) << status();
   if (running_status() != RUNNING) {
     // Schedule calling this method after starting the worker.
-    StartWorker(base::Bind(&RunTaskAfterStartWorker,
-                           weak_factory_.GetWeakPtr(), callback,
-                           base::Bind(&self::DispatchNotificationClickEvent,
-                                      weak_factory_.GetWeakPtr(),
-                                      callback, notification_id,
-                                      notification_data)));
+    StartWorker(base::Bind(
+        &RunTaskAfterStartWorker, weak_factory_.GetWeakPtr(), callback,
+        base::Bind(&self::DispatchNotificationClickEvent,
+                   weak_factory_.GetWeakPtr(), callback,
+                   persistent_notification_id, notification_data)));
     return;
   }
 
   int request_id = AddRequest(callback, &notification_click_callbacks_,
                               REQUEST_NOTIFICATION_CLICK);
-  ServiceWorkerStatusCode status = embedded_worker_->SendMessage(
-      ServiceWorkerMsg_NotificationClickEvent(request_id,
-                                              notification_id,
-                                              notification_data));
+  ServiceWorkerStatusCode status =
+      embedded_worker_->SendMessage(ServiceWorkerMsg_NotificationClickEvent(
+          request_id, persistent_notification_id, notification_data));
   if (status != SERVICE_WORKER_OK) {
     notification_click_callbacks_.Remove(request_id);
     RunSoon(base::Bind(callback, status));
@@ -808,10 +832,6 @@ void ServiceWorkerVersion::RemoveControllee(
   if (HasControllee())
     return;
   FOR_EACH_OBSERVER(Listener, listeners_, OnNoControllees(this));
-  if (is_doomed_) {
-    DoomInternal();
-    return;
-  }
 }
 
 void ServiceWorkerVersion::AddStreamingURLRequestJob(
@@ -824,7 +844,7 @@ void ServiceWorkerVersion::AddStreamingURLRequestJob(
 void ServiceWorkerVersion::RemoveStreamingURLRequestJob(
     const ServiceWorkerURLRequestJob* request_job) {
   streaming_url_request_jobs_.erase(request_job);
-  if (is_doomed_)
+  if (is_redundant())
     StopWorkerIfIdle();
 }
 
@@ -846,12 +866,20 @@ void ServiceWorkerVersion::ReportError(ServiceWorkerStatusCode status,
   }
 }
 
+void ServiceWorkerVersion::SetStartWorkerStatusCode(
+    ServiceWorkerStatusCode status) {
+  start_worker_status_ = status;
+}
+
 void ServiceWorkerVersion::Doom() {
-  if (is_doomed_)
+  DCHECK(!HasControllee());
+  SetStatus(REDUNDANT);
+  StopWorkerIfIdle();
+  if (!context_)
     return;
-  is_doomed_ = true;
-  if (!HasControllee())
-    DoomInternal();
+  std::vector<ServiceWorkerDatabase::ResourceRecord> resources;
+  script_cache_map_.GetResources(&resources);
+  context_->storage()->PurgeResources(resources);
 }
 
 void ServiceWorkerVersion::SetDevToolsAttached(bool attached) {
@@ -929,7 +957,7 @@ void ServiceWorkerVersion::OnStopped(
   DCHECK_EQ(STOPPED, running_status());
   scoped_refptr<ServiceWorkerVersion> protect(this);
 
-  bool should_restart = !is_doomed() && !start_callbacks_.empty() &&
+  bool should_restart = !is_redundant() && !start_callbacks_.empty() &&
                         (old_status != EmbeddedWorkerInstance::STARTING);
 
   StopTimeoutTimer();
@@ -973,7 +1001,6 @@ void ServiceWorkerVersion::OnStopped(
 
   FOR_EACH_OBSERVER(Listener, listeners_, OnRunningStateChanged(this));
 
-  // Restart worker if we have any start callbacks and the worker isn't doomed.
   if (should_restart)
     StartWorkerInternal(false /* pause_after_download */);
 }
@@ -1141,7 +1168,7 @@ void ServiceWorkerVersion::OnActivateEventFinished(
 
   scoped_refptr<ServiceWorkerVersion> protect(this);
   callback->Run(rv);
-  RemoveCallbackAndStopIfDoomed(&activate_callbacks_, request_id);
+  RemoveCallbackAndStopIfRedundant(&activate_callbacks_, request_id);
 }
 
 void ServiceWorkerVersion::OnInstallEventFinished(
@@ -1164,7 +1191,7 @@ void ServiceWorkerVersion::OnInstallEventFinished(
 
   scoped_refptr<ServiceWorkerVersion> protect(this);
   callback->Run(status);
-  RemoveCallbackAndStopIfDoomed(&install_callbacks_, request_id);
+  RemoveCallbackAndStopIfRedundant(&install_callbacks_, request_id);
 }
 
 void ServiceWorkerVersion::OnFetchEventFinished(
@@ -1180,9 +1207,13 @@ void ServiceWorkerVersion::OnFetchEventFinished(
     return;
   }
 
+  // TODO(kinuko): Record other event statuses too.
+  const bool handled = (result == SERVICE_WORKER_FETCH_EVENT_RESULT_RESPONSE);
+  metrics_->RecordEventStatus(handled);
+
   scoped_refptr<ServiceWorkerVersion> protect(this);
   callback->Run(SERVICE_WORKER_OK, result, response);
-  RemoveCallbackAndStopIfDoomed(&fetch_callbacks_, request_id);
+  RemoveCallbackAndStopIfRedundant(&fetch_callbacks_, request_id);
 }
 
 void ServiceWorkerVersion::OnSyncEventFinished(
@@ -1198,7 +1229,7 @@ void ServiceWorkerVersion::OnSyncEventFinished(
 
   scoped_refptr<ServiceWorkerVersion> protect(this);
   callback->Run(SERVICE_WORKER_OK);
-  RemoveCallbackAndStopIfDoomed(&sync_callbacks_, request_id);
+  RemoveCallbackAndStopIfRedundant(&sync_callbacks_, request_id);
 }
 
 void ServiceWorkerVersion::OnNotificationClickEventFinished(
@@ -1214,7 +1245,7 @@ void ServiceWorkerVersion::OnNotificationClickEventFinished(
 
   scoped_refptr<ServiceWorkerVersion> protect(this);
   callback->Run(SERVICE_WORKER_OK);
-  RemoveCallbackAndStopIfDoomed(&notification_click_callbacks_, request_id);
+  RemoveCallbackAndStopIfRedundant(&notification_click_callbacks_, request_id);
 }
 
 void ServiceWorkerVersion::OnPushEventFinished(
@@ -1234,7 +1265,7 @@ void ServiceWorkerVersion::OnPushEventFinished(
 
   scoped_refptr<ServiceWorkerVersion> protect(this);
   callback->Run(status);
-  RemoveCallbackAndStopIfDoomed(&push_callbacks_, request_id);
+  RemoveCallbackAndStopIfRedundant(&push_callbacks_, request_id);
 }
 
 void ServiceWorkerVersion::OnGeofencingEventFinished(int request_id) {
@@ -1250,7 +1281,7 @@ void ServiceWorkerVersion::OnGeofencingEventFinished(int request_id) {
 
   scoped_refptr<ServiceWorkerVersion> protect(this);
   callback->Run(SERVICE_WORKER_OK);
-  RemoveCallbackAndStopIfDoomed(&geofencing_callbacks_, request_id);
+  RemoveCallbackAndStopIfRedundant(&geofencing_callbacks_, request_id);
 }
 
 void ServiceWorkerVersion::OnCrossOriginConnectEventFinished(
@@ -1268,7 +1299,8 @@ void ServiceWorkerVersion::OnCrossOriginConnectEventFinished(
 
   scoped_refptr<ServiceWorkerVersion> protect(this);
   callback->Run(SERVICE_WORKER_OK, accept_connection);
-  RemoveCallbackAndStopIfDoomed(&cross_origin_connect_callbacks_, request_id);
+  RemoveCallbackAndStopIfRedundant(&cross_origin_connect_callbacks_,
+                                   request_id);
 }
 
 void ServiceWorkerVersion::OnOpenWindow(int request_id, GURL url) {
@@ -1520,9 +1552,14 @@ void ServiceWorkerVersion::DidEnsureLiveRegistrationForStartWorker(
     const StatusCallback& callback,
     ServiceWorkerStatusCode status,
     const scoped_refptr<ServiceWorkerRegistration>& protect) {
-  if (status != SERVICE_WORKER_OK || is_doomed()) {
+  if (status != SERVICE_WORKER_OK) {
     RecordStartWorkerResult(status);
     RunSoon(base::Bind(callback, SERVICE_WORKER_ERROR_START_WORKER_FAILED));
+    return;
+  }
+  if (is_redundant()) {
+    RecordStartWorkerResult(SERVICE_WORKER_ERROR_REDUNDANT);
+    RunSoon(base::Bind(callback, SERVICE_WORKER_ERROR_REDUNDANT));
     return;
   }
 
@@ -1748,17 +1785,13 @@ void ServiceWorkerVersion::RecordStartWorkerResult(
   base::TimeTicks start_time = start_time_;
   ClearTick(&start_time_);
 
-  // Failing to start a doomed worker isn't interesting and very common when
-  // update dooms because the script is byte-to-byte identical.
-  if (is_doomed_ || status_ == REDUNDANT)
-    return;
-
-  ServiceWorkerMetrics::RecordStartWorkerStatus(status, IsInstalled(status_));
+  ServiceWorkerMetrics::RecordStartWorkerStatus(status,
+                                                IsInstalled(prestart_status_));
 
   if (status == SERVICE_WORKER_OK && !start_time.is_null() &&
       !skip_recording_startup_time_) {
     ServiceWorkerMetrics::RecordStartWorkerTime(GetTickDuration(start_time),
-                                                IsInstalled(status_));
+                                                IsInstalled(prestart_status_));
   }
 
   if (status != SERVICE_WORKER_ERROR_TIMEOUT)
@@ -1785,25 +1818,12 @@ void ServiceWorkerVersion::RecordStartWorkerResult(
                             EmbeddedWorkerInstance::STARTING_PHASE_MAX_VALUE);
 }
 
-void ServiceWorkerVersion::DoomInternal() {
-  DCHECK(is_doomed_);
-  DCHECK(!HasControllee());
-  SetStatus(REDUNDANT);
-  StopWorkerIfIdle();
-  if (!context_)
-    return;
-  std::vector<ServiceWorkerDatabase::ResourceRecord> resources;
-  script_cache_map_.GetResources(&resources);
-  context_->storage()->PurgeResources(resources);
-}
-
 template <typename IDMAP>
-void ServiceWorkerVersion::RemoveCallbackAndStopIfDoomed(
-    IDMAP* callbacks,
-    int request_id) {
+void ServiceWorkerVersion::RemoveCallbackAndStopIfRedundant(IDMAP* callbacks,
+                                                            int request_id) {
   RestartTick(&idle_time_);
   callbacks->Remove(request_id);
-  if (is_doomed_) {
+  if (is_redundant()) {
     // The stop should be already scheduled, but try to stop immediately, in
     // order to release worker resources soon.
     StopWorkerIfIdle();
@@ -1869,6 +1889,9 @@ ServiceWorkerStatusCode ServiceWorkerVersion::DeduceStartWorkerFailureReason(
     ServiceWorkerStatusCode default_code) {
   if (ping_state_ == PING_TIMED_OUT)
     return SERVICE_WORKER_ERROR_TIMEOUT;
+
+  if (start_worker_status_ != SERVICE_WORKER_OK)
+    return start_worker_status_;
 
   const net::URLRequestStatus& main_script_status =
       script_cache_map()->main_script_status();

@@ -215,7 +215,7 @@ class CONTENT_EXPORT ServiceWorkerVersion
   // This must be called when the status() is ACTIVATED.
   void DispatchNotificationClickEvent(
       const StatusCallback& callback,
-      const std::string& notification_id,
+      int64_t persistent_notification_id,
       const PlatformNotificationData& notification_data);
 
   // Sends push event to the associated embedded worker and asynchronously calls
@@ -286,13 +286,23 @@ class CONTENT_EXPORT ServiceWorkerVersion
   void ReportError(ServiceWorkerStatusCode status,
                    const std::string& status_message);
 
-  // Dooms this version to have REDUNDANT status and its resources deleted.  If
-  // the version is controlling a page, these changes will happen when the
-  // version no longer controls any pages.
+  // Sets the status code to pass to StartWorker callbacks if start fails.
+  void SetStartWorkerStatusCode(ServiceWorkerStatusCode status);
+
+  // Sets this version's status to REDUNDANT and deletes its resources.
+  // The version must not have controllees.
   void Doom();
-  bool is_doomed() const { return is_doomed_; }
+  bool is_redundant() const { return status_ == REDUNDANT; }
 
   bool skip_waiting() const { return skip_waiting_; }
+  void set_skip_waiting(bool skip_waiting) { skip_waiting_ = skip_waiting; }
+
+  bool force_bypass_cache_for_scripts() {
+    return force_bypass_cache_for_scripts_;
+  }
+  void set_force_bypass_cache_for_scripts(bool force_bypass_cache_for_scripts) {
+    force_bypass_cache_for_scripts_ = force_bypass_cache_for_scripts;
+  }
 
   void SetDevToolsAttached(bool attached);
 
@@ -306,11 +316,11 @@ class CONTENT_EXPORT ServiceWorkerVersion
  private:
   friend class base::RefCounted<ServiceWorkerVersion>;
   friend class ServiceWorkerURLRequestJobTest;
+  friend class ServiceWorkerVersionBrowserTest;
+
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerControlleeRequestHandlerTest,
                            ActivateWaitingVersion);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerVersionTest, IdleTimeout);
-  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerVersionTest, KeepAlive);
-  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerVersionTest, ListenerAvailability);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerVersionTest, SetDevToolsAttached);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerWaitForeverInFetchTest, RequestTimeout);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerFailToStartTest, Timeout);
@@ -318,7 +328,8 @@ class CONTENT_EXPORT ServiceWorkerVersion
                            TimeoutStartingWorker);
   FRIEND_TEST_ALL_PREFIXES(ServiceWorkerVersionBrowserTest,
                            TimeoutWorkerInEvent);
-  friend class ServiceWorkerVersionBrowserTest;
+
+  class ServiceWorkerEventMetrics;
 
   typedef ServiceWorkerVersion self;
   using ServiceWorkerClients = std::vector<ServiceWorkerClientInfo>;
@@ -465,10 +476,8 @@ class CONTENT_EXPORT ServiceWorkerVersion
   // and records metrics about startup.
   void RecordStartWorkerResult(ServiceWorkerStatusCode status);
 
-  void DoomInternal();
-
   template <typename IDMAP>
-  void RemoveCallbackAndStopIfDoomed(IDMAP* callbacks, int request_id);
+  void RemoveCallbackAndStopIfRedundant(IDMAP* callbacks, int request_id);
 
   template <typename CallbackType>
   int AddRequest(const CallbackType& callback,
@@ -485,9 +494,10 @@ class CONTENT_EXPORT ServiceWorkerVersion
       ServiceWorkerStatusCode default_code);
 
   const int64 version_id_;
-  int64 registration_id_;
-  GURL script_url_;
-  GURL scope_;
+  const int64 registration_id_;
+  const GURL script_url_;
+  const GURL scope_;
+
   Status status_;
   scoped_ptr<EmbeddedWorkerInstance> embedded_worker_;
   std::vector<StatusCallback> start_callbacks_;
@@ -532,12 +542,20 @@ class CONTENT_EXPORT ServiceWorkerVersion
   // callback map).
   std::queue<RequestInfo> requests_;
 
-  bool is_doomed_ = false;
   bool skip_waiting_ = false;
   bool skip_recording_startup_time_ = false;
+  bool force_bypass_cache_for_scripts_ = false;
 
   std::vector<int> pending_skip_waiting_requests_;
   scoped_ptr<net::HttpResponseInfo> main_script_http_info_;
+
+  // The status when StartWorker was invoked. Used for UMA.
+  Status prestart_status_ = NEW;
+  // If not OK, the reason that StartWorker failed. Used for
+  // running |start_callbacks_|.
+  ServiceWorkerStatusCode start_worker_status_ = SERVICE_WORKER_OK;
+
+  scoped_ptr<ServiceWorkerEventMetrics> metrics_;
 
   base::WeakPtrFactory<ServiceWorkerVersion> weak_factory_;
 

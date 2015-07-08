@@ -429,11 +429,12 @@
           'dependencies': [
             '../base/base.gyp:base',
             '../device/battery/battery.gyp:device_battery_java',
+            '../device/bluetooth/bluetooth.gyp:device_bluetooth_java',
             '../device/vibration/vibration.gyp:device_vibration_java',
             '../media/media.gyp:media_java',
+            '../mojo/mojo_base.gyp:mojo_application_bindings',
             '../mojo/mojo_base.gyp:mojo_system_java',
             '../net/net.gyp:net',
-            '../third_party/mojo/mojo_public.gyp:mojo_application_bindings',
             '../third_party/mojo/mojo_public.gyp:mojo_bindings_java',
             '../ui/android/ui_android.gyp:ui_java',
             '../ui/touch_selection/ui_touch_selection.gyp:selection_event_type_java',
@@ -449,6 +450,7 @@
             'navigation_controller_java',
             'popup_item_type_java',
             'result_codes_java',
+            'readback_response_java',
             'speech_recognition_error_java',
             'top_controls_state_java',
             'screen_orientation_values_java',
@@ -518,6 +520,14 @@
           'type': 'none',
           'variables': {
             'source_file': 'browser/android/content_view_core_impl.cc',
+          },
+          'includes': [ '../build/android/java_cpp_enum.gypi' ],
+        },
+        {
+          'target_name': 'readback_response_java',
+          'type': 'none',
+          'variables': {
+            'source_file': 'public/browser/readback_types.h',
           },
           'includes': [ '../build/android/java_cpp_enum.gypi' ],
         },

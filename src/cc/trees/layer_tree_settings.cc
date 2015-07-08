@@ -51,10 +51,8 @@ LayerTreeSettings::LayerTreeSettings()
       max_untiled_layer_size(gfx::Size(512, 512)),
       default_tile_grid_size(gfx::Size(256, 256)),
       minimum_occlusion_tracking_size(gfx::Size(160, 160)),
-      use_pinch_zoom_scrollbars(false),
       use_pinch_virtual_viewport(false),
-      // At 256x256 tiles, 128 tiles cover an area of 2048x4096 pixels.
-      max_tiles_for_interest_area(128),
+      tiling_interest_area_viewport_multiplier(9.0f),
       skewport_target_time_in_seconds(1.0f),
       skewport_extrapolation_limit_in_content_pixels(2000),
       max_unused_resource_memory_percentage(100),
@@ -69,6 +67,7 @@ LayerTreeSettings::LayerTreeSettings()
       use_occlusion_for_tile_prioritization(false),
       record_full_layer(false),
       use_display_lists(false),
+      use_cached_picture_in_display_list(true),
       verify_property_trees(false),
       gather_pixel_refs(false),
       use_compositor_animation_timelines(false) {

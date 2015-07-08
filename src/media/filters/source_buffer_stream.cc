@@ -337,6 +337,11 @@ bool SourceBufferStream::Append(const BufferQueue& buffers) {
 
     track_buffer_.insert(track_buffer_.end(), deleted_buffers.begin(),
                          deleted_buffers.end());
+    DVLOG(3) << __FUNCTION__ << " Added " << deleted_buffers.size()
+             << " deleted buffers to track buffer. TB size is now "
+             << track_buffer_.size();
+  } else {
+    DVLOG(3) << __FUNCTION__ << " No deleted buffers for track buffer";
   }
 
   // Prune any extra buffers in |track_buffer_| if new keyframes
@@ -824,11 +829,14 @@ void SourceBufferStream::PrepareRangesForNextAppend(
   DecodeTimestamp end = new_buffers.back()->GetDecodeTimestamp();
   base::TimeDelta duration = new_buffers.back()->duration();
 
-  if (duration != kNoTimestamp() && duration > base::TimeDelta()) {
+  // Set end time for remove to include the duration of last buffer. If the
+  // duration is estimated, use 1 microsecond instead to ensure frames are not
+  // accidentally removed due to over-estimation.
+  if (duration != kNoTimestamp() && duration > base::TimeDelta() &&
+      !new_buffers.back()->is_duration_estimated()) {
     end += duration;
   } else {
-    // TODO(acolwell): Ensure all buffers actually have proper
-    // duration info so that this hack isn't needed.
+    // TODO(chcunningham): Emit warning when 0ms durations are not expected.
     // http://crbug.com/312836
     end += base::TimeDelta::FromInternalValue(1);
   }
@@ -920,7 +928,7 @@ void SourceBufferStream::Seek(base::TimeDelta timestamp) {
 }
 
 bool SourceBufferStream::IsSeekPending() const {
-  return !(end_of_stream_ && IsEndSelected()) && seek_pending_;
+  return seek_pending_ && !IsEndOfStreamReached();
 }
 
 void SourceBufferStream::OnSetDuration(base::TimeDelta duration) {
@@ -1077,6 +1085,7 @@ SourceBufferStream::Status SourceBufferStream::GetNextBufferInternal(
       return kConfigChange;
     }
 
+    DVLOG(3) << __FUNCTION__ << " Next buffer coming from track_buffer_";
     *out_buffer = next_buffer;
     track_buffer_.pop_front();
     last_output_buffer_timestamp_ = (*out_buffer)->GetDecodeTimestamp();
@@ -1089,9 +1098,11 @@ SourceBufferStream::Status SourceBufferStream::GetNextBufferInternal(
     return kSuccess;
   }
 
+  DCHECK(track_buffer_.empty());
   if (!selected_range_ || !selected_range_->HasNextBuffer()) {
-    if (end_of_stream_ && IsEndSelected())
+    if (IsEndOfStreamReached()) {
       return kEndOfStream;
+    }
     DVLOG(3) << __FUNCTION__ << " " << GetStreamTypeName()
              << ": returning kNeedBuffer "
              << (selected_range_ ? "(selected range has no next buffer)"
@@ -1196,7 +1207,10 @@ void SourceBufferStream::UnmarkEndOfStream() {
   end_of_stream_ = false;
 }
 
-bool SourceBufferStream::IsEndSelected() const {
+bool SourceBufferStream::IsEndOfStreamReached() const {
+  if (!end_of_stream_ || !track_buffer_.empty())
+    return false;
+
   if (ranges_.empty())
     return true;
 
@@ -1205,6 +1219,9 @@ bool SourceBufferStream::IsEndSelected() const {
         ranges_.back()->GetBufferedEndTimestamp().ToPresentationTime();
     return seek_buffer_timestamp_ >= last_range_end_time;
   }
+
+  if (!selected_range_)
+    return true;
 
   return selected_range_ == ranges_.back();
 }

@@ -223,12 +223,15 @@ public:
     // respectively.
     virtual void setZoomPercent(int value) = 0;
 
-    // Find text on the current page. To clear highlighted results send an
-    // empty search string. Sending the same search string again implies
-    // continuing the search forward or backward depending on the value of
-    // the third argument.
+    // Find text on the current page.  Sending the same search string again
+    // implies continuing the search forward or backward depending on the value
+    // of the third argument.
     virtual void find(const StringRef& text, bool matchCase,
                       bool forward = true) = 0;
+
+    // Stop the current find operation, optionally preserving the selection of
+    // the active item.
+    virtual void stopFind(bool preserveSelection) = 0;
 
     // Replace current misspelling with 'text'. This should be called by
     // context menu handlers.

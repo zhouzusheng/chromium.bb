@@ -107,6 +107,7 @@ class WebViewHost : public ProcessHostListener,
     void onEnableCustomTooltip(bool enabled);
     void onSetZoomPercent(int value);
     void onFind(const FindOnPageRequest& value);
+    void onStopFind(bool preserveSelection);
     void onReplaceMisspelledRange(const std::string& text);
     void onRootWindowPositionChanged();
     void onRootWindowSettingsChanged();

@@ -71,11 +71,6 @@
       }, {  # otherwise, assume Chrome/Chromium.
         'ffmpeg_branding%': '<(branding)',
       }],
-      ['bb_version!=""', {
-        'ffmpeg_product_name%': 'ffmpegsumo.<(bb_version)',
-      }, {
-        'ffmpeg_product_name%': 'ffmpegsumo',
-      }],
     ],
 
     'build_ffmpegsumo%': 1,
@@ -189,7 +184,6 @@
             '<@(c_sources)',
             '<(platform_config_root)/config.h',
             '<(platform_config_root)/libavutil/avconfig.h',
-            'ffmpeg.rc',
           ],
           'include_dirs': [
             '<(platform_config_root)',

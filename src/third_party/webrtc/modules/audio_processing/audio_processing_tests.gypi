@@ -9,6 +9,18 @@
 {
   'targets': [
     {
+      'target_name': 'audioproc_test_utils',
+      'type': 'static_library',
+      'dependencies': [
+        '<(webrtc_root)/base/base.gyp:rtc_base_approved',
+        '<(webrtc_root)/common_audio/common_audio.gyp:common_audio',
+      ],
+      'sources': [
+        'test/test_utils.cc',
+        'test/test_utils.h',
+      ],
+    },
+    {
       'target_name': 'transient_suppression_test',
       'type': 'executable',
       'dependencies': [
@@ -38,13 +50,12 @@
       'target_name': 'nonlinear_beamformer_test',
       'type': 'executable',
       'dependencies': [
+        'audioproc_test_utils',
         '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
         '<(webrtc_root)/modules/modules.gyp:audio_processing',
       ],
       'sources': [
         'beamformer/nonlinear_beamformer_test.cc',
-        'beamformer/pcm_utils.cc',
-        'beamformer/pcm_utils.h',
       ],
     }, # nonlinear_beamformer_test
   ],
@@ -65,11 +76,24 @@
           'includes': [ '../../build/protoc.gypi', ],
         },
         {
+          'target_name': 'audioproc_protobuf_utils',
+          'type': 'static_library',
+          'dependencies': [
+            'audioproc_debug_proto',
+          ],
+          'sources': [
+            'test/protobuf_utils.cc',
+            'test/protobuf_utils.h',
+          ],
+        },
+        {
           'target_name': 'audioproc',
           'type': 'executable',
           'dependencies': [
             'audio_processing',
             'audioproc_debug_proto',
+            'audioproc_test_utils',
+            'audioproc_protobuf_utils',
             '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
             '<(webrtc_root)/test/test.gyp:test_support',
           ],
@@ -81,6 +105,8 @@
           'dependencies': [
             'audio_processing',
             'audioproc_debug_proto',
+            'audioproc_test_utils',
+            'audioproc_protobuf_utils',
             '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
           ],
           'sources': [ 'test/audioproc_float.cc', ],
@@ -90,6 +116,8 @@
           'type': 'executable',
           'dependencies': [
             'audioproc_debug_proto',
+            'audioproc_test_utils',
+            'audioproc_protobuf_utils',
             '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
             '<(webrtc_root)/common_audio/common_audio.gyp:common_audio',
             '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',

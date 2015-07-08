@@ -84,6 +84,11 @@
             'platform/atk_util_auralinux.h',
           ],
         }],
+        ['OS=="android"', {
+          'dependencies': [
+            'ui_accessibility_java'
+          ],
+        }],
       ],
     },
     {
@@ -117,7 +122,7 @@
         'ax_text_utils_unittest.cc',
         'ax_tree_serializer_unittest.cc',
         'ax_tree_unittest.cc',
-	'platform/ax_platform_node_win_unittest.cc'
+        'platform/ax_platform_node_win_unittest.cc'
       ],
       'conditions': [
         ['OS=="win"', {

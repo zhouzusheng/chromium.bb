@@ -21,6 +21,7 @@
 #include "content/public/common/renderer_preferences.h"
 
 // SHEZ: Remove test-only code.
+// #include "content/shell/browser/blink_test_controller.h"
 // #include "content/shell/browser/layout_test/layout_test_devtools_frontend.h"
 // #include "content/shell/browser/layout_test/layout_test_javascript_dialog_manager.h"
 
@@ -29,7 +30,6 @@
 #include "content/shell/browser/shell_content_browser_client.h"
 #include "content/shell/browser/shell_devtools_frontend.h"
 #include "content/shell/browser/shell_javascript_dialog_manager.h"
-#include "content/shell/browser/webkit_test_controller.h"
 #include "content/shell/common/shell_messages.h"
 #include "content/shell/common/shell_switches.h"
 
@@ -326,6 +326,15 @@ bool Shell::IsFullscreenForTabOrPending(const WebContents* web_contents) const {
 #endif
 }
 
+blink::WebDisplayMode Shell::GetDisplayMode(
+    const WebContents* web_contents) const {
+ // TODO : should return blink::WebDisplayModeFullscreen wherever user puts
+ // a browser window into fullscreen (not only in case of renderer-initiated
+ // fullscreen mode): crbug.com/476874.
+ return IsFullscreenForTabOrPending(web_contents) ?
+     blink::WebDisplayModeFullscreen : blink::WebDisplayModeBrowser;
+}
+
 void Shell::RequestToLockMouse(WebContents* web_contents,
                                bool user_gesture,
                                bool last_unlocked_by_target) {
@@ -383,7 +392,7 @@ void Shell::RendererUnresponsive(WebContents* source) {
     return;
   // SHEZ: Remove test code.
 #if 0
-  WebKitTestController::Get()->RendererUnresponsive();
+  BlinkTestController::Get()->RendererUnresponsive();
 #endif
 }
 
@@ -401,18 +410,12 @@ void Shell::WorkerCrashed(WebContents* source) {
     return;
   // SHEZ: Remove test code.
 #if 0
-  WebKitTestController::Get()->WorkerCrashed();
+  BlinkTestController::Get()->WorkerCrashed();
 #endif
 }
 
 bool Shell::HandleContextMenu(const content::ContextMenuParams& params) {
   return PlatformHandleContextMenu(params);
-}
-
-void Shell::WebContentsFocused(WebContents* contents) {
-#if defined(TOOLKIT_VIEWS)
-  PlatformWebContentsFocused(contents);
-#endif
 }
 
 gfx::Size Shell::GetShellDefaultSize() {

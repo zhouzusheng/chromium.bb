@@ -120,8 +120,13 @@
           ],
         }],
         ['target_arch=="ia32" or target_arch=="x64"', {
-          'cflags': [
-            '-msse2',
+          'conditions': [
+            ['os_posix==1', {
+              'cflags': [ '-msse2', ],
+              'xcode_settings': {
+                'OTHER_CFLAGS': [ '-msse2', ],
+              },
+            }],
           ],
           'sources': [
             # Real 32-bit floating-point FFT.
@@ -202,6 +207,22 @@
             'sp/src/arm/armv7/omxSP_FFTInv_CCSToR_F32_Sfs_s.S',
           ],
           'conditions': [
+            ['arm_neon_optional==1', {
+              # Run-time NEON detection.
+              'dependencies': [
+                '../../../build/android/ndk.gyp:cpu_features',
+              ],
+              'link_settings' : {
+                'libraries': [
+                  # To get the __android_log_print routine
+                  '-llog',
+                ],
+              },
+              'sources': [
+                # Detection routine
+                'sp/src/arm/detect.c',
+              ],
+            }],
           ],
         },
         {

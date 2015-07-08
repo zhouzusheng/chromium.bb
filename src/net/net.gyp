@@ -5,7 +5,9 @@
 {
   'variables': {
     'chromium_code': 1,
-
+    # Defines an extra set of libs with an alternate copy of org.apache.http.
+    # TODO(yfriedman): Remove this when crbug.com/488192 is fixed.
+    'net_test_extra_libs': [],
     'linux_link_kerberos%': 0,
     'conditions': [
       ['chromeos==1 or embedded==1 or OS=="android" or OS=="ios"', {
@@ -103,6 +105,7 @@
       ],
     },
     {
+      # GN version: //net
       'target_name': 'net',
       'dependencies': [
         '../base/base.gyp:base_i18n',
@@ -120,6 +123,7 @@
       'includes': [ 'net_common.gypi' ],
     },
     {
+      # GN version: //net:net_unittests
       'target_name': 'net_unittests',
       'type': '<(gtest_target_type)',
       'dependencies': [
@@ -167,17 +171,17 @@
           'sources!': [
             # See bug http://crbug.com/344533.
             'disk_cache/blockfile/index_table_v3_unittest.cc',
-            # No res_ninit() et al on Android, so this doesn't make a lot of
-            # sense.
-            'dns/dns_config_service_posix_unittest.cc',
           ],
           'dependencies': [
             'net_javatests',
             'net_test_jni_headers',
           ],
         }],
-        [ 'use_nss != 1', {
+        [ 'use_nss_certs != 1', {
           'sources!': [
+            'cert/nss_cert_database_unittest.cc',
+            'cert/nss_cert_database_chromeos_unittest.cc',
+            'cert/nss_profile_filter_chromeos_unittest.cc',
             'ssl/client_cert_store_chromeos_unittest.cc',
             'ssl/client_cert_store_nss_unittest.cc',
           ],
@@ -187,7 +191,8 @@
           'dependencies': [
             '../third_party/boringssl/boringssl.gyp:boringssl',
           ],
-        }, {  # use_openssl == 0
+        }],
+        [ 'use_nss_certs == 1 or OS == "ios" or use_openssl == 0', {
           'conditions': [
             [ 'desktop_linux == 1 or chromeos == 1', {
               'dependencies': [
@@ -198,9 +203,6 @@
                 '../third_party/nss/nss.gyp:nspr',
                 '../third_party/nss/nss.gyp:nss',
                 'third_party/nss/ssl.gyp:libssl',
-              ],
-              'sources!': [
-                'cert/nss_cert_database_unittest.cc',
               ],
             }],
           ],
@@ -230,7 +232,7 @@
           # Only include this test when on Posix and using NSS for
           # cert verification or on iOS (which also uses NSS for certs).
           'sources!': [
-            'ocsp/nss_ocsp_unittest.cc',
+            'cert_net/nss_ocsp_unittest.cc',
           ],
         }],
         [ 'use_openssl==1', {
@@ -239,9 +241,6 @@
             # TODO(bulach): Add equivalent tests when the underlying
             #               functionality is ported to OpenSSL.
             'sources!': [
-              'cert/nss_cert_database_chromeos_unittest.cc',
-              'cert/nss_cert_database_unittest.cc',
-              'cert/nss_profile_filter_chromeos_unittest.cc',
               'cert/x509_util_nss_unittest.cc',
               'quic/test_tools/crypto_test_utils_nss.cc',
             ],
@@ -250,7 +249,7 @@
               'cert/x509_util_openssl_unittest.cc',
               'quic/test_tools/crypto_test_utils_openssl.cc',
               'socket/ssl_client_socket_openssl_unittest.cc',
-              'socket/ssl_session_cache_openssl_unittest.cc',
+              'ssl/ssl_client_session_cache_openssl_unittest.cc',
             ],
           },
         ],
@@ -319,6 +318,7 @@
               'proxy/load_state_change_coalescer_unittest.cc',
               'proxy/mojo_proxy_resolver_factory_impl_unittest.cc',
               'proxy/mojo_proxy_resolver_impl_unittest.cc',
+              'proxy/proxy_resolver_error_observer_mojo_unittest.cc',
               'proxy/proxy_resolver_mojo_unittest.cc',
               'proxy/proxy_service_mojo_unittest.cc',
             ],
@@ -377,6 +377,7 @@
               # Need to read input data files.
               'filter/gzip_filter_unittest.cc',
               # Need TestServer.
+              "cert_net/cert_net_fetcher_impl_unittest.cc",
               'proxy/proxy_script_fetcher_impl_unittest.cc',
               'socket/ssl_client_socket_unittest.cc',
               'socket/ssl_server_socket_unittest.cc',
@@ -397,12 +398,6 @@
               'disk_cache/blockfile/index_table_v3_unittest.cc',
             ],
         }],
-        [ 'OS == "android"', {
-            'sources!': [
-              'dns/dns_config_service_posix_unittest.cc',
-            ],
-          },
-        ],
         ['OS == "android"', {
           # TODO(mmenke):  This depends on test_support_base, which depends on
           #                icu.  Figure out a way to remove that dependency.
@@ -420,7 +415,7 @@
             ],
           },
         ],
-        ['v8_use_external_startup_data==1', {
+        ['use_v8_in_net==1 and v8_use_external_startup_data==1', {
           'dependencies': [
             '../gin/gin.gyp:gin',
           ]
@@ -573,7 +568,7 @@
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [4267, ],
     },
-    {
+    { # GN version: //net:balsa
       'target_name': 'balsa',
       'type': 'static_library',
       'dependencies': [
@@ -597,8 +592,8 @@
         'tools/balsa/split.cc',
         'tools/balsa/split.h',
         'tools/balsa/string_piece_utils.h',
-        'tools/quic/spdy_utils.cc',
-        'tools/quic/spdy_utils.h',
+        'tools/quic/spdy_balsa_utils.cc',
+        'tools/quic/spdy_balsa_utils.h',
       ],
     },
     {
@@ -753,6 +748,8 @@
             'proxy/mojo_proxy_resolver_factory_impl.h',
             'proxy/mojo_proxy_resolver_impl.cc',
             'proxy/mojo_proxy_resolver_impl.h',
+            'proxy/proxy_resolver_error_observer_mojo.cc',
+            'proxy/proxy_resolver_error_observer_mojo.h',
           ],
           'dependencies': [
             'mojo_type_converters',

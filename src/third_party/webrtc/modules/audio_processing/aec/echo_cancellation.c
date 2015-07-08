@@ -171,11 +171,11 @@ int32_t WebRtcAec_Create(void** aecInst) {
   return 0;
 }
 
-int32_t WebRtcAec_Free(void* aecInst) {
+void WebRtcAec_Free(void* aecInst) {
   Aec* aecpc = aecInst;
 
   if (aecpc == NULL) {
-    return -1;
+    return;
   }
 
   WebRtc_FreeBuffer(aecpc->far_pre_buf);
@@ -189,8 +189,6 @@ int32_t WebRtcAec_Free(void* aecInst) {
   WebRtcAec_FreeAec(aecpc->aec);
   WebRtcAec_FreeResampler(aecpc->resampler);
   free(aecpc);
-
-  return 0;
 }
 
 int32_t WebRtcAec_Init(void* aecInst, int32_t sampFreq, int32_t scSampFreq) {
@@ -791,9 +789,15 @@ static void ProcessExtended(Aec* self,
     // measurement.
     int startup_size_ms =
         reported_delay_ms < kFixedDelayMs ? kFixedDelayMs : reported_delay_ms;
-    int overhead_elements = (WebRtcAec_system_delay(self->aec) -
-                             startup_size_ms / 2 * self->rate_factor * 8) /
-                            PART_LEN;
+    int target_delay = startup_size_ms * self->rate_factor * 8;
+#if !defined(WEBRTC_ANDROID)
+    // To avoid putting the AEC in a non-causal state we're being slightly
+    // conservative and scale by 2. On Android we use a fixed delay and
+    // therefore there is no need to scale the target_delay.
+    target_delay /= 2;
+#endif
+    int overhead_elements =
+        (WebRtcAec_system_delay(self->aec) - target_delay) / PART_LEN;
     WebRtcAec_MoveFarReadPtr(self->aec, overhead_elements);
     self->startup_phase = 0;
   }

@@ -88,9 +88,6 @@ class EmptyPrintWebViewHelperDelegate : public PrintWebViewHelper::Delegate {
   blink::WebElement GetPdfElement(blink::WebLocalFrame* frame) override {
     return blink::WebElement();
   }
-  bool IsOutOfProcessPdfEnabled() override {
-    return false;
-  }
   bool IsPrintPreviewEnabled() override {
     return false;
   }
@@ -935,8 +932,7 @@ void PrintWebViewHelper::OnPrintForPrintPreview(
   // the element with ID "pdf-viewer" if it isn't an iframe.
   blink::WebLocalFrame* plugin_frame = pdf_element.document().frame();
   blink::WebElement plugin_element = pdf_element;
-  if (delegate_->IsOutOfProcessPdfEnabled() &&
-      pdf_element.hasHTMLTagName("iframe")) {
+  if (pdf_element.hasHTMLTagName("iframe")) {
     plugin_frame = blink::WebLocalFrame::fromFrameOwnerElement(pdf_element);
     plugin_element = delegate_->GetPdfElement(plugin_frame);
     if (plugin_element.isNull()) {

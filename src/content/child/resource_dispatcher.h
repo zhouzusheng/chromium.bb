@@ -46,6 +46,15 @@ struct ResourceResponseHead;
 struct SiteIsolationResponseMetaData;
 struct SyncLoadResponse;
 
+// TODO(shez): Move this into its own header.
+class ResourceLoaderBridge {
+ public:
+  virtual ~ResourceLoaderBridge() {}
+  virtual bool Start(content::RequestPeer* peer) = 0;
+  virtual void Cancel() = 0;
+  virtual void SyncLoad(content::SyncLoadResponse* response) = 0;
+};
+
 // This class serves as a communication interface to the ResourceDispatcherHost
 // in the browser process. It can be used from any child process.
 // Virtual methods are for tests.
@@ -136,6 +145,7 @@ class CONTENT_EXPORT ResourceDispatcher : public IPC::Listener {
     PendingRequestInfo();
 
     PendingRequestInfo(RequestPeer* peer,
+                       ResourceLoaderBridge* bridge,
                        ResourceType resource_type,
                        int origin_pid,
                        const GURL& frame_origin,
@@ -145,6 +155,7 @@ class CONTENT_EXPORT ResourceDispatcher : public IPC::Listener {
     ~PendingRequestInfo();
 
     RequestPeer* peer;
+    ResourceLoaderBridge* bridge;
     ThreadedDataProvider* threaded_data_provider;
     ResourceType resource_type;
     // The PID of the original process which issued this request. This gets

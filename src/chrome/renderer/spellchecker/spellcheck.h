@@ -5,18 +5,20 @@
 #ifndef CHROME_RENDERER_SPELLCHECKER_SPELLCHECK_H_
 #define CHROME_RENDERER_SPELLCHECKER_SPELLCHECK_H_
 
+#include <map>
 #include <string>
 #include <vector>
 
 #include "base/files/file.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
+#include "chrome/common/spellcheck_common.h"
 #include "chrome/renderer/spellchecker/custom_dictionary_engine.h"
 #include "chrome/renderer/spellchecker/spellcheck_language.h"
 #include "content/public/renderer/render_process_observer.h"
-#include "ipc/ipc_platform_file.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
 
 struct SpellCheckResult;
@@ -44,9 +46,9 @@ class SpellCheck : public content::RenderProcessObserver,
   ~SpellCheck() override;
 
   // TODO: Try to move that all to SpellcheckLanguage.
-  void Init(base::File file,
+  void Init(const std::vector<chrome::spellcheck_common::FileLanguagePair>& languages,
             const std::set<std::string>& custom_words,
-            const std::string& language);
+            const std::map<std::string, std::string>& autocorrect_words);
 
   // If there is no dictionary file, then this requests one from the browser
   // and does not block. In this case it returns true.
@@ -71,6 +73,7 @@ class SpellCheck : public content::RenderProcessObserver,
                       int tag,
                       int* misspelling_start,
                       int* misspelling_len,
+                      bool checkForContractions,
                       std::vector<base::string16>* optional_suggestions);
 
   // SpellCheck a paragraph.
@@ -114,18 +117,31 @@ class SpellCheck : public content::RenderProcessObserver,
    FRIEND_TEST_ALL_PREFIXES(SpellCheckTest,
        RequestSpellCheckMultipleTimesWithoutInitialization);
 
+   bool SpellCheckWordInScript(
+       const ScopedVector<SpellcheckLanguage>& languages,
+       const base::char16* in_word,
+       int in_word_len,
+       int tag,
+       int* misspelling_start,
+       int* misspelling_len,
+       bool checkForContractions,
+       std::set<base::string16>* suggestions_set);
+
   // RenderProcessObserver implementation:
    bool OnControlMessageReceived(const IPC::Message& message) override;
 
   // Message handlers.
-  void OnInit(IPC::PlatformFileForTransit bdict_file,
+  void OnInit(const std::vector<chrome::spellcheck_common::FileLanguagePair>& languages,
               const std::set<std::string>& custom_words,
-              const std::string& language,
-              bool auto_spell_correct);
+              const std::map<std::string, std::string>& autocorrect_words,
+              int auto_spell_correct_behavior);
   void OnCustomDictionaryChanged(
       const std::vector<std::string>& words_added,
       const std::vector<std::string>& words_removed);
-  void OnEnableAutoSpellCorrect(bool enable);
+  void OnAutocorrectWordsChanged(
+      const std::map<std::string, std::string>& words_added,
+      const std::vector<std::string>& words_removed);
+  void OnSetAutoSpellCorrectBehavior(int flags);
   void OnEnableSpellCheck(bool enable);
   void OnRequestDocumentMarkers();
 
@@ -145,13 +161,17 @@ class SpellCheck : public content::RenderProcessObserver,
   scoped_ptr<SpellcheckRequest> pending_request_param_;
 #endif
 
-  SpellcheckLanguage spellcheck_;  // Language-specific spellchecking code.
+  std::map<UScriptCode,ScopedVector<SpellcheckLanguage> > spellcheck_;  // Language-specific spellchecking code.
 
   // Custom dictionary spelling engine.
   CustomDictionaryEngine custom_dictionary_;
 
-  // Remember state for auto spell correct.
-  bool auto_spell_correct_turned_on_;
+  // Mapping of bad words to good words for autocorrect.
+  std::map<base::string16, base::string16> autocorrect_words_;
+
+  // Flags for auto-spell-correct behavior.  See spellcheck_common for flags
+  // enum.
+  int auto_spell_correct_behavior_;
 
   // Remember state for spellchecking.
   bool spellcheck_enabled_;

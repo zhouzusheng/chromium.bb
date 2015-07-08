@@ -47,16 +47,24 @@ static const double minimumInterval = 0.004;
 
 static inline bool shouldForwardUserGesture(int interval, int nestingLevel)
 {
-    return UserGestureIndicator::processingUserGesture()
+    return isMainThread()
+        && UserGestureIndicator::processingUserGesture()
         && interval <= maxIntervalForUserGestureForwarding
         && nestingLevel == 1; // Gestures should not be forwarded to nested timers.
+}
+
+static double s_hiddenPageAlignmentInterval = 1.0;
+void DOMTimer::setHiddenPageAlignmentInterval(double interval)
+{
+    s_hiddenPageAlignmentInterval = interval;
 }
 
 double DOMTimer::hiddenPageAlignmentInterval()
 {
     // Timers on hidden pages are aligned so that they fire once per
     // second at most.
-    return 1.0;
+    // SHEZ: made this configurable from outside
+    return s_hiddenPageAlignmentInterval;
 }
 
 double DOMTimer::visiblePageAlignmentInterval()

@@ -109,6 +109,7 @@ class WebContents : public PageNavigator,
     // WebContents make the assignment.
     int routing_id;
     int main_frame_routing_id;
+    int render_process_affinity;
 
     // The name of the top-level frame of the new window. It is non-empty
     // when creating a named window (e.g. <a target="foo"> or

@@ -202,10 +202,6 @@ void WebViewImpl::handleFindRequest(const FindOnPageRequest& request)
     DCHECK(Statics::isInBrowserMainThread());
     DCHECK(!d_wasDestroyed);
 
-    if (!request.reqId) {
-        d_webContents->StopFinding(content::STOP_FIND_ACTION_ACTIVATE_SELECTION);
-        return;
-    }
     blink::WebFindOptions options;
     options.findNext = request.findNext;
     options.forward = request.forward;
@@ -295,6 +291,14 @@ void WebViewImpl::find(const StringRef& text, bool matchCase, bool forward)
     if (!d_find) d_find.reset(new FindOnPage());
 
     handleFindRequest(d_find->makeRequest(text, matchCase, forward));
+}
+
+void WebViewImpl::stopFind(bool preserveSelection)
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    DCHECK(!d_wasDestroyed);
+
+    d_webContents->StopFinding(preserveSelection ? content::STOP_FIND_ACTION_ACTIVATE_SELECTION : content::STOP_FIND_ACTION_CLEAR_SELECTION);
 }
 
 void WebViewImpl::print()

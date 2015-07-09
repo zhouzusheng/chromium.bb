@@ -41,7 +41,6 @@
 #include <chrome/browser/printing/print_view_manager.h>
 #include <components/devtools_http_handler/devtools_http_handler.h>
 #include <content/browser/renderer_host/render_widget_host_view_base.h>
-#include <content/public/browser/devtools_agent_host.h>
 #include <content/public/browser/host_zoom_map.h>
 #include <content/public/browser/media_capture_devices.h>
 #include <content/public/browser/render_frame_host.h>
@@ -350,11 +349,8 @@ void WebViewImpl::loadInspector(WebView* inspectedView)
     content::WebContents* inspectedContents = inspectedViewImpl->d_webContents.get();
     DCHECK(inspectedContents);
 
-    scoped_refptr<content::DevToolsAgentHost> agentHost
-        = content::DevToolsAgentHost::GetOrCreateFor(inspectedContents);
-
     d_devToolsFrontEndHost.reset(
-        new DevToolsFrontendHostDelegateImpl(d_webContents.get(), agentHost));
+        new DevToolsFrontendHostDelegateImpl(d_webContents.get(), inspectedContents));
 
     GURL url = Statics::devToolsHttpHandler->GetFrontendURL("/devtools/devtools.html");
     loadUrl(url.spec());
@@ -366,7 +362,7 @@ void WebViewImpl::inspectElementAt(const POINT& point)
     DCHECK(!d_wasDestroyed);
     DCHECK(d_devToolsFrontEndHost.get())
         << "Need to call loadInspector first!";
-    d_devToolsFrontEndHost->agentHost()->InspectElement(point.x, point.y);
+    d_devToolsFrontEndHost->inspectElementAt(point);
 }
 
 void WebViewImpl::reload(bool ignoreCache)

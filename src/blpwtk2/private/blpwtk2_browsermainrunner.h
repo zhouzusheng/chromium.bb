@@ -31,8 +31,11 @@
 namespace content {
     class BrowserMainRunner;
     class BrowserContext;
-    class DevToolsHttpHandler;
 }  // close namespace content
+
+namespace devtools_http_handler {
+    class DevToolsHttpHandler;
+}  // close namespace devtools_http_handler
 
 namespace sandbox {
     struct SandboxInterfaceInfo;
@@ -65,7 +68,7 @@ class BrowserMainRunner {
     content::MainFunctionParams d_mainParams;
     scoped_ptr<content::BrowserMainRunner> d_impl;
     scoped_ptr<BrowserContextImplManager> d_browserContextImplManager;
-    scoped_ptr<content::DevToolsHttpHandler> d_devtoolsHttpHandler;
+    scoped_ptr<devtools_http_handler::DevToolsHttpHandler> d_devtoolsHttpHandler;
     scoped_ptr<ViewsDelegateImpl> d_viewsDelegate;
 
     DISALLOW_COPY_AND_ASSIGN(BrowserMainRunner);

@@ -1102,15 +1102,15 @@ SiteInstance* RenderFrameHostManager::GetSiteInstanceForNavigation(
     new_instance_descriptor = DetermineSiteInstanceForURL(
         dest_url, source_instance, current_instance, dest_instance, transition,
         dest_is_restore, dest_is_view_source_mode, force_swap);
- 
-    // If we have affinity to a particular process, get it now or forever hold
-    // your peace.
-    if (render_process_affinity_ != SiteInstance::kNoProcessAffinity)
-      new_instance->GetProcess(render_process_affinity_);
   }
 
   SiteInstance* new_instance =
       ConvertToSiteInstance(new_instance_descriptor, candidate_instance);
+
+  // If we have affinity to a particular process, get it now or forever hold
+  // your peace.
+  if (render_process_affinity_ != SiteInstance::kNoProcessAffinity)
+    new_instance->GetProcess(render_process_affinity_);
 
   // If |force_swap| is true, we must use a different SiteInstance than the
   // current one. If we didn't, we would have two RenderFrameHosts in the same

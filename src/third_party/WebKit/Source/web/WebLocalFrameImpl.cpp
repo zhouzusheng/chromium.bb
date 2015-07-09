@@ -1587,7 +1587,8 @@ WebString WebLocalFrameImpl::layerTreeAsText(bool showDebugInfo) const
 void WebLocalFrameImpl::drawInCanvas(const WebRect& rect, const WebString& styleClass, WebCanvas* canvas) const
 {
     IntRect intRect(rect);
-    GraphicsContext graphicsContext(canvas, nullptr);
+    OwnPtr<GraphicsContext> graphicsContextPtr = GraphicsContext::deprecatedCreateWithCanvas(canvas);
+    GraphicsContext& graphicsContext = *graphicsContextPtr;
 
     graphicsContext.translate(static_cast<float>(-intRect.x()), static_cast<float>(-intRect.y()));
     graphicsContext.clip(rect);

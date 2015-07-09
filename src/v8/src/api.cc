@@ -7528,10 +7528,15 @@ const CpuProfileNode* CpuProfileNode::GetChild(int index) const {
 }
 
 
+// SHEZ: Comment-out CpuProfileDepot stuff from the public interface
+// SHEZ: because exporting std::vector doesn't work when building V8
+// SHEZ: as a separate DLL.
+#if 0
 const std::vector<CpuProfileDeoptInfo>& CpuProfileNode::GetDeoptInfos() const {
   const i::ProfileNode* node = reinterpret_cast<const i::ProfileNode*>(this);
   return node->deopt_infos();
 }
+#endif
 
 
 void CpuProfile::Delete() {

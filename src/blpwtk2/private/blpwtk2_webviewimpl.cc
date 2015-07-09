@@ -39,9 +39,9 @@
 #include <base/message_loop/message_loop.h>
 #include <base/strings/utf_string_conversions.h>
 #include <chrome/browser/printing/print_view_manager.h>
+#include <components/devtools_http_handler/devtools_http_handler.h>
 #include <content/browser/renderer_host/render_widget_host_view_base.h>
 #include <content/public/browser/devtools_agent_host.h>
-#include <content/public/browser/devtools_http_handler.h>
 #include <content/public/browser/host_zoom_map.h>
 #include <content/public/browser/media_capture_devices.h>
 #include <content/public/browser/render_frame_host.h>
@@ -419,10 +419,7 @@ void WebViewImpl::setLogicalFocus(bool focused)
         d_webContents->Focus();
     }
     else {
-        content::RenderWidgetHostViewBase* viewBase
-            = static_cast<content::RenderWidgetHostViewBase*>(
-                d_webContents->GetRenderWidgetHostView());
-        viewBase->Blur();
+        d_webContents->GetRenderWidgetHostView()->Blur();
     }
 }
 
@@ -758,15 +755,6 @@ bool WebViewImpl::TakeFocus(content::WebContents* source, bool reverse)
     return false;
 }
 
-void WebViewImpl::WebContentsFocused(content::WebContents* contents)
-{
-    DCHECK(Statics::isInBrowserMainThread());
-    DCHECK(contents == d_webContents);
-    if (d_wasDestroyed) return;
-    if (d_delegate)
-        d_delegate->focused(this);
-}
-
 void WebViewImpl::WebContentsBlurred(content::WebContents* contents)
 {
     DCHECK(Statics::isInBrowserMainThread());
@@ -1085,6 +1073,14 @@ void WebViewImpl::DidFailLoad(content::RenderFrameHost* render_frame_host,
     if (!render_frame_host->GetParent()) {
         d_delegate->didFailLoad(this, validated_url.spec());
     }
+}
+
+void WebViewImpl::OnWebContentsFocused()
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    if (d_wasDestroyed) return;
+    if (d_delegate)
+        d_delegate->focused(this);
 }
 
 }  // close namespace blpwtk2

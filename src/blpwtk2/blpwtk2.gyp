@@ -80,6 +80,7 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../chrome/chrome_blpwtk2.gyp:chrome_blpwtk2',
+        '../components/components.gyp:devtools_http_handler',
         '../content/app/resources/content_resources.gyp:content_resources',
         '../content/content.gyp:content_app_both',
         '../content/content.gyp:content_browser',

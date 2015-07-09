@@ -896,6 +896,12 @@ void RenderWidgetHostViewAura::Focus() {
   }
 }
 
+void RenderWidgetHostViewAura::Blur() {
+  aura::client::FocusClient* client = aura::client::GetFocusClient(window_);
+  if (client)
+    client->FocusWindow(NULL);
+}
+
 bool RenderWidgetHostViewAura::HasFocus() const {
   return window_->HasFocus();
 }

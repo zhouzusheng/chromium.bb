@@ -3075,7 +3075,7 @@ bool EventHandler::sendContextMenuEventForKey(Element* overrideTargetElement)
     if (m_frame->settings()->showContextMenuOnMouseUp())
         eventType = PlatformEvent::MouseReleased;
 
-    PlatformMouseEvent mouseEvent(locationInRootFrame, globalPosition, RightButton, eventType, 1, false, false, false, false, PlatformMouseEvent::RealOrIndistinguishable, WTF::currentTime());
+    PlatformMouseEvent mouseEvent(locationInRootFrame, globalPosition, RightButton, eventType, 1, false, false, false, false, PlatformMouseEvent::FromContextMenuKey, WTF::currentTime());
 
     handleMousePressEvent(mouseEvent);
     return sendContextMenuEvent(mouseEvent, overrideTargetElement);

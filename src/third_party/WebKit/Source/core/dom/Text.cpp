@@ -274,7 +274,7 @@ bool Text::textLayoutObjectIsNeeded(const ComputedStyle& style, const LayoutObje
     if (!canHaveWhitespaceChildren(parent))
         return false;
 
-    if (style.preserveNewline()) // pre/pre-wrap/pre-line always make layoutObjects.
+    if (style.preserveNewline()) // pre/pre-wrap/-bb-pre-wrap-text/pre-line always make layoutObjects.
         return true;
 
     // childNeedsDistributionRecalc() here is rare, only happens JS calling surroundContents() etc. from DOMNodeInsertedIntoDocument etc.

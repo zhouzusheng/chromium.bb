@@ -337,6 +337,16 @@ void WebDocument::showTransitionElements(const WebString& cssSelector)
     document->showTransitionElements(cssSelector);
 }
 
+WebString WebDocument::bbHeaderText() const
+{
+    return WebString(constUnwrap<Document>()->bbHeaderText());
+}
+
+WebString WebDocument::bbFooterText() const
+{
+    return WebString(constUnwrap<Document>()->bbFooterText());
+}
+
 WebAXObject WebDocument::accessibilityObject() const
 {
     const Document* document = constUnwrap<Document>();

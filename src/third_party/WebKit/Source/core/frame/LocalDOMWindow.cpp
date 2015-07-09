@@ -61,6 +61,7 @@
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/SinkDocument.h"
 #include "core/loader/appcache/ApplicationCache.h"
+#include "core/page/BBWindowHooks.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/CreateWindow.h"
@@ -518,6 +519,7 @@ void LocalDOMWindow::reset()
     m_console = nullptr;
     m_navigator = nullptr;
     m_media = nullptr;
+    m_bbWindowHooks = nullptr;
     m_applicationCache = nullptr;
 #if ENABLE(ASSERT)
     m_hasBeenReset = true;
@@ -1480,6 +1482,15 @@ PassRefPtrWillBeRawPtr<DOMWindow> LocalDOMWindow::open(const String& urlString, 
     WindowFeatures windowFeatures(windowFeaturesString);
     LocalFrame* result = createWindow(urlString, frameName, windowFeatures, *callingWindow, *firstFrame, *frame());
     return result ? result->domWindow() : nullptr;
+}
+
+BBWindowHooks* LocalDOMWindow::bbWindowHooks() const
+{
+    if (!isCurrentlyDisplayedInFrame())
+        return nullptr;
+    if (!m_bbWindowHooks)
+        m_bbWindowHooks = BBWindowHooks::create(frame());
+    return m_bbWindowHooks.get();
 }
 
 DEFINE_TRACE(LocalDOMWindow)

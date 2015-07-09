@@ -991,8 +991,12 @@
         'msvs_settings': {
           'VCCLCompilerTool': {
             'Optimization': '0',
-            'RuntimeLibrary': '1',  # /MTd
             'conditions': [
+              ['component=="shared_library"', {
+                'RuntimeLibrary': '3',  # /MDd
+              }, {
+                'RuntimeLibrary': '1',  # /MTd
+              }],
             ],
           },
           'VCLinkerTool': {
@@ -1034,13 +1038,17 @@
         'msvs_settings': {
           'VCCLCompilerTool': {
             'Optimization': '2',
-            'RuntimeLibrary': '1',  # /MTd
             'InlineFunctionExpansion': '2',
             'EnableIntrinsicFunctions': 'true',
             'FavorSizeOrSpeed': '0',
             'StringPooling': 'true',
             'BasicRuntimeChecks': '0',
             'conditions': [
+              ['component=="shared_library"', {
+                'RuntimeLibrary': '3',  #/MDd
+              }, {
+                'RuntimeLibrary': '1',  #/MTd
+              }],
             ],
           },
           'VCLinkerTool': {
@@ -1223,8 +1231,12 @@
                 'EnableIntrinsicFunctions': 'true',
                 'FavorSizeOrSpeed': '0',
                 'StringPooling': 'true',
-                'RuntimeLibrary': '0',  #/MT
                 'conditions': [
+                  ['component=="shared_library"', {
+                    'RuntimeLibrary': '2',  #/MD
+                  }, {
+                    'RuntimeLibrary': '0',  #/MT
+                  }],
                 ],
               },
               'VCLinkerTool': {

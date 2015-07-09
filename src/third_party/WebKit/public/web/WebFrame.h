@@ -48,6 +48,7 @@ struct NPObject;
 namespace v8 {
 class Context;
 class Function;
+class Isolate;
 class Object;
 class Value;
 template <class T> class Local;
@@ -344,6 +345,9 @@ public:
     // the "main world" or an "isolated world" is, then you probably shouldn't
     // be calling this API.
     virtual v8::Local<v8::Context> mainWorldScriptContext() const = 0;
+
+    // Returns the V8 isolate for this frame.
+    virtual v8::Isolate* scriptIsolate() const = 0;
 
     // Navigation ----------------------------------------------------------
 
@@ -674,6 +678,10 @@ public:
     // Dumps the layer tree, used by the accelerated compositor, in
     // text form. This is used only by layout tests.
     virtual WebString layerTreeAsText(bool showDebugInfo = false) const = 0;
+
+    // Draws the contents of the web frame at the specified region onto the
+    // specified canvas
+    virtual void drawInCanvas(const WebRect& rect, const WebString& customCSS, WebCanvas* canvas) const = 0;
 
 #if BLINK_IMPLEMENTATION
     static WebFrame* fromFrame(Frame*);

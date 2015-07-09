@@ -28,6 +28,7 @@
 #include "base/time/time.h"
 #include "base/trace_event/memory_dump_manager.h"
 #include "blink/public/resources/grit/blink_image_resources.h"
+#include "blink/public/resources/grit/blink_inspector_resources.h"
 #include "blink/public/resources/grit/blink_resources.h"
 #include "components/mime_util/mime_util.h"
 #include "components/scheduler/child/webthread_impl_for_worker_scheduler.h"

@@ -353,11 +353,17 @@
       # by the GYP command line or by ~/.gyp/include.gypi.
       'component%': 'shared_library',
 
+      # Product version, appended to product_name for Bloomberg targets.
+      'bb_version%': '',
+
       # By default, don't include PPAPI plugin examples for blpwtk2.
       'bb_ppapi_examples%': 0,
 
       # By default, put type in pdb name.
       'dont_include_type_in_pdb%': 0,
+
+      # By default, don't generate map files.
+      'bb_generate_map_files%': 0,
 
       # /analyze is off by default on Windows because it is very slow and noisy.
       # Enable with GYP_DEFINES=win_analyze=1
@@ -1129,8 +1135,10 @@
     'component%': '<(component)',
     'win_analyze%': '<(win_analyze)',
     'enable_resource_whitelist_generation%': '<(enable_resource_whitelist_generation)',
+    'bb_version%': '<(bb_version)',
     'bb_ppapi_examples%': '<(bb_ppapi_examples)',
     'dont_include_type_in_pdb%': '<(dont_include_type_in_pdb)',
+    'bb_generate_map_files%': '<(bb_generate_map_files)',
     'use_titlecase_in_grd%': '<(use_titlecase_in_grd)',
     'use_third_party_translations%': '<(use_third_party_translations)',
     'remoting%': '<(remoting)',
@@ -1532,6 +1540,11 @@
         # official deterministic build has high value too but MSVC toolset can't
         # generate anything deterministic with WPO enabled AFAIK.
         'dont_embed_build_metadata%': 0,
+      }],
+      ['bb_version==""', {
+        'bb_version_suffix': '',
+      }, {
+        'bb_version_suffix': '.<(bb_version)',
       }],
       # Enable the Syzygy optimization step for the official builds.
       ['OS=="win" and buildtype=="Official" and syzyasan!=1 and clang!=1', {
@@ -2796,6 +2809,14 @@
           }],
         ],
       }],
+      ['bb_generate_map_files==1 and OS=="win"', {
+        'msvs_settings': {
+          'VCLinkerTool': {
+            'GenerateMapFile': 'true',
+            'MapExports': 'true',
+          },
+        },
+      }],  # bb_generate_map_files==1 and OS=="win"
       ['asan==1', {
         'defines': [
           'ADDRESS_SANITIZER',

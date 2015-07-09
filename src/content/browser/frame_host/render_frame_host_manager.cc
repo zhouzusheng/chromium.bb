@@ -54,13 +54,15 @@ RenderFrameHostManager::RenderFrameHostManager(
     RenderFrameHostDelegate* render_frame_delegate,
     RenderViewHostDelegate* render_view_delegate,
     RenderWidgetHostDelegate* render_widget_delegate,
-    Delegate* delegate)
+    Delegate* delegate,
+    int render_process_affinity)
     : frame_tree_node_(frame_tree_node),
       delegate_(delegate),
       render_frame_delegate_(render_frame_delegate),
       render_view_delegate_(render_view_delegate),
       render_widget_delegate_(render_widget_delegate),
       interstitial_page_(nullptr),
+      render_process_affinity_(render_process_affinity),
       should_reuse_web_ui_(false),
       weak_factory_(this) {
   DCHECK(frame_tree_node_);
@@ -103,6 +105,10 @@ void RenderFrameHostManager::Init(BrowserContext* browser_context,
   // that the SiteInstance is ref counted.
   if (!site_instance)
     site_instance = SiteInstance::Create(browser_context);
+  // If we have affinity to a particular render process, then get the process
+  // now, or forever hold your peace.
+  if (render_process_affinity_ != SiteInstance::kNoProcessAffinity)
+    site_instance->GetProcess(render_process_affinity_);
 
   int flags = delegate_->IsHidden() ? CREATE_RF_HIDDEN : 0;
   SetRenderFrameHost(CreateRenderFrameHost(site_instance, view_routing_id,
@@ -1100,6 +1106,11 @@ SiteInstance* RenderFrameHostManager::GetSiteInstanceForNavigation(
 
   SiteInstance* new_instance =
       ConvertToSiteInstance(new_instance_descriptor, candidate_instance);
+
+  // If we have affinity to a particular process, get it now or forever hold
+  // your peace.
+  if (render_process_affinity_ != SiteInstance::kNoProcessAffinity)
+    new_instance->GetProcess(render_process_affinity_);
 
   // If |force_swap| is true, we must use a different SiteInstance than the
   // current one. If we didn't, we would have two RenderFrameHosts in the same

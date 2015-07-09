@@ -23,6 +23,8 @@
 #include "base/path_service.h"
 #endif  // V8_USE_EXTERNAL_STARTUP_DATA
 
+#include <blpv8_products.h>  // For BLPV8_NATIVES_BLOB_NAME, BLPV8_SNAPSHOT_BLOB_NAME
+
 namespace gin {
 
 namespace {
@@ -42,8 +44,8 @@ const int kV8SnapshotBasePathKey =
 #endif  // OS_ANDROID
 #endif  // !OS_MACOSX
 
-const char kNativesFileName[] = "natives_blob.bin";
-const char kSnapshotFileName[] = "snapshot_blob.bin";
+const char kNativesFileName[] = BLPV8_NATIVES_BLOB_NAME;
+const char kSnapshotFileName[] = BLPV8_SNAPSHOT_BLOB_NAME;
 
 // Constants for snapshot loading retries taken from:
 //   https://support.microsoft.com/en-us/kb/316609.
@@ -168,8 +170,10 @@ bool GenerateEntropy(unsigned char* buffer, size_t amount) {
 #if defined(V8_USE_EXTERNAL_STARTUP_DATA)
 #if defined(V8_VERIFY_EXTERNAL_STARTUP_DATA)
 // Defined in gen/gin/v8_snapshot_fingerprint.cc
-extern const unsigned char g_natives_fingerprint[];
-extern const unsigned char g_snapshot_fingerprint[];
+extern "C" {
+    __declspec(dllimport) const unsigned char* GetV8NativesFingerprint();
+    __declspec(dllimport) const unsigned char* GetV8SnapshotFingerprint();
+}
 #endif  // V8_VERIFY_EXTERNAL_STARTUP_DATA
 
 // static
@@ -201,8 +205,8 @@ bool V8Initializer::LoadV8Snapshot() {
   } else if (!MapV8Files(natives_file.Pass(), snapshot_file.Pass())) {
     result = LoadV8SnapshotResult::FAILED_MAP;
 #if defined(V8_VERIFY_EXTERNAL_STARTUP_DATA)
-  } else if (!VerifyV8SnapshotFile(g_mapped_natives, g_natives_fingerprint) ||
-             !VerifyV8SnapshotFile(g_mapped_snapshot, g_snapshot_fingerprint)) {
+  } else if (!VerifyV8SnapshotFile(g_mapped_natives, GetV8NativesFingerprint()) ||
+             !VerifyV8SnapshotFile(g_mapped_snapshot, GetV8SnapshotFingerprint())) {
     result = LoadV8SnapshotResult::FAILED_VERIFY;
 #endif  // V8_VERIFY_EXTERNAL_STARTUP_DATA
   } else {

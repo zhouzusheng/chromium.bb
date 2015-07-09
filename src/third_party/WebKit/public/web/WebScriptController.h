@@ -46,6 +46,11 @@ public:
     // v8::Extension object passed.
     BLINK_EXPORT static void registerExtension(v8::Extension*);
 
+    // By default, stack capture is controlled by inspector.  Set this to false
+    // to make stack capture happen regardless of inspector.  This needs to be
+    // be called before any ScriptControllers are constructed.
+    BLINK_EXPORT static void setStackCaptureControlledByInspector(bool);
+
 private:
     WebScriptController();
 };

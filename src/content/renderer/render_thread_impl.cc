@@ -58,6 +58,7 @@
 #include "content/common/database_messages.h"
 #include "content/common/dom_storage/dom_storage_messages.h"
 #include "content/common/frame_messages.h"
+#include "content/common/in_process_child_thread_params.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
 #include "content/common/gpu/gpu_messages.h"
@@ -387,6 +388,8 @@ blink::WebGraphicsContext3D::Attributes GetOffscreenAttribs() {
   return attributes;
 }
 
+RenderProcessImpl* g_render_process = 0;
+
 }  // namespace
 
 // For measuring memory usage after each task. Behind a command line flag.
@@ -404,6 +407,50 @@ class MemoryObserver : public base::MessageLoop::TaskObserver {
  private:
   DISALLOW_COPY_AND_ASSIGN(MemoryObserver);
 };
+
+// static
+void RenderThread::InitInProcessRenderer(const InProcessChildThreadParams& params)
+{
+  g_render_process = new RenderProcessImpl();
+  RenderThreadImpl* thread = new RenderThreadImpl(params);
+  if (params.channel_name().empty()) {
+    // Normally, WebKit is initialized in the browser's WebKit thread.  This is
+    // necessary because there is code in the browser that depends on WebKit
+    // being initialized at startup.  However, when running an in-process
+    // renderer, we don't run the browser's WebKit thread.
+    // We need to ensure WebKit is initialized to simulate the case that the
+    // WebKit thread has been run.  We only do this if the channel_id is empty,
+    // so that this behavior is only performed for blpwtk2.  Regular
+    // content_shell --single-process mode will have the default upstream
+    // behavior of initializing WebKit when the first RenderView is created.
+    thread->EnsureWebKitInitialized();
+  }
+}
+
+// static
+void RenderThread::SetInProcessRendererChannelName(const std::string& channel_id)
+{
+  RenderThreadImpl* thread = RenderThreadImpl::current();
+  thread->SetChannelName(channel_id);  // This will create the channel.
+}
+
+// static
+scoped_refptr<base::SingleThreadTaskRunner> RenderThread::IOTaskRunner()
+{
+  RenderThreadImpl* thread = RenderThreadImpl::current();
+  scoped_refptr<base::SequencedTaskRunner> str = thread->GetIOTaskRunner();
+  // TODO(SHEZ): Make thread->GetIOTaskRunner return SingleThreadTaskRunner to avoid this downcast?
+  return static_cast<base::SingleThreadTaskRunner*>(str.get());
+}
+
+// static
+void RenderThread::CleanUpInProcessRenderer()
+{
+  if (g_render_process) {
+    delete g_render_process;
+    g_render_process = 0;
+  }
+}
 
 RenderThreadImpl::HistogramCustomizer::HistogramCustomizer() {
   custom_histograms_.insert("V8.MemoryExternalFragmentationTotal");
@@ -682,7 +729,7 @@ void RenderThreadImpl::Init() {
 
   // In single process, browser main loop set up the discardable memory
   // allocator.
-  if (!command_line.HasSwitch(switches::kSingleProcess)) {
+  if (!IsInBrowserProcess()) {
     base::DiscardableMemoryAllocator::SetInstance(
         ChildThreadImpl::discardable_shared_memory_manager());
   }
@@ -1532,6 +1579,7 @@ bool RenderThreadImpl::OnControlMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ViewMsg_SetWebKitSharedTimersSuspended,
                         OnSetWebKitSharedTimersSuspended)
 #endif
+    IPC_MESSAGE_HANDLER(ViewMsg_ClearWebCache, OnClearWebCache)
 #if defined(OS_MACOSX)
     IPC_MESSAGE_HANDLER(ViewMsg_UpdateScrollbarTheme, OnUpdateScrollbarTheme)
 #endif
@@ -1734,6 +1782,10 @@ void RenderThreadImpl::OnUpdateScrollbarTheme(
                                              redraw);
 }
 #endif
+
+void RenderThreadImpl::OnClearWebCache() {
+  blink::WebCache::clear();
+}
 
 void RenderThreadImpl::OnCreateNewSharedWorker(
     const WorkerProcessMsg_CreateWorker_Params& params) {

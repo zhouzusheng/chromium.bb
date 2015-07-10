@@ -2045,7 +2045,7 @@ LayoutUnit LayoutBox::fillAvailableMeasure(LayoutUnit availableLogicalWidth) con
 
 LayoutUnit LayoutBox::fillAvailableMeasure(LayoutUnit availableLogicalWidth, LayoutUnit& marginStart, LayoutUnit& marginEnd) const
 {
-    marginStart = minimumValueForLength(style()->marginStart(), availableLogicalWidth);
+    marginStart = minimumValueForLength(style()->marginStart(), availableLogicalWidth) + additionalMarginStart();
     marginEnd = minimumValueForLength(style()->marginEnd(), availableLogicalWidth);
     return availableLogicalWidth - marginStart - marginEnd;
 }
@@ -2171,6 +2171,11 @@ bool LayoutBox::autoWidthShouldFitContent() const
 
 void LayoutBox::computeMarginsForDirection(MarginDirection flowDirection, const LayoutBlock* containingBlock, LayoutUnit containerWidth, LayoutUnit childWidth, LayoutUnit& marginStart, LayoutUnit& marginEnd, Length marginStartLength, Length marginEndLength) const
 {
+    LayoutUnit inlineAdditionalMarginStart =
+        flowDirection == InlineDirection ?
+        additionalMarginStart() :
+        LayoutUnit();
+
     if (flowDirection == BlockDirection || isFloating() || isInline()) {
         if (isTableCell() && flowDirection == BlockDirection) {
             // FIXME: Not right if we allow cells to have different directionality than the table. If we do allow this, though,
@@ -2183,7 +2188,7 @@ void LayoutBox::computeMarginsForDirection(MarginDirection flowDirection, const 
         // Margins are calculated with respect to the logical width of
         // the containing block (8.3)
         // Inline blocks/tables and floats don't have their margins increased.
-        marginStart = minimumValueForLength(marginStartLength, containerWidth);
+        marginStart = minimumValueForLength(marginStartLength, containerWidth) + inlineAdditionalMarginStart;
         marginEnd = minimumValueForLength(marginEndLength, containerWidth);
         return;
     }
@@ -2198,7 +2203,7 @@ void LayoutBox::computeMarginsForDirection(MarginDirection flowDirection, const 
             marginEndLength.setValue(0);
     }
 
-    LayoutUnit marginStartWidth = minimumValueForLength(marginStartLength, containerWidth);
+    LayoutUnit marginStartWidth = minimumValueForLength(marginStartLength, containerWidth) + inlineAdditionalMarginStart;
     LayoutUnit marginEndWidth = minimumValueForLength(marginEndLength, containerWidth);
 
     LayoutUnit availableWidth = containerWidth;
@@ -2249,7 +2254,7 @@ void LayoutBox::computeMarginsForDirection(MarginDirection flowDirection, const 
 
         if (marginStartLength.isAuto()) {
             marginEnd = marginEndWidth;
-            marginStart = availableWidth - childWidth - marginEnd;
+            marginStart = availableWidth - childWidth - marginEnd + inlineAdditionalMarginStart;
             return;
         }
     }

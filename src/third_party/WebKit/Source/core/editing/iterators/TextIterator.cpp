@@ -513,7 +513,7 @@ void TextIteratorAlgorithm<Strategy>::handleTextBox()
                 return;
             }
             unsigned textBoxLen;
-            if (m_textBox->truncation() == cNoTruncation || emitsOverflowHiddenText() || renderer->style()->overflowX() != OHIDDEN) {
+            if (m_textBox->truncation() == cNoTruncation || emitsOverflowHiddenText() || layoutObject->style()->overflowX() != OHIDDEN) {
                 textBoxLen = m_textBox->len();
             }
             else if (m_textBox->truncation() == cFullTruncation) {

@@ -557,12 +557,12 @@ void ChromeClientImpl::mouseDidMoveOverElement(const HitTestResult& result)
     // If we displayed a tooltip earlier, and we move over a new node, make
     // sure we unset the tooltip. If the new node has a tooltip, then
     // setToolTip will be called later with the new text.
-    if (m_lastTooltipHadText && m_lastMouseOverNode != result.innerNonSharedNode()) {
+    if (m_lastTooltipHadText && m_lastMouseOverNode != result.innerNodeOrImageMapImage()) {
         m_webView->client()->setToolTipText(String(), WebTextDirectionLeftToRight);
         m_lastTooltipHadText = false;
     }
 
-    m_lastMouseOverNode = result.innerNonSharedNode();
+    m_lastMouseOverNode = result.innerNodeOrImageMapImage();
 }
 
 void ChromeClientImpl::setToolTip(const String& tooltipText, TextDirection dir)

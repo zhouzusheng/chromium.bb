@@ -37,6 +37,7 @@ WebViewCreateParams::WebViewCreateParams()
 , d_javascriptCanAccessClipboard(false)
 , d_rendererAffinity(Constants::ANY_OUT_OF_PROCESS_RENDERER)
 , d_profile(0)
+, d_isTransparent(false)
 {
 }
 
@@ -82,6 +83,11 @@ void WebViewCreateParams::setRendererAffinity(int affinity)
 void WebViewCreateParams::setProfile(Profile* profile)
 {
     d_profile = profile;
+}
+
+void WebViewCreateParams::setIsTransparent(bool isTransparent)
+{
+    d_isTransparent = isTransparent;
 }
 
 }  // close namespace blpwtk2

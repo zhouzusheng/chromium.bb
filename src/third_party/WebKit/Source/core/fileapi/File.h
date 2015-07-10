@@ -123,6 +123,7 @@ public:
 
     const String& path() const { ASSERT(hasValidFilePath()); return m_path; }
     const String name() const { return m_name; }
+    const String& blpPath() const { return m_path; }
 
     // Getter for the lastModified IDL attribute,
     // http://dev.w3.org/2006/webapi/FileAPI/#file-attrs

@@ -40,9 +40,12 @@ public:
         : m_desiredColumnWidth(0)
         , m_desiredColumnCount(1)
         , m_progressionAxis(InlineAxis)
+        , m_spanningHeaderSizeChanged(false)
         , m_columnCount(1)
         , m_columnHeight(0)
         , m_minimumColumnHeight(0)
+        , m_spanningHeaderHeight(0)
+        , m_spanningHeaderColumnCount(1)
         , m_forcedBreaks(0)
         , m_maximumDistanceBetweenForcedBreaks(0)
         , m_forcedBreakOffset(0)
@@ -75,6 +78,27 @@ public:
     void updateMinimumColumnHeight(LayoutUnit height) { m_minimumColumnHeight = std::max(height, m_minimumColumnHeight); }
     LayoutUnit minimumColumnHeight() const { return m_minimumColumnHeight; }
 
+    void setSpanningHeaderHeight(LayoutUnit height)
+    {
+        if (m_spanningHeaderHeight != height) {
+            m_spanningHeaderHeight = height;
+            m_spanningHeaderSizeChanged = true;
+        }
+    }
+    LayoutUnit spanningHeaderHeight() const { return m_spanningHeaderHeight; }
+
+    void setSpanningHeaderColumnCount(unsigned count)
+    {
+        if (m_spanningHeaderColumnCount != count) {
+            m_spanningHeaderColumnCount = count;
+            m_spanningHeaderSizeChanged = true;
+        }
+    }
+    unsigned spanningHeaderColumnCount() const { return m_spanningHeaderColumnCount; }
+
+    void setSpanningHeaderSizeChanged(bool changed) { m_spanningHeaderSizeChanged = changed; }
+    bool spanningHeaderSizeChanged() const { return m_spanningHeaderSizeChanged; }
+
     int forcedBreaks() const { return m_forcedBreaks; }
     LayoutUnit forcedBreakOffset() const { return m_forcedBreakOffset; }
     LayoutUnit maximumDistanceBetweenForcedBreaks() const { return m_maximumDistanceBetweenForcedBreaks; }
@@ -99,10 +123,13 @@ private:
     LayoutUnit m_desiredColumnWidth;
     unsigned m_desiredColumnCount;
     Axis m_progressionAxis;
+    bool m_spanningHeaderSizeChanged;
 
     unsigned m_columnCount;
     LayoutUnit m_columnHeight;
     LayoutUnit m_minimumColumnHeight;
+    LayoutUnit m_spanningHeaderHeight;
+    unsigned m_spanningHeaderColumnCount;
     int m_forcedBreaks; // FIXME: We will ultimately need to cache more information to balance around forced breaks properly.
     LayoutUnit m_maximumDistanceBetweenForcedBreaks;
     LayoutUnit m_forcedBreakOffset;

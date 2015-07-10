@@ -411,6 +411,8 @@ private:
     LayoutBlockFlow* containingColumnsBlock(bool allowAnonymousColumnBlock = true);
     LayoutBlockFlow* columnsBlockForSpanningElement(LayoutObject* newChild);
 
+    virtual LayoutUnit additionalMarginStart() const override;
+
     // End helper functions and structs used by layoutBlockChildren.
 
     void removeFromGlobalMaps();

@@ -38,7 +38,8 @@ enum TextIteratorBehavior {
     TextIteratorEmitsImageAltText = 1 << 5,
     TextIteratorEntersOpenShadowRoots = 1 << 6,
     TextIteratorEmitsObjectReplacementCharacter = 1 << 7,
-    TextIteratorDoesNotBreakAtReplacedElement = 1 << 8
+    TextIteratorDoesNotBreakAtReplacedElement = 1 << 8,
+    TextIteratorDoesNotEmitOverflowHiddenText = 1 << 9
 };
 typedef unsigned TextIteratorBehaviorFlags;
 

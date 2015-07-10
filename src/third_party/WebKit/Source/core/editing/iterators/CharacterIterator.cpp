@@ -620,7 +620,7 @@ tryAgain:
     return matchLength;
 }
 
-static const TextIteratorBehaviorFlags iteratorFlagsForFindPlainText = TextIteratorEntersTextControls | TextIteratorEntersOpenShadowRoots | TextIteratorDoesNotBreakAtReplacedElement;
+static const TextIteratorBehaviorFlags iteratorFlagsForFindPlainText = TextIteratorEntersTextControls | TextIteratorEntersOpenShadowRoots | TextIteratorDoesNotBreakAtReplacedElement | TextIteratorDoesNotEmitOverflowHiddenText;
 
 PassRefPtrWillBeRawPtr<Range> findPlainText(const Range* range, const String& target, FindOptions options)
 {

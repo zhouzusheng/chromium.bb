@@ -172,6 +172,7 @@ public:
                 nextBreakable = nextBreakablePositionBreakAll(pos);
                 break;
             case LineBreakType::KeepAll:
+            case LineBreakType::KeepAllIfKorean:
                 nextBreakable = nextBreakablePositionKeepAll(pos, lineBreakType);
                 break;
             default:

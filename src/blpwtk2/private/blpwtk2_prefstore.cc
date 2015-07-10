@@ -64,21 +64,21 @@ bool PrefStore::GetMutableValue(const std::string& key, base::Value** result)
     return d_prefs.GetValue(key, result);
 }
 
-void PrefStore::SetValue(const std::string& key, base::Value* value)
+void PrefStore::SetValue(const std::string& key, base::Value* value, uint32 flags)
 {
     if (d_prefs.SetValue(key, value))
-        ReportValueChanged(key);
+        ReportValueChanged(key, flags);
 }
 
-void PrefStore::SetValueSilently(const std::string& key, base::Value* value)
+void PrefStore::SetValueSilently(const std::string& key, base::Value* value, uint32 flags)
 {
     d_prefs.SetValue(key, value);
 }
 
-void PrefStore::RemoveValue(const std::string& key)
+void PrefStore::RemoveValue(const std::string& key, uint32 flags)
 {
     if (d_prefs.RemoveValue(key))
-        ReportValueChanged(key);
+        ReportValueChanged(key, flags);
 }
 
 bool PrefStore::ReadOnly() const
@@ -108,7 +108,7 @@ void PrefStore::CommitPendingWrite()
     // Do nothing
 }
 
-void PrefStore::ReportValueChanged(const std::string& key)
+void PrefStore::ReportValueChanged(const std::string& key, uint32 flags)
 {
     FOR_EACH_OBSERVER(PrefStore::Observer, d_observers, OnPrefValueChanged(key));
 }

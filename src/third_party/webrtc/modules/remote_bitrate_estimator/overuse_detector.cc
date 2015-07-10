@@ -15,6 +15,10 @@
 #include <stdlib.h>
 
 #include "webrtc/modules/remote_bitrate_estimator/include/bwe_defines.h"
+
+// SHEZ: Remove test-only code.
+// #include "webrtc/modules/remote_bitrate_estimator/test/bwe_test_logging.h"
+
 #include "webrtc/modules/rtp_rtcp/source/rtp_utility.h"
 #include "webrtc/system_wrappers/interface/trace.h"
 
@@ -51,14 +55,21 @@ void OveruseDetector::SetRateControlRegion(RateControlRegion region) {
   }
 }
 
-BandwidthUsage OveruseDetector::Detect(double offset, double ts_delta,
-                                       int num_of_deltas) {
+BandwidthUsage OveruseDetector::Detect(double offset,
+                                       double ts_delta,
+                                       int num_of_deltas,
+                                       int64_t now_ms) {
   if (num_of_deltas < 2) {
     return kBwNormal;
   }
   const double prev_offset = prev_offset_;
   prev_offset_ = offset;
   const double T = std::min(num_of_deltas, 60) * offset;
+
+  // SHEZ: Remove test-only code.
+  // BWE_TEST_LOGGING_PLOT(1, "offset", now_ms, T);
+  // BWE_TEST_LOGGING_PLOT(1, "threshold", now_ms, threshold_);
+
   if (T > threshold_) {
     if (time_over_using_ == -1) {
       // Initialize the timer. Assume that we've been

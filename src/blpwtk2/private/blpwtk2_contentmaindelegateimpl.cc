@@ -56,12 +56,20 @@ static void InitLogging()
     logging::InitLogging(settings);
 }
 
+static ContentClient* g_contentClientInstance = nullptr;
+ContentClient* ContentClient::Instance()
+{
+    return g_contentClientInstance;
+}
+
 ContentClient::ContentClient()
 {
+    g_contentClientInstance = this;
 }
 
 ContentClient::~ContentClient()
 {
+    g_contentClientInstance = nullptr;
 }
 
 // Returns the user agent.

@@ -53,7 +53,6 @@
 #include "platform/heap/Heap.h"
 #include "platform/heap/glue/MessageLoopInterruptor.h"
 #include "platform/heap/glue/PendingGCRunner.h"
-#include "platform/scheduler/Scheduler.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebPrerenderingSupport.h"
 #include "public/platform/WebThread.h"
@@ -150,6 +149,11 @@ static double systemTraceTimeFunction()
     return Platform::current()->systemTraceTime();
 }
 
+static void histogramEnumerationFunction(const char* name, int sample, int boundaryValue)
+{
+    Platform::current()->histogramEnumeration(name, sample, boundaryValue);
+}
+
 static void cryptographicallyRandomValues(unsigned char* buffer, size_t length)
 {
     Platform::current()->cryptographicallyRandomValues(buffer, length);
@@ -169,7 +173,7 @@ void initializeWithoutV8(Platform* platform)
     Platform::initialize(platform);
 
     WTF::setRandomSource(cryptographicallyRandomValues);
-    WTF::initialize(currentTimeFunction, monotonicallyIncreasingTimeFunction, systemTraceTimeFunction);
+    WTF::initialize(currentTimeFunction, monotonicallyIncreasingTimeFunction, systemTraceTimeFunction, histogramEnumerationFunction);
     WTF::initializeMainThread(callOnMainThreadFunction);
     Heap::init();
 
@@ -246,7 +250,6 @@ void shutdownWithoutV8()
 {
     ASSERT(!s_endOfTaskRunner);
     CoreInitializer::shutdown();
-    Scheduler::shutdown();
     Heap::shutdown();
     WTF::shutdown();
     Platform::shutdown();

@@ -176,7 +176,7 @@ void CharacterData::setDataAndUpdate(const String& newData, unsigned offsetOfRep
 
     ASSERT(!layoutObject() || isTextNode());
     if (isTextNode())
-        toText(this)->updateTextRenderer(offsetOfReplacedData, oldLength, recalcStyleBehavior);
+        toText(this)->updateTextLayoutObject(offsetOfReplacedData, oldLength, recalcStyleBehavior);
 
     if (source != UpdateFromParser) {
         if (nodeType() == PROCESSING_INSTRUCTION_NODE)

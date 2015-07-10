@@ -71,7 +71,7 @@ BEGIN
             VALUE "FileDescription", "ANGLE libGLESv2 Dynamic Link Library"
             VALUE "FileVersion", BLPWTK2_RC_VERSION
             VALUE "InternalName", "blpcr_glesv2"
-            VALUE "LegalCopyright", "Copyright (C) 2011 Google Inc."
+            VALUE "LegalCopyright", "Copyright (C) 2015 Google Inc."
             VALUE "OriginalFilename", BLPCR_GLESV2_DLL_NAME
             VALUE "ProductName", "ANGLE libGLESv2 Dynamic Link Library"
             VALUE "ProductVersion", BLPWTK2_RC_VERSION

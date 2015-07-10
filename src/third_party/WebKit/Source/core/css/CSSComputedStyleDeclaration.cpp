@@ -186,21 +186,11 @@ static const CSSPropertyID staticComputableProperties[] = {
     CSSPropertyZIndex,
     CSSPropertyZoom,
 
-    CSSPropertyWebkitAnimationDelay,
-    CSSPropertyWebkitAnimationDirection,
-    CSSPropertyWebkitAnimationDuration,
-    CSSPropertyWebkitAnimationFillMode,
-    CSSPropertyWebkitAnimationIterationCount,
-    CSSPropertyWebkitAnimationName,
-    CSSPropertyWebkitAnimationPlayState,
-    CSSPropertyWebkitAnimationTimingFunction,
     CSSPropertyWebkitAppearance,
     CSSPropertyBackfaceVisibility,
-    CSSPropertyWebkitBackfaceVisibility,
     CSSPropertyWebkitBackgroundClip,
     CSSPropertyWebkitBackgroundComposite,
     CSSPropertyWebkitBackgroundOrigin,
-    CSSPropertyWebkitBackgroundSize,
     CSSPropertyWebkitBorderHorizontalSpacing,
     CSSPropertyWebkitBorderImage,
     CSSPropertyWebkitBorderVerticalSpacing,
@@ -214,7 +204,6 @@ static const CSSPropertyID staticComputableProperties[] = {
     CSSPropertyWebkitBoxOrient,
     CSSPropertyWebkitBoxPack,
     CSSPropertyWebkitBoxReflect,
-    CSSPropertyWebkitBoxShadow,
     CSSPropertyWebkitCaretColor,
     CSSPropertyWebkitClipPath,
     CSSPropertyWebkitColumnBreakAfter,
@@ -271,9 +260,7 @@ static const CSSPropertyID staticComputableProperties[] = {
     CSSPropertyWebkitMaskSize,
     CSSPropertyOrder,
     CSSPropertyPerspective,
-    CSSPropertyWebkitPerspective,
     CSSPropertyPerspectiveOrigin,
-    CSSPropertyWebkitPerspectiveOrigin,
     CSSPropertyWebkitPrintColorAdjust,
     CSSPropertyWebkitRtlOrdering,
     CSSPropertyShapeOutside,
@@ -291,15 +278,8 @@ static const CSSPropertyID staticComputableProperties[] = {
     CSSPropertyWebkitTextStrokeColor,
     CSSPropertyWebkitTextStrokeWidth,
     CSSPropertyTransform,
-    CSSPropertyWebkitTransform,
     CSSPropertyTransformOrigin,
-    CSSPropertyWebkitTransformOrigin,
     CSSPropertyTransformStyle,
-    CSSPropertyWebkitTransformStyle,
-    CSSPropertyWebkitTransitionDelay,
-    CSSPropertyWebkitTransitionDuration,
-    CSSPropertyWebkitTransitionProperty,
-    CSSPropertyWebkitTransitionTimingFunction,
     CSSPropertyWebkitUserDrag,
     CSSPropertyWebkitUserModify,
     CSSPropertyWebkitUserSelect,
@@ -444,16 +424,16 @@ PassRefPtrWillBeRawPtr<CSSValue> CSSComputedStyleDeclaration::getFontSizeCSSValu
     return zoomAdjustedPixelValue(style->fontDescription().computedPixelSize(), *style);
 }
 
-FixedPitchFontType CSSComputedStyleDeclaration::fixedPitchFontType() const
+bool CSSComputedStyleDeclaration::isMonospaceFont() const
 {
     if (!m_node)
-        return VariablePitchFont;
+        return false;
 
     const ComputedStyle* style = m_node->ensureComputedStyle(m_pseudoElementSpecifier);
     if (!style)
-        return VariablePitchFont;
+        return false;
 
-    return style->fontDescription().fixedPitchFontType();
+    return style->fontDescription().isMonospace();
 }
 
 static void logUnimplementedPropertyID(CSSPropertyID propertyID)
@@ -465,7 +445,7 @@ static void logUnimplementedPropertyID(CSSPropertyID propertyID)
     WTF_LOG_ERROR("WebKit does not yet implement getComputedStyle for '%s'.", getPropertyName(propertyID));
 }
 
-static bool isLayoutDependent(CSSPropertyID propertyID, const ComputedStyle* style, LayoutObject* renderer)
+static bool isLayoutDependent(CSSPropertyID propertyID, const ComputedStyle* style, LayoutObject* layoutObject)
 {
     // Some properties only depend on layout in certain conditions which
     // are specified in the main switch statement below. So we can avoid
@@ -474,18 +454,13 @@ static bool isLayoutDependent(CSSPropertyID propertyID, const ComputedStyle* sty
     // FIXME: Some of these cases could be narrowed down or optimized better.
     switch (propertyID) {
     case CSSPropertyBottom:
-    case CSSPropertyGridTemplateColumns:
-    case CSSPropertyGridTemplateRows:
     case CSSPropertyHeight:
     case CSSPropertyLeft:
     case CSSPropertyRight:
     case CSSPropertyTop:
     case CSSPropertyPerspectiveOrigin:
-    case CSSPropertyWebkitPerspectiveOrigin:
     case CSSPropertyTransform:
-    case CSSPropertyWebkitTransform:
     case CSSPropertyTransformOrigin:
-    case CSSPropertyWebkitTransformOrigin:
     case CSSPropertyMotionPath:
     case CSSPropertyMotionOffset:
     case CSSPropertyMotionRotation:
@@ -497,25 +472,34 @@ static bool isLayoutDependent(CSSPropertyID propertyID, const ComputedStyle* sty
     case CSSPropertyRy:
         return true;
     case CSSPropertyMargin:
-        return renderer && renderer->isBox() && (!style || !style->marginBottom().isFixed() || !style->marginTop().isFixed() || !style->marginLeft().isFixed() || !style->marginRight().isFixed());
+        return layoutObject && layoutObject->isBox()
+            && (!style || !style->marginBottom().isFixed() || !style->marginTop().isFixed()
+                || !style->marginLeft().isFixed() || !style->marginRight().isFixed());
     case CSSPropertyMarginLeft:
-        return renderer && renderer->isBox() && (!style || !style->marginLeft().isFixed());
+        return layoutObject && layoutObject->isBox() && (!style || !style->marginLeft().isFixed());
     case CSSPropertyMarginRight:
-        return renderer && renderer->isBox() && (!style || !style->marginRight().isFixed());
+        return layoutObject && layoutObject->isBox() && (!style || !style->marginRight().isFixed());
     case CSSPropertyMarginTop:
-        return renderer && renderer->isBox() && (!style || !style->marginTop().isFixed());
+        return layoutObject && layoutObject->isBox() && (!style || !style->marginTop().isFixed());
     case CSSPropertyMarginBottom:
-        return renderer && renderer->isBox() && (!style || !style->marginBottom().isFixed());
+        return layoutObject && layoutObject->isBox() && (!style || !style->marginBottom().isFixed());
     case CSSPropertyPadding:
-        return renderer && renderer->isBox() && (!style || !style->paddingBottom().isFixed() || !style->paddingTop().isFixed() || !style->paddingLeft().isFixed() || !style->paddingRight().isFixed());
+        return layoutObject && layoutObject->isBox()
+            && (!style || !style->paddingBottom().isFixed() || !style->paddingTop().isFixed()
+                || !style->paddingLeft().isFixed() || !style->paddingRight().isFixed());
     case CSSPropertyPaddingBottom:
-        return renderer && renderer->isBox() && (!style || !style->paddingBottom().isFixed());
+        return layoutObject && layoutObject->isBox() && (!style || !style->paddingBottom().isFixed());
     case CSSPropertyPaddingLeft:
-        return renderer && renderer->isBox() && (!style || !style->paddingLeft().isFixed());
+        return layoutObject && layoutObject->isBox() && (!style || !style->paddingLeft().isFixed());
     case CSSPropertyPaddingRight:
-        return renderer && renderer->isBox() && (!style || !style->paddingRight().isFixed());
+        return layoutObject && layoutObject->isBox() && (!style || !style->paddingRight().isFixed());
     case CSSPropertyPaddingTop:
-        return renderer && renderer->isBox() && (!style || !style->paddingTop().isFixed());
+        return layoutObject && layoutObject->isBox() && (!style || !style->paddingTop().isFixed());
+    case CSSPropertyGridTemplateColumns:
+    case CSSPropertyGridTemplateRows:
+    case CSSPropertyGridTemplate:
+    case CSSPropertyGrid:
+        return layoutObject && layoutObject->isLayoutGrid();
     default:
         return false;
     }
@@ -544,7 +528,7 @@ PassRefPtrWillBeRawPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValu
     Node* styledNode = this->styledNode();
     if (!styledNode)
         return nullptr;
-    LayoutObject* renderer = styledNode->layoutObject();
+    LayoutObject* layoutObject = styledNode->layoutObject();
     const ComputedStyle* style;
 
     Document& document = styledNode->document();
@@ -552,16 +536,16 @@ PassRefPtrWillBeRawPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValu
     // A timing update may be required if a compositor animation is running.
     DocumentAnimations::updateAnimationTimingForGetComputedStyle(*styledNode, propertyID);
 
-    document.updateRenderTreeForNodeIfNeeded(styledNode);
+    document.updateLayoutTreeForNodeIfNeeded(styledNode);
 
     // The style recalc could have caused the styled node to be discarded or replaced
     // if it was a PseudoElement so we need to update it.
     styledNode = this->styledNode();
-    renderer = styledNode->layoutObject();
+    layoutObject = styledNode->layoutObject();
 
     style = computeComputedStyle();
 
-    bool forceFullLayout = isLayoutDependent(propertyID, style, renderer)
+    bool forceFullLayout = isLayoutDependent(propertyID, style, layoutObject)
         || styledNode->isInShadowTree()
         || (document.ownerElement() && document.ensureStyleResolver().hasViewportDependentMediaQueries());
 
@@ -569,13 +553,13 @@ PassRefPtrWillBeRawPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValu
         document.updateLayoutIgnorePendingStylesheets();
         styledNode = this->styledNode();
         style = computeComputedStyle();
-        renderer = styledNode->layoutObject();
+        layoutObject = styledNode->layoutObject();
     }
 
     if (!style)
         return nullptr;
 
-    RefPtrWillBeRawPtr<CSSValue> value = ComputedStyleCSSValueMapping::get(propertyID, *style, renderer, styledNode, m_allowVisitedStyle);
+    RefPtrWillBeRawPtr<CSSValue> value = ComputedStyleCSSValueMapping::get(propertyID, *style, layoutObject, styledNode, m_allowVisitedStyle);
     if (value)
         return value;
 

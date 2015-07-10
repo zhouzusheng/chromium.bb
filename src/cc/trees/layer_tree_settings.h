@@ -64,9 +64,8 @@ class CC_EXPORT LayerTreeSettings {
   gfx::Size max_untiled_layer_size;
   gfx::Size default_tile_grid_size;
   gfx::Size minimum_occlusion_tracking_size;
-  bool use_pinch_zoom_scrollbars;
   bool use_pinch_virtual_viewport;
-  size_t max_tiles_for_interest_area;
+  float tiling_interest_area_viewport_multiplier;
   float skewport_target_time_in_seconds;
   int skewport_extrapolation_limit_in_content_pixels;
   size_t max_unused_resource_memory_percentage;
@@ -81,6 +80,7 @@ class CC_EXPORT LayerTreeSettings {
   bool use_occlusion_for_tile_prioritization;
   bool record_full_layer;
   bool use_display_lists;
+  bool use_cached_picture_in_display_list;
   bool verify_property_trees;
   bool gather_pixel_refs;
   bool use_compositor_animation_timelines;

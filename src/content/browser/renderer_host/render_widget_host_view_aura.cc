@@ -4,6 +4,8 @@
 
 #include "content/browser/renderer_host/render_widget_host_view_aura.h"
 
+#include <set>
+
 #include "base/auto_reset.h"
 #include "base/basictypes.h"
 #include "base/bind.h"
@@ -277,6 +279,20 @@ bool IsFractionalScaleFactor(float scale_factor) {
   return (scale_factor - static_cast<int>(scale_factor)) > 0;
 }
 
+// Reset unchanged touch point to StateStationary for touchmove and
+// touchcancel.
+void MarkUnchangedTouchPointsAsStationary(
+    blink::WebTouchEvent* event,
+    int changed_touch_id) {
+  if (event->type == blink::WebInputEvent::TouchMove ||
+      event->type == blink::WebInputEvent::TouchCancel) {
+    for (size_t i = 0; i < event->touchesLength; ++i) {
+      if (event->touches[i].id != changed_touch_id)
+        event->touches[i].state = blink::WebTouchPoint::StateStationary;
+    }
+  }
+}
+
 }  // namespace
 
 // We need to watch for mouse events outside a Web Popup or its parent
@@ -323,6 +339,12 @@ void RenderWidgetHostViewAura::ApplyEventFilterForPopupExit(
   if (target != window_ &&
       (!popup_parent_host_view_ ||
        target != popup_parent_host_view_->window_)) {
+    // If we enter this code path it means that we did not receive any focus
+    // lost notifications for the popup window. Ensure that blink is aware
+    // of the fact that focus was lost for the host window by sending a Blur
+    // notification.
+    if (popup_parent_host_view_ && popup_parent_host_view_->host_)
+      popup_parent_host_view_->host_->Blur();
     // Note: popup_parent_host_view_ may be NULL when there are multiple
     // popup children per view. See: RenderWidgetHostViewAura::InitAsPopup().
     Shutdown();
@@ -354,10 +376,62 @@ class RenderWidgetHostViewAura::WindowObserver : public aura::WindowObserver {
       view_->RemovingFromRootWindow();
   }
 
+  void OnWindowHierarchyChanged(const HierarchyChangeParams& params) override {
+    view_->ParentHierarchyChanged();
+  }
+
  private:
   RenderWidgetHostViewAura* view_;
 
   DISALLOW_COPY_AND_ASSIGN(WindowObserver);
+};
+
+// This class provides functionality to observe the ancestors of the RWHVA for
+// bounds changes. This is done to snap the RWHVA window to a pixel boundary,
+// which could change when the bounds relative to the root changes.
+// An example where this happens is below:-
+// The fast resize code path for bookmarks where in the parent of RWHVA which
+// is WCV has its bounds changed before the bookmark is hidden. This results in
+// the traditional bounds change notification for the WCV reporting the old
+// bounds as the bookmark is still around. Observing all the ancestors of the
+// RWHVA window enables us to know when the bounds of the window relative to
+// root changes and allows us to snap accordingly.
+class RenderWidgetHostViewAura::WindowAncestorObserver
+    : public aura::WindowObserver {
+ public:
+  explicit WindowAncestorObserver(RenderWidgetHostViewAura* view)
+      : view_(view) {
+    aura::Window* parent = view_->window_->parent();
+    while (parent) {
+      parent->AddObserver(this);
+      ancestors_.insert(parent);
+      parent = parent->parent();
+    }
+  }
+
+  ~WindowAncestorObserver() override {
+    RemoveAncestorObservers();
+  }
+
+  void OnWindowBoundsChanged(aura::Window* window,
+                             const gfx::Rect& old_bounds,
+                             const gfx::Rect& new_bounds) override {
+    DCHECK(ancestors_.find(window) != ancestors_.end());
+    if (new_bounds.origin() != old_bounds.origin())
+      view_->HandleParentBoundsChanged();
+  }
+
+ private:
+  void RemoveAncestorObservers() {
+    for (auto ancestor : ancestors_)
+      ancestor->RemoveObserver(this);
+    ancestors_.clear();
+  }
+
+  RenderWidgetHostViewAura* view_;
+  std::set<aura::Window*> ancestors_;
+
+  DISALLOW_COPY_AND_ASSIGN(WindowAncestorObserver);
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -398,6 +472,7 @@ RenderWidgetHostViewAura::RenderWidgetHostViewAura(RenderWidgetHost* host,
     host_->SetView(this);
 
   window_observer_.reset(new WindowObserver(this));
+
   aura::client::SetTooltipText(window_, &tooltip_);
   aura::client::SetActivationDelegate(window_, this);
   aura::client::SetFocusChangeObserver(window_, this);
@@ -737,6 +812,22 @@ bool RenderWidgetHostViewAura::CanRendererHandleEvent(
   return true;
 }
 
+void RenderWidgetHostViewAura::HandleParentBoundsChanged() {
+  SnapToPhysicalPixelBoundary();
+#if defined(OS_WIN)
+  if (legacy_render_widget_host_HWND_) {
+    legacy_render_widget_host_HWND_->SetBounds(
+        window_->GetBoundsInRootWindow());
+  }
+#endif
+}
+
+void RenderWidgetHostViewAura::ParentHierarchyChanged() {
+  ancestor_window_observer_.reset(new WindowAncestorObserver(this));
+  // Snap when we receive a hierarchy changed. http://crbug.com/388908.
+  HandleParentBoundsChanged();
+}
+
 void RenderWidgetHostViewAura::MovePluginWindows(
     const std::vector<WebPluginGeometry>& plugin_window_moves) {
 #if defined(OS_WIN)
@@ -807,7 +898,9 @@ void RenderWidgetHostViewAura::Focus() {
 }
 
 void RenderWidgetHostViewAura::Blur() {
-  window_->Blur();
+  aura::client::FocusClient* client = aura::client::GetFocusClient(window_);
+  if (client)
+    client->FocusWindow(NULL);
 }
 
 bool RenderWidgetHostViewAura::HasFocus() const {
@@ -1004,9 +1097,9 @@ void RenderWidgetHostViewAura::CopyFromCompositingSurface(
     const gfx::Rect& src_subrect,
     const gfx::Size& dst_size,
     ReadbackRequestCallback& callback,
-    const SkColorType color_type) {
+    const SkColorType preferred_color_type) {
   delegated_frame_host_->CopyFromCompositingSurface(
-      src_subrect, dst_size, callback, color_type);
+      src_subrect, dst_size, callback, preferred_color_type);
 }
 
 void RenderWidgetHostViewAura::CopyFromCompositingSurfaceToVideoFrame(
@@ -1222,10 +1315,14 @@ void RenderWidgetHostViewAura::ProcessAckedTouchEvent(
       break;
   }
 
-  // Only send acks for changed touches.
+  // Only send acks for one changed touch point.
+  bool sent_ack = false;
   for (size_t i = 0; i < touch.event.touchesLength; ++i) {
-    if (touch.event.touches[i].state == required_state)
+    if (touch.event.touches[i].state == required_state) {
+      DCHECK(!sent_ack);
       host->dispatcher()->ProcessedTouchEvent(window_, result);
+      sent_ack = true;
+    }
   }
 }
 
@@ -1253,9 +1350,19 @@ InputEventAckState RenderWidgetHostViewAura::FilterInputEvent(
   if (overscroll_controller_)
     consumed |= overscroll_controller_->WillHandleEvent(input_event);
 
-  return consumed && !WebTouchEvent::isTouchEventType(input_event.type)
-             ? INPUT_EVENT_ACK_STATE_CONSUMED
-             : INPUT_EVENT_ACK_STATE_NOT_CONSUMED;
+  // Touch events should always propagate to the renderer.
+  if (WebTouchEvent::isTouchEventType(input_event.type))
+    return INPUT_EVENT_ACK_STATE_NOT_CONSUMED;
+
+  // Reporting consumed for a fling suggests that there's now an *active* fling
+  // that requires both animation and a fling-end notification. However, the
+  // OverscrollController consumes a fling to stop its propagation; it doesn't
+  // actually tick a fling animation. Report no consumer to convey this.
+  if (consumed && input_event.type == blink::WebInputEvent::GestureFlingStart)
+    return INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS;
+
+  return consumed ? INPUT_EVENT_ACK_STATE_CONSUMED
+                  : INPUT_EVENT_ACK_STATE_NOT_CONSUMED;
 }
 
 BrowserAccessibilityManager*
@@ -2144,6 +2251,10 @@ void RenderWidgetHostViewAura::OnTouchEvent(ui::TouchEvent* event) {
   // processed by the gesture recognizer before events currently awaiting
   // dispatch in the touch queue.
   event->DisableSynchronousHandling();
+
+  // Set unchanged touch point to StateStationary for touchmove and
+  // touchcancel to make sure only send one ack per WebTouchEvent.
+  MarkUnchangedTouchPointsAsStationary(&touch_event, event->touch_id());
   host_->ForwardTouchEventWithLatencyInfo(touch_event, *event->latency());
 }
 
@@ -2492,9 +2603,6 @@ void RenderWidgetHostViewAura::OnShowContextMenu() {
 }
 
 void RenderWidgetHostViewAura::InternalSetBounds(const gfx::Rect& rect) {
-  if (HasDisplayPropertyChanged(window_))
-    host_->InvalidateScreenInfo();
-
   SnapToPhysicalPixelBoundary();
   // Don't recursively call SetBounds if this bounds update is the result of
   // a Window::SetBoundsInternal call.
@@ -2645,10 +2753,6 @@ void RenderWidgetHostViewAura::ForwardKeyboardEvent(
   host_->ForwardKeyboardEvent(event);
 }
 
-SkColorType RenderWidgetHostViewAura::PreferredReadbackFormat() {
-  return kN32_SkColorType;
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // DelegatedFrameHost, public:
 
@@ -2720,6 +2824,10 @@ void RenderWidgetHostViewAura::DelegatedFrameHostUpdateVSyncParameters(
 
 void RenderWidgetHostViewAura::OnDidNavigateMainFrameToNewPage() {
   ui::GestureRecognizer::Get()->CancelActiveTouches(window_);
+}
+
+uint32_t RenderWidgetHostViewAura::GetSurfaceIdNamespace() {
+  return delegated_frame_host_->GetSurfaceIdNamespace();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

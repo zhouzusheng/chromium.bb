@@ -81,14 +81,14 @@ class UserGestureToken;
 class WebActiveGestureAnimation;
 class WebCompositorAnimationTimeline;
 class WebDevToolsAgentImpl;
+class WebElement;
 class WebLayerTreeView;
 class WebLocalFrameImpl;
 class WebImage;
 class WebPagePopupImpl;
 class WebPlugin;
+class WebSelection;
 class WebSettingsImpl;
-
-struct WebSelectionBound;
 
 class RubberbandContext;
 class RubberbandStateImpl;
@@ -131,6 +131,7 @@ public:
 #if OS(ANDROID)
     virtual void paintCompositedDeprecated(WebCanvas*, const WebRect&) override;
 #endif
+    virtual void layoutAndPaintAsync(WebLayoutAndPaintAsyncCallback*) override;
     virtual void compositeAndReadbackAsync(WebCompositeAndReadbackAsyncCallback*) override;
     virtual bool isTrackingRepaints() const override;
     virtual void themeChanged() override;
@@ -144,6 +145,7 @@ public:
         const WebFloatSize& elasticOverscrollDelta,
         float pageScaleDelta,
         float topControlsShownRatioDelta) override;
+    virtual void recordFrameTimingEvent(enum FrameTimingEventType, int64_t, const WebVector<WebFrameTimingEvent>&) override;
     virtual void mouseCaptureLost() override;
     virtual void setFocus(bool enable) override;
     virtual bool setComposition(
@@ -178,7 +180,6 @@ public:
     virtual bool isWebView() const { return true; }
     virtual void setMainFrame(WebFrame*) override;
     virtual void setCredentialManagerClient(WebCredentialManagerClient*) override;
-    virtual void setDevToolsAgentClient(WebDevToolsAgentClient*) override;
     virtual void setPrerendererClient(WebPrerendererClient*) override;
     virtual void setSpellCheckClient(WebSpellCheckClient*) override;
     virtual WebSettings* settings() override;
@@ -270,7 +271,6 @@ public:
     virtual unsigned long createUniqueIdentifierForRequest() override;
     void enableDeviceEmulation(const WebDeviceEmulationParams&) override;
     void disableDeviceEmulation() override;
-    virtual WebDevToolsAgent* devToolsAgent() override;
     virtual WebAXObject accessibilityObject() override;
     virtual void setSelectionColors(unsigned activeBackgroundColor,
                                     unsigned activeForegroundColor,
@@ -366,7 +366,7 @@ public:
         return m_page.get();
     }
 
-    WebDevToolsAgentImpl* devToolsAgentImpl();
+    WebDevToolsAgentImpl* mainFrameDevToolsAgentImpl();
 
     InspectorOverlay* inspectorOverlay();
 
@@ -404,6 +404,8 @@ public:
     bool sendContextMenuEvent(const WebKeyboardEvent&);
 
     void showContextMenuAtPoint(float x, float y, PassRefPtrWillBeRawPtr<ContextMenuProvider>);
+
+    void showContextMenuForElement(WebElement);
 
     // Notifies the WebView that a load has been committed. isNewNavigation
     // will be true if a new session history item should be created for that
@@ -518,8 +520,8 @@ public:
     void enterFullScreenForElement(Element*);
     void exitFullScreenForElement(Element*);
 
-    void clearCompositedSelectionBounds();
-    void updateCompositedSelectionBounds(const WebSelectionBound& anchor, const WebSelectionBound& focus);
+    void clearCompositedSelection();
+    void updateCompositedSelection(const WebSelection&);
 
     // Exposed for the purpose of overriding device metrics.
     void sendResizeEventAndRepaint();
@@ -579,7 +581,7 @@ private:
     void setUserAgentPageScaleConstraints(PageScaleConstraints newConstraints);
     IntSize contentsSize() const;
 
-    void updateMainFrameScrollPosition(const DoublePoint& scrollPosition, bool programmaticScroll);
+    void updateLayoutViewportScrollPosition(const DoublePoint& scrollPosition, bool programmaticScroll);
 
     void performResize();
     void resizeViewWhileAnchored(FrameView*);
@@ -670,7 +672,7 @@ private:
     StorageClientImpl m_storageClientImpl;
 
     WebSize m_size;
-    // If true, automatically resize the render view around its content.
+    // If true, automatically resize the layout view around its content.
     bool m_shouldAutoResize;
     // The lower bound on the size when auto-resizing.
     IntSize m_minAutoSize;
@@ -685,7 +687,7 @@ private:
     OwnPtr<WebSettingsImpl> m_webSettings;
 
     // A copy of the web drop data object we received from the browser.
-    RefPtrWillBePersistent<DataObject> m_currentDragData;
+    Persistent<DataObject> m_currentDragData;
 
     // The point relative to the client area where the mouse was last pressed
     // down. This is used by the drag client to determine what was under the
@@ -780,9 +782,6 @@ private:
     GraphicsLayer* m_rootGraphicsLayer;
     GraphicsLayer* m_rootTransformLayer;
     OwnPtr<GraphicsLayerFactory> m_graphicsLayerFactory;
-    bool m_isAcceleratedCompositingActive;
-    bool m_layerTreeViewCommitsDeferred;
-    bool m_layerTreeViewClosed;
     bool m_matchesHeuristicsForGpuRasterization;
     // If true, the graphics context is being restored.
     bool m_recreatingGraphicsContext;
@@ -798,10 +797,7 @@ private:
     OwnPtrWillBePersistent<FullscreenController> m_fullscreenController;
 
     bool m_showFPSCounter;
-    bool m_showPaintRects;
-    bool m_showDebugBorders;
     bool m_continuousPaintingEnabled;
-    bool m_showScrollBottleneckRects;
     WebColor m_baseBackgroundColor;
     WebColor m_backgroundColorOverride;
     float m_zoomFactorOverride;

@@ -49,7 +49,7 @@
         '../pdf/pdf.gyp:pdf',
         '../printing/printing.gyp:printing',
         '../skia/skia.gyp:skia',
-        '../third_party/hunspell/hunspell.gyp:hunspell',
+        '../third_party/hunspell_new/hunspell.gyp:hunspell',
         '../third_party/icu/icu.gyp:icui18n',
         '../third_party/icu/icu.gyp:icuuc',
         '../third_party/WebKit/public/blink.gyp:blink',

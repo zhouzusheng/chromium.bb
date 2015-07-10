@@ -51,7 +51,6 @@ class Function;
 class Isolate;
 class Object;
 class Value;
-template <class T> class Handle;
 template <class T> class Local;
 }
 
@@ -216,6 +215,10 @@ public:
     // This is executed between layout tests runs
     void clearOpener() { setOpener(0); }
 
+    // Inserts the given frame as a child of this frame, so that it is the next
+    // child after |previousSibling|, or first child if |previousSibling| is null.
+    BLINK_EXPORT void insertAfter(WebFrame* child, WebFrame* previousSibling);
+
     // Adds the given frame as a child of this frame.
     BLINK_EXPORT void appendChild(WebFrame*);
 
@@ -330,11 +333,11 @@ public:
 
     // Call the function with the given receiver and arguments, bypassing
     // canExecute().
-    virtual v8::Handle<v8::Value> callFunctionEvenIfScriptDisabled(
-        v8::Handle<v8::Function>,
-        v8::Handle<v8::Value>,
+    virtual v8::Local<v8::Value> callFunctionEvenIfScriptDisabled(
+        v8::Local<v8::Function>,
+        v8::Local<v8::Value>,
         int argc,
-        v8::Handle<v8::Value> argv[]) = 0;
+        v8::Local<v8::Value> argv[]) = 0;
 
     // Returns the V8 context for associated with the main world and this
     // frame. There can be many V8 contexts associated with this frame, one for

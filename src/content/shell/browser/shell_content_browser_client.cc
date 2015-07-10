@@ -20,6 +20,10 @@
 #include "content/public/common/url_constants.h"
 #include "content/public/common/web_preferences.h"
 #include "content/renderer/in_process_renderer_thread.h"
+
+// SHEZ: Remove test-only code.
+// #include "content/shell/browser/blink_test_controller.h"
+
 #include "content/shell/browser/ipc_echo_message_filter.h"
 
 // SHEZ: Remove test-only code.
@@ -35,11 +39,13 @@
 #include "content/shell/browser/shell_quota_permission_context.h"
 #include "content/shell/browser/shell_resource_dispatcher_host_delegate.h"
 #include "content/shell/browser/shell_web_contents_view_delegate_creator.h"
-#include "content/shell/browser/webkit_test_controller.h"
 #include "content/shell/common/shell_messages.h"
 #include "content/shell/common/shell_switches.h"
-#include "content/shell/common/webkit_test_helpers.h"
-#include "gin/public/isolate_holder.h"
+
+// SHEZ: Remove test-only code.
+// #include "content/shell/renderer/layout_test/blink_test_helpers.h"
+
+#include "gin/v8_initializer.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "url/gurl.h"
 
@@ -227,6 +233,16 @@ bool ShellContentBrowserClient::IsHandledURL(const GURL& url) {
 void ShellContentBrowserClient::AppendExtraCommandLineSwitches(
     base::CommandLine* command_line,
     int child_process_id) {
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
+#if defined(V8_USE_EXTERNAL_STARTUP_DATA)
+  std::string process_type =
+      command_line->GetSwitchValueASCII(switches::kProcessType);
+  if (process_type != switches::kZygoteProcess) {
+    command_line->AppendSwitch(::switches::kV8NativesPassedByFD);
+    command_line->AppendSwitch(::switches::kV8SnapshotPassedByFD);
+  }
+#endif  // V8_USE_EXTERNAL_STARTUP_DATA
+#endif  // OS_POSIX && !OS_MACOSX
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kRunLayoutTest))
     command_line->AppendSwitch(switches::kRunLayoutTest);
@@ -277,7 +293,7 @@ void ShellContentBrowserClient::OverrideWebkitPrefs(
     return;
   // SHEZ: Remove test code.
 #if 0
-  WebKitTestController::Get()->OverrideWebkitPrefs(prefs);
+  BlinkTestController::Get()->OverrideWebkitPrefs(prefs);
 #endif
 }
 
@@ -396,23 +412,16 @@ void ShellContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
     int child_process_id,
     FileDescriptorInfo* mappings) {
 #if defined(V8_USE_EXTERNAL_STARTUP_DATA)
-  if (v8_snapshot_fd_.get() == -1 && v8_natives_fd_.get() == -1) {
-    base::FilePath v8_data_path;
-    PathService::Get(gin::IsolateHolder::kV8SnapshotBasePathKey, &v8_data_path);
-    DCHECK(!v8_data_path.empty());
-
-    int file_flags = base::File::FLAG_OPEN | base::File::FLAG_READ;
-    base::FilePath v8_natives_data_path =
-        v8_data_path.AppendASCII(gin::IsolateHolder::kNativesFileName);
-    base::FilePath v8_snapshot_data_path =
-        v8_data_path.AppendASCII(gin::IsolateHolder::kSnapshotFileName);
-    base::File v8_natives_data_file(v8_natives_data_path, file_flags);
-    base::File v8_snapshot_data_file(v8_snapshot_data_path, file_flags);
-    DCHECK(v8_natives_data_file.IsValid());
-    DCHECK(v8_snapshot_data_file.IsValid());
-    v8_natives_fd_.reset(v8_natives_data_file.TakePlatformFile());
-    v8_snapshot_fd_.reset(v8_snapshot_data_file.TakePlatformFile());
+  if (v8_natives_fd_.get() == -1 || v8_snapshot_fd_.get() == -1) {
+    int v8_natives_fd = -1;
+    int v8_snapshot_fd = -1;
+    if (gin::V8Initializer::OpenV8FilesForChildProcesses(&v8_natives_fd,
+                                                         &v8_snapshot_fd)) {
+      v8_natives_fd_.reset(v8_natives_fd);
+      v8_snapshot_fd_.reset(v8_snapshot_fd);
+    }
   }
+  DCHECK(v8_natives_fd_.get() != -1 && v8_snapshot_fd_.get() != -1);
   mappings->Share(kV8NativesDataDescriptor, v8_natives_fd_.get());
   mappings->Share(kV8SnapshotDataDescriptor, v8_snapshot_fd_.get());
 #endif  // V8_USE_EXTERNAL_STARTUP_DATA

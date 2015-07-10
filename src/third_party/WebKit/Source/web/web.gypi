@@ -193,7 +193,6 @@
       'WebLeakDetector.cpp',
       'WebLocalFrameImpl.cpp',
       'WebLocalFrameImpl.h',
-      'WebMIDIClientMock.cpp',
       'WebMIDIPermissionRequest.cpp',
       'WebMediaDevicesRequest.cpp',
       'WebMediaPlayerClientImpl.cpp',
@@ -231,6 +230,7 @@
       'WebSearchableFormData.cpp',
       'WebSecurityPolicy.cpp',
       'WebSelectElement.cpp',
+      'WebSelection.cpp',
       'WebSelector.cpp',
       'WebSerializedScriptValue.cpp',
       'WebSettingsImpl.cpp',
@@ -279,6 +279,7 @@
       'PopupContainerTest.cpp',
       'PopupMenuTest.cpp',
       'WebDragDataTest.cpp',
+      'WebEmbeddedWorkerImplTest.cpp',
       'WebNodeTest.cpp',
       # FIXME: Move the tests from web/tests/ to appropriate places.
       # crbug.com/353585
@@ -296,7 +297,6 @@
       'tests/LinkHighlightTest.cpp',
       'tests/ListenerLeakTest.cpp',
       'tests/MHTMLTest.cpp',
-      'tests/MemoryInfo.cpp',
       'tests/OpenTypeVerticalDataTest.cpp',
       'tests/PageSerializerTest.cpp',
       'tests/PaintAggregatorTest.cpp',
@@ -332,16 +332,8 @@
       ['OS=="win"',
         {
           'web_unittest_files': [
-            'tests/LocaleWinTest.cpp',
             'tests/WebPageNewSerializerTest.cpp',
             'tests/WebPageSerializerTest.cpp',
-          ],
-        }
-      ],
-      ['OS=="mac"',
-        {
-          'web_unittest_files': [
-            'tests/LocaleMacTest.cpp',
           ],
         }
       ],
@@ -350,13 +342,6 @@
           'web_unittest_files': [
             # Mac uses ScrollAnimatorMac instead of ScrollAnimatorNone.
             'tests/ScrollAnimatorNoneTest.cpp',
-          ],
-        }
-      ],
-      ['os_posix==1 and OS!="mac"',
-        {
-          'web_unittest_files': [
-            'tests/LocaleICUTest.cpp',
           ],
         }
       ],

@@ -58,6 +58,7 @@ class WebDevToolsAgentImpl;
 class WebDevToolsFrontendImpl;
 class WebFrameClient;
 class WebFrameWidgetImpl;
+class WebNode;
 class WebPerformance;
 class WebPlugin;
 class WebPluginContainerImpl;
@@ -124,15 +125,16 @@ public:
     virtual void requestExecuteScriptInIsolatedWorld(
         int worldID, const WebScriptSource* sourceIn, unsigned numSources,
         int extensionGroup, bool userGesture, WebScriptExecutionCallback*) override;
-    virtual v8::Handle<v8::Value> callFunctionEvenIfScriptDisabled(
-        v8::Handle<v8::Function>,
-        v8::Handle<v8::Value>,
+    virtual v8::Local<v8::Value> callFunctionEvenIfScriptDisabled(
+        v8::Local<v8::Function>,
+        v8::Local<v8::Value>,
         int argc,
-        v8::Handle<v8::Value> argv[]) override;
+        v8::Local<v8::Value> argv[]) override;
     virtual v8::Local<v8::Context> mainWorldScriptContext() const override;
     virtual v8::Isolate* scriptIsolate() const override;
     virtual void reload(bool ignoreCache) override;
     virtual void reloadWithOverrideURL(const WebURL& overrideUrl, bool ignoreCache) override;
+    virtual void reloadImage(const WebNode&) override;
     virtual void loadRequest(const WebURLRequest&) override;
     virtual void loadHistoryItem(const WebHistoryItem&, WebHistoryLoadType, WebURLRequest::CachePolicy) override;
     virtual void loadData(
@@ -173,7 +175,7 @@ public:
     virtual bool selectWordAroundCaret() override;
     virtual void selectRange(const WebPoint& base, const WebPoint& extent) override;
     virtual void selectRange(const WebRange&) override;
-    virtual void moveRangeSelectionExtent(const WebPoint&, WebFrame::TextGranularity = CharacterGranularity) override;
+    virtual void moveRangeSelectionExtent(const WebPoint&) override;
     virtual void moveRangeSelection(const WebPoint& base, const WebPoint& extent, WebFrame::TextGranularity = CharacterGranularity) override;
     virtual void moveCaretSelection(const WebPoint&) override;
     virtual bool setEditableSelectionOffsets(int start, int end) override;
@@ -241,7 +243,8 @@ public:
     virtual void addStyleSheetByURL(const WebString& url) override;
     virtual void navigateToSandboxedMarkup(const WebData& markup) override;
     virtual void sendOrientationChangeEvent() override;
-    virtual void willShowInstallBannerPrompt(const WebString& platform, WebAppBannerPromptReply*) override;
+    virtual void willShowInstallBannerPrompt(int requestId, const WebVector<WebString>& platforms, WebAppBannerPromptReply*) override;
+    virtual void willShowInstallBannerPrompt(const WebVector<WebString>& platforms, WebAppBannerPromptReply*) override;
     void requestRunTask(WebSuspendableTask*) const override;
 
     void willBeDetached();
@@ -322,12 +325,6 @@ public:
     // Otherwise creates it and then returns.
     TextFinder& ensureTextFinder();
 
-    // Invalidates vertical scrollbar only.
-    void invalidateScrollbar() const;
-
-    // Invalidates both content area and the scrollbar.
-    void invalidateAll() const;
-
     // Returns a hit-tested VisiblePosition for the given point
     VisiblePosition visiblePositionForViewportPoint(const WebPoint&);
 
@@ -364,7 +361,7 @@ private:
     OwnPtrWillBeMember<InspectorOverlay> m_inspectorOverlay;
     OwnPtrWillBeMember<WebDevToolsAgentImpl> m_devToolsAgent;
 
-    // This is set if the frame is the root of a local frame tree, and requires a widget for rendering.
+    // This is set if the frame is the root of a local frame tree, and requires a widget for layout.
     WebFrameWidgetImpl* m_frameWidget;
 
     WebFrameClient* m_client;

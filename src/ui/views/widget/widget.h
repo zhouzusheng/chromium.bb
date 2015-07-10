@@ -795,7 +795,6 @@ class VIEWS_EXPORT Widget : public internal::NativeWidgetDelegate,
   void OnNativeWidgetBeginUserBoundsChange() override;
   void OnNativeWidgetEndUserBoundsChange() override;
   bool HasFocusManager() const override;
-  bool OnNativeWidgetPaintAccelerated(const gfx::Rect& dirty_region) override;
   void OnNativeWidgetPaint(const ui::PaintContext& context) override;
   bool OnNCHitTest(int* result, const gfx::Point& point) override;
   bool OnNCDragBegin(int hit_test_code) override;

@@ -7,10 +7,10 @@
 
 #include "core/layout/FloatingObjects.h"
 #include "core/layout/LayoutBlockFlow.h"
-#include "core/layout/PaintInfo.h"
+#include "core/paint/ClipScope.h"
 #include "core/paint/DeprecatedPaintLayer.h"
 #include "core/paint/LayoutObjectDrawingRecorder.h"
-#include "platform/graphics/paint/ClipRecorderStack.h"
+#include "core/paint/PaintInfo.h"
 
 namespace blink {
 
@@ -55,7 +55,6 @@ void BlockFlowPainter::paintSelection(const PaintInfo& paintInfo, const LayoutPo
         LayoutUnit lastRight = m_layoutBlockFlow.logicalRightSelectionOffset(&m_layoutBlockFlow, lastTop);
         bool shouldHighlightBeforeSide = false;
         bool isAfterSideSelected = false;
-        ClipRecorderStack clipRecorderStack(paintInfo.context);
 
         LayoutRect bounds;
         if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
@@ -63,10 +62,13 @@ void BlockFlowPainter::paintSelection(const PaintInfo& paintInfo, const LayoutPo
             bounds.moveBy(paintOffset);
         }
         LayoutObjectDrawingRecorder recorder(*paintInfo.context, m_layoutBlockFlow, DisplayItem::SelectionGap, bounds);
+        ClipScope clipScope(paintInfo.context);
 
         LayoutRect gapRectsBounds = m_layoutBlockFlow.selectionGaps(&m_layoutBlockFlow, paintOffset, LayoutSize(), lastTop, lastLeft, lastRight,
             recorder.canUseCachedDrawing() ? nullptr : &paintInfo,
+            recorder.canUseCachedDrawing() ? nullptr : &clipScope,
             shouldHighlightBeforeSide, isAfterSideSelected);
+        // TODO(wkorman): Rework below to process paint invalidation rects during layout rather than paint.
         if (!gapRectsBounds.isEmpty()) {
             DeprecatedPaintLayer* layer = m_layoutBlockFlow.enclosingLayer();
             gapRectsBounds.moveBy(-paintOffset);

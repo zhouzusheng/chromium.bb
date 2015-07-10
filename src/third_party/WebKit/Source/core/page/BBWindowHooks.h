@@ -54,7 +54,7 @@ namespace blink {
         void addMarker(Range* range, long markerType);
         PassRefPtr<Range> findPlainText(Range* range, const String& target, long options);
         bool checkSpellingForNode(Node* node);
-        PassRefPtr<ClientRect> getAbsoluteCaretRectAtOffset(Node* node, long offset);
+        ClientRect* getAbsoluteCaretRectAtOffset(Node* node, long offset);
 
         virtual void trace(Visitor*) override;
 

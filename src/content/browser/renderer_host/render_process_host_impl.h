@@ -113,7 +113,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
   StoragePartition* GetStoragePartition() const override;
   bool Shutdown(int exit_code, bool wait) override;
   bool FastShutdownIfPossible() override;
-  void DumpHandles() override;
   base::ProcessHandle GetHandle() const override;
   BrowserContext* GetBrowserContext() const override;
   bool InSameStoragePartition(StoragePartition* partition) const override;
@@ -144,7 +143,7 @@ class CONTENT_EXPORT RenderProcessHostImpl
       const WebRtcRtpPacketCallback& packet_callback) override;
 #endif
   void ResumeDeferredNavigation(const GlobalRequestID& request_id) override;
-  void NotifyTimezoneChange() override;
+  void NotifyTimezoneChange(const std::string& timezone) override;
   ServiceRegistry* GetServiceRegistry() override;
   bool IsProcessManagedExternally() const override;
   const base::TimeTicks& GetInitTimeForNavigationMetrics() const override;
@@ -316,7 +315,6 @@ class CONTENT_EXPORT RenderProcessHostImpl
 
   // Control message handlers.
   void OnShutdownRequest();
-  void OnDumpHandlesDone();
   void SuddenTerminationChanged(bool enabled);
   void OnUserMetricsRecordAction(const std::string& action);
   void OnSavedPageAsMHTML(int job_id, int64 mhtml_file_size);

@@ -38,7 +38,7 @@ SpellcheckService::EventType g_status_type =
 SpellcheckService::SpellcheckService(content::BrowserContext* context)
     : context_(context),
       weak_ptr_factory_(this) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   PrefService* prefs = user_prefs::UserPrefs::Get(context);
   pref_change_registrar_.Init(prefs);
 
@@ -157,7 +157,7 @@ void SpellcheckService::GetSpellCheckLanguagesFromAcceptLanguages(
 // static
 bool SpellcheckService::SignalStatusEvent(
     SpellcheckService::EventType status_type) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   if (!g_status_event)
     return false;
@@ -173,7 +173,7 @@ void SpellcheckService::StartRecordingMetrics(bool spellcheck_enabled) {
 }
 
 void SpellcheckService::InitForRenderer(content::RenderProcessHost* process) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   content::BrowserContext* context = process->GetBrowserContext();
   if (SpellcheckServiceFactory::GetForContext(context) != this)
@@ -334,19 +334,19 @@ void SpellcheckService::OnHunspellDictionaryDownloadFailure() {
 
 // static
 void SpellcheckService::AttachStatusEvent(base::WaitableEvent* status_event) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   g_status_event = status_event;
 }
 
 // static
 SpellcheckService::EventType SpellcheckService::GetStatusEvent() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   return g_status_type;
 }
 
 void SpellcheckService::InitForAllRenderers() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   for (content::RenderProcessHost::iterator i(
           content::RenderProcessHost::AllHostsIterator());
        !i.IsAtEnd(); i.Advance()) {

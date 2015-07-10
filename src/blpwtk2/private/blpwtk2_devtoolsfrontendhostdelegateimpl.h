@@ -26,9 +26,12 @@
 #include <blpwtk2_config.h>
 
 #include <base/memory/scoped_ptr.h>
+#include <base/memory/weak_ptr.h>
+#include <base/values.h>
 #include <content/public/browser/web_contents_observer.h>
 #include <content/public/browser/devtools_agent_host_client.h>
 #include <content/public/browser/devtools_frontend_host.h>
+#include <net/url_request/url_fetcher_delegate.h>
 
 namespace content {
     class DevToolsAgentHost;
@@ -41,17 +44,25 @@ namespace blpwtk2 {
 class DevToolsFrontendHostDelegateImpl
     : public content::WebContentsObserver,
       public content::DevToolsFrontendHost::Delegate,
-      public content::DevToolsAgentHostClient {
+      public content::DevToolsAgentHostClient,
+      public net::URLFetcherDelegate {
   public:
     DevToolsFrontendHostDelegateImpl(content::WebContents* inspectorContents,
-                                     const scoped_refptr<content::DevToolsAgentHost>& agentHost);
+                                     content::WebContents* inspectedContents);
     virtual ~DevToolsFrontendHostDelegateImpl();
 
-    content::DevToolsAgentHost* agentHost() const { return d_agentHost.get(); }
+    void inspectElementAt(const POINT& point);
+
+    void CallClientFunction(const std::string& function_name,
+                            const base::Value* arg1,
+                            const base::Value* arg2,
+                            const base::Value* arg3);
+    void SendMessageAck(int request_id, const base::Value* arg);
 
     // ======== WebContentsObserver overrides ============
 
     void RenderViewCreated(content::RenderViewHost* renderViewHost) override;
+    void DocumentAvailableInMainFrame() override;
     void WebContentsDestroyed() override;
 
 
@@ -67,9 +78,20 @@ class DevToolsFrontendHostDelegateImpl
     void AgentHostClosed(content::DevToolsAgentHost* agentHost,
                          bool replacedWithAnotherClient) override;
 
+    // ========= net::URLFetcherDelegate overrides =========
+    void OnURLFetchComplete(const net::URLFetcher* source) override;
+
   private:
+    content::WebContents* d_inspectedContents;
     scoped_refptr<content::DevToolsAgentHost> d_agentHost;
     scoped_ptr<content::DevToolsFrontendHost> d_frontendHost;
+    using PendingRequestsMap = std::map<const net::URLFetcher*, int>;
+    PendingRequestsMap d_pendingRequests;
+    base::DictionaryValue d_preferences;
+    base::WeakPtrFactory<DevToolsFrontendHostDelegateImpl> d_weakFactory;
+
+    POINT d_inspectElementPoint;
+    bool d_inspectElementPointPending;
 };
 
 

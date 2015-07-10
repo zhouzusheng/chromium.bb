@@ -25,22 +25,22 @@
 
 #include <blpwtk2_config.h>
 
-#include <content/public/browser/devtools_http_handler_delegate.h>
+#include <components/devtools_http_handler/devtools_http_handler_delegate.h>
 #include <content/public/browser/devtools_manager_delegate.h>
 
 namespace blpwtk2 {
 
 // TODO: document this
 class DevToolsHttpHandlerDelegateImpl
-    : public content::DevToolsHttpHandlerDelegate {
+    : public devtools_http_handler::DevToolsHttpHandlerDelegate {
   public:
     DevToolsHttpHandlerDelegateImpl() {}
     virtual ~DevToolsHttpHandlerDelegateImpl() {}
 
     // ====== DevToolsHttpHandlerDelegate overrides =======
     std::string GetDiscoveryPageHTML() override { return std::string(); }
-    bool BundlesFrontendResources() override { return true; }
-    base::FilePath GetDebugFrontendDir() override { return base::FilePath(); }
+    std::string GetFrontendResource(const std::string& path) override;
+    std::string GetPageThumbnailData(const GURL& url) override { return std::string(); }
 };
 
 // TODO: document this
@@ -58,9 +58,6 @@ class DevToolsManagerDelegateImpl : public content::DevToolsManagerDelegate {
   base::DictionaryValue* HandleCommand(
       content::DevToolsAgentHost* agentHost,
       base::DictionaryValue* command) override;
-  scoped_ptr<content::DevToolsTarget> CreateNewTarget(const GURL& url) override;
-  void EnumerateTargets(TargetCallback callback) override;
-  std::string GetPageThumbnailData(const GURL& url) override { return std::string(); }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DevToolsManagerDelegateImpl);

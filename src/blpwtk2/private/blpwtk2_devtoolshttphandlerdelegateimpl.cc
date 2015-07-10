@@ -22,76 +22,18 @@
 
 #include <blpwtk2_devtoolshttphandlerdelegateimpl.h>
 
-#include <base/command_line.h>
-#include <base/files/file_path.h>
-#include <base/path_service.h>
-#include <base/strings/utf_string_conversions.h>
-#include <content/public/browser/devtools_agent_host.h>
-#include <content/public/browser/devtools_target.h>
-#include <content/public/browser/favicon_status.h>
-#include <content/public/browser/navigation_entry.h>
-#include <content/public/browser/render_view_host.h>
+#include <content/public/browser/devtools_frontend_host.h>
 #include <content/public/browser/web_contents.h>
 #include <content/public/browser/web_contents_delegate.h>
 
 namespace blpwtk2 {
 
-namespace {
+// DevToolsHttpHandlerDelegateImpl -------------------------------------------
 
-// This class is copied from the content_shell implementation of
-// DevToolsHttpHandlerDelegate.  We might customize stuff in here in
-// the future.
-class Target : public content::DevToolsTarget {
-  public:
-    explicit Target(scoped_refptr<content::DevToolsAgentHost> agentHost);
-
-    std::string GetId() const override { return d_agentHost->GetId(); }
-    std::string GetParentId() const override { return std::string(); }
-    std::string GetType() const override { return "page"; }
-    std::string GetTitle() const override { return d_agentHost->GetTitle(); }
-    std::string GetDescription() const override { return std::string(); }
-    GURL GetURL() const override { return d_agentHost->GetURL(); }
-    GURL GetFaviconURL() const override { return d_faviconUrl; }
-    base::TimeTicks GetLastActivityTime() const override {
-        return d_lastActivityTime;
-    }
-    bool IsAttached() const override {
-        return d_agentHost->IsAttached();
-    }
-    scoped_refptr<content::DevToolsAgentHost> GetAgentHost() const override {
-        return d_agentHost;
-    }
-    bool Activate() const override;
-    bool Close() const override;
-
-private:
-    scoped_refptr<content::DevToolsAgentHost> d_agentHost;
-    GURL d_faviconUrl;
-    base::TimeTicks d_lastActivityTime;
-};
-
-Target::Target(scoped_refptr<content::DevToolsAgentHost> agentHost)
-: d_agentHost(agentHost)
+std::string DevToolsHttpHandlerDelegateImpl::GetFrontendResource(const std::string& path)
 {
-    if (content::WebContents* webContents = d_agentHost->GetWebContents()) {
-        content::NavigationController& controller = webContents->GetController();
-        content::NavigationEntry* entry = controller.GetActiveEntry();
-        if (entry != NULL && entry->GetURL().is_valid())
-            d_faviconUrl = entry->GetFavicon().url;
-        d_lastActivityTime = webContents->GetLastActiveTime();
-    }
+    return content::DevToolsFrontendHost::GetFrontendResource(path).as_string();
 }
-
-bool Target::Activate() const {
-    return d_agentHost->Activate();
-}
-
-bool Target::Close() const {
-    return d_agentHost->Close();
-}
-
-}  // close anonymous namespace
-
 
 // DevToolsManagerDelegateImpl -----------------------------------------------
 // TODO: move this to a separate file
@@ -109,28 +51,6 @@ base::DictionaryValue* DevToolsManagerDelegateImpl::HandleCommand(
       base::DictionaryValue* command)
 {
     return NULL;
-}
-
-scoped_ptr<content::DevToolsTarget>
-DevToolsManagerDelegateImpl::CreateNewTarget(const GURL& url)
-{
-    // TODO(SHEZ): implement this
-    NOTIMPLEMENTED();
-    return scoped_ptr<content::DevToolsTarget>();
-}
-
-void DevToolsManagerDelegateImpl::EnumerateTargets(TargetCallback callback)
-{
-    // This is copied from the implementation in content_shell.
-
-    TargetList targets;
-    content::DevToolsAgentHost::List agents =
-        content::DevToolsAgentHost::GetOrCreateAll();
-    for (content::DevToolsAgentHost::List::iterator it = agents.begin();
-         it != agents.end(); ++it) {
-        targets.push_back(new Target(*it));
-    }
-    callback.Run(targets);
 }
 
 }  // close namespace blpwtk2

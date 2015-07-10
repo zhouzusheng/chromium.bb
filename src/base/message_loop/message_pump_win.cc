@@ -61,6 +61,10 @@ void MessagePumpWin::PopRunState() {
   state_ = state_->previous_state;
 }
 
+void MessagePumpWin::Run(Delegate* delegate) {
+  RunWithDispatcher(delegate, NULL);
+}
+
 void MessagePumpWin::Quit() {
   DCHECK(state_);
   state_->should_quit = true;
@@ -482,6 +486,9 @@ bool MessagePumpForUI::ProcessPumpReplacementMessage() {
 MessagePumpForIO::MessagePumpForIO() {
   port_.Set(CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, NULL, 1));
   DCHECK(port_.IsValid());
+}
+
+MessagePumpForIO::~MessagePumpForIO() {
 }
 
 void MessagePumpForIO::ScheduleWork() {

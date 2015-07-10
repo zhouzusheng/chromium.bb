@@ -131,8 +131,6 @@
         'canvas_notimplemented.cc',
         'canvas_paint_mac.h',
         'canvas_paint_mac.mm',
-        'canvas_paint_win.cc',
-        'canvas_paint_win.h',
         'canvas_skia.cc',
         'canvas_skia_paint.h',
         'codec/jpeg_codec.cc',
@@ -223,6 +221,8 @@
         'nine_image_painter.cc',
         'nine_image_painter.h',
         'overlay_transform.h',
+        'paint_throbber.cc',
+        'paint_throbber.h',
         'path.cc',
         'path.h',
         'path_aura.cc',
@@ -307,6 +307,8 @@
         'win/scoped_set_map_mode.h',
         'win/singleton_hwnd.cc',
         'win/singleton_hwnd.h',
+        'win/singleton_hwnd_observer.cc',
+        'win/singleton_hwnd_observer.h',
         'win/window_impl.cc',
         'win/window_impl.h',
       ],
@@ -365,6 +367,16 @@
               '-ljnigraphics',
             ],
           },
+        }],
+        ['chromeos==1', {
+          # Chrome OS requires robust JPEG decoding for the login screen.
+          'sources': [
+            'chromeos/codec/jpeg_codec_robust_slow.cc',
+            'chromeos/codec/jpeg_codec_robust_slow.h',
+          ],
+          'dependencies': [
+            '<(libjpeg_ijg_gyp_path):libjpeg',
+          ],
         }],
         ['use_aura==0 and toolkit_views==0', {
           'sources!': [

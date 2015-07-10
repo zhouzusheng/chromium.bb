@@ -263,7 +263,7 @@ void WebViewImpl::rubberbandWalkFrame(const RubberbandContext& context, LocalFra
 
     FrameView* view = frame->view();
 
-    LayoutObject* layoutObject = frame->contentRenderer();
+    LayoutObject* layoutObject = frame->contentLayoutObject();
     if (!layoutObject || !layoutObject->hasLayer())
         return;
 

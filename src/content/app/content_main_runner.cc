@@ -16,6 +16,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
+#include "base/metrics/statistics_recorder.h"
 #include "base/path_service.h"
 #include "base/process/launch.h"
 #include "base/process/memory.h"
@@ -51,7 +52,7 @@
 #include "ui/base/ui_base_switches.h"
 
 #ifdef V8_USE_EXTERNAL_STARTUP_DATA
-#include "gin/public/isolate_holder.h"
+#include "gin/v8_initializer.h"
 #endif
 
 #if defined(USE_TCMALLOC)
@@ -77,12 +78,14 @@
 #include <cstring>
 
 #include "base/strings/string_number_conversions.h"
+#include "base/trace_event/trace_event_etw_export_win.h"
 #include "ui/base/win/atl_module.h"
 #include "ui/gfx/win/dpi.h"
 #elif defined(OS_MACOSX)
 #include "base/mac/scoped_nsautorelease_pool.h"
 #if !defined(OS_IOS)
 #include "base/power_monitor/power_monitor_device_source.h"
+#include "content/app/mac/mac_init.h"
 #include "content/browser/mach_broker_mac.h"
 #include "content/common/sandbox_init_mac.h"
 #endif  // !OS_IOS
@@ -293,12 +296,7 @@ int RunZygote(const MainFunctionParams& main_function_params,
   ScopedVector<ZygoteForkDelegate> zygote_fork_delegates;
   if (delegate) {
     delegate->ZygoteStarting(&zygote_fork_delegates);
-    // Each Renderer we spawn will re-attempt initialization of the media
-    // libraries, at which point failure will be detected and handled, so
-    // we do not need to cope with initialization failures here.
-    base::FilePath media_path;
-    if (PathService::Get(DIR_MEDIA_LIBS, &media_path))
-      media::InitializeMediaLibrary(media_path);
+    media::InitializeMediaLibrary();
   }
 
   // This function call can return multiple times, once per fork().
@@ -562,6 +560,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     // app quits. Each "main" needs to flush this pool right before it goes into
     // its main event loop to get rid of the cruft.
     autorelease_pool_.reset(new base::mac::ScopedNSAutoreleasePool());
+    InitializeMac();
 #endif
 
     // On Android, the command line is initialized when library is loaded and
@@ -646,6 +645,12 @@ class ContentMainRunnerImpl : public ContentMainRunner {
           base::trace_event::TraceOptions(
               base::trace_event::RECORD_UNTIL_FULL));
     }
+#if defined(OS_WIN)
+    // Enable exporting of events to ETW if requested on the command line.
+    if (command_line.HasSwitch(switches::kTraceExportEventsToETW))
+      base::trace_event::TraceEventETWExport::EnableETWExport();
+#endif  // OS_WIN
+
 #if !defined(OS_ANDROID)
     // Android tracing started at the beginning of the method.
     // Other OSes have to wait till we get here in order for all the memory
@@ -690,7 +695,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     }
 #endif
 
-#if defined(USE_NSS)
+#if defined(USE_NSS_CERTS)
     crypto::EarlySetupForNSSInit();
 #endif
 
@@ -715,17 +720,20 @@ class ContentMainRunnerImpl : public ContentMainRunner {
 #endif
 #endif  // OS_ANDROID
 
+    base::StatisticsRecorder::Initialize();
+
 #if defined(V8_USE_EXTERNAL_STARTUP_DATA)
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
 #if !defined(OS_ANDROID)
-    // kV8NativesDataDescriptor and kV8SnapshotDataDescriptor are shared with
-    // child processes. On Android they are set in
+    // kV8NativesDataDescriptor and kV8SnapshotDataDescriptor could be shared
+    // with child processes via file descriptors. On Android they are set in
     // ChildProcessService::InternalInitChildProcess, otherwise set them here.
-    if (!process_type.empty() && process_type != switches::kZygoteProcess
-        && process_type != "service") {
+    if (command_line.HasSwitch(switches::kV8NativesPassedByFD)) {
       g_fds->Set(
           kV8NativesDataDescriptor,
           kV8NativesDataDescriptor + base::GlobalDescriptors::kBaseDescriptor);
+    }
+    if (command_line.HasSwitch(switches::kV8SnapshotPassedByFD)) {
       g_fds->Set(
           kV8SnapshotDataDescriptor,
           kV8SnapshotDataDescriptor + base::GlobalDescriptors::kBaseDescriptor);
@@ -736,14 +744,14 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     if (v8_natives_fd != -1 && v8_snapshot_fd != -1) {
       auto v8_natives_region = g_fds->GetRegion(kV8NativesDataDescriptor);
       auto v8_snapshot_region = g_fds->GetRegion(kV8SnapshotDataDescriptor);
-      CHECK(gin::IsolateHolder::LoadV8SnapshotFd(
+      CHECK(gin::V8Initializer::LoadV8SnapshotFromFD(
           v8_natives_fd, v8_natives_region.offset, v8_natives_region.size,
           v8_snapshot_fd, v8_snapshot_region.offset, v8_snapshot_region.size));
     } else {
-      CHECK(gin::IsolateHolder::LoadV8Snapshot());
+      CHECK(gin::V8Initializer::LoadV8Snapshot());
     }
 #else
-    CHECK(gin::IsolateHolder::LoadV8Snapshot());
+    CHECK(gin::V8Initializer::LoadV8Snapshot());
 #endif  // OS_POSIX && !OS_MACOSX
 #endif  // V8_USE_EXTERNAL_STARTUP_DATA
 

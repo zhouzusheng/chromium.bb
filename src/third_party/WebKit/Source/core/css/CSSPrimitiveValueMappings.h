@@ -2639,6 +2639,9 @@ template<> inline CSSPrimitiveValue::CSSPrimitiveValue(EWordBreak e)
     case KeepAllWordBreak:
         m_value.valueID = CSSValueKeepAll;
         break;
+    case KeepAllIfKoreanWordBreak:
+        m_value.valueID = CSSValueBbKeepAllIfKorean;
+        break;
     }
 }
 
@@ -2654,6 +2657,8 @@ template<> inline CSSPrimitiveValue::operator EWordBreak() const
         return NormalWordBreak;
     case CSSValueKeepAll:
         return KeepAllWordBreak;
+    case CSSValueBbKeepAllIfKorean:
+        return KeepAllIfKoreanWordBreak;
     default:
         break;
     }

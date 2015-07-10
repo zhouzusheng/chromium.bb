@@ -624,7 +624,7 @@ private:
     explicit FrameView(LocalFrame*);
 
     void updateLayoutAndStyleForPaintingInternal();
-    void invalidateTreeIfNeededRecursive();
+    void invalidateTreeIfNeededRecursive(bool cachedOffsetsEnabled);
     void scrollContentsIfNeededRecursive();
     void updateLayoutAndStyleIfNeededRecursive();
 
@@ -650,7 +650,7 @@ private:
     void scheduleOrPerformPostLayoutTasks();
     void performPostLayoutTasks();
 
-    void invalidateTreeIfNeeded(Vector<LayoutObject*>& pendingDelayedPaintInvalidations);
+    void invalidateTreeIfNeeded(Vector<LayoutObject*>& pendingDelayedPaintInvalidations, bool cachedOffsetsEnabled);
 
     DocumentLifecycle& lifecycle() const;
 

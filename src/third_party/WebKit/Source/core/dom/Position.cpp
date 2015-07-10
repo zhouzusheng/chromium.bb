@@ -1152,6 +1152,8 @@ static InlineTextBox* searchAheadForBetterMatch(LayoutObject* layoutObject)
         if (isNonTextLeafChild(next))
             return 0;
         if (next->isText()) {
+            if (next->style()->userModify() == READ_ONLY)
+                return 0;
             InlineTextBox* match = 0;
             int minOffset = INT_MAX;
             for (InlineTextBox* box = toLayoutText(next)->firstTextBox(); box; box = box->nextTextBox()) {
@@ -1199,6 +1201,10 @@ void PositionAlgorithm<Strategy>::getInlineBoxAndOffset(EAffinity affinity, Text
     if (!layoutObject->isText()) {
         inlineBox = 0;
         if (canHaveChildrenForEditing(deprecatedNode()) && layoutObject->isLayoutBlockFlow() && hasRenderedNonAnonymousDescendantsWithHeight(layoutObject)) {
+            if (layoutObject->isLayoutBlock() && toLayoutBlock(layoutObject)->childrenInline()) {
+                return;
+            }
+
             // Try a visually equivalent position with possibly opposite editability. This helps in case |this| is in
             // an editable block but surrounded by non-editable positions. It acts to negate the logic at the beginning
             // of LayoutObject::createVisiblePosition().

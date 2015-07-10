@@ -358,8 +358,8 @@ bool CSSParserFastPaths::isValidKeywordPropertyAndValue(CSSPropertyID propertyId
         return valueID >= CSSValueHorizontalTb && valueID <= CSSValueHorizontalBt;
     case CSSPropertyWhiteSpace: // normal | pre | nowrap
         return valueID == CSSValueNormal || valueID == CSSValuePre || valueID == CSSValuePreWrap || valueID == CSSValueBbPreWrapText || valueID == CSSValuePreLine || valueID == CSSValueNowrap;
-    case CSSPropertyWordBreak: // normal | break-all | keep-all | break-word (this is a custom extension)
-        return valueID == CSSValueNormal || valueID == CSSValueBreakAll || valueID == CSSValueKeepAll || valueID == CSSValueBreakWord;
+    case CSSPropertyWordBreak: // normal | break-all | keep-all || -bb-keep-all-if-korean | break-word (this is a custom extension)
+        return valueID == CSSValueNormal || valueID == CSSValueBreakAll || valueID == CSSValueKeepAll || valueID == CSSValueBbKeepAllIfKorean || valueID == CSSValueBreakWord;
     default:
         ASSERT_NOT_REACHED();
         return false;

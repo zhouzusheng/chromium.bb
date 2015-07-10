@@ -195,7 +195,7 @@ enum ObjectFit { ObjectFitFill, ObjectFitContain, ObjectFitCover, ObjectFitNone,
 // Word Break Values. Matches WinIE and CSS3
 
 enum EWordBreak {
-    NormalWordBreak, BreakAllWordBreak, KeepAllWordBreak, BreakWordBreak
+    NormalWordBreak, BreakAllWordBreak, KeepAllWordBreak, KeepAllIfKoreanWordBreak, BreakWordBreak
 };
 
 enum EOverflowWrap {

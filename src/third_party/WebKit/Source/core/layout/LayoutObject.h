@@ -506,7 +506,7 @@ public:
             && !isLayoutFullScreenPlaceholder();
     }
     bool isAnonymousColumnsBlock() const { return style()->specifiesColumns() && isAnonymousBlock(); }
-    bool isAnonymousColumnSpanBlock() const { return style()->columnSpan() && isAnonymousBlock(); }
+    bool isAnonymousColumnSpanBlock() const { return style()->hasSpanAllColumns() && isAnonymousBlock(); }
     bool isElementContinuation() const { return node() && node()->layoutObject() != this; }
     bool isInlineElementContinuation() const { return isElementContinuation() && isInline(); }
     virtual LayoutBoxModelObject* virtualContinuation() const { return 0; }
@@ -621,7 +621,7 @@ public:
     LocalFrame* frame() const { return document().frame(); }
 
     virtual LayoutMultiColumnSpannerPlaceholder* spannerPlaceholder() const { return 0; }
-    bool isColumnSpanAll() const { return style()->columnSpan() == ColumnSpanAll && spannerPlaceholder(); }
+    bool isColumnSpanAll() const { return style()->hasSpanAllColumns() && spannerPlaceholder(); }
 
     // Returns the object containing this one. Can be different from parent for positioned elements.
     // If paintInvalidationContainer and paintInvalidationContainerSkipped are not null, on return *paintInvalidationContainerSkipped

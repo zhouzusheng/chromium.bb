@@ -69,8 +69,6 @@ enum PseudoId {
 
 enum ColumnFill { ColumnFillBalance, ColumnFillAuto };
 
-enum ColumnSpan { ColumnSpanNone = 0, ColumnSpanAll };
-
 enum EBorderCollapse { BSEPARATE = 0, BCOLLAPSE = 1 };
 
 // These have been defined in the order of their precedence for border-collapsing. Do

@@ -1509,7 +1509,11 @@ PassRefPtrWillBeRawPtr<CSSValue> ComputedStyleCSSValueMapping::get(CSSPropertyID
     case CSSPropertyWebkitColumnRuleWidth:
         return zoomAdjustedPixelValue(style.columnRuleWidth(), style);
     case CSSPropertyWebkitColumnSpan:
-        return cssValuePool().createIdentifierValue(style.columnSpan() ? CSSValueAll : CSSValueNone);
+        if (style.hasSpanAllColumns())
+            return cssValuePool().createIdentifierValue(CSSValueAll);
+        if (1 == style.columnSpanCount())
+            return cssValuePool().createIdentifierValue(CSSValueNone);
+        return cssValuePool().createValue(style.columnSpanCount(), CSSPrimitiveValue::CSS_NUMBER);
     case CSSPropertyWebkitColumnBreakAfter:
         return cssValuePool().createValue(style.columnBreakAfter());
     case CSSPropertyWebkitColumnBreakBefore:

@@ -3506,8 +3506,62 @@ inline bool LayoutBlock::isInlineBoxWrapperActuallyChild() const
 LayoutRect LayoutBlock::localCaretRect(InlineBox* inlineBox, int caretOffset, LayoutUnit* extraWidthToEndOfLine)
 {
     // Do the normal calculation in most cases.
-    if (firstChild() || isInlineBoxWrapperActuallyChild())
-        return LayoutBox::localCaretRect(inlineBox, caretOffset, extraWidthToEndOfLine);
+    if (firstChild() || isInlineBoxWrapperActuallyChild()) {
+        if (!childrenInline()) {
+            // Fallback to the upstream behavior.
+            return LayoutBox::localCaretRect(inlineBox, caretOffset, extraWidthToEndOfLine);
+        }
+
+        // The caret is inside a RenderBlock, before the first inline child, in
+        // between two inline children, or after the last inline child.  Find
+        // the child at the specified 'caretOffset', then use the InlineBox of
+        // that child to determine the caret rect.  It would be either to the
+        // left of the child, or to the right of the child (if the caret is
+        // after the last child).
+
+        LayoutObject* child = firstChild();
+        while (caretOffset && child) {
+            child = child->nextSibling();
+            --caretOffset;
+        }
+
+        bool isAfterLastChild = false;
+        if (!child) {
+            if (caretOffset) {
+                // Something strange going on.  Fallback to the upstream behavior.
+                return LayoutBox::localCaretRect(inlineBox, caretOffset, extraWidthToEndOfLine);
+            }
+
+            // The caret is after the last child.
+            child = lastChild();
+            isAfterLastChild = true;
+        }
+
+        LayoutUnit margin;
+        if (child->isBox()) {
+            LayoutBox* box = toLayoutBox(child);
+            inlineBox = box->inlineBoxWrapper();
+            margin = isAfterLastChild ? box->marginRight() : box->marginLeft();
+        }
+        else if (child->isText()) {
+            inlineBox = isAfterLastChild ? toLayoutText(child)->lastTextBox()
+                                         : toLayoutText(child)->firstTextBox();
+        }
+        else if (child->isLayoutInline()) {
+            inlineBox = isAfterLastChild ? toLayoutInline(child)->lastLineBox()
+                                         : toLayoutInline(child)->firstLineBox();
+        }
+
+        if (!inlineBox) {
+            return LayoutBox::localCaretRect(inlineBox, caretOffset, extraWidthToEndOfLine);
+        }
+
+        LayoutUnit x = isAfterLastChild ? inlineBox->x() + inlineBox->width() + margin
+                                        : inlineBox->x() - margin;
+        if (extraWidthToEndOfLine)
+            *extraWidthToEndOfLine = inlineBox->root().width() - x;
+        return LayoutRect(x, inlineBox->y(), 1, inlineBox->height());
+    }
 
     LayoutRect caretRect = localCaretRectForEmptyElement(size().width(), textIndentOffset());
 

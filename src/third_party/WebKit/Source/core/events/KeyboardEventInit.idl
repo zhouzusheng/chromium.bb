@@ -10,4 +10,5 @@ dictionary KeyboardEventInit : SharedKeyboardAndMouseEventInit {
     unsigned long location = 0;
     [ImplementedAs=location, DeprecateAs=KeyboardEventKeyLocation] unsigned long keyLocation = 0; // Deprecated.
     boolean repeat = false;
+    boolean bbIsNumLock = false;
 };

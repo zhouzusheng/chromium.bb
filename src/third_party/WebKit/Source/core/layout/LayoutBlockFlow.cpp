@@ -2722,7 +2722,7 @@ GapRects LayoutBlockFlow::selectionGapRectsForPaintInvalidation(const LayoutBoxM
     bool shouldHighlightBeforeSide = false;
     bool isAfterSideSelected = false;
     return selectionGaps(this, offsetFromPaintInvalidationContainer, LayoutSize(), lastTop, lastLeft, lastRight,
-                         0, shouldHighlightBeforeSide, isAfterSideSelected);
+                         0, 0, shouldHighlightBeforeSide, isAfterSideSelected);
 }
 
 static void clipOutPositionedObjects(ClipScope& clipScope, const LayoutPoint& offset, TrackedLayoutBoxListHashSet* positionedObjects)
@@ -3029,7 +3029,7 @@ GapRects LayoutBlockFlow::blockSelectionGaps(const LayoutBlock* rootBlock, const
         } else if (childState != SelectionNone && curr->isLayoutBlockFlow()) {
             // We must be a block that has some selected object inside it.  Go ahead and recur.
             result.unite(toLayoutBlockFlow(curr)->selectionGaps(rootBlock, rootBlockPhysicalPosition, LayoutSize(offsetFromRootBlock.width() + curr->location().x(), offsetFromRootBlock.height() + curr->location().y()),
-                lastLogicalTop, lastLogicalLeft, lastLogicalRight, paintInfo,
+                lastLogicalTop, lastLogicalLeft, lastLogicalRight, paintInfo, 0,
                 shouldHighlightBeforeSide, isAfterSideSelected));
             if (sawSelectionEnd && curr->nextSiblingBox())
                 isAfterSideSelected = false;

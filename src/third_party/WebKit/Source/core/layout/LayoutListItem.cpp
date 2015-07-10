@@ -316,7 +316,7 @@ bool LayoutListItem::updateMarkerLocation()
     if (markerParent != lineBoxParent || fontsAreDifferent) {
         m_marker->remove();
         if (fontsAreDifferent) {
-            m_marker->style()->setFontDescription(firstText->style()->fontDescription());
+            m_marker->mutableStyle()->setFontDescription(firstText->style()->fontDescription());
             m_marker->style()->font().update(m_marker->style()->font().fontSelector());
         }
         lineBoxParent->addChild(m_marker, firstNonMarker);
@@ -335,7 +335,6 @@ LayoutUnit LayoutListItem::additionalMarginStart() const
     if (!m_marker || m_marker->isInside())
         return LayoutUnit();
 
-    const_cast<LayoutListItem*>(this)->updateMarkerLocationAndInvalidateWidth();
     return m_marker->minPreferredLogicalWidth();
 }
 

@@ -53,6 +53,8 @@ void BlockFlowPainter::paintSelection(const PaintInfo& paintInfo, const LayoutPo
         LayoutUnit lastTop = 0;
         LayoutUnit lastLeft = m_layoutBlockFlow.logicalLeftSelectionOffset(&m_layoutBlockFlow, lastTop);
         LayoutUnit lastRight = m_layoutBlockFlow.logicalRightSelectionOffset(&m_layoutBlockFlow, lastTop);
+        bool shouldHighlightBeforeSide = false;
+        bool isAfterSideSelected = false;
 
         LayoutRect bounds;
         if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
@@ -64,7 +66,8 @@ void BlockFlowPainter::paintSelection(const PaintInfo& paintInfo, const LayoutPo
 
         LayoutRect gapRectsBounds = m_layoutBlockFlow.selectionGaps(&m_layoutBlockFlow, paintOffset, LayoutSize(), lastTop, lastLeft, lastRight,
             recorder.canUseCachedDrawing() ? nullptr : &paintInfo,
-            recorder.canUseCachedDrawing() ? nullptr : &clipScope);
+            recorder.canUseCachedDrawing() ? nullptr : &clipScope,
+            shouldHighlightBeforeSide, isAfterSideSelected);
         // TODO(wkorman): Rework below to process paint invalidation rects during layout rather than paint.
         if (!gapRectsBounds.isEmpty()) {
             DeprecatedPaintLayer* layer = m_layoutBlockFlow.enclosingLayer();

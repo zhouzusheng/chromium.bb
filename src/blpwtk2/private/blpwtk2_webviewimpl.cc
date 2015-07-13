@@ -276,7 +276,7 @@ void WebViewImpl::loadUrl(const StringRef& url)
         ui::PageTransitionFromInt(ui::PAGE_TRANSITION_TYPED | ui::PAGE_TRANSITION_FROM_ADDRESS_BAR),
         std::string());
 
-    d_webContents->GetRenderViewHost()->GetView()->SetBackgroundColor(SK_ColorBLACK);
+    d_webContents->GetRenderViewHost()->GetView()->SetBackgroundColor(d_properties.isTransparent? SK_ColorTRANSPARENT : SK_ColorBLACK);
 }
 
 void WebViewImpl::find(const StringRef& text, bool matchCase, bool forward)

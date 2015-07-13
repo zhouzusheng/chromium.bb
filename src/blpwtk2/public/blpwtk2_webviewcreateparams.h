@@ -108,6 +108,11 @@ class BLPWTK2_EXPORT WebViewCreateParams {
     // same renderer process.
     void setProfile(Profile* profile);
 
+    // By default, WebViews render their content on a black background with an opaque
+    // alpha channel. Setting this flag to true will cause the alpha channel to be
+    // populated with values specified by the content's HTML and CSS.
+    void setIsTransparent(bool isTransparent);
+
     bool initiallyVisible() const { return d_initiallyVisible; }
     bool takeKeyboardFocusOnMouseDown() const { return d_takeKeyboardFocusOnMouseDown; }
     bool takeLogicalFocusOnMouseDown() const { return d_takeLogicalFocusOnMouseDown; }
@@ -116,6 +121,7 @@ class BLPWTK2_EXPORT WebViewCreateParams {
     bool javascriptCanAccessClipboard() const { return d_javascriptCanAccessClipboard; }
     int rendererAffinity() const { return d_rendererAffinity; }
     Profile* profile() const { return d_profile; }
+    bool isTransparent() const { return d_isTransparent; }
 
   private:
     bool d_initiallyVisible;
@@ -125,6 +131,7 @@ class BLPWTK2_EXPORT WebViewCreateParams {
     bool d_domPasteEnabled;
     bool d_javascriptCanAccessClipboard;
     int d_rendererAffinity;
+    bool d_isTransparent;
     Profile* d_profile;
 };
 

@@ -166,7 +166,7 @@ bool BBWindowHooks::checkSpellingForNode(Node* node)
     return false;
 }
 
-PassRefPtr<ClientRect> BBWindowHooks::getAbsoluteCaretRectAtOffset(Node* node, long offset)
+ClientRect* BBWindowHooks::getAbsoluteCaretRectAtOffset(Node* node, long offset)
 {
     VisiblePosition visiblePos = VisiblePosition(
         Position(node, offset, Position::PositionIsOffsetInAnchor));

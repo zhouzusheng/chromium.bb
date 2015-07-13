@@ -57,7 +57,7 @@ gfx::Size GetExpandedWindowSize(DWORD window_style, gfx::Size size) {
   return expanded;
 }
 
-void InsetBottomRight(gfx::Rect* rect, gfx::Vector2d vector) {
+void InsetBottomRight(gfx::Rect* rect, const gfx::Vector2d& vector) {
   rect->Inset(0, 0, vector.x(), vector.y());
 }
 
@@ -422,7 +422,6 @@ bool DesktopWindowTreeHostWin::IsFullscreen() const {
 }
 
 void DesktopWindowTreeHostWin::SetOpacity(unsigned char opacity) {
-  message_handler_->SetOpacity(static_cast<BYTE>(opacity));
   content_window_->layer()->SetOpacity(opacity / 255.0);
 }
 
@@ -844,10 +843,6 @@ void DesktopWindowTreeHostWin::HandleNativeFocus(HWND last_focused_window) {
   // If our HWND has WS_CHILD, treat WM_SETFOCUS like an activation change.
   if (GetWindowLong(GetHWND(), GWL_STYLE) & WS_CHILD)
     HandleActivationChanged(true);
-
-  InputMethod* input_method = GetInputMethod();
-  if (input_method)
-    input_method->OnFocus();
 }
 
 void DesktopWindowTreeHostWin::HandleNativeBlur(HWND focused_window) {
@@ -856,10 +851,6 @@ void DesktopWindowTreeHostWin::HandleNativeBlur(HWND focused_window) {
   // If our HWND has WS_CHILD, treat WM_KILLFOCUS like an activation change.
   if (GetWindowLong(GetHWND(), GWL_STYLE) & WS_CHILD)
     HandleActivationChanged(false);
-
-  InputMethod* input_method = GetInputMethod();
-  if (input_method)
-    input_method->OnBlur();
 }
 
 bool DesktopWindowTreeHostWin::HandleMouseEvent(const ui::MouseEvent& event) {
@@ -927,15 +918,10 @@ void DesktopWindowTreeHostWin::HandleInputLanguageChange(
       input_method()->OnInputLocaleChanged();
 }
 
-bool DesktopWindowTreeHostWin::HandlePaintAccelerated(
+void DesktopWindowTreeHostWin::HandlePaintAccelerated(
     const gfx::Rect& invalid_rect) {
-  return native_widget_delegate_->OnNativeWidgetPaintAccelerated(invalid_rect);
-}
-
-void DesktopWindowTreeHostWin::HandlePaint(gfx::Canvas* canvas) {
-  // It appears possible to get WM_PAINT after WM_DESTROY.
   if (compositor())
-    compositor()->ScheduleRedrawRect(gfx::Rect());
+    compositor()->ScheduleRedrawRect(invalid_rect);
 }
 
 bool DesktopWindowTreeHostWin::HandleTooltipNotify(int w_param,

@@ -34,7 +34,7 @@ namespace base {
 class MessageLoop;
 }  // close namespace base
 
-namespace content {
+namespace devtools_http_handler {
     class DevToolsHttpHandler;
 }  // close namespace content
 
@@ -67,7 +67,7 @@ struct Statics {
 
     // Pointer to the single global DevToolsHttpHandler object, created and
     // destroyed by DevToolsHttpHandlerDelegateImpl.
-    static content::DevToolsHttpHandler* devToolsHttpHandler;
+    static devtools_http_handler::DevToolsHttpHandler* devToolsHttpHandler;
 
     // The optional in-process resource loader installed by the application.
     static ResourceLoader* inProcessResourceLoader;

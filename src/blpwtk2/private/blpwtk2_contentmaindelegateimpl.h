@@ -40,6 +40,7 @@ class RendererInfoMap;
 // FIXME: move this to a separate file
 class ContentClient : public content::ContentClient {
   public:
+    static ContentClient* Instance();
     ContentClient();
     virtual ~ContentClient();
 

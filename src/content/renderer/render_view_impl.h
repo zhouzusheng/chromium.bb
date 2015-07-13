@@ -76,7 +76,6 @@ class PepperDeviceTest;
 class SkBitmap;
 struct PP_NetAddress_Private;
 struct ViewMsg_New_Params;
-struct ViewMsg_PostMessage_Params;
 struct ViewMsg_Resize_Params;
 struct ViewMsg_StopFinding_Params;
 
@@ -462,7 +461,6 @@ class CONTENT_EXPORT RenderViewImpl
 
  protected:
   // RenderWidget overrides:
-  void OnClose() override;
   void Close() override;
   void OnResize(const ViewMsg_Resize_Params& params) override;
   void DidInitiatePaint() override;
@@ -472,7 +470,6 @@ class CONTENT_EXPORT RenderViewImpl
   bool WillHandleMouseEvent(const blink::WebMouseEvent& event) override;
   bool WillHandleGestureEvent(const blink::WebGestureEvent& event) override;
   void DidHandleMouseEvent(const blink::WebMouseEvent& event) override;
-  void DidHandleTouchEvent(const blink::WebTouchEvent& event) override;
   bool HasTouchEventHandlersAt(const gfx::Point& point) const override;
   void OnSetFocus(bool enable) override;
   void OnWasHidden() override;
@@ -515,6 +512,7 @@ class CONTENT_EXPORT RenderViewImpl
 
  private:
   // For unit tests.
+  friend class DevToolsAgentTest;
   friend class PepperDeviceTest;
   friend class RenderViewImplTest;
   friend class RenderViewTest;
@@ -563,6 +561,7 @@ class CONTENT_EXPORT RenderViewImpl
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest,
                            MessageOrderInDidChangeSelection);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, SendCandidateWindowEvents);
+  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, RenderFrameClearedAfterClose);
   FRIEND_TEST_ALL_PREFIXES(SuppressErrorPageTest, Suppresses);
   FRIEND_TEST_ALL_PREFIXES(SuppressErrorPageTest, DoesNotSuppress);
 
@@ -611,6 +610,8 @@ class CONTENT_EXPORT RenderViewImpl
   void OnCancelDownload(int32 download_id);
   void OnClearFocusedElement();
   void OnClosePage();
+  void OnClose();
+
   void OnShowContextMenu(ui::MenuSourceType source_type,
                          const gfx::Point& location);
   void OnCopyImageAt(int x, int y);
@@ -655,7 +656,6 @@ class CONTENT_EXPORT RenderViewImpl
   void OnPluginActionAt(const gfx::Point& location,
                         const blink::WebPluginAction& action);
   void OnMoveOrResizeStarted();
-  void OnPostMessageEvent(const ViewMsg_PostMessage_Params& params);
   void OnReleaseDisambiguationPopupBitmap(const cc::SharedBitmapId& id);
   void OnResetPageEncodingToDefault();
   void OnSetActive(bool active);
@@ -769,6 +769,13 @@ class CONTENT_EXPORT RenderViewImpl
   void set_navigation_gesture(NavigationGesture gesture) {
     navigation_gesture_ = gesture;
   }
+
+  // Platform specific theme preferences if any are updated here.
+#if defined(OS_WIN)
+  void UpdateThemePrefs();
+#else
+  void UpdateThemePrefs() {}
+#endif
 
   // ---------------------------------------------------------------------------
   // ADDING NEW FUNCTIONS? Please keep private functions alphabetized and put
@@ -907,7 +914,7 @@ class CONTENT_EXPORT RenderViewImpl
 
   // Helper objects ------------------------------------------------------------
 
-  scoped_ptr<RenderFrameImpl> main_render_frame_;
+  RenderFrameImpl* main_render_frame_;
 
   // The next group of objects all implement RenderViewObserver, so are deleted
   // along with the RenderView automatically.  This is why we just store

@@ -8,6 +8,8 @@
 #include "base/supports_user_data.h"
 #include "base/trace_event/trace_event.h"
 #include "components/keyed_service/core/dependency_manager.h"
+#include "components/pref_registry/pref_registry_syncable.h"
+#include "components/user_prefs/user_prefs.h"
 
 void KeyedServiceBaseFactory::RegisterUserPrefsOnContextForTest(
     base::SupportsUserData* context) {
@@ -30,9 +32,8 @@ void KeyedServiceBaseFactory::RegisterUserPrefsOnContextForTest(
   // to enforce a uniquenes check here because some tests create one context and
   // multiple services of the same type attached to that context (serially, not
   // parallel) and we don't want to register multiple times on the same context.
-  // This is the purpose of RegisterProfilePrefsIfNecessary() which could be
-  // replaced directly by RegisterProfilePrefs() if this method is ever phased
-  // out.
+  // This is the purpose of RegisterPrefsIfNecessaryForContext() which could be
+  // replaced directly by RegisterPrefs() if this method is ever phased out.
   RegisterPrefsIfNecessaryForContext(context,
                                      GetAssociatedPrefRegistry(context));
 }
@@ -55,7 +56,7 @@ void KeyedServiceBaseFactory::DependsOn(KeyedServiceBaseFactory* rhs) {
 }
 
 void KeyedServiceBaseFactory::RegisterPrefsIfNecessaryForContext(
-    const base::SupportsUserData* context,
+    base::SupportsUserData* context,
     user_prefs::PrefRegistrySyncable* registry) {
   if (!ArePreferencesSetOn(context)) {
     RegisterPrefs(registry);
@@ -63,16 +64,29 @@ void KeyedServiceBaseFactory::RegisterPrefsIfNecessaryForContext(
   }
 }
 
+user_prefs::PrefRegistrySyncable*
+KeyedServiceBaseFactory::GetAssociatedPrefRegistry(
+    base::SupportsUserData* context) const {
+  PrefService* prefs =
+      user_prefs::UserPrefs::Get(GetContextForDependencyManager(context));
+  user_prefs::PrefRegistrySyncable* registry =
+      static_cast<user_prefs::PrefRegistrySyncable*>(
+          prefs->DeprecatedGetPrefRegistry());
+  return registry;
+}
+
 #ifndef NDEBUG
 void KeyedServiceBaseFactory::AssertContextWasntDestroyed(
-    const base::SupportsUserData* context) const {
+    base::SupportsUserData* context) const {
   DCHECK(CalledOnValidThread());
+  context = GetContextForDependencyManager(context);
   dependency_manager_->AssertContextWasntDestroyed(context);
 }
 
 void KeyedServiceBaseFactory::MarkContextLiveForTesting(
-    const base::SupportsUserData* context) {
+    base::SupportsUserData* context) {
   DCHECK(CalledOnValidThread());
+  context = GetContextForDependencyManager(context);
   dependency_manager_->MarkContextLiveForTesting(context);
 }
 #endif
@@ -90,17 +104,28 @@ void KeyedServiceBaseFactory::ContextDestroyed(
   // While object destruction can be customized in ways where the object is
   // only dereferenced, this still must run on the UI thread.
   DCHECK(CalledOnValidThread());
-
   registered_preferences_.erase(context);
 }
 
 bool KeyedServiceBaseFactory::ArePreferencesSetOn(
-    const base::SupportsUserData* context) const {
+    base::SupportsUserData* context) const {
   return registered_preferences_.find(context) != registered_preferences_.end();
 }
 
 void KeyedServiceBaseFactory::MarkPreferencesSetOn(
-    const base::SupportsUserData* context) {
+    base::SupportsUserData* context) {
   DCHECK(!ArePreferencesSetOn(context));
   registered_preferences_.insert(context);
 }
+
+#if defined(OS_IOS)
+base::SupportsUserData* KeyedServiceBaseFactory::GetTypedContext(
+    base::SupportsUserData* context) const {
+  return context;
+}
+
+base::SupportsUserData* KeyedServiceBaseFactory::GetContextForDependencyManager(
+    base::SupportsUserData* context) const {
+  return context;
+}
+#endif  // defined(OS_IOS)

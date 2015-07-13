@@ -47,6 +47,8 @@
         '../cc/blink/cc_blink.gyp:cc_blink',
         '../cc/cc.gyp:cc',
         '../components/components.gyp:crash_component_breakpad_mac_to_be_deleted',
+        '../components/components.gyp:devtools_discovery',
+        '../components/components.gyp:devtools_http_handler',
         '../components/components.gyp:web_cache_renderer',
         '../device/bluetooth/bluetooth.gyp:device_bluetooth',
         '../gin/gin.gyp:gin',
@@ -96,6 +98,11 @@
         'shell/app/shell_main_delegate.h',
         'shell/app/shell_main_delegate_mac.h',
         'shell/app/shell_main_delegate_mac.mm',
+
+        # SHEZ: Remove test-only code.
+        # 'shell/browser/blink_test_controller.cc',
+        # 'shell/browser/blink_test_controller.h',
+
         'shell/browser/ipc_echo_message_filter.cc',
         'shell/browser/ipc_echo_message_filter.h',
 
@@ -122,8 +129,8 @@
         # 'shell/browser/layout_test/layout_test_navigator_connect_service_factory.h',
         # 'shell/browser/layout_test/layout_test_notification_manager.cc',
         # 'shell/browser/layout_test/layout_test_notification_manager.h',
-        # 'shell/browser/layout_test/layout_test_permission_manager.h',
         # 'shell/browser/layout_test/layout_test_permission_manager.cc',
+        # 'shell/browser/layout_test/layout_test_permission_manager.h',
         # 'shell/browser/layout_test/layout_test_push_messaging_service.cc',
         # 'shell/browser/layout_test/layout_test_push_messaging_service.h',
         # 'shell/browser/layout_test/layout_test_resource_dispatcher_host_delegate.cc',
@@ -193,8 +200,6 @@
         'shell/browser/shell_web_contents_view_delegate_win.cc',
 
         # SHEZ: Remove test-only code
-        # 'shell/browser/webkit_test_controller.cc',
-        # 'shell/browser/webkit_test_controller.h',
         # 'shell/common/layout_test/layout_test_messages.cc',
         # 'shell/common/layout_test/layout_test_messages.h',
 
@@ -214,15 +219,14 @@
 
         'shell/common/v8_breakpad_support_win.cc',
         'shell/common/v8_breakpad_support_win.h',
-
-        # SHEZ: Remove test-only code
-        # 'shell/common/webkit_test_helpers.cc',
-        # 'shell/common/webkit_test_helpers.h',
-
         'shell/renderer/ipc_echo.cc',
         'shell/renderer/ipc_echo.h',
 
         # SHEZ: Remove test-only code
+        # 'shell/renderer/layout_test/blink_test_helpers.cc',
+        # 'shell/renderer/layout_test/blink_test_helpers.h',
+        # 'shell/renderer/layout_test/blink_test_runner.cc',
+        # 'shell/renderer/layout_test/blink_test_runner.h',
         # 'shell/renderer/layout_test/gc_controller.cc',
         # 'shell/renderer/layout_test/gc_controller.h',
         # 'shell/renderer/layout_test/layout_test_content_renderer_client.cc',
@@ -233,8 +237,6 @@
         # 'shell/renderer/layout_test/layout_test_render_process_observer.h',
         # 'shell/renderer/layout_test/leak_detector.cc',
         # 'shell/renderer/layout_test/leak_detector.h',
-        # 'shell/renderer/layout_test/webkit_test_runner.cc',
-        # 'shell/renderer/layout_test/webkit_test_runner.h',
 
         'shell/renderer/shell_content_renderer_client.cc',
         'shell/renderer/shell_content_renderer_client.h',
@@ -526,6 +528,7 @@
           'variables': {
             'pak_inputs': [
               '<(SHARED_INTERMEDIATE_DIR)/blink/public/resources/blink_resources.pak',
+              '<(SHARED_INTERMEDIATE_DIR)/blink/public/resources/blink_inspector_resources.pak',
               '<(SHARED_INTERMEDIATE_DIR)/blink/public/resources/blink_image_resources_100_percent.pak',
               '<(SHARED_INTERMEDIATE_DIR)/content/app/resources/content_resources_100_percent.pak',
               '<(SHARED_INTERMEDIATE_DIR)/content/app/strings/content_strings_en-US.pak',
@@ -760,9 +763,14 @@
           'dependencies': [ '../build/linux/system.gyp:x11' ],
         }],
         ['OS=="win"', {
-          'defines': [
-            # This seems like a hack, but this is what Safari Win does.
-            'snprintf=_snprintf',
+          'conditions': [
+            ['MSVS_VERSION < "2015"', {
+              'defines': [
+                # This seems like a hack, but this is what Safari Win does.
+                # Luckily it is no longer needed/allowed with VS 2015.
+                'snprintf=_snprintf',
+              ],
+            }],
           ],
           'sources': [
             'shell/tools/plugin/win/TestNetscapePlugin.def',
@@ -807,6 +815,7 @@
     ['OS=="mac" or OS=="win"', {
       'targets': [
         {
+          # GN version: //content/shell:layout_test_helper
           'target_name': 'layout_test_helper',
           'type': 'executable',
           'sources': [
@@ -883,13 +892,6 @@
             },
           ],
           'copies': [
-            {
-              # Copy FFmpeg binaries for audio/video support.
-              'destination': '<(PRODUCT_DIR)/$(CONTENTS_FOLDER_PATH)/Libraries',
-              'files': [
-                '<(PRODUCT_DIR)/ffmpegsumo.so',
-              ],
-            },
             {
               'destination': '<(PRODUCT_DIR)/$(CONTENTS_FOLDER_PATH)/Resources',
               'files': [
@@ -1009,6 +1011,7 @@
     ['OS=="win"', {
       'targets': [
         {
+          # GN version: //content/shell:crash_service
           'target_name': 'content_shell_crash_service',
           'type': 'executable',
           'dependencies': [

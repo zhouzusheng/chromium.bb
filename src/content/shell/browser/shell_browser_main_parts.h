@@ -21,6 +21,10 @@ namespace base {
 class Thread;
 }
 
+namespace devtools_http_handler {
+class DevToolsHttpHandler;
+}
+
 namespace net {
 class NetLog;
 }
@@ -30,8 +34,6 @@ class WMState;
 }
 
 namespace content {
-
-class DevToolsHttpHandler;
 
 class ShellBrowserMainParts : public BrowserMainParts {
  public:
@@ -47,7 +49,7 @@ class ShellBrowserMainParts : public BrowserMainParts {
   bool MainMessageLoopRun(int* result_code) override;
   void PostMainMessageLoopRun() override;
 
-  DevToolsHttpHandler* devtools_http_handler() {
+  devtools_http_handler::DevToolsHttpHandler* devtools_http_handler() {
     return devtools_http_handler_.get();
   }
 
@@ -82,7 +84,7 @@ class ShellBrowserMainParts : public BrowserMainParts {
   const MainFunctionParams parameters_;
   bool run_message_loop_;
 
-  scoped_ptr<DevToolsHttpHandler> devtools_http_handler_;
+  scoped_ptr<devtools_http_handler::DevToolsHttpHandler> devtools_http_handler_;
 
   DISALLOW_COPY_AND_ASSIGN(ShellBrowserMainParts);
 };

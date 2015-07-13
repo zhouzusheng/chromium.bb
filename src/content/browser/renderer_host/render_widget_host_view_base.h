@@ -161,8 +161,6 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   virtual gfx::AcceleratedWidget AccessibilityGetAcceleratedWidget();
   virtual gfx::NativeViewAccessible AccessibilityGetNativeViewAccessible();
 
-  virtual SkColorType PreferredReadbackFormat();
-
   // Informs that the focused DOM node has changed.
   virtual void FocusedNodeChanged(bool is_editable_node) {}
 
@@ -180,6 +178,10 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   virtual void DidOverscroll(const DidOverscrollParams& params) {}
 
   virtual void DidStopFlinging() {}
+
+  // Returns the compositing surface ID namespace, or 0 if Surfaces are not
+  // enabled.
+  virtual uint32_t GetSurfaceIdNamespace();
 
   //----------------------------------------------------------------------------
   // The following static methods are implemented by each platform.
@@ -204,9 +206,6 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // |scroll_offset| is the scroll offset of the render view.
   virtual void MovePluginWindows(
       const std::vector<WebPluginGeometry>& moves) = 0;
-
-  // Take focus from the associated View component.
-  virtual void Blur() = 0;
 
   // Sets the cursor to the one associated with the specified cursor_type
   virtual void UpdateCursor(const WebCursor& cursor) = 0;
@@ -257,10 +256,11 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // output will be unscaled. |callback| is run with true on success,
   // false otherwise. A smaller region than |src_subrect| may be copied
   // if the underlying surface is smaller than |src_subrect|.
-  virtual void CopyFromCompositingSurface(const gfx::Rect& src_subrect,
-                                          const gfx::Size& dst_size,
-                                          ReadbackRequestCallback& callback,
-                                          const SkColorType color_type) = 0;
+  virtual void CopyFromCompositingSurface(
+      const gfx::Rect& src_subrect,
+      const gfx::Size& dst_size,
+      ReadbackRequestCallback& callback,
+      const SkColorType preferred_color_type) = 0;
 
   // Copies the contents of the compositing surface, populating the given
   // |target| with YV12 image data. |src_subrect| is specified in layer space

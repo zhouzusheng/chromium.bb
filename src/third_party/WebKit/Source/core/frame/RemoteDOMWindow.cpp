@@ -345,16 +345,6 @@ void RemoteDOMWindow::cancelAnimationFrame(int id)
     ASSERT_NOT_REACHED();
 }
 
-String RemoteDOMWindow::sanitizedCrossDomainAccessErrorMessage(LocalDOMWindow* callingWindow)
-{
-    return String();
-}
-
-String RemoteDOMWindow::crossDomainAccessErrorMessage(LocalDOMWindow* callingWindow)
-{
-    return String();
-}
-
 RemoteDOMWindow::RemoteDOMWindow(RemoteFrame& frame)
     : m_frame(&frame)
 {

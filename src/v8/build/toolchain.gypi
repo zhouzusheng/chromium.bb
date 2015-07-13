@@ -132,14 +132,6 @@
 
     # Link-Time Optimizations
     'use_lto%': 0,
-
-    'variables': {
-      # This is set when building the Android WebView inside the Android build
-      # system, using the 'android' gyp backend.
-      'android_webview_build%': 0,
-    },
-    # Copy it out one scope.
-    'android_webview_build%': '<(android_webview_build)',
   },
   'conditions': [
     ['host_arch=="ia32" or host_arch=="x64" or \
@@ -204,7 +196,7 @@
         'target_conditions': [
           ['_toolset=="host"', {
             'conditions': [
-              ['v8_target_arch==host_arch and android_webview_build==0', {
+              ['v8_target_arch==host_arch', {
                 # Host built with an Arm CXX compiler.
                 'conditions': [
                   [ 'arm_version==7', {
@@ -247,7 +239,7 @@
           }],  # _toolset=="host"
           ['_toolset=="target"', {
             'conditions': [
-              ['v8_target_arch==target_arch and android_webview_build==0', {
+              ['v8_target_arch==target_arch', {
                 # Target built with an Arm CXX compiler.
                 'conditions': [
                   [ 'arm_version==7', {
@@ -371,7 +363,7 @@
         'target_conditions': [
           ['_toolset=="target"', {
             'conditions': [
-              ['v8_target_arch==target_arch and android_webview_build==0', {
+              ['v8_target_arch==target_arch', {
                 # Target built with a Mips CXX compiler.
                 'cflags': [
                   '-EB',
@@ -558,7 +550,7 @@
         'target_conditions': [
           ['_toolset=="target"', {
             'conditions': [
-              ['v8_target_arch==target_arch and android_webview_build==0', {
+              ['v8_target_arch==target_arch', {
                 # Target built with a Mips CXX compiler.
                 'cflags': [
                   '-EL',
@@ -762,7 +754,7 @@
         'target_conditions': [
           ['_toolset=="target"', {
             'conditions': [
-              ['v8_target_arch==target_arch and android_webview_build==0', {
+              ['v8_target_arch==target_arch', {
                 'cflags': [
                   '-EL',
                   '-Wno-error=array-bounds',  # Workaround https://gcc.gnu.org/bugzilla/show_bug.cgi?id=56273
@@ -930,12 +922,6 @@
                 'cflags': [ '-m32' ],
                 'ldflags': [ '-m32' ],
               }],
-              # Enable feedback-directed optimisation when building in android.
-              [ 'android_webview_build == 1', {
-                'aosp_build_settings': {
-                  'LOCAL_FDO_SUPPORT': 'true',
-                },
-              }],
             ],
             'xcode_settings': {
               'ARCHS': [ 'i386' ],
@@ -960,12 +946,6 @@
                ['target_cxx_is_biarch==1', {
                  'cflags': [ '-m64' ],
                  'ldflags': [ '-m64' ],
-               }],
-               # Enable feedback-directed optimisation when building in android.
-               [ 'android_webview_build == 1', {
-                 'aosp_build_settings': {
-                   'LOCAL_FDO_SUPPORT': 'true',
-                 },
                }],
              ]
            }],
@@ -1011,8 +991,12 @@
         'msvs_settings': {
           'VCCLCompilerTool': {
             'Optimization': '0',
-            'RuntimeLibrary': '1',  # /MTd
             'conditions': [
+              ['component=="shared_library"', {
+                'RuntimeLibrary': '3',  # /MDd
+              }, {
+                'RuntimeLibrary': '1',  # /MTd
+              }],
             ],
           },
           'VCLinkerTool': {
@@ -1054,13 +1038,17 @@
         'msvs_settings': {
           'VCCLCompilerTool': {
             'Optimization': '2',
-            'RuntimeLibrary': '1',  # /MTd
             'InlineFunctionExpansion': '2',
             'EnableIntrinsicFunctions': 'true',
             'FavorSizeOrSpeed': '0',
             'StringPooling': 'true',
             'BasicRuntimeChecks': '0',
             'conditions': [
+              ['component=="shared_library"', {
+                'RuntimeLibrary': '3',  #/MDd
+              }, {
+                'RuntimeLibrary': '1',  #/MTd
+              }],
             ],
           },
           'VCLinkerTool': {
@@ -1243,8 +1231,12 @@
                 'EnableIntrinsicFunctions': 'true',
                 'FavorSizeOrSpeed': '0',
                 'StringPooling': 'true',
-                'RuntimeLibrary': '0',  #/MT
                 'conditions': [
+                  ['component=="shared_library"', {
+                    'RuntimeLibrary': '2',  #/MD
+                  }, {
+                    'RuntimeLibrary': '0',  #/MT
+                  }],
                 ],
               },
               'VCLinkerTool': {

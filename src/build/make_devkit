@@ -110,7 +110,6 @@ def copyBin(destDir, version):
     'blpwtk2' + productAppend + '.dll',
     'blpcr_egl' + productAppend + '.dll',
     'blpcr_glesv2' + productAppend + '.dll',
-    'ffmpegsumo' + productAppend + '.dll',
     'd3dcompiler_47.dll',
     'icudtl' + productAppend + '.dat',
     'blpwtk2_devtools' + productAppend + '.pak',
@@ -123,8 +122,6 @@ def copyBin(destDir, version):
     'blpcr_egl' + productAppend + '.map',
     'blpcr_glesv2' + productAppend + '.pdb',
     'blpcr_glesv2' + productAppend + '.map',
-    'ffmpegsumo' + productAppend + '.pdb',
-    'ffmpegsumo' + productAppend + '.map',
     'blpwtk2_subprocess' + productAppend + '.pdb',
     'blpwtk2_subprocess' + productAppend + '.map',
   ]

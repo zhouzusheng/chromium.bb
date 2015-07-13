@@ -28,7 +28,13 @@ public:
         m.setScale(sx, sy);
         return m;
     }
-
+    
+    static SkMatrix SK_WARN_UNUSED_RESULT MakeScale(SkScalar scale) {
+        SkMatrix m;
+        m.setScale(scale, scale);
+        return m;
+    }
+    
     static SkMatrix SK_WARN_UNUSED_RESULT MakeTrans(SkScalar dx, SkScalar dy) {
         SkMatrix m;
         m.setTranslate(dx, dy);
@@ -797,9 +803,6 @@ private:
     static void Scale_pts(const SkMatrix&, SkPoint dst[], const SkPoint[], int);
     static void ScaleTrans_pts(const SkMatrix&, SkPoint dst[], const SkPoint[],
                                int count);
-    static void Rot_pts(const SkMatrix&, SkPoint dst[], const SkPoint[], int);
-    static void RotTrans_pts(const SkMatrix&, SkPoint dst[], const SkPoint[],
-                             int count);
     static void Persp_pts(const SkMatrix&, SkPoint dst[], const SkPoint[], int);
 
     static void Affine_vpts(const SkMatrix&, SkPoint dst[], const SkPoint[], int);

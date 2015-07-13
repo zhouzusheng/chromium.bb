@@ -60,6 +60,9 @@
         'dsp/yuv_sse2.c',
       ],
       'conditions': [
+        ['OS == "android"', {
+          'dependencies': [ '../../build/android/ndk.gyp:cpu_features' ],
+        }],
         ['order_profiling != 0', {
           'target_conditions' : [
             ['_toolset=="target"', {

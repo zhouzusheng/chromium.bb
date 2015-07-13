@@ -158,11 +158,6 @@ void WebRuntimeFeatures::enableImageColorProfiles(bool enable)
     RuntimeEnabledFeatures::setImageColorProfilesEnabled(enable);
 }
 
-void WebRuntimeFeatures::enableLocalStorage(bool enable)
-{
-    RuntimeEnabledFeatures::setLocalStorageEnabled(enable);
-}
-
 void WebRuntimeFeatures::enableMediaPlayer(bool enable)
 {
     RuntimeEnabledFeatures::setMediaEnabled(enable);
@@ -213,11 +208,6 @@ void WebRuntimeFeatures::enablePagePopup(bool enable)
     RuntimeEnabledFeatures::setPagePopupEnabled(enable);
 }
 
-void WebRuntimeFeatures::enablePeerConnection(bool enable)
-{
-    RuntimeEnabledFeatures::setPeerConnectionEnabled(enable);
-}
-
 void WebRuntimeFeatures::enablePermissionsAPI(bool enable)
 {
     RuntimeEnabledFeatures::setPermissionsEnabled(enable);
@@ -231,6 +221,11 @@ void WebRuntimeFeatures::enableRequestAutocomplete(bool enable)
 void WebRuntimeFeatures::enableScreenOrientation(bool enable)
 {
     RuntimeEnabledFeatures::setScreenOrientationEnabled(enable);
+}
+
+void WebRuntimeFeatures::enableScriptedSpeech(bool enable)
+{
+    RuntimeEnabledFeatures::setScriptedSpeechEnabled(enable);
 }
 
 void WebRuntimeFeatures::enableServiceWorker(bool enable)
@@ -338,11 +333,6 @@ void WebRuntimeFeatures::enablePushMessagingData(bool enable)
     RuntimeEnabledFeatures::setPushMessagingDataEnabled(enable);
 }
 
-void WebRuntimeFeatures::enablePushMessagingHasPermission(bool enable)
-{
-    RuntimeEnabledFeatures::setPushMessagingHasPermissionEnabled(enable);
-}
-
 void WebRuntimeFeatures::enableStaleWhileRevalidateCacheControl(bool enable)
 {
     RuntimeEnabledFeatures::setStaleWhileRevalidateCacheControlEnabled(enable);
@@ -353,9 +343,9 @@ void WebRuntimeFeatures::enableUnsafeES3APIs(bool enable)
     RuntimeEnabledFeatures::setUnsafeES3APIsEnabled(enable);
 }
 
-void WebRuntimeFeatures::enableVRDevice(bool enable)
+void WebRuntimeFeatures::enableWebVR(bool enable)
 {
-    RuntimeEnabledFeatures::setVRDeviceEnabled(enable);
+    RuntimeEnabledFeatures::setWebVREnabled(enable);
 }
 
 } // namespace blink

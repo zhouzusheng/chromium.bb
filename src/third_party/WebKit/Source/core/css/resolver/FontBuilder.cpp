@@ -272,7 +272,7 @@ void FontBuilder::checkForGenericFamilyChange(const FontDescription& oldDescript
     if (newDescription.isAbsoluteSize())
         return;
 
-    if (newDescription.fixedPitchFontType() == oldDescription.fixedPitchFontType())
+    if (newDescription.isMonospace() == oldDescription.isMonospace())
         return;
 
     // For now, lump all families but monospace together.
@@ -286,13 +286,13 @@ void FontBuilder::checkForGenericFamilyChange(const FontDescription& oldDescript
     // multiplying by our scale factor.
     float size;
     if (newDescription.keywordSize()) {
-        size = FontSize::fontSizeForKeyword(&m_document, newDescription.keywordSize(), newDescription.fixedPitchFontType());
+        size = FontSize::fontSizeForKeyword(&m_document, newDescription.keywordSize(), newDescription.isMonospace());
     } else {
         Settings* settings = m_document.settings();
         float fixedScaleFactor = (settings && settings->defaultFixedFontSize() && settings->defaultFontSize())
             ? static_cast<float>(settings->defaultFixedFontSize()) / settings->defaultFontSize()
             : 1;
-        size = oldDescription.fixedPitchFontType() == FixedPitchFont ?
+        size = oldDescription.isMonospace() ?
             newDescription.specifiedSize() / fixedScaleFactor :
             newDescription.specifiedSize() * fixedScaleFactor;
     }
@@ -305,7 +305,7 @@ void FontBuilder::updateSpecifiedSize(FontDescription& fontDescription, const Co
     float specifiedSize = fontDescription.specifiedSize();
 
     if (!specifiedSize && fontDescription.keywordSize())
-        specifiedSize = FontSize::fontSizeForKeyword(&m_document, fontDescription.keywordSize(), fontDescription.fixedPitchFontType());
+        specifiedSize = FontSize::fontSizeForKeyword(&m_document, fontDescription.keywordSize(), fontDescription.isMonospace());
 
     fontDescription.setSpecifiedSize(specifiedSize);
 

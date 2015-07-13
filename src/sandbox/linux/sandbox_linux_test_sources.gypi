@@ -51,17 +51,31 @@
         'seccomp-bpf/errorcode_unittest.cc',
         'seccomp-bpf/sandbox_bpf_unittest.cc',
         'seccomp-bpf/syscall_unittest.cc',
+        'seccomp-bpf/trap_unittest.cc',
       ],
     }],
     [ 'compile_credentials==1', {
       'sources': [
         'integration_tests/namespace_unix_domain_socket_unittest.cc',
         'services/credentials_unittest.cc',
-        'services/namespace_sandbox_unittest.cc',
         'services/namespace_utils_unittest.cc',
       ],
       'dependencies': [
         '../build/linux/system.gyp:libcap'
+      ],
+      'conditions': [
+        [ 'use_base_test_suite==1', {
+          'sources': [
+            'services/namespace_sandbox_unittest.cc',
+          ]
+        }]
+      ],
+    }],
+    [ 'use_base_test_suite==1', {
+      'dependencies': [
+      ],
+      'defines': [
+        'SANDBOX_USES_BASE_TEST_SUITE',
       ],
     }],
   ],

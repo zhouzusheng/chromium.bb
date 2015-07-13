@@ -51,12 +51,6 @@ unsigned numGraphemeClusters(const String& string)
 }
 
 
-enum WordBreakSwitch {
-    Default,
-    KeepAll,
-    KeepAllIfKorean,
-};
-
 static inline bool isBreakableSpace(UChar ch)
 {
     switch (ch) {
@@ -155,29 +149,12 @@ static inline bool shouldBreakAfter(UChar lastCh, UChar ch, UChar nextCh)
     return false;
 }
 
-inline bool isKorean(UChar ch)
-{
-    return ch > asciiLineBreakTableLastChar
-        && ((0xAC00 <= ch && ch <= 0xD7AF) ||
-            (0x1100 <= ch && ch <= 0x11FF) ||
-            (0x3130 <= ch && ch <= 0x318F) ||
-            (0x3200 <= ch && ch <= 0x32FF) ||
-            (0xA960 <= ch && ch <= 0xA97F) ||
-            (0xD7B0 <= ch && ch <= 0xD7FF) ||
-            (0xFF00 <= ch && ch <= 0xFFEF));
-}
-
-template <WordBreakSwitch wordBreakSwitch>
 inline bool needsLineBreakIterator(UChar ch)
 {
-    if (wordBreakSwitch == KeepAll)
-        return false;
-    if (wordBreakSwitch == KeepAllIfKorean && isKorean(ch))
-        return false;
-    return ch > asciiLineBreakTableLastChar && ch != noBreakSpace;
+    return ch > asciiLineBreakTableLastChar && ch != noBreakSpaceCharacter;
 }
 
-template<typename CharacterType, WordBreakSwitch wordBreakSwitch>
+template<typename CharacterType>
 static inline int nextBreakablePosition(LazyLineBreakIterator& lazyBreakIterator, const CharacterType* str, unsigned length, int pos)
 {
     int len = static_cast<int>(length);
@@ -192,7 +169,7 @@ static inline int nextBreakablePosition(LazyLineBreakIterator& lazyBreakIterator
         if (isBreakableSpace(ch) || shouldBreakAfter(lastLastCh, lastCh, ch))
             return i;
 
-        if (needsLineBreakIterator<wordBreakSwitch>(ch) || needsLineBreakIterator<wordBreakSwitch>(lastCh)) {
+        if (needsLineBreakIterator(ch) || needsLineBreakIterator(lastCh)) {
             if (nextBreak < i) {
                 // Don't break if positioned at start of primary context and there is no prior context.
                 if (i || priorContextLength) {
@@ -248,22 +225,74 @@ static inline int nextBreakablePositionBreakAllInternal(LazyLineBreakIterator& l
     return len;
 }
 
-int LazyLineBreakIterator::nextBreakablePositionIgnoringNBSP(int pos, EWordBreak wordBreak)
+inline bool isKorean(UChar ch)
 {
-    switch (wordBreak) {
-    case KeepAllWordBreak:
-        if (m_string.is8Bit())
-            return nextBreakablePosition<LChar, KeepAll>(*this, m_string.characters8(), m_string.length(), pos);
-        return nextBreakablePosition<UChar, KeepAll>(*this, m_string.characters16(), m_string.length(), pos);
-    case KeepAllIfKoreanWordBreak:
-        if (m_string.is8Bit())
-            return nextBreakablePosition<LChar, KeepAllIfKorean>(*this, m_string.characters8(), m_string.length(), pos);
-        return nextBreakablePosition<UChar, KeepAllIfKorean>(*this, m_string.characters16(), m_string.length(), pos);
-    default:
-        if (m_string.is8Bit())
-            return nextBreakablePosition<LChar, Default>(*this, m_string.characters8(), m_string.length(), pos);
-        return nextBreakablePosition<UChar, Default>(*this, m_string.characters16(), m_string.length(), pos);
+    return ch > asciiLineBreakTableLastChar
+        && ((0xAC00 <= ch && ch <= 0xD7AF) ||
+            (0x1100 <= ch && ch <= 0x11FF) ||
+            (0x3130 <= ch && ch <= 0x318F) ||
+            (0x3200 <= ch && ch <= 0x32FF) ||
+            (0xA960 <= ch && ch <= 0xA97F) ||
+            (0xD7B0 <= ch && ch <= 0xD7FF) ||
+            (0xFF00 <= ch && ch <= 0xFFEF));
+}
+
+static inline bool shouldKeepAfter(UChar lastCh, UChar ch, UChar nextCh, LineBreakType lineBreakType)
+{
+    if (lineBreakType == LineBreakType::KeepAllIfKorean) {
+        return isKorean(nextCh);
     }
+
+    UChar preCh = U_MASK(u_charType(ch)) & U_GC_M_MASK ? lastCh : ch;
+    return U_MASK(u_charType(preCh)) & (U_GC_L_MASK | U_GC_N_MASK)
+        && !WTF::Unicode::hasLineBreakingPropertyComplexContext(preCh)
+        && U_MASK(u_charType(nextCh)) & (U_GC_L_MASK | U_GC_N_MASK)
+        && !WTF::Unicode::hasLineBreakingPropertyComplexContext(nextCh);
+}
+
+static inline int nextBreakablePositionKeepAllInternal(LazyLineBreakIterator& lazyBreakIterator, const UChar* str, unsigned length, int pos, LineBreakType lineBreakType)
+{
+    int len = static_cast<int>(length);
+    int nextBreak = -1;
+
+    UChar lastLastCh = pos > 1 ? str[pos - 2] : static_cast<UChar>(lazyBreakIterator.secondToLastCharacter());
+    UChar lastCh = pos > 0 ? str[pos - 1] : static_cast<UChar>(lazyBreakIterator.lastCharacter());
+    unsigned priorContextLength = lazyBreakIterator.priorContextLength();
+    for (int i = pos; i < len; i++) {
+        UChar ch = str[i];
+
+        if (isBreakableSpace(ch) || shouldBreakAfter(lastLastCh, lastCh, ch))
+            return i;
+
+        if (!shouldKeepAfter(lastLastCh, lastCh, ch, lineBreakType) && (needsLineBreakIterator(ch) || needsLineBreakIterator(lastCh))) {
+            if (nextBreak < i) {
+                // Don't break if positioned at start of primary context and there is no prior context.
+                if (i || priorContextLength) {
+                    TextBreakIterator* breakIterator = lazyBreakIterator.get(priorContextLength);
+                    if (breakIterator) {
+                        nextBreak = breakIterator->following(i - 1 + priorContextLength);
+                        if (nextBreak >= 0) {
+                            nextBreak -= priorContextLength;
+                        }
+                    }
+                }
+            }
+            if (i == nextBreak && !isBreakableSpace(lastCh))
+                return i;
+        }
+
+        lastLastCh = lastCh;
+        lastCh = ch;
+    }
+
+    return len;
+}
+
+int LazyLineBreakIterator::nextBreakablePositionIgnoringNBSP(int pos)
+{
+    if (m_string.is8Bit())
+        return nextBreakablePosition<LChar>(*this, m_string.characters8(), m_string.length(), pos);
+    return nextBreakablePosition<UChar>(*this, m_string.characters16(), m_string.length(), pos);
 }
 
 int LazyLineBreakIterator::nextBreakablePositionBreakAll(int pos)
@@ -273,5 +302,11 @@ int LazyLineBreakIterator::nextBreakablePositionBreakAll(int pos)
     return nextBreakablePositionBreakAllInternal<UChar>(*this, m_string.characters16(), m_string.length(), pos);
 }
 
+int LazyLineBreakIterator::nextBreakablePositionKeepAll(int pos, LineBreakType lineBreakType)
+{
+    if (m_string.is8Bit())
+        return nextBreakablePosition<LChar>(*this, m_string.characters8(), m_string.length(), pos);
+    return nextBreakablePositionKeepAllInternal(*this, m_string.characters16(), m_string.length(), pos, lineBreakType);
+}
 
 } // namespace blink

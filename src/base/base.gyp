@@ -134,6 +134,9 @@
               ],
             },
           ],
+          'dependencies': [
+           'trace_event/etw_manifest/etw_manifest.gyp:etw_manifest',
+          ],
         }],
         ['OS == "mac" or (OS == "ios" and _toolset == "host")', {
           'link_settings': {
@@ -308,24 +311,6 @@
       ],
     },
     {
-      # TODO(pasko): Remove this target when crbug.com/424562 is fixed.
-      # GN: //base:protect_file_posix
-      'target_name': 'protect_file_posix',
-      'conditions': [
-        ['os_posix == 1', {
-          'type': 'static_library',
-          'dependencies': [
-            'base',
-          ],
-          'sources': [
-            'files/protect_file_posix.cc',
-          ],
-        }, {
-          'type': 'none',
-        }],
-      ],
-    },
-    {
       'target_name': 'base_prefs_test_support',
       'type': 'static_library',
       'dependencies': [
@@ -383,6 +368,7 @@
         'android/jni_android_unittest.cc',
         'android/jni_array_unittest.cc',
         'android/jni_string_unittest.cc',
+        'android/library_loader/library_prefetcher_unittest.cc',
         'android/path_utils_unittest.cc',
         'android/scoped_java_ref_unittest.cc',
         'android/sys_utils_unittest.cc',
@@ -402,12 +388,13 @@
         'callback_unittest.cc',
         'callback_unittest.nc',
         'cancelable_callback_unittest.cc',
-        'chromeos/memory_pressure_observer_chromeos_unittest.cc',
+        'chromeos/memory_pressure_monitor_unittest.cc',
         'command_line_unittest.cc',
         'containers/adapters_unittest.cc',
         'containers/hash_tables_unittest.cc',
         'containers/linked_list_unittest.cc',
         'containers/mru_cache_unittest.cc',
+        'containers/scoped_ptr_hash_map_unittest.cc',
         'containers/small_map_unittest.cc',
         'containers/stack_container_unittest.cc',
         'cpu_unittest.cc',
@@ -422,6 +409,7 @@
         'file_version_info_unittest.cc',
         'files/dir_reader_posix_unittest.cc',
         'files/file_path_unittest.cc',
+        'files/file_path_watcher_unittest.cc',
         'files/file_proxy_unittest.cc',
         'files/file_unittest.cc',
         'files/file_util_proxy_unittest.cc',
@@ -456,9 +444,11 @@
         'lazy_instance_unittest.cc',
         'logging_unittest.cc',
         'mac/bind_objc_block_unittest.mm',
+        'mac/dispatch_source_mach_unittest.cc',
         'mac/foundation_util_unittest.mm',
         'mac/libdispatch_task_runner_unittest.cc',
         'mac/mac_util_unittest.mm',
+        'mac/memory_pressure_monitor_unittest.cc',
         'mac/objc_property_releaser_unittest.mm',
         'mac/scoped_nsobject_unittest.mm',
         'mac/scoped_objc_class_swizzler_unittest.mm',
@@ -493,6 +483,7 @@
         'metrics/sample_vector_unittest.cc',
         'metrics/sparse_histogram_unittest.cc',
         'metrics/statistics_recorder_unittest.cc',
+        'move_unittest.cc',
         'numerics/safe_numerics_unittest.cc',
         'observer_list_unittest.cc',
         'os_compat_android_unittest.cc',
@@ -561,6 +552,7 @@
         'test/test_pending_task_unittest.cc',
         'test/test_reg_util_win_unittest.cc',
         'test/trace_event_analyzer_unittest.cc',
+        'test/user_action_tester_unittest.cc',
         'threading/non_thread_safe_unittest.cc',
         'threading/platform_thread_unittest.cc',
         'threading/sequenced_worker_pool_unittest.cc',
@@ -593,6 +585,7 @@
         'win/event_trace_provider_unittest.cc',
         'win/i18n_unittest.cc',
         'win/iunknown_impl_unittest.cc',
+        'win/memory_pressure_monitor_unittest.cc',
         'win/message_window_unittest.cc',
         'win/object_watcher_unittest.cc',
         'win/pe_image_unittest.cc',
@@ -683,11 +676,17 @@
             'message_loop/message_pump_glib_unittest.cc',
           ]
         }],
-        ['OS == "linux" and use_allocator!="none"', {
-            'dependencies': [
-              'allocator/allocator.gyp:allocator',
-            ],
-          },
+        ['OS == "linux"', {
+          'dependencies': [
+            'malloc_wrapper',
+          ],
+          'conditions': [
+            ['use_allocator!="none"', {
+              'dependencies': [
+                'allocator/allocator.gyp:allocator',
+              ],
+            }],
+          ]},
         ],
         ['OS == "win"', {
           'sources!': [
@@ -716,14 +715,6 @@
               # TODO(mark): This should not be necessary.
               'dependencies': [
                 '../third_party/icu/icu.gyp:icudata',
-              ],
-            }],
-            ['incremental_chrome_dll', {
-              'defines': [
-                # Used only to workaround a linker bug, do not use this
-                # otherwise, and don't make it broader scope. See
-                # http://crbug.com/251251.
-                'INCREMENTAL_LINKING',
               ],
             }],
           ],
@@ -830,6 +821,7 @@
             'allocator/allocator.gyp:allocator_extension_thunks_win64',
             '../third_party/modp_b64/modp_b64.gyp:modp_b64_win64',
             'third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations_win64',
+            'trace_event/etw_manifest/etw_manifest.gyp:etw_manifest',
           ],
           # TODO(gregoryd): direct_dependent_settings should be shared with the
           # 32-bit target, but it doesn't work due to a bug in gyp
@@ -1042,6 +1034,20 @@
             'third_party/xdg_mime/xdgmimeparent.h',
           ],
         },
+      ],
+    }],
+    ['OS == "linux"', {
+      'targets': [
+        {
+          'target_name': 'malloc_wrapper',
+          'type': 'shared_library',
+          'dependencies': [
+            'base',
+          ],
+          'sources': [
+            'test/malloc_wrapper.cc',
+          ],
+        }
       ],
     }],
     ['OS == "win"', {

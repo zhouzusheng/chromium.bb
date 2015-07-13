@@ -20,10 +20,13 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/ipc/gfx_param_traits.h"
 
+// SHEZ: Remove safe-browsing code
+#if 0
 #if defined(FULL_SAFE_BROWSING)
 #include "chrome/common/safe_browsing/zip_analyzer_results.h"
 #include "chrome/common/safe_browsing/ipc_protobuf_message_macros.h"
 #include "chrome/common/safe_browsing/protobuf_message_param_traits.h"
+#endif
 #endif
 
 // Singly-included section for typedefs.
@@ -41,6 +44,8 @@ typedef std::vector<Tuple<base::string16, base::string16>>
 
 #define IPC_MESSAGE_START ChromeUtilityMsgStart
 
+// SHEZ: Remove safe-browsing code
+#if 0
 #if defined(FULL_SAFE_BROWSING)
 IPC_ENUM_TRAITS_VALIDATE(
     safe_browsing::ClientDownloadRequest_DownloadType,
@@ -108,6 +113,7 @@ IPC_STRUCT_TRAITS_BEGIN(safe_browsing::zip_analyzer::Results)
   IPC_STRUCT_TRAITS_MEMBER(archived_binary)
 IPC_STRUCT_TRAITS_END()
 #endif  // FULL_SAFE_BROWSING
+#endif
 
 #if defined(OS_WIN)
 IPC_STRUCT_BEGIN(ChromeUtilityMsg_GetSaveFileName_Params)
@@ -135,11 +141,13 @@ IPC_MESSAGE_CONTROL3(ChromeUtilityMsg_DecodeImage,
                      bool /* shrink image if needed for IPC msg limit */,
                      int /* delegate id */)
 
+#if defined(OS_CHROMEOS)
 // Tell the utility process to decode the given JPEG image data with a robust
 // libjpeg codec.
 IPC_MESSAGE_CONTROL2(ChromeUtilityMsg_RobustJPEGDecodeImage,
                      std::vector<unsigned char> /* encoded image contents*/,
                      int /* delegate id */)
+#endif  // defined(OS_CHROMEOS)
 
 // Tell the utility process to patch the given |input_file| using |patch_file|
 // and place the output in |output_file|. The patch should use the bsdiff
@@ -206,6 +214,13 @@ IPC_MESSAGE_CONTROL1(ChromeUtilityMsg_GetSaveFileName,
                      ChromeUtilityMsg_GetSaveFileName_Params /* params */)
 #endif  // defined(OS_WIN)
 
+#if defined(OS_ANDROID)
+// Instructs the utility process to detect support for seccomp-bpf,
+// and the result is reported through
+// ChromeUtilityHostMsg_DetectSeccompSupport_Result.
+IPC_MESSAGE_CONTROL0(ChromeUtilityMsg_DetectSeccompSupport)
+#endif
+
 //------------------------------------------------------------------------------
 // Utility process host messages:
 // These are messages from the utility process to the browser.
@@ -252,11 +267,14 @@ IPC_MESSAGE_CONTROL0(ChromeUtilityHostMsg_CreateZipFile_Failed)
 // Reply when the utility process has started.
 IPC_MESSAGE_CONTROL0(ChromeUtilityHostMsg_ProcessStarted)
 
+// SHEZ: Remove safe-browsing code
+#if 0
 #if defined(FULL_SAFE_BROWSING)
 // Reply when a zip file has been analyzed for malicious download protection.
 IPC_MESSAGE_CONTROL1(
     ChromeUtilityHostMsg_AnalyzeZipFileForDownloadProtection_Finished,
     safe_browsing::zip_analyzer::Results)
+#endif
 #endif
 
 #if defined(OS_WIN)
@@ -271,3 +289,10 @@ IPC_MESSAGE_CONTROL2(ChromeUtilityHostMsg_GetSaveFileName_Result,
 IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_BuildDirectWriteFontCache,
                      base::FilePath /* cache file path */)
 #endif  // defined(OS_WIN)
+
+#if defined(OS_ANDROID)
+// Reply to ChromeUtilityMsg_DetectSeccompSupport to report the level
+// of kernel support for seccomp-bpf.
+IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_DetectSeccompSupport_ResultPrctl,
+                     bool /* seccomp prctl supported */)
+#endif

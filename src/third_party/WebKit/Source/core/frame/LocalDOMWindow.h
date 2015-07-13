@@ -148,8 +148,6 @@ public:
     int webkitRequestAnimationFrame(FrameRequestCallback*) override;
     void cancelAnimationFrame(int id) override;
     void schedulePostMessage(PassRefPtrWillBeRawPtr<MessageEvent>, LocalDOMWindow* source, SecurityOrigin* target, PassRefPtrWillBeRawPtr<ScriptCallStack> stackTrace);
-    String crossDomainAccessErrorMessage(LocalDOMWindow* callingWindow) override;
-    String sanitizedCrossDomainAccessErrorMessage(LocalDOMWindow* callingWindow) override;
 
     void registerProperty(DOMWindowProperty*);
     void unregisterProperty(DOMWindowProperty*);
@@ -157,8 +155,6 @@ public:
     void reset();
 
     unsigned pendingUnloadEventListeners() const;
-
-    static IntRect adjustWindowRect(LocalFrame&, const IntRect& pendingChanges);
 
     bool allowPopUp(); // Call on first window, not target window.
     static bool allowPopUp(LocalFrame& firstFrame);
@@ -196,8 +192,6 @@ public:
 
     void willDetachDocumentFromFrame();
 
-    bool isInsecureScriptAccess(DOMWindow& callingWindow, const String& urlString) override;
-
     EventQueue* eventQueue() const;
     void enqueueWindowEvent(PassRefPtrWillBeRawPtr<Event>);
     void enqueueDocumentEvent(PassRefPtrWillBeRawPtr<Event>);
@@ -212,8 +206,6 @@ public:
     void clearEventQueue();
 
     void acceptLanguagesChanged();
-
-    virtual v8::Handle<v8::Object> wrap(v8::Handle<v8::Object> creationContext, v8::Isolate*) override;
 
 private:
     // Rather than simply inheriting LocalFrameLifecycleObserver like most other
@@ -262,16 +254,16 @@ private:
 
     WillBeHeapHashSet<RawPtrWillBeWeakMember<DOMWindowProperty>> m_properties;
 
-    mutable RefPtrWillBeMember<Screen> m_screen;
-    mutable RefPtrWillBeMember<History> m_history;
+    mutable PersistentWillBeMember<Screen> m_screen;
+    mutable PersistentWillBeMember<History> m_history;
     mutable RefPtrWillBeMember<BarProp> m_locationbar;
     mutable RefPtrWillBeMember<BarProp> m_menubar;
     mutable RefPtrWillBeMember<BarProp> m_personalbar;
     mutable RefPtrWillBeMember<BarProp> m_scrollbars;
     mutable RefPtrWillBeMember<BarProp> m_statusbar;
     mutable RefPtrWillBeMember<BarProp> m_toolbar;
-    mutable RefPtrWillBeMember<Console> m_console;
-    mutable RefPtrWillBeMember<Navigator> m_navigator;
+    mutable PersistentWillBeMember<Console> m_console;
+    mutable PersistentWillBeMember<Navigator> m_navigator;
     mutable RefPtrWillBeMember<StyleMedia> m_media;
     mutable RefPtrWillBeMember<BBWindowHooks> m_bbWindowHooks;
 

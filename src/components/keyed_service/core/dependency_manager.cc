@@ -34,7 +34,7 @@ void DependencyManager::AddEdge(KeyedServiceBaseFactory* depended,
 }
 
 void DependencyManager::RegisterPrefsForServices(
-    const base::SupportsUserData* context,
+    base::SupportsUserData* context,
     user_prefs::PrefRegistrySyncable* pref_registry) {
   std::vector<DependencyNode*> construction_order;
   if (!dependency_graph_.GetConstructionOrder(&construction_order)) {
@@ -44,7 +44,8 @@ void DependencyManager::RegisterPrefsForServices(
   for (const auto& dependency_node : construction_order) {
     KeyedServiceBaseFactory* factory =
         static_cast<KeyedServiceBaseFactory*>(dependency_node);
-    factory->RegisterPrefsIfNecessaryForContext(context, pref_registry);
+    base::SupportsUserData* typed_context = factory->GetTypedContext(context);
+    factory->RegisterPrefsIfNecessaryForContext(typed_context, pref_registry);
   }
 }
 
@@ -66,15 +67,16 @@ void DependencyManager::CreateContextServices(base::SupportsUserData* context,
   for (const auto& dependency_node : construction_order) {
     KeyedServiceBaseFactory* factory =
         static_cast<KeyedServiceBaseFactory*>(dependency_node);
+    base::SupportsUserData* typed_context = factory->GetTypedContext(context);
 
     // TODO(SHEZ): Do we still need this?
     factory->RegisterUserPrefsOnContextForTest(context);
 
     if (is_testing_context && factory->ServiceIsNULLWhileTesting() &&
-        !factory->HasTestingFactory(context)) {
-      factory->SetEmptyTestingFactory(context);
+        !factory->HasTestingFactory(typed_context)) {
+      factory->SetEmptyTestingFactory(typed_context);
     } else if (factory->ServiceIsCreatedWithContext()) {
-      factory->CreateServiceNow(context);
+      factory->CreateServiceNow(typed_context);
     }
   }
 }
@@ -93,7 +95,8 @@ void DependencyManager::DestroyContextServices(
   for (const auto& dependency_node : destruction_order) {
     KeyedServiceBaseFactory* factory =
         static_cast<KeyedServiceBaseFactory*>(dependency_node);
-    factory->ContextShutdown(context);
+    base::SupportsUserData* typed_context = factory->GetTypedContext(context);
+    factory->ContextShutdown(typed_context);
   }
 
 #ifndef NDEBUG
@@ -104,13 +107,14 @@ void DependencyManager::DestroyContextServices(
   for (const auto& dependency_node : destruction_order) {
     KeyedServiceBaseFactory* factory =
         static_cast<KeyedServiceBaseFactory*>(dependency_node);
-    factory->ContextDestroyed(context);
+    base::SupportsUserData* typed_context = factory->GetTypedContext(context);
+    factory->ContextDestroyed(typed_context);
   }
 }
 
 #ifndef NDEBUG
 void DependencyManager::AssertContextWasntDestroyed(
-    const base::SupportsUserData* context) {
+    base::SupportsUserData* context) {
   if (dead_context_pointers_.find(context) != dead_context_pointers_.end()) {
     NOTREACHED() << "Attempted to access a context that was ShutDown(). "
                  << "This is most likely a heap smasher in progress. After "
@@ -120,7 +124,7 @@ void DependencyManager::AssertContextWasntDestroyed(
 }
 
 void DependencyManager::MarkContextLiveForTesting(
-    const base::SupportsUserData* context) {
+    base::SupportsUserData* context) {
   dead_context_pointers_.erase(context);
 }
 

@@ -107,6 +107,7 @@ KeyboardEvent::KeyboardEvent(const PlatformKeyboardEvent& key, AbstractView* vie
     , m_keyEvent(adoptPtr(new PlatformKeyboardEvent(key)))
     , m_keyIdentifier(key.keyIdentifier())
     , m_code(key.code())
+    , m_key(key.key())
     , m_location(keyLocationCode(key))
     , m_isAutoRepeat(key.isAutoRepeat())
     , m_bbIsNumLock(key.bbIsNumLock())
@@ -124,10 +125,11 @@ KeyboardEvent::KeyboardEvent(const AtomicString& eventType, const KeyboardEventI
 }
 
 KeyboardEvent::KeyboardEvent(const AtomicString& eventType, bool canBubble, bool cancelable, AbstractView *view,
-    const String& keyIdentifier, const String& code, unsigned location, bool ctrlKey, bool altKey, bool shiftKey, bool metaKey)
+    const String& keyIdentifier, const String& code, const String& key, unsigned location, bool ctrlKey, bool altKey, bool shiftKey, bool metaKey)
     : UIEventWithKeyState(eventType, canBubble, cancelable, view, 0, ctrlKey, altKey, shiftKey, metaKey)
     , m_keyIdentifier(keyIdentifier)
     , m_code(code)
+    , m_key(key)
     , m_location(location)
     , m_isAutoRepeat(false)
     , m_bbIsNumLock(false)

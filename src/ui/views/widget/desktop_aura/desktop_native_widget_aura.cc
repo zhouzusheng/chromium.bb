@@ -15,6 +15,7 @@
 #include "ui/aura/window_property.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/base/hit_test.h"
+#include "ui/base/ime/input_method.h"
 #include "ui/base/ui_base_switches_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/gfx/canvas.h"
@@ -390,6 +391,9 @@ void DesktopNativeWidgetAura::HandleActivationChanged(bool active) {
         window_for_activation = view_for_activation->GetWidget()->GetNativeView();
       }
       activation_client->ActivateWindow(window_for_activation);
+      // Refreshes the focus info to IMF in case that IMF cached the old info
+      // about focused text input client when it was "inactive".
+      GetHostInputMethod()->OnFocus();
     }
   } else {
     // If we're not active we need to deactivate the corresponding
@@ -397,8 +401,10 @@ void DesktopNativeWidgetAura::HandleActivationChanged(bool active) {
     // deactivated (child widgets don't get native desktop activation changes,
     // only aura activation changes).
     aura::Window* active_window = activation_client->GetActiveWindow();
-    if (active_window)
+    if (active_window) {
       activation_client->DeactivateWindow(active_window);
+      GetHostInputMethod()->OnBlur();
+    }
   }
 }
 

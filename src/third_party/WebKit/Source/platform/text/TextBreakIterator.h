@@ -22,7 +22,6 @@
 #ifndef TextBreakIterator_h
 #define TextBreakIterator_h
 
-#include "core/style/ComputedStyleConstants.h"
 #include "platform/PlatformExport.h"
 #include "wtf/text/AtomicString.h"
 #include "wtf/unicode/Unicode.h"
@@ -55,6 +54,8 @@ const int TextBreakDone = -1;
 enum class LineBreakType {
     Normal,
     BreakAll, // word-break:break-all allows breaks between letters/numbers
+    KeepAll, // word-break:keep-all doesn't allow breaks between all kind of letters/numbers except some south east asians'.
+    KeepAllIfKorean,  // word-break: -bb-keep-all-if-korean Bloomberg extension
 };
 
 class PLATFORM_EXPORT LazyLineBreakIterator {
@@ -163,19 +164,28 @@ public:
         m_cachedPriorContextLength = 0;
     }
 
-    inline bool isBreakable(int pos, int& nextBreakable, EWordBreak wordBreak, LineBreakType lineBreakType = LineBreakType::Normal)
+    inline bool isBreakable(int pos, int& nextBreakable, LineBreakType lineBreakType = LineBreakType::Normal)
     {
         if (pos > nextBreakable) {
-            nextBreakable = lineBreakType == LineBreakType::BreakAll
-                ? nextBreakablePositionBreakAll(pos)
-                : nextBreakablePositionIgnoringNBSP(pos, wordBreak);
+            switch (lineBreakType) {
+            case LineBreakType::BreakAll:
+                nextBreakable = nextBreakablePositionBreakAll(pos);
+                break;
+            case LineBreakType::KeepAll:
+            case LineBreakType::KeepAllIfKorean:
+                nextBreakable = nextBreakablePositionKeepAll(pos, lineBreakType);
+                break;
+            default:
+                nextBreakable = nextBreakablePositionIgnoringNBSP(pos);
+            }
         }
         return pos == nextBreakable;
     }
 
 private:
-    int nextBreakablePositionIgnoringNBSP(int pos, EWordBreak wordBreak);
+    int nextBreakablePositionIgnoringNBSP(int pos);
     int nextBreakablePositionBreakAll(int pos);
+    int nextBreakablePositionKeepAll(int pos, LineBreakType lineBreakType);
 
     static const unsigned priorContextCapacity = 2;
     String m_string;

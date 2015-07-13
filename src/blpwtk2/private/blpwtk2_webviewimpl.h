@@ -178,9 +178,6 @@ class WebViewImpl : public WebView,
     // this. Returns true if the delegate successfully handled it.
     bool TakeFocus(content::WebContents* source, bool reverse) override;
 
-    // Notification that |contents| has gained focus.
-    void WebContentsFocused(content::WebContents* contents) override;
-
     // Notification that |contents| has lost focus.
     void WebContentsBlurred(content::WebContents* contents) override;
 
@@ -264,6 +261,9 @@ class WebViewImpl : public WebView,
         const GURL& validated_url,
         int error_code,
         const base::string16& error_description) override;
+
+    // Notification that |contents| has gained focus.
+    void OnWebContentsFocused() override;
 
   private:
     scoped_ptr<DevToolsFrontendHostDelegateImpl> d_devToolsFrontEndHost;

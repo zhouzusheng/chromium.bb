@@ -23,6 +23,7 @@
 #include <blpwtk2_browsermainrunner.h>
 
 #include <blpwtk2_browsercontextimplmanager.h>
+#include <blpwtk2_contentmaindelegateimpl.h>  // for ContentClient TODO: fix this
 #include <blpwtk2_devtoolshttphandlerdelegateimpl.h>
 #include <blpwtk2_processhostmanager.h>
 #include <blpwtk2_statics.h>
@@ -32,8 +33,8 @@
 #include <base/message_loop/message_loop.h>
 #include <base/strings/string_number_conversions.h>
 #include <chrome/browser/printing/print_job_manager.h>
+#include <components/devtools_http_handler/devtools_http_handler.h>
 #include <content/public/browser/browser_main_runner.h>
-#include <content/public/browser/devtools_http_handler.h>
 #include <content/public/common/content_switches.h>
 #include <net/base/net_errors.h>
 #include <net/socket/tcp_server_socket.h>
@@ -43,7 +44,7 @@
 namespace {
 
 class TCPServerSocketFactory
-    : public content::DevToolsHttpHandler::ServerSocketFactory {
+    : public devtools_http_handler::DevToolsHttpHandler::ServerSocketFactory {
  public:
   TCPServerSocketFactory(const std::string& address, uint16 port)
       : address_(address), port_(port) {
@@ -111,12 +112,15 @@ BrowserMainRunner::BrowserMainRunner(
     d_browserContextImplManager.reset(new BrowserContextImplManager());
 
     d_devtoolsHttpHandler.reset(
-        content::DevToolsHttpHandler::Start(
-            scoped_ptr<content::DevToolsHttpHandler::ServerSocketFactory>(
+        new devtools_http_handler::DevToolsHttpHandler(
+            scoped_ptr<devtools_http_handler::DevToolsHttpHandler::ServerSocketFactory>(
                 new TCPServerSocketFactory("127.0.0.1", getRemoteDebuggingPort())),
             "",
             new DevToolsHttpHandlerDelegateImpl(),  // the DevToolsHttpHandler takes ownership of this
-            base::FilePath()));
+            base::FilePath(),
+            base::FilePath(),
+            std::string(),
+            ContentClient::Instance()->GetUserAgent()));
     Statics::devToolsHttpHandler = d_devtoolsHttpHandler.get();
 
     gfx::Screen::SetScreenInstance(

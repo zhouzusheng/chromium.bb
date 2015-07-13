@@ -129,6 +129,7 @@ class WebViewImpl : public WebView,
     void enableCustomTooltip(bool enabled) override;
     void setZoomPercent(int value) override;
     void find(const StringRef& text, bool matchCase, bool forward) override;
+    void stopFind(bool preserveSelection) override;
     void replaceMisspelledRange(const StringRef& text) override;
     void rootWindowPositionChanged() override;
     void rootWindowSettingsChanged() override;

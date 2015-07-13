@@ -107,6 +107,8 @@ IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_SetZoomPercent,
                     int /* value */)
 IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_Find,
                     blpwtk2::FindOnPageRequest /* request */)
+IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_StopFind,
+                    bool /* preserveSelection */)
 IPC_MESSAGE_ROUTED1(BlpWebViewHostMsg_ReplaceMisspelledRange,
                     std::string /* text */)
 IPC_MESSAGE_ROUTED0(BlpWebViewHostMsg_RootWindowPositionChanged)

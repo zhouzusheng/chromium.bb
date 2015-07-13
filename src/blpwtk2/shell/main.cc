@@ -835,12 +835,18 @@ public:
         int len = ::GetWindowTextA(d_findEntryHwnd, buf, sizeof buf);
 
         d_findText.assign(buf, len);
-        d_webView->find(d_findText, false, true);
+        if (0 == len) {
+            d_webView->stopFind(false);
+        }
+        else {
+            d_webView->find(d_findText, false, true);
+        }
     }
 
     void findNext(bool forward)
     {
-        d_webView->find(d_findText, false, forward);
+        if (!d_findText.empty())
+            d_webView->find(d_findText, false, forward);
     }
 
     void findState(blpwtk2::WebView* source, int numberOfMatches, int activeMatchOrdinal, bool finalUpdate) override

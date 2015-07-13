@@ -114,6 +114,7 @@ bool WebViewHost::OnMessageReceived(const IPC::Message& message)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_EnableCustomTooltip, onEnableCustomTooltip)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_SetZoomPercent, onSetZoomPercent)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_Find, onFind)
+        IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_StopFind, onStopFind)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_ReplaceMisspelledRange, onReplaceMisspelledRange)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_RootWindowPositionChanged, onRootWindowPositionChanged)
         IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_RootWindowSettingsChanged, onRootWindowSettingsChanged)
@@ -298,6 +299,11 @@ void WebViewHost::onSetZoomPercent(int value)
 void WebViewHost::onFind(const FindOnPageRequest& value)
 {
     d_webView->handleFindRequest(value);
+}
+
+void WebViewHost::onStopFind(bool preserveSelection)
+{
+    d_webView->stopFind(preserveSelection);
 }
 
 void WebViewHost::onReplaceMisspelledRange(const std::string& text)

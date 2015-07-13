@@ -36,14 +36,16 @@ FindOnPageRequest FindOnPage::makeRequest(const StringRef& text,
         d_numberOfMatches = 0;
         d_activeMatchOrdinal = 0;
 
-        if (!text.isEmpty() && ++d_reqId <= 0) {
-            d_reqId = 1; // handle overflow
+        if (d_reqId == INT_MAX) {
+            d_reqId = 1;  // Handle overflow.
+        }
+        else {
+            ++d_reqId;
         }
     }
-    int reqId = d_text.empty() ? 0 : d_reqId; // 0 reqId to reset search
 
     FindOnPageRequest request;
-    request.reqId = reqId;
+    request.reqId = d_reqId;
     request.text = d_text;
     request.matchCase = matchCase;
     request.findNext = findNext;

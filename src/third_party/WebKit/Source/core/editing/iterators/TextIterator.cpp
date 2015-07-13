@@ -521,7 +521,17 @@ void TextIterator::handleTextBox()
                 }
                 return;
             }
-            unsigned textBoxEnd = textBoxStart + m_textBox->len();
+            unsigned textBoxLen;
+            if (m_textBox->truncation() == cNoTruncation || emitsOverflowHiddenText() || renderer->style()->overflowX() != OHIDDEN) {
+                textBoxLen = m_textBox->len();
+            }
+            else if (m_textBox->truncation() == cFullTruncation) {
+                textBoxLen = 0;
+            }
+            else {
+                textBoxLen = m_textBox->truncation();
+            }
+            unsigned textBoxEnd = textBoxStart + textBoxLen;
             unsigned runEnd = std::min(textBoxEnd, end);
 
             // Determine what the next text box will be, but don't advance yet

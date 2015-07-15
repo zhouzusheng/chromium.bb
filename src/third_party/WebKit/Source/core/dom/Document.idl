@@ -89,6 +89,7 @@ interface Document : Node {
     // Bloomberg-specific extensions
     attribute DOMString bbHeaderText;
     attribute DOMString bbFooterText;
+    attribute boolean bbPrintPageNumbers;
 
     // FIXME: cookie should not have [TreatNullAs=NullString].
     [TreatNullAs=NullString, RaisesException] attribute DOMString cookie;

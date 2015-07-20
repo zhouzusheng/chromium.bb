@@ -753,6 +753,8 @@ public:
     void setBbHeaderText(const String& value) { m_bbHeaderText = value; }
     String bbFooterText() const { return m_bbFooterText; }
     void setBbFooterText(const String& value) { m_bbFooterText = value; }
+    bool bbPrintPageNumbers() const { return m_bbPrintPageNumbers; }
+    void setBbPrintPageNumbers(bool value) { m_bbPrintPageNumbers = value; }
 
     String lastModified() const;
 
@@ -1339,6 +1341,7 @@ private:
     Vector<AnnotatedRegionValue> m_annotatedRegions;
     bool m_hasAnnotatedRegions;
     bool m_annotatedRegionsDirty;
+    bool m_bbPrintPageNumbers;
 
     WillBeHeapHashMap<String, RefPtrWillBeMember<HTMLCanvasElement>> m_cssCanvasElements;
 

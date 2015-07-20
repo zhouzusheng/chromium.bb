@@ -284,6 +284,9 @@ CollectInfoResult CollectDriverInfoD3D(const std::wstring& device_id,
         gpu_info->driver_vendor = driver.driver_vendor;
         gpu_info->driver_version = driver.driver_version;
         gpu_info->driver_date = driver.driver_date;
+        LOG(INFO) << "Primary GPU Driver Vendor: " << driver.driver_vendor;
+        LOG(INFO) << "Primary GPU Driver Version: " << driver.driver_version;
+        LOG(INFO) << "Primary GPU Driver Date: " << driver.driver_date;
       } else {
         gpu_info->secondary_gpus.push_back(driver.device);
       }

@@ -118,6 +118,8 @@ class CONTENT_EXPORT RenderWidget
   // Creates a WebWidget based on the popup type.
   static blink::WebWidget* CreateWebWidget(RenderWidget* render_widget);
 
+  static void SetInputHandlingTimeThrottlingThresholdMicroseconds(int us);
+
   int32 routing_id() const { return routing_id_; }
   int32 surface_id() const { return surface_id_; }
   CompositorDependencies* compositor_deps() const { return compositor_deps_; }
@@ -622,6 +624,9 @@ class CONTENT_EXPORT RenderWidget
 
   // The size of the RenderWidget.
   gfx::Size size_;
+
+  // The size of the RenderWidget expected by the host.
+  gfx::Size browser_size_;
 
   // The size of the view's backing surface in non-DPI-adjusted pixels.
   gfx::Size physical_backing_size_;

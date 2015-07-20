@@ -516,8 +516,7 @@ void PrintWebViewHelper::PrintHeaderAndFooter(
   blink::WebLocalFrame* frame = blink::WebLocalFrame::create(NULL);
   web_view->setMainFrame(frame);
 
-  // SHEZ: This will be filled in by blpwtk2.
-  base::StringValue html("");
+  base::StringValue html(params.header_footer_html);
   // Load page with script to avoid async operations.
   ExecuteScript(frame, kPageLoadScriptFormat, html);
 
@@ -536,6 +535,13 @@ void PrintWebViewHelper::PrintHeaderAndFooter(
   options->SetString("url", url.empty() ? params.url : url);
   base::string16 title = source_frame.document().title();
   options->SetString("title", title.empty() ? params.title : title);
+
+#ifdef BB_HAS_WEB_DOCUMENT_EXTENSIONS
+  // Bloomberg-specific extensions
+  options->SetString("headerText", source_frame.document().bbHeaderText());
+  options->SetString("footerText", source_frame.document().bbFooterText());
+  options->SetBoolean("printPageNumbers", source_frame.document().bbPrintPageNumbers());
+#endif
 
   ExecuteScript(frame, kPageSetupScriptFormat, *options);
 

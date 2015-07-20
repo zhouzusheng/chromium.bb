@@ -26,6 +26,18 @@ namespace gin {
 
 _FOOTER = """
 }  // namespace gin
+
+extern "C" {
+
+__declspec(dllexport) const unsigned char* GetV8NativesFingerprint() {
+  return gin::g_natives_fingerprint;
+}
+
+__declspec(dllexport) const unsigned char* GetV8SnapshotFingerprint() {
+  return gin::g_snapshot_fingerprint;
+}
+
+}  // extern "C"
 """
 
 
@@ -41,7 +53,7 @@ def FingerprintFile(file_path):
 
 
 def WriteFingerprint(output_file, variable_name, fingerprint):
-  output_file.write('\nextern const unsigned char %s[] = { ' % variable_name)
+  output_file.write('\nstatic const unsigned char %s[] = { ' % variable_name)
   for byte in fingerprint:
     output_file.write(str(ord(byte)) + ', ')
   output_file.write('};\n')

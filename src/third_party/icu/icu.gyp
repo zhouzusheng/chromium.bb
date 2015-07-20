@@ -85,18 +85,36 @@
           # to the output directory, it should explicitly depend on this target
           # with the host toolset (like copy_icudtl_dat#host).
           'toolsets': [ 'host' ],
-          'copies': [{
-            'destination': '<(PRODUCT_DIR)',
-            'conditions': [
-              ['OS == "android"', {
-                'files': [
-                  'android/icudtl.dat',
-                ],
-              } , { # else: OS != android
-                'files': [
-                  'source/data/in/icudtl.dat',
-                ],
-              }],
+
+          # SHEZ: Use cp.py so that we can rename icudtl.dat based on the
+          # SHEZ: bb_version
+          # 'copies': [{
+          #   'destination': '<(PRODUCT_DIR)',
+          #   'conditions': [
+          #     ['OS == "android"', {
+          #       'files': [
+          #         'android/icudtl.dat',
+          #       ],
+          #     } , { # else: OS != android
+          #       'files': [
+          #         'source/data/in/icudtl.dat',
+          #       ],
+          #     }],
+          #   ],
+          # }],
+          'actions': [{
+            'action_name': 'copy_icudtl_dat',
+            'inputs': [
+              'source/data/in/icudtl.dat',
+            ],
+            'outputs': [
+              '<(PRODUCT_DIR)/icudtl<(bb_version_suffix).dat',
+            ],
+            'action': [
+              'python',
+              '<(DEPTH)/build/cp.py',
+              '<@(_inputs)',
+              '<@(_outputs)',
             ],
           }],
         },

@@ -47,6 +47,7 @@ struct ToolkitCreateParamsImpl {
     std::vector<std::string> d_sideLoadedFonts;
     ResourceLoader* d_inProcessResourceLoader;
     std::string d_dictionaryPath;
+    std::string d_userAgent;
     std::string d_hostChannel;
     NativeFont d_tooltipFont;
     NativeColor d_activeTextSearchHighlightColor;
@@ -172,6 +173,11 @@ void ToolkitCreateParams::setInProcessResourceLoader(
 void ToolkitCreateParams::setDictionaryPath(const StringRef& path)
 {
     d_impl->d_dictionaryPath.assign(path.data(), path.length());
+}
+
+void ToolkitCreateParams::setUserAgent(const StringRef& userAgent)
+{
+    d_impl->d_userAgent.assign(userAgent.data(), userAgent.length());
 }
 
 void ToolkitCreateParams::setInvalidParameterHandler(_invalid_parameter_handler handler)
@@ -313,6 +319,11 @@ ResourceLoader* ToolkitCreateParams::inProcessResourceLoader() const
 StringRef ToolkitCreateParams::dictionaryPath() const
 {
     return d_impl->d_dictionaryPath;
+}
+
+StringRef ToolkitCreateParams::userAgent() const
+{
+    return d_impl->d_userAgent;
 }
 
 _invalid_parameter_handler ToolkitCreateParams::invalidParameterHandler() const

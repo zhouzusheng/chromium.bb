@@ -22,6 +22,7 @@
 
 #include <blpwtk2_contentrendererclientimpl.h>
 
+#include <blpwtk2_control_messages.h>
 #include <blpwtk2_inprocessresourceloaderbridge.h>
 #include <blpwtk2_jswidget.h>
 #include <blpwtk2_renderviewobserverimpl.h>
@@ -64,6 +65,7 @@ ContentRendererClientImpl::~ContentRendererClientImpl()
 void ContentRendererClientImpl::RenderThreadStarted()
 {
     content::RenderThread* thread = content::RenderThread::Get();
+    thread->AddObserver(this);
 
     if (!d_spellcheck) {
         d_spellcheck.reset(new SpellCheck());
@@ -166,6 +168,24 @@ bool ContentRendererClientImpl::OverrideCreatePlugin(
 
     *plugin = new JsWidget(frame);
     return true;
+}
+
+// -------- RenderProcessObserver overrides --------
+
+bool ContentRendererClientImpl::OnControlMessageReceived(const IPC::Message& message)
+{
+    bool handled = true;
+    IPC_BEGIN_MESSAGE_MAP(ContentRendererClientImpl, message)
+        IPC_MESSAGE_HANDLER(BlpControlMsg_SetUserAgentFromEmbedder, OnSetUserAgentFromEmbedder)
+        IPC_MESSAGE_UNHANDLED(handled = false)
+    IPC_END_MESSAGE_MAP()
+
+    return handled;
+}
+
+void ContentRendererClientImpl::OnSetUserAgentFromEmbedder(const std::string& userAgent)
+{
+    Statics::userAgentFromEmbedder() = userAgent;
 }
 
 }  // close namespace blpwtk2

@@ -75,6 +75,9 @@ ContentClient::~ContentClient()
 // Returns the user agent.
 std::string ContentClient::GetUserAgent() const
 {
+    if (!Statics::userAgentFromEmbedder().empty())
+        return Statics::userAgentFromEmbedder();
+
     // include Chrome in our user-agent because some sites actually look for
     // this.  For example, google's "Search as you type" feature.
     return content::BuildUserAgentFromProduct("BlpWtk/" BB_PATCH_VERSION " Chrome/" CHROMIUM_VERSION);

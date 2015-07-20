@@ -49,3 +49,9 @@ IPC_MESSAGE_CONTROL0(BlpControlHostMsg_ClearWebCache)
 
 IPC_MESSAGE_CONTROL1(BlpControlMsg_SetInProcessRendererChannelName,
                      std::string /* channelName */)
+
+
+// ============ Messages from browser to renderer =====================
+
+IPC_MESSAGE_CONTROL1(BlpControlMsg_SetUserAgentFromEmbedder,
+                     std::string /* userAgent */)

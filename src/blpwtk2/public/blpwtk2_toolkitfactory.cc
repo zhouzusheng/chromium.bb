@@ -137,6 +137,7 @@ Toolkit* ToolkitFactory::create(const ToolkitCreateParams& params)
     Statics::isInProcessRendererDisabled = params.isInProcessRendererDisabled();
     Statics::channelErrorHandler = params.channelErrorHandler();
     content::DisableDWriteFactoryPatching();
+    Statics::userAgentFromEmbedder().assign(params.userAgent().data(), params.userAgent().length());
 
     NativeColor activeSearchColor = params.activeTextSearchHighlightColor();
     NativeColor inactiveSearchColor = params.inactiveTextSearchHighlightColor();

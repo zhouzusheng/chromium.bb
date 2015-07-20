@@ -727,12 +727,11 @@ void RenderThreadImpl::Init() {
     }
   }
 
-  // In single process, browser main loop set up the discardable memory
-  // allocator.
-  if (!IsInBrowserProcess()) {
-    base::DiscardableMemoryAllocator::SetInstance(
-        ChildThreadImpl::discardable_shared_memory_manager());
-  }
+  // TODO(boliu): In single process, browser main loop should set up the
+  // discardable memory manager, and should skip this if kSingleProcess.
+  // See crbug.com/503724.
+  base::DiscardableMemoryAllocator::SetInstance(
+      ChildThreadImpl::discardable_shared_memory_manager());
 
   service_registry()->AddService<RenderFrameSetup>(
       base::Bind(CreateRenderFrameSetup));

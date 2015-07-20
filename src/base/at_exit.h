@@ -49,6 +49,9 @@ class BASE_EXPORT AtExitManager {
   // is possible to register new callbacks after calling this function.
   static void ProcessCallbacksNow();
 
+  // Return true if an AtExitManager has been initialized.
+  static bool IsInitialized();
+
  protected:
   // This constructor will allow this instance of AtExitManager to be created
   // even if one already exists.  This should only be used for testing!
@@ -64,12 +67,10 @@ class BASE_EXPORT AtExitManager {
   DISALLOW_COPY_AND_ASSIGN(AtExitManager);
 };
 
-#if defined(UNIT_TEST)
 class ShadowingAtExitManager : public AtExitManager {
  public:
   ShadowingAtExitManager() : AtExitManager(true) {}
 };
-#endif  // defined(UNIT_TEST)
 
 }  // namespace base
 

@@ -163,7 +163,7 @@ ui::TextInputMode ConvertInputMode(const blink::WebString& input_mode) {
 // the BeginMainFrame interval.
 // 4166us will allow 1/4 of a 60Hz interval or 1/2 of a 120Hz interval to
 // be spent in input hanlders before input starts getting throttled.
-const int kInputHandlingTimeThrottlingThresholdMicroseconds = 4166;
+static int kInputHandlingTimeThrottlingThresholdMicroseconds = 4166;
 
 int64 GetEventLatencyMicros(const WebInputEvent& event, base::TimeTicks now) {
   return (now - base::TimeDelta::FromSecondsD(event.timeStampSeconds))
@@ -923,6 +923,8 @@ void RenderWidget::OnResize(const ViewMsg_Resize_Params& params) {
 
   if (orientation_changed)
     OnOrientationChange();
+
+  browser_size_ = params.new_size;
 }
 
 void RenderWidget::OnEnableDeviceEmulation(
@@ -1079,6 +1081,11 @@ void RenderWidget::OnSwapBuffersComplete() {
 
   // Notify subclasses that composited rendering was flushed to the screen.
   DidFlushPaint();
+}
+
+// static
+void RenderWidget::SetInputHandlingTimeThrottlingThresholdMicroseconds(int us) {
+  kInputHandlingTimeThrottlingThresholdMicroseconds = us;
 }
 
 void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,

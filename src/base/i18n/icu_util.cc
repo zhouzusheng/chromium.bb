@@ -27,6 +27,8 @@
 #include "base/mac/foundation_util.h"
 #endif
 
+#include <blpwtk2_products.h>
+
 #define ICU_UTIL_DATA_FILE   0
 #define ICU_UTIL_DATA_SHARED 1
 #define ICU_UTIL_DATA_STATIC 2
@@ -38,7 +40,7 @@ namespace i18n {
 // No need to change the filename in multiple places (gyp files, windows
 // build pkg configurations, etc). 'l' stands for Little Endian.
 // This variable is exported through the header file.
-const char kIcuDataFileName[] = "icudtl.dat";
+const char kIcuDataFileName[] = BLPWTK2_ICUDTL_DAT_NAME;
 #if ICU_UTIL_DATA_IMPL == ICU_UTIL_DATA_SHARED
 #define ICU_UTIL_DATA_SYMBOL "icudt" U_ICU_VERSION_SHORT "_dat"
 #if defined(OS_WIN)
@@ -86,7 +88,7 @@ bool InitializeICUWithFileDescriptor(
 }
 
 
-bool InitializeICU() {
+bool InitializeICU(const void **data) {
 #if !defined(NDEBUG)
   DCHECK(!g_check_called_once || !g_called_once);
   g_called_once = true;
@@ -175,6 +177,7 @@ bool InitializeICU() {
     }
   }
   UErrorCode err = U_ZERO_ERROR;
+  *data = mapped_file.data();
   udata_setCommonData(const_cast<uint8*>(mapped_file.data()), &err);
   result = (err == U_ZERO_ERROR);
 #if defined(OS_WIN)

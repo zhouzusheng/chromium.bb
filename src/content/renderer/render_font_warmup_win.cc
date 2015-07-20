@@ -186,14 +186,21 @@ void DoPreSandboxWarmupForTypeface(SkTypeface* typeface) {
   paint_warmup.measureText(&glyph, 2);
 }
 
+static bool g_dwriteFactoryPatchingDisabled = false;
+void DisableDWriteFactoryPatching() {
+  g_dwriteFactoryPatchingDisabled = true;
+}
+
 SkFontMgr* GetPreSandboxWarmupFontMgr() {
   if (!g_warmup_fontmgr) {
     IDWriteFactory* factory;
     CreateDirectWriteFactory(&factory);
 
-    GetCustomFontCollection(factory);
-
-    PatchDWriteFactory(factory);
+    IDWriteFontCollection* fontCollection = GetCustomFontCollection(factory);
+    if (g_dwriteFactoryPatchingDisabled)
+      SkFontMgr_SetFontCollectionToUse(fontCollection);
+    else
+      PatchDWriteFactory(factory);
 
     blink::WebFontRendering::setDirectWriteFactory(factory);
     g_warmup_fontmgr = SkFontMgr_New_DirectWrite(factory);

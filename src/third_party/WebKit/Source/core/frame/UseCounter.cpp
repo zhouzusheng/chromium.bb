@@ -884,7 +884,7 @@ String UseCounter::deprecationMessage(Feature feature)
         return "'SVGSVGElement.unsuspendRedrawAll()' is deprecated, please do not use it. It is a no-op, as per SVG2 (https://svgwg.org/svg2-draft/struct.html#__svg__SVGSVGElement__unsuspendRedrawAll).";
 
     case ServiceWorkerClientPostMessage:
-        return "'Client.postMessage()' is an experimental API and may change. See https://github.com/slightlyoff/ServiceWorker/issues/609.";
+        return "'Client.postMessage()' will change to fire an event on 'navigator.serviceWorker' instead of 'window' in M45 (see: https://www.chromestatus.com/feature/5163630974730240).";
 
     case AttrChildAccess:
     case AttrChildChange:
@@ -914,6 +914,9 @@ String UseCounter::deprecationMessage(Feature feature)
 
     case VideoFullscreenAllowedExemption:
         return "Entering fullscreen in an <iframe> with no allowfullscreen attribute is deprecated and will stop working in M46, around October 2015. Please use the allowfullscreen attribute.";
+
+    case PermissionStatusStatus:
+        return "PermissionStatus.status is deprecated and will be removed in M47, around November 2015. Please use PermissionStatus.state instead.";
 
     // Features that aren't deprecated don't have a deprecation message.
     default:

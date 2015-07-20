@@ -509,7 +509,7 @@ void BrowserMainLoop::EarlyInitialization() {
 
   // TODO(boliu): kSingleProcess check is a temporary workaround for
   // in-process Android WebView. crbug.com/503724 tracks proper fix.
-  if (!parsed_command_line_.HasSwitch(switches::kSingleProcess)) {
+  if (!GetContentClient()->browser()->SupportsInProcessRenderer()) {
     base::DiscardableMemoryAllocator::SetInstance(
         HostDiscardableSharedMemoryManager::current());
   }

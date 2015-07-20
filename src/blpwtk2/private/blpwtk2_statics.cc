@@ -61,5 +61,11 @@ int Statics::getUniqueRoutingId()
     return ++lastRoutingId;
 }
 
+std::string& Statics::userAgentFromEmbedder()
+{
+    static std::string str;
+    return str;
+}
+
 }  // close namespace blpwtk2
 

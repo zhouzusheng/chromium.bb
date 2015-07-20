@@ -23,6 +23,7 @@
 #include <blpwtk2_contentbrowserclientimpl.h>
 
 #include <blpwtk2_browsercontextimpl.h>
+#include <blpwtk2_control_messages.h>
 #include <blpwtk2_devtoolshttphandlerdelegateimpl.h>  // for DevToolsManagerDelegateImpl
                                                       // TODO: move this
 #include <blpwtk2_statics.h>
@@ -128,6 +129,10 @@ void ContentBrowserClientImpl::RenderProcessWillLaunch(
     int id = host->GetID();
     host->AddFilter(new SpellCheckMessageFilter(id));
     host->AddFilter(new printing::PrintingMessageFilter(id));
+
+    if (!Statics::userAgentFromEmbedder().empty()) {
+        host->Send(new BlpControlMsg_SetUserAgentFromEmbedder(Statics::userAgentFromEmbedder()));
+    }
 }
 
 void ContentBrowserClientImpl::OverrideWebkitPrefs(

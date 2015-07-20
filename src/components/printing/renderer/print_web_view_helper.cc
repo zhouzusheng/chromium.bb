@@ -540,6 +540,7 @@ void PrintWebViewHelper::PrintHeaderAndFooter(
   // Bloomberg-specific extensions
   options->SetString("headerText", source_frame.document().bbHeaderText());
   options->SetString("footerText", source_frame.document().bbFooterText());
+  options->SetBoolean("printPageNumbers", source_frame.document().bbPrintPageNumbers());
 #endif
 
   ExecuteScript(frame, kPageSetupScriptFormat, *options);

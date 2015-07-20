@@ -26,6 +26,7 @@
 #include <blpwtk2_config.h>
 
 #include <content/public/renderer/content_renderer_client.h>
+#include <content/public/renderer/render_process_observer.h>
 
 class SpellCheck;
 
@@ -33,7 +34,8 @@ namespace blpwtk2 {
 
 // This interface allows us to add hooks to the "renderer" portion of the
 // content module.  This is created during the startup process.
-class ContentRendererClientImpl : public content::ContentRendererClient {
+class ContentRendererClientImpl : public content::ContentRendererClient,
+                                    public content::RenderProcessObserver {
   public:
     ContentRendererClientImpl();
     virtual ~ContentRendererClientImpl();
@@ -73,6 +75,14 @@ class ContentRendererClientImpl : public content::ContentRendererClient {
         blink::WebLocalFrame* frame,
         const blink::WebPluginParams& params,
         blink::WebPlugin** plugin) override;
+
+
+   // -------- RenderProcessObserver overrides --------
+
+   bool OnControlMessageReceived(const IPC::Message& message) override;
+
+   // Message handlers.
+   void OnSetUserAgentFromEmbedder(const std::string& userAgent);
 
   private:
     DISALLOW_COPY_AND_ASSIGN(ContentRendererClientImpl);

@@ -124,6 +124,8 @@ struct Statics {
     static void initBrowserMainThread();
 
     static int getUniqueRoutingId();
+
+    static std::string& userAgentFromEmbedder();
 };
 
 }  // close namespace blpwtk2

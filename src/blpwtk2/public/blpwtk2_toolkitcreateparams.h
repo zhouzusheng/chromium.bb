@@ -142,6 +142,11 @@ class ToolkitCreateParams {
     // spellchecking is enabled in one of the Profile objects.
     BLPWTK2_EXPORT void setDictionaryPath(const StringRef& path);
 
+    // By default, the user agent string will be generated based on the current
+    // version number.  Use this method to override the default user agent
+    // string.
+    BLPWTK2_EXPORT void setUserAgent(const StringRef& userAgent);
+
     // Set the CRT's invalid parameter handler.  If this is not set, then a
     // default handler will be installed, which sets a breakpoint and exits
     // the application.
@@ -205,6 +210,7 @@ class ToolkitCreateParams {
     StringRef sideLoadedFontAt(size_t index) const;
     ResourceLoader* inProcessResourceLoader() const;
     StringRef dictionaryPath() const;
+    StringRef userAgent() const;
     _invalid_parameter_handler invalidParameterHandler() const;
     _purecall_handler purecallHandler() const;
     StringRef hostChannel() const;

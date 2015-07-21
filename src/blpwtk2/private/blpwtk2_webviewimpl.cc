@@ -639,6 +639,10 @@ void WebViewImpl::createWidget(blpwtk2::NativeView parent)
         this,
         d_properties.activateWindowOnMouseDown);
 
+    if (d_properties.inputEventsDisabled) {
+        ::EnableWindow(d_widget->getNativeWidgetView(), FALSE);
+    }
+
     if (d_implClient) {
         d_implClient->updateNativeViews(d_widget->getNativeWidgetView(), ui::GetHiddenWindow());
     }

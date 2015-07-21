@@ -374,6 +374,7 @@ WebView* ToolkitImpl::createWebView(NativeView parent,
     properties.domPasteEnabled = params.domPasteEnabled();
     properties.javascriptCanAccessClipboard = params.javascriptCanAccessClipboard();
     properties.isTransparent = params.isTransparent();
+    properties.inputEventsDisabled = params.inputEventsDisabled();
 
     if (Statics::isRendererMainThreadMode()) {
         ProfileProxy* profileProxy = static_cast<ProfileProxy*>(profile);

@@ -113,6 +113,11 @@ class BLPWTK2_EXPORT WebViewCreateParams {
     // populated with values specified by the content's HTML and CSS.
     void setIsTransparent(bool isTransparent);
 
+    // Setting this flag will cause the WebView's HWND to not receive input event
+    // messages; application code can then use WebView::handleInputEvents() to
+    // push such events into the WebView.
+    void setInputEventsDisabled(bool inputEventsDisabled);
+
     bool initiallyVisible() const { return d_initiallyVisible; }
     bool takeKeyboardFocusOnMouseDown() const { return d_takeKeyboardFocusOnMouseDown; }
     bool takeLogicalFocusOnMouseDown() const { return d_takeLogicalFocusOnMouseDown; }
@@ -122,6 +127,7 @@ class BLPWTK2_EXPORT WebViewCreateParams {
     int rendererAffinity() const { return d_rendererAffinity; }
     Profile* profile() const { return d_profile; }
     bool isTransparent() const { return d_isTransparent; }
+    bool inputEventsDisabled() const { return d_inputEventsDisabled; }
 
   private:
     bool d_initiallyVisible;
@@ -131,8 +137,9 @@ class BLPWTK2_EXPORT WebViewCreateParams {
     bool d_domPasteEnabled;
     bool d_javascriptCanAccessClipboard;
     int d_rendererAffinity;
-    bool d_isTransparent;
     Profile* d_profile;
+    bool d_isTransparent;
+    bool d_inputEventsDisabled;
 };
 
 

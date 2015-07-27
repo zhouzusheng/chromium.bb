@@ -16,6 +16,12 @@ namespace content {
 // sandbox lockdown.
 CONTENT_EXPORT void DoPreSandboxWarmupForTypeface(SkTypeface* typeface);
 
+// Disables the default upstream behavior where the DWriteFactory is patched
+// to make GetSystemFontCollection call StubFontCollection.  When this is
+// disabled, skia will be configured to explicitly use the custom font
+// collection instead of depending on GetSystemFontCollection.
+CONTENT_EXPORT void DisableDWriteFactoryPatching();
+
 // Get the shared font manager used during pre-sandbox warmup for DirectWrite
 // fonts.
 CONTENT_EXPORT SkFontMgr* GetPreSandboxWarmupFontMgr();

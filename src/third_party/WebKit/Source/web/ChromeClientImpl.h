@@ -93,7 +93,7 @@ public:
     virtual bool shouldReportDetailedMessageForSource(LocalFrame&, const WTF::String&) override;
     virtual void addMessageToConsole(
         LocalFrame*, MessageSource, MessageLevel,
-        const WTF::String& message, unsigned lineNumber,
+        const WTF::String& message, unsigned lineNumber, unsigned columnNumber,
         const WTF::String& sourceID, const WTF::String& stackTrace) override;
     virtual bool canRunBeforeUnloadConfirmPanel() override;
     virtual bool runBeforeUnloadConfirmPanel(

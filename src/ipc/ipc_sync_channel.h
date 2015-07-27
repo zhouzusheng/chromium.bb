@@ -11,14 +11,11 @@
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/synchronization/lock.h"
+#include "base/synchronization/waitable_event.h"
 #include "base/synchronization/waitable_event_watcher.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_sync_message.h"
-
-namespace base {
-class WaitableEvent;
-};
 
 namespace IPC {
 
@@ -153,6 +150,17 @@ class IPC_EXPORT SyncChannel : public ChannelProxy {
     // times out.
     void OnSendTimeout(int message_id);
 
+    // Called on the listener thread when a sync message is pushed and there
+    // no outstanding sync messages.  It schedules OnPeekMessageTimeout to be
+    // invoked on the IPC thread.
+    void SchedulePeekMessageTimeout();
+
+    // Called on the IPC thread periodically if SchedulePeekMessageTimeout is
+    // called.  It signals an event that wakes up the listener thread in order
+    // to perform a ::PeekMessage.
+    void OnPeekMessageTimeout();
+
+    base::WaitableEvent* peek_messages_event() { return &peek_messages_event_; }
     base::WaitableEvent* shutdown_event() { return shutdown_event_; }
 
     ReceivedSyncMsgQueue* received_sync_msgs() {
@@ -193,6 +201,7 @@ class IPC_EXPORT SyncChannel : public ChannelProxy {
 
     scoped_refptr<ReceivedSyncMsgQueue> received_sync_msgs_;
 
+    base::WaitableEvent peek_messages_event_;
     base::WaitableEvent* shutdown_event_;
     base::WaitableEventWatcher shutdown_watcher_;
     base::WaitableEventWatcher::EventCallback shutdown_watcher_callback_;

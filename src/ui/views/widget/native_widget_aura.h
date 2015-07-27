@@ -85,6 +85,7 @@ class VIEWS_EXPORT NativeWidgetAura
   gfx::Rect GetClientAreaBoundsInScreen() const override;
   gfx::Rect GetRestoredBounds() const override;
   void SetBounds(const gfx::Rect& bounds) override;
+  void SetBoundsNoDPIAdjustment(const gfx::Rect& bounds) override;
   void SetSize(const gfx::Size& size) override;
   void StackAbove(gfx::NativeView native_view) override;
   void StackAtTop() override;

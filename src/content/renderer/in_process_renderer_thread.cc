@@ -4,9 +4,7 @@
 
 #include "content/renderer/in_process_renderer_thread.h"
 
-#include "content/renderer/render_process.h"
-#include "content/renderer/render_process_impl.h"
-#include "content/renderer/render_thread_impl.h"
+#include "content/public/renderer/render_thread.h"
 
 namespace content {
 
@@ -20,12 +18,11 @@ InProcessRendererThread::~InProcessRendererThread() {
 }
 
 void InProcessRendererThread::Init() {
-  render_process_.reset(new RenderProcessImpl());
-  new RenderThreadImpl(params_);
+  RenderThread::InitInProcessRenderer(params_);
 }
 
 void InProcessRendererThread::CleanUp() {
-  render_process_.reset();
+  RenderThread::CleanUpInProcessRenderer();
 
   // It's a little lame to manually set this flag.  But the single process
   // RendererThread will receive the WM_QUIT.  We don't need to assert on

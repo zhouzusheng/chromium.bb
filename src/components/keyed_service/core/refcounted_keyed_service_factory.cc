@@ -74,8 +74,7 @@ RefcountedKeyedServiceFactory::GetServiceForContext(
   const auto& jt = testing_factories_.find(context);
   if (jt != testing_factories_.end()) {
     if (jt->second) {
-      if (!IsOffTheRecord(context))
-        RegisterUserPrefsOnContextForTest(context);
+      RegisterUserPrefsOnContextForTest(context);
       service = jt->second(context);
     }
   } else {

@@ -10,7 +10,10 @@
         {
             'target_name': 'libEGL',
             'type': 'shared_library',
-            'dependencies': [ 'libGLESv2', ],
+            'dependencies': [
+                'libGLESv2',
+                '../../../blpwtk2/blpwtk2.gyp:blpwtk2_generate_sources',
+            ],
             'includes': [ '../build/common_defines.gypi', ],
             'include_dirs':
             [
@@ -30,6 +33,11 @@
             ],
             'conditions':
             [
+                ['bb_version!=""', {
+                  'product_name': 'blpcr_egl.<(bb_version)',
+                }, {
+                  'product_name': 'blpcr_egl',
+                }],
                 ['angle_build_winrt==1',
                 {
                     'msvs_enable_winrt' : '1',

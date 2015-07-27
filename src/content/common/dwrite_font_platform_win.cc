@@ -61,6 +61,8 @@ namespace {
 
 namespace mswr = Microsoft::WRL;
 
+std::vector<std::wstring> g_custom_font_files;
+
 const char kFontKeyName[] = "font_key_name";
 
 // We use this value to determine whether to cache file fragments
@@ -571,9 +573,15 @@ class FontFileStream
     }
 
     base::FilePath path;
-    PathService::Get(base::DIR_WINDOWS_FONTS, &path);
     base::string16 font_key_name(g_font_loader->GetFontNameFromKey(font_key));
-    path = path.Append(font_key_name.c_str());
+    if (font_key < g_custom_font_files.size()) {
+      // For custom fonts, the font_key_name is itself the path to the font file.
+      path = base::FilePath(font_key_name);
+    }
+    else {
+      PathService::Get(base::DIR_WINDOWS_FONTS, &path);
+      path = path.Append(font_key_name.c_str());
+    }
     memory_.reset(new base::MemoryMappedFile());
 
     // Put some debug information on stack.
@@ -736,12 +744,14 @@ FontCollectionLoader::~FontCollectionLoader() {
 }
 
 UINT32 FontCollectionLoader::GetFontMapSize() {
-  return reg_fonts_.size();
+  return g_custom_font_files.size() + reg_fonts_.size();
 }
 
 base::string16 FontCollectionLoader::GetFontNameFromKey(UINT32 idx) {
-  DCHECK(idx < reg_fonts_.size());
-  return reg_fonts_[idx];
+  DCHECK(idx < g_custom_font_files.size() + reg_fonts_.size());
+  if (idx < g_custom_font_files.size())
+    return g_custom_font_files[idx];
+  return reg_fonts_[idx - g_custom_font_files.size()];
 }
 
 const base::FilePath::CharType* kFontExtensionsToIgnore[] {
@@ -1107,6 +1117,10 @@ IDWriteFontCollection* GetCustomFontCollection(IDWriteFactory* factory) {
   base::debug::ClearCrashKey(kFontKeyName);
 
   return g_font_collection.Get();
+}
+
+void AddCustomFontFile(const base::FilePath& filename) {
+  g_custom_font_files.push_back(filename.value());
 }
 
 bool BuildFontCacheInternal(const WCHAR* file_name) {

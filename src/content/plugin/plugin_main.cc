@@ -43,6 +43,7 @@ int PluginMain(const MainFunctionParams& parameters) {
   InitializeChromeApplication();
 #endif
   base::MessageLoopForUI main_message_loop;
+  main_message_loop.set_ipc_sync_messages_should_peek(true);
   base::PlatformThread::SetName("CrPluginMain");
   base::trace_event::TraceLog::GetInstance()->SetProcessName("Plugin Process");
   base::trace_event::TraceLog::GetInstance()->SetProcessSortIndex(

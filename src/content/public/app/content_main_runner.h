@@ -8,6 +8,8 @@
 #include "build/build_config.h"
 #include "content/common/content_export.h"
 
+#include <stdlib.h>
+
 namespace content {
 struct ContentMainParams;
 
@@ -15,6 +17,13 @@ struct ContentMainParams;
 class CONTENT_EXPORT ContentMainRunner {
  public:
   virtual ~ContentMainRunner() {}
+
+  // Disables the hack where PeekMessage is used to suppress the
+  // IDC_APPSTARTING cursor from being displayed.
+  static void DisablePeekMessageHack();
+
+  // Sets the CRT error handler functions.
+  static void SetCRTErrorHandlerFunctions(_invalid_parameter_handler ivph, _purecall_handler pch);
 
   // Create a new ContentMainRunner object.
   static ContentMainRunner* Create();

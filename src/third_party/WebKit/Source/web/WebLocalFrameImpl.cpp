@@ -85,6 +85,7 @@
 #include "config.h"
 #include "web/WebLocalFrameImpl.h"
 
+#include "bindings/core/v8/BindingSecurity.h"
 #include "bindings/core/v8/DOMWrapperWorld.h"
 #include "bindings/core/v8/ExceptionState.h"
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
@@ -196,6 +197,7 @@
 #include "public/web/WebHistoryItem.h"
 #include "public/web/WebIconURL.h"
 #include "public/web/WebInputElement.h"
+#include "public/web/WebKit.h"
 #include "public/web/WebNode.h"
 #include "public/web/WebPerformance.h"
 #include "public/web/WebPlugin.h"
@@ -917,6 +919,11 @@ v8::Isolate* WebLocalFrameImpl::scriptIsolate() const
     if (!frame())
         return 0;
     return toIsolate(frame());
+}
+
+bool WebFrame::scriptCanAccess(WebFrame* target)
+{
+    return BindingSecurity::shouldAllowAccessToFrame(mainThreadIsolate(), toCoreFrame(target), DoNotReportSecurityError);
 }
 
 void WebLocalFrameImpl::reload(bool ignoreCache)

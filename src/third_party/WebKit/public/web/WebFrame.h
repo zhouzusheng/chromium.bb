@@ -349,6 +349,12 @@ public:
     // Returns the V8 isolate for this frame.
     virtual v8::Isolate* scriptIsolate() const = 0;
 
+
+    // Returns true if the WebFrame currently executing JavaScript has access
+    // to the given WebFrame, or false otherwise.
+    BLINK_EXPORT static bool scriptCanAccess(WebFrame*);
+
+
     // Navigation ----------------------------------------------------------
 
     // Reload the current document.

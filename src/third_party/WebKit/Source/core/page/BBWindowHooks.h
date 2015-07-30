@@ -56,7 +56,7 @@ namespace blink {
         bool checkSpellingForNode(Node* node);
         ClientRect* getAbsoluteCaretRectAtOffset(Node* node, long offset);
 
-        virtual void trace(Visitor*) override;
+        DECLARE_VIRTUAL_TRACE();
 
     private:
 

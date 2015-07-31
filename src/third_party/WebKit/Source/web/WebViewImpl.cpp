@@ -2120,6 +2120,10 @@ static String inputTypeToName(WebInputEvent::Type type)
 
 bool WebViewImpl::handleInputEvent(const WebInputEvent& inputEvent)
 {
+    // SHEZ: Ignore input events if the page is null.
+    if (!page())
+        return true;
+
     // TODO(dcheng): The fact that this is getting called when there is no local
     // main frame is problematic and probably indicates a bug in the input event
     // routing code.

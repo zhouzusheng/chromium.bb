@@ -821,6 +821,7 @@ PrintWebViewHelper::PrintWebViewHelper(content::RenderView* render_view,
       print_node_in_progress_(false),
       is_loading_(false),
       is_scripted_preview_delayed_(false),
+      ipc_nesting_level_(0),
       weak_ptr_factory_(this) {
   if (!delegate_->IsPrintPreviewEnabled())
     DisablePreview();
@@ -889,6 +890,15 @@ void PrintWebViewHelper::PrintPage(blink::WebLocalFrame* frame,
 }
 
 bool PrintWebViewHelper::OnMessageReceived(const IPC::Message& message) {
+  // The class is not designed to handle recursive messages. This is not
+  // expected during regular flow. However, during rendering of content for
+  // printing, lower level code may run nested message loop. E.g. PDF may has
+  // script to show message box http://crbug.com/502562. In that moment browser
+  // may receive updated printer capabilities and decide to restart print
+  // preview generation. When this happened message handling function may
+  // choose to ignore message or safely crash process.
+  ++ipc_nesting_level_;
+
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(PrintWebViewHelper, message)
 #if defined(ENABLE_BASIC_PRINTING)
@@ -902,12 +912,15 @@ bool PrintWebViewHelper::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(PrintMsg_SetScriptedPrintingBlocked,
                         SetScriptedPrintBlocked)
     IPC_MESSAGE_UNHANDLED(handled = false)
-    IPC_END_MESSAGE_MAP()
+  IPC_END_MESSAGE_MAP()
+
+  --ipc_nesting_level_;
   return handled;
 }
 
 void PrintWebViewHelper::OnPrintForPrintPreview(
     const base::DictionaryValue& job_settings) {
+  CHECK_LE(ipc_nesting_level_, 1);
   // If still not finished with earlier print request simply ignore.
   if (prep_frame_view_)
     return;
@@ -989,6 +1002,7 @@ bool PrintWebViewHelper::GetPrintFrame(blink::WebLocalFrame** frame) {
 
 #if defined(ENABLE_BASIC_PRINTING)
 void PrintWebViewHelper::OnPrintPages() {
+  CHECK_LE(ipc_nesting_level_, 1);
   blink::WebLocalFrame* frame;
   if (!GetPrintFrame(&frame))
     return;
@@ -999,6 +1013,7 @@ void PrintWebViewHelper::OnPrintPages() {
 }
 
 void PrintWebViewHelper::OnPrintForSystemDialog() {
+  CHECK_LE(ipc_nesting_level_, 1);
   blink::WebLocalFrame* frame = print_preview_context_.source_frame();
   if (!frame) {
     NOTREACHED();
@@ -1040,6 +1055,8 @@ bool PrintWebViewHelper::IsPrintToPdfRequested(
 }
 
 void PrintWebViewHelper::OnPrintPreview(const base::DictionaryValue& settings) {
+  CHECK_LE(ipc_nesting_level_, 1);
+
   print_preview_context_.OnPrintPreview();
 
   UMA_HISTOGRAM_ENUMERATION("PrintPreview.PreviewEvent",
@@ -1228,6 +1245,7 @@ bool PrintWebViewHelper::FinalizePrintReadyDocument() {
 }
 
 void PrintWebViewHelper::OnPrintingDone(bool success) {
+  CHECK_LE(ipc_nesting_level_, 1);
   notify_browser_of_print_failure_ = false;
   if (!success)
     LOG(ERROR) << "Failure in OnPrintingDone";
@@ -1239,6 +1257,7 @@ void PrintWebViewHelper::SetScriptedPrintBlocked(bool blocked) {
 }
 
 void PrintWebViewHelper::OnInitiatePrintPreview(bool selection_only) {
+  CHECK_LE(ipc_nesting_level_, 1);
   blink::WebLocalFrame* frame = NULL;
   GetPrintFrame(&frame);
   DCHECK(frame);

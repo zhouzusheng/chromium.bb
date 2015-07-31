@@ -84,7 +84,7 @@ deps = {
   'src/testing/gtest':
     (Var("chromium_git")) + '/external/googletest.git@23574bf2333f834ff665f894c97bef8a5b33a0a9',
   'src/third_party/WebKit':
-    (Var("chromium_git")) + '/chromium/blink.git@9b1f68fafb21bde3121c83ca5cb2a885c63f9330',
+    (Var("chromium_git")) + '/chromium/blink.git@7f53d895aa137f17528d92583de0ecffa6e6aebf',
   'src/third_party/angle':
     (Var("chromium_git")) + '/angle/angle.git@fa9744b09e2478c75a25fd1b497469d429e81591',
   'src/third_party/bidichecker':
@@ -192,7 +192,7 @@ deps_os = {
     'src/third_party/android_protobuf/src':
       (Var("chromium_git")) + '/external/android_protobuf.git@94f522f907e3f34f70d9e7816b947e62fddbb267',
     'src/third_party/android_tools':
-      (Var("chromium_git")) + '/android_tools.git@dc0f059b989df0f0a4c3bf2aebd691c4dfb00c94',
+      (Var("chromium_git")) + '/android_tools.git@c07c18af096f86cdcc9657ee856f26f56eaf1130',
     'src/third_party/apache-mime4j':
       (Var("chromium_git")) + '/chromium/deps/apache-mime4j.git@28cb1108bff4b6cf0a2e86ff58b3d025934ebe3a',
     'src/third_party/appurify-python/src':

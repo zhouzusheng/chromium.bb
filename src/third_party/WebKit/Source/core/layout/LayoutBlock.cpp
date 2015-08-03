@@ -2559,6 +2559,11 @@ PositionWithAffinity LayoutBlock::positionForPointWithInlineChildren(const Layou
 
         // pass the box a top position that is inside it
         LayoutPoint point(pointInLogicalContents.x(), closestBox->root().blockDirectionPointInLine());
+
+        // SHEZ: don't do the above if it is a LayoutBlock
+        if (closestBox->layoutObject().isLayoutBlock())
+            point.setY(pointInLogicalContents.y());
+
         if (!isHorizontalWritingMode())
             point = point.transposedPoint();
         if (closestBox->layoutObject().isReplaced())
@@ -2590,7 +2595,7 @@ PositionWithAffinity LayoutBlock::positionForPoint(const LayoutPoint& point)
     if (isTable())
         return LayoutBox::positionForPoint(point);
 
-    if (isReplaced()) {
+    if (0 && isReplaced()) {
         // FIXME: This seems wrong when the object's writing-mode doesn't match the line's writing-mode.
         LayoutUnit pointLogicalLeft = isHorizontalWritingMode() ? point.x() : point.y();
         LayoutUnit pointLogicalTop = isHorizontalWritingMode() ? point.y() : point.x();
@@ -2611,7 +2616,7 @@ PositionWithAffinity LayoutBlock::positionForPoint(const LayoutPoint& point)
     if (!isHorizontalWritingMode())
         pointInLogicalContents = pointInLogicalContents.transposedPoint();
 
-    if (childrenInline())
+    if (childrenInline() && firstRootBox())
         return positionForPointWithInlineChildren(pointInLogicalContents);
 
     LayoutBox* lastCandidateBox = lastChildBox();

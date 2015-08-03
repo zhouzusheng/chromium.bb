@@ -694,8 +694,51 @@ bool EventHandler::handleMouseDraggedEvent(const MouseEventWithHitTestResults& e
 
         updateSelectionForMouseDrag(result);
     }
-    updateSelectionForMouseDrag(event.hitTestResult());
+    HitTestResult hitTestResult = adjustHitTestResultForSelectability(event.hitTestResult());
+    updateSelectionForMouseDrag(hitTestResult);
     return true;
+}
+
+HitTestResult EventHandler::adjustHitTestResultForSelectability(const HitTestResult& result)
+{
+    if (!result.innerNode() || !m_mousePressNode || !m_mousePressNode->layoutObject())
+        return result;
+
+    // Check if we should constrain the selection to within the selectable
+    // area around the initial mousedown node.
+    Node* constraint = m_mousePressNode.get();
+    while (constraint->parentNode() && constraint->parentNode()->layoutObject() && constraint->parentNode()->layoutObject()->isSelectable())
+        constraint = constraint->parentNode();
+
+    // If the existing hit test result is within the constraint, then we don't
+    // need to rerun the hit test.
+    if (constraint->contains(result.innerNode()))
+        return result;
+
+    // Otherwise, we need to constrain the mouse position to the bounds of the
+    // 'constraint' node, then rerun the hit test.
+
+    LayoutPoint mousePosition = m_frame->view() ? m_frame->view()->rootFrameToContents(m_lastKnownMousePosition)
+                                                : m_lastKnownMousePosition;
+
+    LayoutRect boundingBox(constraint->layoutObject()->absoluteBoundingBoxRect());
+    if (mousePosition.x() < boundingBox.x()) {
+        mousePosition.setX(boundingBox.x());
+    }
+    else if (mousePosition.x() > boundingBox.maxX()) {
+        mousePosition.setX(boundingBox.maxX());
+    }
+    if (mousePosition.y() < boundingBox.y()) {
+        mousePosition.setY(boundingBox.y());
+    }
+    else if (mousePosition.y() > boundingBox.maxY()) {
+        mousePosition.setY(boundingBox.maxY());
+    }
+
+    HitTestRequest request(HitTestRequest::ReadOnly | HitTestRequest::Active);
+    HitTestResult newResult(request, mousePosition);
+    m_frame->document()->layoutView()->hitTest(newResult);
+    return newResult;
 }
 
 void EventHandler::updateSelectionForMouseDrag()
@@ -710,6 +753,7 @@ void EventHandler::updateSelectionForMouseDrag()
     HitTestRequest request(HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::Move);
     HitTestResult result(request, view->rootFrameToContents(m_lastKnownMousePosition));
     layoutObject->hitTest(result);
+    result = adjustHitTestResultForSelectability(result);
     updateSelectionForMouseDrag(result);
 }
 

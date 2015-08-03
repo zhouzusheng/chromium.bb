@@ -94,6 +94,7 @@ public:
     void clear();
     void nodeWillBeRemoved(Node&);
 
+    HitTestResult adjustHitTestResultForSelectability(const HitTestResult& result);
     void updateSelectionForMouseDrag();
 
 #if OS(WIN)

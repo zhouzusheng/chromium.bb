@@ -16,15 +16,24 @@ class RubberbandWindowImpl : public gfx::WindowImpl {
 
   CR_BEGIN_MSG_MAP_EX(RubberbandWindowImpl)
     CR_MSG_WM_PAINT(OnPaint)
+    CR_MSG_WM_ERASEBKGND(OnEraseBkgnd)
   CR_END_MSG_MAP()
 
  private:
   LRESULT OnPaint(HDC);
+  LRESULT OnEraseBkgnd(HDC);
 
   DISALLOW_COPY_AND_ASSIGN(RubberbandWindowImpl);
 };
 
+static HPEN s_pen = NULL;
+
 RubberbandWindowImpl::RubberbandWindowImpl() {
+  if (!s_pen) {
+    LOGBRUSH lb = { BS_SOLID, RGB(255, 255, 255), 0 };
+    DWORD style[2] = { 2, 4 };
+    s_pen = ::ExtCreatePen(PS_GEOMETRIC | PS_USERSTYLE, 1, &lb, 2, style);
+  }
 }
 
 RubberbandWindowImpl::~RubberbandWindowImpl() {
@@ -38,16 +47,9 @@ LRESULT RubberbandWindowImpl::OnPaint(HDC /*_dc*/) {
   PAINTSTRUCT ps;
   HDC dc = ::BeginPaint(hwnd(), &ps);
 
-  COLORREF oldbg = ::SetBkColor(dc, RGB(0,0,0));
-  static const char* space = " ";
-  ::ExtTextOutA(dc, rect.left, rect.top, ETO_CLIPPED|ETO_OPAQUE, &rect, space, 1, NULL);
-  ::SetBkColor(dc, oldbg);
+  ::FillRect(dc, &rect, (HBRUSH)::GetStockObject(BLACK_BRUSH));
 
-  LOGBRUSH lb = {BS_SOLID, RGB(255, 255, 255), 0};
-  DWORD style[2] = {2, 4};
-  HPEN pen = ::ExtCreatePen(PS_GEOMETRIC | PS_USERSTYLE, 1, &lb, 2, style);
-
-  HGDIOBJ oldPen = ::SelectObject(dc, pen);
+  HGDIOBJ oldPen = ::SelectObject(dc, s_pen);
   ::MoveToEx(dc, rect.left, rect.top, NULL);
   if (rect.right - rect.left == 1) {
     ::LineTo(dc, rect.right-1, rect.bottom);
@@ -55,11 +57,14 @@ LRESULT RubberbandWindowImpl::OnPaint(HDC /*_dc*/) {
     ::LineTo(dc, rect.right, rect.bottom-1);
   }
   ::SelectObject(dc, oldPen);
-  ::DeleteObject(pen);
 
   ::EndPaint(hwnd(), &ps);
 
   return S_OK;
+}
+
+LRESULT RubberbandWindowImpl::OnEraseBkgnd(HDC) {
+  return 1;
 }
 
 static RubberbandWindowImpl* toWindowImpl(void* impl) {
@@ -106,6 +111,7 @@ static void SetRubberbandWindowRect(RubberbandWindow& window, HWND parent,
                    NULL,
                    x, y, w, h,
                    SWP_NOZORDER | SWP_NOACTIVATE);
+    ::InvalidateRect(window.hwnd(), NULL, FALSE);
   }
 }
 

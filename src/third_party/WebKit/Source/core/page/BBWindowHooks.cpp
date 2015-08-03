@@ -41,7 +41,7 @@ BBWindowHooks::BBWindowHooks(LocalFrame *frame)
 {
 }
 
-void BBWindowHooks::trace(Visitor* visitor)
+DEFINE_TRACE(BBWindowHooks)
 {
     DOMWindowProperty::trace(visitor);
 }

@@ -768,7 +768,7 @@ public:
     FloatQuad absoluteToLocalQuad(const FloatQuad&, MapCoordinatesFlags mode = 0) const;
 
     // Convert a local quad into the coordinate system of container, taking transforms into account.
-    FloatQuad localToContainerQuad(const FloatQuad&, const LayoutBoxModelObject* paintInvalidatinoContainer, MapCoordinatesFlags = 0, bool* wasFixed = 0) const;
+    FloatQuad localToContainerQuad(const FloatQuad&, const LayoutBoxModelObject* paintInvalidatinoContainer, MapCoordinatesFlags = 0, bool* wasFixed = 0, bool useTransform = true) const;
     FloatPoint localToContainerPoint(const FloatPoint&, const LayoutBoxModelObject* paintInvalidationContainer, MapCoordinatesFlags = 0, bool* wasFixed = 0, const PaintInvalidationState* = 0) const;
 
     // Convert a local point into the coordinate system of backing coordinates. Also returns the backing layer if needed.

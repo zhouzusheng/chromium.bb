@@ -52,22 +52,35 @@ included in the next release.
 If you are **not** a Bloomberg employee, the following instructions should still
 work:
 
-* Setup your build environment, as per [these
-  instructions](http://www.chromium.org/developers/how-tos/build-instructions-windows).
-  You'll need to follow the instructions for VS2010.
-* Run the following command from inside the top-level 'chromium/' directory:
+* Setup your build environment:
+    * [Python 2.7](https://www.python.org/download/releases/2.7.6/)
+    * Visual Studio 2013 Update 4 (see [VS updates](https://support.microsoft.com/en-us/kb/2829760))
+    * [Ninja](https://github.com/martine/ninja)
+* Run the following command from inside the top-level directory:
 
-            gclient runhooks
+            src/build/runhooks
 
-* Open `chromium/src/blpwtk2/blpwtk2.sln`.  This solution file should be
-  generated from the previous step.
-* Build the `blpwtk2_all` project.
-* Now, you can either run the `content_shell` project or the `blpwtk2_shell`
-  project.
-    * The `content_shell` project is from the upstream Chromium project, and
-      uses the `content` layer directly.
-    * The `blpwtk2_shell` project is from our `feature/blpwtk2` branch, and
-      uses our `blpwtk2` integration layer.
+* You can build it either on the command-line or from Visual Studio.
+* If building from the command line:
+
+            ninja -C src/out/Debug     # for Debug builds
+            ninja -C src/out/Release   # for Release builds
+
+* If building from Visual Studio:
+    * **Note:** Even though you are using Visual Studio, it will internally
+      build using ninja.  The Visual Studio projects simply invoke ninja when
+      you build them.  *Pure* MSVC builds are **not supported**.  These Visual
+      Studio projects are useful only for browsing the code and debugging
+      (setting breakpoints etc).
+    * Open `src/blpwtk2/blpwtk2.sln`.  This solution file should be generated
+      from the previous step.
+    * Build the `blpwtk2_all` project.
+    * Now, you can either run the `content_shell` project or the
+      `blpwtk2_shell` project:
+        * The `content_shell` project is from the upstream Chromium project,
+          and uses the `content` layer directly.
+        * The `blpwtk2_shell` project is from our `feature/blpwtk2` branch, and
+          uses our `blpwtk2` integration layer.
 
 ---
 ###### Microsoft, Windows, Visual Studio and ClearType are registered trademarks of Microsoft Corp.

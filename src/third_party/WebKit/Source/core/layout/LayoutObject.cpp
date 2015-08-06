@@ -2128,12 +2128,12 @@ void LayoutObject::getTransformFromContainer(const LayoutObject* containerObject
     }
 }
 
-FloatQuad LayoutObject::localToContainerQuad(const FloatQuad& localQuad, const LayoutBoxModelObject* paintInvalidationContainer, MapCoordinatesFlags mode, bool* wasFixed) const
+FloatQuad LayoutObject::localToContainerQuad(const FloatQuad& localQuad, const LayoutBoxModelObject* paintInvalidationContainer, MapCoordinatesFlags mode, bool* wasFixed, bool useTransform) const
 {
     // Track the point at the center of the quad's bounding box. As mapLocalToContainer() calls offsetFromContainer(),
     // it will use that point as the reference point to decide which column's transform to apply in multiple-column blocks.
     TransformState transformState(TransformState::ApplyTransformDirection, localQuad.boundingBox().center(), localQuad);
-    mapLocalToContainer(paintInvalidationContainer, transformState, mode | ApplyContainerFlip | UseTransforms, wasFixed);
+    mapLocalToContainer(paintInvalidationContainer, transformState, mode | ApplyContainerFlip | (useTransform? UseTransforms : 0), wasFixed);
     transformState.flatten();
 
     return transformState.lastPlanarQuad();

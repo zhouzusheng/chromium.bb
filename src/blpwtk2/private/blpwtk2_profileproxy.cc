@@ -116,10 +116,6 @@ void ProfileProxy::setSpellCheckConfig(const SpellCheckConfig& config)
 {
     DCHECK(Statics::isInApplicationMainThread());
 
-    // Auto-correct cannot be enabled if spellcheck is disabled.
-    DCHECK(SpellCheckConfig::AUTOCORRECT_NONE == config.autocorrectBehavior()
-        || config.isSpellCheckEnabled());
-
     Send(new BlpProfileHostMsg_SetSpellCheckConfig(d_routingId, config));
 }
 
@@ -143,34 +139,6 @@ void ProfileProxy::removeCustomWords(const StringRef* words,
         wordsVector[i].assign(words[i].data(), words[i].length());
     }
     Send(new BlpProfileHostMsg_RemoveCustomWords(d_routingId, wordsVector));
-}
-
-void ProfileProxy::addAutocorrectWords(const StringRef* badWords,
-                                       const StringRef* goodWords,
-                                       size_t numWords)
-{
-    DCHECK(Statics::isInApplicationMainThread());
-    std::vector<std::string> badWordsVector(numWords);
-    std::vector<std::string> goodWordsVector(numWords);
-    for (size_t i = 0; i < numWords; ++i) {
-        badWordsVector[i].assign(badWords[i].data(), badWords[i].length());
-        goodWordsVector[i].assign(goodWords[i].data(), goodWords[i].length());
-    }
-    Send(new BlpProfileHostMsg_AddAutocorrectWords(d_routingId,
-                                                   badWordsVector,
-                                                   goodWordsVector));
-}
-
-void ProfileProxy::removeAutocorrectWords(const StringRef* badWords,
-                                          size_t numWords)
-{
-    DCHECK(Statics::isInApplicationMainThread());
-    std::vector<std::string> badWordsVector(numWords);
-    for (size_t i = 0; i < numWords; ++i) {
-        badWordsVector[i].assign(badWords[i].data(), badWords[i].length());
-    }
-    Send(new BlpProfileHostMsg_RemoveAutocorrectWords(d_routingId,
-                                                      badWordsVector));
 }
 
 // IPC::Sender override

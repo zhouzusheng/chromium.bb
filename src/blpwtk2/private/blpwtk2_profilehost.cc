@@ -71,8 +71,6 @@ bool ProfileHost::OnMessageReceived(const IPC::Message& message)
         IPC_MESSAGE_HANDLER(BlpProfileHostMsg_SetSpellCheckConfig, onSetSpellCheckConfig)
         IPC_MESSAGE_HANDLER(BlpProfileHostMsg_AddCustomWords, onAddCustomWords)
         IPC_MESSAGE_HANDLER(BlpProfileHostMsg_RemoveCustomWords, onRemoveCustomWords)
-        IPC_MESSAGE_HANDLER(BlpProfileHostMsg_AddAutocorrectWords, onAddAutocorrectWords)
-        IPC_MESSAGE_HANDLER(BlpProfileHostMsg_RemoveAutocorrectWords, onRemoveAutocorrectWords)
         IPC_MESSAGE_UNHANDLED(handled = false)
     IPC_END_MESSAGE_MAP()
 
@@ -117,33 +115,6 @@ void ProfileHost::onRemoveCustomWords(const std::vector<std::string>& words)
         wordRefs[i].assign(words[i].data(), words[i].length());
     }
     d_browserContext->removeCustomWords(wordRefs.data(), wordRefs.size());
-}
-
-void ProfileHost::onAddAutocorrectWords(
-    const std::vector<std::string>& badWords,
-    const std::vector<std::string>& goodWords)
-{
-    DCHECK(badWords.size() == goodWords.size());
-    std::vector<StringRef> badWordRefs(badWords.size());
-    std::vector<StringRef> goodWordRefs(goodWords.size());
-    for (size_t i = 0; i < badWords.size(); ++i) {
-        badWordRefs[i].assign(badWords[i].data(), badWords[i].length());
-        goodWordRefs[i].assign(goodWords[i].data(), goodWords[i].length());
-    }
-    d_browserContext->addAutocorrectWords(badWordRefs.data(),
-                                          goodWordRefs.data(),
-                                          badWordRefs.size());
-}
-
-void ProfileHost::onRemoveAutocorrectWords(
-    const std::vector<std::string>& badWords)
-{
-    std::vector<StringRef> badWordRefs(badWords.size());
-    for (size_t i = 0; i < badWords.size(); ++i) {
-        badWordRefs[i].assign(badWords[i].data(), badWords[i].length());
-    }
-    d_browserContext->removeAutocorrectWords(badWordRefs.data(),
-                                             badWordRefs.size());
 }
 
 }  // close namespace blpwtk2

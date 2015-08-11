@@ -80,11 +80,6 @@ class BrowserContextImpl : public content::BrowserContext,
                         size_t numWords) override;
     void removeCustomWords(const StringRef* words,
                            size_t numWords) override;
-    void addAutocorrectWords(const StringRef* badWords,
-                             const StringRef* goodWords,
-                             size_t numWords) override;
-    void removeAutocorrectWords(const StringRef* badWords,
-                                size_t numWords) override;
 
 
     // ======== content::BrowserContext implementation =============

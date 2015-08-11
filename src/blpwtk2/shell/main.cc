@@ -40,7 +40,6 @@ WNDPROC g_defaultEditWndProc = 0;
 blpwtk2::Toolkit* g_toolkit = 0;
 blpwtk2::Profile* g_profile = 0;
 bool g_spellCheckEnabled;
-int g_autoCorrectBehavior;
 std::set<std::string> g_languages;
 std::vector<std::string> g_sideLoadedFonts;
 std::string g_url;
@@ -99,9 +98,6 @@ enum {
     IDM_TEST_DUMP_LAYOUT_TREE,
     IDM_SPELLCHECK,
     IDM_SPELLCHECK_ENABLED,
-    IDM_AUTOCORRECT,
-    IDM_AUTOCORRECT_WORDMAP,
-    IDM_AUTOCORRECT_SWAP_ADJACENT_CHARS,
     IDM_LANGUAGES,
     IDM_LANGUAGE_DE,
     IDM_LANGUAGE_EN_GB,
@@ -1238,9 +1234,6 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
     g_profile = g_toolkit->createProfile(profileParams);
 
     g_spellCheckEnabled = true;
-    g_autoCorrectBehavior =
-        blpwtk2::SpellCheckConfig::AUTOCORRECT_WORD_MAP |
-        blpwtk2::SpellCheckConfig::AUTOCORRECT_SWAP_ADJACENT_CHARS;
     g_languages.insert(LANGUAGE_EN_US);
     updateSpellCheckConfig(g_profile);
 
@@ -1250,17 +1243,6 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
     customWords.push_back("zzzx");
     customWords.push_back("Bloomberg");
     g_profile->addCustomWords(customWords.data(), customWords.size());
-
-    // Configure autocorrect words.
-    std::vector<blpwtk2::StringRef> badWords, goodWords;
-    badWords.push_back("speling");           goodWords.push_back("spelling");
-    badWords.push_back("ambigous");          goodWords.push_back("ambiguous");
-    badWords.push_back("restraunt");         goodWords.push_back("restaurant");
-    badWords.push_back("comitee");           goodWords.push_back("committee");
-    badWords.push_back("misunderestimate");  goodWords.push_back("underestimate");
-    badWords.push_back("speeking");          goodWords.push_back("speaking");
-    assert(badWords.size() == goodWords.size());
-    g_profile->addAutocorrectWords(badWords.data(), goodWords.data(), badWords.size());
 
     Shell* firstShell = createShell(g_profile);
     firstShell->d_webView->loadUrl(g_url);
@@ -1397,14 +1379,6 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
             g_spellCheckEnabled = !g_spellCheckEnabled;
             updateSpellCheckConfig(shell->d_profile);
             return 0;
-        case IDM_AUTOCORRECT_WORDMAP:
-            g_autoCorrectBehavior ^= blpwtk2::SpellCheckConfig::AUTOCORRECT_WORD_MAP;
-            updateSpellCheckConfig(shell->d_profile);
-            return 0;
-        case IDM_AUTOCORRECT_SWAP_ADJACENT_CHARS:
-            g_autoCorrectBehavior ^= blpwtk2::SpellCheckConfig::AUTOCORRECT_SWAP_ADJACENT_CHARS;
-            updateSpellCheckConfig(shell->d_profile);
-            return 0;
         case IDM_LANGUAGE_DE:
             toggleLanguage(shell->d_profile, LANGUAGE_DE);
             return 0;
@@ -1484,16 +1458,9 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
     case WM_INITMENUPOPUP: {
             HMENU menu = (HMENU)wParam;
 
-            bool autocorrectWordMap
-                = g_autoCorrectBehavior & blpwtk2::SpellCheckConfig::AUTOCORRECT_WORD_MAP;
-            bool autocorrectSwapChars
-                = g_autoCorrectBehavior & blpwtk2::SpellCheckConfig::AUTOCORRECT_SWAP_ADJACENT_CHARS;
-
             adjustMenuItemStateFlag(shell->d_spellCheckMenu, 1, MFS_DISABLED, !g_spellCheckEnabled);
             adjustMenuItemStateFlag(shell->d_spellCheckMenu, 2, MFS_DISABLED, !g_spellCheckEnabled);
             CheckMenuItem(menu, IDM_SPELLCHECK_ENABLED, g_spellCheckEnabled ? MF_CHECKED : MF_UNCHECKED);
-            CheckMenuItem(menu, IDM_AUTOCORRECT_WORDMAP, autocorrectWordMap ? MF_CHECKED : MF_UNCHECKED);
-            CheckMenuItem(menu, IDM_AUTOCORRECT_SWAP_ADJACENT_CHARS, autocorrectSwapChars ? MF_CHECKED : MF_UNCHECKED);
             CheckMenuItem(menu, IDM_LANGUAGE_DE, g_languages.find(LANGUAGE_DE) != g_languages.end() ? MF_CHECKED : MF_UNCHECKED);
             CheckMenuItem(menu, IDM_LANGUAGE_EN_GB, g_languages.find(LANGUAGE_EN_GB) != g_languages.end() ? MF_CHECKED : MF_UNCHECKED);
             CheckMenuItem(menu, IDM_LANGUAGE_EN_US, g_languages.find(LANGUAGE_EN_US) != g_languages.end() ? MF_CHECKED : MF_UNCHECKED);
@@ -1635,10 +1602,6 @@ Shell* createShell(blpwtk2::Profile* profile, blpwtk2::WebView* webView)
     AppendMenu(menu, MF_POPUP, (UINT_PTR)testMenu, L"&Test");
     HMENU spellCheckMenu = CreateMenu();
     AppendMenu(spellCheckMenu, MF_STRING, IDM_SPELLCHECK_ENABLED, L"Enable &Spellcheck");
-    HMENU autocorrectMenu = CreateMenu();
-    AppendMenu(autocorrectMenu, MF_STRING, IDM_AUTOCORRECT_WORDMAP, L"Word &Map");
-    AppendMenu(autocorrectMenu, MF_STRING, IDM_AUTOCORRECT_SWAP_ADJACENT_CHARS, L"&Swap Adjacent Chars");
-    AppendMenu(spellCheckMenu, MF_POPUP, (UINT_PTR)autocorrectMenu, L"&Autocorrect");
     HMENU languagesMenu = CreateMenu();
     AppendMenu(languagesMenu, MF_STRING, IDM_LANGUAGE_DE, L"&German");
     AppendMenu(languagesMenu, MF_STRING, IDM_LANGUAGE_EN_GB, L"&English (Great Britain)");
@@ -1766,9 +1729,6 @@ void updateSpellCheckConfig(blpwtk2::Profile* profile)
     blpwtk2::SpellCheckConfig config;
 
     config.enableSpellCheck(g_spellCheckEnabled);
-    config.setAutocorrectBehavior(
-        g_spellCheckEnabled ? g_autoCorrectBehavior
-                            : blpwtk2::SpellCheckConfig::AUTOCORRECT_NONE);
 
     std::vector<blpwtk2::StringRef> languages;
     for (std::set<std::string>::const_iterator it = g_languages.begin();

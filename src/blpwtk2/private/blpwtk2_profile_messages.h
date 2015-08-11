@@ -60,13 +60,6 @@ IPC_MESSAGE_ROUTED1(BlpProfileHostMsg_AddCustomWords,
 IPC_MESSAGE_ROUTED1(BlpProfileHostMsg_RemoveCustomWords,
                     std::vector<std::string> /* words */)
 
-// Add/remove autocorrect words.
-IPC_MESSAGE_ROUTED2(BlpProfileHostMsg_AddAutocorrectWords,
-                    std::vector<std::string> /* badWords */,
-                    std::vector<std::string> /* goodWords */)
-IPC_MESSAGE_ROUTED1(BlpProfileHostMsg_RemoveAutocorrectWords,
-                    std::vector<std::string> /* badWords */)
-
 // This destroys the profile.
 IPC_MESSAGE_CONTROL1(BlpProfileHostMsg_Destroy,
                      int /* routingId */)

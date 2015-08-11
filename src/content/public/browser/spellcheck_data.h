@@ -45,11 +45,6 @@ class CONTENT_EXPORT SpellcheckData : public base::SupportsUserData::Data {
     virtual void OnCustomWordsChanged(
         const std::vector<base::StringPiece>& words_added,
         const std::vector<base::StringPiece>& words_removed) = 0;
-
-    // Called when autocorrect words are added or removed.
-    virtual void OnAutocorrectWordsChanged(
-        const std::map<base::StringPiece, base::StringPiece>& words_added,
-        const std::vector<base::StringPiece>& words_removed) = 0;
   };
 
   // Creates a SpellcheckData object and attaches it to the specified context.
@@ -72,21 +67,12 @@ class CONTENT_EXPORT SpellcheckData : public base::SupportsUserData::Data {
   void AdjustCustomWords(const std::vector<base::StringPiece>& to_add,
                          const std::vector<base::StringPiece>& to_remove);
 
-  void AdjustAutocorrectWords(
-      const std::map<base::StringPiece, base::StringPiece>& to_add,
-      const std::vector<base::StringPiece>& to_remove);
-
   const std::set<std::string>& custom_words() const { return custom_words_; }
-  const std::map<std::string, std::string>& autocorrect_words() const {
-    return autocorrect_words_;
-  }
 
  private:
   typedef std::set<std::string> CustomWordsSet;
-  typedef std::map<std::string, std::string> AutocorrectWordsMap;
 
   CustomWordsSet custom_words_;
-  AutocorrectWordsMap autocorrect_words_;
   ObserverList<Observer> observers_;
 
   DISALLOW_COPY_AND_ASSIGN(SpellcheckData);

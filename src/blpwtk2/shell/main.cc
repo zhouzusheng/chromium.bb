@@ -1800,7 +1800,7 @@ public:
         char buffer[1024];
         if (!fstream.is_open()) {
             context->replaceStatusLine("HTTP/1.1 404 Not Found");
-            strcpy(buffer, "The specified file was not found.");
+            strcpy_s(buffer, sizeof(buffer), "The specified file was not found.");
             context->addResponseData(buffer, strlen(buffer));
         }
         else {
@@ -1813,7 +1813,7 @@ public:
                 }
 
                 assert(fstream.gcount() <= sizeof(buffer));
-                context->addResponseData(buffer, fstream.gcount());
+                context->addResponseData(buffer, (int)fstream.gcount());
             }
         }
         context->finish();

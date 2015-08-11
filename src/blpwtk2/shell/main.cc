@@ -1082,9 +1082,16 @@ void logMessageHandler(blpwtk2::ToolkitCreateParams::LogMessageSeverity severity
                        int line,
                        const char* message)
 {
-    char buf[4096];
-    sprintf_s(buf, sizeof(buf), "[%s:%d] %s\n", file, line, message);
-    OutputDebugStringA(buf);
+    char buf[1024];
+    sprintf_s(buf, sizeof(buf), "[%s:%d] ", file, line);
+
+    std::string outputStr;
+    outputStr.reserve(strlen(buf) + strlen(message) + 10);
+    outputStr.append(buf);
+    outputStr.append(message);
+    outputStr.append("\n");
+
+    OutputDebugStringA(outputStr.c_str());
 }
 
 void consoleLogMessageHandler(blpwtk2::ToolkitCreateParams::LogMessageSeverity severity,
@@ -1095,19 +1102,21 @@ void consoleLogMessageHandler(blpwtk2::ToolkitCreateParams::LogMessageSeverity s
                               const blpwtk2::StringRef& stack_trace)
 {
     std::string fileStr(file.data(), file.length());
-    std::string messageStr(message.data(), message.length());
-    std::string stackTraceStr(stack_trace.data(), stack_trace.length());
 
-    char buf[4096];
+    char buf[1024];
+    sprintf_s(buf, sizeof(buf), "[%s:%d:%d] ", fileStr.c_str(), line, column);
 
-    if (stackTraceStr.empty()) {
-        sprintf_s(buf, sizeof(buf), "[%s:%d:%d] %s\n", fileStr.c_str(), line, column, messageStr.c_str());
+    std::string outputStr;
+    outputStr.reserve(strlen(buf) + message.length() + stack_trace.length() + 20);
+    outputStr.append(buf);
+    outputStr.append(message.data(), message.length());
+    if (!stack_trace.isEmpty()) {
+        outputStr.append("\nStack Trace:");
+        outputStr.append(stack_trace.data(), stack_trace.length());
     }
-    else {
-        sprintf_s(buf, sizeof(buf), "[%s:%d:%d] %s\nStack Trace:%s\n", fileStr.c_str(), line, column, messageStr.c_str(), stackTraceStr.c_str());
-    }
+    outputStr.append("\n");
 
-    OutputDebugStringA(buf);
+    OutputDebugStringA(outputStr.c_str());
 }
 
 int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)

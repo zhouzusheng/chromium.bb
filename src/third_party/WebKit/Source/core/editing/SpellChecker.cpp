@@ -34,7 +34,6 @@
 #include "core/dom/NodeTraversal.h"
 #include "core/editing/Editor.h"
 #include "core/editing/SpellCheckRequester.h"
-#include "core/editing/SpellingCorrectionCommand.h"
 #include "core/editing/TextCheckingHelper.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
@@ -404,9 +403,7 @@ void SpellChecker::markMisspellingsAfterTypingToWord(const VisiblePosition &word
 
     // Check spelling of one word
     RefPtrWillBeRawPtr<Range> misspellingRange = nullptr;
-    VisiblePosition checkStartPos = startOfWord(wordStart, LeftWordIfOnBoundary);
-    VisiblePosition checkEndPos = selectionAfterTyping.visibleStart();
-    markMisspellings(VisibleSelection(checkStartPos, checkEndPos), misspellingRange);
+    markMisspellings(VisibleSelection(startOfWord(wordStart, LeftWordIfOnBoundary), endOfWord(wordStart, RightWordIfOnBoundary)), misspellingRange);
 
     // Autocorrect the misspelled word.
     if (!misspellingRange)
@@ -418,36 +415,16 @@ void SpellChecker::markMisspellingsAfterTypingToWord(const VisiblePosition &word
 
     // If autocorrected word is non empty, replace the misspelled word by this word.
     if (!autocorrectedString.isEmpty()) {
-        // Set the starting selection for the SpellingCorrectionCommand.  This will be the selected text
-        // when undo is performed.
         VisibleSelection newSelection(misspellingRange.get(), DOWNSTREAM);
-
-        // Extend the selection to include the space that was typed.  This is so that the user
-        // can continue typing after undo then right-arrow.
-        int positionsAfterMisspelling = 0;
-        VisiblePosition extent = newSelection.visibleExtent();
-        VisiblePosition desiredExtent = selectionAfterTyping.visibleStart();
-        // Do a sanity check to verify that the misspelled range comes before the desired extent.
-        if (0 > comparePositions(extent.deepEquivalent(), desiredExtent.deepEquivalent())) {
-            while (extent != desiredExtent) {
-                extent = extent.next();
-                ++positionsAfterMisspelling;
-            }
-            newSelection.setExtent(extent);
-        }
-
         if (newSelection != frame().selection().selection()) {
             frame().selection().setSelection(newSelection);
         }
 
-        // Apply a SpellingCorrectionCommand, this will close typing and add itself to the undo stack.
-        SpellingCorrectionCommand::create(misspellingRange, autocorrectedString)->apply();
+        frame().editor().replaceSelectionWithText(autocorrectedString, false, false);
 
-        // Reset the caret N characters further, depending on how many positions we were
-        // from the misspelling.
-        for (int i = 0; i < positionsAfterMisspelling; ++i) {
-            frame().selection().modify(FrameSelection::AlterationMove, DirectionForward, CharacterGranularity);
-        }
+        // Reset the charet one character further.
+        frame().selection().moveTo(frame().selection().selection().visibleEnd());
+        frame().selection().modify(FrameSelection::AlterationMove, DirectionForward, CharacterGranularity);
     }
 
     if (!isGrammarCheckingEnabled())
@@ -885,9 +862,7 @@ void SpellChecker::spellCheckAfterBlur()
 void SpellChecker::spellCheckOldSelection(const VisibleSelection& oldSelection, const VisibleSelection& newAdjacentWords)
 {
     VisiblePosition oldStart(oldSelection.visibleStart());
-    VisiblePosition checkStartPos = startOfWord(oldStart, LeftWordIfOnBoundary);
-    VisiblePosition checkEndPos = endOfWord(checkStartPos, RightWordIfOnBoundary);
-    VisibleSelection oldAdjacentWords = VisibleSelection(checkStartPos, checkEndPos);
+    VisibleSelection oldAdjacentWords = VisibleSelection(startOfWord(oldStart, LeftWordIfOnBoundary), endOfWord(oldStart, RightWordIfOnBoundary));
     if (oldAdjacentWords  != newAdjacentWords) {
         if (isContinuousSpellCheckingEnabled() && isGrammarCheckingEnabled()) {
             VisibleSelection selectedSentence = VisibleSelection(startOfSentence(oldStart), endOfSentence(oldStart));

@@ -1834,113 +1834,112 @@ blpwtk2::ResourceLoader* createInProcessResourceLoader()
 }
 
 const char* getHeaderFooterHTMLContent() {
-  return
-      "<!DOCTYPE html>\n"
-      "<html>\n"
-      "<head>\n"
-      "<style>\n"
-      "  body {\n"
-      "    margin: 0px;\n"
-      "    width: 0px;\n"
-      "  }\n"
-      "  .row {\n"
-      "    display: table-row;\n"
-      "    vertical-align: inherit;\n"
-      "  }\n"
-      "  #header, #footer {\n"
-      "    display: table;\n"
-      "    table-layout:fixed;\n"
-      "    width: inherit;\n"
-      "  }\n"
-      "  #header {\n"
-      "    vertical-align: top;\n"
-      "  }\n"
-      "  #footer {\n"
-      "    vertical-align: bottom;\n"
-      "  }\n"
-      "  .text {\n"
-      "    display: table-cell;\n"
-      "    font-family: sans-serif;\n"
-      "    font-size: 8px;\n"
-      "    vertical-align: inherit;\n"
-      "    white-space: nowrap;\n"
-      "  }\n"
-      "  #page_number {\n"
-      "    text-align: right;\n"
-      "  }\n"
-      "  #title {\n"
-      "    text-align: center;\n"
-      "  }\n"
-      "  #date, #url {\n"
-      "    padding-left: 0.7cm;\n"
-      "    padding-right: 0.1cm;\n"
-      "  }\n"
-      "  #title, #page_number {\n"
-      "    padding-left: 0.1cm;\n"
-      "    padding-right: 0.7cm;\n"
-      "  }\n"
-      "  #title, #url {\n"
-      "    overflow: hidden;\n"
-      "    text-overflow: ellipsis;\n"
-      "  }\n"
-      "  #title, #date {\n"
-      "    padding-bottom: 0cm;\n"
-      "    padding-top: 0.4cm;\n"
-      "  }\n"
-      "  #page_number, #url {\n"
-      "    padding-bottom: 0.4cm;\n"
-      "    padding-top: 0cm;\n"
-      "  }\n"
-      "</style>\n"
-      "<script>\n"
-      "function pixels(value) {\n"
-      "  return value + 'px';\n"
-      "}\n"
-      "function setup(options) {\n"
-      "  var body = document.querySelector('body');\n"
-      "  var header = document.querySelector('#header');\n"
-      "  var content = document.querySelector('#content');\n"
-      "  var footer = document.querySelector('#footer');\n"
-      "  body.style.width = pixels(options['width']);\n"
-      "  body.style.height = pixels(options['height']);\n"
-      "  header.style.height = pixels(options['topMargin']);\n"
-      "  content.style.height = pixels(options['height'] - options['topMargin'] - \n"
-      "    options['bottomMargin']);\n"
-      "  footer.style.height = pixels(options['bottomMargin']);\n"
-      "  document.querySelector('#date span').innerText =\n"
-      "    new Date(options['date']).toLocaleDateString();\n"
-      "  document.querySelector('#title span').innerText = options['title'];\n"
-      "  document.querySelector('#url span').innerText = options['url'];\n"
-      "  document.querySelector('#page_number span').innerText = options['pageNumber'];\n"
-      "  document.querySelector('#date').style.width =\n"
-      "    pixels(document.querySelector('#date span').offsetWidth);\n"
-      "  document.querySelector('#page_number').style.width = \n"
-      "    pixels(document.querySelector('#page_number span').offsetWidth);\n"
-      "  if (header.offsetHeight > options['topMargin'] + 1) {\n"
-      "    header.style.display = 'none';\n"
-      "    content.style.height = pixels(options['height'] - options['bottomMargin']);\n"
-      "  }\n"
-      "  if (footer.offsetHeight > options['bottomMargin'] + 1) {\n"
-      "     footer.style.display = 'none';\n"
-      "  }\n"
-      "}\n"
-      "</script>\n"
-      "</head>\n"
-      "<body>\n"
-      "<div id=\"header\">\n"
-      "  <div class=\"row\">\n"
-      "    <div id=\"date\" class = \"text\"><span/></div>\n"
-      "    <div id=\"title\" class = \"text\"><span/></div>\n"
-      "  </div>\n"
-      "</div>\n"
-      "<div id=\"content\">\n"
-      "</div>\n"
-      "<div id=\"footer\">\n"
-      "  <div class=\"row\">\n"
-      "    <div id=\"url\" class = \"text\"><span/></div>\n"
-      "    <div id=\"page_number\" class = \"text\"><span/></div>\n"
-      "  </div>\n"
-      "</div>\n"
-      "</body>\n"
-      "</html>\n";
+  return R"DeLiMeTeR(<!DOCTYPE html>
+<html>
+<head>
+<style>
+  body {
+    margin: 0px;
+    width: 0px;
+  }
+  .row {
+    display: table-row;
+    vertical-align: inherit;
+  }
+  #header, #footer {
+    display: table;
+    table-layout:fixed;
+    width: inherit;
+  }
+  #header {
+    vertical-align: top;
+  }
+  #footer {
+    vertical-align: bottom;
+  }
+  .text {
+    display: table-cell;
+    font-family: sans-serif;
+    font-size: 8px;
+    vertical-align: inherit;
+    white-space: nowrap;
+  }
+  #page_number {
+    text-align: right;
+  }
+  #title {
+    text-align: center;
+  }
+  #date, #url {
+    padding-left: 0.7cm;
+    padding-right: 0.1cm;
+  }
+  #title, #page_number {
+    padding-left: 0.1cm;
+    padding-right: 0.7cm;
+  }
+  #title, #url {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #title, #date {
+    padding-bottom: 0cm;
+    padding-top: 0.4cm;
+  }
+  #page_number, #url {
+    padding-bottom: 0.4cm;
+    padding-top: 0cm;
+  }
+</style>
+<script>
+function pixels(value) {
+  return value + 'px';
+}
+function setup(options) {
+  var body = document.querySelector('body');
+  var header = document.querySelector('#header');
+  var content = document.querySelector('#content');
+  var footer = document.querySelector('#footer');
+  body.style.width = pixels(options['width']);
+  body.style.height = pixels(options['height']);
+  header.style.height = pixels(options['topMargin']);
+  content.style.height = pixels(options['height'] - options['topMargin'] - options['bottomMargin']);
+  footer.style.height = pixels(options['bottomMargin']);
+  document.querySelector('#date span').innerText =
+    new Date(options['date']).toLocaleDateString();
+  document.querySelector('#title span').innerText = options['title'];
+  document.querySelector('#url span').innerText = options['url'];
+  document.querySelector('#page_number span').innerText = options['pageNumber'];
+  document.querySelector('#date').style.width =
+    pixels(document.querySelector('#date span').offsetWidth);
+  document.querySelector('#page_number').style.width =
+    pixels(document.querySelector('#page_number span').offsetWidth);
+  if (header.offsetHeight > options['topMargin'] + 1) {
+    header.style.display = 'none';
+    content.style.height = pixels(options['height'] - options['bottomMargin']);
+  }
+  if (footer.offsetHeight > options['bottomMargin'] + 1) {
+     footer.style.display = 'none';
+  }
+}
+</script>
+</head>
+<body>
+<div id="header">
+  <div class="row">
+    <div id="date" class="text"><span/></div>
+    <div id="title" class="text"><span/></div>
+  </div>
+</div>
+<div id="content">
+</div>
+<div id="footer">
+  <div class="row">
+    <div id="url" class="text"><span/></div>
+    <div id="page_number" class="text"><span/></div>
+  </div>
+</div>
+</body>
+</html>
+)DeLiMeTeR";
 }

@@ -76,17 +76,6 @@ class Profile {
     virtual void removeCustomWords(const StringRef* words,
                                    size_t numWords) = 0;
 
-    // Add the specified 'badWords' to the list of words that will be
-    // autocorrected to the corresponding word from 'goodWords'.
-    virtual void addAutocorrectWords(const StringRef* badWords,
-                                     const StringRef* goodWords,
-                                     size_t numWords) = 0;
-
-    // Remove the specified 'badWords' from the list of words that will be
-    // autocorrected.
-    virtual void removeAutocorrectWords(const StringRef* badWords,
-                                        size_t numWords) = 0;
-
   protected:
     // Destroy this Profile object.  Note that clients of blpwtk2 should use
     // the 'destroy()' method, instead of deleting the object directly.

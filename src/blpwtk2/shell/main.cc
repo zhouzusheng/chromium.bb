@@ -40,7 +40,6 @@ WNDPROC g_defaultEditWndProc = 0;
 blpwtk2::Toolkit* g_toolkit = 0;
 blpwtk2::Profile* g_profile = 0;
 bool g_spellCheckEnabled;
-int g_autoCorrectBehavior;
 std::set<std::string> g_languages;
 std::vector<std::string> g_sideLoadedFonts;
 std::string g_url;
@@ -99,9 +98,6 @@ enum {
     IDM_TEST_DUMP_LAYOUT_TREE,
     IDM_SPELLCHECK,
     IDM_SPELLCHECK_ENABLED,
-    IDM_AUTOCORRECT,
-    IDM_AUTOCORRECT_WORDMAP,
-    IDM_AUTOCORRECT_SWAP_ADJACENT_CHARS,
     IDM_LANGUAGES,
     IDM_LANGUAGE_DE,
     IDM_LANGUAGE_EN_GB,
@@ -1086,9 +1082,16 @@ void logMessageHandler(blpwtk2::ToolkitCreateParams::LogMessageSeverity severity
                        int line,
                        const char* message)
 {
-    char buf[4096];
-    sprintf_s(buf, sizeof(buf), "[%s:%d] %s\n", file, line, message);
-    OutputDebugStringA(buf);
+    char buf[1024];
+    sprintf_s(buf, sizeof(buf), "[%s:%d] ", file, line);
+
+    std::string outputStr;
+    outputStr.reserve(strlen(buf) + strlen(message) + 10);
+    outputStr.append(buf);
+    outputStr.append(message);
+    outputStr.append("\n");
+
+    OutputDebugStringA(outputStr.c_str());
 }
 
 void consoleLogMessageHandler(blpwtk2::ToolkitCreateParams::LogMessageSeverity severity,
@@ -1099,19 +1102,21 @@ void consoleLogMessageHandler(blpwtk2::ToolkitCreateParams::LogMessageSeverity s
                               const blpwtk2::StringRef& stack_trace)
 {
     std::string fileStr(file.data(), file.length());
-    std::string messageStr(message.data(), message.length());
-    std::string stackTraceStr(stack_trace.data(), stack_trace.length());
 
-    char buf[4096];
+    char buf[1024];
+    sprintf_s(buf, sizeof(buf), "[%s:%d:%d] ", fileStr.c_str(), line, column);
 
-    if (stackTraceStr.empty()) {
-        sprintf_s(buf, sizeof(buf), "[%s:%d:%d] %s\n", fileStr.c_str(), line, column, messageStr.c_str());
+    std::string outputStr;
+    outputStr.reserve(strlen(buf) + message.length() + stack_trace.length() + 20);
+    outputStr.append(buf);
+    outputStr.append(message.data(), message.length());
+    if (!stack_trace.isEmpty()) {
+        outputStr.append("\nStack Trace:");
+        outputStr.append(stack_trace.data(), stack_trace.length());
     }
-    else {
-        sprintf_s(buf, sizeof(buf), "[%s:%d:%d] %s\nStack Trace:%s\n", fileStr.c_str(), line, column, messageStr.c_str(), stackTraceStr.c_str());
-    }
+    outputStr.append("\n");
 
-    OutputDebugStringA(buf);
+    OutputDebugStringA(outputStr.c_str());
 }
 
 int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
@@ -1238,9 +1243,6 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
     g_profile = g_toolkit->createProfile(profileParams);
 
     g_spellCheckEnabled = true;
-    g_autoCorrectBehavior =
-        blpwtk2::SpellCheckConfig::AUTOCORRECT_WORD_MAP |
-        blpwtk2::SpellCheckConfig::AUTOCORRECT_SWAP_ADJACENT_CHARS;
     g_languages.insert(LANGUAGE_EN_US);
     updateSpellCheckConfig(g_profile);
 
@@ -1250,17 +1252,6 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
     customWords.push_back("zzzx");
     customWords.push_back("Bloomberg");
     g_profile->addCustomWords(customWords.data(), customWords.size());
-
-    // Configure autocorrect words.
-    std::vector<blpwtk2::StringRef> badWords, goodWords;
-    badWords.push_back("speling");           goodWords.push_back("spelling");
-    badWords.push_back("ambigous");          goodWords.push_back("ambiguous");
-    badWords.push_back("restraunt");         goodWords.push_back("restaurant");
-    badWords.push_back("comitee");           goodWords.push_back("committee");
-    badWords.push_back("misunderestimate");  goodWords.push_back("underestimate");
-    badWords.push_back("speeking");          goodWords.push_back("speaking");
-    assert(badWords.size() == goodWords.size());
-    g_profile->addAutocorrectWords(badWords.data(), goodWords.data(), badWords.size());
 
     Shell* firstShell = createShell(g_profile);
     firstShell->d_webView->loadUrl(g_url);
@@ -1397,14 +1388,6 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
             g_spellCheckEnabled = !g_spellCheckEnabled;
             updateSpellCheckConfig(shell->d_profile);
             return 0;
-        case IDM_AUTOCORRECT_WORDMAP:
-            g_autoCorrectBehavior ^= blpwtk2::SpellCheckConfig::AUTOCORRECT_WORD_MAP;
-            updateSpellCheckConfig(shell->d_profile);
-            return 0;
-        case IDM_AUTOCORRECT_SWAP_ADJACENT_CHARS:
-            g_autoCorrectBehavior ^= blpwtk2::SpellCheckConfig::AUTOCORRECT_SWAP_ADJACENT_CHARS;
-            updateSpellCheckConfig(shell->d_profile);
-            return 0;
         case IDM_LANGUAGE_DE:
             toggleLanguage(shell->d_profile, LANGUAGE_DE);
             return 0;
@@ -1484,16 +1467,9 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
     case WM_INITMENUPOPUP: {
             HMENU menu = (HMENU)wParam;
 
-            bool autocorrectWordMap
-                = g_autoCorrectBehavior & blpwtk2::SpellCheckConfig::AUTOCORRECT_WORD_MAP;
-            bool autocorrectSwapChars
-                = g_autoCorrectBehavior & blpwtk2::SpellCheckConfig::AUTOCORRECT_SWAP_ADJACENT_CHARS;
-
             adjustMenuItemStateFlag(shell->d_spellCheckMenu, 1, MFS_DISABLED, !g_spellCheckEnabled);
             adjustMenuItemStateFlag(shell->d_spellCheckMenu, 2, MFS_DISABLED, !g_spellCheckEnabled);
             CheckMenuItem(menu, IDM_SPELLCHECK_ENABLED, g_spellCheckEnabled ? MF_CHECKED : MF_UNCHECKED);
-            CheckMenuItem(menu, IDM_AUTOCORRECT_WORDMAP, autocorrectWordMap ? MF_CHECKED : MF_UNCHECKED);
-            CheckMenuItem(menu, IDM_AUTOCORRECT_SWAP_ADJACENT_CHARS, autocorrectSwapChars ? MF_CHECKED : MF_UNCHECKED);
             CheckMenuItem(menu, IDM_LANGUAGE_DE, g_languages.find(LANGUAGE_DE) != g_languages.end() ? MF_CHECKED : MF_UNCHECKED);
             CheckMenuItem(menu, IDM_LANGUAGE_EN_GB, g_languages.find(LANGUAGE_EN_GB) != g_languages.end() ? MF_CHECKED : MF_UNCHECKED);
             CheckMenuItem(menu, IDM_LANGUAGE_EN_US, g_languages.find(LANGUAGE_EN_US) != g_languages.end() ? MF_CHECKED : MF_UNCHECKED);
@@ -1635,10 +1611,6 @@ Shell* createShell(blpwtk2::Profile* profile, blpwtk2::WebView* webView)
     AppendMenu(menu, MF_POPUP, (UINT_PTR)testMenu, L"&Test");
     HMENU spellCheckMenu = CreateMenu();
     AppendMenu(spellCheckMenu, MF_STRING, IDM_SPELLCHECK_ENABLED, L"Enable &Spellcheck");
-    HMENU autocorrectMenu = CreateMenu();
-    AppendMenu(autocorrectMenu, MF_STRING, IDM_AUTOCORRECT_WORDMAP, L"Word &Map");
-    AppendMenu(autocorrectMenu, MF_STRING, IDM_AUTOCORRECT_SWAP_ADJACENT_CHARS, L"&Swap Adjacent Chars");
-    AppendMenu(spellCheckMenu, MF_POPUP, (UINT_PTR)autocorrectMenu, L"&Autocorrect");
     HMENU languagesMenu = CreateMenu();
     AppendMenu(languagesMenu, MF_STRING, IDM_LANGUAGE_DE, L"&German");
     AppendMenu(languagesMenu, MF_STRING, IDM_LANGUAGE_EN_GB, L"&English (Great Britain)");
@@ -1766,9 +1738,6 @@ void updateSpellCheckConfig(blpwtk2::Profile* profile)
     blpwtk2::SpellCheckConfig config;
 
     config.enableSpellCheck(g_spellCheckEnabled);
-    config.setAutocorrectBehavior(
-        g_spellCheckEnabled ? g_autoCorrectBehavior
-                            : blpwtk2::SpellCheckConfig::AUTOCORRECT_NONE);
 
     std::vector<blpwtk2::StringRef> languages;
     for (std::set<std::string>::const_iterator it = g_languages.begin();
@@ -1831,7 +1800,7 @@ public:
         char buffer[1024];
         if (!fstream.is_open()) {
             context->replaceStatusLine("HTTP/1.1 404 Not Found");
-            strcpy(buffer, "The specified file was not found.");
+            strcpy_s(buffer, sizeof(buffer), "The specified file was not found.");
             context->addResponseData(buffer, strlen(buffer));
         }
         else {
@@ -1844,7 +1813,7 @@ public:
                 }
 
                 assert(fstream.gcount() <= sizeof(buffer));
-                context->addResponseData(buffer, fstream.gcount());
+                context->addResponseData(buffer, (int)fstream.gcount());
             }
         }
         context->finish();
@@ -1865,113 +1834,112 @@ blpwtk2::ResourceLoader* createInProcessResourceLoader()
 }
 
 const char* getHeaderFooterHTMLContent() {
-  return
-      "<!DOCTYPE html>\n"
-      "<html>\n"
-      "<head>\n"
-      "<style>\n"
-      "  body {\n"
-      "    margin: 0px;\n"
-      "    width: 0px;\n"
-      "  }\n"
-      "  .row {\n"
-      "    display: table-row;\n"
-      "    vertical-align: inherit;\n"
-      "  }\n"
-      "  #header, #footer {\n"
-      "    display: table;\n"
-      "    table-layout:fixed;\n"
-      "    width: inherit;\n"
-      "  }\n"
-      "  #header {\n"
-      "    vertical-align: top;\n"
-      "  }\n"
-      "  #footer {\n"
-      "    vertical-align: bottom;\n"
-      "  }\n"
-      "  .text {\n"
-      "    display: table-cell;\n"
-      "    font-family: sans-serif;\n"
-      "    font-size: 8px;\n"
-      "    vertical-align: inherit;\n"
-      "    white-space: nowrap;\n"
-      "  }\n"
-      "  #page_number {\n"
-      "    text-align: right;\n"
-      "  }\n"
-      "  #title {\n"
-      "    text-align: center;\n"
-      "  }\n"
-      "  #date, #url {\n"
-      "    padding-left: 0.7cm;\n"
-      "    padding-right: 0.1cm;\n"
-      "  }\n"
-      "  #title, #page_number {\n"
-      "    padding-left: 0.1cm;\n"
-      "    padding-right: 0.7cm;\n"
-      "  }\n"
-      "  #title, #url {\n"
-      "    overflow: hidden;\n"
-      "    text-overflow: ellipsis;\n"
-      "  }\n"
-      "  #title, #date {\n"
-      "    padding-bottom: 0cm;\n"
-      "    padding-top: 0.4cm;\n"
-      "  }\n"
-      "  #page_number, #url {\n"
-      "    padding-bottom: 0.4cm;\n"
-      "    padding-top: 0cm;\n"
-      "  }\n"
-      "</style>\n"
-      "<script>\n"
-      "function pixels(value) {\n"
-      "  return value + 'px';\n"
-      "}\n"
-      "function setup(options) {\n"
-      "  var body = document.querySelector('body');\n"
-      "  var header = document.querySelector('#header');\n"
-      "  var content = document.querySelector('#content');\n"
-      "  var footer = document.querySelector('#footer');\n"
-      "  body.style.width = pixels(options['width']);\n"
-      "  body.style.height = pixels(options['height']);\n"
-      "  header.style.height = pixels(options['topMargin']);\n"
-      "  content.style.height = pixels(options['height'] - options['topMargin'] - \n"
-      "    options['bottomMargin']);\n"
-      "  footer.style.height = pixels(options['bottomMargin']);\n"
-      "  document.querySelector('#date span').innerText =\n"
-      "    new Date(options['date']).toLocaleDateString();\n"
-      "  document.querySelector('#title span').innerText = options['title'];\n"
-      "  document.querySelector('#url span').innerText = options['url'];\n"
-      "  document.querySelector('#page_number span').innerText = options['pageNumber'];\n"
-      "  document.querySelector('#date').style.width =\n"
-      "    pixels(document.querySelector('#date span').offsetWidth);\n"
-      "  document.querySelector('#page_number').style.width = \n"
-      "    pixels(document.querySelector('#page_number span').offsetWidth);\n"
-      "  if (header.offsetHeight > options['topMargin'] + 1) {\n"
-      "    header.style.display = 'none';\n"
-      "    content.style.height = pixels(options['height'] - options['bottomMargin']);\n"
-      "  }\n"
-      "  if (footer.offsetHeight > options['bottomMargin'] + 1) {\n"
-      "     footer.style.display = 'none';\n"
-      "  }\n"
-      "}\n"
-      "</script>\n"
-      "</head>\n"
-      "<body>\n"
-      "<div id=\"header\">\n"
-      "  <div class=\"row\">\n"
-      "    <div id=\"date\" class = \"text\"><span/></div>\n"
-      "    <div id=\"title\" class = \"text\"><span/></div>\n"
-      "  </div>\n"
-      "</div>\n"
-      "<div id=\"content\">\n"
-      "</div>\n"
-      "<div id=\"footer\">\n"
-      "  <div class=\"row\">\n"
-      "    <div id=\"url\" class = \"text\"><span/></div>\n"
-      "    <div id=\"page_number\" class = \"text\"><span/></div>\n"
-      "  </div>\n"
-      "</div>\n"
-      "</body>\n"
-      "</html>\n";
+  return R"DeLiMeTeR(<!DOCTYPE html>
+<html>
+<head>
+<style>
+  body {
+    margin: 0px;
+    width: 0px;
+  }
+  .row {
+    display: table-row;
+    vertical-align: inherit;
+  }
+  #header, #footer {
+    display: table;
+    table-layout:fixed;
+    width: inherit;
+  }
+  #header {
+    vertical-align: top;
+  }
+  #footer {
+    vertical-align: bottom;
+  }
+  .text {
+    display: table-cell;
+    font-family: sans-serif;
+    font-size: 8px;
+    vertical-align: inherit;
+    white-space: nowrap;
+  }
+  #page_number {
+    text-align: right;
+  }
+  #title {
+    text-align: center;
+  }
+  #date, #url {
+    padding-left: 0.7cm;
+    padding-right: 0.1cm;
+  }
+  #title, #page_number {
+    padding-left: 0.1cm;
+    padding-right: 0.7cm;
+  }
+  #title, #url {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #title, #date {
+    padding-bottom: 0cm;
+    padding-top: 0.4cm;
+  }
+  #page_number, #url {
+    padding-bottom: 0.4cm;
+    padding-top: 0cm;
+  }
+</style>
+<script>
+function pixels(value) {
+  return value + 'px';
+}
+function setup(options) {
+  var body = document.querySelector('body');
+  var header = document.querySelector('#header');
+  var content = document.querySelector('#content');
+  var footer = document.querySelector('#footer');
+  body.style.width = pixels(options['width']);
+  body.style.height = pixels(options['height']);
+  header.style.height = pixels(options['topMargin']);
+  content.style.height = pixels(options['height'] - options['topMargin'] - options['bottomMargin']);
+  footer.style.height = pixels(options['bottomMargin']);
+  document.querySelector('#date span').innerText =
+    new Date(options['date']).toLocaleDateString();
+  document.querySelector('#title span').innerText = options['title'];
+  document.querySelector('#url span').innerText = options['url'];
+  document.querySelector('#page_number span').innerText = options['pageNumber'];
+  document.querySelector('#date').style.width =
+    pixels(document.querySelector('#date span').offsetWidth);
+  document.querySelector('#page_number').style.width =
+    pixels(document.querySelector('#page_number span').offsetWidth);
+  if (header.offsetHeight > options['topMargin'] + 1) {
+    header.style.display = 'none';
+    content.style.height = pixels(options['height'] - options['bottomMargin']);
+  }
+  if (footer.offsetHeight > options['bottomMargin'] + 1) {
+     footer.style.display = 'none';
+  }
+}
+</script>
+</head>
+<body>
+<div id="header">
+  <div class="row">
+    <div id="date" class="text"><span/></div>
+    <div id="title" class="text"><span/></div>
+  </div>
+</div>
+<div id="content">
+</div>
+<div id="footer">
+  <div class="row">
+    <div id="url" class="text"><span/></div>
+    <div id="page_number" class="text"><span/></div>
+  </div>
+</div>
+</body>
+</html>
+)DeLiMeTeR";
 }

@@ -54,8 +54,8 @@ SpellcheckService::SpellcheckService(content::BrowserContext* context)
   //     context->GetRequestContext(), language_code, country_code));
 
   pref_change_registrar_.Add(
-      prefs::kAutoSpellCorrectBehavior,
-      base::Bind(&SpellcheckService::OnAutoSpellCorrectBehaviorChanged,
+      prefs::kEnableAutoSpellCorrect,
+      base::Bind(&SpellcheckService::OnEnableAutoSpellCorrectChanged,
                  base::Unretained(this)));
   pref_change_registrar_.Add(
       prefs::kSpellCheckDictionary,
@@ -200,26 +200,21 @@ void SpellcheckService::InitForRenderer(content::RenderProcessHost* process) {
   }
 
   const std::set<std::string>* custom_words_ptr;
-  const std::map<std::string, std::string> empty_autocorrect_words;
-  const std::map<std::string, std::string>* autocorrect_words_ptr;
 
   content::SpellcheckData* spellcheckData =
       content::SpellcheckData::FromContext(context_);
   if (spellcheckData) {
     custom_words_ptr = &spellcheckData->custom_words();
-    autocorrect_words_ptr = &spellcheckData->autocorrect_words();
   }
   else {
     DCHECK(custom_dictionary_);
     custom_words_ptr = &custom_dictionary_->GetWords();
-    autocorrect_words_ptr = &empty_autocorrect_words;
   }
 
   process->Send(new SpellCheckMsg_Init(
       languages,
       *custom_words_ptr,
-      *autocorrect_words_ptr,
-      prefs->GetInteger(prefs::kAutoSpellCorrectBehavior)));
+      prefs->GetBoolean(prefs::kEnableAutoSpellCorrect)));
   process->Send(new SpellCheckMsg_EnableSpellCheck(
       prefs->GetBoolean(prefs::kEnableContinuousSpellcheck)));
 }
@@ -271,31 +266,6 @@ void SpellcheckService::OnCustomWordsChanged(
     if (!process || context_ != process->GetBrowserContext())
       continue;
     process->Send(new SpellCheckMsg_CustomDictionaryChanged(
-        words_added_copy,
-        words_removed_copy));
-  }
-}
-
-void SpellcheckService::OnAutocorrectWordsChanged(
-    const std::map<base::StringPiece, base::StringPiece>& words_added,
-    const std::vector<base::StringPiece>& words_removed) {
-  typedef std::map<base::StringPiece,
-                   base::StringPiece>::const_iterator Iterator;
-  std::map<std::string, std::string> words_added_copy;
-  std::vector<std::string> words_removed_copy(words_removed.size());
-  for (Iterator it = words_added.begin(); it != words_added.end(); ++it) {
-    it->second.CopyToString(&words_added_copy[it->first.as_string()]);
-  }
-  for (size_t i = 0; i < words_removed.size(); ++i) {
-    words_removed[i].CopyToString(&words_removed_copy[i]);
-  }
-  for (content::RenderProcessHost::iterator i(
-          content::RenderProcessHost::AllHostsIterator());
-       !i.IsAtEnd(); i.Advance()) {
-    content::RenderProcessHost* process = i.GetCurrentValue();
-    if (!process || context_ != process->GetBrowserContext())
-      continue;
-    process->Send(new SpellCheckMsg_AutocorrectWordsChanged(
         words_added_copy,
         words_removed_copy));
   }
@@ -356,16 +326,16 @@ void SpellcheckService::InitForAllRenderers() {
   }
 }
 
-void SpellcheckService::OnAutoSpellCorrectBehaviorChanged() {
-  int flags = pref_change_registrar_.prefs()->GetInteger(
-      prefs::kAutoSpellCorrectBehavior);
+void SpellcheckService::OnEnableAutoSpellCorrectChanged() {
+  bool enabled = pref_change_registrar_.prefs()->GetBoolean(
+      prefs::kEnableAutoSpellCorrect);
   for (content::RenderProcessHost::iterator i(
            content::RenderProcessHost::AllHostsIterator());
        !i.IsAtEnd(); i.Advance()) {
     content::RenderProcessHost* process = i.GetCurrentValue();
     if (!process || context_ != process->GetBrowserContext())
       continue;
-    process->Send(new SpellCheckMsg_SetAutoSpellCorrectBehavior(flags));
+    process->Send(new SpellCheckMsg_EnableAutoSpellCorrect(enabled));
   }
 }
 

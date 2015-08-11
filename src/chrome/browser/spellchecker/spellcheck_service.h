@@ -119,9 +119,6 @@ class SpellcheckService : public KeyedService,
   void OnCustomWordsChanged(
       const std::vector<base::StringPiece>& words_added,
       const std::vector<base::StringPiece>& words_removed) override;
-  void OnAutocorrectWordsChanged(
-      const std::map<base::StringPiece, base::StringPiece>& words_added,
-      const std::vector<base::StringPiece>& words_removed) override;
 
   // SpellcheckCustomDictionary::Observer implementation.
   void OnCustomDictionaryLoaded() override;
@@ -146,9 +143,9 @@ class SpellcheckService : public KeyedService,
   // Pass all renderers some basic initialization information.
   void InitForAllRenderers();
 
-  // Reacts to a change in user preferences on auto-spell-correct behavior
-  // flags.
-  void OnAutoSpellCorrectBehaviorChanged();
+  // Reacts to a change in user preferences on whether auto-spell-correct should
+  // be enabled.
+  void OnEnableAutoSpellCorrectChanged();
 
   // Reacts to a change in user preference on which language should be used for
   // spellchecking.

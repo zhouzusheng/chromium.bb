@@ -38,6 +38,7 @@ WebViewCreateParams::WebViewCreateParams()
 , d_rendererAffinity(Constants::ANY_OUT_OF_PROCESS_RENDERER)
 , d_profile(0)
 , d_isTransparent(false)
+, d_inputEventsDisabled(false)
 {
 }
 
@@ -88,6 +89,11 @@ void WebViewCreateParams::setProfile(Profile* profile)
 void WebViewCreateParams::setIsTransparent(bool isTransparent)
 {
     d_isTransparent = isTransparent;
+}
+
+void WebViewCreateParams::setInputEventsDisabled(bool inputEventsDisabled)
+{
+    d_inputEventsDisabled = inputEventsDisabled;
 }
 
 }  // close namespace blpwtk2

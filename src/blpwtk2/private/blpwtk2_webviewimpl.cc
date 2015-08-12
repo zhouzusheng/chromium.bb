@@ -223,6 +223,7 @@ void WebViewImpl::overrideWebkitPrefs(content::WebPreferences* prefs)
 {
     prefs->dom_paste_enabled = d_properties.domPasteEnabled;
     prefs->javascript_can_access_clipboard = d_properties.javascriptCanAccessClipboard;
+    prefs->navigate_on_drag_drop = false;
 }
 
 void WebViewImpl::onRenderViewHostMadeCurrent(content::RenderViewHost* renderViewHost)

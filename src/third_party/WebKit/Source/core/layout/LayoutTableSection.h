@@ -119,14 +119,12 @@ public:
         RowStruct()
             : rowLayoutObject(nullptr)
             , baseline(-1)
-            , paginationStrut()
         {
         }
 
         Row row;
         LayoutTableRow* rowLayoutObject;
         LayoutUnit baseline;
-        LayoutUnit paginationStrut;
         Length logicalHeight;
     };
 

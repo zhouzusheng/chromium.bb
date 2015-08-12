@@ -1963,10 +1963,8 @@ void LayoutObject::propagateStyleToAnonymousChildren(bool blockChildrenOnly)
             if (style()->specifiesColumns()) {
                 if (child->style()->specifiesColumns())
                     newStyle->inheritColumnPropertiesFrom(styleRef());
-                if (child->style()->hasSpanAllColumns())
-                    newStyle->setHasSpanAllColumns();
-                else
-                    newStyle->setColumnSpanCount(child->style()->columnSpanCount());
+                if (child->style()->columnSpan())
+                    newStyle->setColumnSpan(ColumnSpanAll);
             }
         }
 

@@ -269,7 +269,7 @@ String TextCheckingHelper::findFirstMisspelling(int& firstMisspellingOffset, boo
                 if (!firstMisspelling) {
                     firstMisspellingOffset = currentChunkOffset + misspellingLocation;
                     firstMisspelling = it.substring(misspellingLocation, misspellingLength);
-                    firstMisspellingRange = Range::create(misspellingStart.containerNode()->document(), misspellingStart, misspellingEnd);
+                    firstMisspellingRange = Range::create(misspellingStart.containerNode()->document(), m_start, m_end);
                 }
 
                 // Store marker for misspelled word.

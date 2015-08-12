@@ -80,24 +80,4 @@ void SpellcheckData::AdjustCustomWords(
                     OnCustomWordsChanged(to_add, to_remove));
 }
 
-void SpellcheckData::AdjustAutocorrectWords(
-    const std::map<base::StringPiece, base::StringPiece>& to_add,
-    const std::vector<base::StringPiece>& to_remove) {
-  typedef std::map<base::StringPiece, base::StringPiece> Map;
-  for (Map::const_iterator it = to_add.begin(); it != to_add.end(); ++it) {
-    it->second.CopyToString(&autocorrect_words_[it->first.as_string()]);
-  }
-  for (size_t i = 0; i < to_remove.size(); ++i) {
-    AutocorrectWordsMap::iterator it =
-        autocorrect_words_.find(to_remove[i].as_string());
-    if (it != autocorrect_words_.end()) {
-      autocorrect_words_.erase(it);
-    }
-  }
-
-  FOR_EACH_OBSERVER(Observer,
-                    observers_,
-                    OnAutocorrectWordsChanged(to_add, to_remove));
-}
-
 }  // namespace content

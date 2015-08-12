@@ -218,21 +218,9 @@ void BrowserContextImpl::setSpellCheckConfig(const SpellCheckConfig& config)
     DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
     DCHECK(!d_isDestroyed);
 
-    // Auto-correct cannot be enabled if spellcheck is disabled.
-    DCHECK(SpellCheckConfig::AUTOCORRECT_NONE == config.autocorrectBehavior()
-        || config.isSpellCheckEnabled());
-
     PrefService* prefs = user_prefs::UserPrefs::Get(this);
 
     bool wasEnabled = prefs->GetBoolean(prefs::kEnableContinuousSpellcheck);
-
-    // Convert from blpwtk2::SpellCheckConfig::AutocorrectFlags to
-    // chrome::spellcheck_common::AutocorrectFlags.
-    int autocorrectBehavior = chrome::spellcheck_common::AUTOCORRECT_NONE;
-    if (config.autocorrectBehavior() & SpellCheckConfig::AUTOCORRECT_WORD_MAP)
-        autocorrectBehavior |= chrome::spellcheck_common::AUTOCORRECT_WORD_MAP;
-    if (config.autocorrectBehavior() & SpellCheckConfig::AUTOCORRECT_SWAP_ADJACENT_CHARS)
-        autocorrectBehavior |= chrome::spellcheck_common::AUTOCORRECT_SWAP_ADJACENT_CHARS;
 
     std::string languages;
     for (size_t i = 0; i < config.numLanguages(); ++i) {
@@ -244,7 +232,6 @@ void BrowserContextImpl::setSpellCheckConfig(const SpellCheckConfig& config)
     }
     prefs->SetBoolean(prefs::kEnableContinuousSpellcheck,
                       config.isSpellCheckEnabled());
-    prefs->SetInteger(prefs::kAutoSpellCorrectBehavior, autocorrectBehavior);
     prefs->SetString(prefs::kSpellCheckDictionary, languages);
 
     if (!wasEnabled && config.isSpellCheckEnabled()) {
@@ -276,33 +263,6 @@ void BrowserContextImpl::removeCustomWords(const StringRef* words,
     content::SpellcheckData::FromContext(this)->AdjustCustomWords(
         std::vector<base::StringPiece>(),
         wordsVector);
-}
-
-void BrowserContextImpl::addAutocorrectWords(const StringRef* badWords,
-                                             const StringRef* goodWords,
-                                             size_t numWords)
-{
-    std::map<base::StringPiece, base::StringPiece> wordsMap;
-    for (size_t i = 0; i < numWords; ++i) {
-        base::StringPiece badWord(badWords[i].data(), badWords[i].length());
-        base::StringPiece goodWord(goodWords[i].data(), goodWords[i].length());
-        wordsMap[badWord] = goodWord;
-    }
-    content::SpellcheckData::FromContext(this)->AdjustAutocorrectWords(
-        wordsMap,
-        std::vector<base::StringPiece>());
-}
-
-void BrowserContextImpl::removeAutocorrectWords(const StringRef* badWords,
-                                                size_t numWords)
-{
-    std::vector<base::StringPiece> badWordsVector(numWords);
-    for (size_t i = 0; i < numWords; ++i) {
-        badWordsVector[i].set(badWords[i].data(), badWords[i].length());
-    }
-    content::SpellcheckData::FromContext(this)->AdjustAutocorrectWords(
-        std::map<base::StringPiece, base::StringPiece>(),
-        badWordsVector);
 }
 
 // ======== content::BrowserContext implementation =============

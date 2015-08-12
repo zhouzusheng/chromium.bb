@@ -76,11 +76,6 @@ class ProfileProxy : public Profile,
                         size_t numWords) override;
     void removeCustomWords(const StringRef* words,
                            size_t numWords) override;
-    void addAutocorrectWords(const StringRef* badWords,
-                             const StringRef* goodWords,
-                             size_t numWords) override;
-    void removeAutocorrectWords(const StringRef* badWords,
-                                size_t numWords) override;
 
   private:
     // Destructor is private.  Calling destroy() will delete the object.

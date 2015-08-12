@@ -223,6 +223,7 @@ void WebViewImpl::overrideWebkitPrefs(content::WebPreferences* prefs)
 {
     prefs->dom_paste_enabled = d_properties.domPasteEnabled;
     prefs->javascript_can_access_clipboard = d_properties.javascriptCanAccessClipboard;
+    prefs->navigate_on_drag_drop = false;
 }
 
 void WebViewImpl::onRenderViewHostMadeCurrent(content::RenderViewHost* renderViewHost)
@@ -638,6 +639,10 @@ void WebViewImpl::createWidget(blpwtk2::NativeView parent)
         parent,
         this,
         d_properties.activateWindowOnMouseDown);
+
+    if (d_properties.inputEventsDisabled) {
+        ::EnableWindow(d_widget->getNativeWidgetView(), FALSE);
+    }
 
     if (d_implClient) {
         d_implClient->updateNativeViews(d_widget->getNativeWidgetView(), ui::GetHiddenWindow());

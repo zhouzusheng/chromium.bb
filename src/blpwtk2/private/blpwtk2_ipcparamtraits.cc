@@ -69,6 +69,7 @@ void ParamTraits<WebViewProperties>::Write(Message* m, const param_type& p)
     WriteParam(m, p.domPasteEnabled);
     WriteParam(m, p.javascriptCanAccessClipboard);
     WriteParam(m, p.isTransparent);
+    WriteParam(m, p.inputEventsDisabled);
 }
 
 bool ParamTraits<WebViewProperties>::Read(const Message* m, PickleIterator* iter, param_type* r)
@@ -84,6 +85,8 @@ bool ParamTraits<WebViewProperties>::Read(const Message* m, PickleIterator* iter
     if (!ReadParam(m, iter, &r->javascriptCanAccessClipboard))
         return false;
     if (!ReadParam(m, iter, &r->isTransparent))
+        return false;
+    if (!ReadParam(m, iter, &r->inputEventsDisabled))
         return false;
     return true;
 }
@@ -102,6 +105,8 @@ void ParamTraits<WebViewProperties>::Log(const param_type& p, std::string* l)
     LogParam(p.javascriptCanAccessClipboard, l);
     l->append(", ");
     LogParam(p.isTransparent, l);
+    l->append(", ");
+    LogParam(p.inputEventsDisabled, l);
     l->append(")");
 }
 
@@ -564,7 +569,6 @@ void ParamTraits<SpellCheckConfig>::Write(Message* m, const param_type& p)
     // TODO: simpler.
 
     WriteParam(m, p.isSpellCheckEnabled());
-    WriteParam(m, p.autocorrectBehavior());
     m->WriteInt(p.numLanguages());
     for (size_t i = 0; i < p.numLanguages(); ++i) {
         StringRef str = p.languageAt(i);
@@ -581,7 +585,6 @@ bool ParamTraits<SpellCheckConfig>::Read(const Message* m,
     // TODO: simpler.
 
     bool boolValue;
-    int intValue;
     int length;
     const char* bytes;
     std::vector<StringRef> strs;
@@ -589,9 +592,6 @@ bool ParamTraits<SpellCheckConfig>::Read(const Message* m,
     if (!ReadParam(m, iter, &boolValue))
         return false;
     r->enableSpellCheck(boolValue);
-    if (!ReadParam(m, iter, &intValue))
-        return false;
-    r->setAutocorrectBehavior(intValue);
 
     if (!iter->ReadLength(&length))
         return false;

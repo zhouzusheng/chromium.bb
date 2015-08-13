@@ -1204,6 +1204,9 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
         toolkitParams.setThreadMode(blpwtk2::ThreadMode::RENDERER_MAIN);
         toolkitParams.setInProcessResourceLoader(createInProcessResourceLoader());
         toolkitParams.setHostChannel(hostChannel);
+        if (!g_in_process_renderer) {
+            toolkitParams.disableInProcessRenderer();
+        }
     }
 #if AUTO_PUMP
     toolkitParams.setPumpMode(blpwtk2::PumpMode::AUTOMATIC);

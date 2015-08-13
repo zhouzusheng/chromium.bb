@@ -178,9 +178,6 @@ class WebViewImpl : public WebView,
     // this. Returns true if the delegate successfully handled it.
     bool TakeFocus(content::WebContents* source, bool reverse) override;
 
-    // Notification that |contents| has lost focus.
-    void WebContentsBlurred(content::WebContents* contents) override;
-
     // Notifies the delegate about the creation of a new WebContents. This
     // typically happens when popups are created.
     void WebContentsCreated(content::WebContents* source_contents,
@@ -264,6 +261,9 @@ class WebViewImpl : public WebView,
 
     // Notification that |contents| has gained focus.
     void OnWebContentsFocused() override;
+
+    // Invoked when focus is lost.
+    void OnWebContentsBlurred() override;
 
   private:
     scoped_ptr<DevToolsFrontendHostDelegateImpl> d_devToolsFrontEndHost;

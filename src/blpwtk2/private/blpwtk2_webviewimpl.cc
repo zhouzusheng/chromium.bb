@@ -756,15 +756,6 @@ bool WebViewImpl::TakeFocus(content::WebContents* source, bool reverse)
     return false;
 }
 
-void WebViewImpl::WebContentsBlurred(content::WebContents* contents)
-{
-    DCHECK(Statics::isInBrowserMainThread());
-    DCHECK(contents == d_webContents);
-    if (d_wasDestroyed) return;
-    if (d_delegate)
-        d_delegate->blurred(this);
-}
-
 void WebViewImpl::WebContentsCreated(content::WebContents* source_contents,
                                      int opener_render_frame_id,
                                      const base::string16& frame_name,
@@ -1082,6 +1073,14 @@ void WebViewImpl::OnWebContentsFocused()
     if (d_wasDestroyed) return;
     if (d_delegate)
         d_delegate->focused(this);
+}
+
+void WebViewImpl::OnWebContentsBlurred()
+{
+    DCHECK(Statics::isInBrowserMainThread());
+    if (d_wasDestroyed) return;
+    if (d_delegate)
+        d_delegate->blurred(this);
 }
 
 }  // close namespace blpwtk2

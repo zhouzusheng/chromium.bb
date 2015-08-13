@@ -1019,8 +1019,7 @@ void WebContentsViewAura::GotFocus() {
 }
 
 void WebContentsViewAura::LostFocus() {
-  if (web_contents_->GetDelegate())
-    web_contents_->GetDelegate()->WebContentsBlurred(web_contents_);
+  web_contents_->NotifyWebContentsBlurred();
 }
 
 void WebContentsViewAura::TakeFocus(bool reverse) {

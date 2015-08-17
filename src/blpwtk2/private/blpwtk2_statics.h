@@ -57,6 +57,10 @@ struct Statics {
     // The pump mode selected by the application.
     static PumpMode::Value pumpMode;
 
+    // Whether or not work messages can be posted while doing work.  Only
+    // used in MANUAL pump mode.
+    static bool workMessageWhileDoingWorkDisabled;
+
     // The id of the application's main thread (i.e. the thread that can enter
     // the blpwtk2 library).
     static base::PlatformThreadId applicationMainThreadId;

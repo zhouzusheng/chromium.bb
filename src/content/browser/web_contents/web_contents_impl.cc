@@ -2432,6 +2432,10 @@ void WebContentsImpl::NotifyWebContentsFocused() {
   FOR_EACH_OBSERVER(WebContentsObserver, observers_, OnWebContentsFocused());
 }
 
+void WebContentsImpl::NotifyWebContentsBlurred() {
+  FOR_EACH_OBSERVER(WebContentsObserver, observers_, OnWebContentsBlurred());
+}
+
 void WebContentsImpl::SystemDragEnded() {
   if (GetRenderViewHost())
     GetRenderViewHost()->DragSourceSystemDragEnded();

@@ -81,6 +81,13 @@ class ToolkitCreateParams {
     // the pump mode.
     BLPWTK2_EXPORT void setPumpMode(PumpMode::Value mode);
 
+    // This only has any effect in the MANUAL pump mode.  By default, blpwtk2
+    // allows work messages to be posted to the main thread while it is doing
+    // work.  This function can be used to disable that.  In this case, the
+    // work message will be posted after doing work, if there is still more
+    // work to be done.
+    BLPWTK2_EXPORT void disableWorkMessageWhileDoingWork();
+
     // By default, log messages go to a "blpwtk2.log" file and to debug output.
     // Use this method to install a custom log message handler instead.  Note
     // that the handler callback can be invoked from any thread.
@@ -196,6 +203,7 @@ class ToolkitCreateParams {
     // ACCESSORS
     ThreadMode::Value threadMode() const;
     PumpMode::Value pumpMode() const;
+    bool workMessageWhileDoingWorkDisabled() const;
     LogMessageHandler logMessageHandler() const;
     ConsoleLogMessageHandler consoleLogMessageHandler() const;
     ChannelErrorHandler channelErrorHandler() const;

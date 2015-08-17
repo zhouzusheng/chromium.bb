@@ -207,9 +207,19 @@ void ToolkitImpl::startupThreads()
         }
 
         LOG(INFO) << "Creating ProcessClient for in-process renderer";
-        d_processClient.reset(
-            new ProcessClientImpl(channelId,
-                                  InProcessRenderer::ioTaskRunner()));
+        scoped_refptr<base::SingleThreadTaskRunner> ioTaskRunner;
+        if (!Statics::isInProcessRendererDisabled) {
+            ioTaskRunner = InProcessRenderer::ioTaskRunner();
+        }
+        else {
+            d_ioThread.reset(new base::Thread("Blpwtk2IOThread"));
+            // We can't recover from failing to start the IO thread.
+            CHECK(d_ioThread->StartWithOptions(
+                base::Thread::Options(base::MessageLoop::TYPE_IO, 0)));
+            ioTaskRunner = d_ioThread->message_loop_proxy();
+        }
+
+        d_processClient.reset(new ProcessClientImpl(channelId, ioTaskRunner));
     }
 
     d_threadsStarted = true;
@@ -233,6 +243,7 @@ void ToolkitImpl::shutdownThreads()
         // Make sure any messages posted to the ProcessHost have been handled.
         d_processClient->Send(new BlpControlHostMsg_Sync(true));
         d_processClient.reset();
+        d_ioThread.reset();
 
         if (d_browserThread.get()) {
             d_browserThread->messageLoop()->PostTask(

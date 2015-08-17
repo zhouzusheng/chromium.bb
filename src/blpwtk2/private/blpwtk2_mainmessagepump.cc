@@ -380,6 +380,9 @@ void MainMessagePump::scheduleMoreWorkIfNecessary()
             ScheduleDelayedWork(base::TimeTicks::Now());
             d_hasAutoPumpTimer = true;
         }
+        else if (Statics::workMessageWhileDoingWorkDisabled) {
+            ScheduleWork();
+        }
     }
     else if (!delayed_work_time_.is_null())
         ScheduleDelayedWork(delayed_work_time_);
@@ -392,8 +395,26 @@ void MainMessagePump::handleWorkMessage()
         // indicates that there is a kMsgHaveWork in the queue.  Now that we
         // are processing the kMsgHaveWork message, set it back to 0.  This is
         // identical to how have_work_ is used in the upstream pump.
-        int old_have_work = InterlockedExchange(&have_work_, 0);
-        DCHECK(1 == old_have_work);
+
+        if (Statics::workMessageWhileDoingWorkDisabled) {
+            // This branch is different from what upstream chromium does.  In
+            // this branch, we will change have_work_ *after* doing work, so
+            // that work messages are not posted to the Windows queue while we
+            // are doing work.
+            // If there is work remaining after doWork(), then we will schedule
+            // it in scheduleMoreWorkIfNecessary(), either as a timer (if there
+            // are other messages waiting), or as a work message (if the queue
+            // is empty).
+            doWork();
+            int old_have_work = InterlockedExchange(&have_work_, 0);
+            DCHECK(1 == old_have_work);
+        }
+        else {
+            // This branch is what upstream chromium does.
+            int old_have_work = InterlockedExchange(&have_work_, 0);
+            DCHECK(1 == old_have_work);
+            doWork();
+        }
     }
     else {
         DCHECK(PumpMode::AUTOMATIC == Statics::pumpMode);
@@ -423,9 +444,9 @@ void MainMessagePump::handleWorkMessage()
         // original state.
         int old_have_work = InterlockedExchange(&have_work_, 2);
         DCHECK(1 == old_have_work || 2 == old_have_work);
+        doWork();
     }
 
-    doWork();
     scheduleMoreWorkIfNecessary();
 
     if (state_ && state_->should_quit) {

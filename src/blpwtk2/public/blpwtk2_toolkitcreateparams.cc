@@ -38,6 +38,7 @@ namespace blpwtk2 {
 struct ToolkitCreateParamsImpl {
     ThreadMode::Value d_threadMode;
     PumpMode::Value d_pumpMode;
+    bool d_workMessageWhileDoingWorkDisabled;
     ToolkitCreateParams::LogMessageHandler d_logMessageHandler;
     ToolkitCreateParams::ConsoleLogMessageHandler d_consoleLogMessageHandler;
     ToolkitCreateParams::ChannelErrorHandler d_channelErrorHandler;
@@ -61,6 +62,7 @@ struct ToolkitCreateParamsImpl {
     ToolkitCreateParamsImpl()
     : d_threadMode(ThreadMode::ORIGINAL)
     , d_pumpMode(PumpMode::MANUAL)
+    , d_workMessageWhileDoingWorkDisabled(false)
     , d_logMessageHandler(0)
     , d_consoleLogMessageHandler(0)
     , d_channelErrorHandler(0)
@@ -110,6 +112,11 @@ void ToolkitCreateParams::setThreadMode(ThreadMode::Value mode)
 void ToolkitCreateParams::setPumpMode(PumpMode::Value mode)
 {
     d_impl->d_pumpMode = mode;
+}
+
+void ToolkitCreateParams::disableWorkMessageWhileDoingWork()
+{
+    d_impl->d_workMessageWhileDoingWorkDisabled = true;
 }
 
 void ToolkitCreateParams::setLogMessageHandler(LogMessageHandler handler)
@@ -245,6 +252,11 @@ ThreadMode::Value ToolkitCreateParams::threadMode() const
 PumpMode::Value ToolkitCreateParams::pumpMode() const
 {
     return d_impl->d_pumpMode;
+}
+
+bool ToolkitCreateParams::workMessageWhileDoingWorkDisabled() const
+{
+    return d_impl->d_workMessageWhileDoingWorkDisabled;
 }
 
 ToolkitCreateParams::LogMessageHandler ToolkitCreateParams::logMessageHandler() const

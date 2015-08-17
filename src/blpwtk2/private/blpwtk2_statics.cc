@@ -28,6 +28,7 @@ namespace blpwtk2 {
 
 ThreadMode::Value Statics::threadMode = ThreadMode::ORIGINAL;
 PumpMode::Value Statics::pumpMode = PumpMode::MANUAL;
+bool Statics::workMessageWhileDoingWorkDisabled = false;
 base::PlatformThreadId Statics::applicationMainThreadId = base::kInvalidThreadId;
 base::PlatformThreadId Statics::browserMainThreadId = base::kInvalidThreadId;
 devtools_http_handler::DevToolsHttpHandler* Statics::devToolsHttpHandler = 0;

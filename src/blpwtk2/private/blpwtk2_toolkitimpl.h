@@ -37,6 +37,7 @@
 
 namespace base {
     class FilePath;
+    class Thread;
 }  // close namespace base
 
 namespace content {
@@ -107,6 +108,7 @@ class ToolkitImpl : public Toolkit {
     scoped_ptr<ProcessHostImpl> d_inProcessHost;
 
     // only used for the RENDERER_MAIN thread mode
+    scoped_ptr<base::Thread> d_ioThread;  // only used when in-process renderer is disabled
     scoped_ptr<ProcessClientImpl> d_processClient;
 
     // only used for the ORIGINAL thread mode

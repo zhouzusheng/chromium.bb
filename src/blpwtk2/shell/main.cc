@@ -51,6 +51,7 @@ bool g_in_process_renderer = false;
 bool g_custom_hit_test = false;
 bool g_custom_tooltip = false;
 bool g_no_plugin_discovery = false;
+bool g_disable_work_message_while_doing_work = false;
 HANDLE g_hJob;
 
 #define BUTTON_WIDTH 72
@@ -984,6 +985,9 @@ HANDLE spawnProcess()
     if (g_no_plugin_discovery) {
         cmdline.append(" --no-plugin-discovery");
     }
+    if (g_disable_work_message_while_doing_work) {
+        cmdline.append(" --disable-work-message-while-doing-work");
+    }
     for (size_t i = 0; i < g_sideLoadedFonts.size(); ++i) {
         cmdline.append(" --sideload-font=");
         cmdline.append(g_sideLoadedFonts[i]);
@@ -1176,6 +1180,9 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
             else if (0 == wcscmp(L"--no-plugin-discovery", argv[i])) {
                 g_no_plugin_discovery = true;
             }
+            else if (0 == wcscmp(L"--disable-work-message-while-doing-work", argv[i])) {
+                g_disable_work_message_while_doing_work = true;
+            }
             else if (argv[i][0] != '-') {
                 char buf[1024];
                 sprintf_s(buf, sizeof(buf), "%S", argv[i]);
@@ -1204,6 +1211,9 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
         toolkitParams.setThreadMode(blpwtk2::ThreadMode::RENDERER_MAIN);
         toolkitParams.setInProcessResourceLoader(createInProcessResourceLoader());
         toolkitParams.setHostChannel(hostChannel);
+        if (!g_in_process_renderer) {
+            toolkitParams.disableInProcessRenderer();
+        }
     }
 #if AUTO_PUMP
     toolkitParams.setPumpMode(blpwtk2::PumpMode::AUTOMATIC);
@@ -1211,6 +1221,10 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
 
     if (g_no_plugin_discovery) {
         toolkitParams.disablePluginDiscovery();
+    }
+
+    if (g_disable_work_message_while_doing_work) {
+        toolkitParams.disableWorkMessageWhileDoingWork();
     }
 
     for (size_t i = 0; i < g_sideLoadedFonts.size(); ++i) {

@@ -237,9 +237,6 @@ class CONTENT_EXPORT WebContentsDelegate {
   // Invoked when the page loses mouse capture.
   virtual void LostCapture() {}
 
-  // Notification that |contents| has lost focus.
-  virtual void WebContentsBlurred(WebContents* contents) {}
-
   // Asks the delegate if the given tab can download.
   // Invoking the |callback| synchronously is OK.
   virtual void CanDownload(RenderViewHost* render_view_host,

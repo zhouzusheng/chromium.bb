@@ -184,6 +184,9 @@ class CONTENT_EXPORT WebContentsImpl
   // Notify observers that the web contents has been focused.
   void NotifyWebContentsFocused();
 
+  // Notify observers that the web contents has lost focus.
+  void NotifyWebContentsBlurred();
+
   WebContentsView* GetView() const;
 
   ScreenOrientationDispatcherHost* screen_orientation_dispatcher_host() {

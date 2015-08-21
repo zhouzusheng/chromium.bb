@@ -39,6 +39,7 @@
 #include <content/browser/renderer_host/web_input_event_aura.h>
 #include <content/public/browser/native_web_keyboard_event.h>
 #include <content/public/renderer/render_view.h>
+#include <content/renderer/render_view_impl.h>
 #include <third_party/WebKit/public/web/WebView.h>
 #include <third_party/WebKit/public/web/WebFrame.h>
 #include <third_party/WebKit/public/web/WebInputEvent.h>
@@ -346,8 +347,8 @@ void WebViewProxy::handleInputEvents(const InputEvent *events, size_t eventsCoun
         << "You should wait for didFinishLoad";
     DCHECK(d_gotRenderViewInfo);
 
-    content::RenderView* rv = content::RenderView::FromRoutingID(d_renderViewRoutingId);
-    DCHECK(rv);
+    content::RenderWidget* rw = content::RenderViewImpl::FromRoutingID(d_renderViewRoutingId);
+    DCHECK(rw);
 
     for (size_t i=0; i < eventsCount; ++i) {
         const InputEvent *event = events + i;
@@ -413,7 +414,7 @@ void WebViewProxy::handleInputEvents(const InputEvent *events, size_t eventsCoun
             if (event->capsLockOn)
                 blinkKeyboardEvent.modifiers |= blink::WebInputEvent::CapsLockOn;
 
-            rv->GetWebView()->handleInputEvent(blinkKeyboardEvent);
+            rw->bbHandleInputEvent(blinkKeyboardEvent);
         } break;
 
         case WM_MOUSEMOVE:
@@ -429,8 +430,13 @@ void WebViewProxy::handleInputEvents(const InputEvent *events, size_t eventsCoun
         case WM_RBUTTONUP: {
             ui::MouseEvent uiMouseEvent(msg);
             blink::WebMouseEvent blinkMouseEvent = content::MakeWebMouseEvent(uiMouseEvent);
-            rv->GetWebView()->handleInputEvent(blinkMouseEvent);
+            rw->bbHandleInputEvent(blinkMouseEvent);
+        } break;
 
+        case WM_MOUSEWHEEL: {
+            ui::MouseWheelEvent uiMouseWheelEvent(msg);
+            blink::WebMouseWheelEvent blinkMouseWheelEvent = content::MakeWebMouseWheelEvent(uiMouseWheelEvent);
+            rw->bbHandleInputEvent(blinkMouseWheelEvent);
         } break;
         }
     }

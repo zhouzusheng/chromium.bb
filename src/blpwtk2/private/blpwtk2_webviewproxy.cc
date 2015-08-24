@@ -222,11 +222,11 @@ void WebViewProxy::drawContentsToBlob(Blob *blob, const DrawParams& params)
     blink::WebFrame* webFrame = rv->GetWebView()->mainFrame();
     DCHECK(webFrame->isWebLocalFrame());
 
-    const int srcWidth = params.srcRegion.right - params.srcRegion.left;
-    const int srcHeight = params.srcRegion.bottom - params.srcRegion.top;
+    int srcWidth = params.srcRegion.right - params.srcRegion.left;
+    int srcHeight = params.srcRegion.bottom - params.srcRegion.top;
 
-    const int destWidth = params.destRegion.right - params.destRegion.left;
-    const int destHeight = params.destRegion.bottom - params.destRegion.top;
+    int destWidth = params.destRegion.right - params.destRegion.left;
+    int destHeight = params.destRegion.bottom - params.destRegion.top;
 
     if (params.rendererType == DrawParams::RendererTypePDF) {
         SkDynamicMemoryWStream& pdf_stream = blob->makeSkStream();
@@ -250,8 +250,8 @@ void WebViewProxy::drawContentsToBlob(Blob *blob, const DrawParams& params)
         canvas.scale(static_cast<SkScalar>(destWidth) / srcWidth, static_cast<SkScalar>(destHeight) / srcHeight);
 
         webFrame->drawInCanvas(blink::WebRect(params.srcRegion.left, params.srcRegion.top, srcWidth, srcHeight),
-            blink::WebString::fromUTF8(params.styleClass.data(), params.styleClass.length()),
-            &canvas);
+                               blink::WebString::fromUTF8(params.styleClass.data(), params.styleClass.length()),
+                               &canvas);
 
         canvas.flush();
     }
@@ -259,17 +259,16 @@ void WebViewProxy::drawContentsToBlob(Blob *blob, const DrawParams& params)
 
 void WebViewProxy::drawContentsToDevice(NativeDeviceContext deviceContext, const DrawParams& params)
 {
-    const int dpi =
-        25.4 *                                                                                      // millimeters / inch
-        distance(GetDeviceCaps(deviceContext, HORZRES), GetDeviceCaps(deviceContext, VERTRES)) /    // resolution
-        distance(GetDeviceCaps(deviceContext, HORZSIZE), GetDeviceCaps(deviceContext, VERTSIZE));   // size in millimeters
-
-    const int destWidth = params.destRegion.right - params.destRegion.left;
-    const int destHeight = params.destRegion.bottom - params.destRegion.top;
+    int destWidth = params.destRegion.right - params.destRegion.left;
+    int destHeight = params.destRegion.bottom - params.destRegion.top;
 
     if (params.rendererType == DrawParams::RendererTypePDF) {
+        int dpi =
+            25.4 *                                                                                      // millimeters / inch
+            distance(GetDeviceCaps(deviceContext, HORZRES), GetDeviceCaps(deviceContext, VERTRES)) /    // resolution
+            distance(GetDeviceCaps(deviceContext, HORZSIZE), GetDeviceCaps(deviceContext, VERTSIZE));   // size in millimeters
+
         std::vector<char> pdf_data;
-        size_t pdf_data_size;
         {
             // override the DPI in the params
             DrawParams params2 = params;
@@ -278,15 +277,13 @@ void WebViewProxy::drawContentsToDevice(NativeDeviceContext deviceContext, const
             Blob blob;
             drawContentsToBlob(&blob, params2);
 
-            pdf_data_size = blob.size();
-            pdf_data.reserve(pdf_data_size);
-            pdf_data.push_back(0);
-            blob.copyTo(&pdf_data[0]);
+            pdf_data.resize(blob.size());
+            blob.copyTo(pdf_data.data());
         }
 
         chrome_pdf::RenderPDFPageToDC(
             pdf_data.data(),
-            pdf_data_size,
+            pdf_data.size(),
             0,
             deviceContext,
             dpi,

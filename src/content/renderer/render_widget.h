@@ -339,6 +339,8 @@ class CONTENT_EXPORT RenderWidget
 
   bool host_closing() const { return host_closing_; }
 
+  void bbHandleInputEvent(const blink::WebInputEvent& event);
+
  protected:
   // Friend RefCounted so that the dtor can be non-public. Using this class
   // without ref-counting is an error.
@@ -819,6 +821,10 @@ class CONTENT_EXPORT RenderWidget
   gfx::Point host_context_menu_location_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidget);
+
+private:
+
+  bool bb_OnHandleInputEvent_no_ack_;
 };
 
 }  // namespace content

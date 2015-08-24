@@ -518,7 +518,8 @@ RenderWidget::RenderWidget(blink::WebPopupType popup_type,
       frame_swap_message_queue_(new FrameSwapMessageQueue()),
       resizing_mode_selector_(new ResizingModeSelector()),
       context_menu_source_type_(ui::MENU_SOURCE_MOUSE),
-      has_host_context_menu_location_(false) {
+      has_host_context_menu_location_(false),
+      bb_OnHandleInputEvent_no_ack_(false) {
   if (!swapped_out)
     RenderProcess::current()->AddRefProcess();
   DCHECK(RenderThread::Get());
@@ -1088,6 +1089,13 @@ void RenderWidget::SetInputHandlingTimeThrottlingThresholdMicroseconds(int us) {
   kInputHandlingTimeThrottlingThresholdMicroseconds = us;
 }
 
+void RenderWidget::bbHandleInputEvent(const blink::WebInputEvent& event) {
+  ui::LatencyInfo latency_info;
+  bb_OnHandleInputEvent_no_ack_ = true;
+  OnHandleInputEvent(&event, latency_info, false);
+  bb_OnHandleInputEvent_no_ack_ = false;
+}
+
 void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
                                       const ui::LatencyInfo& latency_info,
                                       bool is_keyboard_shortcut) {
@@ -1247,6 +1255,7 @@ void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
   // by reentrant calls for events after the paused one.
   bool no_ack = ignore_ack_for_mouse_move_from_debugger_ &&
       input_event->type == WebInputEvent::MouseMove;
+  no_ack |= bb_OnHandleInputEvent_no_ack_;
   if (!WebInputEventTraits::IgnoresAckDisposition(*input_event) && !no_ack) {
     InputHostMsg_HandleInputEvent_ACK_Params ack;
     ack.type = input_event->type;

@@ -111,6 +111,18 @@ def writeBlpv8ProductsFile(f, version):
   f.write('\n')
   f.write('#endif  // INCLUDED_GENERATED_BLPV8_PRODUCTS\n')
 
+def writeBlpPdfUtilProductsFile(f, version):
+  productAppend = ""
+  if version != "":
+    productAppend = "." + version
+
+  f.write('// generated file -- DO NOT EDIT\n')
+  f.write('#ifndef INCLUDED_GENERATED_BLPPDFUTIL_PRODUCTS\n')
+  f.write('#define INCLUDED_GENERATED_BLPPDFUTIL_PRODUCTS\n')
+  f.write('\n')
+  f.write('#define BLPPDFUTIL_DLL_NAME "blppdfutil{}.dll"\n'.format(productAppend))
+  f.write('\n')
+  f.write('#endif  // INCLUDED_GENERATED_BLPPDFUTIL_PRODUCTS\n')
 
 def writeVersionFiles(fH, fCC, version):
   version, chromiumVersion, bbPatch = getVersionParts(version)
@@ -167,6 +179,8 @@ def doMain(args):
       blpwtk2ProductsFile = args[i+1]
     elif args[i] == '--output-blpv8-products':
       blpv8ProductsFile = args[i+1]
+    elif args[i] == '--output-blppdfutil-products':
+      blppdfutilProductsFile = args[i+1]
     elif args[i] == '--output-version-h':
       versionHFile = args[i+1]
     elif args[i] == '--output-version-cc':
@@ -176,6 +190,7 @@ def doMain(args):
 
   assert(blpwtk2ProductsFile != None)
   assert(blpv8ProductsFile != None)
+  assert(blppdfutilProductsFile != None)
   assert(versionHFile != None)
   assert(versionCCFile != None)
   assert(version != None)
@@ -185,6 +200,9 @@ def doMain(args):
 
   with open(blpv8ProductsFile, 'w') as f:
     writeBlpv8ProductsFile(f, version)
+
+  with open(blppdfutilProductsFile, 'w') as f:
+    writeBlpPdfUtilProductsFile(f, version)
 
   with open(versionHFile, 'w') as fH:
     with open(versionCCFile, 'w') as fCC:

@@ -362,6 +362,8 @@ public:
 
         if (!d_webView) {
             blpwtk2::WebViewCreateParams params;
+            params.setJavascriptCanAccessClipboard(true);
+            params.setDOMPasteEnabled(true);
             params.setProfile(d_profile);
             if (g_in_process_renderer && d_profile == g_profile) {
                 params.setRendererAffinity(blpwtk2::Constants::IN_PROCESS_RENDERER);

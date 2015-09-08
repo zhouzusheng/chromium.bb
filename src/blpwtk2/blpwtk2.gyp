@@ -37,6 +37,7 @@
   'variables': {
     'blpwtk2_products_h': '<(SHARED_INTERMEDIATE_DIR)/blpwtk2/public/blpwtk2_products.h',
     'blpv8_products_h': '<(SHARED_INTERMEDIATE_DIR)/blpv8/public/blpv8_products.h',
+    'blppdfutil_products_h': '<(SHARED_INTERMEDIATE_DIR)/blppdfutil/public/blppdfutil_products.h',
     'version_h': '<(SHARED_INTERMEDIATE_DIR)/blpwtk2/public/blpwtk2_version.h',
     'version_cc': '<(SHARED_INTERMEDIATE_DIR)/blpwtk2/public/blpwtk2_version.cc',
   },
@@ -53,6 +54,7 @@
           'outputs': [
             '<(blpwtk2_products_h)',
             '<(blpv8_products_h)',
+            '<(blppdfutil_products_h)',
             '<(version_h)',
             '<(version_cc)',
           ],
@@ -61,6 +63,7 @@
             '<@(_inputs)',
             '--output-blpwtk2-products', '<(blpwtk2_products_h)',
             '--output-blpv8-products', '<(blpv8_products_h)',
+            '--output-blppdfutil-products', '<(blppdfutil_products_h)',
             '--output-version-h', '<(version_h)',
             '--output-version-cc', '<(version_cc)',
             '--version', '<(bb_version)',
@@ -71,6 +74,7 @@
         'include_dirs': [
           '<(SHARED_INTERMEDIATE_DIR)/blpwtk2/public',
           '<(SHARED_INTERMEDIATE_DIR)/blpv8/public',
+          '<(SHARED_INTERMEDIATE_DIR)/blppdfutil/public',
         ],
       },
     },
@@ -354,6 +358,7 @@
       'dependencies': [
         'blpwtk2',
         '../v8/tools/gyp/v8.gyp:v8',
+        '../pdf/blppdfutil.gyp:blppdfutil',
       ],
       'msvs_settings': {
         'VCLinkerTool': {
@@ -414,6 +419,7 @@
         'blpwtk2_subprocess',
         'blpwtk2_shell',
         'blpwtk2_devtools',
+        '../pdf/blppdfutil.gyp:blppdfutil',
         '../content/content_shell_and_tests.gyp:content_shell',
         '../chrome/chrome_blpwtk2.gyp:chrome_blpwtk2',
       ],

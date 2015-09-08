@@ -32,6 +32,11 @@
         '../printing/printing.gyp:printing',
         '../blpwtk2/blpwtk2.gyp:blpwtk2_generate_sources'
       ],
+      'conditions': [
+        ['bb_version!=""', {
+          'product_name': 'blppdfutil.<(bb_version)',
+        }],
+      ],
       'sources': [
         'private/blppdfutil.rc',
         'private/blppdfutil_dllmain.cc',

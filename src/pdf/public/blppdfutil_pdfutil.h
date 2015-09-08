@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Bloomberg Finance L.P.
+ * Copyright (C) 2015 Bloomberg Finance L.P.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,31 +20,31 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef INCLUDED_BLPWTK2_H
-#define INCLUDED_BLPWTK2_H
+#ifndef INCLUDED_BLPPDFUTIL_PDFUTIL_H
+#define INCLUDED_BLPPDFUTIL_PDFUTIL_H
 
-#include <blpwtk2_blob.h>
-#include <blpwtk2_constants.h>
-#include <blpwtk2_contextmenuitem.h>
-#include <blpwtk2_contextmenuparams.h>
-#include <blpwtk2_filechooserparams.h>
-#include <blpwtk2_newviewparams.h>
-#include <blpwtk2_profile.h>
-#include <blpwtk2_profilecreateparams.h>
-#include <blpwtk2_proxyconfig.h>
-#include <blpwtk2_resourcecontext.h>
-#include <blpwtk2_resourceloader.h>
-#include <blpwtk2_spellcheckconfig.h>
-#include <blpwtk2_string.h>
-#include <blpwtk2_stringref.h>
-#include <blpwtk2_textdirection.h>
-#include <blpwtk2_toolkit.h>
-#include <blpwtk2_toolkitcreateparams.h>
-#include <blpwtk2_toolkitfactory.h>
-#include <blpwtk2_webframe.h>
-#include <blpwtk2_webview.h>
-#include <blpwtk2_webviewdelegate.h>
+#include <blppdfutil_config.h>
 
-#endif  // INCLUDED_BLPWTK2_H
+namespace blppdfutil {
 
+class BLPPDFUTIL_EXPORT PdfUtil {
+  public:
+    static bool RenderPDFPageToDC(const void* pdf_buffer,
+                                  int buffer_size,
+                                  int page_number,
+                                  NativeDeviceContext dc,
+                                  int dpi,
+                                  int bounds_origin_x,
+                                  int bounds_origin_y,
+                                  int bounds_width,
+                                  int bounds_height,
+                                  bool fit_to_bounds,
+                                  bool stretch_to_bounds,
+                                  bool keep_aspect_ratio,
+                                  bool center_in_bounds,
+                                  bool autorotate);
+};
+
+}  // close namespace blppdfutil
+#endif  // INCLUDED_BLPPDFUTIL_PDFUTIL_H
 

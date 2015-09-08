@@ -33,7 +33,9 @@
 #include <assert.h>
 
 #include <blpwtk2.h>
+
 #include <v8.h>
+#include <blppdfutil_pdfutil.h>
 
 HINSTANCE g_instance = 0;
 WNDPROC g_defaultEditWndProc = 0;
@@ -294,7 +296,33 @@ void testGetPicture(blpwtk2::NativeView hwnd, blpwtk2::WebView* webView, int sca
     drawParams.rendererType = blpwtk2::WebView::DrawParams::RendererTypePDF;
     drawParams.dpi = 72;
 
-    webView->drawContentsToDevice(deviceContext, drawParams);
+    std::vector<char> pdf_data;
+    {
+        blpwtk2::Blob blob;
+        webView->drawContentsToBlob(&blob, drawParams);
+
+        pdf_data.resize(blob.size());
+        blob.copyTo(&pdf_data[0]);
+    }
+
+    int destWidth = drawParams.destRegion.right - drawParams.destRegion.left;
+    int destHeight = drawParams.destRegion.bottom - drawParams.destRegion.top;
+
+    blppdfutil::PdfUtil::RenderPDFPageToDC(pdf_data.data(),
+                                           pdf_data.size(),
+                                           0,
+                                           deviceContext,
+                                           drawParams.dpi,
+                                           drawParams.destRegion.left,
+                                           drawParams.destRegion.top,
+                                           destWidth,
+                                           destHeight,
+                                           false,
+                                           false,
+                                           false,
+                                           false,
+                                           false);
+
 
 #ifdef USE_EMF
     HENHMETAFILE emf = CloseEnhMetaFile(deviceContext);
@@ -362,6 +390,8 @@ public:
 
         if (!d_webView) {
             blpwtk2::WebViewCreateParams params;
+            params.setJavascriptCanAccessClipboard(true);
+            params.setDOMPasteEnabled(true);
             params.setProfile(d_profile);
             if (g_in_process_renderer && d_profile == g_profile) {
                 params.setRendererAffinity(blpwtk2::Constants::IN_PROCESS_RENDERER);
@@ -1620,7 +1650,7 @@ Shell* createShell(blpwtk2::Profile* profile, blpwtk2::WebView* webView)
     AppendMenu(testMenu, MF_STRING, IDM_TEST_LOGICAL_FOCUS, L"Test Logical Focus");
     AppendMenu(testMenu, MF_STRING, IDM_TEST_LOGICAL_BLUR, L"Test Logical Blur");
     AppendMenu(testMenu, MF_STRING, IDM_TEST_PLAY_KEYBOARD_EVENTS, L"Test Play Keyboard Events");
-    AppendMenu(testMenu, MF_STRING, IDM_TEST_GET_PICTURE, L"Test Draw Picture");
+    AppendMenu(testMenu, MF_STRING, IDM_TEST_GET_PICTURE, L"Test Capture Picture");
     AppendMenu(testMenu, MF_STRING, IDM_TEST_DUMP_LAYOUT_TREE, L"Dump Layout Tree");
     AppendMenu(menu, MF_POPUP, (UINT_PTR)testMenu, L"&Test");
     HMENU spellCheckMenu = CreateMenu();

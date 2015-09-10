@@ -182,7 +182,7 @@ class WebViewImpl : public WebView,
     // typically happens when popups are created.
     void WebContentsCreated(content::WebContents* source_contents,
                             int opener_render_frame_id,
-                            const base::string16& frame_name,
+                            const std::string& frame_name,
                             const GURL& target_url,
                             const content::ContentCreatedParams& params,
                             content::WebContents* new_contents) override;
@@ -247,17 +247,16 @@ class WebViewImpl : public WebView,
     // If the WebContents is displaying replacement content, e.g. network error
     // pages, DidFinishLoad is invoked for frames that were not sending
     // navigational events before. It is safe to ignore these events.
-    void DidFinishLoad(
-        content::RenderFrameHost* render_frame_host,
-        const GURL& validated_url) override;
+    void DidFinishLoad(content::RenderFrameHost* render_frame_host,
+                       const GURL& validated_url) override;
 
     // This method is like DidFinishLoad, but when the load failed or was
     // cancelled, e.g. window.stop() is invoked.
-    void DidFailLoad(
-        content::RenderFrameHost* render_frame_host,
-        const GURL& validated_url,
-        int error_code,
-        const base::string16& error_description) override;
+    void DidFailLoad(content::RenderFrameHost* render_frame_host,
+                     const GURL& validated_url,
+                     int error_code,
+                     const base::string16& error_description,
+                     bool was_ignored_by_handler) override;
 
     // Notification that |contents| has gained focus.
     void OnWebContentsFocused() override;

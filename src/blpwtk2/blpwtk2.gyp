@@ -98,6 +98,7 @@
         '../content/content.gyp:content_utility',
         '../ipc/ipc.gyp:ipc',
         '../net/net.gyp:net',
+        '../net/net.gyp:net_extras',
         '../sandbox/sandbox.gyp:sandbox',
         '../skia/skia.gyp:skia',
         '../third_party/WebKit/public/blink.gyp:blink',

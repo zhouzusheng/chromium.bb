@@ -1676,7 +1676,7 @@ void WebLocalFrameImpl::drawInCanvas(const WebRect& rect, const WebString& style
         else {
             document().body().setAttribute(classAttribute, styleClass);
         }
-        view->updateLayoutAndStyleForPainting();
+        view->updateAllLifecyclePhases();
     }
 
     view->setPaintBehavior(paintBehavior | PaintBehaviorFlattenCompositingLayers);

@@ -758,7 +758,7 @@ bool WebViewImpl::TakeFocus(content::WebContents* source, bool reverse)
 
 void WebViewImpl::WebContentsCreated(content::WebContents* source_contents,
                                      int opener_render_frame_id,
-                                     const base::string16& frame_name,
+                                     const std::string& frame_name,
                                      const GURL& target_url,
                                      const content::ContentCreatedParams& params,
                                      content::WebContents* new_contents)
@@ -1056,7 +1056,8 @@ void WebViewImpl::DidFinishLoad(content::RenderFrameHost* render_frame_host,
 void WebViewImpl::DidFailLoad(content::RenderFrameHost* render_frame_host,
                               const GURL& validated_url,
                               int error_code,
-                              const base::string16& error_description)
+                              const base::string16& error_description,
+                              bool was_ignored_by_handler)
 {
     DCHECK(Statics::isInBrowserMainThread());
     if (d_wasDestroyed || !d_delegate) return;

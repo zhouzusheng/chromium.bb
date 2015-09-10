@@ -254,13 +254,17 @@ void SpellcheckService::Observe(int type,
 void SpellcheckService::OnCustomWordsChanged(
     const std::vector<base::StringPiece>& words_added,
     const std::vector<base::StringPiece>& words_removed) {
-  std::vector<std::string> words_added_copy(words_added.size());
-  std::vector<std::string> words_removed_copy(words_removed.size());
+  std::set<std::string> words_added_copy;
+  std::set<std::string> words_removed_copy;
   for (size_t i = 0; i < words_added.size(); ++i) {
-    words_added[i].CopyToString(&words_added_copy[i]);
+    std::string word;
+    words_added[i].CopyToString(&word);
+    words_added_copy.insert(word);
   }
   for (size_t i = 0; i < words_removed.size(); ++i) {
-    words_removed[i].CopyToString(&words_removed_copy[i]);
+    std::string word;
+    words_removed[i].CopyToString(&word);
+    words_removed_copy.insert(word);
   }
   for (content::RenderProcessHost::iterator i(
           content::RenderProcessHost::AllHostsIterator());

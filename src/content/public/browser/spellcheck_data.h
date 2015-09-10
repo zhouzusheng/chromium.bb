@@ -73,7 +73,7 @@ class CONTENT_EXPORT SpellcheckData : public base::SupportsUserData::Data {
   typedef std::set<std::string> CustomWordsSet;
 
   CustomWordsSet custom_words_;
-  ObserverList<Observer> observers_;
+  base::ObserverList<Observer> observers_;
 
   DISALLOW_COPY_AND_ASSIGN(SpellcheckData);
 };

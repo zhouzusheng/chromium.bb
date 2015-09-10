@@ -139,8 +139,8 @@ class SpellCheck : public content::RenderProcessObserver,
   void OnInit(const std::vector<chrome::spellcheck_common::FileLanguagePair>& languages,
               const std::set<std::string>& custom_words,
               bool auto_spell_correct);
-  void OnCustomDictionaryChanged(const std::vector<std::string>& words_added,
-                                 const std::vector<std::string>& words_removed);
+  void OnCustomDictionaryChanged(const std::set<std::string>& words_added,
+                                 const std::set<std::string>& words_removed);
   void OnEnableAutoSpellCorrect(bool enable);
   void OnEnableSpellCheck(bool enable);
   void OnRequestDocumentMarkers();

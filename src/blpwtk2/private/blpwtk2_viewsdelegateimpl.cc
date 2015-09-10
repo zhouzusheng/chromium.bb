@@ -29,13 +29,10 @@ namespace blpwtk2 {
 
 ViewsDelegateImpl::ViewsDelegateImpl()
 {
-    DCHECK(!ViewsDelegate::views_delegate);
-    ViewsDelegate::views_delegate = this;
 }
 
 ViewsDelegateImpl::~ViewsDelegateImpl()
 {
-    ViewsDelegate::views_delegate = NULL;
 }
 
 bool ViewsDelegateImpl::GetSavedWindowPlacement(

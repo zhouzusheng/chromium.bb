@@ -1,12 +1,13 @@
 // Copyright 2014 PDFium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
- 
+
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#ifndef _PDF_TEXT_INT_H_
-#define _PDF_TEXT_INT_H_
-class CPDF_TextParseOptions 
+#ifndef CORE_SRC_FPDFTEXT_TEXT_INT_H_
+#define CORE_SRC_FPDFTEXT_TEXT_INT_H_
+
+class CPDF_TextParseOptions
 {
 public:
     CPDF_TextParseOptions();
@@ -32,7 +33,7 @@ typedef struct _PAGECHAR_INFO {
     FX_WCHAR			m_Unicode;
     FX_FLOAT			m_OriginX;
     FX_FLOAT			m_OriginY;
-    FX_INT32			m_Flag;
+    int32_t			m_Flag;
     CFX_FloatRect		m_CharBox;
     CPDF_TextObject*	m_pTextObj;
     CFX_AffineMatrix	m_Matrix;
@@ -107,16 +108,16 @@ private:
     int								GetCharWidth(FX_DWORD charCode, CPDF_Font* pFont) const;
     void							CloseTempLine();
     void							OnPiece(IFX_BidiChar* pBidi, CFX_WideString& str);
-    FX_INT32	PreMarkedContent(PDFTEXT_Obj pObj);
+    int32_t	PreMarkedContent(PDFTEXT_Obj pObj);
     void		ProcessMarkedContent(PDFTEXT_Obj pObj);
-    void		CheckMarkedContentObject(FX_INT32& start, FX_INT32& nCount) const;
+    void		CheckMarkedContentObject(int32_t& start, int32_t& nCount) const;
     void		FindPreviousTextObject(void);
     void		AddCharInfoByLRDirection(CFX_WideString& str, int i);
     void		AddCharInfoByRLDirection(CFX_WideString& str, int i);
-    FX_INT32	GetTextObjectWritingMode(const CPDF_TextObject* pTextObj);
-    FX_INT32	FindTextlineFlowDirection();
-    void SwapTempTextBuf(FX_INT32 iCharListStartAppend,
-                         FX_INT32 iBufStartAppend);
+    int32_t	GetTextObjectWritingMode(const CPDF_TextObject* pTextObj);
+    int32_t	FindTextlineFlowDirection();
+    void SwapTempTextBuf(int32_t iCharListStartAppend,
+                         int32_t iBufStartAppend);
     FX_BOOL IsRightToLeft(const CPDF_TextObject* pTextObj,
                           const CPDF_Font* pFont,
                           int nItems) const;
@@ -156,7 +157,7 @@ public:
 protected:
     void							ExtractFindWhat(const CFX_WideString& findwhat);
     FX_BOOL							IsMatchWholeWord(const CFX_WideString& csPageText, int startPos, int endPos);
-    FX_BOOL							ExtractSubString(CFX_WideString& rString, FX_LPCWSTR lpszFullString,
+    FX_BOOL							ExtractSubString(CFX_WideString& rString, const FX_WCHAR* lpszFullString,
             int iSubString, FX_WCHAR chSep);
     CFX_WideString					MakeReverse(const CFX_WideString& str);
     int								ReverseFind(const CFX_WideString& csPageText, const CFX_WideString& csWord, int nStartPos, int& WordLength);
@@ -214,7 +215,8 @@ private:
     CFX_WideString					m_strPageText;
     FX_BOOL							m_IsParserd;
 };
-FX_STRSIZE FX_Unicode_GetNormalization(FX_WCHAR wch, FX_LPWSTR pDst);
+FX_STRSIZE FX_Unicode_GetNormalization(FX_WCHAR wch, FX_WCHAR* pDst);
 void NormalizeString(CFX_WideString& str);
 void NormalizeCompositeChar(FX_WCHAR wChar, CFX_WideString& sDest);
-#endif
+
+#endif  // CORE_SRC_FPDFTEXT_TEXT_INT_H_

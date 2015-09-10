@@ -33,7 +33,7 @@
 #if defined(OS_WIN)
 // A vector of filters, each being a Tuple containing a display string (i.e.
 // "Text Files") and a filter pattern (i.e. "*.txt").
-typedef std::vector<Tuple<base::string16, base::string16>>
+typedef std::vector<base::Tuple<base::string16, base::string16>>
     GetOpenFileNameFilter;
 #endif  // OS_WIN
 
@@ -126,10 +126,6 @@ IPC_STRUCT_END()
 // Utility process messages:
 // These are messages from the browser to the utility process.
 
-// Tell the utility process to parse a JSON string into a Value object.
-IPC_MESSAGE_CONTROL1(ChromeUtilityMsg_ParseJSON,
-                     std::string /* JSON to parse */)
-
 // Tell the utility process to decode the given image data.
 IPC_MESSAGE_CONTROL3(ChromeUtilityMsg_DecodeImage,
                      std::vector<unsigned char> /* encoded image contents */,
@@ -209,29 +205,9 @@ IPC_MESSAGE_CONTROL1(ChromeUtilityMsg_GetSaveFileName,
                      ChromeUtilityMsg_GetSaveFileName_Params /* params */)
 #endif  // defined(OS_WIN)
 
-#if defined(OS_ANDROID)
-// Instructs the utility process to detect support for seccomp-bpf,
-// and the result is reported through
-// ChromeUtilityHostMsg_DetectSeccompSupport_Result.
-IPC_MESSAGE_CONTROL0(ChromeUtilityMsg_DetectSeccompSupport)
-#endif
-
 //------------------------------------------------------------------------------
 // Utility process host messages:
 // These are messages from the utility process to the browser.
-
-// Reply when the utility process successfully parsed a JSON string.
-//
-// WARNING: The result can be of any Value subclass type, but we can't easily
-// pass indeterminate value types by const object reference with our IPC macros,
-// so we put the result Value into a ListValue. Handlers should examine the
-// first (and only) element of the ListValue for the actual result.
-IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_ParseJSON_Succeeded,
-                     base::ListValue)
-
-// Reply when the utility process failed in parsing a JSON string.
-IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_ParseJSON_Failed,
-                     std::string /* error message, if any*/)
 
 // Reply when the utility process has failed while unpacking and parsing a
 // web resource.  |error_message| is a user-readable explanation of what
@@ -281,10 +257,3 @@ IPC_MESSAGE_CONTROL2(ChromeUtilityHostMsg_GetSaveFileName_Result,
 IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_BuildDirectWriteFontCache,
                      base::FilePath /* cache file path */)
 #endif  // defined(OS_WIN)
-
-#if defined(OS_ANDROID)
-// Reply to ChromeUtilityMsg_DetectSeccompSupport to report the level
-// of kernel support for seccomp-bpf.
-IPC_MESSAGE_CONTROL1(ChromeUtilityHostMsg_DetectSeccompSupport_ResultPrctl,
-                     bool /* seccomp prctl supported */)
-#endif

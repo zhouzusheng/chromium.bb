@@ -21,6 +21,9 @@
 
 namespace chrome {
 
+// NotificationService &c. are deprecated (https://crbug.com/268984).
+// Don't add any new notification types, and migrate existing uses of the
+// notification types below to observers.
 enum NotificationType {
   NOTIFICATION_CHROME_START = PREVIOUS_END,
 
@@ -239,12 +242,16 @@ enum NotificationType {
   // The details are none and the source is the new profile.
   NOTIFICATION_PROFILE_ADDED,
 
+  // Use KeyedServiceShutdownNotifier instead this notification type (you did
+  // read the comment at the top of the file, didn't you?).
   // Sent early in the process of destroying a Profile, at the time a user
   // initiates the deletion of a profile versus the much later time when the
   // profile object is actually destroyed (use NOTIFICATION_PROFILE_DESTROYED).
   // The details are none and the source is a Profile*.
   NOTIFICATION_PROFILE_DESTRUCTION_STARTED,
 
+  // Use KeyedServiceShutdownNotifier instead this notification type (you did
+  // read the comment at the top of the file, didn't you?).
   // Sent before a Profile is destroyed. This notification is sent both for
   // normal and OTR profiles.
   // The details are none and the source is a Profile*.
@@ -253,13 +260,6 @@ enum NotificationType {
   // Sent after the URLRequestContextGetter for a Profile has been initialized.
   // The details are none and the source is a Profile*.
   NOTIFICATION_PROFILE_URL_REQUEST_CONTEXT_GETTER_INITIALIZED,
-
-  // Task Manager ------------------------------------------------------------
-
-  // Sent when a renderer process is notified of new v8 heap statistics. The
-  // source is the ID of the renderer process, and the details are a
-  // V8HeapStatsDetails object.
-  NOTIFICATION_RENDERER_V8_HEAP_STATS_COMPUTED,
 
   // Non-history storage services --------------------------------------------
 

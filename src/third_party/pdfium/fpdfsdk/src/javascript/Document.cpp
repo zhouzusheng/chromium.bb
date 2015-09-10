@@ -663,7 +663,7 @@ FX_BOOL Document::submitForm(IFXJS_Context* cc, const CJS_Parameters& params, CJ
 	else if (v.GetType() == VT_object)
 	{
 		JSObject pObj = params[0].ToV8Object();
-		v8::Handle<v8::Value> pValue = JS_GetObjectElement(isolate, pObj, L"cURL");
+		v8::Local<v8::Value> pValue = JS_GetObjectElement(isolate, pObj, L"cURL");
 		if (!pValue.IsEmpty())
 			strURL = CJS_Value(isolate, pValue, GET_VALUE_TYPE(pValue)).ToCFXWideString();
 		pValue = JS_GetObjectElement(isolate, pObj, L"bFDF");
@@ -796,7 +796,7 @@ FX_BOOL Document::mailDoc(IFXJS_Context* cc, const CJS_Parameters& params, CJS_V
 	{
 		JSObject pObj = params[0].ToV8Object();
 
-		v8::Handle<v8::Value> pValue = JS_GetObjectElement(isolate,pObj, L"bUI");
+		v8::Local<v8::Value> pValue = JS_GetObjectElement(isolate,pObj, L"bUI");
 		bUI = CJS_Value(isolate,pValue,GET_VALUE_TYPE(pValue)).ToInt();
 
 		pValue = JS_GetObjectElement(isolate,pObj, L"cTo");
@@ -1223,7 +1223,7 @@ FX_BOOL Document::documentFileName(IFXJS_Context* cc, CJS_PropValue& vp, CFX_Wid
 		return FALSE;
 	}
 	CFX_WideString wsFilePath = m_pDocument->GetPath();
-	FX_INT32 i = wsFilePath.GetLength() - 1;
+	int32_t i = wsFilePath.GetLength() - 1;
 	for ( ; i >= 0; i-- )
 	{
 		if ( wsFilePath.GetAt( i ) == L'\\' || wsFilePath.GetAt( i ) == L'/' )
@@ -1420,47 +1420,6 @@ IconElement* IconTree::operator [](int iIndex)
 		return NULL;
 }
 
-void IconTree::DeleteIconElement(CFX_WideString swIconName)
-{
-	IconElement* pTemp = m_pHead;
-	int iLoopCount = m_iLength;
-	for (int i = 0; i < iLoopCount - 1; i++)
-	{
-		if (pTemp == m_pEnd)
-			break;
-
-		if (m_pHead->IconName == swIconName)
-		{
-			m_pHead = m_pHead->NextIcon;
-			delete pTemp;
-			m_iLength--;
-			pTemp = m_pHead;
-		}
-		if (pTemp->NextIcon->IconName == swIconName)
-		{
-			if (pTemp->NextIcon == m_pEnd)
-			{
-				m_pEnd = pTemp;
-				delete pTemp->NextIcon;
-				m_iLength--;
-				pTemp->NextIcon = NULL;
-			}
-			else
-			{
-				IconElement* pElement = pTemp->NextIcon;
-				pTemp->NextIcon = pTemp->NextIcon->NextIcon;
-				delete pElement;
-				m_iLength--;
-				pElement = NULL;
-			}
-
-			continue;
-		}
-
-		pTemp = pTemp->NextIcon;
-	}
-}
-
 FX_BOOL Document::addIcon(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
 	CJS_Context* pContext = (CJS_Context*)cc;
@@ -1581,16 +1540,8 @@ FX_BOOL Document::getIcon(IFXJS_Context* cc, const CJS_Parameters& params, CJS_V
 
 FX_BOOL Document::removeIcon(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
-	CJS_Context* pContext = (CJS_Context *)cc;
-	if (params.size() != 1) {
-		sError = JSGetStringFromID(pContext, IDS_STRING_JSPARAMERROR);
-		return FALSE;
-	}
-
-	if(!m_pIconTree)
-		return FALSE;
-	CFX_WideString swIconName = params[0].ToCFXWideString();
-	return TRUE;
+  // Unsafe, no supported.
+  return TRUE;
 }
 
 FX_BOOL Document::createDataObject(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
@@ -1854,55 +1805,8 @@ FX_BOOL Document::zoomType(IFXJS_Context* cc, CJS_PropValue& vp, CFX_WideString&
 
 FX_BOOL Document::deletePages(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
 {
-	v8::Isolate* isolate = GetIsolate(cc);
-	ASSERT(m_pDocument != NULL);
-
-	if (!(m_pDocument->GetPermissions(FPDFPERM_MODIFY) ||
-		m_pDocument->GetPermissions(FPDFPERM_ASSEMBLE))) return FALSE;
-
-	int iSize = params.size();
-
-	int nStart = 0;
-	int nEnd = 0;
-
-	if (iSize < 1)
-	{
-	}
-	else if (iSize == 1)
-	{
-		if (params[0].GetType() == VT_object)
-		{
-			JSObject pObj = params[0].ToV8Object();
-			v8::Handle<v8::Value> pValue = JS_GetObjectElement(isolate, pObj, L"nStart");
-            nStart = CJS_Value(m_isolate, pValue, GET_VALUE_TYPE(pValue)).ToInt();
-
-			pValue = JS_GetObjectElement(isolate, pObj, L"nEnd");
-			nEnd = CJS_Value(m_isolate, pValue, GET_VALUE_TYPE(pValue)).ToInt();
-		}
-		else
-		{
-			nStart = params[0].ToInt();
-		}
-	}
-	else
-	{
-		nStart = params[0].ToInt();
-		nEnd = params[1].ToInt();
-	}
-
-	int nTotal = m_pDocument->GetPageCount();
-
-	if (nStart < 0)	nStart = 0;
-	if (nStart >= nTotal) nStart = nTotal - 1;
-
-	if (nEnd < 0) nEnd = 0;
-	if (nEnd >= nTotal) nEnd = nTotal - 1;
-
-	if (nEnd < nStart) nEnd = nStart;
-
-
-
-	return TRUE;
+  // Unsafe, no supported.
+  return TRUE;
 }
 
 FX_BOOL Document::extractPages(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& vRet, CFX_WideString& sError)
@@ -1981,7 +1885,7 @@ void Document::DoAnnotDelay()
 	}
 }
 
-CJS_Document* Document::GetCJSDoc() const 
+CJS_Document* Document::GetCJSDoc() const
 {
 	return static_cast<CJS_Document*>(m_pJSObject);
 }

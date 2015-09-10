@@ -1,14 +1,14 @@
 // Copyright 2014 PDFium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
- 
+
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#ifndef _JS_VALUE_H_
-#define _JS_VALUE_H_
+#ifndef FPDFSDK_INCLUDE_JAVASCRIPT_JS_VALUE_H_
+#define FPDFSDK_INCLUDE_JAVASCRIPT_JS_VALUE_H_
 
-#include "../jsapi/fxjs_v8.h"
 #include "../../../core/include/fxcrt/fx_basic.h"
+#include "../jsapi/fxjs_v8.h"
 
 class CJS_Array;
 class CJS_Date;
@@ -19,7 +19,7 @@ class CJS_Value
 {
 public:
 	CJS_Value(v8::Isolate* isolate);
-	CJS_Value(v8::Isolate* isolate, v8::Handle<v8::Value> pValue,FXJSVALUETYPE t);
+	CJS_Value(v8::Isolate* isolate, v8::Local<v8::Value> pValue,FXJSVALUETYPE t);
 	CJS_Value(v8::Isolate* isolate, const int &iValue);
 	CJS_Value(v8::Isolate* isolate, const double &dValue);
 	CJS_Value(v8::Isolate* isolate, const float &fValue);
@@ -27,14 +27,14 @@ public:
 	CJS_Value(v8::Isolate* isolate, JSFXObject);
 	CJS_Value(v8::Isolate* isolate, CJS_Object*);
    	CJS_Value(v8::Isolate* isolate, CJS_Document*);
-	CJS_Value(v8::Isolate* isolate, FX_LPCSTR pStr);
-	CJS_Value(v8::Isolate* isolate, FX_LPCWSTR pWstr);
+	CJS_Value(v8::Isolate* isolate, const FX_CHAR* pStr);
+	CJS_Value(v8::Isolate* isolate, const FX_WCHAR* pWstr);
 	CJS_Value(v8::Isolate* isolate, CJS_Array& array);
 
 	~CJS_Value();
 
 	void SetNull();
-    void Attach(v8::Handle<v8::Value> pValue,FXJSVALUETYPE t);
+    void Attach(v8::Local<v8::Value> pValue,FXJSVALUETYPE t);
 	void Attach(CJS_Value *pValue);
 	void Detach();
 
@@ -46,9 +46,9 @@ public:
 	CJS_Object* ToCJSObject() const;
 	CFX_WideString ToCFXWideString() const;
 	CFX_ByteString ToCFXByteString() const;
-	v8::Handle<v8::Object> ToV8Object() const;
-	v8::Handle<v8::Array> ToV8Array() const;
-	v8::Handle<v8::Value> ToV8Value() const;
+	v8::Local<v8::Object> ToV8Object() const;
+	v8::Local<v8::Array> ToV8Array() const;
+	v8::Local<v8::Value> ToV8Value() const;
 
 	void operator = (int iValue);
 	void operator = (bool bValue);
@@ -56,11 +56,11 @@ public:
 	void operator = (float);
 	void operator = (CJS_Object*);
 	void operator = (CJS_Document*);
-	void operator = (v8::Handle<v8::Object>);
+	void operator = (v8::Local<v8::Object>);
 	void operator = (CJS_Array &);
 	void operator = (CJS_Date &);
-	void operator = (FX_LPCWSTR pWstr);
-	void operator = (FX_LPCSTR pStr);
+	void operator = (const FX_WCHAR* pWstr);
+	void operator = (const FX_CHAR* pStr);
 	void operator = (CJS_Value value);
 
 	FX_BOOL IsArrayObject() const;
@@ -72,7 +72,7 @@ public:
 
 	v8::Isolate* GetIsolate() {return m_isolate;}
 protected:
-	v8::Handle<v8::Value> m_pValue;
+	v8::Local<v8::Value> m_pValue;
 	FXJSVALUETYPE m_eType;
 	v8::Isolate* m_isolate;
 };
@@ -111,14 +111,14 @@ public:
 	void operator>>(CFX_ByteString&) const;
 	void operator<<(CFX_WideString);
 	void operator>>(CFX_WideString&) const;
-	void operator<<(FX_LPCWSTR c_string);
+	void operator<<(const FX_WCHAR* c_string);
 	void operator<<(JSFXObject);
 	void operator>>(JSFXObject&) const;
 	void operator>>(CJS_Array& array) const;
 	void operator<<(CJS_Array& array);
 	void operator<<(CJS_Date& date);
 	void operator>>(CJS_Date& date) const;
-	operator v8::Handle<v8::Value>() const;
+	operator v8::Local<v8::Value>() const;
 	void StartSetting();
 	void StartGetting();
 private:
@@ -131,16 +131,16 @@ public:
 	CJS_Array(v8::Isolate* isolate);
 	virtual ~CJS_Array();
 
-	void Attach(v8::Handle<v8::Array> pArray);
+	void Attach(v8::Local<v8::Array> pArray);
 	void GetElement(unsigned index,CJS_Value &value);
 	void SetElement(unsigned index,CJS_Value value);
     int GetLength();
 	FX_BOOL IsAttached();
-	operator v8::Handle<v8::Array>();
+	operator v8::Local<v8::Array>();
 
 	v8::Isolate* GetIsolate() {return m_isolate;}
 private:
-	v8::Handle<v8::Array> m_pArray;
+	v8::Local<v8::Array> m_pArray;
 	v8::Isolate* m_isolate;
 };
 
@@ -152,7 +152,7 @@ public:
 	CJS_Date(v8::Isolate* isolate,double dMsec_time);
 	CJS_Date(v8::Isolate* isolate,int year, int mon, int day,int hour, int min, int sec);
 	virtual ~CJS_Date();
-	void Attach(v8::Handle<v8::Value> pDate);
+	void Attach(v8::Local<v8::Value> pDate);
 
 	int     GetYear();
 	void    SetYear(int iYear);
@@ -172,7 +172,7 @@ public:
 	int     GetSeconds();
 	void    SetSeconds(int seconds);
 
-	operator v8::Handle<v8::Value>();
+	operator v8::Local<v8::Value>();
 	operator double() const;
 
 	CFX_WideString	ToString() const;
@@ -182,9 +182,8 @@ public:
 	FX_BOOL	IsValidDate();
 
 protected:
-	v8::Handle<v8::Value> m_pDate;
+	v8::Local<v8::Value> m_pDate;
 	v8::Isolate* m_isolate;
 };
 
-#endif //_JS_VALUE_H_
-
+#endif  // FPDFSDK_INCLUDE_JAVASCRIPT_JS_VALUE_H_

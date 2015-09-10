@@ -949,6 +949,13 @@ v8::Local<v8::Context> WebLocalFrameImpl::mainWorldScriptContext() const
     return scriptState->context();
 }
 
+v8::Isolate* WebLocalFrameImpl::scriptIsolate() const
+{
+    if (!frame())
+        return 0;
+    return toIsolate(frame());
+}
+
 bool WebFrame::scriptCanAccess(WebFrame* target)
 {
     return BindingSecurity::shouldAllowAccessToFrame(mainThreadIsolate(), toCoreFrame(target), DoNotReportSecurityError);
@@ -1643,6 +1650,47 @@ WebString WebLocalFrameImpl::layerTreeAsText(bool showDebugInfo) const
         return WebString();
 
     return WebString(frame()->layerTreeAsText(showDebugInfo ? LayerTreeIncludesDebugInfo : LayerTreeNormal));
+}
+
+
+void WebLocalFrameImpl::drawInCanvas(const WebRect& rect, const WebString& styleClass, WebCanvas* canvas) const
+{
+    IntRect intRect(rect);
+    OwnPtr<GraphicsContext> graphicsContextPtr = GraphicsContext::deprecatedCreateWithCanvas(canvas);
+    GraphicsContext& graphicsContext = *graphicsContextPtr;
+
+    graphicsContext.translate(static_cast<float>(-intRect.x()), static_cast<float>(-intRect.y()));
+    graphicsContext.clip(rect);
+
+    FrameView *view = frameView();
+    PaintBehavior paintBehavior = view->paintBehavior();
+
+    const blink::WebString classAttribute("class");
+    WTF::String originalStyleClass;
+
+    if (!styleClass.isEmpty()) {
+        if (document().body().hasAttribute(classAttribute)) {
+            originalStyleClass = document().body().getAttribute(classAttribute);
+            document().body().setAttribute(classAttribute, WTF::String(originalStyleClass + " " + WTF::String(styleClass)));
+        }
+        else {
+            document().body().setAttribute(classAttribute, styleClass);
+        }
+        view->updateLayoutAndStyleForPainting();
+    }
+
+    view->setPaintBehavior(paintBehavior | PaintBehaviorFlattenCompositingLayers);
+    view->paintContents(&graphicsContext, intRect);
+    view->setPaintBehavior(paintBehavior);
+
+    if (!styleClass.isEmpty()) {
+        if (!originalStyleClass.isEmpty()) {
+            document().body().setAttribute(classAttribute, originalStyleClass);
+        }
+        else {
+            document().body().removeAttribute(classAttribute);
+        }
+    }
 }
 
 // WebLocalFrameImpl public ---------------------------------------------------------

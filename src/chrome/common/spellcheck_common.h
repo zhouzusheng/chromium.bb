@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#include "ipc/ipc_platform_file.h"
+
 namespace base {
 class FilePath;
 }
@@ -38,6 +40,8 @@ static const size_t MAX_SYNCABLE_DICTIONARY_WORDS = 1300;
 // Maximum number of bytes in a word that can be added to the custom spellcheck
 // dictionary.
 static const size_t MAX_CUSTOM_DICTIONARY_WORD_BYTES = 99;
+
+typedef std::pair<IPC::PlatformFileForTransit, std::string> FileLanguagePair;
 
 base::FilePath GetVersionedFileName(const std::string& input_language,
                                     const base::FilePath& dict_dir);

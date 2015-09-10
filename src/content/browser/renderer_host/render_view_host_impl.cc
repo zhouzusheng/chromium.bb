@@ -784,6 +784,14 @@ void RenderViewHostImpl::GotFocus() {
     view->GotFocus();
 }
 
+void RenderViewHostImpl::LostFocus() {
+  RenderWidgetHostImpl::LostFocus();  // Notifies the renderer it lost focus.
+
+  RenderViewHostDelegateView* view = delegate_->GetDelegateView();
+  if (view)
+    view->LostFocus();
+}
+
 void RenderViewHostImpl::LostCapture() {
   RenderWidgetHostImpl::LostCapture();
   delegate_->LostCapture();

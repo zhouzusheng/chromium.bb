@@ -104,6 +104,7 @@ void ShellBrowserContext::InitWhileIOAllowed() {
     base::CreateDirectory(path_);
   base::FilePath pref_file = path_.AppendASCII("prefs.json");
   pref_registry_ = new PrefRegistrySimple();
+  // TODO: remove these string literals
   pref_registry_->RegisterStringPref("spellcheck.dictionary", "en-US");
   pref_registry_->RegisterBooleanPref("browser.enable_spellchecking", true);
   pref_registry_->RegisterBooleanPref("spellcheck.use_spelling_service", true);
@@ -219,6 +220,10 @@ PushMessagingService* ShellBrowserContext::GetPushMessagingService() {
 
 SSLHostStateDelegate* ShellBrowserContext::GetSSLHostStateDelegate() {
   return NULL;
+}
+
+bool ShellBrowserContext::AllowDictionaryDownloads() {
+  return true;
 }
 
 PermissionManager* ShellBrowserContext::GetPermissionManager() {

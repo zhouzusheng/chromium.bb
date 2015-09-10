@@ -742,7 +742,10 @@
         {
             'target_name': 'libGLESv2',
             'type': 'shared_library',
-            'dependencies': [ 'libANGLE' ],
+            'dependencies': [
+                'libANGLE',
+                '../../../blpwtk2/blpwtk2.gyp:blpwtk2_generate_sources',
+            ],
             'includes': [ '../build/common_defines.gypi', ],
             'sources':
             [
@@ -754,6 +757,11 @@
             ],
             'conditions':
             [
+                ['bb_version!=""', {
+                  'product_name': 'blpcr_glesv2.<(bb_version)',
+                }, {
+                  'product_name': 'blpcr_glesv2',
+                }],
                 ['angle_build_winrt==1',
                 {
                     'msvs_enable_winrt' : '1',

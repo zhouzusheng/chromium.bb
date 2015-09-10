@@ -167,6 +167,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void InitAsFullscreen(RenderWidgetHostView* reference_host_view) override;
   void MovePluginWindows(const std::vector<WebPluginGeometry>& moves) override;
   void Focus() override;
+  void Blur() override;
   void UpdateCursor(const WebCursor& cursor) override;
   void SetIsLoading(bool is_loading) override;
   void TextInputTypeChanged(ui::TextInputType type,
@@ -276,6 +277,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
                        const gfx::Rect& new_bounds) override;
   gfx::NativeCursor GetCursor(const gfx::Point& point) override;
   int GetNonClientComponent(const gfx::Point& point) const override;
+  bool ShouldTryFocusOnMouseDown() const override;
   bool ShouldDescendIntoChildForEventHandling(
       aura::Window* child,
       const gfx::Point& location) override;
@@ -532,6 +534,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 
   // Is this a fullscreen view?
   bool is_fullscreen_;
+
+  // True if we have capture due to the mouse being down.
+  bool has_capture_from_mouse_down_;
 
   // Our parent host view, if this is a popup.  NULL otherwise.
   RenderWidgetHostViewAura* popup_parent_host_view_;

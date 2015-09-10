@@ -109,6 +109,7 @@ class WebContentsViewAura
                      const DragEventSourceInfo& event_info) override;
   void UpdateDragCursor(blink::WebDragOperation operation) override;
   void GotFocus() override;
+  void LostFocus() override;
   void TakeFocus(bool reverse) override;
   void ShowDisambiguationPopup(
       const gfx::Rect& target_rect,

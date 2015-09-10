@@ -383,6 +383,7 @@ MessageLoop::MessageLoop(Type type, MessagePumpFactoryCallback pump_factory)
       nestable_tasks_allowed_(true),
 #if defined(OS_WIN)
       os_modal_loop_(false),
+      ipc_sync_messages_should_peek_(false),
 #endif  // OS_WIN
       pump_factory_(pump_factory),
       message_histogram_(NULL),
@@ -422,10 +423,13 @@ void MessageLoop::SetTaskRunner(
   thread_task_runner_handle_.reset(new ThreadTaskRunnerHandle(task_runner_));
 }
 
-void MessageLoop::RunHandler() {
+void MessageLoop::PrepareRunHandler() {
   DCHECK_EQ(this, current());
-
   StartHistogrammer();
+}
+
+void MessageLoop::RunHandler() {
+  PrepareRunHandler();
 
 #if defined(OS_WIN)
   if (run_loop_->dispatcher_ && type() == TYPE_UI) {

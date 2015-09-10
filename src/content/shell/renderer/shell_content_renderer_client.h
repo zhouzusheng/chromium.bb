@@ -17,8 +17,6 @@ class WebCacheRenderProcessObserver;
 
 namespace content {
 
-class WebTestProxyBase;
-
 class ShellContentRendererClient : public ContentRendererClient {
  public:
   ShellContentRendererClient();

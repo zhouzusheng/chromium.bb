@@ -29,6 +29,7 @@
       'dependencies': [
         '../content/content_shell_and_tests.gyp:content_shell',
         '../chrome/chrome_blpwtk2.gyp:chrome_blpwtk2',
+        '../v8/src/d8.gyp:d8',
       ],
       'conditions': [
         ['bb_ppapi_examples==1', {

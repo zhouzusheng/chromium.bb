@@ -4,9 +4,12 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#ifndef _FPDFSDK_MGR_H
-#define _FPDFSDK_MGR_H
+#ifndef FPDFSDK_INCLUDE_FSDK_MGR_H_
+#define FPDFSDK_INCLUDE_FSDK_MGR_H_
 
+#include <map>
+
+#include "../../core/include/fpdftext/fpdf_text.h"
 #include "../../public/fpdf_formfill.h"
 #include "../../public/fpdf_fwlevent.h" // cross platform keycode and events define.
 #include "fsdk_common.h"
@@ -16,6 +19,7 @@
 #include "fsdk_baseform.h"
 #include "fsdk_annothandler.h"
 #include "fsdk_actionhandler.h"
+#include "javascript/IJavaScript.h"
 
 class CPDFSDK_Document;
 class CPDFSDK_PageView;
@@ -26,9 +30,7 @@ class IFX_SystemHandler;
 class CPDFSDK_ActionHandler;
 class CJS_RuntimeFactory;
 
-#include "javascript/IJavaScript.h"
-
-class CPDFDoc_Environment FX_FINAL
+class CPDFDoc_Environment final
 {
 public:
 	CPDFDoc_Environment(CPDF_Document * pDoc);
@@ -121,7 +123,7 @@ public:
 		return FALSE;
 	}
 
-	int JS_appAlert(FX_LPCWSTR Msg, FX_LPCWSTR Title, FX_UINT Type, FX_UINT Icon)
+	int JS_appAlert(const FX_WCHAR* Msg, const FX_WCHAR* Title, FX_UINT Type, FX_UINT Icon)
 	{
 		if(m_pInfo && m_pInfo->m_pJsPlatform && m_pInfo->m_pJsPlatform->app_alert)
 		{
@@ -137,7 +139,7 @@ public:
 		return -1;
 	}
 
-	int JS_appResponse(FX_LPCWSTR Question, FX_LPCWSTR Title, FX_LPCWSTR Default, FX_LPCWSTR cLabel, FPDF_BOOL bPassword, void* response, int length)
+	int JS_appResponse(const FX_WCHAR* Question, const FX_WCHAR* Title, const FX_WCHAR* Default, const FX_WCHAR* cLabel, FPDF_BOOL bPassword, void* response, int length)
 	{
 		if (m_pInfo && m_pInfo->m_pJsPlatform && m_pInfo->m_pJsPlatform->app_response)
 		{
@@ -168,61 +170,11 @@ public:
 		}
 	}
 
-	CFX_WideString JS_fieldBrowse()
-	{
-		if (m_pInfo && m_pInfo->m_pJsPlatform && m_pInfo->m_pJsPlatform->Field_browse)
-		{
-			int nRequiredLen = m_pInfo->m_pJsPlatform->Field_browse(m_pInfo->m_pJsPlatform, NULL, 0);
-			if (nRequiredLen <= 0)
-				return L"";
+    CFX_WideString JS_fieldBrowse();
 
-			char* pbuff = new char[nRequiredLen];
-			if (!pbuff)
-				return L"";
+    CFX_WideString JS_docGetFilePath();
 
-			memset(pbuff, 0, nRequiredLen);
-			int nActualLen = m_pInfo->m_pJsPlatform->Field_browse(m_pInfo->m_pJsPlatform, pbuff, nRequiredLen);
-			if (nActualLen <= 0 || nActualLen > nRequiredLen)
-			{
-				delete[] pbuff;
-				return L"";
-			}
-			CFX_ByteString bsRet = CFX_ByteString(pbuff, nActualLen);
-			CFX_WideString wsRet = CFX_WideString::FromLocal(bsRet);
-			delete[] pbuff;
-			return wsRet;
-		}
-		return L"";
-	}
-
-	CFX_WideString JS_docGetFilePath()
-	{
-		if (m_pInfo && m_pInfo->m_pJsPlatform && m_pInfo->m_pJsPlatform->Doc_getFilePath)
-		{
-			int nRequiredLen = m_pInfo->m_pJsPlatform->Doc_getFilePath(m_pInfo->m_pJsPlatform, NULL, 0);
-			if (nRequiredLen <= 0)
-				return L"";
-
-			char* pbuff = new char[nRequiredLen];
-			if (!pbuff)
-				return L"";
-
-			memset(pbuff, 0, nRequiredLen);
-			int nActualLen = m_pInfo->m_pJsPlatform->Doc_getFilePath(m_pInfo->m_pJsPlatform, pbuff, nRequiredLen);
-			if (nActualLen <= 0 || nActualLen > nRequiredLen)
-			{
-				delete[] pbuff;
-				return L"";
-			}
-			CFX_ByteString bsRet = CFX_ByteString(pbuff, nActualLen);
-			CFX_WideString wsRet = CFX_WideString::FromLocal(bsRet);
-			delete[] pbuff;
-			return wsRet;
-		}
-		return L"";
-	}
-
-	void JS_docSubmitForm(void* formData, int length, FX_LPCWSTR URL)
+	void JS_docSubmitForm(void* formData, int length, const FX_WCHAR* URL)
 	{
 		if(m_pInfo && m_pInfo->m_pJsPlatform && m_pInfo->m_pJsPlatform->Doc_submitForm)
 		{
@@ -233,7 +185,7 @@ public:
 		}
 	}
 
-	void JS_docmailForm(void* mailData, int length, FPDF_BOOL bUI,FX_LPCWSTR To, FX_LPCWSTR Subject, FX_LPCWSTR CC, FX_LPCWSTR BCC, FX_LPCWSTR Msg)
+	void JS_docmailForm(void* mailData, int length, FPDF_BOOL bUI,const FX_WCHAR* To, const FX_WCHAR* Subject, const FX_WCHAR* CC, const FX_WCHAR* BCC, const FX_WCHAR* Msg)
 	{
 		if(m_pInfo && m_pInfo->m_pJsPlatform && m_pInfo->m_pJsPlatform->Doc_mail)
 		{
@@ -298,7 +250,7 @@ public:
 		}
 		return 0;
 	}
-	void	FFI_ExecuteNamedAction(FX_LPCSTR namedAction)
+	void	FFI_ExecuteNamedAction(const FX_CHAR* namedAction)
 	{
 		if(m_pInfo && m_pInfo->FFI_ExecuteNamedAction)
 		{
@@ -313,7 +265,7 @@ public:
 		}
 	}
 
-	void	FFI_DoURIAction(FX_LPCSTR bsURI)
+	void	FFI_DoURIAction(const FX_CHAR* bsURI)
 	{
 		if(m_pInfo && m_pInfo->FFI_DoURIAction)
 		{
@@ -372,8 +324,6 @@ public:
 	CPDFSDK_InterForm*		GetInterForm() ;
 	CPDF_Document*			GetDocument() {return m_pDoc;}
 
-	void					InitPageView();
-	void					AddPageView(CPDF_Page* pPDFPage, CPDFSDK_PageView* pPageView);
 	CPDFSDK_PageView*		GetPageView(CPDF_Page* pPDFPage, FX_BOOL ReNew = TRUE);
 	CPDFSDK_PageView*		GetPageView(int nIndex);
 	CPDFSDK_PageView*		GetCurrentView();
@@ -389,7 +339,6 @@ public:
 
 	FX_BOOL					ExtractPages(const CFX_WordArray &arrExtraPages, CPDF_Document* pDstDoc);
 	FX_BOOL					InsertPages(int nInsertAt, const CPDF_Document* pSrcDoc, const CFX_WordArray &arrSrcPages);
-	FX_BOOL					DeletePages(int nStart, int nCount);
 	FX_BOOL					ReplacePages(int nPage, const CPDF_Document* pSrcDoc, const CFX_WordArray &arrSrcPages);
 
 	void					OnCloseDocument();
@@ -406,15 +355,15 @@ public:
 	FX_BOOL					ProcOpenAction();
 	CPDF_OCContext*			GetOCContext();
 private:
-	CFX_MapPtrTemplate<CPDF_Page*, CPDFSDK_PageView*> m_pageMap;
-	CPDF_Document*			m_pDoc;
-	CPDFSDK_InterForm*		m_pInterForm;
-	CPDFSDK_Annot*			m_pFocusAnnot;
-	CPDFDoc_Environment *	m_pEnv;
-	CPDF_OCContext *		m_pOccontent;
-	FX_BOOL					m_bChangeMask;
+    std::map<CPDF_Page*, CPDFSDK_PageView*> m_pageMap;
+    CPDF_Document* m_pDoc;
+    CPDFSDK_InterForm* m_pInterForm;
+    CPDFSDK_Annot* m_pFocusAnnot;
+    CPDFDoc_Environment* m_pEnv;
+    CPDF_OCContext* m_pOccontent;
+    FX_BOOL m_bChangeMask;
 };
-class CPDFSDK_PageView FX_FINAL
+class CPDFSDK_PageView final
 {
 public:
 	CPDFSDK_PageView(CPDFSDK_Document* pSDKDoc,CPDF_Page* page);
@@ -430,7 +379,7 @@ public:
 	FX_BOOL							Annot_HasAppearance(CPDF_Annot* pAnnot);
 
 	CPDFSDK_Annot*					AddAnnot(CPDF_Dictionary * pDict);
-	CPDFSDK_Annot*					AddAnnot(FX_LPCSTR lpSubType,CPDF_Dictionary * pDict);
+	CPDFSDK_Annot*					AddAnnot(const FX_CHAR* lpSubType,CPDF_Dictionary * pDict);
 	CPDFSDK_Annot*					AddAnnot(CPDF_Annot * pPDFAnnot);
         FX_BOOL						DeleteAnnot(CPDFSDK_Annot* pAnnot);
 	int								CountAnnots();
@@ -447,7 +396,7 @@ public:
 
 	FX_BOOL					OnMouseMove(const CPDF_Point & point, int nFlag);
 	FX_BOOL					OnMouseWheel(double deltaX, double deltaY,const CPDF_Point& point, int nFlag);
-	FX_BOOL					IsValidAnnot(FX_LPVOID p);
+	FX_BOOL					IsValidAnnot(void* p);
 	void					GetCurrentMatrix(CPDF_Matrix& matrix) {matrix = m_curMatrix;}
 	void					UpdateRects(CFX_RectArray& rects);
 	void							UpdateView(CPDFSDK_Annot* pAnnot);
@@ -559,5 +508,4 @@ private:
 	}
 };
 
-
-#endif //_FPDFSDK_MGR_H
+#endif  // FPDFSDK_INCLUDE_FSDK_MGR_H_

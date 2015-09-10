@@ -19,7 +19,7 @@ enum RequestCredentials { "omit", "same-origin", "include" };
 [
     Constructor(RequestInfo input, optional Dictionary requestInitDict),
     ConstructorCallWith=ScriptState,
-    Exposed(Window GlobalFetch, DedicatedWorker GlobalFetch, SharedWorker GlobalFetch, ServiceWorker ServiceWorker),
+    Exposed=(Window,Worker),
     RaisesException=Constructor,
     ActiveDOMObject,
     GarbageCollected,
@@ -28,7 +28,7 @@ enum RequestCredentials { "omit", "same-origin", "include" };
     readonly attribute ByteString method;
     readonly attribute USVString url;
     readonly attribute Headers headers;
-    readonly attribute RequestContext context;
+    [DeprecateAs=FetchAPIRequestContext] readonly attribute RequestContext context;
     readonly attribute DOMString referrer;
     readonly attribute RequestMode mode;
     readonly attribute RequestCredentials credentials;

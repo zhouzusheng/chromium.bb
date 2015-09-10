@@ -150,6 +150,7 @@ Response InputHandler::DispatchKeyEvent(
     const std::string* unmodified_text,
     const std::string* key_identifier,
     const std::string* code,
+    const std::string* key,
     const int* windows_virtual_key_code,
     const int* native_virtual_key_code,
     const bool* auto_repeat,
@@ -204,6 +205,11 @@ Response InputHandler::DispatchKeyEvent(
         ui::KeycodeConverter::CodeStringToDomCode(code->c_str()));
   }
 
+  if (key) {
+    event.domKey = static_cast<int>(
+        ui::KeycodeConverter::KeyStringToDomKey(key->c_str()));
+  }
+
   if (!host_)
     return Response::ServerError("Could not connect to view");
 
@@ -231,12 +237,12 @@ Response InputHandler::DispatchMouseEvent(
   if (!SetMouseEventButton(&event, button))
     return Response::InvalidParams("Invalid mouse button");
 
-  event.x = x;
-  event.y = y;
-  event.windowX = x;
-  event.windowY = y;
-  event.globalX = x;
-  event.globalY = y;
+  event.x = x * page_scale_factor_;
+  event.y = y * page_scale_factor_;
+  event.windowX = x * page_scale_factor_;
+  event.windowY = y * page_scale_factor_;
+  event.globalX = x * page_scale_factor_;
+  event.globalY = y * page_scale_factor_;
   event.clickCount = click_count ? *click_count : 0;
 
   if (!host_)

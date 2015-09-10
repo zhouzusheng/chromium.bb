@@ -1,7 +1,7 @@
 // Copyright 2014 PDFium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
- 
+
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
 #include "../../include/javascript/JavaScript.h"
@@ -19,7 +19,7 @@ JS_TIMER_MAPARRAY& GetTimeMap()
   return *timeMap;
 }
 
-int FXJS_MsgBox(CPDFDoc_Environment* pApp, CPDFSDK_PageView* pPageView, FX_LPCWSTR swMsg, FX_LPCWSTR swTitle, FX_UINT nType, FX_UINT nIcon)
+int FXJS_MsgBox(CPDFDoc_Environment* pApp, CPDFSDK_PageView* pPageView, const FX_WCHAR* swMsg, const FX_WCHAR* swTitle, FX_UINT nType, FX_UINT nIcon)
 {
 	int nRet = 0;
 
@@ -46,7 +46,7 @@ CPDFSDK_PageView* FXJS_GetPageView(IFXJS_Context* cc)
 
 /* ---------------------------------  CJS_EmbedObj --------------------------------- */
 
-CJS_EmbedObj::CJS_EmbedObj(CJS_Object* pJSObject) : 
+CJS_EmbedObj::CJS_EmbedObj(CJS_Object* pJSObject) :
 	m_pJSObject(pJSObject)
 {
 }
@@ -62,12 +62,12 @@ CPDFSDK_PageView* CJS_EmbedObj::JSGetPageView(IFXJS_Context* cc)
 	return FXJS_GetPageView(cc);
 }
 
-int CJS_EmbedObj::MsgBox(CPDFDoc_Environment* pApp, CPDFSDK_PageView* pPageView,FX_LPCWSTR swMsg,FX_LPCWSTR swTitle,FX_UINT nType,FX_UINT nIcon)
+int CJS_EmbedObj::MsgBox(CPDFDoc_Environment* pApp, CPDFSDK_PageView* pPageView,const FX_WCHAR* swMsg,const FX_WCHAR* swTitle,FX_UINT nType,FX_UINT nIcon)
 {
 	return FXJS_MsgBox(pApp, pPageView, swMsg, swTitle, nType, nIcon);
 }
 
-void CJS_EmbedObj::Alert(CJS_Context* pContext, FX_LPCWSTR swMsg)
+void CJS_EmbedObj::Alert(CJS_Context* pContext, const FX_WCHAR* swMsg)
 {
 	CJS_Object::Alert(pContext, swMsg);
 }
@@ -76,7 +76,7 @@ CJS_Timer* CJS_EmbedObj::BeginTimer(CPDFDoc_Environment * pApp,FX_UINT nElapse)
 {
 	CJS_Timer* pTimer = new CJS_Timer(this,pApp);
 	pTimer->SetJSTimer(nElapse);
-	
+
 	return pTimer;
 }
 
@@ -134,12 +134,12 @@ CPDFSDK_PageView* CJS_Object::JSGetPageView(IFXJS_Context* cc)
 	return FXJS_GetPageView(cc);
 }
 
-int CJS_Object::MsgBox(CPDFDoc_Environment* pApp, CPDFSDK_PageView* pPageView, FX_LPCWSTR swMsg, FX_LPCWSTR swTitle, FX_UINT nType, FX_UINT nIcon)
+int CJS_Object::MsgBox(CPDFDoc_Environment* pApp, CPDFSDK_PageView* pPageView, const FX_WCHAR* swMsg, const FX_WCHAR* swTitle, FX_UINT nType, FX_UINT nIcon)
 {
 	return FXJS_MsgBox(pApp, pPageView, swMsg, swTitle, nType, nIcon);
 }
 
-void CJS_Object::Alert(CJS_Context* pContext, FX_LPCWSTR swMsg)
+void CJS_Object::Alert(CJS_Context* pContext, const FX_WCHAR* swMsg)
 {
 	ASSERT(pContext != NULL);
 

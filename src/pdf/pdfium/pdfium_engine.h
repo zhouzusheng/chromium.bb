@@ -46,9 +46,7 @@ class PDFiumEngine : public PDFEngine,
   virtual ~PDFiumEngine();
 
   // PDFEngine implementation.
-  virtual bool New(const char* url);
-  virtual bool New(const char* url,
-                   const char* headers);
+  virtual bool New(const char* url, const char* headers);
   virtual void PageOffsetUpdated(const pp::Point& page_offset);
   virtual void PluginSizeUpdated(const pp::Size& size);
   virtual void ScrolledToXPosition(int position);
@@ -648,6 +646,9 @@ class PDFiumEngine : public PDFEngine,
 
   // Permissions bitfield.
   unsigned long permissions_;
+
+  // Permissions security handler revision number. -1 for unknown.
+  int permissions_handler_revision_;
 
   // Interface structure to provide access to document stream.
   FPDF_FILEACCESS file_access_;

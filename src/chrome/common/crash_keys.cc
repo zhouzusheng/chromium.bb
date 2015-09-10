@@ -128,7 +128,13 @@ const char kKaskoGuid[] = "kasko-guid";
 const char kKaskoEquivalentGuid[] = "kasko-equivalent-guid";
 #endif
 
+// Used to help investigate bug 464926.  NOTE: This value is defined multiple
+// places in the codebase due to layering issues. DO NOT change the value here
+// without changing it in all other places that it is defined in the codebase
+// (search for |kBug464926CrashKey|).
 const char kBug464926CrashKey[] = "bug-464926-info";
+
+const char kViewCount[] = "view-count";
 
 size_t RegisterChromeCrashKeys() {
   // The following keys may be chunked by the underlying crash logging system,
@@ -192,6 +198,7 @@ size_t RegisterChromeCrashKeys() {
     { kKaskoEquivalentGuid, kSmallSize },
 #endif
     { kBug464926CrashKey, kSmallSize },
+    { kViewCount, kSmallSize },
   };
 
   // This dynamic set of keys is used for sets of key value pairs when gathering
@@ -253,7 +260,8 @@ size_t RegisterChromeCrashKeys() {
 void SetMetricsClientIdFromGUID(const std::string& metrics_client_guid) {
   std::string stripped_guid(metrics_client_guid);
   // Remove all instance of '-' char from the GUID. So BCD-WXY becomes BCDWXY.
-  ReplaceSubstringsAfterOffset(&stripped_guid, 0, "-", "");
+  base::ReplaceSubstringsAfterOffset(
+      &stripped_guid, 0, "-", base::StringPiece());
   if (stripped_guid.empty())
     return;
 
@@ -315,7 +323,7 @@ static bool IsBoringSwitch(const std::string& flag) {
     switches::kUIPrioritizeInGpuProcess,
     switches::kUseGL,
     switches::kUserDataDir,
-    // Cros/CC flgas are specified as raw strings to avoid dependency.
+    // Cros/CC flags are specified as raw strings to avoid dependency.
     "child-wallpaper-large",
     "child-wallpaper-small",
     "default-wallpaper-large",
@@ -336,11 +344,11 @@ static bool IsBoringSwitch(const std::string& flag) {
 
 #if defined(OS_WIN)
   // Just about everything has this, don't bother.
-  if (StartsWithASCII(flag, "/prefetch:", true))
+  if (base::StartsWith(flag, "/prefetch:", base::CompareCase::SENSITIVE))
     return true;
 #endif
 
-  if (!StartsWithASCII(flag, "--", true))
+  if (!base::StartsWith(flag, "--", base::CompareCase::SENSITIVE))
     return false;
   size_t end = flag.find("=");
   size_t len = (end == std::string::npos) ? flag.length() - 2 : end - 2;

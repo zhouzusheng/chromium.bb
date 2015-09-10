@@ -685,17 +685,6 @@
             '.',
           ],
           'conditions': [
-            ['OS=="android"', {
-              'libraries': [
-                '-llog',
-              ],
-              'include_dirs': [
-                'src/common/android/include',
-              ],
-              'sources': [
-                'src/common/android/breakpad_getcontext_unittest.cc',
-              ],
-            }],
           ],
         },
         {

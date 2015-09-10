@@ -4,8 +4,8 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#ifndef _FX_MEMORY_H_
-#define _FX_MEMORY_H_
+#ifndef CORE_INCLUDE_FXCRT_FX_MEMORY_H_
+#define CORE_INCLUDE_FXCRT_FX_MEMORY_H_
 
 #include "fx_system.h"
 
@@ -41,8 +41,13 @@ inline void* FX_AllocOrDie(size_t num_members, size_t member_size) {
     return nullptr;  // Suppress compiler warning.
 }
 
-#define FX_NEW_VECTOR(Pointer, Class, Count) (Pointer = new Class[Count])
-#define FX_DELETE_VECTOR(Pointer, Class, Count) delete[] Pointer
+inline void* FX_AllocOrDie2D(size_t w, size_t h, size_t member_size) {
+    if (w < std::numeric_limits<size_t>::max() / h) {
+        return FX_AllocOrDie(w * h, member_size);
+    }
+    FX_OutOfMemoryTerminate();  // Never returns.
+    return nullptr;  // Suppress compiler warning.
+}
 
 inline void* FX_ReallocOrDie(void* ptr, size_t num_members, size_t member_size) {
     if (void* result = FX_SafeRealloc(ptr, num_members, member_size)) {
@@ -54,6 +59,7 @@ inline void* FX_ReallocOrDie(void* ptr, size_t num_members, size_t member_size) 
 
 // Never returns NULL.
 #define FX_Alloc(type, size) (type*)FX_AllocOrDie(size, sizeof(type))
+#define FX_Alloc2D(type, w, h) (type*)FX_AllocOrDie2D(w, h, sizeof(type))
 #define FX_Realloc(type, ptr, size) \
     (type*)FX_ReallocOrDie(ptr, size, sizeof(type))
 
@@ -64,13 +70,13 @@ inline void* FX_ReallocOrDie(void* ptr, size_t num_members, size_t member_size) 
 
 #define FX_Free(ptr) free(ptr)
 
-class CFX_DestructObject 
+class CFX_DestructObject
 {
 public:
 
     virtual ~CFX_DestructObject() {}
 };
-class CFX_GrowOnlyPool 
+class CFX_GrowOnlyPool
 {
 public:
 
@@ -83,14 +89,14 @@ public:
         m_TrunkSize = trunk_size;
     }
 
-    void*	AllocDebug(size_t size, FX_LPCSTR file, int line)
+    void*	AllocDebug(size_t size, const FX_CHAR* file, int line)
     {
         return Alloc(size);
     }
 
     void*	Alloc(size_t size);
 
-    void*	ReallocDebug(void* p, size_t new_size, FX_LPCSTR file, int line)
+    void*	ReallocDebug(void* p, size_t new_size, const FX_CHAR* file, int line)
     {
         return NULL;
     }
@@ -109,5 +115,6 @@ private:
 
     void*	m_pFirstTrunk;
 };
-#endif  // __cplusplust
-#endif  // _FX_MEMORY_H_
+#endif  // __cplusplus
+
+#endif  // CORE_INCLUDE_FXCRT_FX_MEMORY_H_

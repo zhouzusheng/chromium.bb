@@ -1,14 +1,14 @@
 // Copyright 2014 PDFium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
- 
+
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
 #include "../../../include/fxge/fx_ge.h"
 #include "../../../include/fxge/fx_freetype.h"
 #include "text_int.h"
 #define EM_ADJUST(em, a) (em == 0?(a): (a)*1000/em)
-extern void _FPDFAPI_GetInternalFontData(int id1, FX_LPCBYTE& data, FX_DWORD& size);
+extern void _FPDFAPI_GetInternalFontData(int id1, const uint8_t*& data, FX_DWORD& size);
 CFX_Font::CFX_Font()
 {
     m_pSubstFont = NULL;
@@ -28,10 +28,8 @@ CFX_Font::CFX_Font()
 }
 CFX_Font::~CFX_Font()
 {
-    if (m_pSubstFont) {
-        delete m_pSubstFont;
-        m_pSubstFont = NULL;
-    }
+    delete m_pSubstFont;
+    m_pSubstFont = NULL;
     if (m_pFontDataAllocation) {
         FX_Free(m_pFontDataAllocation);
         m_pFontDataAllocation = NULL;
@@ -103,10 +101,7 @@ extern "C" {
 };
 FX_BOOL _LoadFile(FXFT_Library library, FXFT_Face* Face, IFX_FileRead* pFile, FXFT_Stream* stream)
 {
-    FXFT_Stream stream1 = (FXFT_Stream)FX_Alloc(FX_BYTE, sizeof (FXFT_StreamRec));
-    if (!stream1) {
-        return FALSE;
-    }
+    FXFT_Stream stream1 = (FXFT_Stream)FX_Alloc(uint8_t, sizeof (FXFT_StreamRec));
     stream1->base = NULL;
     stream1->size = (unsigned long)pFile->GetSize();
     stream1->pos = 0;
@@ -156,7 +151,7 @@ int CFX_Font::GetGlyphWidth(FX_DWORD glyph_index)
     int width = EM_ADJUST(FXFT_Get_Face_UnitsPerEM(m_Face), FXFT_Get_Glyph_HoriAdvance(m_Face));
     return width;
 }
-static FXFT_Face FT_LoadFont(FX_LPBYTE pData, int size)
+static FXFT_Face FT_LoadFont(uint8_t* pData, int size)
 {
     FXFT_Library library;
     if (CFX_GEModule::Get()->GetFontMgr()->m_FTLibrary == NULL) {
@@ -174,15 +169,12 @@ static FXFT_Face FT_LoadFont(FX_LPBYTE pData, int size)
     }
     return face;
 }
-FX_BOOL CFX_Font::LoadEmbedded(FX_LPCBYTE data, FX_DWORD size)
+FX_BOOL CFX_Font::LoadEmbedded(const uint8_t* data, FX_DWORD size)
 {
-    m_pFontDataAllocation = FX_Alloc(FX_BYTE, size);
-    if (!m_pFontDataAllocation) {
-        return FALSE;
-    }
-    FXSYS_memcpy32(m_pFontDataAllocation, data, size);
-    m_Face = FT_LoadFont((FX_LPBYTE)m_pFontDataAllocation, size);
-    m_pFontData = (FX_LPBYTE)m_pFontDataAllocation;
+    m_pFontDataAllocation = FX_Alloc(uint8_t, size);
+    FXSYS_memcpy(m_pFontDataAllocation, data, size);
+    m_Face = FT_LoadFont((uint8_t*)m_pFontDataAllocation, size);
+    m_pFontData = (uint8_t*)m_pFontDataAllocation;
     m_bEmbedded = TRUE;
     m_dwSize = size;
     return m_Face != NULL;

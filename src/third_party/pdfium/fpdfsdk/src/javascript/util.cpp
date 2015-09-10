@@ -1,7 +1,7 @@
 // Copyright 2014 PDFium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
- 
+
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
 #include "../../include/javascript/JavaScript.h"
@@ -58,8 +58,8 @@ util::~util(void)
 
 struct stru_TbConvert
 {
-	FX_LPCWSTR lpszJSMark;
-	FX_LPCWSTR lpszCppMark;
+	const FX_WCHAR* lpszJSMark;
+	const FX_WCHAR* lpszCppMark;
 };
 
 const stru_TbConvert fcTable[] = {
@@ -152,7 +152,7 @@ FX_BOOL util::printf(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value&
 		iOffend = c_ConvChar.find(L"%",iOffset+1);
 		std::wstring strSub;
 		if (iOffend == -1)
-			strSub = c_ConvChar.substr(iOffset);			
+			strSub = c_ConvChar.substr(iOffset);
 		else
 			strSub = c_ConvChar.substr(iOffset ,iOffend - iOffset);
 		c_strConvers.push_back(strSub);
@@ -235,7 +235,7 @@ FX_BOOL util::printd(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value&
 		switch (nFormat)
 		{
 		case 0:
-			swResult.Format(L"D:%04d%02d%02d%02d%02d%02d", 
+			swResult.Format(L"D:%04d%02d%02d%02d%02d%02d",
 				jsDate.GetYear(),
 				jsDate.GetMonth() + 1,
 				jsDate.GetDay(),
@@ -244,7 +244,7 @@ FX_BOOL util::printd(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value&
 				jsDate.GetSeconds());
 			break;
 		case 1:
-			swResult.Format(L"%04d.%02d.%02d %02d:%02d:%02d", 
+			swResult.Format(L"%04d.%02d.%02d %02d:%02d:%02d",
 				jsDate.GetYear(),
 				jsDate.GetMonth() + 1,
 				jsDate.GetDay(),
@@ -253,7 +253,7 @@ FX_BOOL util::printd(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value&
 				jsDate.GetSeconds());
 			break;
 		case 2:
-			swResult.Format(L"%04d/%02d/%02d %02d:%02d:%02d", 
+			swResult.Format(L"%04d/%02d/%02d %02d:%02d:%02d",
 				jsDate.GetYear(),
 				jsDate.GetMonth() + 1,
 				jsDate.GetDay(),
@@ -303,7 +303,7 @@ FX_BOOL util::printd(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value&
 		iMin = jsDate.GetMinutes();
 		iSec = jsDate.GetSeconds();
 
-		struct tm time = {0};
+		struct tm time = {};
 		time.tm_year = iYear-1900;
 		time.tm_mon = iMonth;
 		time.tm_mday = iDay;
@@ -315,7 +315,7 @@ FX_BOOL util::printd(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value&
 
 		struct stru_TbConvertAd
 		{
-			FX_LPCWSTR lpszJSMark;
+			const FX_WCHAR* lpszJSMark;
 			int     iValue;
 		};
 
@@ -360,7 +360,7 @@ FX_BOOL util::printd(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value&
 		CFX_WideString strFormat;
 //		strFormat.Format(L"%d,%d,%d,%d,%d,%d",iYear, iMonth, iDay, iHour, iMin, iSec);
 //		CString strFormat = cppTm.Format(cFormat.c_str());
-		wchar_t buf[64] = {0};
+		wchar_t buf[64] = {};
 		strFormat = wcsftime(buf, 64, cFormat.c_str(), &time);
 		cFormat = buf;
 		vRet = cFormat.c_str();
@@ -373,7 +373,7 @@ FX_BOOL util::printd(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value&
 void util::printd(const std::wstring &cFormat2, CJS_Date jsDate, bool bXFAPicture, std::wstring &cPurpose)
 {
 	std::wstring cFormat = cFormat2;
-	    
+
 	if (bXFAPicture)
 	{
 		return ; //currently, it doesn't support XFAPicture.
@@ -399,7 +399,7 @@ void util::printd(const std::wstring &cFormat2, CJS_Date jsDate, bool bXFAPictur
 	iMin = jsDate.GetMinutes();
 	iSec = jsDate.GetSeconds();
 
-	struct tm time = {0};
+	struct tm time = {};
 	time.tm_year = iYear-1900;
 	time.tm_mon = iMonth;
 	time.tm_mday = iDay;
@@ -411,7 +411,7 @@ void util::printd(const std::wstring &cFormat2, CJS_Date jsDate, bool bXFAPictur
 
 	struct stru_TbConvertAd
 	{
-		FX_LPCWSTR lpszJSMark;
+		const FX_WCHAR* lpszJSMark;
 		int     iValue;
 	};
 
@@ -454,7 +454,7 @@ void util::printd(const std::wstring &cFormat2, CJS_Date jsDate, bool bXFAPictur
 	}
 
 	CFX_WideString strFormat;
-	wchar_t buf[64] = {0};
+	wchar_t buf[64] = {};
 	strFormat = wcsftime(buf, 64, cFormat.c_str(), &time);
 	cFormat = buf;
 	cPurpose = cFormat;
@@ -588,8 +588,8 @@ FX_BOOL util::scand(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& 
 	{
 		FX_BOOL bWrongFormat = FALSE;
 		dDate = CJS_PublicMethods::MakeRegularDate(sDate,sFormat,bWrongFormat);
-	}	
-	
+	}
+
 	if (!JS_PortIsNan(dDate))
 	{
 		CJS_Date date(isolate,dDate);
@@ -603,10 +603,10 @@ FX_BOOL util::scand(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& 
 	return TRUE;
 }
 
-FX_INT64 FX_atoi64(const char *nptr)
+int64_t FX_atoi64(const char *nptr)
 {
         int c;              /* current char */
-        FX_INT64 total;      /* current total */
+        int64_t total;      /* current total */
         int sign;           /* if '-', then negative, otherwise positive */
 
         /* skip whitespace */

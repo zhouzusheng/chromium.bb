@@ -109,6 +109,8 @@
         # SHEZ: Remove test-only code.
         # 'shell/browser/layout_test/layout_test_android.cc',
         # 'shell/browser/layout_test/layout_test_android.h',
+        # 'shell/browser/layout_test/layout_test_bluetooth_adapter_provider.cc',
+        # 'shell/browser/layout_test/layout_test_bluetooth_adapter_provider.h',
         # 'shell/browser/layout_test/layout_test_browser_context.cc',
         # 'shell/browser/layout_test/layout_test_browser_context.h',
         # 'shell/browser/layout_test/layout_test_browser_main.cc',
@@ -214,8 +216,6 @@
         # SHEZ: Remove test-only code
         # 'shell/common/shell_test_configuration.cc',
         # 'shell/common/shell_test_configuration.h',
-        # 'shell/common/test_runner/test_preferences.cc',
-        # 'shell/common/test_runner/test_preferences.h',
 
         'shell/common/v8_breakpad_support_win.cc',
         'shell/common/v8_breakpad_support_win.h',
@@ -237,75 +237,17 @@
         # 'shell/renderer/layout_test/layout_test_render_process_observer.h',
         # 'shell/renderer/layout_test/leak_detector.cc',
         # 'shell/renderer/layout_test/leak_detector.h',
+        # 'shell/renderer/layout_test/test_media_stream_renderer_factory.cc',
+        # 'shell/renderer/layout_test/test_media_stream_renderer_factory.h',
+        # 'shell/renderer/layout_test/test_video_frame_provider.cc',
+        # 'shell/renderer/layout_test/test_video_frame_provider.h',
 
         'shell/renderer/shell_content_renderer_client.cc',
         'shell/renderer/shell_content_renderer_client.h',
         'shell/renderer/shell_render_view_observer.cc',
         'shell/renderer/shell_render_view_observer.h',
-
-        # SHEZ: Remove test-only code
-        # 'shell/renderer/test_runner/accessibility_controller.cc',
-        # 'shell/renderer/test_runner/accessibility_controller.h',
-        # 'shell/renderer/test_runner/event_sender.cc',
-        # 'shell/renderer/test_runner/event_sender.h',
-        # 'shell/renderer/test_runner/gamepad_controller.cc',
-        # 'shell/renderer/test_runner/gamepad_controller.h',
-        # 'shell/renderer/test_runner/mock_color_chooser.cc',
-        # 'shell/renderer/test_runner/mock_color_chooser.h',
-        # 'shell/renderer/test_runner/mock_constraints.cc',
-        # 'shell/renderer/test_runner/mock_constraints.h',
-        # 'shell/renderer/test_runner/mock_credential_manager_client.cc',
-        # 'shell/renderer/test_runner/mock_credential_manager_client.h',
-        # 'shell/renderer/test_runner/mock_grammar_check.cc',
-        # 'shell/renderer/test_runner/mock_grammar_check.h',
-        # 'shell/renderer/test_runner/mock_screen_orientation_client.cc',
-        # 'shell/renderer/test_runner/mock_screen_orientation_client.h',
-        # 'shell/renderer/test_runner/mock_spell_check.cc',
-        # 'shell/renderer/test_runner/mock_spell_check.h',
-        # 'shell/renderer/test_runner/mock_web_audio_device.cc',
-        # 'shell/renderer/test_runner/mock_web_audio_device.h',
-        # 'shell/renderer/test_runner/mock_web_media_stream_center.cc',
-        # 'shell/renderer/test_runner/mock_web_media_stream_center.h',
-        # 'shell/renderer/test_runner/mock_web_midi_accessor.cc',
-        # 'shell/renderer/test_runner/mock_web_midi_accessor.h',
-        # 'shell/renderer/test_runner/mock_web_speech_recognizer.cc',
-        # 'shell/renderer/test_runner/mock_web_speech_recognizer.h',
-        # 'shell/renderer/test_runner/mock_web_theme_engine.cc',
-        # 'shell/renderer/test_runner/mock_web_theme_engine.h',
-        # 'shell/renderer/test_runner/mock_web_user_media_client.cc',
-        # 'shell/renderer/test_runner/mock_web_user_media_client.h',
-        # 'shell/renderer/test_runner/mock_webrtc_data_channel_handler.cc',
-        # 'shell/renderer/test_runner/mock_webrtc_data_channel_handler.h',
-        # 'shell/renderer/test_runner/mock_webrtc_dtmf_sender_handler.cc',
-        # 'shell/renderer/test_runner/mock_webrtc_dtmf_sender_handler.h',
-        # 'shell/renderer/test_runner/mock_webrtc_peer_connection_handler.cc',
-        # 'shell/renderer/test_runner/mock_webrtc_peer_connection_handler.h',
-        # 'shell/renderer/test_runner/spell_check_client.cc',
-        # 'shell/renderer/test_runner/spell_check_client.h',
-        # 'shell/renderer/test_runner/test_common.cc',
-        # 'shell/renderer/test_runner/test_common.h',
-        # 'shell/renderer/test_runner/test_interfaces.cc',
-        # 'shell/renderer/test_runner/test_interfaces.h',
-        # 'shell/renderer/test_runner/test_plugin.cc',
-        # 'shell/renderer/test_runner/test_plugin.h',
-        # 'shell/renderer/test_runner/test_runner.cc',
-        # 'shell/renderer/test_runner/test_runner.h',
-        # 'shell/renderer/test_runner/text_input_controller.cc',
-        # 'shell/renderer/test_runner/text_input_controller.h',
-        # 'shell/renderer/test_runner/web_ax_object_proxy.cc',
-        # 'shell/renderer/test_runner/web_ax_object_proxy.h',
-        # 'shell/renderer/test_runner/web_content_settings.cc',
-        # 'shell/renderer/test_runner/web_content_settings.h',
-        # 'shell/renderer/test_runner/web_frame_test_proxy.h',
-        # 'shell/renderer/test_runner/web_task.cc',
-        # 'shell/renderer/test_runner/web_task.h',
-        # 'shell/renderer/test_runner/web_test_delegate.h',
-        # 'shell/renderer/test_runner/web_test_interfaces.cc',
-        # 'shell/renderer/test_runner/web_test_interfaces.h',
-        # 'shell/renderer/test_runner/web_test_proxy.cc',
-        # 'shell/renderer/test_runner/web_test_proxy.h',
-        # 'shell/renderer/test_runner/web_test_runner.h',
-
+        'shell/utility/shell_content_utility_client.cc',
+        'shell/utility/shell_content_utility_client.h',
       ],
       'msvs_settings': {
         'VCLinkerTool': {
@@ -429,6 +371,9 @@
       'variables': {
         'grit_out_dir': '<(SHARED_INTERMEDIATE_DIR)/content',
       },
+      'dependencies': [
+        '../components/test_runner/test_runner.gyp:resources',
+      ],
       'actions': [
         {
           'action_name': 'generate_content_shell_resources',
@@ -446,45 +391,6 @@
             '<(SHARED_INTERMEDIATE_DIR)/content/shell_resources.pak'
           ],
         },
-      ],
-      'conditions': [
-        ['OS=="win"', {
-          'copies': [{
-            'destination': '<(PRODUCT_DIR)',
-            'files': ['shell/renderer/test_runner/resources/fonts/AHEM____.TTF'],
-          }],
-        }],
-        ['OS=="mac"', {
-          'all_dependent_settings': {
-            'mac_bundle_resources': [
-              'shell/renderer/test_runner/resources/fonts/AHEM____.TTF',
-              'shell/renderer/test_runner/resources/fonts/ChromiumAATTest.ttf',
-              '<(SHARED_INTERMEDIATE_DIR)/webkit/missingImage.png',
-              '<(SHARED_INTERMEDIATE_DIR)/webkit/textAreaResizeCorner.png',
-            ],
-          },
-        }],
-        ['use_x11 == 1', {
-          'copies': [{
-            'destination': '<(PRODUCT_DIR)',
-            'files': [
-              'shell/renderer/test_runner/resources/fonts/AHEM____.TTF',
-              'shell/renderer/test_runner/resources/fonts/fonts.conf',
-              '../third_party/gardiner_mod/GardinerModBug.ttf',
-              '../third_party/gardiner_mod/GardinerModCat.ttf',
-            ]
-          }],
-        }],
-        ['OS=="android"', {
-          'copies': [{
-            'destination': '<(PRODUCT_DIR)',
-            'files': [
-              'shell/renderer/test_runner/resources/fonts/AHEM____.TTF',
-              'shell/renderer/test_runner/resources/fonts/android_main_fonts.xml',
-              'shell/renderer/test_runner/resources/fonts/android_fallback_fonts.xml',
-            ]
-          }],
-        }],
       ],
     },
     {
@@ -521,6 +427,11 @@
             },
           ],
         }],
+        ['toolkit_views==1', {
+          'dependencies': [
+            '<(DEPTH)/ui/views/resources/views_resources.gyp:views_resources'
+          ],
+        }],
       ],
       'actions': [
         {
@@ -541,6 +452,11 @@
               '<(SHARED_INTERMEDIATE_DIR)/ui/strings/ui_strings_en-US.pak',
             ],
             'conditions': [
+              ['toolkit_views==1', {
+                'pak_inputs': [
+                  '<(SHARED_INTERMEDIATE_DIR)/ui/views/resources/views_resources_100_percent.pak',
+                ],
+              }],
               ['OS!="android"', {
                 'pak_inputs': ['<(SHARED_INTERMEDIATE_DIR)/blink/devtools_resources.pak',],
                 'pak_output': '<(PRODUCT_DIR)/content_shell.pak',
@@ -811,28 +727,6 @@
     }
   ],
   'conditions': [
-    ['OS=="mac" or OS=="win"', {
-      'targets': [
-        {
-          # GN version: //content/shell:layout_test_helper
-          'target_name': 'layout_test_helper',
-          'type': 'executable',
-          'sources': [
-            'shell/renderer/test_runner/helper/layout_test_helper_mac.mm',
-            'shell/renderer/test_runner/helper/layout_test_helper_win.cc',
-          ],
-          'conditions': [
-            ['OS=="mac"', {
-              'link_settings': {
-                'libraries': [
-                  '$(SDKROOT)/System/Library/Frameworks/AppKit.framework',
-                ],
-              },
-            }],
-          ],
-        },
-      ],
-    }],  # OS=="mac" or OS=="win"
     ['OS=="mac"', {
       'targets': [
         {

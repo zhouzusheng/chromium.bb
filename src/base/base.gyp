@@ -387,13 +387,13 @@
         'callback_unittest.cc',
         'callback_unittest.nc',
         'cancelable_callback_unittest.cc',
-        'chromeos/memory_pressure_monitor_unittest.cc',
         'command_line_unittest.cc',
         'containers/adapters_unittest.cc',
         'containers/hash_tables_unittest.cc',
         'containers/linked_list_unittest.cc',
         'containers/mru_cache_unittest.cc',
         'containers/scoped_ptr_hash_map_unittest.cc',
+        'containers/scoped_ptr_map_unittest.cc',
         'containers/small_map_unittest.cc',
         'containers/stack_container_unittest.cc',
         'cpu_unittest.cc',
@@ -443,11 +443,11 @@
         'lazy_instance_unittest.cc',
         'logging_unittest.cc',
         'mac/bind_objc_block_unittest.mm',
+        'mac/call_with_eh_frame_unittest.mm',
         'mac/dispatch_source_mach_unittest.cc',
         'mac/foundation_util_unittest.mm',
         'mac/libdispatch_task_runner_unittest.cc',
         'mac/mac_util_unittest.mm',
-        'mac/memory_pressure_monitor_unittest.cc',
         'mac/objc_property_releaser_unittest.mm',
         'mac/scoped_nsobject_unittest.mm',
         'mac/scoped_objc_class_swizzler_unittest.mm',
@@ -456,6 +456,9 @@
         'memory/aligned_memory_unittest.cc',
         'memory/discardable_shared_memory_unittest.cc',
         'memory/linked_ptr_unittest.cc',
+        'memory/memory_pressure_monitor_chromeos_unittest.cc',
+        'memory/memory_pressure_monitor_mac_unittest.cc',
+        'memory/memory_pressure_monitor_win_unittest.cc',
         'memory/ref_counted_memory_unittest.cc',
         'memory/ref_counted_unittest.cc',
         'memory/scoped_ptr_unittest.cc',
@@ -465,8 +468,7 @@
         'memory/singleton_unittest.cc',
         'memory/weak_ptr_unittest.cc',
         'memory/weak_ptr_unittest.nc',
-        'message_loop/message_loop_proxy_impl_unittest.cc',
-        'message_loop/message_loop_proxy_unittest.cc',
+        'message_loop/message_loop_task_runner_unittest.cc',
         'message_loop/message_loop_unittest.cc',
         'message_loop/message_pump_glib_unittest.cc',
         'message_loop/message_pump_io_ios_unittest.cc',
@@ -520,6 +522,7 @@
         'sha1_unittest.cc',
         'stl_util_unittest.cc',
         'strings/nullable_string16_unittest.cc',
+        'strings/pattern_unittest.cc',
         'strings/safe_sprintf_unittest.cc',
         'strings/string16_unittest.cc',
         'strings/string_number_conversions_unittest.cc',
@@ -584,7 +587,6 @@
         'win/event_trace_provider_unittest.cc',
         'win/i18n_unittest.cc',
         'win/iunknown_impl_unittest.cc',
-        'win/memory_pressure_monitor_unittest.cc',
         'win/message_window_unittest.cc',
         'win/object_watcher_unittest.cc',
         'win/pe_image_unittest.cc',
@@ -625,7 +627,9 @@
         }],
         ['OS == "ios" and _toolset != "host"', {
           'sources/': [
-            # Only test the iOS-meaningful portion of process_utils.
+            # Only test the iOS-meaningful portion of memory and process_utils.
+            ['exclude', '^memory/discardable_shared_memory_unittest\\.cc$'],
+            ['exclude', '^memory/shared_memory_unittest\\.cc$'],
             ['exclude', '^process/memory_unittest'],
             ['exclude', '^process/process_unittest\\.cc$'],
             ['exclude', '^process/process_util_unittest\\.cc$'],
@@ -761,6 +765,21 @@
           'PERF_TEST',
         ],
       },
+    },
+    {
+      'target_name': 'test_launcher_nacl_nonsfi',
+      'conditions': [
+        ['disable_nacl==0 and disable_nacl_untrusted==0 and enable_nacl_nonsfi_test==1', {
+          'type': 'static_library',
+          'sources': [
+            'test/launcher/test_launcher_nacl_nonsfi.cc',
+          ],
+          'dependencies': [
+          ],
+        }, {
+          'type': 'none',
+        }],
+      ],
     },
   ],
   'conditions': [

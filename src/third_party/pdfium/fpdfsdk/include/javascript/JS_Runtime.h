@@ -1,11 +1,11 @@
 // Copyright 2014 PDFium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
- 
+
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
-#ifndef _JS_RUNTIME_H_
-#define _JS_RUNTIME_H_
+#ifndef FPDFSDK_INCLUDE_JAVASCRIPT_JS_RUNTIME_H_
+#define FPDFSDK_INCLUDE_JAVASCRIPT_JS_RUNTIME_H_
 
 #include "../../../third_party/base/nonstd_unique_ptr.h"
 #include "../../../core/include/fxcrt/fx_basic.h"
@@ -58,7 +58,7 @@ public:
 	v8::Isolate*								GetIsolate(){return m_isolate;};
 	void									SetIsolate(v8::Isolate* isolate){m_isolate = isolate;}
 
-	v8::Handle<v8::Context>							NewJSContext();
+	v8::Local<v8::Context>							NewJSContext();
 protected:
 	CFX_ArrayTemplate<CJS_Context*>		m_ContextArray;
 	CPDFDoc_Environment*							m_pApp;
@@ -69,8 +69,7 @@ protected:
 
 	v8::Isolate* m_isolate;
 	nonstd::unique_ptr<CJS_ArrayBufferAllocator> m_pArrayBufferAllocator;
-	v8::Persistent<v8::Context> m_context;
+	v8::Global<v8::Context> m_context;
 };
 
-#endif //_JS_RUNTIME_H_
-
+#endif  // FPDFSDK_INCLUDE_JAVASCRIPT_JS_RUNTIME_H_

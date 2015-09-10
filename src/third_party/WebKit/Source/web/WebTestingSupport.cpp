@@ -33,6 +33,14 @@
 
 namespace blink {
 
+v8::Local<v8::Value> WebTestingSupport::createInternalsObject(v8::Local<v8::Context> context)
+{
+    // SHEZ: Remove test-only code.
+    // V8InternalsPartial::initialize();
+    // return WebCoreTestSupport::createInternalsObject(context);
+    return v8::Local<v8::Value>();
+}
+
 void WebTestingSupport::injectInternalsObject(WebLocalFrame* frame)
 {
     // SHEZ: Remove test-only code.

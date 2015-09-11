@@ -94,12 +94,38 @@ public:
 
     void copyTo(void *dest) const override
     {
-        d_skiaBitmap.copyPixelsTo(dest, size());
+        BITMAPFILEHEADER fileHeader = {
+            0x4d42,
+            sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + size(),
+            0,
+            0,
+            sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER)
+        };
+
+        BITMAPINFOHEADER bmiHeader = {
+            sizeof(BITMAPINFOHEADER),
+            d_skiaBitmap.width(),
+            -d_skiaBitmap.height(),
+            1,
+            32,
+            BI_RGB,
+        };
+
+        auto dest_buffer = reinterpret_cast<char*>(dest);
+        size_t offset = 0;
+
+        memcpy(dest_buffer, &fileHeader, sizeof(fileHeader));
+        offset += sizeof(fileHeader);
+
+        memcpy(dest_buffer + offset, &bmiHeader, sizeof(bmiHeader));
+        offset += sizeof(bmiHeader);
+
+        d_skiaBitmap.copyPixelsTo(dest_buffer + offset, size());
     }
 
     size_t size() const override
     {
-        return d_skiaBitmap.getSize();
+        return sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + d_skiaBitmap.getSize();
     }
 };
 

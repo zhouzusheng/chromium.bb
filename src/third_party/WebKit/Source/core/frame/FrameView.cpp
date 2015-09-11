@@ -1103,7 +1103,7 @@ void FrameView::layout()
 // method would setNeedsRedraw on the GraphicsLayers with invalidations and
 // let the compositor pick which to actually draw.
 // See http://crbug.com/306706
-void FrameView::invalidateTreeIfNeeded(Vector<LayoutObject*>& pendingDelayedPaintInvalidations, bool cachedOffsetsEnabled)
+void FrameView::invalidateTreeIfNeeded(Vector<LayoutObject*>& pendingDelayedPaintInvalidations)
 {
     ASSERT(layoutView());
     LayoutView& rootForPaintInvalidation = *layoutView();
@@ -1111,7 +1111,7 @@ void FrameView::invalidateTreeIfNeeded(Vector<LayoutObject*>& pendingDelayedPain
 
     TRACE_EVENT1("blink", "FrameView::invalidateTree", "root", rootForPaintInvalidation.debugName().ascii());
 
-    PaintInvalidationState rootPaintInvalidationState(rootForPaintInvalidation, pendingDelayedPaintInvalidations, cachedOffsetsEnabled);
+    PaintInvalidationState rootPaintInvalidationState(rootForPaintInvalidation, pendingDelayedPaintInvalidations);
 
     // In slimming paint mode we do per-object invalidation.
     if (m_doFullPaintInvalidation && !RuntimeEnabledFeatures::slimmingPaintEnabled())
@@ -2553,7 +2553,7 @@ void FrameView::updateLayoutAndStyleForPaintingInternal()
 
         scrollContentsIfNeededRecursive();
 
-        invalidateTreeIfNeededRecursive(true);
+        invalidateTreeIfNeededRecursive();
 
         ASSERT(!view->hasPendingSelection());
     }
@@ -2623,30 +2623,20 @@ void FrameView::updateLayoutAndStyleIfNeededRecursive()
     updateWidgetPositionsIfNeeded();
 }
 
-void FrameView::invalidateTreeIfNeededRecursive(bool cachedOffsetsEnabled)
+void FrameView::invalidateTreeIfNeededRecursive()
 {
     // FIXME: We should be more aggressive at cutting tree traversals.
     lifecycle().advanceTo(DocumentLifecycle::InPaintInvalidation);
 
     Vector<LayoutObject*> pendingDelayedPaintInvalidations;
 
-    invalidateTreeIfNeeded(pendingDelayedPaintInvalidations, cachedOffsetsEnabled);
+    invalidateTreeIfNeeded(pendingDelayedPaintInvalidations);
 
     for (Frame* child = m_frame->tree().firstChild(); child; child = child->tree().nextSibling()) {
         if (!child->isLocalFrame())
             continue;
 
-        bool childCachedOffsetsEnabled = cachedOffsetsEnabled;
-        if (childCachedOffsetsEnabled) {
-            for (const LayoutObject* current = child->ownerLayoutObject(); current; current = current->parent()) {
-                if (current->hasLayer() && !current->supportsPaintInvalidationStateCachedOffsets()) {
-                    childCachedOffsetsEnabled = false;
-                    break;
-                }
-            }
-        }
-
-        toLocalFrame(child)->view()->invalidateTreeIfNeededRecursive(childCachedOffsetsEnabled);
+        toLocalFrame(child)->view()->invalidateTreeIfNeededRecursive();
     }
 
     m_doFullPaintInvalidation = false;

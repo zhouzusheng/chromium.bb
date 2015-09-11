@@ -138,6 +138,8 @@ private:
 
     bool emitsObjectReplacementCharacter() const { return m_behavior & TextIteratorEmitsObjectReplacementCharacter; }
 
+    bool emitsOverflowHiddenText() const { return !(m_behavior & TextIteratorDoesNotEmitOverflowHiddenText); }
+
     // Current position, not necessarily of the text being returned, but position
     // as we walk through the DOM tree.
     RawPtrWillBeMember<Node> m_node;

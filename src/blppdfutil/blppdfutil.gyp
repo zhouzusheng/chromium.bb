@@ -27,7 +27,7 @@
       'target_name': 'blppdfutil',
       'type': 'shared_library',
       'dependencies': [
-        'pdf.gyp:pdf',
+        '../pdf/pdf.gyp:pdf',
         '../net/net.gyp:net_derived_sources',
         '../printing/printing.gyp:printing',
         '../blpwtk2/blpwtk2.gyp:blpwtk2_generate_sources'

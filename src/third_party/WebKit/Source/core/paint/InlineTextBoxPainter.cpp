@@ -5,7 +5,7 @@
 #include "config.h"
 #include "core/paint/InlineTextBoxPainter.h"
 
-#include "core/css/parser/CSSPropertyParser.h"
+#include "core/css/parser/CSSParser.h"
 #include "core/dom/DocumentMarkerController.h"
 #include "core/dom/RenderedDocumentMarker.h"
 #include "core/editing/CompositionUnderline.h"
@@ -452,13 +452,14 @@ void InlineTextBoxPainter::paintDocumentMarker(GraphicsContext* pt, const Layout
 
             if (colorAttr != nullAtom) {
                 RGBA32 rgba;
-                if (CSSPropertyParser::fastParseColor(rgba, colorAttr, false)) {
+                String colorStr = colorAttr.string();
+                if (CSSParser::parseColor(rgba, colorStr, false)) {
                     markerColor.setRGB(rgba);
                 }
             }
         }
     }
-    pt->drawLineForDocumentMarker(FloatPoint((boxOrigin.x() + start).toFloat(), (boxOrigin.y() + underlineOffset).toFloat()), width.toFloat(), markerColor));
+    pt->drawLineForDocumentMarker(FloatPoint((boxOrigin.x() + start).toFloat(), (boxOrigin.y() + underlineOffset).toFloat()), width.toFloat(), markerColor);
 }
 
 template <InlineTextBoxPainter::PaintOptions options>

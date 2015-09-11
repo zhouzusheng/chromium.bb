@@ -159,7 +159,7 @@ ui::TextInputMode ConvertInputMode(const blink::WebString& input_mode) {
 // the BeginMainFrame interval.
 // 4166us will allow 1/4 of a 60Hz interval or 1/2 of a 120Hz interval to
 // be spent in input hanlders before input starts getting throttled.
-const int kInputHandlingTimeThrottlingThresholdMicroseconds = 4166;
+static int kInputHandlingTimeThrottlingThresholdMicroseconds = 4166;
 
 int64 GetEventLatencyMicros(const WebInputEvent& event, base::TimeTicks now) {
   return (now - base::TimeDelta::FromSecondsD(event.timeStampSeconds))
@@ -520,7 +520,8 @@ RenderWidget::RenderWidget(blink::WebPopupType popup_type,
       frame_swap_message_queue_(new FrameSwapMessageQueue()),
       resizing_mode_selector_(new ResizingModeSelector()),
       context_menu_source_type_(ui::MENU_SOURCE_MOUSE),
-      has_host_context_menu_location_(false) {
+      has_host_context_menu_location_(false),
+      bb_OnHandleInputEvent_no_ack_(false) {
   if (!swapped_out)
     RenderProcess::current()->AddRefProcess();
   DCHECK(RenderThread::Get());
@@ -907,6 +908,8 @@ void RenderWidget::OnResize(const ViewMsg_Resize_Params& params) {
 
   if (orientation_changed)
     OnOrientationChange();
+
+  browser_size_ = params.new_size;
 }
 
 void RenderWidget::OnEnableDeviceEmulation(
@@ -1063,6 +1066,18 @@ void RenderWidget::OnSwapBuffersComplete() {
 
   // Notify subclasses that composited rendering was flushed to the screen.
   DidFlushPaint();
+}
+
+// static
+void RenderWidget::SetInputHandlingTimeThrottlingThresholdMicroseconds(int us) {
+  kInputHandlingTimeThrottlingThresholdMicroseconds = us;
+}
+
+void RenderWidget::bbHandleInputEvent(const blink::WebInputEvent& event) {
+  ui::LatencyInfo latency_info;
+  bb_OnHandleInputEvent_no_ack_ = true;
+  OnHandleInputEvent(&event, latency_info, false);
+  bb_OnHandleInputEvent_no_ack_ = false;
 }
 
 void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
@@ -1235,6 +1250,7 @@ void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
   // by reentrant calls for events after the paused one.
   bool no_ack = ignore_ack_for_mouse_move_from_debugger_ &&
       input_event->type == WebInputEvent::MouseMove;
+  no_ack |= bb_OnHandleInputEvent_no_ack_;
   if (WebInputEventTraits::WillReceiveAckFromRenderer(*input_event) &&
       !no_ack) {
     InputEventAck ack(input_event->type, ack_result, swap_latency_info,

@@ -347,6 +347,7 @@ void ChildThreadImpl::ConnectChannel(bool use_mojo_channel) {
 
 void ChildThreadImpl::Init(const Options& options) {
   channel_name_ = options.channel_name;
+  use_mojo_channel_ = options.use_mojo_channel;
 
   g_lazy_tls.Pointer()->Set(this);
   on_channel_error_called_ = false;
@@ -443,7 +444,14 @@ void ChildThreadImpl::Init(const Options& options) {
     channel_->AddFilter(startup_filter);
   }
 
-  ConnectChannel(options.use_mojo_channel);
+  if (!channel_name_.empty())
+    InitChannel();
+
+  InitManagers();
+}
+
+void ChildThreadImpl::InitChannel() {
+  ConnectChannel(use_mojo_channel_);
 
   int connection_timeout = kConnectionTimeoutS;
   std::string connection_override =
@@ -469,7 +477,9 @@ void ChildThreadImpl::Init(const Options& options) {
       message_loop_->task_runner(), ::HeapProfilerWithPseudoStackStart,
       ::HeapProfilerStop, ::GetHeapProfile));
 #endif
+}
 
+void ChildThreadImpl::InitManagers() {
   base::trace_event::MemoryDumpManager::GetInstance()->Initialize();
 
   shared_bitmap_manager_.reset(
@@ -525,6 +535,8 @@ void ChildThreadImpl::OnChannelError() {
 
 bool ChildThreadImpl::Send(IPC::Message* msg) {
   DCHECK(base::MessageLoop::current() == message_loop());
+  DCHECK(!channel_name_.empty());  // Trying to send a message before setting
+                                   // the channel name is a very bad thing.
   if (!channel_) {
     delete msg;
     return false;
@@ -542,6 +554,13 @@ void ChildThreadImpl::ReleaseCachedFonts() {
   Send(new ChildProcessHostMsg_ReleaseCachedFonts());
 }
 #endif
+
+void ChildThreadImpl::SetChannelName(const std::string& channel_name) {
+  DCHECK(!channel_name.empty());
+  DCHECK(channel_name_.empty());
+  channel_name_ = channel_name;
+  InitChannel();
+}
 
 IPC::AttachmentBroker* ChildThreadImpl::GetAttachmentBroker() {
   return attachment_broker_.get();

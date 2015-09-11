@@ -103,7 +103,7 @@ public:
     void setResizable(bool) override {}
 
     bool shouldReportDetailedMessageForSource(LocalFrame&, const String&) override { return false; }
-    void addMessageToConsole(LocalFrame*, MessageSource, MessageLevel, const String&, unsigned, const String&, const String&) override {}
+    void addMessageToConsole(LocalFrame*, MessageSource, MessageLevel, const String&, unsigned, unsigned, const String&, const String&) override {}
 
     bool canOpenBeforeUnloadConfirmPanel() override { return false; }
     bool openBeforeUnloadConfirmPanelDelegate(LocalFrame*, const String&) override { return true; }

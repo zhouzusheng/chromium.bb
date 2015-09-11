@@ -11,6 +11,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_change_registrar.h"
 #include "chrome/browser/spellchecker/spellcheck_custom_dictionary.h"
@@ -18,6 +19,7 @@
 #include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/spellcheck_data.h"
 
 class SpellCheckHostMetrics;
 
@@ -43,6 +45,7 @@ namespace spellcheck {
 // SpellcheckService maintains any per-profile information about spellcheck.
 class SpellcheckService : public KeyedService,
                           public content::NotificationObserver,
+                          public content::SpellcheckData::Observer,
                           public SpellcheckCustomDictionary::Observer,
                           public SpellcheckHunspellDictionary::Observer {
  public:
@@ -96,13 +99,6 @@ class SpellcheckService : public KeyedService,
   // Returns the instance of the custom dictionary.
   SpellcheckCustomDictionary* GetCustomDictionary();
 
-  // Returns the instance of the Hunspell dictionary.
-  SpellcheckHunspellDictionary* GetHunspellDictionary();
-
-  // Returns the instance of the spelling service feedback sender.
-  // SHEZ: Remove feedback sender
-  // spellcheck::FeedbackSender* GetFeedbackSender();
-
   // Load a dictionary from a given path. Format specifies how the dictionary
   // is stored. Return value is true if successful.
   bool LoadExternalDictionary(std::string language,
@@ -118,6 +114,11 @@ class SpellcheckService : public KeyedService,
   void Observe(int type,
                const content::NotificationSource& source,
                const content::NotificationDetails& details) override;
+
+  // content::SpellcheckData::Observer implementation.
+  void OnCustomWordsChanged(
+      const std::vector<base::StringPiece>& words_added,
+      const std::vector<base::StringPiece>& words_removed) override;
 
   // SpellcheckCustomDictionary::Observer implementation.
   void OnCustomDictionaryLoaded() override;
@@ -168,7 +169,7 @@ class SpellcheckService : public KeyedService,
 
   scoped_ptr<SpellcheckCustomDictionary> custom_dictionary_;
 
-  scoped_ptr<SpellcheckHunspellDictionary> hunspell_dictionary_;
+  ScopedVector<SpellcheckHunspellDictionary> hunspell_dictionaries_;
 
   // SHEZ: Remove feedback sender
   // scoped_ptr<spellcheck::FeedbackSender> feedback_sender_;

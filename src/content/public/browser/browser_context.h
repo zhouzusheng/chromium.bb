@@ -183,6 +183,9 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   // return nullptr, implementing the default exception storage strategy.
   virtual SSLHostStateDelegate* GetSSLHostStateDelegate() = 0;
 
+  // Returns true if the spellcheck service should download dictionaries.
+  virtual bool AllowDictionaryDownloads() = 0;
+
   // Returns the PermissionManager associated with that context if any, nullptr
   // otherwise.
   virtual PermissionManager* GetPermissionManager() = 0;

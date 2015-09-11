@@ -68,6 +68,10 @@ void DependencyManager::CreateContextServices(base::SupportsUserData* context,
     KeyedServiceBaseFactory* factory =
         static_cast<KeyedServiceBaseFactory*>(dependency_node);
     base::SupportsUserData* typed_context = factory->GetTypedContext(context);
+
+    // TODO(SHEZ): Do we still need this?
+    factory->RegisterUserPrefsOnContextForTest(context);
+
     if (is_testing_context && factory->ServiceIsNULLWhileTesting() &&
         !factory->HasTestingFactory(typed_context)) {
       factory->SetEmptyTestingFactory(typed_context);

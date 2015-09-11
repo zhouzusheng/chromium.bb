@@ -196,6 +196,11 @@ public:
         return length;
     }
 
+    virtual void ReleaseData(const uint8_t* src) override
+    {
+        delete[] src;
+    }
+
     // Called by V8 on background thread.
     bool SetBookmark() override
     {

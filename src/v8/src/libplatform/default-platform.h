@@ -64,6 +64,8 @@ class DefaultPlatform : public Platform {
   DISALLOW_COPY_AND_ASSIGN(DefaultPlatform);
 };
 
+v8::Platform* CreateDefaultPlatformImpl(int thread_pool_size);
+bool PumpMessageLoopImpl(v8::Platform* platform, v8::Isolate* isolate);
 
 } }  // namespace v8::platform
 

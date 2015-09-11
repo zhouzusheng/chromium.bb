@@ -222,17 +222,14 @@ void BrowserContextImpl::setSpellCheckConfig(const SpellCheckConfig& config)
 
     bool wasEnabled = prefs->GetBoolean(prefs::kEnableContinuousSpellcheck);
 
-    std::string languages;
+    base::ListValue languages;
     for (size_t i = 0; i < config.numLanguages(); ++i) {
         StringRef str = config.languageAt(i);
-        if (!languages.empty()) {
-            languages.append(",");
-        }
-        languages.append(str.data(), str.length());
+        languages.AppendString(str.toStdString());
     }
     prefs->SetBoolean(prefs::kEnableContinuousSpellcheck,
                       config.isSpellCheckEnabled());
-    prefs->SetString(prefs::kSpellCheckDictionary, languages);
+    prefs->Set(prefs::kSpellCheckDictionaries, languages);
 
     if (!wasEnabled && config.isSpellCheckEnabled()) {
         // Ensure the spellcheck service is created for this context if we just

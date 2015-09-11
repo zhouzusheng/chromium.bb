@@ -33,6 +33,7 @@
 #define WebWidget_h
 
 #include "../platform/WebCanvas.h"
+#include "../platform/WebColor.h"
 #include "../platform/WebCommon.h"
 #include "../platform/WebFloatSize.h"
 #include "../platform/WebFrameTimingEvent.h"

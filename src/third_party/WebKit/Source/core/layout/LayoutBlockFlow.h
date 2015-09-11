@@ -184,17 +184,26 @@ public:
         const LayoutObject* selObj, LayoutUnit logicalLeft, LayoutUnit logicalTop, LayoutUnit logicalHeight, const PaintInfo*) const;
     LayoutRect logicalRightSelectionGap(const LayoutBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
         const LayoutObject* selObj, LayoutUnit logicalRight, LayoutUnit logicalTop, LayoutUnit logicalHeight, const PaintInfo*) const;
-    void getSelectionGapInfo(SelectionState, bool& leftGap, bool& rightGap) const;
+    LayoutRect lineEndingSelectionGap(const LayoutBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
+        const LayoutObject* selObj, LayoutUnit logicalEnd, LayoutUnit logicalTop, LayoutUnit logicalHeight, const PaintInfo*) const;
+    void getLineEndingGapLogicalLeftAndRight(const LayoutBlock* rootBlock, const LayoutSize& offsetFromRootBlock, LayoutUnit logicalEnd,
+        LayoutUnit logicalTop, LayoutUnit logicalHeight, LayoutUnit& logicalLeft, LayoutUnit& logicalRight) const;
+    void getSelectionGapInfo(const LayoutBlock* rootBlock, bool& leftGap, bool& rightGap) const;
 
     virtual LayoutRect selectionRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer) const override final;
     GapRects selectionGapRectsForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer) const;
     GapRects selectionGaps(const LayoutBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
         LayoutUnit& lastLogicalTop, LayoutUnit& lastLogicalLeft, LayoutUnit& lastLogicalRight,
-        const PaintInfo* = nullptr, ClipScope* = nullptr) const;
+        const PaintInfo*, ClipScope*,
+        bool& shouldHighlightBeforeSide, bool& isAfterSideSelected) const;
     GapRects inlineSelectionGaps(const LayoutBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
-        LayoutUnit& lastLogicalTop, LayoutUnit& lastLogicalLeft, LayoutUnit& lastLogicalRight, const PaintInfo*) const;
+        LayoutUnit& lastLogicalTop, LayoutUnit& lastLogicalLeft, LayoutUnit& lastLogicalRight, const PaintInfo*,
+        bool& shouldHighlightBeforeSide, bool& isAfterSideSelected) const;
     GapRects blockSelectionGaps(const LayoutBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
-        LayoutUnit& lastLogicalTop, LayoutUnit& lastLogicalLeft, LayoutUnit& lastLogicalRight, const PaintInfo*) const;
+        LayoutUnit& lastLogicalTop, LayoutUnit& lastLogicalLeft, LayoutUnit& lastLogicalRight, const PaintInfo*,
+        bool& shouldHighlightBeforeSide, bool& isAfterSideSelected) const;
+    void getLineSelectionLogicalLeftAndRight(const LayoutBlock *rootBlock, const LayoutSize& offsetFromRootBlock, RootInlineBox* line,
+        LayoutUnit& logicalLeft, LayoutUnit& logicalRight) const;
     LayoutRect blockSelectionGap(const LayoutBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
         LayoutUnit lastLogicalTop, LayoutUnit lastLogicalLeft, LayoutUnit lastLogicalRight, LayoutUnit logicalBottom, const PaintInfo*) const;
 

@@ -893,6 +893,17 @@ void LayoutText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
 
     bool breakAll = (styleToUse.wordBreak() == BreakAllWordBreak || styleToUse.wordBreak() == BreakWordBreak) && styleToUse.autoWrap();
     bool keepAll = styleToUse.wordBreak() == KeepAllWordBreak && styleToUse.autoWrap();
+    bool keepAllIfKorean = styleToUse.wordBreak() == KeepAllIfKoreanWordBreak && styleToUse.autoWrap();
+    LineBreakType lineBreakType;
+    if (breakAll) {
+        lineBreakType = LineBreakType::BreakAll;
+    } else if (keepAll) {
+        lineBreakType = LineBreakType::KeepAll;
+    } else if (keepAllIfKorean) {
+        lineBreakType = LineBreakType::KeepAllIfKorean;
+    } else {
+        lineBreakType = LineBreakType::Normal;
+    }
 
     BidiResolver<TextRunIterator, BidiCharacterRun> bidiResolver;
     BidiCharacterRun* run;
@@ -973,7 +984,7 @@ void LayoutText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
             continue;
         }
 
-        bool hasBreak = breakIterator.isBreakable(i, nextBreakable, breakAll ? LineBreakType::BreakAll : keepAll ? LineBreakType::KeepAll : LineBreakType::Normal);
+        bool hasBreak = breakIterator.isBreakable(i, nextBreakable, lineBreakType);
         bool betweenWords = true;
         int j = i;
         while (c != newlineCharacter && c != spaceCharacter && c != tabulationCharacter && (c != softHyphenCharacter)) {
@@ -981,7 +992,7 @@ void LayoutText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
             if (j == len)
                 break;
             c = uncheckedCharacterAt(j);
-            if (breakIterator.isBreakable(j, nextBreakable) && characterAt(j - 1) != softHyphenCharacter)
+            if (breakIterator.isBreakable(j, nextBreakable, lineBreakType) && characterAt(j - 1) != softHyphenCharacter)
                 break;
             if (breakAll) {
                 betweenWords = false;

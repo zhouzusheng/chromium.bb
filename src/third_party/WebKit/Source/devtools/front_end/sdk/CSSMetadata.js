@@ -467,7 +467,7 @@ WebInspector.CSSMetadata._propertyDataMap = {
         "baseline", "middle", "sub", "super", "text-top", "text-bottom", "top", "bottom", "-webkit-baseline-middle"
     ] },
     "white-space": { values: [
-        "normal", "nowrap", "pre", "pre-line", "pre-wrap"
+        "normal", "nowrap", "pre", "pre-line", "pre-wrap", "-bb-pre-wrap-text"
     ] },
     "box-lines": { values: [
         "single", "multiple"
@@ -485,7 +485,7 @@ WebInspector.CSSMetadata._propertyDataMap = {
         "auto"
     ] },
     "word-break": { values: [
-        "normal", "break-all", "break-word"
+        "normal", "break-all", "keep-all", "-bb-keep-all-if-korean", "break-word"
     ] },
     "word-spacing": { values: [
         "normal"

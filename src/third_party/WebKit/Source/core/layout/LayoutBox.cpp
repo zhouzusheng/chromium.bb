@@ -2014,7 +2014,7 @@ LayoutUnit LayoutBox::fillAvailableMeasure(LayoutUnit availableLogicalWidth) con
 
 LayoutUnit LayoutBox::fillAvailableMeasure(LayoutUnit availableLogicalWidth, LayoutUnit& marginStart, LayoutUnit& marginEnd) const
 {
-    marginStart = minimumValueForLength(style()->marginStart(), availableLogicalWidth);
+    marginStart = minimumValueForLength(style()->marginStart(), availableLogicalWidth) + additionalMarginStart();
     marginEnd = minimumValueForLength(style()->marginEnd(), availableLogicalWidth);
     return availableLogicalWidth - marginStart - marginEnd;
 }
@@ -2145,11 +2145,17 @@ void LayoutBox::computeMarginsForDirection(MarginDirection flowDirection, const 
     ASSERT(!isTableRow());
     ASSERT(!isTableSection());
     ASSERT(!isLayoutTableCol());
+
+    LayoutUnit inlineAdditionalMarginStart =
+        flowDirection == InlineDirection ?
+        additionalMarginStart() :
+        LayoutUnit();
+
     if (flowDirection == BlockDirection || isFloating() || isInline()) {
         // Margins are calculated with respect to the logical width of
         // the containing block (8.3)
         // Inline blocks/tables and floats don't have their margins increased.
-        marginStart = minimumValueForLength(marginStartLength, containerWidth);
+        marginStart = minimumValueForLength(marginStartLength, containerWidth) + inlineAdditionalMarginStart;
         marginEnd = minimumValueForLength(marginEndLength, containerWidth);
         return;
     }
@@ -2164,7 +2170,7 @@ void LayoutBox::computeMarginsForDirection(MarginDirection flowDirection, const 
             marginEndLength.setValue(0);
     }
 
-    LayoutUnit marginStartWidth = minimumValueForLength(marginStartLength, containerWidth);
+    LayoutUnit marginStartWidth = minimumValueForLength(marginStartLength, containerWidth) + inlineAdditionalMarginStart;
     LayoutUnit marginEndWidth = minimumValueForLength(marginEndLength, containerWidth);
 
     LayoutUnit availableWidth = containerWidth;
@@ -2215,7 +2221,7 @@ void LayoutBox::computeMarginsForDirection(MarginDirection flowDirection, const 
 
         if (marginStartLength.isAuto()) {
             marginEnd = marginEndWidth;
-            marginStart = availableWidth - childWidth - marginEnd;
+            marginStart = availableWidth - childWidth - marginEnd + inlineAdditionalMarginStart;
             return;
         }
     }

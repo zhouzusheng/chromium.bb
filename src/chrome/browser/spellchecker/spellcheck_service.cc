@@ -356,21 +356,12 @@ void SpellcheckService::OnSpellCheckDictionariesChanged() {
   PrefService* prefs = user_prefs::UserPrefs::Get(context_);
   DCHECK(prefs);
 
-  // SHEZ: The upstream code currently only checks the first item in the
-  // SHEZ: kSpellCheckDictionaries setting.
-  // SHEZ: TODO: make it check all dictionaries, and stop using the
-  // SHEZ: TODO: comma-separated string.
-#if 0
-  std::string dictionary;
-  prefs->GetList(prefs::kSpellCheckDictionaries)->GetString(0, &dictionary);
-#endif
-
-  std::vector<std::string> languages;
-  base::SplitString(prefs->GetString(prefs::kSpellCheckDictionary), ',', &languages);
-
-  for (size_t langIndex = 0; langIndex < languages.size(); ++langIndex) {
+  const base::ListValue* dictionaries = prefs->GetList(prefs::kSpellCheckDictionaries);
+  for (size_t langIndex = 0; langIndex < dictionaries->GetSize(); ++langIndex) {
+    std::string dictionary;
+    dictionaries->GetString(langIndex, &dictionary);
     SpellcheckHunspellDictionary *hunspell_dictionary
-        = new SpellcheckHunspellDictionary(languages[langIndex],
+        = new SpellcheckHunspellDictionary(dictionary,
                                            context_->AllowDictionaryDownloads() ? context_->GetRequestContext() : 0,
                                            this);
 

@@ -2710,11 +2710,8 @@ LRESULT HWNDMessageHandler::HandleMouseEventInternal(UINT message,
             "440919 HWNDMessageHandler::HandleMouseEventInternal6"));
 
     // Reroute the mouse wheel to the window under the pointer if applicable.
-    bool handled = ui::RerouteMouseWheel(hwnd(), w_param, l_param) ||
-            delegate_->HandleMouseEvent(ui::MouseWheelEvent(msg));
-
-    SetMsgHandled(handled);
-    return handled ? 0 : 1;
+    return (ui::RerouteMouseWheel(hwnd(), w_param, l_param) ||
+            delegate_->HandleMouseEvent(ui::MouseWheelEvent(msg))) ? 0 : 1;
   }
 
   // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.

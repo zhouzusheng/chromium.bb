@@ -101,6 +101,10 @@ public:
         reset();
     }
 
+    // Bloomberg-specific extensions
+    void setBbDirectCompositingDisabled(bool value) { m_bbDirectCompositingDisabled = value; }
+    bool bbDirectCompositingDisabled() const { return m_bbDirectCompositingDisabled; }
+
     // Called by HTMLCanvasElement's V8 bindings.
     ScriptValue getContext(ScriptState*, const String&, const CanvasContextCreationAttributes&);
     // Called by Document::getCSSCanvasContext as well as above getContext().
@@ -209,6 +213,7 @@ private:
 
     bool m_ignoreReset;
     bool m_accelerationDisabled;
+    bool m_bbDirectCompositingDisabled;
     FloatRect m_dirtyRect;
 
     mutable intptr_t m_externallyAllocatedMemory;

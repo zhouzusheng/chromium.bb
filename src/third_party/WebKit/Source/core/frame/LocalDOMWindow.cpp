@@ -63,6 +63,7 @@
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/SinkDocument.h"
 #include "core/loader/appcache/ApplicationCache.h"
+#include "core/page/BBWindowHooks.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/CreateWindow.h"
 #include "core/page/Page.h"
@@ -535,6 +536,7 @@ void LocalDOMWindow::reset()
     m_console = nullptr;
     m_navigator = nullptr;
     m_media = nullptr;
+    m_bbWindowHooks = nullptr;
     m_applicationCache = nullptr;
 #if ENABLE(ASSERT)
     m_hasBeenReset = true;
@@ -1470,6 +1472,15 @@ PassRefPtrWillBeRawPtr<DOMWindow> LocalDOMWindow::open(const String& urlString, 
     return createWindow(urlString, frameName, WindowFeatures(windowFeaturesString), *callingWindow, *firstFrame, *frame());
 }
 
+BBWindowHooks* LocalDOMWindow::bbWindowHooks() const
+{
+    if (!isCurrentlyDisplayedInFrame())
+        return nullptr;
+    if (!m_bbWindowHooks)
+        m_bbWindowHooks = BBWindowHooks::create(frame());
+    return m_bbWindowHooks.get();
+}
+
 DEFINE_TRACE(LocalDOMWindow)
 {
 #if ENABLE(OILPAN)
@@ -1487,6 +1498,7 @@ DEFINE_TRACE(LocalDOMWindow)
     visitor->trace(m_console);
     visitor->trace(m_navigator);
     visitor->trace(m_media);
+    visitor->trace(m_bbWindowHooks);
     visitor->trace(m_applicationCache);
     visitor->trace(m_eventQueue);
     visitor->trace(m_postMessageTimers);

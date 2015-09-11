@@ -140,6 +140,9 @@ WebKeyboardEvent WebKeyboardEventBuilder::Build(HWND hwnd,
     NOTREACHED();
   }
 
+  if (::GetKeyState(VK_NUMLOCK) & 0x1)
+    result.bbIsNumLock = true;
+
   if (result.type == WebInputEvent::Char
    || result.type == WebInputEvent::RawKeyDown) {
     result.text[0] = result.windowsKeyCode;

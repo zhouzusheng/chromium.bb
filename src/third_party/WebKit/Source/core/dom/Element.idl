@@ -87,6 +87,14 @@
     [RuntimeEnabled=CSSOMSmoothScroll] void scrollTo(unrestricted double x, unrestricted double y);
     [RuntimeEnabled=CSSOMSmoothScroll] void scrollBy(optional ScrollToOptions options);
     [RuntimeEnabled=CSSOMSmoothScroll] void scrollBy(unrestricted double x, unrestricted double y);
+
+    // Bloomberg-specific extensions
+    void bbRequestSpellCheck();
+    attribute long bbScrollLeftNoZoomAdjust;
+    attribute long bbScrollTopNoZoomAdjust;
+    readonly attribute long bbScrollWidthNoZoomAdjust;
+    readonly attribute long bbScrollHeightNoZoomAdjust;
+
     attribute unrestricted double scrollTop;
     attribute unrestricted double scrollLeft;
     readonly attribute long scrollWidth;

@@ -80,6 +80,7 @@ private:
     void selectClosestWordFromMouseEvent(const MouseEventWithHitTestResults&);
     void selectClosestMisspellingFromMouseEvent(const MouseEventWithHitTestResults&);
     void selectClosestWordOrLinkFromMouseEvent(const MouseEventWithHitTestResults&);
+    HitTestResult adjustHitTestResultForSelectability(const HitTestResult& result, Node* mousePressNode, const IntPoint& lastKnownMousePosition);
 
     FrameSelection& selection() const;
 

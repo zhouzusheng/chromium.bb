@@ -2711,8 +2711,8 @@ void WebViewImpl::didChangeWindowRect()
     }
 
     CustomEventInit eventInit;
-    eventInit.bubbles = false;
-    eventInit.cancelable = false;
+    eventInit.setBubbles(false);
+    eventInit.setCancelable(false);
     RefPtr<CustomEvent> event = CustomEvent::create("bbWindowRectChanged", eventInit);
     mainFrameImpl()->frame()->domWindow()->dispatchEvent(event);
 }

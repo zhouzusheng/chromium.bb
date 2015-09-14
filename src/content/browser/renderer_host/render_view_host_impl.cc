@@ -1414,6 +1414,10 @@ void RenderViewHostImpl::OnFocusedNodeTouched(bool editable) {
 #endif
 }
 
+void RenderViewHostImpl::EnableAltDragRubberbanding(bool enable) {
+  Send(new ViewMsg_EnableAltDragRubberbanding(GetRoutingID(), enable));
+}
+
 bool RenderViewHostImpl::CanAccessFilesOfPageState(
     const PageState& state) const {
   ChildProcessSecurityPolicyImpl* policy =

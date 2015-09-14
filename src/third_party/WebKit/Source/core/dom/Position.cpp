@@ -1202,7 +1202,7 @@ InlineBoxPosition PositionAlgorithm<Strategy>::computeInlineBoxPosition(EAffinit
         inlineBox = 0;
         if (canHaveChildrenForEditing(deprecatedNode()) && layoutObject->isLayoutBlockFlow() && hasRenderedNonAnonymousDescendantsWithHeight(layoutObject)) {
             if (layoutObject->isLayoutBlock() && toLayoutBlock(layoutObject)->childrenInline()) {
-                return;
+                return InlineBoxPosition(inlineBox, caretOffset);
             }
 
             // Try a visually equivalent position with possibly opposite editability. This helps in case |this| is in

@@ -64,6 +64,7 @@ namespace ui {
 class CompositorLock;
 class InputMethod;
 class LocatedEvent;
+class RubberbandOutline;
 class Texture;
 }
 
@@ -222,6 +223,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
                                const SkBitmap& zoomed_bitmap) override;
   bool LockMouse() override;
   void UnlockMouse() override;
+  void SetRubberbandRect(const gfx::Rect& rect) override;
+  void HideRubberbandRect() override;
   void OnSwapCompositorFrame(uint32 output_surface_id,
                              scoped_ptr<cc::CompositorFrame> frame) override;
   void DidStopFlinging() override;
@@ -655,6 +658,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   gfx::Vector2dF last_scroll_offset_;
 
   gfx::Insets insets_;
+
+  // The rect to draw the rubberband highlight.
+  scoped_ptr<ui::RubberbandOutline> rubberband_outline_;
 
   std::vector<ui::LatencyInfo> software_latency_info_;
 

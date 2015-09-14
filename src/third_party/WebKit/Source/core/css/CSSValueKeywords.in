@@ -560,6 +560,14 @@ ellipsis
 discard
 
 //
+// bb-rubberbandable
+//
+// auto
+// none
+// text
+text-with-leading-tab
+
+//
 // word-break
 //
 break-all

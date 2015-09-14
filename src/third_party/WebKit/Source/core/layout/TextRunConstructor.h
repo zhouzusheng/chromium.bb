@@ -36,6 +36,7 @@
 #ifndef TextRunConstructor_h
 #define TextRunConstructor_h
 
+#include "core/CoreExport.h"
 #include "platform/text/TextDirection.h"
 #include "platform/text/TextRun.h"
 #include "wtf/text/Unicode.h"
@@ -65,6 +66,7 @@ TextRun constructTextRun(LayoutObject*, const Font&, const String&, const Comput
 TextRun constructTextRun(LayoutObject*, const Font&, const LayoutText*, const ComputedStyle&, TextDirection);
 TextRun constructTextRun(LayoutObject*, const Font&, const LayoutText*, unsigned offset, unsigned length, const ComputedStyle&, TextDirection);
 TextRun constructTextRun(LayoutObject*, const Font&, const LChar*, int length, const ComputedStyle&, TextDirection);
+CORE_EXPORT
 TextRun constructTextRun(LayoutObject*, const Font&, const UChar*, int length, const ComputedStyle&, TextDirection);
 
 } // namespace blink

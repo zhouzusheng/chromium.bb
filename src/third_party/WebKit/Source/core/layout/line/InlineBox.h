@@ -21,6 +21,7 @@
 #ifndef InlineBox_h
 #define InlineBox_h
 
+#include "core/CoreExport.h"
 #include "core/layout/LayoutBoxModelObject.h"
 #include "core/layout/LayoutObject.h"
 #include "platform/graphics/paint/DisplayItemClient.h"
@@ -175,6 +176,7 @@ public:
     void setParent(InlineFlowBox* par) { m_parent = par; }
 
     const RootInlineBox& root() const;
+    CORE_EXPORT
     RootInlineBox& root();
 
     // x() is the left side of the box in the containing block's coordinate system.
@@ -226,6 +228,7 @@ public:
     LayoutUnit logicalWidth() const { return m_logicalWidth; }
 
     // The logical height is our extent in the block flow direction, i.e., height for horizontal text and width for vertical text.
+    CORE_EXPORT
     LayoutUnit logicalHeight() const;
 
     LayoutRect logicalFrameRect() const { return isHorizontal() ? LayoutRect(m_topLeft.x(), m_topLeft.y(), m_logicalWidth, logicalHeight()) : LayoutRect(m_topLeft.y(), m_topLeft.x(), m_logicalWidth, logicalHeight()); }

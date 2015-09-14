@@ -353,7 +353,7 @@ void WebViewImpl::loadInspector(WebView* inspectedView)
     d_devToolsFrontEndHost.reset(
         new DevToolsFrontendHostDelegateImpl(d_webContents.get(), inspectedContents));
 
-    GURL url = Statics::devToolsHttpHandler->GetFrontendURL("/devtools/devtools.html");
+    GURL url = Statics::devToolsHttpHandler->GetFrontendURL("/devtools/inspector.html");
     loadUrl(url.spec());
 }
 

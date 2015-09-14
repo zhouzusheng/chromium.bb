@@ -98,6 +98,7 @@
         '../content/content.gyp:content_utility',
         '../ipc/ipc.gyp:ipc',
         '../net/net.gyp:net',
+        '../net/net.gyp:net_extras',
         '../sandbox/sandbox.gyp:sandbox',
         '../skia/skia.gyp:skia',
         '../third_party/WebKit/public/blink.gyp:blink',
@@ -358,7 +359,7 @@
       'dependencies': [
         'blpwtk2',
         '../v8/tools/gyp/v8.gyp:v8',
-        '../pdf/blppdfutil.gyp:blppdfutil',
+        '../blppdfutil/blppdfutil.gyp:blppdfutil',
       ],
       'msvs_settings': {
         'VCLinkerTool': {
@@ -419,9 +420,10 @@
         'blpwtk2_subprocess',
         'blpwtk2_shell',
         'blpwtk2_devtools',
-        '../pdf/blppdfutil.gyp:blppdfutil',
+        '../blppdfutil/blppdfutil.gyp:blppdfutil',
         '../content/content_shell_and_tests.gyp:content_shell',
         '../chrome/chrome_blpwtk2.gyp:chrome_blpwtk2',
+        '../v8/src/d8.gyp:d8',
       ],
       'conditions': [
         ['bb_ppapi_examples==1', {

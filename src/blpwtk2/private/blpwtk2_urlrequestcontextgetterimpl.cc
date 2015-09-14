@@ -30,7 +30,6 @@
 #include <base/strings/string_util.h>
 #include <base/threading/sequenced_worker_pool.h>
 #include <base/threading/worker_pool.h>
-#include <content/browser/net/sqlite_persistent_cookie_store.h>
 #include <content/public/browser/browser_thread.h>
 #include <content/public/common/content_switches.h>
 #include <content/public/common/url_constants.h>
@@ -38,6 +37,7 @@
 #include <net/cookies/cookie_monster.h>
 #include <net/dns/mapped_host_resolver.h>
 #include <net/extras/sqlite/cookie_crypto_delegate.h>
+#include <net/extras/sqlite/sqlite_persistent_cookie_store.h>
 #include <net/http/http_auth_handler_factory.h>
 #include <net/http/http_cache.h>
 #include <net/http/http_network_layer.h>
@@ -124,8 +124,8 @@ void URLRequestContextGetterImpl::useSystemProxyConfig()
     // will be passed to the ProxyServer on the IO thread.
     scoped_ptr<net::ProxyConfigService> proxyConfigService(
         net::ProxyService::CreateSystemProxyConfigService(
-            ioLoop->message_loop_proxy(),
-            fileLoop->message_loop_proxy()));
+            ioLoop->task_runner(),
+            fileLoop->task_runner()));
 
     GetNetworkTaskRunner()->PostTask(
         FROM_HERE,
@@ -182,13 +182,12 @@ void URLRequestContextGetterImpl::initialize()
 
     if (d_cookiePersistenceEnabled) {
         d_cookieStore =
-            new content::SQLitePersistentCookieStore(
+            new net::SQLitePersistentCookieStore(
                 d_path.Append(FILE_PATH_LITERAL("Cookies")),
                 GetNetworkTaskRunner(),
                 content::BrowserThread::GetMessageLoopProxyForThread(
                     content::BrowserThread::FILE),
                 true,
-                (storage::SpecialStoragePolicy*)0,
                 (net::CookieCryptoDelegate*)0);
     }
 

@@ -309,8 +309,7 @@ void PdfToEmfUtilityProcessHostClient::Start(
   // generate when sent to a metafile DC.
   utility_process_host_ =
       content::UtilityProcessHost::Create(
-          this, base::MessageLoop::current()->message_loop_proxy())
-          ->AsWeakPtr();
+          this, base::MessageLoop::current()->task_runner())->AsWeakPtr();
   // SHEZ: Remove usage of IDS_UTILITY_PROCESS_EMF_CONVERTOR_NAME
   utility_process_host_->SetName(L"EMF Converter");
   // Should reply with OnProcessStarted().

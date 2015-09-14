@@ -66,13 +66,13 @@ class V8_EXPORT CpuProfileNode {
   };
 
   /** Returns function name (empty string for anonymous functions.) */
-  Handle<String> GetFunctionName() const;
+  Local<String> GetFunctionName() const;
 
   /** Returns id of the script where function is located. */
   int GetScriptId() const;
 
   /** Returns resource name for script from where the function originates. */
-  Handle<String> GetScriptResourceName() const;
+  Local<String> GetScriptResourceName() const;
 
   /**
    * Returns the number, 1-based, of the line where the function originates.
@@ -140,7 +140,7 @@ class V8_EXPORT CpuProfileNode {
 class V8_EXPORT CpuProfile {
  public:
   /** Returns CPU profile title. */
-  Handle<String> GetTitle() const;
+  Local<String> GetTitle() const;
 
   /** Returns the root node of the top down call tree. */
   const CpuProfileNode* GetTopDownRoot() const;
@@ -209,13 +209,13 @@ class V8_EXPORT CpuProfiler {
    * |record_samples| parameter controls whether individual samples should
    * be recorded in addition to the aggregated tree.
    */
-  void StartProfiling(Handle<String> title, bool record_samples = false);
+  void StartProfiling(Local<String> title, bool record_samples = false);
 
   /**
    * Stops collecting CPU profile with a given title and returns it.
    * If the title given is empty, finishes the last profile started.
    */
-  CpuProfile* StopProfiling(Handle<String> title);
+  CpuProfile* StopProfiling(Local<String> title);
 
   /**
    * Tells the profiler whether the embedder is idle.
@@ -257,7 +257,7 @@ class V8_EXPORT HeapGraphEdge {
    * Returns edge name. This can be a variable name, an element index, or
    * a property name.
    */
-  Handle<Value> GetName() const;
+  Local<Value> GetName() const;
 
   /** Returns origin node. */
   const HeapGraphNode* GetFromNode() const;
@@ -286,7 +286,8 @@ class V8_EXPORT HeapGraphNode {
                          // snapshot items together.
     kConsString = 10,    // Concatenated string. A pair of pointers to strings.
     kSlicedString = 11,  // Sliced string. A fragment of another string.
-    kSymbol = 12         // A Symbol (ES6).
+    kSymbol = 12,        // A Symbol (ES6).
+    kSimdValue = 13      // A SIMD value stored in the heap (Proposed ES7).
   };
 
   /** Returns node type (see HeapGraphNode::Type). */
@@ -297,7 +298,7 @@ class V8_EXPORT HeapGraphNode {
    * of the constructor (for objects), the name of the function (for
    * closures), string value, or an empty string (for compiled code).
    */
-  Handle<String> GetName() const;
+  Local<String> GetName() const;
 
   /**
    * Returns node id. For the same heap object, the id remains the same
@@ -440,8 +441,8 @@ class V8_EXPORT HeapProfiler {
    * while the callback is running: only getters on the handle and
    * GetPointerFromInternalField on the objects are allowed.
    */
-  typedef RetainedObjectInfo* (*WrapperInfoCallback)
-      (uint16_t class_id, Handle<Value> wrapper);
+  typedef RetainedObjectInfo* (*WrapperInfoCallback)(uint16_t class_id,
+                                                     Local<Value> wrapper);
 
   /** Returns the number of snapshots taken. */
   int GetSnapshotCount();
@@ -453,13 +454,13 @@ class V8_EXPORT HeapProfiler {
    * Returns SnapshotObjectId for a heap object referenced by |value| if
    * it has been seen by the heap profiler, kUnknownObjectId otherwise.
    */
-  SnapshotObjectId GetObjectId(Handle<Value> value);
+  SnapshotObjectId GetObjectId(Local<Value> value);
 
   /**
    * Returns heap object with given SnapshotObjectId if the object is alive,
    * otherwise empty handle is returned.
    */
-  Handle<Value> FindObjectById(SnapshotObjectId id);
+  Local<Value> FindObjectById(SnapshotObjectId id);
 
   /**
    * Clears internal map from SnapshotObjectId to heap object. The new objects
@@ -484,7 +485,8 @@ class V8_EXPORT HeapProfiler {
      * Returns name to be used in the heap snapshot for given node. Returned
      * string must stay alive until snapshot collection is completed.
      */
-    virtual const char* GetName(Handle<Object> object) = 0;
+    virtual const char* GetName(Local<Object> object) = 0;
+
    protected:
     virtual ~ObjectNameResolver() {}
   };

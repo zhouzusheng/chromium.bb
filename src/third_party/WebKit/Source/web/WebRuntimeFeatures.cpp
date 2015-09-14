@@ -41,6 +41,11 @@ void WebRuntimeFeatures::enableExperimentalFeatures(bool enable)
     RuntimeEnabledFeatures::setExperimentalFeaturesEnabled(enable);
 }
 
+void WebRuntimeFeatures::enableWebBluetooth(bool enable)
+{
+    RuntimeEnabledFeatures::setWebBluetoothEnabled(enable);
+}
+
 void WebRuntimeFeatures::enableFeatureFromString(const WebString& name, bool enable)
 {
     RuntimeEnabledFeatures::setFeatureEnabledFromString(name, enable);
@@ -188,11 +193,6 @@ void WebRuntimeFeatures::enableNavigatorContentUtils(bool enable)
     RuntimeEnabledFeatures::setNavigatorContentUtilsEnabled(enable);
 }
 
-void WebRuntimeFeatures::enableNavigationTransitions(bool enable)
-{
-    RuntimeEnabledFeatures::setNavigationTransitionsEnabled(enable);
-}
-
 void WebRuntimeFeatures::enableNetworkInformation(bool enable)
 {
     RuntimeEnabledFeatures::setNetworkInformationEnabled(enable);
@@ -228,11 +228,6 @@ void WebRuntimeFeatures::enableScriptedSpeech(bool enable)
     RuntimeEnabledFeatures::setScriptedSpeechEnabled(enable);
 }
 
-void WebRuntimeFeatures::enableServiceWorker(bool enable)
-{
-    RuntimeEnabledFeatures::setServiceWorkerEnabled(enable);
-}
-
 void WebRuntimeFeatures::enableSlimmingPaint(bool enable)
 {
     RuntimeEnabledFeatures::setSlimmingPaintEnabled(enable);
@@ -261,11 +256,6 @@ void WebRuntimeFeatures::enableWebGLDraftExtensions(bool enable)
 void WebRuntimeFeatures::enableWebGLImageChromium(bool enable)
 {
     RuntimeEnabledFeatures::setWebGLImageChromiumEnabled(enable);
-}
-
-void WebRuntimeFeatures::enableWebMIDI(bool enable)
-{
-    return RuntimeEnabledFeatures::setWebMIDIEnabled(enable);
 }
 
 void WebRuntimeFeatures::enableXSLT(bool enable)

@@ -53,7 +53,6 @@ enum IPCMessageStart {
   ExtensionMsgStart,
   VideoCaptureMsgStart,
   QuotaMsgStart,
-  ImageMsgStart,
   TextInputClientMsgStart,
   ChromeUtilityMsgStart,
   MediaStreamMsgStart,
@@ -115,7 +114,6 @@ enum IPCMessageStart {
   LayoutTestMsgStart,
   NetworkHintsMsgStart,
   BluetoothMsgStart,
-  NavigatorConnectMsgStart,
   CastMediaMsgStart,
   AwMessagePortMsgStart,
   ExtensionsGuestViewMsgStart,
@@ -127,6 +125,8 @@ enum IPCMessageStart {
   DataReductionProxyStart,
   ContentSettingsMsgStart,
   ChromeAppBannerMsgStart,
+  SafeJsonParserMsgStart,
+  AttachmentBrokerMsgStart,
   LastIPCMsgStart  // Must come last.
 };
 

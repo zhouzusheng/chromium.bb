@@ -13,6 +13,7 @@
 namespace content {
 class ShellContentBrowserClient;
 class ShellContentRendererClient;
+class ShellContentUtilityClient;
 
 #if defined(OS_ANDROID)
 class BrowserMainRunner;
@@ -40,7 +41,7 @@ class ShellMainDelegate : public ContentMainDelegate {
  private:
   scoped_ptr<ShellContentBrowserClient> browser_client_;
   scoped_ptr<ShellContentRendererClient> renderer_client_;
-  scoped_ptr<ContentUtilityClient> utility_client_;
+  scoped_ptr<ShellContentUtilityClient> utility_client_;
   ShellContentClient content_client_;
 
 #if defined(OS_ANDROID)

@@ -4,6 +4,7 @@
 
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
+#include "../../../third_party/base/nonstd_unique_ptr.h"
 #include "../../include/javascript/JavaScript.h"
 #include "../../include/javascript/IJavaScript.h"
 #include "../../include/javascript/JS_Define.h"
@@ -327,7 +328,7 @@ FX_BOOL app::alert(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& v
 		{
 			JSObject pObj = params[0].ToV8Object();
 			{
-				v8::Handle<v8::Value> pValue = JS_GetObjectElement(isolate, pObj, L"cMsg");
+				v8::Local<v8::Value> pValue = JS_GetObjectElement(isolate, pObj, L"cMsg");
 				swMsg = CJS_Value(isolate, pValue, VT_unknown).ToCFXWideString();
 
 				pValue = JS_GetObjectElement(isolate, pObj, L"cTitle");
@@ -360,7 +361,7 @@ FX_BOOL app::alert(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value& v
 							swMsg += L",  ";
 					}
 
-					if(pValue) delete pValue;
+                                        delete pValue;
 				}
 			}
 
@@ -715,7 +716,7 @@ FX_BOOL app::mailMsg(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value&
 	{
 		JSObject pObj = params[0].ToV8Object();
 
-		v8::Handle<v8::Value> pValue = JS_GetObjectElement(isolate, pObj, L"bUI");
+		v8::Local<v8::Value> pValue = JS_GetObjectElement(isolate, pObj, L"bUI");
 		bUI = CJS_Value(isolate, pValue, GET_VALUE_TYPE(pValue)).ToBool();
 
 		pValue = JS_GetObjectElement(isolate, pObj, L"cTo");
@@ -849,7 +850,7 @@ FX_BOOL app::response(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value
 	if (iLength > 0 && params[0].GetType() == VT_object)
 	{
 		JSObject pObj = params[0].ToV8Object();
-		v8::Handle<v8::Value> pValue = JS_GetObjectElement(isolate,pObj,L"cQuestion");
+		v8::Local<v8::Value> pValue = JS_GetObjectElement(isolate,pObj,L"cQuestion");
 		swQuestion = CJS_Value(isolate,pValue,GET_VALUE_TYPE(pValue)).ToCFXWideString();
 
 		pValue = JS_GetObjectElement(isolate,pObj,L"cTitle");
@@ -894,26 +895,27 @@ FX_BOOL app::response(IFXJS_Context* cc, const CJS_Parameters& params, CJS_Value
 	CPDFDoc_Environment* pApp = pContext->GetReaderApp();
 	ASSERT(pApp != NULL);
 
-	const int MAX_INPUT_BYTES = 2048;
-	char* pBuff = new char[MAX_INPUT_BYTES + 2];
-	if (!pBuff)
-		return FALSE;
+    const int MAX_INPUT_BYTES = 2048;
+    nonstd::unique_ptr<char[]> pBuff(new char[MAX_INPUT_BYTES + 2]);
+    memset(pBuff.get(), 0, MAX_INPUT_BYTES + 2);
+    int nLengthBytes = pApp->JS_appResponse(swQuestion.c_str(),
+                                            swTitle.c_str(),
+                                            swDefault.c_str(),
+                                            swLabel.c_str(),
+                                            bPassWord,
+                                            pBuff.get(),
+                                            MAX_INPUT_BYTES);
+    if (nLengthBytes <= 0) {
+        vRet.SetNull();
+        return FALSE;
+    }
+    nLengthBytes = std::min(nLengthBytes, MAX_INPUT_BYTES);
 
-	memset(pBuff, 0, MAX_INPUT_BYTES + 2);
-	int nLengthBytes = pApp->JS_appResponse(swQuestion.c_str(), swTitle.c_str(), swDefault.c_str(),
-                                            swLabel.c_str(), bPassWord, pBuff, MAX_INPUT_BYTES);
-	if (nLengthBytes <= 0)
-	{
-		vRet.SetNull();
-		delete[] pBuff;
-		return FALSE;
-	}
-	if (nLengthBytes > MAX_INPUT_BYTES)
-		nLengthBytes = MAX_INPUT_BYTES;
-
-	vRet = CFX_WideString::FromUTF16LE((unsigned short*)pBuff, nLengthBytes / sizeof(unsigned short)).c_str();
-	delete[] pBuff;
-	return TRUE;
+    CFX_WideString ret_string =
+        CFX_WideString::FromUTF16LE((unsigned short*)pBuff.get(),
+                                    nLengthBytes / sizeof(unsigned short));
+    vRet = ret_string.c_str();
+    return TRUE;
 }
 
 FX_BOOL app::media(IFXJS_Context* cc, CJS_PropValue& vp, CFX_WideString& sError)

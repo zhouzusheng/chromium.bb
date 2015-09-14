@@ -5,16 +5,13 @@
 {
   'variables': {
     'chromium_code': 1,
-    # Defines an extra set of libs with an alternate copy of org.apache.http.
-    # TODO(yfriedman): Remove this when crbug.com/488192 is fixed.
-    'net_test_extra_libs': [],
     'linux_link_kerberos%': 0,
     'conditions': [
-      ['chromeos==1 or embedded==1 or OS=="android" or OS=="ios"', {
-        # Disable Kerberos on ChromeOS, Android and iOS, at least for now.
+      ['chromeos==1 or embedded==1 or OS=="ios"', {
+        # Disable Kerberos on ChromeOS and iOS, at least for now.
         # It needs configuration (krb5.conf and so on).
         'use_kerberos%': 0,
-      }, {  # chromeos == 0 and embedded==0 and OS!="android" and OS!="ios"
+      }, {  # chromeos == 0 and embedded==0 and OS!="ios"
         'use_kerberos%': 1,
       }],
       ['OS=="android" and target_arch != "ia32"', {
@@ -174,7 +171,6 @@
           ],
           'dependencies': [
             'net_javatests',
-            'net_test_jni_headers',
           ],
         }],
         [ 'use_nss_certs != 1', {
@@ -220,12 +216,19 @@
           'defines': [
             'USE_KERBEROS',
           ],
-        }, { # use_kerberos == 0
+        }],
+        [ 'use_kerberos==0 or OS == "android"', {
+          # These are excluded on Android, because the actual Kerberos support,
+          # which these test, is in a separate app on Android.
           'sources!': [
             'http/http_auth_gssapi_posix_unittest.cc',
-            'http/http_auth_handler_negotiate_unittest.cc',
             'http/mock_gssapi_library_posix.cc',
             'http/mock_gssapi_library_posix.h',
+          ],
+        }],
+       [ 'use_kerberos==0', {
+          'sources!': [
+            'http/http_auth_handler_negotiate_unittest.cc',
           ],
         }],
         [ 'use_openssl == 1 or (desktop_linux == 0 and chromeos == 0 and OS != "ios")', {
@@ -299,6 +302,7 @@
           }, {  # else: !use_v8_in_net
             'sources!': [
               'proxy/proxy_resolver_v8_tracing_unittest.cc',
+              'proxy/proxy_resolver_v8_tracing_wrapper_unittest.cc',
               'proxy/proxy_resolver_v8_unittest.cc',
             ],
           },
@@ -315,11 +319,10 @@
             'sources!': [
               'dns/host_resolver_mojo_unittest.cc',
               'dns/mojo_host_resolver_impl_unittest.cc',
-              'proxy/load_state_change_coalescer_unittest.cc',
               'proxy/mojo_proxy_resolver_factory_impl_unittest.cc',
               'proxy/mojo_proxy_resolver_impl_unittest.cc',
-              'proxy/proxy_resolver_error_observer_mojo_unittest.cc',
-              'proxy/proxy_resolver_mojo_unittest.cc',
+              'proxy/mojo_proxy_resolver_v8_tracing_bindings_unittest.cc',
+              'proxy/proxy_resolver_factory_mojo_unittest.cc',
               'proxy/proxy_service_mojo_unittest.cc',
             ],
           },
@@ -391,7 +394,6 @@
               # iOS.
               # OS is not "linux" or "freebsd" or "openbsd".
               'socket/unix_domain_client_socket_posix_unittest.cc',
-              'socket/unix_domain_listen_socket_posix_unittest.cc',
               'socket/unix_domain_server_socket_posix_unittest.cc',
 
               # See bug http://crbug.com/344533.
@@ -447,10 +449,13 @@
         '../base/base.gyp:test_support_perf',
         '../url/url.gyp:url_lib',
         'net',
+        'net_extras',
       ],
       'sources': [
+        'base/mime_sniffer_perftest.cc',
         'cookies/cookie_monster_perftest.cc',
         'disk_cache/blockfile/disk_cache_perftest.cc',
+        'extras/sqlite/sqlite_persistent_cookie_store_perftest.cc',
         'proxy/proxy_resolver_perftest.cc',
         'udp/udp_socket_perftest.cc',
         'websockets/websocket_frame_perftest.cc',
@@ -681,6 +686,8 @@
             'proxy/proxy_resolver_v8.h',
             'proxy/proxy_resolver_v8_tracing.cc',
             'proxy/proxy_resolver_v8_tracing.h',
+            'proxy/proxy_resolver_v8_tracing_wrapper.cc',
+            'proxy/proxy_resolver_v8_tracing_wrapper.h',
             'proxy/proxy_service_v8.cc',
             'proxy/proxy_service_v8.h',
           ],
@@ -713,8 +720,8 @@
             'proxy/in_process_mojo_proxy_resolver_factory.cc',
             'proxy/in_process_mojo_proxy_resolver_factory.h',
             'proxy/mojo_proxy_resolver_factory.h',
-            'proxy/proxy_resolver_mojo.cc',
-            'proxy/proxy_resolver_mojo.h',
+            'proxy/proxy_resolver_factory_mojo.cc',
+            'proxy/proxy_resolver_factory_mojo.h',
             'proxy/proxy_service_mojo.cc',
             'proxy/proxy_service_mojo.h',
           ],
@@ -742,14 +749,11 @@
           'sources': [
             'dns/host_resolver_mojo.cc',
             'dns/host_resolver_mojo.h',
-            'proxy/load_state_change_coalescer.cc',
-            'proxy/load_state_change_coalescer.h',
             'proxy/mojo_proxy_resolver_factory_impl.cc',
             'proxy/mojo_proxy_resolver_factory_impl.h',
             'proxy/mojo_proxy_resolver_impl.cc',
             'proxy/mojo_proxy_resolver_impl.h',
-            'proxy/proxy_resolver_error_observer_mojo.cc',
-            'proxy/proxy_resolver_error_observer_mojo.h',
+            'proxy/mojo_proxy_resolver_v8_tracing_bindings.h',
           ],
           'dependencies': [
             'mojo_type_converters',

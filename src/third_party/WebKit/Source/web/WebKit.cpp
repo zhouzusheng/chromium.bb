@@ -61,6 +61,7 @@
 #include "wtf/Assertions.h"
 #include "wtf/CryptographicallyRandomNumber.h"
 #include "wtf/MainThread.h"
+#include "wtf/Partitions.h"
 #include "wtf/WTF.h"
 #include "wtf/text/AtomicString.h"
 #include "wtf/text/TextEncoding.h"
@@ -72,13 +73,13 @@ namespace {
 
 class EndOfTaskRunner : public WebThread::TaskObserver {
 public:
-    virtual void willProcessTask() override
+    void willProcessTask() override
     {
         AnimationClock::notifyTaskStart();
     }
-    virtual void didProcessTask() override
+    void didProcessTask() override
     {
-        Microtask::performCheckpoint();
+        Microtask::performCheckpoint(mainThreadIsolate());
         V8GCController::reportDOMMemoryUsageToV8(mainThreadIsolate());
         V8Initializer::reportRejectedPromisesOnMainThread();
     }
@@ -164,6 +165,11 @@ static void callOnMainThreadFunction(WTF::MainThreadFunction function, void* con
     Platform::current()->mainThread()->postTask(FROM_HERE, new MainThreadTaskRunner_private(function, context));
 }
 
+static void adjustAmountOfExternalAllocatedMemory(int size)
+{
+    v8::Isolate::GetCurrent()->AdjustAmountOfExternalAllocatedMemory(size);
+}
+
 void initializeWithoutV8(Platform* platform)
 {
     ASSERT(!s_webKitInitialized);
@@ -173,7 +179,7 @@ void initializeWithoutV8(Platform* platform)
     Platform::initialize(platform);
 
     WTF::setRandomSource(cryptographicallyRandomValues);
-    WTF::initialize(currentTimeFunction, monotonicallyIncreasingTimeFunction, systemTraceTimeFunction, histogramEnumerationFunction);
+    WTF::initialize(currentTimeFunction, monotonicallyIncreasingTimeFunction, systemTraceTimeFunction, histogramEnumerationFunction, adjustAmountOfExternalAllocatedMemory);
     WTF::initializeMainThread(callOnMainThreadFunction);
     Heap::init();
 
@@ -300,6 +306,11 @@ void resetPluginCache(bool reloadPages)
 {
     ASSERT(!reloadPages);
     Page::refreshPlugins();
+}
+
+void decommitFreeableMemory()
+{
+    WTF::Partitions::decommitFreeableMemory();
 }
 
 } // namespace blink

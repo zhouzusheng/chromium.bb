@@ -55,13 +55,13 @@
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/HTMLPlugInElement.h"
 #include "core/html/MediaError.h"
+#include "core/input/EventHandler.h"
 #include "core/layout/HitTestResult.h"
 #include "core/layout/LayoutPart.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/HistoryItem.h"
 #include "core/page/ContextMenuController.h"
-#include "core/page/EventHandler.h"
 #include "core/page/Page.h"
 #include "platform/ContextMenu.h"
 #include "platform/Widget.h"
@@ -228,6 +228,15 @@ void ContextMenuClientImpl::showContextMenu(const ContextMenu* defaultMenu, bool
     // all else.
     data.linkURL = r.absoluteLinkURL();
 
+    if (r.innerNode()->isHTMLElement()) {
+        HTMLElement* htmlElement = toHTMLElement(r.innerNode());
+        if (!htmlElement->title().isEmpty()) {
+            data.titleText = htmlElement->title();
+        } else {
+            data.titleText = htmlElement->altText();
+        }
+    }
+
     if (isHTMLCanvasElement(r.innerNode())) {
         data.mediaType = WebContextMenuData::MediaTypeCanvas;
         data.hasImageContents = true;
@@ -391,6 +400,21 @@ void ContextMenuClientImpl::showContextMenu(const ContextMenu* defaultMenu, bool
         // If the anchor wants to suppress the referrer, update the referrerPolicy accordingly.
         if (anchor->hasRel(RelationNoReferrer))
             data.referrerPolicy = WebReferrerPolicyNever;
+
+        data.linkText = anchor->innerText();
+    }
+
+    // Find the input field type.
+    if (isHTMLInputElement(r.innerNode())) {
+        HTMLInputElement* element = toHTMLInputElement(r.innerNode());
+        if (element->type() == InputTypeNames::password)
+            data.inputFieldType = WebContextMenuData::InputFieldTypePassword;
+        else if (element->isTextField())
+            data.inputFieldType = WebContextMenuData::InputFieldTypePlainText;
+        else
+            data.inputFieldType = WebContextMenuData::InputFieldTypeOther;
+    } else {
+        data.inputFieldType = WebContextMenuData::InputFieldTypeNone;
     }
 
     data.node = r.innerNodeOrImageMapImage();
@@ -518,10 +542,10 @@ static bool fireBbContextMenuEvent(LocalFrame* frame, WebContextMenuData& data, 
     exposeBool(isolate, detailObj, "fromContextMenuKey", fromContextMenuKey);
 
     CustomEventInit eventInit;
-    eventInit.bubbles = true;
-    eventInit.cancelable = true;
+    eventInit.setBubbles(true);
+    eventInit.setCancelable(true);
     RefPtr<CustomEvent> event = CustomEvent::create("bbContextMenu", eventInit);
-    event->setSerializedDetail(SerializedScriptValueFactory::instance().createAndSwallowExceptions(isolate, detailObj));
+    event->setDetail(ScriptValue(ScriptState::from(context), detailObj));
 
     data.node.unwrap<Node>()->dispatchEvent(event);
     return event->defaultPrevented();

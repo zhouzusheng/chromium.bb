@@ -23,6 +23,10 @@
       ],
       'sources': [
         # Note: file list duplicated in GN build.
+        'android/bluetooth_jni_registrar.cc',
+        'android/bluetooth_jni_registrar.h',
+        'android/wrappers.cc',
+        'android/wrappers.h',
         'bluetooth_adapter.cc',
         'bluetooth_adapter.h',
         'bluetooth_adapter_android.cc',
@@ -47,14 +51,18 @@
         'bluetooth_audio_sink_chromeos.h',
         'bluetooth_channel_mac.mm',
         'bluetooth_channel_mac.h',
+        'bluetooth_classic_device_mac.mm',
+        'bluetooth_classic_device_mac.h',
         'bluetooth_device.cc',
         'bluetooth_device.h',
         'bluetooth_device_chromeos.cc',
         'bluetooth_device_chromeos.h',
-        'bluetooth_device_mac.h',
         'bluetooth_device_mac.mm',
+        'bluetooth_device_mac.h',
         'bluetooth_device_win.cc',
         'bluetooth_device_win.h',
+        'bluetooth_discovery_filter.cc',
+        'bluetooth_discovery_filter.h',
         'bluetooth_discovery_manager_mac.mm',
         'bluetooth_discovery_manager_mac.h',
         'bluetooth_discovery_session.cc',
@@ -127,11 +135,8 @@
         }],
         ['OS == "android"', {
           'dependencies': [
+            'device_bluetooth_java',
             'device_bluetooth_jni_headers',
-          ],
-          'sources': [
-            'android/bluetooth_jni_registrar.cc',
-            'android/bluetooth_jni_registrar.h',
           ],
         }],
         ['OS=="win"', {
@@ -195,40 +200,6 @@
         'uribeacon/uri_encoder.cc',
         'uribeacon/uri_encoder.h'
       ]
-    },
-    {
-      # GN version: //device/bluetooth:mocks
-      'target_name': 'device_bluetooth_mocks',
-      'type': 'static_library',
-      'dependencies': [
-        'device_bluetooth',
-      ],
-      'include_dirs': [
-        '../../',
-      ],
-      'sources': [
-        # Note: file list duplicated in GN build.
-        'test/mock_bluetooth_adapter.cc',
-        'test/mock_bluetooth_adapter.h',
-        'test/mock_bluetooth_advertisement.cc',
-        'test/mock_bluetooth_advertisement.h',
-        'test/mock_bluetooth_device.cc',
-        'test/mock_bluetooth_device.h',
-        'test/mock_bluetooth_discovery_session.cc',
-        'test/mock_bluetooth_discovery_session.h',
-        'test/mock_bluetooth_gatt_characteristic.cc',
-        'test/mock_bluetooth_gatt_characteristic.h',
-        'test/mock_bluetooth_gatt_connection.cc',
-        'test/mock_bluetooth_gatt_connection.h',
-        'test/mock_bluetooth_gatt_descriptor.cc',
-        'test/mock_bluetooth_gatt_descriptor.h',
-        'test/mock_bluetooth_gatt_notify_session.cc',
-        'test/mock_bluetooth_gatt_notify_session.h',
-        'test/mock_bluetooth_gatt_service.cc',
-        'test/mock_bluetooth_gatt_service.h',
-        'test/mock_bluetooth_socket.cc',
-        'test/mock_bluetooth_socket.h',
-      ],
     },
   ],
   'conditions': [

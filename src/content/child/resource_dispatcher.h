@@ -43,6 +43,7 @@ class ThreadedDataProvider;
 struct ResourceResponseInfo;
 struct RequestInfo;
 struct ResourceResponseHead;
+class SharedMemoryReceivedDataFactory;
 struct SiteIsolationResponseMetaData;
 struct SyncLoadResponse;
 
@@ -176,8 +177,8 @@ class CONTENT_EXPORT ResourceDispatcher : public IPC::Listener {
     base::TimeTicks response_start;
     base::TimeTicks completion_time;
     linked_ptr<base::SharedMemory> buffer;
+    scoped_refptr<SharedMemoryReceivedDataFactory> received_data_factory;
     linked_ptr<SiteIsolationResponseMetaData> site_isolation_metadata;
-    bool blocked_response;
     int buffer_size;
   };
   typedef base::hash_map<int, PendingRequestInfo> PendingRequestList;

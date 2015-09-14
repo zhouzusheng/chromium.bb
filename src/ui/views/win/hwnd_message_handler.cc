@@ -32,6 +32,7 @@
 #include "ui/gfx/path.h"
 #include "ui/gfx/path_win.h"
 #include "ui/gfx/screen.h"
+#include "ui/gfx/win/direct_manipulation.h"
 #include "ui/gfx/win/dpi.h"
 #include "ui/gfx/win/hwnd_util.h"
 #include "ui/native_theme/native_theme_win.h"
@@ -306,7 +307,8 @@ class HWNDMessageHandler::ScopedRedrawLock {
 long HWNDMessageHandler::last_touch_message_time_ = 0;
 
 HWNDMessageHandler::HWNDMessageHandler(HWNDMessageHandlerDelegate* delegate)
-    : delegate_(delegate),
+    : msg_handled_(FALSE),
+      delegate_(delegate),
       fullscreen_handler_(new FullscreenHandler),
       waiting_for_close_now_(false),
       remove_standard_frame_(false),
@@ -329,7 +331,6 @@ HWNDMessageHandler::HWNDMessageHandler(HWNDMessageHandlerDelegate* delegate)
       in_size_loop_(false),
       touch_down_contexts_(0),
       last_mouse_hwheel_time_(0),
-      msg_handled_(FALSE),
       dwm_transition_desired_(false),
       autohide_factory_(this),
       weak_factory_(this) {
@@ -375,6 +376,13 @@ void HWNDMessageHandler::Init(HWND parent, const gfx::Rect& bounds) {
   prop_window_target_.reset(new ui::ViewProp(hwnd(),
                             ui::WindowEventTarget::kWin32InputEventTarget,
                             static_cast<ui::WindowEventTarget*>(this)));
+
+  // Direct Manipulation is enabled on Windows 10+. The CreateInstance function
+  // returns NULL if Direct Manipulation is not available.
+  direct_manipulation_helper_ =
+      gfx::win::DirectManipulationHelper::CreateInstance();
+  if (direct_manipulation_helper_)
+    direct_manipulation_helper_->Initialize(hwnd());
 }
 
 void HWNDMessageHandler::InitModalType(ui::ModalType modal_type) {
@@ -516,6 +524,9 @@ void HWNDMessageHandler::SetBounds(const gfx::Rect& bounds_in_pixels,
     delegate_->HandleClientSizeChanged(GetClientAreaBounds().size());
     ResetWindowRegion(false, true);
   }
+
+  if (direct_manipulation_helper_)
+    direct_manipulation_helper_->SetBounds(bounds_in_pixels);
 }
 
 void HWNDMessageHandler::SetSize(const gfx::Size& size) {
@@ -536,7 +547,10 @@ void HWNDMessageHandler::SetRegion(HRGN region) {
 }
 
 void HWNDMessageHandler::StackAbove(HWND other_hwnd) {
-  SetWindowPos(hwnd(), other_hwnd, 0, 0, 0, 0,
+  // Windows API allows to stack behind another windows only.
+  DCHECK(other_hwnd);
+  HWND next_window = GetNextWindow(other_hwnd, GW_HWNDPREV);
+  SetWindowPos(hwnd(), next_window ? next_window : HWND_TOP, 0, 0, 0, 0,
                SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE);
 }
 
@@ -554,6 +568,8 @@ void HWNDMessageHandler::Show() {
       ShowWindowWithState(ui::SHOW_STATE_INACTIVE);
     }
   }
+  if (direct_manipulation_helper_)
+    direct_manipulation_helper_->Activate(hwnd());
 }
 
 void HWNDMessageHandler::ShowWindowWithState(ui::WindowShowState show_state) {
@@ -571,6 +587,10 @@ void HWNDMessageHandler::ShowWindowWithState(ui::WindowShowState show_state) {
       break;
     case ui::SHOW_STATE_NORMAL:
       native_show_state = SW_SHOWNORMAL;
+      break;
+    case ui::SHOW_STATE_FULLSCREEN:
+      native_show_state = SW_SHOWNORMAL;
+      SetFullscreen(true);
       break;
     default:
       native_show_state = delegate_->GetInitialShowState();
@@ -755,8 +775,9 @@ bool HWNDMessageHandler::SetTitle(const base::string16& title) {
   if (len_with_null == 1 && title.length() == 0)
     return false;
   if (len_with_null - 1 == title.length() &&
-      GetWindowText(
-          hwnd(), WriteInto(&current_title, len_with_null), len_with_null) &&
+      GetWindowText(hwnd(),
+                    base::WriteInto(&current_title, len_with_null),
+                    len_with_null) &&
       current_title == title)
     return false;
   SetWindowText(hwnd(), title.c_str());
@@ -849,28 +870,21 @@ void HWNDMessageHandler::SizeConstraintsChanged() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// HWNDMessageHandler, InputMethodDelegate implementation:
-
-void HWNDMessageHandler::DispatchKeyEventPostIME(const ui::KeyEvent& key) {
-  SetMsgHandled(delegate_->HandleKeyEvent(key));
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // HWNDMessageHandler, gfx::WindowImpl overrides:
 
 HICON HWNDMessageHandler::GetDefaultWindowIcon() const {
   if (use_system_default_icon_)
     return nullptr;
-  return ViewsDelegate::views_delegate
-             ? ViewsDelegate::views_delegate->GetDefaultWindowIcon()
+  return ViewsDelegate::GetInstance()
+             ? ViewsDelegate::GetInstance()->GetDefaultWindowIcon()
              : nullptr;
 }
 
 HICON HWNDMessageHandler::GetSmallWindowIcon() const {
   if (use_system_default_icon_)
     return nullptr;
-  return ViewsDelegate::views_delegate
-             ? ViewsDelegate::views_delegate->GetSmallWindowIcon()
+  return ViewsDelegate::GetInstance()
+             ? ViewsDelegate::GetInstance()->GetSmallWindowIcon()
              : nullptr;
 }
 
@@ -1012,12 +1026,12 @@ void HWNDMessageHandler::HandleParentChanged() {
 
 int HWNDMessageHandler::GetAppbarAutohideEdges(HMONITOR monitor) {
   autohide_factory_.InvalidateWeakPtrs();
-  return ViewsDelegate::views_delegate ?
-      ViewsDelegate::views_delegate->GetAppbarAutohideEdges(
-          monitor,
-          base::Bind(&HWNDMessageHandler::OnAppbarAutohideEdgesChanged,
-                     autohide_factory_.GetWeakPtr())) :
-      ViewsDelegate::EDGE_BOTTOM;
+  return ViewsDelegate::GetInstance()
+             ? ViewsDelegate::GetInstance()->GetAppbarAutohideEdges(
+                   monitor,
+                   base::Bind(&HWNDMessageHandler::OnAppbarAutohideEdgesChanged,
+                              autohide_factory_.GetWeakPtr()))
+             : ViewsDelegate::EDGE_BOTTOM;
 }
 
 void HWNDMessageHandler::OnAppbarAutohideEdgesChanged() {
@@ -1170,7 +1184,7 @@ void HWNDMessageHandler::ResetWindowRegion(bool force, bool redraw) {
   const bool has_new_region = new_region != 0;
   if (has_current_region != has_new_region ||
       (has_current_region && !EqualRgn(current_rgn, new_region))) {
-    // SetWindowRgn takes ownership of the HRGN created by CreateNativeRegion.
+    // SetWindowRgn takes ownership of the HRGN.
     SetWindowRgn(hwnd(), new_region.release(), redraw);
   }
 }
@@ -1635,7 +1649,7 @@ LRESULT HWNDMessageHandler::OnKeyEvent(UINT message,
       hwnd(), message, w_param, l_param, static_cast<DWORD>(GetMessageTime())};
   ui::KeyEvent key(msg);
   if (!delegate_->HandleUntranslatedKeyEvent(key))
-    DispatchKeyEventPostIME(key);
+    SetMsgHandled(FALSE);
   return 0;
 }
 
@@ -2365,6 +2379,9 @@ LRESULT HWNDMessageHandler::OnTouchEvent(UINT message,
   if (ui::GetTouchInputInfoWrapper(reinterpret_cast<HTOUCHINPUT>(l_param),
                                    num_points, input.get(),
                                    sizeof(TOUCHINPUT))) {
+    // input[i].dwTime doesn't necessarily relate to the system time at all,
+    // so use base::TimeTicks::Now().
+    const base::TimeTicks event_time = base::TimeTicks::Now();
     int flags = ui::GetModifiersFromKeyState();
     TouchEvents touch_events;
     for (int i = 0; i < num_points; ++i) {
@@ -2405,20 +2422,16 @@ LRESULT HWNDMessageHandler::OnTouchEvent(UINT message,
         touch_event_type = ui::ET_TOUCH_MOVED;
       }
       if (touch_event_type != ui::ET_UNKNOWN) {
-        // input[i].dwTime doesn't necessarily relate to the system time at all,
-        // so use base::TimeTicks::Now()
-        const base::TimeTicks now = base::TimeTicks::Now();
         ui::TouchEvent event(touch_event_type,
                              gfx::Point(point.x, point.y),
                              id_generator_.GetGeneratedID(input[i].dwID),
-                             now - base::TimeTicks());
+                             event_time - base::TimeTicks());
         event.set_flags(flags);
         event.latency()->AddLatencyNumberWithTimestamp(
             ui::INPUT_EVENT_LATENCY_ORIGINAL_COMPONENT,
             0,
             0,
-            base::TimeTicks::FromInternalValue(
-                event.time_stamp().ToInternalValue()),
+            event_time,
             1);
 
         touch_events.push_back(event);
@@ -2548,10 +2561,15 @@ void HWNDMessageHandler::OnWindowPosChanged(WINDOWPOS* window_pos) {
     MARGINS m = {10, 10, 10, 10};
     DwmExtendFrameIntoClientArea(hwnd(), &m);
   }
-  if (window_pos->flags & SWP_SHOWWINDOW)
+  if (window_pos->flags & SWP_SHOWWINDOW) {
     delegate_->HandleVisibilityChanged(true);
-  else if (window_pos->flags & SWP_HIDEWINDOW)
+    if (direct_manipulation_helper_)
+      direct_manipulation_helper_->Activate(hwnd());
+  } else if (window_pos->flags & SWP_HIDEWINDOW) {
     delegate_->HandleVisibilityChanged(false);
+    if (direct_manipulation_helper_)
+      direct_manipulation_helper_->Deactivate(hwnd());
+  }
   SetMsgHandled(FALSE);
 }
 
@@ -2731,6 +2749,13 @@ LRESULT HWNDMessageHandler::HandleMouseEventInternal(UINT message,
 
   if (!ref.get())
     return 0;
+
+  if (direct_manipulation_helper_ && track_mouse &&
+      (message == WM_MOUSEWHEEL || message == WM_MOUSEHWHEEL)) {
+    direct_manipulation_helper_->HandleMouseWheel(hwnd(), message, w_param,
+        l_param);
+  }
+
   if (!handled && message == WM_NCLBUTTONDOWN && w_param != HTSYSMENU &&
       delegate_->IsUsingCustomFrame()) {
     // TODO(vadimt): Remove ScopedTracker below once crbug.com/440919 is fixed.

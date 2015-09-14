@@ -65,14 +65,9 @@ namespace {
 class ShellViewsDelegateAura : public views::ViewsDelegate {
  public:
   ShellViewsDelegateAura() : use_transparent_windows_(false) {
-    // SHEZ: Copied from TestViewsDelegate
-    DCHECK(!ViewsDelegate::views_delegate);
-    ViewsDelegate::views_delegate = this;
   }
 
   ~ShellViewsDelegateAura() override {
-    // SHEZ: Copied from TestViewsDelegate
-    ViewsDelegate::views_delegate = NULL;
   }
 
   void SetUseTransparentWindows(bool transparent) {

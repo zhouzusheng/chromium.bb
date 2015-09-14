@@ -39,7 +39,10 @@ enum TextIteratorBehavior {
     TextIteratorEntersOpenShadowRoots = 1 << 6,
     TextIteratorEmitsObjectReplacementCharacter = 1 << 7,
     TextIteratorDoesNotBreakAtReplacedElement = 1 << 8,
-    TextIteratorDoesNotEmitOverflowHiddenText = 1 << 9
+    TextIteratorForInnerText = 1 << 9,
+    TextIteratorForSelectionToString = 1 << 10,
+    TextIteratorForWindowFind = 1 << 11,
+    TextIteratorDoesNotEmitOverflowHiddenText = 1 << 12,
 };
 typedef unsigned TextIteratorBehaviorFlags;
 

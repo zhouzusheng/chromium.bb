@@ -38,6 +38,8 @@
       'cocoa/cocoa_mouse_capture_delegate.h',
       'cocoa/native_widget_mac_nswindow.h',
       'cocoa/native_widget_mac_nswindow.mm',
+      'cocoa/tooltip_manager_mac.h',
+      'cocoa/tooltip_manager_mac.mm',
       'cocoa/views_nswindow_delegate.h',
       'cocoa/views_nswindow_delegate.mm',
       'cocoa/widget_owner_nswindow_adapter.h',
@@ -93,8 +95,6 @@
       'controls/menu/menu_controller_delegate.h',
       'controls/menu/menu_delegate.cc',
       'controls/menu/menu_delegate.h',
-      'controls/menu/menu_event_dispatcher_linux.cc',
-      'controls/menu/menu_event_dispatcher_linux.h',
       'controls/menu/menu_host.cc',
       'controls/menu/menu_host.h',
       'controls/menu/menu_host_root_view.cc',
@@ -223,16 +223,6 @@
       'focus/view_storage.h',
       'focus/widget_focus_manager.cc',
       'focus/widget_focus_manager.h',
-      'ime/input_method.h',
-      'ime/input_method_base.cc',
-      'ime/input_method_base.h',
-      'ime/input_method_bridge.cc',
-      'ime/input_method_bridge.h',
-      'ime/input_method_delegate.h',
-      'ime/mock_input_method.cc',
-      'ime/mock_input_method.h',
-      'ime/null_input_method.cc',
-      'ime/null_input_method.h',
       'layout/box_layout.cc',
       'layout/box_layout.h',
       'layout/fill_layout.cc',
@@ -368,6 +358,8 @@
       'bubble/tray_bubble_view.h',
       'controls/menu/display_change_listener_aura.cc',
       'controls/menu/menu_config_aura.cc',
+      'controls/menu/menu_event_dispatcher.cc',
+      'controls/menu/menu_event_dispatcher.h',
       'controls/menu/menu_message_loop_aura.cc',
       'controls/menu/menu_message_loop_aura.h',
       'controls/native/native_view_host_aura.cc',
@@ -386,10 +378,10 @@
       'event_monitor_aura.h',
       'metrics_aura.cc',
       'native_cursor_aura.cc',
-      'touchui/touch_editing_menu.cc',
-      'touchui/touch_editing_menu.h',
       'touchui/touch_selection_controller_impl.cc',
       'touchui/touch_selection_controller_impl.h',
+      'touchui/touch_selection_menu_runner_views.cc',
+      'touchui/touch_selection_menu_runner_views.h',
       'view_constants_aura.cc',
       'view_constants_aura.h',
       'views_touch_selection_controller_factory_aura.cc',
@@ -479,6 +471,8 @@
       'test/menu_runner_test_api.h',
       'test/slider_test_api.cc',
       'test/slider_test_api.h',
+      'test/scoped_views_test_helper.cc',
+      'test/scoped_views_test_helper.h',
       'test/test_views.cc',
       'test/test_views.h',
       'test/test_views_delegate.h',
@@ -572,13 +566,13 @@
       'window/dialog_delegate_unittest.cc',
     ],
     'views_unittests_desktop_sources': [
-      'ime/input_method_bridge_unittest.cc',
       'widget/desktop_widget_unittest.cc',
     ],
     'views_unittests_aura_sources': [
       'controls/native/native_view_host_aura_unittest.cc',
       'corewm/tooltip_controller_unittest.cc',
       'touchui/touch_selection_controller_impl_unittest.cc',
+      'touchui/touch_selection_menu_runner_views_unittest.cc',
       'view_unittest_aura.cc',
       'widget/native_widget_aura_unittest.cc',
     ],
@@ -618,9 +612,16 @@
         '../native_theme/native_theme.gyp:native_theme',
         '../resources/ui_resources.gyp:ui_resources',
         '../strings/ui_strings.gyp:ui_strings',
+        'resources/views_resources.gyp:views_resources',
       ],
+      'all_dependent_settings': {
+        'defines': [
+          'TOOLKIT_VIEWS=1',
+        ],
+      },
       'export_dependent_settings': [
         '../accessibility/accessibility.gyp:ax_gen',
+        'resources/views_resources.gyp:views_resources',
       ],
       'defines': [
         'VIEWS_IMPLEMENTATION',
@@ -704,6 +705,7 @@
           ],
           'dependencies': [
             '../aura/aura.gyp:aura',
+            '../touch_selection/ui_touch_selection.gyp:ui_touch_selection',
             '../wm/wm.gyp:wm',
           ],
         }],
@@ -740,5 +742,39 @@
         }],
       ],
     }, # target_name: views
-  ],
+  ],  # targets
+  'conditions': [
+    ['OS=="mac"', {
+      'targets': [
+        {
+          # GN version: //ui/views:macviews_interactive_ui_tests
+          'target_name': 'macviews_interactive_ui_tests',
+          'type': 'executable',
+          'dependencies': [
+            '../../base/base.gyp:base',
+            '../../skia/skia.gyp:skia',
+            '../base/ui_base.gyp:ui_base_test_support',
+            '../compositor/compositor.gyp:compositor_test_support',
+            '../resources/ui_resources.gyp:ui_resources',
+            '../resources/ui_resources.gyp:ui_test_pak',
+            '../strings/ui_strings.gyp:ui_strings',
+            'views',
+          ],
+          'sources': [
+            'cocoa/bridged_native_widget_interactive_uitest.mm',
+            'run_all_unittests.cc',
+            'widget/native_widget_mac_interactive_uitest.mm',
+          ],
+          'conditions': [
+            ['use_aura == 1', {
+              'dependencies': [
+                '../aura/aura.gyp:aura',
+                '../wm/wm.gyp:wm',
+              ],
+            }],
+          ],
+        },  # target_name: macviews_interactive_ui_tests
+      ],  # targets
+    }],
+  ],  # conditions
 }

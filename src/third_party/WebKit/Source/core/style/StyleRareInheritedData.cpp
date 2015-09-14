@@ -84,6 +84,7 @@ StyleRareInheritedData::StyleRareInheritedData()
     , m_textAlignLast(ComputedStyle::initialTextAlignLast())
     , m_textJustify(ComputedStyle::initialTextJustify())
     , m_textOrientation(TextOrientationVerticalRight)
+    , m_textCombine(ComputedStyle::initialTextCombine())
     , m_textIndentLine(ComputedStyle::initialTextIndentLine())
     , m_textIndentType(ComputedStyle::initialTextIndentLine())
     , m_lineBoxContain(ComputedStyle::initialLineBoxContain())
@@ -140,6 +141,7 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , m_textAlignLast(o.m_textAlignLast)
     , m_textJustify(o.m_textJustify)
     , m_textOrientation(o.m_textOrientation)
+    , m_textCombine(o.m_textCombine)
     , m_textIndentLine(o.m_textIndentLine)
     , m_textIndentType(o.m_textIndentType)
     , m_lineBoxContain(o.m_lineBoxContain)
@@ -207,6 +209,7 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && m_textAlignLast == o.m_textAlignLast
         && m_textJustify == o.m_textJustify
         && m_textOrientation == o.m_textOrientation
+        && m_textCombine == o.m_textCombine
         && m_textIndentLine == o.m_textIndentLine
         && m_textIndentType == o.m_textIndentType
         && m_lineBoxContain == o.m_lineBoxContain

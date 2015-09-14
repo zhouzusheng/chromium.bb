@@ -1411,7 +1411,7 @@ void LayoutText::setText(PassRefPtr<StringImpl> text, bool force)
     // setNeedsLayoutAndPrefWidthsRecalc() only if this LayoutText has parent.
     if (parent()) {
         if (shouldSkipRelayoutOnSetText(this))
-            parent()->setShouldDoFullPaintInvalidation();
+            setShouldDoFullPaintInvalidation();
         else
             setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(LayoutInvalidationReason::TextChanged);
     }

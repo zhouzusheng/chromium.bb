@@ -5,7 +5,6 @@
 #ifndef CHROME_COMMON_SPELLCHECK_COMMON_H_
 #define CHROME_COMMON_SPELLCHECK_COMMON_H_
 
-#include <set>
 #include <string>
 #include <vector>
 
@@ -42,9 +41,6 @@ static const size_t MAX_SYNCABLE_DICTIONARY_WORDS = 1300;
 // dictionary.
 static const size_t MAX_CUSTOM_DICTIONARY_WORD_BYTES = 99;
 
-typedef std::vector<std::string> WordList;
-typedef std::set<std::string> WordSet;
-
 typedef std::pair<IPC::PlatformFileForTransit, std::string> FileLanguagePair;
 
 base::FilePath GetVersionedFileName(const std::string& input_language,
@@ -62,6 +58,9 @@ void SpellCheckLanguages(std::vector<std::string>* languages);
 void GetISOLanguageCountryCodeFromLocale(const std::string& locale,
                                          std::string* language_code,
                                          std::string* country_code);
+
+// Returns true if multilingual spellchecker is enabled.
+bool IsMultilingualSpellcheckEnabled();
 
 }  // namespace spellcheck_common
 }  // namespace chrome

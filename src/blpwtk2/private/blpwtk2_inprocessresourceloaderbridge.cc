@@ -39,6 +39,14 @@
 
 namespace blpwtk2 {
 
+class ReceivedDataImpl : public content::RequestPeer::ReceivedData {
+  public:
+    std::vector<char> d_data;
+    const char* payload() const override { return d_data.data(); }
+    int length() const override { return d_data.size(); }
+    int encoded_length() const override { return d_data.size(); }
+};
+
 class InProcessResourceLoaderBridge::InProcessResourceContext
     : public base::RefCounted<InProcessResourceContext>
     , public ResourceContext {
@@ -191,7 +199,11 @@ void InProcessResourceLoaderBridge::InProcessResourceContext::addResponseData(co
     if (!d_peer)
         return;
 
-    d_peer->OnReceivedData(buffer, length, length);
+    // TODO: Remove the need to copy here.
+    scoped_ptr<ReceivedDataImpl> copiedData(new ReceivedDataImpl());
+    copiedData->d_data.assign(buffer, buffer + length);
+
+    d_peer->OnReceivedData(copiedData.Pass());
 }
 
 void InProcessResourceLoaderBridge::InProcessResourceContext::failed()

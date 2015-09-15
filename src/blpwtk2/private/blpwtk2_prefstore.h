@@ -48,10 +48,10 @@ class PrefStore : public PersistentPrefStore {
     bool GetMutableValue(const std::string& key,
                          base::Value** result) override;
     void SetValue(const std::string& key,
-                  base::Value* value,
+                  scoped_ptr<base::Value> value,
                   uint32 flags) override;
     void SetValueSilently(const std::string& key,
-                          base::Value* value,
+                          scoped_ptr<base::Value> value,
                           uint32 flags) override;
     void RemoveValue(const std::string& key, uint32 flags) override;
     bool ReadOnly() const override;
@@ -59,12 +59,13 @@ class PrefStore : public PersistentPrefStore {
     PrefReadError ReadPrefs() override;
     void ReadPrefsAsync(ReadErrorDelegate* delegate) override;
     void CommitPendingWrite() override;
+    void SchedulePendingLossyWrites() override;
     void ReportValueChanged(const std::string& key, uint32 flags) override;
 
 private:
     void OnInitializationCompleted();
 
-    ObserverList<PrefStore::Observer, true> d_observers;
+    base::ObserverList<PrefStore::Observer, true> d_observers;
     PrefValueMap d_prefs;
 };
 

@@ -93,4 +93,5 @@ bool InitializeICUWithData(const void* icu_data) {
   return err == U_ZERO_ERROR;
 }
 
-} }  // namespace v8::internal
+}  // namespace internal
+}  // namespace v8

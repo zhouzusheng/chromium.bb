@@ -342,9 +342,12 @@ void RenderWidgetHostViewAura::ApplyEventFilterForPopupExit(
     // If we enter this code path it means that we did not receive any focus
     // lost notifications for the popup window. Ensure that blink is aware
     // of the fact that focus was lost for the host window by sending a Blur
-    // notification.
-    if (popup_parent_host_view_ && popup_parent_host_view_->host_)
+    // notification. We also set a flag in the view indicating that we need
+    // to force a Focus notification on the next mouse down.
+    if (popup_parent_host_view_ && popup_parent_host_view_->host_) {
+      popup_parent_host_view_->set_focus_on_mouse_down_ = true;
       popup_parent_host_view_->host_->Blur();
+    }
     // Note: popup_parent_host_view_ may be NULL when there are multiple
     // popup children per view. See: RenderWidgetHostViewAura::InitAsPopup().
     Shutdown();
@@ -467,6 +470,8 @@ RenderWidgetHostViewAura::RenderWidgetHostViewAura(RenderWidgetHost* host,
       has_snapped_to_boundary_(false),
       touch_editing_client_(NULL),
       is_guest_view_hack_(is_guest_view_hack),
+      begin_frame_observer_proxy_(this),
+      set_focus_on_mouse_down_(false),
       weak_ptr_factory_(this) {
   if (!is_guest_view_hack_)
     host_->SetView(this);
@@ -496,6 +501,8 @@ bool RenderWidgetHostViewAura::OnMessageReceived(
     // RenderWidgetHostViewAndroid should also be moved at the same time.
     IPC_MESSAGE_HANDLER(ViewHostMsg_TextInputStateChanged,
                         OnTextInputStateChanged)
+    IPC_MESSAGE_HANDLER(ViewHostMsg_SetNeedsBeginFrames,
+                        OnSetNeedsBeginFrames)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -725,6 +732,15 @@ ui::TextInputClient* RenderWidgetHostViewAura::GetTextInputClient() {
   return this;
 }
 
+void RenderWidgetHostViewAura::OnSetNeedsBeginFrames(bool needs_begin_frames) {
+  begin_frame_observer_proxy_.SetNeedsBeginFrames(needs_begin_frames);
+}
+
+void RenderWidgetHostViewAura::SendBeginFrame(const cc::BeginFrameArgs& args) {
+  delegated_frame_host_->SetVSyncParameters(args.frame_time, args.interval);
+  host_->Send(new ViewMsg_BeginFrame(host_->GetRoutingID(), args));
+}
+
 void RenderWidgetHostViewAura::SetKeyboardFocus() {
 #if defined(OS_WIN)
   if (CanFocus()) {
@@ -733,6 +749,10 @@ void RenderWidgetHostViewAura::SetKeyboardFocus() {
       ::SetFocus(host->GetAcceleratedWidget());
   }
 #endif
+  if (host_ && set_focus_on_mouse_down_) {
+    set_focus_on_mouse_down_ = false;
+    host_->Focus();
+  }
 }
 
 RenderFrameHostImpl* RenderWidgetHostViewAura::GetFocusedFrame() {
@@ -820,6 +840,8 @@ void RenderWidgetHostViewAura::HandleParentBoundsChanged() {
         window_->GetBoundsInRootWindow());
   }
 #endif
+  if (!in_shutdown_)
+    host_->SendScreenRects();
 }
 
 void RenderWidgetHostViewAura::ParentHierarchyChanged() {
@@ -1179,7 +1201,8 @@ void RenderWidgetHostViewAura::OnSwapCompositorFrame(
         output_surface_id,
         frame->delegated_frame_data.Pass(),
         frame->metadata.device_scale_factor,
-        frame->metadata.latency_info);
+        frame->metadata.latency_info,
+        &frame->metadata.satisfies_sequences);
     return;
   }
 
@@ -1320,7 +1343,8 @@ void RenderWidgetHostViewAura::ProcessAckedTouchEvent(
   for (size_t i = 0; i < touch.event.touchesLength; ++i) {
     if (touch.event.touches[i].state == required_state) {
       DCHECK(!sent_ack);
-      host->dispatcher()->ProcessedTouchEvent(window_, result);
+      host->dispatcher()->ProcessedTouchEvent(touch.event.uniqueTouchEventId,
+                                              window_, result);
       sent_ack = true;
     }
   }
@@ -1632,10 +1656,6 @@ void RenderWidgetHostViewAura::InsertChar(base::char16 ch, int flags) {
   }
 }
 
-gfx::NativeWindow RenderWidgetHostViewAura::GetAttachedWindow() const {
-  return window_;
-}
-
 ui::TextInputType RenderWidgetHostViewAura::GetTextInputType() const {
   return text_input_type_;
 }
@@ -1805,18 +1825,6 @@ void RenderWidgetHostViewAura::EnsureCaretInRect(const gfx::Rect& rect) {
       ConvertRectFromScreen(intersected_rect));
 }
 
-void RenderWidgetHostViewAura::OnCandidateWindowShown() {
-  host_->CandidateWindowShown();
-}
-
-void RenderWidgetHostViewAura::OnCandidateWindowUpdated() {
-  host_->CandidateWindowUpdated();
-}
-
-void RenderWidgetHostViewAura::OnCandidateWindowHidden() {
-  host_->CandidateWindowHidden();
-}
-
 bool RenderWidgetHostViewAura::IsEditCommandEnabled(int command_id) {
   return false;
 }
@@ -1869,10 +1877,6 @@ void RenderWidgetHostViewAura::OnBoundsChanged(const gfx::Rect& old_bounds,
 
   if (GetInputMethod())
     GetInputMethod()->OnCaretBoundsChanged(this);
-}
-
-ui::TextInputClient* RenderWidgetHostViewAura::GetFocusedTextInputClient() {
-  return GetTextInputClient();
 }
 
 gfx::NativeCursor RenderWidgetHostViewAura::GetCursor(const gfx::Point& point) {
@@ -2491,7 +2495,7 @@ ui::InputMethod* RenderWidgetHostViewAura::GetInputMethod() const {
   aura::Window* root_window = window_->GetRootWindow();
   if (!root_window)
     return NULL;
-  return root_window->GetProperty(aura::client::kRootWindowInputMethodKey);
+  return root_window->GetHost()->GetInputMethod();
 }
 
 void RenderWidgetHostViewAura::Shutdown() {
@@ -2502,8 +2506,7 @@ void RenderWidgetHostViewAura::Shutdown() {
 }
 
 bool RenderWidgetHostViewAura::NeedsInputGrab() {
-  return popup_type_ == blink::WebPopupTypeSelect ||
-         popup_type_ == blink::WebPopupTypePage;
+  return popup_type_ == blink::WebPopupTypePage;
 }
 
 bool RenderWidgetHostViewAura::NeedsMouseCapture() {
@@ -2697,6 +2700,8 @@ void RenderWidgetHostViewAura::AddedToRootWindow() {
 #endif
 
   delegated_frame_host_->SetCompositor(window_->GetHost()->compositor());
+  if (window_->GetHost()->compositor())
+    begin_frame_observer_proxy_.SetCompositor(window_->GetHost()->compositor());
 }
 
 void RenderWidgetHostViewAura::RemovingFromRootWindow() {
@@ -2709,6 +2714,7 @@ void RenderWidgetHostViewAura::RemovingFromRootWindow() {
 
   window_->GetHost()->RemoveObserver(this);
   delegated_frame_host_->ResetCompositor();
+  begin_frame_observer_proxy_.ResetCompositor();
 
 #if defined(OS_WIN)
   // Update the legacy window's parent temporarily to the desktop window. It
@@ -2720,8 +2726,8 @@ void RenderWidgetHostViewAura::RemovingFromRootWindow() {
 
 void RenderWidgetHostViewAura::DetachFromInputMethod() {
   ui::InputMethod* input_method = GetInputMethod();
-  if (input_method && input_method->GetTextInputClient() == this)
-    input_method->SetFocusedTextInputClient(NULL);
+  if (input_method)
+    input_method->DetachTextInputClient(this);
 }
 
 void RenderWidgetHostViewAura::ForwardKeyboardEvent(

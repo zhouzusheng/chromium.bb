@@ -18,7 +18,7 @@
       'type': '<(gtest_target_type)',
       'dependencies': [
         'audio_processing',
-        'iSACFix',
+        'isac_fix',
         'webrtc_opus',
         '<(webrtc_root)/system_wrappers/system_wrappers.gyp:system_wrappers',
         '<(webrtc_root)/test/test.gyp:test_support_main',

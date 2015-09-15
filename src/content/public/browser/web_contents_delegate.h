@@ -15,6 +15,7 @@
 #include "content/public/browser/invalidate_type.h"
 #include "content/public/browser/navigation_type.h"
 #include "content/public/common/media_stream_request.h"
+#include "content/public/common/security_style.h"
 #include "content/public/common/window_container_type.h"
 #include "third_party/WebKit/public/platform/WebDisplayMode.h"
 #include "third_party/WebKit/public/web/WebDragOperation.h"
@@ -47,6 +48,7 @@ struct DropData;
 struct FileChooserParams;
 struct NativeWebKeyboardEvent;
 struct Referrer;
+struct SecurityStyleExplanations;
 struct SSLStatus;
 }
 
@@ -239,8 +241,7 @@ class CONTENT_EXPORT WebContentsDelegate {
 
   // Asks the delegate if the given tab can download.
   // Invoking the |callback| synchronously is OK.
-  virtual void CanDownload(RenderViewHost* render_view_host,
-                           const GURL& url,
+  virtual void CanDownload(const GURL& url,
                            const std::string& request_method,
                            const base::Callback<void(bool)>& callback);
 
@@ -302,7 +303,7 @@ class CONTENT_EXPORT WebContentsDelegate {
       int route_id,
       int main_frame_route_id,
       WindowContainerType window_container_type,
-      const base::string16& frame_name,
+      const std::string& frame_name,
       const GURL& target_url,
       const std::string& partition_id,
       SessionStorageNamespace* session_storage_namespace);
@@ -311,7 +312,7 @@ class CONTENT_EXPORT WebContentsDelegate {
   // typically happens when popups are created.
   virtual void WebContentsCreated(WebContents* source_contents,
                                   int opener_render_frame_id,
-                                  const base::string16& frame_name,
+                                  const std::string& frame_name,
                                   const GURL& target_url,
                                   const ContentCreatedParams& params,
                                   WebContents* new_contents) {}
@@ -507,6 +508,14 @@ class CONTENT_EXPORT WebContentsDelegate {
   // Called in response to a request to save a frame. If this returns true, the
   // default behavior is suppressed.
   virtual bool SaveFrame(const GURL& url, const Referrer& referrer);
+
+  // Can be overridden by a delegate to return the security style of the
+  // given |web_contents|, populating |security_style_explanations| to
+  // explain why the SecurityStyle was downgraded. Returns
+  // SECURITY_STYLE_UNKNOWN if not overriden.
+  virtual SecurityStyle GetSecurityStyle(
+      WebContents* web_contents,
+      SecurityStyleExplanations* security_style_explanations);
 
  protected:
   virtual ~WebContentsDelegate();

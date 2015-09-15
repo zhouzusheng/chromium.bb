@@ -48,7 +48,7 @@ void ChannelInfo::loadSwitchesFromCommandLine(const base::CommandLine& commandLi
 
 std::string ChannelInfo::serialize() const
 {
-    Pickle pickle(sizeof(Pickle::Header));
+    base::Pickle pickle(sizeof(base::Pickle::Header));
     pickle.WriteUInt16(PICKLE_VERSION);
     pickle.WriteString(d_channelId);
     pickle.WriteInt(d_switches.size());
@@ -69,8 +69,8 @@ bool ChannelInfo::deserialize(const StringRef& data)
     if (!Base64Decode(sp, &decoded))
         return false;
 
-    Pickle pickle(decoded.data(), decoded.size());
-    PickleIterator it(pickle);
+    base::Pickle pickle(decoded.data(), decoded.size());
+    base::PickleIterator it(pickle);
     uint16 versionCheck;
     if (!it.ReadUInt16(&versionCheck) || versionCheck != PICKLE_VERSION)
         return false;

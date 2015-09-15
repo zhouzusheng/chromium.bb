@@ -72,7 +72,7 @@ void ParamTraits<WebViewProperties>::Write(Message* m, const param_type& p)
     WriteParam(m, p.inputEventsDisabled);
 }
 
-bool ParamTraits<WebViewProperties>::Read(const Message* m, PickleIterator* iter, param_type* r)
+bool ParamTraits<WebViewProperties>::Read(const Message* m, base::PickleIterator* iter, param_type* r)
 {
     if (!ReadParam(m, iter, &r->takeKeyboardFocusOnMouseDown))
         return false;
@@ -116,7 +116,7 @@ template <>
 struct ParamTraits<blpwtk2::ContextMenuItem> {
     typedef blpwtk2::ContextMenuItem param_type;
     static void Write(Message* m, const param_type& p);
-    static bool Read(const Message* m, PickleIterator* iter, param_type* r);
+    static bool Read(const Message* m, base::PickleIterator* iter, param_type* r);
     static void Log(const param_type& p, std::string* l);
 };
 
@@ -134,7 +134,7 @@ void ParamTraits<ContextMenuItem>::Write(Message* m, const param_type& p)
     WriteParam(m, impl.d_submenu);
 }
 
-bool ParamTraits<ContextMenuItem>::Read(const Message* m, PickleIterator* iter, param_type* r)
+bool ParamTraits<ContextMenuItem>::Read(const Message* m, base::PickleIterator* iter, param_type* r)
 {
     ContextMenuItemImpl& impl = *getContextMenuItemImpl(*r);
     if (!ReadParam(m, iter, &impl.d_label))
@@ -198,7 +198,7 @@ void ParamTraits<ContextMenuParams>::Write(Message* m, const param_type& p)
     WriteParam(m, impl.d_suggestions);
 }
 
-bool ParamTraits<ContextMenuParams>::Read(const Message* m, PickleIterator* iter, param_type* r)
+bool ParamTraits<ContextMenuParams>::Read(const Message* m, base::PickleIterator* iter, param_type* r)
 {
     ContextMenuParamsImpl& impl = *getContextMenuParamsImpl(*r);
     if (!ReadParam(m, iter, &impl.d_misspelledWord))
@@ -257,7 +257,7 @@ void ParamTraits<FileChooserParams>::Write(Message* m, const param_type& p)
     WriteParam(m, impl->d_acceptTypes);
 }
 
-bool ParamTraits<FileChooserParams>::Read(const Message* m, PickleIterator* iter, param_type* r)
+bool ParamTraits<FileChooserParams>::Read(const Message* m, base::PickleIterator* iter, param_type* r)
 {
     FileChooserParamsImpl* impl = *reinterpret_cast<FileChooserParamsImpl**>(r);
     if (!ReadParam(m, iter, &impl->d_mode))
@@ -296,7 +296,7 @@ void ParamTraits<FindOnPageRequest>::Write(Message* m, const param_type& p)
     WriteParam(m, p.forward);
 }
 
-bool ParamTraits<FindOnPageRequest>::Read(const Message* m, PickleIterator* iter, param_type* r)
+bool ParamTraits<FindOnPageRequest>::Read(const Message* m, base::PickleIterator* iter, param_type* r)
 {
     if (!ReadParam(m, iter, &r->reqId))
         return false;
@@ -361,7 +361,7 @@ void ParamTraits<NewViewParams>::Write(Message* m, const param_type& p)
     }
 }
 
-bool ParamTraits<NewViewParams>::Read(const Message* m, PickleIterator* iter, param_type* r)
+bool ParamTraits<NewViewParams>::Read(const Message* m, base::PickleIterator* iter, param_type* r)
 {
     int intValue;
     int length, strLength;
@@ -462,7 +462,7 @@ template <>
 struct ParamTraits<net::ProxyServer> {
     typedef net::ProxyServer param_type;
     static void Write(Message* m, const param_type& p);
-    static bool Read(const Message* m, PickleIterator* iter, param_type* r);
+    static bool Read(const Message* m, base::PickleIterator* iter, param_type* r);
     static void Log(const param_type& p, std::string* l);
 };
 
@@ -473,7 +473,7 @@ void ParamTraits<net::ProxyServer>::Write(Message* m, const param_type& p)
     m->WriteUInt16(p.host_port_pair().port());
 }
 
-bool ParamTraits<net::ProxyServer>::Read(const Message* m, PickleIterator* iter, param_type* r)
+bool ParamTraits<net::ProxyServer>::Read(const Message* m, base::PickleIterator* iter, param_type* r)
 {
     int scheme;
     if (!iter->ReadInt(&scheme))
@@ -513,7 +513,7 @@ void ParamTraits<ProxyConfig>::Write(Message* m, const param_type& p)
     WriteParam(m, impl.proxy_rules().bypass_rules.ToString());
 }
 
-bool ParamTraits<ProxyConfig>::Read(const Message* m, PickleIterator* iter, param_type* r)
+bool ParamTraits<ProxyConfig>::Read(const Message* m, base::PickleIterator* iter, param_type* r)
 {
     bool hasPacUrl;
     net::ProxyConfig& impl = getProxyConfigImpl(*r)->d_config;
@@ -578,7 +578,7 @@ void ParamTraits<SpellCheckConfig>::Write(Message* m, const param_type& p)
 }
 
 bool ParamTraits<SpellCheckConfig>::Read(const Message* m,
-                                         PickleIterator* iter,
+                                         base::PickleIterator* iter,
                                          param_type* r)
 {
     // TODO: expose the internal vectors of SpellCheckConfig to make this

@@ -1,34 +1,36 @@
 // Copyright 2014 PDFium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
- 
+
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
 #include "../../../include/fxge/fx_ge.h"
-#if _FX_OS_ == _FX_WIN32_DESKTOP_ || _FX_OS_ == _FX_WIN64_
-#include "../../../include/fxge/fx_ge_win32.h"
+
+#if _FX_OS_ == _FX_WIN32_DESKTOP_ || _FX_OS_ == _FX_WIN64_DESKTOP_
 #include <crtdbg.h>
-#include "../agg/include/fxfx_agg_clip_liang_barsky.h"
+
+#include "../../../include/fxcodec/fx_codec.h"
+#include "../../../include/fxge/fx_freetype.h"
+#include "../../../include/fxge/fx_ge_win32.h"
+#include "../agg/include/fx_agg_driver.h"
+#include "../dib/dib_int.h"
+#include "../ge/text_int.h"
 #include "dwrite_int.h"
 #include "win32_int.h"
-#include "../ge/text_int.h"
-#include "../dib/dib_int.h"
-#include "../agg/include/fx_agg_driver.h"
-#include "../../../include/fxge/fx_freetype.h"
-#include "../../../include/fxcodec/fx_codec.h"
-class CWin32FontInfo FX_FINAL : public IFX_SystemFontInfo
+
+class CWin32FontInfo final : public IFX_SystemFontInfo
 {
 public:
     CWin32FontInfo();
     ~CWin32FontInfo();
     virtual void		Release();
     virtual	FX_BOOL		EnumFontList(CFX_FontMapper* pMapper);
-    virtual void*		MapFont(int weight, FX_BOOL bItalic, int charset, int pitch_family, FX_LPCSTR face, FX_BOOL& bExact);
-    virtual void*		GetFont(FX_LPCSTR face)
+    virtual void*		MapFont(int weight, FX_BOOL bItalic, int charset, int pitch_family, const FX_CHAR* face, FX_BOOL& bExact);
+    virtual void*		GetFont(const FX_CHAR* face)
     {
         return NULL;
     }
-    virtual FX_DWORD	GetFontData(void* hFont, FX_DWORD table, FX_LPBYTE buffer, FX_DWORD size);
+    virtual FX_DWORD	GetFontData(void* hFont, FX_DWORD table, uint8_t* buffer, FX_DWORD size);
     virtual void		DeleteFont(void* hFont);
     virtual	FX_BOOL		GetFaceName(void* hFont, CFX_ByteString& name);
     virtual FX_BOOL		GetFontCharset(void* hFont, int& charset);
@@ -64,9 +66,9 @@ FX_BOOL CWin32FontInfo::IsOpenTypeFromDiv(const LOGFONTA *plf)
     FX_DWORD font_size  = GetFontData(hFont, 0, NULL, 0);
     if (font_size != GDI_ERROR && font_size >= sizeof(FX_DWORD)) {
         FX_DWORD lVersion = 0;
-        GetFontData(hFont, 0, (FX_BYTE*)(&lVersion), sizeof(FX_DWORD));
-        lVersion = (((FX_DWORD)(FX_BYTE)(lVersion)) << 24) | ((FX_DWORD)((FX_BYTE)(lVersion >> 8))) << 16 |
-                   ((FX_DWORD)((FX_BYTE)(lVersion >> 16))) << 8 | ((FX_BYTE)(lVersion >> 24));
+        GetFontData(hFont, 0, (uint8_t*)(&lVersion), sizeof(FX_DWORD));
+        lVersion = (((FX_DWORD)(uint8_t)(lVersion)) << 24) | ((FX_DWORD)((uint8_t)(lVersion >> 8))) << 16 |
+                   ((FX_DWORD)((uint8_t)(lVersion >> 16))) << 8 | ((uint8_t)(lVersion >> 24));
         if (lVersion == TT_MAKE_TAG('O', 'T', 'T', 'O') ||
                 lVersion == 0x00010000 ||
                 lVersion == TT_MAKE_TAG('t', 't', 'c', 'f') ||
@@ -85,9 +87,9 @@ FX_BOOL CWin32FontInfo::IsSupportFontFormDiv(const LOGFONTA* plf)
     FX_DWORD font_size  = GetFontData(hFont, 0, NULL, 0);
     if (font_size != GDI_ERROR && font_size >= sizeof(FX_DWORD)) {
         FX_DWORD lVersion = 0;
-        GetFontData(hFont, 0, (FX_BYTE*)(&lVersion), sizeof(FX_DWORD));
-        lVersion = (((FX_DWORD)(FX_BYTE)(lVersion)) << 24) | ((FX_DWORD)((FX_BYTE)(lVersion >> 8))) << 16 |
-                   ((FX_DWORD)((FX_BYTE)(lVersion >> 16))) << 8 | ((FX_BYTE)(lVersion >> 24));
+        GetFontData(hFont, 0, (uint8_t*)(&lVersion), sizeof(FX_DWORD));
+        lVersion = (((FX_DWORD)(uint8_t)(lVersion)) << 24) | ((FX_DWORD)((uint8_t)(lVersion >> 8))) << 16 |
+                   ((FX_DWORD)((uint8_t)(lVersion >> 16))) << 8 | ((uint8_t)(lVersion >> 24));
         if (lVersion == TT_MAKE_TAG('O', 'T', 'T', 'O') ||
                 lVersion == 0x00010000 ||
                 lVersion == TT_MAKE_TAG('t', 't', 'c', 'f') ||
@@ -141,26 +143,26 @@ FX_BOOL CWin32FontInfo::EnumFontList(CFX_FontMapper* pMapper)
 {
     m_pMapper = pMapper;
     LOGFONTA lf;
-    FXSYS_memset32(&lf, 0, sizeof(LOGFONTA));
+    FXSYS_memset(&lf, 0, sizeof(LOGFONTA));
     lf.lfCharSet = DEFAULT_CHARSET;
     lf.lfFaceName[0] = 0;
     lf.lfPitchAndFamily = 0;
-    EnumFontFamiliesExA(m_hDC, &lf, (FONTENUMPROCA)FontEnumProc, (FX_UINTPTR)this, 0);
+    EnumFontFamiliesExA(m_hDC, &lf, (FONTENUMPROCA)FontEnumProc, (uintptr_t)this, 0);
     if (pMapper->GetFontEnumerator()) {
         pMapper->GetFontEnumerator()->Finish();
     }
     return TRUE;
 }
 static const struct {
-    FX_LPCSTR	m_pFaceName;
-    FX_LPCSTR	m_pVariantName;
+    const FX_CHAR*	m_pFaceName;
+    const FX_CHAR*	m_pVariantName;
 }
 VariantNames[] = {
     {"DFKai-SB", "\x19\x6A\x77\x69\xD4\x9A"},
 };
 static const struct {
-    FX_LPCSTR	m_pName;
-    FX_LPCSTR	m_pWinName;
+    const FX_CHAR*	m_pName;
+    const FX_CHAR*	m_pWinName;
     FX_BOOL		m_bBold;
     FX_BOOL		m_bItalic;
 }
@@ -197,8 +199,8 @@ CFX_ByteString CWin32FontInfo::FindFont(const CFX_ByteString& name)
     return CFX_ByteString();
 }
 struct _FontNameMap {
-    FX_LPCSTR	m_pSubFontName;
-    FX_LPCSTR	m_pSrcFontName;
+    const FX_CHAR*	m_pSubFontName;
+    const FX_CHAR*	m_pSrcFontName;
 };
 const _FontNameMap g_JpFontNameMap[] = {
     {"MS Mincho", "Heiseimin-W3"},
@@ -207,7 +209,7 @@ const _FontNameMap g_JpFontNameMap[] = {
 extern "C" {
     static int compareString(const void* key, const void* element)
     {
-        return FXSYS_stricmp((FX_LPCSTR)key, ((_FontNameMap*)element)->m_pSrcFontName);
+        return FXSYS_stricmp((const FX_CHAR*)key, ((_FontNameMap*)element)->m_pSrcFontName);
     }
 }
 FX_BOOL _GetSubFontName(CFX_ByteString& name)
@@ -282,7 +284,7 @@ void CWin32FontInfo::GetJapanesePreference(CFX_ByteString& face, int weight, int
         face = "MS PMincho";
     }
 }
-void* CWin32FontInfo::MapFont(int weight, FX_BOOL bItalic, int charset, int pitch_family, FX_LPCSTR cstr_face, FX_BOOL& bExact)
+void* CWin32FontInfo::MapFont(int weight, FX_BOOL bItalic, int charset, int pitch_family, const FX_CHAR* cstr_face, FX_BOOL& bExact)
 {
     CFX_ByteString face = cstr_face;
     int iBaseFont;
@@ -359,7 +361,7 @@ void CWin32FontInfo::DeleteFont(void* hFont)
 {
     ::DeleteObject(hFont);
 }
-FX_DWORD CWin32FontInfo::GetFontData(void* hFont, FX_DWORD table, FX_LPBYTE buffer, FX_DWORD size)
+FX_DWORD CWin32FontInfo::GetFontData(void* hFont, FX_DWORD table, uint8_t* buffer, FX_DWORD size)
 {
     HFONT hOldFont = (HFONT)::SelectObject(m_hDC, (HFONT)hFont);
     table = FXDWORD_FROM_MSBFIRST(table);
@@ -456,14 +458,14 @@ int CGdiDeviceDriver::GetDeviceCaps(int caps_id)
     }
     return 0;
 }
-FX_LPVOID CGdiDeviceDriver::GetClipRgn()
+void* CGdiDeviceDriver::GetClipRgn()
 {
     HRGN hClipRgn = CreateRectRgn(0, 0, 1, 1);
     if (::GetClipRgn(m_hDC, hClipRgn) == 0) {
         DeleteObject(hClipRgn);
         hClipRgn = NULL;
     }
-    return (FX_LPVOID)hClipRgn;
+    return (void*)hClipRgn;
 }
 FX_BOOL CGdiDeviceDriver::GDI_SetDIBits(const CFX_DIBitmap* pBitmap1, const FX_RECT* pSrcRect, int left, int top, void* pIccTransform)
 {
@@ -518,7 +520,7 @@ FX_BOOL CGdiDeviceDriver::GDI_StretchDIBits(const CFX_DIBitmap* pBitmap1, int de
         return FALSE;
     }
     CFX_ByteString info = CFX_WindowsDIB::GetBitmapInfo(pBitmap);
-    if ((FX_INT64)abs(dest_width) * abs(dest_height) < (FX_INT64)pBitmap1->GetWidth() * pBitmap1->GetHeight() * 4 ||
+    if ((int64_t)abs(dest_width) * abs(dest_height) < (int64_t)pBitmap1->GetWidth() * pBitmap1->GetHeight() * 4 ||
             (flags & FXDIB_INTERPOL) || (flags & FXDIB_BICUBIC_INTERPOL)) {
         SetStretchBltMode(m_hDC, HALFTONE);
     } else {
@@ -526,7 +528,7 @@ FX_BOOL CGdiDeviceDriver::GDI_StretchDIBits(const CFX_DIBitmap* pBitmap1, int de
     }
     CFX_DIBitmap* pToStrechBitmap = pBitmap;
     bool del = false;
-    if (m_DeviceClass == FXDC_PRINTER && ((FX_INT64)pBitmap->GetWidth() * pBitmap->GetHeight() > (FX_INT64)abs(dest_width) * abs(dest_height))) {
+    if (m_DeviceClass == FXDC_PRINTER && ((int64_t)pBitmap->GetWidth() * pBitmap->GetHeight() > (int64_t)abs(dest_width) * abs(dest_height))) {
         pToStrechBitmap = pBitmap->StretchTo(dest_width, dest_height);
         del = true;
     }
@@ -553,7 +555,7 @@ FX_BOOL CGdiDeviceDriver::GDI_StretchBitMask(const CFX_DIBitmap* pBitmap1, int d
         BITMAPINFOHEADER	bmiHeader;
         FX_DWORD			bmiColors[2];
     } bmi;
-    FXSYS_memset32(&bmi.bmiHeader, 0, sizeof (BITMAPINFOHEADER));
+    FXSYS_memset(&bmi.bmiHeader, 0, sizeof (BITMAPINFOHEADER));
     bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
     bmi.bmiHeader.biBitCount = 1;
     bmi.bmiHeader.biCompression = BI_RGB;
@@ -569,7 +571,7 @@ FX_BOOL CGdiDeviceDriver::GDI_StretchBitMask(const CFX_DIBitmap* pBitmap1, int d
     HBRUSH hPattern = CreateSolidBrush(bitmap_color & 0xffffff);
     HBRUSH hOld = (HBRUSH)SelectObject(m_hDC, hPattern);
 
-    
+
     // In PDF, when image mask is 1, use device bitmap; when mask is 0, use brush bitmap.
     // A complete list of the boolen operations is as follows:
 
@@ -597,7 +599,7 @@ BOOL CGdiDeviceDriver::GetClipBox(FX_RECT* pRect)
 {
     return ::GetClipBox(m_hDC, (RECT*)pRect);
 }
-FX_BOOL CGdiDeviceDriver::SetClipRgn(FX_LPVOID hRgn)
+FX_BOOL CGdiDeviceDriver::SetClipRgn(void* hRgn)
 {
     ::SelectClipRgn(m_hDC, (HRGN)hRgn);
     return TRUE;
@@ -655,9 +657,6 @@ static HPEN _CreatePen(const CFX_GraphStateData* pGraphState, const CFX_AffineMa
     FX_DWORD* pDash = NULL;
     if (pGraphState->m_DashCount) {
         pDash = FX_Alloc(FX_DWORD, pGraphState->m_DashCount);
-        if (!pDash) {
-            return NULL;
-        }
         for (int i = 0; i < pGraphState->m_DashCount; i ++) {
             pDash[i] = FXSYS_round(pMatrix ? pMatrix->TransformDistance(pGraphState->m_DashArray[i]) : pGraphState->m_DashArray[i]);
             if (pDash[i] < 1) {
@@ -793,7 +792,7 @@ FX_BOOL CGdiDeviceDriver::DrawPath(const CFX_PathData* pPathData,
         return FALSE;
     }
     if (pPlatform->m_GdiplusExt.IsAvailable()) {
-        if (bDrawAlpha || ((m_DeviceClass != FXDC_PRINTER && !(fill_mode & FXFILL_FULLCOVER)) || pGraphState && pGraphState->m_DashCount)) {
+        if (bDrawAlpha || ((m_DeviceClass != FXDC_PRINTER && !(fill_mode & FXFILL_FULLCOVER)) || (pGraphState && pGraphState->m_DashCount))) {
             if ( !((NULL == pMatrix || _MatrixNoScaled(pMatrix)) &&
                     pGraphState && pGraphState->m_LineWidth == 1.f &&
                     (pPathData->GetPointCount() == 5 || pPathData->GetPointCount() == 4) &&
@@ -930,7 +929,7 @@ FX_BOOL CGdiDeviceDriver::DrawCosmeticLine(FX_FLOAT x1, FX_FLOAT y1, FX_FLOAT x2
     DeleteObject(hPen);
     return TRUE;
 }
-FX_BOOL CGdiDeviceDriver::DeleteDeviceRgn(FX_LPVOID pRgn)
+FX_BOOL CGdiDeviceDriver::DeleteDeviceRgn(void* pRgn)
 {
     DeleteObject((HGDIOBJ)pRgn);
     return TRUE;
@@ -953,7 +952,7 @@ FX_BOOL CGdiDisplayDriver::GetDIBits(CFX_DIBitmap* pBitmap, int left, int top, v
     BitBlt(hDCMemory, 0, 0, width, height, m_hDC, left, top, SRCCOPY);
     SelectObject(hDCMemory, holdbmp);
     BITMAPINFO bmi;
-    FXSYS_memset32(&bmi, 0, sizeof bmi);
+    FXSYS_memset(&bmi, 0, sizeof bmi);
     bmi.bmiHeader.biSize = sizeof bmi.bmiHeader;
     bmi.bmiHeader.biBitCount = pBitmap->GetBPP();
     bmi.bmiHeader.biHeight = -height;
@@ -1173,14 +1172,14 @@ IFX_RenderDeviceDriver* CFX_WindowsDevice::CreateDriver(HDC hDC, FX_BOOL bCmykOu
 CFX_WinBitmapDevice::CFX_WinBitmapDevice(int width, int height, FXDIB_Format format)
 {
     BITMAPINFOHEADER bmih;
-    FXSYS_memset32(&bmih, 0, sizeof (BITMAPINFOHEADER));
+    FXSYS_memset(&bmih, 0, sizeof (BITMAPINFOHEADER));
     bmih.biSize = sizeof(BITMAPINFOHEADER);
     bmih.biBitCount = format & 0xff;
     bmih.biHeight = -height;
     bmih.biPlanes = 1;
     bmih.biWidth = width;
-    FX_LPBYTE pBuffer;
-    m_hBitmap = CreateDIBSection(NULL, (BITMAPINFO*)&bmih, DIB_RGB_COLORS, (FX_LPVOID*)&pBuffer, NULL, 0);
+    uint8_t* pBuffer;
+    m_hBitmap = CreateDIBSection(NULL, (BITMAPINFO*)&bmih, DIB_RGB_COLORS, (void**)&pBuffer, NULL, 0);
     if (m_hBitmap == NULL) {
         return;
     }
@@ -1203,4 +1202,5 @@ CFX_WinBitmapDevice::~CFX_WinBitmapDevice()
     }
     delete GetBitmap();
 }
-#endif
+
+#endif  // _FX_OS_ == _FX_WIN32_DESKTOP_ || _FX_OS_ == _FX_WIN64_

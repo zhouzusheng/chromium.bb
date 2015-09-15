@@ -1,7 +1,7 @@
 // Copyright 2014 PDFium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
- 
+
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
 #include "../../include/fpdfdoc/fpdf_doc.h"
@@ -218,7 +218,7 @@ CPDF_Dictionary* CPDF_Action::GetAnnot() const
     }
     return NULL;
 }
-FX_INT32 CPDF_Action::GetOperationType() const
+int32_t CPDF_Action::GetOperationType() const
 {
     if (m_pDict == NULL) {
         return 0;

@@ -216,8 +216,9 @@
               '-Wno-logical-op-parentheses',
               # ICU has some `unsigned < 0` checks.
               '-Wno-tautological-compare',
-              # Looks like a real issue, see http://crbug.com/114660
-              '-Wno-return-type-c-linkage',
+              # ICU has some code with the pattern:
+              #   if (found = uprv_getWindowsTimeZoneInfo(...))
+              '-Wno-parentheses',
             ],
           },
           # Since ICU wants to internally use its own deprecated APIs, don't
@@ -263,6 +264,8 @@
                     # See http://bugs.icu-project.org/trac/ticket/11122
                     '-Wno-inline-new-delete',
                     '-Wno-implicit-exception-spec-mismatch',
+                    # See http://bugs.icu-project.org/trac/ticket/11757.
+                    '-Wno-reorder',
                   ],
                 },
               },
@@ -307,6 +310,14 @@
               # enum (e.g. URES_TABLE32 which is in UResInternalType). This
               # is on purpose.
               '-Wno-switch',
+              # ICU has some code with the pattern:
+              #   if (found = uprv_getWindowsTimeZoneInfo(...))
+              '-Wno-parentheses',
+              # ICU generally has no unused variables, but there are a few
+              # places where this warning triggers.
+              # See https://codereview.chromium.org/1222643002/ and
+              # http://www.icu-project.org/trac/ticket/11759.
+              "-Wno-unused-const-variable",
             ],
           },
           'cflags': [

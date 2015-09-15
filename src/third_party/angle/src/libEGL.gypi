@@ -10,11 +10,16 @@
         {
             'target_name': 'libEGL',
             'type': 'shared_library',
-            'dependencies': [
+            'dependencies':
+            [
+                'libANGLE',
                 'libGLESv2',
                 '../../../blpwtk2/blpwtk2.gyp:blpwtk2_generate_sources',
             ],
-            'includes': [ '../build/common_defines.gypi', ],
+            'includes':
+            [
+                '../build/common_defines.gypi',
+            ],
             'include_dirs':
             [
                 '.',
@@ -23,13 +28,6 @@
             'sources':
             [
                 '<@(libegl_sources)',
-            ],
-            'defines':
-            [
-                'GL_APICALL=',
-                'GL_GLEXT_PROTOTYPES=',
-                'EGLAPI=',
-                'LIBEGL_IMPLEMENTATION',
             ],
             'conditions':
             [
@@ -41,6 +39,7 @@
                 ['angle_build_winrt==1',
                 {
                     'msvs_enable_winrt' : '1',
+                    'msvs_application_type_revision' : '<(angle_build_winrt_app_type_revision)',
                     'msvs_requires_importlibrary' : 'true',
                     'msvs_settings':
                     {

@@ -64,15 +64,15 @@ bool PrefStore::GetMutableValue(const std::string& key, base::Value** result)
     return d_prefs.GetValue(key, result);
 }
 
-void PrefStore::SetValue(const std::string& key, base::Value* value, uint32 flags)
+void PrefStore::SetValue(const std::string& key, scoped_ptr<base::Value> value, uint32 flags)
 {
-    if (d_prefs.SetValue(key, value))
+    if (d_prefs.SetValue(key, value.Pass()))
         ReportValueChanged(key, flags);
 }
 
-void PrefStore::SetValueSilently(const std::string& key, base::Value* value, uint32 flags)
+void PrefStore::SetValueSilently(const std::string& key, scoped_ptr<base::Value> value, uint32 flags)
 {
-    d_prefs.SetValue(key, value);
+    d_prefs.SetValue(key, value.Pass());
 }
 
 void PrefStore::RemoveValue(const std::string& key, uint32 flags)
@@ -104,6 +104,11 @@ void PrefStore::ReadPrefsAsync(ReadErrorDelegate* error_delegate_raw)
 }
 
 void PrefStore::CommitPendingWrite()
+{
+    // Do nothing
+}
+
+void PrefStore::SchedulePendingLossyWrites()
 {
     // Do nothing
 }

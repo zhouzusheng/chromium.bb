@@ -307,7 +307,7 @@ void WebViewImpl::rubberbandWalkLayoutObject(const RubberbandContext& context, L
     RubberbandContext localContext(&context, layoutObject);
 
     if (layoutObject->hasLayer()) {
-        ASSERT(layoutObject->isLayoutBoxModelObject());
+        ASSERT(layoutObject->isBoxModelObject());
         DeprecatedPaintLayer* layer = toLayoutBoxModelObject(layoutObject)->layer();
         RubberbandLayerContext& layerContext = *localContext.m_layerContext;
 
@@ -403,11 +403,6 @@ void WebViewImpl::rubberbandWalkLayoutObject(const RubberbandContext& context, L
                              (layoutBox->borderTop() + layoutBox->paddingTop()) * localContext.m_layerContext->m_scaleY);
                 rubberbandWalkFrame(localContext, &frameView->frame(), topLeft);
             }
-        }
-
-        if (layoutObject->hasColumns() && layoutObject->isLayoutBlock()) {
-            localContext.m_layerContext->m_colBlockAbsTopLeft = localContext.calcAbsPoint(LayoutPoint::zero());
-            localContext.m_layerContext->m_colBlock = toLayoutBlock(layoutObject);
         }
     }
     else if (layoutObject->isText() && isVisible && isTextRubberbandable(layoutObject)) {

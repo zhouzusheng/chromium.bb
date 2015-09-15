@@ -210,12 +210,6 @@ Console* RemoteDOMWindow::console() const
     return 0;
 }
 
-DOMWindowCSS* RemoteDOMWindow::css() const
-{
-    ASSERT_NOT_REACHED();
-    return 0;
-}
-
 DOMSelection* RemoteDOMWindow::getSelection()
 {
     ASSERT_NOT_REACHED();
@@ -228,11 +222,6 @@ void RemoteDOMWindow::focus(ExecutionContext* override)
 }
 
 void RemoteDOMWindow::blur()
-{
-    // FIXME: Implement.
-}
-
-void RemoteDOMWindow::close(ExecutionContext* override)
 {
     // FIXME: Implement.
 }
@@ -290,22 +279,22 @@ void RemoteDOMWindow::scrollTo(const ScrollToOptions&) const
     ASSERT_NOT_REACHED();
 }
 
-void RemoteDOMWindow::moveBy(int x, int y, bool hasX, bool hasY) const
+void RemoteDOMWindow::moveBy(int x, int y) const
 {
     ASSERT_NOT_REACHED();
 }
 
-void RemoteDOMWindow::moveTo(int x, int y, bool hasX, bool hasY) const
+void RemoteDOMWindow::moveTo(int x, int y) const
 {
     ASSERT_NOT_REACHED();
 }
 
-void RemoteDOMWindow::resizeBy(int x, int y, bool hasX, bool hasY) const
+void RemoteDOMWindow::resizeBy(int x, int y) const
 {
     ASSERT_NOT_REACHED();
 }
 
-void RemoteDOMWindow::resizeTo(int width, int height, bool hasWidth, bool hasHeight) const
+void RemoteDOMWindow::resizeTo(int width, int height) const
 {
     ASSERT_NOT_REACHED();
 }

@@ -216,7 +216,7 @@ void ToolkitImpl::startupThreads()
             // We can't recover from failing to start the IO thread.
             CHECK(d_ioThread->StartWithOptions(
                 base::Thread::Options(base::MessageLoop::TYPE_IO, 0)));
-            ioTaskRunner = d_ioThread->message_loop_proxy();
+            ioTaskRunner = d_ioThread->task_runner();
         }
 
         d_processClient.reset(new ProcessClientImpl(channelId, ioTaskRunner));

@@ -70,6 +70,9 @@ KeyedService* SpellcheckServiceFactory::BuildServiceInstanceFor(
 
 void SpellcheckServiceFactory::RegisterProfilePrefs(
     user_prefs::PrefRegistrySyncable* user_prefs) {
+  user_prefs->RegisterListPref(prefs::kSpellCheckDictionaries,
+                               new base::ListValue);
+  // Continue registering kSpellCheckDictionary for preference migration.
   // TODO(estade): IDS_SPELLCHECK_DICTIONARY should be an ASCII string.
   // SHEZ: replace IDS_SPELLCHECK_DICTIONARY with hardcoded "en-US"
   // SHEZ: TODO: make this configurable

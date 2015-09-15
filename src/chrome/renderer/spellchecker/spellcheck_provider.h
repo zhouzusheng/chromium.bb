@@ -95,7 +95,7 @@ class SpellCheckProvider
   void updateSpellingUIWithMisspelledWord(
       const blink::WebString& word) override;
 
-#if !defined(OS_MACOSX)
+#if !defined(USE_PLATFORM_SPELLCHECKER)
   void OnRespondSpellingService(
       int identifier,
       bool succeeded,
@@ -107,7 +107,7 @@ class SpellCheckProvider
   // needs to check this text.
   bool HasWordCharacters(const base::string16& text, int index) const;
 
-#if defined(OS_MACOSX)
+#if defined(USE_PLATFORM_SPELLCHECKER)
   void OnAdvanceToNextMisspelling();
   void OnRespondTextCheck(
       int identifier,

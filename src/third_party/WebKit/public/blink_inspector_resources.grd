@@ -10,7 +10,7 @@
     <includes>
       <include name="IDR_INSPECTOR_OVERLAY_PAGE_HTML" file="../Source/core/inspector/InspectorOverlayPage.html" type="BINDATA"/>
       <include name="IDR_INSPECTOR_INJECTED_SCRIPT_SOURCE_JS" file="../Source/core/inspector/InjectedScriptSource.js" type="BINDATA"/>
-      <include name="IDR_INSPECTOR_DEBUGGER_SCRIPT_SOURCE_JS" file="../Source/bindings/core/v8/DebuggerScript.js" type="BINDATA"/>
+      <include name="IDR_INSPECTOR_DEBUGGER_SCRIPT_SOURCE_JS" file="../Source/core/inspector/DebuggerScript.js" type="BINDATA"/>
     </includes>
   </release>
 </grit>

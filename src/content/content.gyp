@@ -286,6 +286,7 @@
               'dependencies': [
                 'content_child',
                 'content_common',
+                'content_common_mojo_bindings.gyp:content_common_mojo_bindings',
               ],
             },
           ],

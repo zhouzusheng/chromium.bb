@@ -31,6 +31,7 @@
 #include "core/editing/Editor.h"
 #include "core/editing/SpellChecker.h"
 #include "core/editing/htmlediting.h"
+#include "core/editing/iterators/CharacterIterator.h"
 #include "core/frame/Settings.h"
 #include "wtf/text/StringBuilder.h"
 
@@ -124,22 +125,26 @@ bool BBWindowHooks::checkSpellingForRange(Range* range)
 
 void BBWindowHooks::removeMarker(Range* range, long mask, long removeMarkerFlag)
 {
-    range->ownerDocument().markers().removeMarkers(range,
+    range->ownerDocument().markers().removeMarkers(
+        range->startPosition(),
+        range->endPosition(),
         DocumentMarker::MarkerTypes(mask),
-        static_cast<DocumentMarkerController::RemovePartiallyOverlappingMarkerOrNot>
-        (removeMarkerFlag));
+        static_cast<DocumentMarkerController::RemovePartiallyOverlappingMarkerOrNot>(removeMarkerFlag));
 }
 
 void BBWindowHooks::addMarker(Range* range, long markerType)
 {
-    range->ownerDocument().markers().addMarker(range,
+    range->ownerDocument().markers().addMarker(
+        range->startPosition(),
+        range->endPosition(),
         static_cast<DocumentMarker::MarkerType>(markerType));
 
 }
 
 PassRefPtr<Range> BBWindowHooks::findPlainText(Range* range, const String& target, long options)
 {
-    return blink::findPlainText(range, target, options);
+    EphemeralRange result = blink::findPlainText(EphemeralRange(range), target, options);
+    return Range::create(result.document(), result.startPosition(), result.endPosition());
 }
 
 bool BBWindowHooks::checkSpellingForNode(Node* node)
@@ -168,8 +173,7 @@ bool BBWindowHooks::checkSpellingForNode(Node* node)
 
 ClientRect* BBWindowHooks::getAbsoluteCaretRectAtOffset(Node* node, long offset)
 {
-    VisiblePosition visiblePos = VisiblePosition(
-        Position(node, offset, Position::PositionIsOffsetInAnchor));
+    VisiblePosition visiblePos = VisiblePosition(Position(node, offset));
     IntRect rc = visiblePos.absoluteCaretBounds();
     return ClientRect::create(rc);
 }

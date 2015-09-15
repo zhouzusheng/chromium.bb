@@ -92,6 +92,11 @@ def copyIncludeFiles(destDir):
        os.path.join(srcDir, 'out', 'Debug', 'gen', 'blpwtk2', 'public')])
 
   copyIncludeFilesFrom(
+      os.path.join(destDir, 'include', 'blppdfutil'),
+      [os.path.join(srcDir, 'blppdfutil', 'public'),
+       os.path.join(srcDir, 'out', 'Debug', 'gen', 'blppdfutil', 'public')])
+
+  copyIncludeFilesFrom(
       os.path.join(destDir, 'include', 'v8'),
       [os.path.join(srcDir, 'v8', 'include'),
        os.path.join(srcDir, 'out', 'Debug', 'gen', 'blpv8', 'public')])
@@ -104,12 +109,14 @@ def copyBin(destDir, version):
     'blpwtk2_shell.exe',
     'blpwtk2_subprocess' + productAppend + '.exe',
     'content_shell.exe',
+    'd8.exe',
     'blpv8' + productAppend + '.dll',
     'natives_blob' + productAppend + '.bin',
     'snapshot_blob' + productAppend + '.bin',
     'blpwtk2' + productAppend + '.dll',
     'blpcr_egl' + productAppend + '.dll',
     'blpcr_glesv2' + productAppend + '.dll',
+    'blppdfutil' + productAppend + '.dll',
     'd3dcompiler_47.dll',
     'icudtl' + productAppend + '.dat',
     'blpwtk2_devtools' + productAppend + '.pak',
@@ -122,6 +129,8 @@ def copyBin(destDir, version):
     'blpcr_egl' + productAppend + '.map',
     'blpcr_glesv2' + productAppend + '.pdb',
     'blpcr_glesv2' + productAppend + '.map',
+    'blppdfutil' + productAppend + '.pdb',
+    'blppdfutil' + productAppend + '.map',
     'blpwtk2_subprocess' + productAppend + '.pdb',
     'blpwtk2_subprocess' + productAppend + '.map',
   ]
@@ -142,6 +151,7 @@ def copyLib(destDir, version):
   products = [
     'blpv8' + productAppend + '.dll.lib',
     'blpwtk2' + productAppend + '.dll.lib',
+    'blppdfutil' + productAppend + '.dll.lib',
   ]
 
   configs = ['Debug', 'Release']
@@ -187,7 +197,7 @@ def addGenFiles():
 
 
 def main(args):
-  version = "bb2"   # SET BB VERSION NUMBER HERE
+  version = "bb1"   # SET BB VERSION NUMBER HERE
 
   outDir = None
   doClean = True
@@ -268,6 +278,7 @@ def main(args):
   os.mkdir(os.path.join(destDir, 'bin', 'Debug'))
   os.mkdir(os.path.join(destDir, 'bin', 'Release'))
   os.mkdir(os.path.join(destDir, 'include'))
+  os.mkdir(os.path.join(destDir, 'include', 'blppdfutil'))
   os.mkdir(os.path.join(destDir, 'include', 'blpwtk2'))
   os.mkdir(os.path.join(destDir, 'include', 'v8'))
   os.mkdir(os.path.join(destDir, 'lib'))

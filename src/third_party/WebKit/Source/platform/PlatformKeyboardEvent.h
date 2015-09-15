@@ -109,6 +109,17 @@ protected:
     bool m_isKeypad;
     bool m_isSystemKey;
     bool m_bbIsNumLock;
+
+private:
+    friend class Internals;
+    enum OverrideCapsLockState {
+        Default,
+        On,
+        Off
+    };
+    // Allows overriding the current caps lock state for testing purposes.
+    PLATFORM_EXPORT static void setCurrentCapsLockState(OverrideCapsLockState state) { s_overrideCapsLockState = state; }
+    PLATFORM_EXPORT static OverrideCapsLockState s_overrideCapsLockState;
 };
 
 } // namespace blink

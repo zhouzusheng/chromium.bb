@@ -97,7 +97,8 @@ enum {
     IDM_TEST_LOGICAL_FOCUS,
     IDM_TEST_LOGICAL_BLUR,
     IDM_TEST_PLAY_KEYBOARD_EVENTS,
-    IDM_TEST_GET_PICTURE,
+    IDM_TEST_GET_PDF,
+    IDM_TEST_GET_BITMAP,
     IDM_TEST_DUMP_LAYOUT_TREE,
     IDM_SPELLCHECK,
     IDM_SPELLCHECK_ENABLED,
@@ -196,7 +197,11 @@ void getWebViewPosition(HWND hwnd, int *left, int *top, int *width, int *height)
     *height = rect.bottom - URLBAR_HEIGHT;
 }
 
-void testGetPicture(blpwtk2::NativeView hwnd, blpwtk2::WebView* webView, int scaleX, int scaleY)
+void testGetPicture(blpwtk2::NativeView hwnd,
+                    blpwtk2::WebView* webView,
+                    blpwtk2::WebView::DrawParams::RendererType rendererType,
+                    int scaleX,
+                    int scaleY)
 {
     // NOTE: The PDF engine issues different commands based on the type of
     // device it is drawing to
@@ -293,36 +298,76 @@ void testGetPicture(blpwtk2::NativeView hwnd, blpwtk2::WebView* webView, int sca
     drawParams.srcRegion = { 0, 0, width, height };
     drawParams.destRegion = { 0, 0, width * scaleX, height * scaleY };
     drawParams.styleClass = "screen-grab";
-    drawParams.rendererType = blpwtk2::WebView::DrawParams::RendererTypePDF;
+    drawParams.rendererType = rendererType;
     drawParams.dpi = 72;
 
-    std::vector<char> pdf_data;
-    {
-        blpwtk2::Blob blob;
-        webView->drawContentsToBlob(&blob, drawParams);
+    if (rendererType == blpwtk2::WebView::DrawParams::RendererTypePDF) {
+        std::vector<char> pdf_data;
+        {
+            blpwtk2::Blob blob;
+            webView->drawContentsToBlob(&blob, drawParams);
 
-        pdf_data.resize(blob.size());
-        blob.copyTo(&pdf_data[0]);
+            pdf_data.resize(blob.size());
+            blob.copyTo(&pdf_data[0]);
+        }
+
+        int destWidth = drawParams.destRegion.right - drawParams.destRegion.left;
+        int destHeight = drawParams.destRegion.bottom - drawParams.destRegion.top;
+
+        blppdfutil::PdfUtil::RenderPDFPageToDC(pdf_data.data(),
+                                               pdf_data.size(),
+                                               0,
+                                               deviceContext,
+                                               drawParams.dpi,
+                                               drawParams.destRegion.left,
+                                               drawParams.destRegion.top,
+                                               destWidth,
+                                               destHeight,
+                                               false,
+                                               false,
+                                               false,
+                                               false,
+                                               false);
     }
+    else if (rendererType == blpwtk2::WebView::DrawParams::RendererTypeBitmap) {
+        std::vector<char> bmp_data;
+        {
+            blpwtk2::Blob blob;
+            webView->drawContentsToBlob(&blob, drawParams);
 
-    int destWidth = drawParams.destRegion.right - drawParams.destRegion.left;
-    int destHeight = drawParams.destRegion.bottom - drawParams.destRegion.top;
+            bmp_data.resize(blob.size());
+            blob.copyTo(&bmp_data[0]);
+        }
 
-    blppdfutil::PdfUtil::RenderPDFPageToDC(pdf_data.data(),
-                                           pdf_data.size(),
-                                           0,
-                                           deviceContext,
-                                           drawParams.dpi,
-                                           drawParams.destRegion.left,
-                                           drawParams.destRegion.top,
-                                           destWidth,
-                                           destHeight,
-                                           false,
-                                           false,
-                                           false,
-                                           false,
-                                           false);
+        // Create a device context to associate with the bitmap object
+        blpwtk2::NativeDeviceContext bitmapDeviceContext = CreateCompatibleDC(deviceContext);
 
+        // Create a new bitmap object
+        void *buffer = (void*)NULL;
+        BITMAPINFO bmi = { *reinterpret_cast<BITMAPINFOHEADER*>(bmp_data.data() + sizeof(BITMAPFILEHEADER)) };
+        HBITMAP inputBitmap = CreateDIBSection(bitmapDeviceContext, &bmi, DIB_RGB_COLORS, &buffer, 0, 0);
+
+        // Copy bitmap data from blob into bitmap object
+        memcpy(buffer,
+               bmp_data.data() + sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER),
+               bmp_data.size() - sizeof(BITMAPFILEHEADER) - sizeof(BITMAPINFOHEADER));
+
+        // Block transfer image from bitmap object to 'deviceContext'
+        HGDIOBJ originalSurface = SelectObject(bitmapDeviceContext, inputBitmap);
+        BitBlt(deviceContext,
+               0,
+               0,
+               drawParams.destRegion.right - drawParams.destRegion.left,
+               drawParams.destRegion.bottom - drawParams.destRegion.top,
+               bitmapDeviceContext,
+               0,
+               0,
+               SRCCOPY);
+
+        SelectObject(bitmapDeviceContext, originalSurface);
+        DeleteObject(inputBitmap);
+        DeleteDC(bitmapDeviceContext);
+    }
 
 #ifdef USE_EMF
     HENHMETAFILE emf = CloseEnhMetaFile(deviceContext);
@@ -1422,8 +1467,11 @@ LRESULT CALLBACK shellWndProc(HWND hwnd,        // handle to window
         case IDM_TEST_PLAY_KEYBOARD_EVENTS:
             testPlayKeyboardEvents(shell->d_mainWnd, shell->d_webView);
             return 0;
-        case IDM_TEST_GET_PICTURE:
-            testGetPicture(shell->d_mainWnd, shell->d_webView, 2, 2);
+        case IDM_TEST_GET_PDF:
+            testGetPicture(shell->d_mainWnd, shell->d_webView, blpwtk2::WebView::DrawParams::RendererTypePDF, 2, 2);
+            return 0;
+        case IDM_TEST_GET_BITMAP:
+            testGetPicture(shell->d_mainWnd, shell->d_webView, blpwtk2::WebView::DrawParams::RendererTypeBitmap, 2, 2);
             return 0;
         case IDM_TEST_DUMP_LAYOUT_TREE:
             testDumpLayoutTree(shell->d_webView);
@@ -1650,7 +1698,8 @@ Shell* createShell(blpwtk2::Profile* profile, blpwtk2::WebView* webView)
     AppendMenu(testMenu, MF_STRING, IDM_TEST_LOGICAL_FOCUS, L"Test Logical Focus");
     AppendMenu(testMenu, MF_STRING, IDM_TEST_LOGICAL_BLUR, L"Test Logical Blur");
     AppendMenu(testMenu, MF_STRING, IDM_TEST_PLAY_KEYBOARD_EVENTS, L"Test Play Keyboard Events");
-    AppendMenu(testMenu, MF_STRING, IDM_TEST_GET_PICTURE, L"Test Capture Picture");
+    AppendMenu(testMenu, MF_STRING, IDM_TEST_GET_PDF, L"Test Capture PDF");
+    AppendMenu(testMenu, MF_STRING, IDM_TEST_GET_BITMAP, L"Test Capture Bitmap");
     AppendMenu(testMenu, MF_STRING, IDM_TEST_DUMP_LAYOUT_TREE, L"Dump Layout Tree");
     AppendMenu(menu, MF_POPUP, (UINT_PTR)testMenu, L"&Test");
     HMENU spellCheckMenu = CreateMenu();

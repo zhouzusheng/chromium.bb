@@ -67,7 +67,7 @@
         [ 'OS=="win"', {
           'sources': [ 'd8-windows.cc', ]
         }],
-        [ 'component!="shared_library"', {
+        [ 'v8_as_shared_library==0', {
           'sources': [
             'd8-debug.h',
             'd8-debug.cc',

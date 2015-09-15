@@ -297,6 +297,9 @@ void TypingCommand::markMisspellingsAfterTyping(ETypingCommand commandType)
 
     frame->spellChecker().cancelCheck();
 
+    if (commandType != InsertText)
+        return;
+
     // Take a look at the selection that results after typing and determine whether we need to spellcheck.
     // Since the word containing the current selection is never marked, this does a check to
     // see if typing made a new word that is not in the current selection. Basically, you
@@ -312,7 +315,7 @@ void TypingCommand::markMisspellingsAfterTyping(ETypingCommand commandType)
         frame->spellChecker().markMisspellingsAfterLineBreak(words);
     } else if (previous.isNotNull()) {
         VisiblePosition p2 = startOfWord(start, LeftWordIfOnBoundary);
-        if (p1 != p2)
+        if (p1 != p2 && previous.characterAfter() != '\'' && 0 > comparePositions(p1.deepEquivalent(), p2.deepEquivalent()))
             frame->spellChecker().markMisspellingsAfterTypingToWord(p1, endingSelection());
     }
 }

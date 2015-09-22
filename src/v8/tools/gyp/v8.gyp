@@ -370,6 +370,7 @@
       'type': 'static_library',
       'dependencies': [
         'v8_libbase',
+        '../../../blpwtk2/blpwtk2.gyp:blpwtk2_generate_sources',
       ],
       'variables': {
         'optimize': 'max',

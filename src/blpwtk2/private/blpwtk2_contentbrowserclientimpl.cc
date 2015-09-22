@@ -57,9 +57,12 @@ public:
         return instance;
     }
 
-    virtual bool HandleExternalProtocol(const GURL& url,
-                                        int child_id,
-                                        int route_id);
+    bool HandleExternalProtocol(const GURL& url,
+                                int child_id,
+                                int route_id,
+                                bool is_main_frame,
+                                ui::PageTransition page_transition,
+                                bool has_user_gesture) override;
 
 private:
     ResourceDispatcherHostDelegate() {}
@@ -74,7 +77,10 @@ private:
 
 bool ResourceDispatcherHostDelegate::HandleExternalProtocol(const GURL& url,
                                                             int child_id,
-                                                            int route_id)
+                                                            int route_id,
+                                                            bool is_main_frame,
+                                                            ui::PageTransition page_transition,
+                                                            bool has_user_gesture)
 {
     if (Statics::isInBrowserMainThread()) {
         doHandleExternalProtocol(url, child_id, route_id);

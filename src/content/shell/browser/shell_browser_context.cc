@@ -104,6 +104,9 @@ void ShellBrowserContext::InitWhileIOAllowed() {
     base::CreateDirectory(path_);
   base::FilePath pref_file = path_.AppendASCII("prefs.json");
   pref_registry_ = new PrefRegistrySimple();
+  base::ListValue* enUSList = new base::ListValue();
+  enUSList->AppendString("en-US");
+  pref_registry_->RegisterListPref("spellcheck.dictionaries", enUSList);
   pref_registry_->RegisterStringPref("spellcheck.dictionary", "en-US");
   pref_registry_->RegisterBooleanPref("browser.enable_spellchecking", true);
   pref_registry_->RegisterBooleanPref("spellcheck.use_spelling_service", true);

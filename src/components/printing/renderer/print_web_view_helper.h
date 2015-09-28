@@ -113,6 +113,9 @@ class PrintWebViewHelper
   // printing is build-in. This method is used by CEF.
   static void DisablePreview();
 
+  // Uses the default print settings instead of asking the user everytime.
+  static void UseDefaultPrintSettings();
+
   static Delegate* CreateEmptyDelegate();
 
   bool IsPrintingEnabled();

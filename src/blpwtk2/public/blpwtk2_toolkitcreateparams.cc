@@ -58,6 +58,7 @@ struct ToolkitCreateParamsImpl {
     _purecall_handler d_purecallHandler;
     bool d_printBackgroundGraphics;
     bool d_inProcessRendererDisabled;
+    bool d_useDefaultPrintSettings;
 
     ToolkitCreateParamsImpl()
     : d_threadMode(ThreadMode::ORIGINAL)
@@ -76,6 +77,7 @@ struct ToolkitCreateParamsImpl {
     , d_purecallHandler(0)
     , d_printBackgroundGraphics(false)
     , d_inProcessRendererDisabled(false)
+    , d_useDefaultPrintSettings(false)
     {
     }
 };
@@ -117,6 +119,11 @@ void ToolkitCreateParams::setPumpMode(PumpMode::Value mode)
 void ToolkitCreateParams::disableWorkMessageWhileDoingWork()
 {
     d_impl->d_workMessageWhileDoingWorkDisabled = true;
+}
+
+void ToolkitCreateParams::enableDefaultPrintSettings()
+{
+    d_impl->d_useDefaultPrintSettings = true;
 }
 
 void ToolkitCreateParams::setLogMessageHandler(LogMessageHandler handler)
@@ -257,6 +264,11 @@ PumpMode::Value ToolkitCreateParams::pumpMode() const
 bool ToolkitCreateParams::workMessageWhileDoingWorkDisabled() const
 {
     return d_impl->d_workMessageWhileDoingWorkDisabled;
+}
+
+bool ToolkitCreateParams::useDefaultPrintSettings() const
+{
+    return d_impl->d_useDefaultPrintSettings;
 }
 
 ToolkitCreateParams::LogMessageHandler ToolkitCreateParams::logMessageHandler() const

@@ -32,6 +32,7 @@
 #include <base/logging.h>  // for DCHECK
 #include <base/strings/string16.h>
 #include <base/strings/utf_string_conversions.h>
+#include <components/printing/renderer/print_web_view_helper.h>
 #include <content/public/app/content_main_runner.h>
 #include <content/public/common/dwrite_font_platform_win.h>
 #include <content/public/renderer/render_font_warmup_win.h>
@@ -144,6 +145,11 @@ Toolkit* ToolkitFactory::create(const ToolkitCreateParams& params)
     NativeColor inactiveSearchColor = params.inactiveTextSearchHighlightColor();
     blink::setTextSearchHighlightColor(GetRValue(activeSearchColor), GetGValue(activeSearchColor), GetBValue(activeSearchColor),
                                        GetRValue(inactiveSearchColor), GetGValue(inactiveSearchColor), GetBValue(inactiveSearchColor));
+
+
+    if (params.useDefaultPrintSettings()) {
+        printing::PrintWebViewHelper::UseDefaultPrintSettings();
+    }
 
     g_logMessageHandler = params.logMessageHandler();
     if (g_logMessageHandler) {

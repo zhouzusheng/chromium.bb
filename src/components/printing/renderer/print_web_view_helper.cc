@@ -76,6 +76,8 @@ bool g_is_preview_enabled_ = false;
 #else
 bool g_is_preview_enabled_ = true;
 
+bool g_use_default_print_settings_ = false;
+
 const char kPageLoadScriptFormat[] =
     "document.open(); document.write(%s); document.close();";
 
@@ -820,7 +822,7 @@ void PrepareFrameAndViewForPrint::FinishPrinting() {
 }
 
 bool PrintWebViewHelper::Delegate::IsAskPrintSettingsEnabled() {
-  return true;
+  return !g_use_default_print_settings_;
 }
 
 bool PrintWebViewHelper::Delegate::IsScriptedPrintEnabled() {
@@ -853,6 +855,11 @@ PrintWebViewHelper::~PrintWebViewHelper() {
 // static
 void PrintWebViewHelper::DisablePreview() {
   g_is_preview_enabled_ = false;
+}
+
+// static
+void PrintWebViewHelper::UseDefaultPrintSettings() {
+  g_use_default_print_settings_ = true;
 }
 
 // static

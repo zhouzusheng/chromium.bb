@@ -88,6 +88,12 @@ class ToolkitCreateParams {
     // work to be done.
     BLPWTK2_EXPORT void disableWorkMessageWhileDoingWork();
 
+    // By default, initiating a document print will cause the browser to open
+    // a print dialog to ask for the target printing device.  Calling this
+    // will disable the print dialog and use the default printing device on
+    // the system.
+    BLPWTK2_EXPORT void enableDefaultPrintSettings();
+
     // By default, log messages go to a "blpwtk2.log" file and to debug output.
     // Use this method to install a custom log message handler instead.  Note
     // that the handler callback can be invoked from any thread.
@@ -204,6 +210,7 @@ class ToolkitCreateParams {
     ThreadMode::Value threadMode() const;
     PumpMode::Value pumpMode() const;
     bool workMessageWhileDoingWorkDisabled() const;
+    bool useDefaultPrintSettings() const;
     LogMessageHandler logMessageHandler() const;
     ConsoleLogMessageHandler consoleLogMessageHandler() const;
     ChannelErrorHandler channelErrorHandler() const;

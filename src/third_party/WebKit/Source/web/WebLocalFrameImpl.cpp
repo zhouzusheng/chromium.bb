@@ -1652,22 +1652,50 @@ WebString WebLocalFrameImpl::layerTreeAsText(bool showDebugInfo) const
     return WebString(frame()->layerTreeAsText(showDebugInfo ? LayerTreeIncludesDebugInfo : LayerTreeNormal));
 }
 
+class CanvasPainterContext {
+    void paintToGraphicsContext(GraphicsContext& context, FrameView* view, const FloatRect& floatRect)
+    {
+        // Enter a translation transform
+        AffineTransform transform;
+        transform.translate(static_cast<float>(-floatRect.x()), static_cast<float>(-floatRect.y()));
+        TransformRecorder transformRecorder(context, *this, transform);
+
+        // Enter a clipped region
+        ClipRecorder clipRecorder(context, *this, DisplayItem::ClipPrintedPage, LayoutRect(floatRect));
+
+        PaintBehavior paintBehavior = view->paintBehavior();
+        view->updateAllLifecyclePhases();
+
+        view->setPaintBehavior(paintBehavior | PaintBehaviorFlattenCompositingLayers);
+        view->paintContents(&context, IntRect(floatRect));
+        view->setPaintBehavior(paintBehavior);
+    }
+
+public:
+     void paint(WebCanvas* canvas, FrameView* view, const FloatRect& floatRect)
+     {
+         SkPictureBuilder pictureBuilder(floatRect, &skia::getMetaData(*canvas));
+         paintToGraphicsContext(pictureBuilder.context(), view, floatRect);
+         pictureBuilder.endRecording()->playback(canvas);
+     }
+
+     DisplayItemClient displayItemClient() const
+     {
+         return toDisplayItemClient(this);
+     }
+
+     String debugName() const
+     {
+         return "CanvasPainterContext";
+     }
+};
 
 void WebLocalFrameImpl::drawInCanvas(const WebRect& rect, const WebString& styleClass, WebCanvas* canvas) const
 {
-    IntRect intRect(rect);
-    OwnPtr<GraphicsContext> graphicsContextPtr = GraphicsContext::deprecatedCreateWithCanvas(canvas);
-    GraphicsContext& graphicsContext = *graphicsContextPtr;
-
-    graphicsContext.translate(static_cast<float>(-intRect.x()), static_cast<float>(-intRect.y()));
-    graphicsContext.clip(rect);
-
-    FrameView *view = frameView();
-    PaintBehavior paintBehavior = view->paintBehavior();
-
     const blink::WebString classAttribute("class");
     WTF::String originalStyleClass;
 
+    // Set the new "style" attribute if specified
     if (!styleClass.isEmpty()) {
         if (document().body().hasAttribute(classAttribute)) {
             originalStyleClass = document().body().getAttribute(classAttribute);
@@ -1676,13 +1704,12 @@ void WebLocalFrameImpl::drawInCanvas(const WebRect& rect, const WebString& style
         else {
             document().body().setAttribute(classAttribute, styleClass);
         }
-        view->updateAllLifecyclePhases();
     }
 
-    view->setPaintBehavior(paintBehavior | PaintBehaviorFlattenCompositingLayers);
-    view->paintContents(&graphicsContext, intRect);
-    view->setPaintBehavior(paintBehavior);
+    CanvasPainterContext painterContext;
+    painterContext.paint(canvas, frameView(), FloatRect(rect));
 
+    // Restore the original "style" attribute
     if (!styleClass.isEmpty()) {
         if (!originalStyleClass.isEmpty()) {
             document().body().setAttribute(classAttribute, originalStyleClass);

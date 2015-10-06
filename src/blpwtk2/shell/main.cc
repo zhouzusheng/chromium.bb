@@ -296,7 +296,8 @@ void testGetPicture(blpwtk2::NativeView hwnd,
     // Draw the contents of the webview onto the device context
     blpwtk2::WebView::DrawParams drawParams;
     drawParams.srcRegion = { 0, 0, width, height };
-    drawParams.destRegion = { 0, 0, width * scaleX, height * scaleY };
+    drawParams.destWidth = width * scaleX;
+    drawParams.destHeight = height * scaleY;
     drawParams.styleClass = "screen-grab";
     drawParams.rendererType = rendererType;
     drawParams.dpi = 72;
@@ -311,18 +312,15 @@ void testGetPicture(blpwtk2::NativeView hwnd,
             blob.copyTo(&pdf_data[0]);
         }
 
-        int destWidth = drawParams.destRegion.right - drawParams.destRegion.left;
-        int destHeight = drawParams.destRegion.bottom - drawParams.destRegion.top;
-
         blppdfutil::PdfUtil::RenderPDFPageToDC(pdf_data.data(),
                                                pdf_data.size(),
                                                0,
                                                deviceContext,
                                                drawParams.dpi,
-                                               drawParams.destRegion.left,
-                                               drawParams.destRegion.top,
-                                               destWidth,
-                                               destHeight,
+                                               0,
+                                               0,
+                                               drawParams.destWidth,
+                                               drawParams.destHeight,
                                                false,
                                                false,
                                                false,
@@ -357,8 +355,8 @@ void testGetPicture(blpwtk2::NativeView hwnd,
         BitBlt(deviceContext,
                0,
                0,
-               drawParams.destRegion.right - drawParams.destRegion.left,
-               drawParams.destRegion.bottom - drawParams.destRegion.top,
+               drawParams.destWidth,
+               drawParams.destHeight,
                bitmapDeviceContext,
                0,
                0,

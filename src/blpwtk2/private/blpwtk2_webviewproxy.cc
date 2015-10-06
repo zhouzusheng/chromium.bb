@@ -225,15 +225,12 @@ void WebViewProxy::drawContentsToBlob(Blob *blob, const DrawParams& params)
     int srcWidth = params.srcRegion.right - params.srcRegion.left;
     int srcHeight = params.srcRegion.bottom - params.srcRegion.top;
 
-    int destWidth = params.destRegion.right - params.destRegion.left;
-    int destHeight = params.destRegion.bottom - params.destRegion.top;
-
     if (params.rendererType == DrawParams::RendererTypePDF) {
         SkDynamicMemoryWStream& pdf_stream = blob->makeSkStream();
         {
             skia::RefPtr<SkDocument> document = skia::AdoptRef(SkDocument::CreatePDF(&pdf_stream, params.dpi));
-            SkCanvas *canvas = document->beginPage(destWidth, destHeight);
-            canvas->scale(static_cast<SkScalar>(destWidth) / srcWidth, static_cast<SkScalar>(destHeight) / srcHeight);
+            SkCanvas *canvas = document->beginPage(params.destWidth, params.destHeight);
+            canvas->scale(params.destWidth / srcWidth, params.destHeight / srcHeight);
 
             webFrame->drawInCanvas(blink::WebRect(params.srcRegion.left, params.srcRegion.top, srcWidth, srcHeight),
                                    blink::WebString::fromUTF8(params.styleClass.data(), params.styleClass.length()),
@@ -244,95 +241,16 @@ void WebViewProxy::drawContentsToBlob(Blob *blob, const DrawParams& params)
     }
     else if (params.rendererType == DrawParams::RendererTypeBitmap) {
         SkBitmap& bitmap = blob->makeSkBitmap();
-        bitmap.allocN32Pixels(destWidth, destHeight);
+        bitmap.allocN32Pixels(params.destWidth + 0.5, params.destHeight + 0.5);
 
         SkCanvas canvas(bitmap);
-        canvas.scale(static_cast<SkScalar>(destWidth) / srcWidth, static_cast<SkScalar>(destHeight) / srcHeight);
+        canvas.scale(params.destWidth / srcWidth, params.destHeight / srcHeight);
 
         webFrame->drawInCanvas(blink::WebRect(params.srcRegion.left, params.srcRegion.top, srcWidth, srcHeight),
                                blink::WebString::fromUTF8(params.styleClass.data(), params.styleClass.length()),
                                &canvas);
 
         canvas.flush();
-    }
-}
-
-void WebViewProxy::drawContentsToDevice(NativeDeviceContext deviceContext, const DrawParams& params)
-{
-    int destWidth = params.destRegion.right - params.destRegion.left;
-    int destHeight = params.destRegion.bottom - params.destRegion.top;
-
-    if (params.rendererType == DrawParams::RendererTypePDF) {
-        int dpi =
-            25.4 *                                                                                      // millimeters / inch
-            distance(GetDeviceCaps(deviceContext, HORZRES), GetDeviceCaps(deviceContext, VERTRES)) /    // resolution
-            distance(GetDeviceCaps(deviceContext, HORZSIZE), GetDeviceCaps(deviceContext, VERTSIZE));   // size in millimeters
-
-        std::vector<char> pdf_data;
-        {
-            // override the DPI in the params
-            DrawParams params2 = params;
-            params2.dpi = dpi;
-
-            Blob blob;
-            drawContentsToBlob(&blob, params2);
-
-            pdf_data.resize(blob.size());
-            blob.copyTo(pdf_data.data());
-        }
-
-        chrome_pdf::RenderPDFPageToDC(
-            pdf_data.data(),
-            pdf_data.size(),
-            0,
-            deviceContext,
-            dpi,
-            params.destRegion.left,
-            params.destRegion.top,
-            destWidth,
-            destHeight,
-            false,
-            false,
-            false,
-            false,
-            false);
-    }
-    else if (params.rendererType == DrawParams::RendererTypeBitmap) {
-        Blob blob;
-        drawContentsToBlob(&blob, params);
-        DCHECK(blob.size() <= static_cast<size_t>(destWidth * destHeight * 4));
-
-        // Create an HBITMAP with the contents of the blob
-        BITMAPINFO bmi = {{
-            sizeof(BITMAPINFOHEADER),
-            destWidth,
-            -destHeight,
-            1,
-            32,
-            BI_RGB
-        }};
-
-        void *buffer = 0;
-        HBITMAP bitmap = CreateDIBSection(deviceContext, &bmi, DIB_RGB_COLORS, &buffer, 0, 0);
-        blob.copyTo(buffer);
-
-        // Draw the HBITMAP onto the deviceContext at the specified position
-        NativeDeviceContext srcContext = CreateCompatibleDC(deviceContext);
-        HGDIOBJ originalSurface = SelectObject(srcContext, bitmap);
-
-        BitBlt(deviceContext,
-               params.destRegion.left,
-               params.destRegion.top,
-               destWidth,
-               destHeight,
-               srcContext,
-               0,
-               0,
-               SRCCOPY);
-
-        SelectObject(srcContext, originalSurface);
-        DeleteObject(bitmap);
-        DeleteDC(srcContext);
     }
 }
 

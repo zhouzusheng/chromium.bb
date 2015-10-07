@@ -32,21 +32,20 @@
 #include "core/inspector/WorkerThreadDebugger.h"
 
 #include "bindings/core/v8/V8ScriptRunner.h"
-#include "core/inspector/ScriptDebugListener.h"
 #include "core/inspector/WorkerDebuggerAgent.h"
-#include "core/workers/WorkerGlobalScope.h"
+#include "core/inspector/v8/V8DebuggerListener.h"
 #include "core/workers/WorkerThread.h"
 #include "wtf/MessageQueue.h"
 #include <v8.h>
 
 namespace blink {
 
-static const char* workerContextDebugId = "[worker]";
+static const int workerContextGroupId = 1;
 
-WorkerThreadDebugger::WorkerThreadDebugger(WorkerGlobalScope* workerGlobalScope)
-    : ScriptDebuggerBase(v8::Isolate::GetCurrent(), V8Debugger::create(v8::Isolate::GetCurrent(), this))
+WorkerThreadDebugger::WorkerThreadDebugger(WorkerThread* workerThread)
+    : ScriptDebuggerBase(v8::Isolate::GetCurrent())
     , m_listener(nullptr)
-    , m_workerGlobalScope(workerGlobalScope)
+    , m_workerThread(workerThread)
 {
 }
 
@@ -54,55 +53,25 @@ WorkerThreadDebugger::~WorkerThreadDebugger()
 {
 }
 
-DEFINE_TRACE(WorkerThreadDebugger)
-{
-    visitor->trace(m_workerGlobalScope);
-    ScriptDebuggerBase::trace(visitor);
-}
-
 void WorkerThreadDebugger::setContextDebugData(v8::Local<v8::Context> context)
 {
-    V8Debugger::setContextDebugData(context, workerContextDebugId);
+    V8Debugger::setContextDebugData(context, "worker", workerContextGroupId);
 }
 
-void WorkerThreadDebugger::addListener(ScriptDebugListener* listener)
+int WorkerThreadDebugger::contextGroupId()
 {
-    ASSERT(!m_listener);
-    debugger()->enable();
-    m_listener = listener;
-    Vector<ScriptDebugListener::ParsedScript> compiledScripts;
-    debugger()->getCompiledScripts(workerContextDebugId, compiledScripts);
-    for (size_t i = 0; i < compiledScripts.size(); i++)
-        listener->didParseSource(compiledScripts[i]);
-}
-
-void WorkerThreadDebugger::removeListener(ScriptDebugListener* listener)
-{
-    ASSERT(m_listener == listener);
-    debugger()->continueProgram();
-    m_listener = 0;
-    debugger()->disable();
-}
-
-ScriptDebugListener* WorkerThreadDebugger::getDebugListenerForContext(v8::Local<v8::Context>)
-{
-    // There is only one worker context in isolate.
-    return m_listener;
+    return workerContextGroupId;
 }
 
 void WorkerThreadDebugger::runMessageLoopOnPause(v8::Local<v8::Context>)
 {
     MessageQueueWaitResult result;
-    m_workerGlobalScope->thread()->willEnterNestedLoop();
+    m_workerThread->willEnterNestedLoop();
     do {
-        result = m_workerGlobalScope->thread()->runDebuggerTask();
+        result = m_workerThread->runDebuggerTask();
     // Keep waiting until execution is resumed.
     } while (result == MessageQueueMessageReceived && debugger()->isPaused());
-    m_workerGlobalScope->thread()->didLeaveNestedLoop();
-
-    // The listener may have been removed in the nested loop.
-    if (m_listener)
-        m_listener->didContinue();
+    m_workerThread->didLeaveNestedLoop();
 }
 
 void WorkerThreadDebugger::quitMessageLoopOnPause()

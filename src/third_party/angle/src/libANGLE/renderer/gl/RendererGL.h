@@ -11,6 +11,7 @@
 
 #include "libANGLE/Version.h"
 #include "libANGLE/renderer/Renderer.h"
+#include "libANGLE/renderer/gl/WorkaroundsGL.h"
 
 namespace rx
 {
@@ -35,7 +36,7 @@ class RendererGL : public Renderer
     // Shader creation
     CompilerImpl *createCompiler(const gl::Data &data) override;
     ShaderImpl *createShader(GLenum type) override;
-    ProgramImpl *createProgram() override;
+    ProgramImpl *createProgram(const gl::Program::Data &data) override;
 
     // Framebuffer creation
     FramebufferImpl *createDefaultFramebuffer(const gl::Framebuffer::Data &data) override;
@@ -76,16 +77,21 @@ class RendererGL : public Renderer
     std::string getVendorString() const override;
     std::string getRendererDescription() const override;
 
+    void syncState(const gl::State &state, const gl::State::DirtyBits &dirtyBits) override;
+
     const gl::Version &getMaxSupportedESVersion() const;
 
   private:
-    void generateCaps(gl::Caps *outCaps, gl::TextureCapsMap* outTextureCaps, gl::Extensions *outExtensions) const override;
-    Workarounds generateWorkarounds() const override;
+    void generateCaps(gl::Caps *outCaps, gl::TextureCapsMap* outTextureCaps,
+                      gl::Extensions *outExtensions,
+                      gl::Limitations *outLimitations) const override;
 
     mutable gl::Version mMaxSupportedESVersion;
 
     const FunctionsGL *mFunctions;
     StateManagerGL *mStateManager;
+
+    WorkaroundsGL mWorkarounds;
 
     // For performance debugging
     bool mSkipDrawCalls;

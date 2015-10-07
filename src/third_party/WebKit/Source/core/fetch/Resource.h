@@ -234,6 +234,7 @@ public:
     Resource* resourceToRevalidate() const { return m_resourceToRevalidate; }
     void setResourceToRevalidate(Resource*);
     bool hasCacheControlNoStoreHeader();
+    bool hasVaryHeader() const;
 
     double currentAge() const;
     double freshnessLifetime();
@@ -306,9 +307,10 @@ protected:
     HashCountedSet<ResourceClient*> m_clients;
     HashCountedSet<ResourceClient*> m_clientsAwaitingCallback;
 
-    class ResourceCallback {
+    class ResourceCallback : public NoBaseWillBeGarbageCollectedFinalized<ResourceCallback> {
     public:
         static ResourceCallback* callbackHandler();
+        DECLARE_TRACE();
         void schedule(Resource*);
         void cancel(Resource*);
         bool isScheduled(Resource*) const;
@@ -316,7 +318,7 @@ protected:
         ResourceCallback();
         void timerFired(Timer<ResourceCallback>*);
         Timer<ResourceCallback> m_callbackTimer;
-        HashSet<Resource*> m_resourcesWithPendingClients;
+        WillBeHeapHashSet<RawPtrWillBeMember<Resource>> m_resourcesWithPendingClients;
     };
 
     bool hasClient(ResourceClient* client) { return m_clients.contains(client) || m_clientsAwaitingCallback.contains(client); }
@@ -368,7 +370,7 @@ private:
     String m_fragmentIdentifierForRequest;
 
     RefPtr<CachedMetadata> m_cachedMetadata;
-    OwnPtr<CacheHandler> m_cacheHandler;
+    OwnPtrWillBeMember<CacheHandler> m_cacheHandler;
 
     ResourceError m_error;
 

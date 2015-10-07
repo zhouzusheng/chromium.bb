@@ -11,9 +11,9 @@
 #include "content/child/webmessageportchannel_impl.h"
 #include "content/common/frame_messages.h"
 #include "content/common/frame_replication_state.h"
+#include "content/common/site_isolation_policy.h"
 #include "content/common/swapped_out_messages.h"
 #include "content/common/view_messages.h"
-#include "content/public/common/content_switches.h"
 #include "content/renderer/child_frame_compositing_helper.h"
 #include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_thread_impl.h"
@@ -117,12 +117,6 @@ RenderFrameProxy* RenderFrameProxy::FromWebFrame(blink::WebFrame* web_frame) {
   return NULL;
 }
 
-// static
-bool RenderFrameProxy::IsSwappedOutStateForbidden() {
-  return base::CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kSitePerProcess);
-}
-
 RenderFrameProxy::RenderFrameProxy(int routing_id, int frame_routing_id)
     : routing_id_(routing_id),
       frame_routing_id_(frame_routing_id),
@@ -179,8 +173,7 @@ void RenderFrameProxy::DidCommitCompositorFrame() {
 
 void RenderFrameProxy::SetReplicatedState(const FrameReplicationState& state) {
   DCHECK(web_frame_);
-  web_frame_->setReplicatedOrigin(blink::WebSecurityOrigin::createFromString(
-      blink::WebString::fromUTF8(state.origin.string())));
+  web_frame_->setReplicatedOrigin(state.origin);
   web_frame_->setReplicatedSandboxFlags(state.sandbox_flags);
   web_frame_->setReplicatedName(blink::WebString::fromUTF8(state.name));
 }
@@ -300,7 +293,7 @@ void RenderFrameProxy::OnDisownOpener() {
   // When there is a RenderFrame for this proxy, tell it to disown its opener.
   // TODO(creis): Remove this when we only have WebRemoteFrames and make sure
   // they know they have an opener.
-  if (!RenderFrameProxy::IsSwappedOutStateForbidden()) {
+  if (!SiteIsolationPolicy::IsSwappedOutStateForbidden()) {
     RenderFrameImpl* render_frame =
         RenderFrameImpl::FromRoutingID(frame_routing_id_);
     if (render_frame) {
@@ -337,8 +330,7 @@ void RenderFrameProxy::OnDidUpdateName(const std::string& name) {
 }
 
 void RenderFrameProxy::OnDidUpdateOrigin(const url::Origin& origin) {
-  web_frame_->setReplicatedOrigin(blink::WebSecurityOrigin::createFromString(
-      blink::WebString::fromUTF8(origin.string())));
+  web_frame_->setReplicatedOrigin(origin);
 }
 
 void RenderFrameProxy::frameDetached(DetachType type) {
@@ -391,7 +383,6 @@ void RenderFrameProxy::postMessageEvent(
     if (source_render_frame)
       params.source_routing_id = source_render_frame->GetRoutingID();
   }
-  params.source_view_routing_id = MSG_ROUTING_NONE;
 
   Send(new FrameHostMsg_RouteMessageEvent(routing_id_, params));
 }
@@ -420,6 +411,10 @@ void RenderFrameProxy::navigate(const blink::WebURLRequest& request,
 
 void RenderFrameProxy::forwardInputEvent(const blink::WebInputEvent* event) {
   Send(new FrameHostMsg_ForwardInputEvent(routing_id_, event));
+}
+
+void RenderFrameProxy::frameRectsChanged(const blink::WebRect& frame_rect) {
+  Send(new FrameHostMsg_FrameRectChanged(routing_id_, frame_rect));
 }
 
 }  // namespace

@@ -36,9 +36,9 @@ void SkResourceCache::Key::init(void* nameSpace, uint64_t sharedID, size_t lengt
     static const int kHashedLocal32s = kSharedIDLocal32s + (sizeof(fNamespace) >> 2);
     static const int kLocal32s = kUnhashedLocal32s + kHashedLocal32s;
 
-    SK_COMPILE_ASSERT(sizeof(Key) == (kLocal32s << 2), unaccounted_key_locals);
-    SK_COMPILE_ASSERT(sizeof(Key) == offsetof(Key, fNamespace) + sizeof(fNamespace),
-                      namespace_field_must_be_last);
+    static_assert(sizeof(Key) == (kLocal32s << 2), "unaccounted_key_locals");
+    static_assert(sizeof(Key) == offsetof(Key, fNamespace) + sizeof(fNamespace),
+                 "namespace_field_must_be_last");
 
     fCount32 = SkToS32(kLocal32s + (length >> 2));
     fSharedID_lo = (uint32_t)sharedID;
@@ -347,6 +347,18 @@ void SkResourceCache::purgeSharedID(uint64_t sharedID) {
 #endif
 }
 
+void SkResourceCache::visitAll(Visitor visitor, void* context) {
+    // go backwards, just like purgeAsNeeded, just to make the code similar.
+    // could iterate either direction and still be correct.
+    Rec* rec = fTail;
+    while (rec) {
+        visitor(*rec, context);
+        rec = rec->fPrev;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
 size_t SkResourceCache::setTotalByteLimit(size_t newLimit) {
     size_t prevLimit = fTotalByteLimit;
     fTotalByteLimit = newLimit;
@@ -608,6 +620,11 @@ void SkResourceCache::Add(Rec* rec) {
     get_cache()->add(rec);
 }
 
+void SkResourceCache::VisitAll(Visitor visitor, void* context) {
+    SkAutoMutexAcquire am(gMutex);
+    get_cache()->visitAll(visitor, context);
+}
+
 void SkResourceCache::PostPurgeSharedID(uint64_t sharedID) {
     if (sharedID) {
         SkMessageBus<PurgeSharedIDMessage>::Post(PurgeSharedIDMessage(sharedID));
@@ -644,3 +661,13 @@ void SkGraphics::PurgeResourceCache() {
     return SkResourceCache::PurgeAll();
 }
 
+/////////////
+
+static void dump_visitor(const SkResourceCache::Rec& rec, void*) {
+    SkDebugf("RC: %12s bytes %9lu  discardable %p\n",
+             rec.getCategory(), rec.bytesUsed(), rec.diagnostic_only_getDiscardable());
+}
+
+void SkResourceCache::TestDumpMemoryStatistics() {
+    VisitAll(dump_visitor, nullptr);
+}

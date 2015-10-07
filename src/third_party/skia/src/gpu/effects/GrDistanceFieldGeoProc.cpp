@@ -6,13 +6,12 @@
  */
 
 #include "GrDistanceFieldGeoProc.h"
-#include "GrFontAtlasSizes.h"
 #include "GrInvariantOutput.h"
 #include "GrTexture.h"
 
 #include "SkDistanceFieldGen.h"
 
-#include "gl/GrGLProcessor.h"
+#include "gl/GrGLFragmentProcessor.h"
 #include "gl/GrGLTexture.h"
 #include "gl/GrGLGeometryProcessor.h"
 #include "gl/builders/GrGLProgramBuilder.h"
@@ -77,11 +76,18 @@ public:
         args.fPB->addVarying("IntTextureCoords", &st, kHigh_GrSLPrecision);
         vsBuilder->codeAppendf("%s = %s;", st.vsOut(), dfTexEffect.inTextureCoords()->fName);
 
+        // compute numbers to be hardcoded to convert texture coordinates from int to float
+        SkASSERT(dfTexEffect.numTextures() == 1);
+        GrTexture* atlas = dfTexEffect.textureAccess(0).getTexture();
+        SkASSERT(atlas && SkIsPow2(atlas->width()) && SkIsPow2(atlas->height()));
+        SkScalar recipWidth = 1.0f / atlas->width();
+        SkScalar recipHeight = 1.0f / atlas->height();
+
         GrGLVertToFrag uv(kVec2f_GrSLType);
         args.fPB->addVarying("TextureCoords", &uv, kHigh_GrSLPrecision);
-        // this is only used with text, so our texture bounds always match the glyph atlas
-        vsBuilder->codeAppendf("%s = vec2(" GR_FONT_ATLAS_A8_RECIP_WIDTH ", "
-                               GR_FONT_ATLAS_RECIP_HEIGHT ")*%s;", uv.vsOut(),
+        vsBuilder->codeAppendf("%s = vec2(%.*f, %.*f) * %s;", uv.vsOut(),
+                               GR_SIGNIFICANT_POW2_DECIMAL_DIG, recipWidth,
+                               GR_SIGNIFICANT_POW2_DECIMAL_DIG, recipHeight,
                                dfTexEffect.inTextureCoords()->fName);
         
         // Use highp to work around aliasing issues
@@ -176,6 +182,13 @@ public:
         key |= dfTexEffect.colorIgnored() << 17;
         key |= ComputePosKey(dfTexEffect.viewMatrix()) << 25;
         b->add32(key);
+
+        // Currently we hardcode numbers to convert atlas coordinates to normalized floating point
+        SkASSERT(gp.numTextures() == 1);
+        GrTexture* atlas = gp.textureAccess(0).getTexture();
+        SkASSERT(atlas);
+        b->add32(atlas->width());
+        b->add32(atlas->height());
     }
 
 private:
@@ -525,11 +538,18 @@ public:
         args.fPB->addVarying("IntTextureCoords", &st, kHigh_GrSLPrecision);
         vsBuilder->codeAppendf("%s = %s;", st.vsOut(), dfTexEffect.inTextureCoords()->fName);
 
+        // compute numbers to be hardcoded to convert texture coordinates from int to float
+        SkASSERT(dfTexEffect.numTextures() == 1);
+        GrTexture* atlas = dfTexEffect.textureAccess(0).getTexture();
+        SkASSERT(atlas && SkIsPow2(atlas->width()) && SkIsPow2(atlas->height()));
+        SkScalar recipWidth = 1.0f / atlas->width();
+        SkScalar recipHeight = 1.0f / atlas->height();
+
         GrGLVertToFrag uv(kVec2f_GrSLType);
         args.fPB->addVarying("TextureCoords", &uv, kHigh_GrSLPrecision);
-        // this is only used with text, so our texture bounds always match the glyph atlas
-        vsBuilder->codeAppendf("%s = vec2(" GR_FONT_ATLAS_A8_RECIP_WIDTH ", "
-                               GR_FONT_ATLAS_RECIP_HEIGHT ")*%s;", uv.vsOut(),
+        vsBuilder->codeAppendf("%s = vec2(%.*f, %.*f) * %s;", uv.vsOut(),
+                               GR_SIGNIFICANT_POW2_DECIMAL_DIG, recipWidth,
+                               GR_SIGNIFICANT_POW2_DECIMAL_DIG, recipHeight,
                                dfTexEffect.inTextureCoords()->fName);
 
         // add frag shader code
@@ -545,10 +565,12 @@ public:
         fsBuilder->codeAppendf("vec2 uv = %s;\n", uv.fsIn());
         fsBuilder->codeAppend(GrGLShaderVar::PrecisionString(kHigh_GrSLPrecision,
                                                              pb->ctxInfo().standard()));
+
+        SkScalar lcdDelta = 1.0f / (3.0f * atlas->width());
         if (dfTexEffect.getFlags() & kBGR_DistanceFieldEffectFlag) {
-            fsBuilder->codeAppend("float delta = -" GR_FONT_ATLAS_LCD_DELTA ";\n");
+            fsBuilder->codeAppendf("float delta = -%.*f;\n", SK_FLT_DECIMAL_DIG, lcdDelta);
         } else {
-            fsBuilder->codeAppend("float delta = " GR_FONT_ATLAS_LCD_DELTA ";\n");
+            fsBuilder->codeAppendf("float delta = %.*f;\n", SK_FLT_DECIMAL_DIG, lcdDelta);
         }
         if (isUniformScale) {
             fsBuilder->codeAppendf("float dy = abs(dFdy(%s.y));", st.fsIn());
@@ -668,6 +690,13 @@ public:
         key |= dfTexEffect.colorIgnored() << 16;
         key |= ComputePosKey(dfTexEffect.viewMatrix()) << 25;
         b->add32(key);
+
+        // Currently we hardcode numbers to convert atlas coordinates to normalized floating point
+        SkASSERT(gp.numTextures() == 1);
+        GrTexture* atlas = gp.textureAccess(0).getTexture();
+        SkASSERT(atlas);
+        b->add32(atlas->width());
+        b->add32(atlas->height());
     }
 
 private:

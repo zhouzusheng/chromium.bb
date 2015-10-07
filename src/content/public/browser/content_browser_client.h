@@ -217,7 +217,16 @@ class CONTENT_EXPORT ContentBrowserClient {
   // more conservative check than IsSuitableHost, since it is used after a
   // navigation has committed to ensure that the process did not exceed its
   // authority.
+  // This is called on the UI thread.
   virtual bool CanCommitURL(RenderProcessHost* process_host, const GURL& url);
+
+  // Returns true if no URL within |origin| is allowed to commit in the given
+  // process.  Must return false if there exists at least one URL in |origin|
+  // that is allowed to commit.
+  // This is called on the IO thread.
+  virtual bool IsIllegalOrigin(ResourceContext* resource_context,
+                               int child_process_id,
+                               const GURL& origin);
 
   // Returns whether a URL should be allowed to open from a specific context.
   // This also applies in cases where the new URL will open in another process.
@@ -514,6 +523,9 @@ class CONTENT_EXPORT ContentBrowserClient {
   // else we should do with the file.
   virtual std::string GetDefaultDownloadName();
 
+  // Returns the path to the browser shader disk cache root.
+  virtual base::FilePath GetShaderDiskCacheDirectory();
+
   // Notification that a pepper plugin has just been spawned. This allows the
   // embedder to add filters onto the host to implement interfaces.
   // This is called on the IO thread.
@@ -585,22 +597,34 @@ class CONTENT_EXPORT ContentBrowserClient {
       BrowserContext* browser_context,
       const GURL& url);
 
-  // Allows to override browser Mojo services exposed through the
+  // Allows to register browser Mojo services exposed through the
   // RenderProcessHost.
-  virtual void OverrideRenderProcessMojoServices(ServiceRegistry* registry) {}
+  virtual void RegisterRenderProcessMojoServices(ServiceRegistry* registry) {}
 
-  // Allows to override browser Mojo services exposed through the
+  // Allows to register browser Mojo services exposed through the
   // FrameMojoShell.
-  virtual void OverrideFrameMojoShellServices(
+  virtual void RegisterFrameMojoShellServices(
       ServiceRegistry* registry,
       RenderFrameHost* render_frame_host) {}
 
   using StaticMojoApplicationMap =
       std::map<GURL, base::Callback<scoped_ptr<mojo::ApplicationDelegate>()>>;
 
-  // Registers in-process Mojo application loaders with the browser's global
-  // Mojo shell.
-  virtual void RegisterMojoApplications(StaticMojoApplicationMap* apps) {}
+  // Registers Mojo applications to be loaded in the browser process by the
+  // browser's global Mojo shell.
+  virtual void RegisterInProcessMojoApplications(
+      StaticMojoApplicationMap* apps) {}
+
+  // Registers Mojo applications to be loaded out of the browser process (in
+  // a utility process) without the sandbox. By default, the utility process
+  // thats runs Mojo applications are sandboxed.
+  //
+  // WARNING: This path is NOT recommended! If a Mojo application needs a
+  // service that is only available out of the sandbox, it could ask the browser
+  // process to provide it (e.g. through OverrideFrameMojoShellServices()). Only
+  // use this method when that approach does not work.
+  virtual void RegisterUnsandboxedOutOfProcessMojoApplications(
+      std::vector<GURL>* urls) {}
 
   // Registers additional navigator.connect service factories available in a
   // particular NavigatorConnectContext.

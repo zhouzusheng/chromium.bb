@@ -17,8 +17,8 @@
 #include "libANGLE/Constants.h"
 #include "libANGLE/formatutils.h"
 #include "libANGLE/renderer/ProgramImpl.h"
-#include "libANGLE/renderer/Workarounds.h"
 #include "libANGLE/renderer/d3d/DynamicHLSL.h"
+#include "libANGLE/renderer/d3d/WorkaroundsD3D.h"
 
 namespace gl
 {
@@ -42,12 +42,11 @@ class ShaderExecutableD3D;
 class ProgramD3D : public ProgramImpl
 {
   public:
-    ProgramD3D(RendererD3D *renderer);
+    ProgramD3D(const gl::Program::Data &data, RendererD3D *renderer);
     virtual ~ProgramD3D();
 
     const std::vector<PixelShaderOutputVariable> &getPixelShaderKey() { return mPixelShaderKey; }
     int getShaderVersion() const { return mShaderVersion; }
-    GLenum getTransformFeedbackBufferMode() const { return mTransformFeedbackBufferMode; }
 
     GLint getSamplerMapping(gl::SamplerType type, unsigned int samplerIndex, const gl::Caps &caps) const;
     GLenum getSamplerTextureType(gl::SamplerType type, unsigned int samplerIndex) const;
@@ -69,13 +68,10 @@ class ProgramD3D : public ProgramImpl
     gl::Error getVertexExecutableForInputLayout(const gl::InputLayout &inputLayout, ShaderExecutableD3D **outExectuable, gl::InfoLog *infoLog);
     ShaderExecutableD3D *getGeometryExecutable() const { return mGeometryExecutable; }
 
-    LinkResult compileProgramExecutables(gl::InfoLog &infoLog, gl::Shader *fragmentShader, gl::Shader *vertexShader,
-                                         int registers);
+    LinkResult compileProgramExecutables(gl::InfoLog &infoLog, int registers);
 
     LinkResult link(const gl::Data &data, gl::InfoLog &infoLog,
                     gl::Shader *fragmentShader, gl::Shader *vertexShader,
-                    const std::vector<std::string> &transformFeedbackVaryings,
-                    GLenum transformFeedbackBufferMode,
                     int *registers, std::vector<gl::LinkedVarying> *linkedVaryings,
                     std::map<int, gl::VariableLocation> *outputVariables);
 
@@ -137,7 +133,7 @@ class ProgramD3D : public ProgramImpl
     class VertexExecutable
     {
       public:
-        typedef std::vector<GLenum> Signature;
+        typedef std::vector<bool> Signature;
 
         VertexExecutable(const gl::InputLayout &inputLayout,
                          const Signature &signature,
@@ -225,8 +221,6 @@ class ProgramD3D : public ProgramImpl
 
     UniformStorageD3D *mVertexUniformStorage;
     UniformStorageD3D *mFragmentUniformStorage;
-
-    GLenum mTransformFeedbackBufferMode;
 
     std::vector<Sampler> mSamplersPS;
     std::vector<Sampler> mSamplersVS;

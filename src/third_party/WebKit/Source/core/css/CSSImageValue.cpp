@@ -26,9 +26,9 @@
 #include "core/fetch/FetchInitiatorTypeNames.h"
 #include "core/fetch/FetchRequest.h"
 #include "core/fetch/ImageResource.h"
+#include "core/loader/MixedContentChecker.h"
 #include "core/style/StyleFetchedImage.h"
 #include "core/style/StylePendingImage.h"
-#include "core/loader/MixedContentChecker.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityPolicy.h"
 
@@ -118,6 +118,7 @@ bool CSSImageValue::knownToBeOpaque(const LayoutObject* layoutObject) const
 
 DEFINE_TRACE_AFTER_DISPATCH(CSSImageValue)
 {
+    visitor->trace(m_image);
     CSSValue::traceAfterDispatch(visitor);
 }
 

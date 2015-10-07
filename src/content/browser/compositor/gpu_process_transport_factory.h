@@ -53,8 +53,8 @@ class GpuProcessTransportFactory
   void RemoveCompositor(ui::Compositor* compositor) override;
   scoped_refptr<cc::ContextProvider> SharedMainThreadContextProvider() override;
   bool DoesCreateTestContexts() override;
-  uint32 GetImageTextureTarget(gfx::GpuMemoryBuffer::Format format,
-                               gfx::GpuMemoryBuffer::Usage usage) override;
+  uint32 GetImageTextureTarget(gfx::BufferFormat format,
+                               gfx::BufferUsage usage) override;
   cc::SharedBitmapManager* GetSharedBitmapManager() override;
   gpu::GpuMemoryBufferManager* GetGpuMemoryBufferManager() override;
   cc::TaskGraphRunner* GetTaskGraphRunner() override;
@@ -102,6 +102,9 @@ class GpuProcessTransportFactory
   uint32_t next_surface_id_namespace_;
   scoped_ptr<cc::TaskGraphRunner> task_graph_runner_;
   scoped_ptr<base::SimpleThread> raster_thread_;
+#if !defined(OS_CHROMEOS)
+  scoped_refptr<ContextProviderCommandBuffer> shared_worker_context_provider_;
+#endif
 
 #if defined(OS_WIN)
   scoped_ptr<OutputDeviceBacking> software_backing_;

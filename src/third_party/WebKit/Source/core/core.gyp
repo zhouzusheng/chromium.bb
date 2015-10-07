@@ -568,7 +568,7 @@
           ],
         }, { # OS!="mac"
           'sources!': [
-            'editing/SmartReplaceCF.cpp',
+            'editing/commands/SmartReplaceCF.cpp',
           ],
         }],
         ['OS=="win" and chromium_win_pch==1', {
@@ -784,7 +784,7 @@
               },
             },{ # OS!="mac"
               'sources!': [
-                'editing/SmartReplaceCF.cpp',
+                'editing/commands/SmartReplaceCF.cpp',
                 'layout/LayoutThemeMac.h',
                 'layout/LayoutThemeMac.mm',
               ],

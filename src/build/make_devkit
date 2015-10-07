@@ -247,6 +247,9 @@ def main(args):
   applyVariableToEnvironment('GYP_DEFINES', 'dont_include_type_in_pdb', '1')
   applyVariableToEnvironment('GYP_DEFINES', 'win_embed_manifest', '1')
 
+  with open('devkit_version.txt', 'w') as f:
+    f.write(version)
+
   print("Running hooks for ninjaDebug...")
   sys.stdout.flush()
   rc = bbutil.shellExecNoPipe('python src/build/runhooks.py ninjaDebug')

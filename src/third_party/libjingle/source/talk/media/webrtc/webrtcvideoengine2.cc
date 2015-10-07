@@ -42,6 +42,7 @@
 #include "webrtc/base/buffer.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/stringutils.h"
+#include "webrtc/base/timeutils.h"
 #include "webrtc/call.h"
 #include "webrtc/modules/video_coding/codecs/h264/include/h264.h"
 #include "webrtc/modules/video_coding/codecs/vp8/simulcast_encoder_adapter.h"
@@ -855,6 +856,22 @@ WebRtcVideoChannel2::FilterSupportedCodecs(
   return supported_codecs;
 }
 
+bool WebRtcVideoChannel2::SetSendParameters(const VideoSendParameters& params) {
+  // TODO(pbos): Refactor this to only recreate the send streams once
+  // instead of 4 times.
+  return (SetSendCodecs(params.codecs) &&
+          SetSendRtpHeaderExtensions(params.extensions) &&
+          SetMaxSendBandwidth(params.max_bandwidth_bps) &&
+          SetOptions(params.options));
+}
+
+bool WebRtcVideoChannel2::SetRecvParameters(const VideoRecvParameters& params) {
+  // TODO(pbos): Refactor this to only recreate the recv streams once
+  // instead of twice.
+  return (SetRecvCodecs(params.codecs) &&
+          SetRecvRtpHeaderExtensions(params.extensions));
+}
+
 bool WebRtcVideoChannel2::SetRecvCodecs(const std::vector<VideoCodec>& codecs) {
   TRACE_EVENT0("webrtc", "WebRtcVideoChannel2::SetRecvCodecs");
   LOG(LS_INFO) << "SetRecvCodecs: " << CodecVectorToString(codecs);
@@ -1155,15 +1172,8 @@ bool WebRtcVideoChannel2::AddRecvStream(const StreamParams& sp,
   webrtc::VideoReceiveStream::Config config;
   ConfigureReceiverRtp(&config, sp);
 
-  // Set up A/V sync if there is a VoiceChannel.
-  // TODO(pbos): The A/V is synched by the receiving channel. So we need to know
-  // the SSRC of the remote audio channel in order to sync the correct webrtc
-  // VoiceEngine channel. For now sync the first channel in non-conference to
-  // match existing behavior in WebRtcVideoEngine.
-  if (voice_channel_id_ != -1 && receive_streams_.empty() &&
-      !options_.conference_mode.GetWithDefaultIfUnset(false)) {
-    config.audio_channel_id = voice_channel_id_;
-  }
+  // Set up A/V sync group based on sync label.
+  config.sync_group = sp.sync_label;
 
   config.rtp.remb = false;
   VideoCodecSettings send_codec;
@@ -1383,9 +1393,24 @@ void WebRtcVideoChannel2::OnPacketReceived(
     return;
   }
 
-  // TODO(pbos): Ignore unsignalled packets that don't use the video payload
-  // (prevent creating default receivers for RTX configured as if it would
-  // receive media payloads on those SSRCs).
+  int payload_type = 0;
+  if (!GetRtpPayloadType(packet->data(), packet->size(), &payload_type)) {
+    return;
+  }
+
+  // See if this payload_type is registered as one that usually gets its own
+  // SSRC (RTX) or at least is safe to drop either way (ULPFEC). If it is, and
+  // it wasn't handled above by DeliverPacket, that means we don't know what
+  // stream it associates with, and we shouldn't ever create an implicit channel
+  // for these.
+  for (auto& codec : recv_codecs_) {
+    if (payload_type == codec.rtx_payload_type ||
+        payload_type == codec.fec.red_rtx_payload_type ||
+        payload_type == codec.fec.ulpfec_payload_type) {
+      return;
+    }
+  }
+
   switch (unsignalled_ssrc_handler_->OnUnsignalledSsrc(this, ssrc)) {
     case UnsignalledSsrcHandler::kDropPacket:
       return;
@@ -1413,8 +1438,7 @@ void WebRtcVideoChannel2::OnRtcpReceived(
 
 void WebRtcVideoChannel2::OnReadyToSend(bool ready) {
   LOG(LS_VERBOSE) << "OnReadyToSend: " << (ready ? "Ready." : "Not ready.");
-  call_->SignalNetworkState(ready ? webrtc::Call::kNetworkUp
-                                  : webrtc::Call::kNetworkDown);
+  call_->SignalNetworkState(ready ? webrtc::kNetworkUp : webrtc::kNetworkDown);
 }
 
 bool WebRtcVideoChannel2::MuteStream(uint32 ssrc, bool mute) {
@@ -1663,7 +1687,9 @@ WebRtcVideoChannel2::WebRtcVideoSendStream::WebRtcVideoSendStream(
       capturer_(NULL),
       sending_(false),
       muted_(false),
-      old_adapt_changes_(0) {
+      old_adapt_changes_(0),
+      first_frame_timestamp_ms_(0),
+      last_frame_timestamp_ms_(0) {
   parameters_.config.rtp.max_packet_size = kVideoMtu;
 
   sp.GetPrimarySsrcs(&parameters_.config.rtp.ssrcs);
@@ -1727,6 +1753,15 @@ void WebRtcVideoChannel2::WebRtcVideoSendStream::InputFrame(
                      static_cast<int>(frame->GetWidth()),
                      static_cast<int>(frame->GetHeight()));
   }
+
+  int64_t frame_delta_ms = frame->GetTimeStamp() / rtc::kNumNanosecsPerMillisec;
+  // frame->GetTimeStamp() is essentially a delta, align to webrtc time
+  if (first_frame_timestamp_ms_ == 0) {
+    first_frame_timestamp_ms_ = rtc::Time() - frame_delta_ms;
+  }
+
+  last_frame_timestamp_ms_ = first_frame_timestamp_ms_ + frame_delta_ms;
+  video_frame.set_render_time_ms(last_frame_timestamp_ms_);
   // Reconfigure codec if necessary.
   SetDimensions(
       video_frame.width(), video_frame.height(), capturer->IsScreencast());
@@ -1748,6 +1783,10 @@ bool WebRtcVideoChannel2::WebRtcVideoSendStream::SetCapturer(
   {
     rtc::CritScope cs(&lock_);
 
+    // Reset timestamps to realign new incoming frames to a webrtc timestamp. A
+    // new capturer may have a different timestamp delta than the previous one.
+    first_frame_timestamp_ms_ = 0;
+
     if (capturer == NULL) {
       if (stream_ != NULL) {
         LOG(LS_VERBOSE) << "Disabling capturer, sending black frame.";
@@ -1755,6 +1794,15 @@ bool WebRtcVideoChannel2::WebRtcVideoSendStream::SetCapturer(
 
         CreateBlackFrame(&black_frame, last_dimensions_.width,
                          last_dimensions_.height);
+
+        // Force this black frame not to be dropped due to timestamp order
+        // check. As IncomingCapturedFrame will drop the frame if this frame's
+        // timestamp is less than or equal to last frame's timestamp, it is
+        // necessary to give this black frame a larger timestamp than the
+        // previous one.
+        last_frame_timestamp_ms_ +=
+            format_.interval / rtc::kNumNanosecsPerMillisec;
+        black_frame.set_render_time_ms(last_frame_timestamp_ms_);
         stream_->Input()->IncomingCapturedFrame(black_frame);
       }
 

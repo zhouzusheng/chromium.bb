@@ -35,6 +35,7 @@ namespace gpu {
 class SyncPointManager;
 union ValueState;
 namespace gles2 {
+class FramebufferCompletenessCache;
 class MailboxManager;
 class ProgramCache;
 class ShaderTranslatorCache;
@@ -68,6 +69,7 @@ class CONTENT_EXPORT GpuChannelManager : public IPC::Listener,
                     base::WaitableEvent* shutdown_event,
                     IPC::SyncChannel* channel,
                     IPC::AttachmentBroker* broker,
+                    gpu::SyncPointManager* sync_point_manager,
                     GpuMemoryBufferFactory* gpu_memory_buffer_factory);
   ~GpuChannelManager() override;
 
@@ -91,13 +93,14 @@ class CONTENT_EXPORT GpuChannelManager : public IPC::Listener,
 
   gpu::gles2::ProgramCache* program_cache();
   gpu::gles2::ShaderTranslatorCache* shader_translator_cache();
+  gpu::gles2::FramebufferCompletenessCache* framebuffer_completeness_cache();
 
   GpuMemoryManager* gpu_memory_manager() { return &gpu_memory_manager_; }
 
   GpuChannel* LookupChannel(int32 client_id);
 
   gpu::SyncPointManager* sync_point_manager() {
-    return sync_point_manager_.get();
+    return sync_point_manager_;
   }
 
   gfx::GLSurface* GetDefaultOffscreenSurface();
@@ -111,6 +114,7 @@ class CONTENT_EXPORT GpuChannelManager : public IPC::Listener,
 
   // Message handlers.
   void OnEstablishChannel(int client_id,
+                          uint64_t client_tracing_id,
                           bool share_context,
                           bool allow_future_sync_points);
   void OnCloseChannel(const IPC::ChannelHandle& channel_handle);
@@ -129,15 +133,13 @@ class CONTENT_EXPORT GpuChannelManager : public IPC::Listener,
                                 int client_id,
                                 int32 sync_point);
 
-  void OnRelinquishResources();
-  void OnResourcesRelinquished();
+  void OnFinalize();
 
   void OnUpdateValueState(int client_id,
                           unsigned int target,
                           const gpu::ValueState& state);
 
   void OnLoseAllContexts();
-  void CheckRelinquishGpuResources();
 
   scoped_refptr<base::SingleThreadTaskRunner> io_task_runner_;
   base::WaitableEvent* shutdown_event_;
@@ -153,13 +155,15 @@ class CONTENT_EXPORT GpuChannelManager : public IPC::Listener,
   scoped_refptr<gpu::gles2::MailboxManager> mailbox_manager_;
   GpuMemoryManager gpu_memory_manager_;
   GpuWatchdog* watchdog_;
-  scoped_refptr<gpu::SyncPointManager> sync_point_manager_;
+  // SyncPointManager guaranteed to outlive running MessageLoop.
+  gpu::SyncPointManager* sync_point_manager_;
   scoped_ptr<gpu::gles2::ProgramCache> program_cache_;
   scoped_refptr<gpu::gles2::ShaderTranslatorCache> shader_translator_cache_;
+  scoped_refptr<gpu::gles2::FramebufferCompletenessCache>
+      framebuffer_completeness_cache_;
   scoped_refptr<gfx::GLSurface> default_offscreen_surface_;
   GpuMemoryBufferFactory* const gpu_memory_buffer_factory_;
   IPC::SyncChannel* channel_;
-  bool relinquish_resources_pending_;
   // Must outlive this instance of GpuChannelManager.
   IPC::AttachmentBroker* attachment_broker_;
 

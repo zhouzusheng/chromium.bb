@@ -71,11 +71,9 @@ public:
 
     virtual bool isSVGImage() const { return false; }
     virtual bool isBitmapImage() const { return false; }
-    virtual bool isLazyDecodedBitmap() { return false; }
-    virtual bool isImmutableBitmap() { return false; }
     virtual bool currentFrameKnownToBeOpaque() = 0;
-
-    virtual PassRefPtr<SkImage> skImage();
+    virtual bool currentFrameIsComplete() { return false; }
+    virtual bool currentFrameIsLazyDecoded() { return false; }
 
     // Derived classes should override this if they can assure that the current
     // image frame contains only resources from its own security origin.
@@ -130,17 +128,14 @@ public:
 
     enum TileRule { StretchTile, RoundTile, SpaceTile, RepeatTile };
 
-    virtual bool bitmapForCurrentFrame(SkBitmap*) WARN_UNUSED_RETURN;
+    bool deprecatedBitmapForCurrentFrame(SkBitmap*) WARN_UNUSED_RETURN;
 
+    virtual PassRefPtr<SkImage> imageForCurrentFrame() = 0;
     virtual PassRefPtr<Image> imageForDefaultFrame();
 
     virtual void drawPattern(GraphicsContext*, const FloatRect&,
         const FloatSize&, const FloatPoint& phase, SkXfermode::Mode,
         const FloatRect&, const IntSize& repeatSpacing = IntSize());
-
-#if ENABLE(ASSERT)
-    virtual bool notSolidColor() { return true; }
-#endif
 
     enum ImageClampingMode {
         ClampImageToSourceRect,
@@ -152,15 +147,9 @@ public:
 protected:
     Image(ImageObserver* = 0);
 
-    static void fillWithSolidColor(GraphicsContext*, const FloatRect& dstRect, const Color&, SkXfermode::Mode);
-
     void drawTiled(GraphicsContext*, const FloatRect& dstRect, const FloatPoint& srcPoint, const FloatSize& tileSize,
         SkXfermode::Mode, const IntSize& repeatSpacing);
     void drawTiled(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, const FloatSize& tileScaleFactor, TileRule hRule, TileRule vRule, SkXfermode::Mode);
-
-    // Supporting tiled drawing
-    virtual bool mayFillWithSolidColor() { return false; }
-    virtual Color solidColor() const { return Color(); }
 
 private:
     RefPtr<SharedBuffer> m_encodedImageData;

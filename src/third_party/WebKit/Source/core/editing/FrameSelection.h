@@ -68,8 +68,7 @@ public:
     virtual ~FrameSelection();
 
     enum EAlteration { AlterationMove, AlterationExtend };
-    enum CursorAlignOnScroll { AlignCursorOnScrollIfNeeded,
-                               AlignCursorOnScrollAlways };
+    enum CursorAlignOnScroll { AlignCursorOnScrollIfNeeded, AlignCursorOnScrollAlways };
     enum SetSelectionOption {
         // 1 << 0 is reserved for EUserTriggered
         CloseTyping = 1 << 1,
@@ -85,7 +84,7 @@ public:
         return static_cast<EUserTriggered>(options & UserTriggered);
     }
 
-    enum DirectoinalOption {
+    enum DirectionalOption {
         NonDirectional,
         Directional
     };
@@ -104,15 +103,15 @@ public:
 
     void moveTo(const VisiblePosition&, EUserTriggered = NotUserTriggered, CursorAlignOnScroll = AlignCursorOnScrollIfNeeded);
     void moveTo(const VisiblePosition&, const VisiblePosition&, EUserTriggered = NotUserTriggered);
-    void moveTo(const Position&, EAffinity, EUserTriggered = NotUserTriggered);
+    void moveTo(const Position&, TextAffinity, EUserTriggered = NotUserTriggered);
 
     const VisibleSelection& selection() const { return m_selection; }
     void setSelection(const VisibleSelection&, SetSelectionOptions = CloseTyping | ClearTypingStyle, CursorAlignOnScroll = AlignCursorOnScrollIfNeeded, TextGranularity = CharacterGranularity);
     void setSelection(const VisibleSelection& selection, TextGranularity granularity) { setSelection(selection, CloseTyping | ClearTypingStyle, AlignCursorOnScrollIfNeeded, granularity); }
     // TODO(yosin) We should get rid of |Range| version of |setSelectedRagne()|
     // for Oilpan.
-    bool setSelectedRange(Range*, EAffinity, DirectoinalOption directional = NonDirectional, SetSelectionOptions = CloseTyping | ClearTypingStyle);
-    bool setSelectedRange(const EphemeralRange&, EAffinity, DirectoinalOption directional = NonDirectional, SetSelectionOptions = CloseTyping | ClearTypingStyle);
+    bool setSelectedRange(Range*, TextAffinity, DirectionalOption = NonDirectional, SetSelectionOptions = CloseTyping | ClearTypingStyle);
+    bool setSelectedRange(const EphemeralRange&, TextAffinity, DirectionalOption = NonDirectional, SetSelectionOptions = CloseTyping | ClearTypingStyle);
     void selectAll();
     void clear();
     void prepareForDestruction();
@@ -124,7 +123,7 @@ public:
 
     SelectionType selectionType() const { return m_selection.selectionType(); }
 
-    EAffinity affinity() const { return m_selection.affinity(); }
+    TextAffinity affinity() const { return m_selection.affinity(); }
 
     bool modify(EAlteration, SelectionDirection, TextGranularity, EUserTriggered = NotUserTriggered);
     enum VerticalDirection { DirectionUp, DirectionDown };
@@ -239,7 +238,8 @@ public:
 private:
     explicit FrameSelection(LocalFrame*);
 
-    enum EPositionType { START, END, BASE, EXTENT };
+    // TODO(yosin) We should use capitalized name for |EPositionType|.
+    enum EPositionType { START, END, BASE, EXTENT }; // NOLINT
 
     template <typename Strategy>
     bool containsAlgorithm(const LayoutPoint&);
@@ -269,6 +269,7 @@ private:
 
     void notifyAccessibilityForSelectionChange();
     void notifyCompositorForSelectionChange();
+    void notifyEventHandlerForSelectionChange();
 
     void focusedOrActiveStateChanged();
 

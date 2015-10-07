@@ -804,15 +804,8 @@ bool DesktopWindowTreeHostWin::HandleMouseEvent(const ui::MouseEvent& event) {
   return event.handled();
 }
 
-bool DesktopWindowTreeHostWin::HandleKeyEvent(const ui::KeyEvent& event) {
-  return false;
-}
-
-bool DesktopWindowTreeHostWin::HandleUntranslatedKeyEvent(
-    const ui::KeyEvent& event) {
-  ui::KeyEvent duplicate_event(event);
-  SendEventToProcessor(&duplicate_event);
-  return duplicate_event.handled();
+void DesktopWindowTreeHostWin::HandleKeyEvent(ui::KeyEvent* event) {
+  GetInputMethod()->DispatchKeyEvent(event);
 }
 
 void DesktopWindowTreeHostWin::HandleTouchEvent(

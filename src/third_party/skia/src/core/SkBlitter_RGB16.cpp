@@ -14,7 +14,7 @@
 #include "SkUtilsArm.h"
 #include "SkXfermode.h"
 
-#if SK_MIPS_HAS_DSP
+#if defined(__mips_dsp)
 extern void blitmask_d565_opaque_mips(int width, int height, uint16_t* device,
                                       unsigned deviceRB, const uint8_t* alpha,
                                       uint32_t expanded32, unsigned maskRB);
@@ -22,6 +22,11 @@ extern void blitmask_d565_opaque_mips(int width, int height, uint16_t* device,
 
 #if SK_ARM_NEON_IS_ALWAYS && defined(SK_CPU_LENDIAN)
     #include <arm_neon.h>
+extern void SkRGB16BlitterBlitV_neon(uint16_t* device,
+                                     int height,
+                                     size_t deviceRB,
+                                     unsigned scale,
+                                     uint32_t src32);
 #else
     // if we don't have neon, then our black blitter is worth the extra code
     #define USE_BLACK_BLITTER
@@ -369,7 +374,7 @@ void SkRGB16_Opaque_Blitter::blitAntiH(int x, int y,
 #define SK_BLITBWMASK_DEVTYPE               uint16_t
 #include "SkBlitBWMaskTemplate.h"
 
-#if !defined(SK_MIPS_HAS_DSP)
+#if !defined(__mips_dsp)
 static U16CPU blend_compact(uint32_t src32, uint32_t dst32, unsigned scale5) {
     return SkCompact_rgb_16(dst32 + ((src32 - dst32) * scale5 >> 5));
 }
@@ -460,7 +465,7 @@ void SkRGB16_Opaque_Blitter::blitMask(const SkMask& mask,
         alpha += maskRB;
     } while (--height != 0);
 #undef    UNROLL
-#elif SK_MIPS_HAS_DSP
+#elif defined(__mips_dsp)
     blitmask_d565_opaque_mips(width, height, device, deviceRB, alpha, expanded32, maskRB);
 #else   // non-neon code
     do {
@@ -484,11 +489,15 @@ void SkRGB16_Opaque_Blitter::blitV(int x, int y, int height, SkAlpha alpha) {
     unsigned scale5 = SkAlpha255To256(alpha) >> 3;
     uint32_t src32 =  fExpandedRaw16 * scale5;
     scale5 = 32 - scale5;
+#if SK_ARM_NEON_IS_ALWAYS && defined(SK_CPU_LENDIAN)
+    SkRGB16BlitterBlitV_neon(device, height, deviceRB, scale5, src32);
+#else
     do {
         uint32_t dst32 = SkExpand_rgb_16(*device) * scale5;
         *device = SkCompact_rgb_16((src32 + dst32) >> 5);
         device = (uint16_t*)((char*)device + deviceRB);
     } while (--height != 0);
+#endif
 }
 
 void SkRGB16_Opaque_Blitter::blitRect(int x, int y, int width, int height) {
@@ -659,11 +668,15 @@ void SkRGB16_Blitter::blitV(int x, int y, int height, SkAlpha alpha) {
     unsigned scale5 = SkAlpha255To256(alpha) * fScale >> (8 + 3);
     uint32_t src32 =  fExpandedRaw16 * scale5;
     scale5 = 32 - scale5;
+#if SK_ARM_NEON_IS_ALWAYS && defined(SK_CPU_LENDIAN)
+    SkRGB16BlitterBlitV_neon(device, height, deviceRB, scale5, src32);
+#else
     do {
         uint32_t dst32 = SkExpand_rgb_16(*device) * scale5;
         *device = SkCompact_rgb_16((src32 + dst32) >> 5);
         device = (uint16_t*)((char*)device + deviceRB);
     } while (--height != 0);
+#endif
 }
 
 void SkRGB16_Blitter::blitRect(int x, int y, int width, int height) {

@@ -47,7 +47,7 @@ struct WebCursorInfo;
 // Handles window-level notifications from core on behalf of a WebView.
 class ChromeClientImpl final : public ChromeClient {
 public:
-    explicit ChromeClientImpl(WebViewImpl*);
+    static PassOwnPtrWillBeRawPtr<ChromeClientImpl> create(WebViewImpl*);
     ~ChromeClientImpl() override;
 
     void* webView() const override;
@@ -119,6 +119,9 @@ public:
     // Pass 0 as the GraphicsLayer to detatch the root layer.
     void attachRootGraphicsLayer(GraphicsLayer*, LocalFrame* localRoot) override;
 
+    void setCompositedDisplayList(PassOwnPtr<CompositedDisplayList>) override;
+    CompositedDisplayList* compositedDisplayListForTesting() override;
+
     void attachCompositorAnimationTimeline(WebCompositorAnimationTimeline*, LocalFrame* localRoot) override;
     void detachCompositorAnimationTimeline(WebCompositorAnimationTimeline*, LocalFrame* localRoot) override;
 
@@ -137,7 +140,7 @@ public:
     void setNewWindowNavigationPolicy(WebNavigationPolicy);
 
     bool hasOpenedPopup() const override;
-    PassRefPtrWillBeRawPtr<PopupMenu> openPopupMenu(LocalFrame&, PopupMenuClient*) override;
+    PassRefPtrWillBeRawPtr<PopupMenu> openPopupMenu(LocalFrame&, HTMLSelectElement&) override;
     PagePopup* openPagePopup(PagePopupClient*);
     void closePagePopup(PagePopup*);
     DOMWindow* pagePopupWindowForTesting() const override;
@@ -154,7 +157,6 @@ public:
     void didEndEditingOnTextField(HTMLInputElement&) override;
     void openTextDataListChooser(HTMLInputElement&) override;
     void textFieldDataListChanged(HTMLInputElement&) override;
-    void xhrSucceeded(LocalFrame*) override;
     void ajaxSucceeded(LocalFrame*) override;
 
     void didCancelCompositionOnSelectionChange() override;
@@ -171,6 +173,8 @@ public:
     FloatSize elasticOverscroll() const override;
 
 private:
+    explicit ChromeClientImpl(WebViewImpl*);
+
     bool isChromeClientImpl() const override { return true; }
     void registerPopupOpeningObserver(PopupOpeningObserver*) override;
     void unregisterPopupOpeningObserver(PopupOpeningObserver*) override;

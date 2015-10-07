@@ -89,7 +89,7 @@ void ViewPainter::paintBoxDecorationBackground(const PaintInfo& paintInfo)
         LayoutPoint offset;
         rootLayer.convertToLayerCoords(nullptr, offset);
         transform.translate(offset.x(), offset.y());
-        transform.multiply(rootLayer.renderableTransform(paintInfo.paintBehavior));
+        transform.multiply(rootLayer.renderableTransform(paintInfo.globalPaintFlags()));
 
         if (!transform.isInvertible()) {
             backgroundRenderable = false;
@@ -133,15 +133,21 @@ void ViewPainter::paintBoxDecorationBackground(const PaintInfo& paintInfo)
     else if (shouldClearCanvas && !shouldDrawBackgroundInSeparateBuffer)
         context.fillRect(documentRect, Color(), SkXfermode::kClear_Mode);
 
-    context.save();
-    // TODO(trchen): We should be able to handle 3D-transformed root
-    // background with slimming paint by using transform display items.
-    context.concatCTM(transform.toAffineTransform());
     for (auto it = reversedPaintList.rbegin(); it != reversedPaintList.rend(); ++it) {
         ASSERT((*it)->clip() == BorderFillBox);
-        BoxPainter::paintFillLayerExtended(m_layoutView, paintInfo, Color(), **it, LayoutRect(paintRect), BackgroundBleedNone);
+
+        bool shouldPaintInViewportSpace = (*it)->attachment() == FixedBackgroundAttachment;
+        if (shouldPaintInViewportSpace) {
+            BoxPainter::paintFillLayerExtended(m_layoutView, paintInfo, Color(), **it, LayoutRect::infiniteRect(), BackgroundBleedNone);
+        } else {
+            context.save();
+            // TODO(trchen): We should be able to handle 3D-transformed root
+            // background with slimming paint by using transform display items.
+            context.concatCTM(transform.toAffineTransform());
+            BoxPainter::paintFillLayerExtended(m_layoutView, paintInfo, Color(), **it, LayoutRect(paintRect), BackgroundBleedNone);
+            context.restore();
+        }
     }
-    context.restore();
 
     if (shouldDrawBackgroundInSeparateBuffer)
         context.endLayer();

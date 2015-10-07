@@ -33,12 +33,15 @@
 
 #include "platform/ScriptForbiddenScope.h"
 #include "platform/TraceEvent.h"
+#include "platform/heap/BlinkGCMemoryDumpProvider.h"
 #include "platform/heap/CallbackStack.h"
 #include "platform/heap/Handle.h"
 #include "platform/heap/Heap.h"
 #include "platform/heap/MarkingVisitor.h"
 #include "platform/heap/SafePoint.h"
 #include "public/platform/Platform.h"
+#include "public/platform/WebMemoryAllocatorDump.h"
+#include "public/platform/WebProcessMemoryDump.h"
 #include "public/platform/WebScheduler.h"
 #include "public/platform/WebThread.h"
 #include "public/platform/WebTraceLocation.h"
@@ -94,6 +97,8 @@ ThreadState::ThreadState()
     , m_sweepForbidden(false)
     , m_noAllocationCount(0)
     , m_gcForbiddenCount(0)
+    , m_persistentAllocated(0)
+    , m_persistentFreed(0)
     , m_vectorBackingHeapIndex(Vector1HeapIndex)
     , m_currentHeapAges(0)
     , m_isTerminating(false)
@@ -136,7 +141,7 @@ ThreadState::~ThreadState()
     m_threadLocalWeakCallbackStack = nullptr;
     for (int i = 0; i < NumberOfHeaps; ++i)
         delete m_heaps[i];
-    deleteAllValues(m_interruptors);
+
     **s_threadSpecific = nullptr;
     if (isMainThread()) {
         s_mainThreadStackStart = 0;
@@ -239,7 +244,9 @@ void ThreadState::cleanup()
         // Set the terminate flag on all heap pages of this thread. This is used to
         // ensure we don't trace pages on other threads that are not part of the
         // thread local GC.
-        prepareHeapForTermination();
+        prepareForThreadStateTermination();
+
+        ThreadState::crossThreadPersistentRegion().prepareForThreadStateTermination(this);
 
         // Do thread local GC's as long as the count of thread local Persistents
         // changes and is above zero.
@@ -371,6 +378,14 @@ void ThreadState::visitPersistents(Visitor* visitor)
         TRACE_EVENT0("blink_gc", "V8GCController::traceDOMWrappers");
         m_traceDOMWrappers(m_isolate, visitor);
     }
+}
+
+ThreadState::GCSnapshotInfo::GCSnapshotInfo(size_t numObjectTypes)
+    : liveCount(Vector<int>(numObjectTypes))
+    , deadCount(Vector<int>(numObjectTypes))
+    , liveSize(Vector<size_t>(numObjectTypes))
+    , deadSize(Vector<size_t>(numObjectTypes))
+{
 }
 
 #if ENABLE(GC_PROFILING)
@@ -543,71 +558,116 @@ CrossThreadPersistentRegion& ThreadState::crossThreadPersistentRegion()
     return persistentRegion;
 }
 
-bool ThreadState::shouldForceMemoryPressureGC()
+void ThreadState::updatePersistentCounters()
 {
-    // Avoid potential overflow by truncating to Kb.
-    size_t currentObjectSizeKb = (Heap::allocatedObjectSize() + Heap::markedObjectSize() + WTF::Partitions::totalSizeOfCommittedPages()) >> 10;
-    if (currentObjectSizeKb < 300 * 1024)
-        return false;
+    if (m_persistentAllocated >= m_persistentFreed)
+        Heap::increasePersistentCount(m_persistentAllocated - m_persistentFreed);
+    else
+        Heap::decreasePersistentCount(m_persistentFreed - m_persistentAllocated);
+    Heap::increaseCollectedPersistentCount(m_persistentFreed);
+    m_persistentAllocated = 0;
+    m_persistentFreed = 0;
+}
 
-    size_t estimatedLiveObjectSizeKb = Heap::estimatedLiveObjectSize() >> 10;
-    // If we're consuming too much memory, trigger a conservative GC
-    // aggressively. This is a safe guard to avoid OOM.
-    return currentObjectSizeKb > (estimatedLiveObjectSizeKb * 3) / 2;
+size_t ThreadState::currentObjectSize()
+{
+    return Heap::allocatedObjectSize() + Heap::markedObjectSize() + WTF::Partitions::totalSizeOfCommittedPages();
+}
+
+size_t ThreadState::estimatedLiveObjectSize()
+{
+    if (Heap::persistentCountAtLastGC() == 0) {
+        // We'll reach here only before hitting the first GC.
+        return 0;
+    }
+
+    // We estimate the live object size with the following equations.
+    //
+    //   heapSizePerPersistent = (marked(t0, t1) + partitionAlloc(t0)) / persistentCount(t0)
+    //   estimatedLiveObjectSize = marked(t0, t) + allocated(t0, t) + partitionAlloc(t) - heapSizePerPersistent * collectedPersistentCount(t0, t)
+    //
+    // t0:                 The time when the last collectGarbage runs.
+    // t1:                 The time when the last completeSweep runs.
+    // t:                  The current time.
+    // marked(t0, t):      The size of marked objects between t0 and t.
+    // allocated(t0, t):   The size of newly allocated objects between t0 and t.
+    // persistentCount(t): The number of existing persistent handles at t.
+    // collectedPersistentCount(t0, t):
+    //                     The number of persistent handles collected between
+    //                     t0 and t.
+    // partitionAlloc(t):  The size of allocated memory in PartitionAlloc at t.
+    size_t heapSizeRetainedByCollectedPersistents = static_cast<size_t>(1.0 * (Heap::markedObjectSizeAtLastCompleteSweep() + Heap::partitionAllocSizeAtLastGC()) / Heap::persistentCountAtLastGC() * Heap::collectedPersistentCount());
+    size_t currentHeapSize = currentObjectSize();
+    if (currentHeapSize < heapSizeRetainedByCollectedPersistents)
+        return 0;
+    return currentHeapSize - heapSizeRetainedByCollectedPersistents;
+}
+
+double ThreadState::heapGrowingRate()
+{
+    size_t currentSize = currentObjectSize();
+    size_t estimatedSize = estimatedLiveObjectSize();
+    // If the estimatedSize is 0, we set a very high growing rate
+    // to trigger a GC.
+    double growingRate = estimatedSize > 0 ? 1.0 * currentSize / estimatedSize : 100;
+    TRACE_COUNTER1("blink_gc", "ThreadState::currentHeapSizeKB", std::min(currentSize / 1024, static_cast<size_t>(INT_MAX)));
+    TRACE_COUNTER1("blink_gc", "ThreadState::estimatedLiveObjectSizeKB", std::min(estimatedSize / 1024, static_cast<size_t>(INT_MAX)));
+    TRACE_COUNTER1("blink_gc", "ThreadState::heapGrowingRate", static_cast<int>(100 * growingRate));
+    return growingRate;
 }
 
 // TODO(haraken): We should improve the GC heuristics.
-// These heuristics affect performance significantly.
+// The heuristics affect performance significantly.
+bool ThreadState::judgeGCThreshold(size_t allocatedObjectSizeThreshold, double heapGrowingRateThreshold)
+{
+    // If the allocated object size is small enough, don't trigger a GC.
+    if (Heap::allocatedObjectSize() < allocatedObjectSizeThreshold)
+        return false;
+    // If the heap growing rate is large enough, trigger a GC.
+    return heapGrowingRate() >= heapGrowingRateThreshold;
+}
+
+bool ThreadState::shouldForceMemoryPressureGC()
+{
+    if (currentObjectSize() < 300 * 1024 * 1024)
+        return false;
+
+    // If we're consuming too much memory, trigger a conservative GC
+    // aggressively. This is a safe guard to avoid OOM.
+    return judgeGCThreshold(0, 1.5);
+}
+
 bool ThreadState::shouldScheduleIdleGC()
 {
     if (gcState() != NoGCScheduled)
         return false;
 #if ENABLE(IDLE_GC)
-    // Avoid potential overflow by truncating to Kb.
-    size_t allocatedObjectSizeKb = Heap::allocatedObjectSize() >> 10;
-    // The estimated size is updated when the main thread finishes lazy
-    // sweeping. If this thread reaches here before the main thread finishes
-    // lazy sweeping, the thread will use the estimated size of the last GC.
-    size_t estimatedLiveObjectSizeKb = Heap::estimatedLiveObjectSize() >> 10;
-    // Heap::markedObjectSize() may be underestimated if any thread has not
-    // finished completeSweep().
-    size_t currentObjectSizeKb = allocatedObjectSizeKb + ((Heap::markedObjectSize() + WTF::Partitions::totalSizeOfCommittedPages()) >> 10);
-    // Schedule an idle GC if Oilpan has allocated more than 1 MB since
-    // the last GC and the current memory usage is >50% larger than
-    // the estimated live memory usage.
-    return allocatedObjectSizeKb >= 1024 && currentObjectSizeKb > (estimatedLiveObjectSizeKb * 3) / 2;
+    return judgeGCThreshold(1024 * 1024, 1.5);
 #else
     return false;
 #endif
 }
 
-// TODO(haraken): We should improve the GC heuristics.
-// These heuristics affect performance significantly.
 bool ThreadState::shouldSchedulePreciseGC()
 {
-    if (gcState() != NoGCScheduled)
-        return false;
 #if ENABLE(IDLE_GC)
     return false;
 #else
-    // Avoid potential overflow by truncating to Kb.
-    size_t allocatedObjectSizeKb = Heap::allocatedObjectSize() >> 10;
-    // The estimated size is updated when the main thread finishes lazy
-    // sweeping. If this thread reaches here before the main thread finishes
-    // lazy sweeping, the thread will use the estimated size of the last GC.
-    size_t estimatedLiveObjectSizeKb = Heap::estimatedLiveObjectSize() >> 10;
-    // Heap::markedObjectSize() may be underestimated if any thread has not
-    // finished completeSweep().
-    size_t currentObjectSizeKb = allocatedObjectSizeKb + ((Heap::markedObjectSize() + WTF::Partitions::totalSizeOfCommittedPages()) >> 10);
-    // Schedule a precise GC if Oilpan has allocated more than 1 MB since
-    // the last GC and the current memory usage is >50% larger than
-    // the estimated live memory usage.
-    return allocatedObjectSizeKb >= 1024 && currentObjectSizeKb > (estimatedLiveObjectSizeKb * 3) / 2;
+    return judgeGCThreshold(1024 * 1024, 1.5);
 #endif
 }
 
-// TODO(haraken): We should improve the GC heuristics.
-// These heuristics affect performance significantly.
+bool ThreadState::shouldSchedulePageNavigationGC(float estimatedRemovalRatio)
+{
+    if (UNLIKELY(isGCForbidden()))
+        return false;
+
+    if (shouldForceMemoryPressureGC())
+        return true;
+
+    return judgeGCThreshold(1024 * 1024, 1.5 * (1 - estimatedRemovalRatio));
+}
+
 bool ThreadState::shouldForceConservativeGC()
 {
     if (UNLIKELY(isGCForbidden()))
@@ -616,25 +676,42 @@ bool ThreadState::shouldForceConservativeGC()
     if (shouldForceMemoryPressureGC())
         return true;
 
-    // Avoid potential overflow by truncating to Kb.
-    size_t allocatedObjectSizeKb = Heap::allocatedObjectSize() >> 10;
-    // The estimated size is updated when the main thread finishes lazy
-    // sweeping. If this thread reaches here before the main thread finishes
-    // lazy sweeping, the thread will use the estimated size of the last GC.
-    size_t estimatedLiveObjectSizeKb = Heap::estimatedLiveObjectSize() >> 10;
-    // Heap::markedObjectSize() may be underestimated if any thread has not
-    // finished completeSweep().
-    size_t currentObjectSizeKb = allocatedObjectSizeKb + ((Heap::markedObjectSize() + WTF::Partitions::totalSizeOfCommittedPages()) >> 10);
-    // Schedule a conservative GC if Oilpan has allocated more than 32 MB since
-    // the last GC and the current memory usage is >400% larger than
-    // the estimated live memory usage.
     // TODO(haraken): 400% is too large. Lower the heap growing factor.
-    return allocatedObjectSizeKb >= 32 * 1024 && currentObjectSizeKb > 5 * estimatedLiveObjectSizeKb;
+    return judgeGCThreshold(32 * 1024 * 1024, 5.0);
+}
+
+void ThreadState::schedulePageNavigationGCIfNeeded(float estimatedRemovalRatio)
+{
+    ASSERT(checkThread());
+    if (isGCForbidden())
+        return;
+
+    // Finish on-going lazy sweeping.
+    // TODO(haraken): It might not make sense to force completeSweep() for all
+    // page navigations.
+    completeSweep();
+    ASSERT(!isSweepingInProgress());
+    ASSERT(!sweepForbidden());
+
+    Heap::reportMemoryUsageForTracing();
+
+    if (shouldSchedulePageNavigationGC(estimatedRemovalRatio))
+        schedulePageNavigationGC();
+}
+
+void ThreadState::schedulePageNavigationGC()
+{
+    ASSERT(checkThread());
+    ASSERT(!isSweepingInProgress());
+    setGCState(PageNavigationGCScheduled);
 }
 
 void ThreadState::scheduleGCIfNeeded()
 {
     ASSERT(checkThread());
+    if (isGCForbidden())
+        return;
+
     // Allocation is allowed during sweeping, but those allocations should not
     // trigger nested GCs.
     if (isSweepingInProgress())
@@ -794,8 +871,9 @@ void ThreadState::setGCState(GCState gcState)
     case IdleGCScheduled:
     case PreciseGCScheduled:
     case FullGCScheduled:
+    case PageNavigationGCScheduled:
         ASSERT(checkThread());
-        VERIFY_STATE_TRANSITION(m_gcState == NoGCScheduled || m_gcState == IdleGCScheduled || m_gcState == PreciseGCScheduled || m_gcState == FullGCScheduled || m_gcState == SweepingAndIdleGCScheduled || m_gcState == SweepingAndPreciseGCScheduled);
+        VERIFY_STATE_TRANSITION(m_gcState == NoGCScheduled || m_gcState == IdleGCScheduled || m_gcState == PreciseGCScheduled || m_gcState == FullGCScheduled || m_gcState == PageNavigationGCScheduled || m_gcState == SweepingAndIdleGCScheduled || m_gcState == SweepingAndPreciseGCScheduled);
         completeSweep();
         break;
     case GCRunning:
@@ -837,11 +915,6 @@ void ThreadState::didV8MajorGC()
 {
     ASSERT(checkThread());
     if (isMainThread()) {
-        // Lower the estimated live object size because the V8 major GC is
-        // expected to have collected a lot of DOM wrappers and dropped
-        // references to their DOM objects.
-        Heap::setEstimatedLiveObjectSize(Heap::estimatedLiveObjectSize() / 2);
-
         if (shouldForceMemoryPressureGC()) {
             // Under memory pressure, force a conservative GC.
             Heap::collectGarbage(HeapPointersOnStack, GCWithoutSweep, Heap::ConservativeGC);
@@ -871,20 +944,15 @@ void ThreadState::runScheduledGC(StackState stackState)
     case PreciseGCScheduled:
         Heap::collectGarbage(NoHeapPointersOnStack, GCWithoutSweep, Heap::PreciseGC);
         break;
+    case PageNavigationGCScheduled:
+        Heap::collectGarbage(NoHeapPointersOnStack, GCWithSweep, Heap::PreciseGC);
+        break;
     case IdleGCScheduled:
         // Idle time GC will be scheduled by Blink Scheduler.
         break;
     default:
         break;
     }
-}
-
-void ThreadState::prepareRegionTree()
-{
-    // Add the regions allocated by this thread to the region search tree.
-    for (PageMemoryRegion* region : m_allocatedRegionsSinceLastGC)
-        Heap::addPageMemoryRegion(region);
-    m_allocatedRegionsSinceLastGC.clear();
 }
 
 void ThreadState::flushHeapDoesNotContainCacheIfNeeded()
@@ -915,9 +983,9 @@ void ThreadState::preGC()
     ASSERT(!isInGC());
     setGCState(GCRunning);
     makeConsistentForGC();
-    prepareRegionTree();
     flushHeapDoesNotContainCacheIfNeeded();
     clearHeapAges();
+    updatePersistentCounters();
 }
 
 void ThreadState::postGC(GCType gcType)
@@ -1098,11 +1166,14 @@ void ThreadState::postSweep()
     Heap::reportMemoryUsageForTracing();
 
     if (isMainThread()) {
-        // At the point where the main thread finishes lazy sweeping,
-        // we estimate the live object size. Heap::markedObjectSize()
-        // may be underestimated if any other thread has not finished
-        // lazy sweeping.
-        Heap::setEstimatedLiveObjectSize(Heap::markedObjectSize() + Heap::externalObjectSizeAtLastGC());
+        double collectionRate = 0;
+        if (Heap::objectSizeAtLastGC() > 0)
+            collectionRate = 1 - 1.0 * Heap::markedObjectSize() / Heap::objectSizeAtLastGC();
+        TRACE_COUNTER1("blink_gc", "ThreadState::collectionRate", static_cast<int>(100 * collectionRate));
+
+        // Heap::markedObjectSize() may be underestimated here if any other
+        // thread has not yet finished lazy sweeping.
+        Heap::setMarkedObjectSizeAtLastCompleteSweep(Heap::markedObjectSize());
     }
 
     switch (gcState()) {
@@ -1121,7 +1192,7 @@ void ThreadState::postSweep()
     }
 }
 
-void ThreadState::prepareHeapForTermination()
+void ThreadState::prepareForThreadStateTermination()
 {
     ASSERT(checkThread());
     for (int i = 0; i < NumberOfHeaps; ++i)
@@ -1248,7 +1319,7 @@ void ThreadState::copyStackUntilSafePointScope()
     }
 }
 
-void ThreadState::addInterruptor(Interruptor* interruptor)
+void ThreadState::addInterruptor(PassOwnPtr<Interruptor> interruptor)
 {
     ASSERT(checkThread());
     SafePointScope scope(HeapPointersOnStack);
@@ -1370,22 +1441,27 @@ void ThreadState::takeSnapshot(SnapshotType type)
 {
     ASSERT(isInGC());
 
+    // 0 is used as index for freelist entries. Objects are indexed 1 to
+    // gcInfoIndex.
+    GCSnapshotInfo info(GCInfoTable::gcInfoIndex() + 1);
+    String threadDumpName = String::format("blink_gc/thread_%lu", static_cast<unsigned long>(m_thread));
+    const String heapsDumpName = threadDumpName + "/heaps";
+    const String classesDumpName = threadDumpName + "/classes";
+
     int numberOfHeapsReported = 0;
-#define SNAPSHOT_HEAP(HeapType)                                                                                \
-    {                                                                                                          \
-        numberOfHeapsReported++;                                                                               \
-        String allocatorBaseName;                                                                              \
-        allocatorBaseName = String::format("blink_gc/thread_%lu/heaps/" #HeapType, (unsigned long)(m_thread)); \
-        switch (type) {                                                                                        \
-        case SnapshotType::HeapSnapshot:                                                                       \
-            m_heaps[HeapType##HeapIndex]->takeSnapshot(allocatorBaseName);                                     \
-            break;                                                                                             \
-        case SnapshotType::FreelistSnapshot:                                                                   \
-            m_heaps[HeapType##HeapIndex]->takeFreelistSnapshot(allocatorBaseName);                             \
-            break;                                                                                             \
-        default:                                                                                               \
-            ASSERT_NOT_REACHED();                                                                              \
-        }                                                                                                      \
+#define SNAPSHOT_HEAP(HeapType)                                                                \
+    {                                                                                          \
+        numberOfHeapsReported++;                                                               \
+        switch (type) {                                                                        \
+        case SnapshotType::HeapSnapshot:                                                       \
+            m_heaps[HeapType##HeapIndex]->takeSnapshot(heapsDumpName + "/" #HeapType, info);   \
+            break;                                                                             \
+        case SnapshotType::FreelistSnapshot:                                                   \
+            m_heaps[HeapType##HeapIndex]->takeFreelistSnapshot(heapsDumpName + "/" #HeapType); \
+            break;                                                                             \
+        default:                                                                               \
+            ASSERT_NOT_REACHED();                                                              \
+        }                                                                                      \
     }
 
     SNAPSHOT_HEAP(NormalPage1);
@@ -1405,6 +1481,40 @@ void ThreadState::takeSnapshot(SnapshotType type)
     ASSERT(numberOfHeapsReported == NumberOfHeaps);
 
 #undef SNAPSHOT_HEAP
+
+    if (type == SnapshotType::FreelistSnapshot)
+        return;
+
+    size_t totalLiveCount = 0;
+    size_t totalDeadCount = 0;
+    size_t totalLiveSize = 0;
+    size_t totalDeadSize = 0;
+    for (size_t gcInfoIndex = 1; gcInfoIndex <= GCInfoTable::gcInfoIndex(); ++gcInfoIndex) {
+        String dumpName = classesDumpName + String::format("/%lu_", static_cast<unsigned long>(gcInfoIndex));
+#if ENABLE(GC_PROFILING)
+        dumpName.append(Heap::gcInfo(gcInfoIndex)->className());
+#endif
+        WebMemoryAllocatorDump* classDump = BlinkGCMemoryDumpProvider::instance()->createMemoryAllocatorDumpForCurrentGC(dumpName);
+        classDump->AddScalar("live_count", "objects", info.liveCount[gcInfoIndex]);
+        classDump->AddScalar("dead_count", "objects", info.deadCount[gcInfoIndex]);
+        classDump->AddScalar("live_size", "bytes", info.liveSize[gcInfoIndex]);
+        classDump->AddScalar("dead_size", "bytes", info.deadSize[gcInfoIndex]);
+
+        totalLiveCount += info.liveCount[gcInfoIndex];
+        totalDeadCount += info.deadCount[gcInfoIndex];
+        totalLiveSize += info.liveSize[gcInfoIndex];
+        totalDeadSize += info.deadSize[gcInfoIndex];
+    }
+
+    WebMemoryAllocatorDump* threadDump = BlinkGCMemoryDumpProvider::instance()->createMemoryAllocatorDumpForCurrentGC(threadDumpName);
+    threadDump->AddScalar("live_count", "objects", totalLiveCount);
+    threadDump->AddScalar("dead_count", "objects", totalDeadCount);
+    threadDump->AddScalar("live_size", "bytes", totalLiveSize);
+    threadDump->AddScalar("dead_size", "bytes", totalDeadSize);
+
+    WebMemoryAllocatorDump* heapsDump = BlinkGCMemoryDumpProvider::instance()->createMemoryAllocatorDumpForCurrentGC(heapsDumpName);
+    WebMemoryAllocatorDump* classesDump = BlinkGCMemoryDumpProvider::instance()->createMemoryAllocatorDumpForCurrentGC(classesDumpName);
+    BlinkGCMemoryDumpProvider::instance()->currentProcessMemoryDump()->AddOwnershipEdge(classesDump->guid(), heapsDump->guid());
 }
 
 #if ENABLE(GC_PROFILING)

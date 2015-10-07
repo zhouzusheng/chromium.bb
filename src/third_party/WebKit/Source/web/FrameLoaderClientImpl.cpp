@@ -42,6 +42,7 @@
 #include "core/frame/FrameView.h"
 #include "core/frame/Settings.h"
 #include "core/html/HTMLAppletElement.h"
+#include "core/html/HTMLMediaElement.h"
 #include "core/input/EventHandler.h"
 #include "core/layout/HitTestResult.h"
 #include "core/loader/DocumentLoader.h"
@@ -53,6 +54,7 @@
 #include "modules/device_light/DeviceLightController.h"
 #include "modules/device_orientation/DeviceMotionController.h"
 #include "modules/device_orientation/DeviceOrientationController.h"
+#include "modules/encryptedmedia/HTMLMediaElementEncryptedMedia.h"
 #include "modules/gamepad/NavigatorGamepad.h"
 #include "modules/serviceworkers/NavigatorServiceWorker.h"
 #include "modules/storage/DOMWindowStorageController.h"
@@ -75,7 +77,6 @@
 #include "public/platform/WebURLError.h"
 #include "public/platform/WebVector.h"
 #include "public/web/WebAutofillClient.h"
-#include "public/web/WebCachedURLRequest.h"
 #include "public/web/WebContentSettingsClient.h"
 #include "public/web/WebDOMEvent.h"
 #include "public/web/WebDocument.h"
@@ -276,7 +277,10 @@ Frame* FrameLoaderClientImpl::opener() const
 
 void FrameLoaderClientImpl::setOpener(Frame* opener)
 {
-    m_webFrame->setOpener(WebFrame::fromFrame(opener));
+    WebFrame* openerFrame = WebFrame::fromFrame(opener);
+    if (m_webFrame->client() && m_webFrame->opener() != openerFrame)
+        m_webFrame->client()->didChangeOpener(openerFrame);
+    m_webFrame->setOpener(openerFrame);
 }
 
 Frame* FrameLoaderClientImpl::parent() const
@@ -373,10 +377,10 @@ void FrameLoaderClientImpl::dispatchDidFinishLoading(DocumentLoader* loader,
         m_webFrame->client()->didFinishResourceLoad(m_webFrame, identifier);
 }
 
-void FrameLoaderClientImpl::dispatchDidFinishDocumentLoad()
+void FrameLoaderClientImpl::dispatchDidFinishDocumentLoad(bool documentIsEmpty)
 {
     if (m_webFrame->client())
-        m_webFrame->client()->didFinishDocumentLoad(m_webFrame);
+        m_webFrame->client()->didFinishDocumentLoad(m_webFrame, documentIsEmpty);
 }
 
 void FrameLoaderClientImpl::dispatchDidLoadResourceFromMemoryCache(const ResourceRequest& request, const ResourceResponse& response)
@@ -549,14 +553,6 @@ NavigationPolicy FrameLoaderClientImpl::decidePolicyForNavigation(const Resource
     return static_cast<NavigationPolicy>(webPolicy);
 }
 
-void FrameLoaderClientImpl::dispatchWillRequestResource(FetchRequest* request)
-{
-    if (m_webFrame->client()) {
-        WebCachedURLRequest urlRequest(request);
-        m_webFrame->client()->willRequestResource(m_webFrame, urlRequest);
-    }
-}
-
 void FrameLoaderClientImpl::dispatchWillSendSubmitEvent(HTMLFormElement* form)
 {
     if (m_webFrame->client())
@@ -641,6 +637,12 @@ void FrameLoaderClientImpl::didDispatchPingLoader(const KURL& url)
 {
     if (m_webFrame->client())
         m_webFrame->client()->didDispatchPingLoader(m_webFrame, url);
+}
+
+void FrameLoaderClientImpl::didChangePerformanceTiming()
+{
+    if (m_webFrame->client())
+        m_webFrame->client()->didChangePerformanceTiming();
 }
 
 void FrameLoaderClientImpl::selectorMatchChanged(const Vector<String>& addedSelectors, const Vector<String>& removedSelectors)
@@ -775,6 +777,23 @@ PassRefPtrWillBeRawPtr<Widget> FrameLoaderClientImpl::createJavaAppletWidget(
 {
     return createPlugin(element, KURL(), paramNames, paramValues,
         "application/x-java-applet", false, FailOnDetachedPlugin);
+}
+
+PassOwnPtr<WebMediaPlayer> FrameLoaderClientImpl::createWebMediaPlayer(
+    HTMLMediaElement& htmlMediaElement,
+    const WebURL& url,
+    WebMediaPlayerClient* client)
+{
+    WebLocalFrameImpl* webFrame = WebLocalFrameImpl::fromFrame(
+        htmlMediaElement.document().frame());
+
+    if (!webFrame || !webFrame->client())
+        return nullptr;
+
+    HTMLMediaElementEncryptedMedia& encryptedMedia = HTMLMediaElementEncryptedMedia::from(htmlMediaElement);
+    return adoptPtr(webFrame->client()->createMediaPlayer(webFrame, url,
+        client, &encryptedMedia,
+        encryptedMedia.contentDecryptionModule()));
 }
 
 ObjectContentType FrameLoaderClientImpl::objectContentType(
@@ -940,12 +959,6 @@ void FrameLoaderClientImpl::dispatchDidChangeManifest()
 {
     if (m_webFrame->client())
         m_webFrame->client()->didChangeManifest(m_webFrame);
-}
-
-void FrameLoaderClientImpl::dispatchDidChangeDefaultPresentation()
-{
-    if (m_webFrame->client())
-        m_webFrame->client()->didChangeDefaultPresentation(m_webFrame);
 }
 
 unsigned FrameLoaderClientImpl::backForwardLength()

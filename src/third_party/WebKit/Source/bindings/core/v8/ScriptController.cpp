@@ -106,6 +106,7 @@ DEFINE_TRACE(ScriptController)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_windowProxyManager);
+    visitor->trace(m_pluginObjects);
 #endif
 }
 
@@ -163,7 +164,7 @@ v8::MaybeLocal<v8::Value> ScriptController::callFunction(ExecutionContext* conte
 v8::Local<v8::Value> ScriptController::executeScriptAndReturnValue(v8::Local<v8::Context> context, const ScriptSourceCode& source, AccessControlStatus accessControlStatus, double* compilationFinishTime)
 {
     TRACE_EVENT1("devtools.timeline", "EvaluateScript", "data", InspectorEvaluateScriptEvent::data(frame(), source.url().string(), source.startLine()));
-    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willEvaluateScript(frame(), source.url().string(), source.startLine());
+    InspectorInstrumentationCookie cookie = InspectorInstrumentation::willEvaluateScript(frame());
 
     v8::Local<v8::Value> result;
     {

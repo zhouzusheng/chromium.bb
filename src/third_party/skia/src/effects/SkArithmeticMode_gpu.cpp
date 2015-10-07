@@ -14,7 +14,7 @@
 #include "GrProcessor.h"
 #include "GrTexture.h"
 #include "gl/GrGLCaps.h"
-#include "gl/GrGLProcessor.h"
+#include "gl/GrGLFragmentProcessor.h"
 #include "gl/GrGLProgramDataManager.h"
 #include "gl/builders/GrGLProgramBuilder.h"
 
@@ -60,36 +60,34 @@ public:
 
     ~GLArithmeticFP() override {}
 
-    void emitCode(GrGLFPBuilder* builder,
-                  const GrFragmentProcessor& fp,
-                  const char* outputColor,
-                  const char* inputColor,
-                  const TransformedCoordsArray& coords,
-                  const TextureSamplerArray& samplers) override {
-        GrGLFragmentBuilder* fsBuilder = builder->getFragmentShaderBuilder();
+    void emitCode(EmitArgs& args) override {
+        GrGLFragmentBuilder* fsBuilder = args.fBuilder->getFragmentShaderBuilder();
         fsBuilder->codeAppend("vec4 bgColor = ");
-        fsBuilder->appendTextureLookup(samplers[0], coords[0].c_str(), coords[0].getType());
+        fsBuilder->appendTextureLookup(args.fSamplers[0], args.fCoords[0].c_str(),
+                                       args.fCoords[0].getType());
         fsBuilder->codeAppendf(";");
         const char* dstColor = "bgColor";
 
-        fKUni = builder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
+        fKUni = args.fBuilder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
                                     kVec4f_GrSLType, kDefault_GrSLPrecision,
                                     "k");
-        const char* kUni = builder->getUniformCStr(fKUni);
+        const char* kUni = args.fBuilder->getUniformCStr(fKUni);
 
-        add_arithmetic_code(fsBuilder, inputColor, dstColor, outputColor, kUni, fEnforcePMColor);
-    }
-
-    void setData(const GrGLProgramDataManager& pdman, const GrProcessor& proc) override {
-        const GrArithmeticFP& arith = proc.cast<GrArithmeticFP>();
-        pdman.set4f(fKUni, arith.k1(), arith.k2(), arith.k3(), arith.k4());
-        fEnforcePMColor = arith.enforcePMColor();
+        add_arithmetic_code(fsBuilder, args.fInputColor, dstColor, args.fOutputColor, kUni,
+                            fEnforcePMColor);
     }
 
     static void GenKey(const GrProcessor& proc, const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) {
         const GrArithmeticFP& arith = proc.cast<GrArithmeticFP>();
         uint32_t key = arith.enforcePMColor() ? 1 : 0;
         b->add32(key);
+    }
+
+protected:
+    void onSetData(const GrGLProgramDataManager& pdman, const GrProcessor& proc) override {
+        const GrArithmeticFP& arith = proc.cast<GrArithmeticFP>();
+        pdman.set4f(fKUni, arith.k1(), arith.k2(), arith.k3(), arith.k4());
+        fEnforcePMColor = arith.enforcePMColor();
     }
 
 private:
@@ -115,11 +113,11 @@ GrArithmeticFP::GrArithmeticFP(GrProcessorDataManager*, float k1, float k2, floa
     this->addTextureAccess(&fBackgroundAccess);
 }
 
-void GrArithmeticFP::getGLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const {
+void GrArithmeticFP::onGetGLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const {
     GLArithmeticFP::GenKey(*this, caps, b);
 }
 
-GrGLFragmentProcessor* GrArithmeticFP::createGLInstance() const {
+GrGLFragmentProcessor* GrArithmeticFP::onCreateGLInstance() const {
     return SkNEW_ARGS(GLArithmeticFP, (*this));
 }
 

@@ -11,6 +11,7 @@
 #include "core/frame/DOMWindowProperty.h"
 #include "platform/heap/Handle.h"
 #include "public/platform/modules/presentation/WebPresentationSessionClient.h"
+#include "wtf/OwnPtr.h"
 #include "wtf/text/WTFString.h"
 
 namespace WTF {
@@ -21,8 +22,8 @@ namespace blink {
 
 class DOMArrayBuffer;
 class DOMArrayBufferView;
-class Presentation;
 class PresentationController;
+class PresentationRequest;
 
 class PresentationSession final
     : public RefCountedGarbageCollectedEventTargetWithInlineData<PresentationSession>
@@ -31,16 +32,21 @@ class PresentationSession final
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(PresentationSession);
     DEFINE_WRAPPERTYPEINFO();
 public:
-    static PresentationSession* take(WebPresentationSessionClient*, Presentation*);
+    // For CallbackPromiseAdapter.
+    using WebType = OwnPtr<WebPresentationSessionClient>;
+
+    static PresentationSession* take(ScriptPromiseResolver*, PassOwnPtr<WebPresentationSessionClient>, PresentationRequest*);
+    static PresentationSession* take(PresentationController*, PassOwnPtr<WebPresentationSessionClient>, PresentationRequest*);
     ~PresentationSession() override;
 
     // EventTarget implementation.
     const AtomicString& interfaceName() const override;
     ExecutionContext* executionContext() const override;
+    bool addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, bool capture) override;
 
     DECLARE_VIRTUAL_TRACE();
 
-    const String id() const { return m_id; }
+    const String& id() const { return m_id; }
     const WTF::AtomicString& state() const;
 
     void send(const String& message, ExceptionState&);

@@ -14,6 +14,7 @@ class Dictionary;
 {% endif %}
 {% if named_constructor %}
 class {{v8_class}}Constructor {
+    STATIC_ONLY({{v8_class}}Constructor);
 public:
     static v8::Local<v8::FunctionTemplate> domTemplate(v8::Isolate*);
     static const WrapperTypeInfo wrapperTypeInfo;
@@ -21,9 +22,11 @@ public:
 
 {% endif %}
 class {{v8_class}} {
+    STATIC_ONLY({{v8_class}});
 public:
     {% if has_private_script %}
     class PrivateScript {
+        STATIC_ONLY(PrivateScript);
     public:
         {% for method in methods if method.is_implemented_in_private_script %}
         static bool {{method.name}}Method({{method.argument_declarations_for_private_script | join(', ')}});
@@ -73,9 +76,6 @@ public:
     {% if is_active_dom_object %}
     static ActiveDOMObject* toActiveDOMObject(v8::Local<v8::Object>);
     {% endif %}
-    {% if interface_name == 'Window' %}
-    static v8::Local<v8::ObjectTemplate> getShadowObjectTemplate(v8::Isolate*);
-    {% endif %}
     {% for method in methods %}
     {% if method.is_custom %}
     {% filter conditional(method.conditional_string) %}
@@ -98,19 +98,19 @@ public:
     {% for attribute in attributes %}
     {% if attribute.has_custom_getter %}{# FIXME: and not attribute.implemented_by #}
     {% filter conditional(attribute.conditional_string) %}
-    {% if attribute.is_expose_js_accessors %}
-    static void {{attribute.name}}AttributeGetterCustom(const v8::FunctionCallbackInfo<v8::Value>&);
-    {% else %}
+    {% if attribute.is_data_type_property %}
     static void {{attribute.name}}AttributeGetterCustom(const v8::PropertyCallbackInfo<v8::Value>&);
+    {% else %}
+    static void {{attribute.name}}AttributeGetterCustom(const v8::FunctionCallbackInfo<v8::Value>&);
     {% endif %}
     {% endfilter %}
     {% endif %}
     {% if attribute.has_custom_setter %}{# FIXME: and not attribute.implemented_by #}
     {% filter conditional(attribute.conditional_string) %}
-    {% if attribute.is_expose_js_accessors %}
-    static void {{attribute.name}}AttributeSetterCustom(v8::Local<v8::Value>, const v8::FunctionCallbackInfo<v8::Value>&);
-    {% else %}
+    {% if attribute.is_data_type_property %}
     static void {{attribute.name}}AttributeSetterCustom(v8::Local<v8::Value>, const v8::PropertyCallbackInfo<void>&);
+    {% else %}
+    static void {{attribute.name}}AttributeSetterCustom(v8::Local<v8::Value>, const v8::FunctionCallbackInfo<v8::Value>&);
     {% endif %}
     {% endfilter %}
     {% endif %}

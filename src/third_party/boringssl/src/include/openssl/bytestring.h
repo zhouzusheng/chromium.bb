@@ -248,6 +248,12 @@ struct cbb_st {
   char is_top_level;
 };
 
+/* CBB_zero sets an uninitialised |cbb| to the zero state. It must be
+ * initialised with |CBB_init| or |CBB_init_fixed| before use, but it is safe to
+ * call |CBB_cleanup| without a successful |CBB_init|. This may be used for more
+ * uniform cleanup of a |CBB|. */
+OPENSSL_EXPORT void CBB_zero(CBB *cbb);
+
 /* CBB_init initialises |cbb| with |initial_capacity|. Since a |CBB| grows as
  * needed, the |initial_capacity| is just a hint. It returns one on success or
  * zero on error. */
@@ -277,6 +283,14 @@ OPENSSL_EXPORT int CBB_finish(CBB *cbb, uint8_t **out_data, size_t *out_len);
  * |CBB| objects of |cbb| to be invalidated. It returns one on success or zero
  * on error. */
 OPENSSL_EXPORT int CBB_flush(CBB *cbb);
+
+/* CBB_len returns the number of bytes written to |cbb|'s top-level |CBB|. It
+ * may be compared before and after an operation to determine how many bytes
+ * were written.
+ *
+ * It is a fatal error to call this on a CBB with any active children. This does
+ * not flush |cbb|. */
+OPENSSL_EXPORT size_t CBB_len(const CBB *cbb);
 
 /* CBB_add_u8_length_prefixed sets |*out_contents| to a new child of |cbb|. The
  * data written to |*out_contents| will be prefixed in |cbb| with an 8-bit

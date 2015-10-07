@@ -7,8 +7,7 @@
 
 #include "GrDashingEffect.h"
 
-#include "GrBatch.h"
-#include "GrBatchTarget.h"
+#include "GrBatchFlushState.h"
 #include "GrBatchTest.h"
 #include "GrCaps.h"
 #include "GrGeometryProcessor.h"
@@ -21,8 +20,9 @@
 #include "GrStrokeInfo.h"
 #include "GrVertexBuffer.h"
 #include "SkGr.h"
+#include "batches/GrVertexBatch.h"
 #include "gl/GrGLGeometryProcessor.h"
-#include "gl/GrGLProcessor.h"
+#include "gl/GrGLFragmentProcessor.h"
 #include "gl/builders/GrGLProgramBuilder.h"
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -243,7 +243,7 @@ static GrGeometryProcessor* create_dash_gp(GrColor,
                                            const SkMatrix& localMatrix,
                                            bool usesLocalCoords);
 
-class DashBatch : public GrBatch {
+class DashBatch : public GrVertexBatch {
 public:
     struct Geometry {
         GrColor fColor;
@@ -257,8 +257,8 @@ public:
         SkScalar fPerpendicularScale;
     };
 
-    static GrBatch* Create(const Geometry& geometry, SkPaint::Cap cap, DashAAMode aaMode,
-                           bool fullDash) {
+    static GrDrawBatch* Create(const Geometry& geometry, SkPaint::Cap cap, DashAAMode aaMode,
+                               bool fullDash) {
         return SkNEW_ARGS(DashBatch, (geometry, cap, aaMode, fullDash));
     }
 
@@ -272,18 +272,41 @@ public:
         out->setUnknownSingleComponent();
     }
 
-    void initBatchTracker(const GrPipelineInfo& init) override {
+    SkSTArray<1, Geometry, true>* geoData() { return &fGeoData; }
+
+private:
+    DashBatch(const Geometry& geometry, SkPaint::Cap cap, DashAAMode aaMode, bool fullDash) {
+        this->initClassID<DashBatch>();
+        fGeoData.push_back(geometry);
+
+        fBatch.fAAMode = aaMode;
+        fBatch.fCap = cap;
+        fBatch.fFullDash = fullDash;
+
+        // compute bounds
+        SkScalar halfStrokeWidth = 0.5f * geometry.fSrcStrokeWidth;
+        SkScalar xBloat = SkPaint::kButt_Cap == cap ? 0 : halfStrokeWidth;
+        fBounds.set(geometry.fPtsRot[0], geometry.fPtsRot[1]);
+        fBounds.outset(xBloat, halfStrokeWidth);
+
+        // Note, we actually create the combined matrix here, and save the work
+        SkMatrix& combinedMatrix = fGeoData[0].fSrcRotInv;
+        combinedMatrix.postConcat(geometry.fViewMatrix);
+        combinedMatrix.mapRect(&fBounds);
+    }
+
+    void initBatchTracker(const GrPipelineOptimizations& opt) override {
         // Handle any color overrides
-        if (!init.readsColor()) {
+        if (!opt.readsColor()) {
             fGeoData[0].fColor = GrColor_ILLEGAL;
         }
-        init.getOverrideColorIfSet(&fGeoData[0].fColor);
+        opt.getOverrideColorIfSet(&fGeoData[0].fColor);
 
         // setup batch properties
-        fBatch.fColorIgnored = !init.readsColor();
+        fBatch.fColorIgnored = !opt.readsColor();
         fBatch.fColor = fGeoData[0].fColor;
-        fBatch.fUsesLocalCoords = init.readsLocalCoords();
-        fBatch.fCoverageIgnored = !init.readsCoverage();
+        fBatch.fUsesLocalCoords = opt.readsLocalCoords();
+        fBatch.fCoverageIgnored = !opt.readsCoverage();
     }
 
     struct DashDraw {
@@ -298,35 +321,33 @@ public:
         bool fHasEndRect;
     };
 
-    void generateGeometry(GrBatchTarget* batchTarget, const GrPipeline* pipeline) override {
+    void onPrepareDraws(Target* target) override {
         int instanceCount = fGeoData.count();
-
-        SkMatrix invert;
-        if (this->usesLocalCoords() && !this->viewMatrix().invert(&invert)) {
-            SkDebugf("Failed to invert\n");
-            return;
-        }
-
         SkPaint::Cap cap = this->cap();
-
-        SkAutoTUnref<const GrGeometryProcessor> gp;
-
         bool isRoundCap = SkPaint::kRound_Cap == cap;
         DashCap capType = isRoundCap ? kRound_DashCap : kNonRound_DashCap;
+
+        SkAutoTUnref<const GrGeometryProcessor> gp;
         if (this->fullDash()) {
-            gp.reset(create_dash_gp(this->color(), this->aaMode(), capType, invert,
+            gp.reset(create_dash_gp(this->color(), this->aaMode(), capType, this->viewMatrix(),
                                     this->usesLocalCoords()));
         } else {
             // Set up the vertex data for the line and start/end dashes
-            gp.reset(GrDefaultGeoProcFactory::Create(GrDefaultGeoProcFactory::kPosition_GPType,
-                                                     this->color(),
-                                                     this->usesLocalCoords(),
-                                                     this->coverageIgnored(),
-                                                     SkMatrix::I(),
-                                                     invert));
+            using namespace GrDefaultGeoProcFactory;
+            Color color(this->color());
+            Coverage coverage(this->coverageIgnored() ? Coverage::kNone_Type :
+                                                        Coverage::kSolid_Type);
+            LocalCoords localCoords(this->usesLocalCoords() ? LocalCoords::kUsePosition_Type :
+                                                              LocalCoords::kUnused_Type);
+            gp.reset(CreateForDeviceSpace(color, coverage, localCoords, this->viewMatrix()));
         }
 
-        batchTarget->initDraw(gp, pipeline);
+        if (!gp) {
+            SkDebugf("Could not create GrGeometryProcessor\n");
+            return;
+        }
+
+        target->initDraw(gp, this->pipeline());
 
         // useAA here means Edge AA or MSAA
         bool useAA = this->aaMode() != kBW_DashAAMode;
@@ -531,7 +552,7 @@ public:
         }
 
         QuadHelper helper;
-        void* vertices = helper.init(batchTarget, gp->getVertexStride(), totalRectCount);
+        void* vertices = helper.init(target, gp->getVertexStride(), totalRectCount);
         if (!vertices) {
             return;
         }
@@ -593,34 +614,15 @@ public:
             rectIndex++;
         }
         SkASSERT(0 == (curVIdx % 4) && (curVIdx / 4) == totalRectCount);
-        helper.issueDraw(batchTarget);
+        helper.recordDraw(target);
     }
 
-    SkSTArray<1, Geometry, true>* geoData() { return &fGeoData; }
-
-private:
-    DashBatch(const Geometry& geometry, SkPaint::Cap cap, DashAAMode aaMode, bool fullDash) {
-        this->initClassID<DashBatch>();
-        fGeoData.push_back(geometry);
-
-        fBatch.fAAMode = aaMode;
-        fBatch.fCap = cap;
-        fBatch.fFullDash = fullDash;
-
-        // compute bounds
-        SkScalar halfStrokeWidth = 0.5f * geometry.fSrcStrokeWidth;
-        SkScalar xBloat = SkPaint::kButt_Cap == cap ? 0 : halfStrokeWidth;
-        fBounds.set(geometry.fPtsRot[0], geometry.fPtsRot[1]);
-        fBounds.outset(xBloat, halfStrokeWidth);
-
-        // Note, we actually create the combined matrix here, and save the work
-        SkMatrix& combinedMatrix = fGeoData[0].fSrcRotInv;
-        combinedMatrix.postConcat(geometry.fViewMatrix);
-        combinedMatrix.mapRect(&fBounds);
-    }
-
-    bool onCombineIfPossible(GrBatch* t) override {
+    bool onCombineIfPossible(GrBatch* t, const GrCaps& caps) override {
         DashBatch* that = t->cast<DashBatch>();
+        if (!GrPipeline::CanCombine(*this->pipeline(), this->bounds(), *that->pipeline(),
+                                    that->bounds(), caps)) {
+            return false;
+        }
 
         if (this->aaMode() != that->aaMode()) {
             return false;
@@ -674,8 +676,8 @@ private:
     SkSTArray<1, Geometry, true> fGeoData;
 };
 
-static GrBatch* create_batch(GrColor color, const SkMatrix& viewMatrix, const SkPoint pts[2],
-                             bool useAA, const GrStrokeInfo& strokeInfo, bool msaaRT) {
+static GrDrawBatch* create_batch(GrColor color, const SkMatrix& viewMatrix, const SkPoint pts[2],
+                                 bool useAA, const GrStrokeInfo& strokeInfo, bool msaaRT) {
     const SkScalar* intervals = strokeInfo.getDashIntervals();
     SkScalar phase = strokeInfo.getDashPhase();
 
@@ -728,11 +730,12 @@ static GrBatch* create_batch(GrColor color, const SkMatrix& viewMatrix, const Sk
 }
 
 bool GrDashingEffect::DrawDashLine(GrDrawTarget* target,
-                                   GrPipelineBuilder* pipelineBuilder, GrColor color,
+                                   const GrPipelineBuilder& pipelineBuilder, GrColor color,
                                    const SkMatrix& viewMatrix, const SkPoint pts[2],
                                    bool useAA, const GrStrokeInfo& strokeInfo) {
-    SkAutoTUnref<GrBatch> batch(create_batch(color, viewMatrix, pts, useAA, strokeInfo,
-                                    pipelineBuilder->getRenderTarget()->isUnifiedMultisampled()));
+    SkAutoTUnref<GrDrawBatch> batch(
+            create_batch(color, viewMatrix, pts, useAA, strokeInfo,
+                         pipelineBuilder.getRenderTarget()->isUnifiedMultisampled()));
     if (!batch) {
         return false;
     }
@@ -1204,15 +1207,19 @@ GrGeometryProcessor* DashingLineEffect::TestCreate(GrProcessorTestData* d) {
 static GrGeometryProcessor* create_dash_gp(GrColor color,
                                            DashAAMode dashAAMode,
                                            DashCap cap,
-                                           const SkMatrix& localMatrix,
+                                           const SkMatrix& viewMatrix,
                                            bool usesLocalCoords) {
+    SkMatrix invert;
+    if (usesLocalCoords && !viewMatrix.invert(&invert)) {
+        SkDebugf("Failed to invert\n");
+        return NULL;
+    }
+
     switch (cap) {
         case kRound_DashCap:
-            return DashingCircleEffect::Create(color, dashAAMode, localMatrix, usesLocalCoords);
+            return DashingCircleEffect::Create(color, dashAAMode, invert, usesLocalCoords);
         case kNonRound_DashCap:
-            return DashingLineEffect::Create(color, dashAAMode, localMatrix, usesLocalCoords);
-        default:
-            SkFAIL("Unexpected dashed cap.");
+            return DashingLineEffect::Create(color, dashAAMode, invert, usesLocalCoords);
     }
     return NULL;
 }
@@ -1221,7 +1228,7 @@ static GrGeometryProcessor* create_dash_gp(GrColor color,
 
 #ifdef GR_TEST_UTILS
 
-BATCH_TEST_DEFINE(DashBatch) {
+DRAW_BATCH_TEST_DEFINE(DashBatch) {
     GrColor color = GrRandomColor(random);
     SkMatrix viewMatrix = GrTest::TestMatrixPreservesRightAngles(random);
     bool useAA = random->nextBool();

@@ -50,6 +50,7 @@
         '../components/components.gyp:devtools_discovery',
         '../components/components.gyp:devtools_http_handler',
         '../components/components.gyp:web_cache_renderer',
+        '../components/url_formatter/url_formatter.gyp:url_formatter',
         '../device/bluetooth/bluetooth.gyp:device_bluetooth',
         '../gin/gin.gyp:gin',
         '../gpu/gpu.gyp:gpu',

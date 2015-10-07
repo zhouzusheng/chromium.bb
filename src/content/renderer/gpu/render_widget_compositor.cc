@@ -227,15 +227,23 @@ void RenderWidgetCompositor::Initialize() {
   // to keep content always crisp when possible.
   settings.layer_transforms_should_scale_layer_contents = true;
 
-  settings.renderer_settings.disable_gpu_vsync =
-      cmd->HasSwitch(switches::kDisableGpuVsync);
+  if (cmd->HasSwitch(switches::kDisableGpuVsync)) {
+    std::string display_vsync_string =
+        cmd->GetSwitchValueASCII(switches::kDisableGpuVsync);
+    if (display_vsync_string == "gpu") {
+      settings.renderer_settings.disable_display_vsync = true;
+    } else if (display_vsync_string == "beginframe") {
+      settings.wait_for_beginframe_interval = false;
+    } else {
+      settings.renderer_settings.disable_display_vsync = true;
+      settings.wait_for_beginframe_interval = false;
+    }
+  }
   settings.main_frame_before_activation_enabled =
       cmd->HasSwitch(cc::switches::kEnableMainFrameBeforeActivation) &&
       !cmd->HasSwitch(cc::switches::kDisableMainFrameBeforeActivation);
-  settings.report_overscroll_only_for_scrollable_axes =
-      !compositor_deps_->IsElasticOverscrollEnabled();
   settings.accelerated_animation_enabled =
-      !cmd->HasSwitch(cc::switches::kDisableThreadedAnimation);
+      compositor_deps_->IsThreadedAnimationEnabled();
   const std::string slimming_group =
       base::FieldTrialList::FindFullName("SlimmingPaint");
   settings.use_display_lists =
@@ -295,9 +303,12 @@ void RenderWidgetCompositor::Initialize() {
       compositor_deps_->IsDistanceFieldTextEnabled();
   settings.use_zero_copy = compositor_deps_->IsZeroCopyEnabled();
   settings.use_one_copy = compositor_deps_->IsOneCopyEnabled();
+  settings.use_persistent_map_for_gpu_memory_buffers =
+      compositor_deps_->IsPersistentGpuMemoryBufferEnabled();
   settings.enable_elastic_overscroll =
       compositor_deps_->IsElasticOverscrollEnabled();
-  settings.use_image_texture_target = compositor_deps_->GetImageTextureTarget();
+  settings.use_image_texture_targets =
+      compositor_deps_->GetImageTextureTargets();
   settings.gather_pixel_refs = compositor_deps_->IsGatherPixelRefsEnabled();
 
   if (cmd->HasSwitch(cc::switches::kTopControlsShowThreshold)) {
@@ -364,15 +375,6 @@ void RenderWidgetCompositor::Initialize() {
   settings.invert_viewport_scroll_order =
       cmd->HasSwitch(switches::kInvertViewportScrollOrder);
 
-  if (cmd->HasSwitch(cc::switches::kMaxTilesForInterestArea)) {
-    int max_tiles_for_interest_area;
-    if (GetSwitchValueAsInt(*cmd,
-                            cc::switches::kMaxTilesForInterestArea,
-                            1, std::numeric_limits<int>::max(),
-                            &max_tiles_for_interest_area))
-      settings.max_tiles_for_interest_area = max_tiles_for_interest_area;
-  }
-
   if (cmd->HasSwitch(cc::switches::kMaxUnusedResourceMemoryUsagePercentage)) {
     int max_unused_resource_memory_percentage;
     if (GetSwitchValueAsInt(
@@ -399,8 +401,6 @@ void RenderWidgetCompositor::Initialize() {
   settings.using_synchronous_renderer_compositor =
       synchronous_compositor_factory;
   settings.record_full_layer = widget_->DoesRecordFullLayer();
-  settings.report_overscroll_only_for_scrollable_axes =
-      !synchronous_compositor_factory;
   settings.max_partial_texture_updates = 0;
   if (synchronous_compositor_factory) {
     // Android WebView uses system scrollbars, so make ours invisible.
@@ -421,7 +421,7 @@ void RenderWidgetCompositor::Initialize() {
   // low end, so always use default policy.
   bool use_low_memory_policy =
       base::SysInfo::IsLowEndDevice() && !synchronous_compositor_factory;
-  // RGBA_4444 textures are only enabled for low end devices
+  // RGBA_4444 textures are only enabled by default for low end devices
   // and are disabled for Android WebView as it doesn't support the format.
   settings.renderer_settings.use_rgba_4444_textures = use_low_memory_policy;
   if (use_low_memory_policy) {
@@ -455,11 +455,6 @@ void RenderWidgetCompositor::Initialize() {
   settings.scrollbar_fade_delay_ms = 500;
   settings.scrollbar_fade_resize_delay_ms = 500;
   settings.scrollbar_fade_duration_ms = 300;
-
-  // When pinching in, only show the pinch-viewport overlay scrollbars if the
-  // page scale is at least some threshold away from the minimum. i.e. don't
-  // show the pinch scrollbars when at minimum scale.
-  settings.scrollbar_show_scale_threshold = 1.05f;
 #endif
 
   if (cmd->HasSwitch(switches::kEnableLowResTiling))
@@ -469,11 +464,21 @@ void RenderWidgetCompositor::Initialize() {
   if (cmd->HasSwitch(cc::switches::kEnableBeginFrameScheduling))
     settings.use_external_begin_frame_source = true;
 
+  settings.renderer_settings.use_rgba_4444_textures |=
+      cmd->HasSwitch(switches::kEnableRGBA4444Textures);
+  settings.renderer_settings.use_rgba_4444_textures &=
+      !cmd->HasSwitch(switches::kDisableRGBA4444Textures);
+
   if (widget_->for_oopif()) {
     // TODO(simonhong): Apply BeginFrame scheduling for OOPIF.
     // See crbug.com/471411.
     settings.use_external_begin_frame_source = false;
   }
+
+  settings.max_staging_buffers = 32;
+  // Use 1/4th of staging buffers on low-end devices.
+  if (base::SysInfo::IsLowEndDevice())
+    settings.max_staging_buffers /= 4;
 
   scoped_refptr<base::SingleThreadTaskRunner> compositor_thread_task_runner =
       compositor_deps_->GetCompositorImplThreadTaskRunner();
@@ -688,6 +693,15 @@ void RenderWidgetCompositor::heuristicsForGpuRasterizationUpdated(
 
 void RenderWidgetCompositor::setNeedsAnimate() {
   layer_tree_host_->SetNeedsAnimate();
+  layer_tree_host_->SetNeedsUpdateLayers();
+}
+
+void RenderWidgetCompositor::setNeedsBeginFrame() {
+  layer_tree_host_->SetNeedsAnimate();
+}
+
+void RenderWidgetCompositor::setNeedsCompositorUpdate() {
+  layer_tree_host_->SetNeedsUpdateLayers();
 }
 
 void RenderWidgetCompositor::didStopFlinging() {
@@ -870,6 +884,10 @@ void RenderWidgetCompositor::setTopControlsHeight(float height, bool shrink) {
 
 void RenderWidgetCompositor::setTopControlsShownRatio(float ratio) {
   layer_tree_host_->SetTopControlsShownRatio(ratio);
+}
+
+void RenderWidgetCompositor::setHidePinchScrollbarsNearMinScale(bool hide) {
+  layer_tree_host_->set_hide_pinch_scrollbars_near_min_scale(hide);
 }
 
 void RenderWidgetCompositor::WillBeginMainFrame() {

@@ -30,7 +30,7 @@
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/Range.h"
-#include "core/editing/htmlediting.h"
+#include "core/editing/EditingUtilities.h"
 #include "core/editing/iterators/CharacterIterator.h"
 #include "core/layout/LayoutObject.h"
 #include "platform/geometry/LayoutPoint.h"
@@ -42,7 +42,7 @@
 namespace blink {
 
 VisibleSelection::VisibleSelection()
-    : m_affinity(DOWNSTREAM)
+    : m_affinity(TextAffinity::Downstream)
     , m_changeObserver(nullptr)
     , m_selectionType(NoSelection)
     , m_baseIsFirst(true)
@@ -50,12 +50,12 @@ VisibleSelection::VisibleSelection()
 {
 }
 
-VisibleSelection::VisibleSelection(const Position& pos, EAffinity affinity, bool isDirectional)
+VisibleSelection::VisibleSelection(const Position& pos, TextAffinity affinity, bool isDirectional)
     : VisibleSelection(pos, pos, affinity, isDirectional)
 {
 }
 
-VisibleSelection::VisibleSelection(const Position& base, const Position& extent, EAffinity affinity, bool isDirectional)
+VisibleSelection::VisibleSelection(const Position& base, const Position& extent, TextAffinity affinity, bool isDirectional)
     : m_base(base)
     , m_extent(extent)
     , m_affinity(affinity)
@@ -65,7 +65,7 @@ VisibleSelection::VisibleSelection(const Position& base, const Position& extent,
     validate();
 }
 
-VisibleSelection::VisibleSelection(const PositionInComposedTree& base, const PositionInComposedTree& extent, EAffinity affinity, bool isDirectional)
+VisibleSelection::VisibleSelection(const PositionInComposedTree& base, const PositionInComposedTree& extent, TextAffinity affinity, bool isDirectional)
     : VisibleSelection(toPositionInDOMTree(base), toPositionInDOMTree(extent), affinity, isDirectional)
 {
 }
@@ -80,12 +80,12 @@ VisibleSelection::VisibleSelection(const VisiblePosition& base, const VisiblePos
 {
 }
 
-VisibleSelection::VisibleSelection(const EphemeralRange& range, EAffinity affinity, bool isDirectional)
+VisibleSelection::VisibleSelection(const EphemeralRange& range, TextAffinity affinity, bool isDirectional)
     : VisibleSelection(range.startPosition(), range.endPosition(), affinity, isDirectional)
 {
 }
 
-VisibleSelection::VisibleSelection(const Range* range, EAffinity affinity, bool isDirectional)
+VisibleSelection::VisibleSelection(const Range* range, TextAffinity affinity, bool isDirectional)
     : VisibleSelection(range->startPosition(), range->endPosition(), affinity, isDirectional)
 {
 }
@@ -137,7 +137,7 @@ VisibleSelection::~VisibleSelection()
 VisibleSelection VisibleSelection::selectionFromContentsOfNode(Node* node)
 {
     ASSERT(!editingIgnoresContent(node));
-    return VisibleSelection(firstPositionInNode(node), lastPositionInNode(node), DOWNSTREAM);
+    return VisibleSelection(firstPositionInNode(node), lastPositionInNode(node));
 }
 
 SelectionType VisibleSelection::selectionTypeInComposedTree() const
@@ -242,44 +242,43 @@ bool VisibleSelection::intersectsNode(Node* node) const
 
 PassRefPtrWillBeRawPtr<Range> VisibleSelection::toNormalizedRange() const
 {
-    Position start, end;
-    if (toNormalizedPositions(start, end))
-        return Range::create(*start.document(), start, end);
-    return nullptr;
+    const EphemeralRange range = toNormalizedEphemeralRange();
+    if (range.isNull())
+        return nullptr;
+    return Range::create(range.document(), range.startPosition(), range.endPosition());
 }
 
-template <typename PositionType>
-void normalizePositionsAlgorithm(const PositionType& start, const PositionType& end, PositionType* outStart, PositionType* outEnd)
+template <typename Strategy>
+static EphemeralRangeTemplate<Strategy> normalizeRangeAlgorithm(const EphemeralRangeTemplate<Strategy>& range)
 {
-    ASSERT(start.isNotNull());
-    ASSERT(end.isNotNull());
-    ASSERT(start.compareTo(end) <= 0);
-    start.document()->updateLayoutIgnorePendingStylesheets();
+    ASSERT(range.isNotNull());
+    range.document().updateLayoutIgnorePendingStylesheets();
 
-    PositionType normalizedStart = start.downstream();
-    PositionType normalizedEnd = end.upstream();
+    // TODO(yosin) We should not call |parentAnchoredEquivalent()|, it is
+    // redundant.
+    const PositionAlgorithm<Strategy> normalizedStart = mostForwardCaretPosition(range.startPosition()).parentAnchoredEquivalent();
+    const PositionAlgorithm<Strategy> normalizedEnd = mostBackwardCaretPosition(range.endPosition()).parentAnchoredEquivalent();
     // The order of the positions of |start| and |end| can be swapped after
     // upstream/downstream. e.g. editing/pasteboard/copy-display-none.html
     if (normalizedStart.compareTo(normalizedEnd) > 0)
-        std::swap(normalizedStart, normalizedEnd);
-    *outStart = normalizedStart.parentAnchoredEquivalent();
-    *outEnd = normalizedEnd.parentAnchoredEquivalent();
+        return EphemeralRangeTemplate<Strategy>(normalizedEnd, normalizedStart);
+    return EphemeralRangeTemplate<Strategy>(normalizedStart, normalizedEnd);
 }
 
-void VisibleSelection::normalizePositions(const Position& start, const Position& end, Position* outStart, Position* outEnd)
+EphemeralRange VisibleSelection::normalizeRange(const EphemeralRange& range)
 {
-    return normalizePositionsAlgorithm<Position>(start, end, outStart, outEnd);
+    return normalizeRangeAlgorithm<EditingStrategy>(range);
 }
 
-void VisibleSelection::normalizePositions(const PositionInComposedTree& start, const PositionInComposedTree& end, PositionInComposedTree* outStart, PositionInComposedTree* outEnd)
+EphemeralRangeInComposedTree VisibleSelection::normalizeRange(const EphemeralRangeInComposedTree& range)
 {
-    return normalizePositionsAlgorithm<PositionInComposedTree>(start, end, outStart, outEnd);
+    return normalizeRangeAlgorithm<EditingInComposedTreeStrategy>(range);
 }
 
-bool VisibleSelection::toNormalizedPositions(Position& start, Position& end) const
+EphemeralRange VisibleSelection::toNormalizedEphemeralRange() const
 {
     if (isNone())
-        return false;
+        return EphemeralRange();
 
     // Make sure we have an updated layout since this function is called
     // in the course of running edit commands which modify the DOM.
@@ -289,34 +288,28 @@ bool VisibleSelection::toNormalizedPositions(Position& start, Position& end) con
 
     // Check again, because updating layout can clear the selection.
     if (isNone())
-        return false;
+        return EphemeralRange();
 
     if (isCaret()) {
-        // If the selection is a caret, move the range start upstream. This helps us match
-        // the conventions of text editors tested, which make style determinations based
-        // on the character before the caret, if any.
-        start = m_start.upstream().parentAnchoredEquivalent();
-        end = start;
-    } else {
-        // If the selection is a range, select the minimum range that encompasses the selection.
-        // Again, this is to match the conventions of text editors tested, which make style
-        // determinations based on the first character of the selection.
-        // For instance, this operation helps to make sure that the "X" selected below is the
-        // only thing selected. The range should not be allowed to "leak" out to the end of the
-        // previous text node, or to the beginning of the next text node, each of which has a
-        // different style.
-        //
-        // On a treasure map, <b>X</b> marks the spot.
-        //                       ^ selected
-        //
-        ASSERT(isRange());
-        normalizePositions(m_start, m_end, &start, &end);
+        // If the selection is a caret, move the range start upstream. This
+        // helps us match the conventions of text editors tested, which make
+        // style determinations based on the character before the caret, if any.
+        const Position start = mostBackwardCaretPosition(m_start).parentAnchoredEquivalent();
+        return EphemeralRange(start, start);
     }
-
-    if (!start.containerNode() || !end.containerNode())
-        return false;
-
-    return true;
+    // If the selection is a range, select the minimum range that encompasses
+    // the selection. Again, this is to match the conventions of text editors
+    // tested, which make style determinations based on the first character of
+    // the selection. For instance, this operation helps to make sure that the
+    // "X" selected below is the only thing selected. The range should not be
+    // allowed to "leak" out to the end of the previous text node, or to the
+    // beginning of the next text node, each of which has a different style.
+    //
+    // On a treasure map, <b>X</b> marks the spot.
+    //                       ^ selected
+    //
+    ASSERT(isRange());
+    return normalizeRange(EphemeralRange(m_start, m_end));
 }
 
 bool VisibleSelection::expandUsingGranularity(TextGranularity granularity)
@@ -344,7 +337,7 @@ bool VisibleSelection::expandUsingGranularityInComposedTree(TextGranularity gran
 
 static PassRefPtrWillBeRawPtr<Range> makeSearchRange(const Position& pos)
 {
-    Node* node = pos.deprecatedNode();
+    Node* node = pos.anchorNode();
     if (!node)
         return nullptr;
     Document& document = node->document();
@@ -359,7 +352,7 @@ static PassRefPtrWillBeRawPtr<Range> makeSearchRange(const Position& pos)
 
     Position start(pos.parentAnchoredEquivalent());
     searchRange->selectNodeContents(boundary, exceptionState);
-    searchRange->setStart(start.containerNode(), start.offsetInContainerNode(), exceptionState);
+    searchRange->setStart(start.computeContainerNode(), start.offsetInContainerNode(), exceptionState);
 
     ASSERT(!exceptionState.hadException());
     if (exceptionState.hadException())
@@ -501,7 +494,7 @@ void VisibleSelection::setEndRespectingGranularity(TextGranularity granularity, 
         VisiblePosition wordEnd(endOfWord(originalEnd, side));
         VisiblePosition end(wordEnd);
 
-        if (isEndOfParagraph(originalEnd) && !isEmptyTableCell(m_start.deprecatedNode())) {
+        if (isEndOfParagraph(originalEnd) && !isEmptyTableCell(m_start.anchorNode())) {
             // Select the paragraph break (the space from the end of a paragraph to the start of
             // the next one) to match TextEdit.
             end = wordEnd.next();
@@ -588,7 +581,7 @@ SelectionType VisibleSelection::selectionType(const Position& start, const Posit
         ASSERT(end.isNull());
         return NoSelection;
     }
-    if (start == end || start.upstream() == end.upstream())
+    if (start == end || mostBackwardCaretPosition(start) == mostBackwardCaretPosition(end))
         return CaretSelection;
     return RangeSelection;
 }
@@ -599,7 +592,7 @@ SelectionType VisibleSelection::selectionType(const PositionInComposedTree& star
         ASSERT(end.isNull());
         return NoSelection;
     }
-    if (start == end || start.upstream() == end.upstream())
+    if (start == end || mostBackwardCaretPosition(start) == mostBackwardCaretPosition(end))
         return CaretSelection;
     return RangeSelection;
 }
@@ -610,7 +603,7 @@ void VisibleSelection::updateSelectionType()
 
     // Affinity only makes sense for a caret
     if (m_selectionType != CaretSelection)
-        m_affinity = DOWNSTREAM;
+        m_affinity = TextAffinity::Downstream;
 }
 
 static Node* enclosingShadowHost(Node* node)
@@ -627,7 +620,7 @@ static bool isEnclosedBy(const PositionInComposedTree& position, const Node& nod
     ASSERT(position.isNotNull());
     Node* anchorNode = position.anchorNode();
     if (anchorNode == node)
-        return position.anchorType() != PositionAnchorType::AfterAnchor && position.anchorType() != PositionAnchorType::BeforeAnchor;
+        return !position.isAfterAnchor() && !position.isBeforeAnchor();
 
     return ComposedTreeTraversal::isDescendantOf(*anchorNode, node);
 }
@@ -706,14 +699,14 @@ void VisibleSelection::validate(TextGranularity granularity)
         // come through here before anyone uses it.
         // FIXME: Canonicalizing is good, but haven't we already done it (when we
         // set these two positions to VisiblePosition deepEquivalent()s above)?
-        m_start = m_start.downstream();
-        m_end = m_end.upstream();
+        m_start = mostForwardCaretPosition(m_start);
+        m_end = mostBackwardCaretPosition(m_end);
 
         // Even by downstreaming, |m_start| can be moved to the upper place from
         // the original position, same as |m_end|.
         // e.g.) editing/shadow/select-contenteditable-shadowhost.html
-        m_startInComposedTree = m_startInComposedTree.downstream();
-        m_endInComposedTree = m_endInComposedTree.upstream();
+        m_startInComposedTree = mostForwardCaretPosition(m_startInComposedTree);
+        m_endInComposedTree = mostBackwardCaretPosition(m_endInComposedTree);
         adjustStartAndEndInComposedTree();
 
         if (isCrossingSelectionBoundary(m_startInComposedTree, m_endInComposedTree))
@@ -745,6 +738,18 @@ void VisibleSelection::resetPositionsInComposedTree()
     adjustStartAndEndInComposedTree();
 }
 
+bool VisibleSelection::isValidFor(const Document& document) const
+{
+    if (isNone())
+        return true;
+
+    return m_base.document() == &document
+        && !m_base.isOrphan() && !m_extent.isOrphan()
+        && !m_start.isOrphan() && !m_end.isOrphan()
+        && !m_baseInComposedTree.isOrphan() && !m_extentInComposedTree.isOrphan()
+        && !m_startInComposedTree.isOrphan() && !m_endInComposedTree.isOrphan();
+}
+
 // FIXME: This function breaks the invariant of this class.
 // But because we use VisibleSelection to store values in editing commands for use when
 // undoing the command, we need to be able to create a selection that while currently
@@ -758,7 +763,7 @@ void VisibleSelection::setWithoutValidation(const Position& base, const Position
 
     // TODO(hajimehoshi): We doubt this assertion is needed. This was introduced
     // by http://trac.webkit.org/browser/trunk/WebCore/editing/Selection.cpp?annotate=blame&rev=21071
-    ASSERT(m_affinity == DOWNSTREAM);
+    ASSERT(m_affinity == TextAffinity::Downstream);
 
     m_base = base;
     m_extent = extent;
@@ -786,7 +791,7 @@ void VisibleSelection::setWithoutValidation(const PositionInComposedTree& base, 
 static PositionInComposedTree adjustPositionInComposedTreeForStart(const PositionInComposedTree& position, Node* shadowHost)
 {
     if (isEnclosedBy(position, *shadowHost)) {
-        if (position.anchorType() == PositionAnchorType::BeforeChildren)
+        if (position.isBeforeChildren())
             return PositionInComposedTree::beforeNode(shadowHost);
         return PositionInComposedTree::afterNode(shadowHost);
     }
@@ -803,9 +808,9 @@ static Position adjustPositionForEnd(const Position& currentPosition, Node* star
 {
     TreeScope& treeScope = startContainerNode->treeScope();
 
-    ASSERT(currentPosition.containerNode()->treeScope() != treeScope);
+    ASSERT(currentPosition.computeContainerNode()->treeScope() != treeScope);
 
-    if (Node* ancestor = treeScope.ancestorInThisScope(currentPosition.containerNode())) {
+    if (Node* ancestor = treeScope.ancestorInThisScope(currentPosition.computeContainerNode())) {
         if (ancestor->contains(startContainerNode))
             return positionAfterNode(ancestor);
         return positionBeforeNode(ancestor);
@@ -820,7 +825,7 @@ static Position adjustPositionForEnd(const Position& currentPosition, Node* star
 PositionInComposedTree adjustPositionInComposedTreeForEnd(const PositionInComposedTree& position, Node* shadowHost)
 {
     if (isEnclosedBy(position, *shadowHost)) {
-        if (position.anchorType() == PositionAnchorType::AfterChildren)
+        if (position.isAfterChildren())
             return PositionInComposedTree::afterNode(shadowHost);
         return PositionInComposedTree::beforeNode(shadowHost);
     }
@@ -837,9 +842,9 @@ static Position adjustPositionForStart(const Position& currentPosition, Node* en
 {
     TreeScope& treeScope = endContainerNode->treeScope();
 
-    ASSERT(currentPosition.containerNode()->treeScope() != treeScope);
+    ASSERT(currentPosition.computeContainerNode()->treeScope() != treeScope);
 
-    if (Node* ancestor = treeScope.ancestorInThisScope(currentPosition.containerNode())) {
+    if (Node* ancestor = treeScope.ancestorInThisScope(currentPosition.computeContainerNode())) {
         if (ancestor->contains(endContainerNode))
             return positionBeforeNode(ancestor);
         return positionAfterNode(ancestor);
@@ -862,10 +867,10 @@ void VisibleSelection::adjustSelectionToAvoidCrossingShadowBoundaries()
         return;
 
     if (m_baseIsFirst) {
-        m_extent = adjustPositionForEnd(m_end, m_start.containerNode());
+        m_extent = adjustPositionForEnd(m_end, m_start.computeContainerNode());
         m_end = m_extent;
     } else {
-        m_extent = adjustPositionForStart(m_start, m_end.containerNode());
+        m_extent = adjustPositionForStart(m_start, m_end.computeContainerNode());
         m_start = m_extent;
     }
 
@@ -917,7 +922,7 @@ void VisibleSelection::adjustSelectionToAvoidCrossingEditingBoundaries()
     ContainerNode* startRoot = highestEditableRoot(m_start);
     ContainerNode* endRoot = highestEditableRoot(m_end);
 
-    Element* baseEditableAncestor = lowestEditableAncestor(m_base.containerNode());
+    Element* baseEditableAncestor = lowestEditableAncestor(m_base.computeContainerNode());
 
     // The base, start and end are all in the same region.  No adjustment necessary.
     if (baseRoot == startRoot && baseRoot == endRoot)
@@ -952,17 +957,17 @@ void VisibleSelection::adjustSelectionToAvoidCrossingEditingBoundaries()
 
         // The selection ends in editable content or non-editable content inside a different editable ancestor,
         // move backward until non-editable content inside the same lowest editable ancestor is reached.
-        Element* endEditableAncestor = lowestEditableAncestor(m_end.containerNode());
+        Element* endEditableAncestor = lowestEditableAncestor(m_end.computeContainerNode());
         if (endRoot || endEditableAncestor != baseEditableAncestor) {
 
             Position p = previousVisuallyDistinctCandidate(m_end);
             Element* shadowAncestor = endRoot ? endRoot->shadowHost() : 0;
             if (p.isNull() && shadowAncestor)
                 p = positionAfterNode(shadowAncestor);
-            while (p.isNotNull() && !(lowestEditableAncestor(p.containerNode()) == baseEditableAncestor && !isEditablePosition(p))) {
+            while (p.isNotNull() && !(lowestEditableAncestor(p.computeContainerNode()) == baseEditableAncestor && !isEditablePosition(p))) {
                 Element* root = editableRootForPosition(p);
                 shadowAncestor = root ? root->shadowHost() : 0;
-                p = isAtomicNode(p.containerNode()) ? positionInParentBeforeNode(*p.containerNode()) : previousVisuallyDistinctCandidate(p);
+                p = isAtomicNode(p.computeContainerNode()) ? positionInParentBeforeNode(*p.computeContainerNode()) : previousVisuallyDistinctCandidate(p);
                 if (p.isNull() && shadowAncestor)
                     p = positionAfterNode(shadowAncestor);
             }
@@ -982,16 +987,16 @@ void VisibleSelection::adjustSelectionToAvoidCrossingEditingBoundaries()
 
         // The selection starts in editable content or non-editable content inside a different editable ancestor,
         // move forward until non-editable content inside the same lowest editable ancestor is reached.
-        Element* startEditableAncestor = lowestEditableAncestor(m_start.containerNode());
+        Element* startEditableAncestor = lowestEditableAncestor(m_start.computeContainerNode());
         if (startRoot || startEditableAncestor != baseEditableAncestor) {
             Position p = nextVisuallyDistinctCandidate(m_start);
             Element* shadowAncestor = startRoot ? startRoot->shadowHost() : 0;
             if (p.isNull() && shadowAncestor)
                 p = positionBeforeNode(shadowAncestor);
-            while (p.isNotNull() && !(lowestEditableAncestor(p.containerNode()) == baseEditableAncestor && !isEditablePosition(p))) {
+            while (p.isNotNull() && !(lowestEditableAncestor(p.computeContainerNode()) == baseEditableAncestor && !isEditablePosition(p))) {
                 Element* root = editableRootForPosition(p);
                 shadowAncestor = root ? root->shadowHost() : 0;
-                p = isAtomicNode(p.containerNode()) ? positionInParentAfterNode(*p.containerNode()) : nextVisuallyDistinctCandidate(p);
+                p = isAtomicNode(p.computeContainerNode()) ? positionInParentAfterNode(*p.computeContainerNode()) : nextVisuallyDistinctCandidate(p);
                 if (p.isNull() && shadowAncestor)
                     p = positionBeforeNode(shadowAncestor);
             }
@@ -1011,7 +1016,7 @@ void VisibleSelection::adjustSelectionToAvoidCrossingEditingBoundaries()
     }
 
     // Correct the extent if necessary.
-    if (baseEditableAncestor != lowestEditableAncestor(m_extent.containerNode()))
+    if (baseEditableAncestor != lowestEditableAncestor(m_extent.computeContainerNode()))
         m_extent = m_baseIsFirst ? m_end : m_start;
 }
 
@@ -1071,7 +1076,7 @@ Element* VisibleSelection::rootEditableElement() const
 
 Node* VisibleSelection::nonBoundaryShadowTreeRootNode() const
 {
-    return start().deprecatedNode() && !start().deprecatedNode()->isShadowRoot() ? start().deprecatedNode()->nonBoundaryShadowTreeRootNode() : 0;
+    return start().anchorNode() && !start().anchorNode()->isShadowRoot() ? start().anchorNode()->nonBoundaryShadowTreeRootNode() : 0;
 }
 
 VisibleSelection::ChangeObserver::ChangeObserver()
@@ -1118,7 +1123,7 @@ static bool isValidPosition(const Position& position)
     if (!position.inDocument())
         return false;
 
-    if (position.anchorType() != PositionAnchorType::OffsetInAnchor)
+    if (!position.isOffsetInAnchor())
         return true;
 
     if (position.offsetInContainerNode() < 0)
@@ -1135,7 +1140,18 @@ void VisibleSelection::validatePositionsIfNeeded()
         validate();
 }
 
-bool VisibleSelection::InDOMTree::equalSelections(const VisibleSelection& selection1, const VisibleSelection& selection2)
+EphemeralRange VisibleSelection::InDOMTree::asRange(const VisibleSelection& selection)
+{
+    return EphemeralRange(selectionStart(selection), selectionEnd(selection));
+}
+
+EphemeralRangeInComposedTree VisibleSelection::InComposedTree::asRange(const VisibleSelection& selection)
+{
+    return EphemeralRangeInComposedTree(selectionStart(selection), selectionEnd(selection));
+}
+
+template <typename Strategy>
+static bool equalSelectionsAlgorithm(const VisibleSelection& selection1, const VisibleSelection& selection2)
 {
     if (selection1.affinity() != selection2.affinity() || selection1.isDirectional() != selection2.isDirectional())
         return false;
@@ -1143,13 +1159,20 @@ bool VisibleSelection::InDOMTree::equalSelections(const VisibleSelection& select
     if (selection1.isNone())
         return selection2.isNone();
 
-    return selection1.start() == selection2.start() && selection1.end() == selection2.end() && selection1.affinity() == selection2.affinity()
-        && selection1.isDirectional() == selection2.isDirectional() && selection1.base() == selection2.base() && selection1.extent() == selection2.extent();
+    return Strategy::selectionStart(selection1) == Strategy::selectionStart(selection2)
+        && Strategy::selectionEnd(selection1) == Strategy::selectionEnd(selection2)
+        && Strategy::selectionBase(selection1) == Strategy::selectionBase(selection2)
+        && Strategy::selectionExtent(selection1) == Strategy::selectionExtent(selection2);
 }
 
-bool VisibleSelection::InComposedTree::equalSelections(const VisibleSelection& a, const VisibleSelection& b)
+bool VisibleSelection::InDOMTree::equalSelections(const VisibleSelection& selection1, const VisibleSelection& selection2)
 {
-    return a.startInComposedTree() == b.startInComposedTree() && a.endInComposedTree() == b.endInComposedTree() && a.affinity() == b.affinity() && a.isBaseFirst() == b.isBaseFirst() && a.isDirectional() == b.isDirectional();
+    return equalSelectionsAlgorithm<InDOMTree>(selection1, selection2);
+}
+
+bool VisibleSelection::InComposedTree::equalSelections(const VisibleSelection& selection1, const VisibleSelection& selection2)
+{
+    return equalSelectionsAlgorithm<InComposedTree>(selection1, selection2);
 }
 
 #ifndef NDEBUG
@@ -1182,7 +1205,7 @@ void VisibleSelection::debugPosition(const char* message) const
     }
 
     fprintf(stderr, "isDirectional=%s\n", isDirectional() ? "true" : "false");
-    fprintf(stderr, "affinity=%s\n", affinity() == DOWNSTREAM ? "DOWNSTREaM" : affinity() == UPSTREAM ? "UPSTREAM" : "UNKNOWN");
+    fprintf(stderr, "affinity=%s\n", affinity() == TextAffinity::Downstream ? "DOWNSTREaM" : affinity() == TextAffinity::Upstream ? "UPSTREAM" : "UNKNOWN");
     fprintf(stderr, "================================\n");
 }
 

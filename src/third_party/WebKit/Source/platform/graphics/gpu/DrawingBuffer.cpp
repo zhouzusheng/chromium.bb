@@ -906,7 +906,7 @@ void DrawingBuffer::paintFramebufferToCanvas(int framebuffer, int width, int hei
 {
     unsigned char* pixels = 0;
 
-    const SkBitmap& canvasBitmap = imageBuffer->bitmap();
+    const SkBitmap& canvasBitmap = imageBuffer->deprecatedBitmapForOverwrite();
     const SkBitmap* readbackBitmap = 0;
     ASSERT(canvasBitmap.colorType() == kN32_SkColorType);
     if (canvasBitmap.width() == width && canvasBitmap.height() == height) {
@@ -937,9 +937,7 @@ void DrawingBuffer::paintFramebufferToCanvas(int framebuffer, int width, int hei
     if (m_resizingBitmap.readyToDraw()) {
         // We need to draw the resizing bitmap into the canvas's backing store.
         SkCanvas canvas(canvasBitmap);
-        SkRect dst;
-        dst.set(SkIntToScalar(0), SkIntToScalar(0), SkIntToScalar(canvasBitmap.width()), SkIntToScalar(canvasBitmap.height()));
-        canvas.drawBitmapRect(m_resizingBitmap, 0, dst);
+        canvas.drawBitmapRect(m_resizingBitmap, SkRect::MakeIWH(canvasBitmap.width(), canvasBitmap.height()), nullptr);
     }
 }
 

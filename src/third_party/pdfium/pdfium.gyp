@@ -112,7 +112,7 @@
         }],
         ['bundle_freetype==1', {
           'dependencies': [
-            'third_party/third_party.gyp:freetype',
+            'third_party/third_party.gyp:fx_freetype',
           ],
         }, {
           'link_settings': {
@@ -250,8 +250,6 @@
         'core/src/fpdfapi/fpdf_cmaps/Japan1/UniJIS-UCS2-HW-V_4.cpp',
         'core/src/fpdfapi/fpdf_cmaps/Japan1/UniJIS-UCS2-H_4.cpp',
         'core/src/fpdfapi/fpdf_cmaps/Japan1/UniJIS-UCS2-V_4.cpp',
-        'core/src/fpdfapi/fpdf_cmaps/Japan1/UniJIS-UTF16-H_5.cpp',
-        'core/src/fpdfapi/fpdf_cmaps/Japan1/UniJIS-UTF16-V_5.cpp',
         'core/src/fpdfapi/fpdf_cmaps/Japan1/V_1.cpp',
         'core/src/fpdfapi/fpdf_cmaps/Korea1/Adobe-Korea1-UCS2_2.cpp',
         'core/src/fpdfapi/fpdf_cmaps/Korea1/cmaps_korea1.cpp',
@@ -288,12 +286,10 @@
         'core/src/fpdfapi/fpdf_page/fpdf_page_path.cpp',
         'core/src/fpdfapi/fpdf_page/fpdf_page_pattern.cpp',
         'core/src/fpdfapi/fpdf_page/pageint.h',
-        'core/src/fpdfapi/fpdf_parser/filters_int.h',
         'core/src/fpdfapi/fpdf_parser/fpdf_parser_decode.cpp',
         'core/src/fpdfapi/fpdf_parser/fpdf_parser_document.cpp',
         'core/src/fpdfapi/fpdf_parser/fpdf_parser_encrypt.cpp',
         'core/src/fpdfapi/fpdf_parser/fpdf_parser_fdf.cpp',
-        'core/src/fpdfapi/fpdf_parser/fpdf_parser_filters.cpp',
         'core/src/fpdfapi/fpdf_parser/fpdf_parser_objects.cpp',
         'core/src/fpdfapi/fpdf_parser/fpdf_parser_parser.cpp',
         'core/src/fpdfapi/fpdf_parser/fpdf_parser_utility.cpp',
@@ -334,6 +330,7 @@
       'sources': [
         'core/include/fxcodec/fx_codec.h',
         'core/include/fxcodec/fx_codec_def.h',
+        'core/include/fxcodec/fx_codec_flate.h',
         'core/include/fxcodec/fx_codec_provider.h',
         'core/src/fxcodec/codec/codec_int.h',
         'core/src/fxcodec/codec/fx_codec.cpp',
@@ -393,8 +390,8 @@
       'type': 'static_library',
       'ldflags': [ '-L<(PRODUCT_DIR)',],
       'sources': [
-        'core/include/fxcrt/fx_arb.h',
         'core/include/fxcrt/fx_basic.h',
+        'core/include/fxcrt/fx_bidi.h',
         'core/include/fxcrt/fx_coordinates.h',
         'core/include/fxcrt/fx_ext.h',
         'core/include/fxcrt/fx_memory.h',
@@ -411,8 +408,6 @@
         'core/src/fxcrt/fxcrt_posix.h',
         'core/src/fxcrt/fxcrt_windows.cpp',
         'core/src/fxcrt/fxcrt_windows.h',
-        'core/src/fxcrt/fx_arabic.cpp',
-        'core/src/fxcrt/fx_arabic.h',
         'core/src/fxcrt/fx_basic_array.cpp',
         'core/src/fxcrt/fx_basic_bstring.cpp',
         'core/src/fxcrt/fx_basic_buffer.cpp',
@@ -425,6 +420,7 @@
         'core/src/fxcrt/fx_basic_utf.cpp',
         'core/src/fxcrt/fx_basic_util.cpp',
         'core/src/fxcrt/fx_basic_wstring.cpp',
+        'core/src/fxcrt/fx_bidi.cpp',
         'core/src/fxcrt/fx_extension.cpp',
         'core/src/fxcrt/fx_ucddata.cpp',
         'core/src/fxcrt/fx_unicode.cpp',
@@ -500,6 +496,12 @@
         'core/src/fxge/ge/fx_ge_text.cpp',
         'core/src/fxge/ge/text_int.h',
       ],
+      'variables': {
+        'clang_warning_flags': [
+          # http://code.google.com/p/pdfium/issues/detail?id=188
+          '-Wno-switch',
+        ],
+      },
       'conditions': [
         ['pdf_use_skia==1', {
           'sources': [
@@ -716,6 +718,7 @@
         'core/src/fxcrt/fx_basic_bstring_unittest.cpp',
         'core/src/fxcrt/fx_basic_memmgr_unittest.cpp',
         'core/src/fxcrt/fx_basic_wstring_unittest.cpp',
+        'core/src/fxcrt/fx_bidi_unittest.cpp',
         'core/src/fxcrt/fx_system_unittest.cpp',
         'testing/fx_string_testhelpers.h',
         'testing/fx_string_testhelpers.cpp',

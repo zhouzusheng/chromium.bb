@@ -496,7 +496,7 @@ void GL_APIENTRY ReadnPixelsEXT(GLint x, GLint y, GLsizei width, GLsizei height,
         ASSERT(framebufferObject);
 
         Rectangle area(x, y, width, height);
-        Error error = framebufferObject->readPixels(context->getState(), area, format, type, data);
+        Error error = framebufferObject->readPixels(context, area, format, type, data);
         if (error.isError())
         {
             context->recordError(error);
@@ -642,6 +642,21 @@ void GL_APIENTRY VertexAttribDivisorANGLE(GLuint index, GLuint divisor)
         {
             context->recordError(Error(GL_INVALID_VALUE));
             return;
+        }
+
+        if (context->getLimitations().attributeZeroRequiresZeroDivisorInEXT)
+        {
+            if (index == 0 && divisor != 0)
+            {
+                const char *errorMessage = "The current context doesn't support setting a non-zero divisor on the attribute with index zero. "
+                                           "Please reorder the attributes in your vertex shader so that attribute zero can have a zero divisor.";
+                context->recordError(Error(GL_INVALID_OPERATION, errorMessage));
+
+                // We also output an error message to the debugger window if tracing is active, so that developers can see the error message.
+                ERR("%s", errorMessage);
+
+                return;
+            }
         }
 
         context->setVertexAttribDivisor(index, divisor);
@@ -1167,4 +1182,52 @@ void GL_APIENTRY PopGroupMarkerEXT()
     }
 }
 
+ANGLE_EXPORT void GL_APIENTRY EGLImageTargetTexture2DOES(GLenum target, GLeglImageOES image)
+{
+    EVENT("(GLenum target = 0x%X, GLeglImageOES image = 0x%0.8p)", target, image);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        egl::Display *display   = egl::GetGlobalDisplay();
+        egl::Image *imageObject = reinterpret_cast<egl::Image *>(image);
+        if (!ValidateEGLImageTargetTexture2DOES(context, display, target, imageObject))
+        {
+            return;
+        }
+
+        Texture *texture = context->getTargetTexture(target);
+        Error error = texture->setEGLImageTarget(target, imageObject);
+        if (error.isError())
+        {
+            context->recordError(error);
+            return;
+        }
+    }
+}
+
+ANGLE_EXPORT void GL_APIENTRY EGLImageTargetRenderbufferStorageOES(GLenum target,
+                                                                   GLeglImageOES image)
+{
+    EVENT("(GLenum target = 0x%X, GLeglImageOES image = 0x%0.8p)", target, image);
+
+    Context *context = GetValidGlobalContext();
+    if (context)
+    {
+        egl::Display *display   = egl::GetGlobalDisplay();
+        egl::Image *imageObject = reinterpret_cast<egl::Image *>(image);
+        if (!ValidateEGLImageTargetRenderbufferStorageOES(context, display, target, imageObject))
+        {
+            return;
+        }
+
+        Renderbuffer *renderbuffer = context->getState().getCurrentRenderbuffer();
+        Error error = renderbuffer->setStorageEGLImageTarget(imageObject);
+        if (error.isError())
+        {
+            context->recordError(error);
+            return;
+        }
+    }
+}
 }

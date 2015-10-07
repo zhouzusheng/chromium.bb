@@ -106,7 +106,8 @@ public:
     void willEnterNestedLoop();
     void didLeaveNestedLoop();
 
-    WorkerGlobalScope* workerGlobalScope() const { return m_workerGlobalScope.get(); }
+    // Can be called only on the worker thread, WorkerGlobalScope is not thread safe.
+    WorkerGlobalScope* workerGlobalScope();
 
     // Returns true once one of the terminate* methods is called.
     bool terminated();
@@ -148,6 +149,7 @@ private:
     // Called on the worker thread.
     void initialize(PassOwnPtr<WorkerThreadStartupData>);
     void shutdown();
+    void performShutdownTask();
     void performIdleWork(double deadlineSeconds);
     void postDelayedTask(const WebTraceLocation&, PassOwnPtr<ExecutionContextTask>, long long delayMs);
 
@@ -170,7 +172,6 @@ private:
     RefPtrWillBePersistent<WorkerGlobalScope> m_workerGlobalScope;
 
     v8::Isolate* m_isolate;
-    OwnPtr<V8IsolateInterruptor> m_interruptor;
 
     // Used to signal thread shutdown.
     OwnPtr<WebWaitableEvent> m_shutdownEvent;

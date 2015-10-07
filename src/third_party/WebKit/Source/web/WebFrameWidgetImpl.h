@@ -40,6 +40,7 @@
 #include "web/PageWidgetDelegate.h"
 #include "web/WebLocalFrameImpl.h"
 #include "web/WebViewImpl.h"
+#include "wtf/Assertions.h"
 #include "wtf/HashSet.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/RefCounted.h"
@@ -57,9 +58,9 @@ class WebLayerTreeView;
 class WebMouseEvent;
 class WebMouseWheelEvent;
 
-class WebFrameWidgetImpl final : public WebFrameWidget
-    , public PageWidgetEventHandler
-    , public RefCounted<WebFrameWidgetImpl> {
+class WebFrameWidgetImpl final : public RefCountedWillBeGarbageCollectedFinalized<WebFrameWidgetImpl>
+    , public WebFrameWidget
+    , public PageWidgetEventHandler {
 public:
     static WebFrameWidgetImpl* create(WebWidgetClient*, WebLocalFrame*);
     static HashSet<WebFrameWidgetImpl*>& allInstances();
@@ -69,11 +70,10 @@ public:
     WebSize size() override;
     void willStartLiveResize() override;
     void resize(const WebSize&) override;
+    void resizeVisualViewport(const WebSize&) override;
     void resizePinchViewport(const WebSize&) override;
     void willEndLiveResize() override;
-    void willEnterFullScreen() override;
     void didEnterFullScreen() override;
-    void willExitFullScreen() override;
     void didExitFullScreen() override;
     void beginFrame(const WebBeginFrameArgs&) override;
     void layout() override;
@@ -148,9 +148,15 @@ public:
         ScrollDirection*,
         ScrollGranularity*);
 
+    DECLARE_TRACE();
+
 private:
     friend class WebFrameWidget; // For WebFrameWidget::create.
+#if ENABLE(OILPAN)
+    friend class GarbageCollectedFinalized<WebFrameWidgetImpl>;
+#else
     friend class WTF::RefCounted<WebFrameWidgetImpl>;
+#endif
 
     explicit WebFrameWidgetImpl(WebWidgetClient*, WebLocalFrame*);
     ~WebFrameWidgetImpl();
@@ -185,12 +191,12 @@ private:
 
     // WebFrameWidget is associated with a subtree of the frame tree, corresponding to a maximal
     // connected tree of LocalFrames. This member points to the root of that subtree.
-    WebLocalFrameImpl* m_localRoot;
+    RawPtrWillBeMember<WebLocalFrameImpl> m_localRoot;
 
     WebSize m_size;
 
     // If set, the (plugin) node which has mouse capture.
-    RefPtrWillBePersistent<Node> m_mouseCaptureNode;
+    RefPtrWillBeMember<Node> m_mouseCaptureNode;
     RefPtr<UserGestureToken> m_mouseCaptureGestureToken;
 
     WebLayerTreeView* m_layerTreeView;
@@ -204,7 +210,13 @@ private:
     bool m_ignoreInputEvents;
 
     static const WebInputEvent* m_currentInputEvent;
+
+#if ENABLE(OILPAN)
+    SelfKeepAlive<WebFrameWidgetImpl> m_selfKeepAlive;
+#endif
 };
+
+DEFINE_TYPE_CASTS(WebFrameWidgetImpl, WebFrameWidget, widget, widget->forSubframe(), widget.forSubframe());
 
 } // namespace blink
 

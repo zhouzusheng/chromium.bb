@@ -15,7 +15,7 @@
 
 namespace blink {
 
-SyncRegistrationCallbacks::SyncRegistrationCallbacks(PassRefPtrWillBeRawPtr<ScriptPromiseResolver> resolver, ServiceWorkerRegistration* serviceWorkerRegistration)
+SyncRegistrationCallbacks::SyncRegistrationCallbacks(ScriptPromiseResolver* resolver, ServiceWorkerRegistration* serviceWorkerRegistration)
     : m_resolver(resolver)
     , m_serviceWorkerRegistration(serviceWorkerRegistration)
 {
@@ -57,7 +57,38 @@ void SyncRegistrationCallbacks::onError(WebSyncError* error)
     m_resolver->reject(SyncError::take(m_resolver.get(), error));
 }
 
-SyncUnregistrationCallbacks::SyncUnregistrationCallbacks(PassRefPtrWillBeRawPtr<ScriptPromiseResolver> resolver, ServiceWorkerRegistration* serviceWorkerRegistration)
+SyncNotifyWhenDoneCallbacks::SyncNotifyWhenDoneCallbacks(ScriptPromiseResolver* resolver, ServiceWorkerRegistration* serviceWorkerRegistration)
+    : m_resolver(resolver)
+    , m_serviceWorkerRegistration(serviceWorkerRegistration)
+{
+    ASSERT(m_resolver);
+    ASSERT(m_serviceWorkerRegistration);
+}
+
+SyncNotifyWhenDoneCallbacks::~SyncNotifyWhenDoneCallbacks()
+{
+}
+
+void SyncNotifyWhenDoneCallbacks::onSuccess(bool* status)
+{
+    OwnPtr<bool> statusPtr = adoptPtr(status);
+    if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped()) {
+        return;
+    }
+
+    m_resolver->resolve(*status);
+}
+
+void SyncNotifyWhenDoneCallbacks::onError(WebSyncError* error)
+{
+    if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped()) {
+        SyncError::dispose(error);
+        return;
+    }
+    m_resolver->reject(SyncError::take(m_resolver.get(), error));
+}
+
+SyncUnregistrationCallbacks::SyncUnregistrationCallbacks(ScriptPromiseResolver* resolver, ServiceWorkerRegistration* serviceWorkerRegistration)
     : m_resolver(resolver)
     , m_serviceWorkerRegistration(serviceWorkerRegistration)
 {
@@ -88,7 +119,7 @@ void SyncUnregistrationCallbacks::onError(WebSyncError* error)
     m_resolver->reject(SyncError::take(m_resolver.get(), error));
 }
 
-SyncGetRegistrationsCallbacks::SyncGetRegistrationsCallbacks(PassRefPtrWillBeRawPtr<ScriptPromiseResolver> resolver, ServiceWorkerRegistration* serviceWorkerRegistration)
+SyncGetRegistrationsCallbacks::SyncGetRegistrationsCallbacks(ScriptPromiseResolver* resolver, ServiceWorkerRegistration* serviceWorkerRegistration)
     : m_resolver(resolver)
     , m_serviceWorkerRegistration(serviceWorkerRegistration)
 {
@@ -106,7 +137,7 @@ void SyncGetRegistrationsCallbacks::onSuccess(WebVector<WebSyncRegistration*>* w
         if (webSyncRegistrations) {
             for (size_t i = 0; i < webSyncRegistrations->size(); ++i)
                 SyncRegistration::dispose((*webSyncRegistrations)[i]);
-            delete(webSyncRegistrations);
+            delete (webSyncRegistrations);
         }
         return;
     }
@@ -123,7 +154,7 @@ void SyncGetRegistrationsCallbacks::onSuccess(WebVector<WebSyncRegistration*>* w
             SyncRegistration* reg = SyncRegistration::take(m_resolver.get(), webSyncRegistration, m_serviceWorkerRegistration);
             syncRegistrations.append(reg);
         }
-        delete(webSyncRegistrations);
+        delete (webSyncRegistrations);
         m_resolver->resolve(syncRegistrations);
     } else {
         Vector<PeriodicSyncRegistration*> syncRegistrations;
@@ -132,7 +163,7 @@ void SyncGetRegistrationsCallbacks::onSuccess(WebVector<WebSyncRegistration*>* w
             PeriodicSyncRegistration* reg = PeriodicSyncRegistration::take(m_resolver.get(), webSyncRegistration, m_serviceWorkerRegistration);
             syncRegistrations.append(reg);
         }
-        delete(webSyncRegistrations);
+        delete (webSyncRegistrations);
         m_resolver->resolve(syncRegistrations);
     }
 }
@@ -146,7 +177,7 @@ void SyncGetRegistrationsCallbacks::onError(WebSyncError* error)
     m_resolver->reject(SyncError::take(m_resolver.get(), error));
 }
 
-SyncGetPermissionStatusCallbacks::SyncGetPermissionStatusCallbacks(PassRefPtrWillBeRawPtr<ScriptPromiseResolver> resolver, ServiceWorkerRegistration* serviceWorkerRegistration)
+SyncGetPermissionStatusCallbacks::SyncGetPermissionStatusCallbacks(ScriptPromiseResolver* resolver, ServiceWorkerRegistration* serviceWorkerRegistration)
     : m_resolver(resolver)
     , m_serviceWorkerRegistration(serviceWorkerRegistration)
 {

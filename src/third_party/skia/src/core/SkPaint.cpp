@@ -1243,7 +1243,7 @@ static void add_flattenable(SkDescriptor* desc, uint32_t tag,
     buffer->writeToMemory(desc->addEntry(tag, buffer->bytesWritten(), NULL));
 }
 
-static SkMask::Format computeMaskFormat(const SkPaint& paint) {
+static SkMask::Format compute_mask_format(const SkPaint& paint) {
     uint32_t flags = paint.getFlags();
 
     // Antialiasing being disabled trumps all other settings.
@@ -1405,7 +1405,7 @@ void SkScalerContext::MakeRec(const SkPaint& paint,
         rec->fStrokeJoin = 0;
     }
 
-    rec->fMaskFormat = SkToU8(computeMaskFormat(paint));
+    rec->fMaskFormat = SkToU8(compute_mask_format(paint));
 
     if (SkMask::kLCD16_Format == rec->fMaskFormat) {
         if (too_big_for_lcd(*rec, checkPost2x2)) {
@@ -2063,6 +2063,16 @@ bool SkPaint::getFillPath(const SkPath& src, SkPath* dst, const SkRect* cullRect
     return !rec.isHairlineStyle();
 }
 
+bool SkPaint::canComputeFastBounds() const {
+    if (this->getLooper()) {
+        return this->getLooper()->canComputeFastBounds(*this);
+    }
+    if (this->getImageFilter() && !this->getImageFilter()->canComputeFastBounds()) {
+        return false;
+    }
+    return !this->getRasterizer();
+}
+
 const SkRect& SkPaint::doComputeFastBounds(const SkRect& origSrc,
                                            SkRect* storage,
                                            Style style) const {
@@ -2419,8 +2429,8 @@ bool SkPaint::nothingToDraw() const {
 uint32_t SkPaint::getHash() const {
     // We're going to hash 10 pointers and 7 32-bit values, finishing up with fBitfields,
     // so fBitfields should be 10 pointers and 6 32-bit values from the start.
-    SK_COMPILE_ASSERT(offsetof(SkPaint, fBitfields) == 10 * sizeof(void*) + 6 * sizeof(uint32_t),
-                      SkPaint_notPackedTightly);
+    static_assert(offsetof(SkPaint, fBitfields) == 10 * sizeof(void*) + 6 * sizeof(uint32_t),
+                  "SkPaint_notPackedTightly");
     return SkChecksum::Murmur3(reinterpret_cast<const uint32_t*>(this),
                                offsetof(SkPaint, fBitfields) + sizeof(fBitfields));
 }

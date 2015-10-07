@@ -154,11 +154,12 @@ void SkBaseDevice::drawImage(const SkDraw& draw, const SkImage* image, SkScalar 
 }
 
 void SkBaseDevice::drawImageRect(const SkDraw& draw, const SkImage* image, const SkRect* src,
-                                 const SkRect& dst, const SkPaint& paint) {
+                                 const SkRect& dst, const SkPaint& paint,
+                                 SkCanvas::SrcRectConstraint constraint) {
     // Default impl : turns everything into raster bitmap
     SkBitmap bm;
     if (as_IB(image)->getROPixels(&bm)) {
-        this->drawBitmapRect(draw, bm, src, dst, paint, SkCanvas::kNone_DrawBitmapRectFlag);
+        this->drawBitmapRect(draw, bm, src, dst, paint, constraint);
     }
 }
 
@@ -168,7 +169,7 @@ void SkBaseDevice::drawImageNine(const SkDraw& draw, const SkImage* image, const
 
     SkRect srcR, dstR;
     while (iter.next(&srcR, &dstR)) {
-        this->drawImageRect(draw, image, &srcR, dstR, paint);
+        this->drawImageRect(draw, image, &srcR, dstR, paint, SkCanvas::kStrict_SrcRectConstraint);
     }
 }
 
@@ -178,7 +179,7 @@ void SkBaseDevice::drawBitmapNine(const SkDraw& draw, const SkBitmap& bitmap, co
     
     SkRect srcR, dstR;
     while (iter.next(&srcR, &dstR)) {
-        this->drawBitmapRect(draw, bitmap, &srcR, dstR, paint, SkCanvas::kNone_DrawBitmapRectFlag);
+        this->drawBitmapRect(draw, bitmap, &srcR, dstR, paint, SkCanvas::kStrict_SrcRectConstraint);
     }
 }
 
@@ -197,8 +198,14 @@ void SkBaseDevice::drawAtlas(const SkDraw& draw, const SkImage* atlas, const SkR
         localM.preTranslate(-tex[i].left(), -tex[i].top());
 
         SkPaint pnt(paint);
-        pnt.setShader(atlas->newShader(SkShader::kClamp_TileMode, SkShader::kClamp_TileMode,
-                                       &localM))->unref();
+        SkAutoTUnref<SkShader> shader(atlas->newShader(SkShader::kClamp_TileMode,
+                                                       SkShader::kClamp_TileMode,
+                                                       &localM));
+        if (!shader) {
+            break;
+        }
+        pnt.setShader(shader);
+
         if (colors && colors[i] != SK_ColorWHITE) {
             SkAutoTUnref<SkColorFilter> cf(SkColorFilter::CreateModeFilter(colors[i], mode));
             pnt.setColorFilter(cf);

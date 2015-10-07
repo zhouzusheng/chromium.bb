@@ -37,7 +37,7 @@
 #include "base/trace_event/trace_event.h"
 #include "base/tracked_objects.h"
 #include "cc/base/switches.h"
-#include "components/scheduler/common/scheduler_switches.h"
+#include "components/tracing/tracing_switches.h"
 #include "content/browser/appcache/appcache_dispatcher_host.h"
 #include "content/browser/appcache/chrome_appcache_service.h"
 #include "content/browser/background_sync/background_sync_service_impl.h"
@@ -122,6 +122,7 @@
 #include "content/common/mojo/channel_init.h"
 #include "content/common/mojo/mojo_messages.h"
 #include "content/common/resource_messages.h"
+#include "content/common/site_isolation_policy.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/content_browser_client.h"
@@ -187,6 +188,10 @@
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
 #include "content/browser/browser_io_surface_manager_mac.h"
+#endif
+
+#if defined(USE_OZONE)
+#include "ui/ozone/public/ozone_switches.h"
 #endif
 
 #if defined(ENABLE_BROWSER_CDMS)
@@ -398,6 +403,16 @@ class SessionStorageHolder : public base::SupportsUserData::Data {
       session_storage_namespaces_awaiting_close_;
   DISALLOW_COPY_AND_ASSIGN(SessionStorageHolder);
 };
+
+std::string UintVectorToString(const std::vector<unsigned>& vector) {
+  std::string str;
+  for (auto it : vector) {
+    if (!str.empty())
+      str += ",";
+    str += base::UintToString(it);
+  }
+  return str;
+}
 
 }  // namespace
 
@@ -932,7 +947,7 @@ void RenderProcessHostImpl::CreateMessageFilters() {
   AddFilter(new GeofencingDispatcherHost(
       storage_partition_impl_->GetGeofencingManager()));
   if (browser_command_line.HasSwitch(switches::kEnableWebBluetooth)) {
-    bluetooth_dispatcher_host_ = new BluetoothDispatcherHost();
+    bluetooth_dispatcher_host_ = new BluetoothDispatcherHost(GetID());
     AddFilter(bluetooth_dispatcher_host_.get());
   }
 }
@@ -941,15 +956,17 @@ void RenderProcessHostImpl::RegisterMojoServices() {
   mojo_application_host_->service_registry()->AddService(
       base::Bind(&device::BatteryMonitorImpl::Create));
 
+#if !defined(OS_ANDROID)
   mojo_application_host_->service_registry()->AddService(
       base::Bind(&device::VibrationManagerImpl::Create));
+#endif
 
   mojo_application_host_->service_registry()->AddService(
       base::Bind(&PermissionServiceContext::CreateService,
                  base::Unretained(permission_service_context_.get())));
 
   mojo_application_host_->service_registry()->AddService(base::Bind(
-      &content::BackgroundSyncServiceImpl::Create,
+      &BackgroundSyncContextImpl::CreateService,
       base::Unretained(storage_partition_impl_->GetBackgroundSyncContext())));
 
   mojo_application_host_->service_registry()->AddService(base::Bind(
@@ -962,7 +979,7 @@ void RenderProcessHostImpl::RegisterMojoServices() {
       mojo_application_host_->service_registry_android());
 #endif
 
-  GetContentClient()->browser()->OverrideRenderProcessMojoServices(
+  GetContentClient()->browser()->RegisterRenderProcessMojoServices(
       mojo_application_host_->service_registry());
 }
 
@@ -1121,7 +1138,7 @@ static void AppendCompositorCommandLineFlags(base::CommandLine* command_line) {
     command_line->AppendSwitch(switches::kEnableGpuRasterization);
 
   int msaa_sample_count = GpuRasterizationMSAASampleCount();
-  if (msaa_sample_count > 0) {
+  if (msaa_sample_count >= 0) {
     command_line->AppendSwitchASCII(
         switches::kGpuRasterizationMSAASampleCount,
         base::IntToString(msaa_sample_count));
@@ -1133,30 +1150,30 @@ static void AppendCompositorCommandLineFlags(base::CommandLine* command_line) {
     command_line->AppendSwitch(switches::kEnableZeroCopy);
   if (!IsOneCopyUploadEnabled())
     command_line->AppendSwitch(switches::kDisableOneCopy);
+  if (IsPersistentGpuMemoryBufferEnabled())
+    command_line->AppendSwitch(switches::kEnablePersistentGpuMemoryBuffer);
 
   if (IsForceGpuRasterizationEnabled())
     command_line->AppendSwitch(switches::kForceGpuRasterization);
 
-  command_line->AppendSwitchASCII(
-      switches::kContentImageTextureTarget,
-      base::UintToString(
-          // TODO(reveman): We currently assume that the compositor will use
-          // BGRA_8888 if it's able to, and RGBA_8888 otherwise. Since we don't
-          // know what it will use we hardcode BGRA_8888 here for now. We should
-          // instead move decisions about GpuMemoryBuffer format to the browser
-          // embedder so we know it here, and pass that decision to the
-          // compositor for each usage.
-          // crbug.com/490362
-          BrowserGpuMemoryBufferManager::GetImageTextureTarget(
-              gfx::GpuMemoryBuffer::BGRA_8888,
-              // TODO(danakj): When one-copy supports partial update, change
-              // this usage to PERSISTENT_MAP for one-copy.
-              gfx::GpuMemoryBuffer::MAP)));
+  gfx::BufferUsage buffer_usage = IsPersistentGpuMemoryBufferEnabled()
+                                      ? gfx::BufferUsage::PERSISTENT_MAP
+                                      : gfx::BufferUsage::MAP;
+  std::vector<unsigned> image_targets(
+      static_cast<size_t>(gfx::BufferFormat::LAST) + 1, GL_TEXTURE_2D);
+  for (size_t format = 0;
+       format < static_cast<size_t>(gfx::BufferFormat::LAST) + 1; format++) {
+    image_targets[format] =
+        BrowserGpuMemoryBufferManager::GetImageTextureTarget(
+            static_cast<gfx::BufferFormat>(format), buffer_usage);
+  }
+  command_line->AppendSwitchASCII(switches::kContentImageTextureTarget,
+                                  UintVectorToString(image_targets));
 
   command_line->AppendSwitchASCII(
       switches::kVideoImageTextureTarget,
       base::UintToString(BrowserGpuMemoryBufferManager::GetImageTextureTarget(
-          gfx::GpuMemoryBuffer::R_8, gfx::GpuMemoryBuffer::MAP)));
+          gfx::BufferFormat::R_8, gfx::BufferUsage::MAP)));
 
   // Appending disable-gpu-feature switches due to software rendering list.
   GpuDataManagerImpl* gpu_data_manager = GpuDataManagerImpl::GetInstance();
@@ -1230,6 +1247,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableEncryptedMedia,
     switches::kDisableFileSystem,
     switches::kDisableGpuCompositing,
+    switches::kDisableGpuMemoryBufferVideoFrames,
     switches::kDisableGpuVsync,
     switches::kDisableLowResTiling,
     switches::kDisableHistogramCustomizer,
@@ -1243,8 +1261,10 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableNotifications,
     switches::kDisableOverlayScrollbar,
     switches::kDisablePermissionsAPI,
+    switches::kDisablePresentationAPI,
     switches::kDisablePinch,
     switches::kDisablePrefixedEncryptedMedia,
+    switches::kDisableRGBA4444Textures,
     switches::kDisableSeccompFilterSandbox,
     switches::kDisableSharedWorkers,
     switches::kDisableSlimmingPaint,
@@ -1269,6 +1289,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnableExperimentalWebPlatformFeatures,
     switches::kEnableGPUClientLogging,
     switches::kEnableGpuClientTracing,
+    switches::kEnableGpuMemoryBufferVideoFrames,
     switches::kEnableGPUServiceLogging,
     switches::kEnableIconNtp,
     switches::kEnableLinkDisambiguationPopup,
@@ -1285,12 +1306,14 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kEnablePreciseMemoryInfo,
     switches::kEnablePreferCompositingToLCDText,
     switches::kEnablePushMessagePayload,
+    switches::kEnableRGBA4444Textures,
     switches::kEnableRendererMojoChannel,
+    switches::kEnableRTCSmoothnessAlgorithm,
     switches::kEnableSeccompFilterSandbox,
     switches::kEnableSkiaBenchmarking,
     switches::kEnableSlimmingPaint,
+    switches::kEnableSlimmingPaintV2,
     switches::kEnableSmoothScrolling,
-    switches::kEnableStaleWhileRevalidate,
     switches::kEnableStatsTable,
     switches::kEnableThreadedCompositing,
     switches::kEnableTouchDragDrop,
@@ -1307,6 +1330,7 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kExplicitlyAllowedPorts,
     switches::kForceDeviceScaleFactor,
     switches::kForceDisplayList2dCanvas,
+    switches::kForceOverlayFullscreenVideo,
     switches::kFullMemoryCrashReport,
     switches::kIPCConnectionTimeout,
     switches::kJavaScriptFlags,
@@ -1350,7 +1374,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     cc::switches::kEnableBeginFrameScheduling,
     cc::switches::kEnableGpuBenchmarking,
     cc::switches::kEnableMainFrameBeforeActivation,
-    cc::switches::kMaxTilesForInterestArea,
     cc::switches::kMaxUnusedResourceMemoryUsagePercentage,
     cc::switches::kShowCompositedLayerBorders,
     cc::switches::kShowFPSCounter,
@@ -1363,8 +1386,6 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     cc::switches::kStrictLayerPropertyChangeChecking,
     cc::switches::kTopControlsHideThreshold,
     cc::switches::kTopControlsShowThreshold,
-
-    scheduler::switches::kDisableBlinkScheduler,
 
 #if defined(ENABLE_PLUGINS)
     switches::kEnablePepperTesting,
@@ -1393,6 +1414,9 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
     switches::kDisableDirectWrite,
     switches::kDisableWin32kRendererLockDown,
     switches::kTraceExportEventsToETW,
+#endif
+#if defined(USE_OZONE)
+    switches::kOzonePlatform,
 #endif
 #if defined(OS_CHROMEOS)
     switches::kDisableVaapiAcceleratedVideoEncode,
@@ -1892,12 +1916,13 @@ bool RenderProcessHostImpl::IsSuitableHost(
 
   // Check whether the given host and the intended site_url will be using the
   // same StoragePartition, since a RenderProcessHost can only support a single
-  // StoragePartition.  This is relevant for packaged apps and isolated sites.
+  // StoragePartition.  This is relevant for packaged apps.
   StoragePartition* dest_partition =
       BrowserContext::GetStoragePartitionForSite(browser_context, site_url);
   if (!host->InSameStoragePartition(dest_partition))
     return false;
 
+  // TODO(nick): Consult the SiteIsolationPolicy here. https://crbug.com/513036
   if (ChildProcessSecurityPolicyImpl::GetInstance()->HasWebUIBindings(
           host->GetID()) !=
       WebUIControllerFactoryRegistry::GetInstance()->UseWebUIBindingsForURL(
@@ -1949,13 +1974,12 @@ RenderProcessHost* RenderProcessHost::FromID(int render_process_id) {
 bool RenderProcessHost::ShouldTryToUseExistingProcessHost(
     BrowserContext* browser_context, const GURL& url) {
   // If --site-per-process is enabled, do not try to reuse renderer processes
-  // when over the limit.  (We could allow pages from the same site to share, if
-  // we knew what the given process was dedicated to.  Allowing no sharing is
-  // simpler for now.)  This may cause resource exhaustion issues if too many
-  // sites are open at once.
-  const base::CommandLine& command_line =
-      *base::CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kSitePerProcess))
+  // when over the limit.
+  // TODO(nick): This is overly conservative and isn't launchable. Move this
+  // logic into IsSuitableHost, and check |url| against the URL the process is
+  // dedicated to. This will allow pages from the same site to share, and will
+  // also allow non-isolated sites to share processes. https://crbug.com/513036
+  if (SiteIsolationPolicy::AreCrossProcessFramesPossible())
     return false;
 
   if (run_renderer_in_process())
@@ -2222,10 +2246,8 @@ void RenderProcessHostImpl::OnShutdownRequest() {
 
   // Notify any contents that might have swapped out renderers from this
   // process. They should not attempt to swap them back in.
-  NotificationService::current()->Notify(
-      NOTIFICATION_RENDERER_PROCESS_CLOSING,
-      Source<RenderProcessHost>(this),
-      NotificationService::NoDetails());
+  FOR_EACH_OBSERVER(RenderProcessHostObserver, observers_,
+                    RenderProcessWillExit(this));
 
   mojo_application_host_->WillDestroySoon();
 

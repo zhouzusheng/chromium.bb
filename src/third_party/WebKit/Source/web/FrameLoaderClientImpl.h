@@ -93,13 +93,12 @@ public:
     void dispatchDidCommitLoad(HistoryItem*, HistoryCommitType) override;
     void dispatchDidFailProvisionalLoad(const ResourceError&, HistoryCommitType) override;
     void dispatchDidFailLoad(const ResourceError&, HistoryCommitType) override;
-    void dispatchDidFinishDocumentLoad() override;
+    void dispatchDidFinishDocumentLoad(bool documentIsEmpty) override;
     void dispatchDidFinishLoad() override;
     void dispatchDidFirstVisuallyNonEmptyLayout() override;
 
     void dispatchDidChangeThemeColor() override;
     NavigationPolicy decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationPolicy) override;
-    void dispatchWillRequestResource(FetchRequest*) override;
     void dispatchWillSendSubmitEvent(HTMLFormElement*) override;
     void dispatchWillSubmitForm(HTMLFormElement*) override;
     void didStartLoading(LoadStartType) override;
@@ -112,6 +111,7 @@ public:
     void didRunInsecureContent(SecurityOrigin*, const KURL& insecureURL) override;
     void didDetectXSS(const KURL&, bool didBlockEntirePage) override;
     void didDispatchPingLoader(const KURL&) override;
+    void didChangePerformanceTiming() override;
     void selectorMatchChanged(const Vector<String>& addedSelectors, const Vector<String>& removedSelectors) override;
     PassRefPtrWillBeRawPtr<DocumentLoader> createDocumentLoader(LocalFrame*, const ResourceRequest&, const SubstituteData&) override;
     WTF::String userAgent(const KURL&) override;
@@ -132,6 +132,7 @@ public:
         const KURL& /* base_url */,
         const Vector<WTF::String>& paramNames,
         const Vector<WTF::String>& paramValues) override;
+    PassOwnPtr<WebMediaPlayer> createWebMediaPlayer(HTMLMediaElement&, const WebURL&, WebMediaPlayerClient*) override;
     ObjectContentType objectContentType(
         const KURL&, const WTF::String& mimeType, bool shouldPreferPlugInsForImages) override;
     void didChangeScrollOffset() override;
@@ -175,8 +176,6 @@ public:
     void didStopAllLoaders() override;
 
     void dispatchDidChangeManifest() override;
-
-    void dispatchDidChangeDefaultPresentation() override;
 
     unsigned backForwardLength() override;
 

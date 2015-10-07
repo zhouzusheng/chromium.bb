@@ -33,12 +33,12 @@
 #include "core/layout/TextRunConstructor.h"
 #include "core/layout/VerticalPositionCache.h"
 #include "core/layout/api/LineLayoutItem.h"
+#include "core/layout/api/SelectionState.h"
 #include "core/layout/line/BreakingContextInlineHeaders.h"
 #include "core/layout/line/GlyphOverflow.h"
 #include "core/layout/line/LayoutTextInfo.h"
 #include "core/layout/line/LineLayoutState.h"
 #include "core/layout/line/LineWidth.h"
-#include "core/layout/line/TrailingFloatsRootInlineBox.h"
 #include "core/layout/line/WordMeasurement.h"
 #include "core/layout/svg/line/SVGRootInlineBox.h"
 #include "platform/fonts/Character.h"
@@ -220,7 +220,7 @@ RootInlineBox* LayoutBlockFlow::constructLine(BidiRunList<BidiRun>& bidiRuns, co
         if (!box)
             continue;
 
-        if (!rootHasSelectedChildren && box->layoutObject().selectionState() != LayoutObject::SelectionNone)
+        if (!rootHasSelectedChildren && box->layoutObject().selectionState() != SelectionNone)
             rootHasSelectedChildren = true;
 
         // If we have no parent box yet, or if the run is not simply a sibling,
@@ -479,6 +479,7 @@ static inline void computeExpansionForJustifiedText(BidiRun* firstRun, BidiRun* 
             // Don't justify for white-space: pre.
             if (r->m_object->style()->whiteSpace() != PRE) {
                 InlineTextBox* textBox = toInlineTextBox(r->m_box);
+                RELEASE_ASSERT(expansionOpportunityCount);
                 int expansion = (availableLogicalWidth - totalLogicalWidth) * opportunitiesInRun / expansionOpportunityCount;
                 textBox->setExpansion(expansion);
                 totalLogicalWidth += expansion;
@@ -816,7 +817,6 @@ void LayoutBlockFlow::layoutRunsAndFloatsInRange(LineLayoutState& layoutState,
             // Once BidiRunList is separated from BidiResolver this will not be needed.
             resolver.runs().deleteRuns();
             resolver.markCurrentRunEmpty(); // FIXME: This can probably be replaced by an ASSERT (or just removed).
-            layoutState.setCheckForFloatsFromLastLine(true);
             resolver.setPosition(InlineIterator(resolver.position().root(), 0, 0), 0);
             break;
         }
@@ -882,7 +882,7 @@ void LayoutBlockFlow::layoutRunsAndFloatsInRange(LineLayoutState& layoutState,
 
         if (!logicalWidthIsAvailable) {
             for (size_t i = 0; i < lineBreaker.positionedObjects().size(); ++i)
-                setStaticPositions(LineLayoutBlockFlow(this), lineBreaker.positionedObjects()[i]);
+                setStaticPositions(LineLayoutBlockFlow(this), LineLayoutBox(lineBreaker.positionedObjects()[i]));
 
             if (!layoutState.lineInfo().isEmpty())
                 layoutState.lineInfo().setFirstLine(false);
@@ -1012,7 +1012,7 @@ void LayoutBlockFlow::linkToEndLineIfNeeded(LineLayoutState& layoutState)
         }
     }
 
-    if (m_floatingObjects && (layoutState.checkForFloatsFromLastLine() || positionNewFloats()) && lastRootBox()) {
+    if (positionNewFloats() && lastRootBox()) {
         // In case we have a float on the last line, it might not be positioned up to now.
         // This has to be done before adding in the bottom border/padding, or the float will
         // include the padding incorrectly. -dwh
@@ -1030,22 +1030,6 @@ void LayoutBlockFlow::linkToEndLineIfNeeded(LineLayoutState& layoutState)
         if (it == end)
             return;
 
-        if (layoutState.checkForFloatsFromLastLine()) {
-            LayoutUnit bottomVisualOverflow = lastRootBox()->logicalBottomVisualOverflow();
-            LayoutUnit bottomLayoutOverflow = lastRootBox()->logicalBottomLayoutOverflow();
-            TrailingFloatsRootInlineBox* trailingFloatsLineBox = new TrailingFloatsRootInlineBox(*this);
-            m_lineBoxes.appendLineBox(trailingFloatsLineBox);
-            trailingFloatsLineBox->setConstructed();
-            GlyphOverflowAndFallbackFontsMap textBoxDataMap;
-            VerticalPositionCache verticalPositionCache;
-            LayoutUnit blockLogicalHeight = logicalHeight();
-            trailingFloatsLineBox->alignBoxesInBlockDirection(blockLogicalHeight, textBoxDataMap, verticalPositionCache);
-            trailingFloatsLineBox->setLineTopBottomPositions(blockLogicalHeight, blockLogicalHeight, blockLogicalHeight, blockLogicalHeight);
-            LayoutRect logicalLayoutOverflow(0, blockLogicalHeight, 1, bottomLayoutOverflow - blockLogicalHeight);
-            LayoutRect logicalVisualOverflow(0, blockLogicalHeight, 1, bottomVisualOverflow - blockLogicalHeight);
-            trailingFloatsLineBox->setOverflowFromLogicalRects(logicalLayoutOverflow, logicalVisualOverflow, trailingFloatsLineBox->lineTop(), trailingFloatsLineBox->lineBottom());
-        }
-
         for (; it != end; ++it)
             appendFloatingObjectToLastLine(*it->get());
     }
@@ -1058,12 +1042,14 @@ void LayoutBlockFlow::markDirtyFloatsForPaintInvalidation(Vector<FloatWithRect>&
     // painted by now if they had moved, but if they stayed at (0, 0), they still need to be
     // painted.
     for (size_t i = 0; i < floatCount; ++i) {
+        LayoutBox* f = floats[i].object;
         if (!floats[i].everHadLayout) {
-            LayoutBox* f = floats[i].object;
             if (!f->location().x() && !f->location().y())
                 f->setShouldDoFullPaintInvalidation();
         }
+        insertFloatingObject(*f);
     }
+    positionNewFloats();
 }
 
 struct InlineMinMaxIterator {
@@ -1172,7 +1158,7 @@ static inline void stripTrailingSpace(LayoutUnit& inlineMax, LayoutUnit& inlineM
 
         // FIXME: This ignores first-line.
         const Font& font = text->style()->font();
-        TextRun run = constructTextRun(text, font, &trailingWhitespaceChar, 1,
+        TextRun run = constructTextRun(font, &trailingWhitespaceChar, 1,
             text->styleRef(), text->style()->direction());
         run.setCodePath(text->canUseSimpleFontCodePath()
             ? TextRun::ForceSimple
@@ -1191,6 +1177,33 @@ static inline void stripTrailingSpace(LayoutUnit& inlineMax, LayoutUnit& inlineM
 static inline LayoutUnit adjustFloatForSubPixelLayout(float value)
 {
     return LayoutUnit::fromFloatCeil(value);
+}
+
+static inline void adjustMinMaxForInlineFlow(LayoutObject* child,
+    bool endOfInline, LayoutUnit& childMin, LayoutUnit& childMax)
+{
+    // Add in padding/border/margin from the appropriate side of
+    // the element.
+    LayoutUnit bpm = getBorderPaddingMargin(toLayoutInline(*child),
+        endOfInline);
+    childMin += bpm;
+    childMax += bpm;
+}
+
+static inline void adjustMarginForInlineReplaced(LayoutObject* child,
+    LayoutUnit& childMin, LayoutUnit& childMax)
+{
+    // Inline replaced elts add in their margins to their min/max values.
+    const ComputedStyle& childStyle = child->styleRef();
+    Length startMargin = childStyle.marginStart();
+    Length endMargin = childStyle.marginEnd();
+    LayoutUnit margins;
+    if (startMargin.isFixed())
+        margins += adjustFloatForSubPixelLayout(startMargin.value());
+    if (endMargin.isFixed())
+        margins += adjustFloatForSubPixelLayout(endMargin.value());
+    childMin += margins;
+    childMax += margins;
 }
 
 // FIXME: This function should be broken into something less monolithic.
@@ -1275,27 +1288,13 @@ void LayoutBlockFlow::computeInlinePreferredLogicalWidths(LayoutUnit& minLogical
             if (!child->isText()) {
                 // Case (1) and (2). Inline replaced and inline flow elements.
                 if (child->isLayoutInline()) {
-                    // Add in padding/border/margin from the appropriate side of
-                    // the element.
-                    LayoutUnit bpm = getBorderPaddingMargin(toLayoutInline(*child), childIterator.endOfInline);
-                    childMin += bpm;
-                    childMax += bpm;
-
+                    adjustMinMaxForInlineFlow(child, childIterator.endOfInline,
+                        childMin, childMax);
                     inlineMin += childMin;
                     inlineMax += childMax;
-
                     child->clearPreferredLogicalWidthsDirty();
                 } else {
-                    // Inline replaced elts add in their margins to their min/max values.
-                    LayoutUnit margins;
-                    Length startMargin = childStyle.marginStart();
-                    Length endMargin = childStyle.marginEnd();
-                    if (startMargin.isFixed())
-                        margins += adjustFloatForSubPixelLayout(startMargin.value());
-                    if (endMargin.isFixed())
-                        margins += adjustFloatForSubPixelLayout(endMargin.value());
-                    childMin += margins;
-                    childMax += margins;
+                    adjustMarginForInlineReplaced(child, childMin, childMax);
                 }
             }
 
@@ -1304,15 +1303,7 @@ void LayoutBlockFlow::computeInlinePreferredLogicalWidths(LayoutUnit& minLogical
                 // Go ahead and terminate the current line as far as
                 // minwidth is concerned.
                 LayoutUnit childMinPreferredLogicalWidth, childMaxPreferredLogicalWidth;
-                if (child->isBox() && child->isHorizontalWritingMode() != isHorizontalWritingMode()) {
-                    LayoutBox* childBox = toLayoutBox(child);
-                    LogicalExtentComputedValues computedValues;
-                    childBox->computeLogicalHeight(childBox->borderAndPaddingLogicalHeight(), 0, computedValues);
-                    childMinPreferredLogicalWidth = childMaxPreferredLogicalWidth = computedValues.m_extent;
-                } else {
-                    childMinPreferredLogicalWidth = child->minPreferredLogicalWidth();
-                    childMaxPreferredLogicalWidth = child->maxPreferredLogicalWidth();
-                }
+                computeChildPreferredLogicalWidths(*child, childMinPreferredLogicalWidth, childMaxPreferredLogicalWidth);
                 childMin += childMinPreferredLogicalWidth;
                 childMax += childMaxPreferredLogicalWidth;
 
@@ -1556,6 +1547,10 @@ void LayoutBlockFlow::layoutInlineChildren(bool relayoutChildren, LayoutUnit& pa
                     o->containingBlock()->insertPositionedObject(box);
                 } else if (o->isFloating()) {
                     layoutState.floats().append(FloatWithRect(box));
+                    if (box->needsLayout()) {
+                        box->layout();
+                        markLinesDirtyInBlockRange(toLayoutBox(o)->logicalTop(), toLayoutBox(o)->logicalBottom());
+                    }
                 } else if (isFullLayout || o->needsLayout()) {
                     // Replaced element.
                     box->dirtyLineBoxes(isFullLayout);
@@ -1605,35 +1600,6 @@ void LayoutBlockFlow::layoutInlineChildren(bool relayoutChildren, LayoutUnit& pa
         setShouldDoFullPaintInvalidation();
 }
 
-void LayoutBlockFlow::checkFloatsInCleanLine(RootInlineBox* line, Vector<FloatWithRect>& floats, size_t& floatIndex, bool& encounteredNewFloat, bool& dirtiedByFloat)
-{
-    Vector<LayoutBox*>* cleanLineFloats = line->floatsPtr();
-    if (!cleanLineFloats)
-        return;
-
-    for (auto* floatingBox : *cleanLineFloats) {
-        floatingBox->layoutIfNeeded();
-        LayoutSize newSize = floatingBox->size() +
-            LayoutSize(floatingBox->marginWidth(), floatingBox->marginHeight());
-        if (floats[floatIndex].object != floatingBox) {
-            encounteredNewFloat = true;
-            return;
-        }
-
-        if (floats[floatIndex].rect.size() != newSize) {
-            LayoutUnit floatTop = isHorizontalWritingMode() ? floats[floatIndex].rect.y() : floats[floatIndex].rect.x();
-            LayoutUnit floatHeight = isHorizontalWritingMode() ? std::max(floats[floatIndex].rect.height(), newSize.height())
-                : std::max(floats[floatIndex].rect.width(), newSize.width());
-            floatHeight = std::min(floatHeight, LayoutUnit::max() - floatTop);
-            line->markDirty();
-            markLinesDirtyInBlockRange(line->lineBottomWithLeading(), floatTop + floatHeight, line);
-            floats[floatIndex].rect.setSize(newSize);
-            dirtiedByFloat = true;
-        }
-        floatIndex++;
-    }
-}
-
 RootInlineBox* LayoutBlockFlow::determineStartPosition(LineLayoutState& layoutState, InlineBidiResolver& resolver)
 {
     RootInlineBox* curr = nullptr;
@@ -1641,12 +1607,10 @@ RootInlineBox* LayoutBlockFlow::determineStartPosition(LineLayoutState& layoutSt
     RootInlineBox* firstLineBoxWithBreakAndClearance = 0;
 
     // FIXME: This entire float-checking block needs to be broken into a new function.
-    bool dirtiedByFloat = false;
     if (!layoutState.isFullLayout()) {
         // Paginate all of the clean lines.
         bool paginated = view()->layoutState() && view()->layoutState()->isPaginated();
         LayoutUnit paginationDelta = 0;
-        size_t floatIndex = 0;
         for (curr = firstRootBox(); curr && !curr->isDirty(); curr = curr->nextRootBox()) {
             if (paginated) {
                 paginationDelta -= curr->paginationStrut();
@@ -1667,18 +1631,9 @@ RootInlineBox* LayoutBlockFlow::determineStartPosition(LineLayoutState& layoutSt
             if (!firstLineBoxWithBreakAndClearance && lineBoxHasBRWithClearance(curr))
                 firstLineBoxWithBreakAndClearance = curr;
 
-            // If a new float has been inserted before this line or before its last known float, just do a full layout.
-            bool encounteredNewFloat = false;
-            checkFloatsInCleanLine(curr, layoutState.floats(), floatIndex, encounteredNewFloat, dirtiedByFloat);
-            if (encounteredNewFloat)
-                layoutState.markForFullLayout();
-
-            if (dirtiedByFloat || layoutState.isFullLayout())
+            if (layoutState.isFullLayout())
                 break;
         }
-        // Check if a new float has been inserted after the last known float.
-        if (!curr && floatIndex < layoutState.floats().size())
-            layoutState.markForFullLayout();
     }
 
     if (layoutState.isFullLayout()) {
@@ -1698,7 +1653,7 @@ RootInlineBox* LayoutBlockFlow::determineStartPosition(LineLayoutState& layoutSt
             // We have a dirty line.
             if (RootInlineBox* prevRootBox = curr->prevRootBox()) {
                 // We have a previous line.
-                if (!dirtiedByFloat && (!prevRootBox->endsWithBreak() || !prevRootBox->lineBreakObj() || (prevRootBox->lineBreakObj()->isText() && prevRootBox->lineBreakPos() >= toLayoutText(prevRootBox->lineBreakObj())->textLength()))) {
+                if (!prevRootBox->endsWithBreak() || !prevRootBox->lineBreakObj() || (prevRootBox->lineBreakObj().isText() && prevRootBox->lineBreakPos() >= toLayoutText(prevRootBox->lineBreakObj())->textLength())) {
                     // The previous line didn't break cleanly or broke at a newline
                     // that has been deleted, so treat it as dirty too.
                     curr = prevRootBox;
@@ -1770,18 +1725,11 @@ bool LayoutBlockFlow::lineBoxHasBRWithClearance(RootInlineBox* curr)
 void LayoutBlockFlow::determineEndPosition(LineLayoutState& layoutState, RootInlineBox* startLine, InlineIterator& cleanLineStart, BidiStatus& cleanLineBidiStatus)
 {
     ASSERT(!layoutState.endLine());
-    size_t floatIndex = layoutState.floatIndex();
     RootInlineBox* last = nullptr;
     for (RootInlineBox* curr = startLine->nextRootBox(); curr; curr = curr->nextRootBox()) {
-        if (!curr->isDirty()) {
-            bool encounteredNewFloat = false;
-            bool dirtiedByFloat = false;
-            checkFloatsInCleanLine(curr, layoutState.floats(), floatIndex, encounteredNewFloat, dirtiedByFloat);
-            if (encounteredNewFloat)
-                return;
-            if (lineBoxHasBRWithClearance(curr))
-                return;
-        }
+        if (!curr->isDirty() && lineBoxHasBRWithClearance(curr))
+            return;
+
         if (curr->isDirty())
             last = nullptr;
         else if (!last)
@@ -1954,10 +1902,10 @@ void LayoutBlockFlow::checkLinesForTextOverflow()
     // Full Stops (002E) can be used.
     ASSERT(firstLineFont.primaryFont());
     if (firstLineFont.primaryFont()->glyphForCharacter(horizontalEllipsisCharacter)) {
-        firstLineEllipsisWidth = firstLineFont.width(constructTextRun(this, firstLineFont, &horizontalEllipsisCharacter, 1, *firstLineStyle(), ellipsisDirection));
+        firstLineEllipsisWidth = firstLineFont.width(constructTextRun(firstLineFont, &horizontalEllipsisCharacter, 1, *firstLineStyle(), ellipsisDirection));
     } else {
         selectedEllipsisStr = fullstopCharacterStr;
-        firstLineEllipsisWidth = firstLineFont.width(constructTextRun(this, firstLineFont, fullStopString, fullStopStringLength, *firstLineStyle(), ellipsisDirection));
+        firstLineEllipsisWidth = firstLineFont.width(constructTextRun(firstLineFont, fullStopString, fullStopStringLength, *firstLineStyle(), ellipsisDirection));
     }
     ellipsisWidth = (font == firstLineFont) ? firstLineEllipsisWidth : 0;
 
@@ -1965,10 +1913,10 @@ void LayoutBlockFlow::checkLinesForTextOverflow()
         ASSERT(font.primaryFont());
         if (font.primaryFont()->glyphForCharacter(horizontalEllipsisCharacter)) {
             selectedEllipsisStr = ellipsisStr;
-            ellipsisWidth = font.width(constructTextRun(this, font, &horizontalEllipsisCharacter, 1, styleRef(), ellipsisDirection));
+            ellipsisWidth = font.width(constructTextRun(font, &horizontalEllipsisCharacter, 1, styleRef(), ellipsisDirection));
         } else {
             selectedEllipsisStr = fullstopCharacterStr;
-            ellipsisWidth = font.width(constructTextRun(this, font, fullStopString, fullStopStringLength, styleRef(), ellipsisDirection));
+            ellipsisWidth = font.width(constructTextRun(font, fullStopString, fullStopStringLength, styleRef(), ellipsisDirection));
         }
     }
 

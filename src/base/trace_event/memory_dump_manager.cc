@@ -9,7 +9,6 @@
 #include "base/atomic_sequence_num.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
-#include "base/hash.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/trace_event/memory_dump_provider.h"
 #include "base/trace_event/memory_dump_session_state.h"
@@ -44,7 +43,7 @@ namespace {
 const char kTraceCategory[] = TRACE_DISABLED_BY_DEFAULT("memory-infra");
 
 // Throttle mmaps at a rate of once every kHeavyMmapsDumpsRate standard dumps.
-const int kHeavyMmapsDumpsRate = 8;  // 250 ms * 8 = 2000 ms.
+const int kHeavyDumpsRate = 8;  // 250 ms * 8 = 2000 ms.
 const int kDumpIntervalMs = 250;
 const int kTraceEventNumArgs = 1;
 const char* kTraceEventArgNames[] = {"dumps"};
@@ -53,16 +52,17 @@ const unsigned char kTraceEventArgTypes[] = {TRACE_VALUE_TYPE_CONVERTABLE};
 StaticAtomicSequenceNumber g_next_guid;
 uint32 g_periodic_dumps_count = 0;
 MemoryDumpManager* g_instance_for_testing = nullptr;
-MemoryDumpProvider* g_mmaps_dump_provider = nullptr;
 
 void RequestPeriodicGlobalDump() {
-  MemoryDumpType dump_type = g_periodic_dumps_count == 0
-                                 ? MemoryDumpType::PERIODIC_INTERVAL_WITH_MMAPS
-                                 : MemoryDumpType::PERIODIC_INTERVAL;
-  if (++g_periodic_dumps_count == kHeavyMmapsDumpsRate)
+  MemoryDumpArgs::LevelOfDetail dump_level_of_detail =
+      g_periodic_dumps_count == 0 ? MemoryDumpArgs::LevelOfDetail::HIGH
+                                  : MemoryDumpArgs::LevelOfDetail::LOW;
+  if (++g_periodic_dumps_count == kHeavyDumpsRate)
     g_periodic_dumps_count = 0;
 
-  MemoryDumpManager::GetInstance()->RequestGlobalDump(dump_type);
+  MemoryDumpArgs dump_args = {dump_level_of_detail};
+  MemoryDumpManager::GetInstance()->RequestGlobalDump(
+      MemoryDumpType::PERIODIC_INTERVAL, dump_args);
 }
 
 }  // namespace
@@ -71,10 +71,10 @@ void RequestPeriodicGlobalDump() {
 const char* const MemoryDumpManager::kTraceCategoryForTesting = kTraceCategory;
 
 // static
-const uint64 MemoryDumpManager::kInvalidTracingProcessId = 0;
+const int MemoryDumpManager::kMaxConsecutiveFailuresCount = 3;
 
 // static
-const int MemoryDumpManager::kMaxConsecutiveFailuresCount = 3;
+const uint64 MemoryDumpManager::kInvalidTracingProcessId = 0;
 
 // static
 MemoryDumpManager* MemoryDumpManager::GetInstance() {
@@ -97,6 +97,7 @@ MemoryDumpManager::MemoryDumpManager()
       delegate_(nullptr),
       memory_tracing_enabled_(0),
       tracing_process_id_(kInvalidTracingProcessId),
+      system_allocator_pool_name_(nullptr),
       skip_core_dumpers_auto_registration_for_testing_(false) {
   g_next_guid.GetNext();  // Make sure that first guid is not zero.
 }
@@ -118,17 +119,16 @@ void MemoryDumpManager::Initialize() {
 #endif
 
 #if defined(OS_LINUX) || defined(OS_ANDROID)
-  g_mmaps_dump_provider = ProcessMemoryMapsDumpProvider::GetInstance();
-
   // The memory maps dump provider is currently disabled for security reasons
   // and will be enabled once tracing is more secure (crbug.com/517906).
   // It is still enabled for running benchmarks.
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           "enable-memory-benchmarking")) {
-    RegisterDumpProvider(g_mmaps_dump_provider);
+    RegisterDumpProvider(ProcessMemoryMapsDumpProvider::GetInstance());
   }
 
   RegisterDumpProvider(MallocDumpProvider::GetInstance());
+  system_allocator_pool_name_ = MallocDumpProvider::kAllocatedObjects;
 #endif
 
 #if defined(OS_ANDROID)
@@ -137,6 +137,7 @@ void MemoryDumpManager::Initialize() {
 
 #if defined(OS_WIN)
   RegisterDumpProvider(WinHeapDumpProvider::GetInstance());
+  system_allocator_pool_name_ = WinHeapDumpProvider::kAllocatedObjects;
 #endif
 }
 
@@ -186,12 +187,15 @@ void MemoryDumpManager::UnregisterDumpProvider(MemoryDumpProvider* mdp) {
   did_unregister_dump_provider_ = true;
 }
 
-void MemoryDumpManager::RequestGlobalDump(
-    MemoryDumpType dump_type,
-    const MemoryDumpCallback& callback) {
+void MemoryDumpManager::RequestGlobalDump(MemoryDumpType dump_type,
+                                          const MemoryDumpArgs& dump_args,
+                                          const MemoryDumpCallback& callback) {
   // Bail out immediately if tracing is not enabled at all.
-  if (!UNLIKELY(subtle::NoBarrier_Load(&memory_tracing_enabled_)))
+  if (!UNLIKELY(subtle::NoBarrier_Load(&memory_tracing_enabled_))) {
+    if (!callback.is_null())
+      callback.Run(0u /* guid */, false /* success */);
     return;
+  }
 
   const uint64 guid =
       TraceLog::GetInstance()->MangleEventId(g_next_guid.GetNext());
@@ -207,15 +211,16 @@ void MemoryDumpManager::RequestGlobalDump(
   if (delegate) {
     // The delegate is in charge to coordinate the request among all the
     // processes and call the CreateLocalDumpPoint on the local process.
-    MemoryDumpRequestArgs args = {guid, dump_type};
+    MemoryDumpRequestArgs args = {guid, dump_type, dump_args};
     delegate->RequestGlobalMemoryDump(args, callback);
   } else if (!callback.is_null()) {
     callback.Run(guid, false /* success */);
   }
 }
 
-void MemoryDumpManager::RequestGlobalDump(MemoryDumpType dump_type) {
-  RequestGlobalDump(dump_type, MemoryDumpCallback());
+void MemoryDumpManager::RequestGlobalDump(MemoryDumpType dump_type,
+                                          const MemoryDumpArgs& dump_args) {
+  RequestGlobalDump(dump_type, dump_args, MemoryDumpCallback());
 }
 
 void MemoryDumpManager::CreateProcessDump(const MemoryDumpRequestArgs& args,
@@ -276,13 +281,6 @@ void MemoryDumpManager::ContinueAsyncProcessDump(
     mdp = mdp_info->dump_provider;
     if (mdp_info->disabled) {
       skip_dump = true;
-    } else if (mdp == g_mmaps_dump_provider &&
-               pmd_async_state->req_args.dump_type !=
-                   MemoryDumpType::PERIODIC_INTERVAL_WITH_MMAPS) {
-      // Mmaps dumping is very heavyweight and cannot be performed at the same
-      // rate of other dumps. TODO(primiano): this is a hack and should be
-      // cleaned up as part of crbug.com/499731.
-      skip_dump = true;
     } else if (mdp_info->task_runner &&
                !mdp_info->task_runner->BelongsToCurrentThread()) {
       // It's time to hop onto another thread.
@@ -312,8 +310,11 @@ void MemoryDumpManager::ContinueAsyncProcessDump(
   // Invoke the dump provider without holding the |lock_|.
   bool finalize = false;
   bool dump_successful = false;
-  if (!skip_dump)
-    dump_successful = mdp->OnMemoryDump(&pmd_async_state->process_memory_dump);
+
+  if (!skip_dump) {
+    dump_successful = mdp->OnMemoryDump(pmd_async_state->req_args.dump_args,
+                                        &pmd_async_state->process_memory_dump);
+  }
 
   {
     AutoLock lock(lock_);
@@ -423,7 +424,12 @@ void MemoryDumpManager::OnTraceLogEnabled() {
 
   subtle::NoBarrier_Store(&memory_tracing_enabled_, 1);
 
-  if (delegate_->IsCoordinatorProcess()) {
+  // TODO(primiano): This is a temporary hack to disable periodic memory dumps
+  // when running memory benchmarks until they can be enabled/disabled in
+  // base::trace_event::TraceConfig. See https://goo.gl/5Hj3o0.
+  if (delegate_->IsCoordinatorProcess() &&
+      !CommandLine::ForCurrentProcess()->HasSwitch(
+          "enable-memory-benchmarking")) {
     g_periodic_dumps_count = 0;
     periodic_dump_timer_.Start(FROM_HERE,
                                TimeDelta::FromMilliseconds(kDumpIntervalMs),
@@ -438,13 +444,8 @@ void MemoryDumpManager::OnTraceLogDisabled() {
   session_state_ = nullptr;
 }
 
-// static
-uint64 MemoryDumpManager::ChildProcessIdToTracingProcessId(
-    int child_process_id) {
-  return static_cast<uint64>(
-             Hash(reinterpret_cast<const char*>(&child_process_id),
-                  sizeof(child_process_id))) +
-         1;
+uint64 MemoryDumpManager::GetTracingProcessId() const {
+  return delegate_->GetTracingProcessId();
 }
 
 MemoryDumpManager::MemoryDumpProviderInfo::MemoryDumpProviderInfo(

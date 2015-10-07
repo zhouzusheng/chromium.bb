@@ -59,6 +59,7 @@ const GrGLInterface* GrGLInterfaceRemoveNVPR(const GrGLInterface* interface) {
     newInterface->fFunctions.fStencilThenCoverFillPathInstanced = NULL;
     newInterface->fFunctions.fStencilThenCoverStrokePathInstanced = NULL;
     newInterface->fFunctions.fProgramPathFragmentInputGen = NULL;
+    newInterface->fFunctions.fBindFragmentInputLocation = NULL;
     return newInterface;
 }
 
@@ -389,12 +390,21 @@ bool GrGLInterface::validate() const {
     }
 
     // Dual source blending
-    if (kGL_GrGLStandard == fStandard &&
-        (glVer >= GR_GL_VER(3,3) || fExtensions.has("GL_ARB_blend_func_extended"))) {
-        if (NULL == fFunctions.fBindFragDataLocationIndexed) {
-            RETURN_FALSE_INTERFACE
+    if (kGL_GrGLStandard == fStandard) {
+        if (glVer >= GR_GL_VER(3,3) || fExtensions.has("GL_ARB_blend_func_extended")) {
+            if (NULL == fFunctions.fBindFragDataLocationIndexed) {
+                RETURN_FALSE_INTERFACE
+            }
+        }
+    } else {
+        if (glVer >= GR_GL_VER(3,0) && fExtensions.has("GL_EXT_blend_func_extended")) {
+            if (NULL == fFunctions.fBindFragDataLocation ||
+                NULL == fFunctions.fBindFragDataLocationIndexed) {
+                RETURN_FALSE_INTERFACE
+            }
         }
     }
+
 
     // glGetStringi was added in version 3.0 of both desktop and ES.
     if (glVer >= GR_GL_VER(3, 0)) {
@@ -483,7 +493,7 @@ bool GrGLInterface::validate() const {
 #endif
     }
 
-    if (fExtensions.has("GL_NV_path_rendering")) {
+    if (fExtensions.has("GL_NV_path_rendering") || fExtensions.has("GL_CHROMIUM_path_rendering")) {
         if (NULL == fFunctions.fMatrixLoadf ||
             NULL == fFunctions.fMatrixLoadIdentity ||
             NULL == fFunctions.fPathCommands ||
@@ -514,6 +524,11 @@ bool GrGLInterface::validate() const {
 #endif
             ) {
             RETURN_FALSE_INTERFACE
+        }
+        if (fExtensions.has("GL_CHROMIUM_path_rendering")) {
+            if (NULL == fFunctions.fBindFragmentInputLocation) {
+                RETURN_FALSE_INTERFACE
+            }
         }
     }
 

@@ -29,8 +29,8 @@
 #include "config.h"
 #include "modules/accessibility/AXObject.h"
 
+#include "core/editing/EditingUtilities.h"
 #include "core/editing/VisibleUnits.h"
-#include "core/editing/htmlediting.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/html/HTMLDialogElement.h"
@@ -671,10 +671,25 @@ bool AXObject::isPresentationalChild() const
     return m_cachedIsPresentationalChild;
 }
 
-String AXObject::name(AXNameFrom& nameFrom, WillBeHeapVector<RawPtrWillBeMember<AXObject>>& nameObjects)
+String AXObject::name(AXNameFrom& nameFrom, AXObjectVector& nameObjects) const
 {
-    WillBeHeapHashSet<RawPtrWillBeMember<AXObject>> visited;
-    return textAlternative(false, false, visited, &nameFrom, &nameObjects);
+    WillBeHeapHashSet<RawPtrWillBeMember<const AXObject>> visited;
+    return textAlternative(false, false, visited, nameFrom, nameObjects, nullptr);
+}
+
+String AXObject::name(NameSources* nameSources) const
+{
+    AXObjectSet visited;
+    AXNameFrom tmpNameFrom;
+    AXObjectVector tmpNameObjects;
+    return textAlternative(false, false, visited, tmpNameFrom, tmpNameObjects, nameSources);
+}
+
+String AXObject::recursiveTextAlternative(const AXObject& axObj, bool inAriaLabelledByTraversal, AXObjectSet& visited)
+{
+    AXNameFrom unusedRecursiveNameFrom;
+    AXObjectVector unusedRecursiveNameObjects;
+    return axObj.textAlternative(true, inAriaLabelledByTraversal, visited, unusedRecursiveNameFrom, unusedRecursiveNameObjects, nullptr);
 }
 
 // In ARIA 1.1, the default value for aria-orientation changed from horizontal to undefined.
@@ -1337,7 +1352,7 @@ int AXObject::lineForPosition(const VisiblePosition& visiblePos) const
         return -1;
 
     // If the position is not in the same editable region as this AX object, return -1.
-    Node* containerNode = visiblePos.deepEquivalent().containerNode();
+    Node* containerNode = visiblePos.deepEquivalent().computeContainerNode();
     if (!containerNode->containsIncludingShadowDOM(node()) && !node()->containsIncludingShadowDOM(containerNode))
         return -1;
 
@@ -1438,6 +1453,7 @@ bool AXObject::nameFromContents() const
     case CellRole:
     case ColumnHeaderRole:
     case DirectoryRole:
+    case DisclosureTriangleRole:
     case LinkRole:
     case ListItemRole:
     case MenuItemRole:

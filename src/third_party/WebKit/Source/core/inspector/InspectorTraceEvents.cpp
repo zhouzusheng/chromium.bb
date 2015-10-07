@@ -6,7 +6,6 @@
 #include "core/inspector/InspectorTraceEvents.h"
 
 #include "bindings/core/v8/ScriptCallStackFactory.h"
-#include "bindings/core/v8/ScriptSourceCode.h"
 #include "core/animation/Animation.h"
 #include "core/animation/KeyframeEffect.h"
 #include "core/css/invalidation/DescendantInvalidationSet.h"
@@ -136,7 +135,6 @@ const char* pseudoTypeToString(CSSSelector::PseudoType pseudoType)
         DEFINE_STRING_MAPPING(PseudoRightPage)
         DEFINE_STRING_MAPPING(PseudoFirstPage)
         DEFINE_STRING_MAPPING(PseudoFullScreen)
-        DEFINE_STRING_MAPPING(PseudoFullScreenDocument)
         DEFINE_STRING_MAPPING(PseudoFullScreenAncestor)
         DEFINE_STRING_MAPPING(PseudoInRange)
         DEFINE_STRING_MAPPING(PseudoOutOfRange)

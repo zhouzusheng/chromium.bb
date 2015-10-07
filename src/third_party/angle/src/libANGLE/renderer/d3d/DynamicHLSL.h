@@ -60,17 +60,23 @@ class DynamicHLSL : angle::NonCopyable
                                                    const std::vector<sh::Attribute> &shaderAttributes) const;
     std::string generatePixelShaderForOutputSignature(const std::string &sourceShader, const std::vector<PixelShaderOutputVariable> &outputVariables,
                                                       bool usesFragDepth, const std::vector<GLenum> &outputLayout) const;
-    bool generateShaderLinkHLSL(const gl::Data &data, gl::InfoLog &infoLog, int registers,
+    bool generateShaderLinkHLSL(const gl::Data &data,
+                                gl::InfoLog &infoLog,
+                                int registers,
                                 const VaryingPacking packing,
-                                std::string &pixelHLSL, std::string &vertexHLSL,
-                                ShaderD3D *fragmentShader, ShaderD3D *vertexShader,
+                                std::string &pixelHLSL,
+                                std::string &vertexHLSL,
+                                const ShaderD3D *fragmentShader,
+                                const ShaderD3D *vertexShader,
                                 const std::vector<std::string> &transformFeedbackVaryings,
                                 std::vector<gl::LinkedVarying> *linkedVaryings,
                                 std::map<int, gl::VariableLocation> *programOutputVars,
                                 std::vector<PixelShaderOutputVariable> *outPixelShaderKey,
                                 bool *outUsesFragDepth) const;
 
-    std::string generateGeometryShaderHLSL(int registers, ShaderD3D *fragmentShader, ShaderD3D *vertexShader) const;
+    std::string generateGeometryShaderHLSL(int registers,
+                                           const ShaderD3D *fragmentShader,
+                                           const ShaderD3D *vertexShader) const;
 
   private:
     RendererD3D *const mRenderer;
@@ -84,8 +90,11 @@ class DynamicHLSL : angle::NonCopyable
     std::string generateVaryingHLSL(const ShaderD3D *shader) const;
     void storeUserLinkedVaryings(const ShaderD3D *vertexShader, std::vector<gl::LinkedVarying> *linkedVaryings) const;
     void storeBuiltinLinkedVaryings(const SemanticInfo &info, std::vector<gl::LinkedVarying> *linkedVaryings) const;
-    void defineOutputVariables(ShaderD3D *fragmentShader, std::map<int, gl::VariableLocation> *programOutputVars) const;
-    std::string generatePointSpriteHLSL(int registers, ShaderD3D *fragmentShader, ShaderD3D *vertexShader) const;
+    void defineOutputVariables(const ShaderD3D *fragmentShader,
+                               std::map<int, gl::VariableLocation> *programOutputVars) const;
+    std::string generatePointSpriteHLSL(int registers,
+                                        const ShaderD3D *fragmentShader,
+                                        const ShaderD3D *vertexShader) const;
 
     // Prepend an underscore
     static std::string decorateVariable(const std::string &name);

@@ -13,6 +13,7 @@
 
 #include "./vpx_config.h"
 #include "vpx/internal/vpx_codec_internal.h"
+#include "vpx_util/vpx_thread.h"
 #include "./vp9_rtcd.h"
 #include "vp9/common/vp9_alloccommon.h"
 #include "vp9/common/vp9_loopfilter.h"
@@ -21,7 +22,6 @@
 #include "vp9/common/vp9_entropymode.h"
 #include "vp9/common/vp9_frame_buffers.h"
 #include "vp9/common/vp9_quant_common.h"
-#include "vp9/common/vp9_thread.h"
 #include "vp9/common/vp9_tile_common.h"
 
 #if CONFIG_VP9_POSTPROC
@@ -80,7 +80,7 @@ typedef struct {
 
   // frame_worker_owner indicates which FrameWorker owns this buffer. NULL means
   // that no FrameWorker owns, or is decoding, this buffer.
-  VP9Worker *frame_worker_owner;
+  VPxWorker *frame_worker_owner;
 
   // row and col indicate which position frame has been decoded to in real
   // pixel unit. They are reset to -1 when decoding begins and set to INT_MAX
@@ -345,14 +345,15 @@ static INLINE void set_partition_probs(const VP9_COMMON *const cm,
   xd->partition_probs =
       frame_is_intra_only(cm) ?
           &vp9_kf_partition_probs[0] :
-          (const vp9_prob (*)[PARTITION_TYPES - 1])cm->fc->partition_prob;
+          (const vpx_prob (*)[PARTITION_TYPES - 1])cm->fc->partition_prob;
 }
 
-static INLINE void init_macroblockd(VP9_COMMON *cm, MACROBLOCKD *xd) {
+static INLINE void vp9_init_macroblockd(VP9_COMMON *cm, MACROBLOCKD *xd,
+                                        tran_low_t *dqcoeff) {
   int i;
 
   for (i = 0; i < MAX_MB_PLANE; ++i) {
-    xd->plane[i].dqcoeff = xd->dqcoeff;
+    xd->plane[i].dqcoeff = dqcoeff;
     xd->above_context[i] = cm->above_context +
         i * sizeof(*cm->above_context) * 2 * mi_cols_aligned_to_sb(cm->mi_cols);
 
@@ -372,7 +373,7 @@ static INLINE void init_macroblockd(VP9_COMMON *cm, MACROBLOCKD *xd) {
   set_partition_probs(cm, xd);
 }
 
-static INLINE const vp9_prob* get_partition_probs(const MACROBLOCKD *xd,
+static INLINE const vpx_prob* get_partition_probs(const MACROBLOCKD *xd,
                                                   int ctx) {
   return xd->partition_probs[ctx];
 }

@@ -22,8 +22,7 @@
 #ifndef PendingSelection_h
 #define PendingSelection_h
 
-#include "core/dom/Position.h"
-#include "core/editing/TextAffinity.h"
+#include "core/editing/Position.h"
 #include "core/editing/VisibleSelection.h"
 
 namespace blink {

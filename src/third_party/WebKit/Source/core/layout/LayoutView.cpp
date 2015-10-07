@@ -102,26 +102,34 @@ bool LayoutView::hitTestNoLifecycleUpdate(HitTestResult& result)
 
     uint64_t domTreeVersion = document().domTreeVersion();
     HitTestResult cacheResult = result;
-    bool cacheHit = m_hitTestCache->lookupCachedResult(cacheResult, domTreeVersion);
-    bool hitLayer = layer()->hitTest(result);
-
-    // FrameView scrollbars are not the same as Layer scrollbars tested by Layer::hitTestOverflowControls,
-    // so we need to test FrameView scrollbars separately here. Note that it's important we do this after
-    // the hit test above, because that may overwrite the entire HitTestResult when it finds a hit.
-    IntPoint framePoint = frameView()->contentsToFrame(result.hitTestLocation().roundedPoint());
-    if (Scrollbar* frameScrollbar = frameView()->scrollbarAtFramePoint(framePoint))
-        result.setScrollbar(frameScrollbar);
-
-    if (cacheHit) {
+    bool hitLayer = false;
+    if (m_hitTestCache->lookupCachedResult(cacheResult, domTreeVersion)) {
         m_hitTestCacheHits++;
-        m_hitTestCache->verifyCachedResult(result, cacheResult);
-    }
+        hitLayer = true;
+        result = cacheResult;
+    } else {
+        hitLayer = layer()->hitTest(result);
 
-    if (hitLayer)
-        m_hitTestCache->addCachedResult(result, domTreeVersion);
+        // FrameView scrollbars are not the same as Layer scrollbars tested by Layer::hitTestOverflowControls,
+        // so we need to test FrameView scrollbars separately here. Note that it's important we do this after
+        // the hit test above, because that may overwrite the entire HitTestResult when it finds a hit.
+        IntPoint framePoint = frameView()->contentsToFrame(result.hitTestLocation().roundedPoint());
+        if (Scrollbar* frameScrollbar = frameView()->scrollbarAtFramePoint(framePoint))
+            result.setScrollbar(frameScrollbar);
+
+        if (hitLayer)
+            m_hitTestCache->addCachedResult(result, domTreeVersion);
+    }
 
     TRACE_EVENT_END1("blink,devtools.timeline", "HitTest", "endData", InspectorHitTestEvent::endData(result.hitTestRequest(), result.hitTestLocation(), result));
     return hitLayer;
+}
+
+void LayoutView::clearHitTestCache()
+{
+    m_hitTestCache->clear();
+    if (LayoutPart* frameLayoutObject = frame()->ownerLayoutObject())
+        frameLayoutObject->view()->clearHitTestCache();
 }
 
 void LayoutView::computeLogicalHeight(LayoutUnit logicalHeight, LayoutUnit, LogicalExtentComputedValues& computedValues) const
@@ -795,24 +803,24 @@ void LayoutView::commitPendingSelectionAlgorithm()
     // as the start of the selection, the selection painting code will think that content on the line containing 'foo' is selected
     // and will fill the gap before 'bar'.
     PositionType startPos = Strategy::selectionStart(selection);
-    PositionType candidate = startPos.downstream();
-    if (candidate.isCandidate())
+    PositionType candidate = mostForwardCaretPosition(startPos);
+    if (isVisuallyEquivalentCandidate(candidate))
         startPos = candidate;
     PositionType endPos = Strategy::selectionEnd(selection);
-    candidate = endPos.upstream();
-    if (candidate.isCandidate())
+    candidate = mostBackwardCaretPosition(endPos);
+    if (isVisuallyEquivalentCandidate(candidate))
         endPos = candidate;
 
     // We can get into a state where the selection endpoints map to the same VisiblePosition when a selection is deleted
     // because we don't yet notify the FrameSelection of text removal.
-    if (startPos.isNull() || endPos.isNull() || Strategy::selectionVisibleStart(selection) == Strategy::selectionVisibleEnd(selection))
+    if (startPos.isNull() || endPos.isNull() || Strategy::selectionVisibleStart(selection).deepEquivalent() == Strategy::selectionVisibleEnd(selection).deepEquivalent())
         return;
     LayoutObject* startLayoutObject = startPos.anchorNode()->layoutObject();
     LayoutObject* endLayoutObject = endPos.anchorNode()->layoutObject();
     if (!startLayoutObject || !endLayoutObject)
         return;
     ASSERT(startLayoutObject->view() == this && endLayoutObject->view() == this);
-    setSelection(startLayoutObject, startPos.deprecatedEditingOffset(), endLayoutObject, endPos.deprecatedEditingOffset());
+    setSelection(startLayoutObject, startPos.computeEditingOffset(), endLayoutObject, endPos.computeEditingOffset());
 }
 
 void LayoutView::commitPendingSelection()
@@ -855,6 +863,19 @@ LayoutRect LayoutView::viewRect() const
     if (m_frameView)
         return LayoutRect(m_frameView->visibleContentRect());
     return LayoutRect();
+}
+
+LayoutRect LayoutView::overflowClipRect(const LayoutPoint& location, OverlayScrollbarSizeRelevancy relevancy) const
+{
+    LayoutRect rect = viewRect();
+    if (rect.isEmpty())
+        return LayoutBox::overflowClipRect(location, relevancy);
+
+    rect.setLocation(location);
+    if (hasOverflowClip())
+        excludeScrollbars(rect, relevancy);
+
+    return rect;
 }
 
 IntRect LayoutView::unscaledDocumentRect() const

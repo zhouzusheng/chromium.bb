@@ -43,7 +43,12 @@ public:
 
     void* dataRefs[9];
     void* ownPtrs[4];
+#if ENABLE(OILPAN)
+    Persistent<void*> persistentHandles[2];
+    void* refPtrs[2];
+#else
     void* refPtrs[4];
+#endif
 
     FillLayer fillLayers;
     NinePieceImage ninePieces;
@@ -112,7 +117,6 @@ StyleRareNonInheritedData::StyleRareNonInheritedData()
     , m_objectFit(ComputedStyle::initialObjectFit())
     , m_isolation(ComputedStyle::initialIsolation())
     , m_scrollBehavior(ComputedStyle::initialScrollBehavior())
-    , m_scrollBlocksOn(ComputedStyle::initialScrollBlocksOn())
     , m_scrollSnapType(ComputedStyle::initialScrollSnapType())
     , m_requiresAcceleratedCompositingForExternalReasons(false)
     , m_hasInlineTransform(false)
@@ -189,7 +193,6 @@ StyleRareNonInheritedData::StyleRareNonInheritedData(const StyleRareNonInherited
     , m_objectFit(o.m_objectFit)
     , m_isolation(o.m_isolation)
     , m_scrollBehavior(o.m_scrollBehavior)
-    , m_scrollBlocksOn(o.m_scrollBlocksOn)
     , m_scrollSnapType(o.m_scrollSnapType)
     , m_requiresAcceleratedCompositingForExternalReasons(o.m_requiresAcceleratedCompositingForExternalReasons)
     , m_hasInlineTransform(o.m_hasInlineTransform)
@@ -270,8 +273,7 @@ bool StyleRareNonInheritedData::operator==(const StyleRareNonInheritedData& o) c
         && m_objectFit == o.m_objectFit
         && m_isolation == o.m_isolation
         && m_scrollBehavior == o.m_scrollBehavior
-        && m_scrollBlocksOn == o.m_scrollBlocksOn
-        && m_scrollBlocksOn == o.m_scrollSnapType
+        && m_scrollSnapType == o.m_scrollSnapType
         && m_requiresAcceleratedCompositingForExternalReasons == o.m_requiresAcceleratedCompositingForExternalReasons
         && m_hasInlineTransform == o.m_hasInlineTransform
         && m_resize == o.m_resize

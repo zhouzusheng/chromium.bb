@@ -21,6 +21,7 @@
 #include "base/trace_event/memory_dump_manager.h"
 #include "base/trace_event/process_memory_dump.h"
 #include "base/trace_event/trace_event.h"
+#include "content/common/child_process_host_impl.h"
 #include "content/common/discardable_shared_memory_heap.h"
 #include "content/public/common/child_process_host.h"
 
@@ -153,6 +154,7 @@ HostDiscardableSharedMemoryManager::AllocateLockedDiscardableMemory(
 }
 
 bool HostDiscardableSharedMemoryManager::OnMemoryDump(
+    const base::trace_event::MemoryDumpArgs& args,
     base::trace_event::ProcessMemoryDump* pmd) {
   base::AutoLock lock(lock_);
   for (const auto& process_entry : processes_) {
@@ -173,8 +175,9 @@ bool HostDiscardableSharedMemoryManager::OnMemoryDump(
       // corresponding dump for the same segment, this will avoid to
       // double-count them in tracing. If, instead, no other process will emit a
       // dump with the same guid, the segment will be accounted to the browser.
-      const uint64 child_tracing_process_id = base::trace_event::
-          MemoryDumpManager::ChildProcessIdToTracingProcessId(child_process_id);
+      const uint64 child_tracing_process_id =
+          ChildProcessHostImpl::ChildProcessUniqueIdToTracingProcessId(
+              child_process_id);
       base::trace_event::MemoryAllocatorDumpGuid shared_segment_guid =
           DiscardableSharedMemoryHeap::GetSegmentGUIDForTracing(
               child_tracing_process_id, segment_id);

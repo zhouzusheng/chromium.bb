@@ -6,6 +6,7 @@
 
 #include <limits>
 
+#include "cc/quads/io_surface_draw_quad.h"
 #include "cc/quads/solid_color_draw_quad.h"
 #include "cc/quads/stream_video_draw_quad.h"
 #include "cc/quads/texture_draw_quad.h"
@@ -17,44 +18,60 @@
 namespace cc {
 
 OverlayStrategyCommon::OverlayStrategyCommon(
-    OverlayCandidateValidator* capability_checker)
-    : capability_checker_(capability_checker) {
-}
+    OverlayCandidateValidator* capability_checker,
+    OverlayStrategyCommonDelegate* delegate)
+    : capability_checker_(capability_checker), delegate_(delegate) {}
 
 OverlayStrategyCommon::~OverlayStrategyCommon() {
 }
 
 bool OverlayStrategyCommon::Attempt(RenderPassList* render_passes_in_draw_order,
-                                    OverlayCandidateList* candidate_list) {
+                                    OverlayCandidateList* candidate_list,
+                                    float device_scale_factor) {
   if (!capability_checker_)
     return false;
   RenderPass* root_render_pass = render_passes_in_draw_order->back();
   DCHECK(root_render_pass);
 
+  // Add our primary surface.
+  OverlayCandidate main_image;
+  main_image.display_rect = gfx::RectF(root_render_pass->output_rect);
+  DCHECK(candidate_list->empty());
+  candidate_list->push_back(main_image);
+
+  bool created_overlay = false;
   QuadList& quad_list = root_render_pass->quad_list;
-  for (auto it = quad_list.begin(); it != quad_list.end(); ++it) {
+  for (auto it = quad_list.begin(); it != quad_list.end();) {
     OverlayCandidate candidate;
-    const DrawQuad* draw_quad = *it;
-    if (IsOverlayQuad(draw_quad) &&
-        GetCandidateQuadInfo(*draw_quad, &candidate) &&
-        TryOverlay(capability_checker_, render_passes_in_draw_order,
-                   candidate_list, candidate, it))
-      return true;
+    if (!GetCandidateQuadInfo(**it, &candidate)) {
+      ++it;
+      continue;
+    }
+
+    OverlayResult result = delegate_->TryOverlay(
+        capability_checker_, render_passes_in_draw_order, candidate_list,
+        candidate, &it, device_scale_factor);
+    switch (result) {
+      case DID_NOT_CREATE_OVERLAY:
+        ++it;
+        break;
+      case CREATED_OVERLAY_STOP_LOOKING:
+        return true;
+      case CREATED_OVERLAY_KEEP_LOOKING:
+        created_overlay = true;
+        break;
+    }
   }
-  return false;
+
+  if (!created_overlay) {
+    DCHECK_EQ(1u, candidate_list->size());
+    candidate_list->clear();
+  }
+
+  return created_overlay;
 }
 
-bool OverlayStrategyCommon::IsOverlayQuad(const DrawQuad* draw_quad) {
-  switch (draw_quad->material) {
-    case DrawQuad::TEXTURE_CONTENT:
-      return TextureDrawQuad::MaterialCast(draw_quad)->allow_overlay();
-    case DrawQuad::STREAM_VIDEO_CONTENT:
-      return StreamVideoDrawQuad::MaterialCast(draw_quad)->allow_overlay();
-    default:
-      return false;
-  }
-}
-
+// static
 bool OverlayStrategyCommon::IsInvisibleQuad(const DrawQuad* draw_quad) {
   if (draw_quad->material == DrawQuad::SOLID_COLOR) {
     const SolidColorDrawQuad* solid_quad =
@@ -70,6 +87,8 @@ bool OverlayStrategyCommon::IsInvisibleQuad(const DrawQuad* draw_quad) {
 
 bool OverlayStrategyCommon::GetTextureQuadInfo(const TextureDrawQuad& quad,
                                                OverlayCandidate* quad_info) {
+  if (!quad.allow_overlay())
+    return false;
   gfx::OverlayTransform overlay_transform =
       OverlayCandidate::GetOverlayTransform(
           quad.shared_quad_state->quad_to_target_transform, quad.y_flipped);
@@ -86,6 +105,8 @@ bool OverlayStrategyCommon::GetTextureQuadInfo(const TextureDrawQuad& quad,
 
 bool OverlayStrategyCommon::GetVideoQuadInfo(const StreamVideoDrawQuad& quad,
                                              OverlayCandidate* quad_info) {
+  if (!quad.allow_overlay())
+    return false;
   gfx::OverlayTransform overlay_transform =
       OverlayCandidate::GetOverlayTransform(
           quad.shared_quad_state->quad_to_target_transform, false);
@@ -127,6 +148,22 @@ bool OverlayStrategyCommon::GetVideoQuadInfo(const StreamVideoDrawQuad& quad,
   return true;
 }
 
+bool OverlayStrategyCommon::GetIOSurfaceQuadInfo(const IOSurfaceDrawQuad& quad,
+                                                 OverlayCandidate* quad_info) {
+  if (!quad.allow_overlay)
+    return false;
+  gfx::OverlayTransform overlay_transform =
+      OverlayCandidate::GetOverlayTransform(
+          quad.shared_quad_state->quad_to_target_transform, false);
+  if (overlay_transform != gfx::OVERLAY_TRANSFORM_NONE)
+    return false;
+  quad_info->resource_id = quad.io_surface_resource_id();
+  quad_info->resource_size_in_pixels = quad.io_surface_size;
+  quad_info->transform = overlay_transform;
+  quad_info->uv_rect = gfx::Rect(0, 0, 1, 1);
+  return true;
+}
+
 bool OverlayStrategyCommon::GetCandidateQuadInfo(const DrawQuad& draw_quad,
                                                  OverlayCandidate* quad_info) {
   // All quad checks.
@@ -134,14 +171,23 @@ bool OverlayStrategyCommon::GetCandidateQuadInfo(const DrawQuad& draw_quad,
       draw_quad.shared_quad_state->blend_mode != SkXfermode::kSrcOver_Mode)
     return false;
 
-  if (draw_quad.material == DrawQuad::TEXTURE_CONTENT) {
-    const TextureDrawQuad& quad = *TextureDrawQuad::MaterialCast(&draw_quad);
-    if (!GetTextureQuadInfo(quad, quad_info))
-      return false;
-  } else if (draw_quad.material == DrawQuad::STREAM_VIDEO_CONTENT) {
-    const StreamVideoDrawQuad& quad =
-        *StreamVideoDrawQuad::MaterialCast(&draw_quad);
-    if (!GetVideoQuadInfo(quad, quad_info))
+  switch (draw_quad.material) {
+    case DrawQuad::TEXTURE_CONTENT: {
+      auto* quad = TextureDrawQuad::MaterialCast(&draw_quad);
+      if (!GetTextureQuadInfo(*quad, quad_info))
+        return false;
+    } break;
+    case DrawQuad::STREAM_VIDEO_CONTENT: {
+      auto* quad = StreamVideoDrawQuad::MaterialCast(&draw_quad);
+      if (!GetVideoQuadInfo(*quad, quad_info))
+        return false;
+    } break;
+    case DrawQuad::IO_SURFACE_CONTENT: {
+      auto* quad = IOSurfaceDrawQuad::MaterialCast(&draw_quad);
+      if (!GetIOSurfaceQuadInfo(*quad, quad_info))
+        return false;
+    } break;
+    default:
       return false;
   }
 

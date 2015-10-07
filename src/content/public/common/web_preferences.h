@@ -126,7 +126,6 @@ struct CONTENT_EXPORT WebPreferences {
   bool accelerated_filters_enabled;
   bool deferred_filters_enabled;
   bool container_culling_enabled;
-  bool text_blobs_enabled;
   bool allow_displaying_insecure_content;
   bool allow_running_insecure_content;
   // If true, taints all <canvas> elements, regardless of origin.
@@ -139,6 +138,9 @@ struct CONTENT_EXPORT WebPreferences {
   // features (like geolocation) that we haven't yet disabled for the web at
   // large.
   bool strict_powerful_feature_restrictions;
+  // Disallow user opt-in for blockable mixed content.
+  bool strictly_block_blockable_mixed_content;
+  bool block_mixed_plugin_content;
   bool password_echo_enabled;
   bool should_print_backgrounds;
   bool should_clear_document_background;
@@ -173,6 +175,7 @@ struct CONTENT_EXPORT WebPreferences {
   bool navigate_on_drag_drop;
   V8CacheOptions v8_cache_options;
   bool slimming_paint_enabled;
+  bool slimming_paint_v2_enabled;
 
   // This flags corresponds to a Page's Settings' setCookieEnabled state. It
   // only controls whether or not the "document.cookie" field is properly

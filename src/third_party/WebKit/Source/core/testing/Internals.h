@@ -113,6 +113,7 @@ public:
     // Animation testing.
     void pauseAnimations(double pauseTime, ExceptionState&);
     bool isCompositedAnimation(Animation*);
+    void disableCompositedAnimation(Animation*);
 
     // Modifies m_desiredFrameStartTime in BitmapImage to advance the next frame time
     // for testing whether animated images work properly.
@@ -260,12 +261,15 @@ public:
     void setPageScaleFactor(float scaleFactor, ExceptionState&);
     void setPageScaleFactorLimits(float minScaleFactor, float maxScaleFactor, ExceptionState&);
 
+    bool magnifyScaleAroundAnchor(float factor, float x, float y);
+
     void setIsCursorVisible(Document*, bool, ExceptionState&);
 
     double effectiveMediaVolume(HTMLMediaElement*);
 
     void mediaPlayerRemoteRouteAvailabilityChanged(HTMLMediaElement*, bool);
     void mediaPlayerPlayingRemotelyChanged(HTMLMediaElement*, bool);
+    void setAllowHiddenVolumeControls(HTMLMediaElement*, bool);
 
     void registerURLSchemeAsBypassingContentSecurityPolicy(const String& scheme);
     void registerURLSchemeAsBypassingContentSecurityPolicy(const String& scheme, const Vector<String>& policyAreas);
@@ -366,9 +370,13 @@ public:
     String unscopeableAttribute();
     String unscopeableMethod();
 
-    ClientRectList* focusRingRects(Element*);
+    ClientRectList* outlineRects(Element*);
 
     void setCapsLockState(bool enabled);
+
+    bool setScrollbarVisibilityInScrollableArea(Node*, bool visible);
+
+    void forceRestrictIFramePermissions();
 
 private:
     explicit Internals(ScriptState*);

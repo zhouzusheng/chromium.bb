@@ -65,14 +65,17 @@ public:
     void record(const LayoutBlock*);
     void destroy(const LayoutBlock*);
 
+    bool pageNeedsAutosizing() const;
+
     DECLARE_TRACE();
 
     class LayoutScope {
+        STACK_ALLOCATED();
     public:
         explicit LayoutScope(LayoutBlock*);
         ~LayoutScope();
     protected:
-        TextAutosizer* m_textAutosizer;
+        RawPtrWillBeMember<TextAutosizer> m_textAutosizer;
         LayoutBlock* m_block;
     };
 

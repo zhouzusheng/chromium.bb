@@ -18,7 +18,7 @@
 #include "net/base/escape.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
-#include "net/ftp/ftp_network_session.h"
+#include "net/base/port_util.h"
 #include "net/ftp/ftp_request_info.h"
 #include "net/ftp/ftp_util.h"
 #include "net/log/net_log.h"
@@ -202,14 +202,13 @@ bool ExtractPortFromPASVResponse(const FtpCtrlResponse& response, int* port) {
 }  // namespace
 
 FtpNetworkTransaction::FtpNetworkTransaction(
-    FtpNetworkSession* session,
+    HostResolver* resolver,
     ClientSocketFactory* socket_factory)
     : command_sent_(COMMAND_NONE),
       io_callback_(base::Bind(&FtpNetworkTransaction::OnIOComplete,
                               base::Unretained(this))),
-      session_(session),
       request_(NULL),
-      resolver_(session->host_resolver()),
+      resolver_(resolver),
       read_ctrl_buf_(new IOBuffer(kCtrlBufLen)),
       read_data_buf_len_(0),
       last_error_(OK),
@@ -819,7 +818,7 @@ int FtpNetworkTransaction::ProcessResponseSYST(
       // comparisons easily. If it is not ASCII, we leave the system type
       // as unknown.
       if (base::IsStringASCII(line)) {
-        line = base::StringToLowerASCII(line);
+        line = base::ToLowerASCII(line);
 
         // Remove all whitespace, to correctly handle cases like fancy "V M S"
         // response instead of "VMS".

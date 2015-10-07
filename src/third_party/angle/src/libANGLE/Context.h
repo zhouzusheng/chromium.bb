@@ -190,6 +190,7 @@ class Context final : angle::NonCopyable
     const Caps &getCaps() const;
     const TextureCapsMap &getTextureCaps() const;
     const Extensions &getExtensions() const;
+    const Limitations &getLimitations() const;
 
     const std::string &getRendererString() const;
 
@@ -203,6 +204,8 @@ class Context final : angle::NonCopyable
     const State &getState() const { return mState; }
 
     const Data &getData() const { return mData; }
+    void syncRendererState();
+    void syncRendererState(const State::DirtyBits &bitMask);
 
   private:
     void detachBuffer(GLuint buffer);
@@ -222,6 +225,7 @@ class Context final : angle::NonCopyable
     Caps mCaps;
     TextureCapsMap mTextureCaps;
     Extensions mExtensions;
+    Limitations mLimitations;
 
     // Shader compiler
     Compiler *mCompiler;
@@ -271,6 +275,7 @@ class Context final : angle::NonCopyable
     GLenum mResetStatus;
     GLenum mResetStrategy;
     bool mRobustAccess;
+    egl::Surface *mCurrentSurface;
 
     ResourceManager *mResourceManager;
 

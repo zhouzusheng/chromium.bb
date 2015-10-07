@@ -125,6 +125,11 @@ ChromeClientImpl::~ChromeClientImpl()
 {
 }
 
+PassOwnPtrWillBeRawPtr<ChromeClientImpl> ChromeClientImpl::create(WebViewImpl* webView)
+{
+    return adoptPtrWillBeNoop(new ChromeClientImpl(webView));
+}
+
 void* ChromeClientImpl::webView() const
 {
     return static_cast<void*>(m_webView);
@@ -189,6 +194,9 @@ void ChromeClientImpl::takeFocus(WebFocusType type)
 
 void ChromeClientImpl::focusedNodeChanged(Node* fromNode, Node* toNode)
 {
+    if (!m_webView->client())
+        return;
+
     m_webView->client()->focusedNodeChanged(WebNode(fromNode), WebNode(toNode));
 
     WebURL focusURL;
@@ -495,7 +503,7 @@ void ChromeClientImpl::scheduleAnimationForFrame(LocalFrame* localRoot)
     // a local frame root that doesn't have a WebWidget? During initialization
     // there is no content to draw so this call serves no purpose.
     if (WebLocalFrameImpl::fromFrame(localRoot)->frameWidget())
-        WebLocalFrameImpl::fromFrame(localRoot)->frameWidget()->scheduleAnimation();
+        toWebFrameWidgetImpl(WebLocalFrameImpl::fromFrame(localRoot)->frameWidget())->scheduleAnimation();
 }
 
 IntRect ChromeClientImpl::viewportToScreen(const IntRect& rectInViewport) const
@@ -709,8 +717,20 @@ void ChromeClientImpl::attachRootGraphicsLayer(GraphicsLayer* rootLayer, LocalFr
         }
         ASSERT(webFrame);
         ASSERT(webFrame->frameWidget());
-        webFrame->frameWidget()->setRootGraphicsLayer(rootLayer);
+        toWebFrameWidgetImpl(webFrame->frameWidget())->setRootGraphicsLayer(rootLayer);
     }
+}
+
+void ChromeClientImpl::setCompositedDisplayList(PassOwnPtr<CompositedDisplayList> compositedDisplayList)
+{
+    m_webView->setCompositedDisplayList(compositedDisplayList);
+}
+
+CompositedDisplayList* ChromeClientImpl::compositedDisplayListForTesting()
+{
+    if (WebCompositedDisplayList* compositedDisplayList = m_webView->compositedDisplayList())
+        return compositedDisplayList->compositedDisplayListForTesting();
+    return nullptr;
 }
 
 void ChromeClientImpl::attachCompositorAnimationTimeline(WebCompositorAnimationTimeline* compositorTimeline, LocalFrame* localRoot)
@@ -729,7 +749,7 @@ void ChromeClientImpl::attachCompositorAnimationTimeline(WebCompositorAnimationT
         }
         ASSERT(webFrame);
         ASSERT(webFrame->frameWidget());
-        webFrame->frameWidget()->attachCompositorAnimationTimeline(compositorTimeline);
+        toWebFrameWidgetImpl(webFrame->frameWidget())->attachCompositorAnimationTimeline(compositorTimeline);
     }
 }
 
@@ -749,7 +769,7 @@ void ChromeClientImpl::detachCompositorAnimationTimeline(WebCompositorAnimationT
         }
         ASSERT(webFrame);
         ASSERT(webFrame->frameWidget());
-        webFrame->frameWidget()->detachCompositorAnimationTimeline(compositorTimeline);
+        toWebFrameWidgetImpl(webFrame->frameWidget())->detachCompositorAnimationTimeline(compositorTimeline);
     }
 }
 
@@ -778,14 +798,14 @@ bool ChromeClientImpl::hasOpenedPopup() const
     return m_webView->hasOpenedPopup();
 }
 
-PassRefPtrWillBeRawPtr<PopupMenu> ChromeClientImpl::openPopupMenu(LocalFrame& frame, PopupMenuClient* client)
+PassRefPtrWillBeRawPtr<PopupMenu> ChromeClientImpl::openPopupMenu(LocalFrame& frame, HTMLSelectElement& select)
 {
     notifyPopupOpeningObservers();
     if (WebViewImpl::useExternalPopupMenus())
-        return adoptRefWillBeNoop(new ExternalPopupMenu(frame, client, *m_webView));
+        return adoptRefWillBeNoop(new ExternalPopupMenu(frame, select, *m_webView));
 
     ASSERT(RuntimeEnabledFeatures::pagePopupEnabled());
-    return PopupMenuImpl::create(this, client);
+    return PopupMenuImpl::create(this, select);
 }
 
 PagePopup* ChromeClientImpl::openPagePopup(PagePopupClient* client)
@@ -905,6 +925,8 @@ void ChromeClientImpl::didChangeValueInTextField(HTMLFormControlElement& element
     WebLocalFrameImpl* webframe = WebLocalFrameImpl::fromFrame(element.document().frame());
     if (webframe->autofillClient())
         webframe->autofillClient()->textFieldDidChange(WebFormControlElement(&element));
+
+    m_webView->pageImportanceSignals().setHadFormInteraction();
 }
 
 void ChromeClientImpl::didEndEditingOnTextField(HTMLInputElement& inputElement)
@@ -929,13 +951,6 @@ void ChromeClientImpl::textFieldDataListChanged(HTMLInputElement& input)
         webframe->autofillClient()->dataListOptionsChanged(WebInputElement(&input));
 }
 
-void ChromeClientImpl::xhrSucceeded(LocalFrame* frame)
-{
-    WebLocalFrameImpl* webframe = WebLocalFrameImpl::fromFrame(frame);
-    if (webframe->autofillClient())
-        webframe->autofillClient()->xhrSucceeded();
-}
-
 void ChromeClientImpl::ajaxSucceeded(LocalFrame* frame)
 {
     WebLocalFrameImpl* webframe = WebLocalFrameImpl::fromFrame(frame);
@@ -946,7 +961,7 @@ void ChromeClientImpl::ajaxSucceeded(LocalFrame* frame)
 void ChromeClientImpl::registerViewportLayers() const
 {
     if (m_webView->rootGraphicsLayer() && m_webView->layerTreeView())
-        m_webView->page()->frameHost().pinchViewport().registerLayersWithTreeView(m_webView->layerTreeView());
+        m_webView->page()->frameHost().visualViewport().registerLayersWithTreeView(m_webView->layerTreeView());
 }
 
 void ChromeClientImpl::didUpdateTopControls() const

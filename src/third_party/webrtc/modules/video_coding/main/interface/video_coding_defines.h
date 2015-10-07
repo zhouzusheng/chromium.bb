@@ -40,13 +40,9 @@ enum { kDefaultStartBitrateKbps = 300 };
 
 enum VCMVideoProtection {
   kProtectionNone,
-  kProtectionNack,                // Both send-side and receive-side
-  kProtectionNackSender,          // Send-side only
-  kProtectionNackReceiver,        // Receive-side only
+  kProtectionNack,
   kProtectionFEC,
   kProtectionNackFEC,
-  kProtectionKeyOnLoss,
-  kProtectionKeyOnKeyLoss,
 };
 
 enum VCMTemporalDecimation {
@@ -181,6 +177,8 @@ class VCMQMSettingsCallback {
   virtual int32_t SetVideoQMSettings(const uint32_t frameRate,
                                            const uint32_t width,
                                            const uint32_t height) = 0;
+
+  virtual void SetTargetFramerate(int frame_rate) = 0;
 
  protected:
   virtual ~VCMQMSettingsCallback() {

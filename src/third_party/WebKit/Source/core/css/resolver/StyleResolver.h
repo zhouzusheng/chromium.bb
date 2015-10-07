@@ -36,6 +36,7 @@
 #include "core/css/resolver/StyleBuilder.h"
 #include "core/css/resolver/StyleResolverStats.h"
 #include "core/css/resolver/StyleResourceLoader.h"
+#include "core/dom/DocumentOrderedList.h"
 #include "core/style/AuthorStyleInfo.h"
 #include "core/style/CachedUAStyle.h"
 #include "platform/heap/Handle.h"
@@ -211,13 +212,13 @@ private:
     void applyCallbackSelectors(StyleResolverState&);
 
     template <CSSPropertyPriority priority>
-    void applyMatchedProperties(StyleResolverState&, const MatchResult&, bool important, unsigned startIndex, unsigned endIndex, bool inheritedOnly);
+    void applyMatchedProperties(StyleResolverState&, const MatchedPropertiesRange&, bool important, bool inheritedOnly);
     template <CSSPropertyPriority priority>
     void applyProperties(StyleResolverState&, const StylePropertySet* properties, bool isImportant, bool inheritedOnly, PropertyWhitelistType = PropertyWhitelistNone);
     template <CSSPropertyPriority priority>
     void applyAnimatedProperties(StyleResolverState&, const WillBeHeapHashMap<PropertyHandle, RefPtrWillBeMember<Interpolation>>&);
     template <CSSPropertyPriority priority>
-    void applyAllProperty(StyleResolverState&, CSSValue*, bool inheritedOnly);
+    void applyAllProperty(StyleResolverState&, CSSValue*, bool inheritedOnly, PropertyWhitelistType);
 
     bool pseudoStyleForElementInternal(Element&, const PseudoStyleRequest&, const ComputedStyle* parentStyle, StyleResolverState&);
 

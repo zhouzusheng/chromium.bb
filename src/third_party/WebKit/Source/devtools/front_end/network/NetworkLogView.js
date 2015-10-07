@@ -245,16 +245,14 @@ WebInspector.NetworkLogView.prototype = {
         this._dataURLFilterUI.addEventListener(WebInspector.FilterUI.Events.FilterChanged, this._filterChanged.bind(this), this);
         this._filterBar.addFilter(this._dataURLFilterUI);
 
-        var types = [];
-        for (var typeId in WebInspector.resourceTypes) {
-            var resourceType = WebInspector.resourceTypes[typeId];
-            if (resourceType === WebInspector.resourceTypes.TextTrack)
-                continue;
-            types.push({name: resourceType.name(), label: resourceType.shortCategoryTitle(), title: resourceType.categoryTitle()});
+        var filterItems = [];
+        for (var categoryId in WebInspector.resourceCategories) {
+            var category = WebInspector.resourceCategories[categoryId];
+            filterItems.push({name: category.title, label: category.shortTitle, title: category.title});
         }
-        this._resourceTypeFilterUI = new WebInspector.NamedBitSetFilterUI(types, this._networkResourceTypeFiltersSetting);
-        this._resourceTypeFilterUI.addEventListener(WebInspector.FilterUI.Events.FilterChanged, this._filterChanged.bind(this), this);
-        this._filterBar.addFilter(this._resourceTypeFilterUI);
+        this._resourceCategoryFilterUI = new WebInspector.NamedBitSetFilterUI(filterItems, this._networkResourceTypeFiltersSetting);
+        this._resourceCategoryFilterUI.addEventListener(WebInspector.FilterUI.Events.FilterChanged, this._filterChanged.bind(this), this);
+        this._filterBar.addFilter(this._resourceCategoryFilterUI);
     },
 
     _resetSuggestionBuilder: function()
@@ -290,9 +288,6 @@ WebInspector.NetworkLogView.prototype = {
         this._updateRowsSize();
 
         this._popoverHelper = new WebInspector.PopoverHelper(this.element, this._getPopoverAnchor.bind(this), this._showPopover.bind(this), this._onHidePopover.bind(this));
-        // Enable faster hint.
-        this._popoverHelper.setTimeout(250, 250);
-
         this.switchViewMode(true);
     },
 
@@ -321,14 +316,12 @@ WebInspector.NetworkLogView.prototype = {
             id: "name",
             titleDOMFragment: this._makeHeaderFragment(WebInspector.UIString("Name"), WebInspector.UIString("Path")),
             title: WebInspector.NetworkLogView._columnTitles["name"],
-            sortable: true,
             weight: 20
         });
 
         columns.push({
             id: "method",
             title: WebInspector.NetworkLogView._columnTitles["method"],
-            sortable: true,
             weight: 6
         });
 
@@ -336,35 +329,30 @@ WebInspector.NetworkLogView.prototype = {
             id: "status",
             titleDOMFragment: this._makeHeaderFragment(WebInspector.UIString("Status"), WebInspector.UIString("Text")),
             title: WebInspector.NetworkLogView._columnTitles["status"],
-            sortable: true,
             weight: 6
         });
 
         columns.push({
             id: "protocol",
             title: WebInspector.NetworkLogView._columnTitles["protocol"],
-            sortable: true,
             weight: 6
         });
 
         columns.push({
             id: "scheme",
             title: WebInspector.NetworkLogView._columnTitles["scheme"],
-            sortable: true,
             weight: 6
         });
 
         columns.push({
             id: "domain",
             title: WebInspector.NetworkLogView._columnTitles["domain"],
-            sortable: true,
             weight: 6
         });
 
         columns.push({
             id: "remoteAddress",
             title: WebInspector.NetworkLogView._columnTitles["remoteAddress"],
-            sortable: true,
             weight: 10,
             align: WebInspector.DataGrid.Align.Right
         });
@@ -372,21 +360,18 @@ WebInspector.NetworkLogView.prototype = {
         columns.push({
             id: "type",
             title: WebInspector.NetworkLogView._columnTitles["type"],
-            sortable: true,
             weight: 6
         });
 
         columns.push({
             id: "initiator",
             title: WebInspector.NetworkLogView._columnTitles["initiator"],
-            sortable: true,
             weight: 10
         });
 
         columns.push({
             id: "cookies",
             title: WebInspector.NetworkLogView._columnTitles["cookies"],
-            sortable: true,
             weight: 6,
             align: WebInspector.DataGrid.Align.Right
         });
@@ -394,7 +379,6 @@ WebInspector.NetworkLogView.prototype = {
         columns.push({
             id: "setCookies",
             title: WebInspector.NetworkLogView._columnTitles["setCookies"],
-            sortable: true,
             weight: 6,
             align: WebInspector.DataGrid.Align.Right
         });
@@ -403,7 +387,6 @@ WebInspector.NetworkLogView.prototype = {
             id: "size",
             titleDOMFragment: this._makeHeaderFragment(WebInspector.UIString("Size"), WebInspector.UIString("Content")),
             title: WebInspector.NetworkLogView._columnTitles["size"],
-            sortable: true,
             weight: 6,
             align: WebInspector.DataGrid.Align.Right
         });
@@ -412,7 +395,6 @@ WebInspector.NetworkLogView.prototype = {
             id: "time",
             titleDOMFragment: this._makeHeaderFragment(WebInspector.UIString("Time"), WebInspector.UIString("Latency")),
             title: WebInspector.NetworkLogView._columnTitles["time"],
-            sortable: true,
             weight: 6,
             align: WebInspector.DataGrid.Align.Right
         });
@@ -420,7 +402,6 @@ WebInspector.NetworkLogView.prototype = {
         columns.push({
             id: "connectionId",
             title: WebInspector.NetworkLogView._columnTitles["connectionId"],
-            sortable: true,
             weight: 6
         });
 
@@ -445,6 +426,11 @@ WebInspector.NetworkLogView.prototype = {
             sort: WebInspector.DataGrid.Order.Ascending
         });
 
+        for (var column of columns) {
+            column.sortable = column.id !== "timeline";
+            column.nonSelectable = column.id !== "name";
+        }
+
         this._dataGrid = new WebInspector.SortableDataGrid(columns);
         this._dataGrid.setStickToBottom(true);
         this._updateColumns();
@@ -453,6 +439,8 @@ WebInspector.NetworkLogView.prototype = {
         this._dataGrid.element.classList.add("network-log-grid");
         this._dataGrid.element.addEventListener("contextmenu", this._contextMenu.bind(this), true);
         this._dataGrid.element.addEventListener("mousedown", this._dataGridMouseDown.bind(this), true);
+        this._dataGrid.element.addEventListener("mousemove", this._dataGridMouseMove.bind(this), true);
+        this._dataGrid.element.addEventListener("mouseleave", this._highlightInitiatorChain.bind(this, null), true);
         this._dataGrid.show(this.element);
 
         // Event listeners need to be added _after_ we attach to the document, so that owner document is properly update.
@@ -470,6 +458,51 @@ WebInspector.NetworkLogView.prototype = {
     {
         if ((!this._dataGrid.selectedNode && event.button) || event.target.enclosingNodeOrSelfWithNodeName("a"))
             event.consume();
+    },
+
+    /**
+     * @param {!Event} event
+     */
+    _dataGridMouseMove: function(event)
+    {
+        var node = event.shiftKey ? this._dataGrid.dataGridNodeFromNode(event.target) : null;
+        this._highlightInitiatorChain(node ? node.request() : null);
+    },
+
+    /**
+     * @param {?WebInspector.NetworkRequest} request
+     */
+    _highlightInitiatorChain: function(request)
+    {
+        if (this._requestWithHighlightedInitiators === request)
+            return;
+        this._requestWithHighlightedInitiators = request;
+
+        if (!request) {
+            for (var node of this._nodesByRequestId.values()) {
+                if (!node.dataGrid)
+                    continue;
+                node.element().classList.remove("network-node-on-initiator-path", "network-node-on-initiated-path");
+            }
+            return;
+        }
+
+        var initiators = request.initiatorChain();
+        var initiated = new Set();
+        for (var node of this._nodesByRequestId.values()) {
+            if (!node.dataGrid)
+                continue;
+            var localInitiators = node.request().initiatorChain();
+            if (localInitiators.has(request))
+                initiated.add(node.request());
+        }
+
+        for (var node of this._nodesByRequestId.values()) {
+            if (!node.dataGrid)
+                continue;
+            node.element().classList.toggle("network-node-on-initiator-path", node.request() !== request && initiators.has(node.request()));
+            node.element().classList.toggle("network-node-on-initiated-path", node.request() !== request && initiated.has(node.request()));
+        }
     },
 
     /**
@@ -936,6 +969,7 @@ WebInspector.NetworkLogView.prototype = {
 
     reset: function()
     {
+        this._requestWithHighlightedInitiators = null;
         this.dispatchEventToListeners(WebInspector.NetworkLogView.EventTypes.RequestSelected, null);
 
         /** @type {boolean} */
@@ -1099,12 +1133,6 @@ WebInspector.NetworkLogView.prototype = {
 
         this.element.classList.toggle("brief-mode", !gridMode);
         this._updateColumns();
-    },
-
-    revealSelectedItem: function()
-    {
-        if (this._dataGrid.selectedNode)
-            this._dataGrid.selectedNode.reveal();
     },
 
     /**
@@ -1523,10 +1551,8 @@ WebInspector.NetworkLogView.prototype = {
         var request = node.request();
         if (this._timeFilter && !this._timeFilter(request))
             return false;
-        var resourceType = request.resourceType();
-        if (resourceType === WebInspector.resourceTypes.TextTrack)
-            resourceType = WebInspector.resourceTypes.Other;
-        if (!this._resourceTypeFilterUI.accept(resourceType.name()))
+        var categoryName = request.resourceType().category().title;
+        if (!this._resourceCategoryFilterUI.accept(categoryName))
             return false;
         if (this._dataURLFilterUI.checked() && request.parsedURL.isDataURL())
             return false;

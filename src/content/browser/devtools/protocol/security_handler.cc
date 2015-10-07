@@ -25,7 +25,7 @@ std::string SecurityStyleToProtocolSecurityState(
     case SECURITY_STYLE_UNKNOWN:
       return kSecurityStateUnknown;
     case SECURITY_STYLE_UNAUTHENTICATED:
-      return kSecurityStateHttp;
+      return kSecurityStateNeutral;
     case SECURITY_STYLE_AUTHENTICATION_BROKEN:
       return kSecurityStateInsecure;
     case SECURITY_STYLE_WARNING:
@@ -99,10 +99,30 @@ void SecurityHandler::SecurityStyleChanged(
   AddExplanations(kSecurityStateWarning,
                   security_style_explanations.warning_explanations,
                   &explanations);
+  AddExplanations(kSecurityStateSecure,
+                  security_style_explanations.secure_explanations,
+                  &explanations);
 
-  client_->SecurityStateChanged(SecurityStateChangedParams::Create()
-                                    ->set_security_state(security_state)
-                                    ->set_explanations(explanations));
+  scoped_refptr<MixedContentStatus> mixed_content_status =
+      MixedContentStatus::Create()
+          ->set_ran_insecure_content(
+              security_style_explanations.ran_insecure_content)
+          ->set_displayed_insecure_content(
+              security_style_explanations.displayed_insecure_content)
+          ->set_ran_insecure_content_style(SecurityStyleToProtocolSecurityState(
+              security_style_explanations.ran_insecure_content_style))
+          ->set_displayed_insecure_content_style(
+              SecurityStyleToProtocolSecurityState(
+                  security_style_explanations
+                      .displayed_insecure_content_style));
+
+  client_->SecurityStateChanged(
+      SecurityStateChangedParams::Create()
+          ->set_security_state(security_state)
+          ->set_scheme_is_cryptographic(
+              security_style_explanations.scheme_is_cryptographic)
+          ->set_mixed_content_status(mixed_content_status)
+          ->set_explanations(explanations));
 }
 
 Response SecurityHandler::Enable() {

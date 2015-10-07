@@ -28,17 +28,22 @@ V8IsolateMemoryDumpProvider::~V8IsolateMemoryDumpProvider() {
 // Called at trace dump point time. Creates a snapshot with the memory counters
 // for the current isolate.
 bool V8IsolateMemoryDumpProvider::OnMemoryDump(
+    const base::trace_event::MemoryDumpArgs& args,
     base::trace_event::ProcessMemoryDump* process_memory_dump) {
+  // TODO(ssid): Use MemoryDumpArgs to create light dumps when requested
+  // (crbug.com/499731).
+
   if (isolate_holder_->access_mode() == IsolateHolder::kUseLocker) {
     v8::Locker locked(isolate_holder_->isolate());
-    DumpHeapStatistics(process_memory_dump);
+    DumpHeapStatistics(args, process_memory_dump);
   } else {
-    DumpHeapStatistics(process_memory_dump);
+    DumpHeapStatistics(args, process_memory_dump);
   }
   return true;
 }
 
 void V8IsolateMemoryDumpProvider::DumpHeapStatistics(
+    const base::trace_event::MemoryDumpArgs& args,
     base::trace_event::ProcessMemoryDump* process_memory_dump) {
   std::string dump_base_name =
       base::StringPrintf("v8/isolate_%p", isolate_holder_->isolate());
@@ -88,6 +93,11 @@ void V8IsolateMemoryDumpProvider::DumpHeapStatistics(
       base::trace_event::MemoryAllocatorDump::kNameSize,
       base::trace_event::MemoryAllocatorDump::kUnitsBytes,
       heap_statistics.used_heap_size() - known_spaces_used_size);
+
+  // If light dump is requested, then object statistics are not dumped
+  if (args.level_of_detail ==
+      base::trace_event::MemoryDumpArgs::LevelOfDetail::LOW)
+    return;
 
   // Dump statistics of the heap's live objects from last GC.
   std::string object_name_prefix = dump_base_name + "/heap_objects";

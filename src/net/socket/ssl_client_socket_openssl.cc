@@ -240,7 +240,6 @@ class SSLClientSocketOpenSSL::SSLContext {
     // but that is an OpenSSL issue.
     SSL_CTX_set_next_proto_select_cb(ssl_ctx_.get(), SelectNextProtoCallback,
                                      NULL);
-    ssl_ctx_->tlsext_channel_id_enabled_new = 1;
 
     // Disable the internal session cache. Session caching is handled
     // externally (i.e. by SSLClientSessionCacheOpenSSL).
@@ -467,6 +466,7 @@ SSLClientSocketOpenSSL::SSLClientSocketOpenSSL(
       ssl_config_(ssl_config),
       ssl_session_cache_shard_(context.ssl_session_cache_shard),
       next_handshake_state_(STATE_NONE),
+      disconnected_(false),
       npn_status_(kNextProtoUnsupported),
       channel_id_sent_(false),
       session_pending_(false),
@@ -540,6 +540,14 @@ int SSLClientSocketOpenSSL::Connect(const CompletionCallback& callback) {
   // TransportSecurityState.
   DCHECK(transport_security_state_);
 
+  // Although StreamSocket does allow calling Connect() after Disconnect(),
+  // this has never worked for layered sockets. CHECK to detect any consumers
+  // reconnecting an SSL socket.
+  //
+  // TODO(davidben,mmenke): Remove this API feature. See
+  // https://crbug.com/499289.
+  CHECK(!disconnected_);
+
   net_log_.BeginEvent(NetLog::TYPE_SSL_CONNECT);
 
   // Set up new ssl object.
@@ -575,6 +583,8 @@ void SSLClientSocketOpenSSL::Disconnect() {
     BIO_free_all(transport_bio_);
     transport_bio_ = NULL;
   }
+
+  disconnected_ = true;
 
   // Shut down anything that may call us back.
   cert_verifier_request_.reset();
@@ -954,11 +964,6 @@ int SSLClientSocketOpenSSL::Init() {
   if (cert_verifier_->SupportsOCSPStapling())
     SSL_enable_ocsp_stapling(ssl_);
 
-  // Enable fastradio padding.
-  SSL_enable_fastradio_padding(ssl_,
-                               ssl_config_.fastradio_padding_enabled &&
-                                   ssl_config_.fastradio_padding_eligible);
-
   // By default, renegotiations are rejected. After the initial handshake
   // completes, some application protocols may re-enable it.
   SSL_set_reject_peer_renegotiations(ssl_, 1);
@@ -1186,6 +1191,12 @@ int SSLClientSocketOpenSSL::DoVerifyCert(int result) {
 
   GotoState(STATE_VERIFY_CERT_COMPLETE);
 
+  // OpenSSL decoded the certificate, but the platform certificate
+  // implementation could not. This is treated as a fatal SSL-level protocol
+  // error rather than a certificate error. See https://crbug.com/91341.
+  if (!server_cert_.get())
+    return ERR_SSL_SERVER_CERT_BAD_FORMAT;
+
   // If the certificate is bad and has been previously accepted, use
   // the previous status and bypass the error.
   base::StringPiece der_cert;
@@ -1200,15 +1211,6 @@ int SSLClientSocketOpenSSL::DoVerifyCert(int result) {
     server_cert_verify_result_.cert_status = cert_status;
     server_cert_verify_result_.verified_cert = server_cert_;
     return OK;
-  }
-
-  // When running in a sandbox, it may not be possible to create an
-  // X509Certificate*, as that may depend on OS functionality blocked
-  // in the sandbox.
-  if (!server_cert_.get()) {
-    server_cert_verify_result_.Reset();
-    server_cert_verify_result_.cert_status = CERT_STATUS_INVALID;
-    return ERR_CERT_INVALID;
   }
 
   std::string ocsp_response;
@@ -1261,10 +1263,10 @@ int SSLClientSocketOpenSSL::DoVerifyCertComplete(int result) {
       (result == OK ||
        (IsCertificateError(result) && IsCertStatusMinorError(cert_status))) &&
       !transport_security_state_->CheckPublicKeyPins(
-          host_and_port_.host(),
-          server_cert_verify_result_.is_issued_by_known_root,
-          server_cert_verify_result_.public_key_hashes,
-          &pinning_failure_log_)) {
+          host_and_port_, server_cert_verify_result_.is_issued_by_known_root,
+          server_cert_verify_result_.public_key_hashes, server_cert_.get(),
+          server_cert_verify_result_.verified_cert.get(),
+          TransportSecurityState::ENABLE_PIN_REPORTS, &pinning_failure_log_)) {
     result = ERR_SSL_PINNED_KEY_NOT_IN_CERT_CHAIN;
   }
 
@@ -1345,6 +1347,8 @@ void SSLClientSocketOpenSSL::VerifyCT() {
               << server_cert_verify_result_.verified_cert->subject()
                      .GetDisplayName()
               << " does not conform to CT policy, removing EV status.";
+      server_cert_verify_result_.cert_status |=
+          CERT_STATUS_CT_COMPLIANCE_FAILED;
       server_cert_verify_result_.cert_status &= ~CERT_STATUS_IS_EV;
     }
   }

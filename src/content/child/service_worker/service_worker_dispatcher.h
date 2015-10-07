@@ -12,11 +12,16 @@
 #include "base/memory/ref_counted.h"
 #include "base/strings/string16.h"
 #include "content/child/worker_task_runner.h"
-#include "third_party/WebKit/public/platform/WebServiceWorkerError.h"
-#include "third_party/WebKit/public/platform/WebServiceWorkerProvider.h"
-#include "third_party/WebKit/public/platform/WebServiceWorkerState.h"
+#include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerError.h"
+#include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerProvider.h"
+#include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerRegistration.h"
+#include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerState.h"
 
 class GURL;
+
+namespace base {
+class SingleThreadTaskRunner;
+}
 
 namespace blink {
 class WebURL;
@@ -47,8 +52,11 @@ class CONTENT_EXPORT ServiceWorkerDispatcher
  public:
   typedef blink::WebServiceWorkerProvider::WebServiceWorkerRegistrationCallbacks
       WebServiceWorkerRegistrationCallbacks;
-  typedef blink::WebCallbacks<bool, blink::WebServiceWorkerError>
-      WebServiceWorkerUnregistrationCallbacks;
+  typedef blink::WebServiceWorkerRegistration::WebServiceWorkerUpdateCallbacks
+      WebServiceWorkerUpdateCallbacks;
+  typedef blink::WebServiceWorkerRegistration::
+      WebServiceWorkerUnregistrationCallbacks
+          WebServiceWorkerUnregistrationCallbacks;
   typedef
       blink::WebServiceWorkerProvider::WebServiceWorkerGetRegistrationCallbacks
       WebServiceWorkerGetRegistrationCallbacks;
@@ -59,7 +67,9 @@ class CONTENT_EXPORT ServiceWorkerDispatcher
       WebServiceWorkerGetRegistrationForReadyCallbacks
           WebServiceWorkerGetRegistrationForReadyCallbacks;
 
-  explicit ServiceWorkerDispatcher(ThreadSafeSender* thread_safe_sender);
+  ServiceWorkerDispatcher(
+      ThreadSafeSender* thread_safe_sender,
+      base::SingleThreadTaskRunner* main_thread_task_runner);
   ~ServiceWorkerDispatcher() override;
 
   void OnMessageReceived(const IPC::Message& msg);
@@ -72,7 +82,9 @@ class CONTENT_EXPORT ServiceWorkerDispatcher
       const GURL& script_url,
       WebServiceWorkerRegistrationCallbacks* callbacks);
   // Corresponds to ServiceWorkerRegistration.update().
-  void UpdateServiceWorker(int provider_id, int64 registration_id);
+  void UpdateServiceWorker(int provider_id,
+                           int64 registration_id,
+                           WebServiceWorkerUpdateCallbacks* callbacks);
   // Corresponds to ServiceWorkerRegistration.unregister().
   void UnregisterServiceWorker(
       int provider_id,
@@ -130,18 +142,23 @@ class CONTENT_EXPORT ServiceWorkerDispatcher
       const ServiceWorkerRegistrationObjectInfo& info,
       bool adopt_handle);
 
-  // |thread_safe_sender| needs to be passed in because if the call leads to
-  // construction it will be needed.
   static ServiceWorkerDispatcher* GetOrCreateThreadSpecificInstance(
-      ThreadSafeSender* thread_safe_sender);
+      ThreadSafeSender* thread_safe_sender,
+      base::SingleThreadTaskRunner* main_thread_task_runner);
 
   // Unlike GetOrCreateThreadSpecificInstance() this doesn't create a new
   // instance if thread-local instance doesn't exist.
   static ServiceWorkerDispatcher* GetThreadSpecificInstance();
 
+  base::SingleThreadTaskRunner* main_thread_task_runner() {
+    return main_thread_task_runner_.get();
+  }
+
  private:
   typedef IDMap<WebServiceWorkerRegistrationCallbacks,
       IDMapOwnPointer> RegistrationCallbackMap;
+  typedef IDMap<WebServiceWorkerUpdateCallbacks, IDMapOwnPointer>
+      UpdateCallbackMap;
   typedef IDMap<WebServiceWorkerUnregistrationCallbacks,
       IDMapOwnPointer> UnregistrationCallbackMap;
   typedef IDMap<WebServiceWorkerGetRegistrationCallbacks,
@@ -181,6 +198,7 @@ class CONTENT_EXPORT ServiceWorkerDispatcher
                     int request_id,
                     const ServiceWorkerRegistrationObjectInfo& info,
                     const ServiceWorkerVersionAttributes& attrs);
+  void OnUpdated(int thread_id, int request_id);
   void OnUnregistered(int thread_id,
                       int request_id,
                       bool is_success);
@@ -202,6 +220,10 @@ class CONTENT_EXPORT ServiceWorkerDispatcher
                            int request_id,
                            blink::WebServiceWorkerError::ErrorType error_type,
                            const base::string16& message);
+  void OnUpdateError(int thread_id,
+                     int request_id,
+                     blink::WebServiceWorkerError::ErrorType error_type,
+                     const base::string16& message);
   void OnUnregistrationError(int thread_id,
                              int request_id,
                              blink::WebServiceWorkerError::ErrorType error_type,
@@ -253,6 +275,7 @@ class CONTENT_EXPORT ServiceWorkerDispatcher
       const ServiceWorkerVersionAttributes& attrs);
 
   RegistrationCallbackMap pending_registration_callbacks_;
+  UpdateCallbackMap pending_update_callbacks_;
   UnregistrationCallbackMap pending_unregistration_callbacks_;
   GetRegistrationCallbackMap pending_get_registration_callbacks_;
   GetRegistrationsCallbackMap pending_get_registrations_callbacks_;
@@ -269,6 +292,7 @@ class CONTENT_EXPORT ServiceWorkerDispatcher
   WorkerToProviderMap worker_to_provider_;
 
   scoped_refptr<ThreadSafeSender> thread_safe_sender_;
+  scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerDispatcher);
 };

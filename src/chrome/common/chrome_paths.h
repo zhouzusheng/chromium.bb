@@ -50,11 +50,13 @@ enum {
   DIR_USER_APPLICATIONS,        // ~/Applications
   DIR_USER_LIBRARY,             // ~/Library
 #endif
-#if defined(OS_CHROMEOS) || (defined(OS_MACOSX) && !defined(OS_IOS))
+#if defined(OS_CHROMEOS) || (defined(OS_LINUX) && defined(CHROMIUM_BUILD)) || \
+    (defined(OS_MACOSX) && !defined(OS_IOS))
   DIR_USER_EXTERNAL_EXTENSIONS,  // Directory for per-user external extensions
-                                 // on Chrome Mac.  On Chrome OS, this path is
-                                 // used for OEM customization.
-                                 // Getting this path does not create it.
+                                 // on Chrome Mac and Chromium Linux.
+                                 // On Chrome OS, this path is used for OEM
+                                 // customization. Getting this path does not
+                                 // create it.
 #endif
 
 #if defined(OS_LINUX)
@@ -122,11 +124,19 @@ enum {
   DIR_GLOBAL_GCM_STORE,         // Directory where the global GCM instance
                                 // stores its data.
 #endif
+#if defined(OS_ANDROID)
+  DIR_OFFLINE_PAGE_METADATA,    // Directory where offline page metadata is
+                                // stored.
+#endif
 
   // Valid only in development environment; TODO(darin): move these
   DIR_GEN_TEST_DATA,            // Directory where generated test data resides.
   DIR_TEST_DATA,                // Directory where unit test data resides.
   DIR_TEST_TOOLS,               // Directory where unit test tools reside.
+#if defined(OS_LINUX)
+  FILE_COMPONENT_FLASH_HINT,    // A file in a known location that points to
+                                // the component updated flash plugin.
+#endif // defined(OS_LINUX)
 
   PATH_END
 };

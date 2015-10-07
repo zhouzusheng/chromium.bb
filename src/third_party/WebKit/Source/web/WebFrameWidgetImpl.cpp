@@ -31,6 +31,7 @@
 #include "config.h"
 #include "web/WebFrameWidgetImpl.h"
 
+#include "core/editing/EditingUtilities.h"
 #include "core/editing/Editor.h"
 #include "core/editing/FrameSelection.h"
 #include "core/editing/InputMethodController.h"
@@ -52,7 +53,7 @@
 #include "web/WebLocalFrameImpl.h"
 #include "web/WebPluginContainerImpl.h"
 #include "web/WebRemoteFrameImpl.h"
-#include "web/WebViewImpl.h"
+#include "web/WebViewFrameWidget.h"
 
 namespace blink {
 
@@ -64,10 +65,19 @@ WebFrameWidget* WebFrameWidget::create(WebWidgetClient* client, WebLocalFrame* l
     return WebFrameWidgetImpl::create(client, localRoot);
 }
 
+WebFrameWidget* WebFrameWidget::create(WebView* webView)
+{
+    return new WebViewFrameWidget(*toWebViewImpl(webView));
+}
+
 WebFrameWidgetImpl* WebFrameWidgetImpl::create(WebWidgetClient* client, WebLocalFrame* localRoot)
 {
     // Pass the WebFrameWidgetImpl's self-reference to the caller.
+#if ENABLE(OILPAN)
+    return new WebFrameWidgetImpl(client, localRoot); // SelfKeepAlive is set in constructor.
+#else
     return adoptRef(new WebFrameWidgetImpl(client, localRoot)).leakRef();
+#endif
 }
 
 // static
@@ -87,6 +97,9 @@ WebFrameWidgetImpl::WebFrameWidgetImpl(WebWidgetClient* client, WebLocalFrame* l
     , m_layerTreeViewClosed(false)
     , m_suppressNextKeypressEvent(false)
     , m_ignoreInputEvents(false)
+#if ENABLE(OILPAN)
+    , m_selfKeepAlive(this)
+#endif
 {
     ASSERT(m_localRoot->frame()->isLocalRoot());
     initializeLayerTreeView();
@@ -96,6 +109,12 @@ WebFrameWidgetImpl::WebFrameWidgetImpl(WebWidgetClient* client, WebLocalFrame* l
 
 WebFrameWidgetImpl::~WebFrameWidgetImpl()
 {
+}
+
+DEFINE_TRACE(WebFrameWidgetImpl)
+{
+    visitor->trace(m_localRoot);
+    visitor->trace(m_mouseCaptureNode);
 }
 
 // WebWidget ------------------------------------------------------------------
@@ -112,7 +131,15 @@ void WebFrameWidgetImpl::close()
     // deleted.
     m_client = nullptr;
 
+    m_layerTreeView = nullptr;
+    m_rootLayer = nullptr;
+    m_rootGraphicsLayer = nullptr;
+
+#if ENABLE(OILPAN)
+    m_selfKeepAlive.clear();
+#else
     deref(); // Balances ref() acquired in WebFrameWidget::create
+#endif
 }
 
 WebSize WebFrameWidgetImpl::size()
@@ -173,7 +200,12 @@ void WebFrameWidgetImpl::sendResizeEventAndRepaint()
 
 void WebFrameWidgetImpl::resizePinchViewport(const WebSize& newSize)
 {
-    // FIXME: Implement pinch viewport for out-of-process iframes.
+    // TODO(bokan): To Remove.
+}
+
+void WebFrameWidgetImpl::resizeVisualViewport(const WebSize& newSize)
+{
+    // FIXME: Implement visual viewport for out-of-process iframes.
 }
 
 void WebFrameWidgetImpl::updateMainFrameLayoutSize()
@@ -202,17 +234,7 @@ void WebFrameWidgetImpl::willEndLiveResize()
         m_localRoot->frameView()->willEndLiveResize();
 }
 
-void WebFrameWidgetImpl::willEnterFullScreen()
-{
-    // FIXME: Implement full screen for out-of-process iframes.
-}
-
 void WebFrameWidgetImpl::didEnterFullScreen()
-{
-    // FIXME: Implement full screen for out-of-process iframes.
-}
-
-void WebFrameWidgetImpl::willExitFullScreen()
 {
     // FIXME: Implement full screen for out-of-process iframes.
 }
@@ -424,7 +446,7 @@ bool WebFrameWidgetImpl::hasTouchEventHandlersAt(const WebPoint& point)
 void WebFrameWidgetImpl::scheduleAnimation()
 {
     if (m_layerTreeView) {
-        m_layerTreeView->setNeedsAnimate();
+        m_layerTreeView->setNeedsBeginFrame();
         return;
     }
     if (m_client)
@@ -432,7 +454,7 @@ void WebFrameWidgetImpl::scheduleAnimation()
 }
 
 void WebFrameWidgetImpl::applyViewportDeltas(
-    const WebFloatSize& pinchViewportDelta,
+    const WebFloatSize& visualViewportDelta,
     const WebFloatSize& mainFrameDelta,
     const WebFloatSize& elasticOverscrollDelta,
     float pageScaleDelta,
@@ -540,23 +562,11 @@ bool WebFrameWidgetImpl::selectionBounds(WebRect& anchor, WebRect& focus) const
     if (selection.isCaret()) {
         anchor = focus = selection.absoluteCaretBounds();
     } else {
-        RefPtrWillBeRawPtr<Range> selectedRange = selection.toNormalizedRange();
-        if (!selectedRange)
+        const EphemeralRange selectedRange = selection.selection().toNormalizedEphemeralRange();
+        if (selectedRange.isNull())
             return false;
-
-        RefPtrWillBeRawPtr<Range> range(Range::create(selectedRange->startContainer()->document(),
-            selectedRange->startContainer(),
-            selectedRange->startOffset(),
-            selectedRange->startContainer(),
-            selectedRange->startOffset()));
-        anchor = localFrame->editor().firstRectForRange(range.get());
-
-        range = Range::create(selectedRange->endContainer()->document(),
-            selectedRange->endContainer(),
-            selectedRange->endOffset(),
-            selectedRange->endContainer(),
-            selectedRange->endOffset());
-        focus = localFrame->editor().firstRectForRange(range.get());
+        anchor = localFrame->editor().firstRectForRange(EphemeralRange(selectedRange.startPosition()));
+        focus = localFrame->editor().firstRectForRange(EphemeralRange(selectedRange.endPosition()));
     }
 
     // FIXME: This doesn't apply page scale. This should probably be contents to viewport. crbug.com/459293.
@@ -579,10 +589,10 @@ bool WebFrameWidgetImpl::selectionTextDirection(WebTextDirection& start, WebText
     if (!frame)
         return false;
     FrameSelection& selection = frame->selection();
-    if (!selection.toNormalizedRange())
+    if (selection.selection().toNormalizedEphemeralRange().isNull())
         return false;
-    start = toWebTextDirection(selection.start().primaryDirection());
-    end = toWebTextDirection(selection.end().primaryDirection());
+    start = toWebTextDirection(primaryDirectionOf(*selection.start().anchorNode()));
+    end = toWebTextDirection(primaryDirectionOf(*selection.end().anchorNode()));
     return true;
 }
 

@@ -141,6 +141,14 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   void SetBlendMode(SkXfermode::Mode blend_mode);
   SkXfermode::Mode blend_mode() const { return blend_mode_; }
 
+  void set_draw_blend_mode(SkXfermode::Mode blend_mode) {
+    if (draw_blend_mode_ == blend_mode)
+      return;
+    draw_blend_mode_ = blend_mode;
+    SetNeedsPushProperties();
+  }
+  SkXfermode::Mode draw_blend_mode() const { return draw_blend_mode_; }
+
   bool uses_default_blend_mode() const {
     return blend_mode_ == SkXfermode::kSrcOver_Mode;
   }
@@ -157,6 +165,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   void SetFilters(const FilterOperations& filters);
   const FilterOperations& filters() const { return filters_; }
   bool FilterIsAnimating() const;
+  bool HasPotentiallyRunningFilterAnimation() const;
 
   // Background filters are filters applied to what is behind this layer, when
   // they are viewed through non-opaque regions in this layer. They are used
@@ -195,6 +204,9 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   void SetTransformOrigin(const gfx::Point3F&);
   gfx::Point3F transform_origin() const { return transform_origin_; }
+
+  bool HasAnyAnimationTargetingProperty(
+      Animation::TargetProperty property) const;
 
   bool ScrollOffsetAnimationWasInterrupted() const;
 
@@ -240,19 +252,9 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
     return draw_properties_.screen_space_transform;
   }
   float draw_opacity() const { return draw_properties_.opacity; }
-  bool draw_opacity_is_animating() const {
-    return draw_properties_.opacity_is_animating;
-  }
-  bool draw_transform_is_animating() const {
-    return draw_properties_.target_space_transform_is_animating;
-  }
   bool screen_space_transform_is_animating() const {
     return draw_properties_.screen_space_transform_is_animating;
   }
-  bool screen_space_opacity_is_animating() const {
-    return draw_properties_.screen_space_opacity_is_animating;
-  }
-  bool is_clipped() const { return draw_properties_.is_clipped; }
   gfx::Rect clip_rect() const { return draw_properties_.clip_rect; }
   gfx::Rect drawable_content_rect() const {
     return draw_properties_.drawable_content_rect;
@@ -320,11 +322,6 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
 
   void set_did_scroll_callback(const base::Closure& callback) {
     did_scroll_callback_ = callback;
-  }
-
-  void SetDrawCheckerboardForMissingTiles(bool checkerboard);
-  bool draw_checkerboard_for_missing_tiles() const {
-    return draw_checkerboard_for_missing_tiles_;
   }
 
   void SetForceRenderSurface(bool force_render_surface);
@@ -463,8 +460,8 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   void SetClipTreeIndex(int index);
   int clip_tree_index() const;
 
-  void SetOpacityTreeIndex(int index);
-  int opacity_tree_index() const;
+  void SetEffectTreeIndex(int index);
+  int effect_tree_index() const;
 
   void set_offset_to_transform_parent(gfx::Vector2dF offset) {
     if (offset_to_transform_parent_ == offset)
@@ -490,6 +487,14 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
     visible_rect_from_property_trees_ = rect;
   }
 
+  const gfx::Rect& clip_rect_in_target_space_from_property_trees() const {
+    return clip_rect_in_target_space_from_property_trees_;
+  }
+  void set_clip_rect_in_target_space_from_property_trees(
+      const gfx::Rect& rect) {
+    clip_rect_in_target_space_from_property_trees_ = rect;
+  }
+
   void set_should_flatten_transform_from_property_tree(bool should_flatten) {
     if (should_flatten_transform_from_property_tree_ == should_flatten)
       return;
@@ -499,6 +504,14 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   bool should_flatten_transform_from_property_tree() const {
     return should_flatten_transform_from_property_tree_;
   }
+
+  void set_is_clipped(bool is_clipped) {
+    if (is_clipped_ == is_clipped)
+      return;
+    is_clipped_ = is_clipped;
+    SetNeedsPushProperties();
+  }
+  bool is_clipped() const { return is_clipped_; }
 
   // TODO(vollick): These values are temporary and will be removed as soon as
   // render surface determinations are moved out of CDP. They only exist because
@@ -524,16 +537,6 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
       int num_layer_or_descendants_with_copy_request) {
     num_layer_or_descendants_with_copy_request_ =
         num_layer_or_descendants_with_copy_request;
-  }
-
-  void set_num_layer_or_descandant_with_input_handler(
-      int num_layer_or_descendants_with_input_handler) {
-    num_layer_or_descendants_with_input_handler_ =
-        num_layer_or_descendants_with_input_handler;
-  }
-
-  int num_layer_or_descendants_with_input_handler() {
-    return num_layer_or_descendants_with_input_handler_;
   }
 
   void set_num_children_with_scroll_parent(
@@ -652,6 +655,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   void OnTransformAnimated(const gfx::Transform& transform) override;
   void OnScrollOffsetAnimated(const gfx::ScrollOffset& scroll_offset) override;
   void OnAnimationWaitingForDeletion() override;
+  void OnTransformIsPotentiallyAnimatingChanged(bool is_animating) override;
   bool IsActive() const override;
 
   // If this layer has a scroll parent, it removes |this| from its list of
@@ -667,7 +671,6 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   void InvalidatePropertyTreesIndices();
 
   void UpdateNumCopyRequestsForSubtree(bool add);
-  void UpdateNumInputHandlersForSubtree(bool add);
 
   LayerList children_;
   Layer* parent_;
@@ -690,14 +693,14 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   int scroll_clip_layer_id_;
   int num_descendants_that_draw_content_;
   int transform_tree_index_;
-  int opacity_tree_index_;
+  int effect_tree_index_;
   int clip_tree_index_;
   int property_tree_sequence_number_;
   int num_layer_or_descendants_with_copy_request_;
-  int num_layer_or_descendants_with_input_handler_;
   int num_children_with_scroll_parent_;
   gfx::Vector2dF offset_to_transform_parent_;
   bool should_flatten_transform_from_property_tree_ : 1;
+  bool is_clipped_ : 1;
   bool should_scroll_on_main_thread_ : 1;
   bool have_wheel_event_handlers_ : 1;
   bool have_scroll_event_handlers_ : 1;
@@ -713,7 +716,6 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   bool double_sided_ : 1;
   bool should_flatten_transform_ : 1;
   bool use_parent_backface_visibility_ : 1;
-  bool draw_checkerboard_for_missing_tiles_ : 1;
   bool force_render_surface_ : 1;
   bool transform_is_invertible_ : 1;
   bool has_render_surface_ : 1;
@@ -724,6 +726,9 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   SkColor background_color_;
   float opacity_;
   SkXfermode::Mode blend_mode_;
+  // draw_blend_mode may be different than blend_mode_,
+  // when a RenderSurface re-parents the layer's blend_mode.
+  SkXfermode::Mode draw_blend_mode_;
   FilterOperations filters_;
   FilterOperations background_filters_;
   LayerPositionConstraint position_constraint_;
@@ -761,6 +766,7 @@ class CC_EXPORT Layer : public base::RefCounted<Layer>,
   scoped_ptr<RenderSurface> render_surface_;
 
   gfx::Rect visible_rect_from_property_trees_;
+  gfx::Rect clip_rect_in_target_space_from_property_trees_;
 
   std::vector<FrameTimingRequest> frame_timing_requests_;
   bool frame_timing_requests_dirty_;

@@ -57,7 +57,7 @@ class WebDataSourceImpl;
 class WebDevToolsAgentImpl;
 class WebDevToolsFrontendImpl;
 class WebFrameClient;
-class WebFrameWidgetImpl;
+class WebFrameWidget;
 class WebNode;
 class WebPerformance;
 class WebPlugin;
@@ -89,8 +89,6 @@ public:
     void setSharedWorkerRepositoryClient(WebSharedWorkerRepositoryClient*) override;
     WebSize scrollOffset() const override;
     void setScrollOffset(const WebSize&) override;
-    WebSize minimumScrollOffset() const override;
-    WebSize maximumScrollOffset() const override;
     WebSize contentsSize() const override;
     bool hasVisibleContent() const override;
     WebRect visibleContentRect() const override;
@@ -335,8 +333,8 @@ public:
     // Returns a hit-tested VisiblePosition for the given point
     VisiblePosition visiblePositionForViewportPoint(const WebPoint&);
 
-    void setFrameWidget(WebFrameWidgetImpl*);
-    WebFrameWidgetImpl* frameWidget() const;
+    void setFrameWidget(WebFrameWidget*);
+    WebFrameWidget* frameWidget() const;
 
     // DevTools front-end bindings.
     void setDevToolsFrontend(WebDevToolsFrontendImpl* frontend) { m_webDevToolsFrontend = frontend; }
@@ -370,7 +368,7 @@ private:
     OwnPtrWillBeMember<WebDevToolsAgentImpl> m_devToolsAgent;
 
     // This is set if the frame is the root of a local frame tree, and requires a widget for layout.
-    WebFrameWidgetImpl* m_frameWidget;
+    WebFrameWidget* m_frameWidget;
 
     WebFrameClient* m_client;
     WebAutofillClient* m_autofillClient;
@@ -397,14 +395,10 @@ private:
     HashMap<AtomicString, OwnPtr<WebTestInterfaceFactory>> m_testInterfaces;
 
 #if ENABLE(OILPAN)
-    // Oilpan: to provide the guarantee of having the frame live until
-    // close() is called, an instance keep a self-persistent. It is
-    // cleared upon calling close(). This avoids having to assume that
-    // an embedder's WebFrame references are all discovered via thread
-    // state (stack, registers) should an Oilpan GC strike while we're
-    // in the process of detaching.
-    GC_PLUGIN_IGNORE("340522")
-    Persistent<WebLocalFrameImpl> m_selfKeepAlive;
+    // Oilpan: WebLocalFrameImpl must remain alive until close() is called.
+    // Accomplish that by keeping a self-referential Persistent<>. It is
+    // cleared upon close().
+    SelfKeepAlive<WebLocalFrameImpl> m_selfKeepAlive;
 #endif
 };
 

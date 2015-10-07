@@ -606,15 +606,12 @@ WebInspector.HeapSnapshotView.prototype = {
     },
 
     /**
-     * @param {function()} callback
      * @param {?WebInspector.HeapSnapshotGridNode} node
      */
-    _selectRevealedNode: function(callback, node)
+    _selectRevealedNode: function(node)
     {
         if (node)
             node.select();
-
-        callback();
     },
 
     /**
@@ -632,41 +629,38 @@ WebInspector.HeapSnapshotView.prototype = {
             shouldJump,
             jumpBackwards || false
         );
+
         this._searchThrottler.schedule(this._performSearch.bind(this, nextQuery));
     },
 
     /**
      * @param {!WebInspector.HeapSnapshotCommon.SearchConfig} nextQuery
-     * @param {function()} callback
+     * @return {!Promise<?>}
      */
-    _performSearch: function(nextQuery, callback)
+    _performSearch: function(nextQuery)
     {
         // Call searchCanceled since it will reset everything we need before doing a new search.
         this.searchCanceled();
 
-        if (!this._currentPerspective.supportsSearch()) {
-            callback();
-            return;
-        }
+        if (!this._currentPerspective.supportsSearch())
+            return Promise.resolve();
 
         this.currentQuery = nextQuery;
         var query = nextQuery.query.trim();
 
-        if (!query) {
-            callback();
-            return;
-        }
+        if (!query)
+            return Promise.resolve();
 
         if (query.charAt(0) === "@") {
             var snapshotNodeId = parseInt(query.substring(1), 10);
-            if (!isNaN(snapshotNodeId))
-                this._dataGrid.revealObjectByHeapSnapshotId(String(snapshotNodeId), this._selectRevealedNode.bind(this, callback));
-            else
-                callback();
-            return;
+            if (isNaN(snapshotNodeId))
+                return Promise.resolve();
+            return this._dataGrid.revealObjectByHeapSnapshotId(String(snapshotNodeId)).then(this._selectRevealedNode.bind(this));
         }
 
         /**
+         * @param {!Array<number>} entryIds
+         * @return {!Promise<?>}
          * @this {WebInspector.HeapSnapshotView}
          */
         function didSearch(entryIds)
@@ -675,10 +669,10 @@ WebInspector.HeapSnapshotView.prototype = {
             this._searchableView.updateSearchMatchesCount(this._searchResults.length);
             if (this._searchResults.length)
                 this._currentSearchResultIndex = nextQuery.jumpBackwards ? this._searchResults.length - 1 : 0;
-            this._jumpToSearchResult(this._currentSearchResultIndex, callback);
+            return this._jumpToSearchResult(this._currentSearchResultIndex);
         }
 
-        this._profile._snapshotProxy.search(this.currentQuery, this._dataGrid.nodeFilter(), didSearch.bind(this));
+        return this._profile._snapshotProxy.search(this.currentQuery, this._dataGrid.nodeFilter()).then(didSearch.bind(this));
     },
 
     /**
@@ -703,10 +697,14 @@ WebInspector.HeapSnapshotView.prototype = {
         this._searchThrottler.schedule(this._jumpToSearchResult.bind(this, this._currentSearchResultIndex));
     },
 
-    _jumpToSearchResult: function(searchResultIndex, callback)
+    /**
+     * @param {number} searchResultIndex
+     * @return {!Promise<undefined>}
+     */
+    _jumpToSearchResult: function(searchResultIndex)
     {
-        this._dataGrid.revealObjectByHeapSnapshotId(String(this._searchResults[searchResultIndex]), this._selectRevealedNode.bind(this, callback));
         this._searchableView.updateCurrentMatchIndex(searchResultIndex);
+        return this._dataGrid.revealObjectByHeapSnapshotId(String(this._searchResults[searchResultIndex])).then(this._selectRevealedNode.bind(this));
     },
 
     refreshVisibleData: function()

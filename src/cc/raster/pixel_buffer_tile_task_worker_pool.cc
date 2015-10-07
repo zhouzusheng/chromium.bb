@@ -40,7 +40,8 @@ class RasterBufferImpl : public RasterBuffer {
                 const gfx::Rect& raster_full_rect,
                 const gfx::Rect& raster_dirty_rect,
                 uint64_t new_content_id,
-                float scale) override {
+                float scale,
+                bool include_images) override {
     if (!memory_)
       return;
 
@@ -49,7 +50,7 @@ class RasterBufferImpl : public RasterBuffer {
     TileTaskWorkerPool::PlaybackToMemory(
         memory_, resource_->format(), resource_->size(),
         static_cast<size_t>(stride_), raster_source, raster_full_rect,
-        raster_full_rect, scale);
+        raster_full_rect, scale, include_images);
   }
 
  private:
@@ -436,9 +437,9 @@ void PixelBufferTileTaskWorkerPool::CheckForCompletedUploads() {
     DCHECK(state_it != raster_task_states_.end());
     RasterTaskState& state = *state_it;
 
-    // We can use UncheckedMemorySizeBytes here, since these tasks come from
-    // tiles, the size of which is controlled by the compositor.
-    bytes_pending_upload_ -= Resource::UncheckedMemorySizeBytes(
+    // We can use UncheckedSizeInBytes here, since these tasks come from tiles,
+    // the size of which is controlled by the compositor.
+    bytes_pending_upload_ -= ResourceUtil::UncheckedSizeInBytes<size_t>(
         task->resource()->size(), task->resource()->format());
 
     task->WillComplete();
@@ -545,9 +546,9 @@ void PixelBufferTileTaskWorkerPool::ScheduleMoreTasks() {
     // but if it's the only task allow it to complete no matter what its size,
     // to prevent starvation of the task queue.
     size_t new_bytes_pending_upload = bytes_pending_upload;
-    // We can use UncheckedMemorySizeBytes here, since these tasks come from
-    // tiles, the size of which is controlled by the compositor.
-    new_bytes_pending_upload += Resource::UncheckedMemorySizeBytes(
+    // We can use UncheckedSizeInBytes here, since these tasks come from tiles,
+    // the size of which is controlled by the compositor.
+    new_bytes_pending_upload += ResourceUtil::UncheckedSizeInBytes<size_t>(
         task->resource()->size(), task->resource()->format());
     if (new_bytes_pending_upload > max_bytes_pending_upload_ &&
         bytes_pending_upload) {
@@ -712,9 +713,9 @@ void PixelBufferTileTaskWorkerPool::CheckForCompletedRasterizerTasks() {
     resource_provider_->BeginSetPixels(raster_task->resource()->id());
     has_performed_uploads_since_last_flush_ = true;
 
-    // We can use UncheckedMemorySizeBytes here, since these tasks come from
-    // tiles, the size of which is controlled by the compositor.
-    bytes_pending_upload_ += Resource::UncheckedMemorySizeBytes(
+    // We can use UncheckedSizeInBytes here, since these tasks come from tiles,
+    // the size of which is controlled by the compositor.
+    bytes_pending_upload_ += ResourceUtil::UncheckedSizeInBytes<size_t>(
         raster_task->resource()->size(), raster_task->resource()->format());
     raster_tasks_with_pending_upload_.push_back(raster_task);
     state.type = RasterTaskState::UPLOADING;

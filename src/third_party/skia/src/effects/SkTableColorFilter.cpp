@@ -337,7 +337,7 @@ SkColorFilter* SkTable_ColorFilter::newComposed(const SkColorFilter* innerFilter
 #include "GrInvariantOutput.h"
 #include "SkGr.h"
 #include "effects/GrTextureStripAtlas.h"
-#include "gl/GrGLProcessor.h"
+#include "gl/GrGLFragmentProcessor.h"
 #include "gl/builders/GrGLProgramBuilder.h"
 
 class ColorTableEffect : public GrFragmentProcessor {
@@ -348,14 +348,14 @@ public:
 
     const char* name() const override { return "ColorTable"; }
 
-    void getGLProcessorKey(const GrGLSLCaps&, GrProcessorKeyBuilder*) const override;
-
-    GrGLFragmentProcessor* createGLInstance() const override;
-
     const GrTextureStripAtlas* atlas() const { return fAtlas; }
     int atlasRow() const { return fRow; }
 
 private:
+    GrGLFragmentProcessor* onCreateGLInstance() const override;
+
+    void onGetGLProcessorKey(const GrGLSLCaps&, GrProcessorKeyBuilder*) const override;
+
     bool onIsEqual(const GrFragmentProcessor&) const override;
 
     void onComputeInvariantOutput(GrInvariantOutput* inout) const override;
@@ -379,16 +379,12 @@ class GLColorTableEffect : public GrGLFragmentProcessor {
 public:
     GLColorTableEffect(const GrProcessor&);
 
-    virtual void emitCode(GrGLFPBuilder*,
-                          const GrFragmentProcessor&,
-                          const char* outputColor,
-                          const char* inputColor,
-                          const TransformedCoordsArray&,
-                          const TextureSamplerArray&) override;
-
-    void setData(const GrGLProgramDataManager&, const GrProcessor&) override;
+    virtual void emitCode(EmitArgs&) override;
 
     static void GenKey(const GrProcessor&, const GrGLSLCaps&, GrProcessorKeyBuilder* b) {}
+
+protected:
+    void onSetData(const GrGLProgramDataManager&, const GrProcessor&) override;
 
 private:
     UniformHandle fRGBAYValuesUni;
@@ -398,7 +394,7 @@ private:
 GLColorTableEffect::GLColorTableEffect(const GrProcessor&) {
 }
 
-void GLColorTableEffect::setData(const GrGLProgramDataManager& pdm, const GrProcessor& proc) {
+void GLColorTableEffect::onSetData(const GrGLProgramDataManager& pdm, const GrProcessor& proc) {
     // The textures are organized in a strip where the rows are ordered a, r, g, b.
     float rgbaYValues[4];
     const ColorTableEffect& cte = proc.cast<ColorTableEffect>();
@@ -417,28 +413,24 @@ void GLColorTableEffect::setData(const GrGLProgramDataManager& pdm, const GrProc
     pdm.set4fv(fRGBAYValuesUni, 1, rgbaYValues);
 }
 
-void GLColorTableEffect::emitCode(GrGLFPBuilder* builder,
-                                  const GrFragmentProcessor&,
-                                  const char* outputColor,
-                                  const char* inputColor,
-                                  const TransformedCoordsArray&,
-                                  const TextureSamplerArray& samplers) {
+void GLColorTableEffect::emitCode(EmitArgs& args) {
     const char* yoffsets;
-    fRGBAYValuesUni = builder->addUniform(GrGLFPBuilder::kFragment_Visibility,
+    fRGBAYValuesUni = args.fBuilder->addUniform(GrGLFPBuilder::kFragment_Visibility,
                                           kVec4f_GrSLType, kDefault_GrSLPrecision,
                                           "yoffsets", &yoffsets);
     static const float kColorScaleFactor = 255.0f / 256.0f;
     static const float kColorOffsetFactor = 1.0f / 512.0f;
-    GrGLFragmentBuilder* fsBuilder = builder->getFragmentShaderBuilder();
-    if (NULL == inputColor) {
+    GrGLFragmentBuilder* fsBuilder = args.fBuilder->getFragmentShaderBuilder();
+    if (NULL == args.fInputColor) {
         // the input color is solid white (all ones).
         static const float kMaxValue = kColorScaleFactor + kColorOffsetFactor;
         fsBuilder->codeAppendf("\t\tvec4 coord = vec4(%f, %f, %f, %f);\n",
                                kMaxValue, kMaxValue, kMaxValue, kMaxValue);
 
     } else {
-        fsBuilder->codeAppendf("\t\tfloat nonZeroAlpha = max(%s.a, .0001);\n", inputColor);
-        fsBuilder->codeAppendf("\t\tvec4 coord = vec4(%s.rgb / nonZeroAlpha, nonZeroAlpha);\n", inputColor);
+        fsBuilder->codeAppendf("\t\tfloat nonZeroAlpha = max(%s.a, .0001);\n", args.fInputColor);
+        fsBuilder->codeAppendf("\t\tvec4 coord = vec4(%s.rgb / nonZeroAlpha, nonZeroAlpha);\n",
+                               args.fInputColor);
         fsBuilder->codeAppendf("\t\tcoord = coord * %f + vec4(%f, %f, %f, %f);\n",
                               kColorScaleFactor,
                               kColorOffsetFactor, kColorOffsetFactor,
@@ -447,27 +439,27 @@ void GLColorTableEffect::emitCode(GrGLFPBuilder* builder,
 
     SkString coord;
 
-    fsBuilder->codeAppendf("\t\t%s.a = ", outputColor);
+    fsBuilder->codeAppendf("\t\t%s.a = ", args.fOutputColor);
     coord.printf("vec2(coord.a, %s.a)", yoffsets);
-    fsBuilder->appendTextureLookup(samplers[0], coord.c_str());
+    fsBuilder->appendTextureLookup(args.fSamplers[0], coord.c_str());
     fsBuilder->codeAppend(";\n");
 
-    fsBuilder->codeAppendf("\t\t%s.r = ", outputColor);
+    fsBuilder->codeAppendf("\t\t%s.r = ", args.fOutputColor);
     coord.printf("vec2(coord.r, %s.r)", yoffsets);
-    fsBuilder->appendTextureLookup(samplers[0], coord.c_str());
+    fsBuilder->appendTextureLookup(args.fSamplers[0], coord.c_str());
     fsBuilder->codeAppend(";\n");
 
-    fsBuilder->codeAppendf("\t\t%s.g = ", outputColor);
+    fsBuilder->codeAppendf("\t\t%s.g = ", args.fOutputColor);
     coord.printf("vec2(coord.g, %s.g)", yoffsets);
-    fsBuilder->appendTextureLookup(samplers[0], coord.c_str());
+    fsBuilder->appendTextureLookup(args.fSamplers[0], coord.c_str());
     fsBuilder->codeAppend(";\n");
 
-    fsBuilder->codeAppendf("\t\t%s.b = ", outputColor);
+    fsBuilder->codeAppendf("\t\t%s.b = ", args.fOutputColor);
     coord.printf("vec2(coord.b, %s.b)", yoffsets);
-    fsBuilder->appendTextureLookup(samplers[0], coord.c_str());
+    fsBuilder->appendTextureLookup(args.fSamplers[0], coord.c_str());
     fsBuilder->codeAppend(";\n");
 
-    fsBuilder->codeAppendf("\t\t%s.rgb *= %s.a;\n", outputColor, outputColor);
+    fsBuilder->codeAppendf("\t\t%s.rgb *= %s.a;\n", args.fOutputColor, args.fOutputColor);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -509,12 +501,12 @@ ColorTableEffect::~ColorTableEffect() {
     }
 }
 
-void ColorTableEffect::getGLProcessorKey(const GrGLSLCaps& caps,
+void ColorTableEffect::onGetGLProcessorKey(const GrGLSLCaps& caps,
                                          GrProcessorKeyBuilder* b) const {
     GLColorTableEffect::GenKey(*this, caps, b);
 }
 
-GrGLFragmentProcessor* ColorTableEffect::createGLInstance() const {
+GrGLFragmentProcessor* ColorTableEffect::onCreateGLInstance() const {
     return SkNEW_ARGS(GLColorTableEffect, (*this));
 }
 

@@ -28,9 +28,6 @@
       # appropriately.  Chromium doesn't configure SQLite for that, and would
       # prefer to control distribution to worker threads.
       'SQLITE_MAX_WORKER_THREADS=0',
-      # TODO(shess): Figure out why this is here.  Nobody references it
-      # directly.
-      '_HAS_EXCEPTIONS=0',
       # NOTE(shess): Some defines can affect the amalgamation.  Those should be
       # added to google_generate_amalgamation.sh, and the amalgamation
       # re-generated.  Usually this involves disabling features which include
@@ -120,6 +117,16 @@
             'amalgamation/sqlite3.h',
             'amalgamation/sqlite3.c',
           ],
+          'variables': {
+            'clang_warning_flags': [
+              # sqlite contains a few functions that are unused, at least on
+              # Windows with Chromium's sqlite patches applied
+              # (interiorCursorEOF fts3EvalDeferredPhrase
+              # fts3EvalSelectDeferred sqlite3Fts3InitHashTable
+              # sqlite3Fts3InitTok).
+              '-Wno-unused-function',
+            ],
+          },
           'include_dirs': [
             'amalgamation',
           ],
@@ -134,7 +141,7 @@
             ],
           },
           'msvs_disabled_warnings': [
-            4018, 4244, 4267,
+            4244, 4267,
           ],
           'conditions': [
             ['OS=="linux"', {

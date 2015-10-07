@@ -99,13 +99,11 @@ class NET_EXPORT HttpNetworkSession
     std::string trusted_spdy_proxy;
     // URLs to exclude from forced SPDY.
     std::set<HostPortPair> forced_spdy_exclusions;
-    // Noe: Using this in the case of NPN for HTTP only results in the browser
-    // trying SSL and then falling back to http.
-    bool use_alternate_protocols;
+    bool use_alternative_services;
     double alternative_service_probability_threshold;
 
     bool enable_quic;
-    bool disable_insecure_quic;
+    bool enable_insecure_quic;
     bool enable_quic_for_proxies;
     bool enable_quic_port_selection;
     bool quic_always_require_handshake_confirmation;

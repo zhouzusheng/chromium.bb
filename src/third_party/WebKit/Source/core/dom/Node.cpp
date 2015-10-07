@@ -38,7 +38,6 @@
 #include "core/dom/DOMNodeIds.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentFragment.h"
-#include "core/dom/DocumentMarkerController.h"
 #include "core/dom/DocumentType.h"
 #include "core/dom/Element.h"
 #include "core/dom/ElementRareData.h"
@@ -59,7 +58,8 @@
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/InsertionPoint.h"
 #include "core/dom/shadow/ShadowRoot.h"
-#include "core/editing/htmlediting.h"
+#include "core/editing/EditingUtilities.h"
+#include "core/editing/markers/DocumentMarkerController.h"
 #include "core/events/Event.h"
 #include "core/events/EventDispatchMediator.h"
 #include "core/events/EventDispatcher.h"
@@ -109,7 +109,7 @@ static_assert(sizeof(Node) <= sizeof(SameSizeAsNode), "Node should stay small");
 void* Node::operator new(size_t size)
 {
     ASSERT(isMainThread());
-    return partitionAlloc(WTF::Partitions::objectModelPartition(), size);
+    return partitionAlloc(WTF::Partitions::nodePartition(), size);
 }
 
 void Node::operator delete(void* ptr)
@@ -492,96 +492,6 @@ PassRefPtrWillBeRawPtr<Node> Node::appendChild(PassRefPtrWillBeRawPtr<Node> newC
     return nullptr;
 }
 
-static bool isNodeInNodes(const Node& node, const HeapVector<NodeOrString>& nodes)
-{
-    for (const NodeOrString& nodeOrString : nodes) {
-        if (nodeOrString.isNode() && nodeOrString.getAsNode() == &node)
-            return true;
-    }
-    return false;
-}
-
-static Node* findViablePreviousSibling(const Node& node, const HeapVector<NodeOrString>& nodes)
-{
-    for (Node* sibling = node.previousSibling(); sibling; sibling = sibling->previousSibling()) {
-        if (!isNodeInNodes(*sibling, nodes))
-            return sibling;
-    }
-    return nullptr;
-}
-
-static Node* findViableNextSibling(const Node& node, const HeapVector<NodeOrString>& nodes)
-{
-    for (Node* sibling = node.nextSibling(); sibling; sibling = sibling->nextSibling()) {
-        if (!isNodeInNodes(*sibling, nodes))
-            return sibling;
-    }
-    return nullptr;
-}
-
-static PassRefPtrWillBeRawPtr<Node> nodeOrStringToNode(const NodeOrString& nodeOrString, Document& document)
-{
-    if (nodeOrString.isNode())
-        return nodeOrString.getAsNode();
-    return Text::create(document, nodeOrString.getAsString());
-}
-
-static PassRefPtrWillBeRawPtr<Node> convertNodesIntoNode(const HeapVector<NodeOrString>& nodes, Document& document)
-{
-    if (nodes.size() == 1)
-        return nodeOrStringToNode(nodes[0], document);
-
-    RefPtrWillBeRawPtr<Node> fragment = DocumentFragment::create(document);
-    for (const NodeOrString& nodeOrString : nodes)
-        fragment->appendChild(nodeOrStringToNode(nodeOrString, document), ASSERT_NO_EXCEPTION);
-    return fragment.release();
-}
-
-void Node::prepend(const HeapVector<NodeOrString>& nodes, ExceptionState& exceptionState)
-{
-    RefPtrWillBeRawPtr<Node> node = convertNodesIntoNode(nodes, document());
-    insertBefore(node, firstChild(), exceptionState);
-}
-
-void Node::append(const HeapVector<NodeOrString>& nodes, ExceptionState& exceptionState)
-{
-    RefPtrWillBeRawPtr<Node> node = convertNodesIntoNode(nodes, document());
-    appendChild(node, exceptionState);
-}
-
-void Node::before(const HeapVector<NodeOrString>& nodes, ExceptionState& exceptionState)
-{
-    Node* parent = parentNode();
-    if (!parent)
-        return;
-    Node* viablePreviousSibling = findViablePreviousSibling(*this, nodes);
-    RefPtrWillBeRawPtr<Node> node = convertNodesIntoNode(nodes, document());
-    parent->insertBefore(node, viablePreviousSibling ? viablePreviousSibling->nextSibling() : parent->firstChild(), exceptionState);
-}
-
-void Node::after(const HeapVector<NodeOrString>& nodes, ExceptionState& exceptionState)
-{
-    Node* parent = parentNode();
-    if (!parent)
-        return;
-    Node* viableNextSibling = findViableNextSibling(*this, nodes);
-    RefPtrWillBeRawPtr<Node> node = convertNodesIntoNode(nodes, document());
-    parent->insertBefore(node, viableNextSibling, exceptionState);
-}
-
-void Node::replaceWith(const HeapVector<NodeOrString>& nodes, ExceptionState& exceptionState)
-{
-    Node* parent = parentNode();
-    if (!parent)
-        return;
-    Node* viableNextSibling = findViableNextSibling(*this, nodes);
-    RefPtrWillBeRawPtr<Node> node = convertNodesIntoNode(nodes, document());
-    if (parent == parentNode())
-        parent->replaceChild(node, this, exceptionState);
-    else
-        parent->insertBefore(node, viableNextSibling, exceptionState);
-}
-
 void Node::remove(ExceptionState& exceptionState)
 {
     if (ContainerNode* parent = parentNode())
@@ -609,16 +519,6 @@ void Node::normalize()
     }
 }
 
-const AtomicString& Node::localName() const
-{
-    return nullAtom;
-}
-
-const AtomicString& Node::namespaceURI() const
-{
-    return nullAtom;
-}
-
 bool Node::isContentEditable(UserSelectAllTreatment treatment)
 {
     document().updateLayoutTreeIfNeeded();
@@ -644,7 +544,7 @@ bool Node::hasEditableStyle(EditableLevel editableLevel, UserSelectAllTreatment 
         if ((node->isHTMLElement() || node->isDocumentNode()) && node->layoutObject()) {
             // Elements with user-select: all style are considered atomic
             // therefore non editable.
-            if (Position::nodeIsUserSelectAll(node) && treatment == UserSelectAllIsAlwaysNonEditable)
+            if (nodeIsUserSelectAll(node) && treatment == UserSelectAllIsAlwaysNonEditable)
                 return false;
             switch (node->layoutObject()->style()->userModify()) {
             case READ_ONLY:
@@ -1190,17 +1090,25 @@ bool Node::isEqualNode(Node* other) const
     if (nodeName() != other->nodeName())
         return false;
 
-    if (localName() != other->localName())
-        return false;
-
-    if (namespaceURI() != other->namespaceURI())
-        return false;
-
     if (nodeValue() != other->nodeValue())
         return false;
 
-    if (isElementNode() && !toElement(this)->hasEquivalentAttributes(toElement(other)))
-        return false;
+    if (isAttributeNode()) {
+        if (toAttr(this)->localName() != toAttr(other)->localName())
+            return false;
+
+        if (toAttr(this)->namespaceURI() != toAttr(other)->namespaceURI())
+            return false;
+    } else if (isElementNode()) {
+        if (toElement(this)->localName() != toElement(other)->localName())
+            return false;
+
+        if (toElement(this)->namespaceURI() != toElement(other)->namespaceURI())
+            return false;
+
+        if (!toElement(this)->hasEquivalentAttributes(toElement(other)))
+            return false;
+    }
 
     Node* child = firstChild();
     Node* otherChild = other->firstChild();
@@ -1865,7 +1773,7 @@ void Node::didMoveToNewDocument(Document& oldDocument)
     }
 }
 
-static inline bool tryAddEventListener(Node* targetNode, const AtomicString& eventType, PassRefPtr<EventListener> listener, bool useCapture)
+static inline bool tryAddEventListener(Node* targetNode, const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, bool useCapture)
 {
     if (!targetNode->EventTarget::addEventListener(eventType, listener, useCapture))
         return false;
@@ -1878,12 +1786,12 @@ static inline bool tryAddEventListener(Node* targetNode, const AtomicString& eve
     return true;
 }
 
-bool Node::addEventListener(const AtomicString& eventType, PassRefPtr<EventListener> listener, bool useCapture)
+bool Node::addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, bool useCapture)
 {
     return tryAddEventListener(this, eventType, listener, useCapture);
 }
 
-static inline bool tryRemoveEventListener(Node* targetNode, const AtomicString& eventType, PassRefPtr<EventListener> listener, bool useCapture)
+static inline bool tryRemoveEventListener(Node* targetNode, const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, bool useCapture)
 {
     if (!targetNode->EventTarget::removeEventListener(eventType, listener, useCapture))
         return false;
@@ -1897,7 +1805,7 @@ static inline bool tryRemoveEventListener(Node* targetNode, const AtomicString& 
     return true;
 }
 
-bool Node::removeEventListener(const AtomicString& eventType, PassRefPtr<EventListener> listener, bool useCapture)
+bool Node::removeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, bool useCapture)
 {
     return tryRemoveEventListener(this, eventType, listener, useCapture);
 }
@@ -1918,7 +1826,7 @@ void Node::removeAllEventListenersRecursively()
     }
 }
 
-using EventTargetDataMap = WillBeHeapHashMap<RawPtrWillBeWeakMember<Node>, OwnPtr<EventTargetData>>;
+using EventTargetDataMap = WillBeHeapHashMap<RawPtrWillBeWeakMember<Node>, OwnPtrWillBeMember<EventTargetData>>;
 static EventTargetDataMap& eventTargetDataMap()
 {
     DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<EventTargetDataMap>, map, (adoptPtrWillBeNoop(new EventTargetDataMap())));
@@ -1936,9 +1844,10 @@ EventTargetData& Node::ensureEventTargetData()
         return *eventTargetDataMap().get(this);
     ASSERT(!eventTargetDataMap().contains(this));
     setHasEventTargetData(true);
-    EventTargetData* data = new EventTargetData;
-    eventTargetDataMap().set(this, adoptPtr(data));
-    return *data;
+    OwnPtrWillBeRawPtr<EventTargetData> data = adoptPtrWillBeNoop(new EventTargetData);
+    EventTargetData* dataPtr = data.get();
+    eventTargetDataMap().set(this, data.release());
+    return *dataPtr;
 }
 
 #if !ENABLE(OILPAN)
@@ -2089,24 +1998,13 @@ void Node::handleLocalEvents(Event& event)
 
 void Node::dispatchScopedEvent(PassRefPtrWillBeRawPtr<Event> event)
 {
-    dispatchScopedEventDispatchMediator(EventDispatchMediator::create(event));
+    event->setTrusted(true);
+    EventDispatcher::dispatchScopedEvent(*this, event->createMediator());
 }
 
-void Node::dispatchScopedEventDispatchMediator(PassRefPtrWillBeRawPtr<EventDispatchMediator> eventDispatchMediator)
+bool Node::dispatchEventInternal(PassRefPtrWillBeRawPtr<Event> event)
 {
-    EventDispatcher::dispatchScopedEvent(*this, eventDispatchMediator);
-}
-
-bool Node::dispatchEvent(PassRefPtrWillBeRawPtr<Event> event)
-{
-    if (event->isMouseEvent())
-        return EventDispatcher::dispatchEvent(*this, MouseEventDispatchMediator::create(static_pointer_cast<MouseEvent>(event), MouseEventDispatchMediator::SyntheticMouseEvent));
-    if (event->isTouchEvent())
-        return dispatchTouchEvent(static_pointer_cast<TouchEvent>(event));
-    if (event->isPointerEvent())
-        return dispatchPointerEvent(static_pointer_cast<PointerEvent>(event));
-
-    return EventDispatcher::dispatchEvent(*this, EventDispatchMediator::create(event));
+    return EventDispatcher::dispatchEvent(*this, event->createMediator());
 }
 
 void Node::dispatchSubtreeModifiedEvent()
@@ -2131,15 +2029,16 @@ bool Node::dispatchDOMActivateEvent(int detail, PassRefPtrWillBeRawPtr<Event> un
     return event->defaultHandled();
 }
 
-bool Node::dispatchKeyEvent(const PlatformKeyboardEvent& event)
+bool Node::dispatchKeyEvent(const PlatformKeyboardEvent& nativeEvent)
 {
-    return EventDispatcher::dispatchEvent(*this, KeyboardEventDispatchMediator::create(KeyboardEvent::create(event, document().domWindow())));
+    return dispatchEvent(KeyboardEvent::create(nativeEvent, document().domWindow()));
 }
 
-bool Node::dispatchMouseEvent(const PlatformMouseEvent& event, const AtomicString& eventType,
+bool Node::dispatchMouseEvent(const PlatformMouseEvent& nativeEvent, const AtomicString& eventType,
     int detail, Node* relatedTarget)
 {
-    return EventDispatcher::dispatchEvent(*this, MouseEventDispatchMediator::create(MouseEvent::create(eventType, document().domWindow(), event, detail, relatedTarget)));
+    RefPtrWillBeRawPtr<MouseEvent> event = MouseEvent::create(eventType, document().domWindow(), nativeEvent, detail, relatedTarget);
+    return dispatchEvent(event);
 }
 
 bool Node::dispatchGestureEvent(const PlatformGestureEvent& event)
@@ -2147,27 +2046,17 @@ bool Node::dispatchGestureEvent(const PlatformGestureEvent& event)
     RefPtrWillBeRawPtr<GestureEvent> gestureEvent = GestureEvent::create(document().domWindow(), event);
     if (!gestureEvent.get())
         return false;
-    return EventDispatcher::dispatchEvent(*this, GestureEventDispatchMediator::create(gestureEvent));
+    return dispatchEvent(gestureEvent);
 }
 
-bool Node::dispatchTouchEvent(PassRefPtrWillBeRawPtr<TouchEvent> event)
+void Node::dispatchSimulatedClick(Event* underlyingEvent, SimulatedClickMouseEventOptions eventOptions, SimulatedClickCreationScope scope)
 {
-    return EventDispatcher::dispatchEvent(*this, TouchEventDispatchMediator::create(event));
-}
-
-bool Node::dispatchPointerEvent(PassRefPtrWillBeRawPtr<PointerEvent> event)
-{
-    return EventDispatcher::dispatchEvent(*this, PointerEventDispatchMediator::create(event));
-}
-
-void Node::dispatchSimulatedClick(Event* underlyingEvent, SimulatedClickMouseEventOptions eventOptions)
-{
-    EventDispatcher::dispatchSimulatedClick(*this, underlyingEvent, eventOptions);
+    EventDispatcher::dispatchSimulatedClick(*this, underlyingEvent, eventOptions, scope);
 }
 
 bool Node::dispatchWheelEvent(const PlatformWheelEvent& event)
 {
-    return EventDispatcher::dispatchEvent(*this, WheelEventDispatchMediator::create(event, document().domWindow()));
+    return dispatchEvent(WheelEvent::create(event, document().domWindow()));
 }
 
 void Node::dispatchInputEvent()
@@ -2346,8 +2235,9 @@ PassRefPtrWillBeRawPtr<StaticNodeList> Node::getDestinationInsertionPoints()
     for (size_t i = 0; i < insertionPoints.size(); ++i) {
         InsertionPoint* insertionPoint = insertionPoints[i];
         ASSERT(insertionPoint->containingShadowRoot());
-        if (insertionPoint->containingShadowRoot()->type() != ShadowRootType::UserAgent)
-            filteredInsertionPoints.append(insertionPoint);
+        if (!insertionPoint->containingShadowRoot()->isOpen())
+            break;
+        filteredInsertionPoints.append(insertionPoint);
     }
     return StaticNodeList::adopt(filteredInsertionPoints);
 }

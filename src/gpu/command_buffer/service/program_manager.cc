@@ -592,7 +592,10 @@ bool Program::Link(ShaderManager* manager,
         transform_feedback_varyings_,
         transform_feedback_buffer_mode_);
 
-    if (status == ProgramCache::LINK_SUCCEEDED) {
+    bool cache_hit = status == ProgramCache::LINK_SUCCEEDED;
+    UMA_HISTOGRAM_BOOLEAN("GPU.ProgramCache.CacheHit", cache_hit);
+
+    if (cache_hit) {
       ProgramCache::ProgramLoadResult success =
           cache->LoadLinkedProgram(service_id(),
                                    attached_shaders_[0].get(),
@@ -841,7 +844,8 @@ void Program::GetCorrectedUniformData(
       found = uniform->findInfoByMappedName(name, &info, original_name);
     if (found) {
       const std::string kArraySpec("[0]");
-      if (info->arraySize > 0 && !base::EndsWith(name, kArraySpec, true)) {
+      if (info->arraySize > 0 &&
+          !base::EndsWith(name, kArraySpec, base::CompareCase::SENSITIVE)) {
         *corrected_name = name + kArraySpec;
         *original_name += kArraySpec;
       } else {

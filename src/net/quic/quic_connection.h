@@ -29,6 +29,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_piece.h"
 #include "net/base/ip_endpoint.h"
+#include "net/quic/crypto/quic_decrypter.h"
 #include "net/quic/quic_ack_notifier.h"
 #include "net/quic/quic_ack_notifier_manager.h"
 #include "net/quic/quic_alarm.h"
@@ -94,18 +95,16 @@ class NET_EXPORT_PRIVATE QuicConnectionVisitorInterface {
  public:
   virtual ~QuicConnectionVisitorInterface() {}
 
-  // A simple visitor interface for dealing with data frames.
-  virtual void OnStreamFrames(const std::vector<QuicStreamFrame>& frames) = 0;
+  // A simple visitor interface for dealing with a data frame.
+  virtual void OnStreamFrame(const QuicStreamFrame& frame) = 0;
 
-  // The session should process all WINDOW_UPDATE frames, adjusting both stream
+  // The session should process the WINDOW_UPDATE frame, adjusting both stream
   // and connection level flow control windows.
-  virtual void OnWindowUpdateFrames(
-      const std::vector<QuicWindowUpdateFrame>& frames) = 0;
+  virtual void OnWindowUpdateFrame(const QuicWindowUpdateFrame& frame) = 0;
 
-  // BLOCKED frames tell us that the peer believes it is flow control blocked on
-  // a specified stream. If the session at this end disagrees, something has
-  // gone wrong with our flow control accounting.
-  virtual void OnBlockedFrames(const std::vector<QuicBlockedFrame>& frames) = 0;
+  // A BLOCKED frame indicates the peer is flow control blocked
+  // on a specified stream.
+  virtual void OnBlockedFrame(const QuicBlockedFrame& frame) = 0;
 
   // Called when the stream is reset by the peer.
   virtual void OnRstStream(const QuicRstStreamFrame& frame) = 0;
@@ -297,8 +296,7 @@ class NET_EXPORT_PRIVATE QuicConnection
       const CachedNetworkParameters& cached_network_params);
 
   // Called by the Session when the client has provided CachedNetworkParameters.
-  // Returns true if this changes the initial connection state.
-  virtual bool ResumeConnectionState(
+  virtual void ResumeConnectionState(
       const CachedNetworkParameters& cached_network_params,
       bool max_bandwidth_resumption);
 
@@ -348,6 +346,8 @@ class NET_EXPORT_PRIVATE QuicConnection
                                               const std::string& details);
   // Notifies the visitor of the close and marks the connection as disconnected.
   void CloseConnection(QuicErrorCode error, bool from_peer) override;
+
+  // Sends a GOAWAY frame. Does nothing if a GOAWAY frame has already been sent.
   virtual void SendGoAway(QuicErrorCode error,
                           QuicStreamId last_good_stream_id,
                           const std::string& reason);
@@ -375,6 +375,15 @@ class NET_EXPORT_PRIVATE QuicConnection
 
   // If the socket is not blocked, writes queued packets.
   void WriteIfNotBlocked();
+
+  // Set the packet writer.
+  void SetQuicPacketWriter(QuicPacketWriter* writer, bool owns_writer) {
+    writer_ = writer;
+    owns_writer_ = owns_writer;
+  }
+
+  // Set self address.
+  void SetSelfAddress(IPEndPoint address) { self_address_ = address; }
 
   // The version of the protocol this connection is using.
   QuicVersion version() const { return framer_.version(); }
@@ -443,9 +452,14 @@ class NET_EXPORT_PRIVATE QuicConnection
   QuicRandom* random_generator() const { return random_generator_; }
   QuicByteCount max_packet_length() const;
   void set_max_packet_length(QuicByteCount length);
+
   size_t mtu_probe_count() const { return mtu_probe_count_; }
 
   bool connected() const { return connected_; }
+
+  bool goaway_sent() const { return goaway_sent_; }
+
+  bool goaway_received() const { return goaway_received_; }
 
   // Must only be called on client connections.
   const QuicVersionVector& server_supported_versions() const {
@@ -597,6 +611,11 @@ class NET_EXPORT_PRIVATE QuicConnection
   // Sends an MTU discovery packet of size |mtu_discovery_target_| and updates
   // the MTU discovery alarm.
   void DiscoverMtu();
+
+  // Return the name of the cipher of the primary decrypter of the framer.
+  const char* cipher_name() const { return framer_.decrypter()->cipher_name(); }
+  // Return the id of the cipher of the primary decrypter of the framer.
+  uint32 cipher_id() const { return framer_.decrypter()->cipher_id(); }
 
  protected:
   // Packets which have not been written to the wire.
@@ -762,6 +781,11 @@ class NET_EXPORT_PRIVATE QuicConnection
   // client.
   IPEndPoint self_address_;
   IPEndPoint peer_address_;
+
+  // TODO(fayang): Use migrating_peer_address_ instead of migrating_peer_ip_
+  // and migrating_peer_port_ once FLAGS_quic_allow_ip_migration is deprecated.
+  // Used to store latest peer IP address for IP address migration.
+  IPAddressNumber migrating_peer_ip_;
   // Used to store latest peer port to possibly migrate to later.
   uint16 migrating_peer_port_;
 
@@ -781,6 +805,7 @@ class NET_EXPORT_PRIVATE QuicConnection
   std::vector<QuicBlockedFrame> last_blocked_frames_;
   std::vector<QuicPingFrame> last_ping_frames_;
   std::vector<QuicConnectionCloseFrame> last_close_frames_;
+  bool should_last_packet_instigate_acks_;
 
   // Track some peer state so we can do less bookkeeping
   // Largest sequence sent by the peer which had an ack frame (latest ack info).
@@ -935,6 +960,12 @@ class NET_EXPORT_PRIVATE QuicConnection
 
   // The size of the largest packet received from peer.
   QuicByteCount largest_received_packet_size_;
+
+  // Whether a GoAway has been sent.
+  bool goaway_sent_;
+
+  // Whether a GoAway has been received.
+  bool goaway_received_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicConnection);
 };

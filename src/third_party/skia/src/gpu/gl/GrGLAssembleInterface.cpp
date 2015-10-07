@@ -497,6 +497,11 @@ const GrGLInterface* GrGLAssembleGLESInterface(void* ctx, GrGLGetProc get) {
     GET_PROC(BindTexture);
     GET_PROC_SUFFIX(BindVertexArray, OES);
 
+    if (version >= GR_GL_VER(3,0) && extensions.has("GL_EXT_blend_func_extended")) {
+        GET_PROC_SUFFIX(BindFragDataLocation, EXT);
+        GET_PROC_SUFFIX(BindFragDataLocationIndexed, EXT);
+    }
+
     if (extensions.has("GL_KHR_blend_equation_advanced")) {
         GET_PROC_SUFFIX(BlendBarrier, KHR);
     } else if (extensions.has("GL_NV_blend_equation_advanced")) {
@@ -617,9 +622,19 @@ const GrGLInterface* GrGLAssembleGLESInterface(void* ctx, GrGLGetProc get) {
     GET_PROC(FramebufferRenderbuffer);
     GET_PROC(FramebufferTexture2D);
 
-    if (version >= GR_GL_VER(3,0)) {
+    if (extensions.has("GL_CHROMIUM_framebuffer_multisample")) {
+        GET_PROC_SUFFIX(RenderbufferStorageMultisample, CHROMIUM);
+        GET_PROC_SUFFIX(BlitFramebuffer, CHROMIUM);
+    } else if (version >= GR_GL_VER(3,0)) {
         GET_PROC(RenderbufferStorageMultisample);
         GET_PROC(BlitFramebuffer);
+    }
+
+    if (extensions.has("GL_CHROMIUM_map_sub")) {
+        GET_PROC_SUFFIX(MapBufferSubData, CHROMIUM);
+        GET_PROC_SUFFIX(MapTexSubImage2D, CHROMIUM);
+        GET_PROC_SUFFIX(UnmapBufferSubData, CHROMIUM);
+        GET_PROC_SUFFIX(UnmapTexSubImage2D, CHROMIUM);
     }
 
     if (extensions.has("GL_EXT_multisampled_render_to_texture")) {

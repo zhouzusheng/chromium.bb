@@ -95,8 +95,7 @@ public:
                             const SkMatrix&, const SkPaint&) override;
     virtual void drawBitmapRect(const SkDraw&, const SkBitmap&,
                                 const SkRect* srcOrNull, const SkRect& dst,
-                                const SkPaint& paint,
-                                SkCanvas::DrawBitmapRectFlags flags) override;
+                                const SkPaint& paint, SkCanvas::SrcRectConstraint) override;
     virtual void drawSprite(const SkDraw&, const SkBitmap& bitmap,
                             int x, int y, const SkPaint& paint) override;
     virtual void drawText(const SkDraw&, const void* text, size_t len,
@@ -117,7 +116,7 @@ public:
                             const SkPaint&) override;
     void drawImage(const SkDraw&, const SkImage*, SkScalar x, SkScalar y, const SkPaint&) override;
     void drawImageRect(const SkDraw&, const SkImage*, const SkRect* src, const SkRect& dst,
-                       const SkPaint&) override;
+                       const SkPaint&, SkCanvas::SrcRectConstraint) override;
 
     void flush() override;
 
@@ -187,7 +186,7 @@ private:
                           const SkRect* srcRectPtr,
                           const SkSize* dstSizePtr,      // ignored iff srcRectPtr == NULL
                           const SkPaint&,
-                          SkCanvas::DrawBitmapRectFlags flags);
+                          SkCanvas::SrcRectConstraint);
 
     /**
      * Helper functions called by drawBitmapCommon. By the time these are called the SkDraw's
@@ -207,7 +206,7 @@ private:
                             const SkRect&,
                             const GrTextureParams& params,
                             const SkPaint& paint,
-                            SkCanvas::DrawBitmapRectFlags flags,
+                            SkCanvas::SrcRectConstraint,
                             bool bicubic,
                             bool needsTextureDomain);
     void drawTiledBitmap(const SkBitmap& bitmap,
@@ -216,7 +215,7 @@ private:
                          const SkIRect& clippedSrcRect,
                          const GrTextureParams& params,
                          const SkPaint& paint,
-                         SkCanvas::DrawBitmapRectFlags flags,
+                         SkCanvas::SrcRectConstraint,
                          int tileSize,
                          bool bicubic);
 

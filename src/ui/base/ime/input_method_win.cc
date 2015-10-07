@@ -4,6 +4,7 @@
 
 #include "ui/base/ime/input_method_win.h"
 
+#include "base/auto_reset.h"
 #include "base/basictypes.h"
 #include "base/profiler/scoped_tracker.h"
 #include "ui/base/ime/text_input_client.h"
@@ -29,11 +30,10 @@ InputMethodWin::InputMethodWin(internal::InputMethodDelegate* delegate,
     : toplevel_window_handle_(toplevel_window_handle),
       pending_requested_direction_(base::i18n::UNKNOWN_DIRECTION),
       accept_carriage_return_(false),
-      active_(false),
       enabled_(false),
       is_candidate_popup_open_(false),
       composing_window_handle_(NULL),
-      default_input_language_initialized_(false) {
+      suppress_next_char_(false) {
   SetDelegate(delegate);
 }
 
@@ -58,11 +58,6 @@ bool InputMethodWin::OnUntranslatedIMEMessage(
     InputMethod::NativeEventResult* result) {
   LRESULT original_result = 0;
   BOOL handled = FALSE;
-
-  if (!default_input_language_initialized_) {
-    // Gets the initial input locale.
-    OnInputLocaleChanged();
-  }
 
   switch (event.message) {
     case WM_IME_SETCONTEXT:
@@ -103,16 +98,20 @@ bool InputMethodWin::OnUntranslatedIMEMessage(
   return !!handled;
 }
 
-bool InputMethodWin::DispatchKeyEvent(const ui::KeyEvent& event) {
-  if (!event.HasNativeEvent())
-    return DispatchFabricatedKeyEvent(event);
+void InputMethodWin::DispatchKeyEvent(ui::KeyEvent* event) {
+  if (!event->HasNativeEvent()) {
+    DispatchFabricatedKeyEvent(event);
+    return;
+  }
 
-  const base::NativeEvent& native_key_event = event.native_event();
+  const base::NativeEvent& native_key_event = event->native_event();
   if (native_key_event.message == WM_CHAR) {
     BOOL handled;
     OnChar(native_key_event.hwnd, native_key_event.message,
            native_key_event.wParam, native_key_event.lParam, &handled);
-    return !!handled;  // Don't send WM_CHAR for post event processing.
+    if (handled)
+      event->StopPropagation();
+    return;
   }
   // Handles ctrl-shift key to change text direction and layout alignment.
   if (ui::IMM32Manager::IsRTLKeyboardLayoutInstalled() &&
@@ -137,7 +136,9 @@ bool InputMethodWin::DispatchKeyEvent(const ui::KeyEvent& event) {
     }
   }
 
-  return DispatchKeyEventPostIME(event);
+  ui::EventDispatchDetails details = DispatchKeyEventPostIME(event);
+  if (!details.dispatcher_destroyed)
+    suppress_next_char_ = event->stopped_propagation();
 }
 
 void InputMethodWin::OnTextInputTypeChanged(const TextInputClient* client) {
@@ -177,18 +178,12 @@ void InputMethodWin::CancelComposition(const TextInputClient* client) {
 }
 
 void InputMethodWin::OnInputLocaleChanged() {
-  default_input_language_initialized_ = true;
-  active_ = imm32_manager_.SetInputLanguage();
-  locale_ = imm32_manager_.GetInputLanguageName();
+  // Note: OnInputLocaleChanged() is for crbug.com/168971.
   OnInputMethodChanged();
 }
 
 std::string InputMethodWin::GetInputLocale() {
-  return locale_;
-}
-
-bool InputMethodWin::IsActive() {
-  return active_;
+  return imm32_manager_.GetInputLanguageName();
 }
 
 bool InputMethodWin::IsCandidatePopupOpen() const {
@@ -229,6 +224,11 @@ LRESULT InputMethodWin::OnChar(HWND window_handle,
 
   *handled = TRUE;
 
+  if (suppress_next_char_) {
+    suppress_next_char_ = false;
+    return 0;
+  }
+
   // We need to send character events to the focused text input client event if
   // its text input type is ui::TEXT_INPUT_TYPE_NONE.
   if (GetTextInputClient()) {
@@ -265,8 +265,18 @@ LRESULT InputMethodWin::OnImeSetContext(HWND window_handle,
       FROM_HERE_WITH_EXPLICIT_FUNCTION(
           "440919 InputMethodWin::OnImeSetContext"));
 
-  if (!!wparam)
+  if (!!wparam) {
     imm32_manager_.CreateImeWindow(window_handle);
+    if (system_toplevel_window_focused()) {
+      // Delay initialize the tsf to avoid perf regression.
+      // Loading tsf dll causes some time, so doing it in UpdateIMEState() will
+      // slow down the browser window creation.
+      // See crbug.com/509984.
+      tsf_inputscope::InitializeTsfForInputScopes();
+      tsf_inputscope::SetInputScopeForTsfUnawareWindow(
+          toplevel_window_handle_, GetTextInputType(), GetTextInputMode());
+    }
+  }
 
   OnInputMethodChanged();
   return imm32_manager_.SetImeWindowStyle(
@@ -575,16 +585,20 @@ bool InputMethodWin::IsWindowFocused(const TextInputClient* client) const {
       GetActiveWindow() == toplevel_window_handle_;
 }
 
-bool InputMethodWin::DispatchFabricatedKeyEvent(const ui::KeyEvent& event) {
-  if (event.is_char()) {
+void InputMethodWin::DispatchFabricatedKeyEvent(ui::KeyEvent* event) {
+  if (event->is_char()) {
+    if (suppress_next_char_) {
+      suppress_next_char_ = false;
+      return;
+    }
     if (GetTextInputClient()) {
       GetTextInputClient()->InsertChar(
-          static_cast<base::char16>(event.key_code()),
+          static_cast<base::char16>(event->key_code()),
           ui::GetModifiersFromKeyState());
-      return true;
+      return;
     }
   }
-  return DispatchKeyEventPostIME(event);
+  ignore_result(DispatchKeyEventPostIME(event));
 }
 
 void InputMethodWin::ConfirmCompositionText() {

@@ -33,8 +33,8 @@
 
 #include "core/inspector/EventListenerInfo.h"
 #include "core/inspector/InspectorConsoleAgent.h"
-#include "core/inspector/InspectorDebuggerAgent.h"
-#include "core/inspector/V8Debugger.h"
+#include "core/inspector/V8DebuggerAgent.h"
+#include "core/inspector/v8/V8Debugger.h"
 #include "platform/JSONValues.h"
 
 #include "wtf/RefPtr.h"
@@ -53,7 +53,7 @@ InjectedScriptHost::InjectedScriptHost()
     , m_inspectCallback(nullptr)
     , m_debugger(nullptr)
 {
-    m_defaultInspectableObject = adoptPtr(new InspectableObject());
+    m_defaultInspectableObject = adoptPtrWillBeNoop(new InspectableObject());
 }
 
 InjectedScriptHost::~InjectedScriptHost()
@@ -64,7 +64,8 @@ DEFINE_TRACE(InjectedScriptHost)
 {
     visitor->trace(m_consoleAgent);
     visitor->trace(m_debuggerAgent);
-    visitor->trace(m_debugger);
+    visitor->trace(m_inspectedObjects);
+    visitor->trace(m_defaultInspectableObject);
 }
 
 void InjectedScriptHost::disconnect()
@@ -83,7 +84,7 @@ void InjectedScriptHost::inspectImpl(PassRefPtr<JSONValue> object, PassRefPtr<JS
     }
 }
 
-void InjectedScriptHost::getEventListenersImpl(EventTarget* target, Vector<EventListenerInfo>& listenersArray)
+void InjectedScriptHost::getEventListenersImpl(EventTarget* target, WillBeHeapVector<EventListenerInfo>& listenersArray)
 {
     EventListenerInfo::getEventListeners(target, listenersArray, false);
 }
@@ -101,7 +102,7 @@ ScriptValue InjectedScriptHost::InspectableObject::get(ScriptState*)
     return ScriptValue();
 };
 
-void InjectedScriptHost::addInspectedObject(PassOwnPtr<InjectedScriptHost::InspectableObject> object)
+void InjectedScriptHost::addInspectedObject(PassOwnPtrWillBeRawPtr<InjectedScriptHost::InspectableObject> object)
 {
     m_inspectedObjects.prepend(object);
     while (m_inspectedObjects.size() > 5)
@@ -123,13 +124,13 @@ InjectedScriptHost::InspectableObject* InjectedScriptHost::inspectedObject(unsig
 void InjectedScriptHost::debugFunction(const String& scriptId, int lineNumber, int columnNumber)
 {
     if (m_debuggerAgent)
-        m_debuggerAgent->setBreakpoint(scriptId, lineNumber, columnNumber, InspectorDebuggerAgent::DebugCommandBreakpointSource);
+        m_debuggerAgent->setBreakpoint(scriptId, lineNumber, columnNumber, V8DebuggerAgent::DebugCommandBreakpointSource);
 }
 
 void InjectedScriptHost::undebugFunction(const String& scriptId, int lineNumber, int columnNumber)
 {
     if (m_debuggerAgent)
-        m_debuggerAgent->removeBreakpoint(scriptId, lineNumber, columnNumber, InspectorDebuggerAgent::DebugCommandBreakpointSource);
+        m_debuggerAgent->removeBreakpoint(scriptId, lineNumber, columnNumber, V8DebuggerAgent::DebugCommandBreakpointSource);
 }
 
 void InjectedScriptHost::monitorFunction(const String& scriptId, int lineNumber, int columnNumber, const String& functionName)
@@ -142,13 +143,13 @@ void InjectedScriptHost::monitorFunction(const String& scriptId, int lineNumber,
         builder.append(functionName);
     builder.appendLiteral(" called\" + (arguments.length > 0 ? \" with arguments: \" + Array.prototype.join.call(arguments, \", \") : \"\")) && false");
     if (m_debuggerAgent)
-        m_debuggerAgent->setBreakpoint(scriptId, lineNumber, columnNumber, InspectorDebuggerAgent::MonitorCommandBreakpointSource, builder.toString());
+        m_debuggerAgent->setBreakpoint(scriptId, lineNumber, columnNumber, V8DebuggerAgent::MonitorCommandBreakpointSource, builder.toString());
 }
 
 void InjectedScriptHost::unmonitorFunction(const String& scriptId, int lineNumber, int columnNumber)
 {
     if (m_debuggerAgent)
-        m_debuggerAgent->removeBreakpoint(scriptId, lineNumber, columnNumber, InspectorDebuggerAgent::MonitorCommandBreakpointSource);
+        m_debuggerAgent->removeBreakpoint(scriptId, lineNumber, columnNumber, V8DebuggerAgent::MonitorCommandBreakpointSource);
 }
 
 } // namespace blink

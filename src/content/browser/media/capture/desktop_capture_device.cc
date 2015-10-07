@@ -17,7 +17,7 @@
 #include "content/public/browser/desktop_media_id.h"
 #include "content/public/browser/power_save_blocker.h"
 #include "media/base/video_util.h"
-#include "media/capture/capture_resolution_chooser.h"
+#include "media/capture/content/capture_resolution_chooser.h"
 #include "third_party/libyuv/include/libyuv/scale_argb.h"
 #include "third_party/webrtc/modules/desktop_capture/cropping_window_capturer.h"
 #include "third_party/webrtc/modules/desktop_capture/desktop_and_cursor_composer.h"
@@ -311,14 +311,11 @@ void DesktopCaptureDevice::Core::OnCaptureCompleted(
   }
 
   client_->OnIncomingCapturedData(
-      output_data,
-      output_bytes,
-      media::VideoCaptureFormat(gfx::Size(output_size.width(),
-                                          output_size.height()),
-                                requested_frame_rate_,
-                                media::PIXEL_FORMAT_ARGB),
-      0,
-      base::TimeTicks::Now());
+      output_data, output_bytes,
+      media::VideoCaptureFormat(
+          gfx::Size(output_size.width(), output_size.height()),
+          requested_frame_rate_, media::VIDEO_CAPTURE_PIXEL_FORMAT_ARGB),
+      0, base::TimeTicks::Now());
 }
 
 void DesktopCaptureDevice::Core::OnCaptureTimer() {

@@ -11,6 +11,7 @@
 #include "cc/output/begin_frame_args.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/compositor_frame_ack.h"
+#include "cc/resources/shared_bitmap.h"
 #include "content/common/content_export.h"
 #include "content/common/content_param_traits.h"
 #include "content/common/date_time_suggestion.h"
@@ -117,6 +118,10 @@ IPC_ENUM_TRAITS_MAX_VALUE(ui::TextInputMode, ui::TEXT_INPUT_MODE_MAX)
 IPC_ENUM_TRAITS_MAX_VALUE(ui::TextInputType, ui::TEXT_INPUT_TYPE_MAX)
 
 #if defined(OS_MACOSX)
+IPC_ENUM_TRAITS_MAX_VALUE(
+    blink::ScrollbarButtonsPlacement,
+    blink::ScrollbarButtonsPlacement::ScrollbarButtonsPlacementLast)
+
 IPC_ENUM_TRAITS_MAX_VALUE(blink::ScrollerStyle, blink::ScrollerStyleOverlay)
 
 IPC_STRUCT_TRAITS_BEGIN(FontDescriptor)
@@ -283,6 +288,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::RendererPreferences)
   IPC_STRUCT_TRAITS_MEMBER(arrow_bitmap_height_vertical_scroll_bar_in_dips)
   IPC_STRUCT_TRAITS_MEMBER(arrow_bitmap_width_horizontal_scroll_bar_in_dips)
 #endif
+  IPC_STRUCT_TRAITS_MEMBER(default_font_size)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::WebPluginGeometry)
@@ -394,6 +400,9 @@ IPC_STRUCT_END()
 IPC_STRUCT_BEGIN(ViewHostMsg_TextInputState_Params)
   // The type of input field
   IPC_STRUCT_MEMBER(ui::TextInputType, type)
+
+  // The mode of input field
+  IPC_STRUCT_MEMBER(ui::TextInputMode, mode)
 
   // The flags of the input field (autocorrect, autocomplete, etc.)
   IPC_STRUCT_MEMBER(int, flags)
@@ -552,6 +561,8 @@ IPC_STRUCT_BEGIN(ViewMsg_UpdateScrollbarTheme_Params)
   IPC_STRUCT_MEMBER(bool, jump_on_track_click)
   IPC_STRUCT_MEMBER(blink::ScrollerStyle, preferred_scroller_style)
   IPC_STRUCT_MEMBER(bool, redraw)
+  IPC_STRUCT_MEMBER(bool, scroll_animation_enabled)
+  IPC_STRUCT_MEMBER(blink::ScrollbarButtonsPlacement, button_placement)
 IPC_STRUCT_END()
 #endif
 
@@ -757,20 +768,6 @@ IPC_MESSAGE_ROUTED2(ViewMsg_SetWebUIProperty,
                     std::string /* property_name */,
                     std::string /* property_value_json */)
 
-// This message starts/stop monitoring the input method status of the focused
-// edit control of a renderer process.
-// Parameters
-// * is_active (bool)
-//   Indicates if an input method is active in the browser process.
-//   The possible actions when a renderer process receives this message are
-//   listed below:
-//     Value Action
-//     true  Start sending IPC message ViewHostMsg_ImeUpdateTextInputState
-//           to notify the input method status of the focused edit control.
-//     false Stop sending IPC message ViewHostMsg_ImeUpdateTextInputState.
-IPC_MESSAGE_ROUTED1(ViewMsg_SetInputMethodActive,
-                    bool /* is_active */)
-
 // Used to notify the render-view that we have received a target URL. Used
 // to prevent target URLs spamming the browser.
 IPC_MESSAGE_ROUTED0(ViewMsg_UpdateTargetURL_ACK)
@@ -782,11 +779,6 @@ IPC_MESSAGE_ROUTED1(ViewMsg_RunFileChooserResponse,
 IPC_MESSAGE_ROUTED2(ViewMsg_EnumerateDirectoryResponse,
                     int /* request_id */,
                     std::vector<base::FilePath> /* files_in_directory */)
-
-// When a renderer sends a ViewHostMsg_Focus to the browser process,
-// the browser has the option of sending a ViewMsg_CantFocus back to
-// the renderer.
-IPC_MESSAGE_ROUTED0(ViewMsg_CantFocus)
 
 // Tells the renderer to suppress any further modal dialogs until it receives a
 // corresponding ViewMsg_SwapOut message.  This ensures that no
@@ -942,10 +934,6 @@ IPC_MESSAGE_ROUTED3(ViewMsg_UpdateTopControlsState,
                     bool /* animate */)
 
 IPC_MESSAGE_ROUTED0(ViewMsg_ShowImeIfNeeded)
-
-// Sent by the browser when an IME update that requires acknowledgement has been
-// processed on the browser side.
-IPC_MESSAGE_ROUTED0(ViewMsg_ImeEventAck)
 
 // Extracts the data at the given rect, returning it through the
 // ViewHostMsg_SmartClipDataExtracted IPC.
@@ -1376,12 +1364,6 @@ IPC_MESSAGE_ROUTED1(ViewHostMsg_TakeFocus,
 // Required for opening a date/time dialog
 IPC_MESSAGE_ROUTED1(ViewHostMsg_OpenDateTimeDialog,
                     ViewHostMsg_DateTimeDialogValue_Params /* value */)
-
-IPC_MESSAGE_ROUTED4(ViewHostMsg_TextInputTypeChanged,
-                    ui::TextInputType /* TextInputType of the focused node */,
-                    ui::TextInputMode /* TextInputMode of the focused node */,
-                    bool /* can_compose_inline in the focused node */,
-                    int /* flags in the focused node */)
 
 // Required for updating text input state.
 IPC_MESSAGE_ROUTED1(ViewHostMsg_TextInputStateChanged,

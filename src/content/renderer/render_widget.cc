@@ -161,30 +161,26 @@ ui::TextInputMode ConvertInputMode(const blink::WebString& input_mode) {
 // be spent in input hanlders before input starts getting throttled.
 const int kInputHandlingTimeThrottlingThresholdMicroseconds = 4166;
 
-int64 GetEventLatencyMicros(const WebInputEvent& event, base::TimeTicks now) {
-  return (now - base::TimeDelta::FromSecondsD(event.timeStampSeconds))
+int64 GetEventLatencyMicros(double event_timestamp, base::TimeTicks now) {
+  return (now - base::TimeDelta::FromSecondsD(event_timestamp))
       .ToInternalValue();
 }
 
-void LogInputEventLatencyUma(const WebInputEvent& event, base::TimeTicks now) {
-  UMA_HISTOGRAM_CUSTOM_COUNTS(
-      "Event.AggregatedLatency.Renderer2",
-      GetEventLatencyMicros(event, now),
-      1,
-      10000000,
-      100);
+void LogInputEventLatencyUmaImpl(WebInputEvent::Type event_type,
+                                 double event_timestamp,
+                                 base::TimeTicks now) {
+  UMA_HISTOGRAM_CUSTOM_COUNTS("Event.AggregatedLatency.Renderer2",
+                              GetEventLatencyMicros(event_timestamp, now), 1,
+                              10000000, 100);
 
-#define CASE_TYPE(t) \
-    case WebInputEvent::t: \
-      UMA_HISTOGRAM_CUSTOM_COUNTS( \
-          "Event.Latency.Renderer2." #t, \
-          GetEventLatencyMicros(event, now), \
-          1, \
-          10000000, \
-          100); \
-      break;
+#define CASE_TYPE(t)                                                         \
+  case WebInputEvent::t:                                                     \
+    UMA_HISTOGRAM_CUSTOM_COUNTS("Event.Latency.Renderer2." #t,               \
+                                GetEventLatencyMicros(event_timestamp, now), \
+                                1, 10000000, 100);                           \
+    break;
 
-  switch(event.type) {
+  switch (event_type) {
     CASE_TYPE(Undefined);
     CASE_TYPE(MouseDown);
     CASE_TYPE(MouseUp);
@@ -221,11 +217,22 @@ void LogInputEventLatencyUma(const WebInputEvent& event, base::TimeTicks now) {
     default:
       // Must include default to let blink::WebInputEvent add new event types
       // before they're added here.
-      DLOG(WARNING) << "Unhandled WebInputEvent type: " << event.type;
+      DLOG(WARNING) << "Unhandled WebInputEvent type: " << event_type;
       break;
   }
 
 #undef CASE_TYPE
+}
+
+void LogInputEventLatencyUma(const WebInputEvent& event, base::TimeTicks now,
+                             const ui::LatencyInfo& latency_info) {
+  LogInputEventLatencyUmaImpl(event.type, event.timeStampSeconds, now);
+  for (size_t i = 0; i < latency_info.coalesced_events_size(); i++) {
+    LogInputEventLatencyUmaImpl(
+        event.type,
+        latency_info.timestamps_of_coalesced_events()[i],
+        now);
+  }
 }
 
 }  // namespace
@@ -468,14 +475,15 @@ gfx::Rect RenderWidget::ScreenMetricsEmulator::AdjustValidationMessageAnchor(
 
 // RenderWidget ---------------------------------------------------------------
 
-RenderWidget::RenderWidget(blink::WebPopupType popup_type,
+RenderWidget::RenderWidget(CompositorDependencies* compositor_deps,
+                           blink::WebPopupType popup_type,
                            const blink::WebScreenInfo& screen_info,
                            bool swapped_out,
                            bool hidden,
                            bool never_visible)
     : routing_id_(MSG_ROUTING_NONE),
       surface_id_(0),
-      compositor_deps_(nullptr),
+      compositor_deps_(compositor_deps),
       webwidget_(nullptr),
       opener_id_(MSG_ROUTING_NONE),
       init_complete_(false),
@@ -499,7 +507,6 @@ RenderWidget::RenderWidget(blink::WebPopupType popup_type,
       host_closing_(false),
       is_swapped_out_(swapped_out),
       for_oopif_(false),
-      input_method_is_active_(false),
       text_input_type_(ui::TEXT_INPUT_TYPE_NONE),
       text_input_mode_(ui::TEXT_INPUT_MODE_DEFAULT),
       text_input_flags_(0),
@@ -509,11 +516,9 @@ RenderWidget::RenderWidget(blink::WebPopupType popup_type,
       suppress_next_char_events_(false),
       screen_info_(screen_info),
       device_scale_factor_(screen_info_.deviceScaleFactor),
-      current_event_latency_info_(NULL),
       next_output_surface_id_(0),
 #if defined(OS_ANDROID)
       text_field_is_dirty_(false),
-      outstanding_ime_acks_(0),
       body_background_color_(SK_ColorWHITE),
 #endif
       popup_origin_scale_for_emulation_(0.f),
@@ -525,6 +530,9 @@ RenderWidget::RenderWidget(blink::WebPopupType popup_type,
     RenderProcess::current()->AddRefProcess();
   DCHECK(RenderThread::Get());
   device_color_profile_.push_back('0');
+#if defined(OS_ANDROID)
+  text_input_info_history_.push_back(blink::WebTextInputInfo());
+#endif
 }
 
 RenderWidget::~RenderWidget() {
@@ -541,9 +549,9 @@ RenderWidget* RenderWidget::Create(int32 opener_id,
                                    blink::WebPopupType popup_type,
                                    const blink::WebScreenInfo& screen_info) {
   DCHECK(opener_id != MSG_ROUTING_NONE);
-  scoped_refptr<RenderWidget> widget(
-      new RenderWidget(popup_type, screen_info, false, false, false));
-  if (widget->Init(opener_id, compositor_deps)) {  // adds reference on success.
+  scoped_refptr<RenderWidget> widget(new RenderWidget(
+      compositor_deps, popup_type, screen_info, false, false, false));
+  if (widget->Init(opener_id)) {  // adds reference on success.
     return widget.get();
   }
   return NULL;
@@ -558,21 +566,28 @@ RenderWidget* RenderWidget::CreateForFrame(
     CompositorDependencies* compositor_deps,
     blink::WebLocalFrame* frame) {
   CHECK_NE(routing_id, MSG_ROUTING_NONE);
-  scoped_refptr<RenderWidget> widget(new RenderWidget(
-      blink::WebPopupTypeNone, screen_info, false, hidden, false));
+  scoped_refptr<RenderWidget> widget(
+      new RenderWidget(compositor_deps, blink::WebPopupTypeNone, screen_info,
+                       false, hidden, false));
   widget->routing_id_ = routing_id;
   widget->surface_id_ = surface_id;
-  widget->compositor_deps_ = compositor_deps;
   widget->for_oopif_ = true;
   // DoInit increments the reference count on |widget|, keeping it alive after
   // this function returns.
-  if (widget->DoInit(MSG_ROUTING_NONE, compositor_deps,
+  if (widget->DoInit(MSG_ROUTING_NONE,
                      RenderWidget::CreateWebFrameWidget(widget.get(), frame),
                      nullptr)) {
     widget->CompleteInit();
     return widget.get();
   }
   return nullptr;
+}
+
+// static
+blink::WebWidget* RenderWidget::CreateWebFrameWidget(
+    RenderWidget* render_widget,
+    blink::WebLocalFrame* frame) {
+  return blink::WebFrameWidget::create(render_widget, frame);
 }
 
 // static
@@ -588,22 +603,17 @@ blink::WebWidget* RenderWidget::CreateWebWidget(RenderWidget* render_widget) {
   return NULL;
 }
 
-// static
-blink::WebWidget* RenderWidget::CreateWebFrameWidget(
-    RenderWidget* render_widget,
-    blink::WebLocalFrame* frame) {
-  return blink::WebFrameWidget::create(render_widget, frame);
+void RenderWidget::CloseForFrame() {
+  OnClose();
 }
 
-bool RenderWidget::Init(int32 opener_id,
-                        CompositorDependencies* compositor_deps) {
-  return DoInit(opener_id, compositor_deps, RenderWidget::CreateWebWidget(this),
+bool RenderWidget::Init(int32 opener_id) {
+  return DoInit(opener_id, RenderWidget::CreateWebWidget(this),
                 new ViewHostMsg_CreateWidget(opener_id, popup_type_,
                                              &routing_id_, &surface_id_));
 }
 
 bool RenderWidget::DoInit(int32 opener_id,
-                          CompositorDependencies* compositor_deps,
                           WebWidget* web_widget,
                           IPC::SyncMessage* create_widget_message) {
   DCHECK(!webwidget_);
@@ -611,7 +621,6 @@ bool RenderWidget::DoInit(int32 opener_id,
   if (opener_id != MSG_ROUTING_NONE)
     opener_id_ = opener_id;
 
-  compositor_deps_ = compositor_deps;
   webwidget_ = web_widget;
 
   bool result = true;
@@ -728,15 +737,14 @@ bool RenderWidget::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ViewMsg_ChangeResizeRect, OnChangeResizeRect)
     IPC_MESSAGE_HANDLER(ViewMsg_WasHidden, OnWasHidden)
     IPC_MESSAGE_HANDLER(ViewMsg_WasShown, OnWasShown)
-    IPC_MESSAGE_HANDLER(ViewMsg_SetInputMethodActive, OnSetInputMethodActive)
     IPC_MESSAGE_HANDLER(ViewMsg_Repaint, OnRepaint)
     IPC_MESSAGE_HANDLER(ViewMsg_SetTextDirection, OnSetTextDirection)
     IPC_MESSAGE_HANDLER(ViewMsg_Move_ACK, OnRequestMoveAck)
     IPC_MESSAGE_HANDLER(ViewMsg_UpdateScreenRects, OnUpdateScreenRects)
     IPC_MESSAGE_HANDLER(ViewMsg_SetSurfaceIdNamespace, OnSetSurfaceIdNamespace)
 #if defined(OS_ANDROID)
+    IPC_MESSAGE_HANDLER(InputMsg_ImeEventAck, OnImeEventAck)
     IPC_MESSAGE_HANDLER(ViewMsg_ShowImeIfNeeded, OnShowImeIfNeeded)
-    IPC_MESSAGE_HANDLER(ViewMsg_ImeEventAck, OnImeEventAck)
 #endif
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
@@ -792,8 +800,6 @@ void RenderWidget::Resize(const gfx::Size& new_size,
 
   // NOTE: We may have entered fullscreen mode without changing our size.
   bool fullscreen_change = is_fullscreen_granted_ != is_fullscreen_granted;
-  if (fullscreen_change)
-    WillToggleFullscreen();
   is_fullscreen_granted_ = is_fullscreen_granted;
   display_mode_ = display_mode;
 
@@ -850,6 +856,7 @@ void RenderWidget::SetWindowRectSynchronously(
 }
 
 void RenderWidget::OnClose() {
+  DCHECK(content::RenderThread::Get());
   if (closing_)
     return;
   NotifyOnClose();
@@ -863,11 +870,20 @@ void RenderWidget::OnClose() {
       RenderThreadImpl::current()->WidgetDestroyed();
   }
 
-  // If there is a Send call on the stack, then it could be dangerous to close
-  // now.  Post a task that only gets invoked when there are no nested message
-  // loops.
-  RenderThread::Get()->GetTaskRunner()->PostNonNestableTask(
-      FROM_HERE, base::Bind(&RenderWidget::Close, this));
+  if (for_oopif_) {
+    // Widgets for frames may be created and closed at any time while the frame
+    // is alive. However, the closing process must happen synchronously. Frame
+    // widget and frames hold pointers to each other. If Close() is deferred to
+    // the message loop like in the non-frame widget case, WebWidget::close()
+    // can end up accessing members of an already-deleted frame.
+    Close();
+  } else {
+    // If there is a Send call on the stack, then it could be dangerous to close
+    // now.  Post a task that only gets invoked when there are no nested message
+    // loops.
+    base::ThreadTaskRunnerHandle::Get()->PostNonNestableTask(
+        FROM_HERE, base::Bind(&RenderWidget::Close, this));
+  }
 
   // Balances the AddRef taken when we called AddRoute.
   Release();
@@ -983,7 +999,7 @@ scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface(bool fallback) {
 #if defined(OS_ANDROID)
   if (SynchronousCompositorFactory* factory =
       SynchronousCompositorFactory::GetInstance()) {
-    return factory->CreateOutputSurface(routing_id(),
+    return factory->CreateOutputSurface(routing_id(), surface_id(),
                                         frame_swap_message_queue_);
   }
 #endif
@@ -998,14 +1014,14 @@ scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface(bool fallback) {
   scoped_refptr<ContextProviderCommandBuffer> worker_context_provider;
   if (!use_software) {
     context_provider = ContextProviderCommandBuffer::Create(
-        CreateGraphicsContext3D(), RENDER_COMPOSITOR_CONTEXT);
+        CreateGraphicsContext3D(true), RENDER_COMPOSITOR_CONTEXT);
     if (!context_provider.get()) {
       // Cause the compositor to wait and try again.
       return scoped_ptr<cc::OutputSurface>();
     }
 
     worker_context_provider = ContextProviderCommandBuffer::Create(
-        CreateGraphicsContext3D(), RENDER_WORKER_CONTEXT);
+        CreateGraphicsContext3D(false), RENDER_WORKER_CONTEXT);
     if (!worker_context_provider.get()) {
       // Cause the compositor to wait and try again.
       return scoped_ptr<cc::OutputSurface>();
@@ -1104,9 +1120,6 @@ void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
   }
 #endif
 
-  base::AutoReset<const ui::LatencyInfo*> resetter(&current_event_latency_info_,
-                                                   &latency_info);
-
   base::TimeTicks start_time;
   if (base::TimeTicks::IsHighResolution())
     start_time = base::TimeTicks::Now();
@@ -1114,16 +1127,16 @@ void RenderWidget::OnHandleInputEvent(const blink::WebInputEvent* input_event,
   TRACE_EVENT1("renderer,benchmark", "RenderWidget::OnHandleInputEvent",
                "event", WebInputEventTraits::GetName(input_event->type));
   TRACE_EVENT_SYNTHETIC_DELAY_BEGIN("blink.HandleInputEvent");
-  TRACE_EVENT_FLOW_STEP0(
-      "input,benchmark",
-      "LatencyInfo.Flow",
-      TRACE_ID_DONT_MANGLE(latency_info.trace_id),
-      "HanldeInputEventMain");
+  TRACE_EVENT_WITH_FLOW1("input,benchmark",
+                         "LatencyInfo.Flow",
+                         TRACE_ID_DONT_MANGLE(latency_info.trace_id()),
+                         TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT,
+                         "step", "HandleInputEventMain");
 
   // If we don't have a high res timer, these metrics won't be accurate enough
   // to be worth collecting. Note that this does introduce some sampling bias.
   if (!start_time.is_null())
-    LogInputEventLatencyUma(*input_event, start_time);
+    LogInputEventLatencyUma(*input_event, start_time, latency_info);
 
   scoped_ptr<cc::SwapPromiseMonitor> latency_info_swap_promise_monitor;
   ui::LatencyInfo swap_latency_info(latency_info);
@@ -1396,13 +1409,10 @@ blink::WebLayerTreeView* RenderWidget::layerTreeView() {
 void RenderWidget::WillBeginCompositorFrame() {
   TRACE_EVENT0("gpu", "RenderWidget::willBeginCompositorFrame");
 
-  // The following two can result in further layout and possibly
+  // The UpdateTextInputState can result in further layout and possibly
   // enable GPU acceleration so they need to be called before any painting
   // is done.
-  UpdateTextInputType();
-#if defined(OS_ANDROID)
   UpdateTextInputState(NO_SHOW_IME, FROM_NON_IME);
-#endif
   UpdateSelectionBounds();
 }
 
@@ -1563,6 +1573,7 @@ void RenderWidget::NotifyOnClose() {
 }
 
 void RenderWidget::closeWidgetSoon() {
+  DCHECK(content::RenderThread::Get());
   if (is_swapped_out_) {
     // This widget is currently swapped out, and the active widget is in a
     // different process.  Have the browser route the close request to the
@@ -1579,7 +1590,7 @@ void RenderWidget::closeWidgetSoon() {
   // could be closed before the JS finishes executing.  So instead, post a
   // message back to the message loop, which won't run until the JS is
   // complete, and then the Close message can be sent.
-  RenderThread::Get()->GetTaskRunner()->PostTask(
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE, base::Bind(&RenderWidget::DoDeferredClose, this));
 }
 
@@ -1660,13 +1671,6 @@ WebRect RenderWidget::rootWindowRect() {
 
 WebRect RenderWidget::windowResizerRect() {
   return resizer_rect_;
-}
-
-void RenderWidget::OnSetInputMethodActive(bool is_active) {
-  // To prevent this renderer process from sending unnecessary IPC messages to
-  // a browser process, we permit the renderer process to send IPC messages
-  // only during the input method attached to the browser process is active.
-  input_method_is_active_ = is_active;
 }
 
 void RenderWidget::OnImeSetComposition(
@@ -1767,19 +1771,32 @@ void RenderWidget::OnShowImeIfNeeded() {
 }
 
 #if defined(OS_ANDROID)
-void RenderWidget::IncrementOutstandingImeEventAcks() {
-  ++outstanding_ime_acks_;
+void RenderWidget::OnImeEventSentForAck(const blink::WebTextInputInfo& info) {
+  text_input_info_history_.push_back(info);
 }
 
 void RenderWidget::OnImeEventAck() {
-  --outstanding_ime_acks_;
-  DCHECK(outstanding_ime_acks_ >= 0);
+  DCHECK_GE(text_input_info_history_.size(), 1u);
+  text_input_info_history_.pop_front();
 }
 #endif
 
 bool RenderWidget::ShouldHandleImeEvent() {
 #if defined(OS_ANDROID)
-  return !!webwidget_ && outstanding_ime_acks_ == 0;
+  if (!webwidget_)
+    return false;
+
+  // We cannot handle IME events if there is any chance that the event we are
+  // receiving here from the browser is based on the state that is different
+  // from our current one as indicated by |text_input_info_|.
+  // The states the browser might be in are:
+  // text_input_info_history_[0] - current state ack'd by browser
+  // text_input_info_history_[1...N] - pending state changes
+  for (size_t i = 0u; i < text_input_info_history_.size() - 1u; ++i) {
+    if (text_input_info_history_[i] != text_input_info_)
+      return false;
+  }
+  return true;
 #else
   return !!webwidget_;
 #endif
@@ -1848,17 +1865,6 @@ void RenderWidget::SetHidden(bool hidden) {
     RenderThreadImpl::current()->WidgetRestored();
 }
 
-void RenderWidget::WillToggleFullscreen() {
-  if (!webwidget_)
-    return;
-
-  if (is_fullscreen_granted_) {
-    webwidget_->willExitFullScreen();
-  } else {
-    webwidget_->willEnterFullScreen();
-  }
-}
-
 void RenderWidget::DidToggleFullscreen() {
   if (!webwidget_)
     return;
@@ -1909,60 +1915,19 @@ void RenderWidget::FinishHandlingImeEvent() {
 #endif
 }
 
-void RenderWidget::UpdateTextInputType() {
-  // On Windows, not only an IME but also an on-screen keyboard relies on the
-  // latest TextInputType to optimize its layout and functionality. Thus
-  // |input_method_is_active_| is no longer an appropriate condition to suppress
-  // TextInputTypeChanged IPC on Windows.
-  // TODO(yukawa, yoichio): Consider to stop checking |input_method_is_active_|
-  // on other platforms as well as Windows if the overhead is acceptable.
-#if !defined(OS_WIN)
-  if (!input_method_is_active_)
+void RenderWidget::UpdateTextInputState(ShowIme show_ime,
+                                        ChangeSource change_source) {
+  TRACE_EVENT0("renderer", "RenderWidget::UpdateTextInputState");
+  if (handling_ime_event_)
     return;
-#endif
-
   ui::TextInputType new_type = GetTextInputType();
   if (IsDateTimeInput(new_type))
     return;  // Not considered as a text input field in WebKit/Chromium.
-
-  bool new_can_compose_inline = CanComposeInline();
 
   blink::WebTextInputInfo new_info;
   if (webwidget_)
     new_info = webwidget_->textInputInfo();
   const ui::TextInputMode new_mode = ConvertInputMode(new_info.inputMode);
-  int new_flags = new_info.flags;
-
-  if (text_input_type_ != new_type
-      || can_compose_inline_ != new_can_compose_inline
-      || text_input_mode_ != new_mode
-      || text_input_flags_ != new_flags) {
-    Send(new ViewHostMsg_TextInputTypeChanged(routing_id(),
-                                              new_type,
-                                              new_mode,
-                                              new_can_compose_inline,
-                                              new_flags));
-    text_input_type_ = new_type;
-    can_compose_inline_ = new_can_compose_inline;
-    text_input_mode_ = new_mode;
-    text_input_flags_ = new_flags;
-  }
-}
-
-#if defined(OS_ANDROID) || defined(USE_AURA)
-void RenderWidget::UpdateTextInputState(ShowIme show_ime,
-                                        ChangeSource change_source) {
-  if (handling_ime_event_)
-    return;
-  if (show_ime == NO_SHOW_IME && !input_method_is_active_)
-    return;
-  ui::TextInputType new_type = GetTextInputType();
-  if (IsDateTimeInput(new_type))
-    return;  // Not considered as a text input field in WebKit/Chromium.
-
-  blink::WebTextInputInfo new_info;
-  if (webwidget_)
-    new_info = webwidget_->textInputInfo();
 
   bool new_can_compose_inline = CanComposeInline();
 
@@ -1970,48 +1935,43 @@ void RenderWidget::UpdateTextInputState(ShowIme show_ime,
   // shown.
   if (show_ime == SHOW_IME_IF_NEEDED ||
       (text_input_type_ != new_type ||
+       text_input_mode_ != new_mode ||
        text_input_info_ != new_info ||
        can_compose_inline_ != new_can_compose_inline)
 #if defined(OS_ANDROID)
       || text_field_is_dirty_
 #endif
       ) {
-    ViewHostMsg_TextInputState_Params p;
-    p.type = new_type;
-    p.flags = new_info.flags;
-    p.value = new_info.value.utf8();
-    p.selection_start = new_info.selectionStart;
-    p.selection_end = new_info.selectionEnd;
-    p.composition_start = new_info.compositionStart;
-    p.composition_end = new_info.compositionEnd;
-    p.can_compose_inline = new_can_compose_inline;
-    p.show_ime_if_needed = (show_ime == SHOW_IME_IF_NEEDED);
+    ViewHostMsg_TextInputState_Params params;
+    params.type = new_type;
+    params.mode = new_mode;
+    params.flags = new_info.flags;
+    params.value = new_info.value.utf8();
+    params.selection_start = new_info.selectionStart;
+    params.selection_end = new_info.selectionEnd;
+    params.composition_start = new_info.compositionStart;
+    params.composition_end = new_info.compositionEnd;
+    params.can_compose_inline = new_can_compose_inline;
+    params.show_ime_if_needed = (show_ime == SHOW_IME_IF_NEEDED);
 #if defined(USE_AURA)
-    p.is_non_ime_change = true;
+    params.is_non_ime_change = true;
 #endif
 #if defined(OS_ANDROID)
-    p.is_non_ime_change = (change_source == FROM_NON_IME) ||
+    params.is_non_ime_change = (change_source == FROM_NON_IME) ||
                          text_field_is_dirty_;
-    if (p.is_non_ime_change)
-      IncrementOutstandingImeEventAcks();
+    if (params.is_non_ime_change)
+      OnImeEventSentForAck(new_info);
     text_field_is_dirty_ = false;
 #endif
-#if defined(USE_AURA)
-    Send(new ViewHostMsg_TextInputTypeChanged(routing_id(),
-                                              new_type,
-                                              text_input_mode_,
-                                              new_can_compose_inline,
-                                              new_info.flags));
-#endif
-    Send(new ViewHostMsg_TextInputStateChanged(routing_id(), p));
+    Send(new ViewHostMsg_TextInputStateChanged(routing_id(), params));
 
     text_input_info_ = new_info;
     text_input_type_ = new_type;
+    text_input_mode_ = new_mode;
     can_compose_inline_ = new_can_compose_inline;
     text_input_flags_ = new_info.flags;
   }
 }
-#endif
 
 void RenderWidget::GetSelectionBounds(gfx::Rect* focus, gfx::Rect* anchor) {
   WebRect focus_webrect;
@@ -2022,15 +1982,26 @@ void RenderWidget::GetSelectionBounds(gfx::Rect* focus, gfx::Rect* anchor) {
 }
 
 void RenderWidget::UpdateSelectionBounds() {
+  TRACE_EVENT0("renderer", "RenderWidget::UpdateSelectionBounds");
   if (!webwidget_)
     return;
   if (handling_ime_event_)
     return;
 
+#if defined(USE_AURA)
+  // TODO(mohsen): For now, always send explicit selection IPC notifications for
+  // Aura beucause composited selection updates are not working for webview tags
+  // which regresses IME inside webview. Remove this when composited selection
+  // updates are fixed for webviews. See, http://crbug.com/510568.
+  bool send_ipc = true;
+#else
   // With composited selection updates, the selection bounds will be reported
   // directly by the compositor, in which case explicit IPC selection
   // notifications should be suppressed.
-  if (!blink::WebRuntimeFeatures::isCompositedSelectionUpdateEnabled()) {
+  bool send_ipc =
+      !blink::WebRuntimeFeatures::isCompositedSelectionUpdateEnabled();
+#endif
+  if (send_ipc) {
     ViewHostMsg_SelectionBounds_Params params;
     GetSelectionBounds(&params.anchor_rect, &params.focus_rect);
     if (selection_anchor_rect_ != params.anchor_rect ||
@@ -2089,6 +2060,7 @@ void RenderWidget::UpdateCompositionInfo(bool should_update_range) {
   // TODO(yukawa): Start sending character bounds when the browser side
   // implementation becomes ready (crbug.com/424866).
 #else
+  TRACE_EVENT0("renderer", "RenderWidget::UpdateCompositionInfo");
   gfx::Range range = gfx::Range();
   if (should_update_range) {
     GetCompositionRange(&range);
@@ -2180,9 +2152,6 @@ float RenderWidget::deviceScaleFactor() {
 }
 
 void RenderWidget::resetInputMethod() {
-  if (!input_method_is_active_)
-    return;
-
   ImeEventGuard guard(this);
   // If the last text input type is not None, then we should finish any
   // ongoing composition regardless of the new text input type.
@@ -2381,7 +2350,7 @@ bool RenderWidget::HasTouchEventHandlersAt(const gfx::Point& point) const {
 }
 
 scoped_ptr<WebGraphicsContext3DCommandBufferImpl>
-RenderWidget::CreateGraphicsContext3D() {
+RenderWidget::CreateGraphicsContext3D(bool compositor) {
   if (!webwidget_)
     return scoped_ptr<WebGraphicsContext3DCommandBufferImpl>();
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
@@ -2436,6 +2405,11 @@ RenderWidget::CreateGraphicsContext3D() {
   limits.mapped_memory_reclaim_limit =
       max_transfer_buffer_usage_mb * kBytesPerMegabyte;
 #endif
+  if (compositor) {
+    limits.command_buffer_size = 64 * 1024;
+    limits.start_transfer_buffer_size = 64 * 1024;
+    limits.min_transfer_buffer_size = 64 * 1024;
+  }
 
   scoped_ptr<WebGraphicsContext3DCommandBufferImpl> context(
       new WebGraphicsContext3DCommandBufferImpl(surface_id(),

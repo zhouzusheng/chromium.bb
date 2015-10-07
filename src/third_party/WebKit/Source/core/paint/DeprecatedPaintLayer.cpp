@@ -327,9 +327,7 @@ void DeprecatedPaintLayer::updateLayerPositionsAfterScrollRecursive(const Double
         // the current bounds rect, as the LayoutObject may have moved since the last invalidation.
         // FIXME(416535): Ideally, pending invalidations of scrolling content should be stored in
         // the coordinate space of the scrolling content layer, so that they need no adjustment.
-        LayoutRect invalidationRect = m_layoutObject->previousPaintInvalidationRect();
-        invalidationRect.move(LayoutSize(scrollDelta));
-        m_layoutObject->setPreviousPaintInvalidationRect(invalidationRect);
+        m_layoutObject->adjustPreviousPaintInvalidationForScrollIfNeeded(scrollDelta);
     }
     for (DeprecatedPaintLayer* child = firstChild(); child; child = child->nextSibling()) {
         child->updateLayerPositionsAfterScrollRecursive(scrollDelta,
@@ -404,12 +402,12 @@ TransformationMatrix DeprecatedPaintLayer::currentTransform() const
     return *m_transform;
 }
 
-TransformationMatrix DeprecatedPaintLayer::renderableTransform(PaintBehavior paintBehavior) const
+TransformationMatrix DeprecatedPaintLayer::renderableTransform(GlobalPaintFlags globalPaintFlags) const
 {
     if (!m_transform)
         return TransformationMatrix();
 
-    if (paintBehavior & PaintBehaviorFlattenCompositingLayers) {
+    if (globalPaintFlags & GlobalPaintFlattenCompositingLayers) {
         TransformationMatrix matrix = *m_transform;
         makeMatrixRenderable(matrix, false /* flatten 3d */);
         return matrix;
@@ -744,7 +742,7 @@ bool DeprecatedPaintLayer::updateLayerPosition()
             localPoint -= offset;
         }
 
-        if (positionedParent->layoutObject()->isRelPositioned() && positionedParent->layoutObject()->isLayoutInline()) {
+        if (positionedParent->layoutObject()->isInFlowPositioned() && positionedParent->layoutObject()->isLayoutInline()) {
             LayoutSize offset = toLayoutInline(positionedParent->layoutObject())->offsetForInFlowPositionedInline(*toLayoutBox(layoutObject()));
             localPoint += offset;
         }
@@ -754,7 +752,7 @@ bool DeprecatedPaintLayer::updateLayerPosition()
     }
 
     bool positionOrOffsetChanged = false;
-    if (layoutObject()->isRelPositioned()) {
+    if (layoutObject()->isInFlowPositioned()) {
         LayoutSize newOffset = layoutObject()->offsetForInFlowPosition();
         positionOrOffsetChanged = newOffset != m_offsetForInFlowPosition;
         m_offsetForInFlowPosition = newOffset;
@@ -996,7 +994,7 @@ bool DeprecatedPaintLayer::hasAncestorWithFilterOutsets() const
 }
 
 static void expandClipRectForDescendantsAndReflection(LayoutRect& clipRect, const DeprecatedPaintLayer* layer, const DeprecatedPaintLayer* rootLayer,
-    DeprecatedPaintLayer::TransparencyClipBoxBehavior transparencyBehavior, const LayoutSize& subPixelAccumulation, PaintBehavior paintBehavior)
+    DeprecatedPaintLayer::TransparencyClipBoxBehavior transparencyBehavior, const LayoutSize& subPixelAccumulation, GlobalPaintFlags globalPaintFlags)
 {
     // If we have a mask, then the clip is limited to the border box area (and there is
     // no need to examine child layers).
@@ -1005,7 +1003,7 @@ static void expandClipRectForDescendantsAndReflection(LayoutRect& clipRect, cons
         // a stacking container. This means we can just walk the layer tree directly.
         for (DeprecatedPaintLayer* curr = layer->firstChild(); curr; curr = curr->nextSibling()) {
             if (!layer->reflectionInfo() || layer->reflectionInfo()->reflectionLayer() != curr)
-                clipRect.unite(DeprecatedPaintLayer::transparencyClipBox(curr, rootLayer, transparencyBehavior, DeprecatedPaintLayer::DescendantsOfTransparencyClipBox, subPixelAccumulation, paintBehavior));
+                clipRect.unite(DeprecatedPaintLayer::transparencyClipBox(curr, rootLayer, transparencyBehavior, DeprecatedPaintLayer::DescendantsOfTransparencyClipBox, subPixelAccumulation, globalPaintFlags));
         }
     }
 
@@ -1023,13 +1021,13 @@ static void expandClipRectForDescendantsAndReflection(LayoutRect& clipRect, cons
 }
 
 LayoutRect DeprecatedPaintLayer::transparencyClipBox(const DeprecatedPaintLayer* layer, const DeprecatedPaintLayer* rootLayer, TransparencyClipBoxBehavior transparencyBehavior,
-    TransparencyClipBoxMode transparencyMode, const LayoutSize& subPixelAccumulation, PaintBehavior paintBehavior)
+    TransparencyClipBoxMode transparencyMode, const LayoutSize& subPixelAccumulation, GlobalPaintFlags globalPaintFlags)
 {
     // FIXME: Although this function completely ignores CSS-imposed clipping, we did already intersect with the
     // paintDirtyRect, and that should cut down on the amount we have to paint.  Still it
     // would be better to respect clips.
 
-    if (rootLayer != layer && ((transparencyBehavior == PaintingTransparencyClipBox && layer->paintsWithTransform(paintBehavior))
+    if (rootLayer != layer && ((transparencyBehavior == PaintingTransparencyClipBox && layer->paintsWithTransform(globalPaintFlags))
         || (transparencyBehavior == HitTestingTransparencyClipBox && layer->hasTransformRelatedProperty()))) {
         // The best we can do here is to use enclosed bounding boxes to establish a "fuzzy" enough clip to encompass
         // the transformed layer and all of its children.
@@ -1048,7 +1046,7 @@ LayoutRect DeprecatedPaintLayer::transparencyClipBox(const DeprecatedPaintLayer*
         // We don't use fragment boxes when collecting a transformed layer's bounding box, since it always
         // paints unfragmented.
         LayoutRect clipRect = layer->physicalBoundingBox(layer);
-        expandClipRectForDescendantsAndReflection(clipRect, layer, layer, transparencyBehavior, subPixelAccumulation, paintBehavior);
+        expandClipRectForDescendantsAndReflection(clipRect, layer, layer, transparencyBehavior, subPixelAccumulation, globalPaintFlags);
         clipRect.expand(layer->layoutObject()->style()->filterOutsets());
         LayoutRect result = transform.mapRect(clipRect);
         if (!paginationLayer)
@@ -1067,15 +1065,15 @@ LayoutRect DeprecatedPaintLayer::transparencyClipBox(const DeprecatedPaintLayer*
     }
 
     LayoutRect clipRect = layer->fragmentsBoundingBox(rootLayer);
-    expandClipRectForDescendantsAndReflection(clipRect, layer, rootLayer, transparencyBehavior, subPixelAccumulation, paintBehavior);
+    expandClipRectForDescendantsAndReflection(clipRect, layer, rootLayer, transparencyBehavior, subPixelAccumulation, globalPaintFlags);
     clipRect.expand(layer->layoutObject()->style()->filterOutsets());
     clipRect.move(subPixelAccumulation);
     return clipRect;
 }
 
-LayoutRect DeprecatedPaintLayer::paintingExtent(const DeprecatedPaintLayer* rootLayer, const LayoutRect& paintDirtyRect, const LayoutSize& subPixelAccumulation, PaintBehavior paintBehavior)
+LayoutRect DeprecatedPaintLayer::paintingExtent(const DeprecatedPaintLayer* rootLayer, const LayoutRect& paintDirtyRect, const LayoutSize& subPixelAccumulation, GlobalPaintFlags globalPaintFlags)
 {
-    return intersection(transparencyClipBox(this, rootLayer, PaintingTransparencyClipBox, RootOfTransparencyClipBox, subPixelAccumulation, paintBehavior), paintDirtyRect);
+    return intersection(transparencyClipBox(this, rootLayer, PaintingTransparencyClipBox, RootOfTransparencyClipBox, subPixelAccumulation, globalPaintFlags), paintDirtyRect);
 }
 
 void* DeprecatedPaintLayer::operator new(size_t sz)
@@ -1250,58 +1248,14 @@ static inline const DeprecatedPaintLayer* accumulateOffsetTowardsAncestor(const 
         return ancestorLayer;
     }
 
-    if (position == FixedPosition) {
-        // For a fixed layers, we need to walk up to the root to see if there's a fixed position container
-        // (e.g. a transformed layer). It's an error to call convertToLayerCoords() across a layer with a transform,
-        // so we should always find the ancestor at or before we find the fixed position container, if
-        // the container is transformed.
-        DeprecatedPaintLayer* fixedPositionContainerLayer = 0;
-        bool foundAncestor = false;
-        for (DeprecatedPaintLayer* currLayer = layer->parent(); currLayer; currLayer = currLayer->parent()) {
-            if (currLayer == ancestorLayer)
-                foundAncestor = true;
-
-            if (isFixedPositionedContainer(currLayer)) {
-                fixedPositionContainerLayer = currLayer;
-                // A layer that has a transform-related property but not a
-                // transform still acts as a fixed-position container.
-                // Accumulating offsets across such layers is allowed.
-                if (currLayer->transform())
-                    ASSERT_UNUSED(foundAncestor, foundAncestor);
-                break;
-            }
-        }
-
-        ASSERT(fixedPositionContainerLayer); // We should have hit the LayoutView's layer at least.
-
-        if (fixedPositionContainerLayer != ancestorLayer) {
-            LayoutPoint fixedContainerCoords;
-            layer->convertToLayerCoords(fixedPositionContainerLayer, fixedContainerCoords);
-            location += fixedContainerCoords;
-
-            if (foundAncestor) {
-                LayoutPoint ancestorCoords;
-                ancestorLayer->convertToLayerCoords(fixedPositionContainerLayer, ancestorCoords);
-                location += -ancestorCoords;
-            }
-        } else {
-            // LayoutView has been handled in the first top-level 'if' block above.
-            ASSERT(ancestorLayer != layoutObject->view()->layer());
-            ASSERT(ancestorLayer->hasTransformRelatedProperty());
-
-            location += layer->location();
-        }
-        return foundAncestor ? ancestorLayer : fixedPositionContainerLayer;
-    }
-
     DeprecatedPaintLayer* parentLayer;
-    if (position == AbsolutePosition) {
+    if (position == AbsolutePosition || position == FixedPosition) {
         bool foundAncestorFirst;
         parentLayer = layer->enclosingPositionedAncestor(ancestorLayer, &foundAncestorFirst);
 
         if (foundAncestorFirst) {
-            // Found ancestorLayer before the abs. positioned container, so compute offset of both relative
-            // to the positioned ancestor and subtract.
+            // Found ancestorLayer before the container of the out-of-flow object, so compute offset
+            // of both relative to the container and subtract.
 
             LayoutPoint thisCoords;
             layer->convertToLayerCoords(parentLayer, thisCoords);
@@ -1322,7 +1276,7 @@ static inline const DeprecatedPaintLayer* accumulateOffsetTowardsAncestor(const 
     }
 
     if (!parentLayer)
-        return 0;
+        return nullptr;
 
     location += layer->location();
     return parentLayer;
@@ -1977,12 +1931,16 @@ void DeprecatedPaintLayer::blockSelectionGapsBoundsChanged()
 
 void DeprecatedPaintLayer::addBlockSelectionGapsBounds(const LayoutRect& bounds)
 {
+    if (RuntimeEnabledFeatures::selectionPaintingWithoutSelectionGapsEnabled())
+        return;
     m_blockSelectionGapsBounds.unite(enclosingIntRect(bounds));
     blockSelectionGapsBoundsChanged();
 }
 
 void DeprecatedPaintLayer::clearBlockSelectionGapsBounds()
 {
+    if (RuntimeEnabledFeatures::selectionPaintingWithoutSelectionGapsEnabled())
+        return;
     m_blockSelectionGapsBounds = IntRect();
     for (DeprecatedPaintLayer* child = firstChild(); child; child = child->nextSibling())
         child->clearBlockSelectionGapsBounds();
@@ -1991,6 +1949,9 @@ void DeprecatedPaintLayer::clearBlockSelectionGapsBounds()
 
 void DeprecatedPaintLayer::invalidatePaintForBlockSelectionGaps()
 {
+    if (RuntimeEnabledFeatures::selectionPaintingWithoutSelectionGapsEnabled())
+        return;
+
     for (DeprecatedPaintLayer* child = firstChild(); child; child = child->nextSibling()) {
         // FIXME: We should not allow paint invalidation out of paint invalidation state. crbug.com/457415
         DisablePaintInvalidationStateAsserts disabler;
@@ -2018,6 +1979,9 @@ void DeprecatedPaintLayer::invalidatePaintForBlockSelectionGaps()
 
 IntRect DeprecatedPaintLayer::blockSelectionGapsBounds() const
 {
+    if (RuntimeEnabledFeatures::selectionPaintingWithoutSelectionGapsEnabled())
+        return IntRect();
+
     if (!layoutObject()->isLayoutBlockFlow())
         return IntRect();
 
@@ -2029,6 +1993,9 @@ IntRect DeprecatedPaintLayer::blockSelectionGapsBounds() const
 
 bool DeprecatedPaintLayer::hasBlockSelectionGapBounds() const
 {
+    if (RuntimeEnabledFeatures::selectionPaintingWithoutSelectionGapsEnabled())
+        return false;
+
     // FIXME: it would be more accurate to return !blockSelectionGapsBounds().isEmpty(), but this is impossible
     // at the moment because it causes invalid queries to layout-dependent code (crbug.com/372802).
     // ASSERT(layoutObject()->document().lifecycle().state() >= DocumentLifecycle::LayoutClean);
@@ -2214,7 +2181,7 @@ LayoutRect DeprecatedPaintLayer::boundingBoxForCompositing(const DeprecatedPaint
         result.expand(m_layoutObject->style()->filterOutsets());
     }
 
-    if (transform() && (paintsWithTransform(PaintBehaviorNormal) || options == ApplyBoundsChickenEggHacks))
+    if (transform() && (paintsWithTransform(GlobalPaintNormalPhase) || options == ApplyBoundsChickenEggHacks))
         result = transform()->mapRect(result);
 
     if (enclosingPaginationLayer()) {
@@ -2247,7 +2214,7 @@ CompositingState DeprecatedPaintLayer::compositingState() const
 
 bool DeprecatedPaintLayer::isAllowedToQueryCompositingState() const
 {
-    if (gCompositingQueryMode == CompositingQueriesAreAllowed)
+    if (gCompositingQueryMode == CompositingQueriesAreAllowed || RuntimeEnabledFeatures::slimmingPaintV2Enabled())
         return true;
     return layoutObject()->document().lifecycle().state() >= DocumentLifecycle::InCompositingUpdate;
 }
@@ -2335,9 +2302,9 @@ bool DeprecatedPaintLayer::hasCompositedClippingMask() const
     return m_compositedDeprecatedPaintLayerMapping && m_compositedDeprecatedPaintLayerMapping->hasChildClippingMaskLayer();
 }
 
-bool DeprecatedPaintLayer::paintsWithTransform(PaintBehavior paintBehavior) const
+bool DeprecatedPaintLayer::paintsWithTransform(GlobalPaintFlags globalPaintFlags) const
 {
-    return (transform() || layoutObject()->style()->position() == FixedPosition) && ((paintBehavior & PaintBehaviorFlattenCompositingLayers) || compositingState() != PaintsIntoOwnBacking);
+    return (transform() || layoutObject()->style()->position() == FixedPosition) && ((globalPaintFlags & GlobalPaintFlattenCompositingLayers) || compositingState() != PaintsIntoOwnBacking);
 }
 
 bool DeprecatedPaintLayer::backgroundIsKnownToBeOpaqueInRect(const LayoutRect& localRect) const
@@ -2345,7 +2312,7 @@ bool DeprecatedPaintLayer::backgroundIsKnownToBeOpaqueInRect(const LayoutRect& l
     if (!isSelfPaintingLayer() && !hasSelfPaintingLayerDescendant())
         return false;
 
-    if (paintsWithTransparency(PaintBehaviorNormal))
+    if (paintsWithTransparency(GlobalPaintNormalPhase))
         return false;
 
     // We can't use hasVisibleContent(), because that will be true if our layoutObject is hidden, but some child
@@ -2357,7 +2324,7 @@ bool DeprecatedPaintLayer::backgroundIsKnownToBeOpaqueInRect(const LayoutRect& l
         return false;
 
     // FIXME: Handle simple transforms.
-    if (paintsWithTransform(PaintBehaviorNormal))
+    if (paintsWithTransform(GlobalPaintNormalPhase))
         return false;
 
     // FIXME: Remove this check.
@@ -2578,9 +2545,7 @@ FilterOperations DeprecatedPaintLayer::computeFilterOperations(const ComputedSty
                 continue;
             ReferenceFilterOperation& referenceOperation = toReferenceFilterOperation(*filterOperation);
             // FIXME: Cache the ReferenceFilter if it didn't change.
-            RefPtrWillBeRawPtr<ReferenceFilter> referenceFilter = ReferenceFilter::create(style.effectiveZoom());
-            referenceFilter->setLastEffect(ReferenceFilterBuilder::build(referenceFilter.get(), toElement(enclosingElement()), referenceFilter->sourceGraphic(),
-                referenceOperation));
+            RefPtrWillBeRawPtr<ReferenceFilter> referenceFilter = ReferenceFilterBuilder::build(style.effectiveZoom(), toElement(enclosingElement()), nullptr, referenceOperation);
             referenceOperation.setFilter(referenceFilter.release());
         }
     }

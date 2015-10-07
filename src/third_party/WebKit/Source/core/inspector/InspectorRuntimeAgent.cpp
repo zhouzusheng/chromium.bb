@@ -35,7 +35,8 @@
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InjectedScriptManager.h"
 #include "core/inspector/InspectorState.h"
-#include "core/inspector/V8Debugger.h"
+#include "core/inspector/RemoteObjectId.h"
+#include "core/inspector/v8/V8Debugger.h"
 #include "platform/JSONValues.h"
 
 using blink::TypeBuilder::Runtime::ExecutionContextDescription;
@@ -47,6 +48,7 @@ static const char runtimeEnabled[] = "runtimeEnabled";
 };
 
 class InspectorRuntimeAgent::InjectedScriptCallScope {
+    STACK_ALLOCATED();
 public:
     InjectedScriptCallScope(InspectorRuntimeAgent* agent, bool doNotPauseOnExceptionsAndMuteConsole)
         : m_agent(agent)
@@ -79,7 +81,7 @@ private:
         return presentState;
     }
 
-    InspectorRuntimeAgent* m_agent;
+    RawPtrWillBeMember<InspectorRuntimeAgent> m_agent;
     bool m_doNotPauseOnExceptionsAndMuteConsole;
     V8Debugger::PauseOnExceptionsState m_previousPauseOnExceptionsState;
 };
@@ -115,7 +117,12 @@ void InspectorRuntimeAgent::evaluate(ErrorString* errorString, const String& exp
 
 void InspectorRuntimeAgent::callFunctionOn(ErrorString* errorString, const String& objectId, const String& expression, const RefPtr<JSONArray>* const optionalArguments, const bool* const doNotPauseOnExceptionsAndMuteConsole, const bool* const returnByValue, const bool* generatePreview, RefPtr<TypeBuilder::Runtime::RemoteObject>& result, TypeBuilder::OptOutput<bool>* wasThrown)
 {
-    InjectedScript injectedScript = m_injectedScriptManager->injectedScriptForObjectId(objectId);
+    OwnPtr<RemoteObjectId> remoteId = RemoteObjectId::parse(objectId);
+    if (!remoteId) {
+        *errorString = "Invalid object id";
+        return;
+    }
+    InjectedScript injectedScript = m_injectedScriptManager->findInjectedScript(remoteId.get());
     if (injectedScript.isEmpty()) {
         *errorString = "Inspected frame has gone";
         return;
@@ -130,7 +137,12 @@ void InspectorRuntimeAgent::callFunctionOn(ErrorString* errorString, const Strin
 
 void InspectorRuntimeAgent::getProperties(ErrorString* errorString, const String& objectId, const bool* ownProperties, const bool* accessorPropertiesOnly, const bool* generatePreview, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::PropertyDescriptor>>& result, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::InternalPropertyDescriptor>>& internalProperties, RefPtr<TypeBuilder::Debugger::ExceptionDetails>& exceptionDetails)
 {
-    InjectedScript injectedScript = m_injectedScriptManager->injectedScriptForObjectId(objectId);
+    OwnPtr<RemoteObjectId> remoteId = RemoteObjectId::parse(objectId);
+    if (!remoteId) {
+        *errorString = "Invalid object id";
+        return;
+    }
+    InjectedScript injectedScript = m_injectedScriptManager->findInjectedScript(remoteId.get());
     if (injectedScript.isEmpty()) {
         *errorString = "Inspected frame has gone";
         return;
@@ -144,9 +156,14 @@ void InspectorRuntimeAgent::getProperties(ErrorString* errorString, const String
         injectedScript.getInternalProperties(errorString, objectId, &internalProperties, &exceptionDetails);
 }
 
-void InspectorRuntimeAgent::releaseObject(ErrorString*, const String& objectId)
+void InspectorRuntimeAgent::releaseObject(ErrorString* errorString, const String& objectId)
 {
-    InjectedScript injectedScript = m_injectedScriptManager->injectedScriptForObjectId(objectId);
+    OwnPtr<RemoteObjectId> remoteId = RemoteObjectId::parse(objectId);
+    if (!remoteId) {
+        *errorString = "Invalid object id";
+        return;
+    }
+    InjectedScript injectedScript = m_injectedScriptManager->findInjectedScript(remoteId.get());
     if (injectedScript.isEmpty())
         return;
     bool pausingOnNextStatement = m_debugger->pausingOnNextStatement();

@@ -314,6 +314,11 @@ void WebSettingsImpl::setPrimaryHoverType(HoverType type)
     m_settings->setPrimaryHoverType(static_cast<blink::HoverType>(type));
 }
 
+void WebSettingsImpl::setPreferHiddenVolumeControls(bool enabled)
+{
+    m_settings->setPreferHiddenVolumeControls(enabled);
+}
+
 void WebSettingsImpl::setDOMPasteAllowed(bool enabled)
 {
     m_settings->setDOMPasteAllowed(enabled);
@@ -614,9 +619,19 @@ void WebSettingsImpl::setStrictMixedContentChecking(bool enabled)
     m_settings->setStrictMixedContentChecking(enabled);
 }
 
+void WebSettingsImpl::setStrictMixedContentCheckingForPlugin(bool enabled)
+{
+    m_settings->setStrictMixedContentCheckingForPlugin(enabled);
+}
+
 void WebSettingsImpl::setStrictPowerfulFeatureRestrictions(bool enabled)
 {
     m_settings->setStrictPowerfulFeatureRestrictions(enabled);
+}
+
+void WebSettingsImpl::setStrictlyBlockBlockableMixedContent(bool enabled)
+{
+    m_settings->setStrictlyBlockBlockableMixedContent(enabled);
 }
 
 void WebSettingsImpl::setPasswordEchoEnabled(bool flag)
@@ -803,6 +818,11 @@ void WebSettingsImpl::setV8CacheOptions(V8CacheOptions options)
 void WebSettingsImpl::setUseMobileViewportStyle(bool enabled)
 {
     m_devToolsEmulator->setUseMobileViewportStyle(enabled);
+}
+
+void WebSettingsImpl::setHidePinchScrollbarsNearMinScale(bool enabled)
+{
+    m_devToolsEmulator->setHidePinchScrollbarsNearMinScale(enabled);
 }
 
 } // namespace blink

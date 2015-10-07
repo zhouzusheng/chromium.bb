@@ -23,7 +23,10 @@
 #endif
 
 #if defined(ENABLE_PRINT_PREVIEW)
-#include "chrome/common/crash_keys.h"
+
+// SHEZ: Remove dependency on crash_keys
+//#include "chrome/common/crash_keys.h"
+
 #include "printing/backend/print_backend.h"
 #endif
 
@@ -273,8 +276,9 @@ void PrintingHandler::OnGetPrinterCapsAndDefaults(
       printing::PrintBackend::CreateInstance(NULL);
   printing::PrinterCapsAndDefaults printer_info;
 
-  crash_keys::ScopedPrinterInfo crash_key(
-      print_backend->GetPrinterDriverInfo(printer_name));
+  // SHEZ: Remove dependency on crash_keys
+  //crash_keys::ScopedPrinterInfo crash_key(
+  //    print_backend->GetPrinterDriverInfo(printer_name));
 
   if (print_backend->GetPrinterCapsAndDefaults(printer_name, &printer_info)) {
     Send(new ChromeUtilityHostMsg_GetPrinterCapsAndDefaults_Succeeded(
@@ -292,8 +296,9 @@ void PrintingHandler::OnGetPrinterSemanticCapsAndDefaults(
       printing::PrintBackend::CreateInstance(NULL);
   printing::PrinterSemanticCapsAndDefaults printer_info;
 
-  crash_keys::ScopedPrinterInfo crash_key(
-      print_backend->GetPrinterDriverInfo(printer_name));
+  // SHEZ: Remove dependency on crash_keys
+  //crash_keys::ScopedPrinterInfo crash_key(
+  //    print_backend->GetPrinterDriverInfo(printer_name));
 
   if (print_backend->GetPrinterSemanticCapsAndDefaults(printer_name,
                                                        &printer_info)) {

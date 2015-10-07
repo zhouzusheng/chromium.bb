@@ -72,32 +72,28 @@ public:
     // Called to resize the WebWidget.
     virtual void resize(const WebSize&) { }
 
-    // Resizes the unscaled pinch viewport. Normally the unscaled pinch
+    // Resizes the unscaled visual viewport. Normally the unscaled visual
     // viewport is the same size as the main frame. The passed size becomes the
     // size of the viewport when unscaled (i.e. scale = 1). This is used to
     // shrink the visible viewport to allow things like the ChromeOS virtual
     // keyboard to overlay over content but allow scrolling it into view.
+    virtual void resizeVisualViewport(const WebSize&) { }
+
+    // TODO(bokan): Renamed to visual viewport above. Remove once chromium-side
+    // callers are renamed.
     virtual void resizePinchViewport(const WebSize&) { }
 
     // Ends a group of resize events that was started with a call to
     // willStartLiveResize.
     virtual void willEndLiveResize() { }
 
-    // Called to notify the WebWidget of entering/exiting fullscreen mode. The
-    // resize method may be called between will{Enter,Exit}FullScreen and
-    // did{Enter,Exit}FullScreen.
-    virtual void willEnterFullScreen() { }
+    // Called to notify the WebWidget of entering/exiting fullscreen mode.
     virtual void didEnterFullScreen() { }
-    virtual void willExitFullScreen() { }
     virtual void didExitFullScreen() { }
 
     // Called to update imperative animation state. This should be called before
     // paint, although the client can rate-limit these calls.
     virtual void beginFrame(const WebBeginFrameArgs& frameTime) { }
-
-    // Called when the Widget contents has changed in such a way the layout must be
-    // redone, and any resulting paint invalidations issued.
-    virtual void setNeedsLayoutAndFullPaintInvalidation() { }
 
     // Called to layout the WebWidget. This MUST be called before Paint,
     // and it may result in calls to WebWidgetClient::didInvalidateRect.
@@ -142,7 +138,7 @@ public:
     // Applies viewport related properties during a commit from the compositor
     // thread.
     virtual void applyViewportDeltas(
-        const WebFloatSize& pinchViewportDelta,
+        const WebFloatSize& visualViewportDelta,
         const WebFloatSize& layoutViewportDelta,
         const WebFloatSize& elasticOverscrollDelta,
         float scaleFactor,

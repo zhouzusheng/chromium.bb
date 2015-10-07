@@ -13,9 +13,10 @@
 
 namespace blink {
 
-RootFrameViewport::RootFrameViewport(ScrollableArea& visualViewport, ScrollableArea& layoutViewport)
+RootFrameViewport::RootFrameViewport(ScrollableArea& visualViewport, ScrollableArea& layoutViewport, bool invertScrollOrder)
     : m_visualViewport(visualViewport)
     , m_layoutViewport(layoutViewport)
+    , m_invertScrollOrder(invertScrollOrder)
 {
 }
 
@@ -96,7 +97,10 @@ ScrollResult RootFrameViewport::handleWheel(const PlatformWheelEvent& event)
 {
     updateScrollAnimator();
 
-    ScrollResult viewScrollResult = layoutViewport().handleWheel(event);
+    ScrollableArea& primary = !m_invertScrollOrder ? layoutViewport() : visualViewport();
+    ScrollableArea& secondary = !m_invertScrollOrder ? visualViewport() : layoutViewport();
+
+    ScrollResult viewScrollResult = primary.handleWheel(event);
 
     // The visual viewport will only accept pixel scrolls.
     if (!event.canScroll() || event.granularity() == ScrollByPageWheelEvent)
@@ -108,7 +112,7 @@ ScrollResult RootFrameViewport::handleWheel(const PlatformWheelEvent& event)
     // there is WheelEvent({0, -10} and page scroll by 2px and unusedScrollDelta computed
     // is {0, -8}. Due to which we have to negate the unusedScrollDelta to obtain the expected
     // animation.Please address http://crbug.com/504389.
-    DoublePoint oldOffset = visualViewport().scrollPositionDouble();
+    DoublePoint oldOffset = secondary.scrollPositionDouble();
     DoublePoint locationDelta;
     if (viewScrollResult.didScroll()) {
         locationDelta = -DoublePoint(viewScrollResult.unusedScrollDeltaX, viewScrollResult.unusedScrollDeltaY);
@@ -119,11 +123,11 @@ ScrollResult RootFrameViewport::handleWheel(const PlatformWheelEvent& event)
             locationDelta.setY(-event.deltaY());
     }
 
-    DoublePoint targetPosition = visualViewport().clampScrollPosition(
-        visualViewport().scrollPositionDouble() + toDoubleSize(locationDelta));
-    visualViewport().setScrollPosition(targetPosition, UserScroll);
+    DoublePoint targetPosition = secondary.clampScrollPosition(
+        secondary.scrollPositionDouble() + toDoubleSize(locationDelta));
+    secondary.setScrollPosition(targetPosition, UserScroll);
 
-    DoublePoint usedLocationDelta(visualViewport().scrollPositionDouble() - oldOffset);
+    DoublePoint usedLocationDelta(secondary.scrollPositionDouble() - oldOffset);
 
     bool didScrollX = viewScrollResult.didScrollX || usedLocationDelta.x();
     bool didScrollY = viewScrollResult.didScrollY || usedLocationDelta.y();
@@ -133,23 +137,23 @@ ScrollResult RootFrameViewport::handleWheel(const PlatformWheelEvent& event)
 LayoutRect RootFrameViewport::scrollIntoView(const LayoutRect& rectInContent, const ScrollAlignment& alignX, const ScrollAlignment& alignY)
 {
     // We want to move the rect into the viewport that excludes the scrollbars so we intersect
-    // the pinch viewport with the scrollbar-excluded frameView content rect. However, we don't
+    // the visual viewport with the scrollbar-excluded frameView content rect. However, we don't
     // use visibleContentRect directly since it floors the scroll position. Instead, we use
     // FrameView::scrollPositionDouble and construct a LayoutRect from that (the FrameView size
     // is always integer sized.
 
     LayoutRect frameRectInContent = LayoutRect(
-        layoutViewport().scrollPositionDouble(),
+        layoutViewport().scrollAnimator()->currentPosition(),
         layoutViewport().visibleContentRect().size());
-    LayoutRect pinchRectInContent = LayoutRect(
-        layoutViewport().scrollPositionDouble() + toDoubleSize(visualViewport().scrollPositionDouble()),
+    LayoutRect visualRectInContent = LayoutRect(
+        scrollOffsetFromScrollAnimators(),
         visualViewport().visibleContentRect().size());
 
-    LayoutRect viewRectInContent = intersection(pinchRectInContent, frameRectInContent);
+    LayoutRect viewRectInContent = intersection(visualRectInContent, frameRectInContent);
     LayoutRect targetViewport =
         ScrollAlignment::getRectToExpose(viewRectInContent, rectInContent, alignX, alignY);
 
-    // pinchViewport.scrollIntoView will attempt to center the given rect within the viewport
+    // visualViewport.scrollIntoView will attempt to center the given rect within the viewport
     // so to prevent it from adjusting r's coordinates the rect must match the viewport's size
     // i.e. add the subtracted scrollbars from above back in.
     // FIXME: This is hacky and required because getRectToExpose doesn't naturally account
@@ -190,8 +194,11 @@ void RootFrameViewport::setScrollOffset(const DoublePoint& offset, ScrollType sc
     if (delta.isZero())
         return;
 
-    DoublePoint targetPosition = layoutViewport().clampScrollPosition(layoutViewport().scrollAnimator()->currentPosition() + delta);
-    layoutViewport().setScrollPosition(targetPosition, scrollType);
+    ScrollableArea& primary = !m_invertScrollOrder ? layoutViewport() : visualViewport();
+    ScrollableArea& secondary = !m_invertScrollOrder ? visualViewport() : layoutViewport();
+
+    DoublePoint targetPosition = primary.clampScrollPosition(primary.scrollAnimator()->currentPosition() + delta);
+    primary.setScrollPosition(targetPosition, scrollType);
 
     DoubleSize applied = scrollOffsetFromScrollAnimators() - oldPosition;
     delta -= applied;
@@ -199,8 +206,8 @@ void RootFrameViewport::setScrollOffset(const DoublePoint& offset, ScrollType sc
     if (delta.isZero())
         return;
 
-    targetPosition = visualViewport().clampScrollPosition(visualViewport().scrollAnimator()->currentPosition() + delta);
-    visualViewport().setScrollPosition(targetPosition, scrollType);
+    targetPosition = secondary.clampScrollPosition(secondary.scrollAnimator()->currentPosition() + delta);
+    secondary.setScrollPosition(targetPosition, scrollType);
 }
 
 IntPoint RootFrameViewport::scrollPosition() const

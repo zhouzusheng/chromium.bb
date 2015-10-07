@@ -414,7 +414,8 @@ std::string DynamicHLSL::generateVertexShaderForInputLayout(const std::string &s
         if (!shaderAttribute.name.empty())
         {
             ASSERT(inputIndex < MAX_VERTEX_ATTRIBS);
-            VertexFormatType vertexFormatType = inputLayout[inputIndex];
+            VertexFormatType vertexFormatType =
+                inputIndex < inputLayout.size() ? inputLayout[inputIndex] : VERTEX_FORMAT_INVALID;
 
             // HLSL code for input structure
             if (IsMatrixType(shaderAttribute.type))
@@ -516,8 +517,9 @@ std::string DynamicHLSL::generatePixelShaderForOutputSignature(const std::string
             // corresponding to unwritten variables are similarly undefined.
             if (outputVariable)
             {
-                declarationHLSL += "    " + HLSLTypeString(outputVariable->type) + " " + outputVariable->name +
-                                   " : " + targetSemantic + Str(layoutIndex) + ";\n";
+                declarationHLSL += "    " + HLSLTypeString(outputVariable->type) + " " +
+                                   outputVariable->name + " : " + targetSemantic +
+                                   Str(static_cast<int>(layoutIndex)) + ";\n";
 
                 copyHLSL += "    output." + outputVariable->name + " = " + outputVariable->source + ";\n";
             }
@@ -734,10 +736,14 @@ void DynamicHLSL::storeUserLinkedVaryings(const ShaderD3D *vertexShader,
     }
 }
 
-bool DynamicHLSL::generateShaderLinkHLSL(const gl::Data &data, InfoLog &infoLog, int registers,
+bool DynamicHLSL::generateShaderLinkHLSL(const gl::Data &data,
+                                         InfoLog &infoLog,
+                                         int registers,
                                          const VaryingPacking packing,
-                                         std::string &pixelHLSL, std::string &vertexHLSL,
-                                         ShaderD3D *fragmentShader, ShaderD3D *vertexShader,
+                                         std::string &pixelHLSL,
+                                         std::string &vertexHLSL,
+                                         const ShaderD3D *fragmentShader,
+                                         const ShaderD3D *vertexShader,
                                          const std::vector<std::string> &transformFeedbackVaryings,
                                          std::vector<LinkedVarying> *linkedVaryings,
                                          std::map<int, VariableLocation> *programOutputVars,
@@ -1084,7 +1090,8 @@ bool DynamicHLSL::generateShaderLinkHLSL(const gl::Data &data, InfoLog &infoLog,
     return true;
 }
 
-void DynamicHLSL::defineOutputVariables(ShaderD3D *fragmentShader, std::map<int, VariableLocation> *programOutputVars) const
+void DynamicHLSL::defineOutputVariables(const ShaderD3D *fragmentShader,
+                                        std::map<int, VariableLocation> *programOutputVars) const
 {
     const std::vector<sh::Attribute> &shaderOutputVars = fragmentShader->getActiveOutputVariables();
 
@@ -1112,14 +1119,18 @@ void DynamicHLSL::defineOutputVariables(ShaderD3D *fragmentShader, std::map<int,
     }
 }
 
-std::string DynamicHLSL::generateGeometryShaderHLSL(int registers, ShaderD3D *fragmentShader, ShaderD3D *vertexShader) const
+std::string DynamicHLSL::generateGeometryShaderHLSL(int registers,
+                                                    const ShaderD3D *fragmentShader,
+                                                    const ShaderD3D *vertexShader) const
 {
     // for now we only handle point sprite emulation
     ASSERT(vertexShader->mUsesPointSize && mRenderer->getMajorShaderModel() >= 4);
     return generatePointSpriteHLSL(registers, fragmentShader, vertexShader);
 }
 
-std::string DynamicHLSL::generatePointSpriteHLSL(int registers, ShaderD3D *fragmentShader, ShaderD3D *vertexShader) const
+std::string DynamicHLSL::generatePointSpriteHLSL(int registers,
+                                                 const ShaderD3D *fragmentShader,
+                                                 const ShaderD3D *vertexShader) const
 {
     ASSERT(registers >= 0);
     ASSERT(vertexShader->mUsesPointSize);

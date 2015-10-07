@@ -46,7 +46,7 @@ WebInspector.StylesSidebarPane = function(requestShowCallback)
     filterContainerElement.appendChild(this._filterInput);
 
     var toolbar = new WebInspector.ExtensibleToolbar("styles-sidebarpane-toolbar", hbox);
-    toolbar.element.classList.add("styles-pane-toolbar");
+    toolbar.element.classList.add("styles-pane-toolbar", "toolbar-gray-toggled");
     this._currentToolbarPane = null;
 
     this._requestShowCallback = requestShowCallback;
@@ -62,6 +62,7 @@ WebInspector.StylesSidebarPane = function(requestShowCallback)
     this.element.addEventListener("mousemove", this._mouseMovedOverElement.bind(this), false);
     this._keyDownBound = this._keyDown.bind(this);
     this._keyUpBound = this._keyUp.bind(this);
+    new WebInspector.PropertyChangeHighlighter(this);
 }
 
 // Keep in sync with ComputedStyleConstants.h PseudoId enum. Array below contains pseudo id names for corresponding enum indexes.
@@ -92,7 +93,7 @@ WebInspector.StylesSidebarPane.createExclamationMark = function(property)
     exclamationElement.className = "exclamation-mark";
     if (!WebInspector.StylesSidebarPane.ignoreErrorsForProperty(property))
         exclamationElement.type = "warning-icon";
-    exclamationElement.title = WebInspector.CSSMetadata.cssPropertiesMetainfo.keySet()[property.name.toLowerCase()] ? WebInspector.UIString("Invalid property value.") : WebInspector.UIString("Unknown property name.");
+    exclamationElement.title = WebInspector.CSSMetadata.cssPropertiesMetainfo.keySet()[property.name.toLowerCase()] ? WebInspector.UIString("Invalid property value") : WebInspector.UIString("Unknown property name");
     return exclamationElement;
 }
 
@@ -313,16 +314,14 @@ WebInspector.StylesSidebarPane.prototype = {
 
     /**
      * @override
-     * @param {!WebInspector.Throttler.FinishCallback} finishedCallback
+     * @return {!Promise.<?>}
      */
-    doUpdate: function(finishedCallback)
+    doUpdate: function()
     {
         this._discardElementUnderMouse();
 
-        this.fetchMatchedCascade()
+        return this.fetchMatchedCascade()
             .then(this._innerRebuildUpdate.bind(this))
-            .then(finishedCallback)
-            .catch(/** @type {function()} */(finishedCallback));
     },
 
     _resetCache: function()
@@ -847,6 +846,14 @@ WebInspector.StylesSidebarPane.prototype = {
                 delete this._pendingWidget;
             }
         }
+    },
+
+    /**
+     * @return {!Array<!WebInspector.SectionBlock>}
+     */
+    sectionBlocks: function()
+    {
+        return this._sectionBlocks || [];
     },
 
     __proto__: WebInspector.ElementsSidebarPane.prototype
@@ -2055,7 +2062,29 @@ WebInspector.StylePropertyTreeElement.prototype = {
         }
 
         var stylesPopoverHelper = this._parentPane._stylesPopoverHelper;
-        return new WebInspector.ColorSwatchPopoverIcon(this, stylesPopoverHelper, text).element();
+        var swatchIcon = new WebInspector.ColorSwatchPopoverIcon(this, stylesPopoverHelper, text);
+
+        /**
+         * @param {?WebInspector.CSSStyleDeclaration} styles
+         */
+        function computedCallback(styles)
+        {
+            if (!styles)
+                return;
+            var bgColorText = styles.getPropertyValue("background-color") || "";
+            var bgColor = WebInspector.Color.parse(bgColorText);
+            // TODO(aboxhall): for background color with alpha, compute the actual
+            // visible background color (blended with content underneath).
+            if (bgColor && !bgColor.hasAlpha())
+                swatchIcon.setContrastColor(bgColor);
+        }
+
+        if (this.property.name === "color" && this._parentPane.cssModel() && this.node()) {
+            var cssModel = this._parentPane.cssModel();
+            cssModel.computedStylePromise(this.node().id).then(computedCallback);
+        }
+
+        return swatchIcon.element();
     },
 
     /**
@@ -2177,9 +2206,10 @@ WebInspector.StylePropertyTreeElement.prototype = {
             this.styleTextAppliedForTest();
         }
 
-        this._parentPane._userOperation = true;
-        this.property.setDisabled(disabled, callback.bind(this));
         event.consume();
+        this._parentPane._userOperation = true;
+        this.property.setDisabled(disabled)
+            .then(callback.bind(this));
     },
 
     /**
@@ -2781,14 +2811,12 @@ WebInspector.StylePropertyTreeElement.prototype = {
     /**
      * @param {string} styleText
      * @param {boolean} majorChange
-     * @param {!WebInspector.Throttler.FinishCallback} finishedCallback
+     * @return {!Promise.<undefined>}
      */
-    _innerApplyStyleText: function(styleText, majorChange, finishedCallback)
+    _innerApplyStyleText: function(styleText, majorChange)
     {
-        if (!this.treeOutline) {
-            finishedCallback();
-            return;
-        }
+        if (!this.treeOutline)
+            return Promise.resolve();
 
         styleText = styleText.replace(/\s/g, " ").trim(); // Replace &nbsp; with whitespace.
         if (!styleText.length && majorChange && this._newProperty && !this._propertyHasBeenEditedIncrementally) {
@@ -2796,7 +2824,7 @@ WebInspector.StylePropertyTreeElement.prototype = {
             var section = this.section();
             this.parent.removeChild(this);
             section.afterUpdate();
-            return;
+            return Promise.resolve();
         }
 
         var currentNode = this._parentPane.node();
@@ -2815,7 +2843,6 @@ WebInspector.StylePropertyTreeElement.prototype = {
                     // It did not apply, cancel editing.
                     this._revertStyleUponEditingCanceled();
                 }
-                finishedCallback();
                 this.styleTextAppliedForTest();
                 return;
             }
@@ -2828,7 +2855,6 @@ WebInspector.StylePropertyTreeElement.prototype = {
             if (!this._parentPane._isEditingStyle && currentNode === this.node())
                 this._updatePane();
 
-            finishedCallback();
             this.styleTextAppliedForTest();
         }
 
@@ -2837,7 +2863,8 @@ WebInspector.StylePropertyTreeElement.prototype = {
         if (styleText.length && !/;\s*$/.test(styleText))
             styleText += ";";
         var overwriteProperty = !this._newProperty || this._propertyHasBeenEditedIncrementally;
-        this.property.setText(styleText, majorChange, overwriteProperty, callback.bind(this));
+        return this.property.setText(styleText, majorChange, overwriteProperty)
+            .then(callback.bind(this));
     },
 
     /**

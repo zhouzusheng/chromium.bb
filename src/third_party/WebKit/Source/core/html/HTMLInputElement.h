@@ -94,7 +94,7 @@ public:
 
     bool isImage() const;
 
-    bool checked() const { return m_isChecked; }
+    bool checked() const;
     void setChecked(bool, TextFieldEventBehavior = DispatchNoEvent);
     void dispatchChangeEventIfNeeded();
 
@@ -335,7 +335,7 @@ private:
     bool isEmptySuggestedValue() const final { return suggestedValue().isEmpty(); }
     void handleFocusEvent(Element* oldFocusedElement, WebFocusType) final;
     void handleBlurEvent() final;
-    void dispatchFocusInEvent(const AtomicString& eventType, Element* oldFocusedElement, WebFocusType) final;
+    void dispatchFocusInEvent(const AtomicString& eventType, Element* oldFocusedElement, WebFocusType, InputDeviceCapabilities* sourceCapabilities) final;
     bool supportsAutocapitalize() const final;
     const AtomicString& defaultAutocapitalize() const final;
 

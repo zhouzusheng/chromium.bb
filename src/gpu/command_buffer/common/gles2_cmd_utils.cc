@@ -235,6 +235,16 @@ int GLES2Util::GLGetNumValuesReturned(int id) const {
     case GL_BUFFER_USAGE:
       return 1;
 
+    // ES3
+    case GL_BUFFER_MAPPED:
+      return 1;
+    case GL_BUFFER_ACCESS_FLAGS:
+      return 1;
+    case GL_BUFFER_MAP_LENGTH:
+      return 1;
+    case GL_BUFFER_MAP_OFFSET:
+      return 1;
+
     // -- glGetFramebufferAttachmentParameteriv
     case GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE:
       return 1;
@@ -447,6 +457,7 @@ int BytesPerElement(int type) {
     case GL_UNSIGNED_INT_10F_11F_11F_REV:
     case GL_UNSIGNED_INT_5_9_9_9_REV:
       return 4;
+    case GL_HALF_FLOAT:
     case GL_HALF_FLOAT_OES:
     case GL_UNSIGNED_SHORT:
     case GL_SHORT:
@@ -697,6 +708,23 @@ size_t GLES2Util::GetGLTypeSizeForTexturesAndBuffers(uint32 type) {
       return sizeof(GLfloat);  // NOLINT
     case GL_FIXED:
       return sizeof(GLfixed);  // NOLINT
+    default:
+      return 0;
+  }
+}
+
+size_t GLES2Util::GetGLTypeSizeForPathCoordType(uint32 type) {
+  switch (type) {
+    case GL_BYTE:
+      return sizeof(GLbyte);  // NOLINT
+    case GL_UNSIGNED_BYTE:
+      return sizeof(GLubyte);  // NOLINT
+    case GL_SHORT:
+      return sizeof(GLshort);  // NOLINT
+    case GL_UNSIGNED_SHORT:
+      return sizeof(GLushort);  // NOLINT
+    case GL_FLOAT:
+      return sizeof(GLfloat);  // NOLINT
     default:
       return 0;
   }

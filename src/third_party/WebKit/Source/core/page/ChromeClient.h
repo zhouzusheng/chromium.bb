@@ -25,7 +25,6 @@
 #include "core/CoreExport.h"
 #include "core/dom/AXObjectCache.h"
 #include "core/frame/ConsoleTypes.h"
-#include "core/html/forms/PopupMenuClient.h"
 #include "core/inspector/ConsoleAPITypes.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/NavigationPolicy.h"
@@ -33,6 +32,7 @@
 #include "platform/Cursor.h"
 #include "platform/HostWindow.h"
 #include "platform/PopupMenu.h"
+#include "platform/graphics/CompositedDisplayList.h"
 #include "platform/heap/Handle.h"
 #include "platform/scroll/ScrollTypes.h"
 #include "public/platform/WebFocusType.h"
@@ -57,11 +57,11 @@ class GraphicsLayerFactory;
 class HitTestResult;
 class HTMLFormControlElement;
 class HTMLInputElement;
+class HTMLSelectElement;
 class IntRect;
 class LocalFrame;
 class Node;
 class Page;
-class PopupMenuClient;
 class PopupOpeningObserver;
 class WebCompositorAnimationTimeline;
 
@@ -184,6 +184,9 @@ public:
     // one. Otherwise it sets it for the WebViewImpl.
     virtual void attachRootGraphicsLayer(GraphicsLayer*, LocalFrame* localRoot) = 0;
 
+    virtual void setCompositedDisplayList(PassOwnPtr<CompositedDisplayList>) { }
+    virtual CompositedDisplayList* compositedDisplayListForTesting() { return nullptr; }
+
     virtual void attachCompositorAnimationTimeline(WebCompositorAnimationTimeline*, LocalFrame* localRoot) { }
     virtual void detachCompositorAnimationTimeline(WebCompositorAnimationTimeline*, LocalFrame* localRoot) { }
 
@@ -199,7 +202,7 @@ public:
 
     // Checks if there is an opened popup, called by LayoutMenuList::showPopup().
     virtual bool hasOpenedPopup() const = 0;
-    virtual PassRefPtrWillBeRawPtr<PopupMenu> openPopupMenu(LocalFrame&, PopupMenuClient*) = 0;
+    virtual PassRefPtrWillBeRawPtr<PopupMenu> openPopupMenu(LocalFrame&, HTMLSelectElement&) = 0;
     virtual DOMWindow* pagePopupWindowForTesting() const = 0;
 
     virtual void postAccessibilityNotification(AXObject*, AXObjectCache::AXNotification) { }
@@ -227,10 +230,9 @@ public:
     virtual void didEndEditingOnTextField(HTMLInputElement&) { }
     virtual void handleKeyboardEventOnTextField(HTMLInputElement&, KeyboardEvent&) { }
     virtual void textFieldDataListChanged(HTMLInputElement&) { }
-    virtual void xhrSucceeded(LocalFrame*) { }
     virtual void ajaxSucceeded(LocalFrame*) { }
 
-    // Input mehtod editor related functions.
+    // Input method editor related functions.
     virtual void didCancelCompositionOnSelectionChange() { }
     virtual void willSetInputMethodState() { }
     virtual void didUpdateTextOfFocusedElementByNonUserInput() { }
@@ -250,7 +252,7 @@ public:
     virtual FloatSize elasticOverscroll() const { return FloatSize(); }
 
 protected:
-    virtual ~ChromeClient() { }
+    ~ChromeClient() override { }
 
     virtual void showMouseOverURL(const HitTestResult&) = 0;
     virtual void setWindowRect(const IntRect&) = 0;

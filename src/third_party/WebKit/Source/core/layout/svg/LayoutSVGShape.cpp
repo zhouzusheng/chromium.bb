@@ -61,6 +61,8 @@ void LayoutSVGShape::updateShapeFromElement()
     if (!m_path)
         m_path = adoptPtr(new Path());
     *m_path = toSVGGeometryElement(element())->asPath();
+    if (m_rareData.get())
+        m_rareData->m_cachedNonScalingStrokePath.clear();
 }
 
 void LayoutSVGShape::updateStrokeAndFillBoundingBoxes()
@@ -196,17 +198,23 @@ void LayoutSVGShape::layout()
 
 Path* LayoutSVGShape::nonScalingStrokePath(const Path* path, const AffineTransform& strokeTransform) const
 {
-    DEFINE_STATIC_LOCAL(Path, tempPath, ());
+    LayoutSVGShapeRareData& rareData = ensureRareData();
+    if (!rareData.m_cachedNonScalingStrokePath.isEmpty() && strokeTransform == rareData.m_cachedNonScalingStrokeTransform)
+        return &rareData.m_cachedNonScalingStrokePath;
 
-    tempPath = *path;
-    tempPath.transform(strokeTransform);
-
-    return &tempPath;
+    rareData.m_cachedNonScalingStrokePath = *path;
+    rareData.m_cachedNonScalingStrokePath.transform(strokeTransform);
+    rareData.m_cachedNonScalingStrokeTransform = strokeTransform;
+    return &rareData.m_cachedNonScalingStrokePath;
 }
 
 AffineTransform LayoutSVGShape::nonScalingStrokeTransform() const
 {
-    return toSVGGraphicsElement(element())->getScreenCTM(SVGGraphicsElement::DisallowStyleUpdate);
+    AffineTransform t = toSVGGraphicsElement(element())->getScreenCTM(SVGGraphicsElement::DisallowStyleUpdate);
+    // Width of non-scaling stroke is independent of translation, so zero it out here.
+    t.setE(0);
+    t.setF(0);
+    return t;
 }
 
 void LayoutSVGShape::paint(const PaintInfo& paintInfo, const LayoutPoint&)
@@ -216,7 +224,7 @@ void LayoutSVGShape::paint(const PaintInfo& paintInfo, const LayoutPoint&)
 
 // This method is called from inside paintOutline() since we call paintOutline()
 // while transformed to our coord system, return local coords
-void LayoutSVGShape::addFocusRingRects(Vector<LayoutRect>& rects, const LayoutPoint&) const
+void LayoutSVGShape::addOutlineRects(Vector<LayoutRect>& rects, const LayoutPoint&) const
 {
     LayoutRect rect = LayoutRect(paintInvalidationRectInLocalCoordinates());
     if (!rect.isEmpty())
@@ -235,8 +243,10 @@ bool LayoutSVGShape::nodeAtFloatPoint(HitTestResult& result, const FloatPoint& p
 
     PointerEventsHitRules hitRules(PointerEventsHitRules::SVG_GEOMETRY_HITTESTING, result.hitTestRequest(), style()->pointerEvents());
     if (nodeAtFloatPointInternal(result.hitTestRequest(), localPoint, hitRules)) {
-        updateHitTestResult(result, roundedLayoutPoint(localPoint));
-        return true;
+        const LayoutPoint& localLayoutPoint = roundedLayoutPoint(localPoint);
+        updateHitTestResult(result, localLayoutPoint);
+        if (!result.addNodeToListBasedTestResult(element(), localLayoutPoint))
+            return true;
     }
 
     return false;
@@ -261,8 +271,6 @@ bool LayoutSVGShape::nodeAtFloatPointInternal(const HitTestRequest& request, con
 void LayoutSVGShape::updatePaintInvalidationBoundingBox()
 {
     m_paintInvalidationBoundingBox = strokeBoundingBox();
-    if (strokeWidth() < 1.0f && !m_paintInvalidationBoundingBox.isEmpty())
-        m_paintInvalidationBoundingBox.inflate(1);
     SVGLayoutSupport::intersectPaintInvalidationRectWithResources(this, m_paintInvalidationBoundingBox);
 }
 
@@ -270,6 +278,22 @@ float LayoutSVGShape::strokeWidth() const
 {
     SVGLengthContext lengthContext(element());
     return lengthContext.valueForLength(style()->svgStyle().strokeWidth());
+}
+
+LayoutRect LayoutSVGShape::clippedOverflowRectForPaintInvalidation(
+    const LayoutBoxModelObject* paintInvalidationContainer,
+    const PaintInvalidationState* paintInvalidationState) const
+{
+    const float strokeWidthForHairlinePadding = style()->svgStyle().hasStroke() ? strokeWidth() : 0;
+    return SVGLayoutSupport::clippedOverflowRectForPaintInvalidation(*this,
+        paintInvalidationContainer, paintInvalidationState, strokeWidthForHairlinePadding);
+}
+
+LayoutSVGShapeRareData& LayoutSVGShape::ensureRareData() const
+{
+    if (!m_rareData)
+        m_rareData = adoptPtr(new LayoutSVGShapeRareData());
+    return *m_rareData.get();
 }
 
 }

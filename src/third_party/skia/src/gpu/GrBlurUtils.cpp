@@ -83,8 +83,7 @@ static bool draw_with_mask_filter(GrDrawContext* drawContext,
     desc.fHeight = dstM.fBounds.height();
     desc.fConfig = kAlpha_8_GrPixelConfig;
 
-    SkAutoTUnref<GrTexture> texture(textureProvider->refScratchTexture(
-        desc, GrTextureProvider::kApprox_ScratchTexMatch));
+    SkAutoTUnref<GrTexture> texture(textureProvider->createApproxTexture(desc));
     if (!texture) {
         return false;
     }
@@ -116,8 +115,7 @@ static GrTexture* create_mask_GPU(GrContext* context,
         desc.fConfig = kAlpha_8_GrPixelConfig;
     }
 
-    GrTexture* mask = context->textureProvider()->refScratchTexture(
-        desc, GrTextureProvider::kApprox_ScratchTexMatch);
+    GrTexture* mask = context->textureProvider()->createApproxTexture(desc);
     if (NULL == mask) {
         return NULL;
     }
@@ -242,7 +240,8 @@ void GrBlurUtils::drawPathWithMaskFilter(GrContext* context,
                 return;
             }
 
-            if (paint.getMaskFilter()->directFilterMaskGPU(context,
+            if (paint.getMaskFilter()->directFilterMaskGPU(context->textureProvider(),
+                                                           drawContext,
                                                            renderTarget,
                                                            &grPaint,
                                                            clip,
@@ -253,7 +252,6 @@ void GrBlurUtils::drawPathWithMaskFilter(GrContext* context,
                 // left to do.
                 return;
             }
-
 
             SkAutoTUnref<GrTexture> mask(create_mask_GPU(context,
                                                          maskRect,

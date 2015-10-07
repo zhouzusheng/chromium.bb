@@ -120,7 +120,7 @@ public:
     DataRef<StyleGridItemData> m_gridItem;
     DataRef<StyleScrollSnapData> m_scrollSnap;
 
-    OwnPtr<ContentData> m_content;
+    OwnPtrWillBePersistent<ContentData> m_content;
     OwnPtr<CounterDirectiveMap> m_counterDirectives;
     OwnPtr<CSSAnimationData> m_animations;
     OwnPtr<CSSTransitionData> m_transitions;
@@ -129,7 +129,7 @@ public:
 
     RefPtr<StyleReflection> m_boxReflect;
 
-    RefPtr<ShapeValue> m_shapeOutside;
+    RefPtrWillBePersistent<ShapeValue> m_shapeOutside;
     RefPtr<ClipPathOperation> m_clipPath;
 
     FillLayer m_mask;
@@ -188,8 +188,6 @@ public:
     // ScrollBehavior. 'scroll-behavior' has 2 accepted values, but ScrollBehavior has a third
     // value (that can only be specified using CSSOM scroll APIs) so 2 bits are needed.
     unsigned m_scrollBehavior: 2;
-
-    unsigned m_scrollBlocksOn: 3; // WebScrollBlocksOn
 
     unsigned m_scrollSnapType: 2; // ScrollSnapType
 

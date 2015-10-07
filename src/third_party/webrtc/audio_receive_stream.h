@@ -16,13 +16,14 @@
 #include <vector>
 
 #include "webrtc/config.h"
+#include "webrtc/stream.h"
 #include "webrtc/typedefs.h"
 
 namespace webrtc {
 
 class AudioDecoder;
 
-class AudioReceiveStream {
+class AudioReceiveStream : public ReceiveStream {
  public:
   struct Stats {};
 
@@ -43,17 +44,27 @@ class AudioReceiveStream {
       std::vector<RtpExtension> extensions;
     } rtp;
 
+    // Underlying VoiceEngine handle, used to map AudioReceiveStream to
+    // lower-level components. Temporarily used while VoiceEngine channels are
+    // created outside of Call.
+    int voe_channel_id = -1;
+
+    // Identifier for an A/V synchronization group. Empty string to disable.
+    // TODO(pbos): Synchronize streams in a sync group, not just one video
+    // stream to one audio stream. Tracked by issue webrtc:4762.
+    std::string sync_group;
+
     // Decoders for every payload that we can receive. Call owns the
     // AudioDecoder instances once the Config is submitted to
     // Call::CreateReceiveStream().
     // TODO(solenberg): Use unique_ptr<> once our std lib fully supports C++11.
     std::map<uint8_t, AudioDecoder*> decoder_map;
+
+    // TODO(pbos): Remove config option once combined A/V BWE is always on.
+    bool combined_audio_video_bwe = false;
   };
 
   virtual Stats GetStats() const = 0;
-
- protected:
-  virtual ~AudioReceiveStream() {}
 };
 }  // namespace webrtc
 

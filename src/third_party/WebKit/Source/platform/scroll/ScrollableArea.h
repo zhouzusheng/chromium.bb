@@ -46,6 +46,7 @@ class PlatformWheelEvent;
 class ProgrammaticScrollAnimator;
 struct ScrollAlignment;
 class ScrollAnimator;
+class WebCompositorAnimationTimeline;
 
 enum ScrollBehavior {
     ScrollBehaviorAuto,
@@ -202,7 +203,7 @@ public:
 
     virtual bool shouldSuspendScrollAnimations() const { return true; }
     virtual void scrollbarStyleChanged() { }
-
+    virtual void scrollbarVisibilityChanged() { }
     virtual bool scrollbarsCanBeActive() const = 0;
 
     // Returns the bounding box of this scrollable area, in the coordinate system of the enclosing scroll view.
@@ -268,7 +269,7 @@ public:
     bool hasLayerForVerticalScrollbar() const;
     bool hasLayerForScrollCorner() const;
 
-    void layerForScrollingDidChange();
+    void layerForScrollingDidChange(WebCompositorAnimationTimeline*);
 
     void cancelScrollAnimation();
     void cancelProgrammaticScrollAnimation();

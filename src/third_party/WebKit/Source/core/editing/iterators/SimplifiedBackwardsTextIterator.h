@@ -26,7 +26,7 @@
 #ifndef SimplifiedBackwardsTextIterator_h
 #define SimplifiedBackwardsTextIterator_h
 
-#include "core/dom/Position.h"
+#include "core/editing/Position.h"
 #include "core/editing/iterators/FullyClippedStateStack.h"
 #include "core/editing/iterators/TextIteratorFlags.h"
 #include "platform/heap/Heap.h"
@@ -122,6 +122,8 @@ private:
 };
 
 extern template class CORE_EXTERN_TEMPLATE_EXPORT SimplifiedBackwardsTextIteratorAlgorithm<EditingStrategy>;
+extern template class CORE_EXTERN_TEMPLATE_EXPORT SimplifiedBackwardsTextIteratorAlgorithm<EditingInComposedTreeStrategy>;
+
 using SimplifiedBackwardsTextIterator = SimplifiedBackwardsTextIteratorAlgorithm<EditingStrategy>;
 
 } // namespace blink

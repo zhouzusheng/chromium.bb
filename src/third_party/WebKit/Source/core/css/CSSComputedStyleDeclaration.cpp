@@ -108,6 +108,7 @@ static const CSSPropertyID staticComputableProperties[] = {
     CSSPropertyFontVariantLigatures,
     CSSPropertyFontWeight,
     CSSPropertyHeight,
+    CSSPropertyImageOrientation,
     CSSPropertyImageRendering,
     CSSPropertyIsolation,
     CSSPropertyJustifyItems,
@@ -153,7 +154,6 @@ static const CSSPropertyID staticComputableProperties[] = {
     CSSPropertyResize,
     CSSPropertyRight,
     CSSPropertyScrollBehavior,
-    CSSPropertyScrollBlocksOn,
     CSSPropertySpeak,
     CSSPropertyTableLayout,
     CSSPropertyTabSize,
@@ -412,7 +412,7 @@ static CSSValueID cssIdentifierForFontSizeKeyword(int keywordSize)
 
 inline static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> zoomAdjustedPixelValue(double value, const ComputedStyle& style)
 {
-    return cssValuePool().createValue(adjustFloatForAbsoluteZoom(value, style), CSSPrimitiveValue::CSS_PX);
+    return cssValuePool().createValue(adjustFloatForAbsoluteZoom(value, style), CSSPrimitiveValue::UnitType::Pixels);
 }
 
 PassRefPtrWillBeRawPtr<CSSValue> CSSComputedStyleDeclaration::getFontSizeCSSValuePreferringKeyword() const

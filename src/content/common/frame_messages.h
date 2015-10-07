@@ -239,12 +239,6 @@ IPC_STRUCT_BEGIN(FrameMsg_PostMessage_Params)
   // equivalent frame proxy in the destination process.
   IPC_STRUCT_MEMBER(int, source_routing_id)
 
-  // When sent from the browser, this is the routing ID of the source view in
-  // the destination process.  This currently exists only to support legacy
-  // postMessage to Android WebView and will be removed once crbug.com/473258
-  // is fixed.
-  IPC_STRUCT_MEMBER(int, source_view_routing_id)
-
   // The origin of the source frame.
   IPC_STRUCT_MEMBER(base::string16, source_origin)
 
@@ -262,6 +256,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::CommonNavigationParams)
   IPC_STRUCT_TRAITS_MEMBER(transition)
   IPC_STRUCT_TRAITS_MEMBER(navigation_type)
   IPC_STRUCT_TRAITS_MEMBER(allow_download)
+  IPC_STRUCT_TRAITS_MEMBER(should_replace_current_entry)
   IPC_STRUCT_TRAITS_MEMBER(ui_timestamp)
   IPC_STRUCT_TRAITS_MEMBER(report_type)
   IPC_STRUCT_TRAITS_MEMBER(base_url_for_data_url)
@@ -279,7 +274,9 @@ IPC_STRUCT_TRAITS_BEGIN(content::StartNavigationParams)
   IPC_STRUCT_TRAITS_MEMBER(is_post)
   IPC_STRUCT_TRAITS_MEMBER(extra_headers)
   IPC_STRUCT_TRAITS_MEMBER(browser_initiated_post_data)
-  IPC_STRUCT_TRAITS_MEMBER(should_replace_current_entry)
+#if defined(OS_ANDROID)
+  IPC_STRUCT_TRAITS_MEMBER(has_user_gesture)
+#endif
   IPC_STRUCT_TRAITS_MEMBER(transferred_request_child_id)
   IPC_STRUCT_TRAITS_MEMBER(transferred_request_request_id)
 IPC_STRUCT_TRAITS_END()
@@ -900,6 +897,10 @@ IPC_MESSAGE_ROUTED1(FrameHostMsg_ReclaimCompositorResources,
 // input directly to subframes. http://crbug.com/339659
 IPC_MESSAGE_ROUTED1(FrameHostMsg_ForwardInputEvent,
                     IPC::WebInputEventPointer /* event */)
+
+// Tells the parent that a child's frame rect has changed (or the rect/scroll
+// position of a child's ancestor has changed).
+IPC_MESSAGE_ROUTED1(FrameHostMsg_FrameRectChanged, gfx::Rect /* frame_rect */)
 
 // Used to tell the parent that the user right clicked on an area of the
 // content area, and a context menu should be shown for it. The params

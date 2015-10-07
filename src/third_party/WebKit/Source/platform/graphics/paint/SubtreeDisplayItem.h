@@ -11,31 +11,19 @@
 
 namespace blink {
 
-class PLATFORM_EXPORT SubtreeCachedDisplayItem : public DisplayItem {
-public:
-    SubtreeCachedDisplayItem(const DisplayItemClientWrapper& client, Type type)
-        : DisplayItem(client, type)
-    {
-        ASSERT(isSubtreeCachedType(type));
-    }
-
-    void replay(GraphicsContext&) final { ASSERT_NOT_REACHED(); }
-    void appendToWebDisplayItemList(WebDisplayItemList*) const final { ASSERT_NOT_REACHED(); }
-};
-
-class PLATFORM_EXPORT BeginSubtreeDisplayItem : public PairedBeginDisplayItem {
+class BeginSubtreeDisplayItem final : public PairedBeginDisplayItem {
 public:
     BeginSubtreeDisplayItem(const DisplayItemClientWrapper& client, Type type)
-        : PairedBeginDisplayItem(client, type)
+        : PairedBeginDisplayItem(client, type, sizeof(*this))
     {
         ASSERT(isBeginSubtreeType(type));
     }
 };
 
-class PLATFORM_EXPORT EndSubtreeDisplayItem : public PairedEndDisplayItem {
+class EndSubtreeDisplayItem final : public PairedEndDisplayItem {
 public:
     EndSubtreeDisplayItem(const DisplayItemClientWrapper& client, Type type)
-        : PairedEndDisplayItem(client, type)
+        : PairedEndDisplayItem(client, type, sizeof(*this))
     {
         ASSERT(isEndSubtreeType(type));
     }

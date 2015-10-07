@@ -1,6 +1,4 @@
-
-
-  /**
+/**
    * Use `Polymer.PaperInputBehavior` to implement inputs with `<paper-input-container>`. This
    * behavior is implemented by `<paper-input>`. It exposes a number of properties from
    * `<paper-input-container>` and `<input is="iron-input">` and they should be bound in your
@@ -8,9 +6,9 @@
    *
    * The input element can be accessed by the `inputElement` property if you need to access
    * properties or methods that are not exposed.
-   * @polymerBehavior
+   * @polymerBehavior Polymer.PaperInputBehavior
    */
-  Polymer.PaperInputBehavior = {
+  Polymer.PaperInputBehaviorImpl = {
 
     properties: {
 
@@ -73,6 +71,14 @@
       },
 
       /**
+       * The datalist of the input (if any). This should match the id of an existing <datalist>. Bind this
+       * to the `<input is="iron-input">`'s `list` property.
+       */
+      list: {
+        type: String
+      },
+
+      /**
        * A pattern to validate the `input` with. Bind this to the `<input is="iron-input">`'s
        * `pattern` property.
        */
@@ -87,14 +93,6 @@
       required: {
         type: Boolean,
         value: false
-      },
-
-      /**
-       * The maximum length of the input value. Bind this to the `<input is="iron-input">`'s
-       * `maxlength` property.
-       */
-      maxlength: {
-        type: Number
       },
 
       /**
@@ -180,6 +178,39 @@
       },
 
       /**
+       * The maximum length of the input value. Bind this to the `<input is="iron-input">`'s
+       * `maxlength` property.
+       */
+      maxlength: {
+        type: Number
+      },
+
+      /**
+       * The minimum (numeric or date-time) input value.
+       * Bind this to the `<input is="iron-input">`'s `min` property.
+       */
+      min: {
+        type: String
+      },
+
+      /**
+       * The maximum (numeric or date-time) input value.
+       * Can be a String (e.g. `"2000-1-1"`) or a Number (e.g. `2`).
+       * Bind this to the `<input is="iron-input">`'s `max` property.
+       */
+      max: {
+        type: String
+      },
+
+      /**
+       * Limits the numeric or date-time increments.
+       * Bind this to the `<input is="iron-input">`'s `step` property.
+       */
+      step: {
+        type: String
+      },
+
+      /**
        * Bind this to the `<input is="iron-input">`'s `name` property.
        */
       name: {
@@ -210,6 +241,24 @@
         type: Number
       },
 
+      // Nonstandard attributes for binding if needed
+
+      /**
+       * Bind this to the `<input is="iron-input">`'s `autocapitalize` property.
+       */
+      autocapitalize: {
+        type: String,
+        value: 'none'
+      },
+
+      /**
+       * Bind this to the `<input is="iron-input">`'s `autocorrect` property.
+       */
+      autocorrect: {
+        type: String,
+        value: 'off'
+      },
+
       _ariaDescribedBy: {
         type: String,
         value: ''
@@ -220,6 +269,10 @@
     listeners: {
       'addon-attached': '_onAddonAttached'
     },
+
+    observers: [
+      '_focusedControlStateChanged(focused)'
+    ],
 
     /**
      * Returns a reference to the input element.
@@ -285,6 +338,24 @@
       return placeholder || alwaysFloatLabel;
     },
 
+    _focusedControlStateChanged: function(focused) {
+      // IronControlState stops the focus and blur events in order to redispatch them on the host
+      // element, but paper-input-container listens to those events. Since there are more
+      // pending work on focus/blur in IronControlState, I'm putting in this hack to get the
+      // input focus state working for now.
+      if (!this.$.container) {
+        this.$.container = Polymer.dom(this.root).querySelector('paper-input-container');
+        if (!this.$.container) {
+          return;
+        }
+      }
+      if (focused) {
+        this.$.container._onFocus();
+      } else {
+        this.$.container._onBlur();
+      }
+    },
+
     _updateAriaLabelledBy: function() {
       var label = Polymer.dom(this.root).querySelector('label');
       if (!label) {
@@ -303,3 +374,5 @@
 
   };
 
+  /** @polymerBehavior */
+  Polymer.PaperInputBehavior = [Polymer.IronControlState, Polymer.PaperInputBehaviorImpl];

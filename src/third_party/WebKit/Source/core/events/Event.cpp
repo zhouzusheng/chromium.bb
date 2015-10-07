@@ -24,6 +24,7 @@
 #include "core/events/Event.h"
 
 #include "core/dom/StaticNodeList.h"
+#include "core/events/EventDispatchMediator.h"
 #include "core/events/EventTarget.h"
 #include "core/frame/OriginsUsingFeatures.h"
 #include "core/frame/UseCounter.h"
@@ -46,6 +47,7 @@ Event::Event(const AtomicString& eventType, bool canBubbleArg, bool cancelableAr
     , m_defaultPrevented(false)
     , m_defaultHandled(false)
     , m_cancelBubble(false)
+    , m_isTrusted(false)
     , m_eventPhase(0)
     , m_currentTarget(nullptr)
     , m_createTime(convertSecondsToDOMTimeStamp(currentTime()))
@@ -70,6 +72,7 @@ void Event::initEvent(const AtomicString& eventTypeArg, bool canBubbleArg, bool 
     m_propagationStopped = false;
     m_immediatePropagationStopped = false;
     m_defaultPrevented = false;
+    m_isTrusted = false;
 
     m_type = eventTypeArg;
     m_canBubble = canBubbleArg;
@@ -235,6 +238,11 @@ WillBeHeapVector<RefPtrWillBeMember<EventTarget>> Event::path(ScriptState* scrip
         return WillBeHeapVector<RefPtrWillBeMember<EventTarget>>(1, window);
 
     return WillBeHeapVector<RefPtrWillBeMember<EventTarget>>();
+}
+
+PassRefPtrWillBeRawPtr<EventDispatchMediator> Event::createMediator()
+{
+    return EventDispatchMediator::create(this);
 }
 
 EventTarget* Event::currentTarget() const

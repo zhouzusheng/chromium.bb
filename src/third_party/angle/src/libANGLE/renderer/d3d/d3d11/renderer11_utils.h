@@ -25,7 +25,7 @@ class FramebufferAttachment;
 namespace rx
 {
 class RenderTarget11;
-struct Workarounds;
+struct WorkaroundsD3D;
 struct Renderer11DeviceCaps;
 
 namespace gl_d3d11
@@ -53,7 +53,8 @@ namespace d3d11_gl
 {
 
 GLint GetMaximumClientVersion(D3D_FEATURE_LEVEL featureLevel);
-void GenerateCaps(ID3D11Device *device, ID3D11DeviceContext *deviceContext, const Renderer11DeviceCaps &renderer11DeviceCaps, gl::Caps *caps, gl::TextureCapsMap *textureCapsMap, gl::Extensions *extensions);
+void GenerateCaps(ID3D11Device *device, ID3D11DeviceContext *deviceContext, const Renderer11DeviceCaps &renderer11DeviceCaps, gl::Caps *caps,
+                  gl::TextureCapsMap *textureCapsMap, gl::Extensions *extensions, gl::Limitations *limitations);
 
 }
 
@@ -334,8 +335,7 @@ void SetBufferData(ID3D11DeviceContext *context, ID3D11Buffer *constantBuffer, c
     }
 }
 
-Workarounds GenerateWorkarounds(D3D_FEATURE_LEVEL featureLevel);
-
+WorkaroundsD3D GenerateWorkarounds(D3D_FEATURE_LEVEL featureLevel);
 }
 
 }

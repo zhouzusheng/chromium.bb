@@ -29,7 +29,7 @@ public:
         return SkNEW_ARGS(GrPathProcessor, (color, viewMatrix, localMatrix));
     }
 
-    void initBatchTracker(GrBatchTracker*, const GrPipelineInfo&) const override;
+    void initBatchTracker(GrBatchTracker*, const GrPipelineOptimizations&) const override;
 
     bool canMakeEqual(const GrBatchTracker& mine,
                       const GrPrimitiveProcessor& that,
@@ -53,6 +53,8 @@ public:
 
     virtual GrGLPrimitiveProcessor* createGLInstance(const GrBatchTracker& bt,
                                                      const GrGLSLCaps& caps) const override;
+
+    bool hasTransformedLocalCoords() const override { return false; }
 
 private:
     GrPathProcessor(GrColor color, const SkMatrix& viewMatrix, const SkMatrix& localMatrix);

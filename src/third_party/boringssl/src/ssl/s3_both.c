@@ -242,7 +242,7 @@ int ssl3_get_finished(SSL *s, int a, int b) {
    * TODO(davidben): Is this check now redundant with SSL3_FLAGS_EXPECT_CCS? */
   if (!s->s3->change_cipher_spec) {
     al = SSL_AD_UNEXPECTED_MESSAGE;
-    OPENSSL_PUT_ERROR(SSL, ssl3_get_finished, SSL_R_GOT_A_FIN_BEFORE_A_CCS);
+    OPENSSL_PUT_ERROR(SSL, SSL_R_GOT_A_FIN_BEFORE_A_CCS);
     goto f_err;
   }
   s->s3->change_cipher_spec = 0;
@@ -252,13 +252,13 @@ int ssl3_get_finished(SSL *s, int a, int b) {
 
   if (finished_len != message_len) {
     al = SSL_AD_DECODE_ERROR;
-    OPENSSL_PUT_ERROR(SSL, ssl3_get_finished, SSL_R_BAD_DIGEST_LENGTH);
+    OPENSSL_PUT_ERROR(SSL, SSL_R_BAD_DIGEST_LENGTH);
     goto f_err;
   }
 
   if (CRYPTO_memcmp(p, s->s3->tmp.peer_finish_md, finished_len) != 0) {
     al = SSL_AD_DECRYPT_ERROR;
-    OPENSSL_PUT_ERROR(SSL, ssl3_get_finished, SSL_R_DIGEST_CHECK_FAILED);
+    OPENSSL_PUT_ERROR(SSL, SSL_R_DIGEST_CHECK_FAILED);
     goto f_err;
   }
 
@@ -301,17 +301,11 @@ int ssl3_send_change_cipher_spec(SSL *s, int a, int b) {
   return ssl3_do_write(s, SSL3_RT_CHANGE_CIPHER_SPEC);
 }
 
-int ssl3_output_cert_chain(SSL *s, CERT_PKEY *cpk) {
+int ssl3_output_cert_chain(SSL *s) {
   uint8_t *p;
   unsigned long l = 3 + SSL_HM_HEADER_LENGTH(s);
 
-  if (cpk == NULL) {
-    /* TLSv1 sends a chain with nothing in it, instead of an alert. */
-    if (!BUF_MEM_grow_clean(s->init_buf, l)) {
-      OPENSSL_PUT_ERROR(SSL, ssl3_output_cert_chain, ERR_R_BUF_LIB);
-      return 0;
-    }
-  } else if (!ssl_add_cert_chain(s, cpk, &l)) {
+  if (!ssl_add_cert_chain(s, &l)) {
     return 0;
   }
 
@@ -340,7 +334,7 @@ long ssl3_get_message(SSL *s, int header_state, int body_state, int msg_type,
     s->s3->tmp.reuse_message = 0;
     if (msg_type >= 0 && s->s3->tmp.message_type != msg_type) {
       al = SSL_AD_UNEXPECTED_MESSAGE;
-      OPENSSL_PUT_ERROR(SSL, ssl3_get_message, SSL_R_UNEXPECTED_MESSAGE);
+      OPENSSL_PUT_ERROR(SSL, SSL_R_UNEXPECTED_MESSAGE);
       goto f_err;
     }
     *ok = 1;
@@ -386,7 +380,7 @@ long ssl3_get_message(SSL *s, int header_state, int body_state, int msg_type,
 
     if (msg_type >= 0 && *p != msg_type) {
       al = SSL_AD_UNEXPECTED_MESSAGE;
-      OPENSSL_PUT_ERROR(SSL, ssl3_get_message, SSL_R_UNEXPECTED_MESSAGE);
+      OPENSSL_PUT_ERROR(SSL, SSL_R_UNEXPECTED_MESSAGE);
       goto f_err;
     }
     s->s3->tmp.message_type = *(p++);
@@ -394,12 +388,12 @@ long ssl3_get_message(SSL *s, int header_state, int body_state, int msg_type,
     n2l3(p, l);
     if (l > (unsigned long)max) {
       al = SSL_AD_ILLEGAL_PARAMETER;
-      OPENSSL_PUT_ERROR(SSL, ssl3_get_message, SSL_R_EXCESSIVE_MESSAGE_SIZE);
+      OPENSSL_PUT_ERROR(SSL, SSL_R_EXCESSIVE_MESSAGE_SIZE);
       goto f_err;
     }
 
     if (l && !BUF_MEM_grow_clean(s->init_buf, l + 4)) {
-      OPENSSL_PUT_ERROR(SSL, ssl3_get_message, ERR_R_BUF_LIB);
+      OPENSSL_PUT_ERROR(SSL, ERR_R_BUF_LIB);
       goto err;
     }
     s->s3->tmp.message_size = l;
@@ -447,8 +441,8 @@ int ssl3_hash_current_message(SSL *s) {
   /* The handshake header (different size between DTLS and TLS) is included in
    * the hash. */
   size_t header_len = s->init_msg - (uint8_t *)s->init_buf->data;
-  return ssl3_finish_mac(s, (uint8_t *)s->init_buf->data,
-                         s->init_num + header_len);
+  return ssl3_update_handshake_hash(s, (uint8_t *)s->init_buf->data,
+                                    s->init_num + header_len);
 }
 
 /* ssl3_cert_verify_hash is documented as needing EVP_MAX_MD_SIZE because that
@@ -457,32 +451,25 @@ OPENSSL_COMPILE_ASSERT(EVP_MAX_MD_SIZE > MD5_DIGEST_LENGTH + SHA_DIGEST_LENGTH,
                        combined_tls_hash_fits_in_max);
 
 int ssl3_cert_verify_hash(SSL *s, uint8_t *out, size_t *out_len,
-                          const EVP_MD **out_md, EVP_PKEY *pkey) {
-  const int type = ssl_private_key_type(s, pkey);
-
+                          const EVP_MD **out_md, int pkey_type) {
   /* For TLS v1.2 send signature algorithm and signature using
    * agreed digest and cached handshake records. Otherwise, use
    * SHA1 or MD5 + SHA1 depending on key type.  */
   if (SSL_USE_SIGALGS(s)) {
-    const uint8_t *hdata;
-    size_t hdatalen;
     EVP_MD_CTX mctx;
     unsigned len;
 
-    if (!BIO_mem_contents(s->s3->handshake_buffer, &hdata, &hdatalen)) {
-      OPENSSL_PUT_ERROR(SSL, ssl3_cert_verify_hash, ERR_R_INTERNAL_ERROR);
-      return 0;
-    }
     EVP_MD_CTX_init(&mctx);
     if (!EVP_DigestInit_ex(&mctx, *out_md, NULL) ||
-        !EVP_DigestUpdate(&mctx, hdata, hdatalen) ||
+        !EVP_DigestUpdate(&mctx, s->s3->handshake_buffer->data,
+                          s->s3->handshake_buffer->length) ||
         !EVP_DigestFinal(&mctx, out, &len)) {
-      OPENSSL_PUT_ERROR(SSL, ssl3_cert_verify_hash, ERR_R_EVP_LIB);
+      OPENSSL_PUT_ERROR(SSL, ERR_R_EVP_LIB);
       EVP_MD_CTX_cleanup(&mctx);
       return 0;
     }
     *out_len = len;
-  } else if (type == EVP_PKEY_RSA) {
+  } else if (pkey_type == EVP_PKEY_RSA) {
     if (s->enc_method->cert_verify_mac(s, NID_md5, out) == 0 ||
         s->enc_method->cert_verify_mac(s, NID_sha1, out + MD5_DIGEST_LENGTH) ==
             0) {
@@ -490,29 +477,18 @@ int ssl3_cert_verify_hash(SSL *s, uint8_t *out, size_t *out_len,
     }
     *out_len = MD5_DIGEST_LENGTH + SHA_DIGEST_LENGTH;
     *out_md = EVP_md5_sha1();
-  } else if (type == EVP_PKEY_EC) {
+  } else if (pkey_type == EVP_PKEY_EC) {
     if (s->enc_method->cert_verify_mac(s, NID_sha1, out) == 0) {
       return 0;
     }
     *out_len = SHA_DIGEST_LENGTH;
     *out_md = EVP_sha1();
   } else {
-    OPENSSL_PUT_ERROR(SSL, ssl3_cert_verify_hash, ERR_R_INTERNAL_ERROR);
+    OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
     return 0;
   }
 
   return 1;
-}
-
-int ssl_cert_type(EVP_PKEY *pkey) {
-  switch (pkey->type) {
-    case EVP_PKEY_RSA:
-      return SSL_PKEY_RSA_ENC;
-    case EVP_PKEY_EC:
-      return SSL_PKEY_ECC;
-    default:
-      return -1;
-  }
 }
 
 int ssl_verify_alarm_type(long type) {
@@ -615,7 +591,7 @@ int ssl3_setup_read_buffer(SSL *s) {
   return 1;
 
 err:
-  OPENSSL_PUT_ERROR(SSL, ssl3_setup_read_buffer, ERR_R_MALLOC_FAILURE);
+  OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
   return 0;
 }
 
@@ -652,7 +628,7 @@ int ssl3_setup_write_buffer(SSL *s) {
   return 1;
 
 err:
-  OPENSSL_PUT_ERROR(SSL, ssl3_setup_write_buffer, ERR_R_MALLOC_FAILURE);
+  OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
   return 0;
 }
 

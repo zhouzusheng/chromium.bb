@@ -216,6 +216,10 @@ bool SpellcheckCharAttribute::OutputChar(UChar c,
   }
 }
 
+UScriptCode SpellcheckCharAttribute::GetScriptCode() const {
+  return script_code_;
+}
+
 bool SpellcheckCharAttribute::OutputArabic(UChar c,
                                            base::string16* output) const {
   // Discard characters not from Arabic alphabets. We also discard vowel marks

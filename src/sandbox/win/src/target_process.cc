@@ -46,10 +46,28 @@ SANDBOX_INTERCEPT size_t g_shared_policy_size;
 
 // Returns the address of the main exe module in memory taking in account
 // address space layout randomization.
+#if SANDBOX_DLL
+void* GetBaseAddress(const wchar_t* exe_name, void* entry_point,
+                     bool* has_sandbox) {
+#else
 void* GetBaseAddress(const wchar_t* exe_name, void* entry_point) {
+#endif
   HMODULE exe = ::LoadLibrary(exe_name);
   if (NULL == exe)
     return exe;
+
+#if SANDBOX_DLL
+  *has_sandbox =
+      GetProcAddress(exe, "g_handles_to_close") != NULL &&
+      GetProcAddress(exe, "g_interceptions") != NULL &&
+      GetProcAddress(exe, "g_nt") != NULL &&
+      GetProcAddress(exe, "g_originals") != NULL &&
+      GetProcAddress(exe, "g_shared_IPC_size") != NULL &&
+      GetProcAddress(exe, "g_shared_delayed_integrity_level") != NULL &&
+      GetProcAddress(exe, "g_shared_delayed_mitigations") != NULL &&
+      GetProcAddress(exe, "g_shared_policy_size") != NULL &&
+      GetProcAddress(exe, "g_shared_section") != NULL;
+#endif
 
   base::win::PEImage pe(exe);
   if (!pe.VerifyMagic()) {
@@ -75,6 +93,9 @@ TargetProcess::TargetProcess(base::win::ScopedHandle initial_token,
       initial_token_(initial_token.Pass()),
       job_(job),
       thread_pool_(thread_pool),
+#if SANDBOX_DLL
+      module_base_address_(NULL),
+#endif
       base_address_(NULL) {
 }
 
@@ -247,10 +268,174 @@ DWORD TargetProcess::Create(const wchar_t* exe_path,
     return win_result;
   }
 
+#if SANDBOX_DLL
+  base_address_ = GetBaseAddress(exe_path, entry_point, &exe_has_sandbox_);
+#else
   base_address_ = GetBaseAddress(exe_path, entry_point);
+#endif
   sandbox_process_info_.Set(process_info.Take());
   return win_result;
 }
+
+#if SANDBOX_DLL
+// This function injects sandbox DLL to target process. The function runs
+//LoadLibrary, SetEvent and SuspendThread in three APC threads in same order.
+DWORD TargetProcess::InjectSandboxDll(const wchar_t* module_path)
+{
+  typedef void (CALLBACK *PKNORMAL_ROUTINE)(PVOID, PVOID, PVOID);
+  typedef NTSTATUS (NTAPI *NTQUEUEAPCTHREAD)(HANDLE, PKNORMAL_ROUTINE,
+    PVOID, PVOID, PVOID);
+  module_path_.reset(_wcsdup(module_path));
+  HANDLE event_handle = NULL;
+  LPVOID module_path_mem = NULL;
+  int module_path_length = 0;
+  DWORD win_result = ERROR_SUCCESS;
+
+  do {
+    NTQUEUEAPCTHREAD   NtQueueApcThread = (NTQUEUEAPCTHREAD)
+      ::GetProcAddress(GetModuleHandle(L"NTDLL.DLL"),  "NtQueueApcThread");
+    if (NULL == NtQueueApcThread) {
+      win_result = ::GetLastError();
+      break;
+    }
+
+    HMODULE kernel32_module = GetModuleHandle(L"kernel32.dll");
+    LPVOID load_library_addr = (LPVOID)::GetProcAddress(kernel32_module,
+      "LoadLibraryW");
+    if (NULL == load_library_addr) {
+      win_result = ::GetLastError();
+      break;
+    }
+
+    module_path_length  = (wcslen(module_path_.get()) + 1)* sizeof(wchar_t);
+    module_path_mem = (LPVOID)::VirtualAllocEx(
+      sandbox_process_info_.process_handle(), NULL, module_path_length,
+      MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    if (NULL == module_path_mem){
+      win_result = ::GetLastError();
+      break;
+    }
+
+    if (!::WriteProcessMemory(sandbox_process_info_.process_handle(),
+      module_path_mem, module_path_.get(), module_path_length, NULL)) {
+      win_result = ::GetLastError();
+      break;
+    }
+
+    NTSTATUS  status = NtQueueApcThread(sandbox_process_info_.thread_handle(),
+      (PKNORMAL_ROUTINE)load_library_addr, module_path_mem, NULL, NULL);
+    if (STATUS_SUCCESS != status) {
+      win_result = status;
+      break;
+    }
+
+    LPVOID set_event_addr = (LPVOID)::GetProcAddress(kernel32_module,
+      "SetEvent");
+    if (NULL == set_event_addr) {
+      win_result = ::GetLastError();
+      break;
+    }
+    event_handle = ::CreateEvent(NULL, TRUE, FALSE, NULL);
+    HANDLE child_event_handle = NULL;
+    if (!::DuplicateHandle(GetCurrentProcess(), event_handle,
+      sandbox_process_info_.process_handle(), &child_event_handle, 0, FALSE,
+      DUPLICATE_SAME_ACCESS)) {
+      win_result = ::GetLastError();
+      break;
+    }
+    status = NtQueueApcThread(sandbox_process_info_.thread_handle(),
+      (PKNORMAL_ROUTINE)set_event_addr,  child_event_handle, NULL, NULL);
+    if (STATUS_SUCCESS != status) {
+      win_result = status;
+      break;
+    }
+
+    LPVOID suspend_thread_addr = (LPVOID)::GetProcAddress(kernel32_module,
+      "SuspendThread");
+    if (NULL == suspend_thread_addr) {
+      win_result = ::GetLastError();
+      break;
+    }
+    HANDLE child_thread_handle = NULL;
+    if (!::DuplicateHandle(GetCurrentProcess(),
+      sandbox_process_info_.thread_handle(),
+      sandbox_process_info_.process_handle(),
+      &child_thread_handle, 0, FALSE, DUPLICATE_SAME_ACCESS)) {
+      win_result = ::GetLastError();
+      break;
+    }
+    status = NtQueueApcThread(sandbox_process_info_.thread_handle(),
+      (PKNORMAL_ROUTINE)suspend_thread_addr, child_thread_handle, NULL, NULL);
+    if (STATUS_SUCCESS != status) {
+      win_result = status;
+      break;
+    }
+
+    if (!::ResumeThread(sandbox_process_info_.thread_handle())) {
+      win_result = ::GetLastError();
+      break;
+    }
+
+    DWORD wait_status = ::WaitForSingleObject(event_handle, 10000);
+    if (WAIT_OBJECT_0 != wait_status) {
+      win_result = wait_status;
+      if (WAIT_FAILED == wait_status) {
+        win_result = ::GetLastError();
+      }
+      break;
+    }
+
+  } while (false);
+
+  if (NULL != event_handle) {
+    CloseHandle(event_handle);
+  }
+  if (NULL != module_path_mem) {
+    ::VirtualFreeEx(sandbox_process_info_.process_handle(), module_path_mem,
+    module_path_length, MEM_RELEASE);
+  }
+  if (ERROR_SUCCESS!= win_result) {
+    return win_result;
+  }
+
+  //Wait until thread is suspended GetThreadContext fails if the thread
+  //is not suspended
+  CONTEXT context;
+  context.ContextFlags = CONTEXT_ALL;
+  while (!::GetThreadContext(sandbox_process_info_.thread_handle(),
+    &context)) {
+    Sleep(100);
+  }
+
+  DWORD needed;
+  if(!::EnumProcessModules(sandbox_process_info_.process_handle(), NULL,
+    0, &needed)) {
+    return ::GetLastError();
+  }
+  HMODULE* modules = new HMODULE[needed / sizeof(HMODULE)];
+
+  if(!::EnumProcessModules(sandbox_process_info_.process_handle(), modules,
+    needed, &needed)) {
+    return ::GetLastError();
+  }
+  module_base_address_ = NULL;
+  for (unsigned int i = 0; i < (needed / sizeof(HMODULE)); i++ ) {
+    wchar_t module_name[MAX_PATH];
+    if (::GetModuleFileNameEx(sandbox_process_info_.process_handle(),
+      modules[i], module_name, sizeof(module_name) / sizeof(wchar_t))) {
+      if(_wcsicmp(module_name, module_path_.get())== 0) {
+        module_base_address_ = modules[i];
+        break;
+      }
+    }
+  }
+  delete[] modules;
+  if (NULL == module_base_address_) {
+    return SBOX_ERROR_GENERIC;
+  }
+  return ERROR_SUCCESS;
+}
+#endif
 
 ResultCode TargetProcess::TransferVariable(const char* name, void* address,
                                            size_t size) {
@@ -260,7 +445,7 @@ ResultCode TargetProcess::TransferVariable(const char* name, void* address,
   void* child_var = address;
 
 #if SANDBOX_EXPORTS
-  HMODULE module = ::LoadLibrary(exe_name_.get());
+  HMODULE module = ::LoadLibrary(SandboxModuleName());
   if (NULL == module)
     return SBOX_ERROR_GENERIC;
 
@@ -272,7 +457,7 @@ ResultCode TargetProcess::TransferVariable(const char* name, void* address,
 
   size_t offset = reinterpret_cast<char*>(child_var) -
                   reinterpret_cast<char*>(module);
-  child_var = reinterpret_cast<char*>(MainModule()) + offset;
+  child_var = reinterpret_cast<char*>(SandboxModule()) + offset;
 #else
   UNREFERENCED_PARAMETER(name);
 #endif

@@ -12,29 +12,15 @@
 #include "GrPathRenderer.h"
 
 class GrDashLinePathRenderer : public GrPathRenderer {
-public:
-    bool canDrawPath(const GrDrawTarget*,
-                     const GrPipelineBuilder*,
-                     const SkMatrix& viewMatrix,
-                     const SkPath&,
-                     const GrStrokeInfo&,
-                     bool antiAlias) const override;
+private:
+    bool onCanDrawPath(const CanDrawPathArgs&) const override;
 
-protected:
-    StencilSupport onGetStencilSupport(const GrDrawTarget*,
-                                       const GrPipelineBuilder*,
-                                       const SkPath&,
-                                       const GrStrokeInfo&) const override {
-      return kNoSupport_StencilSupport;
+    StencilSupport onGetStencilSupport(const SkPath&, const GrStrokeInfo&) const override {
+        return kNoSupport_StencilSupport;
     }
 
-    bool onDrawPath(GrDrawTarget*,
-                    GrPipelineBuilder*,
-                    GrColor,
-                    const SkMatrix& viewMatrix,
-                    const SkPath&,
-                    const GrStrokeInfo&,
-                    bool antiAlias) override;
+    bool onDrawPath(const DrawPathArgs&) override;
+
     SkAutoTUnref<GrGpu> fGpu;
     typedef GrPathRenderer INHERITED;
 };

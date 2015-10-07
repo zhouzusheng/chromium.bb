@@ -124,7 +124,7 @@ void GrGLProgramBuilder::nameVariable(SkString* out, char prefix, const char* na
             // Names containing "__" are reserved.
             out->append("x");
         }
-        out->appendf("_Stage%d", fStageIndex);
+        out->appendf("_Stage%d%s", fStageIndex, fFS.getMangleString().c_str());
     }
 }
 
@@ -185,12 +185,13 @@ bool GrGLProgramBuilder::emitAndInstallProcs(GrGLSLExpr4* inputColor, GrGLSLExpr
     const GrPrimitiveProcessor& primProc = this->primitiveProcessor();
     int totalTextures = primProc.numTextures();
     const int maxTextureUnits = fGpu->glCaps().maxFragmentTextureUnits();
-    SkSTArray<8, GrGLProcessor::TransformedCoordsArray> outCoords;
+
     for (int i = 0; i < this->pipeline().numFragmentStages(); i++) {
         const GrFragmentProcessor* processor = this->pipeline().getFragmentStage(i).processor();
-        SkSTArray<2, const GrCoordTransform*, true>& procCoords = fCoordTransforms.push_back();
-        for (int t = 0; t < processor->numTransforms(); t++) {
-            procCoords.push_back(&processor->coordTransform(t));
+
+        if (!primProc.hasTransformedLocalCoords()) {
+            SkSTArray<2, const GrCoordTransform*, true>& procCoords = fCoordTransforms.push_back();
+            processor->gatherCoordTransforms(&procCoords);
         }
 
         totalTextures += processor->numTextures();
@@ -268,6 +269,7 @@ void GrGLProgramBuilder::emitAndInstallProc(const GrPrimitiveProcessor& proc,
     SkString openBrace;
     openBrace.printf("{ // Stage %d, %s\n", fStageIndex, proc.name());
     fFS.codeAppend(openBrace.c_str());
+    fVS.codeAppendf("// Primitive Processor %s\n", proc.name());
 
     this->emitAndInstallProc(proc, outputColor->c_str(), outputCoverage->c_str());
 
@@ -286,7 +288,8 @@ void GrGLProgramBuilder::emitAndInstallProc(const GrPendingFragmentStage& fs,
     SkSTArray<4, GrGLProcessor::TextureSampler> samplers(fp.numTextures());
     this->emitSamplers(fp, &samplers, ifp);
 
-    ifp->fGLProc->emitCode(this, fp, outColor, inColor, fOutCoords[index], samplers);
+    GrGLFragmentProcessor::EmitArgs args(this, fp, outColor, inColor, fOutCoords[index], samplers);
+    ifp->fGLProc->emitCode(args);
 
     // We have to check that effects and the code they emit are consistent, ie if an effect
     // asks for dst color, then the emit code needs to follow suit

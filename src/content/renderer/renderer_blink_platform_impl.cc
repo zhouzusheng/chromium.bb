@@ -21,6 +21,7 @@
 #include "components/scheduler/child/web_scheduler_impl.h"
 #include "components/scheduler/renderer/renderer_scheduler.h"
 #include "components/scheduler/renderer/webthread_impl_for_renderer_scheduler.h"
+#include "components/url_formatter/url_formatter.h"
 #include "content/child/database_util.h"
 #include "content/child/file_info_util.h"
 #include "content/child/fileapi/webfilesystem_impl.h"
@@ -69,7 +70,6 @@
 #include "media/base/mime_util.h"
 #include "media/blink/webcontentdecryptionmodule_impl.h"
 #include "media/filters/stream_parser_factory.h"
-#include "net/base/net_util.h"
 #include "storage/common/database/database_identifier.h"
 #include "storage/common/quota/quota_types.h"
 #include "third_party/WebKit/public/platform/WebBatteryStatusListener.h"
@@ -426,7 +426,8 @@ RendererBlinkPlatformImpl::MimeRegistry::supportsMediaMIMEType(
       return IsNotSupported;
 
     std::string key_system_ascii =
-        media::GetUnprefixedKeySystemName(base::UTF16ToASCII(key_system));
+        media::GetUnprefixedKeySystemName(base::UTF16ToASCII(
+            base::StringPiece16(key_system)));
     std::vector<std::string> strict_codecs;
     media::ParseCodecString(ToASCIIOrEmpty(codecs), &strict_codecs, true);
 
@@ -630,8 +631,9 @@ bool RendererBlinkPlatformImpl::databaseSetFileSize(
 
 bool RendererBlinkPlatformImpl::canAccelerate2dCanvas() {
 #if defined(OS_ANDROID)
-  if (SynchronousCompositorFactory* factory =
-          SynchronousCompositorFactory::GetInstance()) {
+  SynchronousCompositorFactory* factory =
+      SynchronousCompositorFactory::GetInstance();
+  if (factory && factory->OverrideWithFactory()) {
     return factory->GetGPUInfo().SupportsAccelerated2dCanvas();
   }
 #endif
@@ -649,6 +651,11 @@ bool RendererBlinkPlatformImpl::isThreadedCompositingEnabled() {
   RenderThreadImpl* thread = RenderThreadImpl::current();
   // thread can be NULL in tests.
   return thread && thread->compositor_task_runner().get();
+}
+
+bool RendererBlinkPlatformImpl::isThreadedAnimationEnabled() {
+  RenderThreadImpl* thread = RenderThreadImpl::current();
+  return thread ? thread->IsThreadedAnimationEnabled() : true;
 }
 
 double RendererBlinkPlatformImpl::audioHardwareSampleRate() {
@@ -686,8 +693,6 @@ WebAudioDevice* RendererBlinkPlatformImpl::createAudioDevice(
   // The |channels| does not exactly identify the channel layout of the
   // device. The switch statement below assigns a best guess to the channel
   // layout based on number of channels.
-  // TODO(crogers): WebKit should give the channel layout instead of the hard
-  // channel count.
   media::ChannelLayout layout = media::CHANNEL_LAYOUT_UNSUPPORTED;
   switch (channels) {
     case 1:
@@ -715,21 +720,26 @@ WebAudioDevice* RendererBlinkPlatformImpl::createAudioDevice(
       layout = media::CHANNEL_LAYOUT_7_1;
       break;
     default:
-      layout = media::CHANNEL_LAYOUT_STEREO;
+      // If the layout is not supported (more than 9 channels), falls back to
+      // discrete mode.
+      layout = media::CHANNEL_LAYOUT_DISCRETE;
   }
 
   int session_id = 0;
   if (input_device_id.isNull() ||
-      !base::StringToInt(base::UTF16ToUTF8(input_device_id), &session_id)) {
+      !base::StringToInt(base::UTF16ToUTF8(
+          base::StringPiece16(input_device_id)), &session_id)) {
     if (input_channels > 0)
       DLOG(WARNING) << "createAudioDevice(): request for audio input ignored";
 
     input_channels = 0;
   }
 
+  // For CHANNEL_LAYOUT_DISCRETE, pass the explicit channel count along with
+  // the channel layout when creating an |AudioParameters| object.
   media::AudioParameters params(
       media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
-      layout, static_cast<int>(sample_rate), 16, buffer_size,
+      layout, channels, static_cast<int>(sample_rate), 16, buffer_size,
       media::AudioParameters::NO_EFFECTS);
 
   return new RendererWebAudioDeviceImpl(params, callback, session_id);
@@ -947,13 +957,13 @@ RendererBlinkPlatformImpl::createOffscreenGraphicsContext3D(
     return NULL;
 
 #if defined(OS_ANDROID)
-  if (SynchronousCompositorFactory* factory =
-      SynchronousCompositorFactory::GetInstance()) {
+  SynchronousCompositorFactory* factory =
+      SynchronousCompositorFactory::GetInstance();
+  if (factory && factory->OverrideWithFactory()) {
     scoped_ptr<gpu_blink::WebGraphicsContext3DInProcessCommandBufferImpl>
         in_process_context(
             factory->CreateOffscreenGraphicsContext3D(attributes));
-    if (!in_process_context ||
-        !in_process_context->InitializeOnCurrentThread())
+    if (!in_process_context || !in_process_context->InitializeOnCurrentThread())
       return NULL;
     return in_process_context.release();
   }
@@ -1028,7 +1038,7 @@ blink::WebCompositorSupport* RendererBlinkPlatformImpl::compositorSupport() {
 blink::WebString RendererBlinkPlatformImpl::convertIDNToUnicode(
     const blink::WebString& host,
     const blink::WebString& languages) {
-  return net::IDNToUnicode(host.utf8(), languages.utf8());
+  return url_formatter::IDNToUnicode(host.utf8(), languages.utf8());
 }
 
 //------------------------------------------------------------------------------

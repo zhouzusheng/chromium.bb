@@ -1433,12 +1433,196 @@ WebInspector.TimelineModel.prototype = {
 
 /**
  * @constructor
+ */
+WebInspector.TimelineModel.ProfileTreeNode = function()
+{
+    /** @type {number} */
+    this.totalTime;
+    /** @type {number} */
+    this.selfTime;
+    /** @type {string} */
+    this.name;
+    /** @type {string} */
+    this.color;
+    /** @type {string} */
+    this.id;
+    /** @type {!WebInspector.TracingModel.Event} */
+    this.event;
+    /** @type {?Map<string,!WebInspector.TimelineModel.ProfileTreeNode>} */
+    this.children;
+    /** @type {?WebInspector.TimelineModel.ProfileTreeNode} */
+    this.parent;
+}
+
+/**
+ * @param {!Array<!WebInspector.TracingModel.Event>} events
+ * @param {number} startTime
+ * @param {number} endTime
+ * @param {!Array<!WebInspector.TraceEventFilter>} filters
+ * @param {function(!WebInspector.TracingModel.Event):string} eventIdCallback
+ * @return {!WebInspector.TimelineModel.ProfileTreeNode}
+ */
+WebInspector.TimelineModel.buildTopDownTree = function(events, startTime, endTime, filters, eventIdCallback)
+{
+    // Temporarily deposit a big enough value that exceeds the max recording time.
+    var /** @const */ initialTime = 1e7;
+    var root = new WebInspector.TimelineModel.ProfileTreeNode();
+    root.totalTime = initialTime;
+    root.selfTime = initialTime;
+    root.name = WebInspector.UIString("Top-Down Chart");
+    var parent = root;
+
+    /**
+     * @param {!WebInspector.TracingModel.Event} e
+     * @return {boolean}
+     */
+    function filter(e)
+    {
+        if (!e.endTime && e.phase !== WebInspector.TracingModel.Phase.Instant)
+            return false;
+        if (e.endTime <= startTime || e.startTime >= endTime)
+            return false;
+        if (WebInspector.TracingModel.isAsyncPhase(e.phase))
+            return false;
+        for (var i = 0, l = filters.length; i < l; ++i) {
+            if (!filters[i].accept(e))
+                return false;
+        }
+        return true;
+    }
+
+    /**
+     * @param {!WebInspector.TracingModel.Event} e
+     */
+    function onStartEvent(e)
+    {
+        if (!filter(e))
+            return;
+        var time = Math.min(endTime, e.endTime) - Math.max(startTime, e.startTime);
+        var id = eventIdCallback(e);
+        if (!parent.children)
+            parent.children = /** @type {!Map<string,!WebInspector.TimelineModel.ProfileTreeNode>} */ (new Map());
+        var node = parent.children.get(id);
+        if (node) {
+            node.selfTime += time;
+            node.totalTime += time;
+        } else {
+            node = new WebInspector.TimelineModel.ProfileTreeNode();
+            node.totalTime = time;
+            node.selfTime = time;
+            node.parent = parent;
+            node.id = id;
+            node.event = e;
+            parent.children.set(id, node);
+        }
+        parent.selfTime -= time;
+        if (parent.selfTime < 0) {
+            console.log("Error: Negative self of " + parent.selfTime, e);
+            parent.selfTime = 0;
+        }
+        parent = node;
+    }
+
+    /**
+     * @param {!WebInspector.TracingModel.Event} e
+     */
+    function onEndEvent(e)
+    {
+        if (!filter(e))
+            return;
+        parent = parent.parent;
+    }
+
+    WebInspector.TimelineModel.forEachEvent(events, onStartEvent, onEndEvent);
+    root.totalTime -= root.selfTime;
+    root.selfTime = 0;
+    return root;
+}
+
+/**
+ * @param {!WebInspector.TimelineModel.ProfileTreeNode} topDownTree
+ * @param {?function(!WebInspector.TimelineModel.ProfileTreeNode):!WebInspector.TimelineModel.ProfileTreeNode=} groupingCallback
+ * @return {!WebInspector.TimelineModel.ProfileTreeNode}
+ */
+WebInspector.TimelineModel.buildBottomUpTree = function(topDownTree, groupingCallback)
+{
+    var buRoot = new WebInspector.TimelineModel.ProfileTreeNode();
+    buRoot.selfTime = 0;
+    buRoot.totalTime = 0;
+    buRoot.name = WebInspector.UIString("Bottom-Up Chart");
+    /** @type {!Map<string,!WebInspector.TimelineModel.ProfileTreeNode>} */
+    buRoot.children = new Map();
+    var nodesOnStack = /** @type {!Set<string>} */ (new Set());
+    if (topDownTree.children)
+        topDownTree.children.forEach(processNode);
+
+    /**
+     * @param {!WebInspector.TimelineModel.ProfileTreeNode} tdNode
+     */
+    function processNode(tdNode)
+    {
+        var buParent = groupingCallback && groupingCallback(tdNode) || buRoot;
+        appendNode(tdNode, buParent);
+        var hadNode = nodesOnStack.has(tdNode.id);
+        if (!hadNode)
+            nodesOnStack.add(tdNode.id);
+        if (tdNode.children)
+            tdNode.children.forEach(processNode);
+        if (!hadNode)
+            nodesOnStack.delete(tdNode.id);
+    }
+
+    /**
+     * @param {!WebInspector.TimelineModel.ProfileTreeNode} tdNode
+     * @param {!WebInspector.TimelineModel.ProfileTreeNode} buParent
+     */
+    function appendNode(tdNode, buParent)
+    {
+        var selfTime = tdNode.selfTime;
+        var totalTime = tdNode.totalTime;
+        buParent.selfTime += selfTime;
+        buParent.totalTime += selfTime;
+        while (tdNode.parent) {
+            if (!buParent.children)
+                buParent.children = /** @type {!Map<string,!WebInspector.TimelineModel.ProfileTreeNode>} */ (new Map());
+            var id = tdNode.id;
+            var buNode = buParent.children.get(id);
+            if (!buNode) {
+                buNode = new WebInspector.TimelineModel.ProfileTreeNode();
+                buNode.selfTime = selfTime;
+                buNode.totalTime = totalTime;
+                buNode.name = tdNode.name;
+                buNode.event = tdNode.event;
+                buNode.id = id;
+                buParent.children.set(id, buNode);
+            } else {
+                buNode.selfTime += selfTime;
+                if (!nodesOnStack.has(id))
+                    buNode.totalTime += totalTime;
+            }
+            tdNode = tdNode.parent;
+            buParent = buNode;
+        }
+    }
+
+    // Purge zero self time nodes.
+    var rootChildren = buRoot.children;
+    for (var item of rootChildren.entries()) {
+        if (item[1].selfTime === 0)
+            rootChildren.delete(item[0]);
+    }
+
+    return buRoot;
+}
+
+/**
+ * @constructor
  * @param {!WebInspector.TracingModel.Event} event
  */
 WebInspector.TimelineModel.NetworkRequest = function(event)
 {
     this.startTime = event.name === WebInspector.TimelineModel.RecordType.ResourceSendRequest ? event.startTime : 0;
-    this.endTime = 0;
+    this.endTime = Infinity;
     this.addEvent(event);
 }
 
@@ -1448,15 +1632,19 @@ WebInspector.TimelineModel.NetworkRequest.prototype = {
      */
     addEvent: function(event)
     {
+        var recordType = WebInspector.TimelineModel.RecordType;
         this.startTime = Math.min(this.startTime, event.startTime);
-        this.endTime = Math.max(this.endTime, event.endTime || event.startTime);
         var eventData = event.args["data"];
         if (eventData["mimeType"])
             this.mimeType = eventData["mimeType"];
-        if (!this.responseTime && (event.name === WebInspector.TimelineModel.RecordType.ResourceReceiveResponse || event.name === WebInspector.TimelineModel.RecordType.ResourceReceivedData))
+        if (event.name === recordType.ResourceFinish)
+            this.endTime = event.startTime;
+        if (!this.responseTime && (event.name === recordType.ResourceReceiveResponse || event.name === recordType.ResourceReceivedData))
             this.responseTime = event.startTime;
         if (!this.url)
             this.url = eventData["url"];
+        if (!this.requestMethod)
+            this.requestMethod = eventData["requestMethod"];
     }
 }
 
@@ -1639,6 +1827,30 @@ WebInspector.InclusiveTraceEventNameFilter.prototype = {
     {
         return event.hasCategory(WebInspector.TracingModel.ConsoleEventCategory)
             || !!this._eventNames[event.name];
+    },
+
+    __proto__: WebInspector.TraceEventNameFilter.prototype
+}
+
+/**
+ * @constructor
+ * @extends {WebInspector.TraceEventNameFilter}
+ * @param {!Array<string>} excludeNames
+ */
+WebInspector.ExclusiveTraceEventNameFilter = function(excludeNames)
+{
+    WebInspector.TraceEventNameFilter.call(this, excludeNames);
+}
+
+WebInspector.ExclusiveTraceEventNameFilter.prototype = {
+    /**
+     * @override
+     * @param {!WebInspector.TracingModel.Event} event
+     * @return {boolean}
+     */
+    accept: function(event)
+    {
+        return !this._eventNames[event.name];
     },
 
     __proto__: WebInspector.TraceEventNameFilter.prototype

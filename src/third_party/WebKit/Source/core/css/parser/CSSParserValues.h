@@ -26,16 +26,19 @@
 #include "core/css/CSSSelector.h"
 #include "core/css/CSSValueList.h"
 #include "core/css/parser/CSSParserString.h"
+#include "core/css/parser/CSSParserTokenRange.h"
+#include "wtf/Allocator.h"
 
 namespace blink {
 
 class QualifiedName;
-class CSSParserTokenRange;
 
 struct CSSParserFunction;
+struct CSSParserCalcFunction;
 class CSSParserValueList;
 
 struct CSSParserValue {
+    ALLOW_ONLY_INLINE_ALLOCATION();
     CSSValueID id;
     bool isInt;
     union {
@@ -43,6 +46,7 @@ struct CSSParserValue {
         int iValue;
         CSSParserString string;
         CSSParserFunction* function;
+        CSSParserCalcFunction* calcFunction;
         CSSParserValueList* valueList;
         struct {
             UChar32 start;
@@ -52,18 +56,21 @@ struct CSSParserValue {
     enum {
         Operator  = 0x100000,
         Function  = 0x100001,
-        ValueList = 0x100002,
+        CalcFunction  = 0x100002,
+        ValueList = 0x100003,
         HexColor = 0x100004,
-        // Represents a dimension by a list of two values, a CSS_NUMBER and an CSS_IDENT
+        Identifier = 0x100005,
+        // Represents a dimension by a list of two values, a UnitType::Number and an Identifier
         DimensionList = 0x100006,
         // Represents a unicode range by a pair of UChar32 values
         UnicodeRange = 0x100007,
     };
-    int unit;
+    int m_unit;
+    CSSPrimitiveValue::UnitType unit() const { return static_cast<CSSPrimitiveValue::UnitType>(m_unit); }
+    void setUnit(CSSPrimitiveValue::UnitType unit) { m_unit = static_cast<int>(unit); }
 
-    inline void setFromNumber(double value, int unit = CSSPrimitiveValue::CSS_NUMBER);
+    inline void setFromNumber(double value, CSSPrimitiveValue::UnitType);
     inline void setFromOperator(UChar);
-    inline void setFromFunction(CSSParserFunction*);
     inline void setFromValueList(PassOwnPtr<CSSParserValueList>);
 };
 
@@ -74,7 +81,7 @@ public:
         : m_current(0)
     {
     }
-    CSSParserValueList(CSSParserTokenRange, bool& usesRemUnits);
+    CSSParserValueList(CSSParserTokenRange);
     ~CSSParserValueList();
 
     void addValue(const CSSParserValue&);
@@ -112,6 +119,13 @@ struct CSSParserFunction {
 public:
     CSSValueID id;
     OwnPtr<CSSParserValueList> args;
+};
+
+struct CSSParserCalcFunction {
+    WTF_MAKE_FAST_ALLOCATED(CSSParserCalcFunction);
+public:
+    CSSParserCalcFunction(CSSParserTokenRange args_) : args(args_) {}
+    CSSParserTokenRange args;
 };
 
 class CSSParserSelector {
@@ -170,27 +184,19 @@ inline bool CSSParserSelector::hasShadowPseudo() const
     return m_selector->relation() == CSSSelector::ShadowPseudo;
 }
 
-inline void CSSParserValue::setFromNumber(double value, int unit)
+inline void CSSParserValue::setFromNumber(double value, CSSPrimitiveValue::UnitType unit)
 {
     id = CSSValueInvalid;
     isInt = false;
     fValue = value;
-    this->unit = std::isfinite(value) ? unit : CSSPrimitiveValue::CSS_UNKNOWN;
+    this->setUnit(std::isfinite(value) ? unit : CSSPrimitiveValue::UnitType::Unknown);
 }
 
 inline void CSSParserValue::setFromOperator(UChar c)
 {
     id = CSSValueInvalid;
-    unit = Operator;
+    m_unit = Operator;
     iValue = c;
-    isInt = false;
-}
-
-inline void CSSParserValue::setFromFunction(CSSParserFunction* function)
-{
-    id = CSSValueInvalid;
-    this->function = function;
-    unit = Function;
     isInt = false;
 }
 
@@ -198,7 +204,7 @@ inline void CSSParserValue::setFromValueList(PassOwnPtr<CSSParserValueList> valu
 {
     id = CSSValueInvalid;
     this->valueList = valueList.leakPtr();
-    unit = ValueList;
+    m_unit = ValueList;
     isInt = false;
 }
 

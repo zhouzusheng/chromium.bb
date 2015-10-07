@@ -42,7 +42,7 @@ public:
     float snapToLinesPosition() { return m_snapToLinesPosition; }
 
 private:
-    virtual void layout() override;
+    void layout() override;
 
     void adjustForTopAndBottomMarginBorderAndPadding();
     void repositionCueSnapToLinesNotSet();

@@ -35,8 +35,8 @@
 #include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
-#include "core/frame/PinchViewport.h"
 #include "core/frame/Settings.h"
+#include "core/frame/VisualViewport.h"
 #include "core/html/HTMLTextAreaElement.h"
 #include "core/layout/LayoutBlock.h"
 #include "core/layout/LayoutListItem.h"
@@ -481,6 +481,11 @@ bool TextAutosizer::shouldHandleLayout() const
     return m_pageInfo.m_settingEnabled && m_pageInfo.m_pageNeedsAutosizing && !m_updatePageInfoDeferred;
 }
 
+bool TextAutosizer::pageNeedsAutosizing() const
+{
+    return m_pageInfo.m_pageNeedsAutosizing;
+}
+
 void TextAutosizer::updatePageInfoInAllFrames()
 {
     ASSERT(!m_document->frame() || m_document->frame()->isMainFrame());
@@ -560,7 +565,7 @@ IntSize TextAutosizer::windowSize() const
 {
     Page * page = m_document->page();
     ASSERT(page);
-    return page->frameHost().pinchViewport().size();
+    return page->frameHost().visualViewport().size();
 }
 
 void TextAutosizer::resetMultipliers()
@@ -1104,7 +1109,7 @@ TextAutosizer::LayoutScope::LayoutScope(LayoutBlock* block)
     if (m_textAutosizer->shouldHandleLayout())
         m_textAutosizer->beginLayout(m_block);
     else
-        m_textAutosizer = 0;
+        m_textAutosizer = nullptr;
 }
 
 TextAutosizer::LayoutScope::~LayoutScope()

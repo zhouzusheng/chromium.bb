@@ -38,6 +38,8 @@
 #include "media/filters/chunk_demuxer.h"
 #include "media/filters/ffmpeg_demuxer.h"
 #include "third_party/WebKit/public/platform/WebEncryptedMediaTypes.h"
+#include "third_party/WebKit/public/platform/WebMediaPlayerClient.h"
+#include "third_party/WebKit/public/platform/WebMediaPlayerEncryptedMediaClient.h"
 #include "third_party/WebKit/public/platform/WebMediaSource.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
@@ -103,6 +105,7 @@ STATIC_ASSERT_MATCHING_ENUM(UseCredentials);
 WebMediaPlayerImpl::WebMediaPlayerImpl(
     blink::WebLocalFrame* frame,
     blink::WebMediaPlayerClient* client,
+    blink::WebMediaPlayerEncryptedMediaClient* encrypted_client,
     base::WeakPtr<WebMediaPlayerDelegate> delegate,
     scoped_ptr<RendererFactory> renderer_factory,
     CdmFactory* cdm_factory,
@@ -113,6 +116,7 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
       preload_(BufferedDataSource::AUTO),
       main_task_runner_(base::ThreadTaskRunnerHandle::Get()),
       media_task_runner_(params.media_task_runner()),
+      worker_task_runner_(params.worker_task_runner()),
       media_log_(params.media_log()),
       pipeline_(media_task_runner_, media_log_.get()),
       load_type_(LoadTypeURL),
@@ -124,6 +128,7 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
       pending_seek_(false),
       should_notify_time_changed_(false),
       client_(client),
+      encrypted_client_(encrypted_client),
       delegate_(delegate),
       defer_load_cb_(params.defer_load_cb()),
       context_3d_cb_(params.context_3d_cb()),
@@ -139,7 +144,7 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
           BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnNaturalSizeChanged),
           BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnOpacityChanged))),
       encrypted_media_support_(cdm_factory,
-                               client,
+                               encrypted_client,
                                params.media_permission(),
                                base::Bind(&WebMediaPlayerImpl::SetCdm,
                                           AsWeakPtr(),
@@ -293,7 +298,7 @@ void WebMediaPlayerImpl::seek(double seconds) {
   if (ready_state_ > WebMediaPlayer::ReadyStateHaveMetadata)
     SetReadyState(WebMediaPlayer::ReadyStateHaveMetadata);
 
-  base::TimeDelta new_seek_time = ConvertSecondsToTimestamp(seconds);
+  base::TimeDelta new_seek_time = base::TimeDelta::FromSecondsD(seconds);
 
   if (seeking_) {
     if (new_seek_time == seek_time_) {
@@ -387,15 +392,19 @@ void WebMediaPlayerImpl::setVolume(double volume) {
 }
 
 void WebMediaPlayerImpl::setSinkId(const blink::WebString& device_id,
-                                   WebSetSinkIdCB* web_callbacks) {
+                                   WebSetSinkIdCB* web_callback) {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
-  std::string device_id_str(device_id.utf8());
-  GURL security_origin(frame_->securityOrigin().toString().utf8());
-  DVLOG(1) << __FUNCTION__
-           << "(" << device_id_str << ", " << security_origin << ")";
-  audio_source_provider_->SwitchOutputDevice(
-      device_id_str, security_origin,
-      ConvertToSwitchOutputDeviceCB(web_callbacks));
+  DVLOG(1) << __FUNCTION__;
+  media::SwitchOutputDeviceCB callback =
+      media::ConvertToSwitchOutputDeviceCB(web_callback);
+  OutputDevice* output_device = audio_source_provider_->GetOutputDevice();
+  if (output_device) {
+    std::string device_id_str(device_id.utf8());
+    GURL security_origin(frame_->securityOrigin().toString().utf8());
+    output_device->SwitchOutputDevice(device_id_str, security_origin, callback);
+  } else {
+    callback.Run(SWITCH_OUTPUT_DEVICE_RESULT_ERROR_NOT_SUPPORTED);
+  }
 }
 
 #define STATIC_ASSERT_MATCHING_ENUM(webkit_name, chromium_name) \
@@ -579,7 +588,7 @@ bool WebMediaPlayerImpl::didPassCORSAccessCheck() const {
 }
 
 double WebMediaPlayerImpl::mediaTimeForTimeValue(double timeValue) const {
-  return ConvertSecondsToTimestamp(timeValue).InSecondsF();
+  return base::TimeDelta::FromSecondsD(timeValue).InSecondsF();
 }
 
 unsigned WebMediaPlayerImpl::decodedFrameCount() const {
@@ -718,18 +727,18 @@ void WebMediaPlayerImpl::OnEncryptedMediaInitData(
 
   encrypted_media_support_.SetInitDataType(init_data_type);
 
-  client_->encrypted(ConvertToWebInitDataType(init_data_type),
-                     vector_as_array(&init_data),
-                     base::saturated_cast<unsigned int>(init_data.size()));
+  encrypted_client_->encrypted(
+      ConvertToWebInitDataType(init_data_type), vector_as_array(&init_data),
+      base::saturated_cast<unsigned int>(init_data.size()));
 }
 
 void WebMediaPlayerImpl::OnWaitingForDecryptionKey() {
-  client_->didBlockPlaybackWaitingForKey();
+  encrypted_client_->didBlockPlaybackWaitingForKey();
 
   // TODO(jrummell): didResumePlaybackBlockedForKey() should only be called
   // when a key has been successfully added (e.g. OnSessionKeysChange() with
   // |has_additional_usable_key| = true). http://crbug.com/461903
-  client_->didResumePlaybackBlockedForKey();
+  encrypted_client_->didResumePlaybackBlockedForKey();
 }
 
 void WebMediaPlayerImpl::SetCdm(const CdmAttachedCB& cdm_attached_cb,
@@ -857,8 +866,8 @@ void WebMediaPlayerImpl::OnPipelineBufferingStateChanged(
 
 void WebMediaPlayerImpl::OnDemuxerOpened() {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
-  client_->mediaSourceOpened(new WebMediaSourceImpl(
-      chunk_demuxer_, base::Bind(&MediaLog::AddLogEvent, media_log_)));
+  client_->mediaSourceOpened(
+      new WebMediaSourceImpl(chunk_demuxer_, media_log_));
 }
 
 void WebMediaPlayerImpl::OnAddTextTrack(
@@ -925,8 +934,7 @@ void WebMediaPlayerImpl::StartPipeline() {
 
     chunk_demuxer_ = new ChunkDemuxer(
         BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnDemuxerOpened),
-        encrypted_media_init_data_cb,
-        base::Bind(&MediaLog::AddLogEvent, media_log_), media_log_, true);
+        encrypted_media_init_data_cb, media_log_, true);
     demuxer_.reset(chunk_demuxer_);
   }
 
@@ -934,9 +942,9 @@ void WebMediaPlayerImpl::StartPipeline() {
   seeking_ = true;
 
   pipeline_.Start(
-      demuxer_.get(),
-      renderer_factory_->CreateRenderer(
-          media_task_runner_, audio_source_provider_.get(), compositor_),
+      demuxer_.get(), renderer_factory_->CreateRenderer(
+                          media_task_runner_, worker_task_runner_,
+                          audio_source_provider_.get(), compositor_),
       BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnPipelineEnded),
       BIND_TO_RENDER_LOOP(&WebMediaPlayerImpl::OnPipelineError),
       BIND_TO_RENDER_LOOP1(&WebMediaPlayerImpl::OnPipelineSeeked, false),

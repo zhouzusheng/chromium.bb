@@ -9,6 +9,7 @@
 #define SkCachedData_DEFINED
 
 #include "SkMutex.h"
+#include "SkTypes.h"
 
 class SkDiscardableMemory;
 
@@ -29,6 +30,10 @@ public:
     int testing_only_getRefCnt() const { return fRefCnt; }
     bool testing_only_isLocked() const { return fIsLocked; }
     bool testing_only_isInCache() const { return fInCache; }
+
+    SkDiscardableMemory* diagnostic_only_getDiscardable() const {
+        return kDiscardableMemory_StorageType == fStorageType ? fStorage.fDM : nullptr;
+    }
 
 protected:
     // called when fData changes. could be NULL.

@@ -365,11 +365,7 @@ void LayoutGrid::layoutBlock(bool relayoutChildren)
     }
 
     updateLayerTransformAfterLayout();
-
-    // Update our scroll information if we're overflow:auto/scroll/hidden now that we know if
-    // we overflow or not.
-    if (hasOverflowClip())
-        layer()->scrollableArea()->updateAfterLayout();
+    updateScrollInfoAfterLayout();
 
     clearNeedsLayout();
 }
@@ -393,25 +389,6 @@ void LayoutGrid::computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, Layo
     LayoutUnit scrollbarWidth = intrinsicScrollbarLogicalWidth();
     minLogicalWidth += scrollbarWidth;
     maxLogicalWidth += scrollbarWidth;
-}
-
-void LayoutGrid::computePreferredLogicalWidths()
-{
-    ASSERT(preferredLogicalWidthsDirty());
-
-    m_minPreferredLogicalWidth = 0;
-    m_maxPreferredLogicalWidth = 0;
-
-    // FIXME: We don't take our own logical width into account. Once we do, we need to make sure
-    // we apply (and test the interaction with) min-width / max-width.
-
-    computeIntrinsicLogicalWidths(m_minPreferredLogicalWidth, m_maxPreferredLogicalWidth);
-
-    LayoutUnit borderAndPaddingInInlineDirection = borderAndPaddingLogicalWidth();
-    m_minPreferredLogicalWidth += borderAndPaddingInInlineDirection;
-    m_maxPreferredLogicalWidth += borderAndPaddingInInlineDirection;
-
-    clearPreferredLogicalWidthsDirty();
 }
 
 bool LayoutGrid::gridElementIsShrinkToFit()
@@ -534,14 +511,13 @@ LayoutUnit LayoutGrid::computeUsedBreadthOfMaxLength(GridTrackSizingDirection di
         return usedBreadth;
 
     const Length& trackLength = gridLength.length();
-    ASSERT(!trackLength.isAuto());
     if (trackLength.isSpecified()) {
         LayoutUnit computedBreadth = computeUsedBreadthOfSpecifiedLength(direction, trackLength);
         ASSERT(computedBreadth != infinity);
         return computedBreadth;
     }
 
-    ASSERT(trackLength.isMinContent() || trackLength.isMaxContent());
+    ASSERT(trackLength.isMinContent() || trackLength.isAuto() || trackLength.isMaxContent());
     return infinity;
 }
 
@@ -813,7 +789,7 @@ void LayoutGrid::resolveContentBasedTrackSizingFunctionsForNonSpanningItems(Grid
 
     if (trackSize.hasMinContentMaxTrackBreadth())
         track.setGrowthLimit(std::max(track.growthLimit(), minContentForChild(gridItem, direction, columnTracks)));
-    else if (trackSize.hasMaxContentMaxTrackBreadth())
+    else if (trackSize.hasMaxContentOrAutoMaxTrackBreadth())
         track.setGrowthLimit(std::max(track.growthLimit(), maxContentForChild(gridItem, direction, columnTracks)));
 }
 
@@ -849,7 +825,7 @@ static bool shouldProcessTrackForTrackSizeComputationPhase(TrackSizeComputationP
     case ResolveIntrinsicMaximums:
         return trackSize.hasMinOrMaxContentMaxTrackBreadth();
     case ResolveMaxContentMaximums:
-        return trackSize.hasMaxContentMaxTrackBreadth();
+        return trackSize.hasMaxContentOrAutoMaxTrackBreadth();
     case MaximizeTracks:
         ASSERT_NOT_REACHED();
         return false;
@@ -1302,14 +1278,14 @@ void LayoutGrid::applyStretchAlignmentToTracksIfNeeded(GridTrackSizingDirection 
         || (direction == ForRows && styleRef().alignContentDistribution() != ContentDistributionStretch))
         return;
 
-    // We consider auto-sized tracks as content-sized (min-content, max-content, auto).
+    // Spec defines auto-sized tracks as the ones with an 'auto' max-sizing function.
     Vector<GridTrack>& tracks = (direction == ForColumns) ? sizingData.columnTracks : sizingData.rowTracks;
     Vector<unsigned> autoSizedTracksIndex;
     for (unsigned i = 0; i < tracks.size(); ++i) {
         const GridTrackSize& trackSize = gridTrackSize(direction, i);
         // If there is some flexible-sized track, they should have exhausted available space during sizing algorithm.
         ASSERT(!trackSize.maxTrackBreadth().isFlex());
-        if (trackSize.isContentSized())
+        if (trackSize.hasAutoMaxTrackBreadth())
             autoSizedTracksIndex.append(i);
     }
 
@@ -1320,7 +1296,6 @@ void LayoutGrid::applyStretchAlignmentToTracksIfNeeded(GridTrackSizingDirection 
     LayoutUnit sizeToIncrease = availableSpace / numberOfAutoSizedTracks;
     for (const auto& trackIndex : autoSizedTracksIndex) {
         GridTrack* track = tracks.data() + trackIndex;
-        // FIXME: Respecting the constraints imposed by max-height/max-width.
         LayoutUnit baseSize = track->baseSize() + sizeToIncrease;
         track->setBaseSize(baseSize);
     }
@@ -1346,7 +1321,7 @@ void LayoutGrid::layoutGridItems()
 
     for (LayoutBox* child = firstChildBox(); child; child = child->nextSiblingBox()) {
         if (child->isOutOfFlowPositioned()) {
-            child->containingBlock()->insertPositionedObject(child);
+            prepareChildForPositionedLayout(*child);
             continue;
         }
 
@@ -1368,7 +1343,7 @@ void LayoutGrid::layoutGridItems()
         // Stretching logic might force a child layout, so we need to run it before the layoutIfNeeded
         // call to avoid unnecessary relayouts. This might imply that child margins, needed to correctly
         // determine the available space before stretching, are not set yet.
-        applyStretchAlignmentToChildIfNeeded(*child, overrideContainingBlockContentLogicalHeight);
+        applyStretchAlignmentToChildIfNeeded(*child);
 
         child->layoutIfNeeded();
 
@@ -1395,6 +1370,16 @@ void LayoutGrid::layoutGridItems()
 
     // Min / max logical height is handled by the call to updateLogicalHeight in layoutBlock.
     setLogicalHeight(height);
+}
+
+void LayoutGrid::prepareChildForPositionedLayout(LayoutBox& child)
+{
+    ASSERT(child.isOutOfFlowPositioned());
+    child.containingBlock()->insertPositionedObject(&child);
+
+    DeprecatedPaintLayer* childLayer = child.layer();
+    childLayer->setStaticInlinePosition(borderAndPaddingStart());
+    childLayer->setStaticBlockPosition(borderAndPaddingBefore());
 }
 
 void LayoutGrid::layoutPositionedObjects(bool relayoutChildren, PositionedLayoutBehavior info)
@@ -1427,15 +1412,12 @@ void LayoutGrid::layoutPositionedObjects(bool relayoutChildren, PositionedLayout
         child->setExtraBlockOffset(rowOffset);
 
         if (child->parent() == this) {
-            // If column/row start is not auto the padding has been already computed in offsetAndBreadthForPositionedChild().
+            // If column/row start is "auto" the static position has been already set in prepareChildForPositionedLayout().
+            // If column/row start is not "auto" the padding has been already computed in offsetAndBreadthForPositionedChild().
             DeprecatedPaintLayer* childLayer = child->layer();
-            if (columnStartIsAuto)
-                childLayer->setStaticInlinePosition(borderAndPaddingStart());
-            else
+            if (!columnStartIsAuto)
                 childLayer->setStaticInlinePosition(borderStart() + columnOffset);
-            if (rowStartIsAuto)
-                childLayer->setStaticBlockPosition(borderAndPaddingBefore());
-            else
+            if (!rowStartIsAuto)
                 childLayer->setStaticBlockPosition(borderBefore() + rowOffset);
         }
     }
@@ -1568,11 +1550,6 @@ static inline LayoutUnit constrainedChildIntrinsicContentLogicalHeight(const Lay
     return child.constrainLogicalHeightByMinMax(childIntrinsicContentLogicalHeight + child.borderAndPaddingLogicalHeight(), childIntrinsicContentLogicalHeight);
 }
 
-bool LayoutGrid::allowedToStretchLogicalHeightForChild(const LayoutBox& child) const
-{
-    return child.style()->logicalHeight().isAuto() && !child.style()->marginBeforeUsing(style()).isAuto() && !child.style()->marginAfterUsing(style()).isAuto();
-}
-
 // FIXME: This logic is shared by LayoutFlexibleBox, so it should be moved to LayoutBox.
 bool LayoutGrid::needToStretchChildLogicalHeight(const LayoutBox& child) const
 {
@@ -1638,27 +1615,45 @@ LayoutUnit LayoutGrid::availableAlignmentSpaceForChildBeforeStretching(LayoutUni
 }
 
 // FIXME: This logic is shared by LayoutFlexibleBox, so it should be moved to LayoutBox.
-void LayoutGrid::applyStretchAlignmentToChildIfNeeded(LayoutBox& child, LayoutUnit gridAreaBreadthForChild)
+void LayoutGrid::applyStretchAlignmentToChildIfNeeded(LayoutBox& child)
 {
-    if (!allowedToStretchLogicalHeightForChild(child) || ComputedStyle::resolveAlignment(styleRef(), child.styleRef(), ItemPositionStretch) != ItemPositionStretch) {
-        child.clearOverrideLogicalContentHeight();
-        return;
+    // We clear both width and height override values because we will decide now whether they
+    // are allowed or not, evaluating the conditions which might have changed since the old
+    // values were set.
+    child.clearOverrideSize();
+
+    auto& childStyle = child.styleRef();
+    bool isHorizontalMode = isHorizontalWritingMode();
+    bool hasAutoSizeInRowAxis = isHorizontalMode ? childStyle.width().isAuto() : childStyle.height().isAuto();
+    bool allowedToStretchChildAlongRowAxis = hasAutoSizeInRowAxis && !childStyle.marginStartUsing(style()).isAuto() && !childStyle.marginEndUsing(style()).isAuto();
+    if (!allowedToStretchChildAlongRowAxis || ComputedStyle::resolveJustification(styleRef(), childStyle, ItemPositionStretch) != ItemPositionStretch) {
+        bool hasAutoMinSizeInRowAxis = isHorizontalMode ? childStyle.minWidth().isAuto() : childStyle.minHeight().isAuto();
+        bool canShrinkToFitInRowAxisForChild = !hasAutoMinSizeInRowAxis || child.minPreferredLogicalWidth() <= child.overrideContainingBlockContentLogicalWidth();
+        // TODO(lajava): how to handle orthogonality in this case ?.
+        // TODO(lajava): grid track sizing and positioning do not support orthogonal modes yet.
+        if (hasAutoSizeInRowAxis && canShrinkToFitInRowAxisForChild) {
+            LayoutUnit childWidthToFitContent = std::max(std::min(child.maxPreferredLogicalWidth(), child.overrideContainingBlockContentLogicalWidth()  - child.marginLogicalWidth()), child.minPreferredLogicalWidth());
+            LayoutUnit desiredLogicalWidth = child.constrainLogicalHeightByMinMax(childWidthToFitContent, -1);
+            child.setOverrideLogicalContentWidth(desiredLogicalWidth - child.borderAndPaddingLogicalWidth());
+            if (desiredLogicalWidth != child.logicalWidth())
+                child.setNeedsLayout(LayoutInvalidationReason::GridChanged);
+        }
     }
 
-    bool hasOrthogonalWritingMode = child.isHorizontalWritingMode() != isHorizontalWritingMode();
-    // FIXME: If the child has orthogonal flow, then it already has an override height set, so use it.
-    // FIXME: grid track sizing and positioning do not support orthogonal modes yet.
-    if (!hasOrthogonalWritingMode) {
-        LayoutUnit stretchedLogicalHeight = availableAlignmentSpaceForChildBeforeStretching(gridAreaBreadthForChild, child);
-        LayoutUnit desiredLogicalHeight = child.constrainLogicalHeightByMinMax(stretchedLogicalHeight, -1);
-
-        // FIXME: Can avoid laying out here in some cases. See https://webkit.org/b/87905.
-        bool childNeedsRelayout = desiredLogicalHeight != child.logicalHeight();
-        if (childNeedsRelayout || !child.hasOverrideLogicalContentHeight())
+    bool hasAutoSizeInColumnAxis = isHorizontalMode ? childStyle.height().isAuto() : childStyle.width().isAuto();
+    bool allowedToStretchChildAlongColumnAxis = hasAutoSizeInColumnAxis && !childStyle.marginBeforeUsing(style()).isAuto() && !childStyle.marginAfterUsing(style()).isAuto();
+    if (allowedToStretchChildAlongColumnAxis && ComputedStyle::resolveAlignment(styleRef(), childStyle, ItemPositionStretch) == ItemPositionStretch) {
+        // TODO (lajava): If the child has orthogonal flow, then it already has an override height set, so use it.
+        // TODO (lajava): grid track sizing and positioning do not support orthogonal modes yet.
+        if (child.isHorizontalWritingMode() == isHorizontalMode) {
+            LayoutUnit stretchedLogicalHeight = availableAlignmentSpaceForChildBeforeStretching(child.overrideContainingBlockContentLogicalHeight(), child);
+            LayoutUnit desiredLogicalHeight = child.constrainLogicalHeightByMinMax(stretchedLogicalHeight, -1);
             child.setOverrideLogicalContentHeight(desiredLogicalHeight - child.borderAndPaddingLogicalHeight());
-        if (childNeedsRelayout) {
-            child.setLogicalHeight(0);
-            child.setNeedsLayout(LayoutInvalidationReason::GridChanged);
+            if (desiredLogicalHeight != child.logicalHeight()) {
+                // TODO (lajava): Can avoid laying out here in some cases. See https://webkit.org/b/87905.
+                child.setLogicalHeight(0);
+                child.setNeedsLayout(LayoutInvalidationReason::GridChanged);
+            }
         }
     }
 }

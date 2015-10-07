@@ -11,10 +11,10 @@
 #include "base/md5.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "chrome/browser/spellchecker/spellcheck_host_metrics.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/spellcheck_common.h"
-#include "chrome/common/spellcheck_messages.h"
 #include "content/public/browser/browser_thread.h"
 #include "sync/api/sync_change.h"
 #include "sync/api/sync_error_factory.h"
@@ -68,9 +68,10 @@ ChecksumStatus LoadFile(const base::FilePath& file_path,
     if (checksum != base::MD5String(contents))
       return INVALID_CHECKSUM;
   }
-  base::TrimWhitespaceASCII(contents, base::TRIM_ALL, &contents);
-  std::vector<std::string> word_list;
-  base::SplitString(contents, '\n', &word_list);
+
+  std::vector<std::string> word_list = base::SplitString(
+      base::TrimWhitespaceASCII(contents, base::TRIM_ALL), "\n",
+      base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
   words->insert(word_list.begin(), word_list.end());
   return VALID_CHECKSUM;
 }

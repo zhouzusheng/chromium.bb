@@ -25,6 +25,10 @@ namespace cc {
 
 namespace {
 
+// We don't perform per-layer solid color analysis when there are too many skia
+// operations.
+const int kOpCountThatIsOkToAnalyze = 10;
+
 bool DisplayItemsTracingEnabled() {
   bool tracing_enabled;
   TRACE_EVENT_CATEGORY_GROUP_ENABLED(
@@ -240,6 +244,10 @@ size_t DisplayItemList::ApproximateMemoryUsage() const {
   return memory_usage;
 }
 
+bool DisplayItemList::ShouldBeAnalyzedForSolidColor() const {
+  return ApproximateOpCount() <= kOpCountThatIsOkToAnalyze;
+}
+
 scoped_refptr<base::trace_event::ConvertableToTraceFormat>
 DisplayItemList::AsValue(bool include_items) const {
   DCHECK(ProcessAppendedItemsCalled());
@@ -294,7 +302,7 @@ void DisplayItemList::GatherPixelRefs(const gfx::Size& grid_cell_size) {
   if (!picture_->willPlayBackBitmaps())
     return;
 
-  pixel_refs_->GatherPixelRefsFromPicture(picture_.get());
+  pixel_refs_->GatherPixelRefsFromPicture(picture_.get(), layer_rect_);
 }
 
 void* DisplayItemList::GetSidecar(DisplayItem* display_item) {

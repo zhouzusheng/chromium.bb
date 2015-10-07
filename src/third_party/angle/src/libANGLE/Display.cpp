@@ -22,11 +22,14 @@
 #include "common/debug.h"
 #include "common/mathutil.h"
 #include "common/platform.h"
+#include "common/utilities.h"
 #include "libANGLE/Context.h"
 #include "libANGLE/Device.h"
 #include "libANGLE/histogram_macros.h"
+#include "libANGLE/Image.h"
 #include "libANGLE/Surface.h"
 #include "libANGLE/renderer/DisplayImpl.h"
+#include "libANGLE/renderer/ImageImpl.h"
 #include "third_party/trace_event/trace_event.h"
 
 #if defined(ANGLE_ENABLE_D3D9) || defined(ANGLE_ENABLE_D3D11)
@@ -38,6 +41,8 @@
 #       include "libANGLE/renderer/gl/wgl/DisplayWGL.h"
 #   elif defined(ANGLE_USE_X11)
 #       include "libANGLE/renderer/gl/glx/DisplayGLX.h"
+#   elif defined(ANGLE_PLATFORM_APPLE)
+#       include "libANGLE/renderer/gl/cgl/DisplayCGL.h"
 #   else
 #       error Unsupported OpenGL platform.
 #   endif
@@ -112,6 +117,8 @@ rx::DisplayImpl *CreateDisplayImpl(const AttributeMap &attribMap)
         impl = new rx::DisplayD3D();
 #elif defined(ANGLE_USE_X11)
         impl = new rx::DisplayGLX();
+#elif defined(ANGLE_PLATFORM_APPLE)
+        impl = new rx::DisplayCGL();
 #else
         // No display available
         UNREACHABLE();
@@ -134,6 +141,8 @@ rx::DisplayImpl *CreateDisplayImpl(const AttributeMap &attribMap)
         impl = new rx::DisplayWGL();
 #elif defined(ANGLE_USE_X11)
         impl = new rx::DisplayGLX();
+#elif defined(ANGLE_PLATFORM_APPLE)
+        impl = new rx::DisplayCGL();
 #else
 #error Unsupported OpenGL platform.
 #endif
@@ -248,6 +257,11 @@ Error Display::initialize()
     Error error = mImplementation->initialize(this);
     if (error.isError())
     {
+        // Log extended error message here
+        std::stringstream errorStream;
+        errorStream << "ANGLE Display::initialize error " << error.getID() << ": "
+                    << error.getMessage();
+        ANGLEPlatformCurrent()->logError(errorStream.str().c_str());
         return error;
     }
 
@@ -290,6 +304,11 @@ void Display::terminate()
     while (!mContextSet.empty())
     {
         destroyContext(*mContextSet.begin());
+    }
+
+    while (!mImageSet.empty())
+    {
+        destroyImage(*mImageSet.begin());
     }
 
     mConfigSet.clear();
@@ -480,6 +499,59 @@ Error Display::createPixmapSurface(const Config *configuration, NativePixmapType
     return Error(EGL_SUCCESS);
 }
 
+Error Display::createImage(gl::Context *context,
+                           EGLenum target,
+                           EGLClientBuffer buffer,
+                           const AttributeMap &attribs,
+                           Image **outImage)
+{
+    ASSERT(isInitialized());
+
+    if (mImplementation->testDeviceLost())
+    {
+        Error error = restoreLostDevice();
+        if (error.isError())
+        {
+            return error;
+        }
+    }
+
+    egl::ImageSibling *sibling = nullptr;
+    if (IsTextureTarget(target))
+    {
+        sibling = context->getTexture(egl_gl::EGLClientBufferToGLObjectHandle(buffer));
+    }
+    else if (IsRenderbufferTarget(target))
+    {
+        sibling = context->getRenderbuffer(egl_gl::EGLClientBufferToGLObjectHandle(buffer));
+    }
+    else
+    {
+        UNREACHABLE();
+    }
+    ASSERT(sibling != nullptr);
+
+    rx::ImageImpl *imageImpl = mImplementation->createImage(target, sibling, attribs);
+    ASSERT(imageImpl != nullptr);
+
+    Error error = imageImpl->initialize();
+    if (error.isError())
+    {
+        return error;
+    }
+
+    Image *image = new Image(imageImpl, target, sibling, attribs);
+
+    ASSERT(outImage != nullptr);
+    *outImage = image;
+
+    // Add this image to the list of all images and hold a ref to it.
+    image->addRef();
+    mImageSet.insert(image);
+
+    return Error(EGL_SUCCESS);
+}
+
 Error Display::createContext(const Config *configuration, gl::Context *shareContext, const AttributeMap &attribs,
                              gl::Context **outContext)
 {
@@ -565,6 +637,14 @@ void Display::destroySurface(Surface *surface)
     mImplementation->destroySurface(surface);
 }
 
+void Display::destroyImage(egl::Image *image)
+{
+    auto iter = mImageSet.find(image);
+    ASSERT(iter != mImageSet.end());
+    (*iter)->release();
+    mImageSet.erase(iter);
+}
+
 void Display::destroyContext(gl::Context *context)
 {
     mContextSet.erase(context);
@@ -614,6 +694,11 @@ bool Display::isValidContext(gl::Context *context) const
 bool Display::isValidSurface(Surface *surface) const
 {
     return mImplementation->getSurfaceSet().find(surface) != mImplementation->getSurfaceSet().end();
+}
+
+bool Display::isValidImage(const Image *image) const
+{
+    return mImageSet.find(const_cast<Image *>(image)) != mImageSet.end();
 }
 
 bool Display::hasExistingWindowSurface(EGLNativeWindowType window)
@@ -674,6 +759,20 @@ void Display::initDisplayExtensions()
 bool Display::isValidNativeWindow(EGLNativeWindowType window) const
 {
     return mImplementation->isValidNativeWindow(window);
+}
+
+bool Display::isValidDisplay(const egl::Display *display)
+{
+    const DisplayMap *displayMap = GetDisplayMap();
+    for (const auto &displayPair : *displayMap)
+    {
+        if (displayPair.second == display)
+        {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 bool Display::isValidNativeDisplay(EGLNativeDisplayType display)

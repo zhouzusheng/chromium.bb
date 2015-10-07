@@ -30,7 +30,6 @@ class WebContentLayerImpl : public blink::WebContentLayer,
   // WebContentLayer implementation.
   virtual blink::WebLayer* layer();
   virtual void setDoubleSided(bool double_sided);
-  virtual void setDrawCheckerboardForMissingTiles(bool checkerboard);
 
  protected:
   virtual ~WebContentLayerImpl();
@@ -43,6 +42,7 @@ class WebContentLayerImpl : public blink::WebContentLayer,
       const gfx::Rect& clip,
       PaintingControlSetting painting_control) override;
   bool FillsBoundsCompletely() const override;
+  size_t GetApproximateUnsharedMemoryUsage() const override;
 
   scoped_ptr<WebLayerImpl> layer_;
   blink::WebContentLayerClient* client_;

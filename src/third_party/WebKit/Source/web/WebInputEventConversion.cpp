@@ -40,7 +40,7 @@
 #include "core/events/WheelEvent.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
-#include "core/frame/PinchViewport.h"
+#include "core/frame/VisualViewport.h"
 #include "core/layout/LayoutObject.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
@@ -72,20 +72,20 @@ static FloatPoint convertHitPointToWindow(const Widget* widget, FloatPoint point
 {
     float scale = 1;
     IntSize offset;
-    IntPoint pinchViewport;
+    IntPoint visualViewport;
     FloatSize overscrollOffset;
     if (widget) {
         FrameView* rootView = toFrameView(widget->root());
         if (rootView) {
             scale = rootView->inputEventsScaleFactor();
             offset = rootView->inputEventsOffsetForEmulation();
-            pinchViewport = flooredIntPoint(rootView->page()->frameHost().pinchViewport().visibleRect().location());
+            visualViewport = flooredIntPoint(rootView->page()->frameHost().visualViewport().visibleRect().location());
             overscrollOffset = rootView->page()->frameHost().chromeClient().elasticOverscroll();
         }
     }
     return FloatPoint(
-        (point.x() - offset.width()) / scale + pinchViewport.x() + overscrollOffset.width(),
-        (point.y() - offset.height()) / scale + pinchViewport.y() + overscrollOffset.height());
+        (point.x() - offset.width()) / scale + visualViewport.x() + overscrollOffset.width(),
+        (point.y() - offset.height()) / scale + visualViewport.y() + overscrollOffset.height());
 }
 
 static unsigned toPlatformEventModifiers(int webModifiers)
@@ -418,7 +418,7 @@ inline WebTouchPoint::State toWebTouchPointState(const AtomicString& type)
 
 PlatformTouchPointBuilder::PlatformTouchPointBuilder(Widget* widget, const WebTouchPoint& point)
 {
-    m_id = point.id;
+    m_pointerProperties = point;
     m_state = toPlatformTouchPointState(point.state);
 
     // This assumes convertFromContainingWindow does only translations, not scales.
@@ -429,7 +429,6 @@ PlatformTouchPointBuilder::PlatformTouchPointBuilder(Widget* widget, const WebTo
     m_screenPos = FloatPoint(point.screenPosition.x, point.screenPosition.y);
     m_radius = scaleSizeToWindow(widget, FloatSize(point.radiusX, point.radiusY));
     m_rotationAngle = point.rotationAngle;
-    m_force = point.force;
 }
 
 PlatformTouchEventBuilder::PlatformTouchEventBuilder(Widget* widget, const WebTouchEvent& event)

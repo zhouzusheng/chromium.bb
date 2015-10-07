@@ -317,9 +317,6 @@ void GraphicsContext::concat(const SkMatrix& matrix)
     if (contextDisabled())
         return;
 
-    if (matrix.isIdentity())
-        return;
-
     ASSERT(m_canvas);
 
     m_canvas->concat(matrix);
@@ -337,7 +334,7 @@ void GraphicsContext::beginLayer(float opacity, SkXfermode::Mode xfermode, const
     layerPaint.setImageFilter(imageFilter);
 
     if (bounds) {
-        SkRect skBounds = WebCoreFloatRectToSKRect(*bounds);
+        SkRect skBounds = *bounds;
         saveLayer(&skBounds, &layerPaint);
     } else {
         saveLayer(nullptr, &layerPaint);
@@ -427,8 +424,8 @@ void GraphicsContext::compositePicture(SkPicture* picture, const FloatRect& dest
     SkPaint picturePaint;
     picturePaint.setXfermodeMode(op);
     m_canvas->save();
-    SkRect sourceBounds = WebCoreFloatRectToSKRect(src);
-    SkRect skBounds = WebCoreFloatRectToSKRect(dest);
+    SkRect sourceBounds = src;
+    SkRect skBounds = dest;
     SkMatrix pictureTransform;
     pictureTransform.setRectToRect(sourceBounds, skBounds, SkMatrix::kFill_ScaleToFit);
     m_canvas->concat(pictureTransform);
@@ -486,10 +483,10 @@ void GraphicsContext::drawFocusRing(const Vector<IntRect>& rects, int width, int
         return;
 
     SkRegion focusRingRegion;
-    const int outset = focusRingOutset(offset);
+    offset = focusRingOffset(offset);
     for (unsigned i = 0; i < rectCount; i++) {
         SkIRect r = rects[i];
-        r.inset(-outset, -outset);
+        r.inset(-offset, -offset);
         focusRingRegion.op(r, SkRegion::kUnion_Op);
     }
 
@@ -610,9 +607,7 @@ void GraphicsContext::drawLine(const IntPoint& point1, const IntPoint& point2)
     }
 
     adjustLineToPixelBoundaries(p1, p2, width, penStyle);
-    SkPoint pts[2] = { p1.data(), p2.data() };
-
-    m_canvas->drawPoints(SkCanvas::kLines_PointMode, 2, pts, paint);
+    m_canvas->drawLine(p1.x(), p1.y(), p2.x(), p2.y(), paint);
 }
 
 void GraphicsContext::drawLineForDocumentMarker(const FloatPoint& pt, float width, DocumentMarkerLineStyle style)
@@ -901,21 +896,20 @@ SkFilterQuality GraphicsContext::computeFilterQuality(Image* image, const FloatR
     InterpolationQuality resampling;
     if (printing()) {
         resampling = InterpolationNone;
-    } else if (image->isLazyDecodedBitmap()) {
+    } else if (image->currentFrameIsLazyDecoded()) {
         resampling = InterpolationHigh;
     } else {
-        SkRect destRectTarget = dest;
         resampling = computeInterpolationQuality(
             SkScalarToFloat(src.width()), SkScalarToFloat(src.height()),
-            SkScalarToFloat(destRectTarget.width()), SkScalarToFloat(destRectTarget.height()),
-            image->isImmutableBitmap());
-    }
+            SkScalarToFloat(dest.width()), SkScalarToFloat(dest.height()),
+            image->currentFrameIsComplete());
 
-    if (resampling == InterpolationNone) {
-        // FIXME: This is to not break tests (it results in the filter bitmap flag
-        // being set to true). We need to decide if we respect InterpolationNone
-        // being returned from computeInterpolationQuality.
-        resampling = InterpolationLow;
+        if (resampling == InterpolationNone) {
+            // FIXME: This is to not break tests (it results in the filter bitmap flag
+            // being set to true). We need to decide if we respect InterpolationNone
+            // being returned from computeInterpolationQuality.
+            resampling = InterpolationLow;
+        }
     }
     return static_cast<SkFilterQuality>(limitInterpolationQuality(this, resampling));
 }
@@ -1103,8 +1097,7 @@ void GraphicsContext::fillEllipse(const FloatRect& ellipse)
     if (contextDisabled())
         return;
 
-    SkRect rect = ellipse;
-    drawOval(rect, immutableState()->fillPaint());
+    drawOval(ellipse, immutableState()->fillPaint());
 }
 
 void GraphicsContext::strokePath(const Path& pathToStroke)
@@ -1112,8 +1105,7 @@ void GraphicsContext::strokePath(const Path& pathToStroke)
     if (contextDisabled() || pathToStroke.isEmpty())
         return;
 
-    const SkPath& path = pathToStroke.skPath();
-    drawPath(path, immutableState()->strokePaint());
+    drawPath(pathToStroke.skPath(), immutableState()->strokePaint());
 }
 
 void GraphicsContext::strokeRect(const FloatRect& rect)
@@ -1256,9 +1248,6 @@ void GraphicsContext::scale(float x, float y)
         return;
     ASSERT(m_canvas);
 
-    if (x == 1.0f && y == 1.0f)
-        return;
-
     m_canvas->scale(WebCoreFloatToSkScalar(x), WebCoreFloatToSkScalar(y));
 }
 
@@ -1308,19 +1297,9 @@ void GraphicsContext::fillRectWithRoundedHole(const FloatRect& rect, const Float
     if (contextDisabled())
         return;
 
-    Path path;
-    path.setWindRule(RULE_EVENODD);
-    path.addRect(rect);
-
-    if (!roundedHoleRect.radii().isZero())
-        path.addRoundedRect(roundedHoleRect);
-    else
-        path.addRect(roundedHoleRect.rect());
-
     SkPaint paint(immutableState()->fillPaint());
     paint.setColor(color.rgb());
-
-    drawPath(path.skPath(), paint);
+    m_canvas->drawDRRect(SkRRect::MakeRect(rect), roundedHoleRect, paint);
 }
 
 void GraphicsContext::clearRect(const FloatRect& rect)
@@ -1328,10 +1307,9 @@ void GraphicsContext::clearRect(const FloatRect& rect)
     if (contextDisabled())
         return;
 
-    SkRect r = rect;
     SkPaint paint(immutableState()->fillPaint());
     paint.setXfermodeMode(SkXfermode::kClear_Mode);
-    drawRect(r, paint);
+    drawRect(rect, paint);
 }
 
 void GraphicsContext::adjustLineToPixelBoundaries(FloatPoint& p1, FloatPoint& p2, float strokeWidth, StrokeStyle penStyle)

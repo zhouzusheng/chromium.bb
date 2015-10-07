@@ -568,7 +568,7 @@
           ],
         }, { # OS!="mac"
           'sources!': [
-            'editing/SmartReplaceCF.cpp',
+            'editing/commands/SmartReplaceCF.cpp',
           ],
         }],
         ['OS=="win" and chromium_win_pch==1', {
@@ -650,6 +650,7 @@
       'dependencies': [
         '../config.gyp:config',
         '../wtf/wtf_tests.gyp:wtf_unittest_helpers',
+        'webcore_prerequisites',
       ],
       'defines': [
         'BLINK_IMPLEMENTATION=1',
@@ -822,7 +823,7 @@
               },
             },{ # OS!="mac"
               'sources!': [
-                'editing/SmartReplaceCF.cpp',
+                'editing/commands/SmartReplaceCF.cpp',
                 'layout/LayoutThemeMac.h',
                 'layout/LayoutThemeMac.mm',
               ],

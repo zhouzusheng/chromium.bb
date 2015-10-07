@@ -271,6 +271,9 @@ public:
     // zero, if there is no limit.
     virtual size_t virtualMemoryLimitMB() { return 0; }
 
+    // True when Blink runs on low end devices.
+    virtual bool isLowEndDeviceMode() { return false; }
+
     // Return the number of of processors of the current machine.
     virtual size_t numberOfProcessors() { return 0; }
 
@@ -372,9 +375,7 @@ public:
     // WaitableEvent -------------------------------------------------------
 
     // Creates an embedder-defined waitable event object.
-    // TODO(toyoshim): Remove "virtual" from the no arguments version API once
-    // the embedder drops the override implementation.
-    virtual WebWaitableEvent* createWaitableEvent() { return createWaitableEvent(WebWaitableEvent::ResetPolicy::Auto, WebWaitableEvent::InitialState::NonSignaled); }
+    WebWaitableEvent* createWaitableEvent() { return createWaitableEvent(WebWaitableEvent::ResetPolicy::Auto, WebWaitableEvent::InitialState::NonSignaled); }
     virtual WebWaitableEvent* createWaitableEvent(WebWaitableEvent::ResetPolicy, WebWaitableEvent::InitialState) { return nullptr; }
 
     // Waits on multiple events and returns the event object that has been
@@ -610,6 +611,7 @@ public:
     virtual bool canAccelerate2dCanvas() { return false; }
 
     virtual bool isThreadedCompositingEnabled() { return false; }
+    virtual bool isThreadedAnimationEnabled() { return true; }
 
     virtual WebCompositorSupport* compositorSupport() { return nullptr; }
 

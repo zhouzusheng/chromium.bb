@@ -68,9 +68,9 @@ static blink::WebEncryptedMediaKeyInformation::KeyStatus convertStatus(
       return blink::WebEncryptedMediaKeyInformation::KeyStatus::InternalError;
     case media::CdmKeyInformation::EXPIRED:
       return blink::WebEncryptedMediaKeyInformation::KeyStatus::Expired;
-    case media::CdmKeyInformation::OUTPUT_NOT_ALLOWED:
+    case media::CdmKeyInformation::OUTPUT_RESTRICTED:
       return blink::WebEncryptedMediaKeyInformation::KeyStatus::
-          OutputNotAllowed;
+          OutputRestricted;
     case media::CdmKeyInformation::OUTPUT_DOWNSCALED:
       return blink::WebEncryptedMediaKeyInformation::KeyStatus::
           OutputDownscaled;
@@ -165,7 +165,8 @@ static bool SanitizeSessionId(const blink::WebString& session_id,
   if (!base::IsStringASCII(session_id))
     return false;
 
-  sanitized_session_id->assign(base::UTF16ToASCII(session_id));
+  sanitized_session_id->assign(
+      base::UTF16ToASCII(base::StringPiece16(session_id)));
   if (sanitized_session_id->length() > limits::kMaxSessionIdLength)
     return false;
 

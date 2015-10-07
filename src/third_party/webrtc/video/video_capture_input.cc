@@ -63,7 +63,7 @@ VideoCaptureInput::~VideoCaptureInput() {
   module_process_thread_->DeRegisterModule(overuse_detector_.get());
 
   // Stop the thread.
-  rtc::AtomicOps::Increment(&stop_);
+  rtc::AtomicOps::ReleaseStore(&stop_, 1);
   capture_event_.Set();
 
   // Stop the camera input.
@@ -78,7 +78,7 @@ void VideoCaptureInput::IncomingCapturedFrame(const VideoFrame& video_frame) {
   if (local_renderer_)
     local_renderer_->RenderFrame(video_frame, 0);
 
-  stats_proxy_->OnIncomingFrame();
+  stats_proxy_->OnIncomingFrame(video_frame.width(), video_frame.height());
 
   VideoFrame incoming_frame = video_frame;
 
@@ -128,10 +128,9 @@ bool VideoCaptureInput::CaptureProcess() {
   static const int kThreadWaitTimeMs = 100;
   int64_t capture_time = -1;
   if (capture_event_.Wait(kThreadWaitTimeMs) == kEventSignaled) {
-    if (rtc::AtomicOps::Load(&stop_))
+    if (rtc::AtomicOps::AcquireLoad(&stop_))
       return false;
 
-    overuse_detector_->FrameProcessingStarted();
     int64_t encode_start_time = -1;
     VideoFrame deliver_frame;
     {
@@ -148,8 +147,10 @@ bool VideoCaptureInput::CaptureProcess() {
     }
     // Update the overuse detector with the duration.
     if (encode_start_time != -1) {
-      overuse_detector_->FrameEncoded(
+      int encode_time_ms = static_cast<int>(
           Clock::GetRealTimeClock()->TimeInMilliseconds() - encode_start_time);
+      overuse_detector_->FrameEncoded(encode_time_ms);
+      stats_proxy_->OnEncodedFrame(encode_time_ms);
     }
   }
   // We're done!

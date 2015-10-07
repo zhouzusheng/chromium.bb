@@ -105,7 +105,7 @@ void CreateSpdyHeadersFromHttpRequest(const HttpRequestInfo& info,
 
   HttpRequestHeaders::Iterator it(request_headers);
   while (it.GetNext()) {
-    std::string name = base::StringToLowerASCII(it.name());
+    std::string name = base::ToLowerASCII(it.name());
     if (name == "connection" || name == "proxy-connection" ||
         name == "transfer-encoding" || name == "host") {
       continue;
@@ -114,33 +114,43 @@ void CreateSpdyHeadersFromHttpRequest(const HttpRequestInfo& info,
   }
   static const char kHttpProtocolVersion[] = "HTTP/1.1";
 
-  if (protocol_version < SPDY3) {
-    // TODO(bcn): Remove this code now that SPDY/2 is deprecated.
-    (*headers)["version"] = kHttpProtocolVersion;
-    (*headers)["method"] = info.method;
-    (*headers)["host"] = GetHostAndOptionalPort(info.url);
-    if (info.method == "CONNECT") {
-      (*headers)["url"] = GetHostAndPort(info.url);
-    } else {
-      (*headers)["scheme"] = info.url.scheme();
-      (*headers)["url"] = direct ? info.url.PathForRequest()
-                                 : HttpUtil::SpecForRequest(info.url);
-    }
-  } else {
-    if (protocol_version < HTTP2) {
+  switch (protocol_version) {
+    case SPDY2:
+      // TODO(bnc): Remove this code now that SPDY/2 is deprecated.
+      (*headers)["version"] = kHttpProtocolVersion;
+      (*headers)["method"] = info.method;
+      (*headers)["host"] = GetHostAndOptionalPort(info.url);
+      if (info.method == "CONNECT") {
+        (*headers)["url"] = GetHostAndPort(info.url);
+      } else {
+        (*headers)["scheme"] = info.url.scheme();
+        (*headers)["url"] = direct ? info.url.PathForRequest()
+                                   : HttpUtil::SpecForRequest(info.url);
+      }
+      break;
+    case SPDY3:
       (*headers)[":version"] = kHttpProtocolVersion;
       (*headers)[":host"] = GetHostAndOptionalPort(info.url);
-    } else {
-      (*headers)[":authority"] = GetHostAndOptionalPort(info.url);
-    }
-    (*headers)[":method"] = info.method;
-    if (info.method == "CONNECT") {
-      // TODO(bnc): https://crbug.com/433784
-      (*headers)[":path"] = GetHostAndPort(info.url);
-    } else {
-      (*headers)[":scheme"] = info.url.scheme();
-      (*headers)[":path"] = info.url.PathForRequest();
-    }
+      (*headers)[":method"] = info.method;
+      if (info.method == "CONNECT") {
+        (*headers)[":path"] = GetHostAndPort(info.url);
+      } else {
+        (*headers)[":scheme"] = info.url.scheme();
+        (*headers)[":path"] = info.url.PathForRequest();
+      }
+      break;
+    case HTTP2:
+      (*headers)[":method"] = info.method;
+      if (info.method == "CONNECT") {
+        (*headers)[":authority"] = GetHostAndPort(info.url);
+      } else {
+        (*headers)[":authority"] = GetHostAndOptionalPort(info.url);
+        (*headers)[":scheme"] = info.url.scheme();
+        (*headers)[":path"] = info.url.PathForRequest();
+      }
+      break;
+    default:
+      NOTREACHED();
   }
 }
 
@@ -163,7 +173,7 @@ void CreateSpdyHeadersFromHttpResponse(
   void* iter = NULL;
   std::string raw_name, value;
   while (response_headers.EnumerateHeaderLines(&iter, &raw_name, &value)) {
-    std::string name = base::StringToLowerASCII(raw_name);
+    std::string name = base::ToLowerASCII(raw_name);
     AddSpdyHeader(name, value, headers);
   }
 }

@@ -9,12 +9,14 @@
 #include "base/memory/ref_counted_memory.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/metrics/histogram.h"
 #include "content/browser/tracing/tracing_controller_impl.h"
 #include "content/public/browser/background_tracing_config.h"
 #include "content/public/browser/background_tracing_manager.h"
 
 namespace content {
 
+class TraceMessageFilter;
 class TracingDelegate;
 
 class BackgroundTracingManagerImpl : public content::BackgroundTracingManager {
@@ -36,6 +38,8 @@ class BackgroundTracingManagerImpl : public content::BackgroundTracingManager {
   void FireTimerForTesting() override;
   bool HasActiveScenarioForTesting() override;
 
+  void OnHistogramTrigger(const std::string& histogram_name);
+
  private:
   BackgroundTracingManagerImpl();
   ~BackgroundTracingManagerImpl() override;
@@ -47,6 +51,18 @@ class BackgroundTracingManagerImpl : public content::BackgroundTracingManager {
   void BeginFinalizing(StartedFinalizingCallback);
   void ValidateStartupScenario();
   void AbortScenario();
+
+  enum SetupUMACallMode { CLEAR_CALLBACKS, BIND_CALLBACKS };
+
+  void SetupUMACallbacks(SetupUMACallMode mode);
+
+  void OnHistogramChangedCallback(const std::string& histogram_name,
+                                  base::Histogram::Sample reference_value,
+                                  base::Histogram::Sample actual_value);
+  void OnTraceMessageFilterAdded(TraceMessageFilter* filter);
+  void SetupFiltersFromConfig(SetupUMACallMode mode);
+  void SetupFilterFromConfig(scoped_refptr<TraceMessageFilter> filter,
+                             SetupUMACallMode mode);
 
   scoped_ptr<base::DictionaryValue> GenerateMetadataDict() const;
 

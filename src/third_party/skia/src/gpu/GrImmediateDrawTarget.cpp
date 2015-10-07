@@ -7,16 +7,17 @@
 
 #include "GrImmediateDrawTarget.h"
 
-#include "GrBatch.h"
 #include "GrGpu.h"
 #include "GrPipeline.h"
 #include "GrRenderTarget.h"
 #include "SkRect.h"
 #include "SkTypes.h"
 
+#include "batches/GrDrawBatch.h"
+#include "batches/GrVertexBatch.h"
+
 GrImmediateDrawTarget::GrImmediateDrawTarget(GrContext* context)
     : INHERITED(context)
-    , fBatchTarget(this->getGpu())
     , fDrawID(0) {
 }
 
@@ -24,75 +25,23 @@ GrImmediateDrawTarget::~GrImmediateDrawTarget() {
     this->reset();
 }
 
-void GrImmediateDrawTarget::onDrawBatch(GrBatch* batch,
-                                        const PipelineInfo& pipelineInfo) {
-    SkAlignedSStorage<sizeof(GrPipeline)> pipelineStorage;
-    GrPipeline* pipeline = reinterpret_cast<GrPipeline*>(pipelineStorage.get());
-    if (!this->setupPipelineAndShouldDraw(pipeline, pipelineInfo)) {
-        pipeline->~GrPipeline();
-        return;
-    }
+void GrImmediateDrawTarget::onDrawBatch(GrBatch* batch) {
 
-    batch->initBatchTracker(pipeline->infoForPrimitiveProcessor());
-
-    fBatchTarget.resetNumberOfDraws();
-
-    batch->generateGeometry(&fBatchTarget, pipeline);
-    batch->setNumberOfDraws(fBatchTarget.numberOfDraws());
+#if 0
+    // TODO: encapsulate the specialization of GrVertexBatch in GrVertexBatch so that we can
+    // remove this cast. Currently all GrDrawBatches are in fact GrVertexBatch.
+    GrVertexBatch* vertexBatch = static_cast<GrVertexBatch*>(batch);
+    vertexBatch->prepareDraws(&fBatchTarget);
+    vertexBatch->setNumberOfDraws(fBatchTarget.numberOfDraws());
 
     fBatchTarget.preFlush();
-    fBatchTarget.flushNext(batch->numberOfDraws());
+    fBatchTarget.flushNext(vertexBatch->numberOfDraws());
     fBatchTarget.postFlush();
-
-    pipeline->~GrPipeline();
+#endif
 }
 
-void GrImmediateDrawTarget::onClear(const SkIRect* rect, GrColor color,
-                                    bool canIgnoreRect, GrRenderTarget* renderTarget) {
-    this->getGpu()->clear(rect, color, canIgnoreRect, renderTarget);
-}
-
-void GrImmediateDrawTarget::clearStencilClip(const SkIRect& rect,
-                                             bool insideClip,
-                                             GrRenderTarget* renderTarget) {
-    this->getGpu()->clearStencilClip(rect, insideClip, renderTarget);
-}
-
-void GrImmediateDrawTarget::discard(GrRenderTarget* renderTarget) {
-    if (!this->caps()->discardRenderTargetSupport()) {
-        return;
-    }
-
-    this->getGpu()->discard(renderTarget);
-}
-
-void GrImmediateDrawTarget::onReset() {
-    fBatchTarget.reset();
-}
+void GrImmediateDrawTarget::onReset() {}
 
 void GrImmediateDrawTarget::onFlush() {
     ++fDrawID;
-}
-
-bool
-GrImmediateDrawTarget::setupPipelineAndShouldDraw(GrPipeline* pipeline,
-                                                  const GrDrawTarget::PipelineInfo& pipelineInfo) {
-    this->setupPipeline(pipelineInfo, pipeline);
-
-    if (pipeline->mustSkip()) {
-        return false;
-    }
-
-    this->recordXferBarrierIfNecessary(pipeline);
-    return true;
-}
-
-void GrImmediateDrawTarget::recordXferBarrierIfNecessary(const GrPipeline* pipeline) {
-    const GrXferProcessor& xp = *pipeline->getXferProcessor();
-    GrRenderTarget* rt = pipeline->getRenderTarget();
-
-    GrXferBarrierType barrierType;
-    if (xp.willNeedXferBarrier(rt, *this->caps(), &barrierType)) {
-        this->getGpu()->xferBarrier(rt, barrierType);
-    }
 }

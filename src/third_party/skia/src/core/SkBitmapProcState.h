@@ -14,6 +14,7 @@
 #include "SkMatrix.h"
 #include "SkMipMap.h"
 #include "SkPaint.h"
+#include "SkTemplates.h"
 
 typedef SkFixed3232    SkFractionalInt;
 #define SkScalarToFractionalInt(x)  SkScalarToFixed3232(x)
@@ -118,6 +119,7 @@ struct SkBitmapProcState {
 
 private:
     friend class SkBitmapProcShader;
+    friend class SkLightingShaderImpl;
 
     ShaderProc32        fShaderProc32;      // chooseProcs
     ShaderProc16        fShaderProc16;      // chooseProcs

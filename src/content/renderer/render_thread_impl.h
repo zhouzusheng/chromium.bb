@@ -85,6 +85,7 @@ class AecDumpMessageFilter;
 class AudioInputMessageFilter;
 class AudioMessageFilter;
 class AudioRendererMixerManager;
+class BluetoothMessageFilter;
 class BrowserPluginManager;
 class CacheStorageDispatcher;
 class CompositorForwardingMessageFilter;
@@ -135,10 +136,12 @@ class CONTENT_EXPORT RenderThreadImpl
       public GpuChannelHostFactory,
       NON_EXPORTED_BASE(public CompositorDependencies) {
  public:
+  static RenderThreadImpl* Create(const InProcessChildThreadParams& params);
+  static RenderThreadImpl* Create(
+      scoped_ptr<base::MessageLoop> main_message_loop,
+      scoped_ptr<scheduler::RendererScheduler> renderer_scheduler);
   static RenderThreadImpl* current();
 
-  explicit RenderThreadImpl(const InProcessChildThreadParams& params);
-  explicit RenderThreadImpl(scoped_ptr<base::MessageLoop> main_message_loop);
   ~RenderThreadImpl() override;
   void Shutdown() override;
 
@@ -152,7 +155,6 @@ class CONTENT_EXPORT RenderThreadImpl
 
   // RenderThread implementation:
   bool Send(IPC::Message* msg) override;
-  scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner() override;
   IPC::SyncChannel* GetChannel() override;
   std::string GetLocale() override;
   IPC::SyncMessageFilter* GetSyncMessageFilter() override;
@@ -192,8 +194,9 @@ class CONTENT_EXPORT RenderThreadImpl
   bool IsDistanceFieldTextEnabled() override;
   bool IsZeroCopyEnabled() override;
   bool IsOneCopyEnabled() override;
+  bool IsPersistentGpuMemoryBufferEnabled() override;
   bool IsElasticOverscrollEnabled() override;
-  uint32 GetImageTextureTarget() override;
+  std::vector<unsigned> GetImageTextureTargets() override;
   scoped_refptr<base::SingleThreadTaskRunner>
   GetCompositorMainThreadTaskRunner() override;
   scoped_refptr<base::SingleThreadTaskRunner>
@@ -205,6 +208,7 @@ class CONTENT_EXPORT RenderThreadImpl
       int routing_id) override;
   cc::TaskGraphRunner* GetTaskGraphRunner() override;
   bool IsGatherPixelRefsEnabled() override;
+  bool IsThreadedAnimationEnabled() override;
 
   // Synchronously establish a channel to the GPU plugin if not previously
   // established or if it has been lost (for example if the GPU plugin crashed).
@@ -319,8 +323,8 @@ class CONTENT_EXPORT RenderThreadImpl
   // on the renderer's main thread.
   scoped_refptr<base::SingleThreadTaskRunner> GetMediaThreadTaskRunner();
 
-  // A SequencedTaskRunner instance that runs tasks on the raster worker pool.
-  base::SequencedTaskRunner* GetWorkerSequencedTaskRunner();
+  // A TaskRunner instance that runs tasks on the raster worker pool.
+  base::TaskRunner* GetWorkerTaskRunner();
 
   // Causes the idle handler to skip sending idle notifications
   // on the two next scheduled calls, so idle notifications are
@@ -420,6 +424,10 @@ class CONTENT_EXPORT RenderThreadImpl
       mojo::ServiceProviderPtr exposed_services);
 
  protected:
+  RenderThreadImpl(const InProcessChildThreadParams& params,
+                   scoped_ptr<scheduler::RendererScheduler> scheduler);
+  RenderThreadImpl(scoped_ptr<base::MessageLoop> main_message_loop,
+                   scoped_ptr<scheduler::RendererScheduler> scheduler);
   virtual void SetResourceDispatchTaskQueue(
     const scoped_refptr<base::SingleThreadTaskRunner>& resource_task_queue);
 
@@ -573,6 +581,8 @@ class CONTENT_EXPORT RenderThreadImpl
   scoped_ptr<InputHandlerManager> input_handler_manager_;
   scoped_refptr<CompositorForwardingMessageFilter> compositor_message_filter_;
 
+  scoped_refptr<BluetoothMessageFilter> bluetooth_message_filter_;
+
   scoped_refptr<cc_blink::ContextProviderWebContext>
       shared_main_thread_contexts_;
 
@@ -606,13 +616,14 @@ class CONTENT_EXPORT RenderThreadImpl
   bool is_distance_field_text_enabled_;
   bool is_zero_copy_enabled_;
   bool is_one_copy_enabled_;
+  bool is_persistent_gpu_memory_buffer_enabled_;
   bool is_elastic_overscroll_enabled_;
-  unsigned use_image_texture_target_;
+  std::vector<unsigned> use_image_texture_targets_;
   bool is_gather_pixel_refs_enabled_;
+  bool is_threaded_animation_enabled_;
 
   class PendingRenderFrameConnect
-      : public base::RefCounted<PendingRenderFrameConnect>,
-        public mojo::ErrorHandler {
+      : public base::RefCounted<PendingRenderFrameConnect> {
    public:
     PendingRenderFrameConnect(
         int routing_id,
@@ -628,9 +639,10 @@ class CONTENT_EXPORT RenderThreadImpl
    private:
     friend class base::RefCounted<PendingRenderFrameConnect>;
 
-    ~PendingRenderFrameConnect() override;
+    ~PendingRenderFrameConnect();
 
-    void OnConnectionError() override;
+    // Mojo error handler.
+    void OnConnectionError();
 
     int routing_id_;
     mojo::InterfaceRequest<mojo::ServiceProvider> services_;

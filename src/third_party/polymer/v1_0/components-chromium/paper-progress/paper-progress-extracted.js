@@ -1,5 +1,4 @@
-
-  Polymer({
+Polymer({
 
     is: 'paper-progress',
 
@@ -48,6 +47,7 @@
       // If we use attribute/class binding, the animation sometimes doesn't translate properly
       // on Safari 7.1. So instead, we toggle the class here in the update method.
       this.toggleClass('indeterminate', this.indeterminate, this.$.activeProgress);
+      this.toggleClass('indeterminate', this.indeterminate, this.$.indeterminateSplitter);
     },
 
     _transformProgress: function(progress, ratio) {
@@ -69,4 +69,3 @@
     }
 
   });
-

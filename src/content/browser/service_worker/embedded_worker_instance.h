@@ -6,6 +6,7 @@
 #define CONTENT_BROWSER_SERVICE_WORKER_EMBEDDED_WORKER_INSTANCE_H_
 
 #include <map>
+#include <string>
 #include <vector>
 
 #include "base/basictypes.h"
@@ -37,6 +38,8 @@ namespace content {
 
 class EmbeddedWorkerRegistry;
 class MessagePortMessageFilter;
+class ServiceRegistry;
+class ServiceRegistryImpl;
 class ServiceWorkerContextCore;
 struct ServiceWorkerFetchRequest;
 
@@ -86,9 +89,7 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
                                         const base::string16& message,
                                         int line_number,
                                         const GURL& source_url) {}
-    // These should return false if the message is not handled by this
-    // listener. (TODO(kinuko): consider using IPC::Listener interface)
-    // TODO(kinuko): Deprecate OnReplyReceived.
+    // Returns false if the message is not handled by this listener.
     virtual bool OnMessageReceived(const IPC::Message& message) = 0;
   };
 
@@ -118,6 +119,10 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
   // status.
   ServiceWorkerStatusCode SendMessage(const IPC::Message& message);
 
+  // Returns the ServiceRegistry for this worker. It is invalid to call this
+  // when the worker is not in STARTING or RUNNING status.
+  ServiceRegistry* GetServiceRegistry();
+
   int embedded_worker_id() const { return embedded_worker_id_; }
   Status status() const { return status_; }
   StartingPhase starting_phase() const {
@@ -146,6 +151,8 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
   class DevToolsProxy;
   friend class EmbeddedWorkerRegistry;
   FRIEND_TEST_ALL_PREFIXES(EmbeddedWorkerInstanceTest, StartAndStop);
+  FRIEND_TEST_ALL_PREFIXES(EmbeddedWorkerInstanceTest, DetachDuringStart);
+  FRIEND_TEST_ALL_PREFIXES(EmbeddedWorkerInstanceTest, StopDuringStart);
 
   // Constructor is called via EmbeddedWorkerRegistry::CreateWorker().
   // This instance holds a ref of |registry|.
@@ -235,6 +242,7 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
   // Current running information. -1 indicates the worker is not running.
   int process_id_;
   int thread_id_;
+  scoped_ptr<ServiceRegistryImpl> service_registry_;
 
   // Whether devtools is attached or not.
   bool devtools_attached_;

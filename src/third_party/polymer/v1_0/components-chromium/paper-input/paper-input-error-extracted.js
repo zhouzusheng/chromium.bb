@@ -1,5 +1,3 @@
-
-
 (function() {
 
   Polymer({
@@ -9,10 +7,6 @@
     behaviors: [
       Polymer.PaperInputAddonBehavior
     ],
-
-    hostAttributes: {
-      'role': 'alert'
-    },
 
     properties: {
 
@@ -34,4 +28,3 @@
   })
 
 })();
-

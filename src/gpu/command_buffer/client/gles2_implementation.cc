@@ -255,6 +255,11 @@ IdHandlerInterface* GLES2Implementation::GetIdHandler(int namespace_id) const {
   return share_group_->GetIdHandler(namespace_id);
 }
 
+RangeIdHandlerInterface* GLES2Implementation::GetRangeIdHandler(
+    int namespace_id) const {
+  return share_group_->GetRangeIdHandler(namespace_id);
+}
+
 IdAllocator* GLES2Implementation::GetIdAllocator(int namespace_id) const {
   if (namespace_id == id_namespaces::kQueries)
     return query_id_allocator_.get();
@@ -713,12 +718,14 @@ bool GLES2Implementation::GetHelper(GLenum pname, GLint* params) {
         return true;
       }
       break;
-    // TODO(dyen): Also support GL_GPU_DISJOINT_EXT.
     case GL_TIMESTAMP_EXT:
       // We convert all GPU timestamps to CPU time.
       *params = base::saturated_cast<GLint>(
           (base::TraceTicks::Now() - base::TraceTicks()).InMicroseconds()
           * base::Time::kNanosecondsPerMicrosecond);
+      return true;
+    case GL_GPU_DISJOINT_EXT:
+      *params = static_cast<GLint>(query_tracker_->CheckAndResetDisjoint());
       return true;
 
     // Non-cached parameters.
@@ -4858,7 +4865,6 @@ void GLES2Implementation::BeginQueryEXT(GLenum target, GLuint id) {
                  << GLES2Util::GetStringQueryTarget(target)
                  << ", " << id << ")");
 
-  // Check capabilities
   switch (target) {
     case GL_COMMANDS_ISSUED_CHROMIUM:
     case GL_LATENCY_QUERY_CHROMIUM:
@@ -4883,7 +4889,6 @@ void GLES2Implementation::BeginQueryEXT(GLenum target, GLuint id) {
         return;
       }
       break;
-    // TODO(dyen): Also support GL_TIMESTAMP.
     case GL_TIME_ELAPSED_EXT:
       if (!capabilities_.timer_queries) {
         SetGLError(
@@ -4894,7 +4899,7 @@ void GLES2Implementation::BeginQueryEXT(GLenum target, GLuint id) {
       break;
     default:
       SetGLError(
-          GL_INVALID_OPERATION, "glBeginQueryEXT", "unknown query target");
+          GL_INVALID_ENUM, "glBeginQueryEXT", "unknown query target");
       return;
   }
 
@@ -4905,16 +4910,28 @@ void GLES2Implementation::BeginQueryEXT(GLenum target, GLuint id) {
     return;
   }
 
-  // id = 0 INV_OP
   if (id == 0) {
     SetGLError(GL_INVALID_OPERATION, "glBeginQueryEXT", "id is 0");
     return;
   }
 
-  // if not GENned INV_OPERATION
   if (!query_id_allocator_->InUse(id)) {
     SetGLError(GL_INVALID_OPERATION, "glBeginQueryEXT", "invalid id");
     return;
+  }
+
+  // Extra setups some targets might need.
+  switch (target) {
+    case GL_TIME_ELAPSED_EXT:
+      if (!query_tracker_->SetDisjointSync(this)) {
+        SetGLError(GL_OUT_OF_MEMORY,
+                   "glBeginQueryEXT",
+                   "buffer allocation failed");
+        return;
+      }
+      break;
+    default:
+      break;
   }
 
   if (query_tracker_->BeginQuery(id, target, this))
@@ -4931,6 +4948,55 @@ void GLES2Implementation::EndQueryEXT(GLenum target) {
   }
 
   if (query_tracker_->EndQuery(target, this))
+    CheckGLError();
+}
+
+void GLES2Implementation::QueryCounterEXT(GLuint id, GLenum target) {
+  GPU_CLIENT_SINGLE_THREAD_CHECK();
+  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] QueryCounterEXT("
+                 << id
+                 << ", " << GLES2Util::GetStringQueryTarget(target) << ")");
+
+  switch (target) {
+    case GL_TIMESTAMP_EXT:
+      if (!capabilities_.timer_queries) {
+        SetGLError(
+            GL_INVALID_OPERATION, "glQueryCounterEXT",
+            "not enabled for timing queries");
+        return;
+      }
+      break;
+    default:
+      SetGLError(
+          GL_INVALID_ENUM, "glQueryCounterEXT", "unknown query target");
+      return;
+  }
+
+  if (id == 0) {
+    SetGLError(GL_INVALID_OPERATION, "glQueryCounterEXT", "id is 0");
+    return;
+  }
+
+  if (!query_id_allocator_->InUse(id)) {
+    SetGLError(GL_INVALID_OPERATION, "glQueryCounterEXT", "invalid id");
+    return;
+  }
+
+  // Extra setups some targets might need.
+  switch (target) {
+    case GL_TIMESTAMP_EXT:
+      if (!query_tracker_->SetDisjointSync(this)) {
+        SetGLError(GL_OUT_OF_MEMORY,
+                   "glQueryCounterEXT",
+                   "buffer allocation failed");
+        return;
+      }
+      break;
+    default:
+      break;
+  }
+
+  if (query_tracker_->QueryCounter(id, target, this))
     CheckGLError();
 }
 
@@ -4955,18 +5021,36 @@ void GLES2Implementation::GetQueryivEXT(
   CheckGLError();
 }
 
+void GLES2Implementation::GetQueryObjectivEXT(
+    GLuint id, GLenum pname, GLint* params) {
+  GLuint64 result = 0;
+  if (GetQueryObjectValueHelper("glGetQueryObjectivEXT", id, pname, &result))
+    *params = base::saturated_cast<GLint>(result);
+}
+
 void GLES2Implementation::GetQueryObjectuivEXT(
     GLuint id, GLenum pname, GLuint* params) {
   GLuint64 result = 0;
-  if (GetQueryObjectValueHelper("glQueryObjectuivEXT", id, pname, &result))
+  if (GetQueryObjectValueHelper("glGetQueryObjectuivEXT", id, pname, &result))
     *params = base::saturated_cast<GLuint>(result);
+}
+
+void GLES2Implementation::GetQueryObjecti64vEXT(
+    GLuint id, GLenum pname, GLint64* params) {
+  GLuint64 result = 0;
+  if (GetQueryObjectValueHelper("glGetQueryObjectiv64vEXT", id, pname, &result))
+    *params = base::saturated_cast<GLint64>(result);
 }
 
 void GLES2Implementation::GetQueryObjectui64vEXT(
     GLuint id, GLenum pname, GLuint64* params) {
   GLuint64 result = 0;
-  if (GetQueryObjectValueHelper("glQueryObjectui64vEXT", id, pname, &result))
+  if (GetQueryObjectValueHelper("glGetQueryObjectui64vEXT", id, pname, &result))
     *params = result;
+}
+
+void GLES2Implementation::SetDisjointValueSyncCHROMIUM() {
+  query_tracker_->SetDisjointSync(this);
 }
 
 void GLES2Implementation::DrawArraysInstancedANGLE(
@@ -5493,6 +5577,7 @@ bool ValidImageFormat(GLenum internalformat,
     case GL_R8:
     case GL_RGB:
     case GL_RGBA:
+    case GL_RGB_YCBCR_422_CHROMIUM:
     case GL_BGRA_EXT:
       return true;
     default:
@@ -5832,6 +5917,164 @@ void GLES2Implementation::GetInternalformativ(
       params[ii] = data[ii];
     }
   }
+  CheckGLError();
+}
+
+GLuint GLES2Implementation::GenPathsCHROMIUM(GLsizei range) {
+  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glGenPathsCHROMIUM(" << range
+                     << ")");
+  GPU_CLIENT_SINGLE_THREAD_CHECK();
+  static const char kFunctionName[] = "glGenPathsCHROMIUM";
+  if (range < 0) {
+    SetGLError(GL_INVALID_VALUE, kFunctionName, "range < 0");
+    return 0;
+  }
+  if (!base::IsValueInRangeForNumericType<int32_t>(range)) {
+    SetGLError(GL_INVALID_OPERATION, kFunctionName, "range more than 32-bit");
+    return 0;
+  }
+  if (range == 0)
+    return 0;
+
+  GLuint first_client_id = 0;
+  GetRangeIdHandler(id_namespaces::kPaths)
+      ->MakeIdRange(this, range, &first_client_id);
+
+  if (first_client_id == 0) {
+    // Ran out of id space. Is not specified to raise any gl errors.
+    return 0;
+  }
+
+  helper_->GenPathsCHROMIUM(first_client_id, range);
+
+  GPU_CLIENT_LOG_CODE_BLOCK({
+    for (GLsizei i = 0; i < range; ++i) {
+      GPU_CLIENT_LOG("  " << i << ": " << (first_client_id + i));
+    }
+  });
+  CheckGLError();
+  return first_client_id;
+}
+
+void GLES2Implementation::DeletePathsCHROMIUM(GLuint first_client_id,
+                                              GLsizei range) {
+  GPU_CLIENT_SINGLE_THREAD_CHECK();
+  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glDeletePathsCHROMIUM("
+                     << first_client_id << ", " << range << ")");
+  static const char kFunctionName[] = "glDeletePathsCHROMIUM";
+
+  if (range < 0) {
+    SetGLError(GL_INVALID_VALUE, kFunctionName, "range < 0");
+    return;
+  }
+  if (!base::IsValueInRangeForNumericType<int32_t>(range)) {
+    SetGLError(GL_INVALID_OPERATION, kFunctionName, "range more than 32-bit");
+    return;
+  }
+  if (range == 0)
+    return;
+
+  GLuint last_client_id;
+  if (!SafeAddUint32(first_client_id, range - 1, &last_client_id)) {
+    SetGLError(GL_INVALID_OPERATION, kFunctionName, "overflow");
+    return;
+  }
+
+  GetRangeIdHandler(id_namespaces::kPaths)
+      ->FreeIdRange(this, first_client_id, range,
+                    &GLES2Implementation::DeletePathsCHROMIUMStub);
+  CheckGLError();
+}
+
+void GLES2Implementation::DeletePathsCHROMIUMStub(GLuint first_client_id,
+                                                  GLsizei range) {
+  helper_->DeletePathsCHROMIUM(first_client_id, range);
+}
+
+void GLES2Implementation::PathCommandsCHROMIUM(GLuint path,
+                                               GLsizei num_commands,
+                                               const GLubyte* commands,
+                                               GLsizei num_coords,
+                                               GLenum coord_type,
+                                               const void* coords) {
+  GPU_CLIENT_SINGLE_THREAD_CHECK();
+  GPU_CLIENT_LOG("[" << GetLogPrefix() << "] glPathCommandsCHROMIUM(" << path
+                     << ", " << num_commands << ", " << commands << ", "
+                     << num_coords << ", " << coords << ")");
+  static const char kFunctionName[] = "glPathCommandsCHROMIUM";
+  if (path == 0) {
+    SetGLError(GL_INVALID_VALUE, kFunctionName, "invalid path object");
+    return;
+  }
+  if (num_commands < 0) {
+    SetGLError(GL_INVALID_VALUE, kFunctionName, "numCommands < 0");
+    return;
+  }
+  if (num_commands != 0 && !commands) {
+    SetGLError(GL_INVALID_VALUE, kFunctionName, "missing commands");
+    return;
+  }
+  if (num_coords < 0) {
+    SetGLError(GL_INVALID_VALUE, kFunctionName, "numCoords < 0");
+    return;
+  }
+  if (num_coords != 0 && !coords) {
+    SetGLError(GL_INVALID_VALUE, kFunctionName, "missing coords");
+    return;
+  }
+  uint32 coord_type_size = GLES2Util::GetGLTypeSizeForPathCoordType(coord_type);
+  if (coord_type_size == 0) {
+    SetGLError(GL_INVALID_ENUM, kFunctionName, "invalid coordType");
+    return;
+  }
+  if (num_commands == 0) {
+    // No commands must mean no coords, thus nothing to memcpy. Let
+    // the service validate the call. Validate coord_type above, so
+    // that the parameters will be checked the in the same order
+    // regardless of num_commands.
+    helper_->PathCommandsCHROMIUM(path, num_commands, 0, 0, num_coords,
+                                  coord_type, 0, 0);
+    CheckGLError();
+    return;
+  }
+
+  uint32 coords_size;
+  if (!SafeMultiplyUint32(num_coords, coord_type_size, &coords_size)) {
+    SetGLError(GL_INVALID_OPERATION, kFunctionName, "overflow");
+    return;
+  }
+
+  uint32 required_buffer_size;
+  if (!SafeAddUint32(coords_size, num_commands, &required_buffer_size)) {
+    SetGLError(GL_INVALID_OPERATION, kFunctionName, "overflow");
+    return;
+  }
+
+  ScopedTransferBufferPtr buffer(required_buffer_size, helper_,
+                                 transfer_buffer_);
+  if (!buffer.valid() || buffer.size() < required_buffer_size) {
+    SetGLError(GL_OUT_OF_MEMORY, kFunctionName, "too large");
+    return;
+  }
+
+  uint32 coords_shm_id = 0;
+  uint32 coords_shm_offset = 0;
+  // Copy coords first because they need more strict alignment.
+  if (coords_size > 0) {
+    unsigned char* coords_addr = static_cast<unsigned char*>(buffer.address());
+    memcpy(coords_addr, coords, coords_size);
+    coords_shm_id = buffer.shm_id();
+    coords_shm_offset = buffer.offset();
+  }
+
+  DCHECK(num_commands > 0);
+  unsigned char* commands_addr =
+      static_cast<unsigned char*>(buffer.address()) + coords_size;
+  memcpy(commands_addr, commands, num_commands);
+
+  helper_->PathCommandsCHROMIUM(path, num_commands, buffer.shm_id(),
+                                buffer.offset() + coords_size, num_coords,
+                                coord_type, coords_shm_id, coords_shm_offset);
   CheckGLError();
 }
 

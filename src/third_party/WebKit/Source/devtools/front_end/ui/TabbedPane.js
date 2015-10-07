@@ -1336,6 +1336,8 @@ WebInspector.ExtensibleTabbedPaneController.prototype = {
      */
     _tabOrderComparator: function(id1, id2)
     {
-        return this._tabOrders[id2] = this._tabOrders[id1];
+        var weight1 = id1 in this._tabOrders ? this._tabOrders[id1] : 1000000;
+        var weight2 = id2 in this._tabOrders ? this._tabOrders[id2] : 1000000;
+        return weight1 - weight2;
     }
 }

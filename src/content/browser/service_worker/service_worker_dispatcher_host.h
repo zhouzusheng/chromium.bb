@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "base/id_map.h"
+#include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
 #include "content/browser/service_worker/service_worker_registration_status.h"
@@ -88,7 +89,10 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
                                int provider_id,
                                const GURL& pattern,
                                const GURL& script_url);
-  void OnUpdateServiceWorker(int provider_id, int64 registration_id);
+  void OnUpdateServiceWorker(int thread_id,
+                             int request_id,
+                             int provider_id,
+                             int64 registration_id);
   void OnUnregisterServiceWorker(int thread_id,
                                  int request_id,
                                  int provider_id,
@@ -151,6 +155,13 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
                             const std::string& status_message,
                             int64 registration_id);
 
+  void UpdateComplete(int thread_id,
+                      int provider_id,
+                      int request_id,
+                      ServiceWorkerStatusCode status,
+                      const std::string& status_message,
+                      int64 registration_id);
+
   void UnregistrationComplete(int thread_id,
                               int request_id,
                               ServiceWorkerStatusCode status);
@@ -179,6 +190,11 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
                              int request_id,
                              ServiceWorkerStatusCode status,
                              const std::string& status_message);
+
+  void SendUpdateError(int thread_id,
+                       int request_id,
+                       ServiceWorkerStatusCode status,
+                       const std::string& status_message);
 
   void SendUnregistrationError(int thread_id,
                                int request_id,

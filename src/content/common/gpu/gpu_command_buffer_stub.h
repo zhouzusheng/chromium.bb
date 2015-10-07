@@ -9,7 +9,6 @@
 #include <string>
 #include <vector>
 
-#include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "content/common/content_export.h"
@@ -148,8 +147,6 @@ class GpuCommandBufferStub
 
   const gpu::gles2::FeatureInfo* GetFeatureInfo() const;
 
-  uint64 GetMemoryUsage() const;
-
   void SendSwapBuffersCompleted(
       const std::vector<ui::LatencyInfo>& latency_info,
       gfx::SwapResult result);
@@ -188,7 +185,7 @@ class GpuCommandBufferStub
   void OnCreateVideoDecoder(media::VideoCodecProfile profile,
                             int32 route_id,
                             IPC::Message* reply_message);
-  void OnCreateVideoEncoder(media::VideoFrame::Format input_format,
+  void OnCreateVideoEncoder(media::VideoPixelFormat input_format,
                             const gfx::Size& input_visible_size,
                             media::VideoCodecProfile output_profile,
                             uint32 initial_bitrate,
@@ -201,7 +198,7 @@ class GpuCommandBufferStub
 
   void OnRetireSyncPoint(uint32 sync_point);
   bool OnWaitSyncPoint(uint32 sync_point);
-  void OnSyncPointRetired();
+  void OnWaitSyncPointCompleted(uint32 sync_point);
   void OnSignalSyncPoint(uint32 sync_point, uint32 id);
   void OnSignalSyncPointAck(uint32 id);
   void OnSignalQuery(uint32 query, uint32 id);
@@ -211,7 +208,7 @@ class GpuCommandBufferStub
   void OnCreateImage(int32 id,
                      gfx::GpuMemoryBufferHandle handle,
                      gfx::Size size,
-                     gfx::GpuMemoryBuffer::Format format,
+                     gfx::BufferFormat format,
                      uint32 internalformat);
   void OnDestroyImage(int32 id);
 
@@ -235,6 +232,7 @@ class GpuCommandBufferStub
 
   bool CheckContextLost();
   void CheckCompleteWaits();
+  void PullTextureUpdates(uint32 sync_point);
 
   // The lifetime of objects of this class is managed by a GpuChannel. The
   // GpuChannels destroy all the GpuCommandBufferStubs that they own when they

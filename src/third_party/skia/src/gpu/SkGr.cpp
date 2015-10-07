@@ -12,6 +12,7 @@
 #include "GrXferProcessor.h"
 #include "SkColorFilter.h"
 #include "SkConfig8888.h"
+#include "SkCanvas.h"
 #include "SkData.h"
 #include "SkErrorInternals.h"
 #include "SkGrPixelRef.h"
@@ -20,6 +21,7 @@
 #include "SkResourceCache.h"
 #include "SkTextureCompressor.h"
 #include "SkYUVPlanesCache.h"
+#include "effects/GrBicubicEffect.h"
 #include "effects/GrDitherEffect.h"
 #include "effects/GrPorterDuffXferProcessor.h"
 #include "effects/GrYUVtoRGBEffect.h"
@@ -105,10 +107,9 @@ static void get_stretch(const GrContext* ctx, int width, int height,
     if (params && params->isTiled() && !ctx->caps()->npotTextureTileSupport() &&
         (!SkIsPow2(width) || !SkIsPow2(height))) {
         doStretch = true;
-        stretch->fWidth  = GrNextPow2(width);
-        stretch->fHeight = GrNextPow2(height);
-    } else if (width < ctx->caps()->minTextureSize() ||
-               height < ctx->caps()->minTextureSize()) {
+        stretch->fWidth  = GrNextPow2(SkTMax(width, ctx->caps()->minTextureSize()));
+        stretch->fHeight = GrNextPow2(SkTMax(height, ctx->caps()->minTextureSize()));
+    } else if (width < ctx->caps()->minTextureSize() || height < ctx->caps()->minTextureSize()) {
         // The small texture issues appear to be with tiling. Hence it seems ok to scale them
         // up using the GPU. If issues persist we may need to CPU-stretch.
         doStretch = true;
@@ -142,7 +143,7 @@ static bool make_stretched_key(const GrUniqueKey& origKey, const Stretch& stretc
         uint32_t width = SkToU16(stretch.fWidth);
         uint32_t height = SkToU16(stretch.fHeight);
         static const GrUniqueKey::Domain kDomain = GrUniqueKey::GenerateDomain();
-        GrUniqueKey::Builder builder(stretchedKey, origKey, kDomain, 3);
+        GrUniqueKey::Builder builder(stretchedKey, origKey, kDomain, 2);
         builder[0] = stretch.fType;
         builder[1] = width | (height << 16);
         builder.finish();
@@ -152,20 +153,53 @@ static bool make_stretched_key(const GrUniqueKey& origKey, const Stretch& stretc
     return false;
 }
 
-static void make_unstretched_key(const SkBitmap& bitmap, GrUniqueKey* key) {
-    // Our id includes the offset, width, and height so that bitmaps created by extractSubset()
-    // are unique.
-    uint32_t genID = bitmap.getGenerationID();
-    SkIPoint origin = bitmap.pixelRefOrigin();
-    uint32_t width = SkToU16(bitmap.width());
-    uint32_t height = SkToU16(bitmap.height());
+static void make_unstretched_key(GrUniqueKey* key, uint32_t imageID,
+                                 U16CPU width, U16CPU height, SkIPoint origin) {
+    SkASSERT((uint16_t)width == width);
+    SkASSERT((uint16_t)height == height);
 
     static const GrUniqueKey::Domain kDomain = GrUniqueKey::GenerateDomain();
     GrUniqueKey::Builder builder(key, kDomain, 4);
-    builder[0] = genID;
+    builder[0] = imageID;
     builder[1] = origin.fX;
     builder[2] = origin.fY;
     builder[3] = width | (height << 16);
+}
+
+void GrMakeKeyFromImageID(GrUniqueKey* key, uint32_t imageID,
+                          U16CPU width, U16CPU height, SkIPoint origin,
+                          const GrCaps& caps, SkImageUsageType usage) {
+    const Stretch::Type stretches[] = {
+        Stretch::kNone_Type,        // kUntiled_SkImageUsageType
+        Stretch::kNearest_Type,     // kTiled_Unfiltered_SkImageUsageType
+        Stretch::kBilerp_Type,      // kTiled_Filtered_SkImageUsageType
+    };
+
+    const bool isPow2 = SkIsPow2(width) && SkIsPow2(height);
+    const bool needToStretch = !isPow2 &&
+                               usage != kUntiled_SkImageUsageType &&
+                               !caps.npotTextureTileSupport();
+
+    if (needToStretch) {
+        GrUniqueKey tmpKey;
+        make_unstretched_key(&tmpKey, imageID, width, height, origin);
+
+        Stretch stretch;
+        stretch.fType = stretches[usage];
+        stretch.fWidth = SkNextPow2(width);
+        stretch.fHeight = SkNextPow2(height);
+        if (!make_stretched_key(tmpKey, stretch, key)) {
+            goto UNSTRETCHED;
+        }
+    } else {
+        UNSTRETCHED:
+        make_unstretched_key(key, imageID, width, height, origin);
+    }
+}
+
+static void make_unstretched_key(const SkBitmap& bitmap, GrUniqueKey* key) {
+    make_unstretched_key(key, bitmap.getGenerationID(), bitmap.width(), bitmap.height(),
+                         bitmap.pixelRefOrigin());
 }
 
 static void make_bitmap_keys(const SkBitmap& bitmap,
@@ -407,9 +441,11 @@ static GrTexture* load_yuv_texture(GrContext* ctx, const GrUniqueKey& optionalKe
         bool needsExactTexture =
             (yuvDesc.fWidth  != yuvInfo.fSize[0].fWidth) ||
             (yuvDesc.fHeight != yuvInfo.fSize[0].fHeight);
-        yuvTextures[i].reset(ctx->textureProvider()->refScratchTexture(yuvDesc,
-            needsExactTexture ? GrTextureProvider::kExact_ScratchTexMatch :
-                                GrTextureProvider::kApprox_ScratchTexMatch));
+        if (needsExactTexture) {
+            yuvTextures[i].reset(ctx->textureProvider()->createTexture(yuvDesc, true));
+        } else {
+            yuvTextures[i].reset(ctx->textureProvider()->createApproxTexture(yuvDesc));
+        }
         if (!yuvTextures[i] ||
             !yuvTextures[i]->writePixels(0, 0, yuvDesc.fWidth, yuvDesc.fHeight,
                                          yuvDesc.fConfig, planes[i], yuvInfo.fRowBytes[i])) {
@@ -450,6 +486,10 @@ static GrTexture* load_yuv_texture(GrContext* ctx, const GrUniqueKey& optionalKe
 static GrTexture* create_unstretched_bitmap_texture(GrContext* ctx,
                                                     const SkBitmap& origBitmap,
                                                     const GrUniqueKey& optionalKey) {
+    if (origBitmap.width() < ctx->caps()->minTextureSize() ||
+        origBitmap.height() < ctx->caps()->minTextureSize()) {
+        return NULL;
+    }
     SkBitmap tmpBitmap;
 
     const SkBitmap* bitmap = &origBitmap;
@@ -508,6 +548,27 @@ static GrTexture* create_unstretched_bitmap_texture(GrContext* ctx,
                                   bitmap->getPixels(), bitmap->rowBytes());
 }
 
+static SkBitmap stretch_on_cpu(const SkBitmap& bmp, const Stretch& stretch) {
+    SkBitmap stretched;
+    stretched.allocN32Pixels(stretch.fWidth, stretch.fHeight);
+    SkCanvas canvas(stretched);
+    SkPaint paint;
+    switch (stretch.fType) {
+        case Stretch::kNearest_Type:
+            paint.setFilterQuality(kNone_SkFilterQuality);
+            break;
+        case Stretch::kBilerp_Type:
+            paint.setFilterQuality(kLow_SkFilterQuality);
+            break;
+        case Stretch::kNone_Type:
+            SkDEBUGFAIL("Shouldn't get here.");
+            break;
+    }
+    SkRect dstRect = SkRect::MakeWH(SkIntToScalar(stretch.fWidth), SkIntToScalar(stretch.fHeight));
+    canvas.drawBitmapRect(bmp, dstRect, &paint);
+    return stretched;
+}
+
 static GrTexture* create_bitmap_texture(GrContext* ctx,
                                         const SkBitmap& bmp,
                                         const Stretch& stretch,
@@ -522,15 +583,15 @@ static GrTexture* create_bitmap_texture(GrContext* ctx,
         if (!unstretched) {
             unstretched.reset(create_unstretched_bitmap_texture(ctx, bmp, unstretchedKey));
             if (!unstretched) {
-                return NULL;
+                // We might not have been able to create a unstrecthed texture because it is smaller
+                // than the min texture size. In that case do cpu stretching.
+                SkBitmap stretchedBmp = stretch_on_cpu(bmp, stretch);
+                return create_unstretched_bitmap_texture(ctx, stretchedBmp, stretchedKey);
             }
         }
-        GrTexture* stretched = stretch_texture(unstretched, stretch, bmp.pixelRef(), stretchedKey);
-        return stretched;
+        return stretch_texture(unstretched, stretch, bmp.pixelRef(), stretchedKey);
     }
-
     return create_unstretched_bitmap_texture(ctx, bmp, unstretchedKey);
-
 }
 
 bool GrIsBitmapInCache(const GrContext* ctx,
@@ -621,6 +682,31 @@ GrTexture* GrRefCachedBitmapTexture(GrContext* ctx,
 
     return NULL;
 }
+
+// TODO: make this be the canonical signature, and turn the version that takes GrTextureParams*
+//       into a wrapper that contains the inverse of these tables.
+GrTexture* GrRefCachedBitmapTexture(GrContext* ctx,
+                                    const SkBitmap& bitmap,
+                                    SkImageUsageType usage) {
+    // Just need a params that will trigger the correct cache key / etc, since the usage doesn't
+    // tell us the specifics about filter level or specific tiling.
+
+    const SkShader::TileMode tiles[] = {
+        SkShader::kClamp_TileMode,      // kUntiled_SkImageUsageType
+        SkShader::kRepeat_TileMode,     // kTiled_Unfiltered_SkImageUsageType
+        SkShader::kRepeat_TileMode,     // kTiled_Filtered_SkImageUsageType
+    };
+
+    const GrTextureParams::FilterMode filters[] = {
+        GrTextureParams::kNone_FilterMode,      // kUntiled_SkImageUsageType
+        GrTextureParams::kNone_FilterMode,      // kTiled_Unfiltered_SkImageUsageType
+        GrTextureParams::kBilerp_FilterMode,    // kTiled_Filtered_SkImageUsageType
+    };
+
+    GrTextureParams params(tiles[usage], filters[usage]);
+    return GrRefCachedBitmapTexture(ctx, bitmap, &params);
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 // alphatype is ignore for now, but if GrPixelConfig is expanded to encompass
@@ -807,4 +893,46 @@ void GrWrapTextureInBitmap(GrTexture* src, int w, int h, bool isOpaque, SkBitmap
     const SkImageInfo info = GrMakeInfoFromTexture(src, w, h, isOpaque);
     dst->setInfo(info);
     dst->setPixelRef(SkNEW_ARGS(SkGrPixelRef, (info, src)))->unref();
+}
+
+GrTextureParams::FilterMode GrSkFilterQualityToGrFilterMode(SkFilterQuality paintFilterQuality,
+                                                            const SkMatrix& viewM,
+                                                            const SkMatrix& localM,
+                                                            bool* doBicubic) {
+    *doBicubic = false;
+    GrTextureParams::FilterMode textureFilterMode;
+    switch (paintFilterQuality) {
+        case kNone_SkFilterQuality:
+            textureFilterMode = GrTextureParams::kNone_FilterMode;
+            break;
+        case kLow_SkFilterQuality:
+            textureFilterMode = GrTextureParams::kBilerp_FilterMode;
+            break;
+        case kMedium_SkFilterQuality: {
+            SkMatrix matrix;
+            matrix.setConcat(viewM, localM);
+            if (matrix.getMinScale() < SK_Scalar1) {
+                textureFilterMode = GrTextureParams::kMipMap_FilterMode;
+            } else {
+                // Don't trigger MIP level generation unnecessarily.
+                textureFilterMode = GrTextureParams::kBilerp_FilterMode;
+            }
+            break;
+        }
+        case kHigh_SkFilterQuality: {
+            SkMatrix matrix;
+            matrix.setConcat(viewM, localM);
+            *doBicubic = GrBicubicEffect::ShouldUseBicubic(matrix, &textureFilterMode);
+            break;
+        }
+        default:
+            SkErrorInternals::SetError( kInvalidPaint_SkError,
+                                        "Sorry, I don't understand the filtering "
+                                        "mode you asked for.  Falling back to "
+                                        "MIPMaps.");
+            textureFilterMode = GrTextureParams::kMipMap_FilterMode;
+            break;
+
+    }
+    return textureFilterMode;
 }

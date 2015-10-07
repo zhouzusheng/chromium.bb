@@ -106,8 +106,6 @@ private:
  */
 class GrCaps : public SkRefCnt {
 public:
-    
-
     GrCaps(const GrContextOptions&);
 
     virtual SkString dump() const;
@@ -134,6 +132,8 @@ public:
     bool useDrawInsteadOfPartialRenderTargetWrite() const {
         return fUseDrawInsteadOfPartialRenderTargetWrite;
     }
+
+    bool preferVRAMUseOverFlushes() const { return fPreferVRAMUseOverFlushes; }
 
     /**
      * Indicates the capabilities of the fixed function blend unit.
@@ -218,6 +218,12 @@ public:
         return fSupportsInstancedDraws;
     }
 
+    bool fullClearIsFree() const { return fFullClearIsFree; }
+
+    /** True in environments that will issue errors if memory uploaded to buffers 
+        is not initialized (even if not read by draw calls). */
+    bool mustClearUploadedBufferData() const { return fMustClearUploadedBufferData; }
+
 protected:
     /** Subclasses must call this at the end of their constructors in order to apply caps
         overrides requested by the client. Note that overrides will only reduce the caps never
@@ -238,10 +244,15 @@ protected:
     bool fOversizedStencilSupport                    : 1;
     bool fTextureBarrierSupport                      : 1;
     bool fSupportsInstancedDraws                     : 1;
+    bool fFullClearIsFree                            : 1;
+    bool fMustClearUploadedBufferData                : 1;
 
     // Driver workaround
     bool fUseDrawInsteadOfClear                      : 1;
     bool fUseDrawInsteadOfPartialRenderTargetWrite   : 1;
+
+    // ANGLE workaround
+    bool fPreferVRAMUseOverFlushes                   : 1;
 
     BlendEquationSupport fBlendEquationSupport;
     uint32_t fAdvBlendEqBlacklist;

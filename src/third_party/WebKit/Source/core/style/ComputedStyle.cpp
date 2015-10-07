@@ -253,6 +253,7 @@ void ComputedStyle::copyNonInheritedFromCached(const ComputedStyle& other)
     noninherited_flags.pageBreakBefore = other.noninherited_flags.pageBreakBefore;
     noninherited_flags.pageBreakAfter = other.noninherited_flags.pageBreakAfter;
     noninherited_flags.pageBreakInside = other.noninherited_flags.pageBreakInside;
+    noninherited_flags.hasRemUnits = other.noninherited_flags.hasRemUnits;
 
     // Correctly set during selector matching:
     // noninherited_flags.styleType
@@ -528,6 +529,7 @@ bool ComputedStyle::diffNeedsFullLayoutAndPaintInvalidation(const ComputedStyle&
             || rareInheritedData->hyphenationLimitBefore != other.rareInheritedData->hyphenationLimitBefore
             || rareInheritedData->hyphenationLimitAfter != other.rareInheritedData->hyphenationLimitAfter
             || rareInheritedData->hyphenationString != other.rareInheritedData->hyphenationString
+            || rareInheritedData->m_respectImageOrientation != other.rareInheritedData->m_respectImageOrientation
             || rareInheritedData->locale != other.rareInheritedData->locale
             || rareInheritedData->m_rubyPosition != other.rareInheritedData->m_rubyPosition
             || rareInheritedData->textEmphasisMark != other.rareInheritedData->textEmphasisMark
@@ -739,12 +741,12 @@ void ComputedStyle::updatePropertySpecificDifferences(const ComputedStyle& other
             || inherited->visitedLinkColor != other.inherited->visitedLinkColor
             || inherited_flags.m_textUnderline != other.inherited_flags.m_textUnderline
             || visual->textDecoration != other.visual->textDecoration) {
-            diff.setTextOrColorChanged();
+            diff.setTextDecorationOrColorChanged();
         } else if (rareNonInheritedData.get() != other.rareNonInheritedData.get()
             && (rareNonInheritedData->m_textDecorationStyle != other.rareNonInheritedData->m_textDecorationStyle
                 || rareNonInheritedData->m_textDecorationColor != other.rareNonInheritedData->m_textDecorationColor
                 || rareNonInheritedData->m_visitedLinkTextDecorationColor != other.rareNonInheritedData->m_visitedLinkTextDecorationColor)) {
-                diff.setTextOrColorChanged();
+                diff.setTextDecorationOrColorChanged();
         } else if (rareInheritedData.get() != other.rareInheritedData.get()
             && (rareInheritedData->textFillColor() != other.rareInheritedData->textFillColor()
                 || rareInheritedData->textStrokeColor() != other.rareInheritedData->textStrokeColor()
@@ -754,19 +756,24 @@ void ComputedStyle::updatePropertySpecificDifferences(const ComputedStyle& other
                 || rareInheritedData->visitedLinkTextEmphasisColor() != other.rareInheritedData->visitedLinkTextEmphasisColor()
                 || rareInheritedData->textEmphasisFill != other.rareInheritedData->textEmphasisFill
                 || rareInheritedData->appliedTextDecorations != other.rareInheritedData->appliedTextDecorations)) {
-                diff.setTextOrColorChanged();
+                diff.setTextDecorationOrColorChanged();
         }
     }
 }
 
-void ComputedStyle::addCursor(PassRefPtr<StyleImage> image, bool hotSpotSpecified, const IntPoint& hotSpot)
+void ComputedStyle::addCursor(PassRefPtrWillBeRawPtr<StyleImage> image, bool hotSpotSpecified, const IntPoint& hotSpot)
 {
-    if (!rareInheritedData.access()->cursorData)
+    if (!rareInheritedData.access()->cursorData) {
+#if ENABLE(OILPAN)
+        rareInheritedData.access()->cursorData = new CursorList;
+#else
         rareInheritedData.access()->cursorData = CursorList::create();
+#endif
+    }
     rareInheritedData.access()->cursorData->append(CursorData(image, hotSpotSpecified, hotSpot));
 }
 
-void ComputedStyle::setCursorList(PassRefPtr<CursorList> other)
+void ComputedStyle::setCursorList(PassRefPtrWillBeRawPtr<CursorList> other)
 {
     rareInheritedData.access()->cursorData = other;
 }
@@ -794,9 +801,9 @@ void ComputedStyle::clearContent()
         rareNonInheritedData.access()->m_content = nullptr;
 }
 
-void ComputedStyle::appendContent(PassOwnPtr<ContentData> contentData)
+void ComputedStyle::appendContent(PassOwnPtrWillBeRawPtr<ContentData> contentData)
 {
-    OwnPtr<ContentData>& content = rareNonInheritedData.access()->m_content;
+    OwnPtrWillBePersistent<ContentData>& content = rareNonInheritedData.access()->m_content;
     ContentData* lastContent = content.get();
     while (lastContent && lastContent->next())
         lastContent = lastContent->next();
@@ -807,7 +814,7 @@ void ComputedStyle::appendContent(PassOwnPtr<ContentData> contentData)
         content = contentData;
 }
 
-void ComputedStyle::setContent(PassRefPtr<StyleImage> image, bool add)
+void ComputedStyle::setContent(PassRefPtrWillBeRawPtr<StyleImage> image, bool add)
 {
     if (!image)
         return;
@@ -822,7 +829,7 @@ void ComputedStyle::setContent(PassRefPtr<StyleImage> image, bool add)
 
 void ComputedStyle::setContent(const String& string, bool add)
 {
-    OwnPtr<ContentData>& content = rareNonInheritedData.access()->m_content;
+    OwnPtrWillBePersistent<ContentData>& content = rareNonInheritedData.access()->m_content;
     if (add) {
         ContentData* lastContent = content.get();
         while (lastContent && lastContent->next())
@@ -1013,7 +1020,7 @@ static FloatRoundedRect::Radii calcRadiiFor(const BorderData& border, LayoutSize
 }
 
 StyleImage* ComputedStyle::listStyleImage() const { return rareInheritedData->listStyleImage.get(); }
-void ComputedStyle::setListStyleImage(PassRefPtr<StyleImage> v)
+void ComputedStyle::setListStyleImage(PassRefPtrWillBeRawPtr<StyleImage> v)
 {
     if (rareInheritedData->listStyleImage != v)
         rareInheritedData.access()->listStyleImage = v;
@@ -1636,13 +1643,13 @@ void ComputedStyle::resetMotionPath()
     rareNonInheritedData.access()->m_transform.access()->m_motion.m_path = nullptr;
 }
 
-int ComputedStyle::outlineOutset() const
+int ComputedStyle::outlineOutsetExtent() const
 {
     if (!hasOutline())
         return 0;
     if (outlineStyleIsAuto())
         return GraphicsContext::focusRingOutsetExtent(outlineOffset(), outlineWidth());
-    return outlineSize();
+    return std::max(0, outlineWidth() + outlineOffset());
 }
 
 bool ComputedStyle::columnRuleEquivalent(const ComputedStyle* otherStyle) const
@@ -1686,7 +1693,7 @@ LayoutRectOutsets ComputedStyle::imageOutsets(const NinePieceImage& image) const
         NinePieceImage::computeOutset(image.outset().left(), borderLeftWidth()));
 }
 
-void ComputedStyle::setBorderImageSource(PassRefPtr<StyleImage> image)
+void ComputedStyle::setBorderImageSource(PassRefPtrWillBeRawPtr<StyleImage> image)
 {
     if (surround->border.m_image.image() == image.get())
         return;

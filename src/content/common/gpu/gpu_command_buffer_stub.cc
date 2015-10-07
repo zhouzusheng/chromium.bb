@@ -64,10 +64,13 @@ namespace {
 // ContextGroup's memory type managers and the GpuMemoryManager class.
 class GpuCommandBufferMemoryTracker : public gpu::gles2::MemoryTracker {
  public:
-  explicit GpuCommandBufferMemoryTracker(GpuChannel* channel) :
-      tracking_group_(channel->gpu_channel_manager()->gpu_memory_manager()->
-          CreateTrackingGroup(channel->renderer_pid(), this)) {
-  }
+  explicit GpuCommandBufferMemoryTracker(GpuChannel* channel)
+      : tracking_group_(
+            channel->gpu_channel_manager()
+                ->gpu_memory_manager()
+                ->CreateTrackingGroup(channel->renderer_pid(), this)),
+        client_tracing_id_(channel->client_tracing_id()),
+        client_id_(channel->client_id()) {}
 
   void TrackMemoryAllocatedChange(
       size_t old_size,
@@ -81,9 +84,14 @@ class GpuCommandBufferMemoryTracker : public gpu::gles2::MemoryTracker {
     return tracking_group_->EnsureGPUMemoryAvailable(size_needed);
   };
 
+  uint64_t ClientTracingId() const override { return client_tracing_id_; }
+  int ClientId() const override { return client_id_; }
+
  private:
   ~GpuCommandBufferMemoryTracker() override {}
   scoped_ptr<GpuMemoryTrackingGroup> tracking_group_;
+  const uint64_t client_tracing_id_;
+  const int client_id_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuCommandBufferMemoryTracker);
 };
@@ -143,6 +151,15 @@ DevToolsChannelData::CreateForChannel(GpuChannel* channel) {
   return new DevToolsChannelData(res.release());
 }
 
+void RunOnThread(scoped_refptr<base::SingleThreadTaskRunner> task_runner,
+                 const base::Closure& callback) {
+  if (task_runner->BelongsToCurrentThread()) {
+    callback.Run();
+  } else {
+    task_runner->PostTask(FROM_HERE, callback);
+  }
+}
+
 }  // namespace
 
 GpuCommandBufferStub::GpuCommandBufferStub(
@@ -192,12 +209,10 @@ GpuCommandBufferStub::GpuCommandBufferStub(
            attrib_parser.bind_generates_resource);
   } else {
     context_group_ = new gpu::gles2::ContextGroup(
-        mailbox_manager,
-        new GpuCommandBufferMemoryTracker(channel),
+        mailbox_manager, new GpuCommandBufferMemoryTracker(channel),
         channel_->gpu_channel_manager()->shader_translator_cache(),
-        NULL,
-        subscription_ref_set,
-        pending_valuebuffer_state,
+        channel_->gpu_channel_manager()->framebuffer_completeness_cache(), NULL,
+        subscription_ref_set, pending_valuebuffer_state,
         attrib_parser.bind_generates_resource);
   }
 
@@ -839,7 +854,7 @@ void GpuCommandBufferStub::OnCreateVideoDecoder(
 }
 
 void GpuCommandBufferStub::OnCreateVideoEncoder(
-    media::VideoFrame::Format input_format,
+    media::VideoPixelFormat input_format,
     const gfx::Size& input_visible_size,
     media::VideoCodecProfile output_profile,
     uint32 initial_bitrate,
@@ -870,6 +885,12 @@ void GpuCommandBufferStub::AddSyncPoint(uint32 sync_point) {
 void GpuCommandBufferStub::OnRetireSyncPoint(uint32 sync_point) {
   DCHECK(!sync_points_.empty() && sync_points_.front() == sync_point);
   sync_points_.pop_front();
+
+  gpu::gles2::MailboxManager* mailbox_manager =
+      context_group_->mailbox_manager();
+  if (mailbox_manager->UsesSync() && MakeCurrent())
+    mailbox_manager->PushTextureUpdates(sync_point);
+
   GpuChannelManager* manager = channel_->gpu_channel_manager();
   manager->sync_point_manager()->RetireSyncPoint(sync_point);
 }
@@ -878,8 +899,10 @@ bool GpuCommandBufferStub::OnWaitSyncPoint(uint32 sync_point) {
   if (!sync_point)
     return true;
   GpuChannelManager* manager = channel_->gpu_channel_manager();
-  if (manager->sync_point_manager()->IsSyncPointRetired(sync_point))
+  if (manager->sync_point_manager()->IsSyncPointRetired(sync_point)) {
+    PullTextureUpdates(sync_point);
     return true;
+  }
 
   if (sync_point_wait_count_ == 0) {
     TRACE_EVENT_ASYNC_BEGIN1("gpu", "WaitSyncPoint", this,
@@ -889,12 +912,14 @@ bool GpuCommandBufferStub::OnWaitSyncPoint(uint32 sync_point) {
   ++sync_point_wait_count_;
   manager->sync_point_manager()->AddSyncPointCallback(
       sync_point,
-      base::Bind(&GpuCommandBufferStub::OnSyncPointRetired,
-                 this->AsWeakPtr()));
+      base::Bind(&RunOnThread, base::ThreadTaskRunnerHandle::Get(),
+                 base::Bind(&GpuCommandBufferStub::OnWaitSyncPointCompleted,
+                            this->AsWeakPtr(), sync_point)));
   return scheduler_->IsScheduled();
 }
 
-void GpuCommandBufferStub::OnSyncPointRetired() {
+void GpuCommandBufferStub::OnWaitSyncPointCompleted(uint32 sync_point) {
+  PullTextureUpdates(sync_point);
   --sync_point_wait_count_;
   if (sync_point_wait_count_ == 0) {
     TRACE_EVENT_ASYNC_END1("gpu", "WaitSyncPoint", this,
@@ -903,13 +928,20 @@ void GpuCommandBufferStub::OnSyncPointRetired() {
   scheduler_->SetScheduled(true);
 }
 
+void GpuCommandBufferStub::PullTextureUpdates(uint32 sync_point) {
+  gpu::gles2::MailboxManager* mailbox_manager =
+      context_group_->mailbox_manager();
+  if (mailbox_manager->UsesSync() && MakeCurrent())
+    mailbox_manager->PullTextureUpdates(sync_point);
+}
+
 void GpuCommandBufferStub::OnSignalSyncPoint(uint32 sync_point, uint32 id) {
   GpuChannelManager* manager = channel_->gpu_channel_manager();
   manager->sync_point_manager()->AddSyncPointCallback(
       sync_point,
-      base::Bind(&GpuCommandBufferStub::OnSignalSyncPointAck,
-                 this->AsWeakPtr(),
-                 id));
+      base::Bind(&RunOnThread, base::ThreadTaskRunnerHandle::Get(),
+                 base::Bind(&GpuCommandBufferStub::OnSignalSyncPointAck,
+                            this->AsWeakPtr(), id)));
 }
 
 void GpuCommandBufferStub::OnSignalSyncPointAck(uint32 id) {
@@ -954,7 +986,7 @@ void GpuCommandBufferStub::OnSetClientHasMemoryAllocationChangedCallback(
 void GpuCommandBufferStub::OnCreateImage(int32 id,
                                          gfx::GpuMemoryBufferHandle handle,
                                          gfx::Size size,
-                                         gfx::GpuMemoryBuffer::Format format,
+                                         gfx::BufferFormat format,
                                          uint32 internalformat) {
   TRACE_EVENT0("gpu", "GpuCommandBufferStub::OnCreateImage");
 
@@ -1129,10 +1161,6 @@ void GpuCommandBufferStub::MarkContextLost() {
   if (decoder_)
     decoder_->MarkContextLost(gpu::error::kUnknown);
   command_buffer_->SetParseError(gpu::error::kLostContext);
-}
-
-uint64 GpuCommandBufferStub::GetMemoryUsage() const {
-  return GetMemoryManager()->GetClientMemoryUsage(this);
 }
 
 void GpuCommandBufferStub::SendSwapBuffersCompleted(

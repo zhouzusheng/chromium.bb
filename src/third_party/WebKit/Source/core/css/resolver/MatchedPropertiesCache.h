@@ -37,13 +37,13 @@ class ComputedStyle;
 class StyleResolverState;
 
 class CachedMatchedProperties final : public NoBaseWillBeGarbageCollectedFinalized<CachedMatchedProperties> {
-
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(CachedMatchedProperties);
 public:
     WillBeHeapVector<MatchedProperties> matchedProperties;
     RefPtr<ComputedStyle> computedStyle;
     RefPtr<ComputedStyle> parentComputedStyle;
 
-    void set(const ComputedStyle&, const ComputedStyle& parentStyle, const MatchResult&);
+    void set(const ComputedStyle&, const ComputedStyle& parentStyle, const MatchedPropertiesVector&);
     void clear();
     DEFINE_INLINE_TRACE()
     {
@@ -95,8 +95,8 @@ class MatchedPropertiesCache {
 public:
     MatchedPropertiesCache();
 
-    const CachedMatchedProperties* find(unsigned hash, const StyleResolverState&, const MatchResult&);
-    void add(const ComputedStyle&, const ComputedStyle& parentStyle, unsigned hash, const MatchResult&);
+    const CachedMatchedProperties* find(unsigned hash, const StyleResolverState&, const MatchedPropertiesVector&);
+    void add(const ComputedStyle&, const ComputedStyle& parentStyle, unsigned hash, const MatchedPropertiesVector&);
 
     void clear();
     void clearViewportDependent();

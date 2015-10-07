@@ -460,6 +460,16 @@ void SyncChannel::SetRestrictDispatchChannelGroup(int group) {
   sync_context()->set_restrict_dispatch_group(group);
 }
 
+scoped_refptr<SyncMessageFilter> SyncChannel::CreateSyncMessageFilter() {
+  scoped_refptr<SyncMessageFilter> filter = new SyncMessageFilter(
+      sync_context()->shutdown_event(),
+      sync_context()->IsChannelSendThreadSafe());
+  AddFilter(filter.get());
+  if (!did_init())
+    pre_init_sync_message_filters_.push_back(filter);
+  return filter;
+}
+
 bool SyncChannel::Send(Message* message) {
 #ifdef IPC_MESSAGE_LOG_ENABLED
   std::string name;
@@ -582,6 +592,14 @@ void SyncChannel::StartWatching() {
                   base::Unretained(this));
   dispatch_watcher_.StartWatching(sync_context()->GetDispatchEvent(),
                                   dispatch_watcher_callback_);
+}
+
+void SyncChannel::OnChannelInit() {
+  for (const auto& filter : pre_init_sync_message_filters_) {
+    filter->set_is_channel_send_thread_safe(
+        context()->IsChannelSendThreadSafe());
+  }
+  pre_init_sync_message_filters_.clear();
 }
 
 }  // namespace IPC

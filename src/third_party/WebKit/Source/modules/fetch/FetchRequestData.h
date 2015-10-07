@@ -64,7 +64,7 @@ public:
     ~FetchRequestData();
 
     void setMethod(AtomicString method) { m_method = method; }
-    const AtomicString method() const { return m_method; }
+    const AtomicString& method() const { return m_method; }
     void setURL(const KURL& url) { m_url = url; }
     const KURL& url() const { return m_url; }
     bool unsafeRequestFlag() const { return m_unsafeRequestFlag; }
@@ -81,6 +81,8 @@ public:
     WebURLRequest::FetchRequestMode mode() const { return m_mode; }
     void setCredentials(WebURLRequest::FetchCredentialsMode credentials) { m_credentials = credentials; }
     WebURLRequest::FetchCredentialsMode credentials() const { return m_credentials; }
+    void setRedirect(WebURLRequest::FetchRedirectMode redirect) { m_redirect = redirect; }
+    WebURLRequest::FetchRedirectMode redirect() const { return m_redirect; }
     void setResponseTainting(Tainting tainting) { m_responseTainting = tainting; }
     Tainting tainting() const { return m_responseTainting; }
     FetchHeaderList* headerList() const { return m_headerList.get(); }
@@ -90,11 +92,15 @@ public:
     void setBuffer(BodyStreamBuffer* buffer) { m_buffer = buffer; }
     String mimeType() const { return m_mimeType; }
     void setMIMEType(const String& type) { m_mimeType = type; }
+    String integrity() const { return m_integrity; }
+    void setIntegrity(const String& integrity) { m_integrity = integrity; }
 
     DECLARE_TRACE();
 
 private:
     FetchRequestData();
+
+    FetchRequestData* cloneExceptBody();
 
     AtomicString m_method;
     KURL m_url;
@@ -110,12 +116,13 @@ private:
     // FIXME: Support m_synchronousFlag;
     WebURLRequest::FetchRequestMode m_mode;
     WebURLRequest::FetchCredentialsMode m_credentials;
+    WebURLRequest::FetchRedirectMode m_redirect;
     // FIXME: Support m_useURLCredentialsFlag;
-    // FIXME: Support m_manualRedirectFlag;
     // FIXME: Support m_redirectCount;
     Tainting m_responseTainting;
     Member<BodyStreamBuffer> m_buffer;
     String m_mimeType;
+    String m_integrity;
 };
 
 } // namespace blink

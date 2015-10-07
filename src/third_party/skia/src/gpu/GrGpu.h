@@ -133,60 +133,84 @@ public:
      */
     void resolveRenderTarget(GrRenderTarget* target);
 
-    /**
-     * Gets a preferred 8888 config to use for writing/reading pixel data to/from a surface with
-     * config surfaceConfig. The returned config must have at least as many bits per channel as the
-     * readConfig or writeConfig param.
-     */
-    virtual GrPixelConfig preferredReadPixelsConfig(GrPixelConfig readConfig,
-                                                    GrPixelConfig surfaceConfig) const {
-        return readConfig;
-    }
-    virtual GrPixelConfig preferredWritePixelsConfig(GrPixelConfig writeConfig,
-                                                     GrPixelConfig surfaceConfig) const {
-        return writeConfig;
-    }
+    /** Info struct returned by getReadPixelsInfo about performing intermediate draws before
+        reading pixels for performance or correctness. */
+    struct ReadPixelTempDrawInfo {
+        /** If the GrGpu is requesting that the caller do a draw to an intermediate surface then
+            this is descriptor for the temp surface. The draw should always be a rect with
+            dst 0,0,w,h. */
+        GrSurfaceDesc   fTempSurfaceDesc;
+        /** Indicates whether there is a performance advantage to using an exact match texture
+            (in terms of width and height) for the intermediate texture instead of approximate. */
+        bool            fUseExactScratch;
+        /** The caller should swap the R and B channel in the temp draw and then instead of reading
+            the desired config back it should read GrPixelConfigSwapRAndB(readConfig). The swap
+            during the draw and the swap at readback time cancel and the client gets the correct
+            data. The swapped read back is either faster for or required by the underlying backend
+            3D API. */
+        bool            fSwapRAndB;
+    };
+    /** Describes why an intermediate draw must/should be performed before readPixels. */
+    enum DrawPreference {
+        /** On input means that the caller would proceed without draw if the GrGpu doesn't request
+            one.
+            On output means that the GrGpu is not requesting a draw. */
+        kNoDraw_DrawPreference,
+        /** Means that the client would prefer a draw for performance of the readback but
+            can satisfy a straight readPixels call on the inputs without an intermediate draw.
+            getReadPixelsInfo will never set the draw preference to this value but may leave
+            it set. */
+        kCallerPrefersDraw_DrawPreference,
+        /** On output means that GrGpu would prefer a draw for performance of the readback but
+            can satisfy a straight readPixels call on the inputs without an intermediate draw. The
+            caller of getReadPixelsInfo should never specify this on intput. */
+        kGpuPrefersDraw_DrawPreference,
+        /** On input means that the caller requires a draw to do a transformation and there is no
+            CPU fallback.
+            On output means that GrGpu can only satisfy the readPixels request if the intermediate
+            draw is performed.
+          */
+        kRequireDraw_DrawPreference
+    };
 
     /**
-     * Called before uploading writing pixels to a GrTexture when the src pixel config doesn't
-     * match the texture's config.
+     * Used to negotiate whether and how an intermediate draw should or must be performed before
+     * a readPixels call. If this returns false then GrGpu could not deduce an intermediate draw
+     * that would allow a successful readPixels call. The passed width, height, and rowBytes,
+     * must be non-zero and already reflect clipping to the src bounds.
      */
-    virtual bool canWriteTexturePixels(const GrTexture*, GrPixelConfig srcConfig) const = 0;
+    bool getReadPixelsInfo(GrSurface* srcSurface, int readWidth, int readHeight, size_t rowBytes,
+                           GrPixelConfig readConfig, DrawPreference*, ReadPixelTempDrawInfo*);
+
+    /** Info struct returned by getWritePixelsInfo about performing an intermediate draw in order 
+        to write pixels to a GrSurface for either performance or correctness reasons. */
+    struct WritePixelTempDrawInfo {
+        /** If the GrGpu is requesting that the caller upload to an intermediate surface and draw
+            that to the dst then this is the descriptor for the intermediate surface. The caller
+            should upload the pixels such that the upper left pixel of the upload rect is at 0,0 in
+            the intermediate surface.*/
+        GrSurfaceDesc   fTempSurfaceDesc;
+        /** If set, fTempSurfaceDesc's config will be a R/B swap of the src pixel config. The caller
+            should upload the pixels as is such that R and B will be swapped in the intermediate
+            surface. When the intermediate is drawn to the dst the shader should swap R/B again
+            such that the correct swizzle results in the dst. This is done to work around either
+            performance or API restrictions in the backend 3D API implementation. */
+        bool            fSwapRAndB;
+    };
 
     /**
-     * OpenGL's readPixels returns the result bottom-to-top while the skia
-     * API is top-to-bottom. Thus we have to do a y-axis flip. The obvious
-     * solution is to have the subclass do the flip using either the CPU or GPU.
-     * However, the caller (GrContext) may have transformations to apply and can
-     * simply fold in the y-flip for free. On the other hand, the subclass may
-     * be able to do it for free itself. For example, the subclass may have to
-     * do memcpys to handle rowBytes that aren't tight. It could do the y-flip
-     * concurrently.
-     *
-     * This function returns true if a y-flip is required to put the pixels in
-     * top-to-bottom order and the subclass cannot do it for free.
-     *
-     * See read pixels for the params
-     * @return true if calling readPixels with the same set of params will
-     *              produce bottom-to-top data
+     * Used to negotiate whether and how an intermediate surface should be used to write pixels to
+     * a GrSurface. If this returns false then GrGpu could not deduce an intermediate draw
+     * that would allow a successful transfer of the src pixels to the dst. The passed width,
+     * height, and rowBytes, must be non-zero and already reflect clipping to the dst bounds.
      */
-     virtual bool readPixelsWillPayForYFlip(GrRenderTarget* renderTarget,
-                                            int left, int top,
-                                            int width, int height,
-                                            GrPixelConfig config,
-                                            size_t rowBytes) const = 0;
-     /**
-      * This should return true if reading a NxM rectangle of pixels from a
-      * render target is faster if the target has dimensons N and M and the read
-      * rectangle has its top-left at 0,0.
-      */
-     virtual bool fullReadPixelsIsFasterThanPartial() const { return false; };
+    bool getWritePixelsInfo(GrSurface* dstSurface, int width, int height, size_t rowBytes,
+                            GrPixelConfig srcConfig, DrawPreference*, WritePixelTempDrawInfo*);
 
     /**
      * Reads a rectangle of pixels from a render target.
      *
-     * @param renderTarget  the render target to read from. NULL means the
-     *                      current render target.
+     * @param surface       The surface to read from
      * @param left          left edge of the rectangle to read (inclusive)
      * @param top           top edge of the rectangle to read (inclusive)
      * @param width         width of rectangle to read in pixels.
@@ -202,13 +226,14 @@ public:
      *              because of a unsupported pixel config or because no render
      *              target is currently set.
      */
-    bool readPixels(GrRenderTarget* renderTarget,
+    bool readPixels(GrSurface* surface,
                     int left, int top, int width, int height,
                     GrPixelConfig config, void* buffer, size_t rowBytes);
 
     /**
-     * Updates the pixels in a rectangle of a texture.
+     * Updates the pixels in a rectangle of a surface.
      *
+     * @param surface       The surface to write to.
      * @param left          left edge of the rectangle to write (inclusive)
      * @param top           top edge of the rectangle to write (inclusive)
      * @param width         width of rectangle to write in pixels.
@@ -218,17 +243,15 @@ public:
      * @param rowBytes      number of bytes between consecutive rows. Zero
      *                      means rows are tightly packed.
      */
-    bool writeTexturePixels(GrTexture* texture,
-                            int left, int top, int width, int height,
-                            GrPixelConfig config, const void* buffer,
-                            size_t rowBytes);
+    bool writePixels(GrSurface* surface,
+                     int left, int top, int width, int height,
+                     GrPixelConfig config, const void* buffer,
+                     size_t rowBytes);
 
     /**
-     * Clear the passed in render target. Ignores the draw state and clip. Clears the whole thing if
-     * rect is NULL, otherwise just the rect. If canIgnoreRect is set then the entire render target
-     * can be optionally cleared.
+     * Clear the passed in render target. Ignores the draw state and clip.
      */
-    void clear(const SkIRect* rect, GrColor color, bool canIgnoreRect,GrRenderTarget* renderTarget);
+    void clear(const SkIRect& rect, GrColor color, GrRenderTarget* renderTarget);
 
 
     void clearStencilClip(const SkIRect& rect, bool insideClip, GrRenderTarget* renderTarget);
@@ -245,7 +268,7 @@ public:
      * efficiently succeed. It should only succeed if it can allow copySurface to perform a copy
      * that would be more effecient than drawing the src to a dst render target.
      */
-    virtual bool initCopySurfaceDstDesc(const GrSurface* src, GrSurfaceDesc* desc) = 0;
+    virtual bool initCopySurfaceDstDesc(const GrSurface* src, GrSurfaceDesc* desc) const = 0;
 
     // After the client interacts directly with the 3D context state the GrGpu
     // must resync its internal state and assumptions about 3D context state.
@@ -275,9 +298,6 @@ public:
                      GrSurface* src,
                      const SkIRect& srcRect,
                      const SkIPoint& dstPoint);
-
-    // Called before certain draws in order to guarantee coherent results from dst reads.
-    virtual void xferBarrier(GrRenderTarget*, GrXferBarrierType) = 0;
 
     struct DrawArgs {
         DrawArgs(const GrPrimitiveProcessor* primProc,
@@ -362,10 +382,17 @@ public:
     void saveActiveTraceMarkers();
     void restoreActiveTraceMarkers();
 
+    // creation and deletion of raw texture for testing
+    // only to be used in GPU-specific tests
+    virtual GrBackendObject createTestingOnlyBackendTexture(void* pixels, int w, int h,
+                                                            GrPixelConfig config) const = 0;
+    virtual bool isTestingOnlyBackendTexture(GrBackendObject id) const = 0;
+    virtual void deleteTestingOnlyBackendTexture(GrBackendObject id) const = 0;
+
     // Given a rt, find or create a stencil buffer and attach it
     bool attachStencilAttachmentToRenderTarget(GrRenderTarget* target);
 
-    // This is only to be used in tests.
+    // This is only to be used in GL-specific tests.
     virtual const GrGLContext* glContextForTesting() const { return NULL; }
 
 protected:
@@ -380,6 +407,16 @@ protected:
                                           unsigned int* ref,
                                           unsigned int* mask);
 
+    static void ElevateDrawPreference(GrGpu::DrawPreference* preference,
+                                      GrGpu::DrawPreference elevation) {
+        GR_STATIC_ASSERT(GrGpu::kCallerPrefersDraw_DrawPreference > GrGpu::kNoDraw_DrawPreference);
+        GR_STATIC_ASSERT(GrGpu::kGpuPrefersDraw_DrawPreference >
+                         GrGpu::kCallerPrefersDraw_DrawPreference);
+        GR_STATIC_ASSERT(GrGpu::kRequireDraw_DrawPreference >
+                         GrGpu::kGpuPrefersDraw_DrawPreference);
+        *preference = SkTMax(*preference, elevation);
+    }
+
     const GrTraceMarkerSet& getActiveTraceMarkers() const { return fActiveTraceMarkers; }
 
     Stats                                   fStats;
@@ -391,6 +428,9 @@ private:
     // called when the 3D context state is unknown. Subclass should emit any
     // assumed 3D context state and dirty any state cache.
     virtual void onResetContext(uint32_t resetBits) = 0;
+
+    // Called before certain draws in order to guarantee coherent results from dst reads.
+    virtual void xferBarrier(GrRenderTarget*, GrXferBarrierType) = 0;
 
     // overridden by backend-specific derived class to create objects.
     // Texture size and sample size will have already been validated in base class before
@@ -408,8 +448,7 @@ private:
     virtual GrIndexBuffer* onCreateIndexBuffer(size_t size, bool dynamic) = 0;
 
     // overridden by backend-specific derived class to perform the clear.
-    virtual void onClear(GrRenderTarget*, const SkIRect* rect, GrColor color,
-                         bool canIgnoreRect) = 0;
+    virtual void onClear(GrRenderTarget*, const SkIRect& rect, GrColor color) = 0;
 
 
     // Overridden by backend specific classes to perform a clear of the stencil clip bits.  This is
@@ -419,17 +458,26 @@ private:
     // overridden by backend-specific derived class to perform the draw call.
     virtual void onDraw(const DrawArgs&, const GrNonInstancedVertices&) = 0;
 
-    virtual bool onReadPixels(GrRenderTarget* target,
-                              int left, int top, int width, int height,
+    virtual bool onGetReadPixelsInfo(GrSurface* srcSurface, int readWidth, int readHeight,
+                                     size_t rowBytes, GrPixelConfig readConfig, DrawPreference*,
+                                     ReadPixelTempDrawInfo*) = 0;
+    virtual bool onGetWritePixelsInfo(GrSurface* dstSurface, int width, int height, size_t rowBytes,
+                                      GrPixelConfig srcConfig, DrawPreference*,
+                                      WritePixelTempDrawInfo*) = 0;
+
+    // overridden by backend-specific derived class to perform the surface read
+    virtual bool onReadPixels(GrSurface*,
+                              int left, int top,
+                              int width, int height,
                               GrPixelConfig,
                               void* buffer,
                               size_t rowBytes) = 0;
 
-    // overridden by backend-specific derived class to perform the texture update
-    virtual bool onWriteTexturePixels(GrTexture* texture,
-                                      int left, int top, int width, int height,
-                                      GrPixelConfig config, const void* buffer,
-                                      size_t rowBytes) = 0;
+    // overridden by backend-specific derived class to perform the surface write
+    virtual bool onWritePixels(GrSurface*,
+                               int left, int top, int width, int height,
+                               GrPixelConfig config, const void* buffer,
+                               size_t rowBytes) = 0;
 
     // overridden by backend-specific derived class to perform the resolve
     virtual void onResolveRenderTarget(GrRenderTarget* target) = 0;

@@ -13,9 +13,10 @@
       'type': '<(component)',
       'dependencies': [
         '../../base/base.gyp:base',
+        '../../crypto/crypto.gyp:crypto',
         '../../net/net.gyp:net',
         '../../ui/base/ui_base.gyp:ui_base',
-        'bluetooth_strings.gyp:device_bluetooth_strings',
+        'bluetooth_strings.gyp:bluetooth_strings',
         'uribeacon',
       ],
       'defines': [
@@ -55,6 +56,8 @@
         'bluetooth_classic_device_mac.h',
         'bluetooth_device.cc',
         'bluetooth_device.h',
+        'bluetooth_device_android.h',
+        'bluetooth_device_android.cc',
         'bluetooth_device_chromeos.cc',
         'bluetooth_device_chromeos.h',
         'bluetooth_device_mac.mm',
@@ -85,6 +88,8 @@
         'bluetooth_init_win.h',
         'bluetooth_l2cap_channel_mac.mm',
         'bluetooth_l2cap_channel_mac.h',
+        'bluetooth_low_energy_central_manager_delegate.mm',
+        'bluetooth_low_energy_central_manager_delegate.h',
         'bluetooth_low_energy_defs_win.cc',
         'bluetooth_low_energy_defs_win.h',
         'bluetooth_low_energy_device_mac.h',
@@ -247,6 +252,7 @@
           'type': 'none',
           'sources': [
             'android/java/src/org/chromium/device/bluetooth/ChromeBluetoothAdapter.java',
+            'android/java/src/org/chromium/device/bluetooth/ChromeBluetoothDevice.java',
             'android/java/src/org/chromium/device/bluetooth/Wrappers.java',
           ],
           'variables': {

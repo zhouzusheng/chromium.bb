@@ -81,7 +81,7 @@ private:
 
         DECLARE_TRACE();
 
-        virtual ~ImageBitmapLoader() { }
+        ~ImageBitmapLoader() override { }
 
     private:
         ImageBitmapLoader(ImageBitmapFactories&, const IntRect&, ScriptState*);
@@ -89,14 +89,14 @@ private:
         void rejectPromise();
 
         // FileReaderLoaderClient
-        virtual void didStartLoading() override { }
-        virtual void didReceiveData() override { }
-        virtual void didFinishLoading() override;
-        virtual void didFail(FileError::ErrorCode) override;
+        void didStartLoading() override { }
+        void didReceiveData() override { }
+        void didFinishLoading() override;
+        void didFail(FileError::ErrorCode) override;
 
         FileReaderLoader m_loader;
         RawPtrWillBeMember<ImageBitmapFactories> m_factory;
-        RefPtrWillBeMember<ScriptPromiseResolver> m_resolver;
+        Member<ScriptPromiseResolver> m_resolver;
         IntRect m_cropRect;
     };
 

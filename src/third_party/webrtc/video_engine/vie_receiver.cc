@@ -58,6 +58,7 @@ ViEReceiver::ViEReceiver(const int32_t channel_id,
       restored_packet_in_use_(false),
       receiving_ast_enabled_(false),
       receiving_cvo_enabled_(false),
+      receiving_tsn_enabled_(false),
       last_packet_log_ms_(-1) {
   assert(remote_bitrate_estimator);
 }
@@ -147,16 +148,14 @@ RtpReceiver* ViEReceiver::GetRtpReceiver() const {
   return rtp_receiver_.get();
 }
 
-void ViEReceiver::RegisterSimulcastRtpRtcpModules(
-    const std::list<RtpRtcp*>& rtp_modules) {
+void ViEReceiver::RegisterRtpRtcpModules(
+    const std::vector<RtpRtcp*>& rtp_modules) {
   CriticalSectionScoped cs(receive_cs_.get());
-  rtp_rtcp_simulcast_.clear();
-
-  if (!rtp_modules.empty()) {
-    rtp_rtcp_simulcast_.insert(rtp_rtcp_simulcast_.begin(),
-                               rtp_modules.begin(),
-                               rtp_modules.end());
-  }
+  // Only change the "simulcast" modules, the base module can be accessed
+  // without a lock whereas the simulcast modules require locking as they can be
+  // changed in runtime.
+  rtp_rtcp_simulcast_ =
+      std::vector<RtpRtcp*>(rtp_modules.begin() + 1, rtp_modules.end());
 }
 
 bool ViEReceiver::SetReceiveTimestampOffsetStatus(bool enable, int id) {
@@ -198,6 +197,22 @@ bool ViEReceiver::SetReceiveVideoRotationStatus(bool enable, int id) {
     receiving_cvo_enabled_ = false;
     return rtp_header_parser_->DeregisterRtpHeaderExtension(
         kRtpExtensionVideoRotation);
+  }
+}
+
+bool ViEReceiver::SetReceiveTransportSequenceNumber(bool enable, int id) {
+  if (enable) {
+    if (rtp_header_parser_->RegisterRtpHeaderExtension(
+            kRtpExtensionTransportSequenceNumber, id)) {
+      receiving_tsn_enabled_ = true;
+      return true;
+    } else {
+      return false;
+    }
+  } else {
+    receiving_tsn_enabled_ = false;
+    return rtp_header_parser_->DeregisterRtpHeaderExtension(
+        kRtpExtensionTransportSequenceNumber);
   }
 }
 
@@ -398,11 +413,8 @@ int ViEReceiver::InsertRTCPPacket(const uint8_t* rtcp_packet,
       return -1;
     }
 
-    std::list<RtpRtcp*>::iterator it = rtp_rtcp_simulcast_.begin();
-    while (it != rtp_rtcp_simulcast_.end()) {
-      RtpRtcp* rtp_rtcp = *it++;
+    for (RtpRtcp* rtp_rtcp : rtp_rtcp_simulcast_)
       rtp_rtcp->IncomingRtcpPacket(rtcp_packet, rtcp_packet_length);
-    }
   }
   assert(rtp_rtcp_);  // Should be set by owner at construction time.
   int ret = rtp_rtcp_->IncomingRtcpPacket(rtcp_packet, rtcp_packet_length);

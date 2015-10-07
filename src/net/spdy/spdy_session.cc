@@ -598,10 +598,17 @@ bool SpdySession::CanPool(TransportSecurityState* transport_security_state,
     return false;
 
   std::string pinning_failure_log;
+  // DISABLE_PIN_REPORTS is set here because this check can fail in
+  // normal operation without being indicative of a misconfiguration or
+  // attack.
+  //
+  // TODO(estark): replace 0 below with the port of the connection
+  // (though it won't actually be used since reports aren't getting
+  // sent).
   if (!transport_security_state->CheckPublicKeyPins(
-          new_hostname,
-          ssl_info.is_issued_by_known_root,
-          ssl_info.public_key_hashes,
+          HostPortPair(new_hostname, 0), ssl_info.is_issued_by_known_root,
+          ssl_info.public_key_hashes, ssl_info.unverified_cert.get(),
+          ssl_info.cert.get(), TransportSecurityState::DISABLE_PIN_REPORTS,
           &pinning_failure_log)) {
     return false;
   }
@@ -1069,14 +1076,14 @@ scoped_ptr<SpdyFrame> SpdySession::CreateSynStream(
     syn_stream.set_priority(spdy_priority);
     syn_stream.set_fin((flags & CONTROL_FLAG_FIN) != 0);
     syn_stream.set_unidirectional((flags & CONTROL_FLAG_UNIDIRECTIONAL) != 0);
-    syn_stream.set_name_value_block(block);
+    syn_stream.set_header_block(block);
     syn_frame.reset(buffered_spdy_framer_->SerializeFrame(syn_stream));
   } else {
     SpdyHeadersIR headers(stream_id);
     headers.set_priority(spdy_priority);
     headers.set_has_priority(true);
     headers.set_fin((flags & CONTROL_FLAG_FIN) != 0);
-    headers.set_name_value_block(block);
+    headers.set_header_block(block);
     syn_frame.reset(buffered_spdy_framer_->SerializeFrame(headers));
   }
 
@@ -1392,9 +1399,9 @@ int SpdySession::DoReadLoop(ReadState expected_read_state, int result) {
     if (result == ERR_IO_PENDING)
       break;
 
-    if (bytes_read_without_yielding > kYieldAfterBytesRead ||
-        time_func_() > yield_after_time) {
-      read_state_ = READ_STATE_DO_READ;
+    if (read_state_ == READ_STATE_DO_READ &&
+        (bytes_read_without_yielding > kYieldAfterBytesRead ||
+         time_func_() > yield_after_time)) {
       base::ThreadTaskRunnerHandle::Get()->PostTask(
           FROM_HERE,
           base::Bind(&SpdySession::PumpReadLoop, weak_factory_.GetWeakPtr(),
@@ -2978,7 +2985,8 @@ void SpdySession::RecordProtocolErrorHistogram(
     SpdyProtocolErrorDetails details) {
   UMA_HISTOGRAM_ENUMERATION("Net.SpdySessionErrorDetails2", details,
                             NUM_SPDY_PROTOCOL_ERROR_DETAILS);
-  if (base::EndsWith(host_port_pair().host(), "google.com", false)) {
+  if (base::EndsWith(host_port_pair().host(), "google.com",
+                     base::CompareCase::INSENSITIVE_ASCII)) {
     UMA_HISTOGRAM_ENUMERATION("Net.SpdySessionErrorDetails_Google2", details,
                               NUM_SPDY_PROTOCOL_ERROR_DETAILS);
   }

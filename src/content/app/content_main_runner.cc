@@ -10,6 +10,7 @@
 #include "base/at_exit.h"
 #include "base/command_line.h"
 #include "base/debug/debugger.h"
+#include "base/debug/stack_trace.h"
 #include "base/files/file_path.h"
 #include "base/i18n/icu_util.h"
 #include "base/lazy_instance.h"
@@ -28,6 +29,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/trace_event/trace_event.h"
 #include "components/tracing/startup_tracing.h"
+#include "components/tracing/tracing_switches.h"
 #include "content/browser/browser_main.h"
 #include "content/common/set_process_title.h"
 #include "content/common/url_schemes.h"
@@ -195,24 +197,17 @@ void CommonSubprocessInit(const std::string& process_type) {
   // surface UI -- but it's likely they get this wrong too so why not.
   setlocale(LC_NUMERIC, "C");
 #endif
-}
 
-// Only needed on Windows for creating stats tables.
+#if !defined(OFFICIAL_BUILD)
+  // Print stack traces to stderr when crashes occur. This opens up security
+  // holes so it should never be enabled for official builds.
+  base::debug::EnableInProcessStackDumping();
 #if defined(OS_WIN)
-static base::ProcessId GetBrowserPid(const base::CommandLine& command_line) {
-  base::ProcessId browser_pid = base::GetCurrentProcId();
-  if (command_line.HasSwitch(switches::kProcessChannelID)) {
-    std::string channel_name =
-        command_line.GetSwitchValueASCII(switches::kProcessChannelID);
-
-    int browser_pid_int;
-    base::StringToInt(channel_name, &browser_pid_int);
-    browser_pid = static_cast<base::ProcessId>(browser_pid_int);
-    DCHECK_NE(browser_pid_int, 0);
-  }
-  return browser_pid;
-}
+  base::RouteStdioToConsole(false);
+  LoadLibraryA("dbghelp.dll");
 #endif
+#endif
+}
 
 class ContentClientInitializer {
  public:
@@ -620,7 +615,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
 #if defined(OS_WIN)
     // Route stdio to parent console (if any) or create one.
     if (command_line.HasSwitch(switches::kEnableLogging))
-      base::RouteStdioToConsole();
+      base::RouteStdioToConsole(true);
 #endif
 
     // Enable startup tracing asap to avoid early TRACE_EVENT calls being
@@ -632,7 +627,8 @@ class ContentMainRunnerImpl : public ContentMainRunner {
       base::trace_event::TraceLog::GetInstance()->SetEnabled(
           trace_config,
           base::trace_event::TraceLog::RECORDING_MODE);
-    } else if (process_type != switches::kZygoteProcess) {
+    } else if (process_type != switches::kZygoteProcess &&
+               process_type != switches::kRendererProcess) {
       // There is no need to schedule stopping tracing in this case. Telemetry
       // will stop tracing on demand later.
       tracing::EnableStartupTracingIfConfigFileExists();

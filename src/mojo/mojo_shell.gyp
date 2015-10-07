@@ -7,9 +7,13 @@
     'target_name': 'mojo_shell_lib',
     'type': 'static_library',
     'sources': [
+      'shell/application_instance.cc',
+      'shell/application_instance.h',
       'shell/application_loader.h',
       'shell/application_manager.cc',
       'shell/application_manager.h',
+      'shell/capability_filter.cc',
+      'shell/capability_filter.h',
       'shell/content_handler_connection.cc',
       'shell/content_handler_connection.h',
       'shell/data_pipe_peek.cc',
@@ -25,8 +29,6 @@
       'shell/network_fetcher.h',
       'shell/query_util.cc',
       'shell/query_util.h',
-      'shell/shell_impl.cc',
-      'shell/shell_impl.h',
       'shell/static_application_loader.cc',
       'shell/static_application_loader.h',
       'shell/switches.cc',
@@ -54,6 +56,7 @@
     'type': 'executable',
     'sources': [
       'shell/application_manager_unittest.cc',
+      'shell/capability_filter_unittest.cc',
       'shell/query_util_unittest.cc',
     ],
     'dependencies': [
@@ -74,6 +77,7 @@
     'type': 'static_library',
     'variables': {
       'mojom_files': [
+        'shell/capability_filter_unittest.mojom',
         'shell/test.mojom',
       ],
     },

@@ -174,6 +174,7 @@ public:
     virtual void setReportWheelOverscroll(bool) = 0;
     virtual void setForceZeroLayoutHeight(bool) = 0;
     virtual void setFullscreenSupported(bool) = 0;
+    virtual void setHidePinchScrollbarsNearMinScale(bool) = 0;
     virtual void setHyperlinkAuditingEnabled(bool) = 0;
     virtual void setIgnoreMainFrameOverflowHiddenQuirk(bool) = 0;
     virtual void setImageAnimationPolicy(ImageAnimationPolicy) = 0;
@@ -209,6 +210,7 @@ public:
     virtual void setPrimaryPointerType(PointerType) = 0;
     virtual void setAvailableHoverTypes(int) = 0;
     virtual void setPrimaryHoverType(HoverType) = 0;
+    virtual void setPreferHiddenVolumeControls(bool) = 0;
     virtual void setRenderVSyncNotificationEnabled(bool) = 0;
     virtual void setReportScreenSizeInPhysicalPixelsQuirk(bool) = 0;
     virtual void setRootLayerScrolls(bool) = 0;
@@ -236,7 +238,9 @@ public:
     virtual void setSpatialNavigationEnabled(bool) = 0;
     virtual void setStandardFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) = 0;
     virtual void setStrictMixedContentChecking(bool) = 0;
+    virtual void setStrictMixedContentCheckingForPlugin(bool) = 0;
     virtual void setStrictPowerfulFeatureRestrictions(bool) = 0;
+    virtual void setStrictlyBlockBlockableMixedContent(bool) = 0;
     virtual void setSupportDeprecatedTargetDensityDPI(bool) = 0;
     virtual void setSupportsMultipleWindows(bool) = 0;
     virtual void setSyncXHRInDocumentsEnabled(bool) = 0;

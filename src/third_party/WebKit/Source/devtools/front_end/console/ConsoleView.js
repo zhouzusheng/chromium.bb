@@ -58,7 +58,7 @@ WebInspector.ConsoleView = function()
      */
     this._regexMatchRanges = [];
 
-    this._clearConsoleButton = new WebInspector.ToolbarButton(WebInspector.UIString("Clear console log."), "clear-toolbar-item");
+    this._clearConsoleButton = new WebInspector.ToolbarButton(WebInspector.UIString("Clear console log"), "clear-toolbar-item");
     this._clearConsoleButton.addEventListener("click", this._requestClearMessages, this);
 
     this._executionContextComboBox = new WebInspector.ToolbarComboBox(null, "console-context");
@@ -70,7 +70,7 @@ WebInspector.ConsoleView = function()
 
     this._filterBar = new WebInspector.FilterBar("consoleView");
 
-    this._preserveLogCheckbox = new WebInspector.ToolbarCheckbox(WebInspector.UIString("Preserve log"), WebInspector.UIString("Do not clear log on page reload / navigation."), WebInspector.moduleSetting("preserveConsoleLog"));
+    this._preserveLogCheckbox = new WebInspector.ToolbarCheckbox(WebInspector.UIString("Preserve log"), WebInspector.UIString("Do not clear log on page reload / navigation"), WebInspector.moduleSetting("preserveConsoleLog"));
     this._progressToolbarItem = new WebInspector.ToolbarItem(createElement("div"));
 
     var toolbar = new WebInspector.Toolbar(this._contentsElement);
@@ -373,10 +373,10 @@ WebInspector.ConsoleView.prototype = {
     _scheduleViewportRefresh: function()
     {
         /**
-         * @param {!WebInspector.Throttler.FinishCallback} finishCallback
          * @this {WebInspector.ConsoleView}
+         * @return {!Promise.<undefined>}
          */
-        function invalidateViewport(finishCallback)
+        function invalidateViewport()
         {
             if (this._needsFullUpdate) {
                 this._updateMessageList();
@@ -384,7 +384,7 @@ WebInspector.ConsoleView.prototype = {
             } else {
                 this._viewport.invalidate();
             }
-            finishCallback();
+            return Promise.resolve();
         }
         this._viewportThrottler.schedule(invalidateViewport.bind(this));
     },

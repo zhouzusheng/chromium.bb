@@ -510,6 +510,7 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   void DeleteFramebuffersStub(GLsizei n, const GLuint* framebuffers);
   void DeleteRenderbuffersStub(GLsizei n, const GLuint* renderbuffers);
   void DeleteTexturesStub(GLsizei n, const GLuint* textures);
+  void DeletePathsCHROMIUMStub(GLuint first_client_id, GLsizei range);
   void DeleteProgramStub(GLsizei n, const GLuint* programs);
   void DeleteShaderStub(GLsizei n, const GLuint* shaders);
   void DeleteVertexArraysOESStub(GLsizei n, const GLuint* arrays);
@@ -566,6 +567,8 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   bool GetHelper(GLenum pname, GLint* params);
   GLuint GetBoundBufferHelper(GLenum target);
   bool GetBooleanvHelper(GLenum pname, GLboolean* params);
+  bool GetBufferParameteri64vHelper(
+      GLenum target, GLenum pname, GLint64* params);
   bool GetBufferParameterivHelper(GLenum target, GLenum pname, GLint* params);
   bool GetFloatvHelper(GLenum pname, GLfloat* params);
   bool GetFramebufferAttachmentParameterivHelper(
@@ -595,6 +598,7 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   bool SetCapabilityState(GLenum cap, bool enabled);
 
   IdHandlerInterface* GetIdHandler(int id_namespace) const;
+  RangeIdHandlerInterface* GetRangeIdHandler(int id_namespace) const;
   // IdAllocators for objects that can't be shared among contexts.
   // For now, used only for Queries. TODO(hj.r.chung) Should be added for
   // Framebuffer and Vertex array objects.
@@ -818,6 +822,11 @@ class GLES2_IMPL_EXPORT GLES2Implementation
 
   DISALLOW_COPY_AND_ASSIGN(GLES2Implementation);
 };
+
+inline bool GLES2Implementation::GetBufferParameteri64vHelper(
+    GLenum /* target */, GLenum /* pname */, GLint64* /* params */) {
+  return false;
+}
 
 inline bool GLES2Implementation::GetBufferParameterivHelper(
     GLenum /* target */, GLenum /* pname */, GLint* /* params */) {

@@ -61,6 +61,7 @@
 #include "content/common/appcache_interfaces.h"
 #include "content/common/navigation_params.h"
 #include "content/common/resource_messages.h"
+#include "content/common/site_isolation_policy.h"
 #include "content/common/ssl_status_serialization.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_thread.h"
@@ -274,7 +275,9 @@ void SetReferrerForRequest(net::URLRequest* request, const Referrer& referrer) {
 bool ShouldServiceRequest(int process_type,
                           int child_id,
                           const ResourceHostMsg_Request& request_data,
-                          storage::FileSystemContext* file_system_context) {
+                          const net::HttpRequestHeaders& headers,
+                          ResourceMessageFilter* filter,
+                          ResourceContext* resource_context) {
   if (process_type == PROCESS_TYPE_PLUGIN)
     return true;
 
@@ -286,6 +289,21 @@ bool ShouldServiceRequest(int process_type,
     VLOG(1) << "Denied unauthorized request for "
             << request_data.url.possibly_invalid_spec();
     return false;
+  }
+
+  // Check if the renderer is using an illegal Origin header.  If so, kill it.
+  std::string origin_string;
+  bool has_origin = headers.GetHeader("Origin", &origin_string) &&
+                    origin_string != "null";
+  if (has_origin) {
+    GURL origin(origin_string);
+    if (!policy->CanCommitURL(child_id, origin) ||
+        GetContentClient()->browser()->IsIllegalOrigin(resource_context,
+                                                       child_id, origin)) {
+      VLOG(1) << "Killed renderer for illegal origin: " << origin_string;
+      bad_message::ReceivedBadMessage(filter, bad_message::RDH_ILLEGAL_ORIGIN);
+      return false;
+    }
   }
 
   // Check if the renderer is permitted to upload the requested files.
@@ -302,7 +320,7 @@ bool ShouldServiceRequest(int process_type,
       }
       if (iter->type() == ResourceRequestBody::Element::TYPE_FILE_FILESYSTEM) {
         storage::FileSystemURL url =
-            file_system_context->CrackURL(iter->filesystem_url());
+            filter->file_system_context()->CrackURL(iter->filesystem_url());
         if (!policy->CanReadFileSystemFile(child_id, url)) {
           NOTREACHED() << "Denied unauthorized upload of "
                        << iter->filesystem_url().spec();
@@ -718,19 +736,19 @@ ResourceDispatcherHostImpl::CreateResourceHandlerForDownload(
   return handler.Pass();
 }
 
-scoped_ptr<ResourceHandler>
-ResourceDispatcherHostImpl::MaybeInterceptAsStream(net::URLRequest* request,
-                                                   ResourceResponse* response,
-                                                   std::string* payload) {
+scoped_ptr<ResourceHandler> ResourceDispatcherHostImpl::MaybeInterceptAsStream(
+    const base::FilePath& plugin_path,
+    net::URLRequest* request,
+    ResourceResponse* response,
+    std::string* payload) {
+  payload->clear();
   ResourceRequestInfoImpl* info = ResourceRequestInfoImpl::ForRequest(request);
   const std::string& mime_type = response->head.mime_type;
 
   GURL origin;
   if (!delegate_ ||
-      !delegate_->ShouldInterceptResourceAsStream(request,
-                                                  mime_type,
-                                                  &origin,
-                                                  payload)) {
+      !delegate_->ShouldInterceptResourceAsStream(
+          request, plugin_path, mime_type, &origin, payload)) {
     return scoped_ptr<ResourceHandler>();
   }
 
@@ -977,6 +995,7 @@ bool ResourceDispatcherHostImpl::OnMessageReceived(
     IPC_MESSAGE_HANDLER(ResourceHostMsg_DataDownloaded_ACK, OnDataDownloadedACK)
     IPC_MESSAGE_HANDLER(ResourceHostMsg_UploadProgress_ACK, OnUploadProgressACK)
     IPC_MESSAGE_HANDLER(ResourceHostMsg_CancelRequest, OnCancelRequest)
+    IPC_MESSAGE_HANDLER(ResourceHostMsg_DidChangePriority, OnDidChangePriority)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -1170,9 +1189,14 @@ void ResourceDispatcherHostImpl::BeginRequest(
   // http://crbug.com/90971
   CHECK(ContainsKey(active_resource_contexts_, resource_context));
 
+  // Parse the headers before calling ShouldServiceRequest, so that they are
+  // available to be validated.
+  net::HttpRequestHeaders headers;
+  headers.AddHeadersFromString(request_data.headers);
+
   if (is_shutdown_ ||
-      !ShouldServiceRequest(process_type, child_id, request_data,
-                            filter_->file_system_context())) {
+      !ShouldServiceRequest(process_type, child_id, request_data, headers,
+                            filter_, resource_context)) {
     AbortRequestBeforeItStarts(filter_, sync_result, request_id);
     return;
   }
@@ -1204,8 +1228,6 @@ void ResourceDispatcherHostImpl::BeginRequest(
   const Referrer referrer(request_data.referrer, request_data.referrer_policy);
   SetReferrerForRequest(new_request.get(), referrer);
 
-  net::HttpRequestHeaders headers;
-  headers.AddHeadersFromString(request_data.headers);
   new_request->SetExtraRequestHeaders(headers);
 
   storage::BlobStorageContext* blob_context =
@@ -1306,17 +1328,12 @@ void ResourceDispatcherHostImpl::BeginRequest(
   // Initialize the service worker handler for the request. We don't use
   // ServiceWorker for synchronous loads to avoid renderer deadlocks.
   ServiceWorkerRequestHandler::InitializeHandler(
-      new_request.get(),
-      filter_->service_worker_context(),
-      blob_context,
-      child_id,
-      request_data.service_worker_provider_id,
+      new_request.get(), filter_->service_worker_context(), blob_context,
+      child_id, request_data.service_worker_provider_id,
       request_data.skip_service_worker || is_sync_load,
-      request_data.fetch_request_mode,
-      request_data.fetch_credentials_mode,
-      request_data.resource_type,
-      request_data.fetch_request_context_type,
-      request_data.fetch_frame_type,
+      request_data.fetch_request_mode, request_data.fetch_credentials_mode,
+      request_data.fetch_redirect_mode, request_data.resource_type,
+      request_data.fetch_request_context_type, request_data.fetch_frame_type,
       request_data.request_body);
 
   // Have the appcache associate its extra info with the request.
@@ -1386,10 +1403,11 @@ scoped_ptr<ResourceHandler> ResourceDispatcherHostImpl::CreateResourceHandler(
     // to drive the transfer.
     bool is_swappable_navigation =
         request_data.resource_type == RESOURCE_TYPE_MAIN_FRAME;
-    // If we are using --site-per-process, install it for subframes as well.
+    // If out-of-process iframes are possible, then all subframe requests need
+    // to go through the CrossSiteResourceHandler to enforce the site isolation
+    // policy.
     if (!is_swappable_navigation &&
-        base::CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kSitePerProcess)) {
+        SiteIsolationPolicy::AreCrossProcessFramesPossible()) {
       is_swappable_navigation =
           request_data.resource_type == RESOURCE_TYPE_SUB_FRAME;
     }
@@ -1433,8 +1451,10 @@ scoped_ptr<ResourceHandler> ResourceDispatcherHostImpl::AddStandardHandlers(
     throttles.push_back(new PowerSaveBlockResourceThrottle());
   }
 
-  throttles.push_back(
-      scheduler_->ScheduleRequest(child_id, route_id, request).release());
+  // TODO(ricea): Stop looking this up so much.
+  ResourceRequestInfoImpl* info = ResourceRequestInfoImpl::ForRequest(request);
+  throttles.push_back(scheduler_->ScheduleRequest(child_id, route_id,
+                                                  info->IsAsync(), request));
 
   handler.reset(
       new ThrottlingResourceHandler(handler.Pass(), request, throttles.Pass()));
@@ -1444,6 +1464,20 @@ scoped_ptr<ResourceHandler> ResourceDispatcherHostImpl::AddStandardHandlers(
 
 void ResourceDispatcherHostImpl::OnReleaseDownloadedFile(int request_id) {
   UnregisterDownloadedTempFile(filter_->child_id(), request_id);
+}
+
+void ResourceDispatcherHostImpl::OnDidChangePriority(
+    int request_id,
+    net::RequestPriority new_priority,
+    int intra_priority_value) {
+  ResourceLoader* loader = GetLoader(filter_->child_id(), request_id);
+  // The request may go away before processing this message, so |loader| can
+  // legitimately be null.
+  if (!loader)
+    return;
+
+  scheduler_->ReprioritizeRequest(loader->request(), new_priority,
+                                  intra_priority_value);
 }
 
 void ResourceDispatcherHostImpl::OnDataDownloadedACK(int request_id) {

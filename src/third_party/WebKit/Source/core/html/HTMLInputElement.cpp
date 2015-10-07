@@ -42,7 +42,7 @@
 #include "core/dom/shadow/InsertionPoint.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/FrameSelection.h"
-#include "core/editing/SpellChecker.h"
+#include "core/editing/spellcheck/SpellChecker.h"
 #include "core/events/BeforeTextInsertedEvent.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/MouseEvent.h"
@@ -385,11 +385,11 @@ void HTMLInputElement::handleFocusEvent(Element* oldFocusedElement, WebFocusType
     m_inputType->enableSecureTextInput();
 }
 
-void HTMLInputElement::dispatchFocusInEvent(const AtomicString& eventType, Element* oldFocusedElement, WebFocusType type)
+void HTMLInputElement::dispatchFocusInEvent(const AtomicString& eventType, Element* oldFocusedElement, WebFocusType type, InputDeviceCapabilities* sourceCapabilities)
 {
     if (eventType == EventTypeNames::DOMFocusIn)
         m_inputTypeView->handleFocusInEvent(oldFocusedElement, type);
-    HTMLFormControlElementWithState::dispatchFocusInEvent(eventType, oldFocusedElement, type);
+    HTMLFormControlElementWithState::dispatchFocusInEvent(eventType, oldFocusedElement, type, sourceCapabilities);
 }
 
 void HTMLInputElement::handleBlurEvent()
@@ -462,7 +462,7 @@ void HTMLInputElement::updateType()
     lazyReattachIfAttached();
 
     m_inputType = newType.release();
-    if (hasOpenShadowRoot())
+    if (openShadowRoot())
         m_inputTypeView = InputTypeView::create(*this);
     else
         m_inputTypeView = m_inputType;
@@ -900,7 +900,13 @@ bool HTMLInputElement::isTextField() const
 void HTMLInputElement::dispatchChangeEventIfNeeded()
 {
     if (inDocument() && m_inputType->shouldSendChangeEventAfterCheckedChanged())
-        dispatchFormControlChangeEvent();
+        dispatchChangeEvent();
+}
+
+bool HTMLInputElement::checked() const
+{
+    m_inputType->readingChecked();
+    return m_isChecked;
 }
 
 void HTMLInputElement::setChecked(bool nowChecked, TextFieldEventBehavior eventBehavior)
@@ -1523,6 +1529,7 @@ Node::InsertionNotificationRequest HTMLInputElement::insertedInto(ContainerNode*
 
 void HTMLInputElement::removedFrom(ContainerNode* insertionPoint)
 {
+    m_inputTypeView->closePopupView();
     if (insertionPoint->inDocument() && !form())
         removeFromRadioButtonGroup();
     HTMLTextFormControlElement::removedFrom(insertionPoint);

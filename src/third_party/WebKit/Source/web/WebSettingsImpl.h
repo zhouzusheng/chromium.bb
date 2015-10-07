@@ -99,6 +99,7 @@ public:
     void setReportWheelOverscroll(bool) override;
     void setForceZeroLayoutHeight(bool) override;
     void setFullscreenSupported(bool) override;
+    void setHidePinchScrollbarsNearMinScale(bool) override;
     void setHyperlinkAuditingEnabled(bool) override;
     void setIgnoreMainFrameOverflowHiddenQuirk(bool) override;
     void setImageAnimationPolicy(ImageAnimationPolicy) override;
@@ -133,6 +134,7 @@ public:
     void setPrimaryPointerType(PointerType) override;
     void setAvailableHoverTypes(int) override;
     void setPrimaryHoverType(HoverType) override;
+    void setPreferHiddenVolumeControls(bool) override;
     void setRenderVSyncNotificationEnabled(bool) override;
     void setReportScreenSizeInPhysicalPixelsQuirk(bool) override;
     void setRootLayerScrolls(bool) override;
@@ -153,7 +155,9 @@ public:
     void setSpatialNavigationEnabled(bool) override;
     void setStandardFontFamily(const WebString&, UScriptCode = USCRIPT_COMMON) override;
     void setStrictMixedContentChecking(bool) override;
+    void setStrictMixedContentCheckingForPlugin(bool) override;
     void setStrictPowerfulFeatureRestrictions(bool) override;
+    void setStrictlyBlockBlockableMixedContent(bool) override;
     void setSupportDeprecatedTargetDensityDPI(bool) override;
     void setSupportsMultipleWindows(bool) override;
     void setSyncXHRInDocumentsEnabled(bool) override;

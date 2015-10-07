@@ -51,8 +51,10 @@ bool ContentRendererClient::ShouldSuppressErrorPage(RenderFrame* render_frame,
   return false;
 }
 
-void ContentRendererClient::DeferMediaLoad(RenderFrame* render_frame,
-                                           const base::Closure& closure) {
+void ContentRendererClient::DeferMediaLoad(
+    RenderFrame* render_frame,
+    bool has_played_media_before,
+    const base::Closure& closure) {
   closure.Run();
 }
 
@@ -100,20 +102,6 @@ bool ContentRendererClient::RunIdleHandlerWhenWidgetsHidden() {
 bool ContentRendererClient::AllowPopup() {
   return false;
 }
-
-#ifdef OS_ANDROID
-bool ContentRendererClient::HandleNavigation(
-    RenderFrame* render_frame,
-    DocumentState* document_state,
-    int opener_id,
-    blink::WebFrame* frame,
-    const blink::WebURLRequest& request,
-    blink::WebNavigationType type,
-    blink::WebNavigationPolicy default_policy,
-    bool is_redirect) {
-  return false;
-}
-#endif
 
 bool ContentRendererClient::ShouldFork(blink::WebLocalFrame* frame,
                                        const GURL& url,

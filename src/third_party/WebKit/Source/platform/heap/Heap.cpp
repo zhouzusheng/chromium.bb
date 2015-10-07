@@ -242,7 +242,7 @@ void BaseHeap::cleanupPages()
     m_firstPage = nullptr;
 }
 
-void BaseHeap::takeSnapshot(const String& dumpBaseName)
+void BaseHeap::takeSnapshot(const String& dumpBaseName, ThreadState::GCSnapshotInfo& info)
 {
     // |dumpBaseName| at this point is "blink_gc/thread_X/heaps/HeapName"
     WebMemoryAllocatorDump* allocatorDump = BlinkGCMemoryDumpProvider::instance()->createMemoryAllocatorDumpForCurrentGC(dumpBaseName);
@@ -252,7 +252,7 @@ void BaseHeap::takeSnapshot(const String& dumpBaseName)
     for (BasePage* page = m_firstUnsweptPage; page; page = page->next()) {
         size_t heapPageFreeSize = 0;
         size_t heapPageFreeCount = 0;
-        page->takeSnapshot(dumpBaseName, pageIndex, &heapPageFreeSize, &heapPageFreeCount);
+        page->takeSnapshot(dumpBaseName, pageIndex, info, &heapPageFreeSize, &heapPageFreeCount);
         heapTotalFreeSize += heapPageFreeSize;
         heapTotalFreeCount += heapPageFreeCount;
         pageIndex++;
@@ -620,7 +620,6 @@ void NormalPageHeap::allocatePage()
         //    [ guard os page | ... payload ... | guard os page ]
         //    ^---{ aligned to blink page size }
         PageMemoryRegion* region = PageMemoryRegion::allocateNormalPages();
-        threadState()->allocatedRegionsSinceLastGC().append(region);
 
         // Setup the PageMemory object for each of the pages in the region.
         size_t offset = 0;
@@ -707,7 +706,11 @@ bool NormalPageHeap::coalesce()
 
             if (header->isPromptlyFreed()) {
                 ASSERT(size >= sizeof(HeapObjectHeader));
-                FILL_ZERO_IF_PRODUCTION(headerAddress, sizeof(HeapObjectHeader));
+                // Zero the memory in the free list header to maintain the
+                // invariant that memory on the free list is zero filled.
+                // The rest of the memory is already on the free list and is
+                // therefore already zero filled.
+                SET_MEMORY_INACCESSIBLE(headerAddress, sizeof(HeapObjectHeader));
                 freedSize += size;
                 headerAddress += size;
                 continue;
@@ -717,7 +720,7 @@ bool NormalPageHeap::coalesce()
                 // invariant that memory on the free list is zero filled.
                 // The rest of the memory is already on the free list and is
                 // therefore already zero filled.
-                FILL_ZERO_IF_PRODUCTION(headerAddress, size < sizeof(FreeListEntry) ? size : sizeof(FreeListEntry));
+                SET_MEMORY_INACCESSIBLE(headerAddress, size < sizeof(FreeListEntry) ? size : sizeof(FreeListEntry));
                 headerAddress += size;
                 continue;
             }
@@ -759,11 +762,10 @@ void NormalPageHeap::promptlyFreeObject(HeapObjectHeader* header)
                 m_lastRemainingAllocationSize += size;
             }
             m_remainingAllocationSize += size;
-            FILL_ZERO_IF_PRODUCTION(address, size);
-            ASAN_POISON_MEMORY_REGION(address, size);
+            SET_MEMORY_INACCESSIBLE(address, size);
             return;
         }
-        FILL_ZERO_IF_PRODUCTION(payload, payloadSize);
+        SET_MEMORY_INACCESSIBLE(payload, payloadSize);
         header->markPromptlyFreed();
     }
 
@@ -786,8 +788,7 @@ bool NormalPageHeap::expandObject(HeapObjectHeader* header, size_t newSize)
         m_remainingAllocationSize -= expandSize;
 
         // Unpoison the memory used for the object (payload).
-        ASAN_UNPOISON_MEMORY_REGION(header->payloadEnd(), expandSize);
-        FILL_ZERO_IF_NOT_PRODUCTION(header->payloadEnd(), expandSize);
+        SET_MEMORY_ACCESSIBLE(header->payloadEnd(), expandSize);
         header->setSize(allocationSize);
         ASSERT(findPageFromAddress(header->payloadEnd() - 1));
         return true;
@@ -805,21 +806,19 @@ bool NormalPageHeap::shrinkObject(HeapObjectHeader* header, size_t newSize)
     if (header->payloadEnd() == m_currentAllocationPoint) {
         m_currentAllocationPoint -= shrinkSize;
         m_remainingAllocationSize += shrinkSize;
-        FILL_ZERO_IF_PRODUCTION(m_currentAllocationPoint, shrinkSize);
-        ASAN_POISON_MEMORY_REGION(m_currentAllocationPoint, shrinkSize);
+        SET_MEMORY_INACCESSIBLE(m_currentAllocationPoint, shrinkSize);
         header->setSize(allocationSize);
         return true;
     }
     ASSERT(shrinkSize >= sizeof(HeapObjectHeader));
     ASSERT(header->gcInfoIndex() > 0);
     Address shrinkAddress = header->payloadEnd() - shrinkSize;
-    FILL_ZERO_IF_PRODUCTION(shrinkAddress, shrinkSize);
-    ASAN_POISON_MEMORY_REGION(shrinkAddress, shrinkSize);
     HeapObjectHeader* freedHeader = new (NotNull, shrinkAddress) HeapObjectHeader(shrinkSize, header->gcInfoIndex());
     freedHeader->markPromptlyFreed();
     ASSERT(pageFromObject(reinterpret_cast<Address>(header)) == findPageFromAddress(reinterpret_cast<Address>(header)));
     m_promptlyFreedSize += shrinkSize;
     header->setSize(allocationSize);
+    SET_MEMORY_INACCESSIBLE(shrinkAddress + sizeof(HeapObjectHeader), shrinkSize - sizeof(HeapObjectHeader));
     return false;
 }
 
@@ -885,6 +884,11 @@ Address NormalPageHeap::outOfLineAllocate(size_t allocationSize, size_t gcInfoIn
 #if ENABLE(GC_PROFILING)
     threadState()->snapshotFreeListIfNecessary();
 #endif
+
+    // Ideally we want to update the persistent count every time a persistent
+    // handle is created or destructed, but that is heavy. So we do the update
+    // only in outOfLineAllocate().
+    threadState()->updatePersistentCounters();
 
     // 1. If this allocation is big enough, allocate a large object.
     if (allocationSize >= largeObjectSizeThreshold) {
@@ -1003,7 +1007,6 @@ Address LargeObjectHeap::doAllocateLargeObjectPage(size_t allocationSize, size_t
 
     threadState()->shouldFlushHeapDoesNotContainCache();
     PageMemory* pageMemory = PageMemory::allocate(largeObjectSize);
-    threadState()->allocatedRegionsSinceLastGC().append(pageMemory->region());
     Address largeObjectAddress = pageMemory->writableStart();
     Address headerAddress = largeObjectAddress + LargeObjectPage::pageHeaderSize();
 #if ENABLE(ASSERT)
@@ -1165,8 +1168,9 @@ void FreeList::addToFreeList(Address address, size_t size)
         m_biggestFreeListIndex = index;
 }
 
-#if ENABLE(ASSERT) || defined(LEAK_SANITIZER) || defined(ADDRESS_SANITIZER)
+#if ENABLE(ASSERT) || defined(LEAK_SANITIZER) || defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER)
 NO_SANITIZE_ADDRESS
+NO_SANITIZE_MEMORY
 void NEVER_INLINE FreeList::zapFreedMemory(Address address, size_t size)
 {
     for (size_t i = 0; i < size; i++) {
@@ -1306,7 +1310,7 @@ void NormalPage::sweep()
             // invariant that memory on the free list is zero filled.
             // The rest of the memory is already on the free list and is
             // therefore already zero filled.
-            FILL_ZERO_IF_PRODUCTION(headerAddress, size < sizeof(FreeListEntry) ? size : sizeof(FreeListEntry));
+            SET_MEMORY_INACCESSIBLE(headerAddress, size < sizeof(FreeListEntry) ? size : sizeof(FreeListEntry));
             headerAddress += size;
             continue;
         }
@@ -1317,17 +1321,16 @@ void NormalPage::sweep()
             // This is a fast version of header->payloadSize().
             size_t payloadSize = size - sizeof(HeapObjectHeader);
             Address payload = header->payload();
-            // For ASan we unpoison the specific object when calling the
-            // finalizer and poison it again when done to allow the object's own
-            // finalizer to operate on the object. Given all other unmarked
-            // objects are poisoned, ASan will detect an error if the finalizer
-            // touches any other on-heap object that die at the same GC cycle.
+            // For ASan, unpoison the object before calling the finalizer. The
+            // finalized object will be zero-filled and poison'ed afterwards.
+            // Given all other unmarked objects are poisoned, ASan will detect
+            // an error if the finalizer touches any other on-heap object that
+            // die at the same GC cycle.
             ASAN_UNPOISON_MEMORY_REGION(payload, payloadSize);
             header->finalize(payload, payloadSize);
             // This memory will be added to the freelist. Maintain the invariant
             // that memory on the freelist is zero filled.
-            FILL_ZERO_IF_PRODUCTION(headerAddress, size);
-            ASAN_POISON_MEMORY_REGION(payload, payloadSize);
+            SET_MEMORY_INACCESSIBLE(headerAddress, size);
             headerAddress += size;
             continue;
         }
@@ -1384,7 +1387,7 @@ void NormalPage::makeConsistentForMutator()
             // invariant that memory on the free list is zero filled.
             // The rest of the memory is already on the free list and is
             // therefore already zero filled.
-            FILL_ZERO_IF_PRODUCTION(headerAddress, size < sizeof(FreeListEntry) ? size : sizeof(FreeListEntry));
+            SET_MEMORY_INACCESSIBLE(headerAddress, size < sizeof(FreeListEntry) ? size : sizeof(FreeListEntry));
             headerAddress += size;
             continue;
         }
@@ -1552,7 +1555,7 @@ void NormalPage::markOrphaned()
     BasePage::markOrphaned();
 }
 
-void NormalPage::takeSnapshot(String dumpName, size_t pageIndex, size_t* outFreeSize, size_t* outFreeCount)
+void NormalPage::takeSnapshot(String dumpName, size_t pageIndex, ThreadState::GCSnapshotInfo& info, size_t* outFreeSize, size_t* outFreeCount)
 {
     dumpName.append(String::format("/pages/page_%lu", static_cast<unsigned long>(pageIndex)));
     WebMemoryAllocatorDump* pageDump = BlinkGCMemoryDumpProvider::instance()->createMemoryAllocatorDumpForCurrentGC(dumpName);
@@ -1572,9 +1575,17 @@ void NormalPage::takeSnapshot(String dumpName, size_t pageIndex, size_t* outFree
         } else if (header->isMarked()) {
             liveCount++;
             liveSize += header->size();
+
+            size_t gcInfoIndex = header->gcInfoIndex();
+            info.liveCount[gcInfoIndex]++;
+            info.liveSize[gcInfoIndex] += header->size();
         } else {
             deadCount++;
             deadSize += header->size();
+
+            size_t gcInfoIndex = header->gcInfoIndex();
+            info.deadCount[gcInfoIndex]++;
+            info.deadSize[gcInfoIndex] += header->size();
         }
     }
 
@@ -1675,7 +1686,7 @@ void NormalPage::countObjectsToSweep(ClassAgeCountsMap& classAgeCounts)
 bool NormalPage::contains(Address addr)
 {
     Address blinkPageStart = roundToBlinkPageStart(address());
-    ASSERT(blinkPageStart == address() - WTF::kSystemPageSize); // Page is at aligned address plus guard page size.
+    ASSERT(blinkPageStart == address() - blinkGuardPageSize); // Page is at aligned address plus guard page size.
     return blinkPageStart <= addr && addr < blinkPageStart + blinkPageSize;
 }
 #endif
@@ -1763,7 +1774,7 @@ void LargeObjectPage::markOrphaned()
     BasePage::markOrphaned();
 }
 
-void LargeObjectPage::takeSnapshot(String dumpName, size_t pageIndex, size_t* outFreeSize, size_t* outFreeCount)
+void LargeObjectPage::takeSnapshot(String dumpName, size_t pageIndex, ThreadState::GCSnapshotInfo& info, size_t* outFreeSize, size_t* outFreeCount)
 {
     dumpName.append(String::format("/pages/page_%lu", static_cast<unsigned long>(pageIndex)));
     WebMemoryAllocatorDump* pageDump = BlinkGCMemoryDumpProvider::instance()->createMemoryAllocatorDumpForCurrentGC(dumpName);
@@ -1773,12 +1784,17 @@ void LargeObjectPage::takeSnapshot(String dumpName, size_t pageIndex, size_t* ou
     size_t liveCount = 0;
     size_t deadCount = 0;
     HeapObjectHeader* header = heapObjectHeader();
+    size_t gcInfoIndex = header->gcInfoIndex();
     if (header->isMarked()) {
         liveCount = 1;
         liveSize += header->payloadSize();
+        info.liveCount[gcInfoIndex]++;
+        info.liveSize[gcInfoIndex] += header->size();
     } else {
         deadCount = 1;
         deadSize += header->payloadSize();
+        info.deadCount[gcInfoIndex]++;
+        info.deadSize[gcInfoIndex] += header->size();
     }
 
     pageDump->AddScalar("live_count", "objects", liveCount);
@@ -1914,9 +1930,15 @@ void Heap::init()
     s_heapDoesNotContainCache = new HeapDoesNotContainCache();
     s_freePagePool = new FreePagePool();
     s_orphanedPagePool = new OrphanedPagePool();
-    s_allocatedObjectSize = 0;
     s_allocatedSpace = 0;
+    s_allocatedObjectSize = 0;
+    s_objectSizeAtLastGC = 0;
     s_markedObjectSize = 0;
+    s_markedObjectSizeAtLastCompleteSweep = 0;
+    s_persistentCount = 0;
+    s_persistentCountAtLastGC = 0;
+    s_collectedPersistentCount = 0;
+    s_partitionAllocSizeAtLastGC = WTF::Partitions::totalSizeOfCommittedPages();
     s_estimatedMarkingTimePerByte = 0.0;
 
     GCInfoTable::init();
@@ -2372,17 +2394,26 @@ void Heap::reportMemoryUsageHistogram()
     }
 }
 
-#if ENABLE(GC_PROFILING)
 void Heap::reportMemoryUsageForTracing()
 {
+    bool gcTracingEnabled;
+    TRACE_EVENT_CATEGORY_GROUP_ENABLED("blink_gc", &gcTracingEnabled);
+    if (!gcTracingEnabled)
+        return;
+
     // These values are divided by 1024 to avoid overflow in practical cases (TRACE_COUNTER values are 32-bit ints).
     // They are capped to INT_MAX just in case.
-    TRACE_COUNTER1("blink_gc", "Heap::estimatedLiveObjectSizeKB", std::min(Heap::estimatedLiveObjectSize() / 1024, static_cast<size_t>(INT_MAX)));
     TRACE_COUNTER1("blink_gc", "Heap::allocatedObjectSizeKB", std::min(Heap::allocatedObjectSize() / 1024, static_cast<size_t>(INT_MAX)));
     TRACE_COUNTER1("blink_gc", "Heap::markedObjectSizeKB", std::min(Heap::markedObjectSize() / 1024, static_cast<size_t>(INT_MAX)));
+    TRACE_COUNTER1("blink_gc", "Heap::markedObjectSizeAtLastCompleteSweepKB", std::min(Heap::markedObjectSizeAtLastCompleteSweep() / 1024, static_cast<size_t>(INT_MAX)));
+    TRACE_COUNTER1("blink_gc", "Heap::allocatedSpaceKB", std::min(Heap::allocatedSpace() / 1024, static_cast<size_t>(INT_MAX)));
+    TRACE_COUNTER1("blink_gc", "Heap::objectSizeAtLastGCKB", std::min(Heap::objectSizeAtLastGC() / 1024, static_cast<size_t>(INT_MAX)));
+    TRACE_COUNTER1("blink_gc", "Heap::persistentCount", std::min(Heap::persistentCount(), static_cast<size_t>(INT_MAX)));
+    TRACE_COUNTER1("blink_gc", "Heap::persistentCountAtLastGC", std::min(Heap::persistentCountAtLastGC(), static_cast<size_t>(INT_MAX)));
+    TRACE_COUNTER1("blink_gc", "Heap::collectedPersistentCount", std::min(Heap::collectedPersistentCount(), static_cast<size_t>(INT_MAX)));
+    TRACE_COUNTER1("blink_gc", "Heap::partitionAllocSizeAtLastGCKB", std::min(Heap::partitionAllocSizeAtLastGC() / 1024, static_cast<size_t>(INT_MAX)));
     TRACE_COUNTER1("blink_gc", "Partitions::totalSizeOfCommittedPagesKB", std::min(WTF::Partitions::totalSizeOfCommittedPages() / 1024, static_cast<size_t>(INT_MAX)));
 }
-#endif
 
 size_t Heap::objectPayloadSizeForTesting()
 {
@@ -2428,6 +2459,7 @@ void Heap::removePageMemoryRegion(PageMemoryRegion* region)
 
 void Heap::addPageMemoryRegion(PageMemoryRegion* region)
 {
+    MutexLocker locker(regionTreeMutex());
     RegionTree::add(new RegionTree(region), &s_regionTree);
 }
 
@@ -2493,9 +2525,14 @@ void Heap::resetHeapCounters()
 {
     ASSERT(ThreadState::current()->isInGC());
 
+    Heap::reportMemoryUsageForTracing();
+
+    s_objectSizeAtLastGC = s_allocatedObjectSize + s_markedObjectSize;
+    s_partitionAllocSizeAtLastGC = WTF::Partitions::totalSizeOfCommittedPages();
     s_allocatedObjectSize = 0;
     s_markedObjectSize = 0;
-    s_externalObjectSizeAtLastGC = WTF::Partitions::totalSizeOfCommittedPages();
+    s_persistentCountAtLastGC = s_persistentCount;
+    s_collectedPersistentCount = 0;
 }
 
 CallbackStack* Heap::s_markingStack;
@@ -2507,13 +2544,15 @@ bool Heap::s_shutdownCalled = false;
 FreePagePool* Heap::s_freePagePool;
 OrphanedPagePool* Heap::s_orphanedPagePool;
 Heap::RegionTree* Heap::s_regionTree = nullptr;
-size_t Heap::s_allocatedObjectSize = 0;
 size_t Heap::s_allocatedSpace = 0;
+size_t Heap::s_allocatedObjectSize = 0;
+size_t Heap::s_objectSizeAtLastGC = 0;
 size_t Heap::s_markedObjectSize = 0;
-// We don't want to use 0 KB for the initial value because it may end up
-// triggering the first GC of some thread too prematurely.
-size_t Heap::s_estimatedLiveObjectSize = 512 * 1024;
-size_t Heap::s_externalObjectSizeAtLastGC = 0;
+size_t Heap::s_markedObjectSizeAtLastCompleteSweep = 0;
+size_t Heap::s_persistentCount = 0;
+size_t Heap::s_persistentCountAtLastGC = 0;
+size_t Heap::s_collectedPersistentCount = 0;
+size_t Heap::s_partitionAllocSizeAtLastGC = 0;
 double Heap::s_estimatedMarkingTimePerByte = 0.0;
 
 } // namespace blink

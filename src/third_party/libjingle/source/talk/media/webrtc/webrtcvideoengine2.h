@@ -36,7 +36,6 @@
 #include "talk/media/webrtc/webrtcvideochannelfactory.h"
 #include "talk/media/webrtc/webrtcvideodecoderfactory.h"
 #include "talk/media/webrtc/webrtcvideoencoderfactory.h"
-#include "webrtc/base/cpumonitor.h"
 #include "webrtc/base/criticalsection.h"
 #include "webrtc/base/scoped_ptr.h"
 #include "webrtc/base/thread_annotations.h"
@@ -54,7 +53,6 @@ class VideoEncoder;
 }
 
 namespace rtc {
-class CpuMonitor;
 class Thread;
 }  // namespace rtc
 
@@ -187,6 +185,8 @@ class WebRtcVideoChannel2 : public rtc::MessageHandler,
 
   // VideoMediaChannel implementation
   void DetachVoiceChannel() override;
+  bool SetSendParameters(const VideoSendParameters& params) override;
+  bool SetRecvParameters(const VideoRecvParameters& params) override;
   bool SetRecvCodecs(const std::vector<VideoCodec>& codecs) override;
   bool SetSendCodecs(const std::vector<VideoCodec>& codecs) override;
   bool GetSendCodec(VideoCodec* send_codec) override;
@@ -393,6 +393,14 @@ class WebRtcVideoChannel2 : public rtc::MessageHandler,
     bool muted_ GUARDED_BY(lock_);
     VideoFormat format_ GUARDED_BY(lock_);
     int old_adapt_changes_ GUARDED_BY(lock_);
+
+    // The timestamp of the first frame received
+    // Used to generate the timestamps of subsequent frames
+    int64_t first_frame_timestamp_ms_ GUARDED_BY(lock_);
+
+    // The timestamp of the last frame received
+    // Used to generate timestamp for the black frame when capturer is removed
+    int64_t last_frame_timestamp_ms_ GUARDED_BY(lock_);
   };
 
   // Wrapper for the receiver part, contains configs etc. that are needed to

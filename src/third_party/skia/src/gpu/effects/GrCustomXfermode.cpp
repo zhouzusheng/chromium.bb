@@ -18,7 +18,7 @@
 #include "SkXfermode.h"
 #include "gl/GrGLCaps.h"
 #include "gl/GrGLGpu.h"
-#include "gl/GrGLProcessor.h"
+#include "gl/GrGLFragmentProcessor.h"
 #include "gl/GrGLProgramDataManager.h"
 #include "gl/builders/GrGLProgramBuilder.h"
 #include "glsl/GrGLSLCaps.h"
@@ -447,23 +447,17 @@ public:
     GLCustomXferFP(const GrFragmentProcessor&) {}
     ~GLCustomXferFP() override {};
 
-    void emitCode(GrGLFPBuilder* builder,
-                  const GrFragmentProcessor& fp,
-                  const char* outputColor,
-                  const char* inputColor,
-                  const TransformedCoordsArray& coords,
-                  const TextureSamplerArray& samplers) override {
-        SkXfermode::Mode mode = fp.cast<GrCustomXferFP>().mode();
-        GrGLFragmentBuilder* fsBuilder = builder->getFragmentShaderBuilder();
+    void emitCode(EmitArgs& args) override {
+        SkXfermode::Mode mode = args.fFp.cast<GrCustomXferFP>().mode();
+        GrGLFragmentBuilder* fsBuilder = args.fBuilder->getFragmentShaderBuilder();
         const char* dstColor = "bgColor";
         fsBuilder->codeAppendf("vec4 %s = ", dstColor);
-        fsBuilder->appendTextureLookup(samplers[0], coords[0].c_str(), coords[0].getType());
+        fsBuilder->appendTextureLookup(args.fSamplers[0], args.fCoords[0].c_str(),
+                                       args.fCoords[0].getType());
         fsBuilder->codeAppendf(";");
 
-        emit_custom_xfermode_code(mode, fsBuilder, outputColor, inputColor, dstColor); 
+        emit_custom_xfermode_code(mode, fsBuilder, args.fOutputColor, args.fInputColor, dstColor);
     }
-
-    void setData(const GrGLProgramDataManager&, const GrProcessor&) override {}
 
     static void GenKey(const GrFragmentProcessor& proc, const GrGLSLCaps&, GrProcessorKeyBuilder* b) {
         // The background may come from the dst or from a texture.
@@ -472,6 +466,9 @@ public:
         key |= proc.cast<GrCustomXferFP>().mode() << 1;
         b->add32(key);
     }
+
+protected:
+    void onSetData(const GrGLProgramDataManager&, const GrProcessor&) override {}
 
 private:
     typedef GrGLFragmentProcessor INHERITED;
@@ -491,11 +488,11 @@ GrCustomXferFP::GrCustomXferFP(GrProcessorDataManager*, SkXfermode::Mode mode, G
     this->addTextureAccess(&fBackgroundAccess);
 }
 
-void GrCustomXferFP::getGLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const {
+void GrCustomXferFP::onGetGLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const {
     GLCustomXferFP::GenKey(*this, caps, b);
 }
 
-GrGLFragmentProcessor* GrCustomXferFP::createGLInstance() const {
+GrGLFragmentProcessor* GrCustomXferFP::onCreateGLInstance() const {
     return SkNEW_ARGS(GLCustomXferFP, (*this));
 }
 
@@ -556,9 +553,7 @@ private:
 
     void onGetGLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const override;
 
-    bool onWillNeedXferBarrier(const GrRenderTarget* rt,
-                               const GrCaps& caps,
-                               GrXferBarrierType* outBarrierType) const override;
+    GrXferBarrierType onXferBarrier(const GrRenderTarget*, const GrCaps&) const override;
 
     void onGetBlendInfo(BlendInfo*) const override;
 
@@ -631,7 +626,7 @@ private:
 
     void onSetData(const GrGLProgramDataManager&, const GrXferProcessor&) override {}
 
-    typedef GrGLFragmentProcessor INHERITED;
+    typedef GrGLXferProcessor INHERITED;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -761,14 +756,11 @@ GrXferProcessor::OptFlags CustomXP::onGetOptimizations(const GrProcOptInfo& colo
     return flags;
 }
 
-bool CustomXP::onWillNeedXferBarrier(const GrRenderTarget* rt,
-                                     const GrCaps& caps,
-                                     GrXferBarrierType* outBarrierType) const {
+GrXferBarrierType CustomXP::onXferBarrier(const GrRenderTarget* rt, const GrCaps& caps) const {
     if (this->hasHWBlendEquation() && !caps.advancedCoherentBlendEquationSupport()) {
-        *outBarrierType = kBlend_GrXferBarrierType;
-        return true;
+        return kBlend_GrXferBarrierType;
     }
-    return false;
+    return kNone_GrXferBarrierType;
 }
 
 void CustomXP::onGetBlendInfo(BlendInfo* blendInfo) const {

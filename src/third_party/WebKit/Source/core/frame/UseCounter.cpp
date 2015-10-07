@@ -389,7 +389,7 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyClipPath: return 355;
     case CSSPropertyClipRule: return 356;
     case CSSPropertyMask: return 357;
-    case CSSPropertyEnableBackground: return 358;
+    // CSSPropertyEnableBackground has been removed, was return 358;
     case CSSPropertyFilter: return 359;
     case CSSPropertyFloodColor: return 360;
     case CSSPropertyFloodOpacity: return 361;
@@ -489,7 +489,6 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyGrid: return 453;
     case CSSPropertyAll: return 454;
     case CSSPropertyJustifyItems: return 455;
-    case CSSPropertyScrollBlocksOn: return 456;
     case CSSPropertyMotionPath: return 457;
     case CSSPropertyMotionOffset: return 458;
     case CSSPropertyMotionRotation: return 459;
@@ -540,6 +539,7 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     case CSSPropertyTranslate: return 504;
     case CSSPropertyRotate: return 505;
     case CSSPropertyScale: return 506;
+    case CSSPropertyImageOrientation: return 507;
 
     // 1. Add new features above this line (don't change the assigned numbers of the existing
     // items).
@@ -556,7 +556,7 @@ int UseCounter::mapCSSPropertyIdToCSSSampleIdForHistogram(int id)
     return 0;
 }
 
-static int maximumCSSSampleId() { return 506; }
+static int maximumCSSSampleId() { return 507; }
 
 void UseCounter::muteForInspector()
 {
@@ -859,10 +859,10 @@ String UseCounter::deprecationMessage(Feature feature)
     case PrefixedMediaAddKey:
     case PrefixedMediaGenerateKeyRequest:
     case PrefixedMediaCancelKeyRequest:
-        return "The prefixed Encrypted Media Extensions APIs are deprecated and will be removed in M46 (beta around September 2015). Please use 'navigator.requestMediaKeySystemAccess()' instead.";
+        return "The prefixed Encrypted Media Extensions APIs are deprecated and will be removed in M47 (beta around October 2015). Please use 'navigator.requestMediaKeySystemAccess()' instead.";
 
     case CanPlayTypeKeySystem:
-        return "canPlayType()'s 'keySystem' parameter is deprecated and will be ignored in M46 (beta around September 2015). Please use 'navigator.requestMediaKeySystemAccess()' instead.";
+        return "canPlayType()'s 'keySystem' parameter is deprecated and will be ignored in M47 (beta around October 2015). Please use 'navigator.requestMediaKeySystemAccess()' instead.";
 
     case SVGSVGElementForceRedraw:
         return "'SVGSVGElement.forceRedraw()' is deprecated, please do not use it. It is a no-op, as per SVG2 (https://svgwg.org/svg2-draft/struct.html#__svg__SVGSVGElement__forceRedraw).";
@@ -877,6 +877,12 @@ String UseCounter::deprecationMessage(Feature feature)
         return "'SVGSVGElement.unsuspendRedrawAll()' is deprecated, please do not use it. It is a no-op, as per SVG2 (https://svgwg.org/svg2-draft/struct.html#__svg__SVGSVGElement__unsuspendRedrawAll).";
 
     // Powerful features on insecure origins (https://goo.gl/rStTGz)
+    case DeviceMotionInsecureOrigin:
+        return "The devicemotion event is deprecated on insecure origins, and support will be removed in the future. You should consider switching your application to a secure origin, such as HTTPS. See https://goo.gl/rStTGz for more details.";
+
+    case DeviceOrientationInsecureOrigin:
+        return "The deviceorientation event is deprecated on insecure origins, and support will be removed in the future. You should consider switching your application to a secure origin, such as HTTPS. See https://goo.gl/rStTGz for more details.";
+
     case GeolocationInsecureOrigin:
         return "getCurrentPosition() and watchPosition() are deprecated on insecure origins, and support will be removed in the future. You should consider switching your application to a secure origin, such as HTTPS. See https://goo.gl/rStTGz for more details.";
 
@@ -922,9 +928,6 @@ String UseCounter::deprecationMessage(Feature feature)
     case PrefixedMouseEventMovementY:
         return replacedBy("webkitMovementY", "movementY");
 
-    case VideoFullscreenAllowedExemption:
-        return "Entering fullscreen in an <iframe> with no allowfullscreen attribute is deprecated and will stop working in M46, around October 2015. Please use the allowfullscreen attribute.";
-
     case SVGSMILElementInDocument:
     case SVGSMILAnimationInImageRegardlessOfCache:
         return "SVG's SMIL animations (<animate>, <set>, etc.) are deprecated and will be removed. Please use CSS animations or Web animations instead.";
@@ -940,6 +943,30 @@ String UseCounter::deprecationMessage(Feature feature)
 
     case PermissionStatusStatus:
         return "PermissionStatus.status is deprecated and will be removed in M47, around November 2015. Please use PermissionStatus.state instead.";
+
+    case ElementOffsetParent:
+        return "'Element.offsetParent' is deprecated and will be removed in M47, around Novemver 2015. The offset* attributes are only standardized and widely supported for HTML elements.";
+
+    case ElementOffsetTop:
+        return "'Element.offsetTop' is deprecated and will be removed in M47, around Novemver 2015. The offset* attributes are only standardized and widely supported for HTML elements.";
+
+    case ElementOffsetLeft:
+        return "'Element.offsetLeft' is deprecated and will be removed in M47, around Novemver 2015. The offset* attributes are only standardized and widely supported for HTML elements.";
+
+    case ElementOffsetWidth:
+        return "'Element.offsetWidth' is deprecated and will be removed in M47, around Novemver 2015. The offset* attributes are only standardized and widely supported for HTML elements.";
+
+    case ElementOffsetHeight:
+        return "'Element.offsetHeight' is deprecated and will be removed in M47, around Novemver 2015. The offset* attributes are only standardized and widely supported for HTML elements.";
+
+    case PrefixedPerformanceClearResourceTimings:
+        return replacedBy("Performance.webkitClearResourceTimings", "Performance.clearResourceTimings");
+
+    case PrefixedPerformanceSetResourceTimingBufferSize:
+        return replacedBy("Performance.webkitSetResourceTimingBufferSize", "Performance.setResourceTimingBufferSize");
+
+    case PrefixedPerformanceResourceTimingBufferFull:
+        return replacedBy("Performance.onwebkitresourcetimingbufferfull", "Performance.onresourcetimingbufferfull");
 
     case FetchAPIRequestContext:
         return "Request.context is deprecated and will be removed in M46 (see: https://www.chromestatus.com/feature/5534702526005248).";

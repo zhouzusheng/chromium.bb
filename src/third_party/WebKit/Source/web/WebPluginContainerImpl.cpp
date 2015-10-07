@@ -39,6 +39,7 @@
 #include "core/HTMLNames.h"
 #include "core/clipboard/DataObject.h"
 #include "core/clipboard/DataTransfer.h"
+#include "core/events/DragEvent.h"
 #include "core/events/GestureEvent.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/events/MouseEvent.h"
@@ -200,6 +201,8 @@ void WebPluginContainerImpl::handleEvent(Event* event)
         handleTouchEvent(toTouchEvent(event));
     else if (event->isGestureEvent())
         handleGestureEvent(toGestureEvent(event));
+    else if (event->isDragEvent() && m_webPlugin->canProcessDrag())
+        handleDragEvent(toDragEvent(event));
 
     // FIXME: it would be cleaner if Widget::handleEvent returned true/false and
     // HTMLPluginElement called setDefaultHandled or defaultEventHandler.
@@ -315,12 +318,6 @@ void WebPluginContainerImpl::setWebLayer(WebLayer* layer)
 #endif
 
     m_element->setNeedsCompositingUpdate();
-    // Being composited or not affects the self painting layer bit
-    // on the DeprecatedPaintLayer.
-    if (LayoutPart* layoutObject = m_element->layoutPart()) {
-        ASSERT(layoutObject->hasLayer());
-        layoutObject->layer()->updateSelfPaintingLayer();
-    }
 }
 
 bool WebPluginContainerImpl::supportsPaginatedPrint() const
@@ -504,12 +501,6 @@ void WebPluginContainerImpl::loadFrameRequest(const WebURLRequest& request, cons
     frame->loader().load(frameRequest);
 }
 
-void WebPluginContainerImpl::zoomLevelChanged(double zoomLevel)
-{
-    WebViewImpl* view = WebViewImpl::fromPage(m_element->document().frame()->page());
-    view->fullFramePluginZoomLevelChanged(zoomLevel);
-}
-
 bool WebPluginContainerImpl::isRectTopmost(const WebRect& rect)
 {
     // Disallow access to the frame during dispose(), because it is not guaranteed to
@@ -523,9 +514,9 @@ bool WebPluginContainerImpl::isRectTopmost(const WebRect& rect)
     if (!frame)
         return false;
 
+    IntRect documentRect(x() + rect.x, y() + rect.y, rect.width, rect.height);
     // hitTestResultAtPoint() takes a padding rectangle.
     // FIXME: We'll be off by 1 when the width or height is even.
-    IntRect documentRect(x() + rect.x, y() + rect.y, rect.width, rect.height);
     LayoutPoint center = documentRect.center();
     // Make the rect we're checking (the point surrounded by padding rects) contained inside the requested rect. (Note that -1/2 is 0.)
     LayoutSize padding((documentRect.width() - 1) / 2, (documentRect.height() - 1) / 2);
@@ -754,12 +745,6 @@ DEFINE_TRACE(WebPluginContainerImpl)
 void WebPluginContainerImpl::handleMouseEvent(MouseEvent* event)
 {
     ASSERT(parent()->isFrameView());
-
-    if (event->isDragEvent()) {
-        if (m_webPlugin->canProcessDrag())
-            handleDragEvent(event);
-        return;
-    }
 
     // We cache the parent FrameView here as the plugin widget could be deleted
     // in the call to HandleEvent. See http://b/issue?id=1362948

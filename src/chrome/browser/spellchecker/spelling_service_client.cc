@@ -37,6 +37,9 @@ const char kMisspellingsPath[] = "result.spellingCheckResponse.misspellings";
 // The location of error messages in JSON response from spelling service.
 const char kErrorPath[] = "error";
 
+// Languages currently supported by SPELLCHECK.
+const char* const kValidLanguages[] = {"en", "es", "fi", "da"};
+
 }  // namespace
 
 SpellingServiceClient::SpellingServiceClient() {
@@ -121,8 +124,7 @@ bool SpellingServiceClient::IsAvailable(
   // unavailable.
   if (!pref->GetBoolean(prefs::kEnableContinuousSpellcheck) ||
       !pref->GetBoolean(prefs::kSpellCheckUseSpellingService) ||
-      context->IsOffTheRecord() ||
-      chrome::spellcheck_common::IsMultilingualSpellcheckEnabled())
+      context->IsOffTheRecord())
     return false;
 
   // If the locale for spelling has not been set, the user has not decided to
@@ -135,15 +137,13 @@ bool SpellingServiceClient::IsAvailable(
   // Finally, if all options are available, we only enable only SUGGEST
   // if SPELLCHECK is not available for our language because SPELLCHECK results
   // are a superset of SUGGEST results.
-  // TODO(rlp): Only available for English right now. Fix this line to include
-  // all languages SPELLCHECK covers.
-  bool language_available = !locale.compare(0, 2, "en");
-  if (language_available) {
-    return type == SPELLCHECK;
-  } else {
-    // Only SUGGEST is allowed.
-    return type == SUGGEST;
+  for (const char* language : kValidLanguages) {
+    if (!locale.compare(0, 2, language))
+      return type == SPELLCHECK;
   }
+
+  // Only SUGGEST is allowed.
+  return type == SUGGEST;
 }
 
 bool SpellingServiceClient::ParseResponse(

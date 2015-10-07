@@ -16,8 +16,6 @@
 #include "base/strings/string16.h"
 #include "content/public/common/content_client.h"
 #include "third_party/WebKit/public/platform/WebPageVisibilityState.h"
-#include "third_party/WebKit/public/web/WebNavigationPolicy.h"
-#include "third_party/WebKit/public/web/WebNavigationType.h"
 #include "ui/base/page_transition_types.h"
 #include "v8/include/v8.h"
 
@@ -153,8 +151,10 @@ class CONTENT_EXPORT ContentRendererClient {
 
   // Allows the embedder to control when media resources are loaded. Embedders
   // can run |closure| immediately if they don't wish to defer media resource
-  // loading.
+  // loading.  If |has_played_media_before| is true, the render frame has
+  // previously started media playback (i.e. played audio and video).
   virtual void DeferMediaLoad(RenderFrame* render_frame,
+                              bool has_played_media_before,
                               const base::Closure& closure);
 
   // Allows the embedder to override creating a WebMediaStreamCenter. If it
@@ -197,23 +197,6 @@ class CONTENT_EXPORT ContentRendererClient {
 
   // Returns true if a popup window should be allowed.
   virtual bool AllowPopup();
-
-#ifdef OS_ANDROID
-  // TODO(sgurun) This callback is deprecated and will be removed as soon
-  // as android webview completes implementation of a resource throttle based
-  // shouldoverrideurl implementation. See crbug.com/325351
-  //
-  // Returns true if the navigation was handled by the embedder and should be
-  // ignored by WebKit. This method is used by CEF and android_webview.
-  virtual bool HandleNavigation(RenderFrame* render_frame,
-                                DocumentState* document_state,
-                                int opener_id,
-                                blink::WebFrame* frame,
-                                const blink::WebURLRequest& request,
-                                blink::WebNavigationType type,
-                                blink::WebNavigationPolicy default_policy,
-                                bool is_redirect);
-#endif
 
   // Returns true if we should fork a new process for the given navigation.
   // If |send_referrer| is set to false (which is the default), no referrer
@@ -316,6 +299,16 @@ class CONTENT_EXPORT ContentRendererClient {
   virtual void AddImageContextMenuProperties(
       const blink::WebURLResponse& response,
       std::map<std::string, std::string>* properties) {}
+
+  // Notifies that a service worker context has been created. This function
+  // is called from the worker thread.
+  virtual void DidInitializeServiceWorkerContextOnWorkerThread(
+      v8::Local<v8::Context> context,
+      const GURL& url) {}
+
+  // Notifies that a service worker context will be destroyed. This function
+  // is called from the worker thread.
+  virtual void WillDestroyServiceWorkerContextOnWorkerThread(const GURL& url) {}
 };
 
 }  // namespace content

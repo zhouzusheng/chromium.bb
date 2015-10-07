@@ -35,8 +35,8 @@
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
-#include "core/frame/PinchViewport.h"
 #include "core/frame/Settings.h"
+#include "core/frame/VisualViewport.h"
 #include "core/html/HTMLBodyElement.h"
 #include "core/html/HTMLHeadElement.h"
 #include "core/html/HTMLHtmlElement.h"
@@ -56,7 +56,10 @@ using namespace HTMLNames;
 
 class ImageEventListener : public EventListener {
 public:
-    static PassRefPtr<ImageEventListener> create(ImageDocument* document) { return adoptRef(new ImageEventListener(document)); }
+    static PassRefPtrWillBeRawPtr<ImageEventListener> create(ImageDocument* document)
+    {
+        return adoptRefWillBeNoop(new ImageEventListener(document));
+    }
     static const ImageEventListener* cast(const EventListener* listener)
     {
         return listener->type() == ImageEventListenerType
@@ -65,6 +68,12 @@ public:
     }
 
     virtual bool operator==(const EventListener& other);
+
+    DEFINE_INLINE_VIRTUAL_TRACE()
+    {
+        visitor->trace(m_doc);
+        EventListener::trace(visitor);
+    }
 
 private:
     ImageEventListener(ImageDocument* document)
@@ -75,7 +84,7 @@ private:
 
     virtual void handleEvent(ExecutionContext*, Event*);
 
-    ImageDocument* m_doc;
+    RawPtrWillBeMember<ImageDocument> m_doc;
 };
 
 class ImageDocumentParser : public RawDataDocumentParser {
@@ -227,7 +236,7 @@ void ImageDocument::createDocumentStructure(bool loadingMultipartContent)
 
     if (shouldShrinkToFit()) {
         // Add event listeners
-        RefPtr<EventListener> listener = ImageEventListener::create(this);
+        RefPtrWillBeRawPtr<EventListener> listener = ImageEventListener::create(this);
         if (LocalDOMWindow* domWindow = this->domWindow())
             domWindow->addEventListener("resize", listener, false);
         if (m_shrinkToFitMode == Desktop)
@@ -369,8 +378,8 @@ void ImageDocument::windowSizeChanged(ScaleType type)
         // the scale is minimum.
         // Don't shrink height to fit because we use width=device-width in viewport meta tag,
         // and expect a full-width reading mode for normal-width-huge-height images.
-        int viewportWidth = frame()->host()->pinchViewport().size().width();
-        m_imageElement->setInlineStyleProperty(CSSPropertyMaxWidth, viewportWidth * 10, CSSPrimitiveValue::CSS_PX);
+        int viewportWidth = frame()->host()->visualViewport().size().width();
+        m_imageElement->setInlineStyleProperty(CSSPropertyMaxWidth, viewportWidth * 10, CSSPrimitiveValue::UnitType::Pixels);
         return;
     }
 

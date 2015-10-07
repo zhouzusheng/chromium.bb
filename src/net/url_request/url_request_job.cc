@@ -378,7 +378,9 @@ void URLRequestJob::NotifyHeadersComplete() {
   if (has_handled_response_)
     return;
 
-  DCHECK(!request_->status().is_io_pending());
+  // This should not be called on error, and the job type should have cleared
+  // IO_PENDING state before calling this method.
+  DCHECK(request_->status().is_success());
 
   // Initialize to the current time, and let the subclass optionally override
   // the time stamps if it has that information.  The default request_time is
@@ -761,8 +763,15 @@ const URLRequestStatus URLRequestJob::GetStatus() {
 }
 
 void URLRequestJob::SetStatus(const URLRequestStatus &status) {
-  if (request_)
+  if (request_) {
+    // An error status should never be replaced by a non-error status by a
+    // URLRequestJob.  URLRequest has some retry paths, but it resets the status
+    // itself, if needed.
+    DCHECK(request_->status().is_io_pending() ||
+           request_->status().is_success() ||
+           (!status.is_success() && !status.is_io_pending()));
     request_->set_status(status);
+  }
 }
 
 void URLRequestJob::SetProxyServer(const HostPortPair& proxy_server) {
@@ -834,12 +843,17 @@ void URLRequestJob::RecordBytesRead(int bytes_read) {
   DCHECK_GT(bytes_read, 0);
   prefilter_bytes_read_ += bytes_read;
 
-  // Notify NetworkQualityEstimator.
+  // On first read, notify NetworkQualityEstimator that response headers have
+  // been received.
   // TODO(tbansal): Move this to url_request_http_job.cc. This may catch
   // Service Worker jobs twice.
-  if (request_ && request_->context()->network_quality_estimator()) {
-    request_->context()->network_quality_estimator()->NotifyDataReceived(
-        *request_, prefilter_bytes_read_, bytes_read);
+  // If prefilter_bytes_read_ is equal to bytes_read, it indicates this is the
+  // first raw read of the response body. This is used as the signal that
+  // response headers have been received.
+  if (request_ && request_->context()->network_quality_estimator() &&
+      prefilter_bytes_read_ == bytes_read) {
+    request_->context()->network_quality_estimator()->NotifyHeadersReceived(
+        *request_);
   }
 
   if (!filter_.get())

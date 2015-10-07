@@ -10,6 +10,7 @@
 
 #include "GrColor.h"
 #include "GrGpu.h"
+#include "GrNonAtomicRef.h"
 #include "GrPendingFragmentStage.h"
 #include "GrPrimitiveProcessor.h"
 #include "GrProgramDesc.h"
@@ -26,21 +27,56 @@ class GrPipelineBuilder;
  * Class that holds an optimized version of a GrPipelineBuilder. It is meant to be an immutable
  * class, and contains all data needed to set the state for a gpu draw.
  */
-class GrPipeline {
+class GrPipeline : public GrNonAtomicRef {
 public:
-    
+    ///////////////////////////////////////////////////////////////////////////
+    /// @name Creation
 
-    GrPipeline(const GrPipelineBuilder&,
-               const GrProcOptInfo& colorPOI,
-               const GrProcOptInfo& coveragePOI,
-               const GrCaps&,
-               const GrScissorState&,
-               const GrXferProcessor::DstTexture*);
+    struct CreateArgs {
+        const GrPipelineBuilder*    fPipelineBuilder;
+        const GrCaps*               fCaps;
+        GrProcOptInfo               fColorPOI;
+        GrProcOptInfo               fCoveragePOI;
+        const GrScissorState*       fScissor;
+        GrXferProcessor::DstTexture fDstTexture;
+    };
 
-    /*
-     * Returns true if these pipelines are equivalent.
+    /** Creates a pipeline into a pre-allocated buffer */
+    static GrPipeline* CreateAt(void* memory, const CreateArgs&, GrPipelineOptimizations*);
+
+    /// @}
+
+    ///////////////////////////////////////////////////////////////////////////
+    /// @name Comparisons
+
+    /**
+     * Returns true if these pipelines are equivalent.  Coord transforms may be applied either on
+     * the GPU or the CPU. When we apply them on the CPU then the matrices need not agree in order
+     * to combine draws. Therefore we take a param that indicates whether coord transforms should be
+     * compared."
      */
-    bool isEqual(const GrPipeline& that) const;
+    static bool AreEqual(const GrPipeline& a, const GrPipeline& b, bool ignoreCoordTransforms);
+
+    /**
+     * Allows a GrBatch subclass to determine whether two GrBatches can combine. This is a stricter
+     * test than isEqual because it also considers blend barriers when the two batches' bounds
+     * overlap
+     */
+    static bool CanCombine(const GrPipeline& a, const SkRect& aBounds,
+                           const GrPipeline& b, const SkRect& bBounds,
+                           const GrCaps& caps,
+                           bool ignoreCoordTransforms = false)  {
+        if (!AreEqual(a, b, ignoreCoordTransforms)) {
+            return false;
+        }
+        if (a.xferBarrierType(caps)) {
+            return aBounds.fRight <= bBounds.fLeft ||
+                   aBounds.fBottom <= bBounds.fTop ||
+                   bBounds.fRight <= aBounds.fLeft ||
+                   bBounds.fBottom <= aBounds.fTop;
+        }
+        return true;
+    }
 
     /// @}
 
@@ -82,8 +118,10 @@ public:
     bool isDitherState() const { return SkToBool(fFlags & kDither_Flag); }
     bool isHWAntialiasState() const { return SkToBool(fFlags & kHWAA_Flag); }
     bool snapVerticesToPixelCenters() const { return SkToBool(fFlags & kSnapVertices_Flag); }
-    // Skip any draws that refer to this pipeline (they should be a no-op).
-    bool mustSkip() const { return NULL == this->getRenderTarget(); }
+
+    GrXferBarrierType xferBarrierType(const GrCaps& caps) const {
+        return fXferProcessor->xferBarrierType(fRenderTarget.get(), caps);
+    }
 
     /**
      * Gets whether the target is drawing clockwise, counterclockwise,
@@ -97,11 +135,13 @@ public:
 
     bool readsFragPosition() const { return fReadsFragPosition; }
 
-    const GrPipelineInfo& infoForPrimitiveProcessor() const {
-        return fInfoForPrimitiveProcessor;
+    const SkTArray<const GrCoordTransform*, true>& coordTransforms() const {
+        return fCoordTransforms;
     }
 
 private:
+    GrPipeline() { /** Initialized in factory function*/ }
+
     /**
      * Alter the program desc and inputs (attribs and processors) based on the blend optimization.
      */
@@ -137,12 +177,12 @@ private:
     ProgramXferProcessor                fXferProcessor;
     FragmentStageArray                  fFragmentStages;
     bool                                fReadsFragPosition;
-    GrPipelineInfo                      fInfoForPrimitiveProcessor;
 
     // This function is equivalent to the offset into fFragmentStages where coverage stages begin.
     int                                 fNumColorStages;
 
-    GrProgramDesc fDesc;
+    SkSTArray<8, const GrCoordTransform*, true> fCoordTransforms;
+    GrProgramDesc                       fDesc;
 
     typedef SkRefCnt INHERITED;
 };

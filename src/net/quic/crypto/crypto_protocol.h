@@ -55,6 +55,18 @@ const QuicTag kQBIC = TAG('Q', 'B', 'I', 'C');   // TCP cubic
 // Connection options (COPT) values
 const QuicTag kAFCW = TAG('A', 'F', 'C', 'W');   // Auto-tune flow control
                                                  // receive windows.
+const QuicTag kIFW5 = TAG('I', 'F', 'W', '5');   // Set initial size
+                                                 // of stream flow control
+                                                 // receive window to
+                                                 // 32KB. (2^5 KB).
+const QuicTag kIFW6 = TAG('I', 'F', 'W', '6');   // Set initial size
+                                                 // of stream flow control
+                                                 // receive window to
+                                                 // 64KB. (2^6 KB).
+const QuicTag kIFW7 = TAG('I', 'F', 'W', '7');   // Set initial size
+                                                 // of stream flow control
+                                                 // receive window to
+                                                 // 128KB. (2^7 KB).
 const QuicTag kTBBR = TAG('T', 'B', 'B', 'R');   // Reduced Buffer Bloat TCP
 const QuicTag kRENO = TAG('R', 'E', 'N', 'O');   // Reno Congestion Control
 const QuicTag kBYTE = TAG('B', 'Y', 'T', 'E');   // TCP cubic or reno in bytes
@@ -81,6 +93,9 @@ const QuicTag kFHDR = TAG('F', 'H', 'D', 'R');   // FEC protect headers
 const QuicTag kFSTR = TAG('F', 'S', 'T', 'R');   // FEC protect all streams
 // Set FecSendPolicy for sending FEC packet only when FEC alarm goes off.
 const QuicTag kFSPA = TAG('F', 'S', 'P', 'A');
+// Run an experiment that sets FecTimeOut alarm to 0.25RTT.
+// TODO(rtenneti): Delete it after the experiment.
+const QuicTag kFRTT = TAG('F', 'R', 'T', 'T');
 
 // Enable bandwidth resumption experiment.
 const QuicTag kBWRE = TAG('B', 'W', 'R', 'E');  // Bandwidth resumption.

@@ -6,13 +6,15 @@ module content;
 
 import "content/public/common/background_sync.mojom";
 import "content/public/common/permission_status.mojom";
+import "content/public/common/service_worker_event_status.mojom";
 
 enum BackgroundSyncError {
   NONE,
   STORAGE,
   NOT_FOUND,
   NO_SERVICE_WORKER,
-  MAX=NO_SERVICE_WORKER
+  NOT_ALLOWED,
+  MAX=NOT_ALLOWED
 };
 
 interface BackgroundSyncService {
@@ -31,7 +33,8 @@ interface BackgroundSyncService {
       => (BackgroundSyncError err, PermissionStatus status);
 };
 
-interface BackgoundSyncServiceClient {
-  Sync(SyncRegistration event);
+interface BackgroundSyncServiceClient {
+  Sync(SyncRegistration registration)
+      => (ServiceWorkerEventStatus status);
 };
 

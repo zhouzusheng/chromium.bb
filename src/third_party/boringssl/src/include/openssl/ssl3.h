@@ -127,11 +127,14 @@
 extern "C" {
 #endif
 
+/* These are kept to support clients that negotiates higher protocol versions
+ * using SSLv2 client hello records. */
+#define SSL2_MT_CLIENT_HELLO 1
+#define SSL2_VERSION 0x0002
 
-/* Signalling cipher suite value: from RFC5746 */
+/* Signalling cipher suite value from RFC 5746. */
 #define SSL3_CK_SCSV 0x030000FF
-/* Fallback signalling cipher suite value: not IANA assigned.
- * See https://tools.ietf.org/html/draft-bmoeller-tls-downgrade-scsv-01 */
+/* Fallback signalling cipher suite value from RFC 7507. */
 #define SSL3_CK_FALLBACK_SCSV 0x03005600
 
 #define SSL3_CK_RSA_NULL_MD5 0x03000001
@@ -278,20 +281,6 @@ OPENSSL_COMPILE_ASSERT(
 #define SSL3_RT_HANDSHAKE 22
 #define SSL3_RT_APPLICATION_DATA 23
 
-/* Pseudo content types to indicate additional parameters */
-#define TLS1_RT_CRYPTO 0x1000
-#define TLS1_RT_CRYPTO_PREMASTER (TLS1_RT_CRYPTO | 0x1)
-#define TLS1_RT_CRYPTO_CLIENT_RANDOM (TLS1_RT_CRYPTO | 0x2)
-#define TLS1_RT_CRYPTO_SERVER_RANDOM (TLS1_RT_CRYPTO | 0x3)
-#define TLS1_RT_CRYPTO_MASTER (TLS1_RT_CRYPTO | 0x4)
-
-#define TLS1_RT_CRYPTO_READ 0x0000
-#define TLS1_RT_CRYPTO_WRITE 0x0100
-#define TLS1_RT_CRYPTO_MAC (TLS1_RT_CRYPTO | 0x5)
-#define TLS1_RT_CRYPTO_KEY (TLS1_RT_CRYPTO | 0x6)
-#define TLS1_RT_CRYPTO_IV (TLS1_RT_CRYPTO | 0x7)
-#define TLS1_RT_CRYPTO_FIXED_IV (TLS1_RT_CRYPTO | 0x8)
-
 /* Pseudo content type for SSL/TLS header info */
 #define SSL3_RT_HEADER 0x100
 
@@ -324,12 +313,6 @@ typedef struct ssl3_record_st {
   uint8_t *data;
   /* epoch, in DTLS, is the epoch number of the record. */
   uint16_t epoch;
-  /* seq_num, in DTLS, is the sequence number of the record. The top two bytes
-   * are always zero.
-   *
-   * TODO(davidben): This is confusing. They should include the epoch or the
-   * field should be six bytes. */
-  uint8_t seq_num[8];
 } SSL3_RECORD;
 
 typedef struct ssl3_buffer_st {
@@ -380,11 +363,6 @@ typedef struct ssl3_state_st {
    * completed. */
   char initial_handshake_complete;
 
-  /* sniff_buffer is used by the server in the initial handshake to read a
-   * V2ClientHello before the record layer is initialized. */
-  BUF_MEM *sniff_buffer;
-  size_t sniff_buffer_len;
-
   SSL3_BUFFER rbuf; /* read IO goes into here */
   SSL3_BUFFER wbuf; /* write IO goes into here */
 
@@ -402,11 +380,15 @@ typedef struct ssl3_state_st {
   int wpend_ret; /* number of bytes submitted */
   const uint8_t *wpend_buf;
 
-  /* used during startup, digest all incoming/outgoing packets */
-  BIO *handshake_buffer;
-  /* When set of handshake digests is determined, buffer is hashed and freed
-   * and MD_CTX-es for all required digests are stored in this array */
-  EVP_MD_CTX **handshake_dgst;
+  /* handshake_buffer, if non-NULL, contains the handshake transcript. */
+  BUF_MEM *handshake_buffer;
+  /* handshake_hash, if initialized with an |EVP_MD|, maintains the handshake
+   * hash. For TLS 1.1 and below, it is the SHA-1 half. */
+  EVP_MD_CTX handshake_hash;
+  /* handshake_md5, if initialized with an |EVP_MD|, maintains the MD5 half of
+   * the handshake hash for TLS 1.1 and below. */
+  EVP_MD_CTX handshake_md5;
+
   /* this is set whenerver we see a change_cipher_spec message come in when we
    * are not looking for one */
   int change_cipher_spec;
@@ -453,6 +435,34 @@ typedef struct ssl3_state_st {
 
     int reuse_message;
 
+    union {
+      /* sent is a bitset where the bits correspond to elements of kExtensions
+       * in t1_lib.c. Each bit is set if that extension was sent in a
+       * ClientHello. It's not used by servers. */
+      uint32_t sent;
+      /* received is a bitset, like |sent|, but is used by servers to record
+       * which extensions were received from a client. */
+      uint32_t received;
+    } extensions;
+
+    union {
+      /* sent is a bitset where the bits correspond to elements of
+       * |client_custom_extensions| in the |SSL_CTX|. Each bit is set if that
+       * extension was sent in a ClientHello. It's not used by servers. */
+      uint16_t sent;
+      /* received is a bitset, like |sent|, but is used by servers to record
+       * which custom extensions were received from a client. The bits here
+       * correspond to |server_custom_extensions|. */
+      uint16_t received;
+    } custom_extensions;
+
+    /* SNI extension */
+
+    /* should_ack_sni is used by a server and indicates that the SNI extension
+     * should be echoed in the ServerHello. */
+    unsigned should_ack_sni:1;
+
+
     /* Client-only: cert_req determines if a client certificate is to be sent.
      * This is 0 if no client Certificate message is to be sent, 1 if there is
      * a client certificate, and 2 to send an empty client Certificate
@@ -483,11 +493,6 @@ typedef struct ssl3_state_st {
     /* certificate_status_expected is true if OCSP stapling was negotiated and
      * the server is expected to send a CertificateStatus message. */
     char certificate_status_expected;
-
-    /* peer_ecpointformatlist contains the EC point formats advertised by the
-     * peer. */
-    uint8_t *peer_ecpointformatlist;
-    size_t peer_ecpointformatlist_length;
 
     /* Server-only: peer_ellipticcurvelist contains the EC curve IDs advertised
      * by the peer. This is only set on the server's end. The server does not
@@ -540,11 +545,6 @@ typedef struct ssl3_state_st {
    * Channel IDs and that tlsext_channel_id will be valid after the
    * handshake. */
   char tlsext_channel_id_valid;
-  /* tlsext_channel_id_new means that the updated Channel ID extension was
-   * negotiated. This is a temporary hack in the code to support both forms of
-   * Channel ID extension while we transition to the new format, which fixed a
-   * security issue. */
-  char tlsext_channel_id_new;
   /* For a server:
    *     If |tlsext_channel_id_valid| is true, then this contains the
    *     verified Channel ID from the client: a P256 point, (x,y), where
@@ -621,6 +621,8 @@ typedef struct ssl3_state_st {
 #define SSL3_ST_SW_CERT_B (0x141 | SSL_ST_ACCEPT)
 #define SSL3_ST_SW_KEY_EXCH_A (0x150 | SSL_ST_ACCEPT)
 #define SSL3_ST_SW_KEY_EXCH_B (0x151 | SSL_ST_ACCEPT)
+#define SSL3_ST_SW_KEY_EXCH_C (0x152 | SSL_ST_ACCEPT)
+#define SSL3_ST_SW_KEY_EXCH_D (0x153 | SSL_ST_ACCEPT)
 #define SSL3_ST_SW_CERT_REQ_A (0x160 | SSL_ST_ACCEPT)
 #define SSL3_ST_SW_CERT_REQ_B (0x161 | SSL_ST_ACCEPT)
 #define SSL3_ST_SW_SRVR_DONE_A (0x170 | SSL_ST_ACCEPT)

@@ -68,6 +68,7 @@ class Renderer9 : public RendererD3D
     virtual bool resetDevice();
 
     egl::ConfigSet generateConfigs() const override;
+    void generateDisplayExtensions(egl::DisplayExtensions *outExtensions) const override;
 
     void startScene();
     void endScene();
@@ -143,8 +144,8 @@ class Renderer9 : public RendererD3D
     virtual unsigned int getReservedFragmentUniformVectors() const;
     virtual unsigned int getReservedVertexUniformBuffers() const;
     virtual unsigned int getReservedFragmentUniformBuffers() const;
-    virtual bool getShareHandleSupport() const;
-    virtual bool getPostSubBufferSupport() const;
+
+    bool getShareHandleSupport() const;
 
     virtual int getMajorShaderModel() const;
     int getMinorShaderModel() const override;
@@ -172,7 +173,7 @@ class Renderer9 : public RendererD3D
     // Shader creation
     virtual CompilerImpl *createCompiler(const gl::Data &data);
     virtual ShaderImpl *createShader(GLenum type);
-    virtual ProgramImpl *createProgram();
+    virtual ProgramImpl *createProgram(const gl::Program::Data &data);
 
     // Shader operations
     virtual gl::Error loadExecutable(const void *function, size_t length, ShaderType type,
@@ -241,8 +242,11 @@ class Renderer9 : public RendererD3D
     gl::Error clearTextures(gl::SamplerType samplerType, size_t rangeStart, size_t rangeEnd) override;
 
   private:
-    void generateCaps(gl::Caps *outCaps, gl::TextureCapsMap *outTextureCaps, gl::Extensions *outExtensions) const override;
-    Workarounds generateWorkarounds() const override;
+    void generateCaps(gl::Caps *outCaps, gl::TextureCapsMap *outTextureCaps,
+                      gl::Extensions *outExtensions,
+                      gl::Limitations *outLimitations) const override;
+
+    WorkaroundsD3D generateWorkarounds() const override;
 
     void release();
 
@@ -337,11 +341,16 @@ class Renderer9 : public RendererD3D
     GLuint mCurSampleMask;
 
     // Currently applied sampler states
-    std::vector<bool> mForceSetVertexSamplerStates;
-    std::vector<gl::SamplerState> mCurVertexSamplerStates;
+    struct CurSamplerState
+    {
+        CurSamplerState();
 
-    std::vector<bool> mForceSetPixelSamplerStates;
-    std::vector<gl::SamplerState> mCurPixelSamplerStates;
+        bool forceSet;
+        size_t baseLevel;
+        gl::SamplerState samplerState;
+    };
+    std::vector<CurSamplerState> mCurVertexSamplerStates;
+    std::vector<CurSamplerState> mCurPixelSamplerStates;
 
     // Currently applied textures
     std::vector<uintptr_t> mCurVertexTextures;

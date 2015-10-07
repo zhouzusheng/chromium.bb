@@ -102,6 +102,7 @@ bool CommandBufferHelper::AllocateRingBuffer() {
       command_buffer_->CreateTransferBuffer(ring_buffer_size_, &id);
   if (id < 0) {
     ClearUsable();
+    DCHECK(error::IsError(command_buffer()->GetLastError()));
     return false;
   }
 
@@ -122,6 +123,8 @@ void CommandBufferHelper::FreeResources() {
     command_buffer_->DestroyTransferBuffer(ring_buffer_id_);
     ring_buffer_id_ = -1;
     CalcImmediateEntries(0);
+    entries_ = nullptr;
+    ring_buffer_ = nullptr;
   }
 }
 
@@ -195,7 +198,8 @@ bool CommandBufferHelper::Finish() {
   if (put_ == get_offset()) {
     return true;
   }
-  DCHECK(HaveRingBuffer());
+  DCHECK(HaveRingBuffer() ||
+         error::IsError(command_buffer_->GetLastState().error));
   Flush();
   if (!WaitForGetOffsetInRange(put_, put_))
     return false;

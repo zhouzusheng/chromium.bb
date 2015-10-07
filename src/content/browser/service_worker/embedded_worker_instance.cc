@@ -5,6 +5,7 @@
 #include "content/browser/service_worker/embedded_worker_instance.h"
 
 #include <algorithm>
+#include <string>
 #include <utility>
 
 #include "base/bind_helpers.h"
@@ -15,7 +16,9 @@
 #include "content/browser/service_worker/embedded_worker_registry.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/common/content_switches_internal.h"
+#include "content/common/mojo/service_registry_impl.h"
 #include "content/common/service_worker/embedded_worker_messages.h"
+#include "content/common/service_worker/embedded_worker_setup.mojom.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
@@ -83,6 +86,20 @@ void RegisterToWorkerDevToolsManagerOnUI(
       base::Bind(callback, worker_devtools_agent_route_id, wait_for_debugger));
 }
 
+void SetupMojoOnUIThread(int process_id,
+                         int thread_id,
+                         mojo::InterfaceRequest<mojo::ServiceProvider> services,
+                         mojo::ServiceProviderPtr exposed_services) {
+  RenderProcessHost* rph = RenderProcessHost::FromID(process_id);
+  // |rph| may be NULL in unit tests.
+  if (!rph)
+    return;
+  EmbeddedWorkerSetupPtr setup;
+  rph->GetServiceRegistry()->ConnectToRemoteService(mojo::GetProxy(&setup));
+  setup->ExchangeServiceProviders(thread_id, services.Pass(),
+                                  exposed_services.Pass());
+}
+
 }  // namespace
 
 // Lives on IO thread, proxies notifications to DevToolsManager that lives on
@@ -145,6 +162,7 @@ void EmbeddedWorkerInstance::Start(int64 service_worker_version_id,
   status_ = STARTING;
   starting_phase_ = ALLOCATING_PROCESS;
   network_accessed_for_script_ = false;
+  service_registry_.reset(new ServiceRegistryImpl());
   FOR_EACH_OBSERVER(Listener, listener_list_, OnStarting());
   scoped_ptr<EmbeddedWorkerMsg_StartWorker_Params> params(
       new EmbeddedWorkerMsg_StartWorker_Params());
@@ -175,9 +193,15 @@ ServiceWorkerStatusCode EmbeddedWorkerInstance::Stop() {
   DCHECK(status_ == STARTING || status_ == RUNNING) << status_;
   ServiceWorkerStatusCode status =
       registry_->StopWorker(process_id_, embedded_worker_id_);
-  // StopWorker could fail if we can't talk to the worker, which should
-  // basically means it's being terminated, so unconditionally change
-  // the status to STOPPING.
+  UMA_HISTOGRAM_ENUMERATION("ServiceWorker.SendStopWorker.Status", status,
+                            SERVICE_WORKER_ERROR_MAX_VALUE);
+  // StopWorker could fail if we were starting up and don't have a process yet,
+  // or we can no longer communicate with the process. So just detach.
+  if (status != SERVICE_WORKER_OK) {
+    OnDetached();
+    return status;
+  }
+
   status_ = STOPPING;
   FOR_EACH_OBSERVER(Listener, listener_list_, OnStopping());
   return status;
@@ -200,6 +224,11 @@ ServiceWorkerStatusCode EmbeddedWorkerInstance::SendMessage(
   return registry_->Send(process_id_,
                          new EmbeddedWorkerContextMsg_MessageToWorker(
                              thread_id_, embedded_worker_id_, message));
+}
+
+ServiceRegistry* EmbeddedWorkerInstance::GetServiceRegistry() {
+  DCHECK(status_ == STARTING || status_ == RUNNING) << status_;
+  return service_registry_.get();
 }
 
 EmbeddedWorkerInstance::EmbeddedWorkerInstance(
@@ -257,6 +286,7 @@ void EmbeddedWorkerInstance::ProcessAllocated(
   if (status != SERVICE_WORKER_OK) {
     Status old_status = status_;
     status_ = STOPPED;
+    service_registry_.reset();
     callback.Run(status);
     FOR_EACH_OBSERVER(Listener, listener_list_, OnStopped(old_status));
     return;
@@ -284,6 +314,15 @@ void EmbeddedWorkerInstance::SendStartWorker(
     bool is_new_process,
     int worker_devtools_agent_route_id,
     bool wait_for_debugger) {
+  // We may have been detached or stopped at some point during the start up
+  // process, making process_id_ and other state invalid. If that happened,
+  // abort instead of trying to send the IPC.
+  if (status_ != STARTING) {
+    callback.Run(SERVICE_WORKER_ERROR_ABORT);
+    ReleaseProcess();
+    return;
+  }
+
   if (worker_devtools_agent_route_id != MSG_ROUTING_NONE) {
     DCHECK(!devtools_proxy_);
     devtools_proxy_.reset(new DevToolsProxy(process_id_,
@@ -344,6 +383,18 @@ void EmbeddedWorkerInstance::OnScriptLoaded(int thread_id) {
   }
   thread_id_ = thread_id;
   FOR_EACH_OBSERVER(Listener, listener_list_, OnScriptLoaded());
+
+  mojo::ServiceProviderPtr exposed_services;
+  service_registry_->Bind(GetProxy(&exposed_services));
+  mojo::ServiceProviderPtr services;
+  mojo::InterfaceRequest<mojo::ServiceProvider> services_request =
+      GetProxy(&services);
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(SetupMojoOnUIThread, process_id_, thread_id_,
+                 base::Passed(&services_request),
+                 base::Passed(&exposed_services)));
+  service_registry_->BindRemoteServiceProvider(services.Pass());
 }
 
 void EmbeddedWorkerInstance::OnScriptLoadFailed() {
@@ -444,11 +495,12 @@ void EmbeddedWorkerInstance::OnNetworkAccessedForScriptLoad() {
 
 void EmbeddedWorkerInstance::ReleaseProcess() {
   devtools_proxy_.reset();
-  if (context_)
+  if (context_ && process_id_ != -1)
     context_->process_manager()->ReleaseWorkerProcess(embedded_worker_id_);
   status_ = STOPPED;
   process_id_ = -1;
   thread_id_ = -1;
+  service_registry_.reset();
   start_callback_.Reset();
 }
 

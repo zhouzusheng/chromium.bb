@@ -80,7 +80,7 @@ class GpuMemoryBufferMessageFilter : public IPC::MessageFilter {
   void OnCreateGpuMemoryBuffer(
       const GpuMsg_CreateGpuMemoryBuffer_Params& params) {
     TRACE_EVENT2("gpu", "GpuMemoryBufferMessageFilter::OnCreateGpuMemoryBuffer",
-                 "id", params.id, "client_id", params.client_id);
+                 "id", params.id.id, "client_id", params.client_id);
     sender_->Send(new GpuHostMsg_GpuMemoryBufferCreated(
         gpu_memory_buffer_factory_->CreateGpuMemoryBuffer(
             params.id, params.size, params.format, params.usage,
@@ -116,9 +116,11 @@ GpuChildThread::GpuChildThread(
     bool dead_on_arrival,
     const gpu::GPUInfo& gpu_info,
     const DeferredMessages& deferred_messages,
-    GpuMemoryBufferFactory* gpu_memory_buffer_factory)
+    GpuMemoryBufferFactory* gpu_memory_buffer_factory,
+    gpu::SyncPointManager* sync_point_manager)
     : ChildThreadImpl(GetOptions(gpu_memory_buffer_factory)),
       dead_on_arrival_(dead_on_arrival),
+      sync_point_manager_(sync_point_manager),
       gpu_info_(gpu_info),
       deferred_messages_(deferred_messages),
       in_browser_process_(false),
@@ -132,13 +134,15 @@ GpuChildThread::GpuChildThread(
 
 GpuChildThread::GpuChildThread(
     const InProcessChildThreadParams& params,
-    GpuMemoryBufferFactory* gpu_memory_buffer_factory)
+    GpuMemoryBufferFactory* gpu_memory_buffer_factory,
+    gpu::SyncPointManager* sync_point_manager)
     : ChildThreadImpl(ChildThreadImpl::Options::Builder()
                           .InBrowserProcess(params)
                           .AddStartupFilter(new GpuMemoryBufferMessageFilter(
                               gpu_memory_buffer_factory))
                           .Build()),
       dead_on_arrival_(false),
+      sync_point_manager_(sync_point_manager),
       in_browser_process_(true),
       gpu_memory_buffer_factory_(gpu_memory_buffer_factory) {
 #if defined(OS_WIN)
@@ -156,6 +160,10 @@ GpuChildThread::GpuChildThread(
 }
 
 GpuChildThread::~GpuChildThread() {
+  while (!deferred_messages_.empty()) {
+    delete deferred_messages_.front();
+    deferred_messages_.pop();
+  }
 }
 
 // static
@@ -230,8 +238,7 @@ void GpuChildThread::OnInitialize() {
   }
 
 #if defined(OS_ANDROID)
-  base::PlatformThread::SetThreadPriority(base::PlatformThread::CurrentHandle(),
-                                          base::ThreadPriority::DISPLAY);
+  base::PlatformThread::SetCurrentThreadPriority(base::ThreadPriority::DISPLAY);
 #endif
 
   // We don't need to pipe log messages if we are running the GPU thread in
@@ -246,7 +253,8 @@ void GpuChildThread::OnInitialize() {
       GetRouter(), watchdog_thread_.get(),
       ChildProcess::current()->io_task_runner(),
       ChildProcess::current()->GetShutDownEvent(), channel(),
-      GetAttachmentBroker(), gpu_memory_buffer_factory_));
+      GetAttachmentBroker(), sync_point_manager_,
+      gpu_memory_buffer_factory_));
 
 #if defined(USE_OZONE)
   ui::OzonePlatform::GetInstance()
@@ -354,4 +362,3 @@ void GpuChildThread::OnGpuSwitched() {
 }
 
 }  // namespace content
-

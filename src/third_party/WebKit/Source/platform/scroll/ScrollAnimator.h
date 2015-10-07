@@ -99,6 +99,7 @@ public:
 
     virtual void notifyContentAreaScrolled(const FloatSize&) { }
 
+    virtual bool setScrollbarsVisibleForTesting(bool) { return false; }
 protected:
     explicit ScrollAnimator(ScrollableArea*);
 

@@ -37,6 +37,7 @@
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/html/HTMLIFrameElement.h"
+#include "core/html/HTMLVideoElement.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/layout/LayoutPart.h"
 #include "core/layout/LayoutVideo.h"
@@ -105,20 +106,13 @@ void DeprecatedPaintLayerCompositor::setCompositingModeEnabled(bool enable)
 
     m_compositing = enable;
 
-    // LayoutPart::requiresAcceleratedCompositing is used to determine self-paintingness
-    // and bases it's return value for frames on the m_compositing bit here.
-    if (HTMLFrameOwnerElement* ownerElement = m_layoutView.document().ownerElement()) {
-        if (LayoutPart* layoutObject = ownerElement->layoutPart())
-            layoutObject->layer()->updateSelfPaintingLayer();
-    }
-
     if (m_compositing)
         ensureRootLayer();
     else
         destroyRootLayer();
 
-    // Compositing also affects the answer to LayoutIFrame::requiresAcceleratedCompositing(), so
-    // we need to schedule a style recalc in our parent document.
+    // Schedule an update in the parent frame so the <iframe>'s layer in the owner
+    // document matches the compositing state here.
     if (HTMLFrameOwnerElement* ownerElement = m_layoutView.document().ownerElement())
         ownerElement->setNeedsCompositingUpdate();
 }
@@ -281,7 +275,7 @@ void DeprecatedPaintLayerCompositor::assertNoUnresolvedDirtyBits()
 
 #endif
 
-void DeprecatedPaintLayerCompositor::applyOverlayFullscreenVideoAdjustment()
+void DeprecatedPaintLayerCompositor::applyOverlayFullscreenVideoAdjustmentIfNeeded()
 {
     m_inOverlayFullscreenVideo = false;
     if (!m_rootContentLayer)
@@ -289,7 +283,7 @@ void DeprecatedPaintLayerCompositor::applyOverlayFullscreenVideoAdjustment()
 
     bool isLocalRoot = m_layoutView.frame()->isLocalRoot();
     LayoutVideo* video = findFullscreenVideoLayoutObject(m_layoutView.document());
-    if (!video || !video->layer()->hasCompositedDeprecatedPaintLayerMapping()) {
+    if (!video || !video->layer()->hasCompositedDeprecatedPaintLayerMapping() || !video->videoElement()->usesOverlayFullscreenVideo()) {
         if (isLocalRoot) {
             GraphicsLayer* backgroundLayer = fixedRootBackgroundLayer();
             if (backgroundLayer && !backgroundLayer->parent())
@@ -414,8 +408,7 @@ void DeprecatedPaintLayerCompositor::updateIfNeeded()
         else
             m_rootContentLayer->setChildren(childList);
 
-        if (RuntimeEnabledFeatures::overlayFullscreenVideoEnabled())
-            applyOverlayFullscreenVideoAdjustment();
+        applyOverlayFullscreenVideoAdjustmentIfNeeded();
     }
 
     if (m_needsUpdateFixedBackground) {
@@ -425,6 +418,8 @@ void DeprecatedPaintLayerCompositor::updateIfNeeded()
 
     for (unsigned i = 0; i < layersNeedingPaintInvalidation.size(); i++)
         forceRecomputePaintInvalidationRectsIncludingNonCompositingDescendants(layersNeedingPaintInvalidation[i]->layoutObject());
+
+    m_layoutView.frameView()->setFrameTimingRequestsDirty(true);
 
     // Inform the inspector that the layer tree has changed.
     if (m_layoutView.frame()->isMainFrame())
@@ -914,8 +909,8 @@ void DeprecatedPaintLayerCompositor::updateOverflowControlsLayers()
     // make the parent for the scrollbars be the viewport container layer.
 #if OS(MACOSX)
     if (m_layoutView.frame()->isMainFrame()) {
-        PinchViewport& pinchViewport = m_layoutView.frameView()->page()->frameHost().pinchViewport();
-        controlsParent = pinchViewport.containerLayer();
+        VisualViewport& visualViewport = m_layoutView.frameView()->page()->frameHost().visualViewport();
+        controlsParent = visualViewport.containerLayer();
     }
 #endif
 

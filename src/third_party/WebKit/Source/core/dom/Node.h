@@ -26,7 +26,6 @@
 #define Node_h
 
 #include "bindings/core/v8/ExceptionStatePlaceholder.h"
-#include "bindings/core/v8/UnionTypesCore.h"
 #include "core/CoreExport.h"
 #include "core/dom/MutationObserver.h"
 #include "core/dom/SimulatedClickOptions.h"
@@ -210,11 +209,6 @@ public:
     Node* firstChild() const;
     Node* lastChild() const;
 
-    void prepend(const HeapVector<NodeOrString>&, ExceptionState&);
-    void append(const HeapVector<NodeOrString>&, ExceptionState&);
-    void before(const HeapVector<NodeOrString>&, ExceptionState&);
-    void after(const HeapVector<NodeOrString>&, ExceptionState&);
-    void replaceWith(const HeapVector<NodeOrString>&, ExceptionState&);
     void remove(ExceptionState&);
 
     Node* pseudoAwareNextSibling() const;
@@ -231,8 +225,6 @@ public:
 
     bool hasChildren() const { return firstChild(); }
     virtual PassRefPtrWillBeRawPtr<Node> cloneNode(bool deep = false) = 0;
-    virtual const AtomicString& localName() const;
-    virtual const AtomicString& namespaceURI() const;
     void normalize();
 
     bool isSameNode(Node* other) const { return this == other; }
@@ -303,6 +295,9 @@ public:
     bool hasCustomStyleCallbacks() const { return getFlag(HasCustomStyleCallbacksFlag); }
 
     // If this node is in a shadow tree, returns its shadow host. Otherwise, returns nullptr.
+    // TODO(kochi): crbug.com/507413 shadowHost() can return nullptr even when it is in a
+    // shadow tree but its root is detached from its host. This can happen when handling
+    // queued events (e.g. during execCommand()).
     Element* shadowHost() const;
     ShadowRoot* containingShadowRoot() const;
     ShadowRoot* youngestShadowRoot() const;
@@ -525,6 +520,7 @@ public:
     LayoutBoxModelObject* layoutBoxModelObject() const;
 
     struct AttachContext {
+        STACK_ALLOCATED();
         ComputedStyle* resolvedStyle;
         bool performingReattach;
 
@@ -619,8 +615,8 @@ public:
     const AtomicString& interfaceName() const override;
     ExecutionContext* executionContext() const final;
 
-    bool addEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false) override;
-    bool removeEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false) override;
+    bool addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, bool useCapture = false) override;
+    bool removeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, bool useCapture = false) override;
     void removeAllEventListeners() override;
     void removeAllEventListenersRecursively();
 
@@ -629,11 +625,7 @@ public:
     virtual void* preDispatchEventHandler(Event*) { return nullptr; }
     virtual void postDispatchEventHandler(Event*, void* /*dataFromPreDispatch*/) { }
 
-    using EventTarget::dispatchEvent;
-    bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>) override;
-
     void dispatchScopedEvent(PassRefPtrWillBeRawPtr<Event>);
-    void dispatchScopedEventDispatchMediator(PassRefPtrWillBeRawPtr<EventDispatchMediator>);
 
     virtual void handleLocalEvents(Event&);
 
@@ -644,10 +636,8 @@ public:
     bool dispatchWheelEvent(const PlatformWheelEvent&);
     bool dispatchMouseEvent(const PlatformMouseEvent&, const AtomicString& eventType, int clickCount = 0, Node* relatedTarget = nullptr);
     bool dispatchGestureEvent(const PlatformGestureEvent&);
-    bool dispatchTouchEvent(PassRefPtrWillBeRawPtr<TouchEvent>);
-    bool dispatchPointerEvent(PassRefPtrWillBeRawPtr<PointerEvent>);
 
-    void dispatchSimulatedClick(Event* underlyingEvent, SimulatedClickMouseEventOptions = SendNoEvents);
+    void dispatchSimulatedClick(Event* underlyingEvent, SimulatedClickMouseEventOptions = SendNoEvents, SimulatedClickCreationScope = SimulatedClickCreationScope::FromUserAgent);
 
     void dispatchInputEvent();
 
@@ -758,6 +748,8 @@ protected:
     Node(TreeScope*, ConstructionType);
 
     virtual void didMoveToNewDocument(Document& oldDocument);
+
+    bool dispatchEventInternal(PassRefPtrWillBeRawPtr<Event>) override;
 
     static void reattachWhitespaceSiblingsIfNeeded(Text* start);
 

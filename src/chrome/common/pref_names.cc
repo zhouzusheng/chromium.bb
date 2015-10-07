@@ -109,6 +109,9 @@ const char kSupervisedUserManualHosts[] = "profile.managed.manual_hosts";
 // Maps URLs to whether the URL is manually allowed or blocked.
 const char kSupervisedUserManualURLs[] = "profile.managed.manual_urls";
 
+// Stores whether the SafeSites filter is enabled.
+const char kSupervisedUserSafeSites[] = "profile.managed.safe_sites";
+
 // Stores the email address associated with the google account of the secondary
 // custodian of the supervised user, set when the supervised user is created.
 const char kSupervisedUserSecondCustodianEmail[] =
@@ -962,15 +965,10 @@ const char kClearSiteDataOnExit[] = "profile.clear_site_data_on_exit";
 
 // Double that indicates the default zoom level.
 const char kPartitionDefaultZoomLevel[] = "partition.default_zoom_level";
-// TODO(wjmaclean): Remove this once sufficient users have migrated to the
-// per-StoragePartition zoom levels. http://crbug.com/420643.
-const char kDefaultZoomLevelDeprecated[] = "profile.default_zoom_level";
 
 // Dictionary that maps hostnames to zoom levels.  Hosts not in this pref will
 // be displayed at the default zoom level.
 const char kPartitionPerHostZoomLevels[] = "partition.per_host_zoom_levels";
-// TODO(wjmaclean): Remove this.
-const char kPerHostZoomLevelsDeprecated[] = "profile.per_host_zoom_levels";
 
 // A dictionary that tracks the default data model to use for each section of
 // the dialog.
@@ -1158,10 +1156,6 @@ const char kFullscreenAllowed[] = "fullscreen.allowed";
 const char kLocalDiscoveryNotificationsEnabled[] =
     "local_discovery.notifications_enabled";
 
-// A timestamp (stored in base::Time::ToInternalValue format) of the last time
-// a preference was reset.
-const char kPreferenceResetTime[] = "prefs.preference_reset_time";
-
 // How many Service Workers are registered with the Push API (could be zero).
 const char kPushMessagingRegistrationCount[] =
     "gcm.push_messaging_registration_count";
@@ -1265,31 +1259,6 @@ const char kCrashReportingEnabled[] =
     "user_experience_metrics_crash.reporting_enabled";
 #endif
 
-// Base64-encoded compressed serialized form of the variations seed protobuf.
-const char kVariationsCompressedSeed[] = "variations_compressed_seed";
-
-// 64-bit integer serialization of the base::Time from the last successful seed
-// fetch (i.e. when the Variations server responds with 200 or 304).
-const char kVariationsLastFetchTime[] = "variations_last_fetch_time";
-
-// Pair of <Chrome version string, country code string> representing the country
-// used for filtering permanent consistency studies until the next time Chrome
-// is updated.
-const char kVariationsPermanentConsistencyCountry[] =
-    "variations_permanent_consistency_country";
-
-// String for the restrict parameter to be appended to the variations URL.
-const char kVariationsRestrictParameter[] = "variations_restrict_parameter";
-
-// Base64-encoded serialized form of the variations seed protobuf.
-const char kVariationsSeed[] = "variations_seed";
-
-// 64-bit integer serialization of the base::Time from the last seed received.
-const char kVariationsSeedDate[] = "variations_seed_date";
-
-// Digital signature of the binary variations seed data, base64-encoded.
-const char kVariationsSeedSignature[] = "variations_seed_signature";
-
 // Number of times a page load event occurred since the last report.
 const char kStabilityPageLoadCount[] =
     "user_experience_metrics.stability.page_load_count";
@@ -1387,6 +1356,10 @@ const char kBrowserWindowPlacementPopup[] = "browser.window_placement_popup";
 // A collection of position, size, and other data relating to the task
 // manager window to restore on startup.
 const char kTaskManagerWindowPlacement[] = "task_manager.window_placement";
+
+// The most recent stored column visibility of the task manager table to be
+// restored on startup.
+const char kTaskManagerColumnVisibility[] = "task_manager.column_visibility";
 
 // A collection of position, size, and other data relating to app windows to
 // restore on startup.
@@ -1706,9 +1679,7 @@ const char kBuiltInDnsClientEnabled[] = "async_dns.enabled";
 // See also kAudioCaptureAllowedUrls.
 const char kAudioCaptureAllowed[] = "hardware.audio_capture_enabled";
 // Holds URL patterns that specify URLs that will be granted access to audio
-// capture devices without prompt.  NOTE: This whitelist is currently only
-// supported when running in kiosk mode.
-// TODO(tommi): Update comment when this is supported for all modes.
+// capture devices without prompt.
 const char kAudioCaptureAllowedUrls[] = "hardware.audio_capture_allowed_urls";
 
 // A pref holding the value of the policy used to explicitly allow or deny
@@ -1717,9 +1688,7 @@ const char kAudioCaptureAllowedUrls[] = "hardware.audio_capture_allowed_urls";
 // is not allowed and no prompt will be shown.
 const char kVideoCaptureAllowed[] = "hardware.video_capture_enabled";
 // Holds URL patterns that specify URLs that will be granted access to video
-// capture devices without prompt.  NOTE: This whitelist is currently only
-// supported when running in kiosk mode.
-// TODO(tommi): Update comment when this is supported for all modes.
+// capture devices without prompt.
 const char kVideoCaptureAllowedUrls[] = "hardware.video_capture_allowed_urls";
 
 // A boolean pref that controls the enabled-state of hotword search voice
@@ -1873,14 +1842,6 @@ const char kLogoutStartedLast[] = "chromeos.logout-started";
 // value is defined in:
 //   chrome/browser/chromeos/policy/consumer_management_stage.h
 const char kConsumerManagementStage[] = "consumer_management.stage";
-
-// A boolean pref. If set to true, experimental webview based signin flow
-// is deactivated.
-const char kWebviewSigninDisabled[] = "webview_signin_disabled";
-
-// A boolean pref. If set to true, then on the network screen we should display
-// whether the WebView-based sign-in flow is active.
-const char kNewLoginUIPopup[] = "new_login_ui_popup";
 #endif  // defined(OS_CHROMEOS)
 
 // Whether there is a Flash version installed that supports clearing LSO data.

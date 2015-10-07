@@ -54,6 +54,7 @@
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLHeadElement.h"
 #include "core/html/VoidCallback.h"
+#include "core/inspector/IdentifiersFactory.h"
 #include "core/inspector/InspectorHistory.h"
 #include "core/inspector/InspectorPageAgent.h"
 #include "core/inspector/InspectorResourceAgent.h"
@@ -149,40 +150,6 @@ public:
     }
 };
 
-class InspectorCSSAgent::InspectorResourceContentLoaderCallback final : public VoidCallback {
-public:
-    InspectorResourceContentLoaderCallback(InspectorCSSAgent*, PassRefPtrWillBeRawPtr<EnableCallback>);
-    DECLARE_VIRTUAL_TRACE();
-    virtual void handleEvent() override;
-
-private:
-    RawPtrWillBeMember<InspectorCSSAgent> m_cssAgent;
-    RefPtrWillBeMember<EnableCallback> m_callback;
-};
-
-InspectorCSSAgent::InspectorResourceContentLoaderCallback::InspectorResourceContentLoaderCallback(InspectorCSSAgent* cssAgent, PassRefPtrWillBeRawPtr<EnableCallback> callback)
-    : m_cssAgent(cssAgent)
-    , m_callback(callback)
-{
-}
-
-DEFINE_TRACE(InspectorCSSAgent::InspectorResourceContentLoaderCallback)
-{
-    visitor->trace(m_cssAgent);
-    visitor->trace(m_callback);
-    VoidCallback::trace(visitor);
-}
-
-void InspectorCSSAgent::InspectorResourceContentLoaderCallback::handleEvent()
-{
-    // enable always succeeds.
-    if (!m_callback->isActive())
-        return;
-
-    m_cssAgent->wasEnabled();
-    m_callback->sendSuccess();
-}
-
 class InspectorCSSAgent::SetStyleSheetTextAction final : public InspectorCSSAgent::StyleSheetAction {
     WTF_MAKE_NONCOPYABLE(SetStyleSheetTextAction);
 public:
@@ -193,29 +160,29 @@ public:
     {
     }
 
-    virtual bool perform(ExceptionState& exceptionState) override
+    bool perform(ExceptionState& exceptionState) override
     {
         if (!m_styleSheet->getText(&m_oldText))
             return false;
         return redo(exceptionState);
     }
 
-    virtual bool undo(ExceptionState& exceptionState) override
+    bool undo(ExceptionState& exceptionState) override
     {
         return m_styleSheet->setText(m_oldText, exceptionState);
     }
 
-    virtual bool redo(ExceptionState& exceptionState) override
+    bool redo(ExceptionState& exceptionState) override
     {
         return m_styleSheet->setText(m_text, exceptionState);
     }
 
-    virtual String mergeId() override
+    String mergeId() override
     {
         return String::format("SetStyleSheetText %s", m_styleSheet->id().utf8().data());
     }
 
-    virtual void merge(PassRefPtrWillBeRawPtr<Action> action) override
+    void merge(PassRefPtrWillBeRawPtr<Action> action) override
     {
         ASSERT(action->mergeId() == mergeId());
 
@@ -254,12 +221,12 @@ public:
     {
     }
 
-    virtual bool perform(ExceptionState& exceptionState) override
+    bool perform(ExceptionState& exceptionState) override
     {
         return redo(exceptionState);
     }
 
-    virtual bool undo(ExceptionState& exceptionState) override
+    bool undo(ExceptionState& exceptionState) override
     {
         switch (m_type) {
         case SetRuleSelector:
@@ -274,7 +241,7 @@ public:
         return false;
     }
 
-    virtual bool redo(ExceptionState& exceptionState) override
+    bool redo(ExceptionState& exceptionState) override
     {
         switch (m_type) {
         case SetRuleSelector:
@@ -306,17 +273,17 @@ public:
         InspectorCSSAgent::StyleSheetAction::trace(visitor);
     }
 
-    virtual String mergeId() override
+    String mergeId() override
     {
         return String::format("ModifyRuleAction:%d %s:%d", m_type, m_styleSheet->id().utf8().data(), m_oldRange.start);
     }
 
-    virtual bool isNoop() override
+    bool isNoop() override
     {
         return m_oldText == m_newText;
     }
 
-    virtual void merge(PassRefPtrWillBeRawPtr<Action> action) override
+    void merge(PassRefPtrWillBeRawPtr<Action> action) override
     {
         ASSERT(action->mergeId() == mergeId());
 
@@ -345,17 +312,17 @@ public:
     {
     }
 
-    virtual bool perform(ExceptionState& exceptionState) override
+    bool perform(ExceptionState& exceptionState) override
     {
         return redo(exceptionState);
     }
 
-    virtual bool undo(ExceptionState& exceptionState) override
+    bool undo(ExceptionState& exceptionState) override
     {
         return m_styleSheet->setText(m_oldText, exceptionState);
     }
 
-    virtual bool redo(ExceptionState& exceptionState) override
+    bool redo(ExceptionState& exceptionState) override
     {
         if (!m_styleSheet->getText(&m_oldText))
             return false;
@@ -368,12 +335,12 @@ public:
         InspectorCSSAgent::StyleSheetAction::trace(visitor);
     }
 
-    virtual String mergeId() override
+    String mergeId() override
     {
         return String::format("SetElementStyleAction:%s", m_styleSheet->id().utf8().data());
     }
 
-    virtual void merge(PassRefPtrWillBeRawPtr<Action> action) override
+    void merge(PassRefPtrWillBeRawPtr<Action> action) override
     {
         ASSERT(action->mergeId() == mergeId());
 
@@ -398,17 +365,17 @@ public:
     {
     }
 
-    virtual bool perform(ExceptionState& exceptionState) override
+    bool perform(ExceptionState& exceptionState) override
     {
         return redo(exceptionState);
     }
 
-    virtual bool undo(ExceptionState& exceptionState) override
+    bool undo(ExceptionState& exceptionState) override
     {
         return m_styleSheet->deleteRule(m_addedRange, exceptionState);
     }
 
-    virtual bool redo(ExceptionState& exceptionState) override
+    bool redo(ExceptionState& exceptionState) override
     {
         m_cssRule = m_styleSheet->addRule(m_ruleText, m_location, &m_addedRange, exceptionState);
         if (exceptionState.hadException())
@@ -521,7 +488,15 @@ void InspectorCSSAgent::enable(ErrorString* errorString, PassRefPtrWillBeRawPtr<
         return;
     }
     m_state->setBoolean(CSSAgentState::cssAgentEnabled, true);
-    m_resourceContentLoader->ensureResourcesContentLoaded(new InspectorCSSAgent::InspectorResourceContentLoaderCallback(this, prpCallback));
+    m_resourceContentLoader->ensureResourcesContentLoaded(bind(&InspectorCSSAgent::resourceContentLoaded, this, prpCallback));
+}
+
+void InspectorCSSAgent::resourceContentLoaded(PassRefPtrWillBeRawPtr<EnableCallback> callback)
+{
+    if (!callback->isActive())
+        return;
+    wasEnabled();
+    callback->sendSuccess();
 }
 
 void InspectorCSSAgent::wasEnabled()
@@ -926,7 +901,7 @@ void InspectorCSSAgent::setRuleSelector(ErrorString* errorString, const String& 
     bool success = m_domAgent->history()->perform(action, exceptionState);
     if (success) {
         RefPtrWillBeRawPtr<CSSStyleRule> rule = InspectorCSSAgent::asCSSStyleRule(action->takeRule().get());
-        result = inspectorStyleSheet->buildObjectForRule(rule.get(), buildMediaListChain(rule.get()));
+        result = buildObjectForRule(rule.get());
     }
     *errorString = InspectorDOMAgent::toErrorString(exceptionState);
 }
@@ -994,7 +969,7 @@ void InspectorCSSAgent::setMediaText(ErrorString* errorString, const String& sty
 
 void InspectorCSSAgent::createStyleSheet(ErrorString* errorString, const String& frameId, TypeBuilder::CSS::StyleSheetId* outStyleSheetId)
 {
-    LocalFrame* frame = m_pageAgent->frameForId(frameId);
+    LocalFrame* frame = IdentifiersFactory::frameById(m_pageAgent->inspectedFrame(), frameId);
     if (!frame) {
         *errorString = "Frame not found";
         return;
@@ -1035,7 +1010,7 @@ void InspectorCSSAgent::addRule(ErrorString* errorString, const String& styleShe
     }
 
     RefPtrWillBeRawPtr<CSSStyleRule> rule = action->takeRule();
-    result = inspectorStyleSheet->buildObjectForRule(rule.get(), buildMediaListChain(rule.get()));
+    result = buildObjectForRule(rule.get());
 }
 
 void InspectorCSSAgent::forcePseudoState(ErrorString* errorString, int nodeId, const RefPtr<JSONArray>& forcedPseudoClasses)
@@ -1088,7 +1063,7 @@ PassRefPtr<TypeBuilder::CSS::CSSMedia> InspectorCSSAgent::buildMediaObject(const
 
     InspectorStyleSheet* inspectorStyleSheet = parentStyleSheet ? m_cssStyleSheetToInspectorStyleSheet.get(parentStyleSheet) : nullptr;
     RefPtr<TypeBuilder::Array<TypeBuilder::CSS::MediaQuery> > mediaListArray = TypeBuilder::Array<TypeBuilder::CSS::MediaQuery>::create();
-    RefPtr<MediaValues> mediaValues = MediaValues::createDynamicIfFrameExists(frame);
+    RefPtrWillBeRawPtr<MediaValues> mediaValues = MediaValues::createDynamicIfFrameExists(frame);
     bool hasMediaQueryItems = false;
     for (size_t i = 0; i < queryVector.size(); ++i) {
         MediaQuery* query = queryVector.at(i).get();
@@ -1151,9 +1126,8 @@ PassRefPtr<TypeBuilder::CSS::CSSMedia> InspectorCSSAgent::buildMediaObject(const
     return mediaObject.release();
 }
 
-bool InspectorCSSAgent::collectMediaQueriesFromStyleSheet(CSSStyleSheet* styleSheet, TypeBuilder::Array<TypeBuilder::CSS::CSSMedia>* mediaArray)
+void InspectorCSSAgent::collectMediaQueriesFromStyleSheet(CSSStyleSheet* styleSheet, TypeBuilder::Array<TypeBuilder::CSS::CSSMedia>* mediaArray)
 {
-    bool addedItems = false;
     MediaList* mediaList = styleSheet->media();
     String sourceURL;
     if (mediaList && mediaList->length()) {
@@ -1165,18 +1139,15 @@ bool InspectorCSSAgent::collectMediaQueriesFromStyleSheet(CSSStyleSheet* styleSh
         else
             sourceURL = "";
         mediaArray->addItem(buildMediaObject(mediaList, styleSheet->ownerNode() ? MediaListSourceLinkedSheet : MediaListSourceInlineSheet, sourceURL, styleSheet));
-        addedItems = true;
     }
-    return addedItems;
 }
 
-bool InspectorCSSAgent::collectMediaQueriesFromRule(CSSRule* rule, TypeBuilder::Array<TypeBuilder::CSS::CSSMedia>* mediaArray)
+void InspectorCSSAgent::collectMediaQueriesFromRule(CSSRule* rule, TypeBuilder::Array<TypeBuilder::CSS::CSSMedia>* mediaArray)
 {
     MediaList* mediaList;
     String sourceURL;
     CSSStyleSheet* parentStyleSheet = nullptr;
     bool isMediaRule = true;
-    bool addedItems = false;
     if (rule->type() == CSSRule::MEDIA_RULE) {
         CSSMediaRule* mediaRule = toCSSMediaRule(rule);
         mediaList = mediaRule->media();
@@ -1198,11 +1169,8 @@ bool InspectorCSSAgent::collectMediaQueriesFromRule(CSSRule* rule, TypeBuilder::
         sourceURL = "";
     }
 
-    if (mediaList && mediaList->length()) {
+    if (mediaList && mediaList->length())
         mediaArray->addItem(buildMediaObject(mediaList, isMediaRule ? MediaListSourceMediaRule : MediaListSourceImportRule, sourceURL, parentStyleSheet));
-        addedItems = true;
-    }
-    return addedItems;
 }
 
 PassRefPtr<TypeBuilder::Array<TypeBuilder::CSS::CSSMedia> > InspectorCSSAgent::buildMediaListChain(CSSRule* rule)
@@ -1210,16 +1178,15 @@ PassRefPtr<TypeBuilder::Array<TypeBuilder::CSS::CSSMedia> > InspectorCSSAgent::b
     if (!rule)
         return nullptr;
     RefPtr<TypeBuilder::Array<TypeBuilder::CSS::CSSMedia> > mediaArray = TypeBuilder::Array<TypeBuilder::CSS::CSSMedia>::create();
-    bool hasItems = false;
     CSSRule* parentRule = rule;
     while (parentRule) {
-        hasItems = collectMediaQueriesFromRule(parentRule, mediaArray.get()) || hasItems;
+        collectMediaQueriesFromRule(parentRule, mediaArray.get());
         if (parentRule->parentRule()) {
             parentRule = parentRule->parentRule();
         } else {
             CSSStyleSheet* styleSheet = parentRule->parentStyleSheet();
             while (styleSheet) {
-                hasItems = collectMediaQueriesFromStyleSheet(styleSheet, mediaArray.get()) || hasItems;
+                collectMediaQueriesFromStyleSheet(styleSheet, mediaArray.get());
                 parentRule = styleSheet->ownerRule();
                 if (parentRule)
                     break;
@@ -1227,7 +1194,7 @@ PassRefPtr<TypeBuilder::Array<TypeBuilder::CSS::CSSMedia> > InspectorCSSAgent::b
             }
         }
     }
-    return hasItems ? mediaArray : nullptr;
+    return mediaArray;
 }
 
 InspectorStyleSheetForInlineStyle* InspectorCSSAgent::asInspectorStyleSheet(Element* element)
@@ -1403,7 +1370,9 @@ PassRefPtr<TypeBuilder::CSS::CSSRule> InspectorCSSAgent::buildObjectForRule(CSSS
             m_inspectorUserAgentStyleSheet = CSSStyleSheet::create(CSSDefaultStyleSheets::instance().defaultStyleSheet());
         rule->setParentStyleSheet(m_inspectorUserAgentStyleSheet.get());
     }
-    return bindStyleSheet(rule->parentStyleSheet())->buildObjectForRule(rule, buildMediaListChain(rule));
+    RefPtr<TypeBuilder::CSS::CSSRule> result = bindStyleSheet(rule->parentStyleSheet())->buildObjectForRuleWithoutMedia(rule);
+    result->setMedia(buildMediaListChain(rule));
+    return result.release();
 }
 
 static inline bool matchesPseudoElement(const CSSSelector* selector, PseudoId elementPseudoId)
@@ -1424,8 +1393,18 @@ PassRefPtr<TypeBuilder::Array<TypeBuilder::CSS::RuleMatch> > InspectorCSSAgent::
     if (!ruleList)
         return result.release();
 
-    for (unsigned i = 0, size = ruleList->length(); i < size; ++i) {
-        CSSStyleRule* rule = asCSSStyleRule(ruleList->item(i));
+    HashSet<CSSStyleRule*> uniqRulesSet;
+    Vector<CSSStyleRule*> uniqRules;
+    for (unsigned i = ruleList->length(); i > 0; --i) {
+        CSSStyleRule* rule = asCSSStyleRule(ruleList->item(i - 1));
+        if (uniqRulesSet.contains(rule))
+            continue;
+        uniqRulesSet.add(rule);
+        uniqRules.append(rule);
+    }
+
+    for (unsigned i = uniqRules.size(); i > 0; --i) {
+        CSSStyleRule* rule = uniqRules.at(i - 1);
         RefPtr<TypeBuilder::CSS::CSSRule> ruleObject = buildObjectForRule(rule);
         if (!ruleObject)
             continue;
@@ -1536,36 +1515,27 @@ void InspectorCSSAgent::resetPseudoStates()
         document->setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::Inspector));
 }
 
-void InspectorCSSAgent::setCSSPropertyValue(ErrorString* errorString, Element* element, CSSPropertyID propertyId, const String& value)
+PassRefPtrWillBeRawPtr<CSSStyleDeclaration> InspectorCSSAgent::findEffectiveDeclaration(Element* element, CSSPropertyID propertyId)
 {
     PseudoId elementPseudoId = element->pseudoId();
+    CSSStyleDeclaration* inlineStyle =  element->style();
+
     if (elementPseudoId) {
         element = element->parentOrShadowHostElement();
-        if (!element) {
-            *errorString = "Pseudo element has no parent";
-            return;
-        }
+        if (!element)
+            return nullptr;
     }
 
     Document* ownerDocument = element->ownerDocument();
     // A non-active document has no styles.
-    if (!ownerDocument->isActive()) {
-        *errorString = "Can't edit a node from a non-active document";
-        return;
-    }
+    if (!ownerDocument->isActive())
+        return nullptr;
 
-    // Matched rules.
-
-    Vector<StylePropertyShorthand, 4> shorthands;
-    getMatchingShorthandsForLonghand(propertyId, &shorthands);
-
-    String shorthand =  shorthands.size() > 0 ? getPropertyNameString(shorthands[0].id()) : String();
     String longhand = getPropertyNameString(propertyId);
 
-    CSSStyleDeclaration* foundStyle = nullptr;
+    RefPtrWillBeRawPtr<CSSStyleDeclaration> foundStyle = nullptr;
     bool isImportant = false;
 
-    CSSStyleDeclaration* inlineStyle =  element->style();
     if (inlineStyle && !inlineStyle->getPropertyValue(longhand).isEmpty()) {
         foundStyle = inlineStyle;
         isImportant = inlineStyle->getPropertyPriority(longhand) == "important";
@@ -1598,6 +1568,25 @@ void InspectorCSSAgent::setCSSPropertyValue(ErrorString* errorString, Element* e
             foundStyle = style;
     }
 
+    return foundStyle.release();
+}
+
+void InspectorCSSAgent::setCSSPropertyValue(ErrorString* errorString, Element* element, CSSPropertyID propertyId, const String& value)
+{
+    Document* ownerDocument = element->ownerDocument();
+    if (!ownerDocument->isActive()) {
+        *errorString = "Can't edit a node from a non-active document";
+        return;
+    }
+
+    Vector<StylePropertyShorthand, 4> shorthands;
+    getMatchingShorthandsForLonghand(propertyId, &shorthands);
+
+    String shorthand =  shorthands.size() > 0 ? getPropertyNameString(shorthands[0].id()) : String();
+    String longhand = getPropertyNameString(propertyId);
+
+    RefPtrWillBeRawPtr<CSSStyleDeclaration> foundStyle = findEffectiveDeclaration(element, propertyId);
+    CSSStyleDeclaration* inlineStyle =  element->style();
     if (!foundStyle || !foundStyle->parentStyleSheet())
         foundStyle = inlineStyle;
 
@@ -1647,10 +1636,15 @@ void InspectorCSSAgent::setCSSPropertyValue(ErrorString* errorString, Element* e
     String styleSheetText;
     inspectorStyleSheet->getText(&styleSheetText);
     String styleText = styleSheetText.substring(bodyRange.start, bodyRange.length());
-
+    SourceRange changeRange;
     if (foundIndex == -1) {
+        bool isImportant = inlineStyle->getPropertyPriority(longhand) == "important";
         String newPropertyText = "\n" + longhand + ": " + value + (isImportant ? " !important" : "") + ";";
+        if (!styleText.isEmpty() && !styleText.stripWhiteSpace().endsWith(';'))
+            newPropertyText = ";" + newPropertyText;
         styleText.append(newPropertyText);
+        changeRange.start = bodyRange.end;
+        changeRange.end = bodyRange.end + newPropertyText.length();
     } else {
         CSSPropertySourceData declaration = properties[foundIndex];
         String newValueText;
@@ -1661,8 +1655,14 @@ void InspectorCSSAgent::setCSSPropertyValue(ErrorString* errorString, Element* e
 
         String newPropertyText = declaration.name + ": " + newValueText + (declaration.important ? " !important" : "") + ";";
         styleText.replace(declaration.range.start - bodyRange.start, declaration.range.length(), newPropertyText);
+        changeRange.start = declaration.range.start;
+        changeRange.end = changeRange.start + newPropertyText.length();
     }
-    setStyleText(errorString, inspectorStyleSheet, bodyRange, styleText);
+    CSSStyleDeclaration* resultStyle = setStyleText(errorString, inspectorStyleSheet, bodyRange, styleText);
+    if (resultStyle) {
+        frontend()->layoutEditorChange(inspectorStyleSheet->id(), inspectorStyleSheet->buildSourceRangeObject(changeRange));
+        frontend()->flush();
+    }
 }
 
 void InspectorCSSAgent::setEffectivePropertyValueForNode(ErrorString* errorString, int nodeId, const String& propertyName, const String& value)

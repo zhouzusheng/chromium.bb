@@ -7,8 +7,7 @@
 
 #include "GrAAHairLinePathRenderer.h"
 
-#include "GrBatch.h"
-#include "GrBatchTarget.h"
+#include "GrBatchFlushState.h"
 #include "GrBatchTest.h"
 #include "GrCaps.h"
 #include "GrContext.h"
@@ -22,6 +21,8 @@
 #include "SkGeometry.h"
 #include "SkStroke.h"
 #include "SkTemplates.h"
+
+#include "batches/GrVertexBatch.h"
 
 #include "effects/GrBezierEffect.h"
 
@@ -66,7 +67,7 @@ GR_DECLARE_STATIC_UNIQUE_KEY(gQuadsIndexBufferKey);
 
 static const GrIndexBuffer* ref_quads_index_buffer(GrResourceProvider* resourceProvider) {
     GR_DEFINE_STATIC_UNIQUE_KEY(gQuadsIndexBufferKey);
-    return resourceProvider->refOrCreateInstancedIndexBuffer(
+    return resourceProvider->findOrCreateInstancedIndexBuffer(
         kQuadIdxBufPattern, kIdxsPerQuad, kQuadsNumInIdxBuffer, kQuadNumVertices,
         gQuadsIndexBufferKey);
 }
@@ -100,7 +101,7 @@ GR_DECLARE_STATIC_UNIQUE_KEY(gLinesIndexBufferKey);
 
 static const GrIndexBuffer* ref_lines_index_buffer(GrResourceProvider* resourceProvider) {
     GR_DEFINE_STATIC_UNIQUE_KEY(gLinesIndexBufferKey);
-    return resourceProvider->refOrCreateInstancedIndexBuffer(
+    return resourceProvider->findOrCreateInstancedIndexBuffer(
         kLineSegIdxBufPattern, kIdxsPerLineSeg,  kLineSegsNumInIdxBuffer, kLineSegNumVertices,
         gLinesIndexBufferKey);
 }
@@ -616,22 +617,17 @@ static void add_line(const SkPoint p[2],
 
 ///////////////////////////////////////////////////////////////////////////////
 
-bool GrAAHairLinePathRenderer::canDrawPath(const GrDrawTarget* target,
-                                           const GrPipelineBuilder* pipelineBuilder,
-                                           const SkMatrix& viewMatrix,
-                                           const SkPath& path,
-                                           const GrStrokeInfo& stroke,
-                                           bool antiAlias) const {
-    if (!antiAlias) {
+bool GrAAHairLinePathRenderer::onCanDrawPath(const CanDrawPathArgs& args) const {
+    if (!args.fAntiAlias) {
         return false;
     }
 
-    if (!IsStrokeHairlineOrEquivalent(stroke, viewMatrix, NULL)) {
+    if (!IsStrokeHairlineOrEquivalent(*args.fStroke, *args.fViewMatrix, NULL)) {
         return false;
     }
 
-    if (SkPath::kLine_SegmentMask == path.getSegmentMasks() ||
-        target->caps()->shaderCaps()->shaderDerivativeSupport()) {
+    if (SkPath::kLine_SegmentMask == args.fPath->getSegmentMasks() ||
+        args.fShaderCaps->shaderDerivativeSupport()) {
         return true;
     }
     return false;
@@ -674,7 +670,7 @@ bool check_bounds(const SkMatrix& viewMatrix, const SkRect& devBounds, void* ver
     return true;
 }
 
-class AAHairlineBatch : public GrBatch {
+class AAHairlineBatch : public GrVertexBatch {
 public:
     struct Geometry {
         GrColor fColor;
@@ -684,7 +680,7 @@ public:
         SkIRect fDevClipBounds;
     };
 
-    static GrBatch* Create(const Geometry& geometry) {
+    static GrDrawBatch* Create(const Geometry& geometry) {
         return SkNEW_ARGS(AAHairlineBatch, (geometry));
     }
 
@@ -698,26 +694,26 @@ public:
         out->setUnknownSingleComponent();
     }
 
-    void initBatchTracker(const GrPipelineInfo& init) override {
+private:
+    void initBatchTracker(const GrPipelineOptimizations& opt) override {
         // Handle any color overrides
-        if (!init.readsColor()) {
+        if (!opt.readsColor()) {
             fGeoData[0].fColor = GrColor_ILLEGAL;
         }
-        init.getOverrideColorIfSet(&fGeoData[0].fColor);
+        opt.getOverrideColorIfSet(&fGeoData[0].fColor);
 
         // setup batch properties
-        fBatch.fColorIgnored = !init.readsColor();
+        fBatch.fColorIgnored = !opt.readsColor();
         fBatch.fColor = fGeoData[0].fColor;
-        fBatch.fUsesLocalCoords = init.readsLocalCoords();
-        fBatch.fCoverageIgnored = !init.readsCoverage();
+        fBatch.fUsesLocalCoords = opt.readsLocalCoords();
+        fBatch.fCoverageIgnored = !opt.readsCoverage();
         fBatch.fCoverage = fGeoData[0].fCoverage;
     }
 
-    void generateGeometry(GrBatchTarget* batchTarget, const GrPipeline* pipeline) override;
-
     SkSTArray<1, Geometry, true>* geoData() { return &fGeoData; }
 
-private:
+    void onPrepareDraws(Target*) override;
+
     typedef SkTArray<SkPoint, true> PtArray;
     typedef SkTArray<int, true> IntArray;
     typedef SkTArray<float, true> FloatArray;
@@ -735,8 +731,13 @@ private:
         fBounds.outset(0.5f, 0.5f);
     }
 
-    bool onCombineIfPossible(GrBatch* t) override {
+    bool onCombineIfPossible(GrBatch* t, const GrCaps& caps) override {
         AAHairlineBatch* that = t->cast<AAHairlineBatch>();
+
+        if (!GrPipeline::CanCombine(*this->pipeline(), this->bounds(), *that->pipeline(),
+                                    that->bounds(), caps)) {
+            return false;
+        }
 
         if (this->viewMatrix().hasPerspective() != that->viewMatrix().hasPerspective()) {
             return false;
@@ -788,7 +789,7 @@ private:
     SkSTArray<1, Geometry, true> fGeoData;
 };
 
-void AAHairlineBatch::generateGeometry(GrBatchTarget* batchTarget, const GrPipeline* pipeline) {
+void AAHairlineBatch::onPrepareDraws(Target* target) {
     // Setup the viewmatrix and localmatrix for the GrGeometryProcessor.
     SkMatrix invert;
     if (!this->viewMatrix().invert(&invert)) {
@@ -808,24 +809,24 @@ void AAHairlineBatch::generateGeometry(GrBatchTarget* batchTarget, const GrPipel
         toSrc = &invert;
     }
 
-    // Setup geometry processors for worst case
-    uint32_t gpFlags = GrDefaultGeoProcFactory::kPosition_GPType |
-                       GrDefaultGeoProcFactory::kCoverage_GPType;
+    SkAutoTUnref<const GrGeometryProcessor> lineGP;
+    {
+        using namespace GrDefaultGeoProcFactory;
 
-    SkAutoTUnref<const GrGeometryProcessor> lineGP(
-            GrDefaultGeoProcFactory::Create(gpFlags,
-                                            this->color(),
-                                            this->usesLocalCoords(),
-                                            this->coverageIgnored(),
-                                            *geometryProcessorViewM,
-                                            *geometryProcessorLocalM,
-                                            this->coverage()));
+        Color color(this->color());
+        Coverage coverage(Coverage::kAttribute_Type);
+        LocalCoords localCoords(this->usesLocalCoords() ? LocalCoords::kUsePosition_Type :
+                                                          LocalCoords::kUnused_Type);
+        localCoords.fMatrix = geometryProcessorLocalM;
+        lineGP.reset(GrDefaultGeoProcFactory::Create(color, coverage, localCoords,
+                                                     *geometryProcessorViewM));
+    }
 
     SkAutoTUnref<const GrGeometryProcessor> quadGP(
             GrQuadEffect::Create(this->color(),
                                  *geometryProcessorViewM,
                                  kHairlineAA_GrProcessorEdgeType,
-                                 batchTarget->caps(),
+                                 target->caps(),
                                  *geometryProcessorLocalM,
                                  this->usesLocalCoords(),
                                  this->coverage()));
@@ -834,7 +835,7 @@ void AAHairlineBatch::generateGeometry(GrBatchTarget* batchTarget, const GrPipel
             GrConicEffect::Create(this->color(),
                                   *geometryProcessorViewM,
                                   kHairlineAA_GrProcessorEdgeType,
-                                  batchTarget->caps(),
+                                  target->caps(),
                                   *geometryProcessorLocalM,
                                   this->usesLocalCoords(),
                                   this->coverage()));
@@ -860,8 +861,8 @@ void AAHairlineBatch::generateGeometry(GrBatchTarget* batchTarget, const GrPipel
     // do lines first
     if (lineCount) {
         SkAutoTUnref<const GrIndexBuffer> linesIndexBuffer(
-            ref_lines_index_buffer(batchTarget->resourceProvider()));
-        batchTarget->initDraw(lineGP, pipeline);
+            ref_lines_index_buffer(target->resourceProvider()));
+        target->initDraw(lineGP, this->pipeline());
 
         const GrVertexBuffer* vertexBuffer;
         int firstVertex;
@@ -869,7 +870,7 @@ void AAHairlineBatch::generateGeometry(GrBatchTarget* batchTarget, const GrPipel
         size_t vertexStride = lineGP->getVertexStride();
         int vertexCount = kLineSegNumVertices * lineCount;
         LineVertex* verts = reinterpret_cast<LineVertex*>(
-            batchTarget->makeVertSpace(vertexStride, vertexCount, &vertexBuffer, &firstVertex));
+            target->makeVertexSpace(vertexStride, vertexCount, &vertexBuffer, &firstVertex));
 
         if (!verts|| !linesIndexBuffer) {
             SkDebugf("Could not allocate vertices\n");
@@ -887,7 +888,7 @@ void AAHairlineBatch::generateGeometry(GrBatchTarget* batchTarget, const GrPipel
             vertices.initInstanced(kTriangles_GrPrimitiveType, vertexBuffer, linesIndexBuffer,
                                    firstVertex, kLineSegNumVertices, kIdxsPerLineSeg, lineCount,
                                    kLineSegsNumInIdxBuffer);
-            batchTarget->draw(vertices);
+            target->draw(vertices);
         }
     }
 
@@ -896,12 +897,12 @@ void AAHairlineBatch::generateGeometry(GrBatchTarget* batchTarget, const GrPipel
         int firstVertex;
 
         SkAutoTUnref<const GrIndexBuffer> quadsIndexBuffer(
-            ref_quads_index_buffer(batchTarget->resourceProvider()));
+            ref_quads_index_buffer(target->resourceProvider()));
 
         size_t vertexStride = sizeof(BezierVertex);
         int vertexCount = kQuadNumVertices * quadCount + kQuadNumVertices * conicCount;
-        void *vertices = batchTarget->makeVertSpace(vertexStride, vertexCount,
-                                                    &vertexBuffer, &firstVertex);
+        void *vertices = target->makeVertexSpace(vertexStride, vertexCount,
+                                                 &vertexBuffer, &firstVertex);
 
         if (!vertices || !quadsIndexBuffer) {
             SkDebugf("Could not allocate vertices\n");
@@ -923,37 +924,37 @@ void AAHairlineBatch::generateGeometry(GrBatchTarget* batchTarget, const GrPipel
         }
 
         if (quadCount > 0) {
-            batchTarget->initDraw(quadGP, pipeline);
+            target->initDraw(quadGP, this->pipeline());
 
             {
                 GrVertices verts;
                 verts.initInstanced(kTriangles_GrPrimitiveType, vertexBuffer, quadsIndexBuffer,
                                     firstVertex, kQuadNumVertices, kIdxsPerQuad, quadCount,
                                     kQuadsNumInIdxBuffer);
-                batchTarget->draw(verts);
+                target->draw(verts);
                 firstVertex += quadCount * kQuadNumVertices;
            }
         }
 
         if (conicCount > 0) {
-            batchTarget->initDraw(conicGP, pipeline);
+            target->initDraw(conicGP, this->pipeline());
 
             {
                 GrVertices verts;
                 verts.initInstanced(kTriangles_GrPrimitiveType, vertexBuffer, quadsIndexBuffer,
                                     firstVertex, kQuadNumVertices, kIdxsPerQuad, conicCount,
                                     kQuadsNumInIdxBuffer);
-                batchTarget->draw(verts);
+                target->draw(verts);
             }
         }
     }
 }
 
-static GrBatch* create_hairline_batch(GrColor color,
-                                      const SkMatrix& viewMatrix,
-                                      const SkPath& path,
-                                      const GrStrokeInfo& stroke,
-                                      const SkIRect& devClipBounds) {
+static GrDrawBatch* create_hairline_batch(GrColor color,
+                                          const SkMatrix& viewMatrix,
+                                          const SkPath& path,
+                                          const GrStrokeInfo& stroke,
+                                          const SkIRect& devClipBounds) {
     SkScalar hairlineCoverage;
     uint8_t newCoverage = 0xff;
     if (GrPathRenderer::IsStrokeHairlineOrEquivalent(stroke, viewMatrix, &hairlineCoverage)) {
@@ -970,20 +971,14 @@ static GrBatch* create_hairline_batch(GrColor color,
     return AAHairlineBatch::Create(geometry);
 }
 
-bool GrAAHairLinePathRenderer::onDrawPath(GrDrawTarget* target,
-                                          GrPipelineBuilder* pipelineBuilder,
-                                          GrColor color,
-                                          const SkMatrix& viewMatrix,
-                                          const SkPath& path,
-                                          const GrStrokeInfo& stroke,
-                                          bool) {
+bool GrAAHairLinePathRenderer::onDrawPath(const DrawPathArgs& args) {
     SkIRect devClipBounds;
-    pipelineBuilder->clip().getConservativeBounds(pipelineBuilder->getRenderTarget(),
-                                                  &devClipBounds);
+    args.fPipelineBuilder->clip().getConservativeBounds(args.fPipelineBuilder->getRenderTarget(),
+                                                        &devClipBounds);
 
-    SkAutoTUnref<GrBatch> batch(create_hairline_batch(color, viewMatrix, path, stroke,
-                                                      devClipBounds));
-    target->drawBatch(pipelineBuilder, batch);
+    SkAutoTUnref<GrDrawBatch> batch(create_hairline_batch(args.fColor, *args.fViewMatrix, *args.fPath,
+                                                          *args.fStroke, devClipBounds));
+    args.fTarget->drawBatch(*args.fPipelineBuilder, batch);
 
     return true;
 }
@@ -992,7 +987,7 @@ bool GrAAHairLinePathRenderer::onDrawPath(GrDrawTarget* target,
 
 #ifdef GR_TEST_UTILS
 
-BATCH_TEST_DEFINE(AAHairlineBatch) {
+DRAW_BATCH_TEST_DEFINE(AAHairlineBatch) {
     GrColor color = GrRandomColor(random);
     SkMatrix viewMatrix = GrTest::TestMatrix(random);
     GrStrokeInfo stroke(SkStrokeRec::kHairline_InitStyle);

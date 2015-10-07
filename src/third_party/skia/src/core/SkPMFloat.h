@@ -26,6 +26,7 @@ class SkPMFloat : public Sk4f {
 public:
     static SkPMFloat FromPMColor(SkPMColor c) { return SkPMFloat(c); }
     static SkPMFloat FromARGB(float a, float r, float g, float b) { return SkPMFloat(a,r,g,b); }
+    static SkPMFloat FromOpaqueColor(SkColor c);  // Requires c's alpha == 0xFF.
 
     Sk4f alphas() const;  // argb -> aaaa, generally faster than the equivalent Sk4f(this->a()).
 

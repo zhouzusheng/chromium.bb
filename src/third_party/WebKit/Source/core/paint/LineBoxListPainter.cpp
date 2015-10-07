@@ -6,6 +6,7 @@
 #include "core/paint/LineBoxListPainter.h"
 
 #include "core/layout/LayoutBoxModelObject.h"
+#include "core/layout/api/LineLayoutBoxModel.h"
 #include "core/layout/line/InlineFlowBox.h"
 #include "core/layout/line/LineBoxList.h"
 #include "core/layout/line/RootInlineBox.h"
@@ -37,14 +38,14 @@ void LineBoxListPainter::paint(LayoutBoxModelObject* layoutObject, const PaintIn
 
     // FIXME: When Skia supports annotation rect covering (https://code.google.com/p/skia/issues/detail?id=3872),
     // these rects may be covered line box drawings. Then we may need a dedicated paint phase.
-    if (paintInfo.phase == PaintPhaseForeground && paintInfo.context->printing())
+    if (paintInfo.phase == PaintPhaseForeground && paintInfo.isPrinting())
         addPDFURLRectsForInlineChildrenRecursively(layoutObject, paintInfo, paintOffset);
 
     // If we have no lines then we have no work to do.
     if (!m_lineBoxList.firstLineBox())
         return;
 
-    if (!m_lineBoxList.anyLineIntersectsRect(layoutObject, LayoutRect(paintInfo.rect), paintOffset))
+    if (!m_lineBoxList.anyLineIntersectsRect(LineLayoutBoxModel(layoutObject), LayoutRect(paintInfo.rect), paintOffset))
         return;
 
     PaintInfo info(paintInfo);
@@ -55,7 +56,7 @@ void LineBoxListPainter::paint(LayoutBoxModelObject* layoutObject, const PaintIn
     // them. Note that boxes can easily overlap, so we can't make any assumptions
     // based off positions of our first line box or our last line box.
     for (InlineFlowBox* curr = m_lineBoxList.firstLineBox(); curr; curr = curr->nextLineBox()) {
-        if (m_lineBoxList.lineIntersectsDirtyRect(layoutObject, curr, info, paintOffset)) {
+        if (m_lineBoxList.lineIntersectsDirtyRect(LineLayoutBoxModel(layoutObject), curr, info, paintOffset)) {
             RootInlineBox& root = curr->root();
             curr->paint(info, paintOffset, root.lineTop(), root.lineBottom());
         }

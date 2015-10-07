@@ -1,6 +1,4 @@
-
-
-  Polymer({
+Polymer({
 
     is: 'paper-tabs',
 
@@ -263,6 +261,9 @@
     },
 
     _positionBar: function(width, left) {
+      width = width || 0;
+      left = left || 0;
+
       this._width = width;
       this._left = left;
       this.transform(
@@ -284,4 +285,3 @@
     }
 
   });
-

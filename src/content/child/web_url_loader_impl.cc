@@ -10,6 +10,7 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
+#include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/string_util.h"
@@ -28,6 +29,7 @@
 #include "content/common/resource_messages.h"
 #include "content/common/resource_request_body.h"
 #include "content/common/service_worker/service_worker_types.h"
+#include "content/common/ssl_status_serialization.h"
 #include "content/public/child/fixed_received_data.h"
 #include "content/public/child/request_peer.h"
 #include "content/public/common/content_switches.h"
@@ -36,6 +38,8 @@
 #include "net/base/net_errors.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_util.h"
+#include "net/ssl/ssl_cipher_suite_names.h"
+#include "net/ssl/ssl_connection_status_flags.h"
 #include "net/url_request/redirect_info.h"
 #include "net/url_request/url_request_data_job.h"
 #include "third_party/WebKit/public/platform/WebHTTPLoadInfo.h"
@@ -191,6 +195,17 @@ FetchCredentialsMode GetFetchCredentialsMode(const WebURLRequest& request) {
   return static_cast<FetchCredentialsMode>(request.fetchCredentialsMode());
 }
 
+STATIC_ASSERT_MATCHING_ENUMS(FetchRedirectMode::FOLLOW_MODE,
+                             WebURLRequest::FetchRedirectModeFollow);
+STATIC_ASSERT_MATCHING_ENUMS(FetchRedirectMode::ERROR_MODE,
+                             WebURLRequest::FetchRedirectModeError);
+STATIC_ASSERT_MATCHING_ENUMS(FetchRedirectMode::MANUAL_MODE,
+                             WebURLRequest::FetchRedirectModeManual);
+
+FetchRedirectMode GetFetchRedirectMode(const WebURLRequest& request) {
+  return static_cast<FetchRedirectMode>(request.fetchRedirectMode());
+}
+
 STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_FRAME_TYPE_AUXILIARY,
                              WebURLRequest::FrameTypeAuxiliary);
 STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_FRAME_TYPE_NESTED,
@@ -276,6 +291,84 @@ STATIC_ASSERT_MATCHING_ENUMS(REQUEST_CONTEXT_TYPE_XSLT,
 
 RequestContextType GetRequestContextType(const WebURLRequest& request) {
   return static_cast<RequestContextType>(request.requestContext());
+}
+
+void SetSecurityStyleAndDetails(const GURL& url,
+                                const std::string& security_info,
+                                WebURLResponse* response,
+                                bool report_security_info) {
+  if (!report_security_info) {
+    response->setSecurityStyle(WebURLResponse::SecurityStyleUnknown);
+    return;
+  }
+  if (!url.SchemeIsCryptographic()) {
+    response->setSecurityStyle(WebURLResponse::SecurityStyleUnauthenticated);
+    return;
+  }
+
+  // There are cases where an HTTPS request can come in without security
+  // info attached (such as a redirect response).
+  if (security_info.empty()) {
+    response->setSecurityStyle(WebURLResponse::SecurityStyleUnknown);
+    return;
+  }
+
+  SSLStatus ssl_status;
+  if (!DeserializeSecurityInfo(security_info, &ssl_status)) {
+    response->setSecurityStyle(WebURLResponse::SecurityStyleUnknown);
+    DLOG(ERROR)
+        << "DeserializeSecurityInfo() failed for an authenticated request.";
+    return;
+  }
+
+  int ssl_version =
+      net::SSLConnectionStatusToVersion(ssl_status.connection_status);
+  const char* protocol;
+  net::SSLVersionToString(&protocol, ssl_version);
+
+  const char* key_exchange;
+  const char* cipher;
+  const char* mac;
+  bool is_aead;
+  uint16_t cipher_suite =
+      net::SSLConnectionStatusToCipherSuite(ssl_status.connection_status);
+  net::SSLCipherSuiteToStrings(&key_exchange, &cipher, &mac, &is_aead,
+                               cipher_suite);
+  if (mac == NULL) {
+    DCHECK(is_aead);
+    mac = "";
+  }
+
+  blink::WebURLResponse::SecurityStyle securityStyle =
+      WebURLResponse::SecurityStyleUnknown;
+  switch (ssl_status.security_style) {
+    case SECURITY_STYLE_UNKNOWN:
+      securityStyle = WebURLResponse::SecurityStyleUnknown;
+      break;
+    case SECURITY_STYLE_UNAUTHENTICATED:
+      securityStyle = WebURLResponse::SecurityStyleUnauthenticated;
+      break;
+    case SECURITY_STYLE_AUTHENTICATION_BROKEN:
+      securityStyle = WebURLResponse::SecurityStyleAuthenticationBroken;
+      break;
+    case SECURITY_STYLE_WARNING:
+      securityStyle = WebURLResponse::SecurityStyleWarning;
+      break;
+    case SECURITY_STYLE_AUTHENTICATED:
+      securityStyle = WebURLResponse::SecurityStyleAuthenticated;
+      break;
+  }
+
+  response->setSecurityStyle(securityStyle);
+
+  blink::WebString protocol_string = blink::WebString::fromUTF8(protocol);
+  blink::WebString cipher_string = blink::WebString::fromUTF8(cipher);
+  blink::WebString key_exchange_string =
+      blink::WebString::fromUTF8(key_exchange);
+  blink::WebString mac_string = blink::WebString::fromUTF8(mac);
+  response->setSecurityDetails(protocol_string, cipher_string,
+                               key_exchange_string, mac_string,
+                               ssl_status.cert_id);
 }
 
 }  // namespace
@@ -508,6 +601,7 @@ void WebURLLoaderImpl::Context::Start(const WebURLRequest& request,
   request_info.should_reset_appcache = request.shouldResetAppCache();
   request_info.fetch_request_mode = GetFetchRequestMode(request);
   request_info.fetch_credentials_mode = GetFetchCredentialsMode(request);
+  request_info.fetch_redirect_mode = GetFetchRedirectMode(request);
   request_info.fetch_request_context_type = GetRequestContextType(request);
   request_info.fetch_frame_type = GetRequestContextFrameType(request);
   request_info.extra_data = request.extraData();
@@ -538,7 +632,8 @@ bool WebURLLoaderImpl::Context::OnReceivedRedirect(
 
   WebURLResponse response;
   response.initialize();
-  PopulateURLResponse(request_.url(), info, &response);
+  PopulateURLResponse(request_.url(), info, &response,
+                      request_.reportRawHeaders());
 
   // TODO(darin): We lack sufficient information to construct the actual
   // request that resulted from the redirect.
@@ -601,7 +696,8 @@ void WebURLLoaderImpl::Context::OnReceivedResponse(
 
   WebURLResponse response;
   response.initialize();
-  PopulateURLResponse(request_.url(), info, &response);
+  PopulateURLResponse(request_.url(), info, &response,
+                      request_.reportRawHeaders());
 
   bool show_raw_listing = (GURL(request_.url()).query() == "raw");
 
@@ -894,7 +990,8 @@ WebURLLoaderImpl::~WebURLLoaderImpl() {
 
 void WebURLLoaderImpl::PopulateURLResponse(const GURL& url,
                                            const ResourceResponseInfo& info,
-                                           WebURLResponse* response) {
+                                           WebURLResponse* response,
+                                           bool report_security_info) {
   response->setURL(url);
   response->setResponseTime(info.response_time.ToInternalValue());
   response->setMIMEType(WebString::fromUTF8(info.mime_type));
@@ -918,6 +1015,9 @@ void WebURLLoaderImpl::PopulateURLResponse(const GURL& url,
   response->setServiceWorkerResponseType(info.response_type_via_service_worker);
   response->setOriginalURLViaServiceWorker(
       info.original_url_via_service_worker);
+
+  SetSecurityStyleAndDetails(url, info.security_info, response,
+                             report_security_info);
 
   WebURLResponseExtraDataImpl* extra_data =
       new WebURLResponseExtraDataImpl(info.npn_negotiated_protocol);
@@ -1036,7 +1136,8 @@ void WebURLLoaderImpl::loadSynchronously(const WebURLRequest& request,
     return;
   }
 
-  PopulateURLResponse(final_url, sync_load_response, &response);
+  PopulateURLResponse(final_url, sync_load_response, &response,
+                      request.reportRawHeaders());
 
   data.assign(sync_load_response.data.data(),
               sync_load_response.data.size());

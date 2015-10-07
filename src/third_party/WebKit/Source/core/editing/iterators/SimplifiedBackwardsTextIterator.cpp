@@ -28,7 +28,7 @@
 #include "core/editing/iterators/SimplifiedBackwardsTextIterator.h"
 
 #include "core/dom/FirstLetterPseudoElement.h"
-#include "core/editing/htmlediting.h"
+#include "core/editing/EditingUtilities.h"
 #include "core/editing/iterators/TextIterator.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLTextFormControlElement.h"
@@ -82,12 +82,12 @@ SimplifiedBackwardsTextIteratorAlgorithm<Strategy>::SimplifiedBackwardsTextItera
 {
     ASSERT(behavior == TextIteratorDefaultBehavior || behavior == TextIteratorStopsOnFormControls);
 
-    Node* startNode = start.deprecatedNode();
+    Node* startNode = start.anchorNode();
     if (!startNode)
         return;
-    Node* endNode = end.deprecatedNode();
-    int startOffset = start.deprecatedEditingOffset();
-    int endOffset = end.deprecatedEditingOffset();
+    Node* endNode = end.anchorNode();
+    int startOffset = start.computeEditingOffset();
+    int endOffset = end.computeEditingOffset();
 
     init(startNode, endNode, startOffset, endOffset);
 }
@@ -226,7 +226,7 @@ bool SimplifiedBackwardsTextIteratorAlgorithm<Strategy>::handleTextNode()
         return true;
 
     String text = layoutObject->text();
-    if (!layoutObject->firstTextBox() && text.length() > 0)
+    if (!layoutObject->hasTextBoxes() && text.length() > 0)
         return true;
 
     m_positionEndOffset = m_offset;
@@ -368,19 +368,20 @@ template <typename Strategy>
 PositionAlgorithm<Strategy> SimplifiedBackwardsTextIteratorAlgorithm<Strategy>::startPosition() const
 {
     if (m_positionNode)
-        return PositionAlgorithm<Strategy>::createLegacyEditingPosition(m_positionNode, m_positionStartOffset);
-    return PositionAlgorithm<Strategy>::createLegacyEditingPosition(m_startNode, m_startOffset);
+        return PositionAlgorithm<Strategy>::editingPositionOf(m_positionNode, m_positionStartOffset);
+    return PositionAlgorithm<Strategy>::editingPositionOf(m_startNode, m_startOffset);
 }
 
 template <typename Strategy>
 PositionAlgorithm<Strategy>SimplifiedBackwardsTextIteratorAlgorithm<Strategy>::endPosition() const
 {
     if (m_positionNode)
-        return PositionAlgorithm<Strategy>::createLegacyEditingPosition(m_positionNode, m_positionEndOffset);
-    return PositionAlgorithm<Strategy>::createLegacyEditingPosition(m_startNode, m_startOffset);
+        return PositionAlgorithm<Strategy>::editingPositionOf(m_positionNode, m_positionEndOffset);
+    return PositionAlgorithm<Strategy>::editingPositionOf(m_startNode, m_startOffset);
 }
 
 template class CORE_TEMPLATE_EXPORT SimplifiedBackwardsTextIteratorAlgorithm<EditingStrategy>;
+template class CORE_TEMPLATE_EXPORT SimplifiedBackwardsTextIteratorAlgorithm<EditingInComposedTreeStrategy>;
 
 
 } // namespace blink

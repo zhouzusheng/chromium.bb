@@ -11,6 +11,7 @@
 #include "base/single_thread_task_runner.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/thread_task_runner_handle.h"
+#include "content/common/accessibility_messages.h"
 #include "content/renderer/accessibility/blink_ax_enum_conversion.h"
 #include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_view_impl.h"
@@ -41,7 +42,7 @@ const size_t kMaxSnapshotNodeCount = 5000;
 // static
 void RendererAccessibility::SnapshotAccessibilityTree(
     RenderFrameImpl* render_frame,
-    ui::AXTreeUpdate* response) {
+    ui::AXTreeUpdate<content::AXContentNodeData>* response) {
   DCHECK(render_frame);
   DCHECK(response);
   if (!render_frame->GetWebFrame())
@@ -51,7 +52,7 @@ void RendererAccessibility::SnapshotAccessibilityTree(
   WebScopedAXContext context(document);
   BlinkAXTreeSource tree_source(render_frame);
   tree_source.SetRoot(context.root());
-  ui::AXTreeSerializer<blink::WebAXObject> serializer(&tree_source);
+  BlinkAXTreeSerializer serializer(&tree_source);
   serializer.set_max_node_count(kMaxSnapshotNodeCount);
   serializer.SerializeChanges(context.root(), response);
 }
@@ -264,9 +265,6 @@ void RendererAccessibility::SendPendingAccessibilityEvents() {
       continue;
 
     AccessibilityHostMsg_EventParams event_msg;
-    tree_source_.CollectChildFrameIdMapping(
-        &event_msg.node_to_frame_routing_id_map,
-        &event_msg.node_to_browser_plugin_instance_id_map);
     event_msg.event_type = event.event_type;
     event_msg.id = event.id;
     serializer_.SerializeChanges(obj, &event_msg.update);
@@ -510,6 +508,14 @@ void RendererAccessibility::OnSetTextSelection(
   }
 
   obj.setSelectedTextRange(start_offset, end_offset);
+  WebAXObject root = document.accessibilityObject();
+  if (root.isDetached()) {
+#ifndef NDEBUG
+    LOG(WARNING) << "OnSetAccessibilityFocus but root is invalid";
+#endif
+    return;
+  }
+  HandleAXEvent(root, ui::AX_EVENT_LAYOUT_COMPLETE);
 }
 
 void RendererAccessibility::OnSetValue(

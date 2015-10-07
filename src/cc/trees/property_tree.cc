@@ -49,7 +49,7 @@ void PropertyTree<T>::clear() {
 
 template class PropertyTree<TransformNode>;
 template class PropertyTree<ClipNode>;
-template class PropertyTree<OpacityNode>;
+template class PropertyTree<EffectNode>;
 
 TransformNodeData::TransformNodeData()
     : target_id(-1),
@@ -94,11 +94,14 @@ void TransformNodeData::update_post_local_transform(
       transform_origin.z());
 }
 
-ClipNodeData::ClipNodeData() : transform_id(-1), target_id(-1) {
-}
+ClipNodeData::ClipNodeData()
+    : transform_id(-1),
+      target_id(-1),
+      inherit_parent_target_space_clip(false),
+      requires_tight_clip_rect(true),
+      render_surface_is_clipped(false) {}
 
-OpacityNodeData::OpacityNodeData() : opacity(1.f), screen_space_opacity(1.f) {
-}
+EffectNodeData::EffectNodeData() : opacity(1.f), screen_space_opacity(1.f) {}
 
 void TransformTree::clear() {
   PropertyTree<TransformNode>::clear();
@@ -146,6 +149,10 @@ bool TransformTree::ComputeTransformWithSourceSublayerScale(
   const TransformNode* source_node = Node(source_id);
   if (!source_node->data.needs_sublayer_scale)
     return success;
+
+  if (source_node->data.sublayer_scale.x() == 0 ||
+      source_node->data.sublayer_scale.y() == 0)
+    return false;
 
   transform->Scale(1.f / source_node->data.sublayer_scale.x(),
                    1.f / source_node->data.sublayer_scale.y());
@@ -479,11 +486,11 @@ bool TransformTree::HasNodesAffectedByOuterViewportBoundsDelta() const {
   return !nodes_affected_by_outer_viewport_bounds_delta_.empty();
 }
 
-void OpacityTree::UpdateOpacities(int id) {
-  OpacityNode* node = Node(id);
+void EffectTree::UpdateOpacities(int id) {
+  EffectNode* node = Node(id);
   node->data.screen_space_opacity = node->data.opacity;
 
-  OpacityNode* parent_node = parent(node);
+  EffectNode* parent_node = parent(node);
   if (parent_node)
     node->data.screen_space_opacity *= parent_node->data.screen_space_opacity;
 }

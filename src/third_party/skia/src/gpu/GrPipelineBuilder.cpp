@@ -7,16 +7,17 @@
 
 #include "GrPipelineBuilder.h"
 
-#include "GrBatch.h"
 #include "GrBlend.h"
 #include "GrPaint.h"
 #include "GrPipeline.h"
 #include "GrProcOptInfo.h"
 #include "GrXferProcessor.h"
+#include "batches/GrBatch.h"
 #include "effects/GrPorterDuffXferProcessor.h"
 
 GrPipelineBuilder::GrPipelineBuilder()
-    : fFlags(0x0)
+    : fProcDataManager(SkNEW(GrProcessorDataManager))
+    , fFlags(0x0)
     , fDrawFace(kBoth_DrawFace)
     , fColorProcInfoValid(false)
     , fCoverageProcInfoValid(false)
@@ -26,6 +27,7 @@ GrPipelineBuilder::GrPipelineBuilder()
 }
 
 GrPipelineBuilder& GrPipelineBuilder::operator=(const GrPipelineBuilder& that) {
+    fProcDataManager.reset(SkNEW_ARGS(GrProcessorDataManager, (*that.processorDataManager())));
     fRenderTarget.reset(SkSafeRef(that.fRenderTarget.get()));
     fFlags = that.fFlags;
     fStencilSettings = that.fStencilSettings;
@@ -50,6 +52,10 @@ GrPipelineBuilder& GrPipelineBuilder::operator=(const GrPipelineBuilder& that) {
 
 GrPipelineBuilder::GrPipelineBuilder(const GrPaint& paint, GrRenderTarget* rt, const GrClip& clip) {
     SkDEBUGCODE(fBlockEffectRemovalCnt = 0;)
+
+    // TODO keep this logically const using an AutoReset
+    fProcDataManager.reset(
+         const_cast<GrProcessorDataManager*>(SkRef(paint.processorDataManager())));
 
     fColorStages.reset();
     fCoverageStages.reset();
@@ -93,7 +99,8 @@ bool GrPipelineBuilder::willXPNeedDstTexture(const GrCaps& caps,
                                                     this->hasMixedSamples());
 }
 
-void GrPipelineBuilder::AutoRestoreFragmentProcessors::set(GrPipelineBuilder* pipelineBuilder) {
+void GrPipelineBuilder::AutoRestoreFragmentProcessorState::set(
+                                                         const GrPipelineBuilder* pipelineBuilder) {
     if (fPipelineBuilder) {
         int m = fPipelineBuilder->numColorFragmentStages() - fColorEffectCnt;
         SkASSERT(m >= 0);
@@ -107,12 +114,14 @@ void GrPipelineBuilder::AutoRestoreFragmentProcessors::set(GrPipelineBuilder* pi
             fPipelineBuilder->fCoverageProcInfoValid = false;
         }
         SkDEBUGCODE(--fPipelineBuilder->fBlockEffectRemovalCnt;)
+        fPipelineBuilder->getProcessorDataManager()->restoreToSaveMarker(/*fSaveMarker*/);
     }
-    fPipelineBuilder = pipelineBuilder;
+    fPipelineBuilder = const_cast<GrPipelineBuilder*>(pipelineBuilder);
     if (NULL != pipelineBuilder) {
         fColorEffectCnt = pipelineBuilder->numColorFragmentStages();
         fCoverageEffectCnt = pipelineBuilder->numCoverageFragmentStages();
         SkDEBUGCODE(++pipelineBuilder->fBlockEffectRemovalCnt;)
+        fSaveMarker = pipelineBuilder->processorDataManager()->currentSaveMarker();
     }
 }
 
@@ -123,14 +132,6 @@ GrPipelineBuilder::~GrPipelineBuilder() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-
-bool GrPipelineBuilder::willColorBlendWithDst(const GrPrimitiveProcessor* pp) const {
-    this->calcColorInvariantOutput(pp);
-    
-    GrXPFactory::InvariantBlendedColor blendedColor;
-    fXPFactory->getInvariantBlendedColor(fColorProcInfo, &blendedColor);
-    return blendedColor.fWillBlendWithDst;
-}
 
 void GrPipelineBuilder::calcColorInvariantOutput(const GrPrimitiveProcessor* pp) const {
     fColorProcInfo.calcColorWithPrimProc(pp, fColorStages.begin(), this->numColorFragmentStages());
@@ -144,12 +145,12 @@ void GrPipelineBuilder::calcCoverageInvariantOutput(const GrPrimitiveProcessor* 
     fCoverageProcInfoValid = false;
 }
 
-void GrPipelineBuilder::calcColorInvariantOutput(const GrBatch* batch) const {
+void GrPipelineBuilder::calcColorInvariantOutput(const GrDrawBatch* batch) const {
     fColorProcInfo.calcColorWithBatch(batch, fColorStages.begin(), this->numColorFragmentStages());
     fColorProcInfoValid = false;
 }
 
-void GrPipelineBuilder::calcCoverageInvariantOutput(const GrBatch* batch) const {
+void GrPipelineBuilder::calcCoverageInvariantOutput(const GrDrawBatch* batch) const {
     fCoverageProcInfo.calcCoverageWithBatch(batch, fCoverageStages.begin(),
                                             this->numCoverageFragmentStages());
     fCoverageProcInfoValid = false;

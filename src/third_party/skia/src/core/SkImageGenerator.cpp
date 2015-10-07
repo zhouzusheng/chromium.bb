@@ -6,6 +6,12 @@
  */
 
 #include "SkImageGenerator.h"
+#include "SkNextID.h"
+
+SkImageGenerator::SkImageGenerator(const SkImageInfo& info)
+    : fInfo(info)
+    , fUniqueID(SkNextID::ImageID())
+{}
 
 bool SkImageGenerator::getPixels(const SkImageInfo& info, void* pixels, size_t rowBytes,
                                  SkPMColor ctable[], int* ctableCount) {
@@ -31,25 +37,11 @@ bool SkImageGenerator::getPixels(const SkImageInfo& info, void* pixels, size_t r
         ctable = NULL;
     }
 
-#ifdef SK_LEGACY_IMAGE_GENERATOR_ENUMS_AND_OPTIONS
-    // Default options.
-    Options options;
-    const Result result = this->onGetPixels(info, pixels, rowBytes, options, ctable, ctableCount);
-
-    if (kIncompleteInput != result && kSuccess != result) {
-        return false;
-    }
-    if (ctableCount) {
-        SkASSERT(*ctableCount >= 0 && *ctableCount <= 256);
-    }
-        return true;
-#else
     const bool success = this->onGetPixels(info, pixels, rowBytes, ctable, ctableCount);
     if (success && ctableCount) {
         SkASSERT(*ctableCount >= 0 && *ctableCount <= 256);
     }
     return success;
-#endif
 }
 
 bool SkImageGenerator::getPixels(const SkImageInfo& info, void* pixels, size_t rowBytes) {
@@ -112,24 +104,24 @@ bool SkImageGenerator::onGetYUV8Planes(SkISize sizes[3], void* planes[3], size_t
     return this->onGetYUV8Planes(sizes, planes, rowBytes);
 }
 
+GrTexture* SkImageGenerator::generateTexture(GrContext* ctx, SkImageUsageType usage,
+                                             const SkIRect* subset) {
+    if (subset && !SkIRect::MakeWH(fInfo.width(), fInfo.height()).contains(*subset)) {
+        return nullptr;
+    }
+    return this->onGenerateTexture(ctx, usage, subset);
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////////
 
 SkData* SkImageGenerator::onRefEncodedData() {
     return NULL;
 }
 
-#ifdef SK_LEGACY_IMAGE_GENERATOR_ENUMS_AND_OPTIONS
-SkImageGenerator::Result SkImageGenerator::onGetPixels(const SkImageInfo& info, void* dst,
-                                                       size_t rb, const Options& options,
-                                                       SkPMColor* colors, int* colorCount) {
-    return kUnimplemented;
-}
-#else
 bool SkImageGenerator::onGetPixels(const SkImageInfo& info, void* dst, size_t rb,
                                    SkPMColor* colors, int* colorCount) {
     return false;
 }
-#endif
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 

@@ -9,7 +9,6 @@
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_vector.h"
 #include "ipc/ipc_export.h"
 
 #if defined(OS_POSIX)
@@ -61,6 +60,8 @@ class IPC_EXPORT MessageAttachmentSet
 
   // Returns a vector of all brokerable attachments.
   std::vector<const BrokerableAttachment*> PeekBrokerableAttachments() const;
+  std::vector<scoped_refptr<BrokerableAttachment>>
+  GetBrokerableAttachmentsForUpdating();
 
 #if defined(OS_POSIX)
   // This is the maximum number of descriptors per message. We need to know this

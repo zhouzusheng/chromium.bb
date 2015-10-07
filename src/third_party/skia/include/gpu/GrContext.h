@@ -18,7 +18,7 @@
 #include "SkPathEffect.h"
 #include "SkTypes.h"
 
-class GrAARectRenderer;
+struct GrBatchAtlasConfig;
 class GrBatchFontCache;
 class GrCaps;
 struct GrContextOptions;
@@ -228,8 +228,8 @@ public:
     };
 
     /**
-     * Reads a rectangle of pixels from a render target.
-     * @param target        the render target to read from.
+     * Reads a rectangle of pixels from a surface.
+     * @param surface       the surface to read from.
      * @param left          left edge of the rectangle to read (inclusive)
      * @param top           top edge of the rectangle to read (inclusive)
      * @param width         width of rectangle to read in pixels.
@@ -241,14 +241,13 @@ public:
      * @param pixelOpsFlags see PixelOpsFlags enum above.
      *
      * @return true if the read succeeded, false if not. The read can fail because of an unsupported
-     *         pixel config or because no render target is currently set and NULL was passed for
-     *         target.
+     *         pixel configs
      */
-    bool readRenderTargetPixels(GrRenderTarget* target,
-                                int left, int top, int width, int height,
-                                GrPixelConfig config, void* buffer,
-                                size_t rowBytes = 0,
-                                uint32_t pixelOpsFlags = 0);
+    bool readSurfacePixels(GrSurface* surface,
+                           int left, int top, int width, int height,
+                           GrPixelConfig config, void* buffer,
+                           size_t rowBytes = 0,
+                           uint32_t pixelOpsFlags = 0);
 
     /**
      * Writes a rectangle of pixels to a surface.
@@ -354,6 +353,14 @@ public:
     void dumpGpuStats(SkString*) const;
     void printGpuStats() const;
 
+    /** Specify the TextBlob cache limit. If the current cache exceeds this limit it will purge.
+        this is for testing only */
+    void setTextBlobCacheLimit_ForTesting(size_t bytes);
+
+    /** Specify the sizes of the GrAtlasTextContext atlases.  The configs pointer below should be
+        to an array of 3 entries */
+    void setTextContextAtlasSizes_ForTesting(const GrBatchAtlasConfig* configs);
+
 private:
     GrGpu*                          fGpu;
     const GrCaps*                   fCaps;
@@ -446,6 +453,9 @@ private:
                                                    bool swapRAndB, const SkMatrix&);
     const GrFragmentProcessor* createUPMToPMEffect(GrProcessorDataManager*, GrTexture*,
                                                    bool swapRAndB, const SkMatrix&);
+    /** Returns true if we've already determined that createPMtoUPMEffect and createUPMToPMEffect
+        will fail. In such cases fall back to SW conversion. */
+    bool didFailPMUPMConversionTest() const;
 
     /**
      *  This callback allows the resource cache to callback into the GrContext

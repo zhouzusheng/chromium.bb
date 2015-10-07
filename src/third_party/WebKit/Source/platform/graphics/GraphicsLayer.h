@@ -45,7 +45,6 @@
 #include "public/platform/WebImageLayer.h"
 #include "public/platform/WebLayerClient.h"
 #include "public/platform/WebLayerScrollClient.h"
-#include "public/platform/WebNinePatchLayer.h"
 #include "public/platform/WebScrollBlocksOn.h"
 #include "third_party/skia/include/core/SkPaint.h"
 #include "wtf/OwnPtr.h"
@@ -61,21 +60,11 @@ class GraphicsLayer;
 class GraphicsLayerFactory;
 class GraphicsLayerFactoryChromium;
 class Image;
+class LinkHighlight;
 class JSONObject;
 class ScrollableArea;
 class WebCompositorAnimation;
 class WebLayer;
-
-// FIXME: find a better home for this declaration.
-class PLATFORM_EXPORT LinkHighlightClient {
-public:
-    virtual void invalidate() = 0;
-    virtual void clearCurrentGraphicsLayer() = 0;
-    virtual WebLayer* layer() = 0;
-
-protected:
-    virtual ~LinkHighlightClient() { }
-};
 
 typedef Vector<GraphicsLayer*, 64> GraphicsLayerVector;
 
@@ -213,7 +202,6 @@ public:
 
     // Layer contents
     void setContentsToImage(Image*);
-    void setContentsToNinePatch(Image*, const IntRect& aperture);
     void setContentsToPlatformLayer(WebLayer* layer) { setContentsTo(layer); }
     bool hasContentsLayer() const { return m_contentsLayer; }
 
@@ -234,11 +222,11 @@ public:
     void trackPaintInvalidationRect(const FloatRect&);
     void trackPaintInvalidationObject(const String&);
 
-    void addLinkHighlight(LinkHighlightClient*);
-    void removeLinkHighlight(LinkHighlightClient*);
+    void addLinkHighlight(LinkHighlight*);
+    void removeLinkHighlight(LinkHighlight*);
     // Exposed for tests
     unsigned numLinkHighlights() { return m_linkHighlights.size(); }
-    LinkHighlightClient* linkHighlight(int i) { return m_linkHighlights[i]; }
+    LinkHighlight* linkHighlight(int i) { return m_linkHighlights[i]; }
 
     void setScrollableArea(ScrollableArea*, bool isViewport);
     ScrollableArea* scrollableArea() const { return m_scrollableArea; }
@@ -353,7 +341,6 @@ private:
 
     OwnPtr<WebContentLayer> m_layer;
     OwnPtr<WebImageLayer> m_imageLayer;
-    OwnPtr<WebNinePatchLayer> m_ninePatchLayer;
     WebLayer* m_contentsLayer;
     // We don't have ownership of m_contentsLayer, but we do want to know if a given layer is the
     // same as our current layer in setContentsTo(). Since m_contentsLayer may be deleted at this point,
@@ -361,7 +348,7 @@ private:
     // on.
     int m_contentsLayerId;
 
-    Vector<LinkHighlightClient*> m_linkHighlights;
+    Vector<LinkHighlight*> m_linkHighlights;
 
     OwnPtr<ContentLayerDelegate> m_contentLayerDelegate;
 

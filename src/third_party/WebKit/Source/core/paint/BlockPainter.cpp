@@ -5,8 +5,10 @@
 #include "config.h"
 #include "core/paint/BlockPainter.h"
 
+#include "core/editing/DragCaretController.h"
 #include "core/editing/FrameSelection.h"
 #include "core/frame/Settings.h"
+#include "core/layout/LayoutBlockFlow.h"
 #include "core/layout/LayoutFlexibleBox.h"
 #include "core/layout/LayoutInline.h"
 #include "core/page/Page.h"
@@ -21,12 +23,28 @@
 #include "core/paint/ScrollRecorder.h"
 #include "core/paint/ScrollableAreaPainter.h"
 #include "platform/graphics/paint/ClipRecorder.h"
+#include "platform/graphics/paint/SubtreeRecorder.h"
 #include "wtf/Optional.h"
 
 namespace blink {
 
+// We need to balance the benefit of subtree optimization and the cost of subtree display items.
+// Only output subtree information if the block has multiple children or multiple line boxes.
+static bool needsSubtreeRecorder(const LayoutBlock& layoutBlock)
+{
+    return (layoutBlock.firstChild() && layoutBlock.firstChild()->nextSibling())
+        || (layoutBlock.isLayoutBlockFlow() && toLayoutBlockFlow(layoutBlock).firstLineBox() && toLayoutBlockFlow(layoutBlock).firstLineBox()->nextLineBox());
+}
+
 void BlockPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
+    Optional<SubtreeRecorder> subtreeRecorder;
+    if (needsSubtreeRecorder(m_layoutBlock)) {
+        subtreeRecorder.emplace(*paintInfo.context, m_layoutBlock, paintInfo.phase);
+        if (subtreeRecorder->canUseCache())
+            return;
+    }
+
     PaintInfo localPaintInfo(paintInfo);
 
     LayoutPoint adjustedPaintOffset = paintOffset + m_layoutBlock.location();
@@ -34,21 +52,11 @@ void BlockPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOff
     PaintPhase originalPhase = localPaintInfo.phase;
 
     // Check if we need to do anything at all.
-    // TODO(schenney): Could eliminate the isDocumentElement() check if we fix background painting so
-    // that the LayoutView paints the root's background.
-    // TODO(schenney): Test this code path, as breaking changes have failed to show up in testing.
-    // crbug.com/509737
-    Node* blockNode = m_layoutBlock.node();
-    ASSERT(blockNode || m_layoutBlock.isAnonymous());
-    if (blockNode) {
-        if (!m_layoutBlock.isDocumentElement()) {
-            LayoutRect overflowBox = overflowRectForPaintRejection();
-            m_layoutBlock.flipForWritingMode(overflowBox);
-            overflowBox.moveBy(adjustedPaintOffset);
-            if (!overflowBox.intersects(LayoutRect(localPaintInfo.rect)))
-                return;
-        }
-    }
+    LayoutRect overflowBox = overflowRectForPaintRejection();
+    m_layoutBlock.flipForWritingMode(overflowBox);
+    overflowBox.moveBy(adjustedPaintOffset);
+    if (!overflowBox.intersects(LayoutRect(localPaintInfo.rect)))
+        return;
 
     // There are some cases where not all clipped visual overflow is accounted for.
     // FIXME: reduce the number of such cases.
@@ -184,7 +192,7 @@ void BlockPainter::paintObject(const PaintInfo& paintInfo, const LayoutPoint& pa
 
     // FIXME: When Skia supports annotation rect covering (https://code.google.com/p/skia/issues/detail?id=3872),
     // this rect may be covered by foreground and descendant drawings. Then we may need a dedicated paint phase.
-    if (paintPhase == PaintPhaseForeground && paintInfo.context->printing())
+    if (paintPhase == PaintPhaseForeground && paintInfo.isPrinting())
         ObjectPainter(m_layoutBlock).addPDFURLRectIfNeeded(paintInfo, paintOffset);
 
     {
@@ -208,7 +216,7 @@ void BlockPainter::paintObject(const PaintInfo& paintInfo, const LayoutPoint& pa
         if (paintPhase != PaintPhaseSelfOutline)
             paintContents(contentsPaintInfo, paintOffset);
 
-        if (paintPhase == PaintPhaseForeground && !m_layoutBlock.document().printing())
+        if (paintPhase == PaintPhaseForeground && !paintInfo.isPrinting())
             m_layoutBlock.paintSelection(contentsPaintInfo, paintOffset); // Fill in gaps in selection on lines and between blocks.
 
         if (paintPhase == PaintPhaseFloat || paintPhase == PaintPhaseSelection || paintPhase == PaintPhaseTextClip)
@@ -324,7 +332,7 @@ void BlockPainter::paintContinuationOutlines(const PaintInfo& info, const Layout
             cb->addContinuationWithOutline(inlineLayoutObject);
         } else if (!inlineLayoutObject->firstLineBox() || (!inlineEnclosedInSelfPaintingLayer && m_layoutBlock.hasLayer())) {
             // The outline might be painted multiple times if multiple blocks have the same inline element continuation, and the inline has a self-painting layer.
-            ScopeRecorder scopeRecorder(*info.context, *inlineLayoutObject);
+            ScopeRecorder scopeRecorder(*info.context);
             InlinePainter(*inlineLayoutObject).paintOutline(info, paintOffset - m_layoutBlock.locationOffset() + inlineLayoutObject->containingBlock()->location());
         }
     }

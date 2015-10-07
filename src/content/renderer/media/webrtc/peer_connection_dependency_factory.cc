@@ -19,7 +19,7 @@
 #include "content/renderer/media/media_stream_audio_source.h"
 #include "content/renderer/media/media_stream_video_source.h"
 #include "content/renderer/media/media_stream_video_track.h"
-#include "content/renderer/media/peer_connection_identity_service.h"
+#include "content/renderer/media/peer_connection_identity_store.h"
 #include "content/renderer/media/rtc_media_constraints.h"
 #include "content/renderer/media/rtc_peer_connection_handler.h"
 #include "content/renderer/media/rtc_video_decoder_factory.h"
@@ -147,11 +147,6 @@ class P2PPortAllocatorFactory : public webrtc::PortAllocatorFactoryInterface {
       relay_config.transport_type = turn_configurations[i].transport_type;
       relay_config.secure = turn_configurations[i].secure;
       config.relays.push_back(relay_config);
-
-      // Use turn servers as stun servers.
-      config.stun_servers.insert(rtc::SocketAddress(
-          turn_configurations[i].server.hostname(),
-          turn_configurations[i].server.port()));
     }
     config.enable_multiple_routes = enable_multiple_routes_;
 
@@ -413,10 +408,10 @@ PeerConnectionDependencyFactory::CreatePeerConnection(
 
   // Copy the flag from Preference associated with this WebFrame.
   bool enable_multiple_routes = true;
-  PeerConnectionIdentityService* identity_service =
-      new PeerConnectionIdentityService(
+  rtc::scoped_ptr<PeerConnectionIdentityStore> identity_store(
+      new PeerConnectionIdentityStore(
           GURL(web_frame->document().url()),
-          GURL(web_frame->document().firstPartyForCookies()));
+          GURL(web_frame->document().firstPartyForCookies())));
 
   if (web_frame && web_frame->view()) {
     RenderViewImpl* renderer_view_impl =
@@ -436,7 +431,7 @@ PeerConnectionDependencyFactory::CreatePeerConnection(
   return GetPcFactory()->CreatePeerConnection(config,
                                               constraints,
                                               pa_factory.get(),
-                                              identity_service,
+                                              identity_store.Pass(),
                                               observer).get();
 }
 

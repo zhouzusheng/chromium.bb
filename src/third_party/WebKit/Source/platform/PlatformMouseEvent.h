@@ -41,6 +41,8 @@ public:
         RealOrIndistinguishable,
         // Mouse events derived from touch input
         FromTouch,
+        // Mouse event derived from context menu key
+        FromContextMenuKey,
     };
 
     PlatformMouseEvent()

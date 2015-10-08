@@ -650,8 +650,6 @@ static HTMLElement* firstInSpecialElement(const Position& pos)
             HTMLElement* specialElement = toHTMLElement(n);
             VisiblePosition vPos = VisiblePosition(pos);
             VisiblePosition firstInElement = VisiblePosition(firstPositionInOrBeforeNode(specialElement));
-            if (isRenderedTableElement(specialElement) && vPos.deepEquivalent() == firstInElement.next().deepEquivalent())
-                return specialElement;
             if (vPos.deepEquivalent() == firstInElement.deepEquivalent())
                 return specialElement;
         }
@@ -667,8 +665,6 @@ static HTMLElement* lastInSpecialElement(const Position& pos)
             HTMLElement* specialElement = toHTMLElement(n);
             VisiblePosition vPos = VisiblePosition(pos);
             VisiblePosition lastInElement = VisiblePosition(lastPositionInOrAfterNode(specialElement));
-            if (isRenderedTableElement(specialElement) && vPos.deepEquivalent() == lastInElement.previous().deepEquivalent())
-                return specialElement;
             if (vPos.deepEquivalent() == lastInElement.deepEquivalent())
                 return specialElement;
         }

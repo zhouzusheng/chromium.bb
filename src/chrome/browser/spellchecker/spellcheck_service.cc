@@ -374,7 +374,7 @@ void SpellcheckService::OnSpellCheckDictionariesChanged() {
     std::string dictionary;
     dictionary_value->GetAsString(&dictionary);
     hunspell_dictionaries_.push_back(new SpellcheckHunspellDictionary(
-        dictionary, context_->GetRequestContext(), this));
+        dictionary, context_->AllowDictionaryDownloads() ? context_->GetRequestContext() : 0, this));
     hunspell_dictionaries_.back()->AddObserver(this);
     hunspell_dictionaries_.back()->Load();
   }

@@ -56,6 +56,7 @@
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/tracing_controller.h"
+#include "content/public/browser/utility_process_host.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
 #include "content/public/common/result_codes.h"
@@ -70,6 +71,7 @@
 #include "net/ssl/ssl_config_service.h"
 #include "skia/ext/skia_memory_dump_provider.h"
 #include "ui/base/clipboard/clipboard.h"
+#include "ui/base/ui_base_switches.h"
 
 #if defined(USE_AURA) || (defined(OS_MACOSX) && !defined(OS_IOS))
 #include "content/browser/compositor/image_transport_factory.h"
@@ -483,7 +485,7 @@ void BrowserMainLoop::EarlyInitialization() {
 
   // TODO(boliu): kSingleProcess check is a temporary workaround for
   // in-process Android WebView. crbug.com/503724 tracks proper fix.
-  if (!parsed_command_line_.HasSwitch(switches::kSingleProcess)) {
+  if (!GetContentClient()->browser()->SupportsInProcessRenderer()) {
     base::DiscardableMemoryAllocator::SetInstance(
         HostDiscardableSharedMemoryManager::current());
   }
@@ -703,12 +705,14 @@ int BrowserMainLoop::PreCreateThreads() {
   }
 #endif
 
-#if !defined(OS_IOS) && (!defined(GOOGLE_CHROME_BUILD) || defined(OS_ANDROID))
-  // Single-process is an unsupported and not fully tested mode, so
-  // don't enable it for official Chrome builds (except on Android).
-  if (parsed_command_line_.HasSwitch(switches::kSingleProcess))
-    RenderProcessHost::SetRunRendererInProcess(true);
-#endif
+  if (parsed_command_line_.HasSwitch(switches::kSingleProcess)) {
+    UtilityProcessHost::SetRunUtilityInProcess(true);
+  }
+
+  if (GetContentClient()->browser()->SupportsInProcessRenderer()) {
+    RenderProcessHost::AdjustCommandLineForInProcessRenderer(
+        base::CommandLine::ForCurrentProcess());
+  }
 
   return result_code_;
 }
@@ -910,11 +914,6 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
                  true));
 
   mojo_shell_context_.reset();
-
-#if !defined(OS_IOS)
-  if (RenderProcessHost::run_renderer_in_process())
-    RenderProcessHostImpl::ShutDownInProcessRenderer();
-#endif
 
   if (parts_) {
     TRACE_EVENT0("shutdown",

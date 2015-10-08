@@ -145,6 +145,11 @@ class IPC_EXPORT ChannelProxy : public Endpoint, public base::NonThreadSafe {
   }
 #endif
 
+  // Return the channel id that was used to construct this ChannelProxy.
+  const std::string& ChannelId() const {
+    return context_->channel_id();
+  }
+
   // Called to clear the pointer to the IPC task runner when it's going away.
   void ClearIPCTaskRunner();
 

@@ -377,10 +377,20 @@ void DesktopNativeWidgetAura::HandleActivationChanged(bool active) {
           GetWidget()->GetFocusManager()->GetFocusedView() ?
               GetWidget()->GetFocusManager()->GetFocusedView() :
                   GetWidget()->GetFocusManager()->GetStoredFocusView();
-      if (!view_for_activation)
-        view_for_activation = GetWidget()->GetRootView();
-      activation_client->ActivateWindow(
-          view_for_activation->GetWidget()->GetNativeView());
+      aura::Window* window_for_activation;
+      if (!view_for_activation) {
+        window_for_activation = GetWidget()->widget_delegate()
+            ? GetWidget()->widget_delegate()->GetDefaultActivationWindow()
+            : NULL;
+        if (!window_for_activation) {
+          view_for_activation = GetWidget()->GetRootView();
+          window_for_activation = view_for_activation->GetWidget()->GetNativeView();
+        }
+      }
+      else {
+        window_for_activation = view_for_activation->GetWidget()->GetNativeView();
+      }
+      activation_client->ActivateWindow(window_for_activation);
       // Refreshes the focus info to IMF in case that IMF cached the old info
       // about focused text input client when it was "inactive".
       GetInputMethod()->OnFocus();
@@ -697,6 +707,11 @@ void DesktopNativeWidgetAura::SetBounds(const gfx::Rect& bounds) {
   gfx::Rect bounds_in_pixels =
     gfx::ScaleToEnclosingRect(bounds, scale, scale);
   desktop_window_tree_host_->AsWindowTreeHost()->SetBounds(bounds_in_pixels);
+}
+
+void DesktopNativeWidgetAura::SetBoundsNoDPIAdjustment(const gfx::Rect& bounds) {
+  if (content_window_)
+    desktop_window_tree_host_->AsWindowTreeHost()->SetBounds(bounds);
 }
 
 void DesktopNativeWidgetAura::SetSize(const gfx::Size& size) {

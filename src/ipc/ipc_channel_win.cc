@@ -318,6 +318,7 @@ bool ChannelWin::CreatePipe(const IPC::ChannelHandle &channel_handle,
     const DWORD open_mode = PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED |
                             FILE_FLAG_FIRST_PIPE_INSTANCE;
     pipe_name = PipeName(channel_handle.name, &client_secret_);
+    LOG(INFO) << "Creating pipe \"" << pipe_name << "\" in server mode";
     validate_client_ = !!client_secret_;
     pipe_.Set(CreateNamedPipeW(pipe_name.c_str(),
                                open_mode,
@@ -330,6 +331,7 @@ bool ChannelWin::CreatePipe(const IPC::ChannelHandle &channel_handle,
   } else if (mode & MODE_CLIENT_FLAG) {
     DCHECK(!channel_handle.pipe.handle);
     pipe_name = PipeName(channel_handle.name, &client_secret_);
+    LOG(INFO) << "Creating pipe \"" << pipe_name << "\" in client mode";
     pipe_.Set(CreateFileW(pipe_name.c_str(),
                           GENERIC_READ | GENERIC_WRITE,
                           0,

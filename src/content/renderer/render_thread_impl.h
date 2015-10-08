@@ -461,6 +461,7 @@ class CONTENT_EXPORT RenderThreadImpl
 #endif
   void OnNetworkTypeChanged(net::NetworkChangeNotifier::ConnectionType type);
   void OnGetAccessibilityTree();
+  void OnClearWebCache();
   void OnUpdateTimezone(const std::string& zoneId);
   void OnMemoryPressure(
       base::MemoryPressureListener::MemoryPressureLevel memory_pressure_level);

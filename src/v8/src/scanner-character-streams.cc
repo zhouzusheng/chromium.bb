@@ -481,7 +481,7 @@ void ExternalStreamingStream::ResetToBookmark() {
 
 
 void ExternalStreamingStream::FlushCurrent() {
-  delete[] current_data_;
+  source_stream_->ReleaseData(current_data_);
   current_data_ = NULL;
   current_data_length_ = 0;
   current_data_offset_ = 0;

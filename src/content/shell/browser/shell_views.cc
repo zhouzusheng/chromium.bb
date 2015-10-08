@@ -179,6 +179,7 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
                                 public views::ButtonListener {
  public:
   enum UIControl {
+    NEW_BUTTON,
     BACK_BUTTON,
     FORWARD_BUTTON,
     PRINT_BUTTON,
@@ -219,7 +220,10 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
 
   void SetWindowTitle(const base::string16& title) { title_ = title; }
   void EnableUIControl(UIControl control, bool is_enabled) {
-    if (control == BACK_BUTTON) {
+    if (control == NEW_BUTTON) {
+      new_button_->SetState(is_enabled ? views::CustomButton::STATE_NORMAL
+          : views::CustomButton::STATE_DISABLED);
+    } else if (control == BACK_BUTTON) {
       back_button_->SetState(is_enabled ? views::CustomButton::STATE_NORMAL
           : views::CustomButton::STATE_DISABLED);
     } else if (control == FORWARD_BUTTON) {
@@ -288,6 +292,15 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
       views::ColumnSet* toolbar_column_set =
           toolbar_layout->AddColumnSet(0);
       // Back button
+      new_button_ = new views::LabelButton(this, base::ASCIIToUTF16("New"));
+      new_button_->SetStyle(views::Button::STYLE_BUTTON);
+      gfx::Size new_button_size = new_button_->GetPreferredSize();
+      toolbar_column_set->AddColumn(views::GridLayout::CENTER,
+                                    views::GridLayout::CENTER, 0,
+                                    views::GridLayout::FIXED,
+                                    new_button_size.width(),
+                                    new_button_size.width() / 2);
+      // Back button
       back_button_ = new views::LabelButton(this, base::ASCIIToUTF16("Back"));
       back_button_->SetStyle(views::Button::STYLE_BUTTON);
       gfx::Size back_button_size = back_button_->GetPreferredSize();
@@ -345,6 +358,7 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
 
       // Fill up the first row
       toolbar_layout->StartRow(0, 0);
+      toolbar_layout->AddView(new_button_);
       toolbar_layout->AddView(back_button_);
       toolbar_layout->AddView(forward_button_);
       toolbar_layout->AddView(print_button_);
@@ -398,7 +412,12 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
 
   // Overridden from ButtonListener
   void ButtonPressed(views::Button* sender, const ui::Event& event) override {
-    if (sender == back_button_)
+    if (sender == new_button_) {
+      Shell::CreateNewWindow(shell_->web_contents()->GetBrowserContext(),
+                             shell_->web_contents()->GetVisibleURL(),
+                             NULL,
+                             gfx::Size());
+    } else if (sender == back_button_)
       shell_->GoBackOrForward(-1);
     else if (sender == forward_button_)
       shell_->GoBackOrForward(1);
@@ -462,6 +481,7 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
 
   // Toolbar view contains forward/backward/reload button and URL entry
   View* toolbar_view_;
+  views::LabelButton* new_button_;
   views::LabelButton* back_button_;
   views::LabelButton* forward_button_;
   views::LabelButton* print_button_;
@@ -532,7 +552,10 @@ void Shell::PlatformEnableUIControl(UIControl control, bool is_enabled) {
     return;
   ShellWindowDelegateView* delegate_view =
     static_cast<ShellWindowDelegateView*>(window_widget_->widget_delegate());
-  if (control == BACK_BUTTON) {
+  if (control == NEW_BUTTON) {
+    delegate_view->EnableUIControl(ShellWindowDelegateView::NEW_BUTTON,
+        is_enabled);
+  } else if (control == BACK_BUTTON) {
     delegate_view->EnableUIControl(ShellWindowDelegateView::BACK_BUTTON,
         is_enabled);
   } else if (control == FORWARD_BUTTON) {

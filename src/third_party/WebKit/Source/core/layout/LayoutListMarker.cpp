@@ -1052,7 +1052,7 @@ void LayoutListMarker::layout()
 
     if (isImage()) {
         updateMarginsAndContent();
-        setWidth(m_image->imageSize(this, style()->effectiveZoom()).width());
+        setWidth(minPreferredLogicalWidth());
         setHeight(m_image->imageSize(this, style()->effectiveZoom()).height());
     } else {
         setLogicalWidth(minPreferredLogicalWidth());
@@ -1078,7 +1078,7 @@ void LayoutListMarker::imageChanged(WrappedImagePtr o, const IntRect*)
     if (o != m_image->data())
         return;
 
-    if (size() != m_image->imageSize(this, style()->effectiveZoom()) || m_image->errorOccurred())
+    if (size() != m_image->imageSize(this, style()->effectiveZoom()) + LayoutSize(cMarkerPadding, 0) || m_image->errorOccurred())
         setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(LayoutInvalidationReason::ImageChanged);
     else
         setShouldDoFullPaintInvalidation();
@@ -1183,6 +1183,8 @@ void LayoutListMarker::computePreferredLogicalWidths()
     if (isImage()) {
         LayoutSize imageSize = m_image->imageSize(this, style()->effectiveZoom());
         m_minPreferredLogicalWidth = m_maxPreferredLogicalWidth = style()->isHorizontalWritingMode() ? imageSize.width() : imageSize.height();
+        m_minPreferredLogicalWidth += cMarkerPadding;
+        m_maxPreferredLogicalWidth += cMarkerPadding;
         clearPreferredLogicalWidthsDirty();
         updateMargins();
         return;
@@ -1199,6 +1201,7 @@ void LayoutListMarker::computePreferredLogicalWidths()
     case Disc:
     case Square:
         logicalWidth = (font.fontMetrics().ascent() * 2 / 3 + 1) / 2 + 2;
+        logicalWidth += cMarkerPadding;
         break;
     case ArabicIndic:
     case Armenian:
@@ -1256,9 +1259,10 @@ void LayoutListMarker::computePreferredLogicalWidths()
             logicalWidth = 0;
         } else {
             LayoutUnit itemWidth = font.width(m_text);
-            UChar suffixSpace[2] = { listMarkerSuffix(type, m_listItem->value()), ' ' };
-            LayoutUnit suffixSpaceWidth = font.width(constructTextRun(font, suffixSpace, 2, styleRef(), style()->direction()));
+            UChar suffixSpace[1] = { listMarkerSuffix(type, m_listItem->value()) };
+            LayoutUnit suffixSpaceWidth = font.width(constructTextRun(font, suffixSpace, 1, styleRef(), style()->direction()));
             logicalWidth = itemWidth + suffixSpaceWidth;
+            logicalWidth += cMarkerPadding;
         }
         break;
     }
@@ -1273,65 +1277,11 @@ void LayoutListMarker::computePreferredLogicalWidths()
 
 void LayoutListMarker::updateMargins()
 {
-    const FontMetrics& fontMetrics = style()->fontMetrics();
-
     LayoutUnit marginStart = 0;
     LayoutUnit marginEnd = 0;
 
-    if (isInside()) {
-        if (isImage()) {
-            marginEnd = cMarkerPadding;
-        } else {
-            switch (style()->listStyleType()) {
-            case Disc:
-            case Circle:
-            case Square:
-                marginStart = -1;
-                marginEnd = fontMetrics.ascent() - minPreferredLogicalWidth() + 1;
-                break;
-            default:
-                break;
-            }
-        }
-    } else {
-        if (style()->isLeftToRightDirection()) {
-            if (isImage()) {
-                marginStart = -minPreferredLogicalWidth() - cMarkerPadding;
-            } else {
-                int offset = fontMetrics.ascent() * 2 / 3;
-                switch (style()->listStyleType()) {
-                case Disc:
-                case Circle:
-                case Square:
-                    marginStart = -offset - cMarkerPadding - 1;
-                    break;
-                case NoneListStyle:
-                    break;
-                default:
-                    marginStart = m_text.isEmpty() ? LayoutUnit() : -minPreferredLogicalWidth() - offset / 2;
-                }
-            }
-            marginEnd = -marginStart - minPreferredLogicalWidth();
-        } else {
-            if (isImage()) {
-                marginEnd = cMarkerPadding;
-            } else {
-                int offset = fontMetrics.ascent() * 2 / 3;
-                switch (style()->listStyleType()) {
-                case Disc:
-                case Circle:
-                case Square:
-                    marginEnd = offset + cMarkerPadding + 1 - minPreferredLogicalWidth();
-                    break;
-                case NoneListStyle:
-                    break;
-                default:
-                    marginEnd = m_text.isEmpty() ? 0 : offset / 2;
-                }
-            }
-            marginStart = -marginEnd - minPreferredLogicalWidth();
-        }
-
+    if (!isInside()) {
+        marginStart = -minPreferredLogicalWidth();
     }
 
     mutableStyleRef().setMarginStart(Length(marginStart, Fixed));
@@ -1360,10 +1310,16 @@ bool LayoutListMarker::isInside() const
 
 IntRect LayoutListMarker::getRelativeMarkerRect()
 {
-    if (isImage())
-        return IntRect(0, 0, m_image->imageSize(this, style()->effectiveZoom()).width(), m_image->imageSize(this, style()->effectiveZoom()).height());
-
     IntRect relativeRect;
+
+    if (isImage()) {
+        relativeRect = IntRect(0, 0, m_image->imageSize(this, style()->effectiveZoom()).width(), m_image->imageSize(this, style()->effectiveZoom()).height());
+        if (!style()->isLeftToRightDirection()) {
+            relativeRect.move(cMarkerPadding, 0);
+        }
+        return relativeRect;
+    }
+
     EListStyleType type = style()->listStyleType();
     switch (type) {
     case Disc:
@@ -1434,9 +1390,13 @@ IntRect LayoutListMarker::getRelativeMarkerRect()
             return IntRect();
         const Font& font = style()->font();
         int itemWidth = font.width(m_text);
-        UChar suffixSpace[2] = { listMarkerSuffix(type, m_listItem->value()), ' ' };
-        int suffixSpaceWidth = font.width(constructTextRun(font, suffixSpace, 2, styleRef(), style()->direction()));
+        UChar suffixSpace[1] = { listMarkerSuffix(type, m_listItem->value()) };
+        int suffixSpaceWidth = font.width(constructTextRun(font, suffixSpace, 1, styleRef(), style()->direction()));
         relativeRect = IntRect(0, 0, itemWidth + suffixSpaceWidth, font.fontMetrics().height());
+    }
+
+    if (!style()->isLeftToRightDirection()) {
+        relativeRect.move(cMarkerPadding, 0);
     }
 
     if (!style()->isHorizontalWritingMode()) {

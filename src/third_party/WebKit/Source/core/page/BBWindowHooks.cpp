@@ -26,12 +26,12 @@
 #include "core/dom/CharacterData.h"
 #include "core/dom/ClientRect.h"
 #include "core/dom/Document.h"
-#include "core/dom/DocumentMarkerController.h"
 #include "core/dom/Element.h"
+#include "core/editing/EditingUtilities.h"
 #include "core/editing/Editor.h"
-#include "core/editing/SpellChecker.h"
-#include "core/editing/htmlediting.h"
-#include "core/editing/iterators/CharacterIterator.h"
+#include "core/editing/iterators/SearchBuffer.h"
+#include "core/editing/markers/DocumentMarkerController.h"
+#include "core/editing/spellcheck/SpellChecker.h"
 #include "core/frame/Settings.h"
 #include "wtf/text/StringBuilder.h"
 
@@ -126,8 +126,7 @@ bool BBWindowHooks::checkSpellingForRange(Range* range)
 void BBWindowHooks::removeMarker(Range* range, long mask, long removeMarkerFlag)
 {
     range->ownerDocument().markers().removeMarkers(
-        range->startPosition(),
-        range->endPosition(),
+        EphemeralRange(range),
         DocumentMarker::MarkerTypes(mask),
         static_cast<DocumentMarkerController::RemovePartiallyOverlappingMarkerOrNot>(removeMarkerFlag));
 }

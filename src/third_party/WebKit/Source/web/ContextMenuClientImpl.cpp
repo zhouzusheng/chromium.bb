@@ -544,8 +544,8 @@ static bool fireBbContextMenuEvent(LocalFrame* frame, WebContextMenuData& data, 
     CustomEventInit eventInit;
     eventInit.setBubbles(true);
     eventInit.setCancelable(true);
+    eventInit.setDetail(ScriptValue(ScriptState::from(context), detailObj));
     RefPtr<CustomEvent> event = CustomEvent::create("bbContextMenu", eventInit);
-    event->setDetail(ScriptValue(ScriptState::from(context), detailObj));
 
     data.node.unwrap<Node>()->dispatchEvent(event);
     return event->defaultPrevented();

@@ -210,7 +210,7 @@ public:
         DocumentMarkerSpellingLineStyle,
         DocumentMarkerGrammarLineStyle
     };
-    void drawLineForDocumentMarker(const FloatPoint&, float width, DocumentMarkerLineStyle);
+    void drawLineForDocumentMarker(const FloatPoint&, float width, const Color& markerColor);
 
     // beginLayer()/endLayer() behaves like save()/restore() for CTM and clip states.
     // Apply SkXfermode::Mode when the layer is composited on the backdrop (i.e. endLayer()).
@@ -314,7 +314,7 @@ private:
     static SkPMColor lineColors(int);
     static SkPMColor antiColors1(int);
     static SkPMColor antiColors2(int);
-    static void draw1xMarker(SkBitmap*, int);
+    static void draw1xMarker(SkBitmap*, const uint32_t, const uint32_t);
     static void draw2xMarker(SkBitmap*, int);
 #endif
 

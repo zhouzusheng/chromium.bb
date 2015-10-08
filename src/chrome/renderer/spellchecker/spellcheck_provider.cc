@@ -93,7 +93,7 @@ void SpellCheckProvider::RequestTextChecking(
 }
 
 void SpellCheckProvider::DidFinishLoad(blink::WebLocalFrame* frame) {
-  if (spellcheck_->is_spellcheck_enabled()) {
+  if (spellcheck_->IsSpellcheckEnabled()) {
     frame->document().documentElement().requestSpellCheck();
   }
 }

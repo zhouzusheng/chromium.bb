@@ -1659,12 +1659,9 @@ class CanvasPainterContext {
         // Enter a clipped region
         ClipRecorder clipRecorder(context, *this, DisplayItem::ClipPrintedPage, LayoutRect(floatRect));
 
-        PaintBehavior paintBehavior = view->paintBehavior();
         view->updateAllLifecyclePhases();
 
-        view->setPaintBehavior(paintBehavior | PaintBehaviorFlattenCompositingLayers);
-        view->paintContents(&context, IntRect(floatRect));
-        view->setPaintBehavior(paintBehavior);
+        view->paintContents(&context, GlobalPaintFlattenCompositingLayers, IntRect(floatRect));
     }
 
 public:

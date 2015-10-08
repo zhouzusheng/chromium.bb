@@ -462,7 +462,7 @@ class MemoryObserver : public base::MessageLoop::TaskObserver {
 void RenderThread::InitInProcessRenderer(const InProcessChildThreadParams& params)
 {
   g_render_process = new RenderProcessImpl();
-  RenderThreadImpl* thread = RenderThreadImpl::Create(params_);
+  RenderThreadImpl* thread = RenderThreadImpl::Create(params);
   if (params.channel_name().empty()) {
     // Normally, WebKit is initialized in the browser's WebKit thread.  This is
     // necessary because there is code in the browser that depends on WebKit

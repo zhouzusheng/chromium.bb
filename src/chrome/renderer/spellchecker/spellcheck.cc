@@ -36,7 +36,6 @@ using blink::WebVector;
 using blink::WebString;
 using blink::WebTextCheckingResult;
 using blink::WebTextDecorationType;
-using chrome::spellcheck_common::FileLanguagePair;
 
 namespace {
 const int kNoOffset = 0;

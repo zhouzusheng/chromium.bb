@@ -29,7 +29,6 @@
 #include "ipc/ipc_platform_file.h"
 
 using content::BrowserThread;
-using chrome::spellcheck_common::FileLanguagePair;
 
 // TODO(rlp): I do not like globals, but keeping these for now during
 // transition.

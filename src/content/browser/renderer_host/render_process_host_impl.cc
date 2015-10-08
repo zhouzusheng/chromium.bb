@@ -1984,7 +1984,7 @@ bool RenderProcessHost::ShouldTryToUseExistingProcessHost(
   if (SiteIsolationPolicy::AreCrossProcessFramesPossible())
     return false;
 
-  if (command_line.HasSwitch(switches::kSingleProcess))
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess))
     return true;
 
   // NOTE: Sometimes it's necessary to create more render processes than

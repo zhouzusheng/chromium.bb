@@ -402,7 +402,9 @@ void SpellChecker::markMisspellingsAfterTypingToWord(const VisiblePosition &word
 
     // Check spelling of one word
     RefPtrWillBeRawPtr<Range> misspellingRange = nullptr;
-    markMisspellings(VisibleSelection(startOfWord(wordStart, LeftWordIfOnBoundary), endOfWord(wordStart, RightWordIfOnBoundary)), misspellingRange);
+    VisiblePosition checkStartPos = startOfWord(wordStart, LeftWordIfOnBoundary);
+    VisiblePosition checkEndPos = selectionAfterTyping.visibleStart();
+    markMisspellings(VisibleSelection(checkStartPos, checkEndPos), misspellingRange);
 
     if (!misspellingRange || !isGrammarCheckingEnabled())
         return;
@@ -846,7 +848,9 @@ void SpellChecker::spellCheckOldSelection(const VisibleSelection& oldSelection, 
     TRACE_EVENT0("blink", "SpellChecker::spellCheckOldSelection");
 
     VisiblePosition oldStart(oldSelection.visibleStart());
-    VisibleSelection oldAdjacentWords = VisibleSelection(startOfWord(oldStart, LeftWordIfOnBoundary), endOfWord(oldStart, RightWordIfOnBoundary));
+    VisiblePosition checkStartPos = startOfWord(oldStart, LeftWordIfOnBoundary);
+    VisiblePosition checkEndPos = endOfWord(checkStartPos, RightWordIfOnBoundary);
+    VisibleSelection oldAdjacentWords = VisibleSelection(checkStartPos, checkEndPos);
     if (!VisibleSelection::InDOMTree::equalSelections(oldAdjacentWords, newAdjacentWords)) {
         if (isContinuousSpellCheckingEnabled() && isGrammarCheckingEnabled()) {
             VisibleSelection selectedSentence = VisibleSelection(startOfSentence(oldStart), endOfSentence(oldStart));

@@ -289,7 +289,7 @@ GapRects RootInlineBox::lineSelectionGap(const LayoutBlock* rootBlock, const Lay
 
     GapRects result;
 
-    bool selectionExtendsPastEnd = lineState == LayoutObject::SelectionStart || lineState == LayoutObject::SelectionInside;
+    bool selectionExtendsPastEnd = lineState == SelectionStart || lineState == SelectionInside;
     InlineBox* firstBox = firstSelectedBox();
     InlineBox* lastBox = lastSelectedBox();
     if (leftGap) {

@@ -2787,7 +2787,7 @@ bool LayoutBlockFlow::shouldPaintSelectionGaps() const
 void LayoutBlockFlow::getLineSelectionLogicalLeftAndRight(const LayoutBlock *rootBlock, const LayoutSize& offsetFromRootBlock, RootInlineBox* line,
     LayoutUnit& logicalLeft, LayoutUnit& logicalRight) const
 {
-    LayoutObject::SelectionState lineState = line->selectionState();
+    SelectionState lineState = line->selectionState();
     if (lineState == SelectionNone) {
         logicalLeft = 0;
         logicalRight = 0;

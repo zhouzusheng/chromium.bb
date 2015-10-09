@@ -41,8 +41,10 @@
 #include "core/editing/FrameSelection.h"
 #include "core/editing/commands/CreateLinkCommand.h"
 #include "core/editing/commands/FormatBlockCommand.h"
+#include "core/editing/commands/IndentBlockCommand.h"
 #include "core/editing/commands/IndentOutdentCommand.h"
 #include "core/editing/commands/InsertListCommand.h"
+#include "core/editing/commands/OutdentBlockCommand.h"
 #include "core/editing/commands/ReplaceSelectionCommand.h"
 #include "core/editing/commands/TypingCommand.h"
 #include "core/editing/commands/UnlinkCommand.h"
@@ -496,6 +498,13 @@ static bool executeIndent(LocalFrame& frame, Event*, EditorCommandSource, const 
     return true;
 }
 
+static bool executeIndentBlock(LocalFrame& frame, Event*, EditorCommandSource, const String&)
+{
+    ASSERT(frame.document());
+    IndentBlockCommand::create(*frame.document())->apply();
+    return true;
+}
+
 static bool executeInsertBacktab(LocalFrame& frame, Event* event, EditorCommandSource, const String&)
 {
     return targetFrame(frame, event)->eventHandler().handleTextInputEvent("\t", event, TextEventInputBackTab);
@@ -934,6 +943,13 @@ static bool executeOutdent(LocalFrame& frame, Event*, EditorCommandSource, const
 {
     ASSERT(frame.document());
     IndentOutdentCommand::create(*frame.document(), IndentOutdentCommand::Outdent)->apply();
+    return true;
+}
+
+static bool executeOutdentBlock(LocalFrame& frame, Event*, EditorCommandSource, const String&)
+{
+    ASSERT(frame.document());
+    OutdentBlockCommand::create(*frame.document())->apply();
     return true;
 }
 
@@ -1486,6 +1502,7 @@ static const CommandMap& createCommandMap()
         { "HiliteColor", {29, executeBackColor, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "IgnoreSpelling", {30, executeIgnoreSpelling, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "Indent", {31, executeIndent, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "IndentBlock", {9998, executeIndentBlock, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "InsertBacktab", {32, executeInsertBacktab, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, isTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "InsertHTML", {33, executeInsertHTML, supported, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "InsertHorizontalRule", {34, executeInsertHorizontalRule, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
@@ -1556,6 +1573,7 @@ static const CommandMap& createCommandMap()
         { "MoveWordRight", {99, executeMoveWordRight, supportedFromMenuOrKeyBinding, enabledInEditableTextOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "MoveWordRightAndModifySelection", {100, executeMoveWordRightAndModifySelection, supportedFromMenuOrKeyBinding, enabledVisibleSelectionOrCaretBrowsing, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "Outdent", {101, executeOutdent, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "OutdentBlock", {9997, executeOutdentBlock, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "OverWrite", {102, executeToggleOverwrite, supportedFromMenuOrKeyBinding, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "Paste", {103, executePaste, supportedPaste, enabledPaste, stateNone, valueNull, notTextInsertion, allowExecutionWhenDisabled } },
         { "PasteAndMatchStyle", {104, executePasteAndMatchStyle, supportedPaste, enabledPaste, stateNone, valueNull, notTextInsertion, allowExecutionWhenDisabled } },

@@ -993,7 +993,7 @@ void ReplaceSelectionCommand::doApply()
         if (m_insertNested && selectionStartWasStartOfParagraph && selectionEndWasEndOfParagraph && !selectionEndWasEndOfBlock &&
             (selectionEndWasStartOfBlock || !isHTMLBRElement(endingSelection().start().anchorNode())) &&
                 // ^ Do not add new line if the selection ends at the end of a textnode whose nextSibling is <br>
-            visibleEnd.previous().deepEquivalent().containerNode() != visibleEnd.deepEquivalent().containerNode()
+            visibleEnd.previous().deepEquivalent().computeContainerNode() != visibleEnd.deepEquivalent().computeContainerNode()
                 // ^ Do not add new line if the selection is followed by a '\n'
             ) {
             insertParagraphSeparator();

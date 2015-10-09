@@ -248,8 +248,7 @@ GrTexture* GrSWMaskHelper::createTexture() {
         SkASSERT(fContext->caps()->isConfigTexturable(desc.fConfig));
     }
 
-    return fContext->textureProvider()->refScratchTexture(
-        desc, GrTextureProvider::kApprox_ScratchTexMatch);
+    return fContext->textureProvider()->createApproxTexture(desc);
 }
 
 void GrSWMaskHelper::sendTextureData(GrTexture *texture, const GrSurfaceDesc& desc,
@@ -353,7 +352,7 @@ void GrSWMaskHelper::DrawToTargetWithPathMask(GrTexture* texture,
     if (!viewMatrix.invert(&invert)) {
         return;
     }
-    GrPipelineBuilder::AutoRestoreFragmentProcessors arfp(pipelineBuilder);
+    GrPipelineBuilder::AutoRestoreFragmentProcessorState arfps(*pipelineBuilder);
 
     SkRect dstRect = SkRect::MakeLTRB(SK_Scalar1 * rect.fLeft,
                                       SK_Scalar1 * rect.fTop,
@@ -374,5 +373,5 @@ void GrSWMaskHelper::DrawToTargetWithPathMask(GrTexture* texture,
                                                        GrTextureParams::kNone_FilterMode,
                                                        kDevice_GrCoordSet))->unref();
 
-    target->drawBWRect(pipelineBuilder, color, SkMatrix::I(), dstRect, NULL, &invert);
+    target->drawBWRect(*pipelineBuilder, color, SkMatrix::I(), dstRect, NULL, &invert);
 }

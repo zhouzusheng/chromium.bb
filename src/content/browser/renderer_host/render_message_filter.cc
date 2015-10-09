@@ -476,17 +476,6 @@ void RenderMessageFilter::OnCreateWindow(
     int64* cloned_session_storage_namespace_id) {
   bool no_javascript_access;
 
-  // Merge the additional features into the WebWindowFeatures struct before we
-  // pass it on.
-  blink::WebVector<blink::WebString> additional_features(
-      params.additional_features.size());
-
-  for (size_t i = 0; i < params.additional_features.size(); ++i)
-    additional_features[i] = blink::WebString(params.additional_features[i]);
-
-  blink::WebWindowFeatures features = params.features;
-  features.additionalFeatures.swap(additional_features);
-
   bool can_create_window =
       GetContentClient()->browser()->CanCreateWindow(
           params.opener_url,
@@ -496,7 +485,7 @@ void RenderMessageFilter::OnCreateWindow(
           params.target_url,
           params.referrer,
           params.disposition,
-          features,
+          params.features,
           params.user_gesture,
           params.opener_suppressed,
           resource_context_,
@@ -566,7 +555,7 @@ void RenderMessageFilter::OnSetCookie(int render_frame_id,
                                       const std::string& cookie) {
   ChildProcessSecurityPolicyImpl* policy =
       ChildProcessSecurityPolicyImpl::GetInstance();
-  if (!policy->CanAccessCookiesForOrigin(render_process_id_, url)) {
+  if (!policy->CanAccessDataForOrigin(render_process_id_, url)) {
     bad_message::ReceivedBadMessage(this,
                                     bad_message::RMF_SET_COOKIE_BAD_ORIGIN);
     return;
@@ -589,7 +578,7 @@ void RenderMessageFilter::OnGetCookies(int render_frame_id,
                                        IPC::Message* reply_msg) {
   ChildProcessSecurityPolicyImpl* policy =
       ChildProcessSecurityPolicyImpl::GetInstance();
-  if (!policy->CanAccessCookiesForOrigin(render_process_id_, url)) {
+  if (!policy->CanAccessDataForOrigin(render_process_id_, url)) {
     bad_message::ReceivedBadMessage(this,
                                     bad_message::RMF_GET_COOKIES_BAD_ORIGIN);
     delete reply_msg;
@@ -995,7 +984,8 @@ void RenderMessageFilter::OnCacheableMetadataAvailable(
   // in weburlloader_impl.cc).
   const net::RequestPriority kPriority = net::LOW;
   scoped_refptr<net::IOBuffer> buf(new net::IOBuffer(data.size()));
-  memcpy(buf->data(), &data.front(), data.size());
+  if (!data.empty())
+    memcpy(buf->data(), &data.front(), data.size());
   cache->WriteMetadata(url, kPriority, expected_response_time, buf.get(),
                        data.size());
 }
@@ -1199,12 +1189,12 @@ void RenderMessageFilter::OnWebAudioMediaCodec(
 }
 #endif
 
-void RenderMessageFilter::OnAllocateGpuMemoryBuffer(
-    uint32 width,
-    uint32 height,
-    gfx::GpuMemoryBuffer::Format format,
-    gfx::GpuMemoryBuffer::Usage usage,
-    IPC::Message* reply) {
+void RenderMessageFilter::OnAllocateGpuMemoryBuffer(gfx::GpuMemoryBufferId id,
+                                                    uint32 width,
+                                                    uint32 height,
+                                                    gfx::BufferFormat format,
+                                                    gfx::BufferUsage usage,
+                                                    IPC::Message* reply) {
   DCHECK(BrowserGpuMemoryBufferManager::current());
 
   base::CheckedNumeric<int> size = width;
@@ -1216,13 +1206,10 @@ void RenderMessageFilter::OnAllocateGpuMemoryBuffer(
 
   BrowserGpuMemoryBufferManager::current()
       ->AllocateGpuMemoryBufferForChildProcess(
-          gfx::Size(width, height),
-          format,
-          usage,
-          PeerHandle(),
+          id, gfx::Size(width, height), format, usage, PeerHandle(),
           render_process_id_,
-          base::Bind(
-              &RenderMessageFilter::GpuMemoryBufferAllocated, this, reply));
+          base::Bind(&RenderMessageFilter::GpuMemoryBufferAllocated, this,
+                     reply));
 }
 
 void RenderMessageFilter::GpuMemoryBufferAllocated(

@@ -49,13 +49,57 @@
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/ThreadableLoaderClient.h"
 #include "platform/SharedBuffer.h"
+#include "platform/Task.h"
 #include "platform/network/ResourceRequest.h"
 #include "platform/weborigin/SchemeRegistry.h"
 #include "platform/weborigin/SecurityOrigin.h"
+#include "public/platform/Platform.h"
 #include "public/platform/WebURLRequest.h"
 #include "wtf/Assertions.h"
 
 namespace blink {
+
+namespace {
+
+class EmptyDataHandle final : public WebDataConsumerHandle {
+private:
+    class EmptyDataReader final : public WebDataConsumerHandle::Reader {
+    public:
+        explicit EmptyDataReader(WebDataConsumerHandle::Client* client) : m_factory(this)
+        {
+            Platform::current()->currentThread()->postTask(FROM_HERE, new Task(bind(&EmptyDataReader::notify, m_factory.createWeakPtr(), client)));
+        }
+    private:
+        Result read(void*, size_t, WebDataConsumerHandle::Flags, size_t *readSize) override
+        {
+            *readSize = 0;
+            return Done;
+        }
+        Result beginRead(const void** buffer, WebDataConsumerHandle::Flags, size_t *available) override
+        {
+            *available = 0;
+            *buffer = nullptr;
+            return Done;
+        }
+        Result endRead(size_t) override
+        {
+            return WebDataConsumerHandle::UnexpectedError;
+        }
+        void notify(WebDataConsumerHandle::Client* client)
+        {
+            client->didGetReadable();
+        }
+        WeakPtrFactory<EmptyDataReader> m_factory;
+    };
+
+    Reader* obtainReaderInternal(Client* client) override
+    {
+        return new EmptyDataReader(client);
+    }
+    const char* debugName() const override { return "EmptyDataHandle"; }
+};
+
+} // namespace
 
 // Max number of CORS redirects handled in DocumentThreadableLoader.
 // Same number as net/url_request/url_request.cc, and
@@ -94,6 +138,7 @@ DocumentThreadableLoader::DocumentThreadableLoader(Document& document, Threadabl
     , m_timeoutTimer(this, &DocumentThreadableLoader::didTimeout)
     , m_requestStartedSeconds(0.0)
     , m_corsRedirectLimit(kMaxCORSRedirects)
+    , m_redirectMode(request.fetchRedirectMode())
 {
     ASSERT(client);
     // Setting an outgoing referer is only supported in the async code path.
@@ -269,7 +314,38 @@ void DocumentThreadableLoader::redirectReceived(Resource* resource, ResourceRequ
 
     RefPtr<DocumentThreadableLoader> protect(this);
 
-    if (!isAllowedByContentSecurityPolicy(request.url(), ContentSecurityPolicy::DidRedirect)) {
+    if (m_actualRequest) {
+        reportResponseReceived(resource->identifier(), redirectResponse);
+
+        clearResource();
+        request = ResourceRequest();
+
+        m_requestStartedSeconds = 0.0;
+
+        handlePreflightFailure(redirectResponse.url().string(), "Response for preflight is invalid (redirect)");
+
+        return;
+    }
+
+    if (m_redirectMode == WebURLRequest::FetchRedirectModeManual) {
+        // We use |m_redirectMode| to check the original redirect mode.
+        // |request| is a new request for redirect. So we don't set the redirect
+        // mode of it in WebURLLoaderImpl::Context::OnReceivedRedirect().
+        ASSERT(request.useStreamOnResponse());
+        // There is no need to read the body of redirect response because there
+        // is no way to read the body of opaque-redirect filtered response's
+        // internal response.
+        // TODO(horo): If we support any API which expose the internal body, we
+        // will have to read the body. And also HTTPCache changes will be needed
+        // because it doesn't store the body of redirect responses.
+        responseReceived(resource, redirectResponse, adoptPtr(new EmptyDataHandle()));
+        notifyFinished(resource);
+        clearResource();
+        request = ResourceRequest();
+        return;
+    }
+
+    if (m_redirectMode == WebURLRequest::FetchRedirectModeError || !isAllowedByContentSecurityPolicy(request.url(), ContentSecurityPolicy::DidRedirect)) {
         m_client->didFailRedirectCheck();
 
         clearResource();
@@ -394,7 +470,7 @@ void DocumentThreadableLoader::handlePreflightResponse(const ResourceResponse& r
     String accessControlErrorDescription;
 
     if (!passesAccessControlCheck(response, effectiveAllowCredentials(), securityOrigin(), accessControlErrorDescription)) {
-        handlePreflightFailure(response.url().string(), accessControlErrorDescription);
+        handlePreflightFailure(response.url().string(), "Response to preflight request doesn't pass access control check: " + accessControlErrorDescription);
         return;
     }
 
@@ -444,6 +520,7 @@ void DocumentThreadableLoader::handleResponse(unsigned long identifier, const Re
             // therefore fallback-to-network is handled in the browser process
             // when the ServiceWorker does not call respondWith().)
             ASSERT(m_fallbackRequestForServiceWorker);
+            reportResponseReceived(identifier, response);
             loadFallbackRequestForServiceWorker();
             return;
         }
@@ -452,7 +529,17 @@ void DocumentThreadableLoader::handleResponse(unsigned long identifier, const Re
         return;
     }
 
-    ASSERT(!m_fallbackRequestForServiceWorker);
+    // Even if the request met the conditions to get handled by a Service Worker
+    // in the constructor of this class (and therefore
+    // |m_fallbackRequestForServiceWorker| is set), the Service Worker may skip
+    // processing the request. Only if the request is same origin, the skipped
+    // response may come here (wasFetchedViaServiceWorker() returns false) since
+    // such a request doesn't have to go through the CORS algorithm by calling
+    // loadFallbackRequestForServiceWorker().
+    // FIXME: We should use |m_sameOriginRequest| when we will support
+    // Suborigins (crbug.com/336894) for Service Worker.
+    ASSERT(!m_fallbackRequestForServiceWorker || securityOrigin()->canRequest(m_fallbackRequestForServiceWorker->url()));
+    m_fallbackRequestForServiceWorker = nullptr;
 
     if (!m_sameOriginRequest && m_options.crossOriginRequestPolicy == UseAccessControl) {
         String accessControlErrorDescription;

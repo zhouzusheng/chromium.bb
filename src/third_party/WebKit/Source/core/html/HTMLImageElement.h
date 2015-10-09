@@ -53,8 +53,8 @@ public:
     ~HTMLImageElement() override;
     DECLARE_VIRTUAL_TRACE();
 
-    int width(bool ignorePendingStylesheets = false);
-    int height(bool ignorePendingStylesheets = false);
+    int width();
+    int height();
 
     int naturalWidth() const;
     int naturalHeight() const;
@@ -93,10 +93,11 @@ public:
     HTMLFormElement* formOwner() const override;
     void formRemovedFromTree(const Node& formRoot);
     virtual void ensureFallbackContent();
+    virtual void ensureFallbackForGeneratedContent();
     virtual void ensurePrimaryContent();
 
     // CanvasImageSource implementation
-    PassRefPtr<Image> getSourceImageForCanvas(SourceImageMode, SourceImageStatus*) const override;
+    PassRefPtr<Image> getSourceImageForCanvas(SourceImageStatus*) const override;
     bool wouldTaintOrigin(SecurityOrigin*) const override;
     FloatSize elementSize() const override;
     FloatSize defaultDestinationSize() const override;
@@ -169,6 +170,8 @@ private:
     unsigned m_intrinsicSizingViewportDependant : 1;
     unsigned m_useFallbackContent : 1;
     unsigned m_isFallbackImage : 1;
+
+    ReferrerPolicy m_referrerPolicy;
 };
 
 } // namespace blink

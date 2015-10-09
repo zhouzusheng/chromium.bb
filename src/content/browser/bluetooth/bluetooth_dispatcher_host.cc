@@ -10,9 +10,10 @@
 
 #include "content/browser/bluetooth/bluetooth_dispatcher_host.h"
 
-#include "base/metrics/histogram.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/browser/bad_message.h"
+#include "content/browser/bluetooth/bluetooth_metrics.h"
+#include "content/browser/frame_host/render_frame_host_impl.h"
 #include "content/common/bluetooth/bluetooth_messages.h"
 #include "device/bluetooth/bluetooth_adapter.h"
 #include "device/bluetooth/bluetooth_adapter_factory.h"
@@ -21,45 +22,22 @@
 #include "device/bluetooth/bluetooth_gatt_characteristic.h"
 #include "device/bluetooth/bluetooth_gatt_service.h"
 
+using blink::WebBluetoothError;
 using device::BluetoothAdapter;
 using device::BluetoothAdapterFactory;
 using device::BluetoothGattCharacteristic;
 using device::BluetoothGattService;
 using device::BluetoothUUID;
 
-namespace {
+namespace content {
 
-// These types of errors aren't as common. We log them to understand
-// how common they are and if we need to investigate more.
-enum class BluetoothGATTError {
-  UNKNOWN,
-  FAILED,
-  IN_PROGRESS,
-  NOT_PAIRED,
-  // Add errors above this line and update corresponding histograms.xml enum.
-  MAX_ERROR,
-};
+namespace {
 
 // TODO(ortuno): Once we have a chooser for scanning and the right
 // callback for discovered services we should delete these constants.
 // https://crbug.com/436280 and https://crbug.com/484504
 const int kDelayTime = 5;         // 5 seconds for scanning and discovering
 const int kTestingDelayTime = 0;  // No need to wait during tests
-
-// Error Messages
-const char kNoBluetoothAdapter[] = "Bluetooth adapter not available.";
-
-const char kDiscoverySessionStartFailed[] = "Couldn't start discovery session.";
-const char kDiscoverySessionStopFailed[] = "Failed to stop discovery session.";
-
-const char kNoDevicesFound[] = "No Bluetooth devices in range.";
-const char kServiceNotFound[] = "Service not found in device";
-const char kCharacteristicNotFound[] = "Characteristic not found in device.";
-
-const char kDeviceNoLongerInRange[] = "Bluetooth Device is no longer in range.";
-const char kServiceNoLongerExists[] = "GATT Service no longer exists.";
-const char kCharacteristicNoLongerExits[] =
-    "GATT Characteristic no longer exists";
 
 // Defined at
 // https://webbluetoothchrome.github.io/web-bluetooth/#dfn-matches-a-filter
@@ -88,77 +66,82 @@ bool MatchesFilters(const device::BluetoothDevice& device,
   return false;
 }
 
-void AddToHistogram(BluetoothGATTError error) {
-  UMA_HISTOGRAM_ENUMERATION("Bluetooth.GATTErrors", static_cast<int>(error),
-                            static_cast<int>(BluetoothGATTError::MAX_ERROR));
-}
-
-std::string GetConnectErrorMessage(
+WebBluetoothError TranslateConnectError(
     device::BluetoothDevice::ConnectErrorCode error_code) {
   switch (error_code) {
     case device::BluetoothDevice::ERROR_UNKNOWN:
-      return "Unknown error when connecting to the device.";
+      RecordConnectGATTOutcome(UMAConnectGATTOutcome::UNKNOWN);
+      return WebBluetoothError::ConnectUnknownError;
     case device::BluetoothDevice::ERROR_INPROGRESS:
-      return "Connection already in progress.";
+      RecordConnectGATTOutcome(UMAConnectGATTOutcome::IN_PROGRESS);
+      return WebBluetoothError::ConnectAlreadyInProgress;
     case device::BluetoothDevice::ERROR_FAILED:
-      return "Connection failed for unknown reason.";
+      RecordConnectGATTOutcome(UMAConnectGATTOutcome::FAILED);
+      return WebBluetoothError::ConnectUnknownFailure;
     case device::BluetoothDevice::ERROR_AUTH_FAILED:
-      return "Authentication failed.";
+      RecordConnectGATTOutcome(UMAConnectGATTOutcome::AUTH_FAILED);
+      return WebBluetoothError::ConnectAuthFailed;
     case device::BluetoothDevice::ERROR_AUTH_CANCELED:
-      return "Authentication canceled.";
+      RecordConnectGATTOutcome(UMAConnectGATTOutcome::AUTH_CANCELED);
+      return WebBluetoothError::ConnectAuthCanceled;
     case device::BluetoothDevice::ERROR_AUTH_REJECTED:
-      return "Authentication rejected.";
+      RecordConnectGATTOutcome(UMAConnectGATTOutcome::AUTH_REJECTED);
+      return WebBluetoothError::ConnectAuthRejected;
     case device::BluetoothDevice::ERROR_AUTH_TIMEOUT:
-      return "Authentication timeout.";
+      RecordConnectGATTOutcome(UMAConnectGATTOutcome::AUTH_TIMEOUT);
+      return WebBluetoothError::ConnectAuthTimeout;
     case device::BluetoothDevice::ERROR_UNSUPPORTED_DEVICE:
-      return "Unsupported device.";
+      RecordConnectGATTOutcome(UMAConnectGATTOutcome::UNSUPPORTED_DEVICE);
+      return WebBluetoothError::ConnectUnsupportedDevice;
   }
   NOTREACHED();
-  return "";
+  return WebBluetoothError::UntranslatedConnectErrorCode;
 }
 
-std::pair<content::BluetoothError, std::string> TranslateGATTError(
-    BluetoothGattService::GattErrorCode error_code) {
+blink::WebBluetoothError TranslateGATTError(
+    BluetoothGattService::GattErrorCode error_code,
+    UMAGATTOperation operation) {
   switch (error_code) {
     case BluetoothGattService::GATT_ERROR_UNKNOWN:
-      AddToHistogram(BluetoothGATTError::UNKNOWN);
-      return std::make_pair(content::BluetoothError::NOT_SUPPORTED,
-                            "GATT Error Unknown.");
+      RecordGATTOperationOutcome(operation, UMAGATTOperationOutcome::UNKNOWN);
+      return blink::WebBluetoothError::GATTUnknownError;
     case BluetoothGattService::GATT_ERROR_FAILED:
-      AddToHistogram(BluetoothGATTError::FAILED);
-      return std::make_pair(content::BluetoothError::NOT_SUPPORTED,
-                            "GATT operation failed for unknown reason.");
+      RecordGATTOperationOutcome(operation, UMAGATTOperationOutcome::FAILED);
+      return blink::WebBluetoothError::GATTUnknownFailure;
     case BluetoothGattService::GATT_ERROR_IN_PROGRESS:
-      AddToHistogram(BluetoothGATTError::IN_PROGRESS);
-      return std::make_pair(content::BluetoothError::NETWORK,
-                            "GATT operation already in progress.");
+      RecordGATTOperationOutcome(operation,
+                                 UMAGATTOperationOutcome::IN_PROGRESS);
+      return blink::WebBluetoothError::GATTOperationInProgress;
     case BluetoothGattService::GATT_ERROR_INVALID_LENGTH:
-      return std::make_pair(content::BluetoothError::INVALID_MODIFICATION,
-                            "GATT Error: invalid attribute length.");
+      RecordGATTOperationOutcome(operation,
+                                 UMAGATTOperationOutcome::INVALID_LENGTH);
+      return blink::WebBluetoothError::GATTInvalidAttributeLength;
     case BluetoothGattService::GATT_ERROR_NOT_PERMITTED:
-      return std::make_pair(content::BluetoothError::NOT_SUPPORTED,
-                            "GATT operation not permitted.");
+      RecordGATTOperationOutcome(operation,
+                                 UMAGATTOperationOutcome::NOT_PERMITTED);
+      return blink::WebBluetoothError::GATTNotPermitted;
     case BluetoothGattService::GATT_ERROR_NOT_AUTHORIZED:
-      return std::make_pair(content::BluetoothError::SECURITY,
-                            "GATT operation not authorized");
+      RecordGATTOperationOutcome(operation,
+                                 UMAGATTOperationOutcome::NOT_AUTHORIZED);
+      return blink::WebBluetoothError::GATTNotAuthorized;
     case BluetoothGattService::GATT_ERROR_NOT_PAIRED:
-      AddToHistogram(BluetoothGATTError::NOT_PAIRED);
-      return std::make_pair(content::BluetoothError::NETWORK,
-                            "GATT Error: Not paired.");
+      RecordGATTOperationOutcome(operation,
+                                 UMAGATTOperationOutcome::NOT_PAIRED);
+      return blink::WebBluetoothError::GATTNotPaired;
     case BluetoothGattService::GATT_ERROR_NOT_SUPPORTED:
-      return std::make_pair(content::BluetoothError::NOT_SUPPORTED,
-                            "GATT Error: Not supported.");
+      RecordGATTOperationOutcome(operation,
+                                 UMAGATTOperationOutcome::NOT_SUPPORTED);
+      return blink::WebBluetoothError::GATTNotSupported;
   }
   NOTREACHED();
-  return std::make_pair(content::BluetoothError::NOT_SUPPORTED, "");
+  return blink::WebBluetoothError::GATTUntranslatedErrorCode;
 }
 
 }  //  namespace
 
-namespace content {
-
-BluetoothDispatcherHost::BluetoothDispatcherHost()
+BluetoothDispatcherHost::BluetoothDispatcherHost(int render_process_id)
     : BrowserMessageFilter(BluetoothMsgStart),
+      render_process_id_(render_process_id),
       weak_ptr_factory_(this) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   current_delay_time_ = kDelayTime;
@@ -208,9 +191,11 @@ BluetoothDispatcherHost::~BluetoothDispatcherHost() {
   set_adapter(scoped_refptr<device::BluetoothAdapter>());
 }
 
-struct BluetoothDispatcherHost::DiscoverySessionOptions {
-  DiscoverySessionOptions(const std::vector<BluetoothScanFilter>& filters,
-                          const std::vector<BluetoothUUID>& optional_services)
+// Stores information associated with an in-progress requestDevice call. This
+// will include the state of the active chooser dialog in a future patch.
+struct BluetoothDispatcherHost::RequestDeviceSession {
+  RequestDeviceSession(const std::vector<BluetoothScanFilter>& filters,
+                       const std::vector<BluetoothUUID>& optional_services)
       : filters(filters), optional_services(optional_services) {}
 
   std::vector<BluetoothScanFilter> filters;
@@ -245,24 +230,86 @@ static scoped_ptr<device::BluetoothDiscoveryFilter> ComputeScanFilter(
 void BluetoothDispatcherHost::OnRequestDevice(
     int thread_id,
     int request_id,
+    int frame_routing_id,
     const std::vector<BluetoothScanFilter>& filters,
     const std::vector<BluetoothUUID>& optional_services) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  RecordWebBluetoothFunctionCall(UMAWebBluetoothFunction::REQUEST_DEVICE);
+  RecordRequestDeviceArguments(filters, optional_services);
+
+  VLOG(1) << "requestDevice called with the following filters: ";
+  for (const BluetoothScanFilter& filter : filters) {
+    VLOG(1) << "\t[";
+    for (const BluetoothUUID& service : filter.services)
+      VLOG(1) << "\t\t" << service.value();
+    VLOG(1) << "\t]";
+  }
+
+  VLOG(1) << "requestDevice called with the following optional services: ";
+  for (const BluetoothUUID& service : optional_services)
+    VLOG(1) << "\t" << service.value();
+
+  RenderFrameHostImpl* render_frame_host =
+      RenderFrameHostImpl::FromID(render_process_id_, frame_routing_id);
+
+  if (!render_frame_host) {
+    DLOG(WARNING)
+        << "Got a requestDevice IPC without a matching RenderFrameHost: "
+        << render_process_id_ << ", " << frame_routing_id;
+    RecordRequestDeviceOutcome(UMARequestDeviceOutcome::NO_RENDER_FRAME);
+    Send(new BluetoothMsg_RequestDeviceError(
+        thread_id, request_id, WebBluetoothError::RequestDeviceWithoutFrame));
+    return;
+  }
+
   // TODO(scheib): Device selection UI: crbug.com/436280
   // TODO(scheib): Utilize BluetoothAdapter::Observer::DeviceAdded/Removed.
   if (adapter_.get()) {
+    if (!request_device_sessions_
+             .insert(std::make_pair(
+                 std::make_pair(thread_id, request_id),
+                 RequestDeviceSession(filters, optional_services)))
+             .second) {
+      LOG(ERROR) << "2 requestDevice() calls with the same thread_id ("
+                 << thread_id << ") and request_id (" << request_id
+                 << ") shouldn't arrive at the same BluetoothDispatcherHost.";
+      bad_message::ReceivedBadMessage(
+          this, bad_message::BDH_DUPLICATE_REQUEST_DEVICE_ID);
+    }
+    if (!adapter_->IsPresent()) {
+      VLOG(1) << "Bluetooth Adapter not present. Can't serve requestDevice.";
+      RecordRequestDeviceOutcome(
+          UMARequestDeviceOutcome::BLUETOOTH_ADAPTER_NOT_PRESENT);
+      Send(new BluetoothMsg_RequestDeviceError(
+          thread_id, request_id, WebBluetoothError::NoBluetoothAdapter));
+      request_device_sessions_.erase(std::make_pair(thread_id, request_id));
+      return;
+    }
+    // TODO(jyasskin): Once the dialog is available, the dialog should check for
+    // the status of the adapter, i.e. check IsPowered() and
+    // BluetoothAdapter::Observer::PoweredChanged, and inform the user. But
+    // until the dialog is available we log/histogram the status and return
+    // with a message.
+    // https://crbug.com/517237
+    if (!adapter_->IsPowered()) {
+      RecordRequestDeviceOutcome(
+          UMARequestDeviceOutcome::BLUETOOTH_ADAPTER_OFF);
+      Send(new BluetoothMsg_RequestDeviceError(
+          thread_id, request_id, WebBluetoothError::BluetoothAdapterOff));
+      request_device_sessions_.erase(std::make_pair(thread_id, request_id));
+      return;
+    }
     adapter_->StartDiscoverySessionWithFilter(
         ComputeScanFilter(filters),
         base::Bind(&BluetoothDispatcherHost::OnDiscoverySessionStarted,
-                   weak_ptr_factory_.GetWeakPtr(), thread_id, request_id,
-                   base::Passed(make_scoped_ptr(new DiscoverySessionOptions(
-                       filters, optional_services)))),
+                   weak_ptr_factory_.GetWeakPtr(), thread_id, request_id),
         base::Bind(&BluetoothDispatcherHost::OnDiscoverySessionStartedError,
                    weak_ptr_factory_.GetWeakPtr(), thread_id, request_id));
   } else {
-    DLOG(WARNING) << "No BluetoothAdapter. Can't serve requestDevice.";
+    VLOG(1) << "No BluetoothAdapter. Can't serve requestDevice.";
+    RecordRequestDeviceOutcome(UMARequestDeviceOutcome::NO_BLUETOOTH_ADAPTER);
     Send(new BluetoothMsg_RequestDeviceError(
-        thread_id, request_id, BluetoothError::NOT_FOUND, kNoBluetoothAdapter));
+        thread_id, request_id, WebBluetoothError::NoBluetoothAdapter));
   }
   return;
 }
@@ -272,24 +319,27 @@ void BluetoothDispatcherHost::OnConnectGATT(
     int request_id,
     const std::string& device_instance_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  RecordWebBluetoothFunctionCall(UMAWebBluetoothFunction::CONNECT_GATT);
+  const base::TimeTicks start_time = base::TimeTicks::Now();
+
   // TODO(ortuno): Right now it's pointless to check if the domain has access to
   // the device, because any domain can connect to any device. But once
   // permissions are implemented we should check that the domain has access to
   // the device. https://crbug.com/484745
   device::BluetoothDevice* device = adapter_->GetDevice(device_instance_id);
   if (device == nullptr) {  // See "NETWORK_ERROR Note" above.
-    Send(new BluetoothMsg_ConnectGATTError(thread_id, request_id,
-                                           BluetoothError::NETWORK,
-                                           kDeviceNoLongerInRange));
+    RecordConnectGATTOutcome(UMAConnectGATTOutcome::NO_DEVICE);
+    Send(new BluetoothMsg_ConnectGATTError(
+        thread_id, request_id, WebBluetoothError::DeviceNoLongerInRange));
     return;
   }
   device->CreateGattConnection(
       base::Bind(&BluetoothDispatcherHost::OnGATTConnectionCreated,
                  weak_ptr_factory_.GetWeakPtr(), thread_id, request_id,
-                 device_instance_id),
+                 device_instance_id, start_time),
       base::Bind(&BluetoothDispatcherHost::OnCreateGATTConnectionError,
                  weak_ptr_factory_.GetWeakPtr(), thread_id, request_id,
-                 device_instance_id));
+                 device_instance_id, start_time));
 }
 
 void BluetoothDispatcherHost::OnGetPrimaryService(
@@ -298,6 +348,9 @@ void BluetoothDispatcherHost::OnGetPrimaryService(
     const std::string& device_instance_id,
     const std::string& service_uuid) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  RecordWebBluetoothFunctionCall(UMAWebBluetoothFunction::GET_PRIMARY_SERVICE);
+  RecordGetPrimaryServiceService(BluetoothUUID(service_uuid));
+
   // TODO(ortuno): Check if device_instance_id is in "allowed devices"
   // https://crbug.com/493459
   // TODO(ortuno): Check if service_uuid is in "allowed services"
@@ -318,6 +371,8 @@ void BluetoothDispatcherHost::OnGetCharacteristic(
     const std::string& service_instance_id,
     const std::string& characteristic_uuid) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  RecordWebBluetoothFunctionCall(UMAWebBluetoothFunction::GET_CHARACTERISTIC);
+  RecordGetCharacteristicCharacteristic(characteristic_uuid);
 
   auto device_iter = service_to_device_.find(service_instance_id);
   // A service_instance_id not in the map implies a hostile renderer
@@ -335,9 +390,9 @@ void BluetoothDispatcherHost::OnGetCharacteristic(
       adapter_->GetDevice(device_iter->second /* device_instance_id */);
 
   if (device == nullptr) {  // See "NETWORK_ERROR Note" above.
-    Send(new BluetoothMsg_GetCharacteristicError(thread_id, request_id,
-                                                 BluetoothError::NETWORK,
-                                                 kDeviceNoLongerInRange));
+    RecordGetCharacteristicOutcome(UMAGetCharacteristicOutcome::NO_DEVICE);
+    Send(new BluetoothMsg_GetCharacteristicError(
+        thread_id, request_id, WebBluetoothError::DeviceNoLongerInRange));
     return;
   }
 
@@ -346,9 +401,9 @@ void BluetoothDispatcherHost::OnGetCharacteristic(
   device::BluetoothGattService* service =
       device->GetGattService(service_instance_id);
   if (!service) {
-    Send(new BluetoothMsg_GetCharacteristicError(thread_id, request_id,
-                                                 BluetoothError::INVALID_STATE,
-                                                 kServiceNoLongerExists));
+    RecordGetCharacteristicOutcome(UMAGetCharacteristicOutcome::NO_SERVICE);
+    Send(new BluetoothMsg_GetCharacteristicError(
+        thread_id, request_id, WebBluetoothError::ServiceNoLongerExists));
     return;
   }
 
@@ -365,6 +420,7 @@ void BluetoothDispatcherHost::OnGetCharacteristic(
       if (!insert_result.second)
         DCHECK(insert_result.first->second == service_instance_id);
 
+      RecordGetCharacteristicOutcome(UMAGetCharacteristicOutcome::SUCCESS);
       // TODO(ortuno): Use generated instance ID instead.
       // https://crbug.com/495379
       Send(new BluetoothMsg_GetCharacteristicSuccess(
@@ -372,9 +428,9 @@ void BluetoothDispatcherHost::OnGetCharacteristic(
       return;
     }
   }
-  Send(new BluetoothMsg_GetCharacteristicError(thread_id, request_id,
-                                               BluetoothError::NOT_FOUND,
-                                               kCharacteristicNotFound));
+  RecordGetCharacteristicOutcome(UMAGetCharacteristicOutcome::NOT_FOUND);
+  Send(new BluetoothMsg_GetCharacteristicError(
+      thread_id, request_id, WebBluetoothError::CharacteristicNotFound));
 }
 
 void BluetoothDispatcherHost::OnReadValue(
@@ -382,6 +438,8 @@ void BluetoothDispatcherHost::OnReadValue(
     int request_id,
     const std::string& characteristic_instance_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  RecordWebBluetoothFunctionCall(
+      UMAWebBluetoothFunction::CHARACTERISTIC_READ_VALUE);
 
   auto characteristic_iter =
       characteristic_to_service_.find(characteristic_instance_id);
@@ -403,26 +461,28 @@ void BluetoothDispatcherHost::OnReadValue(
   device::BluetoothDevice* device =
       adapter_->GetDevice(device_iter->second /* device_instance_id */);
   if (device == nullptr) {  // See "NETWORK_ERROR Note" above.
-    Send(new BluetoothMsg_ReadCharacteristicValueError(thread_id, request_id,
-                                                       BluetoothError::NETWORK,
-                                                       kDeviceNoLongerInRange));
+    RecordCharacteristicReadValueOutcome(UMAGATTOperationOutcome::NO_DEVICE);
+    Send(new BluetoothMsg_ReadCharacteristicValueError(
+        thread_id, request_id, WebBluetoothError::DeviceNoLongerInRange));
     return;
   }
 
   BluetoothGattService* service = device->GetGattService(service_instance_id);
   if (service == nullptr) {
+    RecordCharacteristicReadValueOutcome(UMAGATTOperationOutcome::NO_SERVICE);
     Send(new BluetoothMsg_ReadCharacteristicValueError(
-        thread_id, request_id, BluetoothError::INVALID_STATE,
-        kServiceNoLongerExists));
+        thread_id, request_id, WebBluetoothError::ServiceNoLongerExists));
     return;
   }
 
   BluetoothGattCharacteristic* characteristic =
       service->GetCharacteristic(characteristic_instance_id);
   if (characteristic == nullptr) {
+    RecordCharacteristicReadValueOutcome(
+        UMAGATTOperationOutcome::NO_CHARACTERISTIC);
     Send(new BluetoothMsg_ReadCharacteristicValueError(
-        thread_id, request_id, BluetoothError::INVALID_STATE,
-        kCharacteristicNoLongerExits));
+        thread_id, request_id,
+        WebBluetoothError::CharacteristicNoLongerExists));
     return;
   }
 
@@ -439,6 +499,8 @@ void BluetoothDispatcherHost::OnWriteValue(
     const std::string& characteristic_instance_id,
     const std::vector<uint8_t>& value) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  RecordWebBluetoothFunctionCall(
+      UMAWebBluetoothFunction::CHARACTERISTIC_WRITE_VALUE);
 
   // Length check per step 3 of writeValue algorithm:
   // https://webbluetoothchrome.github.io/web-bluetooth/#dom-bluetoothgattcharacteristic-writevalue
@@ -470,26 +532,28 @@ void BluetoothDispatcherHost::OnWriteValue(
   device::BluetoothDevice* device =
       adapter_->GetDevice(device_iter->second /* device_instance_id */);
   if (device == nullptr) {  // See "NETWORK_ERROR Note" above.
+    RecordCharacteristicWriteValueOutcome(UMAGATTOperationOutcome::NO_DEVICE);
     Send(new BluetoothMsg_WriteCharacteristicValueError(
-        thread_id, request_id, BluetoothError::NETWORK,
-        kDeviceNoLongerInRange));
+        thread_id, request_id, WebBluetoothError::DeviceNoLongerInRange));
     return;
   }
 
   BluetoothGattService* service = device->GetGattService(service_instance_id);
   if (service == nullptr) {
+    RecordCharacteristicWriteValueOutcome(UMAGATTOperationOutcome::NO_SERVICE);
     Send(new BluetoothMsg_WriteCharacteristicValueError(
-        thread_id, request_id, BluetoothError::INVALID_STATE,
-        kServiceNoLongerExists));
+        thread_id, request_id, WebBluetoothError::ServiceNoLongerExists));
     return;
   }
 
   BluetoothGattCharacteristic* characteristic =
       service->GetCharacteristic(characteristic_instance_id);
   if (characteristic == nullptr) {
+    RecordCharacteristicWriteValueOutcome(
+        UMAGATTOperationOutcome::NO_CHARACTERISTIC);
     Send(new BluetoothMsg_WriteCharacteristicValueError(
-        thread_id, request_id, BluetoothError::INVALID_STATE,
-        kCharacteristicNoLongerExits));
+        thread_id, request_id,
+        WebBluetoothError::CharacteristicNoLongerExists));
     return;
   }
   characteristic->WriteRemoteCharacteristic(
@@ -502,14 +566,13 @@ void BluetoothDispatcherHost::OnWriteValue(
 void BluetoothDispatcherHost::OnDiscoverySessionStarted(
     int thread_id,
     int request_id,
-    scoped_ptr<DiscoverySessionOptions> options,
     scoped_ptr<device::BluetoothDiscoverySession> discovery_session) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   BrowserThread::PostDelayedTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&BluetoothDispatcherHost::StopDiscoverySession,
                  weak_ptr_factory_.GetWeakPtr(), thread_id, request_id,
-                 base::Passed(&options), base::Passed(&discovery_session)),
+                 base::Passed(&discovery_session)),
       base::TimeDelta::FromSeconds(current_delay_time_));
 }
 
@@ -517,33 +580,37 @@ void BluetoothDispatcherHost::OnDiscoverySessionStartedError(int thread_id,
                                                              int request_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DLOG(WARNING) << "BluetoothDispatcherHost::OnDiscoverySessionStartedError";
-  Send(new BluetoothMsg_RequestDeviceError(thread_id, request_id,
-                                           BluetoothError::NOT_FOUND,
-                                           kDiscoverySessionStartFailed));
+  RecordRequestDeviceOutcome(UMARequestDeviceOutcome::DISCOVERY_START_FAILED);
+  Send(new BluetoothMsg_RequestDeviceError(
+      thread_id, request_id, WebBluetoothError::DiscoverySessionStartFailed));
+  request_device_sessions_.erase(std::make_pair(thread_id, request_id));
 }
 
 void BluetoothDispatcherHost::StopDiscoverySession(
     int thread_id,
     int request_id,
-    scoped_ptr<DiscoverySessionOptions> options,
     scoped_ptr<device::BluetoothDiscoverySession> discovery_session) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   discovery_session->Stop(
       base::Bind(&BluetoothDispatcherHost::OnDiscoverySessionStopped,
-                 weak_ptr_factory_.GetWeakPtr(), thread_id, request_id,
-                 base::Passed(&options)),
+                 weak_ptr_factory_.GetWeakPtr(), thread_id, request_id),
       base::Bind(&BluetoothDispatcherHost::OnDiscoverySessionStoppedError,
                  weak_ptr_factory_.GetWeakPtr(), thread_id, request_id));
 }
 
-void BluetoothDispatcherHost::OnDiscoverySessionStopped(
-    int thread_id,
-    int request_id,
-    scoped_ptr<DiscoverySessionOptions> options) {
+void BluetoothDispatcherHost::OnDiscoverySessionStopped(int thread_id,
+                                                        int request_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  auto session =
+      request_device_sessions_.find(std::make_pair(thread_id, request_id));
+  CHECK(session != request_device_sessions_.end());
   BluetoothAdapter::DeviceList devices = adapter_->GetDevices();
   for (device::BluetoothDevice* device : devices) {
-    if (MatchesFilters(*device, options->filters)) {
+    VLOG(1) << "Device: " << device->GetName();
+    VLOG(1) << "UUIDs: ";
+    for (BluetoothUUID uuid : device->GetUUIDs())
+      VLOG(1) << "\t" << uuid.canonical_value();
+    if (MatchesFilters(*device, session->second.filters)) {
       content::BluetoothDevice device_ipc(
           device->GetAddress(),         // instance_id
           device->GetName(),            // name
@@ -555,31 +622,40 @@ void BluetoothDispatcherHost::OnDiscoverySessionStopped(
           device->IsPaired(),           // paired
           content::BluetoothDevice::UUIDsFromBluetoothUUIDs(
               device->GetUUIDs()));  // uuids
+      RecordRequestDeviceOutcome(UMARequestDeviceOutcome::SUCCESS);
       Send(new BluetoothMsg_RequestDeviceSuccess(thread_id, request_id,
                                                  device_ipc));
+      request_device_sessions_.erase(session);
       return;
     }
   }
-  Send(new BluetoothMsg_RequestDeviceError(
-      thread_id, request_id, BluetoothError::NOT_FOUND, kNoDevicesFound));
+  RecordRequestDeviceOutcome(
+      UMARequestDeviceOutcome::NO_MATCHING_DEVICES_FOUND);
+  Send(new BluetoothMsg_RequestDeviceError(thread_id, request_id,
+                                           WebBluetoothError::NoDevicesFound));
+  request_device_sessions_.erase(session);
 }
 
 void BluetoothDispatcherHost::OnDiscoverySessionStoppedError(int thread_id,
                                                              int request_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DLOG(WARNING) << "BluetoothDispatcherHost::OnDiscoverySessionStoppedError";
-  Send(new BluetoothMsg_RequestDeviceError(thread_id, request_id,
-                                           BluetoothError::NOT_FOUND,
-                                           kDiscoverySessionStopFailed));
+  RecordRequestDeviceOutcome(UMARequestDeviceOutcome::DISCOVERY_STOP_FAILED);
+  Send(new BluetoothMsg_RequestDeviceError(
+      thread_id, request_id, WebBluetoothError::DiscoverySessionStopFailed));
+  request_device_sessions_.erase(std::make_pair(thread_id, request_id));
 }
 
 void BluetoothDispatcherHost::OnGATTConnectionCreated(
     int thread_id,
     int request_id,
     const std::string& device_instance_id,
+    base::TimeTicks start_time,
     scoped_ptr<device::BluetoothGattConnection> connection) {
   // TODO(ortuno): Save the BluetoothGattConnection so we can disconnect
   // from it.
+  RecordConnectGATTTimeSuccess(base::TimeTicks::Now() - start_time);
+  RecordConnectGATTOutcome(UMAConnectGATTOutcome::SUCCESS);
   Send(new BluetoothMsg_ConnectGATTSuccess(thread_id, request_id,
                                            device_instance_id));
 }
@@ -588,13 +664,15 @@ void BluetoothDispatcherHost::OnCreateGATTConnectionError(
     int thread_id,
     int request_id,
     const std::string& device_instance_id,
+    base::TimeTicks start_time,
     device::BluetoothDevice::ConnectErrorCode error_code) {
   // There was an error creating the ATT Bearer so we reject with
   // NetworkError.
   // https://webbluetoothchrome.github.io/web-bluetooth/#dom-bluetoothdevice-connectgatt
+  RecordConnectGATTTimeFailed(base::TimeTicks::Now() - start_time);
+  // RecordConnectGATTOutcome is called by TranslateConnectError.
   Send(new BluetoothMsg_ConnectGATTError(thread_id, request_id,
-                                         BluetoothError::NETWORK,
-                                         GetConnectErrorMessage(error_code)));
+                                         TranslateConnectError(error_code)));
 }
 
 void BluetoothDispatcherHost::OnServicesDiscovered(
@@ -606,9 +684,9 @@ void BluetoothDispatcherHost::OnServicesDiscovered(
 
   device::BluetoothDevice* device = adapter_->GetDevice(device_instance_id);
   if (device == nullptr) {  // See "NETWORK_ERROR Note" above.
-    Send(new BluetoothMsg_GetPrimaryServiceError(thread_id, request_id,
-                                                 BluetoothError::NETWORK,
-                                                 kDeviceNoLongerInRange));
+    RecordGetPrimaryServiceOutcome(UMAGetPrimaryServiceOutcome::NO_DEVICE);
+    Send(new BluetoothMsg_GetPrimaryServiceError(
+        thread_id, request_id, WebBluetoothError::DeviceNoLongerInRange));
     return;
   }
   for (BluetoothGattService* service : device->GetGattServices()) {
@@ -623,19 +701,22 @@ void BluetoothDispatcherHost::OnServicesDiscovered(
       if (!insert_result.second)
         DCHECK(insert_result.first->second == device_instance_id);
 
+      RecordGetPrimaryServiceOutcome(UMAGetPrimaryServiceOutcome::SUCCESS);
       Send(new BluetoothMsg_GetPrimaryServiceSuccess(thread_id, request_id,
                                                      service_identifier));
       return;
     }
   }
+  RecordGetPrimaryServiceOutcome(UMAGetPrimaryServiceOutcome::NOT_FOUND);
   Send(new BluetoothMsg_GetPrimaryServiceError(
-      thread_id, request_id, BluetoothError::NOT_FOUND, kServiceNotFound));
+      thread_id, request_id, WebBluetoothError::ServiceNotFound));
 }
 
 void BluetoothDispatcherHost::OnCharacteristicValueRead(
     int thread_id,
     int request_id,
     const std::vector<uint8>& value) {
+  RecordCharacteristicReadValueOutcome(UMAGATTOperationOutcome::SUCCESS);
   Send(new BluetoothMsg_ReadCharacteristicValueSuccess(thread_id, request_id,
                                                        value));
 }
@@ -644,13 +725,15 @@ void BluetoothDispatcherHost::OnCharacteristicReadValueError(
     int thread_id,
     int request_id,
     device::BluetoothGattService::GattErrorCode error_code) {
-  std::pair<BluetoothError, std::string> error = TranslateGATTError(error_code);
+  // TranslateGATTError calls RecordGATTOperationOutcome.
   Send(new BluetoothMsg_ReadCharacteristicValueError(
-      thread_id, request_id, error.first, error.second));
+      thread_id, request_id,
+      TranslateGATTError(error_code, UMAGATTOperation::CHARACTERISTIC_READ)));
 }
 
 void BluetoothDispatcherHost::OnWriteValueSuccess(int thread_id,
                                                   int request_id) {
+  RecordCharacteristicWriteValueOutcome(UMAGATTOperationOutcome::SUCCESS);
   Send(new BluetoothMsg_WriteCharacteristicValueSuccess(thread_id, request_id));
 }
 
@@ -658,10 +741,10 @@ void BluetoothDispatcherHost::OnWriteValueFailed(
     int thread_id,
     int request_id,
     device::BluetoothGattService::GattErrorCode error_code) {
-  std::pair<BluetoothError, std::string> error = TranslateGATTError(error_code);
-
+  // TranslateGATTError calls RecordGATTOperationOutcome.
   Send(new BluetoothMsg_WriteCharacteristicValueError(
-      thread_id, request_id, error.first, error.second));
+      thread_id, request_id,
+      TranslateGATTError(error_code, UMAGATTOperation::CHARACTERISTIC_WRITE)));
 }
 
 }  // namespace content

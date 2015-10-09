@@ -6,23 +6,26 @@
 #include "core/inspector/LayoutEditor.h"
 
 #include "core/css/CSSComputedStyleDeclaration.h"
-#include "core/css/CSSPrimitiveValue.h"
+#include "core/dom/NodeComputedStyle.h"
 #include "core/frame/FrameView.h"
 #include "core/inspector/InspectorCSSAgent.h"
+#include "core/inspector/InspectorHighlight.h"
 #include "core/layout/LayoutBox.h"
 #include "core/layout/LayoutInline.h"
 #include "core/layout/LayoutObject.h"
+#include "core/style/ComputedStyle.h"
 #include "platform/JSONValues.h"
 
 namespace blink {
 
 namespace {
 
-PassRefPtr<JSONObject> createAnchor(float x, float y, const String& propertyName, FloatPoint deltaVector, PassRefPtr<JSONObject> valueDescription)
+PassRefPtr<JSONObject> createAnchor(const FloatPoint& point, const String& type, const String& propertyName, FloatPoint deltaVector, PassRefPtr<JSONObject> valueDescription)
 {
     RefPtr<JSONObject> object = JSONObject::create();
-    object->setNumber("x", x);
-    object->setNumber("y", y);
+    object->setNumber("x", point.x());
+    object->setNumber("y", point.y());
+    object->setString("type", type);
     object->setString("propertyName", propertyName);
 
     RefPtr<JSONObject> deltaVectorJSON = JSONObject::create();
@@ -33,14 +36,6 @@ PassRefPtr<JSONObject> createAnchor(float x, float y, const String& propertyName
     return object.release();
 }
 
-void contentsQuadToViewport(const FrameView* view, FloatQuad& quad)
-{
-    quad.setP1(view->contentsToViewport(roundedIntPoint(quad.p1())));
-    quad.setP2(view->contentsToViewport(roundedIntPoint(quad.p2())));
-    quad.setP3(view->contentsToViewport(roundedIntPoint(quad.p3())));
-    quad.setP4(view->contentsToViewport(roundedIntPoint(quad.p4())));
-}
-
 FloatPoint orthogonalVector(FloatPoint from, FloatPoint to, FloatPoint defaultVector)
 {
     if (from == to)
@@ -49,10 +44,104 @@ FloatPoint orthogonalVector(FloatPoint from, FloatPoint to, FloatPoint defaultVe
     return FloatPoint(to.y() - from.y(), from.x() - to.x());
 }
 
+FloatPoint mean(const FloatPoint& p1, const FloatPoint& p2)
+{
+    float x = (p1.x() + p2.x()) / 2;
+    float y = (p1.y() + p2.y()) / 2;
+    return FloatPoint(x, y);
+}
+
+FloatQuad means(const FloatQuad& quad)
+{
+    FloatQuad result;
+    result.setP1(mean(quad.p1(), quad.p2()));
+    result.setP2(mean(quad.p2(), quad.p3()));
+    result.setP3(mean(quad.p3(), quad.p4()));
+    result.setP4(mean(quad.p4(), quad.p1()));
+    return result;
+}
+
+FloatQuad orthogonalVectors(const FloatQuad& quad)
+{
+    FloatQuad result;
+    result.setP1(orthogonalVector(quad.p1(), quad.p2(), FloatPoint(0, -1)));
+    result.setP2(orthogonalVector(quad.p2(), quad.p3(), FloatPoint(1, 0)));
+    result.setP3(orthogonalVector(quad.p3(), quad.p4(), FloatPoint(0, 1)));
+    result.setP4(orthogonalVector(quad.p4(), quad.p1(), FloatPoint(-1, 0)));
+    return result;
+}
+
+float det(float a11, float a12, float a21, float a22)
+{
+    return a11 * a22 - a12 * a21;
+}
+
+FloatPoint projection(const FloatPoint& anchor, const FloatPoint& orthogonalVector, const FloatPoint& point)
+{
+    float a1 = orthogonalVector.x();
+    float b1 = orthogonalVector.y();
+    float c1 = - anchor.x() * a1 - anchor.y() * b1;
+
+    float a2 = orthogonalVector.y();
+    float b2 = - orthogonalVector.x();
+    float c2 = - point.x() * a2 - point.y() * b2;
+    float d = det(a1, b1, a2, b2);
+    ASSERT(d < 0);
+    float x = - det(c1, b1, c2, b2) / d;
+    float y = - det(a1, c1, a2, c2) / d;
+    return FloatPoint(x, y);
+}
+
+FloatPoint translatePoint(const FloatPoint& point, const FloatPoint& orthogonalVector, float distance)
+{
+    float d = sqrt(orthogonalVector.x() * orthogonalVector.x() + orthogonalVector.y() * orthogonalVector.y());
+    float dx = - orthogonalVector.y() * distance / d;
+    float dy = orthogonalVector.x() * distance / d;
+    return FloatPoint(point.x() + dx, point.y() + dy);
+}
+
+FloatQuad translateAndProject(const FloatQuad& origin, const FloatQuad& orthogonals, const FloatQuad& projectOn, float distance)
+{
+    FloatQuad result;
+    result.setP1(projection(projectOn.p1(), orthogonals.p1(), translatePoint(origin.p1(), orthogonals.p1(), distance)));
+    result.setP2(projection(projectOn.p2(), orthogonals.p2(), translatePoint(origin.p2(), orthogonals.p2(), distance)));
+    // We want to translate at top and bottom point in the same direction, so we use p1 here.
+    result.setP3(projection(projectOn.p3(), orthogonals.p3(), translatePoint(origin.p3(), orthogonals.p1(), distance)));
+    result.setP4(projection(projectOn.p4(), orthogonals.p4(), translatePoint(origin.p4(), orthogonals.p2(), distance)));
+    return result;
+}
+
+bool isMutableUnitType(CSSPrimitiveValue::UnitType unitType)
+{
+    return unitType == CSSPrimitiveValue::UnitType::Pixels || unitType == CSSPrimitiveValue::UnitType::Ems || unitType == CSSPrimitiveValue::UnitType::Percentage || unitType == CSSPrimitiveValue::UnitType::Rems;
+}
+
+String truncateZeroes(const String& number)
+{
+    if (!number.contains('.'))
+        return number;
+
+    int removeCount = 0;
+    while (number[number.length() - removeCount - 1] == '0')
+        removeCount++;
+
+    if (number[number.length() - removeCount - 1] == '.')
+        removeCount++;
+
+    return number.left(number.length() - removeCount);
+}
+
+float toValidValue(CSSPropertyID propertyId, float newValue)
+{
+    if (CSSPropertyPaddingBottom <= propertyId && propertyId <= CSSPropertyPaddingTop)
+        return newValue >= 0 ? newValue : 0;
+
+    return newValue;
+}
 } // namespace
 
 LayoutEditor::LayoutEditor(InspectorCSSAgent* cssAgent)
-    : m_node(nullptr)
+    : m_element(nullptr)
     , m_cssAgent(cssAgent)
     , m_changingProperty(CSSPropertyInvalid)
     , m_propertyInitialValue(0)
@@ -61,73 +150,41 @@ LayoutEditor::LayoutEditor(InspectorCSSAgent* cssAgent)
 
 DEFINE_TRACE(LayoutEditor)
 {
-    visitor->trace(m_node);
+    visitor->trace(m_element);
     visitor->trace(m_cssAgent);
 }
 
 void LayoutEditor::setNode(Node* node)
 {
-    m_node = node;
+    m_element = node && node->isElementNode() ? toElement(node) : nullptr;
     m_changingProperty = CSSPropertyInvalid;
     m_propertyInitialValue = 0;
 }
 
 PassRefPtr<JSONObject> LayoutEditor::buildJSONInfo() const
 {
-    if (!m_node)
+    if (!m_element)
         return nullptr;
 
-    LayoutObject* layoutObject = m_node->layoutObject();
-
-    if (!layoutObject)
-        return nullptr;
-
-    FrameView* containingView = layoutObject->frameView();
-    if (!containingView)
-        return nullptr;
-    if (!layoutObject->isBox() && !layoutObject->isLayoutInline())
-        return nullptr;
-
-    LayoutRect paddingBox;
-
-    if (layoutObject->isBox()) {
-        LayoutBox* layoutBox = toLayoutBox(layoutObject);
-
-        // LayoutBox returns the "pure" content area box, exclusive of the scrollbars (if present), which also count towards the content area in CSS.
-        const int verticalScrollbarWidth = layoutBox->verticalScrollbarWidth();
-        const int horizontalScrollbarHeight = layoutBox->horizontalScrollbarHeight();
-
-        paddingBox = layoutBox->paddingBoxRect();
-        paddingBox.setWidth(paddingBox.width() + verticalScrollbarWidth);
-        paddingBox.setHeight(paddingBox.height() + horizontalScrollbarHeight);
-    } else {
-        LayoutInline* layoutInline = toLayoutInline(layoutObject);
-        LayoutRect borderBox = LayoutRect(layoutInline->linesBoundingBox());
-        paddingBox = LayoutRect(borderBox.x() + layoutInline->borderLeft(), borderBox.y() + layoutInline->borderTop(),
-            borderBox.width() - layoutInline->borderLeft() - layoutInline->borderRight(), borderBox.height() - layoutInline->borderTop() - layoutInline->borderBottom());
-    }
-
-    FloatQuad padding = layoutObject->localToAbsoluteQuad(FloatRect(paddingBox));
-    contentsQuadToViewport(containingView, padding);
-
-    float xLeft = (padding.p1().x() + padding.p4().x()) / 2;
-    float yLeft = (padding.p1().y() + padding.p4().y()) / 2;
-    FloatPoint orthoLeft = orthogonalVector(padding.p4(), padding.p1(), FloatPoint(-1, 0));
-
-    float xRight = (padding.p2().x() + padding.p3().x()) / 2;
-    float yRight = (padding.p2().y() + padding.p3().y()) / 2;
-    FloatPoint orthoRight = orthogonalVector(padding.p2(), padding.p3(), FloatPoint(1, 0));
+    FloatQuad content, padding, border, margin;
+    InspectorHighlight::buildNodeQuads(m_element.get(), &content, &padding, &border, &margin);
+    FloatQuad orthogonals = orthogonalVectors(padding);
 
     RefPtr<JSONObject> object = JSONObject::create();
     RefPtr<JSONArray> anchors = JSONArray::create();
+    FloatQuad contentMeans = means(content);
 
-    RefPtr<JSONObject> paddingLeftDescription = createValueDescription("padding-left");
-    if (paddingLeftDescription)
-        anchors->pushObject(createAnchor(xLeft, yLeft, "padding-left", orthoLeft, paddingLeftDescription.release()));
+    FloatQuad paddingHandles = translateAndProject(contentMeans, orthogonals, padding, 0);
+    appendAnchorFor(anchors.get(), "padding", "padding-top", paddingHandles.p1(), orthogonals.p1());
+    appendAnchorFor(anchors.get(), "padding", "padding-right", paddingHandles.p2(), orthogonals.p2());
+    appendAnchorFor(anchors.get(), "padding", "padding-bottom", paddingHandles.p3(), orthogonals.p3());
+    appendAnchorFor(anchors.get(), "padding", "padding-left", paddingHandles.p4(), orthogonals.p4());
 
-    RefPtr<JSONObject> paddingRightDescription = createValueDescription("padding-right");
-    if (paddingRightDescription)
-        anchors->pushObject(createAnchor(xRight, yRight, "padding-right", orthoRight, paddingRightDescription.release()));
+    FloatQuad marginHandles = translateAndProject(contentMeans, orthogonals, margin, 12);
+    appendAnchorFor(anchors.get(), "margin", "margin-top", marginHandles.p1(), orthogonals.p1());
+    appendAnchorFor(anchors.get(), "margin", "margin-right", marginHandles.p2(), orthogonals.p2());
+    appendAnchorFor(anchors.get(), "margin", "margin-bottom", marginHandles.p3(), orthogonals.p3());
+    appendAnchorFor(anchors.get(), "margin", "margin-left", marginHandles.p4(), orthogonals.p4());
 
     object->setArray("anchors", anchors.release());
     return object.release();
@@ -135,9 +192,12 @@ PassRefPtr<JSONObject> LayoutEditor::buildJSONInfo() const
 
 RefPtrWillBeRawPtr<CSSPrimitiveValue> LayoutEditor::getPropertyCSSValue(CSSPropertyID property) const
 {
-    RefPtrWillBeRawPtr<CSSComputedStyleDeclaration> computedStyleInfo = CSSComputedStyleDeclaration::create(m_node, true);
-    RefPtrWillBeRawPtr<CSSValue> cssValue = computedStyleInfo->getPropertyCSSValue(property);
-    if (!cssValue->isPrimitiveValue())
+    RefPtrWillBeRawPtr<CSSStyleDeclaration> style = m_cssAgent->findEffectiveDeclaration(m_element.get(), property);
+    if (!style)
+        return nullptr;
+
+    RefPtrWillBeRawPtr<CSSValue> cssValue = style->getPropertyCSSValueInternal(property);
+    if (!cssValue || !cssValue->isPrimitiveValue())
         return nullptr;
 
     return toCSSPrimitiveValue(cssValue.get());
@@ -146,35 +206,63 @@ RefPtrWillBeRawPtr<CSSPrimitiveValue> LayoutEditor::getPropertyCSSValue(CSSPrope
 PassRefPtr<JSONObject> LayoutEditor::createValueDescription(const String& propertyName) const
 {
     RefPtrWillBeRawPtr<CSSPrimitiveValue> cssValue = getPropertyCSSValue(cssPropertyID(propertyName));
-    if (!cssValue)
+    if (cssValue && !(cssValue->isLength() || cssValue->isPercentage()))
         return nullptr;
 
     RefPtr<JSONObject> object = JSONObject::create();
-    object->setNumber("value", cssValue->getFloatValue());
-    object->setString("unit", "px");
+    object->setNumber("value", cssValue ? cssValue->getFloatValue() : 0);
+    CSSPrimitiveValue::UnitType unitType = cssValue ? cssValue->typeWithCalcResolved() : CSSPrimitiveValue::UnitType::Pixels;
+    object->setString("unit", CSSPrimitiveValue::unitTypeToString(unitType));
+    // TODO: Support an editing of other popular units like: em, rem
+    object->setBoolean("mutable", isMutableUnitType(unitType));
     return object.release();
+}
+
+void LayoutEditor::appendAnchorFor(JSONArray* anchors, const String& type, const String& propertyName, const FloatPoint& position, const FloatPoint& orthogonalVector) const
+{
+    RefPtr<JSONObject> description = createValueDescription(propertyName);
+    if (description)
+        anchors->pushObject(createAnchor(position, type, propertyName, orthogonalVector, description.release()));
 }
 
 void LayoutEditor::overlayStartedPropertyChange(const String& anchorName)
 {
     m_changingProperty = cssPropertyID(anchorName);
-    if (!m_node || !m_changingProperty)
+    if (!m_element || !m_changingProperty)
         return;
 
     RefPtrWillBeRawPtr<CSSPrimitiveValue> cssValue = getPropertyCSSValue(m_changingProperty);
-    if (!cssValue) {
-        m_changingProperty = CSSPropertyInvalid;
+    m_valueUnitType = cssValue ? cssValue->typeWithCalcResolved() : CSSPrimitiveValue::UnitType::Pixels;
+    if (!isMutableUnitType(m_valueUnitType))
         return;
-    }
 
-    m_propertyInitialValue = cssValue->getFloatValue();
+    switch (m_valueUnitType) {
+    case CSSPrimitiveValue::UnitType::Pixels:
+        m_factor = 1;
+        break;
+    case CSSPrimitiveValue::UnitType::Ems:
+        m_factor = m_element->computedStyle()->computedFontSize();
+        break;
+    case CSSPrimitiveValue::UnitType::Percentage:
+        // It is hard to correctly support percentages, so we decided hack it this way: 100% = 1000px
+        m_factor = 10;
+        break;
+    case CSSPrimitiveValue::UnitType::Rems:
+        m_factor = m_element->document().computedStyle()->computedFontSize();
+        break;
+    default:
+        ASSERT_NOT_REACHED();
+        break;
+    }
+    m_propertyInitialValue = cssValue ? cssValue->getFloatValue() : 0;
 }
 
 void LayoutEditor::overlayPropertyChanged(float cssDelta)
 {
-    if (m_changingProperty && m_node->isElementNode()) {
+    if (m_changingProperty && m_factor) {
         String errorString;
-        m_cssAgent->setCSSPropertyValue(&errorString, toElement(m_node.get()), m_changingProperty, String::number(cssDelta + m_propertyInitialValue) + "px");
+        float newValue = toValidValue(m_changingProperty, cssDelta / m_factor + m_propertyInitialValue);
+        m_cssAgent->setCSSPropertyValue(&errorString, m_element.get(), m_changingProperty, truncateZeroes(String::format("%.2f", newValue)) + CSSPrimitiveValue::unitTypeToString(m_valueUnitType));
     }
 }
 
@@ -182,6 +270,8 @@ void LayoutEditor::overlayEndedPropertyChange()
 {
     m_changingProperty = CSSPropertyInvalid;
     m_propertyInitialValue = 0;
+    m_factor = 0;
+    m_valueUnitType = CSSPrimitiveValue::UnitType::Unknown;
 }
 
 } // namespace blink

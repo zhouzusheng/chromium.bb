@@ -23,13 +23,14 @@ AudioOutputDevices status=experimental
 AudioVideoTracks depends_on=Media, status=experimental
 AuthorShadowDOMForAnyElement
 BackgroundSync status=experimental
+BackgroundSyncPeriodic status=experimental
 BackgroundSyncV2 status=experimental
 // Enable bleeding-edge code to make Blink draw content faster.
 // The changes enabled behind this flag are very likely to break lots of content.
 // ** DO NOT use this flag unless you know what you are doing. **
 BleedingEdgeFastPaths
-BlinkScheduler
-ClientHints status=experimental
+CacheStorageMatchAll status=experimental
+ClientHints status=stable
 ColumnFill status=experimental
 CompositedSelectionUpdate
 CompositorWorker status=experimental
@@ -46,9 +47,9 @@ CSSFontSizeAdjust status=experimental
 CSSGridLayout status=experimental
 CSSIndependentTransformProperties status=experimental
 CSSMaskSourceType status=experimental
-CSSMotionPath status=experimental
+CSSMotionPath status=stable
 CSSOMSmoothScroll status=experimental
-CSSScrollBlocksOn status=experimental
+CSSStickyPosition
 CSSTouchActionPanDirections status=experimental
 CSSViewport status=experimental
 CSSScrollSnapPoints status=test
@@ -58,7 +59,7 @@ Database status=stable
 DecodeToYUV status=experimental
 DeviceLight status=experimental
 DisplayList2dCanvas status=stable
-DOMConvenienceAPI status=experimental
+DurableStorage status=experimental
 ForceDisplayList2dCanvas
 EncryptedMedia status=stable
 EnumerateDevices status=experimental
@@ -76,16 +77,17 @@ Geofencing status=experimental
 GeometryInterfaces status=test
 GlobalCacheStorage status=stable
 ImageColorProfiles
+ImageOrientation status=test
 ImageRenderingPixelated status=stable
 IndexedDBExperimental status=experimental
-InputDevice status=experimental
+InputDeviceCapabilities status=experimental
 InputModeAttribute status=experimental
 KeyboardEventCode status=experimental
 KeyboardEventKey status=test
 LangAttributeAwareFormControlUI
-LinkPreconnect status=experimental
+LinkPreconnect status=stable
 LinkPreload status=experimental
-LinkHeader status=experimental
+LinkHeader status=stable
 FractionalScrollOffsets status=experimental
 Media status=stable
 MediaCapture
@@ -97,17 +99,24 @@ MediaStreamSpeech status=experimental
 MemoryInfoInWorkers status=experimental
 NavigatorConnect status=experimental
 NavigatorContentUtils
+WebNFC status=experimental
 NetworkInformation status=stable
+NewMediaPlaybackUi
 NotificationConstructor status=stable
 NotificationExperimental status=test
 Notifications status=stable
 OrientationEvent
 // Only enabled on Android, and for certain layout tests on Linux.
+// TODO(watk): Delete this in favor of ForceOverlayFullscreenVideo after
+// removing chromium's dependency on it. http://crbug.com/511376
 OverlayFullscreenVideo
+// For simulating Android's overlay fullscreen video in layout tests on Linux.
+ForceOverlayFullscreenVideo
 OverlayScrollbars
 PagePopup status=stable
-PathOpsSVGClipping status=experimental
+PathOpsSVGClipping status=stable
 Permissions status=stable
+PermissionsRequestRevoke status=experimental
 PointerEvent
 PreciseMemoryInfo
 // This feature is deprecated and replaced by EncryptedMedia.
@@ -123,23 +132,27 @@ PushMessaging status=stable
 PushMessagingData status=test
 QuotaPromise status=experimental
 ReducedReferrerGranularity
+RequestIdleCallback status=experimental
 RequestAutocomplete status=test
-SandboxBlocksModals status=experimental
+RestrictIFramePermissions
+SandboxBlocksModals status=stable
 ScreenOrientation status=stable
 ScriptedSpeech status=stable
 // Implements documentElement.scrollTop/Left and bodyElement.scrollTop/Left
 // as per the spec, matching other Web engines.
-ScrollTopLeftInterop
+ScrollTopLeftInterop status=experimental
 SelectionForComposedTree status=stable
-ServiceWorkerCacheAddAll status=experimental
+SelectionPaintingWithoutSelectionGaps
 ServiceWorkerClientAttributes status=stable
 ServiceWorkerNotifications status=stable
-ServiceWorkerPerformanceTimeline status=experimental
+ServiceWorkerPerformanceTimeline status=stable
+ServiceWorkerWindowClientNavigate status=experimental
+ShadowRootClosedMode status=experimental
 ShadowRootDelegatesFocus status=experimental
-SharedArrayBuffer status=experimental
+SharedArrayBuffer
 SharedWorker status=stable
 SlimmingPaint status=stable
-SlimmingPaintCompositorLayerization depends_on=SlimmingPaint
+SlimmingPaintV2 depends_on=SlimmingPaint
 SlimmingPaintUnderInvalidationChecking depends_on=SlimmingPaint
 SlimmingPaintStrictCullRectClipping depends_on=SlimmingPaint
 StaleWhileRevalidateCacheControl
@@ -147,8 +160,8 @@ StaleWhileRevalidateCacheControl
 // be shipped would be enabled. Instead, remove the flag from the shipping
 // interface.
 ExperimentalStream status=experimental
+ReferrerPolicyAttribute status=experimental
 Suborigins status=experimental
-TextBlob
 ThreadedParserDataReceiver
 // Many websites disable mouse support when touch APIs are available.  We'd
 // like to enable this always but can't until more websites fix this bug.
@@ -156,8 +169,10 @@ ThreadedParserDataReceiver
 // touchscreen) in ApplyWebPreferences.
 Touch status=stable
 TouchIconLoading
+TrustedEvents status=stable
+TrustedEventsDefaultAction
 UnsafeES3APIs
-UnsandboxedAuxiliary status=experimental
+UnsandboxedAuxiliary status=stable
 UserSelectAll status=experimental
 WebAnimationsAPI status=experimental
 WebAnimationsSVG status=experimental
@@ -165,10 +180,13 @@ WebAudio condition=WEB_AUDIO, status=stable
 WebBluetooth
 WebGLDraftExtensions status=experimental
 WebGLImageChromium
+WebUSB status=experimental
 WebVR depends_on=GeometryInterfaces
 WebVTTRegions depends_on=Media, status=experimental
 V8IdleTasks
 XSLT status=stable
 SVG1DOM status=stable
+smil status=stable
 ScrollCustomization
-ScrollRestoration status=experimental
+ScrollRestoration status=stable
+WakeLock status=experimental

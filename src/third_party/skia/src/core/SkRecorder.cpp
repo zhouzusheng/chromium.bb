@@ -186,7 +186,7 @@ void SkRecorder::onDrawBitmapRect(const SkBitmap& bitmap,
                                   const SkRect* src,
                                   const SkRect& dst,
                                   const SkPaint* paint,
-                                  DrawBitmapRectFlags flags) {
+                                  SrcRectConstraint constraint) {
 #ifdef WRAP_BITMAP_AS_IMAGE
     // TODO: need a way to support the flags for images...
     SkAutoTUnref<SkImage> image(SkImage::NewFromBitmap(bitmap));
@@ -194,15 +194,13 @@ void SkRecorder::onDrawBitmapRect(const SkBitmap& bitmap,
         this->onDrawImageRect(image, src, dst, paint);
     }
 #else
-    TRY_MINIRECORDER(drawBitmapRectToRect, bitmap, src, dst, paint, flags);
-    if (kBleed_DrawBitmapRectFlag == flags) {
-        APPEND(DrawBitmapRectToRectBleed,
-               this->copy(paint), bitmap, this->copy(src), dst);
+    TRY_MINIRECORDER(drawBitmapRect, bitmap, src, dst, paint, constraint);
+    if (kFast_SrcRectConstraint == constraint) {
+        APPEND(DrawBitmapRectFast, this->copy(paint), bitmap, this->copy(src), dst);
         return;
     }
-    SkASSERT(kNone_DrawBitmapRectFlag == flags);
-    APPEND(DrawBitmapRectToRect,
-           this->copy(paint), bitmap, this->copy(src), dst);
+    SkASSERT(kStrict_SrcRectConstraint == constraint);
+    APPEND(DrawBitmapRect, this->copy(paint), bitmap, this->copy(src), dst);
 #endif
 }
 
@@ -225,10 +223,9 @@ void SkRecorder::onDrawImage(const SkImage* image, SkScalar left, SkScalar top,
     APPEND(DrawImage, this->copy(paint), image, left, top);
 }
 
-void SkRecorder::onDrawImageRect(const SkImage* image, const SkRect* src,
-                                 const SkRect& dst,
-                                 const SkPaint* paint) {
-    APPEND(DrawImageRect, this->copy(paint), image, this->copy(src), dst);
+void SkRecorder::onDrawImageRect(const SkImage* image, const SkRect* src, const SkRect& dst,
+                                 const SkPaint* paint, SrcRectConstraint constraint) {
+    APPEND(DrawImageRect, this->copy(paint), image, this->copy(src), dst, constraint);
 }
 
 void SkRecorder::onDrawImageNine(const SkImage* image, const SkIRect& center,
@@ -248,7 +245,7 @@ void SkRecorder::onDrawText(const void* text, size_t byteLength,
 
 void SkRecorder::onDrawPosText(const void* text, size_t byteLength,
                                const SkPoint pos[], const SkPaint& paint) {
-    const unsigned points = paint.countText(text, byteLength);
+    const int points = paint.countText(text, byteLength);
     APPEND(DrawPosText,
            paint,
            this->copy((const char*)text, byteLength),
@@ -258,7 +255,7 @@ void SkRecorder::onDrawPosText(const void* text, size_t byteLength,
 
 void SkRecorder::onDrawPosTextH(const void* text, size_t byteLength,
                                 const SkScalar xpos[], SkScalar constY, const SkPaint& paint) {
-    const unsigned points = paint.countText(text, byteLength);
+    const int points = paint.countText(text, byteLength);
     APPEND(DrawPosTextH,
            paint,
            this->copy((const char*)text, byteLength),

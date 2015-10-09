@@ -164,7 +164,6 @@ public:
 
     const LayoutSize& offsetForInFlowPosition() const { return m_offsetForInFlowPosition; }
 
-    void blockSelectionGapsBoundsChanged();
     void addBlockSelectionGapsBounds(const LayoutRect&);
     void clearBlockSelectionGapsBounds();
     void invalidatePaintForBlockSelectionGaps();
@@ -236,7 +235,6 @@ public:
 
     // The hitTest() method looks for mouse events by walking layers that intersect the point from front to back.
     bool hitTest(HitTestResult&);
-    bool hitTest(const HitTestRequest&, const HitTestLocation&, HitTestResult&);
 
     // Pass offsetFromRoot if known.
     bool intersectsDamageRect(const LayoutRect& layerBounds, const LayoutRect& damageRect, const DeprecatedPaintLayer* rootLayer, const LayoutPoint* offsetFromRoot = 0) const;
@@ -277,7 +275,7 @@ public:
     // resulting transform has transform-origin baked in. If the layer does not have a transform,
     // returns the identity matrix.
     TransformationMatrix currentTransform() const;
-    TransformationMatrix renderableTransform(PaintBehavior) const;
+    TransformationMatrix renderableTransform(GlobalPaintFlags) const;
 
     // Get the perspective transform, which is applied to transformed sublayers.
     // Returns true if the layer has a -webkit-perspective.
@@ -340,12 +338,12 @@ public:
     // Computes the bounding paint invalidation rect for |layoutObject|, in the coordinate space of |paintInvalidationContainer|'s GraphicsLayer backing.
     static LayoutRect computePaintInvalidationRect(const LayoutObject*, const DeprecatedPaintLayer* paintInvalidationContainer, const PaintInvalidationState* = 0);
 
-    bool paintsWithTransparency(PaintBehavior paintBehavior) const
+    bool paintsWithTransparency(GlobalPaintFlags globalPaintFlags) const
     {
-        return isTransparent() && ((paintBehavior & PaintBehaviorFlattenCompositingLayers) || compositingState() != PaintsIntoOwnBacking);
+        return isTransparent() && ((globalPaintFlags & GlobalPaintFlattenCompositingLayers) || compositingState() != PaintsIntoOwnBacking);
     }
 
-    bool paintsWithTransform(PaintBehavior) const;
+    bool paintsWithTransform(GlobalPaintFlags) const;
 
     // Returns true if background phase is painted opaque in the given rect.
     // The query rect is given in local coordinates.
@@ -414,6 +412,7 @@ public:
             , filterAncestor(0)
             , clippingContainer(0)
             , ancestorScrollingLayer(0)
+            , nearestFixedPositionLayer(0)
             , scrollParent(0)
             , clipParent(0)
             , hasAncestorWithClipPath(false)
@@ -425,6 +424,7 @@ public:
         const DeprecatedPaintLayer* filterAncestor;
         const LayoutObject* clippingContainer;
         const DeprecatedPaintLayer* ancestorScrollingLayer;
+        const DeprecatedPaintLayer* nearestFixedPositionLayer;
 
         // A scroll parent is a compositor concept. It's only needed in blink
         // because we need to use it as a promotion trigger. A layer has a
@@ -478,6 +478,7 @@ public:
     const DeprecatedPaintLayer* filterAncestor() const { return ancestorDependentCompositingInputs().filterAncestor; }
     const LayoutObject* clippingContainer() const { return ancestorDependentCompositingInputs().clippingContainer; }
     const DeprecatedPaintLayer* ancestorScrollingLayer() const { return ancestorDependentCompositingInputs().ancestorScrollingLayer; }
+    const DeprecatedPaintLayer* nearestFixedPositionLayer() const { return ancestorDependentCompositingInputs().nearestFixedPositionLayer; }
     DeprecatedPaintLayer* scrollParent() const { return const_cast<DeprecatedPaintLayer*>(ancestorDependentCompositingInputs().scrollParent); }
     DeprecatedPaintLayer* clipParent() const { return const_cast<DeprecatedPaintLayer*>(ancestorDependentCompositingInputs().clipParent); }
     bool hasAncestorWithClipPath() const { return ancestorDependentCompositingInputs().hasAncestorWithClipPath; }
@@ -514,7 +515,7 @@ public:
         ASSERT(!m_hasSelfPaintingLayerDescendantDirty);
         return m_hasSelfPaintingLayerDescendant;
     }
-    LayoutRect paintingExtent(const DeprecatedPaintLayer* rootLayer, const LayoutRect& paintDirtyRect, const LayoutSize& subPixelAccumulation, PaintBehavior);
+    LayoutRect paintingExtent(const DeprecatedPaintLayer* rootLayer, const LayoutRect& paintDirtyRect, const LayoutSize& subPixelAccumulation, GlobalPaintFlags);
     void appendSingleFragmentIgnoringPagination(DeprecatedPaintLayerFragments&, const DeprecatedPaintLayer* rootLayer, const LayoutRect& dirtyRect, ClipRectsCacheSlot, OverlayScrollbarSizeRelevancy = IgnoreOverlayScrollbarSize, ShouldRespectOverflowClip = RespectOverflowClip, const LayoutPoint* offsetFromRoot = 0, const LayoutSize& subPixelAccumulation = LayoutSize());
     void collectFragments(DeprecatedPaintLayerFragments&, const DeprecatedPaintLayer* rootLayer, const LayoutRect& dirtyRect,
         ClipRectsCacheSlot, OverlayScrollbarSizeRelevancy inOverlayScrollbarSizeRelevancy = IgnoreOverlayScrollbarSize,
@@ -534,7 +535,7 @@ public:
     };
 
     static LayoutRect transparencyClipBox(const DeprecatedPaintLayer*, const DeprecatedPaintLayer* rootLayer, TransparencyClipBoxBehavior transparencyBehavior,
-        TransparencyClipBoxMode transparencyMode, const LayoutSize& subPixelAccumulation, PaintBehavior = 0);
+        TransparencyClipBoxMode transparencyMode, const LayoutSize& subPixelAccumulation, GlobalPaintFlags = GlobalPaintNormalPhase);
 
 private:
     // Bounding box in the coordinates of this layer.
@@ -605,6 +606,8 @@ private:
 
     void updatePaginationRecursive(bool needsPaginationUpdate = false);
     void clearPaginationRecursive();
+
+    void blockSelectionGapsBoundsChanged();
 
     DeprecatedPaintLayerType m_layerType;
 

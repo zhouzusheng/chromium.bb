@@ -20,6 +20,7 @@
 namespace content {
 
 class NavigationEntry;
+class NavigationHandle;
 class RenderFrameHost;
 class RenderViewHost;
 class WebContents;
@@ -97,13 +98,16 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
   // just swapped out.
   virtual void RenderViewDeleted(RenderViewHost* render_view_host) {}
 
-  // This method is invoked when the process for the current RenderView crashes.
-  // The WebContents continues to use the RenderViewHost, e.g. when the user
-  // reloads the current page. When the RenderViewHost itself is deleted, the
-  // RenderViewDeleted method will be invoked.
+  // This method is invoked when the process for the current main
+  // RenderFrameHost exits (usually by crashing, though possibly by other
+  // means). The WebContents continues to use the RenderFrameHost, e.g. when the
+  // user reloads the current page. When the RenderFrameHost itself is deleted,
+  // the RenderFrameDeleted method will be invoked.
   //
-  // Note that this is equivalent to
-  // RenderProcessHostObserver::RenderProcessExited().
+  // Note that this is triggered upstream through
+  // RenderProcessHostObserver::RenderProcessExited(); for code that doesn't
+  // otherwise need to be a WebContentsObserver, that API is probably a better
+  // choice.
   virtual void RenderProcessGone(base::TerminationStatus status) {}
 
   // This method is invoked when a WebContents swaps its visible RenderViewHost
@@ -112,6 +116,39 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
   // down.
   virtual void RenderViewHostChanged(RenderViewHost* old_host,
                                      RenderViewHost* new_host) {}
+
+  // Navigation related events ------------------------------------------------
+
+  // Called when a navigation started in the WebContents. |navigation_handle|
+  // is unique to a specific navigation. The same |navigation_handle| will be
+  // provided on subsequent calls to DidRedirect/Commit/FinishNavigation
+  // related to this navigation.
+  //
+  // Note that this is fired by navigations in any frame of the WebContents,
+  // not just the main frame.
+  //
+  // Note that more than one navigation can be ongoing in the same frame at the
+  // same time (including the main frame). Each will get its own
+  // NavigationHandle.
+  //
+  // Note that there is no guarantee that DidFinishNavigation will be called
+  // for any particular navigation before DidStartNavigation is called on the
+  // next.
+  virtual void DidStartNavigation(NavigationHandle* navigation_handle) {}
+
+  // Called when a navigation encountered a server redirect.
+  virtual void DidRedirectNavigation(NavigationHandle* navigation_handle) {}
+
+  // Called when a navigation was committed.
+  virtual void DidCommitNavigation(NavigationHandle* navigation_handle) {}
+
+  // Called when a navigation stopped in the WebContents. This happens when a
+  // navigation is either aborted, replaced by a new one, or the document load
+  // finishes. Note that |navigation_handle| will be destroyed at the end of
+  // this call, so do not keep a reference to it afterward.
+  virtual void DidFinishNavigation(NavigationHandle* navigation_handle) {}
+
+  // ---------------------------------------------------------------------------
 
   // This method is invoked after the WebContents decides which RenderFrameHost
   // to use for the next browser-initiated navigation, but before the navigation

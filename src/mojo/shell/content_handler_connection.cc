@@ -10,10 +10,12 @@ namespace mojo {
 namespace shell {
 
 ContentHandlerConnection::ContentHandlerConnection(
+    ApplicationInstance* originator,
     ApplicationManager* manager,
     const GURL& content_handler_url,
     const GURL& requestor_url,
-    const std::string& qualifier)
+    const std::string& qualifier,
+    const CapabilityFilter& filter)
     : manager_(manager),
       content_handler_url_(content_handler_url),
       content_handler_qualifier_(qualifier),
@@ -22,13 +24,14 @@ ContentHandlerConnection::ContentHandlerConnection(
   mojo::URLRequestPtr request(mojo::URLRequest::New());
   request->url = mojo::String::From(content_handler_url.spec());
   manager->ConnectToApplication(
-      request.Pass(), qualifier, requestor_url, GetProxy(&services),
-      nullptr, base::Closure());
+      originator, request.Pass(), qualifier, requestor_url, GetProxy(&services),
+      nullptr, filter, base::Closure());
   MessagePipe pipe;
   content_handler_.Bind(
       InterfacePtrInfo<ContentHandler>(pipe.handle0.Pass(), 0u));
   services->ConnectToService(ContentHandler::Name_, pipe.handle1.Pass());
-  content_handler_.set_error_handler(this);
+  content_handler_.set_connection_error_handler(
+      [this]() { CloseConnection(); });
 }
 
 void ContentHandlerConnection::CloseConnection() {
@@ -43,10 +46,6 @@ ContentHandlerConnection::~ContentHandlerConnection() {
   // If this DCHECK fails then something has tried to delete this object without
   // calling CloseConnection.
   DCHECK(connection_closed_);
-}
-
-void ContentHandlerConnection::OnConnectionError() {
-  CloseConnection();
 }
 
 }  // namespace shell

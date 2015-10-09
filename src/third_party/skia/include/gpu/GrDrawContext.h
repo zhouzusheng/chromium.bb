@@ -12,9 +12,9 @@
 #include "SkRefCnt.h"
 #include "SkSurfaceProps.h"
 
-class GrBatch;
 class GrClip;
 class GrContext;
+class GrDrawBatch;
 class GrDrawTarget;
 class GrPaint;
 class GrPathProcessor;
@@ -33,6 +33,7 @@ class SkPath;
 struct SkPoint;
 struct SkRect;
 class SkRRect;
+struct SkRSXform;
 class SkTextBlob;
 
 /*
@@ -222,6 +223,26 @@ public:
                       int indexCount);
 
     /**
+     * Draws textured sprites from an atlas with a paint.
+     *
+     * @param   paint           describes how to color pixels.
+     * @param   viewMatrix      transformation matrix
+     * @param   spriteCount     number of sprites.
+     * @param   xform           array of compressed transformation data, required.
+     * @param   texRect         array of texture rectangles used to access the paint.
+     * @param   colors          optional array of per-sprite colors, supercedes
+     *                          the paint's color field.
+     */
+    void drawAtlas(GrRenderTarget*,
+                   const GrClip&,
+                   const GrPaint& paint,
+                   const SkMatrix& viewMatrix,
+                   int spriteCount,
+                   const SkRSXform xform[],
+                   const SkRect texRect[],
+                   const SkColor colors[]);
+    
+    /**
      * Draws an oval.
      *
      * @param paint         describes how to color pixels.
@@ -237,6 +258,14 @@ public:
                   const SkRect& oval,
                   const GrStrokeInfo& strokeInfo);
 
+
+    /**
+     * Draws a batch
+     *
+     * @param paint    describes how to color pixels.
+     * @param batch    the batch to draw
+     */
+    void drawBatch(GrRenderTarget*, const GrClip&, const GrPaint&, GrDrawBatch*);
 
 private:
     friend class GrAtlasTextContext; // for access to drawBatch
@@ -259,7 +288,7 @@ private:
 
     // This entry point allows the GrTextContext-derived classes to add their batches to
     // the drawTarget.
-    void drawBatch(GrPipelineBuilder* pipelineBuilder, GrBatch* batch);
+    void drawBatch(GrPipelineBuilder* pipelineBuilder, GrDrawBatch* batch);
 
     GrContext*          fContext;     // owning context -> no ref
     GrDrawTarget*       fDrawTarget;

@@ -26,6 +26,9 @@
 #include "content/renderer/renderer_webcookiejar_impl.h"
 #include "ipc/ipc_message.h"
 #include "media/blink/webmediaplayer_delegate.h"
+#include "media/blink/webmediaplayer_params.h"
+#include "mojo/application/public/interfaces/service_provider.mojom.h"
+#include "mojo/application/public/interfaces/shell.mojom.h"
 #include "third_party/WebKit/public/platform/modules/app_banner/WebAppBannerClient.h"
 #include "third_party/WebKit/public/web/WebAXObject.h"
 #include "third_party/WebKit/public/web/WebDataSource.h"
@@ -40,6 +43,10 @@
 
 #if defined(OS_ANDROID)
 #include "content/renderer/media/android/renderer_media_player_manager.h"
+#endif
+
+#if defined(ENABLE_MOJO_MEDIA)
+#include "media/mojo/interfaces/service_factory.mojom.h"
 #endif
 
 class GURL;
@@ -370,6 +377,7 @@ class CONTENT_EXPORT RenderFrameImpl
       blink::WebLocalFrame* frame,
       const blink::WebURL& url,
       blink::WebMediaPlayerClient* client,
+      blink::WebMediaPlayerEncryptedMediaClient* encrypted_client,
       blink::WebContentDecryptionModule* initial_cdm);
   virtual blink::WebApplicationCacheHost* createApplicationCacheHost(
       blink::WebLocalFrame* frame,
@@ -386,10 +394,6 @@ class CONTENT_EXPORT RenderFrameImpl
   virtual blink::WebFrame* createChildFrame(
       blink::WebLocalFrame* parent,
       blink::WebTreeScopeType scope,
-      const blink::WebString& name,
-      blink::WebSandboxFlags sandboxFlags);
-  virtual blink::WebFrame* createChildFrame(
-      blink::WebLocalFrame* parent,
       const blink::WebString& name,
       blink::WebSandboxFlags sandboxFlags);
   virtual void didDisownOpener(blink::WebLocalFrame* frame);
@@ -446,7 +450,8 @@ class CONTENT_EXPORT RenderFrameImpl
                                blink::WebTextDirection direction);
   virtual void didChangeIcon(blink::WebLocalFrame* frame,
                              blink::WebIconURL::Type icon_type);
-  virtual void didFinishDocumentLoad(blink::WebLocalFrame* frame);
+  virtual void didFinishDocumentLoad(blink::WebLocalFrame* frame,
+                                     bool document_is_empty);
   virtual void didHandleOnloadEvents(blink::WebLocalFrame* frame);
   virtual void didFailLoad(blink::WebLocalFrame* frame,
                            const blink::WebURLError& error,
@@ -482,8 +487,6 @@ class CONTENT_EXPORT RenderFrameImpl
   virtual void didReceiveResponse(blink::WebLocalFrame* frame,
                                   unsigned identifier,
                                   const blink::WebURLResponse& response);
-  virtual void didFinishResourceLoad(blink::WebLocalFrame* frame,
-                                     unsigned identifier);
   virtual void didLoadResourceFromMemoryCache(
       blink::WebLocalFrame* frame,
       const blink::WebURLRequest& request,
@@ -547,7 +550,6 @@ class CONTENT_EXPORT RenderFrameImpl
         const blink::WebAXObject& end_object,
         int end_offset);
   virtual void didChangeManifest(blink::WebLocalFrame*);
-  virtual void didChangeDefaultPresentation(blink::WebLocalFrame*);
   virtual bool enterFullscreen();
   virtual bool exitFullscreen();
   virtual blink::WebPermissionClient* permissionClient();
@@ -557,6 +559,8 @@ class CONTENT_EXPORT RenderFrameImpl
                                        const blink::WebString& title);
   virtual void unregisterProtocolHandler(const blink::WebString& scheme,
                                          const blink::WebURL& url);
+  virtual blink::WebBluetooth* bluetooth();
+  virtual blink::WebUSBClient* usbClient();
 
 #if defined(ENABLE_WEBVR)
   blink::WebVRClient* webVRClient() override;
@@ -820,8 +824,8 @@ class CONTENT_EXPORT RenderFrameImpl
 #if defined(OS_ANDROID)
   blink::WebMediaPlayer* CreateAndroidWebMediaPlayer(
       blink::WebMediaPlayerClient* client,
-      media::MediaPermission* media_permission,
-      blink::WebContentDecryptionModule* initial_cdm);
+      blink::WebMediaPlayerEncryptedMediaClient* encrypted_client,
+      const media::WebMediaPlayerParams& params);
 
   RendererMediaPlayerManager* GetMediaPlayerManager();
 #endif
@@ -831,15 +835,19 @@ class CONTENT_EXPORT RenderFrameImpl
   media::MediaPermission* GetMediaPermission();
 
 #if defined(ENABLE_MOJO_MEDIA)
-  mojo::ServiceProvider* GetMediaServiceProvider();
+  media::interfaces::ServiceFactory* GetMediaServiceFactory();
 
-  // Called when a connection error happened on |media_service_provider_|.
-  void OnMediaServiceProviderConnectionError();
+  // Called when a connection error happened on |media_service_factory_|.
+  void OnMediaServiceFactoryConnectionError();
 #endif
 
   media::CdmFactory* GetCdmFactory();
 
   void RegisterMojoServices();
+
+  // Connects to a Mojo application and returns a proxy to its exposed
+  // ServiceProvider.
+  mojo::ServiceProviderPtr ConnectToApplication(const GURL& url);
 
   // Stores the WebLocalFrame we are associated with.  This is null from the
   // constructor until SetWebFrame is called, and it is null after
@@ -947,8 +955,8 @@ class CONTENT_EXPORT RenderFrameImpl
   MediaPermissionDispatcher* media_permission_dispatcher_;
 
 #if defined(ENABLE_MOJO_MEDIA)
-  // The media service provider attached to this frame, lazily initialized.
-  mojo::ServiceProviderPtr media_service_provider_;
+  // The media factory attached to this frame, lazily initialized.
+  media::interfaces::ServiceFactoryPtr media_service_factory_;
 #endif
 
   // MidiClient attached to this frame; lazily initialized.
@@ -977,6 +985,9 @@ class CONTENT_EXPORT RenderFrameImpl
   bool contains_media_player_;
 #endif
 
+  // True if this RenderFrame has ever played media.
+  bool has_played_media_;
+
   // The devtools agent for this frame; only created for main frame and
   // local roots.
   DevToolsAgent* devtools_agent_;
@@ -992,6 +1003,9 @@ class CONTENT_EXPORT RenderFrameImpl
   PresentationDispatcher* presentation_dispatcher_;
 
   ServiceRegistryImpl service_registry_;
+
+  // The shell proxy used to connect to Mojo applications.
+  mojo::ShellPtr mojo_shell_;
 
   // The screen orientation dispatcher attached to the frame, lazily
   // initialized.
@@ -1011,6 +1025,10 @@ class CONTENT_EXPORT RenderFrameImpl
   scoped_ptr<PermissionDispatcher> permission_client_;
 
   scoped_ptr<blink::WebAppBannerClient> app_banner_client_;
+
+  scoped_ptr<blink::WebBluetooth> bluetooth_;
+
+  scoped_ptr<blink::WebUSBClient> usb_client_;
 
 #if defined(ENABLE_WEBVR)
   // The VR dispatcher attached to the frame, lazily initialized.

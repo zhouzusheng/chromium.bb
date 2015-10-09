@@ -40,9 +40,10 @@ class CC_EXPORT DisplayListRasterSource : public RasterSource {
   bool IsSolidColor() const override;
   SkColor GetSolidColor() const override;
   gfx::Size GetSize() const override;
-  void GatherPixelRefs(const gfx::Rect& content_rect,
-                       float contents_scale,
-                       std::vector<SkPixelRef*>* pixel_refs) const override;
+  void GatherPixelRefs(
+      const gfx::Rect& content_rect,
+      float contents_scale,
+      std::vector<skia::PositionPixelRef>* pixel_refs) const override;
   bool CoversRect(const gfx::Rect& content_rect,
                   float contents_scale) const override;
   bool HasRecordings() const override;
@@ -66,6 +67,7 @@ class CC_EXPORT DisplayListRasterSource : public RasterSource {
   // These members are const as this raster source may be in use on another
   // thread and so should not be touched after construction.
   const scoped_refptr<DisplayItemList> display_list_;
+  const size_t painter_reported_memory_usage_;
   const SkColor background_color_;
   const bool requires_clear_;
   const bool can_use_lcd_text_;

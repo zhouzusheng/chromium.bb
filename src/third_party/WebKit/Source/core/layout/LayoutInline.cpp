@@ -32,6 +32,7 @@
 #include "core/layout/LayoutGeometryMap.h"
 #include "core/layout/LayoutTheme.h"
 #include "core/layout/LayoutView.h"
+#include "core/layout/api/LineLayoutBoxModel.h"
 #include "core/layout/line/InlineTextBox.h"
 #include "core/paint/BoxPainter.h"
 #include "core/paint/DeprecatedPaintLayer.h"
@@ -144,7 +145,7 @@ void LayoutInline::updateFromStyle()
 static LayoutObject* inFlowPositionedInlineAncestor(LayoutObject* p)
 {
     while (p && p->isLayoutInline()) {
-        if (p->isRelPositioned())
+        if (p->isInFlowPositioned())
             return p;
         p = p->parent();
     }
@@ -772,7 +773,7 @@ LayoutUnit LayoutInline::marginAfter(const ComputedStyle* otherStyle) const
 bool LayoutInline::nodeAtPoint(HitTestResult& result,
     const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction hitTestAction)
 {
-    return m_lineBoxes.hitTest(this, result, locationInContainer, accumulatedOffset, hitTestAction);
+    return m_lineBoxes.hitTest(LineLayoutBoxModel(this), result, locationInContainer, accumulatedOffset, hitTestAction);
 }
 
 namespace {
@@ -1051,15 +1052,15 @@ LayoutRect LayoutInline::clippedOverflowRect(const LayoutBoxModelObject* paintIn
     LayoutRect overflowRect(linesVisualOverflowBoundingBox());
     mapRectToPaintInvalidationBacking(paintInvalidationContainer, overflowRect, paintInvalidationState);
 
-    LayoutUnit outlineSize = style()->outlineSize();
-    if (outlineSize) {
+    LayoutUnit outlineOutset = style()->outlineOutsetExtent();
+    if (outlineOutset) {
         for (LayoutObject* curr = firstChild(); curr; curr = curr->nextSibling()) {
             if (!curr->isText())
-                overflowRect.unite(curr->rectWithOutlineForPaintInvalidation(paintInvalidationContainer, outlineSize));
+                overflowRect.unite(curr->rectWithOutlineForPaintInvalidation(paintInvalidationContainer, outlineOutset));
         }
 
         if (continuation && !continuation->isInline() && continuation->parent())
-            overflowRect.unite(continuation->rectWithOutlineForPaintInvalidation(paintInvalidationContainer, outlineSize));
+            overflowRect.unite(continuation->rectWithOutlineForPaintInvalidation(paintInvalidationContainer, outlineOutset));
     }
 
     return overflowRect;
@@ -1129,7 +1130,7 @@ LayoutSize LayoutInline::offsetFromContainer(const LayoutObject* container, cons
     ASSERT(container == this->container());
 
     LayoutSize offset;
-    if (isRelPositioned())
+    if (isInFlowPositioned())
         offset += offsetForInFlowPosition();
 
     offset += container->columnOffset(point);
@@ -1299,8 +1300,8 @@ LayoutSize LayoutInline::offsetForInFlowPositionedInline(const LayoutBox& child)
 {
     // FIXME: This function isn't right with mixed writing modes.
 
-    ASSERT(isRelPositioned());
-    if (!isRelPositioned())
+    ASSERT(isInFlowPositioned());
+    if (!isInFlowPositioned())
         return LayoutSize();
 
     // When we have an enclosing relpositioned inline, we need to add in the offset of the first line
@@ -1375,23 +1376,25 @@ public:
 
 } // unnamed namespace
 
-void LayoutInline::addFocusRingRects(Vector<LayoutRect>& rects, const LayoutPoint& additionalOffset) const
+void LayoutInline::addOutlineRects(Vector<LayoutRect>& rects, const LayoutPoint& additionalOffset) const
 {
-    // Add line boxes only if this object is the first object of addFocusRingRects().
-    // Otherwise the parent (LayoutBlockFlow or LayoutInline) should have added line box rects
-    // covering those of this object.
-    if (rects.isEmpty()) {
-        AbsoluteLayoutRectsIgnoringEmptyRectsGeneratorContext context(rects, additionalOffset);
-        generateLineBoxRects(context);
-    }
+    AbsoluteLayoutRectsIgnoringEmptyRectsGeneratorContext context(rects, additionalOffset);
+    generateLineBoxRects(context);
+    addOutlineRectsForChildrenAndContinuations(rects, additionalOffset);
+}
+void LayoutInline::addOutlineRectsForChildrenAndContinuations(Vector<LayoutRect>& rects, const LayoutPoint& additionalOffset) const
+{
+    addOutlineRectsForNormalChildren(rects, additionalOffset);
+    addOutlineRectsForContinuations(rects, additionalOffset);
+}
 
-    addFocusRingRectsForNormalChildren(rects, additionalOffset);
-
+void LayoutInline::addOutlineRectsForContinuations(Vector<LayoutRect>& rects, const LayoutPoint& additionalOffset) const
+{
     if (LayoutBoxModelObject* continuation = this->continuation()) {
         if (continuation->isInline())
-            continuation->addFocusRingRects(rects, additionalOffset + (continuation->containingBlock()->location() - containingBlock()->location()));
+            continuation->addOutlineRects(rects, additionalOffset + (continuation->containingBlock()->location() - containingBlock()->location()));
         else
-            continuation->addFocusRingRects(rects, additionalOffset + (toLayoutBox(continuation)->location() - containingBlock()->location()));
+            continuation->addOutlineRects(rects, additionalOffset + (toLayoutBox(continuation)->location() - containingBlock()->location()));
     }
 }
 

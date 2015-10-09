@@ -60,6 +60,7 @@ class CORE_EXPORT Animation final
     DEFINE_WRAPPERTYPEINFO();
     REFCOUNTED_EVENT_TARGET(Animation);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Animation);
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(Animation);
 public:
     enum AnimationPlayState {
         Idle,
@@ -110,11 +111,10 @@ public:
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(finish);
 
-    virtual const AtomicString& interfaceName() const override;
-    virtual ExecutionContext* executionContext() const override;
-    virtual bool hasPendingActivity() const override;
-    virtual void stop() override;
-    virtual bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>) override;
+    const AtomicString& interfaceName() const override;
+    ExecutionContext* executionContext() const override;
+    bool hasPendingActivity() const override;
+    void stop() override;
 
     double playbackRate() const;
     void setPlaybackRate(double);
@@ -145,6 +145,8 @@ public:
     // Pausing via this method is not reflected in the value returned by
     // paused() and must never overlap with pausing via pause().
     void pauseForTesting(double pauseTime);
+    void disableCompositedAnimationForTesting();
+
     // This should only be used for CSS
     void unpause();
 
@@ -177,9 +179,12 @@ public:
         return animation1->sequenceNumber() < animation2->sequenceNumber();
     }
 
-    virtual bool addEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false) override;
+    bool addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, bool useCapture = false) override;
 
     DECLARE_VIRTUAL_TRACE();
+
+protected:
+    bool dispatchEventInternal(PassRefPtrWillBeRawPtr<Event>) override;
 
 private:
     Animation(ExecutionContext*, AnimationTimeline&, AnimationEffect*);
@@ -235,6 +240,7 @@ private:
     bool m_paused;
     bool m_held;
     bool m_isPausedForTesting;
+    bool m_isCompositedAnimationDisabledForTesting;
 
     // This indicates timing information relevant to the animation's effect
     // has changed by means other than the ordinary progression of time
@@ -254,6 +260,8 @@ private:
     };
 
     class CompositorState {
+        WTF_MAKE_FAST_ALLOCATED(CompositorState);
+        WTF_MAKE_NONCOPYABLE(CompositorState);
     public:
         CompositorState(Animation& animation)
             : startTime(animation.m_startTime)

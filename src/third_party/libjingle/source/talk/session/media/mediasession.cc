@@ -63,8 +63,8 @@ const char kMediaProtocolAvpf[] = "RTP/AVPF";
 // RFC5124
 const char kMediaProtocolDtlsSavpf[] = "UDP/TLS/RTP/SAVPF";
 
-// This should be replaced by "UDP/TLS/RTP/SAVPF", but we need to support it for
-// now to be compatible with previous Chrome versions.
+// We always generate offers with "UDP/TLS/RTP/SAVPF" when using DTLS-SRTP,
+// but we tolerate "RTP/SAVPF" in offers we receive, for compatibility.
 const char kMediaProtocolSavpf[] = "RTP/SAVPF";
 
 const char kMediaProtocolRtpPrefix[] = "RTP/";
@@ -529,7 +529,7 @@ static bool UpdateTransportInfoForBundle(const ContentGroup& bundle_group,
   }
 
   // We should definitely have a transport for the first content.
-  std::string selected_content_name = *bundle_group.FirstContentName();
+  const std::string& selected_content_name = *bundle_group.FirstContentName();
   const TransportInfo* selected_transport_info =
       sdesc->GetTransportInfoByName(selected_content_name);
   if (!selected_transport_info) {
@@ -537,9 +537,9 @@ static bool UpdateTransportInfoForBundle(const ContentGroup& bundle_group,
   }
 
   // Set the other contents to use the same ICE credentials.
-  const std::string selected_ufrag =
+  const std::string& selected_ufrag =
       selected_transport_info->description.ice_ufrag;
-  const std::string selected_pwd =
+  const std::string& selected_pwd =
       selected_transport_info->description.ice_pwd;
   for (TransportInfos::iterator it =
            sdesc->transport_infos().begin();
@@ -614,8 +614,8 @@ static bool IsRtpContent(SessionDescription* sdesc,
       return false;
     }
     is_rtp = media_desc->protocol().empty() ||
-             rtc::starts_with(media_desc->protocol().data(),
-                                    kMediaProtocolRtpPrefix);
+             (media_desc->protocol().find(cricket::kMediaProtocolRtpPrefix) !=
+              std::string::npos);
   }
   return is_rtp;
 }
@@ -1047,8 +1047,10 @@ static bool IsMediaProtocolSupported(MediaType type,
 
 static void SetMediaProtocol(bool secure_transport,
                              MediaContentDescription* desc) {
-  if (!desc->cryptos().empty() || secure_transport)
+  if (!desc->cryptos().empty())
     desc->set_protocol(kMediaProtocolSavpf);
+  else if (secure_transport)
+    desc->set_protocol(kMediaProtocolDtlsSavpf);
   else
     desc->set_protocol(kMediaProtocolAvpf);
 }

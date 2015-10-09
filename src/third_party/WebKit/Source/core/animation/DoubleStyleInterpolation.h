@@ -15,16 +15,16 @@ class CORE_EXPORT DoubleStyleInterpolation : public StyleInterpolation {
 public:
     typedef void NonInterpolableType;
 
-    static PassRefPtrWillBeRawPtr<DoubleStyleInterpolation> create(const CSSValue& start, const CSSValue& end, CSSPropertyID id, CSSPrimitiveValue::UnitType type, InterpolationRange clamp)
+    static PassRefPtrWillBeRawPtr<DoubleStyleInterpolation> create(const CSSValue& start, const CSSValue& end, CSSPropertyID id, bool isNumber, InterpolationRange clamp)
     {
-        return adoptRefWillBeNoop(new DoubleStyleInterpolation(doubleToInterpolableValue(start), doubleToInterpolableValue(end), id, type == CSSPrimitiveValue::CSS_NUMBER || type == CSSPrimitiveValue::CSS_INTEGER, clamp, false));
+        return adoptRefWillBeNoop(new DoubleStyleInterpolation(doubleToInterpolableValue(start), doubleToInterpolableValue(end), id, isNumber, clamp, false));
     }
 
     static PassRefPtrWillBeRawPtr<DoubleStyleInterpolation> maybeCreateFromMotionRotation(const CSSValue& start, const CSSValue& end, CSSPropertyID);
 
     static bool canCreateFrom(const CSSValue&);
 
-    virtual void apply(StyleResolverState&) const override;
+    void apply(StyleResolverState&) const override;
 
     DECLARE_VIRTUAL_TRACE();
 

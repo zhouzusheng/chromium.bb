@@ -139,11 +139,11 @@ protected:
     bool isKeyboardFocusable() const override;
     virtual bool shouldShowFocusRingOnMouseFocus() const;
     bool shouldHaveFocusAppearance() const final;
-    void dispatchBlurEvent(Element* newFocusedElement, WebFocusType) override;
-    void dispatchFocusEvent(Element* oldFocusedElement, WebFocusType) override;
+    void dispatchBlurEvent(Element* newFocusedElement, WebFocusType, InputDeviceCapabilities* sourceCapabilities) override;
+    void dispatchFocusEvent(Element* oldFocusedElement, WebFocusType, InputDeviceCapabilities* sourceCapabilities) override;
     void willCallDefaultEventHandler(const Event&) final;
 
-    void didRecalcStyle(StyleRecalcChange) final;
+    void didRecalcStyle(StyleRecalcChange) override;
 
     // This must be called any time the result of willValidate() has changed.
     void setNeedsWillValidateCheck();

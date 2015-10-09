@@ -8,7 +8,7 @@
   },
   'targets': [
     {
-      # GN version: //device/vibration:vibration_mojo
+      # GN version: //device/vibration:mojo_bindings
       'target_name': 'device_vibration_mojo_bindings',
       'type': 'static_library',
       'includes': [
@@ -34,18 +34,13 @@
         'DEVICE_VIBRATION_IMPLEMENTATION',
       ],
       'sources': [
-        'android/vibration_jni_registrar.cc',
-        'android/vibration_jni_registrar.h',
         'vibration_manager_impl.h',
-        'vibration_manager_impl_android.cc',
-        'vibration_manager_impl_android.h',
         'vibration_manager_impl_default.cc',
       ],
       'conditions': [
         ['OS == "android"', {
           'dependencies': [
             'device_vibration_java',
-            'device_vibration_jni_headers',
           ],
           'sources!': [
             'vibration_manager_impl_default.cc',

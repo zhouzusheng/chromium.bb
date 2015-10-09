@@ -8,10 +8,16 @@
 #include "SkBitmapDevice.h"
 #include "SkConfig8888.h"
 #include "SkDraw.h"
+#include "SkMatrix.h"
+#include "SkPaint.h"
+#include "SkPath.h"
 #include "SkPixelRef.h"
-#include "SkRasterClip.h"
+#include "SkPixmap.h"
 #include "SkShader.h"
 #include "SkSurface.h"
+#include "SkXfermode.h"
+
+class SkColorTable;
 
 #define CHECK_FOR_ANNOTATION(paint) \
     do { if (paint.getAnnotation()) { return; } } while (0)
@@ -237,8 +243,7 @@ void SkBitmapDevice::drawBitmap(const SkDraw& draw, const SkBitmap& bitmap,
 
 void SkBitmapDevice::drawBitmapRect(const SkDraw& draw, const SkBitmap& bitmap,
                                     const SkRect* src, const SkRect& dst,
-                                    const SkPaint& paint,
-                                    SkCanvas::DrawBitmapRectFlags flags) {
+                                    const SkPaint& paint, SkCanvas::SrcRectConstraint constraint) {
     SkMatrix    matrix;
     SkRect      bitmapBounds, tmpSrc, tmpDst;
     SkBitmap    tmpBitmap;

@@ -66,6 +66,7 @@ SingleThreadProxy::SingleThreadProxy(
 
     scoped_ptr<CompositorTimingHistory> compositor_timing_history(
         new CompositorTimingHistory(
+            CompositorTimingHistory::BROWSER_UMA,
             layer_tree_host->rendering_stats_instrumentation()));
 
     scheduler_on_impl_thread_ = Scheduler::Create(
@@ -122,7 +123,9 @@ void SingleThreadProxy::SetLayerTreeHostClientReady() {
 void SingleThreadProxy::SetVisible(bool visible) {
   TRACE_EVENT1("cc", "SingleThreadProxy::SetVisible", "visible", visible);
   DebugScopedSetImplThread impl(this);
+
   layer_tree_host_impl_->SetVisible(visible);
+
   if (scheduler_on_impl_thread_)
     scheduler_on_impl_thread_->SetVisible(layer_tree_host_impl_->visible());
   // Changing visibility could change ShouldComposite().
@@ -189,31 +192,13 @@ void SingleThreadProxy::SetNeedsAnimate() {
   animate_requested_ = true;
   DebugScopedSetImplThread impl(this);
   if (scheduler_on_impl_thread_)
-    scheduler_on_impl_thread_->SetNeedsCommit();
+    scheduler_on_impl_thread_->SetNeedsBeginMainFrame();
 }
 
 void SingleThreadProxy::SetNeedsUpdateLayers() {
   TRACE_EVENT0("cc", "SingleThreadProxy::SetNeedsUpdateLayers");
   DCHECK(Proxy::IsMainThread());
   SetNeedsCommit();
-}
-
-void SingleThreadProxy::DoAnimate() {
-  // Don't animate if there is no root layer.
-  // TODO(mithro): Both Animate and UpdateAnimationState already have a
-  // "!active_tree_->root_layer()" check?
-  if (!layer_tree_host_impl_->active_tree()->root_layer()) {
-    return;
-  }
-
-  layer_tree_host_impl_->Animate(
-      layer_tree_host_impl_->CurrentBeginFrameArgs().frame_time);
-
-  // If animations are not visible, update the animation state now as it
-  // won't happen in DoComposite.
-  if (!layer_tree_host_impl_->AnimationsAreVisible()) {
-    layer_tree_host_impl_->UpdateAnimationState(true);
-  }
 }
 
 void SingleThreadProxy::DoCommit() {
@@ -313,7 +298,7 @@ void SingleThreadProxy::SetNeedsCommit() {
   commit_requested_ = true;
   DebugScopedSetImplThread impl(this);
   if (scheduler_on_impl_thread_)
-    scheduler_on_impl_thread_->SetNeedsCommit();
+    scheduler_on_impl_thread_->SetNeedsBeginMainFrame();
 }
 
 void SingleThreadProxy::SetNeedsRedraw(const gfx::Rect& damage_rect) {
@@ -424,7 +409,7 @@ void SingleThreadProxy::SetNeedsRedrawRectOnImplThread(
 void SingleThreadProxy::SetNeedsCommitOnImplThread() {
   client_->ScheduleComposite();
   if (scheduler_on_impl_thread_)
-    scheduler_on_impl_thread_->SetNeedsCommit();
+    scheduler_on_impl_thread_->SetNeedsBeginMainFrame();
 }
 
 void SingleThreadProxy::SetVideoNeedsBeginFrames(bool needs_begin_frames) {
@@ -447,11 +432,6 @@ void SingleThreadProxy::PostAnimationEventsToMainThreadOnImplThread(
 bool SingleThreadProxy::IsInsideDraw() { return inside_draw_; }
 
 void SingleThreadProxy::DidActivateSyncTree() {
-  // This is required because NotifyReadyToActivate gets called immediately
-  // after commit since single thread commits directly to the active tree.
-  if (scheduler_on_impl_thread_)
-    scheduler_on_impl_thread_->SetWaitForReadyToDraw();
-
   // Synchronously call to CommitComplete. Resetting
   // |commit_blocking_task_runner| would make sure all tasks posted during
   // commit/activation before CommitComplete.
@@ -595,7 +575,8 @@ void SingleThreadProxy::CompositeImmediately(base::TimeTicks frame_begin_time) {
     layer_tree_host_impl_->PrepareTiles();
     layer_tree_host_impl_->SynchronouslyInitializeAllTiles();
 
-    DoAnimate();
+    // TODO(danakj): Don't do this last... we prepared the wrong things. D:
+    layer_tree_host_impl_->Animate();
 
     LayerTreeHostImpl::FrameData frame;
     DoComposite(&frame);
@@ -883,7 +864,7 @@ void SingleThreadProxy::ScheduledActionCommit() {
 void SingleThreadProxy::ScheduledActionAnimate() {
   TRACE_EVENT0("cc", "ScheduledActionAnimate");
   DebugScopedSetImplThread impl(this);
-  DoAnimate();
+  layer_tree_host_impl_->Animate();
 }
 
 void SingleThreadProxy::ScheduledActionActivateSyncTree() {

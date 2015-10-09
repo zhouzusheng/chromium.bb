@@ -60,12 +60,11 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
   virtual void Initialize();
 
   // QuicConnectionVisitorInterface methods:
-  void OnStreamFrames(const std::vector<QuicStreamFrame>& frames) override;
+  void OnStreamFrame(const QuicStreamFrame& frame) override;
   void OnRstStream(const QuicRstStreamFrame& frame) override;
   void OnGoAway(const QuicGoAwayFrame& frame) override;
-  void OnWindowUpdateFrames(
-      const std::vector<QuicWindowUpdateFrame>& frames) override;
-  void OnBlockedFrames(const std::vector<QuicBlockedFrame>& frames) override;
+  void OnWindowUpdateFrame(const QuicWindowUpdateFrame& frame) override;
+  void OnBlockedFrame(const QuicBlockedFrame& frame) override;
   void OnConnectionClosed(QuicErrorCode error, bool from_peer) override;
   void OnWriteBlocked() override {}
   void OnSuccessfulVersionNegotiation(const QuicVersion& version) override;
@@ -157,15 +156,19 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
   // streams.
   virtual size_t GetNumOpenStreams() const;
 
-  void MarkWriteBlocked(QuicStreamId id, QuicPriority priority);
+  // Add the stream to the session's write-blocked list because it is blocked by
+  // connection-level flow control but not by its own stream-level flow control.
+  // The stream will be given a chance to write when a connection-level
+  // WINDOW_UPDATE arrives.
+  void MarkConnectionLevelWriteBlocked(QuicStreamId id, QuicPriority priority);
 
   // Returns true if the session has data to be sent, either queued in the
   // connection, or in a write-blocked stream.
   bool HasDataToWrite() const;
 
-  bool goaway_received() const { return goaway_received_; }
+  bool goaway_sent() const;
 
-  bool goaway_sent() const { return goaway_sent_; }
+  bool goaway_received() const;
 
   QuicErrorCode error() const { return error_; }
 
@@ -264,6 +267,10 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
   // control receive windows.
   void EnableAutoTuneReceiveWindow();
 
+  // Called in OnConfigNegotiated for finch trials to measure performance of
+  // starting with smaller flow control receive windows and auto-tuning.
+  void AdjustInitialFlowControlWindows(size_t stream_window);
+
   // Keep track of highest received byte offset of locally closed streams, while
   // waiting for a definitive final highest offset from the peer.
   std::map<QuicStreamId, QuicStreamOffset>
@@ -309,11 +316,6 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
 
   // Used for connection-level flow control.
   QuicFlowController flow_controller_;
-
-  // Whether a GoAway has been received.
-  bool goaway_received_;
-  // Whether a GoAway has been sent.
-  bool goaway_sent_;
 
   // Indicate if there is pending data for the crypto stream.
   bool has_pending_handshake_;

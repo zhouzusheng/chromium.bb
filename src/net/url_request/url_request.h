@@ -356,7 +356,8 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   bool GetFullRequestHeaders(HttpRequestHeaders* headers) const;
 
   // Gets the total amount of data received from network after SSL decoding and
-  // proxy handling.
+  // proxy handling. Pertains only to the last URLRequestJob issued by this
+  // URLRequest -- i.e. the last redirect.
   int64 GetTotalReceivedBytes() const;
 
   // Returns the current load state for the request. The returned value's
@@ -599,6 +600,10 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   void set_received_response_content_length(int64 received_content_length) {
     received_response_content_length_ = received_content_length;
   }
+
+  // The number of bytes in the raw response body (before any decompression,
+  // etc.). This is only available after the final Read completes. Not available
+  // for FTP responses.
   int64 received_response_content_length() const {
     return received_response_content_length_;
   }

@@ -99,6 +99,13 @@ class SpellcheckService : public KeyedService,
   // Returns the instance of the custom dictionary.
   SpellcheckCustomDictionary* GetCustomDictionary();
 
+  // Returns the instance of the vector of Hunspell dictionaries.
+  const ScopedVector<SpellcheckHunspellDictionary>& GetHunspellDictionaries();
+
+  // Returns the instance of the spelling service feedback sender.
+  // SHEZ: Remove feedback sender
+  // spellcheck::FeedbackSender* GetFeedbackSender();
+
   // Load a dictionary from a given path. Format specifies how the dictionary
   // is stored. Return value is true if successful.
   bool LoadExternalDictionary(std::string language,

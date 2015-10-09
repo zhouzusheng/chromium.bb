@@ -68,12 +68,14 @@ public:
         ScriptResource,
         TextTrackResource,
         XHRResource,
+        FetchResource,
+        EventSourceResource,
         WebSocketResource,
         OtherResource
     };
 
     static PassOwnPtrWillBeRawPtr<InspectorPageAgent> create(LocalFrame* inspectedFrame, InspectorOverlay*, InspectorResourceContentLoader*);
-    void setDeferredAgents(InspectorDebuggerAgent*, InspectorCSSAgent*);
+    void setDebuggerAgent(InspectorDebuggerAgent*);
 
     static Vector<Document*> importsForFrame(LocalFrame*);
     static bool cachedResourceContent(Resource*, String* result, bool* base64Encoded);
@@ -117,15 +119,13 @@ public:
     void didLayout();
     void didScroll();
     void didResizeMainFrame();
+    void didRecalculateStyle(int);
 
     // Inspector Controller API
     void disable(ErrorString*) override;
     void restore() override;
 
     // Cross-agents API
-    static DocumentLoader* assertDocumentLoader(ErrorString*, LocalFrame*);
-    LocalFrame* frameForId(const String& frameId);
-    LocalFrame* assertFrame(ErrorString*, const String& frameId);
     FrameHost* frameHost();
     LocalFrame* inspectedFrame() const { return m_inspectedFrame.get(); }
     LocalFrame* findFrameWithSecurityOrigin(const String& originRawString);
@@ -134,8 +134,6 @@ public:
     DECLARE_VIRTUAL_TRACE();
 
 private:
-    class GetResourceContentLoadListener;
-
     InspectorPageAgent(LocalFrame* inspectedFrame, InspectorOverlay*, InspectorResourceContentLoader*);
 
     void finishReload();
@@ -147,7 +145,6 @@ private:
     PassRefPtr<TypeBuilder::Page::FrameResourceTree> buildObjectForFrameTree(LocalFrame*);
     RawPtrWillBeMember<LocalFrame> m_inspectedFrame;
     RawPtrWillBeMember<InspectorDebuggerAgent> m_debuggerAgent;
-    RawPtrWillBeMember<InspectorCSSAgent> m_cssAgent;
     RawPtrWillBeMember<InspectorOverlay> m_overlay;
     long m_lastScriptIdentifier;
     String m_pendingScriptToEvaluateOnLoadOnce;

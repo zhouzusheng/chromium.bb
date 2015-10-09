@@ -35,8 +35,8 @@
 #include "core/dom/Text.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/FrameSelection.h"
-#include "core/editing/SpellChecker.h"
 #include "core/editing/iterators/TextIterator.h"
+#include "core/editing/spellcheck/SpellChecker.h"
 #include "core/events/BeforeTextInsertedEvent.h"
 #include "core/events/Event.h"
 #include "core/frame/FrameHost.h"
@@ -307,9 +307,8 @@ void HTMLTextAreaElement::handleBeforeTextInsertedEvent(BeforeTextInsertedEvent*
     // that case, and nothing in the text field will be removed.
     unsigned selectionLength = 0;
     if (focused()) {
-        Position start, end;
-        document().frame()->selection().selection().toNormalizedPositions(start, end);
-        selectionLength = computeLengthForSubmission(plainText(start, end));
+        const EphemeralRange range = document().frame()->selection().selection().toNormalizedEphemeralRange();
+        selectionLength = computeLengthForSubmission(plainText(range));
     }
     ASSERT(currentLength >= selectionLength);
     unsigned baseLength = currentLength - selectionLength;

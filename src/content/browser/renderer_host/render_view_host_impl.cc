@@ -214,6 +214,7 @@ RenderViewHostImpl::RenderViewHostImpl(
       waiting_for_drag_context_response_(false),
       enabled_bindings_(0),
       page_id_(-1),
+      nav_entry_id_(0),
       is_active_(!swapped_out),
       is_swapped_out_(swapped_out),
       main_frame_routing_id_(main_frame_routing_id),
@@ -429,8 +430,6 @@ WebPreferences RenderViewHostImpl::ComputeWebkitPrefs() {
   prefs.accelerated_2d_canvas_msaa_sample_count =
       atoi(command_line.GetSwitchValueASCII(
       switches::kAcceleratedCanvas2dMSAASampleCount).c_str());
-  prefs.text_blobs_enabled =
-      !command_line.HasSwitch(switches::kDisableTextBlobs);
 
   prefs.pinch_overlay_scrollbar_thickness = 10;
   prefs.use_solid_color_scrollbars = ui::IsOverlayScrollbarEnabled();
@@ -471,6 +470,10 @@ WebPreferences RenderViewHostImpl::ComputeWebkitPrefs() {
       (command_line.HasSwitch(switches::kEnableSlimmingPaint) ||
       !command_line.HasSwitch(switches::kDisableSlimmingPaint)) &&
       (slimming_group != "DisableSlimmingPaint");
+  prefs.slimming_paint_v2_enabled =
+      prefs.slimming_paint_enabled &&
+      command_line.HasSwitch(switches::kEnableSlimmingPaintV2);
+
 #if defined(OS_MACOSX) || defined(OS_CHROMEOS)
   bool default_enable_scroll_animator = true;
 #else
@@ -521,6 +524,16 @@ WebPreferences RenderViewHostImpl::ComputeWebkitPrefs() {
 
   prefs.strict_powerful_feature_restrictions = command_line.HasSwitch(
       switches::kEnableStrictPowerfulFeatureRestrictions);
+
+  const std::string blockable_mixed_content_group =
+      base::FieldTrialList::FindFullName("BlockableMixedContent");
+  prefs.strictly_block_blockable_mixed_content =
+      blockable_mixed_content_group == "StrictlyBlockBlockableMixedContent";
+
+  const std::string plugin_mixed_content_status =
+      base::FieldTrialList::FindFullName("PluginMixedContentStatus");
+  prefs.block_mixed_plugin_content =
+      plugin_mixed_content_status == "BlockableMixedContent";
 
   prefs.v8_cache_options = GetV8CacheOptions();
 
@@ -585,8 +598,7 @@ void RenderViewHostImpl::RenderProcessExited(RenderProcessHost* host,
     return;
 
   RenderWidgetHostImpl::RendererExited(status, exit_code);
-  delegate_->RenderViewTerminated(
-      this, static_cast<base::TerminationStatus>(status), exit_code);
+  delegate_->RenderViewTerminated(this, status, exit_code);
 }
 
 void RenderViewHostImpl::DragTargetDragEnter(
@@ -921,7 +933,6 @@ bool RenderViewHostImpl::OnMessageReceived(const IPC::Message& msg) {
                         OnRouteCloseEvent)
     IPC_MESSAGE_HANDLER(DragHostMsg_StartDragging, OnStartDragging)
     IPC_MESSAGE_HANDLER(DragHostMsg_UpdateDragCursor, OnUpdateDragCursor)
-    IPC_MESSAGE_HANDLER(DragHostMsg_TargetDrop_ACK, OnTargetDropACK)
     IPC_MESSAGE_HANDLER(ViewHostMsg_TakeFocus, OnTakeFocus)
     IPC_MESSAGE_HANDLER(ViewHostMsg_FocusedNodeChanged, OnFocusedNodeChanged)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ClosePage_ACK, OnClosePageACK)
@@ -993,9 +1004,8 @@ void RenderViewHostImpl::CreateNewWindow(
   GetProcess()->FilterURL(false, &validated_params.opener_url);
   GetProcess()->FilterURL(true, &validated_params.opener_security_origin);
 
-  delegate_->CreateNewWindow(
-      GetProcess()->GetID(), route_id, main_frame_route_id, validated_params,
-      session_storage_namespace);
+  delegate_->CreateNewWindow(GetSiteInstance(), route_id, main_frame_route_id,
+                             validated_params, session_storage_namespace);
 }
 
 void RenderViewHostImpl::CreateNewWidget(int route_id,
@@ -1011,10 +1021,8 @@ void RenderViewHostImpl::OnShowView(int route_id,
                                     WindowOpenDisposition disposition,
                                     const gfx::Rect& initial_rect,
                                     bool user_gesture) {
-  if (is_active_) {
-    delegate_->ShowCreatedWindow(
-        route_id, disposition, initial_rect, user_gesture);
-  }
+  delegate_->ShowCreatedWindow(route_id, disposition, initial_rect,
+                               user_gesture);
   Send(new ViewMsg_Move_ACK(route_id));
 }
 
@@ -1170,13 +1178,6 @@ void RenderViewHostImpl::OnUpdateDragCursor(WebDragOperation current_op) {
   RenderViewHostDelegateView* view = delegate_->GetDelegateView();
   if (view)
     view->UpdateDragCursor(current_op);
-}
-
-void RenderViewHostImpl::OnTargetDropACK() {
-  NotificationService::current()->Notify(
-      NOTIFICATION_RENDER_VIEW_HOST_DID_RECEIVE_DRAG_TARGET_DROP_ACK,
-      Source<RenderViewHost>(this),
-      NotificationService::NoDetails());
 }
 
 void RenderViewHostImpl::OnTakeFocus(bool reverse) {

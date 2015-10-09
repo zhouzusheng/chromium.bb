@@ -1,6 +1,4 @@
-
-
-  Polymer({
+Polymer({
 
     is: 'iron-media-query',
 
@@ -8,10 +6,6 @@
 
       /**
        * The Boolean return value of the media query.
-       *
-       * @attribute queryMatches
-       * @type Boolean
-       * @default false
        */
       queryMatches: {
         type: Boolean,
@@ -22,9 +16,6 @@
 
       /**
        * The CSS media query to evaluate.
-       *
-       * @attribute query
-       * @type String
        */
       query: {
         type: String,
@@ -54,4 +45,3 @@
     }
 
   });
-

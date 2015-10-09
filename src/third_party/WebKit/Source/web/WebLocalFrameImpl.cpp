@@ -71,13 +71,13 @@
 // and a reference to the main frame is kept by the Page.
 //
 // When frame content is replaced, all subframes are destroyed. This happens
-// in FrameLoader::detachFromParent for each subframe in a pre-order depth-first
+// in Frame::detachChildren for each subframe in a pre-order depth-first
 // traversal. Note that child node order may not match DOM node order!
-// detachFromParent() calls FrameLoaderClient::detachedFromParent(), which calls
-// WebFrame::frameDetached(). This triggers WebFrame to clear its reference to
-// LocalFrame, and also notifies the embedder via WebFrameClient that the frame is
-// detached. Most embedders will invoke close() on the WebFrame at this point,
-// triggering its deletion unless something else is still retaining a reference.
+// detachChildren() (virtually) calls Frame::detach(), which again calls
+// FrameLoaderClient::detached(). This triggers WebFrame to clear its reference to
+// LocalFrame. FrameLoaderClient::detached() also notifies the embedder via WebFrameClient
+// that the frame is detached. Most embedders will invoke close() on the WebFrame
+// at this point, triggering its deletion unless something else is still retaining a reference.
 //
 // The client is expected to be set whenever the WebLocalFrameImpl is attached to
 // the DOM.
@@ -103,15 +103,15 @@
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/SuspendableTask.h"
 #include "core/dom/shadow/ShadowRoot.h"
+#include "core/editing/EditingUtilities.h"
 #include "core/editing/Editor.h"
 #include "core/editing/FrameSelection.h"
 #include "core/editing/InputMethodController.h"
 #include "core/editing/PlainTextRange.h"
-#include "core/editing/SpellChecker.h"
 #include "core/editing/TextAffinity.h"
-#include "core/editing/htmlediting.h"
 #include "core/editing/iterators/TextIterator.h"
-#include "core/editing/markup.h"
+#include "core/editing/serializers/Serialization.h"
+#include "core/editing/spellcheck/SpellChecker.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/fetch/SubstituteData.h"
 #include "core/frame/Console.h"
@@ -154,6 +154,7 @@
 #include "core/timing/DOMWindowPerformance.h"
 #include "core/timing/Performance.h"
 #include "modules/app_banner/AppBannerController.h"
+#include "modules/bluetooth/BluetoothSupplement.h"
 #include "modules/geolocation/GeolocationController.h"
 #include "modules/notifications/NotificationPermissionClient.h"
 #include "modules/permissions/PermissionController.h"
@@ -161,6 +162,8 @@
 #include "modules/push_messaging/PushController.h"
 #include "modules/screen_orientation/ScreenOrientationController.h"
 #include "modules/vr/VRController.h"
+#include "modules/wake_lock/ScreenWakeLock.h"
+#include "modules/webusb/USBController.h"
 #include "platform/ScriptForbiddenScope.h"
 #include "platform/TraceEvent.h"
 #include "platform/UserGestureIndicator.h"
@@ -405,7 +408,7 @@ public:
 
         int currentHeight = 0;
         for (size_t pageIndex = 0; pageIndex < numPages; pageIndex++) {
-            ScopeRecorder scopeRecorder(context, *this);
+            ScopeRecorder scopeRecorder(context);
             // Draw a line for a page boundary if this isn't the first page.
             if (pageIndex > 0 && !DrawingRecorder::useCachedDrawingIfPossible(context, *this, DisplayItem::PrintedContentLineBoundary)) {
                 DrawingRecorder lineBoundaryRecorder(context, *this, DisplayItem::PrintedContentLineBoundary, allPagesRect);
@@ -457,7 +460,7 @@ protected:
 
         ClipRecorder clipRecorder(context, *this, DisplayItem::ClipPrintedPage, LayoutRect(pageRect));
 
-        frame()->view()->paintContents(&context, pageRect);
+        frame()->view()->paintContents(&context, GlobalPaintNormalPhase, pageRect);
 
         return scale;
     }
@@ -490,6 +493,12 @@ public:
     }
 
     ~ChromePluginPrintContext() override {}
+
+    DEFINE_INLINE_VIRTUAL_TRACE()
+    {
+        visitor->trace(m_plugin);
+        ChromePrintContext::trace(visitor);
+    }
 
     void begin(float width, float height) override
     {
@@ -531,7 +540,7 @@ protected:
 
 private:
     // Set when printing.
-    WebPluginContainerImpl* m_plugin;
+    RawPtrWillBeMember<WebPluginContainerImpl> m_plugin;
     WebPrintParams m_printParams;
 };
 
@@ -683,20 +692,6 @@ WebSize WebLocalFrameImpl::scrollOffset() const
     return WebSize();
 }
 
-WebSize WebLocalFrameImpl::minimumScrollOffset() const
-{
-    if (ScrollableArea* scrollableArea = layoutViewportScrollableArea())
-        return toIntSize(scrollableArea->minimumScrollPosition());
-    return WebSize();
-}
-
-WebSize WebLocalFrameImpl::maximumScrollOffset() const
-{
-    if (ScrollableArea* scrollableArea = layoutViewportScrollableArea())
-        return toIntSize(scrollableArea->maximumScrollPosition());
-    return WebSize();
-}
-
 void WebLocalFrameImpl::setScrollOffset(const WebSize& offset)
 {
     if (ScrollableArea* scrollableArea = layoutViewportScrollableArea())
@@ -746,7 +741,9 @@ WebView* WebLocalFrameImpl::view() const
 
 void WebLocalFrameImpl::setOpener(WebFrame* opener)
 {
-    // FIXME: Does this need to move up into WebFrame too?
+    // TODO(alexmos): Remove this once didChangeOpener is implemented in
+    // content, as all opener updates will go through it, including disowned
+    // openers.
     if (WebFrame::opener() && !opener && m_client)
         m_client->didDisownOpener(this);
 
@@ -1024,7 +1021,7 @@ void WebLocalFrameImpl::loadData(const WebData& data, const WebString& mimeType,
 
     FrameLoadRequest frameRequest(0, request, SubstituteData(data, mimeType, textEncoding, unreachableURL));
     ASSERT(frameRequest.substituteData().isValid());
-    frameRequest.setLockBackForwardList(replace);
+    frameRequest.setReplacesCurrentItem(replace);
     frame()->loader().load(frameRequest);
 }
 
@@ -1140,10 +1137,10 @@ bool WebLocalFrameImpl::firstRectForCharacterRange(unsigned location, unsigned l
     Element* editable = frame()->selection().rootEditableElementOrDocumentElement();
     if (!editable)
         return false;
-    RefPtrWillBeRawPtr<Range> range = PlainTextRange(location, location + length).createRange(*editable);
-    if (!range)
+    const EphemeralRange range = PlainTextRange(location, location + length).createRange(*editable);
+    if (range.isNull())
         return false;
-    IntRect intRect = frame()->editor().firstRectForRange(range.get());
+    IntRect intRect = frame()->editor().firstRectForRange(range);
     rectInViewport = WebRect(intRect);
     rectInViewport = frame()->view()->contentsToViewport(rectInViewport);
     return true;
@@ -1156,12 +1153,12 @@ size_t WebLocalFrameImpl::characterIndexForPoint(const WebPoint& pointInViewport
 
     IntPoint point = frame()->view()->viewportToContents(pointInViewport);
     HitTestResult result = frame()->eventHandler().hitTestResultAtPoint(point, HitTestRequest::ReadOnly | HitTestRequest::Active);
-    RefPtrWillBeRawPtr<Range> range = frame()->rangeForPoint(result.roundedPointInInnerNodeFrame());
-    if (!range)
+    const EphemeralRange range = frame()->rangeForPoint(result.roundedPointInInnerNodeFrame());
+    if (range.isNull())
         return kNotFound;
     Element* editable = frame()->selection().rootEditableElementOrDocumentElement();
     ASSERT(editable);
-    return PlainTextRange::create(*editable, *range.get()).start();
+    return PlainTextRange::create(*editable, range).start();
 }
 
 bool WebLocalFrameImpl::executeCommand(const WebString& name, const WebNode& node)
@@ -1259,11 +1256,11 @@ WebString WebLocalFrameImpl::selectionAsText() const
     if (pluginContainer)
         return pluginContainer->plugin()->selectionAsText();
 
-    RefPtrWillBeRawPtr<Range> range = frame()->selection().toNormalizedRange();
-    if (!range)
+    const EphemeralRange range = frame()->selection().selection().toNormalizedEphemeralRange();
+    if (range.isNull())
         return WebString();
 
-    String text = range->text();
+    String text = plainText(range, TextIteratorEmitsObjectReplacementCharacter);
 #if OS(WIN)
     replaceNewlinesWithWindowsStyleNewlines(text);
 #endif
@@ -1277,12 +1274,11 @@ WebString WebLocalFrameImpl::selectionAsMarkup() const
     if (pluginContainer)
         return pluginContainer->plugin()->selectionAsMarkup();
 
-    Position startPosition;
-    Position endPosition;
-    if (!frame()->selection().selection().toNormalizedPositions(startPosition, endPosition))
+    const EphemeralRange range = frame()->selection().selection().toNormalizedEphemeralRange();
+    if (range.isNull())
         return WebString();
 
-    return createMarkup(startPosition, endPosition, AnnotateForInterchange, ConvertBlocksToInlines::NotConvert, ResolveNonLocalURLs);
+    return createMarkup(range.startPosition(), range.endPosition(), AnnotateForInterchange, ConvertBlocksToInlines::NotConvert, ResolveNonLocalURLs);
 }
 
 void WebLocalFrameImpl::selectWordAroundPosition(LocalFrame* frame, VisiblePosition position)
@@ -1663,12 +1659,9 @@ class CanvasPainterContext {
         // Enter a clipped region
         ClipRecorder clipRecorder(context, *this, DisplayItem::ClipPrintedPage, LayoutRect(floatRect));
 
-        PaintBehavior paintBehavior = view->paintBehavior();
         view->updateAllLifecyclePhases();
 
-        view->setPaintBehavior(paintBehavior | PaintBehaviorFlattenCompositingLayers);
-        view->paintContents(&context, IntRect(floatRect));
-        view->setPaintBehavior(paintBehavior);
+        view->paintContents(&context, GlobalPaintFlattenCompositingLayers, IntRect(floatRect));
     }
 
 public:
@@ -1758,6 +1751,8 @@ WebLocalFrameImpl::WebLocalFrameImpl(WebTreeScopeType scope, WebFrameClient* cli
 
 WebLocalFrameImpl::~WebLocalFrameImpl()
 {
+    // The widget for the frame, if any, must have already been closed.
+    ASSERT(!m_frameWidget);
     Platform::current()->decrementStatsCounter(webFrameActiveCount);
     frameCount--;
 
@@ -1797,14 +1792,20 @@ void WebLocalFrameImpl::setCoreFrame(PassRefPtrWillBeRawPtr<LocalFrame> frame)
         provideLocalFileSystemTo(*m_frame, LocalFileSystemClient::create());
         provideNavigatorContentUtilsTo(*m_frame, NavigatorContentUtilsClientImpl::create(this));
 
+        if (RuntimeEnabledFeatures::webBluetoothEnabled())
+            BluetoothSupplement::provideTo(*m_frame, m_client ? m_client->bluetooth() : nullptr);
         if (RuntimeEnabledFeatures::screenOrientationEnabled())
             ScreenOrientationController::provideTo(*m_frame, m_client ? m_client->webScreenOrientationClient() : nullptr);
         if (RuntimeEnabledFeatures::presentationEnabled())
             PresentationController::provideTo(*m_frame, m_client ? m_client->presentationClient() : nullptr);
         if (RuntimeEnabledFeatures::permissionsEnabled())
             PermissionController::provideTo(*m_frame, m_client ? m_client->permissionClient() : nullptr);
+        if (RuntimeEnabledFeatures::webUSBEnabled())
+            USBController::provideTo(*m_frame, m_client ? m_client->usbClient() : nullptr);
         if (RuntimeEnabledFeatures::webVREnabled())
             VRController::provideTo(*m_frame, m_client ? m_client->webVRClient() : nullptr);
+        if (RuntimeEnabledFeatures::wakeLockEnabled())
+            ScreenWakeLock::provideTo(*m_frame, m_client ? m_client->wakeLockClient() : nullptr);
     }
 }
 
@@ -2087,6 +2088,7 @@ void WebLocalFrameImpl::initializeToReplaceRemoteFrame(WebRemoteFrame* oldWebFra
         toRemoteBridgeFrameOwner(m_frame->owner())->setSandboxFlags(static_cast<SandboxFlags>(flags));
     m_frame->tree().setName(name);
     setParent(oldWebFrame->parent());
+    setOpener(oldWebFrame->opener());
     // We must call init() after m_frame is assigned because it is referenced
     // during init(). Note that this may dispatch JS events; the frame may be
     // detached after init() returns.
@@ -2265,12 +2267,12 @@ TextFinder& WebLocalFrameImpl::ensureTextFinder()
     return *m_textFinder;
 }
 
-void WebLocalFrameImpl::setFrameWidget(WebFrameWidgetImpl* frameWidget)
+void WebLocalFrameImpl::setFrameWidget(WebFrameWidget* frameWidget)
 {
     m_frameWidget = frameWidget;
 }
 
-WebFrameWidgetImpl* WebLocalFrameImpl::frameWidget() const
+WebFrameWidget* WebLocalFrameImpl::frameWidget() const
 {
     return m_frameWidget;
 }

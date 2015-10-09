@@ -18,6 +18,7 @@
 #include "webrtc/common_types.h"
 #include "webrtc/config.h"
 #include "webrtc/frame_callback.h"
+#include "webrtc/stream.h"
 #include "webrtc/transport.h"
 #include "webrtc/video_renderer.h"
 
@@ -31,7 +32,7 @@ enum RtcpMode { kRtcpCompound, kRtcpReducedSize };
 
 class VideoDecoder;
 
-class VideoReceiveStream {
+class VideoReceiveStream : public ReceiveStream {
  public:
   // TODO(mflodman) Move all these settings to VideoDecoder and move the
   // declaration to common_types.h.
@@ -145,10 +146,10 @@ class VideoReceiveStream {
     // Only valid if 'renderer' is set.
     int render_delay_ms = 10;
 
-    // Audio channel corresponding to this video stream, used for audio/video
-    // synchronization. 'audio_channel_id' is ignored if no VoiceEngine is set
-    // when creating the VideoEngine instance. '-1' disables a/v sync.
-    int audio_channel_id = -1;
+    // Identifier for an A/V synchronization group. Empty string to disable.
+    // TODO(pbos): Synchronize streams in a sync group, not just video streams
+    // to one of the audio streams.
+    std::string sync_group;
 
     // Called for each incoming video frame, i.e. in encoded state. E.g. used
     // when
@@ -165,14 +166,8 @@ class VideoReceiveStream {
     int target_delay_ms = 0;
   };
 
-  virtual void Start() = 0;
-  virtual void Stop() = 0;
-
   // TODO(pbos): Add info on currently-received codec to Stats.
   virtual Stats GetStats() const = 0;
-
- protected:
-  virtual ~VideoReceiveStream() {}
 };
 
 }  // namespace webrtc

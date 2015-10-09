@@ -51,6 +51,14 @@
 #include "libANGLE/renderer/d3d/d3d11/dxgi_support_table.h"
 #include "libANGLE/renderer/d3d/d3d11/formatutils11.h"
 #include "libANGLE/renderer/d3d/d3d11/renderer11_utils.h"
+
+// Include the D3D9 debug annotator header for use by the desktop D3D11 renderer
+// because the D3D11 interface method ID3DUserDefinedAnnotation::GetStatus
+// doesn't work with the Graphics Diagnostics tools in Visual Studio 2013.
+#ifdef ANGLE_ENABLE_D3D9
+#include "libANGLE/renderer/d3d/d3d9/DebugAnnotator9.h"
+#endif
+
 #include "third_party/trace_event/trace_event.h"
 
 // Enable ANGLE_SKIP_DXGI_1_2_CHECK if there is not a possibility of using cross-process
@@ -230,6 +238,7 @@ void Renderer11::SRVCache::clear()
 Renderer11::Renderer11(egl::Display *display)
     : RendererD3D(display),
       mStateCache(this),
+      mLastHistogramUpdateTime(ANGLEPlatformCurrent()->monotonicallyIncreasingTime()),
       mDebug(nullptr)
 {
     mVertexDataManager = NULL;
@@ -328,6 +337,8 @@ Renderer11::Renderer11(egl::Display *display)
       default:
         UNREACHABLE();
     }
+
+    initializeDebugAnnotator();
 }
 
 Renderer11::~Renderer11()
@@ -341,18 +352,10 @@ Renderer11::~Renderer11()
 
 egl::Error Renderer11::initialize()
 {
-    double loadDLLsBegin = ANGLEPlatformCurrent()->currentTime();
-
-    if (!mCompiler.initialize())
-    {
-        return egl::Error(EGL_NOT_INITIALIZED,
-                          D3D11_INIT_COMPILER_ERROR,
-                          "Failed to initialize compiler.");
-    }
-
 #if !defined(ANGLE_ENABLE_WINDOWS_STORE)
     PFN_D3D11_CREATE_DEVICE D3D11CreateDevice = nullptr;
     {
+        SCOPED_ANGLE_HISTOGRAM_TIMER("GPU.ANGLE.Renderer11InitializeDLLsMS");
         TRACE_EVENT0("gpu.angle", "Renderer11::initialize (Load DLLs)");
         mDxgiModule = LoadLibrary(TEXT("dxgi.dll"));
         mD3d11Module = LoadLibrary(TEXT("d3d11.dll"));
@@ -377,24 +380,14 @@ egl::Error Renderer11::initialize()
     }
 #endif
 
-    double loadDLLsSec = ANGLEPlatformCurrent()->currentTime() - loadDLLsBegin;
-    int loadDLLsMS = static_cast<int>(loadDLLsSec * 1000);
-    ANGLE_HISTOGRAM_TIMES("GPU.ANGLE.Renderer11InitializeDLLsMS", loadDLLsMS);
-
     HRESULT result = S_OK;
 #ifdef _DEBUG
     {
         TRACE_EVENT0("gpu.angle", "D3D11CreateDevice (Debug)");
-        result = D3D11CreateDevice(NULL,
-                                   mDriverType,
-                                   NULL,
-                                   D3D11_CREATE_DEVICE_DEBUG,
-                                   mAvailableFeatureLevels.data(),
-                                   mAvailableFeatureLevels.size(),
-                                   D3D11_SDK_VERSION,
-                                   &mDevice,
-                                   &(mRenderer11DeviceCaps.featureLevel),
-                                   &mDeviceContext);
+        result = D3D11CreateDevice(
+            NULL, mDriverType, NULL, D3D11_CREATE_DEVICE_DEBUG, mAvailableFeatureLevels.data(),
+            static_cast<unsigned int>(mAvailableFeatureLevels.size()), D3D11_SDK_VERSION, &mDevice,
+            &(mRenderer11DeviceCaps.featureLevel), &mDeviceContext);
     }
 
     if (!mDevice || FAILED(result))
@@ -408,16 +401,10 @@ egl::Error Renderer11::initialize()
         SCOPED_ANGLE_HISTOGRAM_TIMER("GPU.ANGLE.D3D11CreateDeviceMS");
         TRACE_EVENT0("gpu.angle", "D3D11CreateDevice");
 
-        result = D3D11CreateDevice(NULL,
-                                   mDriverType,
-                                   NULL,
-                                   0,
-                                   mAvailableFeatureLevels.data(),
-                                   mAvailableFeatureLevels.size(),
-                                   D3D11_SDK_VERSION,
-                                   &mDevice,
-                                   &(mRenderer11DeviceCaps.featureLevel),
-                                   &mDeviceContext);
+        result = D3D11CreateDevice(NULL, mDriverType, NULL, 0, mAvailableFeatureLevels.data(),
+                                   static_cast<unsigned int>(mAvailableFeatureLevels.size()),
+                                   D3D11_SDK_VERSION, &mDevice,
+                                   &(mRenderer11DeviceCaps.featureLevel), &mDeviceContext);
 
         // Cleanup done by destructor
         if (!mDevice || FAILED(result))
@@ -557,7 +544,7 @@ egl::Error Renderer11::initialize()
             };
 
             D3D11_INFO_QUEUE_FILTER filter = {};
-            filter.DenyList.NumIDs = ArraySize(hideMessages);
+            filter.DenyList.NumIDs         = static_cast<unsigned int>(ArraySize(hideMessages));
             filter.DenyList.pIDList = hideMessages;
 
             infoQueue->AddStorageFilterEntries(&filter);
@@ -775,6 +762,31 @@ egl::ConfigSet Renderer11::generateConfigs() const
 
     ASSERT(configs.size() > 0);
     return configs;
+}
+
+void Renderer11::generateDisplayExtensions(egl::DisplayExtensions *outExtensions) const
+{
+    outExtensions->createContextRobustness = true;
+
+    if (getShareHandleSupport())
+    {
+        outExtensions->d3dShareHandleClientBuffer     = true;
+        outExtensions->surfaceD3DTexture2DShareHandle = true;
+    }
+
+#ifdef ANGLE_ENABLE_KEYEDMUTEX
+    outExtensions->keyedMutex = true;
+#endif
+
+    outExtensions->querySurfacePointer = true;
+    outExtensions->windowFixedSize     = true;
+
+    // D3D11 does not support present with dirty rectangles until DXGI 1.2.
+    outExtensions->postSubBuffer = mRenderer11DeviceCaps.supportsDXGI1_2;
+
+    outExtensions->createContext = true;
+
+    outExtensions->deviceQuery = true;
 }
 
 gl::Error Renderer11::flush()
@@ -1021,13 +1033,17 @@ gl::Error Renderer11::setUniformBuffers(const gl::Data &data,
                 {
                     UINT firstConstant = 0, numConstants = 0;
                     CalculateConstantBufferParams(uniformBufferOffset, uniformBufferSize, &firstConstant, &numConstants);
-                    mDeviceContext1->VSSetConstantBuffers1(getReservedVertexUniformBuffers() + uniformBufferIndex,
-                                                           1, &constantBuffer, &firstConstant, &numConstants);
+                    mDeviceContext1->VSSetConstantBuffers1(
+                        getReservedVertexUniformBuffers() +
+                            static_cast<unsigned int>(uniformBufferIndex),
+                        1, &constantBuffer, &firstConstant, &numConstants);
                 }
                 else
                 {
-                    mDeviceContext->VSSetConstantBuffers(getReservedVertexUniformBuffers() + uniformBufferIndex,
-                                                         1, &constantBuffer);
+                    mDeviceContext->VSSetConstantBuffers(
+                        getReservedVertexUniformBuffers() +
+                            static_cast<unsigned int>(uniformBufferIndex),
+                        1, &constantBuffer);
                 }
 
                 mCurrentConstantBufferVS[uniformBufferIndex] = bufferStorage->getSerial();
@@ -1077,13 +1093,17 @@ gl::Error Renderer11::setUniformBuffers(const gl::Data &data,
                 {
                     UINT firstConstant = 0, numConstants = 0;
                     CalculateConstantBufferParams(uniformBufferOffset, uniformBufferSize, &firstConstant, &numConstants);
-                    mDeviceContext1->PSSetConstantBuffers1(getReservedFragmentUniformBuffers() + uniformBufferIndex,
-                                                           1, &constantBuffer, &firstConstant, &numConstants);
+                    mDeviceContext1->PSSetConstantBuffers1(
+                        getReservedFragmentUniformBuffers() +
+                            static_cast<unsigned int>(uniformBufferIndex),
+                        1, &constantBuffer, &firstConstant, &numConstants);
                 }
                 else
                 {
-                    mDeviceContext->PSSetConstantBuffers(getReservedFragmentUniformBuffers() + uniformBufferIndex,
-                                                         1, &constantBuffer);
+                    mDeviceContext->PSSetConstantBuffers(
+                        getReservedFragmentUniformBuffers() +
+                            static_cast<unsigned int>(uniformBufferIndex),
+                        1, &constantBuffer);
                 }
 
                 mCurrentConstantBufferPS[uniformBufferIndex] = bufferStorage->getSerial();
@@ -1239,8 +1259,8 @@ void Renderer11::setViewport(const gl::Rectangle &viewport, float zNear, float z
     {
         actualViewport.x = 0;
         actualViewport.y = 0;
-        actualViewport.width = mRenderTargetDesc.width;
-        actualViewport.height = mRenderTargetDesc.height;
+        actualViewport.width  = static_cast<int>(mRenderTargetDesc.width);
+        actualViewport.height = static_cast<int>(mRenderTargetDesc.height);
         actualZNear = 0.0f;
         actualZFar = 1.0f;
     }
@@ -1260,8 +1280,8 @@ void Renderer11::setViewport(const gl::Rectangle &viewport, float zNear, float z
         if (mRenderer11DeviceCaps.featureLevel <= D3D_FEATURE_LEVEL_9_3)
         {
             // Feature Level 9 viewports shouldn't exceed the dimensions of the rendertarget.
-            dxMaxViewportBoundsX = mRenderTargetDesc.width;
-            dxMaxViewportBoundsY = mRenderTargetDesc.height;
+            dxMaxViewportBoundsX = static_cast<int>(mRenderTargetDesc.width);
+            dxMaxViewportBoundsY = static_cast<int>(mRenderTargetDesc.height);
             dxMinViewportBoundsX = 0;
             dxMinViewportBoundsY = 0;
         }
@@ -1620,7 +1640,8 @@ void Renderer11::applyTransformFeedbackBuffers(const gl::State &state)
 
         mAppliedNumXFBBindings = numXFBBindings;
 
-        mDeviceContext->SOSetTargets(numXFBBindings, mAppliedTFBuffers, mCurrentD3DOffsets);
+        mDeviceContext->SOSetTargets(static_cast<unsigned int>(numXFBBindings), mAppliedTFBuffers,
+                                     mCurrentD3DOffsets);
     }
 }
 
@@ -2377,20 +2398,15 @@ bool Renderer11::testDeviceResettable()
     D3D_FEATURE_LEVEL dummyFeatureLevel;
     ID3D11DeviceContext* dummyContext;
 
-    HRESULT result = D3D11CreateDevice(NULL,
-                                       mDriverType,
-                                       NULL,
+    HRESULT result = D3D11CreateDevice(
+        NULL, mDriverType, NULL,
                                        #if defined(_DEBUG)
-                                       D3D11_CREATE_DEVICE_DEBUG,
+        D3D11_CREATE_DEVICE_DEBUG,
                                        #else
-                                       0,
+        0,
                                        #endif
-                                       mAvailableFeatureLevels.data(),
-                                       mAvailableFeatureLevels.size(),
-                                       D3D11_SDK_VERSION,
-                                       &dummyDevice,
-                                       &dummyFeatureLevel,
-                                       &dummyContext);
+        mAvailableFeatureLevels.data(), static_cast<unsigned int>(mAvailableFeatureLevels.size()),
+        D3D11_SDK_VERSION, &dummyDevice, &dummyFeatureLevel, &dummyContext);
 
     if (!mDevice || FAILED(result))
     {
@@ -2539,12 +2555,6 @@ bool Renderer11::getShareHandleSupport() const
     return true;
 }
 
-bool Renderer11::getPostSubBufferSupport() const
-{
-    // D3D11 does not support present with dirty rectangles until DXGI 1.2.
-    return mRenderer11DeviceCaps.supportsDXGI1_2;
-}
-
 int Renderer11::getMajorShaderModel() const
 {
     switch (mRenderer11DeviceCaps.featureLevel)
@@ -2579,6 +2589,17 @@ std::string Renderer11::getShaderModelSuffix() const
       case D3D_FEATURE_LEVEL_9_3:  return "_level_9_3";
       default: UNREACHABLE();      return "";
     }
+}
+
+const WorkaroundsD3D &RendererD3D::getWorkarounds() const
+{
+    if (!mWorkaroundsInitialized)
+    {
+        mWorkarounds            = generateWorkarounds();
+        mWorkaroundsInitialized = true;
+    }
+
+    return mWorkarounds;
 }
 
 gl::Error Renderer11::copyImage2D(const gl::Framebuffer *framebuffer, const gl::Rectangle &sourceRect, GLenum destFormat,
@@ -2961,9 +2982,9 @@ ShaderImpl *Renderer11::createShader(GLenum type)
     return new ShaderD3D(type);
 }
 
-ProgramImpl *Renderer11::createProgram()
+ProgramImpl *Renderer11::createProgram(const gl::Program::Data &data)
 {
-    return new ProgramD3D(this);
+    return new ProgramD3D(data, this);
 }
 
 gl::Error Renderer11::loadExecutable(const void *function, size_t length, ShaderType type,
@@ -2992,7 +3013,7 @@ gl::Error Renderer11::loadExecutable(const void *function, size_t length, Shader
                     const gl::LinkedVarying &varying = transformFeedbackVaryings[i];
                     GLenum transposedType = gl::TransposeMatrixType(varying.type);
 
-                    for (size_t j = 0; j < varying.semanticIndexCount; j++)
+                    for (unsigned int j = 0; j < varying.semanticIndexCount; j++)
                     {
                         D3D11_SO_DECLARATION_ENTRY entry = { 0 };
                         entry.Stream = 0;
@@ -3005,8 +3026,10 @@ gl::Error Renderer11::loadExecutable(const void *function, size_t length, Shader
                     }
                 }
 
-                result = mDevice->CreateGeometryShaderWithStreamOutput(function, length, soDeclaration.data(), soDeclaration.size(),
-                                                                       NULL, 0, 0, NULL, &streamOutShader);
+                result = mDevice->CreateGeometryShaderWithStreamOutput(
+                    function, static_cast<unsigned int>(length), soDeclaration.data(),
+                    static_cast<unsigned int>(soDeclaration.size()), NULL, 0, 0, NULL,
+                    &streamOutShader);
                 ASSERT(SUCCEEDED(result));
                 if (FAILED(result))
                 {
@@ -3150,7 +3173,9 @@ IndexBuffer *Renderer11::createIndexBuffer()
 
 BufferImpl *Renderer11::createBuffer()
 {
-    return new Buffer11(this);
+    Buffer11 *buffer = new Buffer11(this);
+    mAliveBuffers.insert(buffer);
+    return buffer;
 }
 
 VertexArrayImpl *Renderer11::createVertexArray(const gl::VertexArray::Data &data)
@@ -3668,6 +3693,41 @@ bool Renderer11::isES3Capable() const
     return (d3d11_gl::GetMaximumClientVersion(mRenderer11DeviceCaps.featureLevel) > 2);
 };
 
+void Renderer11::onSwap()
+{
+    // Send histogram updates every half hour
+    const double kHistogramUpdateInterval = 30 * 60;
+
+    const double currentTime = ANGLEPlatformCurrent()->monotonicallyIncreasingTime();
+    const double timeSinceLastUpdate = currentTime - mLastHistogramUpdateTime;
+
+    if (timeSinceLastUpdate > kHistogramUpdateInterval)
+    {
+        updateHistograms();
+        mLastHistogramUpdateTime = currentTime;
+    }
+}
+
+void Renderer11::updateHistograms()
+{
+    // Update the buffer CPU memory histogram
+    {
+        size_t sizeSum = 0;
+        for (auto &buffer : mAliveBuffers)
+        {
+            sizeSum += buffer->getTotalCPUBufferMemoryBytes();
+        }
+        const int kOneMegaByte = 1024 * 1024;
+        ANGLE_HISTOGRAM_MEMORY_MB("GPU.ANGLE.Buffer11CPUMemoryMB",
+                                  static_cast<int>(sizeSum) / kOneMegaByte);
+    }
+}
+
+void Renderer11::onBufferDelete(const Buffer11 *deleted)
+{
+    mAliveBuffers.erase(deleted);
+}
+
 ID3D11Texture2D *Renderer11::resolveMultisampledTexture(ID3D11Texture2D *source, unsigned int subresource)
 {
     D3D11_TEXTURE2D_DESC textureDesc;
@@ -3736,12 +3796,14 @@ GLenum Renderer11::getVertexComponentType(gl::VertexFormatType vertexFormatType)
     return d3d11::GetDXGIFormatInfo(d3d11::GetVertexFormatInfo(vertexFormatType, mRenderer11DeviceCaps.featureLevel).nativeFormat).componentType;
 }
 
-void Renderer11::generateCaps(gl::Caps *outCaps, gl::TextureCapsMap *outTextureCaps, gl::Extensions *outExtensions) const
+void Renderer11::generateCaps(gl::Caps *outCaps, gl::TextureCapsMap *outTextureCaps,
+                              gl::Extensions *outExtensions, gl::Limitations *outLimitations) const
 {
-    d3d11_gl::GenerateCaps(mDevice, mDeviceContext, mRenderer11DeviceCaps, outCaps, outTextureCaps, outExtensions);
+    d3d11_gl::GenerateCaps(mDevice, mDeviceContext, mRenderer11DeviceCaps, outCaps, outTextureCaps,
+                           outExtensions, outLimitations);
 }
 
-Workarounds Renderer11::generateWorkarounds() const
+WorkaroundsD3D Renderer11::generateWorkarounds() const
 {
     return d3d11::GenerateWorkarounds(mRenderer11DeviceCaps.featureLevel);
 }
@@ -3770,7 +3832,16 @@ void Renderer11::setShaderResource(gl::SamplerType shaderType, UINT resourceSlot
 
 void Renderer11::createAnnotator()
 {
+    // The D3D11 renderer must choose the D3D9 debug annotator because the D3D11 interface
+    // method ID3DUserDefinedAnnotation::GetStatus on desktop builds doesn't work with the Graphics
+    // Diagnostics tools in Visual Studio 2013.
+    // The D3D9 annotator works properly for both D3D11 and D3D9.
+    // Incorrect status reporting can cause ANGLE to log unnecessary debug events.
+#ifdef ANGLE_ENABLE_D3D9
+    mAnnotator = new DebugAnnotator9();
+#else
     mAnnotator = new DebugAnnotator11();
+#endif
 }
 
 gl::Error Renderer11::clearTextures(gl::SamplerType samplerType, size_t rangeStart, size_t rangeEnd)
@@ -3792,11 +3863,15 @@ gl::Error Renderer11::clearTextures(gl::SamplerType samplerType, size_t rangeSta
 
     if (samplerType == gl::SAMPLER_VERTEX)
     {
-        mDeviceContext->VSSetShaderResources(rangeStart, rangeEnd - rangeStart, &mNullSRVs[0]);
+        mDeviceContext->VSSetShaderResources(static_cast<unsigned int>(rangeStart),
+                                             static_cast<unsigned int>(rangeEnd - rangeStart),
+                                             &mNullSRVs[0]);
     }
     else
     {
-        mDeviceContext->PSSetShaderResources(rangeStart, rangeEnd - rangeStart, &mNullSRVs[0]);
+        mDeviceContext->PSSetShaderResources(static_cast<unsigned int>(rangeStart),
+                                             static_cast<unsigned int>(rangeEnd - rangeStart),
+                                             &mNullSRVs[0]);
     }
 
     for (size_t samplerIndex = rangeStart; samplerIndex < rangeEnd; ++samplerIndex)

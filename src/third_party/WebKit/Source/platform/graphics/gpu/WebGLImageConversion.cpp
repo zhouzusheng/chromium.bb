@@ -441,6 +441,9 @@ template<> void unpack<WebGLImageConversion::DataFormatBGRA8, uint8_t, uint8_t>(
 
 template<> void unpack<WebGLImageConversion::DataFormatRGBA5551, uint16_t, uint8_t>(const uint16_t* source, uint8_t* destination, unsigned pixelsPerRow)
 {
+#if CPU(X86) || CPU(X86_64)
+    SIMD::unpackOneRowOfRGBA5551LittleToRGBA8(source, destination, pixelsPerRow);
+#endif
 #if HAVE(ARM_NEON_INTRINSICS)
     SIMD::unpackOneRowOfRGBA5551ToRGBA8(source, destination, pixelsPerRow);
 #endif
@@ -460,6 +463,9 @@ template<> void unpack<WebGLImageConversion::DataFormatRGBA5551, uint16_t, uint8
 
 template<> void unpack<WebGLImageConversion::DataFormatRGBA4444, uint16_t, uint8_t>(const uint16_t* source, uint8_t* destination, unsigned pixelsPerRow)
 {
+#if CPU(X86) || CPU(X86_64)
+    SIMD::unpackOneRowOfRGBA4444LittleToRGBA8(source, destination, pixelsPerRow);
+#endif
 #if HAVE(ARM_NEON_INTRINSICS)
     SIMD::unpackOneRowOfRGBA4444ToRGBA8(source, destination, pixelsPerRow);
 #endif
@@ -660,6 +666,9 @@ template<> void pack<WebGLImageConversion::DataFormatRA8, WebGLImageConversion::
 // FIXME: this routine is lossy and must be removed.
 template<> void pack<WebGLImageConversion::DataFormatRA8, WebGLImageConversion::AlphaDoUnmultiply, uint8_t, uint8_t>(const uint8_t* source, uint8_t* destination, unsigned pixelsPerRow)
 {
+#if CPU(X86) || CPU(X86_64)
+    SIMD::packOneRowOfRGBA8LittleToRA8(source, destination, pixelsPerRow);
+#endif
     for (unsigned i = 0; i < pixelsPerRow; ++i) {
         float scaleFactor = source[3] ? 255.0f / source[3] : 1.0f;
         uint8_t sourceR = static_cast<uint8_t>(static_cast<float>(source[0]) * scaleFactor);
@@ -2020,14 +2029,14 @@ bool WebGLImageConversion::ImageExtractor::extractImage(bool premultiplyAlpha, b
 {
     if (!m_image)
         return false;
-    bool success = m_image->bitmapForCurrentFrame(&m_skiaBitmap);
+    bool success = m_image->deprecatedBitmapForCurrentFrame(&m_skiaBitmap);
     m_alphaOp = AlphaDoNothing;
     bool hasAlpha = success ? !m_skiaBitmap.isOpaque() : true;
     if ((!success || ignoreGammaAndColorProfile || (hasAlpha && !premultiplyAlpha)) && m_image->data()) {
         // Attempt to get raw unpremultiplied image data.
         OwnPtr<ImageDecoder> decoder(ImageDecoder::create(
-            *(m_image->data()), ImageSource::AlphaNotPremultiplied,
-            ignoreGammaAndColorProfile ? ImageSource::GammaAndColorProfileIgnored : ImageSource::GammaAndColorProfileApplied));
+            *(m_image->data()), ImageDecoder::AlphaNotPremultiplied,
+            ignoreGammaAndColorProfile ? ImageDecoder::GammaAndColorProfileIgnored : ImageDecoder::GammaAndColorProfileApplied));
         if (!decoder)
             return false;
         decoder->setData(m_image->data(), true);

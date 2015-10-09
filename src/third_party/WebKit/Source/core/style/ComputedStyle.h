@@ -78,7 +78,6 @@
 #include "platform/text/TextRun.h"
 #include "platform/text/UnicodeBidi.h"
 #include "platform/transforms/TransformOperations.h"
-#include "public/platform/WebScrollBlocksOn.h"
 #include "wtf/Forward.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/RefCounted.h"
@@ -133,6 +132,7 @@ class CORE_EXPORT ComputedStyle: public RefCounted<ComputedStyle> {
     friend class ComputedStyleCSSValueMapping; // Needs to be able to see visited and unvisited colors for devtools.
     friend class StyleBuilderFunctions; // Sets color styles
     friend class CachedUAStyle; // Saves Border/Background information for later comparison.
+    friend class LengthPropertyFunctions; // Reads initial style values.
 
     // FIXME: When we stop resolving currentColor at style time, these can be removed.
     friend class CSSToStyleMap;
@@ -279,8 +279,10 @@ protected:
         unsigned affectedByDrag : 1;
 
         unsigned isLink : 1;
+
+        mutable unsigned hasRemUnits : 1;
         // If you add more style bits here, you will also need to update ComputedStyle::copyNonInheritedFromCached()
-        // 62 bits
+        // 63 bits
     } noninherited_flags;
 
 // !END SYNC!
@@ -330,6 +332,7 @@ protected:
         noninherited_flags.affectedByActive = false;
         noninherited_flags.affectedByDrag = false;
         noninherited_flags.isLink = false;
+        noninherited_flags.hasRemUnits = false;
     }
 
 private:
@@ -380,6 +383,9 @@ public:
 
     void setHasViewportUnits(bool hasViewportUnits = true) const { noninherited_flags.hasViewportUnits = hasViewportUnits; }
     bool hasViewportUnits() const { return noninherited_flags.hasViewportUnits; }
+
+    void setHasRemUnits() const { noninherited_flags.hasRemUnits = true; }
+    bool hasRemUnits() const { return noninherited_flags.hasRemUnits; }
 
     bool affectedByFocus() const { return noninherited_flags.affectedByFocus; }
     bool affectedByHover() const { return noninherited_flags.affectedByHover; }
@@ -466,7 +472,7 @@ public:
 
     EPosition position() const { return static_cast<EPosition>(noninherited_flags.position); }
     bool hasOutOfFlowPosition() const { return position() == AbsolutePosition || position() == FixedPosition; }
-    bool hasInFlowPosition() const { return position() == RelativePosition; }
+    bool hasInFlowPosition() const { return position() == RelativePosition || position() == StickyPosition; }
     bool hasViewportConstrainedPosition() const { return position() == FixedPosition; }
     EFloat floating() const { return static_cast<EFloat>(noninherited_flags.floating); }
 
@@ -522,7 +528,6 @@ public:
     int borderStartWidth() const;
     int borderEndWidth() const;
 
-    int outlineSize() const { return max(0, outlineWidth() + outlineOffset()); }
     int outlineWidth() const
     {
         if (m_background->outline().style() == BNONE)
@@ -532,7 +537,7 @@ public:
     bool hasOutline() const { return outlineWidth() > 0 && outlineStyle() > BHIDDEN; }
     EBorderStyle outlineStyle() const { return m_background->outline().style(); }
     OutlineIsAuto outlineStyleIsAuto() const { return static_cast<OutlineIsAuto>(m_background->outline().isAuto()); }
-    int outlineOutset() const;
+    int outlineOutsetExtent() const;
 
     EOverflow overflowX() const { return static_cast<EOverflow>(noninherited_flags.overflowX); }
     EOverflow overflowY() const { return static_cast<EOverflow>(noninherited_flags.overflowY); }
@@ -891,6 +896,8 @@ public:
 
     TabSize tabSize() const { return rareInheritedData->m_tabSize; }
 
+    RespectImageOrientationEnum respectImageOrientation() const { return static_cast<RespectImageOrientationEnum>(rareInheritedData->m_respectImageOrientation); }
+
     // End CSS3 Getters
 
     // Apple-specific property getter methods
@@ -954,8 +961,6 @@ public:
     TouchAction touchAction() const { return static_cast<TouchAction>(rareNonInheritedData->m_touchAction); }
 
     ScrollBehavior scrollBehavior() const { return static_cast<ScrollBehavior>(rareNonInheritedData->m_scrollBehavior); }
-    WebScrollBlocksOn scrollBlocksOn() const { return static_cast<WebScrollBlocksOn>(rareNonInheritedData->m_scrollBlocksOn); }
-    bool hasScrollBlocksOn() const { return scrollBlocksOn() != WebScrollBlocksOnNone; }
 
     ScrollSnapType scrollSnapType() const { return static_cast<ScrollSnapType>(rareNonInheritedData->m_scrollSnapType); }
     ScrollSnapPoints scrollSnapPointsX() const { return rareNonInheritedData->m_scrollSnap->m_xPoints; }
@@ -1035,7 +1040,7 @@ public:
     void setBackgroundColor(const StyleColor& v) { SET_VAR(m_background, m_color, v); }
 
     void setBorderImage(const NinePieceImage& b) { SET_VAR(surround, border.m_image, b); }
-    void setBorderImageSource(PassRefPtr<StyleImage>);
+    void setBorderImageSource(PassRefPtrWillBeRawPtr<StyleImage>);
     void setBorderImageSlices(const LengthBox&);
     void setBorderImageSlicesFill(bool);
     void setBorderImageWidth(const BorderImageLengthBox&);
@@ -1159,7 +1164,7 @@ public:
     }
 
     void setMaskBoxImage(const NinePieceImage& b) { SET_VAR(rareNonInheritedData, m_maskBoxImage, b); }
-    void setMaskBoxImageSource(PassRefPtr<StyleImage> v) { rareNonInheritedData.access()->m_maskBoxImage.setImage(v); }
+    void setMaskBoxImageSource(PassRefPtrWillBeRawPtr<StyleImage> v) { rareNonInheritedData.access()->m_maskBoxImage.setImage(v); }
     void setMaskBoxImageSlices(const LengthBox& slices)
     {
         rareNonInheritedData.access()->m_maskBoxImage.setImageSlices(slices);
@@ -1184,7 +1189,7 @@ public:
     void setCaptionSide(ECaptionSide v) { inherited_flags._caption_side = v; }
 
     void setListStyleType(EListStyleType v) { inherited_flags._list_style_type = v; }
-    void setListStyleImage(PassRefPtr<StyleImage>);
+    void setListStyleImage(PassRefPtrWillBeRawPtr<StyleImage>);
     void setListStylePosition(EListStylePosition v) { inherited_flags._list_style_position = v; }
 
     void setMarginTop(const Length& v) { SET_VAR(surround, margin.m_top, v); }
@@ -1202,8 +1207,8 @@ public:
     void setPaddingRight(const Length& v) { SET_VAR(surround, padding.m_right, v); }
 
     void setCursor(ECursor c) { inherited_flags._cursor_style = c; }
-    void addCursor(PassRefPtr<StyleImage>, bool hotSpotSpecified, const IntPoint& hotSpot = IntPoint());
-    void setCursorList(PassRefPtr<CursorList>);
+    void addCursor(PassRefPtrWillBeRawPtr<StyleImage>, bool hotSpotSpecified, const IntPoint& hotSpot = IntPoint());
+    void setCursorList(PassRefPtrWillBeRawPtr<CursorList>);
     void clearCursorList();
 
     void setInsideLink(EInsideLink insideLink) { inherited_flags._insideLink = insideLink; }
@@ -1378,6 +1383,8 @@ public:
 
     void setTabSize(TabSize size) { SET_VAR(rareInheritedData, m_tabSize, size); }
 
+    void setRespectImageOrientation(RespectImageOrientationEnum v) { SET_VAR(rareInheritedData, m_respectImageOrientation, v); }
+
     // End CSS3 Setters
 
     void setWrapFlow(WrapFlow wrapFlow) { SET_VAR(rareNonInheritedData, m_wrapFlow, wrapFlow); }
@@ -1413,7 +1420,6 @@ public:
     void setTouchAction(TouchAction t) { SET_VAR(rareNonInheritedData, m_touchAction, t); }
 
     void setScrollBehavior(ScrollBehavior b) { SET_VAR(rareNonInheritedData, m_scrollBehavior, b); }
-    void setScrollBlocksOn(WebScrollBlocksOn b) { SET_VAR(rareNonInheritedData, m_scrollBlocksOn, b); }
 
     void setScrollSnapType(ScrollSnapType b) { SET_VAR(rareNonInheritedData, m_scrollSnapType, b); }
     void setScrollSnapPointsX(const ScrollSnapPoints& b) { SET_VAR(rareNonInheritedData.access()->m_scrollSnap, m_xPoints, b); }
@@ -1471,7 +1477,7 @@ public:
     const Length& baselineShiftValue() const { return svgStyle().baselineShiftValue(); }
     void setBaselineShiftValue(const Length& s) { accessSVGStyle().setBaselineShiftValue(s); }
 
-    void setShapeOutside(PassRefPtr<ShapeValue> value)
+    void setShapeOutside(PassRefPtrWillBeRawPtr<ShapeValue> value)
     {
         if (rareNonInheritedData->m_shapeOutside == value)
             return;
@@ -1507,7 +1513,7 @@ public:
     bool contentDataEquivalent(const ComputedStyle* otherStyle) const { return const_cast<ComputedStyle*>(this)->rareNonInheritedData->contentDataEquivalent(*const_cast<ComputedStyle*>(otherStyle)->rareNonInheritedData); }
     void clearContent();
     void setContent(const String&, bool add = false);
-    void setContent(PassRefPtr<StyleImage>, bool add = false);
+    void setContent(PassRefPtrWillBeRawPtr<StyleImage>, bool add = false);
     void setContent(PassOwnPtr<CounterContent>, bool add = false);
     void setContent(QuoteType, bool add = false);
 
@@ -1691,6 +1697,7 @@ public:
     static RubyPosition initialRubyPosition() { return RubyPositionBefore; }
     static LineBoxContain initialLineBoxContain() { return LineBoxContainBlock | LineBoxContainInline | LineBoxContainReplaced; }
     static ImageOrientationEnum initialImageOrientation() { return OriginTopLeft; }
+    static RespectImageOrientationEnum initialRespectImageOrientation() { return DoNotRespectImageOrientation; }
     static EImageRendering initialImageRendering() { return ImageRenderingAuto; }
     static ImageResolutionSource initialImageResolutionSource() { return ImageResolutionSpecified; }
     static ImageResolutionSnap initialImageResolutionSnap() { return ImageResolutionNoSnap; }
@@ -1702,7 +1709,6 @@ public:
     static ShadowList* initialBoxShadow() { return 0; }
     static ShadowList* initialTextShadow() { return 0; }
     static ScrollBehavior initialScrollBehavior() { return ScrollBehaviorAuto; }
-    static WebScrollBlocksOn initialScrollBlocksOn() { return WebScrollBlocksOnNone; }
     static ScrollSnapType initialScrollSnapType() { return ScrollSnapTypeNone; }
     static ScrollSnapPoints initialScrollSnapPointsX() { return ScrollSnapPoints(); }
     static ScrollSnapPoints initialScrollSnapPointsY() { return ScrollSnapPoints(); }
@@ -1823,7 +1829,7 @@ private:
     Color floodColor() const { return svgStyle().floodColor(); }
     Color lightingColor() const { return svgStyle().lightingColor(); }
 
-    void appendContent(PassOwnPtr<ContentData>);
+    void appendContent(PassOwnPtrWillBeRawPtr<ContentData>);
     void addAppliedTextDecoration(const AppliedTextDecoration&);
     void applyMotionPathTransform(float originX, float originY, TransformationMatrix&) const;
 

@@ -42,10 +42,10 @@ static inline bool shouldSuppressPaintingLayer(DeprecatedPaintLayer* layer)
     return false;
 }
 
-void DeprecatedPaintLayerPainter::paint(GraphicsContext* context, const LayoutRect& damageRect, PaintBehavior paintBehavior, LayoutObject* paintingRoot, PaintLayerFlags paintFlags)
+void DeprecatedPaintLayerPainter::paint(GraphicsContext* context, const LayoutRect& damageRect, const GlobalPaintFlags globalPaintFlags, LayoutObject* paintingRoot, PaintLayerFlags paintFlags)
 {
-    DeprecatedPaintLayerPaintingInfo paintingInfo(&m_paintLayer, LayoutRect(enclosingIntRect(damageRect)), paintBehavior, LayoutSize(), paintingRoot);
-    if (shouldPaintLayerInSoftwareMode(paintingInfo, paintFlags))
+    DeprecatedPaintLayerPaintingInfo paintingInfo(&m_paintLayer, LayoutRect(enclosingIntRect(damageRect)), globalPaintFlags, LayoutSize(), paintingRoot);
+    if (shouldPaintLayerInSoftwareMode(globalPaintFlags, paintFlags))
         paintLayer(context, paintingInfo, paintFlags);
 }
 
@@ -60,8 +60,8 @@ void DeprecatedPaintLayerPainter::paintLayer(GraphicsContext* context, const Dep
     DisableCompositingQueryAsserts disabler;
 
     if (m_paintLayer.compositingState() != NotComposited) {
-        if (paintingInfo.paintBehavior & PaintBehaviorFlattenCompositingLayers) {
-            // FIXME: ok, but what about PaintBehaviorFlattenCompositingLayers? That's for printing.
+        if (paintingInfo.globalPaintFlags() & GlobalPaintFlattenCompositingLayers) {
+            // FIXME: ok, but what about GlobalPaintFlattenCompositingLayers? That's for printing and drag-image.
             // FIXME: why isn't the code here global, as opposed to being set on each paintLayer() call?
             paintFlags |= PaintLayerUncachedClipRects;
         }
@@ -78,13 +78,13 @@ void DeprecatedPaintLayerPainter::paintLayer(GraphicsContext* context, const Dep
     if (!m_paintLayer.layoutObject()->opacity())
         return;
 
-    if (m_paintLayer.paintsWithTransparency(paintingInfo.paintBehavior))
+    if (m_paintLayer.paintsWithTransparency(paintingInfo.globalPaintFlags()))
         paintFlags |= PaintLayerHaveTransparency;
 
     LayerFixedPositionRecorder fixedPositionRecorder(*context, *m_paintLayer.layoutObject());
 
     // PaintLayerAppliedTransform is used in LayoutReplica, to avoid applying the transform twice.
-    if (m_paintLayer.paintsWithTransform(paintingInfo.paintBehavior) && !(paintFlags & PaintLayerAppliedTransform)) {
+    if (m_paintLayer.paintsWithTransform(paintingInfo.globalPaintFlags()) && !(paintFlags & PaintLayerAppliedTransform)) {
         paintLayerWithTransform(context, paintingInfo, paintFlags);
         return;
     }
@@ -100,7 +100,7 @@ void DeprecatedPaintLayerPainter::paintLayerContentsAndReflection(GraphicsContex
 
     // Paint the reflection first if we have one.
     if (m_paintLayer.reflectionInfo()) {
-        ScopeRecorder scopeRecorder(*context, *m_paintLayer.layoutObject());
+        ScopeRecorder scopeRecorder(*context);
         m_paintLayer.reflectionInfo()->paint(context, paintingInfo, localPaintFlags | PaintLayerPaintingReflection);
     }
 
@@ -217,9 +217,9 @@ void DeprecatedPaintLayerPainter::paintLayerContents(GraphicsContext* context, c
     // Note that there is no need to composite if we're painting the root.
     // FIXME: this should be unified further into DeprecatedPaintLayer::paintsWithTransparency().
     bool shouldCompositeForBlendMode = (!m_paintLayer.layoutObject()->isDocumentElement() || m_paintLayer.layoutObject()->isSVGRoot()) && m_paintLayer.stackingNode()->isStackingContext() && m_paintLayer.hasNonIsolatedDescendantWithBlendMode();
-    if (shouldCompositeForBlendMode || m_paintLayer.paintsWithTransparency(paintingInfo.paintBehavior)) {
+    if (shouldCompositeForBlendMode || m_paintLayer.paintsWithTransparency(paintingInfo.globalPaintFlags())) {
         clipRecorder.emplace(*context, *m_paintLayer.layoutObject(), DisplayItem::TransparencyClip,
-            m_paintLayer.paintingExtent(paintingInfo.rootLayer, paintingInfo.paintDirtyRect, paintingInfo.subPixelAccumulation, paintingInfo.paintBehavior),
+            m_paintLayer.paintingExtent(paintingInfo.rootLayer, paintingInfo.paintDirtyRect, paintingInfo.subPixelAccumulation, paintingInfo.globalPaintFlags()),
             &paintingInfo, LayoutPoint(), paintFlags);
 
         compositingRecorder.emplace(*context, *m_paintLayer.layoutObject(),
@@ -242,7 +242,7 @@ void DeprecatedPaintLayerPainter::paintLayerContents(GraphicsContext* context, c
             shouldPaintContent = atLeastOneFragmentIntersectsDamageRect(layerFragments, localPaintingInfo, paintFlags, offsetFromRoot);
     }
 
-    bool selectionOnly = localPaintingInfo.paintBehavior & PaintBehaviorSelectionOnly;
+    bool selectionOnly = localPaintingInfo.globalPaintFlags() & GlobalPaintSelectionOnly;
     // If this layer's layoutObject is a child of the paintingRoot, we paint unconditionally, which
     // is done by passing a nil paintingRoot down to our layoutObject (as if no paintingRoot was ever set).
     // Else, our layout tree may or may not contain the painting root, so we pass that root along
@@ -261,15 +261,9 @@ void DeprecatedPaintLayerPainter::paintLayerContents(GraphicsContext* context, c
         bool shouldPaintNormalFlowAndPosZOrderLists = isPaintingCompositedForeground;
         bool shouldPaintOverlayScrollbars = isPaintingOverlayScrollbars;
 
-        PaintBehavior paintBehavior = PaintBehaviorNormal;
-        if (paintFlags & PaintLayerPaintingSkipRootBackground)
-            paintBehavior |= PaintBehaviorSkipRootBackground;
-        else if (paintFlags & PaintLayerPaintingRootBackgroundOnly)
-            paintBehavior |= PaintBehaviorRootBackgroundOnly;
-
         if (shouldPaintBackground) {
             paintBackgroundForFragments(layerFragments, context, paintingInfo.paintDirtyRect,
-                localPaintingInfo, paintBehavior, paintingRootForLayoutObject, paintFlags);
+                localPaintingInfo, paintingRootForLayoutObject, paintFlags);
         }
 
         if (shouldPaintNegZOrderList)
@@ -277,11 +271,11 @@ void DeprecatedPaintLayerPainter::paintLayerContents(GraphicsContext* context, c
 
         if (shouldPaintOwnContents) {
             paintForegroundForFragments(layerFragments, context, paintingInfo.paintDirtyRect,
-                localPaintingInfo, paintBehavior, paintingRootForLayoutObject, selectionOnly, paintFlags);
+                localPaintingInfo, paintingRootForLayoutObject, selectionOnly, paintFlags);
         }
 
         if (shouldPaintOutline)
-            paintOutlineForFragments(layerFragments, context, localPaintingInfo, paintBehavior, paintingRootForLayoutObject, paintFlags);
+            paintOutlineForFragments(layerFragments, context, localPaintingInfo, paintingRootForLayoutObject, paintFlags);
 
         if (shouldPaintNormalFlowAndPosZOrderLists)
             paintChildren(NormalFlowChildren | PositiveZOrderChildren, context, paintingInfo, paintFlags);
@@ -329,7 +323,7 @@ bool DeprecatedPaintLayerPainter::atLeastOneFragmentIntersectsDamageRect(Depreca
 
 void DeprecatedPaintLayerPainter::paintLayerWithTransform(GraphicsContext* context, const DeprecatedPaintLayerPaintingInfo& paintingInfo, PaintLayerFlags paintFlags)
 {
-    TransformationMatrix layerTransform = m_paintLayer.renderableTransform(paintingInfo.paintBehavior);
+    TransformationMatrix layerTransform = m_paintLayer.renderableTransform(paintingInfo.globalPaintFlags());
     // If the transform can't be inverted, then don't paint anything.
     if (!layerTransform.isInvertible())
         return;
@@ -357,7 +351,7 @@ void DeprecatedPaintLayerPainter::paintLayerWithTransform(GraphicsContext* conte
         ShouldRespectOverflowClip respectOverflowClip = shouldRespectOverflowClip(paintFlags, m_paintLayer.layoutObject());
         // Calculate the transformed bounding box in the current coordinate space, to figure out
         // which fragmentainers (e.g. columns) we need to visit.
-        LayoutRect transformedExtent = DeprecatedPaintLayer::transparencyClipBox(&m_paintLayer, paginationLayer, DeprecatedPaintLayer::PaintingTransparencyClipBox, DeprecatedPaintLayer::RootOfTransparencyClipBox, paintingInfo.subPixelAccumulation, paintingInfo.paintBehavior);
+        LayoutRect transformedExtent = DeprecatedPaintLayer::transparencyClipBox(&m_paintLayer, paginationLayer, DeprecatedPaintLayer::PaintingTransparencyClipBox, DeprecatedPaintLayer::RootOfTransparencyClipBox, paintingInfo.subPixelAccumulation, paintingInfo.globalPaintFlags());
         // FIXME: we don't check if paginationLayer is within paintingInfo.rootLayer here.
         paginationLayer->collectFragments(fragments, paintingInfo.rootLayer, paintingInfo.paintDirtyRect, cacheSlot, IgnoreOverlayScrollbarSize, respectOverflowClip, 0, paintingInfo.subPixelAccumulation, &transformedExtent);
     } else {
@@ -374,7 +368,7 @@ void DeprecatedPaintLayerPainter::paintLayerWithTransform(GraphicsContext* conte
     for (const auto& fragment : fragments) {
         Optional<ScopeRecorder> scopeRecorder;
         if (needsScope)
-            scopeRecorder.emplace(*context, *m_paintLayer.layoutObject());
+            scopeRecorder.emplace(*context);
         Optional<LayerClipRecorder> clipRecorder;
         if (parentLayer) {
             ClipRect clipRectForFragment(ancestorBackgroundClipRect);
@@ -397,7 +391,7 @@ void DeprecatedPaintLayerPainter::paintFragmentByApplyingTransform(GraphicsConte
     LayoutPoint delta;
     m_paintLayer.convertToLayerCoords(paintingInfo.rootLayer, delta);
     delta.moveBy(fragmentTranslation);
-    TransformationMatrix transform(m_paintLayer.renderableTransform(paintingInfo.paintBehavior));
+    TransformationMatrix transform(m_paintLayer.renderableTransform(paintingInfo.globalPaintFlags()));
     IntPoint roundedDelta = roundedIntPoint(delta);
     transform.translateRight(roundedDelta.x(), roundedDelta.y());
     LayoutSize adjustedSubPixelAccumulation = paintingInfo.subPixelAccumulation + (delta - roundedDelta);
@@ -405,7 +399,7 @@ void DeprecatedPaintLayerPainter::paintFragmentByApplyingTransform(GraphicsConte
     Transform3DRecorder transform3DRecorder(*context, *m_paintLayer.layoutObject(), DisplayItem::Transform3DElementTransform, transform);
 
     // Now do a paint with the root layer shifted to be us.
-    DeprecatedPaintLayerPaintingInfo transformedPaintingInfo(&m_paintLayer, LayoutRect(enclosingIntRect(transform.inverse().mapRect(paintingInfo.paintDirtyRect))), paintingInfo.paintBehavior,
+    DeprecatedPaintLayerPaintingInfo transformedPaintingInfo(&m_paintLayer, LayoutRect(enclosingIntRect(transform.inverse().mapRect(paintingInfo.paintDirtyRect))), paintingInfo.globalPaintFlags(),
         adjustedSubPixelAccumulation, paintingInfo.paintingRoot);
     paintLayerContentsAndReflection(context, transformedPaintingInfo, paintFlags, ForceSingleFragment);
 }
@@ -428,7 +422,7 @@ void DeprecatedPaintLayerPainter::paintChildren(unsigned childrenToVisit, Graphi
         DeprecatedPaintLayerPainter childPainter(*child->layer());
         // If this Layer should paint into its own backing or a grouped backing, that will be done via CompositedDeprecatedPaintLayerMapping::paintContents()
         // and CompositedDeprecatedPaintLayerMapping::doPaintTask().
-        if (!childPainter.shouldPaintLayerInSoftwareMode(paintingInfo, paintFlags))
+        if (!childPainter.shouldPaintLayerInSoftwareMode(paintingInfo.globalPaintFlags(), paintFlags))
             continue;
 
         DeprecatedPaintLayerPaintingInfo childPaintingInfo = paintingInfo;
@@ -449,12 +443,12 @@ static bool paintForFixedRootBackground(const DeprecatedPaintLayer* layer, Paint
     return layer->layoutObject()->isDocumentElement() && (paintFlags & PaintLayerPaintingRootBackgroundOnly);
 }
 
-bool DeprecatedPaintLayerPainter::shouldPaintLayerInSoftwareMode(const DeprecatedPaintLayerPaintingInfo& paintingInfo, PaintLayerFlags paintFlags)
+bool DeprecatedPaintLayerPainter::shouldPaintLayerInSoftwareMode(const GlobalPaintFlags globalPaintFlags, PaintLayerFlags paintFlags)
 {
     DisableCompositingQueryAsserts disabler;
 
     return m_paintLayer.compositingState() == NotComposited
-        || (paintingInfo.paintBehavior & PaintBehaviorFlattenCompositingLayers)
+        || (globalPaintFlags & GlobalPaintFlattenCompositingLayers)
         || ((paintFlags & PaintLayerPaintingReflection) && !m_paintLayer.has3DTransform())
         || paintForFixedRootBackground(&m_paintLayer, paintFlags);
 }
@@ -465,7 +459,7 @@ void DeprecatedPaintLayerPainter::paintOverflowControlsForFragments(const Deprec
     for (auto& fragment : layerFragments) {
         Optional<ScopeRecorder> scopeRecorder;
         if (needsScope)
-            scopeRecorder.emplace(*context, *m_paintLayer.layoutObject());
+            scopeRecorder.emplace(*context);
 
         Optional<LayerClipRecorder> clipRecorder;
 
@@ -476,7 +470,7 @@ void DeprecatedPaintLayerPainter::paintOverflowControlsForFragments(const Deprec
     }
 }
 
-void DeprecatedPaintLayerPainter::paintFragmentWithPhase(PaintPhase phase, const DeprecatedPaintLayerFragment& fragment, GraphicsContext* context, const ClipRect& clipRect, const DeprecatedPaintLayerPaintingInfo& paintingInfo, PaintBehavior paintBehavior, LayoutObject* paintingRootForLayoutObject, PaintLayerFlags paintFlags, ClipState clipState)
+void DeprecatedPaintLayerPainter::paintFragmentWithPhase(PaintPhase phase, const DeprecatedPaintLayerFragment& fragment, GraphicsContext* context, const ClipRect& clipRect, const DeprecatedPaintLayerPaintingInfo& paintingInfo, LayoutObject* paintingRootForLayoutObject, PaintLayerFlags paintFlags, ClipState clipState)
 {
     ASSERT(m_paintLayer.isSelfPaintingLayer());
 
@@ -498,7 +492,7 @@ void DeprecatedPaintLayerPainter::paintFragmentWithPhase(PaintPhase phase, const
         clipRecorder.emplace(*context, *m_paintLayer.layoutObject(), clipType, clipRect, &paintingInfo, fragment.paginationOffset, paintFlags, clippingRule);
     }
 
-    PaintInfo paintInfo(context, pixelSnappedIntRect(clipRect.rect()), phase, paintBehavior, paintingRootForLayoutObject, 0, paintingInfo.rootLayer->layoutObject());
+    PaintInfo paintInfo(context, pixelSnappedIntRect(clipRect.rect()), phase, paintingInfo.globalPaintFlags(), paintFlags, paintingRootForLayoutObject, 0, paintingInfo.rootLayer->layoutObject());
     Optional<ScrollRecorder> scrollRecorder;
     LayoutPoint paintOffset = toPoint(fragment.layerBounds.location() - m_paintLayer.layoutBoxLocation());
     if (!paintingInfo.scrollOffsetAccumulation.isZero()) {
@@ -514,20 +508,20 @@ void DeprecatedPaintLayerPainter::paintFragmentWithPhase(PaintPhase phase, const
 }
 
 void DeprecatedPaintLayerPainter::paintBackgroundForFragments(const DeprecatedPaintLayerFragments& layerFragments, GraphicsContext* context,
-    const LayoutRect& transparencyPaintDirtyRect, const DeprecatedPaintLayerPaintingInfo& localPaintingInfo, PaintBehavior paintBehavior,
+    const LayoutRect& transparencyPaintDirtyRect, const DeprecatedPaintLayerPaintingInfo& localPaintingInfo,
     LayoutObject* paintingRootForLayoutObject, PaintLayerFlags paintFlags)
 {
     bool needsScope = layerFragments.size() > 1;
     for (auto& fragment : layerFragments) {
         Optional<ScopeRecorder> scopeRecorder;
         if (needsScope)
-            scopeRecorder.emplace(*context, *m_paintLayer.layoutObject());
-        paintFragmentWithPhase(PaintPhaseBlockBackground, fragment, context, fragment.backgroundRect, localPaintingInfo, paintBehavior, paintingRootForLayoutObject, paintFlags, HasNotClipped);
+            scopeRecorder.emplace(*context);
+        paintFragmentWithPhase(PaintPhaseBlockBackground, fragment, context, fragment.backgroundRect, localPaintingInfo, paintingRootForLayoutObject, paintFlags, HasNotClipped);
     }
 }
 
 void DeprecatedPaintLayerPainter::paintForegroundForFragments(const DeprecatedPaintLayerFragments& layerFragments, GraphicsContext* context,
-    const LayoutRect& transparencyPaintDirtyRect, const DeprecatedPaintLayerPaintingInfo& localPaintingInfo, PaintBehavior paintBehavior,
+    const LayoutRect& transparencyPaintDirtyRect, const DeprecatedPaintLayerPaintingInfo& localPaintingInfo,
     LayoutObject* paintingRootForLayoutObject, bool selectionOnly, PaintLayerFlags paintFlags)
 {
     // Optimize clipping for the single fragment case.
@@ -542,39 +536,39 @@ void DeprecatedPaintLayerPainter::paintForegroundForFragments(const DeprecatedPa
     // We have to loop through every fragment multiple times, since we have to issue paint invalidations in each specific phase in order for
     // interleaving of the fragments to work properly.
     paintForegroundForFragmentsWithPhase(selectionOnly ? PaintPhaseSelection : PaintPhaseChildBlockBackgrounds, layerFragments,
-        context, localPaintingInfo, paintBehavior, paintingRootForLayoutObject, paintFlags, clipState);
+        context, localPaintingInfo, paintingRootForLayoutObject, paintFlags, clipState);
 
     if (!selectionOnly) {
-        paintForegroundForFragmentsWithPhase(PaintPhaseFloat, layerFragments, context, localPaintingInfo, paintBehavior, paintingRootForLayoutObject, paintFlags, clipState);
-        paintForegroundForFragmentsWithPhase(PaintPhaseForeground, layerFragments, context, localPaintingInfo, paintBehavior, paintingRootForLayoutObject, paintFlags, clipState);
-        paintForegroundForFragmentsWithPhase(PaintPhaseChildOutlines, layerFragments, context, localPaintingInfo, paintBehavior, paintingRootForLayoutObject, paintFlags, clipState);
+        paintForegroundForFragmentsWithPhase(PaintPhaseFloat, layerFragments, context, localPaintingInfo, paintingRootForLayoutObject, paintFlags, clipState);
+        paintForegroundForFragmentsWithPhase(PaintPhaseForeground, layerFragments, context, localPaintingInfo, paintingRootForLayoutObject, paintFlags, clipState);
+        paintForegroundForFragmentsWithPhase(PaintPhaseChildOutlines, layerFragments, context, localPaintingInfo, paintingRootForLayoutObject, paintFlags, clipState);
     }
 }
 
 void DeprecatedPaintLayerPainter::paintForegroundForFragmentsWithPhase(PaintPhase phase, const DeprecatedPaintLayerFragments& layerFragments, GraphicsContext* context,
-    const DeprecatedPaintLayerPaintingInfo& localPaintingInfo, PaintBehavior paintBehavior, LayoutObject* paintingRootForLayoutObject, PaintLayerFlags paintFlags, ClipState clipState)
+    const DeprecatedPaintLayerPaintingInfo& localPaintingInfo, LayoutObject* paintingRootForLayoutObject, PaintLayerFlags paintFlags, ClipState clipState)
 {
     bool needsScope = layerFragments.size() > 1;
     for (auto& fragment : layerFragments) {
         if (!fragment.foregroundRect.isEmpty()) {
             Optional<ScopeRecorder> scopeRecorder;
             if (needsScope)
-                scopeRecorder.emplace(*context, *m_paintLayer.layoutObject());
-            paintFragmentWithPhase(phase, fragment, context, fragment.foregroundRect, localPaintingInfo, paintBehavior, paintingRootForLayoutObject, paintFlags, clipState);
+                scopeRecorder.emplace(*context);
+            paintFragmentWithPhase(phase, fragment, context, fragment.foregroundRect, localPaintingInfo, paintingRootForLayoutObject, paintFlags, clipState);
         }
     }
 }
 
 void DeprecatedPaintLayerPainter::paintOutlineForFragments(const DeprecatedPaintLayerFragments& layerFragments, GraphicsContext* context, const DeprecatedPaintLayerPaintingInfo& localPaintingInfo,
-    PaintBehavior paintBehavior, LayoutObject* paintingRootForLayoutObject, PaintLayerFlags paintFlags)
+    LayoutObject* paintingRootForLayoutObject, PaintLayerFlags paintFlags)
 {
     bool needsScope = layerFragments.size() > 1;
     for (auto& fragment : layerFragments) {
         if (!fragment.outlineRect.isEmpty()) {
             Optional<ScopeRecorder> scopeRecorder;
             if (needsScope)
-                scopeRecorder.emplace(*context, *m_paintLayer.layoutObject());
-            paintFragmentWithPhase(PaintPhaseSelfOutline, fragment, context, fragment.outlineRect, localPaintingInfo, paintBehavior, paintingRootForLayoutObject, paintFlags, HasNotClipped);
+                scopeRecorder.emplace(*context);
+            paintFragmentWithPhase(PaintPhaseSelfOutline, fragment, context, fragment.outlineRect, localPaintingInfo, paintingRootForLayoutObject, paintFlags, HasNotClipped);
         }
     }
 }
@@ -586,8 +580,8 @@ void DeprecatedPaintLayerPainter::paintMaskForFragments(const DeprecatedPaintLay
     for (auto& fragment : layerFragments) {
         Optional<ScopeRecorder> scopeRecorder;
         if (needsScope)
-            scopeRecorder.emplace(*context, *m_paintLayer.layoutObject());
-        paintFragmentWithPhase(PaintPhaseMask, fragment, context, fragment.backgroundRect, localPaintingInfo, PaintBehaviorNormal, paintingRootForLayoutObject, paintFlags, HasNotClipped);
+            scopeRecorder.emplace(*context);
+        paintFragmentWithPhase(PaintPhaseMask, fragment, context, fragment.backgroundRect, localPaintingInfo, paintingRootForLayoutObject, paintFlags, HasNotClipped);
     }
 }
 
@@ -598,17 +592,17 @@ void DeprecatedPaintLayerPainter::paintChildClippingMaskForFragments(const Depre
     for (auto& fragment: layerFragments) {
         Optional<ScopeRecorder> scopeRecorder;
         if (needsScope)
-            scopeRecorder.emplace(*context, *m_paintLayer.layoutObject());
-        paintFragmentWithPhase(PaintPhaseClippingMask, fragment, context, fragment.foregroundRect, localPaintingInfo, PaintBehaviorNormal, paintingRootForLayoutObject, paintFlags, HasNotClipped);
+            scopeRecorder.emplace(*context);
+        paintFragmentWithPhase(PaintPhaseClippingMask, fragment, context, fragment.foregroundRect, localPaintingInfo, paintingRootForLayoutObject, paintFlags, HasNotClipped);
     }
 }
 
-void DeprecatedPaintLayerPainter::paintOverlayScrollbars(GraphicsContext* context, const LayoutRect& damageRect, PaintBehavior paintBehavior, LayoutObject* paintingRoot)
+void DeprecatedPaintLayerPainter::paintOverlayScrollbars(GraphicsContext* context, const LayoutRect& damageRect, const GlobalPaintFlags paintFlags, LayoutObject* paintingRoot)
 {
     if (!m_paintLayer.containsDirtyOverlayScrollbars())
         return;
 
-    DeprecatedPaintLayerPaintingInfo paintingInfo(&m_paintLayer, LayoutRect(enclosingIntRect(damageRect)), paintBehavior, LayoutSize(), paintingRoot);
+    DeprecatedPaintLayerPaintingInfo paintingInfo(&m_paintLayer, LayoutRect(enclosingIntRect(damageRect)), paintFlags, LayoutSize(), paintingRoot);
     paintLayer(context, paintingInfo, PaintLayerPaintingOverlayScrollbars);
 
     m_paintLayer.setContainsDirtyOverlayScrollbars(false);

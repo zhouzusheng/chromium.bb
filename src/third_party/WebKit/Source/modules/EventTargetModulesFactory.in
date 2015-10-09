@@ -24,13 +24,13 @@ modules/notifications/Notification
 modules/permissions/PermissionStatus
 modules/presentation/Presentation
 modules/presentation/PresentationAvailability
+modules/presentation/PresentationRequest
 modules/presentation/PresentationSession
 modules/screen_orientation/ScreenOrientation
 modules/serviceworkers/ServiceWorker
 modules/serviceworkers/ServiceWorkerContainer
 modules/serviceworkers/ServiceWorkerGlobalScope
 modules/serviceworkers/ServiceWorkerRegistration
-modules/serviceworkers/StashedPortCollection
 modules/speech/SpeechRecognition
 modules/speech/SpeechSynthesis
 modules/speech/SpeechSynthesisUtterance
@@ -40,3 +40,4 @@ modules/webmidi/MIDIAccess
 modules/webmidi/MIDIInput
 modules/webmidi/MIDIPort
 modules/websockets/WebSocket ImplementedAs=DOMWebSocket
+modules/webusb/USB

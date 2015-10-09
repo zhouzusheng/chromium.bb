@@ -17,10 +17,10 @@
 
 #include "webrtc/base/checks.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
+#include "webrtc/modules/pacing/include/packet_router.h"
 #include "webrtc/system_wrappers/interface/logging.h"
 #include "webrtc/system_wrappers/interface/trace_event.h"
 #include "webrtc/video/video_capture_input.h"
-#include "webrtc/video_engine/encoder_state_feedback.h"
 #include "webrtc/video_engine/vie_channel.h"
 #include "webrtc/video_engine/vie_channel_group.h"
 #include "webrtc/video_engine/vie_defines.h"
@@ -119,12 +119,11 @@ VideoSendStream::VideoSendStream(
       channel_id_(channel_id),
       use_config_bitrate_(true),
       stats_proxy_(Clock::GetRealTimeClock(), config) {
+  DCHECK(!config_.rtp.ssrcs.empty());
   CHECK(channel_group->CreateSendChannel(channel_id_, 0, &transport_adapter_,
-                                         num_cpu_cores, true));
+                                         num_cpu_cores, config_.rtp.ssrcs));
   vie_channel_ = channel_group_->GetChannel(channel_id_);
   vie_encoder_ = channel_group_->GetEncoder(channel_id_);
-
-  DCHECK(!config_.rtp.ssrcs.empty());
 
   for (size_t i = 0; i < config_.rtp.extensions.size(); ++i) {
     const std::string& extension = config_.rtp.extensions[i].name;
@@ -138,6 +137,8 @@ VideoSendStream::VideoSendStream(
       CHECK_EQ(0, vie_channel_->SetSendAbsoluteSendTimeStatus(true, id));
     } else if (extension == RtpExtension::kVideoRotation) {
       CHECK_EQ(0, vie_channel_->SetSendVideoRotationStatus(true, id));
+    } else if (extension == RtpExtension::kTransportSequenceNumber) {
+      CHECK_EQ(0, vie_channel_->SetSendTransportSequenceNumber(true, id));
     } else {
       RTC_NOTREACHED() << "Registering unsupported RTP extension.";
     }
@@ -147,28 +148,14 @@ VideoSendStream::VideoSendStream(
   channel_group_->SetChannelRembStatus(true, false, vie_channel_);
 
   // Enable NACK, FEC or both.
-  bool enable_protection_nack = false;
-  bool enable_protection_fec = false;
-  if (config_.rtp.fec.red_payload_type != -1) {
-    enable_protection_fec = true;
-    DCHECK(config_.rtp.fec.ulpfec_payload_type != -1);
-    if (config_.rtp.nack.rtp_history_ms > 0) {
-      enable_protection_nack = true;
-      vie_channel_->SetHybridNACKFECStatus(
-          true, static_cast<unsigned char>(config_.rtp.fec.red_payload_type),
-          static_cast<unsigned char>(config_.rtp.fec.ulpfec_payload_type));
-    } else {
-      vie_channel_->SetFECStatus(
-          true, static_cast<unsigned char>(config_.rtp.fec.red_payload_type),
-          static_cast<unsigned char>(config_.rtp.fec.ulpfec_payload_type));
-    }
-    // TODO(changbin): Should set RTX for RED mapping in RTP sender in future.
-  } else {
-    enable_protection_nack = config_.rtp.nack.rtp_history_ms > 0;
-    vie_channel_->SetNACKStatus(config_.rtp.nack.rtp_history_ms > 0);
-  }
+  const bool enable_protection_nack = config_.rtp.nack.rtp_history_ms > 0;
+  const bool enable_protection_fec = config_.rtp.fec.red_payload_type != -1;
+  // TODO(changbin): Should set RTX for RED mapping in RTP sender in future.
+  vie_channel_->SetProtectionMode(enable_protection_nack, enable_protection_fec,
+                                  config_.rtp.fec.red_payload_type,
+                                  config_.rtp.fec.ulpfec_payload_type);
   vie_encoder_->UpdateProtectionMethod(enable_protection_nack,
-                                      enable_protection_fec);
+                                       enable_protection_fec);
 
   ConfigureSsrcs();
 
@@ -450,14 +437,14 @@ std::map<uint32_t, RtpState> VideoSendStream::GetRtpStates() const {
   return rtp_states;
 }
 
-void VideoSendStream::SignalNetworkState(Call::NetworkState state) {
+void VideoSendStream::SignalNetworkState(NetworkState state) {
   // When network goes up, enable RTCP status before setting transmission state.
   // When it goes down, disable RTCP afterwards. This ensures that any packets
   // sent due to the network state changed will not be dropped.
-  if (state == Call::kNetworkUp)
+  if (state == kNetworkUp)
     vie_channel_->SetRTCPMode(kRtcpCompound);
-  vie_encoder_->SetNetworkTransmissionState(state == Call::kNetworkUp);
-  if (state == Call::kNetworkDown)
+  vie_encoder_->SetNetworkTransmissionState(state == kNetworkUp);
+  if (state == kNetworkDown)
     vie_channel_->SetRTCPMode(kRtcpOff);
 }
 
@@ -509,9 +496,6 @@ bool VideoSendStream::SetSendCodec(VideoCodec video_codec) {
 
   // Update used SSRCs.
   vie_encoder_->SetSsrcs(used_ssrcs);
-  EncoderStateFeedback* encoder_state_feedback =
-      channel_group_->GetEncoderStateFeedback();
-  encoder_state_feedback->UpdateSsrcs(used_ssrcs, vie_encoder_);
 
   // Update the protection mode, we might be switching NACK/FEC.
   vie_encoder_->UpdateProtectionMethod(vie_encoder_->nack_enabled(),

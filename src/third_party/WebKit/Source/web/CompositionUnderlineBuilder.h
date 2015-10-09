@@ -43,7 +43,7 @@ class CompositionUnderlineBuilder : public CompositionUnderline {
 public:
     CompositionUnderlineBuilder(const WebCompositionUnderline& u)
         : CompositionUnderline(u.startOffset, u.endOffset,
-            u.thick,
+            Color(u.color), u.thick,
             Color(u.backgroundColor)) { }
 };
 

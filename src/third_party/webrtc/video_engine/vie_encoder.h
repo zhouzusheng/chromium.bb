@@ -73,7 +73,6 @@ class ViEEncoder : public RtcpIntraFrameObserver,
 
   ViEEncoder(int32_t channel_id,
              uint32_t number_of_cores,
-             const Config& config,
              ProcessThread& module_process_thread,
              PacedSender* pacer,
              BitrateAllocator* bitrate_allocator,
@@ -177,7 +176,7 @@ class ViEEncoder : public RtcpIntraFrameObserver,
 
   int channel_id() const { return channel_id_; }
 
-  int GetPaddingNeededBps(int bitrate_bps) const;
+  int GetPaddingNeededBps() const;
 
  protected:
   // Called by BitrateObserver.

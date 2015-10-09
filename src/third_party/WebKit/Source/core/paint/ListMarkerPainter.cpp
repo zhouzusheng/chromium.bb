@@ -8,6 +8,7 @@
 #include "core/layout/LayoutListItem.h"
 #include "core/layout/LayoutListMarker.h"
 #include "core/layout/TextRunConstructor.h"
+#include "core/layout/api/SelectionState.h"
 #include "core/paint/BlockPainter.h"
 #include "core/paint/LayoutObjectDrawingRecorder.h"
 #include "core/paint/PaintInfo.h"
@@ -30,7 +31,7 @@ void ListMarkerPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& pai
 
     LayoutPoint boxOrigin(paintOffset + m_layoutListMarker.location());
     LayoutRect overflowRect(m_layoutListMarker.visualOverflowRect());
-    if (m_layoutListMarker.selectionState() != LayoutObject::SelectionNone)
+    if (m_layoutListMarker.selectionState() != SelectionNone)
         overflowRect.unite(m_layoutListMarker.localSelectionRect());
     overflowRect.moveBy(boxOrigin);
 
@@ -129,7 +130,7 @@ void ListMarkerPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& pai
         return;
 
     const Font& font = m_layoutListMarker.style()->font();
-    TextRun textRun = constructTextRun(&m_layoutListMarker, font, m_layoutListMarker.text(), m_layoutListMarker.styleRef());
+    TextRun textRun = constructTextRun(font, m_layoutListMarker.text(), m_layoutListMarker.styleRef());
 
     GraphicsContextStateSaver stateSaver(*context, false);
     if (!m_layoutListMarker.style()->isHorizontalWritingMode()) {
@@ -161,7 +162,7 @@ void ListMarkerPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& pai
 
     const UChar suffix = m_layoutListMarker.listMarkerSuffix(type, m_layoutListMarker.listItem()->value());
     UChar suffixStr[1] = { suffix };
-    TextRun suffixRun = constructTextRun(&m_layoutListMarker, font, suffixStr, 1, m_layoutListMarker.styleRef(), m_layoutListMarker.style()->direction());
+    TextRun suffixRun = constructTextRun(font, suffixStr, 1, m_layoutListMarker.styleRef(), m_layoutListMarker.style()->direction());
     TextRunPaintInfo suffixRunInfo(suffixRun);
     suffixRunInfo.bounds = marker;
 

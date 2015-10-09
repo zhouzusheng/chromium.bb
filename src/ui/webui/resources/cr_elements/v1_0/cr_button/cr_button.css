@@ -7,6 +7,24 @@
   vertical-align: middle;
 }
 
+:host([disabled]) {
+  pointer-events: none;
+}
+
 paper-button[toggles][active] {
   background-color: lightgrey;
+}
+
+paper-button {
+  margin: 0;
+  --paper-button: {
+    min-width: auto;
+  };
+}
+
+:host([lowercase]) paper-button {
+  --paper-button: {
+    min-width: auto;  /* HACK(dbeam): mixins can't be redefined. */
+    text-transform: none;
+  };
 }

@@ -112,6 +112,7 @@ public:
     BLINK_EXPORT WebElement fullScreenElement() const;
     BLINK_EXPORT WebDOMEvent createEvent(const WebString& eventType);
     BLINK_EXPORT WebReferrerPolicy referrerPolicy() const;
+    BLINK_EXPORT WebString outgoingReferrer();
     BLINK_EXPORT WebElement createElement(const WebString& tagName);
 
     // Bloomberg-specific extensions
@@ -143,8 +144,6 @@ public:
 
     BLINK_EXPORT WebURL manifestURL() const;
     BLINK_EXPORT bool manifestUseCredentials() const;
-
-    BLINK_EXPORT WebURL defaultPresentationURL() const;
 
 #if BLINK_IMPLEMENTATION
     WebDocument(const PassRefPtrWillBeRawPtr<Document>&);

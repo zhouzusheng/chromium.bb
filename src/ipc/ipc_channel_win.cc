@@ -81,23 +81,38 @@ void ChannelWin::Close() {
 }
 
 bool ChannelWin::Send(Message* message) {
-  // TODO(erikchen): Remove this DCHECK once ChannelWin fully supports
-  // brokerable attachments. http://crbug.com/493414.
-  DCHECK(!message->HasAttachments());
   DCHECK(thread_check_->CalledOnValidThread());
   DVLOG(2) << "sending message @" << message << " on channel @" << this
            << " with type " << message->type()
            << " (" << output_queue_.size() << " in queue)";
 
+  if (!prelim_queue_.empty()) {
+    prelim_queue_.push(message);
+    return true;
+  }
+
+  if (message->HasBrokerableAttachments() &&
+      peer_pid_ == base::kNullProcessId) {
+    prelim_queue_.push(message);
+    return true;
+  }
+
+  return ProcessMessageForDelivery(message);
+}
+
+bool ChannelWin::ProcessMessageForDelivery(Message* message) {
   // Sending a brokerable attachment requires a call to Channel::Send(), so
-  // Send() may be re-entrant. Brokered attachments must be sent before the
-  // Message itself.
+  // both Send() and ProcessMessageForDelivery() may be re-entrant. Brokered
+  // attachments must be sent before the Message itself.
   if (message->HasBrokerableAttachments()) {
     DCHECK(broker_);
+    DCHECK(peer_pid_ != base::kNullProcessId);
     for (const BrokerableAttachment* attachment :
          message->attachment_set()->PeekBrokerableAttachments()) {
-      if (!broker_->SendAttachmentToProcess(attachment, peer_pid_))
+      if (!broker_->SendAttachmentToProcess(attachment, peer_pid_)) {
+        delete message;
         return false;
+      }
     }
   }
 
@@ -105,7 +120,12 @@ bool ChannelWin::Send(Message* message) {
   Logging::GetInstance()->OnSendMessage(message, "");
 #endif
 
-  message->TraceMessageBegin();
+  TRACE_EVENT_WITH_FLOW0(TRACE_DISABLED_BY_DEFAULT("ipc.flow"),
+                         "ChannelWin::ProcessMessageForDelivery",
+                         message->flags(),
+                         TRACE_EVENT_FLAG_FLOW_OUT);
+
+  // |output_queue_| takes ownership of |message|.
   output_queue_.push(message);
   // ensure waiting to write
   if (!waiting_connect_) {
@@ -116,6 +136,21 @@ bool ChannelWin::Send(Message* message) {
   }
 
   return true;
+}
+
+void ChannelWin::FlushPrelimQueue() {
+  DCHECK_NE(peer_pid_, base::kNullProcessId);
+
+  // Due to the possibly re-entrant nature of ProcessMessageForDelivery(), it
+  // is critical that |prelim_queue_| appears empty.
+  std::queue<Message*> prelim_queue;
+  prelim_queue_.swap(prelim_queue);
+
+  while (!prelim_queue.empty()) {
+    Message* m = prelim_queue.front();
+    ProcessMessageForDelivery(m);
+    prelim_queue.pop();
+  }
 }
 
 AttachmentBroker* ChannelWin::GetAttachmentBroker() {
@@ -172,10 +207,14 @@ ChannelWin::ReadState ChannelWin::ReadData(
   return READ_PENDING;
 }
 
-bool ChannelWin::WillDispatchInputMessage(Message* msg) {
+bool ChannelWin::ShouldDispatchInputMessage(Message* msg) {
   // Make sure we get a hello when client validation is required.
   if (validate_client_)
     return IsHelloMessage(*msg);
+  return true;
+}
+
+bool ChannelWin::GetNonBrokeredAttachments(Message* msg) {
   return true;
 }
 
@@ -201,7 +240,18 @@ void ChannelWin::HandleInternalMessage(const Message& msg) {
   peer_pid_ = claimed_pid;
   // Validation completed.
   validate_client_ = false;
+
+  FlushPrelimQueue();
+
   listener()->OnChannelConnected(claimed_pid);
+}
+
+base::ProcessId ChannelWin::GetSenderPID() {
+  return GetPeerPID();
+}
+
+bool ChannelWin::IsAttachmentBrokerEndpoint() {
+  return is_attachment_broker_endpoint();
 }
 
 bool ChannelWin::DidEmptyInputBuffers() {
@@ -472,17 +522,18 @@ void ChannelWin::OnIOCompleted(
     if (input_state_.is_pending) {
       // This is the normal case for everything except the initialization step.
       input_state_.is_pending = false;
-      if (!bytes_transfered)
+      if (!bytes_transfered) {
         ok = false;
-      else if (pipe_.IsValid())
-        ok = AsyncReadComplete(bytes_transfered);
+      } else if (pipe_.IsValid()) {
+        ok = (AsyncReadComplete(bytes_transfered) != DISPATCH_ERROR);
+      }
     } else {
       DCHECK(!bytes_transfered);
     }
 
     // Request more data.
     if (ok)
-      ok = ProcessIncomingMessages();
+      ok = (ProcessIncomingMessages() != DISPATCH_ERROR);
   } else {
     DCHECK(context == &output_state_.context);
     CHECK(output_state_.is_pending);

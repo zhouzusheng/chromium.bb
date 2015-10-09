@@ -36,6 +36,7 @@
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/GraphicsLayerFactory.h"
 #include "platform/graphics/Image.h"
+#include "platform/graphics/LinkHighlight.h"
 #include "platform/graphics/filters/SkiaImageFilterBuilder.h"
 #include "platform/graphics/paint/DisplayItemList.h"
 #include "platform/graphics/paint/DrawingRecorder.h"
@@ -118,6 +119,9 @@ GraphicsLayer::GraphicsLayer(GraphicsLayerClient* client)
     m_layer->layer()->setDrawsContent(m_drawsContent && m_contentsVisible);
     m_layer->layer()->setWebLayerClient(this);
     m_layer->setAutomaticallyComputeRasterScale(true);
+
+    // TODO(rbyers): Expose control over this to the web - crbug.com/489802:
+    setScrollBlocksOn(WebScrollBlocksOnStartTouch | WebScrollBlocksOnWheelEvent);
 }
 
 GraphicsLayer::~GraphicsLayer()
@@ -596,17 +600,6 @@ PassRefPtr<JSONObject> GraphicsLayer::layerTreeAsJSON(LayerTreeFlags flags, Rend
     if (m_blendMode != WebBlendModeNormal)
         json->setString("blendMode", compositeOperatorName(CompositeSourceOver, m_blendMode));
 
-    if ((flags & LayerTreeIncludesScrollBlocksOn) && m_scrollBlocksOn) {
-        RefPtr<JSONArray> scrollBlocksOnJSON = adoptRef(new JSONArray);
-        if (m_scrollBlocksOn & WebScrollBlocksOnStartTouch)
-            scrollBlocksOnJSON->pushString("StartTouch");
-        if (m_scrollBlocksOn & WebScrollBlocksOnWheelEvent)
-            scrollBlocksOnJSON->pushString("WheelEvent");
-        if (m_scrollBlocksOn & WebScrollBlocksOnScrollEvent)
-            scrollBlocksOnJSON->pushString("ScrollEvent");
-        json->setArray("scrollBlocksOn", scrollBlocksOnJSON);
-    }
-
     if (m_isRootForIsolatedGroup)
         json->setBoolean("isolate", m_isRootForIsolatedGroup);
 
@@ -1009,13 +1002,13 @@ void GraphicsLayer::setContentsRect(const IntRect& rect)
 
 void GraphicsLayer::setContentsToImage(Image* image)
 {
-    SkBitmap bitmap;
-    if (image && image->bitmapForCurrentFrame(&bitmap)) {
+    RefPtr<SkImage> skImage = image ? image->imageForCurrentFrame() : nullptr;
+    if (image && skImage) {
         if (!m_imageLayer) {
             m_imageLayer = adoptPtr(Platform::current()->compositorSupport()->createImageLayer());
             registerContentsLayer(m_imageLayer->layer());
         }
-        m_imageLayer->setImageBitmap(bitmap);
+        m_imageLayer->setImage(skImage.get());
         m_imageLayer->layer()->setOpaque(image->currentFrameKnownToBeOpaque());
         updateContentsRect();
     } else {
@@ -1026,29 +1019,6 @@ void GraphicsLayer::setContentsToImage(Image* image)
     }
 
     setContentsTo(m_imageLayer ? m_imageLayer->layer() : 0);
-}
-
-void GraphicsLayer::setContentsToNinePatch(Image* image, const IntRect& aperture)
-{
-    if (m_ninePatchLayer) {
-        unregisterContentsLayer(m_ninePatchLayer->layer());
-        m_ninePatchLayer.clear();
-    }
-    SkBitmap bitmap;
-    if (image && image->bitmapForCurrentFrame(&bitmap)) {
-        m_ninePatchLayer = adoptPtr(Platform::current()->compositorSupport()->createNinePatchLayer());
-        int borderWidth = bitmap.width() - aperture.width();
-        int borderHeight = bitmap.height() - aperture.height();
-        WebRect border(aperture.x(), aperture.y(), borderWidth, borderHeight);
-
-        m_ninePatchLayer->setBitmap(bitmap);
-        m_ninePatchLayer->setAperture(aperture);
-        m_ninePatchLayer->setBorder(border);
-
-        m_ninePatchLayer->layer()->setOpaque(image->currentFrameKnownToBeOpaque());
-        registerContentsLayer(m_ninePatchLayer->layer());
-    }
-    setContentsTo(m_ninePatchLayer ? m_ninePatchLayer->layer() : 0);
 }
 
 bool GraphicsLayer::addAnimation(PassOwnPtr<WebCompositorAnimation> popAnimation)
@@ -1101,7 +1071,7 @@ void GraphicsLayer::setPaintingPhase(GraphicsLayerPaintingPhase phase)
     setNeedsDisplay();
 }
 
-void GraphicsLayer::addLinkHighlight(LinkHighlightClient* linkHighlight)
+void GraphicsLayer::addLinkHighlight(LinkHighlight* linkHighlight)
 {
     ASSERT(linkHighlight && !m_linkHighlights.contains(linkHighlight));
     m_linkHighlights.append(linkHighlight);
@@ -1109,7 +1079,7 @@ void GraphicsLayer::addLinkHighlight(LinkHighlightClient* linkHighlight)
     updateChildList();
 }
 
-void GraphicsLayer::removeLinkHighlight(LinkHighlightClient* linkHighlight)
+void GraphicsLayer::removeLinkHighlight(LinkHighlight* linkHighlight)
 {
     m_linkHighlights.remove(m_linkHighlights.find(linkHighlight));
     updateChildList();

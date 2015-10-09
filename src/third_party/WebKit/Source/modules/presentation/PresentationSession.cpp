@@ -5,6 +5,7 @@
 #include "config.h"
 #include "modules/presentation/PresentationSession.h"
 
+#include "bindings/core/v8/ScriptPromiseResolver.h"
 #include "core/dom/DOMArrayBuffer.h"
 #include "core/dom/DOMArrayBufferView.h"
 #include "core/dom/Document.h"
@@ -14,9 +15,12 @@
 #include "core/fileapi/FileReaderLoader.h"
 #include "core/fileapi/FileReaderLoaderClient.h"
 #include "core/frame/LocalFrame.h"
+#include "core/frame/UseCounter.h"
 #include "modules/EventTargetModules.h"
 #include "modules/presentation/Presentation.h"
 #include "modules/presentation/PresentationController.h"
+#include "modules/presentation/PresentationRequest.h"
+#include "modules/presentation/PresentationSessionConnectEvent.h"
 #include "public/platform/modules/presentation/WebPresentationSessionClient.h"
 #include "wtf/Assertions.h"
 #include "wtf/OwnPtr.h"
@@ -113,13 +117,34 @@ PresentationSession::~PresentationSession()
 }
 
 // static
-PresentationSession* PresentationSession::take(WebPresentationSessionClient* client, Presentation* presentation)
+PresentationSession* PresentationSession::take(ScriptPromiseResolver* resolver, PassOwnPtr<WebPresentationSessionClient> client, PresentationRequest* request)
 {
+    ASSERT(resolver);
     ASSERT(client);
-    ASSERT(presentation);
+    ASSERT(request);
+    ASSERT(resolver->executionContext()->isDocument());
 
-    PresentationSession* session = new PresentationSession(presentation->frame(), client->getId(), client->getUrl());
-    presentation->registerSession(session);
+    Document* document = toDocument(resolver->executionContext());
+    if (!document->frame())
+        return nullptr;
+
+    PresentationController* controller = PresentationController::from(*document->frame());
+    if (!controller)
+        return nullptr;
+
+    return take(controller, client, request);
+}
+
+// static
+PresentationSession* PresentationSession::take(PresentationController* controller, PassOwnPtr<WebPresentationSessionClient> client, PresentationRequest* request)
+{
+    ASSERT(controller);
+    ASSERT(request);
+
+    PresentationSession* session = new PresentationSession(controller->frame(), client->getId(), client->getUrl());
+    controller->registerSession(session);
+    request->dispatchEvent(PresentationSessionConnectEvent::create(EventTypeNames::sessionconnect, session));
+
     return session;
 }
 
@@ -132,7 +157,18 @@ ExecutionContext* PresentationSession::executionContext() const
 {
     if (!frame())
         return nullptr;
-    return frame()->document();}
+    return frame()->document();
+}
+
+bool PresentationSession::addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, bool capture)
+{
+    if (eventType == EventTypeNames::statechange)
+        UseCounter::count(executionContext(), UseCounter::PresentationSessionStateChangeEventListener);
+    else if (eventType == EventTypeNames::message)
+        UseCounter::count(executionContext(), UseCounter::PresentationSessionMessageEventListener);
+
+    return EventTarget::addEventListener(eventType, listener, capture);
+}
 
 DEFINE_TRACE(PresentationSession)
 {

@@ -32,7 +32,11 @@
 #include "platform/graphics/LoggingCanvas.h"
 
 #include "platform/image-encoders/skia/PNGImageEncoder.h"
+#include "third_party/skia/include/core/SkPaint.h"
+#include "third_party/skia/include/core/SkPath.h"
 #include "third_party/skia/include/core/SkPicture.h"
+#include "third_party/skia/include/core/SkRRect.h"
+#include "third_party/skia/include/core/SkRect.h"
 #include "wtf/HexNumber.h"
 #include "wtf/text/Base64.h"
 #include "wtf/text/TextEncoding.h"
@@ -598,7 +602,7 @@ void LoggingCanvas::onDrawBitmap(const SkBitmap& bitmap, SkScalar left, SkScalar
     this->SkCanvas::onDrawBitmap(bitmap, left, top, paint);
 }
 
-void LoggingCanvas::onDrawBitmapRect(const SkBitmap& bitmap, const SkRect* src, const SkRect& dst, const SkPaint* paint, DrawBitmapRectFlags flags)
+void LoggingCanvas::onDrawBitmapRect(const SkBitmap& bitmap, const SkRect* src, const SkRect& dst, const SkPaint* paint, SrcRectConstraint constraint)
 {
     AutoLogger logger(this);
     RefPtr<JSONObject> params = logger.logItemWithParams("drawBitmapRectToRect");
@@ -608,8 +612,8 @@ void LoggingCanvas::onDrawBitmapRect(const SkBitmap& bitmap, const SkRect* src, 
     params->setObject("dst", objectForSkRect(dst));
     if (paint)
         params->setObject("paint", objectForSkPaint(*paint));
-    params->setNumber("flags", flags);
-    this->SkCanvas::onDrawBitmapRect(bitmap, src, dst, paint, flags);
+    params->setNumber("flags", constraint);
+    this->SkCanvas::onDrawBitmapRect(bitmap, src, dst, paint, constraint);
 }
 
 void LoggingCanvas::onDrawBitmapNine(const SkBitmap& bitmap, const SkIRect& center, const SkRect& dst, const SkPaint* paint)
@@ -636,7 +640,7 @@ void LoggingCanvas::onDrawImage(const SkImage* image, SkScalar left, SkScalar to
     this->SkCanvas::onDrawImage(image, left, top, paint);
 }
 
-void LoggingCanvas::onDrawImageRect(const SkImage* image, const SkRect* src, const SkRect& dst, const SkPaint* paint)
+void LoggingCanvas::onDrawImageRect(const SkImage* image, const SkRect* src, const SkRect& dst, const SkPaint* paint, SrcRectConstraint constraint)
 {
     AutoLogger logger(this);
     RefPtr<JSONObject> params = logger.logItemWithParams("drawImageRect");
@@ -646,7 +650,7 @@ void LoggingCanvas::onDrawImageRect(const SkImage* image, const SkRect* src, con
     params->setObject("dst", objectForSkRect(dst));
     if (paint)
         params->setObject("paint", objectForSkPaint(*paint));
-    this->SkCanvas::onDrawImageRect(image, src, dst, paint);
+    this->SkCanvas::onDrawImageRect(image, src, dst, paint, constraint);
 }
 
 void LoggingCanvas::onDrawSprite(const SkBitmap& bitmap, int left, int top, const SkPaint* paint)

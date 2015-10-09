@@ -8,6 +8,7 @@
 #include "base/basictypes.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/gfx_export.h"
+#include "ui/gfx/image/image_skia.h"
 
 namespace gfx {
 
@@ -21,6 +22,20 @@ GFX_EXPORT void PaintVectorIcon(Canvas* canvas,
                                 VectorIconId id,
                                 size_t dip_size,
                                 SkColor color);
+
+// Creates an ImageSkia which will render the icon on demand.
+GFX_EXPORT ImageSkia CreateVectorIcon(VectorIconId id,
+                                      size_t dip_size,
+                                      SkColor color);
+
+#if defined(GFX_VECTOR_ICONS_UNSAFE) || defined(GFX_IMPLEMENTATION)
+// Takes a string of the format expected of .icon files and renders onto
+// a canvas. This should only be used as a debugging aid and should never be
+// used in production code.
+GFX_EXPORT ImageSkia CreateVectorIconFromSource(const std::string& source,
+                                                size_t dip_size,
+                                                SkColor color);
+#endif
 
 }  // namespace gfx
 

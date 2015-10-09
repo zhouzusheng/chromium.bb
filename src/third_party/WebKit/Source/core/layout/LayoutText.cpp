@@ -86,7 +86,7 @@ public:
     unsigned lastTypedCharacterOffset() { return m_lastTypedCharacterOffset; }
 
 private:
-    virtual void fired() override
+    void fired() override
     {
         ASSERT(gSecureTextTimers->contains(m_layoutText));
         m_layoutText->setText(m_layoutText->text().impl(), true /* forcing setting text as it may be masked later */);
@@ -306,7 +306,7 @@ PassRefPtr<StringImpl> LayoutText::originalText() const
 String LayoutText::plainText() const
 {
     if (node())
-        return blink::plainText(Position(node(), PositionAnchorType::BeforeChildren), Position(node(), PositionAnchorType::AfterChildren));
+        return blink::plainText(EphemeralRange::rangeOfContents(*node()));
 
     // FIXME: this is just a stopgap until TextIterator is adapted to support generated text.
     StringBuilder plainTextBuilder;
@@ -441,6 +441,14 @@ void LayoutText::absoluteQuadsForRange(Vector<FloatQuad>& quads, unsigned start,
     start = std::min(start, static_cast<unsigned>(INT_MAX));
     end = std::min(end, static_cast<unsigned>(INT_MAX));
 
+    const unsigned caretMinOffset = static_cast<unsigned>(this->caretMinOffset());
+    const unsigned caretMaxOffset = static_cast<unsigned>(this->caretMaxOffset());
+
+    // Narrows |start| and |end| into |caretMinOffset| and |careMaxOffset|
+    // to ignore unrendered leading and trailing whitespaces.
+    start = std::min(std::max(caretMinOffset, start), caretMaxOffset);
+    end = std::min(std::max(caretMinOffset, end), caretMaxOffset);
+
     for (InlineTextBox* box = firstTextBox(); box; box = box->nextTextBox()) {
         // Note: box->end() returns the index of the last character, not the index past it
         if (start <= box->start() && box->end() < end) {
@@ -493,7 +501,7 @@ static bool lineDirectionPointFitsInBox(int pointLineDirection, InlineTextBox* b
     if (!box->nextLeafChildIgnoringLineBreak()) {
         // box is last on line
         // and the x coordinate is to the right of the last text box right edge
-        // generate VisiblePosition, use UPSTREAM affinity if possible
+        // generate VisiblePosition, use TextAffinity::Upstream affinity if possible
         shouldAffinityBeDownstream = UpstreamIfPositionIsNotAtStart;
         return true;
     }
@@ -503,16 +511,16 @@ static bool lineDirectionPointFitsInBox(int pointLineDirection, InlineTextBox* b
 
 static PositionWithAffinity createPositionWithAffinityForBox(const InlineBox* box, int offset, ShouldAffinityBeDownstream shouldAffinityBeDownstream)
 {
-    EAffinity affinity = VP_DEFAULT_AFFINITY;
+    TextAffinity affinity = VP_DEFAULT_AFFINITY;
     switch (shouldAffinityBeDownstream) {
     case AlwaysDownstream:
-        affinity = DOWNSTREAM;
+        affinity = TextAffinity::Downstream;
         break;
     case AlwaysUpstream:
         affinity = VP_UPSTREAM_IF_POSSIBLE;
         break;
     case UpstreamIfPositionIsNotAtStart:
-        affinity = offset > box->caretMinOffset() ? VP_UPSTREAM_IF_POSSIBLE : DOWNSTREAM;
+        affinity = offset > box->caretMinOffset() ? VP_UPSTREAM_IF_POSSIBLE : TextAffinity::Downstream;
         break;
     }
     int textStartOffset = box->layoutObject().isText() ? toLayoutText(box->layoutObject()).textStartOffset() : 0;
@@ -595,7 +603,7 @@ static PositionWithAffinity createPositionWithAffinityForBoxAfterAdjustingOffset
 PositionWithAffinity LayoutText::positionForPoint(const LayoutPoint& point)
 {
     if (!firstTextBox() || textLength() == 0)
-        return createPositionWithAffinity(0, DOWNSTREAM);
+        return createPositionWithAffinity(0);
 
     LayoutUnit pointLineDirection = firstTextBox()->isHorizontal() ? point.x() : point.y();
     LayoutUnit pointBlockDirection = firstTextBox()->isHorizontal() ? point.y() : point.x();
@@ -627,7 +635,7 @@ PositionWithAffinity LayoutText::positionForPoint(const LayoutPoint& point)
         lineDirectionPointFitsInBox(pointLineDirection, lastBox, shouldAffinityBeDownstream);
         return createPositionWithAffinityForBoxAfterAdjustingOffsetForBiDi(lastBox, lastBox->offsetForPosition(pointLineDirection.toFloat()) + lastBox->start(), shouldAffinityBeDownstream);
     }
-    return createPositionWithAffinity(0, DOWNSTREAM);
+    return createPositionWithAffinity(0);
 }
 
 LayoutRect LayoutText::localCaretRect(InlineBox* inlineBox, int caretOffset, LayoutUnit* extraWidthToEndOfLine)
@@ -715,7 +723,7 @@ ALWAYS_INLINE float LayoutText::widthFromFont(const Font& f, int start, int len,
             return combineText->combinedTextWidth(f);
     }
 
-    TextRun run = constructTextRun(const_cast<LayoutText*>(this), f, this, start, len, styleRef(), textDirection);
+    TextRun run = constructTextRun(f, this, start, len, styleRef(), textDirection);
     run.setCharactersLength(textLength() - start);
     ASSERT(run.charactersLength() >= run.length());
     run.setCodePath(canUseSimpleFontCodePath() ? TextRun::ForceSimple : TextRun::ForceComplex);
@@ -782,7 +790,7 @@ void LayoutText::trimmedPrefWidths(LayoutUnit leadWidthLayoutUnit,
         const Font& font = style()->font(); // FIXME: This ignores first-line.
         if (stripFrontSpaces) {
             const UChar spaceChar = spaceCharacter;
-            TextRun run = constructTextRun(this, font, &spaceChar, 1, styleRef(), direction);
+            TextRun run = constructTextRun(font, &spaceChar, 1, styleRef(), direction);
             run.setCodePath(canUseSimpleFontCodePath() ? TextRun::ForceSimple : TextRun::ForceComplex);
             float spaceWidth = font.width(run);
             floatMaxWidth -= spaceWidth;
@@ -1013,7 +1021,7 @@ void LayoutText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
             if (isSpace && (f.fontDescription().typesettingFeatures() & Kerning)) {
                 ASSERT(textDirection >=0 && textDirection <= 1);
                 if (!cachedWordTrailingSpaceWidth[textDirection])
-                    cachedWordTrailingSpaceWidth[textDirection] = f.width(constructTextRun(this, f, &spaceCharacter, 1, styleToUse, textDirection)) + wordSpacing;
+                    cachedWordTrailingSpaceWidth[textDirection] = f.width(constructTextRun(f, &spaceCharacter, 1, styleToUse, textDirection)) + wordSpacing;
                 wordTrailingSpaceWidth = cachedWordTrailingSpaceWidth[textDirection];
             }
 
@@ -1082,7 +1090,7 @@ void LayoutText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
                     m_maxWidth = currMaxWidth;
                 currMaxWidth = 0;
             } else {
-                TextRun run = constructTextRun(this, f, this, i, 1, styleToUse, textDirection);
+                TextRun run = constructTextRun(f, this, i, 1, styleToUse, textDirection);
                 run.setCharactersLength(len - i);
                 run.setCodePath(canUseSimpleFontCodePath() ? TextRun::ForceSimple : TextRun::ForceComplex);
                 ASSERT(run.charactersLength() >= run.length());
@@ -1143,6 +1151,22 @@ bool LayoutText::isAllCollapsibleWhitespace() const
             return false;
     }
     return true;
+}
+
+bool LayoutText::isRenderedCharacter(int offsetInNode) const
+{
+    for (InlineTextBox* box = firstTextBox(); box; box = box->nextTextBox()) {
+        if (offsetInNode < static_cast<int>(box->start()) && !containsReversedText()) {
+            // The offset we're looking for is before this node
+            // this means the offset must be in content that is
+            // not laid out. Return false.
+            return false;
+        }
+        if (offsetInNode >= static_cast<int>(box->start()) && offsetInNode < static_cast<int>(box->start() + box->len()))
+            return true;
+    }
+
+    return false;
 }
 
 bool LayoutText::containsOnlyWhitespace(unsigned from, unsigned len) const
@@ -1523,7 +1547,7 @@ float LayoutText::width(unsigned from, unsigned len, const Font& f, LayoutUnit x
             w = widthFromFont(f, from, len, xPos.toFloat(), 0, textDirection, fallbackFonts, glyphBounds);
         }
     } else {
-        TextRun run = constructTextRun(const_cast<LayoutText*>(this), f, this, from, len, styleRef(), textDirection);
+        TextRun run = constructTextRun(f, this, from, len, styleRef(), textDirection);
         run.setCharactersLength(textLength() - from);
         ASSERT(run.charactersLength() >= run.length());
 

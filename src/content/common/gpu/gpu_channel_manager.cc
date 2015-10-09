@@ -17,17 +17,13 @@
 #include "gpu/command_buffer/common/value_state.h"
 #include "gpu/command_buffer/service/feature_info.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
-#include "gpu/command_buffer/service/mailbox_manager_impl.h"
+#include "gpu/command_buffer/service/mailbox_manager.h"
 #include "gpu/command_buffer/service/memory_program_cache.h"
 #include "gpu/command_buffer/service/shader_translator_cache.h"
 #include "gpu/command_buffer/service/sync_point_manager.h"
 #include "ipc/message_filter.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_share_group.h"
-#if defined(USE_OZONE)
-#include "ui/ozone/public/gpu_platform_support.h"
-#include "ui/ozone/public/ozone_platform.h"
-#endif
 
 namespace content {
 
@@ -38,6 +34,7 @@ GpuChannelManager::GpuChannelManager(
     base::WaitableEvent* shutdown_event,
     IPC::SyncChannel* channel,
     IPC::AttachmentBroker* broker,
+    gpu::SyncPointManager* sync_point_manager,
     GpuMemoryBufferFactory* gpu_memory_buffer_factory)
     : io_task_runner_(io_task_runner),
       shutdown_event_(shutdown_event),
@@ -46,10 +43,9 @@ GpuChannelManager::GpuChannelManager(
           this,
           GpuMemoryManager::kDefaultMaxSurfacesWithFrontbufferSoftLimit),
       watchdog_(watchdog),
-      sync_point_manager_(gpu::SyncPointManager::Create(false)),
+      sync_point_manager_(sync_point_manager),
       gpu_memory_buffer_factory_(gpu_memory_buffer_factory),
       channel_(channel),
-      relinquish_resources_pending_(false),
       attachment_broker_(broker),
       weak_factory_(this) {
   DCHECK(router_);
@@ -83,10 +79,17 @@ GpuChannelManager::shader_translator_cache() {
   return shader_translator_cache_.get();
 }
 
+gpu::gles2::FramebufferCompletenessCache*
+GpuChannelManager::framebuffer_completeness_cache() {
+  if (!framebuffer_completeness_cache_.get())
+    framebuffer_completeness_cache_ =
+        new gpu::gles2::FramebufferCompletenessCache;
+  return framebuffer_completeness_cache_.get();
+}
+
 void GpuChannelManager::RemoveChannel(int client_id) {
   Send(new GpuHostMsg_DestroyChannel(client_id));
   gpu_channels_.erase(client_id);
-  CheckRelinquishGpuResources();
 }
 
 int GpuChannelManager::GenerateRouteID() {
@@ -119,7 +122,7 @@ bool GpuChannelManager::OnMessageReceived(const IPC::Message& msg) {
                         OnCreateViewCommandBuffer)
     IPC_MESSAGE_HANDLER(GpuMsg_DestroyGpuMemoryBuffer, OnDestroyGpuMemoryBuffer)
     IPC_MESSAGE_HANDLER(GpuMsg_LoadedShader, OnLoadedShader)
-    IPC_MESSAGE_HANDLER(GpuMsg_RelinquishResources, OnRelinquishResources)
+    IPC_MESSAGE_HANDLER(GpuMsg_Finalize, OnFinalize)
     IPC_MESSAGE_HANDLER(GpuMsg_UpdateValueState, OnUpdateValueState)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
@@ -129,6 +132,7 @@ bool GpuChannelManager::OnMessageReceived(const IPC::Message& msg) {
 bool GpuChannelManager::Send(IPC::Message* msg) { return router_->Send(msg); }
 
 void GpuChannelManager::OnEstablishChannel(int client_id,
+                                           uint64_t client_tracing_id,
                                            bool share_context,
                                            bool allow_future_sync_points) {
   IPC::ChannelHandle channel_handle;
@@ -139,7 +143,7 @@ void GpuChannelManager::OnEstablishChannel(int client_id,
     if (!share_group_.get()) {
       share_group_ = new gfx::GLShareGroup;
       DCHECK(!mailbox_manager_.get());
-      mailbox_manager_ = new gpu::gles2::MailboxManagerImpl;
+      mailbox_manager_ = gpu::gles2::MailboxManager::Create();
     }
     share_group = share_group_.get();
     mailbox_manager = mailbox_manager_.get();
@@ -150,6 +154,7 @@ void GpuChannelManager::OnEstablishChannel(int client_id,
                                                 share_group,
                                                 mailbox_manager,
                                                 client_id,
+                                                client_tracing_id,
                                                 false,
                                                 allow_future_sync_points));
   channel->Init(io_task_runner_.get(), shutdown_event_, attachment_broker_);
@@ -174,7 +179,6 @@ void GpuChannelManager::OnCloseChannel(
        iter != gpu_channels_.end(); ++iter) {
     if (iter->second->GetChannelName() == channel_handle.name) {
       gpu_channels_.erase(iter);
-      CheckRelinquishGpuResources();
       return;
     }
   }
@@ -274,7 +278,6 @@ void GpuChannelManager::LoseAllContexts() {
 
 void GpuChannelManager::OnLoseAllContexts() {
   gpu_channels_.clear();
-  CheckRelinquishGpuResources();
 }
 
 gfx::GLSurface* GpuChannelManager::GetDefaultOffscreenSurface() {
@@ -285,32 +288,9 @@ gfx::GLSurface* GpuChannelManager::GetDefaultOffscreenSurface() {
   return default_offscreen_surface_.get();
 }
 
-void GpuChannelManager::OnRelinquishResources() {
-  relinquish_resources_pending_ = true;
-  CheckRelinquishGpuResources();
-}
-
-void GpuChannelManager::CheckRelinquishGpuResources() {
-  if (relinquish_resources_pending_ && gpu_channels_.size() <= 1) {
-    relinquish_resources_pending_ = false;
-    if (default_offscreen_surface_.get()) {
-      default_offscreen_surface_->DestroyAndTerminateDisplay();
-      default_offscreen_surface_ = NULL;
-    }
-#if defined(USE_OZONE)
-    ui::OzonePlatform::GetInstance()
-        ->GetGpuPlatformSupport()
-        ->RelinquishGpuResources(
-            base::Bind(&GpuChannelManager::OnResourcesRelinquished,
-                       weak_factory_.GetWeakPtr()));
-#else
-    OnResourcesRelinquished();
-#endif
-  }
-}
-
-void GpuChannelManager::OnResourcesRelinquished() {
-  Send(new GpuHostMsg_ResourcesRelinquished());
+void GpuChannelManager::OnFinalize() {
+  // Quit the GPU process
+  base::MessageLoop::current()->Quit();
 }
 
 }  // namespace content

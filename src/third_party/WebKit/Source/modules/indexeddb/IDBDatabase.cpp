@@ -67,7 +67,6 @@ const char IDBDatabase::transactionInactiveErrorMessage[] = "The transaction is 
 const char IDBDatabase::transactionFinishedErrorMessage[] = "The transaction has finished.";
 const char IDBDatabase::transactionReadOnlyErrorMessage[] = "The transaction is read-only.";
 const char IDBDatabase::databaseClosedErrorMessage[] = "The database connection is closed.";
-const char IDBDatabase::notValidMaxCountErrorMessage[] = "The maxCount provided must not be 0.";
 
 IDBDatabase* IDBDatabase::create(ExecutionContext* context, PassOwnPtr<WebIDBDatabase> database, IDBDatabaseCallbacks* callbacks)
 {
@@ -96,9 +95,7 @@ DEFINE_TRACE(IDBDatabase)
 {
     visitor->trace(m_versionChangeTransaction);
     visitor->trace(m_transactions);
-#if ENABLE(OILPAN)
     visitor->trace(m_enqueuedEvents);
-#endif
     visitor->trace(m_databaseCallbacks);
     RefCountedGarbageCollectedEventTargetWithInlineData<IDBDatabase>::trace(visitor);
     ActiveDOMObject::trace(visitor);
@@ -401,7 +398,7 @@ void IDBDatabase::enqueueEvent(PassRefPtrWillBeRawPtr<Event> event)
     m_enqueuedEvents.append(event);
 }
 
-bool IDBDatabase::dispatchEvent(PassRefPtrWillBeRawPtr<Event> event)
+bool IDBDatabase::dispatchEventInternal(PassRefPtrWillBeRawPtr<Event> event)
 {
     IDB_TRACE("IDBDatabase::dispatchEvent");
     if (m_contextStopped || !executionContext())
@@ -412,7 +409,7 @@ bool IDBDatabase::dispatchEvent(PassRefPtrWillBeRawPtr<Event> event)
             m_enqueuedEvents.remove(i);
     }
 
-    bool result = EventTarget::dispatchEvent(event.get());
+    bool result = EventTarget::dispatchEventInternal(event.get());
     if (event->type() == EventTypeNames::versionchange && !m_closePending && m_backend)
         m_backend->versionChangeIgnored();
     return result;

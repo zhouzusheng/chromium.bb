@@ -26,6 +26,7 @@
 #include "base/timer/hi_res_timer_manager.h"
 #include "base/trace_event/memory_dump_manager.h"
 #include "base/trace_event/trace_event.h"
+#include "components/tracing/tracing_switches.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/device_sensors/device_inertial_sensor_service.h"
 #include "content/browser/dom_storage/dom_storage_area.h"
@@ -68,6 +69,7 @@
 #include "net/base/network_change_notifier.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/ssl/ssl_config_service.h"
+#include "skia/ext/skia_memory_dump_provider.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/ui_base_switches.h"
 
@@ -107,6 +109,10 @@
 #include "content/browser/compositor/browser_compositor_view_mac.h"
 #include "content/browser/in_process_io_surface_manager_mac.h"
 #include "content/browser/theme_helper_mac.h"
+#endif
+
+#if defined(USE_OZONE)
+#include "ui/ozone/public/client_native_pixmap_factory.h"
 #endif
 
 #if defined(OS_WIN)
@@ -320,12 +326,10 @@ MSVC_ENABLE_OPTIMIZE();
 // specified on the command-line. Ownership is passed to the caller.
 base::win::MemoryPressureMonitor* CreateWinMemoryPressureMonitor(
     const base::CommandLine& parsed_command_line) {
-  std::vector<std::string> thresholds;
-  base::SplitString(
+  std::vector<std::string> thresholds = base::SplitString(
       parsed_command_line.GetSwitchValueASCII(
           switches::kMemoryPressureThresholdsMb),
-      ',',
-      &thresholds);
+      ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
 
   int moderate_threshold_mb = 0;
   int critical_threshold_mb = 0;
@@ -463,10 +467,10 @@ void BrowserMainLoop::EarlyInitialization() {
   net::EnsureWinsockInit();
 #endif
 
-#if !defined(USE_OPENSSL)
+#if defined(USE_NSS_CERTS) || !defined(USE_OPENSSL)
   // We want to be sure to init NSPR on the main thread.
   crypto::EnsureNSPRInit();
-#endif  // !defined(USE_OPENSSL)
+#endif
 
 #if !defined(OS_IOS)
   if (parsed_command_line_.HasSwitch(switches::kRendererProcessLimit)) {
@@ -615,6 +619,12 @@ void BrowserMainLoop::PostMainMessageLoopStart() {
   }
 #endif
 
+#if defined(USE_OZONE)
+  client_native_pixmap_factory_ = ui::ClientNativePixmapFactory::Create();
+  ui::ClientNativePixmapFactory::SetInstance(
+      client_native_pixmap_factory_.get());
+#endif
+
   if (parsed_command_line_.HasSwitch(switches::kMemoryMetrics)) {
     TRACE_EVENT0("startup", "BrowserMainLoop::Subsystem:MemoryObserver");
     memory_observer_.reset(new MemoryObserver());
@@ -633,6 +643,8 @@ void BrowserMainLoop::PostMainMessageLoopStart() {
   // Enable the dump providers.
   base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
       HostSharedBitmapManager::current());
+  base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
+      skia::SkiaMemoryDumpProvider::GetInstance());
 
 #if defined(TCMALLOC_TRACE_MEMORY_SUPPORTED)
   trace_memory_controller_.reset(new base::trace_event::TraceMemoryController(
@@ -909,6 +921,10 @@ void BrowserMainLoop::ShutdownThreadsAndCleanUp() {
     parts_->PostMainMessageLoopRun();
   }
 
+#if defined(USE_AURA)
+  aura::Env::DeleteInstance();
+#endif
+
   trace_memory_controller_.reset();
   system_stats_monitor_.reset();
 
@@ -1107,8 +1123,7 @@ int BrowserMainLoop::BrowserThreadsStarted() {
 
 #if defined(OS_ANDROID)
   // Up the priority of the UI thread.
-  base::PlatformThread::SetThreadPriority(base::PlatformThread::CurrentHandle(),
-                                          base::ThreadPriority::DISPLAY);
+  base::PlatformThread::SetCurrentThreadPriority(base::ThreadPriority::DISPLAY);
 #endif
 
   bool always_uses_gpu = true;
@@ -1201,8 +1216,8 @@ int BrowserMainLoop::BrowserThreadsStarted() {
   allowed_clipboard_threads.push_back(base::PlatformThread::CurrentId());
 #if defined(OS_WIN)
   // On Windows, clipboards are also used on the FILE or IO threads.
-  allowed_clipboard_threads.push_back(file_thread_->thread_id());
-  allowed_clipboard_threads.push_back(io_thread_->thread_id());
+  allowed_clipboard_threads.push_back(file_thread_->GetThreadId());
+  allowed_clipboard_threads.push_back(io_thread_->GetThreadId());
 #endif
   ui::Clipboard::SetAllowedThreads(allowed_clipboard_threads);
 

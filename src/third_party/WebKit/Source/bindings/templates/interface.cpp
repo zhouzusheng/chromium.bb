@@ -583,29 +583,6 @@ void {{v8_class}}::visitDOMWrapper(v8::Isolate* isolate, ScriptWrappable* script
 
 
 {##############################################################################}
-{% block shadow_attributes %}
-{% from 'attributes.cpp' import attribute_configuration with context %}
-{% if interface_name == 'Window' %}
-// Suppress warning: global constructors, because AttributeConfiguration is trivial
-// and does not depend on another global objects.
-#if defined(COMPONENT_BUILD) && defined(WIN32) && COMPILER(CLANG)
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wglobal-constructors"
-#endif
-static const V8DOMConfiguration::AttributeConfiguration shadowAttributes[] = {
-    {% for attribute in attributes if attribute.is_unforgeable and attribute.should_be_exposed_to_script %}
-    {{attribute_configuration(attribute)}},
-    {% endfor %}
-};
-#if defined(COMPONENT_BUILD) && defined(WIN32) && COMPILER(CLANG)
-#pragma clang diagnostic pop
-#endif
-
-{% endif %}
-{% endblock %}
-
-
-{##############################################################################}
 {% block constructor_callback %}
 {% if constructors or has_custom_constructor or has_event_constructor %}
 void {{v8_class}}::constructorCallback(const v8::FunctionCallbackInfo<v8::Value>& info)
@@ -629,22 +606,6 @@ void {{v8_class}}::constructorCallback(const v8::FunctionCallbackInfo<v8::Value>
     {% else %}
     {{cpp_class}}V8Internal::constructor(info);
     {% endif %}
-}
-
-{% endif %}
-{% endblock %}
-
-
-{##############################################################################}
-{% block configure_shadow_object_template %}
-{% if interface_name == 'Window' %}
-static void configureShadowObjectTemplate(v8::Local<v8::ObjectTemplate> templ, v8::Isolate* isolate)
-{
-    V8DOMConfiguration::installAttributes(isolate, templ, v8::Local<v8::ObjectTemplate>(), shadowAttributes, WTF_ARRAY_LENGTH(shadowAttributes));
-
-    // Install a security handler with V8.
-    templ->SetAccessCheckCallbacks(V8Window::namedSecurityCheckCustom, V8Window::indexedSecurityCheckCustom, v8::External::New(isolate, const_cast<WrapperTypeInfo*>(&V8Window::wrapperTypeInfo)));
-    templ->SetInternalFieldCount(V8Window::internalFieldCount);
 }
 
 {% endif %}
@@ -724,11 +685,11 @@ v8::Local<v8::Object> {{v8_class}}::findInstanceInPrototypeChain(v8::Local<v8::V
 
 {##############################################################################}
 {% block to_impl %}
-{% if interface_name == 'ArrayBuffer' %}
-{{cpp_class}}* V8ArrayBuffer::toImpl(v8::Local<v8::Object> object)
+{% if interface_name == 'ArrayBuffer' or interface_name == 'SharedArrayBuffer' %}
+{{cpp_class}}* V8{{interface_name}}::toImpl(v8::Local<v8::Object> object)
 {
-    ASSERT(object->IsArrayBuffer());
-    v8::Local<v8::ArrayBuffer> v8buffer = object.As<v8::ArrayBuffer>();
+    ASSERT(object->Is{{interface_name}}());
+    v8::Local<v8::{{interface_name}}> v8buffer = object.As<v8::{{interface_name}}>();
     if (v8buffer->IsExternal()) {
         const WrapperTypeInfo* wrapperTypeInfo = toWrapperTypeInfo(object);
         RELEASE_ASSERT(wrapperTypeInfo);
@@ -736,10 +697,10 @@ v8::Local<v8::Object> {{v8_class}}::findInstanceInPrototypeChain(v8::Local<v8::V
         return toScriptWrappable(object)->toImpl<{{cpp_class}}>();
     }
 
-    // Transfer the ownership of the allocated memory to an ArrayBuffer without
+    // Transfer the ownership of the allocated memory to an {{interface_name}} without
     // copying.
-    v8::ArrayBuffer::Contents v8Contents = v8buffer->Externalize();
-    WTF::ArrayBufferContents contents(v8Contents.Data(), v8Contents.ByteLength(), WTF::ArrayBufferContents::NotShared);
+    v8::{{interface_name}}::Contents v8Contents = v8buffer->Externalize();
+    WTF::ArrayBufferContents contents(v8Contents.Data(), v8Contents.ByteLength(), WTF::ArrayBufferContents::{% if interface_name == 'ArrayBuffer' %}Not{% endif %}Shared);
     RefPtr<{{cpp_class}}> buffer = {{cpp_class}}::create(contents);
     v8::Local<v8::Object> associatedWrapper = buffer->associateWithWrapper(v8::Isolate::GetCurrent(), buffer->wrapperTypeInfo(), object);
     ASSERT_UNUSED(associatedWrapper, associatedWrapper == object);
@@ -789,7 +750,15 @@ v8::Local<v8::Object> {{v8_class}}::findInstanceInPrototypeChain(v8::Local<v8::V
         return scriptWrappable->toImpl<{{cpp_class}}>();
 
     v8::Local<v8::{{interface_name}}> v8View = object.As<v8::{{interface_name}}>();
-    RefPtr<{{cpp_class}}> typedArray = {{cpp_class}}::create(V8ArrayBuffer::toImpl(v8View->Buffer()), v8View->ByteOffset(), v8View->{% if interface_name == 'DataView' %}Byte{% endif %}Length());
+    v8::Local<v8::Object> arrayBuffer = v8View->Buffer();
+    RefPtr<{{cpp_class}}> typedArray;
+    if (arrayBuffer->IsArrayBuffer()) {
+        typedArray = {{cpp_class}}::create(V8ArrayBuffer::toImpl(arrayBuffer), v8View->ByteOffset(), v8View->{% if interface_name == 'DataView' %}Byte{% endif %}Length());
+    } else if (arrayBuffer->IsSharedArrayBuffer()) {
+        typedArray = {{cpp_class}}::create(V8SharedArrayBuffer::toImpl(arrayBuffer), v8View->ByteOffset(), v8View->{% if interface_name == 'DataView' %}Byte{% endif %}Length());
+    } else {
+        ASSERT_NOT_REACHED();
+    }
     v8::Local<v8::Object> associatedWrapper = typedArray->associateWithWrapper(v8::Isolate::GetCurrent(), typedArray->wrapperTypeInfo(), object);
     ASSERT_UNUSED(associatedWrapper, associatedWrapper == object);
 
@@ -882,38 +851,6 @@ V8DOMConfiguration::installAccessor(isolate, v8::Local<v8::Object>(), prototypeO
 ActiveDOMObject* {{v8_class}}::toActiveDOMObject(v8::Local<v8::Object> wrapper)
 {
     return toImpl(wrapper);
-}
-
-{% endif %}
-{% endblock %}
-
-
-{##############################################################################}
-{% block get_shadow_object_template %}
-{% if interface_name == 'Window' %}
-v8::Local<v8::ObjectTemplate> V8Window::getShadowObjectTemplate(v8::Isolate* isolate)
-{
-    if (DOMWrapperWorld::current(isolate).isMainWorld()) {
-        DEFINE_STATIC_LOCAL(v8::Persistent<v8::ObjectTemplate>, V8WindowShadowObjectCacheForMainWorld, ());
-        if (V8WindowShadowObjectCacheForMainWorld.IsEmpty()) {
-            TRACE_EVENT_SCOPED_SAMPLING_STATE("blink", "BuildDOMTemplate");
-            v8::Local<v8::ObjectTemplate> templ = v8::ObjectTemplate::New(isolate);
-            configureShadowObjectTemplate(templ, isolate);
-            V8WindowShadowObjectCacheForMainWorld.Reset(isolate, templ);
-            return templ;
-        }
-        return v8::Local<v8::ObjectTemplate>::New(isolate, V8WindowShadowObjectCacheForMainWorld);
-    } else {
-        DEFINE_STATIC_LOCAL(v8::Persistent<v8::ObjectTemplate>, V8WindowShadowObjectCacheForNonMainWorld, ());
-        if (V8WindowShadowObjectCacheForNonMainWorld.IsEmpty()) {
-            TRACE_EVENT_SCOPED_SAMPLING_STATE("blink", "BuildDOMTemplate");
-            v8::Local<v8::ObjectTemplate> templ = v8::ObjectTemplate::New(isolate);
-            configureShadowObjectTemplate(templ, isolate);
-            V8WindowShadowObjectCacheForNonMainWorld.Reset(isolate, templ);
-            return templ;
-        }
-        return v8::Local<v8::ObjectTemplate>::New(isolate, V8WindowShadowObjectCacheForNonMainWorld);
-    }
 }
 
 {% endif %}

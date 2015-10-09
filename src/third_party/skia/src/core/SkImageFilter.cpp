@@ -33,6 +33,64 @@
   enum { kDefaultCacheSize = 128 * 1024 * 1024 };
 #endif
 
+#ifndef SK_IGNORE_TO_STRING
+void SkImageFilter::CropRect::toString(SkString* str) const {
+    if (!fFlags) {
+        return;
+    }
+
+    str->appendf("cropRect (");
+    if (fFlags & CropRect::kHasLeft_CropEdge) {
+        str->appendf("%.2f, ", fRect.fLeft);
+    } else {
+        str->appendf("X, ");
+    }
+    if (fFlags & CropRect::kHasTop_CropEdge) {
+        str->appendf("%.2f, ", fRect.fTop);
+    } else {
+        str->appendf("X, ");
+    }
+    if (fFlags & CropRect::kHasWidth_CropEdge) {
+        str->appendf("%.2f, ", fRect.width());
+    } else {
+        str->appendf("X, ");
+    }
+    if (fFlags & CropRect::kHasHeight_CropEdge) {
+        str->appendf("%.2f", fRect.height());
+    } else {
+        str->appendf("X");
+    }
+    str->appendf(") ");
+}
+#endif
+
+bool SkImageFilter::CropRect::applyTo(const SkIRect& imageBounds, const Context& ctx,
+                                      SkIRect* cropped) const {
+    *cropped = imageBounds;
+    if (fFlags) {
+        SkRect devCropR;
+        ctx.ctm().mapRect(&devCropR, fRect);
+        const SkIRect devICropR = devCropR.roundOut();
+
+        // Compute the left/top first, in case we have to read them to compute right/bottom
+        if (fFlags & kHasLeft_CropEdge) {
+            cropped->fLeft = devICropR.fLeft;
+        }
+        if (fFlags & kHasTop_CropEdge) {
+            cropped->fTop = devICropR.fTop;
+        }
+        if (fFlags & kHasWidth_CropEdge) {
+            cropped->fRight = cropped->fLeft + devICropR.width();
+        }
+        if (fFlags & kHasHeight_CropEdge) {
+            cropped->fBottom = cropped->fTop + devICropR.height();
+        }
+    }
+    return cropped->intersect(ctx.clipBounds());
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
 static int32_t next_image_filter_unique_id() {
     static int32_t gImageFilterUniqueID;
 
@@ -48,8 +106,8 @@ struct SkImageFilter::Cache::Key {
     Key(const uint32_t uniqueID, const SkMatrix& matrix, const SkIRect& clipBounds, uint32_t srcGenID)
       : fUniqueID(uniqueID), fMatrix(matrix), fClipBounds(clipBounds), fSrcGenID(srcGenID) {
         // Assert that Key is tightly-packed, since it is hashed.
-        SK_COMPILE_ASSERT(sizeof(Key) == sizeof(uint32_t) + sizeof(SkMatrix) + sizeof(SkIRect) +
-                                         sizeof(uint32_t), image_filter_key_tight_packing);
+        static_assert(sizeof(Key) == sizeof(uint32_t) + sizeof(SkMatrix) + sizeof(SkIRect) +
+                                     sizeof(uint32_t), "image_filter_key_tight_packing");
         fMatrix.getType();  // force initialization of type, so hashes match
     }
     uint32_t fUniqueID;
@@ -226,6 +284,23 @@ void SkImageFilter::computeFastBounds(const SkRect& src, SkRect* dst) const {
     }
 }
 
+bool SkImageFilter::canComputeFastBounds() const {
+    if (this->affectsTransparentBlack()) {
+        return false;
+    }
+    for (int i = 0; i < fInputCount; i++) {
+        SkImageFilter* input = this->getInput(i);
+        if (input && !input->canComputeFastBounds()) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool SkImageFilter::affectsTransparentBlack() const {
+    return false;
+}
+
 bool SkImageFilter::onFilterImage(Proxy*, const SkBitmap&, const Context&,
                                   SkBitmap*, SkIPoint*) const {
     return false;
@@ -260,8 +335,7 @@ bool SkImageFilter::filterImageGPU(Proxy* proxy, const SkBitmap& src, const Cont
     desc.fHeight = bounds.height();
     desc.fConfig = kRGBA_8888_GrPixelConfig;
 
-    SkAutoTUnref<GrTexture> dst(context->textureProvider()->refScratchTexture(
-        desc, GrTextureProvider::kApprox_ScratchTexMatch));
+    SkAutoTUnref<GrTexture> dst(context->textureProvider()->createApproxTexture(desc));
     if (!dst) {
         return false;
     }
@@ -298,19 +372,7 @@ bool SkImageFilter::applyCropRect(const Context& ctx, const SkBitmap& src,
     SkIRect srcBounds;
     src.getBounds(&srcBounds);
     srcBounds.offset(srcOffset);
-    SkRect cropRect;
-    ctx.ctm().mapRect(&cropRect, fCropRect.rect());
-    const SkIRect cropRectI = cropRect.roundOut();
-    uint32_t flags = fCropRect.flags();
-    if (flags & CropRect::kHasLeft_CropEdge) srcBounds.fLeft = cropRectI.fLeft;
-    if (flags & CropRect::kHasTop_CropEdge) srcBounds.fTop = cropRectI.fTop;
-    if (flags & CropRect::kHasRight_CropEdge) srcBounds.fRight = cropRectI.fRight;
-    if (flags & CropRect::kHasBottom_CropEdge) srcBounds.fBottom = cropRectI.fBottom;
-    if (!srcBounds.intersect(ctx.clipBounds())) {
-        return false;
-    }
-    *bounds = srcBounds;
-    return true;
+    return fCropRect.applyTo(srcBounds, ctx, bounds);
 }
 
 bool SkImageFilter::applyCropRect(const Context& ctx, Proxy* proxy, const SkBitmap& src,
@@ -318,18 +380,10 @@ bool SkImageFilter::applyCropRect(const Context& ctx, Proxy* proxy, const SkBitm
     SkIRect srcBounds;
     src.getBounds(&srcBounds);
     srcBounds.offset(*srcOffset);
-    SkRect cropRect;
-    ctx.ctm().mapRect(&cropRect, fCropRect.rect());
-    const SkIRect cropRectI = cropRect.roundOut();
-    uint32_t flags = fCropRect.flags();
-    *bounds = srcBounds;
-    if (flags & CropRect::kHasLeft_CropEdge) bounds->fLeft = cropRectI.fLeft;
-    if (flags & CropRect::kHasTop_CropEdge) bounds->fTop = cropRectI.fTop;
-    if (flags & CropRect::kHasRight_CropEdge) bounds->fRight = cropRectI.fRight;
-    if (flags & CropRect::kHasBottom_CropEdge) bounds->fBottom = cropRectI.fBottom;
-    if (!bounds->intersect(ctx.clipBounds())) {
+    if (!fCropRect.applyTo(srcBounds, ctx, bounds)) {
         return false;
     }
+
     if (srcBounds.contains(*bounds)) {
         *dst = src;
         return true;

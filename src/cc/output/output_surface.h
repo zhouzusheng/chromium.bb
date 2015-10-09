@@ -18,7 +18,9 @@
 
 namespace base { class SingleThreadTaskRunner; }
 
-namespace ui { struct LatencyInfo; }
+namespace ui {
+class LatencyInfo;
+}
 
 namespace gfx {
 class Rect;
@@ -118,7 +120,8 @@ class CC_EXPORT OutputSurface {
   virtual void DiscardBackbuffer();
 
   virtual void Reshape(const gfx::Size& size, float scale_factor);
-  virtual gfx::Size SurfaceSize() const;
+  gfx::Size SurfaceSize() const { return surface_size_; }
+  float device_scale_factor() const { return device_scale_factor_; }
 
   // If supported, this causes a ReclaimResources for all resources that are
   // currently in use.
@@ -142,6 +145,9 @@ class CC_EXPORT OutputSurface {
 
   // Get the class capable of informing cc of hardware overlay capability.
   virtual OverlayCandidateValidator* GetOverlayCandidateValidator() const;
+
+  // Get the texture for the main image's overlay.
+  virtual unsigned GetOverlayTextureId() const;
 
   void DidLoseOutputSurface();
   void SetMemoryPolicy(const ManagedMemoryPolicy& policy);

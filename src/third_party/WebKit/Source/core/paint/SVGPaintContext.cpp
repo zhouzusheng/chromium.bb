@@ -111,9 +111,9 @@ void SVGPaintContext::applyCompositingIfNecessary()
     WebBlendMode blendMode = style.hasBlendMode() && m_object->isBlendingAllowed() ?
         style.blendMode() : WebBlendModeNormal;
     if (opacity < 1 || blendMode != WebBlendModeNormal) {
-        m_clipRecorder = adoptPtr(new FloatClipRecorder(*m_paintInfo.context, *m_object, m_paintInfo.phase, m_object->paintInvalidationRectInLocalCoordinates()));
+        const FloatRect compositingBounds = m_object->paintInvalidationRectInLocalCoordinates();
         m_compositingRecorder = adoptPtr(new CompositingRecorder(*m_paintInfo.context, *m_object,
-            WebCoreCompositeToSkiaComposite(CompositeSourceOver, blendMode), opacity));
+            WebCoreCompositeToSkiaComposite(CompositeSourceOver, blendMode), opacity, &compositingBounds));
     }
 }
 
@@ -189,7 +189,7 @@ void SVGPaintContext::paintSubtree(GraphicsContext* context, LayoutObject* item)
     ASSERT(item);
     ASSERT(!item->needsLayout());
 
-    PaintInfo info(context, LayoutRect::infiniteIntRect(), PaintPhaseForeground, PaintBehaviorNormal);
+    PaintInfo info(context, LayoutRect::infiniteIntRect(), PaintPhaseForeground, GlobalPaintNormalPhase, PaintLayerNoFlag);
     item->paint(info, IntPoint());
 }
 
@@ -214,7 +214,10 @@ bool SVGPaintContext::paintForLayoutObject(const PaintInfo& paintInfo, const Com
     float paintAlpha = resourceMode == ApplyToFillMode ? svgStyle.fillOpacity() : svgStyle.strokeOpacity();
     paintServer.applyToSkPaint(paint, paintAlpha);
 
-    paint.setFilterQuality(WebCoreInterpolationQualityToSkFilterQuality(InterpolationDefault));
+    // We always set filter quality to 'low' here. This value will only have an
+    // effect for patterns, which are SkPictures, so using high-order filter
+    // should have little effect on the overall quality.
+    paint.setFilterQuality(kLow_SkFilterQuality);
 
     // TODO(fs): The color filter can set when generating a picture for a mask -
     // due to color-interpolation. We could also just apply the

@@ -7,6 +7,7 @@
 
 #include "core/dom/Document.h"
 #include "core/dom/SecurityContext.h"
+#include "core/dom/SpaceSplitString.h"
 #include "core/frame/LocalFrame.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "platform/Crypto.h"
@@ -31,9 +32,7 @@ String getSha256String(const String& content)
         return "sha256-...";
     }
 
-    // For consistency with Subresource Integrity, we output base64url encoded
-    // data in error messages.
-    return "sha256-" + base64URLEncode(reinterpret_cast<char*>(digest.data()), digest.size(), Base64DoNotInsertLFs);
+    return "sha256-" + base64Encode(reinterpret_cast<char*>(digest.data()), digest.size(), Base64DoNotInsertLFs);
 }
 
 }
@@ -553,7 +552,8 @@ void CSPDirectiveList::applySandboxPolicy(const String& name, const String& sand
     }
     m_hasSandboxPolicy = true;
     String invalidTokens;
-    m_policy->enforceSandboxFlags(parseSandboxPolicy(sandboxPolicy, invalidTokens));
+    SpaceSplitString policyTokens(AtomicString(sandboxPolicy), SpaceSplitString::ShouldNotFoldCase);
+    m_policy->enforceSandboxFlags(parseSandboxPolicy(policyTokens, invalidTokens));
     if (!invalidTokens.isNull())
         m_policy->reportInvalidSandboxFlags(invalidTokens);
 }

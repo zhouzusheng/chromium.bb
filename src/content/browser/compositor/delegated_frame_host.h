@@ -126,7 +126,7 @@ class CONTENT_EXPORT DelegatedFrameHost
       scoped_ptr<cc::DelegatedFrameData> frame_data,
       float frame_device_scale_factor,
       const std::vector<ui::LatencyInfo>& latency_info,
-      std::vector<uint32_t>* satifies_sequences);
+      std::vector<uint32_t>* satisfies_sequences);
   void WasHidden();
   void WasShown(const ui::LatencyInfo& latency_info);
   void WasResized();
@@ -153,6 +153,8 @@ class CONTENT_EXPORT DelegatedFrameHost
   void EndFrameSubscription();
   bool HasFrameSubscriber() const { return frame_subscriber_; }
   uint32_t GetSurfaceIdNamespace();
+  cc::SurfaceId SurfaceIdAtPoint(const gfx::Point& point,
+                                 gfx::Point* transformed_point);
 
   // Exposed for tests.
   cc::DelegatedFrameProvider* FrameProviderForTesting() const {

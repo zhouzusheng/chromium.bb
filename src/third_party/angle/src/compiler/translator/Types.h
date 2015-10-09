@@ -124,6 +124,7 @@ class TStructure : public TFieldListCollection
         return mDeepestNesting;
     }
     bool containsArrays() const;
+    bool containsType(TBasicType t) const;
     bool containsSamplers() const;
 
     bool equals(const TStructure &other) const;
@@ -230,6 +231,10 @@ class TType
   public:
     POOL_ALLOCATOR_NEW_DELETE();
     TType()
+        : type(EbtVoid), precision(EbpUndefined), qualifier(EvqGlobal), invariant(false),
+          layoutQualifier(TLayoutQualifier::create()),
+          primarySize(0), secondarySize(0), array(false), arraySize(0),
+          interfaceBlock(nullptr), structure(nullptr)
     {
     }
     TType(TBasicType t, unsigned char ps = 1, unsigned char ss = 1)
@@ -486,6 +491,11 @@ class TType
         return structure ? structure->containsArrays() : false;
     }
 
+    bool isStructureContainingType(TBasicType t) const
+    {
+        return structure ? structure->containsType(t) : false;
+    }
+
     bool isStructureContainingSamplers() const
     {
         return structure ? structure->containsSamplers() : false;
@@ -593,6 +603,16 @@ struct TPublicType
         }
 
         return userDef->isStructureContainingArrays();
+    }
+
+    bool isStructureContainingType(TBasicType t) const
+    {
+        if (!userDef)
+        {
+            return false;
+        }
+
+        return userDef->isStructureContainingType(t);
     }
 
     bool isMatrix() const

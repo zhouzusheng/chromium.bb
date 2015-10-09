@@ -365,6 +365,9 @@ void SpdyHttpStream::OnDataSent() {
   ReadAndSendRequestBodyData();
 }
 
+// TODO(xunjieli): Maybe do something with the trailers. crbug.com/422958.
+void SpdyHttpStream::OnTrailers(const SpdyHeaderBlock& trailers) {}
+
 void SpdyHttpStream::OnClose(int status) {
   // Cancel any pending reads from the upload data stream.
   if (request_info_->upload_data_stream)

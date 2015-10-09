@@ -63,16 +63,11 @@ public:
 
     void didStartProvisionalLoad(LocalFrame*);
     void didClearDocumentOfWindowObject(LocalFrame*);
-    void didCommitLoadForLocalFrame(LocalFrame*) override;
-
-protected:
-    void enable() override;
-    void disable() override;
 
 private:
-    void startListeningV8Debugger() override;
-    void stopListeningV8Debugger() override;
-    V8Debugger& debugger() override;
+    // V8DebuggerAgent::Client implemntation.
+    void debuggerAgentEnabled() override;
+    void debuggerAgentDisabled() override;
     void muteConsole() override;
     void unmuteConsole() override;
 
@@ -80,11 +75,10 @@ private:
     void overlayResumed() override;
     void overlaySteppedOver() override;
 
-    InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId) override;
+    InjectedScript defaultInjectedScript() override;
     bool canExecuteScripts() const;
 
     PageDebuggerAgent(MainThreadDebugger*, InspectorPageAgent*, InjectedScriptManager*, InspectorOverlay*);
-    RawPtrWillBeMember<MainThreadDebugger> m_mainThreadDebugger;
     RawPtrWillBeMember<InspectorPageAgent> m_pageAgent;
     RawPtrWillBeMember<InspectorOverlay> m_overlay;
     HashMap<String, String> m_compiledScriptURLs;

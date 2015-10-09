@@ -32,7 +32,7 @@ class ContextMenu;
 
 class ContextMenuClient {
 public:
-    virtual ~ContextMenuClient() {  }
+    virtual ~ContextMenuClient() { }
     virtual void showContextMenu(const ContextMenu*, bool fromContextMenuKey) = 0;
     virtual void clearContextMenu() = 0;
 };

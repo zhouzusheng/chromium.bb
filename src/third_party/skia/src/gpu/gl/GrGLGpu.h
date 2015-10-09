@@ -57,20 +57,15 @@ public:
     // Used by GrGLProgram to configure OpenGL state.
     void bindTexture(int unitIdx, const GrTextureParams& params, GrGLTexture* texture);
 
-    // GrGpu overrides
-    GrPixelConfig preferredReadPixelsConfig(GrPixelConfig readConfig,
-                                            GrPixelConfig surfaceConfig) const override;
-    GrPixelConfig preferredWritePixelsConfig(GrPixelConfig writeConfig,
-                                             GrPixelConfig surfaceConfig) const override;
-    bool canWriteTexturePixels(const GrTexture*, GrPixelConfig srcConfig) const override;
-    bool readPixelsWillPayForYFlip(GrRenderTarget* renderTarget,
-                                   int left, int top,
-                                   int width, int height,
-                                   GrPixelConfig config,
-                                   size_t rowBytes) const override;
-    bool fullReadPixelsIsFasterThanPartial() const override;
+    bool onGetReadPixelsInfo(GrSurface* srcSurface, int readWidth, int readHeight, size_t rowBytes,
+                             GrPixelConfig readConfig, DrawPreference*,
+                             ReadPixelTempDrawInfo*) override;
 
-    bool initCopySurfaceDstDesc(const GrSurface* src, GrSurfaceDesc* desc) override;
+    bool onGetWritePixelsInfo(GrSurface* dstSurface, int width, int height,
+                              size_t rowBytes, GrPixelConfig srcConfig, DrawPreference*,
+                              WritePixelTempDrawInfo*) override;
+
+    bool initCopySurfaceDstDesc(const GrSurface* src, GrSurfaceDesc* desc) const override;
 
     // These functions should be used to bind GL objects. They track the GL state and skip redundant
     // bindings. Making the equivalent glBind calls directly will confuse the state tracking.
@@ -96,8 +91,6 @@ public:
         fHWGeometryState.notifyIndexBufferDelete(id);
     }
 
-    void xferBarrier(GrRenderTarget*, GrXferBarrierType) override;
-
     void buildProgramDesc(GrProgramDesc*,
                           const GrPrimitiveProcessor&,
                           const GrPipeline&,
@@ -107,11 +100,18 @@ public:
         return &this->glContext();
     }
 
+    GrBackendObject createTestingOnlyBackendTexture(void* pixels, int w, int h,
+                                                    GrPixelConfig config) const override;
+    bool isTestingOnlyBackendTexture(GrBackendObject id) const override;
+    void deleteTestingOnlyBackendTexture(GrBackendObject id) const override;
+
 private:
     GrGLGpu(GrGLContext* ctx, GrContext* context);
 
     // GrGpu overrides
     void onResetContext(uint32_t resetBits) override;
+
+    void xferBarrier(GrRenderTarget*, GrXferBarrierType) override;
 
     GrTexture* onCreateTexture(const GrSurfaceDesc& desc, GrGpuResource::LifeCycle lifeCycle,
                                const void* srcData, size_t rowBytes) override;
@@ -127,22 +127,21 @@ private:
     bool attachStencilAttachmentToRenderTarget(GrStencilAttachment* sb,
                                                GrRenderTarget* rt) override;
 
-    void onClear(GrRenderTarget*, const SkIRect* rect, GrColor color,
-                 bool canIgnoreRect) override;
+    void onClear(GrRenderTarget*, const SkIRect& rect, GrColor color) override;
 
     void onClearStencilClip(GrRenderTarget*, const SkIRect& rect, bool insideClip) override;
 
-    bool onReadPixels(GrRenderTarget* target,
+    bool onReadPixels(GrSurface*,
                       int left, int top,
                       int width, int height,
                       GrPixelConfig,
                       void* buffer,
                       size_t rowBytes) override;
 
-    bool onWriteTexturePixels(GrTexture* texture,
-                              int left, int top, int width, int height,
-                              GrPixelConfig config, const void* buffer,
-                              size_t rowBytes) override;
+    bool onWritePixels(GrSurface*,
+                       int left, int top, int width, int height,
+                       GrPixelConfig config, const void* buffer,
+                       size_t rowBytes) override;
 
     void onResolveRenderTarget(GrRenderTarget* target) override;
 
@@ -265,7 +264,7 @@ private:
                            bool getSizedInternal,
                            GrGLenum* internalFormat,
                            GrGLenum* externalFormat,
-                           GrGLenum* externalType);
+                           GrGLenum* externalType) const;
     // helper for onCreateTexture and writeTexturePixels
     bool uploadTexData(const GrSurfaceDesc& desc,
                        bool isNewTexture,
@@ -489,6 +488,7 @@ private:
     TriState                    fHWWriteToColor;
     TriState                    fHWDitherEnabled;
     uint32_t                    fHWBoundRenderTargetUniqueID;
+    TriState                    fHWSRGBFramebuffer;
     SkTArray<uint32_t, true>    fHWBoundTextureUniqueIDs;
 
     ///@}

@@ -265,7 +265,7 @@ bool DevToolsAgentHost::IsDebuggerAttached(WebContents* web_contents) {
   return agent_host && agent_host->IsAttached();
 }
 
-//static
+// static
 void RenderFrameDevToolsAgentHost::AddAllAgentHosts(
     DevToolsAgentHost::List* result) {
   base::Callback<void(RenderFrameHost*)> callback = base::Bind(
@@ -509,6 +509,7 @@ void RenderFrameDevToolsAgentHost::RenderFrameDeleted(RenderFrameHost* rfh) {
 void RenderFrameDevToolsAgentHost::DestroyOnRenderFrameGone() {
   DCHECK(current_);
   scoped_refptr<RenderFrameDevToolsAgentHost> protect(this);
+  UpdateProtocolHandlers(nullptr);
   if (IsAttached())
     OnClientDetached();
   HostClosed();
@@ -533,6 +534,7 @@ void RenderFrameDevToolsAgentHost::RenderProcessGone(
       current_frame_crashed_ = true;
       break;
     default:
+      inspector_handler_->TargetDetached("Render process gone.");
       break;
   }
 }
@@ -625,7 +627,8 @@ void RenderFrameDevToolsAgentHost::DisconnectWebContents() {
   if (pending_)
     DiscardPending();
   UpdateProtocolHandlers(nullptr);
-  current_.reset();
+  disconnected_ = current_.Pass();
+  disconnected_->Detach();
   WebContentsObserver::Observe(nullptr);
 }
 
@@ -635,6 +638,7 @@ void RenderFrameDevToolsAgentHost::ConnectWebContents(WebContents* wc) {
   RenderFrameHostImpl* host =
       static_cast<RenderFrameHostImpl*>(wc->GetMainFrame());
   DCHECK(host);
+  current_ = disconnected_.Pass();
   SetPending(host);
   CommitPending();
   WebContentsObserver::Observe(WebContents::FromRenderFrameHost(host));
@@ -690,25 +694,23 @@ void RenderFrameDevToolsAgentHost::OnSwapCompositorFrame(
     page_handler_->OnSwapCompositorFrame(base::get<1>(param).metadata);
   if (input_handler_)
     input_handler_->OnSwapCompositorFrame(base::get<1>(param).metadata);
-  if (frame_trace_recorder_) {
+  if (frame_trace_recorder_ && tracing_handler_->did_initiate_recording()) {
     frame_trace_recorder_->OnSwapCompositorFrame(
         current_ ? current_->host() : nullptr,
-        base::get<1>(param).metadata,
-        tracing_handler_->did_initiate_recording());
+        base::get<1>(param).metadata);
   }
 }
 
 void RenderFrameDevToolsAgentHost::SynchronousSwapCompositorFrame(
     const cc::CompositorFrameMetadata& frame_metadata) {
   if (page_handler_)
-    page_handler_->OnSwapCompositorFrame(frame_metadata);
+    page_handler_->OnSynchronousSwapCompositorFrame(frame_metadata);
   if (input_handler_)
     input_handler_->OnSwapCompositorFrame(frame_metadata);
-  if (frame_trace_recorder_) {
-    frame_trace_recorder_->OnSwapCompositorFrame(
+  if (frame_trace_recorder_ && tracing_handler_->did_initiate_recording()) {
+    frame_trace_recorder_->OnSynchronousSwapCompositorFrame(
         current_ ? current_->host() : nullptr,
-        frame_metadata,
-        tracing_handler_->did_initiate_recording());
+        frame_metadata);
   }
 }
 

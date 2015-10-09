@@ -122,6 +122,8 @@ class HTMLImportsController;
 class HTMLLinkElement;
 class HTMLScriptElement;
 class HitTestRequest;
+class IdleRequestCallback;
+class InputDeviceCapabilities;
 class LayoutPoint;
 class LiveNodeListBase;
 class Locale;
@@ -145,6 +147,7 @@ class SVGUseElement;
 class ScriptRunner;
 class ScriptableDocumentParser;
 class ScriptedAnimationController;
+class ScriptedIdleTaskController;
 class SecurityOrigin;
 class SegmentedString;
 class SelectorQueryCache;
@@ -583,7 +586,7 @@ public:
     String selectedStylesheetSet() const;
     void setSelectedStylesheetSet(const String&);
 
-    bool setFocusedElement(PassRefPtrWillBeRawPtr<Element>, WebFocusType = WebFocusTypeNone);
+    bool setFocusedElement(PassRefPtrWillBeRawPtr<Element>, WebFocusType = WebFocusTypeNone, InputDeviceCapabilities* sourceCapabilities = nullptr);
     Element* focusedElement() const { return m_focusedElement.get(); }
     UserActionElementSet& userActionElements()  { return m_userActionElements; }
     const UserActionElementSet& userActionElements() const { return m_userActionElements; }
@@ -640,7 +643,7 @@ public:
     LocalDOMWindow* domWindow() const { return m_domWindow; }
 
     // Helper functions for forwarding LocalDOMWindow event related tasks to the LocalDOMWindow if it exists.
-    void setWindowAttributeEventListener(const AtomicString& eventType, PassRefPtr<EventListener>);
+    void setWindowAttributeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>);
     EventListener* getWindowAttributeEventListener(const AtomicString& eventType);
 
     static void registerEventFactory(PassOwnPtr<EventFactoryBase>);
@@ -673,17 +676,6 @@ public:
     bool hasMutationObservers() const { return m_mutationObserverTypes; }
     void addMutationObserverTypes(MutationObserverOptions types) { m_mutationObserverTypes |= types; }
 
-    /**
-     * Handles a HTTP header equivalent set by a meta tag using <meta http-equiv="..." content="...">. This is called
-     * when a meta tag is encountered during document parsing, and also when a script dynamically changes or adds a meta
-     * tag. This enables scripts to use meta tags to perform refreshes and set expiry dates in addition to them being
-     * specified in a HTML file.
-     *
-     * @param equiv The http header name (value of the meta tag's "equiv" attribute)
-     * @param content The header value (value of the meta tag's "content" attribute)
-     * @param inDocumentHeadElement Is the element in the document's <head> element?
-     */
-    void processHttpEquiv(const AtomicString& equiv, const AtomicString& content, bool inDocumentHeadElement);
     void updateViewportDescription();
     void processReferrerPolicy(const String& policy);
 
@@ -821,10 +813,6 @@ public:
     // Returns null if there is no such element.
     HTMLLinkElement* linkManifest() const;
 
-    // Returns the HTMLLinkElement currently in use for the default presentation URL.
-    // Returns null if there is no such element.
-    HTMLLinkElement* linkDefaultPresentation() const;
-
     void setUseSecureKeyboardEntryWhenActive(bool);
     bool useSecureKeyboardEntryWhenActive() const;
 
@@ -870,7 +858,7 @@ public:
 
     void initSecurityContext();
     void initSecurityContext(const DocumentInit&);
-    void initContentSecurityPolicy(PassRefPtr<ContentSecurityPolicy> = nullptr);
+    void initContentSecurityPolicy(PassRefPtrWillBeRawPtr<ContentSecurityPolicy> = nullptr);
 
     bool allowInlineEventHandlers(Node*, EventListener*, const String& contextURL, const WTF::OrdinalNumber& contextLine);
     bool allowExecutingScripts(Node*);
@@ -933,6 +921,9 @@ public:
     int requestAnimationFrame(FrameRequestCallback*);
     void cancelAnimationFrame(int id);
     void serviceScriptedAnimations(double monotonicAnimationStartTime);
+
+    int requestIdleCallback(IdleRequestCallback*, double timeoutMillis);
+    void cancelIdleCallback(int id);
 
     EventTarget* errorEventTarget() final;
     void logExceptionToConsole(const String& errorMessage, int scriptId, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtrWillBeRawPtr<ScriptCallStack>) final;
@@ -1044,10 +1035,20 @@ public:
 
     bool isPrivilegedContext(String& errorMessage, const PrivilegeContextCheck = StandardPrivilegeCheck) const override;
 
-    void setClientHintsPreferences(const ClientHintsPreferences& preferences) { m_clientHintsPreferences.set(preferences); }
-    const ClientHintsPreferences& clientHintsPreferences() const { return m_clientHintsPreferences; }
+    ClientHintsPreferences& clientHintsPreferences() { return m_clientHintsPreferences; }
 
     CanvasFontCache* canvasFontCache();
+
+    void incrementNodeCount() { m_nodeCount++; }
+    void decrementNodeCount()
+    {
+        ASSERT(m_nodeCount > 0);
+        m_nodeCount--;
+    }
+    int nodeCount() const { return m_nodeCount; }
+
+    using WeakDocumentSet = WillBeHeapHashSet<RawPtrWillBeWeakMember<Document>>;
+    static WeakDocumentSet& liveDocumentSet();
 
 protected:
     Document(const DocumentInit&, DocumentClassFlags = DefaultDocumentClass);
@@ -1075,6 +1076,7 @@ private:
     bool isElementNode() const = delete; // This will catch anyone doing an unnecessary check.
 
     ScriptedAnimationController& ensureScriptedAnimationController();
+    ScriptedIdleTaskController& ensureScriptedIdleTaskController();
     SecurityContext& securityContext() final { return *this; }
     EventQueue* eventQueue() const final;
 
@@ -1142,13 +1144,6 @@ private:
 
     void clearFocusedElementSoon();
     void clearFocusedElementTimerFired(Timer<Document>*);
-
-    void processHttpEquivDefaultStyle(const AtomicString& content);
-    void processHttpEquivRefresh(const AtomicString& content);
-    void processHttpEquivSetCookie(const AtomicString& content);
-    void processHttpEquivXFrameOptions(const AtomicString& content);
-    void processHttpEquivContentSecurityPolicy(const AtomicString& equiv, const AtomicString& content);
-    void processHttpEquivAcceptCH(const AtomicString& content);
 
     bool haveStylesheetsLoaded() const;
 
@@ -1354,7 +1349,8 @@ private:
     unsigned m_writeRecursionDepth;
 
     RefPtrWillBeMember<ScriptedAnimationController> m_scriptedAnimationController;
-    OwnPtr<MainThreadTaskRunner> m_taskRunner;
+    RefPtrWillBeMember<ScriptedIdleTaskController> m_scriptedIdleTaskController;
+    OwnPtrWillBeMember<MainThreadTaskRunner> m_taskRunner;
     OwnPtrWillBeMember<TextAutosizer> m_textAutosizer;
 
     RefPtrWillBeMember<CustomElementRegistrationContext> m_registrationContext;
@@ -1400,6 +1396,8 @@ private:
     ClientHintsPreferences m_clientHintsPreferences;
 
     PersistentWillBeMember<CanvasFontCache> m_canvasFontCache;
+
+    int m_nodeCount;
 };
 
 extern template class CORE_EXTERN_TEMPLATE_EXPORT WillBeHeapSupplement<Document>;

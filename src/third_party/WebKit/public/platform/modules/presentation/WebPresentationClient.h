@@ -7,6 +7,7 @@
 
 #include "public/platform/WebCallbacks.h"
 #include "public/platform/WebCommon.h"
+#include "public/platform/WebPassOwnPtr.h"
 
 namespace blink {
 
@@ -19,10 +20,10 @@ struct WebPresentationError;
 // If session was created, callback's onSuccess() is invoked with the information about the
 // presentation session created by the embedder. Otherwise, onError() is invoked with the error code
 // and message.
-using WebPresentationSessionClientCallbacks = WebCallbacks<WebPresentationSessionClient, WebPresentationError>;
+using WebPresentationSessionClientCallbacks = WebCallbacks<WebPassOwnPtr<WebPresentationSessionClient>, const WebPresentationError&>;
 
 // Callback for .getAvailability().
-using WebPresentationAvailabilityCallbacks = WebCallbacks<bool, WebPresentationError>;
+using WebPresentationAvailabilityCallbacks = WebCallbacks<bool, const WebPresentationError&>;
 
 // The implementation the embedder has to provide for the Presentation API to work.
 class WebPresentationClient {
@@ -52,12 +53,12 @@ public:
     virtual void sendBlobData(const WebString& presentationUrl, const WebString& presentationId, const uint8_t* data, size_t length) = 0;
 
     // Called when the frame requests to close an existing session.
-    virtual void closeSession(const WebString& url, const WebString& presentationId) = 0;
+    virtual void closeSession(const WebString& presentationUrl, const WebString& presentationId) = 0;
 
     // Called when the frame wants to know the availability of a presentation
-    // display.
-    // The ownership of the |callbacks| argument is transferred to the embedder.
-    virtual void getAvailability(const WebString& url, WebPresentationAvailabilityCallbacks*) = 0;
+    // display for |availabilityUrl|.  The ownership of the callbacks argument
+    // is transferred to the embedder.
+    virtual void getAvailability(const WebString& availabilityUrl, WebPresentationAvailabilityCallbacks*) = 0;
 
     // Start listening to changes in presentation displays availability. The
     // observer will be notified in case of a change. The observer is
@@ -67,6 +68,10 @@ public:
     // Stop listening to changes in presentation displays availability. The
     // observer will no longer be notified in case of a change.
     virtual void stopListening(WebPresentationAvailabilityObserver*) = 0;
+
+    // Called when a defaultRequest has been set. It sends the url associated
+    // with it for the embedder.
+    virtual void setDefaultPresentationUrl(const WebString&) = 0;
 };
 
 } // namespace blink

@@ -162,7 +162,7 @@ bool ContentRendererClientImpl::OverrideCreatePlugin(
     const blink::WebPluginParams& params,
     blink::WebPlugin** plugin)
 {
-    if (base::UTF16ToASCII(params.mimeType) != "application/x-bloomberg-jswidget") {
+    if (base::UTF16ToASCII(base::StringPiece16(params.mimeType)) != "application/x-bloomberg-jswidget") {
         return false;
     }
 

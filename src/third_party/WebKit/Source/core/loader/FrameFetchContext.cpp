@@ -34,6 +34,7 @@
 #include "bindings/core/v8/ScriptController.h"
 #include "core/dom/Document.h"
 #include "core/fetch/ClientHintsPreferences.h"
+#include "core/fetch/UniqueIdentifier.h"
 #include "core/frame/FrameConsole.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
@@ -49,6 +50,7 @@
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/LinkLoader.h"
 #include "core/loader/MixedContentChecker.h"
+#include "core/loader/NetworkHintsInterface.h"
 #include "core/loader/PingLoader.h"
 #include "core/loader/ProgressTracker.h"
 #include "core/loader/appcache/ApplicationCacheHost.h"
@@ -162,15 +164,22 @@ ResourceRequestCachePolicy FrameFetchContext::resourceRequestCachePolicy(const R
         FrameLoadType frameLoadType = frame()->loader().loadType();
         if (request.httpMethod() == "POST" && frameLoadType == FrameLoadTypeBackForward)
             return ReturnCacheDataDontLoad;
-        if (!frame()->host()->overrideEncoding().isEmpty() || frameLoadType == FrameLoadTypeBackForward)
+        if (!frame()->host()->overrideEncoding().isEmpty())
             return ReturnCacheDataElseLoad;
-        if (frameLoadType == FrameLoadTypeReloadFromOrigin)
-            return ReloadBypassingCache;
-        if (frameLoadType == FrameLoadTypeReload || frameLoadType == FrameLoadTypeSame || request.isConditional() || request.httpMethod() == "POST")
+        if (frameLoadType == FrameLoadTypeSame || request.isConditional() || request.httpMethod() == "POST")
             return ReloadIgnoringCacheData;
-        Frame* parent = frame()->tree().parent();
-        if (parent && parent->isLocalFrame())
-            return toLocalFrame(parent)->document()->fetcher()->context().resourceRequestCachePolicy(request, type);
+
+        for (Frame* f = frame(); f; f = f->tree().parent()) {
+            if (!f->isLocalFrame())
+                continue;
+            frameLoadType = toLocalFrame(f)->loader().loadType();
+            if (frameLoadType == FrameLoadTypeBackForward)
+                return ReturnCacheDataElseLoad;
+            if (frameLoadType == FrameLoadTypeReloadFromOrigin)
+                return ReloadBypassingCache;
+            if (frameLoadType == FrameLoadTypeReload)
+                return ReloadIgnoringCacheData;
+        }
         return UseProtocolCachePolicy;
     }
 
@@ -213,20 +222,15 @@ void FrameFetchContext::dispatchWillSendRequest(unsigned long identifier, Resour
     InspectorInstrumentation::willSendRequest(frame(), identifier, ensureLoaderForNotifications(), request, redirectResponse, initiatorInfo);
 }
 
-void FrameFetchContext::dispatchDidLoadResourceFromMemoryCache(const ResourceRequest& request, const ResourceResponse& response)
-{
-    frame()->loader().client()->dispatchDidLoadResourceFromMemoryCache(request, response);
-}
-
 void FrameFetchContext::dispatchDidReceiveResponse(unsigned long identifier, const ResourceResponse& response, ResourceLoader* resourceLoader)
 {
     MixedContentChecker::checkMixedPrivatePublic(frame(), response.remoteIPAddress());
-    LinkLoader::loadLinkFromHeader(response.httpHeaderField("Link"), frame()->document());
+    LinkLoader::loadLinkFromHeader(response.httpHeaderField("Link"), frame()->document(), NetworkHintsInterfaceImpl());
     if (m_documentLoader == frame()->loader().provisionalDocumentLoader()) {
         ResourceFetcher* fetcher = nullptr;
         if (frame()->document())
             fetcher = frame()->document()->fetcher();
-        handleAcceptClientHintsHeader(response.httpHeaderField("accept-ch"), m_documentLoader->clientHintsPreferences(), fetcher);
+        m_documentLoader->clientHintsPreferences().updateFromAcceptClientHintsHeader(response.httpHeaderField("accept-ch"), fetcher);
     }
 
     frame()->loader().progress().incrementProgress(identifier, response);
@@ -272,14 +276,20 @@ void FrameFetchContext::dispatchDidFail(unsigned long identifier, const Resource
         frame()->console().didFailLoading(identifier, error);
 }
 
-void FrameFetchContext::sendRemainingDelegateMessages(unsigned long identifier, const ResourceResponse& response, int dataLength)
-{
-    InspectorInstrumentation::markResourceAsCached(frame(), identifier);
-    if (!response.isNull())
-        dispatchDidReceiveResponse(identifier, response);
 
-    if (dataLength > 0)
-        dispatchDidReceiveData(identifier, 0, dataLength, 0);
+void FrameFetchContext::dispatchDidLoadResourceFromMemoryCache(const Resource* resource)
+{
+    ResourceRequest request(resource->url());
+    unsigned long identifier = createUniqueIdentifier();
+    frame()->loader().client()->dispatchDidLoadResourceFromMemoryCache(request, resource->response());
+    dispatchWillSendRequest(identifier, request, ResourceResponse(), resource->options().initiatorInfo);
+
+    InspectorInstrumentation::markResourceAsCached(frame(), identifier);
+    if (!resource->response().isNull())
+        dispatchDidReceiveResponse(identifier, resource->response());
+
+    if (resource->encodedSize() > 0)
+        dispatchDidReceiveData(identifier, 0, resource->encodedSize(), 0);
 
     dispatchDidFinishLoading(identifier, 0, 0);
 }
@@ -291,11 +301,6 @@ bool FrameFetchContext::shouldLoadNewResource(Resource::Type type) const
     if (type == Resource::MainResource)
         return m_documentLoader == frame()->loader().provisionalDocumentLoader();
     return m_documentLoader == frame()->loader().documentLoader();
-}
-
-void FrameFetchContext::dispatchWillRequestResource(FetchRequest* request)
-{
-    frame()->loader().client()->dispatchWillRequestResource(request);
 }
 
 void FrameFetchContext::willStartLoadingResource(ResourceRequest& request)
@@ -330,6 +335,8 @@ void FrameFetchContext::printAccessDeniedMessage(const KURL& url) const
     String message;
     if (!m_document || m_document->url().isNull())
         message = "Unsafe attempt to load URL " + url.elidedString() + '.';
+    else if (url.isLocalFile() || m_document->url().isLocalFile())
+        message = "Unsafe attempt to load URL " + url.elidedString() + " from frame with URL " + m_document->url().elidedString() + ". 'file:' URLs are treated as unique security origins.\n";
     else
         message = "Unsafe attempt to load URL " + url.elidedString() + " from frame with URL " + m_document->url().elidedString() + ". Domains, protocols and ports must match.\n";
 
@@ -486,21 +493,9 @@ bool FrameFetchContext::canRequest(Resource::Type type, const ResourceRequest& r
     // Last of all, check for mixed content. We do this last so that when
     // folks block mixed content with a CSP policy, they don't get a warning.
     // They'll still get a warning in the console about CSP blocking the load.
-
-    // If we're loading the main resource of a subframe, ensure that we check
-    // against the parent of the active frame, rather than the frame itself.
-    LocalFrame* effectiveFrame = frame();
-    if (resourceRequest.frameType() == WebURLRequest::FrameTypeNested) {
-        // FIXME: Deal with RemoteFrames.
-        Frame* parentFrame = effectiveFrame->tree().parent();
-        ASSERT(parentFrame);
-        if (parentFrame->isLocalFrame())
-            effectiveFrame = toLocalFrame(parentFrame);
-    }
-
     MixedContentChecker::ReportingStatus mixedContentReporting = forPreload ?
         MixedContentChecker::SuppressReport : MixedContentChecker::SendReport;
-    return !MixedContentChecker::shouldBlockFetch(effectiveFrame, resourceRequest, url, mixedContentReporting);
+    return !MixedContentChecker::shouldBlockFetch(MixedContentChecker::effectiveFrameForFrameType(frame(), resourceRequest.frameType()), resourceRequest, url, mixedContentReporting);
 }
 
 bool FrameFetchContext::isControlledByServiceWorker() const
@@ -528,11 +523,6 @@ int64_t FrameFetchContext::serviceWorkerID() const
 bool FrameFetchContext::isMainFrame() const
 {
     return frame()->isMainFrame();
-}
-
-bool FrameFetchContext::hasSubstituteData() const
-{
-    return m_documentLoader && m_documentLoader->substituteData().isValid();
 }
 
 bool FrameFetchContext::defersLoading() const
@@ -585,7 +575,7 @@ void FrameFetchContext::upgradeInsecureRequest(FetchRequest& fetchRequest)
 {
     KURL url = fetchRequest.resourceRequest().url();
 
-    // Tack an 'HTTPS' header to outgoing navigational requests, as described in
+    // Tack an 'Upgrade-Insecure-Requests' header to outgoing navigational requests, as described in
     // https://w3c.github.io/webappsec/specs/upgrade/#feature-detect
     if (fetchRequest.resourceRequest().frameType() != WebURLRequest::FrameTypeNone)
         fetchRequest.mutableResourceRequest().addHTTPHeaderField("Upgrade-Insecure-Requests", "1");
@@ -627,8 +617,10 @@ void FrameFetchContext::addClientHintsIfNecessary(FetchRequest& fetchRequest)
 
     if (shouldSendResourceWidth) {
         FetchRequest::ResourceWidth resourceWidth = fetchRequest.resourceWidth();
-        if (resourceWidth.isSet)
-            fetchRequest.mutableResourceRequest().addHTTPHeaderField("Width", AtomicString(String::number(ceil(resourceWidth.width))));
+        if (resourceWidth.isSet) {
+            float physicalWidth = resourceWidth.width * m_document->devicePixelRatio();
+            fetchRequest.mutableResourceRequest().addHTTPHeaderField("Width", AtomicString(String::number(ceil(physicalWidth))));
+        }
     }
 
     if (shouldSendViewportWidth && frame()->view())
@@ -664,6 +656,27 @@ bool FrameFetchContext::isLowPriorityIframe() const
 {
     return !frame()->isMainFrame() && frame()->settings() && frame()->settings()->lowPriorityIframes();
 }
+
+bool FrameFetchContext::fetchDeferLateScripts() const
+{
+    return frame()->settings() && frame()->settings()->fetchDeferLateScripts();
+}
+
+bool FrameFetchContext::fetchIncreaseFontPriority() const
+{
+    return frame()->settings() && frame()->settings()->fetchIncreaseFontPriority();
+}
+
+bool FrameFetchContext::fetchIncreaseAsyncScriptPriority() const
+{
+    return frame()->settings() && frame()->settings()->fetchIncreaseAsyncScriptPriority();
+}
+
+bool FrameFetchContext::fetchIncreasePriorities() const
+{
+    return frame()->settings() && frame()->settings()->fetchIncreasePriorities();
+}
+
 
 DEFINE_TRACE(FrameFetchContext)
 {

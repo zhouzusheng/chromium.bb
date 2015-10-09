@@ -30,9 +30,9 @@
 #include "core/dom/Element.h"
 #include "core/dom/StyleEngine.h"
 #include "core/dom/shadow/ShadowRoot.h"
+#include "core/editing/EditingUtilities.h"
 #include "core/editing/Editor.h"
 #include "core/editing/FrameSelection.h"
-#include "core/editing/htmlediting.h"
 #include "core/fetch/ResourceLoadPriorityOptimizer.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
@@ -331,7 +331,7 @@ void LayoutBlock::invalidatePaintOfSubtreesIfNeeded(PaintInvalidationState& chil
             // the inline elements position in PaintInvalidationState.
             if (box->style()->position() == AbsolutePosition) {
                 LayoutObject* container = box->container(&paintInvalidationContainerForChild, 0);
-                if (container->isRelPositioned() && container->isLayoutInline()) {
+                if (container->isInFlowPositioned() && container->isLayoutInline()) {
                     // FIXME: We should be able to use PaintInvalidationState for this.
                     // Currently, we will place absolutely positioned elements inside
                     // relatively positioned inline blocks in the wrong location. crbug.com/371485
@@ -345,6 +345,34 @@ void LayoutBlock::invalidatePaintOfSubtreesIfNeeded(PaintInvalidationState& chil
             box->invalidateTreeIfNeeded(childPaintInvalidationState);
         }
     }
+}
+
+inline static void invalidateDisplayItemClientForStartOfContinuationsIfNeeded(const LayoutBlock& block)
+{
+    // If the block is a continuation or containing block of an inline continuation, invalidate the
+    // start object of the continuations if it has focus ring because change of continuation may change
+    // the shape of the focus ring.
+    if (!block.isAnonymous())
+        return;
+
+    LayoutObject* startOfContinuations = nullptr;
+    if (LayoutInline* inlineElementContinuation = block.inlineElementContinuation()) {
+        // This block is an anonymous block continuation.
+        startOfContinuations = inlineElementContinuation->node()->layoutObject();
+    } else if (LayoutObject* firstChild = block.firstChild()) {
+        // This block is the anonymous containing block of an inline element continuation.
+        if (firstChild->isElementContinuation())
+            startOfContinuations = firstChild->node()->layoutObject();
+    }
+    if (startOfContinuations && startOfContinuations->styleRef().outlineStyleIsAuto())
+        startOfContinuations->invalidateDisplayItemClient(*startOfContinuations);
+}
+
+void LayoutBlock::invalidateDisplayItemClients(const LayoutBoxModelObject& paintInvalidationContainer) const
+{
+    LayoutBox::invalidateDisplayItemClients(paintInvalidationContainer);
+    ASSERT(RuntimeEnabledFeatures::slimmingPaintEnabled());
+    invalidateDisplayItemClientForStartOfContinuationsIfNeeded(*this);
 }
 
 void LayoutBlock::addChildIgnoringContinuation(LayoutObject* newChild, LayoutObject* beforeChild)
@@ -931,7 +959,7 @@ void LayoutBlock::addOverflowFromChildren()
         addOverflowFromBlockChildren();
 }
 
-void LayoutBlock::computeOverflow(LayoutUnit oldClientAfterEdge, bool)
+void LayoutBlock::computeOverflow(LayoutUnit oldClientAfterEdge)
 {
     m_overflow.clear();
 
@@ -1035,7 +1063,8 @@ void LayoutBlock::simplifiedNormalFlowLayout()
 {
     if (childrenInline()) {
         ListHashSet<RootInlineBox*> lineBoxes;
-        for (InlineWalker walker(this); !walker.atEnd(); walker.advance()) {
+        ASSERT_WITH_SECURITY_IMPLICATION(isLayoutBlockFlow());
+        for (InlineWalker walker(toLayoutBlockFlow(this)); !walker.atEnd(); walker.advance()) {
             LayoutObject* o = walker.current();
             if (!o->isOutOfFlowPositioned() && (o->isReplaced() || o->isFloating())) {
                 o->layoutIfNeeded();
@@ -1106,7 +1135,7 @@ bool LayoutBlock::simplifiedLayout()
         // computeOverflow expects the bottom edge before we clamp our height. Since this information isn't available during
         // simplifiedLayout, we cache the value in m_overflow.
         LayoutUnit oldClientAfterEdge = hasOverflowModel() ? m_overflow->layoutClientAfterEdge() : clientLogicalBottom();
-        computeOverflow(oldClientAfterEdge, true);
+        computeOverflow(oldClientAfterEdge);
     }
 
     updateLayerTransformAfterLayout();
@@ -1732,7 +1761,7 @@ bool LayoutBlock::hitTestContents(HitTestResult& result, const HitTestLocation& 
 {
     if (childrenInline() && !isTable()) {
         // We have to hit-test our line boxes.
-        if (m_lineBoxes.hitTest(this, result, locationInContainer, accumulatedOffset, hitTestAction))
+        if (m_lineBoxes.hitTest(LineLayoutBoxModel(this), result, locationInContainer, accumulatedOffset, hitTestAction))
             return true;
     } else {
         // Hit test our children.
@@ -1755,13 +1784,13 @@ Position LayoutBlock::positionForBox(InlineBox *box, bool start) const
         return Position();
 
     if (!box->layoutObject().nonPseudoNode())
-        return createLegacyEditingPosition(nonPseudoNode(), start ? caretMinOffset() : caretMaxOffset());
+        return Position::editingPositionOf(nonPseudoNode(), start ? caretMinOffset() : caretMaxOffset());
 
     if (!box->isInlineTextBox())
-        return createLegacyEditingPosition(box->layoutObject().nonPseudoNode(), start ? box->layoutObject().caretMinOffset() : box->layoutObject().caretMaxOffset());
+        return Position::editingPositionOf(box->layoutObject().nonPseudoNode(), start ? box->layoutObject().caretMinOffset() : box->layoutObject().caretMaxOffset());
 
     InlineTextBox* textBox = toInlineTextBox(box);
-    return createLegacyEditingPosition(box->layoutObject().nonPseudoNode(), start ? textBox->start() : textBox->start() + textBox->len());
+    return Position::editingPositionOf(box->layoutObject().nonPseudoNode(), start ? textBox->start() : textBox->start() + textBox->len());
 }
 
 static inline bool isEditingBoundary(LayoutObject* ancestor, LayoutObject* child)
@@ -1778,7 +1807,7 @@ static inline bool isEditingBoundary(LayoutObject* ancestor, LayoutObject* child
 static PositionWithAffinity positionForPointRespectingEditingBoundaries(LayoutBlock* parent, LayoutBox* child, const LayoutPoint& pointInParentCoordinates)
 {
     LayoutPoint childLocation = child->location();
-    if (child->isRelPositioned())
+    if (child->isInFlowPositioned())
         childLocation += child->offsetForInFlowPosition();
 
     // FIXME: This is wrong if the child's writing-mode is different from the parent's.
@@ -1803,8 +1832,8 @@ static PositionWithAffinity positionForPointRespectingEditingBoundaries(LayoutBl
     LayoutUnit childMiddle = parent->logicalWidthForChild(*child) / 2;
     LayoutUnit logicalLeft = parent->isHorizontalWritingMode() ? pointInChildCoordinates.x() : pointInChildCoordinates.y();
     if (logicalLeft < childMiddle)
-        return ancestor->createPositionWithAffinity(childNode->nodeIndex(), DOWNSTREAM);
-    return ancestor->createPositionWithAffinity(childNode->nodeIndex() + 1, UPSTREAM);
+        return ancestor->createPositionWithAffinity(childNode->nodeIndex());
+    return ancestor->createPositionWithAffinity(childNode->nodeIndex() + 1, TextAffinity::Upstream);
 }
 
 PositionWithAffinity LayoutBlock::positionForPointWithInlineChildren(const LayoutPoint& pointInLogicalContents)
@@ -1812,7 +1841,7 @@ PositionWithAffinity LayoutBlock::positionForPointWithInlineChildren(const Layou
     ASSERT(childrenInline());
 
     if (!firstRootBox())
-        return createPositionWithAffinity(0, DOWNSTREAM);
+        return createPositionWithAffinity(0);
 
     bool linesAreFlipped = style()->isFlippedLinesWritingMode();
     bool blocksAreFlipped = style()->isFlippedBlocksWritingMode();
@@ -1868,7 +1897,7 @@ PositionWithAffinity LayoutBlock::positionForPointWithInlineChildren(const Layou
                         box = newBox;
                 }
                 // y coordinate is above first root line box, so return the start of the first
-                return PositionWithAffinity(positionForBox(box, true), DOWNSTREAM);
+                return PositionWithAffinity(positionForBox(box, true));
             }
         }
 
@@ -1891,13 +1920,13 @@ PositionWithAffinity LayoutBlock::positionForPointWithInlineChildren(const Layou
         ASSERT(moveCaretToBoundary);
         InlineBox* logicallyLastBox;
         if (lastRootBoxWithChildren->getLogicalEndBoxWithNode(logicallyLastBox))
-            return PositionWithAffinity(positionForBox(logicallyLastBox, false), DOWNSTREAM);
+            return PositionWithAffinity(positionForBox(logicallyLastBox, false));
     }
 
     // Can't reach this. We have a root line box, but it has no kids.
     // FIXME: This should ASSERT_NOT_REACHED(), but clicking on placeholder text
     // seems to hit this code path.
-    return createPositionWithAffinity(0, DOWNSTREAM);
+    return createPositionWithAffinity(0);
 }
 
 static inline bool isChildHitTestCandidate(LayoutBox* box)
@@ -1916,13 +1945,13 @@ PositionWithAffinity LayoutBlock::positionForPoint(const LayoutPoint& point)
         LayoutUnit pointLogicalTop = isHorizontalWritingMode() ? point.y() : point.x();
 
         if (pointLogicalLeft < 0)
-            return createPositionWithAffinity(caretMinOffset(), DOWNSTREAM);
+            return createPositionWithAffinity(caretMinOffset());
         if (pointLogicalLeft >= logicalWidth())
-            return createPositionWithAffinity(caretMaxOffset(), DOWNSTREAM);
+            return createPositionWithAffinity(caretMaxOffset());
         if (pointLogicalTop < 0)
-            return createPositionWithAffinity(caretMinOffset(), DOWNSTREAM);
+            return createPositionWithAffinity(caretMinOffset());
         if (pointLogicalTop >= logicalHeight())
-            return createPositionWithAffinity(caretMaxOffset(), DOWNSTREAM);
+            return createPositionWithAffinity(caretMaxOffset());
     }
 
     LayoutPoint pointInContents = point;
@@ -2087,12 +2116,7 @@ void LayoutBlock::computeBlockPreferredLogicalWidths(LayoutUnit& minLogicalWidth
         margin = marginStart + marginEnd;
 
         LayoutUnit childMinPreferredLogicalWidth, childMaxPreferredLogicalWidth;
-        if (child->isBox() && child->isHorizontalWritingMode() != isHorizontalWritingMode()) {
-            childMinPreferredLogicalWidth = childMaxPreferredLogicalWidth = toLayoutBox(child)->computeLogicalHeightWithoutLayout();
-        } else {
-            childMinPreferredLogicalWidth = child->minPreferredLogicalWidth();
-            childMaxPreferredLogicalWidth = child->maxPreferredLogicalWidth();
-        }
+        computeChildPreferredLogicalWidths(*child, childMinPreferredLogicalWidth, childMaxPreferredLogicalWidth);
 
         LayoutUnit w = childMinPreferredLogicalWidth + margin;
         minLogicalWidth = std::max(w, minLogicalWidth);
@@ -2138,6 +2162,16 @@ void LayoutBlock::computeBlockPreferredLogicalWidths(LayoutUnit& minLogicalWidth
     maxLogicalWidth = std::max<LayoutUnit>(0, maxLogicalWidth);
 
     maxLogicalWidth = std::max(floatLeftWidth + floatRightWidth, maxLogicalWidth);
+}
+
+void LayoutBlock::computeChildPreferredLogicalWidths(LayoutObject& child, LayoutUnit& minPreferredLogicalWidth, LayoutUnit& maxPreferredLogicalWidth) const
+{
+    if (child.isBox() && child.isHorizontalWritingMode() != isHorizontalWritingMode()) {
+        minPreferredLogicalWidth = maxPreferredLogicalWidth = toLayoutBox(child).computeLogicalHeightWithoutLayout();
+        return;
+    }
+    minPreferredLogicalWidth = child.minPreferredLogicalWidth();
+    maxPreferredLogicalWidth = child.maxPreferredLogicalWidth();
 }
 
 bool LayoutBlock::hasLineIfEmpty() const
@@ -2597,7 +2631,7 @@ LayoutRect LayoutBlock::localCaretRect(InlineBox* inlineBox, int caretOffset, La
     return caretRect;
 }
 
-void LayoutBlock::addFocusRingRects(Vector<LayoutRect>& rects, const LayoutPoint& additionalOffset) const
+void LayoutBlock::addOutlineRects(Vector<LayoutRect>& rects, const LayoutPoint& additionalOffset) const
 {
     // For blocks inside inlines, we go ahead and include margins so that we run right up to the
     // inline boxes above and below us (thus getting merged with them to form a single irregular
@@ -2631,19 +2665,15 @@ void LayoutBlock::addFocusRingRects(Vector<LayoutRect>& rects, const LayoutPoint
                 rects.append(rect);
         }
 
-        addFocusRingRectsForNormalChildren(rects, additionalOffset);
+        addOutlineRectsForNormalChildren(rects, additionalOffset);
         if (TrackedLayoutBoxListHashSet* positionedObjects = this->positionedObjects()) {
             for (auto* box : *positionedObjects)
-                addFocusRingRectsForDescendant(*box, rects, additionalOffset);
+                addOutlineRectsForDescendant(*box, rects, additionalOffset);
         }
     }
 
-    if (inlineElementContinuation) {
-        Vector<LayoutRect> inlineFocusRingRects;
-        // We need to give the LayoutInline a clean vector to let it add focus ring rects of line boxes.
-        inlineElementContinuation->addFocusRingRects(inlineFocusRingRects, additionalOffset + (inlineElementContinuation->containingBlock()->location() - location()));
-        rects.appendVector(inlineFocusRingRects);
-    }
+    if (inlineElementContinuation)
+        inlineElementContinuation->addOutlineRects(rects, additionalOffset + (inlineElementContinuation->containingBlock()->location() - location()));
 }
 
 void LayoutBlock::computeSelfHitTestRects(Vector<LayoutRect>& rects, const LayoutPoint& layerOffset) const
@@ -2673,11 +2703,7 @@ LayoutUnit LayoutBlock::nextPageLogicalTop(LayoutUnit logicalOffset, PageBoundar
     if (!pageLogicalHeight)
         return logicalOffset;
 
-    // The logicalOffset is in our coordinate space.  We can add in our pushed offset.
-    LayoutUnit remainingLogicalHeight = pageRemainingLogicalHeightForOffset(logicalOffset);
-    if (pageBoundaryRule == ExcludePageBoundary)
-        return logicalOffset + (remainingLogicalHeight ? remainingLogicalHeight : pageLogicalHeight);
-    return logicalOffset + remainingLogicalHeight;
+    return logicalOffset + pageRemainingLogicalHeightForOffset(logicalOffset, pageBoundaryRule);
 }
 
 LayoutUnit LayoutBlock::pageLogicalHeightForOffset(LayoutUnit offset) const
@@ -2698,9 +2724,10 @@ LayoutUnit LayoutBlock::pageRemainingLogicalHeightForOffset(LayoutUnit offset, P
     if (!flowThread) {
         LayoutUnit pageLogicalHeight = layoutView->layoutState()->pageLogicalHeight();
         LayoutUnit remainingHeight = pageLogicalHeight - intMod(offset, pageLogicalHeight);
-        if (pageBoundaryRule == IncludePageBoundary) {
-            // If includeBoundaryPoint is true the line exactly on the top edge of a
-            // column will act as being part of the previous column.
+        if (pageBoundaryRule == AssociateWithFormerPage) {
+            // An offset exactly at a page boundary will act as being part of the former page in
+            // question (i.e. no remaining space), rather than being part of the latter (i.e. one
+            // whole page length of remaining space).
             remainingHeight = intMod(remainingHeight, pageLogicalHeight);
         }
         return remainingHeight;
@@ -2832,7 +2859,8 @@ bool LayoutBlock::recalcChildOverflowAfterStyleChange()
 
     if (childrenInline()) {
         ListHashSet<RootInlineBox*> lineBoxes;
-        for (InlineWalker walker(this); !walker.atEnd(); walker.advance()) {
+        ASSERT_WITH_SECURITY_IMPLICATION(isLayoutBlockFlow());
+        for (InlineWalker walker(toLayoutBlockFlow(this)); !walker.atEnd(); walker.advance()) {
             LayoutObject* layoutObject = walker.current();
             if (recalcNormalFlowChildOverflowIfNeeded(layoutObject)) {
                 childrenOverflowChanged = true;
@@ -2888,7 +2916,7 @@ bool LayoutBlock::recalcOverflowAfterStyleChange()
         return false;
 
     LayoutUnit oldClientAfterEdge = hasOverflowModel() ? m_overflow->layoutClientAfterEdge() : clientLogicalBottom();
-    computeOverflow(oldClientAfterEdge, true);
+    computeOverflow(oldClientAfterEdge);
 
     if (hasOverflowClip())
         layer()->scrollableArea()->updateAfterOverflowRecalc();

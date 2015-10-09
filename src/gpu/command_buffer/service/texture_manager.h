@@ -201,6 +201,10 @@ class GPU_EXPORT Texture {
   void OnWillModifyPixels();
   void OnDidModifyPixels();
 
+  void DumpLevelMemory(base::trace_event::ProcessMemoryDump* pmd,
+                       uint64_t client_tracing_id,
+                       const std::string& dump_name) const;
+
  private:
   friend class MailboxManagerImpl;
   friend class MailboxManagerSync;
@@ -555,7 +559,7 @@ struct DecoderTextureState {
 //
 // NOTE: To support shared resources an instance of this class will need to be
 // shared by multiple GLES2Decoders.
-class GPU_EXPORT TextureManager {
+class GPU_EXPORT TextureManager : public base::trace_event::MemoryDumpProvider {
  public:
   class GPU_EXPORT DestructionObserver {
    public:
@@ -587,7 +591,7 @@ class GPU_EXPORT TextureManager {
                  GLsizei max_rectangle_texture_size,
                  GLsizei max_3d_texture_size,
                  bool use_default_textures);
-  ~TextureManager();
+  ~TextureManager() override;
 
   void set_framebuffer_manager(FramebufferManager* manager) {
     framebuffer_manager_ = manager;
@@ -603,7 +607,8 @@ class GPU_EXPORT TextureManager {
   GLint MaxLevelsForTarget(GLenum target) const {
     switch (target) {
       case GL_TEXTURE_2D:
-        return  max_levels_;
+        return max_levels_;
+      case GL_TEXTURE_RECTANGLE_ARB:
       case GL_TEXTURE_EXTERNAL_OES:
         return 1;
       case GL_TEXTURE_3D:
@@ -866,6 +871,10 @@ class GPU_EXPORT TextureManager {
     ErrorState* error_state, const char* function_name,
     GLenum format, GLenum type, GLenum internal_format, GLint level);
 
+  // base::trace_event::MemoryDumpProvider implementation.
+  bool OnMemoryDump(const base::trace_event::MemoryDumpArgs& args,
+                    base::trace_event::ProcessMemoryDump* pmd) override;
+
  private:
   friend class Texture;
   friend class TextureRef;
@@ -895,9 +904,14 @@ class GPU_EXPORT TextureManager {
 
   GLenum AdjustTexFormat(GLenum format) const;
 
+  // Helper function called by OnMemoryDump.
+  void DumpTextureRef(base::trace_event::ProcessMemoryDump* pmd,
+                      TextureRef* ref);
+
   MemoryTypeTracker* GetMemTracker(GLenum texture_pool);
   scoped_ptr<MemoryTypeTracker> memory_tracker_managed_;
   scoped_ptr<MemoryTypeTracker> memory_tracker_unmanaged_;
+  MemoryTracker* memory_tracker_;
 
   scoped_refptr<FeatureInfo> feature_info_;
 

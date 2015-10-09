@@ -28,6 +28,7 @@
 #include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/ElementTraversal.h"
+#include "core/editing/EditingUtilities.h"
 #include "core/editing/FrameSelection.h"
 #include "core/editing/SelectionController.h"
 #include "core/events/MouseEvent.h"
@@ -161,7 +162,7 @@ void HTMLLabelElement::defaultEventHandler(Event* evt)
             if (LocalFrame* frame = document().frame()) {
                 // Check if there is a selection and click is not on the
                 // selection.
-                if (!Position::nodeIsUserSelectNone(this) && frame->selection().isRange() && !frame->eventHandler().selectionController().mouseDownWasSingleClickInSelection())
+                if (!nodeIsUserSelectNone(this) && frame->selection().isRange() && !frame->eventHandler().selectionController().mouseDownWasSingleClickInSelection())
                     isLabelTextSelected = true;
                 // If selection is there and is single click i.e. text is
                 // selected by dragging over label text, then return.
@@ -205,13 +206,13 @@ bool HTMLLabelElement::willRespondToMouseClickEvents()
     return HTMLElement::willRespondToMouseClickEvents();
 }
 
-void HTMLLabelElement::focus(bool, WebFocusType type)
+void HTMLLabelElement::focus(bool, WebFocusType type, InputDeviceCapabilities* sourceCapabilities)
 {
     // to match other browsers, always restore previous selection
     if (HTMLElement* element = control())
-        element->focus(true, type);
+        element->focus(true, type, sourceCapabilities);
     if (isFocusable())
-        HTMLElement::focus(true, type);
+        HTMLElement::focus(true, type, sourceCapabilities);
 }
 
 void HTMLLabelElement::accessKeyAction(bool sendMouseEvents)

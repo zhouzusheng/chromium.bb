@@ -57,7 +57,7 @@ class LayerTreeHostImpl;
 class LayerTreeImpl;
 class MicroBenchmarkImpl;
 class Occlusion;
-class OpacityTree;
+class EffectTree;
 class PrioritizedTile;
 class RenderPass;
 class RenderPassId;
@@ -67,6 +67,7 @@ class ScrollbarLayerImplBase;
 class SimpleEnclosedRegion;
 class Tile;
 class TransformTree;
+class ScrollState;
 
 struct AppendQuadsData;
 
@@ -112,6 +113,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   void OnTransformAnimated(const gfx::Transform& transform) override;
   void OnScrollOffsetAnimated(const gfx::ScrollOffset& scroll_offset) override;
   void OnAnimationWaitingForDeletion() override;
+  void OnTransformIsPotentiallyAnimatingChanged(bool is_animating) override;
   bool IsActive() const override;
 
   // AnimationDelegate implementation.
@@ -149,6 +151,9 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
     return scroll_children_.get();
   }
 
+  void DistributeScroll(ScrollState* scroll_state);
+  void ApplyScroll(ScrollState* scroll_state);
+
   void set_property_tree_sequence_number(int sequence_number) {}
 
   void SetTransformTreeIndex(int index);
@@ -157,8 +162,8 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   void SetClipTreeIndex(int index);
   int clip_tree_index() const { return clip_tree_index_; }
 
-  void SetOpacityTreeIndex(int index);
-  int opacity_tree_index() const { return opacity_tree_index_; }
+  void SetEffectTreeIndex(int index);
+  int effect_tree_index() const { return effect_tree_index_; }
 
   void set_offset_to_transform_parent(const gfx::Vector2dF& offset) {
     offset_to_transform_parent_ = offset;
@@ -175,6 +180,14 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
     visible_rect_from_property_trees_ = rect;
   }
 
+  const gfx::Rect& clip_rect_in_target_space_from_property_trees() const {
+    return clip_rect_in_target_space_from_property_trees_;
+  }
+  void set_clip_rect_in_target_space_from_property_trees(
+      const gfx::Rect& rect) {
+    clip_rect_in_target_space_from_property_trees_ = rect;
+  }
+
   void set_should_flatten_transform_from_property_tree(bool should_flatten) {
     should_flatten_transform_from_property_tree_ = should_flatten;
     SetNeedsPushProperties();
@@ -183,7 +196,14 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
     return should_flatten_transform_from_property_tree_;
   }
 
+  void set_is_clipped(bool is_clipped) {
+    is_clipped_ = is_clipped;
+    SetNeedsPushProperties();
+  }
+  bool is_clipped() const { return is_clipped_; }
+
   void UpdatePropertyTreeTransform();
+  void UpdatePropertyTreeTransformIsAnimated(bool is_animated);
   void UpdatePropertyTreeOpacity();
   void UpdatePropertyTreeScrollOffset();
 
@@ -284,6 +304,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   void SetFilters(const FilterOperations& filters);
   const FilterOperations& filters() const { return filters_; }
   bool FilterIsAnimating() const;
+  bool HasPotentiallyRunningFilterAnimation() const;
   bool FilterIsAnimatingOnImplOnly() const;
 
   void SetBackgroundFilters(const FilterOperations& filters);
@@ -305,6 +326,13 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
 
   void SetBlendMode(SkXfermode::Mode);
   SkXfermode::Mode blend_mode() const { return blend_mode_; }
+  void set_draw_blend_mode(SkXfermode::Mode blend_mode) {
+    if (draw_blend_mode_ == blend_mode)
+      return;
+    draw_blend_mode_ = blend_mode;
+    SetNeedsPushProperties();
+  }
+  SkXfermode::Mode draw_blend_mode() const { return draw_blend_mode_; }
   bool uses_default_blend_mode() const {
     return blend_mode_ == SkXfermode::kSrcOver_Mode;
   }
@@ -377,23 +405,10 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
     return draw_properties_.screen_space_transform;
   }
   float draw_opacity() const { return draw_properties_.opacity; }
-  SkXfermode::Mode draw_blend_mode() const {
-    return draw_properties_.blend_mode;
-  }
-  bool draw_opacity_is_animating() const {
-    return draw_properties_.opacity_is_animating;
-  }
-  bool draw_transform_is_animating() const {
-    return draw_properties_.target_space_transform_is_animating;
-  }
   bool screen_space_transform_is_animating() const {
     return draw_properties_.screen_space_transform_is_animating;
   }
-  bool screen_space_opacity_is_animating() const {
-    return draw_properties_.screen_space_opacity_is_animating;
-  }
   bool can_use_lcd_text() const { return draw_properties_.can_use_lcd_text; }
-  bool is_clipped() const { return draw_properties_.is_clipped; }
   gfx::Rect clip_rect() const { return draw_properties_.clip_rect; }
   gfx::Rect drawable_content_rect() const {
     return draw_properties_.drawable_content_rect;
@@ -518,12 +533,6 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
     scroll_blocks_on_ = scroll_blocks_on;
   }
   ScrollBlocksOn scroll_blocks_on() const { return scroll_blocks_on_; }
-  void SetDrawCheckerboardForMissingTiles(bool checkerboard) {
-    draw_checkerboard_for_missing_tiles_ = checkerboard;
-  }
-  bool draw_checkerboard_for_missing_tiles() const {
-    return draw_checkerboard_for_missing_tiles_;
-  }
 
   InputHandler::ScrollStatus TryScroll(
       const gfx::PointF& screen_space_point,
@@ -545,6 +554,11 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
 
   bool MaximumTargetScale(float* max_scale) const;
   bool AnimationStartScale(float* start_scale) const;
+
+  // This includes all animations, even those that are finished but haven't yet
+  // been deleted.
+  bool HasAnyAnimationTargetingProperty(
+      Animation::TargetProperty property) const;
 
   bool HasFilterAnimationThatInflatesBounds() const;
   bool HasTransformAnimationThatInflatesBounds() const;
@@ -766,6 +780,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   bool double_sided_ : 1;
   bool should_flatten_transform_ : 1;
   bool should_flatten_transform_from_property_tree_ : 1;
+  bool is_clipped_ : 1;
 
   // Tracks if drawing-related properties have changed since last redraw.
   bool layer_property_changed_ : 1;
@@ -774,7 +789,6 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   bool contents_opaque_ : 1;
   bool is_root_for_isolated_group_ : 1;
   bool use_parent_backface_visibility_ : 1;
-  bool draw_checkerboard_for_missing_tiles_ : 1;
   bool draws_content_ : 1;
   bool hide_layer_and_subtree_ : 1;
 
@@ -792,6 +806,9 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
 
   float opacity_;
   SkXfermode::Mode blend_mode_;
+  // draw_blend_mode may be different than blend_mode_,
+  // when a RenderSurface re-parents the layer's blend_mode.
+  SkXfermode::Mode draw_blend_mode_;
   gfx::PointF position_;
   gfx::Transform transform_;
 
@@ -802,8 +819,9 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   int num_descendants_that_draw_content_;
 
   gfx::Rect visible_rect_from_property_trees_;
+  gfx::Rect clip_rect_in_target_space_from_property_trees_;
   int transform_tree_index_;
-  int opacity_tree_index_;
+  int effect_tree_index_;
   int clip_tree_index_;
 
   // The global depth value of the center of the layer. This value is used

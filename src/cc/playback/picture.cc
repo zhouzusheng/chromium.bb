@@ -32,6 +32,10 @@ namespace cc {
 
 namespace {
 
+// We don't perform per-layer solid color analysis when there are too many skia
+// operations.
+const int kOpCountThatIsOkToAnalyze = 10;
+
 bool DecodeBitmap(const void* buffer, size_t size, SkBitmap* bm) {
   const unsigned char* data = static_cast<const unsigned char *>(buffer);
 
@@ -157,6 +161,10 @@ size_t Picture::ApproximateMemoryUsage() const {
   return SkPictureUtils::ApproximateBytesUsed(picture_.get());
 }
 
+bool Picture::ShouldBeAnalyzedForSolidColor() const {
+  return ApproximateOpCount() <= kOpCountThatIsOkToAnalyze;
+}
+
 bool Picture::HasText() const {
   DCHECK(picture_);
   return picture_->hasText();
@@ -234,7 +242,7 @@ void Picture::GatherPixelRefs() {
   if (!WillPlayBackBitmaps())
     return;
 
-  pixel_refs_.GatherPixelRefsFromPicture(picture_.get());
+  pixel_refs_.GatherPixelRefsFromPicture(picture_.get(), layer_rect_);
 }
 
 int Picture::Raster(SkCanvas* canvas,

@@ -33,6 +33,7 @@ class VertexDataManager;
 class IndexDataManager;
 class StreamingIndexBufferInterface;
 class Blit11;
+class Buffer11;
 class Clear11;
 class PixelTransfer11;
 class RenderTarget11;
@@ -104,6 +105,7 @@ class Renderer11 : public RendererD3D
     virtual bool resetDevice();
 
     egl::ConfigSet generateConfigs() const override;
+    void generateDisplayExtensions(egl::DisplayExtensions *outExtensions) const override;
 
     gl::Error flush() override;
     gl::Error finish() override;
@@ -159,8 +161,8 @@ class Renderer11 : public RendererD3D
     virtual unsigned int getReservedFragmentUniformVectors() const;
     virtual unsigned int getReservedVertexUniformBuffers() const;
     virtual unsigned int getReservedFragmentUniformBuffers() const;
-    virtual bool getShareHandleSupport() const;
-    virtual bool getPostSubBufferSupport() const;
+
+    bool getShareHandleSupport() const;
 
     virtual int getMajorShaderModel() const;
     int getMinorShaderModel() const override;
@@ -186,7 +188,7 @@ class Renderer11 : public RendererD3D
     // Shader creation
     virtual CompilerImpl *createCompiler(const gl::Data &data);
     virtual ShaderImpl *createShader(GLenum type);
-    virtual ProgramImpl *createProgram();
+    virtual ProgramImpl *createProgram(const gl::Program::Data &data);
 
     // Shader operations
     virtual gl::Error loadExecutable(const void *function, size_t length, ShaderType type,
@@ -268,13 +270,19 @@ class Renderer11 : public RendererD3D
     RendererClass getRendererClass() const override { return RENDERER_D3D11; }
     InputLayoutCache *getInputLayoutCache() { return &mInputLayoutCache; }
 
+    void onSwap();
+    void onBufferDelete(const Buffer11 *deleted);
+
   protected:
     void createAnnotator() override;
     gl::Error clearTextures(gl::SamplerType samplerType, size_t rangeStart, size_t rangeEnd) override;
 
   private:
-    void generateCaps(gl::Caps *outCaps, gl::TextureCapsMap *outTextureCaps, gl::Extensions *outExtensions) const override;
-    Workarounds generateWorkarounds() const override;
+    void generateCaps(gl::Caps *outCaps, gl::TextureCapsMap *outTextureCaps,
+                      gl::Extensions *outExtensions,
+                      gl::Limitations *outLimitations) const override;
+
+    WorkaroundsD3D generateWorkarounds() const override;
 
     gl::Error drawLineLoop(GLsizei count, GLenum type, const GLvoid *indices, int minIndex, gl::Buffer *elementArrayBuffer);
     gl::Error drawTriangleFan(GLsizei count, GLenum type, const GLvoid *indices, int minIndex, gl::Buffer *elementArrayBuffer, int instances);
@@ -283,6 +291,8 @@ class Renderer11 : public RendererD3D
     void unsetConflictingSRVs(gl::SamplerType shaderType, uintptr_t resource, const gl::ImageIndex &index);
 
     void populateRenderer11DeviceCaps();
+
+    void updateHistograms();
 
     HMODULE mD3d11Module;
     HMODULE mDxgiModule;
@@ -451,6 +461,11 @@ class Renderer11 : public RendererD3D
 
     // Sync query
     ID3D11Query *mSyncQuery;
+
+    // Created objects state tracking
+    std::set<const Buffer11*> mAliveBuffers;
+
+    double mLastHistogramUpdateTime;
 
     ID3D11Device *mDevice;
     Renderer11DeviceCaps mRenderer11DeviceCaps;

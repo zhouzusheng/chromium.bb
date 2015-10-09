@@ -87,6 +87,7 @@ RendererGL::RendererGL(const FunctionsGL *functions, const egl::AttributeMap &at
 {
     ASSERT(mFunctions);
     mStateManager = new StateManagerGL(mFunctions, getRendererCaps());
+    nativegl_gl::GenerateWorkarounds(mFunctions, &mWorkarounds);
 
 #ifndef NDEBUG
     if (mFunctions->debugMessageControl && mFunctions->debugMessageCallback)
@@ -175,9 +176,9 @@ ShaderImpl *RendererGL::createShader(GLenum type)
     return new ShaderGL(type, mFunctions);
 }
 
-ProgramImpl *RendererGL::createProgram()
+ProgramImpl *RendererGL::createProgram(const gl::Program::Data &data)
 {
-    return new ProgramGL(mFunctions, mStateManager);
+    return new ProgramGL(data, mFunctions, mStateManager);
 }
 
 FramebufferImpl *RendererGL::createDefaultFramebuffer(const gl::Framebuffer::Data &data)
@@ -192,12 +193,12 @@ FramebufferImpl *RendererGL::createFramebuffer(const gl::Framebuffer::Data &data
 
 TextureImpl *RendererGL::createTexture(GLenum target)
 {
-    return new TextureGL(target, mFunctions, mStateManager);
+    return new TextureGL(target, mFunctions, mWorkarounds, mStateManager);
 }
 
 RenderbufferImpl *RendererGL::createRenderbuffer()
 {
-    return new RenderbufferGL(mFunctions, mStateManager, getRendererTextureCaps());
+    return new RenderbufferGL(mFunctions, mWorkarounds, mStateManager, getRendererTextureCaps());
 }
 
 BufferImpl *RendererGL::createBuffer()
@@ -291,6 +292,19 @@ std::string RendererGL::getRendererDescription() const
         rendererString << " ES";
     }
     rendererString << " " << mFunctions->version.major << "." << mFunctions->version.minor;
+    if (mFunctions->standard == STANDARD_GL_DESKTOP)
+    {
+        // Some drivers (NVIDIA) use a profile mask of 0 when in compatibility profile.
+        if ((mFunctions->profile & GL_CONTEXT_COMPATIBILITY_PROFILE_BIT) != 0 ||
+            (mFunctions->isAtLeastGL(gl::Version(3, 2)) && mFunctions->profile == 0))
+        {
+            rendererString << " compatibility";
+        }
+        else if ((mFunctions->profile & GL_CONTEXT_CORE_PROFILE_BIT) != 0)
+        {
+            rendererString << " core";
+        }
+    }
 
     return rendererString.str();
 }
@@ -303,15 +317,15 @@ const gl::Version &RendererGL::getMaxSupportedESVersion() const
     return mMaxSupportedESVersion;
 }
 
-void RendererGL::generateCaps(gl::Caps *outCaps, gl::TextureCapsMap* outTextureCaps, gl::Extensions *outExtensions) const
+void RendererGL::generateCaps(gl::Caps *outCaps, gl::TextureCapsMap* outTextureCaps,
+                              gl::Extensions *outExtensions,
+                              gl::Limitations * /* outLimitations */) const
 {
     nativegl_gl::GenerateCaps(mFunctions, outCaps, outTextureCaps, outExtensions, &mMaxSupportedESVersion);
 }
 
-Workarounds RendererGL::generateWorkarounds() const
+void RendererGL::syncState(const gl::State &state, const gl::State::DirtyBits &dirtyBits)
 {
-    Workarounds workarounds;
-    return workarounds;
+    mStateManager->syncState(state, dirtyBits);
 }
-
 }

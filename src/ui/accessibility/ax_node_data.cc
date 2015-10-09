@@ -330,6 +330,18 @@ std::string AXNodeData::ToString() const {
       case AX_ATTR_HIERARCHICAL_LEVEL:
         result += " level=" + value;
         break;
+      case AX_ATTR_ANCHOR_OBJECT_ID:
+        result += " anchor_object_id=" + value;
+        break;
+      case AX_ATTR_ANCHOR_OFFSET:
+        result += " anchor_offset=" + value;
+        break;
+      case AX_ATTR_FOCUS_OBJECT_ID:
+        result += " focus_object_id=" + value;
+        break;
+      case AX_ATTR_FOCUS_OFFSET:
+        result += " focus_offset=" + value;
+        break;
       case AX_ATTR_TEXT_SEL_START:
         result += " sel_start=" + value;
         break;
@@ -396,6 +408,9 @@ std::string AXNodeData::ToString() const {
         break;
       case AX_ATTR_CHILD_TREE_ID:
         result += " child_tree_id=" + value;
+        break;
+      case AX_ATTR_PARENT_TREE_ID:
+        result += " parent_tree_id=" + value;
         break;
       case AX_ATTR_COLOR_VALUE:
         result += base::StringPrintf(" color_value=&%X",
@@ -599,9 +614,6 @@ std::string AXNodeData::ToString() const {
       case AX_ATTR_CANVAS_HAS_FALLBACK:
         result += " has_fallback=" + value;
         break;
-      case AX_ATTR_IS_AX_TREE_HOST:
-        result += " is_ax_tree_host=" + value;
-        break;
       case AX_BOOL_ATTRIBUTE_NONE:
         break;
     }
@@ -655,6 +667,15 @@ std::string AXNodeData::ToString() const {
     result += " child_ids=" + IntVectorToString(child_ids);
 
   return result;
+}
+
+bool AXNodeData::IsRoot() const {
+  return (role == AX_ROLE_ROOT_WEB_AREA ||
+          role == AX_ROLE_DESKTOP);
+}
+
+void AXNodeData::SetRoot() {
+  role = AX_ROLE_ROOT_WEB_AREA;
 }
 
 }  // namespace ui

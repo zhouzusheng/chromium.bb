@@ -10,8 +10,8 @@
 #include "modules/serviceworkers/ServiceWorker.h"
 #include "modules/serviceworkers/ServiceWorkerRegistration.h"
 #include "platform/Supplementable.h"
-#include "public/platform/WebServiceWorkerRegistration.h"
-#include "public/platform/WebServiceWorkerRegistrationProxy.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerRegistration.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerRegistrationProxy.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
@@ -43,21 +43,19 @@ public:
     void setWaiting(WebServiceWorker*) override;
     void setActive(WebServiceWorker*) override;
 
-    // For CallbackPromiseAdapter.
-    typedef WebServiceWorkerRegistration WebType;
-    static ServiceWorkerRegistration* from(ExecutionContext*, WebType* registration);
-    static ServiceWorkerRegistration* take(ScriptPromiseResolver*, WebType* registration);
-    static void dispose(WebType* registration);
+    static ServiceWorkerRegistration* from(ExecutionContext*, WebServiceWorkerRegistration*);
+    static ServiceWorkerRegistration* take(ScriptPromiseResolver*, WebServiceWorkerRegistration*);
+    static void dispose(WebServiceWorkerRegistration*);
 
-    PassRefPtrWillBeRawPtr<ServiceWorker> installing() { return m_installing.get(); }
-    PassRefPtrWillBeRawPtr<ServiceWorker> waiting() { return m_waiting.get(); }
-    PassRefPtrWillBeRawPtr<ServiceWorker> active() { return m_active.get(); }
+    ServiceWorker* installing() { return m_installing; }
+    ServiceWorker* waiting() { return m_waiting; }
+    ServiceWorker* active() { return m_active; }
 
     String scope() const;
 
     WebServiceWorkerRegistration* webRegistration() { return m_outerRegistration.get(); }
 
-    void update(ScriptState*, ExceptionState&);
+    ScriptPromise update(ScriptState*);
     ScriptPromise unregister(ScriptState*);
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(updatefound);
@@ -78,17 +76,17 @@ private:
 
     OwnPtr<WebServiceWorkerRegistration> m_outerRegistration;
     WebServiceWorkerProvider* m_provider;
-    RefPtrWillBeMember<ServiceWorker> m_installing;
-    RefPtrWillBeMember<ServiceWorker> m_waiting;
-    RefPtrWillBeMember<ServiceWorker> m_active;
+    Member<ServiceWorker> m_installing;
+    Member<ServiceWorker> m_waiting;
+    Member<ServiceWorker> m_active;
 
     bool m_stopped;
 };
 
 class ServiceWorkerRegistrationArray {
+    STATIC_ONLY(ServiceWorkerRegistrationArray);
 public:
-    typedef WebVector<WebServiceWorkerRegistration*> WebType;
-    static HeapVector<Member<ServiceWorkerRegistration>> take(ScriptPromiseResolver* resolver, PassOwnPtr<WebType> webServiceWorkerRegistrations)
+    static HeapVector<Member<ServiceWorkerRegistration>> take(ScriptPromiseResolver* resolver, PassOwnPtr<WebVector<WebServiceWorkerRegistration*>> webServiceWorkerRegistrations)
     {
         HeapVector<Member<ServiceWorkerRegistration>> registrations;
         for (WebServiceWorkerRegistration* registration : *webServiceWorkerRegistrations)
@@ -96,15 +94,11 @@ public:
         return registrations;
     }
 
-    static void dispose(PassOwnPtr<WebType> webServiceWorkerRegistrations)
+    static void dispose(PassOwnPtr<WebVector<WebServiceWorkerRegistration*>> webServiceWorkerRegistrations)
     {
         for (WebServiceWorkerRegistration* registration : *webServiceWorkerRegistrations)
             ServiceWorkerRegistration::dispose(registration);
     }
-
-private:
-    WTF_MAKE_NONCOPYABLE(ServiceWorkerRegistrationArray);
-    ServiceWorkerRegistrationArray() = delete;
 };
 
 } // namespace blink

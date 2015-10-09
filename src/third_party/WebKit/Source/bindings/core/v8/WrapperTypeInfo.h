@@ -33,6 +33,7 @@
 
 #include "gin/public/wrapper_info.h"
 #include "platform/heap/Handle.h"
+#include "wtf/Allocator.h"
 #include "wtf/Assertions.h"
 #include <v8.h>
 
@@ -66,6 +67,7 @@ inline void setObjectGroup(v8::Isolate* isolate, ScriptWrappable* scriptWrappabl
 // v8 objects. Each v8 bindings class has exactly one static WrapperTypeInfo member, so
 // comparing pointers is a safe way to determine if types match.
 struct WrapperTypeInfo {
+    DISALLOW_ALLOCATION();
     enum WrapperTypePrototype {
         WrapperTypeObjectPrototype,
         WrapperTypeExceptionPrototype,
@@ -126,12 +128,26 @@ struct WrapperTypeInfo {
 
     void refObject(ScriptWrappable* scriptWrappable) const
     {
+        if (gcType == GarbageCollectedObject) {
+            ThreadState::current()->persistentAllocated();
+        } else if (gcType == WillBeGarbageCollectedObject) {
+#if ENABLE(OILPAN)
+            ThreadState::current()->persistentAllocated();
+#endif
+        }
         ASSERT(refObjectFunction);
         refObjectFunction(scriptWrappable);
     }
 
     void derefObject(ScriptWrappable* scriptWrappable) const
     {
+        if (gcType == GarbageCollectedObject) {
+            ThreadState::current()->persistentFreed();
+        } else if (gcType == WillBeGarbageCollectedObject) {
+#if ENABLE(OILPAN)
+            ThreadState::current()->persistentFreed();
+#endif
+        }
         ASSERT(derefObjectFunction);
         derefObjectFunction(scriptWrappable);
     }

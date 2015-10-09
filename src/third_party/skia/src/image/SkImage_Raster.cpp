@@ -82,11 +82,25 @@ public:
     bool onAsLegacyBitmap(SkBitmap*, LegacyBitmapMode) const override;
 
     SkImage_Raster(const SkBitmap& bm, const SkSurfaceProps* props)
-        : INHERITED(bm.width(), bm.height(), props)
-        , fBitmap(bm) {}
+        : INHERITED(bm.width(), bm.height(), bm.getGenerationID(), props)
+        , fBitmap(bm)
+    {
+        if (bm.pixelRef()->isPreLocked()) {
+            // we only preemptively lock if there is no chance of triggering something expensive
+            // like a lazy decode or imagegenerator. PreLocked means it is flat pixels already.
+            fBitmap.lockPixels();
+        }
+        SkASSERT(fBitmap.isImmutable());
+    }
+
+    bool onIsLazyGenerated() const override {
+        return fBitmap.pixelRef() && fBitmap.pixelRef()->isLazyGenerated();
+    }
 
 private:
-    SkImage_Raster() : INHERITED(0, 0, NULL) {}
+    SkImage_Raster() : INHERITED(0, 0, kNeedNewImageUniqueID, NULL) {
+        fBitmap.setImmutable();
+    }
 
     SkBitmap    fBitmap;
 
@@ -102,7 +116,7 @@ static void release_data(void* addr, void* context) {
 
 SkImage_Raster::SkImage_Raster(const Info& info, SkData* data, size_t rowBytes,
                                SkColorTable* ctable, const SkSurfaceProps* props)
-    : INHERITED(info.width(), info.height(), props)
+    : INHERITED(info.width(), info.height(), kNeedNewImageUniqueID, props)
 {
     data->ref();
     void* addr = const_cast<void*>(data->data());
@@ -114,11 +128,12 @@ SkImage_Raster::SkImage_Raster(const Info& info, SkData* data, size_t rowBytes,
 
 SkImage_Raster::SkImage_Raster(const Info& info, SkPixelRef* pr, const SkIPoint& pixelRefOrigin,
                                size_t rowBytes,  const SkSurfaceProps* props)
-    : INHERITED(info.width(), info.height(), props)
+    : INHERITED(info.width(), info.height(), pr->getGenerationID(), props)
 {
     fBitmap.setInfo(info, rowBytes);
     fBitmap.setPixelRef(pr, pixelRefOrigin);
     fBitmap.lockPixels();
+    SkASSERT(fBitmap.isImmutable());
 }
 
 SkImage_Raster::~SkImage_Raster() {}
@@ -228,8 +243,8 @@ SkImage* SkNewImageFromPixelRef(const SkImageInfo& info, SkPixelRef* pr,
     return SkNEW_ARGS(SkImage_Raster, (info, pr, pixelRefOrigin, rowBytes, props));
 }
 
-SkImage* SkNewImageFromRasterBitmap(const SkBitmap& bm, bool forceSharePixelRef,
-                                    const SkSurfaceProps* props) {
+SkImage* SkNewImageFromRasterBitmap(const SkBitmap& bm, const SkSurfaceProps* props,
+                                    ForceCopyMode forceCopy) {
     SkASSERT(NULL == bm.getTexture());
 
     if (!SkImage_Raster::ValidArgs(bm.info(), bm.rowBytes(), NULL, NULL)) {
@@ -237,9 +252,7 @@ SkImage* SkNewImageFromRasterBitmap(const SkBitmap& bm, bool forceSharePixelRef,
     }
 
     SkImage* image = NULL;
-    if (forceSharePixelRef || bm.isImmutable()) {
-        image = SkNEW_ARGS(SkImage_Raster, (bm, props));
-    } else {
+    if (kYes_ForceCopyMode == forceCopy || !bm.isImmutable()) {
         SkBitmap tmp(bm);
         tmp.lockPixels();
         if (tmp.getPixels()) {
@@ -251,6 +264,8 @@ SkImage* SkNewImageFromRasterBitmap(const SkBitmap& bm, bool forceSharePixelRef,
         if (image && props) {
             as_IB(image)->initWithProps(*props);
         }
+    } else {
+        image = SkNEW_ARGS(SkImage_Raster, (bm, props));
     }
     return image;
 }
@@ -270,7 +285,7 @@ bool SkImage_Raster::onAsLegacyBitmap(SkBitmap* bitmap, LegacyBitmapMode mode) c
         // pixelref since the caller might call setImmutable() themselves
         // (thus changing our state).
         if (fBitmap.isImmutable()) {
-            bitmap->setInfo(fBitmap.info());
+            bitmap->setInfo(fBitmap.info(), fBitmap.rowBytes());
             bitmap->setPixelRef(fBitmap.pixelRef(), fBitmap.pixelRefOrigin());
             return true;
         }

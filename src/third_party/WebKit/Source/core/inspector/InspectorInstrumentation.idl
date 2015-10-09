@@ -138,7 +138,7 @@ interface InspectorInstrumentation {
     void didRemoveTimer([Keep] ExecutionContext*, int timerId);
 
     [Debugger, Inline=FastReturn]
-    InspectorInstrumentationCookie willCallFunction([Keep] ExecutionContext*, const DevToolsFunctionInfo&);
+    InspectorInstrumentationCookie willCallFunction(ExecutionContext*, const DevToolsFunctionInfo&);
 
     [Debugger, Inline=FastReturn]
     void didCallFunction(const InspectorInstrumentationCookie&);
@@ -180,7 +180,7 @@ interface InspectorInstrumentation {
     void didPerformExecutionContextTask(ExecutionContext*);
 
     [Debugger, DOMDebugger, Inline=FastReturn]
-    InspectorInstrumentationCookie willEvaluateScript([Keep] LocalFrame*, const String& url, int lineNumber);
+    InspectorInstrumentationCookie willEvaluateScript(LocalFrame*);
 
     [Debugger, Inline=FastReturn]
     void didEvaluateScript(const InspectorInstrumentationCookie&);
@@ -215,7 +215,7 @@ interface InspectorInstrumentation {
     [Resource, Inline=FastReturn]
     InspectorInstrumentationCookie willRecalculateStyle([Keep] Document*);
 
-    [Resource, Inline=FastReturn]
+    [Resource, Page, Inline=FastReturn]
     void didRecalculateStyle(const InspectorInstrumentationCookie&, int elementCount);
 
     [Resource, Inline=FastReturn]
@@ -225,7 +225,7 @@ interface InspectorInstrumentation {
     void applyUserAgentOverride(LocalFrame*, String* userAgent);
 
     [Resource]
-    void willSendRequest(LocalFrame*, unsigned long identifier, DocumentLoader*, ResourceRequest&, const ResourceResponse& redirectResponse, const FetchInitiatorInfo&);
+    void willSendRequest([Keep] LocalFrame*, unsigned long identifier, DocumentLoader*, ResourceRequest&, const ResourceResponse& redirectResponse, const FetchInitiatorInfo&);
 
     [Resource]
     void markResourceAsCached(LocalFrame*, unsigned long identifier);
@@ -271,6 +271,15 @@ interface InspectorInstrumentation {
 
     [Resource]
     void didFinishXHRLoading([Keep] ExecutionContext*, XMLHttpRequest* xhr, ThreadableLoaderClient* client, const AtomicString& method, const String& url);
+
+    [Resource]
+    void willStartFetch(ExecutionContext*, ThreadableLoaderClient*);
+
+    [Resource]
+    void didFailFetch(ExecutionContext*, ThreadableLoaderClient*);
+
+    [Resource]
+    void didFinishFetch([Keep] ExecutionContext*, ThreadableLoaderClient*, const AtomicString& method, const String& url);
 
     [Resource]
     void scriptImported(ExecutionContext*, unsigned long identifier, const String& sourceString);

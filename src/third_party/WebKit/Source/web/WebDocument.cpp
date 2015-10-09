@@ -262,6 +262,11 @@ WebReferrerPolicy WebDocument::referrerPolicy() const
     return static_cast<WebReferrerPolicy>(constUnwrap<Document>()->referrerPolicy());
 }
 
+WebString WebDocument::outgoingReferrer()
+{
+    return WebString(unwrap<Document>()->outgoingReferrer());
+}
+
 WebElement WebDocument::createElement(const WebString& tagName)
 {
     TrackExceptionState exceptionState;
@@ -348,15 +353,6 @@ bool WebDocument::manifestUseCredentials() const
     if (!linkElement)
         return false;
     return equalIgnoringCase(linkElement->fastGetAttribute(HTMLNames::crossoriginAttr), "use-credentials");
-}
-
-WebURL WebDocument::defaultPresentationURL() const
-{
-    const Document* document = constUnwrap<Document>();
-    HTMLLinkElement* linkElement = document->linkDefaultPresentation();
-    if (!linkElement)
-        return WebURL();
-    return linkElement->href();
 }
 
 WebDocument::WebDocument(const PassRefPtrWillBeRawPtr<Document>& elem)

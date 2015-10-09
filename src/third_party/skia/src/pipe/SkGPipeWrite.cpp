@@ -276,10 +276,10 @@ protected:
     void onDrawPath(const SkPath&, const SkPaint&) override;
     void onDrawBitmap(const SkBitmap&, SkScalar left, SkScalar top, const SkPaint*) override;
     void onDrawBitmapRect(const SkBitmap&, const SkRect* src, const SkRect& dst, const SkPaint*,
-                          DrawBitmapRectFlags flags) override;
+                          SrcRectConstraint) override;
     void onDrawImage(const SkImage*, SkScalar left, SkScalar top, const SkPaint*) override;
     void onDrawImageRect(const SkImage*, const SkRect* src, const SkRect& dst,
-                         const SkPaint*) override;
+                         const SkPaint*, SrcRectConstraint) override;
     void onDrawImageNine(const SkImage*, const SkIRect& center, const SkRect& dst,
                          const SkPaint*) override;
     void onDrawBitmapNine(const SkBitmap&, const SkIRect& center, const SkRect& dst,
@@ -791,7 +791,7 @@ void SkGPipeCanvas::onDrawBitmap(const SkBitmap& bm, SkScalar left, SkScalar top
 }
 
 void SkGPipeCanvas::onDrawBitmapRect(const SkBitmap& bm, const SkRect* src, const SkRect& dst,
-                                     const SkPaint* paint, DrawBitmapRectFlags dbmrFlags) {
+                                     const SkPaint* paint, SrcRectConstraint constraint) {
     NOTIFY_SETUP(this);
     size_t opBytesNeeded = sizeof(SkRect);
     bool hasSrc = src != NULL;
@@ -802,11 +802,11 @@ void SkGPipeCanvas::onDrawBitmapRect(const SkBitmap& bm, const SkRect* src, cons
     } else {
         flags = 0;
     }
-    if (dbmrFlags & kBleed_DrawBitmapRectFlag) {
+    if (kFast_SrcRectConstraint == constraint) {
         flags |= kDrawBitmap_Bleed_DrawOpFlag;
     }
 
-    if (this->commonDrawBitmap(bm, kDrawBitmapRectToRect_DrawOp, flags, opBytesNeeded, paint)) {
+    if (this->commonDrawBitmap(bm, kDrawBitmapRect_DrawOp, flags, opBytesNeeded, paint)) {
         if (hasSrc) {
             fWriter.writeRect(*src);
         }
@@ -869,7 +869,7 @@ void SkGPipeCanvas::onDrawImage(const SkImage* image, SkScalar x, SkScalar y,
 }
 
 void SkGPipeCanvas::onDrawImageRect(const SkImage* image, const SkRect* src, const SkRect& dst,
-                                    const SkPaint* paint) {
+                                    const SkPaint* paint, SrcRectConstraint constraint) {
     NOTIFY_SETUP(this);
     unsigned flags = 0;
     size_t opBytesNeeded = sizeof(SkRect);  // dst
@@ -882,6 +882,7 @@ void SkGPipeCanvas::onDrawImageRect(const SkImage* image, const SkRect* src, con
             fWriter.writeRect(*src);
         }
         fWriter.writeRect(dst);
+        fWriter.writeInt(constraint);
     }
 }
 

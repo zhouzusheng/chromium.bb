@@ -73,10 +73,12 @@ Capabilities::Capabilities()
       blend_equation_advanced(false),
       blend_equation_advanced_coherent(false),
       texture_rg(false),
+      image_ycbcr_422(false),
       render_buffer_format_bgra8888(false),
       occlusion_query_boolean(false),
+      timer_queries(false),
+      surfaceless(false),
       major_version(2),
-      minor_version(0) {
-}
+      minor_version(0) {}
 
 }  // namespace gpu

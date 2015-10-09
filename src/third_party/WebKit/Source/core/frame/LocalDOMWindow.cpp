@@ -128,7 +128,7 @@ public:
     SecurityOrigin* targetOrigin() const { return m_targetOrigin.get(); }
     ScriptCallStack* stackTrace() const { return m_stackTrace.get(); }
     UserGestureToken* userGestureToken() const { return m_userGestureToken.get(); }
-    virtual void stop() override
+    void stop() override
     {
         SuspendableTimer::stop();
 
@@ -150,7 +150,7 @@ public:
     }
 
 private:
-    virtual void fired() override
+    void fired() override
     {
         InspectorInstrumentationCookie cookie = InspectorInstrumentation::traceAsyncOperationCompletedCallbackStarting(executionContext(), m_asyncOperationId);
         // Prevent calls to stop triggered from the event handler to
@@ -941,7 +941,7 @@ static FloatSize getViewportSize(LocalFrame* frame)
     }
 
     return frame->isMainFrame()
-        ? host->pinchViewport().visibleRect().size()
+        ? host->visualViewport().visibleRect().size()
         : view->visibleContentRect(IncludeScrollbars).size();
 }
 
@@ -1275,28 +1275,41 @@ void LocalDOMWindow::resizeTo(int width, int height) const
 int LocalDOMWindow::requestAnimationFrame(FrameRequestCallback* callback)
 {
     callback->m_useLegacyTimeBase = false;
-    if (Document* d = document())
-        return d->requestAnimationFrame(callback);
+    if (Document* doc = document())
+        return doc->requestAnimationFrame(callback);
     return 0;
 }
 
 int LocalDOMWindow::webkitRequestAnimationFrame(FrameRequestCallback* callback)
 {
     callback->m_useLegacyTimeBase = true;
-    if (Document* d = document())
-        return d->requestAnimationFrame(callback);
+    if (Document* document = this->document())
+        return document->requestAnimationFrame(callback);
     return 0;
 }
 
 void LocalDOMWindow::cancelAnimationFrame(int id)
 {
-    if (Document* d = document())
-        d->cancelAnimationFrame(id);
+    if (Document* document = this->document())
+        document->cancelAnimationFrame(id);
 }
 
-bool LocalDOMWindow::addEventListener(const AtomicString& eventType, PassRefPtr<EventListener> prpListener, bool useCapture)
+int LocalDOMWindow::requestIdleCallback(IdleRequestCallback* callback, double timeoutMillis)
 {
-    RefPtr<EventListener> listener = prpListener;
+    if (Document* document = this->document())
+        return document->requestIdleCallback(callback, timeoutMillis);
+    return 0;
+}
+
+void LocalDOMWindow::cancelIdleCallback(int id)
+{
+    if (Document* document = this->document())
+        document->cancelIdleCallback(id);
+}
+
+bool LocalDOMWindow::addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> prpListener, bool useCapture)
+{
+    RefPtrWillBeRawPtr<EventListener> listener = prpListener;
     if (!EventTarget::addEventListener(eventType, listener, useCapture))
         return false;
 
@@ -1328,7 +1341,7 @@ bool LocalDOMWindow::addEventListener(const AtomicString& eventType, PassRefPtr<
     return true;
 }
 
-bool LocalDOMWindow::removeEventListener(const AtomicString& eventType, PassRefPtr<EventListener> listener, bool useCapture)
+bool LocalDOMWindow::removeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, bool useCapture)
 {
     if (!EventTarget::removeEventListener(eventType, listener, useCapture))
         return false;
@@ -1379,6 +1392,7 @@ bool LocalDOMWindow::dispatchEvent(PassRefPtrWillBeRawPtr<Event> prpEvent, PassR
     RefPtrWillBeRawPtr<EventTarget> protect(this);
     RefPtrWillBeRawPtr<Event> event = prpEvent;
 
+    event->setTrusted(true);
     event->setTarget(prpTarget ? prpTarget : this);
     event->setCurrentTarget(this);
     event->setEventPhase(Event::AT_TARGET);

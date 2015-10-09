@@ -103,8 +103,7 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   virtual void SetFromConfig(const QuicConfig& config);
 
   // Pass the CachedNetworkParameters to the send algorithm.
-  // Returns true if this changes the initial connection state.
-  bool ResumeConnectionState(
+  void ResumeConnectionState(
       const CachedNetworkParameters& cached_network_params,
       bool max_bandwidth_resumption);
 
@@ -190,9 +189,6 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   // Returns the estimated bandwidth calculated by the congestion algorithm.
   QuicBandwidth BandwidthEstimate() const;
 
-  // Returns true if the current instantaneous bandwidth estimate is reliable.
-  bool HasReliableBandwidthEstimate() const;
-
   const QuicSustainedBandwidthRecorder& SustainedBandwidthRecorder() const;
 
   // Returns the size of the current congestion window in number of
@@ -206,6 +202,9 @@ class NET_EXPORT_PRIVATE QuicSentPacketManager {
   // sent.
   QuicPacketCount EstimateMaxPacketsInFlight(
       QuicByteCount max_packet_length) const;
+
+  // Returns the size of the current congestion window size in bytes.
+  QuicByteCount GetCongestionWindowInBytes() const;
 
   // Returns the size of the slow start congestion window in nume of 1460 byte
   // TCP segments, aka ssthresh.  Some send algorithms do not define a slow

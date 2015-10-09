@@ -533,6 +533,12 @@ LogMessage::LogMessage(const char* file, int line, LogSeverity severity)
   Init(file, line);
 }
 
+LogMessage::LogMessage(const char* file, int line, const char* condition)
+    : severity_(LOG_FATAL), file_(file), line_(line) {
+  Init(file, line);
+  stream_ << "Check failed: " << condition << ". ";
+}
+
 LogMessage::LogMessage(const char* file, int line, std::string* result)
     : severity_(LOG_FATAL), file_(file), line_(line) {
   Init(file, line);
@@ -549,7 +555,7 @@ LogMessage::LogMessage(const char* file, int line, LogSeverity severity,
 }
 
 LogMessage::~LogMessage() {
-#if !defined(NDEBUG) && !defined(OS_NACL) && !defined(__UCLIBC__)
+#if !defined(OFFICIAL_BUILD) && !defined(OS_NACL) && !defined(__UCLIBC__)
   if (severity_ == LOG_FATAL && base::AtExitManager::IsInitialized()) {
     // Include a stack trace on a fatal.
     base::debug::StackTrace trace;

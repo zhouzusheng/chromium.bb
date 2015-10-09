@@ -10,26 +10,20 @@
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/media_client.h"
 #include "media/base/media_keys.h"
-#include "third_party/WebKit/public/platform/WebMediaPlayerClient.h"
+#include "third_party/WebKit/public/platform/WebMediaPlayerEncryptedMediaClient.h"
 
 namespace media {
 
 // Compile asserts shared by all platforms.
 
-#define STATIC_ASSERT_MATCHING_ENUM(name) \
-  static_assert( \
-  static_cast<int>(blink::WebMediaPlayerClient::MediaKeyErrorCode ## name) == \
-  static_cast<int>(MediaKeys::k ## name ## Error), \
-  "mismatching enum values: " #name)
+#define STATIC_ASSERT_MATCHING_ENUM(name)                                    \
+  static_assert(static_cast<int>(blink::WebMediaPlayerEncryptedMediaClient:: \
+                                     MediaKeyErrorCode##name) ==             \
+                    static_cast<int>(MediaKeys::k##name##Error),             \
+                "mismatching enum values: " #name)
 STATIC_ASSERT_MATCHING_ENUM(Unknown);
 STATIC_ASSERT_MATCHING_ENUM(Client);
 #undef STATIC_ASSERT_MATCHING_ENUM
-
-base::TimeDelta ConvertSecondsToTimestamp(double seconds) {
-  double microseconds = seconds * base::Time::kMicrosecondsPerSecond;
-  return base::TimeDelta::FromMicroseconds(
-      microseconds > 0 ? microseconds + 0.5 : ceil(microseconds - 0.5));
-}
 
 blink::WebTimeRanges ConvertToWebTimeRanges(
     const Ranges<base::TimeDelta>& ranges) {
@@ -132,18 +126,20 @@ void ReportMetrics(blink::WebMediaPlayer::LoadType load_type,
   UMA_HISTOGRAM_ENUMERATION("Media.URLScheme", URLScheme(url),
                             kMaxURLScheme + 1);
 
-  // Keep track if this is a MSE or non-MSE playback.
-  // TODO(xhwang): This name is not intuitive. We should have a histogram for
-  // all load types.
-  UMA_HISTOGRAM_BOOLEAN(
-      "Media.MSE.Playback",
-      load_type == blink::WebMediaPlayer::LoadTypeMediaSource);
+  // Report load type, such as URL, MediaSource or MediaStream.
+  UMA_HISTOGRAM_ENUMERATION("Media.LoadType", load_type,
+                            blink::WebMediaPlayer::LoadTypeMax + 1);
 
   // Report the origin from where the media player is created.
   if (GetMediaClient()) {
     GetMediaClient()->RecordRapporURL(
         "Media.OriginUrl." + LoadTypeToString(load_type), origin_url);
   }
+}
+
+void RecordOriginOfHLSPlayback(const GURL& origin_url) {
+  if (media::GetMediaClient())
+    GetMediaClient()->RecordRapporURL("Media.OriginUrl.HLS", origin_url);
 }
 
 EmeInitDataType ConvertToEmeInitDataType(

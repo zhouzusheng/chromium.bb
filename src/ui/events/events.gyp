@@ -288,11 +288,23 @@
             'gesture_detection/gesture_configuration_default.cc',
           ],
         }],
-        ['use_aura==1 and OS=="android"', {
-          'sources!': [
-            'gesture_detection/gesture_configuration_aura.cc',
-          ],
-        }],
+      ],
+    },
+    {
+      # GN version: //ui/events/ipc:events_ipc
+      'target_name': 'events_ipc',
+      'type': '<(component)',
+      'dependencies': [
+        '<(DEPTH)/base/base.gyp:base',
+        '<(DEPTH)/ipc/ipc.gyp:ipc',
+        'events_base',
+      ],
+      'defines': [
+        'EVENTS_IPC_IMPLEMENTATION',
+      ],
+      'sources': [
+        'ipc/latency_info_param_traits.cc',
+        'ipc/latency_info_param_traits.h',
       ],
     },
     {
@@ -312,6 +324,7 @@
         # Note: sources list duplicated in GN build.
         'test/cocoa_test_event_utils.h',
         'test/cocoa_test_event_utils.mm',
+        'test/device_data_manager_test_api.h',
         'test/event_generator.cc',
         'test/event_generator.h',
         'test/events_test_utils.cc',
@@ -320,6 +333,8 @@
         'test/events_test_utils_x11.h',
         'test/motion_event_test_utils.cc',
         'test/motion_event_test_utils.h',
+        'test/platform_event_source_test_api.cc',
+        'test/platform_event_source_test_api.h',
         'test/platform_event_waiter.cc',
         'test/platform_event_waiter.h',
         'test/test_event_handler.cc',
@@ -336,10 +351,17 @@
           # The cocoa files don't apply to iOS.
           'sources/': [['exclude', 'cocoa']],
         }],
-        ['use_x11==1', {
+        ['use_x11==1 or use_ozone==1', {
+          'sources' : [
+              'test/device_data_manager_test_api_impl.cc',
+            ],
           'dependencies': [
             'devices/events_devices.gyp:events_devices',
-          ],
+            ],
+        }, { # else use_x11=1 or use_ozone=1
+          'sources' : [
+              'test/device_data_manager_test_api_stub.cc',
+            ]
         }],
       ],
     },
@@ -357,6 +379,7 @@
         'dom_keycode_converter',
         'events',
         'events_base',
+        'events_ipc',
         'events_test_support',
         'gesture_detection',
         'gestures_blink',
@@ -384,6 +407,7 @@
         'gestures/fling_curve_unittest.cc',
         'gestures/gesture_provider_aura_unittest.cc',
         'gestures/motion_event_aura_unittest.cc',
+        'ipc/latency_info_param_traits_unittest.cc',
         'keycodes/dom/keycode_converter_unittest.cc',
         'keycodes/keyboard_code_conversion_unittest.cc',
         'latency_info_unittest.cc',

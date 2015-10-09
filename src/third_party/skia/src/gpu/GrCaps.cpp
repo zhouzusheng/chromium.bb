@@ -92,6 +92,8 @@ GrCaps::GrCaps(const GrContextOptions& options) {
     fOversizedStencilSupport = false;
     fTextureBarrierSupport = false;
     fSupportsInstancedDraws = false;
+    fFullClearIsFree = false;
+    fMustClearUploadedBufferData = false;
 
     fUseDrawInsteadOfClear = false;
 
@@ -112,6 +114,8 @@ GrCaps::GrCaps(const GrContextOptions& options) {
     fDrawPathMasksToCompressedTextureSupport = options.fDrawPathToCompressedTexture;
     fGeometryBufferMapThreshold = options.fGeometryBufferMapThreshold;
     fUseDrawInsteadOfPartialRenderTargetWrite = options.fUseDrawInsteadOfPartialRenderTargetWrite;
+
+    fPreferVRAMUseOverFlushes = true;
 }
 
 void GrCaps::applyOptionsOverrides(const GrContextOptions& options) {
@@ -154,9 +158,13 @@ SkString GrCaps::dump() const {
     r.appendf("Oversized Stencil Support          : %s\n", gNY[fOversizedStencilSupport]);
     r.appendf("Texture Barrier Support            : %s\n", gNY[fTextureBarrierSupport]);
     r.appendf("Supports instanced draws           : %s\n", gNY[fSupportsInstancedDraws]);
+    r.appendf("Full screen clear is free          : %s\n", gNY[fFullClearIsFree]);
+    r.appendf("Must clear buffer memory           : %s\n", gNY[fMustClearUploadedBufferData]);
     r.appendf("Draw Instead of Clear [workaround] : %s\n", gNY[fUseDrawInsteadOfClear]);
     r.appendf("Draw Instead of TexSubImage [workaround] : %s\n",
               gNY[fUseDrawInsteadOfPartialRenderTargetWrite]);
+    r.appendf("Prefer VRAM Use over flushes [workaround] : %s\n", gNY[fPreferVRAMUseOverFlushes]);
+
     if (this->advancedBlendEquationSupport()) {
         r.appendf("Advanced Blend Equation Blacklist  : 0x%x\n", fAdvBlendEqBlacklist);
     }

@@ -12,39 +12,11 @@
 #include <emmintrin.h>  // SSE2
 
 #include "./vp9_rtcd.h"
-#include "vp9/common/vp9_idct.h"  // for cospi constants
-#include "vp9/encoder/vp9_dct.h"
-#include "vp9/encoder/x86/vp9_dct_sse2.h"
+#include "./vpx_dsp_rtcd.h"
+#include "vpx_dsp/txfm_common.h"
+#include "vpx_dsp/x86/fwd_txfm_sse2.h"
+#include "vpx_dsp/x86/txfm_common_sse2.h"
 #include "vpx_ports/mem.h"
-
-void vp9_fdct4x4_1_sse2(const int16_t *input, tran_low_t *output, int stride) {
-  __m128i in0, in1;
-  __m128i tmp;
-  const __m128i zero = _mm_setzero_si128();
-  in0  = _mm_loadl_epi64((const __m128i *)(input +  0 * stride));
-  in1  = _mm_loadl_epi64((const __m128i *)(input +  1 * stride));
-  in1  = _mm_unpacklo_epi64(in1, _mm_loadl_epi64((const __m128i *)
-         (input +  2 * stride)));
-  in0  = _mm_unpacklo_epi64(in0, _mm_loadl_epi64((const __m128i *)
-         (input +  3 * stride)));
-
-  tmp = _mm_add_epi16(in0, in1);
-  in0 = _mm_unpacklo_epi16(zero, tmp);
-  in1 = _mm_unpackhi_epi16(zero, tmp);
-  in0 = _mm_srai_epi32(in0, 16);
-  in1 = _mm_srai_epi32(in1, 16);
-
-  tmp = _mm_add_epi32(in0, in1);
-  in0 = _mm_unpacklo_epi32(tmp, zero);
-  in1 = _mm_unpackhi_epi32(tmp, zero);
-
-  tmp = _mm_add_epi32(in0, in1);
-  in0 = _mm_srli_si128(tmp, 8);
-
-  in1 = _mm_add_epi32(tmp, in0);
-  in0 = _mm_slli_epi32(in1, 1);
-  store_output(&in0, output);
-}
 
 static INLINE void load_buffer_4x4(const int16_t *input, __m128i *in,
                                    int stride) {
@@ -185,7 +157,7 @@ void vp9_fht4x4_sse2(const int16_t *input, tran_low_t *output,
 
   switch (tx_type) {
     case DCT_DCT:
-      vp9_fdct4x4_sse2(input, output, stride);
+      vpx_fdct4x4_sse2(input, output, stride);
       break;
     case ADST_DCT:
       load_buffer_4x4(input, in, stride);
@@ -209,46 +181,6 @@ void vp9_fht4x4_sse2(const int16_t *input, tran_low_t *output,
      assert(0);
      break;
   }
-}
-
-void vp9_fdct8x8_1_sse2(const int16_t *input, tran_low_t *output, int stride) {
-  __m128i in0  = _mm_load_si128((const __m128i *)(input + 0 * stride));
-  __m128i in1  = _mm_load_si128((const __m128i *)(input + 1 * stride));
-  __m128i in2  = _mm_load_si128((const __m128i *)(input + 2 * stride));
-  __m128i in3  = _mm_load_si128((const __m128i *)(input + 3 * stride));
-  __m128i u0, u1, sum;
-
-  u0 = _mm_add_epi16(in0, in1);
-  u1 = _mm_add_epi16(in2, in3);
-
-  in0  = _mm_load_si128((const __m128i *)(input + 4 * stride));
-  in1  = _mm_load_si128((const __m128i *)(input + 5 * stride));
-  in2  = _mm_load_si128((const __m128i *)(input + 6 * stride));
-  in3  = _mm_load_si128((const __m128i *)(input + 7 * stride));
-
-  sum = _mm_add_epi16(u0, u1);
-
-  in0 = _mm_add_epi16(in0, in1);
-  in2 = _mm_add_epi16(in2, in3);
-  sum = _mm_add_epi16(sum, in0);
-
-  u0  = _mm_setzero_si128();
-  sum = _mm_add_epi16(sum, in2);
-
-  in0 = _mm_unpacklo_epi16(u0, sum);
-  in1 = _mm_unpackhi_epi16(u0, sum);
-  in0 = _mm_srai_epi32(in0, 16);
-  in1 = _mm_srai_epi32(in1, 16);
-
-  sum = _mm_add_epi32(in0, in1);
-  in0 = _mm_unpacklo_epi32(sum, u0);
-  in1 = _mm_unpackhi_epi32(sum, u0);
-
-  sum = _mm_add_epi32(in0, in1);
-  in0 = _mm_srli_si128(sum, 8);
-
-  in1 = _mm_add_epi32(sum, in0);
-  store_output(&in1, output);
 }
 
 void vp9_fdct8x8_quant_sse2(const int16_t *input, int stride,
@@ -1209,7 +1141,7 @@ void vp9_fht8x8_sse2(const int16_t *input, tran_low_t *output,
 
   switch (tx_type) {
     case DCT_DCT:
-      vp9_fdct8x8_sse2(input, output, stride);
+      vpx_fdct8x8_sse2(input, output, stride);
       break;
     case ADST_DCT:
       load_buffer_8x8(input, in, stride);
@@ -1236,75 +1168,6 @@ void vp9_fht8x8_sse2(const int16_t *input, tran_low_t *output,
       assert(0);
       break;
   }
-}
-
-void vp9_fdct16x16_1_sse2(const int16_t *input, tran_low_t *output,
-                          int stride) {
-  __m128i in0, in1, in2, in3;
-  __m128i u0, u1;
-  __m128i sum = _mm_setzero_si128();
-  int i;
-
-  for (i = 0; i < 2; ++i) {
-    input += 8 * i;
-    in0  = _mm_load_si128((const __m128i *)(input +  0 * stride));
-    in1  = _mm_load_si128((const __m128i *)(input +  1 * stride));
-    in2  = _mm_load_si128((const __m128i *)(input +  2 * stride));
-    in3  = _mm_load_si128((const __m128i *)(input +  3 * stride));
-
-    u0 = _mm_add_epi16(in0, in1);
-    u1 = _mm_add_epi16(in2, in3);
-    sum = _mm_add_epi16(sum, u0);
-
-    in0  = _mm_load_si128((const __m128i *)(input +  4 * stride));
-    in1  = _mm_load_si128((const __m128i *)(input +  5 * stride));
-    in2  = _mm_load_si128((const __m128i *)(input +  6 * stride));
-    in3  = _mm_load_si128((const __m128i *)(input +  7 * stride));
-
-    sum = _mm_add_epi16(sum, u1);
-    u0  = _mm_add_epi16(in0, in1);
-    u1  = _mm_add_epi16(in2, in3);
-    sum = _mm_add_epi16(sum, u0);
-
-    in0  = _mm_load_si128((const __m128i *)(input +  8 * stride));
-    in1  = _mm_load_si128((const __m128i *)(input +  9 * stride));
-    in2  = _mm_load_si128((const __m128i *)(input + 10 * stride));
-    in3  = _mm_load_si128((const __m128i *)(input + 11 * stride));
-
-    sum = _mm_add_epi16(sum, u1);
-    u0  = _mm_add_epi16(in0, in1);
-    u1  = _mm_add_epi16(in2, in3);
-    sum = _mm_add_epi16(sum, u0);
-
-    in0  = _mm_load_si128((const __m128i *)(input + 12 * stride));
-    in1  = _mm_load_si128((const __m128i *)(input + 13 * stride));
-    in2  = _mm_load_si128((const __m128i *)(input + 14 * stride));
-    in3  = _mm_load_si128((const __m128i *)(input + 15 * stride));
-
-    sum = _mm_add_epi16(sum, u1);
-    u0  = _mm_add_epi16(in0, in1);
-    u1  = _mm_add_epi16(in2, in3);
-    sum = _mm_add_epi16(sum, u0);
-
-    sum = _mm_add_epi16(sum, u1);
-  }
-
-  u0  = _mm_setzero_si128();
-  in0 = _mm_unpacklo_epi16(u0, sum);
-  in1 = _mm_unpackhi_epi16(u0, sum);
-  in0 = _mm_srai_epi32(in0, 16);
-  in1 = _mm_srai_epi32(in1, 16);
-
-  sum = _mm_add_epi32(in0, in1);
-  in0 = _mm_unpacklo_epi32(sum, u0);
-  in1 = _mm_unpackhi_epi32(sum, u0);
-
-  sum = _mm_add_epi32(in0, in1);
-  in0 = _mm_srli_si128(sum, 8);
-
-  in1 = _mm_add_epi32(sum, in0);
-  in1 = _mm_srai_epi32(in1, 1);
-  store_output(&in1, output);
 }
 
 static INLINE void load_buffer_16x16(const int16_t* input, __m128i *in0,
@@ -2165,7 +2028,7 @@ void vp9_fht16x16_sse2(const int16_t *input, tran_low_t *output,
 
   switch (tx_type) {
     case DCT_DCT:
-      vp9_fdct16x16_sse2(input, output, stride);
+      vpx_fdct16x16_sse2(input, output, stride);
       break;
     case ADST_DCT:
       load_buffer_16x16(input, in0, in1, stride);
@@ -2193,237 +2056,3 @@ void vp9_fht16x16_sse2(const int16_t *input, tran_low_t *output,
       break;
   }
 }
-
-void vp9_fdct32x32_1_sse2(const int16_t *input, tran_low_t *output,
-                          int stride) {
-  __m128i in0, in1, in2, in3;
-  __m128i u0, u1;
-  __m128i sum = _mm_setzero_si128();
-  int i;
-
-  for (i = 0; i < 8; ++i) {
-    in0  = _mm_load_si128((const __m128i *)(input +  0));
-    in1  = _mm_load_si128((const __m128i *)(input +  8));
-    in2  = _mm_load_si128((const __m128i *)(input + 16));
-    in3  = _mm_load_si128((const __m128i *)(input + 24));
-
-    input += stride;
-    u0 = _mm_add_epi16(in0, in1);
-    u1 = _mm_add_epi16(in2, in3);
-    sum = _mm_add_epi16(sum, u0);
-
-    in0  = _mm_load_si128((const __m128i *)(input +  0));
-    in1  = _mm_load_si128((const __m128i *)(input +  8));
-    in2  = _mm_load_si128((const __m128i *)(input + 16));
-    in3  = _mm_load_si128((const __m128i *)(input + 24));
-
-    input += stride;
-    sum = _mm_add_epi16(sum, u1);
-    u0  = _mm_add_epi16(in0, in1);
-    u1  = _mm_add_epi16(in2, in3);
-    sum = _mm_add_epi16(sum, u0);
-
-    in0  = _mm_load_si128((const __m128i *)(input +  0));
-    in1  = _mm_load_si128((const __m128i *)(input +  8));
-    in2  = _mm_load_si128((const __m128i *)(input + 16));
-    in3  = _mm_load_si128((const __m128i *)(input + 24));
-
-    input += stride;
-    sum = _mm_add_epi16(sum, u1);
-    u0  = _mm_add_epi16(in0, in1);
-    u1  = _mm_add_epi16(in2, in3);
-    sum = _mm_add_epi16(sum, u0);
-
-    in0  = _mm_load_si128((const __m128i *)(input +  0));
-    in1  = _mm_load_si128((const __m128i *)(input +  8));
-    in2  = _mm_load_si128((const __m128i *)(input + 16));
-    in3  = _mm_load_si128((const __m128i *)(input + 24));
-
-    input += stride;
-    sum = _mm_add_epi16(sum, u1);
-    u0  = _mm_add_epi16(in0, in1);
-    u1  = _mm_add_epi16(in2, in3);
-    sum = _mm_add_epi16(sum, u0);
-
-    sum = _mm_add_epi16(sum, u1);
-  }
-
-  u0  = _mm_setzero_si128();
-  in0 = _mm_unpacklo_epi16(u0, sum);
-  in1 = _mm_unpackhi_epi16(u0, sum);
-  in0 = _mm_srai_epi32(in0, 16);
-  in1 = _mm_srai_epi32(in1, 16);
-
-  sum = _mm_add_epi32(in0, in1);
-  in0 = _mm_unpacklo_epi32(sum, u0);
-  in1 = _mm_unpackhi_epi32(sum, u0);
-
-  sum = _mm_add_epi32(in0, in1);
-  in0 = _mm_srli_si128(sum, 8);
-
-  in1 = _mm_add_epi32(sum, in0);
-  in1 = _mm_srai_epi32(in1, 3);
-  store_output(&in1, output);
-}
-
-#if CONFIG_VP9_HIGHBITDEPTH
-/* These SSE2 versions of the FHT functions only actually use SSE2 in the
- * DCT_DCT case in all other cases, they revert to C code which is identical
- * to that used by the C versions of them.
- */
-
-void vp9_highbd_fht4x4_sse2(const int16_t *input, tran_low_t *output,
-                            int stride, int tx_type) {
-  if (tx_type == DCT_DCT) {
-    vp9_highbd_fdct4x4_sse2(input, output, stride);
-  } else {
-    tran_low_t out[4 * 4];
-    tran_low_t *outptr = &out[0];
-    int i, j;
-    tran_low_t temp_in[4], temp_out[4];
-    const transform_2d ht = FHT_4[tx_type];
-
-    // Columns
-    for (i = 0; i < 4; ++i) {
-      for (j = 0; j < 4; ++j)
-        temp_in[j] = input[j * stride + i] * 16;
-      if (i == 0 && temp_in[0])
-        temp_in[0] += 1;
-      ht.cols(temp_in, temp_out);
-      for (j = 0; j < 4; ++j)
-        outptr[j * 4 + i] = temp_out[j];
-    }
-
-    // Rows
-    for (i = 0; i < 4; ++i) {
-      for (j = 0; j < 4; ++j)
-        temp_in[j] = out[j + i * 4];
-      ht.rows(temp_in, temp_out);
-      for (j = 0; j < 4; ++j)
-        output[j + i * 4] = (temp_out[j] + 1) >> 2;
-    }
-  }
-}
-
-void vp9_highbd_fht8x8_sse2(const int16_t *input, tran_low_t *output,
-                            int stride, int tx_type) {
-  if (tx_type == DCT_DCT) {
-    vp9_highbd_fdct8x8_sse2(input, output, stride);
-  } else {
-    tran_low_t out[64];
-    tran_low_t *outptr = &out[0];
-    int i, j;
-    tran_low_t temp_in[8], temp_out[8];
-    const transform_2d ht = FHT_8[tx_type];
-
-    // Columns
-    for (i = 0; i < 8; ++i) {
-      for (j = 0; j < 8; ++j)
-        temp_in[j] = input[j * stride + i] * 4;
-      ht.cols(temp_in, temp_out);
-      for (j = 0; j < 8; ++j)
-        outptr[j * 8 + i] = temp_out[j];
-    }
-
-    // Rows
-    for (i = 0; i < 8; ++i) {
-      for (j = 0; j < 8; ++j)
-        temp_in[j] = out[j + i * 8];
-      ht.rows(temp_in, temp_out);
-      for (j = 0; j < 8; ++j)
-        output[j + i * 8] = (temp_out[j] + (temp_out[j] < 0)) >> 1;
-    }
-  }
-}
-
-void vp9_highbd_fht16x16_sse2(const int16_t *input, tran_low_t *output,
-                              int stride, int tx_type) {
-  if (tx_type == DCT_DCT) {
-    vp9_highbd_fdct16x16_sse2(input, output, stride);
-  } else {
-    tran_low_t out[256];
-    tran_low_t *outptr = &out[0];
-    int i, j;
-    tran_low_t temp_in[16], temp_out[16];
-    const transform_2d ht = FHT_16[tx_type];
-
-    // Columns
-    for (i = 0; i < 16; ++i) {
-      for (j = 0; j < 16; ++j)
-        temp_in[j] = input[j * stride + i] * 4;
-      ht.cols(temp_in, temp_out);
-      for (j = 0; j < 16; ++j)
-        outptr[j * 16 + i] = (temp_out[j] + 1 + (temp_out[j] < 0)) >> 2;
-    }
-
-    // Rows
-    for (i = 0; i < 16; ++i) {
-      for (j = 0; j < 16; ++j)
-        temp_in[j] = out[j + i * 16];
-      ht.rows(temp_in, temp_out);
-      for (j = 0; j < 16; ++j)
-        output[j + i * 16] = temp_out[j];
-    }
-  }
-}
-#endif  // CONFIG_VP9_HIGHBITDEPTH
-
-/*
- * The DCTnxn functions are defined using the macros below. The main code for
- * them is in separate files (vp9/encoder/x86/vp9_dct_sse2_impl.h &
- * vp9/encoder/x86/vp9_dct32x32_sse2_impl.h) which are used by both the 8 bit code
- * and the high bit depth code.
- */
-
-#define DCT_HIGH_BIT_DEPTH 0
-
-#define FDCT4x4_2D vp9_fdct4x4_sse2
-#define FDCT8x8_2D vp9_fdct8x8_sse2
-#define FDCT16x16_2D vp9_fdct16x16_sse2
-#include "vp9/encoder/x86/vp9_dct_sse2_impl.h"
-#undef  FDCT4x4_2D
-#undef  FDCT8x8_2D
-#undef  FDCT16x16_2D
-
-#define FDCT32x32_2D vp9_fdct32x32_rd_sse2
-#define FDCT32x32_HIGH_PRECISION 0
-#include "vp9/encoder/x86/vp9_dct32x32_sse2_impl.h"
-#undef  FDCT32x32_2D
-#undef  FDCT32x32_HIGH_PRECISION
-
-#define FDCT32x32_2D vp9_fdct32x32_sse2
-#define FDCT32x32_HIGH_PRECISION 1
-#include "vp9/encoder/x86/vp9_dct32x32_sse2_impl.h" // NOLINT
-#undef  FDCT32x32_2D
-#undef  FDCT32x32_HIGH_PRECISION
-
-#undef  DCT_HIGH_BIT_DEPTH
-
-
-#if CONFIG_VP9_HIGHBITDEPTH
-
-#define DCT_HIGH_BIT_DEPTH 1
-
-#define FDCT4x4_2D vp9_highbd_fdct4x4_sse2
-#define FDCT8x8_2D vp9_highbd_fdct8x8_sse2
-#define FDCT16x16_2D vp9_highbd_fdct16x16_sse2
-#include "vp9/encoder/x86/vp9_dct_sse2_impl.h" // NOLINT
-#undef  FDCT4x4_2D
-#undef  FDCT8x8_2D
-#undef  FDCT16x16_2D
-
-#define FDCT32x32_2D vp9_highbd_fdct32x32_rd_sse2
-#define FDCT32x32_HIGH_PRECISION 0
-#include "vp9/encoder/x86/vp9_dct32x32_sse2_impl.h" // NOLINT
-#undef  FDCT32x32_2D
-#undef  FDCT32x32_HIGH_PRECISION
-
-#define FDCT32x32_2D vp9_highbd_fdct32x32_sse2
-#define FDCT32x32_HIGH_PRECISION 1
-#include "vp9/encoder/x86/vp9_dct32x32_sse2_impl.h" // NOLINT
-#undef  FDCT32x32_2D
-#undef  FDCT32x32_HIGH_PRECISION
-
-#undef  DCT_HIGH_BIT_DEPTH
-
-#endif  // CONFIG_VP9_HIGHBITDEPTH

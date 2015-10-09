@@ -68,7 +68,6 @@
 #include "core/dom/DOMImplementation.h"
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/DocumentLifecycleObserver.h"
-#include "core/dom/DocumentMarkerController.h"
 #include "core/dom/DocumentType.h"
 #include "core/dom/Element.h"
 #include "core/dom/ElementDataCache.h"
@@ -92,6 +91,7 @@
 #include "core/dom/ProcessingInstruction.h"
 #include "core/dom/ScriptRunner.h"
 #include "core/dom/ScriptedAnimationController.h"
+#include "core/dom/ScriptedIdleTaskController.h"
 #include "core/dom/SelectorQuery.h"
 #include "core/dom/StaticNodeList.h"
 #include "core/dom/StyleEngine.h"
@@ -105,10 +105,13 @@
 #include "core/dom/shadow/ComposedTreeTraversal.h"
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
+#include "core/editing/DragCaretController.h"
 #include "core/editing/Editor.h"
 #include "core/editing/FrameSelection.h"
-#include "core/editing/SpellChecker.h"
-#include "core/editing/markup.h"
+#include "core/editing/InputMethodController.h"
+#include "core/editing/markers/DocumentMarkerController.h"
+#include "core/editing/serializers/Serialization.h"
+#include "core/editing/spellcheck/SpellChecker.h"
 #include "core/events/BeforeUnloadEvent.h"
 #include "core/events/Event.h"
 #include "core/events/EventFactory.h"
@@ -126,7 +129,6 @@
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/OriginsUsingFeatures.h"
-#include "core/frame/PinchViewport.h"
 #include "core/frame/Settings.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/html/DocumentNameCollection.h"
@@ -335,14 +337,11 @@ static bool acceptsEditingFocus(const Element& element)
 
 uint64_t Document::s_globalTreeVersion = 0;
 
-#ifndef NDEBUG
-using WeakDocumentSet = WillBeHeapHashSet<RawPtrWillBeWeakMember<Document>>;
-static WeakDocumentSet& liveDocumentSet()
+Document::WeakDocumentSet& Document::liveDocumentSet()
 {
     DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<WeakDocumentSet>, set, (adoptPtrWillBeNoop(new WeakDocumentSet())));
     return *set;
 }
-#endif
 
 // This class doesn't work with non-Document ExecutionContext.
 class AutofocusTask final : public ExecutionContextTask {
@@ -425,6 +424,7 @@ Document::Document(const DocumentInit& initializer, DocumentClassFlags documentC
     , m_loadEventDelayCount(0)
     , m_loadEventDelayTimer(this, &Document::loadEventDelayTimerFired)
     , m_pluginLoadingTimer(this, &Document::pluginLoadingTimerFired)
+    , m_documentTiming(*this)
     , m_writeRecursionIsTooDeep(false)
     , m_writeRecursionDepth(0)
     , m_taskRunner(MainThreadTaskRunner::create(this))
@@ -436,6 +436,7 @@ Document::Document(const DocumentInit& initializer, DocumentClassFlags documentC
     , m_hasViewportUnits(false)
     , m_styleRecalcElementCounter(0)
     , m_parserSyncPolicy(AllowAsynchronousParsing)
+    , m_nodeCount(0)
 {
     if (m_frame) {
         ASSERT(m_frame->page());
@@ -481,9 +482,7 @@ Document::Document(const DocumentInit& initializer, DocumentClassFlags documentC
     // ignoring the defersLoading flag.
     ASSERT(!parentDocument() || !parentDocument()->activeDOMObjectsAreSuspended());
 
-#ifndef NDEBUG
     liveDocumentSet().add(this);
-#endif
 }
 
 Document::~Document()
@@ -544,9 +543,7 @@ Document::~Document()
     for (unsigned i = 0; i < WTF_ARRAY_LENGTH(m_nodeListCounts); ++i)
         ASSERT(!m_nodeListCounts[i]);
 
-#ifndef NDEBUG
     liveDocumentSet().remove(this);
-#endif
 #endif
 
     InstanceCounters::decrementCounter(InstanceCounters::DocumentCounter);
@@ -591,6 +588,8 @@ void Document::dispose()
         m_scriptedAnimationController->clearDocumentPointer();
     m_scriptedAnimationController.clear();
 
+    m_scriptedIdleTaskController.clear();
+
     if (svgExtensions())
         accessSVGExtensions().pauseAnimations();
 
@@ -598,6 +597,7 @@ void Document::dispose()
     DocumentLifecycleNotifier::notifyDocumentWasDisposed();
 
     m_canvasFontCache.clear();
+    m_nodeCount = 0;
 }
 #endif
 
@@ -760,7 +760,7 @@ PassRefPtrWillBeRawPtr<Element> Document::createElementNS(const AtomicString& na
 
 ScriptValue Document::registerElement(ScriptState* scriptState, const AtomicString& name, const ElementRegistrationOptions& options, ExceptionState& exceptionState, CustomElement::NameSet validNames)
 {
-    OriginsUsingFeatures::count(scriptState, *this, OriginsUsingFeatures::Feature::DocumentRegisterElement);
+    OriginsUsingFeatures::countMainWorldOnly(scriptState, *this, OriginsUsingFeatures::Feature::DocumentRegisterElement);
 
     if (!registrationContext()) {
         exceptionState.throwDOMException(NotSupportedError, "No element registration context is available.");
@@ -1056,16 +1056,16 @@ void Document::setReadyState(ReadyState readyState)
     switch (readyState) {
     case Loading:
         if (!m_documentTiming.domLoading()) {
-            m_documentTiming.setDomLoading(monotonicallyIncreasingTime());
+            m_documentTiming.markDomLoading();
         }
         break;
     case Interactive:
         if (!m_documentTiming.domInteractive())
-            m_documentTiming.setDomInteractive(monotonicallyIncreasingTime());
+            m_documentTiming.markDomInteractive();
         break;
     case Complete:
         if (!m_documentTiming.domComplete())
-            m_documentTiming.setDomComplete(monotonicallyIncreasingTime());
+            m_documentTiming.markDomComplete();
         break;
     }
 
@@ -1637,8 +1637,6 @@ void Document::inheritHtmlAndBodyElementStyles(StyleRecalcChange change)
         columnGap = overflowStyle->columnGap();
     }
 
-    WebScrollBlocksOn scrollBlocksOn = documentElementStyle->scrollBlocksOn();
-
     RefPtr<ComputedStyle> documentStyle = layoutView()->mutableStyle();
     if (documentStyle->writingMode() != rootWritingMode
         || documentStyle->direction() != rootDirection
@@ -1647,8 +1645,7 @@ void Document::inheritHtmlAndBodyElementStyles(StyleRecalcChange change)
         || documentStyle->imageRendering() != imageRendering
         || documentStyle->overflowX() != overflowX
         || documentStyle->overflowY() != overflowY
-        || documentStyle->columnGap() != columnGap
-        || documentStyle->scrollBlocksOn() != scrollBlocksOn) {
+        || documentStyle->columnGap() != columnGap) {
         RefPtr<ComputedStyle> newStyle = ComputedStyle::clone(*documentStyle);
         newStyle->setWritingMode(rootWritingMode);
         newStyle->setDirection(rootDirection);
@@ -1658,7 +1655,6 @@ void Document::inheritHtmlAndBodyElementStyles(StyleRecalcChange change)
         newStyle->setOverflowX(overflowX);
         newStyle->setOverflowY(overflowY);
         newStyle->setColumnGap(columnGap);
-        newStyle->setScrollBlocksOn(scrollBlocksOn);
         layoutView()->setStyle(newStyle);
         setupFontBuilder(*newStyle);
     }
@@ -1746,9 +1742,6 @@ void Document::updateLayoutTree(StyleRecalcChange change)
     // re-attaching our containing iframe, which when asked HTMLFrameElementBase::isURLAllowed
     // hits a null-dereference due to security code always assuming the document has a SecurityOrigin.
 
-    if (m_elemSheet && m_elemSheet->contents()->usesRemUnits())
-        styleEngine().setUsesRemUnit(true);
-
     updateStyle(change);
 
     notifyLayoutTreeOfSubtreeChanges();
@@ -1817,6 +1810,7 @@ void Document::updateStyle(StyleRecalcChange change)
     }
 
     view()->recalcOverflowAfterStyleChange();
+    view()->setFrameTimingRequestsDirty(true);
 
     clearChildNeedsStyleRecalc();
 
@@ -1911,7 +1905,7 @@ void Document::layoutUpdated()
     // first real or 'paintable' layout.
     if (isRenderingReady() && body() && !styleEngine().hasPendingSheets()) {
         if (!m_documentTiming.firstLayout())
-            m_documentTiming.setFirstLayout(monotonicallyIncreasingTime());
+            m_documentTiming.markFirstLayout();
     }
 }
 
@@ -2146,6 +2140,8 @@ void Document::detach(const AttachContext& context)
         m_scriptedAnimationController->clearDocumentPointer();
     m_scriptedAnimationController.clear();
 
+    m_scriptedIdleTaskController.clear();
+
     if (svgExtensions())
         accessSVGExtensions().pauseAnimations();
 
@@ -2179,6 +2175,8 @@ void Document::detach(const AttachContext& context)
     styleEngine().didDetach();
 
     frameHost()->eventHandlerRegistry().documentDetached(*this);
+
+    m_frame->inputMethodController().documentDetached();
 
     // If this Document is associated with a live DocumentLoader, the
     // DocumentLoader will take care of clearing the FetchContext. Deferring
@@ -2873,10 +2871,7 @@ void Document::updateBaseURL()
     if (m_elemSheet) {
         // Element sheet is silly. It never contains anything.
         ASSERT(!m_elemSheet->contents()->ruleCount());
-        bool usesRemUnits = m_elemSheet->contents()->usesRemUnits();
         m_elemSheet = CSSStyleSheet::createInline(this, m_baseURL);
-        // FIXME: So we are not really the parser. The right fix is to eliminate the element sheet completely.
-        m_elemSheet->contents()->parserSetUsesRemUnits(usesRemUnits);
     }
 
     if (!equalIgnoringFragmentIdentifier(oldBaseURL, m_baseURL)) {
@@ -2989,68 +2984,6 @@ CSSStyleSheet& Document::elementSheet()
     return *m_elemSheet;
 }
 
-void Document::processHttpEquiv(const AtomicString& equiv, const AtomicString& content, bool inDocumentHeadElement)
-{
-    ASSERT(!equiv.isNull() && !content.isNull());
-
-    if (equalIgnoringCase(equiv, "default-style")) {
-        processHttpEquivDefaultStyle(content);
-    } else if (equalIgnoringCase(equiv, "refresh")) {
-        processHttpEquivRefresh(content);
-    } else if (equalIgnoringCase(equiv, "set-cookie")) {
-        processHttpEquivSetCookie(content);
-    } else if (equalIgnoringCase(equiv, "content-language")) {
-        setContentLanguage(content);
-    } else if (equalIgnoringCase(equiv, "x-dns-prefetch-control")) {
-        parseDNSPrefetchControlHeader(content);
-    } else if (equalIgnoringCase(equiv, "x-frame-options")) {
-        processHttpEquivXFrameOptions(content);
-    } else if (equalIgnoringCase(equiv, "accept-ch")) {
-        processHttpEquivAcceptCH(content);
-    } else if (equalIgnoringCase(equiv, "content-security-policy") || equalIgnoringCase(equiv, "content-security-policy-report-only")) {
-        if (inDocumentHeadElement)
-            processHttpEquivContentSecurityPolicy(equiv, content);
-        else
-            contentSecurityPolicy()->reportMetaOutsideHead(content);
-    }
-}
-
-void Document::processHttpEquivContentSecurityPolicy(const AtomicString& equiv, const AtomicString& content)
-{
-    if (importLoader())
-        return;
-    if (equalIgnoringCase(equiv, "content-security-policy"))
-        contentSecurityPolicy()->didReceiveHeader(content, ContentSecurityPolicyHeaderTypeEnforce, ContentSecurityPolicyHeaderSourceMeta);
-    else if (equalIgnoringCase(equiv, "content-security-policy-report-only"))
-        contentSecurityPolicy()->didReceiveHeader(content, ContentSecurityPolicyHeaderTypeReport, ContentSecurityPolicyHeaderSourceMeta);
-    else
-        ASSERT_NOT_REACHED();
-}
-
-void Document::processHttpEquivAcceptCH(const AtomicString& content)
-{
-    if (frame())
-        handleAcceptClientHintsHeader(content, m_clientHintsPreferences, fetcher());
-}
-
-void Document::processHttpEquivDefaultStyle(const AtomicString& content)
-{
-    // The preferred style set has been overridden as per section
-    // 14.3.2 of the HTML4.0 specification. We need to update the
-    // sheet used variable and then update our style selector.
-    // For more info, see the test at:
-    // http://www.hixie.ch/tests/evil/css/import/main/preferred.html
-    // -dwh
-    styleEngine().setSelectedStylesheetSetName(content);
-    styleEngine().setPreferredStylesheetSetName(content);
-    styleResolverChanged();
-}
-
-void Document::processHttpEquivRefresh(const AtomicString& content)
-{
-    maybeHandleHttpRefresh(content, HttpRefreshFromMetaTag);
-}
-
 void Document::maybeHandleHttpRefresh(const String& content, HttpRefreshType httpRefreshType)
 {
     if (m_isViewSource || !m_frame)
@@ -3077,37 +3010,6 @@ void Document::maybeHandleHttpRefresh(const String& content, HttpRefreshType htt
         return;
     }
     m_frame->navigationScheduler().scheduleRedirect(delay, refreshURL);
-}
-
-void Document::processHttpEquivSetCookie(const AtomicString& content)
-{
-    // FIXME: make setCookie work on XML documents too; e.g. in case of <html:meta .....>
-    if (!isHTMLDocument())
-        return;
-
-    // Exception (for sandboxed documents) ignored.
-    toHTMLDocument(this)->setCookie(content, IGNORE_EXCEPTION);
-}
-
-void Document::processHttpEquivXFrameOptions(const AtomicString& content)
-{
-    if (!m_frame)
-        return;
-
-    unsigned long requestIdentifier = loader()->mainResourceIdentifier();
-    if (m_frame->loader().shouldInterruptLoadForXFrameOptions(content, url(), requestIdentifier)) {
-        String message = "Refused to display '" + url().elidedString() + "' in a frame because it set 'X-Frame-Options' to '" + content + "'.";
-        m_frame->loader().stopAllLoaders();
-        if (!m_frame)
-            return;
-        // Stopping the loader isn't enough, as we're already parsing the document; to honor the header's
-        // intent, we must navigate away from the possibly partially-rendered document to a location that
-        // doesn't inherit the parent's SecurityOrigin.
-        m_frame->navigate(*this, SecurityOrigin::urlWithUniqueSecurityOrigin(), true, UserGestureStatus::None);
-        RefPtrWillBeRawPtr<ConsoleMessage> consoleMessage = ConsoleMessage::create(SecurityMessageSource, ErrorMessageLevel, message);
-        consoleMessage->setRequestIdentifier(requestIdentifier);
-        addConsoleMessage(consoleMessage.release());
-    }
 }
 
 bool Document::shouldMergeWithLegacyDescription(ViewportDescription::Type origin)
@@ -3153,20 +3055,13 @@ void Document::updateViewportDescription()
 
 void Document::processReferrerPolicy(const String& policy)
 {
-    ASSERT(!policy.isNull());
-
-    if (equalIgnoringCase(policy, "no-referrer") || equalIgnoringCase(policy, "never"))
-        setReferrerPolicy(ReferrerPolicyNever);
-    else if (equalIgnoringCase(policy, "unsafe-url") || equalIgnoringCase(policy, "always"))
-        setReferrerPolicy(ReferrerPolicyAlways);
-    else if (equalIgnoringCase(policy, "origin"))
-        setReferrerPolicy(ReferrerPolicyOrigin);
-    else if (equalIgnoringCase(policy, "origin-when-cross-origin") || equalIgnoringCase(policy, "origin-when-crossorigin"))
-        setReferrerPolicy(ReferrerPolicyOriginWhenCrossOrigin);
-    else if (equalIgnoringCase(policy, "no-referrer-when-downgrade") || equalIgnoringCase(policy, "default"))
-        setReferrerPolicy(ReferrerPolicyNoReferrerWhenDowngrade);
-    else
+    ReferrerPolicy referrerPolicy;
+    if (!SecurityPolicy::referrerPolicyFromString(policy, &referrerPolicy)) {
         addConsoleMessage(ConsoleMessage::create(RenderingMessageSource, ErrorMessageLevel, "Failed to set referrer policy: The value '" + policy + "' is not one of 'always', 'default', 'never', 'no-referrer', 'no-referrer-when-downgrade', 'origin', 'origin-when-crossorigin', or 'unsafe-url'. This document's referrer policy has been left unchanged."));
+        return;
+    }
+
+    setReferrerPolicy(referrerPolicy);
 }
 
 String Document::outgoingReferrer()
@@ -3494,7 +3389,7 @@ void Document::setAnnotatedRegions(const Vector<AnnotatedRegionValue>& regions)
     setAnnotatedRegionsDirty(false);
 }
 
-bool Document::setFocusedElement(PassRefPtrWillBeRawPtr<Element> prpNewFocusedElement, WebFocusType type)
+bool Document::setFocusedElement(PassRefPtrWillBeRawPtr<Element> prpNewFocusedElement, WebFocusType type, InputDeviceCapabilities* sourceCapabilities)
 {
     ASSERT(!m_lifecycle.inDetach());
 
@@ -3526,7 +3421,7 @@ bool Document::setFocusedElement(PassRefPtrWillBeRawPtr<Element> prpNewFocusedEl
         // Dispatch the blur event and let the node do any other blur related activities (important for text fields)
         // If page lost focus, blur event will have already been dispatched
         if (page() && (page()->focusController().isFocused())) {
-            oldFocusedElement->dispatchBlurEvent(newFocusedElement.get(), type);
+            oldFocusedElement->dispatchBlurEvent(newFocusedElement.get(), type, sourceCapabilities);
 
             if (m_focusedElement) {
                 // handler shifted focus
@@ -3534,10 +3429,10 @@ bool Document::setFocusedElement(PassRefPtrWillBeRawPtr<Element> prpNewFocusedEl
                 newFocusedElement = nullptr;
             }
 
-            oldFocusedElement->dispatchFocusOutEvent(EventTypeNames::focusout, newFocusedElement.get()); // DOM level 3 name for the bubbling blur event.
+            oldFocusedElement->dispatchFocusOutEvent(EventTypeNames::focusout, newFocusedElement.get(), sourceCapabilities); // DOM level 3 name for the bubbling blur event.
             // FIXME: We should remove firing DOMFocusOutEvent event when we are sure no content depends
             // on it, probably when <rdar://problem/8503958> is resolved.
-            oldFocusedElement->dispatchFocusOutEvent(EventTypeNames::DOMFocusOut, newFocusedElement.get()); // DOM level 2 name for compatibility.
+            oldFocusedElement->dispatchFocusOutEvent(EventTypeNames::DOMFocusOut, newFocusedElement.get(), sourceCapabilities); // DOM level 2 name for compatibility.
 
             if (m_focusedElement) {
                 // handler shifted focus
@@ -3567,7 +3462,7 @@ bool Document::setFocusedElement(PassRefPtrWillBeRawPtr<Element> prpNewFocusedEl
         // Dispatch the focus event and let the node do any other focus related activities (important for text fields)
         // If page lost focus, event will be dispatched on page focus, don't duplicate
         if (page() && (page()->focusController().isFocused())) {
-            m_focusedElement->dispatchFocusEvent(oldFocusedElement.get(), type);
+            m_focusedElement->dispatchFocusEvent(oldFocusedElement.get(), type, sourceCapabilities);
 
 
             if (m_focusedElement != newFocusedElement) {
@@ -3575,8 +3470,7 @@ bool Document::setFocusedElement(PassRefPtrWillBeRawPtr<Element> prpNewFocusedEl
                 focusChangeBlocked = true;
                 goto SetFocusedElementDone;
             }
-
-            m_focusedElement->dispatchFocusInEvent(EventTypeNames::focusin, oldFocusedElement.get(), type); // DOM level 3 bubbling focus event.
+            m_focusedElement->dispatchFocusInEvent(EventTypeNames::focusin, oldFocusedElement.get(), type, sourceCapabilities); // DOM level 3 bubbling focus event.
 
             if (m_focusedElement != newFocusedElement) {
                 // handler shifted focus
@@ -3586,7 +3480,7 @@ bool Document::setFocusedElement(PassRefPtrWillBeRawPtr<Element> prpNewFocusedEl
 
             // FIXME: We should remove firing DOMFocusInEvent event when we are sure no content depends
             // on it, probably when <rdar://problem/8503958> is m.
-            m_focusedElement->dispatchFocusInEvent(EventTypeNames::DOMFocusIn, oldFocusedElement.get(), type); // DOM level 2 for compatibility.
+            m_focusedElement->dispatchFocusInEvent(EventTypeNames::DOMFocusIn, oldFocusedElement.get(), type, sourceCapabilities); // DOM level 2 for compatibility.
 
             if (m_focusedElement != newFocusedElement) {
                 // handler shifted focus
@@ -3806,7 +3700,7 @@ void Document::didSplitTextNode(Text& oldNode)
     // FIXME: This should update markers for spelling and grammar checking.
 }
 
-void Document::setWindowAttributeEventListener(const AtomicString& eventType, PassRefPtr<EventListener> listener)
+void Document::setWindowAttributeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener)
 {
     LocalDOMWindow* domWindow = this->domWindow();
     if (!domWindow)
@@ -4518,7 +4412,7 @@ WeakPtrWillBeRawPtr<Document> Document::contextDocument()
         return m_weakFactory.createWeakPtr();
 #endif
     }
-    return WeakPtrWillBeRawPtr<Document>(nullptr);
+    return nullptr;
 }
 
 PassRefPtrWillBeRawPtr<Attr> Document::createAttribute(const AtomicString& name, ExceptionState& exceptionState)
@@ -4626,10 +4520,10 @@ void Document::finishedParsing()
     // FIXME: DOMContentLoaded is dispatched synchronously, but this should be dispatched in a queued task,
     // See https://crbug.com/425790
     if (!m_documentTiming.domContentLoadedEventStart())
-        m_documentTiming.setDomContentLoadedEventStart(monotonicallyIncreasingTime());
+        m_documentTiming.markDomContentLoadedEventStart();
     dispatchEvent(Event::createBubble(EventTypeNames::DOMContentLoaded));
     if (!m_documentTiming.domContentLoadedEventEnd())
-        m_documentTiming.setDomContentLoadedEventEnd(monotonicallyIncreasingTime());
+        m_documentTiming.markDomContentLoadedEventEnd();
     setParsingState(FinishedParsing);
 
     // The microtask checkpoint or the loader's finishedParsing() method may invoke script that causes this object to
@@ -4754,22 +4648,6 @@ HTMLLinkElement* Document::linkManifest() const
     return 0;
 }
 
-HTMLLinkElement* Document::linkDefaultPresentation() const
-{
-    HTMLHeadElement* head = this->head();
-    if (!head)
-        return nullptr;
-
-    // The first link element with a presentation URL rel must be used. Others are ignored.
-    for (HTMLLinkElement* linkElement = Traversal<HTMLLinkElement>::firstChild(*head); linkElement; linkElement = Traversal<HTMLLinkElement>::nextSibling(*linkElement)) {
-        if (!linkElement->relAttribute().isDefaultPresentation())
-            continue;
-        return linkElement;
-    }
-
-    return nullptr;
-}
-
 void Document::setUseSecureKeyboardEntryWhenActive(bool usesSecureKeyboard)
 {
     if (m_useSecureKeyboardEntryWhenActive == usesSecureKeyboard)
@@ -4841,10 +4719,8 @@ void Document::initSecurityContext(const DocumentInit& initializer)
                 // Some clients want local URLs to have universal access, but that setting is dangerous for other clients.
                 securityOrigin()->grantUniversalAccess();
             } else if (!settings->allowFileAccessFromFileURLs()) {
-                // Some clients want local URLs to have even tighter restrictions by default, and not be able to access other local files.
-                // FIXME 81578: The naming of this is confusing. Files with restricted access to other local files
-                // still can have other privileges that can be remembered, thereby not making them unique origins.
-                securityOrigin()->enforceFilePathSeparation();
+                // Some clients do not want local URLs to have access to other local URLs.
+                securityOrigin()->blockLocalAccessFromLocalOrigin();
             }
         }
     }
@@ -4881,7 +4757,7 @@ void Document::initSecurityContext(const DocumentInit& initializer)
     setSecurityOrigin(initializer.owner()->securityOrigin());
 }
 
-void Document::initContentSecurityPolicy(PassRefPtr<ContentSecurityPolicy> csp)
+void Document::initContentSecurityPolicy(PassRefPtrWillBeRawPtr<ContentSecurityPolicy> csp)
 {
     setContentSecurityPolicy(csp ? csp : ContentSecurityPolicy::create());
     if (m_frame && m_frame->tree().parent() && m_frame->tree().parent()->isLocalFrame()) {
@@ -5252,6 +5128,25 @@ void Document::serviceScriptedAnimations(double monotonicAnimationStartTime)
     m_scriptedAnimationController->serviceScriptedAnimations(monotonicAnimationStartTime);
 }
 
+ScriptedIdleTaskController& Document::ensureScriptedIdleTaskController()
+{
+    if (!m_scriptedIdleTaskController)
+        m_scriptedIdleTaskController = ScriptedIdleTaskController::create(this, loader()->timing());
+    return *m_scriptedIdleTaskController;
+}
+
+int Document::requestIdleCallback(IdleRequestCallback* callback, double timeoutMillis)
+{
+    return ensureScriptedIdleTaskController().registerCallback(callback, timeoutMillis);
+}
+
+void Document::cancelIdleCallback(int id)
+{
+    if (!m_scriptedIdleTaskController)
+        return;
+    m_scriptedIdleTaskController->cancelCallback(id);
+}
+
 PassRefPtrWillBeRawPtr<Touch> Document::createTouch(DOMWindow* window, EventTarget* target, int identifier, double pageX, double pageY, double screenX, double screenY, double radiusX, double radiusY, float rotationAngle, float force) const
 {
     // Match behavior from when these types were integers, and avoid surprises from someone explicitly
@@ -5377,6 +5272,7 @@ void Document::updateHoverActiveState(const HitTestRequest& request, Element* in
         innerElementInDocument = innerElementInDocument->document().ownerElement();
     }
 
+    updateDistribution();
     Element* oldActiveElement = activeHoverElement();
     if (oldActiveElement && !request.active()) {
         // The oldActiveElement layoutObject is null, dropped on :active by setting display: none,
@@ -5778,8 +5674,11 @@ DEFINE_TRACE(Document)
     visitor->trace(m_parser);
     visitor->trace(m_contextFeatures);
     visitor->trace(m_styleSheetList);
+    visitor->trace(m_documentTiming);
     visitor->trace(m_mediaQueryMatcher);
     visitor->trace(m_scriptedAnimationController);
+    visitor->trace(m_scriptedIdleTaskController);
+    visitor->trace(m_taskRunner);
     visitor->trace(m_textAutosizer);
     visitor->trace(m_registrationContext);
     visitor->trace(m_customElementMicrotaskRunQueue);
@@ -5803,6 +5702,7 @@ DEFINE_TRACE(Document)
     ContainerNode::trace(visitor);
     ExecutionContext::trace(visitor);
     DocumentLifecycleNotifier::trace(visitor);
+    SecurityContext::trace(visitor);
 }
 
 template class CORE_TEMPLATE_EXPORT WillBeHeapSupplement<Document>;
@@ -5813,7 +5713,7 @@ template class CORE_TEMPLATE_EXPORT WillBeHeapSupplement<Document>;
 using namespace blink;
 void showLiveDocumentInstances()
 {
-    WeakDocumentSet& set = liveDocumentSet();
+    Document::WeakDocumentSet& set = Document::liveDocumentSet();
     fprintf(stderr, "There are %u documents currently alive:\n", set.size());
     for (Document* document : set)
         fprintf(stderr, "- Document %p URL: %s\n", document, document->url().string().utf8().data());

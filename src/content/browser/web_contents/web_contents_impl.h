@@ -214,8 +214,8 @@ class CONTENT_EXPORT WebContentsImpl
 
   // Request a one-time snapshot of the accessibility tree without changing
   // the accessibility mode.
-  typedef base::Callback<void(const ui::AXTreeUpdate&)>
-      AXTreeSnapshotCallback;
+  using AXTreeSnapshotCallback =
+      base::Callback<void(const ui::AXTreeUpdate<ui::AXNodeData>&)>;
   void RequestAXTreeSnapshot(AXTreeSnapshotCallback callback);
 
   // WebContents ------------------------------------------------------
@@ -369,6 +369,7 @@ class CONTENT_EXPORT WebContentsImpl
   void OnMediaSessionStateChanged();
   void ResumeMediaSession() override;
   void SuspendMediaSession() override;
+  void StopMediaSession() override;
 
   base::android::ScopedJavaLocalRef<jobject> GetJavaWebContents() override;
   virtual WebContentsAndroid* GetWebContentsAndroid();
@@ -390,7 +391,6 @@ class CONTENT_EXPORT WebContentsImpl
   void RenderFrameCreated(RenderFrameHost* render_frame_host) override;
   void RenderFrameDeleted(RenderFrameHost* render_frame_host) override;
   void SwappedOut(RenderFrameHost* render_frame_host) override;
-  void WorkerCrashed(RenderFrameHost* render_frame_host) override;
   void ShowContextMenu(RenderFrameHost* render_frame_host,
                        const ContextMenuParams& params) override;
   void RunJavaScriptMessage(RenderFrameHost* render_frame_host,
@@ -483,7 +483,7 @@ class CONTENT_EXPORT WebContentsImpl
                           bool last_unlocked_by_target) override;
   void LostMouseLock() override;
   void CreateNewWindow(
-      int render_process_id,
+      SiteInstance* source_site_instance,
       int route_id,
       int main_frame_route_id,
       const ViewHostMsg_CreateWindow_Params& params,
@@ -512,6 +512,10 @@ class CONTENT_EXPORT WebContentsImpl
 
   // NavigatorDelegate ---------------------------------------------------------
 
+  void DidStartNavigation(NavigationHandle* navigation_handle) override;
+  void DidRedirectNavigation(NavigationHandle* navigation_handle) override;
+  void DidCommitNavigation(NavigationHandle* navigation_handle) override;
+  void DidFinishNavigation(NavigationHandle* navigation_handle) override;
   void DidStartProvisionalLoad(RenderFrameHostImpl* render_frame_host,
                                const GURL& validated_url,
                                bool is_error_page,
@@ -713,6 +717,10 @@ class CONTENT_EXPORT WebContentsImpl
   FRIEND_TEST_ALL_PREFIXES(WebContentsImplTest, PendingContents);
   FRIEND_TEST_ALL_PREFIXES(WebContentsImplTest, FrameTreeShape);
   FRIEND_TEST_ALL_PREFIXES(WebContentsImplTest, GetLastActiveTime);
+  FRIEND_TEST_ALL_PREFIXES(WebContentsImplTest,
+                           LoadResourceFromMemoryCacheWithBadSecurityInfo);
+  FRIEND_TEST_ALL_PREFIXES(WebContentsImplTest,
+                           LoadResourceFromMemoryCacheWithEmptySecurityInfo);
   FRIEND_TEST_ALL_PREFIXES(FormStructureBrowserTest, HTMLFiles);
   FRIEND_TEST_ALL_PREFIXES(NavigationControllerTest, HistoryNavigate);
   FRIEND_TEST_ALL_PREFIXES(RenderFrameHostManagerTest, PageDoesBackAndReload);
@@ -1259,6 +1267,10 @@ class CONTENT_EXPORT WebContentsImpl
   // Whether this WebContents is responsible for displaying a subframe in a
   // different process from its parent page.
   bool is_subframe_;
+
+  // When a new tab is created asynchronously, stores the OpenURLParams needed
+  // to continue loading the page once the tab is ready.
+  scoped_ptr<OpenURLParams> delayed_open_url_params_;
 
   // Whether overscroll should be unconditionally disabled.
   bool force_disable_overscroll_content_;

@@ -675,6 +675,8 @@ bool CSSParserFastPaths::isValidKeywordPropertyAndValue(CSSPropertyID propertyId
         return valueID == CSSValueReadOnly || valueID == CSSValueReadWrite || valueID == CSSValueReadWritePlaintextOnly;
     case CSSPropertyWebkitUserSelect: // auto | none | text | all
         return valueID == CSSValueAuto || valueID == CSSValueNone || valueID == CSSValueText || valueID == CSSValueAll;
+    case CSSPropertyBbRubberbandable: // auto | none | text | text-with-leading-tab
+        return valueID == CSSValueAuto || valueID == CSSValueNone || valueID == CSSValueText || valueID == CSSValueTextWithLeadingTab;
     case CSSPropertyWebkitWritingMode:
         return valueID >= CSSValueHorizontalTb && valueID <= CSSValueHorizontalBt;
     case CSSPropertyWritingMode:
@@ -790,6 +792,7 @@ bool CSSParserFastPaths::isKeywordPropertyID(CSSPropertyID propertyId)
     case CSSPropertyWebkitUserDrag:
     case CSSPropertyWebkitUserModify:
     case CSSPropertyWebkitUserSelect:
+    case CSSPropertyBbRubberbandable:
     case CSSPropertyWebkitWritingMode:
     case CSSPropertyWhiteSpace:
     case CSSPropertyWordBreak:

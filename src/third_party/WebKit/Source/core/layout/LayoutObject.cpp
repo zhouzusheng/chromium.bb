@@ -1653,7 +1653,7 @@ Color LayoutObject::selectionColor(int colorProperty, const GlobalPaintFlags glo
 
     // anonymous blocks don't have pseudo styles
     if (isAnonymous() && parent())
-        return parent()->selectionColor(colorProperty);
+        return parent()->selectionColor(colorProperty, globalPaintFlags);
 
     if (RefPtr<ComputedStyle> pseudoStyle = getUncachedPseudoStyleFromParentOrShadowHost())
         return resolveColor(*pseudoStyle, colorProperty);

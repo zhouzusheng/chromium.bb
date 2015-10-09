@@ -2402,7 +2402,7 @@ template<> inline CSSPrimitiveValue::operator EUserSelect() const
 template<> inline CSSPrimitiveValue::CSSPrimitiveValue(ERubberbandable e)
     : CSSValue(PrimitiveClass)
 {
-    m_primitiveUnitType = CSS_VALUE_ID;
+    init(UnitType::ValueID);
     switch (e) {
         case RUBBERBANDABLE_NONE:
             m_value.valueID = CSSValueNone;

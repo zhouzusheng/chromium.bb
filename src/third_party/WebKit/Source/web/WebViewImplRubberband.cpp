@@ -444,7 +444,7 @@ void WebViewImpl::rubberbandWalkLayoutObject(const RubberbandContext& context, L
                     const Font& font = layoutObject->style()->font();
                     UChar space = ' ';
                     candidate.m_spaceWidth = font.width(
-                        constructTextRun(layoutObject, font, &space, 1, layoutObject->styleRef(), candidate.m_isLTR ? LTR : RTL));
+                        constructTextRun(font, &space, 1, layoutObject->styleRef(), candidate.m_isLTR ? LTR : RTL));
                     candidate.m_spaceWidth *= localContext.m_layerContext->m_scaleX;
                 }
             }

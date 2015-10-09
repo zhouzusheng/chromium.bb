@@ -285,19 +285,29 @@ GapRects RootInlineBox::lineSelectionGap(const LayoutBlock* rootBlock, const Lay
     SelectionState lineState = selectionState();
 
     bool leftGap, rightGap;
-    block().getSelectionGapInfo(lineState, leftGap, rightGap);
+    block().getSelectionGapInfo(rootBlock, leftGap, rightGap);
 
     GapRects result;
 
+    bool selectionExtendsPastEnd = lineState == LayoutObject::SelectionStart || lineState == LayoutObject::SelectionInside;
     InlineBox* firstBox = firstSelectedBox();
     InlineBox* lastBox = lastSelectedBox();
     if (leftGap) {
         result.uniteLeft(block().logicalLeftSelectionGap(rootBlock, rootBlockPhysicalPosition, offsetFromRootBlock,
-            &firstBox->parent()->layoutObject(), firstBox->logicalLeft(), selTop, selHeight, paintInfo));
+                                                         &firstBox->parent()->layoutObject(), firstBox->logicalLeft(), selTop, selHeight, paintInfo));
     }
+    else if (firstBox && selectionExtendsPastEnd && !block().style()->isLeftToRightDirection()) {
+        result.uniteLeft(block().lineEndingSelectionGap(rootBlock, rootBlockPhysicalPosition, offsetFromRootBlock,
+                                                        &firstBox->parent()->layoutObject(), firstBox->logicalLeft(), selTop, selHeight, paintInfo));
+    }
+
     if (rightGap) {
         result.uniteRight(block().logicalRightSelectionGap(rootBlock, rootBlockPhysicalPosition, offsetFromRootBlock,
-            &lastBox->parent()->layoutObject(), lastBox->logicalRight(), selTop, selHeight, paintInfo));
+                                                           &lastBox->parent()->layoutObject(), lastBox->logicalRight(), selTop, selHeight, paintInfo));
+    }
+    else if (lastBox && selectionExtendsPastEnd && block().style()->isLeftToRightDirection()) {
+        result.uniteRight(block().lineEndingSelectionGap(rootBlock, rootBlockPhysicalPosition, offsetFromRootBlock,
+                                                         &lastBox->parent()->layoutObject(), lastBox->logicalRight(), selTop, selHeight, paintInfo));
     }
 
     // When dealing with bidi text, a non-contiguous selection region is possible.

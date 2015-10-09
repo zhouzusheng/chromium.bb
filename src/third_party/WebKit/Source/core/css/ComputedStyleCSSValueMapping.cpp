@@ -2245,6 +2245,8 @@ PassRefPtrWillBeRawPtr<CSSValue> ComputedStyleCSSValueMapping::get(CSSPropertyID
         return cssValuePool().createValue(style.userDrag());
     case CSSPropertyWebkitUserSelect:
         return cssValuePool().createValue(style.userSelect());
+    case CSSPropertyBbRubberbandable:
+        return cssValuePool().createValue(style.rubberbandable());
     case CSSPropertyBorderBottomLeftRadius:
         return valueForBorderRadiusCorner(style.borderBottomLeftRadius(), style);
     case CSSPropertyBorderBottomRightRadius:

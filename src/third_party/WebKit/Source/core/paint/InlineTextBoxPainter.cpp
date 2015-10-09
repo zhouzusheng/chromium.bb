@@ -772,7 +772,8 @@ void InlineTextBoxPainter::paintCompositionUnderline(GraphicsContext* ctx, const
     start += 1;
     width -= 2;
 
-    ctx->setStrokeColor(underline.color);
+    const ComputedStyle& styleToUse = m_inlineTextBox.layoutObject().styleRef(m_inlineTextBox.isFirstLineStyle());
+    ctx->setStrokeColor(m_inlineTextBox.layoutObject().resolveColor(styleToUse, CSSPropertyWebkitTextFillColor));
     ctx->setStrokeThickness(lineThickness);
     ctx->drawLineForText(FloatPoint(boxOrigin.x() + start, (boxOrigin.y() + m_inlineTextBox.logicalHeight() - lineThickness).toFloat()), width, m_inlineTextBox.layoutObject().document().printing());
 }

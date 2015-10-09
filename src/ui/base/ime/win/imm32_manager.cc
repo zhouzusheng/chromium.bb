@@ -10,7 +10,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/win/scoped_comptr.h"
-#include "third_party/skia/include/core/SkTypes.h"
+#include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/ime/composition_text.h"
 
 // "imm32.lib" is required by IMM32 APIs used in this file.
@@ -80,6 +80,7 @@ void GetCompositionUnderlines(HIMC imm_context,
         ui::CompositionUnderline underline;
         underline.start_offset = clause_data[i];
         underline.end_offset = clause_data[i+1];
+        underline.color = SK_ColorBLACK;
         underline.thick = false;
         underline.background_color = SK_ColorTRANSPARENT;
 
@@ -322,6 +323,7 @@ void IMM32Manager::GetCompositionInfo(HIMC imm_context, LPARAM lparam,
   // Set default underlines in case there is no clause information.
   if (!composition->underlines.size()) {
     CompositionUnderline underline;
+    underline.color = SK_ColorBLACK;
     underline.background_color = SK_ColorTRANSPARENT;
     if (target_start > 0) {
       underline.start_offset = 0U;

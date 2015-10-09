@@ -74,6 +74,7 @@ void FillCompositionText(
   for (size_t i = 0; i < underlines.size(); ++i) {
     composition_text->underlines[i].start_offset = underlines[i].start_offset;
     composition_text->underlines[i].end_offset = underlines[i].end_offset;
+    composition_text->underlines[i].color = SK_ColorBLACK;
     composition_text->underlines[i].thick = underlines[i].thick;
     composition_text->underlines[i].background_color = SK_ColorTRANSPARENT;
   }

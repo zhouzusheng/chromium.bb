@@ -42,7 +42,8 @@ public:
         MatchStyle = 1 << 2,
         PreventNesting = 1 << 3,
         MovingParagraph = 1 << 4,
-        SanitizeFragment = 1 << 5
+        SanitizeFragment = 1 << 5,
+        InsertNested = 1 << 6
     };
 
     typedef unsigned CommandOptions;
@@ -117,6 +118,7 @@ private:
     EditAction m_editAction;
     bool m_sanitizeFragment;
     bool m_shouldMergeEnd;
+    bool m_insertNested;
 };
 
 } // namespace blink

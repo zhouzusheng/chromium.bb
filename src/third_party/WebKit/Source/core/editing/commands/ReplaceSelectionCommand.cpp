@@ -383,6 +383,7 @@ ReplaceSelectionCommand::ReplaceSelectionCommand(Document& document, PassRefPtrW
     , m_editAction(editAction)
     , m_sanitizeFragment(options & SanitizeFragment)
     , m_shouldMergeEnd(false)
+    , m_insertNested(options & InsertNested)
 {
 }
 
@@ -946,6 +947,8 @@ void ReplaceSelectionCommand::doApply()
     VisiblePosition visibleEnd = selection.visibleEnd();
 
     bool selectionEndWasEndOfParagraph = isEndOfParagraph(visibleEnd);
+    bool selectionEndWasEndOfBlock = isEndOfBlock(visibleEnd);
+    bool selectionEndWasStartOfBlock = isStartOfBlock(visibleEnd.next());
     bool selectionStartWasStartOfParagraph = isStartOfParagraph(visibleStart);
 
     Element* enclosingBlockOfVisibleStart = enclosingBlock(visibleStart.deepEquivalent().anchorNode());
@@ -983,6 +986,21 @@ void ReplaceSelectionCommand::doApply()
             }
         }
         insertionPos = endingSelection().start();
+
+        // If the selection included an entire paragraph, then the previous deleteSelection
+        // command would have deleted the end of the paragraph separator.  If we are inserting
+        // in nested mode, then we should add back a paragraph separator.
+        if (m_insertNested && selectionStartWasStartOfParagraph && selectionEndWasEndOfParagraph && !selectionEndWasEndOfBlock &&
+            (selectionEndWasStartOfBlock || !isHTMLBRElement(endingSelection().start().anchorNode())) &&
+                // ^ Do not add new line if the selection ends at the end of a textnode whose nextSibling is <br>
+            visibleEnd.previous().deepEquivalent().containerNode() != visibleEnd.deepEquivalent().containerNode()
+                // ^ Do not add new line if the selection is followed by a '\n'
+            ) {
+            insertParagraphSeparator();
+            setEndingSelection(endingSelection().visibleStart().previous());
+            visibleStart = endingSelection().visibleStart();
+            insertionPos = endingSelection().start();
+        }
     } else {
         ASSERT(selection.isCaret());
         if (fragment.hasInterchangeNewlineAtStart()) {
@@ -1060,7 +1078,8 @@ void ReplaceSelectionCommand::doApply()
     // We don't want the destination to end up inside nodes that weren't selected.  To avoid that, we move the
     // position forward without changing the visible position so we're still at the same visible location, but
     // outside of preceding tags.
-    insertionPos = positionAvoidingPrecedingNodes(insertionPos);
+    if (!m_insertNested)
+        insertionPos = positionAvoidingPrecedingNodes(insertionPos);
 
     // Paste into run of tabs splits the tab span.
     insertionPos = positionOutsideTabSpan(insertionPos);
@@ -1077,7 +1096,7 @@ void ReplaceSelectionCommand::doApply()
     // We can skip this optimization for fragments not wrapped in one of
     // our style spans and for positions inside list items
     // since insertAsListItems already does the right thing.
-    if (!m_matchStyle && !enclosingList(insertionPos.computeContainerNode())) {
+    if (!m_matchStyle && !enclosingList(insertionPos.computeContainerNode()) && !m_insertNested) {
         if (insertionPos.computeContainerNode()->isTextNode() && insertionPos.offsetInContainerNode() && !insertionPos.atLastEditingPositionForNode()) {
             splitTextNode(toText(insertionPos.computeContainerNode()), insertionPos.offsetInContainerNode());
             insertionPos = firstPositionInNode(insertionPos.computeContainerNode());

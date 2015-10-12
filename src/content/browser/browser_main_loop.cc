@@ -655,14 +655,6 @@ void BrowserMainLoop::PostMainMessageLoopStart() {
 }
 
 int BrowserMainLoop::PreCreateThreads() {
-  // Need to initialize in-process GpuDataManager before creating threads.
-  // It's unsafe to append the gpu command line switches to the global
-  // CommandLine::ForCurrentProcess object after threads are created.
-  // Also need to initialize before BrowserMainParts::PreCreateThreads, so
-  // BrowserMainParts has a hook to set GpuDataManager strings before
-  // starting Gpu process.
-  GpuDataManagerImpl::GetInstance()->Initialize();
-
   if (parts_) {
     TRACE_EVENT0("startup",
         "BrowserMainLoop::CreateThreads:PreCreateThreads");
@@ -704,6 +696,12 @@ int BrowserMainLoop::PreCreateThreads() {
     AVFoundationGlue::InitializeAVFoundation();
   }
 #endif
+
+  // 1) Need to initialize in-process GpuDataManager before creating threads.
+  // It's unsafe to append the gpu command line switches to the global
+  // CommandLine::ForCurrentProcess object after threads are created.
+  // 2) Must be after parts_->PreCreateThreads to pick up chrome://flags.
+  GpuDataManagerImpl::GetInstance()->Initialize();
 
   if (parsed_command_line_.HasSwitch(switches::kSingleProcess)) {
     UtilityProcessHost::SetRunUtilityInProcess(true);

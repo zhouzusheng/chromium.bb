@@ -8,13 +8,6 @@
             "className": "WebInspector.SourcesPanelFactory"
         },
         {
-            "type": "drawer-view",
-            "name": "sources.search",
-            "title": "Search",
-            "order": "1",
-            "className": "WebInspector.AdvancedSearchView"
-        },
-        {
             "type": "@WebInspector.ContextMenu.Provider",
             "contextTypes": ["WebInspector.UISourceCode", "WebInspector.UILocation", "WebInspector.RemoteObject", "WebInspector.NetworkRequest"],
             "className": "WebInspector.SourcesPanel.ContextMenuProvider"
@@ -130,6 +123,12 @@
                     "shortcut": "Ctrl+Shift+F"
                 }
             ]
+        },
+        {
+            "type": "context-menu-item",
+            "location": "mainMenu/navigate",
+            "title": "Search all files",
+            "actionId": "sources.search.toggle"
         },
         {
             "type": "@WebInspector.Revealer",
@@ -285,6 +284,7 @@
         }
     ],
     "dependencies": [
+        "components",
         "source_frame",
         "snippets",
         "extensions"

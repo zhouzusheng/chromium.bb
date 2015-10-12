@@ -13,10 +13,10 @@
 #include "SkTDArray.h"
 #include "SkXfermode.h"
 
-class SkBitmap;
-class GrProcessor;
 class GrContext;
+class GrFragmentProcessor;
 class GrProcessorDataManager;
+class SkBitmap;
 
 /**
  *  ColorFilters are optional objects in the drawing pipeline. When present in
@@ -138,6 +138,10 @@ public:
     virtual bool asFragmentProcessors(GrContext*, GrProcessorDataManager*,
                                       SkTDArray<GrFragmentProcessor*>*) const {
         return false;
+    }
+
+    bool affectsTransparentBlack() const {
+        return this->filterColor(0) != 0;
     }
 
     SK_TO_STRING_PUREVIRT()

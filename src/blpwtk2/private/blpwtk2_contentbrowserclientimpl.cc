@@ -190,7 +190,7 @@ bool ContentBrowserClientImpl::IsHandledURL(const GURL& url)
 {
     if (!url.is_valid())
         return false;
-    DCHECK_EQ(url.scheme(), base::StringToLowerASCII(url.scheme()));
+    DCHECK_EQ(url.scheme(), base::ToLowerASCII(url.scheme()));
     // Keep in sync with ProtocolHandlers added by
     // URLRequestContextGetterImpl::GetURLRequestContext().
     static const char* const kProtocolList[] = {

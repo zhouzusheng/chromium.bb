@@ -45,7 +45,6 @@
 #include "core/paint/DeprecatedPaintLayer.h"
 #include "platform/MIMETypeRegistry.h"
 #include "platform/RuntimeEnabledFeatures.h"
-#include "platform/graphics/BitmapImage.h"
 #include "platform/graphics/Canvas2DImageBufferSurface.h"
 #include "platform/graphics/ExpensiveCanvasHeuristicParameters.h"
 #include "platform/graphics/ImageBuffer.h"
@@ -90,10 +89,9 @@ bool canCreateImageBuffer(const IntSize& size)
 PassRefPtr<Image> createTransparentImage(const IntSize& size)
 {
     ASSERT(canCreateImageBuffer(size));
-    SkBitmap bitmap;
-    bitmap.allocN32Pixels(size.width(), size.height());
-    bitmap.eraseColor(SK_ColorTRANSPARENT);
-    return BitmapImage::create(bitmap);
+    RefPtr<SkSurface> surface = adoptRef(SkSurface::NewRasterN32Premul(size.width(), size.height()));
+    surface->getCanvas()->clear(SK_ColorTRANSPARENT);
+    return StaticBitmapImage::create(adoptRef(surface->newImageSnapshot()));
 }
 
 } // namespace
@@ -145,7 +143,14 @@ LayoutObject* HTMLCanvasElement::createLayoutObject(const ComputedStyle& style)
 
 void HTMLCanvasElement::didRecalcStyle(StyleRecalcChange)
 {
-    SkFilterQuality filterQuality = ensureComputedStyle()->imageRendering() == ImageRenderingPixelated ? kNone_SkFilterQuality : kLow_SkFilterQuality;
+    SkFilterQuality filterQuality;
+    const ComputedStyle* style = ensureComputedStyle();
+    if (style && style->imageRendering() == ImageRenderingPixelated) {
+        filterQuality = kNone_SkFilterQuality;
+    } else {
+        filterQuality = kLow_SkFilterQuality;
+    }
+
     if (is3D()) {
         m_context->setFilterQuality(filterQuality);
         setNeedsCompositingUpdate();
@@ -305,10 +310,10 @@ void HTMLCanvasElement::didFinalizeFrame()
     m_dirtyRect = FloatRect();
 }
 
-void HTMLCanvasElement::restoreCanvasMatrixClipStack()
+void HTMLCanvasElement::restoreCanvasMatrixClipStack(SkCanvas* canvas) const
 {
     if (m_context)
-        m_context->restoreCanvasMatrixClipStack();
+        m_context->restoreCanvasMatrixClipStack(canvas);
 }
 
 void HTMLCanvasElement::doDeferredPaintInvalidation()
@@ -439,6 +444,11 @@ bool HTMLCanvasElement::is3D() const
     return m_context && m_context->is3d();
 }
 
+bool HTMLCanvasElement::isAnimated2D() const
+{
+    return m_context && m_context->is2d() && hasImageBuffer() && m_imageBuffer->wasDrawnToAfterSnapshot();
+}
+
 void HTMLCanvasElement::setSurfaceSize(const IntSize& size)
 {
     m_size = size;
@@ -466,28 +476,51 @@ const AtomicString HTMLCanvasElement::imageSourceURL() const
     return AtomicString(toDataURLInternal("image/png", 0, FrontBuffer));
 }
 
+ImageData* HTMLCanvasElement::toImageData(SourceDrawingBuffer sourceBuffer) const
+{
+    ImageData* imageData;
+    if (is3D()) {
+        // Get non-premultiplied data because of inaccurate premultiplied alpha conversion of buffer()->toDataURL().
+        imageData = m_context->paintRenderingResultsToImageData(sourceBuffer);
+        if (imageData)
+            return imageData;
+
+        m_context->paintRenderingResultsToCanvas(sourceBuffer);
+        imageData = ImageData::create(m_size);
+        RefPtr<SkImage> snapshot = buffer()->newSkImageSnapshot();
+        if (snapshot) {
+            SkImageInfo imageInfo = SkImageInfo::Make(width(), height(), kRGBA_8888_SkColorType, kUnpremul_SkAlphaType);
+            snapshot->readPixels(imageInfo, imageData->data()->data(), imageInfo.minRowBytes(), 0, 0);
+        }
+        return imageData;
+    }
+
+    imageData = ImageData::create(m_size);
+
+    if (!m_context)
+        return imageData;
+
+    ASSERT(m_context->is2d());
+    RefPtr<SkImage> snapshot = buffer()->newSkImageSnapshot();
+    if (snapshot) {
+        SkImageInfo imageInfo = SkImageInfo::Make(width(), height(), kRGBA_8888_SkColorType, kUnpremul_SkAlphaType);
+        snapshot->readPixels(imageInfo, imageData->data()->data(), imageInfo.minRowBytes(), 0, 0);
+    }
+
+    return imageData;
+}
+
 String HTMLCanvasElement::toDataURLInternal(const String& mimeType, const double* quality, SourceDrawingBuffer sourceBuffer) const
 {
     if (!isPaintable())
         return String("data:,");
 
     String encodingMimeType = toEncodingMimeType(mimeType);
-    if (!m_context) {
-        ImageData* imageData = ImageData::create(m_size);
-        ScopedDisposal<ImageData> disposer(imageData);
-        return ImageDataBuffer(imageData->size(), imageData->data()->data()).toDataURL(encodingMimeType, quality);
-    }
 
-    if (m_context->is3d()) {
-        // Get non-premultiplied data because of inaccurate premultiplied alpha conversion of buffer()->toDataURL().
-        ImageData* imageData = m_context->paintRenderingResultsToImageData(sourceBuffer);
-        ScopedDisposal<ImageData> disposer(imageData);
-        if (imageData)
-            return ImageDataBuffer(imageData->size(), imageData->data()->data()).toDataURL(encodingMimeType, quality);
-        m_context->paintRenderingResultsToCanvas(sourceBuffer);
-    }
+    ImageData* imageData = toImageData(sourceBuffer);
+    ScopedDisposal<ImageData> disposer(imageData);
 
-    return buffer()->toDataURL(encodingMimeType, quality);
+    return ImageDataBuffer(imageData->size(), imageData->data()->data()).toDataURL(encodingMimeType, quality);
 }
 
 String HTMLCanvasElement::toDataURL(const String& mimeType, const ScriptValue& qualityArgument, ExceptionState& exceptionState) const
@@ -726,6 +759,12 @@ SkCanvas* HTMLCanvasElement::drawingCanvas() const
     return buffer() ? m_imageBuffer->canvas() : nullptr;
 }
 
+void HTMLCanvasElement::disableDeferral() const
+{
+    if (buffer())
+        m_imageBuffer->disableDeferral();
+}
+
 SkCanvas* HTMLCanvasElement::existingDrawingCanvas() const
 {
     if (!hasImageBuffer())
@@ -773,7 +812,7 @@ PassRefPtr<Image> HTMLCanvasElement::copiedImage(SourceDrawingBuffer sourceBuffe
     if (m_context->is3d())
         needToUpdate |= m_context->paintRenderingResultsToCanvas(sourceBuffer);
     if (needToUpdate && buffer()) {
-        m_copiedImage = buffer()->copyImage(CopyBackingStore, Unscaled);
+        m_copiedImage = buffer()->newImageSnapshot();
         updateExternallyAllocatedMemory();
     }
     return m_copiedImage;
@@ -814,6 +853,12 @@ void HTMLCanvasElement::didChangeVisibilityState(PageVisibilityState visibility)
     }
 }
 
+void HTMLCanvasElement::styleDidChange(const ComputedStyle* oldStyle, const ComputedStyle& newStyle)
+{
+    if (m_context)
+        m_context->styleDidChange(oldStyle, newStyle);
+}
+
 void HTMLCanvasElement::didMoveToNewDocument(Document& oldDocument)
 {
     setObservedDocument(document());
@@ -822,7 +867,7 @@ void HTMLCanvasElement::didMoveToNewDocument(Document& oldDocument)
     HTMLElement::didMoveToNewDocument(oldDocument);
 }
 
-PassRefPtr<Image> HTMLCanvasElement::getSourceImageForCanvas(SourceImageMode mode, SourceImageStatus* status) const
+PassRefPtr<Image> HTMLCanvasElement::getSourceImageForCanvas(SourceImageStatus* status) const
 {
     if (!width() || !height()) {
         *status = ZeroSizeCanvasSourceImageStatus;
@@ -839,13 +884,11 @@ PassRefPtr<Image> HTMLCanvasElement::getSourceImageForCanvas(SourceImageMode mod
         return createTransparentImage(size());
     }
 
-    m_imageBuffer->willAccessPixels();
-
     if (m_context->is3d()) {
         m_context->paintRenderingResultsToCanvas(BackBuffer);
     }
 
-    RefPtr<SkImage> image = buffer()->newImageSnapshot();
+    RefPtr<SkImage> image = buffer()->newSkImageSnapshot();
     if (image) {
         *status = NormalSourceImageStatus;
         return StaticBitmapImage::create(image.release());

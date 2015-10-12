@@ -17,6 +17,7 @@
 #include <limits.h>
 #include <string.h>
 
+#include <openssl/chacha.h>
 #include <openssl/mem.h>
 
 #include "internal.h"
@@ -69,17 +70,12 @@ static void rand_thread_state_free(void *state) {
   OPENSSL_free(state);
 }
 
-extern void CRYPTO_chacha_20(uint8_t *out, const uint8_t *in, size_t in_len,
-                             const uint8_t key[32], const uint8_t nonce[8],
-                             size_t counter);
-
 int RAND_bytes(uint8_t *buf, size_t len) {
   if (len == 0) {
     return 1;
   }
 
-  if (!CRYPTO_have_hwrand() ||
-      !CRYPTO_hwrand(buf, len)) {
+  if (!CRYPTO_hwrand(buf, len)) {
     /* Without a hardware RNG to save us from address-space duplication, the OS
      * entropy is used directly. */
     CRYPTO_sysrand(buf, len);
@@ -174,8 +170,14 @@ int RAND_status(void) {
   return 1;
 }
 
-static const struct rand_meth_st kSSLeayMethod = {NULL, NULL, NULL,
-                                                  NULL, NULL, NULL};
+static const struct rand_meth_st kSSLeayMethod = {
+  RAND_seed,
+  RAND_bytes,
+  RAND_cleanup,
+  RAND_add,
+  RAND_pseudo_bytes,
+  RAND_status,
+};
 
 RAND_METHOD *RAND_SSLeay(void) {
   return (RAND_METHOD*) &kSSLeayMethod;

@@ -47,7 +47,6 @@ class ScriptState;
 class ServiceWorkerClients;
 class ServiceWorkerRegistration;
 class ServiceWorkerThread;
-class StashedPortCollection;
 class WaitUntilObserver;
 class WebServiceWorkerRegistration;
 class WorkerThreadStartupData;
@@ -68,7 +67,6 @@ public:
     // ServiceWorkerGlobalScope.idl
     ServiceWorkerClients* clients();
     ServiceWorkerRegistration* registration();
-    StashedPortCollection* ports();
 
     ScriptPromise fetch(ScriptState*, const RequestInfo&, const Dictionary&, ExceptionState&);
 
@@ -79,9 +77,8 @@ public:
     void setRegistration(WebServiceWorkerRegistration*);
 
     // EventTarget
-    bool addEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false) override;
+    bool addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, bool useCapture = false) override;
     const AtomicString& interfaceName() const override;
-    bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>) override;
 
     void dispatchExtendableEvent(PassRefPtrWillBeRawPtr<Event>, WaitUntilObserver*);
 
@@ -93,18 +90,21 @@ public:
 
     DECLARE_VIRTUAL_TRACE();
 
+protected:
+    // EventTarget
+    bool dispatchEventInternal(PassRefPtrWillBeRawPtr<Event>) override;
+
 private:
     class SkipWaitingCallback;
 
     ServiceWorkerGlobalScope(const KURL&, const String& userAgent, ServiceWorkerThread*, double timeOrigin, const SecurityOrigin*, PassOwnPtrWillBeRawPtr<WorkerClients>);
     void importScripts(const Vector<String>& urls, ExceptionState&) override;
-    PassOwnPtr<CachedMetadataHandler> createWorkerScriptCachedMetadataHandler(const KURL& scriptURL, const Vector<char>* metaData) override;
+    PassOwnPtrWillBeRawPtr<CachedMetadataHandler> createWorkerScriptCachedMetadataHandler(const KURL& scriptURL, const Vector<char>* metaData) override;
     void logExceptionToConsole(const String& errorMessage, int scriptId, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtrWillBeRawPtr<ScriptCallStack>) override;
     void scriptLoaded(size_t scriptSize, size_t cachedMetadataSize) override;
 
     PersistentWillBeMember<ServiceWorkerClients> m_clients;
     PersistentWillBeMember<ServiceWorkerRegistration> m_registration;
-    PersistentWillBeMember<StashedPortCollection> m_ports;
     bool m_didEvaluateScript;
     bool m_hadErrorInTopLevelEventHandler;
     unsigned m_eventNestingLevel;

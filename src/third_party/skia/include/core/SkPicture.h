@@ -9,7 +9,6 @@
 #define SkPicture_DEFINED
 
 #include "SkImageDecoder.h"
-#include "SkLazyPtr.h"
 #include "SkRefCnt.h"
 #include "SkTypes.h"
 
@@ -19,7 +18,9 @@ class SkBitmap;
 class SkCanvas;
 class SkPictureData;
 class SkPixelSerializer;
+class SkRefCntSet;
 class SkStream;
+class SkTypefacePlayback;
 class SkWStream;
 struct SkPictInfo;
 
@@ -163,6 +164,12 @@ private:
     friend class SkBigPicture;
     friend class SkEmptyPicture;
     template <typename> friend class SkMiniPicture;
+
+    void serialize(SkWStream*, SkPixelSerializer*, SkRefCntSet* typefaces) const;
+    static SkPicture* CreateFromStream(SkStream*,
+                                       InstallPixelRefProc proc,
+                                       SkTypefacePlayback*);
+    friend class SkPictureData;
 
     virtual int numSlowPaths() const = 0;
     friend struct SkPathCounter;

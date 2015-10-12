@@ -359,10 +359,15 @@ void P2PTransportChannel::SetRemoteIceMode(IceMode mode) {
   remote_ice_mode_ = mode;
 }
 
-void P2PTransportChannel::set_receiving_timeout(int receiving_timeout_ms) {
+void P2PTransportChannel::SetReceivingTimeout(int receiving_timeout_ms) {
+  if (receiving_timeout_ms < 0) {
+    return;
+  }
   receiving_timeout_ = receiving_timeout_ms;
   check_receiving_delay_ =
       std::max(MIN_CHECK_RECEIVING_DELAY, receiving_timeout_ / 10);
+  LOG(LS_VERBOSE) << "Set ICE receiving timeout to " << receiving_timeout_
+                  << " milliseconds";
 }
 
 // Go into the state of processing candidates, and running in general
@@ -660,6 +665,17 @@ void P2PTransportChannel::OnUseCandidate(Connection* conn) {
 
 void P2PTransportChannel::OnCandidate(const Candidate& candidate) {
   ASSERT(worker_thread_ == rtc::Thread::Current());
+
+  uint32 generation = candidate.generation();
+  // Network may not guarantee the order of the candidate delivery. If a
+  // remote candidate with an older generation arrives, drop it.
+  if (generation != 0 && generation < remote_candidate_generation_) {
+    LOG(LS_WARNING) << "Dropping a remote candidate because its generation "
+                    << generation
+                    << " is lower than the current remote generation "
+                    << remote_candidate_generation_;
+    return;
+  }
 
   // Create connections to this remote candidate.
   CreateConnections(candidate, NULL, false);

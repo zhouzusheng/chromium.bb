@@ -32,8 +32,9 @@
 #include "core/dom/Document.h"
 #include "core/dom/Range.h"
 #include "core/dom/Text.h"
+#include "core/editing/EditingUtilities.h"
+#include "core/editing/TextAffinity.h"
 #include "core/editing/VisibleUnits.h"
-#include "core/editing/htmlediting.h"
 #include "core/html/HTMLElement.h"
 #include "core/layout/LayoutBlock.h"
 #include "core/layout/line/RootInlineBox.h"
@@ -48,12 +49,12 @@ namespace blink {
 
 using namespace HTMLNames;
 
-VisiblePosition::VisiblePosition(const Position &pos, EAffinity affinity)
+VisiblePosition::VisiblePosition(const Position &pos, TextAffinity affinity)
 {
     init(pos, affinity);
 }
 
-VisiblePosition::VisiblePosition(const PositionInComposedTree& pos, EAffinity affinity)
+VisiblePosition::VisiblePosition(const PositionInComposedTree& pos, TextAffinity affinity)
 {
     init(pos, affinity);
 }
@@ -87,16 +88,16 @@ VisiblePosition VisiblePosition::previous(EditingBoundaryCrossingRule rule) cons
     if (pos.atStartOfTree())
         return VisiblePosition();
 
-    VisiblePosition prev = VisiblePosition(pos, DOWNSTREAM);
-    ASSERT(prev != *this);
+    VisiblePosition prev = VisiblePosition(pos);
+    ASSERT(prev.deepEquivalent() != m_deepPosition);
 
 #if ENABLE(ASSERT)
-    // we should always be able to make the affinity DOWNSTREAM, because going previous from an
-    // UPSTREAM position can never yield another UPSTREAM position (unless line wrap length is 0!).
-    if (prev.isNotNull() && m_affinity == UPSTREAM) {
-        VisiblePosition temp = prev;
-        temp.setAffinity(UPSTREAM);
-        ASSERT(inSameLine(temp, prev));
+    // we should always be able to make the affinity |TextAffinity::Downstream|,
+    // because going previous from an |TextAffinity::Upstream| position can
+    // never yield another |TextAffinity::Upstream position| (unless line wrap
+    // length is 0!).
+    if (prev.isNotNull() && m_affinity == TextAffinity::Upstream) {
+        ASSERT(inSameLine(PositionWithAffinity(prev.deepEquivalent()), PositionWithAffinity(prev.deepEquivalent(), TextAffinity::Upstream)));
     }
 #endif
 
@@ -119,11 +120,11 @@ Position VisiblePosition::leftVisuallyDistinctCandidate() const
     if (p.isNull())
         return Position();
 
-    Position downstreamStart = p.downstream();
-    TextDirection primaryDirection = p.primaryDirection();
+    Position downstreamStart = mostForwardCaretPosition(p);
+    TextDirection primaryDirection = primaryDirectionOf(*p.anchorNode());
 
     while (true) {
-        InlineBoxPosition boxPosition = p.computeInlineBoxPosition(m_affinity, primaryDirection);
+        InlineBoxPosition boxPosition = computeInlineBoxPosition(p, m_affinity, primaryDirection);
         InlineBox* box = boxPosition.inlineBox;
         int offset = boxPosition.offsetInBox;
         if (!box)
@@ -160,7 +161,7 @@ Position VisiblePosition::leftVisuallyDistinctCandidate() const
                     if (positionOnLeft.isNull())
                         return Position();
 
-                    InlineBox* boxOnLeft = positionOnLeft.computeInlineBoxPosition(m_affinity, primaryDirection).inlineBox;
+                    InlineBox* boxOnLeft = computeInlineBoxPosition(positionOnLeft, m_affinity, primaryDirection).inlineBox;
                     if (boxOnLeft && boxOnLeft->root() == box->root())
                         return Position();
                     return positionOnLeft;
@@ -250,27 +251,24 @@ Position VisiblePosition::leftVisuallyDistinctCandidate() const
             break;
         }
 
-        p = createLegacyEditingPosition(layoutObject->node(), offset);
+        p = Position::editingPositionOf(layoutObject->node(), offset);
 
-        if ((p.isCandidate() && p.downstream() != downstreamStart) || p.atStartOfTree() || p.atEndOfTree())
+        if ((isVisuallyEquivalentCandidate(p) && mostForwardCaretPosition(p) != downstreamStart) || p.atStartOfTree() || p.atEndOfTree())
             return p;
 
         ASSERT(p != m_deepPosition);
     }
 }
 
-VisiblePosition VisiblePosition::left(bool stayInEditableContent) const
+VisiblePosition VisiblePosition::left() const
 {
     Position pos = leftVisuallyDistinctCandidate();
     // FIXME: Why can't we move left from the last position in a tree?
     if (pos.atStartOfTree() || pos.atEndOfTree())
         return VisiblePosition();
 
-    VisiblePosition left = VisiblePosition(pos, DOWNSTREAM);
-    ASSERT(left != *this);
-
-    if (!stayInEditableContent)
-        return left;
+    VisiblePosition left = VisiblePosition(pos);
+    ASSERT(left.deepEquivalent() != m_deepPosition);
 
     return directionOfEnclosingBlock(left.deepEquivalent()) == LTR ? honorEditingBoundaryAtOrBefore(left) : honorEditingBoundaryAtOrAfter(left);
 }
@@ -281,11 +279,11 @@ Position VisiblePosition::rightVisuallyDistinctCandidate() const
     if (p.isNull())
         return Position();
 
-    Position downstreamStart = p.downstream();
-    TextDirection primaryDirection = p.primaryDirection();
+    Position downstreamStart = mostForwardCaretPosition(p);
+    TextDirection primaryDirection = primaryDirectionOf(*p.anchorNode());
 
     while (true) {
-        InlineBoxPosition boxPosition = p.computeInlineBoxPosition(m_affinity, primaryDirection);
+        InlineBoxPosition boxPosition = computeInlineBoxPosition(p, m_affinity, primaryDirection);
         InlineBox* box = boxPosition.inlineBox;
         int offset = boxPosition.offsetInBox;
         if (!box)
@@ -322,7 +320,7 @@ Position VisiblePosition::rightVisuallyDistinctCandidate() const
                     if (positionOnRight.isNull())
                         return Position();
 
-                    InlineBox* boxOnRight = positionOnRight.computeInlineBoxPosition(m_affinity, primaryDirection).inlineBox;
+                    InlineBox* boxOnRight = computeInlineBoxPosition(positionOnRight, m_affinity, primaryDirection).inlineBox;
                     if (boxOnRight && boxOnRight->root() == box->root())
                         return Position();
                     return positionOnRight;
@@ -415,33 +413,30 @@ Position VisiblePosition::rightVisuallyDistinctCandidate() const
             break;
         }
 
-        p = createLegacyEditingPosition(layoutObject->node(), offset);
+        p = Position::editingPositionOf(layoutObject->node(), offset);
 
-        if ((p.isCandidate() && p.downstream() != downstreamStart) || p.atStartOfTree() || p.atEndOfTree())
+        if ((isVisuallyEquivalentCandidate(p) && mostForwardCaretPosition(p) != downstreamStart) || p.atStartOfTree() || p.atEndOfTree())
             return p;
 
         ASSERT(p != m_deepPosition);
     }
 }
 
-VisiblePosition VisiblePosition::right(bool stayInEditableContent) const
+VisiblePosition VisiblePosition::right() const
 {
     Position pos = rightVisuallyDistinctCandidate();
     // FIXME: Why can't we move left from the last position in a tree?
     if (pos.atStartOfTree() || pos.atEndOfTree())
         return VisiblePosition();
 
-    VisiblePosition right = VisiblePosition(pos, DOWNSTREAM);
-    ASSERT(right != *this);
-
-    if (!stayInEditableContent)
-        return right;
+    VisiblePosition right = VisiblePosition(pos);
+    ASSERT(right.deepEquivalent() != m_deepPosition);
 
     return directionOfEnclosingBlock(right.deepEquivalent()) == LTR ? honorEditingBoundaryAtOrAfter(right) : honorEditingBoundaryAtOrBefore(right);
 }
 
-template <typename PositionWithAffinityType>
-PositionWithAffinityType honorEditingBoundaryAtOrBeforeAlgorithm(const PositionWithAffinityType& pos, const typename PositionWithAffinityType::PositionType& anchor)
+template <typename Strategy>
+PositionWithAffinityTemplate<Strategy> honorEditingBoundaryAtOrBeforeAlgorithm(const PositionWithAffinityTemplate<Strategy>& pos, const PositionAlgorithm<Strategy>& anchor)
 {
     if (pos.isNull())
         return pos;
@@ -449,8 +444,8 @@ PositionWithAffinityType honorEditingBoundaryAtOrBeforeAlgorithm(const PositionW
     ContainerNode* highestRoot = highestEditableRoot(anchor);
 
     // Return empty position if pos is not somewhere inside the editable region containing this position
-    if (highestRoot && !pos.position().deprecatedNode()->isDescendantOf(highestRoot))
-        return PositionWithAffinityType();
+    if (highestRoot && !pos.position().anchorNode()->isDescendantOf(highestRoot))
+        return PositionWithAffinityTemplate<Strategy>();
 
     // Return pos itself if the two are from the very same editable region, or both are non-editable
     // FIXME: In the non-editable case, just because the new position is non-editable doesn't mean movement
@@ -461,7 +456,7 @@ PositionWithAffinityType honorEditingBoundaryAtOrBeforeAlgorithm(const PositionW
     // Return empty position if this position is non-editable, but pos is editable
     // FIXME: Move to the previous non-editable region.
     if (!highestRoot)
-        return PositionWithAffinityType();
+        return PositionWithAffinityTemplate<Strategy>();
 
     // Return the last position before pos that is in the same editable region as this position
     return lastEditablePositionBeforePositionInRoot(pos.position(), highestRoot);
@@ -479,7 +474,7 @@ PositionInComposedTreeWithAffinity honorEditingBoundaryAtOrBeforeOf(const Positi
 
 VisiblePosition VisiblePosition::honorEditingBoundaryAtOrBefore(const VisiblePosition &pos) const
 {
-    return VisiblePosition(honorEditingBoundaryAtOrBeforeOf(PositionWithAffinity(pos.deepEquivalent(), pos.affinity()), deepEquivalent()));
+    return VisiblePosition(honorEditingBoundaryAtOrBeforeOf(pos.toPositionWithAffinity(), deepEquivalent()));
 }
 
 VisiblePosition VisiblePosition::honorEditingBoundaryAtOrAfter(const VisiblePosition &pos) const
@@ -490,7 +485,7 @@ VisiblePosition VisiblePosition::honorEditingBoundaryAtOrAfter(const VisiblePosi
     ContainerNode* highestRoot = highestEditableRoot(deepEquivalent());
 
     // Return empty position if pos is not somewhere inside the editable region containing this position
-    if (highestRoot && !pos.deepEquivalent().deprecatedNode()->isDescendantOf(highestRoot))
+    if (highestRoot && !pos.deepEquivalent().anchorNode()->isDescendantOf(highestRoot))
         return VisiblePosition();
 
     // Return pos itself if the two are from the very same editable region, or both are non-editable
@@ -553,9 +548,9 @@ static PositionType canonicalizeCandidate(const PositionType& candidate)
 {
     if (candidate.isNull())
         return PositionType();
-    ASSERT(candidate.isCandidate());
-    PositionType upstream = candidate.upstream();
-    if (upstream.isCandidate())
+    ASSERT(isVisuallyEquivalentCandidate(candidate));
+    PositionType upstream = mostBackwardCaretPosition(candidate);
+    if (isVisuallyEquivalentCandidate(upstream))
         return upstream;
     return candidate;
 }
@@ -584,21 +579,21 @@ static PositionType canonicalPosition(const PositionType& passedPosition)
     ASSERT(position.document());
     position.document()->updateLayoutIgnorePendingStylesheets();
 
-    Node* node = position.containerNode();
+    Node* node = position.computeContainerNode();
 
-    PositionType candidate = position.upstream();
-    if (candidate.isCandidate())
+    PositionType candidate = mostBackwardCaretPosition(position);
+    if (isVisuallyEquivalentCandidate(candidate))
         return candidate;
-    candidate = position.downstream();
-    if (candidate.isCandidate())
+    candidate = mostForwardCaretPosition(position);
+    if (isVisuallyEquivalentCandidate(candidate))
         return candidate;
 
     // When neither upstream or downstream gets us to a candidate (upstream/downstream won't leave
     // blocks or enter new ones), we search forward and backward until we find one.
     PositionType next = canonicalizeCandidate(nextCandidate(position));
     PositionType prev = canonicalizeCandidate(previousCandidate(position));
-    Node* nextNode = next.deprecatedNode();
-    Node* prevNode = prev.deprecatedNode();
+    Node* nextNode = next.anchorNode();
+    Node* prevNode = prev.anchorNode();
 
     // The new position must be in the same editable element. Enforce that first.
     // Unless the descent is from a non-editable html element to an editable body.
@@ -609,7 +604,7 @@ static PositionType canonicalPosition(const PositionType& passedPosition)
 
     // If the html element is editable, descending into its body will look like a descent
     // from non-editable to editable content since rootEditableElement() always stops at the body.
-    if (isHTMLHtmlElement(editingRoot) || position.deprecatedNode()->isDocumentNode())
+    if (isHTMLHtmlElement(editingRoot) || position.anchorNode()->isDocumentNode())
         return next.isNotNull() ? next : prev;
 
     bool prevIsInSameEditableElement = prevNode && editableRootForPosition(prev) == editingRoot;
@@ -643,47 +638,42 @@ PositionInComposedTree canonicalPositionOf(const PositionInComposedTree& positio
     return canonicalPosition(position);
 }
 
-template<typename PositionType>
-void VisiblePosition::init(const PositionType& position, EAffinity affinity)
+template<typename Strategy>
+void VisiblePosition::init(const PositionAlgorithm<Strategy>& position, TextAffinity affinity)
 {
     m_affinity = affinity;
 
-    PositionType deepPosition = canonicalPosition(position);
+    PositionAlgorithm<Strategy> deepPosition = canonicalPosition(position);
     m_deepPosition = toPositionInDOMTree(deepPosition);
 
-    if (m_affinity != UPSTREAM)
+    if (m_affinity != TextAffinity::Upstream)
         return;
 
     if (isNull()) {
-        m_affinity = DOWNSTREAM;
+        m_affinity = TextAffinity::Downstream;
         return;
     }
 
-    // When not at a line wrap, make sure to end up with DOWNSTREAM affinity.
-    using PositionWithAffinityType = PositionWithAffinityTemplate<PositionType>;
-    if (!inSameLine(PositionWithAffinityType(deepPosition, DOWNSTREAM), PositionWithAffinityType(deepPosition, UPSTREAM)))
+    // When not at a line wrap, make sure to end up with
+    // |TextAffinity::Downstream| affinity.
+    if (!inSameLine(PositionWithAffinityTemplate<Strategy>(deepPosition), PositionWithAffinityTemplate<Strategy>(deepPosition, TextAffinity::Upstream)))
         return;
-    m_affinity = DOWNSTREAM;
+    m_affinity = TextAffinity::Downstream;
 }
 
 UChar32 VisiblePosition::characterAfter() const
 {
-    // We canonicalize to the first of two equivalent candidates, but the second of the two candidates
-    // is the one that will be inside the text node containing the character after this visible position.
-    Position pos = m_deepPosition.downstream();
-    if (!pos.containerNode() || !pos.containerNode()->isTextNode())
+    // We canonicalize to the first of two equivalent candidates, but the second
+    // of the two candidates is the one that will be inside the text node
+    // containing the character after this visible position.
+    Position pos = mostForwardCaretPosition(m_deepPosition);
+    if (!pos.isOffsetInAnchor())
         return 0;
-    switch (pos.anchorType()) {
-    case PositionAnchorType::AfterChildren:
-    case PositionAnchorType::AfterAnchor:
-    case PositionAnchorType::BeforeAnchor:
-    case PositionAnchorType::BeforeChildren:
+    Node* containerNode = pos.computeContainerNode();
+    if (!containerNode || !containerNode->isTextNode())
         return 0;
-    case PositionAnchorType::OffsetInAnchor:
-        break;
-    }
     unsigned offset = static_cast<unsigned>(pos.offsetInContainerNode());
-    Text* textNode = pos.containerText();
+    Text* textNode = toText(containerNode);
     unsigned length = textNode->length();
     if (offset >= length)
         return 0;
@@ -709,6 +699,9 @@ IntRect VisiblePosition::absoluteCaretBounds() const
 
 int VisiblePosition::lineDirectionPointForBlockDirectionNavigation() const
 {
+    if (isNull())
+        return 0;
+
     LayoutObject* layoutObject;
     LayoutRect localRect = localCaretRect(layoutObject);
     if (localRect.isEmpty() || !layoutObject)
@@ -747,74 +740,17 @@ void VisiblePosition::showTreeForThis() const
 
 #endif
 
-PassRefPtrWillBeRawPtr<Range> makeRange(const VisiblePosition &start, const VisiblePosition &end)
+EphemeralRange makeRange(const VisiblePosition &start, const VisiblePosition &end)
 {
     if (start.isNull() || end.isNull())
-        return nullptr;
+        return EphemeralRange();
 
     Position s = start.deepEquivalent().parentAnchoredEquivalent();
     Position e = end.deepEquivalent().parentAnchoredEquivalent();
     if (s.isNull() || e.isNull())
-        return nullptr;
+        return EphemeralRange();
 
-    return Range::create(s.containerNode()->document(), s.containerNode(), s.offsetInContainerNode(), e.containerNode(), e.offsetInContainerNode());
-}
-
-VisiblePosition startVisiblePosition(const Range *r, EAffinity affinity)
-{
-    return VisiblePosition(r->startPosition(), affinity);
-}
-
-bool setStart(Range *r, const VisiblePosition &visiblePosition)
-{
-    if (!r)
-        return false;
-    Position p = visiblePosition.deepEquivalent().parentAnchoredEquivalent();
-    TrackExceptionState exceptionState;
-    r->setStart(p.containerNode(), p.offsetInContainerNode(), exceptionState);
-    return !exceptionState.hadException();
-}
-
-bool setEnd(Range *r, const VisiblePosition &visiblePosition)
-{
-    if (!r)
-        return false;
-    Position p = visiblePosition.deepEquivalent().parentAnchoredEquivalent();
-    TrackExceptionState exceptionState;
-    r->setEnd(p.containerNode(), p.offsetInContainerNode(), exceptionState);
-    return !exceptionState.hadException();
-}
-
-Element* enclosingBlockFlowElement(const VisiblePosition& visiblePosition)
-{
-    if (visiblePosition.isNull())
-        return 0;
-
-    return enclosingBlockFlowElement(*visiblePosition.deepEquivalent().deprecatedNode());
-}
-
-bool isFirstVisiblePositionInNode(const VisiblePosition& visiblePosition, const ContainerNode* node)
-{
-    if (visiblePosition.isNull())
-        return false;
-
-    if (!visiblePosition.deepEquivalent().containerNode()->isDescendantOf(node))
-        return false;
-
-    VisiblePosition previous = visiblePosition.previous();
-    return previous.isNull() || !previous.deepEquivalent().deprecatedNode()->isDescendantOf(node);
-}
-
-bool isLastVisiblePositionInNode(const VisiblePosition& visiblePosition, const ContainerNode* node)
-{
-    if (visiblePosition.isNull())
-        return false;
-
-    if (!visiblePosition.deepEquivalent().containerNode()->isDescendantOf(node))
-        return false;
-
-    VisiblePosition next = visiblePosition.next();
-    return next.isNull() || !next.deepEquivalent().deprecatedNode()->isDescendantOf(node);
+    return EphemeralRange(s, e);
 }
 
 DEFINE_TRACE(VisiblePosition)

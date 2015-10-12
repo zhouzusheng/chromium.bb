@@ -155,7 +155,7 @@ WebImage WebElement::imageContents()
         return WebImage();
 
     SkBitmap bitmap;
-    if (!image->bitmapForCurrentFrame(&bitmap))
+    if (!image->deprecatedBitmapForCurrentFrame(&bitmap))
         return WebImage();
 
     return WebImage(bitmap);

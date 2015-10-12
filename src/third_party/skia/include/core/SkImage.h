@@ -20,6 +20,7 @@ class SkCanvas;
 class SkColorTable;
 class SkImageGenerator;
 class SkPaint;
+class SkPicture;
 class SkString;
 class SkSurface;
 class SkSurfaceProps;
@@ -106,7 +107,7 @@ public:
     /**
      *  Create a new image from the specified descriptor. The underlying platform texture must stay
      *  valid and unaltered until the specified release-proc is invoked, indicating that Skia
-     *  nolonger is holding a reference to it.
+     *  no longer is holding a reference to it.
      *
      *  Will return NULL if the specified descriptor is unsupported.
      */
@@ -140,6 +141,11 @@ public:
                                            const GrBackendObject yuvTextureHandles[3],
                                            const SkISize yuvSizes[3],
                                            GrSurfaceOrigin);
+
+    static SkImage* NewFromPicture(const SkPicture*, const SkISize& dimensions,
+                                   const SkMatrix*, const SkPaint*);
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////
 
     int width() const { return fWidth; }
     int height() const { return fHeight; }
@@ -282,22 +288,19 @@ public:
      */
     bool asLegacyBitmap(SkBitmap*, LegacyBitmapMode) const;
     
-protected:
-    SkImage(int width, int height) :
-        fWidth(width),
-        fHeight(height),
-        fUniqueID(NextUniqueID()) {
+    /**
+     *  Returns true if the image is backed by an image-generator or other src that creates
+     *  (and caches) its pixels / texture on-demand.
+     */
+    bool isLazyGenerated() const;
 
-        SkASSERT(width > 0);
-        SkASSERT(height > 0);
-    }
+protected:
+    SkImage(int width, int height, uint32_t uniqueID);
 
 private:
     const int       fWidth;
     const int       fHeight;
     const uint32_t  fUniqueID;
-
-    static uint32_t NextUniqueID();
 
     typedef SkRefCnt INHERITED;
 };

@@ -80,6 +80,12 @@ interface Document : Node {
     // https://html.spec.whatwg.org/#the-document-object
 
     // resource metadata management
+
+    // Inheritance of [Unforgeable] attributes is not supported.  So we have to
+    // define the same unforgeable attributes in derived interfaces as well.
+    // See that HTMLDocument and XMLDocument redefine 'location' attribute.
+    // Keep all the definitions consistent.
+    // TODO(yukishiino): Support inheritance of attributes defined on instance.
     [PutForwards=href, Unforgeable] readonly attribute Location? location;
     [RaisesException=Setter] attribute DOMString domain;
     readonly attribute DOMString referrer;
@@ -120,8 +126,7 @@ interface Document : Node {
     [ImplementedAs=domWindow] readonly attribute Window? defaultView;
     readonly attribute Element? activeElement;
     boolean hasFocus();
-    // FIXME: designMode should not have [TreatNullAs=NullString].
-    [TreatNullAs=NullString, CustomElementCallbacks, MeasureAs=DocumentDesignMode] attribute DOMString designMode;
+    [CustomElementCallbacks, MeasureAs=DocumentDesignMode] attribute DOMString designMode;
     [CustomElementCallbacks, RaisesException] boolean execCommand(DOMString commandId, optional boolean showUI = false, optional DOMString value = "");
     [RaisesException] boolean queryCommandEnabled(DOMString commandId);
     [RaisesException] boolean queryCommandIndeterm(DOMString commandId);

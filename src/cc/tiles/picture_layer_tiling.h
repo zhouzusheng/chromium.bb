@@ -98,7 +98,7 @@ class CC_EXPORT PictureLayerTiling {
       float contents_scale,
       scoped_refptr<RasterSource> raster_source,
       PictureLayerTilingClient* client,
-      size_t max_tiles_for_interest_area,
+      size_t tiling_interest_area_padding,
       float skewport_target_time_in_seconds,
       int skewport_extrapolation_limit_in_content_pixels);
 
@@ -111,8 +111,17 @@ class CC_EXPORT PictureLayerTiling {
   bool IsTileRequiredForActivation(const Tile* tile) const;
   bool IsTileRequiredForDraw(const Tile* tile) const;
 
-  void set_resolution(TileResolution resolution) { resolution_ = resolution; }
+  void set_resolution(TileResolution resolution) {
+    resolution_ = resolution;
+    may_contain_low_resolution_tiles_ |= resolution == LOW_RESOLUTION;
+  }
   TileResolution resolution() const { return resolution_; }
+  bool may_contain_low_resolution_tiles() const {
+    return may_contain_low_resolution_tiles_;
+  }
+  void reset_may_contain_low_resolution_tiles() {
+    may_contain_low_resolution_tiles_ = false;
+  }
   void set_can_require_tiles_for_activation(bool can_require_tiles) {
     can_require_tiles_for_activation_ = can_require_tiles;
   }
@@ -240,22 +249,6 @@ class CC_EXPORT PictureLayerTiling {
   void AsValueInto(base::trace_event::TracedValue* array) const;
   size_t GPUMemoryUsageInBytes() const;
 
-  struct RectExpansionCache {
-    RectExpansionCache();
-
-    gfx::Rect previous_start;
-    gfx::Rect previous_bounds;
-    gfx::Rect previous_result;
-    int64 previous_target;
-  };
-
-  static
-  gfx::Rect ExpandRectEquallyToAreaBoundedBy(
-      const gfx::Rect& starting_rect,
-      int64 target_area,
-      const gfx::Rect& bounding_rect,
-      RectExpansionCache* cache);
-
  protected:
   friend class CoverageIterator;
   friend class PrioritizedTile;
@@ -287,7 +280,7 @@ class CC_EXPORT PictureLayerTiling {
                      float contents_scale,
                      scoped_refptr<RasterSource> raster_source,
                      PictureLayerTilingClient* client,
-                     size_t max_tiles_for_interest_area,
+                     size_t tiling_interest_area_padding,
                      float skewport_target_time_in_seconds,
                      int skewport_extrapolation_limit_in_content_pixels);
   void SetLiveTilesRect(const gfx::Rect& live_tiles_rect);
@@ -375,7 +368,7 @@ class CC_EXPORT PictureLayerTiling {
   }
   void RemoveTilesInRegion(const Region& layer_region, bool recreate_tiles);
 
-  const size_t max_tiles_for_interest_area_;
+  const size_t tiling_interest_area_padding_;
   const float skewport_target_time_in_seconds_;
   const int skewport_extrapolation_limit_in_content_pixels_;
 
@@ -385,6 +378,7 @@ class CC_EXPORT PictureLayerTiling {
   const WhichTree tree_;
   scoped_refptr<RasterSource> raster_source_;
   TileResolution resolution_;
+  bool may_contain_low_resolution_tiles_;
 
   // Internal data.
   TilingData tiling_data_;
@@ -414,8 +408,6 @@ class CC_EXPORT PictureLayerTiling {
 
  private:
   DISALLOW_ASSIGN(PictureLayerTiling);
-
-  RectExpansionCache expansion_cache_;
 };
 
 }  // namespace cc

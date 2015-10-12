@@ -317,8 +317,6 @@
           'mac/scoped_mach_vm.h',
           'mac/scoped_nsautorelease_pool.h',
           'mac/scoped_nsautorelease_pool.mm',
-          'mac/scoped_nsexception_enabler.h',
-          'mac/scoped_nsexception_enabler.mm',
           'mac/scoped_nsobject.h',
           'mac/scoped_objc_class_swizzler.h',
           'mac/scoped_objc_class_swizzler.mm',
@@ -511,14 +509,14 @@
           'profiler/alternate_timer.h',
           'profiler/native_stack_sampler.cc',
           'profiler/native_stack_sampler.h',
+          'profiler/native_stack_sampler_posix.cc',
+          'profiler/native_stack_sampler_win.cc',
           'profiler/scoped_profile.cc',
           'profiler/scoped_profile.h',
           'profiler/scoped_tracker.cc',
           'profiler/scoped_tracker.h',
           'profiler/stack_sampling_profiler.cc',
           'profiler/stack_sampling_profiler.h',
-          'profiler/stack_sampling_profiler_posix.cc',
-          'profiler/stack_sampling_profiler_win.cc',
           'profiler/tracked_time.cc',
           'profiler/tracked_time.h',
           'rand_util.cc',
@@ -764,13 +762,16 @@
         'include_dirs': [
           '..',
         ],
-        'msvs_disabled_warnings': [
-          4018,
-        ],
         'target_conditions': [
           ['OS == "mac" or OS == "ios"', {
             'sources!': [
               'memory/shared_memory_posix.cc',
+            ],
+          }],
+          ['OS == "ios"', {
+            'sources!': [
+               'memory/discardable_shared_memory.cc',
+               'memory/discardable_shared_memory.h',
             ],
           }],
           ['(<(desktop_linux) == 0 and <(chromeos) == 0) or >(nacl_untrusted_build)==1', {
@@ -1023,6 +1024,8 @@
           'i18n/icu_string_conversions.h',
           'i18n/icu_util.cc',
           'i18n/icu_util.h',
+          'i18n/message_formatter.cc',
+          'i18n/message_formatter.h',
           'i18n/number_formatting.cc',
           'i18n/number_formatting.h',
           'i18n/rtl.cc',

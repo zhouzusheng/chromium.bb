@@ -1223,11 +1223,6 @@ static void rgb_to_lcd16(const SkGdiRGB* SK_RESTRICT src, size_t srcRB, const Sk
     }
 }
 
-static inline unsigned clamp255(unsigned x) {
-    SkASSERT(x <= 256);
-    return x - (x >> 8);
-}
-
 void SkScalerContext_GDI::generateImage(const SkGlyph& glyph) {
     SkASSERT(fDDC);
 
@@ -1860,7 +1855,7 @@ ReturnInfo:
 //Length of GUID representation from create_id, including NULL terminator.
 #define BASE64_GUID_ID_LEN SK_ARRAY_COUNT(BASE64_GUID_ID)
 
-SK_COMPILE_ASSERT(BASE64_GUID_ID_LEN < LF_FACESIZE, GUID_longer_than_facesize);
+static_assert(BASE64_GUID_ID_LEN < LF_FACESIZE, "GUID_longer_than_facesize");
 
 /**
    NameID 6 Postscript names cannot have the character '/'.

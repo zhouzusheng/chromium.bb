@@ -19,9 +19,7 @@ namespace bad_message {
 //
 // NOTE: Do not remove or reorder elements in this list. Add new entries at the
 // end. Items may be renamed but do not change the values. We rely on the enum
-// values in histograms. Also update histograms.xml with any new values by
-// running:
-//    python tools/metrics/histograms/update_bad_message_reasons.py
+// values in histograms.
 enum BadMessageReason {
   NC_IN_PAGE_NAVIGATION = 0,
   RFH_CAN_COMMIT_URL_BLOCKED = 1,
@@ -114,10 +112,16 @@ enum BadMessageReason {
   SWDH_UPDATE_CANNOT = 88,
   SWDH_UNREGISTER_BAD_REGISTRATION_ID = 89,
   BDH_INVALID_WRITE_VALUE_LENGTH = 90,
+  WC_MEMORY_CACHE_RESOURCE_BAD_SECURITY_INFO = 91,
+  WC_RENDERER_DID_NAVIGATE_BAD_SECURITY_INFO = 92,
+  BDH_DUPLICATE_REQUEST_DEVICE_ID = 93,
+  CSDH_INVALID_ORIGIN = 94,
+  RDH_ILLEGAL_ORIGIN = 95,
 
   // Please add new elements here. The naming convention is abbreviated class
   // name (e.g. RenderFrameHost becomes RFH) plus a unique description of the
-  // reason.
+  // reason. After making changes, you MUST update histograms.xml by running:
+  // "python tools/metrics/histograms/update_bad_message_reasons.py"
   BAD_MESSAGE_MAX
 };
 

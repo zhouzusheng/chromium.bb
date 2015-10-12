@@ -29,6 +29,7 @@ class Element;
 class Frame;
 class FrameRequestCallback;
 class History;
+class IdleRequestCallback;
 class LocalDOMWindow;
 class MediaQueryList;
 class Navigator;
@@ -44,7 +45,7 @@ class CORE_EXPORT DOMWindow : public EventTargetWithInlineData, public RefCounte
     DEFINE_WRAPPERTYPEINFO();
     REFCOUNTED_EVENT_TARGET(DOMWindow);
 public:
-    virtual ~DOMWindow();
+    ~DOMWindow() override;
 
     // RefCountedWillBeGarbageCollectedFinalized overrides:
     DECLARE_VIRTUAL_TRACE();
@@ -55,8 +56,8 @@ public:
     virtual Frame* frame() const = 0;
 
     // ScriptWrappable overrides:
-    v8::Local<v8::Object> wrap(v8::Isolate*, v8::Local<v8::Object> creationContext) override final;
-    v8::Local<v8::Object> associateWithWrapper(v8::Isolate*, const WrapperTypeInfo*, v8::Local<v8::Object> wrapper) override final;
+    v8::Local<v8::Object> wrap(v8::Isolate*, v8::Local<v8::Object> creationContext) final;
+    v8::Local<v8::Object> associateWithWrapper(v8::Isolate*, const WrapperTypeInfo*, v8::Local<v8::Object> wrapper) final;
 
     // EventTarget overrides:
     const AtomicString& interfaceName() const override;
@@ -171,6 +172,10 @@ public:
     virtual int requestAnimationFrame(FrameRequestCallback*) = 0;
     virtual int webkitRequestAnimationFrame(FrameRequestCallback*) = 0;
     virtual void cancelAnimationFrame(int id) = 0;
+
+    // Idle callback extensions
+    virtual int requestIdleCallback(IdleRequestCallback*, double timeoutMillis) = 0;
+    virtual void cancelIdleCallback(int id) = 0;
 
     void captureEvents() { }
     void releaseEvents() { }

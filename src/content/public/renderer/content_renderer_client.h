@@ -155,8 +155,10 @@ class CONTENT_EXPORT ContentRendererClient {
 
   // Allows the embedder to control when media resources are loaded. Embedders
   // can run |closure| immediately if they don't wish to defer media resource
-  // loading.
+  // loading.  If |has_played_media_before| is true, the render frame has
+  // previously started media playback (i.e. played audio and video).
   virtual void DeferMediaLoad(RenderFrame* render_frame,
+                              bool has_played_media_before,
                               const base::Closure& closure);
 
   // Allows the embedder to override creating a WebMediaStreamCenter. If it
@@ -323,6 +325,16 @@ class CONTENT_EXPORT ContentRendererClient {
   virtual void AddImageContextMenuProperties(
       const blink::WebURLResponse& response,
       std::map<std::string, std::string>* properties) {}
+
+  // Notifies that a service worker context has been created. This function
+  // is called from the worker thread.
+  virtual void DidInitializeServiceWorkerContextOnWorkerThread(
+      v8::Local<v8::Context> context,
+      const GURL& url) {}
+
+  // Notifies that a service worker context will be destroyed. This function
+  // is called from the worker thread.
+  virtual void WillDestroyServiceWorkerContextOnWorkerThread(const GURL& url) {}
 };
 
 }  // namespace content

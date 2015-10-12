@@ -30,9 +30,7 @@
 #include "core/dom/Document.h"
 #include "core/dom/DocumentLifecycle.h"
 #include "core/dom/Element.h"
-#include "core/dom/Position.h"
 #include "core/editing/PositionWithAffinity.h"
-#include "core/editing/TextAffinity.h"
 #include "core/fetch/ImageResourceClient.h"
 #include "core/html/HTMLElement.h"
 #include "core/inspector/InspectorTraceEvents.h"
@@ -41,6 +39,8 @@
 #include "core/layout/PaintInvalidationState.h"
 #include "core/layout/ScrollAlignment.h"
 #include "core/layout/SubtreeLayoutScope.h"
+#include "core/layout/api/HitTestAction.h"
+#include "core/layout/api/SelectionState.h"
 #include "core/layout/compositing/CompositingState.h"
 #include "core/layout/compositing/CompositingTriggers.h"
 #include "core/style/ComputedStyle.h"
@@ -82,14 +82,6 @@ enum HitTestFilter {
     HitTestAll,
     HitTestSelf,
     HitTestDescendants
-};
-
-enum HitTestAction {
-    HitTestBlockBackground,
-    HitTestChildBlockBackground,
-    HitTestChildBlockBackgrounds,
-    HitTestFloat,
-    HitTestForeground
 };
 
 enum MarkingBehavior {
@@ -135,7 +127,7 @@ public:
     // Anonymous objects should pass the document as their node, and they will then automatically be
     // marked as anonymous in the constructor.
     explicit LayoutObject(Node*);
-    virtual ~LayoutObject();
+    ~LayoutObject() override;
 
     // Returns the name of the layout object.
     virtual const char* name() const = 0;
@@ -506,7 +498,9 @@ public:
     bool isFloating() const { return m_bitfields.floating(); }
 
     bool isOutOfFlowPositioned() const { return m_bitfields.isOutOfFlowPositioned(); } // absolute or fixed positioning
+    bool isInFlowPositioned() const { return m_bitfields.isInFlowPositioned(); } // relative or sticky positioning
     bool isRelPositioned() const { return m_bitfields.isRelPositioned(); } // relative positioning
+    bool isStickyPositioned() const { return m_bitfields.isStickyPositioned(); } // sticky positioning
     bool isPositioned() const { return m_bitfields.isPositioned(); }
 
     bool isText() const  { return m_bitfields.isText(); }
@@ -720,7 +714,8 @@ public:
     virtual bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction);
 
     virtual PositionWithAffinity positionForPoint(const LayoutPoint&);
-    PositionWithAffinity createPositionWithAffinity(int offset, EAffinity);
+    PositionWithAffinity createPositionWithAffinity(int offset, TextAffinity);
+    PositionWithAffinity createPositionWithAffinity(int offset);
     PositionWithAffinity createPositionWithAffinity(const Position&);
 
     virtual void dirtyLinesFromChangedChild(LayoutObject*);
@@ -784,7 +779,7 @@ public:
     // Build an array of quads in absolute coords for line boxes
     virtual void absoluteQuads(Vector<FloatQuad>&, bool* /* wasFixed */ = nullptr) const { }
 
-    virtual IntRect absoluteFocusRingBoundingBoxRect() const;
+    virtual IntRect absoluteOutlineBoundingBoxRect() const;
 
     static FloatRect absoluteBoundingBoxRectForRange(const Range*);
 
@@ -896,14 +891,6 @@ public:
 
     bool hasReflection() const { return m_bitfields.hasReflection(); }
 
-    enum SelectionState {
-        SelectionNone, // The object is not selected.
-        SelectionStart, // The object either contains the start of a selection run or is the start of a run
-        SelectionInside, // The object is fully encompassed by a selection run
-        SelectionEnd, // The object either contains the end of a selection run or is the end of a run
-        SelectionBoth // The object contains an entire run or is the sole selected object in that run
-    };
-
     // The current selection state for an object.  For blocks, the state refers to the state of the leaf
     // descendants (as described above in the SelectionState enum declaration).
     SelectionState selectionState() const { return m_bitfields.selectionState(); }
@@ -924,8 +911,8 @@ public:
     bool isSelectable() const;
     // Obtains the selection colors that should be used when painting a selection.
     Color selectionBackgroundColor() const;
-    Color selectionForegroundColor() const;
-    Color selectionEmphasisMarkColor() const;
+    Color selectionForegroundColor(const GlobalPaintFlags) const;
+    Color selectionEmphasisMarkColor(const GlobalPaintFlags) const;
 
     // Whether or not a given block needs to paint selection gaps.
     virtual bool shouldPaintSelectionGaps() const { return false; }
@@ -969,10 +956,10 @@ public:
     virtual int previousOffsetForBackwardDeletion(int current) const;
     virtual int nextOffset(int current) const;
 
-    virtual void imageChanged(ImageResource*, const IntRect* = nullptr) override final;
+    void imageChanged(ImageResource*, const IntRect* = nullptr) final;
     virtual void imageChanged(WrappedImagePtr, const IntRect* = nullptr) { }
-    virtual bool willRenderImage(ImageResource*) override final;
-    virtual bool getImageAnimationPolicy(ImageResource*, ImageAnimationPolicy&) override final;
+    bool willRenderImage(ImageResource*) final;
+    bool getImageAnimationPolicy(ImageResource*, ImageAnimationPolicy&) final;
 
     void selectionStartEnd(int& spos, int& epos) const;
 
@@ -1000,7 +987,7 @@ public:
 
     bool createsGroup() const { return isTransparent() || hasMask() || hasFilter() || style()->hasBlendMode(); }
 
-    virtual void addFocusRingRects(Vector<LayoutRect>&, const LayoutPoint& additionalOffset) const { }
+    virtual void addOutlineRects(Vector<LayoutRect>&, const LayoutPoint& additionalOffset) const { }
 
     // Compute a list of hit-test rectangles per layer rooted at this layoutObject.
     virtual void computeLayerHitTestRects(LayerHitTestRects&) const;
@@ -1009,9 +996,14 @@ public:
 
     bool isRelayoutBoundaryForInspector() const;
 
-    // The previous paint invalidation rect in the object's previous paint backing.
-    const LayoutRect& previousPaintInvalidationRect() const { return m_previousPaintInvalidationRect; }
+    // The previous paint invalidation rect, in the the space of the paint invalidation container (*not* the graphics layer that paints
+    // this object).
+    LayoutRect previousPaintInvalidationRectIncludingCompositedScrolling(const LayoutBoxModelObject& paintInvalidationContainer) const;
+    LayoutSize previousPaintInvalidationRectSize() const { return previousPaintInvalidationRect().size(); }
     void setPreviousPaintInvalidationRect(const LayoutRect& rect) { m_previousPaintInvalidationRect = rect; }
+
+    // Only adjusts if the paint invalidation container is not a composited scroller.
+    void adjustPreviousPaintInvalidationForScrollIfNeeded(const DoubleSize& scrollDelta);
 
     // The previous position of the top-left corner of the object in its previous paint backing.
     const LayoutPoint& previousPositionFromPaintInvalidationBacking() const { return m_previousPositionFromPaintInvalidationBacking; }
@@ -1026,31 +1018,25 @@ public:
 
     virtual void clearPaintInvalidationState(const PaintInvalidationState&);
 
-    // Indicates whether this layout object was re-laid-out since the last frame.
-    // The flag will be cleared during invalidateTreeIfNeeded.
-    bool layoutDidGetCalledSinceLastFrame() const { return m_bitfields.layoutDidGetCalledSinceLastFrame(); }
-
     bool mayNeedPaintInvalidation() const { return m_bitfields.mayNeedPaintInvalidation(); }
     void setMayNeedPaintInvalidation();
 
     bool shouldInvalidateSelection() const { return m_bitfields.shouldInvalidateSelection(); }
     void setShouldInvalidateSelection();
-    void clearShouldInvalidateSelection() { m_bitfields.setShouldInvalidateSelection(false); }
-
-    bool neededLayoutBecauseOfChildren() const { return m_bitfields.neededLayoutBecauseOfChildren(); }
-    void setNeededLayoutBecauseOfChildren(bool b) { m_bitfields.setNeededLayoutBecauseOfChildren(b); }
 
     bool shouldCheckForPaintInvalidation(const PaintInvalidationState& paintInvalidationState) const
     {
         // Should check for paint invalidation if some ancestor changed location, because this object
         // may also change paint offset or location in paint invalidation container, even if there is
         // no paint invalidation flag set.
-        return paintInvalidationState.ancestorHadPaintInvalidationForLocationChange() || shouldCheckForPaintInvalidationRegardlessOfPaintInvalidationState();
+        return paintInvalidationState.ancestorHadPaintInvalidationForLocationChange()
+            || paintInvalidationState.forcedSubtreeInvalidationRectUpdateWithinContainer()
+            || shouldCheckForPaintInvalidationRegardlessOfPaintInvalidationState();
     }
 
     bool shouldCheckForPaintInvalidationRegardlessOfPaintInvalidationState() const
     {
-        return layoutDidGetCalledSinceLastFrame() || mayNeedPaintInvalidation() || shouldDoFullPaintInvalidation() || shouldInvalidateSelection();
+        return mayNeedPaintInvalidation() || shouldDoFullPaintInvalidation() || shouldInvalidateSelection() || m_bitfields.childShouldCheckForPaintInvalidation();
     }
 
     virtual bool supportsPaintInvalidationStateCachedOffsets() const { return !hasTransformRelatedProperty() && !hasReflection() && !style()->isFlippedBlocksWritingMode(); }
@@ -1152,8 +1138,6 @@ protected:
     virtual void updateAnonymousChildStyle(const LayoutObject& child, ComputedStyle& style) const { }
 
 protected:
-    void setSelfMayNeedPaintInvalidation();
-
     virtual void willBeDestroyed();
 
     virtual void insertedIntoTree();
@@ -1179,14 +1163,13 @@ protected:
         const LayoutRect& oldPaintInvalidationRect, const LayoutPoint& oldPositionFromPaintInvalidationBacking,
         const LayoutRect& newPaintInvalidationRect, const LayoutPoint& newPositionFromPaintInvalidationBacking) const;
     virtual void incrementallyInvalidatePaint(const LayoutBoxModelObject& paintInvalidationContainer, const LayoutRect& oldBounds, const LayoutRect& newBounds, const LayoutPoint& positionFromPaintInvalidationBacking);
-    void fullyInvalidatePaint(const LayoutBoxModelObject& paintInvalidationContainer, PaintInvalidationReason, const LayoutRect& oldBounds, const LayoutRect& newBounds);
 
     virtual bool hasNonCompositedScrollbars() const { return false; }
 
 #if ENABLE(ASSERT)
     virtual bool paintInvalidationStateIsDirty() const
     {
-        return neededLayoutBecauseOfChildren() || shouldCheckForPaintInvalidationRegardlessOfPaintInvalidationState();
+        return m_bitfields.neededLayoutBecauseOfChildren() || shouldCheckForPaintInvalidationRegardlessOfPaintInvalidationState();
     }
 #endif
 
@@ -1201,7 +1184,16 @@ protected:
 
     void setIsSlowRepaintObject(bool);
 
+    const LayoutRect& previousPaintInvalidationRect() const { return m_previousPaintInvalidationRect; }
+
 private:
+    void fullyInvalidatePaint(const LayoutBoxModelObject& paintInvalidationContainer, PaintInvalidationReason, const LayoutRect& oldBounds, const LayoutRect& newBounds);
+
+    // Adjusts a paint invalidation rect in the space of |m_previousPaintInvalidationRect| and |m_previousPositionFromPaintInvalidationBacking|
+    // to be in the space of the |paintInvalidationContainer|,
+    // if needed. They can be different only if |paintInvalidationContainer| is a composited scroller.
+    void adjustInvalidationRectForCompositedScrolling(LayoutRect&, const LayoutBoxModelObject& paintInvalidationContainer) const;
+
     void clearLayoutRootIfNeeded() const;
 
     bool isInert() const;
@@ -1225,11 +1217,6 @@ private:
 
     inline void invalidateContainerPreferredLogicalWidths();
 
-    void clearMayNeedPaintInvalidation();
-
-    void setLayoutDidGetCalledSinceLastFrame();
-    void clearLayoutDidGetCalledSinceLastFrame() { m_bitfields.setLayoutDidGetCalledSinceLastFrame(false); }
-
     void invalidatePaintIncludingNonCompositingDescendantsInternal(const LayoutBoxModelObject& repaintContainer);
 
     LayoutRect previousSelectionRectForPaintInvalidation() const;
@@ -1244,7 +1231,7 @@ private:
     ComputedStyle* cachedFirstLineStyle() const;
     StyleDifference adjustStyleDifference(StyleDifference) const;
 
-    Color selectionColor(int colorProperty) const;
+    Color selectionColor(int colorProperty, const GlobalPaintFlags) const;
 
     void removeShapeImageClient(ShapeValue*);
 
@@ -1261,6 +1248,7 @@ private:
     RefPtr<ComputedStyle> m_style;
 
     // Oilpan: raw pointer back to the owning Node is considered safe.
+    GC_PLUGIN_IGNORE("http://crbug.com/509911")
     Node* m_node;
 
     LayoutObject* m_parent;
@@ -1284,14 +1272,14 @@ private:
             IsStaticallyPositioned = 0,
             IsRelativelyPositioned = 1,
             IsOutOfFlowPositioned = 2,
+            IsStickyPositioned = 3,
         };
 
     public:
         LayoutObjectBitfields(Node* node)
             : m_selfNeedsLayout(false)
             , m_shouldInvalidateOverflowForPaint(false)
-            // FIXME: We should remove mayNeedPaintInvalidation once we are able to
-            // use the other layout flags to detect the same cases. crbug.com/370118
+            , m_childShouldCheckForPaintInvalidation(false)
             , m_mayNeedPaintInvalidation(false)
             , m_shouldInvalidateSelection(false)
             , m_neededLayoutBecauseOfChildren(false)
@@ -1317,7 +1305,6 @@ private:
             , m_hasCounterNodeMap(false)
             , m_everHadLayout(false)
             , m_ancestorLineBoxDirty(false)
-            , m_layoutDidGetCalledSinceLastFrame(false)
             , m_hasPendingResourceUpdate(false)
             , m_isInsideFlowThread(false)
             , m_subtreeChangeListenerRegistered(false)
@@ -1336,10 +1323,11 @@ private:
 
         // 32 bits have been used in the first word, and 16 in the second.
         ADD_BOOLEAN_BITFIELD(selfNeedsLayout, SelfNeedsLayout);
-        ADD_BOOLEAN_BITFIELD(shouldInvalidateOverflowForPaint, ShouldInvalidateOverflowForPaint);
+        ADD_BOOLEAN_BITFIELD(shouldInvalidateOverflowForPaint, ShouldInvalidateOverflowForPaint); // TODO(wangxianzhu): Remove for slimming paint v2.
+        ADD_BOOLEAN_BITFIELD(childShouldCheckForPaintInvalidation, ChildShouldCheckForPaintInvalidation);
         ADD_BOOLEAN_BITFIELD(mayNeedPaintInvalidation, MayNeedPaintInvalidation);
-        ADD_BOOLEAN_BITFIELD(shouldInvalidateSelection, ShouldInvalidateSelection);
-        ADD_BOOLEAN_BITFIELD(neededLayoutBecauseOfChildren, NeededLayoutBecauseOfChildren);
+        ADD_BOOLEAN_BITFIELD(shouldInvalidateSelection, ShouldInvalidateSelection); // TODO(wangxianzhu): Remove for slimming paint v2.
+        ADD_BOOLEAN_BITFIELD(neededLayoutBecauseOfChildren, NeededLayoutBecauseOfChildren); // TODO(wangxianzhu): Remove for slimming paint v2.
         ADD_BOOLEAN_BITFIELD(needsPositionedMovementLayout, NeedsPositionedMovementLayout);
         ADD_BOOLEAN_BITFIELD(normalChildNeedsLayout, NormalChildNeedsLayout);
         ADD_BOOLEAN_BITFIELD(posChildNeedsLayout, PosChildNeedsLayout);
@@ -1365,8 +1353,6 @@ private:
         ADD_BOOLEAN_BITFIELD(hasCounterNodeMap, HasCounterNodeMap);
         ADD_BOOLEAN_BITFIELD(everHadLayout, EverHadLayout);
         ADD_BOOLEAN_BITFIELD(ancestorLineBoxDirty, AncestorLineBoxDirty);
-
-        ADD_BOOLEAN_BITFIELD(layoutDidGetCalledSinceLastFrame, LayoutDidGetCalledSinceLastFrame);
 
         ADD_BOOLEAN_BITFIELD(hasPendingResourceUpdate, HasPendingResourceUpdate);
 
@@ -1396,6 +1382,8 @@ private:
     public:
         bool isOutOfFlowPositioned() const { return m_positionedState == IsOutOfFlowPositioned; }
         bool isRelPositioned() const { return m_positionedState == IsRelativelyPositioned; }
+        bool isStickyPositioned() const { return m_positionedState == IsStickyPositioned; }
+        bool isInFlowPositioned() const { return m_positionedState == IsRelativelyPositioned || m_positionedState == IsStickyPositioned; }
         bool isPositioned() const { return m_positionedState != IsStaticallyPositioned; }
 
         void setPositionedState(int positionState)
@@ -1434,11 +1422,13 @@ private:
     // Store state between styleWillChange and styleDidChange
     static bool s_affectsParentBlock;
 
-    // This stores the paint invalidation rect from the previous frame.
+    // This stores the paint invalidation rect from the previous frame. This rect does *not* account for composited scrolling. See
+    // adjustInvalidationRectForCompositedScrolling().
     LayoutRect m_previousPaintInvalidationRect;
 
     // This stores the position in the paint invalidation backing's coordinate.
     // It is used to detect layoutObject shifts that forces a full invalidation.
+    // This point does *not* account for composited scrolling. See adjustInvalidationRectForCompositedScrolling().
     LayoutPoint m_previousPositionFromPaintInvalidationBacking;
 };
 
@@ -1524,15 +1514,19 @@ inline void LayoutObject::setNeedsLayoutAndFullPaintInvalidation(LayoutInvalidat
 
 inline void LayoutObject::clearNeedsLayout()
 {
-    setNeededLayoutBecauseOfChildren(needsLayoutBecauseOfChildren());
-    setLayoutDidGetCalledSinceLastFrame();
-    setSelfNeedsLayout(false);
+    // Set flags for later stages/cycles.
     setEverHadLayout(true);
+    setMayNeedPaintInvalidation();
+    m_bitfields.setNeededLayoutBecauseOfChildren(needsLayoutBecauseOfChildren());
+
+    // Clear needsLayout flags.
+    setSelfNeedsLayout(false);
     setPosChildNeedsLayout(false);
     setNeedsSimplifiedNormalFlowLayout(false);
     setNormalChildNeedsLayout(false);
     setNeedsPositionedMovementLayout(false);
     setAncestorLineBoxDirty(false);
+
 #if ENABLE(ASSERT)
     checkBlockPositionedObjectsNeedLayout();
 #endif

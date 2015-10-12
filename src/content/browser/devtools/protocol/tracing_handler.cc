@@ -7,10 +7,12 @@
 #include <cmath>
 
 #include "base/bind.h"
+#include "base/format_macros.h"
 #include "base/strings/string_split.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "base/trace_event/memory_dump_manager.h"
 #include "base/trace_event/trace_event_impl.h"
 
 namespace content {
@@ -151,6 +153,29 @@ void TracingHandler::OnCategoriesReceived(
     categories.push_back(category);
   client_->SendGetCategoriesResponse(command_id,
       GetCategoriesResponse::Create()->set_categories(categories));
+}
+
+Response TracingHandler::RequestMemoryDump(DevToolsCommandId command_id) {
+  if (!did_initiate_recording_)
+    return Response::InternalError("Tracing is not started");
+
+  base::trace_event::MemoryDumpArgs dump_args = {
+      base::trace_event::MemoryDumpArgs::LevelOfDetail::HIGH};
+  base::trace_event::MemoryDumpManager::GetInstance()->RequestGlobalDump(
+      base::trace_event::MemoryDumpType::EXPLICITLY_TRIGGERED, dump_args,
+      base::Bind(&TracingHandler::OnMemoryDumpFinished,
+                 weak_factory_.GetWeakPtr(), command_id));
+  return Response::OK();
+}
+
+void TracingHandler::OnMemoryDumpFinished(DevToolsCommandId command_id,
+                                          uint64 dump_guid,
+                                          bool success) {
+  client_->SendRequestMemoryDumpResponse(
+      command_id,
+      RequestMemoryDumpResponse::Create()
+          ->set_dump_guid(base::StringPrintf("0x%" PRIx64, dump_guid))
+          ->set_success(success));
 }
 
 void TracingHandler::SetupTimer(double usage_reporting_interval) {

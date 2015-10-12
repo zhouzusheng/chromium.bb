@@ -2,9 +2,10 @@ Source: http://omahaproxy.appspot.com/viewer
 
   version        channel released  base    branch commit            v8
   -------        ------- --------  ----    -------------            --
-  47.0.2516.0    dev     09/22/15  350069  98a0d59981d834354e3eadb  4.7.63.0
-  46.0.2490.42   beta    09/23/15  344925  afd776cfb7a200e18493193  4.6.85.20
-* 45.0.2454.101  stable  09/24/15  338390  07ad3ac7db843f4bd4229ae  4.5.103.35
+  48.0.2533.0    canary  10/11/15  353465  30094b8a2eba2eb19f1faad  4.8.33.0
+  47.0.2526.8    dev     10/08/15  352221  781f261826a8a875176c9b4  4.7.80.6
+* 46.0.2490.64   beta    10/07/15  344925  315382de347c70dfa136ea5  4.6.85.23
+  45.0.2454.101  stable  09/24/15  338390  07ad3ac7db843f4bd4229ae  4.5.103.35
 
   version        channel released  base    branch commit    webkit  v8
   -------        ------- --------  ----    -------------    ------  --

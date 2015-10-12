@@ -67,10 +67,21 @@ namespace net {
 
 namespace {
 
-void ProcessAlternateProtocol(
-    HttpNetworkSession* session,
-    const HttpResponseHeaders& headers,
-    const HostPortPair& http_host_port_pair) {
+void ProcessAlternativeServices(HttpNetworkSession* session,
+                                const HttpResponseHeaders& headers,
+                                const HostPortPair& http_host_port_pair) {
+  if (session->params().use_alternative_services &&
+      headers.HasHeader(kAlternativeServiceHeader)) {
+    std::string alternative_service_str;
+    headers.GetNormalizedHeader(kAlternativeServiceHeader,
+                                &alternative_service_str);
+    session->http_stream_factory()->ProcessAlternativeService(
+        session->http_server_properties(), alternative_service_str,
+        http_host_port_pair, *session);
+    // If there is an "Alt-Svc" header, then ignore "Alternate-Protocol".
+    return;
+  }
+
   if (!headers.HasHeader(kAlternateProtocolHeader))
     return;
 
@@ -194,12 +205,6 @@ int HttpNetworkTransaction::Start(const HttpRequestInfo* request_info,
   // Channel ID is disabled if privacy mode is enabled for this request.
   if (request_->privacy_mode == PRIVACY_MODE_ENABLED)
     server_ssl_config_.channel_id_enabled = false;
-
-  if (server_ssl_config_.fastradio_padding_enabled) {
-    server_ssl_config_.fastradio_padding_eligible =
-        session_->ssl_config_service()->SupportsFastradioPadding(
-            request_info->url);
-  }
 
   next_state_ = STATE_NOTIFY_BEFORE_CREATE_STREAM;
   int rv = DoLoop(OK);
@@ -896,12 +901,13 @@ void HttpNetworkTransaction::BuildRequestHeaders(
           HttpRequestHeaders::kContentLength,
           base::Uint64ToString(request_->upload_data_stream->size()));
     }
-  } else if (request_->method == "POST" || request_->method == "PUT" ||
-             request_->method == "HEAD") {
+  } else if (request_->method == "POST" || request_->method == "PUT") {
     // An empty POST/PUT request still needs a content length.  As for HEAD,
     // IE and Safari also add a content length header.  Presumably it is to
     // support sending a HEAD request to an URL that only expects to be sent a
     // POST or some other method that normally would have a message body.
+    // Firefox (40.0) does not send the header, and RFC 7230 & 7231
+    // specify that it should not be sent due to undefined behavior.
     request_headers_.SetHeader(HttpRequestHeaders::kContentLength, "0");
   }
 
@@ -1077,8 +1083,8 @@ int HttpNetworkTransaction::DoReadHeadersComplete(int result) {
     return OK;
   }
 
-  ProcessAlternateProtocol(session_, *response_.headers.get(),
-                           HostPortPair::FromURL(request_->url));
+  ProcessAlternativeServices(session_, *response_.headers.get(),
+                             HostPortPair::FromURL(request_->url));
 
   int rv = HandleAuthChallenge();
   if (rv != OK)
@@ -1444,7 +1450,8 @@ void HttpNetworkTransaction::RecordSSLFallbackMetrics(int result) {
     return;
 
   const std::string& host = request_->url.host();
-  bool is_google = base::EndsWith(host, "google.com", true) &&
+  bool is_google = base::EndsWith(host, "google.com",
+                                  base::CompareCase::SENSITIVE) &&
                    (host.size() == 10 || host[host.size() - 11] == '.');
   if (is_google) {
     // Some fraction of successful connections use the fallback, but only due to

@@ -42,8 +42,8 @@
 #include "core/dom/shadow/ComposedTreeTraversal.h"
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
-#include "core/editing/markup.h"
-#include "core/editing/SpellChecker.h"
+#include "core/editing/serializers/Serialization.h"
+#include "core/editing/spellcheck/SpellChecker.h"
 #include "core/events/EventListener.h"
 #include "core/events/KeyboardEvent.h"
 #include "core/frame/LocalFrame.h"
@@ -138,7 +138,7 @@ unsigned HTMLElement::parseBorderWidthAttribute(const AtomicString& value) const
 
 void HTMLElement::applyBorderAttributeToStyle(const AtomicString& value, MutableStylePropertySet* style)
 {
-    addPropertyToPresentationAttributeStyle(style, CSSPropertyBorderWidth, parseBorderWidthAttribute(value), CSSPrimitiveValue::CSS_PX);
+    addPropertyToPresentationAttributeStyle(style, CSSPropertyBorderWidth, parseBorderWidthAttribute(value), CSSPrimitiveValue::UnitType::Pixels);
     addPropertyToPresentationAttributeStyle(style, CSSPropertyBorderStyle, CSSValueSolid);
 }
 
@@ -597,10 +597,9 @@ void HTMLElement::setSpellcheck(bool enable)
     setAttribute(spellcheckAttr, enable ? "true" : "false");
 }
 
-
-void HTMLElement::click()
+void HTMLElement::clickForBindings()
 {
-    dispatchSimulatedClick(0, SendNoEvents);
+    dispatchSimulatedClick(0, SendNoEvents, SimulatedClickCreationScope::FromScript);
 }
 
 void HTMLElement::accessKeyAction(bool sendMouseEvents)
@@ -832,8 +831,11 @@ void HTMLElement::addHTMLLengthToStyle(MutableStylePropertySet* style, CSSProper
             if (cc > '9')
                 break;
             if (cc < '0') {
-                if (cc == '%' || cc == '*')
+                if (cc == '%' || cc == '*') {
+                    if (propertyID == CSSPropertyWidth)
+                        UseCounter::count(document(), UseCounter::HTMLElementDeprecatedWidth);
                     length++;
+                }
                 if (cc != '.')
                     break;
             }

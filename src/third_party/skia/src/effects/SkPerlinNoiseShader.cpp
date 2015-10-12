@@ -19,7 +19,7 @@
 #include "GrCoordTransform.h"
 #include "GrInvariantOutput.h"
 #include "SkGr.h"
-#include "gl/GrGLProcessor.h"
+#include "gl/GrGLFragmentProcessor.h"
 #include "gl/builders/GrGLProgramBuilder.h"
 #endif
 
@@ -487,16 +487,12 @@ public:
     GrGLPerlinNoise(const GrProcessor&);
     virtual ~GrGLPerlinNoise() {}
 
-    virtual void emitCode(GrGLFPBuilder*,
-                          const GrFragmentProcessor&,
-                          const char* outputColor,
-                          const char* inputColor,
-                          const TransformedCoordsArray&,
-                          const TextureSamplerArray&) override;
-
-    void setData(const GrGLProgramDataManager&, const GrProcessor&) override;
+    virtual void emitCode(EmitArgs&) override;
 
     static inline void GenKey(const GrProcessor&, const GrGLSLCaps&, GrProcessorKeyBuilder* b);
+
+protected:
+    void onSetData(const GrGLProgramDataManager&, const GrProcessor&) override;
 
 private:
 
@@ -532,15 +528,6 @@ public:
 
     const char* name() const override { return "PerlinNoise"; }
 
-    virtual void getGLProcessorKey(const GrGLSLCaps& caps,
-                                   GrProcessorKeyBuilder* b) const override {
-        GrGLPerlinNoise::GenKey(*this, caps, b);
-    }
-
-    GrGLFragmentProcessor* createGLInstance() const override {
-        return SkNEW_ARGS(GrGLPerlinNoise, (*this));
-    }
-
     const SkPerlinNoiseShader::StitchData& stitchData() const { return fPaintingData->fStitchDataInit; }
 
     SkPerlinNoiseShader::Type type() const { return fType; }
@@ -551,6 +538,15 @@ public:
     uint8_t alpha() const { return fAlpha; }
 
 private:
+    GrGLFragmentProcessor* onCreateGLInstance() const override {
+        return SkNEW_ARGS(GrGLPerlinNoise, (*this));
+    }
+
+    virtual void onGetGLProcessorKey(const GrGLSLCaps& caps,
+                                     GrProcessorKeyBuilder* b) const override {
+        GrGLPerlinNoise::GenKey(*this, caps, b);
+    }
+
     bool onIsEqual(const GrFragmentProcessor& sBase) const override {
         const GrPerlinNoiseEffect& s = sBase.cast<GrPerlinNoiseEffect>();
         return fType == s.fType &&
@@ -639,32 +635,25 @@ GrGLPerlinNoise::GrGLPerlinNoise(const GrProcessor& processor)
   , fNumOctaves(processor.cast<GrPerlinNoiseEffect>().numOctaves()) {
 }
 
-void GrGLPerlinNoise::emitCode(GrGLFPBuilder* builder,
-                               const GrFragmentProcessor&,
-                               const char* outputColor,
-                               const char* inputColor,
-                               const TransformedCoordsArray& coords,
-                               const TextureSamplerArray& samplers) {
-    sk_ignore_unused_variable(inputColor);
+void GrGLPerlinNoise::emitCode(EmitArgs& args) {
+    GrGLFragmentBuilder* fsBuilder = args.fBuilder->getFragmentShaderBuilder();
+    SkString vCoords = fsBuilder->ensureFSCoords2D(args.fCoords, 0);
 
-    GrGLFragmentBuilder* fsBuilder = builder->getFragmentShaderBuilder();
-    SkString vCoords = fsBuilder->ensureFSCoords2D(coords, 0);
-
-    fBaseFrequencyUni = builder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
+    fBaseFrequencyUni = args.fBuilder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
                                             kVec2f_GrSLType, kDefault_GrSLPrecision,
                                             "baseFrequency");
-    const char* baseFrequencyUni = builder->getUniformCStr(fBaseFrequencyUni);
-    fAlphaUni = builder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
+    const char* baseFrequencyUni = args.fBuilder->getUniformCStr(fBaseFrequencyUni);
+    fAlphaUni = args.fBuilder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
                                     kFloat_GrSLType, kDefault_GrSLPrecision,
                                     "alpha");
-    const char* alphaUni = builder->getUniformCStr(fAlphaUni);
+    const char* alphaUni = args.fBuilder->getUniformCStr(fAlphaUni);
 
     const char* stitchDataUni = NULL;
     if (fStitchTiles) {
-        fStitchDataUni = builder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
+        fStitchDataUni = args.fBuilder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
                                              kVec2f_GrSLType, kDefault_GrSLPrecision,
                                              "stitchData");
-        stitchDataUni = builder->getUniformCStr(fStitchDataUni);
+        stitchDataUni = args.fBuilder->getUniformCStr(fStitchDataUni);
     }
 
     // There are 4 lines, so the center of each line is 1/8, 3/8, 5/8 and 7/8
@@ -734,7 +723,8 @@ void GrGLPerlinNoise::emitCode(GrGLFPBuilder* builder,
         xCoords.appendf("vec2(%s.x, 0.5)", floorVal);
 
         noiseCode.appendf("\n\tvec2 %s;\n\t%s.x = ", latticeIdx, latticeIdx);
-        fsBuilder->appendTextureLookup(&noiseCode, samplers[0], xCoords.c_str(), kVec2f_GrSLType);
+        fsBuilder->appendTextureLookup(&noiseCode, args.fSamplers[0], xCoords.c_str(),
+                                       kVec2f_GrSLType);
         noiseCode.append(".r;");
     }
 
@@ -744,7 +734,8 @@ void GrGLPerlinNoise::emitCode(GrGLFPBuilder* builder,
         xCoords.appendf("vec2(%s.z, 0.5)", floorVal);
 
         noiseCode.appendf("\n\t%s.y = ", latticeIdx);
-        fsBuilder->appendTextureLookup(&noiseCode, samplers[0], xCoords.c_str(), kVec2f_GrSLType);
+        fsBuilder->appendTextureLookup(&noiseCode, args.fSamplers[0], xCoords.c_str(),
+                                       kVec2f_GrSLType);
         noiseCode.append(".r;");
     }
 
@@ -768,7 +759,7 @@ void GrGLPerlinNoise::emitCode(GrGLFPBuilder* builder,
         SkString latticeCoords("");
         latticeCoords.appendf("vec2(%s.x, %s)", bcoords, chanCoord);
         noiseCode.appendf("\n\tvec4 %s = ", lattice);
-        fsBuilder->appendTextureLookup(&noiseCode, samplers[1], latticeCoords.c_str(),
+        fsBuilder->appendTextureLookup(&noiseCode, args.fSamplers[1], latticeCoords.c_str(),
             kVec2f_GrSLType);
         noiseCode.appendf(".bgra;\n\t%s.x = ", uv);
         noiseCode.appendf(dotLattice, lattice, lattice, inc8bit, fractVal);
@@ -780,7 +771,7 @@ void GrGLPerlinNoise::emitCode(GrGLFPBuilder* builder,
         SkString latticeCoords("");
         latticeCoords.appendf("vec2(%s.y, %s)", bcoords, chanCoord);
         noiseCode.append("\n\tlattice = ");
-        fsBuilder->appendTextureLookup(&noiseCode, samplers[1], latticeCoords.c_str(),
+        fsBuilder->appendTextureLookup(&noiseCode, args.fSamplers[1], latticeCoords.c_str(),
             kVec2f_GrSLType);
         noiseCode.appendf(".bgra;\n\t%s.y = ", uv);
         noiseCode.appendf(dotLattice, lattice, lattice, inc8bit, fractVal);
@@ -796,7 +787,7 @@ void GrGLPerlinNoise::emitCode(GrGLFPBuilder* builder,
         SkString latticeCoords("");
         latticeCoords.appendf("vec2(%s.w, %s)", bcoords, chanCoord);
         noiseCode.append("\n\tlattice = ");
-        fsBuilder->appendTextureLookup(&noiseCode, samplers[1], latticeCoords.c_str(),
+        fsBuilder->appendTextureLookup(&noiseCode, args.fSamplers[1], latticeCoords.c_str(),
             kVec2f_GrSLType);
         noiseCode.appendf(".bgra;\n\t%s.y = ", uv);
         noiseCode.appendf(dotLattice, lattice, lattice, inc8bit, fractVal);
@@ -808,7 +799,7 @@ void GrGLPerlinNoise::emitCode(GrGLFPBuilder* builder,
         SkString latticeCoords("");
         latticeCoords.appendf("vec2(%s.z, %s)", bcoords, chanCoord);
         noiseCode.append("\n\tlattice = ");
-        fsBuilder->appendTextureLookup(&noiseCode, samplers[1], latticeCoords.c_str(),
+        fsBuilder->appendTextureLookup(&noiseCode, args.fSamplers[1], latticeCoords.c_str(),
             kVec2f_GrSLType);
         noiseCode.appendf(".bgra;\n\t%s.x = ", uv);
         noiseCode.appendf(dotLattice, lattice, lattice, inc8bit, fractVal);
@@ -835,7 +826,7 @@ void GrGLPerlinNoise::emitCode(GrGLFPBuilder* builder,
                            noiseVec, vCoords.c_str(), baseFrequencyUni);
 
     // Clear the color accumulator
-    fsBuilder->codeAppendf("\n\t\t%s = vec4(0.0);", outputColor);
+    fsBuilder->codeAppendf("\n\t\t%s = vec4(0.0);", args.fOutputColor);
 
     if (fStitchTiles) {
         // Set up TurbulenceInitial stitch values.
@@ -847,7 +838,7 @@ void GrGLPerlinNoise::emitCode(GrGLFPBuilder* builder,
     // Loop over all octaves
     fsBuilder->codeAppendf("\n\t\tfor (int octave = 0; octave < %d; ++octave) {", fNumOctaves);
 
-    fsBuilder->codeAppendf("\n\t\t\t%s += ", outputColor);
+    fsBuilder->codeAppendf("\n\t\t\t%s += ", args.fOutputColor);
     if (fType != SkPerlinNoiseShader::kFractalNoise_Type) {
         fsBuilder->codeAppend("abs(");
     }
@@ -884,17 +875,19 @@ void GrGLPerlinNoise::emitCode(GrGLFPBuilder* builder,
     if (fType == SkPerlinNoiseShader::kFractalNoise_Type) {
         // The value of turbulenceFunctionResult comes from ((turbulenceFunctionResult) + 1) / 2
         // by fractalNoise and (turbulenceFunctionResult) by turbulence.
-        fsBuilder->codeAppendf("\n\t\t%s = %s * vec4(0.5) + vec4(0.5);", outputColor, outputColor);
+        fsBuilder->codeAppendf("\n\t\t%s = %s * vec4(0.5) + vec4(0.5);",
+                               args.fOutputColor,args.fOutputColor);
     }
 
-    fsBuilder->codeAppendf("\n\t\t%s.a *= %s;", outputColor, alphaUni);
+    fsBuilder->codeAppendf("\n\t\t%s.a *= %s;", args.fOutputColor, alphaUni);
 
     // Clamp values
-    fsBuilder->codeAppendf("\n\t\t%s = clamp(%s, 0.0, 1.0);", outputColor, outputColor);
+    fsBuilder->codeAppendf("\n\t\t%s = clamp(%s, 0.0, 1.0);", args.fOutputColor, args.fOutputColor);
 
     // Pre-multiply the result
     fsBuilder->codeAppendf("\n\t\t%s = vec4(%s.rgb * %s.aaa, %s.a);\n",
-                  outputColor, outputColor, outputColor, outputColor);
+                           args.fOutputColor, args.fOutputColor,
+                           args.fOutputColor, args.fOutputColor);
 }
 
 void GrGLPerlinNoise::GenKey(const GrProcessor& processor, const GrGLSLCaps&,
@@ -924,8 +917,8 @@ void GrGLPerlinNoise::GenKey(const GrProcessor& processor, const GrGLSLCaps&,
     b->add32(key);
 }
 
-void GrGLPerlinNoise::setData(const GrGLProgramDataManager& pdman, const GrProcessor& processor) {
-    INHERITED::setData(pdman, processor);
+void GrGLPerlinNoise::onSetData(const GrGLProgramDataManager& pdman, const GrProcessor& processor) {
+    INHERITED::onSetData(pdman, processor);
 
     const GrPerlinNoiseEffect& turbulence = processor.cast<GrPerlinNoiseEffect>();
 

@@ -63,10 +63,6 @@ public:
 
     const char* name() const override { return "Convolution"; }
 
-    void getGLProcessorKey(const GrGLSLCaps&, GrProcessorKeyBuilder*) const override;
-
-    GrGLFragmentProcessor* createGLInstance() const override;
-
     enum {
         // This was decided based on the min allowed value for the max texture
         // samples per fragment program run in DX9SM2 (32). A sigma param of 4.0
@@ -99,6 +95,10 @@ private:
                         float gaussianSigma,
                         bool useBounds,
                         float bounds[2]);
+
+    GrGLFragmentProcessor* onCreateGLInstance() const override;
+
+    void onGetGLProcessorKey(const GrGLSLCaps&, GrProcessorKeyBuilder*) const override;
 
     bool onIsEqual(const GrFragmentProcessor&) const override;
 

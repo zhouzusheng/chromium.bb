@@ -18,10 +18,7 @@ namespace {
 // Layout pixel buffer around the visible layer rect to record.  Any base
 // picture that intersects the visible layer rect expanded by this distance
 // will be recorded.
-const int kPixelDistanceToRecord = 8000;
-// We don't perform solid color analysis on images that have more than 10 skia
-// operations.
-const int kOpCountThatIsOkToAnalyze = 10;
+const int kPixelDistanceToRecord = 4000;
 
 // This is the distance, in layer space, by which the recorded viewport has to
 // change before causing a paint of the new content. For example, it means
@@ -37,8 +34,8 @@ const bool kDefaultClearCanvasSetting = true;
 
 DEFINE_SCOPED_UMA_HISTOGRAM_AREA_TIMER(
     ScopedDisplayListRecordingSourceUpdateTimer,
-    "Compositing.DisplayListRecordingSource.UpdateUs",
-    "Compositing.DisplayListRecordingSource.UpdateInvalidatedAreaPerMs");
+    "Compositing.%s.DisplayListRecordingSource.UpdateUs",
+    "Compositing.%s.DisplayListRecordingSource.UpdateInvalidatedAreaPerMs");
 
 }  // namespace
 
@@ -55,8 +52,8 @@ DisplayListRecordingSource::DisplayListRecordingSource(
       background_color_(SK_ColorTRANSPARENT),
       pixel_record_distance_(kPixelDistanceToRecord),
       grid_cell_size_(grid_cell_size),
-      is_suitable_for_gpu_rasterization_(true) {
-}
+      painter_reported_memory_usage_(0),
+      is_suitable_for_gpu_rasterization_(true) {}
 
 DisplayListRecordingSource::~DisplayListRecordingSource() {
 }
@@ -180,16 +177,11 @@ bool DisplayListRecordingSource::UpdateAndExpandInvalidation(
       NOTREACHED();
   }
 
-  int repeat_count = 1;
-  if (slow_down_raster_scale_factor_for_debug_ > 1) {
-    repeat_count = slow_down_raster_scale_factor_for_debug_;
-    painting_control = ContentLayerClient::DISPLAY_LIST_CACHING_DISABLED;
-  }
-
-  for (int i = 0; i < repeat_count; ++i) {
-    display_list_ = painter->PaintContentsToDisplayList(recorded_viewport_,
-                                                        painting_control);
-  }
+  // TODO(vmpstr): Add a slow_down_recording_scale_factor_for_debug_ to be able
+  // to slow down recording.
+  display_list_ =
+      painter->PaintContentsToDisplayList(recorded_viewport_, painting_control);
+  painter_reported_memory_usage_ = painter->GetApproximateUnsharedMemoryUsage();
 
   is_suitable_for_gpu_rasterization_ =
       display_list_->IsSuitableForGpuRasterization();
@@ -250,7 +242,7 @@ void DisplayListRecordingSource::DetermineIfSolidColor() {
   is_solid_color_ = false;
   solid_color_ = SK_ColorTRANSPARENT;
 
-  if (display_list_->ApproximateOpCount() > kOpCountThatIsOkToAnalyze)
+  if (!display_list_->ShouldBeAnalyzedForSolidColor())
     return;
 
   gfx::Size layer_size = GetSize();
@@ -262,6 +254,7 @@ void DisplayListRecordingSource::DetermineIfSolidColor() {
 void DisplayListRecordingSource::Clear() {
   recorded_viewport_ = gfx::Rect();
   display_list_ = NULL;
+  painter_reported_memory_usage_ = 0;
   is_solid_color_ = false;
 }
 

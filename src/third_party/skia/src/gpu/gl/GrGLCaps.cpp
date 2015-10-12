@@ -47,8 +47,10 @@ GrGLCaps::GrGLCaps(const GrContextOptions& contextOptions,
     fMultisampleDisableSupport = false;
     fUseNonVBOVertexAndIndexDynamicData = false;
     fIsCoreProfile = false;
-    fFullClearIsFree = false;
     fBindFragDataLocationSupport = false;
+    fSRGBWriteControl = false;
+    fRGBA8888PixelsOpsAreSlow = false;
+    fPartialFBOReadIsSlow = false;
 
     fReadPixelsSupportedCache.reset();
 
@@ -191,6 +193,28 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
     // can change based on which render target is bound
     fTwoFormatLimit = kGLES_GrGLStandard == standard;
 
+    // We only enable srgb support if both textures and FBOs support srgb.
+    bool srgbSupport = false;
+    if (kGL_GrGLStandard == standard) {
+        if (ctxInfo.version() >= GR_GL_VER(3,0)) {
+            srgbSupport = true;
+        } else if (ctxInfo.hasExtension("GL_EXT_texture_sRGB")) {
+            if (ctxInfo.hasExtension("GL_ARB_framebuffer_sRGB") ||
+                ctxInfo.hasExtension("GL_EXT_framebuffer_sRGB")) {
+                srgbSupport = true;
+            }
+         }
+        // All the above srgb extensions support toggling srgb writes
+        fSRGBWriteControl = srgbSupport;
+    } else {
+        // See http://skbug.com/4148 for PowerVR issue.
+        srgbSupport = kPowerVRRogue_GrGLRenderer != ctxInfo.renderer() &&
+                      (ctxInfo.version() >= GR_GL_VER(3,0) || ctxInfo.hasExtension("GL_EXT_sRGB"));
+        // ES through 3.1 requires EXT_srgb_write_control to support toggling
+        // sRGB writing for destinations.
+        fSRGBWriteControl = ctxInfo.hasExtension("GL_EXT_sRGB_write_control");
+    }
+
     // Frag Coords Convention support is not part of ES
     // Known issue on at least some Intel platforms:
     // http://code.google.com/p/skia/issues/detail?id=946
@@ -268,12 +292,29 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
     if (kGL_GrGLStandard == standard) {
         fMultisampleDisableSupport = true;
     } else {
-        fMultisampleDisableSupport = false;
+        fMultisampleDisableSupport = ctxInfo.hasExtension("GL_EXT_multisample_compatibility");
     }
 
-    if (kGL_GrGLStandard == standard && version >= GR_GL_VER(3, 0)) {
-        fBindFragDataLocationSupport = true;
+    if (kGL_GrGLStandard == standard) {
+        if (version >= GR_GL_VER(3, 0)) {
+            fBindFragDataLocationSupport = true;
+        }
+    } else {
+        if (version >= GR_GL_VER(3, 0) && ctxInfo.hasExtension("GL_EXT_blend_func_extended")) {
+            fBindFragDataLocationSupport = true;
+        }
     }
+
+#ifdef SK_BUILD_FOR_WIN
+    // We're assuming that on Windows Chromium we're using ANGLE.
+    bool isANGLE = kANGLE_GrGLDriver == ctxInfo.driver() ||
+                   kChromium_GrGLDriver == ctxInfo.driver();
+    // Angle has slow read/write pixel paths for 32bit RGBA (but fast for BGRA). 
+    fRGBA8888PixelsOpsAreSlow = isANGLE;
+    // On DX9 ANGLE reading a partial FBO is slow. TODO: Check whether this is still true and
+    // check DX11 ANGLE.
+    fPartialFBOReadIsSlow = isANGLE;
+#endif
 
     /**************************************************************************
     * GrShaderCaps fields
@@ -295,6 +336,8 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
             ctxInfo.glslGeneration() >= k150_GrGLSLGeneration;
     }
     else {
+        glslCaps->fDualSourceBlendingSupport = ctxInfo.hasExtension("GL_EXT_blend_func_extended");
+
         glslCaps->fShaderDerivativeSupport = ctxInfo.version() >= GR_GL_VER(3, 0) ||
             ctxInfo.hasExtension("GL_OES_standard_derivatives");
     }
@@ -428,6 +471,15 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
         fUseDrawInsteadOfPartialRenderTargetWrite = true;
     }
 
+#ifdef SK_BUILD_FOR_WIN
+    // On ANGLE deferring flushes can lead to GPU starvation
+    fPreferVRAMUseOverFlushes = !isANGLE;
+#endif
+
+    if (kChromium_GrGLDriver == ctxInfo.driver()) {
+        fMustClearUploadedBufferData = true;
+    }
+
     if (kGL_GrGLStandard == standard) {
         // ARB allows mixed size FBO attachments, EXT does not.
         if (ctxInfo.version() >= GR_GL_VER(3, 0) ||
@@ -455,8 +507,8 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
                  ctxInfo.hasExtension("GL_EXT_instanced_arrays"));
     }
 
-    this->initConfigTexturableTable(ctxInfo, gli);
-    this->initConfigRenderableTable(ctxInfo);
+    this->initConfigTexturableTable(ctxInfo, gli, srgbSupport);
+    this->initConfigRenderableTable(ctxInfo, srgbSupport);
     this->initShaderPrecisionTable(ctxInfo, gli, glslCaps);
 
     this->applyOptionsOverrides(contextOptions);
@@ -464,16 +516,20 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
 }
 
 bool GrGLCaps::hasPathRenderingSupport(const GrGLContextInfo& ctxInfo, const GrGLInterface* gli) {
-    if (!ctxInfo.hasExtension("GL_NV_path_rendering")) {
+    bool hasChromiumPathRendering = ctxInfo.hasExtension("GL_CHROMIUM_path_rendering");
+
+    if (!(ctxInfo.hasExtension("GL_NV_path_rendering") || hasChromiumPathRendering)) {
         return false;
     }
+
     if (kGL_GrGLStandard == ctxInfo.standard()) {
         if (ctxInfo.version() < GR_GL_VER(4, 3) &&
             !ctxInfo.hasExtension("GL_ARB_program_interface_query")) {
             return false;
         }
     } else {
-        if (ctxInfo.version() < GR_GL_VER(3, 1)) {
+        if (!hasChromiumPathRendering &&
+            ctxInfo.version() < GR_GL_VER(3, 1)) {
             return false;
         }
     }
@@ -492,7 +548,7 @@ bool GrGLCaps::hasPathRenderingSupport(const GrGLContextInfo& ctxInfo, const GrG
     return true;
 }
 
-void GrGLCaps::initConfigRenderableTable(const GrGLContextInfo& ctxInfo) {
+void GrGLCaps::initConfigRenderableTable(const GrGLContextInfo& ctxInfo, bool srgbSupport) {
     // OpenGL < 3.0
     //  no support for render targets unless the GL_ARB_framebuffer_object
     //  extension is supported (in which case we get ALPHA, RED, RG, RGB,
@@ -570,21 +626,9 @@ void GrGLCaps::initConfigRenderableTable(const GrGLContextInfo& ctxInfo) {
         }
     }
 
-    if (this->fRGBA8RenderbufferSupport && this->isConfigTexturable(kSRGBA_8888_GrPixelConfig)) {
-        if (kGL_GrGLStandard == standard) {
-            if (ctxInfo.version() >= GR_GL_VER(3,0) ||
-                ctxInfo.hasExtension("GL_ARB_framebuffer_sRGB") ||
-                ctxInfo.hasExtension("GL_EXT_framebuffer_sRGB")) {
-                fConfigRenderSupport[kSRGBA_8888_GrPixelConfig][kNo_MSAA] = true;
-                fConfigRenderSupport[kSRGBA_8888_GrPixelConfig][kYes_MSAA] = true;
-            }
-        } else {
-            if (ctxInfo.version() >= GR_GL_VER(3,0) ||
-                ctxInfo.hasExtension("GL_EXT_sRGB")) {
-                fConfigRenderSupport[kSRGBA_8888_GrPixelConfig][kNo_MSAA] = true;
-                fConfigRenderSupport[kSRGBA_8888_GrPixelConfig][kYes_MSAA] = true;
-            }
-        }
+    if (this->fRGBA8RenderbufferSupport && srgbSupport) {
+        fConfigRenderSupport[kSRGBA_8888_GrPixelConfig][kNo_MSAA] = true;
+        fConfigRenderSupport[kSRGBA_8888_GrPixelConfig][kYes_MSAA] = true;
     }
     
     if (this->isConfigTexturable(kRGBA_float_GrPixelConfig)) {
@@ -654,7 +698,8 @@ void GrGLCaps::initConfigRenderableTable(const GrGLContextInfo& ctxInfo) {
     }
 }
 
-void GrGLCaps::initConfigTexturableTable(const GrGLContextInfo& ctxInfo, const GrGLInterface* gli) {
+void GrGLCaps::initConfigTexturableTable(const GrGLContextInfo& ctxInfo, const GrGLInterface* gli,
+                                         bool srgbSupport) {
     GrGLStandard standard = ctxInfo.standard();
     GrGLVersion version = ctxInfo.version();
 
@@ -693,14 +738,7 @@ void GrGLCaps::initConfigTexturableTable(const GrGLContextInfo& ctxInfo, const G
                  kSkia8888_GrPixelConfig != kBGRA_8888_GrPixelConfig);
     }
 
-    // Check for sRGBA
-    if (kGL_GrGLStandard == standard) {
-        fConfigTextureSupport[kSRGBA_8888_GrPixelConfig] =
-            (version >= GR_GL_VER(3,0) || ctxInfo.hasExtension("GL_EXT_texture_sRGB"));
-    } else {
-        fConfigTextureSupport[kSRGBA_8888_GrPixelConfig] =
-            (version >= GR_GL_VER(3,0) || ctxInfo.hasExtension("GL_EXT_sRGB"));
-    }
+    fConfigTextureSupport[kSRGBA_8888_GrPixelConfig] = srgbSupport;
     
     // Compressed texture support
 
@@ -888,8 +926,7 @@ void GrGLCaps::initBlendEqationSupport(const GrGLContextInfo& ctxInfo) {
     // for now until its own blacklists can be updated.
     if (kAdreno4xx_GrGLRenderer == ctxInfo.renderer() ||
         kIntel_GrGLDriver == ctxInfo.driver() ||
-        kChromium_GrGLDriver == ctxInfo.driver() ||
-        kARM_GrGLVendor == ctxInfo.vendor()) {
+        kChromium_GrGLDriver == ctxInfo.driver()) {
         return;
     }
 
@@ -921,6 +958,10 @@ void GrGLCaps::initBlendEqationSupport(const GrGLContextInfo& ctxInfo) {
         // Blacklist color-dodge and color-burn on NVIDIA until the fix is released.
         fAdvBlendEqBlacklist |= (1 << kColorDodge_GrBlendEquation) |
                                 (1 << kColorBurn_GrBlendEquation);
+    }
+    if (kARM_GrGLVendor == ctxInfo.vendor()) {
+        // Blacklist color-burn on ARM until the fix is released.
+        fAdvBlendEqBlacklist |= (1 << kColorBurn_GrBlendEquation);
     }
 }
 
@@ -1110,7 +1151,9 @@ SkString GrGLCaps::dump() const {
     r.appendf("Multisample disable support: %s\n", (fMultisampleDisableSupport ? "YES" : "NO"));
     r.appendf("Use non-VBO for dynamic data: %s\n",
              (fUseNonVBOVertexAndIndexDynamicData ? "YES" : "NO"));
-    r.appendf("Full screen clear is free: %s\n", (fFullClearIsFree ? "YES" : "NO"));
+    r.appendf("SRGB write contol: %s\n", (fSRGBWriteControl ? "YES" : "NO"));
+    r.appendf("RGBA 8888 pixel ops are slow: %s\n", (fRGBA8888PixelsOpsAreSlow ? "YES" : "NO"));
+    r.appendf("Partial FBO read is slow: %s\n", (fPartialFBOReadIsSlow ? "YES" : "NO"));
     return r;
 }
 

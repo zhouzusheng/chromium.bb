@@ -261,22 +261,6 @@ void SkLinearGradient::LinearGradientContext::shadeSpan(int x, int y, SkPMColor*
     }
 }
 
-SkShader::BitmapType SkLinearGradient::asABitmap(SkBitmap* bitmap,
-                                                SkMatrix* matrix,
-                                                TileMode xy[]) const {
-    if (bitmap) {
-        this->getGradientTableBitmap(bitmap);
-    }
-    if (matrix) {
-        matrix->preConcat(fPtsToUnit);
-    }
-    if (xy) {
-        xy[0] = fTileMode;
-        xy[1] = kClamp_TileMode;
-    }
-    return kLinear_BitmapType;
-}
-
 SkShader::GradientType SkLinearGradient::asAGradient(GradientInfo* info) const {
     if (info) {
         commonAsAGradient(info);
@@ -467,12 +451,7 @@ public:
 
     virtual ~GrGLLinearGradient() { }
 
-    virtual void emitCode(GrGLFPBuilder*,
-                          const GrFragmentProcessor&,
-                          const char* outputColor,
-                          const char* inputColor,
-                          const TransformedCoordsArray&,
-                          const TextureSamplerArray&) override;
+    virtual void emitCode(EmitArgs&) override;
 
     static void GenKey(const GrProcessor& processor, const GrGLSLCaps&, GrProcessorKeyBuilder* b) {
         b->add32(GenBaseGradientKey(processor));
@@ -500,15 +479,6 @@ public:
 
     const char* name() const override { return "Linear Gradient"; }
 
-    virtual void getGLProcessorKey(const GrGLSLCaps& caps,
-                                   GrProcessorKeyBuilder* b) const override {
-        GrGLLinearGradient::GenKey(*this, caps, b);
-    }
-
-    GrGLFragmentProcessor* createGLInstance() const override {
-        return SkNEW_ARGS(GrGLLinearGradient, (*this));
-    }
-
 private:
     GrLinearGradient(GrContext* ctx,
                      GrProcessorDataManager* procDataManager,
@@ -518,6 +488,16 @@ private:
         : INHERITED(ctx, procDataManager, shader, matrix, tm) {
         this->initClassID<GrLinearGradient>();
     }
+
+    GrGLFragmentProcessor* onCreateGLInstance() const override {
+        return SkNEW_ARGS(GrGLLinearGradient, (*this));
+    }
+
+    virtual void onGetGLProcessorKey(const GrGLSLCaps& caps,
+                                     GrProcessorKeyBuilder* b) const override {
+        GrGLLinearGradient::GenKey(*this, caps, b);
+    }
+
     GR_DECLARE_FRAGMENT_PROCESSOR_TEST;
 
     typedef GrGradientEffect INHERITED;
@@ -550,17 +530,13 @@ GrFragmentProcessor* GrLinearGradient::TestCreate(GrProcessorTestData* d) {
 
 /////////////////////////////////////////////////////////////////////
 
-void GrGLLinearGradient::emitCode(GrGLFPBuilder* builder,
-                                  const GrFragmentProcessor& fp,
-                                  const char* outputColor,
-                                  const char* inputColor,
-                                  const TransformedCoordsArray& coords,
-                                  const TextureSamplerArray& samplers) {
-    const GrLinearGradient& ge = fp.cast<GrLinearGradient>();
-    this->emitUniforms(builder, ge);
-    SkString t = builder->getFragmentShaderBuilder()->ensureFSCoords2D(coords, 0);
+void GrGLLinearGradient::emitCode(EmitArgs& args) {
+    const GrLinearGradient& ge = args.fFp.cast<GrLinearGradient>();
+    this->emitUniforms(args.fBuilder, ge);
+    SkString t = args.fBuilder->getFragmentShaderBuilder()->ensureFSCoords2D(args.fCoords, 0);
     t.append(".x");
-    this->emitColor(builder, ge, t.c_str(), outputColor, inputColor, samplers);
+    this->emitColor(args.fBuilder, ge, t.c_str(), args.fOutputColor, args.fInputColor,
+                    args.fSamplers);
 }
 
 /////////////////////////////////////////////////////////////////////

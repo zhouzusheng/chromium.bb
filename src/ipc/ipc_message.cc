@@ -73,13 +73,12 @@ Message::Message(const char* data, int data_len)
 
 Message::Message(const Message& other) : base::Pickle(other) {
   Init();
-#if defined(OS_POSIX)
   attachment_set_ = other.attachment_set_;
-#endif
 }
 
 void Message::Init() {
   dispatch_error_ = false;
+  sender_pid_ = base::kNullProcessId;
 #ifdef IPC_MESSAGE_LOG_ENABLED
   received_time_ = 0;
   dont_log_ = false;
@@ -89,9 +88,7 @@ void Message::Init() {
 
 Message& Message::operator=(const Message& other) {
   *static_cast<base::Pickle*>(this) = other;
-#if defined(OS_POSIX)
   attachment_set_ = other.attachment_set_;
-#endif
   return *this;
 }
 

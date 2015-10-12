@@ -12,6 +12,7 @@
 #include "components/scheduler/child/scheduler_helper.h"
 #include "components/scheduler/renderer/deadline_task_runner.h"
 #include "components/scheduler/renderer/renderer_scheduler.h"
+#include "components/scheduler/renderer/task_cost_estimator.h"
 #include "components/scheduler/scheduler_export.h"
 
 namespace base {
@@ -26,7 +27,7 @@ class SCHEDULER_EXPORT RendererSchedulerImpl : public RendererScheduler,
                                                public IdleHelper::Delegate {
  public:
   RendererSchedulerImpl(
-      scoped_refptr<NestableSingleThreadTaskRunner> main_task_runner);
+      scoped_refptr<SchedulerTaskRunnerDelegate> main_task_runner);
   ~RendererSchedulerImpl() override;
 
   // RendererScheduler implementation:
@@ -63,17 +64,6 @@ class SCHEDULER_EXPORT RendererSchedulerImpl : public RendererScheduler,
  private:
   friend class RendererSchedulerImplTest;
   friend class RendererSchedulerImplForTest;
-
-  // Keep RendererSchedulerImpl::TaskQueueIdToString in sync with this enum.
-  enum QueueId {
-    IDLE_TASK_QUEUE = SchedulerHelper::TASK_QUEUE_COUNT,
-    COMPOSITOR_TASK_QUEUE,
-    LOADING_TASK_QUEUE,
-    TIMER_TASK_QUEUE,
-    // Must be the last entry.
-    TASK_QUEUE_COUNT,
-    FIRST_QUEUE_ID = SchedulerHelper::FIRST_QUEUE_ID,
-  };
 
   // Keep RendererSchedulerImpl::PolicyToString in sync with this enum.
   enum class Policy {
@@ -120,7 +110,6 @@ class SCHEDULER_EXPORT RendererSchedulerImpl : public RendererScheduler,
       base::TimeTicks optional_now) const;
   scoped_refptr<base::trace_event::ConvertableToTraceFormat> AsValueLocked(
       base::TimeTicks optional_now) const;
-  static const char* TaskQueueIdToString(QueueId queue_id);
   static const char* PolicyToString(Policy policy);
 
   static bool ShouldPrioritizeInputEvent(
@@ -196,9 +185,9 @@ class SCHEDULER_EXPORT RendererSchedulerImpl : public RendererScheduler,
   SchedulerHelper helper_;
   IdleHelper idle_helper_;
 
-  const scoped_refptr<base::SingleThreadTaskRunner> control_task_runner_;
-  const scoped_refptr<base::SingleThreadTaskRunner> compositor_task_runner_;
-  const scoped_refptr<base::SingleThreadTaskRunner> loading_task_runner_;
+  const scoped_refptr<TaskQueue> control_task_runner_;
+  const scoped_refptr<TaskQueue> compositor_task_runner_;
+  const scoped_refptr<TaskQueue> loading_task_runner_;
   const scoped_refptr<TaskQueue> timer_task_runner_;
 
   base::Closure update_policy_closure_;
@@ -210,10 +199,14 @@ class SCHEDULER_EXPORT RendererSchedulerImpl : public RendererScheduler,
 
   struct MainThreadOnly {
     MainThreadOnly();
+    ~MainThreadOnly();
 
+    TaskCostEstimator timer_task_cost_estimator_;
+    cc::RollingTimeDeltaHistory short_idle_period_duration_;
     Policy current_policy_;
     base::TimeTicks current_policy_expiration_time_;
     base::TimeTicks estimated_next_frame_begin_;
+    base::TimeDelta expected_short_idle_period_duration_;
     int timer_queue_suspend_count_;  // TIMER_TASK_QUEUE suspended if non-zero.
     bool renderer_hidden_;
     bool was_shutdown_;
@@ -229,6 +222,7 @@ class SCHEDULER_EXPORT RendererSchedulerImpl : public RendererScheduler,
     bool awaiting_touch_start_response_;
     bool in_idle_period_;
     bool begin_main_frame_on_critical_path_;
+    bool timer_tasks_seem_expensive_;
   };
 
   struct CompositorThreadOnly {

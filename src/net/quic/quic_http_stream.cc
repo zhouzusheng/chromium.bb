@@ -11,7 +11,7 @@
 #include "net/base/net_errors.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_util.h"
-#include "net/quic/quic_client_session.h"
+#include "net/quic/quic_chromium_client_session.h"
 #include "net/quic/quic_http_utils.h"
 #include "net/quic/quic_reliable_client_stream.h"
 #include "net/quic/quic_utils.h"
@@ -24,7 +24,8 @@
 
 namespace net {
 
-QuicHttpStream::QuicHttpStream(const base::WeakPtr<QuicClientSession>& session)
+QuicHttpStream::QuicHttpStream(
+    const base::WeakPtr<QuicChromiumClientSession>& session)
     : next_state_(STATE_NONE),
       session_(session),
       session_error_(OK),
@@ -186,37 +187,14 @@ int QuicHttpStream::ReadResponseHeaders(const CompletionCallback& callback) {
 
 int QuicHttpStream::ReadResponseBody(
     IOBuffer* buf, int buf_len, const CompletionCallback& callback) {
-  CHECK(buf);
-  CHECK(buf_len);
-  CHECK(!callback.is_null());
-
-  // If we have data buffered, complete the IO immediately.
-  if (!response_body_.empty()) {
-    int bytes_read = 0;
-    while (!response_body_.empty() && buf_len > 0) {
-      scoped_refptr<IOBufferWithSize> data = response_body_.front();
-      const int bytes_to_copy = std::min(buf_len, data->size());
-      memcpy(&(buf->data()[bytes_read]), data->data(), bytes_to_copy);
-      buf_len -= bytes_to_copy;
-      if (bytes_to_copy == data->size()) {
-        response_body_.pop_front();
-      } else {
-        const int bytes_remaining = data->size() - bytes_to_copy;
-        IOBufferWithSize* new_buffer = new IOBufferWithSize(bytes_remaining);
-        memcpy(new_buffer->data(), &(data->data()[bytes_to_copy]),
-               bytes_remaining);
-        response_body_.pop_front();
-        response_body_.push_front(make_scoped_refptr(new_buffer));
-      }
-      bytes_read += bytes_to_copy;
-    }
-    return bytes_read;
-  }
-
   if (!stream_) {
     // If the stream is already closed, there is no body to read.
     return response_status_;
   }
+
+  int rv = ReadAvailableData(buf, buf_len);
+  if (rv != ERR_IO_PENDING)
+    return rv;
 
   CHECK(callback_.is_null());
   CHECK(!user_buffer_.get());
@@ -303,34 +281,31 @@ void QuicHttpStream::SetPriority(RequestPriority priority) {
   priority_ = priority;
 }
 
-void QuicHttpStream::OnHeadersAvailable(StringPiece headers) {
-  int rv = ParseResponseHeaders(headers);
+void QuicHttpStream::OnHeadersAvailable(const SpdyHeaderBlock& headers) {
+  int rv = ProcessResponseHeaders(headers);
   if (rv != ERR_IO_PENDING && !callback_.is_null()) {
     DoCallback(rv);
   }
 }
 
-int QuicHttpStream::OnDataReceived(const char* data, int length) {
-  DCHECK_NE(0, length);
-
+void QuicHttpStream::OnDataAvailable() {
   if (callback_.is_null()) {
-    BufferResponseBody(data, length);
-    return OK;
+    // Data is available, but can't be delivered
+    return;
   }
 
-  if (length <= user_buffer_len_) {
-    memcpy(user_buffer_->data(), data, length);
-  } else {
-    memcpy(user_buffer_->data(), data, user_buffer_len_);
-    int delta = length - user_buffer_len_;
-    BufferResponseBody(data + user_buffer_len_, delta);
-    length = user_buffer_len_;
+  CHECK(user_buffer_.get());
+  CHECK_NE(0, user_buffer_len_);
+  int rv = ReadAvailableData(user_buffer_.get(), user_buffer_len_);
+  if (rv == ERR_IO_PENDING) {
+    // This was a spurrious notification. Wait for the next one.
+    return;
   }
 
+  CHECK(!callback_.is_null());
   user_buffer_ = nullptr;
   user_buffer_len_ = 0;
-  DoCallback(length);
-  return OK;
+  DoCallback(rv);
 }
 
 void QuicHttpStream::OnClose(QuicErrorCode error) {
@@ -516,16 +491,7 @@ int QuicHttpStream::DoSendBodyComplete(int rv) {
   return OK;
 }
 
-int QuicHttpStream::ParseResponseHeaders(StringPiece headers_data) {
-  SpdyFramer framer(GetSpdyVersion());
-  SpdyHeaderBlock headers;
-  size_t len = framer.ParseHeaderBlockInBuffer(headers_data.data(),
-                                               headers_data.length(), &headers);
-  if (len == 0 || len != headers_data.length()) {
-    DLOG(WARNING) << "Invalid headers";
-    return ERR_QUIC_PROTOCOL_ERROR;
-  }
-
+int QuicHttpStream::ProcessResponseHeaders(const SpdyHeaderBlock& headers) {
   // The URLRequest logs these headers, so only log to the QuicSession's
   // net log.
   stream_->net_log().AddEvent(
@@ -552,12 +518,14 @@ int QuicHttpStream::ParseResponseHeaders(StringPiece headers_data) {
   return OK;
 }
 
-void QuicHttpStream::BufferResponseBody(const char* data, int length) {
-  if (length == 0)
-    return;
-  IOBufferWithSize* io_buffer = new IOBufferWithSize(length);
-  memcpy(io_buffer->data(), data, length);
-  response_body_.push_back(make_scoped_refptr(io_buffer));
+int QuicHttpStream::ReadAvailableData(IOBuffer* buf, int buf_len) {
+  int rv = stream_->Read(buf, buf_len);
+  if (stream_->IsDoneReading()) {
+    stream_->SetDelegate(nullptr);
+    stream_->OnFinRead();
+    stream_ = nullptr;
+  }
+  return rv;
 }
 
 SpdyMajorVersion QuicHttpStream::GetSpdyVersion() {

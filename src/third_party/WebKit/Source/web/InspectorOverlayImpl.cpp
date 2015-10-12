@@ -48,47 +48,16 @@
 #include "platform/graphics/GraphicsContext.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebData.h"
+#include "web/PageOverlay.h"
 #include "web/WebGraphicsContextImpl.h"
 #include "web/WebInputEventConversion.h"
 #include "web/WebLocalFrameImpl.h"
 #include "web/WebViewImpl.h"
 #include <v8.h>
 
-namespace OverlayZOrders {
-// Use 99 as a big z-order number so that highlight is above other overlays.
-static const int highlight = 99;
-}
-
 namespace blink {
 
 namespace {
-
-class InspectorOverlayChromeClient final: public EmptyChromeClient {
-public:
-    InspectorOverlayChromeClient(ChromeClient& client, InspectorOverlayImpl* overlay)
-        : m_client(client)
-        , m_overlay(overlay)
-    { }
-
-    void setCursor(const Cursor& cursor) override
-    {
-        m_client.setCursor(cursor);
-    }
-
-    void setToolTip(const String& tooltip, TextDirection direction) override
-    {
-        m_client.setToolTip(tooltip, direction);
-    }
-
-    void invalidateRect(const IntRect&) override
-    {
-        m_overlay->invalidate();
-    }
-
-private:
-    ChromeClient& m_client;
-    InspectorOverlayImpl* m_overlay;
-};
 
 class InspectorOverlayStub : public NoBaseWillBeGarbageCollectedFinalized<InspectorOverlayStub>, public InspectorOverlay {
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(InspectorOverlayStub);
@@ -119,6 +88,82 @@ DEFINE_TRACE(InspectorOverlayStub)
 
 } // anonymous namespace
 
+class InspectorOverlayImpl::InspectorPageOverlayDelegate final : public PageOverlay::Delegate {
+public:
+    explicit InspectorPageOverlayDelegate(InspectorOverlayImpl& overlay)
+        : m_overlay(&overlay)
+    { }
+
+    DEFINE_INLINE_VIRTUAL_TRACE()
+    {
+        visitor->trace(m_overlay);
+        PageOverlay::Delegate::trace(visitor);
+    }
+
+    void paintPageOverlay(WebGraphicsContext* context, const WebSize& webViewSize)
+    {
+        if (m_overlay->isEmpty())
+            return;
+
+        GraphicsContext& graphicsContext = toWebGraphicsContextImpl(context)->graphicsContext();
+        FrameView* view = m_overlay->overlayMainFrame()->view();
+        ASSERT(!view->needsLayout());
+        view->paint(&graphicsContext, IntRect(0, 0, view->width(), view->height()));
+    }
+
+private:
+    RawPtrWillBeMember<InspectorOverlayImpl> m_overlay;
+};
+
+
+class InspectorOverlayImpl::InspectorOverlayChromeClient final : public EmptyChromeClient {
+public:
+    static PassOwnPtrWillBeRawPtr<InspectorOverlayChromeClient> create(ChromeClient& client, InspectorOverlayImpl& overlay)
+    {
+        return adoptPtrWillBeNoop(new InspectorOverlayChromeClient(client, overlay));
+    }
+
+    DEFINE_INLINE_VIRTUAL_TRACE()
+    {
+        visitor->trace(m_client);
+        visitor->trace(m_overlay);
+        EmptyChromeClient::trace(visitor);
+    }
+
+    void setCursor(const Cursor& cursor) override
+    {
+        m_client->setCursor(cursor);
+    }
+
+    void setToolTip(const String& tooltip, TextDirection direction) override
+    {
+        m_client->setToolTip(tooltip, direction);
+    }
+
+    void invalidateRect(const IntRect&) override
+    {
+        m_overlay->invalidate();
+    }
+
+    void scheduleAnimation() override
+    {
+        if (m_overlay->m_inLayout)
+            return;
+
+        m_client->scheduleAnimation();
+    }
+
+private:
+    InspectorOverlayChromeClient(ChromeClient& client, InspectorOverlayImpl& overlay)
+        : m_client(&client)
+        , m_overlay(&overlay)
+    { }
+
+    RawPtrWillBeMember<ChromeClient> m_client;
+    RawPtrWillBeMember<InspectorOverlayImpl> m_overlay;
+};
+
+
 // static
 PassOwnPtrWillBeRawPtr<InspectorOverlay> InspectorOverlayImpl::createEmpty()
 {
@@ -134,7 +179,8 @@ InspectorOverlayImpl::InspectorOverlayImpl(WebViewImpl* webViewImpl)
     , m_omitTooltip(false)
     , m_timer(this, &InspectorOverlayImpl::onTimer)
     , m_suspendCount(0)
-    , m_updating(false)
+    , m_inLayout(false)
+    , m_needsUpdate(false)
 {
     m_overlayHost->setDebuggerListener(this);
 }
@@ -149,31 +195,32 @@ DEFINE_TRACE(InspectorOverlayImpl)
     visitor->trace(m_highlightNode);
     visitor->trace(m_eventTargetNode);
     visitor->trace(m_overlayPage);
+    visitor->trace(m_overlayChromeClient);
     visitor->trace(m_overlayHost);
     visitor->trace(m_listener);
     visitor->trace(m_layoutEditor);
     InspectorOverlay::trace(visitor);
 }
 
-void InspectorOverlayImpl::paintPageOverlay(WebGraphicsContext* context, const WebSize& webViewSize)
+void InspectorOverlayImpl::invalidate()
+{
+    if (!m_pageOverlay)
+        m_pageOverlay = PageOverlay::create(m_webViewImpl, new InspectorPageOverlayDelegate(*this));
+
+    m_pageOverlay->update();
+}
+
+void InspectorOverlayImpl::layout()
 {
     if (isEmpty())
         return;
 
-    GraphicsContext& graphicsContext = toWebGraphicsContextImpl(context)->graphicsContext();
-    FrameView* view = overlayMainFrame()->view();
-    ASSERT(!view->needsLayout());
-    view->paint(&graphicsContext, IntRect(0, 0, view->width(), view->height()));
-}
-
-void InspectorOverlayImpl::invalidate()
-{
-    // Don't invalidate during an update, because that will lead to Document::scheduleLayoutTreeUpdate
-    // being called within Document::updateLayoutTree which violates document lifecycle expectations.
-    if (m_updating)
-        return;
-
-    m_webViewImpl->addPageOverlay(this, OverlayZOrders::highlight);
+    TemporaryChange<bool> scoped(m_inLayout, true);
+    if (m_needsUpdate) {
+        m_needsUpdate = false;
+        rebuildOverlayPage();
+    }
+    overlayMainFrame()->view()->updateAllLifecyclePhases();
 }
 
 bool InspectorOverlayImpl::handleInputEvent(const WebInputEvent& inputEvent)
@@ -269,19 +316,23 @@ bool InspectorOverlayImpl::isEmpty()
 
 void InspectorOverlayImpl::update()
 {
-    TemporaryChange<bool> scoped(m_updating, true);
-
     if (isEmpty()) {
-        m_webViewImpl->removePageOverlay(this);
+        if (m_pageOverlay)
+            m_pageOverlay.clear();
         return;
     }
+    m_needsUpdate = true;
+    m_webViewImpl->page()->chromeClient().scheduleAnimation();
+}
 
+void InspectorOverlayImpl::rebuildOverlayPage()
+{
     FrameView* view = m_webViewImpl->mainFrameImpl()->frameView();
     if (!view)
         return;
 
     IntRect visibleRectInDocument = view->scrollableArea()->visibleContentRect();
-    IntSize viewportSize = m_webViewImpl->page()->frameHost().pinchViewport().size();
+    IntSize viewportSize = m_webViewImpl->page()->frameHost().visualViewport().size();
     toLocalFrame(overlayPage()->mainFrame())->view()->resize(viewportSize);
     reset(viewportSize, visibleRectInDocument.location());
 
@@ -290,10 +341,6 @@ void InspectorOverlayImpl::update()
     if (!m_inspectModeEnabled)
         drawPausedInDebuggerMessage();
     drawViewSize();
-
-    toLocalFrame(overlayPage()->mainFrame())->view()->updateAllLifecyclePhases();
-
-    m_webViewImpl->addPageOverlay(this, OverlayZOrders::highlight);
 }
 
 static PassRefPtr<JSONObject> buildObjectForSize(const IntSize& size)
@@ -316,7 +363,7 @@ void InspectorOverlayImpl::drawNodeHighlight()
 
     RefPtr<JSONObject> highlightJSON = highlight.asJSONObject();
     evaluateInOverlay("drawHighlight", highlightJSON.release());
-    if (m_layoutEditor) {
+    if (m_layoutEditor && m_nodeHighlightConfig.showLayoutEditor) {
         RefPtr<JSONObject> layoutEditorInfo = m_layoutEditor->buildJSONInfo();
         if (layoutEditorInfo)
             evaluateInOverlay("showLayoutEditor", layoutEditorInfo.release());
@@ -356,7 +403,7 @@ Page* InspectorOverlayImpl::overlayPage()
     Page::PageClients pageClients;
     fillWithEmptyClients(pageClients);
     ASSERT(!m_overlayChromeClient);
-    m_overlayChromeClient = adoptPtr(new InspectorOverlayChromeClient(m_webViewImpl->page()->chromeClient(), this));
+    m_overlayChromeClient = InspectorOverlayChromeClient::create(m_webViewImpl->page()->chromeClient(), *this);
     pageClients.chromeClient = m_overlayChromeClient.get();
     m_overlayPage = adoptPtrWillBeNoop(new Page(pageClients));
 
@@ -491,6 +538,5 @@ void InspectorOverlayImpl::setLayoutEditor(PassOwnPtrWillBeRawPtr<LayoutEditor> 
     m_layoutEditor = layoutEditor;
     m_overlayHost->setLayoutEditorListener(m_layoutEditor.get());
 }
-
 
 } // namespace blink

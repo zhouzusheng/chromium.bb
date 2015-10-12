@@ -63,11 +63,14 @@ struct FiringEventIterator {
 };
 typedef Vector<FiringEventIterator, 1> FiringEventIteratorVector;
 
-struct CORE_EXPORT EventTargetData {
-    WTF_MAKE_NONCOPYABLE(EventTargetData); WTF_MAKE_FAST_ALLOCATED(EventTargetData);
+class CORE_EXPORT EventTargetData final : public NoBaseWillBeGarbageCollectedFinalized<EventTargetData> {
+    WTF_MAKE_NONCOPYABLE(EventTargetData);
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(EventTargetData);
 public:
     EventTargetData();
     ~EventTargetData();
+
+    DECLARE_TRACE();
 
     EventListenerMap eventListenerMap;
     OwnPtr<FiringEventIteratorVector> firingEventIterators;
@@ -122,21 +125,26 @@ public:
     virtual LocalDOMWindow* toDOMWindow();
     virtual MessagePort* toMessagePort();
 
-    virtual bool addEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture);
-    virtual bool removeEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture);
+    virtual bool addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, bool useCapture);
+    virtual bool removeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>, bool useCapture);
     virtual void removeAllEventListeners();
-    virtual bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>);
-    bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>, ExceptionState&); // DOM API
+
+    bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>);
+
+    // dispatchEventForBindings is intended to only be called from
+    // javascript originated calls. This method will validate and may adjust
+    // the Event object before dispatching.
+    bool dispatchEventForBindings(PassRefPtrWillBeRawPtr<Event>, ExceptionState&);
     virtual void uncaughtExceptionInEventHandler();
 
     // Used for legacy "onEvent" attribute APIs.
-    bool setAttributeEventListener(const AtomicString& eventType, PassRefPtr<EventListener>);
+    bool setAttributeEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener>);
     EventListener* getAttributeEventListener(const AtomicString& eventType);
 
     bool hasEventListeners() const;
     bool hasEventListeners(const AtomicString& eventType) const;
     bool hasCapturingEventListeners(const AtomicString& eventType);
-    const EventListenerVector& getEventListeners(const AtomicString& eventType);
+    EventListenerVector* getEventListeners(const AtomicString& eventType);
     Vector<AtomicString> eventTypes();
 
     bool fireEventListeners(Event*);
@@ -147,6 +155,8 @@ public:
 
 protected:
     EventTarget();
+
+    virtual bool dispatchEventInternal(PassRefPtrWillBeRawPtr<Event>);
 
     // Subclasses should likely not override these themselves; instead, they should subclass EventTargetWithInlineData.
     virtual EventTargetData* eventTargetData() = 0;
@@ -168,10 +178,22 @@ private:
     friend class EventListenerIterator;
 };
 
-class CORE_EXPORT EventTargetWithInlineData : public EventTarget {
+// EventTargetData is a GCed object, so it should not be used as a part of
+// object. However, we intentionally use it as a part of object for performance,
+// assuming that no one extracts a pointer of
+// EventTargetWithInlineData::m_eventTargetData and store it to a Member etc.
+class GC_PLUGIN_IGNORE("513199") CORE_EXPORT EventTargetWithInlineData : public EventTarget {
+public:
+    DEFINE_INLINE_VIRTUAL_TRACE()
+    {
+        visitor->trace(m_eventTargetData);
+        EventTarget::trace(visitor);
+    }
+
 protected:
-    virtual EventTargetData* eventTargetData() override final { return &m_eventTargetData; }
-    virtual EventTargetData& ensureEventTargetData() override final { return m_eventTargetData; }
+    EventTargetData* eventTargetData() final { return &m_eventTargetData; }
+    EventTargetData& ensureEventTargetData() final { return m_eventTargetData; }
+
 private:
     EventTargetData m_eventTargetData;
 };
@@ -197,6 +219,11 @@ public:
         // EventTarget is not eagerly finalized.
         return allocateObject(size, IsEagerlyFinalizedType<T>::value);
     }
+
+    DEFINE_INLINE_VIRTUAL_TRACE()
+    {
+        EventTargetWithInlineData::trace(visitor);
+    }
 };
 #else
 template <typename T>
@@ -209,16 +236,16 @@ public:
 // FIXME: These macros should be split into separate DEFINE and DECLARE
 // macros to avoid causing so many header includes.
 #define DEFINE_ATTRIBUTE_EVENT_LISTENER(attribute) \
-    EventListener* on##attribute() { return getAttributeEventListener(EventTypeNames::attribute); } \
-    void setOn##attribute(PassRefPtr<EventListener> listener) { setAttributeEventListener(EventTypeNames::attribute, listener); } \
+    EventListener* on##attribute() { return this->getAttributeEventListener(EventTypeNames::attribute); } \
+    void setOn##attribute(PassRefPtrWillBeRawPtr<EventListener> listener) { this->setAttributeEventListener(EventTypeNames::attribute, listener); } \
 
 #define DEFINE_STATIC_ATTRIBUTE_EVENT_LISTENER(attribute) \
     static EventListener* on##attribute(EventTarget& eventTarget) { return eventTarget.getAttributeEventListener(EventTypeNames::attribute); } \
-    static void setOn##attribute(EventTarget& eventTarget, PassRefPtr<EventListener> listener) { eventTarget.setAttributeEventListener(EventTypeNames::attribute, listener); } \
+    static void setOn##attribute(EventTarget& eventTarget, PassRefPtrWillBeRawPtr<EventListener> listener) { eventTarget.setAttributeEventListener(EventTypeNames::attribute, listener); } \
 
 #define DEFINE_WINDOW_ATTRIBUTE_EVENT_LISTENER(attribute) \
     EventListener* on##attribute() { return document().getWindowAttributeEventListener(EventTypeNames::attribute); } \
-    void setOn##attribute(PassRefPtr<EventListener> listener) { document().setWindowAttributeEventListener(EventTypeNames::attribute, listener); } \
+    void setOn##attribute(PassRefPtrWillBeRawPtr<EventListener> listener) { document().setWindowAttributeEventListener(EventTypeNames::attribute, listener); } \
 
 #define DEFINE_STATIC_WINDOW_ATTRIBUTE_EVENT_LISTENER(attribute) \
     static EventListener* on##attribute(EventTarget& eventTarget) { \
@@ -227,7 +254,7 @@ public:
         ASSERT(eventTarget.toDOMWindow()); \
         return eventTarget.getAttributeEventListener(EventTypeNames::attribute); \
     } \
-    static void setOn##attribute(EventTarget& eventTarget, PassRefPtr<EventListener> listener) { \
+    static void setOn##attribute(EventTarget& eventTarget, PassRefPtrWillBeRawPtr<EventListener> listener) { \
         if (Node* node = eventTarget.toNode()) \
             node->document().setWindowAttributeEventListener(EventTypeNames::attribute, listener); \
         else { \
@@ -238,15 +265,15 @@ public:
 
 #define DEFINE_MAPPED_ATTRIBUTE_EVENT_LISTENER(attribute, eventName) \
     EventListener* on##attribute() { return getAttributeEventListener(EventTypeNames::eventName); } \
-    void setOn##attribute(PassRefPtr<EventListener> listener) { setAttributeEventListener(EventTypeNames::eventName, listener); } \
+    void setOn##attribute(PassRefPtrWillBeRawPtr<EventListener> listener) { setAttributeEventListener(EventTypeNames::eventName, listener); } \
 
 #define DECLARE_FORWARDING_ATTRIBUTE_EVENT_LISTENER(recipient, attribute) \
     EventListener* on##attribute(); \
-    void setOn##attribute(PassRefPtr<EventListener> listener);
+    void setOn##attribute(PassRefPtrWillBeRawPtr<EventListener> listener);
 
 #define DEFINE_FORWARDING_ATTRIBUTE_EVENT_LISTENER(type, recipient, attribute) \
     EventListener* type::on##attribute() { return recipient ? recipient->getAttributeEventListener(EventTypeNames::attribute) : 0; } \
-    void type::setOn##attribute(PassRefPtr<EventListener> listener) \
+    void type::setOn##attribute(PassRefPtrWillBeRawPtr<EventListener> listener) \
     { \
         if (recipient) \
             recipient->setAttributeEventListener(EventTypeNames::attribute, listener); \
@@ -292,8 +319,8 @@ public: \
     using baseClass::ref; \
     using baseClass::deref; \
 private: \
-    virtual void refEventTarget() override final { ref(); } \
-    virtual void derefEventTarget() override final { deref(); } \
+    void refEventTarget() final { ref(); } \
+    void derefEventTarget() final { deref(); } \
     typedef int thisIsHereToForceASemiColonAfterThisEventTargetMacro
 #define REFCOUNTED_EVENT_TARGET(baseClass) DEFINE_EVENT_TARGET_REFCOUNTING(RefCounted<baseClass>)
 #define REFCOUNTED_GARBAGE_COLLECTED_EVENT_TARGET(baseClass) DEFINE_EVENT_TARGET_REFCOUNTING(RefCountedGarbageCollected<baseClass>)

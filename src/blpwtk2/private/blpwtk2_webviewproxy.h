@@ -121,8 +121,6 @@ class WebViewProxy : public WebView,
     void print() override;
     void handleInputEvents(const InputEvent *events, size_t eventsCount) override;
     void setDelegate(WebViewDelegate* delegate) override;
-    void drawContentsToDevice(NativeDeviceContext deviceContext,
-                              const DrawParams& params) override;
     void drawContentsToBlob(Blob *blob, const DrawParams& params) override;
     String getLayoutTreeAsText(int flags) const override;
     int getRoutingId() const override;

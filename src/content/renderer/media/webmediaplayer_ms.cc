@@ -25,7 +25,6 @@
 #include "media/base/video_rotation.h"
 #include "media/base/video_util.h"
 #include "media/blink/webmediaplayer_delegate.h"
-#include "media/blink/webmediaplayer_util.h"
 #include "third_party/WebKit/public/platform/WebMediaPlayerClient.h"
 #include "third_party/WebKit/public/platform/WebRect.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
@@ -47,16 +46,13 @@ namespace {
 scoped_refptr<media::VideoFrame> CopyFrameToYV12(
     const scoped_refptr<media::VideoFrame>& frame,
     media::SkCanvasVideoRenderer* video_renderer) {
-  scoped_refptr<media::VideoFrame> new_frame =
-      media::VideoFrame::CreateFrame(media::VideoFrame::YV12,
-                                     frame->coded_size(),
-                                     frame->visible_rect(),
-                                     frame->natural_size(),
-                                     frame->timestamp());
+  scoped_refptr<media::VideoFrame> new_frame = media::VideoFrame::CreateFrame(
+      media::PIXEL_FORMAT_YV12, frame->coded_size(), frame->visible_rect(),
+      frame->natural_size(), frame->timestamp());
 
   if (frame->HasTextures()) {
-    DCHECK(frame->format() == media::VideoFrame::ARGB ||
-           frame->format() == media::VideoFrame::XRGB);
+    DCHECK(frame->format() == media::PIXEL_FORMAT_ARGB ||
+           frame->format() == media::PIXEL_FORMAT_XRGB);
     SkBitmap bitmap;
     bitmap.allocN32Pixels(frame->visible_rect().width(),
                           frame->visible_rect().height());
@@ -79,8 +75,8 @@ scoped_refptr<media::VideoFrame> CopyFrameToYV12(
                                new_frame.get());
   } else {
     DCHECK(frame->IsMappable());
-    DCHECK(frame->format() == media::VideoFrame::YV12 ||
-           frame->format() == media::VideoFrame::I420);
+    DCHECK(frame->format() == media::PIXEL_FORMAT_YV12 ||
+           frame->format() == media::PIXEL_FORMAT_I420);
     for (size_t i = 0; i < media::VideoFrame::NumPlanes(frame->format()); ++i) {
       media::CopyPlane(i, frame->data(i), frame->stride(i),
                        frame->rows(i), new_frame.get());
@@ -259,18 +255,20 @@ void WebMediaPlayerMS::setVolume(double volume) {
 void WebMediaPlayerMS::setSinkId(const blink::WebString& device_id,
                                  media::WebSetSinkIdCB* web_callback) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  std::string device_id_str(device_id.utf8());
-  GURL security_origin(frame_->securityOrigin().toString().utf8());
-  DVLOG(1) << __FUNCTION__
-           << "(" << device_id_str << ", " << security_origin << ")";
+  DVLOG(1) << __FUNCTION__;
   media::SwitchOutputDeviceCB callback =
       media::ConvertToSwitchOutputDeviceCB(web_callback);
   if (audio_renderer_.get()) {
-    audio_renderer_->SwitchOutputDevice(device_id_str, security_origin,
+    media::OutputDevice* output_device = audio_renderer_->GetOutputDevice();
+    if (output_device) {
+      std::string device_id_str(device_id.utf8());
+      GURL security_origin(frame_->securityOrigin().toString().utf8());
+      output_device->SwitchOutputDevice(device_id_str, security_origin,
                                         callback);
-  } else {
-    callback.Run(media::SWITCH_OUTPUT_DEVICE_RESULT_ERROR_NOT_SUPPORTED);
+      return;
+    }
   }
+  callback.Run(media::SWITCH_OUTPUT_DEVICE_RESULT_ERROR_NOT_SUPPORTED);
 }
 
 void WebMediaPlayerMS::setPreload(WebMediaPlayer::Preload preload) {
@@ -388,7 +386,7 @@ bool WebMediaPlayerMS::didPassCORSAccessCheck() const {
 }
 
 double WebMediaPlayerMS::mediaTimeForTimeValue(double timeValue) const {
-  return media::ConvertSecondsToTimestamp(timeValue).InSecondsF();
+  return base::TimeDelta::FromSecondsD(timeValue).InSecondsF();
 }
 
 unsigned WebMediaPlayerMS::decodedFrameCount() const {

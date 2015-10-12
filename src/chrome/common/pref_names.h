@@ -40,6 +40,7 @@ extern const char kSupervisedUserCustodianProfileImageURL[];
 extern const char kSupervisedUserCustodianProfileURL[];
 extern const char kSupervisedUserManualHosts[];
 extern const char kSupervisedUserManualURLs[];
+extern const char kSupervisedUserSafeSites[];
 extern const char kSupervisedUserSecondCustodianEmail[];
 extern const char kSupervisedUserSecondCustodianName[];
 extern const char kSupervisedUserSecondCustodianProfileImageURL[];
@@ -332,9 +333,7 @@ extern const char kContentSettingsPluginWhitelist[];
 #endif
 extern const char kClearSiteDataOnExit[];
 extern const char kPartitionDefaultZoomLevel[];
-extern const char kDefaultZoomLevelDeprecated[];
 extern const char kPartitionPerHostZoomLevels[];
-extern const char kPerHostZoomLevelsDeprecated[];
 extern const char kAutofillDialogAutofillDefault[];
 extern const char kAutofillDialogPayWithoutWallet[];
 extern const char kAutofillDialogWalletLocationAcceptance[];
@@ -398,8 +397,6 @@ extern const char kFullscreenAllowed[];
 
 extern const char kLocalDiscoveryNotificationsEnabled[];
 
-extern const char kPreferenceResetTime[];
-
 extern const char kPushMessagingRegistrationCount[];
 extern const char kPushMessagingAppIdentifierMap[];
 
@@ -441,14 +438,6 @@ extern const char kMetricsReportingEnabled[];
 extern const char kCrashReportingEnabled[];
 #endif
 
-extern const char kVariationsCompressedSeed[];
-extern const char kVariationsLastFetchTime[];
-extern const char kVariationsPermanentConsistencyCountry[];
-extern const char kVariationsRestrictParameter[];
-extern const char kVariationsSeed[];
-extern const char kVariationsSeedDate[];
-extern const char kVariationsSeedSignature[];
-
 extern const char kDeviceOpenNetworkConfiguration[];
 
 extern const char kProfileLastUsed[];
@@ -489,6 +478,7 @@ extern const char kBrowserSuppressDefaultBrowserPrompt[];
 extern const char kBrowserWindowPlacement[];
 extern const char kBrowserWindowPlacementPopup[];
 extern const char kTaskManagerWindowPlacement[];
+extern const char kTaskManagerColumnVisibility[];
 extern const char kAppWindowPlacement[];
 
 extern const char kDownloadDefaultDirectory[];
@@ -664,8 +654,6 @@ extern const char kServerBackedDeviceState[];
 extern const char kCustomizationDefaultWallpaperURL[];
 extern const char kLogoutStartedLast[];
 extern const char kConsumerManagementStage[];
-extern const char kWebviewSigninDisabled[];
-extern const char kNewLoginUIPopup[];
 #endif  // defined(OS_CHROMEOS)
 
 extern const char kClearPluginLSODataEnabled[];

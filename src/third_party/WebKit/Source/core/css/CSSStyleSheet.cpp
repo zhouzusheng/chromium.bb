@@ -61,14 +61,14 @@ private:
     StyleSheetCSSRuleList(CSSStyleSheet* sheet) : m_styleSheet(sheet) { }
 
 #if !ENABLE(OILPAN)
-    virtual void ref() override { m_styleSheet->ref(); }
-    virtual void deref() override { m_styleSheet->deref(); }
+    void ref() override { m_styleSheet->ref(); }
+    void deref() override { m_styleSheet->deref(); }
 #endif
 
-    virtual unsigned length() const override { return m_styleSheet->length(); }
-    virtual CSSRule* item(unsigned index) const override { return m_styleSheet->item(index); }
+    unsigned length() const override { return m_styleSheet->length(); }
+    CSSRule* item(unsigned index) const override { return m_styleSheet->item(index); }
 
-    virtual CSSStyleSheet* styleSheet() const override { return m_styleSheet; }
+    CSSStyleSheet* styleSheet() const override { return m_styleSheet; }
 
     RawPtrWillBeMember<CSSStyleSheet> m_styleSheet;
 };
@@ -269,9 +269,9 @@ bool CSSStyleSheet::canAccessRules() const
     Document* document = ownerDocument();
     if (!document)
         return true;
-    if (document->securityOrigin()->canRequest(baseURL))
+    if (document->securityOrigin()->canRequestNoSuborigin(baseURL))
         return true;
-    if (m_allowRuleAccessFromOrigin && document->securityOrigin()->canAccess(m_allowRuleAccessFromOrigin.get()))
+    if (m_allowRuleAccessFromOrigin && document->securityOrigin()->canAccessCheckSuborigins(m_allowRuleAccessFromOrigin.get()))
         return true;
     return false;
 }

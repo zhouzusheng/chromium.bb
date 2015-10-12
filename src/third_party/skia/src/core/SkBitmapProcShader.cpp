@@ -1,35 +1,22 @@
-
 /*
  * Copyright 2011 Google Inc.
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+
+#include "SkBitmapProcShader.h"
+#include "SkBitmapProcState.h"
 #include "SkColorPriv.h"
+#include "SkErrorInternals.h"
+#include "SkPixelRef.h"
 #include "SkReadBuffer.h"
 #include "SkWriteBuffer.h"
-#include "SkPixelRef.h"
-#include "SkErrorInternals.h"
-#include "SkBitmapProcShader.h"
 
 #if SK_SUPPORT_GPU
-#include "effects/GrSimpleTextureEffect.h"
 #include "effects/GrBicubicEffect.h"
+#include "effects/GrSimpleTextureEffect.h"
 #endif
-
-bool SkBitmapProcShader::CanDo(const SkBitmap& bm, TileMode tx, TileMode ty) {
-    switch (bm.colorType()) {
-        case kAlpha_8_SkColorType:
-        case kRGB_565_SkColorType:
-        case kIndex_8_SkColorType:
-        case kN32_SkColorType:
-    //        if (tx == ty && (kClamp_TileMode == tx || kRepeat_TileMode == tx))
-                return true;
-        default:
-            break;
-    }
-    return false;
-}
 
 SkBitmapProcShader::SkBitmapProcShader(const SkBitmap& src, TileMode tmx, TileMode tmy,
                                        const SkMatrix* localMatrix)
@@ -267,7 +254,12 @@ void SkBitmapProcShader::BitmapProcShaderContext::shadeSpan16(int x, int y, uint
 
 // returns true and set color if the bitmap can be drawn as a single color
 // (for efficiency)
-static bool canUseColorShader(const SkBitmap& bm, SkColor* color) {
+static bool can_use_color_shader(const SkBitmap& bm, SkColor* color) {
+#ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
+    // HWUI does not support color shaders (see b/22390304)
+    return false;
+#endif
+
     if (1 != bm.width() || 1 != bm.height()) {
         return false;
     }
@@ -293,14 +285,14 @@ static bool canUseColorShader(const SkBitmap& bm, SkColor* color) {
     return false;
 }
 
-static bool bitmapIsTooBig(const SkBitmap& bm) {
+static bool bitmap_is_too_big(const SkBitmap& bm) {
     // SkBitmapProcShader stores bitmap coordinates in a 16bit buffer, as it
     // communicates between its matrix-proc and its sampler-proc. Until we can
     // widen that, we have to reject bitmaps that are larger.
     //
-    const int maxSize = 65535;
+    static const int kMaxSize = 65535;
 
-    return bm.width() > maxSize || bm.height() > maxSize;
+    return bm.width() > kMaxSize || bm.height() > kMaxSize;
 }
 
 SkShader* SkCreateBitmapShader(const SkBitmap& src, SkShader::TileMode tmx,
@@ -308,14 +300,13 @@ SkShader* SkCreateBitmapShader(const SkBitmap& src, SkShader::TileMode tmx,
                                SkTBlitterAllocator* allocator) {
     SkShader* shader;
     SkColor color;
-    if (src.isNull() || bitmapIsTooBig(src)) {
+    if (src.isNull() || bitmap_is_too_big(src)) {
         if (NULL == allocator) {
             shader = SkNEW(SkEmptyShader);
         } else {
             shader = allocator->createT<SkEmptyShader>();
         }
-    }
-    else if (canUseColorShader(src, &color)) {
+    } else if (can_use_color_shader(src, &color)) {
         if (NULL == allocator) {
             shader = SkNEW_ARGS(SkColorShader, (color));
         } else {
@@ -359,8 +350,8 @@ void SkBitmapProcShader::toString(SkString* str) const {
 #if SK_SUPPORT_GPU
 
 #include "GrTextureAccess.h"
-#include "effects/GrSimpleTextureEffect.h"
 #include "SkGr.h"
+#include "effects/GrSimpleTextureEffect.h"
 
 bool SkBitmapProcShader::asFragmentProcessor(GrContext* context, const SkPaint& paint,
                                              const SkMatrix& viewM,
@@ -392,41 +383,10 @@ bool SkBitmapProcShader::asFragmentProcessor(GrContext* context, const SkPaint& 
     // we check the matrix scale factors to determine how to interpret the filter quality setting.
     // This completely ignores the complexity of the drawVertices case where explicit local coords
     // are provided by the caller.
-    bool useBicubic = false;
-    GrTextureParams::FilterMode textureFilterMode;
-    switch(paint.getFilterQuality()) {
-        case kNone_SkFilterQuality:
-            textureFilterMode = GrTextureParams::kNone_FilterMode;
-            break;
-        case kLow_SkFilterQuality:
-            textureFilterMode = GrTextureParams::kBilerp_FilterMode;
-            break;
-        case kMedium_SkFilterQuality: {
-            SkMatrix matrix;
-            matrix.setConcat(viewM, this->getLocalMatrix());
-            if (matrix.getMinScale() < SK_Scalar1) {
-                textureFilterMode = GrTextureParams::kMipMap_FilterMode;
-            } else {
-                // Don't trigger MIP level generation unnecessarily.
-                textureFilterMode = GrTextureParams::kBilerp_FilterMode;
-            }
-            break;
-        }
-        case kHigh_SkFilterQuality: {
-            SkMatrix matrix;
-            matrix.setConcat(viewM, this->getLocalMatrix());
-            useBicubic = GrBicubicEffect::ShouldUseBicubic(matrix, &textureFilterMode);
-            break;
-        }
-        default:
-            SkErrorInternals::SetError( kInvalidPaint_SkError,
-                                        "Sorry, I don't understand the filtering "
-                                        "mode you asked for.  Falling back to "
-                                        "MIPMaps.");
-            textureFilterMode = GrTextureParams::kMipMap_FilterMode;
-            break;
-
-    }
+    bool doBicubic;
+    GrTextureParams::FilterMode textureFilterMode =
+            GrSkFilterQualityToGrFilterMode(paint.getFilterQuality(), viewM, this->getLocalMatrix(),
+                                            &doBicubic);
     GrTextureParams params(tm, textureFilterMode);
     SkAutoTUnref<GrTexture> texture(GrRefCachedBitmapTexture(context, fRawBitmap, &params));
 
@@ -440,7 +400,7 @@ bool SkBitmapProcShader::asFragmentProcessor(GrContext* context, const SkPaint& 
                                                 SkColor2GrColor(paint.getColor()) :
                                                 SkColor2GrColorJustAlpha(paint.getColor());
 
-    if (useBicubic) {
+    if (doBicubic) {
         *fp = GrBicubicEffect::Create(procDataManager, texture, matrix, tm);
     } else {
         *fp = GrSimpleTextureEffect::Create(procDataManager, texture, matrix, params);

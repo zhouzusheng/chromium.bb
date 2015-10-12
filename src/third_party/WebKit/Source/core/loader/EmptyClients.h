@@ -30,7 +30,7 @@
 #define EmptyClients_h
 
 #include "core/CoreExport.h"
-#include "core/editing/UndoStep.h"
+#include "core/editing/commands/UndoStep.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/ContextMenuClient.h"
@@ -65,8 +65,9 @@
 namespace blink {
 
 class CORE_EXPORT EmptyChromeClient : public ChromeClient {
-    WTF_MAKE_FAST_ALLOCATED(EmptyChromeClient);
 public:
+    static PassOwnPtrWillBeRawPtr<EmptyChromeClient> create() { return adoptPtrWillBeNoop(new EmptyChromeClient); }
+
     ~EmptyChromeClient() override {}
     void chromeDestroyed() override {}
 
@@ -115,7 +116,7 @@ public:
     bool openJavaScriptPromptDelegate(LocalFrame*, const String&, const String&, String&) override { return false; }
 
     bool hasOpenedPopup() const override { return false; }
-    PassRefPtrWillBeRawPtr<PopupMenu> openPopupMenu(LocalFrame&, PopupMenuClient*) override;
+    PassRefPtrWillBeRawPtr<PopupMenu> openPopupMenu(LocalFrame&, HTMLSelectElement&) override;
     DOMWindow* pagePopupWindowForTesting() const override { return nullptr; }
 
     void setStatusbarText(const String&) override {}
@@ -198,7 +199,7 @@ public:
     void dispatchDidCommitLoad(HistoryItem*, HistoryCommitType) override {}
     void dispatchDidFailProvisionalLoad(const ResourceError&, HistoryCommitType) override {}
     void dispatchDidFailLoad(const ResourceError&, HistoryCommitType) override {}
-    void dispatchDidFinishDocumentLoad() override {}
+    void dispatchDidFinishDocumentLoad(bool) override {}
     void dispatchDidFinishLoad() override {}
     void dispatchDidFirstVisuallyNonEmptyLayout() override {}
     void dispatchDidChangeThemeColor() override {}
@@ -233,6 +234,7 @@ public:
     PassRefPtrWillBeRawPtr<Widget> createPlugin(HTMLPlugInElement*, const KURL&, const Vector<String>&, const Vector<String>&, const String&, bool, DetachedPluginPolicy) override;
     bool canCreatePluginWithoutRenderer(const String& mimeType) const override { return false; }
     PassRefPtrWillBeRawPtr<Widget> createJavaAppletWidget(HTMLAppletElement*, const KURL&, const Vector<String>&, const Vector<String>&) override;
+    PassOwnPtr<WebMediaPlayer> createWebMediaPlayer(HTMLMediaElement&, const WebURL&, WebMediaPlayerClient*) override;
 
     ObjectContentType objectContentType(const KURL&, const String&, bool) override { return ObjectContentType(); }
 

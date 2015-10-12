@@ -30,15 +30,18 @@
 #include "core/editing/EditingStrategy.h"
 #include "core/editing/EphemeralRange.h"
 #include "core/editing/SelectionType.h"
+#include "core/editing/TextAffinity.h"
 #include "core/editing/TextGranularity.h"
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleUnits.h"
+#include "wtf/Allocator.h"
 
 namespace blink {
 
 class LayoutPoint;
 
-const EAffinity SEL_DEFAULT_AFFINITY = DOWNSTREAM;
+// TODO(yosin) We should use capitalized name instead of |SEL_DEFAULT_AFFINITY|.
+const TextAffinity SEL_DEFAULT_AFFINITY = TextAffinity::Downstream; // NOLINT
 enum SelectionDirection { DirectionForward, DirectionBackward, DirectionRight, DirectionLeft };
 
 class CORE_EXPORT VisibleSelection {
@@ -46,9 +49,12 @@ class CORE_EXPORT VisibleSelection {
     DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(VisibleSelection);
 public:
     class InDOMTree {
+        STATIC_ONLY(InDOMTree);
     public:
         using PositionType = Position;
+        using Strategy = EditingStrategy;
 
+        static EphemeralRange asRange(const VisibleSelection&);
         static bool equalSelections(const VisibleSelection&, const VisibleSelection&);
         static PositionType selectionBase(const VisibleSelection& selection) { return selection.base(); }
         static PositionType selectionExtent(const VisibleSelection& selection) { return selection.extent(); }
@@ -61,9 +67,12 @@ public:
     };
 
     class InComposedTree {
+        STATIC_ONLY(InComposedTree);
     public:
         using PositionType = PositionInComposedTree;
+        using Strategy = EditingInComposedTreeStrategy;
 
+        static EphemeralRangeInComposedTree asRange(const VisibleSelection&);
         static bool equalSelections(const VisibleSelection&, const VisibleSelection&);
         static bool isRange(const VisibleSelection& selection) { return selectionType(selection) == RangeSelection; }
         static PositionType selectionBase(const VisibleSelection& selection) { return selection.baseInComposedTree(); }
@@ -73,23 +82,23 @@ public:
         static SelectionType selectionType(const VisibleSelection& selection) { return selection.selectionTypeInComposedTree(); }
         static VisiblePosition selectionVisibleStart(const VisibleSelection& selection)
         {
-            return VisiblePosition(selectionStart(selection), isRange(selection) ? DOWNSTREAM : selection.affinity());
+            return VisiblePosition(selectionStart(selection), isRange(selection) ? TextAffinity::Downstream : selection.affinity());
         }
         static VisiblePosition selectionVisibleEnd(const VisibleSelection& selection)
         {
-            return VisiblePosition(selectionEnd(selection), isRange(selection) ? UPSTREAM : selection.affinity());
+            return VisiblePosition(selectionEnd(selection), isRange(selection) ? TextAffinity::Upstream : selection.affinity());
         }
         static PositionType toPositionType(const Position& position) { return toPositionInComposedTree(position); }
     };
 
     VisibleSelection();
 
-    VisibleSelection(const Position&, EAffinity, bool isDirectional = false);
-    VisibleSelection(const Position& base, const Position& extent, EAffinity = SEL_DEFAULT_AFFINITY, bool isDirectional = false);
-    VisibleSelection(const PositionInComposedTree& base, const PositionInComposedTree& extent, EAffinity = SEL_DEFAULT_AFFINITY, bool isDirectional = false);
+    VisibleSelection(const Position&, TextAffinity, bool isDirectional = false);
+    VisibleSelection(const Position& base, const Position& extent, TextAffinity = SEL_DEFAULT_AFFINITY, bool isDirectional = false);
+    VisibleSelection(const PositionInComposedTree& base, const PositionInComposedTree& extent, TextAffinity = SEL_DEFAULT_AFFINITY, bool isDirectional = false);
 
-    explicit VisibleSelection(const EphemeralRange&, EAffinity = SEL_DEFAULT_AFFINITY, bool isDirectional = false);
-    explicit VisibleSelection(const Range*, EAffinity = SEL_DEFAULT_AFFINITY, bool isDirectional = false);
+    explicit VisibleSelection(const EphemeralRange&, TextAffinity = SEL_DEFAULT_AFFINITY, bool isDirectional = false);
+    explicit VisibleSelection(const Range*, TextAffinity = SEL_DEFAULT_AFFINITY, bool isDirectional = false);
 
     explicit VisibleSelection(const VisiblePosition&, bool isDirectional = false);
     VisibleSelection(const VisiblePosition&, const VisiblePosition&, bool isDirectional = false);
@@ -102,8 +111,8 @@ public:
     SelectionType selectionType() const { return m_selectionType; }
     SelectionType selectionTypeInComposedTree() const;
 
-    void setAffinity(EAffinity affinity) { m_affinity = affinity; }
-    EAffinity affinity() const { return m_affinity; }
+    void setAffinity(TextAffinity affinity) { m_affinity = affinity; }
+    TextAffinity affinity() const { return m_affinity; }
 
     void setBase(const Position&);
     void setBase(const PositionInComposedTree&);
@@ -121,10 +130,10 @@ public:
     PositionInComposedTree startInComposedTree() const;
     PositionInComposedTree endInComposedTree() const;
 
-    VisiblePosition visibleStart() const { return VisiblePosition(m_start, isRange() ? DOWNSTREAM : affinity()); }
-    VisiblePosition visibleEnd() const { return VisiblePosition(m_end, isRange() ? UPSTREAM : affinity()); }
-    VisiblePosition visibleBase() const { return VisiblePosition(m_base, isRange() ? (isBaseFirst() ? UPSTREAM : DOWNSTREAM) : affinity()); }
-    VisiblePosition visibleExtent() const { return VisiblePosition(m_extent, isRange() ? (isBaseFirst() ? DOWNSTREAM : UPSTREAM) : affinity()); }
+    VisiblePosition visibleStart() const { return VisiblePosition(m_start, isRange() ? TextAffinity::Downstream : affinity()); }
+    VisiblePosition visibleEnd() const { return VisiblePosition(m_end, isRange() ? TextAffinity::Upstream : affinity()); }
+    VisiblePosition visibleBase() const { return VisiblePosition(m_base, isRange() ? (isBaseFirst() ? TextAffinity::Upstream : TextAffinity::Downstream) : affinity()); }
+    VisiblePosition visibleExtent() const { return VisiblePosition(m_extent, isRange() ? (isBaseFirst() ? TextAffinity::Downstream : TextAffinity::Upstream) : affinity()); }
 
     bool isNone() const { return selectionType() == NoSelection; }
     bool isCaret() const { return selectionType() == CaretSelection; }
@@ -151,12 +160,12 @@ public:
 
     // FIXME: Most callers probably don't want these functions, but
     // are using them for historical reasons. toNormalizedRange and
-    // toNormalizedPositions contracts the range around text, and
+    // toNormalizedEphemeralRange contracts the range around text, and
     // moves the caret upstream before returning the range/positions.
     PassRefPtrWillBeRawPtr<Range> toNormalizedRange() const;
-    bool toNormalizedPositions(Position& start, Position& end) const;
-    static void normalizePositions(const Position& start, const Position& end, Position* normalizedStart, Position* normalizedEnd);
-    static void normalizePositions(const PositionInComposedTree& start, const PositionInComposedTree& end, PositionInComposedTree* outStart, PositionInComposedTree* outEnd);
+    EphemeralRange toNormalizedEphemeralRange() const;
+    static EphemeralRange normalizeRange(const EphemeralRange&);
+    static EphemeralRangeInComposedTree normalizeRange(const EphemeralRangeInComposedTree&);
 
     Element* rootEditableElement() const;
     bool isContentEditable() const;
@@ -169,6 +178,7 @@ public:
     VisiblePosition visiblePositionRespectingEditingBoundary(const LayoutPoint& localPoint, Node* targetNode) const;
     PositionWithAffinity positionRespectingEditingBoundary(const LayoutPoint& localPoint, Node* targetNode) const;
 
+    bool isValidFor(const Document&) const;
     void setWithoutValidation(const Position&, const Position&);
     void setWithoutValidation(const PositionInComposedTree&, const PositionInComposedTree&);
 
@@ -217,26 +227,26 @@ private:
 
     // We need to store these as Positions because VisibleSelection is
     // used to store values in editing commands for use when
-    // undoing the command. We need to be able to create a selection that, while currently
-    // invalid, will be valid once the changes are undone.
+    // undoing the command. We need to be able to create a selection that, while
+    // currently invalid, will be valid once the changes are undone.
 
-    Position m_base;   // Where the first click happened
+    Position m_base; // Where the first click happened
     Position m_extent; // Where the end click happened
-    Position m_start;  // Leftmost position when expanded to respect granularity
-    Position m_end;    // Rightmost position when expanded to respect granularity
+    Position m_start; // Leftmost position when expanded to respect granularity
+    Position m_end; // Rightmost position when expanded to respect granularity
 
     // TODO(hajimehoshi, yosin): The members m_*InComposedTree are now always
     // computed from the respective positions at validate(). To have selections
     // work on the composed tree more accurately, we need to compute the DOM
     // positions from the composed tree positions. To do this, we need to add
-    // considable amount of fixes (including htmlediting.cpp, VisibleUnit.cpp,
-    // and VisiblePosition.cpp). We'll do that in the future.
+    // considable amount of fixes (including EditingUtilities.cpp,
+    // VisibleUnit.cpp, and VisiblePosition.cpp). We'll do that in the future.
     PositionInComposedTree m_baseInComposedTree;
     PositionInComposedTree m_extentInComposedTree;
     PositionInComposedTree m_startInComposedTree;
     PositionInComposedTree m_endInComposedTree;
 
-    EAffinity m_affinity; // the upstream/downstream affinity of the caret
+    TextAffinity m_affinity; // the upstream/downstream affinity of the caret
 
     // Oilpan: this reference has a lifetime that is at least as long
     // as this object.

@@ -146,16 +146,18 @@ PerformanceEntryVector PerformanceBase::getEntriesByName(const String& name, con
     return entries;
 }
 
-void PerformanceBase::webkitClearResourceTimings()
+void PerformanceBase::clearResourceTimings()
 {
     m_resourceTimingBuffer.clear();
 }
 
-void PerformanceBase::webkitSetResourceTimingBufferSize(unsigned size)
+void PerformanceBase::setResourceTimingBufferSize(unsigned size)
 {
     m_resourceTimingBufferSize = size;
-    if (isResourceTimingBufferFull())
+    if (isResourceTimingBufferFull()) {
+        dispatchEvent(Event::create(EventTypeNames::resourcetimingbufferfull));
         dispatchEvent(Event::create(EventTypeNames::webkitresourcetimingbufferfull));
+    }
 }
 
 void PerformanceBase::clearFrameTimings()
@@ -251,8 +253,10 @@ void PerformanceBase::addResourceTimingBuffer(PerformanceEntry* entry)
 {
     m_resourceTimingBuffer.append(entry);
 
-    if (isResourceTimingBufferFull())
+    if (isResourceTimingBufferFull()) {
+        dispatchEvent(Event::create(EventTypeNames::resourcetimingbufferfull));
         dispatchEvent(Event::create(EventTypeNames::webkitresourcetimingbufferfull));
+    }
 }
 
 bool PerformanceBase::isResourceTimingBufferFull()
@@ -331,7 +335,7 @@ DEFINE_TRACE(PerformanceBase)
     visitor->trace(m_frameTimingBuffer);
     visitor->trace(m_resourceTimingBuffer);
     visitor->trace(m_userTiming);
-    EventTargetWithInlineData::trace(visitor);
+    RefCountedGarbageCollectedEventTargetWithInlineData<PerformanceBase>::trace(visitor);
 }
 
 } // namespace blink

@@ -6,6 +6,7 @@
 #include "core/paint/EllipsisBoxPainter.h"
 
 #include "core/layout/TextRunConstructor.h"
+#include "core/layout/api/SelectionState.h"
 #include "core/layout/line/EllipsisBox.h"
 #include "core/layout/line/RootInlineBox.h"
 #include "core/paint/PaintInfo.h"
@@ -23,8 +24,7 @@ void EllipsisBoxPainter::paint(const PaintInfo& paintInfo, const LayoutPoint& pa
 
 void EllipsisBoxPainter::paintEllipsis(const PaintInfo& paintInfo, const LayoutPoint& paintOffset, LayoutUnit lineTop, LayoutUnit lineBottom, const ComputedStyle& style)
 {
-    bool isPrinting = m_ellipsisBox.layoutObject().document().printing();
-    bool haveSelection = !isPrinting && paintInfo.phase != PaintPhaseTextClip && m_ellipsisBox.selectionState() != LayoutObject::SelectionNone;
+    bool haveSelection = !paintInfo.isPrinting() && paintInfo.phase != PaintPhaseTextClip && m_ellipsisBox.selectionState() != SelectionNone;
 
     LayoutRect paintRect(m_ellipsisBox.logicalFrameRect());
     if (haveSelection)
@@ -54,12 +54,11 @@ void EllipsisBoxPainter::paintEllipsis(const PaintInfo& paintInfo, const LayoutP
     else if (paintInfo.phase == PaintPhaseSelection)
         return;
 
-    bool usesTextAsClip = paintInfo.phase == PaintPhaseTextClip;
-    TextPainter::Style textStyle = TextPainter::textPaintingStyle(m_ellipsisBox.layoutObject(), style, usesTextAsClip, isPrinting);
+    TextPainter::Style textStyle = TextPainter::textPaintingStyle(m_ellipsisBox.layoutObject(), style, paintInfo);
     if (haveSelection)
-        textStyle = TextPainter::selectionPaintingStyle(m_ellipsisBox.layoutObject(), true, usesTextAsClip, isPrinting, textStyle);
+        textStyle = TextPainter::selectionPaintingStyle(m_ellipsisBox.layoutObject(), true, paintInfo, textStyle);
 
-    TextRun textRun = constructTextRun(&m_ellipsisBox.layoutObject(), font, m_ellipsisBox.ellipsisStr(), style, TextRun::AllowTrailingExpansion);
+    TextRun textRun = constructTextRun(font, m_ellipsisBox.ellipsisStr(), style, TextRun::AllowTrailingExpansion);
     LayoutPoint textOrigin(boxOrigin.x(), boxOrigin.y() + font.fontMetrics().ascent());
     TextPainter textPainter(context, font, textRun, textOrigin, boxRect, m_ellipsisBox.isHorizontal());
     textPainter.paint(0, m_ellipsisBox.ellipsisStr().length(), m_ellipsisBox.ellipsisStr().length(), textStyle);
@@ -85,7 +84,7 @@ void EllipsisBoxPainter::paintSelection(GraphicsContext* context, const LayoutPo
     const LayoutPoint localOrigin(boxOrigin.x(), boxOrigin.y() - deltaY);
     LayoutRect clipRect(localOrigin, LayoutSize(m_ellipsisBox.logicalWidth(), h));
     context->clip(clipRect);
-    context->drawHighlightForText(font, constructTextRun(&m_ellipsisBox.layoutObject(), font, m_ellipsisBox.ellipsisStr(), style, TextRun::AllowTrailingExpansion), FloatPoint(localOrigin), h, c);
+    context->drawHighlightForText(font, constructTextRun(font, m_ellipsisBox.ellipsisStr(), style, TextRun::AllowTrailingExpansion), FloatPoint(localOrigin), h, c);
 }
 
 } // namespace blink

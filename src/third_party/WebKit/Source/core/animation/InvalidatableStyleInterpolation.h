@@ -32,6 +32,8 @@ public:
 
     DEFINE_INLINE_VIRTUAL_TRACE()
     {
+        visitor->trace(m_startKeyframe);
+        visitor->trace(m_endKeyframe);
         visitor->trace(m_cachedConversion);
         visitor->trace(m_conversionCheckers);
         visitor->trace(m_cachedValue);
@@ -44,14 +46,18 @@ private:
         const CSSPropertySpecificKeyframe& startKeyframe,
         const CSSPropertySpecificKeyframe& endKeyframe);
 
-    void ensureValidInterpolation(const StyleResolverState&) const;
-    bool isCacheValid(const StyleResolverState&) const;
-    bool maybeCachePairwiseConversion(const StyleResolverState*) const;
-    PassOwnPtrWillBeRawPtr<InterpolationValue> convertSingleKeyframe(const CSSPropertySpecificKeyframe&, const StyleResolverState&) const;
+    PassOwnPtrWillBeRawPtr<InterpolationValue> maybeConvertUnderlyingValue(const StyleResolverState&) const;
+    void ensureValidInterpolation(const StyleResolverState&, const InterpolationValue* underlyingValue) const;
+    bool dependsOnUnderlyingValue() const;
+    bool isCacheValid(const StyleResolverState&, const InterpolationValue* underlyingValue) const;
+    bool isNeutralKeyframeActive() const;
+    bool maybeCachePairwiseConversion(const StyleResolverState*, const InterpolationValue* underlyingValue) const;
+    PassOwnPtrWillBeRawPtr<InterpolationValue> convertSingleKeyframe(const CSSPropertySpecificKeyframe&, const StyleResolverState&, const InterpolationValue* underlyingValue) const;
+    void setFlagIfInheritUsed(StyleResolverState&) const;
 
     const Vector<const InterpolationType*>& m_interpolationTypes;
-    const CSSPropertySpecificKeyframe& m_startKeyframe;
-    const CSSPropertySpecificKeyframe& m_endKeyframe;
+    RawPtrWillBeMember<const CSSPropertySpecificKeyframe> m_startKeyframe;
+    RawPtrWillBeMember<const CSSPropertySpecificKeyframe> m_endKeyframe;
     double m_currentFraction;
     mutable OwnPtrWillBeMember<PrimitiveInterpolation> m_cachedConversion;
     mutable InterpolationType::ConversionCheckers m_conversionCheckers;

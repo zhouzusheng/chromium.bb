@@ -8,7 +8,6 @@
 #include "core/dom/DOMException.h"
 #include "platform/heap/Handle.h"
 #include "public/platform/modules/push_messaging/WebPushError.h"
-#include "wtf/PassOwnPtr.h"
 
 namespace blink {
 
@@ -18,8 +17,8 @@ class PushError {
     WTF_MAKE_NONCOPYABLE(PushError);
 public:
     // For CallbackPromiseAdapter.
-    typedef WebPushError WebType;
-    static DOMException* take(ScriptPromiseResolver*, PassOwnPtr<WebType> webError);
+    using WebType = const WebPushError&;
+    static DOMException* take(ScriptPromiseResolver*, const WebPushError& webError);
 
 private:
     PushError() = delete;

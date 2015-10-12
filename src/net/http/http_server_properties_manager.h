@@ -91,7 +91,8 @@ class NET_EXPORT HttpServerPropertiesManager : public HttpServerProperties {
       const HostPortPair& origin) override;
   bool SetAlternativeService(const HostPortPair& origin,
                              const AlternativeService& alternative_service,
-                             double alternative_probability) override;
+                             double alternative_probability,
+                             base::Time expiration) override;
   bool SetAlternativeServices(const HostPortPair& origin,
                               const AlternativeServiceInfoVector&
                                   alternative_service_info_vector) override;
@@ -205,6 +206,10 @@ class NET_EXPORT HttpServerPropertiesManager : public HttpServerProperties {
                                const base::Closure& completion);
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(HttpServerPropertiesManagerTest,
+                           AddToAlternativeServiceMap);
+  FRIEND_TEST_ALL_PREFIXES(HttpServerPropertiesManagerTest,
+                           AlternativeServiceExpirationDouble);
   void OnHttpServerPropertiesChanged();
 
   bool ReadSupportsQuic(const base::DictionaryValue& server_dict,
@@ -212,9 +217,10 @@ class NET_EXPORT HttpServerPropertiesManager : public HttpServerProperties {
   void AddToSpdySettingsMap(const HostPortPair& server,
                             const base::DictionaryValue& server_dict,
                             SpdySettingsMap* spdy_settings_map);
-  AlternativeServiceInfo ParseAlternativeServiceDict(
+  bool ParseAlternativeServiceDict(
       const base::DictionaryValue& alternative_service_dict,
-      const std::string& server_str);
+      const std::string& server_str,
+      AlternativeServiceInfo* alternative_service_info);
   bool AddToAlternativeServiceMap(
       const HostPortPair& server,
       const base::DictionaryValue& server_dict,

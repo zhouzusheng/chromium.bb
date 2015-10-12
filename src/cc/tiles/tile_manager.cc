@@ -33,8 +33,8 @@ const bool kUseColorEstimator = true;
 
 DEFINE_SCOPED_UMA_HISTOGRAM_AREA_TIMER(
     ScopedRasterTaskTimer,
-    "Compositing.RasterTask.RasterUs",
-    "Compositing.RasterTask.RasterPixelsPerMs");
+    "Compositing.%s.RasterTask.RasterUs",
+    "Compositing.%s.RasterTask.RasterPixelsPerMs");
 
 class RasterTaskImpl : public RasterTask {
  public:
@@ -127,9 +127,10 @@ class RasterTaskImpl : public RasterTask {
 
     DCHECK(raster_source);
 
+    bool include_images = tile_resolution_ != LOW_RESOLUTION;
     raster_buffer_->Playback(raster_source_.get(), content_rect_,
                              invalid_content_rect_, new_content_id_,
-                             contents_scale_);
+                             contents_scale_, include_images);
   }
 
   RasterSource::SolidColorAnalysis analysis_;
@@ -151,47 +152,6 @@ class RasterTaskImpl : public RasterTask {
   scoped_ptr<RasterBuffer> raster_buffer_;
 
   DISALLOW_COPY_AND_ASSIGN(RasterTaskImpl);
-};
-
-class ImageDecodeTaskImpl : public ImageDecodeTask {
- public:
-  ImageDecodeTaskImpl(SkPixelRef* pixel_ref,
-                      uint64_t source_prepare_tiles_id,
-                      const base::Callback<void(bool was_canceled)>& reply)
-      : pixel_ref_(skia::SharePtr(pixel_ref)),
-        source_prepare_tiles_id_(source_prepare_tiles_id),
-        reply_(reply) {}
-
-  // Overridden from Task:
-  void RunOnWorkerThread() override {
-    TRACE_EVENT1("cc", "ImageDecodeTaskImpl::RunOnWorkerThread",
-                 "source_prepare_tiles_id", source_prepare_tiles_id_);
-
-    devtools_instrumentation::ScopedImageDecodeTask image_decode_task(
-        pixel_ref_.get());
-    // This will cause the image referred to by pixel ref to be decoded.
-    pixel_ref_->lockPixels();
-    pixel_ref_->unlockPixels();
-
-    // Release the reference after decoding image to ensure that it is not
-    // kept alive unless needed.
-    pixel_ref_.clear();
-  }
-
-  // Overridden from TileTask:
-  void ScheduleOnOriginThread(TileTaskClient* client) override {}
-  void CompleteOnOriginThread(TileTaskClient* client) override {}
-  void RunReplyOnOriginThread() override { reply_.Run(!HasFinishedRunning()); }
-
- protected:
-  ~ImageDecodeTaskImpl() override {}
-
- private:
-  skia::RefPtr<SkPixelRef> pixel_ref_;
-  uint64_t source_prepare_tiles_id_;
-  const base::Callback<void(bool was_canceled)> reply_;
-
-  DISALLOW_COPY_AND_ASSIGN(ImageDecodeTaskImpl);
 };
 
 const char* TaskSetName(TaskSet task_set) {
@@ -324,14 +284,7 @@ void TileManager::CleanUpReleasedTiles() {
     DCHECK(tiles_.find(tile->id()) != tiles_.end());
     tiles_.erase(tile->id());
 
-    LayerCountMap::iterator layer_it =
-        used_layer_counts_.find(tile->layer_id());
-    DCHECK_GT(layer_it->second, 0);
-    if (--layer_it->second == 0) {
-      used_layer_counts_.erase(layer_it);
-      image_decode_tasks_.erase(tile->layer_id());
-    }
-
+    image_decode_controller_.SubtractLayerUsedCount(tile->layer_id());
     delete tile;
   }
   released_tiles_.swap(tiles_to_retain);
@@ -541,7 +494,7 @@ void TileManager::AssignGpuMemoryToTiles(
   // or deleted. If this operation becomes expensive too, only do this after
   // some resource(s) was returned. Note that in that case, one also need to
   // invalidate when releasing some resource from the pool.
-  resource_pool_->CheckBusyResources(false);
+  resource_pool_->CheckBusyResources();
 
   // Now give memory out to the tiles until we're out, and build
   // the needs-to-be-rasterized queue.
@@ -646,8 +599,10 @@ void TileManager::AssignGpuMemoryToTiles(
 
 void TileManager::FreeResourcesForTile(Tile* tile) {
   TileDrawInfo& draw_info = tile->draw_info();
-  if (draw_info.resource_)
-    resource_pool_->ReleaseResource(draw_info.resource_.Pass(), tile->id());
+  if (draw_info.resource_) {
+    resource_pool_->ReleaseResource(draw_info.resource_, tile->id());
+    draw_info.resource_ = nullptr;
+  }
 }
 
 void TileManager::FreeResourcesForTileAndNotifyClientIfTileWasReadyToDraw(
@@ -712,21 +667,11 @@ void TileManager::ScheduleTasks(
   did_check_for_completed_tasks_since_last_schedule_tasks_ = false;
 }
 
-scoped_refptr<ImageDecodeTask> TileManager::CreateImageDecodeTask(
-    Tile* tile,
-    SkPixelRef* pixel_ref) {
-  return make_scoped_refptr(new ImageDecodeTaskImpl(
-      pixel_ref, prepare_tiles_count_,
-      base::Bind(&TileManager::OnImageDecodeTaskCompleted,
-                 base::Unretained(this), tile->layer_id(),
-                 base::Unretained(pixel_ref))));
-}
-
 scoped_refptr<RasterTask> TileManager::CreateRasterTask(
     const PrioritizedTile& prioritized_tile) {
   Tile* tile = prioritized_tile.tile();
   uint64_t resource_content_id = 0;
-  scoped_ptr<ScopedResource> resource;
+  Resource* resource = nullptr;
   if (tile->invalidated_id()) {
     // TODO(danakj): For resources that are in use, we should still grab them
     // and copy from them instead of rastering everything. crbug.com/492754
@@ -742,66 +687,32 @@ scoped_refptr<RasterTask> TileManager::CreateRasterTask(
     resource = resource_pool_->AcquireResource(
         tile->desired_texture_size(), tile_task_runner_->GetResourceFormat());
   }
-  const ScopedResource* const_resource = resource.get();
 
   // Create and queue all image decode tasks that this tile depends on.
   ImageDecodeTask::Vector decode_tasks;
-  PixelRefTaskMap& existing_pixel_refs = image_decode_tasks_[tile->layer_id()];
-  std::vector<SkPixelRef*> pixel_refs;
+  std::vector<skia::PositionPixelRef> pixel_refs;
   prioritized_tile.raster_source()->GatherPixelRefs(
       tile->content_rect(), tile->contents_scale(), &pixel_refs);
-  for (SkPixelRef* pixel_ref : pixel_refs) {
-    uint32_t id = pixel_ref->getGenerationID();
-
-    // Append existing image decode task if available.
-    PixelRefTaskMap::iterator decode_task_it = existing_pixel_refs.find(id);
-    if (decode_task_it != existing_pixel_refs.end()) {
-      decode_tasks.push_back(decode_task_it->second);
-      continue;
-    }
-
-    // Create and append new image decode task for this pixel ref.
-    scoped_refptr<ImageDecodeTask> decode_task =
-        CreateImageDecodeTask(tile, pixel_ref);
-    decode_tasks.push_back(decode_task);
-    existing_pixel_refs[id] = decode_task;
+  for (const skia::PositionPixelRef& pixel_ref : pixel_refs) {
+    decode_tasks.push_back(image_decode_controller_.GetTaskForPixelRef(
+        pixel_ref, tile->layer_id(), prepare_tiles_count_));
   }
 
   return make_scoped_refptr(new RasterTaskImpl(
-      const_resource, prioritized_tile.raster_source(), tile->content_rect(),
+      resource, prioritized_tile.raster_source(), tile->content_rect(),
       tile->invalidated_content_rect(), tile->contents_scale(),
       prioritized_tile.priority().resolution, tile->layer_id(),
       prepare_tiles_count_, static_cast<const void*>(tile), tile->id(),
       tile->invalidated_id(), resource_content_id, tile->source_frame_number(),
       tile->use_picture_analysis(),
       base::Bind(&TileManager::OnRasterTaskCompleted, base::Unretained(this),
-                 tile->id(), base::Passed(&resource)),
+                 tile->id(), resource),
       &decode_tasks));
-}
-
-void TileManager::OnImageDecodeTaskCompleted(int layer_id,
-                                             SkPixelRef* pixel_ref,
-                                             bool was_canceled) {
-  // If the task was canceled, we need to clean it up
-  // from |image_decode_tasks_|.
-  if (!was_canceled)
-    return;
-
-  LayerPixelRefTaskMap::iterator layer_it = image_decode_tasks_.find(layer_id);
-  if (layer_it == image_decode_tasks_.end())
-    return;
-
-  PixelRefTaskMap& pixel_ref_tasks = layer_it->second;
-  PixelRefTaskMap::iterator task_it =
-      pixel_ref_tasks.find(pixel_ref->getGenerationID());
-
-  if (task_it != pixel_ref_tasks.end())
-    pixel_ref_tasks.erase(task_it);
 }
 
 void TileManager::OnRasterTaskCompleted(
     Tile::Id tile_id,
-    scoped_ptr<ScopedResource> resource,
+    Resource* resource,
     const RasterSource::SolidColorAnalysis& analysis,
     bool was_canceled) {
   DCHECK(tiles_.find(tile_id) != tiles_.end());
@@ -813,16 +724,16 @@ void TileManager::OnRasterTaskCompleted(
 
   if (was_canceled) {
     ++flush_stats_.canceled_count;
-    resource_pool_->ReleaseResource(resource.Pass(), tile->invalidated_id());
+    resource_pool_->ReleaseResource(resource, tile->invalidated_id());
     return;
   }
 
-  UpdateTileDrawInfo(tile, resource.Pass(), analysis);
+  UpdateTileDrawInfo(tile, resource, analysis);
 }
 
 void TileManager::UpdateTileDrawInfo(
     Tile* tile,
-    scoped_ptr<ScopedResource> resource,
+    Resource* resource,
     const RasterSource::SolidColorAnalysis& analysis) {
   TileDrawInfo& draw_info = tile->draw_info();
 
@@ -833,12 +744,12 @@ void TileManager::UpdateTileDrawInfo(
     if (resource) {
       // Pass the old tile id here because the tile is solid color so we did not
       // raster anything into the tile resource.
-      resource_pool_->ReleaseResource(resource.Pass(), tile->invalidated_id());
+      resource_pool_->ReleaseResource(resource, tile->invalidated_id());
     }
   } else {
     DCHECK(resource);
     draw_info.set_use_resource();
-    draw_info.resource_ = resource.Pass();
+    draw_info.resource_ = resource;
     draw_info.contents_swizzled_ =
         tile_task_runner_->GetResourceRequiresSwizzle();
   }
@@ -863,7 +774,7 @@ ScopedTilePtr TileManager::CreateTile(const gfx::Size& desired_texture_size,
   DCHECK(tiles_.find(tile->id()) == tiles_.end());
 
   tiles_[tile->id()] = tile.get();
-  used_layer_counts_[tile->layer_id()]++;
+  image_decode_controller_.AddLayerUsedCount(tile->layer_id());
   return tile;
 }
 
@@ -1045,9 +956,10 @@ TileManager::MemoryUsage::MemoryUsage(size_t memory_bytes,
 TileManager::MemoryUsage TileManager::MemoryUsage::FromConfig(
     const gfx::Size& size,
     ResourceFormat format) {
-  // We can use UncheckedMemorySizeBytes here since this is used with a tile
+  // We can use UncheckedSizeInBytes here since this is used with a tile
   // size which is determined by the compositor (it's at most max texture size).
-  return MemoryUsage(Resource::UncheckedMemorySizeBytes(size, format), 1);
+  return MemoryUsage(ResourceUtil::UncheckedSizeInBytes<size_t>(size, format),
+                     1);
 }
 
 // static

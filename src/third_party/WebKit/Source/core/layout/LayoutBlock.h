@@ -27,6 +27,7 @@
 #include "core/layout/FloatingObjects.h"
 #include "core/layout/GapRects.h"
 #include "core/layout/LayoutBox.h"
+#include "core/layout/api/LineLayoutItem.h"
 #include "core/layout/line/LineBoxList.h"
 #include "core/layout/line/RootInlineBox.h"
 #include "core/style/ShapeValue.h"
@@ -58,7 +59,7 @@ public:
 
 protected:
     explicit LayoutBlock(ContainerNode*);
-    virtual ~LayoutBlock();
+    ~LayoutBlock() override;
 
 public:
     LayoutObject* firstChild() const { ASSERT(children() == virtualChildren()); return children()->firstChild(); }
@@ -74,14 +75,15 @@ public:
     bool beingDestroyed() const { return m_beingDestroyed; }
 
     // These two functions are overridden for inline-block.
-    virtual LayoutUnit lineHeight(bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const override final;
-    virtual int baselinePosition(FontBaseline, bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const override;
+    LayoutUnit lineHeight(bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const final;
+    int baselinePosition(FontBaseline, bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const override;
 
     LayoutUnit minLineHeightForReplacedObject(bool isFirstLine, LayoutUnit replacedHeight) const;
 
+    const LineBoxList& lineBoxes() const { return m_lineBoxes; }
     LineBoxList* lineBoxes() { return &m_lineBoxes; }
 
-    virtual const char* name() const override;
+    const char* name() const override;
 
 protected:
     InlineFlowBox* firstLineBox() const { return m_lineBoxes.firstLineBox(); }
@@ -94,8 +96,8 @@ public:
     // FIXME-BLOCKFLOW: Remove virtualizaion when all callers have moved to LayoutBlockFlow
     virtual void deleteLineBoxTree();
 
-    virtual void addChild(LayoutObject* newChild, LayoutObject* beforeChild = nullptr) override;
-    virtual void removeChild(LayoutObject*) override;
+    void addChild(LayoutObject* newChild, LayoutObject* beforeChild = nullptr) override;
+    void removeChild(LayoutObject*) override;
 
     virtual void layoutBlock(bool relayoutChildren);
 
@@ -141,18 +143,18 @@ public:
     void markPositionedObjectsForLayout();
     // FIXME: Do we really need this to be virtual? It's just so we can call this on
     // LayoutBoxes without needed to check whether they're LayoutBlocks first.
-    virtual void markForPaginationRelayoutIfNeeded(SubtreeLayoutScope&) override final;
+    void markForPaginationRelayoutIfNeeded(SubtreeLayoutScope&) final;
 
     LayoutUnit textIndentOffset() const;
 
-    virtual PositionWithAffinity positionForPoint(const LayoutPoint&) override;
+    PositionWithAffinity positionForPoint(const LayoutPoint&) override;
 
     LayoutUnit blockDirectionOffset(const LayoutSize& offsetFromBlock) const;
     LayoutUnit inlineDirectionOffset(const LayoutSize& offsetFromBlock) const;
 
     LayoutBlock* blockBeforeWithinSelectionRoot(LayoutSize& offset) const;
 
-    virtual void setSelectionState(SelectionState) override;
+    void setSelectionState(SelectionState) override;
 
     LayoutRect logicalRectToPhysicalRect(const LayoutPoint& physicalPosition, const LayoutRect& logicalRect) const;
 
@@ -164,7 +166,7 @@ public:
 
     void addContinuationWithOutline(LayoutInline*);
 
-    virtual LayoutBoxModelObject* virtualContinuation() const override final { return continuation(); }
+    LayoutBoxModelObject* virtualContinuation() const final { return continuation(); }
     bool isAnonymousBlockContinuation() const { return continuation() && isAnonymousBlock(); }
     LayoutInline* inlineElementContinuation() const;
 
@@ -174,7 +176,7 @@ public:
     static LayoutBlock* createAnonymousWithParentAndDisplay(const LayoutObject*, EDisplay = BLOCK);
     LayoutBlock* createAnonymousBlock(EDisplay display = BLOCK) const { return createAnonymousWithParentAndDisplay(this, display); }
 
-    virtual LayoutBox* createAnonymousBoxWithSameTypeAs(const LayoutObject* parent) const override;
+    LayoutBox* createAnonymousBoxWithSameTypeAs(const LayoutObject* parent) const override;
 
     int columnGap() const;
 
@@ -194,7 +196,7 @@ public:
     LayoutUnit collapsedMarginBeforeForChild(const LayoutBox& child) const;
     LayoutUnit collapsedMarginAfterForChild(const LayoutBox& child) const;
 
-    virtual bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override;
+    bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override;
 
     virtual void scrollbarsChanged(bool /*horizontalScrollbarChanged*/, bool /*verticalScrollbarChanged*/) { }
 
@@ -219,12 +221,12 @@ public:
     bool recalcOverflowAfterStyleChange();
 
 protected:
-    virtual void willBeDestroyed() override;
+    void willBeDestroyed() override;
 
     void dirtyForLayoutFromPercentageHeightDescendants(SubtreeLayoutScope&);
 
-    virtual void layout() override;
-    virtual bool updateImageLoadingPriorities() override final;
+    void layout() override;
+    bool updateImageLoadingPriorities() final;
 
     enum PositionedLayoutBehavior {
         DefaultLayout,
@@ -239,7 +241,7 @@ protected:
 
     int beforeMarginInLineDirection(LineDirectionMode) const;
 
-    virtual void paint(const PaintInfo&, const LayoutPoint&) override;
+    void paint(const PaintInfo&, const LayoutPoint&) override;
 public:
     virtual void paintObject(const PaintInfo&, const LayoutPoint&);
     virtual void paintChildren(const PaintInfo&, const LayoutPoint&);
@@ -251,14 +253,15 @@ public:
 protected:
     virtual void adjustInlineDirectionLineBounds(unsigned /* expansionOpportunityCount */, LayoutUnit& /* logicalLeft */, LayoutUnit& /* logicalWidth */) const { }
 
-    virtual void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const override;
-    virtual void computePreferredLogicalWidths() override;
+    void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const override;
+    void computePreferredLogicalWidths() override;
+    void computeChildPreferredLogicalWidths(LayoutObject& child, LayoutUnit& minPreferredLogicalWidth, LayoutUnit& maxPreferredLogicalWidth) const;
 
-    virtual int firstLineBoxBaseline() const override;
-    virtual int inlineBlockBaseline(LineDirectionMode) const override;
+    int firstLineBoxBaseline() const override;
+    int inlineBlockBaseline(LineDirectionMode) const override;
     int lastLineBoxBaseline(LineDirectionMode) const;
 
-    virtual void updateHitTestResult(HitTestResult&, const LayoutPoint&) override;
+    void updateHitTestResult(HitTestResult&, const LayoutPoint&) override;
 
     // Delay update scrollbar until finishDelayUpdateScrollInfo() will be
     // called. This function is used when a flexbox is laying out its
@@ -270,8 +273,8 @@ protected:
 
     void updateScrollInfoAfterLayout();
 
-    virtual void styleWillChange(StyleDifference, const ComputedStyle& newStyle) override;
-    virtual void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override;
+    void styleWillChange(StyleDifference, const ComputedStyle& newStyle) override;
+    void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override;
 
     virtual bool hasLineIfEmpty() const;
 
@@ -279,28 +282,29 @@ protected:
     virtual void simplifiedNormalFlowLayout();
 
 public:
-    virtual void computeOverflow(LayoutUnit oldClientAfterEdge, bool = false);
+    virtual void computeOverflow(LayoutUnit oldClientAfterEdge);
 protected:
     virtual void addOverflowFromChildren();
     void addOverflowFromPositionedObjects();
     void addOverflowFromBlockChildren();
     void addVisualOverflowFromTheme();
 
-    virtual void addFocusRingRects(Vector<LayoutRect>&, const LayoutPoint& additionalOffset) const override;
+    void addOutlineRects(Vector<LayoutRect>&, const LayoutPoint& additionalOffset) const override;
 
-    virtual void computeSelfHitTestRects(Vector<LayoutRect>&, const LayoutPoint& layerOffset) const override;
+    void computeSelfHitTestRects(Vector<LayoutRect>&, const LayoutPoint& layerOffset) const override;
 
     void updateBlockChildDirtyBitsBeforeLayout(bool relayoutChildren, LayoutBox&);
 
-    virtual bool isInlineBlockOrInlineTable() const override final { return isInline() && isReplaced(); }
+    bool isInlineBlockOrInlineTable() const final { return isInline() && isReplaced(); }
 
-    virtual void invalidatePaintOfSubtreesIfNeeded(PaintInvalidationState& childPaintInvalidationState) override;
+    void invalidatePaintOfSubtreesIfNeeded(PaintInvalidationState& childPaintInvalidationState) override;
+    void invalidateDisplayItemClients(const LayoutBoxModelObject& paintInvalidationContainer) const override;
 
 private:
-    virtual LayoutObjectChildList* virtualChildren() override final { return children(); }
-    virtual const LayoutObjectChildList* virtualChildren() const override final { return children(); }
+    LayoutObjectChildList* virtualChildren() final { return children(); }
+    const LayoutObjectChildList* virtualChildren() const final { return children(); }
 
-    virtual bool isLayoutBlock() const override final { return true; }
+    bool isLayoutBlock() const final { return true; }
 
     void makeChildrenNonInline(LayoutObject* insertionPoint = nullptr);
 
@@ -311,11 +315,11 @@ private:
 
     static void collapseAnonymousBlockChild(LayoutBlock* parent, LayoutBlock* child);
 
-    virtual void dirtyLinesFromChangedChild(LayoutObject* child) override final { m_lineBoxes.dirtyLinesFromChangedChild(this, child); }
+    void dirtyLinesFromChangedChild(LayoutObject* child) final { m_lineBoxes.dirtyLinesFromChangedChild(LineLayoutItem(this), LineLayoutItem(child)); }
 
-    virtual void addChildIgnoringContinuation(LayoutObject* newChild, LayoutObject* beforeChild) override;
+    void addChildIgnoringContinuation(LayoutObject* newChild, LayoutObject* beforeChild) override;
 
-    virtual bool isSelfCollapsingBlock() const override;
+    bool isSelfCollapsingBlock() const override;
 
     void removeAnonymousWrappersIfRequired();
 
@@ -326,7 +330,7 @@ private:
 
     bool tryLayoutDoingPositionedMovementOnly();
 
-    virtual bool avoidsFloats() const override { return true; }
+    bool avoidsFloats() const override { return true; }
 
     bool hitTestContents(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction);
     // FIXME-BLOCKFLOW: Remove virtualizaion when all callers have moved to LayoutBlockFlow
@@ -338,21 +342,21 @@ private:
 
     // Obtains the nearest enclosing block (including this block) that contributes a first-line style to our inline
     // children.
-    virtual LayoutBlock* firstLineBlock() const override;
+    LayoutBlock* firstLineBlock() const override;
 
-    virtual LayoutRect rectWithOutlineForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, LayoutUnit outlineWidth, const PaintInvalidationState* = nullptr) const override final;
+    LayoutRect rectWithOutlineForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, LayoutUnit outlineWidth, const PaintInvalidationState* = nullptr) const final;
 
-    virtual LayoutObject* hoverAncestor() const override final;
-    virtual void updateDragState(bool dragOn) override final;
-    virtual void childBecameNonInline(LayoutObject* child) override final;
+    LayoutObject* hoverAncestor() const final;
+    void updateDragState(bool dragOn) final;
+    void childBecameNonInline(LayoutObject* child) final;
 
     bool isSelectionRoot() const;
 
-    virtual void absoluteRects(Vector<IntRect>&, const LayoutPoint& accumulatedOffset) const override;
-    virtual void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed) const override;
+    void absoluteRects(Vector<IntRect>&, const LayoutPoint& accumulatedOffset) const override;
+    void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed) const override;
 
 private:
-    virtual LayoutRect localCaretRect(InlineBox*, int caretOffset, LayoutUnit* extraWidthToEndOfLine = nullptr) override final;
+    LayoutRect localCaretRect(InlineBox*, int caretOffset, LayoutUnit* extraWidthToEndOfLine = nullptr) final;
     bool isInlineBoxWrapperActuallyChild() const;
 
     void markLinesDirtyInBlockRange(LayoutUnit logicalTop, LayoutUnit logicalBottom, RootInlineBox* highest = nullptr);
@@ -367,24 +371,30 @@ private:
     void removeFromGlobalMaps();
     bool widthAvailableToChildrenHasChanged();
 
+public:
+    // Specify which page or column to associate with an offset, if said offset is exactly at a page
+    // or column boundary.
+    enum PageBoundaryRule { AssociateWithFormerPage, AssociateWithLatterPage };
+
+    LayoutUnit pageLogicalHeightForOffset(LayoutUnit) const;
+    LayoutUnit pageRemainingLogicalHeightForOffset(LayoutUnit, PageBoundaryRule) const;
+
 protected:
     bool isPageLogicalHeightKnown(LayoutUnit logicalOffset) const { return pageLogicalHeightForOffset(logicalOffset); }
 
-    // Returns the logicalOffset at the top of the next page. If the offset passed in is already at the top of the current page,
-    // then nextPageLogicalTop with ExcludePageBoundary will still move to the top of the next page. nextPageLogicalTop with
-    // IncludePageBoundary set will not.
+    // Returns the logical offset at the top of the next page, for a given offset.
     //
-    // For a page height of 800px, the first rule will return 800 if the value passed in is 0. The second rule will simply return 0.
-    enum PageBoundaryRule { ExcludePageBoundary, IncludePageBoundary };
-    LayoutUnit nextPageLogicalTop(LayoutUnit logicalOffset, PageBoundaryRule = ExcludePageBoundary) const;
+    // If the given offset is at a page boundary, using AssociateWithLatterPage as PageBoundaryRule
+    // will move us one page ahead (since the offset is at the top of the "current" page). Using
+    // AssociateWithFormerPage instead will keep us where we are (since the offset is at the bottom
+    // of the "current" page, which is exactly the same offset as the top offset on the next page).
+    //
+    // For a page height of 800px, AssociateWithLatterPage will return 1600 if the value passed in
+    // is 800. AssociateWithFormerPage will simply return 800.
+    LayoutUnit nextPageLogicalTop(LayoutUnit logicalOffset, PageBoundaryRule) const;
 
     bool createsNewFormattingContext() const;
 
-public:
-    LayoutUnit pageLogicalHeightForOffset(LayoutUnit offset) const;
-    LayoutUnit pageRemainingLogicalHeightForOffset(LayoutUnit offset, PageBoundaryRule = IncludePageBoundary) const;
-
-protected:
     // A page break is required at some offset due to space shortage in the current fragmentainer.
     void setPageBreak(LayoutUnit offset, LayoutUnit spaceShortage);
 

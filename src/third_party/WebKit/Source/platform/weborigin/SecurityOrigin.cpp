@@ -97,19 +97,24 @@ static bool shouldTreatAsUniqueOrigin(const KURL& url)
         return true;
 
     // FIXME: Do we need to unwrap the URL further?
-    KURL innerURL = SecurityOrigin::shouldUseInnerURL(url) ? SecurityOrigin::extractInnerURL(url) : url;
-
-    // FIXME: Check whether innerURL is valid.
+    KURL relevantURL;
+    if (SecurityOrigin::shouldUseInnerURL(url)) {
+        relevantURL = SecurityOrigin::extractInnerURL(url);
+        if (!relevantURL.isValid())
+            return true;
+    } else {
+        relevantURL = url;
+    }
 
     // For edge case URLs that were probably misparsed, make sure that the origin is unique.
     // FIXME: Do we really need to do this? This looks to be a hack around a
     // security bug in CFNetwork that might have been fixed.
-    if (schemeRequiresAuthority(innerURL) && innerURL.host().isEmpty())
+    if (schemeRequiresAuthority(relevantURL) && relevantURL.host().isEmpty())
         return true;
 
     // SchemeRegistry needs a lower case protocol because it uses HashMaps
     // that assume the scheme has already been canonicalized.
-    String protocol = innerURL.protocol().lower();
+    String protocol = relevantURL.protocol().lower();
 
     if (SchemeRegistry::shouldTreatURLSchemeAsNoAccess(protocol))
         return true;
@@ -122,10 +127,11 @@ SecurityOrigin::SecurityOrigin(const KURL& url)
     : m_protocol(url.protocol().isNull() ? "" : url.protocol().lower())
     , m_host(url.host().isNull() ? "" : url.host().lower())
     , m_port(url.port())
+    , m_effectivePort(url.port() ? url.port() : defaultPortForProtocol(m_protocol))
     , m_isUnique(false)
     , m_universalAccess(false)
     , m_domainWasSetInDOM(false)
-    , m_enforceFilePathSeparation(false)
+    , m_blockLocalAccessFromLocalOrigin(false)
     , m_needsDatabaseIdentifierQuirkForFiles(false)
 {
     // Suborigins are serialized into the host, so extract it if necessary.
@@ -149,11 +155,12 @@ SecurityOrigin::SecurityOrigin()
     , m_domain("")
     , m_suboriginName(WTF::String())
     , m_port(InvalidPort)
+    , m_effectivePort(InvalidPort)
     , m_isUnique(true)
     , m_universalAccess(false)
     , m_domainWasSetInDOM(false)
     , m_canLoadLocalResources(false)
-    , m_enforceFilePathSeparation(false)
+    , m_blockLocalAccessFromLocalOrigin(false)
     , m_needsDatabaseIdentifierQuirkForFiles(false)
 {
 }
@@ -164,11 +171,12 @@ SecurityOrigin::SecurityOrigin(const SecurityOrigin* other)
     , m_domain(other->m_domain.isolatedCopy())
     , m_suboriginName(other->m_suboriginName)
     , m_port(other->m_port)
+    , m_effectivePort(other->m_effectivePort)
     , m_isUnique(other->m_isUnique)
     , m_universalAccess(other->m_universalAccess)
     , m_domainWasSetInDOM(other->m_domainWasSetInDOM)
     , m_canLoadLocalResources(other->m_canLoadLocalResources)
-    , m_enforceFilePathSeparation(other->m_enforceFilePathSeparation)
+    , m_blockLocalAccessFromLocalOrigin(other->m_blockLocalAccessFromLocalOrigin)
     , m_needsDatabaseIdentifierQuirkForFiles(other->m_needsDatabaseIdentifierQuirkForFiles)
 {
 }
@@ -235,6 +243,9 @@ bool SecurityOrigin::isSecure(const KURL& url)
     if (shouldUseInnerURL(url) && SchemeRegistry::shouldTreatURLSchemeAsSecure(extractInnerURL(url).protocol()))
         return true;
 
+    if (SecurityPolicy::isOriginWhiteListedTrustworthy(*SecurityOrigin::create(url).get()))
+        return true;
+
     return false;
 }
 
@@ -289,7 +300,7 @@ bool SecurityOrigin::passesFileCheck(const SecurityOrigin* other) const
 {
     ASSERT(isLocal() && other->isLocal());
 
-    return !m_enforceFilePathSeparation && !other->m_enforceFilePathSeparation;
+    return !m_blockLocalAccessFromLocalOrigin && !other->m_blockLocalAccessFromLocalOrigin;
 }
 
 bool SecurityOrigin::canRequest(const KURL& url) const
@@ -387,10 +398,10 @@ void SecurityOrigin::grantUniversalAccess()
     m_universalAccess = true;
 }
 
-void SecurityOrigin::enforceFilePathSeparation()
+void SecurityOrigin::blockLocalAccessFromLocalOrigin()
 {
     ASSERT(isLocal());
-    m_enforceFilePathSeparation = true;
+    m_blockLocalAccessFromLocalOrigin = true;
 }
 
 bool SecurityOrigin::isLocal() const
@@ -425,7 +436,7 @@ String SecurityOrigin::toString() const
 {
     if (isUnique())
         return "null";
-    if (m_protocol == "file" && m_enforceFilePathSeparation)
+    if (isLocal() && m_blockLocalAccessFromLocalOrigin)
         return "null";
     return toRawString();
 }
@@ -434,7 +445,7 @@ AtomicString SecurityOrigin::toAtomicString() const
 {
     if (isUnique())
         return AtomicString("null", AtomicString::ConstructFromLiteral);
-    if (m_protocol == "file" && m_enforceFilePathSeparation)
+    if (isLocal() && m_blockLocalAccessFromLocalOrigin)
         return AtomicString("null", AtomicString::ConstructFromLiteral);
     return toRawAtomicString();
 }
@@ -504,7 +515,8 @@ PassRefPtr<SecurityOrigin> SecurityOrigin::create(const String& protocol, const 
     if (port < 0 || port > MaxAllowedPort)
         return createUnique();
     String decodedHost = decodeURLEscapeSequences(host);
-    return create(KURL(KURL(), protocol + "://" + host + ":" + String::number(port) + "/"));
+    String portPart = port ? ":" + String::number(port) : String();
+    return create(KURL(KURL(), protocol + "://" + host + portPart + "/"));
 }
 
 bool SecurityOrigin::isSameSchemeHostPort(const SecurityOrigin* other) const
@@ -526,7 +538,7 @@ bool SecurityOrigin::isSameSchemeHostPort(const SecurityOrigin* other) const
 
 bool SecurityOrigin::isSameSchemeHostPortAndSuborigin(const SecurityOrigin* other) const
 {
-    return isSameSchemeHostPort(other) && (!hasSuborigin() || suboriginName() == other->suboriginName());
+    return isSameSchemeHostPort(other) && (suboriginName() == other->suboriginName());
 }
 
 const KURL& SecurityOrigin::urlWithUniqueSecurityOrigin()
@@ -540,7 +552,7 @@ void SecurityOrigin::transferPrivilegesFrom(const SecurityOrigin& origin)
 {
     m_universalAccess = origin.m_universalAccess;
     m_canLoadLocalResources = origin.m_canLoadLocalResources;
-    m_enforceFilePathSeparation = origin.m_enforceFilePathSeparation;
+    m_blockLocalAccessFromLocalOrigin = origin.m_blockLocalAccessFromLocalOrigin;
 }
 
 } // namespace blink

@@ -11,7 +11,7 @@
 #ifndef VP9_COMMON_VP9_SEG_COMMON_H_
 #define VP9_COMMON_VP9_SEG_COMMON_H_
 
-#include "vp9/common/vp9_prob.h"
+#include "vpx_dsp/prob.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -42,8 +42,8 @@ struct segmentation {
   uint8_t abs_delta;
   uint8_t temporal_update;
 
-  vp9_prob tree_probs[SEG_TREE_PROBS];
-  vp9_prob pred_probs[PREDICTION_PROBS];
+  vpx_prob tree_probs[SEG_TREE_PROBS];
+  vpx_prob pred_probs[PREDICTION_PROBS];
 
   int16_t feature_data[MAX_SEGMENTS][SEG_LVL_MAX];
   unsigned int feature_mask[MAX_SEGMENTS];
@@ -76,7 +76,7 @@ static INLINE int get_segdata(const struct segmentation *seg, int segment_id,
   return seg->feature_data[segment_id][feature_id];
 }
 
-extern const vp9_tree_index vp9_segment_tree[TREE_SIZE(MAX_SEGMENTS)];
+extern const vpx_tree_index vp9_segment_tree[TREE_SIZE(MAX_SEGMENTS)];
 
 #ifdef __cplusplus
 }  // extern "C"

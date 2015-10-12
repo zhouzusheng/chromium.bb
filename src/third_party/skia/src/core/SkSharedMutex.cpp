@@ -11,7 +11,6 @@
 #include "SkSemaphore.h"
 #include "SkTypes.h"
 
-
 #if defined(THREAD_SANITIZER)
 
 /* Report that a lock has been created at address "lock". */
@@ -142,6 +141,23 @@ void SkSharedMutex::release() {
     }
 }
 
+#ifdef SK_DEBUG
+void SkSharedMutex::assertHeld() const {
+    int32_t queueCounts = fQueueCounts.load(sk_memory_order_relaxed);
+    // These are very loose asserts about the mutex being held exclusively.
+    SkASSERTF(0 == (queueCounts & kSharedMask),
+              "running shared: %d, exclusive: %d, waiting shared: %d",
+              (queueCounts & kSharedMask) >> kSharedOffset,
+              (queueCounts & kWaitingExclusiveMask) >> kWaitingExlusiveOffset,
+              (queueCounts & kWaitingSharedMask) >> kWaitingSharedOffset);
+    SkASSERTF((queueCounts & kWaitingExclusiveMask) > 0,
+              "running shared: %d, exclusive: %d, waiting shared: %d",
+              (queueCounts & kSharedMask) >> kSharedOffset,
+              (queueCounts & kWaitingExclusiveMask) >> kWaitingExlusiveOffset,
+              (queueCounts & kWaitingSharedMask) >> kWaitingSharedOffset);
+}
+#endif
+
 void SkSharedMutex::acquireShared() {
     int32_t oldQueueCounts = fQueueCounts.load(sk_memory_order_relaxed);
     int32_t newQueueCounts;
@@ -168,7 +184,7 @@ void SkSharedMutex::releaseShared() {
     ANNOTATE_RWLOCK_RELEASED(this, 0);
 
     // Decrement the shared count.
-    int32_t oldQueueCounts = fQueueCounts.fetch_add(-1 << kSharedOffset,
+    int32_t oldQueueCounts = fQueueCounts.fetch_add(~0U << kSharedOffset,
                                                     sk_memory_order_release);
 
     // If shared count is going to zero (because the old count == 1) and there are exclusive
@@ -178,3 +194,16 @@ void SkSharedMutex::releaseShared() {
         fExclusiveQueue.signal();
     }
 }
+
+#ifdef SK_DEBUG
+void SkSharedMutex::assertHeldShared() const {
+    int32_t queueCounts = fQueueCounts.load(sk_memory_order_relaxed);
+    // A very loose assert about the mutex being shared.
+    SkASSERTF((queueCounts & kSharedMask) > 0,
+              "running shared: %d, exclusive: %d, waiting shared: %d",
+              (queueCounts & kSharedMask) >> kSharedOffset,
+              (queueCounts & kWaitingExclusiveMask) >> kWaitingExlusiveOffset,
+              (queueCounts & kWaitingSharedMask) >> kWaitingSharedOffset);
+}
+
+#endif

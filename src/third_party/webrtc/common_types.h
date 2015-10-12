@@ -618,7 +618,7 @@ struct VideoCodecVP8 {
   }
 };
 
-// VP9 specific
+// VP9 specific.
 struct VideoCodecVP9 {
   VideoCodecComplexity complexity;
   int                  resilience;
@@ -627,6 +627,8 @@ struct VideoCodecVP9 {
   bool                 frameDroppingOn;
   int                  keyFrameInterval;
   bool                 adaptiveQpMode;
+  unsigned char        numberOfSpatialLayers;
+  bool                 flexibleMode;
 };
 
 // H264 specific.
@@ -802,6 +804,7 @@ struct RTPHeaderExtension {
   // Audio Level includes both level in dBov and voiced/unvoiced bit. See:
   // https://datatracker.ietf.org/doc/draft-lennox-avt-rtp-audio-level-exthdr/
   bool hasAudioLevel;
+  bool voiceActivity;
   uint8_t audioLevel;
 
   // For Coordination of Video Orientation. See

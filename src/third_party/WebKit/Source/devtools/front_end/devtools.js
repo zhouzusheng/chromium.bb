@@ -205,6 +205,14 @@ DevToolsAPIImpl.prototype = {
     },
 
     /**
+     * @param {boolean} hard
+     */
+    reloadInspectedPage: function(hard)
+    {
+        this._dispatchOnInspectorFrontendAPI("reloadInspectedPage", [hard]);
+    },
+
+    /**
      * @param {string} url
      * @param {number} lineNumber
      * @param {number} columnNumber
@@ -774,6 +782,9 @@ window.InspectorFrontendHost = new InspectorFrontendHostImpl();
  */
 function installBackwardsCompatibility()
 {
+    if (window.location.search.indexOf("remoteFrontend") === -1)
+        return;
+
     /**
      * @this {CSSStyleDeclaration}
      */

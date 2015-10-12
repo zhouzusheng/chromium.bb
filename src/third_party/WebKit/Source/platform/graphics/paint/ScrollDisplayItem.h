@@ -12,10 +12,10 @@
 
 namespace blink {
 
-class PLATFORM_EXPORT BeginScrollDisplayItem : public PairedBeginDisplayItem {
+class PLATFORM_EXPORT BeginScrollDisplayItem final : public PairedBeginDisplayItem {
 public:
     BeginScrollDisplayItem(const DisplayItemClientWrapper& client, Type type, const IntSize& currentOffset)
-        : PairedBeginDisplayItem(client, type)
+        : PairedBeginDisplayItem(client, type, sizeof(*this))
         , m_currentOffset(currentOffset)
     {
         ASSERT(isScrollType(type));
@@ -24,18 +24,21 @@ public:
     void replay(GraphicsContext&) override;
     void appendToWebDisplayItemList(WebDisplayItemList*) const override;
 
+    const IntSize& currentOffset() const { return m_currentOffset; }
+
 private:
 #ifndef NDEBUG
     void dumpPropertiesAsDebugString(WTF::StringBuilder&) const final;
 #endif
 
+private:
     const IntSize m_currentOffset;
 };
 
-class PLATFORM_EXPORT EndScrollDisplayItem : public PairedEndDisplayItem {
+class PLATFORM_EXPORT EndScrollDisplayItem final : public PairedEndDisplayItem {
 public:
     EndScrollDisplayItem(const DisplayItemClientWrapper& client, Type type)
-        : PairedEndDisplayItem(client, type)
+        : PairedEndDisplayItem(client, type, sizeof(*this))
     {
         ASSERT(isEndScrollType(type));
     }

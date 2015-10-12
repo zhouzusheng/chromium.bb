@@ -643,7 +643,10 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
 
         Vector()
         {
-            static_assert(!WTF::IsPolymorphic<T>::value || !VectorTraits<T>::canInitializeWithMemset, "Cannot initialize with memset if there is a vtable");
+            static_assert(!IsPolymorphic<T>::value || !VectorTraits<T>::canInitializeWithMemset, "Cannot initialize with memset if there is a vtable");
+#if ENABLE(OILPAN)
+            static_assert(Allocator::isGarbageCollected || !IsAllowOnlyInlineAllocation<T>::value || !NeedsTracing<T>::value, "Cannot put ALLOW_ONLY_INLINE_ALLOCATION objects that have trace methods into an off-heap Vector");
+#endif
             ANNOTATE_NEW_BUFFER(begin(), capacity(), 0);
             m_size = 0;
         }
@@ -651,7 +654,10 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
         explicit Vector(size_t size)
             : Base(size)
         {
-            static_assert(!WTF::IsPolymorphic<T>::value || !VectorTraits<T>::canInitializeWithMemset, "Cannot initialize with memset if there is a vtable");
+            static_assert(!IsPolymorphic<T>::value || !VectorTraits<T>::canInitializeWithMemset, "Cannot initialize with memset if there is a vtable");
+#if ENABLE(OILPAN)
+            static_assert(Allocator::isGarbageCollected || !IsAllowOnlyInlineAllocation<T>::value || !NeedsTracing<T>::value, "Cannot put ALLOW_ONLY_INLINE_ALLOCATION objects that have trace methods into an off-heap Vector");
+#endif
             ANNOTATE_NEW_BUFFER(begin(), capacity(), size);
             m_size = size;
             TypeOperations::initialize(begin(), end());
@@ -789,7 +795,6 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
 
         void reverse();
 
-        typedef int HasInlinedTraceMethodMarker;
         template<typename VisitorDispatcher> void trace(VisitorDispatcher);
 
     private:
@@ -1274,15 +1279,6 @@ static const size_t kInitialVectorSize = WTF_VECTOR_INITIAL_SIZE;
     {
         for (size_t i = 0; i < m_size / 2; ++i)
             std::swap(at(i), at(m_size - 1 - i));
-    }
-
-    template<typename T, size_t inlineCapacity, typename Allocator>
-    void deleteAllValues(const Vector<T, inlineCapacity, Allocator>& collection)
-    {
-        typedef typename Vector<T, inlineCapacity, Allocator>::const_iterator iterator;
-        iterator end = collection.end();
-        for (iterator it = collection.begin(); it != end; ++it)
-            delete *it;
     }
 
     template<typename T, size_t inlineCapacity, typename Allocator>

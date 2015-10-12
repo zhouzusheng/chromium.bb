@@ -8,37 +8,44 @@
 #include "GrPipeline.h"
 
 #include "GrCaps.h"
-#include "GrBatch.h"
 #include "GrGpu.h"
 #include "GrPipelineBuilder.h"
 #include "GrProcOptInfo.h"
 #include "GrXferProcessor.h"
 
-GrPipeline::GrPipeline(const GrPipelineBuilder& pipelineBuilder,
-                       const GrProcOptInfo& colorPOI,
-                       const GrProcOptInfo& coveragePOI,
-                       const GrCaps& caps,
-                       const GrScissorState& scissorState,
-                       const GrXferProcessor::DstTexture* dstTexture) {
+#include "batches/GrBatch.h"
+
+GrPipeline* GrPipeline::CreateAt(void* memory, const CreateArgs& args,
+                                 GrPipelineOptimizations* opts) {
+    const GrPipelineBuilder& builder = *args.fPipelineBuilder;
+
     // Create XferProcessor from DS's XPFactory
     SkAutoTUnref<GrXferProcessor> xferProcessor(
-        pipelineBuilder.getXPFactory()->createXferProcessor(
-            colorPOI, coveragePOI, pipelineBuilder.hasMixedSamples(), dstTexture, caps));
+        builder.getXPFactory()->createXferProcessor(args.fColorPOI, args.fCoveragePOI,
+                                                    builder.hasMixedSamples(), &args.fDstTexture,
+                                                    *args.fCaps));
+    if (!xferProcessor) {
+        return nullptr;
+    }
 
     GrColor overrideColor = GrColor_ILLEGAL;
-    if (colorPOI.firstEffectiveStageIndex() != 0) {
-        overrideColor = colorPOI.inputColorToEffectiveStage();
+    if (args.fColorPOI.firstEffectiveStageIndex() != 0) {
+        overrideColor = args.fColorPOI.inputColorToEffectiveStage();
     }
 
     GrXferProcessor::OptFlags optFlags = GrXferProcessor::kNone_OptFlags;
-    if (xferProcessor) {
-        fXferProcessor.reset(xferProcessor.get());
 
-        optFlags = xferProcessor->getOptimizations(colorPOI,
-                                                   coveragePOI,
-                                                   pipelineBuilder.getStencil().doesWrite(),
-                                                   &overrideColor,
-                                                   caps);
+    optFlags = xferProcessor->getOptimizations(args.fColorPOI,
+                                                args.fCoveragePOI,
+                                                builder.getStencil().doesWrite(),
+                                                &overrideColor,
+                                                *args.fCaps);
+
+    // When path rendering the stencil settings are not always set on the GrPipelineBuilder
+    // so we must check the draw type. In cases where we will skip drawing we simply return a
+    // null GrPipeline.
+    if (GrXferProcessor::kSkipDraw_OptFlag & optFlags) {
+        return nullptr;
     }
 
     // No need to have an override color if it isn't even going to be used.
@@ -46,82 +53,81 @@ GrPipeline::GrPipeline(const GrPipelineBuilder& pipelineBuilder,
         overrideColor = GrColor_ILLEGAL;
     }
 
-    // When path rendering the stencil settings are not always set on the GrPipelineBuilder
-    // so we must check the draw type. In cases where we will skip drawing we simply return a
-    // null GrPipeline.
-    if (!xferProcessor || (GrXferProcessor::kSkipDraw_OptFlag & optFlags)) {
-        // Set the fields that don't default init and return. The lack of a render target will
-        // indicate that this can be skipped.
-        fFlags = 0;
-        fDrawFace = GrPipelineBuilder::kInvalid_DrawFace;
-        return;
+    GrPipeline* pipeline = SkNEW_PLACEMENT(memory, GrPipeline);
+    pipeline->fXferProcessor.reset(xferProcessor.get());
+
+    pipeline->fRenderTarget.reset(builder.fRenderTarget.get());
+    SkASSERT(pipeline->fRenderTarget);
+    pipeline->fScissorState = *args.fScissor;
+    pipeline->fStencilSettings = builder.getStencil();
+    pipeline->fDrawFace = builder.getDrawFace();
+
+    pipeline->fFlags = 0;
+    if (builder.isHWAntialias()) {
+        pipeline->fFlags |= kHWAA_Flag;
+    }
+    if (builder.isDither()) {
+        pipeline->fFlags |= kDither_Flag;
+    }
+    if (builder.snapVerticesToPixelCenters()) {
+        pipeline->fFlags |= kSnapVertices_Flag;
     }
 
-    fRenderTarget.reset(pipelineBuilder.fRenderTarget.get());
-    SkASSERT(fRenderTarget);
-    fScissorState = scissorState;
-    fStencilSettings = pipelineBuilder.getStencil();
-    fDrawFace = pipelineBuilder.getDrawFace();
-
-    fFlags = 0;
-    if (pipelineBuilder.isHWAntialias()) {
-        fFlags |= kHWAA_Flag;
-    }
-    if (pipelineBuilder.isDither()) {
-        fFlags |= kDither_Flag;
-    }
-    if (pipelineBuilder.snapVerticesToPixelCenters()) {
-        fFlags |= kSnapVertices_Flag;
-    }
-
-    int firstColorStageIdx = colorPOI.firstEffectiveStageIndex();
+    int firstColorStageIdx = args.fColorPOI.firstEffectiveStageIndex();
 
     // TODO: Once we can handle single or four channel input into coverage stages then we can use
     // GrPipelineBuilder's coverageProcInfo (like color above) to set this initial information.
     int firstCoverageStageIdx = 0;
 
-    this->adjustProgramFromOptimizations(pipelineBuilder, optFlags, colorPOI, coveragePOI,
-                                         &firstColorStageIdx, &firstCoverageStageIdx);
+    pipeline->adjustProgramFromOptimizations(builder, optFlags, args.fColorPOI, args.fCoveragePOI,
+                                             &firstColorStageIdx, &firstCoverageStageIdx);
 
     bool usesLocalCoords = false;
 
     // Copy Stages from PipelineBuilder to Pipeline
-    for (int i = firstColorStageIdx; i < pipelineBuilder.numColorFragmentStages(); ++i) {
-        SkNEW_APPEND_TO_TARRAY(&fFragmentStages,
-                               GrPendingFragmentStage,
-                               (pipelineBuilder.fColorStages[i]));
-        usesLocalCoords = usesLocalCoords ||
-                          pipelineBuilder.fColorStages[i].processor()->usesLocalCoords();
+    for (int i = firstColorStageIdx; i < builder.numColorFragmentStages(); ++i) {
+        const GrFragmentStage& fps = builder.fColorStages[i];
+        const GrFragmentProcessor* fp = fps.processor();
+        SkNEW_APPEND_TO_TARRAY(&pipeline->fFragmentStages, GrPendingFragmentStage, (fps));
+        usesLocalCoords = usesLocalCoords || fp->usesLocalCoords();
+        fp->gatherCoordTransforms(&pipeline->fCoordTransforms);
     }
 
-    fNumColorStages = fFragmentStages.count();
-    for (int i = firstCoverageStageIdx; i < pipelineBuilder.numCoverageFragmentStages(); ++i) {
-        SkNEW_APPEND_TO_TARRAY(&fFragmentStages,
-                               GrPendingFragmentStage,
-                               (pipelineBuilder.fCoverageStages[i]));
-        usesLocalCoords = usesLocalCoords ||
-                          pipelineBuilder.fCoverageStages[i].processor()->usesLocalCoords();
+    pipeline->fNumColorStages = pipeline->fFragmentStages.count();
+    for (int i = firstCoverageStageIdx; i < builder.numCoverageFragmentStages(); ++i) {
+        const GrFragmentStage& fps = builder.fCoverageStages[i];
+        const GrFragmentProcessor* fp = fps.processor();
+        SkNEW_APPEND_TO_TARRAY(&pipeline->fFragmentStages, GrPendingFragmentStage, (fps));
+        usesLocalCoords = usesLocalCoords || fp->usesLocalCoords();
+        fp->gatherCoordTransforms(&pipeline->fCoordTransforms);
     }
 
     // Setup info we need to pass to GrPrimitiveProcessors that are used with this GrPipeline.
-    fInfoForPrimitiveProcessor.fFlags = 0;
+    opts->fFlags = 0;
     if (!SkToBool(optFlags & GrXferProcessor::kIgnoreColor_OptFlag)) {
-        fInfoForPrimitiveProcessor.fFlags |= GrPipelineInfo::kReadsColor_GrPipelineInfoFlag;
+        opts->fFlags |= GrPipelineOptimizations::kReadsColor_Flag;
     }
     if (GrColor_ILLEGAL != overrideColor) {
-        fInfoForPrimitiveProcessor.fFlags |= GrPipelineInfo::kUseOverrideColor_GrPipelineInfoFlag;
-        fInfoForPrimitiveProcessor.fOverrideColor = overrideColor;
+        opts->fFlags |= GrPipelineOptimizations::kUseOverrideColor_Flag;
+        opts->fOverrideColor = overrideColor;
     }
     if (!SkToBool(optFlags & GrXferProcessor::kIgnoreCoverage_OptFlag)) {
-        fInfoForPrimitiveProcessor.fFlags |= GrPipelineInfo::kReadsCoverage_GrPipelineInfoFlag;
+        opts->fFlags |= GrPipelineOptimizations::kReadsCoverage_Flag;
     }
     if (usesLocalCoords) {
-        fInfoForPrimitiveProcessor.fFlags |= GrPipelineInfo::kReadsLocalCoords_GrPipelineInfoFlag;
+        opts->fFlags |= GrPipelineOptimizations::kReadsLocalCoords_Flag;
     }
     if (SkToBool(optFlags & GrXferProcessor::kCanTweakAlphaForCoverage_OptFlag)) {
-       fInfoForPrimitiveProcessor.fFlags |=
-           GrPipelineInfo::kCanTweakAlphaForCoverage_GrPipelineInfoFlag; 
+        opts->fFlags |= GrPipelineOptimizations::kCanTweakAlphaForCoverage_Flag; 
     }
+
+    GrXPFactory::InvariantBlendedColor blendedColor;
+    builder.fXPFactory->getInvariantBlendedColor(args.fColorPOI, &blendedColor);
+    if (blendedColor.fWillBlendWithDst) {
+        opts->fFlags |= GrPipelineOptimizations::kWillColorBlendWithDst_Flag;
+    }
+
+    return pipeline;
 }
 
 void GrPipeline::adjustProgramFromOptimizations(const GrPipelineBuilder& pipelineBuilder,
@@ -152,26 +158,27 @@ void GrPipeline::adjustProgramFromOptimizations(const GrPipelineBuilder& pipelin
 
 ////////////////////////////////////////////////////////////////////////////////
 
-bool GrPipeline::isEqual(const GrPipeline& that) const {
-    if (this->getRenderTarget() != that.getRenderTarget() ||
-        this->fFragmentStages.count() != that.fFragmentStages.count() ||
-        this->fNumColorStages != that.fNumColorStages ||
-        this->fScissorState != that.fScissorState ||
-        this->fFlags != that.fFlags ||
-        this->fStencilSettings != that.fStencilSettings ||
-        this->fDrawFace != that.fDrawFace) {
+bool GrPipeline::AreEqual(const GrPipeline& a, const GrPipeline& b,
+                          bool ignoreCoordTransforms) {
+    SkASSERT(&a != &b);
+
+    if (a.getRenderTarget() != b.getRenderTarget() ||
+        a.fFragmentStages.count() != b.fFragmentStages.count() ||
+        a.fNumColorStages != b.fNumColorStages ||
+        a.fScissorState != b.fScissorState ||
+        a.fFlags != b.fFlags ||
+        a.fStencilSettings != b.fStencilSettings ||
+        a.fDrawFace != b.fDrawFace) {
         return false;
     }
 
-    if (!this->getXferProcessor()->isEqual(*that.getXferProcessor())) {
+    if (!a.getXferProcessor()->isEqual(*b.getXferProcessor())) {
         return false;
     }
 
-    // The program desc comparison should have already assured that the stage counts match.
-    SkASSERT(this->numFragmentStages() == that.numFragmentStages());
-    for (int i = 0; i < this->numFragmentStages(); i++) {
-
-        if (this->getFragmentStage(i) != that.getFragmentStage(i)) {
+    for (int i = 0; i < a.numFragmentStages(); i++) {
+        if (!a.getFragmentStage(i).processor()->isEqual(*b.getFragmentStage(i).processor(),
+                                                            ignoreCoordTransforms)) {
             return false;
         }
     }

@@ -266,7 +266,7 @@
     },
     {
       # GN version: //mojo/public/c/test_support
-      'target_name': 'mojo_test_support',
+      'target_name': 'mojo_public_test_support',
       'defines': [
         'MOJO_TEST_SUPPORT_IMPLEMENTATION',
       ],
@@ -305,7 +305,7 @@
       'type': 'static_library',
       'dependencies': [
         '../../base/base.gyp:base',
-        'mojo_test_support',
+        'mojo_public_test_support',
       ],
       'sources': [
         'src/mojo/public/cpp/test_support/lib/test_support.cc',

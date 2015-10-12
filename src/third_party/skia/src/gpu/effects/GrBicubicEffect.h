@@ -10,7 +10,7 @@
 
 #include "GrSingleTextureEffect.h"
 #include "GrTextureDomain.h"
-#include "gl/GrGLProcessor.h"
+#include "gl/GrGLFragmentProcessor.h"
 
 class GrGLBicubicEffect;
 class GrInvariantOutput;
@@ -26,10 +26,6 @@ public:
     const float* coefficients() const { return fCoefficients; }
 
     const char* name() const override { return "Bicubic"; }
-
-    void getGLProcessorKey(const GrGLSLCaps&, GrProcessorKeyBuilder*) const override;
-
-    GrGLFragmentProcessor* createGLInstance() const override;
 
     const GrTextureDomain& domain() const { return fDomain; }
 
@@ -94,6 +90,11 @@ private:
                     const SkMatrix &matrix, const SkShader::TileMode tileModes[2]);
     GrBicubicEffect(GrProcessorDataManager*, GrTexture*, const SkScalar coefficients[16],
                     const SkMatrix &matrix, const SkRect& domain);
+
+    GrGLFragmentProcessor* onCreateGLInstance() const override;
+
+    void onGetGLProcessorKey(const GrGLSLCaps&, GrProcessorKeyBuilder*) const override;
+
     bool onIsEqual(const GrFragmentProcessor&) const override;
 
     void onComputeInvariantOutput(GrInvariantOutput* inout) const override;

@@ -283,7 +283,7 @@ PassOwnPtrWillBeRawPtr<WebDevToolsAgentImpl> WebDevToolsAgentImpl::create(WebLoc
     if (!isMainFrame) {
         WebDevToolsAgentImpl* agent = new WebDevToolsAgentImpl(frame, client, frame->inspectorOverlay());
         if (frame->frameWidget())
-            agent->layerTreeViewChanged(frame->frameWidget()->layerTreeView());
+            agent->layerTreeViewChanged(toWebFrameWidgetImpl(frame->frameWidget())->layerTreeView());
         return adoptPtrWillBeNoop(agent);
     }
 
@@ -402,6 +402,7 @@ void WebDevToolsAgentImpl::webFrameWidgetImplClosed(WebFrameWidgetImpl* webFrame
 
 DEFINE_TRACE(WebDevToolsAgentImpl)
 {
+    visitor->trace(m_webLocalFrameImpl);
     visitor->trace(m_instrumentingAgents);
     visitor->trace(m_injectedScriptManager);
     visitor->trace(m_resourceContentLoader);
@@ -431,7 +432,7 @@ void WebDevToolsAgentImpl::willBeDestroyed()
 
     detach();
     m_injectedScriptManager->disconnect();
-    m_resourceContentLoader->stop();
+    m_resourceContentLoader->dispose();
     m_agents.discardAgents();
     m_instrumentingAgents->reset();
 }
@@ -461,23 +462,24 @@ void WebDevToolsAgentImpl::initializeDeferredAgents()
     OwnPtrWillBeRawPtr<InspectorDebuggerAgent> debuggerAgentPtr(PageDebuggerAgent::create(MainThreadDebugger::instance(), m_pageAgent, injectedScriptManager, m_overlay));
     InspectorDebuggerAgent* debuggerAgent = debuggerAgentPtr.get();
     m_agents.append(debuggerAgentPtr.release());
-    m_asyncCallTracker = adoptPtrWillBeNoop(new AsyncCallTracker(debuggerAgent, m_instrumentingAgents.get()));
+    m_asyncCallTracker = adoptPtrWillBeNoop(new AsyncCallTracker(debuggerAgent->v8DebuggerAgent(), m_instrumentingAgents.get()));
 
-    m_agents.append(InspectorDOMDebuggerAgent::create(injectedScriptManager, m_domAgent, debuggerAgent));
+    m_agents.append(InspectorDOMDebuggerAgent::create(injectedScriptManager, m_domAgent, debuggerAgent->v8DebuggerAgent()));
 
     m_agents.append(InspectorInputAgent::create(m_pageAgent));
 
-    m_agents.append(InspectorProfilerAgent::create(injectedScriptManager, m_overlay));
+    v8::Isolate* isolate = V8PerIsolateData::mainThreadIsolate();
+    m_agents.append(InspectorProfilerAgent::create(isolate, injectedScriptManager, m_overlay));
 
-    m_agents.append(InspectorHeapProfilerAgent::create(injectedScriptManager));
+    m_agents.append(InspectorHeapProfilerAgent::create(isolate, injectedScriptManager));
 
-    m_pageAgent->setDeferredAgents(debuggerAgent, m_cssAgent);
-    m_pageConsoleAgent->setDebuggerAgent(debuggerAgent);
+    m_pageAgent->setDebuggerAgent(debuggerAgent);
+    m_pageConsoleAgent->setDebuggerAgent(debuggerAgent->v8DebuggerAgent());
 
     MainThreadDebugger* mainThreadDebugger = MainThreadDebugger::instance();
     m_injectedScriptManager->injectedScriptHost()->init(
         m_pageConsoleAgent.get(),
-        debuggerAgent,
+        debuggerAgent->v8DebuggerAgent(),
         bind<PassRefPtr<TypeBuilder::Runtime::RemoteObject>, PassRefPtr<JSONObject>>(&InspectorInspectorAgent::inspect, m_inspectorAgent.get()),
         mainThreadDebugger->debugger(),
         adoptPtr(new PageInjectedScriptHostClient()));

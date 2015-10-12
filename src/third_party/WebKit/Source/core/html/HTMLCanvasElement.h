@@ -55,6 +55,7 @@ class HTMLCanvasElement;
 class Image;
 class ImageBuffer;
 class ImageBufferSurface;
+class ImageData;
 class IntSize;
 
 class CORE_EXPORT CanvasObserver : public WillBeGarbageCollectedMixin {
@@ -123,6 +124,7 @@ public:
     void paint(GraphicsContext*, const LayoutRect&);
 
     SkCanvas* drawingCanvas() const;
+    void disableDeferral() const;
     SkCanvas* existingDrawingCanvas() const;
 
     void setRenderingContext(PassOwnPtrWillBeRawPtr<CanvasRenderingContext>);
@@ -140,6 +142,7 @@ public:
     AffineTransform baseTransform() const;
 
     bool is3D() const;
+    bool isAnimated2D() const;
 
     bool hasImageBuffer() const { return m_imageBuffer; }
     void discardImageBuffer();
@@ -156,7 +159,7 @@ public:
     void didChangeVisibilityState(PageVisibilityState) override;
 
     // CanvasImageSource implementation
-    PassRefPtr<Image> getSourceImageForCanvas(SourceImageMode, SourceImageStatus*) const override;
+    PassRefPtr<Image> getSourceImageForCanvas(SourceImageStatus*) const override;
     bool wouldTaintOrigin(SecurityOrigin*) const override;
     FloatSize elementSize() const override;
     bool isCanvasElement() const override { return true; }
@@ -166,7 +169,7 @@ public:
     void notifySurfaceInvalid() override;
     bool isDirty() override { return !m_dirtyRect.isEmpty(); }
     void didFinalizeFrame() override;
-    void restoreCanvasMatrixClipStack() override;
+    void restoreCanvasMatrixClipStack(SkCanvas*) const override;
 
     void doDeferredPaintInvalidation();
 
@@ -176,6 +179,8 @@ public:
 
     static void registerRenderingContextFactory(PassOwnPtr<CanvasRenderingContextFactory>);
     void updateExternallyAllocatedMemory() const;
+
+    void styleDidChange(const ComputedStyle* oldStyle, const ComputedStyle& newStyle);
 
 protected:
     void didMoveToNewDocument(Document& oldDocument) override;
@@ -203,6 +208,7 @@ private:
 
     bool paintsIntoCanvasBuffer() const;
 
+    ImageData* toImageData(SourceDrawingBuffer) const;
     String toDataURLInternal(const String& mimeType, const double* quality, SourceDrawingBuffer) const;
 
     WillBeHeapHashSet<RawPtrWillBeWeakMember<CanvasObserver>> m_observers;

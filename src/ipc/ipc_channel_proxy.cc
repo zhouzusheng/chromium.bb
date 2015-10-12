@@ -32,7 +32,8 @@ ChannelProxy::Context::Context(
       channel_connected_called_(false),
       channel_send_thread_safe_(false),
       message_filter_router_(new MessageFilterRouter()),
-      peer_pid_(base::kNullProcessId) {
+      peer_pid_(base::kNullProcessId),
+      attachment_broker_endpoint_(false) {
   DCHECK(ipc_task_runner_.get());
   // The Listener thread where Messages are handled must be a separate thread
   // to avoid oversubscribing the IO thread. If you trigger this error, you
@@ -52,20 +53,13 @@ void ChannelProxy::Context::ClearIPCTaskRunner() {
   ipc_task_runner_ = NULL;
 }
 
-void ChannelProxy::Context::SetListenerTaskRunner(
-    scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
-  DCHECK(ipc_task_runner_.get() != task_runner.get());
-  DCHECK(listener_task_runner_->BelongsToCurrentThread());
-  DCHECK(task_runner->BelongsToCurrentThread());
-  listener_task_runner_ = task_runner;
-}
-
 void ChannelProxy::Context::CreateChannel(scoped_ptr<ChannelFactory> factory) {
   base::AutoLock l(channel_lifetime_lock_);
   DCHECK(!channel_);
   channel_id_ = factory->GetName();
   channel_ = factory->BuildChannel(this);
   channel_send_thread_safe_ = channel_->IsSendThreadSafe();
+  channel_->SetAttachmentBrokerEndpoint(attachment_broker_endpoint_);
 }
 
 bool ChannelProxy::Context::TryFilters(const Message& message) {
@@ -347,6 +341,10 @@ void ChannelProxy::Context::Send(Message* message) {
                             base::Passed(scoped_ptr<Message>(message))));
 }
 
+bool ChannelProxy::Context::IsChannelSendThreadSafe() const {
+  return channel_send_thread_safe_;
+}
+
 //-----------------------------------------------------------------------------
 
 // static
@@ -434,6 +432,7 @@ void ChannelProxy::Init(scoped_ptr<ChannelFactory> factory,
       FROM_HERE, base::Bind(&Context::OnChannelOpened, context_.get()));
 
   did_init_ = true;
+  OnChannelInit();
 }
 
 void ChannelProxy::Close() {
@@ -486,17 +485,18 @@ void ChannelProxy::RemoveFilter(MessageFilter* filter) {
                             make_scoped_refptr(filter)));
 }
 
-void ChannelProxy::SetListenerTaskRunner(
-    scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
-  DCHECK(CalledOnValidThread());
-
-  context()->SetListenerTaskRunner(task_runner);
-}
-
 void ChannelProxy::ClearIPCTaskRunner() {
   DCHECK(CalledOnValidThread());
 
   context()->ClearIPCTaskRunner();
+}
+
+base::ProcessId ChannelProxy::GetPeerPID() const {
+  return context_->peer_pid_;
+}
+
+void ChannelProxy::OnSetAttachmentBrokerEndpoint() {
+  context()->set_attachment_broker_endpoint(is_attachment_broker_endpoint());
 }
 
 #if defined(OS_POSIX) && !defined(OS_NACL_SFI)
@@ -520,6 +520,9 @@ base::ScopedFD ChannelProxy::TakeClientFileDescriptor() {
   return channel->TakeClientFileDescriptor();
 }
 #endif
+
+void ChannelProxy::OnChannelInit() {
+}
 
 //-----------------------------------------------------------------------------
 

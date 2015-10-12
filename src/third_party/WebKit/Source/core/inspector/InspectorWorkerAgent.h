@@ -47,7 +47,8 @@ typedef String ErrorString;
 class CORE_EXPORT InspectorWorkerAgent final : public InspectorBaseAgent<InspectorWorkerAgent, InspectorFrontend::Worker>, public InspectorBackendDispatcher::WorkerCommandHandler {
 public:
     static PassOwnPtrWillBeRawPtr<InspectorWorkerAgent> create(PageConsoleAgent*);
-    virtual ~InspectorWorkerAgent();
+    ~InspectorWorkerAgent() override;
+    DECLARE_VIRTUAL_TRACE();
 
     void init() override;
     void disable(ErrorString*) override;
@@ -59,11 +60,11 @@ public:
     void workerTerminated(WorkerInspectorProxy*);
 
     // Called from InspectorBackendDispatcher
-    virtual void enable(ErrorString*) override;
-    virtual void connectToWorker(ErrorString*, const String& workerId) override;
-    virtual void disconnectFromWorker(ErrorString*, const String& workerId) override;
-    virtual void sendMessageToWorker(ErrorString*, const String& workerId, const String& message) override;
-    virtual void setAutoconnectToWorkers(ErrorString*, bool value) override;
+    void enable(ErrorString*) override;
+    void connectToWorker(ErrorString*, const String& workerId) override;
+    void disconnectFromWorker(ErrorString*, const String& workerId) override;
+    void sendMessageToWorker(ErrorString*, const String& workerId, const String& message) override;
+    void setAutoconnectToWorkers(ErrorString*, bool value) override;
 
     void setTracingSessionId(const String&);
 
@@ -86,7 +87,7 @@ private:
     typedef HashMap<WorkerInspectorProxy*, WorkerInfo> WorkerInfos;
     WorkerInfos m_workerInfos;
     String m_tracingSessionId;
-    PageConsoleAgent* m_consoleAgent;
+    RawPtrWillBeMember<PageConsoleAgent> m_consoleAgent;
 };
 
 } // namespace blink

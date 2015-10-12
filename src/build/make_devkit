@@ -197,7 +197,7 @@ def addGenFiles():
 
 
 def main(args):
-  version = "bb2"   # SET BB VERSION NUMBER HERE
+  version = "bb1"   # SET BB VERSION NUMBER HERE
 
   outDir = None
   doClean = True
@@ -246,6 +246,9 @@ def main(args):
   applyVariableToEnvironment('GYP_DEFINES', 'bb_ppapi_examples', '0')
   applyVariableToEnvironment('GYP_DEFINES', 'dont_include_type_in_pdb', '1')
   applyVariableToEnvironment('GYP_DEFINES', 'win_embed_manifest', '1')
+
+  with open('devkit_version.txt', 'w') as f:
+    f.write(version)
 
   print("Running hooks for ninjaDebug...")
   sys.stdout.flush()

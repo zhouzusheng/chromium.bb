@@ -10,10 +10,12 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/trace_event/trace_event.h"
 #include "content/browser/tracing/file_tracing_provider_impl.h"
+#include "content/browser/tracing/power_tracing_agent.h"
 #include "content/browser/tracing/trace_message_filter.h"
 #include "content/browser/tracing/tracing_ui.h"
 #include "content/common/child_process_messages.h"
 #include "content/public/browser/browser_message_filter.h"
+#include "content/public/common/child_process_host.h"
 #include "content/public/common/content_switches.h"
 
 #if defined(OS_CHROMEOS)
@@ -55,7 +57,8 @@ TracingControllerImpl::TracingControllerImpl()
       is_system_tracing_(false),
 #endif
       is_recording_(TraceLog::GetInstance()->IsEnabled()),
-      is_monitoring_(false) {
+      is_monitoring_(false),
+      is_power_tracing_(false) {
   base::trace_event::MemoryDumpManager::GetInstance()->SetDelegate(this);
 
   // Deliberately leaked, like this class.
@@ -134,7 +137,6 @@ bool TracingControllerImpl::EnableRecording(
         EtwSystemEventConsumer::GetInstance()->StartSystemTracing();
 #endif
   }
-
 
   base::Closure on_enable_recording_done_callback =
       base::Bind(&TracingControllerImpl::OnEnableRecordingDone,
@@ -226,6 +228,14 @@ void TracingControllerImpl::OnDisableRecordingDone() {
 #endif
   }
 #endif  // defined(OS_CHROMEOS) || defined(OS_WIN)
+
+  if (is_power_tracing_) {
+    is_power_tracing_ = false;
+    ++pending_disable_recording_ack_count_;
+    PowerTracingAgent::GetInstance()->StopTracing(
+        base::Bind(&TracingControllerImpl::OnEndPowerTracingAcked,
+                   base::Unretained(this)));
+  }
 
   // Handle special case of zero child processes by immediately flushing the
   // trace log. Once the flush has completed the caller will be notified that
@@ -484,6 +494,8 @@ void TracingControllerImpl::AddTraceMessageFilter(
     trace_message_filter->SendEnableMonitoring(
         TraceLog::GetInstance()->GetCurrentTraceConfig());
   }
+  if (!trace_message_filter_added_callback_.is_null())
+    trace_message_filter_added_callback_.Run(trace_message_filter);
 }
 
 void TracingControllerImpl::RemoveTraceMessageFilter(
@@ -604,6 +616,18 @@ void TracingControllerImpl::OnDisableRecordingAcked(
     trace_data_sink_->Close();
     trace_data_sink_ = NULL;
   }
+}
+
+void TracingControllerImpl::OnEndPowerTracingAcked(
+    const scoped_refptr<base::RefCountedString>& events_str_ptr) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+
+  if (trace_data_sink_.get()) {
+    std::string json_string = base::GetQuotedJSONString(events_str_ptr->data());
+    trace_data_sink_->SetPowerTrace(json_string);
+  }
+  std::vector<std::string> category_groups;
+  OnDisableRecordingAcked(NULL, category_groups);
 }
 
 #if defined(OS_CHROMEOS) || defined(OS_WIN)
@@ -803,6 +827,8 @@ void TracingControllerImpl::RequestGlobalMemoryDump(
   // OnBrowserProcessMemoryDumpDone().
   pending_memory_dump_ack_count_ = trace_message_filters_.size() + 1;
   pending_memory_dump_filters_.clear();
+  pending_memory_dump_guid_ = args.dump_guid;
+  pending_memory_dump_callback_ = callback;
   failed_memory_dump_count_ = 0;
 
   MemoryDumpManagerDelegate::CreateProcessDump(
@@ -810,14 +836,9 @@ void TracingControllerImpl::RequestGlobalMemoryDump(
                        base::Unretained(this)));
 
   // If there are no child processes we are just done.
-  if (pending_memory_dump_ack_count_ == 1) {
-    if (!callback.is_null())
-      callback.Run(args.dump_guid, true /* success */);
+  if (pending_memory_dump_ack_count_ == 1)
     return;
-  }
 
-  pending_memory_dump_guid_ = args.dump_guid;
-  pending_memory_dump_callback_ = callback;
   pending_memory_dump_filters_ = trace_message_filters_;
 
   for (const scoped_refptr<TraceMessageFilter>& tmf : trace_message_filters_)
@@ -826,6 +847,22 @@ void TracingControllerImpl::RequestGlobalMemoryDump(
 
 bool TracingControllerImpl::IsCoordinatorProcess() const {
   return true;
+}
+
+uint64 TracingControllerImpl::GetTracingProcessId() const {
+  return ChildProcessHost::kBrowserTracingProcessId;
+}
+
+void TracingControllerImpl::SetTraceMessageFilterAddedCallback(
+    const TraceMessageFilterAddedCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  trace_message_filter_added_callback_ = callback;
+}
+
+void TracingControllerImpl::GetTraceMessageFilters(
+    TraceMessageFilterSet* filters) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  filters->insert(trace_message_filters_.begin(), trace_message_filters_.end());
 }
 
 void TracingControllerImpl::OnProcessMemoryDumpResponse(

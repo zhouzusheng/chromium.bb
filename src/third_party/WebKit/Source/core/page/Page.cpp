@@ -22,10 +22,10 @@
 
 #include "core/css/resolver/ViewportStyleResolver.h"
 #include "core/dom/ClientRectList.h"
-#include "core/dom/DocumentMarkerController.h"
 #include "core/dom/VisitedLinkState.h"
-#include "core/editing/Caret.h"
-#include "core/editing/UndoStack.h"
+#include "core/editing/DragCaretController.h"
+#include "core/editing/commands/UndoStack.h"
+#include "core/editing/markers/DocumentMarkerController.h"
 #include "core/events/Event.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/frame/DOMTimer.h"
@@ -177,6 +177,9 @@ ClientRectList* Page::nonFastScrollableRects(const LocalFrame* frame)
         scrollingCoordinator->updateAfterCompositingChangeIfNeeded();
     }
 
+    if (!frame->view()->layerForScrolling())
+        return ClientRectList::create();
+
     // Now retain non-fast scrollable regions
     return ClientRectList::create(frame->view()->layerForScrolling()->platformLayer()->nonFastScrollableRegion());
 }
@@ -301,29 +304,14 @@ void Page::setDefersLoading(bool defers)
     }
 }
 
-void Page::setPageScaleFactor(float scale, const IntPoint& origin)
+void Page::setPageScaleFactor(float scale)
 {
-    if (!mainFrame()->isLocalFrame())
-        return;
-
-    FrameView* view = deprecatedLocalMainFrame()->view();
-    PinchViewport& viewport = frameHost().pinchViewport();
-
-    if (scale != viewport.scale()) {
-        viewport.setScale(scale);
-
-        chromeClient().pageScaleFactorChanged();
-
-        deprecatedLocalMainFrame()->loader().saveScrollState();
-    }
-
-    if (view && view->scrollPosition() != origin)
-        view->setScrollPosition(origin, ProgrammaticScroll);
+    frameHost().visualViewport().setScale(scale);
 }
 
 float Page::pageScaleFactor() const
 {
-    return frameHost().pinchViewport().scale();
+    return frameHost().visualViewport().scale();
 }
 
 void Page::setDeviceScaleFactor(float scaleFactor)
@@ -544,10 +532,21 @@ void Page::acceptLanguagesChanged()
         frames[i]->localDOMWindow()->acceptLanguagesChanged();
 }
 
+void Page::setCompositedDisplayList(PassOwnPtr<CompositedDisplayList> compositedDisplayList)
+{
+    chromeClient().setCompositedDisplayList(compositedDisplayList);
+}
+
+CompositedDisplayList* Page::compositedDisplayListForTesting()
+{
+    return chromeClient().compositedDisplayListForTesting();
+}
+
 DEFINE_TRACE(Page)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_animator);
+    visitor->trace(m_autoscrollController);
     visitor->trace(m_dragCaretController);
     visitor->trace(m_dragController);
     visitor->trace(m_focusController);

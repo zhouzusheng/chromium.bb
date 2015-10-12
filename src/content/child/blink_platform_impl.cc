@@ -40,7 +40,6 @@
 #include "content/app/strings/grit/content_strings.h"
 #include "content/child/background_sync/background_sync_provider.h"
 #include "content/child/background_sync/background_sync_provider_thread_proxy.h"
-#include "content/child/bluetooth/web_bluetooth_impl.h"
 #include "content/child/child_thread_impl.h"
 #include "content/child/content_child_helpers.h"
 #include "content/child/geofencing/web_geofencing_provider_impl.h"
@@ -63,7 +62,7 @@
 #include "net/base/data_url.h"
 #include "net/base/ip_address_number.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_util.h"
+#include "net/base/port_util.h"
 #include "third_party/WebKit/public/platform/WebConvertableToTraceFormat.h"
 #include "third_party/WebKit/public/platform/WebData.h"
 #include "third_party/WebKit/public/platform/WebFloatPoint.h"
@@ -455,8 +454,6 @@ void BlinkPlatformImpl::InternalInit() {
   if (ChildThreadImpl::current()) {
     geofencing_provider_.reset(new WebGeofencingProviderImpl(
         ChildThreadImpl::current()->thread_safe_sender()));
-    bluetooth_.reset(
-        new WebBluetoothImpl(ChildThreadImpl::current()->thread_safe_sender()));
     thread_safe_sender_ = ChildThreadImpl::current()->thread_safe_sender();
     notification_dispatcher_ =
         ChildThreadImpl::current()->notification_dispatcher();
@@ -639,10 +636,9 @@ blink::Platform::TraceEventHandle BlinkPlatformImpl::addTraceEvent(
       base::TraceTicks() + base::TimeDelta::FromSecondsD(timestamp);
   base::trace_event::TraceEventHandle handle =
       TRACE_EVENT_API_ADD_TRACE_EVENT_WITH_THREAD_ID_AND_TIMESTAMP(
-          phase, category_group_enabled, name, id,
-          base::PlatformThread::CurrentId(),
-          timestamp_tt,
-          num_args, arg_names, arg_types, arg_values, NULL, flags);
+          phase, category_group_enabled, name, id, trace_event_internal::kNoId,
+          base::PlatformThread::CurrentId(), timestamp_tt, num_args, arg_names,
+          arg_types, arg_values, NULL, flags);
   blink::Platform::TraceEventHandle result;
   memcpy(&result, &handle, sizeof(result));
   return result;
@@ -675,18 +671,10 @@ blink::Platform::TraceEventHandle BlinkPlatformImpl::addTraceEvent(
   base::TraceTicks timestamp_tt =
       base::TraceTicks() + base::TimeDelta::FromSecondsD(timestamp);
   base::trace_event::TraceEventHandle handle =
-      TRACE_EVENT_API_ADD_TRACE_EVENT_WITH_THREAD_ID_AND_TIMESTAMP(phase,
-                                      category_group_enabled,
-                                      name,
-                                      id,
-                                      base::PlatformThread::CurrentId(),
-                                      timestamp_tt,
-                                      num_args,
-                                      arg_names,
-                                      arg_types,
-                                      arg_values,
-                                      convertable_wrappers,
-                                      flags);
+      TRACE_EVENT_API_ADD_TRACE_EVENT_WITH_THREAD_ID_AND_TIMESTAMP(
+          phase, category_group_enabled, name, id, trace_event_internal::kNoId,
+          base::PlatformThread::CurrentId(), timestamp_tt, num_args, arg_names,
+          arg_types, arg_values, convertable_wrappers, flags);
   blink::Platform::TraceEventHandle result;
   memcpy(&result, &handle, sizeof(result));
   return result;
@@ -1075,8 +1063,8 @@ WebData BlinkPlatformImpl::loadResource(const char* name) {
     return WebData();
 
   // Check the name prefix to see if it's an audio resource.
-  if (base::StartsWithASCII(name, "IRC_Composite", true) ||
-      base::StartsWithASCII(name, "Composite", true))
+  if (base::StartsWith(name, "IRC_Composite", base::CompareCase::SENSITIVE) ||
+      base::StartsWith(name, "Composite", base::CompareCase::SENSITIVE))
     return loadAudioSpatializationResource(name);
 
   // TODO(flackr): We should use a better than linear search here, a trie would
@@ -1111,8 +1099,8 @@ WebString BlinkPlatformImpl::queryLocalizedString(
   int message_id = ToMessageID(name);
   if (message_id < 0)
     return WebString();
-  return ReplaceStringPlaceholders(GetContentClient()->GetLocalizedString(
-      message_id), value, NULL);
+  return base::ReplaceStringPlaceholders(
+      GetContentClient()->GetLocalizedString(message_id), value, NULL);
 }
 
 WebString BlinkPlatformImpl::queryLocalizedString(
@@ -1126,7 +1114,7 @@ WebString BlinkPlatformImpl::queryLocalizedString(
   values.reserve(2);
   values.push_back(value1);
   values.push_back(value2);
-  return ReplaceStringPlaceholders(
+  return base::ReplaceStringPlaceholders(
       GetContentClient()->GetLocalizedString(message_id), values, NULL);
 }
 
@@ -1174,10 +1162,6 @@ blink::WebCrypto* BlinkPlatformImpl::crypto() {
 
 blink::WebGeofencingProvider* BlinkPlatformImpl::geofencingProvider() {
   return geofencing_provider_.get();
-}
-
-blink::WebBluetooth* BlinkPlatformImpl::bluetooth() {
-  return bluetooth_.get();
 }
 
 blink::WebNotificationManager*
@@ -1315,6 +1299,10 @@ size_t BlinkPlatformImpl::physicalMemoryMB() {
 
 size_t BlinkPlatformImpl::virtualMemoryLimitMB() {
   return static_cast<size_t>(base::SysInfo::AmountOfVirtualMemoryMB());
+}
+
+bool BlinkPlatformImpl::isLowEndDeviceMode() {
+  return base::SysInfo::IsLowEndDevice();
 }
 
 size_t BlinkPlatformImpl::numberOfProcessors() {

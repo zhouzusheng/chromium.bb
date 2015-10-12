@@ -22,7 +22,7 @@
 #include "ui/gfx/geometry/rect.h"
 
 namespace ui {
-struct LatencyInfo;
+class LatencyInfo;
 }
 
 namespace cc {
@@ -108,6 +108,8 @@ class CONTENT_EXPORT RenderWidgetCompositor
                                        double duration_sec);
   virtual void heuristicsForGpuRasterizationUpdated(bool matches_heuristics);
   virtual void setNeedsAnimate();
+  virtual void setNeedsBeginFrame();
+  virtual void setNeedsCompositorUpdate();
   virtual void didStopFlinging();
   virtual void layoutAndPaintAsync(
       blink::WebLayoutAndPaintAsyncCallback* callback);
@@ -136,6 +138,7 @@ class CONTENT_EXPORT RenderWidgetCompositor
                               bool animate);
   virtual void setTopControlsHeight(float height, bool shrink);
   virtual void setTopControlsShownRatio(float);
+  virtual void setHidePinchScrollbarsNearMinScale(bool) override;
 
   // cc::LayerTreeHostClient implementation.
   void WillBeginMainFrame() override;

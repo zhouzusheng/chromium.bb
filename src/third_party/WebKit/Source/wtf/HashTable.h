@@ -430,6 +430,8 @@ namespace WTF {
         unsigned capacity() const { return m_tableSize; }
         bool isEmpty() const { return !m_keyCount; }
 
+        void reserveCapacityForSize(unsigned size);
+
         AddResult add(ValuePassInType value)
         {
             return add<IdentityTranslatorType>(Extractor::extract(value), value);
@@ -462,7 +464,6 @@ namespace WTF {
         template<typename HashTranslator, typename T> ValueType* lookup(T);
         template<typename HashTranslator, typename T> const ValueType* lookup(T) const;
 
-        typedef int HasInlinedTraceMethodMarker;
         template<typename VisitorDispatcher> void trace(VisitorDispatcher);
 
 #if ENABLE(ASSERT)
@@ -615,6 +616,23 @@ namespace WTF {
         key ^= (key << 2);
         key ^= (key >> 20);
         return key;
+    }
+
+    inline unsigned calculateCapacity(unsigned size)
+    {
+        for (unsigned mask = size; mask; mask >>= 1)
+            size |= mask; // 00110101010 -> 00111111111
+        return (size + 1) * 2; // 00111111111 -> 10000000000
+    }
+
+    template<typename Key, typename Value, typename Extractor, typename HashFunctions, typename Traits, typename KeyTraits, typename Allocator>
+    void HashTable<Key, Value, Extractor, HashFunctions, Traits, KeyTraits, Allocator>::reserveCapacityForSize(unsigned newSize)
+    {
+        unsigned newCapacity = calculateCapacity(newSize);
+        if (newCapacity > capacity()) {
+            RELEASE_ASSERT(!static_cast<int>(newCapacity >> 31)); // HashTable capacity should not overflow 32bit int.
+            rehash(newCapacity, 0);
+        }
     }
 
     template<typename Key, typename Value, typename Extractor, typename HashFunctions, typename Traits, typename KeyTraits, typename Allocator>
@@ -980,6 +998,13 @@ namespace WTF {
         // IsPolymorphic will return false for a pair of two types, even if
         // one of the components is polymorphic.
         static_assert(!Traits::emptyValueIsZero || !IsPolymorphic<KeyType>::value, "empty value cannot be zero for things with a vtable");
+
+#if ENABLE(OILPAN)
+        static_assert(Allocator::isGarbageCollected
+            || ((!IsAllowOnlyInlineAllocation<KeyType>::value || !NeedsTracing<KeyType>::value)
+            && (!IsAllowOnlyInlineAllocation<ValueType>::value || !NeedsTracing<ValueType>::value))
+            , "Cannot put ALLOW_ONLY_INLINE_ALLOCATION objects that have trace methods into an off-heap HashTable");
+#endif
         if (Traits::emptyValueIsZero) {
             result = Allocator::template allocateZeroedHashTableBacking<ValueType, HashTable>(allocSize);
         } else {

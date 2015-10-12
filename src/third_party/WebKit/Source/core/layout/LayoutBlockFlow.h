@@ -57,17 +57,17 @@ template <class Run> class BidiRunList;
 class CORE_EXPORT LayoutBlockFlow : public LayoutBlock {
 public:
     explicit LayoutBlockFlow(ContainerNode*);
-    virtual ~LayoutBlockFlow();
+    ~LayoutBlockFlow() override;
 
     static LayoutBlockFlow* createAnonymous(Document*);
 
-    virtual bool isLayoutBlockFlow() const override final { return true; }
+    bool isLayoutBlockFlow() const final { return true; }
 
-    virtual void layoutBlock(bool relayoutChildren) override;
+    void layoutBlock(bool relayoutChildren) override;
 
-    virtual void computeOverflow(LayoutUnit oldClientAfterEdge, bool recomputeFloats = false) override;
+    void computeOverflow(LayoutUnit oldClientAfterEdge) override;
 
-    virtual void deleteLineBoxTree() override final;
+    void deleteLineBoxTree() final;
 
     LayoutUnit availableLogicalWidthForLine(LayoutUnit position, bool shouldIndentText, LayoutUnit logicalHeight = 0) const
     {
@@ -100,8 +100,8 @@ public:
     using LayoutBlock::firstRootBox;
     using LayoutBlock::lastRootBox;
 
-    virtual LayoutUnit logicalLeftSelectionOffset(const LayoutBlock* rootBlock, LayoutUnit position) const override;
-    virtual LayoutUnit logicalRightSelectionOffset(const LayoutBlock* rootBlock, LayoutUnit position) const override;
+    LayoutUnit logicalLeftSelectionOffset(const LayoutBlock* rootBlock, LayoutUnit position) const override;
+    LayoutUnit logicalRightSelectionOffset(const LayoutBlock* rootBlock, LayoutUnit position) const override;
 
     RootInlineBox* createAndAppendRootInlineBox();
 
@@ -113,7 +113,7 @@ public:
 
     void removeFloatingObjects();
 
-    virtual void addChild(LayoutObject* newChild, LayoutObject* beforeChild = nullptr) override;
+    void addChild(LayoutObject* newChild, LayoutObject* beforeChild = nullptr) override;
 
     void moveAllChildrenIncludingFloatsTo(LayoutBlock* toBlock, bool fullRemoveInsert);
 
@@ -179,7 +179,7 @@ public:
     // FIXME: This should be const to avoid a const_cast, but can modify child dirty bits and LayoutTextCombine
     void computeInlinePreferredLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth);
 
-    virtual bool shouldPaintSelectionGaps() const override final;
+    bool shouldPaintSelectionGaps() const final;
     LayoutRect logicalLeftSelectionGap(const LayoutBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
         const LayoutObject* selObj, LayoutUnit logicalLeft, LayoutUnit logicalTop, LayoutUnit logicalHeight, const PaintInfo*) const;
     LayoutRect logicalRightSelectionGap(const LayoutBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
@@ -190,7 +190,7 @@ public:
         LayoutUnit logicalTop, LayoutUnit logicalHeight, LayoutUnit& logicalLeft, LayoutUnit& logicalRight) const;
     void getSelectionGapInfo(const LayoutBlock* rootBlock, bool& leftGap, bool& rightGap) const;
 
-    virtual LayoutRect selectionRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer) const override final;
+    LayoutRect selectionRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer) const final;
     GapRects selectionGapRectsForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer) const;
     GapRects selectionGaps(const LayoutBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
         LayoutUnit& lastLogicalTop, LayoutUnit& lastLogicalLeft, LayoutUnit& lastLogicalRight,
@@ -212,10 +212,10 @@ public:
 
     void positionSpannerDescendant(LayoutMultiColumnSpannerPlaceholder& child);
 
-    virtual bool avoidsFloats() const override;
+    bool avoidsFloats() const override;
 
     using LayoutBoxModelObject::moveChildrenTo;
-    virtual void moveChildrenTo(LayoutBoxModelObject* toBoxModelObject, LayoutObject* startChild, LayoutObject* endChild, LayoutObject* beforeChild, bool fullRemoveInsert = false) override;
+    void moveChildrenTo(LayoutBoxModelObject* toBoxModelObject, LayoutObject* startChild, LayoutObject* endChild, LayoutObject* beforeChild, bool fullRemoveInsert = false) override;
 
     LayoutUnit xPositionForFloatIncludingMargin(const FloatingObject& child) const
     {
@@ -246,7 +246,7 @@ public:
 
     LayoutPoint flipFloatForWritingModeForChild(const FloatingObject&, const LayoutPoint&) const;
 
-    virtual const char* name() const override { return "LayoutBlockFlow"; }
+    const char* name() const override { return "LayoutBlockFlow"; }
 
     FloatingObject* insertFloatingObject(LayoutBox&);
 
@@ -270,8 +270,8 @@ protected:
 
     void createFloatingObjects();
 
-    virtual void styleWillChange(StyleDifference, const ComputedStyle& newStyle) override;
-    virtual void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override;
+    void styleWillChange(StyleDifference, const ComputedStyle& newStyle) override;
+    void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override;
 
     void updateBlockChildDirtyBitsBeforeLayout(bool relayoutChildren, LayoutBox&);
 
@@ -287,7 +287,7 @@ protected:
     }
 
     virtual LayoutObject* layoutSpecialExcludedChild(bool /*relayoutChildren*/, SubtreeLayoutScope&);
-    virtual bool updateLogicalWidthAndColumnWidth() override;
+    bool updateLogicalWidthAndColumnWidth() override;
 
     void setLogicalLeftForChild(LayoutBox& child, LayoutUnit logicalLeft);
     void setLogicalTopForChild(LayoutBox& child, LayoutUnit logicalTop);
@@ -315,12 +315,12 @@ private:
 
     LayoutUnit lowestFloatLogicalBottom(FloatingObject::Type = FloatingObject::FloatLeftRight) const;
 
-    virtual bool hitTestFloats(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset) override final;
+    bool hitTestFloats(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset) final;
 
-    virtual void invalidatePaintForOverhangingFloats(bool paintAllDescendants) override final;
-    virtual void invalidatePaintForOverflow() override final;
-    virtual void paintFloats(const PaintInfo&, const LayoutPoint&, bool preservePhase = false) override final;
-    virtual void paintSelection(const PaintInfo&, const LayoutPoint&) override final;
+    void invalidatePaintForOverhangingFloats(bool paintAllDescendants) final;
+    void invalidatePaintForOverflow() final;
+    void paintFloats(const PaintInfo&, const LayoutPoint&, bool preservePhase = false) final;
+    void paintSelection(const PaintInfo&, const LayoutPoint&) final;
     virtual void clipOutFloatingObjects(const LayoutBlock*, ClipScope&, const LayoutPoint&, const LayoutSize&) const;
     void clearFloats(EClear);
 
@@ -481,11 +481,11 @@ protected:
 
     virtual ETextAlign textAlignmentForLine(bool endsWithSoftBreak) const;
 private:
-    virtual LayoutUnit collapsedMarginBefore() const override final { return maxPositiveMarginBefore() - maxNegativeMarginBefore(); }
-    virtual LayoutUnit collapsedMarginAfter() const override final { return maxPositiveMarginAfter() - maxNegativeMarginAfter(); }
+    LayoutUnit collapsedMarginBefore() const final { return maxPositiveMarginBefore() - maxNegativeMarginBefore(); }
+    LayoutUnit collapsedMarginAfter() const final { return maxPositiveMarginAfter() - maxNegativeMarginAfter(); }
 
-    LayoutUnit collapseMargins(LayoutBox& child, MarginInfo&, bool childIsSelfCollapsing);
-    LayoutUnit clearFloatsIfNeeded(LayoutBox& child, MarginInfo&, LayoutUnit oldTopPosMargin, LayoutUnit oldTopNegMargin, LayoutUnit yPos, bool childIsSelfCollapsing);
+    LayoutUnit collapseMargins(LayoutBox& child, MarginInfo&, bool childIsSelfCollapsing, bool childDiscardMarginBefore, bool childDiscardMarginAfter);
+    LayoutUnit clearFloatsIfNeeded(LayoutBox& child, MarginInfo&, LayoutUnit oldTopPosMargin, LayoutUnit oldTopNegMargin, LayoutUnit yPos, bool childIsSelfCollapsing, bool childDiscardMargin);
     LayoutUnit estimateLogicalTopPosition(LayoutBox& child, const MarginInfo&, LayoutUnit& estimateWithoutPagination);
     void marginBeforeEstimateForChild(LayoutBox&, LayoutUnit&, LayoutUnit&, bool&) const;
     void handleAfterSideOfBlock(LayoutBox* lastChild, LayoutUnit top, LayoutUnit bottom, MarginInfo&);
@@ -508,7 +508,7 @@ private:
     LayoutUnit m_paintInvalidationLogicalTop;
     LayoutUnit m_paintInvalidationLogicalBottom;
 
-    virtual bool isSelfCollapsingBlock() const override;
+    bool isSelfCollapsingBlock() const override;
 
 protected:
     OwnPtr<LayoutBlockFlowRareData> m_rareData;
@@ -538,8 +538,7 @@ private:
     void layoutRunsAndFloatsInRange(LineLayoutState&, InlineBidiResolver&,
         const InlineIterator& cleanLineStart, const BidiStatus& cleanLineBidiStatus);
     void linkToEndLineIfNeeded(LineLayoutState&);
-    static void markDirtyFloatsForPaintInvalidation(Vector<FloatWithRect>& floats);
-    void checkFloatsInCleanLine(RootInlineBox*, Vector<FloatWithRect>&, size_t& floatIndex, bool& encounteredNewFloat, bool& dirtiedByFloat);
+    void markDirtyFloatsForPaintInvalidation(Vector<FloatWithRect>& floats);
     RootInlineBox* determineStartPosition(LineLayoutState&, InlineBidiResolver&);
     void determineEndPosition(LineLayoutState&, RootInlineBox* startBox, InlineIterator& cleanLineStart, BidiStatus& cleanLineBidiStatus);
     bool lineBoxHasBRWithClearance(RootInlineBox*);

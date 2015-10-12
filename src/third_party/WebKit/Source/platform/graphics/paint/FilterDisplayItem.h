@@ -16,10 +16,10 @@
 
 namespace blink {
 
-class PLATFORM_EXPORT BeginFilterDisplayItem : public PairedBeginDisplayItem {
+class PLATFORM_EXPORT BeginFilterDisplayItem final : public PairedBeginDisplayItem {
 public:
     BeginFilterDisplayItem(const DisplayItemClientWrapper& client, PassRefPtr<SkImageFilter> imageFilter, const FloatRect& bounds, PassOwnPtr<WebFilterOperations> filterOperations = nullptr)
-        : PairedBeginDisplayItem(client, BeginFilter)
+        : PairedBeginDisplayItem(client, BeginFilter, sizeof(*this))
         , m_imageFilter(imageFilter)
         , m_webFilterOperations(filterOperations)
         , m_bounds(bounds) { }
@@ -39,10 +39,10 @@ private:
     const FloatRect m_bounds;
 };
 
-class PLATFORM_EXPORT EndFilterDisplayItem : public PairedEndDisplayItem {
+class PLATFORM_EXPORT EndFilterDisplayItem final : public PairedEndDisplayItem {
 public:
     EndFilterDisplayItem(const DisplayItemClientWrapper& client)
-        : PairedEndDisplayItem(client, EndFilter) { }
+        : PairedEndDisplayItem(client, EndFilter, sizeof(*this)) { }
 
     void replay(GraphicsContext&) override;
     void appendToWebDisplayItemList(WebDisplayItemList*) const override;

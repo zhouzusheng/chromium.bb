@@ -92,8 +92,21 @@ IPC_PROTOBUF_MESSAGE_TRAITS_BEGIN(
 IPC_PROTOBUF_MESSAGE_TRAITS_END()
 
 IPC_PROTOBUF_MESSAGE_TRAITS_BEGIN(
+    safe_browsing::ClientDownloadRequest_MachOHeaders_LoadCommand)
+  IPC_PROTOBUF_MESSAGE_TRAITS_OPTIONAL_FUNDAMENTAL_MEMBER(command_id)
+  IPC_PROTOBUF_MESSAGE_TRAITS_REPEATED_COMPLEX_MEMBER(command)
+IPC_PROTOBUF_MESSAGE_TRAITS_END()
+
+IPC_PROTOBUF_MESSAGE_TRAITS_BEGIN(
+    safe_browsing::ClientDownloadRequest_MachOHeaders)
+  IPC_PROTOBUF_MESSAGE_TRAITS_REPEATED_COMPLEX_MEMBER(mach_header)
+  IPC_PROTOBUF_MESSAGE_TRAITS_REPEATED_COMPLEX_MEMBER(load_commands)
+IPC_PROTOBUF_MESSAGE_TRAITS_END()
+
+IPC_PROTOBUF_MESSAGE_TRAITS_BEGIN(
     safe_browsing::ClientDownloadRequest_ImageHeaders)
   IPC_PROTOBUF_MESSAGE_TRAITS_OPTIONAL_COMPLEX_MEMBER(pe_headers)
+  IPC_PROTOBUF_MESSAGE_TRAITS_REPEATED_COMPLEX_MEMBER(mach_o_headers)
 IPC_PROTOBUF_MESSAGE_TRAITS_END()
 
 IPC_PROTOBUF_MESSAGE_TRAITS_BEGIN(
@@ -111,7 +124,7 @@ IPC_STRUCT_TRAITS_BEGIN(safe_browsing::zip_analyzer::Results)
   IPC_STRUCT_TRAITS_MEMBER(has_executable)
   IPC_STRUCT_TRAITS_MEMBER(has_archive)
   IPC_STRUCT_TRAITS_MEMBER(archived_binary)
-  IPC_STRUCT_TRAITS_MEMBER(archived_archive_filetypes)
+  IPC_STRUCT_TRAITS_MEMBER(archived_archive_filenames)
 IPC_STRUCT_TRAITS_END()
 #endif  // FULL_SAFE_BROWSING
 #endif
@@ -182,7 +195,14 @@ IPC_MESSAGE_CONTROL0(ChromeUtilityMsg_StartupPing)
 IPC_MESSAGE_CONTROL2(ChromeUtilityMsg_AnalyzeZipFileForDownloadProtection,
                      IPC::PlatformFileForTransit /* zip_file */,
                      IPC::PlatformFileForTransit /* temp_file */)
-#endif
+
+#if defined(OS_MACOSX)
+// Tells the utility process to analyze a DMG file for malicious download
+// protection.
+IPC_MESSAGE_CONTROL1(ChromeUtilityMsg_AnalyzeDmgFileForDownloadProtection,
+                     IPC::PlatformFileForTransit /* dmg_file */)
+#endif  // defined(OS_MACOSX)
+#endif  // defined(FULL_SAFE_BROWSING)
 
 #if defined(OS_WIN)
 // Invokes ui::base::win::OpenFileViaShell from the utility process.
@@ -251,7 +271,14 @@ IPC_MESSAGE_CONTROL0(ChromeUtilityHostMsg_ProcessStarted)
 IPC_MESSAGE_CONTROL1(
     ChromeUtilityHostMsg_AnalyzeZipFileForDownloadProtection_Finished,
     safe_browsing::zip_analyzer::Results)
-#endif
+
+#if defined(OS_MACOSX)
+// Reply when a DMG file has been analyzed for malicious download protection.
+IPC_MESSAGE_CONTROL1(
+    ChromeUtilityHostMsg_AnalyzeDmgFileForDownloadProtection_Finished,
+    safe_browsing::zip_analyzer::Results)
+#endif  // defined(OS_MACOSX)
+#endif  // defined(FULL_SAFE_BROWSING)
 #endif
 
 #if defined(OS_WIN)

@@ -46,7 +46,7 @@ using namespace HTMLNames;
 
 struct SameSizeAsCSSSelector {
     unsigned bitfields;
-    void *pointers[1];
+    void* pointers[1];
 };
 
 static_assert(sizeof(CSSSelector) == sizeof(SameSizeAsCSSSelector), "CSSSelector should stay small");
@@ -261,7 +261,6 @@ PseudoId CSSSelector::pseudoId(PseudoType type)
     case PseudoHostContext:
     case PseudoShadow:
     case PseudoFullScreen:
-    case PseudoFullScreenDocument:
     case PseudoFullScreenAncestor:
     case PseudoSpatialNavigationFocus:
     case PseudoListBox:
@@ -292,7 +291,6 @@ const static NameToPseudoStruct pseudoTypeWithoutArgumentsMap[] = {
 {"-webkit-full-page-media",       CSSSelector::PseudoFullPageMedia},
 {"-webkit-full-screen",           CSSSelector::PseudoFullScreen},
 {"-webkit-full-screen-ancestor",  CSSSelector::PseudoFullScreenAncestor},
-{"-webkit-full-screen-document",  CSSSelector::PseudoFullScreenDocument},
 {"-webkit-resizer",               CSSSelector::PseudoResizer},
 {"-webkit-scrollbar",             CSSSelector::PseudoScrollbar},
 {"-webkit-scrollbar-button",      CSSSelector::PseudoScrollbarButton},
@@ -511,7 +509,6 @@ void CSSSelector::updatePseudoType(const AtomicString& value, bool hasArguments)
     case PseudoFullPageMedia:
     case PseudoFullScreen:
     case PseudoFullScreenAncestor:
-    case PseudoFullScreenDocument:
     case PseudoFutureCue:
     case PseudoHorizontal:
     case PseudoHost:
@@ -590,9 +587,9 @@ String CSSSelector::selectorText(const String& rightSide) const
     StringBuilder str;
 
     if (m_match == Tag && !m_tagIsImplicit) {
-        if (tagQName().prefix().isNull())
+        if (tagQName().prefix().isNull()) {
             str.append(tagQName().localName());
-        else {
+        } else {
             str.append(tagQName().prefix().string());
             str.append('|');
             str.append(tagQName().localName());

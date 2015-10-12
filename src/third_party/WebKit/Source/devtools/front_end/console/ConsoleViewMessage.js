@@ -434,7 +434,7 @@ WebInspector.ConsoleViewMessage.prototype = {
             }
         }
         var note = titleElement.createChild("span", "object-info-state-note");
-        note.title = WebInspector.UIString("Object state below is captured upon first expansion");
+        note.title = WebInspector.UIString("Object value at left was snapshotted when logged, value below was evaluated just now.");
         var section = new WebInspector.ObjectPropertiesSection(obj, titleElement);
         section.enableContextMenu();
         elem.appendChild(section.element);
@@ -1210,9 +1210,17 @@ WebInspector.ConsoleViewMessage.prototype = {
      */
     _tryFormatAsError: function(string)
     {
+        /**
+         * @param {string} prefix
+         */
+        function startsWith(prefix)
+        {
+            return string.startsWith(prefix);
+        }
+
         var errorPrefixes = ["EvalError", "ReferenceError", "SyntaxError", "TypeError", "RangeError", "Error", "URIError"];
         var target = this._target();
-        if (!target || !errorPrefixes.some(String.prototype.startsWith.bind(new String(string))))
+        if (!target || !errorPrefixes.some(startsWith))
             return null;
         var debuggerModel = WebInspector.DebuggerModel.fromTarget(target);
         if (!debuggerModel)

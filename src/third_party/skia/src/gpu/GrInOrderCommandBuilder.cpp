@@ -7,9 +7,9 @@
 
 #include "GrInOrderCommandBuilder.h"
 
+#include "GrBufferedDrawTarget.h"
+
 #include "GrColor.h"
-#include "GrInOrderDrawBuffer.h"
-#include "GrTemplates.h"
 #include "SkPoint.h"
 
 static bool path_fill_type_is_winding(const GrStencilSettings& pathStencilSettings) {
@@ -25,49 +25,25 @@ static bool path_fill_type_is_winding(const GrStencilSettings& pathStencilSettin
     return isWinding;
 }
 
-GrTargetCommands::Cmd* GrInOrderCommandBuilder::recordDrawBatch(State* state, GrBatch* batch) {
-    // Check if there is a Batch Draw we can batch with
+GrTargetCommands::Cmd* GrInOrderCommandBuilder::recordDrawBatch(GrBatch* batch,
+                                                                const GrCaps& caps) {
+    GrBATCH_INFO("In-Recording (%s, %u)\n", batch->name(), batch->uniqueID());
     if (!this->cmdBuffer()->empty() &&
         Cmd::kDrawBatch_CmdType == this->cmdBuffer()->back().type()) {
         DrawBatch* previous = static_cast<DrawBatch*>(&this->cmdBuffer()->back());
-        if (previous->fState == state && previous->fBatch->combineIfPossible(batch)) {
+        if (previous->batch()->combineIfPossible(batch, caps)) {
+            GrBATCH_INFO("\tBatching with (%s, %u)\n",
+                         previous->batch()->name(), previous->batch()->uniqueID());
             return NULL;
         }
     }
 
-    return GrNEW_APPEND_TO_RECORDER(*this->cmdBuffer(), DrawBatch, (state, batch,
-                                                                    this->batchTarget()));
-}
-
-GrTargetCommands::Cmd*
-GrInOrderCommandBuilder::recordStencilPath(const GrPipelineBuilder& pipelineBuilder,
-                                           const GrPathProcessor* pathProc,
-                                           const GrPath* path,
-                                           const GrScissorState& scissorState,
-                                           const GrStencilSettings& stencilSettings) {
-    StencilPath* sp = GrNEW_APPEND_TO_RECORDER(*this->cmdBuffer(), StencilPath,
-                                               (path, pipelineBuilder.getRenderTarget()));
-
-    sp->fScissor = scissorState;
-    sp->fUseHWAA = pipelineBuilder.isHWAntialias();
-    sp->fViewMatrix = pathProc->viewMatrix();
-    sp->fStencil = stencilSettings;
-    return sp;
-}
-
-GrTargetCommands::Cmd*
-GrInOrderCommandBuilder::recordDrawPath(State* state,
-                                        const GrPathProcessor* pathProc,
-                                        const GrPath* path,
-                                        const GrStencilSettings& stencilSettings) {
-    DrawPath* dp = GrNEW_APPEND_TO_RECORDER(*this->cmdBuffer(), DrawPath, (state, path));
-    dp->fStencilSettings = stencilSettings;
-    return dp;
+    return GrNEW_APPEND_TO_RECORDER(*this->cmdBuffer(), DrawBatch, (batch));
 }
 
 GrTargetCommands::Cmd*
 GrInOrderCommandBuilder::recordDrawPaths(State* state,
-                                         GrInOrderDrawBuffer* iodb,
+                                         GrBufferedDrawTarget* bufferedDrawTarget,
                                          const GrPathProcessor* pathProc,
                                          const GrPathRange* pathRange,
                                          const void* indexValues,
@@ -76,7 +52,7 @@ GrInOrderCommandBuilder::recordDrawPaths(State* state,
                                          GrDrawTarget::PathTransformType transformType,
                                          int count,
                                          const GrStencilSettings& stencilSettings,
-                                         const GrDrawTarget::PipelineInfo& pipelineInfo) {
+                                         const GrPipelineOptimizations& opts) {
     SkASSERT(pathRange);
     SkASSERT(indexValues);
     SkASSERT(transformValues);
@@ -84,9 +60,9 @@ GrInOrderCommandBuilder::recordDrawPaths(State* state,
     char* savedIndices;
     float* savedTransforms;
 
-    iodb->appendIndicesAndTransforms(indexValues, indexType,
-                                     transformValues, transformType,
-                                     count, &savedIndices, &savedTransforms);
+    bufferedDrawTarget->appendIndicesAndTransforms(indexValues, indexType,
+                                                   transformValues, transformType,
+                                                   count, &savedIndices, &savedTransforms);
 
     if (!this->cmdBuffer()->empty() &&
         Cmd::kDrawPaths_CmdType == this->cmdBuffer()->back().type()) {
@@ -103,7 +79,7 @@ GrInOrderCommandBuilder::recordDrawPaths(State* state,
             stencilSettings == previous->fStencilSettings &&
             path_fill_type_is_winding(stencilSettings) &&
             previous->fState == state &&
-            !pipelineInfo.willColorBlendWithDst(pathProc)) {
+            !opts.willColorBlendWithDst()) {
 
             const int indexBytes = GrPathRange::PathIndexSizeInBytes(indexType);
             const int xformSize = GrPathRendering::PathTransformSize(transformType);

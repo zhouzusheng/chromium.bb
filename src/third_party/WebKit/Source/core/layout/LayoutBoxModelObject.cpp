@@ -118,6 +118,11 @@ LayoutBoxModelObject::LayoutBoxModelObject(ContainerNode* node)
 {
 }
 
+bool LayoutBoxModelObject::usesCompositedScrolling() const
+{
+    return hasOverflowClip() && hasLayer() && layer()->scrollableArea()->usesCompositedScrolling();
+}
+
 LayoutBoxModelObject::~LayoutBoxModelObject()
 {
     // Our layer should have been destroyed and cleared by now
@@ -319,6 +324,17 @@ void LayoutBoxModelObject::addLayerHitTestRects(LayerHitTestRects& rects, const 
     }
 }
 
+static bool hasPercentageTransform(const ComputedStyle& style)
+{
+    if (TransformOperation* translate = style.translate()) {
+        if (translate->dependsOnBoxSize())
+            return true;
+    }
+    return style.transform().dependsOnBoxSize()
+        || (style.transformOriginX() != Length(50, Percent) && style.transformOriginX().hasPercent())
+        || (style.transformOriginY() != Length(50, Percent) && style.transformOriginY().hasPercent());
+}
+
 void LayoutBoxModelObject::invalidateTreeIfNeeded(PaintInvalidationState& paintInvalidationState)
 {
     ASSERT(!needsLayout());
@@ -331,6 +347,8 @@ void LayoutBoxModelObject::invalidateTreeIfNeeded(PaintInvalidationState& paintI
     // FIXME: This assert should be re-enabled when we move paint invalidation to after compositing update. crbug.com/360286
     // ASSERT(&newPaintInvalidationContainer == containerForPaintInvalidation());
 
+    LayoutRect previousPaintInvalidationRect = this->previousPaintInvalidationRect();
+
     PaintInvalidationReason reason = invalidatePaintIfNeeded(paintInvalidationState, newPaintInvalidationContainer);
     clearPaintInvalidationState(paintInvalidationState);
 
@@ -340,6 +358,19 @@ void LayoutBoxModelObject::invalidateTreeIfNeeded(PaintInvalidationState& paintI
     PaintInvalidationState childTreeWalkState(paintInvalidationState, *this, newPaintInvalidationContainer);
     if (reason == PaintInvalidationLocationChange)
         childTreeWalkState.setAncestorHadPaintInvalidationForLocationChange();
+
+    // Workaround for crbug.com/533277.
+    if (reason != PaintInvalidationNone && hasPercentageTransform(styleRef()))
+        childTreeWalkState.setAncestorHadPaintInvalidationForLocationChange();
+
+    // TODO(wangxianzhu): This is a workaround for crbug.com/490725. We don't have enough saved information to do accurate check
+    // of clipping change. Will remove when we remove rect-based paint invalidation.
+    if (!RuntimeEnabledFeatures::slimmingPaintV2Enabled()
+        && previousPaintInvalidationRect != this->previousPaintInvalidationRect()
+        && !usesCompositedScrolling()
+        && hasOverflowClip())
+        childTreeWalkState.setForceSubtreeInvalidationRectUpdateWithinContainer();
+
     invalidatePaintOfSubtreesIfNeeded(childTreeWalkState);
 }
 
@@ -373,33 +404,33 @@ void LayoutBoxModelObject::invalidateDisplayItemClientOnBacking(const DisplayIte
     }
 }
 
-void LayoutBoxModelObject::addFocusRingRectsForNormalChildren(Vector<LayoutRect>& rects, const LayoutPoint& additionalOffset) const
+void LayoutBoxModelObject::addOutlineRectsForNormalChildren(Vector<LayoutRect>& rects, const LayoutPoint& additionalOffset) const
 {
     for (LayoutObject* child = slowFirstChild(); child; child = child->nextSibling()) {
-        // Focus rings of out-of-flow positioned descendants are handled in LayoutBlock::addFocusRingRects().
+        // Outlines of out-of-flow positioned descendants are handled in LayoutBlock::addOutlineRects().
         if (child->isOutOfFlowPositioned())
             continue;
 
-        // Focus ring of an element continuation or anonymous block continuation is added when we iterate the continuation chain.
-        // See LayoutBlock::addFocusRingRects() and LayoutInline::addFocusRingRects().
+        // Outline of an element continuation or anonymous block continuation is added when we iterate the continuation chain.
+        // See LayoutBlock::addOutlineRects() and LayoutInline::addOutlineRects().
         if (child->isElementContinuation()
             || (child->isLayoutBlock() && toLayoutBlock(child)->isAnonymousBlockContinuation()))
             continue;
 
-        addFocusRingRectsForDescendant(*child, rects, additionalOffset);
+        addOutlineRectsForDescendant(*child, rects, additionalOffset);
     }
 }
 
-void LayoutBoxModelObject::addFocusRingRectsForDescendant(const LayoutObject& descendant, Vector<LayoutRect>& rects, const LayoutPoint& additionalOffset) const
+void LayoutBoxModelObject::addOutlineRectsForDescendant(const LayoutObject& descendant, Vector<LayoutRect>& rects, const LayoutPoint& additionalOffset) const
 {
     if (descendant.isText() || descendant.isListMarker())
         return;
 
     if (descendant.hasLayer()) {
-        Vector<LayoutRect> layerFocusRingRects;
-        descendant.addFocusRingRects(layerFocusRingRects, LayoutPoint());
-        for (size_t i = 0; i < layerFocusRingRects.size(); ++i) {
-            FloatQuad quadInBox = toLayoutBoxModelObject(descendant).localToContainerQuad(FloatQuad(layerFocusRingRects[i]), this);
+        Vector<LayoutRect> layerOutlineRects;
+        descendant.addOutlineRects(layerOutlineRects, LayoutPoint());
+        for (size_t i = 0; i < layerOutlineRects.size(); ++i) {
+            FloatQuad quadInBox = toLayoutBoxModelObject(descendant).localToContainerQuad(FloatQuad(layerOutlineRects[i]), this);
             LayoutRect rect = LayoutRect(quadInBox.boundingBox());
             if (!rect.isEmpty()) {
                 rect.moveBy(additionalOffset);
@@ -410,11 +441,20 @@ void LayoutBoxModelObject::addFocusRingRectsForDescendant(const LayoutObject& de
     }
 
     if (descendant.isBox()) {
-        descendant.addFocusRingRects(rects, additionalOffset + toLayoutBox(descendant).locationOffset());
+        descendant.addOutlineRects(rects, additionalOffset + toLayoutBox(descendant).locationOffset());
         return;
     }
 
-    descendant.addFocusRingRects(rects, additionalOffset);
+    if (descendant.isLayoutInline()) {
+        // As an optimization, an ancestor has added rects for its line boxes covering descendants'
+        // line boxes, so descendants don't need to add line boxes again. For example, if the parent
+        // is a LayoutBlock, it adds rects for its RootOutlineBoxes which cover the line boxes of
+        // this LayoutInline. So the LayoutInline needs to add rects for children and continuations only.
+        toLayoutInline(descendant).addOutlineRectsForChildrenAndContinuations(rects, additionalOffset);
+        return;
+    }
+
+    descendant.addOutlineRects(rects, additionalOffset);
 }
 
 bool LayoutBoxModelObject::calculateHasBoxDecorations() const
@@ -454,12 +494,12 @@ void LayoutBoxModelObject::updateFromStyle()
 
 static LayoutSize accumulateInFlowPositionOffsets(const LayoutObject* child)
 {
-    if (!child->isAnonymousBlock() || !child->isRelPositioned())
+    if (!child->isAnonymousBlock() || !child->isInFlowPositioned())
         return LayoutSize();
     LayoutSize offset;
     LayoutObject* p = toLayoutBlock(child)->inlineElementContinuation();
     while (p && p->isLayoutInline()) {
-        if (p->isRelPositioned()) {
+        if (p->isInFlowPositioned()) {
             LayoutInline* layoutInline = toLayoutInline(p);
             offset += layoutInline->offsetForInFlowPosition();
         }
@@ -576,7 +616,7 @@ LayoutPoint LayoutBoxModelObject::adjustedPositionRelativeToOffsetParent(const L
         if (offsetParent->isBox() && !offsetParent->isBody())
             referencePoint.move(-toLayoutBox(offsetParent)->borderLeft(), -toLayoutBox(offsetParent)->borderTop());
         if (!isOutOfFlowPositioned() || flowThreadContainingBlock()) {
-            if (isRelPositioned())
+            if (isInFlowPositioned())
                 referencePoint.move(relativePositionOffset());
 
             LayoutObject* current;

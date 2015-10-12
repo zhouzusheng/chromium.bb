@@ -150,11 +150,6 @@ int dtls1_accept(SSL *s) {
 
   s->in_handshake++;
 
-  if (s->cert == NULL) {
-    OPENSSL_PUT_ERROR(SSL, dtls1_accept, SSL_R_NO_CERTIFICATE_SET);
-    return -1;
-  }
-
   for (;;) {
     state = s->state;
 
@@ -181,8 +176,8 @@ int dtls1_accept(SSL *s) {
           goto end;
         }
 
-        if (!ssl3_init_finished_mac(s)) {
-          OPENSSL_PUT_ERROR(SSL, dtls1_accept, ERR_R_INTERNAL_ERROR);
+        if (!ssl3_init_handshake_buffer(s)) {
+          OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
           ret = -1;
           goto end;
         }
@@ -246,6 +241,8 @@ int dtls1_accept(SSL *s) {
 
       case SSL3_ST_SW_KEY_EXCH_A:
       case SSL3_ST_SW_KEY_EXCH_B:
+      case SSL3_ST_SW_KEY_EXCH_C:
+      case SSL3_ST_SW_KEY_EXCH_D:
         alg_a = s->s3->tmp.new_cipher->algorithm_auth;
 
         /* Send a ServerKeyExchange message if:
@@ -439,7 +436,7 @@ int dtls1_accept(SSL *s) {
         goto end;
 
       default:
-        OPENSSL_PUT_ERROR(SSL, dtls1_accept, SSL_R_UNKNOWN_STATE);
+        OPENSSL_PUT_ERROR(SSL, SSL_R_UNKNOWN_STATE);
         ret = -1;
         goto end;
     }

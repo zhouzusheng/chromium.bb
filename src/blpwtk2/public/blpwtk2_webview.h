@@ -64,19 +64,34 @@ public:
             RendererTypeBitmap
         };
 
+        // The region of the webview that will be captured.  The units are
+        // specified in terms of pixels.
         NativeRect   srcRegion;
-        NativeRect   destRegion;
+
+        // The size of the generated document.  The units are specified in
+        // terms of points (1/72th of an inch) as described in
+        // https://drafts.csswg.org/css-values-3/#absolute-lengths
+        // If a device dependent renderer is selected (ie. bitmap), the size
+        // will be assumed to be of the native resolution unit of the device.
+        float        destWidth;
+        float        destHeight;
+
+        // A space separated class list that will be applied to the body
+        // element.  The application is only temporary and the style attribute
+        // is reverted once the draw operation is complete.
         StringRef    styleClass;
+
+        // The picture format of the generated output.
         RendererType rendererType;
 
         // The 'dpi' field is only applicable for PDF renderer and when the
-        // target is a Blob. When the target is a native device context, the
-        // DPI setting in the device context is used instead.
+        // target is a Blob.
         int dpi;
 
         DrawParams()
             : srcRegion({ 0 })
-            , destRegion({ 0 })
+            , destWidth(0.0)
+            , destHeight(0.0)
             , rendererType(RendererTypePDF)
             , dpi(72)
         {
@@ -257,10 +272,6 @@ public:
     // Set a new web view delegate. From this point on, all callbacks will
     // be sent to the new delegate.
     virtual void setDelegate(WebViewDelegate* delegate) = 0;
-
-    // Draw the specified region of the main web frame onto the draw context.
-    virtual void drawContentsToDevice(NativeDeviceContext deviceContext,
-                                      const DrawParams& params) = 0;
 
     // Draw the specified region of the main web frame onto a blob.
     virtual void drawContentsToBlob(Blob *blob, const DrawParams& params) = 0;

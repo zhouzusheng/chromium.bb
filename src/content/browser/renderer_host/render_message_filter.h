@@ -35,7 +35,7 @@
 #include "ui/surface/transport_dib.h"
 
 #if defined(OS_MACOSX)
-#include <IOSurface/IOSurfaceAPI.h>
+#include <IOSurface/IOSurface.h>
 #include "base/mac/scoped_cftyperef.h"
 #include "content/common/mac/font_loader.h"
 #endif
@@ -292,10 +292,11 @@ class CONTENT_EXPORT RenderMessageFilter : public BrowserMessageFilter {
                             uint32_t data_size);
 #endif
 
-  void OnAllocateGpuMemoryBuffer(uint32 width,
+  void OnAllocateGpuMemoryBuffer(gfx::GpuMemoryBufferId id,
+                                 uint32 width,
                                  uint32 height,
-                                 gfx::GpuMemoryBuffer::Format format,
-                                 gfx::GpuMemoryBuffer::Usage usage,
+                                 gfx::BufferFormat format,
+                                 gfx::BufferUsage usage,
                                  IPC::Message* reply);
   void GpuMemoryBufferAllocated(IPC::Message* reply,
                                 const gfx::GpuMemoryBufferHandle& handle);

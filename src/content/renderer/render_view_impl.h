@@ -161,14 +161,15 @@ class CONTENT_EXPORT RenderViewImpl
   // |opener_id| will be MSG_ROUTING_NONE. When |swapped_out| is true, the
   // |proxy_routing_id| is specified, so a RenderFrameProxy can be created for
   // this RenderView's main RenderFrame.
-  static RenderViewImpl* Create(const ViewMsg_New_Params& params,
-                                CompositorDependencies* compositor_deps,
+  static RenderViewImpl* Create(CompositorDependencies* compositor_deps,
+                                const ViewMsg_New_Params& params,
                                 bool was_created_by_renderer);
 
   // Used by content_layouttest_support to hook into the creation of
   // RenderViewImpls.
-  static void InstallCreateHook(
-      RenderViewImpl* (*create_render_view_impl)(const ViewMsg_New_Params&));
+  static void InstallCreateHook(RenderViewImpl* (*create_render_view_impl)(
+      CompositorDependencies* compositor_deps,
+      const ViewMsg_New_Params&));
 
   // Returns the RenderViewImpl containing the given WebView.
   static RenderViewImpl* FromWebView(blink::WebView* webview);
@@ -227,6 +228,10 @@ class CONTENT_EXPORT RenderViewImpl
   void FrameDidStartLoading(blink::WebFrame* frame);
   void FrameDidStopLoading(blink::WebFrame* frame);
 
+  // Sets the zoom level and notifies observers. Doesn't call zoomLevelChanged,
+  // as that is only for changes that aren't initiated by the client.
+  void SetZoomLevel(double zoom_level);
+
   // Plugin-related functions --------------------------------------------------
 
 #if defined(ENABLE_PLUGINS)
@@ -281,9 +286,8 @@ class CONTENT_EXPORT RenderViewImpl
   // supported PPAPI plugins.
   bool HasIMETextFocus();
 
-  // Dispatches the current navigation state to the browser. Called on a
-  // periodic timer so we don't send too many messages.
-  void SyncNavigationState();
+  // Synchronously sends the current navigation state to the browser.
+  void SendUpdateState();
 
   // Returns the length of the session history of this RenderView. Note that
   // this only coincides with the actual length of the session history if this
@@ -491,10 +495,10 @@ class CONTENT_EXPORT RenderViewImpl
   void DidCompletePageScaleAnimation() override;
 
  protected:
-  explicit RenderViewImpl(const ViewMsg_New_Params& params);
+  RenderViewImpl(CompositorDependencies* compositor_deps,
+                 const ViewMsg_New_Params& params);
 
   void Initialize(const ViewMsg_New_Params& params,
-                  CompositorDependencies* compositor_deps,
                   bool was_created_by_renderer);
   void SetScreenMetricsEmulationParameters(
       bool enabled,
@@ -554,6 +558,7 @@ class CONTENT_EXPORT RenderViewImpl
                            MessageOrderInDidChangeSelection);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, SendCandidateWindowEvents);
   FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, RenderFrameClearedAfterClose);
+  FRIEND_TEST_ALL_PREFIXES(RenderViewImplTest, PaintAfterSwapOut);
   FRIEND_TEST_ALL_PREFIXES(SuppressErrorPageTest, Suppresses);
   FRIEND_TEST_ALL_PREFIXES(SuppressErrorPageTest, DoesNotSuppress);
 
@@ -582,9 +587,6 @@ class CONTENT_EXPORT RenderViewImpl
 
   static WindowOpenDisposition NavigationPolicyToDisposition(
       blink::WebNavigationPolicy policy);
-
-  void UpdateSessionHistory(blink::WebFrame* frame);
-  void SendUpdateState(HistoryEntry* entry);
 
   void ApplyWebPreferencesInternal(const WebPreferences& prefs,
                                    blink::WebView* web_view,
@@ -825,7 +827,8 @@ class CONTENT_EXPORT RenderViewImpl
   // PageGroupLoadDeferrer on the stack that interferes with swapping out.
   bool suppress_dialogs_until_swap_out_;
 
-  // Timer used to delay the updating of nav state (see SyncNavigationState).
+  // Timer used to delay the updating of nav state (see
+  // StartNavStateSyncTimerIfNecessary).
   base::OneShotTimer<RenderViewImpl> nav_state_sync_timer_;
 
   // Page IDs ------------------------------------------------------------------

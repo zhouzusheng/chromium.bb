@@ -35,6 +35,7 @@
 #include "bindings/core/v8/ScriptState.h"
 #include "bindings/core/v8/SerializedScriptValue.h"
 #include "bindings/core/v8/SerializedScriptValueFactory.h"
+#include "bindings/core/v8/V8ThrowException.h"
 #include "core/dom/DOMException.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
@@ -49,17 +50,17 @@
 #include "modules/serviceworkers/ServiceWorkerRegistration.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/weborigin/SchemeRegistry.h"
-#include "public/platform/WebServiceWorker.h"
-#include "public/platform/WebServiceWorkerProvider.h"
-#include "public/platform/WebServiceWorkerRegistration.h"
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
+#include "public/platform/modules/serviceworker/WebServiceWorker.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerProvider.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerRegistration.h"
 
 namespace blink {
 
 class RegistrationCallback : public WebServiceWorkerProvider::WebServiceWorkerRegistrationCallbacks {
 public:
-    explicit RegistrationCallback(PassRefPtrWillBeRawPtr<ScriptPromiseResolver> resolver)
+    explicit RegistrationCallback(ScriptPromiseResolver* resolver)
         : m_resolver(resolver) { }
     ~RegistrationCallback() override { }
 
@@ -76,17 +77,17 @@ public:
         OwnPtr<WebServiceWorkerError> error = adoptPtr(errorRaw);
         if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
             return;
-        m_resolver->reject(ServiceWorkerError::take(m_resolver.get(), error.release()));
+        m_resolver->reject(ServiceWorkerError::take(m_resolver.get(), *error));
     }
 
 private:
-    RefPtrWillBePersistent<ScriptPromiseResolver> m_resolver;
+    Persistent<ScriptPromiseResolver> m_resolver;
     WTF_MAKE_NONCOPYABLE(RegistrationCallback);
 };
 
 class GetRegistrationCallback : public WebServiceWorkerProvider::WebServiceWorkerGetRegistrationCallbacks {
 public:
-    explicit GetRegistrationCallback(PassRefPtrWillBeRawPtr<ScriptPromiseResolver> resolver)
+    explicit GetRegistrationCallback(ScriptPromiseResolver* resolver)
         : m_resolver(resolver) { }
     ~GetRegistrationCallback() override { }
 
@@ -108,17 +109,17 @@ public:
         OwnPtr<WebServiceWorkerError> error = adoptPtr(errorRaw);
         if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
             return;
-        m_resolver->reject(ServiceWorkerError::take(m_resolver.get(), error.release()));
+        m_resolver->reject(ServiceWorkerError::take(m_resolver.get(), *error));
     }
 
 private:
-    RefPtrWillBePersistent<ScriptPromiseResolver> m_resolver;
+    Persistent<ScriptPromiseResolver> m_resolver;
     WTF_MAKE_NONCOPYABLE(GetRegistrationCallback);
 };
 
 class GetRegistrationsCallback : public WebServiceWorkerProvider::WebServiceWorkerGetRegistrationsCallbacks {
 public:
-    explicit GetRegistrationsCallback(PassRefPtrWillBeRawPtr<ScriptPromiseResolver> resolver)
+    explicit GetRegistrationsCallback(ScriptPromiseResolver* resolver)
         : m_resolver(resolver) { }
     ~GetRegistrationsCallback() override { }
 
@@ -137,11 +138,11 @@ public:
         OwnPtr<WebServiceWorkerError> error = adoptPtr(errorRaw);
         if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
             return;
-        m_resolver->reject(ServiceWorkerError::take(m_resolver.get(), error.release()));
+        m_resolver->reject(ServiceWorkerError::take(m_resolver.get(), *error));
     }
 
 private:
-    RefPtrWillBePersistent<ScriptPromiseResolver> m_resolver;
+    Persistent<ScriptPromiseResolver> m_resolver;
     WTF_MAKE_NONCOPYABLE(GetRegistrationsCallback);
 };
 
@@ -190,7 +191,7 @@ DEFINE_TRACE(ServiceWorkerContainer)
 
 ScriptPromise ServiceWorkerContainer::registerServiceWorker(ScriptState* scriptState, const String& url, const RegistrationOptions& options)
 {
-    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
+    ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
 
     if (!m_provider) {
@@ -246,6 +247,12 @@ ScriptPromise ServiceWorkerContainer::registerServiceWorker(ScriptState* scriptS
         return promise;
     }
 
+    WebString webErrorMessage;
+    if (!m_provider->validateScopeAndScriptURL(patternURL, scriptURL, &webErrorMessage)) {
+        resolver->reject(V8ThrowException::createTypeError(scriptState->isolate(), WebString::fromUTF8("Failed to register a ServiceWorker: " + webErrorMessage.utf8())));
+        return promise;
+    }
+
     m_provider->registerServiceWorker(patternURL, scriptURL, new RegistrationCallback(resolver));
 
     return promise;
@@ -253,7 +260,7 @@ ScriptPromise ServiceWorkerContainer::registerServiceWorker(ScriptState* scriptS
 
 ScriptPromise ServiceWorkerContainer::getRegistration(ScriptState* scriptState, const String& documentURL)
 {
-    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
+    ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
 
     if (!m_provider) {
@@ -293,7 +300,7 @@ ScriptPromise ServiceWorkerContainer::getRegistration(ScriptState* scriptState, 
 
 ScriptPromise ServiceWorkerContainer::getRegistrations(ScriptState* scriptState)
 {
-    RefPtrWillBeRawPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
+    ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
 
     if (!m_provider) {
@@ -372,7 +379,7 @@ void ServiceWorkerContainer::dispatchMessageEvent(WebServiceWorker* serviceWorke
 
     MessagePortArray* ports = MessagePort::toMessagePortArray(executionContext(), webChannels);
     RefPtr<SerializedScriptValue> value = SerializedScriptValueFactory::instance().createFromWire(message);
-    RefPtrWillBeRawPtr<ServiceWorker> source = ServiceWorker::from(executionContext(), serviceWorker);
+    ServiceWorker* source = ServiceWorker::from(executionContext(), serviceWorker);
     dispatchEvent(ServiceWorkerMessageEvent::create(ports, value, source, executionContext()->securityOrigin()->toString()));
 }
 

@@ -331,7 +331,7 @@ void MessagePumpForUI::RescheduleTimer() {
   //
   // We use a single SetTimer corresponding to the timer that will expire
   // soonest.  As new timers are created and destroyed, we update SetTimer.
-  // Getting a spurrious SetTimer event firing is benign, as we'll just be
+  // Getting a spurious SetTimer event firing is benign, as we'll just be
   // processing an empty timer queue.
   //
   int delay_msec = GetCurrentDelay();
@@ -626,8 +626,8 @@ bool MessagePumpForIO::GetIOItem(DWORD timeout, IOItem* item) {
 }
 
 bool MessagePumpForIO::ProcessInternalIOItem(const IOItem& item) {
-  if (this == reinterpret_cast<MessagePumpForIO*>(item.context) &&
-      this == reinterpret_cast<MessagePumpForIO*>(item.handler)) {
+  if (reinterpret_cast<void*>(this) == reinterpret_cast<void*>(item.context) &&
+      reinterpret_cast<void*>(this) == reinterpret_cast<void*>(item.handler)) {
     // This is our internal completion.
     DCHECK(!item.bytes_transfered);
     InterlockedExchange(&have_work_, 0);

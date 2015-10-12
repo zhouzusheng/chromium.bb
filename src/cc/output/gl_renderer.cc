@@ -381,6 +381,7 @@ GLRenderer::~GLRenderer() {
     pending_async_read_pixels_.pop_back();
   }
 
+  previous_swap_overlay_resources_.clear();
   in_use_overlay_resources_.clear();
 
   CleanupSharedObjects();
@@ -518,10 +519,6 @@ void GLRenderer::DoDrawQuad(DrawingFrame* frame,
     case DrawQuad::INVALID:
       NOTREACHED();
       break;
-    case DrawQuad::CHECKERBOARD:
-      DrawCheckerboardQuad(frame, CheckerboardDrawQuad::MaterialCast(quad),
-                           clip_region);
-      break;
     case DrawQuad::DEBUG_BORDER:
       DrawDebugBorderQuad(frame, DebugBorderDrawQuad::MaterialCast(quad));
       break;
@@ -562,48 +559,6 @@ void GLRenderer::DoDrawQuad(DrawingFrame* frame,
                        clip_region);
       break;
   }
-}
-
-void GLRenderer::DrawCheckerboardQuad(const DrawingFrame* frame,
-                                      const CheckerboardDrawQuad* quad,
-                                      const gfx::QuadF* clip_region) {
-  // TODO(enne) For now since checkerboards shouldn't be part of a 3D
-  // context, clipping regions aren't supported so we skip drawing them
-  // if this becomes the case.
-  if (clip_region) {
-    return;
-  }
-  SetBlendEnabled(quad->ShouldDrawWithBlending());
-
-  const TileCheckerboardProgram* program = GetTileCheckerboardProgram();
-  DCHECK(program && (program->initialized() || IsContextLost()));
-  SetUseProgram(program->program());
-
-  SkColor color = quad->color;
-  gl_->Uniform4f(program->fragment_shader().color_location(),
-                 SkColorGetR(color) * (1.0f / 255.0f),
-                 SkColorGetG(color) * (1.0f / 255.0f),
-                 SkColorGetB(color) * (1.0f / 255.0f), 1);
-
-  const int kCheckerboardWidth = 16;
-  float frequency = 1.0f / kCheckerboardWidth;
-
-  gfx::Rect tile_rect = quad->rect;
-  float tex_offset_x =
-      static_cast<int>(tile_rect.x() / quad->scale) % kCheckerboardWidth;
-  float tex_offset_y =
-      static_cast<int>(tile_rect.y() / quad->scale) % kCheckerboardWidth;
-  float tex_scale_x = tile_rect.width() / quad->scale;
-  float tex_scale_y = tile_rect.height() / quad->scale;
-  gl_->Uniform4f(program->fragment_shader().tex_transform_location(),
-                 tex_offset_x, tex_offset_y, tex_scale_x, tex_scale_y);
-
-  gl_->Uniform1f(program->fragment_shader().frequency_location(), frequency);
-
-  SetShaderOpacity(quad->shared_quad_state->opacity,
-                   program->fragment_shader().alpha_location());
-  DrawQuadGeometry(frame, quad->shared_quad_state->quad_to_target_transform,
-                   quad->rect, program->vertex_shader().matrix_location());
 }
 
 // This function does not handle 3D sorting right now, since the debug border
@@ -2673,8 +2628,14 @@ void GLRenderer::SwapBuffers(const CompositorFrameMetadata& metadata) {
   output_surface_->SwapBuffers(&compositor_frame);
 
   // Release previously used overlay resources and hold onto the pending ones
-  // until the next swap buffers.
-  in_use_overlay_resources_.clear();
+  // until the next swap buffers. On some platforms, hold onto resources for
+  // an extra frame.
+  if (settings_->delay_releasing_overlay_resources) {
+    previous_swap_overlay_resources_.clear();
+    previous_swap_overlay_resources_.swap(in_use_overlay_resources_);
+  } else {
+    in_use_overlay_resources_.clear();
+  }
   in_use_overlay_resources_.swap(pending_overlay_resources_);
 
   swap_buffer_rect_ = gfx::Rect();
@@ -3025,17 +2986,6 @@ void GLRenderer::PrepareGeometry(BoundGeometry binding) {
       break;
   }
   bound_geometry_ = binding;
-}
-
-const GLRenderer::TileCheckerboardProgram*
-GLRenderer::GetTileCheckerboardProgram() {
-  if (!tile_checkerboard_program_.initialized()) {
-    TRACE_EVENT0("cc", "GLRenderer::checkerboardProgram::initalize");
-    tile_checkerboard_program_.Initialize(output_surface_->context_provider(),
-                                          TEX_COORD_PRECISION_NA,
-                                          SAMPLER_TYPE_NA);
-  }
-  return &tile_checkerboard_program_;
 }
 
 const GLRenderer::DebugBorderProgram* GLRenderer::GetDebugBorderProgram() {
@@ -3499,8 +3449,6 @@ void GLRenderer::CleanupSharedObjects() {
     video_stream_texture_program_[i].Cleanup(gl_);
   }
 
-  tile_checkerboard_program_.Cleanup(gl_);
-
   debug_border_program_.Cleanup(gl_);
   solid_color_program_.Cleanup(gl_);
   solid_color_program_aa_.Cleanup(gl_);
@@ -3581,16 +3529,20 @@ void GLRenderer::ScheduleOverlays(DrawingFrame* frame) {
     if (overlay.plane_z_order == 0)
       continue;
 
-    pending_overlay_resources_.push_back(
-        make_scoped_ptr(new ResourceProvider::ScopedReadLockGL(
-            resource_provider_, overlay.resource_id)));
+    unsigned texture_id = 0;
+    if (overlay.use_output_surface_for_resource) {
+      texture_id = output_surface_->GetOverlayTextureId();
+      DCHECK(texture_id);
+    } else {
+      pending_overlay_resources_.push_back(
+          make_scoped_ptr(new ResourceProvider::ScopedReadLockGL(
+              resource_provider_, overlay.resource_id)));
+      texture_id = pending_overlay_resources_.back()->texture_id();
+    }
 
     context_support_->ScheduleOverlayPlane(
-        overlay.plane_z_order,
-        overlay.transform,
-        pending_overlay_resources_.back()->texture_id(),
-        ToNearestRect(overlay.display_rect),
-        overlay.uv_rect);
+        overlay.plane_z_order, overlay.transform, texture_id,
+        ToNearestRect(overlay.display_rect), overlay.uv_rect);
   }
 }
 

@@ -166,10 +166,10 @@ class CC_EXPORT LayerTreeImpl {
                                 int inner_viewport_scroll_layer_id,
                                 int outer_viewport_scroll_layer_id);
   void ClearViewportLayers();
-  LayerImpl* overscroll_elasticity_layer() {
-    return overscroll_elasticity_layer_;
+  LayerImpl* OverscrollElasticityLayer() {
+    return LayerById(overscroll_elasticity_layer_id_);
   }
-  LayerImpl* page_scale_layer() { return page_scale_layer_; }
+  LayerImpl* PageScaleLayer() { return LayerById(page_scale_layer_id_); }
   void ApplySentScrollAndScaleDeltasFromAbortedCommit();
 
   SkColor background_color() const { return background_color_; }
@@ -197,6 +197,10 @@ class CC_EXPORT LayerTreeImpl {
 
   SyncedProperty<ScaleGroup>* page_scale_factor();
   const SyncedProperty<ScaleGroup>* page_scale_factor() const;
+
+  void set_hide_pinch_scrollbars_near_min_scale(bool hide) {
+    hide_pinch_scrollbars_near_min_scale_ = hide;
+  }
 
   SyncedElasticOverscroll* elastic_overscroll() {
     return elastic_overscroll_.get();
@@ -242,7 +246,7 @@ class CC_EXPORT LayerTreeImpl {
 
   // These return the size of the root scrollable area and the size of
   // the user-visible scrolling viewport, in CSS layout coordinates.
-  gfx::Size ScrollableSize() const;
+  gfx::SizeF ScrollableSize() const;
   gfx::SizeF ScrollableViewportSize() const;
 
   gfx::Rect RootScrollLayerDeviceViewportBounds() const;
@@ -256,8 +260,6 @@ class CC_EXPORT LayerTreeImpl {
   size_t NumLayers();
 
   AnimationRegistrar* GetAnimationRegistrar() const;
-
-  void PushPersistedState(LayerTreeImpl* pending_tree);
 
   void DidBecomeActive();
 
@@ -276,6 +278,10 @@ class CC_EXPORT LayerTreeImpl {
   // Distribute the rool scroll between outer and inner viewport scroll layer.
   // The outer viewport scroll layer scrolls first.
   void DistributeRootScrollOffset();
+
+  void ApplyScroll(LayerImpl* layer, ScrollState* scroll_state) {
+    layer_tree_host_impl_->ApplyScroll(layer, scroll_state);
+  }
 
   // Call this function when you expect there to be a swap buffer.
   // See swap_promise.h for how to use SwapPromise.
@@ -349,8 +355,13 @@ class CC_EXPORT LayerTreeImpl {
   bool IsAnimatingOpacityProperty(const LayerImpl* layer) const;
   bool IsAnimatingTransformProperty(const LayerImpl* layer) const;
 
+  bool HasPotentiallyRunningFilterAnimation(const LayerImpl* layer) const;
   bool HasPotentiallyRunningOpacityAnimation(const LayerImpl* layer) const;
   bool HasPotentiallyRunningTransformAnimation(const LayerImpl* layer) const;
+
+  bool HasAnyAnimationTargetingProperty(
+      const LayerImpl* layer,
+      Animation::TargetProperty property) const;
 
   bool FilterIsAnimatingOnImplOnly(const LayerImpl* layer) const;
   bool OpacityIsAnimatingOnImplOnly(const LayerImpl* layer) const;
@@ -385,28 +396,29 @@ class CC_EXPORT LayerTreeImpl {
   bool SetPageScaleFactorLimits(float min_page_scale_factor,
                                 float max_page_scale_factor);
   void DidUpdatePageScale();
-  void HideInnerViewportScrollbarsIfNearMinimumScale();
+  void HideInnerViewportScrollbarsIfNeeded();
   void PushTopControls(const float* top_controls_shown_ratio);
   LayerTreeHostImpl* layer_tree_host_impl_;
   int source_frame_number_;
   scoped_ptr<LayerImpl> root_layer_;
   HeadsUpDisplayLayerImpl* hud_layer_;
   PropertyTrees property_trees_;
-  LayerImpl* currently_scrolling_layer_;
   LayerScrollOffsetDelegate* root_layer_scroll_offset_delegate_;
   SkColor background_color_;
   bool has_transparent_background_;
 
-  LayerImpl* overscroll_elasticity_layer_;
-  LayerImpl* page_scale_layer_;
-  LayerImpl* inner_viewport_scroll_layer_;
-  LayerImpl* outer_viewport_scroll_layer_;
+  int currently_scrolling_layer_id_;
+  int overscroll_elasticity_layer_id_;
+  int page_scale_layer_id_;
+  int inner_viewport_scroll_layer_id_;
+  int outer_viewport_scroll_layer_id_;
 
   LayerSelection selection_;
 
   scoped_refptr<SyncedProperty<ScaleGroup>> page_scale_factor_;
   float min_page_scale_factor_;
   float max_page_scale_factor_;
+  bool hide_pinch_scrollbars_near_min_scale_;
 
   scoped_refptr<SyncedElasticOverscroll> elastic_overscroll_;
 
@@ -415,9 +427,6 @@ class CC_EXPORT LayerTreeImpl {
 
   std::vector<PictureLayerImpl*> picture_layers_;
   std::vector<LayerImpl*> layers_with_copy_output_request_;
-
-  // Persisted state for non-impl-side-painting.
-  int scrolling_layer_id_from_previous_tree_;
 
   // List of visible layers for the most recently prepared frame.
   LayerImplList render_surface_layer_list_;

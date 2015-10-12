@@ -11,7 +11,6 @@
 #include "base/id_map.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/process/process.h"
 #include "base/trace_event/memory_dump_provider.h"
@@ -66,6 +65,7 @@ class GpuChannel : public IPC::Listener,
              gfx::GLShareGroup* share_group,
              gpu::gles2::MailboxManager* mailbox_manager,
              int client_id,
+             uint64_t client_tracing_id,
              bool software,
              bool allow_future_sync_points);
   ~GpuChannel() override;
@@ -89,6 +89,8 @@ class GpuChannel : public IPC::Listener,
   base::ProcessId renderer_pid() const { return channel_->GetPeerPID(); }
 
   int client_id() const { return client_id_; }
+
+  uint64_t client_tracing_id() const { return client_tracing_id_; }
 
   scoped_refptr<base::SingleThreadTaskRunner> io_task_runner() const {
     return io_task_runner_;
@@ -161,7 +163,7 @@ class GpuChannel : public IPC::Listener,
   scoped_refptr<gfx::GLImage> CreateImageForGpuMemoryBuffer(
       const gfx::GpuMemoryBufferHandle& handle,
       const gfx::Size& size,
-      gfx::GpuMemoryBuffer::Format format,
+      gfx::BufferFormat format,
       uint32 internalformat);
 
   bool allow_future_sync_points() const { return allow_future_sync_points_; }
@@ -175,7 +177,8 @@ class GpuChannel : public IPC::Listener,
   }
 
   // base::trace_event::MemoryDumpProvider implementation.
-  bool OnMemoryDump(base::trace_event::ProcessMemoryDump* pmd) override;
+  bool OnMemoryDump(const base::trace_event::MemoryDumpArgs& args,
+                    base::trace_event::ProcessMemoryDump* pmd) override;
 
  private:
   friend class GpuChannelMessageFilter;
@@ -219,6 +222,9 @@ class GpuChannel : public IPC::Listener,
 
   // The id of the client who is on the other side of the channel.
   int client_id_;
+
+  // The tracing ID used for memory allocations associated with this client.
+  uint64_t client_tracing_id_;
 
   // Uniquely identifies the channel within this GPU process.
   std::string channel_id_;

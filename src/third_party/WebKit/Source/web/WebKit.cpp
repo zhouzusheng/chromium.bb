@@ -49,7 +49,6 @@
 #include "platform/Logging.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/graphics/ImageDecodingStore.h"
-#include "platform/graphics/media/MediaPlayer.h"
 #include "platform/heap/Heap.h"
 #include "platform/heap/glue/MessageLoopInterruptor.h"
 #include "platform/heap/glue/PendingGCRunner.h"
@@ -57,7 +56,6 @@
 #include "public/platform/WebPrerenderingSupport.h"
 #include "public/platform/WebThread.h"
 #include "web/IndexedDBClientImpl.h"
-#include "web/WebMediaPlayerClientImpl.h"
 #include "wtf/Assertions.h"
 #include "wtf/CryptographicallyRandomNumber.h"
 #include "wtf/MainThread.h"
@@ -105,8 +103,6 @@ private:
 
 static WebThread::TaskObserver* s_endOfTaskRunner = 0;
 static WebThread::TaskObserver* s_pendingGCRunner = 0;
-static ThreadState::Interruptor* s_messageLoopInterruptor = 0;
-static ThreadState::Interruptor* s_isolateInterruptor = 0;
 
 // Make sure we are not re-initialized in the same address space.
 // Doing so may cause hard to reproduce crashes.
@@ -118,8 +114,8 @@ void initialize(Platform* platform)
 
     V8Initializer::initializeMainThreadIfNeeded();
 
-    s_isolateInterruptor = new V8IsolateInterruptor(V8PerIsolateData::mainThreadIsolate());
-    ThreadState::current()->addInterruptor(s_isolateInterruptor);
+    OwnPtr<V8IsolateInterruptor> interruptor = adoptPtr(new V8IsolateInterruptor(V8PerIsolateData::mainThreadIsolate()));
+    ThreadState::current()->addInterruptor(interruptor.release());
     ThreadState::current()->registerTraceDOMWrappers(V8PerIsolateData::mainThreadIsolate(), V8GCController::traceDOMWrappers);
 
     // currentThread is null if we are running on a thread without a message loop.
@@ -190,17 +186,14 @@ void initializeWithoutV8(Platform* platform)
         s_pendingGCRunner = new PendingGCRunner;
         currentThread->addTaskObserver(s_pendingGCRunner);
 
-        ASSERT(!s_messageLoopInterruptor);
-        s_messageLoopInterruptor = new MessageLoopInterruptor(currentThread);
-        ThreadState::current()->addInterruptor(s_messageLoopInterruptor);
+        OwnPtr<MessageLoopInterruptor> interruptor = adoptPtr(new MessageLoopInterruptor(currentThread));
+        ThreadState::current()->addInterruptor(interruptor.release());
     }
 
     DEFINE_STATIC_LOCAL(ModulesInitializer, initializer, ());
     initializer.init();
 
     setIndexedDBClientCreateFunction(IndexedDBClientImpl::create);
-
-    MediaPlayer::setMediaEngineCreateFunction(WebMediaPlayerClientImpl::create);
 }
 
 void shutdown()
@@ -214,19 +207,11 @@ void shutdown()
         s_endOfTaskRunner = 0;
     }
 
-    ASSERT(s_isolateInterruptor);
-    ThreadState::current()->removeInterruptor(s_isolateInterruptor);
-
     // currentThread() is null if we are running on a thread without a message loop.
     if (Platform::current()->currentThread()) {
         ASSERT(s_pendingGCRunner);
         delete s_pendingGCRunner;
         s_pendingGCRunner = 0;
-
-        ASSERT(s_messageLoopInterruptor);
-        ThreadState::current()->removeInterruptor(s_messageLoopInterruptor);
-        delete s_messageLoopInterruptor;
-        s_messageLoopInterruptor = 0;
     }
 
     // Shutdown V8-related background threads before V8 is ramped down. Note

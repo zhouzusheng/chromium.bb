@@ -137,20 +137,27 @@ struct CC_EXPORT ClipNodeData {
 
   gfx::RectF clip;
   gfx::RectF combined_clip;
+  gfx::RectF clip_in_target_space;
   int transform_id;
   int target_id;
+  // This value is true for clip nodes created by layers that do not apply any
+  // clip themselves, but own a render surface that inherits the parent
+  // target space clip.
+  bool inherit_parent_target_space_clip;
+  bool requires_tight_clip_rect;
+  bool render_surface_is_clipped;
 };
 
 typedef TreeNode<ClipNodeData> ClipNode;
 
-struct CC_EXPORT OpacityNodeData {
-  OpacityNodeData();
+struct CC_EXPORT EffectNodeData {
+  EffectNodeData();
 
   float opacity;
   float screen_space_opacity;
 };
 
-typedef TreeNode<OpacityNodeData> OpacityNode;
+typedef TreeNode<EffectNodeData> EffectNode;
 
 template <typename T>
 class CC_EXPORT PropertyTree {
@@ -309,7 +316,7 @@ class CC_EXPORT TransformTree final : public PropertyTree<TransformNode> {
 
 class CC_EXPORT ClipTree final : public PropertyTree<ClipNode> {};
 
-class CC_EXPORT OpacityTree final : public PropertyTree<OpacityNode> {
+class CC_EXPORT EffectTree final : public PropertyTree<EffectNode> {
  public:
   void UpdateOpacities(int id);
 };
@@ -319,7 +326,7 @@ class CC_EXPORT PropertyTrees final {
   PropertyTrees();
 
   TransformTree transform_tree;
-  OpacityTree opacity_tree;
+  EffectTree effect_tree;
   ClipTree clip_tree;
   bool needs_rebuild;
   int sequence_number;

@@ -75,6 +75,8 @@ struct BitmapShaderRec : public SkResourceCache::Rec {
     size_t bytesUsed() const override {
         return sizeof(fKey) + sizeof(SkShader) + fBitmapBytes;
     }
+    const char* getCategory() const override { return "bitmap-shader"; }
+    SkDiscardableMemory* diagnostic_only_getDiscardable() const override { return nullptr; }
 
     static bool Visitor(const SkResourceCache::Rec& baseRec, void* contextShader) {
         const BitmapShaderRec& rec = static_cast<const BitmapShaderRec&>(baseRec);
@@ -83,12 +85,14 @@ struct BitmapShaderRec : public SkResourceCache::Rec {
         result->reset(SkRef(rec.fShader.get()));
 
         SkBitmap tile;
-        rec.fShader.get()->asABitmap(&tile, NULL, NULL);
-        // FIXME: this doesn't protect the pixels from being discarded as soon as we unlock.
-        // Should be handled via a pixel ref generator instead
-        // (https://code.google.com/p/skia/issues/detail?id=3220).
-        SkAutoLockPixels alp(tile, true);
-        return tile.getPixels() != NULL;
+        if (rec.fShader.get()->isABitmap(&tile, NULL, NULL)) {
+            // FIXME: this doesn't protect the pixels from being discarded as soon as we unlock.
+            // Should be handled via a pixel ref generator instead
+            // (https://code.google.com/p/skia/issues/detail?id=3220).
+            SkAutoLockPixels alp(tile, true);
+            return tile.getPixels() != NULL;
+        }
+        return false;
     }
 };
 

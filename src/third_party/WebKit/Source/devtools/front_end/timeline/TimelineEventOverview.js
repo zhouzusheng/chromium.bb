@@ -237,8 +237,8 @@ WebInspector.TimelineEventOverview.Network.prototype = {
                 path = { waiting: new Path2D(), transfer: new Path2D() };
                 paths.set(style, path);
             }
-            var s = Math.floor((request.startTime - timeOffset) * scale);
-            var e = Math.ceil((request.endTime - timeOffset) * scale);
+            var s = Math.max(Math.floor((request.startTime - timeOffset) * scale), 0);
+            var e = Math.min(Math.ceil((request.endTime - timeOffset) * scale), canvasWidth);
             path["waiting"].rect(s, y, e - s, bandHeight - 1);
             path["transfer"].rect(e - tickWidth / 2, y, tickWidth, bandHeight - 1);
             if (!request.responseTime)
@@ -684,6 +684,127 @@ WebInspector.TimelineEventOverview.Frames.prototype = {
         ctx.lineWidth = lineWidth;
         ctx.fill();
         ctx.stroke();
+    },
+
+    __proto__: WebInspector.TimelineEventOverview.prototype
+}
+
+/**
+ * @constructor
+ * @extends {WebInspector.TimelineEventOverview}
+ * @param {!WebInspector.TimelineModel} model
+ */
+WebInspector.TimelineEventOverview.Memory = function(model)
+{
+    WebInspector.TimelineEventOverview.call(this, "memory", "Memory", model);
+    this._heapSizeLabel = this.element.createChild("div", "memory-graph-label");
+}
+
+WebInspector.TimelineEventOverview.Memory.prototype = {
+    resetHeapSizeLabels: function()
+    {
+        this._heapSizeLabel.textContent = "";
+    },
+
+    /**
+     * @override
+     */
+    update: function()
+    {
+        WebInspector.TimelineEventOverview.prototype.update.call(this);
+        var ratio = window.devicePixelRatio;
+
+        var events = this._model.mainThreadEvents();
+        if (!events.length) {
+            this.resetHeapSizeLabels();
+            return;
+        }
+
+        var lowerOffset = 3 * ratio;
+        var maxUsedHeapSize = 0;
+        var minUsedHeapSize = 100000000000;
+        var minTime = this._model.minimumRecordTime();
+        var maxTime = this._model.maximumRecordTime();
+        /**
+         * @param {!WebInspector.TracingModel.Event} event
+         * @return {boolean}
+         */
+        function isUpdateCountersEvent(event)
+        {
+            return event.name === WebInspector.TimelineModel.RecordType.UpdateCounters;
+        }
+        events = events.filter(isUpdateCountersEvent);
+        /**
+         * @param {!WebInspector.TracingModel.Event} event
+         */
+        function calculateMinMaxSizes(event)
+        {
+            var counters = event.args.data;
+            if (!counters || !counters.jsHeapSizeUsed)
+                return;
+            maxUsedHeapSize = Math.max(maxUsedHeapSize, counters.jsHeapSizeUsed);
+            minUsedHeapSize = Math.min(minUsedHeapSize, counters.jsHeapSizeUsed);
+        }
+        events.forEach(calculateMinMaxSizes);
+        minUsedHeapSize = Math.min(minUsedHeapSize, maxUsedHeapSize);
+
+        var lineWidth = 1;
+        var width = this._canvas.width;
+        var height = this._canvas.height - lowerOffset;
+        var xFactor = width / (maxTime - minTime);
+        var yFactor = (height - lineWidth) / Math.max(maxUsedHeapSize - minUsedHeapSize, 1);
+
+        var histogram = new Array(width);
+
+        /**
+         * @param {!WebInspector.TracingModel.Event} event
+         */
+        function buildHistogram(event)
+        {
+            var counters = event.args.data;
+            if (!counters || !counters.jsHeapSizeUsed)
+                return;
+            var x = Math.round((event.startTime - minTime) * xFactor);
+            var y = Math.round((counters.jsHeapSizeUsed - minUsedHeapSize) * yFactor);
+            histogram[x] = Math.max(histogram[x] || 0, y);
+        }
+        events.forEach(buildHistogram);
+
+        var ctx = this._context;
+        var heightBeyondView = height + lowerOffset + lineWidth;
+
+        ctx.translate(0.5, 0.5);
+        ctx.beginPath();
+        ctx.moveTo(-lineWidth, heightBeyondView);
+        var y = 0;
+        var isFirstPoint = true;
+        var lastX = 0;
+        for (var x = 0; x < histogram.length; x++) {
+            if (typeof histogram[x] === "undefined")
+                continue;
+            if (isFirstPoint) {
+                isFirstPoint = false;
+                y = histogram[x];
+                ctx.lineTo(-lineWidth, height - y);
+            }
+            var nextY = histogram[x];
+            if (Math.abs(nextY - y) > 2 && Math.abs(x - lastX) > 1)
+                ctx.lineTo(x, height - y);
+            y = nextY;
+            ctx.lineTo(x, height - y);
+            lastX = x;
+        }
+        ctx.lineTo(width + lineWidth, height - y);
+        ctx.lineTo(width + lineWidth, heightBeyondView);
+        ctx.closePath();
+
+        ctx.fillStyle = "hsla(220, 90%, 70%, 0.2)";
+        ctx.fill();
+        ctx.lineWidth = lineWidth;
+        ctx.strokeStyle = "hsl(220, 90%, 70%)";
+        ctx.stroke();
+
+        this._heapSizeLabel.textContent = WebInspector.UIString("%s \u2013 %s", Number.bytesToString(minUsedHeapSize), Number.bytesToString(maxUsedHeapSize));
     },
 
     __proto__: WebInspector.TimelineEventOverview.prototype

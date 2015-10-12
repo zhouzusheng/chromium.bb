@@ -90,7 +90,6 @@ struct RTCPSender::RtcpContext {
         buffer_size(buffer_size),
         ntp_sec(0),
         ntp_frac(0),
-        jitter_transmission_offset(0),
         position(0) {}
 
   uint8_t* AllocateData(uint32_t bytes) {
@@ -109,7 +108,6 @@ struct RTCPSender::RtcpContext {
   uint32_t buffer_size;
   uint32_t ntp_sec;
   uint32_t ntp_frac;
-  uint32_t jitter_transmission_offset;
   uint32_t position;
 };
 
@@ -121,6 +119,11 @@ class RTCPSender::PacketBuiltCallback
   virtual ~PacketBuiltCallback() {}
   void OnPacketReady(uint8_t* data, size_t length) override {
     context_->position += length;
+  }
+  bool BuildPacket(const rtcp::RtcpPacket& packet) {
+    return packet.BuildExternalBuffer(
+        &context_->buffer[context_->position],
+        context_->buffer_size - context_->position, this);
   }
 
  private:
@@ -146,7 +149,6 @@ RTCPSender::RTCPSender(
       using_nack_(false),
       sending_(false),
       remb_enabled_(false),
-      extended_jitter_report_enabled_(false),
       next_time_to_send_rtcp_(0),
       start_timestamp_(0),
       last_rtp_timestamp_(0),
@@ -176,8 +178,6 @@ RTCPSender::RTCPSender(
   builders_[kRtcpSr] = &RTCPSender::BuildSR;
   builders_[kRtcpRr] = &RTCPSender::BuildRR;
   builders_[kRtcpSdes] = &RTCPSender::BuildSDES;
-  builders_[kRtcpTransmissionTimeOffset] =
-      &RTCPSender::BuildExtendedJitterReport;
   builders_[kRtcpPli] = &RTCPSender::BuildPLI;
   builders_[kRtcpFir] = &RTCPSender::BuildFIR;
   builders_[kRtcpSli] = &RTCPSender::BuildSLI;
@@ -278,16 +278,6 @@ void RTCPSender::SetTMMBRStatus(bool enable) {
   } else {
     ConsumeFlag(RTCPPacketType::kRtcpTmmbr, true);
   }
-}
-
-bool RTCPSender::IJ() const {
-  CriticalSectionScoped lock(critical_section_rtcp_sender_.get());
-  return extended_jitter_report_enabled_;
-}
-
-void RTCPSender::SetIJStatus(bool enable) {
-  CriticalSectionScoped lock(critical_section_rtcp_sender_.get());
-  extended_jitter_report_enabled_ = enable;
 }
 
 void RTCPSender::SetStartTimestamp(uint32_t start_timestamp) {
@@ -516,11 +506,8 @@ RTCPSender::BuildResult RTCPSender::BuildSR(RtcpContext* ctx) {
     report.WithReportBlock(it.second);
 
   PacketBuiltCallback callback(ctx);
-  if (!report.BuildExternalBuffer(&ctx->buffer[ctx->position],
-                                  ctx->buffer_size - ctx->position,
-                                  &callback)) {
+  if (!callback.BuildPacket(report))
     return BuildResult::kTruncated;
-  }
 
   report_blocks_.clear();
   return BuildResult::kSuccess;
@@ -537,10 +524,8 @@ RTCPSender::BuildResult RTCPSender::BuildSDES(RtcpContext* ctx) {
     sdes.WithCName(it.first, it.second);
 
   PacketBuiltCallback callback(ctx);
-  if (!sdes.BuildExternalBuffer(&ctx->buffer[ctx->position],
-                                ctx->buffer_size - ctx->position, &callback)) {
+  if (!callback.BuildPacket(sdes))
     return BuildResult::kTruncated;
-  }
 
   return BuildResult::kSuccess;
 }
@@ -552,75 +537,22 @@ RTCPSender::BuildResult RTCPSender::BuildRR(RtcpContext* ctx) {
     report.WithReportBlock(it.second);
 
   PacketBuiltCallback callback(ctx);
-  if (!report.BuildExternalBuffer(&ctx->buffer[ctx->position],
-                                  ctx->buffer_size - ctx->position,
-                                  &callback)) {
+  if (!callback.BuildPacket(report))
     return BuildResult::kTruncated;
-  }
 
   report_blocks_.clear();
 
   return BuildResult::kSuccess;
 }
 
-// From RFC 5450: Transmission Time Offsets in RTP Streams.
-//        0                   1                   2                   3
-//        0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-//       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-//   hdr |V=2|P|    RC   |   PT=IJ=195   |             length            |
-//       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-//       |                      inter-arrival jitter                     |
-//       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-//       .                                                               .
-//       .                                                               .
-//       .                                                               .
-//       |                      inter-arrival jitter                     |
-//       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-//
-//  If present, this RTCP packet must be placed after a receiver report
-//  (inside a compound RTCP packet), and MUST have the same value for RC
-//  (reception report count) as the receiver report.
-
-RTCPSender::BuildResult RTCPSender::BuildExtendedJitterReport(
-    RtcpContext* ctx) {
-  // sanity
-  if (ctx->position + 8 >= IP_PACKET_SIZE)
-    return BuildResult::kTruncated;
-
-  // add picture loss indicator
-  uint8_t RC = 1;
-  *ctx->AllocateData(1) = 0x80 + RC;
-  *ctx->AllocateData(1) = 195;
-
-  // Used fixed length of 2
-  *ctx->AllocateData(1) = 0;
-  *ctx->AllocateData(1) = 1;
-
-  // Add inter-arrival jitter
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4),
-                                       ctx->jitter_transmission_offset);
-  return BuildResult::kSuccess;
-}
-
 RTCPSender::BuildResult RTCPSender::BuildPLI(RtcpContext* ctx) {
-  // sanity
-  if (ctx->position + 12 >= IP_PACKET_SIZE)
+  rtcp::Pli pli;
+  pli.From(ssrc_);
+  pli.To(remote_ssrc_);
+
+  PacketBuiltCallback callback(ctx);
+  if (!callback.BuildPacket(pli))
     return BuildResult::kTruncated;
-
-  // add picture loss indicator
-  uint8_t FMT = 1;
-  *ctx->AllocateData(1) = 0x80 + FMT;
-  *ctx->AllocateData(1) = 206;
-
-  // Used fixed length of 2
-  *ctx->AllocateData(1) = 0;
-  *ctx->AllocateData(1) = 2;
-
-  // Add our own SSRC
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), ssrc_);
-
-  // Add the remote SSRC
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), remote_ssrc_);
 
   TRACE_EVENT_INSTANT0(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"),
                        "RTCPSender::PLI");
@@ -632,36 +564,17 @@ RTCPSender::BuildResult RTCPSender::BuildPLI(RtcpContext* ctx) {
 }
 
 RTCPSender::BuildResult RTCPSender::BuildFIR(RtcpContext* ctx) {
-  // sanity
-  if (ctx->position + 20 >= IP_PACKET_SIZE)
-    return BuildResult::kTruncated;
-
   if (!ctx->repeat)
-    sequence_number_fir_++;  // do not increase if repetition
+    ++sequence_number_fir_;  // Do not increase if repetition.
 
-  // add full intra request indicator
-  uint8_t FMT = 4;
-  *ctx->AllocateData(1) = 0x80 + FMT;
-  *ctx->AllocateData(1) = 206;
+  rtcp::Fir fir;
+  fir.From(ssrc_);
+  fir.To(remote_ssrc_);
+  fir.WithCommandSeqNum(sequence_number_fir_);
 
-  //Length of 4
-  *ctx->AllocateData(1) = 0;
-  *ctx->AllocateData(1) = 4;
-
-  // Add our own SSRC
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), ssrc_);
-
-  // RFC 5104     4.3.1.2.  Semantics
-  // SSRC of media source
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), 0);
-
-  // Additional Feedback Control Information (FCI)
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), remote_ssrc_);
-
-  *ctx->AllocateData(1) = sequence_number_fir_;
-  *ctx->AllocateData(1) = 0;
-  *ctx->AllocateData(1) = 0;
-  *ctx->AllocateData(1) = 0;
+  PacketBuiltCallback callback(ctx);
+  if (!callback.BuildPacket(fir))
+    return BuildResult::kTruncated;
 
   TRACE_EVENT_INSTANT0(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"),
                        "RTCPSender::FIR");
@@ -680,30 +593,17 @@ RTCPSender::BuildResult RTCPSender::BuildFIR(RtcpContext* ctx) {
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 */
 RTCPSender::BuildResult RTCPSender::BuildSLI(RtcpContext* ctx) {
-  // sanity
-  if (ctx->position + 16 >= IP_PACKET_SIZE)
+  rtcp::Sli sli;
+  sli.From(ssrc_);
+  sli.To(remote_ssrc_);
+  // Crop picture id to 6 least significant bits.
+  sli.WithPictureId(ctx->picture_id & 0x3F);
+  sli.WithFirstMb(0);
+  sli.WithNumberOfMb(0x1FFF);  // 13 bits, only ones for now.
+
+  PacketBuiltCallback callback(ctx);
+  if (!callback.BuildPacket(sli))
     return BuildResult::kTruncated;
-
-  // add slice loss indicator
-  uint8_t FMT = 2;
-  *ctx->AllocateData(1) = 0x80 + FMT;
-  *ctx->AllocateData(1) = 206;
-
-  // Used fixed length of 3
-  *ctx->AllocateData(1) = 0;
-  *ctx->AllocateData(1) = 3;
-
-  // Add our own SSRC
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), ssrc_);
-
-  // Add the remote SSRC
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), remote_ssrc_);
-
-  // Add first, number & picture ID 6 bits
-  // first  = 0, 13 - bits
-  // number = 0x1fff, 13 - bits only ones for now
-  uint32_t sliField = (0x1fff << 6) + (0x3f & ctx->picture_id);
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), sliField);
 
   return BuildResult::kSuccess;
 }
@@ -724,60 +624,15 @@ RTCPSender::BuildResult RTCPSender::BuildRPSI(RtcpContext* ctx) {
   if (ctx->feedback_state.send_payload_type == 0xFF)
     return BuildResult::kError;
 
-  // sanity
-  if (ctx->position + 24 >= IP_PACKET_SIZE)
+  rtcp::Rpsi rpsi;
+  rpsi.From(ssrc_);
+  rpsi.To(remote_ssrc_);
+  rpsi.WithPayloadType(ctx->feedback_state.send_payload_type);
+  rpsi.WithPictureId(ctx->picture_id);
+
+  PacketBuiltCallback callback(ctx);
+  if (!callback.BuildPacket(rpsi))
     return BuildResult::kTruncated;
-
-  // add Reference Picture Selection Indication
-  uint8_t FMT = 3;
-  *ctx->AllocateData(1) = 0x80 + FMT;
-  *ctx->AllocateData(1) = 206;
-
-  // calc length
-  uint32_t bitsRequired = 7;
-  uint8_t bytesRequired = 1;
-  while ((ctx->picture_id >> bitsRequired) > 0) {
-    bitsRequired += 7;
-    bytesRequired++;
-  }
-
-  uint8_t size = 3;
-  if (bytesRequired > 6) {
-    size = 5;
-  } else if (bytesRequired > 2) {
-    size = 4;
-  }
-  *ctx->AllocateData(1) = 0;
-  *ctx->AllocateData(1) = size;
-
-  // Add our own SSRC
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), ssrc_);
-
-  // Add the remote SSRC
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), remote_ssrc_);
-
-  // calc padding length
-  uint8_t paddingBytes = 4 - ((2 + bytesRequired) % 4);
-  if (paddingBytes == 4)
-    paddingBytes = 0;
-  // add padding length in bits
-  *ctx->AllocateData(1) = paddingBytes * 8;  // padding can be 0, 8, 16 or 24
-
-  // add payload type
-  *ctx->AllocateData(1) = ctx->feedback_state.send_payload_type;
-
-  // add picture ID
-  for (int i = bytesRequired - 1; i > 0; --i) {
-    *ctx->AllocateData(1) =
-        0x80 | static_cast<uint8_t>(ctx->picture_id >> (i * 7));
-  }
-  // add last byte of picture ID
-  *ctx->AllocateData(1) = static_cast<uint8_t>(ctx->picture_id & 0x7f);
-
-  // add padding
-  for (int j = 0; j < paddingBytes; j++) {
-    *ctx->AllocateData(1) = 0;
-  }
 
   return BuildResult::kSuccess;
 }
@@ -1386,8 +1241,6 @@ int RTCPSender::PrepareRTCP(const FeedbackState& feedback_state,
           AddReportBlock(report_block);
         }
       }
-      if (extended_jitter_report_enabled_)
-        SetFlag(kRtcpTransmissionTimeOffset, true);
     }
   }
 

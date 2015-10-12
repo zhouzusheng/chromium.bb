@@ -17,7 +17,6 @@
 #if CONFIG_COEFFICIENT_RANGE_CHECKING
 #include "vp9/common/vp9_idct.h"
 #endif
-#include "vp9/common/vp9_scan.h"
 
 #include "vp9/decoder/vp9_detokenize.h"
 
@@ -39,10 +38,10 @@
        ++coef_counts[band][ctx][token];                     \
   } while (0)
 
-static INLINE int read_coeff(const vp9_prob *probs, int n, vp9_reader *r) {
+static INLINE int read_coeff(const vpx_prob *probs, int n, vpx_reader *r) {
   int i, val = 0;
   for (i = 0; i < n; ++i)
-    val = (val << 1) | vp9_read(r, probs[i]);
+    val = (val << 1) | vpx_read(r, probs[i]);
   return val;
 }
 
@@ -50,15 +49,15 @@ static int decode_coefs(const MACROBLOCKD *xd,
                         PLANE_TYPE type,
                         tran_low_t *dqcoeff, TX_SIZE tx_size, const int16_t *dq,
                         int ctx, const int16_t *scan, const int16_t *nb,
-                        vp9_reader *r) {
+                        vpx_reader *r) {
   FRAME_COUNTS *counts = xd->counts;
   const int max_eob = 16 << (tx_size << 1);
   const FRAME_CONTEXT *const fc = xd->fc;
   const int ref = is_inter_block(&xd->mi[0]->mbmi);
   int band, c = 0;
-  const vp9_prob (*coef_probs)[COEFF_CONTEXTS][UNCONSTRAINED_NODES] =
+  const vpx_prob (*coef_probs)[COEFF_CONTEXTS][UNCONSTRAINED_NODES] =
       fc->coef_probs[tx_size][type][ref];
-  const vp9_prob *prob;
+  const vpx_prob *prob;
   unsigned int (*coef_counts)[COEFF_CONTEXTS][UNCONSTRAINED_NODES + 1];
   unsigned int (*eob_branch_count)[COEFF_CONTEXTS];
   uint8_t token_cache[32 * 32];
@@ -118,12 +117,12 @@ static int decode_coefs(const MACROBLOCKD *xd,
     prob = coef_probs[band][ctx];
     if (counts)
       ++eob_branch_count[band][ctx];
-    if (!vp9_read(r, prob[EOB_CONTEXT_NODE])) {
+    if (!vpx_read(r, prob[EOB_CONTEXT_NODE])) {
       INCREMENT_COUNT(EOB_MODEL_TOKEN);
       break;
     }
 
-    while (!vp9_read(r, prob[ZERO_CONTEXT_NODE])) {
+    while (!vpx_read(r, prob[ZERO_CONTEXT_NODE])) {
       INCREMENT_COUNT(ZERO_TOKEN);
       dqv = dq[1];
       token_cache[scan[c]] = 0;
@@ -135,13 +134,13 @@ static int decode_coefs(const MACROBLOCKD *xd,
       prob = coef_probs[band][ctx];
     }
 
-    if (!vp9_read(r, prob[ONE_CONTEXT_NODE])) {
+    if (!vpx_read(r, prob[ONE_CONTEXT_NODE])) {
       INCREMENT_COUNT(ONE_TOKEN);
       token = ONE_TOKEN;
       val = 1;
     } else {
       INCREMENT_COUNT(TWO_TOKEN);
-      token = vp9_read_tree(r, vp9_coef_con_tree,
+      token = vpx_read_tree(r, vp9_coef_con_tree,
                             vp9_pareto8_full[prob[PIVOT_NODE] - 1]);
       switch (token) {
         case TWO_TOKEN:
@@ -189,13 +188,13 @@ static int decode_coefs(const MACROBLOCKD *xd,
     v = (val * dqv) >> dq_shift;
 #if CONFIG_COEFFICIENT_RANGE_CHECKING
 #if CONFIG_VP9_HIGHBITDEPTH
-    dqcoeff[scan[c]] = highbd_check_range((vp9_read_bit(r) ? -v : v),
+    dqcoeff[scan[c]] = highbd_check_range((vpx_read_bit(r) ? -v : v),
                                           xd->bd);
 #else
-    dqcoeff[scan[c]] = check_range(vp9_read_bit(r) ? -v : v);
+    dqcoeff[scan[c]] = check_range(vpx_read_bit(r) ? -v : v);
 #endif  // CONFIG_VP9_HIGHBITDEPTH
 #else
-    dqcoeff[scan[c]] = vp9_read_bit(r) ? -v : v;
+    dqcoeff[scan[c]] = vpx_read_bit(r) ? -v : v;
 #endif  // CONFIG_COEFFICIENT_RANGE_CHECKING
     token_cache[scan[c]] = vp9_pt_energy_class[token];
     ++c;
@@ -206,20 +205,64 @@ static int decode_coefs(const MACROBLOCKD *xd,
   return c;
 }
 
+// TODO(slavarnway): Decode version of vp9_set_context.  Modify vp9_set_context
+// after testing is complete, then delete this version.
+static
+void dec_set_contexts(const MACROBLOCKD *xd, struct macroblockd_plane *pd,
+                      TX_SIZE tx_size, int has_eob,
+                      int aoff, int loff) {
+  ENTROPY_CONTEXT *const a = pd->above_context + aoff;
+  ENTROPY_CONTEXT *const l = pd->left_context + loff;
+  const int tx_size_in_blocks = 1 << tx_size;
+
+  // above
+  if (has_eob && xd->mb_to_right_edge < 0) {
+    int i;
+    const int blocks_wide = pd->n4_w +
+                            (xd->mb_to_right_edge >> (5 + pd->subsampling_x));
+    int above_contexts = tx_size_in_blocks;
+    if (above_contexts + aoff > blocks_wide)
+      above_contexts = blocks_wide - aoff;
+
+    for (i = 0; i < above_contexts; ++i)
+      a[i] = has_eob;
+    for (i = above_contexts; i < tx_size_in_blocks; ++i)
+      a[i] = 0;
+  } else {
+    memset(a, has_eob, sizeof(ENTROPY_CONTEXT) * tx_size_in_blocks);
+  }
+
+  // left
+  if (has_eob && xd->mb_to_bottom_edge < 0) {
+    int i;
+    const int blocks_high = pd->n4_h +
+                            (xd->mb_to_bottom_edge >> (5 + pd->subsampling_y));
+    int left_contexts = tx_size_in_blocks;
+    if (left_contexts + loff > blocks_high)
+      left_contexts = blocks_high - loff;
+
+    for (i = 0; i < left_contexts; ++i)
+      l[i] = has_eob;
+    for (i = left_contexts; i < tx_size_in_blocks; ++i)
+      l[i] = 0;
+  } else {
+    memset(l, has_eob, sizeof(ENTROPY_CONTEXT) * tx_size_in_blocks);
+  }
+}
+
 int vp9_decode_block_tokens(MACROBLOCKD *xd,
-                            int plane, int block,
-                            BLOCK_SIZE plane_bsize, int x, int y,
-                            TX_SIZE tx_size, vp9_reader *r,
+                            int plane, const scan_order *sc,
+                            int x, int y,
+                            TX_SIZE tx_size, vpx_reader *r,
                             int seg_id) {
   struct macroblockd_plane *const pd = &xd->plane[plane];
   const int16_t *const dequant = pd->seg_dequant[seg_id];
   const int ctx = get_entropy_context(tx_size, pd->above_context + x,
                                                pd->left_context + y);
-  const scan_order *so = get_scan(xd, tx_size, pd->plane_type, block);
   const int eob = decode_coefs(xd, pd->plane_type,
-                               BLOCK_OFFSET(pd->dqcoeff, block), tx_size,
-                               dequant, ctx, so->scan, so->neighbors, r);
-  vp9_set_contexts(xd, pd, plane_bsize, tx_size, eob > 0, x, y);
+                               pd->dqcoeff, tx_size,
+                               dequant, ctx, sc->scan, sc->neighbors, r);
+  dec_set_contexts(xd, pd, tx_size, eob > 0, x, y);
   return eob;
 }
 

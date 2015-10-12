@@ -58,7 +58,7 @@ private:
  //////////////////////////////////////////////////////////////////////////////
 
 
-GrResourceCache::GrResourceCache()
+GrResourceCache::GrResourceCache(const GrCaps* caps)
     : fTimestamp(0)
     , fMaxCount(kDefaultMaxCount)
     , fMaxBytes(kDefaultMaxSize)
@@ -75,7 +75,8 @@ GrResourceCache::GrResourceCache()
     , fOverBudgetCB(NULL)
     , fOverBudgetData(NULL)
     , fFlushTimestamps(NULL)
-    , fLastFlushTimestampIndex(0){
+    , fLastFlushTimestampIndex(0)
+    , fPreferVRAMUseOverFlushes(caps->preferVRAMUseOverFlushes()) {
     SkDEBUGCODE(fCount = 0;)
     SkDEBUGCODE(fNewlyPurgeableResourceForValidation = NULL;)
     this->resetFlushTimestamps();
@@ -246,6 +247,7 @@ private:
 };
 
 GrGpuResource* GrResourceCache::findAndRefScratchResource(const GrScratchKey& scratchKey,
+                                                          size_t resourceSize,
                                                           uint32_t flags) {
     SkASSERT(scratchKey.isValid());
 
@@ -259,8 +261,14 @@ GrGpuResource* GrResourceCache::findAndRefScratchResource(const GrScratchKey& sc
         } else if (flags & kRequireNoPendingIO_ScratchFlag) {
             return NULL;
         }
-        // TODO: fail here when kPrefer is specified, we didn't find a resource without pending io,
-        // but there is still space in our budget for the resource.
+        // We would prefer to consume more available VRAM rather than flushing
+        // immediately, but on ANGLE this can lead to starving of the GPU.
+        if (fPreferVRAMUseOverFlushes && this->wouldFit(resourceSize)) {
+            // kPrefer is specified, we didn't find a resource without pending io,
+            // but there is still space in our budget for the resource so force
+            // the caller to allocate a new resource.
+            return NULL;
+        }
     }
     resource = fScratchMap.find(scratchKey, AvailableForScratchUse(false));
     if (resource) {

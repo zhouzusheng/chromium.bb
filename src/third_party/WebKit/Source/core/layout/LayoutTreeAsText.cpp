@@ -194,7 +194,7 @@ void LayoutTreeAsText::writeLayoutObject(TextStream& ts, const LayoutObject& o, 
         const LayoutText& text = toLayoutText(o);
         IntRect linesBox = text.linesBoundingBox();
         r = LayoutRect(IntRect(text.firstRunX(), text.firstRunY(), linesBox.width(), linesBox.height()));
-        if (adjustForTableCells && !text.firstTextBox())
+        if (adjustForTableCells && !text.hasTextBoxes())
             adjustForTableCells = false;
     } else if (o.isLayoutInline()) {
         // FIXME: Would be better not to just dump 0, 0 as the x and y here.
@@ -755,13 +755,13 @@ static void writeSelection(TextStream& ts, const LayoutObject* o)
 
     VisibleSelection selection = frame->selection().selection();
     if (selection.isCaret()) {
-        ts << "caret: position " << selection.start().deprecatedEditingOffset() << " of " << nodePositionAsStringForTesting(selection.start().deprecatedNode());
-        if (selection.affinity() == UPSTREAM)
+        ts << "caret: position " << selection.start().computeEditingOffset() << " of " << nodePositionAsStringForTesting(selection.start().anchorNode());
+        if (selection.affinity() == TextAffinity::Upstream)
             ts << " (upstream affinity)";
         ts << "\n";
     } else if (selection.isRange()) {
-        ts << "selection start: position " << selection.start().deprecatedEditingOffset() << " of " << nodePositionAsStringForTesting(selection.start().deprecatedNode()) << "\n"
-            << "selection end:   position " << selection.end().deprecatedEditingOffset() << " of " << nodePositionAsStringForTesting(selection.end().deprecatedNode()) << "\n";
+        ts << "selection start: position " << selection.start().computeEditingOffset() << " of " << nodePositionAsStringForTesting(selection.start().anchorNode()) << "\n"
+            << "selection end:   position " << selection.end().computeEditingOffset() << " of " << nodePositionAsStringForTesting(selection.end().anchorNode()) << "\n";
     }
 }
 

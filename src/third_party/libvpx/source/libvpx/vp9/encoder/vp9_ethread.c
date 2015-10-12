@@ -21,9 +21,6 @@ static void accumulate_rd_opt(ThreadData *td, ThreadData *td_t) {
   for (i = 0; i < SWITCHABLE_FILTER_CONTEXTS; i++)
     td->rd_counts.filter_diff[i] += td_t->rd_counts.filter_diff[i];
 
-  for (i = 0; i < TX_MODES; i++)
-    td->rd_counts.tx_select_diff[i] += td_t->rd_counts.tx_select_diff[i];
-
   for (i = 0; i < TX_SIZES; i++)
     for (j = 0; j < PLANE_TYPES; j++)
       for (k = 0; k < REF_TYPES; k++)
@@ -69,7 +66,7 @@ static int get_max_tile_cols(VP9_COMP *cpi) {
 void vp9_encode_tiles_mt(VP9_COMP *cpi) {
   VP9_COMMON *const cm = &cpi->common;
   const int tile_cols = 1 << cm->log2_tile_cols;
-  const VP9WorkerInterface *const winterface = vp9_get_worker_interface();
+  const VPxWorkerInterface *const winterface = vpx_get_worker_interface();
   const int num_workers = MIN(cpi->oxcf.max_threads, tile_cols);
   int i;
 
@@ -94,7 +91,7 @@ void vp9_encode_tiles_mt(VP9_COMP *cpi) {
                     sizeof(*cpi->tile_thr_data)));
 
     for (i = 0; i < allocated_workers; i++) {
-      VP9Worker *const worker = &cpi->workers[i];
+      VPxWorker *const worker = &cpi->workers[i];
       EncWorkerData *thread_data = &cpi->tile_thr_data[i];
 
       ++cpi->num_workers;
@@ -132,10 +129,10 @@ void vp9_encode_tiles_mt(VP9_COMP *cpi) {
   }
 
   for (i = 0; i < num_workers; i++) {
-    VP9Worker *const worker = &cpi->workers[i];
+    VPxWorker *const worker = &cpi->workers[i];
     EncWorkerData *thread_data;
 
-    worker->hook = (VP9WorkerHook)enc_worker_hook;
+    worker->hook = (VPxWorkerHook)enc_worker_hook;
     worker->data1 = &cpi->tile_thr_data[i];
     worker->data2 = NULL;
     thread_data = (EncWorkerData*)worker->data1;
@@ -170,7 +167,7 @@ void vp9_encode_tiles_mt(VP9_COMP *cpi) {
 
   // Encode a frame
   for (i = 0; i < num_workers; i++) {
-    VP9Worker *const worker = &cpi->workers[i];
+    VPxWorker *const worker = &cpi->workers[i];
     EncWorkerData *const thread_data = (EncWorkerData*)worker->data1;
 
     // Set the starting tile for each thread.
@@ -184,12 +181,12 @@ void vp9_encode_tiles_mt(VP9_COMP *cpi) {
 
   // Encoding ends.
   for (i = 0; i < num_workers; i++) {
-    VP9Worker *const worker = &cpi->workers[i];
+    VPxWorker *const worker = &cpi->workers[i];
     winterface->sync(worker);
   }
 
   for (i = 0; i < num_workers; i++) {
-    VP9Worker *const worker = &cpi->workers[i];
+    VPxWorker *const worker = &cpi->workers[i];
     EncWorkerData *const thread_data = (EncWorkerData*)worker->data1;
 
     // Accumulate counters.

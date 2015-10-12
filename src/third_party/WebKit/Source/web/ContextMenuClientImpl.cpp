@@ -40,14 +40,14 @@
 #include "core/InputTypeNames.h"
 #include "core/css/CSSStyleDeclaration.h"
 #include "core/dom/Document.h"
-#include "core/dom/DocumentMarkerController.h"
 #include "core/editing/Editor.h"
-#include "core/editing/SpellChecker.h"
+#include "core/editing/markers/DocumentMarkerController.h"
+#include "core/editing/spellcheck/SpellChecker.h"
 #include "core/events/CustomEvent.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
-#include "core/frame/PinchViewport.h"
 #include "core/frame/Settings.h"
+#include "core/frame/VisualViewport.h"
 #include "core/html/HTMLAnchorElement.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLImageElement.h"
@@ -167,7 +167,7 @@ static String selectMisspellingAsync(LocalFrame* selectedFrame, String& descript
 
     // Caret and range selections always return valid normalized ranges.
     RefPtrWillBeRawPtr<Range> selectionRange = selection.toNormalizedRange();
-    DocumentMarkerVector markers = selectedFrame->document()->markers().markersInRange(selectionRange.get(), DocumentMarker::MisspellingMarkers());
+    DocumentMarkerVector markers = selectedFrame->document()->markers().markersInRange(EphemeralRange(selectionRange.get()), DocumentMarker::MisspellingMarkers());
     if (markers.size() != 1)
         return String();
     description = markers[0]->description();
@@ -544,8 +544,8 @@ static bool fireBbContextMenuEvent(LocalFrame* frame, WebContextMenuData& data, 
     CustomEventInit eventInit;
     eventInit.setBubbles(true);
     eventInit.setCancelable(true);
+    eventInit.setDetail(ScriptValue(ScriptState::from(context), detailObj));
     RefPtr<CustomEvent> event = CustomEvent::create("bbContextMenu", eventInit);
-    event->setDetail(ScriptValue(ScriptState::from(context), detailObj));
 
     data.node.unwrap<Node>()->dispatchEvent(event);
     return event->defaultPrevented();

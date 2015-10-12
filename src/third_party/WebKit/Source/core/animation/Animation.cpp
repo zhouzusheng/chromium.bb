@@ -90,6 +90,7 @@ Animation::Animation(ExecutionContext* executionContext, AnimationTimeline& time
     , m_paused(false)
     , m_held(true)
     , m_isPausedForTesting(false)
+    , m_isCompositedAnimationDisabledForTesting(false)
     , m_outdated(false)
     , m_finished(true)
     , m_compositorState(nullptr)
@@ -643,11 +644,11 @@ void Animation::stop()
     m_pendingFinishedEvent = nullptr;
 }
 
-bool Animation::dispatchEvent(PassRefPtrWillBeRawPtr<Event> event)
+bool Animation::dispatchEventInternal(PassRefPtrWillBeRawPtr<Event> event)
 {
     if (m_pendingFinishedEvent == event)
         m_pendingFinishedEvent = nullptr;
-    return EventTargetWithInlineData::dispatchEvent(event);
+    return EventTargetWithInlineData::dispatchEventInternal(event);
 }
 
 double Animation::playbackRate() const
@@ -702,6 +703,9 @@ void Animation::setOutdated()
 
 bool Animation::canStartAnimationOnCompositor() const
 {
+    if (m_isCompositedAnimationDisabledForTesting)
+        return false;
+
     // FIXME: Timeline playback rates should be compositable
     if (m_playbackRate == 0 || (std::isinf(effectEnd()) && m_playbackRate < 0) || (timeline() && timeline()->playbackRate() != 1))
         return false;
@@ -919,7 +923,8 @@ void Animation::endUpdatingState()
 
 void Animation::createCompositorPlayer()
 {
-    if (RuntimeEnabledFeatures::compositorAnimationTimelinesEnabled() && !m_compositorPlayer && Platform::current()->compositorSupport()) {
+    if (RuntimeEnabledFeatures::compositorAnimationTimelinesEnabled() && Platform::current()->isThreadedAnimationEnabled() && !m_compositorPlayer) {
+        ASSERT(Platform::current()->compositorSupport());
         m_compositorPlayer = adoptPtr(Platform::current()->compositorSupport()->createAnimationPlayer());
         ASSERT(m_compositorPlayer);
         m_compositorPlayer->setAnimationDelegate(this);
@@ -1066,7 +1071,7 @@ Animation::PlayStateUpdateScope::~PlayStateUpdateScope()
         InspectorInstrumentation::didCreateAnimation(m_animation->timeline()->document(), m_animation);
 }
 
-bool Animation::addEventListener(const AtomicString& eventType, PassRefPtr<EventListener> listener, bool useCapture)
+bool Animation::addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, bool useCapture)
 {
     if (eventType == EventTypeNames::finish)
         UseCounter::count(executionContext(), UseCounter::AnimationFinishEvent);
@@ -1081,6 +1086,12 @@ void Animation::pauseForTesting(double pauseTime)
         toKeyframeEffect(m_content.get())->pauseAnimationForTestingOnCompositor(currentTimeInternal());
     m_isPausedForTesting = true;
     pause();
+}
+
+void Animation::disableCompositedAnimationForTesting()
+{
+    m_isCompositedAnimationDisabledForTesting = true;
+    cancelAnimationOnCompositor();
 }
 
 DEFINE_TRACE(Animation)

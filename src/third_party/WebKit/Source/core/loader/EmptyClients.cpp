@@ -37,6 +37,7 @@
 #include "platform/FileChooser.h"
 #include "platform/Widget.h"
 #include "public/platform/WebApplicationCacheHost.h"
+#include "public/platform/WebMediaPlayer.h"
 #include "public/platform/WebServiceWorkerProvider.h"
 #include "public/platform/WebServiceWorkerProviderClient.h"
 
@@ -44,20 +45,20 @@ namespace blink {
 
 void fillWithEmptyClients(Page::PageClients& pageClients)
 {
-    static ChromeClient* dummyChromeClient = adoptPtr(new EmptyChromeClient).leakPtr();
-    pageClients.chromeClient = dummyChromeClient;
+    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<ChromeClient>, dummyChromeClient, (EmptyChromeClient::create()));
+    pageClients.chromeClient = dummyChromeClient.get();
 
-    static ContextMenuClient* dummyContextMenuClient = adoptPtr(new EmptyContextMenuClient).leakPtr();
-    pageClients.contextMenuClient = dummyContextMenuClient;
+    DEFINE_STATIC_LOCAL(EmptyContextMenuClient, dummyContextMenuClient, ());
+    pageClients.contextMenuClient = &dummyContextMenuClient;
 
-    static DragClient* dummyDragClient = adoptPtr(new EmptyDragClient).leakPtr();
-    pageClients.dragClient = dummyDragClient;
+    DEFINE_STATIC_LOCAL(EmptyDragClient, dummyDragClient, ());
+    pageClients.dragClient = &dummyDragClient;
 
-    static EditorClient* dummyEditorClient = adoptPtr(new EmptyEditorClient).leakPtr();
-    pageClients.editorClient = dummyEditorClient;
+    DEFINE_STATIC_LOCAL(EmptyEditorClient, dummyEditorClient, ());
+    pageClients.editorClient = &dummyEditorClient;
 
-    static SpellCheckerClient* dummySpellCheckerClient = adoptPtr(new EmptySpellCheckerClient).leakPtr();
-    pageClients.spellCheckerClient = dummySpellCheckerClient;
+    DEFINE_STATIC_LOCAL(EmptySpellCheckerClient, dummySpellCheckerClient, ());
+    pageClients.spellCheckerClient = &dummySpellCheckerClient;
 }
 
 class EmptyPopupMenu : public PopupMenu {
@@ -68,7 +69,7 @@ public:
     void disconnectClient() override { }
 };
 
-PassRefPtrWillBeRawPtr<PopupMenu> EmptyChromeClient::openPopupMenu(LocalFrame&, PopupMenuClient*)
+PassRefPtrWillBeRawPtr<PopupMenu> EmptyChromeClient::openPopupMenu(LocalFrame&, HTMLSelectElement&)
 {
     return adoptRefWillBeNoop(new EmptyPopupMenu());
 }
@@ -130,6 +131,11 @@ PassRefPtrWillBeRawPtr<Widget> EmptyFrameLoaderClient::createPlugin(HTMLPlugInEl
 }
 
 PassRefPtrWillBeRawPtr<Widget> EmptyFrameLoaderClient::createJavaAppletWidget(HTMLAppletElement*, const KURL&, const Vector<String>&, const Vector<String>&)
+{
+    return nullptr;
+}
+
+PassOwnPtr<WebMediaPlayer> EmptyFrameLoaderClient::createWebMediaPlayer(HTMLMediaElement&, const WebURL&, WebMediaPlayerClient*)
 {
     return nullptr;
 }

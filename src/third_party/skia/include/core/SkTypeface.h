@@ -14,7 +14,7 @@
 #include "SkLazyPtr.h"
 #include "SkRect.h"
 #include "SkString.h"
-#include "SkWeakRefCnt.h"
+#include "../private/SkWeakRefCnt.h"
 
 class SkDescriptor;
 class SkFontData;
@@ -377,11 +377,11 @@ protected:
 
 private:
     friend class SkGTypeface;
+    friend class SkRandomTypeface;
     friend class SkPDFFont;
     friend class SkPDFCIDFont;
     friend class GrPathRendering;
     friend class GrGLPathRendering;
-    friend class SkRandomTypeface; // For debugging
 
     /** Retrieve detailed typeface metrics.  Used by the PDF backend.
      @param perGlyphInfo Indicate what glyph specific information (advances,

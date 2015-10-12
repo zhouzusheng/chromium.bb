@@ -106,7 +106,7 @@
       'dependencies': [
         '../../base/base.gyp:base',
         'mojo_system_impl',
-        'mojo_public.gyp:mojo_test_support',
+        'mojo_public.gyp:mojo_public_test_support',
         'mojo_test_support_impl',
       ],
       'sources': [
@@ -119,7 +119,7 @@
       'type': 'static_library',
       'dependencies': [
         'mojo_edk.gyp:mojo_system_impl',
-        'mojo_public.gyp:mojo_test_support',
+        'mojo_public.gyp:mojo_public_test_support',
         'mojo_test_support_impl',
       ],
       'sources': [

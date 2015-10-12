@@ -296,28 +296,21 @@ int32_t VideoSender::RegisterProtectionCallback(
 }
 
 // Enable or disable a video protection method.
-void VideoSender::SetVideoProtection(bool enable,
-                                     VCMVideoProtection videoProtection) {
+void VideoSender::SetVideoProtection(VCMVideoProtection videoProtection) {
   CriticalSectionScoped cs(_sendCritSect);
   switch (videoProtection) {
     case kProtectionNone:
-      _mediaOpt.EnableProtectionMethod(enable, media_optimization::kNone);
+      _mediaOpt.SetProtectionMethod(media_optimization::kNone);
       break;
     case kProtectionNack:
-    case kProtectionNackSender:
-      _mediaOpt.EnableProtectionMethod(enable, media_optimization::kNack);
+      _mediaOpt.SetProtectionMethod(media_optimization::kNack);
       break;
     case kProtectionNackFEC:
-      _mediaOpt.EnableProtectionMethod(enable, media_optimization::kNackFec);
+      _mediaOpt.SetProtectionMethod(media_optimization::kNackFec);
       break;
     case kProtectionFEC:
-      _mediaOpt.EnableProtectionMethod(enable, media_optimization::kFec);
+      _mediaOpt.SetProtectionMethod(media_optimization::kFec);
       break;
-    case kProtectionNackReceiver:
-    case kProtectionKeyOnLoss:
-    case kProtectionKeyOnKeyLoss:
-      // Ignore receiver modes.
-      return;
   }
 }
 // Add one raw video frame to the encoder, blocking.
@@ -363,6 +356,8 @@ int32_t VideoSender::AddVideoFrame(const VideoFrame& videoFrame,
   for (size_t i = 0; i < _nextFrameTypes.size(); ++i) {
     _nextFrameTypes[i] = kVideoFrameDelta;  // Default frame type.
   }
+  if (qm_settings_callback_)
+    qm_settings_callback_->SetTargetFramerate(_encoder->GetTargetFramerate());
   return VCM_OK;
 }
 

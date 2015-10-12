@@ -78,6 +78,9 @@ class QMVideoSettingsCallback : public VCMQMSettingsCallback {
                              const uint32_t width,
                              const uint32_t height);
 
+  // Update target frame rate.
+  void SetTargetFramerate(int frame_rate);
+
  private:
   VideoProcessingModule* vpm_;
 };
@@ -100,7 +103,6 @@ class ViEBitrateObserver : public BitrateObserver {
 
 ViEEncoder::ViEEncoder(int32_t channel_id,
                        uint32_t number_of_cores,
-                       const Config& config,
                        ProcessThread& module_process_thread,
                        PacedSender* pacer,
                        BitrateAllocator* bitrate_allocator,
@@ -394,9 +396,10 @@ int32_t ViEEncoder::ScaleInputImage(bool enable) {
   return 0;
 }
 
-int ViEEncoder::GetPaddingNeededBps(int bitrate_bps) const {
+int ViEEncoder::GetPaddingNeededBps() const {
   int64_t time_of_last_frame_activity_ms;
   int min_transmit_bitrate_bps;
+  int bitrate_bps;
   {
     CriticalSectionScoped cs(data_cs_.get());
     bool send_padding =
@@ -405,15 +408,12 @@ int ViEEncoder::GetPaddingNeededBps(int bitrate_bps) const {
       return 0;
     time_of_last_frame_activity_ms = time_of_last_frame_activity_ms_;
     min_transmit_bitrate_bps = 1000 * min_transmit_bitrate_kbps_;
+    bitrate_bps = last_observed_bitrate_bps_;
   }
 
   VideoCodec send_codec;
   if (vcm_->SendCodec(&send_codec) != 0)
     return 0;
-  SimulcastStream* stream_configs = send_codec.simulcastStream;
-  // Allocate the bandwidth between the streams.
-  std::vector<uint32_t> stream_bitrates = AllocateStreamBitrates(
-      bitrate_bps, stream_configs, send_codec.numberOfSimulcastStreams);
 
   bool video_is_suspended = vcm_->VideoSuspended();
 
@@ -424,6 +424,7 @@ int ViEEncoder::GetPaddingNeededBps(int bitrate_bps) const {
   if (send_codec.numberOfSimulcastStreams == 0) {
     pad_up_to_bitrate_bps = send_codec.minBitrate * 1000;
   } else {
+    SimulcastStream* stream_configs = send_codec.simulcastStream;
     pad_up_to_bitrate_bps =
         stream_configs[send_codec.numberOfSimulcastStreams - 1].minBitrate *
         1000;
@@ -609,13 +610,14 @@ int32_t ViEEncoder::UpdateProtectionMethod(bool nack, bool fec) {
   nack_enabled_ = nack;
 
   // Set Video Protection for VCM.
-  if (fec_enabled_ && nack_enabled_) {
-    vcm_->SetVideoProtection(webrtc::kProtectionNackFEC, true);
+  VCMVideoProtection protection_mode;
+  if (fec_enabled_) {
+    protection_mode =
+        nack_enabled_ ? webrtc::kProtectionNackFEC : kProtectionFEC;
   } else {
-    vcm_->SetVideoProtection(webrtc::kProtectionFEC, fec_enabled_);
-    vcm_->SetVideoProtection(webrtc::kProtectionNackSender, nack_enabled_);
-    vcm_->SetVideoProtection(webrtc::kProtectionNackFEC, false);
+    protection_mode = nack_enabled_ ? kProtectionNack : kProtectionNone;
   }
+  vcm_->SetVideoProtection(protection_mode, true);
 
   if (fec_enabled_ || nack_enabled_) {
     // The send codec must be registered to set correct MTU.
@@ -866,6 +868,10 @@ int32_t QMVideoSettingsCallback::SetVideoQMSettings(
     const uint32_t width,
     const uint32_t height) {
   return vpm_->SetTargetResolution(width, height, frame_rate);
+}
+
+void QMVideoSettingsCallback::SetTargetFramerate(int frame_rate) {
+  vpm_->SetTargetFramerate(frame_rate);
 }
 
 }  // namespace webrtc

@@ -13,7 +13,7 @@
 #define kSQRT_TABLE_BITS    11
 #define kSQRT_TABLE_SIZE    (1 << kSQRT_TABLE_BITS)
 
-SK_COMPILE_ASSERT(sizeof(gSqrt8Table) == kSQRT_TABLE_SIZE, SqrtTableSizesMatch);
+static_assert(sizeof(gSqrt8Table) == kSQRT_TABLE_SIZE, "SqrtTableSizesMatch");
 
 #if 0
 
@@ -225,23 +225,6 @@ void SkRadialGradient::RadialGradientContext::shadeSpan16(int x, int y, uint16_t
     }
 }
 
-SkShader::BitmapType SkRadialGradient::asABitmap(SkBitmap* bitmap,
-    SkMatrix* matrix, SkShader::TileMode* xy) const {
-    if (bitmap) {
-        this->getGradientTableBitmap(bitmap);
-    }
-    if (matrix) {
-        matrix->setScale(SkIntToScalar(kCache32Count),
-                         SkIntToScalar(kCache32Count));
-        matrix->preConcat(fPtsToUnit);
-    }
-    if (xy) {
-        xy[0] = fTileMode;
-        xy[1] = kClamp_TileMode;
-    }
-    return kRadial_BitmapType;
-}
-
 SkShader::GradientType SkRadialGradient::asAGradient(GradientInfo* info) const {
     if (info) {
         commonAsAGradient(info);
@@ -440,12 +423,7 @@ public:
     GrGLRadialGradient(const GrProcessor&) {}
     virtual ~GrGLRadialGradient() { }
 
-    virtual void emitCode(GrGLFPBuilder*,
-                          const GrFragmentProcessor&,
-                          const char* outputColor,
-                          const char* inputColor,
-                          const TransformedCoordsArray&,
-                          const TextureSamplerArray&) override;
+    virtual void emitCode(EmitArgs&) override;
 
     static void GenKey(const GrProcessor& processor, const GrGLSLCaps&, GrProcessorKeyBuilder* b) {
         b->add32(GenBaseGradientKey(processor));
@@ -473,15 +451,6 @@ public:
 
     const char* name() const override { return "Radial Gradient"; }
 
-    virtual void getGLProcessorKey(const GrGLSLCaps& caps,
-                                   GrProcessorKeyBuilder* b) const override {
-        GrGLRadialGradient::GenKey(*this, caps, b);
-    }
-
-    GrGLFragmentProcessor* createGLInstance() const override {
-        return SkNEW_ARGS(GrGLRadialGradient, (*this));
-    }
-
 private:
     GrRadialGradient(GrContext* ctx,
                      GrProcessorDataManager* procDataManager,
@@ -490,6 +459,15 @@ private:
                      SkShader::TileMode tm)
         : INHERITED(ctx, procDataManager, shader, matrix, tm) {
         this->initClassID<GrRadialGradient>();
+    }
+
+    GrGLFragmentProcessor* onCreateGLInstance() const override {
+        return SkNEW_ARGS(GrGLRadialGradient, (*this));
+    }
+
+    virtual void onGetGLProcessorKey(const GrGLSLCaps& caps,
+                                     GrProcessorKeyBuilder* b) const override {
+        GrGLRadialGradient::GenKey(*this, caps, b);
     }
 
     GR_DECLARE_FRAGMENT_PROCESSOR_TEST;
@@ -524,18 +502,14 @@ GrFragmentProcessor* GrRadialGradient::TestCreate(GrProcessorTestData* d) {
 
 /////////////////////////////////////////////////////////////////////
 
-void GrGLRadialGradient::emitCode(GrGLFPBuilder* builder,
-                                  const GrFragmentProcessor& fp,
-                                  const char* outputColor,
-                                  const char* inputColor,
-                                  const TransformedCoordsArray& coords,
-                                  const TextureSamplerArray& samplers) {
-    const GrRadialGradient& ge = fp.cast<GrRadialGradient>();
-    this->emitUniforms(builder, ge);
+void GrGLRadialGradient::emitCode(EmitArgs& args) {
+    const GrRadialGradient& ge = args.fFp.cast<GrRadialGradient>();
+    this->emitUniforms(args.fBuilder, ge);
     SkString t("length(");
-    t.append(builder->getFragmentShaderBuilder()->ensureFSCoords2D(coords, 0));
+    t.append(args.fBuilder->getFragmentShaderBuilder()->ensureFSCoords2D(args.fCoords, 0));
     t.append(")");
-    this->emitColor(builder, ge, t.c_str(), outputColor, inputColor, samplers);
+    this->emitColor(args.fBuilder, ge, t.c_str(), args.fOutputColor, args.fInputColor,
+                    args.fSamplers);
 }
 
 /////////////////////////////////////////////////////////////////////

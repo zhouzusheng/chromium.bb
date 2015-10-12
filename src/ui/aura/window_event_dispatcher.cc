@@ -246,7 +246,7 @@ void WindowEventDispatcher::DispatchMouseExitToHidingWindow(Window* window) {
   if (window->Contains(mouse_moved_handler_) &&
       window->ContainsPointInRoot(last_mouse_location)) {
     DispatchDetails details =
-        DispatchMouseExitAtPoint(window, last_mouse_location);
+        DispatchMouseExitAtPoint(this->window(), last_mouse_location);
     if (details.dispatcher_destroyed)
       return;
   }
@@ -469,7 +469,7 @@ ui::EventDispatchDetails WindowEventDispatcher::PreDispatchEvent(
     PreDispatchTouchEvent(target_window, static_cast<ui::TouchEvent*>(event));
   }
   old_dispatch_target_ = event_dispatch_target_;
-  event_dispatch_target_ = static_cast<Window*>(target);
+  event_dispatch_target_ = target_window;
   return DispatchDetails();
 }
 

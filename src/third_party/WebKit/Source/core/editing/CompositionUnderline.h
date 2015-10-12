@@ -27,24 +27,29 @@
 #define CompositionUnderline_h
 
 #include "platform/graphics/Color.h"
+#include "wtf/Allocator.h"
 
 namespace blink {
 
 struct CompositionUnderline {
+    ALLOW_ONLY_INLINE_ALLOCATION();
     CompositionUnderline()
         : startOffset(0)
         , endOffset(0)
+        , color(Color::transparent)
         , thick(false)
         , backgroundColor(Color::transparent) { }
 
-    CompositionUnderline(unsigned s, unsigned e, bool t, const Color& bc)
+    CompositionUnderline(unsigned s, unsigned e, const Color& c, bool t, const Color& bc)
         : startOffset(s)
         , endOffset(e)
+        , color(c)
         , thick(t)
         , backgroundColor(bc) { }
 
     unsigned startOffset;
     unsigned endOffset;
+    Color color;
     bool thick;
     Color backgroundColor;
 };

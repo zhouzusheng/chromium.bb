@@ -208,7 +208,7 @@ void GetResponseInfo(const WebURLResponse& response,
   WebString content_encoding =
       response.httpHeaderField(WebString::fromUTF8("Content-Encoding"));
   if (!content_encoding.isNull() &&
-      !base::EqualsASCII(content_encoding, "identity")) {
+      !base::EqualsASCII(base::StringPiece16(content_encoding), "identity")) {
     // Don't send the compressed content length to the plugin, which only
     // cares about the decoded length.
     response_info->expected_length = 0;
@@ -553,11 +553,11 @@ WebPluginImpl::WebPluginImpl(
       first_geometry_update_(true),
       ignore_response_error_(false),
       file_path_(file_path),
-      mime_type_(base::UTF16ToASCII(params.mimeType)),
+      mime_type_(base::ToLowerASCII(base::UTF16ToASCII(
+          base::StringPiece16(params.mimeType)))),
       loader_client_(this),
       weak_factory_(this) {
   DCHECK_EQ(params.attributeNames.size(), params.attributeValues.size());
-  base::StringToLowerASCII(&mime_type_);
 
   for (size_t i = 0; i < params.attributeNames.size(); ++i) {
     arg_names_.push_back(params.attributeNames[i].utf8());
@@ -804,7 +804,8 @@ std::string WebPluginImpl::GetCookies(const GURL& url,
     return std::string();
   }
 
-  return base::UTF16ToUTF8(cookie_jar->cookies(url, first_party_for_cookies));
+  return base::UTF16ToUTF8(base::StringPiece16(
+      cookie_jar->cookies(url, first_party_for_cookies)));
 }
 
 void WebPluginImpl::URLRedirectResponse(bool allow, int resource_id) {

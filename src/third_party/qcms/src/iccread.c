@@ -809,10 +809,12 @@ static struct lutmABType *read_tag_lutmABType(struct mem_source *src, struct tag
 	memset(lut, 0, sizeof(struct lutmABType));
 	lut->clut_table   = &lut->clut_table_data[0];
 
-	for (i = 0; i < num_in_channels; i++) {
-		lut->num_grid_points[i] = read_u8(src, clut_offset + i);
-		if (lut->num_grid_points[i] == 0) {
-			invalid_source(src, "bad grid_points");
+	if (clut_offset) {
+		for (i = 0; i < num_in_channels; i++) {
+			lut->num_grid_points[i] = read_u8(src, clut_offset + i);
+			if (lut->num_grid_points[i] == 0) {
+				invalid_source(src, "bad grid_points");
+			}
 		}
 	}
 
@@ -1114,6 +1116,7 @@ qcms_profile* qcms_profile_create_rgb_with_gamma(
 	profile->class = DISPLAY_DEVICE_PROFILE;
 	profile->rendering_intent = QCMS_INTENT_PERCEPTUAL;
 	profile->color_space = RGB_SIGNATURE;
+	profile->pcs = XYZ_SIGNATURE;
 	return profile;
 }
 
@@ -1143,6 +1146,7 @@ qcms_profile* qcms_profile_create_rgb_with_table(
 	profile->class = DISPLAY_DEVICE_PROFILE;
 	profile->rendering_intent = QCMS_INTENT_PERCEPTUAL;
 	profile->color_space = RGB_SIGNATURE;
+	profile->pcs = XYZ_SIGNATURE;
 	return profile;
 }
 

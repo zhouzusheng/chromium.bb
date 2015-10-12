@@ -14,9 +14,10 @@
 #include "chrome/browser/spellchecker/spellcheck_factory.h"
 #include "chrome/browser/spellchecker/spellcheck_host_metrics.h"
 #include "chrome/browser/spellchecker/spellcheck_hunspell_dictionary.h"
-#include "chrome/browser/spellchecker/spellcheck_platform_mac.h"
+#include "chrome/browser/spellchecker/spellcheck_platform.h"
 #include "chrome/browser/spellchecker/spelling_service_client.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/common/spellcheck_bdict_language.h"
 #include "chrome/common/spellcheck_common.h"
 #include "chrome/common/spellcheck_messages.h"
 #include "components/user_prefs/user_prefs.h"
@@ -28,7 +29,6 @@
 #include "ipc/ipc_platform_file.h"
 
 using content::BrowserThread;
-using chrome::spellcheck_common::FileLanguagePair;
 
 // TODO(rlp): I do not like globals, but keeping these for now during
 // transition.
@@ -64,6 +64,22 @@ SpellcheckService::SpellcheckService(content::BrowserContext* context)
 
   single_dictionary_pref.SetValue("");
 
+  // If a user goes from single language to multi-language spellchecking with
+  // spellchecking disabled the dictionaries preference should be blanked.
+  if (!prefs->GetBoolean(prefs::kEnableContinuousSpellcheck) &&
+      chrome::spellcheck_common::IsMultilingualSpellcheckEnabled()) {
+    dictionaries_pref.SetValue(std::vector<std::string>());
+    prefs->SetBoolean(prefs::kEnableContinuousSpellcheck, true);
+  }
+
+  // If a user goes back to single language spellchecking make sure there is
+  // only one language in the dictionaries preference.
+  if (!chrome::spellcheck_common::IsMultilingualSpellcheckEnabled() &&
+      dictionaries_pref.GetValue().size() > 1) {
+    dictionaries_pref.SetValue(
+        std::vector<std::string>(1, first_of_dictionaries));
+  }
+
   std::string language_code;
   std::string country_code;
   chrome::spellcheck_common::GetISOLanguageCountryCodeFromLocale(
@@ -83,12 +99,10 @@ SpellcheckService::SpellcheckService(content::BrowserContext* context)
       prefs::kSpellCheckDictionaries,
       base::Bind(&SpellcheckService::OnSpellCheckDictionariesChanged,
                  base::Unretained(this)));
-  if (!chrome::spellcheck_common::IsMultilingualSpellcheckEnabled()) {
-    pref_change_registrar_.Add(
-        prefs::kSpellCheckUseSpellingService,
-        base::Bind(&SpellcheckService::OnUseSpellingServiceChanged,
-                   base::Unretained(this)));
-  }
+  pref_change_registrar_.Add(
+      prefs::kSpellCheckUseSpellingService,
+      base::Bind(&SpellcheckService::OnUseSpellingServiceChanged,
+                 base::Unretained(this)));
 
   pref_change_registrar_.Add(
       prefs::kEnableContinuousSpellcheck,
@@ -134,8 +148,9 @@ size_t SpellcheckService::GetSpellCheckLanguages(
   StringPrefMember accept_languages_pref;
   accept_languages_pref.Init(prefs::kAcceptLanguages, prefs);
 
-  std::vector<std::string> accept_languages;
-  base::SplitString(accept_languages_pref.GetValue(), ',', &accept_languages);
+  std::vector<std::string> accept_languages = base::SplitString(
+      accept_languages_pref.GetValue(), ",",
+      base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
 
   StringListPrefMember dictionaries_pref;
   dictionaries_pref.Init(prefs::kSpellCheckDictionaries, prefs);
@@ -183,23 +198,17 @@ void SpellcheckService::InitForRenderer(content::RenderProcessHost* process) {
     return;
 
   PrefService* prefs = user_prefs::UserPrefs::Get(context);
-  std::vector<FileLanguagePair> languages;
+  std::vector<SpellCheckBDictLanguage> bdict_languages;
 
-  typedef ScopedVector<SpellcheckHunspellDictionary>::iterator DictIterator;
-
-  for (DictIterator it = hunspell_dictionaries_.begin();
-      it != hunspell_dictionaries_.end();
-      ++it) {
-    SpellcheckHunspellDictionary *d = *it;
-    IPC::PlatformFileForTransit file = IPC::InvalidPlatformFileForTransit();
-
-    if (d->GetDictionaryFile().IsValid()) {
-        file = IPC::GetFileHandleForProcess(
-            d->GetDictionaryFile().GetPlatformFile(),
-            process->GetHandle(), false);
-    }
-
-    languages.push_back(FileLanguagePair(file, d->GetLanguage()));
+  for (const auto& hunspell_dictionary : hunspell_dictionaries_) {
+    bdict_languages.push_back(SpellCheckBDictLanguage());
+    bdict_languages.back().language = hunspell_dictionary->GetLanguage();
+    bdict_languages.back().file =
+        hunspell_dictionary->GetDictionaryFile().IsValid()
+            ? IPC::GetFileHandleForProcess(
+                  hunspell_dictionary->GetDictionaryFile().GetPlatformFile(),
+                  process->GetHandle(), false)
+            : IPC::InvalidPlatformFileForTransit();
   }
 
   const std::set<std::string>* custom_words_ptr;
@@ -215,8 +224,7 @@ void SpellcheckService::InitForRenderer(content::RenderProcessHost* process) {
   }
 
   process->Send(new SpellCheckMsg_Init(
-      languages,
-      *custom_words_ptr,
+      bdict_languages, *custom_words_ptr,
       prefs->GetBoolean(prefs::kEnableAutoSpellCorrect)));
   process->Send(new SpellCheckMsg_EnableSpellCheck(
       prefs->GetBoolean(prefs::kEnableContinuousSpellcheck)));
@@ -229,6 +237,16 @@ SpellCheckHostMetrics* SpellcheckService::GetMetrics() const {
 SpellcheckCustomDictionary* SpellcheckService::GetCustomDictionary() {
   return custom_dictionary_.get();
 }
+
+const ScopedVector<SpellcheckHunspellDictionary>&
+SpellcheckService::GetHunspellDictionaries() {
+  return hunspell_dictionaries_;
+}
+
+// SHEZ: Remove feedback sender
+// spellcheck::FeedbackSender* SpellcheckService::GetFeedbackSender() {
+//   return feedback_sender_.get();
+// }
 
 bool SpellcheckService::LoadExternalDictionary(std::string language,
                                                std::string locale,
@@ -347,33 +365,34 @@ void SpellcheckService::OnEnableAutoSpellCorrectChanged() {
 }
 
 void SpellcheckService::OnSpellCheckDictionariesChanged() {
-  // Delete all the SpellcheckHunspellDictionary and unobserve them
-  typedef ScopedVector<SpellcheckHunspellDictionary>::iterator Iterator;
-  for (Iterator it = hunspell_dictionaries_.begin();
-      it != hunspell_dictionaries_.end();
-      ++it) {
-    SpellcheckHunspellDictionary *hunspell_dictionary = *it;
+  for (auto& hunspell_dictionary : hunspell_dictionaries_)
     hunspell_dictionary->RemoveObserver(this);
-  }
-  hunspell_dictionaries_.clear();
 
-  // Create the new vector of dictionaries
   PrefService* prefs = user_prefs::UserPrefs::Get(context_);
   DCHECK(prefs);
 
-  const base::ListValue* dictionaries = prefs->GetList(prefs::kSpellCheckDictionaries);
-  for (size_t langIndex = 0; langIndex < dictionaries->GetSize(); ++langIndex) {
-    std::string dictionary;
-    dictionaries->GetString(langIndex, &dictionary);
-    SpellcheckHunspellDictionary *hunspell_dictionary
-        = new SpellcheckHunspellDictionary(dictionary,
-                                           context_->AllowDictionaryDownloads() ? context_->GetRequestContext() : 0,
-                                           this);
+  const base::ListValue* dictionary_values =
+      prefs->GetList(prefs::kSpellCheckDictionaries);
 
-    hunspell_dictionary->AddObserver(this);
-    hunspell_dictionary->Load();
-    hunspell_dictionaries_.push_back(hunspell_dictionary);
+  hunspell_dictionaries_.clear();
+  for (const base::Value* dictionary_value : *dictionary_values) {
+    std::string dictionary;
+    dictionary_value->GetAsString(&dictionary);
+    hunspell_dictionaries_.push_back(new SpellcheckHunspellDictionary(
+        dictionary, context_->AllowDictionaryDownloads() ? context_->GetRequestContext() : 0, this));
+    hunspell_dictionaries_.back()->AddObserver(this);
+    hunspell_dictionaries_.back()->Load();
   }
+
+  std::string feedback_language;
+  dictionary_values->GetString(0, &feedback_language);
+  std::string language_code;
+  std::string country_code;
+  chrome::spellcheck_common::GetISOLanguageCountryCodeFromLocale(
+      feedback_language, &language_code, &country_code);
+  // SHEZ: Remove feedback sender
+  // feedback_sender_->OnLanguageCountryChange(language_code, country_code);
+  // UpdateFeedbackSenderState();
 }
 
 void SpellcheckService::OnUseSpellingServiceChanged() {

@@ -60,7 +60,7 @@ enum class WebTreeScopeType;
 class WebApplicationCacheHost;
 class WebApplicationCacheHostClient;
 class WebAppBannerClient;
-class WebCachedURLRequest;
+class WebBluetooth;
 class WebColorChooser;
 class WebColorChooserClient;
 class WebContentDecryptionModule;
@@ -88,8 +88,10 @@ class WebScreenOrientationClient;
 class WebString;
 class WebURL;
 class WebURLResponse;
+class WebUSBClient;
 class WebUserMediaClient;
 class WebVRClient;
+class WebWakeLockClient;
 class WebWorkerContentSettingsClientProxy;
 struct WebColorSuggestion;
 struct WebConsoleMessage;
@@ -108,9 +110,6 @@ public:
 
     // May return null.
     virtual WebPlugin* createPlugin(WebLocalFrame*, const WebPluginParams&) { return 0; }
-
-    // TODO(srirama): Remove this method once chromium updated.
-    virtual WebMediaPlayer* createMediaPlayer(WebLocalFrame*, const WebURL&, WebMediaPlayerClient*, WebContentDecryptionModule*) { return 0; }
 
     // May return null.
     // WebContentDecryptionModule* may be null if one has not yet been set.
@@ -158,7 +157,12 @@ public:
 
     // This frame set its opener to null, disowning it.
     // See http://html.spec.whatwg.org/#dom-opener.
+    // TODO(alexmos): Remove this once didChangeOpener is implemented in content.
     virtual void didDisownOpener(WebLocalFrame*) { }
+
+    // This frame has set its opener to another frame, or disowned the opener
+    // if opener is null. See http://html.spec.whatwg.org/#dom-opener.
+    virtual void didChangeOpener(WebFrame*) { }
 
     // Specifies the reason for the detachment.
     enum class DetachType { Remove, Swap };
@@ -297,7 +301,7 @@ public:
     virtual void didChangeIcon(WebLocalFrame*, WebIconURL::Type) { }
 
     // The frame's document finished loading.
-    virtual void didFinishDocumentLoad(WebLocalFrame*) { }
+    virtual void didFinishDocumentLoad(WebLocalFrame*, bool documentIsEmpty) { }
 
     // The 'load' event was dispatched.
     virtual void didHandleOnloadEvents(WebLocalFrame*) { }
@@ -322,9 +326,6 @@ public:
 
     // The frame's manifest has changed.
     virtual void didChangeManifest(WebLocalFrame*) { }
-
-    // The frame's presentation URL has changed.
-    virtual void didChangeDefaultPresentation(WebLocalFrame*) { }
 
     // The frame's theme color has changed.
     virtual void didChangeThemeColor() { }
@@ -410,9 +411,6 @@ public:
 
     // Low-level resource notifications ------------------------------------
 
-    // An element will request a resource.
-    virtual void willRequestResource(WebLocalFrame*, const WebCachedURLRequest&) { }
-
     // A request is about to be sent out, and the client may modify it.  Request
     // is writable, and changes to the URL, for example, will change the request
     // made.  If this request is the result of a redirect, then redirectResponse
@@ -451,6 +449,9 @@ public:
 
     // A PingLoader was created, and a request dispatched to a URL.
     virtual void didDispatchPingLoader(WebLocalFrame*, const WebURL&) { }
+
+    // A performance timing event (e.g. first paint) occurred
+    virtual void didChangePerformanceTiming() { }
 
     // The loaders in this frame have been stopped.
     virtual void didAbortLoading(WebLocalFrame*) { }
@@ -518,6 +519,9 @@ public:
     // A WebSocket object is going to open a new WebSocket connection.
     virtual void willOpenWebSocket(WebSocketHandle*) { }
 
+    // Wake Lock -----------------------------------------------------
+
+    virtual WebWakeLockClient* wakeLockClient() { return 0; }
 
     // Geolocation ---------------------------------------------------------
 
@@ -666,6 +670,12 @@ public:
     {
         return WebCustomHandlersNew;
     }
+
+    // Bluetooth -----------------------------------------------------------
+    virtual WebBluetooth* bluetooth() { return 0; }
+
+    // WebUSB --------------------------------------------------------------
+    virtual WebUSBClient* usbClient() { return nullptr; }
 
 protected:
     virtual ~WebFrameClient() { }

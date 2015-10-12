@@ -182,7 +182,7 @@ private:
     PassRefPtrWillBeRawPtr<CSSBasicShape> parseBasicShapeInset(CSSParserValueList* args);
 
     bool parseFont(bool important);
-    void parseSystemFont(bool important);
+    bool parseSystemFont(bool important);
     PassRefPtrWillBeRawPtr<CSSValueList> parseFontFamily();
 
     PassRefPtrWillBeRawPtr<CSSValue> parseCounter(int defaultValue);
@@ -194,10 +194,6 @@ private:
     bool parseColorFromValue(const CSSParserValue*, RGBA32&, bool acceptQuirkyColors = false);
 
     bool acceptQuirkyColors(CSSPropertyID) const;
-    PassRefPtrWillBeRawPtr<CSSPrimitiveValue> parseBackgroundColor(const CSSParserValue*);
-    PassRefPtrWillBeRawPtr<CSSPrimitiveValue> parseTapHighlightColor(const CSSParserValue*);
-    PassRefPtrWillBeRawPtr<CSSPrimitiveValue> parseGradientStopColor(const CSSParserValue*);
-    PassRefPtrWillBeRawPtr<CSSPrimitiveValue> parseDeprecatedGradientStopColor(const CSSParserValue*);
 
     PassRefPtrWillBeRawPtr<CSSPrimitiveValue> parseLineHeight();
     bool parseFontSize(bool important);
@@ -257,10 +253,8 @@ private:
     PassRefPtrWillBeRawPtr<CSSValue> parseTextEmphasisStyle();
 
     PassRefPtrWillBeRawPtr<CSSValue> parseTouchAction();
-    PassRefPtrWillBeRawPtr<CSSValue> parseScrollBlocksOn();
 
-    void addTextDecorationProperty(CSSPropertyID, PassRefPtrWillBeRawPtr<CSSValue>, bool important);
-    bool parseTextDecoration(CSSPropertyID propId, bool important);
+    PassRefPtrWillBeRawPtr<CSSValue> parseTextDecoration();
 
     PassRefPtrWillBeRawPtr<CSSValue> parseTextIndent();
 
@@ -355,11 +349,11 @@ private:
 
     bool parseBorderImageQuad(Units, RefPtrWillBeRawPtr<CSSPrimitiveValue>&);
     int colorIntFromValue(CSSParserValue*);
-    bool isCalculation(CSSParserValue*);
 
     bool buildBorderImageParseContext(CSSPropertyID, BorderImageParseContext&);
 
     bool parseDeprecatedGradientColorStop(CSSParserValue*, CSSGradientColorStop&);
+    PassRefPtrWillBeRawPtr<CSSPrimitiveValue> parseDeprecatedGradientStopColor(const CSSParserValue*);
 
     void commitBorderImageProperty(CSSPropertyID, PassRefPtrWillBeRawPtr<CSSValue>, bool important);
 

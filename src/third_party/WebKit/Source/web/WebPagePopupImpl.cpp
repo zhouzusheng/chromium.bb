@@ -35,8 +35,8 @@
 #include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
-#include "core/frame/PinchViewport.h"
 #include "core/frame/Settings.h"
+#include "core/frame/VisualViewport.h"
 #include "core/input/EventHandler.h"
 #include "core/layout/LayoutView.h"
 #include "core/loader/EmptyClients.h"
@@ -66,14 +66,10 @@
 namespace blink {
 
 class PagePopupChromeClient final : public EmptyChromeClient {
-    WTF_MAKE_NONCOPYABLE(PagePopupChromeClient);
-    WTF_MAKE_FAST_ALLOCATED(PagePopupChromeClient);
-
 public:
-    explicit PagePopupChromeClient(WebPagePopupImpl* popup)
-        : m_popup(popup)
+    static PassOwnPtrWillBeRawPtr<PagePopupChromeClient> create(WebPagePopupImpl* popup)
     {
-        ASSERT(m_popup->widgetClient());
+        return adoptPtrWillBeNoop(new PagePopupChromeClient(popup));
     }
 
     void setWindowRect(const IntRect& rect) override
@@ -83,6 +79,12 @@ public:
     }
 
 private:
+    explicit PagePopupChromeClient(WebPagePopupImpl* popup)
+        : m_popup(popup)
+    {
+        ASSERT(m_popup->widgetClient());
+    }
+
     void closeWindowSoon() override
     {
         m_popup->closePopup();
@@ -121,7 +123,7 @@ private:
 
         if (m_popup->isAcceleratedCompositingActive()) {
             ASSERT(m_popup->m_layerTreeView);
-            m_popup->m_layerTreeView->setNeedsAnimate();
+            m_popup->m_layerTreeView->setNeedsCompositorUpdate();
             return;
         }
         m_popup->m_widgetClient->scheduleAnimation();
@@ -229,7 +231,7 @@ bool WebPagePopupImpl::initializePage()
 {
     Page::PageClients pageClients;
     fillWithEmptyClients(pageClients);
-    m_chromeClient = adoptPtr(new PagePopupChromeClient(this));
+    m_chromeClient = PagePopupChromeClient::create(this);
     pageClients.chromeClient = m_chromeClient.get();
 
     m_page = adoptPtrWillBeNoop(new Page(pageClients));
@@ -367,7 +369,7 @@ void WebPagePopupImpl::layout()
 void WebPagePopupImpl::paint(WebCanvas* canvas, const WebRect& rect)
 {
     if (!m_closing)
-        PageWidgetDelegate::paint(*m_page, 0, canvas, rect, *m_page->deprecatedLocalMainFrame());
+        PageWidgetDelegate::paint(*m_page, canvas, rect, *m_page->deprecatedLocalMainFrame());
 }
 
 void WebPagePopupImpl::resize(const WebSize& newSize)
@@ -377,7 +379,7 @@ void WebPagePopupImpl::resize(const WebSize& newSize)
 
     if (m_page) {
         toLocalFrame(m_page->mainFrame())->view()->resize(newSize);
-        m_page->frameHost().pinchViewport().setSize(newSize);
+        m_page->frameHost().visualViewport().setSize(newSize);
     }
 
     m_widgetClient->didInvalidateRect(WebRect(0, 0, newSize.width, newSize.height));

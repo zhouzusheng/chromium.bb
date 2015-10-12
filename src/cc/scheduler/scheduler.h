@@ -83,15 +83,13 @@ class CC_EXPORT Scheduler : public BeginFrameObserverBase {
   void NotifyReadyToDraw();
   void SetThrottleFrameProduction(bool throttle);
 
-  void SetNeedsCommit();
+  void SetNeedsBeginMainFrame();
 
   void SetNeedsRedraw();
 
   void SetNeedsAnimate();
 
   void SetNeedsPrepareTiles();
-
-  void SetWaitForReadyToDraw();
 
   void SetMaxSwapsPending(int max);
   void DidSwapBuffers();

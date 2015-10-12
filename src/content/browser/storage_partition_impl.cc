@@ -17,7 +17,6 @@
 #include "content/browser/gpu/shader_disk_cache.h"
 #include "content/browser/host_zoom_map_impl.h"
 #include "content/browser/navigator_connect/navigator_connect_context_impl.h"
-#include "content/browser/navigator_connect/navigator_connect_service_worker_service_factory.h"
 #include "content/browser/notifications/platform_notification_context_impl.h"
 #include "content/common/dom_storage/dom_storage_types.h"
 #include "content/public/browser/browser_context.h"
@@ -201,36 +200,6 @@ void ClearSessionStorageOnUIThread(
 
 }  // namespace
 
-// static
-STATIC_CONST_MEMBER_DEFINITION const uint32
-    StoragePartition::REMOVE_DATA_MASK_APPCACHE;
-STATIC_CONST_MEMBER_DEFINITION const uint32
-    StoragePartition::REMOVE_DATA_MASK_COOKIES;
-STATIC_CONST_MEMBER_DEFINITION const uint32
-    StoragePartition::REMOVE_DATA_MASK_FILE_SYSTEMS;
-STATIC_CONST_MEMBER_DEFINITION const uint32
-    StoragePartition::REMOVE_DATA_MASK_INDEXEDDB;
-STATIC_CONST_MEMBER_DEFINITION const uint32
-    StoragePartition::REMOVE_DATA_MASK_LOCAL_STORAGE;
-STATIC_CONST_MEMBER_DEFINITION const uint32
-    StoragePartition::REMOVE_DATA_MASK_SERVICE_WORKERS;
-STATIC_CONST_MEMBER_DEFINITION const uint32
-    StoragePartition::REMOVE_DATA_MASK_SHADER_CACHE;
-STATIC_CONST_MEMBER_DEFINITION const uint32
-    StoragePartition::REMOVE_DATA_MASK_WEBSQL;
-STATIC_CONST_MEMBER_DEFINITION const uint32
-    StoragePartition::REMOVE_DATA_MASK_WEBRTC_IDENTITY;
-STATIC_CONST_MEMBER_DEFINITION const uint32
-    StoragePartition::REMOVE_DATA_MASK_ALL;
-STATIC_CONST_MEMBER_DEFINITION const uint32
-    StoragePartition::QUOTA_MANAGED_STORAGE_MASK_TEMPORARY;
-STATIC_CONST_MEMBER_DEFINITION const uint32
-    StoragePartition::QUOTA_MANAGED_STORAGE_MASK_PERSISTENT;
-STATIC_CONST_MEMBER_DEFINITION const uint32
-    StoragePartition::QUOTA_MANAGED_STORAGE_MASK_SYNCABLE;
-STATIC_CONST_MEMBER_DEFINITION const uint32
-    StoragePartition::QUOTA_MANAGED_STORAGE_MASK_ALL;
-
 // Static.
 int StoragePartitionImpl::GenerateQuotaClientMask(uint32 remove_mask) {
   int quota_client_mask = 0;
@@ -383,8 +352,7 @@ StoragePartitionImpl::StoragePartitionImpl(
     HostZoomLevelContext* host_zoom_level_context,
     NavigatorConnectContextImpl* navigator_connect_context,
     PlatformNotificationContextImpl* platform_notification_context,
-    BackgroundSyncContextImpl* background_sync_context,
-    StashedPortManager* stashed_port_manager)
+    BackgroundSyncContextImpl* background_sync_context)
     : partition_path_(partition_path),
       quota_manager_(quota_manager),
       appcache_service_(appcache_service),
@@ -401,7 +369,6 @@ StoragePartitionImpl::StoragePartitionImpl(
       navigator_connect_context_(navigator_connect_context),
       platform_notification_context_(platform_notification_context),
       background_sync_context_(background_sync_context),
-      stashed_port_manager_(stashed_port_manager),
       browser_context_(browser_context) {
 }
 
@@ -437,9 +404,6 @@ StoragePartitionImpl::~StoragePartitionImpl() {
 
   if (GetBackgroundSyncContext())
     GetBackgroundSyncContext()->Shutdown();
-
-  if (GetStashedPortManager())
-    GetStashedPortManager()->Shutdown();
 }
 
 StoragePartitionImpl* StoragePartitionImpl::Create(
@@ -525,9 +489,7 @@ StoragePartitionImpl* StoragePartitionImpl::Create(
           context->CreateZoomLevelDelegate(partition_path)));
 
   scoped_refptr<NavigatorConnectContextImpl> navigator_connect_context =
-      new NavigatorConnectContextImpl();
-  navigator_connect_context->AddFactory(make_scoped_ptr(
-      new NavigatorConnectServiceWorkerServiceFactory(service_worker_context)));
+      new NavigatorConnectContextImpl(service_worker_context);
 
   scoped_refptr<PlatformNotificationContextImpl> platform_notification_context =
       new PlatformNotificationContextImpl(path, context,
@@ -538,10 +500,6 @@ StoragePartitionImpl* StoragePartitionImpl::Create(
       new BackgroundSyncContextImpl();
   background_sync_context->Init(service_worker_context);
 
-  scoped_refptr<StashedPortManager> stashed_port_manager =
-      new StashedPortManager(service_worker_context);
-  stashed_port_manager->Init();
-
   StoragePartitionImpl* storage_partition = new StoragePartitionImpl(
       context, partition_path, quota_manager.get(), appcache_service.get(),
       filesystem_context.get(), database_tracker.get(),
@@ -550,7 +508,7 @@ StoragePartitionImpl* StoragePartitionImpl::Create(
       webrtc_identity_store.get(), special_storage_policy.get(),
       geofencing_manager.get(), host_zoom_level_context.get(),
       navigator_connect_context.get(), platform_notification_context.get(),
-      background_sync_context.get(), stashed_port_manager.get());
+      background_sync_context.get());
 
   service_worker_context->set_storage_partition(storage_partition);
 
@@ -632,10 +590,6 @@ StoragePartitionImpl::GetPlatformNotificationContext() {
 
 BackgroundSyncContextImpl* StoragePartitionImpl::GetBackgroundSyncContext() {
   return background_sync_context_.get();
-}
-
-StashedPortManager* StoragePartitionImpl::GetStashedPortManager() {
-  return stashed_port_manager_.get();
 }
 
 void StoragePartitionImpl::ClearDataImpl(

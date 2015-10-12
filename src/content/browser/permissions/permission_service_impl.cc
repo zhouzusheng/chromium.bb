@@ -21,10 +21,14 @@ PermissionType PermissionNameToPermissionType(PermissionName name) {
       return PermissionType::NOTIFICATIONS;
     case PERMISSION_NAME_PUSH_NOTIFICATIONS:
       return PermissionType::PUSH_MESSAGING;
+    case PERMISSION_NAME_MIDI:
+      return PermissionType::MIDI;
     case PERMISSION_NAME_MIDI_SYSEX:
       return PermissionType::MIDI_SYSEX;
     case PERMISSION_NAME_PROTECTED_MEDIA_IDENTIFIER:
       return PermissionType::PROTECTED_MEDIA_IDENTIFIER;
+    case PERMISSION_NAME_DURABLE_STORAGE:
+      return PermissionType::DURABLE_STORAGE;
   }
 
   NOTREACHED();
@@ -68,6 +72,9 @@ PermissionServiceImpl::PermissionServiceImpl(
     : context_(context),
       binding_(this, request.Pass()),
       weak_factory_(this) {
+  binding_.set_connection_error_handler(
+      base::Bind(&PermissionServiceImpl::OnConnectionError,
+                 base::Unretained(this)));
 }
 
 PermissionServiceImpl::~PermissionServiceImpl() {

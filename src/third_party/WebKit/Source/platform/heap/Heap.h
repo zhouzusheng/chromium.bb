@@ -57,6 +57,16 @@ const size_t blinkPageBaseMask = ~blinkPageOffsetMask;
 // away the page tables and lead to bad performance.
 const size_t blinkPagesPerRegion = 10;
 
+// TODO(nya): Replace this with something like #if ENABLE_NACL.
+#if 0
+// NaCl's system page size is 64 KB. This causes a problem in Oilpan's heap
+// layout because Oilpan allocates two guard pages for each blink page
+// (whose size is 128 KB). So we don't use guard pages in NaCl.
+const size_t blinkGuardPageSize = 0;
+#else
+const size_t blinkGuardPageSize = WTF::kSystemPageSize;
+#endif
+
 // Double precision floats are more efficient when 8 byte aligned, so we 8 byte
 // align all allocations even on 32 bit.
 const size_t allocationGranularity = 8;
@@ -78,12 +88,23 @@ const uint8_t reuseForbiddenZapValue = 0x2c;
 // memory is zeroed out when the memory is reused in Heap::allocateObject().
 // In production builds, memory is not zapped (for performance). The memory
 // is just zeroed out when it is added to the free list.
-#if ENABLE(ASSERT) || defined(LEAK_SANITIZER) || defined(ADDRESS_SANITIZER)
-#define FILL_ZERO_IF_PRODUCTION(address, size) FreeList::zapFreedMemory(address, size)
-#define FILL_ZERO_IF_NOT_PRODUCTION(address, size) memset((address), 0, (size))
+#if defined(MEMORY_SANITIZER)
+// TODO(kojii): We actually need __msan_poison/unpoison here, but it'll be
+// added later.
+#define SET_MEMORY_INACCESSIBLE(address, size) \
+    FreeList::zapFreedMemory(address, size);
+#define SET_MEMORY_ACCESSIBLE(address, size) \
+    memset((address), 0, (size))
+#elif ENABLE(ASSERT) || defined(LEAK_SANITIZER) || defined(ADDRESS_SANITIZER)
+#define SET_MEMORY_INACCESSIBLE(address, size) \
+    FreeList::zapFreedMemory(address, size);   \
+    ASAN_POISON_MEMORY_REGION(address, size)
+#define SET_MEMORY_ACCESSIBLE(address, size) \
+    ASAN_UNPOISON_MEMORY_REGION(address, size);    \
+    memset((address), 0, (size))
 #else
-#define FILL_ZERO_IF_PRODUCTION(address, size) memset((address), 0, (size))
-#define FILL_ZERO_IF_NOT_PRODUCTION(address, size) do { } while (false)
+#define SET_MEMORY_INACCESSIBLE(address, size) memset((address), 0, (size))
+#define SET_MEMORY_ACCESSIBLE(address, size) do { } while (false)
 #endif
 
 class CallbackStack;
@@ -91,6 +112,7 @@ class FreePagePool;
 class NormalPageHeap;
 class OrphanedPagePool;
 class PageMemory;
+class PageMemoryRegion;
 class WebProcessMemoryDump;
 
 #if ENABLE(GC_PROFILING)
@@ -286,7 +308,7 @@ private:
 // Blink heap pages are set up with a guard page before and after the payload.
 inline size_t blinkPagePayloadSize()
 {
-    return blinkPageSize - 2 * WTF::kSystemPageSize;
+    return blinkPageSize - 2 * blinkGuardPageSize;
 }
 
 // Blink heap pages are aligned to the Blink heap page size.
@@ -319,7 +341,7 @@ inline bool vTableInitialized(void* objectPointer)
 // aligned.
 inline bool isPageHeaderAddress(Address address)
 {
-    return !((reinterpret_cast<uintptr_t>(address) & blinkPageOffsetMask) - WTF::kSystemPageSize);
+    return !((reinterpret_cast<uintptr_t>(address) & blinkPageOffsetMask) - blinkGuardPageSize);
 }
 #endif
 
@@ -376,7 +398,7 @@ public:
     virtual void checkAndMarkPointer(Visitor*, Address) = 0;
     virtual void markOrphaned();
 
-    virtual void takeSnapshot(String dumpBaseName, size_t pageIndex, size_t* outFreeSize, size_t* outFreeCount) = 0;
+    virtual void takeSnapshot(String dumpBaseName, size_t pageIndex, ThreadState::GCSnapshotInfo&, size_t* outFreeSize, size_t* outFreeCount) = 0;
 #if ENABLE(GC_PROFILING)
     virtual const GCInfo* findGCInfo(Address) = 0;
     virtual void snapshot(TracedValue*, ThreadState::SnapshotInfo*) = 0;
@@ -458,7 +480,7 @@ public:
     void checkAndMarkPointer(Visitor*, Address) override;
     void markOrphaned() override;
 
-    void takeSnapshot(String dumpBaseName, size_t pageIndex, size_t* outFreeSize, size_t* outFreeCount) override;
+    void takeSnapshot(String dumpBaseName, size_t pageIndex, ThreadState::GCSnapshotInfo&, size_t* outFreeSize, size_t* outFreeCount) override;
 #if ENABLE(GC_PROFILING)
     const GCInfo* findGCInfo(Address) override;
     void snapshot(TracedValue*, ThreadState::SnapshotInfo*) override;
@@ -523,7 +545,7 @@ public:
     void checkAndMarkPointer(Visitor*, Address) override;
     void markOrphaned() override;
 
-    void takeSnapshot(String dumpBaseName, size_t pageIndex, size_t* outFreeSize, size_t* outFreeCount) override;
+    void takeSnapshot(String dumpBaseName, size_t pageIndex, ThreadState::GCSnapshotInfo&, size_t* outFreeSize, size_t* outFreeCount) override;
 #if ENABLE(GC_PROFILING)
     const GCInfo* findGCInfo(Address) override;
     void snapshot(TracedValue*, ThreadState::SnapshotInfo*) override;
@@ -643,7 +665,7 @@ public:
     void getFreeSizeStats(PerBucketFreeListStats bucketStats[], size_t& totalSize) const;
 #endif
 
-#if ENABLE(ASSERT) || defined(LEAK_SANITIZER) || defined(ADDRESS_SANITIZER)
+#if ENABLE(ASSERT) || defined(LEAK_SANITIZER) || defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER)
     static void zapFreedMemory(Address, size_t);
 #endif
 
@@ -669,7 +691,7 @@ public:
     virtual ~BaseHeap();
     void cleanupPages();
 
-    void takeSnapshot(const String& dumpBaseName);
+    void takeSnapshot(const String& dumpBaseName, ThreadState::GCSnapshotInfo&);
 #if ENABLE(ASSERT) || ENABLE(GC_PROFILING)
     BasePage* findPageFromAddress(Address);
 #endif
@@ -788,13 +810,13 @@ private:
 };
 
 // Mask an address down to the enclosing oilpan heap base page.  All oilpan heap
-// pages are aligned at blinkPageBase plus an OS page size.
+// pages are aligned at blinkPageBase plus the size of a guard size.
 // FIXME: Remove PLATFORM_EXPORT once we get a proper public interface to our
 // typed heaps.  This is only exported to enable tests in HeapTest.cpp.
 PLATFORM_EXPORT inline BasePage* pageFromObject(const void* object)
 {
     Address address = reinterpret_cast<Address>(const_cast<void*>(object));
-    BasePage* page = reinterpret_cast<BasePage*>(blinkPageAddress(address) + WTF::kSystemPageSize);
+    BasePage* page = reinterpret_cast<BasePage*>(blinkPageAddress(address) + blinkGuardPageSize);
     ASSERT(page->contains(address));
     return page;
 }
@@ -1007,6 +1029,8 @@ public:
         return info;
     }
 
+    static void setMarkedObjectSizeAtLastCompleteSweep(size_t size) { releaseStore(&s_markedObjectSizeAtLastCompleteSweep, size); }
+    static size_t markedObjectSizeAtLastCompleteSweep() { return acquireLoad(&s_markedObjectSizeAtLastCompleteSweep); }
     static void increaseAllocatedObjectSize(size_t delta) { atomicAdd(&s_allocatedObjectSize, static_cast<long>(delta)); }
     static void decreaseAllocatedObjectSize(size_t delta) { atomicSubtract(&s_allocatedObjectSize, static_cast<long>(delta)); }
     static size_t allocatedObjectSize() { return acquireLoad(&s_allocatedObjectSize); }
@@ -1015,18 +1039,18 @@ public:
     static void increaseAllocatedSpace(size_t delta) { atomicAdd(&s_allocatedSpace, static_cast<long>(delta)); }
     static void decreaseAllocatedSpace(size_t delta) { atomicSubtract(&s_allocatedSpace, static_cast<long>(delta)); }
     static size_t allocatedSpace() { return acquireLoad(&s_allocatedSpace); }
-    static size_t estimatedLiveObjectSize() { return acquireLoad(&s_estimatedLiveObjectSize); }
-    static void setEstimatedLiveObjectSize(size_t size) { releaseStore(&s_estimatedLiveObjectSize, size); }
-    static size_t externalObjectSizeAtLastGC() { return acquireLoad(&s_externalObjectSizeAtLastGC); }
+    static size_t objectSizeAtLastGC() { return acquireLoad(&s_objectSizeAtLastGC); }
+    static void increasePersistentCount(size_t delta) { atomicAdd(&s_persistentCount, static_cast<long>(delta)); }
+    static void decreasePersistentCount(size_t delta) { atomicSubtract(&s_persistentCount, static_cast<long>(delta)); }
+    static size_t persistentCount() { return acquireLoad(&s_persistentCount); }
+    static size_t persistentCountAtLastGC() { return acquireLoad(&s_persistentCountAtLastGC); }
+    static void increaseCollectedPersistentCount(size_t delta) { atomicAdd(&s_collectedPersistentCount, static_cast<long>(delta)); }
+    static size_t collectedPersistentCount() { return acquireLoad(&s_collectedPersistentCount); }
+    static size_t partitionAllocSizeAtLastGC() { return acquireLoad(&s_partitionAllocSizeAtLastGC); }
 
     static double estimatedMarkingTime();
     static void reportMemoryUsageHistogram();
-
-#if ENABLE(GC_PROFILING)
     static void reportMemoryUsageForTracing();
-#else
-    static void reportMemoryUsageForTracing() { }
-#endif
 
 private:
     // A RegionTree is a simple binary search tree of PageMemoryRegions sorted
@@ -1065,9 +1089,13 @@ private:
     static RegionTree* s_regionTree;
     static size_t s_allocatedSpace;
     static size_t s_allocatedObjectSize;
+    static size_t s_objectSizeAtLastGC;
     static size_t s_markedObjectSize;
-    static size_t s_estimatedLiveObjectSize;
-    static size_t s_externalObjectSizeAtLastGC;
+    static size_t s_markedObjectSizeAtLastCompleteSweep;
+    static size_t s_persistentCount;
+    static size_t s_persistentCountAtLastGC;
+    static size_t s_collectedPersistentCount;
+    static size_t s_partitionAllocSizeAtLastGC;
     static double s_estimatedMarkingTimePerByte;
 
     friend class ThreadState;
@@ -1314,9 +1342,7 @@ inline Address NormalPageHeap::allocateObject(size_t allocationSize, size_t gcIn
         Address result = headerAddress + sizeof(HeapObjectHeader);
         ASSERT(!(reinterpret_cast<uintptr_t>(result) & allocationMask));
 
-        // Unpoison the memory used for the object (payload).
-        ASAN_UNPOISON_MEMORY_REGION(result, allocationSize - sizeof(HeapObjectHeader));
-        FILL_ZERO_IF_NOT_PRODUCTION(result, allocationSize - sizeof(HeapObjectHeader));
+        SET_MEMORY_ACCESSIBLE(result, allocationSize - sizeof(HeapObjectHeader));
         ASSERT(findPageFromAddress(headerAddress + allocationSize - 1));
         return result;
     }

@@ -35,8 +35,11 @@
 #include "core/page/EventWithHitTestResults.h"
 #include "platform/geometry/IntPoint.h"
 #include "platform/geometry/IntRect.h"
+#include "platform/graphics/CompositedDisplayList.h"
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/heap/Handle.h"
+#include "public/platform/WebCompositedDisplayList.h"
+#include "public/platform/WebCompositorAnimationTimeline.h"
 #include "public/platform/WebDisplayMode.h"
 #include "public/platform/WebFloatSize.h"
 #include "public/platform/WebGestureCurveTarget.h"
@@ -48,13 +51,13 @@
 #include "public/platform/WebVector.h"
 #include "public/web/WebInputEvent.h"
 #include "public/web/WebNavigationPolicy.h"
+#include "public/web/WebPageImportanceSignals.h"
 #include "public/web/WebView.h"
 #include "web/ChromeClientImpl.h"
 #include "web/ContextMenuClientImpl.h"
 #include "web/DragClientImpl.h"
 #include "web/EditorClientImpl.h"
 #include "web/MediaKeysClientImpl.h"
-#include "web/PageOverlayList.h"
 #include "web/PageWidgetDelegate.h"
 #include "web/SpellCheckerClientImpl.h"
 #include "web/StorageClientImpl.h"
@@ -71,13 +74,13 @@ class Frame;
 class FullscreenController;
 class InspectorOverlay;
 class InspectorOverlayImpl;
-class LinkHighlight;
+class LinkHighlightImpl;
+class PageOverlay;
 class PageScaleConstraintsSet;
 class DeprecatedPaintLayerCompositor;
 class TopControls;
 class UserGestureToken;
 class WebActiveGestureAnimation;
-class WebCompositorAnimationTimeline;
 class WebDevToolsAgentImpl;
 class WebElement;
 class WebLayerTreeView;
@@ -116,6 +119,7 @@ public:
     WebSize size() override;
     void willStartLiveResize() override;
     void resize(const WebSize&) override;
+    void resizeVisualViewport(const WebSize&) override;
     void resizePinchViewport(const WebSize&) override;
     void willEndLiveResize() override;
     void didEnterFullScreen() override;
@@ -123,7 +127,6 @@ public:
 
     void beginFrame(const WebBeginFrameArgs&) override;
 
-    void setNeedsLayoutAndFullPaintInvalidation() override;
     void layout() override;
     void paint(WebCanvas*, const WebRect&) override;
 #if OS(ANDROID)
@@ -137,7 +140,7 @@ public:
     bool hasTouchEventHandlersAt(const WebPoint&) override;
 
     void applyViewportDeltas(
-        const WebFloatSize& pinchViewportDelta,
+        const WebFloatSize& visualViewportDelta,
         const WebFloatSize& layoutViewportDelta,
         const WebFloatSize& elasticOverscrollDelta,
         float pageScaleDelta,
@@ -199,6 +202,7 @@ public:
     void setInitialFocus(bool reverse) override;
     void clearFocusedElement() override;
     bool scrollFocusedNodeIntoRect(const WebRect&) override;
+    void smoothScroll(int targetX, int targetY, long durationMs) override;
     void zoomToFindInPageRect(const WebRect&);
     void advanceFocus(bool reverse) override;
     double zoomLevel() override;
@@ -212,7 +216,9 @@ public:
     void setInitialPageScaleOverride(float) override;
     void setMaximumLegibleScale(float) override;
     void setPageScaleFactor(float) override;
+    void setVisualViewportOffset(const WebFloatPoint&) override;
     void setPinchViewportOffset(const WebFloatPoint&) override;
+    WebFloatPoint visualViewportOffset() const override;
     WebFloatPoint pinchViewportOffset() const override;
     void resetScrollAndScaleState() override;
     void setIgnoreViewportTagScaleLimits(bool) override;
@@ -273,16 +279,17 @@ public:
     void showContextMenu() override;
     void extractSmartClipData(WebRect, WebString&, WebString&, WebRect&) override;
     void hidePopups() override;
-    void addPageOverlay(WebPageOverlay*, int /* zOrder */) override;
-    void removePageOverlay(WebPageOverlay*) override;
+    void setPageOverlayColor(WebColor) override;
     void transferActiveWheelFlingAnimation(const WebActiveWheelFlingParameters&) override;
     bool endActiveFlingAnimation() override;
     void setShowPaintRects(bool) override;
     void setShowDebugBorders(bool);
     void setShowFPSCounter(bool) override;
-    void setContinuousPaintingEnabled(bool) override;
     void setShowScrollBottleneckRects(bool) override;
     void acceptLanguagesChanged() override;
+
+    void setCompositedDisplayList(PassOwnPtr<CompositedDisplayList>);
+    WebCompositedDisplayList* compositedDisplayList() override;
 
     // WebViewImpl
     void enableViewport();
@@ -293,6 +300,7 @@ public:
     float minimumPageScaleFactor() const;
     float maximumPageScaleFactor() const;
     float clampPageScaleFactorToLimits(float) const;
+    void resetScrollAndScaleStateImmediately();
 
     HitTestResult coreHitTestResultAt(const WebPoint&);
     void suppressInvalidations(bool enable);
@@ -301,7 +309,7 @@ public:
     void setIgnoreInputEvents(bool newValue);
     void setBackgroundColorOverride(WebColor);
     void setZoomFactorOverride(float);
-    void updateShowFPSCounterAndContinuousPainting();
+    void updateShowFPSCounter();
     void setCompositorDeviceScaleFactorOverride(float);
     void setRootLayerTransform(const WebSize& offset, float scale);
 
@@ -325,10 +333,6 @@ public:
     virtual void abortRubberbanding() override;
     virtual WebString getTextInRubberband(const WebRect&) override;
 
-
-    PageOverlayList* pageOverlays() const { return m_pageOverlays.get(); }
-
-    void setOverlayLayer(GraphicsLayer*);
 
     const WebPoint& lastMouseDownPoint() const
     {
@@ -474,6 +478,7 @@ public:
     void scheduleAnimation();
     void attachCompositorAnimationTimeline(WebCompositorAnimationTimeline*);
     void detachCompositorAnimationTimeline(WebCompositorAnimationTimeline*);
+    WebCompositorAnimationTimeline* linkHighlightsTimeline() const { return m_linkHighlightsTimeline.get(); }
 
     void setVisibilityState(WebPageVisibilityState, bool) override;
 
@@ -530,15 +535,12 @@ public:
 
     // Exposed for tests.
     unsigned numLinkHighlights() { return m_linkHighlights.size(); }
-    LinkHighlight* linkHighlight(int i) { return m_linkHighlights[i].get(); }
+    LinkHighlightImpl* linkHighlight(int i) { return m_linkHighlights[i].get(); }
 
     WebSettingsImpl* settingsImpl();
 
     // Returns the bounding box of the block type node touched by the WebPoint.
     WebRect computeBlockBound(const WebPoint&, bool ignoreClipping);
-
-    // Exposed for tests.
-    WebVector<WebCompositionUnderline> compositionUnderlines() const;
 
     WebLayerTreeView* layerTreeView() const { return m_layerTreeView; }
 
@@ -561,13 +563,16 @@ public:
 
     FloatSize elasticOverscroll() const { return m_elasticOverscroll; }
 
+    WebPageImportanceSignals& pageImportanceSignals() { return m_pageImportanceSignals; }
+
 private:
     void setPageScaleFactorAndLocation(float, const FloatPoint&);
 
-    void scrollAndRescaleViewports(float scaleFactor, const IntPoint& mainFrameOrigin, const FloatPoint& pinchViewportOrigin);
+    void scrollAndRescaleViewports(float scaleFactor, const IntPoint& mainFrameOrigin, const FloatPoint& visualViewportOrigin);
 
     float maximumLegiblePageScale() const;
     void refreshPageScaleFactorAfterLayout();
+    void resetScrollAndScaleState(bool immediately);
     void resumeTreeViewCommits();
     IntSize contentsSize() const;
 
@@ -647,11 +652,12 @@ private:
     void disablePopupMouseWheelEventListener();
 
     void cancelPagePopup();
+    void updatePageOverlays();
 
     WebViewClient* m_client; // Can be 0 (e.g. unittests, shared workers, etc.)
     WebSpellCheckClient* m_spellCheckClient;
 
-    ChromeClientImpl m_chromeClientImpl;
+    OwnPtrWillBePersistent<ChromeClientImpl> m_chromeClientImpl;
     ContextMenuClientImpl m_contextMenuClientImpl;
     DragClientImpl m_dragClientImpl;
     EditorClientImpl m_editorClientImpl;
@@ -739,8 +745,8 @@ private:
     RefPtr<WebPagePopupImpl> m_pagePopup;
 
     OwnPtrWillBePersistent<InspectorOverlayImpl> m_inspectorOverlay;
-    OwnPtr<DevToolsEmulator> m_devToolsEmulator;
-    OwnPtr<PageOverlayList> m_pageOverlays;
+    OwnPtrWillBePersistent<DevToolsEmulator> m_devToolsEmulator;
+    OwnPtr<PageOverlay> m_pageColorOverlay;
     OwnPtr<RubberbandState> m_rubberbandState;
 
     // Whether Alt+Mousedrag rubberbanding is enabled or not.
@@ -769,27 +775,32 @@ private:
     bool m_recreatingGraphicsContext;
     static const WebInputEvent* m_currentInputEvent;
 
+    WebCompositedDisplayList m_compositedDisplayList;
+
     MediaKeysClientImpl m_mediaKeysClientImpl;
     OwnPtr<WebActiveGestureAnimation> m_gestureAnimation;
     WebPoint m_positionOnFlingStart;
     WebPoint m_globalPositionOnFlingStart;
     int m_flingModifier;
     bool m_flingSourceDevice;
-    Vector<OwnPtr<LinkHighlight>> m_linkHighlights;
+    Vector<OwnPtr<LinkHighlightImpl>> m_linkHighlights;
+    OwnPtr<WebCompositorAnimationTimeline> m_linkHighlightsTimeline;
     OwnPtrWillBePersistent<FullscreenController> m_fullscreenController;
 
     bool m_showFPSCounter;
-    bool m_continuousPaintingEnabled;
     WebColor m_baseBackgroundColor;
     WebColor m_backgroundColorOverride;
     float m_zoomFactorOverride;
 
     bool m_userGestureObserved;
+    bool m_shouldDispatchFirstVisuallyNonEmptyLayout;
     WebDisplayMode m_displayMode;
 
     FloatSize m_elasticOverscroll;
 
-    RefPtr<EventListener> m_popupMouseWheelEventListener;
+    RefPtrWillBePersistent<EventListener> m_popupMouseWheelEventListener;
+
+    WebPageImportanceSignals m_pageImportanceSignals;
 };
 
 DEFINE_TYPE_CASTS(WebViewImpl, WebWidget, widget, widget->isWebView(), widget.isWebView());

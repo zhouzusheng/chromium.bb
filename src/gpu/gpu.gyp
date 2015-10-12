@@ -149,10 +149,11 @@
         '../base/base.gyp:base',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '<(angle_path)/src/angle.gyp:translator',
-        '../ui/gl/gl.gyp:gl',
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/gfx/gfx.gyp:gfx_geometry',
         '../ui/gfx/gfx.gyp:gfx_test_support',
+        '../ui/gl/gl.gyp:gl',
+        '../ui/gl/gl.gyp:gl_test_support',
         'command_buffer/command_buffer.gyp:gles2_utils',
         'command_buffer_client',
         'command_buffer_common',
@@ -245,6 +246,7 @@
         'command_buffer/service/shader_translator_unittest.cc',
         'command_buffer/service/test_helper.cc',
         'command_buffer/service/test_helper.h',
+        'command_buffer/service/path_manager_unittest.cc',
         'command_buffer/service/texture_manager_unittest.cc',
         'command_buffer/service/transfer_buffer_manager_unittest.cc',
         'command_buffer/service/valuebuffer_manager_unittest.cc',
@@ -652,7 +654,7 @@
     ['OS == "win" or (OS == "linux" and use_x11==1)', {
       'targets': [
         {
-          # TODO(kbr): port this target to the GN build.
+          # TODO(crbug.com/519834): port this target to the GN build.
           'target_name': 'angle_end2end_tests',
           'type': '<(gtest_target_type)',
           'dependencies': [
@@ -719,7 +721,20 @@
           # and is only a part of the Chromium build to allow easy integration
           # with the GPU bot waterfall. (Note that dEQP uses exceptions, and
           # currently can't build with Clang on Windows)
-          'target_name': 'angle_deqp_tests',
+          'target_name': 'angle_deqp_gles2_tests',
+          'type': '<(gtest_target_type)',
+          'dependencies': [
+            '../base/base.gyp:base',
+          ],
+          'includes': [
+            '../third_party/angle/build/common_defines.gypi',
+          ],
+          'sources': [
+            'angle_deqp_tests_main.cc',
+          ],
+        },
+        {
+          'target_name': 'angle_deqp_gles3_tests',
           'type': '<(gtest_target_type)',
           'dependencies': [
             '../base/base.gyp:base',

@@ -25,20 +25,21 @@ DisplayListRasterSource::CreateFromDisplayListRecordingSource(
 }
 
 DisplayListRasterSource::DisplayListRasterSource()
-    : background_color_(SK_ColorTRANSPARENT),
+    : painter_reported_memory_usage_(0),
+      background_color_(SK_ColorTRANSPARENT),
       requires_clear_(true),
       can_use_lcd_text_(true),
       is_solid_color_(false),
       solid_color_(SK_ColorTRANSPARENT),
       clear_canvas_with_debug_color_(false),
       slow_down_raster_scale_factor_for_debug_(0),
-      should_attempt_to_use_distance_field_text_(false) {
-}
+      should_attempt_to_use_distance_field_text_(false) {}
 
 DisplayListRasterSource::DisplayListRasterSource(
     const DisplayListRecordingSource* other,
     bool can_use_lcd_text)
     : display_list_(other->display_list_),
+      painter_reported_memory_usage_(other->painter_reported_memory_usage_),
       background_color_(other->background_color_),
       requires_clear_(other->requires_clear_),
       can_use_lcd_text_(can_use_lcd_text),
@@ -49,13 +50,13 @@ DisplayListRasterSource::DisplayListRasterSource(
       clear_canvas_with_debug_color_(other->clear_canvas_with_debug_color_),
       slow_down_raster_scale_factor_for_debug_(
           other->slow_down_raster_scale_factor_for_debug_),
-      should_attempt_to_use_distance_field_text_(false) {
-}
+      should_attempt_to_use_distance_field_text_(false) {}
 
 DisplayListRasterSource::DisplayListRasterSource(
     const DisplayListRasterSource* other,
     bool can_use_lcd_text)
     : display_list_(other->display_list_),
+      painter_reported_memory_usage_(other->painter_reported_memory_usage_),
       background_color_(other->background_color_),
       requires_clear_(other->requires_clear_),
       can_use_lcd_text_(can_use_lcd_text),
@@ -67,8 +68,7 @@ DisplayListRasterSource::DisplayListRasterSource(
       slow_down_raster_scale_factor_for_debug_(
           other->slow_down_raster_scale_factor_for_debug_),
       should_attempt_to_use_distance_field_text_(
-          other->should_attempt_to_use_distance_field_text_) {
-}
+          other->should_attempt_to_use_distance_field_text_) {}
 
 DisplayListRasterSource::~DisplayListRasterSource() {
 }
@@ -116,8 +116,11 @@ void DisplayListRasterSource::RasterCommon(
   DCHECK(display_list_.get());
   gfx::Rect canvas_target_playback_rect =
       canvas_playback_rect - canvas_bitmap_rect.OffsetFromOrigin();
-  display_list_->Raster(canvas, callback, canvas_target_playback_rect,
-                        contents_scale);
+  int repeat_count = std::max(1, slow_down_raster_scale_factor_for_debug_);
+  for (int i = 0; i < repeat_count; ++i) {
+    display_list_->Raster(canvas, callback, canvas_target_playback_rect,
+                          contents_scale);
+  }
 }
 
 skia::RefPtr<SkPicture> DisplayListRasterSource::GetFlattenedPicture() {
@@ -138,7 +141,8 @@ skia::RefPtr<SkPicture> DisplayListRasterSource::GetFlattenedPicture() {
 size_t DisplayListRasterSource::GetPictureMemoryUsage() const {
   if (!display_list_)
     return 0;
-  return display_list_->ApproximateMemoryUsage();
+  return display_list_->ApproximateMemoryUsage() +
+         painter_reported_memory_usage_;
 }
 
 void DisplayListRasterSource::PerformSolidColorAnalysis(
@@ -160,7 +164,7 @@ void DisplayListRasterSource::PerformSolidColorAnalysis(
 void DisplayListRasterSource::GatherPixelRefs(
     const gfx::Rect& content_rect,
     float contents_scale,
-    std::vector<SkPixelRef*>* pixel_refs) const {
+    std::vector<skia::PositionPixelRef>* pixel_refs) const {
   DCHECK_EQ(0u, pixel_refs->size());
 
   gfx::Rect layer_rect =

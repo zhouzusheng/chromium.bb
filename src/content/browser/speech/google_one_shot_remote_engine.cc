@@ -37,7 +37,6 @@ const char* const kConfidenceString = "confidence";
 const int kWebServiceStatusNoError = 0;
 const int kWebServiceStatusNoSpeech = 4;
 const int kWebServiceStatusNoMatch = 5;
-const AudioEncoder::Codec kDefaultAudioCodec = AudioEncoder::CODEC_FLAC;
 
 bool ParseServerResponse(const std::string& response_body,
                          SpeechRecognitionResult* result,
@@ -211,15 +210,15 @@ void GoogleOneShotRemoteEngine::StartRecognition() {
   parts.push_back("key=" + net::EscapeQueryParamValue(api_key, true));
 #endif
 
-  GURL url(std::string(kDefaultSpeechRecognitionUrl) + JoinString(parts, '&'));
+  GURL url(std::string(kDefaultSpeechRecognitionUrl) +
+           base::JoinString(parts, "&"));
 
-  encoder_.reset(AudioEncoder::Create(kDefaultAudioCodec,
-                                      config_.audio_sample_rate,
-                                      config_.audio_num_bits_per_sample));
+  encoder_.reset(new AudioEncoder(config_.audio_sample_rate,
+                                  config_.audio_num_bits_per_sample));
   DCHECK(encoder_.get());
   url_fetcher_ = net::URLFetcher::Create(url_fetcher_id_for_tests, url,
                                          net::URLFetcher::POST, this);
-  url_fetcher_->SetChunkedUpload(encoder_->mime_type());
+  url_fetcher_->SetChunkedUpload(encoder_->GetMimeType());
   url_fetcher_->SetRequestContext(url_context_.get());
   url_fetcher_->SetReferrer(config_.origin_url);
 
@@ -255,7 +254,7 @@ void GoogleOneShotRemoteEngine::AudioChunksEnded() {
   size_t sample_count =
       config_.audio_sample_rate * kAudioPacketIntervalMs / 1000;
   scoped_refptr<AudioChunk> dummy_chunk(new AudioChunk(
-      sample_count * sizeof(int16), encoder_->bits_per_sample() / 8));
+      sample_count * sizeof(int16), encoder_->GetBitsPerSample() / 8));
   encoder_->Encode(*dummy_chunk.get());
   encoder_->Flush();
   scoped_refptr<AudioChunk> encoded_dummy_data(

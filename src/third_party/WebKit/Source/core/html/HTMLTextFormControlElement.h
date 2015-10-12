@@ -26,7 +26,7 @@
 #define HTMLTextFormControlElement_h
 
 #include "core/CoreExport.h"
-#include "core/dom/Position.h"
+#include "core/editing/Position.h"
 #include "core/html/HTMLFormControlElementWithState.h"
 
 namespace blink {
@@ -141,8 +141,8 @@ private:
     int computeSelectionEnd() const;
     TextFieldSelectionDirection computeSelectionDirection() const;
 
-    void dispatchFocusEvent(Element* oldFocusedElement, WebFocusType) final;
-    void dispatchBlurEvent(Element* newFocusedElement, WebFocusType) final;
+    void dispatchFocusEvent(Element* oldFocusedElement, WebFocusType, InputDeviceCapabilities* sourceCapabilities) final;
+    void dispatchBlurEvent(Element* newFocusedElement, WebFocusType, InputDeviceCapabilities* sourceCapabilities) final;
     void scheduleSelectEvent();
 
     // Returns true if user-editable value is empty. Used to check placeholder visibility.

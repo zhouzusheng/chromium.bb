@@ -9,7 +9,7 @@
 #define GrTextureDomainEffect_DEFINED
 
 #include "GrSingleTextureEffect.h"
-#include "gl/GrGLProcessor.h"
+#include "gl/GrGLFragmentProcessor.h"
 
 class GrGLProgramBuilder;
 class GrGLShaderBuilder;
@@ -169,10 +169,6 @@ public:
 
     const char* name() const override { return "TextureDomain"; }
 
-    void getGLProcessorKey(const GrGLSLCaps&, GrProcessorKeyBuilder*) const override;
-
-    GrGLFragmentProcessor* createGLInstance() const override;
-
     const GrTextureDomain& textureDomain() const { return fTextureDomain; }
 
 protected:
@@ -186,6 +182,10 @@ private:
                           GrTextureDomain::Mode,
                           GrTextureParams::FilterMode,
                           GrCoordSet);
+
+    GrGLFragmentProcessor* onCreateGLInstance() const override;
+
+    void onGetGLProcessorKey(const GrGLSLCaps&, GrProcessorKeyBuilder*) const override;
 
     bool onIsEqual(const GrFragmentProcessor&) const override;
 

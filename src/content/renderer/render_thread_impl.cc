@@ -29,8 +29,10 @@
 #include "base/threading/simple_thread.h"
 #include "base/threading/thread_local.h"
 #include "base/threading/thread_restrictions.h"
+#include "base/trace_event/memory_dump_manager.h"
 #include "base/trace_event/trace_event.h"
 #include "base/values.h"
+#include "cc/base/histograms.h"
 #include "cc/base/switches.h"
 #include "cc/blink/web_external_bitmap_impl.h"
 #include "cc/blink/web_layer_impl.h"
@@ -68,6 +70,7 @@
 #include "content/common/gpu/gpu_process_launch_causes.h"
 #include "content/common/render_frame_setup.mojom.h"
 #include "content/common/resource_messages.h"
+#include "content/common/service_worker/embedded_worker_setup.mojom.h"
 #include "content/common/view_messages.h"
 #include "content/common/worker_messages.h"
 #include "content/public/common/content_constants.h"
@@ -79,6 +82,7 @@
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/public/renderer/render_process_observer.h"
 #include "content/public/renderer/render_view_visitor.h"
+#include "content/renderer/bluetooth/bluetooth_message_filter.h"
 #include "content/renderer/browser_plugin/browser_plugin_manager.h"
 #include "content/renderer/cache_storage/cache_storage_dispatcher.h"
 #include "content/renderer/cache_storage/cache_storage_message_filter.h"
@@ -105,12 +109,14 @@
 #include "content/renderer/media/video_capture_message_filter.h"
 #include "content/renderer/net_info_helper.h"
 #include "content/renderer/p2p/socket_dispatcher.h"
+#include "content/renderer/raster_worker_pool.h"
 #include "content/renderer/render_frame_proxy.h"
 #include "content/renderer/render_process_impl.h"
 #include "content/renderer/render_view_impl.h"
 #include "content/renderer/renderer_blink_platform_impl.h"
 #include "content/renderer/scheduler/resource_dispatch_throttler.h"
 #include "content/renderer/service_worker/embedded_worker_dispatcher.h"
+#include "content/renderer/service_worker/service_worker_context_client.h"
 #include "content/renderer/service_worker/service_worker_context_message_filter.h"
 #include "content/renderer/shared_worker/embedded_shared_worker_stub.h"
 #include "gin/public/debug.h"
@@ -124,8 +130,10 @@
 #include "media/renderers/gpu_video_accelerator_factories.h"
 #include "mojo/common/common_type_converters.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_util.h"
+#include "net/base/port_util.h"
 #include "skia/ext/event_tracer_impl.h"
+#include "skia/ext/skia_memory_dump_provider.h"
+#include "third_party/WebKit/public/platform/WebImageGenerator.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebThread.h"
 #include "third_party/WebKit/public/web/WebCache.h"
@@ -234,6 +242,8 @@ class RenderViewZoomer : public RenderViewVisitor {
 
   bool Visit(RenderView* render_view) override {
     WebView* webview = render_view->GetWebView();
+    RenderViewImpl* render_view_impl =
+        static_cast<RenderViewImpl*>(render_view);
     // Remote frames don't host documents.
     // TODO(wjmaclean) Although it seems likely that a frame without a
     // document can safely early-out here, we should confirm this is truly
@@ -251,10 +261,9 @@ class RenderViewZoomer : public RenderViewVisitor {
     // Empty scheme works as wildcard that matches any scheme,
     if ((net::GetHostOrSpecFromURL(url) == host_) &&
         (scheme_.empty() || scheme_ == url.scheme()) &&
-        !static_cast<RenderViewImpl*>(render_view)
-             ->uses_temporary_zoom_level()) {
+        !render_view_impl->uses_temporary_zoom_level()) {
       webview->hidePopups();
-      webview->setZoomLevel(zoom_level_);
+      render_view_impl->SetZoomLevel(zoom_level_);
     }
     return true;
   }
@@ -378,128 +387,60 @@ blink::WebGraphicsContext3D::Attributes GetOffscreenAttribs() {
   return attributes;
 }
 
+void SetupEmbeddedWorkerOnWorkerThread(
+    mojo::InterfaceRequest<mojo::ServiceProvider> services,
+    mojo::ServiceProviderPtr exposed_services) {
+  ServiceWorkerContextClient* client =
+      ServiceWorkerContextClient::ThreadSpecificInstance();
+  // It is possible for client to be null if for some reason the worker died
+  // before this call made it to the worker thread. In that case just do
+  // nothing and let mojo close the connection.
+  if (!client)
+    return;
+  client->BindServiceRegistry(services.Pass(), exposed_services.Pass());
+}
+
+class EmbeddedWorkerSetupImpl : public EmbeddedWorkerSetup {
+ public:
+  explicit EmbeddedWorkerSetupImpl(
+      mojo::InterfaceRequest<EmbeddedWorkerSetup> request)
+      : binding_(this, request.Pass()) {}
+
+  void ExchangeServiceProviders(
+      int32_t thread_id,
+      mojo::InterfaceRequest<mojo::ServiceProvider> services,
+      mojo::ServiceProviderPtr exposed_services) override {
+    WorkerTaskRunner::Instance()->GetTaskRunnerFor(thread_id)->PostTask(
+        FROM_HERE,
+        base::Bind(&SetupEmbeddedWorkerOnWorkerThread, base::Passed(&services),
+                   base::Passed(&exposed_services)));
+  }
+
+ private:
+  mojo::StrongBinding<EmbeddedWorkerSetup> binding_;
+};
+
+void CreateEmbeddedWorkerSetup(
+    mojo::InterfaceRequest<EmbeddedWorkerSetup> request) {
+  new EmbeddedWorkerSetupImpl(request.Pass());
+}
+
+void StringToUintVector(const std::string& str, std::vector<unsigned>* vector) {
+  DCHECK(vector->empty());
+  std::vector<std::string> pieces = base::SplitString(
+      str, ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
+  DCHECK_EQ(pieces.size(), static_cast<size_t>(gfx::BufferFormat::LAST) + 1);
+  for (size_t i = 0; i < pieces.size(); ++i) {
+    unsigned number = 0;
+    bool succeed = base::StringToUint(pieces[i], &number);
+    DCHECK(succeed);
+    vector->push_back(number);
+  }
+}
+
 RenderProcessImpl* g_render_process = 0;
 
 }  // namespace
-
-class RasterWorkerPool : public base::SequencedTaskRunner,
-                         public base::DelegateSimpleThread::Delegate {
- public:
-  RasterWorkerPool()
-      : namespace_token_(task_graph_runner_.GetNamespaceToken()) {}
-
-  void Start(int num_threads,
-             const base::SimpleThread::Options& thread_options) {
-    DCHECK(threads_.empty());
-    while (threads_.size() < static_cast<size_t>(num_threads)) {
-      scoped_ptr<base::DelegateSimpleThread> thread(
-          new base::DelegateSimpleThread(
-              this, base::StringPrintf(
-                        "CompositorTileWorker%u",
-                        static_cast<unsigned>(threads_.size() + 1)).c_str(),
-              thread_options));
-      thread->Start();
-      threads_.push_back(thread.Pass());
-    }
-  }
-
-  void Shutdown() {
-    // Shutdown raster threads.
-    task_graph_runner_.Shutdown();
-    while (!threads_.empty()) {
-      threads_.back()->Join();
-      threads_.pop_back();
-    }
-  }
-
-  // Overridden from base::TaskRunner:
-  bool PostDelayedTask(const tracked_objects::Location& from_here,
-                       const base::Closure& task,
-                       base::TimeDelta delay) override {
-    return PostNonNestableDelayedTask(from_here, task, delay);
-  }
-
-  bool RunsTasksOnCurrentThread() const override { return true; }
-
-  // Overridden from base::SequencedTaskRunner:
-  bool PostNonNestableDelayedTask(const tracked_objects::Location& from_here,
-                                  const base::Closure& task,
-                                  base::TimeDelta delay) override {
-    base::AutoLock lock(lock_);
-    DCHECK(!threads_.empty());
-
-    // Remove completed tasks.
-    DCHECK(completed_tasks_.empty());
-    task_graph_runner_.CollectCompletedTasks(namespace_token_,
-                                             &completed_tasks_);
-    DCHECK_LE(completed_tasks_.size(), tasks_.size());
-    DCHECK(std::equal(completed_tasks_.begin(), completed_tasks_.end(),
-                      tasks_.begin()));
-    tasks_.erase(tasks_.begin(), tasks_.begin() + completed_tasks_.size());
-    completed_tasks_.clear();
-
-    tasks_.push_back(make_scoped_refptr(new ClosureTask(task)));
-
-    graph_.Reset();
-    for (const auto& task : tasks_) {
-      cc::TaskGraph::Node node(task.get(), 0, graph_.nodes.size());
-      if (graph_.nodes.size()) {
-        graph_.edges.push_back(
-            cc::TaskGraph::Edge(graph_.nodes.back().task, node.task));
-      }
-      graph_.nodes.push_back(node);
-    }
-
-    task_graph_runner_.ScheduleTasks(namespace_token_, &graph_);
-    return true;
-  }
-
-  // Overridden from base::DelegateSimpleThread::Delegate:
-  void Run() override { task_graph_runner_.Run(); }
-
-  cc::TaskGraphRunner* GetTaskGraphRunner() { return &task_graph_runner_; }
-
- protected:
-  ~RasterWorkerPool() override {}
-
- private:
-  // Simple Task for the TaskGraphRunner that wraps a closure.
-  class ClosureTask : public cc::Task {
-   public:
-    ClosureTask(const base::Closure& closure) : closure_(closure) {}
-
-    // Overridden from cc::Task:
-    void RunOnWorkerThread() override {
-      closure_.Run();
-      closure_.Reset();
-    };
-
-   protected:
-    ~ClosureTask() override {}
-
-   private:
-    base::Closure closure_;
-
-    DISALLOW_COPY_AND_ASSIGN(ClosureTask);
-  };
-
-  // The actual threads where work is done.
-  ScopedVector<base::DelegateSimpleThread> threads_;
-  cc::TaskGraphRunner task_graph_runner_;
-
-  // Namespace where the SequencedTaskRunner tasks run.
-  const cc::NamespaceToken namespace_token_;
-
-  // Lock to exclusively access all the following members that are used to
-  // implement the SequencedTaskRunner interface.
-  base::Lock lock_;
-  // List of tasks currently queued up for execution.
-  ClosureTask::Vector tasks_;
-  // Cached vector to avoid allocation when getting the list of complete tasks.
-  ClosureTask::Vector completed_tasks_;
-  // Graph object used for scheduling tasks.
-  cc::TaskGraph graph_;
-};
 
 // For measuring memory usage after each task. Behind a command line flag.
 class MemoryObserver : public base::MessageLoop::TaskObserver {
@@ -521,7 +462,7 @@ class MemoryObserver : public base::MessageLoop::TaskObserver {
 void RenderThread::InitInProcessRenderer(const InProcessChildThreadParams& params)
 {
   g_render_process = new RenderProcessImpl();
-  RenderThreadImpl* thread = new RenderThreadImpl(params);
+  RenderThreadImpl* thread = RenderThreadImpl::Create(params);
   if (params.channel_name().empty()) {
     // Normally, WebKit is initialized in the browser's WebKit thread.  This is
     // necessary because there is code in the browser that depends on WebKit
@@ -604,15 +545,34 @@ void RenderThreadImpl::HistogramCustomizer::SetCommonHost(
   }
 }
 
+// static
+RenderThreadImpl* RenderThreadImpl::Create(
+    const InProcessChildThreadParams& params) {
+  scoped_ptr<scheduler::RendererScheduler> renderer_scheduler =
+      scheduler::RendererScheduler::Create();
+  return new RenderThreadImpl(params, renderer_scheduler.Pass());
+}
+
+// static
+RenderThreadImpl* RenderThreadImpl::Create(
+    scoped_ptr<base::MessageLoop> main_message_loop,
+    scoped_ptr<scheduler::RendererScheduler> renderer_scheduler) {
+  return new RenderThreadImpl(main_message_loop.Pass(),
+                              renderer_scheduler.Pass());
+}
+
 RenderThreadImpl* RenderThreadImpl::current() {
   return lazy_tls.Pointer()->Get();
 }
 
-RenderThreadImpl::RenderThreadImpl(const InProcessChildThreadParams& params)
+RenderThreadImpl::RenderThreadImpl(
+    const InProcessChildThreadParams& params,
+    scoped_ptr<scheduler::RendererScheduler> scheduler)
     : ChildThreadImpl(Options::Builder()
                           .InBrowserProcess(params)
                           .UseMojoChannel(ShouldUseMojoChannel())
                           .Build()),
+      renderer_scheduler_(scheduler.Pass()),
       raster_worker_pool_(new RasterWorkerPool()) {
   Init();
 }
@@ -620,10 +580,12 @@ RenderThreadImpl::RenderThreadImpl(const InProcessChildThreadParams& params)
 // When we run plugins in process, we actually run them on the render thread,
 // which means that we need to make the render thread pump UI events.
 RenderThreadImpl::RenderThreadImpl(
-    scoped_ptr<base::MessageLoop> main_message_loop)
+    scoped_ptr<base::MessageLoop> main_message_loop,
+    scoped_ptr<scheduler::RendererScheduler> scheduler)
     : ChildThreadImpl(Options::Builder()
                           .UseMojoChannel(ShouldUseMojoChannel())
                           .Build()),
+      renderer_scheduler_(scheduler.Pass()),
       main_message_loop_(main_message_loop.Pass()),
       raster_worker_pool_(new RasterWorkerPool()) {
   Init();
@@ -660,8 +622,6 @@ void RenderThreadImpl::Init() {
   dom_storage_dispatcher_.reset(new DomStorageDispatcher());
   main_thread_indexed_db_dispatcher_.reset(new IndexedDBDispatcher(
       thread_safe_sender()));
-  renderer_scheduler_ = scheduler::RendererScheduler::Create();
-  channel()->SetListenerTaskRunner(renderer_scheduler_->DefaultTaskRunner());
   main_thread_cache_storage_dispatcher_.reset(
       new CacheStorageDispatcher(thread_safe_sender()));
   embedded_worker_dispatcher_.reset(new EmbeddedWorkerDispatcher());
@@ -713,6 +673,9 @@ void RenderThreadImpl::Init() {
   midi_message_filter_ = new MidiMessageFilter(GetIOMessageLoopProxy());
   AddFilter(midi_message_filter_.get());
 
+  bluetooth_message_filter_ = new BluetoothMessageFilter(thread_safe_sender());
+  AddFilter(bluetooth_message_filter_->GetFilter());
+
   AddFilter((new IndexedDBMessageFilter(thread_safe_sender()))->GetFilter());
 
   AddFilter((new CacheStorageMessageFilter(thread_safe_sender()))->GetFilter());
@@ -722,6 +685,8 @@ void RenderThreadImpl::Init() {
   GetContentClient()->renderer()->RenderThreadStarted();
 
   InitSkiaEventTracer();
+  base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
+      skia::SkiaMemoryDumpProvider::GetInstance());
 
   const base::CommandLine& command_line =
       *base::CommandLine::ForCurrentProcess();
@@ -730,9 +695,15 @@ void RenderThreadImpl::Init() {
   if (command_line.HasSwitch(switches::kEnableCompositorAnimationTimelines))
     layer_settings.use_compositor_animation_timelines = true;
   cc_blink::WebLayerImpl::SetLayerSettings(layer_settings);
+  cc::SetClientNameForMetrics("Renderer");
+
+  is_threaded_animation_enabled_ =
+      !command_line.HasSwitch(cc::switches::kDisableThreadedAnimation);
 
   is_zero_copy_enabled_ = command_line.HasSwitch(switches::kEnableZeroCopy);
   is_one_copy_enabled_ = !command_line.HasSwitch(switches::kDisableOneCopy);
+  is_persistent_gpu_memory_buffer_enabled_ =
+      command_line.HasSwitch(switches::kEnablePersistentGpuMemoryBuffer);
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
   is_elastic_overscroll_enabled_ = base::mac::IsOSLionOrLater();
@@ -751,9 +722,7 @@ void RenderThreadImpl::Init() {
 
   std::string image_texture_target_string =
       command_line.GetSwitchValueASCII(switches::kContentImageTextureTarget);
-  bool parsed_image_texture_target = base::StringToUint(
-      image_texture_target_string, &use_image_texture_target_);
-  DCHECK(parsed_image_texture_target);
+  StringToUintVector(image_texture_target_string, &use_image_texture_targets_);
 
   if (command_line.HasSwitch(switches::kDisableLCDText)) {
     is_lcd_text_enabled_ = false;
@@ -780,7 +749,7 @@ void RenderThreadImpl::Init() {
     DCHECK(parsed_msaa_sample_count) << string_value;
     DCHECK_GE(gpu_rasterization_msaa_sample_count_, 0);
   } else {
-    gpu_rasterization_msaa_sample_count_ = 0;
+    gpu_rasterization_msaa_sample_count_ = -1;
   }
 
   if (command_line.HasSwitch(switches::kDisableDistanceFieldText)) {
@@ -832,6 +801,8 @@ void RenderThreadImpl::Init() {
 
   service_registry()->AddService<RenderFrameSetup>(
       base::Bind(CreateRenderFrameSetup));
+  service_registry()->AddService<EmbeddedWorkerSetup>(
+      base::Bind(CreateEmbeddedWorkerSetup));
 
   TRACE_EVENT_END_ETW("RenderThreadImpl::Init", 0, "");
 }
@@ -1006,10 +977,6 @@ bool RenderThreadImpl::Send(IPC::Message* msg) {
   return rv;
 }
 
-scoped_refptr<base::SingleThreadTaskRunner> RenderThreadImpl::GetTaskRunner() {
-  return GetRendererScheduler()->DefaultTaskRunner();
-}
-
 IPC::SyncChannel* RenderThreadImpl::GetChannel() {
   return channel();
 }
@@ -1050,7 +1017,7 @@ void RenderThreadImpl::AddRoute(int32 routing_id, IPC::Listener* listener) {
       connection->services().Pass());
   mojo::ServiceProviderPtr exposed_services(
       connection->exposed_services().Pass());
-  exposed_services.set_error_handler(nullptr);
+  exposed_services.set_connection_error_handler(mojo::Closure());
   pending_render_frame_connects_.erase(it);
 
   frame->BindServiceRegistry(services.Pass(), exposed_services.Pass());
@@ -1244,6 +1211,10 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
   SkGraphics::SetResourceCacheSingleAllocationByteLimit(
       kImageCacheSingleAllocationByteLimit);
 
+  // Hook up blink's codecs so skia can call them
+  SkGraphics::SetImageGeneratorFromEncodedFactory(
+      blink::WebImageGenerator::create);
+
   if (command_line.HasSwitch(switches::kMemoryMetrics)) {
     memory_observer_.reset(new MemoryObserver());
     message_loop()->AddTaskObserver(memory_observer_.get());
@@ -1299,6 +1270,7 @@ cc::SharedBitmapManager* RenderThreadImpl::GetSharedBitmapManager() {
 }
 
 void RenderThreadImpl::RegisterExtension(v8::Extension* extension) {
+  EnsureWebKitInitialized();
   WebScriptController::registerExtension(extension);
 }
 
@@ -1428,17 +1400,29 @@ RenderThreadImpl::GetGpuFactories() {
         GPU_VIDEO_ACCELERATOR_CONTEXT);
   }
   if (gpu_va_context_provider_.get()) {
-    bool enable_video_accelerator =
+    const bool enable_video_accelerator =
         !cmd_line->HasSwitch(switches::kDisableAcceleratedVideoDecode);
+    const bool enable_gpu_memory_buffer_video_frames =
+#if defined(OS_MACOSX)
+        !cmd_line->HasSwitch(switches::kDisableGpuMemoryBufferVideoFrames);
+#else
+        cmd_line->HasSwitch(switches::kEnableGpuMemoryBufferVideoFrames);
+#endif
     std::string image_texture_target_string =
-        cmd_line->GetSwitchValueASCII(switches::kContentImageTextureTarget);
+        cmd_line->GetSwitchValueASCII(switches::kVideoImageTextureTarget);
     unsigned image_texture_target = 0;
-    bool parsed_image_texture_target =
+    const bool parsed_image_texture_target =
         base::StringToUint(image_texture_target_string, &image_texture_target);
     DCHECK(parsed_image_texture_target);
+    CHECK(gpu_channel_.get()) << "Have gpu_va_context_provider but no "
+                                 "gpu_channel_. See crbug.com/495185.";
+    CHECK(gpu_channel_host.get()) << "Have gpu_va_context_provider but lost "
+                                     "gpu_channel_. See crbug.com/495185.";
+
     gpu_factories = RendererGpuVideoAcceleratorFactories::Create(
         gpu_channel_host.get(), media_task_runner, gpu_va_context_provider_,
-        image_texture_target, enable_video_accelerator);
+        enable_gpu_memory_buffer_video_frames, image_texture_target,
+        enable_video_accelerator);
   }
   return gpu_factories;
 }
@@ -1467,8 +1451,9 @@ RenderThreadImpl::SharedMainThreadContextProvider() {
       shared_main_thread_contexts_->DestroyedOnMainThread()) {
     shared_main_thread_contexts_ = NULL;
 #if defined(OS_ANDROID)
-    if (SynchronousCompositorFactory* factory =
-            SynchronousCompositorFactory::GetInstance()) {
+    SynchronousCompositorFactory* factory =
+        SynchronousCompositorFactory::GetInstance();
+    if (factory && factory->OverrideWithFactory()) {
       shared_main_thread_contexts_ = factory->CreateOffscreenContextProvider(
           GetOffscreenAttribs(), "Offscreen-MainThread");
     }
@@ -1551,12 +1536,16 @@ bool RenderThreadImpl::IsOneCopyEnabled() {
   return is_one_copy_enabled_;
 }
 
+bool RenderThreadImpl::IsPersistentGpuMemoryBufferEnabled() {
+  return is_persistent_gpu_memory_buffer_enabled_;
+}
+
 bool RenderThreadImpl::IsElasticOverscrollEnabled() {
   return is_elastic_overscroll_enabled_;
 }
 
-uint32 RenderThreadImpl::GetImageTextureTarget() {
-  return use_image_texture_target_;
+std::vector<unsigned> RenderThreadImpl::GetImageTextureTargets() {
+  return use_image_texture_targets_;
 }
 
 scoped_refptr<base::SingleThreadTaskRunner>
@@ -1599,6 +1588,10 @@ cc::TaskGraphRunner* RenderThreadImpl::GetTaskGraphRunner() {
 
 bool RenderThreadImpl::IsGatherPixelRefsEnabled() {
   return is_gather_pixel_refs_enabled_;
+}
+
+bool RenderThreadImpl::IsThreadedAnimationEnabled() {
+  return is_threaded_animation_enabled_;
 }
 
 bool RenderThreadImpl::IsMainThread() {
@@ -1713,7 +1706,7 @@ void RenderThreadImpl::OnCreateNewView(const ViewMsg_New_Params& params) {
   EnsureWebKitInitialized();
   CompositorDependencies* compositor_deps = this;
   // When bringing in render_view, also bring in webkit's glue and jsbindings.
-  RenderViewImpl::Create(params, compositor_deps, false);
+  RenderViewImpl::Create(compositor_deps, params, false);
 }
 
 GpuChannelHost* RenderThreadImpl::EstablishGpuChannelSync(
@@ -1859,9 +1852,10 @@ void RenderThreadImpl::OnUpdateScrollbarTheme(
       blink_platform_impl_->scrollbarBehavior())
       ->set_jump_on_track_click(params.jump_on_track_click);
 
-  blink::WebScrollbarTheme::updateScrollbars(
+  blink::WebScrollbarTheme::updateScrollbarsWithNSDefaults(
       params.initial_button_delay, params.autoscroll_button_delay,
-      params.preferred_scroller_style, params.redraw);
+      params.preferred_scroller_style, params.redraw,
+      params.scroll_animation_enabled, params.button_placement);
 }
 #endif
 
@@ -1936,7 +1930,7 @@ RenderThreadImpl::GetMediaThreadTaskRunner() {
   return media_thread_->task_runner();
 }
 
-base::SequencedTaskRunner* RenderThreadImpl::GetWorkerSequencedTaskRunner() {
+base::TaskRunner* RenderThreadImpl::GetWorkerTaskRunner() {
   return raster_worker_pool_.get();
 }
 
@@ -2016,7 +2010,9 @@ RenderThreadImpl::PendingRenderFrameConnect::PendingRenderFrameConnect(
   // The RenderFrame may be deleted before the ExchangeServiceProviders message
   // is received. In that case, the RenderFrameHost should close the connection,
   // which is detected by setting an error handler on |exposed_services_|.
-  exposed_services_.set_error_handler(this);
+  exposed_services_.set_connection_error_handler(base::Bind(
+      &RenderThreadImpl::PendingRenderFrameConnect::OnConnectionError,
+      base::Unretained(this)));
 }
 
 RenderThreadImpl::PendingRenderFrameConnect::~PendingRenderFrameConnect() {

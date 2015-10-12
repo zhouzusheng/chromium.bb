@@ -9,7 +9,7 @@ namespace blink {
 
 struct SameSizeAsDisplayItem {
     virtual ~SameSizeAsDisplayItem() { } // Allocate vtable pointer.
-    void* pointers[2];
+    void* pointer;
     int ints[2]; // Make sure other fields are packed into two ints.
 #ifndef NDEBUG
     WTF::String m_debugString;
@@ -53,6 +53,23 @@ static WTF::String paintPhaseAsDebugString(int paintPhase)
 
 static WTF::String specialDrawingTypeAsDebugString(DisplayItem::Type type)
 {
+    if (type >= DisplayItem::TableCollapsedBorderUnalignedBase) {
+        if (type <= DisplayItem::TableCollapsedBorderBase)
+            return "TableCollapsedBorderAlignment";
+        if (type <= DisplayItem::TableCollapsedBorderLast) {
+            StringBuilder sb;
+            sb.append("TableCollapsedBorder");
+            if (type & DisplayItem::TableCollapsedBorderTop)
+                sb.append("Top");
+            if (type & DisplayItem::TableCollapsedBorderRight)
+                sb.append("Right");
+            if (type & DisplayItem::TableCollapsedBorderBottom)
+                sb.append("Bottom");
+            if (type & DisplayItem::TableCollapsedBorderLeft)
+                sb.append("Left");
+            return sb.toString();
+        }
+    }
     switch (type) {
         DEBUG_STRING_CASE(BoxDecorationBackground);
         DEBUG_STRING_CASE(Caret);
@@ -141,8 +158,8 @@ WTF::String DisplayItem::typeAsDebugString(Type type)
 {
     if (isDrawingType(type))
         return drawingTypeAsDebugString(type);
-    if (isCachedType(type))
-        return "Cached" + drawingTypeAsDebugString(cachedTypeToDrawingType(type));
+    if (isCachedDrawingType(type))
+        return "Cached" + drawingTypeAsDebugString(cachedDrawingTypeToDrawingType(type));
     if (isClipType(type))
         return clipTypeAsDebugString(type);
     if (isEndClipType(type))
@@ -164,7 +181,7 @@ WTF::String DisplayItem::typeAsDebugString(Type type)
     if (isEndTransform3DType(type))
         return "End" + transform3DTypeAsDebugString(endTransform3DTypeToTransform3DType(type));
 
-    PAINT_PHASE_BASED_DEBUG_STRINGS(SubtreeCached);
+    PAINT_PHASE_BASED_DEBUG_STRINGS(CachedSubtree);
     PAINT_PHASE_BASED_DEBUG_STRINGS(BeginSubtree);
     PAINT_PHASE_BASED_DEBUG_STRINGS(EndSubtree);
 
@@ -190,6 +207,8 @@ WTF::String DisplayItem::typeAsDebugString(Type type)
 
 WTF::String DisplayItem::asDebugString() const
 {
+    if (!isValid())
+        return "null";
     WTF::StringBuilder stringBuilder;
     stringBuilder.append('{');
     dumpPropertiesAsDebugString(stringBuilder);
@@ -199,6 +218,7 @@ WTF::String DisplayItem::asDebugString() const
 
 void DisplayItem::dumpPropertiesAsDebugString(WTF::StringBuilder& stringBuilder) const
 {
+    ASSERT(isValid());
     stringBuilder.append(String::format("client: \"%p", client()));
     if (!clientDebugString().isEmpty()) {
         stringBuilder.append(' ');
@@ -209,8 +229,8 @@ void DisplayItem::dumpPropertiesAsDebugString(WTF::StringBuilder& stringBuilder)
     stringBuilder.append('"');
     if (m_skippedCache)
         stringBuilder.append(", skippedCache: true");
-    if (m_scopeContainer)
-        stringBuilder.append(String::format(", scope: \"%p,%d\"", m_scopeContainer, m_scopeId));
+    if (m_scope)
+        stringBuilder.append(String::format(", scope: %d", m_scope));
 }
 
 #endif

@@ -414,6 +414,9 @@ class CONTENT_EXPORT WebContentsObserver : public IPC::Listener,
   // Notification that |contents| has gained focus.
   virtual void OnWebContentsFocused() {}
 
+  // Invoked when focus is lost.
+  virtual void OnWebContentsBlurred() {}
+
   // IPC::Listener implementation.
   bool OnMessageReceived(const IPC::Message& message) override;
 

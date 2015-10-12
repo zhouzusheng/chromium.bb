@@ -946,6 +946,13 @@ v8::Local<v8::Context> WebLocalFrameImpl::mainWorldScriptContext() const
     return scriptState->context();
 }
 
+v8::Isolate* WebLocalFrameImpl::scriptIsolate() const
+{
+    if (!frame())
+        return 0;
+    return toIsolate(frame());
+}
+
 bool WebFrame::scriptCanAccess(WebFrame* target)
 {
     return BindingSecurity::shouldAllowAccessToFrame(mainThreadIsolate(), toCoreFrame(target), DoNotReportSecurityError);
@@ -1639,6 +1646,71 @@ WebString WebLocalFrameImpl::layerTreeAsText(bool showDebugInfo) const
         return WebString();
 
     return WebString(frame()->layerTreeAsText(showDebugInfo ? LayerTreeIncludesDebugInfo : LayerTreeNormal));
+}
+
+class CanvasPainterContext {
+    void paintToGraphicsContext(GraphicsContext& context, FrameView* view, const FloatRect& floatRect)
+    {
+        // Enter a translation transform
+        AffineTransform transform;
+        transform.translate(static_cast<float>(-floatRect.x()), static_cast<float>(-floatRect.y()));
+        TransformRecorder transformRecorder(context, *this, transform);
+
+        // Enter a clipped region
+        ClipRecorder clipRecorder(context, *this, DisplayItem::ClipPrintedPage, LayoutRect(floatRect));
+
+        view->updateAllLifecyclePhases();
+
+        view->paintContents(&context, GlobalPaintFlattenCompositingLayers, IntRect(floatRect));
+    }
+
+public:
+     void paint(WebCanvas* canvas, FrameView* view, const FloatRect& floatRect)
+     {
+         SkPictureBuilder pictureBuilder(floatRect, &skia::getMetaData(*canvas));
+         paintToGraphicsContext(pictureBuilder.context(), view, floatRect);
+         pictureBuilder.endRecording()->playback(canvas);
+     }
+
+     DisplayItemClient displayItemClient() const
+     {
+         return toDisplayItemClient(this);
+     }
+
+     String debugName() const
+     {
+         return "CanvasPainterContext";
+     }
+};
+
+void WebLocalFrameImpl::drawInCanvas(const WebRect& rect, const WebString& styleClass, WebCanvas* canvas) const
+{
+    const blink::WebString classAttribute("class");
+    WTF::String originalStyleClass;
+
+    // Set the new "style" attribute if specified
+    if (!styleClass.isEmpty()) {
+        if (document().body().hasAttribute(classAttribute)) {
+            originalStyleClass = document().body().getAttribute(classAttribute);
+            document().body().setAttribute(classAttribute, WTF::String(originalStyleClass + " " + WTF::String(styleClass)));
+        }
+        else {
+            document().body().setAttribute(classAttribute, styleClass);
+        }
+    }
+
+    CanvasPainterContext painterContext;
+    painterContext.paint(canvas, frameView(), FloatRect(rect));
+
+    // Restore the original "style" attribute
+    if (!styleClass.isEmpty()) {
+        if (!originalStyleClass.isEmpty()) {
+            document().body().setAttribute(classAttribute, originalStyleClass);
+        }
+        else {
+            document().body().removeAttribute(classAttribute);
+        }
+    }
 }
 
 // WebLocalFrameImpl public ---------------------------------------------------------

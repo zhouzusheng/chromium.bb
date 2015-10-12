@@ -111,9 +111,19 @@ SpellcheckService::SpellcheckService(content::BrowserContext* context)
 
   OnSpellCheckDictionariesChanged();
 
-  custom_dictionary_.reset(new SpellcheckCustomDictionary(context_->GetPath()));
-  custom_dictionary_->AddObserver(this);
-  custom_dictionary_->Load();
+  content::SpellcheckData* spellcheckData =
+      content::SpellcheckData::FromContext(context);
+  if (spellcheckData) {
+    // If the browser-context has SpellcheckData, then we will use that instead
+    // of SpellcheckCustomDictionary, which reads & writes the words list to
+    // disk.
+    spellcheckData->AddObserver(this);
+  }
+  else {
+    custom_dictionary_.reset(new SpellcheckCustomDictionary(context_->GetPath()));
+    custom_dictionary_->AddObserver(this);
+    custom_dictionary_->Load();
+  }
 
   registrar_.Add(this,
                  content::NOTIFICATION_RENDERER_PROCESS_CREATED,
@@ -201,8 +211,20 @@ void SpellcheckService::InitForRenderer(content::RenderProcessHost* process) {
             : IPC::InvalidPlatformFileForTransit();
   }
 
+  const std::set<std::string>* custom_words_ptr;
+
+  content::SpellcheckData* spellcheckData =
+      content::SpellcheckData::FromContext(context_);
+  if (spellcheckData) {
+    custom_words_ptr = &spellcheckData->custom_words();
+  }
+  else {
+    DCHECK(custom_dictionary_);
+    custom_words_ptr = &custom_dictionary_->GetWords();
+  }
+
   process->Send(new SpellCheckMsg_Init(
-      bdict_languages, custom_dictionary_->GetWords(),
+      bdict_languages, *custom_words_ptr,
       prefs->GetBoolean(prefs::kEnableAutoSpellCorrect)));
   process->Send(new SpellCheckMsg_EnableSpellCheck(
       prefs->GetBoolean(prefs::kEnableContinuousSpellcheck)));
@@ -244,6 +266,34 @@ void SpellcheckService::Observe(int type,
   content::RenderProcessHost* process =
       content::Source<content::RenderProcessHost>(source).ptr();
   InitForRenderer(process);
+}
+
+// content::SpellcheckData::Observer implementation.
+void SpellcheckService::OnCustomWordsChanged(
+    const std::vector<base::StringPiece>& words_added,
+    const std::vector<base::StringPiece>& words_removed) {
+  std::set<std::string> words_added_copy;
+  std::set<std::string> words_removed_copy;
+  for (size_t i = 0; i < words_added.size(); ++i) {
+    std::string word;
+    words_added[i].CopyToString(&word);
+    words_added_copy.insert(word);
+  }
+  for (size_t i = 0; i < words_removed.size(); ++i) {
+    std::string word;
+    words_removed[i].CopyToString(&word);
+    words_removed_copy.insert(word);
+  }
+  for (content::RenderProcessHost::iterator i(
+          content::RenderProcessHost::AllHostsIterator());
+       !i.IsAtEnd(); i.Advance()) {
+    content::RenderProcessHost* process = i.GetCurrentValue();
+    if (!process || context_ != process->GetBrowserContext())
+      continue;
+    process->Send(new SpellCheckMsg_CustomDictionaryChanged(
+        words_added_copy,
+        words_removed_copy));
+  }
 }
 
 void SpellcheckService::OnCustomDictionaryLoaded() {
@@ -324,7 +374,7 @@ void SpellcheckService::OnSpellCheckDictionariesChanged() {
     std::string dictionary;
     dictionary_value->GetAsString(&dictionary);
     hunspell_dictionaries_.push_back(new SpellcheckHunspellDictionary(
-        dictionary, context_->GetRequestContext(), this));
+        dictionary, context_->AllowDictionaryDownloads() ? context_->GetRequestContext() : 0, this));
     hunspell_dictionaries_.back()->AddObserver(this);
     hunspell_dictionaries_.back()->Load();
   }

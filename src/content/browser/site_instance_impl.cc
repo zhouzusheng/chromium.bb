@@ -4,6 +4,7 @@
 
 #include "content/browser/site_instance_impl.h"
 
+#include "base/command_line.h"
 #include "content/browser/browsing_instance.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/frame_host/debug_urls.h"
@@ -13,6 +14,7 @@
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/render_process_host_factory.h"
 #include "content/public/browser/web_ui_controller_factory.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 
@@ -20,6 +22,7 @@ namespace content {
 
 const RenderProcessHostFactory*
     SiteInstanceImpl::g_render_process_host_factory_ = NULL;
+int SiteInstanceImpl::kNoProcessAffinity = RenderProcessHostImpl::kInvalidId;
 int32 SiteInstanceImpl::next_site_instance_id_ = 1;
 
 SiteInstanceImpl::SiteInstanceImpl(BrowsingInstance* browsing_instance)
@@ -66,7 +69,7 @@ bool SiteInstanceImpl::HasProcess() const {
   return false;
 }
 
-RenderProcessHost* SiteInstanceImpl::GetProcess() {
+RenderProcessHost* SiteInstanceImpl::GetProcess(int affinity) {
   // TODO(erikkay) It would be nice to ensure that the renderer type had been
   // properly set before we get here.  The default tab creation case winds up
   // with no site set at this point, so it will default to TYPE_NORMAL.  This
@@ -78,9 +81,18 @@ RenderProcessHost* SiteInstanceImpl::GetProcess() {
   if (!process_) {
     BrowserContext* browser_context = browsing_instance_->browser_context();
 
+    if (affinity != SiteInstance::kNoProcessAffinity) {
+      process_ = RenderProcessHost::FromID(affinity);
+      if (process_) {
+        DCHECK(RenderProcessHostImpl::IsSuitableHost(process_,
+                                                     browser_context,
+                                                     site_));
+      }
+    }
+
     // If we should use process-per-site mode (either in general or for the
     // given site), then look for an existing RenderProcessHost for the site.
-    bool use_process_per_site = has_site_ &&
+    bool use_process_per_site = !process_ && has_site_ &&
         RenderProcessHost::ShouldUseProcessPerSite(browser_context, site_);
     if (use_process_per_site) {
       process_ = RenderProcessHostImpl::GetProcessHostForSite(browser_context,
@@ -100,10 +112,19 @@ RenderProcessHost* SiteInstanceImpl::GetProcess() {
         process_ = g_render_process_host_factory_->CreateRenderProcessHost(
             browser_context, this);
       } else {
+        int id = (affinity != SiteInstance::kNoProcessAffinity)
+            ? affinity
+            : RenderProcessHostImpl::GenerateUniqueId();
+        DCHECK(!RenderProcessHost::FromID(id));
+        bool is_in_process = base::CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kSingleProcess);
+        base::ProcessHandle processHandle =
+            is_in_process ? base::GetCurrentProcessHandle()
+                          : base::kNullProcessHandle;
         StoragePartitionImpl* partition =
             static_cast<StoragePartitionImpl*>(
                 BrowserContext::GetStoragePartition(browser_context, this));
-        process_ = new RenderProcessHostImpl(browser_context,
+        process_ = new RenderProcessHostImpl(id, processHandle, browser_context,
                                              partition,
                                              site_.SchemeIs(kGuestScheme));
       }

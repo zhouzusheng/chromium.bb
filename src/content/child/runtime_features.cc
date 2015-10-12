@@ -155,6 +155,15 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kEnableWebGLImageChromium))
     WebRuntimeFeatures::enableWebGLImageChromium(true);
 
+  if (command_line.HasSwitch(switches::kEnableCSS3TextDecorations))
+    WebRuntimeFeatures::enableCSS3TextDecorations(true);
+
+  if (command_line.HasSwitch(switches::kEnableCSS3Text))
+    WebRuntimeFeatures::enableCSS3Text(true);
+
+  if (command_line.HasSwitch(switches::kEnableCSSGridLayout))
+    WebRuntimeFeatures::enableCSSGridLayout(true);
+
   // TODO(watk): Remove EnableOverlayFullscreenVideo once blink is updated to
   // use ForceOverlayFullscreenVideo instead. http://crbug.com/511376
   if (command_line.HasSwitch(switches::kEnableOverlayFullscreenVideo) ||

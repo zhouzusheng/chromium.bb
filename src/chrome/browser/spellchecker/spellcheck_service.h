@@ -19,6 +19,7 @@
 #include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/spellcheck_data.h"
 
 class SpellCheckHostMetrics;
 
@@ -44,6 +45,7 @@ namespace spellcheck {
 // SpellcheckService maintains any per-profile information about spellcheck.
 class SpellcheckService : public KeyedService,
                           public content::NotificationObserver,
+                          public content::SpellcheckData::Observer,
                           public SpellcheckCustomDictionary::Observer,
                           public SpellcheckHunspellDictionary::Observer {
  public:
@@ -119,6 +121,11 @@ class SpellcheckService : public KeyedService,
   void Observe(int type,
                const content::NotificationSource& source,
                const content::NotificationDetails& details) override;
+
+  // content::SpellcheckData::Observer implementation.
+  void OnCustomWordsChanged(
+      const std::vector<base::StringPiece>& words_added,
+      const std::vector<base::StringPiece>& words_removed) override;
 
   // SpellcheckCustomDictionary::Observer implementation.
   void OnCustomDictionaryLoaded() override;

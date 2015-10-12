@@ -6,6 +6,7 @@
 #define SANDBOX_WIN_SRC_TARGET_PROCESS_H_
 
 #include <windows.h>
+#include <psapi.h>
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
@@ -54,6 +55,47 @@ class TargetProcess {
                bool set_lockdown_token_after_create,
                const base::win::StartupInformation& startup_info,
                base::win::ScopedProcessInformation* target_info);
+
+#if SANDBOX_DLL
+  // Returns true if the exe has sandbox.lib linked into it. The sandbox DLL
+  // will only be injected if this returns false.
+  bool ExeHasSandbox() const
+  {
+    return exe_has_sandbox_;
+  }
+
+  // Injects sandbox DLL to target process, while target process is in
+  // suspended state.
+  DWORD InjectSandboxDll(const wchar_t* module_path);
+#endif
+
+  // Returns the target exe name or sandbox DLL name (if the sandbox.lib is
+  // linked into a DLL).
+  const wchar_t* SandboxModuleName() const
+  {
+#if SANDBOX_DLL
+    if (exe_has_sandbox_)
+      return Name();
+    DCHECK(module_path_.get());
+    return module_path_.get();
+#else
+    return Name();
+#endif
+  }
+
+  // Returns the address of the target main exe or sandbox dll (if the
+  // sandbox.lib is linked into a DLL).
+  HMODULE SandboxModule() const
+  {
+#if SANDBOX_DLL
+    if (exe_has_sandbox_)
+      return MainModule();
+    DCHECK(module_base_address_);
+    return reinterpret_cast<HMODULE>(module_base_address_);
+#else
+    return MainModule();
+#endif
+  }
 
   // Destroys the target process.
   void Terminate();
@@ -114,6 +156,18 @@ class TargetProcess {
   scoped_ptr<SharedMemIPCServer> ipc_server_;
   // Provides the threads used by the IPC. This class does not own this pointer.
   ThreadProvider* thread_pool_;
+
+#if SANDBOX_DLL
+  // True if the exe has sandbox.lib linked into it.
+  bool exe_has_sandbox_;
+  // Base address of the sandbox module. This is only set if exe_has_sandbox_
+  // is is false (i.e. only if a sandbox dll has been injected).
+  void* module_base_address_;
+  // Full name of the sandbox module. This is only set if exe_has_sandbox_ is
+  // false (i.e. only if a sandbox dll has been injected).
+  scoped_ptr<wchar_t, base::FreeDeleter>  module_path_;
+#endif
+
   // Base address of the main executable
   void* base_address_;
   // Full name of the target executable.

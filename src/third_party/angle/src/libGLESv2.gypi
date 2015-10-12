@@ -769,7 +769,11 @@
         {
             'target_name': 'libGLESv2',
             'type': '<(angle_gl_library_type)',
-            'dependencies': [ 'libANGLE', 'angle_common' ],
+            'dependencies': [
+                '../../../blpwtk2/blpwtk2.gyp:blpwtk2_generate_sources',
+                'libANGLE',
+                'angle_common'
+            ],
             'includes': [ '../build/common_defines.gypi', ],
             'sources':
             [
@@ -781,6 +785,11 @@
             ],
             'conditions':
             [
+                ['bb_version!=""', {
+                  'product_name': 'blpcr_glesv2.<(bb_version)',
+                }, {
+                  'product_name': 'blpcr_glesv2',
+                }],
                 ['angle_build_winrt==1',
                 {
                     'msvs_requires_importlibrary' : 'true',

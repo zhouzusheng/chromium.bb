@@ -32,6 +32,8 @@
 #include "software_renderer.h"
 #endif
 
+#include <blpwtk2_products.h>
+
 namespace gfx {
 
 namespace {
@@ -152,18 +154,18 @@ bool InitializeStaticGLBindings(GLImplementation implementation) {
       // the former and if there is another version of libglesv2.dll in the dll
       // search path, it will get loaded instead.
       base::NativeLibrary gles_library = base::LoadNativeLibrary(
-          gles_path.Append(L"libglesv2.dll"), NULL);
+          gles_path.AppendASCII(BLPCR_GLESV2_DLL_NAME), NULL);
       if (!gles_library) {
-        DVLOG(1) << "libglesv2.dll not found";
+        LOG(WARNING) << BLPCR_GLESV2_DLL_NAME << " not found";
         return false;
       }
 
       // When using EGL, first try eglGetProcAddress and then Windows
       // GetProcAddress on both the EGL and GLES2 DLLs.
       base::NativeLibrary egl_library = base::LoadNativeLibrary(
-          gles_path.Append(L"libegl.dll"), NULL);
+          gles_path.AppendASCII(BLPCR_EGL_DLL_NAME), NULL);
       if (!egl_library) {
-        DVLOG(1) << "libegl.dll not found.";
+        LOG(WARNING) << BLPCR_EGL_DLL_NAME << " not found.";
         base::UnloadNativeLibrary(gles_library);
         return false;
       }

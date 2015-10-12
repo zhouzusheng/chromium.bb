@@ -908,6 +908,9 @@ IPC_MESSAGE_CONTROL1(ViewMsg_UpdateScrollbarTheme,
                      ViewMsg_UpdateScrollbarTheme_Params /* params */)
 #endif
 
+// Tells the renderer to clear unused resources from its global web cache
+IPC_MESSAGE_CONTROL0(ViewMsg_ClearWebCache)
+
 #if defined(OS_ANDROID)
 // Tells the renderer to suspend/resume the webkit timers.
 IPC_MESSAGE_CONTROL1(ViewMsg_SetWebKitSharedTimersSuspended,

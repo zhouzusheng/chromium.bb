@@ -311,11 +311,6 @@ void WebViewImpl::print()
     printViewManager->PrintNow();
 }
 
-void WebViewImpl::drawContentsToDevice(NativeDeviceContext deviceContext, const DrawParams& params)
-{
-    NOTREACHED() << "drawContentsToDevice() not supported in WebViewImpl";
-}
-
 void WebViewImpl::drawContentsToBlob(Blob *blob, const DrawParams& params)
 {
     NOTREACHED() << "drawContentsToBlob() not supported in WebViewImpl";

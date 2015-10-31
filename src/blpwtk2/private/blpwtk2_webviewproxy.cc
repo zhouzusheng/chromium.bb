@@ -50,6 +50,70 @@
 #include <ui/events/event.h>
 #include <ui/gfx/geometry/size.h>
 
+namespace {
+
+const int DEFAULT_DPI_X = 96;
+
+float getScreenScaleFactor()
+{
+    static float scale_x = -1;
+
+    if (scale_x < 0) {
+        HWND desktop_window = ::GetDesktopWindow();
+        HDC screen_dc = ::GetDC(desktop_window);
+        if (screen_dc == NULL) {
+            return 1.0;
+        }
+        int dpi_x = ::GetDeviceCaps(screen_dc, LOGPIXELSX);
+        ::ReleaseDC(desktop_window, screen_dc);
+        scale_x = (float)dpi_x / DEFAULT_DPI_X;
+
+        if (scale_x <= 1.25) {
+            // From WebKit: Force 125% and below to 100% scale. We do this to
+            // maintain previous (non-DPI-aware) behavior where only the font
+            // size was boosted.
+            scale_x = 1.0;
+        }
+    }
+
+    return scale_x;  // Windows zooms are always symmetric
+}
+
+bool isXPScaling()
+{
+    static bool scale_read = false;
+    static bool isXPScaling = false;
+
+    if (!scale_read) {
+        HKEY userKey;
+        if (ERROR_SUCCESS != ::RegOpenCurrentUser(KEY_QUERY_VALUE, &userKey)) {
+            return false;
+        }
+
+        DWORD pvData;
+        DWORD size = sizeof(pvData);
+        LONG result = ::RegGetValueW(userKey,
+                                     L"Software\\Microsoft\\Windows\\DWM",
+                                     L"UseDpiScaling",
+                                     RRF_RT_DWORD,
+                                     NULL,
+                                     &pvData,
+                                     &size);
+
+        ::RegCloseKey(userKey);
+        if (ERROR_SUCCESS != result) {
+            return false;
+        }
+
+        scale_read = true;
+        isXPScaling = pvData ? false : true;
+    }
+
+    return isXPScaling && getScreenScaleFactor() > 1.0;
+}
+
+}  // close anonymous namespace
+
 namespace blpwtk2 {
 
 WebViewProxy::WebViewProxy(ProcessClient* processClient,
@@ -496,11 +560,12 @@ void WebViewProxy::moveImpl(const gfx::Rect& rc)
     DCHECK(Statics::isInApplicationMainThread());
     DCHECK(!d_moveAckPending);
 
-    if (d_gotRenderViewInfo && !rc.IsEmpty()) {
+    if (d_gotRenderViewInfo && !rc.IsEmpty() && !isXPScaling()) {
         // If we have renderer info (only happens if we are in-process), we can
         // start resizing the RenderView while we are in the main thread.  This
         // is to avoid a round-trip delay waiting for the resize to get to the
         // browser thread, and it sending a ViewMsg_Resize back to this thread.
+        // We disable this optimization in XP-style DPI scaling.
         content::RenderView* rv = content::RenderView::FromRoutingID(d_renderViewRoutingId);
         DCHECK(rv);
         rv->SetSize(rc.size());

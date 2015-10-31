@@ -134,6 +134,7 @@ void ChannelProxy::Context::OnChannelOpened() {
   AddRef();
 
   if (!channel_->Connect()) {
+    LOG(WARNING) << "ChannelProxy::Context::OnChannelOpened(): Calling OnChannelError()";
     OnChannelError();
     return;
   }
@@ -187,8 +188,10 @@ void ChannelProxy::Context::OnSendMessage(scoped_ptr<Message> message) {
     return;
   }
 
-  if (!channel_->Send(message.release()))
+  if (!channel_->Send(message.release())) {
+    LOG(WARNING) << "ChannelProxy::Context::OnSendMessage(): Calling OnChannelError()";
     OnChannelError();
+  }
 }
 
 // Called on the IPC::Channel thread

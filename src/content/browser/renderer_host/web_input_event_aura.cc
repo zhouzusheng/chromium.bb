@@ -365,7 +365,11 @@ blink::WebMouseEvent MakeWebMouseEventFromAuraEvent(
       webkit_event.clickCount = event.GetClickCount();
       break;
     case ui::ET_MOUSE_ENTERED:
+      webkit_event.type = blink::WebInputEvent::MouseEnter;
+      break;
     case ui::ET_MOUSE_EXITED:
+      webkit_event.type = blink::WebInputEvent::MouseLeave;
+      break;
     case ui::ET_MOUSE_MOVED:
     case ui::ET_MOUSE_DRAGGED:
       webkit_event.type = blink::WebInputEvent::MouseMove;

@@ -1683,19 +1683,40 @@ public:
      }
 };
 
+static void collectAllFrames(std::vector<const LocalFrame*>* list, const LocalFrame* frame)
+{
+    list->push_back(frame);
+
+    for (auto childFrame = frame->tree().firstChild(); childFrame; childFrame = childFrame->tree().nextSibling()) {
+        if (!childFrame->isLocalFrame())
+            continue;
+
+        collectAllFrames(list, toLocalFrame(childFrame));
+    }
+}
+
 void WebLocalFrameImpl::drawInCanvas(const WebRect& rect, const WebString& styleClass, WebCanvas* canvas) const
 {
-    const blink::WebString classAttribute("class");
-    WTF::String originalStyleClass;
+    std::vector<const LocalFrame*> frames;
+    collectAllFrames(&frames, frame());
 
     // Set the new "style" attribute if specified
+    const blink::WebString classAttribute("class");
+    std::vector<WTF::String> originalStyleClasses;
+
     if (!styleClass.isEmpty()) {
-        if (document().body().hasAttribute(classAttribute)) {
-            originalStyleClass = document().body().getAttribute(classAttribute);
-            document().body().setAttribute(classAttribute, WTF::String(originalStyleClass + " " + WTF::String(styleClass)));
-        }
-        else {
-            document().body().setAttribute(classAttribute, styleClass);
+        for (auto localFrame : frames) {
+            auto body = WebElement(localFrame->document()->body());
+
+            if (body.hasAttribute(classAttribute)) {
+                WTF::String originalStyleClass = body.getAttribute(classAttribute);
+                originalStyleClasses.push_back(originalStyleClass);
+                body.setAttribute(classAttribute, WTF::String(originalStyleClass + " " + WTF::String(styleClass)));
+            }
+            else {
+                originalStyleClasses.push_back(WTF::String());
+                body.setAttribute(classAttribute, styleClass);
+            }
         }
     }
 
@@ -1703,12 +1724,18 @@ void WebLocalFrameImpl::drawInCanvas(const WebRect& rect, const WebString& style
     painterContext.paint(canvas, frameView(), FloatRect(rect));
 
     // Restore the original "style" attribute
-    if (!styleClass.isEmpty()) {
-        if (!originalStyleClass.isEmpty()) {
-            document().body().setAttribute(classAttribute, originalStyleClass);
-        }
-        else {
-            document().body().removeAttribute(classAttribute);
+    if (!originalStyleClasses.empty()) {
+        int index = -1;
+        for (auto localFrame : frames) {
+            const auto& originalStyleClass = originalStyleClasses[++index];
+            auto body = WebElement(localFrame->document()->body());
+
+            if (!originalStyleClass.isEmpty()) {
+                body.setAttribute(classAttribute, originalStyleClass);
+            }
+            else {
+                body.removeAttribute(classAttribute);
+            }
         }
     }
 }

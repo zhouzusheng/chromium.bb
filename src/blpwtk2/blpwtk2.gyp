@@ -161,6 +161,8 @@
         'private/blpwtk2_contextmenuparamsimpl.cc',
         'private/blpwtk2_contextmenuparamsimpl.h',
         'private/blpwtk2_control_messages.h',
+        'private/blpwtk2_desktopstreamsregistry.cc',
+        'private/blpwtk2_desktopstreamsregistry.h',
         'private/blpwtk2_devtoolsfrontendhostdelegateimpl.cc',
         'private/blpwtk2_devtoolsfrontendhostdelegateimpl.h',
         'private/blpwtk2_devtoolshttphandlerdelegateimpl.cc',

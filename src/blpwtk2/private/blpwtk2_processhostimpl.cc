@@ -26,6 +26,7 @@
 #include <blpwtk2_channelinfo.h>
 #include <blpwtk2_constants.h>
 #include <blpwtk2_control_messages.h>
+#include <blpwtk2_desktopstreamsregistry.h>
 #include <blpwtk2_managedrenderprocesshost.h>
 #include <blpwtk2_processhostmanager.h>
 #include <blpwtk2_products.h>
@@ -162,6 +163,7 @@ bool ProcessHostImpl::OnMessageReceived(const IPC::Message& message)
             IPC_MESSAGE_HANDLER(BlpControlHostMsg_Sync, onSync)
             IPC_MESSAGE_HANDLER(BlpControlHostMsg_CreateNewHostChannel, onCreateNewHostChannel)
             IPC_MESSAGE_HANDLER(BlpControlHostMsg_ClearWebCache, onClearWebCache)
+            IPC_MESSAGE_HANDLER(BlpControlHostMsg_RegisterNativeViewForStreaming, onRegisterNativeViewForStreaming)
             IPC_MESSAGE_HANDLER(BlpProfileHostMsg_New, onProfileNew)
             IPC_MESSAGE_HANDLER(BlpProfileHostMsg_Destroy, onProfileDestroy)
             IPC_MESSAGE_HANDLER(BlpWebViewHostMsg_New, onWebViewNew)
@@ -247,6 +249,12 @@ void ProcessHostImpl::onCreateNewHostChannel(int timeoutInMilliseconds,
 void ProcessHostImpl::onClearWebCache()
 {
     content::RenderProcessHost::ClearWebCacheOnAllRenderers();
+}
+
+void ProcessHostImpl::onRegisterNativeViewForStreaming(NativeViewForTransit view,
+                                                       std::string* result)
+{
+    *result = DesktopStreamsRegistry::RegisterNativeViewForStreaming((NativeView)view);
 }
 
 void ProcessHostImpl::onProfileNew(int routingId,

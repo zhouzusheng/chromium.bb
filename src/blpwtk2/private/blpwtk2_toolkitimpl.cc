@@ -29,6 +29,7 @@
 #include <blpwtk2_channelinfo.h>
 #include <blpwtk2_constants.h>
 #include <blpwtk2_control_messages.h>
+#include <blpwtk2_desktopstreamsregistry.h>
 #include <blpwtk2_inprocessrenderer.h>
 #include <blpwtk2_mainmessagepump.h>
 #include <blpwtk2_managedrenderprocesshost.h>
@@ -518,6 +519,23 @@ void ToolkitImpl::setTimerHiddenPageAlignmentInterval(double interval)
 v8::Local<v8::Context> ToolkitImpl::createWebScriptContext()
 {
     return blink::WebScriptBindings::createWebScriptContext();
+}
+
+String ToolkitImpl::registerNativeViewForStreaming(NativeView view)
+{
+    std::string result;
+
+    if (Statics::isRendererMainThreadMode()) {
+        DCHECK(d_processClient.get());
+        d_processClient->Send(
+            new BlpControlHostMsg_RegisterNativeViewForStreaming(view,
+                                                                 &result));
+    }
+    else {
+        result = DesktopStreamsRegistry::RegisterNativeViewForStreaming(view);
+    }
+
+    return String(result);
 }
 
 }  // close namespace blpwtk2

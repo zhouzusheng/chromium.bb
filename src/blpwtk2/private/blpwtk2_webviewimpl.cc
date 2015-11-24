@@ -23,6 +23,7 @@
 #include <blpwtk2_webviewimpl.h>
 
 #include <blpwtk2_browsercontextimpl.h>
+#include <blpwtk2_desktopstreamsregistry.h>
 #include <blpwtk2_devtoolsfrontendhostdelegateimpl.h>
 #include <blpwtk2_filechooserparams.h>
 #include <blpwtk2_filechooserparamsimpl.h>
@@ -861,6 +862,12 @@ void WebViewImpl::RequestMediaAccessPermission(
         const content::MediaStreamDevice* device = findDeviceById(request.requested_video_device_id, videoDevices);
         if (device) {
             devices.push_back(*device);
+        }
+        else {
+            content::MediaStreamDevice desktop_device = DesktopStreamsRegistry::GetInstance()->RequestMediaForStreamId(request.requested_video_device_id);
+            if (desktop_device.type != content::MEDIA_NO_SERVICE) {
+                devices.push_back(desktop_device);
+            }
         }
     }
     if (request.requested_audio_device_id.empty()) {

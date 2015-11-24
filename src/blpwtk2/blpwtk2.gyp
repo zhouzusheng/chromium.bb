@@ -255,6 +255,8 @@
         'public/blpwtk2_contextmenuparams.h',
         'public/blpwtk2_filechooserparams.cc',
         'public/blpwtk2_filechooserparams.h',
+        'public/blpwtk2_iatpatchfunction.cc',
+        'public/blpwtk2_iatpatchfunction.h',
         'public/blpwtk2_newviewparams.cc',
         'public/blpwtk2_newviewparams.h',
         'public/blpwtk2_profile.cc',

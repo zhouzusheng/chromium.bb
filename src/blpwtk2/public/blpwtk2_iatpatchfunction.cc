@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2013 Bloomberg Finance L.P.
+ * Copyright (C) 2015 Bloomberg Finance L.P.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -20,32 +20,50 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef INCLUDED_BLPWTK2_H
-#define INCLUDED_BLPWTK2_H
-
-#include <blpwtk2_blob.h>
-#include <blpwtk2_constants.h>
-#include <blpwtk2_contextmenuitem.h>
-#include <blpwtk2_contextmenuparams.h>
-#include <blpwtk2_filechooserparams.h>
 #include <blpwtk2_iatpatchfunction.h>
-#include <blpwtk2_newviewparams.h>
-#include <blpwtk2_profile.h>
-#include <blpwtk2_profilecreateparams.h>
-#include <blpwtk2_proxyconfig.h>
-#include <blpwtk2_resourcecontext.h>
-#include <blpwtk2_resourceloader.h>
-#include <blpwtk2_spellcheckconfig.h>
-#include <blpwtk2_string.h>
-#include <blpwtk2_stringref.h>
-#include <blpwtk2_textdirection.h>
-#include <blpwtk2_toolkit.h>
-#include <blpwtk2_toolkitcreateparams.h>
-#include <blpwtk2_toolkitfactory.h>
-#include <blpwtk2_webframe.h>
-#include <blpwtk2_webview.h>
-#include <blpwtk2_webviewdelegate.h>
 
-#endif  // INCLUDED_BLPWTK2_H
+#include <base/win/iat_patch_function.h>
 
+namespace blpwtk2 {
 
+struct IATPatchFunction::Impl {
+    base::win::IATPatchFunction d_baseImpl;
+};
+
+IATPatchFunction::IATPatchFunction()
+: d_impl(new Impl())
+{
+}
+
+IATPatchFunction::~IATPatchFunction()
+{
+    delete d_impl;
+}
+
+DWORD IATPatchFunction::patch(const wchar_t* module,
+                              const char* importedFromModule,
+                              const char* functionName,
+                              void* newFunction)
+{
+    return d_impl->d_baseImpl.Patch(module,
+                                    importedFromModule,
+                                    functionName,
+                                    newFunction);
+}
+
+DWORD IATPatchFunction::unpatch()
+{
+    return d_impl->d_baseImpl.Unpatch();
+}
+
+bool IATPatchFunction::isPatched() const
+{
+    return d_impl->d_baseImpl.is_patched();
+}
+
+void* IATPatchFunction::originalFunction() const
+{
+    return d_impl->d_baseImpl.original_function();
+}
+
+}  // close namespace blpwtk2

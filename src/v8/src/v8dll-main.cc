@@ -18,4 +18,15 @@ BOOL WINAPI DllMain(HANDLE hinstDLL,
   return TRUE;
 }
 }
+
+#ifdef ALLOCATOR_SHIM
+extern __int64 allocator_shim_counter;
+extern "C" {
+__declspec(dllexport) __int64 GetAllocatorShimCounter()
+{
+    return allocator_shim_counter;
+}
+}
+#endif
+
 #endif  // V8_OS_WIN

@@ -2591,6 +2591,11 @@ LayoutRect LayoutBlock::localCaretRect(InlineBox* inlineBox, int caretOffset, La
             // The caret is after the last child.
             child = lastChild();
             isAfterLastChild = true;
+
+            if (!child) {
+                // Fallback to the upstream behavior.
+                return LayoutBox::localCaretRect(inlineBox, caretOffset, extraWidthToEndOfLine);
+            }
         }
 
         LayoutUnit margin;

@@ -87,6 +87,7 @@ class ToolkitImpl : public Toolkit {
     void clearWebCache() override;
     void setTimerHiddenPageAlignmentInterval(double) override;
     v8::Local<v8::Context> createWebScriptContext() override;
+    String registerNativeViewForStreaming(NativeView view) override;
 
   private:
     void createInProcessHost();

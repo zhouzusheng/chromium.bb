@@ -178,6 +178,8 @@ class Toolkit {
     // Creates a V8 context that can access the DOM.
     virtual v8::Local<v8::Context> createWebScriptContext() = 0;
 
+    virtual String registerNativeViewForStreaming(NativeView view) = 0;
+
   protected:
     // Destroy this Toolkit object.  Note that clients of blpwtk2 should use
     // the 'destroy()' method, instead of deleting the object directly.

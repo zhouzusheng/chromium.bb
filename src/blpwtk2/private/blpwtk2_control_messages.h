@@ -23,6 +23,8 @@
 // IPC messages for global process control.
 // Multiply-included file, hence no include guard.
 
+#include <blpwtk2_config.h>  // for NativeViewForTransit
+
 #include <ipc/ipc_message_macros.h>
 
 #undef IPC_MESSAGE_EXPORT
@@ -43,6 +45,11 @@ IPC_SYNC_MESSAGE_CONTROL1_1(BlpControlHostMsg_CreateNewHostChannel,
 
 // Clear the web cache on all renderer processes managed by the ProcessHost.
 IPC_MESSAGE_CONTROL0(BlpControlHostMsg_ClearWebCache)
+
+// Register a NativeView as a streaming media source
+IPC_SYNC_MESSAGE_CONTROL1_1(BlpControlHostMsg_RegisterNativeViewForStreaming,
+                            blpwtk2::NativeViewForTransit /* NativeView */,
+                            std::string /* streaming media id */)
 
 
 // ============= Messages from host to client =======================

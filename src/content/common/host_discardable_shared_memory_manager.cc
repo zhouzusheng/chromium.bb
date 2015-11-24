@@ -254,7 +254,10 @@ void HostDiscardableSharedMemoryManager::AllocateLockedDiscardableSharedMemory(
   // Make sure |id| is not already in use.
   MemorySegmentMap& process_segments = processes_[client_process_id];
   if (process_segments.find(id) != process_segments.end()) {
-    LOG(ERROR) << "Invalid discardable shared memory ID";
+    LOG(ERROR) << "Invalid discardable shared memory ID"
+               << ", client_process_id = " << client_process_id
+               << ", size = " << size
+               << ", id = " << id;
     *shared_memory_handle = base::SharedMemory::NULLHandle();
     return;
   }
@@ -276,12 +279,23 @@ void HostDiscardableSharedMemoryManager::AllocateLockedDiscardableSharedMemory(
   scoped_ptr<base::DiscardableSharedMemory> memory(
       new base::DiscardableSharedMemory);
   if (!memory->CreateAndMap(size)) {
+    LOG(ERROR) << "Cannot create and map discardable memory segment"
+               << ", client_process_id = " << client_process_id
+               << ", size = " << size
+               << ", id = " << id
+               << ", bytes_allocated_ = " << bytes_allocated_
+               << ", memory_limit_ = " << memory_limit_;
     *shared_memory_handle = base::SharedMemory::NULLHandle();
     return;
   }
 
   if (!memory->ShareToProcess(process_handle, shared_memory_handle)) {
-    LOG(ERROR) << "Cannot share discardable memory segment";
+    LOG(ERROR) << "Cannot share discardable memory segment"
+               << ", client_process_id = " << client_process_id
+               << ", size = " << size
+               << ", id = " << id
+               << ", bytes_allocated_ = " << bytes_allocated_
+               << ", memory_limit_ = " << memory_limit_;
     *shared_memory_handle = base::SharedMemory::NULLHandle();
     return;
   }
@@ -289,6 +303,12 @@ void HostDiscardableSharedMemoryManager::AllocateLockedDiscardableSharedMemory(
   base::CheckedNumeric<size_t> checked_bytes_allocated = bytes_allocated_;
   checked_bytes_allocated += memory->mapped_size();
   if (!checked_bytes_allocated.IsValid()) {
+    LOG(ERROR) << "checked_bytes_allocated is invalid"
+               << ", client_process_id = " << client_process_id
+               << ", size = " << size
+               << ", id = " << id
+               << ", bytes_allocated_ = " << bytes_allocated_
+               << ", memory_limit_ = " << memory_limit_;
     *shared_memory_handle = base::SharedMemory::NULLHandle();
     return;
   }

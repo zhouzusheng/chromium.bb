@@ -79,6 +79,8 @@ class ProcessHostImpl : public ProcessHost,
     void onCreateNewHostChannel(int timeoutInMilliseconds,
                                 std::string* channelInfo);
     void onClearWebCache();
+    void onRegisterNativeViewForStreaming(NativeViewForTransit view,
+                                          std::string* result);
     void onProfileNew(int routingId,
                       const std::string& dataDir,
                       bool diskCacheEnabled,

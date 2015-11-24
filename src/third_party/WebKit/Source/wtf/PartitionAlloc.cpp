@@ -769,6 +769,13 @@ void* partitionAllocSlowPath(PartitionRootBase* root, int flags, size_t size, Pa
 
     PartitionPage* newPage = nullptr;
 
+    volatile bool wasDirectMapped = false;
+    volatile bool wasNewActivePage = false;
+    volatile bool didRecommitPage = false;
+    volatile bool triedAllocatingNewPage = false;
+    volatile bool didAllocateNewPage = false;
+    volatile int numEmptyPagesChecked = 0;
+
     // For the partitionAllocGeneric API, we have a bunch of buckets marked
     // as special cases. We bounce them through to the slow path so that we
     // can still have a blazing fast hot path due to lack of corner-case
@@ -784,10 +791,12 @@ void* partitionAllocSlowPath(PartitionRootBase* root, int flags, size_t size, Pa
             partitionExcessiveAllocationSize();
         }
         newPage = partitionDirectMap(root, flags, size);
+        wasDirectMapped = true;
     } else if (LIKELY(partitionSetNewActivePage(bucket))) {
         // First, did we find an active page in the active pages list?
         newPage = bucket->activePagesHead;
         ASSERT(partitionPageStateIsActive(newPage));
+        wasNewActivePage = true;
     } else if (LIKELY(bucket->emptyPagesHead != nullptr) || LIKELY(bucket->decommittedPagesHead != nullptr)) {
         // Second, look in our lists of empty and decommitted pages.
         // Check empty pages first, which are preferred, but beware that an
@@ -796,6 +805,7 @@ void* partitionAllocSlowPath(PartitionRootBase* root, int flags, size_t size, Pa
             ASSERT(newPage->bucket == bucket);
             ASSERT(partitionPageStateIsEmpty(newPage) || partitionPageStateIsDecommitted(newPage));
             bucket->emptyPagesHead = newPage->nextPage;
+            ++numEmptyPagesChecked;
             // Accept the empty page unless it got decommitted.
             if (newPage->freelistHead) {
                 newPage->nextPage = nullptr;
@@ -813,13 +823,16 @@ void* partitionAllocSlowPath(PartitionRootBase* root, int flags, size_t size, Pa
             void* addr = partitionPageToPointer(newPage);
             partitionRecommitSystemPages(root, addr, partitionBucketBytes(newPage->bucket));
             partitionPageReset(newPage);
+            didRecommitPage = true;
         }
         ASSERT(newPage);
     } else {
         // Third. If we get here, we need a brand new page.
+        triedAllocatingNewPage = true;
         uint16_t numPartitionPages = partitionBucketPartitionPages(bucket);
         void* rawPages = partitionAllocPartitionPages(root, flags, numPartitionPages);
         if (LIKELY(rawPages != nullptr)) {
+            didAllocateNewPage = true;
             newPage = partitionPointerToPageNoAlignmentCheck(rawPages);
             partitionPageSetup(newPage, bucket);
         }

@@ -41,6 +41,7 @@ struct ToolkitCreateParamsImpl {
     bool d_workMessageWhileDoingWorkDisabled;
     ToolkitCreateParams::LogMessageHandler d_logMessageHandler;
     ToolkitCreateParams::ConsoleLogMessageHandler d_consoleLogMessageHandler;
+    ToolkitCreateParams::WinProcExceptionFilter d_winProcExceptionFilter;
     ToolkitCreateParams::ChannelErrorHandler d_channelErrorHandler;
     int d_maxSocketsPerProxy;
     int d_inputHandlingTimeThrottlingThresholdMicroseconds;
@@ -66,6 +67,7 @@ struct ToolkitCreateParamsImpl {
     , d_workMessageWhileDoingWorkDisabled(false)
     , d_logMessageHandler(0)
     , d_consoleLogMessageHandler(0)
+    , d_winProcExceptionFilter(0)
     , d_channelErrorHandler(0)
     , d_maxSocketsPerProxy(-1000)
     , d_inputHandlingTimeThrottlingThresholdMicroseconds(-1000)
@@ -134,6 +136,11 @@ void ToolkitCreateParams::setLogMessageHandler(LogMessageHandler handler)
 void ToolkitCreateParams::setConsoleLogMessageHandler(ConsoleLogMessageHandler handler)
 {
     d_impl->d_consoleLogMessageHandler = handler;
+}
+
+void ToolkitCreateParams::setWinProcExceptionFilter(WinProcExceptionFilter filter)
+{
+    d_impl->d_winProcExceptionFilter = filter;
 }
 
 void ToolkitCreateParams::setChannelErrorHandler(ChannelErrorHandler handler)
@@ -279,6 +286,11 @@ ToolkitCreateParams::LogMessageHandler ToolkitCreateParams::logMessageHandler() 
 ToolkitCreateParams::ConsoleLogMessageHandler ToolkitCreateParams::consoleLogMessageHandler() const
 {
     return d_impl->d_consoleLogMessageHandler;
+}
+
+ToolkitCreateParams::WinProcExceptionFilter ToolkitCreateParams::winProcExceptionFilter() const
+{
+    return d_impl->d_winProcExceptionFilter;
 }
 
 ToolkitCreateParams::ChannelErrorHandler ToolkitCreateParams::channelErrorHandler() const

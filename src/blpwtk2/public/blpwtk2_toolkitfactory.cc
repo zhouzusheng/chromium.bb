@@ -32,6 +32,7 @@
 #include <base/logging.h>  // for DCHECK
 #include <base/strings/string16.h>
 #include <base/strings/utf_string_conversions.h>
+#include <base/win/wrapped_window_proc.h>
 #include <components/printing/renderer/print_web_view_helper.h>
 #include <content/public/app/content_main_runner.h>
 #include <content/public/common/dwrite_font_platform_win.h>
@@ -162,6 +163,8 @@ Toolkit* ToolkitFactory::create(const ToolkitCreateParams& params)
     }
 
     views::corewm::TooltipWin::SetTooltipStyle(params.tooltipFont());
+
+    base::win::SetWinProcExceptionFilter(params.winProcExceptionFilter());
 
     content::ContentMainRunner::SetCRTErrorHandlerFunctions(
         params.invalidParameterHandler(),

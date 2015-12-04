@@ -623,7 +623,7 @@ void RenderWidgetHostViewAura::Show() {
   delegated_frame_host_->WasShown(browser_latency_info);
 
 #if defined(OS_WIN)
-  if (legacy_render_widget_host_HWND_) {
+  if (legacy_render_widget_host_HWND_ && GetNativeView()->GetHost()) {
     // Reparent the legacy Chrome_RenderWidgetHostHWND window to the parent
     // window before reparenting any plugins. This ensures that the plugin
     // windows stay on top of the child Zorder in the parent and receive
@@ -2698,7 +2698,7 @@ void RenderWidgetHostViewAura::RemovingFromRootWindow() {
   // Update the legacy window's parent temporarily to the desktop window. It
   // will eventually get reparented to the right root.
   if (legacy_render_widget_host_HWND_)
-    legacy_render_widget_host_HWND_->UpdateParent(::GetDesktopWindow());
+    legacy_render_widget_host_HWND_->UpdateParent(ui::GetHiddenWindow());
 #endif
 }
 

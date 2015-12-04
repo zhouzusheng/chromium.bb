@@ -64,6 +64,10 @@ class ToolkitCreateParams {
                                             const StringRef& message,
                                             const StringRef& stack_trace);
 
+    // The callback function that will be invoked whenever SEH exceptions
+    // are caught in win procs.
+    typedef int(__cdecl *WinProcExceptionFilter)(EXCEPTION_POINTERS* info);
+
     // The callback function that will be invoked whenever a channel error
     // happens.
     typedef void(*ChannelErrorHandler)(int reserved);
@@ -102,6 +106,10 @@ class ToolkitCreateParams {
     // Use this method to install a custom log message handler for the
     // Web Console. This handler is only used for in-process renderers.
     BLPWTK2_EXPORT void setConsoleLogMessageHandler(ConsoleLogMessageHandler handler);
+
+    // Use this method to install a custom filter that will be invoked whenever
+    // SEH exceptions happen inside win procs.
+    BLPWTK2_EXPORT void setWinProcExceptionFilter(WinProcExceptionFilter filter);
 
     // Use this method to install a channel error handler.
     BLPWTK2_EXPORT void setChannelErrorHandler(ChannelErrorHandler handler);
@@ -213,6 +221,7 @@ class ToolkitCreateParams {
     bool useDefaultPrintSettings() const;
     LogMessageHandler logMessageHandler() const;
     ConsoleLogMessageHandler consoleLogMessageHandler() const;
+    WinProcExceptionFilter winProcExceptionFilter() const;
     ChannelErrorHandler channelErrorHandler() const;
     bool isInProcessRendererDisabled() const;
     bool isMaxSocketsPerProxySet() const;

@@ -298,8 +298,10 @@ void GpuChannelHost::RemoveRoute(int route_id) {
 
 base::SharedMemoryHandle GpuChannelHost::ShareToGpuProcess(
     base::SharedMemoryHandle source_handle) {
-  if (IsLost())
+  if (IsLost()) {
+    LOG(ERROR) << "Failed to send shared memory handle. Channel was lost.";
     return base::SharedMemory::NULLHandle();
+  }
 
 #if defined(OS_WIN) || defined(OS_MACOSX)
   // Windows and Mac need to explicitly duplicate the handle out to another
@@ -308,8 +310,11 @@ base::SharedMemoryHandle GpuChannelHost::ShareToGpuProcess(
   base::ProcessId peer_pid;
   {
     AutoLock lock(context_lock_);
-    if (!channel_)
+    if (!channel_) {
+      LOG(ERROR)
+          << "No channel available to send shared memory handle to GPU process.";
       return base::SharedMemory::NULLHandle();
+    }
     peer_pid = channel_->GetPeerPID();
   }
 #if defined(OS_WIN)
@@ -320,8 +325,10 @@ base::SharedMemoryHandle GpuChannelHost::ShareToGpuProcess(
   bool success = BrokerDuplicateSharedMemoryHandle(source_handle, peer_pid,
                                                    &target_handle);
 #endif
-  if (!success)
+  if (!success) {
+    LOG(ERROR) << "Failed to duplicate shared memory handle.";
     return base::SharedMemory::NULLHandle();
+  }
 
   return target_handle;
 #else

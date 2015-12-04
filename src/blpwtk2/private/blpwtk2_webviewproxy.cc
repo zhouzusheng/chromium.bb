@@ -90,22 +90,38 @@ bool isXPScaling()
             return false;
         }
 
-        DWORD pvData;
-        DWORD size = sizeof(pvData);
-        LONG result = ::RegGetValueW(userKey,
-                                     L"Software\\Microsoft\\Windows\\DWM",
-                                     L"UseDpiScaling",
-                                     RRF_RT_DWORD,
-                                     NULL,
-                                     &pvData,
-                                     &size);
+        unsigned long pvData;
+        unsigned long size = sizeof(pvData);
+
+        HKEY dwmKey;
+        long result = ::RegOpenKeyExW(userKey,
+                                      L"Software\\Microsoft\\Windows\\DWM",
+                                      0,
+                                      KEY_QUERY_VALUE,
+                                      &dwmKey);
 
         ::RegCloseKey(userKey);
+
         if (ERROR_SUCCESS != result) {
             return false;
         }
 
         scale_read = true;
+
+        result = ::RegQueryValueExW(dwmKey,
+                                    L"UseDpiScaling",
+                                    NULL,
+                                    NULL,
+                                    reinterpret_cast<unsigned char*>(&pvData),
+                                    &size);
+
+        ::RegCloseKey(dwmKey);
+
+        if (ERROR_SUCCESS != result) {
+            isXPScaling = false;
+            return false;
+        }
+
         isXPScaling = pvData ? false : true;
     }
 

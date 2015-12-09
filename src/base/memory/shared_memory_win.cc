@@ -265,6 +265,7 @@ bool SharedMemory::ShareToProcessCommon(ProcessHandle process,
                          access, FALSE, options)) {
     PLOG(ERROR) << "DuplicateHandle failed"
                 << ", mapped_file = " << mapped_file
+                << ", process = " << process
                 << ", access = " << access
                 << ", options = " << options;
     return false;

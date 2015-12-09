@@ -1706,16 +1706,21 @@ void WebLocalFrameImpl::drawInCanvas(const WebRect& rect, const WebString& style
 
     if (!styleClass.isEmpty()) {
         for (auto localFrame : frames) {
-            auto body = WebElement(localFrame->document()->body());
+            auto htmlBody = localFrame->document()->body();
 
-            if (body.hasAttribute(classAttribute)) {
-                WTF::String originalStyleClass = body.getAttribute(classAttribute);
+            // Some documents (ie. SVG documents) do not have body elements
+            if (!htmlBody)
+                continue;
+
+            auto webBody = WebElement(htmlBody);
+            if (webBody.hasAttribute(classAttribute)) {
+                WTF::String originalStyleClass = webBody.getAttribute(classAttribute);
                 originalStyleClasses.push_back(originalStyleClass);
-                body.setAttribute(classAttribute, WTF::String(originalStyleClass + " " + WTF::String(styleClass)));
+                webBody.setAttribute(classAttribute, WTF::String(originalStyleClass + " " + WTF::String(styleClass)));
             }
             else {
                 originalStyleClasses.push_back(WTF::String());
-                body.setAttribute(classAttribute, styleClass);
+                webBody.setAttribute(classAttribute, styleClass);
             }
         }
     }
@@ -1727,14 +1732,18 @@ void WebLocalFrameImpl::drawInCanvas(const WebRect& rect, const WebString& style
     if (!originalStyleClasses.empty()) {
         int index = -1;
         for (auto localFrame : frames) {
+            auto htmlBody = localFrame->document()->body();
+            if (!htmlBody)
+                continue;
+
             const auto& originalStyleClass = originalStyleClasses[++index];
-            auto body = WebElement(localFrame->document()->body());
+            auto webBody = WebElement(htmlBody);
 
             if (!originalStyleClass.isEmpty()) {
-                body.setAttribute(classAttribute, originalStyleClass);
+                webBody.setAttribute(classAttribute, originalStyleClass);
             }
             else {
-                body.removeAttribute(classAttribute);
+                webBody.removeAttribute(classAttribute);
             }
         }
     }

@@ -22,19 +22,38 @@
 
 #include <windows.h>  // NOLINT
 #include <blpwtk2_products.h>
+#include <base/environment.h>
 #include <content/public/app/startup_helper_win.h>  // for InitializeSandboxInfo
 #include <sandbox/win/src/sandbox_types.h>  // for SandboxInterfaceInfo
+
+std::string getSubProcessModuleName()
+{
+    char subProcessModuleEnvVar[64];
+    sprintf_s(subProcessModuleEnvVar, sizeof(subProcessModuleEnvVar),
+              "BLPWTK2_SUBPROCESS_%d_%d_%d_%d_%d",
+              CHROMIUM_VERSION_MAJOR,
+              CHROMIUM_VERSION_MINOR,
+              CHROMIUM_VERSION_BUILD,
+              CHROMIUM_VERSION_PATCH,
+              BB_PATCH_NUMBER);
+    std::string result;
+    scoped_ptr<base::Environment> env(base::Environment::Create());
+    if (!env->GetVar(subProcessModuleEnvVar, &result) || result.empty()) {
+        return BLPWTK2_DLL_NAME;
+    }
+    return result;
+}
 
 int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE, wchar_t*, int)
 {
     sandbox::SandboxInterfaceInfo sandboxInfo = {0};
     content::InitializeSandboxInfo(&sandboxInfo);
     {
-        HMODULE blpwtk2Module = LoadLibraryA(BLPWTK2_DLL_NAME);
-        if (!blpwtk2Module) return -3456;
+        HMODULE subProcessModule = LoadLibraryA(getSubProcessModuleName().c_str());
+        if (!subProcessModule) return -3456;
         typedef int (*MainFunc)(HINSTANCE hInstance,
                                 sandbox::SandboxInterfaceInfo* sandboxInfo);
-        MainFunc mainFunc = (MainFunc)GetProcAddress(blpwtk2Module, "SubProcessMain");
+        MainFunc mainFunc = (MainFunc)GetProcAddress(subProcessModule, "SubProcessMain");
         if (!mainFunc) return -4567;
         return mainFunc(instance, &sandboxInfo);
     }

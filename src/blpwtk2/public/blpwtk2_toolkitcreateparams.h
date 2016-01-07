@@ -214,6 +214,11 @@ class ToolkitCreateParams {
     // This method enables printing background graphics.
     BLPWTK2_EXPORT void enablePrintBackgroundGraphics();
 
+    // Set the name of the module that subprocesses will load.  By default,
+    // subprocesses load the blpwtk2 dll.  The module specified here must
+    // export the SubProcessMain symbol.
+    BLPWTK2_EXPORT void setSubProcessModule(const StringRef& moduleName);
+
     // ACCESSORS
     ThreadMode::Value threadMode() const;
     PumpMode::Value pumpMode() const;
@@ -243,6 +248,7 @@ class ToolkitCreateParams {
     NativeColor inactiveTextSearchHighlightColor() const;
     StringRef headerFooterHTMLContent() const;
     bool isPrintBackgroundGraphicsEnabled() const;
+    StringRef subProcessModule() const;
 
   private:
     ToolkitCreateParamsImpl* d_impl;

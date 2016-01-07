@@ -28,6 +28,7 @@
 #include <blpwtk2_toolkitcreateparams.h>
 #include <blpwtk2_toolkitimpl.h>
 
+#include <base/environment.h>
 #include <base/files/file_path.h>
 #include <base/logging.h>  // for DCHECK
 #include <base/strings/string16.h>
@@ -141,6 +142,26 @@ Toolkit* ToolkitFactory::create(const ToolkitCreateParams& params)
     Statics::channelErrorHandler = params.channelErrorHandler();
     content::DisableDWriteFactoryPatching();
     Statics::userAgentFromEmbedder().assign(params.userAgent().data(), params.userAgent().length());
+
+    // If this process is the host, then set the environment variable that
+    // subprocesses will use to determine which SubProcessMain module should
+    // be loaded.
+    if (params.hostChannel().isEmpty()) {
+        char subProcessModuleEnvVar[64];
+        sprintf_s(subProcessModuleEnvVar, sizeof(subProcessModuleEnvVar),
+                  "BLPWTK2_SUBPROCESS_%d_%d_%d_%d_%d",
+                  CHROMIUM_VERSION_MAJOR,
+                  CHROMIUM_VERSION_MINOR,
+                  CHROMIUM_VERSION_BUILD,
+                  CHROMIUM_VERSION_PATCH,
+                  BB_PATCH_NUMBER);
+        std::string subProcessModule = params.subProcessModule().toStdString();
+        if (subProcessModule.empty()) {
+            subProcessModule = BLPWTK2_DLL_NAME;
+        }
+        scoped_ptr<base::Environment> env(base::Environment::Create());
+        env->SetVar(subProcessModuleEnvVar, subProcessModule);
+    }
 
     NativeColor activeSearchColor = params.activeTextSearchHighlightColor();
     NativeColor inactiveSearchColor = params.inactiveTextSearchHighlightColor();

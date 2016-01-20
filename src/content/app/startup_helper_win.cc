@@ -48,11 +48,21 @@ void InitializeSandboxInfo(sandbox::SandboxInterfaceInfo* info) {
   }
 }
 
+static _invalid_parameter_handler g_invalidParameterHandler = InvalidParameter;
+void SetInvalidParamHandler(_invalid_parameter_handler handler) {
+  g_invalidParameterHandler = handler;
+}
+
+static _purecall_handler g_purecallHandler = PureCall;
+void SetPurecallHandler(_purecall_handler handler) {
+  g_purecallHandler = handler;
+}
+
 // Register the invalid param handler and pure call handler to be able to
 // notify breakpad when it happens.
 void RegisterInvalidParamHandler() {
-  _set_invalid_parameter_handler(InvalidParameter);
-  _set_purecall_handler(PureCall);
+  _set_invalid_parameter_handler(g_invalidParameterHandler);
+  _set_purecall_handler(g_purecallHandler);
 }
 
 void SetupCRT(const base::CommandLine& command_line) {

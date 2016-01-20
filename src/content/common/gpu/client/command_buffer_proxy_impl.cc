@@ -174,11 +174,15 @@ bool CommandBufferProxyImpl::Initialize() {
   TRACE_EVENT0("gpu", "CommandBufferProxyImpl::Initialize");
   shared_state_shm_.reset(channel_->factory()->AllocateSharedMemory(
       sizeof(*shared_state())).release());
-  if (!shared_state_shm_)
+  if (!shared_state_shm_) {
+    LOG(ERROR) << "Could not allocate shared memory of " << sizeof(*shared_state()) << " bytes.";
     return false;
+  }
 
-  if (!shared_state_shm_->Map(sizeof(*shared_state())))
+  if (!shared_state_shm_->Map(sizeof(*shared_state()))) {
+    LOG(ERROR) << "Could not map shared memory.";
     return false;
+  }
 
   shared_state()->Initialize();
 
@@ -187,8 +191,10 @@ bool CommandBufferProxyImpl::Initialize() {
   // sending of the Initialize IPC below.
   base::SharedMemoryHandle handle =
       channel_->ShareToGpuProcess(shared_state_shm_->handle());
-  if (!base::SharedMemory::IsHandleValid(handle))
+  if (!base::SharedMemory::IsHandleValid(handle)) {
+    LOG(ERROR) << "Failed to share handle with GPU process.";
     return false;
+  }
 
   bool result = false;
   if (!Send(new GpuCommandBufferMsg_Initialize(

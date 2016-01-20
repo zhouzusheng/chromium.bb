@@ -49,6 +49,9 @@ class SpellcheckCharAttribute {
   // comments in CreateRuleSets() why we need this function.)
   bool OutputChar(UChar c, base::string16* output) const;
 
+  // Returns the script code the language is based on
+  UScriptCode GetScriptCode() const;
+
  private:
   // Creates the rule-sets that return words possibly used by the given
   // language. Unfortunately, these rule-sets are not perfect and have some

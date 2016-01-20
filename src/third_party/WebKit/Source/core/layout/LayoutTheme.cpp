@@ -816,14 +816,36 @@ Color LayoutTheme::systemColor(CSSValueID cssValueId) const
     return Color();
 }
 
+// Orange.
+static int s_activeTextSearchR = 255;
+static int s_activeTextSearchG = 150;
+static int s_activeTextSearchB = 50;
+
+// Yellow.
+static int s_inactiveTextSearchR = 255;
+static int s_inactiveTextSearchG = 255;
+static int s_inactiveTextSearchB = 0;
+
+// static
+void LayoutTheme::setTextSearchHighlightColor(int activeR, int activeG, int activeB,
+                                              int inactiveR, int inactiveG, int inactiveB)
+{
+    s_activeTextSearchR = activeR;
+    s_activeTextSearchG = activeG;
+    s_activeTextSearchB = activeB;
+    s_inactiveTextSearchR = inactiveR;
+    s_inactiveTextSearchG = inactiveG;
+    s_inactiveTextSearchB = inactiveB;
+}
+
 Color LayoutTheme::platformActiveTextSearchHighlightColor() const
 {
-    return Color(255, 150, 50); // Orange.
+    return Color(s_activeTextSearchR, s_activeTextSearchG, s_activeTextSearchB);
 }
 
 Color LayoutTheme::platformInactiveTextSearchHighlightColor() const
 {
-    return Color(255, 255, 0); // Yellow.
+    return Color(s_inactiveTextSearchR, s_inactiveTextSearchG, s_inactiveTextSearchB);
 }
 
 Color LayoutTheme::tapHighlightColor()

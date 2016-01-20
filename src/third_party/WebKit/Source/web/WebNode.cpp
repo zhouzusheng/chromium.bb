@@ -221,7 +221,7 @@ bool WebNode::isDocumentNode() const
 
 void WebNode::dispatchEvent(const WebDOMEvent& event)
 {
-    if (!event.isNull())
+    if (!event.isNull() && m_private->executionContext())
         m_private->executionContext()->postSuspendableTask(adoptPtr(new NodeDispatchEventTask(m_private, event)));
 }
 

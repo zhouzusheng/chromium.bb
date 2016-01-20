@@ -26,6 +26,8 @@ extern "C" {
 void* _crtheap = reinterpret_cast<void*>(1);
 }
 
+__int64 allocator_shim_counter = 0;
+
 namespace {
 
 const size_t kWindowsPageSize = 4096;
@@ -52,13 +54,21 @@ bool win_heap_init() {
 }
 
 void* win_heap_malloc(size_t size) {
-  if (size < kMaxWindowsAllocation)
-    return HeapAlloc(_crtheap, 0, size);
+  if (size < kMaxWindowsAllocation) {
+    void* ptr = HeapAlloc(_crtheap, 0, size);
+    if (ptr)
+        ::InterlockedAdd64(&allocator_shim_counter, size);
+    return ptr;
+  }
   return NULL;
 }
 
-void win_heap_free(void* size) {
-  HeapFree(_crtheap, 0, size);
+void win_heap_free(void* ptr) {
+  if (ptr) {
+    size_t size = HeapSize(_crtheap, 0, ptr);
+    ::InterlockedAdd64(&allocator_shim_counter, -static_cast<LONG64>(size));
+  }
+  HeapFree(_crtheap, 0, ptr);
 }
 
 void* win_heap_realloc(void* ptr, size_t size) {
@@ -68,8 +78,17 @@ void* win_heap_realloc(void* ptr, size_t size) {
     win_heap_free(ptr);
     return NULL;
   }
-  if (size < kMaxWindowsAllocation)
-    return HeapReAlloc(_crtheap, 0, ptr, size);
+  if (size < kMaxWindowsAllocation) {
+    size_t old_size = HeapSize(_crtheap, 0, ptr);
+    void* new_ptr = HeapReAlloc(_crtheap, 0, ptr, size);
+    if (new_ptr) {
+      if (size >= old_size)
+        ::InterlockedAdd64(&allocator_shim_counter, size - old_size);
+      else
+        ::InterlockedAdd64(&allocator_shim_counter, -static_cast<LONG64>(old_size - size));
+    }
+    return new_ptr;
+  }
   return NULL;
 }
 

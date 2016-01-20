@@ -74,6 +74,8 @@ const double kMinDpi = 1.0;
 #if defined(ENABLE_PRINT_PREVIEW)
 bool g_is_preview_enabled = true;
 
+bool g_use_default_print_settings_ = false;
+
 const char kPageLoadScriptFormat[] =
     "document.open(); document.write(%s); document.close();";
 
@@ -525,8 +527,7 @@ void PrintWebViewHelper::PrintHeaderAndFooter(
       blink::WebLocalFrame::create(blink::WebTreeScopeType::Document, NULL);
   web_view->setMainFrame(frame);
 
-  // SHEZ: This will be filled in by blpwtk2.
-  base::StringValue html("");
+  base::StringValue html(params.header_footer_html);
   // Load page with script to avoid async operations.
   ExecuteScript(frame, kPageLoadScriptFormat, html);
 
@@ -543,6 +544,13 @@ void PrintWebViewHelper::PrintHeaderAndFooter(
   options->SetString("url", params.url);
   base::string16 title = source_frame.document().title();
   options->SetString("title", title.empty() ? params.title : title);
+
+#ifdef BB_HAS_WEB_DOCUMENT_EXTENSIONS
+  // Bloomberg-specific extensions
+  options->SetString("headerText", source_frame.document().bbHeaderText());
+  options->SetString("footerText", source_frame.document().bbFooterText());
+  options->SetBoolean("printPageNumbers", source_frame.document().bbPrintPageNumbers());
+#endif
 
   ExecuteScript(frame, kPageSetupScriptFormat, *options);
 
@@ -808,7 +816,7 @@ void PrepareFrameAndViewForPrint::FinishPrinting() {
 }
 
 bool PrintWebViewHelper::Delegate::IsAskPrintSettingsEnabled() {
-  return true;
+  return !g_use_default_print_settings_;
 }
 
 bool PrintWebViewHelper::Delegate::IsScriptedPrintEnabled() {
@@ -841,6 +849,11 @@ PrintWebViewHelper::~PrintWebViewHelper() {
 // static
 void PrintWebViewHelper::DisablePreview() {
   g_is_preview_enabled = false;
+}
+
+// static
+void PrintWebViewHelper::UseDefaultPrintSettings() {
+  g_use_default_print_settings_ = true;
 }
 
 // static

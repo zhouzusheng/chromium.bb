@@ -290,6 +290,12 @@ v8::Local<v8::Context> WebRemoteFrameImpl::deprecatedMainWorldScriptContext() co
     return toV8Context(frame(), DOMWrapperWorld::mainWorld());
 }
 
+v8::Isolate* WebRemoteFrameImpl::scriptIsolate() const
+{
+    ASSERT_NOT_REACHED();
+    return nullptr;
+}
+
 void WebRemoteFrameImpl::reload(bool ignoreCache)
 {
     ASSERT_NOT_REACHED();
@@ -706,6 +712,11 @@ WebString WebRemoteFrameImpl::layerTreeAsText(bool showDebugInfo) const
 {
     ASSERT_NOT_REACHED();
     return WebString();
+}
+
+void WebRemoteFrameImpl::drawInCanvas(const WebRect& rect, const WebString& styleClass, WebCanvas* canvas) const
+{
+    ASSERT_NOT_REACHED();
 }
 
 WebLocalFrame* WebRemoteFrameImpl::createLocalChild(WebTreeScopeType scope, const WebString& name, WebSandboxFlags sandboxFlags, WebFrameClient* client, WebFrame* previousSibling)

@@ -5,6 +5,8 @@
 #ifndef CONTENT_PUBLIC_APP_STARTUP_HELPER_WIN_H_
 #define CONTENT_PUBLIC_APP_STARTUP_HELPER_WIN_H_
 
+#include <stdlib.h>
+
 namespace base {
 class CommandLine;
 }
@@ -24,6 +26,10 @@ namespace content {
 // sandbox library); it will not work correctly if it is exported from a
 // DLL and linked in.
 void InitializeSandboxInfo(sandbox::SandboxInterfaceInfo* sandbox_info);
+
+// Allow the embedder to set custom handlers.
+void SetInvalidParamHandler(_invalid_parameter_handler handler);
+void SetPurecallHandler(_purecall_handler handler);
 
 // Register the invalid param handler and pure call handler to be able to
 // notify breakpad when it happens.

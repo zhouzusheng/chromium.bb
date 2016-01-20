@@ -43,4 +43,12 @@ WebDOMCustomEvent::WebDOMCustomEvent(const WebString& type)
     unwrap<CustomEvent>()->initCustomEvent(type, false, false, nullptr);
 }
 
+// static
+WebDOMCustomEvent WebDOMCustomEvent::create()
+{
+    WebDOMCustomEvent result;
+    result.m_private = CustomEvent::create();
+    return result;
+}
+
 } // namespace blink

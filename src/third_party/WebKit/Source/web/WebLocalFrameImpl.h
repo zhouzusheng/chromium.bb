@@ -129,6 +129,7 @@ public:
         int argc,
         v8::Local<v8::Value> argv[]) override;
     v8::Local<v8::Context> mainWorldScriptContext() const override;
+    v8::Isolate* scriptIsolate() const override;
     void reload(bool ignoreCache) override;
     void reloadWithOverrideURL(const WebURL& overrideUrl, bool ignoreCache) override;
     void reloadImage(const WebNode&) override;
@@ -226,6 +227,7 @@ public:
 
     bool selectionStartHasSpellingMarkerFor(int from, int length) const override;
     WebString layerTreeAsText(bool showDebugInfo = false) const override;
+    void drawInCanvas(const WebRect& rect, const WebString& styleClass, WebCanvas* canvas) const override;
 
     void registerTestInterface(const WebString& name, WebTestInterfaceFactory*) override;
 

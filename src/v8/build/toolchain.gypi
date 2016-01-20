@@ -46,6 +46,7 @@
     # TODO(bradchen): get rid of nacl_target_arch when someday
     # NaCl V8 builds stop using the ARM simulator
     'nacl_target_arch%': 'none',     # must be set externally
+    'v8_as_shared_library%': 1,
 
     # Setting 'v8_can_use_vfp32dregs' to 'true' will cause V8 to use the VFP
     # registers d16-d31 in the generated code, both in the snapshot and for the

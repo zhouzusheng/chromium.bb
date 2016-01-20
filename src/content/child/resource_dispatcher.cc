@@ -27,8 +27,10 @@
 #include "content/public/child/fixed_received_data.h"
 #include "content/public/child/request_peer.h"
 #include "content/public/child/resource_dispatcher_delegate.h"
+#include "content/public/common/content_client.h"
 #include "content/public/common/resource_response.h"
 #include "content/public/common/resource_type.h"
+#include "content/public/renderer/content_renderer_client.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "net/base/request_priority.h"
@@ -396,6 +398,8 @@ bool ResourceDispatcher::RemovePendingRequest(int request_id) {
   bool release_downloaded_file = request_info.download_to_file;
 
   ReleaseResourcesInMessageQueue(&request_info.deferred_message_queue);
+  if (it->second.bridge)
+    delete it->second.bridge;
   pending_requests_.erase(it);
 
   if (release_downloaded_file) {
@@ -410,6 +414,12 @@ void ResourceDispatcher::Cancel(int request_id) {
   PendingRequestList::iterator it = pending_requests_.find(request_id);
   if (it == pending_requests_.end()) {
     DVLOG(1) << "unknown request";
+    return;
+  }
+
+  if (it->second.bridge) {
+    it->second.bridge->Cancel();
+    RemovePendingRequest(request_id);
     return;
   }
 
@@ -465,6 +475,7 @@ bool ResourceDispatcher::AttachThreadedDataReceiver(
 
 ResourceDispatcher::PendingRequestInfo::PendingRequestInfo()
     : peer(NULL),
+      bridge(NULL),
       threaded_data_provider(NULL),
       resource_type(RESOURCE_TYPE_SUB_RESOURCE),
       is_deferred(false),
@@ -474,12 +485,14 @@ ResourceDispatcher::PendingRequestInfo::PendingRequestInfo()
 
 ResourceDispatcher::PendingRequestInfo::PendingRequestInfo(
     RequestPeer* peer,
+    ResourceLoaderBridge* bridge,
     ResourceType resource_type,
     int origin_pid,
     const GURL& frame_origin,
     const GURL& request_url,
     bool download_to_file)
     : peer(peer),
+      bridge(bridge),
       threaded_data_provider(NULL),
       resource_type(resource_type),
       origin_pid(origin_pid),
@@ -544,6 +557,13 @@ void ResourceDispatcher::FlushDeferredMessages(int request_id) {
 void ResourceDispatcher::StartSync(const RequestInfo& request_info,
                                    ResourceRequestBody* request_body,
                                    SyncLoadResponse* response) {
+  scoped_ptr<ResourceLoaderBridge> bridge(
+      GetContentClient()->renderer()->OverrideResourceLoaderBridge(request_info));
+  if (bridge.get()) {
+    bridge->SyncLoad(response);
+    return;
+  }
+
   scoped_ptr<ResourceHostMsg_Request> request =
       CreateRequest(request_info, request_body, NULL);
 
@@ -574,14 +594,38 @@ void ResourceDispatcher::StartSync(const RequestInfo& request_info,
 int ResourceDispatcher::StartAsync(const RequestInfo& request_info,
                                    ResourceRequestBody* request_body,
                                    RequestPeer* peer) {
+  // Compute a unique request_id for this renderer process.
+  int request_id = MakeRequestID();
+
+  scoped_ptr<ResourceLoaderBridge> bridge(
+      GetContentClient()->renderer()->OverrideResourceLoaderBridge(request_info));
+  if (bridge.get()) {
+      const RequestExtraData kEmptyData;
+      const RequestExtraData* extra_data;
+      if (request_info.extra_data)
+        extra_data = static_cast<RequestExtraData*>(request_info.extra_data);
+      else
+        extra_data = &kEmptyData;
+
+      bridge->Start(peer);
+      pending_requests_[request_id] =
+          PendingRequestInfo(peer,
+                             bridge.release(),
+                             request_info.request_type,
+                             request_info.requestor_pid,
+                             extra_data->frame_origin(),
+                             request_info.url,
+                             request_info.download_to_file);
+      return request_id;
+  }
+
   GURL frame_origin;
   scoped_ptr<ResourceHostMsg_Request> request =
       CreateRequest(request_info, request_body, &frame_origin);
 
-  // Compute a unique request_id for this renderer process.
-  int request_id = MakeRequestID();
   pending_requests_[request_id] =
       PendingRequestInfo(peer,
+                         nullptr,
                          request->resource_type,
                          request->origin_pid,
                          frame_origin,

@@ -25,7 +25,7 @@ struct StreamedSource {
   // Internal implementation of v8::ScriptCompiler::StreamedSource.
   base::SmartPointer<ScriptCompiler::ExternalSourceStream> source_stream;
   ScriptCompiler::StreamedSource::Encoding encoding;
-  base::SmartPointer<ScriptCompiler::CachedData> cached_data;
+  base::SmartDisposingPointer<ScriptCompiler::CachedData> cached_data;
 
   // Data needed for parsing, and data needed to to be passed between thread
   // between parsing and compilation. These need to be initialized before the

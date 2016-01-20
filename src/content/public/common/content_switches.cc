@@ -313,6 +313,15 @@ const char kEnableDistanceFieldText[]       = "enable-distance-field-text";
 // Enable the experimental Credential Manager JavaScript API.
 const char kEnableCredentialManagerAPI[]    = "enable-credential-manager-api";
 
+// Enables CSS3 Text Decorations.
+const char kEnableCSS3TextDecorations[] = "enable-css3-text-decorations";
+
+// Enables CSS3 Text.
+const char kEnableCSS3Text[] = "enable-css3-text";
+
+// Enables CSS Grid Layout.
+const char kEnableCSSGridLayout[] = "enable-css-grid-layout";
+
 // Enable the creation of compositing layers when it would prevent LCD text.
 const char kEnablePreferCompositingToLCDText[] =
     "enable-prefer-compositing-to-lcd-text";

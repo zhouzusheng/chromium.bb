@@ -233,6 +233,7 @@ SyncChannel::SyncContext::SyncContext(
     WaitableEvent* shutdown_event)
     : ChannelProxy::Context(listener, ipc_task_runner),
       received_sync_msgs_(ReceivedSyncMsgQueue::AddContext()),
+      peek_messages_event_(true, false),
       shutdown_event_(shutdown_event),
       restrict_dispatch_group_(kRestrictDispatchGroup_None) {
 }
@@ -258,6 +259,12 @@ void SyncChannel::SyncContext::Push(SyncMessage* sync_msg) {
                          sync_msg->GetReplyDeserializer(),
                          new WaitableEvent(true, false));
   base::AutoLock auto_lock(deserializers_lock_);
+#if defined(OS_WIN)
+  if (deserializers_.empty()) {
+    if (base::MessageLoop::current()->ipc_sync_messages_should_peek())
+      SchedulePeekMessageTimeout();
+  }
+#endif
   deserializers_.push_back(pending);
 }
 
@@ -379,6 +386,18 @@ void SyncChannel::SyncContext::OnSendTimeout(int message_id) {
   }
 }
 
+void SyncChannel::SyncContext::SchedulePeekMessageTimeout() {
+  peek_messages_event_.Reset();
+  ipc_task_runner()->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(&SyncContext::OnPeekMessageTimeout, this),
+      base::TimeDelta::FromMilliseconds(250));
+}
+
+void SyncChannel::SyncContext::OnPeekMessageTimeout() {
+  peek_messages_event_.Signal();
+}
+
 void SyncChannel::SyncContext::CancelPendingSends() {
   base::AutoLock auto_lock(deserializers_lock_);
   PendingSyncMessageQueue::iterator iter;
@@ -413,6 +432,7 @@ scoped_ptr<SyncChannel> SyncChannel::Create(
     const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
     bool create_pipe_now,
     base::WaitableEvent* shutdown_event) {
+  LOG(INFO) << "Creating SyncChannel: " << channel_handle.name;
   scoped_ptr<SyncChannel> channel =
       Create(listener, ipc_task_runner, shutdown_event);
   channel->Init(channel_handle, mode, create_pipe_now);
@@ -512,10 +532,11 @@ void SyncChannel::WaitForReply(
     WaitableEvent* objects[] = {
       context->GetDispatchEvent(),
       context->GetSendDoneEvent(),
+      context->peek_messages_event(),
       pump_messages_event
     };
 
-    unsigned count = pump_messages_event ? 3: 2;
+    unsigned count = pump_messages_event ? 4: 3;
     size_t result = WaitableEvent::WaitMany(objects, count);
     if (result == 0 /* dispatch event */) {
       // We're waiting for a reply, but we received a blocking synchronous
@@ -525,7 +546,19 @@ void SyncChannel::WaitForReply(
       continue;
     }
 
-    if (result == 2 /* pump_messages_event */)
+#if defined(OS_WIN)
+    if (result == 2 /* peek_messages_event */) {
+      // We're waiting for a reply, but we want to ensure that any sent
+      // messages on the Windows message queue get processed.  This is to
+      // prevent a deadlock when we're syncing with another UI thread.
+      MSG msg;
+      ::PeekMessage(&msg, NULL, 0, 0, PM_NOREMOVE);
+      context->SchedulePeekMessageTimeout();
+      continue;
+    }
+#endif
+
+    if (result == 3 /* pump_messages_event */)
       WaitForReplyWithNestedMessageLoop(context);  // Run a nested message loop.
 
     break;

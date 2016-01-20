@@ -120,6 +120,8 @@ class CONTENT_EXPORT RenderWidget
   // Closes a RenderWidget that was created by |CreateForFrame|.
   void CloseForFrame();
 
+  static void SetInputHandlingTimeThrottlingThresholdMicroseconds(int us);
+
   int32 routing_id() const { return routing_id_; }
   CompositorDependencies* compositor_deps() const { return compositor_deps_; }
   blink::WebWidget* webwidget() const { return webwidget_; }
@@ -336,6 +338,8 @@ class CONTENT_EXPORT RenderWidget
 #endif
 
   bool host_closing() const { return host_closing_; }
+
+  void bbHandleInputEvent(const blink::WebInputEvent& event);
 
  protected:
   // Friend RefCounted so that the dtor can be non-public. Using this class
@@ -609,6 +613,9 @@ class CONTENT_EXPORT RenderWidget
   // The size of the RenderWidget.
   gfx::Size size_;
 
+  // The size of the RenderWidget expected by the host.
+  gfx::Size browser_size_;
+
   // The size of the view's backing surface in non-DPI-adjusted pixels.
   gfx::Size physical_backing_size_;
 
@@ -797,6 +804,10 @@ class CONTENT_EXPORT RenderWidget
   gfx::Point host_context_menu_location_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidget);
+
+private:
+
+  bool bb_OnHandleInputEvent_no_ack_;
 };
 
 }  // namespace content

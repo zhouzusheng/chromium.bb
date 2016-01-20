@@ -40,7 +40,7 @@
       'type': 'executable',
       'dependencies': [
         '../tools/gyp/v8.gyp:v8',
-        '../tools/gyp/v8.gyp:v8_libplatform',
+        '../tools/gyp/v8.gyp:v8_libplatformimpl',
       ],
       # Generated source files need this explicitly:
       'include_dirs+': [
@@ -66,7 +66,7 @@
         [ 'OS=="win"', {
           'sources': [ 'd8-windows.cc', ]
         }],
-        [ 'component!="shared_library"', {
+        [ 'v8_as_shared_library==0', {
           'sources': [
             '<(SHARED_INTERMEDIATE_DIR)/d8-js.cc',
           ],

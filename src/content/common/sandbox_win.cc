@@ -842,10 +842,13 @@ bool BrokerDuplicateHandle(HANDLE source_handle,
                            DWORD options) {
   // If our process is the target just duplicate the handle.
   if (::GetCurrentProcessId() == target_process_id) {
-    return !!::DuplicateHandle(::GetCurrentProcess(), source_handle,
-                               ::GetCurrentProcess(), target_handle,
-                               desired_access, FALSE, options);
+    if (!!::DuplicateHandle(::GetCurrentProcess(), source_handle,
+                            ::GetCurrentProcess(), target_handle,
+                            desired_access, FALSE, options))
+      return true;
 
+    PLOG(ERROR) << "Failed to duplicate handle.";
+    return false;
   }
 
   // Try the broker next
@@ -859,13 +862,19 @@ bool BrokerDuplicateHandle(HANDLE source_handle,
   // Finally, see if we already have access to the process.
   base::win::ScopedHandle target_process;
   target_process.Set(::OpenProcess(PROCESS_DUP_HANDLE, FALSE,
-                                    target_process_id));
+                                   target_process_id));
   if (target_process.IsValid()) {
-    return !!::DuplicateHandle(::GetCurrentProcess(), source_handle,
-                                target_process.Get(), target_handle,
-                                desired_access, FALSE, options);
+    if (!!::DuplicateHandle(::GetCurrentProcess(), source_handle,
+                            target_process.Get(), target_handle,
+                            desired_access, FALSE, options)) {
+      return true;
+    }
+
+    PLOG(ERROR) << "Failed to duplicate handle for another process.";
+    return false;
   }
 
+  LOG(ERROR) << "Failed to create handle for process " << target_process_id;
   return false;
 }
 

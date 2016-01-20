@@ -37,10 +37,10 @@
 
 namespace blink {
 
-WebDOMCustomEvent::WebDOMCustomEvent(const WebString& type)
+WebDOMCustomEvent::WebDOMCustomEvent(const WebString& type, bool canBubble, bool cancelable, const WebSerializedScriptValue& messageData)
     : WebDOMEvent(CustomEvent::create())
 {
-    unwrap<CustomEvent>()->initCustomEvent(type, false, false, nullptr);
+    unwrap<CustomEvent>()->initCustomEvent(type, canBubble, cancelable, messageData);
 }
 
 } // namespace blink

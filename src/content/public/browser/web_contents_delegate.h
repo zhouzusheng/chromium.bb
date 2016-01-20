@@ -21,6 +21,7 @@
 #include "third_party/WebKit/public/platform/WebDisplayMode.h"
 #include "third_party/WebKit/public/web/WebDragOperation.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "third_party/WebKit/public/web/WebTextDirection.h"
 #include "ui/base/window_open_disposition.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/native_widget_types.h"
@@ -65,6 +66,13 @@ class WebGestureEvent;
 namespace content {
 
 struct OpenURLParams;
+
+struct ContentCreatedParams {
+    WindowOpenDisposition disposition;
+    float x, y, width, height;
+    bool x_set, y_set, width_set, height_set;
+    std::vector<base::string16> additional_features;
+};
 
 // Objects implement this interface to get notified about changes in the
 // WebContents and to provide necessary functionality.
@@ -307,6 +315,7 @@ class CONTENT_EXPORT WebContentsDelegate {
                                   int opener_render_frame_id,
                                   const std::string& frame_name,
                                   const GURL& target_url,
+                                  const ContentCreatedParams& params,
                                   WebContents* new_contents) {}
 
   // Notification that the tab is hung.
@@ -469,6 +478,19 @@ class CONTENT_EXPORT WebContentsDelegate {
       const GURL& url,
       const base::FilePath& plugin_path,
       const base::Callback<void(bool)>& callback);
+
+  // Return true if the RWHV should take focus on mouse-down.
+  virtual bool ShouldSetKeyboardFocusOnMouseDown();
+  virtual bool ShouldSetLogicalFocusOnMouseDown();
+
+  // Allows delegate to show a custom tooltip. If the delegate doesn't want a
+  // custom tooltip, it should just return 'false'. Otherwise, it should show
+  // the tooltip and return 'true'. By default, the delegate doesn't provide a
+  // custom tooltip.
+  virtual bool ShowTooltip(
+      WebContents* web_contents,
+      const base::string16& tooltip_text,
+      blink::WebTextDirection text_direction_hint);
 
   // Returns the size for the new render view created for the pending entry in
   // |web_contents|; if there's no size, returns an empty size.

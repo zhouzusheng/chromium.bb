@@ -250,7 +250,7 @@ WebContents* WebContents::Create(const WebContents::CreateParams& params) {
 WebContents* WebContents::CreateWithSessionStorage(
     const WebContents::CreateParams& params,
     const SessionStorageNamespaceMap& session_storage_namespace_map) {
-  WebContentsImpl* new_contents = new WebContentsImpl(params.browser_context);
+  WebContentsImpl* new_contents = new WebContentsImpl(params.browser_context, params.render_process_affinity);
 
   for (SessionStorageNamespaceMap::const_iterator it =
            session_storage_namespace_map.begin();
@@ -364,7 +364,8 @@ void WebContentsImpl::WebContentsTreeNode::ConnectToOuterWebContents(
 
 // WebContentsImpl -------------------------------------------------------------
 
-WebContentsImpl::WebContentsImpl(BrowserContext* browser_context)
+WebContentsImpl::WebContentsImpl(BrowserContext* browser_context,
+                                 int render_process_affinity)
     : delegate_(NULL),
       controller_(this, browser_context),
       render_view_host_delegate_view_(NULL),
@@ -376,7 +377,8 @@ WebContentsImpl::WebContentsImpl(BrowserContext* browser_context)
                   this,
                   this,
                   this,
-                  this),
+                  this,
+                  render_process_affinity),
       is_loading_(false),
       is_load_to_different_document_(false),
       crashed_status_(base::TERMINATION_STATUS_STILL_RUNNING),
@@ -517,7 +519,7 @@ WebContentsImpl* WebContentsImpl::CreateWithOpener(
     const WebContents::CreateParams& params,
     FrameTreeNode* opener) {
   TRACE_EVENT0("browser", "WebContentsImpl::CreateWithOpener");
-  WebContentsImpl* new_contents = new WebContentsImpl(params.browser_context);
+  WebContentsImpl* new_contents = new WebContentsImpl(params.browser_context, params.render_process_affinity);
 
   if (!params.opener_suppressed && opener) {
     new_contents->GetFrameTree()->root()->SetOpener(opener);
@@ -1585,6 +1587,23 @@ RenderWidgetHostInputEventRouter* WebContentsImpl::GetInputEventRouter() {
   return rwh_input_event_router_.get();
 }
 
+bool WebContentsImpl::ShouldSetKeyboardFocusOnMouseDown() {
+  return !delegate_ || delegate_->ShouldSetKeyboardFocusOnMouseDown();
+}
+
+bool WebContentsImpl::ShouldSetLogicalFocusOnMouseDown() {
+  return !delegate_ || delegate_->ShouldSetLogicalFocusOnMouseDown();
+}
+
+bool WebContentsImpl::ShowTooltip(
+    const base::string16& tooltip_text,
+    blink::WebTextDirection text_direction_hint) {
+  if (delegate_) {
+    return delegate_->ShowTooltip(this, tooltip_text, text_direction_hint);
+  }
+  return false;
+}
+
 void WebContentsImpl::EnterFullscreenMode(const GURL& origin) {
   // This method is being called to enter renderer-initiated fullscreen mode.
   // Make sure any existing fullscreen widget is shut down first.
@@ -1741,6 +1760,7 @@ void WebContentsImpl::CreateNewWindow(
   CreateParams create_params(GetBrowserContext(), site_instance.get());
   create_params.routing_id = route_id;
   create_params.main_frame_routing_id = main_frame_route_id;
+  create_params.render_process_affinity = frame_tree_.RenderProcessAffinity();
   create_params.main_frame_name = params.frame_name;
   create_params.opener_render_process_id = render_process_id;
   create_params.opener_render_frame_id = params.opener_render_frame_id;
@@ -1788,9 +1808,20 @@ void WebContentsImpl::CreateNewWindow(
   }
 
   if (delegate_) {
+    ContentCreatedParams delegate_params;
+    delegate_params.disposition = params.disposition;
+    delegate_params.x = params.features.x;
+    delegate_params.y = params.features.y;
+    delegate_params.width = params.features.width;
+    delegate_params.height = params.features.height;
+    delegate_params.x_set = params.features.xSet;
+    delegate_params.y_set = params.features.ySet;
+    delegate_params.width_set = params.features.widthSet;
+    delegate_params.height_set = params.features.heightSet;
+    delegate_params.additional_features = params.additional_features;
     delegate_->WebContentsCreated(
         this, params.opener_render_frame_id, params.frame_name,
-        params.target_url, new_contents);
+        params.target_url, delegate_params, new_contents);
   }
 
   if (params.opener_suppressed) {
@@ -2574,6 +2605,10 @@ void WebContentsImpl::DidGetRedirectForResourceRequest(
 
 void WebContentsImpl::NotifyWebContentsFocused() {
   FOR_EACH_OBSERVER(WebContentsObserver, observers_, OnWebContentsFocused());
+}
+
+void WebContentsImpl::NotifyWebContentsBlurred() {
+  FOR_EACH_OBSERVER(WebContentsObserver, observers_, OnWebContentsBlurred());
 }
 
 void WebContentsImpl::SystemDragEnded() {

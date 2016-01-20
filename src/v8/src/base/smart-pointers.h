@@ -104,6 +104,23 @@ class SmartArrayPointer : public SmartPointerBase<ArrayDeallocator<T>, T> {
 
 
 template <typename T>
+struct ObjectDisposer {
+  static void Delete(T* object) { T::dispose(object); }
+};
+
+
+template <typename T>
+class SmartDisposingPointer: public SmartPointerBase<ObjectDisposer<T>, T> {
+ public:
+  SmartDisposingPointer() { }
+  explicit SmartDisposingPointer(T* ptr)
+      : SmartPointerBase<ObjectDisposer<T>, T>(ptr) { }
+  SmartDisposingPointer(const SmartDisposingPointer<T>& rhs)
+      : SmartPointerBase<ObjectDisposer<T>, T>(rhs) { }
+};
+
+
+template <typename T>
 struct ObjectDeallocator {
   static void Delete(T* object) { delete object; }
 };

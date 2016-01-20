@@ -224,6 +224,10 @@ SSLHostStateDelegate* ShellBrowserContext::GetSSLHostStateDelegate() {
   return NULL;
 }
 
+bool ShellBrowserContext::AllowDictionaryDownloads() {
+  return true;
+}
+
 PermissionManager* ShellBrowserContext::GetPermissionManager() {
   if (!permission_manager_.get())
     permission_manager_.reset(new ShellPermissionManager());

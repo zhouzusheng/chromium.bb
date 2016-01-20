@@ -742,7 +742,7 @@
       'type': 'executable',
       'dependencies': [
         '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
-        '<(DEPTH)/v8/tools/gyp/v8.gyp:v8_libplatform',
+        '<(DEPTH)/v8/tools/gyp/v8.gyp:v8_libplatformimpl',
         'pdfium',
       ],
       'include_dirs': [

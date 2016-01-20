@@ -41,22 +41,29 @@
     {
       'target_name': 'v8',
       'dependencies_traverse': 1,
-      'dependencies': ['v8_maybe_snapshot'],
+      'dependencies': ['v8_maybe_snapshot','v8_libplatformimpl'],
       'conditions': [
         ['want_separate_host_toolset==1', {
           'toolsets': ['host', 'target'],
         }, {
           'toolsets': ['target'],
         }],
-        ['component=="shared_library"', {
-          'type': '<(component)',
+        ['v8_as_shared_library==1', {
+          'type': 'shared_library',
+          'product_name': 'blpv8<(bb_version_suffix)',
           'sources': [
+            '../../src/blpv8.rc',
+            '<(SHARED_INTERMEDIATE_DIR)/gin/v8_snapshot_fingerprint.cc',
             # Note: on non-Windows we still build this file so that gyp
             # has some sources to link into the component.
             '../../src/v8dll-main.cc',
           ],
           'include_dirs': [
             '../..',
+          ],
+          'dependencies': [
+            '../../../blpwtk2/blpwtk2.gyp:blpwtk2_generate_sources',
+            '../../../gin/gin.gyp:gin_v8_snapshot_fingerprint',
           ],
           'defines': [
             'V8_SHARED',
@@ -79,6 +86,12 @@
             }],
           ],
           'conditions': [
+            ['OS=="win" and win_use_allocator_shim==1', {
+              'dependencies': [
+                '<(DEPTH)/base/allocator/allocator.gyp:allocator',
+                '<(DEPTH)/base/base.gyp:base',
+              ],
+            }],
             ['OS=="mac"', {
               'xcode_settings': {
                 'OTHER_LDFLAGS': ['-dynamiclib', '-all_load']
@@ -131,7 +144,7 @@
               ],
             }, {
               'inputs': [
-                '<(PRODUCT_DIR)/snapshot_blob.bin',
+                '<(PRODUCT_DIR)/snapshot_blob<(bb_version_suffix).bin',
               ],
             }],
           ],
@@ -160,7 +173,7 @@
             'js2c',
           ],
         }],
-        ['component=="shared_library"', {
+        ['v8_as_shared_library==1', {
           'defines': [
             'V8_SHARED',
             'BUILDING_V8_SHARED',
@@ -245,7 +258,7 @@
           'toolsets': ['target'],
           'dependencies': ['js2c'],
         }],
-        ['component=="shared_library"', {
+        ['v8_as_shared_library==1', {
           'defines': [
             'BUILDING_V8_SHARED',
             'V8_SHARED',
@@ -273,7 +286,7 @@
                 'natives_blob',
               ],
             }],
-            ['component=="shared_library"', {
+            ['v8_as_shared_library==1', {
               'defines': [
                 'V8_SHARED',
                 'BUILDING_V8_SHARED',
@@ -331,12 +344,12 @@
                       ],
                     }, {
                       'outputs': [
-                        '<(PRODUCT_DIR)/snapshot_blob.bin',
+                        '<(PRODUCT_DIR)/snapshot_blob<(bb_version_suffix).bin',
                       ],
                       'action': [
                         '<(mksnapshot_exec)',
                         '<@(mksnapshot_flags)',
-                        '--startup_blob', '<(PRODUCT_DIR)/snapshot_blob.bin',
+                        '--startup_blob', '<(PRODUCT_DIR)/snapshot_blob<(bb_version_suffix).bin',
                         '<(embed_script)',
                       ],
                     }],
@@ -363,6 +376,7 @@
       'type': 'static_library',
       'dependencies': [
         'v8_libbase',
+        '../../../blpwtk2/blpwtk2.gyp:blpwtk2_generate_sources',
       ],
       'variables': {
         'optimize': 'max',
@@ -1392,7 +1406,7 @@
           # See http://crbug.com/485155.
           'msvs_shard': 4,
         }],
-        ['component=="shared_library"', {
+        ['v8_as_shared_library==1', {
           'defines': [
             'BUILDING_V8_SHARED',
             'V8_SHARED',
@@ -1700,7 +1714,7 @@
       ],
     },
     {
-      'target_name': 'v8_libplatform',
+      'target_name': 'v8_libplatformimpl',
       'type': 'static_library',
       'variables': {
         'optimize': 'max',
@@ -1712,7 +1726,6 @@
         '../..',
       ],
       'sources': [
-        '../../include/libplatform/libplatform.h',
         '../../src/libplatform/default-platform.cc',
         '../../src/libplatform/default-platform.h',
         '../../src/libplatform/task-queue.cc',
@@ -1762,10 +1775,10 @@
                     ],
                   }, {
                     'outputs': [
-                      '<(PRODUCT_DIR)/natives_blob.bin',
+                      '<(PRODUCT_DIR)/natives_blob<(bb_version_suffix).bin',
                     ],
                     'action': [
-                      'python', '<@(_inputs)', '<(PRODUCT_DIR)/natives_blob.bin'
+                      'python', '<@(_inputs)', '<(PRODUCT_DIR)/natives_blob<(bb_version_suffix).bin'
                     ],
                   }],
                 ],
@@ -2070,7 +2083,7 @@
     {
       'target_name': 'mksnapshot',
       'type': 'executable',
-      'dependencies': ['v8_base', 'v8_nosnapshot', 'v8_libplatform'],
+      'dependencies': ['v8_base', 'v8_nosnapshot', 'v8_libplatformimpl'],
       'include_dirs+': [
         '../..',
       ],

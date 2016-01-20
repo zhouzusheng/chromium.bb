@@ -150,6 +150,7 @@ EventType EventTypeFromNative(const base::NativeEvent& native_event) {
     case WM_KEYDOWN:
     case WM_SYSKEYDOWN:
     case WM_CHAR:
+    case WM_SYSCHAR:
       return ET_KEY_PRESSED;
     // The WM_DEADCHAR message is posted to the window with the keyboard focus
     // when a WM_KEYUP message is translated. This happens for special keyboard

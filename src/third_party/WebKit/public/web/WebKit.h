@@ -78,6 +78,14 @@ BLINK_EXPORT bool layoutTestMode();
 BLINK_EXPORT void setFontAntialiasingEnabledForTest(bool);
 BLINK_EXPORT bool fontAntialiasingEnabledForTest();
 
+// By default, timers on hidden pages are aligned so that they fire once per
+// second at most.  This API changes that alignment interval.
+BLINK_EXPORT void setTimerHiddenPageAlignmentInterval(double);
+
+// Set the highlight color for text searches.
+BLINK_EXPORT void setTextSearchHighlightColor(int activeR, int activeG, int activeB,
+                                              int inactiveR, int inactiveG, int inactiveB);
+
 // Enables the named log channel. See WebCore/platform/Logging.h for details.
 BLINK_EXPORT void enableLogChannel(const char*);
 

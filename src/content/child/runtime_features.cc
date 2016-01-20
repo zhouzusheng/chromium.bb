@@ -158,6 +158,15 @@ void SetRuntimeFeaturesDefaultsAndUpdateFromArgs(
   if (command_line.HasSwitch(switches::kEnableWebGLImageChromium))
     WebRuntimeFeatures::enableWebGLImageChromium(true);
 
+  if (command_line.HasSwitch(switches::kEnableCSS3TextDecorations))
+    WebRuntimeFeatures::enableCSS3TextDecorations(true);
+
+  if (command_line.HasSwitch(switches::kEnableCSS3Text))
+    WebRuntimeFeatures::enableCSS3Text(true);
+
+  if (command_line.HasSwitch(switches::kEnableCSSGridLayout))
+    WebRuntimeFeatures::enableCSSGridLayout(true);
+
   if (command_line.HasSwitch(switches::kForceOverlayFullscreenVideo))
     WebRuntimeFeatures::forceOverlayFullscreenVideo(true);
 

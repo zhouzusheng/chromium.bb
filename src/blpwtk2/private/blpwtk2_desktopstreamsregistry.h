@@ -51,7 +51,7 @@ class DesktopStreamsRegistry {
   content::MediaStreamDevice RequestMediaForStreamId(const std::string& id);
 
  private:
-  friend struct DefaultSingletonTraits<DesktopStreamsRegistry>;
+  friend struct base::DefaultSingletonTraits<DesktopStreamsRegistry>;
   DesktopStreamsRegistry();
   ~DesktopStreamsRegistry();
 

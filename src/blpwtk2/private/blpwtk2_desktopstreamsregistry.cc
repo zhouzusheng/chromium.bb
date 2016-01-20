@@ -50,7 +50,7 @@ std::string GenerateRandomStreamId() {
 DesktopStreamsRegistry* DesktopStreamsRegistry::GetInstance() {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
-  return Singleton<DesktopStreamsRegistry>::get();
+  return base::Singleton<DesktopStreamsRegistry>::get();
 }
 
 std::string DesktopStreamsRegistry::RegisterNativeViewForStreaming(NativeView view) {

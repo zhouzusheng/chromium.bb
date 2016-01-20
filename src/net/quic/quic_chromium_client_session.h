@@ -17,6 +17,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
 #include "net/base/completion_callback.h"
+#include "net/base/socket_performance_watcher.h"
 #include "net/proxy/proxy_server.h"
 #include "net/quic/quic_client_session_base.h"
 #include "net/quic/quic_connection_logger.h"
@@ -24,6 +25,7 @@
 #include "net/quic/quic_packet_reader.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_reliable_client_stream.h"
+#include "net/quic/quic_time.h"
 
 namespace net {
 
@@ -110,15 +112,19 @@ class NET_EXPORT_PRIVATE QuicChromiumClientSession
       scoped_ptr<DatagramClientSocket> socket,
       QuicStreamFactory* stream_factory,
       QuicCryptoClientStreamFactory* crypto_client_stream_factory,
+      QuicClock* clock,
       TransportSecurityState* transport_security_state,
       scoped_ptr<QuicServerInfo> server_info,
       const QuicServerId& server_id,
+      int yield_after_packets,
+      QuicTime::Delta yield_after_duration,
       int cert_verify_flags,
       const QuicConfig& config,
       QuicCryptoClientConfig* crypto_config,
       const char* const connection_description,
       base::TimeTicks dns_resolution_end_time,
       base::TaskRunner* task_runner,
+      scoped_ptr<SocketPerformanceWatcher> socket_performance_watcher,
       NetLog* net_log);
   ~QuicChromiumClientSession() override;
 

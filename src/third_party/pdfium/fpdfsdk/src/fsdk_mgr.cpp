@@ -10,6 +10,7 @@
 #include "../include/fsdk_mgr.h"
 #include "../include/formfiller/FFL_FormFiller.h"
 #include "../include/javascript/IJavaScript.h"
+#include "../include/javascript/JS_Runtime.h"
 
 #if _FX_OS_ == _FX_ANDROID_
 #include "time.h"
@@ -203,31 +204,20 @@ FX_SYSTEMTIME CFX_SystemHandler::GetLocalTime() {
   return m_pEnv->FFI_GetLocalTime();
 }
 
-CJS_RuntimeFactory* GetJSRuntimeFactory() {
-  static CJS_RuntimeFactory s_JSRuntimeFactory;
-  return &s_JSRuntimeFactory;
-}
-
 CPDFDoc_Environment::CPDFDoc_Environment(CPDF_Document* pDoc,
                                          FPDF_FORMFILLINFO* pFFinfo)
     : m_pAnnotHandlerMgr(NULL),
       m_pActionHandler(NULL),
-      m_pJSRuntime(NULL),
       m_pInfo(pFFinfo),
       m_pSDKDoc(NULL),
       m_pPDFDoc(pDoc),
       m_pIFormFiller(NULL) {
   m_pSysHandler = new CFX_SystemHandler(this);
-  m_pJSRuntimeFactory = GetJSRuntimeFactory();
-  m_pJSRuntimeFactory->AddRef();
 }
 
 CPDFDoc_Environment::~CPDFDoc_Environment() {
   delete m_pIFormFiller;
   m_pIFormFiller = NULL;
-  if (m_pJSRuntime && m_pJSRuntimeFactory)
-    m_pJSRuntimeFactory->DeleteJSRuntime(m_pJSRuntime);
-  m_pJSRuntimeFactory->Release();
 
   delete m_pSysHandler;
   m_pSysHandler = NULL;
@@ -384,8 +374,8 @@ IFXJS_Runtime* CPDFDoc_Environment::GetJSRuntime() {
   if (!IsJSInitiated())
     return NULL;
   if (!m_pJSRuntime)
-    m_pJSRuntime = m_pJSRuntimeFactory->NewJSRuntime(this);
-  return m_pJSRuntime;
+    m_pJSRuntime.reset(new CJS_Runtime(this));
+  return m_pJSRuntime.get();
 }
 
 CPDFSDK_AnnotHandlerMgr* CPDFDoc_Environment::GetAnnotHandlerMgr() {
@@ -396,7 +386,7 @@ CPDFSDK_AnnotHandlerMgr* CPDFDoc_Environment::GetAnnotHandlerMgr() {
 
 CPDFSDK_ActionHandler* CPDFDoc_Environment::GetActionHander() {
   if (!m_pActionHandler)
-    m_pActionHandler = new CPDFSDK_ActionHandler(this);
+    m_pActionHandler = new CPDFSDK_ActionHandler();
   return m_pActionHandler;
 }
 
@@ -413,9 +403,16 @@ CPDFSDK_Document::CPDFSDK_Document(CPDF_Document* pDoc,
       m_pFocusAnnot(nullptr),
       m_pEnv(pEnv),
       m_pOccontent(nullptr),
-      m_bChangeMask(FALSE) {}
+      m_bChangeMask(FALSE),
+      m_bBeingDestroyed(FALSE) {
+}
 
 CPDFSDK_Document::~CPDFSDK_Document() {
+  m_bBeingDestroyed = TRUE;
+
+  for (auto& it : m_pageMap)
+    it.second->KillFocusAnnotIfNeeded();
+
   for (auto& it : m_pageMap)
     delete it.second;
   m_pageMap.clear();
@@ -515,6 +512,7 @@ void CPDFSDK_Document::ReMovePageView(CPDF_Page* pPDFPage) {
   if (pPageView->IsLocked())
     return;
 
+  pPageView->KillFocusAnnotIfNeeded();
   delete pPageView;
   m_pageMap.erase(it);
 }
@@ -547,6 +545,9 @@ CPDFSDK_Annot* CPDFSDK_Document::GetFocusAnnot() {
 }
 
 FX_BOOL CPDFSDK_Document::SetFocusAnnot(CPDFSDK_Annot* pAnnot, FX_UINT nFlag) {
+  if (m_bBeingDestroyed)
+    return FALSE;
+
   if (m_pFocusAnnot == pAnnot)
     return TRUE;
 
@@ -634,17 +635,6 @@ CPDFSDK_PageView::CPDFSDK_PageView(CPDFSDK_Document* pSDKDoc, CPDF_Page* page)
 }
 
 CPDFSDK_PageView::~CPDFSDK_PageView() {
-  // if there is a focused annot on the page, we should kill the focus first.
-  if (CPDFSDK_Annot* focusedAnnot = m_pSDKDoc->GetFocusAnnot()) {
-    for (int i = 0, count = m_fxAnnotArray.GetSize(); i < count; i++) {
-      CPDFSDK_Annot* pAnnot = (CPDFSDK_Annot*)m_fxAnnotArray.GetAt(i);
-      if (pAnnot == focusedAnnot) {
-        KillFocusAnnot();
-        break;
-      }
-    }
-  }
-
   CPDFDoc_Environment* pEnv = m_pSDKDoc->GetEnv();
   CPDFSDK_AnnotHandlerMgr* pAnnotHandlerMgr = pEnv->GetAnnotHandlerMgr();
   ASSERT(pAnnotHandlerMgr);
@@ -740,6 +730,15 @@ CPDFSDK_Annot* CPDFSDK_PageView::GetFXWidgetAtPoint(FX_FLOAT pageX,
   }
 
   return NULL;
+}
+
+void CPDFSDK_PageView::KillFocusAnnotIfNeeded() {
+  // if there is a focused annot on the page, we should kill the focus first.
+  if (CPDFSDK_Annot* focusedAnnot = m_pSDKDoc->GetFocusAnnot()) {
+    int index = m_fxAnnotArray.Find(focusedAnnot);
+    if (index >= 0)
+      KillFocusAnnot();
+  }
 }
 
 FX_BOOL CPDFSDK_PageView::Annot_HasAppearance(CPDF_Annot* pAnnot) {
@@ -922,15 +921,8 @@ FX_BOOL CPDFSDK_PageView::OnKeyDown(int nKeyCode, int nFlag) {
 }
 
 FX_BOOL CPDFSDK_PageView::OnKeyUp(int nKeyCode, int nFlag) {
-  //  if(CPDFSDK_Annot* pAnnot = GetFocusAnnot())
-  //  {
-  //      CFFL_IFormFiller* pIFormFiller = g_pFormFillApp->GetIFormFiller();
-  //      return pIFormFiller->OnKeyUp(pAnnot, nKeyCode, nFlag);
-  //  }
   return FALSE;
 }
-
-extern void CheckUnSupportAnnot(CPDF_Document* pDoc, CPDF_Annot* pPDFAnnot);
 
 void CPDFSDK_PageView::LoadFXAnnots() {
   CPDFDoc_Environment* pEnv = m_pSDKDoc->GetEnv();

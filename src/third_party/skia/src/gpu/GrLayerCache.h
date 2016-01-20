@@ -86,7 +86,7 @@ public:
             fIDMatrix.fInitialMat.getType(); // force initialization of type so hashes match
 
             if (copyKey) {
-                int* tempKey = SkNEW_ARRAY(int, keySize);
+                int* tempKey = new int[keySize];
                 memcpy(tempKey, key, keySize*sizeof(int));
                 fKey = tempKey;
             } else {
@@ -100,7 +100,7 @@ public:
 
         ~Key() {
             if (fFreeKey) {
-                SkDELETE_ARRAY(fKey);
+                delete[] fKey;
             }
         }
 
@@ -143,10 +143,14 @@ public:
     static uint32_t Hash(const Key& key) { return key.hash(); }
 
     // GrCachedLayer proper
-    GrCachedLayer(uint32_t pictureID, int start, int stop,
-                  const SkIRect& srcIR, const SkIRect& dstIR,
+    GrCachedLayer(uint32_t pictureID,
+                  int start,
+                  int stop,
+                  const SkIRect& srcIR,
+                  const SkIRect& dstIR,
                   const SkMatrix& ctm,
-                  const int* key, int keySize,
+                  const int* key,
+                  int keySize,
                   const SkPaint* paint)
         : fKey(pictureID, ctm, key, keySize, true)
         , fStart(start)
@@ -154,11 +158,11 @@ public:
         , fSrcIR(srcIR)
         , fDstIR(dstIR)
         , fOffset(SkIPoint::Make(0, 0))
-        , fPaint(paint ? SkNEW_ARGS(SkPaint, (*paint)) : NULL)
-        , fFilter(NULL)
-        , fTexture(NULL)
+        , fPaint(paint ? new SkPaint(*paint) : nullptr)
+        , fFilter(nullptr)
+        , fTexture(nullptr)
         , fRect(SkIRect::MakeEmpty())
-        , fPlot(NULL)
+        , fPlot(nullptr)
         , fUses(0)
         , fLocked(false) {
         SkASSERT(SK_InvalidGenID != pictureID);
@@ -166,7 +170,7 @@ public:
         if (fPaint) {
             if (fPaint->getImageFilter()) {
                 fFilter = SkSafeRef(fPaint->getImageFilter());
-                fPaint->setImageFilter(NULL);
+                fPaint->setImageFilter(nullptr);
             }
         }
     }
@@ -174,7 +178,7 @@ public:
     ~GrCachedLayer() {
         SkSafeUnref(fTexture);
         SkSafeUnref(fFilter);
-        SkDELETE(fPaint);
+        delete fPaint;
     }
 
     uint32_t pictureID() const { return fKey.pictureID(); }
@@ -203,7 +207,7 @@ public:
     const SkIPoint& offset() const { return fOffset; }
 
     void setPlot(GrPlot* plot) {
-        SkASSERT(NULL == plot || NULL == fPlot);
+        SkASSERT(nullptr == plot || nullptr == fPlot);
         fPlot = plot;
     }
     GrPlot* plot() { return fPlot; }
@@ -233,7 +237,7 @@ private:
     SkIPoint        fOffset;
 
     // The paint used when dropping the layer down into the owning canvas.
-    // Can be NULL. This class makes a copy for itself.
+    // Can be nullptr. This class makes a copy for itself.
     SkPaint*  fPaint;
 
     // The imagefilter that needs to be applied to the layer prior to it being
@@ -246,11 +250,11 @@ private:
 
     // For both atlased and non-atlased layers 'fRect' contains the  bound of
     // the layer in whichever texture it resides. It is empty when 'fTexture'
-    // is NULL.
+    // is nullptr.
     SkIRect         fRect;
 
     // For atlased layers, fPlot stores the atlas plot in which the layer rests.
-    // It is always NULL for non-atlased layers.
+    // It is always nullptr for non-atlased layers.
     GrPlot*         fPlot;
 
     // The number of actively hoisted layers using this cached image (e.g.,

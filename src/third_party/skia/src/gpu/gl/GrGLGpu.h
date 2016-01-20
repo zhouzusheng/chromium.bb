@@ -93,12 +93,21 @@ public:
 
     void buildProgramDesc(GrProgramDesc*,
                           const GrPrimitiveProcessor&,
-                          const GrPipeline&,
-                          const GrBatchTracker&) const override;
+                          const GrPipeline&) const override;
 
     const GrGLContext* glContextForTesting() const override {
         return &this->glContext();
     }
+
+    void clearStencil(GrRenderTarget*) override;
+
+    void invalidateBoundRenderTarget() {
+        fHWBoundRenderTargetUniqueID = SK_InvalidUniqueID;
+    }
+
+    GrStencilAttachment* createStencilAttachmentForRenderTarget(const GrRenderTarget* rt,
+                                                                int width,
+                                                                int height) override;
 
     GrBackendObject createTestingOnlyBackendTexture(void* pixels, int w, int h,
                                                     GrPixelConfig config) const override;
@@ -123,9 +132,9 @@ private:
     GrTexture* onWrapBackendTexture(const GrBackendTextureDesc&, GrWrapOwnership) override;
     GrRenderTarget* onWrapBackendRenderTarget(const GrBackendRenderTargetDesc&,
                                               GrWrapOwnership) override;
-    bool createStencilAttachmentForRenderTarget(GrRenderTarget* rt, int width, int height) override;
-    bool attachStencilAttachmentToRenderTarget(GrStencilAttachment* sb,
-                                               GrRenderTarget* rt) override;
+    // Given a GrPixelConfig return the index into the stencil format array on GrGLCaps to a
+    // compatible stencil format.
+    int getCompatibleStencilIndex(GrPixelConfig config);
 
     void onClear(GrRenderTarget*, const SkIRect& rect, GrColor color) override;
 
@@ -151,12 +160,6 @@ private:
                        GrSurface* src,
                        const SkIRect& srcRect,
                        const SkIPoint& dstPoint) override;
-
-    void clearStencil(GrRenderTarget*) override;
-
-    // GrDrawTarget overrides
-    void didAddGpuTraceMarker() override;
-    void didRemoveGpuTraceMarker() override;
 
     // binds texture unit in GL
     void setTextureUnit(int unitIdx);
@@ -231,7 +234,6 @@ private:
 #endif
     };
 
-    void flushDither(bool dither);
     void flushColorWrite(bool writeColor);
     void flushDrawFace(GrPipelineBuilder::DrawFace face);
 
@@ -253,12 +255,16 @@ private:
     // ensures that such operations don't negatively interact with tracking bound textures.
     void setScratchTextureUnit();
 
+    // colocates all samples at pixel center for render target, if MSAA.
+    // allows drawing coverage based AA shapes in MSAA mode.
+    void setColocatedSampleLocations(GrRenderTarget* rt, bool useColocatedSampleLocations);
+
     // bounds is region that may be modified and therefore has to be resolved.
-    // NULL means whole target. Can be an empty rect.
+    // nullptr means whole target. Can be an empty rect.
     void flushRenderTarget(GrGLRenderTarget*, const SkIRect* bounds);
 
     void flushStencil(const GrStencilSettings&);
-    void flushHWAAState(GrRenderTarget* rt, bool useHWAA);
+    void flushHWAAState(GrRenderTarget* rt, bool useHWAA, bool stencilEnabled);
 
     bool configToGLFormats(GrPixelConfig config,
                            bool getSizedInternal,
@@ -339,9 +345,9 @@ private:
      */
     class HWGeometryState {
     public:
-        HWGeometryState() { fVBOVertexArray = NULL; this->invalidate(); }
+        HWGeometryState() { fVBOVertexArray = nullptr; this->invalidate(); }
 
-        ~HWGeometryState() { SkDELETE(fVBOVertexArray); }
+        ~HWGeometryState() { delete fVBOVertexArray; }
 
         void invalidate() {
             fBoundVertexArrayIDIsValid = false;
@@ -418,7 +424,7 @@ private:
         /**
          * Binds the vertex array object that should be used to render from the vertex buffer.
          * The vertex array is bound and its attrib array state object is returned. The vertex
-         * buffer is bound. The index buffer (if non-NULL) is bound to the vertex array. The
+         * buffer is bound. The index buffer (if non-nullptr) is bound to the vertex array. The
          * returned GrGLAttribArrayState should be used to set vertex attribute arrays.
          */
         GrGLAttribArrayState* bindArrayAndBuffersToDraw(GrGLGpu* gpu,
@@ -486,16 +492,15 @@ private:
 
     GrPipelineBuilder::DrawFace fHWDrawFace;
     TriState                    fHWWriteToColor;
-    TriState                    fHWDitherEnabled;
     uint32_t                    fHWBoundRenderTargetUniqueID;
     TriState                    fHWSRGBFramebuffer;
     SkTArray<uint32_t, true>    fHWBoundTextureUniqueIDs;
 
     ///@}
 
-    // we record what stencil format worked last time to hopefully exit early
-    // from our loop that tries stencil formats and calls check fb status.
-    int fLastSuccessfulStencilFmtIdx;
+    // Mapping of pixel configs to known supported stencil formats to be used
+    // when adding a stencil buffer to a framebuffer.
+    int fPixelConfigToStencilIndex[kGrPixelConfigCnt];
 
     typedef GrGpu INHERITED;
     friend class GrGLPathRendering; // For accessing setTextureUnit.

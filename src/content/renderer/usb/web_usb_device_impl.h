@@ -14,7 +14,6 @@
 #include "third_party/WebKit/public/platform/modules/webusb/WebUSBDevice.h"
 #include "third_party/WebKit/public/platform/modules/webusb/WebUSBDeviceInfo.h"
 #include "third_party/WebKit/public/platform/modules/webusb/WebUSBError.h"
-#include "third_party/mojo/src/mojo/public/cpp/bindings/error_handler.h"
 
 namespace mojo {
 class Shell;
@@ -22,9 +21,9 @@ class Shell;
 
 namespace content {
 
-class WebUSBDeviceImpl : public blink::WebUSBDevice, public mojo::ErrorHandler {
+class WebUSBDeviceImpl : public blink::WebUSBDevice {
  public:
-  WebUSBDeviceImpl(device::usb::DeviceManagerPtr device_manager,
+  WebUSBDeviceImpl(device::usb::DevicePtr device,
                    const blink::WebUSBDeviceInfo& device_info);
   ~WebUSBDeviceImpl() override;
 
@@ -33,6 +32,8 @@ class WebUSBDeviceImpl : public blink::WebUSBDevice, public mojo::ErrorHandler {
   const blink::WebUSBDeviceInfo& info() const override;
   void open(blink::WebUSBDeviceOpenCallbacks* callbacks) override;
   void close(blink::WebUSBDeviceCloseCallbacks* callbacks) override;
+  void getConfiguration(
+      blink::WebUSBDeviceGetConfigurationCallbacks* callbacks) override;
   void setConfiguration(
       uint8_t configuration_value,
       blink::WebUSBDeviceSetConfigurationCallbacks* callbacks) override;
@@ -62,13 +63,8 @@ class WebUSBDeviceImpl : public blink::WebUSBDevice, public mojo::ErrorHandler {
                 blink::WebUSBDeviceBulkTransferCallbacks* callbacks) override;
   void reset(blink::WebUSBDeviceResetCallbacks* callbacks) override;
 
-  // mojo::ErrorHandler implementation:
-  void OnConnectionError() override;
-
-  device::usb::DeviceManagerPtr device_manager_;
-
-  blink::WebUSBDeviceInfo device_info_;
   device::usb::DevicePtr device_;
+  blink::WebUSBDeviceInfo device_info_;
 
   base::WeakPtrFactory<WebUSBDeviceImpl> weak_factory_;
 

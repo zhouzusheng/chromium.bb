@@ -19,7 +19,6 @@
 #include "cc/base/synced_property.h"
 #include "cc/debug/devtools_instrumentation.h"
 #include "cc/debug/traced_value.h"
-#include "cc/input/layer_scroll_offset_delegate.h"
 #include "cc/input/page_scale_animation.h"
 #include "cc/layers/heads_up_display_layer_impl.h"
 #include "cc/layers/layer.h"
@@ -47,7 +46,6 @@ LayerTreeImpl::LayerTreeImpl(
     : layer_tree_host_impl_(layer_tree_host_impl),
       source_frame_number_(-1),
       hud_layer_(0),
-      root_layer_scroll_offset_delegate_(NULL),
       background_color_(0),
       has_transparent_background_(false),
       currently_scrolling_layer_id_(Layer::INVALID_ID),
@@ -59,6 +57,7 @@ LayerTreeImpl::LayerTreeImpl(
       min_page_scale_factor_(0),
       max_page_scale_factor_(0),
       hide_pinch_scrollbars_near_min_scale_(false),
+      device_scale_factor_(1.f),
       elastic_overscroll_(elastic_overscroll),
       viewport_size_invalid_(false),
       needs_update_draw_properties_(true),
@@ -68,8 +67,7 @@ LayerTreeImpl::LayerTreeImpl(
       render_surface_layer_list_id_(0),
       top_controls_shrink_blink_size_(false),
       top_controls_height_(0),
-      top_controls_shown_ratio_(top_controls_shown_ratio) {
-}
+      top_controls_shown_ratio_(top_controls_shown_ratio) {}
 
 LayerTreeImpl::~LayerTreeImpl() {
   BreakSwapPromises(IsActiveTree() ? SwapPromise::SWAP_FAILS
@@ -112,27 +110,6 @@ void LayerTreeImpl::GatherFrameTimingRequestIds(
       root_layer_.get(), [request_ids](LayerImpl* layer) {
         layer->GatherFrameTimingRequestIds(request_ids);
       });
-}
-
-bool LayerTreeImpl::IsExternalScrollActive() const {
-  return root_layer_scroll_offset_delegate_ &&
-         root_layer_scroll_offset_delegate_->IsExternalScrollActive();
-}
-
-void LayerTreeImpl::DidUpdateScrollOffset(int layer_id) {
-  int inner_layer_id = InnerViewportScrollLayer()
-                           ? InnerViewportScrollLayer()->id()
-                           : Layer::INVALID_ID;
-  int outer_layer_id = OuterViewportScrollLayer()
-                           ? OuterViewportScrollLayer()->id()
-                           : Layer::INVALID_ID;
-  if (layer_id != outer_layer_id && layer_id != inner_layer_id)
-    return;
-
-  if (!root_layer_scroll_offset_delegate_)
-    return;
-
-  UpdateRootScrollOffsetDelegate();
 }
 
 void LayerTreeImpl::SetRootLayer(scoped_ptr<LayerImpl> layer) {
@@ -185,7 +162,7 @@ static void UpdateClipTreeForBoundsDeltaOnLayer(LayerImpl* layer,
     ClipNode* clip_node = clip_tree->Node(layer->clip_tree_index());
     if (clip_node) {
       DCHECK_EQ(layer->id(), clip_node->owner_id);
-      gfx::Size bounds = layer->bounds();
+      gfx::SizeF bounds = gfx::SizeF(layer->bounds());
       if (clip_node->data.clip.size() != bounds) {
         clip_node->data.clip.set_size(bounds);
         clip_tree->set_needs_update(true);
@@ -238,6 +215,7 @@ void LayerTreeImpl::PushPropertiesTo(LayerTreeImpl* target_tree) {
   // tree so only the limits need to be provided.
   target_tree->PushPageScaleFactorAndLimits(nullptr, min_page_scale_factor(),
                                             max_page_scale_factor());
+  target_tree->SetDeviceScaleFactor(device_scale_factor());
   target_tree->elastic_overscroll()->PushPendingToActive();
 
   target_tree->pending_page_scale_animation_ =
@@ -446,13 +424,6 @@ void LayerTreeImpl::DidUpdatePageScale() {
 
   set_needs_update_draw_properties();
 
-  if (root_layer_scroll_offset_delegate_) {
-    root_layer_scroll_offset_delegate_->UpdateRootLayerState(
-        TotalScrollOffset(), TotalMaxScrollOffset(), ScrollableSize(),
-        current_page_scale_factor(), min_page_scale_factor_,
-        max_page_scale_factor_);
-  }
-
   if (PageScaleLayer() && PageScaleLayer()->transform_tree_index() != -1) {
     TransformNode* node = property_trees_.transform_tree.Node(
         PageScaleLayer()->transform_tree_index());
@@ -470,6 +441,15 @@ void LayerTreeImpl::DidUpdatePageScale() {
 
   ForceScrollbarParameterUpdateAfterScaleChange(PageScaleLayer());
   HideInnerViewportScrollbarsIfNeeded();
+}
+
+void LayerTreeImpl::SetDeviceScaleFactor(float device_scale_factor) {
+  if (device_scale_factor == device_scale_factor_)
+    return;
+  device_scale_factor_ = device_scale_factor;
+
+  if (IsActiveTree())
+    layer_tree_host_impl_->SetFullRootLayerDamage();
 }
 
 void LayerTreeImpl::HideInnerViewportScrollbarsIfNeeded() {
@@ -555,7 +535,24 @@ void LayerTreeImpl::ClearViewportLayers() {
   outer_viewport_scroll_layer_id_ = Layer::INVALID_ID;
 }
 
+#if DCHECK_IS_ON()
+int SanityCheckCopyRequestCounts(LayerImpl* layer) {
+  int count = layer->HasCopyRequest() ? 1 : 0;
+  for (size_t i = 0; i < layer->children().size(); ++i) {
+    count += SanityCheckCopyRequestCounts(layer->child_at(i));
+  }
+  DCHECK_EQ(count, layer->num_layer_or_descendants_with_copy_request())
+      << ", id: " << layer->id();
+  return count;
+}
+#endif
+
 bool LayerTreeImpl::UpdateDrawProperties(bool update_lcd_text) {
+#if DCHECK_IS_ON()
+  if (root_layer())
+    SanityCheckCopyRequestCounts(root_layer());
+#endif
+
   if (!needs_update_draw_properties_)
     return true;
 
@@ -749,7 +746,7 @@ gfx::SizeF LayerTreeImpl::ScrollableSize() const {
                                      ? OuterViewportScrollLayer()
                                      : InnerViewportScrollLayer();
   if (!root_scroll_layer || root_scroll_layer->children().empty())
-    return gfx::Size();
+    return gfx::SizeF();
 
   gfx::SizeF content_size =
       root_scroll_layer->children()[0]->BoundsForScrolling();
@@ -862,20 +859,12 @@ FrameRateCounter* LayerTreeImpl::frame_rate_counter() const {
   return layer_tree_host_impl_->fps_counter();
 }
 
-PaintTimeCounter* LayerTreeImpl::paint_time_counter() const {
-  return layer_tree_host_impl_->paint_time_counter();
-}
-
 MemoryHistory* LayerTreeImpl::memory_history() const {
   return layer_tree_host_impl_->memory_history();
 }
 
 gfx::Size LayerTreeImpl::device_viewport_size() const {
   return layer_tree_host_impl_->device_viewport_size();
-}
-
-float LayerTreeImpl::device_scale_factor() const {
-  return layer_tree_host_impl_->device_scale_factor();
 }
 
 DebugRectHistory* LayerTreeImpl::debug_rect_history() const {
@@ -1031,46 +1020,15 @@ void LayerTreeImpl::AsValueInto(base::trace_event::TracedValue* state) const {
   for (auto* swap_promise : swap_promise_list_)
     state->AppendDouble(swap_promise->TraceId());
   state->EndArray();
+
+  state->BeginArray("pinned_swap_promise_trace_ids");
+  for (auto* swap_promise : pinned_swap_promise_list_)
+    state->AppendDouble(swap_promise->TraceId());
+  state->EndArray();
 }
 
-void LayerTreeImpl::SetRootLayerScrollOffsetDelegate(
-    LayerScrollOffsetDelegate* root_layer_scroll_offset_delegate) {
-  if (root_layer_scroll_offset_delegate_ == root_layer_scroll_offset_delegate)
-    return;
-
-  root_layer_scroll_offset_delegate_ = root_layer_scroll_offset_delegate;
-
-  if (root_layer_scroll_offset_delegate_) {
-    root_layer_scroll_offset_delegate_->UpdateRootLayerState(
-        TotalScrollOffset(), TotalMaxScrollOffset(), ScrollableSize(),
-        current_page_scale_factor(), min_page_scale_factor(),
-        max_page_scale_factor());
-
-    DistributeRootScrollOffset();
-  }
-}
-
-void LayerTreeImpl::UpdateRootScrollOffsetDelegate() {
-  DCHECK(root_layer_scroll_offset_delegate_);
-
-  gfx::ScrollOffset offset = InnerViewportScrollLayer()->CurrentScrollOffset();
-
-  if (OuterViewportScrollLayer())
-    offset += OuterViewportScrollLayer()->CurrentScrollOffset();
-
-  root_layer_scroll_offset_delegate_->UpdateRootLayerState(
-      offset, TotalMaxScrollOffset(), ScrollableSize(),
-      current_page_scale_factor(), min_page_scale_factor(),
-      max_page_scale_factor());
-}
-
-void LayerTreeImpl::DistributeRootScrollOffset() {
-  if (!root_layer_scroll_offset_delegate_)
-    return;
-
-  gfx::ScrollOffset root_offset =
-      root_layer_scroll_offset_delegate_->GetTotalScrollOffset();
-
+void LayerTreeImpl::DistributeRootScrollOffset(
+    const gfx::ScrollOffset& root_offset) {
   if (!InnerViewportScrollLayer())
     return;
 
@@ -1084,6 +1042,7 @@ void LayerTreeImpl::DistributeRootScrollOffset() {
       OuterViewportScrollLayer()->CurrentScrollOffset();
 
   // It may be nothing has changed.
+  DCHECK(inner_viewport_offset + outer_viewport_offset == TotalScrollOffset());
   if (inner_viewport_offset + outer_viewport_offset == root_offset)
     return;
 
@@ -1094,13 +1053,9 @@ void LayerTreeImpl::DistributeRootScrollOffset() {
   outer_viewport_offset.SetToMin(max_outer_viewport_scroll_offset);
   outer_viewport_offset.SetToMax(gfx::ScrollOffset());
 
-  OuterViewportScrollLayer()->SetCurrentScrollOffsetFromDelegate(
-      outer_viewport_offset);
+  OuterViewportScrollLayer()->SetCurrentScrollOffset(outer_viewport_offset);
   inner_viewport_offset = root_offset - outer_viewport_offset;
-  InnerViewportScrollLayer()->SetCurrentScrollOffsetFromDelegate(
-      inner_viewport_offset);
-
-  UpdateRootScrollOffsetDelegate();
+  InnerViewportScrollLayer()->SetCurrentScrollOffset(inner_viewport_offset);
 }
 
 void LayerTreeImpl::QueueSwapPromise(scoped_ptr<SwapPromise> swap_promise) {
@@ -1108,23 +1063,37 @@ void LayerTreeImpl::QueueSwapPromise(scoped_ptr<SwapPromise> swap_promise) {
   swap_promise_list_.push_back(swap_promise.Pass());
 }
 
+void LayerTreeImpl::QueuePinnedSwapPromise(
+    scoped_ptr<SwapPromise> swap_promise) {
+  DCHECK(IsActiveTree());
+  DCHECK(swap_promise);
+  pinned_swap_promise_list_.push_back(swap_promise.Pass());
+}
+
 void LayerTreeImpl::PassSwapPromises(
     ScopedPtrVector<SwapPromise>* new_swap_promise) {
-  swap_promise_list_.insert_and_take(swap_promise_list_.end(),
-                                     new_swap_promise);
-  new_swap_promise->clear();
+  for (auto* swap_promise : swap_promise_list_)
+    swap_promise->DidNotSwap(SwapPromise::SWAP_FAILS);
+  swap_promise_list_.clear();
+  swap_promise_list_.swap(*new_swap_promise);
 }
 
 void LayerTreeImpl::FinishSwapPromises(CompositorFrameMetadata* metadata) {
   for (auto* swap_promise : swap_promise_list_)
     swap_promise->DidSwap(metadata);
   swap_promise_list_.clear();
+  for (auto* swap_promise : pinned_swap_promise_list_)
+    swap_promise->DidSwap(metadata);
+  pinned_swap_promise_list_.clear();
 }
 
 void LayerTreeImpl::BreakSwapPromises(SwapPromise::DidNotSwapReason reason) {
   for (auto* swap_promise : swap_promise_list_)
     swap_promise->DidNotSwap(reason);
   swap_promise_list_.clear();
+  for (auto* swap_promise : pinned_swap_promise_list_)
+    swap_promise->DidNotSwap(reason);
+  pinned_swap_promise_list_.clear();
 }
 
 void LayerTreeImpl::DidModifyTilePriorities() {
@@ -1231,7 +1200,7 @@ static inline bool LayerClipsSubtree(LayerType* layer) {
 static bool PointHitsRect(
     const gfx::PointF& screen_space_point,
     const gfx::Transform& local_space_to_screen_space_transform,
-    const gfx::RectF& local_space_rect,
+    const gfx::Rect& local_space_rect,
     float* distance_to_camera) {
   // If the transform is not invertible, then assume that this point doesn't hit
   // this rect.
@@ -1254,7 +1223,7 @@ static bool PointHitsRect(
   if (clipped)
     return false;
 
-  if (!local_space_rect.Contains(hit_test_point_in_local_space))
+  if (!gfx::RectF(local_space_rect).Contains(hit_test_point_in_local_space))
     return false;
 
   if (distance_to_camera) {
@@ -1330,7 +1299,7 @@ static bool PointIsClippedBySurfaceOrClipRect(
 static bool PointHitsLayer(const LayerImpl* layer,
                            const gfx::PointF& screen_space_point,
                            float* distance_to_intersection) {
-  gfx::RectF content_rect(layer->bounds());
+  gfx::Rect content_rect(layer->bounds());
   if (!PointHitsRect(screen_space_point,
                      layer->screen_space_transform(),
                      content_rect,
@@ -1523,6 +1492,14 @@ static ViewportSelectionBound ComputeViewportSelectionBound(
       MathUtil::MapPoint(layer->screen_space_transform(), layer_top, &clipped);
   gfx::PointF screen_bottom = MathUtil::MapPoint(
       layer->screen_space_transform(), layer_bottom, &clipped);
+
+  // MapPoint can produce points with NaN components (even when no inputs are
+  // NaN). Since consumers of ViewportSelectionBounds may round |edge_top| or
+  // |edge_bottom| (and since rounding will crash on NaN), we return an empty
+  // bound instead.
+  if (std::isnan(screen_top.x()) || std::isnan(screen_top.y()) ||
+      std::isnan(screen_bottom.x()) || std::isnan(screen_bottom.y()))
+    return ViewportSelectionBound();
 
   const float inv_scale = 1.f / device_scale_factor;
   viewport_bound.edge_top = gfx::ScalePoint(screen_top, inv_scale);

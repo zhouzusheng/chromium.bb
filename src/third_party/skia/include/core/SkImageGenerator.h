@@ -8,6 +8,7 @@
 #ifndef SkImageGenerator_DEFINED
 #define SkImageGenerator_DEFINED
 
+#include "SkBitmap.h"
 #include "SkColor.h"
 #include "SkImageInfo.h"
 
@@ -29,22 +30,22 @@ class SkPicture;
  *  If generator is NULL, will safely return false.
  *
  *  If this fails or when the SkDiscardablePixelRef that is
- *  installed into destination is destroyed, it will call
- *  SkDELETE() on the generator.  Therefore, generator should be
- *  allocated with SkNEW() or SkNEW_ARGS().
+ *  installed into destination is destroyed, it will
+ *  delete the generator.  Therefore, generator should be
+ *  allocated with new.
  *
  *  @param destination Upon success, this bitmap will be
  *  configured and have a pixelref installed.
  *
  *  @return true iff successful.
  */
-SK_API bool SkInstallDiscardablePixelRef(SkImageGenerator*, SkBitmap* destination);
+SK_API bool SkDEPRECATED_InstallDiscardablePixelRef(SkImageGenerator*, SkBitmap* destination);
 
 /**
  *  On success, installs a discardable pixelref into destination, based on encoded data.
  *  Regardless of success or failure, the caller must still balance their ownership of encoded.
  */
-SK_API bool SkInstallDiscardablePixelRef(SkData* encoded, SkBitmap* destination);
+SK_API bool SkDEPRECATED_InstallDiscardablePixelRef(SkData* encoded, SkBitmap* destination);
 
 /**
  *  An interface that allows a purgeable PixelRef (such as a
@@ -165,6 +166,23 @@ public:
     static SkImageGenerator* NewFromPicture(const SkISize&, const SkPicture*, const SkMatrix*,
                                             const SkPaint*);
 
+    bool tryGenerateBitmap(SkBitmap* bm) {
+        return this->tryGenerateBitmap(bm, nullptr, nullptr);
+    }
+    bool tryGenerateBitmap(SkBitmap* bm, const SkImageInfo& info, SkBitmap::Allocator* allocator) {
+        return this->tryGenerateBitmap(bm, &info, allocator);
+    }
+    void generateBitmap(SkBitmap* bm) {
+        if (!this->tryGenerateBitmap(bm, nullptr, nullptr)) {
+            sk_throw();
+        }
+    }
+    void generateBitmap(SkBitmap* bm, const SkImageInfo& info) {
+        if (!this->tryGenerateBitmap(bm, &info, nullptr)) {
+            sk_throw();
+        }
+    }
+
 protected:
     SkImageGenerator(const SkImageInfo& info);
 
@@ -179,6 +197,8 @@ protected:
     virtual GrTexture* onGenerateTexture(GrContext*, SkImageUsageType, const SkIRect*) {
         return nullptr;
     }
+
+    bool tryGenerateBitmap(SkBitmap* bm, const SkImageInfo* optionalInfo, SkBitmap::Allocator*);
 
 private:
     const SkImageInfo fInfo;

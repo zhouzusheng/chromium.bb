@@ -176,6 +176,19 @@ static URLSchemesSet& serviceWorkerSchemes()
     return serviceWorkerSchemes;
 }
 
+static URLSchemesSet& fetchAPISchemes()
+{
+    assertLockHeld();
+    DEFINE_STATIC_LOCAL_NOASSERT(URLSchemesSet, fetchAPISchemes, ());
+
+    if (fetchAPISchemes.isEmpty()) {
+        fetchAPISchemes.add("http");
+        fetchAPISchemes.add("https");
+    }
+
+    return fetchAPISchemes;
+}
+
 static URLSchemesSet& firstPartyWhenTopLevelSchemes()
 {
     assertLockHeld();
@@ -188,6 +201,13 @@ static URLSchemesMap<SchemeRegistry::PolicyAreas>& ContentSecurityPolicyBypassin
     assertLockHeld();
     DEFINE_STATIC_LOCAL_NOASSERT(URLSchemesMap<SchemeRegistry::PolicyAreas>, schemes, ());
     return schemes;
+}
+
+static URLSchemesSet& secureContextBypassingSchemes()
+{
+    assertLockHeld();
+    DEFINE_STATIC_LOCAL_NOASSERT(URLSchemesSet, secureContextBypassingSchemes, ());
+    return secureContextBypassingSchemes;
 }
 
 bool SchemeRegistry::shouldTreatURLSchemeAsLocal(const String& scheme)
@@ -360,6 +380,20 @@ bool SchemeRegistry::shouldTreatURLSchemeAsAllowingServiceWorkers(const String& 
     return serviceWorkerSchemes().contains(scheme);
 }
 
+void SchemeRegistry::registerURLSchemeAsSupportingFetchAPI(const String& scheme)
+{
+    MutexLocker locker(mutex());
+    fetchAPISchemes().add(scheme);
+}
+
+bool SchemeRegistry::shouldTreatURLSchemeAsSupportingFetchAPI(const String& scheme)
+{
+    if (scheme.isEmpty())
+        return false;
+    MutexLocker locker(mutex());
+    return fetchAPISchemes().contains(scheme);
+}
+
 void SchemeRegistry::registerURLSchemeAsFirstPartyWhenTopLevel(const String& scheme)
 {
     MutexLocker locker(mutex());
@@ -396,6 +430,20 @@ bool SchemeRegistry::schemeShouldBypassContentSecurityPolicy(const String& schem
     // Thus by default, schemes do not bypass CSP.
     MutexLocker locker(mutex());
     return (ContentSecurityPolicyBypassingSchemes().get(scheme) & policyAreas) == policyAreas;
+}
+
+void SchemeRegistry::registerURLSchemeBypassingSecureContextCheck(const String& scheme)
+{
+    MutexLocker locker(mutex());
+    secureContextBypassingSchemes().add(scheme.lower());
+}
+
+bool SchemeRegistry::schemeShouldBypassSecureContextCheck(const String& scheme)
+{
+    if (scheme.isEmpty())
+        return false;
+    MutexLocker locker(mutex());
+    return secureContextBypassingSchemes().contains(scheme.lower());
 }
 
 } // namespace blink

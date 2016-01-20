@@ -20,6 +20,7 @@
 #include "content/public/common/web_preferences.h"
 
 // SHEZ: Remove test-only code.
+// #include "content/public/test/test_mojo_app.h"
 // #include "content/shell/browser/blink_test_controller.h"
 
 #include "content/shell/browser/ipc_echo_message_filter.h"
@@ -39,10 +40,6 @@
 #include "content/shell/browser/shell_web_contents_view_delegate_creator.h"
 #include "content/shell/common/shell_messages.h"
 #include "content/shell/common/shell_switches.h"
-
-// SHEZ: Remove test-only code.
-// #include "content/shell/renderer/layout_test/blink_test_helpers.h"
-
 #include "net/url_request/url_request_context_getter.h"
 #include "url/gurl.h"
 
@@ -52,14 +49,14 @@
 #if defined(OS_ANDROID)
 #include "base/android/apk_assets.h"
 #include "base/android/path_utils.h"
-#include "components/crash/browser/crash_dump_manager_android.h"
+#include "components/crash/content/browser/crash_dump_manager_android.h"
 #include "content/shell/android/shell_descriptors.h"
 #endif
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
 #include "base/debug/leak_annotations.h"
-#include "components/crash/app/breakpad_linux.h"
-#include "components/crash/browser/crash_handler_host_linux.h"
+#include "components/crash/content/app/breakpad_linux.h"
+#include "components/crash/content/browser/crash_handler_host_linux.h"
 #include "content/public/common/content_descriptors.h"
 #endif
 
@@ -225,6 +222,15 @@ bool ShellContentBrowserClient::IsNPAPIEnabled() {
   return true;
 #else
   return false;
+#endif
+}
+
+void ShellContentBrowserClient::RegisterOutOfProcessMojoApplications(
+      OutOfProcessMojoApplicationMap* apps) {
+    // SHEZ: Remove test-only code.
+#if 0
+  apps->insert(std::make_pair(GURL(kTestMojoAppUrl),
+                              base::UTF8ToUTF16("Test Mojo App")));
 #endif
 }
 
@@ -411,7 +417,7 @@ void ShellContentBrowserClient::PreSpawnRenderer(sandbox::TargetPolicy* policy,
 #if 0
   // TODO(SHEZ): Fix this.
 
-  std::vector<std::string> font_files = GetSideloadFontFiles();
+  std::vector<std::string> font_files = switches::GetSideloadFontFiles();
   for (std::vector<std::string>::const_iterator i(font_files.begin());
       i != font_files.end();
       ++i) {

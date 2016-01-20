@@ -82,13 +82,13 @@ WebSecurityOrigin WebDocument::securityOrigin() const
     return WebSecurityOrigin(constUnwrap<Document>()->securityOrigin());
 }
 
-bool WebDocument::isPrivilegedContext(WebString& errorMessage) const
+bool WebDocument::isSecureContext(WebString& errorMessage) const
 {
     const Document* document = constUnwrap<Document>();
     if (!document)
         return false;
     String message;
-    bool result = document->isPrivilegedContext(message);
+    bool result = document->isSecureContext(message);
     errorMessage = message;
     return result;
 }
@@ -248,15 +248,6 @@ WebElement WebDocument::fullScreenElement() const
     return WebElement(fullScreenElement);
 }
 
-WebDOMEvent WebDocument::createEvent(const WebString& eventType)
-{
-    TrackExceptionState exceptionState;
-    WebDOMEvent event(unwrap<Document>()->createEvent(eventType, exceptionState));
-    if (exceptionState.hadException())
-        return WebDOMEvent();
-    return event;
-}
-
 WebReferrerPolicy WebDocument::referrerPolicy() const
 {
     return static_cast<WebReferrerPolicy>(constUnwrap<Document>()->referrerPolicy());
@@ -265,15 +256,6 @@ WebReferrerPolicy WebDocument::referrerPolicy() const
 WebString WebDocument::outgoingReferrer()
 {
     return WebString(unwrap<Document>()->outgoingReferrer());
-}
-
-WebElement WebDocument::createElement(const WebString& tagName)
-{
-    TrackExceptionState exceptionState;
-    WebElement element(unwrap<Document>()->createElement(tagName, exceptionState));
-    if (exceptionState.hadException())
-        return WebElement();
-    return element;
 }
 
 WebAXObject WebDocument::accessibilityObject() const
@@ -344,6 +326,8 @@ WebDocument::WebDocument(const PassRefPtrWillBeRawPtr<Document>& elem)
     : WebNode(elem)
 {
 }
+
+DEFINE_WEB_NODE_TYPE_CASTS(WebDocument, constUnwrap<Node>()->isDocumentNode());
 
 WebDocument& WebDocument::operator=(const PassRefPtrWillBeRawPtr<Document>& elem)
 {

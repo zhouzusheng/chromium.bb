@@ -4,6 +4,7 @@
 
 #include "ipc/ipc_channel_win.h"
 
+#include <stdint.h>
 #include <windows.h>
 
 #include "base/auto_reset.h"
@@ -17,6 +18,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_checker.h"
 #include "base/win/scoped_handle.h"
+#include "ipc/attachment_broker.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_logging.h"
 #include "ipc/ipc_message_attachment_set.h"
@@ -37,8 +39,7 @@ ChannelWin::State::~State() {
 
 ChannelWin::ChannelWin(const IPC::ChannelHandle& channel_handle,
                        Mode mode,
-                       Listener* listener,
-                       AttachmentBroker* broker)
+                       Listener* listener)
     : ChannelReader(listener),
       input_state_(this),
       output_state_(this),
@@ -47,12 +48,12 @@ ChannelWin::ChannelWin(const IPC::ChannelHandle& channel_handle,
       processing_incoming_(false),
       validate_client_(false),
       client_secret_(0),
-      broker_(broker),
       weak_factory_(this) {
   CreatePipe(channel_handle, mode);
 }
 
 ChannelWin::~ChannelWin() {
+  CleanUp();
   Close();
 }
 
@@ -74,9 +75,9 @@ void ChannelWin::Close() {
   }
 
   while (!output_queue_.empty()) {
-    Message* m = output_queue_.front();
+    OutputElement* element = output_queue_.front();
     output_queue_.pop();
-    delete m;
+    delete element;
   }
 }
 
@@ -105,11 +106,12 @@ bool ChannelWin::ProcessMessageForDelivery(Message* message) {
   // both Send() and ProcessMessageForDelivery() may be re-entrant. Brokered
   // attachments must be sent before the Message itself.
   if (message->HasBrokerableAttachments()) {
-    DCHECK(broker_);
+    DCHECK(GetAttachmentBroker());
     DCHECK(peer_pid_ != base::kNullProcessId);
     for (const BrokerableAttachment* attachment :
          message->attachment_set()->PeekBrokerableAttachments()) {
-      if (!broker_->SendAttachmentToProcess(attachment, peer_pid_)) {
+      if (!GetAttachmentBroker()->SendAttachmentToProcess(attachment,
+                                                          peer_pid_)) {
         delete message;
         return false;
       }
@@ -126,7 +128,18 @@ bool ChannelWin::ProcessMessageForDelivery(Message* message) {
                          TRACE_EVENT_FLAG_FLOW_OUT);
 
   // |output_queue_| takes ownership of |message|.
-  output_queue_.push(message);
+  OutputElement* element = new OutputElement(message);
+  output_queue_.push(element);
+
+#if USE_ATTACHMENT_BROKER
+  if (message->HasBrokerableAttachments()) {
+    // |output_queue_| takes ownership of |ids.buffer|.
+    Message::SerializedAttachmentIds ids =
+        message->SerializedIdsOfBrokerableAttachments();
+    output_queue_.push(new OutputElement(ids.buffer, ids.size));
+  }
+#endif
+
   // ensure waiting to write
   if (!waiting_connect_) {
     if (!output_state_.is_pending) {
@@ -154,7 +167,7 @@ void ChannelWin::FlushPrelimQueue() {
 }
 
 AttachmentBroker* ChannelWin::GetAttachmentBroker() {
-  return broker_;
+  return AttachmentBroker::GetGlobal();
 }
 
 base::ProcessId ChannelWin::GetPeerPID() const {
@@ -222,11 +235,11 @@ void ChannelWin::HandleInternalMessage(const Message& msg) {
   DCHECK_EQ(msg.type(), static_cast<unsigned>(Channel::HELLO_MESSAGE_TYPE));
   // The hello message contains one parameter containing the PID.
   base::PickleIterator it(msg);
-  int32 claimed_pid;
+  int32_t claimed_pid;
   bool failed = !it.ReadInt(&claimed_pid);
 
   if (!failed && validate_client_) {
-    int32 secret;
+    int32_t secret;
     failed = it.ReadInt(&secret) ? (secret != client_secret_) : true;
   }
 
@@ -260,8 +273,8 @@ bool ChannelWin::DidEmptyInputBuffers() {
 }
 
 // static
-const base::string16 ChannelWin::PipeName(
-    const std::string& channel_id, int32* secret) {
+const base::string16 ChannelWin::PipeName(const std::string& channel_id,
+                                          int32_t* secret) {
   std::string name("\\\\.\\pipe\\chrome.");
 
   // Prevent the shared secret from ending up in the pipe name.
@@ -356,14 +369,15 @@ bool ChannelWin::CreatePipe(const IPC::ChannelHandle &channel_handle,
 
   // Don't send the secret to the untrusted process, and don't send a secret
   // if the value is zero (for IPC backwards compatability).
-  int32 secret = validate_client_ ? 0 : client_secret_;
+  int32_t secret = validate_client_ ? 0 : client_secret_;
   if (!m->WriteInt(GetCurrentProcessId()) ||
       (secret && !m->WriteUInt32(secret))) {
     pipe_.Close();
     return false;
   }
 
-  output_queue_.push(m.release());
+  OutputElement* element = new OutputElement(m.release());
+  output_queue_.push(element);
   return true;
 }
 
@@ -453,9 +467,9 @@ bool ChannelWin::ProcessOutgoingMessages(
     }
     // Message was sent.
     CHECK(!output_queue_.empty());
-    Message* m = output_queue_.front();
+    OutputElement* element = output_queue_.front();
     output_queue_.pop();
-    delete m;
+    delete element;
   }
 
   if (output_queue_.empty())
@@ -465,11 +479,11 @@ bool ChannelWin::ProcessOutgoingMessages(
     return false;
 
   // Write to pipe...
-  Message* m = output_queue_.front();
-  DCHECK(m->size() <= INT_MAX);
+  OutputElement* element = output_queue_.front();
+  DCHECK(element->size() <= INT_MAX);
   BOOL ok = WriteFile(pipe_.Get(),
-                      m->data(),
-                      static_cast<uint32>(m->size()),
+                      element->data(),
+                      static_cast<uint32_t>(element->size()),
                       NULL,
                       &output_state_.context.overlapped);
   if (!ok) {
@@ -477,8 +491,11 @@ bool ChannelWin::ProcessOutgoingMessages(
     if (write_error == ERROR_IO_PENDING) {
       output_state_.is_pending = true;
 
-      DVLOG(2) << "sent pending message @" << m << " on channel @" << this
-               << " with type " << m->type();
+      const Message* m = element->get_message();
+      if (m) {
+        DVLOG(2) << "sent pending message @" << m << " on channel @" << this
+                 << " with type " << m->type();
+      }
 
       return true;
     }
@@ -486,8 +503,11 @@ bool ChannelWin::ProcessOutgoingMessages(
     return false;
   }
 
-  DVLOG(2) << "sent message @" << m << " on channel @" << this
-           << " with type " << m->type();
+  const Message* m = element->get_message();
+  if (m) {
+    DVLOG(2) << "sent message @" << m << " on channel @" << this
+             << " with type " << m->type();
+  }
 
   output_state_.is_pending = true;
   return true;
@@ -550,10 +570,8 @@ void ChannelWin::OnIOCompleted(
 // static
 scoped_ptr<Channel> Channel::Create(const IPC::ChannelHandle& channel_handle,
                                     Mode mode,
-                                    Listener* listener,
-                                    AttachmentBroker* broker) {
-  return scoped_ptr<Channel>(
-      new ChannelWin(channel_handle, mode, listener, broker));
+                                    Listener* listener) {
+  return scoped_ptr<Channel>(new ChannelWin(channel_handle, mode, listener));
 }
 
 // static

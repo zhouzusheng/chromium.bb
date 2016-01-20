@@ -65,7 +65,7 @@
 #include "core/layout/LayoutView.h"
 #include "core/loader/ProgressTracker.h"
 #include "core/page/Page.h"
-#include "core/paint/DeprecatedPaintLayer.h"
+#include "core/paint/PaintLayer.h"
 #include "core/style/ComputedStyleConstants.h"
 #include "core/svg/SVGDocumentExtensions.h"
 #include "core/svg/SVGSVGElement.h"
@@ -184,9 +184,9 @@ AXLayoutObject::AXLayoutObject(LayoutObject* layoutObject, AXObjectCacheImpl& ax
 #endif
 }
 
-PassRefPtrWillBeRawPtr<AXLayoutObject> AXLayoutObject::create(LayoutObject* layoutObject, AXObjectCacheImpl& axObjectCache)
+AXLayoutObject* AXLayoutObject::create(LayoutObject* layoutObject, AXObjectCacheImpl& axObjectCache)
 {
-    return adoptRefWillBeNoop(new AXLayoutObject(layoutObject, axObjectCache));
+    return new AXLayoutObject(layoutObject, axObjectCache);
 }
 
 AXLayoutObject::~AXLayoutObject()
@@ -380,7 +380,26 @@ static bool isLinkable(const AXObject& object)
 
 // Requires layoutObject to be present because it relies on style
 // user-modify. Don't move this logic to AXNodeObject.
-// TODO(nektar): Implement support in AXNodeObject for aria-hidden and canvas.
+bool AXLayoutObject::isEditable() const
+{
+    if (m_layoutObject && m_layoutObject->isTextControl())
+        return true;
+
+    if (node() && node()->isContentEditable())
+        return true;
+
+    if (isWebArea()) {
+        Document& document = m_layoutObject->document();
+        HTMLElement* body = document.body();
+        if (body && body->isContentEditable())
+            return true;
+
+        return document.isContentEditable();
+    }
+
+    return AXNodeObject::isEditable();
+}
+
 bool AXLayoutObject::isRichlyEditable() const
 {
     if (node() && node()->isContentRichlyEditable())
@@ -395,7 +414,7 @@ bool AXLayoutObject::isRichlyEditable() const
         return document.isContentRichlyEditable();
     }
 
-    return false;
+    return AXNodeObject::isRichlyEditable();
 }
 
 bool AXLayoutObject::isLinked() const
@@ -840,49 +859,6 @@ float AXLayoutObject::fontSize() const
         return AXNodeObject::fontSize();
 
     return style->computedFontSize();
-}
-
-AccessibilityOrientation AXLayoutObject::orientation() const
-{
-    const AtomicString& ariaOrientation = getAttribute(aria_orientationAttr);
-    AccessibilityOrientation axorientation = AccessibilityOrientationUndefined;
-
-    // For TreeGridRole, roleValue() can't be compared because its overridden
-    // in AXTable::roleValue()
-    if (ariaRoleAttribute() == TreeGridRole) {
-        if (equalIgnoringCase(ariaOrientation, "horizontal"))
-            axorientation = AccessibilityOrientationHorizontal;
-        if (equalIgnoringCase(ariaOrientation, "vertical"))
-            axorientation = AccessibilityOrientationVertical;
-        return axorientation;
-    }
-
-    switch (roleValue()) {
-    case ComboBoxRole:
-    case ListBoxRole:
-    case MenuRole:
-    case ScrollBarRole:
-    case TreeRole:
-        axorientation = AccessibilityOrientationVertical;
-        break;
-    case MenuBarRole:
-    case SliderRole:
-    case SplitterRole:
-    case TabListRole:
-    case ToolbarRole:
-        axorientation = AccessibilityOrientationHorizontal;
-        break;
-    case RadioGroupRole:
-        break;
-    default:
-        return AXObject::orientation();
-    }
-
-    if (equalIgnoringCase(ariaOrientation, "horizontal"))
-        axorientation = AccessibilityOrientationHorizontal;
-    if (equalIgnoringCase(ariaOrientation, "vertical"))
-        axorientation = AccessibilityOrientationVertical;
-    return axorientation;
 }
 
 String AXLayoutObject::text() const
@@ -1527,7 +1503,7 @@ AXObject* AXLayoutObject::accessibilityHitTest(const IntPoint& point) const
     if (!m_layoutObject || !m_layoutObject->hasLayer())
         return 0;
 
-    DeprecatedPaintLayer* layer = toLayoutBox(m_layoutObject)->layer();
+    PaintLayer* layer = toLayoutBox(m_layoutObject)->layer();
 
     HitTestRequest request(HitTestRequest::ReadOnly | HitTestRequest::Active);
     HitTestResult hitTestResult = HitTestResult(request, point);
@@ -1707,12 +1683,12 @@ void AXLayoutObject::addChildren()
     if (!canHaveChildren())
         return;
 
-    Vector<AXObject*> ownedChildren;
+    HeapVector<Member<AXObject>> ownedChildren;
     computeAriaOwnsChildren(ownedChildren);
 
-    for (RefPtrWillBeRawPtr<AXObject> obj = firstChild(); obj; obj = obj->nextSibling()) {
-        if (!axObjectCache().isAriaOwned(obj.get()))
-            addChild(obj.get());
+    for (AXObject* obj = firstChild(); obj; obj = obj->nextSibling()) {
+        if (!axObjectCache().isAriaOwned(obj))
+            addChild(obj);
     }
 
     addHiddenChildren();
@@ -1850,7 +1826,7 @@ AXObject::AXRange AXLayoutObject::selection() const
         return AXRange();
 
     VisibleSelection selection = layoutObject()->frame()->selection().selection();
-    RefPtrWillBeRawPtr<Range> selectionRange = selection.firstRange();
+    RefPtrWillBeRawPtr<Range> selectionRange = firstRangeOf(selection);
     if (!selectionRange)
         return AXRange();
 
@@ -1862,12 +1838,15 @@ AXObject::AXRange AXLayoutObject::selection() const
     Node* anchorNode = selectionRange->startContainer();
     ASSERT(anchorNode);
 
-    RefPtrWillBeRawPtr<AXObject> anchorObject = nullptr;
+    AXObject* anchorObject = nullptr;
     // Find the closest node that has a corresponding AXObject.
     // This is because some nodes may be aria hidden or might not even have
     // a layout object if they are part of the shadow DOM.
-    while (anchorNode
-        && !(anchorObject = getUnignoredObjectFromNode(*anchorNode))) {
+    while (anchorNode) {
+        anchorObject = getUnignoredObjectFromNode(*anchorNode);
+        if (anchorObject)
+            break;
+
         if (anchorNode->nextSibling())
             anchorNode = anchorNode->nextSibling();
         else
@@ -1879,9 +1858,12 @@ AXObject::AXRange AXLayoutObject::selection() const
     Node* focusNode = selectionRange->endContainer();
     ASSERT(focusNode);
 
-    RefPtrWillBeRawPtr<AXObject> focusObject = nullptr;
-    while (focusNode
-        && !(focusObject = getUnignoredObjectFromNode(*focusNode))) {
+    AXObject* focusObject = nullptr;
+    while (focusNode) {
+        focusObject = getUnignoredObjectFromNode(*focusNode);
+        if (focusObject)
+            break;
+
         if (focusNode->previousSibling())
             focusNode = focusNode->previousSibling();
         else
@@ -1911,7 +1893,7 @@ AXObject::AXRange AXLayoutObject::selectionUnderObject() const
         return AXRange();
 
     VisibleSelection selection = layoutObject()->frame()->selection().selection();
-    RefPtrWillBeRawPtr<Range> selectionRange = selection.firstRange();
+    RefPtrWillBeRawPtr<Range> selectionRange = firstRangeOf(selection);
     ContainerNode* parentNode = node()->parentNode();
     int nodeIndex = node()->nodeIndex();
     if (!selectionRange
@@ -2007,23 +1989,29 @@ void AXLayoutObject::setSelection(const AXRange& selection)
     if (!layoutObject() || !selection.isValid())
         return;
 
-    if (selection.anchorObject && !isValidSelectionBound(selection.anchorObject.get()))
-        return;
-
-    if (selection.focusObject && !isValidSelectionBound(selection.focusObject.get()))
-        return;
-
     AXObject* anchorObject = selection.anchorObject ?
         selection.anchorObject.get() : this;
     AXObject* focusObject = selection.focusObject ?
         selection.focusObject.get() : this;
 
-    if (anchorObject == this && anchorObject == focusObject
-        && layoutObject()->isTextControl()) {
+    if (!isValidSelectionBound(anchorObject)
+        || !isValidSelectionBound(focusObject)) {
+        return;
+    }
+
+    if (anchorObject == focusObject
+        && anchorObject->layoutObject()->isTextControl()) {
         HTMLTextFormControlElement* textControl = toLayoutTextControl(
-            layoutObject())->textFormControlElement();
-        textControl->setSelectionRange(selection.anchorOffset, selection.focusOffset,
-            SelectionHasNoDirection, NotDispatchSelectEvent);
+            anchorObject->layoutObject())->textFormControlElement();
+        if (selection.anchorOffset <= selection.focusOffset) {
+            textControl->setSelectionRange(
+                selection.anchorOffset, selection.focusOffset,
+                SelectionHasForwardDirection, NotDispatchSelectEvent);
+        } else {
+            textControl->setSelectionRange(
+                selection.focusOffset, selection.anchorOffset,
+                SelectionHasBackwardDirection, NotDispatchSelectEvent);
+        }
         return;
     }
 
@@ -2053,8 +2041,8 @@ void AXLayoutObject::setSelection(const AXRange& selection)
 
 bool AXLayoutObject::isValidSelectionBound(const AXObject* boundObject) const
 {
-    return boundObject && !boundObject->isDetached()
-        && boundObject->isAXLayoutObject()
+    return layoutObject() && boundObject && !boundObject->isDetached()
+        && boundObject->isAXLayoutObject() && boundObject->layoutObject()
         && boundObject->layoutObject()->frame() == layoutObject()->frame()
         && &boundObject->axObjectCache() == &axObjectCache();
 }
@@ -2068,9 +2056,9 @@ void AXLayoutObject::setValue(const String& string)
 
     LayoutBoxModelObject* layoutObject = toLayoutBoxModelObject(m_layoutObject);
     if (layoutObject->isTextField() && isHTMLInputElement(*node()))
-        toHTMLInputElement(*node()).setValue(string);
+        toHTMLInputElement(*node()).setValue(string, DispatchInputAndChangeEvent);
     else if (layoutObject->isTextArea() && isHTMLTextAreaElement(*node()))
-        toHTMLTextAreaElement(*node()).setValue(string);
+        toHTMLTextAreaElement(*node()).setValue(string, DispatchInputAndChangeEvent);
 }
 
 //
@@ -2179,7 +2167,7 @@ VisiblePosition AXLayoutObject::visiblePositionForIndex(int index) const
         return VisiblePosition();
 
     if (index <= 0)
-        return VisiblePosition(firstPositionInOrBeforeNode(node));
+        return createVisiblePosition(firstPositionInOrBeforeNode(node));
 
     Position start, end;
     bool selected = Range::selectNodeContents(node, start, end);
@@ -2188,7 +2176,7 @@ VisiblePosition AXLayoutObject::visiblePositionForIndex(int index) const
 
     CharacterIterator it(start, end);
     it.advance(index - 1);
-    return VisiblePosition(Position(it.currentContainer(), it.endOffset()), TextAffinity::Upstream);
+    return createVisiblePosition(Position(it.currentContainer(), it.endOffset()), TextAffinity::Upstream);
 }
 
 void AXLayoutObject::addInlineTextBoxChildren(bool force)
@@ -2256,20 +2244,6 @@ AXObject* AXLayoutObject::treeAncestorDisallowingChild() const
             return treeAncestor;
     }
     return 0;
-}
-
-void AXLayoutObject::ariaListboxSelectedChildren(AccessibilityChildrenVector& result)
-{
-    bool isMulti = isMultiSelectable();
-
-    for (const auto& child : children()) {
-        // Every child should have aria-role option, and if so, check for selected attribute/state.
-        if (child->isSelected() && child->ariaRoleAttribute() == ListBoxOptionRole) {
-            result.append(child);
-            if (!isMulti)
-                return;
-        }
-    }
 }
 
 bool AXLayoutObject::nodeIsTextControl(const Node* node) const
@@ -2566,35 +2540,6 @@ void AXLayoutObject::addRemoteSVGChildren()
     }
 }
 
-void AXLayoutObject::ariaSelectedRows(AccessibilityChildrenVector& result)
-{
-    // Get all the rows.
-    AccessibilityChildrenVector allRows;
-    if (isTree())
-        ariaTreeRows(allRows);
-    else if (isAXTable() && toAXTable(this)->supportsSelectedRows())
-        allRows = toAXTable(this)->rows();
-
-    // Determine which rows are selected.
-    bool isMulti = isMultiSelectable();
-
-    // Prefer active descendant over aria-selected.
-    AXObject* activeDesc = activeDescendant();
-    if (activeDesc && (activeDesc->isTreeItem() || activeDesc->isTableRow())) {
-        result.append(activeDesc);
-        if (!isMulti)
-            return;
-    }
-
-    for (const auto& row : allRows) {
-        if (row->isSelected()) {
-            result.append(row);
-            if (!isMulti)
-                break;
-        }
-    }
-}
-
 bool AXLayoutObject::elementAttributeValue(const QualifiedName& attributeName) const
 {
     if (!m_layoutObject)
@@ -2625,7 +2570,7 @@ LayoutRect AXLayoutObject::computeElementRect() const
     } else if (isWebArea() || obj->isSVGRoot()) {
         result = LayoutRect(obj->absoluteBoundingBoxRect());
     } else {
-        result = LayoutRect(obj->absoluteOutlineBoundingBoxRect());
+        result = LayoutRect(obj->absoluteElementBoundingBoxRect());
     }
 
     Document* document = this->document();

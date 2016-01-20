@@ -67,25 +67,38 @@ DEFINE_TRACE(SpellCheckRequest)
     TextCheckingRequest::trace(visitor);
 }
 
-// static
-PassRefPtrWillBeRawPtr<SpellCheckRequest> SpellCheckRequest::create(TextCheckingTypeMask textCheckingOptions, TextCheckingProcessType processType, PassRefPtrWillBeRawPtr<Range> checkingRange, PassRefPtrWillBeRawPtr<Range> paragraphRange, int requestNumber)
+void SpellCheckRequest::dispose()
 {
-    ASSERT(checkingRange);
-    ASSERT(paragraphRange);
+    if (m_checkingRange)
+        m_checkingRange->dispose();
+    if (m_paragraphRange && m_paragraphRange != m_checkingRange)
+        m_paragraphRange->dispose();
+}
 
-    String text = checkingRange->text();
-    if (!text.length())
+// static
+PassRefPtrWillBeRawPtr<SpellCheckRequest> SpellCheckRequest::create(TextCheckingTypeMask textCheckingOptions, TextCheckingProcessType processType, const EphemeralRange& checkingRange, const EphemeralRange& paragraphRange, int requestNumber)
+{
+    String text = plainText(checkingRange, TextIteratorEmitsObjectReplacementCharacter);
+    if (text.isEmpty())
         return nullptr;
 
-    const DocumentMarkerVector& markers = checkingRange->ownerDocument().markers().markersInRange(EphemeralRange(checkingRange.get()), DocumentMarker::SpellCheckClientMarkers());
+    RefPtrWillBeRawPtr<Range> checkingRangeObject = createRange(checkingRange);
+    RefPtrWillBeRawPtr<Range> paragraphRangeObject = nullptr;
+    // Share identical Range objects.
+    if (checkingRange == paragraphRange)
+        paragraphRangeObject = checkingRangeObject;
+    else
+        paragraphRangeObject = createRange(paragraphRange);
+
+    const DocumentMarkerVector& markers = checkingRangeObject->ownerDocument().markers().markersInRange(checkingRange, DocumentMarker::SpellCheckClientMarkers());
     Vector<uint32_t> hashes(markers.size());
     Vector<unsigned> offsets(markers.size());
-    for (size_t i = 0; i < markers.size(); i++) {
+    for (size_t i = 0; i < markers.size(); ++i) {
         hashes[i] = markers[i]->hash();
         offsets[i] = markers[i]->startOffset();
     }
 
-    return adoptRefWillBeNoop(new SpellCheckRequest(checkingRange, paragraphRange, text, textCheckingOptions, processType, hashes, offsets, requestNumber));
+    return adoptRefWillBeNoop(new SpellCheckRequest(checkingRangeObject, paragraphRangeObject, text, textCheckingOptions, processType, hashes, offsets, requestNumber));
 }
 
 const TextCheckingRequestData& SpellCheckRequest::data() const
@@ -211,6 +224,15 @@ void SpellCheckRequester::invokeRequest(PassRefPtrWillBeRawPtr<SpellCheckRequest
     client().requestCheckingOfString(m_processingRequest);
 }
 
+void SpellCheckRequester::clearProcessingRequest()
+{
+    if (!m_processingRequest)
+        return;
+
+    m_processingRequest->dispose();
+    m_processingRequest.clear();
+}
+
 void SpellCheckRequester::enqueueRequest(PassRefPtrWillBeRawPtr<SpellCheckRequest> request)
 {
     ASSERT(request);
@@ -251,7 +273,7 @@ void SpellCheckRequester::didCheck(int sequence, const Vector<TextCheckingResult
     if (m_lastProcessedSequence < sequence)
         m_lastProcessedSequence = sequence;
 
-    m_processingRequest.clear();
+    clearProcessingRequest();
     if (!m_requestQueue.isEmpty())
         m_timerToProcessQueuedRequest.startOneShot(0, FROM_HERE);
 }

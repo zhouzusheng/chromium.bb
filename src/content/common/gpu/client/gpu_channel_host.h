@@ -18,9 +18,9 @@
 #include "content/common/content_export.h"
 #include "content/common/gpu/gpu_process_launch_causes.h"
 #include "content/common/gpu/gpu_result_codes.h"
+#include "content/common/gpu/gpu_stream_priority.h"
 #include "content/common/message_router.h"
 #include "gpu/config/gpu_info.h"
-#include "ipc/attachment_broker.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_sync_channel.h"
 #include "ipc/message_filter.h"
@@ -58,8 +58,7 @@ namespace content {
 class CommandBufferProxyImpl;
 class GpuChannelHost;
 
-class CONTENT_EXPORT GpuChannelHostFactory
-    : virtual public IPC::SupportsAttachmentBrokering {
+class CONTENT_EXPORT GpuChannelHostFactory {
  public:
   virtual ~GpuChannelHostFactory() {}
 
@@ -83,17 +82,22 @@ class GpuChannelHost : public IPC::Sender,
   // Must be called on the main thread (as defined by the factory).
   static scoped_refptr<GpuChannelHost> Create(
       GpuChannelHostFactory* factory,
+      int channel_id,
       const gpu::GPUInfo& gpu_info,
       const IPC::ChannelHandle& channel_handle,
       base::WaitableEvent* shutdown_event,
       gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager);
 
   static const int32 kDefaultStreamId = 0;
+  static const GpuStreamPriority kDefaultStreamPriority =
+      GpuStreamPriority::NORMAL;
 
   bool IsLost() const {
     DCHECK(channel_filter_.get());
     return channel_filter_->IsLost();
   }
+
+  int channel_id() const { return channel_id_; }
 
   // The GPU stats reported by the GPU process.
   const gpu::GPUInfo& gpu_info() const { return gpu_info_; }
@@ -116,6 +120,7 @@ class GpuChannelHost : public IPC::Sender,
       int32 surface_id,
       CommandBufferProxyImpl* share_group,
       int32 stream_id,
+      GpuStreamPriority stream_priority,
       const std::vector<int32>& attribs,
       const GURL& active_url,
       gfx::GpuPreference gpu_preference);
@@ -125,6 +130,7 @@ class GpuChannelHost : public IPC::Sender,
       const gfx::Size& size,
       CommandBufferProxyImpl* share_group,
       int32 stream_id,
+      GpuStreamPriority stream_priority,
       const std::vector<int32>& attribs,
       const GURL& active_url,
       gfx::GpuPreference gpu_preference);
@@ -236,6 +242,7 @@ class GpuChannelHost : public IPC::Sender,
   };
 
   GpuChannelHost(GpuChannelHostFactory* factory,
+                 int channel_id,
                  const gpu::GPUInfo& gpu_info,
                  gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager);
   ~GpuChannelHost() override;
@@ -246,13 +253,13 @@ class GpuChannelHost : public IPC::Sender,
 
   // Threading notes: all fields are constant during the lifetime of |this|
   // except:
-  // - |next_transfer_buffer_id_|, atomic type
   // - |next_image_id_|, atomic type
   // - |next_route_id_|, atomic type
   // - |next_stream_id_|, atomic type
   // - |channel_| and |stream_flush_info_|, protected by |context_lock_|
   GpuChannelHostFactory* const factory_;
 
+  const int channel_id_;
   const gpu::GPUInfo gpu_info_;
 
   scoped_refptr<MessageFilter> channel_filter_;
@@ -261,9 +268,6 @@ class GpuChannelHost : public IPC::Sender,
 
   // A filter for sending messages from thread other than the main thread.
   scoped_refptr<IPC::SyncMessageFilter> sync_filter_;
-
-  // Transfer buffer IDs are allocated in sequence.
-  base::AtomicSequenceNumber next_transfer_buffer_id_;
 
   // Image IDs are allocated in sequence.
   base::AtomicSequenceNumber next_image_id_;

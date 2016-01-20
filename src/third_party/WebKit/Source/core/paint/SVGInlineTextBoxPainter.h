@@ -7,6 +7,7 @@
 
 #include "core/style/ComputedStyleConstants.h"
 #include "core/layout/svg/LayoutSVGResourcePaintServer.h"
+#include "wtf/Allocator.h"
 
 namespace blink {
 
@@ -22,8 +23,9 @@ class TextRun;
 class DocumentMarker;
 
 class SVGInlineTextBoxPainter {
+    STACK_ALLOCATED();
 public:
-    SVGInlineTextBoxPainter(SVGInlineTextBox& svgInlineTextBox) : m_svgInlineTextBox(svgInlineTextBox) { }
+    SVGInlineTextBoxPainter(const SVGInlineTextBox& svgInlineTextBox) : m_svgInlineTextBox(svgInlineTextBox) { }
     void paint(const PaintInfo&, const LayoutPoint&);
     void paintSelectionBackground(const PaintInfo&);
     virtual void paintTextMatchMarker(GraphicsContext*, const LayoutPoint&, DocumentMarker*, const ComputedStyle&, const Font&);
@@ -35,7 +37,7 @@ private:
     void paintTextWithShadows(const PaintInfo&, const ComputedStyle&, TextRun&, const SVGTextFragment&, int startPosition, int endPosition, LayoutSVGResourceMode);
     void paintText(const PaintInfo&, const ComputedStyle&, const ComputedStyle& selectionStyle, const SVGTextFragment&, LayoutSVGResourceMode, bool shouldPaintSelection);
 
-    SVGInlineTextBox& m_svgInlineTextBox;
+    const SVGInlineTextBox& m_svgInlineTextBox;
 };
 
 } // namespace blink

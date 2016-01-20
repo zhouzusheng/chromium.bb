@@ -133,7 +133,6 @@ void QueryTracker::Query::Begin(GLES2Implementation* gl) {
       // tell service about id, shared memory and count
       gl->helper()->BeginQueryEXT(target(), id(), shm_id(), shm_offset());
       break;
-    case GL_ASYNC_PIXEL_UNPACK_COMPLETED_CHROMIUM:
     case GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM:
     default:
       // tell service about id, shared memory and count
@@ -169,7 +168,7 @@ void QueryTracker::Query::End(GLES2Implementation* gl) {
 void QueryTracker::Query::QueryCounter(GLES2Implementation* gl) {
   MarkAsActive();
   flush_count_ = gl->helper()->flush_generation();
-  gl->helper()->QueryCounterEXT(target(), id(), shm_id(), shm_offset(),
+  gl->helper()->QueryCounterEXT(id(), target(), shm_id(), shm_offset(),
                                 submit_count());
   MarkAsPending(gl->helper()->InsertToken());
 }
@@ -189,7 +188,6 @@ bool QueryTracker::Query::CheckResultsAvailable(
           //DCHECK(info_.sync->result >= client_begin_time_us_);
           result_ = info_.sync->result - client_begin_time_us_;
           break;
-        case GL_ASYNC_PIXEL_UNPACK_COMPLETED_CHROMIUM:
         case GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM:
         default:
           result_ = info_.sync->result;

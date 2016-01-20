@@ -510,15 +510,23 @@ void LinkStyle::setCSSStyleSheet(const String& href, const KURL& baseURL, const 
         return;
     }
 
-    // See the comment in ScriptLoader.cpp about why this check is necessary
-    // here. https://crbug.com/500701.
-    if (!cachedStyleSheet->errorOccurred() && !SubresourceIntegrity::CheckSubresourceIntegrity(*m_owner, cachedStyleSheet->sheetText(), KURL(baseURL, href), *cachedStyleSheet)) {
+    // See the comment in PendingScript.cpp about why this check is necessary
+    // here, instead of in the resource fetcher. https://crbug.com/500701.
+    if (!cachedStyleSheet->errorOccurred() && cachedStyleSheet->resourceBuffer() && !SubresourceIntegrity::CheckSubresourceIntegrity(*m_owner, cachedStyleSheet->resourceBuffer()->data(), cachedStyleSheet->resourceBuffer()->size(), KURL(baseURL, href), *cachedStyleSheet)) {
         m_loading = false;
         removePendingSheet();
         notifyLoadedSheetAndAllCriticalSubresources(Node::ErrorOccurredLoadingSubresource);
         return;
     }
-
+    // While the stylesheet is asynchronously loading, the owner can be moved under
+    // shadow tree.  In that case, cancel any processing on the loaded content.
+    if (m_owner->isInShadowTree()) {
+        m_loading = false;
+        removePendingSheet();
+        if (m_sheet)
+            clearSheet();
+        return;
+    }
     // Completing the sheet load may cause scripts to execute.
     RefPtrWillBeRawPtr<Node> protector(m_owner.get());
 

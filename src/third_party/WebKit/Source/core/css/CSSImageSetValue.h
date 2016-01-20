@@ -35,7 +35,6 @@ namespace blink {
 
 class Document;
 class StyleFetchedImageSet;
-class StyleImage;
 
 class CSSImageSetValue : public CSSValueList {
 public:
@@ -46,15 +45,12 @@ public:
     }
     ~CSSImageSetValue();
 
-    StyleFetchedImageSet* cachedImageSet(Document*, float deviceScaleFactor, const ResourceLoaderOptions&);
-    StyleFetchedImageSet* cachedImageSet(Document*, float deviceScaleFactor);
-
-    // Returns a StyleFetchedImageSet if the best fit image has been cached already, otherwise a StylePendingImage.
-    StyleImage* cachedOrPendingImageSet(float);
+    bool isCachePending(float deviceScaleFactor) const;
+    StyleFetchedImageSet* cachedImageSet(float deviceScaleFactor);
+    StyleFetchedImageSet* cacheImageSet(Document*, float deviceScaleFactor, const ResourceLoaderOptions&);
+    StyleFetchedImageSet* cacheImageSet(Document*, float deviceScaleFactor);
 
     String customCSSText() const;
-
-    bool isPending() const { return !m_accessedBestFitImage; }
 
     struct ImageWithScale {
         ALLOW_ONLY_INLINE_ALLOCATION();
@@ -63,12 +59,14 @@ public:
         float scaleFactor;
     };
 
+    PassRefPtrWillBeRawPtr<CSSImageSetValue> valueWithURLsMadeAbsolute();
+
     bool hasFailedOrCanceledSubresources() const;
 
     DECLARE_TRACE_AFTER_DISPATCH();
 
 protected:
-    ImageWithScale bestImageForScaleFactor();
+    ImageWithScale bestImageForScaleFactor(float scaleFactor);
 
 private:
     CSSImageSetValue();
@@ -76,12 +74,9 @@ private:
     void fillImageSet();
     static inline bool compareByScaleFactor(ImageWithScale first, ImageWithScale second) { return first.scaleFactor < second.scaleFactor; }
 
-    RefPtrWillBeMember<StyleImage> m_imageSet;
-    bool m_accessedBestFitImage;
-
-    // This represents the scale factor that we used to find the best fit image. It does not necessarily
-    // correspond to the scale factor of the best fit image.
-    float m_scaleFactor;
+    bool m_isCachePending;
+    float m_cachedScaleFactor;
+    RefPtrWillBeMember<StyleFetchedImageSet> m_cachedImageSet;
 
     Vector<ImageWithScale> m_imagesInSet;
 };

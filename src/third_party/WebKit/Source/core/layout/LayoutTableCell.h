@@ -40,6 +40,48 @@ enum IncludeBorderColorOrNot { DoNotIncludeBorderColor, IncludeBorderColor };
 
 class SubtreeLayoutScope;
 
+// LayoutTableCell is used to represent a table cell (display: table-cell).
+//
+// Because rows are as tall as the tallest cell, cells need to be aligned into
+// the enclosing row space. To achieve this, LayoutTableCell introduces the
+// concept of 'intrinsic padding'. Those 2 paddings are used to shift the box
+// into the row as follows:
+//
+//        --------------------------------
+//        ^  ^
+//        |  |
+//        |  |    cell's border before
+//        |  |
+//        |  v
+//        |  ^
+//        |  |
+//        |  | m_intrinsicPaddingBefore
+//        |  |
+//        |  v
+//        |  -----------------------------
+//        |  |                           |
+// row    |  |   cell's padding box      |
+// height |  |                           |
+//        |  -----------------------------
+//        |  ^
+//        |  |
+//        |  | m_intrinsicPaddingAfter
+//        |  |
+//        |  v
+//        |  ^
+//        |  |
+//        |  |    cell's border after
+//        |  |
+//        v  v
+//        ---------------------------------
+//
+// Note that this diagram is not impacted by collapsing or separate borders
+// (see 'border-collapse').
+// Also there is no margin on table cell (or any internal table element).
+//
+// LayoutTableCell is positioned with respect to the enclosing
+// LayoutTableSection. See callers of
+// LayoutTableSection::setLogicalPositionForCell() for when it is placed.
 class CORE_EXPORT LayoutTableCell final : public LayoutBlockFlow {
 public:
     explicit LayoutTableCell(Element*);
@@ -137,7 +179,7 @@ public:
 
     void layout() override;
 
-    void paint(const PaintInfo&, const LayoutPoint&) override;
+    void paint(const PaintInfo&, const LayoutPoint&) const override;
 
     LayoutUnit cellBaselinePosition() const;
     bool isBaselineAligned() const
@@ -232,7 +274,7 @@ protected:
     void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override;
     void computePreferredLogicalWidths() override;
 
-    void addLayerHitTestRects(LayerHitTestRects&, const DeprecatedPaintLayer* currentCompositedLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const override;
+    void addLayerHitTestRects(LayerHitTestRects&, const PaintLayer* currentCompositedLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const override;
 
 private:
     bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectTableCell || LayoutBlockFlow::isOfType(type); }
@@ -241,10 +283,10 @@ private:
 
     void updateLogicalWidth() override;
 
-    void paintBoxDecorationBackground(const PaintInfo&, const LayoutPoint&) override;
-    void paintMask(const PaintInfo&, const LayoutPoint&) override;
+    void paintBoxDecorationBackground(const PaintInfo&, const LayoutPoint&) const override;
+    void paintMask(const PaintInfo&, const LayoutPoint&) const override;
 
-    bool boxShadowShouldBeAppliedToBackground(BackgroundBleedAvoidance, InlineFlowBox*) const override;
+    bool boxShadowShouldBeAppliedToBackground(BackgroundBleedAvoidance, const InlineFlowBox*) const override;
 
     LayoutSize offsetFromContainer(const LayoutObject*, const LayoutPoint&, bool* offsetDependsOnPoint = nullptr) const override;
     LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* = nullptr) const override;
@@ -287,6 +329,12 @@ private:
     unsigned m_cellWidthChanged : 1;
     unsigned m_hasColSpan: 1;
     unsigned m_hasRowSpan: 1;
+
+    // The intrinsic padding.
+    // See class comment for what they are.
+    //
+    // Note: Those fields are using non-subpixel units (int)
+    // because we don't do fractional arithmetic on tables.
     int m_intrinsicPaddingBefore;
     int m_intrinsicPaddingAfter;
 };

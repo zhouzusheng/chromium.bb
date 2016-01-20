@@ -5,8 +5,11 @@
 // Original code copyright 2014 Foxit Software Inc. http://www.foxitsoftware.com
 
 #include "JBig2_HuffmanTable.h"
-#include "JBig2_BitStream.h"
+
 #include <string.h>
+
+#include "../../../include/fxcrt/fx_memory.h"
+#include "JBig2_BitStream.h"
 
 CJBig2_HuffmanTable::CJBig2_HuffmanTable(const JBig2TableLine* pTable,
                                          int nLines,
@@ -21,18 +24,10 @@ CJBig2_HuffmanTable::CJBig2_HuffmanTable(CJBig2_BitStream* pStream) {
 }
 
 CJBig2_HuffmanTable::~CJBig2_HuffmanTable() {
-  if (CODES) {
-    m_pModule->JBig2_Free(CODES);
-  }
-  if (PREFLEN) {
-    m_pModule->JBig2_Free(PREFLEN);
-  }
-  if (RANGELEN) {
-    m_pModule->JBig2_Free(RANGELEN);
-  }
-  if (RANGELOW) {
-    m_pModule->JBig2_Free(RANGELOW);
-  }
+  FX_Free(CODES);
+  FX_Free(PREFLEN);
+  FX_Free(RANGELEN);
+  FX_Free(RANGELOW);
 }
 void CJBig2_HuffmanTable::init() {
   HTOOB = FALSE;
@@ -50,10 +45,10 @@ int CJBig2_HuffmanTable::parseFromStandardTable(const JBig2TableLine* pTable,
   int* FIRSTCODE;
   HTOOB = bHTOOB;
   NTEMP = nLines;
-  CODES = (int*)m_pModule->JBig2_Malloc2(sizeof(int), NTEMP);
-  PREFLEN = (int*)m_pModule->JBig2_Malloc2(sizeof(int), NTEMP);
-  RANGELEN = (int*)m_pModule->JBig2_Malloc2(sizeof(int), NTEMP);
-  RANGELOW = (int*)m_pModule->JBig2_Malloc2(sizeof(int), NTEMP);
+  CODES = FX_Alloc(int, NTEMP);
+  PREFLEN = FX_Alloc(int, NTEMP);
+  RANGELEN = FX_Alloc(int, NTEMP);
+  RANGELOW = FX_Alloc(int, NTEMP);
   LENMAX = 0;
   for (i = 0; i < NTEMP; i++) {
     PREFLEN[i] = pTable[i].PREFLEN;
@@ -63,9 +58,9 @@ int CJBig2_HuffmanTable::parseFromStandardTable(const JBig2TableLine* pTable,
       LENMAX = PREFLEN[i];
     }
   }
-  LENCOUNT = (int*)m_pModule->JBig2_Malloc2(sizeof(int), (LENMAX + 1));
+  LENCOUNT = FX_Alloc(int, LENMAX + 1);
   JBIG2_memset(LENCOUNT, 0, sizeof(int) * (LENMAX + 1));
-  FIRSTCODE = (int*)m_pModule->JBig2_Malloc2(sizeof(int), (LENMAX + 1));
+  FIRSTCODE = FX_Alloc(int, LENMAX + 1);
   for (i = 0; i < NTEMP; i++) {
     LENCOUNT[PREFLEN[i]]++;
   }
@@ -85,17 +80,17 @@ int CJBig2_HuffmanTable::parseFromStandardTable(const JBig2TableLine* pTable,
     }
     CURLEN = CURLEN + 1;
   }
-  m_pModule->JBig2_Free(LENCOUNT);
-  m_pModule->JBig2_Free(FIRSTCODE);
+  FX_Free(LENCOUNT);
+  FX_Free(FIRSTCODE);
   return 1;
 }
 
-#define HT_CHECK_MEMORY_ADJUST                                                \
-  if (NTEMP >= nSize) {                                                       \
-    nSize += 16;                                                              \
-    PREFLEN = (int*)m_pModule->JBig2_Realloc(PREFLEN, sizeof(int) * nSize);   \
-    RANGELEN = (int*)m_pModule->JBig2_Realloc(RANGELEN, sizeof(int) * nSize); \
-    RANGELOW = (int*)m_pModule->JBig2_Realloc(RANGELOW, sizeof(int) * nSize); \
+#define HT_CHECK_MEMORY_ADJUST                   \
+  if (NTEMP >= nSize) {                          \
+    nSize += 16;                                 \
+    PREFLEN = FX_Realloc(int, PREFLEN, nSize);   \
+    RANGELEN = FX_Realloc(int, RANGELEN, nSize); \
+    RANGELOW = FX_Realloc(int, RANGELOW, nSize); \
   }
 int CJBig2_HuffmanTable::parseFromCodedBuffer(CJBig2_BitStream* pStream) {
   unsigned char HTPS, HTRS;
@@ -116,9 +111,9 @@ int CJBig2_HuffmanTable::parseFromCodedBuffer(CJBig2_BitStream* pStream) {
       pStream->readInteger(&HTHIGH) == -1 || HTLOW > HTHIGH) {
     goto failed;
   }
-  PREFLEN = (int*)m_pModule->JBig2_Malloc2(sizeof(int), nSize);
-  RANGELEN = (int*)m_pModule->JBig2_Malloc2(sizeof(int), nSize);
-  RANGELOW = (int*)m_pModule->JBig2_Malloc2(sizeof(int), nSize);
+  PREFLEN = FX_Alloc(int, nSize);
+  RANGELEN = FX_Alloc(int, nSize);
+  RANGELOW = FX_Alloc(int, nSize);
   CURRANGELOW = HTLOW;
   NTEMP = 0;
   do {
@@ -152,16 +147,16 @@ int CJBig2_HuffmanTable::parseFromCodedBuffer(CJBig2_BitStream* pStream) {
     }
     NTEMP = NTEMP + 1;
   }
-  CODES = (int*)m_pModule->JBig2_Malloc2(sizeof(int), NTEMP);
+  CODES = FX_Alloc(int, NTEMP);
   LENMAX = 0;
   for (int i = 0; i < NTEMP; i++) {
     if (PREFLEN[i] > LENMAX) {
       LENMAX = PREFLEN[i];
     }
   }
-  LENCOUNT = (int*)m_pModule->JBig2_Malloc2(sizeof(int), (LENMAX + 1));
+  LENCOUNT = FX_Alloc(int, (LENMAX + 1));
   JBIG2_memset(LENCOUNT, 0, sizeof(int) * (LENMAX + 1));
-  FIRSTCODE = (int*)m_pModule->JBig2_Malloc2(sizeof(int), (LENMAX + 1));
+  FIRSTCODE = FX_Alloc(int, (LENMAX + 1));
   for (int i = 0; i < NTEMP; i++) {
     LENCOUNT[PREFLEN[i]]++;
   }
@@ -181,8 +176,8 @@ int CJBig2_HuffmanTable::parseFromCodedBuffer(CJBig2_BitStream* pStream) {
     }
     CURLEN = CURLEN + 1;
   }
-  m_pModule->JBig2_Free(LENCOUNT);
-  m_pModule->JBig2_Free(FIRSTCODE);
+  FX_Free(LENCOUNT);
+  FX_Free(FIRSTCODE);
   return TRUE;
 failed:
   return FALSE;

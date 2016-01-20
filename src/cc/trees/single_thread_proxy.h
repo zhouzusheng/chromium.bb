@@ -38,7 +38,8 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   void FinishAllRendering() override;
   bool IsStarted() const override;
   bool CommitToActiveTree() const override;
-  void SetOutputSurface(scoped_ptr<OutputSurface>) override;
+  void SetOutputSurface(OutputSurface* output_surface) override;
+  void ReleaseOutputSurface() override;
   void SetLayerTreeHostClientReady() override;
   void SetVisible(bool visible) override;
   void SetThrottleFrameProduction(bool throttle) override;
@@ -55,7 +56,6 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
   void MainThreadHasStoppedFlinging() override {}
   void Start() override;
   void Stop() override;
-  void ForceSerializeOnSwapBuffers() override;
   bool SupportsImplScrolling() const override;
   bool MainFrameWillHappenForTesting() override;
   void SetChildrenNeedBeginFrames(bool children_need_begin_frames) override;
@@ -109,8 +109,6 @@ class CC_EXPORT SingleThreadProxy : public Proxy,
       scoped_ptr<FrameTimingTracker::CompositeTimingSet> composite_events,
       scoped_ptr<FrameTimingTracker::MainFrameTimingSet> main_frame_events)
       override;
-
-  void SetDebugState(const LayerTreeDebugState& debug_state) override {}
 
   void RequestNewOutputSurface();
 

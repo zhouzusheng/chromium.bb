@@ -274,6 +274,7 @@ HttpCache::Transaction::Transaction(RequestPriority priority, HttpCache* cache)
       write_len_(0),
       transaction_pattern_(PATTERN_UNDEFINED),
       total_received_bytes_(0),
+      total_sent_bytes_(0),
       websocket_handshake_stream_base_create_helper_(NULL),
       weak_factory_(this) {
   static_assert(HttpCache::Transaction::kNumValidationHeaders ==
@@ -521,11 +522,18 @@ bool HttpCache::Transaction::GetFullRequestHeaders(
   return false;
 }
 
-int64 HttpCache::Transaction::GetTotalReceivedBytes() const {
-  int64 total_received_bytes = total_received_bytes_;
+int64_t HttpCache::Transaction::GetTotalReceivedBytes() const {
+  int64_t total_received_bytes = total_received_bytes_;
   if (network_trans_)
     total_received_bytes += network_trans_->GetTotalReceivedBytes();
   return total_received_bytes;
+}
+
+int64_t HttpCache::Transaction::GetTotalSentBytes() const {
+  int64_t total_sent_bytes = total_sent_bytes_;
+  if (network_trans_)
+    total_sent_bytes += network_trans_->GetTotalSentBytes();
+  return total_sent_bytes;
 }
 
 void HttpCache::Transaction::DoneReading() {
@@ -589,6 +597,18 @@ bool HttpCache::Transaction::GetLoadTimingInfo(
   // the same time as send_start.
   load_timing_info->send_end = first_cache_access_since_;
   return true;
+}
+
+bool HttpCache::Transaction::GetRemoteEndpoint(IPEndPoint* endpoint) const {
+  if (network_trans_)
+    return network_trans_->GetRemoteEndpoint(endpoint);
+
+  if (!old_remote_endpoint_.address().empty()) {
+    *endpoint = old_remote_endpoint_;
+    return true;
+  }
+
+  return false;
 }
 
 void HttpCache::Transaction::SetPriority(RequestPriority priority) {
@@ -1395,6 +1415,7 @@ int HttpCache::Transaction::DoSendRequest() {
 
   // Old load timing information, if any, is now obsolete.
   old_network_trans_load_timing_.reset();
+  old_remote_endpoint_ = IPEndPoint();
 
   if (websocket_handshake_stream_base_create_helper_)
     network_trans_->SetWebSocketHandshakeStreamCreateHelper(
@@ -1867,7 +1888,7 @@ int HttpCache::Transaction::DoCacheWriteDataComplete(int result) {
     // We want to ignore errors writing to disk and just keep reading from
     // the network.
     result = write_len_;
-  } else if (!done_reading_ && entry_) {
+  } else if (!done_reading_ && entry_ && (!partial_ || truncated_)) {
     int current_size = entry_->disk_entry->GetDataSize(kResponseContentIndex);
     int64 body_size = response_.headers->GetContentLength();
     if (body_size >= 0 && body_size <= current_size)
@@ -2115,6 +2136,13 @@ int HttpCache::Transaction::BeginCacheValidation() {
 
   bool skip_validation = (required_validation == VALIDATION_NONE);
 
+  if ((effective_load_flags_ & LOAD_SUPPORT_ASYNC_REVALIDATION) &&
+      required_validation == VALIDATION_ASYNCHRONOUS) {
+    DCHECK_EQ(request_->method, "GET");
+    skip_validation = true;
+    response_.async_revalidation_required = true;
+  }
+
   if (request_->method == "HEAD" &&
       (truncated_ || response_.headers->response_code() == 206)) {
     DCHECK(!partial_);
@@ -2242,7 +2270,7 @@ int HttpCache::Transaction::BeginExternallyConditionalizedRequest() {
       EXTERNALLY_CONDITIONALIZED_CACHE_USABLE;
   if (mode_ == NONE)
     type = EXTERNALLY_CONDITIONALIZED_MISMATCHED_VALIDATORS;
-  else if (RequiresValidation())
+  else if (RequiresValidation() != VALIDATION_NONE)
     type = EXTERNALLY_CONDITIONALIZED_CACHE_REQUIRES_VALIDATION;
 
   // TODO(ricea): Add CACHE_USABLE_STALE once stale-while-revalidate CL landed.
@@ -2794,10 +2822,13 @@ void HttpCache::Transaction::ResetNetworkTransaction() {
   if (network_trans_->GetLoadTimingInfo(&load_timing))
     old_network_trans_load_timing_.reset(new LoadTimingInfo(load_timing));
   total_received_bytes_ += network_trans_->GetTotalReceivedBytes();
+  total_sent_bytes_ += network_trans_->GetTotalSentBytes();
   ConnectionAttempts attempts;
   network_trans_->GetConnectionAttempts(&attempts);
   for (const auto& attempt : attempts)
     old_connection_attempts_.push_back(attempt);
+  old_remote_endpoint_ = IPEndPoint();
+  network_trans_->GetRemoteEndpoint(&old_remote_endpoint_);
   network_trans_.reset();
 }
 

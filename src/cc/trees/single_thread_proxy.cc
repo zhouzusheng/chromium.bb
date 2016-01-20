@@ -128,7 +128,6 @@ void SingleThreadProxy::SetVisible(bool visible) {
 
   if (scheduler_on_impl_thread_)
     scheduler_on_impl_thread_->SetVisible(layer_tree_host_impl_->visible());
-  // Changing visibility could change ShouldComposite().
 }
 
 void SingleThreadProxy::SetThrottleFrameProduction(bool throttle) {
@@ -149,8 +148,16 @@ void SingleThreadProxy::RequestNewOutputSurface() {
   layer_tree_host_->RequestNewOutputSurface();
 }
 
-void SingleThreadProxy::SetOutputSurface(
-    scoped_ptr<OutputSurface> output_surface) {
+void SingleThreadProxy::ReleaseOutputSurface() {
+  // |layer_tree_host_| should already be aware of this.
+  DCHECK(layer_tree_host_->output_surface_lost());
+
+  if (scheduler_on_impl_thread_)
+    scheduler_on_impl_thread_->DidLoseOutputSurface();
+  return layer_tree_host_impl_->ReleaseOutputSurface();
+}
+
+void SingleThreadProxy::SetOutputSurface(OutputSurface* output_surface) {
   DCHECK(Proxy::IsMainThread());
   DCHECK(layer_tree_host_->output_surface_lost());
   DCHECK(output_surface_creation_requested_);
@@ -160,7 +167,7 @@ void SingleThreadProxy::SetOutputSurface(
   {
     DebugScopedSetMainThreadBlocked main_thread_blocked(this);
     DebugScopedSetImplThread impl(this);
-    success = layer_tree_host_impl_->InitializeRenderer(output_surface.Pass());
+    success = layer_tree_host_impl_->InitializeRenderer(output_surface);
   }
 
   if (success) {
@@ -230,7 +237,6 @@ void SingleThreadProxy::DoCommit() {
         blocking_main_thread_task_runner()));
 
     layer_tree_host_impl_->BeginCommit();
-    layer_tree_host_->BeginCommitOnImplThread(layer_tree_host_impl_.get());
 
     // TODO(robliao): Remove ScopedTracker below once https://crbug.com/461509
     // is fixed.
@@ -256,6 +262,11 @@ void SingleThreadProxy::DoCommit() {
     DCHECK_EQ(1.f, scroll_info->page_scale_delta);
 #endif
 
+    if (scheduler_on_impl_thread_)
+      scheduler_on_impl_thread_->DidCommit();
+
+    layer_tree_host_impl_->CommitComplete();
+
     // TODO(robliao): Remove ScopedTracker below once https://crbug.com/461509
     // is fixed.
     tracked_objects::ScopedTracker tracking_profile8(
@@ -271,16 +282,11 @@ void SingleThreadProxy::DoCommit() {
 }
 
 void SingleThreadProxy::CommitComplete() {
+  // Commit complete happens on the main side after activate to satisfy any
+  // SetNextCommitWaitsForActivation calls.
   DCHECK(!layer_tree_host_impl_->pending_tree())
       << "Activation is expected to have synchronously occurred by now.";
   DCHECK(commit_blocking_task_runner_);
-
-  if (scheduler_on_impl_thread_)
-    scheduler_on_impl_thread_->DidCommit();
-
-  // Notify commit complete on the impl side after activate to satisfy any
-  // SetNextCommitWaitsForActivation calls.
-  layer_tree_host_impl_->CommitComplete();
 
   DebugScopedSetMainThread main(this);
   commit_blocking_task_runner_.reset();
@@ -587,16 +593,6 @@ void SingleThreadProxy::CompositeImmediately(base::TimeTicks frame_begin_time) {
         SwapPromise::SWAP_FAILS);
 
     DidFinishImplFrame();
-  }
-}
-
-void SingleThreadProxy::ForceSerializeOnSwapBuffers() {
-  {
-    DebugScopedSetImplThread impl(this);
-    if (layer_tree_host_impl_->renderer()) {
-      DCHECK(!layer_tree_host_->output_surface_lost());
-      layer_tree_host_impl_->renderer()->DoNoOp();
-    }
   }
 }
 

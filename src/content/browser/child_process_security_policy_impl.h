@@ -60,6 +60,7 @@ class CONTENT_EXPORT ChildProcessSecurityPolicyImpl
                                const std::string& filesystem_id) override;
   void GrantDeleteFromFileSystem(int child_id,
                                  const std::string& filesystem_id) override;
+  void GrantOrigin(int child_id, const url::Origin& origin) override;
   void GrantScheme(int child_id, const std::string& scheme) override;
   bool CanReadFile(int child_id, const base::FilePath& file) override;
   bool CanCreateReadWriteFile(int child_id,
@@ -175,7 +176,7 @@ class CONTENT_EXPORT ChildProcessSecurityPolicyImpl
 
   // Obtain an instance of ChildProcessSecurityPolicyImpl via GetInstance().
   ChildProcessSecurityPolicyImpl();
-  friend struct DefaultSingletonTraits<ChildProcessSecurityPolicyImpl>;
+  friend struct base::DefaultSingletonTraits<ChildProcessSecurityPolicyImpl>;
 
   // Adds child process during registration.
   void AddChild(int child_id);

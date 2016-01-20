@@ -64,20 +64,18 @@ public:
         : m_resolver(resolver) { }
     ~RegistrationCallback() override { }
 
-    void onSuccess(WebServiceWorkerRegistration* registration) override
+    void onSuccess(WebPassOwnPtr<WebServiceWorkerRegistration::Handle> handle) override
     {
         if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
             return;
-        m_resolver->resolve(ServiceWorkerRegistration::take(m_resolver.get(), registration));
+        m_resolver->resolve(ServiceWorkerRegistration::getOrCreate(m_resolver->executionContext(), handle.release()));
     }
 
-    // Takes ownership of |errorRaw|.
-    void onError(WebServiceWorkerError* errorRaw) override
+    void onError(const WebServiceWorkerError& error) override
     {
-        OwnPtr<WebServiceWorkerError> error = adoptPtr(errorRaw);
         if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
             return;
-        m_resolver->reject(ServiceWorkerError::take(m_resolver.get(), *error));
+        m_resolver->reject(ServiceWorkerError::take(m_resolver.get(), error));
     }
 
 private:
@@ -91,25 +89,24 @@ public:
         : m_resolver(resolver) { }
     ~GetRegistrationCallback() override { }
 
-    void onSuccess(WebServiceWorkerRegistration* registration) override
+    void onSuccess(WebPassOwnPtr<WebServiceWorkerRegistration::Handle> webPassHandle) override
     {
+        OwnPtr<WebServiceWorkerRegistration::Handle> handle = webPassHandle.release();
         if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
             return;
-        if (!registration) {
+        if (!handle) {
             // Resolve the promise with undefined.
             m_resolver->resolve();
             return;
         }
-        m_resolver->resolve(ServiceWorkerRegistration::take(m_resolver.get(), registration));
+        m_resolver->resolve(ServiceWorkerRegistration::getOrCreate(m_resolver->executionContext(), handle.release()));
     }
 
-    // Takes ownership of |errorRaw|.
-    void onError(WebServiceWorkerError* errorRaw) override
+    void onError(const WebServiceWorkerError& error) override
     {
-        OwnPtr<WebServiceWorkerError> error = adoptPtr(errorRaw);
         if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
             return;
-        m_resolver->reject(ServiceWorkerError::take(m_resolver.get(), *error));
+        m_resolver->reject(ServiceWorkerError::take(m_resolver.get(), error));
     }
 
 private:
@@ -123,22 +120,24 @@ public:
         : m_resolver(resolver) { }
     ~GetRegistrationsCallback() override { }
 
-    // Takes ownership of |registrationsRaw|.
-    void onSuccess(WebVector<WebServiceWorkerRegistration*>* registrationsRaw) override
+    void onSuccess(WebPassOwnPtr<WebVector<WebServiceWorkerRegistration::Handle*>> webPassRegistrations) override
     {
-        OwnPtr<WebVector<WebServiceWorkerRegistration*>> registrations = adoptPtr(registrationsRaw);
+        Vector<OwnPtr<WebServiceWorkerRegistration::Handle>> handles;
+        OwnPtr<WebVector<WebServiceWorkerRegistration::Handle*>> webRegistrations = webPassRegistrations.release();
+        for (auto& handle : *webRegistrations) {
+            handles.append(adoptPtr(handle));
+        }
+
         if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
             return;
-        m_resolver->resolve(ServiceWorkerRegistrationArray::take(m_resolver.get(), registrations.release()));
+        m_resolver->resolve(ServiceWorkerRegistrationArray::take(m_resolver.get(), &handles));
     }
 
-    // Takes ownership of |errorRaw|.
-    void onError(WebServiceWorkerError* errorRaw) override
+    void onError(const WebServiceWorkerError& error) override
     {
-        OwnPtr<WebServiceWorkerError> error = adoptPtr(errorRaw);
         if (!m_resolver->executionContext() || m_resolver->executionContext()->activeDOMObjectsAreStopped())
             return;
-        m_resolver->reject(ServiceWorkerError::take(m_resolver.get(), *error));
+        m_resolver->reject(ServiceWorkerError::take(m_resolver.get(), error));
     }
 
 private:
@@ -150,14 +149,16 @@ class ServiceWorkerContainer::GetRegistrationForReadyCallback : public WebServic
 public:
     explicit GetRegistrationForReadyCallback(ReadyProperty* ready)
         : m_ready(ready) { }
-    ~GetRegistrationForReadyCallback() { }
-    void onSuccess(WebServiceWorkerRegistration* registration) override
+    ~GetRegistrationForReadyCallback() override { }
+
+    void onSuccess(WebPassOwnPtr<WebServiceWorkerRegistration::Handle> handle) override
     {
-        ASSERT(registration);
         ASSERT(m_ready->state() == ReadyProperty::Pending);
+
         if (m_ready->executionContext() && !m_ready->executionContext()->activeDOMObjectsAreStopped())
-            m_ready->resolve(ServiceWorkerRegistration::from(m_ready->executionContext(), registration));
+            m_ready->resolve(ServiceWorkerRegistration::getOrCreate(m_ready->executionContext(), handle.release()));
     }
+
 private:
     Persistent<ReadyProperty> m_ready;
     WTF_MAKE_NONCOPYABLE(GetRegistrationForReadyCallback);
@@ -207,7 +208,7 @@ ScriptPromise ServiceWorkerContainer::registerServiceWorker(ScriptState* scriptS
     RefPtr<SecurityOrigin> documentOrigin = executionContext->securityOrigin();
     String errorMessage;
     // Restrict to secure origins: https://w3c.github.io/webappsec/specs/powerfulfeatures/#settings-privileged
-    if (!executionContext->isPrivilegedContext(errorMessage)) {
+    if (!executionContext->isSecureContext(errorMessage)) {
         resolver->reject(DOMException::create(NotSupportedError, errorMessage));
         return promise;
     }
@@ -275,7 +276,7 @@ ScriptPromise ServiceWorkerContainer::getRegistration(ScriptState* scriptState, 
 
     RefPtr<SecurityOrigin> documentOrigin = executionContext->securityOrigin();
     String errorMessage;
-    if (!executionContext->isPrivilegedContext(errorMessage)) {
+    if (!executionContext->isSecureContext(errorMessage)) {
         resolver->reject(DOMException::create(NotSupportedError, errorMessage));
         return promise;
     }
@@ -311,7 +312,7 @@ ScriptPromise ServiceWorkerContainer::getRegistrations(ScriptState* scriptState)
     ExecutionContext* executionContext = scriptState->executionContext();
     RefPtr<SecurityOrigin> documentOrigin = executionContext->securityOrigin();
     String errorMessage;
-    if (!executionContext->isPrivilegedContext(errorMessage)) {
+    if (!executionContext->isSecureContext(errorMessage)) {
         resolver->reject(DOMException::create(NotSupportedError, errorMessage));
         return promise;
     }

@@ -1,13 +1,15 @@
-(function() {
 
-  Polymer({
+    Polymer({
+      is: 'paper-icon-item',
 
-    is: 'paper-icon-item',
+      hostAttributes: {
+        'role': 'listitem',
+        'tabindex': '0'
+      },
 
-    hostAttributes: {
-      'role': 'listitem'
-    }
-
-  });
-
-})();
+      behaviors: [
+        Polymer.IronControlState,
+        Polymer.IronButtonState
+      ]
+    });
+  

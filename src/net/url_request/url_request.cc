@@ -259,11 +259,18 @@ bool URLRequest::GetFullRequestHeaders(HttpRequestHeaders* headers) const {
   return job_->GetFullRequestHeaders(headers);
 }
 
-int64 URLRequest::GetTotalReceivedBytes() const {
+int64_t URLRequest::GetTotalReceivedBytes() const {
   if (!job_.get())
     return 0;
 
   return job_->GetTotalReceivedBytes();
+}
+
+int64_t URLRequest::GetTotalSentBytes() const {
+  if (!job_.get())
+    return 0;
+
+  return job_->GetTotalSentBytes();
 }
 
 LoadStateWithParam URLRequest::GetLoadState() const {
@@ -391,6 +398,13 @@ HttpResponseHeaders* URLRequest::response_headers() const {
 
 void URLRequest::GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const {
   *load_timing_info = load_timing_info_;
+}
+
+bool URLRequest::GetRemoteEndpoint(IPEndPoint* endpoint) const {
+  if (!job_)
+    return false;
+
+  return job_->GetRemoteEndpoint(endpoint);
 }
 
 bool URLRequest::GetResponseCookies(ResponseCookies* cookies) {
@@ -875,6 +889,9 @@ void URLRequest::PrepareToRestart() {
 }
 
 void URLRequest::OrphanJob() {
+  if (network_delegate_)
+    network_delegate_->NotifyURLRequestJobOrphaned(this);
+
   // When calling this function, please check that URLRequestHttpJob is
   // not in between calling NetworkDelegate::NotifyHeadersReceived receiving
   // the call back. This is currently guaranteed by the following strategies:

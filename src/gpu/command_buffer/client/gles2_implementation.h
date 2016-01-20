@@ -18,6 +18,7 @@
 #include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/trace_event/memory_dump_provider.h"
 #include "gpu/command_buffer/client/buffer_tracker.h"
 #include "gpu/command_buffer/client/client_context_state.h"
 #include "gpu/command_buffer/client/context_support.h"
@@ -122,7 +123,8 @@ class GLES2ImplementationErrorMessageCallback {
 // shared memory and synchronization issues.
 class GLES2_IMPL_EXPORT GLES2Implementation
     : NON_EXPORTED_BASE(public GLES2Interface),
-      NON_EXPORTED_BASE(public ContextSupport) {
+      NON_EXPORTED_BASE(public ContextSupport),
+      NON_EXPORTED_BASE(public base::trace_event::MemoryDumpProvider) {
  public:
   enum MappedMemoryLimit {
     kNoLimit = MappedMemoryManager::kNoLimit,
@@ -207,6 +209,7 @@ class GLES2_IMPL_EXPORT GLES2Implementation
                             const gfx::RectF& uv_rect) override;
   GLuint InsertFutureSyncPointCHROMIUM() override;
   void RetireSyncPointCHROMIUM(GLuint sync_point) override;
+  uint64_t ShareGroupTracingGUID() const override;
 
   void GetProgramInfoCHROMIUMHelper(GLuint program, std::vector<int8>* result);
   GLint GetAttribLocationHelper(GLuint program, const char* name);
@@ -253,6 +256,10 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   void SignalQuery(uint32 query, const base::Closure& callback) override;
   void SetSurfaceVisible(bool visible) override;
   void SetAggressivelyFreeResources(bool aggressively_free_resources) override;
+
+  // base::trace_event::MemoryDumpProvider implementation.
+  bool OnMemoryDump(const base::trace_event::MemoryDumpArgs& args,
+                    base::trace_event::ProcessMemoryDump* pmd) override;
 
   void SetErrorMessageCallback(
       GLES2ImplementationErrorMessageCallback* callback) {
@@ -623,32 +630,6 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   // a token.
   void RemoveTransferBuffer(BufferTracker::Buffer* buffer);
 
-  // Returns true if the async upload token has passed.
-  //
-  // NOTE: This will detect wrapped async tokens by checking if the most
-  // significant  bit of async token to check is 1 but the last read is 0, i.e.
-  // the uint32 wrapped.
-  bool HasAsyncUploadTokenPassed(uint32 token) const {
-    return async_upload_sync_->HasAsyncUploadTokenPassed(token);
-  }
-
-  // Get the next async upload token.
-  uint32 NextAsyncUploadToken();
-
-  // Ensure that the shared memory used for synchronizing async upload tokens
-  // has been mapped.
-  //
-  // Returns false on error, true on success.
-  bool EnsureAsyncUploadSync();
-
-  // Checks the last read asynchronously upload token and frees any unmanaged
-  // transfer buffer that has its async token passed.
-  void PollAsyncUploads();
-
-  // Free every async upload buffer. If some async upload buffer is still in use
-  // wait for them to finish before freeing.
-  void FreeAllAsyncUploadBuffers();
-
   bool GetBoundPixelTransferBuffer(
       GLenum target, const char* function_name, GLuint* buffer_id);
   BufferTracker::Buffer* GetBoundPixelUnpackTransferBufferIfValid(
@@ -743,18 +724,6 @@ class GLES2_IMPL_EXPORT GLES2Implementation
   // The currently bound pixel transfer buffers.
   GLuint bound_pixel_pack_transfer_buffer_id_;
   GLuint bound_pixel_unpack_transfer_buffer_id_;
-
-  // The current asynchronous pixel buffer upload token.
-  uint32 async_upload_token_;
-
-  // The shared memory used for synchronizing asynchronous upload tokens.
-  AsyncUploadSync* async_upload_sync_;
-  int32 async_upload_sync_shm_id_;
-  unsigned int async_upload_sync_shm_offset_;
-
-  // Unmanaged pixel transfer buffer memory pending asynchronous upload token.
-  typedef std::list<std::pair<void*, uint32> > DetachedAsyncUploadMemoryList;
-  DetachedAsyncUploadMemoryList detached_async_upload_memory_;
 
   // Client side management for vertex array objects. Needed to correctly
   // track client side arrays.

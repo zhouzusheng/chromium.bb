@@ -62,18 +62,14 @@ class CC_EXPORT LayerTreeSettings {
   float top_controls_show_threshold;
   float top_controls_hide_threshold;
   double background_animation_rate;
-  size_t max_partial_texture_updates;
   gfx::Size default_tile_size;
   gfx::Size max_untiled_layer_size;
-  gfx::Size default_tile_grid_size;
   gfx::Size minimum_occlusion_tracking_size;
   size_t tiling_interest_area_padding;
   float skewport_target_time_in_seconds;
   int skewport_extrapolation_limit_in_content_pixels;
-  size_t max_unused_resource_memory_percentage;
   size_t max_memory_for_prepaint_percentage;
   bool strict_layer_property_change_checking;
-  bool use_one_copy;
   bool use_zero_copy;
   bool use_persistent_map_for_gpu_memory_buffers;
   bool enable_elastic_overscroll;
@@ -83,13 +79,11 @@ class CC_EXPORT LayerTreeSettings {
   size_t scheduled_raster_task_limit;
   bool use_occlusion_for_tile_prioritization;
   bool record_full_layer;
-  bool use_display_lists;
   bool verify_property_trees;
-  bool gather_pixel_refs;
+  bool image_decode_tasks_enabled;
   bool use_compositor_animation_timelines;
-  bool invert_viewport_scroll_order;
   bool wait_for_beginframe_interval;
-  int max_staging_buffers;
+  int max_staging_buffer_usage_in_bytes;
 
   LayerTreeDebugState initial_debug_state;
 

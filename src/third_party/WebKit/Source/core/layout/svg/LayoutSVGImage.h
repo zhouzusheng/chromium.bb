@@ -42,6 +42,7 @@ public:
     void setNeedsTransformUpdate() override { m_needsTransformUpdate = true; }
 
     LayoutImageResource* imageResource() { return m_imageResource.get(); }
+    const LayoutImageResource* imageResource() const { return m_imageResource.get(); }
 
     const AffineTransform& localToParentTransform() const override { return m_localTransform; }
     RefPtr<const SkPicture>& bufferedForeground() { return m_bufferedForeground; }
@@ -57,12 +58,12 @@ protected:
 private:
     FloatRect strokeBoundingBox() const override { return m_objectBoundingBox; }
 
-    void addOutlineRects(Vector<LayoutRect>&, const LayoutPoint& additionalOffset) const override;
+    void addOutlineRects(Vector<LayoutRect>&, const LayoutPoint& additionalOffset, IncludeBlockVisualOverflowOrNot) const override;
 
     void imageChanged(WrappedImagePtr, const IntRect* = nullptr) override;
 
     void layout() override;
-    void paint(const PaintInfo&, const LayoutPoint&) override;
+    void paint(const PaintInfo&, const LayoutPoint&) const override;
 
     void updateBoundingBox();
     void updateImageContainerSize();

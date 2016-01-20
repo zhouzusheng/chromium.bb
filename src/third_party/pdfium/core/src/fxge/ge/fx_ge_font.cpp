@@ -8,9 +8,6 @@
 #include "../../../include/fxge/fx_freetype.h"
 #include "text_int.h"
 #define EM_ADJUST(em, a) (em == 0 ? (a) : (a)*1000 / em)
-extern void _FPDFAPI_GetInternalFontData(int id1,
-                                         const uint8_t*& data,
-                                         FX_DWORD& size);
 CFX_Font::CFX_Font() {
   m_pSubstFont = NULL;
   m_Face = NULL;
@@ -51,13 +48,13 @@ void CFX_Font::DeleteFace() {
   FXFT_Done_Face(m_Face);
   m_Face = NULL;
 }
-FX_BOOL CFX_Font::LoadSubst(const CFX_ByteString& face_name,
-                            FX_BOOL bTrueType,
-                            FX_DWORD flags,
-                            int weight,
-                            int italic_angle,
-                            int CharsetCP,
-                            FX_BOOL bVertical) {
+void CFX_Font::LoadSubst(const CFX_ByteString& face_name,
+                         FX_BOOL bTrueType,
+                         FX_DWORD flags,
+                         int weight,
+                         int italic_angle,
+                         int CharsetCP,
+                         FX_BOOL bVertical) {
   m_bEmbedded = FALSE;
   m_bVertical = bVertical;
   m_pSubstFont = new CFX_SubstFont;
@@ -74,7 +71,6 @@ FX_BOOL CFX_Font::LoadSubst(const CFX_ByteString& face_name,
     m_pFontData = FXFT_Get_Face_Stream_Base(m_Face);
     m_dwSize = FXFT_Get_Face_Stream_Size(m_Face);
   }
-  return TRUE;
 }
 
 int CFX_Font::GetGlyphWidth(FX_DWORD glyph_index) {

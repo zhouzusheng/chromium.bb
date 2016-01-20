@@ -40,8 +40,9 @@ WebInspector.ElementsTreeElement = function(node, elementCloseTag)
     TreeElement.call(this);
     this._node = node;
 
-    this._decorationsElement = createElementWithClass("div");
-    this.listItemElement.appendChild(this._decorationsElement);
+    this._gutterContainer = this.listItemElement.createChild("div", "gutter-container");
+    this._gutterContainer.addEventListener("click", this._showContextMenu.bind(this));
+    this._decorationsElement = this._gutterContainer.createChild("div", "hidden");
 
     this._elementCloseTag = elementCloseTag;
 
@@ -49,8 +50,6 @@ WebInspector.ElementsTreeElement = function(node, elementCloseTag)
         this._canAddAttributes = true;
     this._searchQuery = null;
     this._expandedChildrenLimit = WebInspector.ElementsTreeElement.InitialChildrenLimit;
-    if (this._node.nodeType() === Node.ELEMENT_NODE && this._node.parentNode && this._node.parentNode.nodeType() === Node.DOCUMENT_NODE && !this._node.parentNode.parentNode)
-        this.setCollapsible(false);
 }
 
 WebInspector.ElementsTreeElement.InitialChildrenLimit = 500;
@@ -91,7 +90,7 @@ WebInspector.ElementsTreeElement.visibleShadowRoots = function(node)
      */
     function filter(root)
     {
-        return root.shadowRootType() === WebInspector.DOMNode.ShadowRootTypes.Author;
+        return root.shadowRootType() !== WebInspector.DOMNode.ShadowRootTypes.UserAgent;
     }
     return roots;
 }
@@ -512,6 +511,14 @@ WebInspector.ElementsTreeElement.prototype = {
     },
 
     /**
+     * @param {!Event} event
+     */
+    _showContextMenu: function(event)
+    {
+        this.treeOutline.showContextMenu(this, event);
+    },
+
+    /**
      * @param {!WebInspector.ContextMenu} contextMenu
      * @param {!Event} event
      */
@@ -525,11 +532,9 @@ WebInspector.ElementsTreeElement.prototype = {
         var newAttribute = event.target.enclosingNodeOrSelfWithClass("add-attribute");
         if (attribute && !newAttribute)
             contextMenu.appendItem(WebInspector.UIString.capitalize("Edit ^attribute"), this._startEditingAttribute.bind(this, attribute, event.target));
-        contextMenu.appendSeparator();
-        var pseudoSubMenu = contextMenu.appendSubMenuItem(WebInspector.UIString.capitalize("Force ^element ^state"));
-        WebInspector.ElementsTreeElement.populateForcedPseudoStateItems(pseudoSubMenu, treeElement.node());
-        contextMenu.appendSeparator();
         this.populateNodeContextMenu(contextMenu);
+        WebInspector.ElementsTreeElement.populateForcedPseudoStateItems(contextMenu, treeElement.node());
+        contextMenu.appendSeparator();
         this.populateScrollIntoView(contextMenu);
     },
 
@@ -538,7 +543,6 @@ WebInspector.ElementsTreeElement.prototype = {
      */
     populateScrollIntoView: function(contextMenu)
     {
-        contextMenu.appendSeparator();
         contextMenu.appendItem(WebInspector.UIString.capitalize("Scroll into ^view"), this._scrollIntoView.bind(this));
     },
 
@@ -555,24 +559,38 @@ WebInspector.ElementsTreeElement.prototype = {
         var openTagElement = this._node[this.treeOutline.treeElementSymbol()] || this;
         var isEditable = this.hasEditableNode();
         if (isEditable && !this._editing)
-            contextMenu.appendItem(WebInspector.UIString("Edit as HTML"), openTagElement.toggleEditAsHTML.bind(openTagElement));
+            contextMenu.appendAction("elements.edit-as-html", WebInspector.UIString("Edit as HTML"));
         var isShadowRoot = this._node.isShadowRoot();
 
         // Place it here so that all "Copy"-ing items stick together.
-        if (this._node.nodeType() === Node.ELEMENT_NODE)
-            contextMenu.appendItem(WebInspector.UIString.capitalize("Copy CSS ^path"), this._copyCSSPath.bind(this));
+        var copyMenu = contextMenu.appendSubMenuItem(WebInspector.UIString("Copy"));
+        var createShortcut = WebInspector.KeyboardShortcut.shortcutToString;
+        var modifier = WebInspector.KeyboardShortcut.Modifiers.CtrlOrMeta;
+        var menuItem;
         if (!isShadowRoot)
-            contextMenu.appendItem(WebInspector.UIString("Copy XPath"), this._copyXPath.bind(this));
+            menuItem = copyMenu.appendItem(WebInspector.UIString("Copy outerHTML"), this.treeOutline.performCopyOrCut.bind(this.treeOutline, false, this._node));
+            menuItem.setShortcut(createShortcut("V", modifier));
+        if (this._node.nodeType() === Node.ELEMENT_NODE)
+            copyMenu.appendItem(WebInspector.UIString.capitalize("Copy selector"), this._copyCSSPath.bind(this));
+        if (!isShadowRoot)
+            copyMenu.appendItem(WebInspector.UIString("Copy XPath"), this._copyXPath.bind(this));
         if (!isShadowRoot) {
             var treeOutline = this.treeOutline;
-            contextMenu.appendSeparator();
-            contextMenu.appendItem(WebInspector.UIString("Cut"), treeOutline.performCopyOrCut.bind(treeOutline, true, this._node), !this.hasEditableNode());
-            contextMenu.appendItem(WebInspector.UIString("Copy"), treeOutline.performCopyOrCut.bind(treeOutline, false, this._node));
-            contextMenu.appendItem(WebInspector.UIString("Paste"), treeOutline.pasteNode.bind(treeOutline, this._node), !treeOutline.canPaste(this._node));
+            menuItem = copyMenu.appendItem(WebInspector.UIString("Cut element"), treeOutline.performCopyOrCut.bind(treeOutline, true, this._node), !this.hasEditableNode());
+            menuItem.setShortcut(createShortcut("X", modifier));
+            menuItem = copyMenu.appendItem(WebInspector.UIString("Copy element"), treeOutline.performCopyOrCut.bind(treeOutline, false, this._node));
+            menuItem.setShortcut(createShortcut("C", modifier));
+            menuItem = copyMenu.appendItem(WebInspector.UIString("Paste element"), treeOutline.pasteNode.bind(treeOutline, this._node), !treeOutline.canPaste(this._node));
+            menuItem.setShortcut(createShortcut("V", modifier));
         }
 
+        contextMenu.appendSeparator();
+        menuItem = contextMenu.appendCheckboxItem(WebInspector.UIString("Hide element"), this.treeOutline.toggleHideElement.bind(this.treeOutline, this._node), this.treeOutline.isToggledToHidden(this._node));
+        menuItem.setShortcut(WebInspector.shortcutRegistry.shortcutTitleForAction("elements.hide-element"));
+
+
         if (isEditable)
-            contextMenu.appendItem(WebInspector.UIString("Delete"), this.remove.bind(this));
+            contextMenu.appendItem(WebInspector.UIString("Delete element"), this.remove.bind(this));
         contextMenu.appendSeparator();
     },
 
@@ -772,10 +790,11 @@ WebInspector.ElementsTreeElement.prototype = {
 
     /**
      * @param {function(string, string)} commitCallback
+     * @param {function()} disposeCallback
      * @param {?Protocol.Error} error
      * @param {string} initialValue
      */
-    _startEditingAsHTML: function(commitCallback, error, initialValue)
+    _startEditingAsHTML: function(commitCallback, disposeCallback, error, initialValue)
     {
         if (error)
             return;
@@ -824,6 +843,7 @@ WebInspector.ElementsTreeElement.prototype = {
          */
         function dispose()
         {
+            disposeCallback();
             delete this._editing;
             this.treeOutline.setMultilineEditing(null);
 
@@ -1067,7 +1087,7 @@ WebInspector.ElementsTreeElement.prototype = {
             highlightElement.appendChild(nodeInfo);
             this.title = highlightElement;
             this.updateDecorations();
-            this.listItemElement.insertBefore(this._decorationsElement, this.listItemElement.firstChild);
+            this.listItemElement.insertBefore(this._gutterContainer, this.listItemElement.firstChild);
             delete this._highlightResult;
         }
 
@@ -1120,14 +1140,17 @@ WebInspector.ElementsTreeElement.prototype = {
             (n === node ? decorations : descendantDecorations).push(decoration);
         }
 
-        Promise.all(promises).then(setTitle.bind(this));
+        Promise.all(promises).then(updateDecorationsUI.bind(this));
 
         /**
          * @this {WebInspector.ElementsTreeElement}
          */
-        function setTitle()
+        function updateDecorationsUI()
         {
             this._decorationsElement.removeChildren();
+            this._decorationsElement.classList.add("hidden");
+            this._gutterContainer.classList.toggle("has-decorations", decorations.length || descendantDecorations.length);
+
             if (!decorations.length && !descendantDecorations.length)
                 return;
 
@@ -1169,6 +1192,7 @@ WebInspector.ElementsTreeElement.prototype = {
             {
                 for (var color of colors) {
                     var child = this._decorationsElement.createChild("div", className);
+                    this._decorationsElement.classList.remove("hidden");
                     child.style.backgroundColor = color;
                     child.style.borderColor = color;
                     if (offset)
@@ -1531,8 +1555,14 @@ WebInspector.ElementsTreeElement.prototype = {
                 node.setOuterHTML(value, selectNode);
         }
 
+        function disposeCallback()
+        {
+            if (callback)
+                callback(false);
+        }
+
         var node = this._node;
-        node.getOuterHTML(this._startEditingAsHTML.bind(this, commitChange));
+        node.getOuterHTML(this._startEditingAsHTML.bind(this, commitChange, disposeCallback));
     },
 
     _copyCSSPath: function()

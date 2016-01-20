@@ -34,6 +34,7 @@
 #include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/fileapi/File.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/html/ImageData.h"
@@ -42,9 +43,11 @@
 #include "core/html/canvas/CanvasRenderingContext.h"
 #include "core/html/canvas/CanvasRenderingContextFactory.h"
 #include "core/layout/LayoutHTMLCanvas.h"
-#include "core/paint/DeprecatedPaintLayer.h"
+#include "core/paint/PaintLayer.h"
 #include "platform/MIMETypeRegistry.h"
 #include "platform/RuntimeEnabledFeatures.h"
+#include "platform/Task.h"
+#include "platform/ThreadSafeFunctional.h"
 #include "platform/graphics/Canvas2DImageBufferSurface.h"
 #include "platform/graphics/ExpensiveCanvasHeuristicParameters.h"
 #include "platform/graphics/ImageBuffer.h"
@@ -54,6 +57,7 @@
 #include "platform/graphics/gpu/AcceleratedImageBufferSurface.h"
 #include "platform/transforms/AffineTransform.h"
 #include "public/platform/Platform.h"
+#include "public/platform/WebTraceLocation.h"
 #include <math.h>
 #include <v8.h>
 
@@ -74,6 +78,10 @@ const int MaxCanvasArea = 32768 * 8192; // Maximum canvas area in CSS pixels
 
 // In Skia, we will also limit width/height to 32767.
 const int MaxSkiaDim = 32767; // Maximum width/height in CSS pixels.
+
+// A default value of quality argument for toDataURL and toBlob
+// It is in an invalid range (outside 0.0 - 1.0) so that it will not be misinterpreted as a user-input value
+const int UndefinedQualityValue = -1.0;
 
 bool canCreateImageBuffer(const IntSize& size)
 {
@@ -123,6 +131,15 @@ HTMLCanvasElement::~HTMLCanvasElement()
     // Ensure these go away before the ImageBuffer.
     m_context.clear();
 #endif
+}
+
+WebThread* HTMLCanvasElement::getToBlobThreadInstance()
+{
+    DEFINE_STATIC_LOCAL(OwnPtr<WebThread>, s_toBlobThread, ());
+    if (!s_toBlobThread) {
+        s_toBlobThread = adoptPtr(Platform::current()->createThread("Async toBlob"));
+    }
+    return s_toBlobThread.get();
 }
 
 void HTMLCanvasElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -298,8 +315,8 @@ void HTMLCanvasElement::didFinalizeFrame()
     // paint invalidations if the canvas is accelerated, since
     // the canvas contents are sent separately through a texture layer.
     if (ro && (!m_context || !m_context->isAccelerated())) {
-        LayoutRect mappedDirtyRect(enclosingIntRect(mapRect(m_dirtyRect, srcRect, ro->contentBoxRect())));
-        // For querying DeprecatedPaintLayer::compositingState()
+        LayoutRect mappedDirtyRect(enclosingIntRect(mapRect(m_dirtyRect, srcRect, FloatRect(ro->contentBoxRect()))));
+        // For querying PaintLayer::compositingState()
         // FIXME: is this invalidation using the correct compositing state?
         DisableCompositingQueryAsserts disabler;
         ro->invalidatePaintRectangle(mappedDirtyRect);
@@ -324,7 +341,7 @@ void HTMLCanvasElement::doDeferredPaintInvalidation()
         m_dirtyRect.intersect(srcRect);
         LayoutBox* lb = layoutBox();
         if (lb) {
-            FloatRect mappedDirtyRect = mapRect(m_dirtyRect, srcRect, lb->contentBoxRect());
+            FloatRect mappedDirtyRect = mapRect(m_dirtyRect, srcRect, FloatRect(lb->contentBoxRect()));
             if (m_context->isAccelerated()) {
                 // Accelerated 2D canvases need the dirty rect to be expressed relative to the
                 // content box, as opposed to the layout box.
@@ -473,6 +490,13 @@ const AtomicString HTMLCanvasElement::imageSourceURL() const
     return AtomicString(toDataURLInternal("image/png", 0, FrontBuffer));
 }
 
+void HTMLCanvasElement::prepareSurfaceForPaintingIfNeeded() const
+{
+    ASSERT(m_context && m_context->is2d()); // This function is called by the 2d context
+    if (buffer())
+        m_imageBuffer->prepareSurfaceForPaintingIfNeeded();
+}
+
 ImageData* HTMLCanvasElement::toImageData(SourceDrawingBuffer sourceBuffer) const
 {
     ImageData* imageData;
@@ -484,7 +508,7 @@ ImageData* HTMLCanvasElement::toImageData(SourceDrawingBuffer sourceBuffer) cons
 
         m_context->paintRenderingResultsToCanvas(sourceBuffer);
         imageData = ImageData::create(m_size);
-        RefPtr<SkImage> snapshot = buffer()->newSkImageSnapshot();
+        RefPtr<SkImage> snapshot = buffer()->newSkImageSnapshot(PreferNoAcceleration);
         if (snapshot) {
             SkImageInfo imageInfo = SkImageInfo::Make(width(), height(), kRGBA_8888_SkColorType, kUnpremul_SkAlphaType);
             snapshot->readPixels(imageInfo, imageData->data()->data(), imageInfo.minRowBytes(), 0, 0);
@@ -498,7 +522,7 @@ ImageData* HTMLCanvasElement::toImageData(SourceDrawingBuffer sourceBuffer) cons
         return imageData;
 
     ASSERT(m_context->is2d());
-    RefPtr<SkImage> snapshot = buffer()->newSkImageSnapshot();
+    RefPtr<SkImage> snapshot = buffer()->newSkImageSnapshot(PreferNoAcceleration);
     if (snapshot) {
         SkImageInfo imageInfo = SkImageInfo::Make(width(), height(), kRGBA_8888_SkColorType, kUnpremul_SkAlphaType);
         snapshot->readPixels(imageInfo, imageData->data()->data(), imageInfo.minRowBytes(), 0, 0);
@@ -507,7 +531,7 @@ ImageData* HTMLCanvasElement::toImageData(SourceDrawingBuffer sourceBuffer) cons
     return imageData;
 }
 
-String HTMLCanvasElement::toDataURLInternal(const String& mimeType, const double* quality, SourceDrawingBuffer sourceBuffer) const
+String HTMLCanvasElement::toDataURLInternal(const String& mimeType, const double& quality, SourceDrawingBuffer sourceBuffer) const
 {
     if (!isPaintable())
         return String("data:,");
@@ -526,16 +550,67 @@ String HTMLCanvasElement::toDataURL(const String& mimeType, const ScriptValue& q
         exceptionState.throwSecurityError("Tainted canvases may not be exported.");
         return String();
     }
-    double quality;
-    double* qualityPtr = nullptr;
+    double quality = UndefinedQualityValue;
     if (!qualityArgument.isEmpty()) {
         v8::Local<v8::Value> v8Value = qualityArgument.v8Value();
         if (v8Value->IsNumber()) {
             quality = v8Value.As<v8::Number>()->Value();
-            qualityPtr = &quality;
         }
     }
-    return toDataURLInternal(mimeType, qualityPtr, BackBuffer);
+    return toDataURLInternal(mimeType, quality, BackBuffer);
+}
+
+void HTMLCanvasElement::encodeImageAsync(DOMUint8ClampedArray* imageData, IntSize imageSize, FileCallback* callback, const String& mimeType, double quality)
+{
+    OwnPtr<Vector<char>> encodedImage(adoptPtr(new Vector<char>()));
+
+    if (!ImageDataBuffer(imageSize, imageData->data()).encodeImage(mimeType, quality, encodedImage.get())) {
+        Platform::current()->mainThread()->taskRunner()->postTask(FROM_HERE, bind(&FileCallback::handleEvent, callback, nullptr));
+    } else {
+        Platform::current()->mainThread()->taskRunner()->postTask(FROM_HERE, threadSafeBind(&HTMLCanvasElement::createBlobAndCall, encodedImage.release(), mimeType, AllowCrossThreadAccess(callback)));
+    }
+}
+
+void HTMLCanvasElement::createBlobAndCall(PassOwnPtr<Vector<char>> encodedImage, const String& mimeType, FileCallback* callback)
+{
+    // The main thread takes ownership of encoded image vector
+    OwnPtr<Vector<char>> enc(encodedImage);
+
+    File* resultBlob = File::create(enc->data(), enc->size(), mimeType);
+    Platform::current()->mainThread()->taskRunner()->postTask(FROM_HERE, bind(&FileCallback::handleEvent, callback, resultBlob));
+}
+
+void HTMLCanvasElement::toBlob(FileCallback* callback, const String& mimeType, const ScriptValue& qualityArgument, ExceptionState& exceptionState)
+{
+    if (!originClean()) {
+        exceptionState.throwSecurityError("Tainted canvases may not be exported.");
+        return;
+    }
+
+    if (!isPaintable()) {
+        // If the canvas element's bitmap has no pixels
+        Platform::current()->mainThread()->taskRunner()->postTask(FROM_HERE, bind(&FileCallback::handleEvent, callback, nullptr));
+        return;
+    }
+
+    double quality = UndefinedQualityValue;
+    if (!qualityArgument.isEmpty()) {
+        v8::Local<v8::Value> v8Value = qualityArgument.v8Value();
+        if (v8Value->IsNumber()) {
+            quality = v8Value.As<v8::Number>()->Value();
+        }
+    }
+
+    String encodingMimeType = toEncodingMimeType(mimeType);
+
+    ImageData* imageData = toImageData(BackBuffer);
+    // imageData unref its data, which we still keep alive for the async toBlob thread
+    ScopedDisposal<ImageData> disposer(imageData);
+
+    // Add a ref to keep image data alive until completion of encoding
+    RefPtr<DOMUint8ClampedArray> imageDataRef(imageData->data());
+
+    getToBlobThreadInstance()->taskRunner()->postTask(FROM_HERE, new Task(threadSafeBind(&HTMLCanvasElement::encodeImageAsync, AllowCrossThreadAccess(imageDataRef.release().leakRef()), imageData->size(), AllowCrossThreadAccess(callback), encodingMimeType, quality)));
 }
 
 SecurityOrigin* HTMLCanvasElement::securityOrigin() const
@@ -633,7 +708,7 @@ PassOwnPtr<ImageBufferSurface> HTMLCanvasElement::createImageBufferSurface(const
     if (shouldAccelerate(deviceSize)) {
         if (document().settings())
             *msaaSampleCount = document().settings()->accelerated2dCanvasMSAASampleCount();
-        OwnPtr<ImageBufferSurface> surface = adoptPtr(new Canvas2DImageBufferSurface(deviceSize, opacityMode, *msaaSampleCount));
+        OwnPtr<ImageBufferSurface> surface = adoptPtr(new Canvas2DImageBufferSurface(deviceSize, *msaaSampleCount, opacityMode, Canvas2DLayerBridge::EnableAcceleration));
         if (surface->isValid())
             return surface.release();
     }
@@ -653,7 +728,7 @@ PassOwnPtr<ImageBufferSurface> HTMLCanvasElement::createImageBufferSurface(const
 void HTMLCanvasElement::createImageBuffer()
 {
     createImageBufferInternal(nullptr);
-    if (m_didFailToCreateImageBuffer && m_context->is2d())
+    if (m_didFailToCreateImageBuffer && m_context->is2d() && !size().isEmpty())
         m_context->loseContext(CanvasRenderingContext::SyntheticLostContext);
 }
 
@@ -797,7 +872,7 @@ void HTMLCanvasElement::ensureUnacceleratedImageBuffer()
     m_didFailToCreateImageBuffer = !m_imageBuffer;
 }
 
-PassRefPtr<Image> HTMLCanvasElement::copiedImage(SourceDrawingBuffer sourceBuffer) const
+PassRefPtr<Image> HTMLCanvasElement::copiedImage(SourceDrawingBuffer sourceBuffer, AccelerationHint hint) const
 {
     if (!isPaintable())
         return nullptr;
@@ -809,7 +884,7 @@ PassRefPtr<Image> HTMLCanvasElement::copiedImage(SourceDrawingBuffer sourceBuffe
     if (m_context->is3d())
         needToUpdate |= m_context->paintRenderingResultsToCanvas(sourceBuffer);
     if (needToUpdate && buffer()) {
-        m_copiedImage = buffer()->newImageSnapshot();
+        m_copiedImage = buffer()->newImageSnapshot(hint);
         updateExternallyAllocatedMemory();
     }
     return m_copiedImage;
@@ -864,7 +939,7 @@ void HTMLCanvasElement::didMoveToNewDocument(Document& oldDocument)
     HTMLElement::didMoveToNewDocument(oldDocument);
 }
 
-PassRefPtr<Image> HTMLCanvasElement::getSourceImageForCanvas(SourceImageStatus* status) const
+PassRefPtr<Image> HTMLCanvasElement::getSourceImageForCanvas(SourceImageStatus* status, AccelerationHint hint) const
 {
     if (!width() || !height()) {
         *status = ZeroSizeCanvasSourceImageStatus;
@@ -885,7 +960,7 @@ PassRefPtr<Image> HTMLCanvasElement::getSourceImageForCanvas(SourceImageStatus* 
         m_context->paintRenderingResultsToCanvas(BackBuffer);
     }
 
-    RefPtr<SkImage> image = buffer()->newSkImageSnapshot();
+    RefPtr<SkImage> image = buffer()->newSkImageSnapshot(hint);
     if (image) {
         *status = NormalSourceImageStatus;
         return StaticBitmapImage::create(image.release());

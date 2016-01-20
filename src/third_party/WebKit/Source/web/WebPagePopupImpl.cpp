@@ -32,6 +32,7 @@
 #include "web/WebPagePopupImpl.h"
 
 #include "core/dom/ContextFeatures.h"
+#include "core/events/MessageEvent.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
@@ -123,7 +124,7 @@ private:
 
         if (m_popup->isAcceleratedCompositingActive()) {
             ASSERT(m_popup->m_layerTreeView);
-            m_popup->m_layerTreeView->setNeedsCompositorUpdate();
+            m_popup->m_layerTreeView->setNeedsBeginFrame();
             return;
         }
         m_popup->m_widgetClient->scheduleAnimation();
@@ -244,8 +245,8 @@ bool WebPagePopupImpl::initializePage()
     m_page->settings().setScrollAnimatorEnabled(m_webView->page()->settings().scrollAnimatorEnabled());
 
     provideContextFeaturesTo(*m_page, adoptPtr(new PagePopupFeaturesClient()));
-    static FrameLoaderClient* emptyFrameLoaderClient = new EmptyFrameLoaderClient();
-    RefPtrWillBeRawPtr<LocalFrame> frame = LocalFrame::create(emptyFrameLoaderClient, &m_page->frameHost(), 0);
+    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<FrameLoaderClient>, emptyFrameLoaderClient, (EmptyFrameLoaderClient::create()));
+    RefPtrWillBeRawPtr<LocalFrame> frame = LocalFrame::create(emptyFrameLoaderClient.get(), &m_page->frameHost(), 0);
     frame->setPagePopupOwner(m_popupClient->ownerElement());
     frame->setView(FrameView::create(frame.get()));
     frame->init();
@@ -350,7 +351,7 @@ void WebPagePopupImpl::beginFrame(const WebBeginFrameArgs& frameTime)
         return;
     // FIXME: This should use frameTime.lastFrameTimeMonotonic but doing so
     // breaks tests.
-    PageWidgetDelegate::animate(*m_page, monotonicallyIncreasingTime(), *m_page->deprecatedLocalMainFrame());
+    PageWidgetDelegate::animate(*m_page, monotonicallyIncreasingTime());
 }
 
 void WebPagePopupImpl::willCloseLayerTreeView()
@@ -399,6 +400,10 @@ bool WebPagePopupImpl::handleGestureEvent(const WebGestureEvent& event)
 {
     if (m_closing || !m_page || !m_page->mainFrame() || !toLocalFrame(m_page->mainFrame())->view())
         return false;
+    if (event.type == WebInputEvent::GestureTap && !isGestureEventInWindow(event)) {
+        cancel();
+        return false;
+    }
     LocalFrame& frame = *toLocalFrame(m_page->mainFrame());
     return frame.eventHandler().handleGestureEvent(PlatformGestureEventBuilder(frame.view(), event));
 }
@@ -420,6 +425,11 @@ bool WebPagePopupImpl::handleMouseWheel(LocalFrame& mainFrame, const WebMouseWhe
 }
 
 bool WebPagePopupImpl::isMouseEventInWindow(const WebMouseEvent& event)
+{
+    return IntRect(0, 0, m_windowRectInScreen.width, m_windowRectInScreen.height).contains(IntPoint(event.x, event.y));
+}
+
+bool WebPagePopupImpl::isGestureEventInWindow(const WebGestureEvent& event)
 {
     return IntRect(0, 0, m_windowRectInScreen.width, m_windowRectInScreen.height).contains(IntPoint(event.x, event.y));
 }

@@ -10,6 +10,7 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/callback_helpers.h"
+#include "media/base/timestamp_constants.h"
 #include "media/filters/chunk_demuxer.h"
 #include "third_party/WebKit/public/platform/WebSourceBufferClient.h"
 
@@ -109,13 +110,13 @@ void WebSourceBufferImpl::append(
     *timestamp_offset = timestamp_offset_.InSecondsF();
 }
 
-void WebSourceBufferImpl::abort() {
-  demuxer_->Abort(id_,
-                  append_window_start_, append_window_end_,
-                  &timestamp_offset_);
+void WebSourceBufferImpl::resetParserState() {
+  demuxer_->ResetParserState(id_,
+                             append_window_start_, append_window_end_,
+                             &timestamp_offset_);
 
-  // TODO(wolenetz): abort should be able to modify the caller timestamp offset
-  // (just like WebSourceBufferImpl::append).
+  // TODO(wolenetz): resetParserState should be able to modify the caller
+  // timestamp offset (just like WebSourceBufferImpl::append).
   // See http://crbug.com/370229 for further details.
 }
 

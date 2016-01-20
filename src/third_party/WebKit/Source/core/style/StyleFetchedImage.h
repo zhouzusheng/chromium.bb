@@ -42,9 +42,10 @@ public:
     }
     ~StyleFetchedImage() override;
 
-    WrappedImagePtr data() const override { return m_image.get(); }
+    WrappedImagePtr data() const override;
 
     PassRefPtrWillBeRawPtr<CSSValue> cssValue() const override;
+    PassRefPtrWillBeRawPtr<CSSValue> computedCSSValue() const override;
 
     bool canRender(const LayoutObject&, float multiplier) const override;
     bool isLoaded() const override;
@@ -58,9 +59,9 @@ public:
     void addClient(LayoutObject*) override;
     void removeClient(LayoutObject*) override;
     void notifyFinished(Resource*) override;
-    PassRefPtr<Image> image(LayoutObject*, const IntSize&) const override;
+    PassRefPtr<Image> image(const LayoutObject*, const IntSize&) const override;
     bool knownToBeOpaque(const LayoutObject*) const override;
-    ImageResource* cachedImage() const override { return m_image.get(); }
+    ImageResource* cachedImage() const override;
 
     DECLARE_VIRTUAL_TRACE();
 

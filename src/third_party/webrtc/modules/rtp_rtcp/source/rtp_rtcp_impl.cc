@@ -27,24 +27,23 @@
 namespace webrtc {
 
 RtpRtcp::Configuration::Configuration()
-    : id(-1),
-      audio(false),
+    : audio(false),
       receiver_only(false),
       clock(nullptr),
       receive_statistics(NullObjectReceiveStatistics()),
       outgoing_transport(nullptr),
       intra_frame_callback(nullptr),
       bandwidth_callback(nullptr),
+      transport_feedback_callback(nullptr),
       rtt_stats(nullptr),
       rtcp_packet_type_counter_observer(nullptr),
       audio_messages(NullObjectRtpAudioFeedback()),
       remote_bitrate_estimator(nullptr),
       paced_sender(nullptr),
-      packet_router(nullptr),
+      transport_sequence_number_allocator(nullptr),
       send_bitrate_observer(nullptr),
       send_frame_count_observer(nullptr),
-      send_side_delay_observer(nullptr) {
-}
+      send_side_delay_observer(nullptr) {}
 
 RtpRtcp* RtpRtcp::CreateRtpRtcp(const RtpRtcp::Configuration& configuration) {
   if (configuration.clock) {
@@ -60,31 +59,29 @@ RtpRtcp* RtpRtcp::CreateRtpRtcp(const RtpRtcp::Configuration& configuration) {
 }
 
 ModuleRtpRtcpImpl::ModuleRtpRtcpImpl(const Configuration& configuration)
-    : rtp_sender_(configuration.id,
-                  configuration.audio,
+    : rtp_sender_(configuration.audio,
                   configuration.clock,
                   configuration.outgoing_transport,
                   configuration.audio_messages,
                   configuration.paced_sender,
-                  configuration.packet_router,
-                  configuration.send_time_callback,
+                  configuration.transport_sequence_number_allocator,
+                  configuration.transport_feedback_callback,
                   configuration.send_bitrate_observer,
                   configuration.send_frame_count_observer,
                   configuration.send_side_delay_observer),
-      rtcp_sender_(configuration.id,
-                   configuration.audio,
+      rtcp_sender_(configuration.audio,
                    configuration.clock,
                    configuration.receive_statistics,
-                   configuration.rtcp_packet_type_counter_observer),
-      rtcp_receiver_(configuration.id,
-                     configuration.clock,
+                   configuration.rtcp_packet_type_counter_observer,
+                   configuration.outgoing_transport),
+      rtcp_receiver_(configuration.clock,
                      configuration.receiver_only,
                      configuration.rtcp_packet_type_counter_observer,
                      configuration.bandwidth_callback,
                      configuration.intra_frame_callback,
+                     configuration.transport_feedback_callback,
                      this),
       clock_(configuration.clock),
-      id_(configuration.id),
       audio_(configuration.audio),
       collision_detected_(false),
       last_process_time_(configuration.clock->TimeInMilliseconds()),
@@ -102,9 +99,6 @@ ModuleRtpRtcpImpl::ModuleRtpRtcpImpl(const Configuration& configuration)
       critical_section_rtt_(CriticalSectionWrapper::CreateCriticalSection()),
       rtt_ms_(0) {
   send_video_codec_.codecType = kVideoCodecUnknown;
-
-  // TODO(pwestin) move to constructors of each rtp/rtcp sender/receiver object.
-  rtcp_sender_.RegisterSendTransport(configuration.outgoing_transport);
 
   // Make sure that RTCP objects are aware of our SSRC.
   uint32_t SSRC = rtp_sender_.SSRC();
@@ -475,20 +469,20 @@ int32_t ModuleRtpRtcpImpl::SetTransportOverhead(
 }
 
 int32_t ModuleRtpRtcpImpl::SetMaxTransferUnit(const uint16_t mtu) {
-  DCHECK_LE(mtu, IP_PACKET_SIZE) << "Invalid mtu: " << mtu;
+  RTC_DCHECK_LE(mtu, IP_PACKET_SIZE) << "Invalid mtu: " << mtu;
   return rtp_sender_.SetMaxPayloadLength(mtu - packet_overhead_,
                                          packet_overhead_);
 }
 
-RTCPMethod ModuleRtpRtcpImpl::RTCP() const {
-  if (rtcp_sender_.Status() != kRtcpOff) {
+RtcpMode ModuleRtpRtcpImpl::RTCP() const {
+  if (rtcp_sender_.Status() != RtcpMode::kOff) {
     return rtcp_receiver_.Status();
   }
-  return kRtcpOff;
+  return RtcpMode::kOff;
 }
 
 // Configure RTCP status i.e on/off.
-void ModuleRtpRtcpImpl::SetRTCPStatus(const RTCPMethod method) {
+void ModuleRtpRtcpImpl::SetRTCPStatus(const RtcpMode method) {
   rtcp_sender_.SetRTCPStatus(method);
   rtcp_receiver_.SetRTCPStatus(method);
 }
@@ -768,6 +762,11 @@ RtcpStatisticsCallback* ModuleRtpRtcpImpl::GetRtcpStatisticsCallback() {
   return rtcp_receiver_.GetRtcpStatisticsCallback();
 }
 
+bool ModuleRtpRtcpImpl::SendFeedbackPacket(
+    const rtcp::TransportFeedback& packet) {
+  return rtcp_sender_.SendFeedbackPacket(packet);
+}
+
 // Send a TelephoneEvent tone using RFC 2833 (4733).
 int32_t ModuleRtpRtcpImpl::SendTelephoneEventOutband(
     const uint8_t key,
@@ -862,7 +861,7 @@ void ModuleRtpRtcpImpl::SetRemoteSSRC(const uint32_t ssrc) {
       // Configured via API ignore.
       return;
     }
-    if (kRtcpOff != rtcp_sender_.Status()) {
+    if (RtcpMode::kOff != rtcp_sender_.Status()) {
       // Send RTCP bye on the current SSRC.
       SendRTCP(kRtcpBye);
     }

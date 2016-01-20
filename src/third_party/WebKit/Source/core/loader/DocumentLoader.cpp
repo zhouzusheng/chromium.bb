@@ -56,6 +56,7 @@
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/LinkLoader.h"
+#include "core/loader/ProgressTracker.h"
 #include "core/loader/appcache/ApplicationCacheHost.h"
 #include "core/page/FrameTree.h"
 #include "core/page/Page.h"
@@ -339,6 +340,11 @@ bool DocumentLoader::shouldContinueForNavigationPolicy(const ResourceRequest& re
         return true;
     if (policy == NavigationPolicyIgnore)
         return false;
+    if (policy == NavigationPolicyHandledByClient) {
+        // Mark the frame as loading since the embedder is handling the navigation.
+        frameLoader()->progress().progressStarted();
+        return false;
+    }
     if (!LocalDOMWindow::allowPopUp(*m_frame) && !UserGestureIndicator::processingUserGesture())
         return false;
     frameLoader()->client()->loadURLExternally(request, policy);
@@ -469,27 +475,31 @@ void DocumentLoader::responseReceived(Resource* resource, const ResourceResponse
     if (response.appCacheID())
         memoryCache()->remove(m_mainResource.get());
 
-    DEFINE_STATIC_LOCAL(AtomicString, xFrameOptionHeader, ("x-frame-options", AtomicString::ConstructFromLiteral));
-    HTTPHeaderMap::const_iterator it = response.httpHeaderFields().find(xFrameOptionHeader);
-    if (it != response.httpHeaderFields().end()) {
-        String content = it->value;
-        if (frameLoader()->shouldInterruptLoadForXFrameOptions(content, response.url(), mainResourceIdentifier())) {
-            String message = "Refused to display '" + response.url().elidedString() + "' in a frame because it set 'X-Frame-Options' to '" + content + "'.";
-            RefPtrWillBeRawPtr<ConsoleMessage> consoleMessage = ConsoleMessage::create(SecurityMessageSource, ErrorMessageLevel, message);
-            consoleMessage->setRequestIdentifier(mainResourceIdentifier());
-            frame()->document()->addConsoleMessage(consoleMessage.release());
-
-            cancelLoadAfterXFrameOptionsOrCSPDenied(response);
-            return;
-        }
-    }
-
     m_contentSecurityPolicy = ContentSecurityPolicy::create();
     m_contentSecurityPolicy->setOverrideURLForSelf(response.url());
     m_contentSecurityPolicy->didReceiveHeaders(ContentSecurityPolicyResponseHeaders(response));
     if (!m_contentSecurityPolicy->allowAncestors(m_frame, response.url())) {
         cancelLoadAfterXFrameOptionsOrCSPDenied(response);
         return;
+    }
+
+    DEFINE_STATIC_LOCAL(AtomicString, xFrameOptionHeader, ("x-frame-options", AtomicString::ConstructFromLiteral));
+
+    // 'frame-ancestors' obviates 'x-frame-options': https://w3c.github.io/webappsec/specs/content-security-policy/#frame-ancestors-and-frame-options
+    if (!m_contentSecurityPolicy->isFrameAncestorsEnforced()) {
+        HTTPHeaderMap::const_iterator it = response.httpHeaderFields().find(xFrameOptionHeader);
+        if (it != response.httpHeaderFields().end()) {
+            String content = it->value;
+            if (frameLoader()->shouldInterruptLoadForXFrameOptions(content, response.url(), mainResourceIdentifier())) {
+                String message = "Refused to display '" + response.url().elidedString() + "' in a frame because it set 'X-Frame-Options' to '" + content + "'.";
+                RefPtrWillBeRawPtr<ConsoleMessage> consoleMessage = ConsoleMessage::create(SecurityMessageSource, ErrorMessageLevel, message);
+                consoleMessage->setRequestIdentifier(mainResourceIdentifier());
+                frame()->document()->addConsoleMessage(consoleMessage.release());
+
+                cancelLoadAfterXFrameOptionsOrCSPDenied(response);
+                return;
+            }
+        }
     }
 
     ASSERT(!mainResourceLoader() || !mainResourceLoader()->defersLoading());
@@ -526,7 +536,10 @@ void DocumentLoader::ensureWriter(const AtomicString& mimeType, const KURL& over
     m_frame->loader().clear();
     ASSERT(m_frame->page());
 
-    ParserSynchronizationPolicy parsingPolicy = (m_substituteData.isValid() && m_substituteData.forceSynchronousLoad()) ? ForceSynchronousParsing : AllowAsynchronousParsing;
+    ParserSynchronizationPolicy parsingPolicy = AllowAsynchronousParsing;
+    if ((m_substituteData.isValid() && m_substituteData.forceSynchronousLoad()) || !Document::threadedParsingEnabledForTesting())
+        parsingPolicy = ForceSynchronousParsing;
+
     m_writer = createWriterFor(0, init, mimeType, encoding, false, parsingPolicy);
     m_writer->setDocumentWasLoadedAsPartOfNavigation();
 

@@ -148,6 +148,8 @@
  * OTHERWISE.
  */
 
+#include <openssl/ssl.h>
+
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -276,12 +278,22 @@ int ssl3_connect(SSL *s) {
           if (s->s3->tmp.certificate_status_expected) {
             s->state = SSL3_ST_CR_CERT_STATUS_A;
           } else {
-            s->state = SSL3_ST_CR_KEY_EXCH_A;
+            s->state = SSL3_ST_VERIFY_SERVER_CERT;
           }
         } else {
           skip = 1;
           s->state = SSL3_ST_CR_KEY_EXCH_A;
         }
+        s->init_num = 0;
+        break;
+
+      case SSL3_ST_VERIFY_SERVER_CERT:
+        ret = ssl3_verify_server_cert(s);
+        if (ret <= 0) {
+          goto end;
+        }
+
+        s->state = SSL3_ST_CR_KEY_EXCH_A;
         s->init_num = 0;
         break;
 
@@ -468,7 +480,7 @@ int ssl3_connect(SSL *s) {
         if (ret <= 0) {
           goto end;
         }
-        s->state = SSL3_ST_CR_KEY_EXCH_A;
+        s->state = SSL3_ST_VERIFY_SERVER_CERT;
         s->init_num = 0;
         break;
 
@@ -946,11 +958,10 @@ err:
 }
 
 int ssl3_get_server_certificate(SSL *s) {
-  int al, i, ok, ret = -1;
+  int al, ok, ret = -1;
   unsigned long n;
   X509 *x = NULL;
   STACK_OF(X509) *sk = NULL;
-  SESS_CERT *sc;
   EVP_PKEY *pkey = NULL;
   CBS cbs, certificate_list;
   const uint8_t *data;
@@ -1005,35 +1016,17 @@ int ssl3_get_server_certificate(SSL *s) {
     x = NULL;
   }
 
-  i = ssl_verify_cert_chain(s, sk);
-  if (s->verify_mode != SSL_VERIFY_NONE && i <= 0) {
-    al = ssl_verify_alarm_type(s->verify_result);
-    OPENSSL_PUT_ERROR(SSL, SSL_R_CERTIFICATE_VERIFY_FAILED);
-    goto f_err;
-  }
-  ERR_clear_error(); /* but we keep s->verify_result */
-
   X509 *leaf = sk_X509_value(sk, 0);
   if (!ssl3_check_certificate_for_cipher(leaf, s->s3->tmp.new_cipher)) {
     al = SSL_AD_ILLEGAL_PARAMETER;
     goto f_err;
   }
 
-  sc = ssl_sess_cert_new();
-  if (sc == NULL) {
-    goto err;
-  }
-
-  ssl_sess_cert_free(s->session->sess_cert);
-  s->session->sess_cert = sc;
-
   /* NOTE: Unlike the server half, the client's copy of |cert_chain| includes
    * the leaf. */
-  sc->cert_chain = sk;
+  sk_X509_pop_free(s->session->cert_chain, X509_free);
+  s->session->cert_chain = sk;
   sk = NULL;
-
-  X509_free(sc->peer_cert);
-  sc->peer_cert = X509_up_ref(leaf);
 
   X509_free(s->session->peer);
   s->session->peer = X509_up_ref(leaf);
@@ -1083,19 +1076,9 @@ int ssl3_get_server_key_exchange(SSL *s) {
       return -1;
     }
 
-    /* In plain PSK ciphersuite, ServerKeyExchange can be
-       omitted if no identity hint is sent. Set session->sess_cert anyway to
-       avoid problems later.*/
+    /* In plain PSK ciphersuite, ServerKeyExchange may be omitted to send no
+     * identity hint. */
     if (s->s3->tmp.new_cipher->algorithm_auth & SSL_aPSK) {
-      /* PSK ciphersuites that also send a Certificate would have already
-       * initialized |sess_cert|. */
-      if (s->session->sess_cert == NULL) {
-        s->session->sess_cert = ssl_sess_cert_new();
-        if (s->session->sess_cert == NULL) {
-          return -1;
-        }
-      }
-
       /* TODO(davidben): This should be reset in one place with the rest of the
        * handshake state. */
       OPENSSL_free(s->s3->tmp.peer_psk_identity_hint);
@@ -1108,18 +1091,6 @@ int ssl3_get_server_key_exchange(SSL *s) {
   /* Retain a copy of the original CBS to compute the signature over. */
   CBS_init(&server_key_exchange, s->init_msg, n);
   server_key_exchange_orig = server_key_exchange;
-
-  if (s->session->sess_cert != NULL) {
-    DH_free(s->session->sess_cert->peer_dh_tmp);
-    s->session->sess_cert->peer_dh_tmp = NULL;
-    EC_KEY_free(s->session->sess_cert->peer_ecdh_tmp);
-    s->session->sess_cert->peer_ecdh_tmp = NULL;
-  } else {
-    s->session->sess_cert = ssl_sess_cert_new();
-    if (s->session->sess_cert == NULL) {
-      return -1;
-    }
-  }
 
   alg_k = s->s3->tmp.new_cipher->algorithm_mkey;
   alg_a = s->s3->tmp.new_cipher->algorithm_auth;
@@ -1191,7 +1162,8 @@ int ssl3_get_server_key_exchange(SSL *s) {
       OPENSSL_PUT_ERROR(SSL, SSL_R_BAD_DH_P_LENGTH);
       goto err;
     }
-    s->session->sess_cert->peer_dh_tmp = dh;
+    DH_free(s->s3->tmp.peer_dh_tmp);
+    s->s3->tmp.peer_dh_tmp = dh;
     dh = NULL;
   } else if (alg_k & SSL_kECDHE) {
     uint16_t curve_id;
@@ -1244,7 +1216,8 @@ int ssl3_get_server_key_exchange(SSL *s) {
       goto f_err;
     }
     EC_KEY_set_public_key(ecdh, srvr_ecpoint);
-    s->session->sess_cert->peer_ecdh_tmp = ecdh;
+    EC_KEY_free(s->s3->tmp.peer_ecdh_tmp);
+    s->s3->tmp.peer_ecdh_tmp = ecdh;
     ecdh = NULL;
     BN_CTX_free(bn_ctx);
     bn_ctx = NULL;
@@ -1264,7 +1237,7 @@ int ssl3_get_server_key_exchange(SSL *s) {
 
   /* ServerKeyExchange should be signed by the server's public key. */
   if (ssl_cipher_has_server_public_key(s->s3->tmp.new_cipher)) {
-    pkey = X509_get_pubkey(s->session->sess_cert->peer_cert);
+    pkey = X509_get_pubkey(s->session->peer);
     if (pkey == NULL) {
       goto err;
     }
@@ -1390,15 +1363,10 @@ int ssl3_get_certificate_request(SSL *s) {
 
   if (SSL_USE_SIGALGS(s)) {
     CBS supported_signature_algorithms;
-    if (!CBS_get_u16_length_prefixed(&cbs, &supported_signature_algorithms)) {
+    if (!CBS_get_u16_length_prefixed(&cbs, &supported_signature_algorithms) ||
+        !tls1_parse_peer_sigalgs(s, &supported_signature_algorithms)) {
       ssl3_send_alert(s, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
       OPENSSL_PUT_ERROR(SSL, SSL_R_DECODE_ERROR);
-      goto err;
-    }
-
-    if (!tls1_process_sigalgs(s, &supported_signature_algorithms)) {
-      ssl3_send_alert(s, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
-      OPENSSL_PUT_ERROR(SSL, SSL_R_SIGNATURE_ALGORITHMS_ERROR);
       goto err;
     }
   }
@@ -1487,15 +1455,6 @@ int ssl3_get_new_session_ticket(SSL *s) {
       /* This should never happen. */
       OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
       goto err;
-    }
-    if (s->session->sess_cert != NULL) {
-      /* |sess_cert| is not serialized and must be duplicated explicitly. */
-      assert(new_session->sess_cert == NULL);
-      new_session->sess_cert = ssl_sess_cert_dup(s->session->sess_cert);
-      if (new_session->sess_cert == NULL) {
-        SSL_SESSION_free(new_session);
-        goto err;
-      }
     }
 
     SSL_SESSION_free(s->session);
@@ -1683,13 +1642,7 @@ int ssl3_send_client_key_exchange(SSL *s) {
         goto err;
       }
 
-      if (s->session->sess_cert == NULL) {
-        /* We should always have a server certificate with SSL_kRSA. */
-        OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
-        goto err;
-      }
-
-      pkey = X509_get_pubkey(s->session->sess_cert->peer_cert);
+      pkey = X509_get_pubkey(s->session->peer);
       if (pkey == NULL ||
           pkey->type != EVP_PKEY_RSA ||
           pkey->pkey.rsa == NULL) {
@@ -1735,21 +1688,14 @@ int ssl3_send_client_key_exchange(SSL *s) {
       }
     } else if (alg_k & SSL_kDHE) {
       DH *dh_srvr, *dh_clnt;
-      SESS_CERT *scert = s->session->sess_cert;
       int dh_len;
       size_t pub_len;
 
-      if (scert == NULL) {
-        ssl3_send_alert(s, SSL3_AL_FATAL, SSL_AD_UNEXPECTED_MESSAGE);
-        OPENSSL_PUT_ERROR(SSL, SSL_R_UNEXPECTED_MESSAGE);
-        goto err;
-      }
-
-      if (scert->peer_dh_tmp == NULL) {
+      if (s->s3->tmp.peer_dh_tmp == NULL) {
         OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
         goto err;
       }
-      dh_srvr = scert->peer_dh_tmp;
+      dh_srvr = s->s3->tmp.peer_dh_tmp;
 
       /* generate a new random key */
       dh_clnt = DHparams_dup(dh_srvr);
@@ -1791,18 +1737,12 @@ int ssl3_send_client_key_exchange(SSL *s) {
       EC_KEY *tkey;
       int field_size = 0, ecdh_len;
 
-      if (s->session->sess_cert == NULL) {
-        ssl3_send_alert(s, SSL3_AL_FATAL, SSL_AD_UNEXPECTED_MESSAGE);
-        OPENSSL_PUT_ERROR(SSL, SSL_R_UNEXPECTED_MESSAGE);
-        goto err;
-      }
-
-      if (s->session->sess_cert->peer_ecdh_tmp == NULL) {
+      if (s->s3->tmp.peer_ecdh_tmp == NULL) {
         OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
         goto err;
       }
 
-      tkey = s->session->sess_cert->peer_ecdh_tmp;
+      tkey = s->s3->tmp.peer_ecdh_tmp;
 
       srvr_group = EC_KEY_get0_group(tkey);
       srvr_ecpoint = EC_KEY_get0_public_key(tkey);
@@ -2255,4 +2195,18 @@ int ssl_do_client_cert_cb(SSL *s, X509 **px509, EVP_PKEY **ppkey) {
     i = s->ctx->client_cert_cb(s, px509, ppkey);
   }
   return i;
+}
+
+int ssl3_verify_server_cert(SSL *s) {
+  int ret = ssl_verify_cert_chain(s, s->session->cert_chain);
+  if (s->verify_mode != SSL_VERIFY_NONE && ret <= 0) {
+    int al = ssl_verify_alarm_type(s->verify_result);
+    ssl3_send_alert(s, SSL3_AL_FATAL, al);
+    OPENSSL_PUT_ERROR(SSL, SSL_R_CERTIFICATE_VERIFY_FAILED);
+  } else {
+    ret = 1;
+    ERR_clear_error(); /* but we keep s->verify_result */
+  }
+
+  return ret;
 }

@@ -141,10 +141,10 @@ static const size_t kMaxPartitionPagesPerSlotSpan = 4;
 
 // To avoid fragmentation via never-used freelist entries, we hand out partition
 // freelist sections gradually, in units of the dominant system page size.
-// What we're actually doing is avoiding filling the full partition page
-// (typically 16KB) will freelist pointers right away. Writing freelist
-// pointers will fault and dirty a private page, which is very wasteful if we
-// never actually store objects there.
+// What we're actually doing is avoiding filling the full partition page (16 KB)
+// with freelist pointers right away. Writing freelist pointers will fault and
+// dirty a private page, which is very wasteful if we never actually store
+// objects there.
 static const size_t kNumSystemPagesPerPartitionPage = kPartitionPageSize / kSystemPageSize;
 static const size_t kMaxSystemPagesPerSlotSpan = kNumSystemPagesPerPartitionPage * kMaxPartitionPagesPerSlotSpan;
 
@@ -316,6 +316,8 @@ struct WTF_EXPORT PartitionRootBase {
     // that.
     static PartitionPage gSeedPage;
     static PartitionBucket gPagedBucket;
+    // gOomHandlingFunction is invoked when ParitionAlloc hits OutOfMemory.
+    static void (*gOomHandlingFunction)();
 };
 
 // Never instantiate a PartitionRoot directly, instead use PartitionAlloc.
@@ -383,6 +385,7 @@ public:
     virtual void partitionsDumpBucketStats(const char* partitionName, const PartitionBucketMemoryStats*) = 0;
 };
 
+WTF_EXPORT void partitionAllocGlobalInit(void (*oomHandlingFunction)());
 WTF_EXPORT void partitionAllocInit(PartitionRoot*, size_t numBuckets, size_t maxAllocation);
 WTF_EXPORT bool partitionAllocShutdown(PartitionRoot*);
 WTF_EXPORT void partitionAllocGenericInit(PartitionRootGeneric*);
@@ -696,6 +699,13 @@ ALWAYS_INLINE void* partitionAllocGenericFlags(PartitionRootGeneric* root, int f
     size = partitionCookieSizeAdjustAdd(size);
     PartitionBucket* bucket = partitionGenericSizeToBucket(root, size);
     spinLockLock(&root->lock);
+    // TODO(bashi): Remove following RELEAE_ASSERT()s once we find the cause of
+    // http://crbug.com/514141
+#if OS(ANDROID)
+    RELEASE_ASSERT(bucket >= &root->buckets[0] || bucket == &PartitionRootGeneric::gPagedBucket);
+    RELEASE_ASSERT(bucket <= &root->buckets[kGenericNumBuckets - 1] || bucket == &PartitionRootGeneric::gPagedBucket);
+    RELEASE_ASSERT(root->initialized);
+#endif
     void* ret = partitionBucketAlloc(root, flags, size, bucket);
     spinLockUnlock(&root->lock);
     return ret;

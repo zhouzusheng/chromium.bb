@@ -106,7 +106,7 @@ public:
     int baselinePosition(FontBaseline baselineType) const final;
     LayoutUnit lineHeight() const final;
 
-    void paint(const PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom) override;
+    void paint(const PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom) const override;
     bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom) final;
 
     using InlineBox::hasSelectedChildren;
@@ -148,11 +148,6 @@ public:
     void ascentAndDescentForBox(InlineBox*, GlyphOverflowAndFallbackFontsMap&, int& ascent, int& descent, bool& affectsAscent, bool& affectsDescent) const;
     LayoutUnit verticalPositionForBox(InlineBox*, VerticalPositionCache&);
     bool includeLeadingForBox(InlineBox*) const;
-    bool includeFontForBox(InlineBox*) const;
-    bool includeGlyphsForBox(InlineBox*) const;
-    bool includeMarginForBox(InlineBox*) const;
-    bool fitsToGlyphs() const;
-    bool includesRootLineBoxFontOrLeading() const;
 
     LayoutUnit logicalTopVisualOverflow() const
     {

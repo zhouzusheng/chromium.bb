@@ -185,6 +185,8 @@ bool ServiceWorkerDispatcherHost::OnMessageReceived(
                         OnWorkerReadyForInspection)
     IPC_MESSAGE_HANDLER(EmbeddedWorkerHostMsg_WorkerScriptLoaded,
                         OnWorkerScriptLoaded)
+    IPC_MESSAGE_HANDLER(EmbeddedWorkerHostMsg_WorkerThreadStarted,
+                        OnWorkerThreadStarted)
     IPC_MESSAGE_HANDLER(EmbeddedWorkerHostMsg_WorkerScriptLoadFailed,
                         OnWorkerScriptLoadFailed)
     IPC_MESSAGE_HANDLER(EmbeddedWorkerHostMsg_WorkerScriptEvaluated,
@@ -263,19 +265,19 @@ ServiceWorkerDispatcherHost::GetOrCreateRegistrationHandle(
     base::WeakPtr<ServiceWorkerProviderHost> provider_host,
     ServiceWorkerRegistration* registration) {
   DCHECK(provider_host);
-  ServiceWorkerRegistrationHandle* handle =
+  ServiceWorkerRegistrationHandle* existing_handle =
       FindRegistrationHandle(provider_host->provider_id(), registration->id());
-  if (handle) {
-    handle->IncrementRefCount();
-    return handle;
+  if (existing_handle) {
+    existing_handle->IncrementRefCount();
+    return existing_handle;
   }
 
   scoped_ptr<ServiceWorkerRegistrationHandle> new_handle(
-      new ServiceWorkerRegistrationHandle(
-          GetContext()->AsWeakPtr(), provider_host, registration));
-  handle = new_handle.get();
+      new ServiceWorkerRegistrationHandle(GetContext()->AsWeakPtr(),
+                                          provider_host, registration));
+  ServiceWorkerRegistrationHandle* new_handle_ptr = new_handle.get();
   RegisterServiceWorkerRegistrationHandle(new_handle.Pass());
-  return handle;
+  return new_handle_ptr;
 }
 
 void ServiceWorkerDispatcherHost::OnRegisterServiceWorker(
@@ -438,9 +440,10 @@ void ServiceWorkerDispatcherHost::OnUpdateServiceWorker(int thread_id,
   // The spec says, "update() pings the server for an updated version of this
   // script without consulting caches", so set |force_bypass_cache| to true.
   GetContext()->UpdateServiceWorker(
-      registration, true, /* force_bypass_cache */
-      provider_host, base::Bind(&ServiceWorkerDispatcherHost::UpdateComplete,
-                                this, thread_id, provider_id, request_id));
+      registration, true /* force_bypass_cache */,
+      false /* skip_script_comparison */, provider_host,
+      base::Bind(&ServiceWorkerDispatcherHost::UpdateComplete, this, thread_id,
+                 provider_id, request_id));
 }
 
 void ServiceWorkerDispatcherHost::OnUnregisterServiceWorker(
@@ -767,21 +770,19 @@ void ServiceWorkerDispatcherHost::OnSetHostedVersionId(
   }
   if (!provider_host->IsContextAlive())
     return;
-  if (!provider_host->SetHostedVersionId(version_id))
-    bad_message::ReceivedBadMessage(this, bad_message::SWDH_SET_HOSTED_VERSION);
 
   ServiceWorkerVersion* version = GetContext()->GetLiveVersion(version_id);
-  if (!version)
+  if (!version || version->running_status() == ServiceWorkerVersion::STOPPING)
     return;
+
+  if (!provider_host->SetHostedVersionId(version_id))
+    bad_message::ReceivedBadMessage(this, bad_message::SWDH_SET_HOSTED_VERSION);
 
   // Retrieve the registration associated with |version|. The registration
   // must be alive because the version keeps it during starting worker.
   ServiceWorkerRegistration* registration =
       GetContext()->GetLiveRegistration(version->registration_id());
   DCHECK(registration);
-  // TODO(ksakamoto): This is a quick fix for crbug.com/459916.
-  if (!registration)
-    return;
 
   // Set the document URL to the script url in order to allow
   // register/unregister/getRegistration on ServiceWorkerGlobalScope.
@@ -799,19 +800,15 @@ void ServiceWorkerDispatcherHost::OnSetHostedVersionId(
 ServiceWorkerRegistrationHandle*
 ServiceWorkerDispatcherHost::FindRegistrationHandle(int provider_id,
                                                     int64 registration_id) {
-  for (IDMap<ServiceWorkerRegistrationHandle, IDMapOwnPointer>::iterator
-           iter(&registration_handles_);
-       !iter.IsAtEnd();
-       iter.Advance()) {
+  for (RegistrationHandleMap::iterator iter(&registration_handles_);
+       !iter.IsAtEnd(); iter.Advance()) {
     ServiceWorkerRegistrationHandle* handle = iter.GetCurrentValue();
-    DCHECK(handle);
-    DCHECK(handle->registration());
     if (handle->provider_id() == provider_id &&
         handle->registration()->id() == registration_id) {
       return handle;
     }
   }
-  return NULL;
+  return nullptr;
 }
 
 void ServiceWorkerDispatcherHost::GetRegistrationObjectInfoAndVersionAttributes(
@@ -820,7 +817,7 @@ void ServiceWorkerDispatcherHost::GetRegistrationObjectInfoAndVersionAttributes(
     ServiceWorkerRegistrationObjectInfo* info,
     ServiceWorkerVersionAttributes* attrs) {
   ServiceWorkerRegistrationHandle* handle =
-    GetOrCreateRegistrationHandle(provider_host, registration);
+      GetOrCreateRegistrationHandle(provider_host, registration);
   *info = handle->GetObjectInfo();
 
   attrs->installing = provider_host->GetOrCreateServiceWorkerHandle(
@@ -916,12 +913,23 @@ void ServiceWorkerDispatcherHost::OnWorkerReadyForInspection(
   registry->OnWorkerReadyForInspection(render_process_id_, embedded_worker_id);
 }
 
-void ServiceWorkerDispatcherHost::OnWorkerScriptLoaded(
-    int embedded_worker_id,
-    int thread_id,
-    int provider_id) {
+void ServiceWorkerDispatcherHost::OnWorkerScriptLoaded(int embedded_worker_id) {
   TRACE_EVENT0("ServiceWorker",
                "ServiceWorkerDispatcherHost::OnWorkerScriptLoaded");
+  if (!GetContext())
+    return;
+
+  EmbeddedWorkerRegistry* registry = GetContext()->embedded_worker_registry();
+  if (!registry->CanHandle(embedded_worker_id))
+    return;
+  registry->OnWorkerScriptLoaded(render_process_id_, embedded_worker_id);
+}
+
+void ServiceWorkerDispatcherHost::OnWorkerThreadStarted(int embedded_worker_id,
+                                                        int thread_id,
+                                                        int provider_id) {
+  TRACE_EVENT0("ServiceWorker",
+               "ServiceWorkerDispatcherHost::OnWorkerThreadStarted");
   if (!GetContext())
     return;
 
@@ -938,8 +946,8 @@ void ServiceWorkerDispatcherHost::OnWorkerScriptLoaded(
   EmbeddedWorkerRegistry* registry = GetContext()->embedded_worker_registry();
   if (!registry->CanHandle(embedded_worker_id))
     return;
-  registry->OnWorkerScriptLoaded(
-      render_process_id_, thread_id, embedded_worker_id);
+  registry->OnWorkerThreadStarted(render_process_id_, thread_id,
+                                  embedded_worker_id);
 }
 
 void ServiceWorkerDispatcherHost::OnWorkerScriptLoadFailed(

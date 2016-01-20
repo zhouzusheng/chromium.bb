@@ -1386,7 +1386,7 @@ void OutputHLSL::visitSymbol(TIntermSymbol *node)
             mUsesInstanceID = true;
             out << name;
         }
-        else if (name == "gl_FragDepthEXT")
+        else if (name == "gl_FragDepthEXT" || name == "gl_FragDepth")
         {
             mUsesFragDepth = true;
             out << "gl_Depth";
@@ -2374,9 +2374,7 @@ bool OutputHLSL::visitSelection(Visit visit, TIntermSelection *node)
     }
 
     // D3D errors when there is a gradient operation in a loop in an unflattened if.
-    if (mShaderType == GL_FRAGMENT_SHADER &&
-        mCurrentFunctionMetadata->hasDiscontinuousLoop(node) &&
-        mCurrentFunctionMetadata->hasGradientInCallGraph(node))
+    if (mShaderType == GL_FRAGMENT_SHADER && mCurrentFunctionMetadata->hasGradientLoop(node))
     {
         out << "FLATTEN ";
     }

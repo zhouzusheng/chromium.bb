@@ -74,7 +74,7 @@ const GpuFeatureInfo GetGpuFeatureInfo(size_t index, bool* eof) {
           kWebGLFeatureName,
           manager->IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_WEBGL),
           command_line.HasSwitch(switches::kDisableExperimentalWebGL),
-          "WebGL has been disabled, either via about:flags or command line.",
+          "WebGL has been disabled via the command line.",
           false
       },
       {
@@ -164,22 +164,6 @@ bool IsPropertyTreeVerificationEnabled() {
   return command_line.HasSwitch(cc::switches::kEnablePropertyTreeVerification);
 }
 
-bool IsDelegatedRendererEnabled() {
-  const base::CommandLine& command_line =
-      *base::CommandLine::ForCurrentProcess();
-  bool enabled = false;
-
-#if defined(USE_AURA) || defined(OS_MACOSX)
-  // Enable on Aura and Mac.
-  enabled = true;
-#endif
-
-  // Flags override.
-  enabled |= command_line.HasSwitch(switches::kEnableDelegatedRenderer);
-  enabled &= !command_line.HasSwitch(switches::kDisableDelegatedRenderer);
-  return enabled;
-}
-
 int NumberOfRendererRasterThreads() {
   int num_processors = base::SysInfo::NumberOfProcessors();
 
@@ -190,14 +174,6 @@ int NumberOfRendererRasterThreads() {
 #endif
 
   int num_raster_threads = num_processors / 2;
-
-  // Async uploads is used when neither zero-copy nor one-copy is enabled and
-  // it uses its own thread, so reduce the number of raster threads when async
-  // uploads is in use.
-  bool async_uploads_is_used =
-      !IsZeroCopyUploadEnabled() && !IsOneCopyUploadEnabled();
-  if (async_uploads_is_used)
-    --num_raster_threads;
 
 #if defined(OS_ANDROID)
   // Limit the number of raster threads to 1 on Android.
@@ -222,19 +198,14 @@ int NumberOfRendererRasterThreads() {
                                     kMaxRasterThreads);
 }
 
-bool IsOneCopyUploadEnabled() {
-  if (IsZeroCopyUploadEnabled())
-    return false;
-
-  const base::CommandLine& command_line =
-      *base::CommandLine::ForCurrentProcess();
-  return !command_line.HasSwitch(switches::kDisableOneCopy);
-}
-
 bool IsZeroCopyUploadEnabled() {
   const base::CommandLine& command_line =
       *base::CommandLine::ForCurrentProcess();
+#if defined(OS_MACOSX)
+  return !command_line.HasSwitch(switches::kDisableZeroCopy);
+#else
   return command_line.HasSwitch(switches::kEnableZeroCopy);
+#endif
 }
 
 bool IsPersistentGpuMemoryBufferEnabled() {

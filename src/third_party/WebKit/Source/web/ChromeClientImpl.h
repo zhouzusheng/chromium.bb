@@ -62,6 +62,7 @@ public:
     void takeFocus(WebFocusType) override;
     void focusedNodeChanged(Node* fromNode, Node* toNode) override;
     void focusedFrameChanged(LocalFrame*) override;
+    bool hadFormInteraction() const override;
     Page* createWindow(
         LocalFrame*, const FrameLoadRequest&, const WindowFeatures&, NavigationPolicy, ShouldSendReferrer) override;
     void show(NavigationPolicy) override;
@@ -138,6 +139,7 @@ public:
     // ChromeClientImpl:
     void setCursorForPlugin(const WebCursorInfo&);
     void setNewWindowNavigationPolicy(WebNavigationPolicy);
+    void setCursorOverridden(bool);
 
     bool hasOpenedPopup() const override;
     PassRefPtrWillBeRawPtr<PopupMenu> openPopupMenu(LocalFrame&, HTMLSelectElement&) override;
@@ -172,6 +174,8 @@ public:
 
     FloatSize elasticOverscroll() const override;
 
+    void didObserveNonGetFetchFromScript() const override;
+
 private:
     explicit ChromeClientImpl(WebViewImpl*);
 
@@ -186,6 +190,7 @@ private:
     WindowFeatures m_windowFeatures;
     Vector<PopupOpeningObserver*> m_popupOpeningObservers;
     Cursor m_lastSetMouseCursorForTesting;
+    bool m_cursorOverridden;
 };
 
 DEFINE_TYPE_CASTS(ChromeClientImpl, ChromeClient, client, client->isChromeClientImpl(), client.isChromeClientImpl());

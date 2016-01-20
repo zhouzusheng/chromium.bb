@@ -40,7 +40,7 @@ class GrDrawBatch : public GrBatch {
 public:
     class Target;
 
-    GrDrawBatch();
+    GrDrawBatch(uint32_t classID);
     ~GrDrawBatch() override;
 
     virtual void getInvariantOutputColor(GrInitInvariantOutput* out) const = 0;
@@ -64,12 +64,12 @@ public:
     SkString dumpInfo() const override {
         SkString string;
         string.append("ColorStages:\n");
-        for (int i = 0; i < this->pipeline()->numColorFragmentStages(); i++) {
-            string.appendf("\t\t%s\n", this->pipeline()->getColorStage(i).processor()->name());
+        for (int i = 0; i < this->pipeline()->numColorFragmentProcessors(); i++) {
+            string.appendf("\t\t%s\n", this->pipeline()->getColorFragmentProcessor(i).name());
         }
         string.append("CoverageStages:\n");
-        for (int i = 0; i < this->pipeline()->numCoverageFragmentStages(); i++) {
-            string.appendf("\t%s\n", this->pipeline()->getCoverageStage(i).processor()->name());
+        for (int i = 0; i < this->pipeline()->numCoverageFragmentProcessors(); i++) {
+            string.appendf("\t%s\n", this->pipeline()->getCoverageFragmentProcessor(i).name());
         }
         string.appendf("XP: %s\n", this->pipeline()->getXferProcessor()->name());
         return string;

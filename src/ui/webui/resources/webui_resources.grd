@@ -183,8 +183,10 @@ without changes to the corresponding grd file. -->
                file="images/error.svg" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_SELECT"
                file="images/select.png" type="BINDATA" />
-      <include name="IDR_WEBUI_IMAGES_THROBBER"
-               file="images/throbber.svg" type="BINDATA" />
+      <include name="IDR_WEBUI_IMAGES_THROBBER_MEDIUM"
+               file="images/throbber_medium.svg" type="BINDATA" />
+      <include name="IDR_WEBUI_IMAGES_THROBBER_SMALL"
+               file="images/throbber_small.svg" type="BINDATA" />
       <include name="IDR_WEBUI_IMAGES_TRASH"
                file="images/trash.png" type="BINDATA" />
 
@@ -427,6 +429,9 @@ without changes to the corresponding grd file. -->
       <if expr="chromeos">
         <structure name="IDR_WEBUI_CSS_UI_ACCOUNT_TWEAKS"
                    file="css/chromeos/ui_account_tweaks.css"
+                   type="chrome_html" />
+        <structure name="IDR_WEBUI_HTML_UI_ACCOUNT_TWEAKS"
+                   file="html/chromeos/ui_account_tweaks.html"
                    type="chrome_html" />
         <structure name="IDR_WEBUI_JS_UI_ACCOUNT_TWEAKS"
                    file="js/chromeos/ui_account_tweaks.js"

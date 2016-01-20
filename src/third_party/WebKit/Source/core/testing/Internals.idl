@@ -78,6 +78,11 @@
     // for testing whether animated images work properly.
     [RaisesException] void advanceTimeForImage(Element image, double deltaTimeInSeconds);
 
+    // Advances an animated image. For BitmapImage (e.g., animated gifs) this
+    // will advance to the next frame. For SVGImage, this will trigger an
+    // animation update for CSS and advance the SMIL timeline by one frame.
+    [RaisesException, TypeChecking=Interface] void advanceImageAnimation(Element image);
+
     [RaisesException, TypeChecking=Interface] Node nextSiblingInComposedTree(Node node);
     [RaisesException, TypeChecking=Interface] Node firstChildInComposedTree(Node node);
     [RaisesException, TypeChecking=Interface] Node lastChildInComposedTree(Node node);
@@ -120,8 +125,6 @@
     [RaisesException, TypeChecking=Interface] void setSuggestedValue(Element inputElement, DOMString value);
     [RaisesException, TypeChecking=Interface] void setEditingValue(Element inputElement, DOMString value);
     [RaisesException, TypeChecking=Interface] void setAutofilled(Element inputElement, boolean enabled);
-
-    [RaisesException, TypeChecking=Interface] void scrollElementToRect(Element element, long x, long y, long w, long h);
 
     [TypeChecking=Interface] Range rangeFromLocationAndLength(Element scope, long rangeLocation, long rangeLength);
     [TypeChecking=Interface] unsigned long locationFromRange(Element scope, Range range);
@@ -173,7 +176,8 @@
     readonly attribute unsigned long workerThreadCount;
 
     // Flags for layerTreeAsText.
-    // The values of these constants must be kept in sync with the values of LayerTreeAsTextBehaviorFlags in GraphicsLayerClient.h.
+    // The values of these constants must be kept in sync with the values of LayerTreeFlags in GraphicsLayerClient.h.
+    const unsigned short LAYER_TREE_INCLUDES_DEBUG_INFO = 1;
     const unsigned short LAYER_TREE_INCLUDES_REPAINT_RECTS = 2;
     const unsigned short LAYER_TREE_INCLUDES_PAINTING_PHASES = 4;
     const unsigned short LAYER_TREE_INCLUDES_ROOT_LAYER = 8;
@@ -230,8 +234,9 @@
 
     DOMString[] getReferencedFilePaths();
 
-    // These functions both reset the tracked repaint rects. They are inteded to be used in the following order:
-    //  startTrackingRepaints, repaintRectsAsText, stopTrackingRepaints.
+    // These functions both reset the tracked repaint rects. They are intended to be used in the following order:
+    //  startTrackingRepaints(), repaintRectsAsText(), stopTrackingRepaints().
+    // TODO(wangxianzhu): Remove these functions when we no longer use repaint rects.
     [RaisesException, TypeChecking=Interface] void startTrackingRepaints(Document document);
     [RaisesException, TypeChecking=Interface] void stopTrackingRepaints(Document document);
 
@@ -241,6 +246,16 @@
     [RaisesException] void updateLayoutIgnorePendingStylesheetsAndRunPostLayoutTasks(optional Node? node = null);
 
     [RaisesException, TypeChecking=Interface] void forceFullRepaint(Document document);
+
+    // These functions both reset the tracked paint invalidation objects. They are intended to be used in the following order:
+    //  startTrackingPaintInvalidationObjects(), trackedPaintInvalidationObjects(), stopTrackingPaintInvalidationObjects().
+    void startTrackingPaintInvalidationObjects();
+    void stopTrackingPaintInvalidationObjects();
+
+    // Returns a list of debug strings for objects that were invalidated between
+    // startTrackingPaintInvalidationObjects() and stopTrackingPaintInvalidationObjects().
+    // If an object is invalidated multiple times, it will appear in the list multiple times.
+    DOMString[] trackedPaintInvalidationObjects();
 
     // Returns a list of draggable/non-draggable regions in the document.
     [RaisesException, TypeChecking=Interface] ClientRectList draggableRegions(Document document);
@@ -264,6 +279,7 @@
     [TypeChecking=Interface] boolean isSelectPopupVisible(Node node);
     boolean selectPopupItemStyleIsRtl(Node select, long itemIndex);
     long selectPopupItemStyleFontHeight(Node select, long itemIndex);
+    [TypeChecking=Interface] void resetTypeAheadSession(HTMLSelectElement select);
 
     [RaisesException] ClientRect selectionBounds();
 
@@ -297,7 +313,7 @@
     // These functions are for testing NetInfo. You must call setNetworkStateNotifierTestOnly(true)
     // before calling setNetworkConnectionInfo.
     void setNetworkStateNotifierTestOnly(boolean testOnly);
-    [RaisesException] void setNetworkConnectionInfo(DOMString type);
+    [RaisesException] void setNetworkConnectionInfo(DOMString type, double downlinkMaxMbps);
 
     // This function is for testing HitRegions on Canvas2D.
     unsigned long countHitRegions(CanvasRenderingContext2D context);
@@ -307,12 +323,9 @@
 
     [TypeChecking=Interface] ClientRect boundsInViewportSpace(Element element);
 
-    [RaisesException, TypeChecking=Interface] void forcePluginPlaceholder(HTMLElement plugin, DocumentFragment fragment);
-    [RaisesException, TypeChecking=Interface] void forcePluginPlaceholder(HTMLElement plugin, PluginPlaceholderOptions options);
-
     DictionaryTest dictionaryTest();
     UnionTypesTest unionTypesTest();
-
+    [RaisesException, TypeChecking=Interface] void setScrollChain(ScrollState scrollState, Element[] elements);
     void forceBlinkGCWithoutV8GC();
 
     DOMString selectedHTMLForClipboard();
@@ -329,12 +342,15 @@
     [Unscopeable] readonly attribute DOMString unscopeableAttribute;
     [Unscopeable] DOMString unscopeableMethod();
 
+    ClientRectList focusRingRects(Element element);
     ClientRectList outlineRects(Element element);
     void setCapsLockState(boolean enabled);
+    void setSelectionPaintingWithoutSelectionGapsEnabled(boolean enabled);
 
     // Returns whether the scrollbar was able to be shown or hidden; not all platforms
     // support overlay scrollbars.
     bool setScrollbarVisibilityInScrollableArea(Node node, boolean visible);
 
     void forceRestrictIFramePermissions();
+    [RaisesException] double monotonicTimeToZeroBasedDocumentTime(double platformTime);
 };

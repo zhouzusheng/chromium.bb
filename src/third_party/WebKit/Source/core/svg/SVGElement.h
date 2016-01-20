@@ -28,6 +28,7 @@
 #include "core/svg/SVGParsingError.h"
 #include "core/svg/properties/SVGPropertyInfo.h"
 #include "platform/heap/Handle.h"
+#include "wtf/Allocator.h"
 #include "wtf/HashMap.h"
 #include "wtf/OwnPtr.h"
 
@@ -111,8 +112,6 @@ public:
     const WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement>>& instancesForElement() const;
     void mapInstanceToElement(SVGElement*);
     void removeInstanceMapping(SVGElement*);
-
-    bool getBoundingBox(FloatRect&);
 
     void setCursorElement(SVGCursorElement*);
     void setCursorImageValue(CSSCursorImageValue*);
@@ -245,6 +244,7 @@ private:
 };
 
 struct SVGAttributeHashTranslator {
+    STATIC_ONLY(SVGAttributeHashTranslator);
     static unsigned hash(const QualifiedName& key)
     {
         if (key.hasPrefix()) {

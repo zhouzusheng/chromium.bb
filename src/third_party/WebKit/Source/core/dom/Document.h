@@ -74,6 +74,7 @@ class Attr;
 class CDATASection;
 class CSSStyleDeclaration;
 class CSSStyleSheet;
+class CancellableTaskFactory;
 class CanvasFontCache;
 class CanvasRenderingContext2D;
 class CanvasRenderingContext2DOrWebGLRenderingContext;
@@ -123,6 +124,7 @@ class HTMLLinkElement;
 class HTMLScriptElement;
 class HitTestRequest;
 class IdleRequestCallback;
+class IdleRequestOptions;
 class InputDeviceCapabilities;
 class LayoutPoint;
 class LiveNodeListBase;
@@ -303,7 +305,6 @@ public:
 
     String defaultCharset() const;
 
-    AtomicString charset() const { return Document::encodingName(); }
     AtomicString characterSet() const { return Document::encodingName(); }
 
     AtomicString encodingName() const;
@@ -535,7 +536,8 @@ public:
     ScriptableDocumentParser* scriptableDocumentParser() const;
 
     bool printing() const { return m_printing; }
-    void setPrinting(bool p) { m_printing = p; }
+    void setPrinting(bool isPrinting) { m_printing = isPrinting; }
+    bool wasPrinting() const { return m_wasPrinting; }
 
     bool paginatedForScreen() const { return m_paginatedForScreen; }
     void setPaginatedForScreen(bool p) { m_paginatedForScreen = p; }
@@ -569,6 +571,7 @@ public:
     void setParsingState(ParsingState);
     bool parsing() const { return m_parsingState == Parsing; }
     bool isInDOMContentLoaded() const { return m_parsingState == InDOMContentLoaded; }
+    bool hasFinishedParsing() const { return m_parsingState == FinishedParsing; }
 
     bool shouldScheduleLayout() const;
     int elapsedTime() const;
@@ -786,7 +789,6 @@ public:
     void incDOMTreeVersion() { ASSERT(m_lifecycle.stateAllowsTreeMutations()); m_domTreeVersion = ++s_globalTreeVersion; }
     uint64_t domTreeVersion() const { return m_domTreeVersion; }
 
-    void incStyleVersion() { ++m_styleVersion; }
     uint64_t styleVersion() const { return m_styleVersion; }
 
     enum PendingSheetLayout { NoLayoutWithPendingSheets, DidLayoutWithPendingSheets, IgnoreLayoutWithPendingSheets };
@@ -909,12 +911,13 @@ public:
     PassRefPtrWillBeRawPtr<TouchList> createTouchList(WillBeHeapVector<RefPtrWillBeMember<Touch>>&) const;
 
     const DocumentTiming& timing() const { return m_documentTiming; }
+    void markFirstTextPaint();
 
     int requestAnimationFrame(FrameRequestCallback*);
     void cancelAnimationFrame(int id);
     void serviceScriptedAnimations(double monotonicAnimationStartTime);
 
-    int requestIdleCallback(IdleRequestCallback*, double timeoutMillis);
+    int requestIdleCallback(IdleRequestCallback*, const IdleRequestOptions&);
     void cancelIdleCallback(int id);
 
     EventTarget* errorEventTarget() final;
@@ -1025,11 +1028,16 @@ public:
 
     NthIndexCache* nthIndexCache() const { return m_nthIndexCache; }
 
-    bool isPrivilegedContext(String& errorMessage, const PrivilegeContextCheck = StandardPrivilegeCheck) const override;
+    bool isSecureContext(String& errorMessage, const SecureContextCheck = StandardSecureContextCheck) const override;
 
     ClientHintsPreferences& clientHintsPreferences() { return m_clientHintsPreferences; }
 
     CanvasFontCache* canvasFontCache();
+
+    // Used by unit tests so that all parsing will be main thread for
+    // controlling parsing and chunking precisely.
+    static void setThreadedParsingEnabledForTesting(bool);
+    static bool threadedParsingEnabledForTesting();
 
     void incrementNodeCount() { m_nodeCount++; }
     void decrementNodeCount()
@@ -1119,7 +1127,7 @@ private:
     void updateFocusAppearanceTimerFired(Timer<Document>*);
     void updateBaseURL();
 
-    void executeScriptsWaitingForResourcesTimerFired(Timer<Document>*);
+    void executeScriptsWaitingForResources();
 
     void loadEventDelayTimerFired(Timer<Document>*);
     void pluginLoadingTimerFired(Timer<Document>*);
@@ -1188,12 +1196,13 @@ private:
     RefPtrWillBeMember<CSSStyleSheet> m_elemSheet;
 
     bool m_printing;
+    bool m_wasPrinting;
     bool m_paginatedForScreen;
 
     CompatibilityMode m_compatibilityMode;
     bool m_compatibilityModeLocked; // This is cheaper than making setCompatibilityMode virtual.
 
-    Timer<Document> m_executeScriptsWaitingForResourcesTimer;
+    OwnPtr<CancellableTaskFactory> m_executeScriptsWaitingForResourcesTask;
 
     bool m_hasAutofocused;
     Timer<Document> m_clearFocusedElementTimer;
@@ -1243,7 +1252,7 @@ private:
     String m_rawTitle;
     RefPtrWillBeMember<Element> m_titleElement;
 
-    OwnPtrWillBeMember<AXObjectCache> m_axObjectCache;
+    PersistentWillBeMember<AXObjectCache> m_axObjectCache;
     OwnPtrWillBeMember<DocumentMarkerController> m_markers;
 
     Timer<Document> m_updateFocusAppearanceTimer;
@@ -1352,7 +1361,7 @@ private:
     LocaleIdentifierToLocaleMap m_localeCache;
 
     AnimationClock m_animationClock;
-    RefPtrWillBeMember<AnimationTimeline> m_timeline;
+    PersistentWillBeMember<AnimationTimeline> m_timeline;
     CompositorPendingAnimations m_compositorPendingAnimations;
 
     RefPtrWillBeMember<Document> m_templateDocument;

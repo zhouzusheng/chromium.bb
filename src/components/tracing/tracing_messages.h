@@ -29,16 +29,15 @@ IPC_STRUCT_TRAITS_END()
 IPC_STRUCT_TRAITS_BEGIN(base::trace_event::MemoryDumpRequestArgs)
 IPC_STRUCT_TRAITS_MEMBER(dump_guid)
 IPC_STRUCT_TRAITS_MEMBER(dump_type)
-IPC_STRUCT_TRAITS_MEMBER(dump_args)
+IPC_STRUCT_TRAITS_MEMBER(level_of_detail)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(base::trace_event::MemoryDumpArgs)
   IPC_STRUCT_TRAITS_MEMBER(level_of_detail)
 IPC_STRUCT_TRAITS_END()
 
-IPC_ENUM_TRAITS_MAX_VALUE(
-    base::trace_event::MemoryDumpArgs::LevelOfDetail,
-    base::trace_event::MemoryDumpArgs::LevelOfDetail::LAST)
+IPC_ENUM_TRAITS_MAX_VALUE(base::trace_event::MemoryDumpLevelOfDetail,
+                          base::trace_event::MemoryDumpLevelOfDetail::LAST)
 
 IPC_ENUM_TRAITS_MAX_VALUE(
     base::trace_event::MemoryDumpType,
@@ -88,9 +87,10 @@ IPC_MESSAGE_CONTROL2(TracingMsg_GlobalMemoryDumpResponse,
                      uint64 /* dump_guid */,
                      bool /* success */)
 
-IPC_MESSAGE_CONTROL2(TracingMsg_SetUMACallback,
+IPC_MESSAGE_CONTROL3(TracingMsg_SetUMACallback,
                      std::string /* histogram_name */,
-                     base::HistogramBase::Sample /* histogram_value */)
+                     base::HistogramBase::Sample /* histogram_lower_value */,
+                     base::HistogramBase::Sample /* histogram_uppwer_value */)
 
 IPC_MESSAGE_CONTROL1(TracingMsg_ClearUMACallback,
                      std::string /* histogram_name */)

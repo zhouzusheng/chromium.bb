@@ -233,7 +233,8 @@ bool SpellcheckService::LoadExternalDictionary(std::string language,
   return false;
 }
 
-bool SpellcheckService::UnloadExternalDictionary(std::string path) {
+bool SpellcheckService::UnloadExternalDictionary(
+    const std::string& /* path */) {
   return false;
 }
 
@@ -261,17 +262,21 @@ void SpellcheckService::OnCustomDictionaryChanged(
   }
 }
 
-void SpellcheckService::OnHunspellDictionaryInitialized() {
+void SpellcheckService::OnHunspellDictionaryInitialized(
+    const std::string& language) {
   InitForAllRenderers();
 }
 
-void SpellcheckService::OnHunspellDictionaryDownloadBegin() {
+void SpellcheckService::OnHunspellDictionaryDownloadBegin(
+    const std::string& language) {
 }
 
-void SpellcheckService::OnHunspellDictionaryDownloadSuccess() {
+void SpellcheckService::OnHunspellDictionaryDownloadSuccess(
+    const std::string& language) {
 }
 
-void SpellcheckService::OnHunspellDictionaryDownloadFailure() {
+void SpellcheckService::OnHunspellDictionaryDownloadFailure(
+    const std::string& language) {
 }
 
 // static

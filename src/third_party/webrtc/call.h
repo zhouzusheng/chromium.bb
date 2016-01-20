@@ -45,7 +45,9 @@ class PacketReceiver {
 
   virtual DeliveryStatus DeliverPacket(MediaType media_type,
                                        const uint8_t* packet,
-                                       size_t length) = 0;
+                                       size_t length,
+                                       const PacketTime& packet_time) = 0;
+
  protected:
   virtual ~PacketReceiver() {}
 };
@@ -69,22 +71,10 @@ class LoadObserver {
 class Call {
  public:
   struct Config {
-    Config() = delete;
-    explicit Config(newapi::Transport* send_transport)
-        : send_transport(send_transport) {}
-
     static const int kDefaultStartBitrateBps;
-
-    // TODO(solenberg): Need to add media type to the interface for outgoing
-    // packets too.
-    newapi::Transport* send_transport = nullptr;
 
     // VoiceEngine used for audio/video synchronization for this Call.
     VoiceEngine* voice_engine = nullptr;
-
-    // Callback for overuse and normal usage based on the jitter of incoming
-    // captured frames. 'nullptr' disables the callback.
-    LoadObserver* overuse_callback = nullptr;
 
     // Bitrate config used until valid bitrate estimates are calculated. Also
     // used to cap total bitrate used.
@@ -95,7 +85,7 @@ class Call {
     } bitrate_config;
 
     struct AudioConfig {
-      AudioDeviceModule* audio_device_manager = nullptr;
+      AudioDeviceModule* audio_device_module = nullptr;
       AudioProcessing* audio_processing = nullptr;
       VoiceEngineObserver* voice_engine_observer = nullptr;
     } audio_config;

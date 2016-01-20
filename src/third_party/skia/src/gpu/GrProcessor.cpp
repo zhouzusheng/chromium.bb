@@ -7,13 +7,11 @@
 
 #include "GrProcessor.h"
 #include "GrContext.h"
-#include "GrCoordTransform.h"
 #include "GrGeometryProcessor.h"
 #include "GrInvariantOutput.h"
 #include "GrMemoryPool.h"
 #include "GrXferProcessor.h"
 #include "SkSpinlock.h"
-#include "gl/GrGLFragmentProcessor.h"
 
 #if SK_ALLOW_STATIC_GLOBAL_INITIALIZERS
 
@@ -50,7 +48,7 @@ GrProcessorTestFactory<GrGeometryProcessor>::GetFactories() {
  * we verify the count is as expected.  If a new factory is added, then these numbers must be
  * manually adjusted.
  */
-static const int kFPFactoryCount = 37;
+static const int kFPFactoryCount = 38;
 static const int kGPFactoryCount = 14;
 static const int kXPFactoryCount = 5;
 
@@ -130,114 +128,6 @@ bool GrProcessor::hasSameTextureAccesses(const GrProcessor& that) const {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-bool GrFragmentProcessor::isEqual(const GrFragmentProcessor& that,
-                                  bool ignoreCoordTransforms) const {
-    if (this->classID() != that.classID() ||
-        !this->hasSameTextureAccesses(that)) {
-        return false;
-    }
-    if (ignoreCoordTransforms) {
-        if (this->numTransforms() != that.numTransforms()) {
-            return false;
-        }
-    } else if (!this->hasSameTransforms(that)) {
-        return false;
-    }
-    if (!this->onIsEqual(that)) {
-        return false;
-    }
-    if (this->numChildProcessors() != that.numChildProcessors()) {
-        return false;
-    }
-    for (int i = 0; i < this->numChildProcessors(); ++i) {
-        if (!this->childProcessor(i).isEqual(that.childProcessor(i), ignoreCoordTransforms)) {
-            return false;
-        }
-    }
-    return true;
-}
-
-GrGLFragmentProcessor* GrFragmentProcessor::createGLInstance() const {
-    GrGLFragmentProcessor* glFragProc = this->onCreateGLInstance();
-    glFragProc->fChildProcessors.push_back_n(fChildProcessors.count());
-    for (int i = 0; i < fChildProcessors.count(); ++i) {
-        glFragProc->fChildProcessors[i] = fChildProcessors[i].processor()->createGLInstance();
-    }
-    return glFragProc;
-}
-
-void GrFragmentProcessor::addTextureAccess(const GrTextureAccess* textureAccess) {
-    // Can't add texture accesses after registering any children since their texture accesses have
-    // already been bubbled up into our fTextureAccesses array
-    SkASSERT(fChildProcessors.empty());
-
-    INHERITED::addTextureAccess(textureAccess);
-    fNumTexturesExclChildren++;
-}
-
-void GrFragmentProcessor::addCoordTransform(const GrCoordTransform* transform) {
-    // Can't add transforms after registering any children since their transforms have already been
-    // bubbled up into our fCoordTransforms array
-    SkASSERT(fChildProcessors.empty());
-
-    fCoordTransforms.push_back(transform);
-    fUsesLocalCoords = fUsesLocalCoords || transform->sourceCoords() == kLocal_GrCoordSet;
-    SkDEBUGCODE(transform->setInProcessor();)
-    fNumTransformsExclChildren++;
-}
-
-int GrFragmentProcessor::registerChildProcessor(const GrFragmentProcessor* child) {
-    // Append the child's transforms to our transforms array and the child's textures array to our
-    // textures array
-    if (!child->fCoordTransforms.empty()) {
-        fCoordTransforms.push_back_n(child->fCoordTransforms.count(),
-                                     child->fCoordTransforms.begin());
-    }
-    if (!child->fTextureAccesses.empty()) {
-        fTextureAccesses.push_back_n(child->fTextureAccesses.count(),
-                                     child->fTextureAccesses.begin());
-    }
-
-    int index = fChildProcessors.count();
-    fChildProcessors.push_back(GrFragmentStage(child));
-
-    if (child->willReadFragmentPosition()) {
-        this->setWillReadFragmentPosition();
-    }
-
-    return index;
-}
-
-bool GrFragmentProcessor::hasSameTransforms(const GrFragmentProcessor& that) const {
-    if (this->numTransforms() != that.numTransforms()) {
-        return false;
-    }
-    int count = this->numTransforms();
-    for (int i = 0; i < count; ++i) {
-        if (this->coordTransform(i) != that.coordTransform(i)) {
-            return false;
-        }
-    }
-    return true;
-}
-
-void GrFragmentProcessor::computeInvariantOutput(GrInvariantOutput* inout) const {
-    this->onComputeInvariantOutput(inout);
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-
 // Initial static variable from GrXPFactory
 int32_t GrXPFactory::gCurrXPFClassID =
         GrXPFactory::kIllegalXPFClassID;
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-
-// GrProcessorDataManager lives in the same pool
-void* GrProcessorDataManager::operator new(size_t size) {
-    return MemoryPoolAccessor().pool()->allocate(size);
-}
-
-void GrProcessorDataManager::operator delete(void* target) {
-    return MemoryPoolAccessor().pool()->release(target);
-}

@@ -44,28 +44,19 @@ WebInspector.ElementsPanel = function()
     this._splitWidget.show(this.element);
 
     this._searchableView = new WebInspector.SearchableView(this);
-    this._searchableView.setMinimumSize(25, 19);
+    this._searchableView.setMinimumSize(25, 28);
     this._searchableView.setPlaceholder(WebInspector.UIString("Find by string, selector, or XPath"));
     var stackElement = this._searchableView.element;
 
     this._contentElement = createElement("div");
     var crumbsContainer = createElement("div");
-    this._showLayoutEditor = false;
-    if (Runtime.experiments.isEnabled("materialDesign")) {
-        this._toolbar = this._createElementsToolbar();
-        var toolbar = stackElement.createChild("div", "elements-topbar hbox");
-        toolbar.appendChild(this._toolbar.element);
-        toolbar.appendChild(crumbsContainer);
-        stackElement.appendChild(this._contentElement);
-    } else {
-        stackElement.appendChild(this._contentElement);
-        stackElement.appendChild(crumbsContainer);
-    }
+    stackElement.appendChild(this._contentElement);
+    stackElement.appendChild(crumbsContainer);
 
-    this._elementsPanelTreeOutilneSplit = new WebInspector.SplitWidget(false, true, "treeOutlineAnimationTimelineWidget", 300, 300);
-    this._elementsPanelTreeOutilneSplit.hideSidebar();
-    this._elementsPanelTreeOutilneSplit.setMainWidget(this._searchableView);
-    this._splitWidget.setMainWidget(this._elementsPanelTreeOutilneSplit);
+    this._treeOutlineSplit = new WebInspector.SplitWidget(false, true, "treeOutlineAnimationTimelineWidget", 300, 300);
+    this._treeOutlineSplit.hideSidebar();
+    this._treeOutlineSplit.setMainWidget(this._searchableView);
+    this._splitWidget.setMainWidget(this._treeOutlineSplit);
 
     this._contentElement.id = "elements-content";
     // FIXME: crbug.com/425984
@@ -83,7 +74,7 @@ WebInspector.ElementsPanel = function()
     this._elementsSidebarViewWrappers = [];
     var sharedSidebarModel = new WebInspector.SharedSidebarModel();
     this.sidebarPanes.platformFonts = WebInspector.PlatformFontsWidget.createSidebarWrapper(sharedSidebarModel);
-    this.sidebarPanes.styles = new WebInspector.StylesSidebarPane(this._showStylesSidebar.bind(this));
+    this.sidebarPanes.styles = new WebInspector.StylesSidebarPane();
 
     this.sidebarPanes.computedStyle = WebInspector.ComputedStyleWidget.createSidebarWrapper(this.sidebarPanes.styles, sharedSidebarModel);
 
@@ -106,45 +97,12 @@ WebInspector.ElementsPanel = function()
     WebInspector.targetManager.observeTargets(this);
     WebInspector.moduleSetting("showUAShadowDOM").addChangeListener(this._showUAShadowDOMChanged.bind(this));
     WebInspector.targetManager.addModelListener(WebInspector.DOMModel, WebInspector.DOMModel.Events.DocumentUpdated, this._documentUpdatedEvent, this);
-    if (Runtime.experiments.isEnabled("materialDesign"))
-        WebInspector.targetManager.addModelListener(WebInspector.DOMModel, WebInspector.DOMModel.Events.MarkersChanged, this._updateToolbarButtons, this);
     WebInspector.extensionServer.addEventListener(WebInspector.ExtensionServer.Events.SidebarPaneAdded, this._extensionSidebarPaneAdded, this);
 }
 
 WebInspector.ElementsPanel._elementsSidebarViewTitleSymbol = Symbol("title");
 
 WebInspector.ElementsPanel.prototype = {
-    /**
-     * @return {!WebInspector.Toolbar}
-     */
-    _createElementsToolbar: function()
-    {
-        var toolbar = new WebInspector.ExtensibleToolbar("elements-toolbar");
-        toolbar.element.classList.add("elements-toolbar");
-        this._hideElementButton = new WebInspector.ToolbarButton(WebInspector.UIString("Hide element"), "visibility-off-toolbar-item");
-        this._hideElementButton.setAction("elements.hide-element");
-        toolbar.appendToolbarItem(this._hideElementButton);
-
-        this._editAsHTMLButton = new WebInspector.ToolbarButton(WebInspector.UIString("Edit as HTML"), "edit-toolbar-item");
-        this._editAsHTMLButton.setAction("elements.edit-as-html");
-        toolbar.appendToolbarItem(this._editAsHTMLButton);
-        toolbar.appendSeparator();
-
-        this._forceElementStateButton = new WebInspector.ToolbarMenuButton(WebInspector.UIString("Force element state"), "pin-toolbar-item", this._showForceElementStateMenu.bind(this));
-        toolbar.appendToolbarItem(this._forceElementStateButton);
-        this._breakpointsButton = new WebInspector.ToolbarMenuButton(WebInspector.UIString("Toggle breakpoints"), "add-breakpoint-toolbar-item", this._showBreakpointsMenu.bind(this));
-        toolbar.appendToolbarItem(this._breakpointsButton);
-
-        toolbar.appendSeparator();
-        if (Runtime.experiments.isEnabled("layoutEditor") && !Runtime.queryParam("remoteFrontend")) {
-            this._layoutEditorButton = new WebInspector.ToolbarButton(WebInspector.UIString("Toggle Layout Editor"), "layout-editor-toolbar-item");
-            toolbar.appendToolbarItem(this._layoutEditorButton);
-            this._layoutEditorButton.addEventListener("click", this._toggleLayoutEditor, this);
-            toolbar.appendSeparator();
-        }
-        return toolbar;
-    },
-
     _toggleHideElement: function()
     {
         var node = this.selectedDOMNode();
@@ -154,58 +112,13 @@ WebInspector.ElementsPanel.prototype = {
         treeOutline.toggleHideElement(node);
     },
 
-    _updateToolbarButtons: function()
-    {
-        if (!Runtime.experiments.isEnabled("materialDesign"))
-            return;
-        var node = this.selectedDOMNode();
-        if (!node)
-            return;
-        var classText = node.getAttribute("class");
-        var treeOutline = this._treeOutlineForNode(node);
-        this._hideElementButton.setToggled(treeOutline && treeOutline.isToggledToHidden(node));
-        this._editAsHTMLButton.setToggled(false);
-        this._breakpointsButton.setEnabled(!node.pseudoType());
-        this._breakpointsButton.setToggled(WebInspector.domBreakpointsSidebarPane.hasBreakpoints(node));
-        this._forceElementStateButton.setEnabled(node.nodeType() === Node.ELEMENT_NODE && !node.pseudoType());
-        this._forceElementStateButton.setToggled(!!WebInspector.CSSStyleModel.fromNode(node).pseudoState(node).length);
-    },
-
     _toggleEditAsHTML: function()
     {
         var node = this.selectedDOMNode();
         var treeOutline = this._treeOutlineForNode(node);
         if (!node || !treeOutline)
             return;
-
-        var startEditing = true;
-        if (Runtime.experiments.isEnabled("materialDesign")) {
-            startEditing = !this._editAsHTMLButton.toggled();
-            this._editAsHTMLButton.setToggled(startEditing);
-        }
-        treeOutline.toggleEditAsHTML(node, startEditing, this._updateToolbarButtons.bind(this));
-    },
-
-    /**
-     * @param {!WebInspector.ContextMenu} contextMenu
-     */
-    _showBreakpointsMenu: function(contextMenu)
-    {
-        var node = this.selectedDOMNode();
-        if (!node)
-            return;
-        WebInspector.domBreakpointsSidebarPane.populateNodeContextMenu(node, contextMenu, false);
-    },
-
-    /**
-     * @param {!WebInspector.ContextMenu} contextMenu
-     */
-    _showForceElementStateMenu: function(contextMenu)
-    {
-        var node = this.selectedDOMNode();
-        if (!node)
-            return;
-        WebInspector.ElementsTreeElement.populateForcedPseudoStateItems(contextMenu, node);
+        treeOutline.toggleEditAsHTML(node);
     },
 
     _loadSidebarViews: function()
@@ -271,8 +184,6 @@ WebInspector.ElementsPanel.prototype = {
         if (this.isShowing())
             this.wasShown();
 
-        if (this._showLayoutEditor)
-            domModel.setHighlighter(new WebInspector.ElementsPanel.LayoutEditorNodeHighlighter(target, treeOutline));
     },
 
     /**
@@ -288,8 +199,6 @@ WebInspector.ElementsPanel.prototype = {
         treeOutline.unwireFromDOMModel();
         this._treeOutlines.remove(treeOutline);
         treeOutline.element.remove();
-        if (this._showLayoutEditor)
-            domModel.setHighlighter(null);
     },
 
     _updateTreeOutlineVisibleWidth: function()
@@ -405,8 +314,6 @@ WebInspector.ElementsPanel.prototype = {
         }
         WebInspector.notifications.dispatchEventToListeners(WebInspector.NotificationService.Events.SelectedNodeChanged);
         this._selectedNodeChangedForTest();
-        if (Runtime.experiments.isEnabled("materialDesign"))
-            this._updateToolbarButtons();
     },
 
     _selectedNodeChangedForTest: function() { },
@@ -884,17 +791,15 @@ WebInspector.ElementsPanel.prototype = {
      */
     revealAndSelectNode: function(node)
     {
-        if (WebInspector.inspectElementModeController && WebInspector.inspectElementModeController.enabled()) {
-            InspectorFrontendHost.bringToFront();
-            WebInspector.inspectElementModeController.disable();
-        }
+        if (WebInspector.inspectElementModeController && WebInspector.inspectElementModeController.isInInspectElementMode())
+            WebInspector.inspectElementModeController.stopInspection();
 
         this._omitDefaultSelection = true;
-        WebInspector.inspectorView.setCurrentPanel(this);
+
+        var showLayoutEditor = !!WebInspector.inspectElementModeController && WebInspector.inspectElementModeController.isInLayoutEditorMode();
+        WebInspector.inspectorView.setCurrentPanel(this, showLayoutEditor);
         node = WebInspector.moduleSetting("showUAShadowDOM").get() ? node : this._leaveUserAgentShadowDOM(node);
-        if (this._showLayoutEditor)
-            node.highlight();
-        else
+        if (!showLayoutEditor)
             node.highlightForTwoSeconds();
 
         this.selectDOMNode(node, true);
@@ -945,11 +850,6 @@ WebInspector.ElementsPanel.prototype = {
             this._treeOutlines[i].update();
     },
 
-    _showStylesSidebar: function()
-    {
-        this.sidebarPaneView.selectTab(this.sidebarPanes.styles.title());
-    },
-
     _updateSidebarPosition: function()
     {
         var vertically;
@@ -966,6 +866,8 @@ WebInspector.ElementsPanel.prototype = {
 
         if (this.sidebarPaneView && this.sidebarPaneView.shouldHideOnDetach())
             return; // We can't reparent extension iframes.
+
+        var selectedTabId = this.sidebarPaneView ? this.sidebarPaneView.selectedTabId : null;
 
         var extensionSidebarPanes = WebInspector.extensionServer.sidebarPanes();
         if (this.sidebarPaneView) {
@@ -1065,6 +967,9 @@ WebInspector.ElementsPanel.prototype = {
 
         this._splitWidget.setSidebarWidget(this.sidebarPaneView);
         this.sidebarPanes.styles.expand();
+
+        if (selectedTabId)
+            this.sidebarPaneView.selectTab(selectedTabId);
     },
 
     /**
@@ -1091,34 +996,11 @@ WebInspector.ElementsPanel.prototype = {
     setWidgetBelowDOM: function(widget)
     {
         if (widget) {
-            this._elementsPanelTreeOutilneSplit.setSidebarWidget(widget);
-            this._elementsPanelTreeOutilneSplit.showBoth(true);
+            this._treeOutlineSplit.setSidebarWidget(widget);
+            this._treeOutlineSplit.showBoth(true);
         } else {
-            this._elementsPanelTreeOutilneSplit.hideSidebar(true);
+            this._treeOutlineSplit.hideSidebar(true);
         }
-    },
-
-    _toggleLayoutEditor: function()
-    {
-        this._showLayoutEditor = !this._showLayoutEditor;
-        this._layoutEditorButton.setToggled(this._showLayoutEditor);
-        var targets = WebInspector.targetManager.targets();
-        for (var target of targets) {
-            var domModel = WebInspector.DOMModel.fromTarget(target);
-            if (!domModel)
-                continue;
-
-            var treeOutline = /** @type {!WebInspector.ElementsTreeOutline} */(this._modelToTreeOutline.get(domModel));
-            if (this._showLayoutEditor)
-                domModel.setHighlighter(new WebInspector.ElementsPanel.LayoutEditorNodeHighlighter(target, treeOutline));
-            else
-                domModel.setHighlighter(null);
-
-            // We need to correct (turn on/off layout editor) the config which is used by inspect element mode, so we re-enable it.
-            if (WebInspector.inspectElementModeController && WebInspector.inspectElementModeController.enabled())
-                domModel.setInspectModeEnabled(true, WebInspector.moduleSetting("showUAShadowDOM").get());
-        }
-        WebInspector.DOMModel.hideDOMNodeHighlight();
     },
 
     __proto__: WebInspector.Panel.prototype
@@ -1279,77 +1161,4 @@ WebInspector.ElementsPanel.PseudoStateMarkerDecorator.prototype = {
     {
         return { color: "orange", title: WebInspector.UIString("Element state: %s", ":" + WebInspector.CSSStyleModel.fromNode(node).pseudoState(node).join(", :")) };
     }
-}
-
-/**
- * @constructor
- * @implements {WebInspector.DOMPresentationUtils.MarkerDecorator}
- */
-WebInspector.ElementsPanel.HiddenMarkerDecorator = function()
-{
-}
-
-WebInspector.ElementsPanel.HiddenMarkerDecorator.prototype = {
-    /**
-     * @override
-     * @param {!WebInspector.DOMNode} node
-     * @return {?{title: string, color: string}}
-     */
-    decorate: function(node)
-    {
-        return { color: "#555", title: WebInspector.UIString("Element is hidden") };
-    }
-}
-
-/**
- * @constructor
- * @extends {WebInspector.DefaultDOMNodeHighlighter}
- * @param {!WebInspector.Target} target
- * @param {!WebInspector.ElementsTreeOutline} treeOutline
- */
-WebInspector.ElementsPanel.LayoutEditorNodeHighlighter = function(target, treeOutline)
-{
-    WebInspector.DefaultDOMNodeHighlighter.call(this, target.domAgent());
-    this._treeOutline = treeOutline;
-}
-
-WebInspector.ElementsPanel.LayoutEditorNodeHighlighter.prototype = {
-    /**
-     * @override
-     * @param {?WebInspector.DOMNode} node
-     * @param {!DOMAgent.HighlightConfig} config
-     * @param {!DOMAgent.BackendNodeId=} backendNodeId
-     * @param {!RuntimeAgent.RemoteObjectId=} objectId
-     */
-    highlightDOMNode: function(node, config, backendNodeId, objectId)
-    {
-        config.showLayoutEditor = config.showInfo;
-        var selectedNode = this._treeOutline.selectedDOMNode();
-        if (objectId || node || backendNodeId || !selectedNode)
-            WebInspector.DefaultDOMNodeHighlighter.prototype.highlightDOMNode.call(this, node, config, backendNodeId, objectId);
-        else
-            WebInspector.DefaultDOMNodeHighlighter.prototype.highlightDOMNode.call(this, selectedNode, config);
-    },
-
-    /**
-     * @override
-     * @param {boolean} enabled
-     * @param {boolean} inspectUAShadowDOM
-     * @param {!DOMAgent.HighlightConfig} config
-     * @param {function(?Protocol.Error)=} callback
-     */
-    setInspectModeEnabled: function(enabled, inspectUAShadowDOM, config, callback)
-    {
-        config.showLayoutEditor = config.showInfo;
-        WebInspector.DefaultDOMNodeHighlighter.prototype.setInspectModeEnabled.call(this, enabled, inspectUAShadowDOM, config, callback);
-
-        if (enabled)
-            return;
-
-        var selectedNode = this._treeOutline.selectedDOMNode();
-        if (selectedNode)
-            WebInspector.DefaultDOMNodeHighlighter.prototype.highlightDOMNode.call(this, selectedNode, config);
-    },
-
-    __proto__: WebInspector.DefaultDOMNodeHighlighter.prototype
 }

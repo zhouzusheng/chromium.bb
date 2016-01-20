@@ -35,7 +35,7 @@ namespace blink {
 class Event;
 class TextTrackContainer;
 
-class MediaControls final : public HTMLDivElement {
+class CORE_EXPORT MediaControls final : public HTMLDivElement {
 public:
     static PassRefPtrWillBeRawPtr<MediaControls> create(HTMLMediaElement&);
 
@@ -108,10 +108,6 @@ private:
     void startHideMediaControlsTimer();
     void stopHideMediaControlsTimer();
     void resetHideMediaControlsTimer();
-
-    // Attempts to show the overlay cast button. If it is covered by another
-    // element in the page, it will be hidden.
-    void tryShowOverlayCastButton();
 
     void panelWidthChangedTimerFired(Timer<MediaControls>*);
 

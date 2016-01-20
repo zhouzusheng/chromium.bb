@@ -19,7 +19,7 @@ namespace SkRecords {
 template <typename T>
 class Is {
 public:
-    Is() : fPtr(NULL) {}
+    Is() : fPtr(nullptr) {}
 
     typedef T type;
     type* get() { return fPtr; }
@@ -31,7 +31,7 @@ public:
 
     template <typename U>
     bool operator()(U*) {
-        fPtr = NULL;
+        fPtr = nullptr;
         return false;
     }
 
@@ -41,28 +41,27 @@ private:
 
 // Matches any command that draws, and stores its paint.
 class IsDraw {
-    SK_CREATE_MEMBER_DETECTOR(paint);
 public:
-    IsDraw() : fPaint(NULL) {}
+    IsDraw() : fPaint(nullptr) {}
 
     typedef SkPaint type;
     type* get() { return fPaint; }
 
     template <typename T>
-    SK_WHEN(HasMember_paint<T>, bool) operator()(T* draw) {
+    SK_WHEN(T::kTags & kDraw_Tag, bool) operator()(T* draw) {
         fPaint = AsPtr(draw->paint);
         return true;
     }
 
-    template <typename T>
-    SK_WHEN(!HasMember_paint<T>, bool) operator()(T*) {
-        fPaint = NULL;
-        return false;
+    bool operator()(DrawDrawable*) {
+        static_assert(DrawDrawable::kTags & kDraw_Tag, "");
+        fPaint = nullptr;
+        return true;
     }
 
-    // SaveLayer has an SkPaint named paint, but it's not a draw.
-    bool operator()(SaveLayer*) {
-        fPaint = NULL;
+    template <typename T>
+    SK_WHEN(!(T::kTags & kDraw_Tag), bool) operator()(T* draw) {
+        fPaint = nullptr;
         return false;
     }
 

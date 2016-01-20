@@ -56,6 +56,7 @@
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/MixedContentChecker.h"
+#include "core/loader/NavigationScheduler.h"
 #include "platform/UserGestureIndicator.h"
 #include "wtf/text/AtomicString.h"
 #include <limits>
@@ -835,12 +836,14 @@ void HTMLFormElement::anonymousNamedGetter(const AtomicString& name, RadioNodeLi
     getNamedElements(name, elements);
     ASSERT(!elements.isEmpty());
 
+    bool onlyMatchImg = !elements.isEmpty() && isHTMLImageElement(*elements.first());
+    if (onlyMatchImg)
+        UseCounter::count(document(), UseCounter::FormNameAccessForImageElement);
     if (elements.size() == 1) {
         returnValue.setElement(elements.at(0));
         return;
     }
 
-    bool onlyMatchImg = !elements.isEmpty() && isHTMLImageElement(*elements.first());
     returnValue.setRadioNodeList(radioNodeList(name, onlyMatchImg));
 }
 

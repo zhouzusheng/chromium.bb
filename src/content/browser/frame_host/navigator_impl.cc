@@ -159,7 +159,7 @@ void NavigatorImpl::DidStartProvisionalLoad(
   }
 
   render_frame_host->SetNavigationHandle(
-      NavigationHandleImpl::Create(url, is_main_frame, delegate_));
+      NavigationHandleImpl::Create(validated_url, is_main_frame, delegate_));
 }
 
 void NavigatorImpl::DidFailProvisionalLoadWithError(
@@ -397,6 +397,8 @@ void NavigatorImpl::DidNavigate(
   FrameTree* frame_tree = render_frame_host->frame_tree_node()->frame_tree();
   bool oopifs_possible = SiteIsolationPolicy::AreCrossProcessFramesPossible();
 
+  bool is_navigation_within_page = controller_->IsURLInPageNavigation(
+      params.url, params.was_within_same_page, render_frame_host);
   if (ui::PageTransitionIsMainFrame(params.transition)) {
     if (delegate_) {
       // When overscroll navigation gesture is enabled, a screenshot of the page
@@ -415,8 +417,6 @@ void NavigatorImpl::DidNavigate(
       }
 
       // Run tasks that must execute just before the commit.
-      bool is_navigation_within_page = controller_->IsURLInPageNavigation(
-          params.url, params.was_within_same_page, render_frame_host);
       delegate_->DidNavigateMainFramePreCommit(is_navigation_within_page);
     }
 
@@ -492,7 +492,9 @@ void NavigatorImpl::DidNavigate(
     delegate_->DidCommitProvisionalLoad(render_frame_host,
                                         params.url,
                                         transition_type);
-    render_frame_host->navigation_handle()->DidCommitNavigation();
+    render_frame_host->navigation_handle()->DidCommitNavigation(
+        is_navigation_within_page, render_frame_host);
+    render_frame_host->SetNavigationHandle(nullptr);
   }
 
   if (!did_navigate)

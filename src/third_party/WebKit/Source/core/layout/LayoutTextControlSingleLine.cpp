@@ -33,9 +33,9 @@
 #include "core/layout/HitTestResult.h"
 #include "core/layout/LayoutAnalyzer.h"
 #include "core/layout/LayoutTheme.h"
-#include "core/paint/DeprecatedPaintLayer.h"
 #include "core/paint/LayoutObjectDrawingRecorder.h"
 #include "core/paint/PaintInfo.h"
+#include "core/paint/PaintLayer.h"
 #include "core/paint/ThemePainter.h"
 #include "platform/PlatformKeyboardEvent.h"
 #include "platform/fonts/SimpleFontData.h"
@@ -70,12 +70,12 @@ inline HTMLElement* LayoutTextControlSingleLine::innerSpinButtonElement() const
     return toHTMLElement(inputElement()->userAgentShadowRoot()->getElementById(ShadowElementNames::spinButton()));
 }
 
-void LayoutTextControlSingleLine::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void LayoutTextControlSingleLine::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset) const
 {
     LayoutTextControl::paint(paintInfo, paintOffset);
 
     if (paintInfo.phase == PaintPhaseBlockBackground && m_shouldDrawCapsLockIndicator) {
-        if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, *this, paintInfo.phase))
+        if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*paintInfo.context, *this, paintInfo.phase, paintOffset))
             return;
 
         LayoutRect contentsRect = contentBoxRect();
@@ -89,8 +89,8 @@ void LayoutTextControlSingleLine::paint(const PaintInfo& paintInfo, const Layout
         // Convert the rect into the coords used for painting the content
         contentsRect.moveBy(paintOffset + location());
         IntRect snappedRect = pixelSnappedIntRect(contentsRect);
-        LayoutObjectDrawingRecorder recorder(*paintInfo.context, *this, paintInfo.phase, snappedRect);
-        LayoutTheme::theme().painter().paintCapsLockIndicator(this, paintInfo, snappedRect);
+        LayoutObjectDrawingRecorder recorder(*paintInfo.context, *this, paintInfo.phase, snappedRect, paintOffset);
+        LayoutTheme::theme().painter().paintCapsLockIndicator(*this, paintInfo, snappedRect);
     }
 }
 
@@ -398,10 +398,7 @@ LayoutUnit LayoutTextControlSingleLine::scrollWidth() const
         // Adjust scrollWidth to inculde input element horizontal paddings and
         // decoration width
         LayoutUnit adjustment = clientWidth() - inner->clientWidth();
-        // TODO(leviw): We floor to avoid breaking JS that tries to scroll to
-        // scrollWidth - clientWidth.
-        // TODO(leviw): These values are broken when zooming. crbug.com/471412
-        return inner->scrollWidth().floor() + adjustment;
+        return inner->scrollWidth() + adjustment;
     }
     return LayoutBlockFlow::scrollWidth();
 }
@@ -412,10 +409,7 @@ LayoutUnit LayoutTextControlSingleLine::scrollHeight() const
         // Adjust scrollHeight to include input element vertical paddings and
         // decoration height
         LayoutUnit adjustment = clientHeight() - inner->clientHeight();
-        // TODO(leviw): We floor to avoid breaking JS that tries to scroll to
-        // scrollHeight - clientHeight.
-        // TODO(leviw): These values are broken when zooming. crbug.com/471412
-        return inner->scrollHeight().floor() + adjustment;
+        return inner->scrollHeight() + adjustment;
     }
     return LayoutBlockFlow::scrollHeight();
 }

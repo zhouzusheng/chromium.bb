@@ -46,7 +46,7 @@ class CONTENT_EXPORT MediaStreamVideoTrack : public MediaStreamTrack {
       const blink::WebMediaConstraints& constraints,
       const MediaStreamVideoSource::ConstraintsCallback& callback,
       bool enabled);
-  virtual ~MediaStreamVideoTrack();
+  ~MediaStreamVideoTrack() override;
 
   void SetEnabled(bool enabled) override;
 
@@ -62,7 +62,7 @@ class CONTENT_EXPORT MediaStreamVideoTrack : public MediaStreamTrack {
   friend class MediaStreamVideoSink;
   FRIEND_TEST_ALL_PREFIXES(MediaStreamRemoteVideoSourceTest, StartTrack);
   FRIEND_TEST_ALL_PREFIXES(MediaStreamRemoteVideoSourceTest, RemoteTrackStop);
-  FRIEND_TEST_ALL_PREFIXES(VideoDestinationHandlerTest, PutFrame);
+  FRIEND_TEST_ALL_PREFIXES(PepperToVideoTrackAdapterTest, PutFrame);
 
   // Add |sink| to receive state changes on the main render thread and video
   // frames in the |callback| method on the IO-thread.

@@ -121,7 +121,7 @@ typedef std::map<std::string, ui::TextInputMode> TextInputModeMap;
 class TextInputModeMapSingleton {
  public:
   static TextInputModeMapSingleton* GetInstance() {
-    return Singleton<TextInputModeMapSingleton>::get();
+    return base::Singleton<TextInputModeMapSingleton>::get();
   }
   TextInputModeMapSingleton() {
     map_["verbatim"] = ui::TEXT_INPUT_MODE_VERBATIM;
@@ -140,7 +140,7 @@ class TextInputModeMapSingleton {
  private:
   TextInputModeMap map_;
 
-  friend struct DefaultSingletonTraits<TextInputModeMapSingleton>;
+  friend struct base::DefaultSingletonTraits<TextInputModeMapSingleton>;
 
   DISALLOW_COPY_AND_ASSIGN(TextInputModeMapSingleton);
 };
@@ -414,8 +414,8 @@ void RenderWidget::ScreenMetricsEmulator::Apply(
   widget_->SetDeviceScaleFactor(applied_device_scale_factor);
   widget_->view_screen_rect_ = applied_widget_rect_;
 
-  gfx::Size physical_backing_size = gfx::ToCeiledSize(gfx::ScaleSize(
-      original_size_, original_screen_info_.deviceScaleFactor));
+  gfx::Size physical_backing_size = gfx::ScaleToCeiledSize(
+      original_size_, original_screen_info_.deviceScaleFactor);
   widget_->Resize(applied_widget_rect_.size(),
                   physical_backing_size,
                   top_controls_shrink_blink_size,
@@ -467,7 +467,7 @@ void RenderWidget::ScreenMetricsEmulator::OnShowContextMenu(
 
 gfx::Rect RenderWidget::ScreenMetricsEmulator::AdjustValidationMessageAnchor(
     const gfx::Rect& anchor) {
-  gfx::Rect scaled = gfx::ToEnclosedRect(gfx::ScaleRect(anchor, scale_));
+  gfx::Rect scaled = gfx::ScaleToEnclosedRect(anchor, scale_);
   scaled.set_x(scaled.x() + offset_.x());
   scaled.set_y(scaled.y() + offset_.y());
   return scaled;
@@ -482,11 +482,9 @@ RenderWidget::RenderWidget(CompositorDependencies* compositor_deps,
                            bool hidden,
                            bool never_visible)
     : routing_id_(MSG_ROUTING_NONE),
-      surface_id_(0),
       compositor_deps_(compositor_deps),
       webwidget_(nullptr),
       opener_id_(MSG_ROUTING_NONE),
-      init_complete_(false),
       top_controls_shrink_blink_size_(false),
       top_controls_height_(0.f),
       next_paint_flags_(0),
@@ -519,7 +517,6 @@ RenderWidget::RenderWidget(CompositorDependencies* compositor_deps,
       next_output_surface_id_(0),
 #if defined(OS_ANDROID)
       text_field_is_dirty_(false),
-      body_background_color_(SK_ColorWHITE),
 #endif
       popup_origin_scale_for_emulation_(0.f),
       frame_swap_message_queue_(new FrameSwapMessageQueue()),
@@ -560,7 +557,6 @@ RenderWidget* RenderWidget::Create(int32 opener_id,
 // static
 RenderWidget* RenderWidget::CreateForFrame(
     int routing_id,
-    int surface_id,
     bool hidden,
     const blink::WebScreenInfo& screen_info,
     CompositorDependencies* compositor_deps,
@@ -570,14 +566,12 @@ RenderWidget* RenderWidget::CreateForFrame(
       new RenderWidget(compositor_deps, blink::WebPopupTypeNone, screen_info,
                        false, hidden, false));
   widget->routing_id_ = routing_id;
-  widget->surface_id_ = surface_id;
   widget->for_oopif_ = true;
   // DoInit increments the reference count on |widget|, keeping it alive after
   // this function returns.
   if (widget->DoInit(MSG_ROUTING_NONE,
                      RenderWidget::CreateWebFrameWidget(widget.get(), frame),
                      nullptr)) {
-    widget->CompleteInit();
     return widget.get();
   }
   return nullptr;
@@ -608,9 +602,9 @@ void RenderWidget::CloseForFrame() {
 }
 
 bool RenderWidget::Init(int32 opener_id) {
-  return DoInit(opener_id, RenderWidget::CreateWebWidget(this),
-                new ViewHostMsg_CreateWidget(opener_id, popup_type_,
-                                             &routing_id_, &surface_id_));
+  return DoInit(
+      opener_id, RenderWidget::CreateWebWidget(this),
+      new ViewHostMsg_CreateWidget(opener_id, popup_type_, &routing_id_));
 }
 
 bool RenderWidget::DoInit(int32 opener_id,
@@ -642,18 +636,6 @@ bool RenderWidget::DoInit(int32 opener_id,
     // The above Send can fail when the tab is closing.
     return false;
   }
-}
-
-// This is used to complete pending inits and non-pending inits.
-void RenderWidget::CompleteInit() {
-  DCHECK(routing_id_ != MSG_ROUTING_NONE);
-
-  init_complete_ = true;
-
-  if (compositor_)
-    StartCompositor();
-
-  Send(new ViewHostMsg_RenderViewReady(routing_id_));
 }
 
 void RenderWidget::SetSwappedOut(bool is_swapped_out) {
@@ -727,7 +709,6 @@ bool RenderWidget::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(InputMsg_SyntheticGestureCompleted,
                         OnSyntheticGestureCompleted)
     IPC_MESSAGE_HANDLER(ViewMsg_Close, OnClose)
-    IPC_MESSAGE_HANDLER(ViewMsg_CreatingNew_ACK, OnCreatingNewAck)
     IPC_MESSAGE_HANDLER(ViewMsg_Resize, OnResize)
     IPC_MESSAGE_HANDLER(ViewMsg_EnableDeviceEmulation,
                         OnEnableDeviceEmulation)
@@ -889,14 +870,6 @@ void RenderWidget::OnClose() {
   Release();
 }
 
-// Got a response from the browser after the renderer decided to create a new
-// view.
-void RenderWidget::OnCreatingNewAck() {
-  DCHECK(routing_id_ != MSG_ROUTING_NONE);
-
-  CompleteInit();
-}
-
 void RenderWidget::OnResize(const ViewMsg_Resize_Params& params) {
   if (resizing_mode_selector_->ShouldAbortOnResize(this, params))
     return;
@@ -999,7 +972,7 @@ scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface(bool fallback) {
 #if defined(OS_ANDROID)
   if (SynchronousCompositorFactory* factory =
       SynchronousCompositorFactory::GetInstance()) {
-    return factory->CreateOutputSurface(routing_id(), surface_id(),
+    return factory->CreateOutputSurface(routing_id(),
                                         frame_swap_message_queue_);
   }
 #endif
@@ -1017,51 +990,40 @@ scoped_ptr<cc::OutputSurface> RenderWidget::CreateOutputSurface(bool fallback) {
         CreateGraphicsContext3D(true), RENDER_COMPOSITOR_CONTEXT);
     if (!context_provider.get()) {
       // Cause the compositor to wait and try again.
-      return scoped_ptr<cc::OutputSurface>();
+      return nullptr;
     }
-
-    worker_context_provider = ContextProviderCommandBuffer::Create(
-        CreateGraphicsContext3D(false), RENDER_WORKER_CONTEXT);
-    if (!worker_context_provider.get()) {
+    worker_context_provider =
+        RenderThreadImpl::current()->SharedWorkerContextProvider();
+    if (!worker_context_provider) {
       // Cause the compositor to wait and try again.
-      return scoped_ptr<cc::OutputSurface>();
+      return nullptr;
     }
   }
 
   uint32 output_surface_id = next_output_surface_id_++;
-  if (command_line.HasSwitch(switches::kEnableDelegatedRenderer)) {
+  // Composite-to-mailbox is currently used for layout tests in order to cause
+  // them to draw inside in the renderer to do the readback there. This should
+  // no longer be the case when crbug.com/311404 is fixed.
+  if (!RenderThreadImpl::current() ||
+      !RenderThreadImpl::current()->layout_test_mode()) {
     DCHECK(compositor_deps_->GetCompositorImplThreadTaskRunner());
-    return scoped_ptr<cc::OutputSurface>(new DelegatedCompositorOutputSurface(
+    return make_scoped_ptr(new DelegatedCompositorOutputSurface(
         routing_id(), output_surface_id, context_provider,
         worker_context_provider, frame_swap_message_queue_));
   }
+
   if (!context_provider.get()) {
     scoped_ptr<cc::SoftwareOutputDevice> software_device(
         new cc::SoftwareOutputDevice());
 
-    return scoped_ptr<cc::OutputSurface>(new CompositorOutputSurface(
+    return make_scoped_ptr(new CompositorOutputSurface(
         routing_id(), output_surface_id, nullptr, nullptr,
         software_device.Pass(), frame_swap_message_queue_, true));
   }
 
-  if (command_line.HasSwitch(cc::switches::kCompositeToMailbox)) {
-    // Composite-to-mailbox is currently used for layout tests in order to cause
-    // them to draw inside in the renderer to do the readback there. This should
-    // no longer be the case when crbug.com/311404 is fixed.
-    DCHECK(RenderThreadImpl::current()->layout_test_mode());
-    cc::ResourceFormat format = cc::RGBA_8888;
-    if (base::SysInfo::IsLowEndDevice())
-      format = cc::RGB_565;
-    return scoped_ptr<cc::OutputSurface>(new MailboxOutputSurface(
-        routing_id(), output_surface_id, context_provider,
-        worker_context_provider, scoped_ptr<cc::SoftwareOutputDevice>(),
-        frame_swap_message_queue_, format));
-  }
-  bool use_swap_compositor_frame_message = false;
-  return scoped_ptr<cc::OutputSurface>(new CompositorOutputSurface(
+  return make_scoped_ptr(new MailboxOutputSurface(
       routing_id(), output_surface_id, context_provider,
-      worker_context_provider, scoped_ptr<cc::SoftwareOutputDevice>(),
-      frame_swap_message_queue_, use_swap_compositor_frame_message));
+      worker_context_provider, frame_swap_message_queue_, cc::RGBA_8888));
 }
 
 void RenderWidget::OnSwapBuffersAborted() {
@@ -1334,13 +1296,6 @@ void RenderWidget::OnSetFocus(bool enable) {
     webwidget_->setFocus(enable);
 }
 
-void RenderWidget::ClearFocus() {
-  // We may have got the focus from the browser before this gets processed, in
-  // which case we do not want to unfocus ourself.
-  if (!has_focus_ && webwidget_)
-    webwidget_->setFocus(false);
-}
-
 void RenderWidget::FlushPendingInputEventAck() {
   if (pending_input_event_ack_) {
     TRACE_EVENT_ASYNC_END0("input", "RenderWidget::ThrottledInputEventAck",
@@ -1374,8 +1329,7 @@ void RenderWidget::didAutoResize(const WebSize& new_size) {
 }
 
 void RenderWidget::AutoResizeCompositor()  {
-  physical_backing_size_ = gfx::ToCeiledSize(gfx::ScaleSize(size_,
-      device_scale_factor_));
+  physical_backing_size_ = gfx::ScaleToCeiledSize(size_, device_scale_factor_);
   if (compositor_)
     compositor_->setViewportSize(size_, physical_backing_size_);
 }
@@ -1385,8 +1339,7 @@ void RenderWidget::initializeLayerTreeView() {
 
   compositor_ = RenderWidgetCompositor::Create(this, compositor_deps_);
   compositor_->setViewportSize(size_, physical_backing_size_);
-  if (init_complete_)
-    StartCompositor();
+  StartCompositor();
 }
 
 void RenderWidget::WillCloseLayerTreeView() {
@@ -1404,6 +1357,16 @@ void RenderWidget::WillCloseLayerTreeView() {
 
 blink::WebLayerTreeView* RenderWidget::layerTreeView() {
   return compositor_.get();
+}
+
+void RenderWidget::didFirstVisuallyNonEmptyLayout() {
+  QueueMessage(
+      new ViewHostMsg_DidFirstVisuallyNonEmptyPaint(routing_id_),
+      MESSAGE_DELIVERY_POLICY_WITH_VISUAL_STATE);
+}
+
+void RenderWidget::didFirstLayoutAfterFinishedParsing() {
+  // TODO(dglazkov): Use this hook to drive CapturePageInfo.
 }
 
 void RenderWidget::WillBeginCompositorFrame() {
@@ -2051,7 +2014,7 @@ ui::TextInputType RenderWidget::WebKitToUiTextInputType(
 
 ui::TextInputType RenderWidget::GetTextInputType() {
   if (webwidget_)
-    return WebKitToUiTextInputType(webwidget_->textInputInfo().type);
+    return WebKitToUiTextInputType(webwidget_->textInputType());
   return ui::TEXT_INPUT_TYPE_NONE;
 }
 
@@ -2113,29 +2076,8 @@ bool RenderWidget::ShouldUpdateCompositionInfo(
 }
 
 #if defined(OS_ANDROID)
-void RenderWidget::DidChangeBodyBackgroundColor(SkColor bg_color) {
-  // If not initialized, default to white. Note that 0 is different from black
-  // as black still has alpha 0xFF.
-  if (!bg_color)
-    bg_color = SK_ColorWHITE;
-
-  if (bg_color != body_background_color_) {
-    body_background_color_ = bg_color;
-    Send(new ViewHostMsg_DidChangeBodyBackgroundColor(routing_id(), bg_color));
-  }
-}
-
 bool RenderWidget::DoesRecordFullLayer() const {
-  SynchronousCompositorFactory* synchronous_compositor_factory =
-      SynchronousCompositorFactory::GetInstance();
-
-  // We assume that the absence of synchronous_compositor_factory
-  // means we are in Chrome. In chrome, we want to clip, i.e.
-  // *not* to record the full layer.
-  if (!synchronous_compositor_factory)
-    return false;
-
-  return synchronous_compositor_factory->RecordFullLayer();
+  return false;
 }
 #endif
 
@@ -2411,14 +2353,15 @@ RenderWidget::CreateGraphicsContext3D(bool compositor) {
     limits.min_transfer_buffer_size = 64 * 1024;
   }
 
+  // TODO(piman): we still need to create a View command buffer until
+  // crbug.com/526196 is fixed. The surface_id doesn't matter, it just needs to
+  // be !0.
+  const int32 kDummySurfaceId = 1;
   scoped_ptr<WebGraphicsContext3DCommandBufferImpl> context(
-      new WebGraphicsContext3DCommandBufferImpl(surface_id(),
-                                                GetURLForGraphicsContext3D(),
-                                                gpu_channel_host.get(),
-                                                attributes,
-                                                lose_context_when_out_of_memory,
-                                                limits,
-                                                NULL));
+      new WebGraphicsContext3DCommandBufferImpl(
+          kDummySurfaceId, GetURLForGraphicsContext3D(),
+          gpu_channel_host.get(), attributes, lose_context_when_out_of_memory,
+          limits, NULL));
   return context.Pass();
 }
 

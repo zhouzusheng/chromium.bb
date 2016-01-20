@@ -49,6 +49,7 @@ class CORE_EXPORT MainThreadDebugger final : public ScriptDebuggerBase {
     WTF_MAKE_NONCOPYABLE(MainThreadDebugger);
 public:
     class ClientMessageLoop {
+        WTF_MAKE_FAST_ALLOCATED(ClientMessageLoop);
     public:
         virtual ~ClientMessageLoop() { }
         virtual void run(LocalFrame*) = 0;
@@ -72,13 +73,11 @@ public:
 private:
     MainThreadDebugger(PassOwnPtr<ClientMessageLoop>, v8::Isolate*);
 
-    void runMessageLoopOnPause(v8::Local<v8::Context>) override;
+    void runMessageLoopOnPause(int contextGroupId) override;
     void quitMessageLoopOnPause() override;
 
     static WTF::Mutex& creationMutex();
 
-    using ListenersMap = HashMap<int, V8DebuggerListener*>;
-    ListenersMap m_listenersMap;
     OwnPtr<ClientMessageLoop> m_clientMessageLoop;
     OwnPtr<InspectorTaskRunner> m_taskRunner;
 

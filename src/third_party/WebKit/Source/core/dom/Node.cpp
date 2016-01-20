@@ -89,7 +89,6 @@
 #include "wtf/HashSet.h"
 #include "wtf/Partitions.h"
 #include "wtf/PassOwnPtr.h"
-#include "wtf/RefCountedLeakCounter.h"
 #include "wtf/Vector.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/StringBuilder.h"
@@ -151,67 +150,70 @@ void Node::dumpStatistics()
     size_t elementsWithRareData = 0;
     size_t elementsWithNamedNodeMap = 0;
 
-    for (Node* node : liveNodeSet()) {
-        if (node->hasRareData()) {
-            ++nodesWithRareData;
-            if (node->isElementNode()) {
-                ++elementsWithRareData;
-                if (toElement(node)->hasNamedNodeMap())
-                    ++elementsWithNamedNodeMap;
+    {
+        ScriptForbiddenScope forbidScriptDuringRawIteration;
+        for (Node* node : liveNodeSet()) {
+            if (node->hasRareData()) {
+                ++nodesWithRareData;
+                if (node->isElementNode()) {
+                    ++elementsWithRareData;
+                    if (toElement(node)->hasNamedNodeMap())
+                        ++elementsWithNamedNodeMap;
+                }
             }
-        }
 
-        switch (node->nodeType()) {
-        case ELEMENT_NODE: {
-            ++elementNodes;
+            switch (node->nodeType()) {
+            case ELEMENT_NODE: {
+                ++elementNodes;
 
-            // Tag stats
-            Element* element = toElement(node);
-            HashMap<String, size_t>::AddResult result = perTagCount.add(element->tagName(), 1);
-            if (!result.isNewEntry)
-                result.storedValue->value++;
+                // Tag stats
+                Element* element = toElement(node);
+                HashMap<String, size_t>::AddResult result = perTagCount.add(element->tagName(), 1);
+                if (!result.isNewEntry)
+                    result.storedValue->value++;
 
-            if (const ElementData* elementData = element->elementData()) {
-                attributes += elementData->attributes().size();
-                ++elementsWithAttributeStorage;
+                if (const ElementData* elementData = element->elementData()) {
+                    attributes += elementData->attributes().size();
+                    ++elementsWithAttributeStorage;
+                }
+                break;
             }
-            break;
-        }
-        case ATTRIBUTE_NODE: {
-            ++attrNodes;
-            break;
-        }
-        case TEXT_NODE: {
-            ++textNodes;
-            break;
-        }
-        case CDATA_SECTION_NODE: {
-            ++cdataNodes;
-            break;
-        }
-        case COMMENT_NODE: {
-            ++commentNodes;
-            break;
-        }
-        case PROCESSING_INSTRUCTION_NODE: {
-            ++piNodes;
-            break;
-        }
-        case DOCUMENT_NODE: {
-            ++documentNodes;
-            break;
-        }
-        case DOCUMENT_TYPE_NODE: {
-            ++docTypeNodes;
-            break;
-        }
-        case DOCUMENT_FRAGMENT_NODE: {
-            if (node->isShadowRoot())
-                ++shadowRootNodes;
-            else
-                ++fragmentNodes;
-            break;
-        }
+            case ATTRIBUTE_NODE: {
+                ++attrNodes;
+                break;
+            }
+            case TEXT_NODE: {
+                ++textNodes;
+                break;
+            }
+            case CDATA_SECTION_NODE: {
+                ++cdataNodes;
+                break;
+            }
+            case COMMENT_NODE: {
+                ++commentNodes;
+                break;
+            }
+            case PROCESSING_INSTRUCTION_NODE: {
+                ++piNodes;
+                break;
+            }
+            case DOCUMENT_NODE: {
+                ++documentNodes;
+                break;
+            }
+            case DOCUMENT_TYPE_NODE: {
+                ++docTypeNodes;
+                break;
+            }
+            case DOCUMENT_FRAGMENT_NODE: {
+                if (node->isShadowRoot())
+                    ++shadowRootNodes;
+                else
+                    ++fragmentNodes;
+                break;
+            }
+            }
         }
     }
 
@@ -242,14 +244,8 @@ void Node::dumpStatistics()
 #endif
 }
 
-DEFINE_DEBUG_ONLY_GLOBAL(WTF::RefCountedLeakCounter, nodeCounter, ("WebCoreNode"));
-
 void Node::trackForDebugging()
 {
-#ifndef NDEBUG
-    nodeCounter.increment();
-#endif
-
 #if DUMP_NODE_STATISTICS
     liveNodeSet().add(this);
 #endif
@@ -276,10 +272,6 @@ Node::Node(TreeScope* treeScope, ConstructionType type)
 
 Node::~Node()
 {
-#ifndef NDEBUG
-    nodeCounter.decrement();
-#endif
-
 #if !ENABLE(OILPAN)
 #if DUMP_NODE_STATISTICS
     liveNodeSet().remove(this);
@@ -519,13 +511,13 @@ void Node::normalize()
     }
 }
 
-bool Node::isContentEditable(UserSelectAllTreatment treatment)
+bool Node::isContentEditable(UserSelectAllTreatment treatment) const
 {
     document().updateLayoutTreeIfNeeded();
     return hasEditableStyle(Editable, treatment);
 }
 
-bool Node::isContentRichlyEditable()
+bool Node::isContentRichlyEditable() const
 {
     document().updateLayoutTreeIfNeeded();
     return hasEditableStyle(RichlyEditable, UserSelectAllIsAlwaysNonEditable);
@@ -597,29 +589,6 @@ LayoutRect Node::boundingBox() const
     return LayoutRect();
 }
 
-bool Node::hasNonEmptyBoundingBox() const
-{
-    // Before calling absoluteRects, check for the common case where the layoutObject
-    // is non-empty, since this is a faster check and almost always returns true.
-    LayoutBoxModelObject* box = layoutBoxModelObject();
-    if (!box)
-        return false;
-    if (!box->borderBoundingBox().isEmpty())
-        return true;
-
-    Vector<IntRect> rects;
-    FloatPoint absPos = layoutObject()->localToAbsolute();
-    layoutObject()->absoluteRects(rects, flooredLayoutPoint(absPos));
-    size_t n = rects.size();
-    for (size_t i = 0; i < n; ++i) {
-        if (!rects[i].isEmpty()) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
 #ifndef NDEBUG
 inline static ShadowRoot* oldestShadowRootFor(const Node* node)
 {
@@ -653,18 +622,26 @@ bool Node::needsDistributionRecalc() const
 
 void Node::updateDistribution()
 {
+    // Extra early out to avoid spamming traces.
+    if (inDocument() && !document().childNeedsDistributionRecalc())
+        return;
     TRACE_EVENT0("blink", "Node::updateDistribution");
     ScriptForbiddenScope forbidScript;
-    rootInTreeOfTrees(*this).recalcDistribution();
+    Node& root = rootInTreeOfTrees(*this);
+    if (root.childNeedsDistributionRecalc())
+        root.recalcDistribution();
 }
 
 void Node::recalcDistribution()
 {
+    ASSERT(childNeedsDistributionRecalc());
+
     if (isElementNode()) {
         if (ElementShadow* shadow = toElement(this)->shadow())
             shadow->distributeIfNeeded();
     }
 
+    ASSERT(ScriptForbiddenScope::isScriptForbidden());
     for (Node* child = firstChild(); child; child = child->nextSibling()) {
         if (child->childNeedsDistributionRecalc())
             child->recalcDistribution();
@@ -692,6 +669,7 @@ void Node::setNeedsStyleInvalidation()
 
 void Node::markAncestorsWithChildNeedsStyleInvalidation()
 {
+    ScriptForbiddenScope forbidScriptDuringRawIteration;
     for (Node* node = parentOrShadowHostNode(); node && !node->childNeedsStyleInvalidation(); node = node->parentOrShadowHostNode())
         node->setChildNeedsStyleInvalidation();
     document().scheduleLayoutTreeUpdateIfNeeded();
@@ -699,6 +677,7 @@ void Node::markAncestorsWithChildNeedsStyleInvalidation()
 
 void Node::markAncestorsWithChildNeedsDistributionRecalc()
 {
+    ScriptForbiddenScope forbidScriptDuringRawIteration;
     for (Node* node = this; node && !node->childNeedsDistributionRecalc(); node = node->parentOrShadowHostNode())
         node->setChildNeedsDistributionRecalc();
     document().scheduleLayoutTreeUpdateIfNeeded();
@@ -714,7 +693,6 @@ void Node::markAncestorsWithChildNeedsStyleRecalc()
     for (ContainerNode* p = parentOrShadowHostNode(); p && !p->childNeedsStyleRecalc(); p = p->parentOrShadowHostNode())
         p->setChildNeedsStyleRecalc();
     document().scheduleLayoutTreeUpdateIfNeeded();
-    document().incStyleVersion();
 }
 
 void Node::setNeedsStyleRecalc(StyleChangeType changeType, const StyleChangeReasonForTracing& reason)
@@ -777,7 +755,7 @@ bool Node::isInert() const
 
 unsigned Node::nodeIndex() const
 {
-    Node* tempNode = previousSibling();
+    const Node* tempNode = previousSibling();
     unsigned count = 0;
     for (count = 0; tempNode; count++)
         tempNode = tempNode->previousSibling();
@@ -934,6 +912,7 @@ void Node::detach(const AttachContext& context)
 
 void Node::reattachWhitespaceSiblingsIfNeeded(Text* start)
 {
+    ScriptForbiddenScope forbidScriptDuringRawIteration;
     for (Node* sibling = start; sibling; sibling = sibling->nextSibling()) {
         if (sibling->isTextNode() && toText(sibling)->containsOnlyWhitespace()) {
             bool hadLayoutObject = !!sibling->layoutObject();
@@ -1055,14 +1034,14 @@ Element* Node::rootEditableElement(EditableType editableType) const
 
 Element* Node::rootEditableElement() const
 {
-    Element* result = nullptr;
-    for (Node* n = const_cast<Node*>(this); n && n->hasEditableStyle(); n = n->parentNode()) {
+    const Node* result = nullptr;
+    for (const Node* n = this; n && n->hasEditableStyle(); n = n->parentNode()) {
         if (n->isElementNode())
-            result = toElement(n);
+            result = n;
         if (isHTMLBodyElement(*n))
             break;
     }
-    return result;
+    return toElement(const_cast<Node*>(result));
 }
 
 // FIXME: End of obviously misplaced HTML editing functions.  Try to move these out of Node.
@@ -1283,7 +1262,7 @@ String Node::textContent(bool convertBRsToNewlines) const
         return String();
 
     StringBuilder content;
-    for (Node& node : NodeTraversal::inclusiveDescendantsOf(*this)) {
+    for (const Node& node : NodeTraversal::inclusiveDescendantsOf(*this)) {
         if (isHTMLBRElement(node) && convertBRsToNewlines) {
             content.append('\n');
         } else if (node.isTextNode()) {
@@ -1427,7 +1406,7 @@ unsigned short Node::compareDocumentPosition(const Node* otherNode, ShadowTreesT
                 if (!child1->isShadowRoot())
                     return Node::DOCUMENT_POSITION_PRECEDING | connection;
 
-                for (ShadowRoot* child = toShadowRoot(child2)->olderShadowRoot(); child; child = child->olderShadowRoot()) {
+                for (const ShadowRoot* child = toShadowRoot(child2)->olderShadowRoot(); child; child = child->olderShadowRoot()) {
                     if (child == child1) {
                         return Node::DOCUMENT_POSITION_FOLLOWING | connection;
                     }
@@ -1442,7 +1421,7 @@ unsigned short Node::compareDocumentPosition(const Node* otherNode, ShadowTreesT
                 return DOCUMENT_POSITION_PRECEDING | connection;
 
             // Otherwise we need to see which node occurs first.  Crawl backwards from child2 looking for child1.
-            for (Node* child = child2->previousSibling(); child; child = child->previousSibling()) {
+            for (const Node* child = child2->previousSibling(); child; child = child->previousSibling()) {
                 if (child == child1)
                     return DOCUMENT_POSITION_FOLLOWING | connection;
             }
@@ -1541,7 +1520,7 @@ void Node::showNodePathForThis() const
         const Node* node = chain[index - 1];
         if (node->isShadowRoot()) {
             int count = 0;
-            for (ShadowRoot* shadowRoot = toShadowRoot(node)->olderShadowRoot(); shadowRoot; shadowRoot = shadowRoot->olderShadowRoot())
+            for (const ShadowRoot* shadowRoot = toShadowRoot(node)->olderShadowRoot(); shadowRoot; shadowRoot = shadowRoot->olderShadowRoot())
                 ++count;
             WTFLogAlways("/#shadow-root[%d]", count);
             continue;
@@ -1556,7 +1535,7 @@ void Node::showNodePathForThis() const
             bool hasIdAttr = !idattr.isNull() && !idattr.isEmpty();
             if (node->previousSibling() || node->nextSibling()) {
                 int count = 0;
-                for (Node* previous = node->previousSibling(); previous; previous = previous->previousSibling()) {
+                for (const Node* previous = node->previousSibling(); previous; previous = previous->previousSibling()) {
                     if (previous->nodeName() == node->nodeName()) {
                         ++count;
                     }
@@ -1585,7 +1564,7 @@ void Node::showNodePathForThis() const
 
 static void traverseTreeAndMark(const String& baseIndent, const Node* rootNode, const Node* markedNode1, const char* markedLabel1, const Node* markedNode2, const char* markedLabel2)
 {
-    for (Node& node : NodeTraversal::inclusiveDescendantsOf(*rootNode)) {
+    for (const Node& node : NodeTraversal::inclusiveDescendantsOf(*rootNode)) {
         StringBuilder indent;
         if (node == markedNode1)
             indent.append(markedLabel1);
@@ -1697,13 +1676,13 @@ static void showSubTreeAcrossFrame(const Node* node, const Node* markedNode, con
         if (ShadowRoot* oldestShadowRoot = oldestShadowRootFor(node))
             showSubTreeAcrossFrame(oldestShadowRoot, markedNode, indent + "\t");
     }
-    for (Node* child = node->firstChild(); child; child = child->nextSibling())
+    for (const Node* child = node->firstChild(); child; child = child->nextSibling())
         showSubTreeAcrossFrame(child, markedNode, indent + "\t");
 }
 
 void Node::showTreeForThisAcrossFrame() const
 {
-    Node* rootNode = const_cast<Node*>(this);
+    const Node* rootNode = this;
     while (parentOrShadowHostOrFrameOwner(rootNode))
         rootNode = parentOrShadowHostOrFrameOwner(rootNode);
     showSubTreeAcrossFrame(rootNode, this, "");
@@ -1715,18 +1694,20 @@ void Node::showTreeForThisAcrossFrame() const
 
 Element* Node::enclosingLinkEventParentOrSelf() const
 {
-    for (Node* node = const_cast<Node*>(this); node; node = ComposedTreeTraversal::parent(*node)) {
+    const Node* result = nullptr;
+    for (const Node* node = this; node; node = ComposedTreeTraversal::parent(*node)) {
         // For imagemaps, the enclosing link node is the associated area element not the image itself.
         // So we don't let images be the enclosingLinkNode, even though isLink sometimes returns true
         // for them.
         if (node->isLink() && !isHTMLImageElement(*node)) {
             // Casting to Element is safe because only HTMLAnchorElement, HTMLImageElement and
             // SVGAElement can return true for isLink().
-            return toElement(node);
+            result = node;
+            break;
         }
     }
 
-    return nullptr;
+    return toElement(const_cast<Node*>(result));
 }
 
 const AtomicString& Node::interfaceName() const
@@ -1819,6 +1800,7 @@ void Node::removeAllEventListeners()
 
 void Node::removeAllEventListenersRecursively()
 {
+    ScriptForbiddenScope forbidScriptDuringRawIteration;
     for (Node& node : NodeTraversal::startsAt(this)) {
         node.removeAllEventListeners();
         for (ShadowRoot* root = node.youngestShadowRoot(); root; root = root->olderShadowRoot())
@@ -1881,7 +1863,7 @@ WillBeHeapHashSet<RawPtrWillBeMember<MutationObserverRegistration>>* Node::trans
 }
 
 template<typename Registry>
-static inline void collectMatchingObserversForMutation(WillBeHeapHashMap<RawPtrWillBeMember<MutationObserver>, MutationRecordDeliveryOptions>& observers, Registry* registry, Node& target, MutationObserver::MutationType type, const QualifiedName* attributeName)
+static inline void collectMatchingObserversForMutation(WillBeHeapHashMap<RefPtrWillBeMember<MutationObserver>, MutationRecordDeliveryOptions>& observers, Registry* registry, Node& target, MutationObserver::MutationType type, const QualifiedName* attributeName)
 {
     if (!registry)
         return;
@@ -1889,18 +1871,19 @@ static inline void collectMatchingObserversForMutation(WillBeHeapHashMap<RawPtrW
     for (const auto& registration : *registry) {
         if (registration->shouldReceiveMutationFrom(target, type, attributeName)) {
             MutationRecordDeliveryOptions deliveryOptions = registration->deliveryOptions();
-            WillBeHeapHashMap<RawPtrWillBeMember<MutationObserver>, MutationRecordDeliveryOptions>::AddResult result = observers.add(&registration->observer(), deliveryOptions);
+            WillBeHeapHashMap<RefPtrWillBeMember<MutationObserver>, MutationRecordDeliveryOptions>::AddResult result = observers.add(&registration->observer(), deliveryOptions);
             if (!result.isNewEntry)
                 result.storedValue->value |= deliveryOptions;
         }
     }
 }
 
-void Node::getRegisteredMutationObserversOfType(WillBeHeapHashMap<RawPtrWillBeMember<MutationObserver>, MutationRecordDeliveryOptions>& observers, MutationObserver::MutationType type, const QualifiedName* attributeName)
+void Node::getRegisteredMutationObserversOfType(WillBeHeapHashMap<RefPtrWillBeMember<MutationObserver>, MutationRecordDeliveryOptions>& observers, MutationObserver::MutationType type, const QualifiedName* attributeName)
 {
     ASSERT((type == MutationObserver::Attributes && attributeName) || !attributeName);
     collectMatchingObserversForMutation(observers, mutationObserverRegistry(), *this, type, attributeName);
     collectMatchingObserversForMutation(observers, transientMutationObserverRegistry(), *this, type, attributeName);
+    ScriptForbiddenScope forbidScriptDuringRawIteration;
     for (Node* node = parentNode(); node; node = node->parentNode()) {
         collectMatchingObserversForMutation(observers, node->mutationObserverRegistry(), *this, type, attributeName);
         collectMatchingObserversForMutation(observers, node->transientMutationObserverRegistry(), *this, type, attributeName);
@@ -1971,6 +1954,7 @@ void Node::notifyMutationObserversNodeWillDetach()
     if (!document().hasMutationObservers())
         return;
 
+    ScriptForbiddenScope forbidScriptDuringRawIteration;
     for (Node* node = parentNode(); node; node = node->parentNode()) {
         if (WillBeHeapVector<OwnPtrWillBeMember<MutationObserverRegistration>>* registry = node->mutationObserverRegistry()) {
             const size_t size = registry->size();
@@ -2222,6 +2206,7 @@ void Node::updateAncestorConnectedSubframeCountForInsertion() const
     if (!count)
         return;
 
+    ScriptForbiddenScope forbidScriptDuringRawIteration;
     for (Node* node = parentOrShadowHostNode(); node; node = node->parentOrShadowHostNode())
         node->incrementConnectedSubframeCount(count);
 }

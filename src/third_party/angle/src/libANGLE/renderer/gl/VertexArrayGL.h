@@ -25,11 +25,14 @@ class VertexArrayGL : public VertexArrayImpl
 
     gl::Error syncDrawArraysState(const gl::AttributesMask &activeAttributesMask,
                                   GLint first,
-                                  GLsizei count) const;
+                                  GLsizei count,
+                                  GLsizei instanceCount) const;
     gl::Error syncDrawElementsState(const gl::AttributesMask &activeAttributesMask,
                                     GLsizei count,
                                     GLenum type,
                                     const GLvoid *indices,
+                                    GLsizei instanceCount,
+                                    bool primitiveRestartEnabled,
                                     const GLvoid **outIndices) const;
 
     GLuint getVertexArrayID() const;
@@ -43,22 +46,31 @@ class VertexArrayGL : public VertexArrayImpl
                             GLsizei count,
                             GLenum type,
                             const GLvoid *indices,
+                            GLsizei instanceCount,
+                            bool primitiveRestartEnabled,
                             const GLvoid **outIndices) const;
 
     // Apply index data, only sets outIndexRange if attributesNeedStreaming is true
-    gl::Error syncIndexData(GLsizei count, GLenum type, const GLvoid *indices, bool attributesNeedStreaming,
-                            gl::RangeUI *outIndexRange, const GLvoid **outIndices) const;
+    gl::Error syncIndexData(GLsizei count,
+                            GLenum type,
+                            const GLvoid *indices,
+                            bool primitiveRestartEnabled,
+                            bool attributesNeedStreaming,
+                            gl::IndexRange *outIndexRange,
+                            const GLvoid **outIndices) const;
 
     // Returns the amount of space needed to stream all attributes that need streaming
     // and the data size of the largest attribute
     void computeStreamingAttributeSizes(const gl::AttributesMask &activeAttributesMask,
-                                        const gl::RangeUI &indexRange,
+                                        GLsizei instanceCount,
+                                        const gl::IndexRange &indexRange,
                                         size_t *outStreamingDataSize,
                                         size_t *outMaxAttributeDataSize) const;
 
     // Stream attributes that have client data
     gl::Error streamAttributes(const gl::AttributesMask &activeAttributesMask,
-                               const gl::RangeUI &indexRange) const;
+                               GLsizei instanceCount,
+                               const gl::IndexRange &indexRange) const;
 
     void updateNeedsStreaming(size_t attribIndex);
     void updateAttribEnabled(size_t attribIndex);

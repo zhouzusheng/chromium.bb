@@ -21,6 +21,10 @@ class SkPDFObjNumMap;
 class SkPDFObject;
 class SkPDFSubstituteMap;
 
+#ifdef SK_PDF_IMAGE_STATS
+#include "SkAtomics.h"
+#endif
+
 /** \class SkPDFObject
 
     A PDF Object is the base class for primitive elements in a PDF file.  A
@@ -313,10 +317,7 @@ private:
 class SkPDFSharedStream : public SkPDFObject {
 public:
     // Takes ownership of asset.
-    SkPDFSharedStream(SkStreamAsset* data)
-        : fAsset(data), fDict(SkNEW(SkPDFDict)) {
-        SkASSERT(data);
-    }
+    SkPDFSharedStream(SkStreamAsset* data) : fAsset(data), fDict(new SkPDFDict) { SkASSERT(data); }
     SkPDFDict* dict() { return fDict; }
     void emitObject(SkWStream*,
                     const SkPDFObjNumMap&,
@@ -384,5 +385,12 @@ public:
 private:
     SkTHashMap<SkPDFObject*, SkPDFObject*> fSubstituteMap;
 };
+
+#ifdef SK_PDF_IMAGE_STATS
+extern SkAtomic<int> gDrawImageCalls;
+extern SkAtomic<int> gJpegImageObjects;
+extern SkAtomic<int> gRegularImageObjects;
+extern void SkPDFImageDumpStats();
+#endif // SK_PDF_IMAGE_STATS
 
 #endif

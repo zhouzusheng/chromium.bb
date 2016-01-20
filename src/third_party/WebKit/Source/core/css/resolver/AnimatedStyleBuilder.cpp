@@ -156,7 +156,7 @@ void setFillSize(FillLayer* fillLayer, const AnimatableValue* value, StyleResolv
 template <CSSPropertyID property>
 void setOnFillLayers(FillLayer& fillLayers, const AnimatableValue* value, StyleResolverState& state)
 {
-    const WillBeHeapVector<RefPtrWillBeMember<AnimatableValue>>& values = toAnimatableRepeatable(value)->values();
+    const Vector<RefPtr<AnimatableValue>>& values = toAnimatableRepeatable(value)->values();
     ASSERT(!values.isEmpty());
     FillLayer* fillLayer = &fillLayers;
     FillLayer* prev = 0;
@@ -268,7 +268,7 @@ TransformOperation* animatableValueToTransformOperation(const AnimatableValue* v
 {
     const TransformOperations& transformList = toAnimatableTransform(value)->transformOperations();
     ASSERT(transformList.size() == 1);
-    ASSERT(transformList.operations()[0]->type() == type);
+    ASSERT(transformList.operations()[0].get()->type() == type);
     return transformList.operations()[0].get();
 }
 
@@ -538,7 +538,7 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
         style->setClipPath(toAnimatableClipPathOperation(value)->clipPathOperation());
         return;
     case CSSPropertyWebkitColumnCount:
-        style->setColumnCount(clampTo<unsigned short>(toAnimatableDouble(value)->toDouble(), 1));
+        style->setColumnCount(clampTo<unsigned short>(round(toAnimatableDouble(value)->toDouble()), 1));
         return;
     case CSSPropertyWebkitColumnGap:
         style->setColumnGap(clampTo(toAnimatableDouble(value)->toDouble(), 0));
@@ -555,6 +555,9 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
         return;
     case CSSPropertyWebkitFilter:
         style->setFilter(toAnimatableFilterOperations(value)->operations());
+        return;
+    case CSSPropertyBackdropFilter:
+        style->setBackdropFilter(toAnimatableFilterOperations(value)->operations());
         return;
     case CSSPropertyWebkitMaskBoxImageOutset:
         style->setMaskBoxImageOutset(animatableValueToBorderImageLengthBox(value, state));
@@ -582,7 +585,7 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
         setOnFillLayers<CSSPropertyWebkitMaskSize>(style->accessMaskLayers(), value, state);
         return;
     case CSSPropertyPerspective:
-        style->setPerspective(clampTo<float>(toAnimatableDouble(value)->toDouble()));
+        style->setPerspective(value->isDouble() ? clampTo<float>(toAnimatableDouble(value)->toDouble()) : 0);
         return;
     case CSSPropertyPerspectiveOrigin:
         style->setPerspectiveOrigin(animatableValueToLengthPoint(value, state));
@@ -603,11 +606,20 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
     case CSSPropertyTransform: {
         const TransformOperations& operations = toAnimatableTransform(value)->transformOperations();
         // FIXME: This normalization (handling of 'none') should be performed at input in AnimatableValueFactory.
-        style->setTransform(operations.size() ? operations : TransformOperations(true));
+        if (operations.size() == 0) {
+            style->setTransform(TransformOperations(true));
+            return;
+        }
+        double sourceZoom = toAnimatableTransform(value)->zoom();
+        double destinationZoom = style->effectiveZoom();
+        style->setTransform(sourceZoom == destinationZoom ? operations : operations.zoom(destinationZoom / sourceZoom));
         return;
     }
     case CSSPropertyTranslate: {
-        style->setTranslate(toTranslateTransformOperation(animatableValueToTransformOperation(value, TransformOperation::Translate3D)));
+        TranslateTransformOperation* translate = toTranslateTransformOperation(animatableValueToTransformOperation(value, TransformOperation::Translate3D));
+        double sourceZoom = toAnimatableTransform(value)->zoom();
+        double destinationZoom = style->effectiveZoom();
+        style->setTranslate(sourceZoom == destinationZoom ? translate : translate->zoomTranslate(destinationZoom / sourceZoom));
         return;
     }
     case CSSPropertyRotate: {

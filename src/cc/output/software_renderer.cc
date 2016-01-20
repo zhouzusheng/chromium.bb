@@ -102,8 +102,7 @@ const RendererCapabilitiesImpl& SoftwareRenderer::Capabilities() const {
 
 void SoftwareRenderer::BeginDrawingFrame(DrawingFrame* frame) {
   TRACE_EVENT0("cc", "SoftwareRenderer::BeginDrawingFrame");
-  root_canvas_ = output_device_->BeginPaint(
-      gfx::ToEnclosingRect(frame->root_damage_rect));
+  root_canvas_ = output_device_->BeginPaint(frame->root_damage_rect);
 }
 
 void SoftwareRenderer::FinishDrawingFrame(DrawingFrame* frame) {
@@ -254,7 +253,7 @@ void SoftwareRenderer::DoDrawQuad(DrawingFrame* frame,
   gfx::Transform quad_rect_matrix;
   QuadRectTransform(&quad_rect_matrix,
                     quad->shared_quad_state->quad_to_target_transform,
-                    quad->rect);
+                    gfx::RectF(quad->rect));
   gfx::Transform contents_device_transform =
       frame->window_matrix * frame->projection_matrix * quad_rect_matrix;
   contents_device_transform.FlattenTo2d();
@@ -396,7 +395,7 @@ void SoftwareRenderer::DrawPictureQuad(const DrawingFrame* frame,
 void SoftwareRenderer::DrawSolidColorQuad(const DrawingFrame* frame,
                                           const SolidColorDrawQuad* quad) {
   gfx::RectF visible_quad_vertex_rect = MathUtil::ScaleRectProportional(
-      QuadVertexRect(), quad->rect, quad->visible_rect);
+      QuadVertexRect(), gfx::RectF(quad->rect), gfx::RectF(quad->visible_rect));
   current_paint_.setColor(quad->color);
   current_paint_.setAlpha(quad->shared_quad_state->opacity *
                           SkColorGetA(quad->color));
@@ -421,11 +420,11 @@ void SoftwareRenderer::DrawTextureQuad(const DrawingFrame* frame,
                                                         quad->uv_bottom_right),
                                       bitmap->width(),
                                       bitmap->height());
-  gfx::RectF visible_uv_rect =
-      MathUtil::ScaleRectProportional(uv_rect, quad->rect, quad->visible_rect);
+  gfx::RectF visible_uv_rect = MathUtil::ScaleRectProportional(
+      uv_rect, gfx::RectF(quad->rect), gfx::RectF(quad->visible_rect));
   SkRect sk_uv_rect = gfx::RectFToSkRect(visible_uv_rect);
   gfx::RectF visible_quad_vertex_rect = MathUtil::ScaleRectProportional(
-      QuadVertexRect(), quad->rect, quad->visible_rect);
+      QuadVertexRect(), gfx::RectF(quad->rect), gfx::RectF(quad->visible_rect));
   SkRect quad_rect = gfx::RectFToSkRect(visible_quad_vertex_rect);
 
   if (quad->y_flipped)
@@ -478,9 +477,10 @@ void SoftwareRenderer::DrawTileQuad(const DrawingFrame* frame,
   DCHECK_EQ(GL_CLAMP_TO_EDGE, lock.wrap_mode());
 
   gfx::RectF visible_tex_coord_rect = MathUtil::ScaleRectProportional(
-      quad->tex_coord_rect, quad->rect, quad->visible_rect);
+      quad->tex_coord_rect, gfx::RectF(quad->rect),
+      gfx::RectF(quad->visible_rect));
   gfx::RectF visible_quad_vertex_rect = MathUtil::ScaleRectProportional(
-      QuadVertexRect(), quad->rect, quad->visible_rect);
+      QuadVertexRect(), gfx::RectF(quad->rect), gfx::RectF(quad->visible_rect));
 
   SkRect uv_rect = gfx::RectFToSkRect(visible_tex_coord_rect);
   current_paint_.setFilterQuality(
@@ -505,8 +505,9 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
   SkShader::TileMode content_tile_mode = WrapModeToTileMode(lock.wrap_mode());
 
   SkRect dest_rect = gfx::RectFToSkRect(QuadVertexRect());
-  SkRect dest_visible_rect = gfx::RectFToSkRect(MathUtil::ScaleRectProportional(
-      QuadVertexRect(), quad->rect, quad->visible_rect));
+  SkRect dest_visible_rect = gfx::RectFToSkRect(
+      MathUtil::ScaleRectProportional(QuadVertexRect(), gfx::RectF(quad->rect),
+                                      gfx::RectF(quad->visible_rect)));
   SkRect content_rect = SkRect::MakeWH(quad->rect.width(), quad->rect.height());
 
   SkMatrix content_mat;
@@ -518,7 +519,7 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
   SkBitmap filter_bitmap;
   if (!quad->filters.IsEmpty()) {
     skia::RefPtr<SkImageFilter> filter = RenderSurfaceFilters::BuildImageFilter(
-        quad->filters, content_texture->size());
+        quad->filters, gfx::SizeF(content_texture->size()));
     // TODO(ajuma): Apply the filter in the same pass as the content where
     // possible (e.g. when there's no origin offset). See crbug.com/308201.
     filter_bitmap = ApplyImageFilter(filter.get(), quad, content);
@@ -640,21 +641,13 @@ void SoftwareRenderer::DidChangeVisibility() {
 }
 
 bool SoftwareRenderer::ShouldApplyBackgroundFilters(
-    const DrawingFrame* frame,
     const RenderPassDrawQuad* quad) const {
   if (quad->background_filters.IsEmpty())
     return false;
 
-  // TODO(danakj): We only allow background filters on an opaque render surface
-  // because other surfaces may contain translucent pixels, and the contents
-  // behind those translucent pixels wouldn't have the filter applied.
-  if (frame->current_render_pass->has_transparent_background)
-    return false;
+  // TODO(hendrikw): Look into allowing background filters to see pixels from
+  // other render targets.  See crbug.com/314867.
 
-  // TODO(ajuma): Add support for reference filters once
-  // FilterOperations::GetOutsets supports reference filters.
-  if (quad->background_filters.HasReferenceFilter())
-    return false;
   return true;
 }
 
@@ -692,7 +685,7 @@ gfx::Rect SoftwareRenderer::GetBackdropBoundingBoxForRenderPassQuad(
     const DrawingFrame* frame,
     const RenderPassDrawQuad* quad,
     const gfx::Transform& contents_device_transform) const {
-  DCHECK(ShouldApplyBackgroundFilters(frame, quad));
+  DCHECK(ShouldApplyBackgroundFilters(quad));
   gfx::Rect backdrop_rect = gfx::ToEnclosingRect(
       MathUtil::MapClippedRect(contents_device_transform, QuadVertexRect()));
 
@@ -710,13 +703,13 @@ skia::RefPtr<SkShader> SoftwareRenderer::GetBackgroundFilterShader(
     const DrawingFrame* frame,
     const RenderPassDrawQuad* quad,
     SkShader::TileMode content_tile_mode) const {
-  if (!ShouldApplyBackgroundFilters(frame, quad))
+  if (!ShouldApplyBackgroundFilters(quad))
     return skia::RefPtr<SkShader>();
 
   gfx::Transform quad_rect_matrix;
   QuadRectTransform(&quad_rect_matrix,
                     quad->shared_quad_state->quad_to_target_transform,
-                    quad->rect);
+                    gfx::RectF(quad->rect));
   gfx::Transform contents_device_transform =
       frame->window_matrix * frame->projection_matrix * quad_rect_matrix;
   contents_device_transform.FlattenTo2d();
@@ -738,7 +731,7 @@ skia::RefPtr<SkShader> SoftwareRenderer::GetBackgroundFilterShader(
 
   skia::RefPtr<SkImageFilter> filter = RenderSurfaceFilters::BuildImageFilter(
       quad->background_filters,
-      gfx::Size(backdrop_bitmap.width(), backdrop_bitmap.height()));
+      gfx::SizeF(backdrop_bitmap.width(), backdrop_bitmap.height()));
   SkBitmap filter_backdrop_bitmap =
       ApplyImageFilter(filter.get(), quad, &backdrop_bitmap);
 

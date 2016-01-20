@@ -263,7 +263,7 @@ void ContextState::RestoreBufferBindings() const {
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, GetBufferId(element_array_buffer));
   }
   glBindBuffer(GL_ARRAY_BUFFER, GetBufferId(bound_array_buffer.get()));
-  if (feature_info_->IsES3Enabled()) {
+  if (feature_info_->IsES3Capable()) {
     glBindBuffer(GL_COPY_READ_BUFFER,
                  GetBufferId(bound_copy_read_buffer.get()));
     glBindBuffer(GL_COPY_WRITE_BUFFER,
@@ -497,6 +497,53 @@ void ContextState::RemoveBoundBuffer(Buffer* buffer) {
   }
   if (bound_uniform_buffer.get() == buffer) {
     bound_uniform_buffer = nullptr;
+  }
+}
+
+void ContextState::UnbindTexture(TextureRef* texture) {
+  GLuint active_unit = active_texture_unit;
+  for (size_t jj = 0; jj < texture_units.size(); ++jj) {
+    TextureUnit& unit = texture_units[jj];
+    if (unit.bound_texture_2d.get() == texture) {
+      unit.bound_texture_2d = NULL;
+      if (active_unit != jj) {
+        glActiveTexture(GL_TEXTURE0 + jj);
+        active_unit = jj;
+      }
+      glBindTexture(GL_TEXTURE_2D, 0);
+    } else if (unit.bound_texture_cube_map.get() == texture) {
+      unit.bound_texture_cube_map = NULL;
+      if (active_unit != jj) {
+        glActiveTexture(GL_TEXTURE0 + jj);
+        active_unit = jj;
+      }
+      glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
+    } else if (unit.bound_texture_external_oes.get() == texture) {
+      unit.bound_texture_external_oes = NULL;
+      if (active_unit != jj) {
+        glActiveTexture(GL_TEXTURE0 + jj);
+        active_unit = jj;
+      }
+      glBindTexture(GL_TEXTURE_EXTERNAL_OES, 0);
+    } else if (unit.bound_texture_3d.get() == texture) {
+      unit.bound_texture_3d = NULL;
+      if (active_unit != jj) {
+        glActiveTexture(GL_TEXTURE0 + jj);
+        active_unit = jj;
+      }
+      glBindTexture(GL_TEXTURE_3D, 0);
+    } else if (unit.bound_texture_2d_array.get() == texture) {
+      unit.bound_texture_2d_array = NULL;
+      if (active_unit != jj) {
+        glActiveTexture(GL_TEXTURE0 + jj);
+        active_unit = jj;
+      }
+      glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+    }
+  }
+
+  if (active_unit != active_texture_unit) {
+    glActiveTexture(GL_TEXTURE0 + active_texture_unit);
   }
 }
 

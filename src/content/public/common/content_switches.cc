@@ -93,19 +93,19 @@ const char kDisableDatabases[]              = "disable-databases";
 // Disables Delay Agnostic AEC in WebRTC.
 const char kDisableDelayAgnosticAec[]       = "disable-delay-agnostic-aec";
 
-// Disables delegated renderer.
-const char kDisableDelegatedRenderer[]      = "disable-delegated-renderer";
-
 // Handles URL requests by NPAPI plugins through the renderer.
 const char kDisableDirectNPAPIRequests[]    = "disable-direct-npapi-requests";
 
 // Disable the per-domain blocking for 3D APIs after GPU reset.
 // This switch is intended only for tests.
-extern const char kDisableDomainBlockingFor3DAPIs[] =
+const char kDisableDomainBlockingFor3DAPIs[] =
     "disable-domain-blocking-for-3d-apis";
 
 // Disable experimental WebGL support.
 const char kDisableExperimentalWebGL[]      = "disable-webgl";
+
+// Comma-separated list of feature names to disable. See also kEnableFeatures.
+const char kDisableFeatures[]               = "disable-features";
 
 // Disable FileSystem API.
 const char kDisableFileSystem[]             = "disable-file-system";
@@ -115,6 +115,10 @@ const char kDisableFlash3d[]                = "disable-flash-3d";
 
 // Disable Stage3D inside of flapper.
 const char kDisableFlashStage3d[]           = "disable-flash-stage3d";
+
+// Disable user gesture requirement for media playback.
+const char kDisableGestureRequirementForMediaPlayback[] =
+    "disable-gesture-requirement-for-media-playback";
 
 // Disables GPU hardware acceleration.  If software renderer is not in place,
 // then the GPU process won't launch.
@@ -132,8 +136,7 @@ const char kDisableGpuMemoryBufferVideoFrames[] =
 
 // Disable the limit on the number of times the GPU process may be restarted
 // This switch is intended only for tests.
-extern const char kDisableGpuProcessCrashLimit[] =
-    "disable-gpu-process-crash-limit";
+const char kDisableGpuProcessCrashLimit[] = "disable-gpu-process-crash-limit";
 
 // Disable GPU rasterization, i.e. rasterize on the CPU only.
 // Overrides the kEnableGpuRasterization and kForceGpuRasterization flags.
@@ -164,17 +167,14 @@ const char kDisableHideInactiveStackedTabCloseButtons[] =
 // Disable the RenderThread's HistogramCustomizer.
 const char kDisableHistogramCustomizer[]    = "disable-histogram-customizer";
 
-// Prevent Java from running.
-const char kDisableJava[]                   = "disable-java";
-
 // Don't kill a child process when it sends a bad IPC message.  Apart
 // from testing, it is a bad idea from a security perspective to enable
 // this switch.
 const char kDisableKillAfterBadIPC[]        = "disable-kill-after-bad-ipc";
 
-// Disables prefixed Encrypted Media API (e.g. webkitGenerateKeyRequest()).
-const char kDisablePrefixedEncryptedMedia[] =
-    "disable-prefixed-encrypted-media";
+// Enables prefixed Encrypted Media API (e.g. webkitGenerateKeyRequest()).
+const char kEnablePrefixedEncryptedMedia[] =
+    "enable-prefixed-encrypted-media";
 
 // Disables LCD text.
 const char kDisableLCDText[]                = "disable-lcd-text";
@@ -201,9 +201,6 @@ const char kDisableNativeGpuMemoryBuffers[] =
 
 // Disables the Web Notification and the Push APIs.
 const char kDisableNotifications[]          = "disable-notifications";
-
-// Disable rasterizer that writes directly to GPU memory.
-const char kDisableOneCopy[]                = "disable-one-copy";
 
 // Disable Pepper3D.
 const char kDisablePepper3d[]               = "disable-pepper-3d";
@@ -251,10 +248,6 @@ const char kDisableSetuidSandbox[]          = "disable-setuid-sandbox";
 // Disable shared workers.
 const char kDisableSharedWorkers[]          = "disable-shared-workers";
 
-// Disables slimming paint: http://www.chromium.org/blink/slimming-paint
-// Can be overridden by kEnableSlimmingPaint.
-const char kDisableSlimmingPaint[]           = "disable-slimming-paint";
-
 // Disable smooth scrolling for testing.
 const char kDisableSmoothScrolling[]        = "disable-smooth-scrolling";
 
@@ -281,6 +274,9 @@ const char kDisableWebSecurity[]            = "disable-web-security";
 
 // Disables Blink's XSSAuditor. The XSSAuditor mitigates reflective XSS.
 const char kDisableXSSAuditor[]             = "disable-xss-auditor";
+
+// Disable rasterizer that writes directly to GPU memory associated with tiles.
+const char kDisableZeroCopy[]                = "disable-zero-copy";
 
 // Specifies if the |DOMAutomationController| needs to be bound in the
 // renderer. This binding happens on per-frame basis and hence can potentially
@@ -330,12 +326,6 @@ const char kEnableBlinkFeatures[]           = "enable-blink-features";
 // PlzNavigate: Use the experimental browser-side navigation path.
 const char kEnableBrowserSideNavigation[]   = "enable-browser-side-navigation";
 
-// Enables Delay Agnostic AEC in WebRTC.
-const char kEnableDelayAgnosticAec[]        = "enable-delay-agnostic-aec";
-
-// Enables delegated renderer.
-const char kEnableDelegatedRenderer[]       = "enable-delegated-renderer";
-
 // Enables display list based 2d canvas implementation. Options:
 //  1. Enable: allow browser to use display list for 2d canvas (browser makes
 //     decision).
@@ -357,6 +347,9 @@ const char kEnableExperimentalCanvasFeatures[] =
 // Enables Web Platform features that are in development.
 const char kEnableExperimentalWebPlatformFeatures[] =
     "enable-experimental-web-platform-features";
+
+// Comma-separated list of feature names to enable. See also kDisableFeatures.
+const char kEnableFeatures[] = "enable-features";
 
 // Enable Web Bluetooth.
 const char kEnableWebBluetooth[] = "enable-web-bluetooth";
@@ -389,11 +382,6 @@ const char kEnableMemoryBenchmarking[]      = "enable-memory-benchmarking";
 
 // Enables the network information API.
 const char kEnableNetworkInformation[]      = "enable-network-information";
-
-// Enables use of hardware overlay for fullscreen video playback. Android only.
-// TODO(watk): Remove this once blink is updated to pass
-// kForceOverlayFullscreenVideo for layout tests. http://crbug.com/511376
-const char kEnableOverlayFullscreenVideo[]  = "enable-overlay-fullscreen-video";
 
 // Enables the use of persistent GPU memory buffers for partial raster.
 const char kEnablePersistentGpuMemoryBuffer[] =
@@ -441,10 +429,6 @@ const char kEnableSeccompFilterSandbox[] =
 // Enables the Skia benchmarking extension
 const char kEnableSkiaBenchmarking[]        = "enable-skia-benchmarking";
 
-// Enables slimming paint: http://www.chromium.org/blink/slimming-paint
-// Overrides kDisableSlimmingPaint if both are present.
-const char kEnableSlimmingPaint[]           = "enable-slimming-paint";
-
 // Enables slimming paint phase 2: http://www.chromium.org/blink/slimming-paint
 const char kEnableSlimmingPaintV2[]         = "enable-slimming-paint-v2";
 
@@ -489,13 +473,6 @@ const char kEnableUserMediaScreenCapturing[] =
 // pinch gestures.
 const char kEnableViewport[]                = "enable-viewport";
 
-// Enables the viewport meta tag, the de facto way to control layout which works
-// only on mobile browsers.
-const char kEnableViewportMeta[]            = "enable-viewport-meta";
-
-// Enables experiment to scroll the inner viewport first in some situations.
-const char kInvertViewportScrollOrder[] = "invert-viewport-scroll-order";
-
 // Enable the Vtune profiler support.
 const char kEnableVtune[]                   = "enable-vtune-support";
 
@@ -518,16 +495,6 @@ const char kExplicitlyAllowedPorts[]        = "explicitly-allowed-ports";
 // Load NPAPI plugins from the specified directory.
 const char kExtraPluginDir[]                = "extra-plugin-dir";
 
-// This option can be used to force field trials when testing changes locally.
-// The argument is a list of name and value pairs, separated by slashes. If a
-// trial name is prefixed with an asterisk, that trial will start activated.
-// For example, the following argument defines two trials, with the second one
-// activated: "GoogleNow/Enable/*MaterialDesignNTP/Default/"
-// This option is also used by the browser to send the list of trials to
-// renderers, using the same format. See
-// FieldTrialList::CreateTrialsFromString() in field_trial.h for details.
-const char kForceFieldTrials[]              = "force-fieldtrials";
-
 // Always use the Skia GPU backend for drawing layer tiles. Only valid with GPU
 // accelerated compositing + impl-side painting. Overrides the
 // kEnableGpuRasterization flag.
@@ -540,7 +507,7 @@ const char kGpuRasterizationMSAASampleCount[] =
 
 // Forces use of hardware overlay for fullscreen video playback. Useful for
 // testing the Android overlay fullscreen functionality on other platforms.
-const char kForceOverlayFullscreenVideo[]  = "force-overlay-fullscreen-video";
+const char kForceOverlayFullscreenVideo[]   = "force-overlay-fullscreen-video";
 
 // Force renderer accessibility to be on instead of enabling it on demand when
 // a screen reader is detected. The disable-renderer-accessibility switch
@@ -586,6 +553,9 @@ const char kIgnoreCertificateErrors[]       = "ignore-certificate-errors";
 
 // Ignores GPU blacklist.
 const char kIgnoreGpuBlacklist[]            = "ignore-gpu-blacklist";
+
+// Makes all APIs reflect the layout viewport.
+const char kInertVisualViewport[]           = "inert-visual-viewport";
 
 // Run the GPU process as a thread in the browser process.
 const char kInProcessGPU[]                  = "in-process-gpu";
@@ -810,8 +780,7 @@ const char kTestType[]                      = "test-type";
 const char kTouchTextSelectionStrategy[]    = "touch-selection-strategy";
 
 // Prioritizes the UI's command stream in the GPU process
-extern const char kUIPrioritizeInGpuProcess[] =
-    "ui-prioritize-in-gpu-process";
+const char kUIPrioritizeInGpuProcess[] = "ui-prioritize-in-gpu-process";
 
 // Bypass the media stream infobar by selecting the default device for media
 // streams (e.g. WebRTC). Works with --use-fake-device-for-media-stream.
@@ -901,10 +870,6 @@ const char kWebRtcMaxCaptureFramerate[]     = "max-gum-fps";
 #endif
 
 #if defined(OS_ANDROID)
-// Disable user gesture requirement for media playback.
-const char kDisableGestureRequirementForMediaPlayback[] =
-    "disable-gesture-requirement-for-media-playback";
-
 // Disable overscroll edge effects like those found in Android views.
 const char kDisableOverscrollEdgeEffect[]   = "disable-overscroll-edge-effect";
 
@@ -913,9 +878,6 @@ const char kDisablePullToRefreshEffect[]   = "disable-pull-to-refresh-effect";
 
 // Disable the locking feature of the screen orientation API.
 const char kDisableScreenOrientationLock[]  = "disable-screen-orientation-lock";
-
-// WebRTC is enabled by default on Android.
-const char kDisableWebRTC[]                 = "disable-webrtc";
 
 // Enable external animation system for Android compositor.
 // See also kEnableCompositorAnimationTimelines for renderer compositors.
@@ -976,6 +938,12 @@ const char kDisableLegacyIntermediateWindow[] = "disable-legacy-window";
 // Disables the Win32K process mitigation policy for renderer processes.
 const char kDisableWin32kRendererLockDown[] =
     "disable-win32k-renderer-lockdown";
+
+// Enables the Win32K process mitigation policy for certain PPAPI mime
+// types. Each mime type is separated by a comma. Specify * to enable
+// the policy for all mime types.
+const char kEnableWin32kLockDownMimeTypes[] =
+    "enable-win32k-lockdown-mimetypes";
 
 // Enables experimental hardware acceleration for VP8/VP9 video decoding.
 const char kEnableAcceleratedVpxDecode[] = "enable-accelerated-vpx-decode";

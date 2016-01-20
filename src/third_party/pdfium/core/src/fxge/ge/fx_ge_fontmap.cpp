@@ -8,6 +8,7 @@
 
 #include "../../../include/fxge/fx_ge.h"
 #include "../../../include/fxge/fx_freetype.h"
+#include "../fontdata/chromefontdata/chromefontdata.h"
 #include "text_int.h"
 
 #define GET_TT_SHORT(w) (FX_WORD)(((w)[0] << 8) | (w)[1])
@@ -392,24 +393,6 @@ void CFX_FontMgr::ReleaseFace(FXFT_Face face) {
     }
   }
 }
-extern "C" {
-extern const unsigned char g_FoxitFixedItalicFontData[18746];
-extern const unsigned char g_FoxitFixedFontData[17597];
-extern const unsigned char g_FoxitSansItalicFontData[16339];
-extern const unsigned char g_FoxitSansFontData[15025];
-extern const unsigned char g_FoxitSerifItalicFontData[21227];
-extern const unsigned char g_FoxitSerifFontData[19469];
-extern const unsigned char g_FoxitFixedBoldItalicFontData[19151];
-extern const unsigned char g_FoxitFixedBoldFontData[18055];
-extern const unsigned char g_FoxitSansBoldItalicFontData[16418];
-extern const unsigned char g_FoxitSansBoldFontData[16344];
-extern const unsigned char g_FoxitSerifBoldItalicFontData[20733];
-extern const unsigned char g_FoxitSerifBoldFontData[19395];
-extern const unsigned char g_FoxitSymbolFontData[16729];
-extern const unsigned char g_FoxitDingbatsFontData[29513];
-extern const unsigned char g_FoxitSerifMMFontData[113417];
-extern const unsigned char g_FoxitSansMMFontData[66919];
-};
 const FoxitFonts g_FoxitFonts[14] = {
     {g_FoxitFixedFontData, 17597},
     {g_FoxitFixedBoldFontData, 18055},
@@ -426,11 +409,6 @@ const FoxitFonts g_FoxitFonts[14] = {
     {g_FoxitSymbolFontData, 16729},
     {g_FoxitDingbatsFontData, 29513},
 };
-void _FPDFAPI_GetInternalFontData(int id,
-                                  const uint8_t*& data,
-                                  FX_DWORD& size) {
-  CFX_GEModule::Get()->GetFontMgr()->GetStandardFont(data, size, id);
-}
 FX_BOOL CFX_FontMgr::GetStandardFont(const uint8_t*& pFontData,
                                      FX_DWORD& size,
                                      int index) {
@@ -498,8 +476,7 @@ static CFX_ByteString _TT_NormalizeName(const FX_CHAR* family) {
   norm.MakeLower();
   return norm;
 }
-CFX_ByteString _FPDF_GetNameFromTT(const uint8_t* name_table,
-                                   FX_DWORD name_id) {
+CFX_ByteString GetNameFromTT(const uint8_t* name_table, FX_DWORD name_id) {
   const uint8_t* ptr = name_table + 2;
   int name_count = GET_TT_SHORT(ptr);
   int string_offset = GET_TT_SHORT(ptr + 2);
@@ -560,14 +537,14 @@ CFX_ByteString _FPDF_LoadTableFromTTStreamFile(IFX_FileStream* pFile,
 }
 CFX_ByteString CFX_FontMapper::GetPSNameFromTT(void* hFont) {
   if (m_pFontInfo == NULL) {
-    CFX_ByteString();
+    return CFX_ByteString();
   }
   CFX_ByteString result;
   FX_DWORD size = m_pFontInfo->GetFontData(hFont, 0x6e616d65, NULL, 0);
   if (size) {
     uint8_t* buffer = FX_Alloc(uint8_t, size);
     m_pFontInfo->GetFontData(hFont, 0x6e616d65, buffer, size);
-    result = _FPDF_GetNameFromTT(buffer, 6);
+    result = GetNameFromTT(buffer, 6);
     FX_Free(buffer);
   }
   return result;
@@ -1266,10 +1243,6 @@ CFontFileFaceInfo::~CFontFileFaceInfo() {
   }
   m_Face = NULL;
 }
-extern FX_BOOL _LoadFile(FXFT_Library library,
-                         FXFT_Face* Face,
-                         IFX_FileRead* pFile,
-                         FXFT_Stream* stream);
 #if _FX_OS_ == _FX_ANDROID_
 IFX_SystemFontInfo* IFX_SystemFontInfo::CreateDefault(const char** pUnused) {
   return NULL;
@@ -1383,8 +1356,8 @@ void CFX_FolderFontInfo::ReportFace(CFX_ByteString& path,
   }
   CFX_ByteString names =
       _FPDF_LoadTableFromTT(pFile, tables, nTables, 0x6e616d65);
-  CFX_ByteString facename = _FPDF_GetNameFromTT(names, 1);
-  CFX_ByteString style = _FPDF_GetNameFromTT(names, 2);
+  CFX_ByteString facename = GetNameFromTT(names, 1);
+  CFX_ByteString style = GetNameFromTT(names, 2);
   if (style != "Regular") {
     facename += " " + style;
   }
@@ -1462,13 +1435,11 @@ FX_DWORD CFX_FolderFontInfo::GetFontData(void* hFont,
     }
   }
   FX_DWORD datasize = 0;
-  FX_DWORD offset;
+  FX_DWORD offset = 0;
   if (table == 0) {
     datasize = pFont->m_FontOffset ? 0 : pFont->m_FileSize;
-    offset = 0;
   } else if (table == 0x74746366) {
     datasize = pFont->m_FontOffset ? pFont->m_FileSize : 0;
-    offset = 0;
   } else {
     FX_DWORD nTables = pFont->m_FontTables.GetLength() / 16;
     for (FX_DWORD i = 0; i < nTables; i++) {

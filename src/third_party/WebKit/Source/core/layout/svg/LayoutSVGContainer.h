@@ -41,13 +41,13 @@ public:
     LayoutObject* firstChild() const { ASSERT(children() == virtualChildren()); return children()->firstChild(); }
     LayoutObject* lastChild() const { ASSERT(children() == virtualChildren()); return children()->lastChild(); }
 
-    void paint(const PaintInfo&, const LayoutPoint&) override;
+    void paint(const PaintInfo&, const LayoutPoint&) const override;
     void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override;
     void setNeedsBoundariesUpdate() final { m_needsBoundariesUpdate = true; }
     virtual bool didTransformToRootUpdate() { return false; }
     bool isObjectBoundingBoxValid() const { return m_objectBoundingBoxValid; }
 
-    bool selfWillPaint();
+    bool selfWillPaint() const;
 
     bool hasNonIsolatedBlendingDescendants() const final;
 
@@ -64,7 +64,7 @@ protected:
 
     void addChild(LayoutObject* child, LayoutObject* beforeChild = nullptr) final;
     void removeChild(LayoutObject*) final;
-    void addOutlineRects(Vector<LayoutRect>&, const LayoutPoint& additionalOffset) const final;
+    void addOutlineRects(Vector<LayoutRect>&, const LayoutPoint& additionalOffset, IncludeBlockVisualOverflowOrNot) const final;
 
     FloatRect strokeBoundingBox() const final { return m_strokeBoundingBox; }
 

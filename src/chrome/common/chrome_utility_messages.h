@@ -26,6 +26,7 @@
 #include "chrome/common/safe_browsing/zip_analyzer_results.h"
 #include "chrome/common/safe_browsing/ipc_protobuf_message_macros.h"
 #include "chrome/common/safe_browsing/protobuf_message_param_traits.h"
+#include "chrome/common/safe_browsing/zip_analyzer_results.h"
 #endif
 #endif
 

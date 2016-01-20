@@ -6,18 +6,17 @@
 
 #ifndef _JBIG2_HUFFMAN_TABLE_H_
 #define _JBIG2_HUFFMAN_TABLE_H_
-#include "JBig2_Module.h"
+
 #include "JBig2_HuffmanTable_Standard.h"
 #include "JBig2_BitStream.h"
-class CJBig2_HuffmanTable : public CJBig2_Object {
+
+class CJBig2_HuffmanTable {
  public:
   CJBig2_HuffmanTable(const JBig2TableLine* pTable, int nLines, FX_BOOL bHTOOB);
 
   CJBig2_HuffmanTable(CJBig2_BitStream* pStream);
 
   ~CJBig2_HuffmanTable();
-
-  void init();
 
   int parseFromStandardTable(const JBig2TableLine* pTable,
                              int nLines,
@@ -28,6 +27,8 @@ class CJBig2_HuffmanTable : public CJBig2_Object {
   FX_BOOL isOK() { return m_bOK; }
 
  private:
+  void init();
+
   FX_BOOL HTOOB;
   int NTEMP;
   int* CODES;

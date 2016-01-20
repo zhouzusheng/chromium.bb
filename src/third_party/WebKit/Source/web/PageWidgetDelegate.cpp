@@ -35,7 +35,7 @@
 #include "core/frame/LocalFrame.h"
 #include "core/input/EventHandler.h"
 #include "core/layout/LayoutView.h"
-#include "core/layout/compositing/DeprecatedPaintLayerCompositor.h"
+#include "core/layout/compositing/PaintLayerCompositor.h"
 #include "core/page/AutoscrollController.h"
 #include "core/page/Page.h"
 #include "core/paint/TransformRecorder.h"
@@ -51,11 +51,8 @@
 
 namespace blink {
 
-void PageWidgetDelegate::animate(Page& page, double monotonicFrameBeginTime, LocalFrame& root)
+void PageWidgetDelegate::animate(Page& page, double monotonicFrameBeginTime)
 {
-    RefPtrWillBeRawPtr<FrameView> view = root.view();
-    if (!view)
-        return;
     page.autoscrollController().animate(monotonicFrameBeginTime);
     page.animator().serviceScriptedAnimations(monotonicFrameBeginTime);
 }

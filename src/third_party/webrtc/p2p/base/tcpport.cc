@@ -29,32 +29,32 @@
  *  Data could only be sent in state 3. Sening data during state 2 & 6 will get
  *  EWOULDBLOCK, 4 & 5 EPIPE.
  *
- *                          7 -------------+
- *                          |Connected: N  |
- *         Timeout          |Writable:  N  |     Timeout
- *     +------------------->|Connection is |<----------------+
- *     |                    |Dead          |                 |
- *     |                    +--------------+                 |
- *     |                               ^                     |
- *     |            OnClose            |                     |
- *     |    +-----------------------+  |                     |
- *     |    |                       |  |Timeout              |
- *     |    v                       |  |                     |
- *   4 +----------+          5 -----+--+--+           6 -----+-----+
- *   |Connected: N|Send() or |Connected: N|           |Connected: Y|
- *   |Writable:  Y|Ping()    |Writable:  Y|OnConnect  |Writable:  Y|
- *   |PendingTCP:N+--------> |PendingTCP:Y+---------> |PendingTCP:N|
- *   |PretendWri:Y|          |PretendWri:Y|           |PretendWri:Y|
- *   +-----+------+          +------------+           +---+--+-----+
- *     ^   ^                                              |  |
- *     |   |                     OnClose                  |  |
- *     |   +----------------------------------------------+  |
- *     |                                                     |
- *     |                              Stun Binding Completed |
- *     |                                                     |
- *     |                    OnClose                          |
- *     +------------------------------------------------+    |
- *                                                      |    v
+ *         OS Timeout         7 -------------+
+ *   +----------------------->|Connected: N  |
+ *   |                        |Writable:  N  |     Timeout
+ *   |       Timeout          |Connection is |<----------------+
+ *   |   +------------------->|Dead          |                 |
+ *   |   |                    +--------------+                 |
+ *   |   |                               ^                     |
+ *   |   |            OnClose            |                     |
+ *   |   |    +-----------------------+  |                     |
+ *   |   |    |                       |  |Timeout              |
+ *   |   |    v                       |  |                     |
+ *   | 4 +----------+          5 -----+--+--+           6 -----+-----+
+ *   | |Connected: N|Send() or |Connected: N|           |Connected: Y|
+ *   | |Writable:  Y|Ping()    |Writable:  Y|OnConnect  |Writable:  Y|
+ *   | |PendingTCP:N+--------> |PendingTCP:Y+---------> |PendingTCP:N|
+ *   | |PretendWri:Y|          |PretendWri:Y|           |PretendWri:Y|
+ *   | +-----+------+          +------------+           +---+--+-----+
+ *   |   ^   ^                                              |  |
+ *   |   |   |                     OnClose                  |  |
+ *   |   |   +----------------------------------------------+  |
+ *   |   |                                                     |
+ *   |   |                              Stun Binding Completed |
+ *   |   |                                                     |
+ *   |   |                    OnClose                          |
+ *   |   +------------------------------------------------+    |
+ *   |                                                    |    v
  *  1 -----------+           2 -----------+Stun      3 -----------+
  *  |Connected: N|           |Connected: Y|Binding   |Connected: Y|
  *  |Writable:  N|OnConnect  |Writable:  N|Completed |Writable:  Y|
@@ -343,7 +343,7 @@ int TCPConnection::Send(const void* data, size_t size,
     sent_packets_discarded_++;
     error_ = socket_->GetError();
   } else {
-    send_rate_tracker_.Update(sent);
+    send_rate_tracker_.AddSamples(sent);
   }
   return sent;
 }
@@ -354,10 +354,16 @@ int TCPConnection::GetError() {
 
 void TCPConnection::OnConnectionRequestResponse(ConnectionRequest* req,
                                                 StunMessage* response) {
-  // Once we receive a binding response, we are really writable, and not just
-  // pretending to be writable.
-  pretending_to_be_writable_ = false;
+  // Process the STUN response before we inform upper layer ready to send.
   Connection::OnConnectionRequestResponse(req, response);
+
+  // If we're in the state of pretending to be writeable, we should inform the
+  // upper layer it's ready to send again as previous EWOULDLBLOCK from socket
+  // would have stopped the outgoing stream.
+  if (pretending_to_be_writable_) {
+    Connection::OnReadyToSend();
+  }
+  pretending_to_be_writable_ = false;
   ASSERT(write_state() == STATE_WRITABLE);
 }
 
@@ -368,9 +374,18 @@ void TCPConnection::OnConnect(rtc::AsyncPacketSocket* socket) {
   // given a binding address, and the platform is expected to pick the
   // correct local address.
   const rtc::IPAddress& socket_ip = socket->GetLocalAddress().ipaddr();
-  if (socket_ip == port()->ip()) {
-    LOG_J(LS_VERBOSE, this) << "Connection established to "
-                            << socket->GetRemoteAddress().ToSensitiveString();
+  if (socket_ip == port()->ip() || IPIsAny(port()->ip())) {
+    if (socket_ip == port()->ip()) {
+      LOG_J(LS_VERBOSE, this) << "Connection established to "
+                              << socket->GetRemoteAddress().ToSensitiveString();
+    } else {
+      LOG(LS_WARNING) << "Socket is bound to a different address:"
+                      << socket->GetLocalAddress().ipaddr().ToString()
+                      << ", rather then the local port:"
+                      << port()->ip().ToString()
+                      << ". Still allowing it since it's any address"
+                      << ", possibly caused by multi-routes being disabled.";
+    }
     set_connected(true);
     connection_pending_ = false;
   } else {
@@ -378,7 +393,7 @@ void TCPConnection::OnConnect(rtc::AsyncPacketSocket* socket) {
                             << socket_ip.ToSensitiveString()
                             << ", different from the local candidate IP "
                             << port()->ip().ToSensitiveString();
-    socket_->Close();
+    OnClose(socket, 0);
   }
 }
 
@@ -390,6 +405,9 @@ void TCPConnection::OnClose(rtc::AsyncPacketSocket* socket, int error) {
   // packet it can't send.
   if (connected()) {
     set_connected(false);
+
+    // Prevent the connection from being destroyed by redundant SignalClose
+    // events.
     pretending_to_be_writable_ = true;
 
     // We don't attempt reconnect right here. This is to avoid a case where the
@@ -397,6 +415,12 @@ void TCPConnection::OnClose(rtc::AsyncPacketSocket* socket, int error) {
     // when the connection is used to Send() or Ping().
     port()->thread()->PostDelayed(reconnection_timeout(), this,
                                   MSG_TCPCONNECTION_DELAYED_ONCLOSE);
+  } else if (!pretending_to_be_writable_) {
+    // OnClose could be called when the underneath socket times out during the
+    // initial connect() (i.e. |pretending_to_be_writable_| is false) . We have
+    // to manually destroy here as this connection, as never connected, will not
+    // be scheduled for ping to trigger destroy.
+    Destroy();
   }
 }
 
@@ -407,7 +431,7 @@ void TCPConnection::OnMessage(rtc::Message* pmsg) {
       // seconds, it's time to tear this down. This is the case for the original
       // TCP connection on passive side during a reconnect.
       if (pretending_to_be_writable_) {
-        set_write_state(STATE_WRITE_TIMEOUT);
+        Destroy();
       }
       break;
     default:

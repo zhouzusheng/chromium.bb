@@ -31,16 +31,16 @@
 
 namespace blink {
 
-class DeprecatedPaintLayer;
-class DeprecatedPaintLayerScrollableArea;
+class PaintLayer;
+class PaintLayerScrollableArea;
 
-enum DeprecatedPaintLayerType {
-    NoDeprecatedPaintLayer,
-    NormalDeprecatedPaintLayer,
+enum PaintLayerType {
+    NoPaintLayer,
+    NormalPaintLayer,
     // A forced or overflow clip layer is required for bookkeeping purposes,
     // but does not force a layer to be self painting.
-    OverflowClipDeprecatedPaintLayer,
-    ForcedDeprecatedPaintLayer
+    OverflowClipPaintLayer,
+    ForcedPaintLayer
 };
 
 // Modes for some of the line-related functions.
@@ -63,9 +63,69 @@ enum ContentChangeType {
 
 class InlineFlowBox;
 
-// This class is the base for all objects that adhere to the CSS box model as described
-// at http://www.w3.org/TR/CSS21/box.html
-
+// This class is the base class for all CSS objects.
+//
+// All CSS objects follow the box model object:
+// http://www.w3.org/TR/CSS21/box.html
+//
+// This class actually doesn't have the box model but it exposes some common
+// functions or concepts that sub-classes can extend upon. For example, there
+// are accessors for margins, borders, paddings and borderBoundingBox().
+//
+// The reason for this partial implementation is that the 2 classes inheriting
+// from it (LayoutBox and LayoutInline) have different requirements but need to
+// have a PaintLayer.
+// For a full implementation of the box model, see LayoutBox.
+//
+// An important member of this class is PaintLayer. This class is
+// central to painting and hit-testing (see its class comment).
+// PaintLayers are instantiated for several reasons based on the
+// return value of layerTypeRequired().
+// Interestingly, most SVG objects inherit from LayoutSVGModelObject and thus
+// can't have a PaintLayer. This is an unfortunate artifact of our
+// design as it limits code sharing and prevents hardware accelerating SVG
+// (the current design require a PaintLayer for compositing).
+//
+// In order to fully understand LayoutBoxModelObject and the inherited classes,
+// we need to introduce the concept of coordinate systems.
+// There is 3 main coordinate systems:
+// - physical coordinates: it is the coordinate system used for painting and
+//   correspond to physical direction as seen on the physical display (screen,
+//   printed page). In CSS, 'top', 'right', 'bottom', 'left' are all in physical
+//   coordinates. The code matches this convention too.
+//
+// - logical coordinates: this is the coordinate system used for layout. It is
+//   determined by 'writing-mode' and 'direction'. Any property using 'before',
+//   'after', 'start' or 'end' is in logical coordinates. Those are also named
+//   respectively 'logical top', 'logical bottom', 'logical left' and
+//   'logical right'.
+//
+// Example with writing-mode: vertical-rl; direction: ltr;
+//
+//                    'top' / 'start' side
+//
+//                     block-flow direction
+//           <------------------------------------ |
+//           ------------------------------------- |
+//           |        c   |          s           | |
+// 'left'    |        o   |          o           | |   inline     'right'
+//    /      |        n   |          m           | |  direction      /
+// 'after'   |        t   |          e           | |              'before'
+//  side     |        e   |                      | |                side
+//           |        n   |                      | |
+//           |        t   |                      | |
+//           ------------------------------------- v
+//
+//                 'bottom' / 'end' side
+//
+// See https://drafts.csswg.org/css-writing-modes-3/#text-flow for some
+// extra details.
+//
+// - physical coordinates with flipped block-flow direction: those are physical
+//   coordinates but we flipped the block direction. See
+//   LayoutBox::noOverflowRect.
+//   TODO(jchaffraix): I don't fully understand why we need this coordinate
+//   system someone should fill in those details.
 class CORE_EXPORT LayoutBoxModelObject : public LayoutObject {
 public:
     LayoutBoxModelObject(ContainerNode*);
@@ -92,15 +152,20 @@ public:
     virtual int pixelSnappedOffsetHeight() const;
 
     bool hasSelfPaintingLayer() const;
-    DeprecatedPaintLayer* layer() const { return m_layer.get(); }
-    DeprecatedPaintLayerScrollableArea* scrollableArea() const;
+    PaintLayer* layer() const { return m_layer.get(); }
+    PaintLayerScrollableArea* scrollableArea() const;
 
     virtual void updateFromStyle();
 
-    virtual DeprecatedPaintLayerType layerTypeRequired() const = 0;
+    // The type of PaintLayer to instantiate.
+    // Any value returned from this function other than NoPaintLayer
+    // will populate |m_layer|.
+    virtual PaintLayerType layerTypeRequired() const = 0;
 
     // This will work on inlines to return the bounding box of all of the lines' border boxes.
     virtual IntRect borderBoundingBox() const = 0;
+
+    virtual LayoutRect visualOverflowRect() const = 0;
 
     // Checks if this box, or any of it's descendants, or any of it's continuations,
     // will take up space in the layout of the page.
@@ -117,8 +182,8 @@ public:
     LayoutUnit computedCSSPaddingStart() const { return computedCSSPadding(style()->paddingStart()); }
     LayoutUnit computedCSSPaddingEnd() const { return computedCSSPadding(style()->paddingEnd()); }
 
-    // These functions are used during layout. Table cells
-    // override them to include some extra intrinsic padding.
+    // These functions are used during layout. Table cells override them to
+    // include the intrinsic padding (see explanations in LayoutTableCell).
     virtual LayoutUnit paddingTop() const { return computedCSSPaddingTop(); }
     virtual LayoutUnit paddingBottom() const { return computedCSSPaddingBottom(); }
     virtual LayoutUnit paddingLeft() const { return computedCSSPaddingLeft(); }
@@ -181,7 +246,7 @@ public:
 
     virtual void childBecameNonInline(LayoutObject* /*child*/) { }
 
-    virtual bool boxShadowShouldBeAppliedToBackground(BackgroundBleedAvoidance, InlineFlowBox* = nullptr) const;
+    virtual bool boxShadowShouldBeAppliedToBackground(BackgroundBleedAvoidance, const InlineFlowBox* = nullptr) const;
 
     // Overridden by subclasses to determine line height and baseline position.
     virtual LayoutUnit lineHeight(bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const = 0;
@@ -228,10 +293,10 @@ protected:
     bool hasAutoHeightOrContainingBlockWithAutoHeight() const;
     LayoutBlock* containingBlockForAutoHeightDetection(Length logicalHeight) const;
 
-    void addOutlineRectsForNormalChildren(Vector<LayoutRect>&, const LayoutPoint& additionalOffset) const;
-    void addOutlineRectsForDescendant(const LayoutObject& descendant, Vector<LayoutRect>&, const LayoutPoint& additionalOffset) const;
+    void addOutlineRectsForNormalChildren(Vector<LayoutRect>&, const LayoutPoint& additionalOffset, IncludeBlockVisualOverflowOrNot) const;
+    void addOutlineRectsForDescendant(const LayoutObject& descendant, Vector<LayoutRect>&, const LayoutPoint& additionalOffset, IncludeBlockVisualOverflowOrNot) const;
 
-    void addLayerHitTestRects(LayerHitTestRects&, const DeprecatedPaintLayer*, const LayoutPoint&, const LayoutRect&) const override;
+    void addLayerHitTestRects(LayerHitTestRects&, const PaintLayer*, const LayoutPoint&, const LayoutRect&) const override;
 
     void styleWillChange(StyleDifference, const ComputedStyle& newStyle) override;
     void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) override;
@@ -265,12 +330,14 @@ public:
     IntSize calculateImageIntrinsicDimensions(StyleImage*, const IntSize& scaledPositioningAreaSize, ScaleByEffectiveZoomOrNot) const;
 
 private:
-    void createLayer(DeprecatedPaintLayerType);
+    void createLayer(PaintLayerType);
 
     LayoutUnit computedCSSPadding(const Length&) const;
     bool isBoxModelObject() const final { return true; }
 
-    OwnPtr<DeprecatedPaintLayer> m_layer;
+    // The PaintLayer associated with this object.
+    // |m_layer| can be nullptr depending on the return value of layerTypeRequired().
+    OwnPtr<PaintLayer> m_layer;
 };
 
 DEFINE_LAYOUT_OBJECT_TYPE_CASTS(LayoutBoxModelObject, isBoxModelObject());

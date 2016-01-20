@@ -138,10 +138,10 @@ interface InspectorInstrumentation {
     void didRemoveTimer([Keep] ExecutionContext*, int timerId);
 
     [Debugger, Inline=FastReturn]
-    InspectorInstrumentationCookie willCallFunction(ExecutionContext*, const DevToolsFunctionInfo&);
+    InspectorInstrumentationCookie willExecuteScript(ExecutionContext*, int scriptId);
 
     [Debugger, Inline=FastReturn]
-    void didCallFunction(const InspectorInstrumentationCookie&);
+    void didExecuteScript(const InspectorInstrumentationCookie&);
 
     [AsyncCallTracker, Inline=FastReturn]
     void didEnqueueEvent([Keep] EventTarget*, Event*);
@@ -152,7 +152,7 @@ interface InspectorInstrumentation {
     [AsyncCallTracker, DOMDebugger, Inline=FastReturn]
     InspectorInstrumentationCookie willHandleEvent([Keep] EventTarget*, Event*, EventListener* listener, bool useCapture);
 
-    [AsyncCallTracker, Debugger, Inline=FastReturn]
+    [AsyncCallTracker, DOMDebugger, Inline=FastReturn]
     void didHandleEvent(const InspectorInstrumentationCookie&);
 
     [AsyncCallTracker, Inline=FastReturn]
@@ -179,11 +179,8 @@ interface InspectorInstrumentation {
     [AsyncCallTracker, Inline=FastReturn]
     void didPerformExecutionContextTask(ExecutionContext*);
 
-    [Debugger, DOMDebugger, Inline=FastReturn]
-    InspectorInstrumentationCookie willEvaluateScript(LocalFrame*);
-
-    [Debugger, Inline=FastReturn]
-    void didEvaluateScript(const InspectorInstrumentationCookie&);
+    [DOMDebugger, Inline=FastReturn]
+    void willEvaluateScript(ExecutionContext*);
 
     [PageRuntime]
     void didCreateScriptContext([Keep] LocalFrame*, ScriptState*, SecurityOrigin*, int worldId);
@@ -194,14 +191,11 @@ interface InspectorInstrumentation {
     [AsyncCallTracker, DOMDebugger, Inline=FastReturn]
     InspectorInstrumentationCookie willFireTimer([Keep] ExecutionContext*, int timerId);
 
-    [AsyncCallTracker, Debugger, Inline=FastReturn]
+    [AsyncCallTracker, DOMDebugger, Inline=FastReturn]
     void didFireTimer(const InspectorInstrumentationCookie&);
 
     [Page, Inline=FastReturn]
-    void didLayout(LocalFrame*);
-
-    [Page, Inline=FastReturn]
-    void didScroll(LocalFrame*);
+    void didUpdateLayout(LocalFrame*);
 
     [Page, Inline=FastReturn]
     void didResizeMainFrame(LocalFrame*);
@@ -223,6 +217,9 @@ interface InspectorInstrumentation {
 
     [Resource, Inline=FastReturn]
     void applyUserAgentOverride(LocalFrame*, String* userAgent);
+
+    [Resource]
+    void didBlockRequest([Keep] LocalFrame*, const ResourceRequest&, DocumentLoader*, const FetchInitiatorInfo&, ResourceRequestBlockedReason);
 
     [Resource]
     void willSendRequest([Keep] LocalFrame*, unsigned long identifier, DocumentLoader*, ResourceRequest&, const ResourceResponse& redirectResponse, const FetchInitiatorInfo&);
@@ -264,7 +261,7 @@ interface InspectorInstrumentation {
     void didFinishEventSourceRequest(ExecutionContext*, ThreadableLoaderClient* eventSource);
 
     [AsyncCallTracker, Resource]
-    void willLoadXHR(ExecutionContext*, XMLHttpRequest* xhr, ThreadableLoaderClient* client, const AtomicString& method, const KURL& url, bool async, PassRefPtr<FormData>, const HTTPHeaderMap& headers, bool includeCredentials);
+    void willLoadXHR(ExecutionContext*, XMLHttpRequest* xhr, ThreadableLoaderClient* client, const AtomicString& method, const KURL& url, bool async, PassRefPtr<EncodedFormData>, const HTTPHeaderMap& headers, bool includeCredentials);
 
     [Resource]
     void didFailXHRLoading([Keep] ExecutionContext*, XMLHttpRequest* xhr, ThreadableLoaderClient* client, const AtomicString& method, const String& url);
@@ -417,10 +414,10 @@ interface InspectorInstrumentation {
     void traceAsyncCallbackCompleted(const InspectorInstrumentationCookie&);
 
     [Animation, Inline=FastReturn]
-    void didCreateAnimation(Document*, Animation* player);
+    void didCreateAnimation(Document*, unsigned);
 
     [Animation, Inline=FastReturn]
-    void didCancelAnimation(Document*, Animation* player);
+    void didStartAnimation(Document*, Animation* player);
 }
 
 interface InspectorConsoleInstrumentation {

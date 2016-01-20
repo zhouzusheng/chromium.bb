@@ -138,6 +138,7 @@ public:
     BLINK_EXPORT bool ariaControls(WebVector<WebAXObject>& controlsElements) const;
     BLINK_EXPORT bool ariaFlowTo(WebVector<WebAXObject>& flowToElements) const;
     BLINK_EXPORT bool ariaHasPopup() const;
+    BLINK_EXPORT bool isEditable() const;
     BLINK_EXPORT bool isMultiline() const;
     BLINK_EXPORT bool isRichlyEditable() const;
     BLINK_EXPORT bool ariaOwns(WebVector<WebAXObject>& ownsElements) const;
@@ -309,9 +310,9 @@ public:
     BLINK_EXPORT void scrollToGlobalPoint(const WebPoint&) const;
 
 #if BLINK_IMPLEMENTATION
-    WebAXObject(const PassRefPtrWillBeRawPtr<AXObject>&);
-    WebAXObject& operator=(const PassRefPtrWillBeRawPtr<AXObject>&);
-    operator PassRefPtrWillBeRawPtr<AXObject>() const;
+    WebAXObject(AXObject*);
+    WebAXObject& operator=(AXObject*);
+    operator AXObject*() const;
 #endif
 
 private:

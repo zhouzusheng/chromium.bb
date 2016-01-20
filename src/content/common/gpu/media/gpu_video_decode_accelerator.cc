@@ -46,6 +46,7 @@
 #elif defined(USE_OZONE)
 #include "media/ozone/media_ozone_platform.h"
 #elif defined(OS_ANDROID)
+#include "content/common/gpu/media/android_copying_backing_strategy.h"
 #include "content/common/gpu/media/android_video_decode_accelerator.h"
 #endif
 
@@ -381,8 +382,8 @@ GpuVideoDecodeAccelerator::CreateAndroidVDA() {
   scoped_ptr<media::VideoDecodeAccelerator> decoder;
 #if defined(OS_ANDROID)
   decoder.reset(new AndroidVideoDecodeAccelerator(
-      stub_->decoder()->AsWeakPtr(),
-      make_context_current_));
+      stub_->decoder()->AsWeakPtr(), make_context_current_,
+      make_scoped_ptr(new AndroidCopyingBackingStrategy())));
 #endif
   return decoder.Pass();
 }
@@ -423,7 +424,10 @@ GpuVideoDecodeAccelerator::GetSupportedProfiles() {
 // Runs on IO thread if video_decode_accelerator_->CanDecodeOnIOThread() is
 // true, otherwise on the main thread.
 void GpuVideoDecodeAccelerator::OnDecode(
-    base::SharedMemoryHandle handle, int32 id, uint32 size) {
+    base::SharedMemoryHandle handle,
+    int32 id,
+    uint32 size,
+    base::TimeDelta presentation_timestamp) {
   DCHECK(video_decode_accelerator_.get());
   if (id < 0) {
     DLOG(ERROR) << "BitstreamBuffer id " << id << " out of range";
@@ -438,7 +442,8 @@ void GpuVideoDecodeAccelerator::OnDecode(
     }
     return;
   }
-  video_decode_accelerator_->Decode(media::BitstreamBuffer(id, handle, size));
+  video_decode_accelerator_->Decode(
+      media::BitstreamBuffer(id, handle, size, presentation_timestamp));
 }
 
 void GpuVideoDecodeAccelerator::OnAssignPictureBuffers(

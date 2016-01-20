@@ -11,9 +11,9 @@
 #include "SkBitmapDevice.h"
 #include "SkChecksum.h"
 #include "SkDevice.h"
-#include "SkLazyPtr.h"
 #include "SkMatrixImageFilter.h"
 #include "SkMutex.h"
+#include "SkOncePtr.h"
 #include "SkReadBuffer.h"
 #include "SkRect.h"
 #include "SkTDynamicHash.h"
@@ -182,7 +182,7 @@ SkImageFilter::SkImageFilter(int inputCount, SkImageFilter** inputs, const CropR
     fCropRect(cropRect ? *cropRect : CropRect(SkRect(), 0x0)),
     fUniqueID(next_image_filter_unique_id()) {
     for (int i = 0; i < inputCount; ++i) {
-        if (NULL == inputs[i] || inputs[i]->usesSrcInput()) {
+        if (nullptr == inputs[i] || inputs[i]->usesSrcInput()) {
             fUsesSrcInput = true;
         }
         fInputs[i] = inputs[i];
@@ -204,16 +204,16 @@ SkImageFilter::SkImageFilter(int inputCount, SkReadBuffer& buffer)
     if (common.unflatten(buffer, inputCount)) {
         fCropRect = common.cropRect();
         fInputCount = common.inputCount();
-        fInputs = SkNEW_ARRAY(SkImageFilter*, fInputCount);
+        fInputs = new SkImageFilter* [fInputCount];
         common.detachInputs(fInputs);
         for (int i = 0; i < fInputCount; ++i) {
-            if (NULL == fInputs[i] || fInputs[i]->usesSrcInput()) {
+            if (nullptr == fInputs[i] || fInputs[i]->usesSrcInput()) {
                 fUsesSrcInput = true;
             }
         }
     } else {
         fInputCount = 0;
-        fInputs = NULL;
+        fInputs = nullptr;
     }
 }
 
@@ -221,8 +221,8 @@ void SkImageFilter::flatten(SkWriteBuffer& buffer) const {
     buffer.writeInt(fInputCount);
     for (int i = 0; i < fInputCount; i++) {
         SkImageFilter* input = getInput(i);
-        buffer.writeBool(input != NULL);
-        if (input != NULL) {
+        buffer.writeBool(input != nullptr);
+        if (input != nullptr) {
             buffer.writeFlattenable(input);
         }
     }
@@ -307,7 +307,7 @@ bool SkImageFilter::onFilterImage(Proxy*, const SkBitmap&, const Context&,
 }
 
 bool SkImageFilter::canFilterImageGPU() const {
-    return this->asFragmentProcessor(NULL, NULL, NULL, SkMatrix::I(), SkIRect());
+    return this->asFragmentProcessor(nullptr, nullptr, nullptr, SkMatrix::I(), SkIRect());
 }
 
 bool SkImageFilter::filterImageGPU(Proxy* proxy, const SkBitmap& src, const Context& ctx,
@@ -352,9 +352,9 @@ bool SkImageFilter::filterImageGPU(Proxy* proxy, const SkBitmap& src, const Cont
     GrPaint paint;
     if (this->asFragmentProcessor(&fp, paint.getProcessorDataManager(), srcTexture, matrix, bounds)) {
         SkASSERT(fp);
-        paint.addColorProcessor(fp)->unref();
+        paint.addColorFragmentProcessor(fp)->unref();
 
-        GrDrawContext* drawContext = context->drawContext();
+        SkAutoTUnref<GrDrawContext> drawContext(context->drawContext());
         if (drawContext) {
             drawContext->drawNonAARectToRect(dst->asRenderTarget(), clip, paint, SkMatrix::I(),
                                              dstRect, srcRect);
@@ -444,7 +444,7 @@ SkImageFilter* SkImageFilter::CreateMatrixFilter(const SkMatrix& matrix,
 void SkImageFilter::WrapTexture(GrTexture* texture, int width, int height, SkBitmap* result) {
     SkImageInfo info = SkImageInfo::MakeN32Premul(width, height);
     result->setInfo(info);
-    result->setPixelRef(SkNEW_ARGS(SkGrPixelRef, (info, texture)))->unref();
+    result->setPixelRef(new SkGrPixelRef(info, texture))->unref();
 }
 
 bool SkImageFilter::getInputResultGPU(SkImageFilter::Proxy* proxy,
@@ -464,8 +464,8 @@ bool SkImageFilter::getInputResultGPU(SkImageFilter::Proxy* proxy,
                 if (kUnknown_SkColorType == info.colorType()) {
                     return false;
                 }
-                SkAutoTUnref<GrTexture> resultTex(GrRefCachedBitmapTexture(context, *result, NULL));
-                result->setPixelRef(SkNEW_ARGS(SkGrPixelRef, (info, resultTex)))->unref();
+                SkAutoTUnref<GrTexture> resultTex(GrRefCachedBitmapTexture(context, *result, nullptr));
+                result->setPixelRef(new SkGrPixelRef(info, resultTex))->unref();
             }
             return true;
         } else {
@@ -560,24 +560,19 @@ private:
     mutable SkMutex                    fMutex;
 };
 
-SkImageFilter::Cache* CreateCache() {
-    return SkImageFilter::Cache::Create(kDefaultCacheSize);
-}
-
 } // namespace
 
 SkImageFilter::Cache* SkImageFilter::Cache::Create(size_t maxBytes) {
-    return SkNEW_ARGS(CacheImpl, (maxBytes));
+    return new CacheImpl(maxBytes);
 }
 
-SK_DECLARE_STATIC_LAZY_PTR(SkImageFilter::Cache, cache, CreateCache);
-
+SK_DECLARE_STATIC_ONCE_PTR(SkImageFilter::Cache, cache);
 SkImageFilter::Cache* SkImageFilter::Cache::Get() {
-    return cache.get();
+    return cache.get([]{ return SkImageFilter::Cache::Create(kDefaultCacheSize); });
 }
 
 void SkImageFilter::PurgeCache() {
-    cache.get()->purge();
+    Cache::Get()->purge();
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -587,8 +582,8 @@ SkBaseDevice* SkImageFilter::Proxy::createDevice(int w, int h) {
                                    SkBaseDevice::kNever_TileUsage,
                                    kUnknown_SkPixelGeometry,
                                    true /*forImageFilter*/);
-    SkBaseDevice* dev = fDevice->onCreateDevice(cinfo, NULL);
-    if (NULL == dev) {
+    SkBaseDevice* dev = fDevice->onCreateDevice(cinfo, nullptr);
+    if (nullptr == dev) {
         const SkSurfaceProps surfaceProps(fDevice->fSurfaceProps.flags(),
                                           kUnknown_SkPixelGeometry);
         dev = SkBitmapDevice::Create(cinfo.fInfo, surfaceProps);

@@ -153,6 +153,8 @@ public:
     void hidePopup();
     PopupMenu* popup() const { return m_popup.get(); }
 
+    void resetTypeAheadSessionForTesting();
+
     DECLARE_VIRTUAL_TRACE();
 
 protected:
@@ -184,17 +186,19 @@ private:
     LayoutObject* createLayoutObject(const ComputedStyle&) override;
     void didRecalcStyle(StyleRecalcChange) override;
     void detach(const AttachContext& = AttachContext()) override;
-    bool appendFormData(FormDataList&, bool) override;
+    void appendToFormData(FormData&) override;
     void didAddUserAgentShadowRoot(ShadowRoot&) override;
 
     void defaultEventHandler(Event*) override;
 
-    void dispatchInputAndChangeEventForMenuList(bool requiresUserGesture = true);
+    void dispatchInputAndChangeEventForMenuList();
 
     void recalcListItems(bool updateSelectedStates = true) const;
 
     void typeAheadFind(KeyboardEvent*);
     void saveLastSelection();
+    // Returns the first selected OPTION, or nullptr.
+    HTMLOptionElement* selectedOption() const;
 
     InsertionNotificationRequest insertedInto(ContainerNode*) override;
 
@@ -252,7 +256,7 @@ private:
     Vector<bool> m_cachedStateForActiveSelection;
     TypeAhead m_typeAhead;
     unsigned m_size;
-    int m_lastOnChangeIndex;
+    RefPtrWillBeMember<HTMLOptionElement> m_lastOnChangeOption;
     int m_activeSelectionAnchorIndex;
     int m_activeSelectionEndIndex;
     bool m_isProcessingUserDrivenChange;

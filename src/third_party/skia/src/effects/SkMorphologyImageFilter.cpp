@@ -207,13 +207,13 @@ public:
 
     static GrFragmentProcessor* Create(GrProcessorDataManager* procDataManager, GrTexture* tex,
                                        Direction dir, int radius, MorphologyType type) {
-        return SkNEW_ARGS(GrMorphologyEffect, (procDataManager, tex, dir, radius, type));
+        return new GrMorphologyEffect(procDataManager, tex, dir, radius, type);
     }
 
     static GrFragmentProcessor* Create(GrProcessorDataManager* procDataManager, GrTexture* tex,
                                        Direction dir, int radius, MorphologyType type,
                                        float bounds[2]) {
-        return SkNEW_ARGS(GrMorphologyEffect, (procDataManager, tex, dir, radius, type, bounds));
+        return new GrMorphologyEffect(procDataManager, tex, dir, radius, type, bounds);
     }
 
     virtual ~GrMorphologyEffect();
@@ -425,7 +425,7 @@ void GrMorphologyEffect::onGetGLProcessorKey(const GrGLSLCaps& caps, GrProcessor
 }
 
 GrGLFragmentProcessor* GrMorphologyEffect::onCreateGLInstance() const {
-    return SkNEW_ARGS(GrGLMorphologyEffect, (*this));
+    return new GrGLMorphologyEffect(*this);
 }
 bool GrMorphologyEffect::onIsEqual(const GrFragmentProcessor& sBase) const {
     const GrMorphologyEffect& s = sBase.cast<GrMorphologyEffect>();
@@ -445,7 +445,7 @@ void GrMorphologyEffect::onComputeInvariantOutput(GrInvariantOutput* inout) cons
 
 GR_DEFINE_FRAGMENT_PROCESSOR_TEST(GrMorphologyEffect);
 
-GrFragmentProcessor* GrMorphologyEffect::TestCreate(GrProcessorTestData* d) {
+const GrFragmentProcessor* GrMorphologyEffect::TestCreate(GrProcessorTestData* d) {
     int texIdx = d->fRandom->nextBool() ? GrProcessorUnitTest::kSkiaPMTextureIdx :
                                       GrProcessorUnitTest::kAlphaTextureIdx;
     Direction dir = d->fRandom->nextBool() ? kX_Direction : kY_Direction;
@@ -471,12 +471,12 @@ void apply_morphology_rect(GrDrawContext* drawContext,
                            float bounds[2],
                            Gr1DKernelEffect::Direction direction) {
     GrPaint paint;
-    paint.addColorProcessor(GrMorphologyEffect::Create(paint.getProcessorDataManager(),
-                                                       texture,
-                                                       direction,
-                                                       radius,
-                                                       morphType,
-                                                       bounds))->unref();
+    paint.addColorFragmentProcessor(GrMorphologyEffect::Create(paint.getProcessorDataManager(),
+                                                               texture,
+                                                               direction,
+                                                               radius,
+                                                               morphType,
+                                                               bounds))->unref();
     drawContext->drawNonAARectToRect(rt, clip, paint, SkMatrix::I(), SkRect::Make(dstRect),
                                      SkRect::Make(srcRect));
 }
@@ -491,11 +491,11 @@ void apply_morphology_rect_no_bounds(GrDrawContext* drawContext,
                                      GrMorphologyEffect::MorphologyType morphType,
                                      Gr1DKernelEffect::Direction direction) {
     GrPaint paint;
-    paint.addColorProcessor(GrMorphologyEffect::Create(paint.getProcessorDataManager(),
-                                                       texture,
-                                                       direction,
-                                                       radius,
-                                                       morphType))->unref();
+    paint.addColorFragmentProcessor(GrMorphologyEffect::Create(paint.getProcessorDataManager(),
+                                                               texture,
+                                                               direction,
+                                                               radius,
+                                                               morphType))->unref();
     drawContext->drawNonAARectToRect(rt, clip, paint, SkMatrix::I(), SkRect::Make(dstRect),
                                      SkRect::Make(srcRect));
 }
@@ -570,10 +570,10 @@ bool apply_morphology(const SkBitmap& input,
 
     if (radius.fWidth > 0) {
         GrTexture* scratch = context->textureProvider()->createApproxTexture(desc);
-        if (NULL == scratch) {
+        if (nullptr == scratch) {
             return false;
         }
-        GrDrawContext* dstDrawContext = context->drawContext();
+        SkAutoTUnref<GrDrawContext> dstDrawContext(context->drawContext());
         if (!dstDrawContext) {
             return false;
         }
@@ -593,10 +593,10 @@ bool apply_morphology(const SkBitmap& input,
     }
     if (radius.fHeight > 0) {
         GrTexture* scratch = context->textureProvider()->createApproxTexture(desc);
-        if (NULL == scratch) {
+        if (nullptr == scratch) {
             return false;
         }
-        GrDrawContext* dstDrawContext = context->drawContext();
+        SkAutoTUnref<GrDrawContext> dstDrawContext(context->drawContext());
         if (!dstDrawContext) {
             return false;
         }

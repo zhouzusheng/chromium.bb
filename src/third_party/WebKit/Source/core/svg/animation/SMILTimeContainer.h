@@ -69,6 +69,9 @@ public:
 
     void setDocumentOrderIndexesDirty() { m_documentOrderIndexesDirty = true; }
 
+    // Advance the animation timeline a single frame.
+    void advanceFrameForTesting();
+
     DECLARE_TRACE();
 
 private:
@@ -128,7 +131,7 @@ private:
     Timer<SMILTimeContainer> m_wakeupTimer;
     Timer<SMILTimeContainer> m_animationPolicyOnceTimer;
 
-    using ElementAttributePair = pair<RawPtrWillBeWeakMember<SVGElement>, QualifiedName>;
+    using ElementAttributePair = std::pair<RawPtrWillBeWeakMember<SVGElement>, QualifiedName>;
     using AnimationsLinkedHashSet = WillBeHeapLinkedHashSet<RawPtrWillBeWeakMember<SVGSMILElement>>;
     using GroupedAnimationsMap = WillBeHeapHashMap<ElementAttributePair, OwnPtrWillBeMember<AnimationsLinkedHashSet>>;
     GroupedAnimationsMap m_scheduledAnimations;

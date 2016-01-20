@@ -15,7 +15,10 @@ namespace rx
 struct WorkaroundsGL
 {
     WorkaroundsGL()
-        : avoid1BitAlphaTextureFormats(false), rgba4IsNotSupportedForColorRendering(false)
+        : avoid1BitAlphaTextureFormats(false),
+          rgba4IsNotSupportedForColorRendering(false),
+          doesSRGBClearsOnLinearFramebufferAttachments(false),
+          doWhileGLSLCausesGPUHang(false)
     {
     }
 
@@ -32,6 +35,21 @@ struct WorkaroundsGL
     // returns GL_FRAMEBUFFER_UNSUPPORTED. Work around this by using a known color-renderable
     // format.
     bool rgba4IsNotSupportedForColorRendering;
+
+    // When clearing a framebuffer on Intel or AMD drivers, when GL_FRAMEBUFFER_SRGB is enabled, the
+    // driver clears to the linearized clear color despite the framebuffer not supporting SRGB
+    // blending.  It only seems to do this when the framebuffer has only linear attachments, mixed
+    // attachments appear to get the correct clear color.
+
+    bool doesSRGBClearsOnLinearFramebufferAttachments;
+    // On Mac some GLSL constructs involving do-while loops cause GPU hangs, such as the following:
+    //  int i = 1;
+    //  do {
+    //      i --;
+    //      continue;
+    //  } while (i > 0)
+    // Work around this by rewriting the do-while to use another GLSL construct (block + while)
+    bool doWhileGLSLCausesGPUHang;
 };
 }
 

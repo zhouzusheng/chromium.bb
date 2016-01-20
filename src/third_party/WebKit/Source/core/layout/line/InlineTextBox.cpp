@@ -185,7 +185,31 @@ SelectionState InlineTextBox::selectionState() const
     return state;
 }
 
-LayoutRect InlineTextBox::localSelectionRect(int startPos, int endPos)
+bool InlineTextBox::hasWrappedSelectionNewline() const
+{
+    // TODO(wkorman): We shouldn't need layout at this point and it should
+    // be enforced by DocumentLifecycle. http://crbug.com/537821
+    // Bail out as currently looking up selection state can cause the editing
+    // code can force a re-layout while scrutinizing the editing position, and
+    // InlineTextBox instances are not guaranteed to survive a re-layout.
+    if (lineLayoutItem().needsLayout())
+        return false;
+
+    SelectionState state = selectionState();
+    return RuntimeEnabledFeatures::selectionPaintingWithoutSelectionGapsEnabled()
+        && (state == SelectionStart || state == SelectionInside)
+        // Checking last leaf child can be slow, so we make sure to do this only
+        // after the other simple conditionals.
+        && (root().lastLeafChild() == this);
+}
+
+float InlineTextBox::newlineSpaceWidth() const
+{
+    const ComputedStyle& styleToUse = lineLayoutItem().styleRef(isFirstLineStyle());
+    return styleToUse.font().spaceWidth();
+}
+
+LayoutRect InlineTextBox::localSelectionRect(int startPos, int endPos) const
 {
     int sPos = std::max(startPos - m_start, 0);
     int ePos = std::min(endPos - m_start, (int)m_len);
@@ -220,9 +244,27 @@ LayoutRect InlineTextBox::localSelectionRect(int startPos, int endPos)
     else if (r.maxX() > logicalRight())
         logicalWidth = logicalRight() - r.x();
 
-    LayoutPoint topPoint = isHorizontal() ? LayoutPoint(r.x(), selTop) : LayoutPoint(selTop, r.x());
-    LayoutUnit width = isHorizontal() ? logicalWidth : selHeight;
-    LayoutUnit height = isHorizontal() ? selHeight : logicalWidth;
+    LayoutPoint topPoint;
+    LayoutUnit width;
+    LayoutUnit height;
+    if (isHorizontal()) {
+        topPoint = LayoutPoint(r.x(), selTop);
+        width = logicalWidth;
+        height = selHeight;
+        if (hasWrappedSelectionNewline()) {
+            if (!isLeftToRightDirection())
+                topPoint.setX(topPoint.x() - newlineSpaceWidth());
+            width += newlineSpaceWidth();
+        }
+    } else {
+        topPoint = LayoutPoint(selTop, r.x());
+        width = selHeight;
+        height = logicalWidth;
+        // TODO(wkorman): RTL text embedded in top-to-bottom text can create
+        // bottom-to-top situations. Add tests and ensure we handle correctly.
+        if (hasWrappedSelectionNewline())
+            height += newlineSpaceWidth();
+    }
 
     return LayoutRect(topPoint, LayoutSize(width, height));
 }
@@ -249,10 +291,24 @@ void InlineTextBox::attachLine()
     lineLayoutItem().attachTextBox(this);
 }
 
+void InlineTextBox::setTruncation(unsigned truncation)
+{
+    if (truncation == m_truncation)
+        return;
+
+    m_truncation = truncation;
+    InlineTextBoxPainter::removeFromTextBlobCache(*this);
+}
+
+void InlineTextBox::clearTruncation()
+{
+    setTruncation(cNoTruncation);
+}
+
 LayoutUnit InlineTextBox::placeEllipsisBox(bool flowIsLTR, LayoutUnit visibleLeftEdge, LayoutUnit visibleRightEdge, LayoutUnit ellipsisWidth, LayoutUnit &truncatedWidth, bool& foundBox)
 {
     if (foundBox) {
-        m_truncation = cFullTruncation;
+        setTruncation(cFullTruncation);
         return -1;
     }
 
@@ -266,7 +322,7 @@ LayoutUnit InlineTextBox::placeEllipsisBox(bool flowIsLTR, LayoutUnit visibleLef
     bool rtlFullTruncation = !flowIsLTR && ellipsisX >= logicalLeft() + logicalWidth();
     if (ltrFullTruncation || rtlFullTruncation) {
         // Too far.  Just set full truncation, but return -1 and let the ellipsis just be placed at the edge of the box.
-        m_truncation = cFullTruncation;
+        setTruncation(cFullTruncation);
         foundBox = true;
         return -1;
     }
@@ -290,13 +346,13 @@ LayoutUnit InlineTextBox::placeEllipsisBox(bool flowIsLTR, LayoutUnit visibleLef
         if (offset == 0) {
             // No characters should be laid out.  Set ourselves to full truncation and place the ellipsis at the min of our start
             // and the ellipsis edge.
-            m_truncation = cFullTruncation;
+            setTruncation(cFullTruncation);
             truncatedWidth += ellipsisWidth;
             return std::min(ellipsisX, logicalLeft());
         }
 
         // Set the truncation index on the text run.
-        m_truncation = offset;
+        setTruncation(offset);
 
         // If we got here that means that we were only partially truncated and we need to return the pixel offset at which
         // to place the ellipsis.
@@ -362,7 +418,7 @@ bool InlineTextBox::getEmphasisMarkPosition(const ComputedStyle& style, TextEmph
     return !rubyText || !rubyText->firstLineBox();
 }
 
-void InlineTextBox::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset, LayoutUnit /*lineTop*/, LayoutUnit /*lineBottom*/)
+void InlineTextBox::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset, LayoutUnit /*lineTop*/, LayoutUnit /*lineBottom*/) const
 {
     InlineTextBoxPainter(*this).paint(paintInfo, paintOffset);
 }
@@ -385,12 +441,12 @@ void InlineTextBox::selectionStartEnd(int& sPos, int& ePos) const
     ePos = std::min(endPos - m_start, (int)m_len);
 }
 
-void InlineTextBox::paintDocumentMarker(GraphicsContext* pt, const LayoutPoint& boxOrigin, DocumentMarker* marker, const ComputedStyle& style, const Font& font, bool grammar)
+void InlineTextBox::paintDocumentMarker(GraphicsContext* pt, const LayoutPoint& boxOrigin, DocumentMarker* marker, const ComputedStyle& style, const Font& font, bool grammar) const
 {
     InlineTextBoxPainter(*this).paintDocumentMarker(pt, boxOrigin, marker, style, font, grammar);
 }
 
-void InlineTextBox::paintTextMatchMarker(GraphicsContext* pt, const LayoutPoint& boxOrigin, DocumentMarker* marker, const ComputedStyle& style, const Font& font)
+void InlineTextBox::paintTextMatchMarker(GraphicsContext* pt, const LayoutPoint& boxOrigin, DocumentMarker* marker, const ComputedStyle& style, const Font& font) const
 {
     InlineTextBoxPainter(*this).paintTextMatchMarker(pt, boxOrigin, marker, style, font);
 }

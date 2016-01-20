@@ -31,8 +31,10 @@
 #include "bindings/core/v8/ScriptValue.h"
 #include "bindings/core/v8/UnionTypesCore.h"
 #include "core/CoreExport.h"
+#include "core/dom/DOMTypedArray.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentVisibilityObserver.h"
+#include "core/fileapi/FileCallback.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/canvas/CanvasImageSource.h"
 #include "platform/geometry/FloatRect.h"
@@ -41,6 +43,7 @@
 #include "platform/graphics/GraphicsTypes3D.h"
 #include "platform/graphics/ImageBufferClient.h"
 #include "platform/heap/Handle.h"
+#include "public/platform/WebThread.h"
 
 #define CanvasDefaultInterpolationQuality InterpolationLow
 
@@ -76,6 +79,8 @@ class CORE_EXPORT HTMLCanvasElement final : public HTMLElement, public DocumentV
 public:
     DECLARE_NODE_FACTORY(HTMLCanvasElement);
     ~HTMLCanvasElement() override;
+
+    static WebThread* getToBlobThreadInstance();
 
     void addObserver(CanvasObserver*);
     void removeObserver(CanvasObserver*);
@@ -113,6 +118,9 @@ public:
     String toDataURL(const String& mimeType, const ScriptValue& qualityArgument, ExceptionState&) const;
     String toDataURL(const String& mimeType, ExceptionState& exceptionState) const { return toDataURL(mimeType, ScriptValue(), exceptionState); }
 
+    void toBlob(FileCallback*, const String& mimeType, const ScriptValue& qualityArgument, ExceptionState&);
+    void toBlob(FileCallback* callback, const String& mimeType, ExceptionState& exceptionState) { return toBlob(callback, mimeType, ScriptValue(), exceptionState); }
+
     // Used for rendering
     void didDraw(const FloatRect&);
     void notifyObserversCanvasChanged(const FloatRect&);
@@ -128,7 +136,7 @@ public:
 
     void ensureUnacceleratedImageBuffer();
     ImageBuffer* buffer() const;
-    PassRefPtr<Image> copiedImage(SourceDrawingBuffer) const;
+    PassRefPtr<Image> copiedImage(SourceDrawingBuffer, AccelerationHint) const;
     void clearCopiedImage();
 
     SecurityOrigin* securityOrigin() const;
@@ -147,6 +155,8 @@ public:
 
     bool shouldBeDirectComposited() const;
 
+    void prepareSurfaceForPaintingIfNeeded() const;
+
     const AtomicString imageSourceURL() const override;
 
     InsertionNotificationRequest insertedInto(ContainerNode*) override;
@@ -155,7 +165,7 @@ public:
     void didChangeVisibilityState(PageVisibilityState) override;
 
     // CanvasImageSource implementation
-    PassRefPtr<Image> getSourceImageForCanvas(SourceImageStatus*) const override;
+    PassRefPtr<Image> getSourceImageForCanvas(SourceImageStatus*, AccelerationHint) const override;
     bool wouldTaintOrigin(SecurityOrigin*) const override;
     FloatSize elementSize() const override;
     bool isCanvasElement() const override { return true; }
@@ -205,7 +215,10 @@ private:
     bool paintsIntoCanvasBuffer() const;
 
     ImageData* toImageData(SourceDrawingBuffer) const;
-    String toDataURLInternal(const String& mimeType, const double* quality, SourceDrawingBuffer) const;
+    String toDataURLInternal(const String& mimeType, const double& quality, SourceDrawingBuffer) const;
+
+    static void encodeImageAsync(DOMUint8ClampedArray* imagedata, IntSize imageSize, FileCallback*, const String& mimeType, double quality);
+    static void createBlobAndCall(PassOwnPtr<Vector<char>> encodedImage, const String& mimeType, FileCallback*);
 
     WillBeHeapHashSet<RawPtrWillBeWeakMember<CanvasObserver>> m_observers;
 

@@ -24,7 +24,7 @@ class GrVertexBatch : public GrDrawBatch {
 public:
     class Target;
 
-    GrVertexBatch();
+    GrVertexBatch(uint32_t classID);
 
 protected:
     /** Helper for rendering instances using an instanced index index buffer. This class creates the
@@ -51,7 +51,7 @@ protected:
     class QuadHelper : private InstancedHelper {
     public:
         QuadHelper() : INHERITED() {}
-        /** Finds the cached quad index buffer and reserves vertex space. Returns NULL on failure
+        /** Finds the cached quad index buffer and reserves vertex space. Returns nullptr on failure
             and on sucess a pointer to the vertex data that the caller should populate before
             calling issueDraws(). */
         void* init(Target* batchTarget, size_t vertexStride, int quadsToDraw);
@@ -78,9 +78,6 @@ private:
     // Array of DrawArray. There may be inline uploads between each DrawArray and each DrawArray
     // may use a different primitive processor.
     SkTLList<DrawArray> fDrawArrays;
-
-    // What is this?
-    GrBatchTracker      fBatchTracker;
 
     typedef GrDrawBatch INHERITED;
 };

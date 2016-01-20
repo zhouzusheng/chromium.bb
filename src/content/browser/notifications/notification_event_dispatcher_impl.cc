@@ -53,6 +53,7 @@ void NotificationClickEventFinished(
     case SERVICE_WORKER_ERROR_SCRIPT_EVALUATE_FAILED:
     case SERVICE_WORKER_ERROR_DISK_CACHE:
     case SERVICE_WORKER_ERROR_REDUNDANT:
+    case SERVICE_WORKER_ERROR_DISALLOWED:
     case SERVICE_WORKER_ERROR_MAX_VALUE:
       status = PERSISTENT_NOTIFICATION_STATUS_SERVICE_WORKER_ERROR;
       break;
@@ -79,6 +80,7 @@ void DispatchNotificationClickEventOnRegistration(
                    dispatch_complete_callback,
                    service_worker_registration);
 
+    DCHECK(service_worker_registration->active_version());
     service_worker_registration->active_version()->
         DispatchNotificationClickEvent(
             dispatch_event_callback,
@@ -109,6 +111,7 @@ void DispatchNotificationClickEventOnRegistration(
     case SERVICE_WORKER_ERROR_SCRIPT_EVALUATE_FAILED:
     case SERVICE_WORKER_ERROR_DISK_CACHE:
     case SERVICE_WORKER_ERROR_REDUNDANT:
+    case SERVICE_WORKER_ERROR_DISALLOWED:
     case SERVICE_WORKER_ERROR_MAX_VALUE:
       status = PERSISTENT_NOTIFICATION_STATUS_SERVICE_WORKER_ERROR;
       break;
@@ -141,7 +144,7 @@ void FindServiceWorkerRegistration(
     return;
   }
 
-  service_worker_context->FindRegistrationForId(
+  service_worker_context->FindReadyRegistrationForId(
       notification_database_data.service_worker_registration_id,
       origin,
       base::Bind(&DispatchNotificationClickEventOnRegistration,
@@ -177,7 +180,7 @@ NotificationEventDispatcher* NotificationEventDispatcher::GetInstance() {
 NotificationEventDispatcherImpl*
 NotificationEventDispatcherImpl::GetInstance() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  return Singleton<NotificationEventDispatcherImpl>::get();
+  return base::Singleton<NotificationEventDispatcherImpl>::get();
 }
 
 NotificationEventDispatcherImpl::NotificationEventDispatcherImpl() {}

@@ -18,6 +18,7 @@
 #include "media/base/limits.h"
 #include "media/base/media_switches.h"
 #include "media/base/pipeline.h"
+#include "media/base/timestamp_constants.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_util.h"
 #include "media/ffmpeg/ffmpeg_common.h"
@@ -63,6 +64,12 @@ static int GetVideoBufferImpl(struct AVCodecContext* s,
 static void ReleaseVideoBufferImpl(void* opaque, uint8* data) {
   scoped_refptr<VideoFrame> video_frame;
   video_frame.swap(reinterpret_cast<VideoFrame**>(&opaque));
+}
+
+// static
+bool FFmpegVideoDecoder::IsCodecSupported(VideoCodec codec) {
+  FFmpegGlue::InitializeFFmpeg();
+  return avcodec_find_decoder(VideoCodecToCodecID(codec)) != nullptr;
 }
 
 FFmpegVideoDecoder::FFmpegVideoDecoder(

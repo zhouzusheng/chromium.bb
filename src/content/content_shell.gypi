@@ -112,6 +112,8 @@
         # 'shell/browser/layout_test/layout_test_android.h',
         # 'shell/browser/layout_test/layout_test_bluetooth_adapter_provider.cc',
         # 'shell/browser/layout_test/layout_test_bluetooth_adapter_provider.h',
+        # 'shell/browser/layout_test/layout_test_bluetooth_chooser_factory.cc',
+        # 'shell/browser/layout_test/layout_test_bluetooth_chooser_factory.h',
         # 'shell/browser/layout_test/layout_test_browser_context.cc',
         # 'shell/browser/layout_test/layout_test_browser_context.h',
         # 'shell/browser/layout_test/layout_test_browser_main.cc',
@@ -573,30 +575,6 @@
                          '--scm=1',
                          '--version=<(content_shell_version)'],
             },
-            {
-              # This postbuid step is responsible for creating the following
-              # helpers:
-              #
-              # Content Shell Helper EH.app and Content Shell Helper NP.app are
-              # created from Content Shell Helper.app.
-              #
-              # The EH helper is marked for an executable heap. The NP helper
-              # is marked for no PIE (ASLR).
-              'postbuild_name': 'Make More Helpers',
-              'action': [
-                '../build/mac/make_more_helpers.sh',
-                'Frameworks',
-                '<(content_shell_product_name)',
-              ],
-            },
-            {
-              # Make sure there isn't any Objective-C in the shell's
-              # executable.
-              'postbuild_name': 'Verify No Objective-C',
-              'action': [
-                '../build/mac/verify_no_objc.sh',
-              ],
-            },
           ],
         }],  # OS=="mac"
         ['OS=="android"', {
@@ -795,21 +773,6 @@
             },
           ],
           'conditions': [
-            ['enable_webrtc==1', {
-              'variables': {
-                'libpeer_target_type%': 'static_library',
-              },
-              'conditions': [
-                ['libpeer_target_type!="static_library"', {
-                  'copies': [{
-                   'destination': '<(PRODUCT_DIR)/$(CONTENTS_FOLDER_PATH)/Libraries',
-                   'files': [
-                      '<(PRODUCT_DIR)/libpeerconnection.so',
-                    ],
-                  }],
-                }],
-              ],
-            }],
             ['icu_use_data_file_flag==1', {
               'mac_bundle_resources': [
                 '<(PRODUCT_DIR)/icudtl.dat',
@@ -878,14 +841,6 @@
                          '--keystone=0',
                          '--scm=0',
                          '--version=<(content_shell_version)'],
-            },
-            {
-              # Make sure there isn't any Objective-C in the helper app's
-              # executable.
-              'postbuild_name': 'Verify No Objective-C',
-              'action': [
-                '../build/mac/verify_no_objc.sh',
-              ],
             },
           ],
           'conditions': [

@@ -29,6 +29,10 @@ PermissionType PermissionNameToPermissionType(PermissionName name) {
       return PermissionType::PROTECTED_MEDIA_IDENTIFIER;
     case PERMISSION_NAME_DURABLE_STORAGE:
       return PermissionType::DURABLE_STORAGE;
+    case PERMISSION_NAME_AUDIO_CAPTURE:
+      return PermissionType::AUDIO_CAPTURE;
+    case PERMISSION_NAME_VIDEO_CAPTURE:
+      return PermissionType::VIDEO_CAPTURE;
   }
 
   NOTREACHED();
@@ -41,7 +45,8 @@ PermissionServiceImpl::PendingRequest::PendingRequest(
     PermissionType permission,
     const GURL& origin,
     const PermissionStatusCallback& callback)
-    : permission(permission),
+    : id(PermissionManager::kNoPendingOperation),
+      permission(permission),
       origin(origin),
       callback(callback) {
 }
@@ -113,18 +118,39 @@ void PermissionServiceImpl::RequestPermission(
   }
 
   PermissionType permission_type = PermissionNameToPermissionType(permission);
-  int request_id = pending_requests_.Add(
+  int pending_request_id = pending_requests_.Add(
       new PendingRequest(permission_type, GURL(origin), callback));
 
-  browser_context->GetPermissionManager()->RequestPermission(
+  int id = browser_context->GetPermissionManager()->RequestPermission(
       permission_type,
       context_->render_frame_host(),
-      request_id,
       GURL(origin),
       user_gesture, // TODO(mlamouri): should be removed (crbug.com/423770)
       base::Bind(&PermissionServiceImpl::OnRequestPermissionResponse,
                  weak_factory_.GetWeakPtr(),
-                 request_id));
+                 pending_request_id));
+
+  // Check if the request still exists. It might have been removed by the
+  // callback if it was run synchronously.
+  PendingRequest* pending_request = pending_requests_.Lookup(
+      pending_request_id);
+  if (!pending_request)
+      return;
+  pending_request->id = id;
+}
+
+void PermissionServiceImpl::RequestPermissions(
+    mojo::Array<PermissionName> permissions,
+    const mojo::String& origin,
+    bool user_gesture,
+    const PermissionsStatusCallback& callback) {
+  // TODO(lalitm,mlamouri): this is returning the current permission statuses
+  // in order for the call to successfully return. It will be changed later.
+  // See https://crbug.com/516626
+  mojo::Array<PermissionStatus> result(permissions.size());
+  for (size_t i = 0; i < permissions.size(); ++i)
+    result[i] = GetPermissionStatusFromName(permissions[i], GURL(origin));
+  callback.Run(result.Pass());
 }
 
 void PermissionServiceImpl::OnRequestPermissionResponse(
@@ -138,7 +164,6 @@ void PermissionServiceImpl::OnRequestPermissionResponse(
 }
 
 void PermissionServiceImpl::CancelPendingOperations() {
-  DCHECK(context_->render_frame_host());
   DCHECK(context_->GetBrowserContext());
 
   PermissionManager* permission_manager =
@@ -150,10 +175,7 @@ void PermissionServiceImpl::CancelPendingOperations() {
   for (RequestsMap::Iterator<PendingRequest> it(&pending_requests_);
        !it.IsAtEnd(); it.Advance()) {
     permission_manager->CancelPermissionRequest(
-        it.GetCurrentValue()->permission,
-        context_->render_frame_host(),
-        it.GetCurrentKey(),
-        it.GetCurrentValue()->origin);
+        it.GetCurrentValue()->id);
   }
   pending_requests_.Clear();
 

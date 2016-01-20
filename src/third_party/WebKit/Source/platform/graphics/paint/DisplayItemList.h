@@ -6,6 +6,8 @@
 #define DisplayItemList_h
 
 #include "platform/PlatformExport.h"
+#include "platform/RuntimeEnabledFeatures.h"
+#include "platform/geometry/LayoutPoint.h"
 #include "platform/graphics/ContiguousContainer.h"
 #include "platform/graphics/paint/DisplayItem.h"
 #include "platform/graphics/paint/Transform3DDisplayItem.h"
@@ -31,7 +33,27 @@ static const size_t kMaximumDisplayItemSize = sizeof(BeginTransform3DDisplayItem
 // which were invalidated on this frame and do not change SimpleLayers.
 using DisplayListDiff = HashMap<DisplayItemClient, DisplayItem*>;
 
-using DisplayItems = ContiguousContainer<DisplayItem, kDisplayItemAlignment>;
+class DisplayItems : public ContiguousContainer<DisplayItem, kDisplayItemAlignment> {
+public:
+    DisplayItems(size_t initialSizeBytes)
+        : ContiguousContainer(kMaximumDisplayItemSize, initialSizeBytes) {}
+
+    DisplayItem& appendByMoving(DisplayItem& item)
+    {
+#ifndef NDEBUG
+        WTF::String originalDebugString = item.asDebugString();
+#endif
+        ASSERT(item.isValid());
+        DisplayItem& result = ContiguousContainer::appendByMoving(item, item.derivedSize());
+        // ContiguousContainer::appendByMoving() called in-place constructor on item, which invalidated it.
+        ASSERT(!item.isValid());
+#ifndef NDEBUG
+        // Save original debug string in the old item to help debugging.
+        item.setClientDebugString(originalDebugString);
+#endif
+        return result;
+    }
+};
 
 class PLATFORM_EXPORT DisplayItemList {
     WTF_MAKE_NONCOPYABLE(DisplayItemList);
@@ -43,8 +65,15 @@ public:
     }
 
     // These methods are called during paint invalidation.
-    void invalidate(DisplayItemClient);
+    void invalidate(const DisplayItemClientWrapper&);
+    void invalidateUntracked(DisplayItemClient);
     void invalidateAll();
+
+    // Record when paint offsets change during paint.
+    void invalidatePaintOffset(const DisplayItemClientWrapper&);
+#if ENABLE(ASSERT)
+    bool paintOffsetWasInvalidated(DisplayItemClient) const;
+#endif
 
     // These methods are called during painting.
     template <typename DisplayItemClass, typename... Args>
@@ -56,7 +85,7 @@ public:
             "DisplayItem subclass is larger than kMaximumDisplayItemSize.");
 
         DisplayItemClass& displayItem = m_newDisplayItems.allocateAndConstruct<DisplayItemClass>(WTF::forward<Args>(args)...);
-        processNewItem(&displayItem);
+        processNewItem(displayItem);
         return displayItem;
     }
 
@@ -101,33 +130,47 @@ public:
     bool displayItemConstructionIsDisabled() const { return m_constructionDisabled; }
     void setDisplayItemConstructionIsDisabled(const bool disable) { m_constructionDisabled = disable; }
 
-#if ENABLE(ASSERT)
-    size_t newDisplayItemsSize() const { return m_newDisplayItems.size(); }
-#endif
+    bool textPainted() const { return m_textPainted; }
+    void setTextPainted() { m_textPainted = true; }
+
+    // Returns displayItems added using createAndAppend() since beginning or the last
+    // commitNewDisplayItems(). Use with care.
+    DisplayItems& newDisplayItems() { return m_newDisplayItems; }
 
 #ifndef NDEBUG
     void showDebugData() const;
 #endif
 
+    void startTrackingPaintInvalidationObjects()
+    {
+        ASSERT(RuntimeEnabledFeatures::slimmingPaintV2Enabled());
+        m_trackedPaintInvalidationObjects = adoptPtr(new Vector<String>());
+    }
+    void stopTrackingPaintInvalidationObjects()
+    {
+        ASSERT(RuntimeEnabledFeatures::slimmingPaintV2Enabled());
+        m_trackedPaintInvalidationObjects = nullptr;
+    }
+    Vector<String> trackedPaintInvalidationObjects()
+    {
+        ASSERT(RuntimeEnabledFeatures::slimmingPaintV2Enabled());
+        return m_trackedPaintInvalidationObjects ? *m_trackedPaintInvalidationObjects : Vector<String>();
+    }
+
 protected:
     DisplayItemList()
-        : m_currentDisplayItems(kMaximumDisplayItemSize, 0)
-        , m_newDisplayItems(kMaximumDisplayItemSize, kInitialDisplayItemsCapacity * kMaximumDisplayItemSize)
+        : m_currentDisplayItems(0)
+        , m_newDisplayItems(kInitialDisplayItemsCapacity * kMaximumDisplayItemSize)
         , m_validlyCachedClientsDirty(false)
         , m_constructionDisabled(false)
+        , m_textPainted(false)
         , m_skippingCacheCount(0)
         , m_numCachedItems(0)
         , m_nextScope(1) { }
 
 private:
-    friend class DisplayItemListTest;
-    friend class DisplayItemListPaintTest;
-    friend class DisplayItemListPaintTestForSlimmingPaintV2;
-    friend class LayoutObjectDrawingRecorderTest;
-
     // Set new item state (scopes, cache skipping, etc) for a new item.
-    // TODO(pdr): This only passes a pointer to make the patch easier to review. Change to a reference.
-    void processNewItem(DisplayItem*);
+    void processNewItem(DisplayItem&);
 
     void updateValidlyCachedClientsIfNeeded() const;
 
@@ -135,7 +178,7 @@ private:
     WTF::String displayItemsAsDebugString(const DisplayItems&) const;
 #endif
 
-    // Indices into PaintList of all DrawingDisplayItems and BeginSubtreeDisplayItems of each client.
+    // Indices into PaintList of all DrawingDisplayItems and BeginSubsequenceDisplayItems of each client.
     // Temporarily used during merge to find out-of-order display items.
     using DisplayItemIndicesByClientMap = HashMap<DisplayItemClient, Vector<size_t>>;
 
@@ -143,14 +186,15 @@ private:
     static void addItemToIndexIfNeeded(const DisplayItem&, size_t index, DisplayItemIndicesByClientMap&);
 
     struct OutOfOrderIndexContext;
-    DisplayItems::iterator findOutOfOrderCachedItem(DisplayItems::iterator currentIt, const DisplayItem::Id&, OutOfOrderIndexContext&);
+    DisplayItems::iterator findOutOfOrderCachedItem(const DisplayItem::Id&, OutOfOrderIndexContext&);
     DisplayItems::iterator findOutOfOrderCachedItemForward(const DisplayItem::Id&, OutOfOrderIndexContext&);
-    void copyCachedSubtree(DisplayItems::iterator& currentIt, DisplayItems& updatedList);
+    void copyCachedSubsequence(DisplayItems::iterator& currentIt, DisplayItems& updatedList);
 
 #if ENABLE(ASSERT)
     // The following two methods are for checking under-invalidations
     // (when RuntimeEnabledFeatures::slimmingPaintUnderInvalidationCheckingEnabled).
-    void checkCachedDisplayItemIsUnchanged(const DisplayItem&, DisplayItemIndicesByClientMap&);
+    void checkUnderInvalidation(DisplayItems::iterator& newIt, DisplayItems::iterator& currentIt);
+    void checkCachedDisplayItemIsUnchanged(const char* messagePrefix, const DisplayItem& newItem, const DisplayItem& oldItem);
     void checkNoRemainingCachedDisplayItems();
 #endif
 
@@ -166,9 +210,18 @@ private:
     mutable HashSet<DisplayItemClient> m_validlyCachedClients;
     mutable bool m_validlyCachedClientsDirty;
 
+#if ENABLE(ASSERT)
+    // Set of clients which had paint offset changes since the last commit. This is used for
+    // ensuring paint offsets are only updated once and are the same in all phases.
+    HashSet<DisplayItemClient> m_clientsWithPaintOffsetInvalidations;
+#endif
+
     // Allow display item construction to be disabled to isolate the costs of construction
     // in performance metrics.
     bool m_constructionDisabled;
+
+    // Indicates this DisplayItemList has ever had text. It is never reset to false.
+    bool m_textPainted;
 
     int m_skippingCacheCount;
 
@@ -183,6 +236,8 @@ private:
     // the duplicated ids are from.
     DisplayItemIndicesByClientMap m_newDisplayItemIndicesByClient;
 #endif
+
+    OwnPtr<Vector<String>> m_trackedPaintInvalidationObjects;
 };
 
 } // namespace blink

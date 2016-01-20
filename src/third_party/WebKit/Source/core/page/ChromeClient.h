@@ -89,8 +89,9 @@ public:
     virtual void takeFocus(WebFocusType) = 0;
 
     virtual void focusedNodeChanged(Node*, Node*) = 0;
-
     virtual void focusedFrameChanged(LocalFrame*) = 0;
+
+    virtual bool hadFormInteraction() const = 0;
 
     // The LocalFrame pointer provides the ChromeClient with context about which
     // LocalFrame wants to create the new Page. Also, the newly created window
@@ -250,6 +251,11 @@ public:
     virtual void unregisterPopupOpeningObserver(PopupOpeningObserver*) = 0;
 
     virtual FloatSize elasticOverscroll() const { return FloatSize(); }
+
+    // Called when observed XHR, fetch, and other fetch request with non-GET
+    // method is initiated from javascript. At this time, it is not guaranteed
+    // that this is comprehensive.
+    virtual void didObserveNonGetFetchFromScript() const {}
 
 protected:
     ~ChromeClient() override { }

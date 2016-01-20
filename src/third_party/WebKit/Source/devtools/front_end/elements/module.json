@@ -4,7 +4,7 @@
             "type": "@WebInspector.PanelFactory",
             "name": "elements",
             "title": "Elements",
-            "order": 0,
+            "order": 10,
             "className": "WebInspector.ElementsPanelFactory"
         },
         {
@@ -99,8 +99,10 @@
         },
         {
             "type": "@WebInspector.DOMPresentationUtils.MarkerDecorator",
-            "className": "WebInspector.ElementsPanel.HiddenMarkerDecorator",
-            "marker": "hidden-marker"
+            "className": "WebInspector.DOMPresentationUtils.GenericDecorator",
+            "marker": "hidden-marker",
+            "title": "Element is hidden",
+            "color": "#555"
         }
     ],
     "dependencies": [

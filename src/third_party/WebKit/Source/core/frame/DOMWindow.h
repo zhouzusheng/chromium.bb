@@ -29,6 +29,7 @@ class Frame;
 class FrameRequestCallback;
 class History;
 class IdleRequestCallback;
+class IdleRequestOptions;
 class LocalDOMWindow;
 class MediaQueryList;
 class Navigator;
@@ -170,7 +171,7 @@ public:
     virtual void cancelAnimationFrame(int id) = 0;
 
     // Idle callback extensions
-    virtual int requestIdleCallback(IdleRequestCallback*, double timeoutMillis) = 0;
+    virtual int requestIdleCallback(IdleRequestCallback*, const IdleRequestOptions&) = 0;
     virtual void cancelIdleCallback(int id) = 0;
 
     void captureEvents() { }
@@ -195,6 +196,8 @@ public:
     bool isCurrentlyDisplayedInFrame() const;
 
     void resetLocation();
+
+    bool isSecureContext() const;
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(animationend);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(animationiteration);

@@ -8,8 +8,8 @@
 #include "core/layout/LayoutBox.h"
 #include "core/layout/LayoutBoxModelObject.h"
 #include "core/layout/LayoutView.h"
-#include "core/layout/compositing/CompositedDeprecatedPaintLayerMapping.h"
-#include "core/paint/DeprecatedPaintLayer.h"
+#include "core/layout/compositing/CompositedLayerMapping.h"
+#include "core/paint/PaintLayer.h"
 #include "platform/LayoutUnit.h"
 #include "platform/geometry/LayoutRect.h"
 
@@ -47,11 +47,11 @@ bool fixedBackgroundPaintsInLocalCoordinates(const LayoutObject& obj, const Glob
     if (globalPaintFlags & GlobalPaintFlattenCompositingLayers)
         return false;
 
-    DeprecatedPaintLayer* rootLayer = view.layer();
+    PaintLayer* rootLayer = view.layer();
     if (!rootLayer || rootLayer->compositingState() == NotComposited)
         return false;
 
-    return rootLayer->compositedDeprecatedPaintLayerMapping()->backgroundLayerPaintsFixedRootBackground();
+    return rootLayer->compositedLayerMapping()->backgroundLayerPaintsFixedRootBackground();
 }
 
 IntSize calculateFillTileSize(const LayoutBoxModelObject& obj, const FillLayer& fillLayer, const IntSize& positioningAreaSize)
@@ -170,7 +170,7 @@ void BackgroundImageGeometry::clip(const IntRect& clipRect)
 
 void BackgroundImageGeometry::calculate(const LayoutBoxModelObject& obj, const LayoutBoxModelObject* paintContainer,
     const GlobalPaintFlags globalPaintFlags, const FillLayer& fillLayer, const LayoutRect& paintRect,
-    LayoutObject* backgroundObject)
+    const LayoutObject* backgroundObject)
 {
     LayoutUnit left = 0;
     LayoutUnit top = 0;

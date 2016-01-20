@@ -91,6 +91,10 @@ public:
     static void registerURLSchemeAsAllowingServiceWorkers(const String& scheme);
     static bool shouldTreatURLSchemeAsAllowingServiceWorkers(const String& scheme);
 
+    // HTTP-like schemes that are treated as supporting the Fetch API.
+    static void registerURLSchemeAsSupportingFetchAPI(const String& scheme);
+    static bool shouldTreatURLSchemeAsSupportingFetchAPI(const String& scheme);
+
     // Schemes which override the first-/third-party checks on a Document.
     static void registerURLSchemeAsFirstPartyWhenTopLevel(const String& scheme);
     static bool shouldTreatURLSchemeAsFirstPartyWhenTopLevel(const String& scheme);
@@ -109,6 +113,11 @@ public:
     static void registerURLSchemeAsBypassingContentSecurityPolicy(const String& scheme, PolicyAreas = PolicyAreaAll);
     static void removeURLSchemeRegisteredAsBypassingContentSecurityPolicy(const String& scheme);
     static bool schemeShouldBypassContentSecurityPolicy(const String& scheme, PolicyAreas = PolicyAreaAll);
+
+    // Schemes which bypass Secure Context checks defined in
+    // https://w3c.github.io/webappsec/specs/powerfulfeatures/#is-origin-trustworthy.
+    static void registerURLSchemeBypassingSecureContextCheck(const String& scheme);
+    static bool schemeShouldBypassSecureContextCheck(const String& scheme);
 
 private:
     static const URLSchemesSet& localSchemes();

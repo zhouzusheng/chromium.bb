@@ -100,7 +100,7 @@ bool ChannelProxy::Context::OnMessageReceivedNoFilter(const Message& message) {
 }
 
 // Called on the IPC::Channel thread
-void ChannelProxy::Context::OnChannelConnected(int32 peer_pid) {
+void ChannelProxy::Context::OnChannelConnected(int32_t peer_pid) {
   // We cache off the peer_pid so it can be safely accessed from both threads.
   peer_pid_ = channel_->GetPeerPID();
 
@@ -352,10 +352,9 @@ scoped_ptr<ChannelProxy> ChannelProxy::Create(
     const IPC::ChannelHandle& channel_handle,
     Channel::Mode mode,
     Listener* listener,
-    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
-    AttachmentBroker* broker) {
+    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner) {
   scoped_ptr<ChannelProxy> channel(new ChannelProxy(listener, ipc_task_runner));
-  channel->Init(channel_handle, mode, true, broker);
+  channel->Init(channel_handle, mode, true);
   return channel.Pass();
 }
 
@@ -394,8 +393,7 @@ ChannelProxy::~ChannelProxy() {
 
 void ChannelProxy::Init(const IPC::ChannelHandle& channel_handle,
                         Channel::Mode mode,
-                        bool create_pipe_now,
-                        AttachmentBroker* broker) {
+                        bool create_pipe_now) {
 #if defined(OS_POSIX)
   // When we are creating a server on POSIX, we need its file descriptor
   // to be created immediately so that it can be accessed and passed
@@ -405,7 +403,7 @@ void ChannelProxy::Init(const IPC::ChannelHandle& channel_handle,
     create_pipe_now = true;
   }
 #endif  // defined(OS_POSIX)
-  Init(ChannelFactory::Create(channel_handle, mode, broker), create_pipe_now);
+  Init(ChannelFactory::Create(channel_handle, mode), create_pipe_now);
 }
 
 void ChannelProxy::Init(scoped_ptr<ChannelFactory> factory,

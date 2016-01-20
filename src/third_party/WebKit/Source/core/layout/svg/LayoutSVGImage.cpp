@@ -147,7 +147,7 @@ void LayoutSVGImage::layout()
     clearNeedsLayout();
 }
 
-void LayoutSVGImage::paint(const PaintInfo& paintInfo, const LayoutPoint&)
+void LayoutSVGImage::paint(const PaintInfo& paintInfo, const LayoutPoint&) const
 {
     SVGImagePainter(*this).paint(paintInfo);
 }
@@ -194,12 +194,10 @@ void LayoutSVGImage::imageChanged(WrappedImagePtr, const IntRect*)
     setShouldDoFullPaintInvalidation();
 }
 
-void LayoutSVGImage::addOutlineRects(Vector<LayoutRect>& rects, const LayoutPoint&) const
+void LayoutSVGImage::addOutlineRects(Vector<LayoutRect>& rects, const LayoutPoint&, IncludeBlockVisualOverflowOrNot) const
 {
     // this is called from paint() after the localTransform has already been applied
-    LayoutRect contentRect = LayoutRect(paintInvalidationRectInLocalCoordinates());
-    if (!contentRect.isEmpty())
-        rects.append(contentRect);
+    rects.append(LayoutRect(paintInvalidationRectInLocalCoordinates()));
 }
 
 } // namespace blink

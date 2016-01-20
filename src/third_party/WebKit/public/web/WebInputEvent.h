@@ -172,6 +172,11 @@ public:
         // Left/right modifiers for keyboard events.
         IsLeft           = 1 << 11,
         IsRight          = 1 << 12,
+
+        // Indicates that an event was generated on the touch screen while
+        // touch accessibility is enabled, so the event should be handled
+        // by accessibility code first before normal input event processing.
+        IsTouchAccessibility = 1 << 13
     };
 
     // The rail mode for a wheel event specifies the axis on which scrolling is
@@ -185,7 +190,7 @@ public:
 
     static const int InputModifiers = ShiftKey | ControlKey | AltKey | MetaKey;
 
-    double timeStampSeconds; // Seconds since epoch.
+    double timeStampSeconds; // Seconds since platform start with microsecond resolution.
     unsigned size; // The size of this structure, for serialization.
     Type type;
     int modifiers;
@@ -294,9 +299,6 @@ public:
     // Sets keyIdentifier based on the value of windowsKeyCode.  This is
     // handy for generating synthetic keyboard events.
     BLINK_EXPORT void setKeyIdentifierFromWindowsKeyCode();
-
-    static int windowsKeyCodeWithoutLocation(int keycode);
-    static int locationModifiersFromWindowsKeyCode(int keycode);
 };
 
 // WebMouseEvent --------------------------------------------------------------
@@ -373,6 +375,13 @@ public:
     float accelerationRatioX;
     float accelerationRatioY;
 
+    // This field exists to allow BrowserPlugin to mark MouseWheel events as
+    // 'resent' to handle the case where an event is not consumed when first
+    // encountered; it should be handled differently by the plugin when it is
+    // sent for thesecond time. No code within Blink touches this, other than to
+    // plumb it through event conversions.
+    int resendingPluginId;
+
     Phase phase;
     Phase momentumPhase;
 
@@ -412,6 +421,7 @@ public:
         , wheelTicksY(0.0f)
         , accelerationRatioX(1.0f)
         , accelerationRatioY(1.0f)
+        , resendingPluginId(-1)
         , phase(PhaseNone)
         , momentumPhase(PhaseNone)
         , canRubberbandLeft(true)
@@ -433,6 +443,12 @@ public:
     int globalX;
     int globalY;
     WebGestureDevice sourceDevice;
+    // This field exists to allow BrowserPlugin to mark GestureScroll events as
+    // 'resent' to handle the case where an event is not consumed when first
+    // encountered; it should be handled differently by the plugin when it is
+    // sent for thesecond time. No code within Blink touches this, other than to
+    // plumb it through event conversions.
+    int resendingPluginId;
 
     union {
         // Tap information must be set for GestureTap, GestureTapUnconfirmed,
@@ -514,6 +530,7 @@ public:
         , y(0)
         , globalX(0)
         , globalY(0)
+        , resendingPluginId(-1)
     {
         memset(&data, 0, sizeof(data));
     }

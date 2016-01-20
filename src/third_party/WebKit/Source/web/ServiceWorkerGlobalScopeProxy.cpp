@@ -39,6 +39,7 @@
 #include "core/events/MessageEvent.h"
 #include "core/inspector/ConsoleMessage.h"
 #include "core/workers/WorkerGlobalScope.h"
+#include "core/workers/WorkerThread.h"
 #include "modules/background_sync/SyncEvent.h"
 #include "modules/background_sync/SyncRegistration.h"
 #include "modules/fetch/Headers.h"
@@ -50,6 +51,7 @@
 #include "modules/navigatorconnect/WorkerNavigatorServices.h"
 #include "modules/notifications/Notification.h"
 #include "modules/notifications/NotificationEvent.h"
+#include "modules/notifications/NotificationEventInit.h"
 #include "modules/push_messaging/PushEvent.h"
 #include "modules/push_messaging/PushMessageData.h"
 #include "modules/serviceworkers/ExtendableEvent.h"
@@ -58,11 +60,11 @@
 #include "modules/serviceworkers/WaitUntilObserver.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "public/platform/WebCrossOriginServiceWorkerClient.h"
-#include "public/platform/WebServiceWorkerEventResult.h"
-#include "public/platform/WebServiceWorkerRequest.h"
 #include "public/platform/modules/notifications/WebNotificationData.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerEventResult.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerRequest.h"
 #include "public/web/WebSerializedScriptValue.h"
-#include "public/web/WebServiceWorkerContextClient.h"
+#include "public/web/modules/serviceworker/WebServiceWorkerContextClient.h"
 #include "web/WebEmbeddedWorkerImpl.h"
 #include "wtf/Assertions.h"
 #include "wtf/Functional.h"
@@ -79,10 +81,10 @@ ServiceWorkerGlobalScopeProxy::~ServiceWorkerGlobalScopeProxy()
 {
 }
 
-void ServiceWorkerGlobalScopeProxy::setRegistration(WebServiceWorkerRegistration* registration)
+void ServiceWorkerGlobalScopeProxy::setRegistration(WebPassOwnPtr<WebServiceWorkerRegistration::Handle> handle)
 {
     ASSERT(m_workerGlobalScope);
-    m_workerGlobalScope->setRegistration(registration);
+    m_workerGlobalScope->setRegistration(handle);
 }
 
 void ServiceWorkerGlobalScopeProxy::dispatchActivateEvent(int eventID)
@@ -225,8 +227,9 @@ void ServiceWorkerGlobalScopeProxy::workerGlobalScopeClosed()
 
 void ServiceWorkerGlobalScopeProxy::willDestroyWorkerGlobalScope()
 {
+    v8::HandleScope handleScope(m_workerGlobalScope->thread()->isolate());
+    m_client.willDestroyWorkerContext(m_workerGlobalScope->script()->context());
     m_workerGlobalScope = nullptr;
-    m_client.willDestroyWorkerContext();
 }
 
 void ServiceWorkerGlobalScopeProxy::workerThreadTerminated()

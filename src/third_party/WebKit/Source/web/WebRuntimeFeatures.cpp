@@ -159,6 +159,11 @@ void WebRuntimeFeatures::enableMediaCapture(bool enable)
     RuntimeEnabledFeatures::setMediaCaptureEnabled(enable);
 }
 
+void WebRuntimeFeatures::enableMediaRecorder(bool enable)
+{
+    RuntimeEnabledFeatures::setMediaRecorderEnabled(enable);
+}
+
 void WebRuntimeFeatures::enableMediaSource(bool enable)
 {
     RuntimeEnabledFeatures::setMediaSourceEnabled(enable);
@@ -214,11 +219,6 @@ void WebRuntimeFeatures::enableScriptedSpeech(bool enable)
     RuntimeEnabledFeatures::setScriptedSpeechEnabled(enable);
 }
 
-void WebRuntimeFeatures::enableSlimmingPaint(bool enable)
-{
-    RuntimeEnabledFeatures::setSlimmingPaintEnabled(enable);
-}
-
 void WebRuntimeFeatures::enableSlimmingPaintV2(bool enable)
 {
     RuntimeEnabledFeatures::setSlimmingPaintV2Enabled(enable);
@@ -257,11 +257,6 @@ void WebRuntimeFeatures::enableXSLT(bool enable)
 void WebRuntimeFeatures::enableOverlayScrollbars(bool enable)
 {
     RuntimeEnabledFeatures::setOverlayScrollbarsEnabled(enable);
-}
-
-void WebRuntimeFeatures::enableOverlayFullscreenVideo(bool enable)
-{
-    RuntimeEnabledFeatures::setOverlayFullscreenVideoEnabled(enable);
 }
 
 void WebRuntimeFeatures::forceOverlayFullscreenVideo(bool enable)
@@ -312,11 +307,6 @@ void WebRuntimeFeatures::enablePushMessaging(bool enable)
 void WebRuntimeFeatures::enablePushMessagingData(bool enable)
 {
     RuntimeEnabledFeatures::setPushMessagingDataEnabled(enable);
-}
-
-void WebRuntimeFeatures::enableStaleWhileRevalidateCacheControl(bool enable)
-{
-    RuntimeEnabledFeatures::setStaleWhileRevalidateCacheControlEnabled(enable);
 }
 
 void WebRuntimeFeatures::enableUnsafeES3APIs(bool enable)

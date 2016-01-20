@@ -23,7 +23,6 @@
 #include "cc/layers/texture_layer.h"
 #include "content/common/content_constants_internal.h"
 #include "content/common/frame_messages.h"
-#include "content/common/view_messages.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/pepper/content_decryptor_delegate.h"
@@ -120,6 +119,7 @@
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_rep.h"
 #include "ui/gfx/range/range.h"
+#include "url/origin.h"
 #include "v8/include/v8.h"
 
 #if defined(OS_CHROMEOS)
@@ -1523,7 +1523,7 @@ void PepperPluginInstanceImpl::UpdateLayerTransform() {
   // plugin to be rendered, then flickering behavior occurs as in
   // crbug.com/353453.
   gfx::SizeF graphics_2d_size_in_dip =
-      gfx::ScaleSize(bound_graphics_2d_platform_->Size(),
+      gfx::ScaleSize(gfx::SizeF(bound_graphics_2d_platform_->Size()),
                      bound_graphics_2d_platform_->GetScale());
   gfx::Size plugin_size_in_dip(view_data_.rect.size.width,
                                view_data_.rect.size.height);
@@ -1609,7 +1609,7 @@ void PepperPluginInstanceImpl::SendDidChangeView() {
     }
 
     if (throttler_) {
-      throttler_->Initialize(render_frame_, plugin_url_.GetOrigin(),
+      throttler_->Initialize(render_frame_, url::Origin(plugin_url_),
                              module()->name(), unobscured_rect_.size());
     }
   }
@@ -2055,7 +2055,7 @@ void PepperPluginInstanceImpl::OnThrottleStateChange() {
   SendDidChangeView();
 
   bool is_throttled = throttler_->IsThrottled();
-  render_frame()->Send(new ViewHostMsg_PluginInstanceThrottleStateChange(
+  render_frame()->Send(new FrameHostMsg_PluginInstanceThrottleStateChange(
       module_->GetPluginChildId(), pp_instance_, is_throttled));
 }
 
@@ -3015,7 +3015,8 @@ void PepperPluginInstanceImpl::DoSetCursor(WebCursorInfo* cursor) {
 
 bool PepperPluginInstanceImpl::IsFullPagePlugin() {
   WebLocalFrame* frame = container()->element().document().frame();
-  return frame->view()->mainFrame()->document().isPluginDocument();
+  return frame->view()->mainFrame()->isWebLocalFrame() &&
+         frame->view()->mainFrame()->document().isPluginDocument();
 }
 
 bool PepperPluginInstanceImpl::FlashSetFullscreen(bool fullscreen,

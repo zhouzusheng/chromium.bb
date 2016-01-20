@@ -1,5 +1,5 @@
-Polymer({
 
+  Polymer({
     is: 'paper-button',
 
     behaviors: [
@@ -7,7 +7,6 @@ Polymer({
     ],
 
     properties: {
-
       /**
        * If true, the button should be styled with a shadow.
        */

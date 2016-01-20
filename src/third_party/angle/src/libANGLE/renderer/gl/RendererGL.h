@@ -15,6 +15,7 @@
 
 namespace rx
 {
+class BlitGL;
 class FunctionsGL;
 class StateManagerGL;
 
@@ -27,19 +28,41 @@ class RendererGL : public Renderer
     gl::Error flush() override;
     gl::Error finish() override;
 
-    gl::Error drawArrays(const gl::Data &data, GLenum mode,
-                         GLint first, GLsizei count, GLsizei instances) override;
-    gl::Error drawElements(const gl::Data &data, GLenum mode, GLsizei count, GLenum type,
-                           const GLvoid *indices, GLsizei instances,
-                           const gl::RangeUI &indexRange) override;
+    gl::Error drawArrays(const gl::Data &data, GLenum mode, GLint first, GLsizei count) override;
+    gl::Error drawArraysInstanced(const gl::Data &data,
+                                  GLenum mode,
+                                  GLint first,
+                                  GLsizei count,
+                                  GLsizei instanceCount) override;
+
+    gl::Error drawElements(const gl::Data &data,
+                           GLenum mode,
+                           GLsizei count,
+                           GLenum type,
+                           const GLvoid *indices,
+                           const gl::IndexRange &indexRange) override;
+    gl::Error drawElementsInstanced(const gl::Data &data,
+                                    GLenum mode,
+                                    GLsizei count,
+                                    GLenum type,
+                                    const GLvoid *indices,
+                                    GLsizei instances,
+                                    const gl::IndexRange &indexRange) override;
+    gl::Error drawRangeElements(const gl::Data &data,
+                                GLenum mode,
+                                GLuint start,
+                                GLuint end,
+                                GLsizei count,
+                                GLenum type,
+                                const GLvoid *indices,
+                                const gl::IndexRange &indexRange) override;
 
     // Shader creation
-    CompilerImpl *createCompiler(const gl::Data &data) override;
-    ShaderImpl *createShader(GLenum type) override;
+    CompilerImpl *createCompiler() override;
+    ShaderImpl *createShader(const gl::Shader::Data &data) override;
     ProgramImpl *createProgram(const gl::Program::Data &data) override;
 
     // Framebuffer creation
-    FramebufferImpl *createDefaultFramebuffer(const gl::Framebuffer::Data &data) override;
     FramebufferImpl *createFramebuffer(const gl::Framebuffer::Data &data) override;
 
     // Texture creation
@@ -62,6 +85,9 @@ class RendererGL : public Renderer
     // Transform Feedback creation
     TransformFeedbackImpl *createTransformFeedback() override;
 
+    // Sampler object creation
+    SamplerImpl *createSampler() override;
+
     // EXT_debug_marker
     void insertEventMarker(GLsizei length, const char *marker) override;
     void pushGroupMarker(GLsizei length, const char *marker) override;
@@ -80,6 +106,9 @@ class RendererGL : public Renderer
     void syncState(const gl::State &state, const gl::State::DirtyBits &dirtyBits) override;
 
     const gl::Version &getMaxSupportedESVersion() const;
+    const FunctionsGL *getFunctions() const { return mFunctions; }
+    StateManagerGL *getStateManager() const { return mStateManager; }
+    const WorkaroundsGL &getWorkarounds() const { return mWorkarounds; }
 
   private:
     void generateCaps(gl::Caps *outCaps, gl::TextureCapsMap* outTextureCaps,
@@ -90,6 +119,8 @@ class RendererGL : public Renderer
 
     const FunctionsGL *mFunctions;
     StateManagerGL *mStateManager;
+
+    BlitGL *mBlitter;
 
     WorkaroundsGL mWorkarounds;
 

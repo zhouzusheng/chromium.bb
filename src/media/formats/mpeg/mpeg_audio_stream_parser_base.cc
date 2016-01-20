@@ -7,9 +7,9 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/message_loop/message_loop.h"
-#include "media/base/buffers.h"
 #include "media/base/stream_parser_buffer.h"
 #include "media/base/text_track_config.h"
+#include "media/base/timestamp_constants.h"
 #include "media/base/video_decoder_config.h"
 
 namespace media {
@@ -79,7 +79,8 @@ void MPEGAudioStreamParserBase::Flush() {
   DVLOG(1) << __FUNCTION__;
   DCHECK_NE(state_, UNINITIALIZED);
   queue_.Reset();
-  timestamp_helper_->SetBaseTimestamp(base::TimeDelta());
+  if (timestamp_helper_)
+    timestamp_helper_->SetBaseTimestamp(base::TimeDelta());
   in_media_segment_ = false;
 }
 
@@ -206,8 +207,7 @@ int MPEGAudioStreamParserBase::ParseFrame(const uint8* data,
                        kSampleFormatF32,
                        channel_layout,
                        sample_rate,
-                       NULL,
-                       0,
+                       std::vector<uint8_t>(),
                        false,
                        base::TimeDelta(),
                        codec_delay_);

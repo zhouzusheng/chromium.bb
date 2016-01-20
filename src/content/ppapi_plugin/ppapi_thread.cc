@@ -8,6 +8,7 @@
 
 #include "base/command_line.h"
 #include "base/cpu.h"
+#include "base/debug/alias.h"
 #include "base/debug/crash_logging.h"
 #include "base/files/file_util.h"
 #include "base/logging.h"
@@ -51,6 +52,7 @@
 #if defined(OS_WIN)
 #include "base/win/win_util.h"
 #include "base/win/windows_version.h"
+#include "content/common/font_warmup_win.h"
 #include "sandbox/win/src/sandbox.h"
 #elif defined(OS_MACOSX)
 #include "content/common/sandbox_init_mac.h"
@@ -113,7 +115,7 @@ PpapiThread::PpapiThread(const base::CommandLine& command_line, bool is_broker)
       command_line.GetSwitchValueASCII(switches::kPpapiFlashArgs));
 
   blink_platform_impl_.reset(new PpapiBlinkPlatformImpl);
-  blink::initialize(blink_platform_impl_.get());
+  blink::initializeWithoutV8(blink_platform_impl_.get());
 
   if (!is_broker_) {
     scoped_refptr<ppapi::proxy::PluginMessageFilter> plugin_filter(
@@ -141,7 +143,7 @@ void PpapiThread::Shutdown() {
   if (plugin_entry_points_.shutdown_module)
     plugin_entry_points_.shutdown_module();
   blink_platform_impl_->Shutdown();
-  blink::shutdown();
+  blink::shutdownWithoutV8();
 }
 
 bool PpapiThread::Send(IPC::Message* msg) {
@@ -206,7 +208,10 @@ base::SharedMemoryHandle PpapiThread::ShareSharedMemoryHandleWithRemote(
 #if defined(OS_WIN)
   if (peer_handle_.IsValid()) {
     DCHECK(is_broker_);
-    return IPC::GetFileHandleForProcess(handle, peer_handle_.Get(), false);
+    IPC::PlatformFileForTransit platform_file = IPC::GetFileHandleForProcess(
+        handle.GetHandle(), peer_handle_.Get(), false);
+    base::ProcessId pid = base::GetProcId(peer_handle_.Get());
+    return base::SharedMemoryHandle(platform_file, pid);
   }
 #endif
 
@@ -257,7 +262,8 @@ PP_Resource PpapiThread::CreateBrowserFont(
         connection, instance, desc, prefs))->GetReference();
 }
 
-uint32 PpapiThread::Register(ppapi::proxy::PluginDispatcher* plugin_dispatcher) {
+uint32 PpapiThread::Register(
+    ppapi::proxy::PluginDispatcher* plugin_dispatcher) {
   if (!plugin_dispatcher ||
       plugin_dispatchers_.size() >= std::numeric_limits<uint32>::max()) {
     return 0;
@@ -404,6 +410,11 @@ void PpapiThread::OnLoadPlugin(const base::FilePath& path,
 
     WarmupWindowsLocales(permissions);
 
+    if (!base::win::IsUser32AndGdi32Available() &&
+        permissions.HasPermission(ppapi::PERMISSION_FLASH)) {
+      PatchGdiFontEnumeration(path);
+    }
+
     g_target_services->LowerToken();
   }
 #endif
@@ -483,7 +494,13 @@ void PpapiThread::OnSetNetworkState(bool online) {
 
 void PpapiThread::OnCrash() {
   // Intentionally crash upon the request of the browser.
-  volatile int* null_pointer = NULL;
+  //
+  // Linker's ICF feature may merge this function with other functions with the
+  // same definition and it may confuse the crash report processing system.
+  static int static_variable_to_make_this_function_unique = 0;
+  base::debug::Alias(&static_variable_to_make_this_function_unique);
+
+  volatile int* null_pointer = nullptr;
   *null_pointer = 0;
 }
 

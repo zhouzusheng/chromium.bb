@@ -129,7 +129,7 @@ void VideoCaptureGpuJpegDecoder::DecodeCapturedData(
           gfx::Rect(dimensions),                      // visible_rect
           dimensions,                                 // natural_size
           static_cast<uint8_t*>(out_buffer->data()),  // data
-          out_buffer->size(),                         // data_size
+          out_buffer->mapped_size(),                  // data_size
           out_handle,                                 // handle
           0,                                          // shared_memory_offset
           base::TimeDelta());                         // timestamp
@@ -154,7 +154,7 @@ void VideoCaptureGpuJpegDecoder::DecodeCapturedData(
 }
 
 void VideoCaptureGpuJpegDecoder::VideoFrameReady(int32_t bitstream_buffer_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   TRACE_EVENT0("jpeg", "VideoCaptureGpuJpegDecoder::VideoFrameReady");
   base::AutoLock lock(lock_);
 
@@ -180,7 +180,7 @@ void VideoCaptureGpuJpegDecoder::VideoFrameReady(int32_t bitstream_buffer_id) {
 void VideoCaptureGpuJpegDecoder::NotifyError(
     int32_t bitstream_buffer_id,
     media::JpegDecodeAccelerator::Error error) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   LOG(ERROR) << "Decode error, bitstream_buffer_id=" << bitstream_buffer_id
              << ", error=" << error;
 
@@ -193,7 +193,7 @@ void VideoCaptureGpuJpegDecoder::NotifyError(
 void VideoCaptureGpuJpegDecoder::EstablishGpuChannelOnUIThread(
     const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
     base::WeakPtr<VideoCaptureGpuJpegDecoder> weak_this) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(BrowserGpuChannelHostFactory::instance());
 
   BrowserGpuChannelHostFactory::instance()->EstablishGpuChannel(
@@ -206,7 +206,7 @@ void VideoCaptureGpuJpegDecoder::EstablishGpuChannelOnUIThread(
 void VideoCaptureGpuJpegDecoder::GpuChannelEstablishedOnUIThread(
     const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
     base::WeakPtr<VideoCaptureGpuJpegDecoder> weak_this) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   scoped_refptr<GpuChannelHost> gpu_channel_host(
       BrowserGpuChannelHostFactory::instance()->GetGpuChannel());

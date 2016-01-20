@@ -626,7 +626,6 @@ void UnmapTexSubImage2DCHROMIUM(const void* mem) override;
 void ResizeCHROMIUM(GLuint width, GLuint height, GLfloat scale_factor) override;
 const GLchar* GetRequestableExtensionsCHROMIUM() override;
 void RequestExtensionCHROMIUM(const char* extension) override;
-void RateLimitOffscreenContextCHROMIUM() override;
 void GetProgramInfoCHROMIUM(GLuint program,
                             GLsizei bufsize,
                             GLsizei* size,
@@ -733,26 +732,6 @@ void ReleaseTexImage2DCHROMIUM(GLenum target, GLint imageId) override;
 void TraceBeginCHROMIUM(const char* category_name,
                         const char* trace_name) override;
 void TraceEndCHROMIUM() override;
-void AsyncTexSubImage2DCHROMIUM(GLenum target,
-                                GLint level,
-                                GLint xoffset,
-                                GLint yoffset,
-                                GLsizei width,
-                                GLsizei height,
-                                GLenum format,
-                                GLenum type,
-                                const void* data) override;
-void AsyncTexImage2DCHROMIUM(GLenum target,
-                             GLint level,
-                             GLenum internalformat,
-                             GLsizei width,
-                             GLsizei height,
-                             GLint border,
-                             GLenum format,
-                             GLenum type,
-                             const void* pixels) override;
-void WaitAsyncTexImage2DCHROMIUM(GLenum target) override;
-void WaitAllAsyncTexImage2DCHROMIUM() override;
 void DiscardFramebufferEXT(GLenum target,
                            GLsizei count,
                            const GLenum* attachments) override;
@@ -806,4 +785,5 @@ void StencilThenCoverStrokePathCHROMIUM(GLuint path,
                                         GLenum coverMode) override;
 GLenum GetGraphicsResetStatusKHR() override;
 void BlendBarrierKHR() override;
+void ApplyScreenSpaceAntialiasingCHROMIUM() override;
 #endif  // GPU_COMMAND_BUFFER_CLIENT_GLES2_TRACE_IMPLEMENTATION_AUTOGEN_H_

@@ -67,7 +67,11 @@ public:
     // and with how it's described in the specification, the proper attribute name is .loop
     // The old attribute is kept for backwards compatibility.
     bool loop() const { return m_isLooping; }
-    void setLoop(bool looping) { m_isLooping = looping; }
+    void setLoop(bool looping)
+    {
+        m_isLooping = looping;
+        m_didSetLooping = m_didSetLooping || looping;
+    }
 
     // Loop times in seconds.
     double loopStart() const { return m_loopStart; }
@@ -116,6 +120,9 @@ private:
     // If true, it will wrap around to the start of the buffer each time it reaches the end.
     bool m_isLooping;
 
+    // True if the source .loop attribute was ever set.
+    bool m_didSetLooping;
+
     double m_loopStart;
     double m_loopEnd;
 
@@ -144,9 +151,6 @@ private:
     // called. If we revive setPannerNode, this should be a raw pointer and
     // AudioBufferSourceNode should have Member<PannerNode>.
     RefPtr<PannerHandler> m_pannerNode;
-
-    // This synchronizes process() with setBuffer() which can cause dynamic channel count changes.
-    mutable Mutex m_processLock;
 
     // The minimum playbackRate value ever used for this source.  This includes any adjustments
     // caused by doppler too.

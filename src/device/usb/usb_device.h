@@ -7,7 +7,6 @@
 
 #include <vector>
 
-#include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/strings/string16.h"
@@ -34,8 +33,8 @@ class UsbDevice : public base::RefCountedThreadSafe<UsbDevice> {
   const std::string& guid() const { return guid_; }
 
   // Accessors to basic information.
-  uint16 vendor_id() const { return vendor_id_; }
-  uint16 product_id() const { return product_id_; }
+  uint16_t vendor_id() const { return vendor_id_; }
+  uint16_t product_id() const { return product_id_; }
   const base::string16& manufacturer_string() const {
     return manufacturer_string_;
   }
@@ -45,6 +44,9 @@ class UsbDevice : public base::RefCountedThreadSafe<UsbDevice> {
     return webusb_allowed_origins_.get();
   }
   const GURL& webusb_landing_page() const { return webusb_landing_page_; }
+  const std::vector<UsbConfigDescriptor>& configurations() const {
+    return configurations_;
+  }
 
   // On ChromeOS the permission_broker service is used to change the ownership
   // of USB device nodes so that Chrome can open them. On other platforms these
@@ -62,14 +64,9 @@ class UsbDevice : public base::RefCountedThreadSafe<UsbDevice> {
   // if the device is unconfigured.
   virtual const UsbConfigDescriptor* GetActiveConfiguration() = 0;
 
-  // Gets all of the device's UsbConfigDescriptors.
-  const std::vector<UsbConfigDescriptor>& configurations() const {
-    return configurations_;
-  }
-
  protected:
-  UsbDevice(uint16 vendor_id,
-            uint16 product_id,
+  UsbDevice(uint16_t vendor_id,
+            uint16_t product_id,
             const base::string16& manufacturer_string,
             const base::string16& product_string,
             const base::string16& serial_number);
@@ -91,8 +88,8 @@ class UsbDevice : public base::RefCountedThreadSafe<UsbDevice> {
   friend class base::RefCountedThreadSafe<UsbDevice>;
 
   const std::string guid_;
-  const uint16 vendor_id_;
-  const uint16 product_id_;
+  const uint16_t vendor_id_;
+  const uint16_t product_id_;
 
   DISALLOW_COPY_AND_ASSIGN(UsbDevice);
 };

@@ -32,11 +32,11 @@
 #define WebServiceWorkerContextClient_h
 
 #include "public/platform/WebMessagePortChannel.h"
-#include "public/platform/WebServiceWorkerClientsClaimCallbacks.h"
-#include "public/platform/WebServiceWorkerClientsInfo.h"
-#include "public/platform/WebServiceWorkerEventResult.h"
-#include "public/platform/WebServiceWorkerSkipWaitingCallbacks.h"
 #include "public/platform/WebURL.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerClientsClaimCallbacks.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerClientsInfo.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerEventResult.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerSkipWaitingCallbacks.h"
 #include <v8.h>
 
 namespace blink {
@@ -54,10 +54,6 @@ class WebString;
 // on the main thread and then passed on to the worker thread by a newly
 // created WorkerGlobalScope. Unless otherwise noted, all methods of this class
 // are called on the worker thread.
-//
-// FIXME: Split this into EmbeddedWorkerContextClient and
-// ServiceWorkerScriptContextClient when we decide to use EmbeddedWorker
-// framework for other implementation (like SharedWorker).
 class WebServiceWorkerContextClient {
 public:
     virtual ~WebServiceWorkerContextClient() { }
@@ -69,6 +65,10 @@ public:
     // ServiceWorker has prepared everything for script loading and is now ready for inspection.
     virtual void workerReadyForInspection() { }
 
+    // The worker script is successfully loaded and a new thread is about to
+    // be started. Called on the main thread.
+    virtual void workerScriptLoaded() { }
+
     // A new WorkerGlobalScope is created and started to run on the
     // worker thread.
     // This also gives back a proxy to the client to talk to the
@@ -79,7 +79,7 @@ public:
 
     // WorkerGlobalScope is about to be destroyed. The client should clear
     // the WebServiceWorkerGlobalScopeProxy when this is called.
-    virtual void willDestroyWorkerContext() { }
+    virtual void willDestroyWorkerContext(v8::Local<v8::Context> context) { }
 
     // WorkerGlobalScope is destroyed and the worker is ready to be terminated.
     virtual void workerContextDestroyed() { }

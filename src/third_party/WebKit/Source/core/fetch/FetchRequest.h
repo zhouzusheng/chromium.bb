@@ -32,17 +32,20 @@
 #include "core/fetch/ResourceLoaderOptions.h"
 #include "platform/network/ResourceLoadPriority.h"
 #include "platform/network/ResourceRequest.h"
+#include "wtf/Allocator.h"
 #include "wtf/text/AtomicString.h"
 
 namespace blink {
 class SecurityOrigin;
 
 class CORE_EXPORT FetchRequest {
+    STACK_ALLOCATED();
 public:
     enum DeferOption { NoDefer, LazyLoad, DeferredByClient };
     enum OriginRestriction { UseDefaultOriginRestrictionForType, RestrictToSameOrigin, NoOriginRestriction };
 
     struct ResourceWidth {
+        DISALLOW_ALLOCATION();
         float width;
         bool isSet;
 
@@ -88,6 +91,8 @@ public:
     void setCrossOriginAccessControl(SecurityOrigin*, const AtomicString& crossOriginMode);
     OriginRestriction originRestriction() const { return m_originRestriction; }
     void setOriginRestriction(OriginRestriction restriction) { m_originRestriction = restriction; }
+    String integrityMetadata() const { return m_integrityMetadata; }
+    void setIntegrityMetadata(const String& metadata) { m_integrityMetadata = metadata; }
 
 private:
     ResourceRequest m_resourceRequest;
@@ -99,6 +104,7 @@ private:
     OriginRestriction m_originRestriction;
     ResourceWidth m_resourceWidth;
     ClientHintsPreferences m_clientHintPreferences;
+    String m_integrityMetadata;
 };
 
 } // namespace blink

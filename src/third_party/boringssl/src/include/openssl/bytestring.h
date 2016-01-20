@@ -99,6 +99,10 @@ OPENSSL_EXPORT int CBS_get_u32(CBS *cbs, uint32_t *out);
  * |cbs|. It returns one on success and zero on error. */
 OPENSSL_EXPORT int CBS_get_bytes(CBS *cbs, CBS *out, size_t len);
 
+/* CBS_copy_bytes copies the next |len| bytes from |cbs| to |out| and advances
+ * |cbs|. It returns one on success and zero on error. */
+OPENSSL_EXPORT int CBS_copy_bytes(CBS *cbs, uint8_t *out, size_t len);
+
 /* CBS_get_u8_length_prefixed sets |*out| to the contents of an 8-bit,
  * length-prefixed value from |cbs| and advances |cbs| over it. It returns one
  * on success and zero on error. */
@@ -174,10 +178,10 @@ OPENSSL_EXPORT int CBS_get_any_ber_asn1_element(CBS *cbs, CBS *out,
  * in 64 bits. */
 OPENSSL_EXPORT int CBS_get_asn1_uint64(CBS *cbs, uint64_t *out);
 
-/* CBS_get_optional_asn1 gets an optional explicitly-tagged element
- * from |cbs| tagged with |tag| and sets |*out| to its contents. If
- * present, it sets |*out_present| to one, otherwise zero. It returns
- * one on success, whether or not the element was present, and zero on
+/* CBS_get_optional_asn1 gets an optional explicitly-tagged element from |cbs|
+ * tagged with |tag| and sets |*out| to its contents. If present and if
+ * |out_present| is not NULL, it sets |*out_present| to one, otherwise zero. It
+ * returns one on success, whether or not the element was present, and zero on
  * decode failure. */
 OPENSSL_EXPORT int CBS_get_optional_asn1(CBS *cbs, CBS *out, int *out_present,
                                          unsigned tag);
@@ -266,7 +270,11 @@ OPENSSL_EXPORT int CBB_init_fixed(CBB *cbb, uint8_t *buf, size_t len);
 
 /* CBB_cleanup frees all resources owned by |cbb| and other |CBB| objects
  * writing to the same buffer. This should be used in an error case where a
- * serialisation is abandoned. */
+ * serialisation is abandoned.
+ *
+ * This function can only be called on a "top level" |CBB|, i.e. one initialised
+ * with |CBB_init| or |CBB_init_fixed|, or a |CBB| set to the zero state with
+ * |CBB_zero|. */
 OPENSSL_EXPORT void CBB_cleanup(CBB *cbb);
 
 /* CBB_finish completes any pending length prefix and sets |*out_data| to a

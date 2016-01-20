@@ -272,10 +272,6 @@ OPENSSL_COMPILE_ASSERT(
 #define SSL3_MD_CLIENT_FINISHED_CONST "\x43\x4C\x4E\x54"
 #define SSL3_MD_SERVER_FINISHED_CONST "\x53\x52\x56\x52"
 
-#define SSL3_VERSION 0x0300
-#define SSL3_VERSION_MAJOR 0x03
-#define SSL3_VERSION_MINOR 0x00
-
 #define SSL3_RT_CHANGE_CIPHER_SPEC 20
 #define SSL3_RT_ALERT 21
 #define SSL3_RT_HANDSHAKE 22
@@ -311,16 +307,17 @@ typedef struct ssl3_record_st {
   /* data is a non-owning pointer to the record contents. The total length of
    * the buffer is |off| + |length|. */
   uint8_t *data;
-  /* epoch, in DTLS, is the epoch number of the record. */
-  uint16_t epoch;
 } SSL3_RECORD;
 
 typedef struct ssl3_buffer_st {
-  uint8_t *buf;       /* at least SSL3_RT_MAX_PACKET_SIZE bytes, see
-                         ssl3_setup_buffers() */
-  size_t len;         /* buffer size */
-  int offset;         /* where to 'copy from' */
-  int left;           /* how many bytes left */
+  /* buf is the memory allocated for this buffer. */
+  uint8_t *buf;
+  /* offset is the offset into |buf| which the buffer contents start at. */
+  uint16_t offset;
+  /* len is the length of the buffer contents from |buf| + |offset|. */
+  uint16_t len;
+  /* cap is how much memory beyond |buf| + |offset| is available. */
+  uint16_t cap;
 } SSL3_BUFFER;
 
 #define SSL3_CT_RSA_SIGN 1
@@ -352,9 +349,6 @@ typedef struct ssl3_state_st {
   /* flags for countermeasure against known-IV weakness */
   int need_record_splitting;
 
-  /* The value of 'extra' when the buffers were initialized */
-  int init_extra;
-
   /* have_version is true if the connection's final version is known. Otherwise
    * the version has not been negotiated yet. */
   char have_version;
@@ -363,8 +357,10 @@ typedef struct ssl3_state_st {
    * completed. */
   char initial_handshake_complete;
 
-  SSL3_BUFFER rbuf; /* read IO goes into here */
-  SSL3_BUFFER wbuf; /* write IO goes into here */
+  /* read_buffer holds data from the transport to be processed. */
+  SSL3_BUFFER read_buffer;
+  /* write_buffer holds data to be written to the transport. */
+  SSL3_BUFFER write_buffer;
 
   SSL3_RECORD rrec; /* each decoded record goes in here */
 
@@ -491,8 +487,12 @@ typedef struct ssl3_state_st {
     int cert_request;
 
     /* certificate_status_expected is true if OCSP stapling was negotiated and
-     * the server is expected to send a CertificateStatus message. */
-    char certificate_status_expected;
+     * the server is expected to send a CertificateStatus message. (This is
+     * used on both the client and server sides.) */
+    unsigned certificate_status_expected:1;
+
+    /* ocsp_stapling_requested is true if a client requested OCSP stapling. */
+    unsigned ocsp_stapling_requested:1;
 
     /* Server-only: peer_ellipticcurvelist contains the EC curve IDs advertised
      * by the peer. This is only set on the server's end. The server does not
@@ -519,6 +519,12 @@ typedef struct ssl3_state_st {
     /* Client-only: in_false_start is one if there is a pending handshake in
      * False Start. The client may write data at this point. */
     char in_false_start;
+
+    /* peer_dh_tmp, on a client, is the server's DHE public key. */
+    DH *peer_dh_tmp;
+
+    /* peer_ecdh_tmp, on a client, is the server's ECDHE public key. */
+    EC_KEY *peer_ecdh_tmp;
   } tmp;
 
   /* Connection binding to prevent renegotiation attacks */
@@ -557,6 +563,7 @@ typedef struct ssl3_state_st {
 /* extra state */
 #define SSL3_ST_CW_FLUSH (0x100 | SSL_ST_CONNECT)
 #define SSL3_ST_FALSE_START (0x101 | SSL_ST_CONNECT)
+#define SSL3_ST_VERIFY_SERVER_CERT (0x102 | SSL_ST_CONNECT)
 /* write to server */
 #define SSL3_ST_CW_CLNT_HELLO_A (0x110 | SSL_ST_CONNECT)
 #define SSL3_ST_CW_CLNT_HELLO_B (0x111 | SSL_ST_CONNECT)
@@ -622,7 +629,6 @@ typedef struct ssl3_state_st {
 #define SSL3_ST_SW_KEY_EXCH_A (0x150 | SSL_ST_ACCEPT)
 #define SSL3_ST_SW_KEY_EXCH_B (0x151 | SSL_ST_ACCEPT)
 #define SSL3_ST_SW_KEY_EXCH_C (0x152 | SSL_ST_ACCEPT)
-#define SSL3_ST_SW_KEY_EXCH_D (0x153 | SSL_ST_ACCEPT)
 #define SSL3_ST_SW_CERT_REQ_A (0x160 | SSL_ST_ACCEPT)
 #define SSL3_ST_SW_CERT_REQ_B (0x161 | SSL_ST_ACCEPT)
 #define SSL3_ST_SW_SRVR_DONE_A (0x170 | SSL_ST_ACCEPT)

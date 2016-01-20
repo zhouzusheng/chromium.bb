@@ -148,7 +148,7 @@ void TypingCommand::updateSelectionIfDifferentFromCurrentSelection(TypingCommand
 {
     ASSERT(frame);
     VisibleSelection currentSelection = frame->selection().selection();
-    if (VisibleSelection::InDOMTree::equalSelections(currentSelection, typingCommand->endingSelection()))
+    if (equalSelectionsInDOMTree(currentSelection, typingCommand->endingSelection()))
         return;
 
     typingCommand->setStartingSelection(currentSelection);
@@ -180,7 +180,7 @@ void TypingCommand::insertText(Document& document, const String& text, const Vis
     // that is different from the current selection.  In the future, we should change EditCommand
     // to deal with custom selections in a general way that can be used by all of the commands.
     if (RefPtrWillBeRawPtr<TypingCommand> lastTypingCommand = lastTypingCommandIfStillOpenForTyping(frame.get())) {
-        if (!VisibleSelection::InDOMTree::equalSelections(lastTypingCommand->endingSelection(), selectionForInsertion)) {
+        if (!equalSelectionsInDOMTree(lastTypingCommand->endingSelection(), selectionForInsertion)) {
             lastTypingCommand->setStartingSelection(selectionForInsertion);
             lastTypingCommand->setEndingSelection(selectionForInsertion);
         }
@@ -302,8 +302,8 @@ void TypingCommand::markMisspellingsAfterTyping(ETypingCommand commandType)
     // Since the word containing the current selection is never marked, this does a check to
     // see if typing made a new word that is not in the current selection. Basically, you
     // get this by being at the end of a word and typing a space.
-    VisiblePosition start(endingSelection().start(), endingSelection().affinity());
-    VisiblePosition previous = start.previous();
+    VisiblePosition start = createVisiblePosition(endingSelection().start(), endingSelection().affinity());
+    VisiblePosition previous = previousPositionOf(start);
 
     VisiblePosition p1 = startOfWord(previous, LeftWordIfOnBoundary);
 
@@ -438,14 +438,14 @@ void TypingCommand::deleteKeyPressed(TextGranularity granularity, bool killRing)
             selection->modify(FrameSelection::AlterationExtend, DirectionBackward, CharacterGranularity);
 
         VisiblePosition visibleStart(endingSelection().visibleStart());
-        if (visibleStart.previous(CannotCrossEditingBoundary).isNull()) {
+        if (previousPositionOf(visibleStart, CannotCrossEditingBoundary).isNull()) {
             // When the caret is at the start of the editable area in an empty list item, break out of the list item.
             if (breakOutOfEmptyListItem()) {
                 typingAddedToOpenCommand(DeleteKey);
                 return;
             }
             // When there are no visible positions in the editing root, delete its entire contents.
-            if (visibleStart.next(CannotCrossEditingBoundary).isNull() && makeEditableRootEmpty()) {
+            if (nextPositionOf(visibleStart, CannotCrossEditingBoundary).isNull() && makeEditableRootEmpty()) {
                 typingAddedToOpenCommand(DeleteKey);
                 return;
             }
@@ -453,11 +453,11 @@ void TypingCommand::deleteKeyPressed(TextGranularity granularity, bool killRing)
 
         // If we have a caret selection at the beginning of a cell, we have nothing to do.
         Node* enclosingTableCell = enclosingNodeOfType(visibleStart.deepEquivalent(), &isTableCell);
-        if (enclosingTableCell && visibleStart.deepEquivalent() == VisiblePosition(firstPositionInNode(enclosingTableCell)).deepEquivalent())
+        if (enclosingTableCell && visibleStart.deepEquivalent() == createVisiblePosition(firstPositionInNode(enclosingTableCell)).deepEquivalent())
             return;
 
         // If the caret is at the start of a paragraph after a table, move content into the last table cell.
-        if (isStartOfParagraph(visibleStart) && isFirstPositionAfterTable(visibleStart.previous(CannotCrossEditingBoundary))) {
+        if (isStartOfParagraph(visibleStart) && isFirstPositionAfterTable(previousPositionOf(visibleStart, CannotCrossEditingBoundary))) {
             // Unless the caret is just before a table.  We don't want to move a table into the last table cell.
             if (isLastPositionBeforeTable(visibleStart))
                 return;
@@ -543,10 +543,10 @@ void TypingCommand::forwardDeleteKeyPressed(TextGranularity granularity, bool ki
         Position downstreamEnd = mostForwardCaretPosition(endingSelection().end());
         VisiblePosition visibleEnd = endingSelection().visibleEnd();
         Node* enclosingTableCell = enclosingNodeOfType(visibleEnd.deepEquivalent(), &isTableCell);
-        if (enclosingTableCell && visibleEnd.deepEquivalent() == VisiblePosition(lastPositionInNode(enclosingTableCell)).deepEquivalent())
+        if (enclosingTableCell && visibleEnd.deepEquivalent() == createVisiblePosition(lastPositionInNode(enclosingTableCell)).deepEquivalent())
             return;
         if (visibleEnd.deepEquivalent() == endOfParagraph(visibleEnd).deepEquivalent())
-            downstreamEnd = mostForwardCaretPosition(visibleEnd.next(CannotCrossEditingBoundary).deepEquivalent());
+            downstreamEnd = mostForwardCaretPosition(nextPositionOf(visibleEnd, CannotCrossEditingBoundary).deepEquivalent());
         // When deleting tables: Select the table first, then perform the deletion
         if (isRenderedTableElement(downstreamEnd.computeContainerNode()) && downstreamEnd.computeOffsetInContainerNode() <= caretMinOffset(downstreamEnd.computeContainerNode())) {
             setEndingSelection(VisibleSelection(endingSelection().end(), positionAfterNode(downstreamEnd.computeContainerNode()), TextAffinity::Downstream, endingSelection().isDirectional()));

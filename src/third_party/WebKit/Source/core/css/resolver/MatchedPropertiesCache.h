@@ -101,13 +101,13 @@ public:
     void clear();
     void clearViewportDependent();
 
-    static bool isCacheable(const Element*, const ComputedStyle&, const ComputedStyle& parentStyle);
+    static bool isCacheable(const ComputedStyle&, const ComputedStyle& parentStyle);
 
     DECLARE_TRACE();
 
 private:
 #if ENABLE(OILPAN)
-    typedef HeapHashMap<unsigned, Member<CachedMatchedProperties>, DefaultHash<unsigned>::Hash, HashTraits<unsigned>, CachedMatchedPropertiesHashTraits > Cache;
+    using Cache = HeapHashMap<unsigned, Member<CachedMatchedProperties>, DefaultHash<unsigned>::Hash, HashTraits<unsigned>, CachedMatchedPropertiesHashTraits>;
 #else
     // Every N additions to the matched declaration cache trigger a sweep where entries holding
     // the last reference to a style declaration are garbage collected.
@@ -115,7 +115,7 @@ private:
 
     unsigned m_additionsSinceLastSweep;
 
-    typedef HashMap<unsigned, OwnPtr<CachedMatchedProperties>> Cache;
+    using Cache = HashMap<unsigned, OwnPtr<CachedMatchedProperties>>;
     Timer<MatchedPropertiesCache> m_sweepTimer;
 #endif
     Cache m_cache;

@@ -116,6 +116,8 @@ void StringToWorkarounds(
   if (workarounds->max_vertex_uniform_vectors_256)
     workarounds->max_vertex_uniform_vectors = 256;
 
+  if (workarounds->max_copy_texture_chromium_size_1048576)
+    workarounds->max_copy_texture_chromium_size = 1048576;
   if (workarounds->max_copy_texture_chromium_size_262144)
     workarounds->max_copy_texture_chromium_size = 262144;
 }
@@ -130,6 +132,7 @@ FeatureInfo::FeatureFlags::FeatureFlags()
       use_core_framebuffer_multisample(false),
       multisampled_render_to_texture(false),
       use_img_for_multisampled_render_to_texture(false),
+      chromium_screen_space_antialiasing(false),
       oes_standard_derivatives(false),
       oes_egl_image_external(false),
       oes_depth24(false),
@@ -146,6 +149,7 @@ FeatureInfo::FeatureFlags::FeatureFlags()
       use_arb_occlusion_query2_for_occlusion_query_boolean(false),
       use_arb_occlusion_query_for_occlusion_query_boolean(false),
       native_vertex_array_object(false),
+      ext_texture_format_astc(false),
       ext_texture_format_atc(false),
       ext_texture_format_bgra8888(false),
       ext_texture_format_dxt1(false),
@@ -218,19 +222,29 @@ void FeatureInfo::InitializeBasicState(const base::CommandLine* command_line) {
   enable_gl_path_rendering_switch_ =
       command_line->HasSwitch(switches::kEnableGLPathRendering);
 
+  // The shader translator is needed to translate from WebGL-conformant GLES SL
+  // to normal GLES SL, enforce WebGL conformance, translate from GLES SL 1.0 to
+  // target context GLSL, etc.
+  // The flag here is for testing only.
+  disable_shader_translator_ =
+      command_line->HasSwitch(switches::kDisableGLSLTranslator);
+
   unsafe_es3_apis_enabled_ = false;
+
+  // Default context_type_ to a GLES2 Context.
+  context_type_ = CONTEXT_TYPE_OPENGLES2;
 }
 
-bool FeatureInfo::Initialize() {
-  disallowed_features_ = DisallowedFeatures();
-  InitializeFeatures();
-  return true;
-}
-
-bool FeatureInfo::Initialize(const DisallowedFeatures& disallowed_features) {
+bool FeatureInfo::Initialize(ContextType context_type,
+                             const DisallowedFeatures& disallowed_features) {
   disallowed_features_ = disallowed_features;
+  context_type_ = context_type;
   InitializeFeatures();
   return true;
+}
+
+bool FeatureInfo::InitializeForTesting() {
+  return Initialize(CONTEXT_TYPE_OPENGLES2, DisallowedFeatures());
 }
 
 bool IsGL_REDSupportedOnFBOs() {
@@ -368,6 +382,24 @@ void FeatureInfo::InitializeFeatures() {
         GL_COMPRESSED_RGBA_S3TC_DXT5_EXT);
     validators_.texture_internal_format_storage.AddValue(
         GL_COMPRESSED_RGBA_S3TC_DXT5_EXT);
+  }
+
+  bool have_astc = extensions.Contains("GL_KHR_texture_compression_astc_ldr");
+  if (have_astc) {
+    feature_flags_.ext_texture_format_astc = true;
+    AddExtensionString("GL_KHR_texture_compression_astc_ldr");
+
+    // GL_COMPRESSED_RGBA_ASTC(0x93B0 ~ 0x93BD)
+    GLint astc_format_it = GL_COMPRESSED_RGBA_ASTC_4x4_KHR;
+    GLint astc_format_max = GL_COMPRESSED_RGBA_ASTC_12x12_KHR;
+    for (; astc_format_it <= astc_format_max; astc_format_it++)
+        validators_.compressed_texture_format.AddValue(astc_format_it);
+
+    // GL_COMPRESSED_SRGB8_ALPHA8_ASTC(0x93D0 ~ 0x93DD)
+    astc_format_it = GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x4_KHR;
+    astc_format_max = GL_COMPRESSED_SRGB8_ALPHA8_ASTC_12x12_KHR;
+    for (; astc_format_it <= astc_format_max; astc_format_it++)
+        validators_.compressed_texture_format.AddValue(astc_format_it);
   }
 
   bool have_atc = extensions.Contains("GL_AMD_compressed_ATC_texture") ||
@@ -518,6 +550,15 @@ void FeatureInfo::InitializeFeatures() {
     validators_.read_pixel_format.AddValue(GL_BGRA_EXT);
   }
 
+  // We only support timer queries if we also support glGetInteger64v.
+  // For GL_EXT_disjoint_timer_query, glGetInteger64v is only support under ES3.
+  if ((gl_version_info_->is_es3 &&
+       extensions.Contains("GL_EXT_disjoint_timer_query")) ||
+      extensions.Contains("GL_ARB_timer_query") ||
+      extensions.Contains("GL_EXT_timer_query")) {
+    AddExtensionString("GL_EXT_disjoint_timer_query");
+  }
+
   if (enable_render_buffer_bgra) {
     feature_flags_.ext_render_buffer_format_bgra8888 = true;
     AddExtensionString("GL_CHROMIUM_renderbuffer_format_BGRA8888");
@@ -659,7 +700,15 @@ void FeatureInfo::InitializeFeatures() {
   }
 
   // Check for multisample support
-  if (!workarounds_.disable_chromium_framebuffer_multisample) {
+
+  // crbug.com/527565 - On some GPUs, MSAA does not perform acceptably for
+  // rasterization. We disable it on non-WebGL contexts. For WebGL contexts
+  // we leave it up to the site to decide whether to enable MSAA.
+  bool disable_all_multisample =
+      workarounds_.disable_msaa_on_non_webgl_contexts && !IsWebGLContext();
+
+  if (!disable_all_multisample &&
+      !workarounds_.disable_chromium_framebuffer_multisample) {
     bool ext_has_multisample =
         extensions.Contains("GL_EXT_framebuffer_multisample") ||
         gl_version_info_->is_es3 ||
@@ -681,7 +730,8 @@ void FeatureInfo::InitializeFeatures() {
     }
   }
 
-  if (!workarounds_.disable_multisampled_render_to_texture) {
+  if (!disable_all_multisample &&
+      !workarounds_.disable_multisampled_render_to_texture) {
     if (extensions.Contains("GL_EXT_multisampled_render_to_texture")) {
       feature_flags_.multisampled_render_to_texture = true;
     } else if (extensions.Contains("GL_IMG_multisampled_render_to_texture")) {
@@ -696,6 +746,11 @@ void FeatureInfo::InitializeFeatures() {
           GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_SAMPLES_EXT);
       AddExtensionString("GL_EXT_multisampled_render_to_texture");
     }
+  }
+
+  if (extensions.Contains("GL_INTEL_framebuffer_CMAA")) {
+    feature_flags_.chromium_screen_space_antialiasing = true;
+    AddExtensionString("GL_CHROMIUM_screen_space_antialiasing");
   }
 
   if (extensions.Contains("GL_OES_depth24") || gfx::HasDesktopGLFeatures() ||
@@ -826,10 +881,11 @@ void FeatureInfo::InitializeFeatures() {
        enable_immutable_texture_format_bgra_on_es3) ||
       (gl_version_info_->is_es3 &&
        !enable_texture_format_bgra8888);
-  if (extensions.Contains("GL_EXT_texture_storage") ||
-      extensions.Contains("GL_ARB_texture_storage") ||
-      support_texture_storage_on_es3 ||
-      gl_version_info_->is_desktop_core_profile) {
+  if (!workarounds_.disable_texture_storage &&
+      (extensions.Contains("GL_EXT_texture_storage") ||
+       extensions.Contains("GL_ARB_texture_storage") ||
+       support_texture_storage_on_es3 ||
+       gl_version_info_->is_desktop_core_profile)) {
     feature_flags_.ext_texture_storage = true;
     AddExtensionString("GL_EXT_texture_storage");
     validators_.texture_parameter.AddValue(GL_TEXTURE_IMMUTABLE_FORMAT_EXT);
@@ -1146,6 +1202,21 @@ void FeatureInfo::EnableES3Validators() {
   }
 
   unsafe_es3_apis_enabled_ = true;
+}
+
+bool FeatureInfo::IsWebGLContext() const {
+  // Switch statement to cause a compile-time error if we miss a case.
+  switch (context_type_) {
+    case CONTEXT_TYPE_WEBGL1:
+    case CONTEXT_TYPE_WEBGL2:
+      return true;
+    case CONTEXT_TYPE_OPENGLES2:
+    case CONTEXT_TYPE_OPENGLES3:
+      return false;
+  }
+
+  NOTREACHED();
+  return false;
 }
 
 void FeatureInfo::AddExtensionString(const char* s) {

@@ -122,6 +122,7 @@ WebInspector.SoftContextMenu.prototype = {
         if (item.element) {
             var wrapper = menuItemElement.createChild("div", "soft-context-menu-custom-item");
             wrapper.appendChild(item.element);
+            menuItemElement._isCustom = true;
             return menuItemElement;
         }
 
@@ -145,7 +146,7 @@ WebInspector.SoftContextMenu.prototype = {
         menuItemElement._subItems = item.subItems;
 
         // Occupy the same space on the left in all items.
-        var checkMarkElement = menuItemElement.createChild("span", "soft-context-menu-item-checkmark");
+        var checkMarkElement = menuItemElement.createChild("span", "soft-context-menu-item-checkmark checkmark");
         checkMarkElement.textContent = "\u2713 "; // Checkmark Unicode symbol
         checkMarkElement.style.opacity = "0";
 
@@ -273,7 +274,7 @@ WebInspector.SoftContextMenu.prototype = {
     _highlightPrevious: function()
     {
         var menuItemElement = this._highlightedMenuItemElement ? this._highlightedMenuItemElement.previousSibling : this._contextMenuElement.lastChild;
-        while (menuItemElement && menuItemElement._isSeparator)
+        while (menuItemElement && (menuItemElement._isSeparator || menuItemElement._isCustom))
             menuItemElement = menuItemElement.previousSibling;
         if (menuItemElement)
             this._highlightMenuItem(menuItemElement);
@@ -282,7 +283,7 @@ WebInspector.SoftContextMenu.prototype = {
     _highlightNext: function()
     {
         var menuItemElement = this._highlightedMenuItemElement ? this._highlightedMenuItemElement.nextSibling : this._contextMenuElement.firstChild;
-        while (menuItemElement && menuItemElement._isSeparator)
+        while (menuItemElement && (menuItemElement._isSeparator || menuItemElement._isCustom))
             menuItemElement = menuItemElement.nextSibling;
         if (menuItemElement)
             this._highlightMenuItem(menuItemElement);
@@ -356,11 +357,10 @@ WebInspector.SoftContextMenu.prototype = {
 
             if (event)
                 event.consume(true);
-        } else if (this._parentMenu && this._contextMenuElement.parentElement) {
+        } else if (this._parentMenu && this._contextMenuElement.parentElementOrShadowHost()) {
             this._discardSubMenus();
             if (closeParentMenus)
                 this._parentMenu._discardMenu(closeParentMenus, event);
-
             if (event)
                 event.consume(true);
         }
@@ -374,7 +374,7 @@ WebInspector.SoftContextMenu.prototype = {
     {
         if (this._subMenu)
             this._subMenu._discardSubMenus();
-        this._contextMenuElement.remove();
+        this.element.remove();
         if (this._parentMenu)
             delete this._parentMenu._subMenu;
     }

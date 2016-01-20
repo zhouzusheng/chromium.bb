@@ -60,7 +60,7 @@ SVGPaintContext::~SVGPaintContext()
     if (m_clipper) {
         ASSERT(SVGResourcesCache::cachedResourcesForLayoutObject(m_object));
         ASSERT(SVGResourcesCache::cachedResourcesForLayoutObject(m_object)->clipper() == m_clipper);
-        SVGClipPainter(*m_clipper).postApplyStatefulResource(*m_object, m_paintInfo.context, m_clipperState);
+        SVGClipPainter(*m_clipper).finishEffect(*m_object, m_paintInfo.context, m_clipperState);
     }
 }
 
@@ -123,7 +123,7 @@ bool SVGPaintContext::applyClipIfNecessary(SVGResources* resources)
     // m_object->style()->clipPath() corresponds to '-webkit-clip-path'.
     // FIXME: We should unify the clip-path and -webkit-clip-path codepaths.
     if (LayoutSVGResourceClipper* clipper = resources ? resources->clipper() : nullptr) {
-        if (!SVGClipPainter(*clipper).applyStatefulResource(*m_object, m_paintInfo.context, m_clipperState))
+        if (!SVGClipPainter(*clipper).prepareEffect(*m_object, m_object->objectBoundingBox(), m_object->paintInvalidationRectInLocalCoordinates(), m_paintInfo.context, m_clipperState))
             return false;
         m_clipper = clipper;
     } else {
@@ -183,7 +183,7 @@ bool SVGPaintContext::isIsolationInstalled() const
     return false;
 }
 
-void SVGPaintContext::paintSubtree(GraphicsContext* context, LayoutObject* item)
+void SVGPaintContext::paintSubtree(GraphicsContext* context, const LayoutObject* item)
 {
     ASSERT(context);
     ASSERT(item);
@@ -193,7 +193,7 @@ void SVGPaintContext::paintSubtree(GraphicsContext* context, LayoutObject* item)
     item->paint(info, IntPoint());
 }
 
-bool SVGPaintContext::paintForLayoutObject(const PaintInfo& paintInfo, const ComputedStyle& style, LayoutObject& layoutObject, LayoutSVGResourceMode resourceMode, SkPaint& paint, const AffineTransform* additionalPaintServerTransform)
+bool SVGPaintContext::paintForLayoutObject(const PaintInfo& paintInfo, const ComputedStyle& style, const LayoutObject& layoutObject, LayoutSVGResourceMode resourceMode, SkPaint& paint, const AffineTransform* additionalPaintServerTransform)
 {
     if (paintInfo.isRenderingClipPathAsMaskImage()) {
         if (resourceMode == ApplyToStrokeMode)

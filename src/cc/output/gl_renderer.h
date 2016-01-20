@@ -62,7 +62,6 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
   // Waits for rendering to finish.
   void Finish() override;
 
-  void DoNoOp() override;
   void SwapBuffers(const CompositorFrameMetadata& metadata) override;
 
   virtual bool IsContextLost();
@@ -170,8 +169,7 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
       bool use_aa);
   scoped_ptr<ScopedResource> GetBackdropTexture(const gfx::Rect& bounding_rect);
 
-  static bool ShouldApplyBackgroundFilters(DrawingFrame* frame,
-                                           const RenderPassDrawQuad* quad);
+  static bool ShouldApplyBackgroundFilters(const RenderPassDrawQuad* quad);
   skia::RefPtr<SkImage> ApplyBackgroundFilters(
       DrawingFrame* frame,
       const RenderPassDrawQuad* quad,

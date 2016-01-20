@@ -22,10 +22,13 @@
  */
 
 #include "config.h"
-
 #include "platform/graphics/filters/FilterEffect.h"
 
 #include "platform/graphics/filters/Filter.h"
+#include "platform/graphics/filters/SkiaImageFilterBuilder.h"
+#include "third_party/skia/include/core/SkColorFilter.h"
+#include "third_party/skia/include/effects/SkColorFilterImageFilter.h"
+#include "third_party/skia/include/effects/SkPictureImageFilter.h"
 
 namespace blink {
 
@@ -188,6 +191,13 @@ PassRefPtr<SkImageFilter> FilterEffect::createImageFilter(SkiaImageFilterBuilder
 PassRefPtr<SkImageFilter> FilterEffect::createImageFilterWithoutValidation(SkiaImageFilterBuilder* builder)
 {
     return createImageFilter(builder);
+}
+
+PassRefPtr<SkImageFilter> FilterEffect::createTransparentBlack(SkiaImageFilterBuilder* builder) const
+{
+    SkAutoTUnref<SkColorFilter> filter(SkColorFilter::CreateModeFilter(0, SkXfermode::kClear_Mode));
+    SkImageFilter::CropRect rect = getCropRect(builder->cropOffset());
+    return adoptRef(SkColorFilterImageFilter::Create(filter, nullptr, &rect));
 }
 
 bool FilterEffect::hasConnectedInput() const

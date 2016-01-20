@@ -15,10 +15,10 @@
 #include "modules/EventTargetModules.h"
 #include "modules/presentation/PresentationAvailability.h"
 #include "modules/presentation/PresentationAvailabilityCallbacks.h"
+#include "modules/presentation/PresentationConnection.h"
+#include "modules/presentation/PresentationConnectionCallbacks.h"
 #include "modules/presentation/PresentationController.h"
 #include "modules/presentation/PresentationError.h"
-#include "modules/presentation/PresentationSession.h"
-#include "modules/presentation/PresentationSessionCallbacks.h"
 #include "platform/UserGestureIndicator.h"
 
 namespace blink {
@@ -65,14 +65,17 @@ ExecutionContext* PresentationRequest::executionContext() const
 
 bool PresentationRequest::addEventListener(const AtomicString& eventType, PassRefPtrWillBeRawPtr<EventListener> listener, bool capture)
 {
-    if (eventType == EventTypeNames::sessionconnect)
-        UseCounter::count(executionContext(), UseCounter::PresentationRequestSessionConnectEventListener);
+    if (eventType == EventTypeNames::connectionavailable)
+        UseCounter::count(executionContext(), UseCounter::PresentationRequestConnectionAvailableEventListener);
 
     return EventTarget::addEventListener(eventType, listener, capture);
 }
 
 bool PresentationRequest::hasPendingActivity() const
 {
+    if (!executionContext() || executionContext()->activeDOMObjectsAreStopped())
+        return false;
+
     // Prevents garbage collecting of this object when not hold by another
     // object but still has listeners registered.
     return hasEventListeners();
@@ -93,12 +96,12 @@ ScriptPromise PresentationRequest::start(ScriptState* scriptState)
         resolver->reject(DOMException::create(InvalidStateError, "The PresentationRequest is no longer associated to a frame."));
         return promise;
     }
-    client->startSession(m_url.string(), new PresentationSessionCallbacks(resolver, this));
+    client->startSession(m_url.string(), new PresentationConnectionCallbacks(resolver, this));
 
     return promise;
 }
 
-ScriptPromise PresentationRequest::join(ScriptState* scriptState, const String& id)
+ScriptPromise PresentationRequest::reconnect(ScriptState* scriptState, const String& id)
 {
     ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
@@ -108,7 +111,7 @@ ScriptPromise PresentationRequest::join(ScriptState* scriptState, const String& 
         resolver->reject(DOMException::create(InvalidStateError, "The PresentationRequest is no longer associated to a frame."));
         return promise;
     }
-    client->joinSession(m_url.string(), id, new PresentationSessionCallbacks(resolver, this));
+    client->joinSession(m_url.string(), id, new PresentationConnectionCallbacks(resolver, this));
 
     return promise;
 }

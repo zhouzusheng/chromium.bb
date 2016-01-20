@@ -63,12 +63,11 @@ void CompositorLock::CancelLock() {
   compositor_ = NULL;
 }
 
-Compositor::Compositor(gfx::AcceleratedWidget widget,
-                       ui::ContextFactory* context_factory,
+Compositor::Compositor(ui::ContextFactory* context_factory,
                        scoped_refptr<base::SingleThreadTaskRunner> task_runner)
     : context_factory_(context_factory),
       root_layer_(NULL),
-      widget_(widget),
+      widget_(gfx::kNullAcceleratedWidget),
       surface_id_allocator_(context_factory->CreateSurfaceIdAllocator()),
       task_runner_(task_runner),
       vsync_manager_(new CompositorVSyncManager()),
@@ -136,10 +135,7 @@ Compositor::Compositor(gfx::AcceleratedWidget widget,
   settings.initial_debug_state.SetRecordRenderingStats(
       command_line->HasSwitch(cc::switches::kEnableGpuBenchmarking));
 
-  settings.use_display_lists = true;
-
   settings.use_zero_copy = IsUIZeroCopyEnabled();
-  settings.use_one_copy = IsUIOneCopyEnabled();
 
   settings.renderer_settings.use_rgba_4444_textures =
       command_line->HasSwitch(switches::kUIEnableRGBA4444Textures);
@@ -157,9 +153,9 @@ Compositor::Compositor(gfx::AcceleratedWidget widget,
             static_cast<gfx::BufferFormat>(format), usage);
   }
 
-  // Note: gathering of pixel refs is only needed when using multiple
-  // raster threads.
-  settings.gather_pixel_refs = false;
+  // Note: Only enable image decode tasks if we have more than one worker
+  // thread.
+  settings.image_decode_tasks_enabled = false;
 
   settings.use_compositor_animation_timelines =
       command_line->HasSwitch(switches::kUIEnableCompositorAnimationTimelines);
@@ -179,7 +175,6 @@ Compositor::Compositor(gfx::AcceleratedWidget widget,
                       base::TimeTicks::Now() - before_create);
   host_->SetRootLayer(root_web_layer_);
   host_->set_surface_id_namespace(surface_id_allocator_->id_namespace());
-  host_->SetLayerTreeHostClientReady();
 }
 
 Compositor::~Compositor() {
@@ -299,6 +294,14 @@ void Compositor::SetAuthoritativeVSyncInterval(
   }
 
   vsync_manager_->SetAuthoritativeVSyncInterval(interval);
+}
+
+void Compositor::SetAcceleratedWidgetAndStartCompositor(
+    gfx::AcceleratedWidget widget) {
+  // This function should only get called once.
+  DCHECK_EQ(gfx::kNullAcceleratedWidget, widget_);
+  widget_ = widget;
+  host_->SetLayerTreeHostClientReady();
 }
 
 scoped_refptr<CompositorVSyncManager> Compositor::vsync_manager() const {

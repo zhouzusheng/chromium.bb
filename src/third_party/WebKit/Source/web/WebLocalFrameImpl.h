@@ -31,6 +31,7 @@
 #ifndef WebLocalFrameImpl_h
 #define WebLocalFrameImpl_h
 
+#include "core/editing/VisiblePosition.h"
 #include "core/frame/LocalFrame.h"
 #include "platform/geometry/FloatRect.h"
 #include "public/platform/WebFileSystemType.h"
@@ -46,7 +47,6 @@ namespace blink {
 
 class ChromePrintContext;
 class GeolocationClientProxy;
-class InspectorOverlay;
 class IntSize;
 class KURL;
 class Range;
@@ -179,6 +179,7 @@ public:
     bool setCompositionFromExistingText(int compositionStart, int compositionEnd, const WebVector<WebCompositionUnderline>& underlines) override;
     void extendSelectionAndDelete(int before, int after) override;
     void setCaretVisible(bool) override;
+    void clearFocus() override;
     int printBegin(const WebPrintParams&, const WebNode& constrainToNode) override;
     float printPage(int pageToPrint, WebCanvas*) override;
     float getPrintPageShrink(int page) override;
@@ -246,6 +247,7 @@ public:
         WebHistoryLoadType) override;
     bool isLoading() const override;
     bool isResourceLoadInProgress() const override;
+    bool isNavigationScheduled() const override;
     void setCommittedFirstRealLoad() override;
     void sendOrientationChangeEvent() override;
     void willShowInstallBannerPrompt(int requestId, const WebVector<WebString>& platforms, WebAppBannerPromptReply*) override;
@@ -283,7 +285,6 @@ public:
 
     FrameView* frameView() const { return frame() ? frame()->view() : 0; }
 
-    InspectorOverlay* inspectorOverlay();
     WebDevToolsAgentImpl* devToolsAgentImpl() const { return m_devToolsAgent.get(); }
 
     // Getters for the impls corresponding to Get(Provisional)DataSource. They
@@ -357,14 +358,13 @@ private:
     WebPlugin* focusedPluginIfInputMethodSupported();
     ScrollableArea* layoutViewportScrollableArea() const;
 
-    FrameLoaderClientImpl m_frameLoaderClientImpl;
+    OwnPtrWillBeMember<FrameLoaderClientImpl> m_frameLoaderClientImpl;
 
     // The embedder retains a reference to the WebCore LocalFrame while it is active in the DOM. This
     // reference is released when the frame is removed from the DOM or the entire page is closed.
     // FIXME: These will need to change to WebFrame when we introduce WebFrameProxy.
     RefPtrWillBeMember<LocalFrame> m_frame;
 
-    OwnPtrWillBeMember<InspectorOverlay> m_inspectorOverlay;
     OwnPtrWillBeMember<WebDevToolsAgentImpl> m_devToolsAgent;
 
     // This is set if the frame is the root of a local frame tree, and requires a widget for layout.

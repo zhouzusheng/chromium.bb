@@ -38,7 +38,6 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
-#include "wtf/RetainPtr.h"
 #include "wtf/text/WTFString.h"
 
 class SkBitmap;
@@ -121,6 +120,11 @@ public:
     virtual void setAnimationPolicy(ImageAnimationPolicy) { }
     virtual ImageAnimationPolicy animationPolicy() { return ImageAnimationPolicyAllowed; }
     virtual void advanceTime(double deltaTimeInSeconds) { }
+
+    // Advances an animated image. For BitmapImage (e.g., animated gifs) this
+    // will advance to the next frame. For SVGImage, this will trigger an
+    // animation update for CSS and advance the SMIL timeline by one frame.
+    virtual void advanceAnimationForTesting() { }
 
     // Typically the ImageResource that owns us.
     ImageObserver* imageObserver() const { return m_imageObserver; }

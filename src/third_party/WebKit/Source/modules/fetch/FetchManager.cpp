@@ -34,7 +34,9 @@
 #include "platform/network/ResourceError.h"
 #include "platform/network/ResourceRequest.h"
 #include "platform/network/ResourceResponse.h"
+#include "platform/weborigin/SchemeRegistry.h"
 #include "platform/weborigin/SecurityOrigin.h"
+#include "platform/weborigin/SecurityPolicy.h"
 #include "public/platform/WebURLRequest.h"
 #include "wtf/HashSet.h"
 #include "wtf/Vector.h"
@@ -109,7 +111,7 @@ public:
             String errorMessage = "Unknown error occurred while trying to verify integrity.";
             m_finished = true;
             if (r == WebDataConsumerHandle::Done) {
-                if (SubresourceIntegrity::CheckSubresourceIntegrity(m_integrityMetadata, String(m_buffer.data(), m_buffer.size()), m_url, *m_loader->document(), errorMessage)) {
+                if (SubresourceIntegrity::CheckSubresourceIntegrity(m_integrityMetadata, m_buffer.data(), m_buffer.size(), m_url, *m_loader->document(), errorMessage)) {
                     m_updater->update(FetchFormDataConsumerHandle::create(m_buffer.data(), m_buffer.size()));
                     m_loader->m_resolver->resolve(m_response);
                     m_loader->m_resolver.clear();
@@ -396,7 +398,9 @@ void FetchManager::Loader::start()
     }
 
     // "- |request|'s url's scheme is not one of 'http' and 'https'"
-    if (!m_request->url().protocolIsInHTTPFamily()) {
+    // This may include other HTTP-like schemes if the embedder has added them
+    // to SchemeRegistry::registerURLSchemeAsSupportingFetchAPI.
+    if (!SchemeRegistry::shouldTreatURLSchemeAsSupportingFetchAPI(m_request->url().protocol())) {
         // "A network error."
         performNetworkError("Fetch API cannot load " + m_request->url().string() + ". URL scheme must be \"http\" or \"https\" for CORS request.");
         return;
@@ -440,7 +444,7 @@ void FetchManager::Loader::performBasicFetch()
 {
     // "To perform a basic fetch using |request|, switch on |request|'s url's
     // scheme, and run the associated steps:"
-    if (m_request->url().protocolIsInHTTPFamily()) {
+    if (SchemeRegistry::shouldTreatURLSchemeAsSupportingFetchAPI(m_request->url().protocol())) {
         // "Return the result of performing an HTTP fetch using |request|."
         performHTTPFetch(false, false);
     } else {
@@ -456,7 +460,7 @@ void FetchManager::Loader::performNetworkError(const String& message)
 
 void FetchManager::Loader::performHTTPFetch(bool corsFlag, bool corsPreflightFlag)
 {
-    ASSERT(m_request->url().protocolIsInHTTPFamily());
+    ASSERT(SchemeRegistry::shouldTreatURLSchemeAsSupportingFetchAPI(m_request->url().protocol()));
     // CORS preflight fetch procedure is implemented inside DocumentThreadableLoader.
 
     // "1. Let |HTTPRequest| be a copy of |request|, except that |HTTPRequest|'s
@@ -472,7 +476,7 @@ void FetchManager::Loader::performHTTPFetch(bool corsFlag, bool corsPreflightFla
     }
 
     if (m_request->method() != "GET" && m_request->method() != "HEAD") {
-        if (m_request->buffer()->hasBody()) {
+        if (m_request->buffer()) {
             request.setHTTPBody(m_request->buffer()->drainAsFormData());
         }
     }
@@ -482,8 +486,27 @@ void FetchManager::Loader::performHTTPFetch(bool corsFlag, bool corsPreflightFla
     // "2. Append `Referer`/empty byte sequence, if |HTTPRequest|'s |referrer|
     // is none, and `Referer`/|HTTPRequest|'s referrer, serialized and utf-8
     // encoded, otherwise, to HTTPRequest's header list.
-    // We set the referrer using workerGlobalScope's URL in
-    // WorkerThreadableLoader.
+    //
+    // The following code also invokes "determine request's referrer" which is
+    // written in "Main fetch" operation.
+    ASSERT(m_request->referrerPolicy() == ReferrerPolicyDefault);
+    // Request's referrer policy is always default, so use the client's one.
+    // TODO(yhirano): Fix here when we introduce requet's referrer policy.
+    ReferrerPolicy policy = executionContext()->referrerPolicy();
+    if (m_request->referrerString() == FetchRequestData::clientReferrerString()) {
+        String referrerURL;
+        if (executionContext()->isDocument()) {
+            Document* document = toDocument(executionContext());
+            referrerURL = document->outgoingReferrer();
+        } else if (executionContext()->isWorkerGlobalScope()) {
+            referrerURL = executionContext()->url().strippedForUseAsReferrer();
+        }
+        request.setHTTPReferrer(SecurityPolicy::generateReferrer(policy, m_request->url(), referrerURL));
+    } else {
+        // Note that generateReferrer generates |no-referrer| from |no-referrer|
+        // referrer string (i.e. String()).
+        request.setHTTPReferrer(SecurityPolicy::generateReferrer(policy, m_request->url(), m_request->referrerString()));
+    }
 
     // "3. Append `Host`, ..."
     // FIXME: Implement this when the spec is fixed.

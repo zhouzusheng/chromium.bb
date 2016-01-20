@@ -47,6 +47,7 @@ bool ValidFormat(BufferFormat format) {
       return true;
     case BufferFormat::BGRX_8888:
     case BufferFormat::YUV_420:
+    case BufferFormat::YUV_420_BIPLANAR:
     case BufferFormat::UYVY_422:
       return false;
   }
@@ -69,6 +70,7 @@ bool IsCompressedFormat(BufferFormat format) {
     case BufferFormat::BGRA_8888:
     case BufferFormat::BGRX_8888:
     case BufferFormat::YUV_420:
+    case BufferFormat::YUV_420_BIPLANAR:
     case BufferFormat::UYVY_422:
       return false;
   }
@@ -98,6 +100,7 @@ GLenum TextureFormat(BufferFormat format) {
       return GL_BGRA_EXT;
     case BufferFormat::BGRX_8888:
     case BufferFormat::YUV_420:
+    case BufferFormat::YUV_420_BIPLANAR:
     case BufferFormat::UYVY_422:
       NOTREACHED();
       return 0;
@@ -126,6 +129,7 @@ GLenum DataType(BufferFormat format) {
     case BufferFormat::ETC1:
     case BufferFormat::BGRX_8888:
     case BufferFormat::YUV_420:
+    case BufferFormat::YUV_420_BIPLANAR:
     case BufferFormat::UYVY_422:
       NOTREACHED();
       return 0;
@@ -207,6 +211,7 @@ bool GLImageMemory::StrideInBytes(size_t width,
       return true;
     case BufferFormat::BGRX_8888:
     case BufferFormat::YUV_420:
+    case BufferFormat::YUV_420_BIPLANAR:
     case BufferFormat::UYVY_422:
       NOTREACHED();
       return false;
@@ -446,14 +451,27 @@ void GLImageMemory::DoBindTexImage(unsigned target) {
 void GLImageMemory::OnMemoryDump(base::trace_event::ProcessMemoryDump* pmd,
                                  uint64_t process_tracing_id,
                                  const std::string& dump_name) {
-  // Log size 0 if |ref_counted_memory_| has been released.
-  size_t size_in_bytes = memory_ ? SizeInBytes(size_, format_) : 0;
+  // Note that the following calculation does not consider whether this GLImage
+  // has been un-bound from a texture. It also relies on this GLImage only ever
+  // being bound to a single texture. We could check these conditions more
+  // thoroughly, but at the cost of extra GL queries.
+  bool is_bound_to_texture = target_ && !need_do_bind_tex_image_;
+
+#if defined(OS_WIN) || defined(USE_X11) || defined(OS_ANDROID) || \
+    defined(USE_OZONE)
+  is_bound_to_texture |= !!egl_texture_id_;
+#endif
+
+  size_t size_in_bytes = is_bound_to_texture ? SizeInBytes(size_, format_) : 0;
 
   base::trace_event::MemoryAllocatorDump* dump =
-      pmd->CreateAllocatorDump(dump_name);
+      pmd->CreateAllocatorDump(dump_name + "/texture_memory");
   dump->AddScalar(base::trace_event::MemoryAllocatorDump::kNameSize,
                   base::trace_event::MemoryAllocatorDump::kUnitsBytes,
                   static_cast<uint64_t>(size_in_bytes));
+
+  // No need for a global shared edge here. This object in the GPU process is
+  // the sole owner of this texture id.
 }
 
 }  // namespace gfx

@@ -77,7 +77,7 @@ void LayoutTextControl::styleDidChange(StyleDifference diff, const ComputedStyle
         innerEditorLayoutObject->setStyle(createInnerEditorStyle(styleRef()));
         innerEditor->setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::Control));
     }
-    textFormControlElement()->updatePlaceholderVisibility(false);
+    textFormControlElement()->updatePlaceholderVisibility();
 }
 
 static inline void updateUserModifyProperty(HTMLTextFormControlElement& node, ComputedStyle& style)
@@ -281,10 +281,9 @@ void LayoutTextControl::computePreferredLogicalWidths()
     clearPreferredLogicalWidthsDirty();
 }
 
-void LayoutTextControl::addOutlineRects(Vector<LayoutRect>& rects, const LayoutPoint& additionalOffset) const
+void LayoutTextControl::addOutlineRects(Vector<LayoutRect>& rects, const LayoutPoint& additionalOffset, IncludeBlockVisualOverflowOrNot) const
 {
-    if (!size().isEmpty())
-        rects.append(LayoutRect(additionalOffset, size()));
+    rects.append(LayoutRect(additionalOffset, size()));
 }
 
 LayoutObject* LayoutTextControl::layoutSpecialExcludedChild(bool relayoutChildren, SubtreeLayoutScope& layoutScope)

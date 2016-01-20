@@ -52,15 +52,13 @@ class ExceptionState;
 class WebCompositorAnimationPlayer;
 
 class CORE_EXPORT Animation final
-    : public EventTargetWithInlineData
-    , public RefCountedWillBeNoBase<Animation>
+    : public RefCountedGarbageCollectedEventTargetWithInlineData<Animation>
     , public ActiveDOMObject
     , public WebCompositorAnimationDelegate
     , public WebCompositorAnimationPlayerClient {
     DEFINE_WRAPPERTYPEINFO();
-    REFCOUNTED_EVENT_TARGET(Animation);
+    REFCOUNTED_GARBAGE_COLLECTED_EVENT_TARGET(Animation);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Animation);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(Animation);
 public:
     enum AnimationPlayState {
         Idle,
@@ -71,7 +69,7 @@ public:
     };
 
     ~Animation();
-    static PassRefPtrWillBeRawPtr<Animation> create(AnimationEffect*, AnimationTimeline*);
+    static Animation* create(AnimationEffect*, AnimationTimeline*);
 
     // Returns whether the animation is finished.
     bool update(TimingUpdateReason);
@@ -121,10 +119,6 @@ public:
     const AnimationTimeline* timeline() const { return m_timeline; }
     AnimationTimeline* timeline() { return m_timeline; }
 
-#if !ENABLE(OILPAN)
-    void detachFromTimeline();
-#endif
-
     double calculateStartTime(double currentTime) const;
     bool hasStartTime() const { return !isNull(m_startTime); }
     double startTime(bool& isNull) const;
@@ -168,7 +162,8 @@ public:
 
     bool affects(const Element&, CSSPropertyID) const;
 
-    void preCommit(int compositorGroup, bool startOnCompositor);
+    // Returns whether we should continue with the commit for this animation or wait until next commit.
+    bool preCommit(int compositorGroup, bool startOnCompositor);
     void postCommit(double timelineTime);
 
     unsigned sequenceNumber() const { return m_sequenceNumber; }
@@ -230,12 +225,12 @@ private:
 
     unsigned m_sequenceNumber;
 
-    typedef ScriptPromiseProperty<RawPtrWillBeMember<Animation>, RawPtrWillBeMember<Animation>, Member<DOMException>> AnimationPromise;
-    PersistentWillBeMember<AnimationPromise> m_finishedPromise;
-    PersistentWillBeMember<AnimationPromise> m_readyPromise;
+    typedef ScriptPromiseProperty<Member<Animation>, Member<Animation>, Member<DOMException>> AnimationPromise;
+    Member<AnimationPromise> m_finishedPromise;
+    Member<AnimationPromise> m_readyPromise;
 
-    RefPtrWillBeMember<AnimationEffect> m_content;
-    RawPtrWillBeMember<AnimationTimeline> m_timeline;
+    Member<AnimationEffect> m_content;
+    Member<AnimationTimeline> m_timeline;
     // Reflects all pausing, including via pauseForTesting().
     bool m_paused;
     bool m_held;
@@ -289,7 +284,7 @@ private:
         PlayStateUpdateScope(Animation&, TimingUpdateReason, CompositorPendingChange = SetCompositorPending);
         ~PlayStateUpdateScope();
     private:
-        RawPtrWillBeMember<Animation> m_animation;
+        Member<Animation> m_animation;
         AnimationPlayState m_initialPlayState;
         CompositorPendingChange m_compositorPendingChange;
     };

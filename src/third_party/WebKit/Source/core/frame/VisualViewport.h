@@ -87,6 +87,8 @@ public:
         return m_innerViewportScrollLayer.get();
     }
 
+    void initializeScrollbars();
+
     // Sets the location of the visual viewport relative to the outer viewport. The
     // coordinates are in partial CSS pixels.
     void setLocation(const FloatPoint&);
@@ -164,6 +166,7 @@ public:
     IntPoint rootFrameToViewport(const IntPoint&) const;
 
     // ScrollableArea implementation
+    HostWindow* hostWindow() const override;
     DoubleRect visibleContentRectDouble(IncludeScrollbarsInRect = ExcludeScrollbars) const override;
     IntRect visibleContentRect(IncludeScrollbarsInRect = ExcludeScrollbars) const override;
     bool shouldUseIntegerScrollOffset() const override;
@@ -192,11 +195,22 @@ public:
     GraphicsLayer* layerForHorizontalScrollbar() const override;
     GraphicsLayer* layerForVerticalScrollbar() const override;
 
+    // Used for gathering data on user pinch-zoom statistics.
+    void userDidChangeScale();
+    void sendUMAMetrics();
+    void startTrackingPinchStats();
+
+    // Heuristic-based function for determining if we should disable workarounds
+    // for viewing websites that are not optimized for mobile devices.
+    bool shouldDisableDesktopWorkarounds() const;
+
 private:
     explicit VisualViewport(FrameHost&);
 
+    bool visualViewportSuppliesScrollbars() const;
+
     // GraphicsLayerClient implementation.
-    void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& inClip) override;
+    void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& inClip) const override;
     String debugName(const GraphicsLayer*) override;
 
     void setupScrollbar(WebScrollbar::Orientation);
@@ -226,6 +240,8 @@ private:
     float m_scale;
     IntSize m_size;
     float m_topControlsAdjustment;
+    float m_maxPageScale;
+    bool m_trackPinchZoomStatsForPage;
 };
 
 } // namespace blink

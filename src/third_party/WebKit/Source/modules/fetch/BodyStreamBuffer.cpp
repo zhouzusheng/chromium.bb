@@ -10,7 +10,7 @@
 #include "core/dom/ExceptionCode.h"
 #include "modules/fetch/DataConsumerHandleUtil.h"
 #include "platform/blob/BlobData.h"
-#include "platform/network/FormData.h"
+#include "platform/network/EncodedFormData.h"
 
 namespace blink {
 
@@ -90,18 +90,12 @@ private:
 
 BodyStreamBuffer::BodyStreamBuffer(PassOwnPtr<FetchDataConsumerHandle> handle)
     : m_handle(handle)
-    , m_reader(m_handle ? m_handle->obtainReader(this) : nullptr)
+    , m_reader(m_handle->obtainReader(this))
     , m_stream(new ReadableByteStream(this, new ReadableByteStream::StrictStrategy))
     , m_lockLevel(0)
-    , m_hasBody(m_handle)
     , m_streamNeedsMore(false)
 {
-    if (m_hasBody) {
-        m_stream->didSourceStart();
-    } else {
-        // a null body corresponds to an empty stream.
-        close();
-    }
+    m_stream->didSourceStart();
 }
 
 PassRefPtr<BlobDataHandle> BodyStreamBuffer::drainAsBlobDataHandle(FetchDataConsumerHandle::Reader::BlobSizePolicy policy)
@@ -118,13 +112,13 @@ PassRefPtr<BlobDataHandle> BodyStreamBuffer::drainAsBlobDataHandle(FetchDataCons
     return nullptr;
 }
 
-PassRefPtr<FormData> BodyStreamBuffer::drainAsFormData()
+PassRefPtr<EncodedFormData> BodyStreamBuffer::drainAsFormData()
 {
     ASSERT(!isLocked());
     if (ReadableStream::Closed == m_stream->stateInternal() || ReadableStream::Errored == m_stream->stateInternal())
         return nullptr;
 
-    RefPtr<FormData> formData = m_reader->drainAsFormData();
+    RefPtr<EncodedFormData> formData = m_reader->drainAsFormData();
     if (formData) {
         close();
         return formData.release();
@@ -138,7 +132,7 @@ PassOwnPtr<FetchDataConsumerHandle> BodyStreamBuffer::lock(ExecutionContext* exe
     ++m_lockLevel;
     m_reader = nullptr;
     OwnPtr<FetchDataConsumerHandle> handle = m_handle.release();
-    if (ReadableStream::Closed == m_stream->stateInternal() || !m_hasBody)
+    if (ReadableStream::Closed == m_stream->stateInternal())
         return createFetchDataConsumerHandleFromWebHandle(createDoneDataConsumerHandle());
     if (ReadableStream::Errored == m_stream->stateInternal())
         return createFetchDataConsumerHandleFromWebHandle(createUnexpectedErrorDataConsumerHandle());

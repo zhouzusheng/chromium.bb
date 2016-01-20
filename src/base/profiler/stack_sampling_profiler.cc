@@ -83,8 +83,8 @@ void AsyncRunner::RunCallbackAndDeleteInstance(
 
 // StackSamplingProfiler::Module ----------------------------------------------
 
-StackSamplingProfiler::Module::Module() : base_address(nullptr) {}
-StackSamplingProfiler::Module::Module(const void* base_address,
+StackSamplingProfiler::Module::Module() : base_address(0u) {}
+StackSamplingProfiler::Module::Module(uintptr_t base_address,
                                       const std::string& id,
                                       const FilePath& filename)
     : base_address(base_address), id(id), filename(filename) {}
@@ -93,12 +93,13 @@ StackSamplingProfiler::Module::~Module() {}
 
 // StackSamplingProfiler::Frame -----------------------------------------------
 
-StackSamplingProfiler::Frame::Frame(const void* instruction_pointer,
+StackSamplingProfiler::Frame::Frame(uintptr_t instruction_pointer,
                                     size_t module_index)
-    : instruction_pointer(instruction_pointer),
-      module_index(module_index) {}
+    : instruction_pointer(instruction_pointer), module_index(module_index) {}
 
 StackSamplingProfiler::Frame::~Frame() {}
+
+StackSamplingProfiler::Frame::Frame() {}
 
 // StackSamplingProfiler::CallStackProfile ------------------------------------
 
@@ -141,14 +142,14 @@ void StackSamplingProfiler::SamplingThread::ThreadMain() {
 // adhering to the sampling intervals. Once we have established users for the
 // StackSamplingProfiler and the collected data to judge, we may go the other
 // way or make this behavior configurable.
-bool StackSamplingProfiler::SamplingThread::CollectProfile(
+void StackSamplingProfiler::SamplingThread::CollectProfile(
     CallStackProfile* profile,
-    TimeDelta* elapsed_time) {
+    TimeDelta* elapsed_time,
+    bool* was_stopped) {
   ElapsedTimer profile_timer;
-  CallStackProfile current_profile;
-  native_sampler_->ProfileRecordingStarting(&current_profile.modules);
-  current_profile.sampling_period = params_.sampling_interval;
-  bool burst_completed = true;
+  native_sampler_->ProfileRecordingStarting(&profile->modules);
+  profile->sampling_period = params_.sampling_interval;
+  *was_stopped = false;
   TimeDelta previous_elapsed_sample_time;
   for (int i = 0; i < params_.samples_per_burst; ++i) {
     if (i != 0) {
@@ -157,24 +158,19 @@ bool StackSamplingProfiler::SamplingThread::CollectProfile(
       if (stop_event_.TimedWait(
               std::max(params_.sampling_interval - previous_elapsed_sample_time,
                        TimeDelta()))) {
-        burst_completed = false;
+        *was_stopped = true;
         break;
       }
     }
     ElapsedTimer sample_timer;
-    current_profile.samples.push_back(Sample());
-    native_sampler_->RecordStackSample(&current_profile.samples.back());
+    profile->samples.push_back(Sample());
+    native_sampler_->RecordStackSample(&profile->samples.back());
     previous_elapsed_sample_time = sample_timer.Elapsed();
   }
 
   *elapsed_time = profile_timer.Elapsed();
-  current_profile.profile_duration = *elapsed_time;
+  profile->profile_duration = *elapsed_time;
   native_sampler_->ProfileRecordingStopped();
-
-  if (burst_completed)
-    *profile = current_profile;
-
-  return burst_completed;
 }
 
 // In an analogous manner to CollectProfile() and samples exceeding the expected
@@ -197,9 +193,13 @@ void StackSamplingProfiler::SamplingThread::CollectProfiles(
     }
 
     CallStackProfile profile;
-    if (!CollectProfile(&profile, &previous_elapsed_profile_time))
+    bool was_stopped = false;
+    CollectProfile(&profile, &previous_elapsed_profile_time, &was_stopped);
+    if (!profile.samples.empty())
+      profiles->push_back(profile);
+
+    if (was_stopped)
       return;
-    profiles->push_back(profile);
   }
 }
 

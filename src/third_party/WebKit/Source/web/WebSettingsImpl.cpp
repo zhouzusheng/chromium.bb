@@ -190,6 +190,11 @@ void WebSettingsImpl::setInvertViewportScrollOrder(bool enabled)
     m_settings->setInvertViewportScrollOrder(enabled);
 }
 
+void WebSettingsImpl::setInertVisualViewport(bool enabled)
+{
+    m_settings->setInertVisualViewport(enabled);
+}
+
 void WebSettingsImpl::setDeviceScaleAdjustment(float deviceScaleAdjustment)
 {
     m_devToolsEmulator->setDeviceScaleAdjustment(deviceScaleAdjustment);
@@ -296,22 +301,22 @@ void WebSettingsImpl::setPluginsEnabled(bool enabled)
 
 void WebSettingsImpl::setAvailablePointerTypes(int pointers)
 {
-    m_settings->setAvailablePointerTypes(pointers);
+    m_devToolsEmulator->setAvailablePointerTypes(pointers);
 }
 
 void WebSettingsImpl::setPrimaryPointerType(PointerType pointer)
 {
-    m_settings->setPrimaryPointerType(static_cast<blink::PointerType>(pointer));
+    m_devToolsEmulator->setPrimaryPointerType(static_cast<blink::PointerType>(pointer));
 }
 
 void WebSettingsImpl::setAvailableHoverTypes(int types)
 {
-    m_settings->setAvailableHoverTypes(types);
+    m_devToolsEmulator->setAvailableHoverTypes(types);
 }
 
 void WebSettingsImpl::setPrimaryHoverType(HoverType type)
 {
-    m_settings->setPrimaryHoverType(static_cast<blink::HoverType>(type));
+    m_devToolsEmulator->setPrimaryHoverType(static_cast<blink::HoverType>(type));
 }
 
 void WebSettingsImpl::setPreferHiddenVolumeControls(bool enabled)
@@ -342,11 +347,6 @@ void WebSettingsImpl::setUsesEncodingDetector(bool usesDetector)
 void WebSettingsImpl::setTextAreasAreResizable(bool areResizable)
 {
     m_settings->setTextAreasAreResizable(areResizable);
-}
-
-void WebSettingsImpl::setJavaEnabled(bool enabled)
-{
-    m_settings->setJavaEnabled(enabled);
 }
 
 void WebSettingsImpl::setAllowScriptsToCloseWindows(bool allow)
@@ -584,6 +584,11 @@ void WebSettingsImpl::setAsynchronousSpellCheckingEnabled(bool enabled)
     m_settings->setAsynchronousSpellCheckingEnabled(enabled);
 }
 
+void WebSettingsImpl::setAutoplayExperimentMode(const WebString& mode)
+{
+    m_settings->setAutoplayExperimentMode(mode);
+}
+
 void WebSettingsImpl::setUnifiedTextCheckerEnabled(bool enabled)
 {
     m_settings->setUnifiedTextCheckerEnabled(enabled);
@@ -677,26 +682,6 @@ bool WebSettingsImpl::multiTargetTapNotificationEnabled()
 void WebSettingsImpl::setMultiTargetTapNotificationEnabled(bool enabled)
 {
     m_settings->setMultiTargetTapNotificationEnabled(enabled);
-}
-
-int WebSettingsImpl::availablePointerTypes() const
-{
-    return m_settings->availablePointerTypes();
-}
-
-WebSettings::PointerType WebSettingsImpl::primaryPointerType() const
-{
-    return static_cast<PointerType>(m_settings->primaryPointerType());
-}
-
-int WebSettingsImpl::availableHoverTypes() const
-{
-    return m_settings->availableHoverTypes();
-}
-
-WebSettings::HoverType WebSettingsImpl::primaryHoverType() const
-{
-    return static_cast<HoverType>(m_settings->primaryHoverType());
 }
 
 bool WebSettingsImpl::viewportEnabled() const

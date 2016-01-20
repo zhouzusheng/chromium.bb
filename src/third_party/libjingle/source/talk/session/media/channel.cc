@@ -31,7 +31,6 @@
 #include "talk/media/base/rtputils.h"
 #include "webrtc/p2p/base/transportchannel.h"
 #include "talk/session/media/channelmanager.h"
-#include "talk/session/media/typingmonitor.h"
 #include "webrtc/base/bind.h"
 #include "webrtc/base/buffer.h"
 #include "webrtc/base/byteorder.h"
@@ -171,15 +170,17 @@ void RtpSendParametersFromMediaDescription(
 }
 
 BaseChannel::BaseChannel(rtc::Thread* thread,
-                         MediaChannel* media_channel, BaseSession* session,
-                         const std::string& content_name, bool rtcp)
+                         MediaChannel* media_channel,
+                         TransportController* transport_controller,
+                         const std::string& content_name,
+                         bool rtcp)
     : worker_thread_(thread),
-      session_(session),
+      transport_controller_(transport_controller),
       media_channel_(media_channel),
       content_name_(content_name),
-      rtcp_(rtcp),
-      transport_channel_(NULL),
-      rtcp_transport_channel_(NULL),
+      rtcp_transport_enabled_(rtcp),
+      transport_channel_(nullptr),
+      rtcp_transport_channel_(nullptr),
       enabled_(false),
       writable_(false),
       rtp_ready_to_send_(false),
@@ -205,20 +206,31 @@ BaseChannel::~BaseChannel() {
   // the media channel may try to send on the dead transport channel. NULLing
   // is not an effective strategy since the sends will come on another thread.
   delete media_channel_;
-  set_transport_channel(nullptr);
-  set_rtcp_transport_channel(nullptr);
+  // Note that we don't just call set_transport_channel(nullptr) because that
+  // would call a pure virtual method which we can't do from a destructor.
+  if (transport_channel_) {
+    DisconnectFromTransportChannel(transport_channel_);
+    transport_controller_->DestroyTransportChannel_w(
+        transport_name_, cricket::ICE_CANDIDATE_COMPONENT_RTP);
+  }
+  if (rtcp_transport_channel_) {
+    DisconnectFromTransportChannel(rtcp_transport_channel_);
+    transport_controller_->DestroyTransportChannel_w(
+        transport_name_, cricket::ICE_CANDIDATE_COMPONENT_RTCP);
+  }
   LOG(LS_INFO) << "Destroyed channel";
 }
 
 bool BaseChannel::Init() {
-  if (!SetTransportChannels(session(), rtcp())) {
+  if (!SetTransport(content_name())) {
     return false;
   }
 
   if (!SetDtlsSrtpCiphers(transport_channel(), false)) {
     return false;
   }
-  if (rtcp() && !SetDtlsSrtpCiphers(rtcp_transport_channel(), true)) {
+  if (rtcp_transport_enabled() &&
+      !SetDtlsSrtpCiphers(rtcp_transport_channel(), true)) {
     return false;
   }
 
@@ -232,29 +244,35 @@ void BaseChannel::Deinit() {
   media_channel_->SetInterface(NULL);
 }
 
-bool BaseChannel::SetTransportChannels(BaseSession* session, bool rtcp) {
-  return worker_thread_->Invoke<bool>(Bind(
-      &BaseChannel::SetTransportChannels_w, this, session, rtcp));
+bool BaseChannel::SetTransport(const std::string& transport_name) {
+  return worker_thread_->Invoke<bool>(
+      Bind(&BaseChannel::SetTransport_w, this, transport_name));
 }
 
-bool BaseChannel::SetTransportChannels_w(BaseSession* session, bool rtcp) {
+bool BaseChannel::SetTransport_w(const std::string& transport_name) {
   ASSERT(worker_thread_ == rtc::Thread::Current());
 
-  set_transport_channel(session->CreateChannel(
-      content_name(), cricket::ICE_CANDIDATE_COMPONENT_RTP));
+  if (transport_name == transport_name_) {
+    // Nothing to do if transport name isn't changing
+    return true;
+  }
+
+  set_transport_channel(transport_controller_->CreateTransportChannel_w(
+      transport_name, cricket::ICE_CANDIDATE_COMPONENT_RTP));
   if (!transport_channel()) {
     return false;
   }
-  if (rtcp) {
-    set_rtcp_transport_channel(session->CreateChannel(
-        content_name(), cricket::ICE_CANDIDATE_COMPONENT_RTCP));
+  if (rtcp_transport_enabled()) {
+    LOG(LS_INFO) << "Create RTCP TransportChannel for " << content_name()
+                 << " on " << transport_name << " transport ";
+    set_rtcp_transport_channel(transport_controller_->CreateTransportChannel_w(
+        transport_name, cricket::ICE_CANDIDATE_COMPONENT_RTCP));
     if (!rtcp_transport_channel()) {
       return false;
     }
-  } else {
-    set_rtcp_transport_channel(nullptr);
   }
 
+  transport_name_ = transport_name;
   return true;
 }
 
@@ -262,42 +280,62 @@ void BaseChannel::set_transport_channel(TransportChannel* new_tc) {
   ASSERT(worker_thread_ == rtc::Thread::Current());
 
   TransportChannel* old_tc = transport_channel_;
-
-  if (old_tc == new_tc) {
+  if (!old_tc && !new_tc) {
+    // Nothing to do
     return;
   }
+  ASSERT(old_tc != new_tc);
+
   if (old_tc) {
     DisconnectFromTransportChannel(old_tc);
-    session()->DestroyChannel(
-        content_name(), cricket::ICE_CANDIDATE_COMPONENT_RTP);
+    transport_controller_->DestroyTransportChannel_w(
+        transport_name_, cricket::ICE_CANDIDATE_COMPONENT_RTP);
   }
 
   transport_channel_ = new_tc;
 
   if (new_tc) {
     ConnectToTransportChannel(new_tc);
+    for (const auto& pair : socket_options_) {
+      new_tc->SetOption(pair.first, pair.second);
+    }
   }
+
+  // Update aggregate writable/ready-to-send state between RTP and RTCP upon
+  // setting new channel
+  UpdateWritableState_w();
+  SetReadyToSend(false, new_tc && new_tc->writable());
 }
 
 void BaseChannel::set_rtcp_transport_channel(TransportChannel* new_tc) {
   ASSERT(worker_thread_ == rtc::Thread::Current());
 
   TransportChannel* old_tc = rtcp_transport_channel_;
-
-  if (old_tc == new_tc) {
+  if (!old_tc && !new_tc) {
+    // Nothing to do
     return;
   }
+  ASSERT(old_tc != new_tc);
+
   if (old_tc) {
     DisconnectFromTransportChannel(old_tc);
-    session()->DestroyChannel(
-        content_name(), cricket::ICE_CANDIDATE_COMPONENT_RTCP);
+    transport_controller_->DestroyTransportChannel_w(
+        transport_name_, cricket::ICE_CANDIDATE_COMPONENT_RTCP);
   }
 
   rtcp_transport_channel_ = new_tc;
 
   if (new_tc) {
     ConnectToTransportChannel(new_tc);
+    for (const auto& pair : rtcp_socket_options_) {
+      new_tc->SetOption(pair.first, pair.second);
+    }
   }
+
+  // Update aggregate writable/ready-to-send state between RTP and RTCP upon
+  // setting new channel
+  UpdateWritableState_w();
+  SetReadyToSend(true, new_tc && new_tc->writable());
 }
 
 void BaseChannel::ConnectToTransportChannel(TransportChannel* tc) {
@@ -321,14 +359,6 @@ bool BaseChannel::Enable(bool enable) {
       enable ? &BaseChannel::EnableMedia_w : &BaseChannel::DisableMedia_w,
       this));
   return true;
-}
-
-bool BaseChannel::MuteStream(uint32 ssrc, bool mute) {
-  return InvokeOnWorker(Bind(&BaseChannel::MuteStream_w, this, ssrc, mute));
-}
-
-bool BaseChannel::IsStreamMuted(uint32 ssrc) {
-  return InvokeOnWorker(Bind(&BaseChannel::IsStreamMuted_w, this, ssrc));
 }
 
 bool BaseChannel::AddRecvStream(const StreamParams& sp) {
@@ -416,9 +446,13 @@ int BaseChannel::SetOption(SocketType type, rtc::Socket::Option opt,
   switch (type) {
     case ST_RTP:
       channel = transport_channel_;
+      socket_options_.push_back(
+          std::pair<rtc::Socket::Option, int>(opt, value));
       break;
     case ST_RTCP:
       channel = rtcp_transport_channel_;
+      rtcp_socket_options_.push_back(
+          std::pair<rtc::Socket::Option, int>(opt, value));
       break;
   }
   return channel ? channel->SetOption(opt, value) : -1;
@@ -426,12 +460,7 @@ int BaseChannel::SetOption(SocketType type, rtc::Socket::Option opt,
 
 void BaseChannel::OnWritableState(TransportChannel* channel) {
   ASSERT(channel == transport_channel_ || channel == rtcp_transport_channel_);
-  if (transport_channel_->writable()
-      && (!rtcp_transport_channel_ || rtcp_transport_channel_->writable())) {
-    ChannelWritable_w();
-  } else {
-    ChannelNotWritable_w();
-  }
+  UpdateWritableState_w();
 }
 
 void BaseChannel::OnChannelRead(TransportChannel* channel,
@@ -449,26 +478,25 @@ void BaseChannel::OnChannelRead(TransportChannel* channel,
 }
 
 void BaseChannel::OnReadyToSend(TransportChannel* channel) {
-  SetReadyToSend(channel, true);
+  ASSERT(channel == transport_channel_ || channel == rtcp_transport_channel_);
+  SetReadyToSend(channel == rtcp_transport_channel_, true);
 }
 
-void BaseChannel::SetReadyToSend(TransportChannel* channel, bool ready) {
-  ASSERT(channel == transport_channel_ || channel == rtcp_transport_channel_);
-  if (channel == transport_channel_) {
+void BaseChannel::SetReadyToSend(bool rtcp, bool ready) {
+  if (rtcp) {
+    rtcp_ready_to_send_ = ready;
+  } else {
     rtp_ready_to_send_ = ready;
   }
-  if (channel == rtcp_transport_channel_) {
-    rtcp_ready_to_send_ = ready;
-  }
 
-  if (!ready) {
-    // Notify the MediaChannel when either rtp or rtcp channel can't send.
-    media_channel_->OnReadyToSend(false);
-  } else if (rtp_ready_to_send_ &&
-             // In the case of rtcp mux |rtcp_transport_channel_| will be null.
-             (rtcp_ready_to_send_ || !rtcp_transport_channel_)) {
+  if (rtp_ready_to_send_ &&
+      // In the case of rtcp mux |rtcp_transport_channel_| will be null.
+      (rtcp_ready_to_send_ || !rtcp_transport_channel_)) {
     // Notify the MediaChannel when both rtp and rtcp channel can send.
     media_channel_->OnReadyToSend(true);
+  } else {
+    // Notify the MediaChannel when either rtp or rtcp channel can't send.
+    media_channel_->OnReadyToSend(false);
   }
 }
 
@@ -590,7 +618,7 @@ bool BaseChannel::SendPacket(bool rtcp, rtc::Buffer* packet,
   if (ret != static_cast<int>(packet->size())) {
     if (channel->GetError() == EWOULDBLOCK) {
       LOG(LS_WARNING) << "Got EWOULDBLOCK from socket.";
-      SetReadyToSend(channel, false);
+      SetReadyToSend(rtcp, false);
     }
     return false;
   }
@@ -724,21 +752,13 @@ void BaseChannel::DisableMedia_w() {
   ChangeState();
 }
 
-bool BaseChannel::MuteStream_w(uint32 ssrc, bool mute) {
-  ASSERT(worker_thread_ == rtc::Thread::Current());
-  bool ret = media_channel()->MuteStream(ssrc, mute);
-  if (ret) {
-    if (mute)
-      muted_streams_.insert(ssrc);
-    else
-      muted_streams_.erase(ssrc);
+void BaseChannel::UpdateWritableState_w() {
+  if (transport_channel_ && transport_channel_->writable() &&
+      (!rtcp_transport_channel_ || rtcp_transport_channel_->writable())) {
+    ChannelWritable_w();
+  } else {
+    ChannelNotWritable_w();
   }
-  return ret;
-}
-
-bool BaseChannel::IsStreamMuted_w(uint32 ssrc) {
-  ASSERT(worker_thread_ == rtc::Thread::Current());
-  return muted_streams_.find(ssrc) != muted_streams_.end();
 }
 
 void BaseChannel::ChannelWritable_w() {
@@ -746,9 +766,7 @@ void BaseChannel::ChannelWritable_w() {
   if (writable_)
     return;
 
-  LOG(LS_INFO) << "Channel socket writable ("
-               << transport_channel_->content_name() << ", "
-               << transport_channel_->component() << ")"
+  LOG(LS_INFO) << "Channel writable (" << content_name_ << ")"
                << (was_ever_writable_ ? "" : " for the first time");
 
   std::vector<ConnectionInfo> infos;
@@ -765,13 +783,13 @@ void BaseChannel::ChannelWritable_w() {
   // If we're doing DTLS-SRTP, now is the time.
   if (!was_ever_writable_ && ShouldSetupDtlsSrtp()) {
     if (!SetupDtlsSrtp(false)) {
-      SignalDtlsSetupFailure(this, false);
+      SignalDtlsSetupFailure_w(false);
       return;
     }
 
     if (rtcp_transport_channel_) {
       if (!SetupDtlsSrtp(true)) {
-        SignalDtlsSetupFailure(this, true);
+        SignalDtlsSetupFailure_w(true);
         return;
       }
     }
@@ -798,9 +816,9 @@ bool BaseChannel::SetDtlsSrtpCiphers(TransportChannel *tc, bool rtcp) {
   // We always use the default SRTP ciphers for RTCP, but we may use different
   // ciphers for RTP depending on the media type.
   if (!rtcp) {
-    GetSrtpCiphers(&ciphers);
+    GetSrtpCryptoSuiteNames(&ciphers);
   } else {
-    GetSupportedDefaultCryptoSuites(&ciphers);
+    GetDefaultSrtpCryptoSuiteNames(&ciphers);
   }
   return tc->SetSrtpCiphers(ciphers);
 }
@@ -814,8 +832,8 @@ bool BaseChannel::ShouldSetupDtlsSrtp() const {
 bool BaseChannel::SetupDtlsSrtp(bool rtcp_channel) {
   bool ret = false;
 
-  TransportChannel *channel = rtcp_channel ?
-      rtcp_transport_channel_ : transport_channel_;
+  TransportChannel* channel =
+      rtcp_channel ? rtcp_transport_channel_ : transport_channel_;
 
   // No DTLS
   if (!channel->IsDtlsActive())
@@ -823,7 +841,7 @@ bool BaseChannel::SetupDtlsSrtp(bool rtcp_channel) {
 
   std::string selected_cipher;
 
-  if (!channel->GetSrtpCipher(&selected_cipher)) {
+  if (!channel->GetSrtpCryptoSuite(&selected_cipher)) {
     LOG(LS_ERROR) << "No DTLS-SRTP selected cipher";
     return false;
   }
@@ -910,9 +928,7 @@ void BaseChannel::ChannelNotWritable_w() {
   if (!writable_)
     return;
 
-  LOG(LS_INFO) << "Channel socket not writable ("
-               << transport_channel_->content_name() << ", "
-               << transport_channel_->component() << ")";
+  LOG(LS_INFO) << "Channel not writable (" << content_name_ << ")";
   writable_ = false;
   ChangeState();
 }
@@ -1011,7 +1027,8 @@ void BaseChannel::ActivateRtcpMux() {
 void BaseChannel::ActivateRtcpMux_w() {
   if (!rtcp_mux_filter_.IsActive()) {
     rtcp_mux_filter_.SetActive();
-    set_rtcp_transport_channel(NULL);
+    set_rtcp_transport_channel(nullptr);
+    rtcp_transport_enabled_ = false;
   }
 }
 
@@ -1030,7 +1047,11 @@ bool BaseChannel::SetRtcpMux_w(bool enable, ContentAction action,
       ret = rtcp_mux_filter_.SetAnswer(enable, src);
       if (ret && rtcp_mux_filter_.IsActive()) {
         // We activated RTCP mux, close down the RTCP transport.
-        set_rtcp_transport_channel(NULL);
+        LOG(LS_INFO) << "Enabling rtcp-mux for " << content_name()
+                     << " by destroying RTCP transport channel for "
+                     << transport_name();
+        set_rtcp_transport_channel(nullptr);
+        rtcp_transport_enabled_ = false;
       }
       break;
     case CA_UPDATE:
@@ -1257,14 +1278,16 @@ void BaseChannel::FlushRtcpMessages() {
 VoiceChannel::VoiceChannel(rtc::Thread* thread,
                            MediaEngineInterface* media_engine,
                            VoiceMediaChannel* media_channel,
-                           BaseSession* session,
+                           TransportController* transport_controller,
                            const std::string& content_name,
                            bool rtcp)
-    : BaseChannel(thread, media_channel, session, content_name,
+    : BaseChannel(thread,
+                  media_channel,
+                  transport_controller,
+                  content_name,
                   rtcp),
       media_engine_(media_engine),
-      received_media_(false) {
-}
+      received_media_(false) {}
 
 VoiceChannel::~VoiceChannel() {
   StopAudioMonitor();
@@ -1278,10 +1301,6 @@ bool VoiceChannel::Init() {
   if (!BaseChannel::Init()) {
     return false;
   }
-  media_channel()->SignalMediaError.connect(
-      this, &VoiceChannel::OnVoiceChannelError);
-  srtp_filter()->SignalSrtpError.connect(
-      this, &VoiceChannel::OnSrtpError);
   return true;
 }
 
@@ -1290,13 +1309,12 @@ bool VoiceChannel::SetRemoteRenderer(uint32 ssrc, AudioRenderer* renderer) {
                              media_channel(), ssrc, renderer));
 }
 
-bool VoiceChannel::SetLocalRenderer(uint32 ssrc, AudioRenderer* renderer) {
-  return InvokeOnWorker(Bind(&VoiceMediaChannel::SetLocalRenderer,
-                             media_channel(), ssrc, renderer));
-}
-
-bool VoiceChannel::SetRingbackTone(const void* buf, int len) {
-  return InvokeOnWorker(Bind(&VoiceChannel::SetRingbackTone_w, this, buf, len));
+bool VoiceChannel::SetAudioSend(uint32 ssrc,
+                                bool enable,
+                                const AudioOptions* options,
+                                AudioRenderer* renderer) {
+  return InvokeOnWorker(Bind(&VoiceMediaChannel::SetAudioSend, media_channel(),
+                             ssrc, enable, options, renderer));
 }
 
 // TODO(juberti): Handle early media the right way. We should get an explicit
@@ -1313,11 +1331,6 @@ void VoiceChannel::SetEarlyMedia(bool enable) {
     // Stop the timeout if currently going.
     worker_thread()->Clear(this, MSG_EARLYMEDIATIMEOUT);
   }
-}
-
-bool VoiceChannel::PlayRingbackTone(uint32 ssrc, bool play, bool loop) {
-  return InvokeOnWorker(Bind(&VoiceChannel::PlayRingbackTone_w,
-                             this, ssrc, play, loop));
 }
 
 bool VoiceChannel::PressDTMF(int digit, bool playout) {
@@ -1384,26 +1397,6 @@ bool VoiceChannel::IsAudioMonitorRunning() const {
   return (audio_monitor_.get() != NULL);
 }
 
-void VoiceChannel::StartTypingMonitor(const TypingMonitorOptions& settings) {
-  typing_monitor_.reset(new TypingMonitor(this, worker_thread(), settings));
-  SignalAutoMuted.repeat(typing_monitor_->SignalMuted);
-}
-
-void VoiceChannel::StopTypingMonitor() {
-  typing_monitor_.reset();
-}
-
-bool VoiceChannel::IsTypingMonitorRunning() const {
-  return typing_monitor_;
-}
-
-bool VoiceChannel::MuteStream_w(uint32 ssrc, bool mute) {
-  bool ret = BaseChannel::MuteStream_w(ssrc, mute);
-  if (typing_monitor_ && mute)
-    typing_monitor_->OnChannelMuted();
-  return ret;
-}
-
 int VoiceChannel::GetInputLevel_w() {
   return media_engine_->GetInputLevel();
 }
@@ -1433,9 +1426,7 @@ void VoiceChannel::ChangeState() {
   // Render incoming data if we're the active call, and we have the local
   // content. We receive data on the default channel and multiplexed streams.
   bool recv = IsReadyToReceive();
-  if (!media_channel()->SetPlayout(recv)) {
-    SendLastMediaError();
-  }
+  media_channel()->SetPlayout(recv);
 
   // Send outgoing data if we're the active call, we have the remote content,
   // and we have had some form of connectivity.
@@ -1443,7 +1434,6 @@ void VoiceChannel::ChangeState() {
   SendFlags send_flag = send ? SEND_MICROPHONE : SEND_NOTHING;
   if (!media_channel()->SetSend(send_flag)) {
     LOG(LS_ERROR) << "Failed to SetSend " << send_flag << " on voice channel";
-    SendLastMediaError();
   }
 
   LOG(LS_INFO) << "Changing voice state, recv=" << recv << " send=" << send;
@@ -1475,7 +1465,7 @@ bool VoiceChannel::SetLocalContent_w(const MediaContentDescription* content,
   AudioRecvParameters recv_params = last_recv_params_;
   RtpParametersFromMediaDescription(audio, &recv_params);
   if (!media_channel()->SetRecvParameters(recv_params)) {
-    SafeSetError("Failed to set local video description recv parameters.",
+    SafeSetError("Failed to set local audio description recv parameters.",
                  error_desc);
     return false;
   }
@@ -1540,24 +1530,13 @@ bool VoiceChannel::SetRemoteContent_w(const MediaContentDescription* content,
     return false;
   }
 
+  if (audio->rtp_header_extensions_set()) {
+    MaybeCacheRtpAbsSendTimeHeaderExtension(audio->rtp_header_extensions());
+  }
+
   set_remote_content_direction(content->direction());
   ChangeState();
   return true;
-}
-
-bool VoiceChannel::SetRingbackTone_w(const void* buf, int len) {
-  ASSERT(worker_thread() == rtc::Thread::Current());
-  return media_channel()->SetRingbackTone(static_cast<const char*>(buf), len);
-}
-
-bool VoiceChannel::PlayRingbackTone_w(uint32 ssrc, bool play, bool loop) {
-  ASSERT(worker_thread() == rtc::Thread::Current());
-  if (play) {
-    LOG(LS_INFO) << "Playing ringback tone, loop=" << loop;
-  } else {
-    LOG(LS_INFO) << "Stopping ringback tone";
-  }
-  return media_channel()->PlayRingbackTone(ssrc, play, loop);
 }
 
 void VoiceChannel::HandleEarlyMediaTimeout() {
@@ -1577,11 +1556,6 @@ bool VoiceChannel::InsertDtmf_w(uint32 ssrc, int event, int duration,
   return media_channel()->InsertDtmf(ssrc, event, duration, flags);
 }
 
-bool VoiceChannel::SetChannelOptions(const AudioOptions& options) {
-  return InvokeOnWorker(Bind(&VoiceMediaChannel::SetOptions,
-                             media_channel(), options));
-}
-
 void VoiceChannel::OnMessage(rtc::Message *pmsg) {
   switch (pmsg->message_id) {
     case MSG_EARLYMEDIATIMEOUT:
@@ -1590,7 +1564,6 @@ void VoiceChannel::OnMessage(rtc::Message *pmsg) {
     case MSG_CHANNEL_ERROR: {
       VoiceChannelErrorMessageData* data =
           static_cast<VoiceChannelErrorMessageData*>(pmsg->pdata);
-      SignalMediaError(this, data->ssrc, data->error);
       delete data;
       break;
     }
@@ -1616,67 +1589,29 @@ void VoiceChannel::OnAudioMonitorUpdate(AudioMonitor* monitor,
   SignalAudioMonitor(this, info);
 }
 
-void VoiceChannel::OnVoiceChannelError(
-    uint32 ssrc, VoiceMediaChannel::Error err) {
-  VoiceChannelErrorMessageData* data = new VoiceChannelErrorMessageData(
-      ssrc, err);
-  signaling_thread()->Post(this, MSG_CHANNEL_ERROR, data);
-}
-
-void VoiceChannel::OnSrtpError(uint32 ssrc, SrtpFilter::Mode mode,
-                               SrtpFilter::Error error) {
-  switch (error) {
-    case SrtpFilter::ERROR_FAIL:
-      OnVoiceChannelError(ssrc, (mode == SrtpFilter::PROTECT) ?
-                          VoiceMediaChannel::ERROR_REC_SRTP_ERROR :
-                          VoiceMediaChannel::ERROR_PLAY_SRTP_ERROR);
-      break;
-    case SrtpFilter::ERROR_AUTH:
-      OnVoiceChannelError(ssrc, (mode == SrtpFilter::PROTECT) ?
-                          VoiceMediaChannel::ERROR_REC_SRTP_AUTH_FAILED :
-                          VoiceMediaChannel::ERROR_PLAY_SRTP_AUTH_FAILED);
-      break;
-    case SrtpFilter::ERROR_REPLAY:
-      // Only receving channel should have this error.
-      ASSERT(mode == SrtpFilter::UNPROTECT);
-      OnVoiceChannelError(ssrc, VoiceMediaChannel::ERROR_PLAY_SRTP_REPLAY);
-      break;
-    default:
-      break;
-  }
-}
-
-void VoiceChannel::GetSrtpCiphers(std::vector<std::string>* ciphers) const {
+void VoiceChannel::GetSrtpCryptoSuiteNames(
+    std::vector<std::string>* ciphers) const {
   GetSupportedAudioCryptoSuites(ciphers);
 }
 
 VideoChannel::VideoChannel(rtc::Thread* thread,
                            VideoMediaChannel* media_channel,
-                           BaseSession* session,
+                           TransportController* transport_controller,
                            const std::string& content_name,
                            bool rtcp)
-    : BaseChannel(thread, media_channel, session, content_name,
+    : BaseChannel(thread,
+                  media_channel,
+                  transport_controller,
+                  content_name,
                   rtcp),
       renderer_(NULL),
-      previous_we_(rtc::WE_CLOSE) {
-}
+      previous_we_(rtc::WE_CLOSE) {}
 
 bool VideoChannel::Init() {
   if (!BaseChannel::Init()) {
     return false;
   }
-  media_channel()->SignalMediaError.connect(
-      this, &VideoChannel::OnVideoChannelError);
-  srtp_filter()->SignalSrtpError.connect(
-      this, &VideoChannel::OnSrtpError);
   return true;
-}
-
-void VoiceChannel::SendLastMediaError() {
-  uint32 ssrc;
-  VoiceMediaChannel::Error error;
-  media_channel()->GetLastMediaError(&ssrc, &error);
-  SignalMediaError(this, ssrc, error);
 }
 
 VideoChannel::~VideoChannel() {
@@ -1752,15 +1687,14 @@ bool VideoChannel::RequestIntraFrame() {
   return true;
 }
 
-void VideoChannel::ChangeState() {
-  // Render incoming data if we're the active call, and we have the local
-  // content. We receive data on the default channel and multiplexed streams.
-  bool recv = IsReadyToReceive();
-  if (!media_channel()->SetRender(recv)) {
-    LOG(LS_ERROR) << "Failed to SetRender on video channel";
-    // TODO(gangji): Report error back to server.
-  }
+bool VideoChannel::SetVideoSend(uint32 ssrc,
+                                bool mute,
+                                const VideoOptions* options) {
+  return InvokeOnWorker(Bind(&VideoMediaChannel::SetVideoSend, media_channel(),
+                             ssrc, mute, options));
+}
 
+void VideoChannel::ChangeState() {
   // Send outgoing data if we're the active call, we have the remote content,
   // and we have had some form of connectivity.
   bool send = IsReadyToSend();
@@ -1769,7 +1703,7 @@ void VideoChannel::ChangeState() {
     // TODO(gangji): Report error back to server.
   }
 
-  LOG(LS_INFO) << "Changing video state, recv=" << recv << " send=" << send;
+  LOG(LS_INFO) << "Changing video state, send=" << send;
 }
 
 bool VideoChannel::GetStats(VideoMediaInfo* stats) {
@@ -1969,11 +1903,6 @@ void VideoChannel::OnScreencastWindowEvent_s(uint32 ssrc,
   SignalScreencastWindowEvent(ssrc, we);
 }
 
-bool VideoChannel::SetChannelOptions(const VideoOptions &options) {
-  return InvokeOnWorker(Bind(&VideoMediaChannel::SetOptions,
-                             media_channel(), options));
-}
-
 void VideoChannel::OnMessage(rtc::Message *pmsg) {
   switch (pmsg->message_id) {
     case MSG_SCREENCASTWINDOWEVENT: {
@@ -1986,7 +1915,6 @@ void VideoChannel::OnMessage(rtc::Message *pmsg) {
     case MSG_CHANNEL_ERROR: {
       const VideoChannelErrorMessageData* data =
           static_cast<VideoChannelErrorMessageData*>(pmsg->pdata);
-      SignalMediaError(this, data->ssrc, data->error);
       delete data;
       break;
     }
@@ -2051,52 +1979,23 @@ bool VideoChannel::GetLocalSsrc(const VideoCapturer* capturer, uint32* ssrc) {
   return false;
 }
 
-void VideoChannel::OnVideoChannelError(uint32 ssrc,
-                                       VideoMediaChannel::Error error) {
-  VideoChannelErrorMessageData* data = new VideoChannelErrorMessageData(
-      ssrc, error);
-  signaling_thread()->Post(this, MSG_CHANNEL_ERROR, data);
-}
-
-void VideoChannel::OnSrtpError(uint32 ssrc, SrtpFilter::Mode mode,
-                               SrtpFilter::Error error) {
-  switch (error) {
-    case SrtpFilter::ERROR_FAIL:
-      OnVideoChannelError(ssrc, (mode == SrtpFilter::PROTECT) ?
-                          VideoMediaChannel::ERROR_REC_SRTP_ERROR :
-                          VideoMediaChannel::ERROR_PLAY_SRTP_ERROR);
-      break;
-    case SrtpFilter::ERROR_AUTH:
-      OnVideoChannelError(ssrc, (mode == SrtpFilter::PROTECT) ?
-                          VideoMediaChannel::ERROR_REC_SRTP_AUTH_FAILED :
-                          VideoMediaChannel::ERROR_PLAY_SRTP_AUTH_FAILED);
-      break;
-    case SrtpFilter::ERROR_REPLAY:
-      // Only receving channel should have this error.
-      ASSERT(mode == SrtpFilter::UNPROTECT);
-      // TODO(gangji): Turn on the signaling of replay error once we have
-      // switched to the new mechanism for doing video retransmissions.
-      // OnVideoChannelError(ssrc, VideoMediaChannel::ERROR_PLAY_SRTP_REPLAY);
-      break;
-    default:
-      break;
-  }
-}
-
-
-void VideoChannel::GetSrtpCiphers(std::vector<std::string>* ciphers) const {
+void VideoChannel::GetSrtpCryptoSuiteNames(
+    std::vector<std::string>* ciphers) const {
   GetSupportedVideoCryptoSuites(ciphers);
 }
 
 DataChannel::DataChannel(rtc::Thread* thread,
                          DataMediaChannel* media_channel,
-                         BaseSession* session,
+                         TransportController* transport_controller,
                          const std::string& content_name,
                          bool rtcp)
-    : BaseChannel(thread, media_channel, session, content_name, rtcp),
+    : BaseChannel(thread,
+                  media_channel,
+                  transport_controller,
+                  content_name,
+                  rtcp),
       data_channel_type_(cricket::DCT_NONE),
-      ready_to_send_data_(false) {
-}
+      ready_to_send_data_(false) {}
 
 DataChannel::~DataChannel() {
   StopMediaMonitor();
@@ -2112,14 +2011,10 @@ bool DataChannel::Init() {
   }
   media_channel()->SignalDataReceived.connect(
       this, &DataChannel::OnDataReceived);
-  media_channel()->SignalMediaError.connect(
-      this, &DataChannel::OnDataChannelError);
   media_channel()->SignalReadyToSend.connect(
       this, &DataChannel::OnDataChannelReadyToSend);
   media_channel()->SignalStreamClosedRemotely.connect(
       this, &DataChannel::OnStreamClosedRemotely);
-  srtp_filter()->SignalSrtpError.connect(
-      this, &DataChannel::OnSrtpError);
   return true;
 }
 
@@ -2327,7 +2222,6 @@ void DataChannel::OnMessage(rtc::Message *pmsg) {
     case MSG_CHANNEL_ERROR: {
       const DataChannelErrorMessageData* data =
           static_cast<DataChannelErrorMessageData*>(pmsg->pdata);
-      SignalMediaError(this, data->ssrc, data->error);
       delete data;
       break;
     }
@@ -2393,30 +2287,8 @@ void DataChannel::OnDataChannelReadyToSend(bool writable) {
                            new DataChannelReadyToSendMessageData(writable));
 }
 
-void DataChannel::OnSrtpError(uint32 ssrc, SrtpFilter::Mode mode,
-                              SrtpFilter::Error error) {
-  switch (error) {
-    case SrtpFilter::ERROR_FAIL:
-      OnDataChannelError(ssrc, (mode == SrtpFilter::PROTECT) ?
-                         DataMediaChannel::ERROR_SEND_SRTP_ERROR :
-                         DataMediaChannel::ERROR_RECV_SRTP_ERROR);
-      break;
-    case SrtpFilter::ERROR_AUTH:
-      OnDataChannelError(ssrc, (mode == SrtpFilter::PROTECT) ?
-                         DataMediaChannel::ERROR_SEND_SRTP_AUTH_FAILED :
-                         DataMediaChannel::ERROR_RECV_SRTP_AUTH_FAILED);
-      break;
-    case SrtpFilter::ERROR_REPLAY:
-      // Only receving channel should have this error.
-      ASSERT(mode == SrtpFilter::UNPROTECT);
-      OnDataChannelError(ssrc, DataMediaChannel::ERROR_RECV_SRTP_REPLAY);
-      break;
-    default:
-      break;
-  }
-}
-
-void DataChannel::GetSrtpCiphers(std::vector<std::string>* ciphers) const {
+void DataChannel::GetSrtpCryptoSuiteNames(
+    std::vector<std::string>* ciphers) const {
   GetSupportedDataCryptoSuites(ciphers);
 }
 

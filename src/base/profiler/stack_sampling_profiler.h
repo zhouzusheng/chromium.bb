@@ -51,8 +51,7 @@ class NativeStackSampler;
 //
 // When all call stack profiles are complete, or the profiler is stopped, the
 // completed callback is called from a thread created by the profiler with the
-// completed profiles. A profile is considered complete if all requested samples
-// were recorded for the profile (i.e. it was not stopped prematurely).
+// collected profiles.
 //
 // The results of the profiling are passed to the completed callback and consist
 // of a vector of CallStackProfiles. Each CallStackProfile corresponds to a
@@ -64,12 +63,13 @@ class BASE_EXPORT StackSamplingProfiler {
   // Module represents the module (DLL or exe) corresponding to a stack frame.
   struct BASE_EXPORT Module {
     Module();
-    Module(const void* base_address, const std::string& id,
+    Module(uintptr_t base_address,
+           const std::string& id,
            const FilePath& filename);
     ~Module();
 
     // Points to the base address of the module.
-    const void* base_address;
+    uintptr_t base_address;
 
     // An opaque binary string that uniquely identifies a particular program
     // version with high probability. This is parsed from headers of the loaded
@@ -89,11 +89,14 @@ class BASE_EXPORT StackSamplingProfiler {
     // Identifies an unknown module.
     static const size_t kUnknownModuleIndex = static_cast<size_t>(-1);
 
-    Frame(const void* instruction_pointer, size_t module_index);
+    Frame(uintptr_t instruction_pointer, size_t module_index);
     ~Frame();
 
+    // Default constructor to satisfy IPC macros. Do not use explicitly.
+    Frame();
+
     // The sampled instruction pointer within the function.
-    const void* instruction_pointer;
+    uintptr_t instruction_pointer;
 
     // Index of the module in CallStackProfile::modules. We don't represent
     // module state directly here to save space.
@@ -195,14 +198,15 @@ class BASE_EXPORT StackSamplingProfiler {
     void Stop();
 
    private:
-    // Collects a call stack profile from a single burst. Returns true if the
-    // profile was collected, or false if collection was stopped before it
-    // completed.
-    bool CollectProfile(CallStackProfile* profile, TimeDelta* elapsed_time);
+    // Collects |profile| from a single burst. If the profiler was stopped
+    // during collection, sets |was_stopped| and provides the set of samples
+    // collected up to that point.
+    void CollectProfile(CallStackProfile* profile, TimeDelta* elapsed_time,
+                        bool* was_stopped);
 
     // Collects call stack profiles from all bursts, or until the sampling is
-    // stopped. If stopped before complete, |call_stack_profiles| will contain
-    // only full bursts.
+    // stopped. If stopped before complete, the last profile in
+    // |call_stack_profiles| may contain a partial burst.
     void CollectProfiles(CallStackProfiles* profiles);
 
     scoped_ptr<NativeStackSampler> native_sampler_;

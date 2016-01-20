@@ -223,42 +223,15 @@ public:
         return (flags & kHasSpan16_Flag) != 0;
     }
 
-#ifdef SK_SUPPORT_LEGACY_SHADERBITMAPTYPE
-public:
-#else
-protected:
-#endif
     /**
-     Gives method bitmap should be read to implement a shader.
-     Also determines number and interpretation of "extra" parameters returned
-     by asABitmap
+     *  Returns true if this shader is just a bitmap, and if not null, returns the bitmap,
+     *  localMatrix, and tilemodes. If this is not a bitmap, returns false and ignores the
+     *  out-parameters.
      */
-    enum BitmapType {
-        kNone_BitmapType,   //<! Shader is not represented as a bitmap
-        kDefault_BitmapType,//<! Access bitmap using local coords transformed
-    };
-    /** Optional methods for shaders that can pretend to be a bitmap/texture
-        to play along with opengl. Default just returns kNone_BitmapType and
-        ignores the out parameters.
-
-        @param outTexture if non-NULL will be the bitmap representing the shader
-                          after return.
-        @param outMatrix  if non-NULL will be the matrix to apply to vertices
-                          to access the bitmap after return.
-        @param xy         if non-NULL will be the tile modes that should be
-                          used to access the bitmap after return.
-        @param twoPointRadialParams Two extra return values needed for two point
-                                    radial bitmaps. The first is the x-offset of
-                                    the second point and the second is the radius
-                                    about the first point.
-    */
-    virtual BitmapType asABitmap(SkBitmap* outTexture, SkMatrix* outMatrix,
-                         TileMode xy[2]) const;
-
-public:
-    bool isABitmap(SkBitmap* bitmap, SkMatrix* matrix, TileMode xy[2]) const {
-        return this->asABitmap(bitmap, matrix, xy) == kDefault_BitmapType;
+    bool isABitmap(SkBitmap* outTexture, SkMatrix* outMatrix, TileMode xy[2]) const {
+        return this->onIsABitmap(outTexture, outMatrix, xy);
     }
+
     bool isABitmap() const {
         return this->isABitmap(nullptr, nullptr, nullptr);
     }
@@ -334,27 +307,23 @@ public:
 
 
     /**
-     *  Returns true if the shader subclass succeeds in creating an effect or if none is required.
-     *  False is returned if it fails or if there is not an implementation of this method in the
-     *  shader subclass.
+     *  Returns a GrFragmentProcessor that implements the shader for the GPU backend. NULL is
+     *  returned if there is no GPU implementation.
      *
-     *  On success an implementation of this method must inspect the SkPaint and set paintColor to
-     *  the color the effect expects as its input color. If the SkShader wishes to emit a solid
-     *  color then it should set paintColor to that color and not create an effect. Note that
-     *  GrColor is always premul. The common patterns are to convert paint's SkColor to GrColor or
-     *  to extract paint's alpha and replicate it to all channels in paintColor. Upon failure
-     *  paintColor should not be modified. It is not recommended to specialize the effect to
-     *  the paint's color as then many GPU shaders may be generated.
+     *  The GPU device does not call SkShader::createContext(), instead we pass the view matrix,
+     *  local matrix, and filter quality directly.
      *
-     *  The GrContext may be used by the effect to create textures. The GPU device does not
-     *  call createContext. Instead we pass the SkPaint here in case the shader needs paint info.
+     *  The GrContext may be used by the to create textures that are required by the returned
+     *  processor.
      *
-     *  A view matrix is always required to create the correct GrFragmentProcessor.  Some shaders
-     *  may also use the optional localMatrix to define a matrix relevant only for sampling.
+     *  The returned GrFragmentProcessor should expect an unpremultiplied input color and
+     *  produce a premultiplied output.
      */
-    virtual bool asFragmentProcessor(GrContext*, const SkPaint&, const SkMatrix& viewM,
-                                     const SkMatrix* localMatrix, GrColor*,
-                                     GrProcessorDataManager*, GrFragmentProcessor**) const;
+    virtual const GrFragmentProcessor* asFragmentProcessor(GrContext*,
+                                                           const SkMatrix& viewMatrix,
+                                                           const SkMatrix* localMatrix,
+                                                           SkFilterQuality,
+                                                           GrProcessorDataManager*) const;
 
     /**
      *  If the shader can represent its "average" luminance in a single color, return true and
@@ -405,6 +374,8 @@ public:
     static SkShader* CreateBitmapShader(const SkBitmap& src,
                                         TileMode tmx, TileMode tmy,
                                         const SkMatrix* localMatrix = NULL);
+
+    // NOTE: You can create an SkImage Shader with SkImage::newShader().
 
     /** Call this to create a new shader that will draw with the specified picture.
      *
@@ -459,6 +430,11 @@ protected:
     virtual bool onAsLuminanceColor(SkColor*) const {
         return false;
     }
+
+    virtual bool onIsABitmap(SkBitmap*, SkMatrix*, TileMode[2]) const {
+        return false;
+    }
+
 private:
     // This is essentially const, but not officially so it can be modified in
     // constructors.
@@ -466,6 +442,7 @@ private:
 
     // So the SkLocalMatrixShader can whack fLocalMatrix in its SkReadBuffer constructor.
     friend class SkLocalMatrixShader;
+    friend class SkBitmapProcShader;    // for computeTotalInverse()
 
     typedef SkFlattenable INHERITED;
 };

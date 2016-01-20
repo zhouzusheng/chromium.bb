@@ -119,6 +119,7 @@ HTMLInputElement::HTMLInputElement(Document& document, HTMLFormElement* form, bo
     , m_hasTouchEventHandler(false)
     , m_shouldRevealPassword(false)
     , m_needsToUpdateViewValue(true)
+    , m_isPlaceholderVisible(false)
     // |m_inputType| is lazily created when constructed by the parser to avoid
     // constructing unnecessarily a text inputType and its shadow subtree, just
     // to destroy them when the |type| attribute gets set by the parser to
@@ -700,7 +701,7 @@ void HTMLInputElement::parseAttribute(const QualifiedName& name, const AtomicStr
     } else if (name == valueAttr) {
         // We only need to setChanged if the form is looking at the default value right now.
         if (!hasDirtyValue()) {
-            updatePlaceholderVisibility(false);
+            updatePlaceholderVisibility();
             setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::fromAttribute(valueAttr));
         }
         m_needsToUpdateViewValue = true;
@@ -871,9 +872,10 @@ void HTMLInputElement::setActivatedSubmit(bool flag)
     m_isActivatedSubmit = flag;
 }
 
-bool HTMLInputElement::appendFormData(FormDataList& encoding, bool multipart)
+void HTMLInputElement::appendToFormData(FormData& formData)
 {
-    return m_inputType->isFormDataAppendable() && m_inputType->appendFormData(encoding, multipart);
+    if (m_inputType->isFormDataAppendable())
+        m_inputType->appendToFormData(formData);
 }
 
 String HTMLInputElement::resultForDialogSubmit()
@@ -1665,6 +1667,11 @@ bool HTMLInputElement::supportLabels() const
 bool HTMLInputElement::shouldAppearChecked() const
 {
     return checked() && m_inputType->isCheckable();
+}
+
+void HTMLInputElement::setPlaceholderVisibility(bool visible)
+{
+    m_isPlaceholderVisible = visible;
 }
 
 bool HTMLInputElement::supportsPlaceholder() const

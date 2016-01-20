@@ -108,7 +108,7 @@ OutputMixer::OutputMixer(uint32_t instanceId) :
     WEBRTC_TRACE(kTraceMemory, kTraceVoice, VoEId(_instanceId,-1),
                  "OutputMixer::OutputMixer() - ctor");
 
-    if (_mixerModule.RegisterMixedStreamCallback(*this) == -1)
+    if (_mixerModule.RegisterMixedStreamCallback(this) == -1)
     {
         WEBRTC_TRACE(kTraceError, kTraceVoice, VoEId(_instanceId,-1),
                      "OutputMixer::OutputMixer() failed to register mixer"
@@ -215,14 +215,14 @@ int32_t
 OutputMixer::SetMixabilityStatus(MixerParticipant& participant,
                                  bool mixable)
 {
-    return _mixerModule.SetMixabilityStatus(participant, mixable);
+    return _mixerModule.SetMixabilityStatus(&participant, mixable);
 }
 
 int32_t
 OutputMixer::SetAnonymousMixabilityStatus(MixerParticipant& participant,
                                           bool mixable)
 {
-    return _mixerModule.SetAnonymousMixabilityStatus(participant,mixable);
+    return _mixerModule.SetAnonymousMixabilityStatus(&participant, mixable);
 }
 
 int32_t
@@ -589,7 +589,7 @@ OutputMixer::InsertInbandDtmfTone()
     } else
     {
         // stereo
-        for (int i = 0; i < _audioFrame.samples_per_channel_; i++)
+        for (size_t i = 0; i < _audioFrame.samples_per_channel_; i++)
         {
             _audioFrame.data_[2 * i] = toneBuffer[i];
             _audioFrame.data_[2 * i + 1] = 0;

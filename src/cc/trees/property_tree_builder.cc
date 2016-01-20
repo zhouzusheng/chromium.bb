@@ -31,7 +31,7 @@ struct DataForRecursion {
   EffectTree* effect_tree;
   LayerType* transform_tree_parent;
   LayerType* transform_fixed_parent;
-  LayerType* render_target;
+  int render_target;
   int clip_tree_parent;
   int effect_tree_parent;
   const LayerType* page_scale_layer;
@@ -43,7 +43,6 @@ struct DataForRecursion {
   bool affected_by_inner_viewport_bounds_delta;
   bool affected_by_outer_viewport_bounds_delta;
   bool should_flatten;
-  bool ancestor_clips_subtree;
   const gfx::Transform* device_transform;
   gfx::Vector2dF scroll_compensation_adjustment;
   int sequence_number;
@@ -72,9 +71,9 @@ static bool RequiresClipNode(LayerType* layer,
                              int parent_transform_id,
                              bool is_clipped) {
   const bool render_surface_applies_clip =
-      layer->render_surface() && is_clipped;
+      layer->has_render_surface() && is_clipped;
   const bool render_surface_may_grow_due_to_clip_children =
-      layer->render_surface() && layer->num_unclipped_descendants() > 0;
+      layer->has_render_surface() && layer->num_unclipped_descendants() > 0;
 
   if (layer->masks_to_bounds() || layer->mask_layer() ||
       render_surface_may_grow_due_to_clip_children)
@@ -94,38 +93,42 @@ static bool LayerClipsSubtree(LayerType* layer) {
 template <typename LayerType>
 void AddClipNodeIfNeeded(const DataForRecursion<LayerType>& data_from_ancestor,
                          LayerType* layer,
+                         bool created_render_surface,
                          bool created_transform_node,
                          DataForRecursion<LayerType>* data_for_children) {
   ClipNode* parent = GetClipParent(data_from_ancestor, layer);
   int parent_id = parent->id;
 
-  bool ancestor_clips_subtree =
-      data_from_ancestor.ancestor_clips_subtree ||
-      (layer->clip_parent() && layer->clip_parent()->is_clipped());
+  bool is_root = !layer->parent();
+  bool ancestor_clips_subtree = is_root || parent->data.layers_are_clipped;
 
-  data_for_children->ancestor_clips_subtree = false;
+  bool layers_are_clipped = false;
   bool has_unclipped_surface = false;
 
   if (layer->has_render_surface()) {
     if (ancestor_clips_subtree && layer->num_unclipped_descendants() > 0)
-      data_for_children->ancestor_clips_subtree = true;
-    else if (!ancestor_clips_subtree && !layer->num_unclipped_descendants())
+      layers_are_clipped = true;
+    else if (!ancestor_clips_subtree)
       has_unclipped_surface = true;
   } else {
-    data_for_children->ancestor_clips_subtree = ancestor_clips_subtree;
+    layers_are_clipped = ancestor_clips_subtree;
   }
 
   bool layer_clips_subtree = LayerClipsSubtree(layer);
   if (layer_clips_subtree)
-    data_for_children->ancestor_clips_subtree = true;
+    layers_are_clipped = true;
 
-  if (has_unclipped_surface)
+  if (has_unclipped_surface) {
     parent_id = kUnclippedRootClipTreeNodeId;
-
+    data_for_children->effect_tree->Node(data_for_children->render_target)
+        ->data.clip_id = kUnclippedRootClipTreeNodeId;
+  }
   if (!RequiresClipNode(layer, data_from_ancestor, parent->data.transform_id,
                         ancestor_clips_subtree)) {
     // Unclipped surfaces reset the clip rect.
     data_for_children->clip_tree_parent = parent_id;
+    DCHECK_EQ(layers_are_clipped, data_for_children->clip_tree->Node(parent_id)
+                                      ->data.layers_are_clipped);
   } else {
     LayerType* transform_parent = data_for_children->transform_tree_parent;
     if (layer->position_constraint().is_fixed_position() &&
@@ -133,34 +136,48 @@ void AddClipNodeIfNeeded(const DataForRecursion<LayerType>& data_from_ancestor,
       transform_parent = data_for_children->transform_fixed_parent;
     }
     ClipNode node;
-    node.data.clip = gfx::RectF(
-        gfx::PointF() + layer->offset_to_transform_parent(), layer->bounds());
+    node.data.clip =
+        gfx::RectF(gfx::PointF() + layer->offset_to_transform_parent(),
+                   gfx::SizeF(layer->bounds()));
     node.data.transform_id = transform_parent->transform_tree_index();
-    node.data.target_id =
-        data_for_children->render_target->transform_tree_index();
+    if (layer->has_render_surface()) {
+      node.data.target_id =
+          data_from_ancestor.effect_tree->Node(data_for_children->render_target)
+              ->data.transform_id;
+    } else {
+      node.data.target_id =
+          data_for_children->effect_tree->Node(data_for_children->render_target)
+              ->data.transform_id;
+    }
     node.owner_id = layer->id();
-    node.data.inherit_parent_target_space_clip = !layer_clips_subtree &&
-                                                 layer->has_render_surface() &&
-                                                 ancestor_clips_subtree;
-    node.data.requires_tight_clip_rect =
-        ancestor_clips_subtree &&
-        (!layer->render_surface() ||
-         (layer->has_render_surface() && !layer_clips_subtree &&
-          layer->num_unclipped_descendants()));
 
+    if (ancestor_clips_subtree) {
+      node.data.use_only_parent_clip = !layer_clips_subtree;
+      // If the layer has render surface, the target has changed and so we use
+      // only the local clip for layer clipping.
+      node.data.layer_clipping_uses_only_local_clip =
+          layer->has_render_surface();
+    } else {
+      node.data.use_only_parent_clip = false;
+      node.data.layer_clipping_uses_only_local_clip = true;
+    }
+
+    // If render surface clips subtree and has unclipped descendants, the
+    // surface isn't clipped and we don't want to use ancestor's clips while
+    // calculating visible rect.
+    node.data.layer_visibility_uses_only_local_clip =
+        layer->has_render_surface() && layer->num_unclipped_descendants() &&
+        layer_clips_subtree;
     node.data.render_surface_is_clipped = layer->has_render_surface() &&
                                           ancestor_clips_subtree &&
                                           !layer->num_unclipped_descendants();
+    node.data.layers_are_clipped = layers_are_clipped;
 
     data_for_children->clip_tree_parent =
         data_for_children->clip_tree->Insert(node, parent_id);
   }
 
-  layer->SetClipTreeIndex(has_unclipped_surface
-                              ? kUnclippedRootClipTreeNodeId
-                              : data_for_children->clip_tree_parent);
-
-  layer->set_is_clipped(data_for_children->ancestor_clips_subtree);
+  layer->SetClipTreeIndex(data_for_children->clip_tree_parent);
 
   // TODO(awoloszyn): Right now when we hit a node with a replica, we reset the
   // clip for all children since we may need to draw. We need to figure out a
@@ -171,6 +188,7 @@ template <typename LayerType>
 bool AddTransformNodeIfNeeded(
     const DataForRecursion<LayerType>& data_from_ancestor,
     LayerType* layer,
+    bool created_render_surface,
     DataForRecursion<LayerType>* data_for_children) {
   const bool is_root = !layer->parent();
   const bool is_page_scale_layer = layer == data_from_ancestor.page_scale_layer;
@@ -190,7 +208,7 @@ bool AddTransformNodeIfNeeded(
   const bool has_any_transform_animation =
       layer->HasAnyAnimationTargetingProperty(Animation::TRANSFORM);
 
-  const bool has_surface = !!layer->render_surface();
+  const bool has_surface = layer->has_render_surface();
 
   bool requires_node = is_root || is_scrollable || has_significant_transform ||
                        has_any_transform_animation || has_surface || is_fixed ||
@@ -270,12 +288,32 @@ bool AddTransformNodeIfNeeded(
   // Surfaces inherently flatten transforms.
   data_for_children->should_flatten =
       layer->should_flatten_transform() || has_surface;
+  DCHECK_GT(data_from_ancestor.effect_tree->size(), 0u);
+
   node->data.target_id =
-      data_from_ancestor.render_target->transform_tree_index();
+      data_for_children->effect_tree->Node(data_from_ancestor.render_target)
+          ->data.transform_id;
   node->data.content_target_id =
-      data_for_children->render_target->transform_tree_index();
+      data_for_children->effect_tree->Node(data_for_children->render_target)
+          ->data.transform_id;
   DCHECK_NE(node->data.target_id, kInvalidPropertyTreeNodeId);
+
   node->data.is_animated = has_potentially_animated_transform;
+  if (has_potentially_animated_transform) {
+    float maximum_animation_target_scale = 0.f;
+    if (layer->MaximumTargetScale(&maximum_animation_target_scale)) {
+      node->data.local_maximum_animation_target_scale =
+          maximum_animation_target_scale;
+    }
+
+    float starting_animation_scale = 0.f;
+    if (layer->AnimationStartScale(&starting_animation_scale)) {
+      node->data.local_starting_animation_scale = starting_animation_scale;
+    }
+
+    node->data.has_only_translation_animations =
+        layer->HasOnlyTranslationTransforms();
+  }
 
   float post_local_scale_factor = 1.0f;
   if (is_root) {
@@ -362,34 +400,53 @@ bool IsAnimatingOpacity(LayerImpl* layer) {
 }
 
 template <typename LayerType>
-void AddEffectNodeIfNeeded(
+bool AddEffectNodeIfNeeded(
     const DataForRecursion<LayerType>& data_from_ancestor,
     LayerType* layer,
     DataForRecursion<LayerType>* data_for_children) {
   const bool is_root = !layer->parent();
   const bool has_transparency = layer->opacity() != 1.f;
   const bool has_animated_opacity = IsAnimatingOpacity(layer);
-  bool requires_node = is_root || has_transparency || has_animated_opacity;
+  const bool has_render_surface = layer->has_render_surface();
+  bool requires_node =
+      is_root || has_transparency || has_animated_opacity || has_render_surface;
 
   int parent_id = data_from_ancestor.effect_tree_parent;
 
   if (!requires_node) {
     layer->SetEffectTreeIndex(parent_id);
     data_for_children->effect_tree_parent = parent_id;
-    return;
+    return false;
   }
 
   EffectNode node;
   node.owner_id = layer->id();
   node.data.opacity = layer->opacity();
   node.data.screen_space_opacity = layer->opacity();
-  if (!is_root)
+  node.data.has_render_surface = has_render_surface;
+  if (!is_root) {
+    // For every effect node, we create a transform node, so it's safe to use
+    // the next available id from the transform tree as this effect node's
+    // transform id.
+    node.data.transform_id =
+        data_from_ancestor.transform_tree->next_available_id();
+    node.data.clip_id = data_from_ancestor.clip_tree_parent;
+
     node.data.screen_space_opacity *=
         data_from_ancestor.effect_tree->Node(parent_id)
             ->data.screen_space_opacity;
+  } else {
+    // Root render surface acts the unbounded and untransformed to draw content
+    // into. Transform node created from root layer (includes device scale
+    // factor) and clip node created from root layer (include viewports) applies
+    // to root render surface's content, but not root render surface itself.
+    node.data.transform_id = kRootPropertyTreeNodeId;
+    node.data.clip_id = kUnclippedRootClipTreeNodeId;
+  }
   data_for_children->effect_tree_parent =
       data_for_children->effect_tree->Insert(node, parent_id);
   layer->SetEffectTreeIndex(data_for_children->effect_tree_parent);
+  return has_render_surface;
 }
 
 template <typename LayerType>
@@ -398,18 +455,21 @@ void BuildPropertyTreesInternal(
     const DataForRecursion<LayerType>& data_from_parent) {
   layer->set_property_tree_sequence_number(data_from_parent.sequence_number);
   DataForRecursion<LayerType> data_for_children(data_from_parent);
-  if (layer->render_surface()) {
-    data_for_children.render_target = layer;
+
+  bool created_render_surface =
+      AddEffectNodeIfNeeded(data_from_parent, layer, &data_for_children);
+
+  if (created_render_surface) {
+    data_for_children.render_target = data_for_children.effect_tree_parent;
     layer->set_draw_blend_mode(SkXfermode::kSrcOver_Mode);
   } else {
     layer->set_draw_blend_mode(layer->blend_mode());
   }
 
-  bool created_transform_node =
-      AddTransformNodeIfNeeded(data_from_parent, layer, &data_for_children);
-  AddClipNodeIfNeeded(data_from_parent, layer, created_transform_node,
-                      &data_for_children);
-  AddEffectNodeIfNeeded(data_from_parent, layer, &data_for_children);
+  bool created_transform_node = AddTransformNodeIfNeeded(
+      data_from_parent, layer, created_render_surface, &data_for_children);
+  AddClipNodeIfNeeded(data_from_parent, layer, created_render_surface,
+                      created_transform_node, &data_for_children);
 
   if (layer == data_from_parent.page_scale_layer)
     data_for_children.in_subtree_of_page_scale_layer = true;
@@ -460,7 +520,7 @@ void BuildPropertyTreesTopLevelInternal(
   data_for_recursion.effect_tree = &property_trees->effect_tree;
   data_for_recursion.transform_tree_parent = nullptr;
   data_for_recursion.transform_fixed_parent = nullptr;
-  data_for_recursion.render_target = root_layer;
+  data_for_recursion.render_target = kRootPropertyTreeNodeId;
   data_for_recursion.clip_tree_parent = kUnclippedRootClipTreeNodeId;
   data_for_recursion.effect_tree_parent = kInvalidPropertyTreeNodeId;
   data_for_recursion.page_scale_layer = page_scale_layer;
@@ -472,7 +532,6 @@ void BuildPropertyTreesTopLevelInternal(
   data_for_recursion.affected_by_inner_viewport_bounds_delta = false;
   data_for_recursion.affected_by_outer_viewport_bounds_delta = false;
   data_for_recursion.should_flatten = false;
-  data_for_recursion.ancestor_clips_subtree = true;
   data_for_recursion.device_transform = &device_transform;
 
   data_for_recursion.transform_tree->clear();
@@ -481,7 +540,7 @@ void BuildPropertyTreesTopLevelInternal(
   data_for_recursion.sequence_number = property_trees->sequence_number;
 
   ClipNode root_clip;
-  root_clip.data.clip = viewport;
+  root_clip.data.clip = gfx::RectF(viewport);
   root_clip.data.transform_id = kRootPropertyTreeNodeId;
   data_for_recursion.clip_tree_parent = data_for_recursion.clip_tree->Insert(
       root_clip, kUnclippedRootClipTreeNodeId);

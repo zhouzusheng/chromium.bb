@@ -35,7 +35,6 @@
 #include "cc/layers/layer.h"
 #include "cc/layers/layer_iterator.h"
 #include "cc/layers/painted_scrollbar_layer.h"
-#include "cc/layers/render_surface.h"
 #include "cc/resources/ui_resource_request.h"
 #include "cc/scheduler/begin_frame_source.h"
 #include "cc/trees/draw_property_utils.h"
@@ -88,7 +87,6 @@ scoped_ptr<LayerTreeHost> LayerTreeHost::CreateSingleThreaded(
 LayerTreeHost::LayerTreeHost(InitParams* params)
     : micro_benchmark_controller_(this),
       next_ui_resource_id_(1),
-      inside_begin_main_frame_(false),
       needs_full_tree_sync_(true),
       needs_meta_info_recomputation_(true),
       client_(params->client),
@@ -224,9 +222,7 @@ void LayerTreeHost::BeginMainFrameNotExpectedSoon() {
 }
 
 void LayerTreeHost::BeginMainFrame(const BeginFrameArgs& args) {
-  inside_begin_main_frame_ = true;
   client_->BeginMainFrame(args);
-  inside_begin_main_frame_ = false;
 }
 
 void LayerTreeHost::DidStopFlinging() {
@@ -235,11 +231,6 @@ void LayerTreeHost::DidStopFlinging() {
 
 void LayerTreeHost::Layout() {
   client_->Layout();
-}
-
-void LayerTreeHost::BeginCommitOnImplThread(LayerTreeHostImpl* host_impl) {
-  DCHECK(proxy_->IsImplThread());
-  TRACE_EVENT0("cc", "LayerTreeHost::CommitTo");
 }
 
 // This function commits the LayerTreeHost to an impl tree. When modifying
@@ -325,7 +316,10 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
   RecordGpuRasterizationHistogram();
 
   host_impl->SetViewportSize(device_viewport_size_);
-  host_impl->SetDeviceScaleFactor(device_scale_factor_);
+  // TODO(senorblanco): Move this up so that it happens before GPU rasterization
+  // properties are set, since those trigger an update of GPU rasterization
+  // status, which depends on the device scale factor. (crbug.com/535700)
+  sync_tree->SetDeviceScaleFactor(device_scale_factor_);
   host_impl->SetDebugState(debug_state_);
   if (pending_page_scale_animation_) {
     sync_tree->SetPendingPageScaleAnimation(
@@ -394,7 +388,18 @@ void LayerTreeHost::SetOutputSurface(scoped_ptr<OutputSurface> surface) {
   DCHECK(output_surface_lost_);
   DCHECK(surface);
 
-  proxy_->SetOutputSurface(surface.Pass());
+  DCHECK(!new_output_surface_);
+  new_output_surface_ = surface.Pass();
+  proxy_->SetOutputSurface(new_output_surface_.get());
+}
+
+scoped_ptr<OutputSurface> LayerTreeHost::ReleaseOutputSurface() {
+  DCHECK(!visible_);
+  DCHECK(!output_surface_lost_);
+
+  DidLoseOutputSurface();
+  proxy_->ReleaseOutputSurface();
+  return current_output_surface_.Pass();
 }
 
 void LayerTreeHost::RequestNewOutputSurface() {
@@ -402,16 +407,20 @@ void LayerTreeHost::RequestNewOutputSurface() {
 }
 
 void LayerTreeHost::DidInitializeOutputSurface() {
+  DCHECK(new_output_surface_);
   output_surface_lost_ = false;
-  if (root_layer()) {
-    LayerTreeHostCommon::CallFunctionForSubtree(
-        root_layer(), [](Layer* layer) { layer->OnOutputSurfaceCreated(); });
-  }
+  current_output_surface_ = new_output_surface_.Pass();
   client_->DidInitializeOutputSurface();
 }
 
 void LayerTreeHost::DidFailToInitializeOutputSurface() {
   DCHECK(output_surface_lost_);
+  DCHECK(new_output_surface_);
+  // Note: It is safe to drop all output surface references here as
+  // LayerTreeHostImpl will not keep a pointer to either the old or
+  // new output surface after failing to initialize the new one.
+  current_output_surface_ = nullptr;
+  new_output_surface_ = nullptr;
   client_->DidFailToInitializeOutputSurface();
 }
 
@@ -573,7 +582,6 @@ void LayerTreeHost::SetDebugState(const LayerTreeDebugState& debug_state) {
       debug_state_.RecordRenderingStats());
 
   SetNeedsCommit();
-  proxy_->SetDebugState(debug_state);
 }
 
 void LayerTreeHost::SetHasGpuRasterizationTrigger(bool has_trigger) {
@@ -643,8 +651,6 @@ void LayerTreeHost::SetVisible(bool visible) {
   if (visible_ == visible)
     return;
   visible_ = visible;
-  if (!visible)
-    ReduceMemoryUsage();
   proxy_->SetVisible(visible);
 }
 
@@ -795,22 +801,11 @@ bool LayerTreeHost::DoUpdateLayers(Layer* root_layer) {
   base::AutoReset<bool> painting(&in_paint_layer_contents_, true);
   bool did_paint_content = false;
   for (const auto& layer : update_layer_list) {
-    // TODO(enne): temporarily clobber draw properties visible rect.
-    layer->draw_properties().visible_layer_rect =
-        layer->visible_rect_from_property_trees();
     did_paint_content |= layer->Update();
     content_is_suitable_for_gpu_rasterization_ &=
         layer->IsSuitableForGpuRasterization();
   }
   return did_paint_content;
-}
-
-void LayerTreeHost::ReduceMemoryUsage() {
-  if (!root_layer())
-    return;
-
-  LayerTreeHostCommon::CallFunctionForSubtree(
-      root_layer(), [](Layer* layer) { layer->ReduceMemoryUsage(); });
 }
 
 void LayerTreeHost::ApplyScrollAndScale(ScrollAndScaleSet* info) {
@@ -877,30 +872,6 @@ void LayerTreeHost::ApplyScrollAndScale(ScrollAndScaleSet* info) {
         info->top_controls_delta);
     SetNeedsUpdateLayers();
   }
-}
-
-void LayerTreeHost::StartRateLimiter() {
-  if (inside_begin_main_frame_)
-    return;
-
-  if (!rate_limit_timer_.IsRunning()) {
-    rate_limit_timer_.Start(FROM_HERE,
-                            base::TimeDelta(),
-                            this,
-                            &LayerTreeHost::RateLimit);
-  }
-}
-
-void LayerTreeHost::StopRateLimiter() {
-  rate_limit_timer_.Stop();
-}
-
-void LayerTreeHost::RateLimit() {
-  // Force a no-op command on the compositor context, so that any ratelimiting
-  // commands will wait for the compositing context, and therefore for the
-  // SwapBuffers.
-  proxy_->ForceSerializeOnSwapBuffers();
-  client_->RateLimitSharedMainThreadContext();
 }
 
 void LayerTreeHost::SetDeviceScaleFactor(float device_scale_factor) {
@@ -1001,6 +972,8 @@ void LayerTreeHost::RegisterViewportLayers(
     scoped_refptr<Layer> page_scale_layer,
     scoped_refptr<Layer> inner_viewport_scroll_layer,
     scoped_refptr<Layer> outer_viewport_scroll_layer) {
+  DCHECK_IMPLIES(inner_viewport_scroll_layer,
+                 inner_viewport_scroll_layer != outer_viewport_scroll_layer);
   overscroll_elasticity_layer_ = overscroll_elasticity_layer;
   page_scale_layer_ = page_scale_layer;
   inner_viewport_scroll_layer_ = inner_viewport_scroll_layer;
@@ -1110,7 +1083,7 @@ void LayerTreeHost::UnregisterLayer(Layer* layer) {
 }
 
 bool LayerTreeHost::IsLayerInTree(int layer_id, LayerTreeType tree_type) const {
-  return tree_type == LayerTreeType::ACTIVE;
+  return tree_type == LayerTreeType::ACTIVE && LayerById(layer_id);
 }
 
 void LayerTreeHost::SetMutatorsNeedCommit() {
@@ -1215,6 +1188,29 @@ bool LayerTreeHost::HasPotentiallyRunningTransformAnimation(
   return animation_host_
              ? animation_host_->HasPotentiallyRunningTransformAnimation(
                    layer->id(), LayerTreeType::ACTIVE)
+             : false;
+}
+
+bool LayerTreeHost::HasOnlyTranslationTransforms(const Layer* layer) const {
+  return animation_host_
+             ? animation_host_->HasOnlyTranslationTransforms(
+                   layer->id(), LayerTreeType::ACTIVE)
+             : false;
+}
+
+bool LayerTreeHost::MaximumTargetScale(const Layer* layer,
+                                       float* max_scale) const {
+  return animation_host_
+             ? animation_host_->MaximumTargetScale(
+                   layer->id(), LayerTreeType::ACTIVE, max_scale)
+             : false;
+}
+
+bool LayerTreeHost::AnimationStartScale(const Layer* layer,
+                                        float* start_scale) const {
+  return animation_host_
+             ? animation_host_->AnimationStartScale(
+                   layer->id(), LayerTreeType::ACTIVE, start_scale)
              : false;
 }
 

@@ -77,6 +77,7 @@
 #include "public/web/WebInputEvent.h"
 #include "public/web/WebKit.h"
 #include "public/web/WebNode.h"
+#include "public/web/WebPageImportanceSignals.h"
 #include "public/web/WebPlugin.h"
 #include "public/web/WebPopupMenuInfo.h"
 #include "public/web/WebSelection.h"
@@ -118,6 +119,7 @@ static WebAXEvent toWebAXEvent(AXObjectCache::AXNotification notification)
 
 ChromeClientImpl::ChromeClientImpl(WebViewImpl* webView)
     : m_webView(webView)
+    , m_cursorOverridden(false)
 {
 }
 
@@ -210,6 +212,11 @@ void ChromeClientImpl::focusedFrameChanged(LocalFrame* frame)
     WebLocalFrameImpl* webframe = WebLocalFrameImpl::fromFrame(frame);
     if (webframe && webframe->client())
         webframe->client()->frameFocused();
+}
+
+bool ChromeClientImpl::hadFormInteraction() const
+{
+    return m_webView->pageImportanceSignals() && m_webView->pageImportanceSignals()->hadFormInteraction();
 }
 
 namespace {
@@ -529,8 +536,6 @@ void ChromeClientImpl::contentsSizeChanged(LocalFrame* frame, const IntSize& siz
 
     WebLocalFrameImpl* webframe = WebLocalFrameImpl::fromFrame(frame);
     webframe->didChangeContentsSize(size);
-
-    frame->loader().restoreScrollPositionAndViewState();
 }
 
 void ChromeClientImpl::pageScaleFactorChanged() const
@@ -628,6 +633,7 @@ void ChromeClientImpl::openFileChooser(LocalFrame* frame, PassRefPtr<FileChooser
         params.initialValue = params.selectedFiles[0];
     params.useMediaCapture = fileChooser->settings().useMediaCapture;
     params.needLocalPath = fileChooser->settings().allowsDirectoryUpload;
+    params.requestor = frame->document()->url();
 
     WebFileChooserCompletionImpl* chooserCompletion = new WebFileChooserCompletionImpl(fileChooser);
     if (client->runFileChooser(params, chooserCompletion))
@@ -665,6 +671,9 @@ void ChromeClientImpl::setCursor(const Cursor& cursor)
 
 void ChromeClientImpl::setCursor(const WebCursorInfo& cursor)
 {
+    if (m_cursorOverridden)
+        return;
+
 #if OS(MACOSX)
     // On Mac the mousemove event propagates to both the popup and main window.
     // If a popup is open we don't want the main window to change the cursor.
@@ -678,6 +687,11 @@ void ChromeClientImpl::setCursor(const WebCursorInfo& cursor)
 void ChromeClientImpl::setCursorForPlugin(const WebCursorInfo& cursor)
 {
     setCursor(cursor);
+}
+
+void ChromeClientImpl::setCursorOverridden(bool overridden)
+{
+    m_cursorOverridden = overridden;
 }
 
 void ChromeClientImpl::postAccessibilityNotification(AXObject* obj, AXObjectCache::AXNotification notification)
@@ -926,7 +940,7 @@ void ChromeClientImpl::didChangeValueInTextField(HTMLFormControlElement& element
     if (webframe->autofillClient())
         webframe->autofillClient()->textFieldDidChange(WebFormControlElement(&element));
 
-    m_webView->pageImportanceSignals().setHadFormInteraction();
+    m_webView->pageImportanceSignals()->setHadFormInteraction();
 }
 
 void ChromeClientImpl::didEndEditingOnTextField(HTMLInputElement& inputElement)
@@ -992,6 +1006,12 @@ void ChromeClientImpl::notifyPopupOpeningObservers() const
 FloatSize ChromeClientImpl::elasticOverscroll() const
 {
     return m_webView->elasticOverscroll();
+}
+
+void ChromeClientImpl::didObserveNonGetFetchFromScript() const
+{
+    if (m_webView->pageImportanceSignals())
+        m_webView->pageImportanceSignals()->setIssuedNonGetFetchFromScript();
 }
 
 } // namespace blink

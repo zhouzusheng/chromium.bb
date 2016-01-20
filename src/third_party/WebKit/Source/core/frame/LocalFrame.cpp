@@ -54,13 +54,14 @@
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/layout/HitTestResult.h"
 #include "core/layout/LayoutView.h"
-#include "core/layout/compositing/DeprecatedPaintLayerCompositor.h"
+#include "core/layout/compositing/PaintLayerCompositor.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/loader/FrameLoaderClient.h"
+#include "core/loader/NavigationScheduler.h"
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
-#include "core/paint/DeprecatedPaintLayer.h"
+#include "core/paint/PaintLayer.h"
 #include "core/paint/TransformRecorder.h"
 #include "core/svg/SVGDocumentExtensions.h"
 #include "platform/DragImage.h"
@@ -72,6 +73,9 @@
 #include "platform/graphics/paint/ClipRecorder.h"
 #include "platform/graphics/paint/SkPictureBuilder.h"
 #include "platform/text/TextStream.h"
+#include "public/platform/WebFrameHostScheduler.h"
+#include "public/platform/WebFrameScheduler.h"
+#include "public/platform/WebSecurityOrigin.h"
 #include "third_party/skia/include/core/SkImage.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/StdLibExtras.h"
@@ -247,12 +251,14 @@ void LocalFrame::navigate(Document& originDocument, const KURL& url, bool replac
         request.resourceRequest().setHasUserGesture(userGestureStatus == UserGestureStatus::Active);
         m_loader.load(request);
     } else {
-        m_navigationScheduler.scheduleLocationChange(&originDocument, url.string(), replaceCurrentItem);
+        m_navigationScheduler->scheduleLocationChange(&originDocument, url.string(), replaceCurrentItem);
     }
 }
 
 void LocalFrame::navigate(const FrameLoadRequest& request)
 {
+    if (!isNavigationAllowed())
+        return;
     m_loader.load(request);
 }
 
@@ -268,7 +274,7 @@ void LocalFrame::reload(FrameLoadType loadType, ClientRedirectPolicy clientRedir
         request.setClientRedirect(clientRedirectPolicy);
         m_loader.load(request, loadType);
     } else {
-        m_navigationScheduler.scheduleReload();
+        m_navigationScheduler->scheduleReload();
     }
 }
 
@@ -281,6 +287,7 @@ void LocalFrame::detach(FrameDetachType type)
     m_loader.stopAllLoaders();
     m_loader.dispatchUnloadEvent();
     detachChildren();
+    m_frameScheduler.clear();
 
     // All done if detaching the subframes brought about a detach of this frame also.
     if (!client())
@@ -309,7 +316,28 @@ void LocalFrame::detach(FrameDetachType type)
     // Signal frame destruction here rather than in the destructor.
     // Main motivation is to avoid being dependent on its exact timing (Oilpan.)
     LocalFrameLifecycleNotifier::notifyContextDestroyed();
+    // TODO(dcheng): Temporary, to debug https://crbug.com/531291.
+    // If this is true, we somehow re-entered LocalFrame::detach. But this is
+    // probably OK?
+    if (m_supplementStatus == SupplementStatus::Cleared)
+        RELEASE_ASSERT(m_supplements.isEmpty());
+    // If this is true, we somehow re-entered LocalFrame::detach in the middle
+    // of cleaning up supplements.
+    RELEASE_ASSERT(m_supplementStatus != SupplementStatus::Clearing);
+    RELEASE_ASSERT(m_supplementStatus == SupplementStatus::Uncleared);
+    m_supplementStatus = SupplementStatus::Clearing;
+
+    // TODO(haraken): Temporary code to debug https://crbug.com/531291.
+    // Check that m_supplements doesn't duplicate OwnPtrs.
+    HashSet<void*> supplementPointers;
+    for (auto& it : m_supplements) {
+        void* pointer = reinterpret_cast<void*>(it.value.get());
+        RELEASE_ASSERT(!supplementPointers.contains(pointer));
+        supplementPointers.add(pointer);
+    }
+
     m_supplements.clear();
+    m_supplementStatus = SupplementStatus::Cleared;
     WeakIdentifierMap<LocalFrame>::notifyObjectDestroyed(this);
 }
 
@@ -672,19 +700,19 @@ String LocalFrame::selectedTextForClipboard() const
     return selection().selectedTextForClipboard();
 }
 
-VisiblePosition LocalFrame::visiblePositionForPoint(const IntPoint& framePoint)
+PositionWithAffinity LocalFrame::positionForPoint(const IntPoint& framePoint)
 {
     HitTestResult result = eventHandler().hitTestResultAtPoint(framePoint);
     Node* node = result.innerNodeOrImageMapImage();
     if (!node)
-        return VisiblePosition();
+        return PositionWithAffinity();
     LayoutObject* layoutObject = node->layoutObject();
     if (!layoutObject)
-        return VisiblePosition();
-    VisiblePosition visiblePos = VisiblePosition(layoutObject->positionForPoint(result.localPoint()));
-    if (visiblePos.isNull())
-        visiblePos = VisiblePosition(firstPositionInOrBeforeNode(node));
-    return visiblePos;
+        return PositionWithAffinity();
+    const PositionWithAffinity position = layoutObject->positionForPoint(result.localPoint());
+    if (position.isNull())
+        return PositionWithAffinity(firstPositionInOrBeforeNode(node));
+    return position;
 }
 
 Document* LocalFrame::documentAtPoint(const IntPoint& pointInRootFrame)
@@ -702,11 +730,12 @@ Document* LocalFrame::documentAtPoint(const IntPoint& pointInRootFrame)
 
 EphemeralRange LocalFrame::rangeForPoint(const IntPoint& framePoint)
 {
-    VisiblePosition position = visiblePositionForPoint(framePoint);
-    if (position.isNull())
+    const PositionWithAffinity positionWithAffinity = positionForPoint(framePoint);
+    if (positionWithAffinity.isNull())
         return EphemeralRange();
 
-    VisiblePosition previous = position.previous();
+    VisiblePosition position = createVisiblePosition(positionWithAffinity);
+    VisiblePosition previous = previousPositionOf(position);
     if (previous.isNotNull()) {
         const EphemeralRange previousCharacterRange = makeRange(previous, position);
         IntRect rect = editor().firstRectForRange(previousCharacterRange);
@@ -714,7 +743,7 @@ EphemeralRange LocalFrame::rangeForPoint(const IntPoint& framePoint)
             return EphemeralRange(previousCharacterRange);
     }
 
-    VisiblePosition next = position.next();
+    VisiblePosition next = nextPositionOf(position);
     const EphemeralRange nextCharacterRange = makeRange(position, next);
     if (nextCharacterRange.isNotNull()) {
         IntRect rect = editor().firstRectForRange(nextCharacterRange);
@@ -838,7 +867,7 @@ String LocalFrame::localLayerTreeAsText(unsigned flags) const
 inline LocalFrame::LocalFrame(FrameLoaderClient* client, FrameHost* host, FrameOwner* owner)
     : Frame(client, host, owner)
     , m_loader(this)
-    , m_navigationScheduler(this)
+    , m_navigationScheduler(NavigationScheduler::create(this))
     , m_script(ScriptController::create(this))
     , m_editor(Editor::create(*this))
     , m_spellChecker(SpellChecker::create(*this))
@@ -846,6 +875,7 @@ inline LocalFrame::LocalFrame(FrameLoaderClient* client, FrameHost* host, FrameO
     , m_eventHandler(adoptPtrWillBeNoop(new EventHandler(this)))
     , m_console(FrameConsole::create(*this))
     , m_inputMethodController(InputMethodController::create(*this))
+    , m_navigationDisableCount(0)
     , m_pageZoomFactor(parentPageZoomFactor(this))
     , m_textZoomFactor(parentTextZoomFactor(this))
     , m_inViewSourceMode(false)
@@ -856,6 +886,36 @@ inline LocalFrame::LocalFrame(FrameLoaderClient* client, FrameHost* host, FrameO
         m_instrumentingAgents = localFrameRoot()->m_instrumentingAgents;
 }
 
+WebFrameScheduler* LocalFrame::frameScheduler()
+{
+    if (!m_frameScheduler.get())
+        m_frameScheduler = adoptPtr(host()->frameHostScheduler()->createFrameScheduler());
+
+    ASSERT(m_frameScheduler.get());
+    return m_frameScheduler.get();
+}
+
+void LocalFrame::updateFrameSecurityOrigin()
+{
+    SecurityContext* context = securityContext();
+    if (!context)
+        return;
+
+    WebSecurityOrigin securityOrigin(context->securityOrigin());
+    frameScheduler()->setFrameOrigin(&securityOrigin);
+}
+
 DEFINE_WEAK_IDENTIFIER_MAP(LocalFrame);
+
+FrameNavigationDisabler::FrameNavigationDisabler(LocalFrame& frame)
+    : m_frame(&frame)
+{
+    m_frame->disableNavigation();
+}
+
+FrameNavigationDisabler::~FrameNavigationDisabler()
+{
+    m_frame->enableNavigation();
+}
 
 } // namespace blink

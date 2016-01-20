@@ -12,6 +12,7 @@
 #include "chrome/browser/spellchecker/spellcheck_service.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/spellcheck_common.h"
+#include "components/data_use_measurement/core/data_use_user_data.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
 #include "net/base/load_flags.h"
@@ -139,6 +140,10 @@ void SpellcheckHunspellDictionary::Load() {
 void SpellcheckHunspellDictionary::RetryDownloadDictionary(
       net::URLRequestContextGetter* request_context_getter) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  if (dictionary_file_.file.IsValid()) {
+    NOTREACHED();
+    return;
+  }
   request_context_getter_ = request_context_getter;
   DownloadDictionary(GetDictionaryURL());
 }
@@ -236,9 +241,12 @@ void SpellcheckHunspellDictionary::DownloadDictionary(GURL url) {
   DCHECK(request_context_getter_);
 
   download_status_ = DOWNLOAD_IN_PROGRESS;
-  FOR_EACH_OBSERVER(Observer, observers_, OnHunspellDictionaryDownloadBegin());
+  FOR_EACH_OBSERVER(Observer, observers_,
+                    OnHunspellDictionaryDownloadBegin(language_));
 
   fetcher_ = net::URLFetcher::Create(url, net::URLFetcher::GET, this);
+  data_use_measurement::DataUseUserData::AttachToFetcher(
+      fetcher_.get(), data_use_measurement::DataUseUserData::SPELL_CHECKER);
   fetcher_->SetRequestContext(request_context_getter_);
   fetcher_->SetLoadFlags(
       net::LOAD_DO_NOT_SEND_COOKIES | net::LOAD_DO_NOT_SAVE_COOKIES);
@@ -348,7 +356,7 @@ void SpellcheckHunspellDictionary::SaveDictionaryDataComplete(
     download_status_ = DOWNLOAD_NONE;
     FOR_EACH_OBSERVER(Observer,
                       observers_,
-                      OnHunspellDictionaryDownloadSuccess());
+                      OnHunspellDictionaryDownloadSuccess(language_));
     Load();
   } else {
     InformListenersOfDownloadFailure();
@@ -357,12 +365,13 @@ void SpellcheckHunspellDictionary::SaveDictionaryDataComplete(
 }
 
 void SpellcheckHunspellDictionary::InformListenersOfInitialization() {
-  FOR_EACH_OBSERVER(Observer, observers_, OnHunspellDictionaryInitialized());
+  FOR_EACH_OBSERVER(Observer, observers_,
+                    OnHunspellDictionaryInitialized(language_));
 }
 
 void SpellcheckHunspellDictionary::InformListenersOfDownloadFailure() {
   download_status_ = DOWNLOAD_FAILED;
   FOR_EACH_OBSERVER(Observer,
                     observers_,
-                    OnHunspellDictionaryDownloadFailure());
+                    OnHunspellDictionaryDownloadFailure(language_));
 }

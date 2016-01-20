@@ -103,9 +103,7 @@ public:
 
     /**
      *  Serialize to a stream. If non NULL, serializer will be used to serialize
-     *  any bitmaps in the picture.
-     *
-     *  TODO: Use serializer to serialize SkImages as well.
+     *  bitmaps and images in the picture.
      */
     void serialize(SkWStream*, SkPixelSerializer* = NULL) const;
 
@@ -193,6 +191,9 @@ private:
 
     static_assert(MIN_PICTURE_VERSION <= 42,
                   "Remove COMMENT API handlers from SkPicturePlayback.cpp");
+
+    static_assert(MIN_PICTURE_VERSION <= 43,
+                  "Remove SkBitmapSourceDeserializer.");
 
     static bool IsValidPictInfo(const SkPictInfo& info);
     static SkPicture* Forwardport(const SkPictInfo&, const SkPictureData*);

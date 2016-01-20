@@ -168,7 +168,8 @@ RenderFrameHostImpl::RenderFrameHostImpl(SiteInstance* site_instance,
                                          RenderWidgetHostDelegate* rwh_delegate,
                                          FrameTree* frame_tree,
                                          FrameTreeNode* frame_tree_node,
-                                         int routing_id,
+                                         int32 routing_id,
+                                         int32 widget_routing_id,
                                          int flags)
     : render_view_host_(render_view_host),
       delegate_(delegate),
@@ -209,9 +210,9 @@ RenderFrameHostImpl::RenderFrameHostImpl(SiteInstance* site_instance,
   swapout_event_monitor_timeout_.reset(new TimeoutMonitor(base::Bind(
       &RenderFrameHostImpl::OnSwappedOut, weak_ptr_factory_.GetWeakPtr())));
 
-  if (flags & CREATE_RF_NEEDS_RENDER_WIDGET_HOST) {
+  if (widget_routing_id != MSG_ROUTING_NONE) {
     render_widget_host_ = new RenderWidgetHostImpl(rwh_delegate, GetProcess(),
-                                                   MSG_ROUTING_NONE, hidden);
+                                                   widget_routing_id, hidden);
     render_widget_host_->set_owned_by_render_frame_host(true);
   }
 }
@@ -458,7 +459,7 @@ bool RenderFrameHostImpl::OnMessageReceived(const IPC::Message &msg) {
                                     OnRunBeforeUnloadConfirm)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidAccessInitialDocument,
                         OnDidAccessInitialDocument)
-    IPC_MESSAGE_HANDLER(FrameHostMsg_DidDisownOpener, OnDidDisownOpener)
+    IPC_MESSAGE_HANDLER(FrameHostMsg_DidChangeOpener, OnDidChangeOpener)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidChangeName, OnDidChangeName)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidAssignPageId, OnDidAssignPageId)
     IPC_MESSAGE_HANDLER(FrameHostMsg_DidChangeSandboxFlags,
@@ -605,9 +606,10 @@ gfx::NativeViewAccessible
   return NULL;
 }
 
-bool RenderFrameHostImpl::CreateRenderFrame(int parent_routing_id,
-                                            int previous_sibling_routing_id,
-                                            int proxy_routing_id) {
+bool RenderFrameHostImpl::CreateRenderFrame(int proxy_routing_id,
+                                            int opener_routing_id,
+                                            int parent_routing_id,
+                                            int previous_sibling_routing_id) {
   TRACE_EVENT0("navigation", "RenderFrameHostImpl::CreateRenderFrame");
   DCHECK(!IsRenderFrameLive()) << "Creating frame twice";
 
@@ -622,20 +624,19 @@ bool RenderFrameHostImpl::CreateRenderFrame(int parent_routing_id,
 
   FrameMsg_NewFrame_Params params;
   params.routing_id = routing_id_;
-  params.parent_routing_id = parent_routing_id;
   params.proxy_routing_id = proxy_routing_id;
+  params.opener_routing_id = opener_routing_id;
+  params.parent_routing_id = parent_routing_id;
   params.previous_sibling_routing_id = previous_sibling_routing_id;
   params.replication_state = frame_tree_node()->current_replication_state();
 
   if (render_widget_host_) {
     params.widget_params.routing_id = render_widget_host_->GetRoutingID();
-    params.widget_params.surface_id = render_widget_host_->surface_id();
     params.widget_params.hidden = render_widget_host_->is_hidden();
   } else {
     // MSG_ROUTING_NONE will prevent a new RenderWidget from being created in
     // the renderer process.
     params.widget_params.routing_id = MSG_ROUTING_NONE;
-    params.widget_params.surface_id = 0;
     params.widget_params.hidden = true;
   }
 
@@ -915,6 +916,19 @@ void RenderFrameHostImpl::OnDidCommitProvisionalLoad(const IPC::Message& msg) {
 
   accessibility_reset_count_ = 0;
   frame_tree_node()->navigator()->DidNavigate(this, validated_params);
+
+  // For a top-level frame, there are potential security concerns associated
+  // with displaying graphics from a previously loaded page after the URL in
+  // the omnibar has been changed. It is unappealing to clear the page
+  // immediately, but if the renderer is taking a long time to issue any
+  // compositor output (possibly because of script deliberately creating this
+  // situation) then we clear it after a while anyway.
+  // See https://crbug.com/497588.
+  if (frame_tree_node_->IsMainFrame() && GetView() &&
+      !validated_params.was_within_same_page) {
+    RenderWidgetHostImpl::From(GetView()->GetRenderWidgetHost())
+        ->StartNewContentRenderingTimeout();
+  }
 
   // PlzNavigate
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
@@ -1269,24 +1283,9 @@ void RenderFrameHostImpl::OnDidAccessInitialDocument() {
   delegate_->DidAccessInitialDocument();
 }
 
-void RenderFrameHostImpl::OnDidDisownOpener() {
-  // This message is only sent for top-level frames for now.
-  // TODO(alexmos):  This should eventually support subframe openers as well,
-  // and it should allow openers to be updated to another frame (which can
-  // happen via window.open('','framename')) in addition to being disowned.
-
-  // No action is necessary if the opener has already been cleared.
-  if (!frame_tree_node_->opener())
-    return;
-
-  // Clear our opener so that future cross-process navigations don't have an
-  // opener assigned.
-  frame_tree_node_->SetOpener(nullptr);
-
-  // Notify all other RenderFrameHosts and RenderFrameProxies for this frame.
-  // This is important in case we go back to them, or if another window in
-  // those processes tries to access window.opener.
-  frame_tree_node_->render_manager()->DidDisownOpener(this);
+void RenderFrameHostImpl::OnDidChangeOpener(int32 opener_routing_id) {
+  frame_tree_node_->render_manager()->DidChangeOpener(opener_routing_id,
+                                                      GetSiteInstance());
 }
 
 void RenderFrameHostImpl::OnDidChangeName(const std::string& name) {
@@ -1362,8 +1361,10 @@ void RenderFrameHostImpl::OnBeginNavigation(
     scoped_refptr<ResourceRequestBody> body) {
   CHECK(base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableBrowserSideNavigation));
+  CommonNavigationParams validated_params = common_params;
+  GetProcess()->FilterURL(false, &validated_params.url);
   frame_tree_node()->navigator()->OnBeginNavigation(
-      frame_tree_node(), common_params, begin_params, body);
+      frame_tree_node(), validated_params, begin_params, body);
 }
 
 void RenderFrameHostImpl::OnDispatchLoad() {
@@ -1381,6 +1382,14 @@ void RenderFrameHostImpl::OnDispatchLoad() {
   proxy->Send(new FrameMsg_DispatchLoad(proxy->GetRoutingID()));
 }
 
+RenderWidgetHostViewBase* RenderFrameHostImpl::GetViewForAccessibility() {
+  return static_cast<RenderWidgetHostViewBase*>(
+      frame_tree_node_->IsMainFrame() ? render_view_host_->GetView()
+                                      : frame_tree_node_->frame_tree()
+                                            ->GetMainFrame()
+                                            ->render_view_host_->GetView());
+}
+
 void RenderFrameHostImpl::OnAccessibilityEvents(
     const std::vector<AccessibilityHostMsg_EventParams>& params,
     int reset_token) {
@@ -1393,8 +1402,7 @@ void RenderFrameHostImpl::OnAccessibilityEvents(
   }
   accessibility_reset_token_ = 0;
 
-  RenderWidgetHostViewBase* view = static_cast<RenderWidgetHostViewBase*>(
-      render_view_host_->GetView());
+  RenderWidgetHostViewBase* view = GetViewForAccessibility();
 
   AccessibilityMode accessibility_mode = delegate_->GetAccessibilityMode();
   if ((accessibility_mode != AccessibilityModeOff) && view &&
@@ -1678,6 +1686,8 @@ void RenderFrameHostImpl::Navigate(
     const StartNavigationParams& start_params,
     const RequestNavigationParams& request_params) {
   TRACE_EVENT0("navigation", "RenderFrameHostImpl::Navigate");
+  DCHECK(!base::CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableBrowserSideNavigation));
 
   UpdatePermissionsForNavigation(common_params, request_params);
 
@@ -1715,12 +1725,19 @@ void RenderFrameHostImpl::Navigate(
     frame_tree_node_->DidStartLoading(true);
 }
 
-void RenderFrameHostImpl::NavigateToURL(const GURL& url) {
+void RenderFrameHostImpl::NavigateToInterstitialURL(const GURL& data_url) {
+  DCHECK(data_url.SchemeIs(url::kDataScheme));
   CommonNavigationParams common_params(
-      url, Referrer(), ui::PAGE_TRANSITION_LINK, FrameMsg_Navigate_Type::NORMAL,
-      true, false, base::TimeTicks::Now(),
+      data_url, Referrer(), ui::PAGE_TRANSITION_LINK,
+      FrameMsg_Navigate_Type::NORMAL, false, false, base::TimeTicks::Now(),
       FrameMsg_UILoadMetricsReportType::NO_REPORT, GURL(), GURL());
-  Navigate(common_params, StartNavigationParams(), RequestNavigationParams());
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableBrowserSideNavigation)) {
+    CommitNavigation(nullptr, nullptr, common_params,
+                     RequestNavigationParams());
+  } else {
+    Navigate(common_params, StartNavigationParams(), RequestNavigationParams());
+  }
 }
 
 void RenderFrameHostImpl::OpenURL(const FrameHostMsg_OpenURL_Params& params,
@@ -1786,8 +1803,22 @@ bool RenderFrameHostImpl::ShouldDispatchBeforeUnload() {
   return !GetParent() && IsRenderFrameLive();
 }
 
-void RenderFrameHostImpl::DisownOpener() {
-  Send(new FrameMsg_DisownOpener(GetRoutingID()));
+void RenderFrameHostImpl::UpdateOpener() {
+  // This frame (the frame whose opener is being updated) might not have had
+  // proxies for the new opener chain in its SiteInstance.  Make sure they
+  // exist.
+  if (frame_tree_node_->opener()) {
+    frame_tree_node_->opener()->render_manager()->CreateOpenerProxies(
+        GetSiteInstance(), frame_tree_node_);
+  }
+
+  int opener_routing_id =
+      frame_tree_node_->render_manager()->GetOpenerRoutingID(GetSiteInstance());
+  Send(new FrameMsg_UpdateOpener(GetRoutingID(), opener_routing_id));
+}
+
+void RenderFrameHostImpl::ClearFocus() {
+  Send(new FrameMsg_ClearFocus(routing_id_));
 }
 
 void RenderFrameHostImpl::ExtendSelectionAndDelete(size_t before,
@@ -1978,8 +2009,7 @@ const ui::AXTree* RenderFrameHostImpl::GetAXTreeForTesting() {
 
 BrowserAccessibilityManager*
     RenderFrameHostImpl::GetOrCreateBrowserAccessibilityManager() {
-  RenderWidgetHostViewBase* view = static_cast<RenderWidgetHostViewBase*>(
-      render_view_host_->GetView());
+  RenderWidgetHostViewBase* view = GetViewForAccessibility();
   if (view &&
       !browser_accessibility_manager_ &&
       !no_create_browser_accessibility_manager_for_testing_) {

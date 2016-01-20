@@ -42,6 +42,8 @@ class VideoFrame;
 
 namespace blink {
 struct WebScreenInfo;
+class WebMouseEvent;
+class WebMouseWheelEvent;
 }
 
 namespace content {
@@ -144,9 +146,6 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // be used to inject synthetic input events.
   virtual scoped_ptr<SyntheticGestureTarget> CreateSyntheticGestureTarget();
 
-  // Return true if frame subscription is supported on this platform.
-  virtual bool CanSubscribeFrame() const;
-
   // Create a BrowserAccessibilityManager for this view.
   virtual BrowserAccessibilityManager* CreateBrowserAccessibilityManager(
       BrowserAccessibilityDelegate* delegate);
@@ -161,6 +160,11 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
 
   virtual void OnSwapCompositorFrame(uint32 output_surface_id,
                                      scoped_ptr<cc::CompositorFrame> frame) {}
+
+  // This method exists to allow removing of displayed graphics, after a new
+  // page has been loaded, to prevent the displayed URL from being out of sync
+  // with what is visible on screen.
+  virtual void ClearCompositorFrame() = 0;
 
   // Because the associated remote WebKit instance can asynchronously
   // prevent-default on a dispatched touch event, the touch events are queued in
@@ -185,6 +189,9 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // been identified by hit testing mouse, touch or gesture events).
   virtual uint32_t SurfaceIdNamespaceAtPoint(const gfx::Point& point,
                                              gfx::Point* transformed_point);
+  virtual void ProcessKeyboardEvent(const NativeWebKeyboardEvent& event) {}
+  virtual void ProcessMouseEvent(const blink::WebMouseEvent& event) {}
+  virtual void ProcessMouseWheelEvent(const blink::WebMouseWheelEvent& event) {}
 
   //----------------------------------------------------------------------------
   // The following static methods are implemented by each platform.
@@ -260,7 +267,7 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   virtual void CopyFromCompositingSurface(
       const gfx::Rect& src_subrect,
       const gfx::Size& dst_size,
-      ReadbackRequestCallback& callback,
+      const ReadbackRequestCallback& callback,
       const SkColorType preferred_color_type) = 0;
 
   // Copies the contents of the compositing surface, populating the given
@@ -285,9 +292,6 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // IsSurfaceAvailableForCopy() and HasAcceleratedSurface().
   virtual bool CanCopyToVideoFrame() const = 0;
 
-  // DEPRECATED. Called when an accelerated compositing surface is initialized.
-  virtual void AcceleratedSurfaceInitialized(int route_id) {}
-
   // Return true if the view has an accelerated surface that contains the last
   // presented frame for the view. If |desired_size| is non-empty, true is
   // returned only if the accelerated surface size matches.
@@ -302,11 +306,10 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
       const gfx::Display& display);
 
   virtual void GetScreenInfo(blink::WebScreenInfo* results) = 0;
+  virtual bool GetScreenColorProfile(std::vector<char>* color_profile) = 0;
 
   // Gets the bounds of the window, in screen coordinates.
   virtual gfx::Rect GetBoundsInRootWindow() = 0;
-
-  virtual gfx::GLSurfaceHandle GetCompositingSurface() = 0;
 
   // Called by the RenderFrameHost when it receives an IPC response to a
   // TextSurroundingSelectionRequest.
@@ -402,7 +405,7 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // The current selection range relative to the start of the web page.
   gfx::Range selection_range_;
 
-protected:
+ protected:
   // The scale factor of the display the renderer is currently on.
   float current_device_scale_factor_;
 
@@ -420,7 +423,7 @@ protected:
 
   uint32 renderer_frame_number_;
 
-  base::OneShotTimer<RenderWidgetHostViewBase> flush_input_timer_;
+  base::OneShotTimer flush_input_timer_;
 
   base::WeakPtrFactory<RenderWidgetHostViewBase> weak_factory_;
 

@@ -150,6 +150,7 @@ public:
         PseudoDefault,
         PseudoDisabled,
         PseudoOptional,
+        PseudoPlaceholderShown,
         PseudoRequired,
         PseudoReadOnly,
         PseudoReadWrite,
@@ -203,25 +204,6 @@ public:
         PseudoListBox
     };
 
-    enum MarginBoxType {
-        TopLeftCornerMarginBox,
-        TopLeftMarginBox,
-        TopCenterMarginBox,
-        TopRightMarginBox,
-        TopRightCornerMarginBox,
-        BottomLeftCornerMarginBox,
-        BottomLeftMarginBox,
-        BottomCenterMarginBox,
-        BottomRightMarginBox,
-        BottomRightCornerMarginBox,
-        LeftTopMarginBox,
-        LeftMiddleMarginBox,
-        LeftBottomMarginBox,
-        RightTopMarginBox,
-        RightMiddleMarginBox,
-        RightBottomMarginBox,
-    };
-
     enum AttributeMatchType {
         CaseSensitive,
         CaseInsensitive,
@@ -250,7 +232,7 @@ public:
     // Returns the argument of a parameterized selector. For example, :lang(en-US) would have an argument of en-US.
     // Note that :nth-* selectors don't store an argument and just store the numbers.
     const AtomicString& argument() const { return m_hasRareData ? m_data.m_rareData->m_argument : nullAtom; }
-    const CSSSelectorList* selectorList() const { return m_hasRareData ? m_data.m_rareData->m_selectorList.get() : 0; }
+    const CSSSelectorList* selectorList() const { return m_hasRareData ? m_data.m_rareData->m_selectorList.get() : nullptr; }
 
 #ifndef NDEBUG
     void show() const;
@@ -353,7 +335,10 @@ private:
     void createRareData();
 
     union DataUnion {
-    DataUnion() : m_value(0) { }
+        DataUnion()
+            : m_value(nullptr)
+        {
+        }
         StringImpl* m_value;
         QualifiedName::QualifiedNameImpl* m_tagQName;
         RareData* m_rareData;

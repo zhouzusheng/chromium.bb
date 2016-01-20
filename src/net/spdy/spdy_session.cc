@@ -66,8 +66,9 @@ scoped_ptr<base::ListValue> SpdyHeaderBlockToListValue(
   for (SpdyHeaderBlock::const_iterator it = headers.begin();
        it != headers.end(); ++it) {
     headers_list->AppendString(
-        it->first + ": " +
-        ElideHeaderValueForNetLog(capture_mode, it->first, it->second));
+        it->first.as_string() + ": " +
+        ElideHeaderValueForNetLog(capture_mode, it->first.as_string(),
+                                  it->second.as_string()));
   }
   return headers_list.Pass();
 }
@@ -744,8 +745,7 @@ void SpdySession::InitializeWithSocket(
   DCHECK_GE(protocol_, kProtoSPDYMinimumVersion);
   DCHECK_LE(protocol_, kProtoSPDYMaximumVersion);
 
-  if ((protocol_ >= kProtoHTTP2MinimumVersion) &&
-      (protocol_ <= kProtoHTTP2MaximumVersion))
+  if (protocol_ == kProtoHTTP2)
     send_connection_header_prefix_ = true;
 
   if (protocol_ >= kProtoSPDY31) {
@@ -1618,6 +1618,8 @@ int SpdySession::DoWriteComplete(int result) {
 
   if (result > 0) {
     in_flight_write_->Consume(static_cast<size_t>(result));
+    if (in_flight_write_stream_.get())
+      in_flight_write_stream_->AddRawSentBytes(static_cast<size_t>(result));
 
     // We only notify the stream when we've fully written the pending frame.
     if (in_flight_write_->GetRemainingSize() == 0) {
@@ -2037,7 +2039,7 @@ void SpdySession::OnDataFrameHeader(SpdyStreamId stream_id,
 
   DCHECK(buffered_spdy_framer_);
   size_t header_len = buffered_spdy_framer_->GetDataFrameMinimumSize();
-  stream->IncrementRawReceivedBytes(header_len);
+  stream->AddRawReceivedBytes(header_len);
 }
 
 void SpdySession::OnStreamFrameData(SpdyStreamId stream_id,
@@ -2082,7 +2084,7 @@ void SpdySession::OnStreamFrameData(SpdyStreamId stream_id,
   SpdyStream* stream = it->second.stream;
   CHECK_EQ(stream->stream_id(), stream_id);
 
-  stream->IncrementRawReceivedBytes(len);
+  stream->AddRawReceivedBytes(len);
 
   if (it->second.waiting_for_syn_reply) {
     const std::string& error = "Data received before SYN_REPLY.";
@@ -2319,7 +2321,7 @@ void SpdySession::OnSynReply(SpdyStreamId stream_id,
   SpdyStream* stream = it->second.stream;
   CHECK_EQ(stream->stream_id(), stream_id);
 
-  stream->IncrementRawReceivedBytes(last_compressed_frame_len_);
+  stream->AddRawReceivedBytes(last_compressed_frame_len_);
   last_compressed_frame_len_ = 0;
 
   if (GetProtocolVersion() >= HTTP2) {
@@ -2366,7 +2368,7 @@ void SpdySession::OnHeaders(SpdyStreamId stream_id,
   SpdyStream* stream = it->second.stream;
   CHECK_EQ(stream->stream_id(), stream_id);
 
-  stream->IncrementRawReceivedBytes(last_compressed_frame_len_);
+  stream->AddRawReceivedBytes(last_compressed_frame_len_);
   last_compressed_frame_len_ = 0;
 
   base::Time response_time = base::Time::Now();
@@ -2481,8 +2483,8 @@ void SpdySession::OnPing(SpdyPingId unique_id, bool is_ack) {
       base::Bind(&NetLogSpdyPingCallback, unique_id, is_ack, "received"));
 
   // Send response to a PING from server.
-  if ((protocol_ >= kProtoHTTP2MinimumVersion && !is_ack) ||
-      (protocol_ < kProtoHTTP2MinimumVersion && unique_id % 2 == 0)) {
+  if ((protocol_ == kProtoHTTP2 && !is_ack) ||
+      (protocol_ < kProtoHTTP2 && unique_id % 2 == 0)) {
     WritePingFrame(unique_id, true);
     return;
   }
@@ -2525,7 +2527,7 @@ void SpdySession::OnWindowUpdate(SpdyStreamId stream_id,
       DoDrainSession(
           ERR_SPDY_PROTOCOL_ERROR,
           "Received WINDOW_UPDATE with an invalid delta_window_size " +
-              base::UintToString(delta_window_size));
+              base::IntToString(delta_window_size));
       return;
     }
 
@@ -2697,10 +2699,10 @@ bool SpdySession::TryCreatePushStream(SpdyStreamId stream_id,
 
   // In spdy4/http2 PUSH_PROMISE arrives on associated stream.
   if (associated_it != active_streams_.end() && GetProtocolVersion() >= HTTP2) {
-    associated_it->second.stream->IncrementRawReceivedBytes(
+    associated_it->second.stream->AddRawReceivedBytes(
         last_compressed_frame_len_);
   } else {
-    stream->IncrementRawReceivedBytes(last_compressed_frame_len_);
+    stream->AddRawReceivedBytes(last_compressed_frame_len_);
   }
 
   last_compressed_frame_len_ = 0;
@@ -2757,8 +2759,7 @@ void SpdySession::SendInitialData() {
   DCHECK(enable_sending_initial_data_);
 
   if (send_connection_header_prefix_) {
-    DCHECK_GE(protocol_, kProtoHTTP2MinimumVersion);
-    DCHECK_LE(protocol_, kProtoHTTP2MaximumVersion);
+    DCHECK_EQ(protocol_, kProtoHTTP2);
     scoped_ptr<SpdyFrame> connection_header_prefix_frame(
         new SpdyFrame(const_cast<char*>(kHttp2ConnectionHeaderPrefix),
                       kHttp2ConnectionHeaderPrefixSize,
@@ -3081,15 +3082,6 @@ void SpdySession::CompleteStreamRequest(
   if (rv != ERR_IO_PENDING) {
     pending_request->OnRequestCompleteFailure(rv);
   }
-}
-
-SSLClientSocket* SpdySession::GetSSLClientSocket() const {
-  if (!is_secure_)
-    return NULL;
-  SSLClientSocket* ssl_socket =
-      reinterpret_cast<SSLClientSocket*>(connection_->socket());
-  DCHECK(ssl_socket);
-  return ssl_socket;
 }
 
 void SpdySession::OnWriteBufferConsumed(

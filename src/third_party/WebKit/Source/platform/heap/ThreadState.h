@@ -50,6 +50,8 @@ class Isolate;
 
 namespace blink {
 
+#define PRINT_HEAP_STATS 0 // Enable this macro to print heap stats to stderr.
+
 class BasePage;
 class CallbackStack;
 class CrossThreadPersistentRegion;
@@ -226,6 +228,11 @@ public:
     };
 #endif
 
+    enum V8GCType {
+        V8MinorGC,
+        V8MajorGC,
+    };
+
     // The NoAllocationScope class is used in debug mode to catch unwanted
     // allocations. E.g. allocations during GC.
     class NoAllocationScope final {
@@ -322,14 +329,13 @@ public:
     bool checkThread() const { return m_thread == currentThread(); }
 #endif
 
-    void didV8MajorGC();
-
     void performIdleGC(double deadlineSeconds);
     void performIdleLazySweep(double deadlineSeconds);
 
     void scheduleIdleGC();
     void scheduleIdleLazySweep();
     void schedulePreciseGC();
+    void scheduleV8FollowupGCIfNeeded(V8GCType);
     void schedulePageNavigationGCIfNeeded(float estimatedRemovalRatio);
     void schedulePageNavigationGC();
     void scheduleGCIfNeeded();
@@ -478,19 +484,6 @@ public:
     PersistentRegion* persistentRegion() const { return m_persistentRegion.get(); }
     // A region of PersistentNodes not owned by any particular thread.
     static CrossThreadPersistentRegion& crossThreadPersistentRegion();
-
-    // TODO(haraken): Currently CrossThreadPersistent handles are not counted.
-    // This wouldn't be a big deal because # of CrossThreadPersistents is small,
-    // but should be fixed.
-    void persistentAllocated()
-    {
-        ++m_persistentAllocated;
-    }
-    void persistentFreed()
-    {
-        ++m_persistentFreed;
-    }
-    void updatePersistentCounters();
 
     // Visit local thread stack and trace all pointers conservatively.
     void visitStack(Visitor*);
@@ -691,16 +684,29 @@ private:
     bool shouldScheduleIdleGC();
     bool shouldSchedulePreciseGC();
     bool shouldForceConservativeGC();
+    // V8 minor or major GC is likely to drop a lot of references to objects
+    // on Oilpan's heap. We give a chance to schedule a GC.
+    bool shouldScheduleV8FollowupGC();
+    // Page navigation is likely to drop a lot of references to objects
+    // on Oilpan's heap. We give a chance to schedule a GC.
     // estimatedRemovalRatio is the estimated ratio of objects that will be no
     // longer necessary due to the navigation.
     bool shouldSchedulePageNavigationGC(float estimatedRemovalRatio);
 
-    // Internal helper for GC policy handling code. Returns true if
-    // an urgent conservative GC is now needed due to memory pressure.
+    // Internal helpers to handle memory pressure conditions.
+
+    // Returns true if memory use is in a near-OOM state
+    // (aka being under "memory pressure".)
     bool shouldForceMemoryPressureGC();
-    size_t estimatedLiveObjectSize();
-    size_t currentObjectSize();
+
+    // Returns true if shouldForceMemoryPressureGC() held and a
+    // conservative GC was performed to handle the emergency.
+    bool forceMemoryPressureGCIfNeeded();
+
+    size_t estimatedLiveSize(size_t currentSize, size_t sizeAtLastGC);
+    size_t totalMemorySize();
     double heapGrowingRate();
+    double partitionAllocGrowingRate();
     bool judgeGCThreshold(size_t allocatedObjectSizeThreshold, double heapGrowingRateThreshold);
 
     void runScheduledGC(StackState);
@@ -768,8 +774,6 @@ private:
     bool m_sweepForbidden;
     size_t m_noAllocationCount;
     size_t m_gcForbiddenCount;
-    int m_persistentAllocated;
-    int m_persistentFreed;
     BaseHeap* m_heaps[NumberOfHeaps];
 
     int m_vectorBackingHeapIndex;

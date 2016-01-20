@@ -66,7 +66,7 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
                                                int64 version_id);
 
   // Returns the existing registration handle whose reference count is
-  // incremented or newly created one if it doesn't exist.
+  // incremented or a newly created one if it doesn't exist.
   ServiceWorkerRegistrationHandle* GetOrCreateRegistrationHandle(
       base::WeakPtr<ServiceWorkerProviderHost> provider_host,
       ServiceWorkerRegistration* registration);
@@ -111,9 +111,10 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
   void OnProviderDestroyed(int provider_id);
   void OnSetHostedVersionId(int provider_id, int64 version_id);
   void OnWorkerReadyForInspection(int embedded_worker_id);
-  void OnWorkerScriptLoaded(int embedded_worker_id,
-                            int thread_id,
-                            int provider_id);
+  void OnWorkerScriptLoaded(int embedded_worker_id);
+  void OnWorkerThreadStarted(int embedded_worker_id,
+                             int thread_id,
+                             int provider_id);
   void OnWorkerScriptLoadFailed(int embedded_worker_id);
   void OnWorkerScriptEvaluated(int embedded_worker_id, bool success);
   void OnWorkerStarted(int embedded_worker_id);
@@ -139,7 +140,7 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
 
   ServiceWorkerRegistrationHandle* FindRegistrationHandle(
       int provider_id,
-      int64 registration_id);
+      int64 registration_handle_id);
 
   void GetRegistrationObjectInfoAndVersionAttributes(
       base::WeakPtr<ServiceWorkerProviderHost> provider_host,
@@ -216,7 +217,10 @@ class CONTENT_EXPORT ServiceWorkerDispatcherHost : public BrowserMessageFilter {
   scoped_refptr<ServiceWorkerContextWrapper> context_wrapper_;
 
   IDMap<ServiceWorkerHandle, IDMapOwnPointer> handles_;
-  IDMap<ServiceWorkerRegistrationHandle, IDMapOwnPointer> registration_handles_;
+
+  using RegistrationHandleMap =
+      IDMap<ServiceWorkerRegistrationHandle, IDMapOwnPointer>;
+  RegistrationHandleMap registration_handles_;
 
   bool channel_ready_;  // True after BrowserMessageFilter::sender_ != NULL.
   ScopedVector<IPC::Message> pending_messages_;

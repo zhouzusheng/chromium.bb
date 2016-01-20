@@ -289,7 +289,7 @@ public:
     SkFilterQuality getFilterQuality() const {
         return (SkFilterQuality)fBitfields.fFilterQuality;
     }
-    
+
     /**
      *  Set the filter quality. This affects the quality (and performance) of
      *  drawing scaled images.
@@ -398,6 +398,15 @@ public:
     /** Cap enum specifies the settings for the paint's strokecap. This is the
         treatment that is applied to the beginning and end of each non-closed
         contour (e.g. lines).
+
+        If the cap is round or square, the caps are drawn when the contour has
+        a zero length. Zero length contours can be created by following moveTo
+        with a lineTo at the same point, or a moveTo followed by a close.
+
+        A dash with an on interval of zero also creates a zero length contour.
+
+        The zero length contour draws the square cap without rotation, since
+        the no direction can be inferred.
     */
     enum Cap {
         kButt_Cap,      //!< begin/end contours with no extension
@@ -1037,8 +1046,6 @@ private:
      */
     SkColor computeLuminanceColor() const;
 
-    static void Term();
-
     enum {
         /*  This is the size we use when we ask for a glyph's path. We then
          *  post-transform it as we draw to match the request.
@@ -1081,7 +1088,6 @@ private:
     friend class SkAutoGlyphCacheNoGamma;
     friend class SkCanvas;
     friend class SkDraw;
-    friend class SkGraphics; // So Term() can be called.
     friend class SkPDFDevice;
     friend class GrBitmapTextContext;
     friend class GrAtlasTextContext;

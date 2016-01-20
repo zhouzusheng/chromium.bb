@@ -82,7 +82,7 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
 public:
     explicit LayoutBox(ContainerNode*);
 
-    DeprecatedPaintLayerType layerTypeRequired() const override;
+    PaintLayerType layerTypeRequired() const override;
 
     bool backgroundIsKnownToBeOpaqueInRect(const LayoutRect& localRect) const override;
 
@@ -242,7 +242,7 @@ public:
     // does include the intrinsic padding in the content box as this is what some callers expect (like getComputedStyle).
     LayoutRect computedCSSContentBoxRect() const { return LayoutRect(borderLeft() + computedCSSPaddingLeft(), borderTop() + computedCSSPaddingTop(), clientWidth() - computedCSSPaddingLeft() - computedCSSPaddingRight(), clientHeight() - computedCSSPaddingTop() - computedCSSPaddingBottom()); }
 
-    void addOutlineRects(Vector<LayoutRect>&, const LayoutPoint& additionalOffset) const override;
+    void addOutlineRects(Vector<LayoutRect>&, const LayoutPoint& additionalOffset, IncludeBlockVisualOverflowOrNot) const override;
 
     // Use this with caution! No type checking is done!
     LayoutBox* previousSiblingBox() const;
@@ -269,7 +269,7 @@ public:
     LayoutUnit logicalLeftLayoutOverflow() const { return style()->isHorizontalWritingMode() ? layoutOverflowRect().x() : layoutOverflowRect().y(); }
     LayoutUnit logicalRightLayoutOverflow() const { return style()->isHorizontalWritingMode() ? layoutOverflowRect().maxX() : layoutOverflowRect().maxY(); }
 
-    virtual LayoutRect visualOverflowRect() const { return m_overflow ? m_overflow->visualOverflowRect() : borderBoxRect(); }
+    LayoutRect visualOverflowRect() const override { return m_overflow ? m_overflow->visualOverflowRect() : borderBoxRect(); }
     LayoutUnit logicalLeftVisualOverflow() const { return style()->isHorizontalWritingMode() ? visualOverflowRect().x() : visualOverflowRect().y(); }
     LayoutUnit logicalRightVisualOverflow() const { return style()->isHorizontalWritingMode() ? visualOverflowRect().maxX() : visualOverflowRect().maxY(); }
 
@@ -393,7 +393,7 @@ public:
     LayoutRect reflectedRect(const LayoutRect&) const;
 
     void layout() override;
-    void paint(const PaintInfo&, const LayoutPoint&) override;
+    void paint(const PaintInfo&, const LayoutPoint&) const override;
     bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override;
 
     LayoutUnit minPreferredLogicalWidth() const override;
@@ -436,6 +436,7 @@ public:
     LayoutUnit adjustContentBoxLogicalHeightForBoxSizing(LayoutUnit height) const;
 
     struct ComputedMarginValues {
+        DISALLOW_ALLOCATION();
         ComputedMarginValues() { }
 
         LayoutUnit m_before;
@@ -444,6 +445,7 @@ public:
         LayoutUnit m_end;
     };
     struct LogicalExtentComputedValues {
+        STACK_ALLOCATED();
         LogicalExtentComputedValues() { }
 
         LayoutUnit m_extent;
@@ -581,12 +583,12 @@ public:
     LayoutRect localCaretRect(InlineBox*, int caretOffset, LayoutUnit* extraWidthToEndOfLine = nullptr) override;
 
     virtual LayoutRect overflowClipRect(const LayoutPoint& location, OverlayScrollbarSizeRelevancy = IgnoreOverlayScrollbarSize) const;
-    LayoutRect clipRect(const LayoutPoint& location);
+    LayoutRect clipRect(const LayoutPoint& location) const;
     virtual bool hasControlClip() const { return false; }
     virtual LayoutRect controlClipRect(const LayoutPoint&) const { return LayoutRect(); }
 
-    virtual void paintBoxDecorationBackground(const PaintInfo&, const LayoutPoint&);
-    virtual void paintMask(const PaintInfo&, const LayoutPoint&);
+    virtual void paintBoxDecorationBackground(const PaintInfo&, const LayoutPoint&) const;
+    virtual void paintMask(const PaintInfo&, const LayoutPoint&) const;
     void imageChanged(WrappedImagePtr, const IntRect* = nullptr) override;
 
     void logicalExtentAfterUpdatingLogicalWidth(const LayoutUnit& logicalTop, LogicalExtentComputedValues&);
@@ -595,7 +597,7 @@ public:
 
     void removeFloatingOrPositionedChildFromBlockLists();
 
-    DeprecatedPaintLayer* enclosingFloatPaintingLayer() const;
+    PaintLayer* enclosingFloatPaintingLayer() const;
 
     virtual int firstLineBoxBaseline() const { return -1; }
     virtual int inlineBlockBaseline(LineDirectionMode) const { return -1; } // Returns -1 if we should skip this box when computing the baseline of an inline-block.
@@ -729,9 +731,9 @@ protected:
 
     // Returns false if it could not cheaply compute the extent (e.g. fixed background), in which case the returned rect may be incorrect.
     // FIXME: make this a const method once the LayoutBox reference in BoxPainter is const.
-    bool getBackgroundPaintedExtent(LayoutRect&);
+    bool getBackgroundPaintedExtent(LayoutRect&) const;
     virtual bool foregroundIsKnownToBeOpaqueInRect(const LayoutRect& localRect, unsigned maxDepthToTest) const;
-    bool computeBackgroundIsKnownToBeObscured() override;
+    bool computeBackgroundIsKnownToBeObscured() const override;
 
     void computePositionedLogicalWidth(LogicalExtentComputedValues&) const;
 
@@ -745,7 +747,7 @@ protected:
 
     LayoutObject* splitAnonymousBoxesAroundChild(LayoutObject* beforeChild);
 
-    void addLayerHitTestRects(LayerHitTestRects&, const DeprecatedPaintLayer* currentCompositedLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const override;
+    void addLayerHitTestRects(LayerHitTestRects&, const PaintLayer* currentCompositedLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const override;
     void computeSelfHitTestRects(Vector<LayoutRect>&, const LayoutPoint& layerOffset) const override;
 
     PaintInvalidationReason paintInvalidationReason(const LayoutBoxModelObject& paintInvalidationContainer,
@@ -833,7 +835,7 @@ private:
     // Returns true if the box intersects the viewport visible to the user.
     bool intersectsVisibleViewport();
 
-    void updateSlowRepaintStatusAfterStyleChange();
+    void updateBackgroundAttachmentFixedStatusAfterStyleChange();
 
     // The width/height of the contents + borders + padding.  The x/y location is relative to our container (which is not always our parent).
     LayoutRect m_frameRect;
@@ -848,10 +850,15 @@ private:
     LayoutRectOutsets m_marginBoxOutsets;
 
 protected:
-    // The preferred logical width of the element if it were to break its lines at every possible opportunity.
+    // The preferred logical width of the element if it were to break its lines at every
+    // possible opportunity. CSS 2.1 calls this width the "preferred minimum width" and
+    // "minimum content width".
+    // See https://drafts.csswg.org/css-sizing-3/#intrinsic for more information.
     LayoutUnit m_minPreferredLogicalWidth;
 
     // The preferred logical width of the element if it never breaks any lines at all.
+    // CSS 2.1 calls this width the "preferred width" and "maximum cell width".
+    // See https://drafts.csswg.org/css-sizing-3/#intrinsic for more information.
     LayoutUnit m_maxPreferredLogicalWidth;
 
     // Our overflow information.

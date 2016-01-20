@@ -16,6 +16,8 @@
 class GrBatchAtlas;
 class GrIndexBuffer;
 class GrPath;
+class GrRenderTarget;
+class GrStencilAttachment;
 class GrStrokeInfo;
 class GrVertexBuffer;
 class SkDescriptor;
@@ -50,7 +52,7 @@ public:
      * @param vertCount   number of vertices the pattern references
      * @param key         Key to be assigned to the index buffer.
      *
-     * @return The index buffer if successful, otherwise NULL.
+     * @return The index buffer if successful, otherwise nullptr.
      */
     const GrIndexBuffer* findOrCreateInstancedIndexBuffer(const uint16_t* pattern,
                                                           int patternSize,
@@ -129,10 +131,16 @@ public:
      *   @param data             User supplied data which will be passed into func whenver an
      *                           eviction occurs
      *
-     *   @return                 An initialized GrBatchAtlas, or NULL if creation fails
+     *   @return                 An initialized GrBatchAtlas, or nullptr if creation fails
      */
     GrBatchAtlas* createAtlas(GrPixelConfig, int width, int height, int numPlotsX, int numPlotsY,
                               GrBatchAtlas::EvictionFunc func, void* data);
+
+    /**
+     * If passed in render target already has a stencil buffer, return it. Otherwise attempt to
+     * attach one.
+     */
+    GrStencilAttachment* attachStencilAttachment(GrRenderTarget* rt);
 
 private:
     const GrIndexBuffer* createInstancedIndexBuffer(const uint16_t* pattern,

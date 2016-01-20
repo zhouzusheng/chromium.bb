@@ -1,4 +1,5 @@
-Polymer({
+
+  Polymer({
     is: 'paper-fab',
 
     behaviors: [
@@ -42,7 +43,8 @@ Polymer({
        */
       mini: {
         type: Boolean,
-        value: false
+        value: false,
+        reflectToAttribute: true
       }
     },
 

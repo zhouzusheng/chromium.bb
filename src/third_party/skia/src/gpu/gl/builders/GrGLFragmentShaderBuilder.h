@@ -57,25 +57,7 @@ public:
     void onBeforeChildProcEmitCode();
     void onAfterChildProcEmitCode();
 
-    int getChildNumberThisLevel() const {
-        if (fSubstageIndices.count() > 1) {
-            // second-to-last value in the fSubstageIndices stack is the index of the child proc
-            // at that level which is currently emitting code.
-            return fSubstageIndices[fSubstageIndices.count() - 2];
-        }
-        return -1;
-    }
-
     const SkString& getMangleString() const { return fMangleString; }
-
-    SkString getMangleStringThisLevel() const {
-        SkString ret;
-        int childNumber = this->getChildNumberThisLevel();
-        if (childNumber >= 0) {
-            ret.printf("_c%d", childNumber);
-        }
-        return ret;
-    }
 
 private:
     /*
@@ -112,7 +94,7 @@ class GrGLXPFragmentBuilder : public GrGLFragmentBuilder {
 public:
     GrGLXPFragmentBuilder(GrGLProgramBuilder* program) : INHERITED(program) {}
 
-    /** Returns the variable name that holds the color of the destination pixel. This may be NULL if
+    /** Returns the variable name that holds the color of the destination pixel. This may be nullptr if
         no effect advertised that it will read the destination. */
     virtual const char* dstColor() = 0;
 

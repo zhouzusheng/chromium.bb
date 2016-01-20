@@ -104,6 +104,9 @@ public:
 
 ScriptPromise Body::arrayBuffer(ScriptState* scriptState)
 {
+    if (m_opaque)
+        return ScriptPromise::reject(scriptState, V8ThrowException::createTypeError(scriptState->isolate(), "The body is opaque."));
+
     if (bodyUsed())
         return ScriptPromise::reject(scriptState, V8ThrowException::createTypeError(scriptState->isolate(), "Already read"));
 
@@ -118,12 +121,19 @@ ScriptPromise Body::arrayBuffer(ScriptState* scriptState)
 
     ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
-    bodyBuffer()->startLoading(scriptState->executionContext(), FetchDataLoader::createLoaderAsArrayBuffer(), new BodyArrayBufferConsumer(resolver));
+    if (bodyBuffer()) {
+        bodyBuffer()->startLoading(scriptState->executionContext(), FetchDataLoader::createLoaderAsArrayBuffer(), new BodyArrayBufferConsumer(resolver));
+    } else {
+        resolver->resolve(DOMArrayBuffer::create(0u, 1));
+    }
     return promise;
 }
 
 ScriptPromise Body::blob(ScriptState* scriptState)
 {
+    if (m_opaque)
+        return ScriptPromise::reject(scriptState, V8ThrowException::createTypeError(scriptState->isolate(), "The body is opaque."));
+
     if (bodyUsed())
         return ScriptPromise::reject(scriptState, V8ThrowException::createTypeError(scriptState->isolate(), "Already read"));
 
@@ -133,13 +143,22 @@ ScriptPromise Body::blob(ScriptState* scriptState)
 
     ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
-    bodyBuffer()->startLoading(scriptState->executionContext(), FetchDataLoader::createLoaderAsBlobHandle(mimeType()), new BodyBlobConsumer(resolver));
+    if (bodyBuffer()) {
+        bodyBuffer()->startLoading(scriptState->executionContext(), FetchDataLoader::createLoaderAsBlobHandle(mimeType()), new BodyBlobConsumer(resolver));
+    } else {
+        OwnPtr<BlobData> blobData = BlobData::create();
+        blobData->setContentType(mimeType());
+        resolver->resolve(Blob::create(BlobDataHandle::create(blobData.release(), 0)));
+    }
     return promise;
 
 }
 
 ScriptPromise Body::json(ScriptState* scriptState)
 {
+    if (m_opaque)
+        return ScriptPromise::reject(scriptState, V8ThrowException::createTypeError(scriptState->isolate(), "The body is opaque."));
+
     if (bodyUsed())
         return ScriptPromise::reject(scriptState, V8ThrowException::createTypeError(scriptState->isolate(), "Already read"));
 
@@ -149,12 +168,19 @@ ScriptPromise Body::json(ScriptState* scriptState)
 
     ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
-    bodyBuffer()->startLoading(scriptState->executionContext(), FetchDataLoader::createLoaderAsString(), new BodyJsonConsumer(resolver));
+    if (bodyBuffer()) {
+        bodyBuffer()->startLoading(scriptState->executionContext(), FetchDataLoader::createLoaderAsString(), new BodyJsonConsumer(resolver));
+    } else {
+        resolver->reject(V8ThrowException::createSyntaxError(scriptState->isolate(), "Unexpected end of input"));
+    }
     return promise;
 }
 
 ScriptPromise Body::text(ScriptState* scriptState)
 {
+    if (m_opaque)
+        return ScriptPromise::reject(scriptState, V8ThrowException::createTypeError(scriptState->isolate(), "The body is opaque."));
+
     if (bodyUsed())
         return ScriptPromise::reject(scriptState, V8ThrowException::createTypeError(scriptState->isolate(), "Already read"));
 
@@ -164,29 +190,38 @@ ScriptPromise Body::text(ScriptState* scriptState)
 
     ScriptPromiseResolver* resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = resolver->promise();
-    bodyBuffer()->startLoading(scriptState->executionContext(), FetchDataLoader::createLoaderAsString(), new BodyTextConsumer(resolver));
+    if (bodyBuffer()) {
+        bodyBuffer()->startLoading(scriptState->executionContext(), FetchDataLoader::createLoaderAsString(), new BodyTextConsumer(resolver));
+    } else {
+        resolver->resolve(String());
+    }
     return promise;
 }
 
 ReadableByteStream* Body::body()
 {
     UseCounter::count(executionContext(), UseCounter::FetchBodyStream);
-    return bodyBuffer()->stream();
+    return bodyBuffer() ? bodyBuffer()->stream() : nullptr;
 }
 
 bool Body::bodyUsed()
 {
-    return m_bodyPassed || body()->isLocked();
+    return m_bodyPassed || (body() && body()->isLocked());
 }
 
 bool Body::hasPendingActivity() const
 {
     if (executionContext()->activeDOMObjectsAreStopped())
         return false;
+    if (!bodyBuffer())
+        return false;
     return bodyBuffer()->hasPendingActivity();
 }
 
-Body::Body(ExecutionContext* context) : ActiveDOMObject(context), m_bodyPassed(false)
+Body::Body(ExecutionContext* context)
+    : ActiveDOMObject(context)
+    , m_bodyPassed(false)
+    , m_opaque(false)
 {
     suspendIfNeeded();
 }

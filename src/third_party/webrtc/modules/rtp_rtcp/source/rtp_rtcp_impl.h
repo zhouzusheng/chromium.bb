@@ -126,10 +126,10 @@ class ModuleRtpRtcpImpl : public RtpRtcp {
   // RTCP part.
 
   // Get RTCP status.
-  RTCPMethod RTCP() const override;
+  RtcpMode RTCP() const override;
 
   // Configure RTCP status i.e on/off.
-  void SetRTCPStatus(RTCPMethod method) override;
+  void SetRTCPStatus(RtcpMode method) override;
 
   // Set RTCP CName.
   int32_t SetCNAME(const char* c_name) override;
@@ -228,6 +228,7 @@ class ModuleRtpRtcpImpl : public RtpRtcp {
       RtcpStatisticsCallback* callback) override;
   RtcpStatisticsCallback* GetRtcpStatisticsCallback() override;
 
+  bool SendFeedbackPacket(const rtcp::TransportFeedback& packet) override;
   // (APP) Application specific data.
   int32_t SetRTCPApplicationSpecificData(uint8_t sub_type,
                                          uint32_t name,
@@ -352,7 +353,6 @@ class ModuleRtpRtcpImpl : public RtpRtcp {
 
   bool TimeToSendFullNackList(int64_t now) const;
 
-  int32_t id_;
   const bool audio_;
   bool collision_detected_;
   int64_t last_process_time_;

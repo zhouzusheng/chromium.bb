@@ -18,6 +18,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/spellcheck_common.h"
 #include "chrome/common/spellcheck_result.h"
+#include "components/data_use_measurement/core/data_use_user_data.h"
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/browser_context.h"
 #include "google_apis/google_api_keys.h"
@@ -105,6 +106,8 @@ bool SpellingServiceClient::RequestTextCheck(
 
   GURL url = GURL(kSpellingServiceURL);
   net::URLFetcher* fetcher = CreateURLFetcher(url).release();
+  data_use_measurement::DataUseUserData::AttachToFetcher(
+      fetcher, data_use_measurement::DataUseUserData::SPELL_CHECKER);
   fetcher->SetRequestContext(context->GetRequestContext());
   fetcher->SetUploadData("application/json", request);
   fetcher->SetLoadFlags(
@@ -189,9 +192,9 @@ bool SpellingServiceClient::ParseResponse(
   //     "data": [...]
   //   }
   // }
-  scoped_ptr<base::DictionaryValue> value(
-      static_cast<base::DictionaryValue*>(base::JSONReader::DeprecatedRead(
-          data, base::JSON_ALLOW_TRAILING_COMMAS)));
+  scoped_ptr<base::DictionaryValue> value(static_cast<base::DictionaryValue*>(
+      base::JSONReader::Read(data, base::JSON_ALLOW_TRAILING_COMMAS)
+          .release()));
   if (!value.get() || !value->IsType(base::Value::TYPE_DICTIONARY))
     return false;
 

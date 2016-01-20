@@ -24,7 +24,6 @@
 #include "content/child/service_worker/web_service_worker_registration_impl.h"
 #include "content/child/thread_safe_sender.h"
 #include "content/child/webmessageportchannel_impl.h"
-#include "content/child/worker_task_runner.h"
 #include "content/common/devtools_messages.h"
 #include "content/common/message_port_messages.h"
 #include "content/common/mojo/service_registry_impl.h"
@@ -79,7 +78,7 @@ class DataSourceExtraData
       public base::SupportsUserData {
  public:
   DataSourceExtraData() {}
-  virtual ~DataSourceExtraData() {}
+  ~DataSourceExtraData() override {}
 };
 
 // Called on the main thread only and blink owns it.
@@ -88,9 +87,8 @@ class WebServiceWorkerNetworkProviderImpl
  public:
   // Blink calls this method for each request starting with the main script,
   // we tag them with the provider id.
-  virtual void willSendRequest(
-      blink::WebDataSource* data_source,
-      blink::WebURLRequest& request) {
+  void willSendRequest(blink::WebDataSource* data_source,
+                       blink::WebURLRequest& request) override {
     ServiceWorkerNetworkProvider* provider =
         ServiceWorkerNetworkProvider::FromDocumentState(
             static_cast<DataSourceExtraData*>(data_source->extraData()));
@@ -336,10 +334,17 @@ void ServiceWorkerContextClient::workerContextFailedToStart() {
       WorkerContextDestroyed(embedded_worker_id_);
 }
 
+void ServiceWorkerContextClient::workerScriptLoaded() {
+  DCHECK(main_thread_task_runner_->RunsTasksOnCurrentThread());
+  DCHECK(!proxy_);
+
+  Send(new EmbeddedWorkerHostMsg_WorkerScriptLoaded(embedded_worker_id_));
+}
+
 void ServiceWorkerContextClient::workerContextStarted(
     blink::WebServiceWorkerContextProxy* proxy) {
   DCHECK(!worker_task_runner_.get());
-  DCHECK_NE(0, WorkerTaskRunner::Instance()->CurrentWorkerId());
+  DCHECK_NE(0, WorkerThread::GetCurrentId());
   worker_task_runner_ = base::ThreadTaskRunnerHandle::Get();
   // g_worker_client_tls.Pointer()->Get() could return NULL if this context
   // gets deleted before workerContextStarted() is called.
@@ -353,18 +358,24 @@ void ServiceWorkerContextClient::workerContextStarted(
   // willDestroyWorkerContext.
   context_.reset(new WorkerContextData(this));
 
+  ServiceWorkerRegistrationObjectInfo registration_info;
+  ServiceWorkerVersionAttributes version_attrs;
+  provider_context_->GetRegistrationInfoAndVersionAttributes(&registration_info,
+                                                             &version_attrs);
+  DCHECK_NE(registration_info.registration_id,
+            kInvalidServiceWorkerRegistrationId);
+
   // Register Mojo services.
   context_->service_registry.ServiceRegistry::AddService(
       base::Bind(&ServicePortDispatcherImpl::Create,
                  context_->proxy_weak_factory.GetWeakPtr()));
-  context_->service_registry.ServiceRegistry::AddService(
-      base::Bind(&BackgroundSyncClientImpl::Create));
+  context_->service_registry.ServiceRegistry::AddService(base::Bind(
+      &BackgroundSyncClientImpl::Create, registration_info.registration_id));
 
   SetRegistrationInServiceWorkerGlobalScope();
 
-  Send(new EmbeddedWorkerHostMsg_WorkerScriptLoaded(
-      embedded_worker_id_,
-      WorkerTaskRunner::Instance()->CurrentWorkerId(),
+  Send(new EmbeddedWorkerHostMsg_WorkerThreadStarted(
+      embedded_worker_id_, WorkerThread::GetCurrentId(),
       provider_context_->provider_id()));
 
   TRACE_EVENT_ASYNC_STEP_INTO0(
@@ -389,16 +400,17 @@ void ServiceWorkerContextClient::didEvaluateWorkerScript(bool success) {
 void ServiceWorkerContextClient::didInitializeWorkerContext(
     v8::Local<v8::Context> context,
     const blink::WebURL& url) {
-  // TODO(annekao): Remove WebURL parameter from Blink (since url and script_url
-  // are equal). Also remove m_documentURL from ServiceWorkerGlobalScopeProxy.
-  DCHECK_EQ(script_url_, GURL(url));
+  // TODO(annekao): Remove WebURL parameter from Blink, it's at best redundant
+  // given |script_url_|, and may be empty in the future.
+  // Also remove m_documentURL from ServiceWorkerGlobalScopeProxy.
   GetContentClient()
       ->renderer()
       ->DidInitializeServiceWorkerContextOnWorkerThread(context, script_url_);
 }
 
-void ServiceWorkerContextClient::willDestroyWorkerContext() {
-  // At this point OnWorkerRunLoopStopped is already called, so
+void ServiceWorkerContextClient::willDestroyWorkerContext(
+    v8::Local<v8::Context> context) {
+  // At this point WillStopCurrentWorkerThread is already called, so
   // worker_task_runner_->RunsTasksOnCurrentThread() returns false
   // (while we're still on the worker thread).
   proxy_ = NULL;
@@ -412,7 +424,7 @@ void ServiceWorkerContextClient::willDestroyWorkerContext() {
   g_worker_client_tls.Pointer()->Set(NULL);
 
   GetContentClient()->renderer()->WillDestroyServiceWorkerContextOnWorkerThread(
-      script_url_);
+      context, script_url_);
 }
 
 void ServiceWorkerContextClient::workerContextDestroyed() {
@@ -641,7 +653,7 @@ void ServiceWorkerContextClient::DispatchSyncEvent(
     const blink::WebSyncRegistration& registration,
     const SyncCallback& callback) {
   TRACE_EVENT0("ServiceWorker",
-               "ServiceWorkerScriptContext::DispatchSyncEvent");
+               "ServiceWorkerContextClient::DispatchSyncEvent");
   int request_id =
       context_->sync_event_callbacks.Add(new SyncCallback(callback));
   proxy_->dispatchSyncEvent(request_id, registration);
@@ -676,16 +688,10 @@ void ServiceWorkerContextClient::SetRegistrationInServiceWorkerGlobalScope() {
 
   // Register a registration and its version attributes with the dispatcher
   // living on the worker thread.
-  scoped_ptr<WebServiceWorkerRegistrationImpl> registration(
-      dispatcher->CreateServiceWorkerRegistration(info, false));
-  registration->SetInstalling(
-      dispatcher->GetServiceWorker(attrs.installing, false));
-  registration->SetWaiting(
-      dispatcher->GetServiceWorker(attrs.waiting, false));
-  registration->SetActive(
-      dispatcher->GetServiceWorker(attrs.active, false));
+  scoped_refptr<WebServiceWorkerRegistrationImpl> registration(
+      dispatcher->GetOrCreateRegistration(info, attrs));
 
-  proxy_->setRegistration(registration.release());
+  proxy_->setRegistration(registration->CreateHandle());
 }
 
 void ServiceWorkerContextClient::OnActivateEvent(int request_id) {

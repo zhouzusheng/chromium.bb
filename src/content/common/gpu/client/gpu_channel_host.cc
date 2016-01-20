@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/atomic_sequence_num.h"
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/posix/eintr_wrapper.h"
@@ -26,6 +27,12 @@
 using base::AutoLock;
 
 namespace content {
+namespace {
+
+// Global atomic to generate unique transfer buffer IDs.
+base::StaticAtomicSequenceNumber g_next_transfer_buffer_id;
+
+}  // namespace
 
 GpuChannelHost::StreamFlushInfo::StreamFlushInfo()
     : flush_pending(false),
@@ -38,25 +45,28 @@ GpuChannelHost::StreamFlushInfo::~StreamFlushInfo() {}
 // static
 scoped_refptr<GpuChannelHost> GpuChannelHost::Create(
     GpuChannelHostFactory* factory,
+    int channel_id,
     const gpu::GPUInfo& gpu_info,
     const IPC::ChannelHandle& channel_handle,
     base::WaitableEvent* shutdown_event,
     gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager) {
   DCHECK(factory->IsMainThread());
   scoped_refptr<GpuChannelHost> host =
-      new GpuChannelHost(factory, gpu_info, gpu_memory_buffer_manager);
+      new GpuChannelHost(factory, channel_id, gpu_info,
+                         gpu_memory_buffer_manager);
   host->Connect(channel_handle, shutdown_event);
   return host;
 }
 
 GpuChannelHost::GpuChannelHost(
     GpuChannelHostFactory* factory,
+    int channel_id,
     const gpu::GPUInfo& gpu_info,
     gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager)
     : factory_(factory),
+      channel_id_(channel_id),
       gpu_info_(gpu_info),
       gpu_memory_buffer_manager_(gpu_memory_buffer_manager) {
-  next_transfer_buffer_id_.GetNext();
   next_image_id_.GetNext();
   next_route_id_.GetNext();
   next_stream_id_.GetNext();
@@ -69,9 +79,9 @@ void GpuChannelHost::Connect(const IPC::ChannelHandle& channel_handle,
   // since we need to filter everything to route it to the right thread.
   scoped_refptr<base::SingleThreadTaskRunner> io_task_runner =
       factory_->GetIOThreadTaskRunner();
-  channel_ = IPC::SyncChannel::Create(
-      channel_handle, IPC::Channel::MODE_CLIENT, NULL, io_task_runner.get(),
-      true, shutdown_event, factory_->GetAttachmentBroker());
+  channel_ =
+      IPC::SyncChannel::Create(channel_handle, IPC::Channel::MODE_CLIENT, NULL,
+                               io_task_runner.get(), true, shutdown_event);
 
   sync_filter_ = channel_->CreateSyncMessageFilter();
 
@@ -158,9 +168,11 @@ scoped_ptr<CommandBufferProxyImpl> GpuChannelHost::CreateViewCommandBuffer(
     int32 surface_id,
     CommandBufferProxyImpl* share_group,
     int32 stream_id,
+    GpuStreamPriority stream_priority,
     const std::vector<int32>& attribs,
     const GURL& active_url,
     gfx::GpuPreference gpu_preference) {
+  DCHECK(!share_group || (stream_id == share_group->stream_id()));
   TRACE_EVENT1("gpu",
                "GpuChannelHost::CreateViewCommandBuffer",
                "surface_id",
@@ -169,10 +181,14 @@ scoped_ptr<CommandBufferProxyImpl> GpuChannelHost::CreateViewCommandBuffer(
   GPUCreateCommandBufferConfig init_params;
   init_params.share_group_id =
       share_group ? share_group->route_id() : MSG_ROUTING_NONE;
+  init_params.stream_id = stream_id;
+  init_params.stream_priority = stream_priority;
   init_params.attribs = attribs;
   init_params.active_url = active_url;
   init_params.gpu_preference = gpu_preference;
+
   int32 route_id = GenerateRouteID();
+
   CreateCommandBufferResult result = factory_->CreateViewCommandBuffer(
       surface_id, init_params, route_id);
   if (result != CREATE_COMMAND_BUFFER_SUCCEEDED) {
@@ -204,18 +220,24 @@ scoped_ptr<CommandBufferProxyImpl> GpuChannelHost::CreateOffscreenCommandBuffer(
     const gfx::Size& size,
     CommandBufferProxyImpl* share_group,
     int32 stream_id,
+    GpuStreamPriority stream_priority,
     const std::vector<int32>& attribs,
     const GURL& active_url,
     gfx::GpuPreference gpu_preference) {
+  DCHECK(!share_group || (stream_id == share_group->stream_id()));
   TRACE_EVENT0("gpu", "GpuChannelHost::CreateOffscreenCommandBuffer");
 
   GPUCreateCommandBufferConfig init_params;
   init_params.share_group_id =
       share_group ? share_group->route_id() : MSG_ROUTING_NONE;
+  init_params.stream_id = stream_id;
+  init_params.stream_priority = stream_priority;
   init_params.attribs = attribs;
   init_params.active_url = active_url;
   init_params.gpu_preference = gpu_preference;
+
   int32 route_id = GenerateRouteID();
+
   bool succeeded = false;
   if (!Send(new GpuChannelMsg_CreateOffscreenCommandBuffer(
           size, init_params, route_id, &succeeded))) {
@@ -312,14 +334,8 @@ base::SharedMemoryHandle GpuChannelHost::ShareToGpuProcess(
       return base::SharedMemory::NULLHandle();
     peer_pid = channel_->GetPeerPID();
   }
-#if defined(OS_WIN)
-  bool success =
-      BrokerDuplicateHandle(source_handle, peer_pid, &target_handle,
-                            FILE_GENERIC_READ | FILE_GENERIC_WRITE, 0);
-#elif defined(OS_MACOSX)
   bool success = BrokerDuplicateSharedMemoryHandle(source_handle, peer_pid,
                                                    &target_handle);
-#endif
   if (!success)
     return base::SharedMemory::NULLHandle();
 
@@ -330,7 +346,8 @@ base::SharedMemoryHandle GpuChannelHost::ShareToGpuProcess(
 }
 
 int32 GpuChannelHost::ReserveTransferBufferId() {
-  return next_transfer_buffer_id_.GetNext();
+  // 0 is a reserved value.
+  return g_next_transfer_buffer_id.GetNext() + 1;
 }
 
 gfx::GpuMemoryBufferHandle GpuChannelHost::ShareGpuMemoryBufferToGpuProcess(

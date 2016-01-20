@@ -885,7 +885,17 @@ WebInspector.ElementsTreeOutline.prototype = {
     _contextMenuEventFired: function(event)
     {
         var treeElement = this._treeElementFromEvent(event);
-        if (!(treeElement instanceof WebInspector.ElementsTreeElement) || WebInspector.isEditing())
+        if (treeElement instanceof WebInspector.ElementsTreeElement)
+            this.showContextMenu(treeElement, event);
+    },
+
+    /**
+     * @param {!WebInspector.ElementsTreeElement} treeElement
+     * @param {!Event} event
+     */
+    showContextMenu: function(treeElement, event)
+    {
+        if (WebInspector.isEditing())
             return;
 
         var contextMenu = new WebInspector.ContextMenu(event);
@@ -1199,6 +1209,9 @@ WebInspector.ElementsTreeOutline.prototype = {
     {
         var node = /** @type {!WebInspector.DOMNode} */ (event.data);
         this._addUpdateRecord(node).charDataModified();
+        // Text could be large and force us to render itself as the child in the tree outline.
+        if (node.parentNode && node.parentNode.firstChild === node.parentNode.lastChild)
+            this._addUpdateRecord(node.parentNode).childrenModified();
         this._updateModifiedNodesSoon();
     },
 
@@ -1329,6 +1342,8 @@ WebInspector.ElementsTreeOutline.prototype = {
     {
         var treeElement = new WebInspector.ElementsTreeElement(node, closingTag);
         treeElement.setExpandable(!closingTag && this._hasVisibleChildren(node));
+        if (node.nodeType() === Node.ELEMENT_NODE && node.parentNode && node.parentNode.nodeType() === Node.DOCUMENT_NODE && !node.parentNode.parentNode)
+            treeElement.setCollapsible(false);
         treeElement.selectable = this._selectEnabled;
         return treeElement;
     },
@@ -1386,14 +1401,9 @@ WebInspector.ElementsTreeOutline.prototype = {
      */
     _hasVisibleChildren: function(node)
     {
-        if (WebInspector.ElementsTreeElement.canShowInlineText(node))
-            return false;
-
         if (node.importedDocument())
             return true;
         if (node.templateContent())
-            return true;
-        if (node.childNodeCount())
             return true;
         if (WebInspector.ElementsTreeElement.visibleShadowRoots(node).length)
             return true;
@@ -1401,7 +1411,7 @@ WebInspector.ElementsTreeOutline.prototype = {
             return true;
         if (node.isInsertionPoint())
             return true;
-        return false;
+        return !!node.childNodeCount() && !WebInspector.ElementsTreeElement.canShowInlineText(node);
     },
 
     /**

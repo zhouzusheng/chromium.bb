@@ -19,6 +19,7 @@ namespace scheduler {
 class SchedulerTaskRunnerDelegate;
 class SingleThreadIdleTaskRunner;
 class WebSchedulerImpl;
+class WebTaskRunnerImpl;
 class WorkerScheduler;
 
 class SCHEDULER_EXPORT WebThreadImplForPPAPI : public WebThreadBase {
@@ -29,6 +30,7 @@ class SCHEDULER_EXPORT WebThreadImplForPPAPI : public WebThreadBase {
   // blink::WebThread implementation.
   virtual blink::WebScheduler* scheduler() const;
   blink::PlatformThreadId threadId() const override;
+  virtual blink::WebTaskRunner* taskRunner();
 
   // WebThreadBase implementation.
   base::SingleThreadTaskRunner* TaskRunner() const override;
@@ -47,6 +49,7 @@ class SCHEDULER_EXPORT WebThreadImplForPPAPI : public WebThreadBase {
   scoped_refptr<base::SingleThreadTaskRunner> thread_task_runner_;
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
   scoped_refptr<scheduler::SingleThreadIdleTaskRunner> idle_task_runner_;
+  scoped_ptr<WebTaskRunnerImpl> web_task_runner_;
 };
 
 }  // namespace scheduler

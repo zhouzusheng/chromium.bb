@@ -115,6 +115,8 @@ public:
     // A data url from <canvas> or <img> is passed to the method's argument.
     virtual void saveImageFromDataURL(const WebString&) { }
 
+    // Called when PageImportanceSignals for the WebView is updated.
+    virtual void pageImportanceSignalsChanged() { }
 
     // Editing -------------------------------------------------------------
 

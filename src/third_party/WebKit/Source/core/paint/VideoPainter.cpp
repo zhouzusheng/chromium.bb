@@ -13,6 +13,7 @@
 #include "core/paint/LayoutObjectDrawingRecorder.h"
 #include "core/paint/PaintInfo.h"
 #include "platform/geometry/LayoutPoint.h"
+#include "platform/graphics/paint/ClipRecorder.h"
 
 namespace blink {
 
@@ -29,18 +30,18 @@ void VideoPainter::paintReplaced(const PaintInfo& paintInfo, const LayoutPoint& 
     rect.moveBy(paintOffset);
 
     GraphicsContext* context = paintInfo.context;
-    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*context, m_layoutVideo, paintInfo.phase))
-        return;
-
     LayoutRect contentRect = m_layoutVideo.contentBoxRect();
     contentRect.moveBy(paintOffset);
-    LayoutObjectDrawingRecorder drawingRecorder(*context, m_layoutVideo, paintInfo.phase, contentRect);
 
-    bool clip = !contentRect.contains(rect);
-    if (clip) {
-        context->save();
-        context->clip(contentRect);
+    Optional<ClipRecorder> clipRecorder;
+    if (!contentRect.contains(rect)) {
+        clipRecorder.emplace(*context, m_layoutVideo, paintInfo.displayItemTypeForClipping(), contentRect);
     }
+
+    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*context, m_layoutVideo, paintInfo.phase, paintOffset))
+        return;
+
+    LayoutObjectDrawingRecorder drawingRecorder(*context, m_layoutVideo, paintInfo.phase, contentRect, paintOffset);
 
     if (displayingPoster) {
         ImagePainter(m_layoutVideo).paintIntoRect(context, rect);
@@ -49,8 +50,6 @@ void VideoPainter::paintReplaced(const PaintInfo& paintInfo, const LayoutPoint& 
         videoPaint.setColor(SK_ColorBLACK);
         m_layoutVideo.videoElement()->paintCurrentFrame(context->canvas(), pixelSnappedIntRect(rect), &videoPaint);
     }
-    if (clip)
-        context->restore();
 }
 
 } // namespace blink

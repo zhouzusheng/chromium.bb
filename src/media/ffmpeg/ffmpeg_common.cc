@@ -6,11 +6,13 @@
 
 #include "base/basictypes.h"
 #include "base/logging.h"
-#include "base/metrics/histogram.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/sha1.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "media/base/decoder_buffer.h"
+#include "media/base/video_decoder_config.h"
 #include "media/base/video_util.h"
 
 namespace media {
@@ -154,6 +156,10 @@ static VideoCodec CodecIDToVideoCodec(AVCodecID codec_id) {
   switch (codec_id) {
     case AV_CODEC_ID_H264:
       return kCodecH264;
+#if defined(ENABLE_HEVC_DEMUXING)
+    case AV_CODEC_ID_HEVC:
+      return kCodecHEVC;
+#endif
     case AV_CODEC_ID_THEORA:
       return kCodecTheora;
     case AV_CODEC_ID_MPEG4:
@@ -168,10 +174,14 @@ static VideoCodec CodecIDToVideoCodec(AVCodecID codec_id) {
   return kUnknownVideoCodec;
 }
 
-static AVCodecID VideoCodecToCodecID(VideoCodec video_codec) {
+AVCodecID VideoCodecToCodecID(VideoCodec video_codec) {
   switch (video_codec) {
     case kCodecH264:
       return AV_CODEC_ID_H264;
+#if defined(ENABLE_HEVC_DEMUXING)
+    case kCodecHEVC:
+      return AV_CODEC_ID_HEVC;
+#endif
     case kCodecTheora:
       return AV_CODEC_ID_THEORA;
     case kCodecMPEG4:
@@ -276,7 +286,7 @@ static AVSampleFormat SampleFormatToAVSampleFormat(SampleFormat sample_format) {
   return AV_SAMPLE_FMT_NONE;
 }
 
-void AVCodecContextToAudioDecoderConfig(const AVCodecContext* codec_context,
+bool AVCodecContextToAudioDecoderConfig(const AVCodecContext* codec_context,
                                         bool is_encrypted,
                                         AudioDecoderConfig* config) {
   DCHECK_EQ(codec_context->codec_type, AVMEDIA_TYPE_AUDIO);
@@ -310,12 +320,26 @@ void AVCodecContextToAudioDecoderConfig(const AVCodecContext* codec_context,
         codec_context->seek_preroll * 1000000.0 / codec_context->sample_rate);
   }
 
+  // AVStream occasionally has invalid extra data. See http://crbug.com/517163
+  if ((codec_context->extradata_size == 0) !=
+      (codec_context->extradata == nullptr)) {
+    LOG(ERROR) << __FUNCTION__
+               << (codec_context->extradata == nullptr ? " NULL" : " Non-NULL")
+               << " extra data cannot have size of "
+               << codec_context->extradata_size << ".";
+    return false;
+  }
+
+  std::vector<uint8_t> extra_data;
+  if (codec_context->extradata_size > 0) {
+    extra_data.assign(codec_context->extradata,
+                      codec_context->extradata + codec_context->extradata_size);
+  }
   config->Initialize(codec,
                      sample_format,
                      channel_layout,
                      sample_rate,
-                     codec_context->extradata,
-                     codec_context->extradata_size,
+                     extra_data,
                      is_encrypted,
                      seek_preroll,
                      codec_context->delay);
@@ -324,15 +348,19 @@ void AVCodecContextToAudioDecoderConfig(const AVCodecContext* codec_context,
     DCHECK_EQ(av_get_bytes_per_sample(codec_context->sample_fmt) * 8,
               config->bits_per_channel());
   }
+
+  return true;
 }
 
-void AVStreamToAudioDecoderConfig(const AVStream* stream,
+bool AVStreamToAudioDecoderConfig(const AVStream* stream,
                                   AudioDecoderConfig* config) {
   bool is_encrypted = false;
-  AVDictionaryEntry* key = av_dict_get(stream->metadata, "enc_key_id", NULL, 0);
+  AVDictionaryEntry* key =
+      av_dict_get(stream->metadata, "enc_key_id", nullptr, 0);
   if (key)
     is_encrypted = true;
-  AVCodecContextToAudioDecoderConfig(stream->codec, is_encrypted, config);
+  return AVCodecContextToAudioDecoderConfig(stream->codec, is_encrypted,
+                                            config);
 }
 
 void AudioDecoderConfigToAVCodecContext(const AudioDecoderConfig& config,
@@ -349,21 +377,21 @@ void AudioDecoderConfigToAVCodecContext(const AudioDecoderConfig& config,
       ChannelLayoutToChannelCount(config.channel_layout());
   codec_context->sample_rate = config.samples_per_second();
 
-  if (config.extra_data()) {
-    codec_context->extradata_size = config.extra_data_size();
-    codec_context->extradata = reinterpret_cast<uint8_t*>(
-        av_malloc(config.extra_data_size() + FF_INPUT_BUFFER_PADDING_SIZE));
-    memcpy(codec_context->extradata, config.extra_data(),
-           config.extra_data_size());
-    memset(codec_context->extradata + config.extra_data_size(), '\0',
-           FF_INPUT_BUFFER_PADDING_SIZE);
-  } else {
-    codec_context->extradata = NULL;
+  if (config.extra_data().empty()) {
+    codec_context->extradata = nullptr;
     codec_context->extradata_size = 0;
+  } else {
+    codec_context->extradata_size = config.extra_data().size();
+    codec_context->extradata = reinterpret_cast<uint8_t*>(
+        av_malloc(config.extra_data().size() + FF_INPUT_BUFFER_PADDING_SIZE));
+    memcpy(codec_context->extradata, &config.extra_data()[0],
+           config.extra_data().size());
+    memset(codec_context->extradata + config.extra_data().size(), '\0',
+           FF_INPUT_BUFFER_PADDING_SIZE);
   }
 }
 
-void AVStreamToVideoDecoderConfig(const AVStream* stream,
+bool AVStreamToVideoDecoderConfig(const AVStream* stream,
                                   VideoDecoderConfig* config) {
   gfx::Size coded_size(stream->codec->coded_width, stream->codec->coded_height);
 
@@ -424,12 +452,13 @@ void AVStreamToVideoDecoderConfig(const AVStream* stream,
   }
 
   bool is_encrypted = false;
-  AVDictionaryEntry* key = av_dict_get(stream->metadata, "enc_key_id", NULL, 0);
+  AVDictionaryEntry* key =
+      av_dict_get(stream->metadata, "enc_key_id", nullptr, 0);
   if (key)
     is_encrypted = true;
 
   AVDictionaryEntry* webm_alpha =
-      av_dict_get(stream->metadata, "alpha_mode", NULL, 0);
+      av_dict_get(stream->metadata, "alpha_mode", nullptr, 0);
   if (webm_alpha && !strcmp(webm_alpha->value, "1")) {
     format = PIXEL_FORMAT_YV12A;
   }
@@ -444,9 +473,24 @@ void AVStreamToVideoDecoderConfig(const AVStream* stream,
                                                 : COLOR_SPACE_HD_REC709;
   }
 
+  // AVStream occasionally has invalid extra data. See http://crbug.com/517163
+  if ((stream->codec->extradata_size == 0) !=
+      (stream->codec->extradata == nullptr)) {
+    LOG(ERROR) << __FUNCTION__
+               << (stream->codec->extradata == nullptr ? " NULL" : " Non-Null")
+               << " extra data cannot have size of "
+               << stream->codec->extradata_size << ".";
+    return false;
+  }
+
+  std::vector<uint8_t> extra_data;
+  if (stream->codec->extradata_size > 0) {
+    extra_data.assign(stream->codec->extradata,
+                      stream->codec->extradata + stream->codec->extradata_size);
+  }
   config->Initialize(codec, profile, format, color_space, coded_size,
-                     visible_rect, natural_size, stream->codec->extradata,
-                     stream->codec->extradata_size, is_encrypted);
+                     visible_rect, natural_size, extra_data, is_encrypted);
+  return true;
 }
 
 void VideoDecoderConfigToAVCodecContext(
@@ -461,17 +505,17 @@ void VideoDecoderConfigToAVCodecContext(
   if (config.color_space() == COLOR_SPACE_JPEG)
     codec_context->color_range = AVCOL_RANGE_JPEG;
 
-  if (config.extra_data()) {
-    codec_context->extradata_size = config.extra_data_size();
-    codec_context->extradata = reinterpret_cast<uint8_t*>(
-        av_malloc(config.extra_data_size() + FF_INPUT_BUFFER_PADDING_SIZE));
-    memcpy(codec_context->extradata, config.extra_data(),
-           config.extra_data_size());
-    memset(codec_context->extradata + config.extra_data_size(), '\0',
-           FF_INPUT_BUFFER_PADDING_SIZE);
-  } else {
-    codec_context->extradata = NULL;
+  if (config.extra_data().empty()) {
+    codec_context->extradata = nullptr;
     codec_context->extradata_size = 0;
+  } else {
+    codec_context->extradata_size = config.extra_data().size();
+    codec_context->extradata = reinterpret_cast<uint8_t*>(
+        av_malloc(config.extra_data().size() + FF_INPUT_BUFFER_PADDING_SIZE));
+    memcpy(codec_context->extradata, &config.extra_data()[0],
+           config.extra_data().size());
+    memset(codec_context->extradata + config.extra_data().size(), '\0',
+           FF_INPUT_BUFFER_PADDING_SIZE);
   }
 }
 
@@ -634,6 +678,13 @@ bool FFmpegUTCDateToTime(const char* date_utc, base::Time* out) {
   }
 
   return false;
+}
+
+int32_t HashCodecName(const char* codec_name) {
+  // Use the first 32-bits from the SHA1 hash as the identifier.
+  int32_t hash;
+  memcpy(&hash, base::SHA1HashString(codec_name).substr(0, 4).c_str(), 4);
+  return hash;
 }
 
 }  // namespace media

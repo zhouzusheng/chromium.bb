@@ -173,13 +173,14 @@
 #include "core/layout/LayoutPart.h"
 #include "core/layout/LayoutView.h"
 #include "core/layout/TextAutosizer.h"
-#include "core/layout/compositing/DeprecatedPaintLayerCompositor.h"
+#include "core/layout/compositing/PaintLayerCompositor.h"
 #include "core/loader/CookieJar.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameFetchContext.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/ImageLoader.h"
+#include "core/loader/NavigationScheduler.h"
 #include "core/loader/appcache/ApplicationCacheHost.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/EventWithHitTestResults.h"
@@ -191,6 +192,8 @@
 #include "core/svg/SVGDocumentExtensions.h"
 #include "core/svg/SVGTitleElement.h"
 #include "core/svg/SVGUseElement.h"
+#include "core/timing/DOMWindowPerformance.h"
+#include "core/timing/Performance.h"
 #include "core/workers/SharedWorkerRepositoryClient.h"
 #include "core/xml/parser/XMLDocumentParser.h"
 #include "platform/DateComponents.h"
@@ -204,6 +207,7 @@
 #include "platform/TraceEvent.h"
 #include "platform/network/ContentSecurityPolicyParsers.h"
 #include "platform/network/HTTPParsers.h"
+#include "platform/scheduler/CancellableTaskFactory.h"
 #include "platform/scroll/ScrollbarTheme.h"
 #include "platform/text/PlatformLocale.h"
 #include "platform/text/SegmentedString.h"
@@ -211,8 +215,10 @@
 #include "platform/weborigin/SchemeRegistry.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "public/platform/Platform.h"
+#include "public/platform/WebFrameScheduler.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/DateMath.h"
+#include "wtf/Functional.h"
 #include "wtf/HashFunctions.h"
 #include "wtf/MainThread.h"
 #include "wtf/StdLibExtras.h"
@@ -337,6 +343,8 @@ static bool acceptsEditingFocus(const Element& element)
 
 uint64_t Document::s_globalTreeVersion = 0;
 
+static bool s_threadedParsingEnabledForTesting = true;
+
 Document::WeakDocumentSet& Document::liveDocumentSet()
 {
     DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<WeakDocumentSet>, set, (adoptPtrWillBeNoop(new WeakDocumentSet())));
@@ -377,10 +385,11 @@ Document::Document(const DocumentInit& initializer, DocumentClassFlags documentC
     , m_contextFeatures(ContextFeatures::defaultSwitch())
     , m_wellFormed(false)
     , m_printing(false)
+    , m_wasPrinting(false)
     , m_paginatedForScreen(false)
     , m_compatibilityMode(NoQuirksMode)
     , m_compatibilityModeLocked(false)
-    , m_executeScriptsWaitingForResourcesTimer(this, &Document::executeScriptsWaitingForResourcesTimerFired)
+    , m_executeScriptsWaitingForResourcesTask(CancellableTaskFactory::create(this, &Document::executeScriptsWaitingForResources))
     , m_hasAutofocused(false)
     , m_clearFocusedElementTimer(this, &Document::clearFocusedElementTimerFired)
     , m_domTreeVersion(++s_globalTreeVersion)
@@ -432,6 +441,7 @@ Document::Document(const DocumentInit& initializer, DocumentClassFlags documentC
     , m_timeline(AnimationTimeline::create(this))
     , m_templateDocumentHost(nullptr)
     , m_didAssociateFormControlsTimer(this, &Document::didAssociateFormControlsTimerFired)
+    , m_timers(Platform::current()->currentThread()->scheduler()->timerTaskRunner())
     , m_hasViewportUnits(false)
     , m_styleRecalcElementCounter(0)
     , m_parserSyncPolicy(AllowAsynchronousParsing)
@@ -442,6 +452,7 @@ Document::Document(const DocumentInit& initializer, DocumentClassFlags documentC
         provideContextFeaturesToDocumentFrom(*this, *m_frame->page());
 
         m_fetcher = m_frame->loader().documentLoader()->fetcher();
+        m_timers.setTimerTaskRunner(m_frame->frameScheduler()->timerTaskRunner());
         FrameFetchContext::provideDocumentToContext(m_fetcher->context(), this);
     } else if (m_importsController) {
         m_fetcher = FrameFetchContext::createContextAndFetcher(nullptr);
@@ -565,6 +576,7 @@ void Document::dispose()
     m_userActionElements.documentDidRemoveLastRef();
     m_associatedFormControls.clear();
 
+    m_scriptRunner->dispose();
     detachParser();
 
     m_registrationContext.clear();
@@ -596,7 +608,6 @@ void Document::dispose()
     DocumentLifecycleNotifier::notifyDocumentWasDisposed();
 
     m_canvasFontCache.clear();
-    m_nodeCount = 0;
 }
 #endif
 
@@ -616,6 +627,7 @@ MediaQueryMatcher& Document::mediaQueryMatcher()
 
 void Document::mediaQueryAffectingValueChanged()
 {
+    styleResolverChanged();
     m_evaluateMediaQueriesOnStyleRecalc = true;
     styleEngine().clearMediaQueryRuleSetStyleSheets();
     InspectorInstrumentation::mediaQueryResultChanged(this);
@@ -974,6 +986,7 @@ PassRefPtrWillBeRawPtr<Node> Document::adoptNode(PassRefPtrWillBeRawPtr<Node> so
             source->parentNode()->removeChild(source.get(), exceptionState);
             if (exceptionState.hadException())
                 return nullptr;
+            RELEASE_ASSERT(!source->parentNode());
         }
     }
 
@@ -1374,6 +1387,9 @@ void Document::didChangeVisibilityState()
     for (DocumentVisibilityObserver* observer : m_visibilityObservers)
         observer->didChangeVisibilityState(state);
 
+    if (state == PageVisibilityStateVisible)
+        timeline().setAllCompositorPending();
+
     if (hidden() && m_canvasFontCache)
         m_canvasFontCache->pruneAll();
 }
@@ -1491,7 +1507,7 @@ bool Document::needsFullLayoutTreeUpdate() const
     // FIXME: The childNeedsDistributionRecalc bit means either self or children, we should fix that.
     if (childNeedsDistributionRecalc())
         return true;
-    if (DocumentAnimations::needsOutdatedAnimationUpdate(*this))
+    if (DocumentAnimations::needsAnimationTimingUpdate(*this))
         return true;
     return false;
 }
@@ -1521,6 +1537,8 @@ void Document::scheduleLayoutTreeUpdate()
 
     TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ScheduleStyleRecalculation", TRACE_EVENT_SCOPE_THREAD, "data", InspectorRecalculateStylesEvent::data(frame()));
     InspectorInstrumentation::didScheduleStyleRecalculation(this);
+
+    ++m_styleVersion;
 }
 
 bool Document::hasPendingForcedStyleRecalc() const
@@ -1704,8 +1722,16 @@ void Document::updateLayoutTree(StyleRecalcChange change)
     if (!view() || !isActive())
         return;
 
-    if (change != Force && !needsLayoutTreeUpdate())
+    if (change != Force && !needsLayoutTreeUpdate()) {
+        if (lifecycle().state() < DocumentLifecycle::StyleClean) {
+            // needsLayoutTreeUpdate may change to false without any actual layout tree update.
+            // For example, needsAnimationTimingUpdate may change to false when time elapses.
+            // Advance lifecycle to StyleClean because style is actually clean now.
+            lifecycle().advanceTo(DocumentLifecycle::InStyleRecalc);
+            lifecycle().advanceTo(DocumentLifecycle::StyleClean);
+        }
         return;
+    }
 
     if (inStyleRecalc())
         return;
@@ -1717,8 +1743,10 @@ void Document::updateLayoutTree(StyleRecalcChange change)
     RELEASE_ASSERT(!view()->isPainting());
 
     // Script can run below in WidgetUpdates, so protect the LocalFrame.
-    // FIXME: Can this still happen? How does script run inside
-    // UpdateSuspendScope::performDeferredWidgetTreeOperations() ?
+    // TODO(esprehn): This should actually crash because of the ScriptForbiddenScope,
+    // for an example stack see crbug.com/536194, it seems like we should just use
+    // a PluginScriptForbiddenScope to block all script from running inside here
+    // to avoid the crash.
     RefPtrWillBeRawPtr<LocalFrame> protect(m_frame.get());
 
     TRACE_EVENT_BEGIN1("blink,devtools.timeline", "UpdateLayoutTree", "beginData", InspectorRecalculateStylesEvent::data(frame()));
@@ -1755,7 +1783,7 @@ void Document::updateLayoutTree(StyleRecalcChange change)
         clearFocusedElementSoon();
     layoutView()->clearHitTestCache();
 
-    ASSERT(!m_timeline->hasOutdatedAnimation());
+    ASSERT(!DocumentAnimations::needsAnimationTimingUpdate(*this));
 
     TRACE_EVENT_END1("blink,devtools.timeline", "UpdateLayoutTree", "elementCount", m_styleRecalcElementCounter);
     InspectorInstrumentation::didRecalculateStyle(cookie, m_styleRecalcElementCounter);
@@ -1816,6 +1844,8 @@ void Document::updateStyle(StyleRecalcChange change)
     // Pseudo element removal and similar may only work with these flags still set. Reset them after the style recalc.
     styleEngine().resetCSSFeatureFlags(resolver.ensureUpdatedRuleFeatureSet());
     resolver.clearStyleSharingList();
+
+    m_wasPrinting = m_printing;
 
     ASSERT(!needsStyleRecalc());
     ASSERT(!childNeedsStyleRecalc());
@@ -1906,6 +1936,12 @@ void Document::layoutUpdated()
         if (!m_documentTiming.firstLayout())
             m_documentTiming.markFirstLayout();
     }
+}
+
+void Document::markFirstTextPaint()
+{
+    if (m_documentTiming.firstTextPaint() == 0)
+        m_documentTiming.markFirstTextPaint();
 }
 
 void Document::setNeedsFocusedElementCheck()
@@ -2113,10 +2149,22 @@ void Document::attach(const AttachContext& context)
 
 void Document::detach(const AttachContext& context)
 {
+    TRACE_EVENT0("blink", "Document::detach");
     ASSERT(!m_frame || m_frame->tree().childCount() == 0);
     if (!isActive())
         return;
 
+    // Frame navigation can cause a new Document to be attached. Don't allow that, since that will
+    // cause a situation where LocalFrame still has a Document attached after this finishes!
+    // Normally, it shouldn't actually be possible to trigger navigation here. However, plugins
+    // (see below) can cause lots of crazy things to happen, since plugin detach involves nested
+    // message loops.
+    FrameNavigationDisabler navigationDisabler(*m_frame);
+    // Defer widget updates to avoid plugins trying to run script inside ScriptForbiddenScope,
+    // which will crash the renderer after https://crrev.com/200984
+    HTMLFrameOwnerElement::UpdateSuspendScope suspendWidgetHierarchyUpdates;
+    // Don't allow script to run in the middle of detach() because a detaching Document is not in a
+    // consistent state.
     ScriptForbiddenScope forbidScript;
     view()->dispose();
     m_markers->prepareForDestruction();
@@ -2189,6 +2237,8 @@ void Document::detach(const AttachContext& context)
     // thinking they should have access to a valid frame when they don't.
     if (m_importsController)
         HTMLImportsController::removeFrom(*this);
+
+    m_timers.setTimerTaskRunner(Platform::current()->currentThread()->scheduler()->timerTaskRunner());
 
     // This is required, as our LocalFrame might delete itself as soon as it detaches
     // us. However, this violates Node::detach() semantics, as it's never
@@ -2384,6 +2434,9 @@ PassRefPtrWillBeRawPtr<DocumentParser> Document::implicitOpen(ParserSynchronizat
     ASSERT(!m_focusedElement);
 
     setCompatibilityMode(NoQuirksMode);
+
+    if (!threadedParsingEnabledForTesting())
+        parserSyncPolicy = ForceSynchronousParsing;
 
     m_parserSyncPolicy = parserSyncPolicy;
     m_parser = createParser();
@@ -2959,7 +3012,8 @@ void Document::didRemoveAllPendingStylesheet()
 
 void Document::didLoadAllScriptBlockingResources()
 {
-    m_executeScriptsWaitingForResourcesTimer.startOneShot(0, FROM_HERE);
+    Platform::current()->currentThread()->scheduler()->loadingTaskRunner()->postTask(
+        FROM_HERE, m_executeScriptsWaitingForResourcesTask->cancelAndCreate());
 
     if (frame())
         frame()->loader().client()->didRemoveAllPendingStylesheet();
@@ -2968,7 +3022,7 @@ void Document::didLoadAllScriptBlockingResources()
         view()->processUrlFragment(m_url);
 }
 
-void Document::executeScriptsWaitingForResourcesTimerFired(Timer<Document>*)
+void Document::executeScriptsWaitingForResources()
 {
     if (!isRenderingReady())
         return;
@@ -3023,9 +3077,6 @@ void Document::setViewportDescription(const ViewportDescription& viewportDescrip
         m_viewportDefaultMinWidth = viewportDescription.minWidth;
 
     if (viewportDescription.isLegacyViewportType()) {
-        if (settings() && !settings()->viewportMetaEnabled())
-            return;
-
         m_legacyViewportDescription = viewportDescription;
 
         // When no author style for @viewport is present, and a meta tag for defining
@@ -3065,6 +3116,11 @@ void Document::processReferrerPolicy(const String& policy)
 
 String Document::outgoingReferrer()
 {
+    if (securityOrigin()->isUnique()) {
+        // Return |no-referrer|.
+        return String();
+    }
+
     // See http://www.whatwg.org/specs/web-apps/current-work/#fetching-resources
     // for why we walk the parent chain for srcdoc documents.
     Document* referrerDocument = this;
@@ -3438,6 +3494,8 @@ bool Document::setFocusedElement(PassRefPtrWillBeRawPtr<Element> prpNewFocusedEl
                 focusChangeBlocked = true;
                 newFocusedElement = nullptr;
             }
+            // Event handlers might make newFocusedElement dirty.
+            updateLayoutIgnorePendingStylesheets();
         }
 
         if (view()) {
@@ -3457,6 +3515,8 @@ bool Document::setFocusedElement(PassRefPtrWillBeRawPtr<Element> prpNewFocusedEl
         }
         // Set focus on the new node
         m_focusedElement = newFocusedElement;
+
+        m_focusedElement->setFocus(true);
 
         // Dispatch the focus event and let the node do any other focus related activities (important for text fields)
         // If page lost focus, event will be dispatched on page focus, don't duplicate
@@ -3487,8 +3547,6 @@ bool Document::setFocusedElement(PassRefPtrWillBeRawPtr<Element> prpNewFocusedEl
                 goto SetFocusedElementDone;
             }
         }
-
-        m_focusedElement->setFocus(true);
 
         if (m_focusedElement->isRootEditableElement())
             frame()->spellChecker().didBeginEditing(m_focusedElement.get());
@@ -4774,7 +4832,7 @@ void Document::initContentSecurityPolicy(PassRefPtrWillBeRawPtr<ContentSecurityP
 
 bool Document::allowInlineEventHandlers(Node* node, EventListener* listener, const String& contextURL, const WTF::OrdinalNumber& contextLine)
 {
-    if (!contentSecurityPolicy()->allowInlineEventHandlers(contextURL, contextLine))
+    if (!ContentSecurityPolicy::shouldBypassMainWorld(this) && !contentSecurityPolicy()->allowInlineEventHandlers(contextURL, contextLine))
         return false;
 
     // HTML says that inline script needs browsing context to create its execution environment.
@@ -4817,6 +4875,7 @@ void Document::didUpdateSecurityOrigin()
 {
     if (!m_frame)
         return;
+    m_frame->updateFrameSecurityOrigin();
     m_frame->script().updateSecurityOrigin(securityOrigin());
 }
 
@@ -4964,6 +5023,8 @@ void Document::tasksWereResumed()
         m_scriptedAnimationController->resume();
 
     MutationObserver::resumeSuspendedObservers();
+    if (m_domWindow)
+        DOMWindowPerformance::performance(*m_domWindow)->resumeSuspendedObservers();
 }
 
 // FIXME: suspendScheduledTasks(), resumeScheduledTasks(), tasksNeedSuspension()
@@ -5130,13 +5191,13 @@ void Document::serviceScriptedAnimations(double monotonicAnimationStartTime)
 ScriptedIdleTaskController& Document::ensureScriptedIdleTaskController()
 {
     if (!m_scriptedIdleTaskController)
-        m_scriptedIdleTaskController = ScriptedIdleTaskController::create(this, loader()->timing());
+        m_scriptedIdleTaskController = ScriptedIdleTaskController::create(this);
     return *m_scriptedIdleTaskController;
 }
 
-int Document::requestIdleCallback(IdleRequestCallback* callback, double timeoutMillis)
+int Document::requestIdleCallback(IdleRequestCallback* callback, const IdleRequestOptions& options)
 {
-    return ensureScriptedIdleTaskController().registerCallback(callback, timeoutMillis);
+    return ensureScriptedIdleTaskController().registerCallback(callback, options);
 }
 
 void Document::cancelIdleCallback(int id)
@@ -5231,6 +5292,16 @@ void Document::adjustFloatRectForScrollAndAbsoluteZoom(FloatRect& rect, LayoutOb
     LayoutRect visibleContentRect(view()->visibleContentRect());
     rect.move(-FloatSize(visibleContentRect.x().toFloat(), visibleContentRect.y().toFloat()));
     adjustFloatRectForAbsoluteZoom(rect, layoutObject);
+}
+
+void Document::setThreadedParsingEnabledForTesting(bool enabled)
+{
+    s_threadedParsingEnabledForTesting = enabled;
+}
+
+bool Document::threadedParsingEnabledForTesting()
+{
+    return s_threadedParsingEnabledForTesting;
 }
 
 bool Document::hasActiveParser()
@@ -5608,17 +5679,50 @@ v8::Local<v8::Object> Document::associateWithWrapper(v8::Isolate* isolate, const
     return wrapper;
 }
 
-bool Document::isPrivilegedContext(String& errorMessage, const PrivilegeContextCheck privilegeContextCheck) const
+bool Document::isSecureContext(String& errorMessage, const SecureContextCheck privilegeContextCheck) const
 {
+    // There may be exceptions for the secure context check defined for certain
+    // schemes. The exceptions are applied only to the special scheme and to
+    // sandboxed URLs from those origins, but *not* to any children.
+    //
+    // For example:
+    //   <iframe src="http://host">
+    //     <iframe src="scheme-has-exception://host"></iframe>
+    //     <iframe sandbox src="scheme-has-exception://host"></iframe>
+    //   </iframe>
+    // both inner iframes pass this check, assuming that the scheme
+    // "scheme-has-exception:" is granted an exception.
+    //
+    // However,
+    //   <iframe src="http://host">
+    //     <iframe sandbox src="http://host"></iframe>
+    //   </iframe>
+    // would fail the check (that is, sandbox does not grant an exception itself).
+    //
+    // Additionally, with
+    //   <iframe src="scheme-has-exception://host">
+    //     <iframe src="http://host"></iframe>
+    //     <iframe sandbox src="http://host"></iframe>
+    //   </iframe>
+    // both inner iframes would fail the check, even though the outermost iframe
+    // passes.
+    //
+    // In all cases, a frame must be potentially trustworthy in addition to
+    // having an exception listed in order for the exception to be granted.
     if (SecurityContext::isSandboxed(SandboxOrigin)) {
-        if (!SecurityOrigin::create(url())->isPotentiallyTrustworthy(errorMessage))
+        RefPtr<SecurityOrigin> origin = SecurityOrigin::create(url());
+        if (!origin->isPotentiallyTrustworthy(errorMessage))
             return false;
+        if (SchemeRegistry::schemeShouldBypassSecureContextCheck(origin->protocol()))
+            return true;
     } else {
         if (!securityOrigin()->isPotentiallyTrustworthy(errorMessage))
             return false;
+        if (SchemeRegistry::schemeShouldBypassSecureContextCheck(securityOrigin()->protocol()))
+            return true;
     }
 
-    if (privilegeContextCheck == StandardPrivilegeCheck) {
+    if (privilegeContextCheck == StandardSecureContextCheck) {
         Document* context = parentDocument();
         while (context) {
             // Skip to the next ancestor if it's a srcdoc.

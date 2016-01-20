@@ -28,7 +28,7 @@
 
 #include "core/editing/EditingUtilities.h"
 #include "core/layout/LayoutView.h"
-#include "core/paint/DeprecatedPaintLayer.h"
+#include "core/paint/PaintLayer.h"
 
 namespace blink {
 
@@ -47,7 +47,7 @@ bool DragCaretController::isContentRichlyEditable() const
     return isRichlyEditablePosition(m_position.deepEquivalent());
 }
 
-void DragCaretController::setCaretPosition(const VisiblePosition& position)
+void DragCaretController::setCaretPosition(const PositionWithAffinity& position)
 {
     // for querying Layer::compositingState()
     // This code is probably correct, since it doesn't occur in a stack that
@@ -56,7 +56,7 @@ void DragCaretController::setCaretPosition(const VisiblePosition& position)
 
     if (Node* node = m_position.deepEquivalent().anchorNode())
         invalidateCaretRect(node);
-    m_position = position;
+    m_position = createVisiblePosition(position);
     Document* document = nullptr;
     if (Node* node = m_position.deepEquivalent().anchorNode()) {
         invalidateCaretRect(node);
@@ -105,6 +105,11 @@ DEFINE_TRACE(DragCaretController)
 LayoutBlock* DragCaretController::caretLayoutObject() const
 {
     return CaretBase::caretLayoutObject(m_position.deepEquivalent().anchorNode());
+}
+
+bool DragCaretController::isContentEditable() const
+{
+    return rootEditableElementOf(m_position);
 }
 
 void DragCaretController::paintDragCaret(LocalFrame* frame, GraphicsContext* p, const LayoutPoint& paintOffset, const LayoutRect& clipRect) const

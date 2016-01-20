@@ -18,7 +18,7 @@ class GrDrawBatch;
 class GrDrawTarget;
 class GrPaint;
 class GrPathProcessor;
-class GrPathRange;
+class GrPathRangeDraw;
 class GrPipelineBuilder;
 class GrRenderTarget;
 class GrStrokeInfo;
@@ -61,17 +61,14 @@ public:
                       SkScalar x, SkScalar y,
                       SkDrawFilter*, const SkIRect& clipBounds);
 
-    // drawPaths is thanks to GrStencilAndCoverTextContext
-    // TODO: remove
-    void drawPaths(GrPipelineBuilder* pipelineBuilder,
-                   const GrPathProcessor* pathProc,
-                   const GrPathRange* pathRange,
-                   const void* indices,
-                   int /*GrDrawTarget::PathIndexType*/ indexType,
-                   const float transformValues[],
-                   int /*GrDrawTarget::PathTransformType*/ transformType,
-                   int count,
-                   int /*GrPathRendering::FillType*/ fill);
+    // drawPathsFromRange is thanks to GrStencilAndCoverTextContext
+    // TODO: remove once path batches can be created external to GrDrawTarget.
+    void drawPathsFromRange(const GrPipelineBuilder*,
+                            const SkMatrix& viewMatrix,
+                            const SkMatrix& localMatrix,
+                            GrColor color,
+                            GrPathRangeDraw* draw,
+                            int /*GrPathRendering::FillType*/ fill);
 
     /**
      * Provides a perfomance hint that the render target's contents are allowed
@@ -120,16 +117,13 @@ public:
      * @param viewMatrix    transformation matrix which applies to rectToDraw
      * @param rectToDraw    the rectangle to draw
      * @param localRect     the rectangle of shader coordinates applied to rectToDraw
-     * @param localMatrix   an optional matrix to transform the shader coordinates before applying
-     *                      to rectToDraw
      */
     void drawNonAARectToRect(GrRenderTarget*,
                              const GrClip&,
                              const GrPaint& paint,
                              const SkMatrix& viewMatrix,
                              const SkRect& rectToDraw,
-                             const SkRect& localRect,
-                             const SkMatrix* localMatrix = NULL);
+                             const SkRect& localRect);
 
     /**
      * Draws a non-AA rect with paint and a localMatrix
@@ -139,9 +133,7 @@ public:
                                       const GrPaint& paint,
                                       const SkMatrix& viewMatrix,
                                       const SkRect& rect,
-                                      const SkMatrix& localMatrix) {
-        this->drawNonAARectToRect(rt, clip, paint, viewMatrix, rect, rect, &localMatrix);
-    }
+                                      const SkMatrix& localMatrix);
 
     /**
      *  Draw a roundrect using a paint.

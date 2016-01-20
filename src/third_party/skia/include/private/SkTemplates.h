@@ -10,9 +10,11 @@
 #ifndef SkTemplates_DEFINED
 #define SkTemplates_DEFINED
 
-#include "../private/SkTLogic.h"
 #include "SkMath.h"
+#include "SkTLogic.h"
 #include "SkTypes.h"
+#include "SkUniquePtr.h"
+#include "SkUtility.h"
 #include <limits.h>
 #include <new>
 
@@ -28,33 +30,6 @@
  */
 template<typename T> inline void sk_ignore_unused_variable(const T&) { }
 
-namespace skstd {
-
-template <typename T> inline remove_reference_t<T>&& move(T&& t) {
-  return static_cast<remove_reference_t<T>&&>(t);
-}
-
-template <typename T> inline T&& forward(remove_reference_t<T>& t) /*noexcept*/ {
-    return static_cast<T&&>(t);
-}
-template <typename T> inline T&& forward(remove_reference_t<T>&& t) /*noexcept*/ {
-    static_assert(!is_lvalue_reference<T>::value,
-                  "Forwarding an rvalue reference as an lvalue reference is not allowed.");
-    return static_cast<T&&>(t);
-}
-
-}  // namespace skstd
-
-///@{
-/** SkTConstType<T, CONST>::type will be 'const T' if CONST is true, 'T' otherwise. */
-template <typename T, bool CONST> struct SkTConstType {
-    typedef T type;
-};
-template <typename T> struct SkTConstType<T, true> {
-    typedef const T type;
-};
-///@}
-
 /**
  *  Returns a pointer to a D which comes immediately after S[count].
  */
@@ -66,12 +41,14 @@ template <typename D, typename S> static D* SkTAfter(S* ptr, size_t count = 1) {
  *  Returns a pointer to a D which comes byteOffset bytes after S.
  */
 template <typename D, typename S> static D* SkTAddOffset(S* ptr, size_t byteOffset) {
-    // The intermediate char* has the same const-ness as D as this produces better error messages.
+    // The intermediate char* has the same cv-ness as D as this produces better error messages.
     // This relies on the fact that reinterpret_cast can add constness, but cannot remove it.
-    return reinterpret_cast<D*>(
-        reinterpret_cast<typename SkTConstType<char, SkTIsConst<D>::value>::type*>(ptr) + byteOffset
-    );
+    return reinterpret_cast<D*>(reinterpret_cast<sknonstd::same_cv_t<char, D>*>(ptr) + byteOffset);
 }
+
+template <typename R, typename T, R (*P)(T*)> struct SkFunctionWrapper {
+    R operator()(T* t) { return P(t); }
+};
 
 /** \class SkAutoTCallVProc
 
@@ -81,25 +58,13 @@ template <typename D, typename S> static D* SkTAddOffset(S* ptr, size_t byteOffs
     reference is null when the destructor is called, we do not call the
     function.
 */
-template <typename T, void (*P)(T*)> class SkAutoTCallVProc : SkNoncopyable {
+template <typename T, void (*P)(T*)> class SkAutoTCallVProc
+    : public skstd::unique_ptr<T, SkFunctionWrapper<void, T, P>> {
 public:
-    SkAutoTCallVProc(T* obj): fObj(obj) {}
-    ~SkAutoTCallVProc() { if (fObj) P(fObj); }
+    SkAutoTCallVProc(T* obj): skstd::unique_ptr<T, SkFunctionWrapper<void, T, P>>(obj) {}
 
-    operator T*() const { return fObj; }
-    T* operator->() const { SkASSERT(fObj); return fObj; }
-
-    T* detach() { T* obj = fObj; fObj = NULL; return obj; }
-    void reset(T* obj = NULL) {
-        if (fObj != obj) {
-            if (fObj) {
-                P(fObj);
-            }
-            fObj = obj;
-        }
-    }
-private:
-    T* fObj;
+    operator T*() const { return this->get(); }
+    T* detach() { return this->release(); }
 };
 
 /** \class SkAutoTCallIProc
@@ -110,17 +75,13 @@ If detach() is called, the object reference is set to null. If the object
 reference is null when the destructor is called, we do not call the
 function.
 */
-template <typename T, int (*P)(T*)> class SkAutoTCallIProc : SkNoncopyable {
+template <typename T, int (*P)(T*)> class SkAutoTCallIProc
+    : public skstd::unique_ptr<T, SkFunctionWrapper<int, T, P>> {
 public:
-    SkAutoTCallIProc(T* obj): fObj(obj) {}
-    ~SkAutoTCallIProc() { if (fObj) P(fObj); }
+    SkAutoTCallIProc(T* obj): skstd::unique_ptr<T, SkFunctionWrapper<int, T, P>>(obj) {}
 
-    operator T*() const { return fObj; }
-    T* operator->() const { SkASSERT(fObj); return fObj; }
-
-    T* detach() { T* obj = fObj; fObj = NULL; return obj; }
-private:
-    T* fObj;
+    operator T*() const { return this->get(); }
+    T* detach() { return this->release(); }
 };
 
 /** \class SkAutoTDelete
@@ -133,86 +94,21 @@ private:
 
   The size of a SkAutoTDelete is small: sizeof(SkAutoTDelete<T>) == sizeof(T*)
 */
-template <typename T> class SkAutoTDelete : SkNoncopyable {
+template <typename T> class SkAutoTDelete : public skstd::unique_ptr<T> {
 public:
-    SkAutoTDelete(T* obj = NULL) : fObj(obj) {}
-    ~SkAutoTDelete() { SkDELETE(fObj); }
+    SkAutoTDelete(T* obj = NULL) : skstd::unique_ptr<T>(obj) {}
 
-    T* get() const { return fObj; }
-    operator T*() const { return fObj; }
-    T& operator*() const { SkASSERT(fObj); return *fObj; }
-    T* operator->() const { SkASSERT(fObj); return fObj; }
-
-    void reset(T* obj) {
-        if (fObj != obj) {
-            SkDELETE(fObj);
-            fObj = obj;
-        }
-    }
-
-    /**
-     *  Delete the owned object, setting the internal pointer to NULL.
-     */
-    void free() {
-        SkDELETE(fObj);
-        fObj = NULL;
-    }
-
-    /**
-     *  Transfer ownership of the object to the caller, setting the internal
-     *  pointer to NULL. Note that this differs from get(), which also returns
-     *  the pointer, but it does not transfer ownership.
-     */
-    T* detach() {
-        T* obj = fObj;
-        fObj = NULL;
-        return obj;
-    }
-
-    void swap(SkAutoTDelete* that) {
-        SkTSwap(fObj, that->fObj);
-    }
-
-private:
-    T*  fObj;
+    operator T*() const { return this->get(); }
+    void free() { this->reset(nullptr); }
+    T* detach() { return this->release(); }
 };
 
-// Calls ~T() in the destructor.
-template <typename T> class SkAutoTDestroy : SkNoncopyable {
+template <typename T> class SkAutoTDeleteArray : public skstd::unique_ptr<T[]> {
 public:
-    SkAutoTDestroy(T* obj = NULL) : fObj(obj) {}
-    ~SkAutoTDestroy() {
-        if (fObj) {
-            fObj->~T();
-        }
-    }
+    SkAutoTDeleteArray(T array[]) : skstd::unique_ptr<T[]>(array) {}
 
-    T* get() const { return fObj; }
-    T& operator*() const { SkASSERT(fObj); return *fObj; }
-    T* operator->() const { SkASSERT(fObj); return fObj; }
-
-private:
-    T*  fObj;
-};
-
-template <typename T> class SkAutoTDeleteArray : SkNoncopyable {
-public:
-    SkAutoTDeleteArray(T array[]) : fArray(array) {}
-    ~SkAutoTDeleteArray() { SkDELETE_ARRAY(fArray); }
-
-    T*      get() const { return fArray; }
-    void    free() { SkDELETE_ARRAY(fArray); fArray = NULL; }
-    T*      detach() { T* array = fArray; fArray = NULL; return array; }
-
-    void reset(T array[]) {
-        if (fArray != array) {
-            SkDELETE_ARRAY(fArray);
-            fArray = array;
-        }
-    }
-
-private:
-    T*  fArray;
+    void free() { this->reset(nullptr); }
+    T* detach() { return this->release(); }
 };
 
 /** Allocate an array of T elements, and free the array in the destructor
@@ -229,7 +125,7 @@ public:
         SkASSERT(count >= 0);
         fArray = NULL;
         if (count) {
-            fArray = SkNEW_ARRAY(T, count);
+            fArray = new T[count];
         }
         SkDEBUGCODE(fCount = count;)
     }
@@ -237,18 +133,16 @@ public:
     /** Reallocates given a new count. Reallocation occurs even if new count equals old count.
      */
     void reset(int count) {
-        SkDELETE_ARRAY(fArray);
+        delete[] fArray;
         SkASSERT(count >= 0);
         fArray = NULL;
         if (count) {
-            fArray = SkNEW_ARRAY(T, count);
+            fArray = new T[count];
         }
         SkDEBUGCODE(fCount = count;)
     }
 
-    ~SkAutoTArray() {
-        SkDELETE_ARRAY(fArray);
-    }
+    ~SkAutoTArray() { delete[] fArray; }
 
     /** Return the array of T elements. Will be NULL if count == 0
      */
@@ -327,7 +221,7 @@ public:
         iter = fArray;
         T* stop = fArray + count;
         while (iter < stop) {
-            SkNEW_PLACEMENT(iter++, T);
+            new (iter++) T;
         }
     }
 
@@ -497,7 +391,7 @@ template <typename T> void SkInPlaceDeleteCheck(T* obj, void* storage) {
     if (storage == obj) {
         obj->~T();
     } else {
-        SkDELETE(obj);
+        delete obj;
     }
 }
 
@@ -510,12 +404,12 @@ template <typename T> void SkInPlaceDeleteCheck(T* obj, void* storage) {
  *      SkInPlaceDeleteCheck(obj, storage);
  */
 template <typename T> T* SkInPlaceNewCheck(void* storage, size_t size) {
-    return (sizeof(T) <= size) ? new (storage) T : SkNEW(T);
+    return (sizeof(T) <= size) ? new (storage) T : new T;
 }
 
 template <typename T, typename A1, typename A2, typename A3>
 T* SkInPlaceNewCheck(void* storage, size_t size, const A1& a1, const A2& a2, const A3& a3) {
-    return (sizeof(T) <= size) ? new (storage) T(a1, a2, a3) : SkNEW_ARGS(T, (a1, a2, a3));
+    return (sizeof(T) <= size) ? new (storage) T(a1, a2, a3) : new T(a1, a2, a3);
 }
 
 /**

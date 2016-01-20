@@ -169,12 +169,10 @@ void PresentationServiceImpl::Bind(
     mojo::InterfaceRequest<presentation::PresentationService> request) {
   binding_.reset(new mojo::Binding<presentation::PresentationService>(
       this, request.Pass()));
-  binding_->set_error_handler(this);
-}
-
-void PresentationServiceImpl::OnConnectionError() {
-  DVLOG(1) << "OnConnectionError";
-  delete this;
+  binding_->set_connection_error_handler([this]() {
+    DVLOG(1) << "Connection error";
+    delete this;
+  });
 }
 
 void PresentationServiceImpl::SetClient(
@@ -573,6 +571,11 @@ std::string PresentationServiceImpl::ScreenAvailabilityListenerImpl
 void PresentationServiceImpl::ScreenAvailabilityListenerImpl
 ::OnScreenAvailabilityChanged(bool available) {
   service_->client_->OnScreenAvailabilityUpdated(availability_url_, available);
+}
+
+void PresentationServiceImpl::ScreenAvailabilityListenerImpl
+::OnScreenAvailabilityNotSupported() {
+  service_->client_->OnScreenAvailabilityNotSupported(availability_url_);
 }
 
 PresentationServiceImpl::NewSessionMojoCallbackWrapper

@@ -15,10 +15,9 @@
 
 class GrGLBitmapTextGeoProc : public GrGLGeometryProcessor {
 public:
-    GrGLBitmapTextGeoProc(const GrGeometryProcessor&, const GrBatchTracker&)
-        : fColor(GrColor_ILLEGAL) {}
+    GrGLBitmapTextGeoProc() : fColor(GrColor_ILLEGAL) {}
 
-    void onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) override{
+    void onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) override {
         const GrBitmapTextGeoProc& cte = args.fGP.cast<GrBitmapTextGeoProc>();
 
         GrGLGPBuilder* pb = args.fPB;
@@ -70,12 +69,16 @@ public:
             fsBuilder->codeAppendf("%s = ", args.fOutputCoverage);
             fsBuilder->appendTextureLookup(args.fSamplers[0], v.fsIn(), kVec2f_GrSLType);
             fsBuilder->codeAppend(";");
+            if (cte.maskFormat() == kA565_GrMaskFormat) {
+                // set alpha to be max of rgb coverage
+                fsBuilder->codeAppendf("%s.a = max(max(%s.r, %s.g), %s.b);",
+                                       args.fOutputCoverage, args.fOutputCoverage,
+                                       args.fOutputCoverage, args.fOutputCoverage);
+            }
         }
     }
 
-    virtual void setData(const GrGLProgramDataManager& pdman,
-                         const GrPrimitiveProcessor& gp,
-                         const GrBatchTracker& bt) override {
+    void setData(const GrGLProgramDataManager& pdman, const GrPrimitiveProcessor& gp) override {
         const GrBitmapTextGeoProc& btgp = gp.cast<GrBitmapTextGeoProc>();
         if (btgp.color() != fColor && !btgp.hasVertexColor()) {
             GrGLfloat c[4];
@@ -93,7 +96,6 @@ public:
     }
 
     static inline void GenKey(const GrGeometryProcessor& proc,
-                              const GrBatchTracker& bt,
                               const GrGLSLCaps&,
                               GrProcessorKeyBuilder* b) {
         const GrBitmapTextGeoProc& gp = proc.cast<GrBitmapTextGeoProc>();
@@ -127,7 +129,7 @@ GrBitmapTextGeoProc::GrBitmapTextGeoProc(GrColor color, GrTexture* texture,
     , fLocalMatrix(localMatrix)
     , fUsesLocalCoords(usesLocalCoords)
     , fTextureAccess(texture, params)
-    , fInColor(NULL)
+    , fInColor(nullptr)
     , fMaskFormat(format) {
     this->initClassID<GrBitmapTextGeoProc>();
     fInPosition = &this->addVertexAttrib(Attribute("inPosition", kVec2f_GrVertexAttribType));
@@ -143,23 +145,19 @@ GrBitmapTextGeoProc::GrBitmapTextGeoProc(GrColor color, GrTexture* texture,
     this->addTextureAccess(&fTextureAccess);
 }
 
-void GrBitmapTextGeoProc::getGLProcessorKey(const GrBatchTracker& bt,
-                                            const GrGLSLCaps& caps,
-                                            GrProcessorKeyBuilder* b) const {
-    GrGLBitmapTextGeoProc::GenKey(*this, bt, caps, b);
+void GrBitmapTextGeoProc::getGLProcessorKey(const GrGLSLCaps& caps,GrProcessorKeyBuilder* b) const {
+    GrGLBitmapTextGeoProc::GenKey(*this, caps, b);
 }
 
-GrGLPrimitiveProcessor*
-GrBitmapTextGeoProc::createGLInstance(const GrBatchTracker& bt,
-                                      const GrGLSLCaps& caps) const {
-    return SkNEW_ARGS(GrGLBitmapTextGeoProc, (*this, bt));
+GrGLPrimitiveProcessor* GrBitmapTextGeoProc::createGLInstance(const GrGLSLCaps& caps) const {
+    return new GrGLBitmapTextGeoProc();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
 GR_DEFINE_GEOMETRY_PROCESSOR_TEST(GrBitmapTextGeoProc);
 
-GrGeometryProcessor* GrBitmapTextGeoProc::TestCreate(GrProcessorTestData* d) {
+const GrGeometryProcessor* GrBitmapTextGeoProc::TestCreate(GrProcessorTestData* d) {
     int texIdx = d->fRandom->nextBool() ? GrProcessorUnitTest::kSkiaPMTextureIdx :
                                           GrProcessorUnitTest::kAlphaTextureIdx;
     static const SkShader::TileMode kTileModes[] = {

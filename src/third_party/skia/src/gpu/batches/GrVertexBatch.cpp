@@ -9,7 +9,7 @@
 #include "GrBatchFlushState.h"
 #include "GrResourceProvider.h"
 
-GrVertexBatch::GrVertexBatch() : fDrawArrays(1) {}
+GrVertexBatch::GrVertexBatch(uint32_t classID) : INHERITED(classID), fDrawArrays(1) {}
 
 void GrVertexBatch::onPrepare(GrBatchFlushState* state) {
     Target target(state, this);
@@ -22,7 +22,7 @@ void* GrVertexBatch::InstancedHelper::init(Target* target, GrPrimitiveType primT
                                            int instancesToDraw) {
     SkASSERT(target);
     if (!indexBuffer) {
-        return NULL;
+        return nullptr;
     }
     const GrVertexBuffer* vertexBuffer;
     int firstVertex;
@@ -30,7 +30,7 @@ void* GrVertexBatch::InstancedHelper::init(Target* target, GrPrimitiveType primT
     void* vertices = target->makeVertexSpace(vertexStride, vertexCount, &vertexBuffer, &firstVertex);
     if (!vertices) {
         SkDebugf("Vertices could not be allocated for instanced rendering.");
-        return NULL;
+        return nullptr;
     }
     SkASSERT(vertexBuffer);
     size_t ibSize = indexBuffer->gpuMemorySize();
@@ -53,7 +53,7 @@ void* GrVertexBatch::QuadHelper::init(Target* target, size_t vertexStride,
         target->resourceProvider()->refQuadIndexBuffer());
     if (!quadIndexBuffer) {
         SkDebugf("Could not get quad index buffer.");
-        return NULL;
+        return nullptr;
     }
     return this->INHERITED::init(target, kTriangles_GrPrimitiveType, vertexStride,
                                  quadIndexBuffer, kVerticesPerQuad, kIndicesPerQuad, quadsToDraw);
@@ -75,8 +75,8 @@ void GrVertexBatch::onDraw(GrBatchFlushState* state) {
         GrProgramDesc desc;
         const GrPipeline* pipeline = this->pipeline();
         const GrPrimitiveProcessor* primProc = drawArray.fPrimitiveProcessor.get();
-        state->gpu()->buildProgramDesc(&desc, *primProc, *pipeline, fBatchTracker);
-        GrGpu::DrawArgs args(primProc, pipeline, &desc, &fBatchTracker);
+        state->gpu()->buildProgramDesc(&desc, *primProc, *pipeline);
+        GrGpu::DrawArgs args(primProc, pipeline, &desc);
 
         int drawCount = drawArray.fDraws.count();
         for (int i = 0; i < drawCount; i++) {

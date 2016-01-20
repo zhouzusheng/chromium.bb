@@ -42,7 +42,7 @@ WebInspector.TimelineFlameChartDataProviderBase = function(model)
     this._timelineData;
     this._font = "11px " + WebInspector.fontFamily();
     this._filters = [];
-    this.addFilter(WebInspector.TimelineUIUtils.hiddenEventsFilter());
+    this.addFilter(WebInspector.TimelineUIUtils.visibleEventsFilter());
     this.addFilter(new WebInspector.ExcludeTopLevelFilter());
 }
 
@@ -100,7 +100,7 @@ WebInspector.TimelineFlameChartDataProviderBase.prototype = {
     },
 
     /**
-     * @param {!WebInspector.TraceEventFilter} filter
+     * @param {!WebInspector.TimelineModel.Filter} filter
      */
     addFilter: function(filter)
     {
@@ -817,15 +817,6 @@ WebInspector.TimelineFlameChartNetworkDataProvider = function(model)
 WebInspector.TimelineFlameChartNetworkDataProvider.prototype = {
     /**
      * @override
-     * @return {number}
-     */
-    barHeight: function()
-    {
-        return 5;
-    },
-
-    /**
-     * @override
      * @return {!WebInspector.FlameChart.TimelineData}
      */
     timelineData: function()
@@ -910,6 +901,17 @@ WebInspector.TimelineFlameChartNetworkDataProvider.prototype = {
     /**
      * @override
      * @param {number} index
+     * @return {?string}
+     */
+    entryTitle: function(index)
+    {
+        var request = /** @type {!WebInspector.TimelineModel.NetworkRequest} */ (this._requests[index]);
+        return request.url || null;
+    },
+
+    /**
+     * @override
+     * @param {number} index
      * @param {!CanvasRenderingContext2D} context
      * @param {?string} text
      * @param {number} barX
@@ -966,18 +968,31 @@ WebInspector.TimelineFlameChartNetworkDataProvider.prototype = {
         this._maximumBoundary = this._model.maximumRecordTime();
         this._timeSpan = this._model.isEmpty() ? 1000 : this._maximumBoundary - this._minimumBoundary;
         this._model.networkRequests().forEach(this._appendEntry.bind(this));
-        this._currentLevel = this._requests.length;
+        this._updateTimelineData();
     },
 
     _updateTimelineData: function()
     {
         if (!this._timelineData)
             return;
-        var index = 0;
+        var index = -1;
+        var lastTime = Infinity;
         for (var i = 0; i < this._requests.length; ++i) {
             var r = this._requests[i];
             var visible = r.startTime < this._endTime && r.endTime > this._startTime;
-            this._timelineData.entryLevels[i] = visible ? index++ : 0;
+            if (!visible) {
+                this._timelineData.entryLevels[i] = -1;
+                continue;
+            }
+            if (lastTime > r.startTime)
+                ++index;
+            lastTime = r.endTime;
+            this._timelineData.entryLevels[i] = index;
+        }
+        ++index;
+        for (var i = 0; i < this._requests.length; ++i) {
+            if (this._timelineData.entryLevels[i] === -1)
+                this._timelineData.entryLevels[i] = index;
         }
         this._timelineData = new WebInspector.FlameChart.TimelineData(
              this._timelineData.entryLevels,
@@ -1151,6 +1166,15 @@ WebInspector.TimelineFlameChartView.prototype = {
     updateRangeSelection: function(startTime, endTime)
     {
         this._delegate.select(WebInspector.TimelineSelection.fromRange(startTime, endTime));
+    },
+
+    /**
+     * @override
+     */
+    endRangeSelection: function()
+    {
+        if (Runtime.experiments.isEnabled("multipleTimelineViews"))
+            this._delegate.select(null);
     },
 
     /**

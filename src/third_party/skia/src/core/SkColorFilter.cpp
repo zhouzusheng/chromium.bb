@@ -13,7 +13,9 @@
 #include "SkUnPreMultiply.h"
 #include "SkWriteBuffer.h"
 
-class GrFragmentProcessor;
+#if SK_SUPPORT_GPU
+#include "GrFragmentProcessor.h"
+#endif
 
 bool SkColorFilter::asColorMode(SkColor* color, SkXfermode::Mode* mode) const {
     return false;
@@ -67,11 +69,15 @@ public:
 #endif
 
 #if SK_SUPPORT_GPU
-    bool asFragmentProcessors(GrContext* context, GrProcessorDataManager* procDataManager,
-                              SkTDArray<GrFragmentProcessor*>* array) const override {
-        bool hasFrags = fInner->asFragmentProcessors(context, procDataManager, array);
-        hasFrags |= fOuter->asFragmentProcessors(context, procDataManager, array);
-        return hasFrags;
+    const GrFragmentProcessor* asFragmentProcessor(GrContext* context,
+                                                   GrProcessorDataManager* pdm) const override {
+        SkAutoTUnref<const GrFragmentProcessor> innerFP(fInner->asFragmentProcessor(context, pdm));
+        SkAutoTUnref<const GrFragmentProcessor> outerFP(fOuter->asFragmentProcessor(context, pdm));
+        if (!innerFP || !outerFP) {
+            return nullptr;
+        }
+        const GrFragmentProcessor* series[] = { innerFP, outerFP };
+        return GrFragmentProcessor::RunInSeries(series, 2);
     }
 #endif
 
@@ -130,9 +136,9 @@ SkColorFilter* SkColorFilter::CreateComposeFilter(SkColorFilter* outer, SkColorF
 
     int count = inner->privateComposedFilterCount() + outer->privateComposedFilterCount();
     if (count > SK_MAX_COMPOSE_COLORFILTER_COUNT) {
-        return NULL;
+        return nullptr;
     }
-    return SkNEW_ARGS(SkComposeColorFilter, (outer, inner, count));
+    return new SkComposeColorFilter(outer, inner, count);
 }
 
 SK_DEFINE_FLATTENABLE_REGISTRAR_GROUP_START(SkColorFilter)

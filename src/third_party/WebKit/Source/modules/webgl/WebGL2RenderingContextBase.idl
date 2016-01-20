@@ -338,10 +338,14 @@ typedef long long      GLint64;
     void uniform2ui(WebGLUniformLocation? location, GLuint v0, GLuint v1);
     void uniform3ui(WebGLUniformLocation? location, GLuint v0, GLuint v1, GLuint v2);
     void uniform4ui(WebGLUniformLocation? location, GLuint v0, GLuint v1, GLuint v2, GLuint v3);
-    void uniform1uiv(WebGLUniformLocation? location, sequence<GLuint> value);
-    void uniform2uiv(WebGLUniformLocation? location, sequence<GLuint> value);
-    void uniform3uiv(WebGLUniformLocation? location, sequence<GLuint> value);
-    void uniform4uiv(WebGLUniformLocation? location, sequence<GLuint> value);
+    void uniform1uiv(WebGLUniformLocation? location, [FlexibleArrayBufferView] Uint32Array v);
+    void uniform1uiv(WebGLUniformLocation? location, sequence<GLuint> v);
+    void uniform2uiv(WebGLUniformLocation? location, [FlexibleArrayBufferView] Uint32Array v);
+    void uniform2uiv(WebGLUniformLocation? location, sequence<GLuint> v);
+    void uniform3uiv(WebGLUniformLocation? location, [FlexibleArrayBufferView] Uint32Array v);
+    void uniform3uiv(WebGLUniformLocation? location, sequence<GLuint> v);
+    void uniform4uiv(WebGLUniformLocation? location, [FlexibleArrayBufferView] Uint32Array v);
+    void uniform4uiv(WebGLUniformLocation? location, sequence<GLuint> v);
     void uniformMatrix2x3fv(WebGLUniformLocation? location, GLboolean transpose, Float32Array value);
     void uniformMatrix2x3fv(WebGLUniformLocation? location, GLboolean transpose, sequence<GLfloat> value);
     void uniformMatrix3x2fv(WebGLUniformLocation? location, GLboolean transpose, Float32Array value);
@@ -356,8 +360,10 @@ typedef long long      GLint64;
     void uniformMatrix4x3fv(WebGLUniformLocation? location, GLboolean transpose, sequence<GLfloat> value);
 
     void vertexAttribI4i(GLuint index, GLint x, GLint y, GLint z, GLint w);
+    void vertexAttribI4iv(GLuint index, Int32Array v);
     void vertexAttribI4iv(GLuint index, sequence<GLint> v);
     void vertexAttribI4ui(GLuint index, GLuint x, GLuint y, GLuint z, GLuint w);
+    void vertexAttribI4uiv(GLuint index, Uint32Array v);
     void vertexAttribI4uiv(GLuint index, sequence<GLuint> v);
     void vertexAttribIPointer(GLuint index, GLint size, GLenum type, GLsizei stride, GLintptr offset);
 
@@ -432,5 +438,8 @@ typedef long long      GLint64;
     void deleteVertexArray(WebGLVertexArrayObject? vertexArray);
     GLboolean isVertexArray(WebGLVertexArrayObject? vertexArray);
     void bindVertexArray(WebGLVertexArrayObject? vertexArray);
+
+    /* Reading */
+    void readPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, GLintptr offset);
 };
 WebGL2RenderingContextBase implements WebGLRenderingContextBase;

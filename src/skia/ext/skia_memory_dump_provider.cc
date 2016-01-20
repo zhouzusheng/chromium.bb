@@ -7,15 +7,16 @@
 #include "base/trace_event/memory_allocator_dump.h"
 #include "base/trace_event/memory_dump_manager.h"
 #include "base/trace_event/process_memory_dump.h"
+#include "skia/ext/SkTraceMemoryDump_chrome.h"
 #include "third_party/skia/include/core/SkGraphics.h"
-#include "third_party/skia/src/core/SkResourceCache.h"
 
 namespace skia {
 
 // static
 SkiaMemoryDumpProvider* SkiaMemoryDumpProvider::GetInstance() {
-  return Singleton<SkiaMemoryDumpProvider,
-                   LeakySingletonTraits<SkiaMemoryDumpProvider>>::get();
+  return base::Singleton<
+      SkiaMemoryDumpProvider,
+      base::LeakySingletonTraits<SkiaMemoryDumpProvider>>::get();
 }
 
 SkiaMemoryDumpProvider::SkiaMemoryDumpProvider() {}
@@ -25,17 +26,9 @@ SkiaMemoryDumpProvider::~SkiaMemoryDumpProvider() {}
 bool SkiaMemoryDumpProvider::OnMemoryDump(
     const base::trace_event::MemoryDumpArgs& args,
     base::trace_event::ProcessMemoryDump* process_memory_dump) {
-  auto font_mad =
-      process_memory_dump->CreateAllocatorDump("skia/sk_font_cache");
-  font_mad->AddScalar("size", "bytes", SkGraphics::GetFontCacheUsed());
-  font_mad->AddScalar("count", "objects", SkGraphics::GetFontCacheCountUsed());
-
-  auto resource_mad =
-      process_memory_dump->CreateAllocatorDump("skia/sk_resource_cache");
-  resource_mad->AddScalar("size", "bytes",
-                          SkResourceCache::GetTotalBytesUsed());
-  // TODO(ssid): crbug.com/503168. Add sub-allocation edges from discardable or
-  // malloc memory dumps to avoid double counting.
+  SkTraceMemoryDump_Chrome skia_dumper(args.level_of_detail,
+                                       process_memory_dump);
+  SkGraphics::DumpMemoryStatistics(&skia_dumper);
 
   return true;
 }

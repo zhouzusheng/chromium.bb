@@ -15,6 +15,7 @@
 #include "GrRenderTarget.h"
 #include "GrTextureProvider.h"
 #include "SkMatrix.h"
+#include "../private/SkMutex.h"
 #include "SkPathEffect.h"
 #include "SkTypes.h"
 
@@ -26,7 +27,6 @@ class GrDrawContext;
 class GrDrawTarget;
 class GrFragmentProcessor;
 class GrGpu;
-class GrGpuTraceMarker;
 class GrIndexBuffer;
 class GrLayerCache;
 class GrOvalRenderer;
@@ -43,6 +43,7 @@ class GrTextureParams;
 class GrVertexBuffer;
 class GrStrokeInfo;
 class GrSoftwarePathRenderer;
+class SkTraceMemoryDump;
 
 class SK_API GrContext : public SkRefCnt {
 public:
@@ -332,9 +333,6 @@ public:
     // Called by tests that draw directly to the context via GrDrawTarget
     void getTestTarget(GrTestTarget*);
 
-    void addGpuTraceMarker(const GrGpuTraceMarker* marker);
-    void removeGpuTraceMarker(const GrGpuTraceMarker* marker);
-
     GrPathRenderer* getPathRenderer(
                     const GrDrawTarget* target,
                     const GrPipelineBuilder*,
@@ -361,6 +359,9 @@ public:
         to an array of 3 entries */
     void setTextContextAtlasSizes_ForTesting(const GrBatchAtlasConfig* configs);
 
+    /** Enumerates all cached GPU resources and dumps their memory to traceMemoryDump. */
+    void dumpMemoryStatistics(SkTraceMemoryDump* traceMemoryDump) const;
+
 private:
     GrGpu*                          fGpu;
     const GrCaps*                   fCaps;
@@ -384,6 +385,18 @@ private:
     bool                            fDidTestPMConversions;
     int                             fPMToUPMConversion;
     int                             fUPMToPMConversion;
+    // The sw backend may call GrContext::readSurfacePixels on multiple threads
+    // We may transfer the responsibilty for using a mutex to the sw backend
+    // when there are fewer code paths that lead to a readSurfacePixels call
+    // from the sw backend. readSurfacePixels is reentrant in one case - when performing
+    // the PM conversions test. To handle this we do the PM conversions test outside
+    // of fReadPixelsMutex and use a separate mutex to guard it. When it re-enters
+    // readSurfacePixels it will grab fReadPixelsMutex and release it before the outer
+    // readSurfacePixels proceeds to grab it.
+    // TODO: Stop pretending to make GrContext thread-safe for sw rasterization and provide
+    // a mechanism to make a SkPicture safe for multithreaded sw rasterization.
+    SkMutex                         fReadPixelsMutex;
+    SkMutex                         fTestPMConversionsMutex;
 
     struct CleanUpData {
         PFCleanUpFunc fFunc;
@@ -450,9 +463,13 @@ private:
      * return NULL.
      */
     const GrFragmentProcessor* createPMToUPMEffect(GrProcessorDataManager*, GrTexture*,
-                                                   bool swapRAndB, const SkMatrix&);
+                                                   bool swapRAndB, const SkMatrix&) const;
     const GrFragmentProcessor* createUPMToPMEffect(GrProcessorDataManager*, GrTexture*,
-                                                   bool swapRAndB, const SkMatrix&);
+                                                   bool swapRAndB, const SkMatrix&) const;
+    /** Called before either of the above two functions to determine the appropriate fragment
+        processors for conversions. This must be called by readSurfacePixels befor a mutex is taken,
+        since testingvPM conversions itself will call readSurfacePixels */
+    void testPMConversionsIfNecessary(uint32_t flags);
     /** Returns true if we've already determined that createPMtoUPMEffect and createUPMToPMEffect
         will fail. In such cases fall back to SW conversion. */
     bool didFailPMUPMConversionTest() const;

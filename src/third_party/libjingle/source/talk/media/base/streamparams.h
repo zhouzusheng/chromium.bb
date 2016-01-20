@@ -49,6 +49,7 @@
 #include <vector>
 
 #include "webrtc/base/basictypes.h"
+#include "webrtc/base/constructormagic.h"
 
 namespace cricket {
 
@@ -246,7 +247,7 @@ struct MediaStreams {
   std::vector<StreamParams> video_;
   std::vector<StreamParams> data_;
 
-  DISALLOW_COPY_AND_ASSIGN(MediaStreams);
+  RTC_DISALLOW_COPY_AND_ASSIGN(MediaStreams);
 };
 
 // A request for a specific format of a specific stream.

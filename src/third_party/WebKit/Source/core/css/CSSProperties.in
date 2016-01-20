@@ -112,6 +112,7 @@ animation-iteration-count custom_all
 animation-name custom_all
 animation-play-state custom_all
 animation-timing-function custom_all
+backdrop-filter interpolable, custom_value, runtime_flag=CSSBackdropFilter
 backface-visibility
 background-attachment custom_all
 background-blend-mode custom_all
@@ -280,7 +281,7 @@ stroke-width interpolable, inherited, svg, converter=convertUnzoomedLength
 table-layout
 tab-size inherited, converter=convertLengthOrTabSpaces
 text-align inherited, custom_value
-text-align-last runtime_flag=CSS3Text, inherited, type_name=TextAlignLast
+text-align-last inherited, type_name=TextAlignLast
 text-anchor inherited, svg
 // FIXME: We shouldn't switch between shorthand/not shorthand based on a runtime flag
 text-decoration use_handlers_for=CSSPropertyTextDecorationLine, longhands=text-decoration-line;text-decoration-style;text-decoration-color
@@ -343,7 +344,6 @@ y interpolable, svg, converter=convertLength
 -webkit-filter interpolable, custom_value
 -webkit-highlight inherited, converter=convertString<CSSValueNone>
 -webkit-hyphenate-character inherited, name_for_methods=HyphenationString, converter=convertString<CSSValueAuto>
--webkit-line-box-contain inherited, converter=convertLineBoxContain
 -webkit-line-break inherited, type_name=LineBreak
 -webkit-line-clamp type_name=LineClampValue
 -webkit-margin-after-collapse type_name=EMarginCollapse

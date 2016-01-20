@@ -87,7 +87,7 @@ SkSurface_Raster::SkSurface_Raster(const SkImageInfo& info, void* pixels, size_t
                                    const SkSurfaceProps* props)
     : INHERITED(info, props)
 {
-    fBitmap.installPixels(info, pixels, rb, NULL, releaseProc, context);
+    fBitmap.installPixels(info, pixels, rb, nullptr, releaseProc, context);
     fWeOwnThePixels = false;    // We are "Direct"
 }
 
@@ -105,9 +105,7 @@ SkSurface_Raster::SkSurface_Raster(SkPixelRef* pr, const SkSurfaceProps* props)
     }
 }
 
-SkCanvas* SkSurface_Raster::onNewCanvas() {
-    return SkNEW_ARGS(SkCanvas, (fBitmap, this->props()));
-}
+SkCanvas* SkSurface_Raster::onNewCanvas() { return new SkCanvas(fBitmap, this->props()); }
 
 SkSurface* SkSurface_Raster::onNewSurface(const SkImageInfo& info) {
     return SkSurface::NewRaster(info, &this->props());
@@ -145,7 +143,7 @@ void SkSurface_Raster::onCopyOnWrite(ContentChangeMode mode) {
     if (SkBitmapImageGetPixelRef(this->getCachedImage(kNo_Budgeted)) == fBitmap.pixelRef()) {
         SkASSERT(fWeOwnThePixels);
         if (kDiscard_ContentChangeMode == mode) {
-            fBitmap.setPixelRef(NULL);
+            fBitmap.setPixelRef(nullptr);
             fBitmap.allocPixels();
         } else {
             SkBitmap prev(fBitmap);
@@ -164,32 +162,32 @@ void SkSurface_Raster::onCopyOnWrite(ContentChangeMode mode) {
 SkSurface* SkSurface::NewRasterDirectReleaseProc(const SkImageInfo& info, void* pixels, size_t rb,
                                                  void (*releaseProc)(void* pixels, void* context),
                                                  void* context, const SkSurfaceProps* props) {
-    if (NULL == releaseProc) {
-        context = NULL;
+    if (nullptr == releaseProc) {
+        context = nullptr;
     }
     if (!SkSurface_Raster::Valid(info, rb)) {
-        return NULL;
+        return nullptr;
     }
-    if (NULL == pixels) {
-        return NULL;
+    if (nullptr == pixels) {
+        return nullptr;
     }
 
-    return SkNEW_ARGS(SkSurface_Raster, (info, pixels, rb, releaseProc, context, props));
+    return new SkSurface_Raster(info, pixels, rb, releaseProc, context, props);
 }
 
 SkSurface* SkSurface::NewRasterDirect(const SkImageInfo& info, void* pixels, size_t rowBytes,
                                       const SkSurfaceProps* props) {
-    return NewRasterDirectReleaseProc(info, pixels, rowBytes, NULL, NULL, props);
+    return NewRasterDirectReleaseProc(info, pixels, rowBytes, nullptr, nullptr, props);
 }
 
 SkSurface* SkSurface::NewRaster(const SkImageInfo& info, const SkSurfaceProps* props) {
     if (!SkSurface_Raster::Valid(info)) {
-        return NULL;
+        return nullptr;
     }
 
-    SkAutoTUnref<SkPixelRef> pr(SkMallocPixelRef::NewAllocate(info, 0, NULL));
-    if (NULL == pr.get()) {
-        return NULL;
+    SkAutoTUnref<SkPixelRef> pr(SkMallocPixelRef::NewAllocate(info, 0, nullptr));
+    if (nullptr == pr.get()) {
+        return nullptr;
     }
-    return SkNEW_ARGS(SkSurface_Raster, (pr, props));
+    return new SkSurface_Raster(pr, props);
 }

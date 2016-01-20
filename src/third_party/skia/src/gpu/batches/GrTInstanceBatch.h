@@ -22,6 +22,12 @@
  *
  *     const char* Name()
  *
+ *     void InvariantOutputCoverage(GrInitInvariantOutput* out)
+ *
+ *     void SetBounds(const Geometry& seedGeometry, SkRect* outBounds)
+ *
+ *     void UpdateBoundsAfterAppend(const Geometry& lastGeometry, SkRect* currentBounds)
+ *
  *     bool CanCombine(const Geometry& mine, const Geometry& theirs,
  *                     const GrPipelineOptimizations&)
  *
@@ -36,11 +42,11 @@
 template <typename Impl>
 class GrTInstanceBatch : public GrVertexBatch {
 public:
+    DEFINE_BATCH_CLASS_ID
+
     typedef typename Impl::Geometry Geometry;
 
-    static GrTInstanceBatch* Create() {
-        return SkNEW(GrTInstanceBatch);
-    }
+    static GrTInstanceBatch* Create() { return new GrTInstanceBatch; }
 
     const char* name() const override { return Impl::Name(); }
 
@@ -50,7 +56,7 @@ public:
     }
 
     void getInvariantOutputCoverage(GrInitInvariantOutput* out) const override {
-        out->setUnknownSingleComponent();
+        Impl::InitInvariantOutputCoverage(out);
     }
 
     void initBatchTracker(const GrPipelineOptimizations& opt) override {
@@ -60,22 +66,19 @@ public:
 
     SkSTArray<1, Geometry, true>* geoData() { return &fGeoData; }
 
-    // to avoid even the initial copy of the struct, we have a getter for the first item which
-    // is used to seed the batch with its initial geometry.  After seeding, the client should call
-    // init() so the Batch can initialize itself
-    Geometry* geometry() { return &fGeoData[0]; }
+    // After seeding, the client should call init() so the Batch can initialize itself
     void init() {
         const Geometry& geo = fGeoData[0];
-        this->setBounds(geo.fDevRect);
+        Impl::SetBounds(geo, &fBounds);
+    }
+
+    void updateBoundsAfterAppend() {
+        const Geometry& geo = fGeoData.back();
+        Impl::UpdateBoundsAfterAppend(geo, &fBounds);
     }
 
 private:
-    GrTInstanceBatch() {
-        this->initClassID<GrTInstanceBatch<Impl>>();
-
-        // Push back an initial geometry
-        fGeoData.push_back();
-    }
+    GrTInstanceBatch() : INHERITED(ClassID()) {}
 
     void onPrepareDraws(Target* target) override {
         SkAutoTUnref<const GrGeometryProcessor> gp(Impl::CreateGP(this->seedGeometry(), fOpts));
@@ -134,6 +137,8 @@ private:
 
     GrPipelineOptimizations fOpts;
     SkSTArray<1, Geometry, true> fGeoData;
+
+    typedef GrVertexBatch INHERITED;
 };
 
 #endif

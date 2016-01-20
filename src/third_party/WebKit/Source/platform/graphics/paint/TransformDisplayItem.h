@@ -26,8 +26,14 @@ private:
 #ifndef NDEBUG
     void dumpPropertiesAsDebugString(WTF::StringBuilder&) const final;
 #endif
+#if ENABLE(ASSERT)
+    bool equals(const DisplayItem& other) const final
+    {
+        return DisplayItem::equals(other)
+            && m_transform == static_cast<const BeginTransformDisplayItem&>(other).m_transform;
+    }
+#endif
 
-private:
     const AffineTransform m_transform;
 };
 

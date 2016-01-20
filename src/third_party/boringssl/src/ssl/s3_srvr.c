@@ -146,6 +146,8 @@
  * OTHER ENTITY BASED ON INFRINGEMENT OF INTELLECTUAL PROPERTY RIGHTS OR
  * OTHERWISE. */
 
+#include <openssl/ssl.h>
+
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -306,10 +308,19 @@ int ssl3_accept(SSL *s) {
         s->init_num = 0;
         break;
 
+      case SSL3_ST_SW_CERT_STATUS_A:
+      case SSL3_ST_SW_CERT_STATUS_B:
+        ret = ssl3_send_certificate_status(s);
+        if (ret <= 0) {
+          goto end;
+        }
+        s->state = SSL3_ST_SW_KEY_EXCH_A;
+        s->init_num = 0;
+        break;
+
       case SSL3_ST_SW_KEY_EXCH_A:
       case SSL3_ST_SW_KEY_EXCH_B:
       case SSL3_ST_SW_KEY_EXCH_C:
-      case SSL3_ST_SW_KEY_EXCH_D:
         alg_a = s->s3->tmp.new_cipher->algorithm_auth;
 
         /* Send a ServerKeyExchange message if:
@@ -471,7 +482,7 @@ int ssl3_accept(SSL *s) {
         /* If this is a full handshake with ChannelID then record the hashshake
          * hashes in |s->session| in case we need them to verify a ChannelID
          * signature on a resumption of this session in the future. */
-        if (!s->hit) {
+        if (!s->hit && s->s3->tlsext_channel_id_valid) {
           ret = tls1_record_handshake_hashes_for_channel_id(s);
           if (ret <= 0) {
             goto end;
@@ -548,6 +559,8 @@ int ssl3_accept(SSL *s) {
         if (s->ctx->retain_only_sha256_of_client_certs) {
           X509_free(s->session->peer);
           s->session->peer = NULL;
+          sk_X509_pop_free(s->session->cert_chain, X509_free);
+          s->session->cert_chain = NULL;
         }
 
         s->s3->initial_handshake_complete = 1;
@@ -589,12 +602,12 @@ int ssl3_get_initial_bytes(SSL *s) {
   /* Read the first 5 bytes, the size of the TLS record header. This is
    * sufficient to detect a V2ClientHello and ensures that we never read beyond
    * the first record. */
-  int ret = ssl3_read_n(s, SSL3_RT_HEADER_LENGTH, 0 /* new packet */);
+  int ret = ssl_read_buffer_extend_to(s, SSL3_RT_HEADER_LENGTH);
   if (ret <= 0) {
     return ret;
   }
-  assert(s->packet_length == SSL3_RT_HEADER_LENGTH);
-  const uint8_t *p = s->packet;
+  assert(ssl_read_buffer_len(s) == SSL3_RT_HEADER_LENGTH);
+  const uint8_t *p = ssl_read_buffer(s);
 
   /* Some dedicated error codes for protocol mixups should the application wish
    * to interpret them differently. (These do not overlap with ClientHello or
@@ -619,15 +632,7 @@ int ssl3_get_initial_bytes(SSL *s) {
     return 1;
   }
 
-  /* Fall through to the standard logic. Unread what's been read to re-process
-   * it. */
-  assert(s->rstate == SSL_ST_READ_HEADER);
-  assert(s->s3->rbuf.offset >= SSL3_RT_HEADER_LENGTH);
-  s->s3->rbuf.offset -= SSL3_RT_HEADER_LENGTH;
-  s->s3->rbuf.left += SSL3_RT_HEADER_LENGTH;
-  s->packet = NULL;
-  s->packet_length = 0;
-
+  /* Fall through to the standard logic. */
   s->state = SSL3_ST_SR_CLNT_HELLO_A;
   return 1;
 }
@@ -643,8 +648,8 @@ int ssl3_get_v2_client_hello(SSL *s) {
   uint8_t random[SSL3_RANDOM_SIZE];
 
   /* Determine the length of the V2ClientHello. */
-  assert(s->packet_length >= SSL3_RT_HEADER_LENGTH);
-  p = (const uint8_t *)s->packet;
+  assert(ssl_read_buffer_len(s) >= SSL3_RT_HEADER_LENGTH);
+  p = ssl_read_buffer(s);
   msg_length = ((p[0] & 0x7f) << 8) | p[1];
   if (msg_length > (1024 * 4)) {
     OPENSSL_PUT_ERROR(SSL, SSL_R_RECORD_TOO_LARGE);
@@ -658,16 +663,13 @@ int ssl3_get_v2_client_hello(SSL *s) {
     return -1;
   }
 
-  /* Read the remainder of the V2ClientHello. We have previously read
-   * |SSL3_RT_HEADER_LENGTH| bytes in ssl3_get_initial_bytes. */
-  ret = ssl3_read_n(s, msg_length - (SSL3_RT_HEADER_LENGTH - 2),
-                    1 /* extend */);
+  /* Read the remainder of the V2ClientHello. */
+  ret = ssl_read_buffer_extend_to(s, 2 + msg_length);
   if (ret <= 0) {
     return ret;
   }
-  assert(s->packet_length == msg_length + 2);
-  CBS_init(&v2_client_hello, (const uint8_t *)s->packet + 2,
-           msg_length);
+  assert(ssl_read_buffer_len(s) == msg_length + 2);
+  CBS_init(&v2_client_hello, ssl_read_buffer(s) + 2, msg_length);
 
   /* The V2ClientHello without the length is incorporated into the handshake
    * hash. */
@@ -756,10 +758,9 @@ int ssl3_get_v2_client_hello(SSL *s) {
   /* The handshake message header is 4 bytes. */
   s->s3->tmp.message_size = len - 4;
 
-  /* The V2ClientHello was processed, so it may be released now. */
-  if (s->s3->rbuf.left == 0) {
-    ssl3_release_read_buffer(s);
-  }
+  /* Consume and discard the V2ClientHello. */
+  ssl_read_buffer_consume(s, 2 + msg_length);
+  ssl_read_buffer_discard(s);
 
   return 1;
 }
@@ -1191,6 +1192,32 @@ int ssl3_send_server_hello(SSL *s) {
   return ssl_do_write(s);
 }
 
+int ssl3_send_certificate_status(SSL *ssl) {
+  if (ssl->state == SSL3_ST_SW_CERT_STATUS_A) {
+    CBB out, ocsp_response;
+    size_t length;
+
+    CBB_zero(&out);
+    if (!CBB_init_fixed(&out, ssl_handshake_start(ssl),
+                        ssl->init_buf->max - SSL_HM_HEADER_LENGTH(ssl)) ||
+        !CBB_add_u8(&out, TLSEXT_STATUSTYPE_ocsp) ||
+        !CBB_add_u24_length_prefixed(&out, &ocsp_response) ||
+        !CBB_add_bytes(&ocsp_response, ssl->ctx->ocsp_response,
+                       ssl->ctx->ocsp_response_length) ||
+        !CBB_finish(&out, NULL, &length) ||
+        !ssl_set_handshake_header(ssl, SSL3_MT_CERTIFICATE_STATUS, length)) {
+      OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
+      CBB_cleanup(&out);
+      return -1;
+    }
+
+    ssl->state = SSL3_ST_SW_CERT_STATUS_B;
+  }
+
+  /* SSL3_ST_SW_CERT_STATUS_B */
+  return ssl_do_write(ssl);
+}
+
 int ssl3_send_server_done(SSL *s) {
   if (s->state == SSL3_ST_SW_SRVR_DONE_A) {
     if (!ssl_set_handshake_header(s, SSL3_MT_SERVER_DONE, 0)) {
@@ -1225,6 +1252,10 @@ int ssl3_send_server_key_exchange(SSL *s) {
   BUF_MEM *buf;
   EVP_MD_CTX md_ctx;
 
+  if (s->state == SSL3_ST_SW_KEY_EXCH_C) {
+    return ssl_do_write(s);
+  }
+
   if (ssl_cipher_has_server_public_key(s->s3->tmp.new_cipher)) {
     if (!ssl_has_private_key(s)) {
       al = SSL_AD_INTERNAL_ERROR;
@@ -1236,6 +1267,7 @@ int ssl3_send_server_key_exchange(SSL *s) {
   }
 
   EVP_MD_CTX_init(&md_ctx);
+  enum ssl_private_key_result_t sign_result;
   if (s->state == SSL3_ST_SW_KEY_EXCH_A) {
     alg_k = s->s3->tmp.new_cipher->algorithm_mkey;
     alg_a = s->s3->tmp.new_cipher->algorithm_auth;
@@ -1416,7 +1448,6 @@ int ssl3_send_server_key_exchange(SSL *s) {
       encodedPoint = NULL;
     }
 
-    /* not anonymous */
     if (ssl_cipher_has_server_public_key(s->s3->tmp.new_cipher)) {
       /* n is the length of the params, they start at d and p points to
        * the space at the end. */
@@ -1451,51 +1482,47 @@ int ssl3_send_server_key_exchange(SSL *s) {
         goto err;
       }
 
-      const enum ssl_private_key_result_t sign_result = ssl_private_key_sign(
-          s, &p[2], &sig_len, max_sig_len, EVP_MD_CTX_md(&md_ctx),
-          digest, digest_length);
-      if (sign_result == ssl_private_key_retry) {
-        s->rwstate = SSL_PRIVATE_KEY_OPERATION;
-        /* Stash away |p|. */
-        s->init_num = p - ssl_handshake_start(s) + SSL_HM_HEADER_LENGTH(s);
-        s->state = SSL3_ST_SW_KEY_EXCH_B;
-        goto err;
-      } else if (sign_result != ssl_private_key_success) {
-        goto err;
-      }
+      sign_result = ssl_private_key_sign(s, &p[2], &sig_len, max_sig_len,
+                                         EVP_MD_CTX_md(&md_ctx), digest,
+                                         digest_length);
+    } else {
+      /* This key exchange doesn't involve a signature. */
+      sign_result = ssl_private_key_success;
+      sig_len = 0;
     }
-
-    s->state = SSL3_ST_SW_KEY_EXCH_C;
-  } else if (s->state == SSL3_ST_SW_KEY_EXCH_B) {
-    /* Complete async sign. */
+  } else {
+    assert(s->state == SSL3_ST_SW_KEY_EXCH_B);
     /* Restore |p|. */
     p = ssl_handshake_start(s) + s->init_num - SSL_HM_HEADER_LENGTH(s);
-    const enum ssl_private_key_result_t sign_result =
-        ssl_private_key_sign_complete(s, &p[2], &sig_len, max_sig_len);
-    if (sign_result == ssl_private_key_retry) {
+    sign_result = ssl_private_key_sign_complete(s, &p[2], &sig_len,
+                                                max_sig_len);
+  }
+
+  switch (sign_result) {
+    case ssl_private_key_success:
+      s->rwstate = SSL_NOTHING;
+      break;
+    case ssl_private_key_failure:
+      s->rwstate = SSL_NOTHING;
+      goto err;
+    case ssl_private_key_retry:
       s->rwstate = SSL_PRIVATE_KEY_OPERATION;
+      /* Stash away |p|. */
+      s->init_num = p - ssl_handshake_start(s) + SSL_HM_HEADER_LENGTH(s);
+      s->state = SSL3_ST_SW_KEY_EXCH_B;
       goto err;
-    } else if (sign_result != ssl_private_key_success) {
-      goto err;
-    }
-
-    s->rwstate = SSL_NOTHING;
-    s->state = SSL3_ST_SW_KEY_EXCH_C;
   }
 
-  if (s->state == SSL3_ST_SW_KEY_EXCH_C) {
-    if (ssl_cipher_has_server_public_key(s->s3->tmp.new_cipher)) {
-      s2n(sig_len, p);
-      p += sig_len;
-    }
-    if (!ssl_set_handshake_header(s, SSL3_MT_SERVER_KEY_EXCHANGE,
-                                  p - ssl_handshake_start(s))) {
-      goto err;
-    }
-    s->state = SSL3_ST_SW_KEY_EXCH_D;
+  if (ssl_cipher_has_server_public_key(s->s3->tmp.new_cipher)) {
+    s2n(sig_len, p);
+    p += sig_len;
   }
+  if (!ssl_set_handshake_header(s, SSL3_MT_SERVER_KEY_EXCHANGE,
+                                p - ssl_handshake_start(s))) {
+    goto err;
+  }
+  s->state = SSL3_ST_SW_KEY_EXCH_C;
 
-  /* state SSL3_ST_SW_KEY_EXCH_D */
   EVP_MD_CTX_cleanup(&md_ctx);
   return ssl_do_write(s);
 
@@ -2202,17 +2229,8 @@ int ssl3_get_client_certificate(SSL *s) {
   s->session->peer = sk_X509_shift(sk);
   s->session->verify_result = s->verify_result;
 
-  /* With the current implementation, sess_cert will always be NULL when we
-   * arrive here. */
-  if (s->session->sess_cert == NULL) {
-    s->session->sess_cert = ssl_sess_cert_new();
-    if (s->session->sess_cert == NULL) {
-      OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
-      goto err;
-    }
-  }
-  sk_X509_pop_free(s->session->sess_cert->cert_chain, X509_free);
-  s->session->sess_cert->cert_chain = sk;
+  sk_X509_pop_free(s->session->cert_chain, X509_free);
+  s->session->cert_chain = sk;
   /* Inconsistency alert: cert_chain does *not* include the peer's own
    * certificate, while we do include it in s3_clnt.c */
 

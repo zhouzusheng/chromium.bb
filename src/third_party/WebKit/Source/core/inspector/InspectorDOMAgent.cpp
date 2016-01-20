@@ -70,7 +70,6 @@
 #include "core/inspector/InjectedScriptManager.h"
 #include "core/inspector/InspectorHighlight.h"
 #include "core/inspector/InspectorHistory.h"
-#include "core/inspector/InspectorOverlay.h"
 #include "core/inspector/InspectorPageAgent.h"
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InstrumentingAgents.h"
@@ -154,38 +153,6 @@ bool parseQuad(const RefPtr<JSONArray>& quadArray, FloatQuad* quad)
     quad->setP4(FloatPoint(coordinates[6], coordinates[7]));
 
     return true;
-}
-
-Node* hoveredNodeForPoint(LocalFrame* frame, const IntPoint& pointInRootFrame, bool ignorePointerEventsNone)
-{
-    HitTestRequest::HitTestRequestType hitType = HitTestRequest::Move | HitTestRequest::ReadOnly | HitTestRequest::AllowChildFrameContent;
-    if (ignorePointerEventsNone)
-        hitType |= HitTestRequest::IgnorePointerEventsNone;
-    HitTestRequest request(hitType);
-    HitTestResult result(request, frame->view()->rootFrameToContents(pointInRootFrame));
-    frame->contentLayoutObject()->hitTest(result);
-    Node* node = result.innerPossiblyPseudoNode();
-    while (node && node->nodeType() == Node::TEXT_NODE)
-        node = node->parentNode();
-    return node;
-}
-
-Node* hoveredNodeForEvent(LocalFrame* frame, const PlatformGestureEvent& event, bool ignorePointerEventsNone)
-{
-    return hoveredNodeForPoint(frame, event.position(), ignorePointerEventsNone);
-}
-
-Node* hoveredNodeForEvent(LocalFrame* frame, const PlatformMouseEvent& event, bool ignorePointerEventsNone)
-{
-    return hoveredNodeForPoint(frame, event.position(), ignorePointerEventsNone);
-}
-
-Node* hoveredNodeForEvent(LocalFrame* frame, const PlatformTouchEvent& event, bool ignorePointerEventsNone)
-{
-    const Vector<PlatformTouchPoint>& points = event.touchPoints();
-    if (!points.size())
-        return nullptr;
-    return hoveredNodeForPoint(frame, roundedIntPoint(points[0].pos()), ignorePointerEventsNone);
 }
 
 ScriptValue nodeAsScriptValue(ScriptState* scriptState, Node* node)
@@ -306,15 +273,14 @@ bool InspectorDOMAgent::getPseudoElementType(PseudoId pseudoId, TypeBuilder::DOM
     }
 }
 
-InspectorDOMAgent::InspectorDOMAgent(InspectorPageAgent* pageAgent, InjectedScriptManager* injectedScriptManager, InspectorOverlay* overlay)
+InspectorDOMAgent::InspectorDOMAgent(InspectorPageAgent* pageAgent, InjectedScriptManager* injectedScriptManager, Client* client)
     : InspectorBaseAgent<InspectorDOMAgent, InspectorFrontend::DOM>("DOM")
     , m_pageAgent(pageAgent)
     , m_injectedScriptManager(injectedScriptManager)
-    , m_overlay(overlay)
+    , m_client(client)
     , m_domListener(nullptr)
     , m_documentNodeToIdMap(adoptPtrWillBeNoop(new NodeToIdMap()))
     , m_lastNodeId(1)
-    , m_searchingForNode(NotSearching)
     , m_suppressAttributeModifiedEvent(false)
     , m_backendNodeIdToInspect(0)
 {
@@ -324,7 +290,6 @@ InspectorDOMAgent::~InspectorDOMAgent()
 {
 #if !ENABLE(OILPAN)
     setDocument(nullptr);
-    ASSERT(m_searchingForNode == NotSearching);
 #endif
 }
 
@@ -475,7 +440,8 @@ Element* InspectorDOMAgent::assertElement(ErrorString* errorString, int nodeId)
     return toElement(node);
 }
 
-static ShadowRoot* userAgentShadowRoot(Node* node)
+// static
+ShadowRoot* InspectorDOMAgent::userAgentShadowRoot(Node* node)
 {
     if (!node || !node->isInShadowTree())
         return nullptr;
@@ -1125,45 +1091,6 @@ void InspectorDOMAgent::discardSearchResults(ErrorString*, const String& searchI
     m_searchResults.remove(searchId);
 }
 
-bool InspectorDOMAgent::handleMousePress()
-{
-    if (m_searchingForNode == NotSearching)
-        return false;
-
-    if (m_hoveredNodeForInspectMode) {
-        inspect(m_hoveredNodeForInspectMode.get());
-        m_hoveredNodeForInspectMode.clear();
-        return true;
-    }
-    return false;
-}
-
-bool InspectorDOMAgent::handleGestureEvent(LocalFrame* frame, const PlatformGestureEvent& event)
-{
-    if (m_searchingForNode == NotSearching || event.type() != PlatformEvent::GestureTap)
-        return false;
-    Node* node = hoveredNodeForEvent(frame, event, false);
-    if (node && m_inspectModeHighlightConfig) {
-        m_overlay->highlightNode(node, 0 /* eventTarget */, *m_inspectModeHighlightConfig, false);
-        inspect(node);
-        return true;
-    }
-    return false;
-}
-
-bool InspectorDOMAgent::handleTouchEvent(LocalFrame* frame, const PlatformTouchEvent& event)
-{
-    if (m_searchingForNode == NotSearching)
-        return false;
-    Node* node = hoveredNodeForEvent(frame, event, false);
-    if (node && m_inspectModeHighlightConfig) {
-        m_overlay->highlightNode(node, 0 /* eventTarget */, *m_inspectModeHighlightConfig, false);
-        inspect(node);
-        return true;
-    }
-    return false;
-}
-
 void InspectorDOMAgent::inspect(Node* inspectedNode)
 {
     if (!inspectedNode)
@@ -1184,50 +1111,10 @@ void InspectorDOMAgent::inspect(Node* inspectedNode)
     frontend()->inspectNodeRequested(backendNodeId);
 }
 
-bool InspectorDOMAgent::handleMouseMove(LocalFrame* frame, const PlatformMouseEvent& event)
-{
-    if (m_searchingForNode == NotSearching)
-        return false;
-
-    if (!frame->view() || !frame->contentLayoutObject())
-        return true;
-    Node* node = hoveredNodeForEvent(frame, event, event.shiftKey());
-
-    // Do not highlight within user agent shadow root unless requested.
-    if (m_searchingForNode != SearchingForUAShadow) {
-        ShadowRoot* shadowRoot = userAgentShadowRoot(node);
-        if (shadowRoot)
-            node = shadowRoot->host();
-    }
-
-    // Shadow roots don't have boxes - use host element instead.
-    if (node && node->isShadowRoot())
-        node = node->parentOrShadowHostNode();
-
-    if (!node)
-        return true;
-
-    Node* eventTarget = event.shiftKey() ? hoveredNodeForEvent(frame, event, false) : nullptr;
-    if (eventTarget == node)
-        eventTarget = 0;
-
-    if (node && m_inspectModeHighlightConfig) {
-        m_hoveredNodeForInspectMode = node;
-        m_overlay->highlightNode(node, eventTarget, *m_inspectModeHighlightConfig, event.ctrlKey() || event.metaKey());
-    }
-    return true;
-}
-
 void InspectorDOMAgent::setSearchingForNode(ErrorString* errorString, SearchMode searchMode, JSONObject* highlightInspectorObject)
 {
-    m_searchingForNode = searchMode;
-    m_overlay->setInspectModeEnabled(searchMode != NotSearching);
-    if (searchMode != NotSearching) {
-        m_inspectModeHighlightConfig = highlightConfigFromInspectorObject(errorString, highlightInspectorObject);
-    } else {
-        m_hoveredNodeForInspectMode.clear();
-        hideHighlight(errorString);
-    }
+    if (m_client)
+        m_client->setInspectMode(searchMode, searchMode != NotSearching ? highlightConfigFromInspectorObject(errorString, highlightInspectorObject) : nullptr);
 }
 
 PassOwnPtr<InspectorHighlightConfig> InspectorDOMAgent::highlightConfigFromInspectorObject(ErrorString* errorString, JSONObject* highlightInspectorObject)
@@ -1247,9 +1134,6 @@ PassOwnPtr<InspectorHighlightConfig> InspectorDOMAgent::highlightConfigFromInspe
     bool showExtensionLines = false; // Default: false (do not show extension lines).
     highlightInspectorObject->getBoolean("showExtensionLines", &showExtensionLines);
     highlightConfig->showExtensionLines = showExtensionLines;
-    bool showLayoutEditor = false;
-    highlightInspectorObject->getBoolean("showLayoutEditor", &showLayoutEditor);
-    highlightConfig->showLayoutEditor = showLayoutEditor;
     bool displayAsMaterial = false;
     highlightInspectorObject->getBoolean("displayAsMaterial", &displayAsMaterial);
     highlightConfig->displayAsMaterial = displayAsMaterial;
@@ -1265,11 +1149,25 @@ PassOwnPtr<InspectorHighlightConfig> InspectorDOMAgent::highlightConfigFromInspe
     return highlightConfig.release();
 }
 
-void InspectorDOMAgent::setInspectModeEnabled(ErrorString* errorString, bool enabled, const bool* inspectUAShadowDOM, const RefPtr<JSONObject>* highlightConfig)
+void InspectorDOMAgent::setInspectMode(ErrorString* errorString, const String& mode, const RefPtr<JSONObject>* highlightConfig)
 {
-    if (enabled && !pushDocumentUponHandlelessOperation(errorString))
+    SearchMode searchMode;
+    if (mode == TypeBuilder::getEnumConstantValue(TypeBuilder::DOM::InspectMode::SearchForNode)) {
+        searchMode = SearchingForNormal;
+    } else if (mode == TypeBuilder::getEnumConstantValue(TypeBuilder::DOM::InspectMode::SearchForUAShadowDOM)) {
+        searchMode = SearchingForUAShadow;
+    } else if (mode == TypeBuilder::getEnumConstantValue(TypeBuilder::DOM::InspectMode::None)) {
+        searchMode = NotSearching;
+    } else if (mode == TypeBuilder::getEnumConstantValue(TypeBuilder::DOM::InspectMode::ShowLayoutEditor)) {
+        searchMode = ShowLayoutEditor;
+    } else {
+        *errorString = "Unknown mode \"" + mode + "\" was provided.";
         return;
-    SearchMode searchMode = enabled ? (asBool(inspectUAShadowDOM) ? SearchingForUAShadow : SearchingForNormal) : NotSearching;
+    }
+
+    if (searchMode != NotSearching && !pushDocumentUponHandlelessOperation(errorString))
+        return;
+
     setSearchingForNode(errorString, searchMode, highlightConfig ? highlightConfig->get() : nullptr);
 }
 
@@ -1294,7 +1192,8 @@ void InspectorDOMAgent::innerHighlightQuad(PassOwnPtr<FloatQuad> quad, const Ref
     OwnPtr<InspectorHighlightConfig> highlightConfig = adoptPtr(new InspectorHighlightConfig());
     highlightConfig->content = parseColor(color);
     highlightConfig->contentOutline = parseColor(outlineColor);
-    m_overlay->highlightQuad(quad, *highlightConfig);
+    if (m_client)
+        m_client->highlightQuad(quad, *highlightConfig);
 }
 
 Node* InspectorDOMAgent::nodeForRemoteId(ErrorString* errorString, const String& objectId)
@@ -1345,7 +1244,8 @@ void InspectorDOMAgent::highlightNode(ErrorString* errorString, const RefPtr<JSO
     if (!highlightConfig)
         return;
 
-    m_overlay->highlightNode(node, 0 /* eventTarget */, *highlightConfig, false);
+    if (m_client)
+        m_client->highlightNode(node, *highlightConfig, false);
 }
 
 void InspectorDOMAgent::highlightFrame(
@@ -1361,13 +1261,15 @@ void InspectorDOMAgent::highlightFrame(
         highlightConfig->showInfo = true; // Always show tooltips for frames.
         highlightConfig->content = parseColor(color);
         highlightConfig->contentOutline = parseColor(outlineColor);
-        m_overlay->highlightNode(frame->deprecatedLocalOwner(), 0 /* eventTarget */, *highlightConfig, false);
+        if (m_client)
+            m_client->highlightNode(frame->deprecatedLocalOwner(), *highlightConfig, false);
     }
 }
 
 void InspectorDOMAgent::hideHighlight(ErrorString*)
 {
-    m_overlay->hideHighlight();
+    if (m_client)
+        m_client->hideHighlight();
 }
 
 void InspectorDOMAgent::copyTo(ErrorString* errorString, int nodeId, int targetElementId, const int* const anchorNodeId, int* newNodeId)
@@ -1568,8 +1470,9 @@ static TypeBuilder::DOM::ShadowRootType::Enum shadowRootType(ShadowRoot* shadowR
         return TypeBuilder::DOM::ShadowRootType::User_agent;
     case ShadowRootType::OpenByDefault:
     case ShadowRootType::Open:
+        return TypeBuilder::DOM::ShadowRootType::Open;
     case ShadowRootType::Closed:
-        return TypeBuilder::DOM::ShadowRootType::Author;
+        return TypeBuilder::DOM::ShadowRootType::Closed;
     }
     ASSERT_NOT_REACHED();
     return TypeBuilder::DOM::ShadowRootType::User_agent;
@@ -2168,6 +2071,8 @@ void InspectorDOMAgent::setInspectedNode(ErrorString* errorString, int nodeId)
     if (!node)
         return;
     m_injectedScriptManager->injectedScriptHost()->addInspectedObject(adoptPtrWillBeNoop(new InspectableNode(node)));
+    if (m_client)
+        m_client->setInspectedNode(node);
 }
 
 void InspectorDOMAgent::getRelayoutBoundary(ErrorString* errorString, int nodeId, int* relayoutBoundaryNodeId)
@@ -2226,7 +2131,6 @@ DEFINE_TRACE(InspectorDOMAgent)
     visitor->trace(m_domListener);
     visitor->trace(m_pageAgent);
     visitor->trace(m_injectedScriptManager);
-    visitor->trace(m_overlay);
 #if ENABLE(OILPAN)
     visitor->trace(m_documentNodeToIdMap);
     visitor->trace(m_danglingNodeToIdMaps);
@@ -2236,7 +2140,6 @@ DEFINE_TRACE(InspectorDOMAgent)
     visitor->trace(m_revalidateTask);
     visitor->trace(m_searchResults);
 #endif
-    visitor->trace(m_hoveredNodeForInspectMode);
     visitor->trace(m_history);
     visitor->trace(m_domEditor);
     InspectorBaseAgent::trace(visitor);

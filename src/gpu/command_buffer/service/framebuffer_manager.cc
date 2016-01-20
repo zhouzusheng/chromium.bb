@@ -245,7 +245,7 @@ FramebufferManager::TextureDetachObserver::~TextureDetachObserver() {}
 FramebufferManager::FramebufferManager(
     uint32 max_draw_buffers,
     uint32 max_color_attachments,
-    ContextGroup::ContextType context_type,
+    ContextType context_type,
     const scoped_refptr<FramebufferCompletenessCache>&
         framebuffer_combo_complete_cache)
     : framebuffer_state_change_count_(1),
@@ -359,7 +359,8 @@ void Framebuffer::ChangeDrawBuffersHelper(bool recover) const {
   for (AttachmentMap::const_iterator it = attachments_.begin();
        it != attachments_.end(); ++it) {
     if (it->first >= GL_COLOR_ATTACHMENT0 &&
-        it->first < GL_COLOR_ATTACHMENT0 + manager_->max_draw_buffers_) {
+        it->first < GL_COLOR_ATTACHMENT0 + manager_->max_draw_buffers_ &&
+        !GLES2Util::IsIntegerFormat(it->second->internal_format())) {
       buffers[it->first - GL_COLOR_ATTACHMENT0] = it->first;
     }
   }
@@ -386,6 +387,26 @@ void Framebuffer::PrepareDrawBuffersForClear() const {
 void Framebuffer::RestoreDrawBuffersAfterClear() const {
   bool recover = true;
   ChangeDrawBuffersHelper(recover);
+}
+
+void Framebuffer::ClearIntegerBuffers() {
+  for (AttachmentMap::const_iterator it = attachments_.begin();
+       it != attachments_.end(); ++it) {
+    GLenum internal_format = it->second->internal_format();
+    if (it->first >= GL_COLOR_ATTACHMENT0 &&
+        it->first < GL_COLOR_ATTACHMENT0 + manager_->max_draw_buffers_ &&
+        !it->second->cleared() &&
+        GLES2Util::IsIntegerFormat(internal_format)) {
+      GLint drawbuffer = it->first - GL_COLOR_ATTACHMENT0;
+      if (GLES2Util::IsUnsignedIntegerFormat(internal_format)) {
+        const static GLuint kZero[] = { 0u, 0u, 0u, 0u };
+        glClearBufferuiv(GL_COLOR, drawbuffer, kZero);
+      } else {  // IsUnsignedIntegerFormat(internal_format)
+        const static GLint kZero[] = { 0, 0, 0, 0 };
+        glClearBufferiv(GL_COLOR, drawbuffer, kZero);
+      }
+    }
+  }
 }
 
 void Framebuffer::MarkAttachmentAsCleared(
@@ -470,7 +491,7 @@ GLenum Framebuffer::IsPossiblyComplete() const {
       if (width == 0 || height == 0) {
         return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
       }
-    } else if (manager_->context_type() != ContextGroup::CONTEXT_TYPE_WEBGL2) {
+    } else if (manager_->context_type() != CONTEXT_TYPE_WEBGL2) {
       // TODO(zmo): revisit this if we create ES3 contexts for clients other
       // than WebGL 2.
       if (attachment->width() != width || attachment->height() != height) {
@@ -696,17 +717,21 @@ void Framebuffer::OnTextureRefDetached(TextureRef* texture) {
   manager_->OnTextureRefDetached(texture);
 }
 
-void Framebuffer::OnWillRenderTo() const {
+void Framebuffer::OnWillRenderTo(GLenum attachment) const {
   for (AttachmentMap::const_iterator it = attachments_.begin();
        it != attachments_.end(); ++it) {
-    it->second->OnWillRenderTo();
+    if (attachment == 0 || attachment == it->first) {
+      it->second->OnWillRenderTo();
+    }
   }
 }
 
-void Framebuffer::OnDidRenderTo() const {
+void Framebuffer::OnDidRenderTo(GLenum attachment) const {
   for (AttachmentMap::const_iterator it = attachments_.begin();
        it != attachments_.end(); ++it) {
-    it->second->OnDidRenderTo();
+    if (attachment == 0 || attachment == it->first) {
+      it->second->OnDidRenderTo();
+    }
   }
 }
 

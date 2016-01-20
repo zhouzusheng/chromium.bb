@@ -5,9 +5,7 @@
 #ifndef CONTENT_BROWSER_SERVICE_WORKER_EMBEDDED_WORKER_INSTANCE_H_
 #define CONTENT_BROWSER_SERVICE_WORKER_EMBEDDED_WORKER_INSTANCE_H_
 
-#include <map>
 #include <string>
-#include <vector>
 
 #include "base/basictypes.h"
 #include "base/callback.h"
@@ -41,7 +39,6 @@ class MessagePortMessageFilter;
 class ServiceRegistry;
 class ServiceRegistryImpl;
 class ServiceWorkerContextCore;
-struct ServiceWorkerFetchRequest;
 
 // This gives an interface to control one EmbeddedWorker instance, which
 // may be 'in-waiting' or running in one of the child processes added by
@@ -56,8 +53,7 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
     STOPPING,
   };
 
-  // This enum is used in UMA histograms, so don't change the order or remove
-  // entries.
+  // This enum is used in UMA histograms. Append-only.
   enum StartingPhase {
     NOT_STARTING,
     ALLOCATING_PROCESS,
@@ -66,13 +62,19 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
     SCRIPT_DOWNLOADING,
     SCRIPT_LOADED,
     SCRIPT_EVALUATED,
+    THREAD_STARTED,  // Happens after SCRIPT_LOADED and before SCRIPT_EVALUATED
+    // Script read happens after SENT_START_WORKER and before SCRIPT_LOADED
+    // (installed scripts only)
+    SCRIPT_READ_STARTED,
+    SCRIPT_READ_FINISHED,
+    // Add new values here.
     STARTING_PHASE_MAX_VALUE,
   };
 
   class Listener {
    public:
     virtual ~Listener() {}
-    virtual void OnScriptLoaded() {}
+    virtual void OnThreadStarted() {}
     virtual void OnStarting() {}
     virtual void OnStarted() {}
     virtual void OnStopping() {}
@@ -80,6 +82,8 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
     virtual void OnStopped(Status old_status) {}
     // The browser-side IPC endpoint for communication with the worker died.
     virtual void OnDetached(Status old_status) {}
+    virtual void OnScriptLoaded() {}
+    virtual void OnScriptLoadFailed() {}
     virtual void OnReportException(const base::string16& error_message,
                                    int line_number,
                                    int column_number,
@@ -143,8 +147,15 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
   // Called when the script load request accessed the network.
   void OnNetworkAccessedForScriptLoad();
 
+  // Called when reading the main script from the service worker script cache
+  // begins and ends.
+  void OnScriptReadStarted();
+  void OnScriptReadFinished();
+
   static std::string StatusToString(Status status);
   static std::string StartingPhaseToString(StartingPhase phase);
+
+  void Detach();
 
  private:
   typedef base::ObserverList<Listener> ListenerList;
@@ -187,8 +198,12 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
   void OnReadyForInspection();
 
   // Called back from Registry when the worker instance has ack'ed that
-  // it finished loading the script and has started a worker thread.
-  void OnScriptLoaded(int thread_id);
+  // it finished loading the script.
+  void OnScriptLoaded();
+
+  // Called back from Registry when the worker instance has ack'ed that
+  // it has started a worker thread.
+  void OnThreadStarted(int thread_id);
 
   // Called back from Registry when the worker instance has ack'ed that
   // it failed to load the script.

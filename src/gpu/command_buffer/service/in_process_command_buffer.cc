@@ -10,6 +10,7 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/command_line.h"
 #include "base/lazy_instance.h"
 #include "base/location.h"
 #include "base/logging.h"
@@ -23,9 +24,11 @@
 #include "gpu/command_buffer/service/context_group.h"
 #include "gpu/command_buffer/service/gl_context_virtual.h"
 #include "gpu/command_buffer/service/gpu_scheduler.h"
+#include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/command_buffer/service/image_factory.h"
 #include "gpu/command_buffer/service/image_manager.h"
 #include "gpu/command_buffer/service/mailbox_manager.h"
+#include "gpu/command_buffer/service/memory_program_cache.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
 #include "gpu/command_buffer/service/query_manager.h"
 #include "gpu/command_buffer/service/sync_point_manager.h"
@@ -50,6 +53,8 @@
 namespace gpu {
 
 namespace {
+
+base::StaticAtomicSequenceNumber g_next_command_buffer_id;
 
 template <typename T>
 static void RunTaskWithResult(base::Callback<T(void)> task,
@@ -158,10 +163,22 @@ InProcessCommandBuffer::Service::pending_valuebuffer_state() {
   return pending_valuebuffer_state_;
 }
 
+gpu::gles2::ProgramCache* InProcessCommandBuffer::Service::program_cache() {
+  if (!program_cache_.get() &&
+      (gfx::g_driver_gl.ext.b_GL_ARB_get_program_binary ||
+       gfx::g_driver_gl.ext.b_GL_OES_get_program_binary) &&
+      !base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableGpuProgramCache)) {
+    program_cache_.reset(new gpu::gles2::MemoryProgramCache());
+  }
+  return program_cache_.get();
+}
+
 InProcessCommandBuffer::InProcessCommandBuffer(
     const scoped_refptr<Service>& service)
-    : context_lost_(false),
-      idle_work_pending_(false),
+    : command_buffer_id_(g_next_command_buffer_id.GetNext()),
+      context_lost_(false),
+      delayed_work_pending_(false),
       image_factory_(nullptr),
       last_put_offset_(-1),
       gpu_memory_buffer_manager_(nullptr),
@@ -270,7 +287,7 @@ bool InProcessCommandBuffer::InitializeOnGpuThread(
 
   DCHECK(params.size.width() >= 0 && params.size.height() >= 0);
 
-  TransferBufferManager* manager = new TransferBufferManager();
+  TransferBufferManager* manager = new TransferBufferManager(nullptr);
   transfer_buffer_manager_ = manager;
   manager->Initialize();
 
@@ -327,6 +344,11 @@ bool InProcessCommandBuffer::InitializeOnGpuThread(
     return false;
   }
 
+  sync_point_client_state_ = SyncPointClientState::Create();
+  sync_point_client_ = service_->sync_point_manager()->CreateSyncPointClient(
+      sync_point_client_state_,
+      GetNamespaceID(), GetCommandBufferID());
+
   if (service_->UseVirtualizedGLContexts() ||
       decoder_->GetContextGroup()
           ->feature_info()
@@ -361,6 +383,14 @@ bool InProcessCommandBuffer::InitializeOnGpuThread(
     LOG(ERROR) << "Could not make context current.";
     DestroyOnGpuThread();
     return false;
+  }
+
+  if (!decoder_->GetContextGroup()->has_program_cache() &&
+      !decoder_->GetContextGroup()
+           ->feature_info()
+           ->workarounds()
+           .disable_program_cache) {
+    decoder_->GetContextGroup()->set_program_cache(service_->program_cache());
   }
 
   gles2::DisallowedFeatures disallowed_features;
@@ -414,6 +444,8 @@ bool InProcessCommandBuffer::DestroyOnGpuThread() {
   }
   context_ = NULL;
   surface_ = NULL;
+  sync_point_client_ = NULL;
+  sync_point_client_state_ = NULL;
   gl_share_group_ = NULL;
 #if defined(OS_ANDROID)
   stream_texture_manager_.reset();
@@ -456,10 +488,13 @@ int32 InProcessCommandBuffer::GetLastToken() {
   return last_state_.token;
 }
 
-void InProcessCommandBuffer::FlushOnGpuThread(int32 put_offset) {
+void InProcessCommandBuffer::FlushOnGpuThread(int32 put_offset,
+                                              uint32_t order_num) {
   CheckSequencedThread();
   ScopedEvent handle_flush(&flush_event_);
   base::AutoLock lock(command_buffer_lock_);
+
+  sync_point_client_state_->BeginProcessingOrderNumber(order_num);
   command_buffer_->Flush(put_offset);
   {
     // Update state before signaling the flush event.
@@ -469,32 +504,43 @@ void InProcessCommandBuffer::FlushOnGpuThread(int32 put_offset) {
   DCHECK((!error::IsError(state_after_last_flush_.error) && !context_lost_) ||
          (error::IsError(state_after_last_flush_.error) && context_lost_));
 
+  // Currently the in process command buffer does not support being descheduled,
+  // if it does we would need to back off on calling the finish processing
+  // order number function until the message is rescheduled and finished
+  // processing. This DCHECK is to enforce this.
+  DCHECK(context_lost_ || put_offset == state_after_last_flush_.get_offset);
+  sync_point_client_state_->FinishProcessingOrderNumber(order_num);
+
   // If we've processed all pending commands but still have pending queries,
   // pump idle work until the query is passed.
   if (put_offset == state_after_last_flush_.get_offset &&
-      gpu_scheduler_->HasMoreWork()) {
-    ScheduleIdleWorkOnGpuThread();
+      (gpu_scheduler_->HasMoreIdleWork() ||
+       gpu_scheduler_->HasPendingQueries())) {
+    ScheduleDelayedWorkOnGpuThread();
   }
 }
 
-void InProcessCommandBuffer::PerformIdleWork() {
+void InProcessCommandBuffer::PerformDelayedWork() {
   CheckSequencedThread();
-  idle_work_pending_ = false;
+  delayed_work_pending_ = false;
   base::AutoLock lock(command_buffer_lock_);
-  if (MakeCurrent() && gpu_scheduler_->HasMoreWork()) {
+  if (MakeCurrent()) {
     gpu_scheduler_->PerformIdleWork();
-    ScheduleIdleWorkOnGpuThread();
+    gpu_scheduler_->ProcessPendingQueries();
+    if (gpu_scheduler_->HasMoreIdleWork() ||
+        gpu_scheduler_->HasPendingQueries()) {
+      ScheduleDelayedWorkOnGpuThread();
+    }
   }
 }
 
-void InProcessCommandBuffer::ScheduleIdleWorkOnGpuThread() {
+void InProcessCommandBuffer::ScheduleDelayedWorkOnGpuThread() {
   CheckSequencedThread();
-  if (idle_work_pending_)
+  if (delayed_work_pending_)
     return;
-  idle_work_pending_ = true;
-  service_->ScheduleIdleWork(
-      base::Bind(&InProcessCommandBuffer::PerformIdleWork,
-                 gpu_thread_weak_ptr_));
+  delayed_work_pending_ = true;
+  service_->ScheduleDelayedWork(base::Bind(
+      &InProcessCommandBuffer::PerformDelayedWork, gpu_thread_weak_ptr_));
 }
 
 void InProcessCommandBuffer::Flush(int32 put_offset) {
@@ -505,10 +551,14 @@ void InProcessCommandBuffer::Flush(int32 put_offset) {
   if (last_put_offset_ == put_offset)
     return;
 
+  SyncPointManager* sync_manager = service_->sync_point_manager();
+  const uint32_t order_num =
+      sync_point_client_state_->GenerateUnprocessedOrderNumber(sync_manager);
   last_put_offset_ = put_offset;
   base::Closure task = base::Bind(&InProcessCommandBuffer::FlushOnGpuThread,
                                   gpu_thread_weak_ptr_,
-                                  put_offset);
+                                  put_offset,
+                                  order_num);
   QueueTask(task);
 }
 
@@ -823,6 +873,14 @@ bool InProcessCommandBuffer::IsGpuChannelLost() {
   return false;
 }
 
+CommandBufferNamespace InProcessCommandBuffer::GetNamespaceID() const {
+  return CommandBufferNamespace::IN_PROCESS;
+}
+
+uint64_t InProcessCommandBuffer::GetCommandBufferID() const {
+  return command_buffer_id_;
+}
+
 uint32 InProcessCommandBuffer::CreateStreamTextureOnGpuThread(
     uint32 client_texture_id) {
 #if defined(OS_ANDROID)
@@ -907,7 +965,7 @@ void GpuInProcessThread::ScheduleTask(const base::Closure& task) {
   task_runner()->PostTask(FROM_HERE, task);
 }
 
-void GpuInProcessThread::ScheduleIdleWork(const base::Closure& callback) {
+void GpuInProcessThread::ScheduleDelayedWork(const base::Closure& callback) {
   // Match delay with GpuCommandBufferStub.
   task_runner()->PostDelayedTask(FROM_HERE, callback,
                                  base::TimeDelta::FromMilliseconds(2));

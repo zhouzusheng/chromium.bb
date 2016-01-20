@@ -5,14 +5,6 @@
  * found in the LICENSE file.
  */
 
-#include "sk_canvas.h"
-#include "sk_data.h"
-#include "sk_image.h"
-#include "sk_paint.h"
-#include "sk_path.h"
-#include "sk_surface.h"
-#include "sk_types_priv.h"
-
 #include "SkCanvas.h"
 #include "SkData.h"
 #include "SkImage.h"
@@ -22,6 +14,14 @@
 #include "SkPath.h"
 #include "SkPictureRecorder.h"
 #include "SkSurface.h"
+
+#include "sk_canvas.h"
+#include "sk_data.h"
+#include "sk_image.h"
+#include "sk_paint.h"
+#include "sk_path.h"
+#include "sk_surface.h"
+#include "sk_types_priv.h"
 
 const struct {
     sk_colortype_t  fC;
@@ -258,13 +258,9 @@ uint32_t sk_image_get_unique_id(const sk_image_t* cimage) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////
 
-sk_path_t* sk_path_new() {
-    return (sk_path_t*)SkNEW(SkPath);
-}
+sk_path_t* sk_path_new() { return (sk_path_t*)new SkPath; }
 
-void sk_path_delete(sk_path_t* cpath) {
-    SkDELETE(as_path(cpath));
-}
+void sk_path_delete(sk_path_t* cpath) { delete as_path(cpath); }
 
 void sk_path_move_to(sk_path_t* cpath, float x, float y) {
     as_path(cpath)->moveTo(x, y);

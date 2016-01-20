@@ -10,7 +10,7 @@
 
 #include "SkColorFilter.h"
 #include "SkData.h"
-#include "SkMutex.h"
+#include "../private/SkMutex.h"
 
 class SK_API SkColorCubeFilter : public SkColorFilter {
 public:
@@ -25,8 +25,8 @@ public:
     uint32_t getFlags() const override;
 
 #if SK_SUPPORT_GPU
-   bool asFragmentProcessors(GrContext*, GrProcessorDataManager*,
-                             SkTDArray<GrFragmentProcessor*>*) const override;
+    const GrFragmentProcessor* asFragmentProcessor(GrContext*,
+                                                   GrProcessorDataManager*) const override;
 #endif
 
     SK_TO_STRING_OVERRIDE()

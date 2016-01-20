@@ -10,8 +10,11 @@
 #include "GrGpu.h"
 #include "GrIndexBuffer.h"
 #include "GrPathRendering.h"
+#include "GrRenderTarget.h"
+#include "GrRenderTargetPriv.h"
 #include "GrResourceCache.h"
 #include "GrResourceKey.h"
+#include "GrStencilAttachment.h"
 #include "GrVertexBuffer.h"
 
 GR_DECLARE_STATIC_UNIQUE_KEY(gQuadIndexBufferKey);
@@ -32,12 +35,12 @@ const GrIndexBuffer* GrResourceProvider::createInstancedIndexBuffer(const uint16
     GrIndexBuffer* buffer = this->createIndexBuffer(bufferSize, kStatic_BufferUsage,
                                                     kNoPendingIO_Flag);
     if (!buffer) {
-        return NULL;
+        return nullptr;
     }
     uint16_t* data = (uint16_t*) buffer->map();
-    bool useTempData = (NULL == data);
+    bool useTempData = (nullptr == data);
     if (useTempData) {
-        data = SkNEW_ARRAY(uint16_t, reps * patternSize);
+        data = new uint16_t[reps * patternSize];
     }
     for (int i = 0; i < reps; ++i) {
         int baseIdx = i * patternSize;
@@ -49,9 +52,9 @@ const GrIndexBuffer* GrResourceProvider::createInstancedIndexBuffer(const uint16
     if (useTempData) {
         if (!buffer->updateData(data, bufferSize)) {
             buffer->unref();
-            return NULL;
+            return nullptr;
         }
-        SkDELETE_ARRAY(data);
+        delete[] data;
     } else {
         buffer->unmap();
     }
@@ -88,7 +91,7 @@ GrPathRange* GrResourceProvider::createGlyphs(const SkTypeface* tf, const SkDesc
 GrIndexBuffer* GrResourceProvider::createIndexBuffer(size_t size, BufferUsage usage,
                                                      uint32_t flags) {
     if (this->isAbandoned()) {
-        return NULL;
+        return nullptr;
     }
 
     bool noPendingIO = SkToBool(flags & kNoPendingIO_Flag);
@@ -117,7 +120,7 @@ GrIndexBuffer* GrResourceProvider::createIndexBuffer(size_t size, BufferUsage us
 GrVertexBuffer* GrResourceProvider::createVertexBuffer(size_t size, BufferUsage usage,
                                                        uint32_t flags) {
     if (this->isAbandoned()) {
-        return NULL;
+        return nullptr;
     }
 
     bool noPendingIO = SkToBool(flags & kNoPendingIO_Flag);
@@ -159,7 +162,58 @@ GrBatchAtlas* GrResourceProvider::createAtlas(GrPixelConfig config,
     static const uint32_t kFlags = GrResourceProvider::kNoPendingIO_Flag;
     GrTexture* texture = this->createApproxTexture(desc, kFlags);
     if (!texture) {
-        return NULL;
+        return nullptr;
     }
-    return SkNEW_ARGS(GrBatchAtlas, (texture, numPlotsX, numPlotsY));
+    GrBatchAtlas* atlas = new GrBatchAtlas(texture, numPlotsX, numPlotsY);
+    atlas->registerEvictionCallback(func, data);
+    return atlas;
 }
+
+GrStencilAttachment* GrResourceProvider::attachStencilAttachment(GrRenderTarget* rt) {
+    SkASSERT(rt);
+    if (rt->renderTargetPriv().getStencilAttachment()) {
+        return rt->renderTargetPriv().getStencilAttachment();
+    }
+
+    if (!rt->wasDestroyed() && rt->canAttemptStencilAttachment()) {
+        GrUniqueKey sbKey;
+
+        int width = rt->width();
+        int height = rt->height();
+#if 0
+        if (this->caps()->oversizedStencilSupport()) {
+            width  = SkNextPow2(width);
+            height = SkNextPow2(height);
+        }
+#endif
+        bool newStencil = false;
+        GrStencilAttachment::ComputeSharedStencilAttachmentKey(width, height,
+                                                               rt->numStencilSamples(), &sbKey);
+        GrStencilAttachment* stencil = static_cast<GrStencilAttachment*>(
+            this->findAndRefResourceByUniqueKey(sbKey));
+        if (!stencil) {
+            // Need to try and create a new stencil
+            stencil = this->gpu()->createStencilAttachmentForRenderTarget(rt, width, height);
+            if (stencil) {
+                stencil->resourcePriv().setUniqueKey(sbKey);
+                newStencil = true;
+            }
+        }
+        if (rt->renderTargetPriv().attachStencilAttachment(stencil)) {
+            if (newStencil) {
+                // Right now we're clearing the stencil attachment here after it is
+                // attached to an RT for the first time. When we start matching
+                // stencil buffers with smaller color targets this will no longer
+                // be correct because it won't be guaranteed to clear the entire
+                // sb.
+                // We used to clear down in the GL subclass using a special purpose
+                // FBO. But iOS doesn't allow a stencil-only FBO. It reports unsupported
+                // FBO status.
+                this->gpu()->clearStencil(rt);
+            }
+        }
+    }
+    return rt->renderTargetPriv().getStencilAttachment();
+}
+
+

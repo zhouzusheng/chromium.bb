@@ -10,8 +10,10 @@
 #include <string>
 #include <vector>
 
+#include "base/gtest_prod_util.h"
 #include "base/logging.h"
 #include "base/memory/weak_ptr.h"
+#include "base/time/time.h"
 #include "net/base/address_list.h"
 #include "net/base/completion_callback.h"
 #include "net/base/host_port_pair.h"
@@ -25,6 +27,7 @@
 #include "net/quic/quic_crypto_stream.h"
 #include "net/quic/quic_http_stream.h"
 #include "net/quic/quic_protocol.h"
+#include "net/ssl/ssl_config_service.h"
 
 namespace net {
 
@@ -42,6 +45,7 @@ class QuicRandom;
 class QuicServerInfoFactory;
 class QuicServerId;
 class QuicStreamFactory;
+class SocketPerformanceWatcherFactory;
 class TransportSecurityState;
 
 namespace test {
@@ -70,22 +74,25 @@ class NET_EXPORT_PRIVATE QuicStreamRequest {
 
   void OnRequestComplete(int rv);
 
+  // Helper method that calls |factory_|'s GetTimeDelayForWaitingJob(). It
+  // returns the amount of time waiting job should be delayed.
+  base::TimeDelta GetTimeDelayForWaitingJob() const;
+
   scoped_ptr<QuicHttpStream> ReleaseStream();
 
   void set_stream(scoped_ptr<QuicHttpStream> stream);
 
-  const std::string origin_host() const { return origin_host_; }
+  const std::string& origin_host() const { return origin_host_; }
 
   PrivacyMode privacy_mode() const { return privacy_mode_; }
 
-  const BoundNetLog& net_log() const{
-    return net_log_;
-  }
+  const BoundNetLog& net_log() const { return net_log_; }
 
  private:
   QuicStreamFactory* factory_;
   HostPortPair host_port_pair_;
   std::string origin_host_;
+  bool is_https_;
   PrivacyMode privacy_mode_;
   BoundNetLog net_log_;
   CompletionCallback callback_;
@@ -98,6 +105,7 @@ class NET_EXPORT_PRIVATE QuicStreamRequest {
 // QuicChromiumClientSessions.
 class NET_EXPORT_PRIVATE QuicStreamFactory
     : public NetworkChangeNotifier::IPAddressObserver,
+      public SSLConfigService::Observer,
       public CertDatabase::Observer {
  public:
   QuicStreamFactory(
@@ -108,6 +116,7 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
       CertPolicyEnforcer* cert_policy_enforcer,
       ChannelIDService* channel_id_service,
       TransportSecurityState* transport_security_state,
+      const SocketPerformanceWatcherFactory* socket_performance_watcher_factory,
       QuicCryptoClientStreamFactory* quic_crypto_client_stream_factory,
       QuicRandom* random_generator,
       QuicClock* clock,
@@ -128,6 +137,7 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
       int threshold_timeouts_with_streams_open,
       int threshold_public_resets_post_handshake,
       int socket_receive_buffer_size,
+      bool delay_tcp_race,
       const QuicTagVector& connection_options);
   ~QuicStreamFactory() override;
 
@@ -196,6 +206,11 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   // IP address changes.
   void OnIPAddressChanged() override;
 
+  // SSLConfigService::Observer methods:
+
+  // We perform the same flushing as described above when SSL settings change.
+  void OnSSLConfigChanged() override;
+
   // CertDatabase::Observer methods:
 
   // We close all sessions when certificate database is changed.
@@ -207,6 +222,9 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   }
 
   void set_require_confirmation(bool require_confirmation);
+
+  // It returns the amount of time waiting job should be delayed.
+  base::TimeDelta GetTimeDelayForWaitingJob(const QuicServerId& server_id);
 
   QuicConnectionHelper* helper() { return helper_.get(); }
 
@@ -228,6 +246,8 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   }
 
   int socket_receive_buffer_size() const { return socket_receive_buffer_size_; }
+
+  bool delay_tcp_race() const { return delay_tcp_race_; }
 
  private:
   class Job;
@@ -273,7 +293,8 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
                          const BoundNetLog& net_log);
 
   // Returns a newly created QuicHttpStream owned by the caller.
-  scoped_ptr<QuicHttpStream> CreateFromSession(QuicChromiumClientSession*);
+  scoped_ptr<QuicHttpStream> CreateFromSession(
+      QuicChromiumClientSession* session);
 
   bool OnResolution(const QuicServerId& server_id,
                     const AddressList& address_list);
@@ -298,6 +319,7 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
 
   // Helper methods.
   bool WasQuicRecentlyBroken(const QuicServerId& server_id) const;
+
   bool CryptoConfigCacheIsEmpty(const QuicServerId& server_id);
 
   // Initializes the cached state associated with |server_id| in
@@ -305,6 +327,10 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   void InitializeCachedStateInCryptoConfig(
       const QuicServerId& server_id,
       const scoped_ptr<QuicServerInfo>& server_info);
+
+  // Initialize |quic_supported_servers_at_startup_| with the list of servers
+  // that supported QUIC at start up.
+  void InitializeQuicSupportedServersAtStartup();
 
   void ProcessGoingAwaySession(QuicChromiumClientSession* session,
                                const QuicServerId& server_id,
@@ -323,6 +349,11 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   QuicRandom* random_generator_;
   scoped_ptr<QuicClock> clock_;
   const size_t max_packet_length_;
+
+  // Factory which is used to create socket performance watcher. A new watcher
+  // is created for every QUIC connection.
+  // |socket_performance_watcher_factory_| may be null.
+  const SocketPerformanceWatcherFactory* socket_performance_watcher_factory_;
 
   // The helper used for all connections.
   scoped_ptr<QuicConnectionHelper> helper_;
@@ -409,6 +440,15 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   // Size of the UDP receive buffer.
   int socket_receive_buffer_size_;
 
+  // Set if we do want to delay TCP connection when it is racing with QUIC.
+  bool delay_tcp_race_;
+
+  // If more than |yield_after_packets_| packets have been read or more than
+  // |yield_after_duration_| time has passed, then
+  // QuicPacketReader::StartReading() yields by doing a PostTask().
+  int yield_after_packets_;
+  QuicTime::Delta yield_after_duration_;
+
   // Each profile will (probably) have a unique port_seed_ value.  This value
   // is used to help seed a pseudo-random number generator (PortSuggester) so
   // that we consistently (within this profile) suggest the same ephemeral
@@ -420,6 +460,7 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   // Local address of socket that was created in CreateSession.
   IPEndPoint local_address_;
   bool check_persisted_supports_quic_;
+  bool quic_supported_servers_at_startup_initialzied_;
   std::set<HostPortPair> quic_supported_servers_at_startup_;
 
   NetworkConnection network_connection_;

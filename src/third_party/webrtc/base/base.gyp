@@ -29,8 +29,6 @@
       'target_name': 'rtc_base_approved',
       'type': 'static_library',
       'sources': [
-        '../overrides/webrtc/base/basictypes.h',
-        '../overrides/webrtc/base/constructormagic.h',
         'atomicops.h',
         'basictypes.h',
         'bitbuffer.cc',
@@ -86,18 +84,11 @@
       'conditions': [
         ['build_with_chromium==1', {
           'include_dirs': [
-            '../overrides',
+            '../../webrtc_overrides',
           ],
           'sources!': [
-            'basictypes.h',
-            'constructormagic.h',
             'logging.cc',
             'logging.h',
-          ],
-        }, {
-          'sources!': [
-            '../overrides/webrtc/base/basictypes.h',
-            '../overrides/webrtc/base/constructormagic.h',
           ],
         }],
       ],
@@ -111,14 +102,14 @@
       ],
       'defines': [
         'FEATURE_ENABLE_SSL',
+        'SSL_USE_OPENSSL',
+        'HAVE_OPENSSL_SSL_H',
         'LOGGING=1',
       ],
       'sources': [
         'arraysize.h',
         'asyncfile.cc',
         'asyncfile.h',
-        'asynchttprequest.cc',
-        'asynchttprequest.h',
         'asyncinvoker.cc',
         'asyncinvoker.h',
         'asyncinvoker-inl.h',
@@ -229,6 +220,15 @@
         'network.cc',
         'network.h',
         'nullsocketserver.h',
+        'openssl.h',
+        'openssladapter.cc',
+        'openssladapter.h',
+        'openssldigest.cc',
+        'openssldigest.h',
+        'opensslidentity.cc',
+        'opensslidentity.h',
+        'opensslstreamadapter.cc',
+        'opensslstreamadapter.h',
         'optionsfile.cc',
         'optionsfile.h',
         'pathutils.cc',
@@ -347,9 +347,6 @@
         'worker.h',
         'x11windowpicker.cc',
         'x11windowpicker.h',
-        '../overrides/webrtc/base/logging.cc',
-        '../overrides/webrtc/base/logging.h',
-        '../overrides/webrtc/base/win32socketinit.cc',
       ],
       # TODO(henrike): issue 3307, make rtc_base build without disabling
       # these flags.
@@ -366,6 +363,8 @@
         ],
         'defines': [
           'FEATURE_ENABLE_SSL',
+          'SSL_USE_OPENSSL',
+          'HAVE_OPENSSL_SSL_H',
         ],
       },
       'include_dirs': [
@@ -375,8 +374,13 @@
       'conditions': [
         ['build_with_chromium==1', {
           'include_dirs': [
-            '../overrides',
+            '../../webrtc_overrides',
             '../../boringssl/src/include',
+          ],
+          'sources': [
+            '../../webrtc_overrides/webrtc/base/win32socketinit.cc',
+            '../../webrtc_overrides/webrtc/base/logging.cc',
+            '../../webrtc_overrides/webrtc/base/logging.h',
           ],
           'sources!': [
             'atomicops.h',
@@ -486,90 +490,6 @@
                 # is expected to be when building json outside of the standalone
                 # build.
                 'WEBRTC_EXTERNAL_JSON',
-              ],
-            }],
-          ],
-          'sources!': [
-            '../overrides/webrtc/base/win32socketinit.cc',
-            '../overrides/webrtc/base/logging.cc',
-            '../overrides/webrtc/base/logging.h',
-          ],
-        }],
-        ['use_openssl==1', {
-          'defines': [
-            'SSL_USE_OPENSSL',
-            'HAVE_OPENSSL_SSL_H',
-          ],
-          'direct_dependent_settings': {
-            'defines': [
-              'SSL_USE_OPENSSL',
-              'HAVE_OPENSSL_SSL_H',
-            ],
-          },
-          'sources': [
-            'openssl.h',
-            'openssladapter.cc',
-            'openssladapter.h',
-            'openssldigest.cc',
-            'openssldigest.h',
-            'opensslidentity.cc',
-            'opensslidentity.h',
-            'opensslstreamadapter.cc',
-            'opensslstreamadapter.h',
-          ],
-          'conditions': [
-            ['build_ssl==1', {
-              'dependencies': [
-                '<(DEPTH)/third_party/boringssl/boringssl.gyp:boringssl',
-              ],
-            }, {
-              'include_dirs': [
-                '<(ssl_root)',
-              ],
-            }],
-          ],
-        }, {
-          'sources': [
-            'nssidentity.cc',
-            'nssidentity.h',
-            'nssstreamadapter.cc',
-            'nssstreamadapter.h',
-          ],
-          'conditions': [
-            ['use_legacy_ssl_defaults!=1', {
-              'defines': [
-                'SSL_USE_NSS',
-                'HAVE_NSS_SSL_H',
-                'SSL_USE_NSS_RNG',
-              ],
-              'direct_dependent_settings': {
-                'defines': [
-                  'SSL_USE_NSS',
-                  'HAVE_NSS_SSL_H',
-                  'SSL_USE_NSS_RNG',
-                ],
-              },
-            }],
-            ['build_ssl==1', {
-              'conditions': [
-                # On some platforms, the rest of NSS is bundled. On others,
-                # it's pulled from the system.
-                ['OS == "mac" or OS == "ios"', {
-                  'dependencies': [
-                    '<(DEPTH)/net/third_party/nss/ssl.gyp:libssl',
-                    '<(DEPTH)/third_party/nss/nss.gyp:nspr',
-                    '<(DEPTH)/third_party/nss/nss.gyp:nss',
-                  ],
-                }],
-                ['os_posix == 1 and OS != "mac" and OS != "ios" and OS != "android"', {
-                  'dependencies': [
-                    '<(DEPTH)/build/linux/system.gyp:ssl',
-                  ],
-                }],
-              ],
-            }, {
-              'include_dirs': [
-                '<(ssl_root)',
               ],
             }],
           ],
@@ -740,6 +660,15 @@
           'sources!': [
             'linux.cc',
             'linux.h',
+          ],
+        }],
+        ['build_ssl==1', {
+          'dependencies': [
+            '<(DEPTH)/third_party/boringssl/boringssl.gyp:boringssl',
+          ],
+        }, {
+          'include_dirs': [
+            '<(ssl_root)',
           ],
         }],
       ],

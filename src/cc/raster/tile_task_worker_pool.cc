@@ -33,7 +33,6 @@ class TaskSetFinishedTaskImpl : public TileTask {
   // Overridden from TileTask:
   void ScheduleOnOriginThread(TileTaskClient* client) override {}
   void CompleteOnOriginThread(TileTaskClient* client) override {}
-  void RunReplyOnOriginThread() override {}
 
  protected:
   ~TaskSetFinishedTaskImpl() override {}
@@ -161,14 +160,7 @@ class SkipImageFilter : public SkDrawFilter {
       return false;
 
     SkShader* shader = paint->getShader();
-    if (!shader)
-      return true;
-    SkShader::BitmapType bitmap_type =
-        shader->asABitmap(nullptr, nullptr, nullptr);
-    // The kDefault_BitmapType is returned for images. Other bitmap types are
-    // simply bitmap representations of colors such as gradients. So, we can
-    // return true and draw for any case except kDefault_BitmapType.
-    return bitmap_type != SkShader::kDefault_BitmapType;
+    return !shader || !shader->isABitmap();
   }
 };
 
@@ -232,13 +224,8 @@ void TileTaskWorkerPool::PlaybackToMemory(void* memory,
     SkImageInfo dst_info =
         SkImageInfo::Make(info.width(), info.height(), buffer_color_type,
                           info.alphaType(), info.profileType());
-    // TODO(kaanb): The GL pipeline assumes a 4-byte alignment for the
-    // bitmap data. There will be no need to call SkAlign4 once crbug.com/293728
-    // is fixed.
-    const size_t dst_row_bytes = SkAlign4(dst_info.minRowBytes());
-    DCHECK_EQ(0u, dst_row_bytes % 4);
-    bool success = canvas->readPixels(dst_info, memory, dst_row_bytes, 0, 0);
-    DCHECK_EQ(true, success);
+    bool rv = canvas->readPixels(dst_info, memory, stride, 0, 0);
+    DCHECK(rv);
   }
 }
 

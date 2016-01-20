@@ -32,6 +32,29 @@
 
 namespace blink {
 
+// LayoutInline is the LayoutObject associated with display: inline.
+// This is called an "inline box" in CSS 2.1.
+// http://www.w3.org/TR/CSS2/visuren.html#inline-boxes
+//
+// It is also the base class for content that behaves in similar way (like
+// quotes and "display: ruby").
+//
+// Note that LayoutInline is always 'inline-level' but other LayoutObject
+// can be 'inline-level', which is why it's stored as a boolean on LayoutObject
+// (see LayoutObject::isInline()).
+//
+// For performance and memory consumption, this class ignores some inline-boxes
+// during line layout because they don't impact layout (they still exist and are
+// inserted into the layout tree). An example of this is
+//             <span><span>Text</span></span>
+// where the 2 spans have the same size as the inner text-node so they can be
+// ignored for layout purpose, generating a single inline-box instead of 3.
+// One downside of this optimization is that we have extra work to do when
+// asking for bounding rects (see generateLineBoxRects).
+// This optimization is called "culled inline" in the code.
+//
+// LayoutInlines are expected to be laid out by their containing
+// LayoutBlockFlow. See LayoutBlockFlow::layoutInlineChildren.
 class CORE_EXPORT LayoutInline : public LayoutBoxModelObject {
 public:
     explicit LayoutInline(Element*);
@@ -65,7 +88,7 @@ public:
     LayoutSize offsetFromContainer(const LayoutObject*, const LayoutPoint&, bool* offsetDependsOnPoint = nullptr) const final;
 
     IntRect linesBoundingBox() const;
-    LayoutRect linesVisualOverflowBoundingBox() const;
+    LayoutRect visualOverflowRect() const final;
 
     InlineFlowBox* createAndAppendInlineFlowBox();
 
@@ -86,11 +109,11 @@ public:
 
     LayoutSize offsetForInFlowPositionedInline(const LayoutBox& child) const;
 
-    void addOutlineRects(Vector<LayoutRect>&, const LayoutPoint& additionalOffset) const final;
+    void addOutlineRects(Vector<LayoutRect>&, const LayoutPoint& additionalOffset, IncludeBlockVisualOverflowOrNot) const final;
     // The following methods are called from the container if it has already added outline rects for line boxes
     // and/or children of this LayoutInline.
-    void addOutlineRectsForChildrenAndContinuations(Vector<LayoutRect>&, const LayoutPoint& additionalOffset) const;
-    void addOutlineRectsForContinuations(Vector<LayoutRect>&, const LayoutPoint& additionalOffset) const;
+    void addOutlineRectsForChildrenAndContinuations(Vector<LayoutRect>&, const LayoutPoint& additionalOffset, IncludeBlockVisualOverflowOrNot) const;
+    void addOutlineRectsForContinuations(Vector<LayoutRect>&, const LayoutPoint& additionalOffset, IncludeBlockVisualOverflowOrNot) const;
 
     using LayoutBoxModelObject::continuation;
     using LayoutBoxModelObject::setContinuation;
@@ -126,6 +149,9 @@ private:
     InlineBox* culledInlineFirstLineBox() const;
     InlineBox* culledInlineLastLineBox() const;
 
+    // For visualOverflowRect() only, to get bounding box of visual overflow of line boxes.
+    LayoutRect linesVisualOverflowBoundingBox() const;
+
     template<typename GeneratorContext>
     void generateLineBoxRects(GeneratorContext& yield) const;
     template<typename GeneratorContext>
@@ -143,11 +169,11 @@ private:
 
     void layout() final { ASSERT_NOT_REACHED(); } // Do nothing for layout()
 
-    void paint(const PaintInfo&, const LayoutPoint&) final;
+    void paint(const PaintInfo&, const LayoutPoint&) const final;
 
     bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) final;
 
-    DeprecatedPaintLayerType layerTypeRequired() const override { return isInFlowPositioned() || createsGroup() || hasClipPath() || style()->shouldCompositeForCurrentAnimations() || style()->hasCompositorProxy() ? NormalDeprecatedPaintLayer : NoDeprecatedPaintLayer; }
+    PaintLayerType layerTypeRequired() const override { return isInFlowPositioned() || createsGroup() || hasClipPath() || style()->shouldCompositeForCurrentAnimations() || style()->hasCompositorProxy() ? NormalPaintLayer : NoPaintLayer; }
 
     LayoutUnit offsetLeft() const final;
     LayoutUnit offsetTop() const final;
@@ -156,7 +182,6 @@ private:
 
     LayoutRect absoluteClippedOverflowRect() const override;
     LayoutRect clippedOverflowRectForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, const PaintInvalidationState* = nullptr) const override;
-    LayoutRect rectWithOutlineForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, LayoutUnit outlineWidth, const PaintInvalidationState* = nullptr) const final;
     void mapRectToPaintInvalidationBacking(const LayoutBoxModelObject* paintInvalidationContainer, LayoutRect&, const PaintInvalidationState*) const final;
 
     // This method differs from clippedOverflowRectForPaintInvalidation in that it includes

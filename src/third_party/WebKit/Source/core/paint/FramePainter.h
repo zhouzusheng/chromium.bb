@@ -19,7 +19,7 @@ class FramePainter {
     STACK_ALLOCATED();
     WTF_MAKE_NONCOPYABLE(FramePainter);
 public:
-    explicit FramePainter(FrameView& frameView) : m_frameView(&frameView) { }
+    explicit FramePainter(const FrameView& frameView) : m_frameView(&frameView) { }
 
     void paint(GraphicsContext*, const GlobalPaintFlags, const IntRect&);
     void paintScrollbars(GraphicsContext*, const IntRect&);
@@ -29,9 +29,9 @@ public:
 private:
     void paintScrollbar(GraphicsContext*, Scrollbar*, const IntRect&);
 
-    FrameView& frameView();
+    const FrameView& frameView();
 
-    RawPtrWillBeMember<FrameView> m_frameView;
+    RawPtrWillBeMember<const FrameView> m_frameView;
     static bool s_inPaintContents;
 };
 

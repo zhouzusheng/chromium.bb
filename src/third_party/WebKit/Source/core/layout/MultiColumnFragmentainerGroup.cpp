@@ -48,8 +48,6 @@ void MultiColumnFragmentainerGroup::resetColumnHeight()
 
     m_maxColumnHeight = calculateMaxColumnHeight();
 
-    LayoutUnit oldColumnHeight = m_columnHeight;
-
     LayoutMultiColumnFlowThread* flowThread = m_columnSet.multiColumnFlowThread();
     LayoutMultiColumnFlowThread* enclosingFlowThread = flowThread->enclosingFlowThread();
     if (enclosingFlowThread && enclosingFlowThread->isPageLogicalHeightKnown()) {
@@ -62,9 +60,6 @@ void MultiColumnFragmentainerGroup::resetColumnHeight()
     } else {
         setAndConstrainColumnHeight(heightAdjustedForRowOffset(flowThread->columnHeightAvailable()));
     }
-
-    if (m_columnHeight != oldColumnHeight)
-        m_columnSet.setChildNeedsLayout(MarkOnlyThis);
 
     // Content runs are only needed in the initial layout pass, in order to find an initial column
     // height, and should have been deleted afterwards. We're about to rebuild the content runs, so
@@ -227,7 +222,7 @@ LayoutRect MultiColumnFragmentainerGroup::fragmentsBoundingBox(const LayoutRect&
     return unionRect(startColumnRect, endColumnRect);
 }
 
-void MultiColumnFragmentainerGroup::collectLayerFragments(DeprecatedPaintLayerFragments& fragments, const LayoutRect& layerBoundingBox, const LayoutRect& dirtyRect) const
+void MultiColumnFragmentainerGroup::collectLayerFragments(PaintLayerFragments& fragments, const LayoutRect& layerBoundingBox, const LayoutRect& dirtyRect) const
 {
     // |layerBoundingBox| is in the flow thread coordinate space, relative to the top/left edge of
     // the flow thread, but note that it has been converted with respect to writing mode (so that
@@ -279,14 +274,14 @@ void MultiColumnFragmentainerGroup::collectLayerFragments(DeprecatedPaintLayerFr
     ASSERT(endColumn >= startColumn);
 
     for (unsigned i = startColumn; i <= endColumn; i++) {
-        DeprecatedPaintLayerFragment fragment;
+        PaintLayerFragment fragment;
 
         // Set the physical translation offset.
         fragment.paginationOffset = toLayoutPoint(flowThreadTranslationAtOffset(logicalTopInFlowThreadAt(i)));
 
         // Set the overflow clip rect that corresponds to the column.
         fragment.paginationClip = flowThreadPortionOverflowRectAt(i);
-        // Flip it into more a physical (DeprecatedPaintLayer-style) rectangle.
+        // Flip it into more a physical (PaintLayer-style) rectangle.
         flowThread->flipForWritingMode(fragment.paginationClip);
 
         fragments.append(fragment);

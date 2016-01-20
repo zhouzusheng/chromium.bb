@@ -30,8 +30,8 @@ public:
     virtual ~PushSubscription();
 
     KURL endpoint() const;
-    PassRefPtr<DOMArrayBuffer> curve25519dh() const;
 
+    PassRefPtr<DOMArrayBuffer> getKey(const AtomicString& name) const;
     ScriptPromise unsubscribe(ScriptState*);
 
     ScriptValue toJSONForBinding(ScriptState*);

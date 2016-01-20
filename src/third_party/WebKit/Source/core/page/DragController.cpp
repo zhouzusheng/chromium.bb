@@ -152,7 +152,7 @@ static PassRefPtrWillBeRawPtr<DocumentFragment> documentFragmentFromDragData(Dra
 
     Document& document = context->ownerDocument();
     if (dragData->containsCompatibleContent()) {
-        if (PassRefPtrWillBeRawPtr<DocumentFragment> fragment = dragData->asFragment(frame, context, allowPlainText, chosePlainText))
+        if (PassRefPtrWillBeRawPtr<DocumentFragment> fragment = dragData->asFragment(frame))
             return fragment;
 
         if (dragData->containsURL(DragData::DoNotConvertFilenames)) {
@@ -178,7 +178,7 @@ static PassRefPtrWillBeRawPtr<DocumentFragment> documentFragmentFromDragData(Dra
     }
     if (allowPlainText && dragData->containsPlainText()) {
         chosePlainText = true;
-        return createFragmentFromText(context.get(), dragData->asPlainText()).get();
+        return createFragmentFromText(EphemeralRange(context.get()), dragData->asPlainText()).get();
     }
 
     return nullptr;
@@ -374,7 +374,7 @@ bool DragController::tryDocumentDrag(DragData* dragData, DragDestinationAction a
         }
 
         if (!m_fileInputElementUnderMouse)
-            m_page->dragCaretController().setCaretPosition(m_documentUnderMouse->frame()->visiblePositionForPoint(point));
+            m_page->dragCaretController().setCaretPosition(m_documentUnderMouse->frame()->positionForPoint(point));
 
         LocalFrame* innerFrame = element->document().frame();
         dragSession.operation = dragIsMove(innerFrame->selection(), dragData) ? DragOperationMove : DragOperationCopy;
@@ -428,9 +428,9 @@ static bool setSelectionToDragCaret(LocalFrame* frame, VisibleSelection& dragCar
 {
     frame->selection().setSelection(dragCaret);
     if (frame->selection().isNone()) {
-        dragCaret = VisibleSelection(frame->visiblePositionForPoint(point));
+        dragCaret = VisibleSelection(frame->positionForPoint(point));
         frame->selection().setSelection(dragCaret);
-        range = dragCaret.toNormalizedRange();
+        range = createRange(dragCaret.toNormalizedEphemeralRange());
     }
     return !frame->selection().isNone() && frame->selection().isContentEditable();
 }
@@ -483,7 +483,7 @@ bool DragController::concludeEditDrag(DragData* dragData)
 
     VisibleSelection dragCaret(m_page->dragCaretController().caretPosition());
     m_page->dragCaretController().clear();
-    RefPtrWillBeRawPtr<Range> range = dragCaret.toNormalizedRange();
+    RefPtrWillBeRawPtr<Range> range = createRange(dragCaret.toNormalizedEphemeralRange());
     RefPtrWillBeRawPtr<Element> rootEditableElement = innerFrame->selection().rootEditableElement();
 
     // For range to be null a WebKit client must have done something bad while
@@ -522,7 +522,7 @@ bool DragController::concludeEditDrag(DragData* dragData)
 
         if (setSelectionToDragCaret(innerFrame.get(), dragCaret, range, point)) {
             ASSERT(m_documentUnderMouse);
-            ReplaceSelectionCommand::create(*m_documentUnderMouse.get(), createFragmentFromText(range.get(), text),  ReplaceSelectionCommand::SelectReplacement | ReplaceSelectionCommand::MatchStyle | ReplaceSelectionCommand::PreventNesting)->apply();
+            ReplaceSelectionCommand::create(*m_documentUnderMouse.get(), createFragmentFromText(EphemeralRange(range.get()), text),  ReplaceSelectionCommand::SelectReplacement | ReplaceSelectionCommand::MatchStyle | ReplaceSelectionCommand::PreventNesting)->apply();
         }
     }
 
@@ -716,7 +716,7 @@ static void prepareDataTransferForImageDrag(LocalFrame* source, DataTransfer* da
     if (node->isContentRichlyEditable()) {
         RefPtrWillBeRawPtr<Range> range = source->document()->createRange();
         range->selectNode(node, ASSERT_NO_EXCEPTION);
-        source->selection().setSelection(VisibleSelection(range.get()));
+        source->selection().setSelection(VisibleSelection(EphemeralRange(range.get())));
     }
     dataTransfer->declareAndWriteDragImage(node, !linkURL.isEmpty() ? linkURL : imageURL, label);
 }

@@ -14,6 +14,7 @@
 #include "webrtc/base/checks.h"
 #include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp.h"
 #include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp_defines.h"
+#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/transport_feedback.h"
 
 namespace webrtc {
 
@@ -21,20 +22,20 @@ PacketRouter::PacketRouter() : transport_seq_(0) {
 }
 
 PacketRouter::~PacketRouter() {
-  DCHECK(rtp_modules_.empty());
+  RTC_DCHECK(rtp_modules_.empty());
 }
 
 void PacketRouter::AddRtpModule(RtpRtcp* rtp_module) {
   rtc::CritScope cs(&modules_lock_);
-  DCHECK(std::find(rtp_modules_.begin(), rtp_modules_.end(), rtp_module) ==
-         rtp_modules_.end());
+  RTC_DCHECK(std::find(rtp_modules_.begin(), rtp_modules_.end(), rtp_module) ==
+             rtp_modules_.end());
   rtp_modules_.push_back(rtp_module);
 }
 
 void PacketRouter::RemoveRtpModule(RtpRtcp* rtp_module) {
   rtc::CritScope cs(&modules_lock_);
   auto it = std::find(rtp_modules_.begin(), rtp_modules_.end(), rtp_module);
-  DCHECK(it != rtp_modules_.end());
+  RTC_DCHECK(it != rtp_modules_.end());
   rtp_modules_.erase(it);
 }
 
@@ -87,6 +88,16 @@ uint16_t PacketRouter::AllocateSequenceNumber() {
   } while (prev_seq != desired_prev_seq);
 
   return new_seq;
+}
+
+bool PacketRouter::SendFeedback(rtcp::TransportFeedback* packet) {
+  rtc::CritScope cs(&modules_lock_);
+  for (auto* rtp_module : rtp_modules_) {
+    packet->WithPacketSenderSsrc(rtp_module->SSRC());
+    if (rtp_module->SendFeedbackPacket(*packet))
+      return true;
+  }
+  return false;
 }
 
 }  // namespace webrtc

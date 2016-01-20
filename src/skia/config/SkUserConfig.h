@@ -90,7 +90,7 @@
     PDF documents.
  */
 #define SK_SFNTLY_SUBSETTER \
-    "third_party/sfntly/cpp/src/sample/chromium/font_subsetter.h"
+    "third_party/sfntly/src/cpp/src/sample/chromium/font_subsetter.h"
 
 /*  To write debug messages to a console, skia will call SkDebugf(...) following
     printf conventions (e.g. const char* format, ...). If you want to redirect
@@ -222,8 +222,8 @@ SK_API void SkDebugf_FileLine(const char* file, int line, bool fatal,
 #   define SK_IGNORE_GPU_DITHER
 #endif
 
-#ifndef    SK_SUPPORT_LEGACY_SHADERBITMAPTYPE
-#   define SK_SUPPORT_LEGACY_SHADERBITMAPTYPE
+#ifndef    SK_SAVE_LAYER_BOUNDS_ARE_FILTERED
+#   define SK_SAVE_LAYER_BOUNDS_ARE_FILTERED
 #endif
 
 ///////////////////////// Imported from BUILD.gn and skia_common.gypi

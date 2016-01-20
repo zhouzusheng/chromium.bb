@@ -105,6 +105,11 @@ ScriptPromise MediaDevices::getUserMedia(ScriptState* scriptState, const MediaSt
         return exceptionState.reject(scriptState);
     }
 
+    String errorMessage;
+    if (!request->isSecureContextUse(errorMessage)) {
+        return ScriptPromise::rejectWithDOMException(scriptState, DOMException::create(NotSupportedError, errorMessage));
+    }
+
     request->start();
     return resolver->promise();
 }

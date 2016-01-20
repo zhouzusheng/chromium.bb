@@ -12,10 +12,10 @@
 #include "core/inspector/InspectorTraceEvents.h"
 #include "core/layout/LayoutView.h"
 #include "core/page/Page.h"
-#include "core/paint/DeprecatedPaintLayer.h"
-#include "core/paint/DeprecatedPaintLayerPainter.h"
 #include "core/paint/LayoutObjectDrawingRecorder.h"
 #include "core/paint/PaintInfo.h"
+#include "core/paint/PaintLayer.h"
+#include "core/paint/PaintLayerPainter.h"
 #include "core/paint/ScrollbarPainter.h"
 #include "core/paint/TransformRecorder.h"
 #include "platform/fonts/FontCache.h"
@@ -80,9 +80,9 @@ void FramePainter::paintContents(GraphicsContext* context, const GlobalPaintFlag
     else
         fillWithRed = true;
 
-    if (fillWithRed && !LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*context, *frameView().layoutView(), DisplayItem::DebugRedFill)) {
+    if (fillWithRed && !LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*context, *frameView().layoutView(), DisplayItem::DebugRedFill, LayoutPoint())) {
         IntRect contentRect(IntPoint(), frameView().contentsSize());
-        LayoutObjectDrawingRecorder drawingRecorder(*context, *frameView().layoutView(), DisplayItem::DebugRedFill, contentRect);
+        LayoutObjectDrawingRecorder drawingRecorder(*context, *frameView().layoutView(), DisplayItem::DebugRedFill, contentRect, LayoutPoint());
     }
 #endif
 
@@ -113,14 +113,14 @@ void FramePainter::paintContents(GraphicsContext* context, const GlobalPaintFlag
 
     // frameView().nodeToDraw() is used to draw only one element (and its descendants)
     LayoutObject* layoutObject = frameView().nodeToDraw() ? frameView().nodeToDraw()->layoutObject() : 0;
-    DeprecatedPaintLayer* rootLayer = layoutView->layer();
+    PaintLayer* rootLayer = layoutView->layer();
 
 #if ENABLE(ASSERT)
     layoutView->assertSubtreeIsLaidOut();
     LayoutObject::SetLayoutNeededForbiddenScope forbidSetNeedsLayout(*rootLayer->layoutObject());
 #endif
 
-    DeprecatedPaintLayerPainter layerPainter(*rootLayer);
+    PaintLayerPainter layerPainter(*rootLayer);
 
     float deviceScaleFactor = blink::deviceScaleFactor(rootLayer->layoutObject()->frame());
     context->setDeviceScaleFactor(deviceScaleFactor);
@@ -132,11 +132,9 @@ void FramePainter::paintContents(GraphicsContext* context, const GlobalPaintFlag
 
     frameView().setIsPainting(false);
 
-    frameView().setLastPaintTime(currentTime());
-
     // Regions may have changed as a result of the visibility/z-index of element changing.
     if (document->annotatedRegionsDirty())
-        frameView().updateAnnotatedRegions();
+        frameView().updateDocumentAnnotatedRegions();
 
     if (isTopLevelPainter) {
         // Everything that happens after paintContents completions is considered
@@ -165,12 +163,12 @@ void FramePainter::paintScrollCorner(GraphicsContext* context, const IntRect& co
 {
     if (frameView().scrollCorner()) {
         bool needsBackground = frameView().frame().isMainFrame();
-        if (needsBackground && !LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*context, *frameView().layoutView(), DisplayItem::ScrollbarCorner)) {
-            LayoutObjectDrawingRecorder drawingRecorder(*context, *frameView().layoutView(), DisplayItem::ScrollbarCorner, cornerRect);
+        if (needsBackground && !LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*context, *frameView().layoutView(), DisplayItem::ScrollbarCorner, LayoutPoint())) {
+            LayoutObjectDrawingRecorder drawingRecorder(*context, *frameView().layoutView(), DisplayItem::ScrollbarCorner, FloatRect(cornerRect), LayoutPoint());
             context->fillRect(cornerRect, frameView().baseBackgroundColor());
 
         }
-        ScrollbarPainter::paintIntoRect(frameView().scrollCorner(), context, cornerRect.location(), LayoutRect(cornerRect));
+        ScrollbarPainter::paintIntoRect(*frameView().scrollCorner(), context, cornerRect.location(), LayoutRect(cornerRect));
         return;
     }
 
@@ -189,8 +187,9 @@ void FramePainter::paintScrollbar(GraphicsContext* context, Scrollbar* bar, cons
     bar->paint(context, rect);
 }
 
-FrameView& FramePainter::frameView()
+const FrameView& FramePainter::frameView()
 {
+    ASSERT(m_frameView);
     return *m_frameView;
 }
 

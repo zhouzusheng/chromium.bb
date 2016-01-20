@@ -13,8 +13,8 @@
 #include "modules/fetch/FetchBlobDataConsumerHandle.h"
 #include "modules/fetch/FetchHeaderList.h"
 #include "platform/network/ResourceRequest.h"
-#include "public/platform/WebServiceWorkerRequest.h"
 #include "public/platform/WebURLRequest.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerRequest.h"
 
 namespace blink {
 
@@ -33,7 +33,7 @@ FetchRequestData* FetchRequestData::create(ExecutionContext* executionContext, c
     if (webRequest.blobDataHandle())
         request->setBuffer(new BodyStreamBuffer(FetchBlobDataConsumerHandle::create(executionContext, webRequest.blobDataHandle())));
     request->setContext(webRequest.requestContext());
-    request->m_referrer.setURL(webRequest.referrer());
+    request->setReferrer(Referrer(webRequest.referrerUrl().string(), ReferrerPolicyDefault));
     request->setMode(webRequest.mode());
     request->setCredentials(webRequest.credentialsMode());
     request->setRedirect(webRequest.redirectMode());
@@ -64,14 +64,12 @@ FetchRequestData* FetchRequestData::cloneExceptBody()
 FetchRequestData* FetchRequestData::clone(ExecutionContext* executionContext)
 {
     FetchRequestData* request = FetchRequestData::cloneExceptBody();
-    if (m_buffer->hasBody()) {
+    if (m_buffer) {
         OwnPtr<FetchDataConsumerHandle> dest1, dest2;
         // TODO(yhirano): unlock the buffer.
         DataConsumerTee::create(executionContext, m_buffer->lock(executionContext), &dest1, &dest2);
         m_buffer = new BodyStreamBuffer(dest1.release());
         request->m_buffer = new BodyStreamBuffer(dest2.release());
-    } else {
-        m_buffer = new BodyStreamBuffer;
     }
     return request;
 }
@@ -80,7 +78,7 @@ FetchRequestData* FetchRequestData::pass(ExecutionContext* executionContext)
 {
     FetchRequestData* request = FetchRequestData::cloneExceptBody();
     request->m_buffer = m_buffer;
-    m_buffer = new BodyStreamBuffer;
+    m_buffer = nullptr;
     return request;
 }
 
@@ -94,11 +92,11 @@ FetchRequestData::FetchRequestData()
     , m_unsafeRequestFlag(false)
     , m_context(WebURLRequest::RequestContextUnspecified)
     , m_sameOriginDataURLFlag(false)
+    , m_referrer(Referrer(clientReferrerString(), ReferrerPolicyDefault))
     , m_mode(WebURLRequest::FetchRequestModeNoCORS)
     , m_credentials(WebURLRequest::FetchCredentialsModeOmit)
     , m_redirect(WebURLRequest::FetchRedirectModeFollow)
     , m_responseTainting(BasicTainting)
-    , m_buffer(new BodyStreamBuffer)
 {
 }
 

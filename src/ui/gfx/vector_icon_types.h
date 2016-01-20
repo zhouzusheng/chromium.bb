@@ -24,9 +24,13 @@ enum CommandType {
   NEW_PATH,
   // Sets the color for the current path.
   PATH_COLOR_ARGB,
+  // Sets the path to clear mode (Skia's kClear_Mode).
+  PATH_MODE_CLEAR,
   // By default, the path will be filled. This changes the paint action to
   // stroke at the given width.
   STROKE,
+  // By default, a stroke has a round cap. This sets it to square.
+  CAP_SQUARE,
   // These correspond to pathing commands.
   MOVE_TO,
   R_MOVE_TO,
@@ -39,6 +43,7 @@ enum CommandType {
   CUBIC_TO,
   R_CUBIC_TO,
   CIRCLE,
+  ROUND_RECT,
   CLOSE,
   // Sets the dimensions of the canvas in dip. (Default is kReferenceSizeDip.)
   CANVAS_DIMENSIONS,

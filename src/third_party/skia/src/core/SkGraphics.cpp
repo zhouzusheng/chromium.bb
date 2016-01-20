@@ -12,6 +12,7 @@
 #include "SkBlitter.h"
 #include "SkCanvas.h"
 #include "SkGeometry.h"
+#include "SkGlyphCache.h"
 #include "SkMath.h"
 #include "SkMatrix.h"
 #include "SkOpts.h"
@@ -19,6 +20,7 @@
 #include "SkPathEffect.h"
 #include "SkPixelRef.h"
 #include "SkRefCnt.h"
+#include "SkResourceCache.h"
 #include "SkRTConf.h"
 #include "SkScalerContext.h"
 #include "SkShader.h"
@@ -27,6 +29,8 @@
 #include "SkTime.h"
 #include "SkUtils.h"
 #include "SkXfermode.h"
+
+#include <stdlib.h>
 
 void SkGraphics::GetVersion(int32_t* major, int32_t* minor, int32_t* patch) {
     if (major) {
@@ -54,10 +58,11 @@ void SkGraphics::Init() {
 #endif
 }
 
-void SkGraphics::Term() {
-    PurgeFontCache();
-    PurgeResourceCache();
-    SkPaint::Term();
+///////////////////////////////////////////////////////////////////////////////
+
+void SkGraphics::DumpMemoryStatistics(SkTraceMemoryDump* dump) {
+  SkResourceCache::DumpMemoryStatistics(dump);
+  SkGlyphCache::DumpMemoryStatistics(dump);
 }
 
 ///////////////////////////////////////////////////////////////////////////////

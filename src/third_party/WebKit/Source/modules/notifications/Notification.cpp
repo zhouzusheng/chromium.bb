@@ -32,10 +32,7 @@
 #include "modules/notifications/Notification.h"
 
 #include "bindings/core/v8/ExceptionState.h"
-#include "bindings/core/v8/ScriptPromise.h"
 #include "bindings/core/v8/ScriptState.h"
-#include "bindings/core/v8/ScriptValue.h"
-#include "bindings/core/v8/ScriptWrappable.h"
 #include "bindings/core/v8/SerializedScriptValueFactory.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExecutionContext.h"
@@ -83,7 +80,7 @@ Notification* Notification::create(ExecutionContext* context, const String& titl
     }
 
     String insecureOriginMessage;
-    UseCounter::Feature feature = context->isPrivilegedContext(insecureOriginMessage)
+    UseCounter::Feature feature = context->isSecureContext(insecureOriginMessage)
         ? UseCounter::NotificationSecureOrigin
         : UseCounter::NotificationInsecureOrigin;
 
@@ -253,6 +250,11 @@ bool Notification::silent() const
     return m_data.silent;
 }
 
+bool Notification::requireInteraction() const
+{
+    return m_data.requireInteraction;
+}
+
 ScriptValue Notification::data(ScriptState* scriptState)
 {
     if (m_developerData.isEmpty()) {
@@ -314,14 +316,12 @@ WebNotificationPermission Notification::checkPermission(ExecutionContext* contex
 ScriptPromise Notification::requestPermission(ScriptState* scriptState, NotificationPermissionCallback* deprecatedCallback)
 {
     ExecutionContext* context = scriptState->executionContext();
-    NotificationPermissionClient* permissionClient = NotificationPermissionClient::from(context);
-    if (!permissionClient) {
-        // TODO(peter): Assert that this code-path will only be reached for Document environments when Blink
-        // supports [Exposed] annotations on class members in IDL definitions. See https://crbug.com/442139.
-        return ScriptPromise::cast(scriptState, v8String(scriptState->isolate(), permission(context)));
-    }
+    if (NotificationPermissionClient* permissionClient = NotificationPermissionClient::from(context))
+        return permissionClient->requestPermission(scriptState, deprecatedCallback);
 
-    return permissionClient->requestPermission(scriptState, deprecatedCallback);
+    // The context has been detached. Return a promise that will never settle.
+    ASSERT(context->activeDOMObjectsAreStopped());
+    return ScriptPromise();
 }
 
 size_t Notification::maxActions()

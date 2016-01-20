@@ -58,6 +58,7 @@
             'acm_receive_test',
             'acm_send_test',
             'audio_coding_module',
+            'audio_conference_mixer',
             'audio_device'  ,
             'audio_processing',
             'audioproc_test_utils',
@@ -92,11 +93,11 @@
             '<(webrtc_root)/test/test.gyp:frame_generator',
             '<(webrtc_root)/test/test.gyp:rtp_test_utils',
             '<(webrtc_root)/test/test.gyp:test_support_main',
+            '<(webrtc_root)/test/webrtc_test_common.gyp:webrtc_test_common',
             '<(webrtc_root)/tools/tools.gyp:agc_test_utils',
           ],
           'sources': [
             'audio_coding/codecs/cng/audio_encoder_cng_unittest.cc',
-            'audio_coding/codecs/opus/audio_encoder_mutable_opus_test.cc',
             'audio_coding/main/acm2/acm_receiver_unittest.cc',
             'audio_coding/main/acm2/acm_receiver_unittest_oldapi.cc',
             'audio_coding/main/acm2/audio_coding_module_unittest.cc',
@@ -158,8 +159,11 @@
             'audio_coding/neteq/mock/mock_payload_splitter.h',
             'audio_coding/neteq/tools/input_audio_file_unittest.cc',
             'audio_coding/neteq/tools/packet_unittest.cc',
+            'audio_conference_mixer/test/audio_conference_mixer_unittest.cc',
+            'audio_device/fine_audio_buffer_unittest.cc',
             'audio_processing/aec/echo_cancellation_unittest.cc',
             'audio_processing/aec/system_delay_unittest.cc',
+            'audio_processing/agc/agc_manager_direct_unittest.cc',
             # TODO(ajm): Fix to match new interface.
             # 'audio_processing/agc/agc_unittest.cc',
             'audio_processing/agc/histogram_unittest.cc',
@@ -167,7 +171,6 @@
             'audio_processing/beamformer/complex_matrix_unittest.cc',
             'audio_processing/beamformer/covariance_matrix_generator_unittest.cc',
             'audio_processing/beamformer/matrix_unittest.cc',
-            'audio_processing/beamformer/mock_nonlinear_beamformer.cc',
             'audio_processing/beamformer/mock_nonlinear_beamformer.h',
             'audio_processing/echo_cancellation_impl_unittest.cc',
             'audio_processing/intelligibility/intelligibility_enhancer_unittest.cc',
@@ -214,6 +217,7 @@
             'pacing/packet_router_unittest.cc',
             'remote_bitrate_estimator/bwe_simulations.cc',
             'remote_bitrate_estimator/include/mock/mock_remote_bitrate_observer.h',
+            'remote_bitrate_estimator/include/mock/mock_remote_bitrate_estimator.h',
             'remote_bitrate_estimator/inter_arrival_unittest.cc',
             'remote_bitrate_estimator/overuse_detector_unittest.cc',
             'remote_bitrate_estimator/rate_statistics_unittest.cc',
@@ -221,17 +225,20 @@
             'remote_bitrate_estimator/remote_bitrate_estimator_single_stream_unittest.cc',
             'remote_bitrate_estimator/remote_bitrate_estimator_unittest_helper.cc',
             'remote_bitrate_estimator/remote_bitrate_estimator_unittest_helper.h',
+            'remote_bitrate_estimator/remote_estimator_proxy_unittest.cc',
             'remote_bitrate_estimator/send_time_history_unittest.cc',
             'remote_bitrate_estimator/test/bwe_test_framework_unittest.cc',
             'remote_bitrate_estimator/test/bwe_unittest.cc',
             'remote_bitrate_estimator/test/metric_recorder_unittest.cc',
             'remote_bitrate_estimator/test/estimators/nada_unittest.cc',
+            'remote_bitrate_estimator/transport_feedback_adapter_unittest.cc',
             'rtp_rtcp/source/mock/mock_rtp_payload_strategy.h',
             'rtp_rtcp/source/byte_io_unittest.cc',
             'rtp_rtcp/source/fec_receiver_unittest.cc',
             'rtp_rtcp/source/fec_test_helper.cc',
             'rtp_rtcp/source/fec_test_helper.h',
             'rtp_rtcp/source/h264_sps_parser_unittest.cc',
+            'rtp_rtcp/source/h264_bitstream_parser_unittest.cc',
             'rtp_rtcp/source/nack_rtx_unittest.cc',
             'rtp_rtcp/source/packet_loss_stats_unittest.cc',
             'rtp_rtcp/source/producer_fec_unittest.cc',
@@ -336,7 +343,7 @@
             }],
             ['build_libvpx==1', {
               'dependencies': [
-                '<(libvpx_dir)/libvpx.gyp:libvpx',
+                '<(libvpx_dir)/libvpx.gyp:libvpx_new',
               ],
             }],
             ['OS=="android"', {
@@ -355,7 +362,6 @@
                 'audio_device/android/audio_manager_unittest.cc',
                 'audio_device/android/ensure_initialized.cc',
                 'audio_device/android/ensure_initialized.h',
-                'audio_device/android/fine_audio_buffer_unittest.cc',
               ],
             }],
             ['OS=="ios"', {
@@ -465,6 +471,45 @@
         ['test_isolation_mode != "noop"', {
           'targets': [
             {
+              'target_name': 'audio_codec_speed_tests_run',
+              'type': 'none',
+              'dependencies': [
+                'audio_codec_speed_tests',
+              ],
+              'includes': [
+                '../build/isolate.gypi',
+              ],
+              'sources': [
+                'audio_codec_speed_tests.isolate',
+              ],
+            },
+            {
+              'target_name': 'audio_decoder_unittests_run',
+              'type': 'none',
+              'dependencies': [
+                'audio_decoder_unittests',
+              ],
+              'includes': [
+                '../build/isolate.gypi',
+              ],
+              'sources': [
+                'audio_decoder_unittests.isolate',
+              ],
+            },
+            {
+              'target_name': 'audio_device_tests_run',
+              'type': 'none',
+              'dependencies': [
+                'audio_device_tests',
+              ],
+              'includes': [
+                '../build/isolate.gypi',
+              ],
+              'sources': [
+                'audio_device_tests.isolate',
+              ],
+            },
+            {
               'target_name': 'modules_tests_run',
               'type': 'none',
               'dependencies': [
@@ -488,6 +533,19 @@
               ],
               'sources': [
                 'modules_unittests.isolate',
+              ],
+            },
+            {
+              'target_name': 'video_render_tests_run',
+              'type': 'none',
+              'dependencies': [
+                'video_render_tests',
+              ],
+              'includes': [
+                '../build/isolate.gypi',
+              ],
+              'sources': [
+                'video_render_tests.isolate',
               ],
             },
           ],

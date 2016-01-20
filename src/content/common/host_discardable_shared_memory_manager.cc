@@ -64,6 +64,19 @@ class DiscardableMemoryImpl : public base::DiscardableMemory {
     return shared_memory_->memory();
   }
 
+  base::trace_event::MemoryAllocatorDump* CreateMemoryAllocatorDump(
+      const char* name,
+      base::trace_event::ProcessMemoryDump* pmd) const override {
+    // The memory could have been purged, but we still create a dump with
+    // mapped_size. So, the size can be inaccurate.
+    base::trace_event::MemoryAllocatorDump* dump =
+        pmd->CreateAllocatorDump(name);
+    dump->AddScalar(base::trace_event::MemoryAllocatorDump::kNameSize,
+                    base::trace_event::MemoryAllocatorDump::kUnitsBytes,
+                    shared_memory_->mapped_size());
+    return dump;
+  }
+
  private:
   scoped_ptr<base::DiscardableSharedMemory> shared_memory_;
   const base::Closure deleted_callback_;
@@ -167,9 +180,16 @@ bool HostDiscardableSharedMemoryManager::OnMemoryDump(
           "discardable/process_%x/segment_%d", child_process_id, segment_id);
       base::trace_event::MemoryAllocatorDump* dump =
           pmd->CreateAllocatorDump(dump_name);
+
       dump->AddScalar(base::trace_event::MemoryAllocatorDump::kNameSize,
                       base::trace_event::MemoryAllocatorDump::kUnitsBytes,
                       segment->memory()->mapped_size());
+
+      // Host can only tell if whole segment is locked or not.
+      dump->AddScalar(
+          "locked_size", base::trace_event::MemoryAllocatorDump::kUnitsBytes,
+          segment->memory()->IsMemoryLocked() ? segment->memory()->mapped_size()
+                                              : 0u);
 
       // Create the cross-process ownership edge. If the child creates a
       // corresponding dump for the same segment, this will avoid to
@@ -435,9 +455,6 @@ void HostDiscardableSharedMemoryManager::ReleaseMemory(
 
 void HostDiscardableSharedMemoryManager::BytesAllocatedChanged(
     size_t new_bytes_allocated) const {
-  TRACE_COUNTER1("renderer_host", "TotalDiscardableMemoryUsage",
-                 new_bytes_allocated);
-
   static const char kTotalDiscardableMemoryAllocatedKey[] =
       "total-discardable-memory-allocated";
   base::debug::SetCrashKeyValue(kTotalDiscardableMemoryAllocatedKey,

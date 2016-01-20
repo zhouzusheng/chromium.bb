@@ -49,7 +49,6 @@ SchedulerStateMachine::SchedulerStateMachine(const SchedulerSettings& settings)
       impl_latency_takes_priority_(false),
       main_thread_missed_last_deadline_(false),
       skip_next_begin_main_frame_to_reduce_latency_(false),
-      continuous_painting_(false),
       children_need_begin_frames_(false),
       defer_commits_(false),
       video_needs_begin_frames_(false),
@@ -242,7 +241,6 @@ void SchedulerStateMachine::AsValueInto(
                     main_thread_missed_last_deadline_);
   state->SetBoolean("skip_next_begin_main_frame_to_reduce_latency",
                     skip_next_begin_main_frame_to_reduce_latency_);
-  state->SetBoolean("continuous_painting", continuous_painting_);
   state->SetBoolean("children_need_begin_frames", children_need_begin_frames_);
   state->SetBoolean("video_needs_begin_frames", video_needs_begin_frames_);
   state->SetBoolean("defer_commits", defer_commits_);
@@ -255,19 +253,21 @@ void SchedulerStateMachine::AsValueInto(
 }
 
 bool SchedulerStateMachine::PendingDrawsShouldBeAborted() const {
+  // Normally when |visible_| is false, pending activations will be forced and
+  // draws will be aborted. However, when the embedder is Android WebView,
+  // software draws could be scheduled by the Android OS at any time and draws
+  // should not be aborted in this case.
+  bool is_output_surface_lost = (output_surface_state_ == OUTPUT_SURFACE_LOST);
+  if (settings_.using_synchronous_renderer_compositor)
+    return is_output_surface_lost || !can_draw_;
+
   // These are all the cases where we normally cannot or do not want to draw
   // but, if needs_redraw_ is true and we do not draw to make forward progress,
   // we might deadlock with the main thread.
   // This should be a superset of PendingActivationsShouldBeForced() since
   // activation of the pending tree is blocked by drawing of the active tree and
   // the main thread might be blocked on activation of the most recent commit.
-  if (PendingActivationsShouldBeForced())
-    return true;
-
-  // Additional states where we should abort draws.
-  if (!can_draw_)
-    return true;
-  return false;
+  return is_output_surface_lost || !can_draw_ || !visible_;
 }
 
 bool SchedulerStateMachine::PendingActivationsShouldBeForced() const {
@@ -291,6 +291,9 @@ bool SchedulerStateMachine::PendingActivationsShouldBeForced() const {
 }
 
 bool SchedulerStateMachine::ShouldBeginOutputSurfaceCreation() const {
+  if (!visible_)
+    return false;
+
   // Don't try to initialize too early.
   if (!can_start_)
     return false;
@@ -627,8 +630,6 @@ void SchedulerStateMachine::WillCommit(bool commit_has_no_updates) {
   // This post-commit work is common to both completed and aborted commits.
   pending_tree_is_ready_for_activation_ = false;
 
-  if (continuous_painting_)
-    needs_begin_main_frame_ = true;
   last_commit_had_no_updates_ = commit_has_no_updates;
 }
 

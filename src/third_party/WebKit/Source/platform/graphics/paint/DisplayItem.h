@@ -26,7 +26,7 @@ class PLATFORM_EXPORT DisplayItem {
 public:
     enum {
         // Must be kept in sync with core/paint/PaintPhase.h.
-        PaintPhaseMax = 12,
+        PaintPhaseMax = 11,
     };
 
     // A display item type uniquely identifies a display item of a client.
@@ -90,7 +90,8 @@ public:
         ScrollbarVertical, // For ScrollbarThemeMacNonOverlayAPI only.
         SelectionGap,
         SelectionTint,
-        TableCellBackgroundFromSelfPaintingRow, // FIXME: To be deprecated.
+        TableCellBackgroundFromContainers,
+        TableCellBackgroundFromSelfPaintingRow,
         // Table collapsed borders can be painted together (e.g., left & top) but there are at most 4 phases of collapsed
         // border painting for a single cell. To disambiguate these phases of collapsed border painting, a mask is used.
         // TableCollapsedBorderBase can be larger than TableCollapsedBorderUnalignedBase to ensure the base lower bits are 0's.
@@ -125,7 +126,6 @@ public:
         ClipPopupListBoxFrame,
         ClipSelectionImage,
         PageWidgetDelegateClip,
-        TransparencyClip,
         ClipPrintedPage,
         ClipLast = ClipPrintedPage,
 
@@ -165,20 +165,14 @@ public:
         BeginFixedPositionContainer,
         EndFixedPositionContainer,
 
-        CachedSubtreeFirst,
-        CachedSubtreePaintPhaseFirst = CachedSubtreeFirst,
-        CachedSubtreePaintPhaseLast = CachedSubtreePaintPhaseFirst + PaintPhaseMax,
-        CachedSubtreeLast = CachedSubtreePaintPhaseLast,
-
-        BeginSubtreeFirst,
-        BeginSubtreePaintPhaseFirst = BeginSubtreeFirst,
-        BeginSubtreePaintPhaseLast = BeginSubtreePaintPhaseFirst + PaintPhaseMax,
-        BeginSubtreeLast = BeginSubtreePaintPhaseLast,
-
-        EndSubtreeFirst,
-        EndSubtreePaintPhaseFirst = EndSubtreeFirst,
-        EndSubtreePaintPhaseLast = EndSubtreePaintPhaseFirst + PaintPhaseMax,
-        EndSubtreeLast = EndSubtreePaintPhaseLast,
+        SubsequenceFirst,
+        SubsequenceNegativeZOrder = SubsequenceFirst,
+        SubsequenceNormalFlowAndPositiveZOrder,
+        SubsequenceLast = SubsequenceNormalFlowAndPositiveZOrder,
+        EndSubsequenceFirst,
+        EndSubsequenceLast = EndSubsequenceFirst + SubsequenceLast - SubsequenceFirst,
+        CachedSubsequenceFirst,
+        CachedSubsequenceLast = CachedSubsequenceFirst + SubsequenceLast - SubsequenceFirst,
 
         UninitializedType,
         TypeLast = UninitializedType
@@ -239,8 +233,8 @@ public:
     {
         if (isCachedDrawingType(type))
             return cachedDrawingTypeToDrawingType(type);
-        if (isCachedSubtreeType(type))
-            return cachedSubtreeTypeToBeginSubtreeType(type);
+        if (isCachedSubsequenceType(type))
+            return cachedSubsequenceTypeToSubsequenceType(type);
         return type;
     }
 
@@ -318,21 +312,15 @@ public:
     DEFINE_PAIRED_CATEGORY_METHODS(Scroll, scroll)
     DEFINE_PAINT_PHASE_CONVERSION_METHOD(Scroll)
 
-    DEFINE_PAIRED_CATEGORY_METHODS(Transform3D, transform3D);
+    DEFINE_PAIRED_CATEGORY_METHODS(Transform3D, transform3D)
 
-    DEFINE_CATEGORY_METHODS(CachedSubtree)
-    DEFINE_PAINT_PHASE_CONVERSION_METHOD(CachedSubtree)
-    DEFINE_CATEGORY_METHODS(BeginSubtree)
-    DEFINE_PAINT_PHASE_CONVERSION_METHOD(BeginSubtree)
-    DEFINE_CATEGORY_METHODS(EndSubtree)
-    DEFINE_PAINT_PHASE_CONVERSION_METHOD(EndSubtree)
-    DEFINE_CONVERSION_METHODS(CachedSubtree, cachedSubtree, BeginSubtree, beginSubtree)
-    DEFINE_CONVERSION_METHODS(CachedSubtree, cachedSubtree, EndSubtree, endSubtree)
-    DEFINE_CONVERSION_METHODS(BeginSubtree, beginSubtree, EndSubtree, endSubtree)
+    DEFINE_PAIRED_CATEGORY_METHODS(Subsequence, subsequence)
+    DEFINE_CATEGORY_METHODS(CachedSubsequence)
+    DEFINE_CONVERSION_METHODS(Subsequence, subsequence, CachedSubsequence, cachedSubsequence)
 
-    static bool isCachedType(Type type) { return isCachedDrawingType(type) || isCachedSubtreeType(type); }
+    static bool isCachedType(Type type) { return isCachedDrawingType(type) || isCachedSubsequenceType(type); }
     bool isCached() const { return isCachedType(m_type); }
-    static bool isCacheableType(Type type) { return isDrawingType(type) || isBeginSubtreeType(type); }
+    static bool isCacheableType(Type type) { return isDrawingType(type) || isSubsequenceType(type); }
     bool isCacheable() const { return !skippedCache() && isCacheableType(m_type); }
 
     virtual bool isBegin() const { return false; }
@@ -340,16 +328,24 @@ public:
 
 #if ENABLE(ASSERT)
     virtual bool isEndAndPairedWith(DisplayItem::Type otherType) const { return false; }
+    virtual bool equals(const DisplayItem& other) const
+    {
+        return m_client == other.m_client
+            && m_scope == other.m_scope
+            && m_type == other.m_type
+            && m_derivedSize == other.m_derivedSize
+            && m_skippedCache == other.m_skippedCache;
+    }
 #endif
 
     virtual bool drawsContent() const { return false; }
 
     bool isValid() const { return m_client; }
-    void clearClientForUnderInvalidationChecking() { m_client = nullptr; }
 
 #ifndef NDEBUG
     static WTF::String typeAsDebugString(DisplayItem::Type);
     const WTF::String& clientDebugString() const { return m_clientDebugString; }
+    void setClientDebugString(const WTF::String& s) { m_clientDebugString = s; }
     WTF::String asDebugString() const;
     virtual void dumpPropertiesAsDebugString(WTF::StringBuilder&) const;
 #endif
@@ -366,16 +362,13 @@ private:
         , m_type(UninitializedType)
         , m_derivedSize(sizeof(*this))
         , m_skippedCache(false)
-#ifndef NDEBUG
-        , m_clientDebugString("invalid")
-#endif
     { }
 
-    DisplayItemClient m_client;
+    const DisplayItemClient m_client;
     unsigned m_scope;
     static_assert(TypeLast < (1 << 16), "DisplayItem::Type should fit in 16 bits");
     const Type m_type : 16;
-    unsigned m_derivedSize : 8; // size of the actual derived class
+    const unsigned m_derivedSize : 8; // size of the actual derived class
     unsigned m_skippedCache : 1;
 
 #ifndef NDEBUG

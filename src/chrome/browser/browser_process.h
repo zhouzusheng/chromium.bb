@@ -19,7 +19,6 @@
 #include "chrome/browser/ui/host_desktop.h"
 
 class BackgroundModeManager;
-class ChromeNetLog;
 class CRLSetFetcher;
 class DownloadRequestLimiter;
 class DownloadStatusUpdater;
@@ -35,7 +34,6 @@ class PrefRegistrySimple;
 class PrefService;
 class Profile;
 class ProfileManager;
-class PromoResourceService;
 class SafeBrowsingService;
 class StatusTray;
 class WatchDogThread;
@@ -43,7 +41,7 @@ class WatchDogThread;
 class WebRtcLogUploader;
 #endif
 
-namespace chrome_variations {
+namespace variations {
 class VariationsService;
 }
 
@@ -62,7 +60,7 @@ class GCMDriver;
 }
 
 namespace memory {
-class OomPriorityManager;
+class TabManager;
 }
 
 namespace message_center {
@@ -75,6 +73,10 @@ class MetricsService;
 
 namespace net {
 class URLRequestContextGetter;
+}
+
+namespace net_log {
+class ChromeNetLog;
 }
 
 namespace network_time {
@@ -98,6 +100,10 @@ class RapporService;
 
 namespace safe_browsing {
 class ClientSideDetectionService;
+}
+
+namespace web_resource {
+class PromoResourceService;
 }
 
 // NOT THREAD SAFE, call only from the main thread.
@@ -126,8 +132,8 @@ class BrowserProcess {
   virtual ProfileManager* profile_manager() = 0;
   virtual PrefService* local_state() = 0;
   virtual net::URLRequestContextGetter* system_request_context() = 0;
-  virtual chrome_variations::VariationsService* variations_service() = 0;
-  virtual PromoResourceService* promo_resource_service() = 0;
+  virtual variations::VariationsService* variations_service() = 0;
+  virtual web_resource::PromoResourceService* promo_resource_service() = 0;
 
   virtual BrowserProcessPlatformPart* platform_part() = 0;
 
@@ -220,7 +226,7 @@ class BrowserProcess {
   virtual void StartAutoupdateTimer() = 0;
 #endif
 
-  virtual ChromeNetLog* net_log() = 0;
+  virtual net_log::ChromeNetLog* net_log() = 0;
 
   virtual component_updater::ComponentUpdateService* component_updater() = 0;
 
@@ -244,8 +250,8 @@ class BrowserProcess {
 
   virtual gcm::GCMDriver* gcm_driver() = 0;
 
-  // Returns the out-of-memory priority manager if it exists, null otherwise.
-  virtual memory::OomPriorityManager* GetOomPriorityManager() = 0;
+  // Returns the tab manager if it exists, null otherwise.
+  virtual memory::TabManager* GetTabManager() = 0;
 
   // Returns the default web client state of Chrome (i.e., was it the user's
   // default browser) at the time a previous check was made sometime between

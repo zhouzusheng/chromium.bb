@@ -4,6 +4,7 @@
 
 #include "media/formats/mp2t/es_parser_mpeg1audio.h"
 
+#include <vector>
 
 #include "base/basictypes.h"
 #include "base/bind.h"
@@ -11,9 +12,9 @@
 #include "base/strings/string_number_conversions.h"
 #include "media/base/audio_timestamp_helper.h"
 #include "media/base/bit_reader.h"
-#include "media/base/buffers.h"
 #include "media/base/channel_layout.h"
 #include "media/base/stream_parser_buffer.h"
+#include "media/base/timestamp_constants.h"
 #include "media/formats/common/offset_byte_queue.h"
 #include "media/formats/mp2t/mp2t_common.h"
 #include "media/formats/mpeg/mpeg1_audio_stream_parser.h"
@@ -174,7 +175,7 @@ bool EsParserMpeg1Audio::UpdateAudioConfiguration(
       kSampleFormatS16,
       header.channel_layout,
       header.sample_rate,
-      NULL, 0,
+      std::vector<uint8_t>(),
       false);
 
   if (!audio_decoder_config.Matches(last_audio_decoder_config_)) {

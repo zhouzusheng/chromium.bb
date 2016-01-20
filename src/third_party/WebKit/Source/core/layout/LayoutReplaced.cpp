@@ -29,8 +29,8 @@
 #include "core/layout/LayoutBlock.h"
 #include "core/layout/LayoutImage.h"
 #include "core/layout/LayoutView.h"
-#include "core/paint/DeprecatedPaintLayer.h"
 #include "core/paint/PaintInfo.h"
+#include "core/paint/PaintLayer.h"
 #include "core/paint/ReplacedPainter.h"
 #include "platform/LengthFunctions.h"
 
@@ -94,7 +94,7 @@ void LayoutReplaced::layout()
 
     clearNeedsLayout();
 
-    if (replacedContentRect() != oldContentRect)
+    if (!RuntimeEnabledFeatures::slimmingPaintV2Enabled() && replacedContentRect() != oldContentRect)
         setShouldDoFullPaintInvalidation();
 }
 
@@ -106,7 +106,7 @@ void LayoutReplaced::intrinsicSizeChanged()
     setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation(LayoutInvalidationReason::SizeChanged);
 }
 
-void LayoutReplaced::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void LayoutReplaced::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset) const
 {
     ReplacedPainter(*this).paint(paintInfo, paintOffset);
 }
@@ -445,7 +445,7 @@ LayoutRect LayoutReplaced::selectionRectForPaintInvalidation(const LayoutBoxMode
     mapRectToPaintInvalidationBacking(paintInvalidationContainer, rect, 0);
     // FIXME: groupedMapping() leaks the squashing abstraction.
     if (paintInvalidationContainer->layer()->groupedMapping())
-        DeprecatedPaintLayer::mapRectToPaintBackingCoordinates(paintInvalidationContainer, rect);
+        PaintLayer::mapRectToPaintBackingCoordinates(paintInvalidationContainer, rect);
     return rect;
 }
 

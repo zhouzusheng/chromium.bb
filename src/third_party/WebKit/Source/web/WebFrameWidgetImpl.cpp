@@ -41,13 +41,15 @@
 #include "core/frame/Settings.h"
 #include "core/input/EventHandler.h"
 #include "core/layout/LayoutView.h"
-#include "core/layout/compositing/DeprecatedPaintLayerCompositor.h"
+#include "core/layout/compositing/PaintLayerCompositor.h"
+#include "core/page/ContextMenuController.h"
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
 #include "platform/KeyboardCodes.h"
 #include "platform/NotImplemented.h"
 #include "public/web/WebBeginFrameArgs.h"
 #include "public/web/WebWidgetClient.h"
+#include "web/ContextMenuAllowedScope.h"
 #include "web/WebDevToolsAgentImpl.h"
 #include "web/WebInputEventConversion.h"
 #include "web/WebLocalFrameImpl.h"
@@ -65,9 +67,9 @@ WebFrameWidget* WebFrameWidget::create(WebWidgetClient* client, WebLocalFrame* l
     return WebFrameWidgetImpl::create(client, localRoot);
 }
 
-WebFrameWidget* WebFrameWidget::create(WebView* webView)
+WebFrameWidget* WebFrameWidget::create(WebWidgetClient* client, WebView* webView, WebLocalFrame* mainFrame)
 {
-    return new WebViewFrameWidget(*toWebViewImpl(webView));
+    return new WebViewFrameWidget(client, toWebViewImpl(*webView), toWebLocalFrameImpl(*mainFrame));
 }
 
 WebFrameWidgetImpl* WebFrameWidgetImpl::create(WebWidgetClient* client, WebLocalFrame* localRoot)
@@ -246,13 +248,9 @@ void WebFrameWidgetImpl::didExitFullScreen()
 
 void WebFrameWidgetImpl::beginFrame(const WebBeginFrameArgs& frameTime)
 {
-    TRACE_EVENT0("blink", "WebFrameWidgetImpl::beginFrame");
-
-    WebBeginFrameArgs validFrameTime(frameTime);
-    if (!validFrameTime.lastFrameTimeMonotonic)
-        validFrameTime.lastFrameTimeMonotonic = monotonicallyIncreasingTime();
-
-    PageWidgetDelegate::animate(*page(), validFrameTime.lastFrameTimeMonotonic, *m_localRoot->frame());
+    TRACE_EVENT1("blink", "WebFrameWidgetImpl::beginFrame", "frameTime", frameTime.lastFrameTimeMonotonic);
+    ASSERT(frameTime.lastFrameTimeMonotonic);
+    PageWidgetDelegate::animate(*page(), frameTime.lastFrameTimeMonotonic);
 }
 
 void WebFrameWidgetImpl::layout()
@@ -378,10 +376,6 @@ bool WebFrameWidgetImpl::handleInputEvent(const WebInputEvent& inputEvent)
 {
 
     TRACE_EVENT1("input", "WebFrameWidgetImpl::handleInputEvent", "type", inputTypeToName(inputEvent.type).ascii());
-
-    WebDevToolsAgentImpl* devTools = m_localRoot ? m_localRoot->devToolsAgentImpl() : nullptr;
-    if (devTools && devTools->handleInputEvent(inputEvent))
-        return true;
 
     // Report the event to be NOT processed by WebKit, so that the browser can handle it appropriately.
     if (m_ignoreInputEvents)
@@ -533,9 +527,12 @@ bool WebFrameWidgetImpl::compositionRange(size_t* location, size_t* length)
 
 WebTextInputInfo WebFrameWidgetImpl::textInputInfo()
 {
-    WebTextInputInfo info;
-    // FIXME: To be implemented.
-    return info;
+    return view()->textInputInfo();
+}
+
+WebTextInputType WebFrameWidgetImpl::textInputType()
+{
+    return view()->textInputType();
 }
 
 WebColor WebFrameWidgetImpl::backgroundColor() const
@@ -705,14 +702,63 @@ void WebFrameWidgetImpl::handleMouseDown(LocalFrame& mainFrame, const WebMouseEv
     if (event.button == WebMouseEvent::ButtonLeft && m_mouseCaptureNode)
         m_mouseCaptureGestureToken = mainFrame.eventHandler().takeLastMouseDownGestureToken();
 
-    // FIXME: Add context menu support.
+    // Dispatch the contextmenu event regardless of if the click was swallowed.
+    if (!page()->settings().showContextMenuOnMouseUp()) {
+#if OS(MACOSX)
+        if (event.button == WebMouseEvent::ButtonRight || (event.button == WebMouseEvent::ButtonLeft && event.modifiers & WebMouseEvent::ControlKey))
+            mouseContextMenu(event);
+#else
+        if (event.button == WebMouseEvent::ButtonRight)
+            mouseContextMenu(event);
+#endif
+    }
+}
+
+void WebFrameWidgetImpl::mouseContextMenu(const WebMouseEvent& event)
+{
+    page()->contextMenuController().clearContextMenu();
+
+    PlatformMouseEventBuilder pme(m_localRoot->frameView(), event);
+
+    // Find the right target frame. See issue 1186900.
+    HitTestResult result = hitTestResultForRootFramePos(pme.position());
+    Frame* targetFrame;
+    if (result.innerNodeOrImageMapImage())
+        targetFrame = result.innerNodeOrImageMapImage()->document().frame();
+    else
+        targetFrame = page()->focusController().focusedOrMainFrame();
+
+    // This will need to be changed to a nullptr check when focus control
+    // is refactored, at which point focusedOrMainFrame will never return a
+    // RemoteFrame.
+    // See https://crbug.com/341918.
+    if (!targetFrame->isLocalFrame())
+        return;
+
+    LocalFrame* targetLocalFrame = toLocalFrame(targetFrame);
+
+#if OS(WIN)
+    targetLocalFrame->view()->setCursor(pointerCursor());
+#endif
+
+    {
+        ContextMenuAllowedScope scope;
+        targetLocalFrame->eventHandler().sendContextMenuEvent(pme, nullptr);
+    }
+    // Actually showing the context menu is handled by the ContextMenuClient
+    // implementation...
 }
 
 void WebFrameWidgetImpl::handleMouseUp(LocalFrame& mainFrame, const WebMouseEvent& event)
 {
     PageWidgetEventHandler::handleMouseUp(mainFrame, event);
 
-    // FIXME: Add context menu support (Windows).
+    if (page()->settings().showContextMenuOnMouseUp()) {
+        // Dispatch the contextmenu event regardless of if the click was swallowed.
+        // On Mac/Linux, we handle it on mouse down, not up.
+        if (event.button == WebMouseEvent::ButtonRight)
+            mouseContextMenu(event);
+    }
 }
 
 bool WebFrameWidgetImpl::handleMouseWheel(LocalFrame& mainFrame, const WebMouseWheelEvent& event)
@@ -722,8 +768,33 @@ bool WebFrameWidgetImpl::handleMouseWheel(LocalFrame& mainFrame, const WebMouseW
 
 bool WebFrameWidgetImpl::handleGestureEvent(const WebGestureEvent& event)
 {
-    // FIXME: Add gesture support.
-    return false;
+    bool eventSwallowed = false;
+    bool eventCancelled = false;
+    switch (event.type) {
+    case WebInputEvent::GestureScrollBegin:
+    case WebInputEvent::GestureScrollEnd:
+    case WebInputEvent::GestureScrollUpdate:
+    case WebInputEvent::GestureTap:
+    case WebInputEvent::GestureTapUnconfirmed:
+    case WebInputEvent::GestureTapDown:
+    case WebInputEvent::GestureShowPress:
+    case WebInputEvent::GestureTapCancel:
+    case WebInputEvent::GestureDoubleTap:
+    case WebInputEvent::GestureTwoFingerTap:
+    case WebInputEvent::GestureLongPress:
+    case WebInputEvent::GestureLongTap:
+        break;
+    case WebInputEvent::GestureFlingStart:
+    case WebInputEvent::GestureFlingCancel:
+        m_client->didHandleGestureEvent(event, eventCancelled);
+        return false;
+    default:
+        ASSERT_NOT_REACHED();
+    }
+    LocalFrame* frame = m_localRoot->frame();
+    eventSwallowed = frame->eventHandler().handleGestureEvent(PlatformGestureEventBuilder(frame->view(), event));
+    m_client->didHandleGestureEvent(event, eventCancelled);
+    return eventSwallowed;
 }
 
 bool WebFrameWidgetImpl::handleKeyEvent(const WebKeyboardEvent& event)
@@ -764,6 +835,22 @@ bool WebFrameWidgetImpl::handleKeyEvent(const WebKeyboardEvent& event)
         }
         return true;
     }
+
+#if !OS(MACOSX)
+    const WebInputEvent::Type contextMenuTriggeringEventType =
+#if OS(WIN)
+        WebInputEvent::KeyUp;
+#else
+        WebInputEvent::RawKeyDown;
+#endif
+
+    bool isUnmodifiedMenuKey = !(event.modifiers & WebInputEvent::InputModifiers) && event.windowsKeyCode == VKEY_APPS;
+    bool isShiftF10 = event.modifiers == WebInputEvent::ShiftKey && event.windowsKeyCode == VKEY_F10;
+    if ((isUnmodifiedMenuKey || isShiftF10) && event.type == contextMenuTriggeringEventType) {
+        view()->sendContextMenuEvent(event);
+        return true;
+    }
+#endif // !OS(MACOSX)
 
     return keyEventDefault(event);
 }
@@ -986,7 +1073,7 @@ void WebFrameWidgetImpl::setIsAcceleratedCompositingActive(bool active)
         m_localRoot->frameView()->setClipsRepaints(!m_isAcceleratedCompositingActive);
 }
 
-DeprecatedPaintLayerCompositor* WebFrameWidgetImpl::compositor() const
+PaintLayerCompositor* WebFrameWidgetImpl::compositor() const
 {
     LocalFrame* frame = toLocalFrame(toCoreFrame(m_localRoot));
     if (!frame || !frame->document() || !frame->document()->layoutView())
@@ -995,16 +1082,8 @@ DeprecatedPaintLayerCompositor* WebFrameWidgetImpl::compositor() const
     return frame->document()->layoutView()->compositor();
 }
 
-void WebFrameWidgetImpl::suppressInvalidations(bool enable)
-{
-    if (m_client)
-        m_client->suppressCompositorScheduling(enable);
-}
-
 void WebFrameWidgetImpl::setRootGraphicsLayer(GraphicsLayer* layer)
 {
-    suppressInvalidations(true);
-
     m_rootGraphicsLayer = layer;
     m_rootLayer = layer ? layer->platformLayer() : nullptr;
 
@@ -1024,8 +1103,6 @@ void WebFrameWidgetImpl::setRootGraphicsLayer(GraphicsLayer* layer)
             m_layerTreeView->clearViewportLayers();
         }
     }
-
-    suppressInvalidations(false);
 }
 
 void WebFrameWidgetImpl::attachCompositorAnimationTimeline(WebCompositorAnimationTimeline* compositorTimeline)
@@ -1054,6 +1131,14 @@ void WebFrameWidgetImpl::setVisibilityState(WebPageVisibilityState visibilitySta
         bool visible = visibilityState == WebPageVisibilityStateVisible;
         m_layerTreeView->setVisible(visible);
     }
+}
+
+HitTestResult WebFrameWidgetImpl::hitTestResultForRootFramePos(const IntPoint& posInRootFrame)
+{
+    IntPoint docPoint(m_localRoot->frame()->view()->rootFrameToContents(posInRootFrame));
+    HitTestResult result = m_localRoot->frame()->eventHandler().hitTestResultAtPoint(docPoint, HitTestRequest::ReadOnly | HitTestRequest::Active);
+    result.setToShadowHostIfInUserAgentShadowRoot();
+    return result;
 }
 
 } // namespace blink

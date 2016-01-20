@@ -40,10 +40,10 @@ class LayoutTextFragment;
 // at points where replaced elements break up the text flow. The text comes back in
 // chunks so as to optimize for performance of the iteration.
 template <typename Strategy>
-class SimplifiedBackwardsTextIteratorAlgorithm {
+class CORE_TEMPLATE_CLASS_EXPORT SimplifiedBackwardsTextIteratorAlgorithm {
     STACK_ALLOCATED();
 public:
-    SimplifiedBackwardsTextIteratorAlgorithm(const PositionAlgorithm<Strategy>& start, const PositionAlgorithm<Strategy>& end, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
+    SimplifiedBackwardsTextIteratorAlgorithm(const PositionTemplate<Strategy>& start, const PositionTemplate<Strategy>& end, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
 
     bool atEnd() const { return !m_positionNode || m_shouldStop; }
     void advance();
@@ -65,8 +65,8 @@ public:
 
     Node* startContainer() const;
     int endOffset() const;
-    PositionAlgorithm<Strategy> startPosition() const;
-    PositionAlgorithm<Strategy> endPosition() const;
+    PositionTemplate<Strategy> startPosition() const;
+    PositionTemplate<Strategy> endPosition() const;
 
 private:
     void init(Node* startNode, Node* endNode, int startOffset, int endOffset);
@@ -84,7 +84,7 @@ private:
     int m_offset;
     bool m_handledNode;
     bool m_handledChildren;
-    FullyClippedStateStack m_fullyClippedStack;
+    FullyClippedStateStackAlgorithm<Strategy> m_fullyClippedStack;
 
     // End of the range.
     RawPtrWillBeMember<Node> m_startNode;

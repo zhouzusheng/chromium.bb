@@ -180,6 +180,11 @@ public:
 
     bool isInInitialLayoutPass() const { return !m_inBalancingPass; }
 
+    // Skip past a column spanner during flow thread layout. Spanners are not laid out inside the
+    // flow thread, since the flow thread is not in a spanner's containing block chain (since the
+    // containing block is the multicol container).
+    void skipColumnSpanner(LayoutBox*, LayoutUnit logicalTopInFlowThread);
+
     bool recalculateColumnHeights();
 
     void columnRuleStyleDidChange();
@@ -215,11 +220,10 @@ private:
 
     void addColumnSetToThread(LayoutMultiColumnSet*) override;
     void willBeRemovedFromTree() override;
-    void skipColumnSpanner(LayoutBox*, LayoutUnit logicalTopInFlowThread) override;
     void flowThreadDescendantWasInserted(LayoutObject*) final;
     void flowThreadDescendantWillBeRemoved(LayoutObject*) final;
-    void flowThreadDescendantStyleWillChange(LayoutObject*, StyleDifference, const ComputedStyle& newStyle) override;
-    void flowThreadDescendantStyleDidChange(LayoutObject*, StyleDifference, const ComputedStyle& oldStyle) override;
+    void flowThreadDescendantStyleWillChange(LayoutBox*, StyleDifference, const ComputedStyle& newStyle) override;
+    void flowThreadDescendantStyleDidChange(LayoutBox*, StyleDifference, const ComputedStyle& oldStyle) override;
     void computePreferredLogicalWidths() override;
     void computeLogicalHeight(LayoutUnit logicalHeight, LayoutUnit logicalTop, LogicalExtentComputedValues&) const override;
     void updateLogicalWidth() override;

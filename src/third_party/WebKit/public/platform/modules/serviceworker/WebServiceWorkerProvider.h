@@ -32,8 +32,9 @@
 #define WebServiceWorkerProvider_h
 
 #include "public/platform/WebCallbacks.h"
-#include "public/platform/WebServiceWorkerRegistration.h"
+#include "public/platform/WebPassOwnPtr.h"
 #include "public/platform/WebVector.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerRegistration.h"
 
 namespace blink {
 
@@ -51,12 +52,13 @@ public:
     // events. Must be cleared before the client becomes invalid.
     virtual void setClient(WebServiceWorkerProviderClient*) { }
 
-    // The WebServiceWorkerRegistration and WebServiceWorkerError ownership are
-    // passed to the WebServiceWorkerRegistrationCallbacks implementation.
-    typedef WebCallbacks<WebServiceWorkerRegistration*, WebServiceWorkerError*> WebServiceWorkerRegistrationCallbacks;
-    typedef WebCallbacks<WebServiceWorkerRegistration*, WebServiceWorkerError*> WebServiceWorkerGetRegistrationCallbacks;
-    typedef WebCallbacks<WebVector<WebServiceWorkerRegistration*>*, WebServiceWorkerError*> WebServiceWorkerGetRegistrationsCallbacks;
-    typedef WebCallbacks<WebServiceWorkerRegistration*, void> WebServiceWorkerGetRegistrationForReadyCallbacks;
+    using WebServiceWorkerRegistrationCallbacks = WebCallbacks<WebPassOwnPtr<WebServiceWorkerRegistration::Handle>, const WebServiceWorkerError&>;
+    using WebServiceWorkerGetRegistrationCallbacks = WebCallbacks<WebPassOwnPtr<WebServiceWorkerRegistration::Handle>, const WebServiceWorkerError&>;
+
+    // Each element's ownership is transferred.
+    // TODO(yhirano): Consider using vector<scoped_ptr<>>.
+    using WebServiceWorkerGetRegistrationsCallbacks = WebCallbacks<WebPassOwnPtr<WebVector<WebServiceWorkerRegistration::Handle*>>, const WebServiceWorkerError&>;
+    using WebServiceWorkerGetRegistrationForReadyCallbacks = WebCallbacks<WebPassOwnPtr<WebServiceWorkerRegistration::Handle>, void>;
 
     virtual void registerServiceWorker(const WebURL& pattern, const WebURL& scriptUrl, WebServiceWorkerRegistrationCallbacks*) { }
     virtual void getRegistration(const WebURL& documentURL, WebServiceWorkerGetRegistrationCallbacks*) { }

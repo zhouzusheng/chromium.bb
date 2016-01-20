@@ -5,6 +5,7 @@
 #ifndef DragEvent_h
 #define DragEvent_h
 
+#include "core/CoreExport.h"
 #include "core/events/DragEventInit.h"
 #include "core/events/MouseEvent.h"
 
@@ -12,7 +13,7 @@ namespace blink {
 
 class DataTransfer;
 
-class DragEvent final : public MouseEvent {
+class CORE_EXPORT DragEvent final : public MouseEvent {
     DEFINE_WRAPPERTYPEINFO();
 
 public:
@@ -31,7 +32,7 @@ public:
         int movementX, int movementY,
         bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, short button, unsigned short buttons,
         PassRefPtrWillBeRawPtr<EventTarget> relatedTarget, DataTransfer*,
-        bool isSimulated = false, PlatformMouseEvent::SyntheticEventType = PlatformMouseEvent::RealOrIndistinguishable,
+        PlatformMouseEvent::SyntheticEventType = PlatformMouseEvent::RealOrIndistinguishable,
         double uiCreateTime = 0);
 
     static PassRefPtrWillBeRawPtr<DragEvent> create(const AtomicString& type, const DragEventInit& initializer)
@@ -39,7 +40,7 @@ public:
         return adoptRefWillBeNoop(new DragEvent(type, initializer));
     }
 
-    DataTransfer* dataTransfer() const override { return isDragEvent() ? m_dataTransfer.get() : 0; }
+    DataTransfer* dataTransfer() const override { return isDragEvent() ? m_dataTransfer.get() : nullptr; }
 
     bool isDragEvent() const override;
     bool isMouseEvent() const override;
@@ -56,7 +57,7 @@ private:
         int movementX, int movementY,
         bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, short button, unsigned short buttons,
         PassRefPtrWillBeRawPtr<EventTarget> relatedTarget, DataTransfer*,
-        bool isSimulated, PlatformMouseEvent::SyntheticEventType, double uiCreateTime = 0);
+        PlatformMouseEvent::SyntheticEventType, double uiCreateTime = 0);
 
     DragEvent(const AtomicString& type, const DragEventInit&);
 

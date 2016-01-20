@@ -54,6 +54,25 @@ class LayoutMultiColumnSpannerPlaceholder;
 class LayoutRubyRun;
 template <class Run> class BidiRunList;
 
+// LayoutBlockFlow is the class that implements a block container in CSS 2.1.
+// http://www.w3.org/TR/CSS21/visuren.html#block-boxes
+//
+// LayoutBlockFlows are the only LayoutObject allowed to own floating objects
+// (aka floats): http://www.w3.org/TR/CSS21/visuren.html#floats .
+//
+// Floats are inserted into |m_floatingObjects| (see FloatingObjects for more
+// information on how floats are modelled) during layout. This happens either as
+// part of laying out blocks (layoutBlockChildren) or line layout (LineBreaker
+// class). This is because floats can be part of an inline or a block context.
+//
+// An interesting feature of floats is that they can intrude into the next
+// block(s). This means that |m_floatingObjects| can potentially contain
+// pointers to a previous sibling LayoutBlockFlow's float.
+//
+// LayoutBlockFlow is also the only LayoutObject to own a line box tree and
+// perform inline layout. See LayoutBlockFlowLine.cpp for these parts.
+//
+// TODO(jchaffraix): We need some float and line box expert to expand on this.
 class CORE_EXPORT LayoutBlockFlow : public LayoutBlock {
 public:
     explicit LayoutBlockFlow(ContainerNode*);
@@ -288,6 +307,8 @@ private:
     bool layoutBlockFlow(bool relayoutChildren, LayoutUnit& pageLogicalHeight, SubtreeLayoutScope&);
     void layoutBlockChildren(bool relayoutChildren, SubtreeLayoutScope&, LayoutUnit beforeEdge, LayoutUnit afterEdge);
 
+    void markDescendantsWithFloatsForLayoutIfNeeded(LayoutBlockFlow& child, LayoutUnit newLogicalTop, LayoutUnit previousFloatLogicalBottom);
+    bool positionAndLayoutOnceIfNeeded(LayoutBox& child, LayoutUnit newLogicalTop, LayoutUnit& previousFloatLogicalBottom);
     void layoutBlockChild(LayoutBox& child, MarginInfo&, LayoutUnit& previousFloatLogicalBottom);
     void adjustPositionedBlock(LayoutBox& child, const MarginInfo&);
     void adjustFloatingBlock(const MarginInfo&);
@@ -310,8 +331,8 @@ private:
 
     void invalidatePaintForOverhangingFloats(bool paintAllDescendants) final;
     void invalidatePaintForOverflow() final;
-    void paintFloats(const PaintInfo&, const LayoutPoint&, bool preservePhase = false) final;
-    void paintSelection(const PaintInfo&, const LayoutPoint&) final;
+    void paintFloats(const PaintInfo&, const LayoutPoint&, bool preservePhase = false) const final;
+    void paintSelection(const PaintInfo&, const LayoutPoint&) const final;
     virtual void clipOutFloatingObjects(const LayoutBlock*, ClipScope&, const LayoutPoint&, const LayoutSize&) const;
     void clearFloats(EClear);
 
@@ -352,6 +373,7 @@ private:
 
 public:
     struct FloatWithRect {
+        ALLOW_ONLY_INLINE_ALLOCATION();
         FloatWithRect(LayoutBox* f)
             : object(f)
             , rect(f->frameRect())
@@ -366,6 +388,7 @@ public:
     };
 
     class MarginValues {
+        DISALLOW_ALLOCATION();
     public:
         MarginValues(LayoutUnit beforePos, LayoutUnit beforeNeg, LayoutUnit afterPos, LayoutUnit afterNeg)
             : m_positiveMarginBefore(beforePos)
@@ -435,7 +458,7 @@ public:
         bool m_discardMarginAfter : 1;
     };
 
-    FloatingObjects* floatingObjects() { return m_floatingObjects.get(); }
+    const FloatingObjects* floatingObjects() const { return m_floatingObjects.get(); }
 
 
 protected:
@@ -485,11 +508,11 @@ private:
     LayoutUnit applyBeforeBreak(LayoutBox& child, LayoutUnit logicalOffset); // If the child has a before break, then return a new yPos that shifts to the top of the next page/column.
     LayoutUnit applyAfterBreak(LayoutBox& child, LayoutUnit logicalOffset, MarginInfo&); // If the child has an after break, then return a new offset that shifts to the top of the next page/column.
 
-    LayoutUnit adjustBlockChildForPagination(LayoutUnit logicalTopAfterClear, LayoutUnit estimateWithoutPagination, LayoutBox& child, bool atBeforeSideOfBlock);
+    LayoutUnit adjustBlockChildForPagination(LayoutUnit logicalTop, LayoutBox& child, bool atBeforeSideOfBlock);
     // Computes a deltaOffset value that put a line at the top of the next page if it doesn't fit on the current page.
     void adjustLinePositionForPagination(RootInlineBox&, LayoutUnit& deltaOffset);
     // If the child is unsplittable and can't fit on the current page, return the top of the next page/column.
-    LayoutUnit adjustForUnsplittableChild(LayoutBox&, LayoutUnit logicalOffset, bool includeMargins = false);
+    LayoutUnit adjustForUnsplittableChild(LayoutBox&, LayoutUnit logicalOffset);
 
     // Used to store state between styleWillChange and styleDidChange
     static bool s_canPropagateFloatIntoSibling;
@@ -522,6 +545,7 @@ private:
         LayoutUnit& availableLogicalWidth, BidiRun* firstRun, BidiRun* trailingSpaceRun, GlyphOverflowAndFallbackFontsMap& textBoxDataMap, VerticalPositionCache&, WordMeasurements&);
     void computeBlockDirectionPositionsForLine(RootInlineBox*, BidiRun*, GlyphOverflowAndFallbackFontsMap&, VerticalPositionCache&);
     void appendFloatingObjectToLastLine(FloatingObject&);
+    void appendFloatsToLastLine(LineLayoutState&, const InlineIterator& cleanLineStart);
     // Helper function for layoutInlineChildren()
     RootInlineBox* createLineBoxesFromBidiRuns(unsigned bidiLevel, BidiRunList<BidiRun>&, const InlineIterator& end, LineInfo&, VerticalPositionCache&, BidiRun* trailingSpaceRun, WordMeasurements&);
     void layoutRunsAndFloats(LineLayoutState&);

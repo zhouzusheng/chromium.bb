@@ -13,6 +13,7 @@
 #include "base/strings/string_piece.h"
 #include "base/strings/stringprintf.h"
 #include "media/base/limits.h"
+#include "media/base/timestamp_constants.h"
 #include "media/base/video_util.h"
 #include "ui/gfx/geometry/point.h"
 
@@ -87,12 +88,18 @@ static gfx::Size SampleSize(VideoPixelFormat format, size_t plane) {
         case PIXEL_FORMAT_I420:
         case PIXEL_FORMAT_YV12A:
         case PIXEL_FORMAT_NV12:
+        case PIXEL_FORMAT_NV21:
+        case PIXEL_FORMAT_MT21:
           return gfx::Size(2, 2);
 
         case PIXEL_FORMAT_UNKNOWN:
+        case PIXEL_FORMAT_UYVY:
+        case PIXEL_FORMAT_YUY2:
         case PIXEL_FORMAT_ARGB:
         case PIXEL_FORMAT_XRGB:
-        case PIXEL_FORMAT_UYVY:
+        case PIXEL_FORMAT_RGB24:
+        case PIXEL_FORMAT_RGB32:
+        case PIXEL_FORMAT_MJPEG:
           break;
       }
   }
@@ -119,10 +126,16 @@ static int BytesPerElement(VideoPixelFormat format, size_t plane) {
   switch (format) {
     case PIXEL_FORMAT_ARGB:
     case PIXEL_FORMAT_XRGB:
+    case PIXEL_FORMAT_RGB32:
       return 4;
+    case PIXEL_FORMAT_RGB24:
+      return 3;
     case PIXEL_FORMAT_UYVY:
+    case PIXEL_FORMAT_YUY2:
       return 2;
-    case PIXEL_FORMAT_NV12: {
+    case PIXEL_FORMAT_NV12:
+    case PIXEL_FORMAT_NV21:
+    case PIXEL_FORMAT_MT21: {
       static const int bytes_per_element[] = {1, 2};
       DCHECK_LT(plane, arraysize(bytes_per_element));
       return bytes_per_element[plane];
@@ -133,6 +146,8 @@ static int BytesPerElement(VideoPixelFormat format, size_t plane) {
     case PIXEL_FORMAT_YV12A:
     case PIXEL_FORMAT_YV24:
       return 1;
+    case PIXEL_FORMAT_MJPEG:
+      return 0;
     case PIXEL_FORMAT_UNKNOWN:
       break;
   }
@@ -164,7 +179,7 @@ bool VideoFrame::IsValidConfig(VideoPixelFormat format,
     return true;
 
   // Make sure new formats are properly accounted for in the method.
-  static_assert(PIXEL_FORMAT_MAX == 9,
+  static_assert(PIXEL_FORMAT_MAX == 15,
                 "Added pixel format, please review IsValidConfig()");
 
   if (format == PIXEL_FORMAT_UNKNOWN) {
@@ -183,35 +198,19 @@ scoped_refptr<VideoFrame> VideoFrame::CreateFrame(VideoPixelFormat format,
                                                   const gfx::Rect& visible_rect,
                                                   const gfx::Size& natural_size,
                                                   base::TimeDelta timestamp) {
-  if (!IsYuvPlanar(format)) {
-    NOTIMPLEMENTED();
-    return nullptr;
-  }
+  return CreateFrameInternal(format, coded_size, visible_rect, natural_size,
+                             timestamp, false);
+}
 
-  // Since we're creating a new YUV frame (and allocating memory for it
-  // ourselves), we can pad the requested |coded_size| if necessary if the
-  // request does not line up on sample boundaries. See discussion at
-  // http://crrev.com/1240833003
-  const gfx::Size alignment = CommonAlignment(format);
-  const gfx::Size new_coded_size =
-      gfx::Size(RoundUp(coded_size.width(), alignment.width()),
-                RoundUp(coded_size.height(), alignment.height()));
-  DCHECK((new_coded_size.width() % alignment.width() == 0) &&
-         (new_coded_size.height() % alignment.height() == 0));
-
-  const StorageType storage = STORAGE_OWNED_MEMORY;
-  if (!IsValidConfig(format, storage, new_coded_size, visible_rect,
-                     natural_size)) {
-    DLOG(ERROR) << __FUNCTION__ << " Invalid config."
-                << ConfigToString(format, storage, coded_size, visible_rect,
-                                  natural_size);
-    return nullptr;
-  }
-
-  scoped_refptr<VideoFrame> frame(new VideoFrame(
-      format, storage, new_coded_size, visible_rect, natural_size, timestamp));
-  frame->AllocateYUV();
-  return frame;
+// static
+scoped_refptr<VideoFrame> VideoFrame::CreateZeroInitializedFrame(
+    VideoPixelFormat format,
+    const gfx::Size& coded_size,
+    const gfx::Rect& visible_rect,
+    const gfx::Size& natural_size,
+    base::TimeDelta timestamp) {
+  return CreateFrameInternal(format, coded_size, visible_rect, natural_size,
+                             timestamp, true);
 }
 
 // static
@@ -223,7 +222,9 @@ scoped_refptr<VideoFrame> VideoFrame::WrapNativeTexture(
     const gfx::Rect& visible_rect,
     const gfx::Size& natural_size,
     base::TimeDelta timestamp) {
-  if (format != PIXEL_FORMAT_ARGB && format != PIXEL_FORMAT_UYVY) {
+  if (format != PIXEL_FORMAT_ARGB &&
+      format != PIXEL_FORMAT_UYVY &&
+      format != PIXEL_FORMAT_NV12) {
     DLOG(ERROR) << "Unsupported pixel format supported, got "
                 << VideoPixelFormatToString(format);
     return nullptr;
@@ -519,15 +520,21 @@ scoped_refptr<VideoFrame> VideoFrame::CreateHoleFrame(
 // static
 size_t VideoFrame::NumPlanes(VideoPixelFormat format) {
   switch (format) {
+    case PIXEL_FORMAT_UYVY:
+    case PIXEL_FORMAT_YUY2:
     case PIXEL_FORMAT_ARGB:
     case PIXEL_FORMAT_XRGB:
-    case PIXEL_FORMAT_UYVY:
+    case PIXEL_FORMAT_RGB24:
+    case PIXEL_FORMAT_RGB32:
+    case PIXEL_FORMAT_MJPEG:
       return 1;
     case PIXEL_FORMAT_NV12:
+    case PIXEL_FORMAT_NV21:
+    case PIXEL_FORMAT_MT21:
       return 2;
+    case PIXEL_FORMAT_I420:
     case PIXEL_FORMAT_YV12:
     case PIXEL_FORMAT_YV16:
-    case PIXEL_FORMAT_I420:
     case PIXEL_FORMAT_YV24:
       return 3;
     case PIXEL_FORMAT_YV12A:
@@ -880,7 +887,46 @@ VideoFrame::~VideoFrame() {
     base::ResetAndReturn(&callback).Run();
 }
 
-void VideoFrame::AllocateYUV() {
+// static
+scoped_refptr<VideoFrame> VideoFrame::CreateFrameInternal(
+    VideoPixelFormat format,
+    const gfx::Size& coded_size,
+    const gfx::Rect& visible_rect,
+    const gfx::Size& natural_size,
+    base::TimeDelta timestamp,
+    bool zero_initialize_memory) {
+  if (!IsYuvPlanar(format)) {
+    NOTIMPLEMENTED();
+    return nullptr;
+  }
+
+  // Since we're creating a new YUV frame (and allocating memory for it
+  // ourselves), we can pad the requested |coded_size| if necessary if the
+  // request does not line up on sample boundaries. See discussion at
+  // http://crrev.com/1240833003
+  const gfx::Size alignment = CommonAlignment(format);
+  const gfx::Size new_coded_size =
+      gfx::Size(RoundUp(coded_size.width(), alignment.width()),
+                RoundUp(coded_size.height(), alignment.height()));
+  DCHECK((new_coded_size.width() % alignment.width() == 0) &&
+         (new_coded_size.height() % alignment.height() == 0));
+
+  const StorageType storage = STORAGE_OWNED_MEMORY;
+  if (!IsValidConfig(format, storage, new_coded_size, visible_rect,
+                     natural_size)) {
+    DLOG(ERROR) << __FUNCTION__ << " Invalid config."
+                << ConfigToString(format, storage, coded_size, visible_rect,
+                                  natural_size);
+    return nullptr;
+  }
+
+  scoped_refptr<VideoFrame> frame(new VideoFrame(
+      format, storage, new_coded_size, visible_rect, natural_size, timestamp));
+  frame->AllocateYUV(zero_initialize_memory);
+  return frame;
+}
+
+void VideoFrame::AllocateYUV(bool zero_initialize_memory) {
   DCHECK_EQ(storage_type_, STORAGE_OWNED_MEMORY);
   static_assert(0 == kYPlane, "y plane data must be index 0");
 
@@ -906,6 +952,8 @@ void VideoFrame::AllocateYUV() {
 
   uint8* data = reinterpret_cast<uint8*>(
       base::AlignedAlloc(data_size, kFrameAddressAlignment));
+  if (zero_initialize_memory)
+    memset(data, 0, data_size);
 
   for (size_t plane = 0; plane < NumPlanes(format_); ++plane)
     data_[plane] = data + offset[plane];

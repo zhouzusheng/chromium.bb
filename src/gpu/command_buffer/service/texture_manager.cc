@@ -586,21 +586,25 @@ bool Texture::CanGenerateMipmaps(
     return false;
   }
 
+  if (static_cast<size_t>(base_level_) >= face_infos_[0].level_infos.size()) {
+    return false;
+  }
+
   // Can't generate mips for depth or stencil textures.
-  const Texture::LevelInfo& first = face_infos_[0].level_infos[0];
-  uint32 channels = GLES2Util::GetChannelsForFormat(first.format);
+  const Texture::LevelInfo& base = face_infos_[0].level_infos[base_level_];
+  uint32 channels = GLES2Util::GetChannelsForFormat(base.format);
   if (channels & (GLES2Util::kDepth | GLES2Util::kStencil)) {
     return false;
   }
 
   // TODO(gman): Check internal_format, format and type.
   for (size_t ii = 0; ii < face_infos_.size(); ++ii) {
-    const LevelInfo& info = face_infos_[ii].level_infos[0];
-    if ((info.target == 0) || (info.width != first.width) ||
-        (info.height != first.height) || (info.depth != 1) ||
-        (info.format != first.format) ||
-        (info.internal_format != first.internal_format) ||
-        (info.type != first.type) ||
+    const LevelInfo& info = face_infos_[ii].level_infos[base_level_];
+    if ((info.target == 0) || (info.width != base.width) ||
+        (info.height != base.height) || (info.depth != base.depth) ||
+        (info.format != base.format) ||
+        (info.internal_format != base.internal_format) ||
+        (info.type != base.type) ||
         feature_info->validators()->compressed_texture_format.IsValid(
             info.internal_format) ||
         info.image.get()) {
@@ -858,8 +862,7 @@ bool Texture::ValidForTexture(
     GLint zoffset,
     GLsizei width,
     GLsizei height,
-    GLsizei depth,
-    GLenum type) const {
+    GLsizei depth) const {
   size_t face_index = GLES2Util::GLTargetToFaceIndex(target);
   if (level >= 0 && face_index < face_infos_.size() &&
       static_cast<size_t>(level) < face_infos_[face_index].level_infos.size()) {
@@ -875,8 +878,7 @@ bool Texture::ValidForTexture(
            zoffset >= 0 &&
            max_x <= info.width &&
            max_y <= info.height &&
-           max_z <= info.depth &&
-           type == info.type;
+           max_z <= info.depth;
   }
   return false;
 }
@@ -1264,6 +1266,10 @@ void Texture::SetLevelImage(
   info.image = image;
   UpdateCanRenderCondition();
   UpdateHasImages();
+
+  // TODO(ericrk): Images may have complex sizing not accounted for by
+  // |estimated_size_|, we should add logic here to update |estimated_size_|
+  // based on the new GLImage. crbug.com/526298
 }
 
 gfx::GLImage* Texture::GetLevelImage(GLint target, GLint level) const {
@@ -1405,6 +1411,13 @@ bool TextureManager::Initialize() {
   default_textures_[kCubeMap] = CreateDefaultAndBlackTextures(
       GL_TEXTURE_CUBE_MAP, &black_texture_ids_[kCubeMap]);
 
+  if (feature_info_->IsES3Enabled()) {
+    default_textures_[kTexture3D] = CreateDefaultAndBlackTextures(
+        GL_TEXTURE_3D, &black_texture_ids_[kTexture3D]);
+    default_textures_[kTexture2DArray] = CreateDefaultAndBlackTextures(
+        GL_TEXTURE_2D_ARRAY, &black_texture_ids_[kTexture2DArray]);
+  }
+
   if (feature_info_->feature_flags().oes_egl_image_external) {
     default_textures_[kExternalOES] = CreateDefaultAndBlackTextures(
         GL_TEXTURE_EXTERNAL_OES, &black_texture_ids_[kExternalOES]);
@@ -1435,6 +1448,8 @@ scoped_refptr<TextureRef>
   // black values according to the spec.
   bool needs_initialization = (target != GL_TEXTURE_EXTERNAL_OES);
   bool needs_faces = (target == GL_TEXTURE_CUBE_MAP);
+  bool is_3d_or_2d_array_target = (target == GL_TEXTURE_3D ||
+      target == GL_TEXTURE_2D_ARRAY);
 
   // Make default textures and texture for replacing non-renderable textures.
   GLuint ids[2];
@@ -1449,8 +1464,13 @@ scoped_refptr<TextureRef>
                        GL_RGBA, GL_UNSIGNED_BYTE, black);
         }
       } else {
-        glTexImage2D(target, 0, GL_RGBA, 1, 1, 0, GL_RGBA,
-                     GL_UNSIGNED_BYTE, black);
+        if (is_3d_or_2d_array_target) {
+          glTexImage3D(target, 0, GL_RGBA, 1, 1, 1, 0, GL_RGBA,
+                       GL_UNSIGNED_BYTE, black);
+        } else {
+          glTexImage2D(target, 0, GL_RGBA, 1, 1, 0, GL_RGBA,
+                       GL_UNSIGNED_BYTE, black);
+        }
       }
     }
   }
@@ -1980,6 +2000,59 @@ void TextureManager::ValidateAndDoTexImage(
     return;
   }
 
+  // ValidateTexImage is passed already.
+  Texture* texture = texture_ref->texture();
+  bool need_cube_map_workaround =
+      texture->target() == GL_TEXTURE_CUBE_MAP &&
+      (texture_state->force_cube_complete ||
+       (texture_state->force_cube_map_positive_x_allocation &&
+        args.target != GL_TEXTURE_CUBE_MAP_POSITIVE_X));
+  if (need_cube_map_workaround) {
+    std::vector<GLenum> undefined_faces;
+    if (texture_state->force_cube_complete) {
+      int width = 0;
+      int height = 0;
+      for (unsigned i = 0; i < 6; i++) {
+        bool defined =
+            texture->GetLevelSize(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i,
+                                  args.level, &width, &height, nullptr);
+        if (!defined || GL_TEXTURE_CUBE_MAP_POSITIVE_X + i == args.target)
+          undefined_faces.push_back(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i);
+      }
+    } else if (texture_state->force_cube_map_positive_x_allocation &&
+               args.target != GL_TEXTURE_CUBE_MAP_POSITIVE_X) {
+      int width = 0;
+      int height = 0;
+      if (!texture->GetLevelSize(GL_TEXTURE_CUBE_MAP_POSITIVE_X, args.level,
+                                 &width, &height, nullptr)) {
+        undefined_faces.push_back(GL_TEXTURE_CUBE_MAP_POSITIVE_X);
+      }
+      undefined_faces.push_back(args.target);
+    }
+
+    DCHECK(undefined_faces.size());
+    if (!memory_tracker_managed_->EnsureGPUMemoryAvailable(
+            undefined_faces.size() * args.pixels_size)) {
+      ERRORSTATE_SET_GL_ERROR(state->GetErrorState(), GL_OUT_OF_MEMORY,
+                              function_name, "out of memory");
+      return;
+    }
+    DoTexImageArguments new_args = args;
+    scoped_ptr<char[]> zero(new char[args.pixels_size]);
+    memset(zero.get(), 0, args.pixels_size);
+    for (GLenum face : undefined_faces) {
+      new_args.target = face;
+      if (face == args.target) {
+        new_args.pixels = args.pixels;
+      } else {
+        new_args.pixels = zero.get();
+      }
+      DoTexImage(texture_state, state->GetErrorState(), framebuffer_state,
+                 function_name, texture_ref, new_args);
+    }
+    return;
+  }
+
   DoTexImage(texture_state, state->GetErrorState(), framebuffer_state,
              function_name, texture_ref, args);
 }
@@ -2109,7 +2182,7 @@ void TextureManager::DumpTextureRef(base::trace_event::ProcessMemoryDump* pmd,
     return;
 
   std::string dump_name =
-      base::StringPrintf("gl/client_%d/textures/texture_%d",
+      base::StringPrintf("gpu/gl/textures/client_%d/texture_%d",
                          memory_tracker_->ClientId(), ref->client_id());
 
   base::trace_event::MemoryAllocatorDump* dump =
@@ -2120,8 +2193,8 @@ void TextureManager::DumpTextureRef(base::trace_event::ProcessMemoryDump* pmd,
 
   // Add the |client_guid| which expresses shared ownership with the client
   // process.
-  auto client_guid = gfx::GetGLTextureGUIDForTracing(
-      memory_tracker_->ClientTracingId(), ref->client_id());
+  auto client_guid = gfx::GetGLTextureClientGUIDForTracing(
+      memory_tracker_->ShareGroupTracingGUID(), ref->client_id());
   pmd->CreateSharedGlobalAllocatorDump(client_guid);
   pmd->AddOwnershipEdge(dump->guid(), client_guid);
 
@@ -2129,8 +2202,8 @@ void TextureManager::DumpTextureRef(base::trace_event::ProcessMemoryDump* pmd,
   // |client_guid|s.
   // TODO(ericrk): May need to ensure uniqueness using GLShareGroup and
   // potentially cross-share-group sharing via EGLImages. crbug.com/512534
-  auto service_guid =
-      gfx::GetGLTextureGUIDForTracing(0, ref->texture()->service_id());
+  auto service_guid = gfx::GetGLTextureServiceGUIDForTracing(
+      memory_tracker_->ShareGroupTracingGUID(), ref->texture()->service_id());
   pmd->CreateSharedGlobalAllocatorDump(service_guid);
 
   int importance = 0;  // Default importance.

@@ -242,19 +242,17 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
   }
 
   scoped_refptr<ContextProviderCommandBuffer> context_provider;
-  scoped_refptr<ContextProviderCommandBuffer> worker_context_provider;
-#if !defined(OS_CHROMEOS)
-  worker_context_provider = shared_worker_context_provider_;
-#endif
   if (create_gpu_output_surface) {
     // Try to reuse existing worker context provider.
-    if (worker_context_provider) {
-      base::AutoLock lock(*worker_context_provider->GetLock());
-      if (worker_context_provider->ContextGL()
-              ->GetGraphicsResetStatusKHR() != GL_NO_ERROR)
-        worker_context_provider = nullptr;
+    bool shared_worker_context_provider_lost = false;
+    if (shared_worker_context_provider_) {
+      // Note: If context is lost, we delete reference after releasing the lock.
+      base::AutoLock lock(*shared_worker_context_provider_->GetLock());
+      if (shared_worker_context_provider_->ContextGL()
+              ->GetGraphicsResetStatusKHR() != GL_NO_ERROR) {
+        shared_worker_context_provider_lost = true;
+      }
     }
-
     scoped_refptr<GpuChannelHost> gpu_channel_host =
         BrowserGpuChannelHostFactory::instance()->GetGpuChannel();
     if (gpu_channel_host.get()) {
@@ -264,16 +262,22 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
           BROWSER_COMPOSITOR_ONSCREEN_CONTEXT);
       if (context_provider && !context_provider->BindToCurrentThread())
         context_provider = nullptr;
-      worker_context_provider = ContextProviderCommandBuffer::Create(
-          GpuProcessTransportFactory::CreateContextCommon(gpu_channel_host, 0),
-          BROWSER_WORKER_CONTEXT);
-      if (worker_context_provider &&
-          !worker_context_provider->BindToCurrentThread())
-        worker_context_provider = nullptr;
+      if (!shared_worker_context_provider_ ||
+          shared_worker_context_provider_lost) {
+        shared_worker_context_provider_ = ContextProviderCommandBuffer::Create(
+            GpuProcessTransportFactory::CreateContextCommon(gpu_channel_host,
+                                                            0),
+            BROWSER_WORKER_CONTEXT);
+        if (shared_worker_context_provider_ &&
+            !shared_worker_context_provider_->BindToCurrentThread())
+          shared_worker_context_provider_ = nullptr;
+        if (shared_worker_context_provider_)
+          shared_worker_context_provider_->SetupLock();
+      }
     }
 
     bool created_gpu_browser_compositor =
-        !!context_provider && !!worker_context_provider;
+        !!context_provider && !!shared_worker_context_provider_;
 
     UMA_HISTOGRAM_BOOLEAN("Aura.CreatedGpuBrowserCompositor",
                           created_gpu_browser_compositor);
@@ -288,10 +292,6 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
                             create_gpu_output_surface, num_attempts + 1));
       return;
     }
-
-#if !defined(OS_CHROMEOS)
-    shared_worker_context_provider_ = worker_context_provider;
-#endif
   }
 
   scoped_ptr<BrowserCompositorOutputSurface> surface;
@@ -305,7 +305,7 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
         context_provider->ContextCapabilities();
     if (!data->surface_id) {
       surface = make_scoped_ptr(new OffscreenBrowserCompositorOutputSurface(
-          context_provider, worker_context_provider,
+          context_provider, shared_worker_context_provider_,
           compositor->vsync_manager(),
           scoped_ptr<BrowserCompositorOverlayCandidateValidator>()));
     } else if (capabilities.gpu.surfaceless) {
@@ -317,8 +317,8 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
 #endif
       surface =
           make_scoped_ptr(new GpuSurfacelessBrowserCompositorOutputSurface(
-              context_provider, worker_context_provider, data->surface_id,
-              compositor->vsync_manager(),
+              context_provider, shared_worker_context_provider_,
+              data->surface_id, compositor->vsync_manager(),
               CreateOverlayCandidateValidator(compositor->widget()), target,
               format, BrowserGpuMemoryBufferManager::current()));
     } else {
@@ -328,7 +328,7 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
       validator = CreateOverlayCandidateValidator(compositor->widget());
 #endif
       surface = make_scoped_ptr(new GpuBrowserCompositorOutputSurface(
-          context_provider, worker_context_provider,
+          context_provider, shared_worker_context_provider_,
           compositor->vsync_manager(), validator.Pass()));
     }
   }
@@ -359,7 +359,7 @@ void GpuProcessTransportFactory::EstablishedGpuChannel(
   scoped_ptr<cc::SurfaceDisplayOutputSurface> output_surface(
       new cc::SurfaceDisplayOutputSurface(
           manager, compositor->surface_id_allocator(), context_provider,
-          worker_context_provider));
+          shared_worker_context_provider_));
   display_client->set_surface_output_surface(output_surface.get());
   output_surface->set_display_client(display_client.get());
   display_client->display()->Resize(compositor->size());
@@ -446,14 +446,6 @@ cc::TaskGraphRunner* GpuProcessTransportFactory::GetTaskGraphRunner() {
 
 ui::ContextFactory* GpuProcessTransportFactory::GetContextFactory() {
   return this;
-}
-
-gfx::GLSurfaceHandle GpuProcessTransportFactory::GetSharedSurfaceHandle() {
-  gfx::GLSurfaceHandle handle = gfx::GLSurfaceHandle(
-      gfx::kNullPluginWindow, gfx::NULL_TRANSPORT);
-  handle.parent_client_id =
-      BrowserGpuChannelHostFactory::instance()->GetGpuChannelId();
-  return handle;
 }
 
 scoped_ptr<cc::SurfaceIdAllocator>
@@ -570,8 +562,17 @@ GpuProcessTransportFactory::CreatePerCompositorData(
     data->surface_id = 0;
   } else {
     data->surface_id = tracker->AddSurfaceForNativeWidget(widget);
+#if defined(OS_MACOSX) || defined(OS_ANDROID)
+    // On Mac and Android, we can't pass the AcceleratedWidget, which is
+    // process-local, so instead we pass the surface_id, so that we can look up
+    // the AcceleratedWidget on the GPU side or when we receive
+    // GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params.
+    gfx::PluginWindowHandle handle = data->surface_id;
+#else
+    gfx::PluginWindowHandle handle = widget;
+#endif
     tracker->SetSurfaceHandle(data->surface_id,
-                              gfx::GLSurfaceHandle(widget, gfx::NATIVE_DIRECT));
+                              gfx::GLSurfaceHandle(handle, gfx::NATIVE_DIRECT));
   }
 
   per_compositor_data_[compositor] = data;

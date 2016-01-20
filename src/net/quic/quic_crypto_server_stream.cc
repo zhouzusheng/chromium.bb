@@ -20,6 +20,24 @@ using std::string;
 
 namespace net {
 
+namespace {
+bool HasFixedTag(const CryptoHandshakeMessage& message) {
+  const QuicTag* received_tags;
+  size_t received_tags_length;
+  QuicErrorCode error =
+      message.GetTaglist(kCOPT, &received_tags, &received_tags_length);
+  if (error == QUIC_NO_ERROR) {
+    DCHECK(received_tags);
+    for (size_t i = 0; i < received_tags_length; ++i) {
+      if (received_tags[i] == kFIXD) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+}  // namespace
+
 void ServerHelloNotifier::OnAckNotification(
     int num_retransmitted_packets,
     int num_retransmitted_bytes,
@@ -57,6 +75,12 @@ void QuicCryptoServerStream::OnHandshakeMessage(
   QuicCryptoStream::OnHandshakeMessage(message);
   ++num_handshake_messages_;
 
+  // This block should be removed with support for QUIC_VERSION_25.
+  if (FLAGS_quic_require_fix && !HasFixedTag(message)) {
+    CloseConnection(QUIC_CRYPTO_MESSAGE_PARAMETER_NOT_FOUND);
+    return;
+  }
+
   // Do not process handshake messages after the handshake is confirmed.
   if (handshake_confirmed_) {
     CloseConnection(QUIC_CRYPTO_MESSAGE_AFTER_HANDSHAKE_COMPLETE);
@@ -79,7 +103,9 @@ void QuicCryptoServerStream::OnHandshakeMessage(
   validate_client_hello_cb_ = new ValidateCallback(this);
   return crypto_config_->ValidateClientHello(
       message, session()->connection()->peer_address().address(),
-      session()->connection()->clock(), validate_client_hello_cb_);
+      session()->connection()->self_address().address(), version(),
+      session()->connection()->clock(), &crypto_proof_,
+      validate_client_hello_cb_);
 }
 
 void QuicCryptoServerStream::FinishProcessingHandshakeMessage(
@@ -253,7 +279,7 @@ QuicErrorCode QuicCryptoServerStream::ProcessClientHello(
       connection->peer_address(), version(), connection->supported_versions(),
       use_stateless_rejects_in_crypto_config, server_designated_connection_id,
       connection->clock(), connection->random_generator(),
-      &crypto_negotiated_params_, reply, error_details);
+      &crypto_negotiated_params_, &crypto_proof_, reply, error_details);
 }
 
 void QuicCryptoServerStream::OverrideQuicConfigDefaults(QuicConfig* config) {

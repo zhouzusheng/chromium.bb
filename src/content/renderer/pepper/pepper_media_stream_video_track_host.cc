@@ -18,11 +18,6 @@
 #include "ppapi/host/host_message_context.h"
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/shared_impl/media_stream_buffer.h"
-
-// IS_ALIGNED is also defined in
-// third_party/webrtc/overrides/webrtc/base/basictypes.h
-// TODO(ronghuawu): Avoid undef.
-#undef IS_ALIGNED
 #include "third_party/libyuv/include/libyuv.h"
 
 using media::VideoFrame;
@@ -41,15 +36,15 @@ const char kPepperVideoSourceName[] = "PepperVideoSourceName";
 // Default config for output mode.
 const int kDefaultOutputFrameRate = 30;
 
-media::VideoCapturePixelFormat ToPixelFormat(PP_VideoFrame_Format format) {
+media::VideoPixelFormat ToPixelFormat(PP_VideoFrame_Format format) {
   switch (format) {
     case PP_VIDEOFRAME_FORMAT_YV12:
-      return media::VIDEO_CAPTURE_PIXEL_FORMAT_YV12;
+      return media::PIXEL_FORMAT_YV12;
     case PP_VIDEOFRAME_FORMAT_I420:
-      return media::VIDEO_CAPTURE_PIXEL_FORMAT_I420;
+      return media::PIXEL_FORMAT_I420;
     default:
       DVLOG(1) << "Unsupported pixel format " << format;
-      return media::VIDEO_CAPTURE_PIXEL_FORMAT_UNKNOWN;
+      return media::PIXEL_FORMAT_UNKNOWN;
   }
 }
 
@@ -371,7 +366,7 @@ int32_t PepperMediaStreamVideoTrackHost::SendFrameToTrack(int32_t index) {
 
 void PepperMediaStreamVideoTrackHost::OnVideoFrame(
     const scoped_refptr<VideoFrame>& frame,
-    const base::TimeTicks& estimated_capture_time) {
+    base::TimeTicks estimated_capture_time) {
   DCHECK(frame.get());
   // TODO(penghuang): Check |frame->end_of_stream()| and close the track.
   PP_VideoFrame_Format ppformat = ToPpapiFormat(frame->format());

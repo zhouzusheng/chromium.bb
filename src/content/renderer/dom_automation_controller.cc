@@ -58,6 +58,29 @@ gin::ObjectTemplateBuilder DomAutomationController::GetObjectTemplateBuilder(
 
 void DomAutomationController::OnDestruct() {}
 
+void DomAutomationController::DidCreateScriptContext(
+    v8::Local<v8::Context> context,
+    int extension_group,
+    int world_id) {
+  // Add the domAutomationController to isolated worlds as well.
+  v8::Isolate* isolate = blink::mainThreadIsolate();
+  v8::HandleScope handle_scope(isolate);
+  if (context.IsEmpty())
+    return;
+
+  v8::Context::Scope context_scope(context);
+
+  // Resuse this object instead of creating others.
+  gin::Handle<DomAutomationController> controller =
+      gin::CreateHandle(isolate, this);
+  if (controller.IsEmpty())
+    return;
+
+  v8::Local<v8::Object> global = context->Global();
+  global->Set(gin::StringToV8(isolate, "domAutomationController"),
+              controller.ToV8());
+}
+
 bool DomAutomationController::SendMsg(const gin::Arguments& args) {
   if (!render_frame())
     return false;
@@ -89,7 +112,7 @@ bool DomAutomationController::SendMsg(const gin::Arguments& args) {
     return false;
 
   bool succeeded = Send(new FrameHostMsg_DomOperationResponse(
-      routing_id(), json, automation_id_));
+      routing_id(), json));
 
   automation_id_ = MSG_ROUTING_NONE;
   return succeeded;
@@ -102,7 +125,7 @@ bool DomAutomationController::SendJSON(const std::string& json) {
   if (automation_id_ == MSG_ROUTING_NONE)
     return false;
   bool result = Send(new FrameHostMsg_DomOperationResponse(
-      routing_id(), json, automation_id_));
+      routing_id(), json));
 
   automation_id_ = MSG_ROUTING_NONE;
   return result;
@@ -113,7 +136,7 @@ bool DomAutomationController::SendWithId(int automation_id,
   if (!render_frame())
     return false;
   return Send(
-      new FrameHostMsg_DomOperationResponse(routing_id(), str, automation_id));
+      new FrameHostMsg_DomOperationResponse(routing_id(), str));
 }
 
 bool DomAutomationController::SetAutomationId(int automation_id) {

@@ -14,6 +14,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
+#include "base/metrics/sparse_histogram.h"
 #include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/thread_task_runner_handle.h"
@@ -185,18 +186,31 @@ void GetSdpAndTypeFromSessionDescription(
 void GetNativeRtcConfiguration(
     const blink::WebRTCConfiguration& blink_config,
     webrtc::PeerConnectionInterface::RTCConfiguration* webrtc_config) {
-  if (blink_config.isNull() || !webrtc_config)
+  DCHECK_EQ(webrtc_config->enable_localhost_ice_candidate, false);
+
+  // When we don't have WebRTCConfiguration, treat it as a special case where we
+  // should generate local host candidate. This will only be honored if
+  // enable_multiple_routes is disabled.
+  if (blink_config.isNull()) {
+    webrtc_config->enable_localhost_ice_candidate = true;
     return;
-  for (size_t i = 0; i < blink_config.numberOfServers(); ++i) {
-    webrtc::PeerConnectionInterface::IceServer server;
-    const blink::WebRTCICEServer& webkit_server =
-        blink_config.server(i);
-    server.username =
-        base::UTF16ToUTF8(base::StringPiece16(webkit_server.username()));
-    server.password =
-        base::UTF16ToUTF8(base::StringPiece16(webkit_server.credential()));
-    server.uri = webkit_server.uri().spec();
-    webrtc_config->servers.push_back(server);
+  }
+
+  if (blink_config.iceServers().isNull()) {
+    // Same as when iceServers is undefined or unspecified.
+    webrtc_config->enable_localhost_ice_candidate = true;
+  } else {
+    for (size_t i = 0; i < blink_config.iceServers().numberOfServers(); ++i) {
+      webrtc::PeerConnectionInterface::IceServer server;
+      const blink::WebRTCICEServer& webkit_server =
+          blink_config.iceServers().server(i);
+      server.username =
+          base::UTF16ToUTF8(base::StringPiece16(webkit_server.username()));
+      server.password =
+          base::UTF16ToUTF8(base::StringPiece16(webkit_server.credential()));
+      server.uri = webkit_server.uri().spec();
+      webrtc_config->servers.push_back(server);
+    }
   }
 
   switch (blink_config.iceTransports()) {
@@ -482,7 +496,8 @@ void GetStatsOnSignalingThread(
     const scoped_refptr<webrtc::PeerConnectionInterface>& pc,
     webrtc::PeerConnectionInterface::StatsOutputLevel level,
     const scoped_refptr<webrtc::StatsObserver>& observer,
-    const std::string track_id, blink::WebMediaStreamSource::Type track_type) {
+    const std::string& track_id,
+    blink::WebMediaStreamSource::Type track_type) {
   TRACE_EVENT0("webrtc", "GetStatsOnSignalingThread");
 
   scoped_refptr<webrtc::MediaStreamTrackInterface> track;
@@ -531,8 +546,44 @@ class PeerConnectionUMAObserver : public webrtc::UMAObserver {
         UMA_HISTOGRAM_ENUMERATION("WebRTC.PeerConnection.CandidatePairType_TCP",
                                   counter, counter_max);
         break;
-      case webrtc::kPeerConnectionEnumCounterMax:
-        NOTREACHED();
+      default:
+        // The default clause is expected to reach when new enum types are
+        // added.
+        break;
+    }
+  }
+
+  void IncrementSparseEnumCounter(
+      webrtc::PeerConnectionEnumCounterType counter_type,
+      int counter) override {
+    switch (counter_type) {
+      case webrtc::kEnumCounterAudioSrtpCipher:
+        UMA_HISTOGRAM_SPARSE_SLOWLY(
+            "WebRTC.PeerConnection.SrtpCryptoSuite.Audio", counter);
+        break;
+      case webrtc::kEnumCounterAudioSslCipher:
+        UMA_HISTOGRAM_SPARSE_SLOWLY(
+            "WebRTC.PeerConnection.SslCipherSuite.Audio", counter);
+        break;
+      case webrtc::kEnumCounterVideoSrtpCipher:
+        UMA_HISTOGRAM_SPARSE_SLOWLY(
+            "WebRTC.PeerConnection.SrtpCryptoSuite.Video", counter);
+        break;
+      case webrtc::kEnumCounterVideoSslCipher:
+        UMA_HISTOGRAM_SPARSE_SLOWLY(
+            "WebRTC.PeerConnection.SslCipherSuite.Video", counter);
+        break;
+      case webrtc::kEnumCounterDataSrtpCipher:
+        UMA_HISTOGRAM_SPARSE_SLOWLY(
+            "WebRTC.PeerConnection.SrtpCryptoSuite.Data", counter);
+        break;
+      case webrtc::kEnumCounterDataSslCipher:
+        UMA_HISTOGRAM_SPARSE_SLOWLY("WebRTC.PeerConnection.SslCipherSuite.Data",
+                                    counter);
+        break;
+      default:
+        // The default clause is expected to reach when new enum types are
+        // added.
         break;
     }
   }
@@ -555,7 +606,9 @@ class PeerConnectionUMAObserver : public webrtc::UMAObserver {
                                  value);
         break;
       default:
-        NOTREACHED();
+        // The default clause is expected to reach when new enum types are
+        // added.
+        break;
     }
   }
 };

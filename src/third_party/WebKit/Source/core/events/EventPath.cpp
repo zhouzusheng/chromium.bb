@@ -94,7 +94,7 @@ void EventPath::initialize()
         return;
     calculatePath();
     calculateAdjustedTargets();
-    calculateTreeScopePrePostOrderNumbers();
+    calculateTreeOrderAndSetNearestAncestorClosedTree();
 }
 
 void EventPath::calculatePath()
@@ -155,7 +155,7 @@ void EventPath::calculatePath()
     }
 }
 
-void EventPath::calculateTreeScopePrePostOrderNumbers()
+void EventPath::calculateTreeOrderAndSetNearestAncestorClosedTree()
 {
     // Precondition:
     //   - TreeScopes in m_treeScopeEventContexts must be *connected* in the same tree of trees.
@@ -163,10 +163,11 @@ void EventPath::calculateTreeScopePrePostOrderNumbers()
     WillBeHeapHashMap<RawPtrWillBeMember<const TreeScope>, RawPtrWillBeMember<TreeScopeEventContext>> treeScopeEventContextMap;
     for (const auto& treeScopeEventContext : m_treeScopeEventContexts)
         treeScopeEventContextMap.add(&treeScopeEventContext->treeScope(), treeScopeEventContext.get());
-    TreeScopeEventContext* rootTree = 0;
+    TreeScopeEventContext* rootTree = nullptr;
     for (const auto& treeScopeEventContext : m_treeScopeEventContexts) {
         // Use olderShadowRootOrParentTreeScope here for parent-child relationships.
-        // See the definition of trees of trees in the Shado DOM spec: http://w3c.github.io/webcomponents/spec/shadow/
+        // See the definition of trees of trees in the Shadow DOM spec:
+        // http://w3c.github.io/webcomponents/spec/shadow/
         TreeScope* parent = treeScopeEventContext.get()->treeScope().olderShadowRootOrParentTreeScope();
         if (!parent) {
             ASSERT(!rootTree);
@@ -177,13 +178,13 @@ void EventPath::calculateTreeScopePrePostOrderNumbers()
         treeScopeEventContextMap.find(parent)->value->addChild(*treeScopeEventContext.get());
     }
     ASSERT(rootTree);
-    rootTree->calculatePrePostOrderNumber(0);
+    rootTree->calculateTreeOrderAndSetNearestAncestorClosedTree(0, nullptr);
 }
 
 TreeScopeEventContext* EventPath::ensureTreeScopeEventContext(Node* currentTarget, TreeScope* treeScope, TreeScopeEventContextMap& treeScopeEventContextMap)
 {
     if (!treeScope)
-        return 0;
+        return nullptr;
     TreeScopeEventContext* treeScopeEventContext;
     bool isNewEntry;
     {
@@ -208,10 +209,10 @@ TreeScopeEventContext* EventPath::ensureTreeScopeEventContext(Node* currentTarge
 
 void EventPath::calculateAdjustedTargets()
 {
-    const TreeScope* lastTreeScope = 0;
+    const TreeScope* lastTreeScope = nullptr;
 
     TreeScopeEventContextMap treeScopeEventContextMap;
-    TreeScopeEventContext* lastTreeScopeEventContext = 0;
+    TreeScopeEventContext* lastTreeScopeEventContext = nullptr;
 
     for (size_t i = 0; i < size(); ++i) {
         Node* currentNode = at(i).node();
@@ -243,7 +244,7 @@ void EventPath::buildRelatedNodeMap(const Node& relatedNode, RelatedTargetMap& r
 EventTarget* EventPath::findRelatedNode(TreeScope& scope, RelatedTargetMap& relatedTargetMap)
 {
     WillBeHeapVector<RawPtrWillBeMember<TreeScope>, 32> parentTreeScopes;
-    EventTarget* relatedNode = 0;
+    EventTarget* relatedNode = nullptr;
     for (TreeScope* current = &scope; current; current = current->olderShadowRootOrParentTreeScope()) {
         parentTreeScopes.append(current);
         RelatedTargetMap::const_iterator iter = relatedTargetMap.find(current);
@@ -253,8 +254,9 @@ EventTarget* EventPath::findRelatedNode(TreeScope& scope, RelatedTargetMap& rela
         }
     }
     ASSERT(relatedNode);
-    for (WillBeHeapVector<RawPtrWillBeMember<TreeScope>, 32>::iterator iter = parentTreeScopes.begin(); iter < parentTreeScopes.end(); ++iter)
-        relatedTargetMap.add(*iter, relatedNode);
+    for (const auto& entry : parentTreeScopes)
+        relatedTargetMap.add(entry, relatedNode);
+
     return relatedNode;
 }
 

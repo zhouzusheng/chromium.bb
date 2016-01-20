@@ -60,13 +60,13 @@ private:
     LayoutObjectChildList* virtualChildren() final { return children(); }
     const LayoutObjectChildList* virtualChildren() const final { return children(); }
 
-    DeprecatedPaintLayerType layerTypeRequired() const override { return NormalDeprecatedPaintLayer; }
+    PaintLayerType layerTypeRequired() const override { return NormalPaintLayer; }
 
     bool canHaveChildren() const final { return true; }
     bool isChildAllowed(LayoutObject*, const ComputedStyle&) const final;
 
     bool isImage() const final { return false; }
-    void paintReplaced(const PaintInfo&, const LayoutPoint&) override;
+    void paintReplaced(const PaintInfo&, const LayoutPoint&) const override;
 
     bool backgroundShouldAlwaysBeClipped() const final { return false; }
 

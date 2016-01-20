@@ -119,7 +119,7 @@ VisibleSelection Editor::selectionForCommand(Event* event)
     HTMLTextFormControlElement* textFromControlOfTarget = isHTMLTextFormControlElement(*event->target()->toNode()) ? toHTMLTextFormControlElement(event->target()->toNode()) : 0;
     if (textFromControlOfTarget && (selection.start().isNull() || textFromControlOfTarget != textFormControlOfSelectionStart)) {
         if (RefPtrWillBeRawPtr<Range> range = textFromControlOfTarget->selection())
-            return VisibleSelection(range.get(), TextAffinity::Downstream, selection.isDirectional());
+            return VisibleSelection(EphemeralRange(range.get()), TextAffinity::Downstream, selection.isDirectional());
     }
     return selection;
 }
@@ -255,8 +255,8 @@ bool Editor::canDeleteRange(const EphemeralRange& range) const
         return false;
 
     if (range.isCollapsed()) {
-        VisiblePosition start(range.startPosition());
-        VisiblePosition previous = start.previous();
+        VisiblePosition start = createVisiblePosition(range.startPosition());
+        VisiblePosition previous = previousPositionOf(start);
         // FIXME: We sometimes allow deletions at the start of editable roots, like when the caret is in an empty list item.
         if (previous.isNull() || previous.deepEquivalent().anchorNode()->rootEditableElement() != startContainer->rootEditableElement())
             return false;
@@ -425,7 +425,7 @@ static PassRefPtr<Image> imageFromNode(const Node& node)
         return nullptr;
 
     if (layoutObject->isCanvas())
-        return toHTMLCanvasElement(node).copiedImage(FrontBuffer);
+        return toHTMLCanvasElement(node).copiedImage(FrontBuffer, PreferNoAcceleration);
 
     if (layoutObject->isImage()) {
         LayoutImage* layoutImage = toLayoutImage(layoutObject);
@@ -999,7 +999,7 @@ void Editor::setBaseWritingDirection(WritingDirection direction)
         return;
     }
 
-    RefPtrWillBeRawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create();
+    RefPtrWillBeRawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create(HTMLQuirksMode);
     style->setProperty(CSSPropertyDirection, direction == LeftToRightWritingDirection ? "ltr" : direction == RightToLeftWritingDirection ? "rtl" : "inherit", false);
     applyParagraphStyleToSelection(style.get(), EditActionSetWritingDirection);
 }
@@ -1023,11 +1023,11 @@ void Editor::transpose()
 
     // Make a selection that goes back one character and forward two characters.
     VisiblePosition caret = selection.visibleStart();
-    VisiblePosition next = isEndOfParagraph(caret) ? caret : caret.next();
-    VisiblePosition previous = next.previous();
+    VisiblePosition next = isEndOfParagraph(caret) ? caret : nextPositionOf(caret);
+    VisiblePosition previous = previousPositionOf(next);
     if (next.deepEquivalent() == previous.deepEquivalent())
         return;
-    previous = previous.previous();
+    previous = previousPositionOf(previous);
     if (!inSameParagraph(next, previous))
         return;
     const EphemeralRange range = makeRange(previous, next);
@@ -1042,7 +1042,7 @@ void Editor::transpose()
     String transposed = text.right(1) + text.left(1);
 
     // Select the two characters.
-    if (!VisibleSelection::InDOMTree::equalSelections(newSelection, frame().selection().selection()))
+    if (!equalSelectionsInDOMTree(newSelection, frame().selection().selection()))
         frame().selection().setSelection(newSelection);
 
     // Insert the transposed characters.
@@ -1066,7 +1066,7 @@ void Editor::changeSelectionAfterCommand(const VisibleSelection& newSelection,  
         return;
 
     // See <rdar://problem/5729315> Some shouldChangeSelectedDOMRange contain Ranges for selections that are no longer valid
-    bool selectionDidNotChangeDOMPosition = VisibleSelection::InDOMTree::equalSelections(newSelection, frame().selection().selection());
+    bool selectionDidNotChangeDOMPosition = equalSelectionsInDOMTree(newSelection, frame().selection().selection());
     frame().selection().setSelection(newSelection, options);
 
     // Some editing operations change the selection visually without affecting its position within the DOM.
@@ -1085,12 +1085,12 @@ IntRect Editor::firstRectForRange(const EphemeralRange& range) const
     LayoutUnit extraWidthToEndOfLine = 0;
     ASSERT(range.isNotNull());
 
-    IntRect startCaretRect = RenderedPosition(VisiblePosition(range.startPosition()).deepEquivalent(), TextAffinity::Downstream).absoluteRect(&extraWidthToEndOfLine);
-    if (startCaretRect == LayoutRect())
+    IntRect startCaretRect = RenderedPosition(createVisiblePosition(range.startPosition()).deepEquivalent(), TextAffinity::Downstream).absoluteRect(&extraWidthToEndOfLine);
+    if (startCaretRect.isEmpty())
         return IntRect();
 
-    IntRect endCaretRect = RenderedPosition(VisiblePosition(range.endPosition()).deepEquivalent(), TextAffinity::Upstream).absoluteRect();
-    if (endCaretRect == LayoutRect())
+    IntRect endCaretRect = RenderedPosition(createVisiblePosition(range.endPosition()).deepEquivalent(), TextAffinity::Upstream).absoluteRect();
+    if (endCaretRect.isEmpty())
         return IntRect();
 
     if (startCaretRect.y() == endCaretRect.y()) {
@@ -1154,7 +1154,7 @@ bool Editor::findString(const String& target, FindOptions options)
     if (!resultRange)
         return false;
 
-    frame().selection().setSelection(VisibleSelection(resultRange.get()));
+    frame().selection().setSelection(VisibleSelection(EphemeralRange(resultRange.get())));
     frame().selection().revealSelection();
     return true;
 }
@@ -1249,7 +1249,7 @@ static PassRefPtrWillBeRawPtr<Range> findRangeOfStringAlgorithm(Document& docume
     // the reference range, find again. Build a selection with the found range
     // to remove collapsed whitespace. Compare ranges instead of selection
     // objects to ignore the way that the current selection was made.
-    if (resultRange && startInReferenceRange && VisibleSelection::normalizeRange(EphemeralRangeTemplate<Strategy>(resultRange.get())) == referenceRange) {
+    if (resultRange && startInReferenceRange && normalizeRange(EphemeralRangeTemplate<Strategy>(resultRange.get())) == referenceRange) {
         if (forward)
             searchRange = EphemeralRangeTemplate<Strategy>(fromPositionInDOMTree<Strategy>(resultRange->endPosition()), searchRange.endPosition());
         else

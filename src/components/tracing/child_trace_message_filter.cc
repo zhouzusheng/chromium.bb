@@ -237,9 +237,11 @@ void ChildTraceMessageFilter::OnGlobalMemoryDumpResponse(uint64 dump_guid,
 
 void ChildTraceMessageFilter::OnHistogramChanged(
     const std::string& histogram_name,
-    base::Histogram::Sample reference_value,
+    base::Histogram::Sample reference_lower_value,
+    base::Histogram::Sample reference_upper_value,
     base::Histogram::Sample actual_value) {
-  if (actual_value < reference_value)
+  if (actual_value < reference_lower_value ||
+      actual_value > reference_upper_value)
     return;
 
   ipc_task_runner_->PostTask(
@@ -264,11 +266,43 @@ void ChildTraceMessageFilter::SendTriggerMessage(
 
 void ChildTraceMessageFilter::OnSetUMACallback(
     const std::string& histogram_name,
-    int histogram_value) {
+    int histogram_lower_value,
+    int histogram_upper_value) {
   histogram_last_changed_ = base::Time();
   base::StatisticsRecorder::SetCallback(
-      histogram_name, base::Bind(&ChildTraceMessageFilter::OnHistogramChanged,
-                                 this, histogram_name, histogram_value));
+      histogram_name,
+      base::Bind(&ChildTraceMessageFilter::OnHistogramChanged, this,
+                 histogram_name, histogram_lower_value, histogram_upper_value));
+
+  base::HistogramBase* existing_histogram =
+      base::StatisticsRecorder::FindHistogram(histogram_name);
+  if (!existing_histogram)
+    return;
+
+  scoped_ptr<base::HistogramSamples> samples =
+      existing_histogram->SnapshotSamples();
+  if (!samples)
+    return;
+
+  scoped_ptr<base::SampleCountIterator> sample_iterator = samples->Iterator();
+  if (!sample_iterator)
+    return;
+
+  while (!sample_iterator->Done()) {
+    base::HistogramBase::Sample min;
+    base::HistogramBase::Sample max;
+    base::HistogramBase::Count count;
+    sample_iterator->Get(&min, &max, &count);
+    if (min >= histogram_lower_value && max <= histogram_upper_value &&
+        count > 0) {
+      ipc_task_runner_->PostTask(
+          FROM_HERE, base::Bind(&ChildTraceMessageFilter::SendTriggerMessage,
+                                this, histogram_name));
+      break;
+    }
+
+    sample_iterator->Next();
+  }
 }
 
 void ChildTraceMessageFilter::OnClearUMACallback(

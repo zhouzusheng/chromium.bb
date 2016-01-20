@@ -26,7 +26,9 @@ namespace blink {
 
 // We define the default ChunkTypeTraits for frequently used types.
 template<typename ChunkType>
-class ReadableStreamChunkTypeTraits { };
+class ReadableStreamChunkTypeTraits {
+    STATIC_ONLY(ReadableStreamChunkTypeTraits);
+};
 
 template<>
 class ReadableStreamChunkTypeTraits<String> {
@@ -190,6 +192,7 @@ template <typename ChunkTypeTraits>
 ScriptPromise ReadableStreamImpl<ChunkTypeTraits>::read(ScriptState* scriptState)
 {
     ASSERT(stateInternal() == Readable);
+    setIsDisturbed();
     if (m_queue.isEmpty()) {
         m_pendingReads.append(ScriptPromiseResolver::create(scriptState));
         ScriptPromise promise = m_pendingReads.last()->promise();
@@ -215,6 +218,7 @@ void ReadableStreamImpl<ChunkTypeTraits>::readInternal(Deque<std::pair<typename 
     ASSERT(m_pendingReads.isEmpty());
     ASSERT(queue.isEmpty());
 
+    setIsDisturbed();
     queue.swap(m_queue);
     m_totalQueueSize = 0;
     readInternalPostAction();

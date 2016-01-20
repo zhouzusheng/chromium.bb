@@ -1,4 +1,5 @@
-(function() {
+
+  (function() {
     'use strict';
 
     /**
@@ -228,7 +229,7 @@
      * `keys` property is pressed.
      *
      * @demo demo/index.html
-     * @polymerBehavior IronA11yKeysBehavior
+     * @polymerBehavior
      */
     Polymer.IronA11yKeysBehavior = {
       properties: {

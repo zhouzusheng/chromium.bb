@@ -196,11 +196,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
     return should_flatten_transform_from_property_tree_;
   }
 
-  void set_is_clipped(bool is_clipped) {
-    is_clipped_ = is_clipped;
-    SetNeedsPushProperties();
-  }
-  bool is_clipped() const { return is_clipped_; }
+  bool is_clipped() const { return draw_properties_.is_clipped; }
 
   void UpdatePropertyTreeTransform();
   void UpdatePropertyTreeTransformIsAnimated(bool is_animated);
@@ -389,12 +385,8 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
 
   RenderSurfaceImpl* render_surface() const { return render_surface_.get(); }
 
-  DrawProperties<LayerImpl>& draw_properties() {
-    return draw_properties_;
-  }
-  const DrawProperties<LayerImpl>& draw_properties() const {
-    return draw_properties_;
-  }
+  DrawProperties& draw_properties() { return draw_properties_; }
+  const DrawProperties& draw_properties() const { return draw_properties_; }
 
   // The following are shortcut accessors to get various information from
   // draw_properties_
@@ -443,11 +435,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   void SetBoundsDelta(const gfx::Vector2dF& bounds_delta);
   gfx::Vector2dF bounds_delta() const { return bounds_delta_; }
 
-  bool IsExternalScrollActive() const;
-
   void SetCurrentScrollOffset(const gfx::ScrollOffset& scroll_offset);
-  void SetCurrentScrollOffsetFromDelegate(
-      const gfx::ScrollOffset& scroll_offset);
   void PushScrollOffsetFromMainThread(const gfx::ScrollOffset& scroll_offset);
   // This method is similar to PushScrollOffsetFromMainThread but will cause the
   // scroll offset given to clobber any scroll changes on the active tree in the
@@ -571,11 +559,10 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
 
   // Note this rect is in layer space (not content space).
   void SetUpdateRect(const gfx::Rect& update_rect);
-  gfx::Rect update_rect() const { return update_rect_; }
+  const gfx::Rect& update_rect() const { return update_rect_; }
 
-  void AddDamageRect(const gfx::RectF& damage_rect);
-
-  const gfx::RectF& damage_rect() const { return damage_rect_; }
+  void AddDamageRect(const gfx::Rect& damage_rect);
+  const gfx::Rect& damage_rect() const { return damage_rect_; }
 
   virtual base::DictionaryValue* LayerTreeAsJson() const;
 
@@ -680,11 +667,29 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
 
   bool layer_or_descendant_is_drawn() { return layer_or_descendant_is_drawn_; }
 
+  void set_layer_or_descendant_has_input_handler(
+      bool layer_or_descendant_has_input_handler) {
+    layer_or_descendant_has_input_handler_ =
+        layer_or_descendant_has_input_handler;
+  }
+
+  bool layer_or_descendant_has_input_handler() {
+    return layer_or_descendant_has_input_handler_;
+  }
+
   void set_sorted_for_recursion(bool sorted_for_recursion) {
     sorted_for_recursion_ = sorted_for_recursion;
   }
-
   bool sorted_for_recursion() { return sorted_for_recursion_; }
+
+  void set_num_layer_or_descendant_with_copy_request(
+      int num_layer_or_descendants_with_copy_request) {
+    num_layer_or_descendants_with_copy_request_ =
+        num_layer_or_descendants_with_copy_request;
+  }
+  int num_layer_or_descendants_with_copy_request() {
+    return num_layer_or_descendants_with_copy_request_;
+  }
 
   void UpdatePropertyTreeForScrollingAndAnimationIfNeeded();
 
@@ -722,10 +727,7 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   void ValidateQuadResourcesInternal(DrawQuad* quad) const;
 
   void PushScrollOffset(const gfx::ScrollOffset* scroll_offset);
-  // If the new scroll offset is assigned from the root scroll offset delegate,
-  // LayerImpl won't inform the root scroll offset delegate about the scroll
-  // change to avoid feedback.
-  void DidUpdateScrollOffset(bool is_from_root_delegate);
+  void DidUpdateScrollOffset();
   void NoteLayerPropertyChangedForDescendantsInternal();
 
   virtual const char* LayerTypeAsString() const;
@@ -765,7 +767,6 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
 
   gfx::Vector2dF offset_to_transform_parent_;
 
-  bool scrollable_ : 1;
   bool should_scroll_on_main_thread_ : 1;
   bool have_wheel_event_handlers_ : 1;
   bool have_scroll_event_handlers_ : 1;
@@ -780,7 +781,6 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
   bool double_sided_ : 1;
   bool should_flatten_transform_ : 1;
   bool should_flatten_transform_from_property_tree_ : 1;
-  bool is_clipped_ : 1;
 
   // Tracks if drawing-related properties have changed since last redraw.
   bool layer_property_changed_ : 1;
@@ -853,11 +853,12 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
  private:
   // Rect indicating what was repainted/updated during update.
   // Note that plugin layers bypass this and leave it empty.
-  // Uses layer (not content) space.
+  // This is in the layer's space.
   gfx::Rect update_rect_;
 
-  // This rect is in layer space.
-  gfx::RectF damage_rect_;
+  // Denotes an area that is damaged and needs redraw. This is in the layer's
+  // space.
+  gfx::Rect damage_rect_;
 
   // Manages animations for this layer.
   scoped_refptr<LayerAnimationController> layer_animation_controller_;
@@ -871,15 +872,18 @@ class CC_EXPORT LayerImpl : public LayerAnimationValueObserver,
 
   // Group of properties that need to be computed based on the layer tree
   // hierarchy before layers can be drawn.
-  DrawProperties<LayerImpl> draw_properties_;
+  DrawProperties draw_properties_;
 
   scoped_refptr<base::trace_event::ConvertableToTraceFormat> debug_info_;
   scoped_ptr<RenderSurfaceImpl> render_surface_;
 
   std::vector<FrameTimingRequest> frame_timing_requests_;
+  int num_layer_or_descendants_with_copy_request_;
   bool frame_timing_requests_dirty_;
   bool visited_;
   bool layer_or_descendant_is_drawn_;
+  // If true, the layer or one of its descendants has a wheel or touch handler.
+  bool layer_or_descendant_has_input_handler_;
   bool sorted_for_recursion_;
 
   DISALLOW_COPY_AND_ASSIGN(LayerImpl);

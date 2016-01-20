@@ -74,8 +74,8 @@ public:
         v8::AccessorNameGetterCallback getterForMainWorld;
         v8::AccessorNameSetterCallback setterForMainWorld;
         const WrapperTypeInfo* data;
-        v8::AccessControl settings;
-        v8::PropertyAttribute attribute;
+        unsigned settings : 8; // v8::AccessControl
+        unsigned attribute : 8; // v8::PropertyAttribute
         unsigned exposeConfiguration : 1; // ExposeConfiguration
         unsigned propertyLocationConfiguration : 3; // PropertyLocationConfiguration
         unsigned holderCheckConfiguration : 1; // HolderCheckConfiguration
@@ -96,8 +96,8 @@ public:
         v8::FunctionCallback getterForMainWorld;
         v8::FunctionCallback setterForMainWorld;
         const WrapperTypeInfo* data;
-        v8::AccessControl settings;
-        v8::PropertyAttribute attribute;
+        unsigned settings : 8; // v8::AccessControl
+        unsigned attribute : 8; // v8::PropertyAttribute
         unsigned exposeConfiguration : 1; // ExposeConfiguration
         unsigned propertyLocationConfiguration : 3; // PropertyLocationConfiguration
         unsigned holderCheckConfiguration : 1; // HolderCheckConfiguration
@@ -115,8 +115,7 @@ public:
         ConstantTypeUnsignedShort,
         ConstantTypeUnsignedLong,
         ConstantTypeFloat,
-        ConstantTypeDouble,
-        ConstantTypeString
+        ConstantTypeDouble
     };
 
     // ConstantConfiguration translates into calls to Set() for setting up an
@@ -128,7 +127,6 @@ public:
         const char* const name;
         int ivalue;
         double dvalue;
-        const char* const svalue;
         ConstantType type;
     };
 
@@ -162,7 +160,9 @@ public:
         v8::FunctionCallback callback;
         v8::FunctionCallback callbackForMainWorld;
         int length;
-        ExposeConfiguration exposeConfiguration;
+        unsigned attribute : 8; // v8::PropertyAttribute
+        unsigned exposeConfiguration : 1; // ExposeConfiguration
+        unsigned propertyLocationConfiguration : 3; // PropertyLocationConfiguration
     };
 
     struct SymbolKeyedMethodConfiguration {
@@ -178,21 +178,23 @@ public:
         v8::FunctionCallback callback;
         // SymbolKeyedMethodConfiguration doesn't support per-world bindings.
         int length;
-        ExposeConfiguration exposeConfiguration;
+        unsigned attribute : 8; // v8::PropertyAttribute
+        unsigned exposeConfiguration : 1; // ExposeConfiguration
+        unsigned propertyLocationConfiguration : 3; // PropertyLocationConfiguration
     };
 
-    static void installMethods(v8::Isolate*, v8::Local<v8::ObjectTemplate> prototypeTemplate, v8::Local<v8::Signature>, v8::PropertyAttribute, const MethodConfiguration*, size_t callbackCount);
+    static void installMethods(v8::Isolate*, v8::Local<v8::ObjectTemplate> instanceTemplate, v8::Local<v8::ObjectTemplate> prototypeTemplate, v8::Local<v8::FunctionTemplate> interfaceTemplate, v8::Local<v8::Signature>, const MethodConfiguration*, size_t methodCount);
 
-    static void installMethod(v8::Isolate*, v8::Local<v8::FunctionTemplate>, v8::Local<v8::Signature>, v8::PropertyAttribute, const MethodConfiguration&);
+    static void installMethod(v8::Isolate*, v8::Local<v8::ObjectTemplate> instanceTemplate, v8::Local<v8::ObjectTemplate> prototypeTemplate, v8::Local<v8::FunctionTemplate> interfaceTemplate, v8::Local<v8::Signature>, const MethodConfiguration&);
 
-    static void installMethod(v8::Isolate*, v8::Local<v8::ObjectTemplate>, v8::Local<v8::Signature>, v8::PropertyAttribute, const MethodConfiguration&);
+    static void installMethod(v8::Isolate*, v8::Local<v8::Object> instance, v8::Local<v8::Object> prototype, v8::Local<v8::Function> interface, v8::Local<v8::Signature>, const MethodConfiguration&);
 
-    static void installMethod(v8::Isolate*, v8::Local<v8::ObjectTemplate>, v8::Local<v8::Signature>, v8::PropertyAttribute, const SymbolKeyedMethodConfiguration&);
+    static void installMethod(v8::Isolate*, v8::Local<v8::ObjectTemplate>, v8::Local<v8::Signature>, const SymbolKeyedMethodConfiguration&);
 
     static v8::Local<v8::Signature> installDOMClassTemplate(v8::Isolate*, v8::Local<v8::FunctionTemplate>, const char* interfaceName, v8::Local<v8::FunctionTemplate> parentClass, size_t fieldCount,
         const AttributeConfiguration*, size_t attributeCount,
         const AccessorConfiguration*, size_t accessorCount,
-        const MethodConfiguration*, size_t callbackCount);
+        const MethodConfiguration*, size_t methodCount);
 
     static v8::Local<v8::FunctionTemplate> domClassTemplate(v8::Isolate*, WrapperTypeInfo*, void (*)(v8::Local<v8::FunctionTemplate>, v8::Isolate*));
 };

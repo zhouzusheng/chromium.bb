@@ -8,14 +8,14 @@
 #include "base/compiler_specific.h"
 #include "base/strings/string16.h"
 #include "ui/events/events_base_export.h"
+#include "ui/events/keycodes/dom/dom_key.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 
 namespace ui {
 
 enum class DomCode;
-enum class DomKey;
 
-// Helper functions to get the meaning of a Windows key code in a
+// Helper functions to get the meaning of a DOM |code| in a
 // platform independent way. It supports control characters as well.
 // It assumes a US keyboard layout is used, so it may only be used when there
 // is no native event or no better way to get the character.
@@ -29,16 +29,6 @@ enum class DomKey;
 // character according to US keyboard layout definition. Preferably, such
 // events should be created using a full KeyEvent constructor, explicitly
 // specifying the character and DOM 3 values as well as the legacy VKEY.
-//
-// TODO(kpschoedel): replace remaining uses of the ...FromKeyCode() functions
-// and remove them, to avoid future creation of underspecified key events.
-// crbug.com/444045
-EVENTS_BASE_EXPORT base::char16 GetCharacterFromKeyCode(KeyboardCode key_code,
-                                                        int flags);
-EVENTS_BASE_EXPORT bool GetMeaningFromKeyCode(KeyboardCode key_code,
-                                              int flags,
-                                              DomKey* dom_key,
-                                              base::char16* character);
 
 // Helper function to map a physical key state (dom_code and flags)
 // to a meaning (dom_key and character, together corresponding to the
@@ -50,11 +40,12 @@ EVENTS_BASE_EXPORT bool GetMeaningFromKeyCode(KeyboardCode key_code,
 // Returns true and sets the output parameters if the (dom_code, flags) pair
 // has an interpretation in the US English layout; otherwise the output
 // parameters are untouched.
-EVENTS_BASE_EXPORT bool DomCodeToUsLayoutMeaning(DomCode dom_code,
-                                                 int flags,
-                                                 DomKey* dom_key,
-                                                 base::char16* character,
-                                                 KeyboardCode* key_code)
+EVENTS_BASE_EXPORT base::char16 DomCodeToUsLayoutCharacter(DomCode dom_code,
+                                                           int flags);
+EVENTS_BASE_EXPORT bool DomCodeToUsLayoutDomKey(DomCode dom_code,
+                                                int flags,
+                                                DomKey* dom_key,
+                                                KeyboardCode* key_code)
     WARN_UNUSED_RESULT;
 
 // Obtains the control character corresponding to a physical key;
@@ -66,14 +57,8 @@ EVENTS_BASE_EXPORT bool DomCodeToUsLayoutMeaning(DomCode dom_code,
 EVENTS_BASE_EXPORT bool DomCodeToControlCharacter(DomCode dom_code,
                                                   int flags,
                                                   DomKey* dom_key,
-                                                  base::char16* character,
                                                   KeyboardCode* key_code)
     WARN_UNUSED_RESULT;
-
-// Returns the DomKey value associated with an ASCII/Unicode character.
-// All printable characters and most other character codes use
-// DomKey::CHARACTER, but a few ASCII C0 codes have their own DomKey.
-EVENTS_BASE_EXPORT DomKey CharacterToDomKey(uint32 character);
 
 // Returns a Windows-based VKEY for a non-printable DOM Level 3 |key|.
 // The returned VKEY is non-located (e.g. VKEY_SHIFT).
@@ -94,6 +79,11 @@ LocatedToNonLocatedKeyboardCode(KeyboardCode key_code);
 // Determine the located VKEY corresponding to a non-located VKEY.
 EVENTS_BASE_EXPORT KeyboardCode
 NonLocatedToLocatedKeyboardCode(KeyboardCode key_code, DomCode dom_code);
+
+// Determine the located VKEY corresponding to a non-located VKEY for
+// keypad vkeys. (eg. VKEY_1 (with DomCode::NUMPAD1 maps to VKEY_NUMPAD1).
+EVENTS_BASE_EXPORT KeyboardCode
+NonLocatedToLocatedKeypadKeyboardCode(KeyboardCode key_code, DomCode dom_code);
 
 // Returns a DOM Level 3 |code| from a Windows-based VKEY value.
 // This assumes a US layout and should only be used when |code| cannot be

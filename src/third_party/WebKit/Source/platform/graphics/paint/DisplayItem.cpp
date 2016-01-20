@@ -32,9 +32,8 @@ static WTF::String paintPhaseAsDebugString(int paintPhase)
     case 6: return "PaintPhaseChildOutlines";
     case 7: return "PaintPhaseSelfOutline";
     case 8: return "PaintPhaseSelection";
-    case 9: return "PaintPhaseCollapsedTableBorders";
-    case 10: return "PaintPhaseTextClip";
-    case 11: return "PaintPhaseMask";
+    case 9: return "PaintPhaseTextClip";
+    case 10: return "PaintPhaseMask";
     case DisplayItem::PaintPhaseMax: return "PaintPhaseClippingMask";
     default:
         ASSERT_NOT_REACHED();
@@ -105,6 +104,7 @@ static WTF::String specialDrawingTypeAsDebugString(DisplayItem::Type type)
         DEBUG_STRING_CASE(ScrollbarVertical);
         DEBUG_STRING_CASE(SelectionGap);
         DEBUG_STRING_CASE(SelectionTint);
+        DEBUG_STRING_CASE(TableCellBackgroundFromContainers);
         DEBUG_STRING_CASE(TableCellBackgroundFromSelfPaintingRow);
         DEBUG_STRING_CASE(VideoBitmap);
         DEBUG_STRING_CASE(WebPlugin);
@@ -140,7 +140,6 @@ static WTF::String clipTypeAsDebugString(DisplayItem::Type type)
         DEBUG_STRING_CASE(ClipPopupListBoxFrame);
         DEBUG_STRING_CASE(ClipSelectionImage);
         DEBUG_STRING_CASE(PageWidgetDelegateClip);
-        DEBUG_STRING_CASE(TransparencyClip);
         DEBUG_STRING_CASE(ClipPrintedPage);
         DEFAULT_CASE;
     }
@@ -150,6 +149,15 @@ static String transform3DTypeAsDebugString(DisplayItem::Type type)
 {
     switch (type) {
         DEBUG_STRING_CASE(Transform3DElementTransform);
+        DEFAULT_CASE;
+    }
+}
+
+static String subsequenceTypeAsDebugString(DisplayItem::Type type)
+{
+    switch (type) {
+        DEBUG_STRING_CASE(SubsequenceNegativeZOrder);
+        DEBUG_STRING_CASE(SubsequenceNormalFlowAndPositiveZOrder);
         DEFAULT_CASE;
     }
 }
@@ -181,12 +189,12 @@ WTF::String DisplayItem::typeAsDebugString(Type type)
     if (isEndTransform3DType(type))
         return "End" + transform3DTypeAsDebugString(endTransform3DTypeToTransform3DType(type));
 
-    PAINT_PHASE_BASED_DEBUG_STRINGS(CachedSubtree);
-    PAINT_PHASE_BASED_DEBUG_STRINGS(BeginSubtree);
-    PAINT_PHASE_BASED_DEBUG_STRINGS(EndSubtree);
-
-    if (type == UninitializedType)
-        return "UninitializedType";
+    if (isSubsequenceType(type))
+        return subsequenceTypeAsDebugString(type);
+    if (isEndSubsequenceType(type))
+        return "End" + subsequenceTypeAsDebugString(endSubsequenceTypeToSubsequenceType(type));
+    if (isCachedSubsequenceType(type))
+        return "Cached" + subsequenceTypeAsDebugString(cachedSubsequenceTypeToSubsequenceType(type));
 
     switch (type) {
         DEBUG_STRING_CASE(BeginFilter);
@@ -201,14 +209,13 @@ WTF::String DisplayItem::typeAsDebugString(Type type)
         DEBUG_STRING_CASE(EndFixedPosition);
         DEBUG_STRING_CASE(BeginFixedPositionContainer);
         DEBUG_STRING_CASE(EndFixedPositionContainer);
+        DEBUG_STRING_CASE(UninitializedType);
         DEFAULT_CASE;
     }
 }
 
 WTF::String DisplayItem::asDebugString() const
 {
-    if (!isValid())
-        return "null";
     WTF::StringBuilder stringBuilder;
     stringBuilder.append('{');
     dumpPropertiesAsDebugString(stringBuilder);
@@ -218,7 +225,13 @@ WTF::String DisplayItem::asDebugString() const
 
 void DisplayItem::dumpPropertiesAsDebugString(WTF::StringBuilder& stringBuilder) const
 {
-    ASSERT(isValid());
+    if (!isValid()) {
+        stringBuilder.append("valid: false, originalDebugString: ");
+        // This is the original debug string which is in json format.
+        stringBuilder.append(clientDebugString());
+        return;
+    }
+
     stringBuilder.append(String::format("client: \"%p", client()));
     if (!clientDebugString().isEmpty()) {
         stringBuilder.append(' ');

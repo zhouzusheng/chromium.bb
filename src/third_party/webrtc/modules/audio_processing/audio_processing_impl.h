@@ -68,19 +68,15 @@ class AudioProcessingImpl : public AudioProcessing {
                  ChannelLayout reverse_layout) override;
   int Initialize(const ProcessingConfig& processing_config) override;
   void SetExtraOptions(const Config& config) override;
-  int set_sample_rate_hz(int rate) override;
-  int input_sample_rate_hz() const override;
-  int sample_rate_hz() const override;
   int proc_sample_rate_hz() const override;
   int proc_split_sample_rate_hz() const override;
   int num_input_channels() const override;
   int num_output_channels() const override;
   int num_reverse_channels() const override;
   void set_output_will_be_muted(bool muted) override;
-  bool output_will_be_muted() const override;
   int ProcessStream(AudioFrame* frame) override;
   int ProcessStream(const float* const* src,
-                    int samples_per_channel,
+                    size_t samples_per_channel,
                     int input_sample_rate_hz,
                     ChannelLayout input_layout,
                     int output_sample_rate_hz,
@@ -93,7 +89,7 @@ class AudioProcessingImpl : public AudioProcessing {
   int AnalyzeReverseStream(AudioFrame* frame) override;
   int ProcessReverseStream(AudioFrame* frame) override;
   int AnalyzeReverseStream(const float* const* data,
-                           int samples_per_channel,
+                           size_t samples_per_channel,
                            int sample_rate_hz,
                            ChannelLayout layout) override;
   int ProcessReverseStream(const float* const* src,
@@ -106,7 +102,6 @@ class AudioProcessingImpl : public AudioProcessing {
   void set_delay_offset_ms(int offset) override;
   int delay_offset_ms() const override;
   void set_stream_key_pressed(bool key_pressed) override;
-  bool stream_key_pressed() const override;
   int StartDebugRecording(const char filename[kMaxFilenameSize]) override;
   int StartDebugRecording(FILE* handle) override;
   int StartDebugRecordingForPlatformFile(rtc::PlatformFile handle) override;
@@ -167,9 +162,18 @@ class AudioProcessingImpl : public AudioProcessing {
   // out into a separate class with an "enabled" and "disabled" implementation.
   int WriteMessageToDebugFile();
   int WriteInitMessage();
+
+  // Writes Config message. If not |forced|, only writes the current config if
+  // it is different from the last saved one; if |forced|, writes the config
+  // regardless of the last saved.
+  int WriteConfigMessage(bool forced);
+
   rtc::scoped_ptr<FileWrapper> debug_file_;
   rtc::scoped_ptr<audioproc::Event> event_msg_;  // Protobuf message.
   std::string event_str_;  // Memory for protobuf serialization.
+
+  // Serialized string of last saved APM configuration.
+  std::string last_serialized_config_;
 #endif
 
   // Format of processing streams at input/output call sites.

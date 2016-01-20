@@ -7,9 +7,9 @@
 
 #include "core/layout/LayoutView.h"
 #include "core/page/Page.h"
-#include "core/paint/DeprecatedPaintLayer.h"
-#include "core/paint/DeprecatedPaintLayerScrollableArea.h"
 #include "core/paint/LayoutObjectDrawingRecorder.h"
+#include "core/paint/PaintLayer.h"
+#include "core/paint/PaintLayerScrollableArea.h"
 #include "core/paint/ScrollbarPainter.h"
 #include "core/paint/TransformRecorder.h"
 #include "platform/graphics/GraphicsContext.h"
@@ -30,17 +30,14 @@ void ScrollableAreaPainter::paintResizer(GraphicsContext* context, const IntPoin
     if (scrollableArea().resizer()) {
         if (!absRect.intersects(damageRect))
             return;
-        ScrollbarPainter::paintIntoRect(scrollableArea().resizer(), context, paintOffset, LayoutRect(absRect));
+        ScrollbarPainter::paintIntoRect(*scrollableArea().resizer(), context, paintOffset, LayoutRect(absRect));
         return;
     }
 
-    if (!RuntimeEnabledFeatures::slimmingPaintEnabled() && !absRect.intersects(damageRect))
+    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*context, scrollableArea().box(), DisplayItem::Resizer, paintOffset))
         return;
 
-    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*context, scrollableArea().box(), DisplayItem::Resizer))
-        return;
-
-    LayoutObjectDrawingRecorder recorder(*context, scrollableArea().box(), DisplayItem::Resizer, absRect);
+    LayoutObjectDrawingRecorder recorder(*context, scrollableArea().box(), DisplayItem::Resizer, absRect, paintOffset);
 
     drawPlatformResizerImage(context, absRect);
 
@@ -116,7 +113,7 @@ void ScrollableAreaPainter::paintOverflowControls(GraphicsContext* context, cons
 
         LayoutView* layoutView = scrollableArea().box().view();
 
-        DeprecatedPaintLayer* paintingRoot = scrollableArea().layer()->enclosingLayerWithCompositedDeprecatedPaintLayerMapping(IncludeSelf);
+        PaintLayer* paintingRoot = scrollableArea().layer()->enclosingLayerWithCompositedLayerMapping(IncludeSelf);
         if (!paintingRoot)
             paintingRoot = layoutView->layer();
 
@@ -180,26 +177,23 @@ void ScrollableAreaPainter::paintScrollCorner(GraphicsContext* context, const In
     if (scrollableArea().scrollCorner()) {
         if (!absRect.intersects(damageRect))
             return;
-        ScrollbarPainter::paintIntoRect(scrollableArea().scrollCorner(), context, paintOffset, LayoutRect(absRect));
+        ScrollbarPainter::paintIntoRect(*scrollableArea().scrollCorner(), context, paintOffset, LayoutRect(absRect));
         return;
     }
-
-    if (!RuntimeEnabledFeatures::slimmingPaintEnabled() && !absRect.intersects(damageRect))
-        return;
 
     // We don't want to paint white if we have overlay scrollbars, since we need
     // to see what is behind it.
     if (scrollableArea().hasOverlayScrollbars())
         return;
 
-    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*context, scrollableArea().box(), DisplayItem::ScrollbarCorner))
+    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*context, scrollableArea().box(), DisplayItem::ScrollbarCorner, paintOffset))
         return;
 
-    LayoutObjectDrawingRecorder recorder(*context, scrollableArea().box(), DisplayItem::ScrollbarCorner, absRect);
+    LayoutObjectDrawingRecorder recorder(*context, scrollableArea().box(), DisplayItem::ScrollbarCorner, absRect, paintOffset);
     context->fillRect(absRect, Color::white);
 }
 
-DeprecatedPaintLayerScrollableArea& ScrollableAreaPainter::scrollableArea() const
+PaintLayerScrollableArea& ScrollableAreaPainter::scrollableArea() const
 {
     return *m_scrollableArea;
 }

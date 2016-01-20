@@ -39,6 +39,15 @@ bool ContentBrowserClient::ShouldUseProcessPerSite(
   return false;
 }
 
+bool ContentBrowserClient::ShouldLockToOrigin(BrowserContext* browser_context,
+                                              const GURL& effective_url) {
+  return true;
+}
+
+bool ContentBrowserClient::LogWebUIUrl(const GURL& web_ui_url) const {
+  return false;
+}
+
 net::URLRequestContextGetter* ContentBrowserClient::CreateRequestContext(
     BrowserContext* browser_context,
     ProtocolHandlerMap* protocol_handlers,
@@ -352,6 +361,12 @@ void ContentBrowserClient::OpenURL(
     const content::OpenURLParams& params,
     const base::Callback<void(content::WebContents*)>& callback) {
   callback.Run(nullptr);
+}
+
+ScopedVector<NavigationThrottle>
+ContentBrowserClient::CreateThrottlesForNavigation(
+    NavigationHandle* navigation_handle) {
+  return ScopedVector<NavigationThrottle>();
 }
 
 #if defined(OS_WIN)

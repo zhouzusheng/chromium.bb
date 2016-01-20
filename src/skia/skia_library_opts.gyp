@@ -28,13 +28,20 @@
     {
       'target_name': 'skia_opts',
       'type': 'static_library',
+      # The optimize: 'max' scattered throughout are particularly
+      # important when compiled by MSVC 2013, which seems 
+      # to mis-link-time-compile code that's built with
+      # different optimization levels. http://crbug.com/543583
+      'variables': {
+        'optimize': 'max',
+      },
       'includes': [
         'skia_common.gypi',
         '../build/android/increase_size_for_speed.gypi',
         # Disable LTO due to compiler error
         # in mems_in_disjoint_alias_sets_p, at alias.c:393
         # crbug.com/422255
-        '../build/android/disable_lto.gypi',
+        '../build/android/disable_gcc_lto.gypi',
       ],
       'include_dirs': [ '<@(include_dirs)' ],
       'conditions': [
@@ -102,6 +109,13 @@
     {
       'target_name': 'skia_opts_ssse3',
       'type': 'static_library',
+      # The optimize: 'max' scattered throughout are particularly
+      # important when compiled by MSVC 2013, which seems 
+      # to mis-link-time-compile code that's built with
+      # different optimization levels. http://crbug.com/543583
+      'variables': {
+        'optimize': 'max',
+      },
       'includes': [
         'skia_common.gypi',
         '../build/android/increase_size_for_speed.gypi',
@@ -139,6 +153,13 @@
     {
       'target_name': 'skia_opts_sse41',
       'type': 'static_library',
+      # The optimize: 'max' scattered throughout are particularly
+      # important when compiled by MSVC 2013, which seems 
+      # to mis-link-time-compile code that's built with
+      # different optimization levels. http://crbug.com/543583
+      'variables': {
+        'optimize': 'max',
+      },
       'includes': [
         'skia_common.gypi',
         '../build/android/increase_size_for_speed.gypi',
@@ -169,6 +190,13 @@
     {
       'target_name': 'skia_opts_none',
       'type': 'static_library',
+      # The optimize: 'max' scattered throughout are particularly
+      # important when compiled by MSVC 2013, which seems 
+      # to mis-link-time-compile code that's built with
+      # different optimization levels. http://crbug.com/543583
+      'variables': {
+        'optimize': 'max',
+      },
       'includes': [
         'skia_common.gypi',
         '../build/android/increase_size_for_speed.gypi',
@@ -192,7 +220,7 @@
             '../build/android/increase_size_for_speed.gypi',
             # Disable LTO due to Neon issues
             # crbug.com/408997
-            '../build/android/disable_lto.gypi',
+            '../build/android/disable_gcc_lto.gypi',
           ],
           'include_dirs': [ '<@(include_dirs)' ],
           'cflags!': [

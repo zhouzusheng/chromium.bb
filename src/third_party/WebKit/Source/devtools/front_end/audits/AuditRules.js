@@ -897,24 +897,13 @@ WebInspector.AuditRules.ImageDimensionsRule.prototype = {
             if (completeSrc)
                 src = completeSrc;
 
-            if (styles.computedStyle.getPropertyValue("position") === "absolute")
+            if (styles.computedStyle.get("position") === "absolute")
                 return;
 
-            if (styles.attributesStyle) {
-                var widthFound = !!styles.attributesStyle.getLiveProperty("width");
-                var heightFound = !!styles.attributesStyle.getLiveProperty("height");
-            }
-
-            var inlineStyle = styles.inlineStyle;
-            if (inlineStyle) {
-                if (inlineStyle.getPropertyValue("width") !== "")
-                    widthFound = true;
-                if (inlineStyle.getPropertyValue("height") !== "")
-                    heightFound = true;
-            }
-
-            for (var i = styles.matchedCSSRules.length - 1; i >= 0 && !(widthFound && heightFound); --i) {
-                var style = styles.matchedCSSRules[i].style;
+            var widthFound = false;
+            var heightFound = false;
+            for (var i = 0; !(widthFound && heightFound) && i < styles.nodeStyles.length; ++i) {
+                var style = styles.nodeStyles[i];
                 if (style.getPropertyValue("width") !== "")
                     widthFound = true;
                 if (style.getPropertyValue("height") !== "")
@@ -941,27 +930,17 @@ WebInspector.AuditRules.ImageDimensionsRule.prototype = {
             var targetResult = {};
 
             /**
-             * @param {?WebInspector.CSSStyleModel.InlineStyleResult} inlineStyleResult
-             */
-            function inlineCallback(inlineStyleResult)
-            {
-                if (!inlineStyleResult)
-                    return;
-                targetResult.inlineStyle = inlineStyleResult.inlineStyle;
-                targetResult.attributesStyle = inlineStyleResult.attributesStyle;
-            }
-
-            /**
              * @param {?WebInspector.CSSStyleModel.MatchedStyleResult} matchedStyleResult
              */
             function matchedCallback(matchedStyleResult)
             {
-                if (matchedStyleResult)
-                    targetResult.matchedCSSRules = matchedStyleResult.matchedCSSRules;
+                if (!matchedStyleResult)
+                    return;
+                targetResult.nodeStyles = matchedStyleResult.nodeStyles();
             }
 
             /**
-             * @param {?WebInspector.CSSStyleDeclaration} computedStyle
+             * @param {?Map.<string, string>} computedStyle
              */
             function computedCallback(computedStyle)
             {
@@ -974,8 +953,7 @@ WebInspector.AuditRules.ImageDimensionsRule.prototype = {
             var nodePromises = [];
             for (var i = 0; nodeIds && i < nodeIds.length; ++i) {
                 var stylePromises = [
-                    cssModel.matchedStylesPromise(nodeIds[i], false, false).then(matchedCallback),
-                    cssModel.inlineStylesPromise(nodeIds[i]).then(inlineCallback),
+                    cssModel.matchedStylesPromise(nodeIds[i]).then(matchedCallback),
                     cssModel.computedStylePromise(nodeIds[i]).then(computedCallback)
                 ];
                 var nodePromise = Promise.all(stylePromises).then(imageStylesReady.bind(null, nodeIds[i], targetResult));

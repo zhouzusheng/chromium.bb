@@ -35,6 +35,7 @@
 #include "core/StylePropertyShorthand.h"
 #include "core/animation/AnimationTimeline.h"
 #include "core/animation/ElementAnimations.h"
+#include "core/animation/InvalidatableStyleInterpolation.h"
 #include "core/animation/KeyframeEffect.h"
 #include "core/animation/StyleInterpolation.h"
 #include "core/animation/animatable/AnimatableValue.h"
@@ -109,7 +110,7 @@ ComputedStyle* StyleResolver::s_styleNotYetAvailable;
 
 static StylePropertySet* leftToRightDeclaration()
 {
-    DEFINE_STATIC_REF_WILL_BE_PERSISTENT(MutableStylePropertySet, leftToRightDecl, (MutableStylePropertySet::create()));
+    DEFINE_STATIC_REF_WILL_BE_PERSISTENT(MutableStylePropertySet, leftToRightDecl, (MutableStylePropertySet::create(HTMLQuirksMode)));
     if (leftToRightDecl->isEmpty())
         leftToRightDecl->setProperty(CSSPropertyDirection, CSSValueLtr);
     return leftToRightDecl;
@@ -117,7 +118,7 @@ static StylePropertySet* leftToRightDeclaration()
 
 static StylePropertySet* rightToLeftDeclaration()
 {
-    DEFINE_STATIC_REF_WILL_BE_PERSISTENT(MutableStylePropertySet, rightToLeftDecl, (MutableStylePropertySet::create()));
+    DEFINE_STATIC_REF_WILL_BE_PERSISTENT(MutableStylePropertySet, rightToLeftDecl, (MutableStylePropertySet::create(HTMLQuirksMode)));
     if (rightToLeftDecl->isEmpty())
         rightToLeftDecl->setProperty(CSSPropertyDirection, CSSValueRtl);
     return rightToLeftDecl;
@@ -305,6 +306,7 @@ bool StyleResolver::hasRulesForId(const AtomicString& id) const
 
 void StyleResolver::addToStyleSharingList(Element& element)
 {
+    ASSERT(RuntimeEnabledFeatures::styleSharingEnabled());
     // Never add elements to the style sharing list if we're not in a recalcStyle,
     // otherwise we could leave stale pointers in there.
     if (!document().inStyleRecalc())
@@ -485,32 +487,10 @@ PassRefPtr<ComputedStyle> StyleResolver::styleForDocument(Document& document)
     return documentStyle.release();
 }
 
-AuthorStyleInfo StyleResolver::authorStyleInfo(StyleResolverState& state)
-{
-    const CachedUAStyle* cachedUAStyle = state.cachedUAStyle();
-
-    if (!cachedUAStyle)
-        return AuthorStyleInfo();
-
-    // Exclude background-repeat from comparison by resetting it.
-    FillLayer backgroundCopy = cachedUAStyle->backgroundLayers;
-    FillLayer backgroundLayersCopy = state.style()->backgroundLayers();
-    backgroundCopy.setRepeatX(NoRepeatFill);
-    backgroundCopy.setRepeatY(NoRepeatFill);
-    backgroundLayersCopy.setRepeatX(NoRepeatFill);
-    backgroundLayersCopy.setRepeatY(NoRepeatFill);
-
-    bool backgroundChanged = backgroundLayersCopy != backgroundCopy
-        || state.style()->backgroundColor() != cachedUAStyle->backgroundColor;
-    bool borderChanged = state.style()->border() != cachedUAStyle->border;
-
-    return AuthorStyleInfo(backgroundChanged, borderChanged);
-}
-
 void StyleResolver::adjustComputedStyle(StyleResolverState& state, Element* element)
 {
     StyleAdjuster adjuster(document().inQuirksMode());
-    adjuster.adjustComputedStyle(state.mutableStyleRef(), *state.parentStyle(), element, authorStyleInfo(state));
+    adjuster.adjustComputedStyle(state.mutableStyleRef(), *state.parentStyle(), element);
 }
 
 // Start loading resources referenced by this style.
@@ -548,7 +528,7 @@ PassRefPtr<ComputedStyle> StyleResolver::styleForElement(Element* element, const
 
     ElementResolveContext elementContext(*element);
 
-    if (sharingBehavior == AllowStyleSharing && (defaultParent || elementContext.parentStyle())) {
+    if (RuntimeEnabledFeatures::styleSharingEnabled() && sharingBehavior == AllowStyleSharing && (defaultParent || elementContext.parentStyle())) {
         SharedStyleFinder styleFinder(elementContext, m_features, m_siblingRuleSet.get(), m_uncommonAttributeRuleSet.get(), *this);
         if (RefPtr<ComputedStyle> sharedStyle = styleFinder.findSharedStyle())
             return sharedStyle.release();
@@ -654,14 +634,14 @@ PassRefPtr<ComputedStyle> StyleResolver::styleForElement(Element* element, const
 
 // This function is used by the WebAnimations JavaScript API method animate().
 // FIXME: Remove this when animate() switches away from resolution-dependent parsing.
-PassRefPtrWillBeRawPtr<AnimatableValue> StyleResolver::createAnimatableValueSnapshot(Element& element, const ComputedStyle* baseStyle, CSSPropertyID property, CSSValue* value)
+PassRefPtr<AnimatableValue> StyleResolver::createAnimatableValueSnapshot(Element& element, const ComputedStyle* baseStyle, CSSPropertyID property, CSSValue* value)
 {
     StyleResolverState state(element.document(), &element);
     state.setStyle(baseStyle ? ComputedStyle::clone(*baseStyle) : ComputedStyle::create());
     return createAnimatableValueSnapshot(state, property, value);
 }
 
-PassRefPtrWillBeRawPtr<AnimatableValue> StyleResolver::createAnimatableValueSnapshot(StyleResolverState& state, CSSPropertyID property, CSSValue* value)
+PassRefPtr<AnimatableValue> StyleResolver::createAnimatableValueSnapshot(StyleResolverState& state, CSSPropertyID property, CSSValue* value)
 {
     if (value) {
         StyleBuilder::applyProperty(property, state, value);
@@ -934,20 +914,27 @@ bool StyleResolver::applyAnimatedProperties(StyleResolverState& state, const Ele
     if (state.animationUpdate().isEmpty())
         return false;
 
-    const ActiveInterpolationMap& activeInterpolationsForAnimations = state.animationUpdate().activeInterpolationsForAnimations();
-    const ActiveInterpolationMap& activeInterpolationsForTransitions = state.animationUpdate().activeInterpolationsForTransitions();
-    applyAnimatedProperties<HighPropertyPriority>(state, activeInterpolationsForAnimations);
-    applyAnimatedProperties<HighPropertyPriority>(state, activeInterpolationsForTransitions);
+    if (state.style()->insideLink() != NotInsideLink) {
+        ASSERT(state.applyPropertyToRegularStyle());
+        state.setApplyPropertyToVisitedLinkStyle(true);
+    }
+
+    const ActiveInterpolationsMap& activeInterpolationsMapForAnimations = state.animationUpdate().activeInterpolationsForAnimations();
+    const ActiveInterpolationsMap& activeInterpolationsMapForTransitions = state.animationUpdate().activeInterpolationsForTransitions();
+    applyAnimatedProperties<HighPropertyPriority>(state, activeInterpolationsMapForAnimations);
+    applyAnimatedProperties<HighPropertyPriority>(state, activeInterpolationsMapForTransitions);
 
     updateFont(state);
 
-    applyAnimatedProperties<LowPropertyPriority>(state, activeInterpolationsForAnimations);
-    applyAnimatedProperties<LowPropertyPriority>(state, activeInterpolationsForTransitions);
+    applyAnimatedProperties<LowPropertyPriority>(state, activeInterpolationsMapForAnimations);
+    applyAnimatedProperties<LowPropertyPriority>(state, activeInterpolationsMapForTransitions);
 
     // Start loading resources used by animations.
     loadPendingResources(state);
 
     ASSERT(!state.fontBuilder().fontDirty());
+
+    state.setApplyPropertyToVisitedLinkStyle(false);
 
     return true;
 }
@@ -967,16 +954,21 @@ StyleRuleKeyframes* StyleResolver::findKeyframesRule(const Element* element, con
 }
 
 template <CSSPropertyPriority priority>
-void StyleResolver::applyAnimatedProperties(StyleResolverState& state, const WillBeHeapHashMap<PropertyHandle, RefPtrWillBeMember<Interpolation>>& activeInterpolations)
+void StyleResolver::applyAnimatedProperties(StyleResolverState& state, const ActiveInterpolationsMap& activeInterpolationsMap)
 {
-    for (const auto& interpolationEntry : activeInterpolations) {
-        if (!interpolationEntry.key.isCSSProperty())
+    for (const auto& interpolationsVectorEntry : activeInterpolationsMap) {
+        if (!interpolationsVectorEntry.key.isCSSProperty())
             continue;
-        CSSPropertyID property = interpolationEntry.key.cssProperty();
+        CSSPropertyID property = interpolationsVectorEntry.key.cssProperty();
         if (!CSSPropertyPriorityData<priority>::propertyHasPriority(property))
             continue;
-        const StyleInterpolation* interpolation = toStyleInterpolation(interpolationEntry.value.get());
-        interpolation->apply(state);
+        const Interpolation& interpolation = *interpolationsVectorEntry.value.first();
+        if (interpolation.isInvalidatableStyleInterpolation()) {
+            InvalidatableStyleInterpolation::applyStack(interpolationsVectorEntry.value, state);
+        } else {
+            // TODO(alancutter): Remove this old code path once animations have completely migrated to InterpolationTypes.
+            toStyleInterpolation(interpolation).apply(state);
+        }
     }
 }
 
@@ -1141,7 +1133,6 @@ static inline bool isValidFirstLetterStyleProperty(CSSPropertyID id)
     // http://www.w3.org/TR/css3-background/#placement
     case CSSPropertyBoxShadow:
     // Properties that we currently support outside of spec.
-    case CSSPropertyWebkitLineBoxContain:
     case CSSPropertyVisibility:
         return true;
 
@@ -1297,11 +1288,11 @@ void StyleResolver::applyMatchedProperties(StyleResolverState& state, const Matc
 
     INCREMENT_STYLE_STATS_COUNTER(*this, matchedPropertyApply, 1);
 
-    unsigned cacheHash = matchResult.isCacheable() ? computeMatchedPropertiesHash(matchResult.matchedProperties().data(), matchResult.matchedProperties().size()) : 0;
+    unsigned cacheHash = RuntimeEnabledFeatures::styleMatchedPropertiesCacheEnabled() && matchResult.isCacheable() ? computeMatchedPropertiesHash(matchResult.matchedProperties().data(), matchResult.matchedProperties().size()) : 0;
     bool applyInheritedOnly = false;
-    const CachedMatchedProperties* cachedMatchedProperties = cacheHash ? m_matchedPropertiesCache.find(cacheHash, state, matchResult.matchedProperties()) : 0;
+    const CachedMatchedProperties* cachedMatchedProperties = cacheHash ? m_matchedPropertiesCache.find(cacheHash, state, matchResult.matchedProperties()) : nullptr;
 
-    if (cachedMatchedProperties && MatchedPropertiesCache::isCacheable(element, *state.style(), *state.parentStyle())) {
+    if (cachedMatchedProperties && MatchedPropertiesCache::isCacheable(*state.style(), *state.parentStyle())) {
         INCREMENT_STYLE_STATS_COUNTER(*this, matchedPropertyCacheHit, 1);
         // We can build up the style by copying non-inherited properties from an earlier style object built using the same exact
         // style declarations. We then only need to apply the inherited properties, if any, as their values can depend on the
@@ -1370,14 +1361,47 @@ void StyleResolver::applyMatchedProperties(StyleResolverState& state, const Matc
         applyMatchedProperties<LowPropertyPriority>(state, range, true, applyInheritedOnly);
     applyMatchedProperties<LowPropertyPriority>(state, matchResult.uaRules(), true, applyInheritedOnly);
 
+    if (state.style()->hasAppearance() && !applyInheritedOnly) {
+        // Check whether the final border and background differs from the cached UA ones.
+        // When there is a partial match in the MatchedPropertiesCache, these flags will already be set correctly
+        // and the value stored in cacheUserAgentBorderAndBackground is incorrect, so doing this check again
+        // would give the wrong answer.
+        state.style()->setHasAuthorBackground(hasAuthorBackground(state));
+        state.style()->setHasAuthorBorder(hasAuthorBorder(state));
+    }
+
     loadPendingResources(state);
 
-    if (!cachedMatchedProperties && cacheHash && MatchedPropertiesCache::isCacheable(element, *state.style(), *state.parentStyle())) {
+    if (!cachedMatchedProperties && cacheHash && MatchedPropertiesCache::isCacheable(*state.style(), *state.parentStyle())) {
+        ASSERT(RuntimeEnabledFeatures::styleMatchedPropertiesCacheEnabled());
         INCREMENT_STYLE_STATS_COUNTER(*this, matchedPropertyCacheAdded, 1);
         m_matchedPropertiesCache.add(*state.style(), *state.parentStyle(), cacheHash, matchResult.matchedProperties());
     }
 
     ASSERT(!state.fontBuilder().fontDirty());
+}
+
+bool StyleResolver::hasAuthorBackground(const StyleResolverState& state)
+{
+    const CachedUAStyle* cachedUAStyle = state.cachedUAStyle();
+    if (!cachedUAStyle)
+        return false;
+
+    FillLayer oldFill = cachedUAStyle->backgroundLayers;
+    FillLayer newFill = state.style()->backgroundLayers();
+    // Exclude background-repeat from comparison by resetting it.
+    oldFill.setRepeatX(NoRepeatFill);
+    oldFill.setRepeatY(NoRepeatFill);
+    newFill.setRepeatX(NoRepeatFill);
+    newFill.setRepeatY(NoRepeatFill);
+
+    return (oldFill != newFill || cachedUAStyle->backgroundColor != state.style()->backgroundColor());
+}
+
+bool StyleResolver::hasAuthorBorder(const StyleResolverState& state)
+{
+    const CachedUAStyle* cachedUAStyle = state.cachedUAStyle();
+    return cachedUAStyle && (cachedUAStyle->border != state.style()->border());
 }
 
 void StyleResolver::applyCallbackSelectors(StyleResolverState& state)
@@ -1425,7 +1449,7 @@ void StyleResolver::computeFont(ComputedStyle* style, const StylePropertySet& pr
     };
 
     // TODO(timloh): This is weird, the style is being used as its own parent
-    StyleResolverState state(document(), document().documentElement(), style);
+    StyleResolverState state(document(), nullptr, style);
     state.setStyle(style);
 
     for (CSSPropertyID property : properties) {

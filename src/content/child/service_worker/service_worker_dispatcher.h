@@ -11,7 +11,7 @@
 #include "base/id_map.h"
 #include "base/memory/ref_counted.h"
 #include "base/strings/string16.h"
-#include "content/child/worker_task_runner.h"
+#include "content/public/child/worker_thread.h"
 #include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerError.h"
 #include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerProvider.h"
 #include "third_party/WebKit/public/platform/modules/serviceworker/WebServiceWorkerRegistration.h"
@@ -37,6 +37,7 @@ namespace content {
 
 class ServiceWorkerMessageFilter;
 class ServiceWorkerProviderContext;
+class ServiceWorkerRegistrationHandleReference;
 class ThreadSafeSender;
 class WebServiceWorkerImpl;
 class WebServiceWorkerRegistrationImpl;
@@ -47,8 +48,7 @@ struct ServiceWorkerVersionAttributes;
 // This class manages communication with the browser process about
 // registration of the service worker, exposed to renderer and worker
 // scripts through methods like navigator.registerServiceWorker().
-class CONTENT_EXPORT ServiceWorkerDispatcher
-    : public WorkerTaskRunner::Observer {
+class CONTENT_EXPORT ServiceWorkerDispatcher : public WorkerThread::Observer {
  public:
   typedef blink::WebServiceWorkerProvider::WebServiceWorkerRegistrationCallbacks
       WebServiceWorkerRegistrationCallbacks;
@@ -91,10 +91,9 @@ class CONTENT_EXPORT ServiceWorkerDispatcher
       int64 registration_id,
       WebServiceWorkerUnregistrationCallbacks* callbacks);
   // Corresponds to navigator.serviceWorker.getRegistration().
-  void GetRegistration(
-      int provider_id,
-      const GURL& document_url,
-      WebServiceWorkerRegistrationCallbacks* callbacks);
+  void GetRegistration(int provider_id,
+                       const GURL& document_url,
+                       WebServiceWorkerGetRegistrationCallbacks* callbacks);
   // Corresponds to navigator.serviceWorker.getRegistrations().
   void GetRegistrations(
       int provider_id,
@@ -134,13 +133,19 @@ class CONTENT_EXPORT ServiceWorkerDispatcher
       const ServiceWorkerObjectInfo& info,
       bool adopt_handle);
 
-  // Creates a WebServiceWorkerRegistrationImpl for the specified registration
-  // and transfers its ownership to the caller. If |adopt_handle| is true, a
-  // ServiceWorkerRegistrationHandleReference will be adopted for the
-  // registration.
-  WebServiceWorkerRegistrationImpl* CreateServiceWorkerRegistration(
+  // Returns the existing registration or a newly created one. When a new one is
+  // created, increments interprocess references to the registration and its
+  // versions via ServiceWorker(Registration)HandleReference.
+  scoped_refptr<WebServiceWorkerRegistrationImpl> GetOrCreateRegistration(
       const ServiceWorkerRegistrationObjectInfo& info,
-      bool adopt_handle);
+      const ServiceWorkerVersionAttributes& attrs);
+
+  // Returns the existing registration or a newly created one. Always adopts
+  // interprocess references to the registration and its versions via
+  // ServiceWorker(Registration)HandleReference.
+  scoped_refptr<WebServiceWorkerRegistrationImpl> GetOrAdoptRegistration(
+      const ServiceWorkerRegistrationObjectInfo& info,
+      const ServiceWorkerVersionAttributes& attrs);
 
   static ServiceWorkerDispatcher* GetOrCreateThreadSpecificInstance(
       ThreadSafeSender* thread_safe_sender,
@@ -180,8 +185,8 @@ class CONTENT_EXPORT ServiceWorkerDispatcher
   friend class WebServiceWorkerImpl;
   friend class WebServiceWorkerRegistrationImpl;
 
-  // WorkerTaskRunner::Observer implementation.
-  void OnWorkerRunLoopStopped() override;
+  // WorkerThread::Observer implementation.
+  void WillStopCurrentWorkerThread() override;
 
   void OnAssociateRegistrationWithServiceWorker(
       int thread_id,
@@ -265,15 +270,6 @@ class CONTENT_EXPORT ServiceWorkerDispatcher
   void RemoveServiceWorkerRegistration(
       int registration_handle_id);
 
-  // Returns an existing registration or new one filled in with version
-  // attributes. This function assumes given |info| and |attrs| retain handle
-  // references and always adopts them.
-  // TODO(nhiroki): This assumption seems to impair readability. We could
-  // explictly pass ServiceWorker(Registration)HandleReference instead.
-  WebServiceWorkerRegistrationImpl* FindOrCreateRegistration(
-      const ServiceWorkerRegistrationObjectInfo& info,
-      const ServiceWorkerVersionAttributes& attrs);
-
   RegistrationCallbackMap pending_registration_callbacks_;
   UpdateCallbackMap pending_update_callbacks_;
   UnregistrationCallbackMap pending_unregistration_callbacks_;
@@ -286,10 +282,6 @@ class CONTENT_EXPORT ServiceWorkerDispatcher
 
   WorkerObjectMap service_workers_;
   RegistrationObjectMap registrations_;
-
-  // A map for ServiceWorkers that are associated to a particular document
-  // (e.g. as .current).
-  WorkerToProviderMap worker_to_provider_;
 
   scoped_refptr<ThreadSafeSender> thread_safe_sender_;
   scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner_;

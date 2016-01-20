@@ -108,7 +108,7 @@ void DisplayListRasterSource::RasterCommon(
     float contents_scale) const {
   canvas->translate(-canvas_bitmap_rect.x(), -canvas_bitmap_rect.y());
   gfx::Rect content_rect =
-      gfx::ToEnclosingRect(gfx::ScaleRect(gfx::Rect(size_), contents_scale));
+      gfx::ScaleToEnclosingRect(gfx::Rect(size_), contents_scale);
   content_rect.Intersect(canvas_playback_rect);
 
   canvas->clipRect(gfx::RectToSkRect(content_rect), SkRegion::kIntersect_Op);
@@ -161,31 +161,19 @@ void DisplayListRasterSource::PerformSolidColorAnalysis(
   analysis->is_solid_color = canvas.GetColorIfSolid(&analysis->solid_color);
 }
 
-void DisplayListRasterSource::GatherPixelRefs(
-    const gfx::Rect& content_rect,
-    float contents_scale,
-    std::vector<skia::PositionPixelRef>* pixel_refs) const {
-  DCHECK_EQ(0u, pixel_refs->size());
-
-  gfx::Rect layer_rect =
-      gfx::ScaleToEnclosingRect(content_rect, 1.0f / contents_scale);
-
-  PixelRefMap::Iterator iterator(layer_rect, display_list_.get());
-  while (iterator) {
-    pixel_refs->push_back(*iterator);
-    ++iterator;
-  }
+void DisplayListRasterSource::GetDiscardableImagesInRect(
+    const gfx::Rect& layer_rect,
+    std::vector<PositionImage>* images) const {
+  DCHECK_EQ(0u, images->size());
+  display_list_->GetDiscardableImagesInRect(layer_rect, images);
 }
 
-bool DisplayListRasterSource::CoversRect(const gfx::Rect& content_rect,
-                                         float contents_scale) const {
+bool DisplayListRasterSource::CoversRect(const gfx::Rect& layer_rect) const {
   if (size_.IsEmpty())
     return false;
-  gfx::Rect layer_rect =
-      gfx::ScaleToEnclosingRect(content_rect, 1.f / contents_scale);
-  layer_rect.Intersect(gfx::Rect(size_));
-
-  return recorded_viewport_.Contains(layer_rect);
+  gfx::Rect bounded_rect = layer_rect;
+  bounded_rect.Intersect(gfx::Rect(size_));
+  return recorded_viewport_.Contains(bounded_rect);
 }
 
 gfx::Size DisplayListRasterSource::GetSize() const {
@@ -203,6 +191,10 @@ SkColor DisplayListRasterSource::GetSolidColor() const {
 
 bool DisplayListRasterSource::HasRecordings() const {
   return !!display_list_.get();
+}
+
+gfx::Rect DisplayListRasterSource::RecordedViewport() const {
+  return recorded_viewport_;
 }
 
 void DisplayListRasterSource::SetShouldAttemptToUseDistanceFieldText() {

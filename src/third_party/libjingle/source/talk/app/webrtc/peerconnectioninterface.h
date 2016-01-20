@@ -77,10 +77,13 @@
 #include "talk/app/webrtc/dtlsidentitystore.h"
 #include "talk/app/webrtc/jsep.h"
 #include "talk/app/webrtc/mediastreaminterface.h"
+#include "talk/app/webrtc/rtpreceiverinterface.h"
+#include "talk/app/webrtc/rtpsenderinterface.h"
 #include "talk/app/webrtc/statstypes.h"
 #include "talk/app/webrtc/umametrics.h"
 #include "webrtc/base/fileutils.h"
 #include "webrtc/base/network.h"
+#include "webrtc/base/rtccertificate.h"
 #include "webrtc/base/sslstreamadapter.h"
 #include "webrtc/base/socketaddress.h"
 
@@ -126,12 +129,6 @@ class StatsObserver : public rtc::RefCountInterface {
 
 class MetricsObserverInterface : public rtc::RefCountInterface {
  public:
-  // TODO(guoweis): Remove this function once IncrementEnumCounter gets into
-  // chromium. IncrementCounter only deals with one type of enumeration counter,
-  // i.e. PeerConnectionAddressFamilyCounter. Instead of creating a function for
-  // each enum type, IncrementEnumCounter is generalized with the enum type
-  // parameter.
-  virtual void IncrementCounter(PeerConnectionAddressFamilyCounter type) {}
 
   // |type| is the type of the enum counter to be incremented. |counter|
   // is the particular counter in that type. |counter_max| is the next sequence
@@ -140,11 +137,16 @@ class MetricsObserverInterface : public rtc::RefCountInterface {
                                     int counter,
                                     int counter_max) {}
 
+  // This is used to handle sparse counters like SSL cipher suites.
+  // TODO(guoweis): Remove the implementation once the dependency's interface
+  // definition is updated.
+  virtual void IncrementSparseEnumCounter(PeerConnectionEnumCounterType type,
+                                          int counter) {
+    IncrementEnumCounter(type, counter, 0 /* Ignored */);
+  }
+
   virtual void AddHistogramSample(PeerConnectionMetricsName type,
                                   int value) = 0;
-  // TODO(jbauch): Make method abstract when it is implemented by Chromium.
-  virtual void AddHistogramSample(PeerConnectionMetricsName type,
-                                  const std::string& value) {}
 
  protected:
   virtual ~MetricsObserverInterface() {}
@@ -230,26 +232,44 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
     kTcpCandidatePolicyDisabled
   };
 
+  enum ContinualGatheringPolicy {
+    GATHER_ONCE,
+    GATHER_CONTINUALLY
+  };
+
+  // TODO(hbos): Change into class with private data and public getters.
   struct RTCConfiguration {
+    static const int kUndefined = -1;
+    // Default maximum number of packets in the audio jitter buffer.
+    static const int kAudioJitterBufferMaxPackets = 50;
     // TODO(pthatcher): Rename this ice_transport_type, but update
     // Chromium at the same time.
     IceTransportsType type;
     // TODO(pthatcher): Rename this ice_servers, but update Chromium
     // at the same time.
     IceServers servers;
+    // A localhost candidate is signaled whenever a candidate with the any
+    // address is allocated.
+    bool enable_localhost_ice_candidate;
     BundlePolicy bundle_policy;
     RtcpMuxPolicy rtcp_mux_policy;
     TcpCandidatePolicy tcp_candidate_policy;
     int audio_jitter_buffer_max_packets;
     bool audio_jitter_buffer_fast_accelerate;
+    int ice_connection_receiving_timeout;
+    ContinualGatheringPolicy continual_gathering_policy;
+    std::vector<rtc::scoped_refptr<rtc::RTCCertificate>> certificates;
 
     RTCConfiguration()
         : type(kAll),
+          enable_localhost_ice_candidate(false),
           bundle_policy(kBundlePolicyBalanced),
           rtcp_mux_policy(kRtcpMuxPolicyNegotiate),
           tcp_candidate_policy(kTcpCandidatePolicyEnabled),
-          audio_jitter_buffer_max_packets(50),
-          audio_jitter_buffer_fast_accelerate(false) {}
+          audio_jitter_buffer_max_packets(kAudioJitterBufferMaxPackets),
+          audio_jitter_buffer_fast_accelerate(false),
+          ice_connection_receiving_timeout(kUndefined),
+          continual_gathering_policy(GATHER_ONCE) {}
   };
 
   struct RTCOfferAnswerOptions {
@@ -316,6 +336,17 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
   virtual rtc::scoped_refptr<DtmfSenderInterface> CreateDtmfSender(
       AudioTrackInterface* track) = 0;
 
+  // TODO(deadbeef): Make these pure virtual once all subclasses implement them.
+  virtual std::vector<rtc::scoped_refptr<RtpSenderInterface>> GetSenders()
+      const {
+    return std::vector<rtc::scoped_refptr<RtpSenderInterface>>();
+  }
+
+  virtual std::vector<rtc::scoped_refptr<RtpReceiverInterface>> GetReceivers()
+      const {
+    return std::vector<rtc::scoped_refptr<RtpReceiverInterface>>();
+  }
+
   virtual bool GetStats(StatsObserver* observer,
                         MediaStreamTrackInterface* track,
                         StatsOutputLevel level) = 0;
@@ -351,12 +382,24 @@ class PeerConnectionInterface : public rtc::RefCountInterface {
   // The |observer| callback will be called when done.
   virtual void SetRemoteDescription(SetSessionDescriptionObserver* observer,
                                     SessionDescriptionInterface* desc) = 0;
-  // Sets the ICE connection receiving timeout value in milliseconds.
-  virtual void SetIceConnectionReceivingTimeout(int timeout_ms) {}
   // Restarts or updates the ICE Agent process of gathering local candidates
   // and pinging remote candidates.
+  // TODO(deadbeef): Remove once Chrome is moved over to SetConfiguration.
   virtual bool UpdateIce(const IceServers& configuration,
-                         const MediaConstraintsInterface* constraints) = 0;
+                         const MediaConstraintsInterface* constraints) {
+    return false;
+  }
+  // Sets the PeerConnection's global configuration to |config|.
+  // Any changes to STUN/TURN servers or ICE candidate policy will affect the
+  // next gathering phase, and cause the next call to createOffer to generate
+  // new ICE credentials. Note that the BUNDLE and RTCP-multiplexing policies
+  // cannot be changed with this method.
+  // TODO(deadbeef): Make this pure virtual once all Chrome subclasses of
+  // PeerConnectionInterface implement it.
+  virtual bool SetConfiguration(
+      const PeerConnectionInterface::RTCConfiguration& config) {
+    return false;
+  }
   // Provides a remote candidate to the ICE Agent.
   // A copy of the |candidate| will be created and added to the remote
   // description. So the caller of this method still has the ownership of the

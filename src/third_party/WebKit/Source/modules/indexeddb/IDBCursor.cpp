@@ -61,10 +61,6 @@ IDBCursor::IDBCursor(PassOwnPtr<WebIDBCursor> backend, WebIDBCursorDirection dir
     , m_direction(direction)
     , m_source(source)
     , m_transaction(transaction)
-    , m_gotValue(false)
-    , m_keyDirty(true)
-    , m_primaryKeyDirty(true)
-    , m_valueDirty(true)
 {
     ASSERT(m_backend);
     ASSERT(m_request);
@@ -325,7 +321,9 @@ ScriptValue IDBCursor::value(ScriptState* scriptState)
     IDBObjectStore* objectStore = effectiveObjectStore();
     const IDBObjectStoreMetadata& metadata = objectStore->metadata();
     IDBAny* value;
-    if (metadata.autoIncrement && !metadata.keyPath.isNull()) {
+    if (!m_value) {
+        value = IDBAny::createUndefined();
+    } else if (metadata.autoIncrement && !metadata.keyPath.isNull()) {
         RefPtr<IDBValue> idbValue = IDBValue::create(m_value.get(), m_primaryKey, metadata.keyPath);
 #if ENABLE(ASSERT)
         assertPrimaryKeyValidOrInjectable(scriptState, idbValue.get());

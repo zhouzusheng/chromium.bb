@@ -145,15 +145,15 @@
             "type": "@WebInspector.ActionDelegate",
             "actionId": "main.inspect-devices",
             "title": "Inspect devices\u2026",
-            "className": "WebInspector.Main.InspectDevicesActionDelegate"
+            "className": "WebInspector.Main.InspectDevicesActionDelegate",
+            "experiment": "!inspectDevicesDialog"
         },
         {
             "type": "drawer-view",
             "name": "rendering",
             "title": "Rendering",
             "order": "11",
-            "className": "WebInspector.RenderingOptions.View",
-            "experiment": "!materialDesign"
+            "className": "WebInspector.RenderingOptions.View"
         },
         {
             "type": "@WebInspector.ToolbarItem.Provider",
@@ -283,8 +283,8 @@
             "type": "context-menu-item",
             "location": "mainMenu/navigate",
             "order": 100,
-            "title": "Inspect devices\u2026",
-            "actionId": "main.inspect-devices"
+            "actionId": "main.inspect-devices",
+            "experiment": "!inspectDevicesDialog"
         },
         {
             "type": "setting",
@@ -309,6 +309,13 @@
             "settingName": "showScrollBottleneckRects",
             "settingType": "boolean",
             "defaultValue": false
+        },
+        {
+            "type": "@WebInspector.ToolbarItem.Provider",
+            "className": "WebInspector.InspectElementModeController.LayoutEditorButtonProvider",
+            "order": 4,
+            "location": "styles-sidebarpane-toolbar",
+            "experiment": "layoutEditor"
         }
     ],
     "dependencies": [
@@ -321,9 +328,9 @@
     "scripts": [
         "HelpScreenUntilReload.js",
         "AdvancedApp.js",
+        "FrontendWebSocketAPI.js",
         "RenderingOptions.js",
         "SimpleApp.js",
-        "TestController.js",
         "Tests.js",
         "OverlayController.js",
         "Main.js"

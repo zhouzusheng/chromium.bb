@@ -97,7 +97,7 @@ void LayoutSVGContainer::removeChild(LayoutObject* child)
         descendantIsolationRequirementsChanged(DescendantIsolationNeedsUpdate);
 }
 
-bool LayoutSVGContainer::selfWillPaint()
+bool LayoutSVGContainer::selfWillPaint() const
 {
     SVGResources* resources = SVGResourcesCache::cachedResourcesForLayoutObject(this);
     return resources && resources->filter();
@@ -145,16 +145,14 @@ void LayoutSVGContainer::descendantIsolationRequirementsChanged(DescendantIsolat
         parent()->descendantIsolationRequirementsChanged(state);
 }
 
-void LayoutSVGContainer::paint(const PaintInfo& paintInfo, const LayoutPoint&)
+void LayoutSVGContainer::paint(const PaintInfo& paintInfo, const LayoutPoint&) const
 {
     SVGContainerPainter(*this).paint(paintInfo);
 }
 
-void LayoutSVGContainer::addOutlineRects(Vector<LayoutRect>& rects, const LayoutPoint&) const
+void LayoutSVGContainer::addOutlineRects(Vector<LayoutRect>& rects, const LayoutPoint&, IncludeBlockVisualOverflowOrNot) const
 {
-    LayoutRect contentRect = LayoutRect(paintInvalidationRectInLocalCoordinates());
-    if (!contentRect.isEmpty())
-        rects.append(contentRect);
+    rects.append(LayoutRect(paintInvalidationRectInLocalCoordinates()));
 }
 
 void LayoutSVGContainer::updateCachedBoundaries()

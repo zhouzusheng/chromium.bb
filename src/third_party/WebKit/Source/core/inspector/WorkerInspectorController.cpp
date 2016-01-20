@@ -34,7 +34,6 @@
 
 #include "core/InspectorBackendDispatcher.h"
 #include "core/InspectorFrontend.h"
-#include "core/inspector/AsyncCallTracker.h"
 #include "core/inspector/InjectedScriptHost.h"
 #include "core/inspector/InjectedScriptManager.h"
 #include "core/inspector/InspectorConsoleAgent.h"
@@ -98,9 +97,9 @@ public:
     {
         // Process all queued debugger commands. WorkerThread is certainly
         // alive if this task is being executed.
-        m_thread->willEnterNestedLoop();
-        while (MessageQueueMessageReceived == m_thread->runDebuggerTask(WorkerThread::DontWaitForMessage)) { }
-        m_thread->didLeaveNestedLoop();
+        m_thread->willRunDebuggerTasks();
+        while (WorkerThread::TaskReceived == m_thread->runDebuggerTask(WorkerThread::DontWaitForTask)) { }
+        m_thread->didRunDebuggerTasks();
     }
 
 private:
@@ -135,7 +134,6 @@ WorkerInspectorController::WorkerInspectorController(WorkerGlobalScope* workerGl
     OwnPtrWillBeRawPtr<WorkerDebuggerAgent> workerDebuggerAgent = WorkerDebuggerAgent::create(m_workerThreadDebugger.get(), workerGlobalScope, m_injectedScriptManager.get());
     m_workerDebuggerAgent = workerDebuggerAgent.get();
     m_agents.append(workerDebuggerAgent.release());
-    m_asyncCallTracker = adoptPtrWillBeNoop(new AsyncCallTracker(m_workerDebuggerAgent->v8DebuggerAgent(), m_instrumentingAgents.get()));
 
     v8::Isolate* isolate = workerGlobalScope->thread()->isolate();
     m_agents.append(InspectorProfilerAgent::create(isolate, m_injectedScriptManager.get(), 0));
@@ -216,7 +214,8 @@ void WorkerInspectorController::interruptAndDispatchInspectorCommands()
 
 void WorkerInspectorController::resumeStartup()
 {
-    m_paused = false;
+    if (m_paused)
+        m_workerThreadDebugger->quitMessageLoopOnPause();
 }
 
 bool WorkerInspectorController::isRunRequired()
@@ -234,13 +233,8 @@ void WorkerInspectorController::workerContextInitialized(bool shouldPauseOnStart
 void WorkerInspectorController::pauseOnStart()
 {
     m_paused = true;
-    MessageQueueWaitResult result;
-    m_workerGlobalScope->thread()->willEnterNestedLoop();
-    do {
-        result = m_workerGlobalScope->thread()->runDebuggerTask();
-    // Keep waiting until execution is resumed.
-    } while (result == MessageQueueMessageReceived && m_paused);
-    m_workerGlobalScope->thread()->didLeaveNestedLoop();
+    m_workerThreadDebugger->runMessageLoopOnPause(WorkerThreadDebugger::contextGroupId());
+    m_paused = false;
 }
 
 DEFINE_TRACE(WorkerInspectorController)
@@ -252,7 +246,6 @@ DEFINE_TRACE(WorkerInspectorController)
     visitor->trace(m_backendDispatcher);
     visitor->trace(m_agents);
     visitor->trace(m_workerDebuggerAgent);
-    visitor->trace(m_asyncCallTracker);
     visitor->trace(m_workerRuntimeAgent);
 }
 

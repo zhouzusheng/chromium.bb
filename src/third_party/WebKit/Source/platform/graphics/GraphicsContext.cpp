@@ -27,12 +27,12 @@
 #include "config.h"
 #include "platform/graphics/GraphicsContext.h"
 
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/TraceEvent.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/graphics/ColorSpace.h"
 #include "platform/graphics/Gradient.h"
 #include "platform/graphics/ImageBuffer.h"
+#include "platform/graphics/paint/DisplayItemList.h"
 #include "platform/weborigin/KURL.h"
 #include "skia/ext/platform_device.h"
 #include "third_party/skia/include/core/SkAnnotation.h"
@@ -50,47 +50,9 @@
 
 namespace blink {
 
-class GraphicsContext::RecordingState {
-    WTF_MAKE_FAST_ALLOCATED(GraphicsContext::RecordingState);
-    WTF_MAKE_NONCOPYABLE(RecordingState);
-public:
-    static PassOwnPtr<RecordingState> Create(SkCanvas* canvas, const SkMatrix& matrix)
-    {
-        // Slimmming Paint uses m_pictureRecorder on GraphicsContext instead.
-        ASSERT(!RuntimeEnabledFeatures::slimmingPaintEnabled());
-        return adoptPtr(new RecordingState(canvas, matrix));
-    }
-
-    SkPictureRecorder& recorder() { return m_recorder; }
-    SkCanvas* canvas() const { return m_savedCanvas; }
-    const SkMatrix& matrix() const { return m_savedMatrix; }
-
-private:
-    explicit RecordingState(SkCanvas* canvas, const SkMatrix& matrix)
-        : m_savedCanvas(canvas)
-        , m_savedMatrix(matrix)
-    { }
-
-    SkPictureRecorder m_recorder;
-    SkCanvas* m_savedCanvas;
-    const SkMatrix m_savedMatrix;
-};
-
 GraphicsContext::GraphicsContext(DisplayItemList* displayItemList, DisabledMode disableContextOrPainting, SkMetaData* metaData)
-    : GraphicsContext(nullptr, displayItemList, disableContextOrPainting, metaData)
-{
-    // TODO(chrishtr): switch the type of the parameter to DisplayItemList&.
-    ASSERT(displayItemList);
-}
-
-PassOwnPtr<GraphicsContext> GraphicsContext::deprecatedCreateWithCanvas(SkCanvas* canvas, DisabledMode disableContextOrPainting, SkMetaData* metaData)
-{
-    return adoptPtr(new GraphicsContext(canvas, nullptr, disableContextOrPainting, metaData));
-}
-
-GraphicsContext::GraphicsContext(SkCanvas* canvas, DisplayItemList* displayItemList, DisabledMode disableContextOrPainting, SkMetaData* metaData)
-    : m_canvas(canvas)
-    , m_originalCanvas(canvas)
+    : m_canvas(nullptr)
+    , m_originalCanvas(nullptr)
     , m_displayItemList(displayItemList)
     , m_paintStateStack()
     , m_paintStateIndex(0)
@@ -104,6 +66,9 @@ GraphicsContext::GraphicsContext(SkCanvas* canvas, DisplayItemList* displayItemL
     , m_printing(false)
     , m_hasMetaData(!!metaData)
 {
+    // TODO(chrishtr): switch the type of the parameter to DisplayItemList&.
+    ASSERT(displayItemList);
+
     if (metaData)
         m_metaData = *metaData;
 
@@ -125,15 +90,9 @@ GraphicsContext::~GraphicsContext()
         ASSERT(!m_paintStateIndex);
         ASSERT(!m_paintState->saveCount());
         ASSERT(!m_layerCount);
-        ASSERT(m_recordingStateStack.isEmpty());
         ASSERT(!saveCount());
     }
 #endif
-}
-
-void GraphicsContext::resetCanvas(SkCanvas* canvas)
-{
-    m_canvas = canvas;
 }
 
 void GraphicsContext::save()
@@ -279,24 +238,6 @@ void GraphicsContext::clearDrawLooper()
     mutableState()->clearDrawLooper();
 }
 
-SkMatrix GraphicsContext::getTotalMatrix() const
-{
-    ASSERT(!RuntimeEnabledFeatures::slimmingPaintEnabled());
-
-    if (contextDisabled() || !m_canvas)
-        return SkMatrix::I();
-
-    ASSERT(m_canvas);
-
-    if (!isRecording())
-        return m_canvas->getTotalMatrix();
-
-    SkMatrix totalMatrix = m_recordingStateStack.last()->matrix();
-    totalMatrix.preConcat(m_canvas->getTotalMatrix());
-
-    return totalMatrix;
-}
-
 SkColorFilter* GraphicsContext::colorFilter() const
 {
     return immutableState()->colorFilter();
@@ -360,17 +301,7 @@ void GraphicsContext::beginRecording(const FloatRect& bounds)
     if (contextDisabled())
         return;
 
-    if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
-        m_canvas = m_pictureRecorder.beginRecording(bounds, 0);
-        if (m_hasMetaData)
-            skia::getMetaData(*m_canvas) = m_metaData;
-        return;
-    }
-
-    m_recordingStateStack.append(
-        RecordingState::Create(m_canvas, getTotalMatrix()));
-
-    m_canvas = m_recordingStateStack.last()->recorder().beginRecording(bounds, 0);
+    m_canvas = m_pictureRecorder.beginRecording(bounds, 0);
     if (m_hasMetaData)
         skia::getMetaData(*m_canvas) = m_metaData;
 }
@@ -380,30 +311,15 @@ PassRefPtr<const SkPicture> GraphicsContext::endRecording()
     if (contextDisabled())
         return nullptr;
 
-    if (RuntimeEnabledFeatures::slimmingPaintEnabled()) {
-        RefPtr<const SkPicture> picture = adoptRef(m_pictureRecorder.endRecordingAsPicture());
-        m_canvas = m_originalCanvas;
-        ASSERT(picture);
-        return picture.release();
-    }
-
-    ASSERT(!m_recordingStateStack.isEmpty());
-    RecordingState* recording = m_recordingStateStack.last().get();
-    RefPtr<const SkPicture> picture = adoptRef(recording->recorder().endRecordingAsPicture());
-    m_canvas = recording->canvas();
-
-    m_recordingStateStack.removeLast();
-
+    RefPtr<const SkPicture> picture = adoptRef(m_pictureRecorder.endRecordingAsPicture());
+    m_canvas = m_originalCanvas;
     ASSERT(picture);
     return picture.release();
 }
 
 bool GraphicsContext::isRecording() const
 {
-    if (RuntimeEnabledFeatures::slimmingPaintEnabled())
-        return m_canvas != m_originalCanvas;
-
-    return !m_recordingStateStack.isEmpty();
+    return m_canvas != m_originalCanvas;
 }
 
 void GraphicsContext::drawPicture(const SkPicture* picture)
@@ -486,9 +402,14 @@ void GraphicsContext::drawFocusRing(const Vector<IntRect>& rects, int width, int
     offset = focusRingOffset(offset);
     for (unsigned i = 0; i < rectCount; i++) {
         SkIRect r = rects[i];
+        if (r.isEmpty())
+            continue;
         r.inset(-offset, -offset);
         focusRingRegion.op(r, SkRegion::kUnion_Op);
     }
+
+    if (focusRingRegion.isEmpty())
+        return;
 
     if (focusRingRegion.isRect()) {
         drawFocusRingRect(SkRect::Make(focusRingRegion.getBounds()), color, width);
@@ -812,7 +733,8 @@ void GraphicsContext::drawText(const Font& font, const TextRunPaintInfo& runInfo
     if (contextDisabled())
         return;
 
-    font.drawText(m_canvas, runInfo, point, m_deviceScaleFactor, paint);
+    if (font.drawText(m_canvas, runInfo, point, m_deviceScaleFactor, paint))
+        m_displayItemList->setTextPainted();
 }
 
 template<typename DrawTextFunc>
@@ -839,7 +761,8 @@ void GraphicsContext::drawText(const Font& font, const TextRunPaintInfo& runInfo
         return;
 
     drawTextPasses([&font, &runInfo, &point, this](const SkPaint& paint) {
-        font.drawText(m_canvas, runInfo, point, m_deviceScaleFactor, paint);
+        if (font.drawText(m_canvas, runInfo, point, m_deviceScaleFactor, paint))
+            m_displayItemList->setTextPainted();
     });
 }
 
@@ -859,7 +782,8 @@ void GraphicsContext::drawBidiText(const Font& font, const TextRunPaintInfo& run
         return;
 
     drawTextPasses([&font, &runInfo, &point, customFontNotReadyAction, this](const SkPaint& paint) {
-        font.drawBidiText(m_canvas, runInfo, point, customFontNotReadyAction, m_deviceScaleFactor, paint);
+        if (font.drawBidiText(m_canvas, runInfo, point, customFontNotReadyAction, m_deviceScaleFactor, paint))
+            m_displayItemList->setTextPainted();
     });
 }
 
@@ -1269,22 +1193,6 @@ void GraphicsContext::setURLFragmentForRect(const String& destName, const IntRec
 
     SkAutoDataUnref skDestName(SkData::NewWithCString(destName.utf8().data()));
     SkAnnotateLinkToDestination(m_canvas, rect, skDestName.get());
-}
-
-AffineTransform GraphicsContext::getCTM() const
-{
-    ASSERT(!RuntimeEnabledFeatures::slimmingPaintEnabled());
-
-    if (contextDisabled())
-        return AffineTransform();
-
-    SkMatrix m = getTotalMatrix();
-    return AffineTransform(SkScalarToDouble(m.getScaleX()),
-                           SkScalarToDouble(m.getSkewY()),
-                           SkScalarToDouble(m.getSkewX()),
-                           SkScalarToDouble(m.getScaleY()),
-                           SkScalarToDouble(m.getTranslateX()),
-                           SkScalarToDouble(m.getTranslateY()));
 }
 
 void GraphicsContext::concatCTM(const AffineTransform& affine)

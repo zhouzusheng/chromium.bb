@@ -45,6 +45,7 @@
 #include "wtf/MathExtras.h"
 #include "wtf/text/Unicode.h"
 
+#include <algorithm>
 #include <list>
 #include <map>
 #include <string>
@@ -231,7 +232,7 @@ static inline unsigned countGraphemesInCluster(const UChar* str,
         cursorPos = cursorPosIterator->next();
         numGraphemes++;
     }
-    return numGraphemes < 0 ? 0 : numGraphemes;
+    return std::max(0, numGraphemes);
 }
 
 static inline void addEmphasisMark(GlyphBuffer* buffer,
@@ -452,7 +453,8 @@ int ShapeResult::offsetForPosition(Vector<RefPtr<ShapeResult>>& results,
     unsigned totalOffset;
     if (run.rtl()) {
         totalOffset = run.length();
-        for (auto& wordResult : results) {
+        for (unsigned i = results.size(); i; --i) {
+            const RefPtr<ShapeResult>& wordResult = results[i - 1];
             if (!wordResult)
                 continue;
             totalOffset -= wordResult->numCharacters();
@@ -521,8 +523,10 @@ void ShapeResult::fallbackFonts(HashSet<const SimpleFontData*>* fallback) const
     ASSERT(fallback);
     ASSERT(m_primaryFont);
     for (unsigned i = 0; i < m_runs.size(); ++i) {
-        if (m_runs[i] && m_runs[i]->m_fontData != m_primaryFont)
+        if (m_runs[i] && m_runs[i]->m_fontData != m_primaryFont
+            && !m_runs[i]->m_fontData->isTextOrientationFallbackOf(m_primaryFont.get())) {
             fallback->add(m_runs[i]->m_fontData.get());
+        }
     }
 }
 
@@ -602,9 +606,11 @@ static void normalizeCharacters(const TextRun& run, unsigned length, UChar* dest
         // Don't normalize tabs as they are not treated as spaces for word-end.
         if (run.normalizeSpace() && Character::isNormalizedCanvasSpaceCharacter(character))
             character = spaceCharacter;
-        else if (Character::treatAsSpace(character))
+        else if (Character::treatAsSpace(character) && character != noBreakSpaceCharacter)
             character = spaceCharacter;
         else if (Character::treatAsZeroWidthSpaceInComplexScript(character))
+            character = zeroWidthSpaceCharacter;
+        else if (Character::isModifier(character))
             character = zeroWidthSpaceCharacter;
 
         U16_APPEND(destination, *destinationLength, length, character, error);
@@ -663,12 +669,17 @@ void HarfBuzzShaper::setExpansion(float padding)
         m_expansionPerOpportunity = 0;
 }
 
+static inline hb_feature_t createFeature(uint8_t c1, uint8_t c2, uint8_t c3, uint8_t c4, uint32_t value = 0)
+{
+    return { HB_TAG(c1, c2, c3, c4), value, 0 /* start */, static_cast<unsigned>(-1) /* end */ };
+}
+
 void HarfBuzzShaper::setFontFeatures()
 {
     const FontDescription& description = m_font->fontDescription();
 
-    static hb_feature_t noKern = { HB_TAG('k', 'e', 'r', 'n'), 0, 0, static_cast<unsigned>(-1) };
-    static hb_feature_t noVkrn = { HB_TAG('v', 'k', 'r', 'n'), 0, 0, static_cast<unsigned>(-1) };
+    static hb_feature_t noKern = createFeature('k', 'e', 'r', 'n');
+    static hb_feature_t noVkrn = createFeature('v', 'k', 'r', 'n');
     switch (description.kerning()) {
     case FontDescription::NormalKerning:
         // kern/vkrn are enabled by default
@@ -680,8 +691,8 @@ void HarfBuzzShaper::setFontFeatures()
         break;
     }
 
-    static hb_feature_t noClig = { HB_TAG('c', 'l', 'i', 'g'), 0, 0, static_cast<unsigned>(-1) };
-    static hb_feature_t noLiga = { HB_TAG('l', 'i', 'g', 'a'), 0, 0, static_cast<unsigned>(-1) };
+    static hb_feature_t noClig = createFeature('c', 'l', 'i', 'g');
+    static hb_feature_t noLiga = createFeature('l', 'i', 'g', 'a');
     switch (description.commonLigaturesState()) {
     case FontDescription::DisabledLigaturesState:
         m_features.append(noLiga);
@@ -693,7 +704,7 @@ void HarfBuzzShaper::setFontFeatures()
     case FontDescription::NormalLigaturesState:
         break;
     }
-    static hb_feature_t dlig = { HB_TAG('d', 'l', 'i', 'g'), 1, 0, static_cast<unsigned>(-1) };
+    static hb_feature_t dlig = createFeature('d', 'l', 'i', 'g', 1);
     switch (description.discretionaryLigaturesState()) {
     case FontDescription::DisabledLigaturesState:
         // dlig is off by default
@@ -704,7 +715,7 @@ void HarfBuzzShaper::setFontFeatures()
     case FontDescription::NormalLigaturesState:
         break;
     }
-    static hb_feature_t hlig = { HB_TAG('h', 'l', 'i', 'g'), 1, 0, static_cast<unsigned>(-1) };
+    static hb_feature_t hlig = createFeature('h', 'l', 'i', 'g', 1);
     switch (description.historicalLigaturesState()) {
     case FontDescription::DisabledLigaturesState:
         // hlig is off by default
@@ -715,7 +726,7 @@ void HarfBuzzShaper::setFontFeatures()
     case FontDescription::NormalLigaturesState:
         break;
     }
-    static hb_feature_t noCalt = { HB_TAG('c', 'a', 'l', 't'), 0, 0, static_cast<unsigned>(-1) };
+    static hb_feature_t noCalt = createFeature('c', 'a', 'l', 't');
     switch (description.contextualLigaturesState()) {
     case FontDescription::DisabledLigaturesState:
         m_features.append(noCalt);
@@ -727,9 +738,9 @@ void HarfBuzzShaper::setFontFeatures()
         break;
     }
 
-    static hb_feature_t hwid = { HB_TAG('h', 'w', 'i', 'd'), 1, 0, static_cast<unsigned>(-1) };
-    static hb_feature_t twid = { HB_TAG('t', 'w', 'i', 'd'), 1, 0, static_cast<unsigned>(-1) };
-    static hb_feature_t qwid = { HB_TAG('q', 'w', 'i', 'd'), 1, 0, static_cast<unsigned>(-1) };
+    static hb_feature_t hwid = createFeature('h', 'w', 'i', 'd', 1);
+    static hb_feature_t twid = createFeature('t', 'w', 'i', 'd', 1);
+    static hb_feature_t qwid = createFeature('q', 'w', 'i', 'd', 1);
     switch (description.widthVariant()) {
     case HalfWidth:
         m_features.append(hwid);
@@ -1086,7 +1097,7 @@ void HarfBuzzShaper::shapeResult(ShapeResult* result, unsigned index,
     hb_glyph_info_t* glyphInfos = hb_buffer_get_glyph_infos(harfBuzzBuffer, 0);
     hb_glyph_position_t* glyphPositions = hb_buffer_get_glyph_positions(harfBuzzBuffer, 0);
 
-    float totalAdvance = 0;
+    float totalAdvance = 0.0f;
     FloatPoint glyphOrigin;
     float offsetX, offsetY;
     float* directionOffset = m_font->fontDescription().isVerticalAnyUpright() ? &offsetY : &offsetX;
@@ -1133,7 +1144,7 @@ void HarfBuzzShaper::shapeResult(ShapeResult* result, unsigned index,
         glyphOrigin += FloatSize(advance + offsetX, offsetY);
     }
 
-    run->m_width = totalAdvance > 0.0 ? totalAdvance : 0.0;
+    run->m_width = std::max(0.0f, totalAdvance);
     result->m_width += run->m_width;
     result->m_numGlyphs += numGlyphs;
     result->m_runs[index] = run.release();
@@ -1172,7 +1183,7 @@ float HarfBuzzShaper::adjustSpacing(ShapeResult::RunInfo* run, size_t glyphIndex
         spacing += m_letterSpacing;
 
     bool treatAsSpace = Character::treatAsSpace(character);
-    if (treatAsSpace && currentCharacterIndex && (character != '\t' || !m_textRun.allowTabs()))
+    if (treatAsSpace && (currentCharacterIndex || character == noBreakSpaceCharacter) && (character != '\t' || !m_textRun.allowTabs()))
         spacing += m_wordSpacingAdjustment;
 
     if (!m_expansionOpportunityCount)

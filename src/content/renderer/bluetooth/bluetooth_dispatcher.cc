@@ -14,7 +14,7 @@
 #include "third_party/WebKit/public/platform/WebPassOwnPtr.h"
 #include "third_party/WebKit/public/platform/modules/bluetooth/WebBluetoothDevice.h"
 #include "third_party/WebKit/public/platform/modules/bluetooth/WebBluetoothError.h"
-#include "third_party/WebKit/public/platform/modules/bluetooth/WebBluetoothGATTCharacteristic.h"
+#include "third_party/WebKit/public/platform/modules/bluetooth/WebBluetoothGATTCharacteristicInit.h"
 #include "third_party/WebKit/public/platform/modules/bluetooth/WebBluetoothGATTRemoteServer.h"
 #include "third_party/WebKit/public/platform/modules/bluetooth/WebBluetoothGATTService.h"
 #include "third_party/WebKit/public/platform/modules/bluetooth/WebRequestDeviceOptions.h"
@@ -22,7 +22,7 @@
 using blink::WebBluetoothConnectGATTCallbacks;
 using blink::WebBluetoothDevice;
 using blink::WebBluetoothError;
-using blink::WebBluetoothGATTCharacteristic;
+using blink::WebBluetoothGATTCharacteristicInit;
 using blink::WebBluetoothGATTRemoteServer;
 using blink::WebBluetoothGATTService;
 using blink::WebBluetoothReadValueCallbacks;
@@ -72,7 +72,7 @@ base::LazyInstance<base::ThreadLocalPointer<void>>::Leaky g_dispatcher_tls =
 void* const kHasBeenDeleted = reinterpret_cast<void*>(0x1);
 
 int CurrentWorkerId() {
-  return WorkerTaskRunner::Instance()->CurrentWorkerId();
+  return WorkerThread::GetCurrentId();
 }
 
 WebBluetoothDevice::VendorIDSource GetWebVendorIdSource(
@@ -111,7 +111,7 @@ BluetoothDispatcher* BluetoothDispatcher::GetOrCreateThreadSpecificInstance(
 
   BluetoothDispatcher* dispatcher = new BluetoothDispatcher(thread_safe_sender);
   if (CurrentWorkerId())
-    WorkerTaskRunner::Instance()->AddStopObserver(dispatcher);
+    WorkerThread::AddObserver(dispatcher);
   return dispatcher;
 }
 
@@ -225,7 +225,7 @@ void BluetoothDispatcher::writeValue(
       CurrentWorkerId(), request_id, characteristic_instance_id.utf8(), value));
 }
 
-void BluetoothDispatcher::OnWorkerRunLoopStopped() {
+void BluetoothDispatcher::WillStopCurrentWorkerThread() {
   delete this;
 }
 
@@ -294,16 +294,6 @@ void BluetoothDispatcher::OnGetPrimaryServiceError(int thread_id,
                                                    WebBluetoothError error) {
   DCHECK(pending_primary_service_requests_.Lookup(request_id)) << request_id;
 
-  // Since we couldn't find the service return null. See Step 3 of
-  // getPrimaryService algorithm:
-  // https://webbluetoothchrome.github.io/web-bluetooth/#dom-bluetoothgattremoteserver-getprimaryservice
-  if (error == WebBluetoothError::ServiceNotFound) {
-    pending_primary_service_requests_.Lookup(request_id)
-        ->callbacks->onSuccess(nullptr);
-    pending_primary_service_requests_.Remove(request_id);
-    return;
-  }
-
   pending_primary_service_requests_.Lookup(request_id)
       ->callbacks->onError(WebBluetoothError(error));
   pending_primary_service_requests_.Remove(request_id);
@@ -318,7 +308,7 @@ void BluetoothDispatcher::OnGetCharacteristicSuccess(
   BluetoothCharacteristicRequest* request =
       pending_characteristic_requests_.Lookup(request_id);
   request->callbacks->onSuccess(
-      blink::adoptWebPtr(new WebBluetoothGATTCharacteristic(
+      blink::adoptWebPtr(new WebBluetoothGATTCharacteristicInit(
           WebString::fromUTF8(characteristic_instance_id),
           request->service_instance_id, request->characteristic_uuid)));
 
@@ -330,16 +320,9 @@ void BluetoothDispatcher::OnGetCharacteristicError(int thread_id,
                                                    WebBluetoothError error) {
   DCHECK(pending_characteristic_requests_.Lookup(request_id)) << request_id;
 
-  // Since we couldn't find the characteristic return null. See Step 3 of
-  // getCharacteristic algorithm:
-  // https://webbluetoothchrome.github.io/web-bluetooth/#dom-bluetoothgattservice-getcharacteristic
-  if (error == WebBluetoothError::CharacteristicNotFound) {
-    pending_characteristic_requests_.Lookup(request_id)
-        ->callbacks->onSuccess(nullptr);
-  } else {
-    pending_characteristic_requests_.Lookup(request_id)
-        ->callbacks->onError(WebBluetoothError(error));
-  }
+  pending_characteristic_requests_.Lookup(request_id)
+      ->callbacks->onError(WebBluetoothError(error));
+
   pending_characteristic_requests_.Remove(request_id);
 }
 

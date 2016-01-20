@@ -22,7 +22,7 @@ bool AttachmentBrokerPrivilegedWin::SendAttachmentToProcess(
     const BrokerableAttachment* attachment,
     base::ProcessId destination_process) {
   switch (attachment->GetBrokerableType()) {
-    case BrokerableAttachment::WIN_HANDLE:
+    case BrokerableAttachment::WIN_HANDLE: {
       const internal::HandleAttachmentWin* handle_attachment =
           static_cast<const internal::HandleAttachmentWin*>(attachment);
       HandleWireFormat wire_format =
@@ -33,6 +33,11 @@ bool AttachmentBrokerPrivilegedWin::SendAttachmentToProcess(
         return false;
       RouteDuplicatedHandle(new_wire_format);
       return true;
+    }
+    case BrokerableAttachment::MACH_PORT:
+    case BrokerableAttachment::PLACEHOLDER:
+      NOTREACHED();
+      return false;
   }
   return false;
 }
@@ -55,8 +60,10 @@ void AttachmentBrokerPrivilegedWin::OnDuplicateWinHandle(
   IPC::internal::HandleAttachmentWin::WireFormat wire_format =
       base::get<0>(param);
 
-  if (wire_format.destination_process == base::kNullProcessId)
+  if (wire_format.destination_process == base::kNullProcessId) {
+    LogError(NO_DESTINATION);
     return;
+  }
 
   HandleWireFormat new_wire_format =
       DuplicateWinHandle(wire_format, message.get_sender_pid());
@@ -82,9 +89,11 @@ void AttachmentBrokerPrivilegedWin::RouteDuplicatedHandle(
     // forever.
     LOG(ERROR) << "Failed to deliver brokerable attachment to process with id: "
                << dest;
+    LogError(DESTINATION_NOT_FOUND);
     return;
   }
 
+  LogError(DESTINATION_FOUND);
   sender->Send(new AttachmentBrokerMsg_WinHandleHasBeenDuplicated(wire_format));
 }
 
@@ -92,25 +101,18 @@ AttachmentBrokerPrivilegedWin::HandleWireFormat
 AttachmentBrokerPrivilegedWin::DuplicateWinHandle(
     const HandleWireFormat& wire_format,
     base::ProcessId source_pid) {
-  HandleWireFormat new_wire_format;
-  new_wire_format.destination_process = wire_format.destination_process;
-  new_wire_format.attachment_id = wire_format.attachment_id;
-  new_wire_format.permissions = wire_format.permissions;
-  new_wire_format.handle = 0;
-
-  HANDLE original_handle = LongToHandle(wire_format.handle);
-
   base::Process source_process =
       base::Process::OpenWithExtraPrivileges(source_pid);
   base::Process dest_process =
       base::Process::OpenWithExtraPrivileges(wire_format.destination_process);
+  int new_wire_format_handle = 0;
   if (source_process.Handle() && dest_process.Handle()) {
     DWORD desired_access = 0;
     DWORD options = 0;
     switch (wire_format.permissions) {
       case HandleWin::INVALID:
         LOG(ERROR) << "Received invalid permissions for duplication.";
-        return new_wire_format;
+        return CopyWireFormat(wire_format, 0);
       case HandleWin::DUPLICATE:
         options = DUPLICATE_SAME_ACCESS;
         break;
@@ -120,14 +122,23 @@ AttachmentBrokerPrivilegedWin::DuplicateWinHandle(
     }
 
     HANDLE new_handle;
+    HANDLE original_handle = LongToHandle(wire_format.handle);
     DWORD result = ::DuplicateHandle(source_process.Handle(), original_handle,
                                      dest_process.Handle(), &new_handle,
                                      desired_access, FALSE, options);
 
-    new_wire_format.handle = (result != 0) ? HandleToLong(new_handle) : 0;
+    new_wire_format_handle = (result != 0) ? HandleToLong(new_handle) : 0;
   }
 
-  return new_wire_format;
+  return CopyWireFormat(wire_format, new_wire_format_handle);
+}
+
+AttachmentBrokerPrivilegedWin::HandleWireFormat
+AttachmentBrokerPrivilegedWin::CopyWireFormat(
+    const HandleWireFormat& wire_format,
+    int handle) {
+  return HandleWireFormat(handle, wire_format.destination_process,
+                          wire_format.permissions, wire_format.attachment_id);
 }
 
 }  // namespace IPC

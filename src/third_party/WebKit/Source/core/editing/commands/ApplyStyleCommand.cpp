@@ -250,8 +250,8 @@ void ApplyStyleCommand::applyBlockStyle(EditingStyle *style)
         end = swap;
     }
 
-    VisiblePosition visibleStart(start);
-    VisiblePosition visibleEnd(end);
+    VisiblePosition visibleStart = createVisiblePosition(start);
+    VisiblePosition visibleEnd = createVisiblePosition(end);
 
     if (visibleStart.isNull() || visibleStart.isOrphan() || visibleEnd.isNull() || visibleEnd.isOrphan())
         return;
@@ -266,8 +266,8 @@ void ApplyStyleCommand::applyBlockStyle(EditingStyle *style)
     int endIndex = TextIterator::rangeLength(endRange->startPosition(), endRange->endPosition(), true);
 
     VisiblePosition paragraphStart(startOfParagraph(visibleStart));
-    VisiblePosition nextParagraphStart(endOfParagraph(paragraphStart).next());
-    VisiblePosition beyondEnd(endOfParagraph(visibleEnd).next());
+    VisiblePosition nextParagraphStart(nextPositionOf(endOfParagraph(paragraphStart)));
+    VisiblePosition beyondEnd(nextPositionOf(endOfParagraph(visibleEnd)));
     while (paragraphStart.isNotNull() && paragraphStart.deepEquivalent() != beyondEnd.deepEquivalent()) {
         StyleChange styleChange(style, paragraphStart.deepEquivalent());
         if (styleChange.cssStyle().length() || m_removeOnly) {
@@ -285,11 +285,11 @@ void ApplyStyleCommand::applyBlockStyle(EditingStyle *style)
             }
 
             if (nextParagraphStart.isOrphan())
-                nextParagraphStart = endOfParagraph(paragraphStart).next();
+                nextParagraphStart = nextPositionOf(endOfParagraph(paragraphStart));
         }
 
         paragraphStart = nextParagraphStart;
-        nextParagraphStart = endOfParagraph(paragraphStart).next();
+        nextParagraphStart = nextPositionOf(endOfParagraph(paragraphStart));
     }
 
     EphemeralRange startEphemeralRange = PlainTextRange(startIndex).createRangeForSelection(toContainerNode(scope));
@@ -304,7 +304,7 @@ void ApplyStyleCommand::applyBlockStyle(EditingStyle *style)
 static PassRefPtrWillBeRawPtr<MutableStylePropertySet> copyStyleOrCreateEmpty(const StylePropertySet* style)
 {
     if (!style)
-        return MutableStylePropertySet::create();
+        return MutableStylePropertySet::create(HTMLQuirksMode);
     return style->mutableCopy();
 }
 
@@ -812,7 +812,7 @@ void ApplyStyleCommand::applyInlineStyleToNodeRange(EditingStyle* style, PassRef
             continue;
         }
 
-        if (isBlock(node.get()))
+        if (isEnclosingBlock(node.get()))
             continue;
 
         if (node->hasChildren()) {
@@ -828,7 +828,7 @@ void ApplyStyleCommand::applyInlineStyleToNodeRange(EditingStyle* style, PassRef
         Node* runEnd = node.get();
         Node* sibling = node->nextSibling();
         while (sibling && sibling != pastEndNode && !sibling->contains(pastEndNode.get())
-            && (!isBlock(sibling) || isHTMLBRElement(*sibling))
+            && (!isEnclosingBlock(sibling) || isHTMLBRElement(*sibling))
             && !containsNonEditableRegion(*sibling)) {
             runEnd = sibling;
             sibling = runEnd->nextSibling();

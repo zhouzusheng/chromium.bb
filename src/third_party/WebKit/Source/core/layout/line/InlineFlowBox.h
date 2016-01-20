@@ -38,7 +38,7 @@ class VerticalPositionCache;
 
 struct GlyphOverflow;
 
-typedef HashMap<const InlineTextBox*, pair<Vector<const SimpleFontData*>, GlyphOverflow>> GlyphOverflowAndFallbackFontsMap;
+typedef HashMap<const InlineTextBox*, std::pair<Vector<const SimpleFontData*>, GlyphOverflow>> GlyphOverflowAndFallbackFontsMap;
 
 class InlineFlowBox : public InlineBox {
 public:
@@ -115,9 +115,9 @@ public:
 
     void clearTruncation() override;
 
-    IntRect roundedFrameRect() const;
+    LayoutRect frameRect() const;
 
-    void paint(const PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom) override;
+    void paint(const PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom) const override;
     bool nodeAtPoint(HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom) override;
 
     bool boxShadowCanBeAppliedToBackground(const FillLayer&) const;

@@ -93,6 +93,8 @@ public:
 
     BLINK_EXPORT static void enableMediaCapture(bool);
 
+    BLINK_EXPORT static void enableMediaRecorder(bool);
+
     BLINK_EXPORT static void enableMediaSource(bool);
 
     BLINK_EXPORT static void enableNotificationConstructor(bool);
@@ -115,7 +117,6 @@ public:
 
     BLINK_EXPORT static void enableScriptedSpeech(bool);
 
-    BLINK_EXPORT static void enableSlimmingPaint(bool);
     BLINK_EXPORT static void enableSlimmingPaintV2(bool);
 
     BLINK_EXPORT static void enableTouch(bool);
@@ -133,8 +134,6 @@ public:
     BLINK_EXPORT static void enableXSLT(bool);
 
     BLINK_EXPORT static void enableOverlayScrollbars(bool);
-
-    BLINK_EXPORT static void enableOverlayFullscreenVideo(bool);
 
     BLINK_EXPORT static void forceOverlayFullscreenVideo(bool);
 
@@ -159,8 +158,6 @@ public:
     BLINK_EXPORT static void enablePushMessagingData(bool);
 
     BLINK_EXPORT static void enablePushMessagingHasPermission(bool);
-
-    BLINK_EXPORT static void enableStaleWhileRevalidateCacheControl(bool);
 
     BLINK_EXPORT static void enableUnsafeES3APIs(bool);
 

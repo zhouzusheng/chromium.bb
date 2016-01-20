@@ -21,6 +21,7 @@
 #include "webrtc/common_types.h"
 #include "webrtc/modules/rtp_rtcp/source/byte_io.h"
 #include "webrtc/modules/rtp_rtcp/source/rtp_rtcp_impl.h"
+#include "webrtc/modules/rtp_rtcp/source/rtcp_packet/transport_feedback.h"
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
 #include "webrtc/system_wrappers/interface/logging.h"
 #include "webrtc/system_wrappers/interface/trace_event.h"
@@ -93,7 +94,7 @@ struct RTCPSender::RtcpContext {
         position(0) {}
 
   uint8_t* AllocateData(uint32_t bytes) {
-    DCHECK_LE(position + bytes, buffer_size);
+    RTC_DCHECK_LE(position + bytes, buffer_size);
     uint8_t* ptr = &buffer[position];
     position += bytes;
     return ptr;
@@ -131,18 +132,15 @@ class RTCPSender::PacketBuiltCallback
 };
 
 RTCPSender::RTCPSender(
-    int32_t id,
     bool audio,
     Clock* clock,
     ReceiveStatistics* receive_statistics,
-    RtcpPacketTypeCounterObserver* packet_type_counter_observer)
-    : id_(id),
-      audio_(audio),
+    RtcpPacketTypeCounterObserver* packet_type_counter_observer,
+    Transport* outgoing_transport)
+    : audio_(audio),
       clock_(clock),
-      method_(kRtcpOff),
-      critical_section_transport_(
-          CriticalSectionWrapper::CreateCriticalSection()),
-      cbTransport_(nullptr),
+      method_(RtcpMode::kOff),
+      transport_(outgoing_transport),
 
       critical_section_rtcp_sender_(
           CriticalSectionWrapper::CreateCriticalSection()),
@@ -174,6 +172,7 @@ RTCPSender::RTCPSender(
       packet_type_counter_observer_(packet_type_counter_observer) {
   memset(last_send_report_, 0, sizeof(last_send_report_));
   memset(last_rtcp_time_, 0, sizeof(last_rtcp_time_));
+  RTC_DCHECK(transport_ != nullptr);
 
   builders_[kRtcpSr] = &RTCPSender::BuildSR;
   builders_[kRtcpRr] = &RTCPSender::BuildRR;
@@ -197,22 +196,16 @@ RTCPSender::RTCPSender(
 RTCPSender::~RTCPSender() {
 }
 
-int32_t RTCPSender::RegisterSendTransport(Transport* outgoingTransport) {
-  CriticalSectionScoped lock(critical_section_transport_.get());
-  cbTransport_ = outgoingTransport;
-  return 0;
-}
-
-RTCPMethod RTCPSender::Status() const {
+RtcpMode RTCPSender::Status() const {
   CriticalSectionScoped lock(critical_section_rtcp_sender_.get());
   return method_;
 }
 
-void RTCPSender::SetRTCPStatus(RTCPMethod method) {
+void RTCPSender::SetRTCPStatus(RtcpMode method) {
   CriticalSectionScoped lock(critical_section_rtcp_sender_.get());
   method_ = method;
 
-  if (method == kRtcpOff)
+  if (method == RtcpMode::kOff)
     return;
   next_time_to_send_rtcp_ =
       clock_->TimeInMilliseconds() +
@@ -230,7 +223,7 @@ int32_t RTCPSender::SetSendingStatus(const FeedbackState& feedback_state,
   {
     CriticalSectionScoped lock(critical_section_rtcp_sender_.get());
 
-    if (method_ != kRtcpOff) {
+    if (method_ != RtcpMode::kOff) {
       if (sending == false && sending_ == true) {
         // Trigger RTCP bye
         sendRTCPBye = true;
@@ -318,7 +311,7 @@ int32_t RTCPSender::SetCNAME(const char* c_name) {
   if (!c_name)
     return -1;
 
-  DCHECK_LT(strlen(c_name), static_cast<size_t>(RTCP_CNAME_SIZE));
+  RTC_DCHECK_LT(strlen(c_name), static_cast<size_t>(RTCP_CNAME_SIZE));
   CriticalSectionScoped lock(critical_section_rtcp_sender_.get());
   cname_ = c_name;
   return 0;
@@ -326,7 +319,7 @@ int32_t RTCPSender::SetCNAME(const char* c_name) {
 
 int32_t RTCPSender::AddMixedCNAME(uint32_t SSRC, const char* c_name) {
   assert(c_name);
-  DCHECK_LT(strlen(c_name), static_cast<size_t>(RTCP_CNAME_SIZE));
+  RTC_DCHECK_LT(strlen(c_name), static_cast<size_t>(RTCP_CNAME_SIZE));
   CriticalSectionScoped lock(critical_section_rtcp_sender_.get());
   if (csrc_cnames_.size() >= kRtpCsrcSize)
     return -1;
@@ -409,7 +402,7 @@ From RFC 3550
 
   CriticalSectionScoped lock(critical_section_rtcp_sender_.get());
 
-  if (method_ == kRtcpOff)
+  if (method_ == RtcpMode::kOff)
     return false;
 
   if (!audio_ && sendKeyframeBeforeRTP) {
@@ -515,7 +508,7 @@ RTCPSender::BuildResult RTCPSender::BuildSR(RtcpContext* ctx) {
 
 RTCPSender::BuildResult RTCPSender::BuildSDES(RtcpContext* ctx) {
   size_t length_cname = cname_.length();
-  CHECK_LT(length_cname, static_cast<size_t>(RTCP_CNAME_SIZE));
+  RTC_CHECK_LT(length_cname, static_cast<size_t>(RTCP_CNAME_SIZE));
 
   rtcp::Sdes sdes;
   sdes.WithCName(ssrc_, cname_);
@@ -638,47 +631,15 @@ RTCPSender::BuildResult RTCPSender::BuildRPSI(RtcpContext* ctx) {
 }
 
 RTCPSender::BuildResult RTCPSender::BuildREMB(RtcpContext* ctx) {
-  // sanity
-  if (ctx->position + 20 + 4 * remb_ssrcs_.size() >= IP_PACKET_SIZE)
+  rtcp::Remb remb;
+  remb.From(ssrc_);
+  for (uint32_t ssrc : remb_ssrcs_)
+    remb.AppliesTo(ssrc);
+  remb.WithBitrateBps(remb_bitrate_);
+
+  PacketBuiltCallback callback(ctx);
+  if (!callback.BuildPacket(remb))
     return BuildResult::kTruncated;
-
-  // add application layer feedback
-  uint8_t FMT = 15;
-  *ctx->AllocateData(1) = 0x80 + FMT;
-  *ctx->AllocateData(1) = 206;
-
-  *ctx->AllocateData(1) = 0;
-  *ctx->AllocateData(1) = static_cast<uint8_t>(remb_ssrcs_.size() + 4);
-
-  // Add our own SSRC
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), ssrc_);
-
-  // Remote SSRC must be 0
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), 0);
-
-  *ctx->AllocateData(1) = 'R';
-  *ctx->AllocateData(1) = 'E';
-  *ctx->AllocateData(1) = 'M';
-  *ctx->AllocateData(1) = 'B';
-
-  *ctx->AllocateData(1) = remb_ssrcs_.size();
-  // 6 bit Exp
-  // 18 bit mantissa
-  uint8_t brExp = 0;
-  for (uint32_t i = 0; i < 64; i++) {
-    if (remb_bitrate_ <= (0x3FFFFu << i)) {
-      brExp = i;
-      break;
-    }
-  }
-  const uint32_t brMantissa = (remb_bitrate_ >> brExp);
-  *ctx->AllocateData(1) =
-      static_cast<uint8_t>((brExp << 2) + ((brMantissa >> 16) & 0x03));
-  *ctx->AllocateData(1) = static_cast<uint8_t>(brMantissa >> 8);
-  *ctx->AllocateData(1) = static_cast<uint8_t>(brMantissa);
-
-  for (size_t i = 0; i < remb_ssrcs_.size(); i++)
-    ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), remb_ssrcs_[i]);
 
   TRACE_EVENT_INSTANT0(TRACE_DISABLED_BY_DEFAULT("webrtc_rtp"),
                        "RTCPSender::REMB");
@@ -738,46 +699,15 @@ RTCPSender::BuildResult RTCPSender::BuildTMMBR(RtcpContext* ctx) {
   }
 
   if (tmmbr_send_) {
-    // sanity
-    if (ctx->position + 20 >= IP_PACKET_SIZE)
+    rtcp::Tmmbr tmmbr;
+    tmmbr.From(ssrc_);
+    tmmbr.To(remote_ssrc_);
+    tmmbr.WithBitrateKbps(tmmbr_send_);
+    tmmbr.WithOverhead(packet_oh_send_);
+
+    PacketBuiltCallback callback(ctx);
+    if (!callback.BuildPacket(tmmbr))
       return BuildResult::kTruncated;
-
-    // add TMMBR indicator
-    uint8_t FMT = 3;
-    *ctx->AllocateData(1) = 0x80 + FMT;
-    *ctx->AllocateData(1) = 205;
-
-    // Length of 4
-    *ctx->AllocateData(1) = 0;
-    *ctx->AllocateData(1) = 4;
-
-    // Add our own SSRC
-    ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), ssrc_);
-
-    // RFC 5104     4.2.1.2.  Semantics
-
-    // SSRC of media source
-    ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), 0);
-
-    // Additional Feedback Control Information (FCI)
-    ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), remote_ssrc_);
-
-    uint32_t bitRate = tmmbr_send_ * 1000;
-    uint32_t mmbrExp = 0;
-    for (uint32_t i = 0; i < 64; i++) {
-      if (bitRate <= (0x1FFFFu << i)) {
-        mmbrExp = i;
-        break;
-      }
-    }
-    uint32_t mmbrMantissa = (bitRate >> mmbrExp);
-
-    *ctx->AllocateData(1) =
-        static_cast<uint8_t>((mmbrExp << 2) + ((mmbrMantissa >> 15) & 0x03));
-    *ctx->AllocateData(1) = static_cast<uint8_t>(mmbrMantissa >> 7);
-    *ctx->AllocateData(1) = static_cast<uint8_t>(
-        (mmbrMantissa << 1) + ((packet_oh_send_ >> 8) & 0x01));
-    *ctx->AllocateData(1) = static_cast<uint8_t>(packet_oh_send_);
   }
   return BuildResult::kSuccess;
 }
@@ -787,90 +717,32 @@ RTCPSender::BuildResult RTCPSender::BuildTMMBN(RtcpContext* ctx) {
   if (boundingSet == NULL)
     return BuildResult::kError;
 
-  // sanity
-  if (ctx->position + 12 + boundingSet->lengthOfSet() * 8 >= IP_PACKET_SIZE) {
-    LOG(LS_WARNING) << "Failed to build TMMBN.";
-    return BuildResult::kTruncated;
-  }
-
-  uint8_t FMT = 4;
-  // add TMMBN indicator
-  *ctx->AllocateData(1) = 0x80 + FMT;
-  *ctx->AllocateData(1) = 205;
-
-  // Add length later
-  int posLength = ctx->position;
-  ctx->AllocateData(2);
-
-  // Add our own SSRC
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), ssrc_);
-
-  // RFC 5104     4.2.2.2.  Semantics
-
-  // SSRC of media source
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), 0);
-
-  // Additional Feedback Control Information (FCI)
-  int numBoundingSet = 0;
-  for (uint32_t n = 0; n < boundingSet->lengthOfSet(); n++) {
-    if (boundingSet->Tmmbr(n) > 0) {
-      uint32_t tmmbrSSRC = boundingSet->Ssrc(n);
-      ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), tmmbrSSRC);
-
-      uint32_t bitRate = boundingSet->Tmmbr(n) * 1000;
-      uint32_t mmbrExp = 0;
-      for (int i = 0; i < 64; i++) {
-        if (bitRate <= (0x1FFFFu << i)) {
-          mmbrExp = i;
-          break;
-        }
-      }
-      uint32_t mmbrMantissa = (bitRate >> mmbrExp);
-      uint32_t measuredOH = boundingSet->PacketOH(n);
-
-      *ctx->AllocateData(1) =
-          static_cast<uint8_t>((mmbrExp << 2) + ((mmbrMantissa >> 15) & 0x03));
-      *ctx->AllocateData(1) = static_cast<uint8_t>(mmbrMantissa >> 7);
-      *ctx->AllocateData(1) = static_cast<uint8_t>((mmbrMantissa << 1) +
-                                                   ((measuredOH >> 8) & 0x01));
-      *ctx->AllocateData(1) = static_cast<uint8_t>(measuredOH);
-      numBoundingSet++;
+  rtcp::Tmmbn tmmbn;
+  tmmbn.From(ssrc_);
+  for (uint32_t i = 0; i < boundingSet->lengthOfSet(); i++) {
+    if (boundingSet->Tmmbr(i) > 0) {
+      tmmbn.WithTmmbr(boundingSet->Ssrc(i), boundingSet->Tmmbr(i),
+                      boundingSet->PacketOH(i));
     }
   }
-  uint16_t length = static_cast<uint16_t>(2 + 2 * numBoundingSet);
-  ctx->buffer[posLength++] = static_cast<uint8_t>(length >> 8);
-  ctx->buffer[posLength] = static_cast<uint8_t>(length);
+
+  PacketBuiltCallback callback(ctx);
+  if (!callback.BuildPacket(tmmbn))
+    return BuildResult::kTruncated;
 
   return BuildResult::kSuccess;
 }
 
 RTCPSender::BuildResult RTCPSender::BuildAPP(RtcpContext* ctx) {
-  // sanity
-  if (app_data_ == NULL) {
-    LOG(LS_WARNING) << "Failed to build app specific.";
-    return BuildResult::kError;
-  }
-  if (ctx->position + 12 + app_length_ >= IP_PACKET_SIZE) {
-    LOG(LS_WARNING) << "Failed to build app specific.";
+  rtcp::App app;
+  app.From(ssrc_);
+  app.WithSubType(app_sub_type_);
+  app.WithName(app_name_);
+  app.WithData(app_data_.get(), app_length_);
+
+  PacketBuiltCallback callback(ctx);
+  if (!callback.BuildPacket(app))
     return BuildResult::kTruncated;
-  }
-  *ctx->AllocateData(1) = 0x80 + app_sub_type_;
-
-  // Add APP ID
-  *ctx->AllocateData(1) = 204;
-
-  uint16_t length = (app_length_ >> 2) + 2;  // include SSRC and name
-  *ctx->AllocateData(1) = static_cast<uint8_t>(length >> 8);
-  *ctx->AllocateData(1) = static_cast<uint8_t>(length);
-
-  // Add our own SSRC
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), ssrc_);
-
-  // Add our application name
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), app_name_);
-
-  // Add the data
-  memcpy(ctx->AllocateData(app_length_), app_data_.get(), app_length_);
 
   return BuildResult::kSuccess;
 }
@@ -948,34 +820,20 @@ RTCPSender::BuildResult RTCPSender::BuildNACK(RtcpContext* ctx) {
 }
 
 RTCPSender::BuildResult RTCPSender::BuildBYE(RtcpContext* ctx) {
-  // sanity
-  if (ctx->position + 8 >= IP_PACKET_SIZE)
+  rtcp::Bye bye;
+  bye.From(ssrc_);
+  for (uint32_t csrc : csrcs_)
+    bye.WithCsrc(csrc);
+
+  PacketBuiltCallback callback(ctx);
+  if (!callback.BuildPacket(bye))
     return BuildResult::kTruncated;
-
-  // Add a bye packet
-  // Number of SSRC + CSRCs.
-  *ctx->AllocateData(1) = static_cast<uint8_t>(0x80 + 1 + csrcs_.size());
-  *ctx->AllocateData(1) = 203;
-
-  // length
-  *ctx->AllocateData(1) = 0;
-  *ctx->AllocateData(1) = static_cast<uint8_t>(1 + csrcs_.size());
-
-  // Add our own SSRC
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), ssrc_);
-
-  // add CSRCs
-  for (size_t i = 0; i < csrcs_.size(); i++)
-    ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), csrcs_[i]);
 
   return BuildResult::kSuccess;
 }
 
 RTCPSender::BuildResult RTCPSender::BuildReceiverReferenceTime(
     RtcpContext* ctx) {
-  const int kRrTimeBlockLength = 20;
-  if (ctx->position + kRrTimeBlockLength >= IP_PACKET_SIZE)
-    return BuildResult::kTruncated;
 
   if (last_xr_rr_.size() >= RTCP_NUMBER_OF_SR)
     last_xr_rr_.erase(last_xr_rr_.begin());
@@ -983,146 +841,74 @@ RTCPSender::BuildResult RTCPSender::BuildReceiverReferenceTime(
       RTCPUtility::MidNtp(ctx->ntp_sec, ctx->ntp_frac),
       Clock::NtpToMs(ctx->ntp_sec, ctx->ntp_frac)));
 
-  // Add XR header.
-  *ctx->AllocateData(1) = 0x80;
-  *ctx->AllocateData(1) = 207;
-  ByteWriter<uint16_t>::WriteBigEndian(ctx->AllocateData(2),
-                                       4);  // XR packet length.
+  rtcp::Xr xr;
+  xr.From(ssrc_);
 
-  // Add our own SSRC.
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), ssrc_);
+  rtcp::Rrtr rrtr;
+  rrtr.WithNtpSec(ctx->ntp_sec);
+  rrtr.WithNtpFrac(ctx->ntp_frac);
 
-  //    0                   1                   2                   3
-  //    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-  //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-  //   |     BT=4      |   reserved    |       block length = 2        |
-  //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-  //   |              NTP timestamp, most significant word             |
-  //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-  //   |             NTP timestamp, least significant word             |
-  //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+  xr.WithRrtr(&rrtr);
 
-  // Add Receiver Reference Time Report block.
-  *ctx->AllocateData(1) = 4;  // BT.
-  *ctx->AllocateData(1) = 0;  // Reserved.
-  ByteWriter<uint16_t>::WriteBigEndian(ctx->AllocateData(2),
-                                       2);  // Block length.
+  // TODO(sprang): Merge XR report sending to contain all of RRTR, DLRR, VOIP?
 
-  // NTP timestamp.
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), ctx->ntp_sec);
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), ctx->ntp_frac);
+  PacketBuiltCallback callback(ctx);
+  if (!callback.BuildPacket(xr))
+    return BuildResult::kTruncated;
 
   return BuildResult::kSuccess;
 }
 
 RTCPSender::BuildResult RTCPSender::BuildDlrr(RtcpContext* ctx) {
-  const int kDlrrBlockLength = 24;
-  if (ctx->position + kDlrrBlockLength >= IP_PACKET_SIZE)
-    return BuildResult::kTruncated;
+  rtcp::Xr xr;
+  xr.From(ssrc_);
 
-  // Add XR header.
-  *ctx->AllocateData(1) = 0x80;
-  *ctx->AllocateData(1) = 207;
-  ByteWriter<uint16_t>::WriteBigEndian(ctx->AllocateData(2),
-                                       5);  // XR packet length.
-
-  // Add our own SSRC.
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), ssrc_);
-
-  //   0                   1                   2                   3
-  //   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-  //  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-  //  |     BT=5      |   reserved    |         block length          |
-  //  +=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+
-  //  |                 SSRC_1 (SSRC of first receiver)               | sub-
-  //  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+ block
-  //  |                         last RR (LRR)                         |   1
-  //  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-  //  |                   delay since last RR (DLRR)                  |
-  //  +=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+
-  //  |                 SSRC_2 (SSRC of second receiver)              | sub-
-  //  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+ block
-  //  :                               ...                             :   2
-
-  // Add DLRR sub block.
-  *ctx->AllocateData(1) = 5;  // BT.
-  *ctx->AllocateData(1) = 0;  // Reserved.
-  ByteWriter<uint16_t>::WriteBigEndian(ctx->AllocateData(2),
-                                       3);  // Block length.
-
-  // NTP timestamp.
-
+  rtcp::Dlrr dlrr;
   const RtcpReceiveTimeInfo& info = ctx->feedback_state.last_xr_rr;
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), info.sourceSSRC);
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), info.lastRR);
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4),
-                                       info.delaySinceLastRR);
+  dlrr.WithDlrrItem(info.sourceSSRC, info.lastRR, info.delaySinceLastRR);
+
+  xr.WithDlrr(&dlrr);
+
+  PacketBuiltCallback callback(ctx);
+  if (!callback.BuildPacket(xr))
+    return BuildResult::kTruncated;
 
   return BuildResult::kSuccess;
 }
 
 // TODO(sprang): Add a unit test for this, or remove if the code isn't used.
 RTCPSender::BuildResult RTCPSender::BuildVoIPMetric(RtcpContext* ctx) {
-  // sanity
-  if (ctx->position + 44 >= IP_PACKET_SIZE)
+  rtcp::Xr xr;
+  xr.From(ssrc_);
+
+  rtcp::VoipMetric voip;
+  voip.To(remote_ssrc_);
+  voip.LossRate(xr_voip_metric_.lossRate);
+  voip.DiscardRate(xr_voip_metric_.discardRate);
+  voip.BurstDensity(xr_voip_metric_.burstDensity);
+  voip.GapDensity(xr_voip_metric_.gapDensity);
+  voip.BurstDuration(xr_voip_metric_.burstDuration);
+  voip.GapDuration(xr_voip_metric_.gapDuration);
+  voip.RoundTripDelay(xr_voip_metric_.roundTripDelay);
+  voip.EndSystemDelay(xr_voip_metric_.endSystemDelay);
+  voip.SignalLevel(xr_voip_metric_.signalLevel);
+  voip.NoiseLevel(xr_voip_metric_.noiseLevel);
+  voip.Rerl(xr_voip_metric_.RERL);
+  voip.Gmin(xr_voip_metric_.Gmin);
+  voip.Rfactor(xr_voip_metric_.Rfactor);
+  voip.ExtRfactor(xr_voip_metric_.extRfactor);
+  voip.MosLq(xr_voip_metric_.MOSLQ);
+  voip.MosCq(xr_voip_metric_.MOSCQ);
+  voip.RxConfig(xr_voip_metric_.RXconfig);
+  voip.JbNominal(xr_voip_metric_.JBnominal);
+  voip.JbMax(xr_voip_metric_.JBmax);
+  voip.JbAbsMax(xr_voip_metric_.JBabsMax);
+
+  xr.WithVoipMetric(&voip);
+
+  PacketBuiltCallback callback(ctx);
+  if (!callback.BuildPacket(xr))
     return BuildResult::kTruncated;
-
-  // Add XR header
-  *ctx->AllocateData(1) = 0x80;
-  *ctx->AllocateData(1) = 207;
-
-  uint32_t XRLengthPos = ctx->position;
-
-  // handle length later on
-  ctx->AllocateData(2);
-
-  // Add our own SSRC
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), ssrc_);
-
-  // Add a VoIP metrics block
-  *ctx->AllocateData(1) = 7;
-  *ctx->AllocateData(1) = 0;
-  ByteWriter<uint16_t>::WriteBigEndian(ctx->AllocateData(2), 8);
-
-  // Add the remote SSRC
-  ByteWriter<uint32_t>::WriteBigEndian(ctx->AllocateData(4), remote_ssrc_);
-
-  *ctx->AllocateData(1) = xr_voip_metric_.lossRate;
-  *ctx->AllocateData(1) = xr_voip_metric_.discardRate;
-  *ctx->AllocateData(1) = xr_voip_metric_.burstDensity;
-  *ctx->AllocateData(1) = xr_voip_metric_.gapDensity;
-
-  ByteWriter<uint16_t>::WriteBigEndian(ctx->AllocateData(2),
-                                       xr_voip_metric_.burstDuration);
-  ByteWriter<uint16_t>::WriteBigEndian(ctx->AllocateData(2),
-                                       xr_voip_metric_.gapDuration);
-
-  ByteWriter<uint16_t>::WriteBigEndian(ctx->AllocateData(2),
-                                       xr_voip_metric_.roundTripDelay);
-  ByteWriter<uint16_t>::WriteBigEndian(ctx->AllocateData(2),
-                                       xr_voip_metric_.endSystemDelay);
-
-  *ctx->AllocateData(1) = xr_voip_metric_.signalLevel;
-  *ctx->AllocateData(1) = xr_voip_metric_.noiseLevel;
-  *ctx->AllocateData(1) = xr_voip_metric_.RERL;
-  *ctx->AllocateData(1) = xr_voip_metric_.Gmin;
-
-  *ctx->AllocateData(1) = xr_voip_metric_.Rfactor;
-  *ctx->AllocateData(1) = xr_voip_metric_.extRfactor;
-  *ctx->AllocateData(1) = xr_voip_metric_.MOSLQ;
-  *ctx->AllocateData(1) = xr_voip_metric_.MOSCQ;
-
-  *ctx->AllocateData(1) = xr_voip_metric_.RXconfig;
-  *ctx->AllocateData(1) = 0;  // reserved
-
-  ByteWriter<uint16_t>::WriteBigEndian(ctx->AllocateData(2),
-                                       xr_voip_metric_.JBnominal);
-  ByteWriter<uint16_t>::WriteBigEndian(ctx->AllocateData(2),
-                                       xr_voip_metric_.JBmax);
-  ByteWriter<uint16_t>::WriteBigEndian(ctx->AllocateData(2),
-                                       xr_voip_metric_.JBabsMax);
-
-  ByteWriter<uint16_t>::WriteBigEndian(&ctx->buffer[XRLengthPos], 10);
 
   return BuildResult::kSuccess;
 }
@@ -1147,7 +933,7 @@ int32_t RTCPSender::SendCompoundRTCP(
     uint64_t pictureID) {
   {
     CriticalSectionScoped lock(critical_section_rtcp_sender_.get());
-    if (method_ == kRtcpOff) {
+    if (method_ == RtcpMode::kOff) {
       LOG(LS_WARNING) << "Can't send rtcp if it is disabled.";
       return -1;
     }
@@ -1188,11 +974,11 @@ int RTCPSender::PrepareRTCP(const FeedbackState& feedback_state,
   if (IsFlagPresent(kRtcpSr) || IsFlagPresent(kRtcpRr)) {
     // Report type already explicitly set, don't automatically populate.
     generate_report = true;
-    DCHECK(ConsumeFlag(kRtcpReport) == false);
+    RTC_DCHECK(ConsumeFlag(kRtcpReport) == false);
   } else {
     generate_report =
-        (ConsumeFlag(kRtcpReport) && method_ == kRtcpNonCompound) ||
-        method_ == kRtcpCompound;
+        (ConsumeFlag(kRtcpReport) && method_ == RtcpMode::kReducedSize) ||
+        method_ == RtcpMode::kCompound;
     if (generate_report)
       SetFlag(sending_ ? kRtcpSr : kRtcpRr, true);
   }
@@ -1247,7 +1033,7 @@ int RTCPSender::PrepareRTCP(const FeedbackState& feedback_state,
   auto it = report_flags_.begin();
   while (it != report_flags_.end()) {
     auto builder = builders_.find(it->type);
-    DCHECK(builder != builders_.end());
+    RTC_DCHECK(builder != builders_.end());
     if (it->is_volatile) {
       report_flags_.erase(it++);
     } else {
@@ -1276,7 +1062,7 @@ int RTCPSender::PrepareRTCP(const FeedbackState& feedback_state,
         remote_ssrc_, packet_type_counter_);
   }
 
-  DCHECK(AllVolatileFlagsConsumed());
+  RTC_DCHECK(AllVolatileFlagsConsumed());
 
   return context.position;
 }
@@ -1323,11 +1109,8 @@ bool RTCPSender::PrepareReport(const FeedbackState& feedback_state,
 }
 
 int32_t RTCPSender::SendToNetwork(const uint8_t* dataBuffer, size_t length) {
-  CriticalSectionScoped lock(critical_section_transport_.get());
-  if (cbTransport_) {
-    if (cbTransport_->SendRTCPPacket(id_, dataBuffer, length) > 0)
-      return 0;
-  }
+  if (transport_->SendRtcp(dataBuffer, length))
+    return 0;
   return -1;
 }
 
@@ -1415,6 +1198,26 @@ bool RTCPSender::AllVolatileFlagsConsumed() const {
       return false;
   }
   return true;
+}
+
+bool RTCPSender::SendFeedbackPacket(const rtcp::TransportFeedback& packet) {
+  class Sender : public rtcp::RtcpPacket::PacketReadyCallback {
+   public:
+    Sender(Transport* transport)
+        : transport_(transport), send_failure_(false) {}
+
+    void OnPacketReady(uint8_t* data, size_t length) override {
+      if (!transport_->SendRtcp(data, length))
+        send_failure_ = true;
+    }
+
+    Transport* const transport_;
+    bool send_failure_;
+  } sender(transport_);
+
+  uint8_t buffer[IP_PACKET_SIZE];
+  return packet.BuildExternalBuffer(buffer, IP_PACKET_SIZE, &sender) &&
+         !sender.send_failure_;
 }
 
 }  // namespace webrtc

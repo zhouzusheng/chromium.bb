@@ -217,7 +217,7 @@ size_t SkTwoPointConicalGradient::contextSize() const {
 
 SkShader::Context* SkTwoPointConicalGradient::onCreateContext(const ContextRec& rec,
                                                               void* storage) const {
-    return SkNEW_PLACEMENT_ARGS(storage, TwoPointConicalGradientContext, (*this, rec));
+    return new (storage) TwoPointConicalGradientContext(*this, rec);
 }
 
 SkTwoPointConicalGradient::TwoPointConicalGradientContext::TwoPointConicalGradientContext(
@@ -312,7 +312,7 @@ SkShader::GradientType SkTwoPointConicalGradient::asAGradient(
 SkFlattenable* SkTwoPointConicalGradient::CreateProc(SkReadBuffer& buffer) {
     DescriptorScope desc;
     if (!desc.unflatten(buffer)) {
-        return NULL;
+        return nullptr;
     }
     SkPoint c1 = buffer.readPoint();
     SkPoint c2 = buffer.readPoint();
@@ -360,30 +360,18 @@ void SkTwoPointConicalGradient::flatten(SkWriteBuffer& buffer) const {
 
 #include "SkGr.h"
 
-bool SkTwoPointConicalGradient::asFragmentProcessor(GrContext* context,
-                                                    const SkPaint& paint,
-                                                    const SkMatrix& viewM,
-                                                    const SkMatrix* localMatrix,
-                                                    GrColor* paintColor,
-                                                    GrProcessorDataManager* procDataManager,
-                                                    GrFragmentProcessor** fp)  const {
+const GrFragmentProcessor* SkTwoPointConicalGradient::asFragmentProcessor(
+                                                  GrContext* context,
+                                                  const SkMatrix& viewM,
+                                                  const SkMatrix* localMatrix,
+                                                  SkFilterQuality,
+                                                  GrProcessorDataManager* procDataManager) const {
     SkASSERT(context);
     SkASSERT(fPtsToUnit.isIdentity());
-
-    *fp = Gr2PtConicalGradientEffect::Create(context, procDataManager, *this, fTileMode,
-                                             localMatrix);
-    *paintColor = SkColor2GrColorJustAlpha(paint.getColor());
-    return true;
-}
-
-#else
-
-bool SkTwoPointConicalGradient::asFragmentProcessor(GrContext*, const SkPaint&,
-                                                    const SkMatrix&, const SkMatrix*,
-                                                    GrColor*, GrProcessorDataManager*,
-                                                    GrFragmentProcessor**)  const {
-    SkDEBUGFAIL("Should not call in GPU-less build");
-    return false;
+    SkAutoTUnref<const GrFragmentProcessor> inner(
+        Gr2PtConicalGradientEffect::Create(context, procDataManager, *this, fTileMode,
+                                            localMatrix));
+    return GrFragmentProcessor::MulOutputByInputAlpha(inner);
 }
 
 #endif

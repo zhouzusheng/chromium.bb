@@ -100,7 +100,7 @@ WebInspector.NetworkProjectDelegate.prototype = {
      */
     addFile: function(parentPath, name, url, contentProvider)
     {
-        return this.addContentProvider(parentPath, name, url, url, contentProvider);
+        return this.addContentProvider(parentPath, name, url, contentProvider);
     },
 
     __proto__: WebInspector.ContentProviderBasedProjectDelegate.prototype
@@ -410,6 +410,7 @@ WebInspector.NetworkProject.prototype = {
             cssModel.removeEventListener(WebInspector.CSSStyleModel.Events.StyleSheetAdded, this._styleSheetAdded, this);
             cssModel.removeEventListener(WebInspector.CSSStyleModel.Events.StyleSheetRemoved, this._styleSheetRemoved, this);
         }
+        delete target[WebInspector.NetworkProject._networkProjectSymbol];
     },
 
     _reset: function()

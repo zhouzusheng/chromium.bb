@@ -28,6 +28,44 @@
 
 namespace {
 
+// Implements SocketPerformanceWatcher for TCP sockets.
+class SocketPerformanceWatcherTCP : public net::SocketPerformanceWatcher {
+ public:
+  SocketPerformanceWatcherTCP() {}
+
+  ~SocketPerformanceWatcherTCP() override {
+    DCHECK(thread_checker_.CalledOnValidThread());
+  }
+
+  // net::SocketPerformanceWatcher implementation:
+  void OnUpdatedRTTAvailable(const base::TimeDelta& rtt) override {
+    DCHECK(thread_checker_.CalledOnValidThread());
+    // TODO(tbansal): Notify any relevant observers.
+  }
+
+ private:
+  base::ThreadChecker thread_checker_;
+};
+
+// Implements SocketPerformanceWatcher for UDP sockets.
+class SocketPerformanceWatcherUDP : public net::SocketPerformanceWatcher {
+ public:
+  SocketPerformanceWatcherUDP() {}
+
+  ~SocketPerformanceWatcherUDP() override {
+    DCHECK(thread_checker_.CalledOnValidThread());
+  }
+
+  // net::SocketPerformanceWatcher implementation:
+  void OnUpdatedRTTAvailable(const base::TimeDelta& rtt) override {
+    DCHECK(thread_checker_.CalledOnValidThread());
+    // TODO(tbansal): Notify any relevant observers.
+  }
+
+ private:
+  base::ThreadChecker thread_checker_;
+};
+
 // Default value of the half life (in seconds) for computing time weighted
 // percentiles. Every half life, the weight of all observations reduces by
 // half. Lowering the half life would reduce the weight of older values faster.
@@ -140,7 +178,7 @@ NetworkQualityEstimator::NetworkQualityEstimator(
       downstream_throughput_kbps_observations_(
           GetWeightMultiplierPerSecond(variation_params)),
       rtt_msec_observations_(GetWeightMultiplierPerSecond(variation_params)),
-      external_estimates_provider_(external_estimates_provider.Pass()) {
+      external_estimate_provider_(external_estimates_provider.Pass()) {
   static_assert(kMinRequestDurationMicroseconds > 0,
                 "Minimum request duration must be > 0");
   static_assert(kDefaultHalfLifeSeconds > 0,
@@ -154,8 +192,15 @@ NetworkQualityEstimator::NetworkQualityEstimator(
 
   ObtainOperatingParams(variation_params);
   NetworkChangeNotifier::AddConnectionTypeObserver(this);
-  if (external_estimates_provider_)
-    external_estimates_provider_->SetUpdatedEstimateDelegate(this);
+  if (external_estimate_provider_) {
+    RecordExternalEstimateProviderMetrics(
+        EXTERNAL_ESTIMATE_PROVIDER_STATUS_AVAILABLE);
+    external_estimate_provider_->SetUpdatedEstimateDelegate(this);
+    QueryExternalEstimateProvider();
+  } else {
+    RecordExternalEstimateProviderMetrics(
+        EXTERNAL_ESTIMATE_PROVIDER_STATUS_NOT_AVAILABLE);
+  }
   current_network_id_ = GetCurrentNetworkID();
   AddDefaultEstimates();
 }
@@ -172,6 +217,9 @@ void NetworkQualityEstimator::ObtainOperatingParams(
   for (size_t i = 0; i <= NetworkChangeNotifier::CONNECTION_LAST; ++i) {
     NetworkChangeNotifier::ConnectionType type =
         static_cast<NetworkChangeNotifier::ConnectionType>(i);
+    DCHECK_EQ(InvalidRTT(), default_observations_[i].rtt());
+    DCHECK_EQ(kInvalidThroughput,
+              default_observations_[i].downstream_throughput_kbps());
     int32_t variations_value = kMinimumRTTVariationParameterMsec - 1;
     // Name of the parameter that holds the RTT value for this connection type.
     std::string rtt_parameter_name =
@@ -205,16 +253,21 @@ void NetworkQualityEstimator::ObtainOperatingParams(
 void NetworkQualityEstimator::AddDefaultEstimates() {
   DCHECK(thread_checker_.CalledOnValidThread());
   if (default_observations_[current_network_id_.type].rtt() != InvalidRTT()) {
-    rtt_msec_observations_.AddObservation(Observation(
+    Observation rtt_observation(
         default_observations_[current_network_id_.type].rtt().InMilliseconds(),
-        base::TimeTicks::Now()));
+        base::TimeTicks::Now(), DEFAULT_FROM_PLATFORM);
+    rtt_msec_observations_.AddObservation(rtt_observation);
+    NotifyObserversOfRTT(rtt_observation);
   }
   if (default_observations_[current_network_id_.type]
           .downstream_throughput_kbps() != kInvalidThroughput) {
+    Observation throughput_observation(
+        default_observations_[current_network_id_.type]
+            .downstream_throughput_kbps(),
+        base::TimeTicks::Now(), DEFAULT_FROM_PLATFORM);
     downstream_throughput_kbps_observations_.AddObservation(
-        Observation(default_observations_[current_network_id_.type]
-                        .downstream_throughput_kbps(),
-                    base::TimeTicks::Now()));
+        throughput_observation);
+    NotifyObserversOfThroughput(throughput_observation);
   }
 }
 
@@ -262,8 +315,10 @@ void NetworkQualityEstimator::NotifyHeadersReceived(const URLRequest& request) {
           observed_rtt, peak_network_quality_.downstream_throughput_kbps());
     }
 
-    rtt_msec_observations_.AddObservation(
-        Observation(observed_rtt.InMilliseconds(), now));
+    Observation rtt_observation(observed_rtt.InMilliseconds(), now,
+                                URL_REQUEST);
+    rtt_msec_observations_.AddObservation(rtt_observation);
+    NotifyObserversOfRTT(rtt_observation);
 
     // Compare the RTT observation with the estimated value and record it.
     if (estimated_median_network_quality_.rtt() != InvalidRTT()) {
@@ -330,8 +385,33 @@ void NetworkQualityEstimator::NotifyRequestCompleted(
     peak_network_quality_ =
         NetworkQuality(peak_network_quality_.rtt(), downstream_kbps_as_integer);
 
+  Observation throughput_observation(downstream_kbps_as_integer, now,
+                                     URL_REQUEST);
   downstream_throughput_kbps_observations_.AddObservation(
-      Observation(downstream_kbps_as_integer, now));
+      throughput_observation);
+  NotifyObserversOfThroughput(throughput_observation);
+}
+
+void NetworkQualityEstimator::AddRTTObserver(RTTObserver* rtt_observer) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  rtt_observer_list_.AddObserver(rtt_observer);
+}
+
+void NetworkQualityEstimator::RemoveRTTObserver(RTTObserver* rtt_observer) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  rtt_observer_list_.RemoveObserver(rtt_observer);
+}
+
+void NetworkQualityEstimator::AddThroughputObserver(
+    ThroughputObserver* throughput_observer) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  throughput_observer_list_.AddObserver(throughput_observer);
+}
+
+void NetworkQualityEstimator::RemoveThroughputObserver(
+    ThroughputObserver* throughput_observer) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  throughput_observer_list_.RemoveObserver(throughput_observer);
 }
 
 void NetworkQualityEstimator::RecordRTTUMA(int32_t estimated_value_msec,
@@ -379,6 +459,12 @@ bool NetworkQualityEstimator::RequestProvidesUsefulObservations(
          !request.response_info().response_time.is_null() &&
          !request.was_cached() &&
          request.creation_time() >= last_connection_change_;
+}
+
+void NetworkQualityEstimator::RecordExternalEstimateProviderMetrics(
+    NQEExternalEstimateProviderStatus status) const {
+  UMA_HISTOGRAM_ENUMERATION("NQE.ExternalEstimateProviderStatus", status,
+                            EXTERNAL_ESTIMATE_PROVIDER_STATUS_BOUNDARY);
 }
 
 void NetworkQualityEstimator::OnConnectionTypeChanged(
@@ -500,6 +586,8 @@ void NetworkQualityEstimator::OnConnectionTypeChanged(
   rtt_msec_observations_.Clear();
   current_network_id_ = GetCurrentNetworkID();
 
+  QueryExternalEstimateProvider();
+
   // Read any cached estimates for the new network. If cached estimates are
   // unavailable, add the default estimates.
   if (!ReadCachedNetworkQualityEstimate())
@@ -549,8 +637,9 @@ bool NetworkQualityEstimator::GetRecentMedianDownlinkThroughputKbps(
 }
 
 NetworkQualityEstimator::Observation::Observation(int32_t value,
-                                                  base::TimeTicks timestamp)
-    : value(value), timestamp(timestamp) {
+                                                  base::TimeTicks timestamp,
+                                                  ObservationSource source)
+    : value(value), timestamp(timestamp), source(source) {
   DCHECK_GE(value, 0);
   DCHECK(!timestamp.is_null());
 }
@@ -765,17 +854,68 @@ bool NetworkQualityEstimator::ReadCachedNetworkQualityEstimate() {
   DCHECK_NE(InvalidRTT(), network_quality.rtt());
   DCHECK_NE(kInvalidThroughput, network_quality.downstream_throughput_kbps());
 
-  downstream_throughput_kbps_observations_.AddObservation(Observation(
-      network_quality.downstream_throughput_kbps(), base::TimeTicks::Now()));
-  rtt_msec_observations_.AddObservation(Observation(
-      network_quality.rtt().InMilliseconds(), base::TimeTicks::Now()));
+  Observation througphput_observation(
+      network_quality.downstream_throughput_kbps(), base::TimeTicks::Now(),
+      CACHED_ESTIMATE);
+  downstream_throughput_kbps_observations_.AddObservation(
+      througphput_observation);
+  NotifyObserversOfThroughput(througphput_observation);
+
+  Observation rtt_observation(network_quality.rtt().InMilliseconds(),
+                              base::TimeTicks::Now(), CACHED_ESTIMATE);
+  rtt_msec_observations_.AddObservation(rtt_observation);
+  NotifyObserversOfRTT(rtt_observation);
+
   return true;
 }
 
 void NetworkQualityEstimator::OnUpdatedEstimateAvailable() {
   DCHECK(thread_checker_.CalledOnValidThread());
-  DCHECK(external_estimates_provider_);
-  // TODO(tbansal): Query provider for the recent value.
+  DCHECK(external_estimate_provider_);
+
+  RecordExternalEstimateProviderMetrics(
+      EXTERNAL_ESTIMATE_PROVIDER_STATUS_CALLBACK);
+  QueryExternalEstimateProvider();
+}
+
+void NetworkQualityEstimator::QueryExternalEstimateProvider() {
+  DCHECK(thread_checker_.CalledOnValidThread());
+
+  if (!external_estimate_provider_)
+    return;
+  RecordExternalEstimateProviderMetrics(
+      EXTERNAL_ESTIMATE_PROVIDER_STATUS_QUERIED);
+
+  base::TimeDelta time_since_last_update;
+
+  // Request a new estimate if estimate is not available, or if the available
+  // estimate is not fresh.
+  if (!external_estimate_provider_->GetTimeSinceLastUpdate(
+          &time_since_last_update) ||
+      time_since_last_update >
+          base::TimeDelta::FromMilliseconds(
+              kExternalEstimateProviderFreshnessDurationMsec)) {
+    // Request the external estimate provider for updated estimates. When the
+    // updates estimates are available, OnUpdatedEstimateAvailable() will be
+    // called.
+    external_estimate_provider_->Update();
+    return;
+  }
+
+  RecordExternalEstimateProviderMetrics(
+      EXTERNAL_ESTIMATE_PROVIDER_STATUS_QUERY_SUCCESSFUL);
+  base::TimeDelta rtt;
+  if (external_estimate_provider_->GetRTT(&rtt)) {
+    rtt_msec_observations_.AddObservation(Observation(
+        rtt.InMilliseconds(), base::TimeTicks::Now(), EXTERNAL_ESTIMATE));
+  }
+
+  int32_t downstream_throughput_kbps;
+  if (external_estimate_provider_->GetDownstreamThroughputKbps(
+          &downstream_throughput_kbps)) {
+    downstream_throughput_kbps_observations_.AddObservation(Observation(
+        downstream_throughput_kbps, base::TimeTicks::Now(), EXTERNAL_ESTIMATE));
+  }
 }
 
 void NetworkQualityEstimator::CacheNetworkQualityEstimate() {
@@ -815,6 +955,35 @@ void NetworkQualityEstimator::CacheNetworkQualityEstimate() {
       current_network_id_, CachedNetworkQuality(network_quality)));
   DCHECK_LE(cached_network_qualities_.size(),
             static_cast<size_t>(kMaximumNetworkQualityCacheSize));
+}
+
+scoped_ptr<SocketPerformanceWatcher>
+NetworkQualityEstimator::CreateTCPSocketPerformanceWatcher() const {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  return scoped_ptr<SocketPerformanceWatcher>(
+      new SocketPerformanceWatcherTCP());
+}
+
+scoped_ptr<SocketPerformanceWatcher>
+NetworkQualityEstimator::CreateUDPSocketPerformanceWatcher() const {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  return scoped_ptr<SocketPerformanceWatcher>(
+      new SocketPerformanceWatcherUDP());
+}
+
+void NetworkQualityEstimator::NotifyObserversOfRTT(
+    const Observation& observation) {
+  FOR_EACH_OBSERVER(RTTObserver, rtt_observer_list_,
+                    OnRTTObservation(observation.value, observation.timestamp,
+                                     observation.source));
+}
+
+void NetworkQualityEstimator::NotifyObserversOfThroughput(
+    const Observation& observation) {
+  FOR_EACH_OBSERVER(
+      ThroughputObserver, throughput_observer_list_,
+      OnThroughputObservation(observation.value, observation.timestamp,
+                              observation.source));
 }
 
 NetworkQualityEstimator::CachedNetworkQuality::CachedNetworkQuality(

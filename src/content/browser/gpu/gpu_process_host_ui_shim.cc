@@ -66,45 +66,6 @@ void StopGpuProcessOnIO(int host_id) {
     host->StopGpuProcess();
 }
 
-class ScopedSendOnIOThread {
- public:
-  ScopedSendOnIOThread(int host_id, IPC::Message* msg)
-      : host_id_(host_id),
-        msg_(msg),
-        cancelled_(false) {
-  }
-
-  ~ScopedSendOnIOThread() {
-    if (!cancelled_) {
-      BrowserThread::PostTask(BrowserThread::IO,
-                              FROM_HERE,
-                              base::Bind(&SendOnIOThreadTask,
-                                         host_id_,
-                                         msg_.release()));
-    }
-  }
-
-  void Cancel() { cancelled_ = true; }
-
- private:
-  int host_id_;
-  scoped_ptr<IPC::Message> msg_;
-  bool cancelled_;
-};
-
-RenderWidgetHostViewBase* GetRenderWidgetHostViewFromSurfaceID(
-    int surface_id) {
-  int render_process_id = 0;
-  int render_widget_id = 0;
-  if (!GpuSurfaceTracker::Get()->GetRenderWidgetIDForSurface(
-        surface_id, &render_process_id, &render_widget_id))
-    return NULL;
-
-  RenderWidgetHost* host =
-      RenderWidgetHost::FromID(render_process_id, render_widget_id);
-  return host ? static_cast<RenderWidgetHostViewBase*>(host->GetView()) : NULL;
-}
-
 }  // namespace
 
 void RouteToGpuProcessHostUIShimTask(int host_id, const IPC::Message& msg) {
@@ -231,8 +192,6 @@ bool GpuProcessHostUIShim::OnControlMessageReceived(
   IPC_BEGIN_MESSAGE_MAP(GpuProcessHostUIShim, message)
     IPC_MESSAGE_HANDLER(GpuHostMsg_OnLogMessage,
                         OnLogMessage)
-    IPC_MESSAGE_HANDLER(GpuHostMsg_AcceleratedSurfaceInitialized,
-                        OnAcceleratedSurfaceInitialized)
 #if defined(OS_MACOSX)
     IPC_MESSAGE_HANDLER(GpuHostMsg_AcceleratedSurfaceBuffersSwapped,
                         OnAcceleratedSurfaceBuffersSwapped)
@@ -267,15 +226,6 @@ void GpuProcessHostUIShim::OnGraphicsInfoCollected(
   GpuDataManagerImpl::GetInstance()->UpdateGpuInfo(gpu_info);
 }
 
-void GpuProcessHostUIShim::OnAcceleratedSurfaceInitialized(int32 surface_id,
-                                                           int32 route_id) {
-  RenderWidgetHostViewBase* view =
-      GetRenderWidgetHostViewFromSurfaceID(surface_id);
-  if (!view)
-    return;
-  view->AcceleratedSurfaceInitialized(route_id);
-}
-
 #if defined(OS_MACOSX)
 void GpuProcessHostUIShim::OnAcceleratedSurfaceBuffersSwapped(
     const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params) {
@@ -289,7 +239,6 @@ void GpuProcessHostUIShim::OnAcceleratedSurfaceBuffersSwapped(
   // On Mac with delegated rendering, accelerated surfaces are not necessarily
   // associated with a RenderWidgetHostViewBase.
   AcceleratedSurfaceMsg_BufferPresented_Params ack_params;
-  DCHECK(IsDelegatedRendererEnabled());
 
   // If the frame was intended for an NSView that the gfx::AcceleratedWidget is
   // no longer attached to, do not pass the frame along to the widget. Just ack

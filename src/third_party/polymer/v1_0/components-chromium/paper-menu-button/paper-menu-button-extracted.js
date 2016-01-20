@@ -1,4 +1,5 @@
-(function() {
+
+  (function() {
     'use strict';
 
     var PaperMenuButton = Polymer({
@@ -29,7 +30,8 @@
         opened: {
           type: Boolean,
           value: false,
-          notify: true
+          notify: true,
+          observer: '_openedChanged'
         },
 
         /**
@@ -87,7 +89,7 @@
          * Set to true to disable automatically closing the dropdown after
          * a selection has been made.
          */
-        ignoreActivate: {
+        ignoreSelect: {
           type: Boolean,
           value: false
         },
@@ -150,6 +152,14 @@
               }
             }];
           }
+        },
+
+        /**
+         * This is the element intended to be bound as the focus target
+         * for the `iron-dropdown` contained by `paper-menu-button`.
+         */
+        _dropdownContent: {
+          type: Object
         }
       },
 
@@ -159,7 +169,14 @@
       },
 
       listeners: {
-        'iron-activate': '_onIronActivate'
+        'iron-select': '_onIronSelect'
+      },
+
+      /**
+       * The content element that is contained by the menu button, if any.
+       */
+      get contentElement() {
+        return Polymer.dom(this.$.content).getDistributedNodes()[0];
       },
 
       /**
@@ -182,14 +199,14 @@
       },
 
       /**
-       * When an `iron-activate` event is received, the dropdown should
+       * When an `iron-select` event is received, the dropdown should
        * automatically close on the assumption that a value has been chosen.
        *
        * @param {CustomEvent} event A CustomEvent instance with type
-       * set to `"iron-activate"`.
+       * set to `"iron-select"`.
        */
-      _onIronActivate: function(event) {
-        if (!this.ignoreActivate) {
+      _onIronSelect: function(event) {
+        if (!this.ignoreSelect) {
           this.close();
         }
       },
@@ -203,6 +220,12 @@
        */
       _openedChanged: function(opened, oldOpened) {
         if (opened) {
+          // TODO(cdata): Update this when we can measure changes in distributed
+          // children in an idiomatic way.
+          // We poke this property in case the element has changed. This will
+          // cause the focus target for the `iron-dropdown` to be updated as
+          // necessary:
+          this._dropdownContent = this.contentElement;
           this.fire('paper-dropdown-open');
         } else if (oldOpened != null) {
           this.fire('paper-dropdown-close');

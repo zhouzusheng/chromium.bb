@@ -133,6 +133,8 @@
  * OTHER ENTITY BASED ON INFRINGEMENT OF INTELLECTUAL PROPERTY RIGHTS OR
  * OTHERWISE. */
 
+#include <openssl/ssl.h>
+
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -332,7 +334,7 @@ int ssl3_final_finish_mac(SSL *s, const char *sender, int len, uint8_t *p) {
 static int ssl3_handshake_mac(SSL *s, int md_nid, const char *sender, int len,
                               uint8_t *p) {
   unsigned int ret;
-  int npad, n;
+  size_t npad, n;
   unsigned int i;
   uint8_t md_buf[EVP_MAX_MD_SIZE];
   EVP_MD_CTX ctx;
@@ -355,9 +357,6 @@ static int ssl3_handshake_mac(SSL *s, int md_nid, const char *sender, int len,
   }
 
   n = EVP_MD_CTX_size(&ctx);
-  if (n < 0) {
-    return 0;
-  }
 
   npad = (48 / n) * n;
   if (sender != NULL) {

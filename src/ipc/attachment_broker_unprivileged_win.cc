@@ -20,13 +20,18 @@ bool AttachmentBrokerUnprivilegedWin::SendAttachmentToProcess(
     const BrokerableAttachment* attachment,
     base::ProcessId destination_process) {
   switch (attachment->GetBrokerableType()) {
-    case BrokerableAttachment::WIN_HANDLE:
+    case BrokerableAttachment::WIN_HANDLE: {
       const internal::HandleAttachmentWin* handle_attachment =
           static_cast<const internal::HandleAttachmentWin*>(attachment);
       internal::HandleAttachmentWin::WireFormat format =
           handle_attachment->GetWireFormat(destination_process);
       return get_sender()->Send(
           new AttachmentBrokerMsg_DuplicateWinHandle(format));
+    }
+    case BrokerableAttachment::MACH_PORT:
+    case BrokerableAttachment::PLACEHOLDER:
+      NOTREACHED();
+      return false;
   }
   return false;
 }
@@ -44,12 +49,15 @@ bool AttachmentBrokerUnprivilegedWin::OnMessageReceived(const Message& msg) {
 void AttachmentBrokerUnprivilegedWin::OnWinHandleHasBeenDuplicated(
     const IPC::internal::HandleAttachmentWin::WireFormat& wire_format) {
   // The IPC message was intended for a different process. Ignore it.
-  if (wire_format.destination_process != base::Process::Current().Pid())
+  if (wire_format.destination_process != base::Process::Current().Pid()) {
+    LogError(WRONG_DESTINATION);
     return;
+  }
 
   scoped_refptr<BrokerableAttachment> attachment(
       new IPC::internal::HandleAttachmentWin(wire_format));
   HandleReceivedAttachment(attachment);
+  LogError(SUCCESS);
 }
 
 }  // namespace IPC

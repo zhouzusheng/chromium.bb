@@ -4,10 +4,6 @@
 
 #include "content/browser/service_worker/embedded_worker_instance.h"
 
-#include <algorithm>
-#include <string>
-#include <utility>
-
 #include "base/bind_helpers.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/threading/non_thread_safe.h"
@@ -28,14 +24,6 @@
 namespace content {
 
 namespace {
-
-// Functor to sort by the .second element of a struct.
-struct SecondGreater {
-  template <typename Value>
-  bool operator()(const Value& lhs, const Value& rhs) {
-    return lhs.second > rhs.second;
-  }
-};
 
 void NotifyWorkerReadyForInspectionOnUI(int worker_process_id,
                                         int worker_route_id) {
@@ -142,11 +130,12 @@ class EmbeddedWorkerInstance::DevToolsProxy : public base::NonThreadSafe {
 };
 
 EmbeddedWorkerInstance::~EmbeddedWorkerInstance() {
-  DCHECK(status_ == STOPPING || status_ == STOPPED);
+  DCHECK(status_ == STOPPING || status_ == STOPPED) << status_;
   devtools_proxy_.reset();
   if (context_ && process_id_ != -1)
     context_->process_manager()->ReleaseWorkerProcess(embedded_worker_id_);
-  registry_->RemoveWorker(process_id_, embedded_worker_id_);
+  if (registry_->GetWorker(embedded_worker_id_))
+    registry_->RemoveWorker(process_id_, embedded_worker_id_);
 }
 
 void EmbeddedWorkerInstance::Start(int64 service_worker_version_id,
@@ -362,8 +351,21 @@ void EmbeddedWorkerInstance::OnReadyForInspection() {
     devtools_proxy_->NotifyWorkerReadyForInspection();
 }
 
-void EmbeddedWorkerInstance::OnScriptLoaded(int thread_id) {
+void EmbeddedWorkerInstance::OnScriptReadStarted() {
+  starting_phase_ = SCRIPT_READ_STARTED;
+}
+
+void EmbeddedWorkerInstance::OnScriptReadFinished() {
+  starting_phase_ = SCRIPT_READ_FINISHED;
+}
+
+void EmbeddedWorkerInstance::OnScriptLoaded() {
+  FOR_EACH_OBSERVER(Listener, listener_list_, OnScriptLoaded());
   starting_phase_ = SCRIPT_LOADED;
+}
+
+void EmbeddedWorkerInstance::OnThreadStarted(int thread_id) {
+  starting_phase_ = THREAD_STARTED;
   if (!start_timing_.is_null()) {
     if (network_accessed_for_script_) {
       UMA_HISTOGRAM_TIMES("EmbeddedWorkerInstance.ScriptLoadWithNetworkAccess",
@@ -378,7 +380,7 @@ void EmbeddedWorkerInstance::OnScriptLoaded(int thread_id) {
     start_timing_ = base::TimeTicks::Now();
   }
   thread_id_ = thread_id;
-  FOR_EACH_OBSERVER(Listener, listener_list_, OnScriptLoaded());
+  FOR_EACH_OBSERVER(Listener, listener_list_, OnThreadStarted());
 
   mojo::ServiceProviderPtr exposed_services;
   service_registry_->Bind(GetProxy(&exposed_services));
@@ -394,6 +396,7 @@ void EmbeddedWorkerInstance::OnScriptLoaded(int thread_id) {
 }
 
 void EmbeddedWorkerInstance::OnScriptLoadFailed() {
+  FOR_EACH_OBSERVER(Listener, listener_list_, OnScriptLoadFailed());
 }
 
 void EmbeddedWorkerInstance::OnScriptEvaluated(bool success) {
@@ -432,6 +435,11 @@ void EmbeddedWorkerInstance::OnDetached() {
   Status old_status = status_;
   ReleaseProcess();
   FOR_EACH_OBSERVER(Listener, listener_list_, OnDetached(old_status));
+}
+
+void EmbeddedWorkerInstance::Detach() {
+  registry_->RemoveWorker(process_id_, embedded_worker_id_);
+  OnDetached();
 }
 
 bool EmbeddedWorkerInstance::OnMessageReceived(const IPC::Message& message) {
@@ -546,6 +554,12 @@ std::string EmbeddedWorkerInstance::StartingPhaseToString(StartingPhase phase) {
       return "Script loaded";
     case SCRIPT_EVALUATED:
       return "Script evaluated";
+    case THREAD_STARTED:
+      return "Thread started";
+    case SCRIPT_READ_STARTED:
+      return "Script read started";
+    case SCRIPT_READ_FINISHED:
+      return "Script read finished";
     case STARTING_PHASE_MAX_VALUE:
       NOTREACHED();
   }

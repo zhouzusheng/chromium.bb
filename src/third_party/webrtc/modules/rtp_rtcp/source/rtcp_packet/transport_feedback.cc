@@ -13,6 +13,7 @@
 #include "webrtc/base/checks.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/modules/rtp_rtcp/source/byte_io.h"
+#include "webrtc/modules/rtp_rtcp/source/rtcp_utility.h"
 
 namespace webrtc {
 namespace rtcp {
@@ -133,13 +134,13 @@ class OneBitVectorChunk : public PacketStatusChunk {
     buffer[0] = 0x80u;
     for (int i = 0; i < kSymbolsInFirstByte; ++i) {
       uint8_t encoded_symbol = EncodeSymbol(symbols_[i]);
-      DCHECK_LE(encoded_symbol, 1u);
+      RTC_DCHECK_LE(encoded_symbol, 1u);
       buffer[0] |= encoded_symbol << (kSymbolsInFirstByte - (i + 1));
     }
     buffer[1] = 0x00u;
     for (int i = 0; i < kSymbolsInSecondByte; ++i) {
       uint8_t encoded_symbol = EncodeSymbol(symbols_[i + kSymbolsInFirstByte]);
-      DCHECK_LE(encoded_symbol, 1u);
+      RTC_DCHECK_LE(encoded_symbol, 1u);
       buffer[1] |= encoded_symbol << (kSymbolsInSecondByte - (i + 1));
     }
   }
@@ -247,7 +248,7 @@ class RunLengthChunk : public PacketStatusChunk {
  public:
   RunLengthChunk(TransportFeedback::StatusSymbol symbol, size_t size)
       : symbol_(symbol), size_(size) {
-    DCHECK_LE(size, 0x1FFFu);
+    RTC_DCHECK_LE(size, 0x1FFFu);
   }
 
   virtual ~RunLengthChunk() {}
@@ -266,7 +267,7 @@ class RunLengthChunk : public PacketStatusChunk {
   }
 
   static RunLengthChunk* ParseFrom(const uint8_t* buffer) {
-    DCHECK_EQ(0, buffer[0] & 0x80);
+    RTC_DCHECK_EQ(0, buffer[0] & 0x80);
     TransportFeedback::StatusSymbol symbol =
         DecodeSymbol((buffer[0] >> 5) & 0x03);
     uint16_t count = (static_cast<uint16_t>(buffer[0] & 0x1F) << 8) | buffer[1];
@@ -304,10 +305,17 @@ void TransportFeedback::WithMediaSourceSsrc(uint32_t ssrc) {
   media_source_ssrc_ = ssrc;
 }
 
+uint32_t TransportFeedback::GetPacketSenderSsrc() const {
+  return packet_sender_ssrc_;
+}
+
+uint32_t TransportFeedback::GetMediaSourceSsrc() const {
+  return media_source_ssrc_;
+}
 void TransportFeedback::WithBase(uint16_t base_sequence,
                                  int64_t ref_timestamp_us) {
-  DCHECK_EQ(-1, base_seq_);
-  DCHECK_NE(-1, ref_timestamp_us);
+  RTC_DCHECK_EQ(-1, base_seq_);
+  RTC_DCHECK_NE(-1, ref_timestamp_us);
   base_seq_ = base_sequence;
   last_seq_ = base_sequence;
   base_time_ = ref_timestamp_us / kBaseScaleFactor;
@@ -320,7 +328,7 @@ void TransportFeedback::WithFeedbackSequenceNumber(uint8_t feedback_sequence) {
 
 bool TransportFeedback::WithReceivedPacket(uint16_t sequence_number,
                                            int64_t timestamp) {
-  DCHECK_NE(-1, base_seq_);
+  RTC_DCHECK_NE(-1, base_seq_);
   int64_t seq = Unwrap(sequence_number);
   if (seq != base_seq_ && seq <= last_seq_)
     return false;
@@ -439,7 +447,7 @@ bool TransportFeedback::Encode(StatusSymbol symbol) {
       return true;
     } else {
       // New symbol does not match what's already in symbol_vec.
-      if (first_symbol_cardinality_ > capacity) {
+      if (first_symbol_cardinality_ >= capacity) {
         // Symbols in symbol_vec can only be RLE-encoded. Emit the RLE-chunk
         // and re-add input. symbol_vec is then guaranteed to have room for the
         // symbol, so recursion cannot continue.
@@ -512,7 +520,7 @@ void TransportFeedback::EmitVectorChunk() {
 }
 
 void TransportFeedback::EmitRunLengthChunk() {
-  DCHECK_GE(first_symbol_cardinality_, symbol_vec_.size());
+  RTC_DCHECK_GE(first_symbol_cardinality_, symbol_vec_.size());
   status_chunks_.push_back(
       new RunLengthChunk(symbol_vec_.front(), first_symbol_cardinality_));
   symbol_vec_.clear();
@@ -526,12 +534,8 @@ uint16_t TransportFeedback::GetBaseSequence() const {
   return base_seq_;
 }
 
-int32_t TransportFeedback::GetBaseTime() const {
-  return static_cast<int32_t>(base_time_ & 0x00FFFFFF);
-}
-
 int64_t TransportFeedback::GetBaseTimeUs() const {
-  return GetBaseTime() * kBaseScaleFactor;
+  return base_time_ * kBaseScaleFactor;
 }
 
 std::vector<TransportFeedback::StatusSymbol>
@@ -581,17 +585,17 @@ bool TransportFeedback::Create(uint8_t* packet,
   ByteWriter<uint32_t>::WriteBigEndian(&packet[*position], media_source_ssrc_);
   *position += 4;
 
-  DCHECK_LE(base_seq_, 0xFFFF);
+  RTC_DCHECK_LE(base_seq_, 0xFFFF);
   ByteWriter<uint16_t>::WriteBigEndian(&packet[*position], base_seq_);
   *position += 2;
 
   int64_t status_count = last_seq_ - base_seq_ + 1;
-  DCHECK_LE(status_count, 0xFFFF);
+  RTC_DCHECK_LE(status_count, 0xFFFF);
   ByteWriter<uint16_t>::WriteBigEndian(&packet[*position], status_count);
   *position += 2;
 
   ByteWriter<int32_t, 3>::WriteBigEndian(&packet[*position],
-                                         static_cast<int16_t>(base_time_));
+                                         static_cast<int32_t>(base_time_));
   *position += 3;
 
   packet[(*position)++] = feedback_seq_;
@@ -659,52 +663,21 @@ rtc::scoped_ptr<TransportFeedback> TransportFeedback::ParseFrom(
     return nullptr;
   }
 
-  size_t packet_size_words =
-      ByteReader<uint16_t>::ReadBigEndian(&buffer[2]) + 1;
-  if (length < packet_size_words * 4) {
-    LOG(LS_WARNING) << "Buffer too small (" << length
-                    << " bytes) to fit a FeedbackPacket of "
-                    << packet_size_words << " 32bit words.";
+  RTCPUtility::RtcpCommonHeader header;
+  if (!RtcpParseCommonHeader(buffer, length, &header))
     return nullptr;
-  }
 
-  // TODO(sprang): Break this out and generalize when implementing parsing of
-  // other RtcpPacket subclasses.
-
-  const uint8_t kRtcpVersion = 2;
-  uint8_t version = buffer[0] >> 6;
-  if (version != kRtcpVersion) {
-    LOG(LS_WARNING) << "Invalid RTCP header: Version must be " << kRtcpVersion
-                    << " but was " << version;
-    return nullptr;
-  }
-
-  bool has_padding = (buffer[0] & 0x20) != 0;
-
-  uint8_t format = buffer[0] & 0x1F;
-  if (format != kFeedbackMessageType) {
+  if (header.count_or_format != kFeedbackMessageType) {
     LOG(LS_WARNING) << "Invalid RTCP header: FMT must be "
-                    << kFeedbackMessageType << " but was " << format;
+                    << kFeedbackMessageType << " but was "
+                    << header.count_or_format;
     return nullptr;
   }
 
-  uint8_t payload_type = buffer[1];
-  if (payload_type != kPayloadType) {
+  if (header.packet_type != kPayloadType) {
     LOG(LS_WARNING) << "Invalid RTCP header: PT must be " << kPayloadType
-                    << " but was " << payload_type;
+                    << " but was " << header.packet_type;
     return nullptr;
-  }
-
-  size_t payload_size = packet_size_words * 4;
-  if (has_padding) {
-    uint8_t padding_bytes = buffer[payload_size - 1];
-    if (payload_size < kMinSizeBytes + padding_bytes) {
-      LOG(LS_WARNING) << "Invalid RTCP header: Too many padding bytes ("
-                      << padding_bytes << ") for a packet size of "
-                      << payload_size << "bytes.";
-      return nullptr;
-    }
-    payload_size -= padding_bytes;
   }
 
   packet->packet_sender_ssrc_ = ByteReader<uint32_t>::ReadBigEndian(&buffer[4]);
@@ -714,6 +687,7 @@ rtc::scoped_ptr<TransportFeedback> TransportFeedback::ParseFrom(
   packet->base_time_ = ByteReader<int32_t, 3>::ReadBigEndian(&buffer[16]);
   packet->feedback_seq_ = buffer[19];
   size_t index = 20;
+  const size_t end_index = kHeaderLength + header.payload_size_bytes;
 
   if (num_packets == 0) {
     LOG(LS_WARNING) << "Empty feedback messages not allowed.";
@@ -723,7 +697,7 @@ rtc::scoped_ptr<TransportFeedback> TransportFeedback::ParseFrom(
 
   size_t packets_read = 0;
   while (packets_read < num_packets) {
-    if (index + 2 > payload_size) {
+    if (index + 2 > end_index) {
       LOG(LS_WARNING) << "Buffer overflow while parsing packet.";
       return nullptr;
     }
@@ -740,12 +714,12 @@ rtc::scoped_ptr<TransportFeedback> TransportFeedback::ParseFrom(
 
   std::vector<StatusSymbol> symbols = packet->GetStatusVector();
 
-  DCHECK_EQ(num_packets, symbols.size());
+  RTC_DCHECK_EQ(num_packets, symbols.size());
 
   for (StatusSymbol symbol : symbols) {
     switch (symbol) {
       case StatusSymbol::kReceivedSmallDelta:
-        if (index + 1 > payload_size) {
+        if (index + 1 > end_index) {
           LOG(LS_WARNING) << "Buffer overflow while parsing packet.";
           return nullptr;
         }
@@ -753,7 +727,7 @@ rtc::scoped_ptr<TransportFeedback> TransportFeedback::ParseFrom(
         ++index;
         break;
       case StatusSymbol::kReceivedLargeDelta:
-        if (index + 2 > payload_size) {
+        if (index + 2 > end_index) {
           LOG(LS_WARNING) << "Buffer overflow while parsing packet.";
           return nullptr;
         }
@@ -766,8 +740,8 @@ rtc::scoped_ptr<TransportFeedback> TransportFeedback::ParseFrom(
     }
   }
 
-  DCHECK_GE(index, payload_size - 3);
-  DCHECK_LE(index, payload_size);
+  RTC_DCHECK_GE(index, end_index - 3);
+  RTC_DCHECK_LE(index, end_index);
 
   return packet;
 }

@@ -45,6 +45,7 @@
 #include "public/platform/WebScheduler.h"
 #include "public/platform/WebThread.h"
 #include "public/platform/WebTraceLocation.h"
+#include "wtf/DataLog.h"
 #include "wtf/Partitions.h"
 #include "wtf/ThreadingPrimitives.h"
 #if ENABLE(GC_PROFILING)
@@ -97,8 +98,6 @@ ThreadState::ThreadState()
     , m_sweepForbidden(false)
     , m_noAllocationCount(0)
     , m_gcForbiddenCount(0)
-    , m_persistentAllocated(0)
-    , m_persistentFreed(0)
     , m_vectorBackingHeapIndex(Vector1HeapIndex)
     , m_currentHeapAges(0)
     , m_isTerminating(false)
@@ -446,7 +445,7 @@ void ThreadState::snapshot()
 
     Vector<String> classNameVector(info.classTags.size());
     for (SnapshotInfo::ClassTagMap::iterator it = info.classTags.begin(); it != info.classTags.end(); ++it)
-        classNameVector[it->value] = it->key->m_className;
+        classNameVector[it->value] = it->key->className();
 
     size_t liveSize = 0;
     size_t deadSize = 0;
@@ -558,131 +557,148 @@ CrossThreadPersistentRegion& ThreadState::crossThreadPersistentRegion()
     return persistentRegion;
 }
 
-void ThreadState::updatePersistentCounters()
-{
-    if (m_persistentAllocated >= m_persistentFreed)
-        Heap::increasePersistentCount(m_persistentAllocated - m_persistentFreed);
-    else
-        Heap::decreasePersistentCount(m_persistentFreed - m_persistentAllocated);
-    Heap::increaseCollectedPersistentCount(m_persistentFreed);
-    m_persistentAllocated = 0;
-    m_persistentFreed = 0;
-}
-
-size_t ThreadState::currentObjectSize()
+size_t ThreadState::totalMemorySize()
 {
     return Heap::allocatedObjectSize() + Heap::markedObjectSize() + WTF::Partitions::totalSizeOfCommittedPages();
 }
 
-size_t ThreadState::estimatedLiveObjectSize()
+size_t ThreadState::estimatedLiveSize(size_t estimationBaseSize, size_t sizeAtLastGC)
 {
-    if (Heap::persistentCountAtLastGC() == 0) {
+    if (Heap::wrapperCountAtLastGC() == 0) {
         // We'll reach here only before hitting the first GC.
         return 0;
     }
 
-    // We estimate the live object size with the following equations.
-    //
-    //   heapSizePerPersistent = (marked(t0, t1) + partitionAlloc(t0)) / persistentCount(t0)
-    //   estimatedLiveObjectSize = marked(t0, t) + allocated(t0, t) + partitionAlloc(t) - heapSizePerPersistent * collectedPersistentCount(t0, t)
-    //
-    // t0:                 The time when the last collectGarbage runs.
-    // t1:                 The time when the last completeSweep runs.
-    // t:                  The current time.
-    // marked(t0, t):      The size of marked objects between t0 and t.
-    // allocated(t0, t):   The size of newly allocated objects between t0 and t.
-    // persistentCount(t): The number of existing persistent handles at t.
-    // collectedPersistentCount(t0, t):
-    //                     The number of persistent handles collected between
-    //                     t0 and t.
-    // partitionAlloc(t):  The size of allocated memory in PartitionAlloc at t.
-    size_t heapSizeRetainedByCollectedPersistents = static_cast<size_t>(1.0 * (Heap::markedObjectSizeAtLastCompleteSweep() + Heap::partitionAllocSizeAtLastGC()) / Heap::persistentCountAtLastGC() * Heap::collectedPersistentCount());
-    size_t currentHeapSize = currentObjectSize();
-    if (currentHeapSize < heapSizeRetainedByCollectedPersistents)
+    // (estimated size) = (estimation base size) - (heap size at the last GC) / (# of persistent handles at the last GC) * (# of persistent handles collected since the last GC);
+    size_t sizeRetainedByCollectedPersistents = static_cast<size_t>(1.0 * sizeAtLastGC / Heap::wrapperCountAtLastGC() * Heap::collectedWrapperCount());
+    if (estimationBaseSize < sizeRetainedByCollectedPersistents)
         return 0;
-    return currentHeapSize - heapSizeRetainedByCollectedPersistents;
+    return estimationBaseSize - sizeRetainedByCollectedPersistents;
 }
 
 double ThreadState::heapGrowingRate()
 {
-    size_t currentSize = currentObjectSize();
-    size_t estimatedSize = estimatedLiveObjectSize();
-    // If the estimatedSize is 0, we set a very high growing rate
-    // to trigger a GC.
+    size_t currentSize = Heap::allocatedObjectSize() + Heap::markedObjectSize();
+    size_t estimatedSize = estimatedLiveSize(Heap::markedObjectSizeAtLastCompleteSweep(), Heap::markedObjectSizeAtLastCompleteSweep());
+
+    // If the estimatedSize is 0, we set a high growing rate to trigger a GC.
     double growingRate = estimatedSize > 0 ? 1.0 * currentSize / estimatedSize : 100;
-    TRACE_COUNTER1("blink_gc", "ThreadState::currentHeapSizeKB", std::min(currentSize / 1024, static_cast<size_t>(INT_MAX)));
-    TRACE_COUNTER1("blink_gc", "ThreadState::estimatedLiveObjectSizeKB", std::min(estimatedSize / 1024, static_cast<size_t>(INT_MAX)));
+    TRACE_COUNTER1("blink_gc", "ThreadState::heapEstimatedSizeKB", std::min(estimatedSize / 1024, static_cast<size_t>(INT_MAX)));
     TRACE_COUNTER1("blink_gc", "ThreadState::heapGrowingRate", static_cast<int>(100 * growingRate));
     return growingRate;
 }
 
-// TODO(haraken): We should improve the GC heuristics.
-// The heuristics affect performance significantly.
-bool ThreadState::judgeGCThreshold(size_t allocatedObjectSizeThreshold, double heapGrowingRateThreshold)
+double ThreadState::partitionAllocGrowingRate()
 {
-    // If the allocated object size is small enough, don't trigger a GC.
-    if (Heap::allocatedObjectSize() < allocatedObjectSizeThreshold)
-        return false;
-    // If the heap growing rate is large enough, trigger a GC.
-    return heapGrowingRate() >= heapGrowingRateThreshold;
+    size_t currentSize = WTF::Partitions::totalSizeOfCommittedPages();
+    size_t estimatedSize = estimatedLiveSize(currentSize, Heap::partitionAllocSizeAtLastGC());
+
+    // If the estimatedSize is 0, we set a high growing rate to trigger a GC.
+    double growingRate = estimatedSize > 0 ? 1.0 * currentSize / estimatedSize : 100;
+    TRACE_COUNTER1("blink_gc", "ThreadState::partitionAllocEstimatedSizeKB", std::min(estimatedSize / 1024, static_cast<size_t>(INT_MAX)));
+    TRACE_COUNTER1("blink_gc", "ThreadState::partitionAllocGrowingRate", static_cast<int>(100 * growingRate));
+    return growingRate;
 }
 
-bool ThreadState::shouldForceMemoryPressureGC()
+// TODO(haraken): We should improve the GC heuristics. The heuristics affect
+// performance significantly.
+bool ThreadState::judgeGCThreshold(size_t totalMemorySizeThreshold, double heapGrowingRateThreshold)
 {
-    if (currentObjectSize() < 300 * 1024 * 1024)
+    // If the allocated object size or the total memory size is small, don't trigger a GC.
+    if (Heap::allocatedObjectSize() < 100 * 1024 || totalMemorySize() < totalMemorySizeThreshold)
         return false;
-
-    // If we're consuming too much memory, trigger a conservative GC
-    // aggressively. This is a safe guard to avoid OOM.
-    return judgeGCThreshold(0, 1.5);
+    // If the growing rate of Oilpan's heap or PartitionAlloc is high enough,
+    // trigger a GC.
+#if PRINT_HEAP_STATS
+    dataLogF("heapGrowingRate=%.1lf, partitionAllocGrowingRate=%.1lf\n", heapGrowingRate(), partitionAllocGrowingRate());
+#endif
+    return heapGrowingRate() >= heapGrowingRateThreshold || partitionAllocGrowingRate() >= heapGrowingRateThreshold;
 }
 
 bool ThreadState::shouldScheduleIdleGC()
 {
     if (gcState() != NoGCScheduled)
         return false;
-#if ENABLE(IDLE_GC)
     return judgeGCThreshold(1024 * 1024, 1.5);
-#else
-    return false;
-#endif
 }
 
-bool ThreadState::shouldSchedulePreciseGC()
+bool ThreadState::shouldScheduleV8FollowupGC()
 {
-#if ENABLE(IDLE_GC)
-    return false;
-#else
-    return judgeGCThreshold(1024 * 1024, 1.5);
-#endif
+    return judgeGCThreshold(32 * 1024 * 1024, 1.5);
 }
 
 bool ThreadState::shouldSchedulePageNavigationGC(float estimatedRemovalRatio)
 {
-    if (UNLIKELY(isGCForbidden()))
-        return false;
-
-    if (shouldForceMemoryPressureGC())
-        return true;
-
     return judgeGCThreshold(1024 * 1024, 1.5 * (1 - estimatedRemovalRatio));
 }
 
 bool ThreadState::shouldForceConservativeGC()
 {
-    if (UNLIKELY(isGCForbidden()))
-        return false;
-
-    if (shouldForceMemoryPressureGC())
-        return true;
-
     // TODO(haraken): 400% is too large. Lower the heap growing factor.
     return judgeGCThreshold(32 * 1024 * 1024, 5.0);
+}
+
+// If we're consuming too much memory, trigger a conservative GC
+// aggressively. This is a safe guard to avoid OOM.
+bool ThreadState::shouldForceMemoryPressureGC()
+{
+    if (totalMemorySize() < 300 * 1024 * 1024)
+        return false;
+    return judgeGCThreshold(0, 1.5);
+}
+
+void ThreadState::scheduleV8FollowupGCIfNeeded(V8GCType gcType)
+{
+    ASSERT(checkThread());
+    Heap::reportMemoryUsageForTracing();
+
+#if PRINT_HEAP_STATS
+    dataLogF("ThreadState::scheduleV8FollowupGCIfNeeded (gcType=%s)\n", gcType == V8MajorGC ? "MajorGC" : "MinorGC");
+#endif
+
+    if (isGCForbidden())
+        return;
+
+    // This completeSweep() will do nothing in common cases since we've
+    // called completeSweep() before V8 starts minor/major GCs.
+    completeSweep();
+    ASSERT(!isSweepingInProgress());
+    ASSERT(!sweepForbidden());
+
+    // TODO(haraken): Consider if we should trigger a memory pressure GC
+    // for V8 minor GCs as well.
+    if (gcType == V8MajorGC && shouldForceMemoryPressureGC()) {
+#if PRINT_HEAP_STATS
+        dataLogF("Scheduled MemoryPressureGC\n");
+#endif
+        Heap::collectGarbage(HeapPointersOnStack, GCWithoutSweep, Heap::MemoryPressureGC);
+        return;
+    }
+    if (shouldScheduleV8FollowupGC()) {
+#if PRINT_HEAP_STATS
+        dataLogF("Scheduled PreciseGC\n");
+#endif
+        schedulePreciseGC();
+        return;
+    }
+    if (gcType == V8MajorGC) {
+#if PRINT_HEAP_STATS
+        dataLogF("Scheduled IdleGC\n");
+#endif
+        scheduleIdleGC();
+        return;
+    }
 }
 
 void ThreadState::schedulePageNavigationGCIfNeeded(float estimatedRemovalRatio)
 {
     ASSERT(checkThread());
+    Heap::reportMemoryUsageForTracing();
+
+#if PRINT_HEAP_STATS
+    dataLogF("ThreadState::schedulePageNavigationGCIfNeeded (estimatedRemovalRatio=%.2lf)\n", estimatedRemovalRatio);
+#endif
+
     if (isGCForbidden())
         return;
 
@@ -693,10 +709,20 @@ void ThreadState::schedulePageNavigationGCIfNeeded(float estimatedRemovalRatio)
     ASSERT(!isSweepingInProgress());
     ASSERT(!sweepForbidden());
 
-    Heap::reportMemoryUsageForTracing();
-
-    if (shouldSchedulePageNavigationGC(estimatedRemovalRatio))
+    if (shouldForceMemoryPressureGC()) {
+#if PRINT_HEAP_STATS
+        dataLogF("Scheduled MemoryPressureGC\n");
+#endif
+        Heap::collectGarbage(HeapPointersOnStack, GCWithoutSweep, Heap::MemoryPressureGC);
+        return;
+    }
+    if (shouldSchedulePageNavigationGC(estimatedRemovalRatio)) {
+#if PRINT_HEAP_STATS
+        dataLogF("Scheduled PageNavigationGC\n");
+#endif
         schedulePageNavigationGC();
+        return;
+    }
 }
 
 void ThreadState::schedulePageNavigationGC()
@@ -709,25 +735,49 @@ void ThreadState::schedulePageNavigationGC()
 void ThreadState::scheduleGCIfNeeded()
 {
     ASSERT(checkThread());
-    if (isGCForbidden())
-        return;
+    Heap::reportMemoryUsageForTracing();
+
+#if PRINT_HEAP_STATS
+    dataLogF("ThreadState::scheduleGCIfNeeded\n");
+#endif
 
     // Allocation is allowed during sweeping, but those allocations should not
     // trigger nested GCs.
+    if (isGCForbidden())
+        return;
+
+    if (shouldForceMemoryPressureGC()) {
+        completeSweep();
+        if (shouldForceMemoryPressureGC()) {
+#if PRINT_HEAP_STATS
+            dataLogF("Scheduled MemoryPressureGC\n");
+#endif
+            Heap::collectGarbage(HeapPointersOnStack, GCWithoutSweep, Heap::MemoryPressureGC);
+            return;
+        }
+    }
+
     if (isSweepingInProgress())
         return;
     ASSERT(!sweepForbidden());
 
-    Heap::reportMemoryUsageForTracing();
-
     if (shouldForceConservativeGC()) {
-        Heap::collectGarbage(HeapPointersOnStack, GCWithoutSweep, Heap::ConservativeGC);
+        completeSweep();
+        if (shouldForceConservativeGC()) {
+#if PRINT_HEAP_STATS
+            dataLogF("Scheduled ConservativeGC\n");
+#endif
+            Heap::collectGarbage(HeapPointersOnStack, GCWithoutSweep, Heap::ConservativeGC);
+            return;
+        }
+    }
+    if (shouldScheduleIdleGC()) {
+#if PRINT_HEAP_STATS
+        dataLogF("Scheduled IdleGC\n");
+#endif
+        scheduleIdleGC();
         return;
     }
-    if (shouldSchedulePreciseGC())
-        schedulePreciseGC();
-    else if (shouldScheduleIdleGC())
-        scheduleIdleGC();
 }
 
 void ThreadState::performIdleGC(double deadlineSeconds)
@@ -816,9 +866,7 @@ void ThreadState::scheduleIdleLazySweep()
     if (!isMainThread())
         return;
 
-#if ENABLE(LAZY_SWEEPING)
     Platform::current()->currentThread()->scheduler()->postIdleTask(FROM_HERE, WTF::bind<double>(&ThreadState::performIdleLazySweep, this));
-#endif
 }
 
 void ThreadState::schedulePreciseGC()
@@ -911,18 +959,6 @@ ThreadState::GCState ThreadState::gcState() const
     return m_gcState;
 }
 
-void ThreadState::didV8MajorGC()
-{
-    ASSERT(checkThread());
-    if (isMainThread()) {
-        if (shouldForceMemoryPressureGC()) {
-            // Under memory pressure, force a conservative GC.
-            Heap::collectGarbage(HeapPointersOnStack, GCWithoutSweep, Heap::ConservativeGC);
-            return;
-        }
-    }
-}
-
 void ThreadState::runScheduledGC(StackState stackState)
 {
     ASSERT(checkThread());
@@ -945,7 +981,7 @@ void ThreadState::runScheduledGC(StackState stackState)
         Heap::collectGarbage(NoHeapPointersOnStack, GCWithoutSweep, Heap::PreciseGC);
         break;
     case PageNavigationGCScheduled:
-        Heap::collectGarbage(NoHeapPointersOnStack, GCWithSweep, Heap::PreciseGC);
+        Heap::collectGarbage(NoHeapPointersOnStack, GCWithSweep, Heap::PageNavigationGC);
         break;
     case IdleGCScheduled:
         // Idle time GC will be scheduled by Blink Scheduler.
@@ -985,7 +1021,6 @@ void ThreadState::preGC()
     makeConsistentForGC();
     flushHeapDoesNotContainCacheIfNeeded();
     clearHeapAges();
-    updatePersistentCounters();
 }
 
 void ThreadState::postGC(GCType gcType)
@@ -1039,9 +1074,7 @@ void ThreadState::preSweep()
 
     threadLocalWeakProcessing();
 
-#if ENABLE(LAZY_SWEEPING)
     GCState previousGCState = gcState();
-#endif
     // We have to set the GCState to Sweeping before calling pre-finalizers
     // to disallow a GC during the pre-finalizers.
     setGCState(Sweeping);
@@ -1055,25 +1088,17 @@ void ThreadState::preSweep()
     poisonEagerHeap(SetPoison);
 #endif
 
-#if ENABLE(LAZY_SWEEPING)
+    eagerSweep();
+#if defined(ADDRESS_SANITIZER)
+    poisonAllHeaps();
+#endif
     if (previousGCState == EagerSweepScheduled) {
         // Eager sweeping should happen only in testing.
-        eagerSweep();
-#if defined(ADDRESS_SANITIZER)
-        poisonAllHeaps();
-#endif
         completeSweep();
     } else {
         // The default behavior is lazy sweeping.
-        eagerSweep();
-#if defined(ADDRESS_SANITIZER)
-        poisonAllHeaps();
-#endif
         scheduleIdleLazySweep();
     }
-#else
-    completeSweep();
-#endif
 
 #if ENABLE(GC_PROFILING)
     snapshotFreeListIfNecessary();
@@ -1171,6 +1196,10 @@ void ThreadState::postSweep()
             collectionRate = 1 - 1.0 * Heap::markedObjectSize() / Heap::objectSizeAtLastGC();
         TRACE_COUNTER1("blink_gc", "ThreadState::collectionRate", static_cast<int>(100 * collectionRate));
 
+#if PRINT_HEAP_STATS
+        dataLogF("ThreadState::postSweep (collectionRate=%d%%)\n", static_cast<int>(100 * collectionRate));
+#endif
+
         // Heap::markedObjectSize() may be underestimated here if any other
         // thread has not yet finished lazy sweeping.
         Heap::setMarkedObjectSizeAtLastCompleteSweep(Heap::markedObjectSize());
@@ -1231,6 +1260,8 @@ void ThreadState::resumeThreads()
 void ThreadState::safePoint(StackState stackState)
 {
     ASSERT(checkThread());
+    Heap::reportMemoryUsageForTracing();
+
     runScheduledGC(stackState);
     ASSERT(!m_atSafePoint);
     m_stackState = stackState;
@@ -1491,7 +1522,7 @@ void ThreadState::takeSnapshot(SnapshotType type)
     size_t totalDeadSize = 0;
     for (size_t gcInfoIndex = 1; gcInfoIndex <= GCInfoTable::gcInfoIndex(); ++gcInfoIndex) {
         String dumpName = classesDumpName + String::format("/%lu_", static_cast<unsigned long>(gcInfoIndex));
-#if ENABLE(GC_PROFILING)
+#if ENABLE(DETAILED_MEMORY_INFRA)
         dumpName.append(Heap::gcInfo(gcInfoIndex)->className());
 #endif
         WebMemoryAllocatorDump* classDump = BlinkGCMemoryDumpProvider::instance()->createMemoryAllocatorDumpForCurrentGC(dumpName);

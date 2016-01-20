@@ -28,6 +28,7 @@
 
 #include "core/HTMLNames.h"
 #include "core/css/MediaValuesCached.h"
+#include "core/css/resolver/StyleResolver.h"
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/DocumentLifecycleObserver.h"
 #include "core/dom/Element.h"
@@ -43,6 +44,7 @@
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/InspectorTraceEvents.h"
 #include "core/loader/DocumentLoader.h"
+#include "core/loader/NavigationScheduler.h"
 #include "platform/SharedBuffer.h"
 #include "platform/ThreadSafeFunctional.h"
 #include "platform/ThreadedDataReceiver.h"
@@ -625,16 +627,17 @@ void HTMLDocumentParser::pumpTokenizer()
     // much we parsed as part of didWriteHTML instead of willWriteHTML.
     TRACE_EVENT_BEGIN1("devtools.timeline", "ParseHTML", "beginData", InspectorParseHtmlEvent::beginData(document(), m_input.current().currentLine().zeroBasedInt()));
 
-    m_xssAuditor.init(document(), &m_xssAuditorDelegate);
+    if (!isParsingFragment())
+        m_xssAuditor.init(document(), &m_xssAuditorDelegate);
 
     while (canTakeNextToken()) {
-        if (!isParsingFragment())
+        if (m_xssAuditor.isEnabled())
             m_sourceTracker.start(m_input.current(), m_tokenizer.get(), token());
 
         if (!m_tokenizer->nextToken(m_input.current(), token()))
             break;
 
-        if (!isParsingFragment()) {
+        if (m_xssAuditor.isEnabled()) {
             m_sourceTracker.end(m_input.current(), m_tokenizer.get(), token());
 
             // We do not XSS filter innerHTML, which means we (intentionally) fail
@@ -773,6 +776,10 @@ void HTMLDocumentParser::startBackgroundParser()
     ASSERT(document());
     m_haveBackgroundParser = true;
 
+    // Make sure that a resolver is set up, so that the correct viewport dimensions will be fed to the background parser and preload scanner.
+    if (document()->loader())
+        document()->ensureStyleResolver();
+
     RefPtr<WeakReference<BackgroundHTMLParser>> reference = WeakReference<BackgroundHTMLParser>::createUnbound();
     m_backgroundParser = WeakPtr<BackgroundHTMLParser>(reference);
 
@@ -787,6 +794,7 @@ void HTMLDocumentParser::startBackgroundParser()
     config->parser = m_weakFactory.createWeakPtr();
     config->xssAuditor = adoptPtr(new XSSAuditor);
     config->xssAuditor->init(document(), &m_xssAuditorDelegate);
+
     config->preloadScanner = adoptPtr(new TokenPreloadScanner(document()->url().copy(), CachedDocumentParameters::create(document())));
     config->decoder = takeDecoder();
     if (document()->settings()) {

@@ -64,11 +64,13 @@
 #include "platform/network/ContentSecurityPolicyParsers.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityOrigin.h"
+#include "public/platform/Platform.h"
+#include "public/platform/WebScheduler.h"
 #include "public/platform/WebURLRequest.h"
 
 namespace blink {
 
-WorkerGlobalScope::WorkerGlobalScope(const KURL& url, const String& userAgent, WorkerThread* thread, double timeOrigin, const SecurityOrigin* starterOrigin, PassOwnPtrWillBeRawPtr<WorkerClients> workerClients)
+WorkerGlobalScope::WorkerGlobalScope(const KURL& url, const String& userAgent, WorkerThread* thread, double timeOrigin, PassOwnPtr<SecurityOrigin::PrivilegeData> starterOriginPrivilageData, PassOwnPtrWillBeRawPtr<WorkerClients> workerClients)
     : m_url(url)
     , m_userAgent(userAgent)
     , m_v8CacheOptions(V8CacheOptionsDefault)
@@ -78,13 +80,14 @@ WorkerGlobalScope::WorkerGlobalScope(const KURL& url, const String& userAgent, W
     , m_closing(false)
     , m_eventQueue(WorkerEventQueue::create(this))
     , m_workerClients(workerClients)
+    , m_timers(Platform::current()->currentThread()->scheduler()->timerTaskRunner())
     , m_timeOrigin(timeOrigin)
     , m_messageStorage(ConsoleMessageStorage::create())
     , m_workerExceptionUniqueIdentifier(0)
 {
     setSecurityOrigin(SecurityOrigin::create(url));
-    if (starterOrigin)
-        securityOrigin()->transferPrivilegesFrom(*starterOrigin);
+    if (starterOriginPrivilageData)
+        securityOrigin()->transferPrivilegesFrom(starterOriginPrivilageData);
 
     if (m_workerClients)
         m_workerClients->reattachThread();
@@ -356,12 +359,12 @@ void WorkerGlobalScope::exceptionHandled(int exceptionId, bool isHandled)
         addConsoleMessage(consoleMessage.release());
 }
 
-bool WorkerGlobalScope::isPrivilegedContext(String& errorMessage, const PrivilegeContextCheck privilegeContextCheck) const
+bool WorkerGlobalScope::isSecureContext(String& errorMessage, const SecureContextCheck privilegeContextCheck) const
 {
     // Until there are APIs that are available in workers and that
     // require a privileged context test that checks ancestors, just do
     // a simple check here. Once we have a need for a real
-    // |isPrivilegedContext| check here, we can check the responsible
+    // |isSecureContext| check here, we can check the responsible
     // document for a privileged context at worker creation time, pass
     // it in via WorkerThreadStartupData, and check it here.
     return securityOrigin()->isPotentiallyTrustworthy(errorMessage);

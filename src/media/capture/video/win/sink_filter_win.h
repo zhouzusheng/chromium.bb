@@ -36,12 +36,12 @@ class __declspec(uuid("88cdbbdc-a73b-4afa-acbf-15d5e2ce12c3")) SinkFilter
  public:
   explicit SinkFilter(SinkFilterObserver* observer);
 
-  void SetRequestedMediaFormat(VideoCapturePixelFormat pixel_format,
+  void SetRequestedMediaFormat(VideoPixelFormat pixel_format,
                                float frame_rate,
                                const BITMAPINFOHEADER& info_header);
   // Returns the format that is negotiated when this
   // filter is connected to a media filter.
-  const VideoCaptureFormat& ResultingFormat();
+  const VideoCaptureFormat& ResultingFormat() const;
 
   // Implement FilterBase.
   size_t NoOfPins() override;

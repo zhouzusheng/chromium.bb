@@ -212,8 +212,8 @@ int VP9EncoderImpl::InitEncode(const VideoCodec* inst,
   if (inst->codecSpecific.VP9.numberOfTemporalLayers > 3) {
     return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;
   }
-  // For now, only support one spatial layer.
-  if (inst->codecSpecific.VP9.numberOfSpatialLayers != 1) {
+  // libvpx currently supports only one or two spatial layers.
+  if (inst->codecSpecific.VP9.numberOfSpatialLayers > 2) {
     return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;
   }
   int retVal = Release();
@@ -283,6 +283,8 @@ int VP9EncoderImpl::InitEncode(const VideoCodec* inst,
   } else {
     config_->kf_mode = VPX_KF_DISABLED;
   }
+  config_->rc_resize_allowed = inst->codecSpecific.VP9.automaticResizeOn ?
+      1 : 0;
   // Determine number of threads based on the image size and #cores.
   config_->g_threads = NumberOfThreads(config_->g_w,
                                        config_->g_h,
@@ -351,13 +353,8 @@ int VP9EncoderImpl::NumberOfThreads(int width,
 }
 
 int VP9EncoderImpl::InitAndSetControlSettings(const VideoCodec* inst) {
-
   config_->ss_number_layers = num_spatial_layers_;
 
-  if (num_spatial_layers_ > 1) {
-    config_->rc_min_quantizer = 0;
-    config_->rc_max_quantizer = 63;
-  }
   int scaling_factor_num = 256;
   for (int i = num_spatial_layers_ - 1; i >= 0; --i) {
     svc_internal_.svc_params.max_quantizers[i] = config_->rc_max_quantizer;
@@ -404,6 +401,12 @@ int VP9EncoderImpl::InitAndSetControlSettings(const VideoCodec* inst) {
   vpx_codec_control(encoder_, VP9E_SET_NOISE_SENSITIVITY,
                     inst->codecSpecific.VP9.denoisingOn ? 1 : 0);
 #endif
+  if (codec_.mode == kScreensharing) {
+    // Adjust internal parameters to screen content.
+    vpx_codec_control(encoder_, VP9E_SET_TUNE_CONTENT, 1);
+  }
+  // Enable encoder skip of static/low content blocks.
+  vpx_codec_control(encoder_, VP8E_SET_STATIC_THRESHOLD, 1);
   inited_ = true;
   return WEBRTC_VIDEO_CODEC_OK;
 }
@@ -440,8 +443,8 @@ int VP9EncoderImpl::Encode(const VideoFrame& input_image,
   if (frame_types && frame_types->size() > 0) {
     frame_type = (*frame_types)[0];
   }
-  DCHECK_EQ(input_image.width(), static_cast<int>(raw_->d_w));
-  DCHECK_EQ(input_image.height(), static_cast<int>(raw_->d_h));
+  RTC_DCHECK_EQ(input_image.width(), static_cast<int>(raw_->d_w));
+  RTC_DCHECK_EQ(input_image.height(), static_cast<int>(raw_->d_h));
 
   // Set input image for use in the callback.
   // This was necessary since you need some information from input_image.
@@ -485,8 +488,10 @@ void VP9EncoderImpl::PopulateCodecSpecific(CodecSpecificInfo* codec_specific,
   vp9_info->inter_pic_predicted =
       (pkt.data.frame.flags & VPX_FRAME_IS_KEY) ? false : true;
   vp9_info->flexible_mode = codec_.codecSpecific.VP9.flexibleMode;
-  vp9_info->ss_data_available =
-      (pkt.data.frame.flags & VPX_FRAME_IS_KEY) ? true : false;
+  vp9_info->ss_data_available = ((pkt.data.frame.flags & VPX_FRAME_IS_KEY) &&
+                                 !codec_.codecSpecific.VP9.flexibleMode)
+                                    ? true
+                                    : false;
   if (pkt.data.frame.flags & VPX_FRAME_IS_KEY) {
     gof_idx_ = 0;
   }
@@ -540,8 +545,10 @@ void VP9EncoderImpl::PopulateCodecSpecific(CodecSpecificInfo* codec_specific,
     vp9_info->tl0_pic_idx = tl0_pic_idx_;
   }
 
+  // Always populate this, so that the packetizer can properly set the marker
+  // bit.
+  vp9_info->num_spatial_layers = num_spatial_layers_;
   if (vp9_info->ss_data_available) {
-    vp9_info->num_spatial_layers = num_spatial_layers_;
     vp9_info->spatial_layer_resolution_present = true;
     for (size_t i = 0; i < vp9_info->num_spatial_layers; ++i) {
       vp9_info->width[i] = codec_.width *
@@ -739,7 +746,6 @@ int VP9DecoderImpl::ReturnFrame(const vpx_image_t* img, uint32_t timestamp) {
   // using a WrappedI420Buffer.
   rtc::scoped_refptr<WrappedI420Buffer> img_wrapped_buffer(
       new rtc::RefCountedObject<webrtc::WrappedI420Buffer>(
-          img->d_w, img->d_h,
           img->d_w, img->d_h,
           img->planes[VPX_PLANE_Y], img->stride[VPX_PLANE_Y],
           img->planes[VPX_PLANE_U], img->stride[VPX_PLANE_U],

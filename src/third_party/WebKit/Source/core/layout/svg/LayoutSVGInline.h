@@ -30,7 +30,7 @@ public:
     explicit LayoutSVGInline(Element*);
 
     const char* name() const override { return "LayoutSVGInline"; }
-    DeprecatedPaintLayerType layerTypeRequired() const final { return NoDeprecatedPaintLayer; }
+    PaintLayerType layerTypeRequired() const final { return NoPaintLayer; }
     bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectSVG || type == LayoutObjectSVGInline || LayoutInline::isOfType(type); }
 
     bool isChildAllowed(LayoutObject*, const ComputedStyle&) const override;
@@ -51,6 +51,8 @@ public:
 
 private:
     InlineFlowBox* createInlineFlowBox() final;
+
+    void invalidateTreeIfNeeded(PaintInvalidationState&) final;
 
     void willBeDestroyed() final;
     void styleDidChange(StyleDifference, const ComputedStyle* oldStyle) final;

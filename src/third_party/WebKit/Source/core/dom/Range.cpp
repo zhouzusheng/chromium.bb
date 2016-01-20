@@ -135,6 +135,14 @@ Range::~Range()
 }
 #endif
 
+void Range::dispose()
+{
+#if ENABLE(OILPAN)
+    // A prompt detach from the owning Document helps avoid GC overhead.
+    m_ownerDocument->detachRange(this);
+#endif
+}
+
 void Range::setDocument(Document& document)
 {
     ASSERT(m_ownerDocument != document);
@@ -1080,26 +1088,6 @@ void Range::selectNode(Node* refNode, ExceptionState& exceptionState)
         return;
     }
 
-    // InvalidNodeTypeError: Raised if an ancestor of refNode is an Entity, Notation or
-    // DocumentType node or if refNode is a Document, DocumentFragment, ShadowRoot, Attr, Entity, or Notation
-    // node.
-    for (ContainerNode* anc = refNode->parentNode(); anc; anc = anc->parentNode()) {
-        switch (anc->nodeType()) {
-        case Node::ATTRIBUTE_NODE:
-        case Node::CDATA_SECTION_NODE:
-        case Node::COMMENT_NODE:
-        case Node::DOCUMENT_FRAGMENT_NODE:
-        case Node::DOCUMENT_NODE:
-        case Node::ELEMENT_NODE:
-        case Node::PROCESSING_INSTRUCTION_NODE:
-        case Node::TEXT_NODE:
-            break;
-        case Node::DOCUMENT_TYPE_NODE:
-            exceptionState.throwDOMException(InvalidNodeTypeError, "The node provided has an ancestor of type '" + anc->nodeName() + "'.");
-            return;
-        }
-    }
-
     switch (refNode->nodeType()) {
     case Node::CDATA_SECTION_NODE:
     case Node::COMMENT_NODE:
@@ -1579,8 +1567,8 @@ void Range::didSplitTextNode(Text& oldNode)
 
 void Range::expand(const String& unit, ExceptionState& exceptionState)
 {
-    VisiblePosition start(startPosition());
-    VisiblePosition end(endPosition());
+    VisiblePosition start = createVisiblePosition(startPosition());
+    VisiblePosition end = createVisiblePosition(endPosition());
     if (unit == "word") {
         start = startOfWord(start);
         end = endOfWord(end);

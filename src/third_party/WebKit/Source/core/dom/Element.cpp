@@ -1003,17 +1003,17 @@ void Element::bbRequestSpellCheck()
         else if (element->isTextFormControl()) {
             HTMLElement* innerElement = toHTMLTextFormControlElement(element)->innerEditorElement();
             if (innerElement && innerElement->hasEditableStyle() && innerElement->isSpellCheckingEnabled()) {
-                VisiblePosition startPos(firstPositionInNode(innerElement));
-                VisiblePosition endPos(lastPositionInNode(innerElement));
-                RefPtr<Range> rangeToCheck = Range::create(innerElement->document(), startPos.deepEquivalent(), endPos.deepEquivalent());
+                VisiblePosition startPos = createVisiblePosition(firstPositionInNode(innerElement));
+                VisiblePosition endPos = createVisiblePosition(lastPositionInNode(innerElement));
+                EphemeralRange rangeToCheck(startPos.deepEquivalent(), endPos.deepEquivalent());
                 spellCheckRequester.requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));
             }
             element = ElementTraversal::nextSkippingChildren(*element, stayWithin);
         }
         else if (element->hasEditableStyle() && element->isSpellCheckingEnabled()) {
-            VisiblePosition startPos(firstPositionInNode(element));
-            VisiblePosition endPos(lastPositionInNode(element));
-            RefPtr<Range> rangeToCheck = Range::create(element->document(), startPos.deepEquivalent(), endPos.deepEquivalent());
+            VisiblePosition startPos = createVisiblePosition(firstPositionInNode(element));
+            VisiblePosition endPos = createVisiblePosition(lastPositionInNode(element));
+            EphemeralRange rangeToCheck(startPos.deepEquivalent(), endPos.deepEquivalent());
             spellCheckRequester.requestCheckingFor(SpellCheckRequest::create(TextCheckingTypeSpelling | TextCheckingTypeGrammar, TextCheckingProcessBatch, rangeToCheck, rangeToCheck));
             element = ElementTraversal::nextSkippingChildren(*element, stayWithin);
         }

@@ -44,6 +44,8 @@ public:
         // Synthetic mouse events generated without a position, for example those generated
         // from keyboard input.
         Positionless,
+        // Mouse event derived from context menu key
+        FromContextMenuKey,
     };
 
     PlatformMouseEvent()

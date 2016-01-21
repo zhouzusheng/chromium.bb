@@ -258,6 +258,21 @@ WebString WebDocument::outgoingReferrer()
     return WebString(unwrap<Document>()->outgoingReferrer());
 }
 
+WebString WebDocument::bbHeaderText() const
+{
+    return WebString(constUnwrap<Document>()->bbHeaderText());
+}
+
+WebString WebDocument::bbFooterText() const
+{
+    return WebString(constUnwrap<Document>()->bbFooterText());
+}
+
+bool WebDocument::bbPrintPageNumbers() const
+{
+    return constUnwrap<Document>()->bbPrintPageNumbers();
+}
+
 WebAXObject WebDocument::accessibilityObject() const
 {
     const Document* document = constUnwrap<Document>();

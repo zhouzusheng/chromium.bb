@@ -81,6 +81,7 @@ public:
     int keyCode() const; // key code for keydown and keyup, character for keypress
     int charCode() const; // character code for keypress, 0 for keydown and keyup
     bool repeat() const { return m_isAutoRepeat; }
+    bool bbIsNumLock() const { return m_bbIsNumLock; }
 
     const AtomicString& interfaceName() const override;
     bool isKeyboardEvent() const override;
@@ -104,6 +105,7 @@ private:
     String m_key;
     unsigned m_location;
     bool m_isAutoRepeat : 1;
+    bool m_bbIsNumLock : 1;
 };
 
 class KeyboardEventDispatchMediator : public EventDispatchMediator {

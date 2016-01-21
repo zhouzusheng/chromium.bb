@@ -190,6 +190,10 @@
 
     // window.toString() requires special handling in V8
     [DoNotCheckSignature, DoNotCheckSecurity, Custom, NotEnumerable] stringifier;
+
+    // Bloomberg specific objects/methods
+    readonly attribute BBWindowHooks bbWindowHooks;
+
 };
 
 // http://www.whatwg.org/specs/web-apps/current-work/#transferable-objects

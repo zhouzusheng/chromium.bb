@@ -88,6 +88,7 @@ private:
 
     template <typename Strategy>
     void selectClosestWordOrLinkFromMouseEvent(const MouseEventWithHitTestResults&);
+    HitTestResult adjustHitTestResultForSelectability(const HitTestResult& result, Node* mousePressNode, const IntPoint& lastKnownMousePosition);
 
     template <typename Strategy>
     bool handleGestureLongPressAlgorithm(const PlatformGestureEvent&, const HitTestResult&);

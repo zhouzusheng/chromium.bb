@@ -54,6 +54,8 @@ struct SameSizeAsStyleRareInheritedData : public RefCounted<SameSizeAsStyleRareI
 
     Color touchColors;
     TabSize tabSize;
+
+    StyleColor caretColor;
 };
 
 static_assert(sizeof(StyleRareInheritedData) <= sizeof(SameSizeAsStyleRareInheritedData), "StyleRareInheritedData should stay small");
@@ -99,6 +101,7 @@ StyleRareInheritedData::StyleRareInheritedData()
     , hyphenationLimitAfter(-1)
     , hyphenationLimitLines(-1)
     , tapHighlightColor(ComputedStyle::initialTapHighlightColor())
+    , caretColor(ComputedStyle::initialCaretColor())
     , m_tabSize(ComputedStyle::initialTabSize())
 {
 }
@@ -157,6 +160,7 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , locale(o.locale)
     , textEmphasisCustomMark(o.textEmphasisCustomMark)
     , tapHighlightColor(o.tapHighlightColor)
+    , caretColor(o.caretColor)
     , appliedTextDecorations(o.appliedTextDecorations)
     , m_tabSize(o.m_tabSize)
 {
@@ -221,6 +225,7 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && m_imageRendering == o.m_imageRendering
         && m_textUnderlinePosition == o.m_textUnderlinePosition
         && m_rubyPosition == o.m_rubyPosition
+        && caretColor == o.caretColor
         && dataEquivalent(listStyleImage.get(), o.listStyleImage.get())
         && dataEquivalent(appliedTextDecorations, o.appliedTextDecorations);
 }

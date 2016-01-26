@@ -188,6 +188,8 @@ private:
 
     WebViewImpl* m_webView; // Weak pointer.
     WindowFeatures m_windowFeatures;
+    Node* m_lastMouseOverNode; // weak pointer
+    bool m_lastTooltipHadText;
     Vector<PopupOpeningObserver*> m_popupOpeningObservers;
     Cursor m_lastSetMouseCursorForTesting;
     bool m_cursorOverridden;

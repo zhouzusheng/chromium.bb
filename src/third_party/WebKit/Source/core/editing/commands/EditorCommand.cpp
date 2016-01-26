@@ -523,6 +523,13 @@ static bool executeInsertHTML(LocalFrame& frame, Event*, EditorCommandSource, co
     return executeInsertFragment(frame, createFragmentFromMarkup(*frame.document(), value, ""));
 }
 
+static bool executeInsertHTMLNested(LocalFrame& frame, Event*, EditorCommandSource, const String& value)
+{
+    ASSERT(frame.document());
+    ReplaceSelectionCommand::create(*frame.document(), createFragmentFromMarkup(*frame.document(), value, ""), ReplaceSelectionCommand::InsertNested, EditActionUnspecified)->apply();
+    return true;
+}
+
 static bool executeInsertImage(LocalFrame& frame, Event*, EditorCommandSource, const String& value)
 {
     ASSERT(frame.document());
@@ -1501,6 +1508,7 @@ static const CommandMap& createCommandMap()
         { "IndentBlock", {9998, executeIndentBlock, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "InsertBacktab", {32, executeInsertBacktab, supportedFromMenuOrKeyBinding, enabledInEditableText, stateNone, valueNull, isTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "InsertHTML", {33, executeInsertHTML, supported, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
+        { "InsertHTMLNested", {9999, executeInsertHTMLNested, supported, enabledInEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "InsertHorizontalRule", {34, executeInsertHorizontalRule, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "InsertImage", {35, executeInsertImage, supported, enabledInRichlyEditableText, stateNone, valueNull, notTextInsertion, doNotAllowExecutionWhenDisabled } },
         { "InsertLineBreak", {36, executeInsertLineBreak, supported, enabledInEditableText, stateNone, valueNull, isTextInsertion, doNotAllowExecutionWhenDisabled } },

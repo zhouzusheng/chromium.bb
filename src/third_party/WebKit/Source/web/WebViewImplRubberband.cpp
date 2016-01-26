@@ -37,7 +37,7 @@
 #include "core/layout/LayoutView.h"
 #include "core/layout/TextRunConstructor.h"
 #include "core/page/Page.h"
-#include "core/paint/DeprecatedPaintLayer.h"
+#include "core/paint/PaintLayer.h"
 #include "wtf/text/StringBuilder.h"
 
 #include "public/web/WebViewClient.h"
@@ -308,7 +308,7 @@ void WebViewImpl::rubberbandWalkLayoutObject(const RubberbandContext& context, L
 
     if (layoutObject->hasLayer()) {
         ASSERT(layoutObject->isBoxModelObject());
-        DeprecatedPaintLayer* layer = toLayoutBoxModelObject(layoutObject)->layer();
+        PaintLayer* layer = toLayoutBoxModelObject(layoutObject)->layer();
         RubberbandLayerContext& layerContext = *localContext.m_layerContext;
 
         if (layer->hasTransformRelatedProperty()) {

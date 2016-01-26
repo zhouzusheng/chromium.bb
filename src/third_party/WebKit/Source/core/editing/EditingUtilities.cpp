@@ -1094,13 +1094,13 @@ Node* nextRenderedSiblingExcludingWhitespace(const Node* node)
 Node* blockExtentStart(Node* node, const Node* stayWithin)
 {
     while (true) {
-        if (isBlock(node)) {
+        if (isEnclosingBlock(node)) {
             while (!previousRenderedSiblingExcludingWhitespace(node) && node->parentNode() && (!stayWithin || node->parentNode() != stayWithin))
                 node = node->parentNode();
             break;
         }
         else if (node->previousSibling()) {
-            if (isBlock(node->previousSibling()))
+            if (isEnclosingBlock(node->previousSibling()))
                 break;
             node = node->previousSibling();
         }
@@ -1115,13 +1115,13 @@ Node* blockExtentStart(Node* node, const Node* stayWithin)
 Node* blockExtentEnd(Node* node, const Node* stayWithin)
 {
     while (true) {
-        if (isBlock(node)) {
+        if (isEnclosingBlock(node)) {
             while (!nextRenderedSiblingExcludingWhitespace(node) && node->parentNode() && (!stayWithin || node->parentNode() != stayWithin))
                 node = node->parentNode();
             break;
         }
         else if (node->nextSibling()) {
-            if (isBlock(node->nextSibling()))
+            if (isEnclosingBlock(node->nextSibling()))
                 break;
             node = node->nextSibling();
         }

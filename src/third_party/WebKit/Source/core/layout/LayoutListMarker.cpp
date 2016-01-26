@@ -1427,8 +1427,7 @@ LayoutRect LayoutListMarker::selectionRectForPaintInvalidation(const LayoutBoxMo
     LayoutRect rect(0, root.selectionTop() - location().y(), size().width(), root.selectionHeight());
     mapRectToPaintInvalidationBacking(paintInvalidationContainer, rect, 0);
     // FIXME: groupedMapping() leaks the squashing abstraction.
-    // TODO(shez): Investigate why layer() is sometimes null here.
-    if (paintInvalidationContainer->layer() && paintInvalidationContainer->layer()->groupedMapping())
+    if (paintInvalidationContainer->layer()->groupedMapping())
         DeprecatedPaintLayer::mapRectToPaintBackingCoordinates(paintInvalidationContainer, rect);
     return rect;
 }

@@ -943,7 +943,7 @@ void ReplaceSelectionCommand::doApply()
         m_insertionStyle->mergeTypingStyle(&document());
     }
 
-    const VisiblePosition visibleStart = selection.visibleStart();
+    VisiblePosition visibleStart = selection.visibleStart();
     const VisiblePosition visibleEnd = selection.visibleEnd();
 
     const bool selectionEndWasEndOfParagraph = isEndOfParagraph(visibleEnd);

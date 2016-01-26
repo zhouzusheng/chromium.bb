@@ -385,6 +385,7 @@ y interpolable, svg, converter=convertLength
 -webkit-user-drag
 -webkit-user-modify inherited
 -webkit-user-select inherited
+-bb-rubberbandable inherited, name_for_methods=Rubberbandable
 white-space inherited
 widows interpolable, inherited, type_name=short, custom_all
 width interpolable, initial=initialSize, converter=convertLengthSizing

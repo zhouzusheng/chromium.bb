@@ -1347,6 +1347,7 @@ bool RenderViewImpl::OnMessageReceived(const IPC::Message& message) {
     // TODO(viettrungluu): Move to a separate message filter.
     IPC_MESSAGE_HANDLER(ViewMsg_SetHistoryOffsetAndLength,
                         OnSetHistoryOffsetAndLength)
+    IPC_MESSAGE_HANDLER(ViewMsg_EnableAltDragRubberbanding, OnEnableAltDragRubberbanding)
     IPC_MESSAGE_HANDLER(ViewMsg_EnableViewSourceMode, OnEnableViewSourceMode)
     IPC_MESSAGE_HANDLER(ViewMsg_ReleaseDisambiguationPopupBitmap,
                         OnReleaseDisambiguationPopupBitmap)
@@ -1526,6 +1527,10 @@ void RenderViewImpl::OnForceRedraw(int id) {
         rwc->CreateLatencyInfoSwapPromiseMonitor(&latency_info).Pass();
   }
   ScheduleCompositeWithForcedRedraw();
+}
+
+void RenderViewImpl::OnEnableAltDragRubberbanding(bool enable) {
+  webview()->enableAltDragRubberbanding(enable);
 }
 
 // blink::WebViewClient ------------------------------------------------------
@@ -1965,6 +1970,14 @@ void RenderViewImpl::didUpdateLayout() {
 
 void RenderViewImpl::navigateBackForwardSoon(int offset) {
   Send(new ViewHostMsg_GoToEntryAtOffset(routing_id_, offset));
+}
+
+void RenderViewImpl::setRubberbandRect(const WebRect& rect) {
+  Send(new ViewHostMsg_SetRubberbandRect(routing_id_, rect));
+}
+
+void RenderViewImpl::hideRubberbandRect() {
+  Send(new ViewHostMsg_HideRubberbandRect(routing_id_));
 }
 
 int RenderViewImpl::historyBackListCount() {

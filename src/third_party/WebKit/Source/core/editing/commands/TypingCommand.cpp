@@ -316,7 +316,7 @@ void TypingCommand::markMisspellingsAfterTyping(ETypingCommand commandType)
         frame->spellChecker().markMisspellingsAfterLineBreak(words);
     } else if (previous.isNotNull()) {
         VisiblePosition p2 = startOfWord(start, LeftWordIfOnBoundary);
-        if (p1.deepEquivalent() != p2.deepEquivalent() && previous.characterAfter() != '\'' && 0 > comparePositions(p1.deepEquivalent(), p2.deepEquivalent()))
+        if (p1.deepEquivalent() != p2.deepEquivalent() && characterAfter(previous) != '\'' && 0 > comparePositions(p1.deepEquivalent(), p2.deepEquivalent()))
             frame->spellChecker().markMisspellingsAfterTypingToWord(p1, endingSelection());
     }
 }

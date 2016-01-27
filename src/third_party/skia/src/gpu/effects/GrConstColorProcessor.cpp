@@ -19,7 +19,11 @@ public:
         fColorUniform = args.fBuilder->addUniform(GrGLProgramBuilder::kFragment_Visibility,
                                             kVec4f_GrSLType, kMedium_GrSLPrecision, "constantColor",
                                             &colorUni);
-        switch (args.fFp.cast<GrConstColorProcessor>().inputMode()) {
+        GrConstColorProcessor::InputMode mode = args.fFp.cast<GrConstColorProcessor>().inputMode();
+        if (!args.fInputColor) {
+            mode = GrConstColorProcessor::kIgnore_InputMode;
+        }
+        switch (mode) {
             case GrConstColorProcessor::kIgnore_InputMode:
                 fsBuilder->codeAppendf("%s = %s;", args.fOutputColor, colorUni);
                 break;
@@ -91,7 +95,7 @@ void GrConstColorProcessor::onGetGLProcessorKey(const GrGLSLCaps&, GrProcessorKe
 }
 
 GrGLFragmentProcessor* GrConstColorProcessor::onCreateGLInstance() const  {
-    return SkNEW(GLConstColorProcessor);
+    return new GLConstColorProcessor;
 }
 
 bool GrConstColorProcessor::onIsEqual(const GrFragmentProcessor& other) const {
@@ -103,7 +107,7 @@ bool GrConstColorProcessor::onIsEqual(const GrFragmentProcessor& other) const {
 
 GR_DEFINE_FRAGMENT_PROCESSOR_TEST(GrConstColorProcessor);
 
-GrFragmentProcessor* GrConstColorProcessor::TestCreate(GrProcessorTestData* d) {
+const GrFragmentProcessor* GrConstColorProcessor::TestCreate(GrProcessorTestData* d) {
     GrColor color;
     int colorPicker = d->fRandom->nextULessThan(3);
     switch (colorPicker) {

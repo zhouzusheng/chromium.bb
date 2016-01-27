@@ -13,7 +13,7 @@
 #include "base/basictypes.h"
 #include "base/containers/hash_tables.h"
 #include "base/memory/ref_counted.h"
-#include "gpu/command_buffer/service/async_pixel_transfer_delegate.h"
+#include "gpu/command_buffer/service/feature_info.h"
 #include "gpu/command_buffer/service/gl_utils.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
 #include "gpu/gpu_export.h"
@@ -146,7 +146,7 @@ class GPU_EXPORT Texture {
   }
 
   // Returns true of the given dimensions are inside the dimensions of the
-  // level and if the type matches the level.
+  // level.
   bool ValidForTexture(
       GLint target,
       GLint level,
@@ -155,8 +155,7 @@ class GPU_EXPORT Texture {
       GLint zoffset,
       GLsizei width,
       GLsizei height,
-      GLsizei depth,
-      GLenum type) const;
+      GLsizei depth) const;
 
   bool IsValid() const {
     return !!target();
@@ -536,10 +535,14 @@ class GPU_EXPORT TextureRef : public base::RefCounted<TextureRef> {
 struct DecoderTextureState {
   // total_texture_upload_time automatically initialized to 0 in default
   // constructor.
-  explicit DecoderTextureState(bool texsubimage_faster_than_teximage)
+  explicit DecoderTextureState(const FeatureInfo::Workarounds& workarounds)
       : tex_image_failed(false),
         texture_upload_count(0),
-        texsubimage_faster_than_teximage(texsubimage_faster_than_teximage) {}
+        texsubimage_faster_than_teximage(
+            workarounds.texsubimage_faster_than_teximage),
+        force_cube_map_positive_x_allocation(
+            workarounds.force_cube_map_positive_x_allocation),
+        force_cube_complete(workarounds.force_cube_complete) {}
 
   // This indicates all the following texSubImage*D calls that are part of the
   // failed texImage*D call should be ignored. The client calls have a lock
@@ -552,6 +555,8 @@ struct DecoderTextureState {
   base::TimeDelta total_texture_upload_time;
 
   bool texsubimage_faster_than_teximage;
+  bool force_cube_map_positive_x_allocation;
+  bool force_cube_complete;
 };
 
 // This class keeps track of the textures and their sizes so we can do NPOT and
@@ -578,6 +583,8 @@ class GPU_EXPORT TextureManager : public base::trace_event::MemoryDumpProvider {
 
   enum DefaultAndBlackTextures {
     kTexture2D,
+    kTexture3D,
+    kTexture2DArray,
     kCubeMap,
     kExternalOES,
     kRectangleARB,
@@ -679,15 +686,6 @@ class GPU_EXPORT TextureManager : public base::trace_event::MemoryDumpProvider {
                     GLenum type,
                     const gfx::Rect& cleared_rect);
 
-  // Adapter to call above function.
-  void SetLevelInfoFromParams(TextureRef* ref,
-                              const gpu::AsyncTexImage2DParams& params) {
-    SetLevelInfo(ref, params.target, params.level, params.internal_format,
-                 params.width, params.height, 1 /* depth */, params.border,
-                 params.format, params.type,
-                 gfx::Rect(params.width, params.height) /* cleared_rect */);
-  }
-
   Texture* Produce(TextureRef* ref);
 
   // Maps an existing texture into the texture manager, at a given client ID.
@@ -741,6 +739,10 @@ class GPU_EXPORT TextureManager : public base::trace_event::MemoryDumpProvider {
     switch (target) {
       case GL_TEXTURE_2D:
         return default_textures_[kTexture2D].get();
+      case GL_TEXTURE_3D:
+        return default_textures_[kTexture3D].get();
+      case GL_TEXTURE_2D_ARRAY:
+        return default_textures_[kTexture2DArray].get();
       case GL_TEXTURE_CUBE_MAP:
         return default_textures_[kCubeMap].get();
       case GL_TEXTURE_EXTERNAL_OES:
@@ -773,6 +775,10 @@ class GPU_EXPORT TextureManager : public base::trace_event::MemoryDumpProvider {
     switch (target) {
       case GL_SAMPLER_2D:
         return black_texture_ids_[kTexture2D];
+      case GL_SAMPLER_3D:
+        return black_texture_ids_[kTexture3D];
+      case GL_SAMPLER_2D_ARRAY:
+        return black_texture_ids_[kTexture2DArray];
       case GL_SAMPLER_CUBE:
         return black_texture_ids_[kCubeMap];
       case GL_SAMPLER_EXTERNAL_OES:

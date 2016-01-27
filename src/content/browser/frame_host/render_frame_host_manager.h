@@ -116,20 +116,20 @@ class CONTENT_EXPORT RenderFrameHostManager {
     // corresponding to this view host. If this method is not called and the
     // process is not shared, then the WebContentsImpl will act as though the
     // renderer is not running (i.e., it will render "sad tab"). This method is
-    // automatically called from LoadURL. |for_main_frame_navigation| indicates
-    // whether this RenderViewHost is used to render a top-level frame, so the
-    // appropriate RenderWidgetHostView type is used.
+    // automatically called from LoadURL.
     virtual bool CreateRenderViewForRenderManager(
         RenderViewHost* render_view_host,
         int opener_frame_routing_id,
         int proxy_routing_id,
-        const FrameReplicationState& replicated_frame_state,
-        bool for_main_frame_navigation) = 0;
+        const FrameReplicationState& replicated_frame_state) = 0;
+    virtual void CreateRenderWidgetHostViewForRenderManager(
+        RenderViewHost* render_view_host) = 0;
     virtual bool CreateRenderFrameForRenderManager(
         RenderFrameHost* render_frame_host,
+        int proxy_routing_id,
+        int opener_routing_id,
         int parent_routing_id,
-        int previous_sibling_routing_id,
-        int proxy_routing_id) = 0;
+        int previous_sibling_routing_id) = 0;
     virtual void BeforeUnloadFiredFromRenderManager(
         bool proceed, const base::TimeTicks& proceed_time,
         bool* proceed_to_fire_unload) = 0;
@@ -208,8 +208,9 @@ class CONTENT_EXPORT RenderFrameHostManager {
   // For arguments, see WebContentsImpl constructor.
   void Init(BrowserContext* browser_context,
             SiteInstance* site_instance,
-            int view_routing_id,
-            int frame_routing_id);
+            int32 view_routing_id,
+            int32 frame_routing_id,
+            int32 widget_routing_id);
 
   // Returns the currently active RenderFrameHost.
   //
@@ -331,8 +332,14 @@ class CONTENT_EXPORT RenderFrameHostManager {
   void DidNavigateFrame(RenderFrameHostImpl* render_frame_host,
                         bool was_caused_by_user_gesture);
 
-  // Called when a renderer sets its opener to null.
-  void DidDisownOpener(RenderFrameHost* render_frame_host);
+  // Called when this frame's opener is changed to the frame specified by
+  // |opener_routing_id| in |source_site_instance|'s process.  This change
+  // could come from either the current RenderFrameHost or one of the
+  // proxies (e.g., window.open that targets a RemoteFrame by name).  The
+  // updated opener will be forwarded to any other RenderFrameProxies and
+  // RenderFrames for this FrameTreeNode.
+  void DidChangeOpener(int opener_routing_id,
+                       SiteInstance* source_site_instance);
 
   // Sets the pending Web UI for the pending navigation, ensuring that the
   // bindings are appropriate compared to |bindings|.
@@ -447,12 +454,16 @@ class CONTENT_EXPORT RenderFrameHostManager {
   void EnsureRenderViewInitialized(RenderViewHostImpl* render_view_host,
                                    SiteInstance* instance);
 
-  // Recursively creates swapped out RenderViews and RenderFrameProxies for
-  // this frame's FrameTree and for its opener chain in the given SiteInstance.
-  // This allows other tabs to send cross-process JavaScript calls to their
-  // opener(s) and to any other frames in the opener's FrameTree (e.g.,
-  // supporting calls like window.opener.opener.frames[x][y]).
-  void CreateOpenerProxies(SiteInstance* instance);
+  // Creates swapped out RenderViews and RenderFrameProxies for this frame's
+  // FrameTree and for its opener chain in the given SiteInstance. This allows
+  // other tabs to send cross-process JavaScript calls to their opener(s) and
+  // to any other frames in the opener's FrameTree (e.g., supporting calls like
+  // window.opener.opener.frames[x][y]).  Does not create proxies for the
+  // subtree rooted at |skip_this_node| (e.g., if a node is being navigated, it
+  // can be passed here to prevent proxies from being created for it, in
+  // case it is in the same FrameTree as another node on its opener chain).
+  void CreateOpenerProxies(SiteInstance* instance,
+                           FrameTreeNode* skip_this_node);
 
   // Ensure that this frame has proxies in all SiteInstances that can discover
   // this frame by name (e.g., via window.open("", "frame_name")).  See
@@ -604,24 +615,14 @@ class CONTENT_EXPORT RenderFrameHostManager {
   // |pending_render_frame_host_| while respecting the opener route if needed
   // and stores it in pending_render_frame_host_.
   void CreatePendingRenderFrameHost(SiteInstance* old_instance,
-                                    SiteInstance* new_instance,
-                                    bool is_main_frame);
+                                    SiteInstance* new_instance);
 
   // Ensure that we have created all needed proxies for a new RFH with
   // SiteInstance |new_instance|: (1) create swapped-out RVHs and proxies for
   // the new RFH's opener chain if we are staying in the same BrowsingInstance;
-  // (2) Create proxies for the new RFH's SiteInstance in its own frame tree;
-  // (3) set any additional flags for the new RenderFrame with
-  // |create_render_frame_flags|.
+  // (2) Create proxies for the new RFH's SiteInstance in its own frame tree.
   void CreateProxiesForNewRenderFrameHost(SiteInstance* old_instance,
-                                          SiteInstance* new_instance,
-                                          int* create_render_frame_flags);
-
-  // Create swapped out RenderViews and RenderFrameProxies in the given
-  // SiteInstance for all frames on the opener chain of this frame.  Same as
-  // CreateOpenerProxies, but starts from this frame's opener, calling
-  // CreateOpenerProxies on it if it exists and returning otherwise.
-  void CreateOpenerProxiesIfNeeded(SiteInstance* instance);
+                                          SiteInstance* new_instance);
 
   // Traverse the opener chain and populate |opener_frame_trees| with
   // all FrameTrees accessible by following frame openers of nodes in the
@@ -638,13 +639,16 @@ class CONTENT_EXPORT RenderFrameHostManager {
   // Create swapped out RenderViews and RenderFrameProxies in the given
   // SiteInstance for the current node's FrameTree.  Used as a helper function
   // in CreateOpenerProxies for creating proxies in each FrameTree on the
-  // opener chain.
-  void CreateOpenerProxiesForFrameTree(SiteInstance* instance);
+  // opener chain.  Don't create proxies for the subtree rooted at
+  // |skip_this_node|.
+  void CreateOpenerProxiesForFrameTree(SiteInstance* instance,
+                                       FrameTreeNode* skip_this_node);
 
   // Creates a RenderFrameHost and corresponding RenderViewHost if necessary.
   scoped_ptr<RenderFrameHostImpl> CreateRenderFrameHost(SiteInstance* instance,
-                                                        int view_routing_id,
-                                                        int frame_routing_id,
+                                                        int32 view_routing_id,
+                                                        int32 frame_routing_id,
+                                                        int32 widget_routing_id,
                                                         int flags);
 
   // PlzNavigate
@@ -662,8 +666,7 @@ class CONTENT_EXPORT RenderFrameHostManager {
   // out state.  Returns early if the RenderViewHost has already been
   // initialized for another RenderFrameHost.
   bool InitRenderView(RenderViewHostImpl* render_view_host,
-                      int proxy_routing_id,
-                      bool for_main_frame_navigation);
+                      int proxy_routing_id);
 
   // Initialization for RenderFrameHost uses the same sequence as InitRenderView
   // above.

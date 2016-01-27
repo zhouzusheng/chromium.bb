@@ -48,9 +48,9 @@ public:
     const String& unavailablePluginReplacementText() const { return m_unavailablePluginReplacementText; }
 
 private:
-    void paintContents(const PaintInfo&, const LayoutPoint&) final;
-    void paintReplaced(const PaintInfo&, const LayoutPoint&) final;
-    void paint(const PaintInfo&, const LayoutPoint&) final;
+    void paintContents(const PaintInfo&, const LayoutPoint&) const final;
+    void paintReplaced(const PaintInfo&, const LayoutPoint&) const final;
+    void paint(const PaintInfo&, const LayoutPoint&) const final;
 
     void layout() final;
     PaintInvalidationReason invalidatePaintIfNeeded(PaintInvalidationState&, const LayoutBoxModelObject&) final;
@@ -58,7 +58,7 @@ private:
     bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectEmbeddedObject || LayoutPart::isOfType(type); }
     LayoutBox* embeddedContentBox() const final;
 
-    DeprecatedPaintLayerType layerTypeRequired() const final;
+    PaintLayerType layerTypeRequired() const final;
 
     ScrollResultOneDimensional scroll(ScrollDirectionPhysical, ScrollGranularity, float multiplier) final;
 

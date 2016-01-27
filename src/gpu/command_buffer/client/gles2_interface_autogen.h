@@ -649,7 +649,6 @@ virtual void ResizeCHROMIUM(GLuint width,
                             GLfloat scale_factor) = 0;
 virtual const GLchar* GetRequestableExtensionsCHROMIUM() = 0;
 virtual void RequestExtensionCHROMIUM(const char* extension) = 0;
-virtual void RateLimitOffscreenContextCHROMIUM() = 0;
 virtual void GetProgramInfoCHROMIUM(GLuint program,
                                     GLsizei bufsize,
                                     GLsizei* size,
@@ -757,26 +756,6 @@ virtual void ReleaseTexImage2DCHROMIUM(GLenum target, GLint imageId) = 0;
 virtual void TraceBeginCHROMIUM(const char* category_name,
                                 const char* trace_name) = 0;
 virtual void TraceEndCHROMIUM() = 0;
-virtual void AsyncTexSubImage2DCHROMIUM(GLenum target,
-                                        GLint level,
-                                        GLint xoffset,
-                                        GLint yoffset,
-                                        GLsizei width,
-                                        GLsizei height,
-                                        GLenum format,
-                                        GLenum type,
-                                        const void* data) = 0;
-virtual void AsyncTexImage2DCHROMIUM(GLenum target,
-                                     GLint level,
-                                     GLenum internalformat,
-                                     GLsizei width,
-                                     GLsizei height,
-                                     GLint border,
-                                     GLenum format,
-                                     GLenum type,
-                                     const void* pixels) = 0;
-virtual void WaitAsyncTexImage2DCHROMIUM(GLenum target) = 0;
-virtual void WaitAllAsyncTexImage2DCHROMIUM() = 0;
 virtual void DiscardFramebufferEXT(GLenum target,
                                    GLsizei count,
                                    const GLenum* attachments) = 0;
@@ -832,4 +811,5 @@ virtual void StencilThenCoverStrokePathCHROMIUM(GLuint path,
                                                 GLenum coverMode) = 0;
 virtual GLenum GetGraphicsResetStatusKHR() = 0;
 virtual void BlendBarrierKHR() = 0;
+virtual void ApplyScreenSpaceAntialiasingCHROMIUM() = 0;
 #endif  // GPU_COMMAND_BUFFER_CLIENT_GLES2_INTERFACE_AUTOGEN_H_

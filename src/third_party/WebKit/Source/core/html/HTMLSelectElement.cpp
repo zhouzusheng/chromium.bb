@@ -45,7 +45,7 @@
 #include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
-#include "core/html/FormDataList.h"
+#include "core/html/FormData.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLOptGroupElement.h"
 #include "core/html/HTMLOptionElement.h"
@@ -80,7 +80,7 @@ HTMLSelectElement::HTMLSelectElement(Document& document, HTMLFormElement* form)
     : HTMLFormControlElementWithState(selectTag, document, form)
     , m_typeAhead(this)
     , m_size(0)
-    , m_lastOnChangeIndex(-1)
+    , m_lastOnChangeOption(nullptr)
     , m_activeSelectionAnchorIndex(-1)
     , m_activeSelectionEndIndex(-1)
     , m_isProcessingUserDrivenChange(false)
@@ -249,11 +249,8 @@ void HTMLSelectElement::remove(int optionIndex)
 
 String HTMLSelectElement::value() const
 {
-    const WillBeHeapVector<RawPtrWillBeMember<HTMLElement>>& items = listItems();
-    for (unsigned i = 0; i < items.size(); i++) {
-        if (isHTMLOptionElement(items[i]) && toHTMLOptionElement(items[i])->selected())
-            return toHTMLOptionElement(items[i])->value();
-    }
+    if (HTMLOptionElement* option = selectedOption())
+        return option->value();
     return "";
 }
 
@@ -281,14 +278,13 @@ void HTMLSelectElement::setValue(const String &value, bool sendEvents)
     setSuggestedIndex(-1);
     if (m_isAutofilledByPreview)
         setAutofilled(false);
-    setSelectedIndex(optionIndex);
+    SelectOptionFlags flags = DeselectOtherOptions;
+    if (sendEvents)
+        flags |= DispatchInputAndChangeEvent | UserDriven;
+    selectOption(optionIndex, flags);
 
-    if (sendEvents && previousSelectedIndex != selectedIndex()) {
-        if (usesMenuList())
-            dispatchInputAndChangeEventForMenuList(false);
-        else
-            listBoxOnChange();
-    }
+    if (sendEvents && previousSelectedIndex != selectedIndex() && !usesMenuList())
+        listBoxOnChange();
 }
 
 String HTMLSelectElement::suggestedValue() const
@@ -630,7 +626,7 @@ void HTMLSelectElement::selectAll()
 void HTMLSelectElement::saveLastSelection()
 {
     if (usesMenuList()) {
-        m_lastOnChangeIndex = selectedIndex();
+        m_lastOnChangeOption = selectedOption();
         return;
     }
 
@@ -720,13 +716,13 @@ void HTMLSelectElement::listBoxOnChange()
     }
 }
 
-void HTMLSelectElement::dispatchInputAndChangeEventForMenuList(bool requiresUserGesture)
+void HTMLSelectElement::dispatchInputAndChangeEventForMenuList()
 {
     ASSERT(usesMenuList());
 
-    int selected = selectedIndex();
-    if (m_lastOnChangeIndex != selected && (!requiresUserGesture || m_isProcessingUserDrivenChange)) {
-        m_lastOnChangeIndex = selected;
+    HTMLOptionElement* selectedOption = this->selectedOption();
+    if (m_lastOnChangeOption.get() != selectedOption && m_isProcessingUserDrivenChange) {
+        m_lastOnChangeOption = selectedOption;
         m_isProcessingUserDrivenChange = false;
         RefPtrWillBeRawPtr<HTMLSelectElement> protector(this);
         dispatchInputEvent();
@@ -861,6 +857,15 @@ void HTMLSelectElement::recalcListItems(bool updateSelectedStates) const
         firstOption->setSelectedState(true);
 }
 
+HTMLOptionElement* HTMLSelectElement::selectedOption() const
+{
+    for (const auto& element : listItems()) {
+        if (isHTMLOptionElement(*element) && toHTMLOptionElement(*element).selected())
+            return toHTMLOptionElement(element);
+    }
+    return nullptr;
+}
+
 int HTMLSelectElement::selectedIndex() const
 {
     unsigned index = 0;
@@ -938,6 +943,8 @@ void HTMLSelectElement::optionInserted(const HTMLOptionElement& option, bool opt
 
 void HTMLSelectElement::optionRemoved(const HTMLOptionElement& option)
 {
+    if (m_lastOnChangeOption == &option)
+        m_lastOnChangeOption.clear();
     if (m_activeSelectionAnchorIndex < 0 && m_activeSelectionEndIndex < 0)
         return;
     int listIndex = optionToListIndex(option.index());
@@ -963,17 +970,17 @@ void HTMLSelectElement::selectOption(int optionIndex, SelectOptionFlags flags)
     if (selectedIndex() != optionIndex && isAutofilled())
         setAutofilled(false);
 
-    HTMLElement* element = 0;
+    HTMLOptionElement* element = nullptr;
     if (listIndex >= 0) {
-        element = items[listIndex];
-        if (isHTMLOptionElement(*element)) {
-            // setActiveSelectionAnchorIndex is O(N).
-            if (m_activeSelectionAnchorIndex < 0 || shouldDeselect)
-                setActiveSelectionAnchorIndex(listIndex);
-            if (m_activeSelectionEndIndex < 0 || shouldDeselect)
-                setActiveSelectionEndIndex(listIndex);
-            toHTMLOptionElement(*element).setSelectedState(true);
-        }
+        // listIndex must point an HTMLOptionElement if listIndex is not -1
+        // because optionToListIndex() returned it.
+        element = toHTMLOptionElement(items[listIndex]);
+        // setActiveSelectionAnchorIndex is O(N).
+        if (m_activeSelectionAnchorIndex < 0 || shouldDeselect)
+            setActiveSelectionAnchorIndex(listIndex);
+        if (m_activeSelectionEndIndex < 0 || shouldDeselect)
+            setActiveSelectionEndIndex(listIndex);
+        element->setSelectedState(true);
     }
 
     // deselectItemsWithoutValidation() is O(N).
@@ -994,6 +1001,8 @@ void HTMLSelectElement::selectOption(int optionIndex, SelectOptionFlags flags)
         m_isProcessingUserDrivenChange = flags & UserDriven;
         if (flags & DispatchInputAndChangeEvent)
             dispatchInputAndChangeEventForMenuList();
+        else
+            m_lastOnChangeOption = element;
         if (LayoutObject* layoutObject = this->layoutObject()) {
             if (usesMenuList()) {
                 // didSetSelectedIndex() is O(N) because of listToOptionIndex
@@ -1052,6 +1061,7 @@ void HTMLSelectElement::dispatchFocusEvent(Element* oldFocusedElement, WebFocusT
 
 void HTMLSelectElement::dispatchBlurEvent(Element* newFocusedElement, WebFocusType type, InputDeviceCapabilities* sourceCapabilities)
 {
+    m_typeAhead.resetSession();
     // We only need to fire change events here for menu lists, because we fire
     // change events for list boxes whenever the selection change is actually made.
     // This matches other browsers' behavior.
@@ -1160,27 +1170,18 @@ void HTMLSelectElement::parseMultipleAttribute(const AtomicString& value)
     lazyReattachIfAttached();
 }
 
-bool HTMLSelectElement::appendFormData(FormDataList& list, bool)
+void HTMLSelectElement::appendToFormData(FormData& formData)
 {
     const AtomicString& name = this->name();
     if (name.isEmpty())
-        return false;
+        return;
 
-    bool successful = false;
     const WillBeHeapVector<RawPtrWillBeMember<HTMLElement>>& items = listItems();
-
     for (unsigned i = 0; i < items.size(); ++i) {
         HTMLElement* element = items[i];
-        if (isHTMLOptionElement(*element) && toHTMLOptionElement(*element).selected() && !toHTMLOptionElement(*element).isDisabledFormControl()) {
-            list.appendData(name, toHTMLOptionElement(*element).value());
-            successful = true;
-        }
+        if (isHTMLOptionElement(*element) && toHTMLOptionElement(*element).selected() && !toHTMLOptionElement(*element).isDisabledFormControl())
+            formData.append(name, toHTMLOptionElement(*element).value());
     }
-
-    // It's possible that this is a menulist with multiple options and nothing
-    // will be submitted (!successful). We won't send a unselected non-disabled
-    // option as fallback. This behavior matches to other browsers.
-    return successful;
 }
 
 void HTMLSelectElement::resetImpl()
@@ -1776,6 +1777,7 @@ DEFINE_TRACE(HTMLSelectElement)
 #if ENABLE(OILPAN)
     visitor->trace(m_listItems);
 #endif
+    visitor->trace(m_lastOnChangeOption);
     visitor->trace(m_popup);
     HTMLFormControlElementWithState::trace(visitor);
 }
@@ -1949,6 +1951,11 @@ void HTMLSelectElement::detach(const AttachContext& context)
         m_popup->disconnectClient();
     m_popupIsVisible = false;
     m_popup = nullptr;
+}
+
+void HTMLSelectElement::resetTypeAheadSessionForTesting()
+{
+    m_typeAhead.resetSession();
 }
 
 } // namespace blink

@@ -55,17 +55,16 @@ class ExceptionState;
 class Font;
 class FontFaceCache;
 class FontResource;
-class FontsReadyPromiseResolver;
 class ExecutionContext;
 
 #if ENABLE(OILPAN)
 class FontFaceSet final : public EventTargetWithInlineData, public HeapSupplement<Document>, public ActiveDOMObject {
     USING_GARBAGE_COLLECTED_MIXIN(FontFaceSet);
-    typedef HeapSupplement<Document> SupplementType;
+    using SupplementType = HeapSupplement<Document>;
 #else
 class FontFaceSet final : public EventTargetWithInlineData, public RefCountedSupplement<Document, FontFaceSet>, public ActiveDOMObject {
     REFCOUNTED_EVENT_TARGET(FontFaceSet);
-    typedef RefCountedSupplement<Document, FontFaceSet> SupplementType;
+    using SupplementType = RefCountedSupplement<Document, FontFaceSet>;
 #endif
     DEFINE_WRAPPERTYPEINFO();
 public:
@@ -145,11 +144,14 @@ private:
     void handlePendingEventsAndPromises();
     const WillBeHeapListHashSet<RefPtrWillBeMember<FontFace>>& cssConnectedFontFaceList() const;
     bool isCSSConnectedFontFace(FontFace*) const;
+    bool shouldSignalReady() const;
+
+    using ReadyProperty = ScriptPromiseProperty<RawPtrWillBeMember<FontFaceSet>, RawPtrWillBeMember<FontFaceSet>, Member<DOMException>>;
 
     WillBeHeapHashSet<RefPtrWillBeMember<FontFace>> m_loadingFonts;
     bool m_shouldFireLoadingEvent;
     bool m_isLoading;
-    PersistentHeapVectorWillBeHeapVector<Member<FontsReadyPromiseResolver>> m_readyResolvers;
+    PersistentWillBeMember<ReadyProperty> m_ready;
     FontFaceArray m_loadedFonts;
     FontFaceArray m_failedFonts;
     WillBeHeapListHashSet<RefPtrWillBeMember<FontFace>> m_nonCSSConnectedFaces;

@@ -137,13 +137,13 @@ private:
     // 'shadow page' - created to proxy loading requests from the worker.
     RefPtrWillBePersistent<ExecutionContext> m_loadingDocument;
     WebView* m_webView;
-    WebLocalFrameImpl* m_mainFrame;
+    RefPtrWillBePersistent<WebLocalFrameImpl> m_mainFrame;
     bool m_askedToTerminate;
 
     // This one is bound to and used only on the main thread.
     OwnPtr<WebServiceWorkerNetworkProvider> m_networkProvider;
 
-    OwnPtr<WorkerInspectorProxy> m_workerInspectorProxy;
+    OwnPtrWillBePersistent<WorkerInspectorProxy> m_workerInspectorProxy;
 
     RefPtr<WorkerThread> m_workerThread;
 

@@ -12,7 +12,6 @@
 #include "base/memory/shared_memory.h"
 #include "base/synchronization/lock.h"
 #include "gpu/command_buffer/common/mailbox_holder.h"
-#include "media/base/buffers.h"
 #include "media/base/video_frame_metadata.h"
 #include "media/base/video_types.h"
 #include "ui/gfx/geometry/rect.h"
@@ -112,6 +111,15 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
                                                const gfx::Rect& visible_rect,
                                                const gfx::Size& natural_size,
                                                base::TimeDelta timestamp);
+
+  // Offers the same functionality as CreateFrame, and additionally zeroes out
+  // the initial allocated buffers.
+  static scoped_refptr<VideoFrame> CreateZeroInitializedFrame(
+      VideoPixelFormat format,
+      const gfx::Size& coded_size,
+      const gfx::Rect& visible_rect,
+      const gfx::Size& natural_size,
+      base::TimeDelta timestamp);
 
   // Wraps a native texture of the given parameters with a VideoFrame.
   // The backing of the VideoFrame is held in the mailbox held by
@@ -364,6 +372,9 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
   const VideoFrameMetadata* metadata() const { return &metadata_; }
   VideoFrameMetadata* metadata() { return &metadata_; }
 
+  // The time span between the current frame and the first frame of the stream.
+  // This is the media timestamp, and not the reference time.
+  // See VideoFrameMetadata::REFERENCE_TIME for details.
   base::TimeDelta timestamp() const { return timestamp_; }
   void set_timestamp(base::TimeDelta timestamp) {
     timestamp_ = timestamp;
@@ -415,7 +426,15 @@ class MEDIA_EXPORT VideoFrame : public base::RefCountedThreadSafe<VideoFrame> {
              base::TimeDelta timestamp);
   virtual ~VideoFrame();
 
-  void AllocateYUV();
+  static scoped_refptr<VideoFrame> CreateFrameInternal(
+      VideoPixelFormat format,
+      const gfx::Size& coded_size,
+      const gfx::Rect& visible_rect,
+      const gfx::Size& natural_size,
+      base::TimeDelta timestamp,
+      bool zero_initialize_memory);
+
+  void AllocateYUV(bool zero_initialize_memory);
 
   // Frame format.
   const VideoPixelFormat format_;

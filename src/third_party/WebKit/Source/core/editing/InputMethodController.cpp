@@ -122,7 +122,7 @@ bool InputMethodController::confirmComposition()
 {
     if (!hasComposition())
         return false;
-    return confirmComposition(plainText(compositionEphemeralRange()));
+    return confirmComposition(composingText());
 }
 
 bool InputMethodController::confirmComposition(const String& text)
@@ -182,7 +182,7 @@ bool InputMethodController::finishComposition(const String& text, FinishComposit
 
     Editor::RevealSelectionScope revealSelectionScope(&editor());
 
-    bool dirty = m_isDirty || plainText(compositionEphemeralRange()) != text;
+    bool dirty = m_isDirty || composingText() != text;
 
     if (mode == CancelComposition) {
         ASSERT(text == emptyString());
@@ -312,7 +312,7 @@ void InputMethodController::setComposition(const String& text, const Vector<Comp
     unsigned start = std::min(baseOffset + selectionStart, extentOffset);
     unsigned end = std::min(std::max(start, baseOffset + selectionEnd), extentOffset);
     RefPtrWillBeRawPtr<Range> selectedRange = Range::create(baseNode->document(), baseNode, start, baseNode, end);
-    frame().selection().setSelectedRange(selectedRange.get(), TextAffinity::Downstream, FrameSelection::NonDirectional, NotUserTriggered);
+    frame().selection().setSelectedRange(selectedRange.get(), TextAffinity::Downstream, SelectionDirectionalMode::NonDirectional, NotUserTriggered);
 
     if (underlines.isEmpty()) {
         frame().document()->markers().addCompositionMarker(m_compositionRange->startPosition(), m_compositionRange->endPosition(), Color::black, false, LayoutTheme::theme().platformDefaultCompositionBackgroundColor());
@@ -376,14 +376,19 @@ PassRefPtrWillBeRawPtr<Range> InputMethodController::compositionRange() const
     return hasComposition() ? m_compositionRange : nullptr;
 }
 
+String InputMethodController::composingText() const
+{
+    return plainText(compositionEphemeralRange(), TextIteratorEmitsOriginalText);
+}
+
 PlainTextRange InputMethodController::getSelectionOffsets() const
 {
-    RefPtrWillBeRawPtr<Range> range = frame().selection().selection().firstRange();
-    if (!range)
+    EphemeralRange range = firstEphemeralRangeOf(frame().selection().selection());
+    if (range.isNull())
         return PlainTextRange();
     ContainerNode* editable = frame().selection().rootEditableElementOrTreeScopeRootNode();
     ASSERT(editable);
-    return PlainTextRange::create(*editable, *range.get());
+    return PlainTextRange::create(*editable, range);
 }
 
 bool InputMethodController::setSelectionOffsets(const PlainTextRange& selectionOffsets)
@@ -398,7 +403,7 @@ bool InputMethodController::setSelectionOffsets(const PlainTextRange& selectionO
     if (range.isNull())
         return false;
 
-    return frame().selection().setSelectedRange(range, VP_DEFAULT_AFFINITY, FrameSelection::NonDirectional, FrameSelection::CloseTyping);
+    return frame().selection().setSelectedRange(range, VP_DEFAULT_AFFINITY, SelectionDirectionalMode::NonDirectional, FrameSelection::CloseTyping);
 }
 
 bool InputMethodController::setEditableSelectionOffsets(const PlainTextRange& selectionOffsets)

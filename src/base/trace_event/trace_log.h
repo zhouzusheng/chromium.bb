@@ -5,6 +5,7 @@
 #ifndef BASE_TRACE_EVENT_TRACE_LOG_H_
 #define BASE_TRACE_EVENT_TRACE_LOG_H_
 
+#include "base/gtest_prod_util.h"
 #include "base/trace_event/memory_dump_provider.h"
 #include "base/trace_event/trace_config.h"
 #include "base/trace_event/trace_event_impl.h"
@@ -25,11 +26,10 @@
       TRACE_EVENT_PHASE_INSTANT, name, reinterpret_cast<const void*>(id), \
       extra)
 
-template <typename Type>
-struct DefaultSingletonTraits;
-
 namespace base {
 
+template <typename Type>
+struct DefaultSingletonTraits;
 class RefCountedString;
 
 namespace trace_event {

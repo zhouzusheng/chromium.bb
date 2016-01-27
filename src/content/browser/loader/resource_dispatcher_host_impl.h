@@ -93,7 +93,8 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
       bool is_content_initiated,
       ResourceContext* context,
       int child_id,
-      int route_id,
+      int render_view_route_id,
+      int render_frame_route_id,
       bool prefer_cache,
       bool do_not_prompt_for_login,
       scoped_ptr<DownloadSaveInfo> save_info,
@@ -127,7 +128,8 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   void BeginSaveFile(const GURL& url,
                      const Referrer& referrer,
                      int child_id,
-                     int route_id,
+                     int render_view_route_id,
+                     int render_frame_route_id,
                      ResourceContext* context);
 
   // Cancels the given request if it still exists.
@@ -272,7 +274,6 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   // PlzNavigate: Begins a request for NavigationURLLoader. |loader| is the
   // loader to attach to the leaf resource handler.
   void BeginNavigationRequest(ResourceContext* resource_context,
-                              int frame_tree_node_id,
                               const NavigationRequestInfo& info,
                               NavigationURLLoaderImplCore* loader);
 
@@ -459,7 +460,6 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
       scoped_ptr<ResourceHandler> handler);
 
   void OnDataDownloadedACK(int request_id);
-  void OnUploadProgressACK(int request_id);
   void OnCancelRequest(int request_id);
   void OnReleaseDownloadedFile(int request_id);
   void OnDidChangePriority(int request_id,
@@ -470,7 +470,8 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
   // |download| should be true if the request is a file download.
   ResourceRequestInfoImpl* CreateRequestInfo(
       int child_id,
-      int route_id,
+      int render_view_route_id,
+      int render_frame_route_id,
       bool download,
       ResourceContext* context);
 
@@ -520,8 +521,7 @@ class CONTENT_EXPORT ResourceDispatcherHostImpl
 
   // A timer that periodically calls UpdateLoadInfo while pending_loaders_ is
   // not empty and at least one RenderViewHost is loading.
-  scoped_ptr<base::RepeatingTimer<ResourceDispatcherHostImpl> >
-      update_load_states_timer_;
+  scoped_ptr<base::RepeatingTimer> update_load_states_timer_;
 
   // We own the save file manager.
   scoped_refptr<SaveFileManager> save_file_manager_;

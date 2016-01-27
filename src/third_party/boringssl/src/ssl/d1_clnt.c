@@ -112,6 +112,8 @@
  * [including the GNU Public Licence.]
  */
 
+#include <openssl/ssl.h>
+
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -127,6 +129,7 @@
 #include <openssl/rand.h>
 
 #include "internal.h"
+
 
 static int dtls1_get_hello_verify(SSL *s);
 
@@ -260,12 +263,22 @@ int dtls1_connect(SSL *s) {
           if (s->s3->tmp.certificate_status_expected) {
             s->state = SSL3_ST_CR_CERT_STATUS_A;
           } else {
-            s->state = SSL3_ST_CR_KEY_EXCH_A;
+            s->state = SSL3_ST_VERIFY_SERVER_CERT;
           }
         } else {
           skip = 1;
           s->state = SSL3_ST_CR_KEY_EXCH_A;
         }
+        s->init_num = 0;
+        break;
+
+      case SSL3_ST_VERIFY_SERVER_CERT:
+        ret = ssl3_verify_server_cert(s);
+        if (ret <= 0) {
+          goto end;
+        }
+
+        s->state = SSL3_ST_CR_KEY_EXCH_A;
         s->init_num = 0;
         break;
 
@@ -418,7 +431,7 @@ int dtls1_connect(SSL *s) {
         if (ret <= 0) {
           goto end;
         }
-        s->state = SSL3_ST_CR_KEY_EXCH_A;
+        s->state = SSL3_ST_VERIFY_SERVER_CERT;
         s->init_num = 0;
         break;
 

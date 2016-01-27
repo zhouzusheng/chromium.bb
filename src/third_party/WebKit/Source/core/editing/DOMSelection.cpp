@@ -48,6 +48,14 @@
 
 namespace blink {
 
+static Position createPosition(Node* node, int offset)
+{
+    ASSERT(offset >= 0);
+    if (!node)
+        return Position();
+    return Position(node, offset);
+}
+
 static Node* selectionShadowAncestor(LocalFrame* frame)
 {
     Node* node = frame->selection().selection().base().anchorNode();
@@ -218,7 +226,7 @@ void DOMSelection::collapse(Node* node, int offset, ExceptionState& exceptionSta
     range->setEnd(node, offset, exceptionState);
     if (exceptionState.hadException())
         return;
-    m_frame->selection().setSelectedRange(range.get(), TextAffinity::Downstream, m_frame->selection().isDirectional() ? FrameSelection::Directional : FrameSelection::NonDirectional);
+    m_frame->selection().setSelectedRange(range.get(), TextAffinity::Downstream, m_frame->selection().isDirectional() ? SelectionDirectionalMode::Directional : SelectionDirectionalMode::NonDirectional);
 }
 
 void DOMSelection::collapseToEnd(ExceptionState& exceptionState)
@@ -233,7 +241,7 @@ void DOMSelection::collapseToEnd(ExceptionState& exceptionState)
         return;
     }
 
-    m_frame->selection().moveTo(VisiblePosition(selection.end()));
+    m_frame->selection().moveTo(createVisiblePosition(selection.end()));
 }
 
 void DOMSelection::collapseToStart(ExceptionState& exceptionState)
@@ -248,7 +256,7 @@ void DOMSelection::collapseToStart(ExceptionState& exceptionState)
         return;
     }
 
-    m_frame->selection().moveTo(VisiblePosition(selection.start()));
+    m_frame->selection().moveTo(createVisiblePosition(selection.start()));
 }
 
 void DOMSelection::empty()
@@ -276,8 +284,8 @@ void DOMSelection::setBaseAndExtent(Node* baseNode, int baseOffset, Node* extent
     if (!isValidForPosition(baseNode) || !isValidForPosition(extentNode))
         return;
 
-    VisiblePosition visibleBase = VisiblePosition(Position(baseNode, baseOffset));
-    VisiblePosition visibleExtent = VisiblePosition(Position(extentNode, extentOffset));
+    VisiblePosition visibleBase = createVisiblePosition(createPosition(baseNode, baseOffset));
+    VisiblePosition visibleExtent = createVisiblePosition(createPosition(extentNode, extentOffset));
 
     m_frame->selection().moveTo(visibleBase, visibleExtent);
 }
@@ -351,7 +359,7 @@ void DOMSelection::extend(Node* node, int offset, ExceptionState& exceptionState
     if (!isValidForPosition(node))
         return;
 
-    m_frame->selection().setExtent(VisiblePosition(Position(node, offset)));
+    m_frame->selection().setExtent(createVisiblePosition(createPosition(node, offset)));
 }
 
 PassRefPtrWillBeRawPtr<Range> DOMSelection::getRangeAt(int index, ExceptionState& exceptionState)
@@ -445,7 +453,7 @@ void DOMSelection::deleteFromDocument()
     if (selection.isNone())
         return;
 
-    RefPtrWillBeRawPtr<Range> selectedRange = selection.selection().toNormalizedRange();
+    RefPtrWillBeRawPtr<Range> selectedRange = createRange(selection.selection().toNormalizedEphemeralRange());
     if (!selectedRange)
         return;
 
@@ -456,12 +464,14 @@ void DOMSelection::deleteFromDocument()
 
 bool DOMSelection::containsNode(const Node* n, bool allowPartial) const
 {
+    ASSERT(n);
+
     if (!m_frame)
         return false;
 
     FrameSelection& selection = m_frame->selection();
 
-    if (!n || m_frame->document() != n->document() || selection.isNone())
+    if (m_frame->document() != n->document() || selection.isNone())
         return false;
 
     unsigned nodeIndex = n->nodeIndex();

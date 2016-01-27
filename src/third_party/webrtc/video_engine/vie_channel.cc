@@ -77,23 +77,19 @@ class ViEChannelProtectionCallback : public VCMProtectionCallback {
   ViEChannel* owner_;
 };
 
-ViEChannel::ViEChannel(int32_t channel_id,
-                       int32_t engine_id,
-                       uint32_t number_of_cores,
+ViEChannel::ViEChannel(uint32_t number_of_cores,
                        Transport* transport,
                        ProcessThread* module_process_thread,
                        RtcpIntraFrameObserver* intra_frame_observer,
                        RtcpBandwidthObserver* bandwidth_observer,
-                       SendTimeObserver* send_time_observer,
+                       TransportFeedbackObserver* transport_feedback_observer,
                        RemoteBitrateEstimator* remote_bitrate_estimator,
                        RtcpRttStats* rtt_stats,
                        PacedSender* paced_sender,
                        PacketRouter* packet_router,
                        size_t max_rtp_streams,
                        bool sender)
-    : channel_id_(channel_id),
-      engine_id_(engine_id),
-      number_of_cores_(number_of_cores),
+    : number_of_cores_(number_of_cores),
       sender_(sender),
       module_process_thread_(module_process_thread),
       crit_(CriticalSectionWrapper::CreateCriticalSection()),
@@ -102,19 +98,17 @@ ViEChannel::ViEChannel(int32_t channel_id,
       vcm_(VideoCodingModule::Create(Clock::GetRealTimeClock(),
                                      nullptr,
                                      nullptr)),
-      vie_receiver_(channel_id, vcm_, remote_bitrate_estimator, this),
+      vie_receiver_(vcm_, remote_bitrate_estimator, this),
       vie_sync_(vcm_),
       stats_observer_(new ChannelStatsObserver(this)),
-      vcm_receive_stats_callback_(NULL),
+      receive_stats_callback_(nullptr),
       incoming_video_stream_(nullptr),
-      codec_observer_(NULL),
       intra_frame_observer_(intra_frame_observer),
       rtt_stats_(rtt_stats),
       paced_sender_(paced_sender),
       packet_router_(packet_router),
       bandwidth_observer_(bandwidth_observer),
-      send_time_observer_(send_time_observer),
-      decoder_reset_(true),
+      transport_feedback_observer_(transport_feedback_observer),
       nack_history_size_sender_(kSendSidePacketHistorySize),
       max_nack_reordering_threshold_(kMaxPacketAgeToNack),
       pre_render_callback_(NULL),
@@ -123,18 +117,17 @@ ViEChannel::ViEChannel(int32_t channel_id,
       rtt_sum_ms_(0),
       num_rtts_(0),
       rtp_rtcp_modules_(
-          CreateRtpRtcpModules(ViEModuleId(engine_id_, channel_id_),
-                               !sender,
+          CreateRtpRtcpModules(!sender,
                                vie_receiver_.GetReceiveStatistics(),
                                transport,
                                sender ? intra_frame_observer_ : nullptr,
                                sender ? bandwidth_observer_.get() : nullptr,
-                               sender ? send_time_observer_ : nullptr,
+                               transport_feedback_observer_,
                                rtt_stats_,
                                &rtcp_packet_type_counter_observer_,
                                remote_bitrate_estimator,
                                paced_sender_,
-                               sender_ ? packet_router_ : nullptr,
+                               packet_router_,
                                &send_bitrate_observer_,
                                &send_frame_count_observer_,
                                &send_side_delay_observer_,
@@ -155,11 +148,11 @@ int32_t ViEChannel::Init() {
     for (RtpRtcp* rtp_rtcp : rtp_rtcp_modules_)
       rtp_rtcp->SetStorePacketsStatus(true, nack_history_size_sender_);
   }
+  packet_router_->AddRtpModule(rtp_rtcp_modules_[0]);
   if (sender_) {
-    packet_router_->AddRtpModule(rtp_rtcp_modules_[0]);
     std::list<RtpRtcp*> send_rtp_modules(1, rtp_rtcp_modules_[0]);
     send_payload_router_->SetSendingRtpModules(send_rtp_modules);
-    DCHECK(!send_payload_router_->active());
+    RTC_DCHECK(!send_payload_router_->active());
   }
   if (vcm_->RegisterReceiveCallback(this) != 0) {
     return -1;
@@ -183,10 +176,8 @@ ViEChannel::~ViEChannel() {
   module_process_thread_->DeRegisterModule(vcm_);
   module_process_thread_->DeRegisterModule(&vie_sync_);
   send_payload_router_->SetSendingRtpModules(std::list<RtpRtcp*>());
-  if (sender_ && packet_router_) {
-    for (size_t i = 0; i < num_active_rtp_rtcp_modules_; ++i)
-      packet_router_->RemoveRtpModule(rtp_rtcp_modules_[i]);
-  }
+  for (size_t i = 0; i < num_active_rtp_rtcp_modules_; ++i)
+    packet_router_->RemoveRtpModule(rtp_rtcp_modules_[i]);
   for (RtpRtcp* rtp_rtcp : rtp_rtcp_modules_) {
     module_process_thread_->DeRegisterModule(rtp_rtcp);
     delete rtp_rtcp;
@@ -335,7 +326,7 @@ void ViEChannel::UpdateHistograms() {
 
 int32_t ViEChannel::SetSendCodec(const VideoCodec& video_codec,
                                  bool new_stream) {
-  DCHECK(sender_);
+  RTC_DCHECK(sender_);
   if (video_codec.codecType == kVideoCodecRED ||
       video_codec.codecType == kVideoCodecULPFEC) {
     LOG_F(LS_ERROR) << "Not a valid send codec " << video_codec.codecType;
@@ -408,20 +399,18 @@ int32_t ViEChannel::SetSendCodec(const VideoCodec& video_codec,
   // Deregister previously registered modules.
   for (size_t i = num_active_modules; i < num_prev_active_modules; ++i) {
     module_process_thread_->DeRegisterModule(rtp_rtcp_modules_[i]);
-    if (sender_ && packet_router_)
-      packet_router_->RemoveRtpModule(rtp_rtcp_modules_[i]);
+    packet_router_->RemoveRtpModule(rtp_rtcp_modules_[i]);
   }
   // Register new active modules.
   for (size_t i = num_prev_active_modules; i < num_active_modules; ++i) {
     module_process_thread_->RegisterModule(rtp_rtcp_modules_[i]);
-    if (sender_ && packet_router_)
-      packet_router_->AddRtpModule(rtp_rtcp_modules_[i]);
+    packet_router_->AddRtpModule(rtp_rtcp_modules_[i]);
   }
   return 0;
 }
 
 int32_t ViEChannel::SetReceiveCodec(const VideoCodec& video_codec) {
-  DCHECK(!sender_);
+  RTC_DCHECK(!sender_);
   if (!vie_receiver_.SetReceiveCodec(video_codec)) {
     return -1;
   }
@@ -437,25 +426,12 @@ int32_t ViEChannel::SetReceiveCodec(const VideoCodec& video_codec) {
   return 0;
 }
 
-int32_t ViEChannel::RegisterCodecObserver(ViEDecoderObserver* observer) {
-  CriticalSectionScoped cs(crit_.get());
-  if (observer) {
-    if (codec_observer_) {
-      LOG_F(LS_ERROR) << "Observer already registered.";
-      return -1;
-    }
-    codec_observer_ = observer;
-  } else {
-    codec_observer_ = NULL;
-  }
-  return 0;
-}
 
 int32_t ViEChannel::RegisterExternalDecoder(const uint8_t pl_type,
                                             VideoDecoder* decoder,
                                             bool buffered_rendering,
                                             int32_t render_delay) {
-  DCHECK(!sender_);
+  RTC_DCHECK(!sender_);
   int32_t result;
   result = vcm_->RegisterExternalDecoder(decoder, pl_type, buffered_rendering);
   if (result != VCM_OK) {
@@ -465,7 +441,7 @@ int32_t ViEChannel::RegisterExternalDecoder(const uint8_t pl_type,
 }
 
 int32_t ViEChannel::DeRegisterExternalDecoder(const uint8_t pl_type) {
-  DCHECK(!sender_);
+  RTC_DCHECK(!sender_);
   VideoCodec current_receive_codec;
   int32_t result = 0;
   result = vcm_->ReceiveCodec(&current_receive_codec);
@@ -496,7 +472,7 @@ int ViEChannel::ReceiveDelay() const {
   return vcm_->Delay();
 }
 
-void ViEChannel::SetRTCPMode(const RTCPMethod rtcp_mode) {
+void ViEChannel::SetRTCPMode(const RtcpMode rtcp_mode) {
   for (RtpRtcp* rtp_rtcp : rtp_rtcp_modules_)
     rtp_rtcp->SetRTCPStatus(rtcp_mode);
 }
@@ -507,13 +483,13 @@ void ViEChannel::SetProtectionMode(bool enable_nack,
                                    int payload_type_fec) {
   // Validate payload types.
   if (enable_fec) {
-    DCHECK_GE(payload_type_red, 0);
-    DCHECK_GE(payload_type_fec, 0);
-    DCHECK_LE(payload_type_red, 127);
-    DCHECK_LE(payload_type_fec, 127);
+    RTC_DCHECK_GE(payload_type_red, 0);
+    RTC_DCHECK_GE(payload_type_fec, 0);
+    RTC_DCHECK_LE(payload_type_red, 127);
+    RTC_DCHECK_LE(payload_type_fec, 127);
   } else {
-    DCHECK_EQ(payload_type_red, -1);
-    DCHECK_EQ(payload_type_fec, -1);
+    RTC_DCHECK_EQ(payload_type_red, -1);
+    RTC_DCHECK_EQ(payload_type_fec, -1);
     // Set to valid uint8_ts to be castable later without signed overflows.
     payload_type_red = 0;
     payload_type_fec = 0;
@@ -542,7 +518,7 @@ void ViEChannel::SetProtectionMode(bool enable_nack,
 void ViEChannel::ProcessNACKRequest(const bool enable) {
   if (enable) {
     // Turn on NACK.
-    if (rtp_rtcp_modules_[0]->RTCP() == kRtcpOff)
+    if (rtp_rtcp_modules_[0]->RTCP() == RtcpMode::kOff)
       return;
     vie_receiver_.SetNackStatus(true, max_nack_reordering_threshold_);
 
@@ -726,7 +702,7 @@ void ViEChannel::SetRtcpXrRrtrStatus(bool enable) {
 }
 
 void ViEChannel::SetTransmissionSmoothingStatus(bool enable) {
-  DCHECK(paced_sender_ && "No paced sender registered.");
+  RTC_DCHECK(paced_sender_ && "No paced sender registered.");
   paced_sender_->SetStatus(enable);
 }
 
@@ -753,7 +729,7 @@ int32_t ViEChannel::SetRemoteSSRCType(const StreamType usage,
 }
 
 int32_t ViEChannel::GetLocalSSRC(uint8_t idx, unsigned int* ssrc) {
-  DCHECK_LE(idx, rtp_rtcp_modules_.size());
+  RTC_DCHECK_LE(idx, rtp_rtcp_modules_.size());
   *ssrc = rtp_rtcp_modules_[idx]->SSRC();
   return 0;
 }
@@ -784,7 +760,7 @@ void ViEChannel::SetRtxReceivePayloadType(int payload_type,
 }
 
 void ViEChannel::SetRtpStateForSsrc(uint32_t ssrc, const RtpState& rtp_state) {
-  DCHECK(!rtp_rtcp_modules_[0]->Sending());
+  RTC_DCHECK(!rtp_rtcp_modules_[0]->Sending());
   for (RtpRtcp* rtp_rtcp : rtp_rtcp_modules_) {
     if (rtp_rtcp->SetRtpStateForSsrc(ssrc, rtp_state))
       return;
@@ -792,7 +768,7 @@ void ViEChannel::SetRtpStateForSsrc(uint32_t ssrc, const RtpState& rtp_state) {
 }
 
 RtpState ViEChannel::GetRtpStateForSsrc(uint32_t ssrc) {
-  DCHECK(!rtp_rtcp_modules_[0]->Sending());
+  RTC_DCHECK(!rtp_rtcp_modules_[0]->Sending());
   RtpState rtp_state;
   for (RtpRtcp* rtp_rtcp : rtp_rtcp_modules_) {
     if (rtp_rtcp->GetRtpStateForSsrc(ssrc, &rtp_state))
@@ -804,7 +780,7 @@ RtpState ViEChannel::GetRtpStateForSsrc(uint32_t ssrc) {
 
 // TODO(pbos): Set CNAME on all modules.
 int32_t ViEChannel::SetRTCPCName(const char* rtcp_cname) {
-  DCHECK(!rtp_rtcp_modules_[0]->Sending());
+  RTC_DCHECK(!rtp_rtcp_modules_[0]->Sending());
   return rtp_rtcp_modules_[0]->SetCNAME(rtcp_cname);
 }
 
@@ -1042,22 +1018,11 @@ CallStatsObserver* ViEChannel::GetStatsObserver() {
 int32_t ViEChannel::FrameToRender(VideoFrame& video_frame) {  // NOLINT
   CriticalSectionScoped cs(crit_.get());
 
-  if (decoder_reset_) {
-    // Trigger a callback to the user if the incoming codec has changed.
-    if (codec_observer_) {
-      // The codec set by RegisterReceiveCodec might not be the size we're
-      // actually decoding.
-      receive_codec_.width = static_cast<uint16_t>(video_frame.width());
-      receive_codec_.height = static_cast<uint16_t>(video_frame.height());
-      codec_observer_->IncomingCodecChanged(channel_id_, receive_codec_);
-    }
-    decoder_reset_ = false;
-  }
-
   if (pre_render_callback_ != NULL)
     pre_render_callback_->FrameCallback(&video_frame);
 
-  incoming_video_stream_->RenderFrame(channel_id_, video_frame);
+  // TODO(pbos): Remove stream id argument.
+  incoming_video_stream_->RenderFrame(0xFFFFFFFF, video_frame);
   return 0;
 }
 
@@ -1066,28 +1031,29 @@ int32_t ViEChannel::ReceivedDecodedReferenceFrame(
   return rtp_rtcp_modules_[0]->SendRTCPReferencePictureSelection(picture_id);
 }
 
-void ViEChannel::IncomingCodecChanged(const VideoCodec& codec) {
+void ViEChannel::OnIncomingPayloadType(int payload_type) {
   CriticalSectionScoped cs(crit_.get());
-  receive_codec_ = codec;
+  if (receive_stats_callback_)
+    receive_stats_callback_->OnIncomingPayloadType(payload_type);
 }
 
 void ViEChannel::OnReceiveRatesUpdated(uint32_t bit_rate, uint32_t frame_rate) {
   CriticalSectionScoped cs(crit_.get());
-  if (codec_observer_)
-    codec_observer_->IncomingRate(channel_id_, frame_rate, bit_rate);
+  if (receive_stats_callback_)
+    receive_stats_callback_->OnIncomingRate(frame_rate, bit_rate);
 }
 
 void ViEChannel::OnDiscardedPacketsUpdated(int discarded_packets) {
   CriticalSectionScoped cs(crit_.get());
-  if (vcm_receive_stats_callback_ != NULL)
-    vcm_receive_stats_callback_->OnDiscardedPacketsUpdated(discarded_packets);
+  if (receive_stats_callback_)
+    receive_stats_callback_->OnDiscardedPacketsUpdated(discarded_packets);
 }
 
 void ViEChannel::OnFrameCountsUpdated(const FrameCounts& frame_counts) {
   CriticalSectionScoped cs(crit_.get());
   receive_frame_counts_ = frame_counts;
-  if (vcm_receive_stats_callback_ != NULL)
-    vcm_receive_stats_callback_->OnFrameCountsUpdated(frame_counts);
+  if (receive_stats_callback_)
+    receive_stats_callback_->OnFrameCountsUpdated(frame_counts);
 }
 
 void ViEChannel::OnDecoderTiming(int decode_ms,
@@ -1098,15 +1064,11 @@ void ViEChannel::OnDecoderTiming(int decode_ms,
                                  int min_playout_delay_ms,
                                  int render_delay_ms) {
   CriticalSectionScoped cs(crit_.get());
-  if (!codec_observer_)
+  if (!receive_stats_callback_)
     return;
-  codec_observer_->DecoderTiming(decode_ms,
-                                 max_decode_ms,
-                                 current_delay_ms,
-                                 target_delay_ms,
-                                 jitter_buffer_ms,
-                                 min_playout_delay_ms,
-                                 render_delay_ms);
+  receive_stats_callback_->OnDecoderTiming(
+      decode_ms, max_decode_ms, current_delay_ms, target_delay_ms,
+      jitter_buffer_ms, min_playout_delay_ms, render_delay_ms);
 }
 
 int32_t ViEChannel::RequestKeyFrame() {
@@ -1167,26 +1129,24 @@ int ViEChannel::ProtectionRequest(const FecProtectionParams* delta_fec_params,
 }
 
 std::vector<RtpRtcp*> ViEChannel::CreateRtpRtcpModules(
-    int32_t id,
     bool receiver_only,
     ReceiveStatistics* receive_statistics,
     Transport* outgoing_transport,
     RtcpIntraFrameObserver* intra_frame_callback,
     RtcpBandwidthObserver* bandwidth_callback,
-    SendTimeObserver* send_time_callback,
+    TransportFeedbackObserver* transport_feedback_callback,
     RtcpRttStats* rtt_stats,
     RtcpPacketTypeCounterObserver* rtcp_packet_type_counter_observer,
     RemoteBitrateEstimator* remote_bitrate_estimator,
-    PacedSender* paced_sender,
-    PacketRouter* packet_router,
+    RtpPacketSender* paced_sender,
+    TransportSequenceNumberAllocator* transport_sequence_number_allocator,
     BitrateStatisticsObserver* send_bitrate_observer,
     FrameCountObserver* send_frame_count_observer,
     SendSideDelayObserver* send_side_delay_observer,
     size_t num_modules) {
-  DCHECK_GT(num_modules, 0u);
+  RTC_DCHECK_GT(num_modules, 0u);
   RtpRtcp::Configuration configuration;
   ReceiveStatistics* null_receive_statistics = configuration.receive_statistics;
-  configuration.id = id;
   configuration.audio = false;
   configuration.receiver_only = receiver_only;
   configuration.receive_statistics = receive_statistics;
@@ -1196,19 +1156,20 @@ std::vector<RtpRtcp*> ViEChannel::CreateRtpRtcpModules(
   configuration.rtcp_packet_type_counter_observer =
       rtcp_packet_type_counter_observer;
   configuration.paced_sender = paced_sender;
-  configuration.packet_router = packet_router;
+  configuration.transport_sequence_number_allocator =
+      transport_sequence_number_allocator;
   configuration.send_bitrate_observer = send_bitrate_observer;
   configuration.send_frame_count_observer = send_frame_count_observer;
   configuration.send_side_delay_observer = send_side_delay_observer;
   configuration.bandwidth_callback = bandwidth_callback;
-  configuration.send_time_callback = send_time_callback;
+  configuration.transport_feedback_callback = transport_feedback_callback;
 
   std::vector<RtpRtcp*> modules;
   for (size_t i = 0; i < num_modules; ++i) {
     RtpRtcp* rtp_rtcp = RtpRtcp::CreateRtpRtcp(configuration);
     rtp_rtcp->SetSendingStatus(false);
     rtp_rtcp->SetSendingMediaStatus(false);
-    rtp_rtcp->SetRTCPStatus(kRtcpCompound);
+    rtp_rtcp->SetRTCPStatus(RtcpMode::kCompound);
     modules.push_back(rtp_rtcp);
     // Receive statistics and remote bitrate estimator should only be set for
     // the primary (first) module.
@@ -1219,7 +1180,7 @@ std::vector<RtpRtcp*> ViEChannel::CreateRtpRtcpModules(
 }
 
 void ViEChannel::StartDecodeThread() {
-  DCHECK(!sender_);
+  RTC_DCHECK(!sender_);
   // Start the decode thread
   if (decode_thread_)
     return;
@@ -1261,8 +1222,9 @@ void ViEChannel::RegisterPreDecodeImageCallback(
   vcm_->RegisterPreDecodeImageCallback(pre_decode_callback);
 }
 
+// TODO(pbos): Remove OnInitializeDecoder which is called from the RTP module,
+// any decoder resetting should be handled internally within the VCM.
 int32_t ViEChannel::OnInitializeDecoder(
-    const int32_t id,
     const int8_t payload_type,
     const char payload_name[RTP_PAYLOAD_NAME_SIZE],
     const int frequency,
@@ -1272,22 +1234,14 @@ int32_t ViEChannel::OnInitializeDecoder(
                << " " << payload_name;
   vcm_->ResetDecoder();
 
-  CriticalSectionScoped cs(crit_.get());
-  decoder_reset_ = true;
   return 0;
 }
 
-void ViEChannel::OnIncomingSSRCChanged(const int32_t id, const uint32_t ssrc) {
-  DCHECK_EQ(channel_id_, ChannelId(id));
+void ViEChannel::OnIncomingSSRCChanged(const uint32_t ssrc) {
   rtp_rtcp_modules_[0]->SetRemoteSSRC(ssrc);
 }
 
-void ViEChannel::OnIncomingCSRCChanged(const int32_t id,
-                                       const uint32_t CSRC,
-                                       const bool added) {
-  DCHECK_EQ(channel_id_, ChannelId(id));
-  CriticalSectionScoped cs(crit_.get());
-}
+void ViEChannel::OnIncomingCSRCChanged(const uint32_t CSRC, const bool added) {}
 
 void ViEChannel::RegisterSendFrameCountObserver(
     FrameCountObserver* observer) {
@@ -1297,7 +1251,7 @@ void ViEChannel::RegisterSendFrameCountObserver(
 void ViEChannel::RegisterReceiveStatisticsProxy(
     ReceiveStatisticsProxy* receive_statistics_proxy) {
   CriticalSectionScoped cs(crit_.get());
-  vcm_receive_stats_callback_ = receive_statistics_proxy;
+  receive_stats_callback_ = receive_statistics_proxy;
 }
 
 void ViEChannel::SetIncomingVideoStream(

@@ -5,6 +5,8 @@
 #ifndef CONTENT_RENDERER_PRESENTATION_PRESENTATION_DISPATCHER_H_
 #define CONTENT_RENDERER_PRESENTATION_PRESENTATION_DISPATCHER_H_
 
+#include <queue>
+
 #include "base/compiler_specific.h"
 #include "base/containers/scoped_ptr_map.h"
 #include "base/id_map.h"
@@ -14,6 +16,7 @@
 #include "content/common/presentation/presentation_service.mojom.h"
 #include "content/public/renderer/render_frame_observer.h"
 #include "third_party/WebKit/public/platform/modules/presentation/WebPresentationClient.h"
+#include "third_party/mojo/src/mojo/public/cpp/bindings/binding.h"
 
 namespace blink {
 class WebPresentationAvailabilityObserver;
@@ -54,38 +57,33 @@ class CONTENT_EXPORT PresentationDispatcher
       size_t length);
 
   // WebPresentationClient implementation.
-  virtual void setController(
-      blink::WebPresentationController* controller);
-  virtual void startSession(
+  void setController(blink::WebPresentationController* controller) override;
+  void startSession(
       const blink::WebString& presentationUrl,
-      blink::WebPresentationSessionClientCallbacks* callback);
-  virtual void joinSession(
-      const blink::WebString& presentationUrl,
-      const blink::WebString& presentationId,
-      blink::WebPresentationSessionClientCallbacks* callback);
-  virtual void sendString(
+      blink::WebPresentationConnectionClientCallbacks* callback) override;
+  void joinSession(
       const blink::WebString& presentationUrl,
       const blink::WebString& presentationId,
-      const blink::WebString& message);
-  virtual void sendArrayBuffer(
-      const blink::WebString& presentationUrl,
-      const blink::WebString& presentationId,
-      const uint8* data,
-      size_t length);
-  virtual void sendBlobData(
-      const blink::WebString& presentationUrl,
-      const blink::WebString& presentationId,
-      const uint8* data,
-      size_t length);
-  virtual void closeSession(
-      const blink::WebString& presentationUrl,
-      const blink::WebString& presentationId);
-  virtual void getAvailability(
+      blink::WebPresentationConnectionClientCallbacks* callback) override;
+  void sendString(const blink::WebString& presentationUrl,
+                  const blink::WebString& presentationId,
+                  const blink::WebString& message) override;
+  void sendArrayBuffer(const blink::WebString& presentationUrl,
+                       const blink::WebString& presentationId,
+                       const uint8* data,
+                       size_t length) override;
+  void sendBlobData(const blink::WebString& presentationUrl,
+                    const blink::WebString& presentationId,
+                    const uint8* data,
+                    size_t length) override;
+  void closeSession(const blink::WebString& presentationUrl,
+                    const blink::WebString& presentationId) override;
+  void getAvailability(
       const blink::WebString& availabilityUrl,
-      blink::WebPresentationAvailabilityCallbacks* callbacks);
-  virtual void startListening(blink::WebPresentationAvailabilityObserver*);
-  virtual void stopListening(blink::WebPresentationAvailabilityObserver*);
-  virtual void setDefaultPresentationUrl(const blink::WebString& url);
+      blink::WebPresentationAvailabilityCallbacks* callbacks) override;
+  void startListening(blink::WebPresentationAvailabilityObserver*) override;
+  void stopListening(blink::WebPresentationAvailabilityObserver*) override;
+  void setDefaultPresentationUrl(const blink::WebString& url) override;
 
   // RenderFrameObserver implementation.
   void DidCommitProvisionalLoad(
@@ -104,7 +102,7 @@ class CONTENT_EXPORT PresentationDispatcher
       mojo::Array<presentation::SessionMessagePtr> messages) override;
 
   void OnSessionCreated(
-      blink::WebPresentationSessionClientCallbacks* callback,
+      blink::WebPresentationConnectionClientCallbacks* callback,
       presentation::PresentationSessionInfoPtr session_info,
       presentation::PresentationErrorPtr error);
   void OnDefaultSessionStarted(

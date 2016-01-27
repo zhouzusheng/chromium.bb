@@ -44,6 +44,7 @@ class SecurityOrigin;
 class StyleRuleBase;
 class StyleRuleFontFace;
 class StyleRuleImport;
+class StyleRuleNamespace;
 
 class CORE_EXPORT StyleSheetContents : public RefCountedWillBeGarbageCollectedFinalized<StyleSheetContents> {
 public:
@@ -64,6 +65,7 @@ public:
 
     const CSSParserContext& parserContext() const { return m_parserContext; }
 
+    const AtomicString& defaultNamespace() { return m_defaultNamespace; }
     const AtomicString& determineNamespace(const AtomicString& prefix);
 
     void parseAuthorStyleSheet(const CSSStyleSheetResource*, const SecurityOrigin*);
@@ -102,6 +104,7 @@ public:
     // Rules other than @import.
     const WillBeHeapVector<RefPtrWillBeMember<StyleRuleBase>>& childRules() const { return m_childRules; }
     const WillBeHeapVector<RefPtrWillBeMember<StyleRuleImport>>& importRules() const { return m_importRules; }
+    const WillBeHeapVector<RefPtrWillBeMember<StyleRuleNamespace>>& namespaceRules() const { return m_namespaceRules; }
 
     void notifyLoadedSheet(const CSSStyleSheetResource*);
 
@@ -121,7 +124,7 @@ public:
     unsigned estimatedSizeInBytes() const;
 
     bool wrapperInsertRule(PassRefPtrWillBeRawPtr<StyleRuleBase>, unsigned index);
-    void wrapperDeleteRule(unsigned index);
+    bool wrapperDeleteRule(unsigned index);
 
     PassRefPtrWillBeRawPtr<StyleSheetContents> copy() const
     {
@@ -171,9 +174,11 @@ private:
     String m_originalURL;
 
     WillBeHeapVector<RefPtrWillBeMember<StyleRuleImport>> m_importRules;
+    WillBeHeapVector<RefPtrWillBeMember<StyleRuleNamespace>> m_namespaceRules;
     WillBeHeapVector<RefPtrWillBeMember<StyleRuleBase>> m_childRules;
-    typedef HashMap<AtomicString, AtomicString> PrefixNamespaceURIMap;
+    using PrefixNamespaceURIMap = HashMap<AtomicString, AtomicString>;
     PrefixNamespaceURIMap m_namespaces;
+    AtomicString m_defaultNamespace;
 
     bool m_hasSyntacticallyValidCSSHeader : 1;
     bool m_didLoadErrorOccur : 1;

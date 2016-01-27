@@ -14,6 +14,7 @@
 #include "../include/fsdk_define.h"
 #include "../include/fsdk_mgr.h"
 #include "../include/fsdk_rendercontext.h"
+#include "../include/jsapi/fxjs_v8.h"
 
 CPDF_CustomAccess::CPDF_CustomAccess(FPDF_FILEACCESS* pFileAccess) {
   if (pFileAccess)
@@ -60,10 +61,6 @@ FPDF_BOOL FSDK_IsSandBoxPolicyEnabled(FPDF_DWORD policy) {
       return FALSE;
   }
 }
-
-#ifndef _T
-#define _T(x) x
-#endif
 
 CCodec_ModuleMgr* g_pCodecModule = nullptr;
 
@@ -112,6 +109,10 @@ DLLEXPORT void STDCALL FPDF_InitLibraryWithConfig(
     pModuleMgr->LoadEmbeddedJapan1CMaps();
     pModuleMgr->LoadEmbeddedCNS1CMaps();
     pModuleMgr->LoadEmbeddedKorea1CMaps();
+  }
+  if (cfg && cfg->version >= 2) {
+    FXJS_Initialize(cfg->m_v8EmbedderSlot,
+                    reinterpret_cast<v8::Isolate*>(cfg->m_pIsolate));
   }
 }
 
@@ -181,8 +182,6 @@ DLLEXPORT FPDF_DOCUMENT STDCALL FPDF_LoadDocument(FPDF_STRING file_path,
   }
   return pParser->GetDocument();
 }
-
-extern void CheckUnSupportError(CPDF_Document* pDoc, FX_DWORD err_code);
 
 class CMemFile final : public IFX_FileRead {
  public:

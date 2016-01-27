@@ -250,13 +250,7 @@ bool HTMLVideoElement::usesOverlayFullscreenVideo() const
     if (RuntimeEnabledFeatures::forceOverlayFullscreenVideoEnabled())
         return true;
 
-    // TODO(watk): Remove this and the REF check below when the chromium side change to not
-    // set OverlayFullscreenVideo on Android lands. http://crbug.com/511376
-    if (HTMLMediaElement::isMediaStreamURL(sourceURL().string()))
-        return false;
-
-    return RuntimeEnabledFeatures::overlayFullscreenVideoEnabled()
-        || (webMediaPlayer() && webMediaPlayer()->supportsOverlayFullscreenVideo());
+    return webMediaPlayer() && webMediaPlayer()->supportsOverlayFullscreenVideo();
 }
 
 void HTMLVideoElement::didMoveToNewDocument(Document& oldDocument)
@@ -290,7 +284,7 @@ KURL HTMLVideoElement::posterImageURL() const
     return document().completeURL(url);
 }
 
-PassRefPtr<Image> HTMLVideoElement::getSourceImageForCanvas(SourceImageStatus* status) const
+PassRefPtr<Image> HTMLVideoElement::getSourceImageForCanvas(SourceImageStatus* status, AccelerationHint) const
 {
     if (!hasAvailableVideoFrame()) {
         *status = InvalidSourceImageStatus;
@@ -298,6 +292,7 @@ PassRefPtr<Image> HTMLVideoElement::getSourceImageForCanvas(SourceImageStatus* s
     }
 
     IntSize intrinsicSize(videoWidth(), videoHeight());
+    // FIXME: Not sure if we dhould we be doing anything with the AccelerationHint argument here?
     OwnPtr<ImageBuffer> imageBuffer = ImageBuffer::create(intrinsicSize);
     if (!imageBuffer) {
         *status = InvalidSourceImageStatus;

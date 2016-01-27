@@ -1,7 +1,5 @@
-(function() {
 
   Polymer({
-
     is: 'paper-input-error',
 
     behaviors: [
@@ -9,7 +7,6 @@
     ],
 
     properties: {
-
       /**
        * True if the error is showing.
        */
@@ -18,13 +15,9 @@
         reflectToAttribute: true,
         type: Boolean
       }
-
     },
 
     update: function(state) {
       this._setInvalid(state.invalid);
     }
-
-  })
-
-})();
+  });

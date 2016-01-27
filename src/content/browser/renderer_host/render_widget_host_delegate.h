@@ -25,6 +25,7 @@ namespace content {
 
 class BrowserAccessibilityManager;
 class RenderWidgetHostImpl;
+class RenderWidgetHostInputEventRouter;
 struct NativeWebKeyboardEvent;
 
 //
@@ -104,6 +105,8 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
   // Requests the renderer to select the region between two points in the
   // currently focused frame.
   virtual void SelectRange(const gfx::Point& base, const gfx::Point& extent) {}
+
+  virtual RenderWidgetHostInputEventRouter* GetInputEventRouter();
 
 #if defined(OS_WIN)
   virtual gfx::NativeViewAccessible GetParentNativeViewAccessible();

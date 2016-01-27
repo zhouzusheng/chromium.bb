@@ -28,6 +28,13 @@
     {
       'target_name': 'skia_opts',
       'type': 'static_library',
+      # The optimize: 'max' scattered throughout are particularly
+      # important when compiled by MSVC 2013, which seems 
+      # to mis-link-time-compile code that's built with
+      # different optimization levels. http://crbug.com/543583
+      'variables': {
+        'optimize': 'max',
+      },
       'includes': [
         'skia_common.gypi',
         # Disable LTO due to compiler error
@@ -100,6 +107,13 @@
     {
       'target_name': 'skia_opts_ssse3',
       'type': 'static_library',
+      # The optimize: 'max' scattered throughout are particularly
+      # important when compiled by MSVC 2013, which seems 
+      # to mis-link-time-compile code that's built with
+      # different optimization levels. http://crbug.com/543583
+      'variables': {
+        'optimize': 'max',
+      },
       'includes': [
         'skia_common.gypi',
       ],
@@ -136,6 +150,13 @@
     {
       'target_name': 'skia_opts_sse41',
       'type': 'static_library',
+      # The optimize: 'max' scattered throughout are particularly
+      # important when compiled by MSVC 2013, which seems 
+      # to mis-link-time-compile code that's built with
+      # different optimization levels. http://crbug.com/543583
+      'variables': {
+        'optimize': 'max',
+      },
       'includes': [
         'skia_common.gypi',
       ],
@@ -165,6 +186,13 @@
     {
       'target_name': 'skia_opts_none',
       'type': 'static_library',
+      # The optimize: 'max' scattered throughout are particularly
+      # important when compiled by MSVC 2013, which seems 
+      # to mis-link-time-compile code that's built with
+      # different optimization levels. http://crbug.com/543583
+      'variables': {
+        'optimize': 'max',
+      },
       'includes': [
         'skia_common.gypi',
       ],

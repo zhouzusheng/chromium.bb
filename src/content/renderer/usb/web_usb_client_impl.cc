@@ -22,7 +22,6 @@
 #include "third_party/WebKit/public/platform/modules/webusb/WebUSBDeviceRequestOptions.h"
 #include "third_party/WebKit/public/platform/modules/webusb/WebUSBError.h"
 #include "third_party/mojo/src/mojo/public/cpp/bindings/array.h"
-#include "third_party/mojo/src/mojo/public/cpp/bindings/error_handler.h"
 #include "third_party/mojo/src/mojo/public/cpp/bindings/interface_request.h"
 
 namespace content {
@@ -56,14 +55,15 @@ void OnGetDevicesComplete(
     ScopedWebCallbacks<blink::WebUSBClientGetDevicesCallbacks> scoped_callbacks,
     mojo::ServiceProvider* device_services,
     mojo::Array<device::usb::DeviceInfoPtr> results) {
+  device::usb::DeviceManagerPtr device_manager;
+  mojo::ConnectToService(device_services, &device_manager);
   blink::WebVector<blink::WebUSBDevice*>* devices =
       new blink::WebVector<blink::WebUSBDevice*>(results.size());
   for (size_t i = 0; i < results.size(); ++i) {
-    device::usb::DeviceManagerPtr device_manager;
-    mojo::ConnectToService(device_services, &device_manager);
+    device::usb::DevicePtr device;
+    device_manager->GetDevice(results[i]->guid, mojo::GetProxy(&device));
     (*devices)[i] = new WebUSBDeviceImpl(
-        device_manager.Pass(),
-        mojo::ConvertTo<blink::WebUSBDeviceInfo>(results[i]));
+        device.Pass(), mojo::ConvertTo<blink::WebUSBDeviceInfo>(results[i]));
   }
   scoped_callbacks.PassCallbacks()->onSuccess(blink::adoptWebPtr(devices));
 }
@@ -80,13 +80,8 @@ WebUSBClientImpl::~WebUSBClientImpl() {}
 void WebUSBClientImpl::getDevices(
     blink::WebUSBClientGetDevicesCallbacks* callbacks) {
   auto scoped_callbacks = MakeScopedUSBCallbacks(callbacks);
-  // TODO(rockot): Remove this once DeviceManager is updated. It should no
-  // longer take enumeration options.
-  device::usb::EnumerationOptionsPtr options =
-      device::usb::EnumerationOptions::New();
-  options->filters = mojo::Array<device::usb::DeviceFilterPtr>::New(0);
   device_manager_->GetDevices(
-      options.Pass(),
+      nullptr,
       base::Bind(&OnGetDevicesComplete, base::Passed(&scoped_callbacks),
                  base::Unretained(device_services_.get())));
 }
@@ -97,6 +92,43 @@ void WebUSBClientImpl::requestDevice(
   callbacks->onError(blink::WebUSBError(blink::WebUSBError::Error::Service,
                                         base::UTF8ToUTF16("Not implemented.")));
   delete callbacks;
+}
+
+void WebUSBClientImpl::setObserver(Observer* observer) {
+  if (!observer_) {
+    // Set up two sequential calls to GetDeviceChanges to avoid latency.
+    device_manager_->GetDeviceChanges(base::Bind(
+        &WebUSBClientImpl::OnDeviceChangeNotification, base::Unretained(this)));
+    device_manager_->GetDeviceChanges(base::Bind(
+        &WebUSBClientImpl::OnDeviceChangeNotification, base::Unretained(this)));
+  }
+
+  observer_ = observer;
+}
+
+void WebUSBClientImpl::OnDeviceChangeNotification(
+    device::usb::DeviceChangeNotificationPtr notification) {
+  if (!observer_)
+    return;
+
+  device_manager_->GetDeviceChanges(base::Bind(
+      &WebUSBClientImpl::OnDeviceChangeNotification, base::Unretained(this)));
+  for (size_t i = 0; i < notification->devices_added.size(); ++i) {
+    const device::usb::DeviceInfoPtr& device_info =
+        notification->devices_added[i];
+    device::usb::DevicePtr device;
+    device_manager_->GetDevice(device_info->guid, mojo::GetProxy(&device));
+    observer_->onDeviceConnected(blink::adoptWebPtr(new WebUSBDeviceImpl(
+        device.Pass(), mojo::ConvertTo<blink::WebUSBDeviceInfo>(device_info))));
+  }
+  for (size_t i = 0; i < notification->devices_removed.size(); ++i) {
+    const device::usb::DeviceInfoPtr& device_info =
+        notification->devices_removed[i];
+    device::usb::DevicePtr device;
+    device_manager_->GetDevice(device_info->guid, mojo::GetProxy(&device));
+    observer_->onDeviceDisconnected(blink::adoptWebPtr(new WebUSBDeviceImpl(
+        device.Pass(), mojo::ConvertTo<blink::WebUSBDeviceInfo>(device_info))));
+  }
 }
 
 }  // namespace content

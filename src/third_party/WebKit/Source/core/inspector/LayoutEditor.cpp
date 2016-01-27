@@ -5,16 +5,24 @@
 #include "config.h"
 #include "core/inspector/LayoutEditor.h"
 
+#include "bindings/core/v8/ScriptController.h"
 #include "core/css/CSSComputedStyleDeclaration.h"
+#include "core/css/CSSImportRule.h"
+#include "core/css/CSSMediaRule.h"
+#include "core/css/CSSStyleRule.h"
+#include "core/css/MediaList.h"
 #include "core/dom/NodeComputedStyle.h"
+#include "core/dom/StaticNodeList.h"
 #include "core/frame/FrameView.h"
 #include "core/inspector/InspectorCSSAgent.h"
+#include "core/inspector/InspectorDOMAgent.h"
 #include "core/inspector/InspectorHighlight.h"
 #include "core/layout/LayoutBox.h"
 #include "core/layout/LayoutInline.h"
 #include "core/layout/LayoutObject.h"
 #include "core/style/ComputedStyle.h"
 #include "platform/JSONValues.h"
+#include "platform/ScriptForbiddenScope.h"
 
 namespace blink {
 
@@ -131,41 +139,105 @@ String truncateZeroes(const String& number)
     return number.left(number.length() - removeCount);
 }
 
-float toValidValue(CSSPropertyID propertyId, float newValue)
+InspectorHighlightConfig affectedNodesHighlightConfig()
 {
-    if (CSSPropertyPaddingBottom <= propertyId && propertyId <= CSSPropertyPaddingTop)
-        return newValue >= 0 ? newValue : 0;
-
-    return newValue;
+    // TODO: find a better color
+    InspectorHighlightConfig config;
+    config.content = Color(95, 127, 162, 100);
+    config.padding = Color(95, 127, 162, 100);
+    config.margin = Color(95, 127, 162, 100);
+    return config;
 }
+
+InspectorHighlightConfig chosenNodeHighlightConfig()
+{
+    InspectorHighlightConfig config;
+    config.padding = Color(147, 196, 125, 140);
+    config.margin = Color(246, 178, 107, 168);
+    return config;
+}
+
+void collectMediaQueriesFromRule(CSSRule* rule, Vector<String>& mediaArray)
+{
+    MediaList* mediaList;
+    if (rule->type() == CSSRule::MEDIA_RULE) {
+        CSSMediaRule* mediaRule = toCSSMediaRule(rule);
+        mediaList = mediaRule->media();
+    } else if (rule->type() == CSSRule::IMPORT_RULE) {
+        CSSImportRule* importRule = toCSSImportRule(rule);
+        mediaList = importRule->media();
+    } else {
+        mediaList = nullptr;
+    }
+
+    if (mediaList && mediaList->length())
+        mediaArray.append(mediaList->mediaText());
+}
+
+void buildMediaListChain(CSSRule* rule, Vector<String>& mediaArray)
+{
+    while (rule) {
+        collectMediaQueriesFromRule(rule, mediaArray);
+        if (rule->parentRule()) {
+            rule = rule->parentRule();
+        } else if (rule->parentStyleSheet()) {
+            CSSStyleSheet* styleSheet = rule->parentStyleSheet();
+            MediaList* mediaList = styleSheet->media();
+            if (mediaList && mediaList->length())
+                mediaArray.append(mediaList->mediaText());
+
+            rule = styleSheet->ownerRule();
+        } else {
+            break;
+        }
+    }
+}
+
+float roundValue(float value, CSSPrimitiveValue::UnitType unitType)
+{
+    float roundTo = unitType == CSSPrimitiveValue::UnitType::Pixels ? 1 : 0.05;
+    return round(value / roundTo) * roundTo;
+}
+
 } // namespace
 
-LayoutEditor::LayoutEditor(InspectorCSSAgent* cssAgent)
-    : m_element(nullptr)
+LayoutEditor::LayoutEditor(Element* element, InspectorCSSAgent* cssAgent, InspectorDOMAgent* domAgent, ScriptController* scriptController)
+    : m_element(element)
     , m_cssAgent(cssAgent)
+    , m_domAgent(domAgent)
+    , m_scriptController(scriptController)
     , m_changingProperty(CSSPropertyInvalid)
     , m_propertyInitialValue(0)
+    , m_isDirty(false)
+    , m_matchedRules(m_cssAgent->matchedRulesList(element))
+    , m_currentRuleIndex(m_matchedRules->length())
 {
+}
+
+LayoutEditor::~LayoutEditor()
+{
+}
+
+void LayoutEditor::dispose()
+{
+    if (!m_isDirty)
+        return;
+
+    ErrorString errorString;
+    m_domAgent->undo(&errorString);
 }
 
 DEFINE_TRACE(LayoutEditor)
 {
     visitor->trace(m_element);
     visitor->trace(m_cssAgent);
+    visitor->trace(m_domAgent);
+    visitor->trace(m_scriptController);
+    visitor->trace(m_matchedRules);
 }
 
-void LayoutEditor::setNode(Node* node)
+void LayoutEditor::rebuild() const
 {
-    m_element = node && node->isElementNode() ? toElement(node) : nullptr;
-    m_changingProperty = CSSPropertyInvalid;
-    m_propertyInitialValue = 0;
-}
-
-PassRefPtr<JSONObject> LayoutEditor::buildJSONInfo() const
-{
-    if (!m_element)
-        return nullptr;
-
     FloatQuad content, padding, border, margin;
     InspectorHighlight::buildNodeQuads(m_element.get(), &content, &padding, &border, &margin);
     FloatQuad orthogonals = orthogonalVectors(padding);
@@ -187,12 +259,15 @@ PassRefPtr<JSONObject> LayoutEditor::buildJSONInfo() const
     appendAnchorFor(anchors.get(), "margin", "margin-left", marginHandles.p4(), orthogonals.p4());
 
     object->setArray("anchors", anchors.release());
-    return object.release();
+    InspectorHighlight highlight(m_element.get(), chosenNodeHighlightConfig(), false);
+    object->setObject("nodeHighlight", highlight.asJSONObject());
+    evaluateInOverlay("showLayoutEditor", object.release());
+    pushSelectorInfoInOverlay();
 }
 
 RefPtrWillBeRawPtr<CSSPrimitiveValue> LayoutEditor::getPropertyCSSValue(CSSPropertyID property) const
 {
-    RefPtrWillBeRawPtr<CSSStyleDeclaration> style = m_cssAgent->findEffectiveDeclaration(m_element.get(), property);
+    RefPtrWillBeRawPtr<CSSStyleDeclaration> style = m_cssAgent->findEffectiveDeclaration(property, m_matchedRules.get(), m_element->style());
     if (!style)
         return nullptr;
 
@@ -213,7 +288,6 @@ PassRefPtr<JSONObject> LayoutEditor::createValueDescription(const String& proper
     object->setNumber("value", cssValue ? cssValue->getFloatValue() : 0);
     CSSPrimitiveValue::UnitType unitType = cssValue ? cssValue->typeWithCalcResolved() : CSSPrimitiveValue::UnitType::Pixels;
     object->setString("unit", CSSPrimitiveValue::unitTypeToString(unitType));
-    // TODO: Support an editing of other popular units like: em, rem
     object->setBoolean("mutable", isMutableUnitType(unitType));
     return object.release();
 }
@@ -228,7 +302,7 @@ void LayoutEditor::appendAnchorFor(JSONArray* anchors, const String& type, const
 void LayoutEditor::overlayStartedPropertyChange(const String& anchorName)
 {
     m_changingProperty = cssPropertyID(anchorName);
-    if (!m_element || !m_changingProperty)
+    if (!m_changingProperty)
         return;
 
     RefPtrWillBeRawPtr<CSSPrimitiveValue> cssValue = getPropertyCSSValue(m_changingProperty);
@@ -260,9 +334,9 @@ void LayoutEditor::overlayStartedPropertyChange(const String& anchorName)
 void LayoutEditor::overlayPropertyChanged(float cssDelta)
 {
     if (m_changingProperty && m_factor) {
-        String errorString;
-        float newValue = toValidValue(m_changingProperty, cssDelta / m_factor + m_propertyInitialValue);
-        m_cssAgent->setCSSPropertyValue(&errorString, m_element.get(), m_changingProperty, truncateZeroes(String::format("%.2f", newValue)) + CSSPrimitiveValue::unitTypeToString(m_valueUnitType));
+        float newValue = cssDelta / m_factor + m_propertyInitialValue;
+        newValue = newValue >= 0 ? roundValue(newValue, m_valueUnitType) : 0;
+        m_isDirty |= setCSSPropertyValueInCurrentRule(truncateZeroes(String::format("%.2f", newValue)) + CSSPrimitiveValue::unitTypeToString(m_valueUnitType));
     }
 }
 
@@ -272,6 +346,119 @@ void LayoutEditor::overlayEndedPropertyChange()
     m_propertyInitialValue = 0;
     m_factor = 0;
     m_valueUnitType = CSSPrimitiveValue::UnitType::Unknown;
+}
+
+void LayoutEditor::commitChanges()
+{
+    if (!m_isDirty)
+        return;
+
+    m_isDirty = false;
+    ErrorString errorString;
+    m_domAgent->markUndoableState(&errorString);
+}
+
+bool LayoutEditor::currentStyleIsInline() const
+{
+    return m_currentRuleIndex == m_matchedRules->length();
+}
+
+void LayoutEditor::nextSelector()
+{
+    if (m_currentRuleIndex == 0)
+        return;
+
+    m_currentRuleIndex--;
+    pushSelectorInfoInOverlay();
+}
+
+void LayoutEditor::previousSelector()
+{
+    if (currentStyleIsInline())
+        return;
+
+    m_currentRuleIndex++;
+    pushSelectorInfoInOverlay();
+}
+void LayoutEditor::pushSelectorInfoInOverlay() const
+{
+    evaluateInOverlay("setSelectorInLayoutEditor", currentSelectorInfo());
+}
+
+PassRefPtr<JSONObject> LayoutEditor::currentSelectorInfo() const
+{
+    RefPtr<JSONObject> object = JSONObject::create();
+    String currentSelectorText = currentStyleIsInline() ? "inline style" : toCSSStyleRule(m_matchedRules->item(m_currentRuleIndex))->selectorText();
+    object->setString("selector", currentSelectorText);
+
+    Document* ownerDocument = m_element->ownerDocument();
+    if (!ownerDocument->isActive() || currentStyleIsInline())
+        return object.release();
+
+    Vector<String> medias;
+    buildMediaListChain(m_matchedRules->item(m_currentRuleIndex), medias);
+    RefPtr<JSONArray> mediasJSONArray = JSONArray::create();
+    for (size_t i = 0; i < medias.size(); ++i)
+        mediasJSONArray->pushString(medias[i]);
+
+    object->setArray("medias", mediasJSONArray.release());
+
+    TrackExceptionState exceptionState;
+    RefPtrWillBeRawPtr<StaticElementList> elements = ownerDocument->querySelectorAll(AtomicString(currentSelectorText), exceptionState);
+
+    if (!elements || exceptionState.hadException())
+        return object.release();
+
+    RefPtr<JSONArray> highlights = JSONArray::create();
+    InspectorHighlightConfig config = affectedNodesHighlightConfig();
+    for (unsigned i = 0; i < elements->length(); ++i) {
+        Element* element = elements->item(i);
+        if (element == m_element)
+            continue;
+
+        InspectorHighlight highlight(element, config, false);
+        highlights->pushObject(highlight.asJSONObject());
+    }
+
+    object->setArray("nodes", highlights.release());
+    return object.release();
+}
+
+bool LayoutEditor::setCSSPropertyValueInCurrentRule(const String& value)
+{
+    RefPtrWillBeRawPtr<CSSStyleDeclaration> effectiveDeclaration = m_cssAgent->findEffectiveDeclaration(m_changingProperty, m_matchedRules.get(), m_element->style());
+    bool forceImportant = false;
+
+    if (effectiveDeclaration) {
+        CSSStyleRule* effectiveRule = nullptr;
+        if (effectiveDeclaration->parentRule() && effectiveDeclaration->parentRule()->type() == CSSRule::STYLE_RULE)
+            effectiveRule = toCSSStyleRule(effectiveDeclaration->parentRule());
+
+        unsigned effectiveRuleIndex = m_matchedRules->length();
+        for (unsigned i = 0; i < m_matchedRules->length(); ++i) {
+            if (m_matchedRules->item(i) == effectiveRule) {
+                effectiveRuleIndex = i;
+                break;
+            }
+        }
+        forceImportant = effectiveDeclaration->getPropertyPriority(getPropertyNameString(m_changingProperty)) == "important";
+        forceImportant |= effectiveRuleIndex > m_currentRuleIndex;
+    }
+
+    CSSStyleDeclaration* style = currentStyleIsInline() ? m_element->style() : toCSSStyleRule(m_matchedRules->item(m_currentRuleIndex))->style();
+
+    String errorString;
+    m_cssAgent->setCSSPropertyValue(&errorString, m_element.get(), style, m_changingProperty, value, forceImportant);
+    return errorString.isEmpty();
+}
+
+void LayoutEditor::evaluateInOverlay(const String& method, PassRefPtr<JSONValue> argument) const
+{
+    ScriptForbiddenScope::AllowUserAgentScript allowScript;
+    RefPtr<JSONArray> command = JSONArray::create();
+    command->pushString(method);
+    command->pushValue(argument);
+    m_scriptController->executeScriptInMainWorld("dispatch(" + command->toJSONString() + ")", ScriptController::ExecuteScriptWhenScriptsDisabled);
 }
 
 } // namespace blink

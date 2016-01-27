@@ -11,8 +11,8 @@
 #include "modules/ModulesExport.h"
 #include "modules/cachestorage/CacheQueryOptions.h"
 #include "modules/fetch/GlobalFetch.h"
-#include "public/platform/WebServiceWorkerCache.h"
-#include "public/platform/WebServiceWorkerCacheError.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerCache.h"
+#include "public/platform/modules/serviceworker/WebServiceWorkerCacheError.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/OwnPtr.h"
@@ -32,7 +32,7 @@ class MODULES_EXPORT Cache final : public GarbageCollectedFinalized<Cache>, publ
     DEFINE_WRAPPERTYPEINFO();
     WTF_MAKE_NONCOPYABLE(Cache);
 public:
-    static Cache* create(WeakPtr<GlobalFetch::ScopedFetcher>, PassOwnPtr<WebServiceWorkerCache>);
+    static Cache* create(WeakPtrWillBeRawPtr<GlobalFetch::ScopedFetcher>, PassOwnPtr<WebServiceWorkerCache>);
 
     // From Cache.idl:
     ScriptPromise match(ScriptState*, const RequestInfo&, const CacheQueryOptions&, ExceptionState&);
@@ -47,14 +47,14 @@ public:
 
     static WebServiceWorkerCache::QueryParams toWebQueryParams(const CacheQueryOptions&);
 
-    DEFINE_INLINE_TRACE() { }
+    DECLARE_TRACE();
 
 private:
     class BarrierCallbackForPut;
     class BlobHandleCallbackForPut;
     class FetchResolvedForAdd;
     friend class FetchResolvedForAdd;
-    Cache(WeakPtr<GlobalFetch::ScopedFetcher>, PassOwnPtr<WebServiceWorkerCache>);
+    Cache(WeakPtrWillBeRawPtr<GlobalFetch::ScopedFetcher>, PassOwnPtr<WebServiceWorkerCache>);
 
     ScriptPromise matchImpl(ScriptState*, const Request*, const CacheQueryOptions&);
     ScriptPromise matchAllImpl(ScriptState*);
@@ -67,7 +67,7 @@ private:
 
     WebServiceWorkerCache* webCache() const;
 
-    WeakPtr<GlobalFetch::ScopedFetcher> m_scopedFetcher;
+    WeakPtrWillBeMember<GlobalFetch::ScopedFetcher> m_scopedFetcher;
     OwnPtr<WebServiceWorkerCache> m_webCache;
 };
 

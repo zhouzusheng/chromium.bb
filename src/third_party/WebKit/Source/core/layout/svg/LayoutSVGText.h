@@ -30,7 +30,6 @@ namespace blink {
 
 class LayoutSVGInlineText;
 class SVGTextElement;
-class LayoutSVGInlineText;
 
 class LayoutSVGText final : public LayoutSVGBlock {
 public:
@@ -43,6 +42,8 @@ public:
     void setNeedsTransformUpdate() override { m_needsTransformUpdate = true; }
     void setNeedsTextMetricsUpdate() { m_needsTextMetricsUpdate = true; }
     FloatRect paintInvalidationRectInLocalCoordinates() const override;
+    FloatRect objectBoundingBox() const override { return FloatRect(frameRect()); }
+    FloatRect strokeBoundingBox() const override;
 
     static LayoutSVGText* locateLayoutSVGTextAncestor(LayoutObject*);
     static const LayoutSVGText* locateLayoutSVGTextAncestor(const LayoutObject*);
@@ -63,7 +64,7 @@ public:
 private:
     bool isOfType(LayoutObjectType type) const override { return type == LayoutObjectSVGText || LayoutSVGBlock::isOfType(type); }
 
-    void paint(const PaintInfo&, const LayoutPoint&) override;
+    void paint(const PaintInfo&, const LayoutPoint&) const override;
     bool nodeAtFloatPoint(HitTestResult&, const FloatPoint& pointInParent, HitTestAction) override;
     PositionWithAffinity positionForPoint(const LayoutPoint&) override;
 
@@ -75,8 +76,7 @@ private:
     void removeChild(LayoutObject*) override;
     void willBeDestroyed() override;
 
-    FloatRect objectBoundingBox() const override { return frameRect(); }
-    FloatRect strokeBoundingBox() const override;
+    void invalidateTreeIfNeeded(PaintInvalidationState&) override;
 
     RootInlineBox* createRootInlineBox() override;
 

@@ -23,11 +23,7 @@ class PromiseTracker::PromiseWeakCallbackData final {
     WTF_MAKE_NONCOPYABLE(PromiseWeakCallbackData);
 public:
     PromiseWeakCallbackData(PromiseTracker* tracker, int id)
-#if ENABLE(OILPAN)
-        : m_tracker(tracker)
-#else
         : m_tracker(tracker->m_weakPtrFactory.createWeakPtr())
-#endif
         , m_id(id)
     {
     }
@@ -40,7 +36,7 @@ public:
         m_tracker->m_listener->didUpdatePromise(InspectorFrontend::Debugger::EventType::Gc, promiseDetails.release());
     }
 
-    WeakPtrWillBeWeakPersistent<PromiseTracker> m_tracker;
+    WeakPtr<PromiseTracker> m_tracker;
     int m_id;
 };
 
@@ -77,9 +73,7 @@ PromiseTracker::PromiseTracker(Listener* listener, v8::Isolate* isolate)
     , m_captureStacks(false)
     , m_listener(listener)
     , m_isolate(isolate)
-#if !ENABLE(OILPAN)
     , m_weakPtrFactory(this)
-#endif
     , m_idToPromise(isolate)
 {
     clear();
@@ -87,13 +81,6 @@ PromiseTracker::PromiseTracker(Listener* listener, v8::Isolate* isolate)
 
 PromiseTracker::~PromiseTracker()
 {
-}
-
-DEFINE_TRACE(PromiseTracker)
-{
-#if ENABLE(OILPAN)
-    visitor->trace(m_listener);
-#endif
 }
 
 void PromiseTracker::setEnabled(bool enabled, bool captureStacks)
@@ -169,25 +156,26 @@ void PromiseTracker::didReceiveV8PromiseEvent(ScriptState* scriptState, v8::Loca
         if (!status) {
             if (isNewPromise) {
                 promiseDetails->setCreationTime(currentTimeMS());
-                RefPtrWillBeRawPtr<ScriptCallStack> stack = createScriptCallStack(m_captureStacks ? ScriptCallStack::maxCallStackSizeToCapture : 1, true);
-                if (stack && stack->size()) {
-                    promiseDetails->setCallFrame(stack->at(0).buildInspectorObject());
-                    if (m_captureStacks) {
-                        promiseDetails->setCreationStack(stack->buildInspectorArray());
-                        RefPtrWillBeRawPtr<ScriptAsyncCallStack> asyncCallStack = stack->asyncCallStack();
-                        if (asyncCallStack)
-                            promiseDetails->setAsyncCreationStack(asyncCallStack->buildInspectorObject());
+                RefPtrWillBeRawPtr<ScriptCallStack> stack = currentScriptCallStack(m_captureStacks ? ScriptCallStack::maxCallStackSizeToCapture : 1);
+                if (stack) {
+                    if (stack->size()) {
+                        promiseDetails->setCallFrame(stack->at(0).buildInspectorObject());
+                        if (m_captureStacks)
+                            promiseDetails->setCreationStack(stack->buildInspectorArray());
                     }
+                    RefPtrWillBeRawPtr<ScriptAsyncCallStack> asyncCallStack = stack->asyncCallStack();
+                    if (m_captureStacks && asyncCallStack)
+                        promiseDetails->setAsyncCreationStack(asyncCallStack->buildInspectorObject());
                 }
             }
         } else {
             promiseDetails->setSettlementTime(currentTimeMS());
             if (m_captureStacks) {
-                RefPtrWillBeRawPtr<ScriptCallStack> stack = createScriptCallStack(ScriptCallStack::maxCallStackSizeToCapture, true);
-                if (stack && stack->size()) {
-                    promiseDetails->setSettlementStack(stack->buildInspectorArray());
-                    RefPtrWillBeRawPtr<ScriptAsyncCallStack> asyncCallStack = stack->asyncCallStack();
-                    if (asyncCallStack)
+                RefPtrWillBeRawPtr<ScriptCallStack> stack = currentScriptCallStack(ScriptCallStack::maxCallStackSizeToCapture);
+                if (stack) {
+                    if (stack->size())
+                        promiseDetails->setSettlementStack(stack->buildInspectorArray());
+                    if (RefPtrWillBeRawPtr<ScriptAsyncCallStack> asyncCallStack = stack->asyncCallStack())
                         promiseDetails->setAsyncSettlementStack(asyncCallStack->buildInspectorObject());
                 }
             }

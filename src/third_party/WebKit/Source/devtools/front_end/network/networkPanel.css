@@ -229,3 +229,8 @@
     border-bottom: solid 1px #cdcdcd;
     flex: none !important;
 }
+
+.network-blocked-urls {
+    border-top: 1px solid #dadada;
+    flex: 104px 0 0;
+}

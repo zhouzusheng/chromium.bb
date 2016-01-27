@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <vector>
 
 #include "../../../../third_party/lcms2-2.6/include/lcms2.h"
 #include "../../../../third_party/libopenjpeg20/openjpeg.h"
@@ -658,14 +659,12 @@ class CJPX_Decoder {
   explicit CJPX_Decoder(bool use_colorspace);
   ~CJPX_Decoder();
   FX_BOOL Init(const unsigned char* src_data, int src_size);
-  void GetInfo(FX_DWORD& width,
-               FX_DWORD& height,
-               FX_DWORD& codestream_nComps,
-               FX_DWORD& output_nComps);
-  FX_BOOL Decode(uint8_t* dest_buf,
-                 int pitch,
-                 FX_BOOL bTranslateColor,
-                 uint8_t* offsets);
+  void GetInfo(FX_DWORD* width, FX_DWORD* height, FX_DWORD* components);
+  bool Decode(uint8_t* dest_buf,
+              int pitch,
+              const std::vector<uint8_t>& offsets);
+
+ private:
   const uint8_t* m_SrcData;
   int m_SrcSize;
   opj_image_t* image;
@@ -673,8 +672,14 @@ class CJPX_Decoder {
   opj_stream_t* l_stream;
   const bool m_UseColorSpace;
 };
+
 CJPX_Decoder::CJPX_Decoder(bool use_colorspace)
-    : image(NULL), l_codec(NULL), l_stream(NULL), m_UseColorSpace(use_colorspace) {}
+    : image(nullptr),
+      l_codec(nullptr),
+      l_stream(nullptr),
+      m_UseColorSpace(use_colorspace) {
+}
+
 CJPX_Decoder::~CJPX_Decoder() {
   if (l_codec) {
     opj_destroy_codec(l_codec);
@@ -686,6 +691,7 @@ CJPX_Decoder::~CJPX_Decoder() {
     opj_image_destroy(image);
   }
 }
+
 FX_BOOL CJPX_Decoder::Init(const unsigned char* src_data, int src_size) {
   static const unsigned char szJP2Header[] = {
       0x00, 0x00, 0x00, 0x0c, 0x6a, 0x50, 0x20, 0x20, 0x0d, 0x0a, 0x87, 0x0a};
@@ -766,54 +772,48 @@ FX_BOOL CJPX_Decoder::Init(const unsigned char* src_data, int src_size) {
   }
   return TRUE;
 }
-void CJPX_Decoder::GetInfo(FX_DWORD& width,
-                           FX_DWORD& height,
-                           FX_DWORD& codestream_nComps,
-                           FX_DWORD& output_nComps) {
-  width = (FX_DWORD)image->x1;
-  height = (FX_DWORD)image->y1;
-  output_nComps = codestream_nComps = (FX_DWORD)image->numcomps;
-}
-FX_BOOL CJPX_Decoder::Decode(uint8_t* dest_buf,
-                             int pitch,
-                             FX_BOOL bTranslateColor,
-                             uint8_t* offsets) {
-  int i, wid, hei, row, col, channel, src;
-  uint8_t* pChannel;
-  uint8_t* pScanline;
-  uint8_t* pPixel;
 
-  if (image->comps[0].w != image->x1 || image->comps[0].h != image->y1) {
-    return FALSE;
-  }
-  if (pitch<(int)(image->comps[0].w * 8 * image->numcomps + 31)>> 5 << 2) {
-    return FALSE;
-  }
+void CJPX_Decoder::GetInfo(FX_DWORD* width,
+                           FX_DWORD* height,
+                           FX_DWORD* components) {
+  *width = (FX_DWORD)image->x1;
+  *height = (FX_DWORD)image->y1;
+  *components = (FX_DWORD)image->numcomps;
+}
+
+bool CJPX_Decoder::Decode(uint8_t* dest_buf,
+                          int pitch,
+                          const std::vector<uint8_t>& offsets) {
+  if (image->comps[0].w != image->x1 || image->comps[0].h != image->y1)
+    return false;
+
+  if (pitch<(int)(image->comps[0].w * 8 * image->numcomps + 31)>> 5 << 2)
+    return false;
+
   FXSYS_memset(dest_buf, 0xff, image->y1 * pitch);
-  uint8_t** channel_bufs = FX_Alloc(uint8_t*, image->numcomps);
-  FX_BOOL result = FALSE;
-  int* adjust_comps = FX_Alloc(int, image->numcomps);
-  for (i = 0; i < (int)image->numcomps; i++) {
+  std::vector<uint8_t*> channel_bufs(image->numcomps);
+  std::vector<int> adjust_comps(image->numcomps);
+  for (uint32_t i = 0; i < image->numcomps; i++) {
     channel_bufs[i] = dest_buf + offsets[i];
     adjust_comps[i] = image->comps[i].prec - 8;
     if (i > 0) {
       if (image->comps[i].dx != image->comps[i - 1].dx ||
           image->comps[i].dy != image->comps[i - 1].dy ||
           image->comps[i].prec != image->comps[i - 1].prec) {
-        goto done;
+        return false;
       }
     }
   }
-  wid = image->comps[0].w;
-  hei = image->comps[0].h;
-  for (channel = 0; channel < (int)image->numcomps; channel++) {
-    pChannel = channel_bufs[channel];
+  int width = image->comps[0].w;
+  int height = image->comps[0].h;
+  for (uint32_t channel = 0; channel < image->numcomps; ++channel) {
+    uint8_t* pChannel = channel_bufs[channel];
     if (adjust_comps[channel] < 0) {
-      for (row = 0; row < hei; row++) {
-        pScanline = pChannel + row * pitch;
-        for (col = 0; col < wid; col++) {
-          pPixel = pScanline + col * image->numcomps;
-          src = image->comps[channel].data[row * wid + col];
+      for (int row = 0; row < height; ++row) {
+        uint8_t* pScanline = pChannel + row * pitch;
+        for (int col = 0; col < width; ++col) {
+          uint8_t* pPixel = pScanline + col * image->numcomps;
+          int src = image->comps[channel].data[row * width + col];
           src += image->comps[channel].sgnd
                      ? 1 << (image->comps[channel].prec - 1)
                      : 0;
@@ -825,14 +825,14 @@ FX_BOOL CJPX_Decoder::Decode(uint8_t* dest_buf,
         }
       }
     } else {
-      for (row = 0; row < hei; row++) {
-        pScanline = pChannel + row * pitch;
-        for (col = 0; col < wid; col++) {
-          pPixel = pScanline + col * image->numcomps;
+      for (int row = 0; row < height; ++row) {
+        uint8_t* pScanline = pChannel + row * pitch;
+        for (int col = 0; col < width; ++col) {
+          uint8_t* pPixel = pScanline + col * image->numcomps;
           if (!image->comps[channel].data) {
             continue;
           }
-          src = image->comps[channel].data[row * wid + col];
+          int src = image->comps[channel].data[row * width + col];
           src += image->comps[channel].sgnd
                      ? 1 << (image->comps[channel].prec - 1)
                      : 0;
@@ -852,44 +852,34 @@ FX_BOOL CJPX_Decoder::Decode(uint8_t* dest_buf,
       }
     }
   }
-  result = TRUE;
+  return true;
+}
 
-done:
-  FX_Free(channel_bufs);
-  FX_Free(adjust_comps);
-  return result;
-}
-void initialize_transition_table();
-void initialize_significance_luts();
-void initialize_sign_lut();
 CCodec_JpxModule::CCodec_JpxModule() {}
-void* CCodec_JpxModule::CreateDecoder(const uint8_t* src_buf,
-                                      FX_DWORD src_size,
-                                      FX_BOOL useColorSpace) {
-  CJPX_Decoder* pDecoder = new CJPX_Decoder(useColorSpace);
-  if (!pDecoder->Init(src_buf, src_size)) {
-    delete pDecoder;
-    return NULL;
-  }
-  return pDecoder;
+CCodec_JpxModule::~CCodec_JpxModule() {
 }
-void CCodec_JpxModule::GetImageInfo(void* ctx,
-                                    FX_DWORD& width,
-                                    FX_DWORD& height,
-                                    FX_DWORD& codestream_nComps,
-                                    FX_DWORD& output_nComps) {
-  CJPX_Decoder* pDecoder = (CJPX_Decoder*)ctx;
-  pDecoder->GetInfo(width, height, codestream_nComps, output_nComps);
+
+CJPX_Decoder* CCodec_JpxModule::CreateDecoder(const uint8_t* src_buf,
+                                              FX_DWORD src_size,
+                                              bool use_colorspace) {
+  nonstd::unique_ptr<CJPX_Decoder> decoder(new CJPX_Decoder(use_colorspace));
+  return decoder->Init(src_buf, src_size) ? decoder.release() : nullptr;
 }
-FX_BOOL CCodec_JpxModule::Decode(void* ctx,
-                                 uint8_t* dest_data,
-                                 int pitch,
-                                 FX_BOOL bTranslateColor,
-                                 uint8_t* offsets) {
-  CJPX_Decoder* pDecoder = (CJPX_Decoder*)ctx;
-  return pDecoder->Decode(dest_data, pitch, bTranslateColor, offsets);
+
+void CCodec_JpxModule::GetImageInfo(CJPX_Decoder* pDecoder,
+                                    FX_DWORD* width,
+                                    FX_DWORD* height,
+                                    FX_DWORD* components) {
+  pDecoder->GetInfo(width, height, components);
 }
-void CCodec_JpxModule::DestroyDecoder(void* ctx) {
-  CJPX_Decoder* pDecoder = (CJPX_Decoder*)ctx;
+
+bool CCodec_JpxModule::Decode(CJPX_Decoder* pDecoder,
+                              uint8_t* dest_data,
+                              int pitch,
+                              const std::vector<uint8_t>& offsets) {
+  return pDecoder->Decode(dest_data, pitch, offsets);
+}
+
+void CCodec_JpxModule::DestroyDecoder(CJPX_Decoder* pDecoder) {
   delete pDecoder;
 }

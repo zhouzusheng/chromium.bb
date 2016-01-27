@@ -357,10 +357,10 @@ void HTMLElement::parseAttribute(const QualifiedName& name, const AtomicString& 
         if (name == contenteditableAttr) {
             if (value.isNull() || equalIgnoringCase(value, "false")) {
                 if (document().frame()) {
-                    VisiblePosition startPos(firstPositionInNode(this));
-                    VisiblePosition endPos(lastPositionInNode(this));
-                    RefPtr<Range> range = Range::create(document(), startPos.deepEquivalent(), endPos.deepEquivalent());
-                    document().frame()->spellChecker().clearMisspellingsAndBadGrammar(VisibleSelection(range.get()));
+                    VisiblePosition startPos = createVisiblePosition(firstPositionInNode(this));
+                    VisiblePosition endPos = createVisiblePosition(lastPositionInNode(this));
+                    EphemeralRange range(startPos.deepEquivalent(), endPos.deepEquivalent());
+                    document().frame()->spellChecker().clearMisspellingsAndBadGrammar(VisibleSelection(range));
                 }
             }
         }

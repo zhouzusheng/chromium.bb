@@ -123,13 +123,7 @@ static bool hasDoubleValue(CSSPrimitiveValue::UnitType type)
     case CSSPrimitiveValue::UnitType::CustomIdentifier:
     case CSSPrimitiveValue::UnitType::String:
     case CSSPrimitiveValue::UnitType::URI:
-    case CSSPrimitiveValue::UnitType::Attribute:
-    case CSSPrimitiveValue::UnitType::Counter:
-    case CSSPrimitiveValue::UnitType::Rect:
     case CSSPrimitiveValue::UnitType::RGBColor:
-    case CSSPrimitiveValue::UnitType::Pair:
-    case CSSPrimitiveValue::UnitType::Shape:
-    case CSSPrimitiveValue::UnitType::Quad:
     case CSSPrimitiveValue::UnitType::Calc:
     case CSSPrimitiveValue::UnitType::CalcPercentageWithNumber:
     case CSSPrimitiveValue::UnitType::CalcPercentageWithLength:
@@ -561,7 +555,7 @@ private:
             return leftSide;
         if (rightSide->category() == CalcNumber)
             return rightSide;
-        return 0;
+        return nullptr;
     }
 
     double evaluate(double leftSide, double rightSide) const

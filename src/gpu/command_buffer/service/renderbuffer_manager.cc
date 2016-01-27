@@ -252,7 +252,7 @@ bool RenderbufferManager::OnMemoryDump(
     const auto& renderbuffer = renderbuffer_entry.second;
 
     std::string dump_name =
-        base::StringPrintf("gl/client_%d/renderbuffers/renderbuffer_%d",
+        base::StringPrintf("gpu/gl/renderbuffers/client_%d/renderbuffer_%d",
                            client_id, client_renderbuffer_id);
     base::trace_event::MemoryAllocatorDump* dump =
         pmd->CreateAllocatorDump(dump_name);
@@ -261,7 +261,7 @@ bool RenderbufferManager::OnMemoryDump(
                     static_cast<uint64_t>(renderbuffer->EstimatedSize()));
 
     auto guid = gfx::GetGLRenderbufferGUIDForTracing(
-        memory_tracker_->ClientTracingId(), client_renderbuffer_id);
+        memory_tracker_->ShareGroupTracingGUID(), client_renderbuffer_id);
     pmd->CreateSharedGlobalAllocatorDump(guid);
     pmd->AddOwnershipEdge(dump->guid(), guid);
   }

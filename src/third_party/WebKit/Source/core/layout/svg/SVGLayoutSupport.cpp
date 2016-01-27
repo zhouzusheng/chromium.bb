@@ -38,7 +38,7 @@
 #include "core/layout/svg/LayoutSVGViewportContainer.h"
 #include "core/layout/svg/SVGResources.h"
 #include "core/layout/svg/SVGResourcesCache.h"
-#include "core/paint/DeprecatedPaintLayer.h"
+#include "core/paint/PaintLayer.h"
 #include "core/svg/SVGElement.h"
 #include "platform/geometry/TransformState.h"
 #include "platform/graphics/StrokeData.h"
@@ -341,7 +341,7 @@ bool SVGLayoutSupport::filtersForceContainerLayout(LayoutObject* object)
     return true;
 }
 
-bool SVGLayoutSupport::pointInClippingArea(LayoutObject* object, const FloatPoint& point)
+bool SVGLayoutSupport::pointInClippingArea(const LayoutObject* object, const FloatPoint& point)
 {
     ASSERT(object);
 
@@ -357,7 +357,7 @@ bool SVGLayoutSupport::pointInClippingArea(LayoutObject* object, const FloatPoin
     return true;
 }
 
-bool SVGLayoutSupport::transformToUserSpaceAndCheckClipping(LayoutObject* object, const AffineTransform& localTransform, const FloatPoint& pointInParent, FloatPoint& localPoint)
+bool SVGLayoutSupport::transformToUserSpaceAndCheckClipping(const LayoutObject* object, const AffineTransform& localTransform, const FloatPoint& pointInParent, FloatPoint& localPoint)
 {
     if (!localTransform.isInvertible())
         return false;
@@ -450,7 +450,7 @@ AffineTransform SVGLayoutSupport::deprecatedCalculateTransformToLayer(const Layo
     // Continue walking up the layer tree, accumulating CSS transforms.
     // FIXME: this queries layer compositing state - which is not
     // supported during layout. Hence, the result may not include all CSS transforms.
-    DeprecatedPaintLayer* layer = layoutObject ? layoutObject->enclosingLayer() : 0;
+    PaintLayer* layer = layoutObject ? layoutObject->enclosingLayer() : 0;
     while (layer && layer->isAllowedToQueryCompositingState()) {
         // We can stop at compositing layers, to match the backing resolution.
         // FIXME: should we be computing the transform to the nearest composited layer,

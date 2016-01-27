@@ -17,15 +17,20 @@ struct WebUSBTransferInfo;
 
 using WebUSBDeviceOpenCallbacks = WebCallbacks<void, const WebUSBError&>;
 using WebUSBDeviceCloseCallbacks = WebCallbacks<void, const WebUSBError&>;
+using WebUSBDeviceGetConfigurationCallbacks = WebCallbacks<uint8_t, const WebUSBError&>;
 using WebUSBDeviceSetConfigurationCallbacks = WebCallbacks<void, const WebUSBError&>;
 using WebUSBDeviceClaimInterfaceCallbacks = WebCallbacks<void, const WebUSBError&>;
 using WebUSBDeviceReleaseInterfaceCallbacks = WebCallbacks<void, const WebUSBError&>;
 using WebUSBDeviceResetCallbacks = WebCallbacks<void, const WebUSBError&>;
 using WebUSBDeviceSetInterfaceAlternateSettingCallbacks = WebCallbacks<void, const WebUSBError&>;
 using WebUSBDeviceClearHaltCallbacks = WebCallbacks<void, const WebUSBError&>;
-using WebUSBDeviceControlTransferCallbacks = WebCallbacks<WebPassOwnPtr<WebUSBTransferInfo>, const WebUSBError&>;
-using WebUSBDeviceBulkTransferCallbacks = WebCallbacks<WebPassOwnPtr<WebUSBTransferInfo>, const WebUSBError&>;
-using WebUSBDeviceInterruptTransferCallbacks = WebCallbacks<WebPassOwnPtr<WebUSBTransferInfo>, const WebUSBError&>;
+using WebUSBDeviceTransferCallbacks = WebCallbacks<WebPassOwnPtr<WebUSBTransferInfo>, const WebUSBError&>;
+
+// TODO(rockot): Eliminate these aliases once they're no longer used outside of
+// Blink code.
+using WebUSBDeviceControlTransferCallbacks = WebUSBDeviceTransferCallbacks;
+using WebUSBDeviceBulkTransferCallbacks = WebUSBDeviceTransferCallbacks;
+using WebUSBDeviceInterruptTransferCallbacks = WebUSBDeviceTransferCallbacks;
 
 class WebUSBDevice {
 public:
@@ -40,7 +45,7 @@ public:
         Vendor,
     };
 
-    enum RequestRecipient {
+    enum class RequestRecipient {
         Device,
         Interface,
         Endpoint,
@@ -67,6 +72,10 @@ public:
     // Closes the device.
     // Ownership of the WebUSBDeviceCloseCallbacks is transferred to the client.
     virtual void close(WebUSBDeviceCloseCallbacks*) = 0;
+
+    // Gets the active configuration of the device.
+    // Ownership of the WebUSBDeviceGetConfigurationCallbacks is transferred to the client.
+    virtual void getConfiguration(WebUSBDeviceGetConfigurationCallbacks*) = 0;
 
     // Sets the active configuration for the device.
     // Ownership of the WebUSBDeviceSetConfigurationCallbacks is transferred to the client.

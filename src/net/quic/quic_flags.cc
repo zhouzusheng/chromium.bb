@@ -46,39 +46,8 @@ bool FLAGS_enable_quic_stateless_reject_support = true;
 // If true, flow controller may grow the receive window size if necessary.
 bool FLAGS_quic_auto_tune_receive_window = true;
 
-// Enables server-side path MTU discovery in QUIC.
-bool FLAGS_quic_do_path_mtu_discovery = true;
-
-// Process QUIC frames as soon as they're parsed, instead of waiting for the
-// packet's parsing to complete.
-bool FLAGS_quic_process_frames_inline = true;
-
-// No longer call OnCanWrite when connection level flow control unblocks in
-// QuicSession.
-bool FLAGS_quic_dont_write_when_flow_unblocked = true;
-
-// If true, client IP migration is allowed in QUIC.
-bool FLAGS_quic_allow_ip_migration = true;
-
-// Estimate that only 60% of QUIC's receive buffer is usable as opposed to 95%.
-bool FLAGS_quic_use_conservative_receive_buffer = true;
-
-// If true, default quic_time_wait_list_seconds (time to keep a connection ID on
-// the time-wait list) is 200 seconds rather than 5 seconds and increase the
-// maximum time-wait list size to 600,000.
-bool FLAGS_increase_time_wait_list = true;
-
 // Limits QUIC's max CWND to 200 packets.
 bool FLAGS_quic_limit_max_cwnd = true;
-
-// If true, instead of enforcing a fixed limit of 200 between the last
-// client-created stream ID and the next one, calculate the difference based on
-// get_max_open_streams().
-bool FLAGS_exact_stream_id_delta = true;
-
-// Limits the pacing burst out of quiescence to the current congestion window in
-// packets.
-bool FLAGS_quic_limit_pacing_burst = true;
 
 // If true, require handshake confirmation for QUIC connections, functionally
 // disabling 0-rtt handshakes.
@@ -88,3 +57,29 @@ bool FLAGS_quic_require_handshake_confirmation = false;
 // Disables special treatment of truncated acks, since older retransmissions are
 // proactively discarded in QUIC.
 bool FLAGS_quic_disable_truncated_ack_handling = true;
+
+// If true, after a server silo receives a packet from a migrated QUIC
+// client, a GO_AWAY frame is sent to the client.
+bool FLAGS_send_goaway_after_client_migration = true;
+
+// Close the connection instead of attempting to write a packet out of sequence
+// number order.
+bool FLAGS_quic_close_connection_out_of_order_sending = true;
+
+// QUIC-specific flag. If true, Cubic's epoch is reset when the sender is
+// application-limited.
+bool FLAGS_reset_cubic_epoch_when_app_limited = true;
+
+// If true, use an interval set as the internal representation of a packet queue
+// instead of a set.
+bool FLAGS_quic_packet_queue_use_interval_set = true;
+
+// If true, QUIC sessions will write block streams that attempt to write
+// unencrypted data.
+bool FLAGS_quic_block_unencrypted_writes = true;
+
+// If true, Close the connection instead of writing unencrypted stream data.
+bool FLAGS_quic_never_write_unencrypted_data = true;
+
+// If true, reject any incoming QUIC which does not have the FIXD tag.
+bool FLAGS_quic_require_fix = true;

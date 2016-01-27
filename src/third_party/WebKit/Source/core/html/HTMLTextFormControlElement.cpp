@@ -83,7 +83,7 @@ Node::InsertionNotificationRequest HTMLTextFormControlElement::insertedInto(Cont
 void HTMLTextFormControlElement::dispatchFocusEvent(Element* oldFocusedElement, WebFocusType type, InputDeviceCapabilities* sourceCapabilities)
 {
     if (supportsPlaceholder())
-        updatePlaceholderVisibility(false);
+        updatePlaceholderVisibility();
     handleFocusEvent(oldFocusedElement, type);
     HTMLFormControlElementWithState::dispatchFocusEvent(oldFocusedElement, type, sourceCapabilities);
 }
@@ -91,7 +91,7 @@ void HTMLTextFormControlElement::dispatchFocusEvent(Element* oldFocusedElement, 
 void HTMLTextFormControlElement::dispatchBlurEvent(Element* newFocusedElement, WebFocusType type, InputDeviceCapabilities* sourceCapabilities)
 {
     if (supportsPlaceholder())
-        updatePlaceholderVisibility(false);
+        updatePlaceholderVisibility();
     handleBlurEvent();
     HTMLFormControlElementWithState::dispatchBlurEvent(newFocusedElement, type, sourceCapabilities);
 }
@@ -147,8 +147,7 @@ bool HTMLTextFormControlElement::placeholderShouldBeVisible() const
     return supportsPlaceholder()
         && isEmptyValue()
         && isEmptySuggestedValue()
-        && !isPlaceholderEmpty()
-        && (!layoutObject() || layoutObject()->style()->visibility() == VISIBLE);
+        && !isPlaceholderEmpty();
 }
 
 HTMLElement* HTMLTextFormControlElement::placeholderElement() const
@@ -156,17 +155,21 @@ HTMLElement* HTMLTextFormControlElement::placeholderElement() const
     return toHTMLElement(userAgentShadowRoot()->getElementById(ShadowElementNames::placeholder()));
 }
 
-void HTMLTextFormControlElement::updatePlaceholderVisibility(bool placeholderValueChanged)
+void HTMLTextFormControlElement::updatePlaceholderVisibility()
 {
-    if (!supportsPlaceholder())
-        return;
-    if (!placeholderElement() || placeholderValueChanged)
-        updatePlaceholderText();
     HTMLElement* placeholder = placeholderElement();
-    if (!placeholder)
+    if (!placeholder) {
+        updatePlaceholderText();
+        return;
+    }
+
+    bool placeHolderWasVisible = isPlaceholderVisible();
+    setPlaceholderVisibility(placeholderShouldBeVisible());
+    if (placeHolderWasVisible == isPlaceholderVisible())
         return;
 
-    placeholder->setInlineStyleProperty(CSSPropertyDisplay, placeholderShouldBeVisible() ? CSSValueBlock : CSSValueNone);
+    pseudoStateChanged(CSSSelector::PseudoPlaceholderShown);
+    placeholder->setInlineStyleProperty(CSSPropertyDisplay, isPlaceholderVisible() ? CSSValueBlock : CSSValueNone, true);
 }
 
 void HTMLTextFormControlElement::setSelectionStart(int start)
@@ -395,14 +398,14 @@ void HTMLTextFormControlElement::setSelectionRange(int start, int end, TextField
 VisiblePosition HTMLTextFormControlElement::visiblePositionForIndex(int index) const
 {
     if (index <= 0)
-        return VisiblePosition(firstPositionInNode(innerEditorElement()));
+        return createVisiblePosition(firstPositionInNode(innerEditorElement()));
     Position start, end;
     bool selected = Range::selectNodeContents(innerEditorElement(), start, end);
     if (!selected)
         return VisiblePosition();
     CharacterIterator it(start, end);
     it.advance(index - 1);
-    return VisiblePosition(it.endPosition(), TextAffinity::Upstream);
+    return createVisiblePosition(it.endPosition(), TextAffinity::Upstream);
 }
 
 int HTMLTextFormControlElement::indexForVisiblePosition(const VisiblePosition& pos) const
@@ -607,7 +610,8 @@ void HTMLTextFormControlElement::parseAttribute(const QualifiedName& name, const
         UseCounter::count(document(), UseCounter::AutocapitalizeAttribute);
 
     if (name == placeholderAttr) {
-        updatePlaceholderVisibility(true);
+        updatePlaceholderText();
+        updatePlaceholderVisibility();
         UseCounter::count(document(), UseCounter::PlaceholderAttribute);
     } else {
         HTMLFormControlElementWithState::parseAttribute(name, value);
@@ -628,15 +632,23 @@ void HTMLTextFormControlElement::setInnerEditorValue(const String& value)
         return;
 
     bool textIsChanged = value != innerEditorValue();
-    if (textIsChanged || !innerEditorElement()->hasChildren()) {
-        if (textIsChanged && layoutObject()) {
-            if (AXObjectCache* cache = document().existingAXObjectCache())
-                cache->handleTextFormControlChanged(this);
-        }
-        innerEditorElement()->setInnerText(value, ASSERT_NO_EXCEPTION);
+    HTMLElement* innerEditor = innerEditorElement();
+    if (!textIsChanged && innerEditor->hasChildren())
+        return;
 
-        if (value.endsWith('\n') || value.endsWith('\r'))
-            innerEditorElement()->appendChild(HTMLBRElement::create(document()));
+    // If the last child is a trailing <br> that's appended below, remove it
+    // first so as to enable setInnerText() fast path of updating a text node.
+    if (isHTMLBRElement(innerEditor->lastChild()))
+        innerEditor->removeChild(innerEditor->lastChild(), ASSERT_NO_EXCEPTION);
+
+    innerEditor->setInnerText(value, ASSERT_NO_EXCEPTION);
+
+    if (value.endsWith('\n') || value.endsWith('\r'))
+        innerEditor->appendChild(HTMLBRElement::create(document()));
+
+    if (textIsChanged && layoutObject()) {
+        if (AXObjectCache* cache = document().existingAXObjectCache())
+            cache->handleTextFormControlChanged(this);
     }
 }
 

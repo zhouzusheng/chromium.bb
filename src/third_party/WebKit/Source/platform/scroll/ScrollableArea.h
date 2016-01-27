@@ -96,13 +96,7 @@ public:
     // element.
     virtual LayoutRect scrollIntoView(const LayoutRect& rectInContent, const ScrollAlignment& alignX, const ScrollAlignment& alignY);
 
-    // Scrolls the area so that the given rect, given in the area's content coordinates, such that it's
-    // cenetered in the second rect, which is given relative to the area's origin.
-    void scrollIntoRect(const LayoutRect& rectInContent, const FloatRect& targetRectInFrame);
-
     static bool scrollBehaviorFromString(const String&, ScrollBehavior&);
-
-    virtual ScrollResult handleWheel(const PlatformWheelEvent&);
 
     bool inLiveResize() const { return m_inLiveResize; }
     void willStartLiveResize();

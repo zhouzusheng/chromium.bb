@@ -33,7 +33,6 @@
 
 namespace blink {
 
-class AuthorStyleInfo;
 class ComputedStyle;
 class Element;
 class FileList;
@@ -62,7 +61,7 @@ public:
     // metrics and defaults given the contents of the style.  This includes sophisticated operations like
     // selection of control size based off the font, the disabling of appearance when certain other properties like
     // "border" are set, or if the appearance is not supported by the theme.
-    void adjustStyle(ComputedStyle&, Element*, const AuthorStyleInfo&);
+    void adjustStyle(ComputedStyle&, Element*);
 
     // The remaining methods should be implemented by the platform-specific portion of the theme, e.g.,
     // LayoutThemeMac.cpp for Mac OS X.
@@ -84,7 +83,7 @@ public:
     bool isControlContainer(ControlPart) const;
 
     // Whether or not the control has been styled enough by the author to disable the native appearance.
-    virtual bool isControlStyled(const ComputedStyle&, const AuthorStyleInfo&) const;
+    virtual bool isControlStyled(const ComputedStyle&) const;
 
     // Some controls may spill out of their containers (e.g., the check on an OSX 10.9 checkbox). Add this
     // "visual overflow" to the object's border box rect.
@@ -95,7 +94,7 @@ public:
     // or vice versa).
     bool controlStateChanged(LayoutObject&, ControlState) const;
 
-    bool shouldDrawDefaultFocusRing(LayoutObject*) const;
+    bool shouldDrawDefaultFocusRing(const LayoutObject&) const;
 
     // A method asking if the theme's controls actually care about redrawing when hovered.
     virtual bool supportsHover(const ComputedStyle&) const { return false; }
@@ -163,7 +162,7 @@ public:
     String formatMediaControlsTime(float time) const;
     String formatMediaControlsCurrentTime(float currentTime, float duration) const;
 
-    virtual IntSize meterSizeForBounds(const LayoutMeter*, const IntRect&) const;
+    virtual IntSize meterSizeForBounds(const LayoutMeter&, const IntRect&) const;
     virtual bool supportsMeter(ControlPart) const;
 
     // Returns size of one slider tick mark for a horizontal track.
@@ -231,17 +230,17 @@ protected:
 
 public:
     // Methods for state querying
-    static ControlStates controlStatesForLayoutObject(const LayoutObject*);
-    static bool isActive(const LayoutObject*);
-    static bool isChecked(const LayoutObject*);
-    static bool isIndeterminate(const LayoutObject*);
-    static bool isEnabled(const LayoutObject*);
-    static bool isFocused(const LayoutObject*);
-    static bool isPressed(const LayoutObject*);
-    static bool isSpinUpButtonPartPressed(const LayoutObject*);
-    static bool isHovered(const LayoutObject*);
-    static bool isSpinUpButtonPartHovered(const LayoutObject*);
-    static bool isReadOnlyControl(const LayoutObject*);
+    static ControlStates controlStatesForLayoutObject(const LayoutObject&);
+    static bool isActive(const LayoutObject&);
+    static bool isChecked(const LayoutObject&);
+    static bool isIndeterminate(const LayoutObject&);
+    static bool isEnabled(const LayoutObject&);
+    static bool isFocused(const LayoutObject&);
+    static bool isPressed(const LayoutObject&);
+    static bool isSpinUpButtonPartPressed(const LayoutObject&);
+    static bool isHovered(const LayoutObject&);
+    static bool isSpinUpButtonPartHovered(const LayoutObject&);
+    static bool isReadOnlyControl(const LayoutObject&);
 
 private:
     Color m_customFocusRingColor;

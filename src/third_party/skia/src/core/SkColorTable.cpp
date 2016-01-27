@@ -47,26 +47,14 @@ SkColorTable::~SkColorTable() {
 
 #include "SkColorPriv.h"
 
-namespace {
-struct Build16BitCache {
-    const SkPMColor* fColors;
-    int fCount;
-
-    uint16_t* operator()() const {
-        uint16_t* cache = (uint16_t*)sk_malloc_throw(fCount * sizeof(uint16_t));
+const uint16_t* SkColorTable::read16BitCache() const {
+    return f16BitCache.get([&]{
+        auto cache = new uint16_t[fCount];
         for (int i = 0; i < fCount; i++) {
             cache[i] = SkPixel32ToPixel16_ToU16(fColors[i]);
         }
         return cache;
-    }
-};
-}//namespace
-
-void SkColorTable::Free16BitCache(uint16_t* cache) { sk_free(cache); }
-
-const uint16_t* SkColorTable::read16BitCache() const {
-    const Build16BitCache create = { fColors, fCount };
-    return f16BitCache.get(create);
+    });
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -85,7 +73,7 @@ SkColorTable::SkColorTable(SkReadBuffer& buffer) {
         SkDEBUGCODE(success =) buffer.readColorArray(fColors, fCount);
     } else {
         fCount = 0;
-        fColors = NULL;
+        fColors = nullptr;
     }
 #ifdef SK_DEBUG
     SkASSERT((unsigned)fCount <= 256);

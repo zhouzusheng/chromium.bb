@@ -151,7 +151,7 @@ LayoutUnit RootInlineBox::placeEllipsisBox(bool ltr, LayoutUnit blockLeftEdge, L
     return result;
 }
 
-void RootInlineBox::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset, LayoutUnit lineTop, LayoutUnit lineBottom)
+void RootInlineBox::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset, LayoutUnit lineTop, LayoutUnit lineBottom) const
 {
     RootInlineBoxPainter(*this).paint(paintInfo, paintOffset, lineTop, lineBottom);
 }
@@ -285,29 +285,19 @@ GapRects RootInlineBox::lineSelectionGap(const LayoutBlock* rootBlock, const Lay
     SelectionState lineState = selectionState();
 
     bool leftGap, rightGap;
-    block().getSelectionGapInfo(rootBlock, leftGap, rightGap);
+    block().getSelectionGapInfo(lineState, leftGap, rightGap);
 
     GapRects result;
 
-    bool selectionExtendsPastEnd = lineState == SelectionStart || lineState == SelectionInside;
     InlineBox* firstBox = firstSelectedBox();
     InlineBox* lastBox = lastSelectedBox();
     if (leftGap) {
         result.uniteLeft(block().logicalLeftSelectionGap(rootBlock, rootBlockPhysicalPosition, offsetFromRootBlock,
-                                                         &firstBox->parent()->layoutObject(), firstBox->logicalLeft(), selTop, selHeight, paintInfo));
+            &firstBox->parent()->layoutObject(), firstBox->logicalLeft(), selTop, selHeight, paintInfo));
     }
-    else if (firstBox && selectionExtendsPastEnd && !block().style()->isLeftToRightDirection()) {
-        result.uniteLeft(block().lineEndingSelectionGap(rootBlock, rootBlockPhysicalPosition, offsetFromRootBlock,
-                                                        &firstBox->parent()->layoutObject(), firstBox->logicalLeft(), selTop, selHeight, paintInfo));
-    }
-
     if (rightGap) {
         result.uniteRight(block().logicalRightSelectionGap(rootBlock, rootBlockPhysicalPosition, offsetFromRootBlock,
-                                                           &lastBox->parent()->layoutObject(), lastBox->logicalRight(), selTop, selHeight, paintInfo));
-    }
-    else if (lastBox && selectionExtendsPastEnd && block().style()->isLeftToRightDirection()) {
-        result.uniteRight(block().lineEndingSelectionGap(rootBlock, rootBlockPhysicalPosition, offsetFromRootBlock,
-                                                         &lastBox->parent()->layoutObject(), lastBox->logicalRight(), selTop, selHeight, paintInfo));
+            &lastBox->parent()->layoutObject(), lastBox->logicalRight(), selTop, selHeight, paintInfo));
     }
 
     // When dealing with bidi text, a non-contiguous selection region is possible.
@@ -328,7 +318,7 @@ GapRects RootInlineBox::lineSelectionGap(const LayoutBlock* rootBlock, const Lay
                 LayoutRect gapRect = rootBlock->logicalRectToPhysicalRect(rootBlockPhysicalPosition, logicalRect);
                 if (isPreviousBoxSelected && gapRect.width() > 0 && gapRect.height() > 0) {
                     if (paintInfo && box->parent()->lineLayoutItem().style()->visibility() == VISIBLE)
-                        paintInfo->context->fillRect(gapRect, box->parent()->lineLayoutItem().selectionBackgroundColor());
+                        paintInfo->context->fillRect(FloatRect(gapRect), box->parent()->lineLayoutItem().selectionBackgroundColor());
                     // VisibleSelection may be non-contiguous, see comment above.
                     result.uniteCenter(gapRect);
                 }
@@ -606,35 +596,26 @@ void RootInlineBox::ascentAndDescentForBox(InlineBox* box, GlyphOverflowAndFallb
 {
     bool ascentDescentSet = false;
 
-    // Replaced boxes will return 0 for the line-height if line-box-contain says they are
-    // not to be included.
     if (box->layoutObject().isReplaced()) {
-        if (layoutObject().style(isFirstLineStyle())->lineBoxContain() & LineBoxContainReplaced) {
-            ascent = box->baselinePosition(baselineType());
-            descent = box->lineHeight() - ascent;
+        ascent = box->baselinePosition(baselineType());
+        descent = box->lineHeight() - ascent;
 
-            // Replaced elements always affect both the ascent and descent.
-            affectsAscent = true;
-            affectsDescent = true;
-        }
+        // Replaced elements always affect both the ascent and descent.
+        affectsAscent = true;
+        affectsDescent = true;
         return;
     }
 
     Vector<const SimpleFontData*>* usedFonts = nullptr;
-    GlyphOverflow* glyphOverflow = nullptr;
     if (box->isText()) {
         GlyphOverflowAndFallbackFontsMap::iterator it = textBoxDataMap.find(toInlineTextBox(box));
         usedFonts = it == textBoxDataMap.end() ? 0 : &it->value.first;
-        glyphOverflow = it == textBoxDataMap.end() ? 0 : &it->value.second;
     }
 
     bool includeLeading = includeLeadingForBox(box);
-    bool includeFont = includeFontForBox(box);
-
-    bool setUsedFont = false;
     bool setUsedFontWithLeading = false;
 
-    if (usedFonts && !usedFonts->isEmpty() && (includeFont || (box->lineLayoutItem().style(isFirstLineStyle())->lineHeight().isNegative() && includeLeading))) {
+    if (usedFonts && !usedFonts->isEmpty() && (box->lineLayoutItem().style(isFirstLineStyle())->lineHeight().isNegative() && includeLeading)) {
         usedFonts->append(box->lineLayoutItem().style(isFirstLineStyle())->font().primaryFont());
         for (size_t i = 0; i < usedFonts->size(); ++i) {
             const FontMetrics& fontMetrics = usedFonts->at(i)->fontMetrics();
@@ -643,10 +624,6 @@ void RootInlineBox::ascentAndDescentForBox(InlineBox* box, GlyphOverflowAndFallb
             int halfLeading = (fontMetrics.lineSpacing() - fontMetrics.height()) / 2;
             int usedFontAscentAndLeading = usedFontAscent + halfLeading;
             int usedFontDescentAndLeading = fontMetrics.lineSpacing() - usedFontAscentAndLeading;
-            if (includeFont) {
-                setAscentAndDescent(ascent, descent, usedFontAscent, usedFontDescent, ascentDescentSet);
-                setUsedFont = true;
-            }
             if (includeLeading) {
                 setAscentAndDescent(ascent, descent, usedFontAscentAndLeading, usedFontDescentAndLeading, ascentDescentSet);
                 setUsedFontWithLeading = true;
@@ -670,34 +647,6 @@ void RootInlineBox::ascentAndDescentForBox(InlineBox* box, GlyphOverflowAndFallb
         // the root box's baseline, then we contribute to the maxDescent value.
         affectsAscent = ascentWithLeading - box->logicalTop() > 0;
         affectsDescent = descentWithLeading + box->logicalTop() > 0;
-    }
-
-    if (includeFontForBox(box) && !setUsedFont) {
-        int fontAscent = box->lineLayoutItem().style(isFirstLineStyle())->fontMetrics().ascent(baselineType());
-        int fontDescent = box->lineLayoutItem().style(isFirstLineStyle())->fontMetrics().descent(baselineType());
-        setAscentAndDescent(ascent, descent, fontAscent, fontDescent, ascentDescentSet);
-        affectsAscent = fontAscent - box->logicalTop() > 0;
-        affectsDescent = fontDescent + box->logicalTop() > 0;
-    }
-
-    if (includeGlyphsForBox(box) && glyphOverflow && glyphOverflow->computeBounds) {
-        setAscentAndDescent(ascent, descent, glyphOverflow->top, glyphOverflow->bottom, ascentDescentSet);
-        affectsAscent = glyphOverflow->top - box->logicalTop() > 0;
-        affectsDescent = glyphOverflow->bottom + box->logicalTop() > 0;
-    }
-
-    if (includeMarginForBox(box)) {
-        LayoutUnit ascentWithMargin = box->lineLayoutItem().style(isFirstLineStyle())->fontMetrics().ascent(baselineType());
-        LayoutUnit descentWithMargin = box->lineLayoutItem().style(isFirstLineStyle())->fontMetrics().descent(baselineType());
-        if (box->parent() && !box->lineLayoutItem().isText()) {
-            ascentWithMargin += box->boxModelObject().borderBefore() + box->boxModelObject().paddingBefore() + box->boxModelObject().marginBefore();
-            descentWithMargin += box->boxModelObject().borderAfter() + box->boxModelObject().paddingAfter() + box->boxModelObject().marginAfter();
-        }
-        setAscentAndDescent(ascent, descent, ascentWithMargin, descentWithMargin, ascentDescentSet);
-
-        // Treat like a replaced element, since we're using the margin box.
-        affectsAscent = true;
-        affectsDescent = true;
     }
 }
 
@@ -775,60 +724,7 @@ LayoutUnit RootInlineBox::verticalPositionForBox(InlineBox* box, VerticalPositio
 
 bool RootInlineBox::includeLeadingForBox(InlineBox* box) const
 {
-    if (box->lineLayoutItem().isReplaced() || (box->lineLayoutItem().isText() && !box->isText()))
-        return false;
-
-    LineBoxContain lineBoxContain = lineLayoutItem().style()->lineBoxContain();
-    return (lineBoxContain & LineBoxContainInline) || (box == this && (lineBoxContain & LineBoxContainBlock));
-}
-
-bool RootInlineBox::includeFontForBox(InlineBox* box) const
-{
-    if (box->lineLayoutItem().isReplaced() || (box->lineLayoutItem().isText() && !box->isText()))
-        return false;
-
-    if (!box->isText() && box->isInlineFlowBox() && !toInlineFlowBox(box)->hasTextChildren())
-        return false;
-
-    // For now map "glyphs" to "font" in vertical text mode until the bounds returned by glyphs aren't garbage.
-    LineBoxContain lineBoxContain = lineLayoutItem().style()->lineBoxContain();
-    return (lineBoxContain & LineBoxContainFont) || (!isHorizontal() && (lineBoxContain & LineBoxContainGlyphs));
-}
-
-bool RootInlineBox::includeGlyphsForBox(InlineBox* box) const
-{
-    if (box->lineLayoutItem().isReplaced() || (box->lineLayoutItem().isText() && !box->isText()))
-        return false;
-
-    if (!box->isText() && box->isInlineFlowBox() && !toInlineFlowBox(box)->hasTextChildren())
-        return false;
-
-    // FIXME: We can't fit to glyphs yet for vertical text, since the bounds returned are garbage.
-    LineBoxContain lineBoxContain = lineLayoutItem().style()->lineBoxContain();
-    return isHorizontal() && (lineBoxContain & LineBoxContainGlyphs);
-}
-
-bool RootInlineBox::includeMarginForBox(InlineBox* box) const
-{
-    if (box->lineLayoutItem().isReplaced() || (box->lineLayoutItem().isText() && !box->isText()))
-        return false;
-
-    LineBoxContain lineBoxContain = lineLayoutItem().style()->lineBoxContain();
-    return lineBoxContain & LineBoxContainInlineBox;
-}
-
-
-bool RootInlineBox::fitsToGlyphs() const
-{
-    // FIXME: We can't fit to glyphs yet for vertical text, since the bounds returned are garbage.
-    LineBoxContain lineBoxContain = lineLayoutItem().style()->lineBoxContain();
-    return isHorizontal() && (lineBoxContain & LineBoxContainGlyphs);
-}
-
-bool RootInlineBox::includesRootLineBoxFontOrLeading() const
-{
-    LineBoxContain lineBoxContain = lineLayoutItem().style()->lineBoxContain();
-    return (lineBoxContain & LineBoxContainBlock) || (lineBoxContain & LineBoxContainInline) || (lineBoxContain & LineBoxContainFont);
+    return !(box->lineLayoutItem().isReplaced() || (box->lineLayoutItem().isText() && !box->isText()));
 }
 
 Node* RootInlineBox::getLogicalStartBoxWithNode(InlineBox*& startBox) const

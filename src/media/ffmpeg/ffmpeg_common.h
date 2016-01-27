@@ -13,7 +13,7 @@
 #include "media/base/audio_decoder_config.h"
 #include "media/base/channel_layout.h"
 #include "media/base/media_export.h"
-#include "media/base/video_decoder_config.h"
+#include "media/base/video_codecs.h"
 #include "media/base/video_frame.h"
 #include "media/ffmpeg/ffmpeg_deleters.h"
 
@@ -85,19 +85,26 @@ MEDIA_EXPORT base::TimeDelta ConvertFromTimeBase(const AVRational& time_base,
 MEDIA_EXPORT int64 ConvertToTimeBase(const AVRational& time_base,
                                      const base::TimeDelta& timestamp);
 
-void AVStreamToAudioDecoderConfig(const AVStream* stream,
-                                  AudioDecoderConfig* config);
+// Returns true if AVStream is successfully converted to a AudioDecoderConfig.
+// Returns false if conversion fails, in which case |config| is not modified.
+MEDIA_EXPORT bool AVStreamToAudioDecoderConfig(const AVStream* stream,
+                                               AudioDecoderConfig* config);
 void AudioDecoderConfigToAVCodecContext(
     const AudioDecoderConfig& config,
     AVCodecContext* codec_context);
 
-void AVStreamToVideoDecoderConfig(const AVStream* stream,
-                                  VideoDecoderConfig* config);
+// Returns true if AVStream is successfully converted to a VideoDecoderConfig.
+// Returns false if conversion fails, in which case |config| is not modified.
+MEDIA_EXPORT bool AVStreamToVideoDecoderConfig(const AVStream* stream,
+                                               VideoDecoderConfig* config);
 void VideoDecoderConfigToAVCodecContext(
     const VideoDecoderConfig& config,
     AVCodecContext* codec_context);
 
-MEDIA_EXPORT void AVCodecContextToAudioDecoderConfig(
+// Returns true if AVCodecContext is successfully converted to an
+// AudioDecoderConfig. Returns false if conversion fails, in which case |config|
+// is not modified.
+MEDIA_EXPORT bool AVCodecContextToAudioDecoderConfig(
     const AVCodecContext* codec_context,
     bool is_encrypted,
     AudioDecoderConfig* config);
@@ -108,9 +115,11 @@ MEDIA_EXPORT void AVCodecContextToAudioDecoderConfig(
 MEDIA_EXPORT ChannelLayout ChannelLayoutToChromeChannelLayout(int64_t layout,
                                                               int channels);
 
+MEDIA_EXPORT AVCodecID VideoCodecToCodecID(VideoCodec video_codec);
+
 // Converts FFmpeg's audio sample format to Chrome's SampleFormat.
 MEDIA_EXPORT SampleFormat
-    AVSampleFormatToSampleFormat(AVSampleFormat sample_format);
+AVSampleFormatToSampleFormat(AVSampleFormat sample_format);
 
 // Converts FFmpeg's pixel formats to its corresponding supported video format.
 MEDIA_EXPORT VideoPixelFormat
@@ -126,6 +135,10 @@ ColorSpace AVColorSpaceToColorSpace(AVColorSpace color_space,
 // Returns true and sets |*out| if |date_utc| contains a valid
 // date string. Otherwise returns fals and timeline_offset is unmodified.
 MEDIA_EXPORT bool FFmpegUTCDateToTime(const char* date_utc, base::Time* out);
+
+// Returns a 32-bit hash for the given codec name.  See the VerifyUmaCodecHashes
+// unit test for more information and code for generating the histogram XML.
+MEDIA_EXPORT int32_t HashCodecName(const char* codec_name);
 
 }  // namespace media
 

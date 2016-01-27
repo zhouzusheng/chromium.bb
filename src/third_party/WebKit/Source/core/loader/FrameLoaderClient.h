@@ -49,7 +49,6 @@ namespace blink {
 class Document;
 class DocumentLoader;
 class FetchRequest;
-class HTMLAppletElement;
 class HTMLFormElement;
 class HTMLFrameOwnerElement;
 class HTMLMediaElement;
@@ -57,7 +56,6 @@ class HTMLPlugInElement;
 class HistoryItem;
 class KURL;
 class LocalFrame;
-class PluginPlaceholder;
 class ResourceError;
 class ResourceRequest;
 class ResourceResponse;
@@ -97,10 +95,10 @@ public:
     virtual void dispatchDidFailLoad(const ResourceError&, HistoryCommitType) = 0;
     virtual void dispatchDidFinishDocumentLoad(bool documentIsEmpty) = 0;
     virtual void dispatchDidFinishLoad() = 0;
-    virtual void dispatchDidFirstVisuallyNonEmptyLayout() = 0;
     virtual void dispatchDidChangeThemeColor() = 0;
 
     virtual NavigationPolicy decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationPolicy) = 0;
+    virtual bool hasPendingNavigation() = 0;
 
     virtual void dispatchWillSendSubmitEvent(HTMLFormElement*) = 0;
     virtual void dispatchWillSubmitForm(HTMLFormElement*) = 0;
@@ -151,14 +149,7 @@ public:
         AllowDetachedPlugin,
     };
     virtual bool canCreatePluginWithoutRenderer(const String& mimeType) const = 0;
-
-    // Called before plugin creation in order to ask the embedder whether a
-    // placeholder should be substituted instead.
-    virtual PassOwnPtrWillBeRawPtr<PluginPlaceholder> createPluginPlaceholder(Document&, const KURL&, const Vector<String>& paramNames, const Vector<String>& paramValues, const String& mimeType, bool loadManually) = 0;
-
     virtual PassRefPtrWillBeRawPtr<Widget> createPlugin(HTMLPlugInElement*, const KURL&, const Vector<String>&, const Vector<String>&, const String&, bool loadManually, DetachedPluginPolicy) = 0;
-
-    virtual PassRefPtrWillBeRawPtr<Widget> createJavaAppletWidget(HTMLAppletElement*, const KURL& baseURL, const Vector<String>& paramNames, const Vector<String>& paramValues) = 0;
 
     virtual PassOwnPtr<WebMediaPlayer> createWebMediaPlayer(HTMLMediaElement&, const WebURL&, WebMediaPlayerClient*) = 0;
 

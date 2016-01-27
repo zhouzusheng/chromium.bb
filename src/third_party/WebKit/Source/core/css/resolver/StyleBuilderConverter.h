@@ -76,7 +76,6 @@ public:
     static Length convertLengthSizing(StyleResolverState&, CSSValue*);
     static Length convertLengthMaxSizing(StyleResolverState&, CSSValue*);
     static TabSize convertLengthOrTabSpaces(StyleResolverState&, CSSValue*);
-    static LineBoxContain convertLineBoxContain(StyleResolverState&, CSSValue*);
     static Length convertLineHeight(StyleResolverState&, CSSValue*);
     static float convertNumberOrPercentage(StyleResolverState&, CSSValue*);
     static LengthPoint convertPosition(StyleResolverState&, CSSValue*);
@@ -157,6 +156,7 @@ AtomicString StyleBuilderConverter::convertString(StyleResolverState&, CSSValue*
     CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
     if (primitiveValue->getValueID() == IdForNone)
         return nullAtom;
+    ASSERT(primitiveValue->isString());
     return AtomicString(primitiveValue->getStringValue());
 }
 

@@ -40,12 +40,16 @@ class PermissionServiceImpl : public PermissionService {
 
  private:
   using PermissionStatusCallback = mojo::Callback<void(PermissionStatus)>;
+  using PermissionsStatusCallback =
+      mojo::Callback<void(mojo::Array<PermissionStatus>)>;
 
   struct PendingRequest {
     PendingRequest(PermissionType permission, const GURL& origin,
                    const PermissionStatusCallback& callback);
     ~PendingRequest();
 
+    // Request ID received from the PermissionManager.
+    int id;
     PermissionType permission;
     GURL origin;
     PermissionStatusCallback callback;
@@ -73,6 +77,10 @@ class PermissionServiceImpl : public PermissionService {
                          const mojo::String& origin,
                          bool user_gesture,
                          const PermissionStatusCallback& callback) override;
+  void RequestPermissions(mojo::Array<PermissionName> permissions,
+                          const mojo::String& origin,
+                          bool user_gesture,
+                          const PermissionsStatusCallback& callback) override;
   void RevokePermission(PermissionName permission,
                         const mojo::String& origin,
                         const PermissionStatusCallback& callback) override;

@@ -25,7 +25,7 @@ item is displayed in the control. If no item is selected, the `label` is
 displayed instead.
 
 The child element with the class `dropdown-content` will be used as the dropdown
-menu. It could be a `paper-menu` or element that triggers `iron-activate` when
+menu. It could be a `paper-menu` or element that triggers `iron-select` when
 selecting its children.
 
 Example:
@@ -40,6 +40,9 @@ Example:
     </paper-dropdown-menu>
 
 This example renders a dropdown menu with 4 options.
+
+Similarly to using `iron-select`, `iron-deselect` events will cause the
+current selection of the `paper-dropdown-menu` to be cleared.
 
 ### Styling
 
@@ -71,6 +74,12 @@ respectively.
       position: relative;
       text-align: left;
       cursor: pointer;
+
+      /* NOTE(cdata): Both values are needed, since some phones require the
+       * value to be `transparent`.
+       */
+      -webkit-tap-highlight-color: rgba(0,0,0,0);
+      -webkit-tap-highlight-color: transparent;
 
       --paper-input-container-input: {
         overflow: hidden;
@@ -106,6 +115,7 @@ respectively.
     }
 
     paper-menu-button {
+      display: block;
       @apply(--paper-dropdown-menu-button);
     }
 
@@ -121,16 +131,14 @@ respectively.
 
   </style>
   <template>
-    <paper-menu-button id="menuButton" vertical-align="top" horizontal-align="right" vertical-offset="[[_computeMenuVerticalOffset(noLabelFloat)]]" disabled="[[disabled]]" no-animations="[[noAnimations]]" on-iron-activate="_onIronActivate" opened="{{opened}}">
+    <paper-menu-button id="menuButton" vertical-align="top" horizontal-align="right" vertical-offset="[[_computeMenuVerticalOffset(noLabelFloat)]]" disabled="[[disabled]]" no-animations="[[noAnimations]]" on-iron-select="_onIronSelect" on-iron-deselect="_onIronDeselect" opened="{{opened}}">
       <div class="dropdown-trigger">
         <paper-ripple></paper-ripple>
         <paper-input readonly="" disabled="[[disabled]]" value="[[selectedItemLabel]]" placeholder="[[placeholder]]" always-float-label="[[alwaysFloatLabel]]" no-label-float="[[noLabelFloat]]" label="[[label]]">
           <iron-icon icon="arrow-drop-down" suffix=""></iron-icon>
         </paper-input>
       </div>
-      <div class="dropdown-content">
-        <content select=".dropdown-content"></content>
-      </div>
+      <content id="content" select=".dropdown-content"></content>
     </paper-menu-button>
   </template>
 </dom-module>

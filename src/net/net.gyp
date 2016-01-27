@@ -291,10 +291,7 @@
             ],
           },
         ],
-        # Always need use_v8_in_net to be 1 to run gyp on Android, so just
-        # remove net_unittest's dependency on v8 when using icu alternatives
-        # instead of setting use_v8_in_net to 0.
-        [ 'use_v8_in_net==1 and use_icu_alternatives_on_android==0', {
+        [ 'use_v8_in_net==1', {
             'dependencies': [
               'net_with_v8',
             ],
@@ -408,16 +405,6 @@
             '../testing/android/native_test.gyp:native_test_native_code',
           ]
         }],
-        [ 'use_icu_alternatives_on_android == 1', {
-            'dependencies!': [
-              '../base/base.gyp:base_i18n',
-            ],
-            'sources!': [
-              'base/filename_util_unittest.cc',
-              'base/net_util_icu_unittest.cc',
-            ],
-          },
-        ],
         ['use_v8_in_net==1 and v8_use_external_startup_data==1', {
           'dependencies': [
             '../gin/gin.gyp:gin',

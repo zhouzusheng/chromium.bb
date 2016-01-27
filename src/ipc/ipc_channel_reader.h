@@ -7,8 +7,8 @@
 
 #include <set>
 
-#include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
+#include "base/macros.h"
 #include "base/memory/scoped_vector.h"
 #include "ipc/attachment_broker.h"
 #include "ipc/brokerable_attachment.h"
@@ -75,6 +75,10 @@ class IPC_EXPORT ChannelReader : public SupportsAttachmentBrokering,
 
   Listener* listener() const { return listener_; }
 
+  // Subclasses should call this method in their destructor to give this class a
+  // chance to clean up state that might be dependent on subclass members.
+  void CleanUp();
+
   // Populates the given buffer with data from the pipe.
   //
   // Returns the state of the read. On READ_SUCCESS, the number of bytes
@@ -123,6 +127,8 @@ class IPC_EXPORT ChannelReader : public SupportsAttachmentBrokering,
  private:
   FRIEND_TEST_ALL_PREFIXES(ChannelReaderTest, AttachmentAlreadyBrokered);
   FRIEND_TEST_ALL_PREFIXES(ChannelReaderTest, AttachmentNotYetBrokered);
+  FRIEND_TEST_ALL_PREFIXES(ChannelReaderTest, ResizeOverflowBuffer);
+  FRIEND_TEST_ALL_PREFIXES(ChannelReaderTest, InvalidMessageSize);
 
   typedef std::set<BrokerableAttachment::AttachmentId> AttachmentIdSet;
 
@@ -151,6 +157,9 @@ class IPC_EXPORT ChannelReader : public SupportsAttachmentBrokering,
   // is not empty.
   void StartObservingAttachmentBroker();
   void StopObservingAttachmentBroker();
+
+  // Checks that |size| is a valid message size. Has side effects if it's not.
+  bool CheckMessageSize(size_t size);
 
   Listener* listener_;
 

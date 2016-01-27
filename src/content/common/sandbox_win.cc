@@ -11,6 +11,7 @@
 #include "base/debug/profiler.h"
 #include "base/files/file_util.h"
 #include "base/hash.h"
+#include "base/logging.h"
 #include "base/memory/shared_memory.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/path_service.h"
@@ -51,6 +52,8 @@ namespace {
 const wchar_t* const kTroublesomeDlls[] = {
   L"adialhk.dll",                 // Kaspersky Internet Security.
   L"acpiz.dll",                   // Unknown.
+  L"activedetect32.dll",          // Lenovo One Key Theater (crbug.com/536056).
+  L"activedetect64.dll",          // Lenovo One Key Theater (crbug.com/536056).
   L"airfoilinject3.dll",          // Airfoil.
   L"akinsofthook32.dll",          // Akinsoft Software Engineering.
   L"assistant_x64.dll",           // Unknown.
@@ -118,6 +121,8 @@ const wchar_t* const kTroublesomeDlls[] = {
   L"tfwah.dll",                   // Threatfire (PC tools).
   L"wblind.dll",                  // Stardock Object desktop.
   L"wbhelp.dll",                  // Stardock Object desktop.
+  L"windowsapihookdll32.dll",     // Lenovo One Key Theater (crbug.com/536056).
+  L"windowsapihookdll64.dll",     // Lenovo One Key Theater (crbug.com/536056).
   L"winstylerthemehelper.dll"     // Tuneup utilities 2006.
 };
 
@@ -569,6 +574,31 @@ void AddAppContainerPolicy(sandbox::TargetPolicy* policy, const wchar_t* sid) {
   }
 }
 
+bool AddWin32kLockdownPolicy(sandbox::TargetPolicy* policy) {
+#if !defined(NACL_WIN64)
+  if (!IsWin32kRendererLockdownEnabled())
+    return true;
+
+  // Enable win32k lockdown if not already.
+  sandbox::MitigationFlags flags = policy->GetProcessMitigations();
+  if ((flags & sandbox::MITIGATION_WIN32K_DISABLE) ==
+      sandbox::MITIGATION_WIN32K_DISABLE)
+    return true;
+
+  sandbox::ResultCode result =
+      policy->AddRule(sandbox::TargetPolicy::SUBSYS_WIN32K_LOCKDOWN,
+                      sandbox::TargetPolicy::FAKE_USER_GDI_INIT, nullptr);
+  if (result != sandbox::SBOX_ALL_OK)
+    return false;
+
+  flags |= sandbox::MITIGATION_WIN32K_DISABLE;
+  result = policy->SetProcessMitigations(flags);
+  if (result != sandbox::SBOX_ALL_OK)
+    return false;
+#endif
+  return true;
+}
+
 bool InitBrokerServices(sandbox::BrokerServices* broker_services) {
   // TODO(abarth): DCHECK(CalledOnValidThread());
   //               See <http://b/1287166>.
@@ -656,20 +686,16 @@ base::Process StartSandboxedProcess(
                                          sandbox::MITIGATION_DEP_NO_ATL_THUNK |
                                          sandbox::MITIGATION_SEHOP;
 
+  if (policy->SetProcessMitigations(mitigations) != sandbox::SBOX_ALL_OK)
+    return base::Process();
+
 #if !defined(NACL_WIN64)
   if (type_str == switches::kRendererProcess &&
       IsWin32kRendererLockdownEnabled()) {
-    if (policy->AddRule(sandbox::TargetPolicy::SUBSYS_WIN32K_LOCKDOWN,
-                        sandbox::TargetPolicy::FAKE_USER_GDI_INIT,
-                        NULL) != sandbox::SBOX_ALL_OK) {
+    if (!AddWin32kLockdownPolicy(policy))
       return base::Process();
-    }
-    mitigations |= sandbox::MITIGATION_WIN32K_DISABLE;
   }
 #endif
-
-  if (policy->SetProcessMitigations(mitigations) != sandbox::SBOX_ALL_OK)
-    return base::Process();
 
   mitigations = sandbox::MITIGATION_STRICT_HANDLE_CHECKS |
                 sandbox::MITIGATION_DLL_SEARCH_ORDER;
@@ -687,8 +713,9 @@ base::Process StartSandboxedProcess(
   if (!disable_default_policy && !AddPolicyForSandboxedProcess(policy))
     return base::Process();
 
-  if (type_str == switches::kRendererProcess) {
 #if !defined(NACL_WIN64)
+  if (type_str == switches::kRendererProcess ||
+      type_str == switches::kPpapiPluginProcess) {
     if (gfx::win::ShouldUseDirectWrite()) {
       AddDirectory(base::DIR_WINDOWS_FONTS,
                   NULL,
@@ -706,14 +733,16 @@ base::Process StartSandboxedProcess(
 
       base::SharedMemory direct_write_font_cache_section;
       if (direct_write_font_cache_section.Open(name, true)) {
-        void* shared_handle =
-            policy->AddHandleToShare(direct_write_font_cache_section.handle());
+        void* shared_handle = policy->AddHandleToShare(
+            direct_write_font_cache_section.handle().GetHandle());
         cmd_line->AppendSwitchASCII(switches::kFontCacheSharedHandle,
             base::UintToString(reinterpret_cast<unsigned int>(shared_handle)));
       }
     }
+  }
 #endif
-  } else {
+
+  if (type_str != switches::kRendererProcess) {
     // Hack for Google Desktop crash. Trick GD into not injecting its DLL into
     // this subprocess. See
     // http://code.google.com/p/chromium/issues/detail?id=25580
@@ -739,6 +768,17 @@ base::Process StartSandboxedProcess(
   if (!AddGenericPolicy(policy)) {
     NOTREACHED();
     return base::Process();
+  }
+
+  // Allow the renderer and gpu processes to access the log file.
+  if (type_str == switches::kRendererProcess ||
+      type_str == switches::kGpuProcess) {
+    if (logging::IsLoggingToFileEnabled()) {
+      DCHECK(base::FilePath(logging::GetLogFileFullPath()).IsAbsolute());
+      policy->AddRule(sandbox::TargetPolicy::SUBSYS_FILES,
+                      sandbox::TargetPolicy::FILES_ALLOW_ANY,
+                      logging::GetLogFileFullPath().c_str());
+    }
   }
 
 #if !defined(OFFICIAL_BUILD)

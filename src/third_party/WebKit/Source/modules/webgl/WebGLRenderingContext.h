@@ -64,6 +64,7 @@ private:
     PersistentWillBeMember<ANGLEInstancedArrays> m_angleInstancedArrays;
     PersistentWillBeMember<CHROMIUMSubscribeUniform> m_chromiumSubscribeUniform;
     PersistentWillBeMember<EXTBlendMinMax> m_extBlendMinMax;
+    PersistentWillBeMember<EXTDisjointTimerQuery> m_extDisjointTimerQuery;
     PersistentWillBeMember<EXTFragDepth> m_extFragDepth;
     PersistentWillBeMember<EXTShaderTextureLOD> m_extShaderTextureLOD;
     PersistentWillBeMember<EXTsRGB> m_extsRGB;
@@ -79,6 +80,7 @@ private:
     PersistentWillBeMember<WebGLDebugRendererInfo> m_webglDebugRendererInfo;
     PersistentWillBeMember<WebGLDebugShaders> m_webglDebugShaders;
     PersistentWillBeMember<WebGLDrawBuffers> m_webglDrawBuffers;
+    PersistentWillBeMember<WebGLCompressedTextureASTC> m_webglCompressedTextureASTC;
     PersistentWillBeMember<WebGLCompressedTextureATC> m_webglCompressedTextureATC;
     PersistentWillBeMember<WebGLCompressedTextureETC1> m_webglCompressedTextureETC1;
     PersistentWillBeMember<WebGLCompressedTexturePVRTC> m_webglCompressedTexturePVRTC;

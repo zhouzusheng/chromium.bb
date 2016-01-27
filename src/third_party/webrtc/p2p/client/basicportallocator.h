@@ -112,6 +112,7 @@ class BasicPortAllocatorSession : public PortAllocatorSession,
 
   virtual void StartGettingPorts();
   virtual void StopGettingPorts();
+  virtual void ClearGettingPorts();
   virtual bool IsGettingPorts() { return running_; }
 
  protected:
@@ -182,6 +183,7 @@ class BasicPortAllocatorSession : public PortAllocatorSession,
   void MaybeSignalCandidatesAllocationDone();
   void OnPortAllocationComplete(AllocationSequence* seq);
   PortData* FindPort(Port* port);
+  void GetNetworks(std::vector<rtc::Network*>* networks);
 
   bool CheckCandidateFilter(const Candidate& c);
 
@@ -260,8 +262,11 @@ class AllocationSequence : public rtc::MessageHandler,
   ~AllocationSequence();
   bool Init();
   void Clear();
+  void OnNetworkRemoved();
 
   State state() const { return state_; }
+  const rtc::Network* network() const { return network_; }
+  bool network_removed() const { return network_removed_; }
 
   // Disables the phases for a new sequence that this one already covers for an
   // equivalent network setup.
@@ -311,6 +316,7 @@ class AllocationSequence : public rtc::MessageHandler,
   void OnPortDestroyed(PortInterface* port);
 
   BasicPortAllocatorSession* session_;
+  bool network_removed_ = false;
   rtc::Network* network_;
   rtc::IPAddress ip_;
   PortConfiguration* config_;

@@ -122,14 +122,14 @@ static bool applyCommandToFrame(LocalFrame& frame, EditorCommandSource source, E
 
 static bool executeApplyStyle(LocalFrame& frame, EditorCommandSource source, EditAction action, CSSPropertyID propertyID, const String& propertyValue)
 {
-    RefPtrWillBeRawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create();
+    RefPtrWillBeRawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create(HTMLQuirksMode);
     style->setProperty(propertyID, propertyValue);
     return applyCommandToFrame(frame, source, action, style.get());
 }
 
 static bool executeApplyStyle(LocalFrame& frame, EditorCommandSource source, EditAction action, CSSPropertyID propertyID, CSSValueID propertyValue)
 {
-    RefPtrWillBeRawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create();
+    RefPtrWillBeRawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create(HTMLQuirksMode);
     style->setProperty(propertyID, propertyValue);
     return applyCommandToFrame(frame, source, action, style.get());
 }
@@ -157,7 +157,7 @@ static bool executeToggleStyleInList(LocalFrame& frame, EditorCommandSource sour
     }
 
     // FIXME: We shouldn't be having to convert new style into text.  We should have setPropertyCSSValue.
-    RefPtrWillBeRawPtr<MutableStylePropertySet> newMutableStyle = MutableStylePropertySet::create();
+    RefPtrWillBeRawPtr<MutableStylePropertySet> newMutableStyle = MutableStylePropertySet::create(HTMLQuirksMode);
     newMutableStyle->setProperty(propertyID, newStyle);
     return applyCommandToFrame(frame, source, action, newMutableStyle.get());
 }
@@ -180,7 +180,7 @@ static bool executeToggleStyle(LocalFrame& frame, EditorCommandSource source, Ed
 
 static bool executeApplyParagraphStyle(LocalFrame& frame, EditorCommandSource source, EditAction action, CSSPropertyID propertyID, const String& propertyValue)
 {
-    RefPtrWillBeRawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create();
+    RefPtrWillBeRawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create(HTMLQuirksMode);
     style->setProperty(propertyID, propertyValue);
     // FIXME: We don't call shouldApplyStyle when the source is DOM; is there a good reason for that?
     switch (source) {
@@ -223,7 +223,7 @@ static bool expandSelectionToGranularity(LocalFrame& frame, TextGranularity gran
     if (newRange.isCollapsed())
         return false;
     TextAffinity affinity = frame.selection().affinity();
-    frame.selection().setSelectedRange(newRange, affinity, FrameSelection::NonDirectional, FrameSelection::CloseTyping);
+    frame.selection().setSelectedRange(newRange, affinity, SelectionDirectionalMode::NonDirectional, FrameSelection::CloseTyping);
     return true;
 }
 
@@ -396,11 +396,9 @@ static bool executeDeleteToEndOfParagraph(LocalFrame& frame, Event*, EditorComma
 
 static bool executeDeleteToMark(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
-    // TODO(yosin) We should use |EphemeralRange| version of
-    // |VisibleSelection::toNormalizedRange()|.
-    RefPtrWillBeRawPtr<Range> mark = frame.editor().mark().toNormalizedRange();
-    if (mark) {
-        bool selected = frame.selection().setSelectedRange(unionEphemeralRanges(EphemeralRange(mark.get()), frame.editor().selectedRange()), TextAffinity::Downstream, FrameSelection::NonDirectional, FrameSelection::CloseTyping);
+    const EphemeralRange mark = frame.editor().mark().toNormalizedEphemeralRange();
+    if (mark.isNotNull()) {
+        bool selected = frame.selection().setSelectedRange(unionEphemeralRanges(mark, frame.editor().selectedRange()), TextAffinity::Downstream, SelectionDirectionalMode::NonDirectional, FrameSelection::CloseTyping);
         ASSERT(selected);
         if (!selected)
             return false;
@@ -626,7 +624,7 @@ static bool executeJustifyRight(LocalFrame& frame, Event*, EditorCommandSource s
 
 static bool executeMakeTextWritingDirectionLeftToRight(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
-    RefPtrWillBeRawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create();
+    RefPtrWillBeRawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create(HTMLQuirksMode);
     style->setProperty(CSSPropertyUnicodeBidi, CSSValueEmbed);
     style->setProperty(CSSPropertyDirection, CSSValueLtr);
     frame.editor().applyStyle(style.get(), EditActionSetWritingDirection);
@@ -635,7 +633,7 @@ static bool executeMakeTextWritingDirectionLeftToRight(LocalFrame& frame, Event*
 
 static bool executeMakeTextWritingDirectionNatural(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
-    RefPtrWillBeRawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create();
+    RefPtrWillBeRawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create(HTMLQuirksMode);
     style->setProperty(CSSPropertyUnicodeBidi, CSSValueNormal);
     frame.editor().applyStyle(style.get(), EditActionSetWritingDirection);
     return true;
@@ -643,7 +641,7 @@ static bool executeMakeTextWritingDirectionNatural(LocalFrame& frame, Event*, Ed
 
 static bool executeMakeTextWritingDirectionRightToLeft(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
-    RefPtrWillBeRawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create();
+    RefPtrWillBeRawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create(HTMLQuirksMode);
     style->setProperty(CSSPropertyUnicodeBidi, CSSValueEmbed);
     style->setProperty(CSSPropertyDirection, CSSValueRtl);
     frame.editor().applyStyle(style.get(), EditActionSetWritingDirection);
@@ -702,7 +700,7 @@ static bool executeMovePageDown(LocalFrame& frame, Event*, EditorCommandSource, 
     if (!distance)
         return false;
     return frame.selection().modify(FrameSelection::AlterationMove, distance, FrameSelection::DirectionDown,
-        UserTriggered, FrameSelection::AlignCursorOnScrollAlways);
+        UserTriggered, CursorAlignOnScroll::Always);
 }
 
 static bool executeMovePageDownAndModifySelection(LocalFrame& frame, Event*, EditorCommandSource, const String&)
@@ -711,7 +709,7 @@ static bool executeMovePageDownAndModifySelection(LocalFrame& frame, Event*, Edi
     if (!distance)
         return false;
     return frame.selection().modify(FrameSelection::AlterationExtend, distance, FrameSelection::DirectionDown,
-        UserTriggered, FrameSelection::AlignCursorOnScrollAlways);
+        UserTriggered, CursorAlignOnScroll::Always);
 }
 
 static bool executeMovePageUp(LocalFrame& frame, Event*, EditorCommandSource, const String&)
@@ -720,7 +718,7 @@ static bool executeMovePageUp(LocalFrame& frame, Event*, EditorCommandSource, co
     if (!distance)
         return false;
     return frame.selection().modify(FrameSelection::AlterationMove, distance, FrameSelection::DirectionUp,
-        UserTriggered, FrameSelection::AlignCursorOnScrollAlways);
+        UserTriggered, CursorAlignOnScroll::Always);
 }
 
 static bool executeMovePageUpAndModifySelection(LocalFrame& frame, Event*, EditorCommandSource, const String&)
@@ -729,7 +727,7 @@ static bool executeMovePageUpAndModifySelection(LocalFrame& frame, Event*, Edito
     if (!distance)
         return false;
     return frame.selection().modify(FrameSelection::AlterationExtend, distance, FrameSelection::DirectionUp,
-        UserTriggered, FrameSelection::AlignCursorOnScrollAlways);
+        UserTriggered, CursorAlignOnScroll::Always);
 }
 
 static bool executeMoveRight(LocalFrame& frame, Event*, EditorCommandSource, const String&)
@@ -1065,13 +1063,11 @@ static bool executeSelectSentence(LocalFrame& frame, Event*, EditorCommandSource
 
 static bool executeSelectToMark(LocalFrame& frame, Event*, EditorCommandSource, const String&)
 {
-    // TODO(yosin) We should use |EphemeralRange| version of
-    // |VisibleSelection::toNormalizedRange()|.
-    RefPtrWillBeRawPtr<Range> mark = frame.editor().mark().toNormalizedRange();
+    const EphemeralRange mark = frame.editor().mark().toNormalizedEphemeralRange();
     EphemeralRange selection = frame.editor().selectedRange();
-    if (!mark || selection.isNull())
+    if (mark.isNull() || selection.isNull())
         return false;
-    frame.selection().setSelectedRange(unionEphemeralRanges(EphemeralRange(mark.get()), selection), TextAffinity::Downstream, FrameSelection::NonDirectional, FrameSelection::CloseTyping);
+    frame.selection().setSelectedRange(unionEphemeralRanges(mark, selection), TextAffinity::Downstream, SelectionDirectionalMode::NonDirectional, FrameSelection::CloseTyping);
     return true;
 }
 
@@ -1459,7 +1455,7 @@ static String valueFormatBlock(LocalFrame& frame, Event*)
     const VisibleSelection& selection = frame.selection().selection();
     if (!selection.isNonOrphanedCaretOrRange() || !selection.isContentEditable())
         return "";
-    Element* formatBlockElement = FormatBlockCommand::elementForFormatBlockCommand(selection.firstRange().get());
+    Element* formatBlockElement = FormatBlockCommand::elementForFormatBlockCommand(firstRangeOf(selection).get());
     if (!formatBlockElement)
         return "";
     return formatBlockElement->localName();

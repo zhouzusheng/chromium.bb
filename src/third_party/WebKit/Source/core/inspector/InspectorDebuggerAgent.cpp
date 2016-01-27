@@ -31,17 +31,16 @@
 #include "core/inspector/InspectorDebuggerAgent.h"
 
 #include "bindings/core/v8/V8Binding.h"
+#include "core/inspector/AsyncCallTracker.h"
 #include "core/inspector/ScriptAsyncCallStack.h"
 #include "core/inspector/v8/V8Debugger.h"
 #include "platform/ScriptForbiddenScope.h"
-#include "wtf/MainThread.h"
-#include "wtf/Optional.h"
 
 namespace blink {
 
 InspectorDebuggerAgent::InspectorDebuggerAgent(InjectedScriptManager* injectedScriptManager, V8Debugger* debugger, int contextGroupId)
     : InspectorBaseAgent<InspectorDebuggerAgent, InspectorFrontend::Debugger>("Debugger")
-    , m_v8DebuggerAgent(adoptPtrWillBeNoop(new V8DebuggerAgent(injectedScriptManager, debugger, this, contextGroupId)))
+    , m_v8DebuggerAgent(V8DebuggerAgent::create(injectedScriptManager, debugger, this, contextGroupId))
 {
 }
 
@@ -54,7 +53,7 @@ InspectorDebuggerAgent::~InspectorDebuggerAgent()
 
 DEFINE_TRACE(InspectorDebuggerAgent)
 {
-    visitor->trace(m_v8DebuggerAgent);
+    visitor->trace(m_asyncCallTracker);
     InspectorBaseAgent<InspectorDebuggerAgent, InspectorFrontend::Debugger>::trace(visitor);
 }
 
@@ -255,6 +254,16 @@ void InspectorDebuggerAgent::debuggerAgentDisabled()
     m_instrumentingAgents->setInspectorDebuggerAgent(nullptr);
 }
 
+void InspectorDebuggerAgent::asyncCallTrackingStateChanged(bool tracking)
+{
+    m_asyncCallTracker->asyncCallTrackingStateChanged(tracking);
+}
+
+void InspectorDebuggerAgent::resetAsyncOperations()
+{
+    m_asyncCallTracker->resetAsyncOperations();
+}
+
 bool InspectorDebuggerAgent::isPaused()
 {
     return m_v8DebuggerAgent->isPaused();
@@ -262,20 +271,8 @@ bool InspectorDebuggerAgent::isPaused()
 
 PassRefPtrWillBeRawPtr<ScriptAsyncCallStack> InspectorDebuggerAgent::currentAsyncStackTraceForConsole()
 {
-    Optional<ScriptForbiddenScope::AllowUserAgentScript> allowScripting;
-    if (isMainThread())
-        allowScripting.emplace();
+    ScriptForbiddenScope::AllowUserAgentScript allowScripting;
     return m_v8DebuggerAgent->currentAsyncStackTraceForConsole();
-}
-
-void InspectorDebuggerAgent::didFireTimer()
-{
-    m_v8DebuggerAgent->cancelPauseOnNextStatement();
-}
-
-void InspectorDebuggerAgent::didHandleEvent()
-{
-    m_v8DebuggerAgent->cancelPauseOnNextStatement();
 }
 
 void InspectorDebuggerAgent::scriptExecutionBlockedByCSP(const String& directiveText)
@@ -287,30 +284,21 @@ void InspectorDebuggerAgent::scriptExecutionBlockedByCSP(const String& directive
     m_v8DebuggerAgent->breakProgram(InspectorFrontend::Debugger::Reason::CSPViolation, directive.release());
 }
 
-void InspectorDebuggerAgent::willCallFunction(const DevToolsFunctionInfo& info)
+void InspectorDebuggerAgent::willExecuteScript(int scriptId)
 {
-    m_v8DebuggerAgent->willCallFunction(info.scriptId());
+    m_v8DebuggerAgent->willExecuteScript(scriptId);
 }
 
-void InspectorDebuggerAgent::didCallFunction()
+void InspectorDebuggerAgent::didExecuteScript()
 {
-    m_v8DebuggerAgent->didCallFunction();
-}
-
-void InspectorDebuggerAgent::willEvaluateScript()
-{
-    m_v8DebuggerAgent->willEvaluateScript();
-}
-
-void InspectorDebuggerAgent::didEvaluateScript()
-{
-    m_v8DebuggerAgent->didEvaluateScript();
+    m_v8DebuggerAgent->didExecuteScript();
 }
 
 // InspectorBaseAgent overrides.
 void InspectorDebuggerAgent::init()
 {
     m_v8DebuggerAgent->setInspectorState(m_state);
+    m_asyncCallTracker = adoptPtrWillBeNoop(new AsyncCallTracker(m_v8DebuggerAgent.get(), m_instrumentingAgents.get()));
 }
 
 void InspectorDebuggerAgent::setFrontend(InspectorFrontend* frontend)

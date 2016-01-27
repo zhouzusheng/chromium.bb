@@ -7,18 +7,16 @@
 #include <cstdarg>
 #include <sstream>
 
-#include "src/v8.h"
-
 #include "src/bailout-reason.h"
 #include "src/base/platform/platform.h"
 #include "src/bootstrapper.h"
 #include "src/code-stubs.h"
-#include "src/cpu-profiler.h"
 #include "src/deoptimizer.h"
 #include "src/global-handles.h"
 #include "src/log-inl.h"
 #include "src/log-utils.h"
 #include "src/macro-assembler.h"
+#include "src/profiler/cpu-profiler.h"
 #include "src/runtime-profiler.h"
 #include "src/string-stream.h"
 #include "src/vm-state-inl.h"
@@ -125,8 +123,9 @@ class CodeEventLogger::NameBuffer {
   }
 
   void AppendInt(int n) {
-    Vector<char> buffer(utf8_buffer_ + utf8_pos_,
-                        kUtf8BufferSize - utf8_pos_);
+    int space = kUtf8BufferSize - utf8_pos_;
+    if (space <= 0) return;
+    Vector<char> buffer(utf8_buffer_ + utf8_pos_, space);
     int size = SNPrintF(buffer, "%d", n);
     if (size > 0 && utf8_pos_ + size <= kUtf8BufferSize) {
       utf8_pos_ += size;
@@ -134,8 +133,9 @@ class CodeEventLogger::NameBuffer {
   }
 
   void AppendHex(uint32_t n) {
-    Vector<char> buffer(utf8_buffer_ + utf8_pos_,
-                        kUtf8BufferSize - utf8_pos_);
+    int space = kUtf8BufferSize - utf8_pos_;
+    if (space <= 0) return;
+    Vector<char> buffer(utf8_buffer_ + utf8_pos_, space);
     int size = SNPrintF(buffer, "%x", n);
     if (size > 0 && utf8_pos_ + size <= kUtf8BufferSize) {
       utf8_pos_ += size;
@@ -147,7 +147,7 @@ class CodeEventLogger::NameBuffer {
 
  private:
   static const int kUtf8BufferSize = 512;
-  static const int kUtf16BufferSize = 128;
+  static const int kUtf16BufferSize = kUtf8BufferSize;
 
   int utf8_pos_;
   char utf8_buffer_[kUtf8BufferSize];
@@ -503,6 +503,7 @@ class JitLogger : public CodeEventLogger {
                                  int length);
 
   JitCodeEventHandler code_event_handler_;
+  base::Mutex logger_mutex_;
 };
 
 
@@ -532,6 +533,7 @@ void JitLogger::LogRecordedBuffer(Code* code,
 
 
 void JitLogger::CodeMoveEvent(Address from, Address to) {
+  base::LockGuard<base::Mutex> guard(&logger_mutex_);
   Code* from_code = Code::cast(HeapObject::FromAddress(from));
 
   JitCodeEvent event;
@@ -1608,8 +1610,7 @@ void Logger::LogCodeObject(Object* object) {
     case Code::COMPARE_NIL_IC:   // fall through
     case Code::TO_BOOLEAN_IC:  // fall through
     case Code::STUB:
-      description =
-          CodeStub::MajorName(CodeStub::GetMajorKey(code_object), true);
+      description = CodeStub::MajorName(CodeStub::GetMajorKey(code_object));
       if (description == NULL)
         description = "A stub from the snapshot";
       tag = Logger::STUB_TAG;
@@ -1645,6 +1646,10 @@ void Logger::LogCodeObject(Object* object) {
     case Code::KEYED_STORE_IC:
       description = "A keyed store IC from the snapshot";
       tag = Logger::KEYED_STORE_IC_TAG;
+      break;
+    case Code::WASM_FUNCTION:
+      description = "A wasm function";
+      tag = Logger::STUB_TAG;
       break;
     case Code::NUMBER_OF_KINDS:
       break;

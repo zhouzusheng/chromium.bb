@@ -9,6 +9,7 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/singleton.h"
+#include "base/synchronization/lock.h"
 
 namespace base {
 class SingleThreadTaskRunner;
@@ -33,7 +34,6 @@ class ChildMemoryDumpManagerDelegateImpl
   void RequestGlobalMemoryDump(
       const base::trace_event::MemoryDumpRequestArgs& args,
       const base::trace_event::MemoryDumpCallback& callback) override;
-  bool IsCoordinatorProcess() const override;
   uint64 GetTracingProcessId() const override;
 
   void SetChildTraceMessageFilter(ChildTraceMessageFilter* ctmf);
@@ -53,7 +53,8 @@ class ChildMemoryDumpManagerDelegateImpl
   friend class ChildTraceMessageFilter;
 
  private:
-  friend struct DefaultSingletonTraits<ChildMemoryDumpManagerDelegateImpl>;
+  friend struct base::DefaultSingletonTraits<
+      ChildMemoryDumpManagerDelegateImpl>;
 
   ChildMemoryDumpManagerDelegateImpl();
   ~ChildMemoryDumpManagerDelegateImpl() override;
@@ -63,6 +64,10 @@ class ChildMemoryDumpManagerDelegateImpl
   // The SingleThreadTaskRunner where the |ctmf_| lives.
   // It is NULL iff |cmtf_| is NULL.
   scoped_refptr<base::SingleThreadTaskRunner> ctmf_task_runner_;
+
+  // Protects from concurrent access to |ctmf_task_runner_| to allow
+  // RequestGlobalMemoryDump to be called from arbitrary threads.
+  base::Lock lock_;
 
   // The unique id of the child process, created for tracing and is expected to
   // be valid only when tracing is enabled.

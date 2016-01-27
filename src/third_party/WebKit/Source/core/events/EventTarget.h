@@ -39,6 +39,7 @@
 #include "core/EventTypeNames.h"
 #include "core/events/EventListenerMap.h"
 #include "platform/heap/Handle.h"
+#include "wtf/Allocator.h"
 #include "wtf/text/AtomicString.h"
 
 namespace blink {
@@ -50,6 +51,7 @@ class MessagePort;
 class Node;
 
 struct FiringEventIterator {
+    ALLOW_ONLY_INLINE_ALLOCATION();
     FiringEventIterator(const AtomicString& eventType, size_t& iterator, size_t& end)
         : eventType(eventType)
         , iterator(iterator)
@@ -61,7 +63,7 @@ struct FiringEventIterator {
     size_t& iterator;
     size_t& end;
 };
-typedef Vector<FiringEventIterator, 1> FiringEventIteratorVector;
+using FiringEventIteratorVector = Vector<FiringEventIterator, 1>;
 
 class CORE_EXPORT EventTargetData final : public NoBaseWillBeGarbageCollectedFinalized<EventTargetData> {
     WTF_MAKE_NONCOPYABLE(EventTargetData);
@@ -272,7 +274,7 @@ public:
     void setOn##attribute(PassRefPtrWillBeRawPtr<EventListener> listener);
 
 #define DEFINE_FORWARDING_ATTRIBUTE_EVENT_LISTENER(type, recipient, attribute) \
-    EventListener* type::on##attribute() { return recipient ? recipient->getAttributeEventListener(EventTypeNames::attribute) : 0; } \
+    EventListener* type::on##attribute() { return recipient ? recipient->getAttributeEventListener(EventTypeNames::attribute) : nullptr; } \
     void type::setOn##attribute(PassRefPtrWillBeRawPtr<EventListener> listener) \
     { \
         if (recipient) \

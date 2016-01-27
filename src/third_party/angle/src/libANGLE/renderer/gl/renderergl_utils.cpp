@@ -502,6 +502,15 @@ void GenerateCaps(const FunctionsGL *functions, gl::Caps *caps, gl::TextureCapsM
         LimitVersion(maxSupportedESVersion, gl::Version(2, 0));
     }
 
+    // Check if sampler objects are supported
+    if (!functions->isAtLeastGL(gl::Version(3, 3)) &&
+        !functions->hasGLExtension("GL_ARB_sampler_objects") &&
+        !functions->isAtLeastGLES(gl::Version(3, 0)))
+    {
+        // Can't support ES3 without sampler objects
+        LimitVersion(maxSupportedESVersion, gl::Version(2, 0));
+    }
+
     // Extension support
     extensions->setTextureExtensionSupport(*textureCapsMap);
     extensions->elementIndexUint = functions->standard == STANDARD_GL_DESKTOP ||
@@ -532,6 +541,21 @@ void GenerateCaps(const FunctionsGL *functions, gl::Caps *caps, gl::TextureCapsM
                             functions->isAtLeastGLES(gl::Version(3, 0)) || functions->hasGLESExtension("GL_EXT_frag_depth");
     extensions->fboRenderMipmap = functions->isAtLeastGL(gl::Version(3, 0)) || functions->hasGLExtension("GL_EXT_framebuffer_object") ||
                                   functions->isAtLeastGLES(gl::Version(3, 0)) || functions->hasGLESExtension("GL_OES_fbo_render_mipmap");
+    extensions->instancedArrays = functions->isAtLeastGL(gl::Version(3, 1)) ||
+                                  (functions->hasGLExtension("GL_ARB_instanced_arrays") &&
+                                   (functions->hasGLExtension("GL_ARB_draw_instanced") ||
+                                    functions->hasGLExtension("GL_EXT_draw_instanced"))) ||
+                                  functions->isAtLeastGLES(gl::Version(3, 0)) ||
+                                  functions->hasGLESExtension("GL_EXT_instanced_arrays");
+    extensions->unpackSubimage = functions->standard == STANDARD_GL_DESKTOP ||
+                                 functions->isAtLeastGLES(gl::Version(3, 0)) ||
+                                 functions->hasGLESExtension("GL_EXT_unpack_subimage");
+    extensions->packSubimage = functions->standard == STANDARD_GL_DESKTOP ||
+                               functions->isAtLeastGLES(gl::Version(3, 0)) ||
+                               functions->hasGLESExtension("GL_NV_pack_subimage");
+    extensions->debugMarker =
+        functions->isAtLeastGL(gl::Version(4, 3)) || functions->hasGLExtension("GL_KHR_debug") ||
+        functions->isAtLeastGLES(gl::Version(3, 2)) || functions->hasGLESExtension("GL_KHR_debug");
 }
 
 void GenerateWorkarounds(const FunctionsGL *functions, WorkaroundsGL *workarounds)
@@ -545,6 +569,14 @@ void GenerateWorkarounds(const FunctionsGL *functions, WorkaroundsGL *workaround
 
     workarounds->rgba4IsNotSupportedForColorRendering =
         functions->standard == STANDARD_GL_DESKTOP && vendor == VENDOR_ID_INTEL;
+
+    workarounds->doesSRGBClearsOnLinearFramebufferAttachments =
+        functions->standard == STANDARD_GL_DESKTOP &&
+        (vendor == VENDOR_ID_INTEL || vendor == VENDOR_ID_AMD);
+
+#if ANGLE_PLATFORM_APPLE
+    workarounds->doWhileGLSLCausesGPUHang = true;
+#endif
 }
 
 }

@@ -1,4 +1,6 @@
-Polymer({
+
+
+  Polymer({
     is: 'paper-slider',
 
     behaviors: [
@@ -55,7 +57,8 @@ Polymer({
       immediateValue: {
         type: Number,
         value: 0,
-        readOnly: true
+        readOnly: true,
+        notify: true
       },
 
       /**
@@ -316,23 +319,15 @@ Polymer({
     },
 
     _getClassNames: function() {
-      var classes = {};
-
-      classes.disabled = this.disabled;
-      classes.pin = this.pin;
-      classes.snaps = this.snaps;
-      classes.ring = this.immediateValue <= this.min;
-      classes.expand = this.expand;
-      classes.dragging = this.dragging;
-      classes.transiting = this.transiting;
-      classes.editable = this.editable;
-
-      return this._mergeClasses(classes);
-    },
-
-    _getProgressClass: function() {
       return this._mergeClasses({
-        transiting: this.transiting
+        disabled: this.disabled,
+        pin: this.pin,
+        snaps: this.snaps,
+        ring: this.immediateValue <= this.min,
+        expand: this.expand,
+        dragging: this.dragging,
+        transiting: this.transiting,
+        editable: this.editable
       });
     },
 
@@ -375,3 +370,4 @@ Polymer({
    *
    * @event change
    */
+

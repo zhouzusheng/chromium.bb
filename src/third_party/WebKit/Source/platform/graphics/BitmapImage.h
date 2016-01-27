@@ -84,6 +84,9 @@ public:
     ImageAnimationPolicy animationPolicy() override { return m_animationPolicy; }
     void advanceTime(double deltaTimeInSeconds) override;
 
+    // Advance the image animation by one frame.
+    void advanceAnimationForTesting() override { internalAdvanceAnimation(false); }
+
     PassRefPtr<SkImage> imageForCurrentFrame() override;
     PassRefPtr<Image> imageForDefaultFrame() override;
     bool currentFrameKnownToBeOpaque() override;
@@ -118,7 +121,6 @@ private:
     float frameDurationAtIndex(size_t);
     bool frameHasAlphaAtIndex(size_t);
     ImageOrientation frameOrientationAtIndex(size_t);
-    bool frameIsLazyDecodedAtIndex(size_t) const;
 
     // Decodes and caches a frame. Never accessed except internally.
     void cacheFrame(size_t index);

@@ -77,8 +77,8 @@ bool InitializeSymbols() {
   if (!SymGetSearchPathW(GetCurrentProcess(),
                          symbols_path.get(),
                          kSymbolsArraySize)) {
-    DLOG(WARNING) << "SymGetSearchPath failed: " << g_init_error;
     g_init_error = GetLastError();
+    DLOG(WARNING) << "SymGetSearchPath failed: " << g_init_error;
     return false;
   }
 
@@ -229,6 +229,9 @@ StackTrace::StackTrace(CONTEXT* context) {
 void StackTrace::InitTrace(CONTEXT* context_record) {
   // When walking an exception stack, we need to use StackWalk64().
   count_ = 0;
+  // Make a copy of the context_record, because StackWalk64 modifies it!
+  CONTEXT context_record_copy = *context_record;
+  context_record = &context_record_copy;
   // Initialize stack walking.
   STACKFRAME64 stack_frame;
   memset(&stack_frame, 0, sizeof(stack_frame));

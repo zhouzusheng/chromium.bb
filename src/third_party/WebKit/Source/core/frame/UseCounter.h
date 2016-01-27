@@ -56,6 +56,7 @@ class StyleSheetContents;
 // http://www.google.com/chrome/intl/en/privacy.html
 
 class CORE_EXPORT UseCounter {
+    DISALLOW_ALLOCATION();
     WTF_MAKE_NONCOPYABLE(UseCounter);
 public:
     UseCounter();
@@ -141,7 +142,6 @@ public:
         DocumentCreateAttribute = 111,
         DocumentCreateAttributeNS = 112,
         DocumentCreateCDATASection = 113, // Removed from DOM4.
-        DocumentInputEncoding = 114,
         DocumentXMLEncoding = 115, // Removed from DOM4.
         DocumentXMLStandalone = 116, // Removed from DOM4.
         DocumentXMLVersion = 117, // Removed from DOM4.
@@ -150,7 +150,6 @@ public:
         NavigatorVendor = 124,
         NavigatorVendorSub = 125,
         FileError = 126,
-        DocumentCharset = 127, // Documented as IE extensions = 0, from KHTML days.
         PrefixedAnimationEndEvent = 128,
         UnprefixedAnimationEndEvent = 129,
         PrefixedAndUnprefixedAnimationEndEvent = 130,
@@ -321,10 +320,6 @@ public:
         PrefixedIDBTransactionConstructor = 370,
         NotificationPermission = 371,
         RangeDetach = 372,
-        PrefixedTouchRadiusX = 378,
-        PrefixedTouchRadiusY = 379,
-        PrefixedTouchRotationAngle = 380,
-        PrefixedTouchForce = 381,
         PrefixedMouseEventMovementX = 382,
         PrefixedMouseEventMovementY = 383,
         PrefixedFileRelativePath = 386,
@@ -438,7 +433,6 @@ public:
         SrcsetXDescriptor = 523,
         SrcsetWDescriptor = 524,
         SelectionContainsNode = 525,
-        MediaStreamEnded = 526,
         XMLExternalResourceLoad = 529,
         MixedContentPrivateHostnameInPublicHostname = 530,
         LegacyProtocolEmbeddedAsSubresource = 531,
@@ -446,8 +440,6 @@ public:
         NotificationCreated = 533,
         NotificationClosed = 534,
         NotificationPermissionRequested = 535,
-        MediaStreamLabel = 536,
-        MediaStreamStop = 537,
         ConsoleTimeline = 538,
         ConsoleTimelineEnd = 539,
         SRIElementWithMatchingIntegrityAttribute = 540,
@@ -595,11 +587,6 @@ public:
         V8Animation_Cancel_Method = 699,
         V8Animation_Onfinish_AttributeGetter = 700,
         V8Animation_Onfinish_AttributeSetter = 701,
-        ElementOffsetParent = 702,
-        ElementOffsetTop = 703,
-        ElementOffsetLeft = 704,
-        ElementOffsetWidth = 705,
-        ElementOffsetHeight = 706,
         V8Window_WebKitAnimationEvent_ConstructorGetter = 707,
         V8Window_WebKitAnimationEvent_AttributeSetter = 708,
         ResourceLoadedAfterRedirectWithCSP = 709,
@@ -667,10 +654,6 @@ public:
         V8Element_Animate_Method = 773,
         // The above items are available in M44 branch.
 
-        V8SVGSVGElement_PixelUnitToMillimeterX_AttributeGetter = 774,
-        V8SVGSVGElement_PixelUnitToMillimeterY_AttributeGetter = 775,
-        V8SVGSVGElement_ScreenPixelToMillimeterX_AttributeGetter = 776,
-        V8SVGSVGElement_ScreenPixelToMillimeterY_AttributeGetter = 777,
         V8SVGSVGElement_GetElementById_Method = 778,
         ElementCreateShadowRootMultiple = 779,
         V8MessageChannel_Constructor = 780,
@@ -693,7 +676,6 @@ public:
         ElementCreateShadowRootMultipleWithUserAgentShadowRoot = 800,
         InputTypeFileSecureOrigin = 801,
         InputTypeFileInsecureOrigin = 802,
-        V8HashChangeEvent_InitHashChangeEvent_Method = 803,
         ElementCreateShadowRootWithParameter = 804,
         V8KeyboardEvent_KeyIdentifier_AttributeGetter = 805,
         V8SecurityPolicyViolationEvent_DocumentURI_AttributeGetter = 806,
@@ -742,7 +724,6 @@ public:
         DOMStringList_Contains_Method_Location = 849,
         NavigatorVibrate = 850,
         NavigatorVibrateSubFrame = 851,
-        PermissionStatusStatus = 852,
         V8XPathEvaluator_Constructor = 853,
         V8XPathEvaluator_CreateExpression_Method = 854,
         V8XPathEvaluator_CreateNSResolver_Method = 855,
@@ -822,16 +803,47 @@ public:
         PresentationAvailabilityChangeEventListener = 927,
         PresentationRequestConstructor = 928,
         PresentationRequestStart = 929,
-        PresentationRequestJoin = 930,
+        PresentationRequestReconnect = 930,
         PresentationRequestGetAvailability = 931,
-        PresentationRequestSessionConnectEventListener = 932,
-        PresentationSessionClose = 933,
-        PresentationSessionSend = 934,
-        PresentationSessionStateChangeEventListener = 935,
-        PresentationSessionMessageEventListener = 936,
+        PresentationRequestConnectionAvailableEventListener = 932,
+        PresentationConnectionClose = 933,
+        PresentationConnectionSend = 934,
+        PresentationConnectionStateChangeEventListener = 935,
+        PresentationConnectionMessageEventListener = 936,
         CSSAnimationsStackedNeutralKeyframe = 937,
         ReadingCheckedInClickHandler = 938,
         FlexboxIntrinsicSizeAlgorithmIsDifferent = 939,
+        HTMLImportsHasStyleSheets = 940,
+        WebkitTextInClipProperty = 941,
+        WebkitTextInColorProperty = 942,
+        HeaderValueNotMatchingRFC7230 = 943,
+        ClipPathOfPositionedElement = 944,
+        ClipCssOfPositionedElement = 945,
+        NetInfoType = 946,
+        NetInfoDownlinkMax = 947,
+        NetInfoOnChange = 948,
+        NetInfoOnTypeChange = 949,
+        V8Window_Alert_Method = 950,
+        V8Window_Confirm_Method = 951,
+        V8Window_Prompt_Method = 952,
+        V8Window_Print_Method = 953,
+        V8Window_RequestIdleCallback_Method = 954,
+        FlexboxPercentagePaddingVertical = 955,
+        FlexboxPercentageMarginVertical = 956,
+        BackspaceNavigatedBack = 957,
+        BackspaceNavigatedBackAfterFormInteraction = 958,
+        CSPSourceWildcardWouldMatchExactHost = 959,
+        CredentialManagerGet = 960,
+        CredentialManagerGetWithUI = 961,
+        CredentialManagerGetWithoutUI = 962,
+        CredentialManagerStore = 963,
+        CredentialManagerRequireUserMediation = 964,
+        MeterElementWithContinuousCapacityAppearance = 991,
+        MeterElementWithDiscreteCapacityAppearance = 992,
+        MeterElementWithMeterAppearance = 993,
+        MeterElementWithNoneAppearance = 994,
+        MeterElementWithRatingAppearance = 995,
+        MeterElementWithRelevancyAppearance = 996,
 
         // Add new features immediately above this line. Don't change assigned
         // numbers of any item, and don't reuse removed slots.
@@ -890,6 +902,7 @@ public:
     static void unmuteForInspector();
 
     class CountBits {
+        DISALLOW_ALLOCATION();
     public:
         CountBits() : m_bits(NumberOfFeatures) { }
 

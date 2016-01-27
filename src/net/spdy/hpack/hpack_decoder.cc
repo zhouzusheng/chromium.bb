@@ -75,24 +75,16 @@ bool HpackDecoder::HandleHeaderRepresentation(StringPiece name,
     }
   }
 
-  if (name == kCookieKey) {
-    // Create new cookie header, or append to existing.
-    auto it = decoded_block_.find(kCookieKey);
-    if (it == decoded_block_.end()) {
-      decoded_block_[kCookieKey].assign(value.data(), value.size());
-    } else {
-      decoded_block_[kCookieKey].append("; ");
-      value.AppendToString(&decoded_block_[kCookieKey]);
-    }
+  auto it = decoded_block_.find(name);
+  if (it == decoded_block_.end()) {
+    // This is a new key.
+    decoded_block_[name] = value;
   } else {
-    auto result = decoded_block_.insert(
-        std::make_pair(name.as_string(), value.as_string()));
-    if (!result.second) {
-      // Key |name| already exists, append new value.
-      result.first->second.push_back('\0');
-      result.first->second.insert(result.first->second.end(), value.begin(),
-                                  value.end());
-    }
+    // The key already exists, append |value| with appropriate delimiter.
+    string new_value = it->second.as_string();
+    new_value.append((name == kCookieKey) ? "; " : string(1, '\0'));
+    value.AppendToString(&new_value);
+    decoded_block_.ReplaceOrAppendHeader(name, new_value);
   }
   return true;
 }
@@ -193,7 +185,7 @@ bool HpackDecoder::DecodeNextName(HpackInputStream* input_stream,
     *next_name = entry->name();
   } else {
     // |entry| could be evicted as part of this insertion. Preemptively copy.
-    key_buffer_.assign(entry->name());
+    key_buffer_.assign(entry->name().data(), entry->name().size());
     *next_name = key_buffer_;
   }
   return true;

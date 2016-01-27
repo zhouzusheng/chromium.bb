@@ -86,14 +86,14 @@ HTMLCanvasElement* CSSCanvasValue::element(Document* document)
     return m_element;
 }
 
-PassRefPtr<Image> CSSCanvasValue::image(LayoutObject* layoutObject, const IntSize& /*size*/)
+PassRefPtr<Image> CSSCanvasValue::image(const LayoutObject* layoutObject, const IntSize& /*size*/)
 {
     ASSERT(clients().contains(layoutObject));
     HTMLCanvasElement* elt = element(&layoutObject->document());
     if (!elt)
         return nullptr;
     UseCounter::count(layoutObject->document(), UseCounter::WebkitCanvas);
-    return elt->copiedImage(FrontBuffer);
+    return elt->copiedImage(FrontBuffer, PreferNoAcceleration);
 }
 
 bool CSSCanvasValue::equals(const CSSCanvasValue& other) const

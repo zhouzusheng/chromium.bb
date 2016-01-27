@@ -4,6 +4,8 @@
 
 #include "content/renderer/pepper/content_decryptor_delegate.h"
 
+#include <vector>
+
 #include "base/callback_helpers.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/numerics/safe_conversions.h"
@@ -53,27 +55,25 @@ namespace {
 // reference-count of 0. If |data| is NULL, sets |*resource| to NULL. Returns
 // true upon success and false if any error happened.
 bool MakeBufferResource(PP_Instance instance,
-                        const uint8_t* data,
-                        uint32_t size,
+                        const std::vector<uint8_t>& data,
                         scoped_refptr<PPB_Buffer_Impl>* resource) {
   TRACE_EVENT0("media", "ContentDecryptorDelegate - MakeBufferResource");
   DCHECK(resource);
 
-  if (!data || !size) {
-    DCHECK(!data && !size);
+  if (data.empty()) {
     resource = NULL;
     return true;
   }
 
   scoped_refptr<PPB_Buffer_Impl> buffer(
-      PPB_Buffer_Impl::CreateResource(instance, size));
+      PPB_Buffer_Impl::CreateResource(instance, data.size()));
   if (!buffer.get())
     return false;
 
   BufferAutoMapper mapper(buffer.get());
-  if (!mapper.data() || mapper.size() < size)
+  if (!mapper.data() || mapper.size() < data.size())
     return false;
-  memcpy(mapper.data(), data, size);
+  memcpy(mapper.data(), &data[0], data.size());
 
   *resource = buffer;
   return true;
@@ -322,6 +322,8 @@ media::CdmKeyInformation::KeyStatus PpCdmKeyStatusToCdmKeyInformationKeyStatus(
       return media::CdmKeyInformation::OUTPUT_DOWNSCALED;
     case PP_CDMKEYSTATUS_STATUSPENDING:
       return media::CdmKeyInformation::KEY_STATUS_PENDING;
+    case PP_CDMKEYSTATUS_RELEASED:
+      return media::CdmKeyInformation::RELEASED;
     default:
       NOTREACHED();
       return media::CdmKeyInformation::INTERNAL_ERROR;
@@ -590,7 +592,6 @@ bool ContentDecryptorDelegate::InitializeAudioDecoder(
   scoped_refptr<PPB_Buffer_Impl> extra_data_resource;
   if (!MakeBufferResource(pp_instance_,
                           decoder_config.extra_data(),
-                          decoder_config.extra_data_size(),
                           &extra_data_resource)) {
     return false;
   }
@@ -619,7 +620,6 @@ bool ContentDecryptorDelegate::InitializeVideoDecoder(
   scoped_refptr<PPB_Buffer_Impl> extra_data_resource;
   if (!MakeBufferResource(pp_instance_,
                           decoder_config.extra_data(),
-                          decoder_config.extra_data_size(),
                           &extra_data_resource)) {
     return false;
   }

@@ -65,7 +65,7 @@ void installProtocolHandlers(net::URLRequestJobFactoryImpl* jobFactory,
     for (content::ProtocolHandlerMap::iterator it = protocolHandlers->begin();
          it != protocolHandlers->end(); ++it) {
         bool setProtocol = jobFactory->SetProtocolHandler(
-            it->first, it->second.release());
+            it->first, make_scoped_ptr(it->second.release()));
         DCHECK(setProtocol);
     }
     protocolHandlers->clear();
@@ -197,21 +197,21 @@ void URLRequestContextGetterImpl::initialize()
     d_urlRequestContext->set_proxy_service(d_proxyService.get());
     d_storage.reset(
         new net::URLRequestContextStorage(d_urlRequestContext.get()));
-    d_storage->set_network_delegate(new NetworkDelegateImpl());
+    d_storage->set_network_delegate(make_scoped_ptr(new NetworkDelegateImpl()));
     d_storage->set_cookie_store(
         new net::CookieMonster(d_cookieStore.get(), 0));
     d_storage->set_channel_id_service(make_scoped_ptr(
         new net::ChannelIDService(new net::DefaultChannelIDStore(NULL),
                                   base::WorkerPool::GetTaskRunner(true))));
     d_storage->set_http_user_agent_settings(
-        new net::StaticHttpUserAgentSettings(
-        "en-us,en", base::EmptyString()));
+        make_scoped_ptr(new net::StaticHttpUserAgentSettings(
+                        "en-us,en", base::EmptyString())));
 
     scoped_ptr<net::HostResolver> hostResolver
         = net::HostResolver::CreateDefaultResolver(0);
 
     d_storage->set_cert_verifier(net::CertVerifier::CreateDefault());
-    d_storage->set_transport_security_state(new net::TransportSecurityState());
+    d_storage->set_transport_security_state(make_scoped_ptr(new net::TransportSecurityState()));
     d_storage->set_ssl_config_service(new net::SSLConfigServiceDefaults);
     d_storage->set_http_auth_handler_factory(
         net::HttpAuthHandlerFactory::CreateDefault(hostResolver.get()));
@@ -265,7 +265,7 @@ void URLRequestContextGetterImpl::initialize()
     net::HttpCache* mainCache = new net::HttpCache(networkLayer,
                                                    networkSessionParams.net_log,
                                                    backendFactory);
-    d_storage->set_http_transaction_factory(mainCache);
+    d_storage->set_http_transaction_factory(make_scoped_ptr(mainCache));
 
     scoped_ptr<net::URLRequestJobFactoryImpl> jobFactory(
         new net::URLRequestJobFactoryImpl());
@@ -276,16 +276,16 @@ void URLRequestContextGetterImpl::initialize()
     }
     bool setProtocol = jobFactory->SetProtocolHandler(
         url::kDataScheme,
-        new net::DataProtocolHandler);
+        make_scoped_ptr(new net::DataProtocolHandler));
     DCHECK(setProtocol);
     setProtocol = jobFactory->SetProtocolHandler(
         url::kFileScheme,
-        new net::FileProtocolHandler(
-            content::BrowserThread::GetBlockingPool()->
-                GetTaskRunnerWithShutdownBehavior(
-                    base::SequencedWorkerPool::SKIP_ON_SHUTDOWN)));
+        make_scoped_ptr(new net::FileProtocolHandler(
+                            content::BrowserThread::GetBlockingPool()->
+                                GetTaskRunnerWithShutdownBehavior(
+                                    base::SequencedWorkerPool::SKIP_ON_SHUTDOWN))));
     DCHECK(setProtocol);
-    d_storage->set_job_factory(jobFactory.release());
+    d_storage->set_job_factory(jobFactory.Pass());
 }
 
 void URLRequestContextGetterImpl::updateProxyConfig(
@@ -293,14 +293,12 @@ void URLRequestContextGetterImpl::updateProxyConfig(
 {
     DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
     if (d_proxyService) {
-        d_proxyService->ResetConfigService(proxyConfigService.release());
+        d_proxyService->ResetConfigService(proxyConfigService.Pass());
         return;
     }
 
     // TODO(jam): use v8 if possible, look at chrome code.
-    d_proxyService.reset(
-        net::ProxyService::CreateUsingSystemProxyResolver(
-            proxyConfigService.release(), 0, 0));
+    d_proxyService = net::ProxyService::CreateUsingSystemProxyResolver(proxyConfigService.Pass(), 0, 0);
 }
 
 }  // close namespace blpwtk2

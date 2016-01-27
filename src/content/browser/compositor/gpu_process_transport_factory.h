@@ -64,7 +64,6 @@ class GpuProcessTransportFactory
 
   // ImageTransportFactory implementation.
   ui::ContextFactory* GetContextFactory() override;
-  gfx::GLSurfaceHandle GetSharedSurfaceHandle() override;
   cc::SurfaceManager* GetSurfaceManager() override;
   GLHelper* GetGLHelper() override;
   void AddObserver(ImageTransportFactoryObserver* observer) override;
@@ -102,9 +101,7 @@ class GpuProcessTransportFactory
   uint32_t next_surface_id_namespace_;
   scoped_ptr<cc::TaskGraphRunner> task_graph_runner_;
   scoped_ptr<base::SimpleThread> raster_thread_;
-#if !defined(OS_CHROMEOS)
   scoped_refptr<ContextProviderCommandBuffer> shared_worker_context_provider_;
-#endif
 
 #if defined(OS_WIN)
   scoped_ptr<OutputDeviceBacking> software_backing_;

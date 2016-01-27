@@ -40,8 +40,9 @@
 #include "core/layout/line/TrailingObjects.h"
 #include "core/layout/line/WordMeasurement.h"
 #include "core/layout/svg/LayoutSVGInlineText.h"
-#include "core/paint/DeprecatedPaintLayer.h"
+#include "core/paint/PaintLayer.h"
 #include "platform/text/TextBreakIterator.h"
+#include "wtf/Allocator.h"
 #include "wtf/Vector.h"
 
 namespace blink {
@@ -50,6 +51,7 @@ namespace blink {
 const unsigned cMaxLineDepth = 200;
 
 class BreakingContext {
+    STACK_ALLOCATED();
 public:
     BreakingContext(InlineBidiResolver& resolver, LineInfo& inLineInfo, LineWidth& lineWidth, LayoutTextInfo& inLayoutTextInfo, FloatingObject* inLastFloatFromPreviousLine, bool appliedStartWidth, LineLayoutBlockFlow block)
         : m_resolver(resolver)
@@ -276,6 +278,12 @@ inline void BreakingContext::increment()
         m_currentCharacterIsSpace = false;
 
     m_current.moveToStartOf(m_nextObject);
+
+    // When the line box tree is created, this position in the line will be snapped to
+    // LayoutUnit's, and those measurements will be used by the paint code.  Do the
+    // equivalent snapping here, to get consistent line measurements.
+    m_width.snapUncommittedWidth();
+
     m_atStart = false;
 }
 
@@ -457,8 +465,10 @@ inline void BreakingContext::handleReplaced()
     if (m_atStart)
         m_width.updateAvailableWidth(replacedBox.logicalHeight());
 
-    // Break on replaced elements if either has normal white-space.
-    if ((m_autoWrap || ComputedStyle::autoWrap(m_lastWS)) && (!m_current.object().isImage() || m_allowImagesToBreak)) {
+    // Break on replaced elements if either has normal white-space,
+    // or if the replaced element is ruby that can break before.
+    if ((m_autoWrap || ComputedStyle::autoWrap(m_lastWS)) && (!m_current.object().isImage() || m_allowImagesToBreak)
+        && (!m_current.object().isRubyRun() || toLayoutRubyRun(m_current.object())->canBreakBefore(m_layoutTextInfo.m_lineBreakIterator))) {
         m_width.commit();
         m_lineBreak.moveToStartOf(m_current.object());
     }
@@ -905,7 +915,8 @@ inline void BreakingContext::commitAndUpdateLineBreakIfNeeded()
 
     if (!m_current.object().isFloatingOrOutOfFlowPositioned()) {
         m_lastObject = m_current.object();
-        if (m_lastObject.isReplaced() && m_autoWrap && (!m_lastObject.isImage() || m_allowImagesToBreak) && (!m_lastObject.isListMarker() || LineLayoutListMarker(m_lastObject).isInside())) {
+        if (m_lastObject.isReplaced() && m_autoWrap && (!m_lastObject.isImage() || m_allowImagesToBreak) && (!m_lastObject.isListMarker() || LineLayoutListMarker(m_lastObject).isInside())
+            && !m_lastObject.isRubyRun()) {
             m_width.commit();
             m_lineBreak.moveToStartOf(m_nextObject);
         }

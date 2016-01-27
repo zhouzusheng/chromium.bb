@@ -10,14 +10,19 @@
 #include "SkCanvas.h"
 #include "SkColorTable.h"
 #include "SkData.h"
-#include "SkImageGeneratorPriv.h"
 #include "SkImagePriv.h"
 #include "SkPixelRef.h"
 #include "SkSurface.h"
 
+#if SK_SUPPORT_GPU
+#include "GrContext.h"
+#include "SkGr.h"
+#include "SkGrPriv.h"
+#endif
+
 class SkImage_Raster : public SkImage_Base {
 public:
-    static bool ValidArgs(const Info& info, size_t rowBytes, SkColorTable* ctable,
+    static bool ValidArgs(const Info& info, size_t rowBytes, bool hasColorTable,
                           size_t* minSize) {
         const int maxDimension = SK_MaxS32 >> 2;
 
@@ -39,8 +44,7 @@ public:
         }
 
         const bool needsCT = kIndex_8_SkColorType == info.colorType();
-        const bool hasCT = NULL != ctable;
-        if (needsCT != hasCT) {
+        if (needsCT != hasColorTable) {
             return false;
         }
 
@@ -62,21 +66,18 @@ public:
     SkImage_Raster(const SkImageInfo&, SkData*, size_t rb, SkColorTable*, const SkSurfaceProps*);
     virtual ~SkImage_Raster();
 
-    SkSurface* onNewSurface(const SkImageInfo&, const SkSurfaceProps&) const override;
     bool onReadPixels(const SkImageInfo&, void*, size_t, int srcX, int srcY) const override;
     const void* onPeekPixels(SkImageInfo*, size_t* /*rowBytes*/) const override;
     SkData* onRefEncoded() const override;
     bool getROPixels(SkBitmap*) const override;
+    GrTexture* asTextureRef(GrContext*, SkImageUsageType) const override;
+    SkImage* onNewSubset(const SkIRect&) const override;
 
     // exposed for SkSurface_Raster via SkNewImageFromPixelRef
     SkImage_Raster(const SkImageInfo&, SkPixelRef*, const SkIPoint& pixelRefOrigin, size_t rowBytes,
                    const SkSurfaceProps*);
 
     SkPixelRef* getPixelRef() const { return fBitmap.pixelRef(); }
-
-    SkShader* onNewShader(SkShader::TileMode,
-                          SkShader::TileMode,
-                          const SkMatrix* localMatrix) const override;
 
     bool isOpaque() const override;
     bool onAsLegacyBitmap(SkBitmap*, LegacyBitmapMode) const override;
@@ -98,7 +99,7 @@ public:
     }
 
 private:
-    SkImage_Raster() : INHERITED(0, 0, kNeedNewImageUniqueID, NULL) {
+    SkImage_Raster() : INHERITED(0, 0, kNeedNewImageUniqueID, nullptr) {
         fBitmap.setImmutable();
     }
 
@@ -138,15 +139,6 @@ SkImage_Raster::SkImage_Raster(const Info& info, SkPixelRef* pr, const SkIPoint&
 
 SkImage_Raster::~SkImage_Raster() {}
 
-SkShader* SkImage_Raster::onNewShader(SkShader::TileMode tileX, SkShader::TileMode tileY,
-                                      const SkMatrix* localMatrix) const {
-    return SkShader::CreateBitmapShader(fBitmap, tileX, tileY, localMatrix);
-}
-
-SkSurface* SkImage_Raster::onNewSurface(const SkImageInfo& info, const SkSurfaceProps& props) const {
-    return SkSurface::NewRaster(info, &props);
-}
-
 bool SkImage_Raster::onReadPixels(const SkImageInfo& dstInfo, void* dstPixels, size_t dstRowBytes,
                                   int srcX, int srcY) const {
     SkBitmap shallowCopy(fBitmap);
@@ -156,7 +148,7 @@ bool SkImage_Raster::onReadPixels(const SkImageInfo& dstInfo, void* dstPixels, s
 const void* SkImage_Raster::onPeekPixels(SkImageInfo* infoPtr, size_t* rowBytesPtr) const {
     const SkImageInfo info = fBitmap.info();
     if ((kUnknown_SkColorType == info.colorType()) || !fBitmap.getPixels()) {
-        return NULL;
+        return nullptr;
     }
     *infoPtr = info;
     *rowBytesPtr = fBitmap.rowBytes();
@@ -172,7 +164,7 @@ SkData* SkImage_Raster::onRefEncoded() const {
     if (prInfo.width() == bmInfo.width() && prInfo.height() == bmInfo.height()) {
         return pr->refEncodedData();
     }
-    return NULL;
+    return nullptr;
 }
 
 bool SkImage_Raster::getROPixels(SkBitmap* dst) const {
@@ -180,78 +172,112 @@ bool SkImage_Raster::getROPixels(SkBitmap* dst) const {
     return true;
 }
 
+GrTexture* SkImage_Raster::asTextureRef(GrContext* ctx, SkImageUsageType usage) const {
+#if SK_SUPPORT_GPU
+    if (!ctx) {
+        return nullptr;
+    }
+
+    // textures (at least the texture-key) only support 16bit dimensions, so abort early
+    // if we're too big.
+    if (fBitmap.width() > 0xFFFF || fBitmap.height() > 0xFFFF) {
+        return nullptr;
+    }
+
+    GrUniqueKey key;
+    GrMakeKeyFromImageID(&key, fBitmap.getGenerationID(),
+                         SkIRect::MakeWH(fBitmap.width(), fBitmap.height()),
+                         *ctx->caps(), usage);
+
+    if (GrTexture* tex = ctx->textureProvider()->findAndRefTextureByUniqueKey(key)) {
+        return tex;
+    }
+    return GrRefCachedBitmapTexture(ctx, fBitmap, usage);
+#endif
+    
+    return nullptr;
+}
+
+SkImage* SkImage_Raster::onNewSubset(const SkIRect& subset) const {
+    // TODO : could consider heurist of sharing pixels, if subset is pretty close to complete
+
+    SkImageInfo info = SkImageInfo::MakeN32(subset.width(), subset.height(), fBitmap.alphaType());
+    SkAutoTUnref<SkSurface> surface(SkSurface::NewRaster(info));
+    if (!surface) {
+        return nullptr;
+    }
+    surface->getCanvas()->clear(0);
+    surface->getCanvas()->drawImage(this, SkIntToScalar(-subset.x()), SkIntToScalar(-subset.y()),
+                                    nullptr);
+    return surface->newImageSnapshot();
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 SkImage* SkImage::NewRasterCopy(const SkImageInfo& info, const void* pixels, size_t rowBytes,
                                 SkColorTable* ctable) {
     size_t size;
-    if (!SkImage_Raster::ValidArgs(info, rowBytes, ctable, &size) || !pixels) {
-        return NULL;
+    if (!SkImage_Raster::ValidArgs(info, rowBytes, ctable != nullptr, &size) || !pixels) {
+        return nullptr;
     }
 
     // Here we actually make a copy of the caller's pixel data
     SkAutoDataUnref data(SkData::NewWithCopy(pixels, size));
-    return SkNEW_ARGS(SkImage_Raster, (info, data, rowBytes, ctable, NULL));
+    return new SkImage_Raster(info, data, rowBytes, ctable, nullptr);
 }
 
 
 SkImage* SkImage::NewRasterData(const SkImageInfo& info, SkData* data, size_t rowBytes) {
     size_t size;
-    if (!SkImage_Raster::ValidArgs(info, rowBytes, NULL, &size) || !data) {
-        return NULL;
+    if (!SkImage_Raster::ValidArgs(info, rowBytes, false, &size) || !data) {
+        return nullptr;
     }
 
     // did they give us enough data?
     if (data->size() < size) {
-        return NULL;
+        return nullptr;
     }
 
-    SkColorTable* ctable = NULL;
-    return SkNEW_ARGS(SkImage_Raster, (info, data, rowBytes, ctable, NULL));
+    SkColorTable* ctable = nullptr;
+    return new SkImage_Raster(info, data, rowBytes, ctable, nullptr);
 }
 
 SkImage* SkImage::NewFromRaster(const SkImageInfo& info, const void* pixels, size_t rowBytes,
                                 RasterReleaseProc proc, ReleaseContext ctx) {
     size_t size;
-    if (!SkImage_Raster::ValidArgs(info, rowBytes, NULL, &size) || !pixels) {
-        return NULL;
+    if (!SkImage_Raster::ValidArgs(info, rowBytes, false, &size) || !pixels) {
+        return nullptr;
     }
 
-    SkColorTable* ctable = NULL;
+    SkColorTable* ctable = nullptr;
     SkAutoDataUnref data(SkData::NewWithProc(pixels, size, proc, ctx));
-    return SkNEW_ARGS(SkImage_Raster, (info, data, rowBytes, ctable, NULL));
-}
-
-SkImage* SkImage::NewFromGenerator(SkImageGenerator* generator, const SkIRect* subset) {
-    SkBitmap bitmap;
-    if (!SkInstallDiscardablePixelRef(generator, subset, &bitmap, NULL)) {
-        return NULL;
-    }
-    if (0 == bitmap.width() || 0 == bitmap.height()) {
-        return NULL;
-    }
-
-    return SkNEW_ARGS(SkImage_Raster, (bitmap, NULL));
+    return new SkImage_Raster(info, data, rowBytes, ctable, nullptr);
 }
 
 SkImage* SkNewImageFromPixelRef(const SkImageInfo& info, SkPixelRef* pr,
                                 const SkIPoint& pixelRefOrigin, size_t rowBytes,
                                 const SkSurfaceProps* props) {
-    if (!SkImage_Raster::ValidArgs(info, rowBytes, NULL, NULL)) {
-        return NULL;
+    if (!SkImage_Raster::ValidArgs(info, rowBytes, false, nullptr)) {
+        return nullptr;
     }
-    return SkNEW_ARGS(SkImage_Raster, (info, pr, pixelRefOrigin, rowBytes, props));
+    return new SkImage_Raster(info, pr, pixelRefOrigin, rowBytes, props);
 }
 
 SkImage* SkNewImageFromRasterBitmap(const SkBitmap& bm, const SkSurfaceProps* props,
                                     ForceCopyMode forceCopy) {
-    SkASSERT(NULL == bm.getTexture());
+    SkASSERT(nullptr == bm.getTexture());
 
-    if (!SkImage_Raster::ValidArgs(bm.info(), bm.rowBytes(), NULL, NULL)) {
-        return NULL;
+    bool hasColorTable = false;
+    if (kIndex_8_SkColorType == bm.colorType()) {
+        SkAutoLockPixels autoLockPixels(bm);
+        hasColorTable = bm.getColorTable() != nullptr;
     }
 
-    SkImage* image = NULL;
+    if (!SkImage_Raster::ValidArgs(bm.info(), bm.rowBytes(), hasColorTable, nullptr)) {
+        return nullptr;
+    }
+
+    SkImage* image = nullptr;
     if (kYes_ForceCopyMode == forceCopy || !bm.isImmutable()) {
         SkBitmap tmp(bm);
         tmp.lockPixels();
@@ -265,7 +291,7 @@ SkImage* SkNewImageFromRasterBitmap(const SkBitmap& bm, const SkSurfaceProps* pr
             as_IB(image)->initWithProps(*props);
         }
     } else {
-        image = SkNEW_ARGS(SkImage_Raster, (bm, props));
+        image = new SkImage_Raster(bm, props);
     }
     return image;
 }

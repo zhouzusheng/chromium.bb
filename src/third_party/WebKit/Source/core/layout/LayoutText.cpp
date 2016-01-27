@@ -35,11 +35,12 @@
 #include "core/layout/LayoutBlock.h"
 #include "core/layout/LayoutTextCombine.h"
 #include "core/layout/LayoutView.h"
+#include "core/layout/api/LineLayoutBox.h"
 #include "core/layout/line/AbstractInlineTextBox.h"
 #include "core/layout/line/EllipsisBox.h"
 #include "core/layout/line/GlyphOverflow.h"
 #include "core/layout/line/InlineTextBox.h"
-#include "core/paint/DeprecatedPaintLayer.h"
+#include "core/paint/PaintLayer.h"
 #include "platform/fonts/Character.h"
 #include "platform/fonts/FontCache.h"
 #include "platform/geometry/FloatQuad.h"
@@ -523,8 +524,8 @@ static PositionWithAffinity createPositionWithAffinityForBox(const InlineBox* bo
         affinity = offset > box->caretMinOffset() ? VP_UPSTREAM_IF_POSSIBLE : TextAffinity::Downstream;
         break;
     }
-    int textStartOffset = box->layoutObject().isText() ? toLayoutText(box->layoutObject()).textStartOffset() : 0;
-    return box->layoutObject().createPositionWithAffinity(offset + textStartOffset, affinity);
+    int textStartOffset = box->lineLayoutItem().isText() ? LineLayoutText(box->lineLayoutItem()).textStartOffset() : 0;
+    return box->lineLayoutItem().createPositionWithAffinity(offset + textStartOffset, affinity);
 }
 
 static PositionWithAffinity createPositionWithAffinityForBoxAfterAdjustingOffsetForBiDi(const InlineTextBox* box, int offset, ShouldAffinityBeDownstream shouldAffinityBeDownstream)
@@ -541,7 +542,7 @@ static PositionWithAffinity createPositionWithAffinityForBoxAfterAdjustingOffset
 
         const InlineBox* prevBox = box->prevLeafChildIgnoringLineBreak();
         if ((prevBox && prevBox->bidiLevel() == box->bidiLevel())
-            || box->layoutObject().containingBlock()->style()->direction() == box->direction()) // FIXME: left on 12CBA
+            || box->lineLayoutItem().containingBlock().style()->direction() == box->direction()) // FIXME: left on 12CBA
             return createPositionWithAffinityForBox(box, box->caretLeftmostOffset(), shouldAffinityBeDownstream);
 
         if (prevBox && prevBox->bidiLevel() > box->bidiLevel()) {
@@ -571,7 +572,7 @@ static PositionWithAffinity createPositionWithAffinityForBoxAfterAdjustingOffset
 
     const InlineBox* nextBox = box->nextLeafChildIgnoringLineBreak();
     if ((nextBox && nextBox->bidiLevel() == box->bidiLevel())
-        || box->layoutObject().containingBlock()->style()->direction() == box->direction())
+        || box->lineLayoutItem().containingBlock().style()->direction() == box->direction())
         return createPositionWithAffinityForBox(box, box->caretRightmostOffset(), shouldAffinityBeDownstream);
 
     // offset is on the right edge
@@ -1122,16 +1123,11 @@ void LayoutText::computePreferredLogicalWidths(float leadWidth, HashSet<const Si
         m_lastLineLineMinWidth = currMaxWidth;
     }
 
-    if (styleToUse.lineBoxContain() & LineBoxContainGlyphs) {
-        // We shouldn't change our mind once we "know".
-        ASSERT(!m_knownToHaveNoOverflowAndNoFallbackFonts);
-    } else {
-        GlyphOverflow glyphOverflow;
-        glyphOverflow.setFromBounds(glyphBounds, f.fontMetrics().floatAscent(), f.fontMetrics().floatDescent(), m_maxWidth);
-        // We shouldn't change our mind once we "know".
-        ASSERT(!m_knownToHaveNoOverflowAndNoFallbackFonts || (fallbackFonts.isEmpty() && glyphOverflow.isZero()));
-        m_knownToHaveNoOverflowAndNoFallbackFonts = fallbackFonts.isEmpty() && glyphOverflow.isZero();
-    }
+    GlyphOverflow glyphOverflow;
+    glyphOverflow.setFromBounds(glyphBounds, f.fontMetrics().floatAscent(), f.fontMetrics().floatDescent(), m_maxWidth);
+    // We shouldn't change our mind once we "know".
+    ASSERT(!m_knownToHaveNoOverflowAndNoFallbackFonts || (fallbackFonts.isEmpty() && glyphOverflow.isZero()));
+    m_knownToHaveNoOverflowAndNoFallbackFonts = fallbackFonts.isEmpty() && glyphOverflow.isZero();
 
     clearPreferredLogicalWidthsDirty();
 }
@@ -1356,7 +1352,7 @@ UChar LayoutText::previousCharacter() const
     return prev;
 }
 
-void LayoutText::addLayerHitTestRects(LayerHitTestRects&, const DeprecatedPaintLayer* currentLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const
+void LayoutText::addLayerHitTestRects(LayerHitTestRects&, const PaintLayer* currentLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const
 {
     // Text nodes aren't event targets, so don't descend any further.
 }
@@ -1588,7 +1584,7 @@ IntRect LayoutText::linesBoundingBox() const
     return result;
 }
 
-LayoutRect LayoutText::linesVisualOverflowBoundingBox() const
+LayoutRect LayoutText::visualOverflowRect() const
 {
     if (!firstTextBox())
         return LayoutRect();
@@ -1617,7 +1613,7 @@ LayoutRect LayoutText::clippedOverflowRectForPaintInvalidation(const LayoutBoxMo
     if (style()->visibility() != VISIBLE)
         return LayoutRect();
 
-    LayoutRect paintInvalidationRect(linesVisualOverflowBoundingBox());
+    LayoutRect paintInvalidationRect(visualOverflowRect());
     mapRectToPaintInvalidationBacking(paintInvalidationContainer, paintInvalidationRect, paintInvalidationState);
     return paintInvalidationRect;
 }
@@ -1659,9 +1655,8 @@ LayoutRect LayoutText::selectionRectForPaintInvalidation(const LayoutBoxModelObj
 
     mapRectToPaintInvalidationBacking(paintInvalidationContainer, rect, 0);
     // FIXME: groupedMapping() leaks the squashing abstraction.
-    // TODO(shez): Investigate why layer() is sometimes null here.
-    if (paintInvalidationContainer->layer() && paintInvalidationContainer->layer()->groupedMapping())
-        DeprecatedPaintLayer::mapRectToPaintBackingCoordinates(paintInvalidationContainer, rect);
+    if (paintInvalidationContainer->layer()->groupedMapping())
+        PaintLayer::mapRectToPaintBackingCoordinates(paintInvalidationContainer, rect);
     return rect;
 }
 

@@ -50,7 +50,7 @@ protected:
     AXLayoutObject(LayoutObject*, AXObjectCacheImpl&);
 
 public:
-    static PassRefPtrWillBeRawPtr<AXLayoutObject> create(LayoutObject*, AXObjectCacheImpl&);
+    static AXLayoutObject* create(LayoutObject*, AXObjectCacheImpl&);
     ~AXLayoutObject() override;
 
     // Public, overridden from AXObject.
@@ -84,6 +84,7 @@ protected:
 
     // Check object role or purpose.
     bool isAttachment() const override;
+    bool isEditable() const override;
     bool isRichlyEditable() const override;
     bool isLinked() const override;
     bool isLoaded() const override;
@@ -105,7 +106,6 @@ protected:
     RGBA32 color() const final;
     // Font size is in pixels.
     float fontSize() const final;
-    AccessibilityOrientation orientation() const override;
     String text() const override;
     AccessibilityTextDirection textDirection() const final;
     int textLength() const override;
@@ -202,7 +202,6 @@ protected:
 
 private:
     AXObject* treeAncestorDisallowingChild() const;
-    void ariaListboxSelectedChildren(AccessibilityChildrenVector&);
     bool nodeIsTextControl(const Node*) const;
     bool isTabItemSelected() const;
     bool isValidSelectionBound(const AXObject*) const;
@@ -222,7 +221,6 @@ private:
     void addRemoteSVGChildren();
     void addInlineTextBoxChildren(bool force);
 
-    void ariaSelectedRows(AccessibilityChildrenVector&);
     bool elementAttributeValue(const QualifiedName&) const;
     LayoutRect computeElementRect() const;
     AXRange textControlSelection() const;

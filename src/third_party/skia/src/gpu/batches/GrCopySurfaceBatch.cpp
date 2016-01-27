@@ -73,7 +73,7 @@ GrBatch* GrCopySurfaceBatch::Create(GrSurface* dst, GrSurface* src, const SkIRec
                                     dstPoint,
                                     &clippedSrcRect,
                                     &clippedDstPoint)) {
-        return NULL;
+        return nullptr;
     }
-    return SkNEW_ARGS(GrCopySurfaceBatch, (dst, src, clippedSrcRect, clippedDstPoint));
+    return new GrCopySurfaceBatch(dst, src, clippedSrcRect, clippedDstPoint);
 }

@@ -36,7 +36,6 @@ public:
     virtual void apply(StyleResolverState&) const = 0;
 
     bool isStyleInterpolation() const final { return true; }
-    virtual bool isDeferredLegacyStyleInterpolation() const { return false; }
 
     CSSPropertyID id() const { return m_id; }
 
@@ -45,15 +44,10 @@ public:
         return PropertyHandle(id());
     }
 
-    DEFINE_INLINE_VIRTUAL_TRACE()
-    {
-        Interpolation::trace(visitor);
-    }
-
 protected:
     CSSPropertyID m_id;
 
-    StyleInterpolation(PassOwnPtrWillBeRawPtr<InterpolableValue> start, PassOwnPtrWillBeRawPtr<InterpolableValue> end, CSSPropertyID id)
+    StyleInterpolation(PassOwnPtr<InterpolableValue> start, PassOwnPtr<InterpolableValue> end, CSSPropertyID id)
         : Interpolation(start, end)
         , m_id(id)
     {

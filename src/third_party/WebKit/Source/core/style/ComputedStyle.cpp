@@ -128,6 +128,7 @@ ALWAYS_INLINE ComputedStyle::ComputedStyle(InitialStyleTag)
     rareNonInheritedData.access()->m_transform.init();
     rareNonInheritedData.access()->m_willChange.init();
     rareNonInheritedData.access()->m_filter.init();
+    rareNonInheritedData.access()->m_backdropFilter.init();
     rareNonInheritedData.access()->m_grid.init();
     rareNonInheritedData.access()->m_gridItem.init();
     rareNonInheritedData.access()->m_scrollSnap.init();
@@ -539,7 +540,6 @@ bool ComputedStyle::diffNeedsFullLayoutAndPaintInvalidation(const ComputedStyle&
             || rareInheritedData->m_textOrientation != other.rareInheritedData->m_textOrientation
             || rareInheritedData->m_textCombine != other.rareInheritedData->m_textCombine
             || rareInheritedData->m_tabSize != other.rareInheritedData->m_tabSize
-            || rareInheritedData->m_lineBoxContain != other.rareInheritedData->m_lineBoxContain
             || rareInheritedData->listStyleImage != other.rareInheritedData->listStyleImage
             || rareInheritedData->textStrokeWidth != other.rareInheritedData->textStrokeWidth)
             return true;
@@ -735,6 +735,9 @@ void ComputedStyle::updatePropertySpecificDifferences(const ComputedStyle& other
 
         if (rareNonInheritedData->m_filter != other.rareNonInheritedData->m_filter)
             diff.setFilterChanged();
+
+        if (rareNonInheritedData->m_backdropFilter != other.rareNonInheritedData->m_backdropFilter)
+            diff.setBackdropFilterChanged();
     }
 
     if (!diff.needsPaintInvalidation()) {
@@ -886,6 +889,20 @@ bool ComputedStyle::hasWillChangeCompositingHint() const
         case CSSPropertyLeft:
         case CSSPropertyBottom:
         case CSSPropertyRight:
+            return true;
+        default:
+            break;
+        }
+    }
+    return false;
+}
+
+bool ComputedStyle::hasWillChangeTransformHint() const
+{
+    for (const auto& property: rareNonInheritedData->m_willChange->m_properties) {
+        switch (property) {
+        case CSSPropertyTransform:
+        case CSSPropertyAliasWebkitTransform:
             return true;
         default:
             break;
@@ -1682,6 +1699,12 @@ Color ComputedStyle::initialTapHighlightColor()
 
 #if ENABLE(OILPAN)
 const FilterOperations& ComputedStyle::initialFilter()
+{
+    DEFINE_STATIC_LOCAL(Persistent<FilterOperationsWrapper>, ops, (FilterOperationsWrapper::create()));
+    return ops->operations();
+}
+
+const FilterOperations& ComputedStyle::initialBackdropFilter()
 {
     DEFINE_STATIC_LOCAL(Persistent<FilterOperationsWrapper>, ops, (FilterOperationsWrapper::create()));
     return ops->operations();

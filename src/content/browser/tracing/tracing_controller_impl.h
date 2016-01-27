@@ -59,17 +59,15 @@ class TracingControllerImpl
   void RequestGlobalMemoryDump(
       const base::trace_event::MemoryDumpRequestArgs& args,
       const base::trace_event::MemoryDumpCallback& callback) override;
-  bool IsCoordinatorProcess() const override;
   uint64 GetTracingProcessId() const override;
 
-  typedef base::Callback<void(TraceMessageFilter*)>
-      TraceMessageFilterAddedCallback;
-  typedef std::set<scoped_refptr<TraceMessageFilter> > TraceMessageFilterSet;
-
-  TraceMessageFilterAddedCallback trace_filter_added_callback_;
-  void SetTraceMessageFilterAddedCallback(
-      const TraceMessageFilterAddedCallback& callback);
-  void GetTraceMessageFilters(TraceMessageFilterSet*);
+  class TraceMessageFilterObserver {
+   public:
+    virtual void OnTraceMessageFilterAdded(TraceMessageFilter* filter) = 0;
+    virtual void OnTraceMessageFilterRemoved(TraceMessageFilter* filter) = 0;
+  };
+  void AddTraceMessageFilterObserver(TraceMessageFilterObserver* observer);
+  void RemoveTraceMessageFilterObserver(TraceMessageFilterObserver* observer);
 
  private:
   friend struct base::DefaultLazyInstanceTraits<TracingControllerImpl>;
@@ -164,6 +162,7 @@ class TracingControllerImpl
 
   void OnMonitoringStateChanged(bool is_monitoring);
 
+  typedef std::set<scoped_refptr<TraceMessageFilter>> TraceMessageFilterSet;
   TraceMessageFilterSet trace_message_filters_;
 
   // Pending acks for DisableRecording.
@@ -201,7 +200,8 @@ class TracingControllerImpl
   std::string watch_event_name_;
   WatchEventCallback watch_event_callback_;
 
-  TraceMessageFilterAddedCallback trace_message_filter_added_callback_;
+  base::ObserverList<TraceMessageFilterObserver>
+      trace_message_filter_observers_;
 
   std::set<std::string> known_category_groups_;
   std::set<TracingUI*> tracing_uis_;

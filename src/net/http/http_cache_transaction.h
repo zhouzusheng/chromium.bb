@@ -9,6 +9,7 @@
 #define NET_HTTP_HTTP_CACHE_TRANSACTION_H_
 
 #include <stddef.h>
+#include <stdint.h>
 
 #include <string>
 
@@ -19,6 +20,7 @@
 #include "base/time/time.h"
 #include "net/base/completion_callback.h"
 #include "net/base/io_buffer.h"
+#include "net/base/ip_endpoint.h"
 #include "net/base/load_states.h"
 #include "net/base/request_priority.h"
 #include "net/base/upload_progress.h"
@@ -141,13 +143,15 @@ class HttpCache::Transaction : public HttpTransaction {
            const CompletionCallback& callback) override;
   void StopCaching() override;
   bool GetFullRequestHeaders(HttpRequestHeaders* headers) const override;
-  int64 GetTotalReceivedBytes() const override;
+  int64_t GetTotalReceivedBytes() const override;
+  int64_t GetTotalSentBytes() const override;
   void DoneReading() override;
   const HttpResponseInfo* GetResponseInfo() const override;
   LoadState GetLoadState() const override;
   UploadProgress GetUploadProgress(void) const override;
   void SetQuicServerInfo(QuicServerInfo* quic_server_info) override;
   bool GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const override;
+  bool GetRemoteEndpoint(IPEndPoint* endpoint) const override;
   void SetPriority(RequestPriority priority) override;
   void SetWebSocketHandshakeStreamCreateHelper(
       WebSocketHandshakeStreamBase::CreateHelper* create_helper) override;
@@ -468,7 +472,8 @@ class HttpCache::Transaction : public HttpTransaction {
   base::TimeTicks first_cache_access_since_;
   base::TimeTicks send_request_since_;
 
-  int64 total_received_bytes_;
+  int64_t total_received_bytes_;
+  int64_t total_sent_bytes_;
 
   // Load timing information for the last network request, if any.  Set in the
   // 304 and 206 response cases, as the network transaction may be destroyed
@@ -476,6 +481,7 @@ class HttpCache::Transaction : public HttpTransaction {
   scoped_ptr<LoadTimingInfo> old_network_trans_load_timing_;
 
   ConnectionAttempts old_connection_attempts_;
+  IPEndPoint old_remote_endpoint_;
 
   // The helper object to use to create WebSocketHandshakeStreamBase
   // objects. Only relevant when establishing a WebSocket connection.

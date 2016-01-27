@@ -51,8 +51,7 @@ enum NotificationPermission {
 ] interface Notification : EventTarget {
     [CallWith=ExecutionContext, MeasureAs=NotificationPermission] static readonly attribute NotificationPermission permission;
 
-    // TODO(peter): Only expose requestPermission() on the Window object. See https://crbug.com/442139.
-    [CallWith=ScriptState, MeasureAs=NotificationPermissionRequested] static Promise<NotificationPermission> requestPermission(optional NotificationPermissionCallback deprecatedCallback);
+    [CallWith=ScriptState, Exposed=Window, MeasureAs=NotificationPermissionRequested] static Promise<NotificationPermission> requestPermission(optional NotificationPermissionCallback deprecatedCallback);
 
     [RuntimeEnabled=NotificationExperimental] static readonly attribute unsigned long maxActions;
 
@@ -70,6 +69,7 @@ enum NotificationPermission {
 
     [RuntimeEnabled=NotificationExperimental] readonly attribute sequence<unsigned long>? vibrate;
     readonly attribute boolean silent;
+    readonly attribute boolean requireInteraction;
     [CallWith=ScriptState, SameObject] readonly attribute any data;
 
     // TODO(johnme): The spec requires a FrozenArray, but sequence seems to behave like one already?! https://crbug.com/515920

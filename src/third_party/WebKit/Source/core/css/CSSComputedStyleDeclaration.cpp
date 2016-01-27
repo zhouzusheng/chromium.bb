@@ -26,7 +26,6 @@
 
 #include "bindings/core/v8/ExceptionState.h"
 #include "core/CSSPropertyNames.h"
-#include "core/animation/DocumentAnimations.h"
 #include "core/css/CSSPrimitiveValueMappings.h"
 #include "core/css/CSSPropertyMetadata.h"
 #include "core/css/CSSSelector.h"
@@ -93,6 +92,7 @@ static const CSSPropertyID staticComputableProperties[] = {
     CSSPropertyClear,
     CSSPropertyClip,
     CSSPropertyColor,
+    CSSPropertyContent,
     CSSPropertyCursor,
     CSSPropertyDirection,
     CSSPropertyDisplay,
@@ -220,6 +220,7 @@ static const CSSPropertyID staticComputableProperties[] = {
     CSSPropertyWebkitColumnSpan,
     CSSPropertyWebkitColumnWidth,
     CSSPropertyWebkitFilter,
+    CSSPropertyBackdropFilter,
     CSSPropertyAlignContent,
     CSSPropertyAlignItems,
     CSSPropertyAlignSelf,
@@ -242,7 +243,6 @@ static const CSSPropertyID staticComputableProperties[] = {
     CSSPropertyGridRowStart,
     CSSPropertyWebkitHighlight,
     CSSPropertyWebkitHyphenateCharacter,
-    CSSPropertyWebkitLineBoxContain,
     CSSPropertyWebkitLineBreak,
     CSSPropertyWebkitLineClamp,
     CSSPropertyWebkitLocale,
@@ -458,6 +458,9 @@ static void logUnimplementedPropertyID(CSSPropertyID propertyID)
 
 static bool isLayoutDependent(CSSPropertyID propertyID, const ComputedStyle* style, LayoutObject* layoutObject)
 {
+    if (!layoutObject)
+        return false;
+
     // Some properties only depend on layout in certain conditions which
     // are specified in the main switch statement below. So we can avoid
     // forcing layout in those conditions. The conditions in this switch
@@ -472,48 +475,38 @@ static bool isLayoutDependent(CSSPropertyID propertyID, const ComputedStyle* sty
     case CSSPropertyPerspectiveOrigin:
     case CSSPropertyTransform:
     case CSSPropertyTranslate:
-    case CSSPropertyRotate:
-    case CSSPropertyScale:
     case CSSPropertyTransformOrigin:
-    case CSSPropertyMotionPath:
-    case CSSPropertyMotionOffset:
-    case CSSPropertyMotionRotation:
     case CSSPropertyWidth:
-    case CSSPropertyWebkitFilter:
-    case CSSPropertyX:
-    case CSSPropertyY:
-    case CSSPropertyRx:
-    case CSSPropertyRy:
-        return true;
+        return layoutObject->isBox();
     case CSSPropertyMargin:
-        return layoutObject && layoutObject->isBox()
+        return layoutObject->isBox()
             && (!style || !style->marginBottom().isFixed() || !style->marginTop().isFixed()
                 || !style->marginLeft().isFixed() || !style->marginRight().isFixed());
     case CSSPropertyMarginLeft:
-        return layoutObject && layoutObject->isBox() && (!style || !style->marginLeft().isFixed());
+        return layoutObject->isBox() && (!style || !style->marginLeft().isFixed());
     case CSSPropertyMarginRight:
-        return layoutObject && layoutObject->isBox() && (!style || !style->marginRight().isFixed());
+        return layoutObject->isBox() && (!style || !style->marginRight().isFixed());
     case CSSPropertyMarginTop:
-        return layoutObject && layoutObject->isBox() && (!style || !style->marginTop().isFixed());
+        return layoutObject->isBox() && (!style || !style->marginTop().isFixed());
     case CSSPropertyMarginBottom:
-        return layoutObject && layoutObject->isBox() && (!style || !style->marginBottom().isFixed());
+        return layoutObject->isBox() && (!style || !style->marginBottom().isFixed());
     case CSSPropertyPadding:
-        return layoutObject && layoutObject->isBox()
+        return layoutObject->isBox()
             && (!style || !style->paddingBottom().isFixed() || !style->paddingTop().isFixed()
                 || !style->paddingLeft().isFixed() || !style->paddingRight().isFixed());
     case CSSPropertyPaddingBottom:
-        return layoutObject && layoutObject->isBox() && (!style || !style->paddingBottom().isFixed());
+        return layoutObject->isBox() && (!style || !style->paddingBottom().isFixed());
     case CSSPropertyPaddingLeft:
-        return layoutObject && layoutObject->isBox() && (!style || !style->paddingLeft().isFixed());
+        return layoutObject->isBox() && (!style || !style->paddingLeft().isFixed());
     case CSSPropertyPaddingRight:
-        return layoutObject && layoutObject->isBox() && (!style || !style->paddingRight().isFixed());
+        return layoutObject->isBox() && (!style || !style->paddingRight().isFixed());
     case CSSPropertyPaddingTop:
-        return layoutObject && layoutObject->isBox() && (!style || !style->paddingTop().isFixed());
+        return layoutObject->isBox() && (!style || !style->paddingTop().isFixed());
     case CSSPropertyGridTemplateColumns:
     case CSSPropertyGridTemplateRows:
     case CSSPropertyGridTemplate:
     case CSSPropertyGrid:
-        return layoutObject && layoutObject->isLayoutGrid();
+        return layoutObject->isLayoutGrid();
     default:
         return false;
     }
@@ -529,7 +522,7 @@ const ComputedStyle* CSSComputedStyleDeclaration::computeComputedStyle() const
 Node* CSSComputedStyleDeclaration::styledNode() const
 {
     if (!m_node)
-        return 0;
+        return nullptr;
     if (m_node->isElementNode()) {
         if (PseudoElement* element = toElement(m_node)->pseudoElement(m_pseudoElementSpecifier))
             return element;
@@ -546,9 +539,6 @@ PassRefPtrWillBeRawPtr<CSSValue> CSSComputedStyleDeclaration::getPropertyCSSValu
     const ComputedStyle* style;
 
     Document& document = styledNode->document();
-
-    // A timing update may be required if a compositor animation is running.
-    DocumentAnimations::updateAnimationTimingForGetComputedStyle(*styledNode, propertyID);
 
     document.updateLayoutTreeForNodeIfNeeded(styledNode);
 
@@ -640,7 +630,7 @@ PassRefPtrWillBeRawPtr<MutableStylePropertySet> CSSComputedStyleDeclaration::cop
 
 CSSRule* CSSComputedStyleDeclaration::parentRule() const
 {
-    return 0;
+    return nullptr;
 }
 
 String CSSComputedStyleDeclaration::getPropertyValue(const String& propertyName)

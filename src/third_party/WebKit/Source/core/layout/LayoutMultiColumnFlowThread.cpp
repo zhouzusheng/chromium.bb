@@ -255,11 +255,9 @@ void LayoutMultiColumnFlowThread::evacuateAndDestroy()
     multicolContainer->resetMultiColumnFlowThread();
     moveAllChildrenTo(multicolContainer, true);
 
-    // FIXME: it's scary that neither destroy() nor the move*Children* methods take care of this,
-    // and instead leave you with dangling root line box pointers. But since this is how it is done
-    // in other parts of the code that deal with reparenting layoutObjects, let's do the cleanup on our
-    // own here as well.
-    deleteLineBoxTree();
+    // We used to manually nuke the line box tree here, but that should happen automatically when
+    // moving children around (the code above).
+    ASSERT(!firstLineBox());
 
     destroy();
 }
@@ -366,6 +364,7 @@ void LayoutMultiColumnFlowThread::layoutColumns(bool relayoutChildren, SubtreeLa
             continue;
         }
         LayoutMultiColumnSet* columnSet = toLayoutMultiColumnSet(columnBox);
+        layoutScope.setChildNeedsLayout(columnSet);
         if (!m_inBalancingPass) {
             // This is the initial layout pass. We need to reset the column height, because contents
             // typically have changed.
@@ -393,16 +392,8 @@ bool LayoutMultiColumnFlowThread::recalculateColumnHeights()
     // passes than that, though, but the number of retries should not exceed the number of
     // columns, unless we have a bug.
     bool needsRelayout = false;
-    for (LayoutMultiColumnSet* multicolSet = firstMultiColumnSet(); multicolSet; multicolSet = multicolSet->nextSiblingMultiColumnSet()) {
+    for (LayoutMultiColumnSet* multicolSet = firstMultiColumnSet(); multicolSet; multicolSet = multicolSet->nextSiblingMultiColumnSet())
         needsRelayout |= multicolSet->recalculateColumnHeight(m_inBalancingPass ? StretchBySpaceShortage : GuessFromFlowThreadPortion);
-        if (needsRelayout) {
-            // Once a column set gets a new column height, that column set and all successive column
-            // sets need to be laid out over again, since their logical top will be affected by
-            // this, and therefore their column heights may change as well, at least if the multicol
-            // height is constrained.
-            multicolSet->setChildNeedsLayout(MarkOnlyThis);
-        }
-    }
 
     if (needsRelayout)
         setChildNeedsLayout(MarkOnlyThis);
@@ -538,7 +529,6 @@ void LayoutMultiColumnFlowThread::createAndInsertSpannerPlaceholder(LayoutBox* s
                 // a new spanner placeholder between them.
                 setToSplit = mapDescendantToColumnSet(previousLayoutObject);
                 ASSERT(setToSplit == mapDescendantToColumnSet(insertedBeforeInFlowThread));
-                setToSplit->setNeedsLayoutAndFullPaintInvalidation(LayoutInvalidationReason::ColumnsChanged);
                 insertBeforeColumnBox = setToSplit->nextSiblingMultiColumnBox();
                 // We've found out which set that needs to be split. Now proceed to
                 // inserting the spanner placeholder, and then insert a second column set.
@@ -565,7 +555,6 @@ void LayoutMultiColumnFlowThread::destroySpannerPlaceholder(LayoutMultiColumnSpa
             && previousColumnBox && previousColumnBox->isLayoutMultiColumnSet()) {
             // Need to merge two column sets.
             nextColumnBox->destroy();
-            previousColumnBox->setNeedsLayout(LayoutInvalidationReason::ColumnsChanged);
             invalidateColumnSets();
         }
     }
@@ -837,42 +826,28 @@ static inline bool needsToInsertIntoFlowThread(const ComputedStyle& oldStyle, co
     return (!newStyle.hasOutOfFlowPosition() && oldStyle.hasOutOfFlowPosition()) || needsToReinsertIntoFlowThread(oldStyle, newStyle);
 }
 
-void LayoutMultiColumnFlowThread::flowThreadDescendantStyleWillChange(LayoutObject* descendant, StyleDifference diff, const ComputedStyle& newStyle)
+void LayoutMultiColumnFlowThread::flowThreadDescendantStyleWillChange(LayoutBox* descendant, StyleDifference diff, const ComputedStyle& newStyle)
 {
-    if (descendant->isText()) {
-        // Text nodes inherit all properties from the parent node (including non-inheritable
-        // ones). We don't care what its 'position' is. In fact, we _must_ ignore it, since the
-        // parent may be the multicol container, and having that accidentally leaked into children
-        // of the multicol is bad.
-        return;
-    }
     if (needsToRemoveFromFlowThread(descendant->styleRef(), newStyle))
         flowThreadDescendantWillBeRemoved(descendant);
 }
 
-void LayoutMultiColumnFlowThread::flowThreadDescendantStyleDidChange(LayoutObject* descendant, StyleDifference diff, const ComputedStyle& oldStyle)
+void LayoutMultiColumnFlowThread::flowThreadDescendantStyleDidChange(LayoutBox* descendant, StyleDifference diff, const ComputedStyle& oldStyle)
 {
-    if (descendant->isText()) {
-        // Text nodes inherit all properties from the parent node (including non-inheritable
-        // ones). We don't care what its 'position' is. In fact, we _must_ ignore it, since the
-        // parent may be the multicol container, and having that accidentally leaked into children
-        // of the multicol is bad.
-        return;
-    }
     if (needsToInsertIntoFlowThread(oldStyle, descendant->styleRef())) {
         flowThreadDescendantWasInserted(descendant);
         return;
     }
     if (descendantIsValidColumnSpanner(descendant)) {
         // We went from being regular column content to becoming a spanner.
-        ASSERT(!toLayoutBox(descendant)->spannerPlaceholder());
+        ASSERT(!descendant->spannerPlaceholder());
 
         // First remove this as regular column content. Note that this will walk the entire subtree
         // of |descendant|. There might be spanners there (which won't be spanners anymore, since
         // we're not allowed to nest spanners), whose placeholders must die.
         flowThreadDescendantWillBeRemoved(descendant);
 
-        createAndInsertSpannerPlaceholder(toLayoutBox(descendant), nextInPreOrderAfterChildrenSkippingOutOfFlow(this, descendant));
+        createAndInsertSpannerPlaceholder(descendant, nextInPreOrderAfterChildrenSkippingOutOfFlow(this, descendant));
     }
 }
 

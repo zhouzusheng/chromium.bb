@@ -20,8 +20,7 @@ ChannelReader::ChannelReader(Listener* listener) : listener_(listener) {
 }
 
 ChannelReader::~ChannelReader() {
-  if (!blocked_ids_.empty())
-    StopObservingAttachmentBroker();
+  DCHECK(blocked_ids_.empty());
 }
 
 ChannelReader::DispatchState ChannelReader::ProcessIncomingMessages() {
@@ -62,6 +61,13 @@ bool ChannelReader::IsHelloMessage(const Message& m) {
       m.type() == Channel::HELLO_MESSAGE_TYPE;
 }
 
+void ChannelReader::CleanUp() {
+  if (!blocked_ids_.empty()) {
+    StopObservingAttachmentBroker();
+    blocked_ids_.clear();
+  }
+}
+
 bool ChannelReader::TranslateInputData(const char* input_data,
                                        int input_data_len) {
   const char* p;
@@ -72,24 +78,26 @@ bool ChannelReader::TranslateInputData(const char* input_data,
     p = input_data;
     end = input_data + input_data_len;
   } else {
-    if (input_overflow_buf_.size() + input_data_len >
-        Channel::kMaximumMessageSize) {
-      input_overflow_buf_.clear();
-      LOG(ERROR) << "IPC message is too big";
+    if (!CheckMessageSize(input_overflow_buf_.size() + input_data_len))
       return false;
-    }
     input_overflow_buf_.append(input_data, input_data_len);
     p = input_overflow_buf_.data();
     end = p + input_overflow_buf_.size();
   }
 
+  size_t next_message_size = 0;
+
   // Dispatch all complete messages in the data buffer.
   while (p < end) {
-    const char* message_tail = Message::FindNext(p, end);
-    if (message_tail) {
-      int len = static_cast<int>(message_tail - p);
+    Message::NextMessageInfo info;
+    Message::FindNext(p, end, &info);
+    if (info.message_found) {
+      int pickle_len = static_cast<int>(info.pickle_end - p);
+      Message translated_message(p, pickle_len);
 
-      Message translated_message(p, len);
+      for (const auto& id : info.attachment_ids)
+        translated_message.AddPlaceholderBrokerableAttachmentWithId(id);
+
       if (!GetNonBrokeredAttachments(&translated_message))
         return false;
 
@@ -103,7 +111,7 @@ bool ChannelReader::TranslateInputData(const char* input_data,
         if (blocked_ids.empty()) {
           // Dispatch the message and continue the loop.
           DispatchMessage(&translated_message);
-          p = message_tail;
+          p = info.message_end;
           continue;
         }
 
@@ -114,15 +122,29 @@ bool ChannelReader::TranslateInputData(const char* input_data,
       // Make a deep copy of |translated_message| to add to the queue.
       scoped_ptr<Message> m(new Message(translated_message));
       queued_messages_.push_back(m.release());
-      p = message_tail;
+      p = info.message_end;
     } else {
       // Last message is partial.
+      next_message_size = info.message_size;
+      if (!CheckMessageSize(next_message_size))
+        return false;
       break;
     }
   }
 
   // Save any partial data in the overflow buffer.
   input_overflow_buf_.assign(p, end - p);
+
+  if (!input_overflow_buf_.empty()) {
+    // We have something in the overflow buffer, which means that we will
+    // append the next data chunk (instead of parsing it directly). So we
+    // resize the buffer to fit the next message, to avoid repeatedly
+    // growing the buffer as we receive all message' data chunks.
+    next_message_size += Channel::kReadBufferSize - 1;
+    if (next_message_size > input_overflow_buf_.capacity()) {
+      input_overflow_buf_.reserve(next_message_size);
+    }
+  }
 
   if (input_overflow_buf_.empty() && !DidEmptyInputBuffers())
     return false;
@@ -191,8 +213,9 @@ ChannelReader::AttachmentIdSet ChannelReader::GetBrokeredAttachments(
 
 #if USE_ATTACHMENT_BROKER
   MessageAttachmentSet* set = msg->attachment_set();
-  for (const scoped_refptr<BrokerableAttachment>& attachment :
-       set->GetBrokerableAttachmentsForUpdating()) {
+  std::vector<const BrokerableAttachment*> brokerable_attachments_copy =
+      set->PeekBrokerableAttachments();
+  for (const BrokerableAttachment* attachment : brokerable_attachments_copy) {
     if (attachment->NeedsBrokering()) {
       AttachmentBroker* broker = GetAttachmentBroker();
       scoped_refptr<BrokerableAttachment> brokered_attachment;
@@ -203,7 +226,7 @@ ChannelReader::AttachmentIdSet ChannelReader::GetBrokeredAttachments(
         continue;
       }
 
-      attachment->PopulateWithAttachment(brokered_attachment.get());
+      set->ReplacePlaceholderWithAttachment(brokered_attachment);
     }
   }
 #endif  // USE_ATTACHMENT_BROKER
@@ -236,6 +259,15 @@ void ChannelReader::StopObservingAttachmentBroker() {
 #if USE_ATTACHMENT_BROKER
   GetAttachmentBroker()->RemoveObserver(this);
 #endif  // USE_ATTACHMENT_BROKER
+}
+
+bool ChannelReader::CheckMessageSize(size_t size) {
+  if (size <= Channel::kMaximumMessageSize) {
+    return true;
+  }
+  input_overflow_buf_.clear();
+  LOG(ERROR) << "IPC message is too big: " << size;
+  return false;
 }
 
 }  // namespace internal

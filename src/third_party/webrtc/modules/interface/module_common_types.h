@@ -160,6 +160,7 @@ struct RTPVideoHeaderVP9 {
     inter_layer_predicted = false;
     gof_idx = kNoGofIdx;
     num_ref_pics = 0;
+    num_spatial_layers = 1;
   }
 
   bool inter_pic_predicted;  // This layer frame is dependent on previously
@@ -191,7 +192,7 @@ struct RTPVideoHeaderVP9 {
   int16_t ref_picture_id[kMaxVp9RefPics];  // PictureID of reference pictures.
 
   // SS data.
-  size_t num_spatial_layers;
+  size_t num_spatial_layers;  // Always populated.
   bool spatial_layer_resolution_present;
   uint16_t width[kMaxVp9NumberOfSpatialLayers];
   uint16_t height[kMaxVp9NumberOfSpatialLayers];
@@ -391,7 +392,7 @@ class RTPFragmentationHeader {
   uint8_t* fragmentationPlType;      // Payload type of each fragmentation
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(RTPFragmentationHeader);
+  RTC_DISALLOW_COPY_AND_ASSIGN(RTPFragmentationHeader);
 };
 
 struct RTCPVoIPMetric {
@@ -480,7 +481,7 @@ struct VideoContentMetrics {
 class AudioFrame {
  public:
   // Stereo, 32 kHz, 60 ms (2 * 32 * 60)
-  static const int kMaxDataSizeSamples = 3840;
+  static const size_t kMaxDataSizeSamples = 3840;
 
   enum VADActivity {
     kVadActive = 0,
@@ -504,7 +505,7 @@ class AudioFrame {
 
   // |interleaved_| is not changed by this method.
   void UpdateFrame(int id, uint32_t timestamp, const int16_t* data,
-                   int samples_per_channel, int sample_rate_hz,
+                   size_t samples_per_channel, int sample_rate_hz,
                    SpeechType speech_type, VADActivity vad_activity,
                    int num_channels = 1, uint32_t energy = -1);
 
@@ -528,7 +529,7 @@ class AudioFrame {
   // -1 represents an uninitialized value.
   int64_t ntp_time_ms_;
   int16_t data_[kMaxDataSizeSamples];
-  int samples_per_channel_;
+  size_t samples_per_channel_;
   int sample_rate_hz_;
   int num_channels_;
   SpeechType speech_type_;
@@ -541,7 +542,7 @@ class AudioFrame {
   bool interleaved_;
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(AudioFrame);
+  RTC_DISALLOW_COPY_AND_ASSIGN(AudioFrame);
 };
 
 inline AudioFrame::AudioFrame()
@@ -568,7 +569,7 @@ inline void AudioFrame::Reset() {
 inline void AudioFrame::UpdateFrame(int id,
                                     uint32_t timestamp,
                                     const int16_t* data,
-                                    int samples_per_channel,
+                                    size_t samples_per_channel,
                                     int sample_rate_hz,
                                     SpeechType speech_type,
                                     VADActivity vad_activity,
@@ -584,7 +585,7 @@ inline void AudioFrame::UpdateFrame(int id,
   energy_ = energy;
 
   assert(num_channels >= 0);
-  const int length = samples_per_channel * num_channels;
+  const size_t length = samples_per_channel * num_channels;
   assert(length <= kMaxDataSizeSamples);
   if (data != NULL) {
     memcpy(data_, data, sizeof(int16_t) * length);
@@ -609,7 +610,7 @@ inline void AudioFrame::CopyFrom(const AudioFrame& src) {
   interleaved_ = src.interleaved_;
 
   assert(num_channels_ >= 0);
-  const int length = samples_per_channel_ * num_channels_;
+  const size_t length = samples_per_channel_ * num_channels_;
   assert(length <= kMaxDataSizeSamples);
   memcpy(data_, src.data_, sizeof(int16_t) * length);
 }
@@ -622,7 +623,7 @@ inline AudioFrame& AudioFrame::operator>>=(const int rhs) {
   assert((num_channels_ > 0) && (num_channels_ < 3));
   if ((num_channels_ > 2) || (num_channels_ < 1)) return *this;
 
-  for (int i = 0; i < samples_per_channel_ * num_channels_; i++) {
+  for (size_t i = 0; i < samples_per_channel_ * num_channels_; i++) {
     data_[i] = static_cast<int16_t>(data_[i] >> rhs);
   }
   return *this;
@@ -644,8 +645,8 @@ inline AudioFrame& AudioFrame::Append(const AudioFrame& rhs) {
     speech_type_ = kUndefined;
   }
 
-  int offset = samples_per_channel_ * num_channels_;
-  for (int i = 0; i < rhs.samples_per_channel_ * rhs.num_channels_; i++) {
+  size_t offset = samples_per_channel_ * num_channels_;
+  for (size_t i = 0; i < rhs.samples_per_channel_ * rhs.num_channels_; i++) {
     data_[offset + i] = rhs.data_[i];
   }
   samples_per_channel_ += rhs.samples_per_channel_;
@@ -695,7 +696,7 @@ inline AudioFrame& AudioFrame::operator+=(const AudioFrame& rhs) {
            sizeof(int16_t) * rhs.samples_per_channel_ * num_channels_);
   } else {
     // IMPROVEMENT this can be done very fast in assembly
-    for (int i = 0; i < samples_per_channel_ * num_channels_; i++) {
+    for (size_t i = 0; i < samples_per_channel_ * num_channels_; i++) {
       int32_t wrap_guard =
           static_cast<int32_t>(data_[i]) + static_cast<int32_t>(rhs.data_[i]);
       data_[i] = ClampToInt16(wrap_guard);
@@ -720,7 +721,7 @@ inline AudioFrame& AudioFrame::operator-=(const AudioFrame& rhs) {
   }
   speech_type_ = kUndefined;
 
-  for (int i = 0; i < samples_per_channel_ * num_channels_; i++) {
+  for (size_t i = 0; i < samples_per_channel_ * num_channels_; i++) {
     int32_t wrap_guard =
         static_cast<int32_t>(data_[i]) - static_cast<int32_t>(rhs.data_[i]);
     data_[i] = ClampToInt16(wrap_guard);
@@ -763,6 +764,46 @@ inline uint16_t LatestSequenceNumber(uint16_t sequence_number1,
 inline uint32_t LatestTimestamp(uint32_t timestamp1, uint32_t timestamp2) {
   return IsNewerTimestamp(timestamp1, timestamp2) ? timestamp1 : timestamp2;
 }
+
+// Utility class to unwrap a sequence number to a larger type, for easier
+// handling large ranges. Note that sequence numbers will never be unwrapped
+// to a negative value.
+class SequenceNumberUnwrapper {
+ public:
+  SequenceNumberUnwrapper() : last_seq_(-1) {}
+
+  // Get the unwrapped sequence, but don't update the internal state.
+  int64_t UnwrapWithoutUpdate(uint16_t sequence_number) {
+    if (last_seq_ == -1)
+      return sequence_number;
+
+    uint16_t cropped_last = static_cast<uint16_t>(last_seq_);
+    int64_t delta = sequence_number - cropped_last;
+    if (IsNewerSequenceNumber(sequence_number, cropped_last)) {
+      if (delta < 0)
+        delta += (1 << 16);  // Wrap forwards.
+    } else if (delta > 0 && (last_seq_ + delta - (1 << 16)) >= 0) {
+      // If sequence_number is older but delta is positive, this is a backwards
+      // wrap-around. However, don't wrap backwards past 0 (unwrapped).
+      delta -= (1 << 16);
+    }
+
+    return last_seq_ + delta;
+  }
+
+  // Only update the internal state to the specified last (unwrapped) sequence.
+  void UpdateLast(int64_t last_sequence) { last_seq_ = last_sequence; }
+
+  // Unwrap the sequence number and update the internal state.
+  int64_t Unwrap(uint16_t sequence_number) {
+    int64_t unwrapped = UnwrapWithoutUpdate(sequence_number);
+    UpdateLast(unwrapped);
+    return unwrapped;
+  }
+
+ private:
+  int64_t last_seq_;
+};
 
 }  // namespace webrtc
 

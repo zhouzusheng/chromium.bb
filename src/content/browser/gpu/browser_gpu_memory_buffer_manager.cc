@@ -21,6 +21,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/content_switches.h"
 #include "gpu/GLES2/gl2extchromium.h"
+#include "ui/gfx/buffer_format_util.h"
 #include "ui/gl/gl_switches.h"
 
 #if defined(OS_MACOSX)
@@ -118,6 +119,8 @@ GetSupportedGpuMemoryBufferConfigurations(gfx::GpuMemoryBufferType type) {
         {gfx::BufferFormat::BGRA_8888, gfx::BufferUsage::PERSISTENT_MAP},
         {gfx::BufferFormat::UYVY_422, gfx::BufferUsage::MAP},
         {gfx::BufferFormat::UYVY_422, gfx::BufferUsage::PERSISTENT_MAP},
+        {gfx::BufferFormat::YUV_420_BIPLANAR, gfx::BufferUsage::MAP},
+        {gfx::BufferFormat::YUV_420_BIPLANAR, gfx::BufferUsage::PERSISTENT_MAP},
     };
     for (auto& configuration : kNativeConfigurations) {
       if (IsGpuMemoryBufferFactoryConfigurationSupported(type, configuration))
@@ -130,6 +133,7 @@ GetSupportedGpuMemoryBufferConfigurations(gfx::GpuMemoryBufferType type) {
       {gfx::BufferFormat::BGRA_8888, gfx::BufferUsage::SCANOUT},
       {gfx::BufferFormat::BGRX_8888, gfx::BufferUsage::SCANOUT},
       {gfx::BufferFormat::UYVY_422, gfx::BufferUsage::SCANOUT},
+      {gfx::BufferFormat::YUV_420_BIPLANAR, gfx::BufferUsage::SCANOUT},
   };
   for (auto& configuration : kScanoutConfigurations) {
     if (IsGpuMemoryBufferFactoryConfigurationSupported(type, configuration))
@@ -304,14 +308,8 @@ bool BrowserGpuMemoryBufferManager::OnMemoryDump(
       if (!dump)
         return false;
 
-      size_t buffer_size_in_bytes = 0;
-      // Note: BufferSizeInBytes returns an approximated size for the buffer
-      // but the factory can be made to return the exact size if this
-      // approximation is not good enough.
-      bool valid_size = GpuMemoryBufferImpl::BufferSizeInBytes(
-          buffer.second.size, buffer.second.format, &buffer_size_in_bytes);
-      DCHECK(valid_size);
-
+      size_t buffer_size_in_bytes = gfx::BufferSizeForBufferFormat(
+          buffer.second.size, buffer.second.format);
       dump->AddScalar(base::trace_event::MemoryAllocatorDump::kNameSize,
                       base::trace_event::MemoryAllocatorDump::kUnitsBytes,
                       buffer_size_in_bytes);

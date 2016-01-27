@@ -193,7 +193,6 @@ class CONTENT_EXPORT RenderThreadImpl
   bool IsLcdTextEnabled() override;
   bool IsDistanceFieldTextEnabled() override;
   bool IsZeroCopyEnabled() override;
-  bool IsOneCopyEnabled() override;
   bool IsPersistentGpuMemoryBufferEnabled() override;
   bool IsElasticOverscrollEnabled() override;
   std::vector<unsigned> GetImageTextureTargets() override;
@@ -207,7 +206,7 @@ class CONTENT_EXPORT RenderThreadImpl
   scoped_ptr<cc::BeginFrameSource> CreateExternalBeginFrameSource(
       int routing_id) override;
   cc::TaskGraphRunner* GetTaskGraphRunner() override;
-  bool IsGatherPixelRefsEnabled() override;
+  bool AreImageDecodeTasksEnabled() override;
   bool IsThreadedAnimationEnabled() override;
 
   // Synchronously establish a channel to the GPU plugin if not previously
@@ -326,6 +325,9 @@ class CONTENT_EXPORT RenderThreadImpl
   // A TaskRunner instance that runs tasks on the raster worker pool.
   base::TaskRunner* GetWorkerTaskRunner();
 
+  // Returns a shared worker context provider that can be used on any thread.
+  scoped_refptr<ContextProviderCommandBuffer> SharedWorkerContextProvider();
+
   // Causes the idle handler to skip sending idle notifications
   // on the two next scheduled calls, so idle notifications are
   // not sent for at least one notification delay.
@@ -434,6 +436,7 @@ class CONTENT_EXPORT RenderThreadImpl
  private:
   // ChildThread
   bool OnControlMessageReceived(const IPC::Message& msg) override;
+  void OnProcessBackgrounded(bool backgrounded) override;
 
   // GpuChannelHostFactory implementation:
   bool IsMainThread() override;
@@ -448,8 +451,9 @@ class CONTENT_EXPORT RenderThreadImpl
 
   void OnCreateNewFrame(FrameMsg_NewFrame_Params params);
   void OnCreateNewFrameProxy(int routing_id,
-                             int parent_routing_id,
                              int render_view_routing_id,
+                             int opener_routing_id,
+                             int parent_routing_id,
                              const FrameReplicationState& replicated_state);
   void OnSetZoomLevelForCurrentURL(const std::string& scheme,
                                    const std::string& host,
@@ -459,7 +463,9 @@ class CONTENT_EXPORT RenderThreadImpl
 #if defined(ENABLE_PLUGINS)
   void OnPurgePluginListCache(bool reload_pages);
 #endif
-  void OnNetworkTypeChanged(net::NetworkChangeNotifier::ConnectionType type);
+  void OnNetworkConnectionChanged(
+      net::NetworkChangeNotifier::ConnectionType type,
+      double max_bandwidth_mbps);
   void OnGetAccessibilityTree();
   void OnClearWebCache();
   void OnUpdateTimezone(const std::string& zoneId);
@@ -471,6 +477,9 @@ class CONTENT_EXPORT RenderThreadImpl
 #if defined(OS_MACOSX)
   void OnUpdateScrollbarTheme(
       const ViewMsg_UpdateScrollbarTheme_Params& params);
+  void OnSystemColorsChanged(int aqua_color_variant,
+                             const std::string& highlight_text_color,
+                             const std::string& highlight_color);
 #endif
   void OnCreateNewSharedWorker(
       const WorkerProcessMsg_CreateWorker_Params& params);
@@ -547,7 +556,7 @@ class CONTENT_EXPORT RenderThreadImpl
   bool layout_test_mode_;
 
   // Timer that periodically calls IdleHandler.
-  base::RepeatingTimer<RenderThreadImpl> idle_timer_;
+  base::RepeatingTimer idle_timer_;
 
   // The channel from the renderer process to the GPU process.
   scoped_refptr<GpuChannelHost> gpu_channel_;
@@ -589,6 +598,7 @@ class CONTENT_EXPORT RenderThreadImpl
 
   base::ObserverList<RenderProcessObserver> observers_;
 
+  scoped_refptr<ContextProviderCommandBuffer> shared_worker_context_provider_;
   scoped_refptr<ContextProviderCommandBuffer> gpu_va_context_provider_;
 
   scoped_ptr<AudioRendererMixerManager> audio_renderer_mixer_manager_;
@@ -620,7 +630,7 @@ class CONTENT_EXPORT RenderThreadImpl
   bool is_persistent_gpu_memory_buffer_enabled_;
   bool is_elastic_overscroll_enabled_;
   std::vector<unsigned> use_image_texture_targets_;
-  bool is_gather_pixel_refs_enabled_;
+  bool are_image_decode_tasks_enabled_;
   bool is_threaded_animation_enabled_;
 
   class PendingRenderFrameConnect

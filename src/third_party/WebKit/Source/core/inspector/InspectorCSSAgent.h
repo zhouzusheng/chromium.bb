@@ -77,6 +77,7 @@ public:
     };
 
     class InlineStyleOverrideScope {
+        STACK_ALLOCATED();
     public:
         InlineStyleOverrideScope(SecurityContext* context)
             : m_contentSecurityPolicy(context->contentSecurityPolicy())
@@ -90,7 +91,7 @@ public:
         }
 
     private:
-        ContentSecurityPolicy* m_contentSecurityPolicy;
+        RawPtrWillBeMember<ContentSecurityPolicy> m_contentSecurityPolicy;
     };
 
     static CSSStyleRule* asCSSStyleRule(CSSRule*);
@@ -114,7 +115,6 @@ public:
     void disable(ErrorString*) override;
     void reset();
     void mediaQueryResultChanged();
-    void setCSSPropertyValue(ErrorString*, Element*, CSSPropertyID, const String&);
 
     void activeStyleSheetsUpdated(Document*);
     void documentDetached(Document*);
@@ -129,10 +129,10 @@ public:
     void getComputedStyleForNode(ErrorString*, int nodeId, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::CSSComputedStyleProperty>>&) override;
     void getPlatformFontsForNode(ErrorString*, int nodeId, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::PlatformFontUsage>>&) override;
     void getInlineStylesForNode(ErrorString*, int nodeId, RefPtr<TypeBuilder::CSS::CSSStyle>& inlineStyle, RefPtr<TypeBuilder::CSS::CSSStyle>& attributes) override;
-    void getMatchedStylesForNode(ErrorString*, int nodeId, const bool* excludePseudo, const bool* excludeInherited, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::RuleMatch>>& matchedCSSRules, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::PseudoIdMatches>>&, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::InheritedStyleEntry>>& inheritedEntries) override;
+    void getMatchedStylesForNode(ErrorString*, int nodeId, RefPtr<TypeBuilder::CSS::CSSStyle>& inlineStyle, RefPtr<TypeBuilder::CSS::CSSStyle>& attributesStyle, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::RuleMatch>>& matchedCSSRules, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::PseudoElementMatches>>&, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::InheritedStyleEntry>>& inheritedEntries) override;
     void getStyleSheetText(ErrorString*, const String& styleSheetId, String* result) override;
     void setStyleSheetText(ErrorString*, const String& styleSheetId, const String& text) override;
-    void setRuleSelector(ErrorString*, const String& styleSheetId, const RefPtr<JSONObject>& range, const String& selector, RefPtr<TypeBuilder::CSS::CSSRule>& result) override;
+    void setRuleSelector(ErrorString*, const String& styleSheetId, const RefPtr<JSONObject>& range, const String& selector, RefPtr<TypeBuilder::CSS::SelectorList>& result) override;
     void setStyleText(ErrorString*, const String& styleSheetId, const RefPtr<JSONObject>& range, const String& text, RefPtr<TypeBuilder::CSS::CSSStyle>& result) override;
     void setMediaText(ErrorString*, const String& styleSheetId, const RefPtr<JSONObject>& range, const String& text, RefPtr<TypeBuilder::CSS::CSSMedia>& result) override;
     void createStyleSheet(ErrorString*, const String& frameId, TypeBuilder::CSS::StyleSheetId* outStyleSheetId) override;
@@ -144,8 +144,11 @@ public:
     void collectMediaQueriesFromStyleSheet(CSSStyleSheet*, TypeBuilder::Array<TypeBuilder::CSS::CSSMedia>* mediaArray);
     PassRefPtr<TypeBuilder::CSS::CSSMedia> buildMediaObject(const MediaList*, MediaListSource, const String&, CSSStyleSheet*);
     PassRefPtr<TypeBuilder::Array<TypeBuilder::CSS::CSSMedia> > buildMediaListChain(CSSRule*);
-    PassRefPtrWillBeRawPtr<CSSStyleDeclaration> findEffectiveDeclaration(Element*, CSSPropertyID);
 
+    PassRefPtrWillBeRawPtr<CSSStyleDeclaration> findEffectiveDeclaration(CSSPropertyID, CSSRuleList* matchedRulesList, CSSStyleDeclaration* inlineStyle);
+    void setCSSPropertyValue(ErrorString*, Element*, RefPtrWillBeRawPtr<CSSStyleDeclaration>, CSSPropertyID, const String& value, bool forceImportant = false);
+
+    PassRefPtrWillBeRawPtr<CSSRuleList> matchedRulesList(Element*);
 private:
     class StyleSheetAction;
     class SetStyleSheetTextAction;
@@ -176,6 +179,8 @@ private:
 
     InspectorStyleSheet* bindStyleSheet(CSSStyleSheet*);
     String unbindStyleSheet(InspectorStyleSheet*);
+    InspectorStyleSheet* inspectorStyleSheetForRule(CSSStyleRule*);
+
     InspectorStyleSheet* viaInspectorStyleSheet(Document*, bool createIfAbsent);
     InspectorStyleSheet* assertInspectorStyleSheetForId(ErrorString*, const String&);
     InspectorStyleSheetBase* assertStyleSheetForId(ErrorString*, const String&);

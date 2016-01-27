@@ -69,6 +69,7 @@
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/gpu/gpu_process_launch_causes.h"
 #include "content/common/render_frame_setup.mojom.h"
+#include "content/common/render_process_messages.h"
 #include "content/common/resource_messages.h"
 #include "content/common/service_worker/embedded_worker_setup.mojom.h"
 #include "content/common/view_messages.h"
@@ -163,6 +164,7 @@
 
 #if defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
+#include "content/renderer/theme_helper_mac.h"
 #include "content/renderer/webscrollbarbehavior_impl_mac.h"
 #endif
 
@@ -701,7 +703,6 @@ void RenderThreadImpl::Init() {
       !command_line.HasSwitch(cc::switches::kDisableThreadedAnimation);
 
   is_zero_copy_enabled_ = command_line.HasSwitch(switches::kEnableZeroCopy);
-  is_one_copy_enabled_ = !command_line.HasSwitch(switches::kDisableOneCopy);
   is_persistent_gpu_memory_buffer_enabled_ =
       command_line.HasSwitch(switches::kEnablePersistentGpuMemoryBuffer);
 
@@ -767,8 +768,6 @@ void RenderThreadImpl::Init() {
   memory_pressure_listener_.reset(new base::MemoryPressureListener(
       base::Bind(&RenderThreadImpl::OnMemoryPressure, base::Unretained(this))));
 
-  is_gather_pixel_refs_enabled_ = false;
-
   int num_raster_threads = 0;
   std::string string_value =
       command_line.GetSwitchValueASCII(switches::kNumRasterThreads);
@@ -777,11 +776,10 @@ void RenderThreadImpl::Init() {
   DCHECK(parsed_num_raster_threads) << string_value;
   DCHECK_GT(num_raster_threads, 0);
 
-  // Note: Currently, gathering of pixel refs when using a single
-  // raster thread doesn't provide any benefit. This might change
-  // in the future but we avoid it for now to reduce the cost of
-  // Picture::Create.
-  is_gather_pixel_refs_enabled_ = num_raster_threads > 1;
+  // Note: Currently, enabling image decode tasks only provides a benefit if
+  // there's more than one raster thread. This might change in the future but we
+  // avoid it for now to reduce the cost of recording.
+  are_image_decode_tasks_enabled_ = num_raster_threads > 1;
 
   base::SimpleThread::Options thread_options;
 #if defined(OS_ANDROID) || defined(OS_LINUX)
@@ -893,6 +891,7 @@ void RenderThreadImpl::Shutdown() {
   main_thread_compositor_task_runner_ = NULL;
 
   // Context providers must be released prior to destroying the GPU channel.
+  shared_worker_context_provider_ = nullptr;
   gpu_va_context_provider_ = nullptr;
   shared_main_thread_contexts_ = nullptr;
 
@@ -912,8 +911,10 @@ void RenderThreadImpl::Shutdown() {
   // the message loop after this.
   renderer_scheduler_->Shutdown();
   main_message_loop_.reset();
-  if (blink_platform_impl_)
+  if (blink_platform_impl_) {
+    blink_platform_impl_->Shutdown();
     blink::shutdown();
+  }
 
   lazy_tls.Pointer()->Set(NULL);
 }
@@ -1206,6 +1207,11 @@ void RenderThreadImpl::EnsureWebKitInitialized() {
   if (GetContentClient()->renderer()->RunIdleHandlerWhenWidgetsHidden())
     ScheduleIdleHandler(kLongIdleHandlerDelayMs);
 
+  renderer_scheduler_->SetTimerQueueSuspensionWhenBackgroundedEnabled(
+      GetContentClient()
+          ->renderer()
+          ->AllowTimerSuspensionWhenProcessBackgrounded());
+
   cc_blink::SetSharedBitmapAllocationFunction(AllocateSharedBitmapFunction);
 
   SkGraphics::SetResourceCacheSingleAllocationByteLimit(
@@ -1381,6 +1387,11 @@ RenderThreadImpl::GetGpuFactories() {
   scoped_refptr<media::GpuVideoAcceleratorFactories> gpu_factories;
   scoped_refptr<base::SingleThreadTaskRunner> media_task_runner =
       GetMediaThreadTaskRunner();
+  if (gpu_va_context_provider_.get() && !gpu_channel_host.get()) {
+    // The GPU channel was lost. It's possible that |gpu_va_context_provider_|
+    // has not been made aware of that, so always create a new one.
+    gpu_va_context_provider_ = nullptr;
+  }
   if (!gpu_va_context_provider_.get() ||
       gpu_va_context_provider_->DestroyedOnMainThread()) {
     if (!gpu_channel_host.get()) {
@@ -1414,11 +1425,6 @@ RenderThreadImpl::GetGpuFactories() {
     const bool parsed_image_texture_target =
         base::StringToUint(image_texture_target_string, &image_texture_target);
     DCHECK(parsed_image_texture_target);
-    CHECK(gpu_channel_.get()) << "Have gpu_va_context_provider but no "
-                                 "gpu_channel_. See crbug.com/495185.";
-    CHECK(gpu_channel_host.get()) << "Have gpu_va_context_provider but lost "
-                                     "gpu_channel_. See crbug.com/495185.";
-
     gpu_factories = RendererGpuVideoAcceleratorFactories::Create(
         gpu_channel_host.get(), media_task_runner, gpu_va_context_provider_,
         enable_gpu_memory_buffer_video_frames, image_texture_target,
@@ -1471,8 +1477,7 @@ RenderThreadImpl::SharedMainThreadContextProvider() {
 
 AudioRendererMixerManager* RenderThreadImpl::GetAudioRendererMixerManager() {
   if (!audio_renderer_mixer_manager_) {
-    audio_renderer_mixer_manager_.reset(new AudioRendererMixerManager(
-        GetAudioHardwareConfig()));
+    audio_renderer_mixer_manager_.reset(new AudioRendererMixerManager());
   }
 
   return audio_renderer_mixer_manager_.get();
@@ -1499,7 +1504,7 @@ base::WaitableEvent* RenderThreadImpl::GetShutdownEvent() {
 #if defined(OS_WIN)
 void RenderThreadImpl::PreCacheFontCharacters(const LOGFONT& log_font,
                                               const base::string16& str) {
-  Send(new ViewHostMsg_PreCacheFontCharacters(log_font, str));
+  Send(new RenderProcessHostMsg_PreCacheFontCharacters(log_font, str));
 }
 
 #endif  // OS_WIN
@@ -1530,10 +1535,6 @@ bool RenderThreadImpl::IsDistanceFieldTextEnabled() {
 
 bool RenderThreadImpl::IsZeroCopyEnabled() {
   return is_zero_copy_enabled_;
-}
-
-bool RenderThreadImpl::IsOneCopyEnabled() {
-  return is_one_copy_enabled_;
 }
 
 bool RenderThreadImpl::IsPersistentGpuMemoryBufferEnabled() {
@@ -1586,8 +1587,8 @@ cc::TaskGraphRunner* RenderThreadImpl::GetTaskGraphRunner() {
   return raster_worker_pool_->GetTaskGraphRunner();
 }
 
-bool RenderThreadImpl::IsGatherPixelRefsEnabled() {
-  return is_gather_pixel_refs_enabled_;
+bool RenderThreadImpl::AreImageDecodeTasksEnabled() {
+  return are_image_decode_tasks_enabled_;
 }
 
 bool RenderThreadImpl::IsThreadedAnimationEnabled() {
@@ -1620,7 +1621,6 @@ CreateCommandBufferResult RenderThreadImpl::CreateViewCommandBuffer(
 
   CreateCommandBufferResult result = CREATE_COMMAND_BUFFER_FAILED;
   IPC::Message* message = new GpuHostMsg_CreateViewCommandBuffer(
-      surface_id,
       init_params,
       route_id,
       &result);
@@ -1659,7 +1659,8 @@ bool RenderThreadImpl::OnControlMessageReceived(const IPC::Message& msg) {
     // TODO(port): removed from render_messages_internal.h;
     // is there a new non-windows message I should add here?
     IPC_MESSAGE_HANDLER(ViewMsg_New, OnCreateNewView)
-    IPC_MESSAGE_HANDLER(ViewMsg_NetworkTypeChanged, OnNetworkTypeChanged)
+    IPC_MESSAGE_HANDLER(ViewMsg_NetworkConnectionChanged,
+                        OnNetworkConnectionChanged)
     IPC_MESSAGE_HANDLER(WorkerProcessMsg_CreateWorker, OnCreateNewSharedWorker)
     IPC_MESSAGE_HANDLER(ViewMsg_TimezoneChange, OnUpdateTimezone)
 #if defined(OS_ANDROID)
@@ -1669,6 +1670,7 @@ bool RenderThreadImpl::OnControlMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ViewMsg_ClearWebCache, OnClearWebCache)
 #if defined(OS_MACOSX)
     IPC_MESSAGE_HANDLER(ViewMsg_UpdateScrollbarTheme, OnUpdateScrollbarTheme)
+    IPC_MESSAGE_HANDLER(ViewMsg_SystemColorsChanged, OnSystemColorsChanged)
 #endif
 #if defined(ENABLE_PLUGINS)
     IPC_MESSAGE_HANDLER(ViewMsg_PurgePluginListCache, OnPurgePluginListCache)
@@ -1678,21 +1680,32 @@ bool RenderThreadImpl::OnControlMessageReceived(const IPC::Message& msg) {
   return handled;
 }
 
+void RenderThreadImpl::OnProcessBackgrounded(bool backgrounded) {
+  ChildThreadImpl::OnProcessBackgrounded(backgrounded);
+
+  if (backgrounded)
+    renderer_scheduler_->OnRendererBackgrounded();
+  else
+    renderer_scheduler_->OnRendererForegrounded();
+}
+
 void RenderThreadImpl::OnCreateNewFrame(FrameMsg_NewFrame_Params params) {
   CompositorDependencies* compositor_deps = this;
   RenderFrameImpl::CreateFrame(
-      params.routing_id, params.parent_routing_id,
-      params.previous_sibling_routing_id, params.proxy_routing_id,
+      params.routing_id, params.proxy_routing_id, params.opener_routing_id,
+      params.parent_routing_id, params.previous_sibling_routing_id,
       params.replication_state, compositor_deps, params.widget_params);
 }
 
 void RenderThreadImpl::OnCreateNewFrameProxy(
     int routing_id,
-    int parent_routing_id,
     int render_view_routing_id,
+    int opener_routing_id,
+    int parent_routing_id,
     const FrameReplicationState& replicated_state) {
-  RenderFrameProxy::CreateFrameProxy(routing_id, parent_routing_id,
-                                     render_view_routing_id, replicated_state);
+  RenderFrameProxy::CreateFrameProxy(routing_id, render_view_routing_id,
+                                     opener_routing_id, parent_routing_id,
+                                     replicated_state);
 }
 
 void RenderThreadImpl::OnSetZoomLevelForCurrentURL(const std::string& scheme,
@@ -1748,6 +1761,7 @@ GpuChannelHost* RenderThreadImpl::EstablishGpuChannelSync(
 
   gpu_channel_ =
       GpuChannelHost::Create(this,
+                             client_id,
                              gpu_info,
                              channel_handle,
                              ChildProcess::current()->GetShutDownEvent(),
@@ -1757,12 +1771,6 @@ GpuChannelHost* RenderThreadImpl::EstablishGpuChannelSync(
 
 blink::WebMediaStreamCenter* RenderThreadImpl::CreateMediaStreamCenter(
     blink::WebMediaStreamCenterClient* client) {
-#if defined(OS_ANDROID)
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableWebRTC))
-    return NULL;
-#endif
-
 #if defined(ENABLE_WEBRTC)
   if (!media_stream_center_) {
     media_stream_center_ = GetContentClient()->renderer()
@@ -1809,15 +1817,16 @@ void RenderThreadImpl::OnPurgePluginListCache(bool reload_pages) {
 }
 #endif
 
-void RenderThreadImpl::OnNetworkTypeChanged(
-    net::NetworkChangeNotifier::ConnectionType type) {
+void RenderThreadImpl::OnNetworkConnectionChanged(
+    net::NetworkChangeNotifier::ConnectionType type,
+    double max_bandwidth_mbps) {
   EnsureWebKitInitialized();
   bool online = type != net::NetworkChangeNotifier::CONNECTION_NONE;
   WebNetworkStateNotifier::setOnLine(online);
   FOR_EACH_OBSERVER(
       RenderProcessObserver, observers_, NetworkStateChanged(online));
-  WebNetworkStateNotifier::setWebConnectionType(
-      NetConnectionTypeToWebConnectionType(type));
+  WebNetworkStateNotifier::setWebConnection(
+      NetConnectionTypeToWebConnectionType(type), max_bandwidth_mbps);
 }
 
 void RenderThreadImpl::OnUpdateTimezone(const std::string& zone_id) {
@@ -1856,6 +1865,14 @@ void RenderThreadImpl::OnUpdateScrollbarTheme(
       params.initial_button_delay, params.autoscroll_button_delay,
       params.preferred_scroller_style, params.redraw,
       params.scroll_animation_enabled, params.button_placement);
+}
+
+void RenderThreadImpl::OnSystemColorsChanged(
+    int aqua_color_variant,
+    const std::string& highlight_text_color,
+    const std::string& highlight_color) {
+  SystemColorsDidChange(aqua_color_variant, highlight_text_color,
+                        highlight_color);
 }
 #endif
 
@@ -1932,6 +1949,31 @@ RenderThreadImpl::GetMediaThreadTaskRunner() {
 
 base::TaskRunner* RenderThreadImpl::GetWorkerTaskRunner() {
   return raster_worker_pool_.get();
+}
+
+scoped_refptr<ContextProviderCommandBuffer>
+RenderThreadImpl::SharedWorkerContextProvider() {
+  DCHECK(IsMainThread());
+  // Try to reuse existing shared worker context provider.
+  bool shared_worker_context_provider_lost = false;
+  if (shared_worker_context_provider_) {
+    // Note: If context is lost, delete reference after releasing the lock.
+    base::AutoLock lock(*shared_worker_context_provider_->GetLock());
+    if (shared_worker_context_provider_->ContextGL()
+            ->GetGraphicsResetStatusKHR() != GL_NO_ERROR) {
+      shared_worker_context_provider_lost = true;
+    }
+  }
+  if (!shared_worker_context_provider_ || shared_worker_context_provider_lost) {
+    shared_worker_context_provider_ = ContextProviderCommandBuffer::Create(
+        CreateOffscreenContext3d(), RENDER_WORKER_CONTEXT);
+    if (shared_worker_context_provider_ &&
+        !shared_worker_context_provider_->BindToCurrentThread())
+      shared_worker_context_provider_ = nullptr;
+    if (shared_worker_context_provider_)
+      shared_worker_context_provider_->SetupLock();
+  }
+  return shared_worker_context_provider_;
 }
 
 void RenderThreadImpl::SampleGamepads(blink::WebGamepads* data) {

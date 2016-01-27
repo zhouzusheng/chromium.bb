@@ -213,6 +213,7 @@ WebInspector.InspectorFrontendHostStub.prototype = {
      */
     requestFileSystems: function()
     {
+        this.events.dispatchEventToListeners(InspectorFrontendHostAPI.Events.FileSystemsLoaded, []);
     },
 
     /**
@@ -381,9 +382,28 @@ WebInspector.InspectorFrontendHostStub.prototype = {
 
     /**
      * @override
+     * @param {boolean} discoverUsbDevices
+     * @param {boolean} portForwardingEnabled
+     * @param {!Adb.PortForwardingConfig} portForwardingConfig
+     */
+    setDevicesDiscoveryConfig: function(discoverUsbDevices, portForwardingEnabled, portForwardingConfig)
+    {
+    },
+
+    /**
+     * @override
      * @param {boolean} enabled
      */
     setDevicesUpdatesEnabled: function(enabled)
+    {
+    },
+
+    /**
+     * @override
+     * @param {string} pageId
+     * @param {string} action
+     */
+    performActionOnRemotePage: function(pageId, action)
     {
     },
 
@@ -406,6 +426,14 @@ WebInspector.InspectorFrontendHostStub.prototype = {
     isHostedMode: function()
     {
         return true;
+    },
+
+    /**
+     * @override
+     * @param {string} message
+     */
+    sendFrontendAPINotification: function(message)
+    {
     }
 };
 

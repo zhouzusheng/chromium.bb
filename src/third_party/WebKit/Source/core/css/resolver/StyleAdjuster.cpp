@@ -36,6 +36,7 @@
 #include "core/dom/Element.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/Settings.h"
+#include "core/frame/UseCounter.h"
 #include "core/html/HTMLIFrameElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLPlugInElement.h"
@@ -44,7 +45,6 @@
 #include "core/frame/LocalFrame.h"
 #include "core/layout/LayoutReplaced.h"
 #include "core/layout/LayoutTheme.h"
-#include "core/style/GridPosition.h"
 #include "core/style/ComputedStyle.h"
 #include "core/style/ComputedStyleConstants.h"
 #include "core/svg/SVGSVGElement.h"
@@ -99,20 +99,20 @@ static EDisplay equivalentBlockDisplay(EDisplay display, bool isFloating, bool s
     return BLOCK;
 }
 
-static bool isOutermostSVGElement(const Element* e)
+static bool isOutermostSVGElement(const Element* element)
 {
-    return e && e->isSVGElement() && toSVGElement(*e).isOutermostSVGSVGElement();
+    return element && element->isSVGElement() && toSVGElement(*element).isOutermostSVGSVGElement();
 }
 
 // CSS requires text-decoration to be reset at each DOM element for
 // inline blocks, inline tables, shadow DOM crossings, floating elements,
 // and absolute or relatively positioned elements. Outermost <svg> roots are
 // considered to be atomic inline-level.
-static bool doesNotInheritTextDecoration(const ComputedStyle& style, const Element* e)
+static bool doesNotInheritTextDecoration(const ComputedStyle& style, const Element* element)
 {
     return style.display() == INLINE_TABLE
-        || style.display() == INLINE_BLOCK || style.display() == INLINE_BOX || isAtShadowBoundary(e)
-        || style.isFloating() || style.hasOutOfFlowPosition() || isOutermostSVGElement(e);
+        || style.display() == INLINE_BLOCK || style.display() == INLINE_BOX || isAtShadowBoundary(element)
+        || style.isFloating() || style.hasOutOfFlowPosition() || isOutermostSVGElement(element);
 }
 
 // FIXME: This helper is only needed because pseudoStyleForElement passes a null
@@ -143,6 +143,7 @@ static bool hasWillChangeThatCreatesStackingContext(const ComputedStyle& style)
         case CSSPropertyWebkitClipPath:
         case CSSPropertyWebkitBoxReflect:
         case CSSPropertyWebkitFilter:
+        case CSSPropertyBackdropFilter:
         case CSSPropertyZIndex:
         case CSSPropertyPosition:
             return true;
@@ -158,25 +159,25 @@ static bool hasWillChangeThatCreatesStackingContext(const ComputedStyle& style)
     return false;
 }
 
-void StyleAdjuster::adjustComputedStyle(ComputedStyle& style, const ComputedStyle& parentStyle, Element *e, const AuthorStyleInfo& authorStyle)
+void StyleAdjuster::adjustComputedStyle(ComputedStyle& style, const ComputedStyle& parentStyle, Element* element)
 {
     if (style.display() != NONE) {
-        if (e && e->isHTMLElement())
-            adjustStyleForHTMLElement(style, parentStyle, toHTMLElement(*e));
+        if (element && element->isHTMLElement())
+            adjustStyleForHTMLElement(style, parentStyle, toHTMLElement(*element));
 
         // Per the spec, position 'static' and 'relative' in the top layer compute to 'absolute'.
-        if (isInTopLayer(e, style) && (style.position() == StaticPosition || style.position() == RelativePosition))
+        if (isInTopLayer(element, style) && (style.position() == StaticPosition || style.position() == RelativePosition))
             style.setPosition(AbsolutePosition);
 
         // Absolute/fixed positioned elements, floating elements and the document element need block-like outside display.
-        if (style.hasOutOfFlowPosition() || style.isFloating() || (e && e->document().documentElement() == e))
+        if (style.hasOutOfFlowPosition() || style.isFloating() || (element && element->document().documentElement() == element))
             style.setDisplay(equivalentBlockDisplay(style.display(), style.isFloating(), !m_useQuirksModeStyles));
 
         // We don't adjust the first letter style earlier because we may change the display setting in
         // adjustStyeForTagName() above.
         adjustStyleForFirstLetter(style);
 
-        adjustStyleForDisplay(style, parentStyle);
+        adjustStyleForDisplay(style, parentStyle, element ? &element->document() : 0);
     } else {
         adjustStyleForFirstLetter(style);
     }
@@ -188,7 +189,7 @@ void StyleAdjuster::adjustComputedStyle(ComputedStyle& style, const ComputedStyl
     // Auto z-index becomes 0 for the root element and transparent objects. This prevents
     // cases where objects that should be blended as a single unit end up with a non-transparent
     // object wedged in between them. Auto z-index also becomes 0 for objects that specify transforms/masks/reflections.
-    if (style.hasAutoZIndex() && ((e && e->document().documentElement() == e)
+    if (style.hasAutoZIndex() && ((element && element->document().documentElement() == element)
         || style.hasOpacity()
         || style.hasTransformRelatedProperty()
         || style.hasMask()
@@ -198,20 +199,11 @@ void StyleAdjuster::adjustComputedStyle(ComputedStyle& style, const ComputedStyl
         || style.hasBlendMode()
         || style.hasIsolation()
         || style.position() == FixedPosition
-        || isInTopLayer(e, style)
+        || isInTopLayer(element, style)
         || hasWillChangeThatCreatesStackingContext(style)))
         style.setZIndex(0);
 
-    // will-change:transform should result in the same rendering behavior as having a transform,
-    // including the creation of a containing block for fixed position descendants.
-    // SVG elements can skip this because they implicitly have transforms.
-    bool isSVGElement = e && e->isSVGElement();
-    if (!isSVGElement && !style.hasTransform() && (style.willChangeProperties().contains(CSSPropertyAliasWebkitTransform) || style.willChangeProperties().contains(CSSPropertyTransform))) {
-        bool makeIdentity = true;
-        style.setTransform(TransformOperations(makeIdentity));
-    }
-
-    if (doesNotInheritTextDecoration(style, e))
+    if (doesNotInheritTextDecoration(style, element))
         style.clearAppliedTextDecorations();
 
     style.applyTextDecorations();
@@ -225,7 +217,7 @@ void StyleAdjuster::adjustComputedStyle(ComputedStyle& style, const ComputedStyl
 
     // Let the theme also have a crack at adjusting the style.
     if (style.hasAppearance())
-        LayoutTheme::theme().adjustStyle(style, e, authorStyle);
+        LayoutTheme::theme().adjustStyle(style, element);
 
     // If we have first-letter pseudo style, transitions, or animations, do not share this style.
     if (style.hasPseudoStyle(FIRST_LETTER) || style.transitions() || style.animations())
@@ -237,33 +229,34 @@ void StyleAdjuster::adjustComputedStyle(ComputedStyle& style, const ComputedStyl
         || style.hasFilter()))
         style.setTransformStyle3D(TransformStyle3DFlat);
 
+    bool isSVGElement = element && element->isSVGElement();
     if (isSVGElement) {
         // Only the root <svg> element in an SVG document fragment tree honors css position
-        if (!(isSVGSVGElement(*e) && e->parentNode() && !e->parentNode()->isSVGElement()))
+        if (!(isSVGSVGElement(*element) && element->parentNode() && !element->parentNode()->isSVGElement()))
             style.setPosition(ComputedStyle::initialPosition());
 
         // SVG text layout code expects us to be a block-level style element.
-        if ((isSVGForeignObjectElement(*e) || isSVGTextElement(*e)) && style.isDisplayInlineType())
+        if ((isSVGForeignObjectElement(*element) || isSVGTextElement(*element)) && style.isDisplayInlineType())
             style.setDisplay(BLOCK);
 
         // Columns don't apply to svg text elements.
-        if (isSVGTextElement(*e))
+        if (isSVGTextElement(*element))
             style.clearMultiCol();
     }
 
-    if (e && e->hasTagName(htmlTag)) {
-        if (e->document().frame() &&
-            e->document().frame()->deprecatedLocalOwner() &&
-            e->document().frame()->deprecatedLocalOwner()->layoutObject()) {
+    if (element && element->hasTagName(htmlTag)) {
+        if (element->document().frame() &&
+            element->document().frame()->deprecatedLocalOwner() &&
+            element->document().frame()->deprecatedLocalOwner()->layoutObject()) {
             float ownerEffectiveZoom
-                = e->document().frame()->deprecatedLocalOwner()->layoutObject()->style()->effectiveZoom();
+                = element->document().frame()->deprecatedLocalOwner()->layoutObject()->style()->effectiveZoom();
             float childZoom = style.zoom();
             style.setEffectiveZoom(ownerEffectiveZoom * childZoom);
         }
     }
 
-    if (e && e->hasTagName(iframeTag)) {
-        HTMLIFrameElement* iframe = static_cast<HTMLIFrameElement*>(e);
+    if (element && element->hasTagName(iframeTag)) {
+        HTMLIFrameElement* iframe = static_cast<HTMLIFrameElement*>(element);
         if (iframe->contentDocument() && iframe->contentDocument()->body() &&
             iframe->contentDocument()->body()->parentNode() &&
             iframe->contentDocument()->body()->parentNode()->layoutObject()) {
@@ -278,6 +271,27 @@ void StyleAdjuster::adjustComputedStyle(ComputedStyle& style, const ComputedStyl
     }
 
     adjustStyleForAlignment(style, parentStyle);
+
+    if (element) {
+        if ((style.width().type() == Intrinsic)
+            | (style.minWidth().type() == Intrinsic)
+            | (style.maxWidth().type() == Intrinsic)
+            | (style.height().type() == Intrinsic)
+            | (style.minHeight().type() == Intrinsic)
+            | (style.maxHeight().type() == Intrinsic)
+            | (style.flexBasis().type() == Intrinsic)) {
+            UseCounter::countDeprecation(element->document(), UseCounter::LegacyCSSValueIntrinsic);
+        }
+        if ((style.width().type() == MinIntrinsic)
+            | (style.minWidth().type() == MinIntrinsic)
+            | (style.maxWidth().type() == MinIntrinsic)
+            | (style.height().type() == MinIntrinsic)
+            | (style.minHeight().type() == MinIntrinsic)
+            | (style.maxHeight().type() == MinIntrinsic)
+            | (style.flexBasis().type() == MinIntrinsic)) {
+            UseCounter::countDeprecation(element->document(), UseCounter::LegacyCSSValueMinIntrinsic);
+        }
+    }
 }
 
 void StyleAdjuster::adjustStyleForFirstLetter(ComputedStyle& style)
@@ -440,16 +454,6 @@ void StyleAdjuster::adjustStyleForHTMLElement(ComputedStyle& style, const Comput
 
     if (isHTMLPlugInElement(element)) {
         style.setRequiresAcceleratedCompositingForExternalReasons(toHTMLPlugInElement(element).shouldAccelerate());
-
-        // Plugins should get the standard replaced width/height instead of 'auto'.
-        // Replaced layoutObjects get this for free, and fallback content doesn't count.
-        if (toHTMLPlugInElement(element).usePlaceholderContent()) {
-            if (style.width().isAuto())
-                style.setWidth(Length(LayoutReplaced::defaultWidth, Fixed));
-            if (style.height().isAuto())
-                style.setHeight(Length(LayoutReplaced::defaultHeight, Fixed));
-        }
-
         return;
     }
 }
@@ -491,7 +495,7 @@ void StyleAdjuster::adjustOverflow(ComputedStyle& style)
     }
 }
 
-void StyleAdjuster::adjustStyleForDisplay(ComputedStyle& style, const ComputedStyle& parentStyle)
+void StyleAdjuster::adjustStyleForDisplay(ComputedStyle& style, const ComputedStyle& parentStyle, Document* document)
 {
     if (style.display() == BLOCK && !style.isFloating())
         return;
@@ -525,6 +529,13 @@ void StyleAdjuster::adjustStyleForDisplay(ComputedStyle& style, const ComputedSt
     if (parentStyle.isDisplayFlexibleOrGridBox()) {
         style.setFloating(NoFloat);
         style.setDisplay(equivalentBlockDisplay(style.display(), style.isFloating(), !m_useQuirksModeStyles));
+
+        // We want to count vertical percentage paddings/margins on flex items because our current
+        // behavior is different from the spec and we want to gather compatibility data.
+        if (style.paddingBefore().hasPercent() || style.paddingAfter().hasPercent())
+            UseCounter::count(document, UseCounter::FlexboxPercentagePaddingVertical);
+        if (style.marginBefore().hasPercent() || style.marginAfter().hasPercent())
+            UseCounter::count(document, UseCounter::FlexboxPercentageMarginVertical);
     }
 }
 

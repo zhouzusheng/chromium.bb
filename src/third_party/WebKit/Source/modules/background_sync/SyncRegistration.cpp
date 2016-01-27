@@ -27,16 +27,9 @@ SyncRegistration* SyncRegistration::create(const WebSyncRegistration& syncRegist
     return new SyncRegistration(syncRegistration.id, options, serviceWorkerRegistration);
 }
 
-SyncRegistration* SyncRegistration::take(ScriptPromiseResolver*, WebSyncRegistration* syncRegistration, ServiceWorkerRegistration* serviceWorkerRegistration)
+SyncRegistration* SyncRegistration::take(ScriptPromiseResolver*, PassOwnPtr<WebSyncRegistration> registration, ServiceWorkerRegistration* serviceWorkerRegistration)
 {
-    OwnPtr<WebSyncRegistration> registration = adoptPtr(syncRegistration);
-    return create(*syncRegistration, serviceWorkerRegistration);
-}
-
-void SyncRegistration::dispose(WebSyncRegistration* syncRegistration)
-{
-    if (syncRegistration)
-        delete syncRegistration;
+    return create(*registration, serviceWorkerRegistration);
 }
 
 SyncRegistration::SyncRegistration(int64_t id, const SyncRegistrationOptions& options, ServiceWorkerRegistration* serviceWorkerRegistration)
@@ -84,7 +77,7 @@ ScriptPromise SyncRegistration::unregister(ScriptState* scriptState)
     WebSyncProvider* webSyncProvider = Platform::current()->backgroundSyncProvider();
     ASSERT(webSyncProvider);
 
-    webSyncProvider->unregisterBackgroundSync(WebSyncRegistration::PeriodicityOneShot, m_id, m_tag, m_serviceWorkerRegistration->webRegistration(), new SyncUnregistrationCallbacks(resolver, m_serviceWorkerRegistration));
+    webSyncProvider->unregisterBackgroundSync(m_id, m_serviceWorkerRegistration->webRegistration(), new SyncUnregistrationCallbacks(resolver, m_serviceWorkerRegistration));
 
     return promise;
 }

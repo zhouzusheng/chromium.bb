@@ -41,10 +41,10 @@ RenderSurfaceImpl::~RenderSurfaceImpl() {}
 
 gfx::RectF RenderSurfaceImpl::DrawableContentRect() const {
   gfx::RectF drawable_content_rect =
-      MathUtil::MapClippedRect(draw_transform_, content_rect_);
+      MathUtil::MapClippedRect(draw_transform_, gfx::RectF(content_rect_));
   if (owning_layer_->has_replica()) {
-    drawable_content_rect.Union(
-        MathUtil::MapClippedRect(replica_draw_transform_, content_rect_));
+    drawable_content_rect.Union(MathUtil::MapClippedRect(
+        replica_draw_transform_, gfx::RectF(content_rect_)));
   }
 
   return drawable_content_rect;
@@ -75,8 +75,8 @@ bool RenderSurfaceImpl::HasReplica() const {
   return owning_layer_->has_replica();
 }
 
-gfx::Transform RenderSurfaceImpl::ReplicaDrawTransform() const {
-  return replica_draw_transform_;
+const LayerImpl* RenderSurfaceImpl::ReplicaLayer() const {
+  return owning_layer_->replica_layer();
 }
 
 int RenderSurfaceImpl::TransformTreeIndex() const {
@@ -222,9 +222,9 @@ void RenderSurfaceImpl::AppendQuads(RenderPass* render_pass,
     gfx::Vector2dF owning_layer_draw_scale =
         MathUtil::ComputeTransform2dScaleComponents(
             owning_layer_->draw_transform(), 1.f);
-    gfx::SizeF unclipped_mask_target_size =
-        gfx::ScaleSize(owning_layer_->bounds(), owning_layer_draw_scale.x(),
-                       owning_layer_draw_scale.y());
+    gfx::SizeF unclipped_mask_target_size = gfx::ScaleSize(
+        gfx::SizeF(owning_layer_->bounds()), owning_layer_draw_scale.x(),
+        owning_layer_draw_scale.y());
     mask_uv_scale = gfx::Vector2dF(
         content_rect_.width() / unclipped_mask_target_size.width(),
         content_rect_.height() / unclipped_mask_target_size.height());

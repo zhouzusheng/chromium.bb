@@ -48,6 +48,7 @@
 #include "core/frame/EventHandlerRegistry.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
+#include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLPlugInElement.h"
 #include "core/input/EventHandler.h"
@@ -58,8 +59,8 @@
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
-#include "core/paint/DeprecatedPaintLayer.h"
 #include "core/paint/LayoutObjectDrawingRecorder.h"
+#include "core/paint/PaintLayer.h"
 #include "modules/plugins/PluginOcclusionSupport.h"
 #include "platform/HostWindow.h"
 #include "platform/KeyboardCodes.h"
@@ -109,7 +110,7 @@ void WebPluginContainerImpl::layoutIfNeeded()
     m_webPlugin->layoutIfNeeded();
 }
 
-void WebPluginContainerImpl::paint(GraphicsContext* context, const IntRect& rect)
+void WebPluginContainerImpl::paint(GraphicsContext* context, const IntRect& rect) const
 {
     if (!parent())
         return;
@@ -118,10 +119,10 @@ void WebPluginContainerImpl::paint(GraphicsContext* context, const IntRect& rect
     if (!frameRect().intersects(rect))
         return;
 
-    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*context, *m_element->layoutObject(), DisplayItem::Type::WebPlugin))
+    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*context, *m_element->layoutObject(), DisplayItem::Type::WebPlugin, LayoutPoint()))
         return;
 
-    LayoutObjectDrawingRecorder drawingRecorder(*context, *m_element->layoutObject(), DisplayItem::Type::WebPlugin, rect);
+    LayoutObjectDrawingRecorder drawingRecorder(*context, *m_element->layoutObject(), DisplayItem::Type::WebPlugin, rect, LayoutPoint());
     context->save();
 
     ASSERT(parent()->isFrameView());
@@ -244,7 +245,8 @@ void WebPluginContainerImpl::setParentVisible(bool parentVisible)
     if (!isSelfVisible())
         return;  // This widget has explicitely been marked as not visible.
 
-    m_webPlugin->updateVisibility(isVisible());
+    if (m_webPlugin)
+        m_webPlugin->updateVisibility(isVisible());
 }
 
 void WebPluginContainerImpl::setParent(Widget* widget)
@@ -342,10 +344,10 @@ int WebPluginContainerImpl::printBegin(const WebPrintParams& printParams) const
 
 void WebPluginContainerImpl::printPage(int pageNumber, GraphicsContext* gc, const IntRect& printRect)
 {
-    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*gc, *m_element->layoutObject(), DisplayItem::Type::WebPlugin))
+    if (LayoutObjectDrawingRecorder::useCachedDrawingIfPossible(*gc, *m_element->layoutObject(), DisplayItem::Type::WebPlugin, LayoutPoint()))
         return;
 
-    LayoutObjectDrawingRecorder drawingRecorder(*gc, *m_element->layoutObject(), DisplayItem::Type::WebPlugin, printRect);
+    LayoutObjectDrawingRecorder drawingRecorder(*gc, *m_element->layoutObject(), DisplayItem::Type::WebPlugin, printRect, LayoutPoint());
     gc->save();
     WebCanvas* canvas = gc->canvas();
     m_webPlugin->printPage(pageNumber, canvas);
@@ -463,6 +465,9 @@ WebString WebPluginContainerImpl::executeScriptURL(const WebURL& url, bool popup
 {
     LocalFrame* frame = m_element->document().frame();
     if (!frame)
+        return WebString();
+
+    if (!m_element->document().contentSecurityPolicy()->allowJavaScriptURLs(m_element->document().url(), OrdinalNumber()))
         return WebString();
 
     const KURL& kurl = url;
@@ -605,6 +610,15 @@ WebLayer* WebPluginContainerImpl::platformLayer() const
 
 v8::Local<v8::Object> WebPluginContainerImpl::scriptableObject(v8::Isolate* isolate)
 {
+#if ENABLE(OILPAN)
+    // With Oilpan, on plugin element detach dispose() will be called to safely
+    // clear out references, including the pre-emptive destruction of the plugin.
+    //
+    // It clearly has no scriptable object if in such a disposed state.
+    if (!m_webPlugin)
+        return v8::Local<v8::Object>();
+#endif
+
     // The plugin may be destroyed due to re-entrancy when calling
     // v8ScriptableObject below. crbug.com/458776. Hold a reference to the
     // plugin container to prevent this from happening. For Oilpan, 'this'
@@ -710,11 +724,16 @@ void WebPluginContainerImpl::dispose()
     for (size_t i = 0; i < m_pluginLoadObservers.size(); ++i)
         m_pluginLoadObservers[i]->clearPluginContainer();
 
-    m_webPlugin->destroy();
+    if (m_webPlugin) {
+        RELEASE_ASSERT(!m_webPlugin->container() || m_webPlugin->container() == this);
+        m_webPlugin->destroy();
+    }
     m_webPlugin = nullptr;
 
-    if (m_webLayer)
+    if (m_webLayer) {
         GraphicsLayer::unregisterContentsLayer(m_webLayer);
+        m_webLayer = nullptr;
+    }
 
     m_pluginLoadObservers.clear();
     m_element = nullptr;
@@ -951,11 +970,6 @@ void WebPluginContainerImpl::calculateGeometry(IntRect& windowRect, IntRect& cli
     // Convert to the plugin position.
     for (size_t i = 0; i < cutOutRects.size(); i++)
         cutOutRects[i].move(-frameRect().x(), -frameRect().y());
-}
-
-bool WebPluginContainerImpl::pluginShouldPersist() const
-{
-    return m_webPlugin->shouldPersist();
 }
 
 } // namespace blink

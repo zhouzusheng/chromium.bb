@@ -61,7 +61,6 @@ LayerImpl::LayerImpl(LayerTreeImpl* tree_impl,
       double_sided_(true),
       should_flatten_transform_(true),
       should_flatten_transform_from_property_tree_(false),
-      is_clipped_(false),
       layer_property_changed_(false),
       masks_to_bounds_(false),
       contents_opaque_(false),
@@ -85,9 +84,11 @@ LayerImpl::LayerImpl(LayerTreeImpl* tree_impl,
       num_dependents_need_push_properties_(0),
       sorting_context_id_(0),
       current_draw_mode_(DRAW_MODE_NONE),
+      num_layer_or_descendants_with_copy_request_(0),
       frame_timing_requests_dirty_(false),
       visited_(false),
       layer_or_descendant_is_drawn_(false),
+      layer_or_descendant_has_input_handler_(false),
       sorted_for_recursion_(false) {
   DCHECK_GT(layer_id_, 0);
   DCHECK(layer_tree_impl_);
@@ -316,8 +317,8 @@ void LayerImpl::ClearRenderSurfaceLayerList() {
 void LayerImpl::PopulateSharedQuadState(SharedQuadState* state) const {
   state->SetAll(draw_properties_.target_space_transform, bounds(),
                 draw_properties_.visible_layer_rect, draw_properties_.clip_rect,
-                is_clipped_, draw_properties_.opacity, draw_blend_mode_,
-                sorting_context_id_);
+                draw_properties_.is_clipped, draw_properties_.opacity,
+                draw_blend_mode_, sorting_context_id_);
 }
 
 void LayerImpl::PopulateScaledSharedQuadState(SharedQuadState* state,
@@ -325,13 +326,13 @@ void LayerImpl::PopulateScaledSharedQuadState(SharedQuadState* state,
   gfx::Transform scaled_draw_transform =
       draw_properties_.target_space_transform;
   scaled_draw_transform.Scale(SK_MScalar1 / scale, SK_MScalar1 / scale);
-  gfx::Size scaled_bounds = gfx::ToCeiledSize(gfx::ScaleSize(bounds(), scale));
+  gfx::Size scaled_bounds = gfx::ScaleToCeiledSize(bounds(), scale);
   gfx::Rect scaled_visible_layer_rect =
       gfx::ScaleToEnclosingRect(visible_layer_rect(), scale);
   scaled_visible_layer_rect.Intersect(gfx::Rect(scaled_bounds));
 
   state->SetAll(scaled_draw_transform, scaled_bounds, scaled_visible_layer_rect,
-                draw_properties().clip_rect, is_clipped_,
+                draw_properties().clip_rect, draw_properties().is_clipped,
                 draw_properties().opacity, draw_blend_mode_,
                 sorting_context_id_);
 }
@@ -512,7 +513,8 @@ InputHandler::ScrollStatus LayerImpl::TryScroll(
     return InputHandler::SCROLL_ON_MAIN_THREAD;
   }
 
-  if (type == InputHandler::WHEEL && have_wheel_event_handlers() &&
+  if ((type == InputHandler::WHEEL || type == InputHandler::ANIMATED_WHEEL) &&
+      have_wheel_event_handlers() &&
       effective_block_mode & SCROLL_BLOCKS_ON_WHEEL_EVENT) {
     TRACE_EVENT0("cc", "LayerImpl::tryScroll: Failed WheelEventHandlers");
     return InputHandler::SCROLL_ON_MAIN_THREAD;
@@ -570,7 +572,6 @@ void LayerImpl::PushPropertiesTo(LayerImpl* layer) {
   layer->SetShouldFlattenTransform(should_flatten_transform_);
   layer->set_should_flatten_transform_from_property_tree(
       should_flatten_transform_from_property_tree_);
-  layer->set_is_clipped(is_clipped_);
   layer->set_draw_blend_mode(draw_blend_mode_);
   layer->SetUseParentBackfaceVisibility(use_parent_backface_visibility_);
   layer->SetTransformAndInvertibility(transform_, transform_is_invertible_);
@@ -644,6 +645,9 @@ void LayerImpl::PushPropertiesTo(LayerImpl* layer) {
 
   layer->SetStackingOrderChanged(stacking_order_changed_);
   layer->SetDebugInfo(debug_info_);
+  layer->set_num_layer_or_descendant_with_copy_request(
+      num_layer_or_descendants_with_copy_request_);
+  set_num_layer_or_descendant_with_copy_request(0);
 
   if (frame_timing_requests_dirty_) {
     layer->SetFrameTimingRequests(frame_timing_requests_);
@@ -778,8 +782,8 @@ const char* LayerImpl::LayerTypeAsString() const {
 void LayerImpl::ResetAllChangeTrackingForSubtree() {
   layer_property_changed_ = false;
 
-  update_rect_ = gfx::Rect();
-  damage_rect_ = gfx::RectF();
+  update_rect_.SetRect(0, 0, 0, 0);
+  damage_rect_.SetRect(0, 0, 0, 0);
 
   if (render_surface_)
     render_surface_->ResetPropertyChangedFlag();
@@ -844,6 +848,25 @@ void LayerImpl::UpdatePropertyTreeTransformIsAnimated(bool is_animated) {
       return;
     if (node->data.is_animated != is_animated) {
       node->data.is_animated = is_animated;
+      if (is_animated) {
+        float maximum_target_scale = 0.f;
+        node->data.local_maximum_animation_target_scale =
+            MaximumTargetScale(&maximum_target_scale) ? maximum_target_scale
+                                                      : 0.f;
+
+        float animation_start_scale = 0.f;
+        node->data.local_starting_animation_scale =
+            AnimationStartScale(&animation_start_scale) ? animation_start_scale
+                                                        : 0.f;
+
+        node->data.has_only_translation_animations =
+            HasOnlyTranslationTransforms();
+      } else {
+        node->data.local_maximum_animation_target_scale = 0.f;
+        node->data.local_starting_animation_scale = 0.f;
+        node->data.has_only_translation_animations = true;
+      }
+
       transform_tree.set_needs_update(true);
     }
   }
@@ -965,8 +988,8 @@ void LayerImpl::SetBoundsDelta(const gfx::Vector2dF& bounds_delta) {
         layer_tree_impl()->property_trees()->clip_tree.Node(clip_tree_index());
     if (clip_node) {
       DCHECK(id() == clip_node->owner_id);
-      clip_node->data.clip =
-          gfx::RectF(gfx::PointF() + offset_to_transform_parent(), bounds());
+      clip_node->data.clip = gfx::RectF(
+          gfx::PointF() + offset_to_transform_parent(), gfx::SizeF(bounds()));
       layer_tree_impl()->property_trees()->clip_tree.set_needs_update(true);
     }
 
@@ -1358,25 +1381,14 @@ void LayerImpl::SetUpdateRect(const gfx::Rect& update_rect) {
   SetNeedsPushProperties();
 }
 
-void LayerImpl::AddDamageRect(const gfx::RectF& damage_rect) {
-  damage_rect_ = gfx::UnionRects(damage_rect_, damage_rect);
-}
-
-bool LayerImpl::IsExternalScrollActive() const {
-  return layer_tree_impl_->IsExternalScrollActive();
+void LayerImpl::AddDamageRect(const gfx::Rect& damage_rect) {
+  damage_rect_.Union(damage_rect);
 }
 
 void LayerImpl::SetCurrentScrollOffset(const gfx::ScrollOffset& scroll_offset) {
   DCHECK(IsActive());
   if (scroll_offset_->SetCurrent(scroll_offset))
-    DidUpdateScrollOffset(false);
-}
-
-void LayerImpl::SetCurrentScrollOffsetFromDelegate(
-    const gfx::ScrollOffset& scroll_offset) {
-  DCHECK(IsActive());
-  if (scroll_offset_->SetCurrent(scroll_offset))
-    DidUpdateScrollOffset(true);
+    DidUpdateScrollOffset();
 }
 
 void LayerImpl::PushScrollOffsetFromMainThread(
@@ -1446,7 +1458,7 @@ void LayerImpl::PushScrollOffset(const gfx::ScrollOffset* scroll_offset) {
   }
 
   if (changed)
-    DidUpdateScrollOffset(false);
+    DidUpdateScrollOffset();
 }
 
 void LayerImpl::UpdatePropertyTreeScrollOffset() {
@@ -1465,11 +1477,9 @@ void LayerImpl::UpdatePropertyTreeScrollOffset() {
   }
 }
 
-void LayerImpl::DidUpdateScrollOffset(bool is_from_root_delegate) {
+void LayerImpl::DidUpdateScrollOffset() {
   DCHECK(scroll_offset_);
 
-  if (!is_from_root_delegate)
-    layer_tree_impl()->DidUpdateScrollOffset(id());
   NoteLayerPropertyChangedForSubtree();
   ScrollbarParametersDidChange(false);
 
@@ -1479,7 +1489,7 @@ void LayerImpl::DidUpdateScrollOffset(bool is_from_root_delegate) {
   if (layer_tree_impl()->IsActiveTree()) {
     LayerImpl* pending_twin = layer_tree_impl()->FindPendingTreeLayerById(id());
     if (pending_twin)
-      pending_twin->DidUpdateScrollOffset(is_from_root_delegate);
+      pending_twin->DidUpdateScrollOffset();
   }
 }
 
@@ -1522,8 +1532,9 @@ gfx::ScrollOffset LayerImpl::MaxScrollOffset() const {
   }
 
   gfx::SizeF scaled_scroll_bounds =
-      gfx::ToFlooredSize(gfx::ScaleSize(BoundsForScrolling(), scale_factor));
-  scaled_scroll_bounds = gfx::ToFlooredSize(scaled_scroll_bounds);
+      gfx::ScaleSize(BoundsForScrolling(), scale_factor);
+  scaled_scroll_bounds.SetSize(std::floor(scaled_scroll_bounds.width()),
+                               std::floor(scaled_scroll_bounds.height()));
 
   gfx::ScrollOffset max_offset(
       scaled_scroll_bounds.width() - scroll_clip_layer_->bounds().width(),
@@ -1746,8 +1757,9 @@ void LayerImpl::AsValueInto(base::trace_event::TracedValue* state) const {
   MathUtil::AddToTracedValue("transform_origin", transform_origin_, state);
 
   bool clipped;
-  gfx::QuadF layer_quad = MathUtil::MapQuad(
-      screen_space_transform(), gfx::QuadF(gfx::Rect(bounds())), &clipped);
+  gfx::QuadF layer_quad =
+      MathUtil::MapQuad(screen_space_transform(),
+                        gfx::QuadF(gfx::RectF(gfx::Rect(bounds()))), &clipped);
   MathUtil::AddToTracedValue("layer_quad", layer_quad, state);
   if (!touch_event_handler_region_.IsEmpty()) {
     state->BeginArray("touch_event_handler_region");
@@ -1895,7 +1907,7 @@ gfx::Rect LayerImpl::GetScaledEnclosingRectInTargetSpace(float scale) const {
   gfx::Transform scaled_draw_transform =
       draw_properties_.target_space_transform;
   scaled_draw_transform.Scale(SK_MScalar1 / scale, SK_MScalar1 / scale);
-  gfx::Size scaled_bounds = gfx::ToCeiledSize(gfx::ScaleSize(bounds(), scale));
+  gfx::Size scaled_bounds = gfx::ScaleToCeiledSize(bounds(), scale);
   return MathUtil::MapEnclosingClippedRect(scaled_draw_transform,
                                            gfx::Rect(scaled_bounds));
 }

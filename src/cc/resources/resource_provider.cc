@@ -24,6 +24,7 @@
 #include "cc/resources/shared_bitmap_manager.h"
 #include "cc/resources/transferable_resource.h"
 #include "gpu/GLES2/gl2extchromium.h"
+#include "gpu/command_buffer/client/context_support.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "gpu/command_buffer/client/gpu_memory_buffer_manager.h"
 #include "third_party/khronos/GLES2/gl2.h"
@@ -217,8 +218,6 @@ ResourceProvider::Resource::Resource(GLuint texture_id,
       locked_for_write(false),
       lost(false),
       marked_for_deletion(false),
-      pending_set_pixels(false),
-      set_pixels_completion_forced(false),
       allocated(false),
       read_lock_fences_enabled(false),
       has_shared_bitmap_id(false),
@@ -260,8 +259,6 @@ ResourceProvider::Resource::Resource(uint8_t* pixels,
       locked_for_write(false),
       lost(false),
       marked_for_deletion(false),
-      pending_set_pixels(false),
-      set_pixels_completion_forced(false),
       allocated(false),
       read_lock_fences_enabled(false),
       has_shared_bitmap_id(!!bitmap),
@@ -304,8 +301,6 @@ ResourceProvider::Resource::Resource(const SharedBitmapId& bitmap_id,
       locked_for_write(false),
       lost(false),
       marked_for_deletion(false),
-      pending_set_pixels(false),
-      set_pixels_completion_forced(false),
       allocated(false),
       read_lock_fences_enabled(false),
       has_shared_bitmap_id(true),
@@ -340,14 +335,12 @@ scoped_ptr<ResourceProvider> ResourceProvider::Create(
     gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
     BlockingTaskRunner* blocking_main_thread_task_runner,
     int highp_threshold_min,
-    bool use_rgba_4444_texture_format,
     size_t id_allocation_chunk_size,
     const std::vector<unsigned>& use_image_texture_targets) {
   scoped_ptr<ResourceProvider> resource_provider(new ResourceProvider(
       output_surface, shared_bitmap_manager, gpu_memory_buffer_manager,
       blocking_main_thread_task_runner, highp_threshold_min,
-      use_rgba_4444_texture_format, id_allocation_chunk_size,
-      use_image_texture_targets));
+      id_allocation_chunk_size, use_image_texture_targets));
   resource_provider->Initialize();
   return resource_provider;
 }
@@ -545,7 +538,7 @@ void ResourceProvider::DeleteResource(ResourceId id) {
   Resource* resource = &it->second;
   DCHECK(!resource->marked_for_deletion);
   DCHECK_EQ(resource->imported_count, 0);
-  DCHECK(resource->pending_set_pixels || !resource->locked_for_write);
+  DCHECK(!resource->locked_for_write);
 
   if (resource->exported_count > 0 || resource->lock_for_read_count > 0 ||
       !ReadLockFenceHasPassed(resource)) {
@@ -669,7 +662,6 @@ void ResourceProvider::CopyToResource(ResourceId id,
     dest.writePixels(source_info, image, image_stride, 0, 0);
   } else {
     DCHECK(resource->gl_id);
-    DCHECK(!resource->pending_set_pixels);
     DCHECK_EQ(resource->target, static_cast<GLenum>(GL_TEXTURE_2D));
     GLES2Interface* gl = ContextGL();
     DCHECK(gl);
@@ -707,10 +699,8 @@ ResourceProvider::Resource* ResourceProvider::GetResource(ResourceId id) {
 
 const ResourceProvider::Resource* ResourceProvider::LockForRead(ResourceId id) {
   Resource* resource = GetResource(id);
-  DCHECK(!resource->locked_for_write ||
-         resource->set_pixels_completion_forced) <<
-      "locked for write: " << resource->locked_for_write <<
-      " pixels completion forced: " << resource->set_pixels_completion_forced;
+  DCHECK(!resource->locked_for_write) << "locked for write: "
+                                      << resource->locked_for_write;
   DCHECK_EQ(resource->exported_count, 0);
   // Uninitialized! Call SetPixels or LockForWrite first.
   DCHECK(resource->allocated);
@@ -1030,7 +1020,6 @@ ResourceProvider::ResourceProvider(
     gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
     BlockingTaskRunner* blocking_main_thread_task_runner,
     int highp_threshold_min,
-    bool use_rgba_4444_texture_format,
     size_t id_allocation_chunk_size,
     const std::vector<unsigned>& use_image_texture_targets)
     : output_surface_(output_surface),
@@ -1050,7 +1039,6 @@ ResourceProvider::ResourceProvider(
       max_texture_size_(0),
       best_texture_format_(RGBA_8888),
       best_render_buffer_format_(RGBA_8888),
-      use_rgba_4444_texture_format_(use_rgba_4444_texture_format),
       id_allocation_chunk_size_(id_allocation_chunk_size),
       use_sync_query_(false),
       use_image_texture_targets_(use_image_texture_targets),
@@ -1467,106 +1455,6 @@ void ResourceProvider::DeleteAndReturnUnusedResourcesToChild(
   }
 }
 
-void ResourceProvider::AcquirePixelBuffer(ResourceId id) {
-  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
-               "ResourceProvider::AcquirePixelBuffer");
-
-  Resource* resource = GetResource(id);
-  DCHECK(resource->origin == Resource::INTERNAL);
-  DCHECK_EQ(resource->exported_count, 0);
-  DCHECK(!resource->image_id);
-  DCHECK_NE(ETC1, resource->format);
-
-  DCHECK_EQ(RESOURCE_TYPE_GL_TEXTURE, resource->type);
-  GLES2Interface* gl = ContextGL();
-  DCHECK(gl);
-  if (!resource->gl_pixel_buffer_id)
-    resource->gl_pixel_buffer_id = buffer_id_allocator_->NextId();
-  gl->BindBuffer(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM,
-                 resource->gl_pixel_buffer_id);
-  size_t resource_bytes = ResourceUtil::UncheckedSizeInBytesAligned<size_t>(
-      resource->size, resource->format);
-  gl->BufferData(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM, resource_bytes, NULL,
-                 GL_DYNAMIC_DRAW);
-  gl->BindBuffer(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM, 0);
-}
-
-void ResourceProvider::ReleasePixelBuffer(ResourceId id) {
-  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
-               "ResourceProvider::ReleasePixelBuffer");
-
-  Resource* resource = GetResource(id);
-  DCHECK(resource->origin == Resource::INTERNAL);
-  DCHECK_EQ(resource->exported_count, 0);
-  DCHECK(!resource->image_id);
-
-  // The pixel buffer can be released while there is a pending "set pixels"
-  // if completion has been forced. Any shared memory associated with this
-  // pixel buffer will not be freed until the waitAsyncTexImage2DCHROMIUM
-  // command has been processed on the service side. It is also safe to
-  // reuse any query id associated with this resource before they complete
-  // as each new query has a unique submit count.
-  if (resource->pending_set_pixels) {
-    DCHECK(resource->set_pixels_completion_forced);
-    resource->pending_set_pixels = false;
-    resource->locked_for_write = false;
-  }
-
-  DCHECK_EQ(RESOURCE_TYPE_GL_TEXTURE, resource->type);
-  if (!resource->gl_pixel_buffer_id)
-    return;
-  GLES2Interface* gl = ContextGL();
-  DCHECK(gl);
-  gl->BindBuffer(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM,
-                 resource->gl_pixel_buffer_id);
-  gl->BufferData(
-      GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM, 0, NULL, GL_DYNAMIC_DRAW);
-  gl->BindBuffer(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM, 0);
-}
-
-uint8_t* ResourceProvider::MapPixelBuffer(ResourceId id, int* stride) {
-  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
-               "ResourceProvider::MapPixelBuffer");
-
-  Resource* resource = GetResource(id);
-  DCHECK(resource->origin == Resource::INTERNAL);
-  DCHECK_EQ(resource->exported_count, 0);
-  DCHECK(!resource->image_id);
-
-  *stride = 0;
-  DCHECK_EQ(RESOURCE_TYPE_GL_TEXTURE, resource->type);
-  GLES2Interface* gl = ContextGL();
-  DCHECK(gl);
-  DCHECK(resource->gl_pixel_buffer_id);
-  gl->BindBuffer(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM,
-                 resource->gl_pixel_buffer_id);
-  uint8_t* image = static_cast<uint8_t*>(gl->MapBufferCHROMIUM(
-      GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM, GL_WRITE_ONLY));
-  gl->BindBuffer(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM, 0);
-  // Buffer is required to be 4-byte aligned.
-  CHECK(!(reinterpret_cast<intptr_t>(image) & 3));
-  return image;
-}
-
-void ResourceProvider::UnmapPixelBuffer(ResourceId id) {
-  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
-               "ResourceProvider::UnmapPixelBuffer");
-
-  Resource* resource = GetResource(id);
-  DCHECK(resource->origin == Resource::INTERNAL);
-  DCHECK_EQ(resource->exported_count, 0);
-  DCHECK(!resource->image_id);
-
-  DCHECK_EQ(RESOURCE_TYPE_GL_TEXTURE, resource->type);
-  GLES2Interface* gl = ContextGL();
-  DCHECK(gl);
-  DCHECK(resource->gl_pixel_buffer_id);
-  gl->BindBuffer(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM,
-                 resource->gl_pixel_buffer_id);
-  gl->UnmapBufferCHROMIUM(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM);
-  gl->BindBuffer(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM, 0);
-}
-
 GLenum ResourceProvider::BindForSampling(ResourceId resource_id,
                                          GLenum unit,
                                          GLenum filter) {
@@ -1576,7 +1464,7 @@ GLenum ResourceProvider::BindForSampling(ResourceId resource_id,
   DCHECK(it != resources_.end());
   Resource* resource = &it->second;
   DCHECK(resource->lock_for_read_count);
-  DCHECK(!resource->locked_for_write || resource->set_pixels_completion_forced);
+  DCHECK(!resource->locked_for_write);
 
   ScopedSetActiveTexture scoped_active_tex(gl, unit);
   GLenum target = resource->target;
@@ -1591,115 +1479,6 @@ GLenum ResourceProvider::BindForSampling(ResourceId resource_id,
     BindImageForSampling(resource);
 
   return target;
-}
-
-void ResourceProvider::BeginSetPixels(ResourceId id) {
-  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
-               "ResourceProvider::BeginSetPixels");
-
-  Resource* resource = GetResource(id);
-  DCHECK(!resource->pending_set_pixels);
-
-  LazyCreate(resource);
-  DCHECK(resource->origin == Resource::INTERNAL);
-  DCHECK(resource->gl_id || resource->allocated);
-  DCHECK(ReadLockFenceHasPassed(resource));
-  DCHECK(!resource->image_id);
-
-  bool allocate = !resource->allocated;
-  resource->allocated = true;
-  LockForWrite(id);
-
-  DCHECK_EQ(RESOURCE_TYPE_GL_TEXTURE, resource->type);
-  DCHECK(resource->gl_id);
-  GLES2Interface* gl = ContextGL();
-  DCHECK(gl);
-  DCHECK(resource->gl_pixel_buffer_id);
-  DCHECK_EQ(resource->target, static_cast<GLenum>(GL_TEXTURE_2D));
-  gl->BindTexture(GL_TEXTURE_2D, resource->gl_id);
-  gl->BindBuffer(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM,
-                 resource->gl_pixel_buffer_id);
-  if (!resource->gl_upload_query_id)
-    gl->GenQueriesEXT(1, &resource->gl_upload_query_id);
-  gl->BeginQueryEXT(GL_ASYNC_PIXEL_UNPACK_COMPLETED_CHROMIUM,
-                    resource->gl_upload_query_id);
-  if (allocate) {
-    gl->AsyncTexImage2DCHROMIUM(GL_TEXTURE_2D,
-                                0, /* level */
-                                GLInternalFormat(resource->format),
-                                resource->size.width(),
-                                resource->size.height(),
-                                0, /* border */
-                                GLDataFormat(resource->format),
-                                GLDataType(resource->format),
-                                NULL);
-  } else {
-    gl->AsyncTexSubImage2DCHROMIUM(GL_TEXTURE_2D,
-                                   0, /* level */
-                                   0, /* x */
-                                   0, /* y */
-                                   resource->size.width(),
-                                   resource->size.height(),
-                                   GLDataFormat(resource->format),
-                                   GLDataType(resource->format),
-                                   NULL);
-  }
-  gl->EndQueryEXT(GL_ASYNC_PIXEL_UNPACK_COMPLETED_CHROMIUM);
-  gl->BindBuffer(GL_PIXEL_UNPACK_TRANSFER_BUFFER_CHROMIUM, 0);
-
-  resource->pending_set_pixels = true;
-  resource->set_pixels_completion_forced = false;
-}
-
-void ResourceProvider::ForceSetPixelsToComplete(ResourceId id) {
-  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
-               "ResourceProvider::ForceSetPixelsToComplete");
-
-  Resource* resource = GetResource(id);
-
-  DCHECK(resource->locked_for_write);
-  DCHECK(resource->pending_set_pixels);
-  DCHECK(!resource->set_pixels_completion_forced);
-
-  if (resource->gl_id) {
-    GLES2Interface* gl = ContextGL();
-    gl->BindTexture(GL_TEXTURE_2D, resource->gl_id);
-    gl->WaitAsyncTexImage2DCHROMIUM(GL_TEXTURE_2D);
-    gl->BindTexture(GL_TEXTURE_2D, 0);
-  }
-
-  resource->set_pixels_completion_forced = true;
-}
-
-bool ResourceProvider::DidSetPixelsComplete(ResourceId id) {
-  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
-               "ResourceProvider::DidSetPixelsComplete");
-
-  Resource* resource = GetResource(id);
-
-  DCHECK(resource->locked_for_write);
-  DCHECK(resource->pending_set_pixels);
-
-  if (resource->gl_id) {
-    GLES2Interface* gl = ContextGL();
-    DCHECK(gl);
-    DCHECK(resource->gl_upload_query_id);
-    GLuint complete = 1;
-    gl->GetQueryObjectuivEXT(
-        resource->gl_upload_query_id, GL_QUERY_RESULT_AVAILABLE_EXT, &complete);
-    if (!complete)
-      return false;
-  }
-
-  resource->pending_set_pixels = false;
-  UnlockForWrite(resource);
-
-  // Async set pixels commands are not necessarily processed in-sequence with
-  // drawing commands. Read lock fences are required to ensure that async
-  // commands don't access the resource while used for drawing.
-  resource->read_lock_fences_enabled = true;
-
-  return true;
 }
 
 void ResourceProvider::CreateForTesting(ResourceId id) {
@@ -1848,9 +1627,9 @@ bool ResourceProvider::OnMemoryDump(
 
     // Resource IDs are not process-unique, so log with the ResourceProvider's
     // unique id.
-    std::string dump_name = base::StringPrintf(
-        "cc/resource_memory/resource_provider_%d/resource_%d", tracing_id_,
-        resource_entry.first);
+    std::string dump_name =
+        base::StringPrintf("cc/resource_memory/provider_%d/resource_%d",
+                           tracing_id_, resource_entry.first);
     base::trace_event::MemoryAllocatorDump* dump =
         pmd->CreateAllocatorDump(dump_name);
 
@@ -1870,8 +1649,11 @@ bool ResourceProvider::OnMemoryDump(
     } else if (resource.shared_bitmap) {
       guid = GetSharedBitmapGUIDForTracing(resource.shared_bitmap->id());
     } else if (resource.gl_id && resource.allocated) {
-      guid =
-          gfx::GetGLTextureGUIDForTracing(tracing_process_id, resource.gl_id);
+      guid = gfx::GetGLTextureClientGUIDForTracing(
+          output_surface_->context_provider()
+              ->ContextSupport()
+              ->ShareGroupTracingGUID(),
+          resource.gl_id);
     }
 
     if (!guid.empty()) {

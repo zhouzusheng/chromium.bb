@@ -33,13 +33,8 @@ public:
                                        bool localCoordsWillBeRead,
                                        bool coverageWillBeIgnored,
                                        uint8_t coverage) {
-        return SkNEW_ARGS(DefaultGeoProc, (gpTypeFlags,
-                                           color,
-                                           viewMatrix,
-                                           localMatrix,
-                                           coverage,
-                                           localCoordsWillBeRead,
-                                           coverageWillBeIgnored));
+        return new DefaultGeoProc(gpTypeFlags, color, viewMatrix, localMatrix, coverage,
+                                  localCoordsWillBeRead, coverageWillBeIgnored);
     }
 
     const char* name() const override { return "DefaultGeometryProcessor"; }
@@ -60,7 +55,7 @@ public:
 
     class GLProcessor : public GrGLGeometryProcessor {
     public:
-        GLProcessor(const GrGeometryProcessor& gp, const GrBatchTracker&)
+        GLProcessor()
             : fViewMatrix(SkMatrix::InvalidMatrix()), fColor(GrColor_ILLEGAL), fCoverage(0xff) {}
 
         void onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) override {
@@ -120,7 +115,6 @@ public:
         }
 
         static inline void GenKey(const GrGeometryProcessor& gp,
-                                  const GrBatchTracker& bt,
                                   const GrGLSLCaps&,
                                   GrProcessorKeyBuilder* b) {
             const DefaultGeoProc& def = gp.cast<DefaultGeoProc>();
@@ -136,9 +130,7 @@ public:
             b->add32(key);
         }
 
-        virtual void setData(const GrGLProgramDataManager& pdman,
-                             const GrPrimitiveProcessor& gp,
-                             const GrBatchTracker& bt) override {
+        void setData(const GrGLProgramDataManager& pdman, const GrPrimitiveProcessor& gp) override {
             const DefaultGeoProc& dgp = gp.cast<DefaultGeoProc>();
 
             if (!dgp.viewMatrix().isIdentity() && !fViewMatrix.cheapEqualTo(dgp.viewMatrix())) {
@@ -180,15 +172,12 @@ public:
         typedef GrGLGeometryProcessor INHERITED;
     };
 
-    virtual void getGLProcessorKey(const GrBatchTracker& bt,
-                                   const GrGLSLCaps& caps,
-                                   GrProcessorKeyBuilder* b) const override {
-        GLProcessor::GenKey(*this, bt, caps, b);
+    void getGLProcessorKey(const GrGLSLCaps& caps, GrProcessorKeyBuilder* b) const override {
+        GLProcessor::GenKey(*this, caps, b);
     }
 
-    virtual GrGLPrimitiveProcessor* createGLInstance(const GrBatchTracker& bt,
-                                                     const GrGLSLCaps&) const override {
-        return SkNEW_ARGS(GLProcessor, (*this, bt));
+    GrGLPrimitiveProcessor* createGLInstance(const GrGLSLCaps&) const override {
+        return new GLProcessor();
     }
 
 private:
@@ -199,10 +188,10 @@ private:
                    uint8_t coverage,
                    bool localCoordsWillBeRead,
                    bool coverageWillBeIgnored)
-        : fInPosition(NULL)
-        , fInColor(NULL)
-        , fInLocalCoords(NULL)
-        , fInCoverage(NULL)
+        : fInPosition(nullptr)
+        , fInColor(nullptr)
+        , fInLocalCoords(nullptr)
+        , fInCoverage(nullptr)
         , fColor(color)
         , fViewMatrix(viewMatrix)
         , fLocalMatrix(localMatrix)
@@ -256,7 +245,7 @@ private:
 
 GR_DEFINE_GEOMETRY_PROCESSOR_TEST(DefaultGeoProc);
 
-GrGeometryProcessor* DefaultGeoProc::TestCreate(GrProcessorTestData* d) {
+const GrGeometryProcessor* DefaultGeoProc::TestCreate(GrProcessorTestData* d) {
     uint32_t flags = 0;
     if (d->fRandom->nextBool()) {
         flags |= kColor_GPFlag;
@@ -315,7 +304,7 @@ const GrGeometryProcessor* GrDefaultGeoProcFactory::CreateForDeviceSpace(
         SkASSERT(LocalCoords::kUsePosition_Type == localCoords.fType);
         if (!viewMatrix.isIdentity() && !viewMatrix.invert(&invert)) {
             SkDebugf("Could not invert\n");
-            return NULL;
+            return nullptr;
         }
 
         if (localCoords.hasLocalMatrix()) {

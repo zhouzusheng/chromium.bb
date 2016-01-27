@@ -21,13 +21,13 @@ SkDrawableList::~SkDrawableList() {
 SkBigPicture::SnapshotArray* SkDrawableList::newDrawableSnapshot() {
     const int count = fArray.count();
     if (0 == count) {
-        return NULL;
+        return nullptr;
     }
     SkAutoTMalloc<const SkPicture*> pics(count);
     for (int i = 0; i < count; ++i) {
         pics[i] = fArray[i]->newPictureSnapshot();
     }
-    return SkNEW_ARGS(SkBigPicture::SnapshotArray, (pics.detach(), count));
+    return new SkBigPicture::SnapshotArray(pics.detach(), count);
 }
 
 void SkDrawableList::append(SkDrawable* drawable) {
@@ -60,15 +60,17 @@ void SkRecorder::reset(SkRecord* record, const SkRect& bounds,
 }
 
 void SkRecorder::forgetRecord() {
-    fDrawableList.reset(NULL);
+    fDrawableList.reset(nullptr);
     fApproxBytesUsedBySubPictures = 0;
-    fRecord = NULL;
+    fRecord = nullptr;
 }
 
 // To make appending to fRecord a little less verbose.
-#define APPEND(T, ...)                                    \
-        if (fMiniRecorder) { this->flushMiniRecorder(); } \
-        SkNEW_PLACEMENT_ARGS(fRecord->append<SkRecords::T>(), SkRecords::T, (__VA_ARGS__))
+#define APPEND(T, ...)             \
+    if (fMiniRecorder) {           \
+        this->flushMiniRecorder(); \
+    }                              \
+    new (fRecord->append<SkRecords::T>()) SkRecords::T{__VA_ARGS__}
 
 #define TRY_MINIRECORDER(method, ...)                       \
     if (fMiniRecorder && fMiniRecorder->method(__VA_ARGS__)) { return; }
@@ -80,22 +82,22 @@ void SkRecorder::forgetRecord() {
 // (For most types we just pass by value and let copy constructors do their thing.)
 template <typename T>
 T* SkRecorder::copy(const T* src) {
-    if (NULL == src) {
-        return NULL;
+    if (nullptr == src) {
+        return nullptr;
     }
-    return SkNEW_PLACEMENT_ARGS(fRecord->alloc<T>(), T, (*src));
+    return new (fRecord->alloc<T>()) T(*src);
 }
 
 // This copy() is for arrays.
 // It will work with POD or non-POD, though currently we only use it for POD.
 template <typename T>
 T* SkRecorder::copy(const T src[], size_t count) {
-    if (NULL == src) {
-        return NULL;
+    if (nullptr == src) {
+        return nullptr;
     }
     T* dst = fRecord->alloc<T>(count);
     for (size_t i = 0; i < count; i++) {
-        SkNEW_PLACEMENT_ARGS(dst + i, T, (src[i]));
+        new (dst + i) T(src[i]);
     }
     return dst;
 }
@@ -105,8 +107,8 @@ T* SkRecorder::copy(const T src[], size_t count) {
 // but I found no corresponding speedup for other arrays.
 template <>
 char* SkRecorder::copy(const char src[], size_t count) {
-    if (NULL == src) {
-        return NULL;
+    if (nullptr == src) {
+        return nullptr;
     }
     char* dst = fRecord->alloc<char>(count);
     memcpy(dst, src, count);
@@ -157,7 +159,7 @@ void SkRecorder::onDrawDRRect(const SkRRect& outer, const SkRRect& inner, const 
 
 void SkRecorder::onDrawDrawable(SkDrawable* drawable, const SkMatrix* matrix) {
     if (!fDrawableList) {
-        fDrawableList.reset(SkNEW(SkDrawableList));
+        fDrawableList.reset(new SkDrawableList);
     }
     fDrawableList->append(drawable);
     APPEND(DrawDrawable, this->copy(matrix), drawable->getBounds(), fDrawableList->count() - 1);
@@ -300,8 +302,8 @@ void SkRecorder::onDrawVertices(VertexMode vmode,
                          vmode,
                          vertexCount,
                          this->copy(vertices, vertexCount),
-                         texs ? this->copy(texs, vertexCount) : NULL,
-                         colors ? this->copy(colors, vertexCount) : NULL,
+                         texs ? this->copy(texs, vertexCount) : nullptr,
+                         colors ? this->copy(colors, vertexCount) : nullptr,
                          xmode,
                          this->copy(indices, indexCount),
                          indexCount);
@@ -310,9 +312,9 @@ void SkRecorder::onDrawVertices(VertexMode vmode,
 void SkRecorder::onDrawPatch(const SkPoint cubics[12], const SkColor colors[4],
                              const SkPoint texCoords[4], SkXfermode* xmode, const SkPaint& paint) {
     APPEND(DrawPatch, paint,
-           cubics ? this->copy(cubics, SkPatchUtils::kNumCtrlPts) : NULL,
-           colors ? this->copy(colors, SkPatchUtils::kNumCorners) : NULL,
-           texCoords ? this->copy(texCoords, SkPatchUtils::kNumCorners) : NULL,
+           cubics ? this->copy(cubics, SkPatchUtils::kNumCtrlPts) : nullptr,
+           colors ? this->copy(colors, SkPatchUtils::kNumCorners) : nullptr,
+           texCoords ? this->copy(texCoords, SkPatchUtils::kNumCorners) : nullptr,
            xmode);
 }
 

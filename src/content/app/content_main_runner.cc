@@ -28,7 +28,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/trace_event/trace_event.h"
-#include "components/tracing/startup_tracing.h"
+#include "components/tracing/trace_config_file.h"
 #include "components/tracing/tracing_switches.h"
 #include "content/browser/browser_main.h"
 #include "content/common/set_process_title.h"
@@ -46,7 +46,6 @@
 #include "content/public/common/sandbox_init.h"
 #include "content/renderer/in_process_renderer_thread.h"
 #include "content/utility/in_process_utility_thread.h"
-#include "crypto/nss_util.h"
 #include "ipc/ipc_descriptors.h"
 #include "ipc/ipc_switches.h"
 #include "media/base/media.h"
@@ -60,10 +59,6 @@
 
 #if defined(USE_TCMALLOC)
 #include "third_party/tcmalloc/chromium/src/gperftools/malloc_extension.h"
-#if defined(TYPE_PROFILING)
-#include "base/allocator/type_profiler.h"
-#include "base/allocator/type_profiler_tcmalloc.h"
-#endif
 #endif
 
 #if !defined(OS_IOS)
@@ -111,6 +106,10 @@
 #endif
 
 #endif  // OS_POSIX
+
+#if defined(USE_NSS_CERTS)
+#include "crypto/nss_util.h"
+#endif
 
 #if !defined(OS_MACOSX) && defined(USE_TCMALLOC)
 extern "C" {
@@ -476,13 +475,6 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     // implement this EnableTerminationOnOutOfMemory() function.  Whateverz.
     // This works for now.
 #if !defined(OS_MACOSX) && defined(USE_TCMALLOC)
-
-#if defined(TYPE_PROFILING)
-    base::type_profiler::InterceptFunctions::SetFunctions(
-        base::type_profiler::NewInterceptForTCMalloc,
-        base::type_profiler::DeleteInterceptForTCMalloc);
-#endif
-
     // For tcmalloc, we need to tell it to behave like new.
     tc_set_new_mode(1);
 
@@ -643,9 +635,11 @@ class ContentMainRunnerImpl : public ContentMainRunner {
           base::trace_event::TraceLog::RECORDING_MODE);
     } else if (process_type != switches::kZygoteProcess &&
                process_type != switches::kRendererProcess) {
-      // There is no need to schedule stopping tracing in this case. Telemetry
-      // will stop tracing on demand later.
-      tracing::EnableStartupTracingIfConfigFileExists();
+      if (tracing::TraceConfigFile::GetInstance()->IsEnabled()) {
+        base::trace_event::TraceLog::GetInstance()->SetEnabled(
+            tracing::TraceConfigFile::GetInstance()->GetTraceConfig(),
+            base::trace_event::TraceLog::RECORDING_MODE);
+      }
     }
 
 #if defined(OS_WIN)

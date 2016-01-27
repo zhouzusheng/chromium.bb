@@ -89,6 +89,8 @@ public:
 
     void didOverscroll(const FloatSize&, const FloatSize&, const FloatPoint&, const FloatSize&) override {}
 
+    bool hadFormInteraction() const override { return false; }
+
     void setToolbarsVisible(bool) override {}
     bool toolbarsVisible() override { return false; }
 
@@ -164,9 +166,10 @@ public:
 };
 
 class CORE_EXPORT EmptyFrameLoaderClient : public FrameLoaderClient {
-    WTF_MAKE_NONCOPYABLE(EmptyFrameLoaderClient); WTF_MAKE_FAST_ALLOCATED(EmptyFrameLoaderClient);
+    WTF_MAKE_NONCOPYABLE(EmptyFrameLoaderClient);
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(EmptyFrameLoaderClient);
 public:
-    EmptyFrameLoaderClient() {}
+    static PassOwnPtrWillBeRawPtr<EmptyFrameLoaderClient> create() { return adoptPtrWillBeNoop(new EmptyFrameLoaderClient); }
     ~EmptyFrameLoaderClient() override {}
 
     bool hasWebView() const override { return true; } // mainly for assertions
@@ -201,10 +204,10 @@ public:
     void dispatchDidFailLoad(const ResourceError&, HistoryCommitType) override {}
     void dispatchDidFinishDocumentLoad(bool) override {}
     void dispatchDidFinishLoad() override {}
-    void dispatchDidFirstVisuallyNonEmptyLayout() override {}
     void dispatchDidChangeThemeColor() override {}
 
     NavigationPolicy decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationPolicy) override;
+    bool hasPendingNavigation() override;
 
     void dispatchWillSendSubmitEvent(HTMLFormElement*) override;
     void dispatchWillSubmitForm(HTMLFormElement*) override;
@@ -230,10 +233,8 @@ public:
     void didDispatchPingLoader(const KURL&) override {}
     void selectorMatchChanged(const Vector<String>&, const Vector<String>&) override {}
     PassRefPtrWillBeRawPtr<LocalFrame> createFrame(const FrameLoadRequest&, const AtomicString&, HTMLFrameOwnerElement*) override;
-    PassOwnPtrWillBeRawPtr<PluginPlaceholder> createPluginPlaceholder(Document&, const KURL&, const Vector<String>& paramNames, const Vector<String>& paramValues, const String& mimeType, bool loadManually) override;
     PassRefPtrWillBeRawPtr<Widget> createPlugin(HTMLPlugInElement*, const KURL&, const Vector<String>&, const Vector<String>&, const String&, bool, DetachedPluginPolicy) override;
     bool canCreatePluginWithoutRenderer(const String& mimeType) const override { return false; }
-    PassRefPtrWillBeRawPtr<Widget> createJavaAppletWidget(HTMLAppletElement*, const KURL&, const Vector<String>&, const Vector<String>&) override;
     PassOwnPtr<WebMediaPlayer> createWebMediaPlayer(HTMLMediaElement&, const WebURL&, WebMediaPlayerClient*) override;
 
     ObjectContentType objectContentType(const KURL&, const String&, bool) override { return ObjectContentType(); }
@@ -256,9 +257,13 @@ public:
     bool isControlledByServiceWorker(DocumentLoader&) override { return false; }
     int64_t serviceWorkerID(DocumentLoader&) override { return -1; }
     PassOwnPtr<WebApplicationCacheHost> createApplicationCacheHost(WebApplicationCacheHostClient*) override;
+
+protected:
+    EmptyFrameLoaderClient() {}
 };
 
 class CORE_EXPORT EmptyTextCheckerClient : public TextCheckerClient {
+    DISALLOW_ALLOCATION();
 public:
     ~EmptyTextCheckerClient() { }
 

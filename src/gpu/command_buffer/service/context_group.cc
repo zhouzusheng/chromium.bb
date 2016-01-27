@@ -36,8 +36,7 @@ ContextGroup::ContextGroup(
     const scoped_refptr<SubscriptionRefSet>& subscription_ref_set,
     const scoped_refptr<ValueStateMap>& pending_valuebuffer_state,
     bool bind_generates_resource)
-    : context_type_(CONTEXT_TYPE_UNDEFINED),
-      mailbox_manager_(mailbox_manager),
+    : mailbox_manager_(mailbox_manager),
       memory_tracker_(memory_tracker),
       shader_translator_cache_(shader_translator_cache),
 #if defined(OS_MACOSX)
@@ -79,9 +78,7 @@ ContextGroup::ContextGroup(
       pending_valuebuffer_state_ = new ValueStateMap();
     if (!feature_info.get())
       feature_info_ = new FeatureInfo;
-    TransferBufferManager* manager = new TransferBufferManager();
-    transfer_buffer_manager_ = manager;
-    manager->Initialize();
+    transfer_buffer_manager_ = new TransferBufferManager(memory_tracker_.get());
   }
 }
 
@@ -91,49 +88,27 @@ static void GetIntegerv(GLenum pname, uint32* var) {
   *var = value;
 }
 
-// static
-ContextGroup::ContextType ContextGroup::GetContextType(
-    unsigned webgl_version) {
-  switch (webgl_version) {
-    case 0:
-      return CONTEXT_TYPE_OTHER;
-    case 1:
-      return CONTEXT_TYPE_WEBGL1;
-    case 2:
-      return CONTEXT_TYPE_WEBGL2;
-    default:
-      return CONTEXT_TYPE_UNDEFINED;
-  }
-}
-
-bool ContextGroup::Initialize(
-    GLES2Decoder* decoder,
-    ContextGroup::ContextType context_type,
-    const DisallowedFeatures& disallowed_features) {
-  if (context_type == CONTEXT_TYPE_UNDEFINED) {
-    LOG(ERROR) << "ContextGroup::Initialize failed because of unknown "
-               << "context type.";
-    return false;
-  }
-  if (context_type_ == CONTEXT_TYPE_UNDEFINED) {
-    context_type_ = context_type;
-  } else if (context_type_ != context_type) {
-    LOG(ERROR) << "ContextGroup::Initialize failed because the type of "
-               << "the context does not fit with the group.";
-    return false;
-  }
-
-  // If we've already initialized the group just add the context.
+bool ContextGroup::Initialize(GLES2Decoder* decoder,
+                              ContextType context_type,
+                              const DisallowedFeatures& disallowed_features) {
   if (HaveContexts()) {
+    if (context_type != feature_info_->context_type()) {
+      LOG(ERROR) << "ContextGroup::Initialize failed because the type of "
+                 << "the context does not fit with the group.";
+      return false;
+    }
+    // If we've already initialized the group just add the context.
     decoders_.push_back(base::AsWeakPtr<GLES2Decoder>(decoder));
     return true;
   }
 
-  if (!feature_info_->Initialize(disallowed_features)) {
+  if (!feature_info_->Initialize(context_type, disallowed_features)) {
     LOG(ERROR) << "ContextGroup::Initialize failed because FeatureInfo "
                << "initialization failed.";
     return false;
   }
+
+  transfer_buffer_manager_->Initialize();
 
   const GLint kMinRenderbufferSize = 512;  // GL says 1 pixel!
   GLint max_renderbuffer_size = 0;
@@ -167,9 +142,9 @@ bool ContextGroup::Initialize(
 
   buffer_manager_.reset(
       new BufferManager(memory_tracker_.get(), feature_info_.get()));
-  framebuffer_manager_.reset(
-      new FramebufferManager(max_draw_buffers_, max_color_attachments_,
-                             context_type, framebuffer_completeness_cache_));
+  framebuffer_manager_.reset(new FramebufferManager(
+      max_draw_buffers_, max_color_attachments_, feature_info_->context_type(),
+      framebuffer_completeness_cache_));
   renderbuffer_manager_.reset(new RenderbufferManager(
       memory_tracker_.get(), max_renderbuffer_size, max_samples,
       feature_info_.get()));

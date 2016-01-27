@@ -49,10 +49,62 @@ typedef Vector<WordMeasurement, 64> WordMeasurements;
 
 enum ContainingBlockState { NewContainingBlock, SameContainingBlock };
 
-typedef WTF::HashMap<LayoutBlock*, OwnPtr<ListHashSet<LayoutInline*>>> ContinuationOutlineTableMap;
-
-ContinuationOutlineTableMap* continuationOutlineTable();
-
+// LayoutBlock is the class that is used by any LayoutObject
+// that is a containing block.
+// http://www.w3.org/TR/CSS2/visuren.html#containing-block
+// See also LayoutObject::containingBlock() that is the function
+// used to get the containing block of a LayoutObject.
+//
+// CSS is inconsistent and allows inline elements (LayoutInline) to be
+// containing blocks, even though they are not blocks. Our
+// implementation is as confused with inlines. See e.g.
+// LayoutObject::containingBlock() vs LayoutObject::container().
+//
+// Containing blocks are a central concept for layout, in
+// particular to the layout of out-of-flow positioned
+// elements. They are used to determine the sizing as well
+// as the positioning of the LayoutObjects.
+//
+// LayoutBlock is the class that handles out-of-flow positioned elements in
+// Blink, in particular for layout (see layoutPositionedObjects()). That's why
+// LayoutBlock keeps track of them through |gPositionedDescendantsMap| (see
+// LayoutBlock.cpp).
+// Note that this is a design decision made in Blink that doesn't reflect CSS:
+// CSS allows relatively positioned inlines (LayoutInline) to be containing
+// blocks, but they don't have the logic to handle out-of-flow positioned
+// objects. This induces some complexity around choosing an enclosing
+// LayoutBlock (for inserting out-of-flow objects during layout) vs the CSS
+// containing block (for sizing, invalidation).
+//
+//
+// ***** WHO LAYS OUT OUT-OF-FLOW POSITIONED OBJECTS? *****
+// A positioned object gets inserted into an enclosing LayoutBlock's positioned
+// map. This is determined by LayoutObject::containingBlock().
+//
+//
+// ***** HANDLING OUT-OF-FLOW POSITIONED OBJECTS *****
+// Care should be taken to handle out-of-flow positioned objects during
+// certain tree walks (e.g. layout()). The rule is that anything that
+// cares about containing blocks should skip the out-of-flow elements
+// in the normal tree walk and do an optional follow-up pass for them
+// using LayoutBlock::positionedObjects().
+// Not doing so will result in passing the wrong containing
+// block as tree walks will always pass the parent as the
+// containing block.
+//
+// Sample code of how to handle positioned objects in LayoutBlock:
+//
+// for (LayoutObject* child = firstChild(); child; child = child->nextSibling()) {
+//     if (child->isOutOfFlowPositioned())
+//         continue;
+//
+//     // Handle normal flow children.
+//     ...
+// }
+// for (LayoutBox* positionedObject : positionedObjects()) {
+//     // Handle out-of-flow positioned objects.
+//     ...
+// }
 class CORE_EXPORT LayoutBlock : public LayoutBox {
 public:
     friend class LineLayoutState;
@@ -164,8 +216,6 @@ public:
     int heightForLineCount(int);
     void clearTruncation();
 
-    void addContinuationWithOutline(LayoutInline*);
-
     LayoutBoxModelObject* virtualContinuation() const final { return continuation(); }
     bool isAnonymousBlockContinuation() const { return continuation() && isAnonymousBlock(); }
     LayoutInline* inlineElementContinuation() const;
@@ -206,12 +256,15 @@ public:
     LayoutUnit startOffsetForContent() const { return style()->isLeftToRightDirection() ? logicalLeftOffsetForContent() : logicalWidth() - logicalRightOffsetForContent(); }
     LayoutUnit endOffsetForContent() const { return !style()->isLeftToRightDirection() ? logicalLeftOffsetForContent() : logicalWidth() - logicalRightOffsetForContent(); }
 
+    bool needsRecalcLogicalWidthAfterLayoutChildren() const { return m_needsRecalcLogicalWidthAfterLayoutChildren; }
+    void setNeedsRecalcLogicalWidthAfterLayoutChildren() { m_needsRecalcLogicalWidthAfterLayoutChildren = true; }
+    void clearNeedsRecalcLogicalWidthAfterLayoutChildren() { m_needsRecalcLogicalWidthAfterLayoutChildren = false; }
+
     virtual LayoutUnit logicalLeftSelectionOffset(const LayoutBlock* rootBlock, LayoutUnit position) const;
     virtual LayoutUnit logicalRightSelectionOffset(const LayoutBlock* rootBlock, LayoutUnit position) const;
 
 #if ENABLE(ASSERT)
     void checkPositionedObjectsNeedLayout();
-    bool paintsContinuationOutline(LayoutInline* flow);
 #endif
 #ifndef NDEBUG
     void showLineTreeAndMark(const InlineBox* = nullptr, const char* = nullptr, const InlineBox* = nullptr, const char* = nullptr, const LayoutObject* = nullptr) const;
@@ -241,14 +294,14 @@ protected:
 
     int beforeMarginInLineDirection(LineDirectionMode) const;
 
-    void paint(const PaintInfo&, const LayoutPoint&) override;
+    void paint(const PaintInfo&, const LayoutPoint&) const override;
 public:
-    virtual void paintObject(const PaintInfo&, const LayoutPoint&);
-    virtual void paintChildren(const PaintInfo&, const LayoutPoint&);
+    virtual void paintObject(const PaintInfo&, const LayoutPoint&) const;
+    virtual void paintChildren(const PaintInfo&, const LayoutPoint&) const;
 
     // FIXME-BLOCKFLOW: Remove virtualizaion when all callers have moved to LayoutBlockFlow
-    virtual void paintFloats(const PaintInfo&, const LayoutPoint&, bool) { }
-    virtual void paintSelection(const PaintInfo&, const LayoutPoint&) { }
+    virtual void paintFloats(const PaintInfo&, const LayoutPoint&, bool) const { }
+    virtual void paintSelection(const PaintInfo&, const LayoutPoint&) const { }
 
 protected:
     virtual void adjustInlineDirectionLineBounds(unsigned /* expansionOpportunityCount */, LayoutUnit& /* logicalLeft */, LayoutUnit& /* logicalWidth */) const { }
@@ -289,7 +342,7 @@ protected:
     void addOverflowFromBlockChildren();
     void addVisualOverflowFromTheme();
 
-    void addOutlineRects(Vector<LayoutRect>&, const LayoutPoint& additionalOffset) const override;
+    void addOutlineRects(Vector<LayoutRect>&, const LayoutPoint& additionalOffset, IncludeBlockVisualOverflowOrNot) const override;
 
     void computeSelfHitTestRects(Vector<LayoutRect>&, const LayoutPoint& layerOffset) const override;
 
@@ -307,9 +360,6 @@ private:
     bool isLayoutBlock() const final { return true; }
 
     void makeChildrenNonInline(LayoutObject* insertionPoint = nullptr);
-
-    // Promote all children and make them siblings that come right after this block.
-    void promoteAllChildrenAndInsertAfter();
 
     virtual void removeLeftoverAnonymousBlock(LayoutBlock* child);
 
@@ -336,15 +386,13 @@ private:
     // FIXME-BLOCKFLOW: Remove virtualizaion when all callers have moved to LayoutBlockFlow
     virtual bool hitTestFloats(HitTestResult&, const HitTestLocation&, const LayoutPoint&) { return false; }
 
-    virtual bool isPointInOverflowControl(HitTestResult&, const LayoutPoint& locationInContainer, const LayoutPoint& accumulatedOffset);
+    virtual bool isPointInOverflowControl(HitTestResult&, const LayoutPoint& locationInContainer, const LayoutPoint& accumulatedOffset) const;
 
     void computeBlockPreferredLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const;
 
     // Obtains the nearest enclosing block (including this block) that contributes a first-line style to our inline
     // children.
     LayoutBlock* firstLineBlock() const override;
-
-    LayoutRect rectWithOutlineForPaintInvalidation(const LayoutBoxModelObject* paintInvalidationContainer, LayoutUnit outlineWidth, const PaintInvalidationState* = nullptr) const final;
 
     LayoutObject* hoverAncestor() const final;
     void updateDragState(bool dragOn) final;
@@ -354,6 +402,11 @@ private:
 
     void absoluteRects(Vector<IntRect>&, const LayoutPoint& accumulatedOffset) const override;
     void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed) const override;
+
+public:
+    bool hasCursorCaret() const;
+    bool hasDragCaret() const;
+    bool hasCaret() const { return hasCursorCaret() || hasDragCaret(); }
 
 private:
     LayoutRect localCaretRect(InlineBox*, int caretOffset, LayoutUnit* extraWidthToEndOfLine = nullptr) final;
@@ -420,6 +473,7 @@ protected:
     unsigned m_widthAvailableToChildrenChanged  : 1;
     mutable unsigned m_hasOnlySelfCollapsingChildren : 1;
     mutable unsigned m_descendantsWithFloatsMarkedForLayout : 1;
+    mutable unsigned m_needsRecalcLogicalWidthAfterLayoutChildren : 1;
 
     // LayoutRubyBase objects need to be able to split and merge, moving their children around
     // (calling moveChildTo, moveAllChildrenTo, and makeChildrenNonInline).

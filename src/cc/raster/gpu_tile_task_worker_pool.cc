@@ -201,11 +201,13 @@ void GpuTileTaskWorkerPool::CheckForCompletedTasks() {
   completed_tasks_.clear();
 }
 
-ResourceFormat GpuTileTaskWorkerPool::GetResourceFormat() const {
+ResourceFormat GpuTileTaskWorkerPool::GetResourceFormat(
+    bool must_support_alpha) const {
   return rasterizer_->resource_provider()->best_render_buffer_format();
 }
 
-bool GpuTileTaskWorkerPool::GetResourceRequiresSwizzle() const {
+bool GpuTileTaskWorkerPool::GetResourceRequiresSwizzle(
+    bool must_support_alpha) const {
   // This doesn't require a swizzle because we rasterize to the correct format.
   return false;
 }
@@ -217,8 +219,6 @@ void GpuTileTaskWorkerPool::CompleteTasks(const Task::Vector& tasks) {
     tile_task->WillComplete();
     tile_task->CompleteOnOriginThread(this);
     tile_task->DidComplete();
-
-    tile_task->RunReplyOnOriginThread();
   }
   completed_tasks_.clear();
 }

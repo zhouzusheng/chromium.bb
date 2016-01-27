@@ -37,6 +37,7 @@ class StateManagerGL final : angle::NonCopyable
     void deleteProgram(GLuint program);
     void deleteVertexArray(GLuint vao);
     void deleteTexture(GLuint texture);
+    void deleteSampler(GLuint sampler);
     void deleteBuffer(GLuint buffer);
     void deleteFramebuffer(GLuint fbo);
     void deleteRenderbuffer(GLuint rbo);
@@ -44,19 +45,13 @@ class StateManagerGL final : angle::NonCopyable
     void useProgram(GLuint program);
     void bindVertexArray(GLuint vao, GLuint elementArrayBuffer);
     void bindBuffer(GLenum type, GLuint buffer);
+    void bindBufferBase(GLenum type, size_t index, GLuint buffer);
+    void bindBufferRange(GLenum type, size_t index, GLuint buffer, size_t offset, size_t size);
     void activeTexture(size_t unit);
     void bindTexture(GLenum type, GLuint texture);
+    void bindSampler(size_t unit, GLuint sampler);
     void bindFramebuffer(GLenum type, GLuint framebuffer);
     void bindRenderbuffer(GLenum type, GLuint renderbuffer);
-
-    gl::Error setDrawArraysState(const gl::Data &data, GLint first, GLsizei count);
-    gl::Error setDrawElementsState(const gl::Data &data, GLsizei count, GLenum type, const GLvoid *indices,
-                                   const GLvoid **outIndices);
-
-    void syncState(const gl::State &state, const gl::State::DirtyBits &dirtyBits);
-
-  private:
-    gl::Error setGenericDrawState(const gl::Data &data);
 
     void setAttributeCurrentData(size_t index, const gl::VertexAttribCurrentValueData &data);
 
@@ -68,7 +63,10 @@ class StateManagerGL final : angle::NonCopyable
 
     void setBlendEnabled(bool enabled);
     void setBlendColor(const gl::ColorF &blendColor);
-    void setBlendFuncs(GLenum sourceBlendRGB, GLenum destBlendRGB, GLenum sourceBlendAlpha, GLenum destBlendAlpha);
+    void setBlendFuncs(GLenum sourceBlendRGB,
+                       GLenum destBlendRGB,
+                       GLenum sourceBlendAlpha,
+                       GLenum destBlendAlpha);
     void setBlendEquations(GLenum blendEquationRGB, GLenum blendEquationAlpha);
     void setColorMask(bool red, bool green, bool blue, bool alpha);
     void setSampleAlphaToCoverageEnabled(bool enabled);
@@ -91,7 +89,6 @@ class StateManagerGL final : angle::NonCopyable
     void setFrontFace(GLenum frontFace);
     void setPolygonOffsetFillEnabled(bool enabled);
     void setPolygonOffset(float factor, float units);
-    void setMultisampleEnabled(bool enabled);
     void setRasterizerDiscardEnabled(bool enabled);
     void setLineWidth(float width);
 
@@ -107,9 +104,34 @@ class StateManagerGL final : angle::NonCopyable
                              GLint skipRows,
                              GLint skipPixels,
                              GLint imageHeight,
-                             GLint skipImages);
+                             GLint skipImages,
+                             GLuint unpackBuffer);
     void setPixelPackState(const gl::PixelPackState &pack);
-    void setPixelPackState(GLint alignment, GLint rowLength, GLint skipRows, GLint skipPixels);
+    void setPixelPackState(GLint alignment,
+                           GLint rowLength,
+                           GLint skipRows,
+                           GLint skipPixels,
+                           GLuint packBuffer);
+
+    void setFramebufferSRGBEnabled(bool enabled);
+
+    gl::Error setDrawArraysState(const gl::Data &data,
+                                 GLint first,
+                                 GLsizei count,
+                                 GLsizei instanceCount);
+    gl::Error setDrawElementsState(const gl::Data &data,
+                                   GLsizei count,
+                                   GLenum type,
+                                   const GLvoid *indices,
+                                   GLsizei instanceCount,
+                                   const GLvoid **outIndices);
+
+    void syncState(const gl::State &state, const gl::State::DirtyBits &dirtyBits);
+
+  private:
+    gl::Error setGenericDrawState(const gl::Data &data);
+
+    void setTextureCubemapSeamlessEnabled(bool enabled);
 
     const FunctionsGL *mFunctions;
 
@@ -120,8 +142,19 @@ class StateManagerGL final : angle::NonCopyable
 
     std::map<GLenum, GLuint> mBuffers;
 
+    struct IndexedBufferBinding
+    {
+        IndexedBufferBinding();
+
+        size_t offset;
+        size_t size;
+        GLuint buffer;
+    };
+    std::map<GLenum, std::vector<IndexedBufferBinding>> mIndexedBuffers;
+
     size_t mTextureUnitIndex;
     std::map<GLenum, std::vector<GLuint>> mTextures;
+    std::vector<GLuint> mSamplers;
 
     GLint mUnpackAlignment;
     GLint mUnpackRowLength;
@@ -188,7 +221,6 @@ class StateManagerGL final : angle::NonCopyable
     bool mPolygonOffsetFillEnabled;
     GLfloat mPolygonOffsetFactor;
     GLfloat mPolygonOffsetUnits;
-    bool mMultisampleEnabled;
     bool mRasterizerDiscardEnabled;
     float mLineWidth;
 
@@ -197,6 +229,11 @@ class StateManagerGL final : angle::NonCopyable
     gl::ColorF mClearColor;
     float mClearDepth;
     GLint mClearStencil;
+
+    bool mFramebufferSRGBEnabled;
+    bool mTextureCubemapSeamlessEnabled;
+
+    gl::State::DirtyBits mLocalDirtyBits;
 };
 
 }

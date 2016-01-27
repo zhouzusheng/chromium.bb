@@ -32,7 +32,7 @@
 #include "core/layout/LayoutView.h"
 #include "core/layout/svg/SVGLayoutSupport.h"
 #include "core/layout/svg/SVGResourcesCache.h"
-#include "core/paint/DeprecatedPaintLayer.h"
+#include "core/paint/PaintLayer.h"
 #include "core/paint/SVGRootPainter.h"
 #include "core/svg/SVGElement.h"
 #include "core/svg/SVGSVGElement.h"
@@ -198,7 +198,7 @@ bool LayoutSVGRoot::shouldApplyViewportClip() const
         || this->isDocumentElement();
 }
 
-void LayoutSVGRoot::paintReplaced(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void LayoutSVGRoot::paintReplaced(const PaintInfo& paintInfo, const LayoutPoint& paintOffset) const
 {
     SVGRootPainter(*this).paint(paintInfo, paintOffset);
 }

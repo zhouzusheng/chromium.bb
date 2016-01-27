@@ -113,6 +113,16 @@ DevToolsAPIImpl.prototype = {
     },
 
     /**
+     * @param {boolean} discoverUsbDevices
+     * @param {boolean} portForwardingEnabled
+     * @param {!Adb.PortForwardingConfig} portForwardingConfig
+     */
+    devicesDiscoveryConfigChanged: function(discoverUsbDevices, portForwardingEnabled, portForwardingConfig)
+    {
+        this._dispatchOnInspectorFrontendAPI("devicesDiscoveryConfigChanged", [discoverUsbDevices, portForwardingEnabled, portForwardingConfig]);
+    },
+
+    /**
      * @param {!Array.<!Adb.Device>} devices
      */
     devicesUpdated: function(devices)
@@ -272,6 +282,24 @@ DevToolsAPIImpl.prototype = {
     streamWrite: function(id, chunk)
     {
         this._dispatchOnInspectorFrontendAPI("streamWrite", [id, chunk]);
+    },
+
+    frontendAPIAttached: function()
+    {
+        this._dispatchOnInspectorFrontendAPI("frontendAPIAttached", []);
+    },
+
+    frontendAPIDetached: function()
+    {
+        this._dispatchOnInspectorFrontendAPI("frontendAPIDetached", []);
+    },
+
+    /**
+     * @param {string} command
+     */
+    dispatchFrontendAPIMessage: function(command)
+    {
+        this._dispatchOnInspectorFrontendAPI("dispatchFrontendAPIMessage", [command]);
     }
 }
 
@@ -496,6 +524,15 @@ InspectorFrontendHostImpl.prototype = {
 
     /**
      * @override
+     * @param {string} message
+     */
+    sendFrontendAPINotification: function(message)
+    {
+        DevToolsAPI.sendMessageToEmbedder("sendFrontendAPINotification", [message], null);
+    },
+
+    /**
+     * @override
      */
     requestFileSystems: function()
     {
@@ -622,11 +659,32 @@ InspectorFrontendHostImpl.prototype = {
 
     /**
      * @override
+     * @param {boolean} discoverUsbDevices
+     * @param {boolean} portForwardingEnabled
+     * @param {!Adb.PortForwardingConfig} portForwardingConfig
+     */
+    setDevicesDiscoveryConfig: function(discoverUsbDevices, portForwardingEnabled, portForwardingConfig)
+    {
+        DevToolsAPI.sendMessageToEmbedder("setDevicesDiscoveryConfig", [discoverUsbDevices, portForwardingEnabled, JSON.stringify(portForwardingConfig)], null);
+    },
+
+    /**
+     * @override
      * @param {boolean} enabled
      */
     setDevicesUpdatesEnabled: function(enabled)
     {
         DevToolsAPI.sendMessageToEmbedder("setDevicesUpdatesEnabled", [enabled], null);
+    },
+
+    /**
+     * @override
+     * @param {string} pageId
+     * @param {string} action
+     */
+    performActionOnRemotePage: function(pageId, action)
+    {
+        DevToolsAPI.sendMessageToEmbedder("performActionOnRemotePage", [pageId, action], null);
     },
 
     /**
@@ -836,25 +894,25 @@ else
 if (window.domAutomationController) {
     var uiTests = {};
 
-    uiTests._tryRun = function()
+    uiTests._dispatchIfReady = function()
     {
-        if (uiTests._testSuite && uiTests._pendingTestName) {
-            var name = uiTests._pendingTestName;
-            delete uiTests._pendingTestName;
-            uiTests._testSuite.runTest(name);
+        if (uiTests._testSuite && uiTests._pendingDispatchArgs) {
+            var args = uiTests._pendingDispatchArgs;
+            delete uiTests._pendingDispatchArgs;
+            uiTests._testSuite.dispatch(args);
         }
     }
 
-    uiTests.runTest = function(name)
+    uiTests.dispatchOnTestSuite = function(args)
     {
-        uiTests._pendingTestName = name;
-        uiTests._tryRun();
+        uiTests._pendingDispatchArgs = args;
+        uiTests._dispatchIfReady();
     };
 
-    uiTests.testSuiteReady = function(testSuiteConstructor, testBase)
+    uiTests.testSuiteReady = function(testSuiteConstructor)
     {
         uiTests._testSuite = testSuiteConstructor(window.domAutomationController);
-        uiTests._tryRun();
+        uiTests._dispatchIfReady();
     };
 
     window.uiTests = uiTests;

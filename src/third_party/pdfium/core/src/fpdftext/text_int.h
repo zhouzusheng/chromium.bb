@@ -7,9 +7,15 @@
 #ifndef CORE_SRC_FPDFTEXT_TEXT_INT_H_
 #define CORE_SRC_FPDFTEXT_TEXT_INT_H_
 
+#include "../../include/fpdftext/fpdf_text.h"
+#include "../../include/fxcrt/fx_basic.h"
+
+class CFX_BidiChar;
+class CPDF_DocProgressiveSearch;
+class CPDF_FormObject;
 class CPDF_LinkExtract;
 class CPDF_TextPageFind;
-class CPDF_DocProgressiveSearch;
+
 #define FPDFTEXT_CHAR_ERROR -1
 #define FPDFTEXT_CHAR_NORMAL 0
 #define FPDFTEXT_CHAR_GENERATED 1
@@ -19,6 +25,7 @@ class CPDF_DocProgressiveSearch;
 #define FPDFTEXT_MC_PASS 0
 #define FPDFTEXT_MC_DONE 1
 #define FPDFTEXT_MC_DELAY 2
+
 typedef struct _PAGECHAR_INFO {
   int m_CharCode;
   FX_WCHAR m_Unicode;
@@ -44,15 +51,13 @@ typedef CFX_ArrayTemplate<PDFTEXT_Obj> LINEOBJ;
 
 class CPDF_TextPage : public IPDF_TextPage {
  public:
-  CPDF_TextPage(const CPDF_Page* pPage, int flags = 0);
-  CPDF_TextPage(const CPDF_PageObjects* pPage, int flags = 0);
-  CPDF_TextPage(const CPDF_Page* pPage, CPDFText_ParseOptions ParserOptions);
+  CPDF_TextPage(const CPDF_Page* pPage, int flags);
   ~CPDF_TextPage() override {}
 
   // IPDF_TextPage
   FX_BOOL ParseTextPage() override;
   void NormalizeObjects(FX_BOOL bNormalize) override;
-  FX_BOOL IsParsered() const override { return m_IsParsered; }
+  bool IsParsed() const override { return m_bIsParsed; }
   int CharIndexFromTextIndex(int TextIndex) const override;
   int TextIndexFromCharIndex(int CharIndex) const override;
   int CountChars() const override;
@@ -125,20 +130,18 @@ class CPDF_TextPage : public IPDF_TextPage {
                         const CPDF_Font* pFont,
                         int nItems) const;
 
- protected:
   CPDFText_ParseOptions m_ParseOptions;
   CFX_WordArray m_CharIndex;
-  const CPDF_PageObjects* m_pPage;
+  const CPDF_PageObjects* const m_pPage;
   PAGECHAR_InfoArray m_charList;
   CFX_WideTextBuf m_TextBuf;
   PAGECHAR_InfoArray m_TempCharList;
   CFX_WideTextBuf m_TempTextBuf;
-  int m_parserflag;
+  const int m_parserflag;
   CPDF_TextObject* m_pPreTextObj;
   CFX_AffineMatrix m_perMatrix;
-  FX_BOOL m_IsParsered;
+  bool m_bIsParsed;
   CFX_AffineMatrix m_DisplayMatrix;
-
   SEGMENT_Array m_Segment;
   CFX_RectArray m_SelRects;
   LINEOBJ m_LineObj;
@@ -148,7 +151,7 @@ class CPDF_TextPage : public IPDF_TextPage {
 
 class CPDF_TextPageFind : public IPDF_TextPageFind {
  public:
-  CPDF_TextPageFind(const IPDF_TextPage* pTextPage);
+  explicit CPDF_TextPageFind(const IPDF_TextPage* pTextPage);
   ~CPDF_TextPageFind() override {}
 
   // IPDF_TextPageFind
@@ -193,6 +196,7 @@ class CPDF_TextPageFind : public IPDF_TextPageFind {
   CFX_RectArray m_resArray;
   FX_BOOL m_IsFind;
 };
+
 class CPDF_LinkExt {
  public:
   CPDF_LinkExt() {}
@@ -216,24 +220,28 @@ class CPDF_LinkExtract : public IPDF_LinkExtract {
   void GetBoundedSegment(int index, int& start, int& count) const override;
   void GetRects(int index, CFX_RectArray& rects) const override;
 
-  FX_BOOL IsExtract() const { return m_IsParserd; }
+  FX_BOOL IsExtract() const { return m_bIsParsed; }
 
  protected:
-  void parserLink();
+  void ParseLink();
   void DeleteLinkList();
   FX_BOOL CheckWebLink(CFX_WideString& strBeCheck);
   FX_BOOL CheckMailLink(CFX_WideString& str);
-  FX_BOOL AppendToLinkList(int start, int count, const CFX_WideString& strUrl);
+  void AppendToLinkList(int start, int count, const CFX_WideString& strUrl);
 
  private:
   LINK_InfoArray m_LinkList;
   const CPDF_TextPage* m_pTextPage;
   CFX_WideString m_strPageText;
-  FX_BOOL m_IsParserd;
+  bool m_bIsParsed;
 };
 
 FX_STRSIZE FX_Unicode_GetNormalization(FX_WCHAR wch, FX_WCHAR* pDst);
 void NormalizeString(CFX_WideString& str);
 void NormalizeCompositeChar(FX_WCHAR wChar, CFX_WideString& sDest);
+void GetTextStream_Unicode(CFX_WideTextBuf& buffer,
+                           CPDF_PageObjects* pPage,
+                           FX_BOOL bUseLF,
+                           CFX_PtrArray* pObjArray);
 
 #endif  // CORE_SRC_FPDFTEXT_TEXT_INT_H_

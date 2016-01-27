@@ -182,6 +182,7 @@
 #define SSL_AES128GCM 0x00000010L
 #define SSL_AES256GCM 0x00000020L
 #define SSL_CHACHA20POLY1305 0x00000040L
+#define SSL_eNULL 0x00000080L
 
 #define SSL_AES (SSL_AES128 | SSL_AES256 | SSL_AES128GCM | SSL_AES256GCM)
 
@@ -259,10 +260,15 @@ int ssl_cipher_has_server_public_key(const SSL_CIPHER *cipher);
 /* ssl_cipher_requires_server_key_exchange returns 1 if |cipher| requires a
  * ServerKeyExchange message. Otherwise it returns 0.
  *
- * Unlike ssl_cipher_has_server_public_key, some ciphers take optional
- * ServerKeyExchanges. PSK and RSA_PSK only use the ServerKeyExchange to
- * communicate a psk_identity_hint, so it is optional. */
+ * Unlike |ssl_cipher_has_server_public_key|, this function may return zero
+ * while still allowing |cipher| an optional ServerKeyExchange. This is the
+ * case for plain PSK ciphers. */
 int ssl_cipher_requires_server_key_exchange(const SSL_CIPHER *cipher);
+
+/* ssl_cipher_get_record_split_len, for TLS 1.0 CBC mode ciphers, returns the
+ * length of an encrypted 1-byte record, for use in record-splitting. Otherwise
+ * it returns zero. */
+size_t ssl_cipher_get_record_split_len(const SSL_CIPHER *cipher);
 
 
 /* Encryption layer. */
@@ -348,6 +354,95 @@ typedef struct dtls1_bitmap_st {
 } DTLS1_BITMAP;
 
 
+/* Record layer. */
+
+/* ssl_record_prefix_len returns the length of the prefix before the ciphertext
+ * of a record for |ssl|.
+ *
+ * TODO(davidben): Expose this as part of public API once the high-level
+ * buffer-free APIs are available. */
+size_t ssl_record_prefix_len(const SSL *ssl);
+
+enum ssl_open_record_t {
+  ssl_open_record_success,
+  ssl_open_record_discard,
+  ssl_open_record_partial,
+  ssl_open_record_error,
+};
+
+/* tls_open_record decrypts a record from |in|.
+ *
+ * On success, it returns |ssl_open_record_success|. It sets |*out_type| to the
+ * record type, |*out_len| to the plaintext length, and writes the record body
+ * to |out|. It sets |*out_consumed| to the number of bytes of |in| consumed.
+ * Note that |*out_len| may be zero.
+ *
+ * If a record was successfully processed but should be discarded, it returns
+ * |ssl_open_record_discard| and sets |*out_consumed| to the number of bytes
+ * consumed.
+ *
+ * If the input did not contain a complete record, it returns
+ * |ssl_open_record_partial|. It sets |*out_consumed| to the total number of
+ * bytes necessary. It is guaranteed that a successful call to |tls_open_record|
+ * will consume at least that many bytes.
+ *
+ * On failure, it returns |ssl_open_record_error| and sets |*out_alert| to an
+ * alert to emit.
+ *
+ * If |in| and |out| alias, |out| must be <= |in| + |ssl_record_prefix_len|. */
+enum ssl_open_record_t tls_open_record(
+    SSL *ssl, uint8_t *out_type, uint8_t *out, size_t *out_len,
+    size_t *out_consumed, uint8_t *out_alert, size_t max_out, const uint8_t *in,
+    size_t in_len);
+
+/* dtls_open_record implements |tls_open_record| for DTLS. It never returns
+ * |ssl_open_record_partial| but otherwise behaves analogously. */
+enum ssl_open_record_t dtls_open_record(
+    SSL *ssl, uint8_t *out_type, uint8_t *out, size_t *out_len,
+    size_t *out_consumed, uint8_t *out_alert, size_t max_out, const uint8_t *in,
+    size_t in_len);
+
+/* ssl_seal_prefix_len returns the length of the prefix before the ciphertext
+ * when sealing a record with |ssl|. Note that this value may differ from
+ * |ssl_record_prefix_len| when TLS 1.0 CBC record-splitting is enabled. Sealing
+ * a small record may also result in a smaller output than this value.
+ *
+ * TODO(davidben): Expose this as part of public API once the high-level
+ * buffer-free APIs are available. */
+size_t ssl_seal_prefix_len(const SSL *ssl);
+
+/* ssl_max_seal_overhead returns the maximum overhead of sealing a record with
+ * |ssl|. This includes |ssl_seal_prefix_len|.
+ *
+ * TODO(davidben): Expose this as part of public API once the high-level
+ * buffer-free APIs are available. */
+size_t ssl_max_seal_overhead(const SSL *ssl);
+
+/* tls_seal_record seals a new record of type |type| and body |in| and writes it
+ * to |out|. At most |max_out| bytes will be written. It returns one on success
+ * and zero on error. If enabled, |tls_seal_record| implements TLS 1.0 CBC 1/n-1
+ * record splitting and may write two records concatenated.
+ *
+ * For a large record, the ciphertext will begin |ssl_seal_prefix_len| bytes
+ * into out. Aligning |out| appropriately may improve performance. It writes at
+ * most |in_len| + |ssl_max_seal_overhead| bytes to |out|.
+ *
+ * If |in| and |out| alias, |out| + |ssl_seal_prefix_len| must be <= |in|. */
+int tls_seal_record(SSL *ssl, uint8_t *out, size_t *out_len, size_t max_out,
+                    uint8_t type, const uint8_t *in, size_t in_len);
+
+enum dtls1_use_epoch_t {
+  dtls1_use_previous_epoch,
+  dtls1_use_current_epoch,
+};
+
+/* dtls_seal_record implements |tls_seal_record| for DTLS. |use_epoch| selects
+ * which epoch's cipher state to use. */
+int dtls_seal_record(SSL *ssl, uint8_t *out, size_t *out_len, size_t max_out,
+                     uint8_t type, const uint8_t *in, size_t in_len,
+                     enum dtls1_use_epoch_t use_epoch);
+
+
 /* Private key operations. */
 
 /* ssl_has_private_key returns one if |ssl| has a private key
@@ -359,8 +454,6 @@ int ssl_has_private_key(SSL *ssl);
  * the operation with |EVP_PKEY|. */
 
 int ssl_private_key_type(SSL *ssl);
-
-int ssl_private_key_supports_digest(SSL *ssl, const EVP_MD *md);
 
 size_t ssl_private_key_max_signature_len(SSL *ssl);
 
@@ -422,6 +515,61 @@ void ssl3_free_handshake_hash(SSL *s);
 /* ssl3_update_handshake_hash adds |in| to the handshake buffer and handshake
  * hash, whichever is enabled. It returns one on success and zero on failure. */
 int ssl3_update_handshake_hash(SSL *ssl, const uint8_t *in, size_t in_len);
+
+
+/* Transport buffers. */
+
+/* ssl_read_buffer returns a pointer to contents of the read buffer. */
+uint8_t *ssl_read_buffer(SSL *ssl);
+
+/* ssl_read_buffer_len returns the length of the read buffer. */
+size_t ssl_read_buffer_len(const SSL *ssl);
+
+/* ssl_read_buffer_extend_to extends the read buffer to the desired length. For
+ * TLS, it reads to the end of the buffer until the buffer is |len| bytes
+ * long. For DTLS, it reads a new packet and ignores |len|. It returns one on
+ * success, zero on EOF, and a negative number on error.
+ *
+ * It is an error to call |ssl_read_buffer_extend_to| in DTLS when the buffer is
+ * non-empty. */
+int ssl_read_buffer_extend_to(SSL *ssl, size_t len);
+
+/* ssl_read_buffer_consume consumes |len| bytes from the read buffer. It
+ * advances the data pointer and decrements the length. The memory consumed will
+ * remain valid until the next call to |ssl_read_buffer_extend| or it is
+ * discarded with |ssl_read_buffer_discard|. */
+void ssl_read_buffer_consume(SSL *ssl, size_t len);
+
+/* ssl_read_buffer_discard discards the consumed bytes from the read buffer. If
+ * the buffer is now empty, it releases memory used by it. */
+void ssl_read_buffer_discard(SSL *ssl);
+
+/* ssl_read_buffer_clear releases all memory associated with the read buffer and
+ * zero-initializes it. */
+void ssl_read_buffer_clear(SSL *ssl);
+
+/* ssl_write_buffer_is_pending returns one if the write buffer has pending data
+ * and zero if is empty. */
+int ssl_write_buffer_is_pending(const SSL *ssl);
+
+/* ssl_write_buffer_init initializes the write buffer. On success, it sets
+ * |*out_ptr| to the start of the write buffer with space for up to |max_len|
+ * bytes. It returns one on success and zero on failure. Call
+ * |ssl_write_buffer_set_len| to complete initialization. */
+int ssl_write_buffer_init(SSL *ssl, uint8_t **out_ptr, size_t max_len);
+
+/* ssl_write_buffer_set_len is called after |ssl_write_buffer_init| to complete
+ * initialization after |len| bytes are written to the buffer. */
+void ssl_write_buffer_set_len(SSL *ssl, size_t len);
+
+/* ssl_write_buffer_flush flushes the write buffer to the transport. It returns
+ * one on success and <= 0 on error. For DTLS, whether or not the write
+ * succeeds, the write buffer will be cleared. */
+int ssl_write_buffer_flush(SSL *ssl);
+
+/* ssl_write_buffer_clear releases all memory associated with the write buffer
+ * and zero-initializes it. */
+void ssl_write_buffer_clear(SSL *ssl);
 
 
 /* Underdocumented functions.
@@ -607,17 +755,17 @@ typedef struct cert_st {
    * |SSL_CTX_set_tmp_ecdh_callback|. */
   EC_KEY *(*ecdh_tmp_cb)(SSL *ssl, int is_export, int keysize);
 
-  /* signature algorithms peer reports: e.g. supported signature
-   * algorithms extension for server or as part of a certificate
-   * request for client. */
-  uint8_t *peer_sigalgs;
-  /* Size of above array */
+  /* peer_sigalgs are the algorithm/hash pairs that the peer supports. These
+   * are taken from the contents of signature algorithms extension for a server
+   * or from the CertificateRequest for a client. */
+  TLS_SIGALGS *peer_sigalgs;
+  /* peer_sigalgslen is the number of entries in |peer_sigalgs|. */
   size_t peer_sigalgslen;
 
-  /* Signature algorithms shared by client and server: cached
-   * because these are used most often. */
-  TLS_SIGALGS *shared_sigalgs;
-  size_t shared_sigalgslen;
+  /* digest_nids, if non-NULL, is the set of digests supported by |privatekey|
+   * in decreasing order of preference. */
+  int *digest_nids;
+  size_t num_digest_nids;
 
   /* Certificate setup callback: if set is called whenever a
    * certificate may be required (client or server). the callback
@@ -628,19 +776,6 @@ typedef struct cert_st {
   int (*cert_cb)(SSL *ssl, void *arg);
   void *cert_cb_arg;
 } CERT;
-
-typedef struct sess_cert_st {
-  /* cert_chain is the certificate chain sent by the peer. NOTE: for a client,
-   * this does includes the server's leaf certificate, but, for a server, this
-   * does NOT include the client's leaf. */
-  STACK_OF(X509) *cert_chain;
-
-  /* peer_cert, on a client, is the leaf certificate of the peer. */
-  X509 *peer_cert;
-
-  DH *peer_dh_tmp;
-  EC_KEY *peer_ecdh_tmp;
-} SESS_CERT;
 
 /* SSL_METHOD is a compatibility structure to support the legacy version-locked
  * methods. */
@@ -822,9 +957,6 @@ CERT *ssl_cert_new(void);
 CERT *ssl_cert_dup(CERT *cert);
 void ssl_cert_clear_certs(CERT *c);
 void ssl_cert_free(CERT *c);
-SESS_CERT *ssl_sess_cert_new(void);
-SESS_CERT *ssl_sess_cert_dup(const SESS_CERT *sess_cert);
-void ssl_sess_cert_free(SESS_CERT *sess_cert);
 int ssl_get_new_session(SSL *s, int session);
 
 enum ssl_session_result_t {
@@ -860,7 +992,7 @@ int ssl_cert_add1_chain_cert(CERT *cert, X509 *x509);
 void ssl_cert_set_cert_cb(CERT *cert,
                           int (*cb)(SSL *ssl, void *arg), void *arg);
 
-int ssl_verify_cert_chain(SSL *s, STACK_OF(X509) *sk);
+int ssl_verify_cert_chain(SSL *ssl, STACK_OF(X509) *cert_chain);
 int ssl_add_cert_chain(SSL *s, unsigned long *l);
 void ssl_update_cache(SSL *s, int mode);
 
@@ -880,7 +1012,7 @@ int ssl_fill_hello_random(uint8_t *out, size_t len, int is_server);
 
 int ssl3_send_server_certificate(SSL *s);
 int ssl3_send_new_session_ticket(SSL *s);
-int ssl3_send_cert_status(SSL *s);
+int ssl3_send_certificate_status(SSL *s);
 int ssl3_get_finished(SSL *s, int state_a, int state_b);
 int ssl3_send_change_cipher_spec(SSL *s, int state_a, int state_b);
 int ssl3_prf(SSL *s, uint8_t *out, size_t out_len, const uint8_t *secret,
@@ -922,10 +1054,6 @@ int ssl3_output_cert_chain(SSL *s);
 const SSL_CIPHER *ssl3_choose_cipher(
     SSL *ssl, STACK_OF(SSL_CIPHER) *clnt,
     struct ssl_cipher_preference_list_st *srvr);
-int ssl3_setup_read_buffer(SSL *s);
-int ssl3_setup_write_buffer(SSL *s);
-int ssl3_release_read_buffer(SSL *s);
-int ssl3_release_write_buffer(SSL *s);
 
 int ssl3_new(SSL *s);
 void ssl3_free(SSL *s);
@@ -941,13 +1069,7 @@ int ssl3_do_change_cipher_spec(SSL *ssl);
 int ssl3_set_handshake_header(SSL *s, int htype, unsigned long len);
 int ssl3_handshake_write(SSL *s);
 
-enum dtls1_use_epoch_t {
-  dtls1_use_previous_epoch,
-  dtls1_use_current_epoch,
-};
-
 int dtls1_do_write(SSL *s, int type, enum dtls1_use_epoch_t use_epoch);
-int ssl3_read_n(SSL *s, int n, int extend);
 int dtls1_read_app_data(SSL *ssl, uint8_t *buf, int len, int peek);
 void dtls1_read_close_notify(SSL *ssl);
 int dtls1_read_bytes(SSL *s, int type, uint8_t *buf, int len, int peek);
@@ -996,6 +1118,7 @@ int ssl3_get_server_key_exchange(SSL *s);
 int ssl3_get_server_certificate(SSL *s);
 int ssl3_send_next_proto(SSL *s);
 int ssl3_send_channel_id(SSL *s);
+int ssl3_verify_server_cert(SSL *s);
 
 /* some server-only functions */
 int ssl3_get_initial_bytes(SSL *s);
@@ -1018,7 +1141,6 @@ void dtls1_free(SSL *s);
 
 long dtls1_get_message(SSL *s, int st1, int stn, int mt, long max,
                        enum ssl_hash_message_t hash_message, int *ok);
-int dtls1_get_record(SSL *s);
 int dtls1_dispatch_alert(SSL *s);
 
 int ssl_init_wbio_buffer(SSL *s, int push);
@@ -1172,7 +1294,7 @@ int ssl3_is_version_enabled(SSL *s, uint16_t version);
 uint16_t ssl3_version_from_wire(SSL *s, uint16_t wire_version);
 
 uint32_t ssl_get_algorithm_prf(SSL *s);
-int tls1_process_sigalgs(SSL *s, const CBS *sigalgs);
+int tls1_parse_peer_sigalgs(SSL *s, const CBS *sigalgs);
 
 /* tls1_choose_signing_digest returns a digest for use with |ssl|'s private key
  * based on the peer's preferences the digests supported. */

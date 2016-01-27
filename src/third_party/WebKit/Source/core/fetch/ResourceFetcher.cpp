@@ -57,76 +57,63 @@ using blink::WebURLRequest;
 
 namespace blink {
 
+namespace {
+
+// Events for UMA. Do not reorder or delete. Add new events at the end, but
+// before SriResourceIntegrityMismatchEventCount.
+enum SriResourceIntegrityMismatchEvent {
+    CheckingForIntegrityMismatch = 0,
+    RefetchDueToIntegrityMismatch = 1,
+    SriResourceIntegrityMismatchEventCount
+};
+
+}
+
+static void RecordSriResourceIntegrityMismatchEvent(SriResourceIntegrityMismatchEvent event)
+{
+    Platform::current()->histogramEnumeration("sri.resource_integrity_mismatch_event", event, SriResourceIntegrityMismatchEventCount);
+}
+
+static ResourceLoadPriority typeToPriority(Resource::Type type)
+{
+    switch (type) {
+    case Resource::MainResource:
+        return ResourceLoadPriorityVeryHigh;
+    case Resource::XSLStyleSheet:
+        ASSERT(RuntimeEnabledFeatures::xsltEnabled());
+    case Resource::CSSStyleSheet:
+        return ResourceLoadPriorityHigh;
+    case Resource::Raw:
+    case Resource::Script:
+    case Resource::Font:
+    case Resource::ImportResource:
+        return ResourceLoadPriorityMedium;
+    case Resource::LinkSubresource:
+    case Resource::TextTrack:
+    case Resource::Media:
+    case Resource::SVGDocument:
+        return ResourceLoadPriorityLow;
+    case Resource::Image:
+    case Resource::LinkPrefetch:
+    case Resource::LinkPreload:
+        return ResourceLoadPriorityVeryLow;
+    }
+
+    ASSERT_NOT_REACHED();
+    return ResourceLoadPriorityUnresolved;
+}
+
 ResourceLoadPriority ResourceFetcher::loadPriority(Resource::Type type, const FetchRequest& request)
 {
     // TODO(yoav): Change it here so that priority can be changed even after it was resolved.
     if (request.priority() != ResourceLoadPriorityUnresolved)
         return request.priority();
 
-    // An image fetch is used to distinguish between "early" and "late" scripts in a document
-    if (type == Resource::Image)
-        m_imageFetched = true;
+    // Synchronous requests should always be max priority, lest they hang the renderer.
+    if (request.options().synchronousPolicy == RequestSynchronously)
+        return ResourceLoadPriorityHighest;
 
-    // Runtime experiment that change how we prioritize resources.
-    // The toggles do not depend on each other and can be flipped individually
-    // though the cumulative result will depend on the interaction between them.
-    // Background doc: https://docs.google.com/document/d/1bCDuq9H1ih9iNjgzyAL0gpwNFiEP4TZS-YLRp_RuMlc/edit?usp=sharing
-    bool deferLateScripts = context().fetchDeferLateScripts();
-    bool increaseFontPriority = context().fetchIncreaseFontPriority();
-    bool increaseAsyncScriptPriority = context().fetchIncreaseAsyncScriptPriority();
-    // Increases the priorities for CSS, Scripts, Fonts and Images all by one level
-    // and parser-blocking scripts and visible images by 2.
-    // This is used in conjunction with logic on the Chrome side to raise the threshold
-    // of "layout-blocking" resources and provide a boost to resources that are needed
-    // as soon as possible for something currently on the screen.
-    bool increasePriorities = context().fetchIncreasePriorities();
-
-    switch (type) {
-    case Resource::MainResource:
-        return context().isLowPriorityIframe() ? ResourceLoadPriorityVeryLow : ResourceLoadPriorityVeryHigh;
-    case Resource::CSSStyleSheet:
-        return increasePriorities ? ResourceLoadPriorityVeryHigh : ResourceLoadPriorityHigh;
-    case Resource::Raw:
-        return request.options().synchronousPolicy == RequestSynchronously ? ResourceLoadPriorityVeryHigh : ResourceLoadPriorityMedium;
-    case Resource::Script:
-        // Async/Defer scripts.
-        if (FetchRequest::LazyLoad == request.defer())
-            return increaseAsyncScriptPriority ? ResourceLoadPriorityMedium : ResourceLoadPriorityLow;
-        // Reduce the priority of late-body scripts.
-        if (deferLateScripts && request.forPreload() && m_imageFetched)
-            return increasePriorities ? ResourceLoadPriorityMedium : ResourceLoadPriorityLow;
-        // Parser-blocking scripts.
-        if (!request.forPreload())
-            return increasePriorities ? ResourceLoadPriorityVeryHigh : ResourceLoadPriorityMedium;
-        // Non-async/defer scripts discovered by the preload scanner (only early scripts if deferLateScripts is active).
-        return increasePriorities ? ResourceLoadPriorityHigh : ResourceLoadPriorityMedium;
-    case Resource::Font:
-        if (increaseFontPriority)
-            return increasePriorities ? ResourceLoadPriorityVeryHigh : ResourceLoadPriorityHigh;
-        return increasePriorities ? ResourceLoadPriorityHigh : ResourceLoadPriorityMedium;
-    case Resource::ImportResource:
-        return ResourceLoadPriorityMedium;
-    case Resource::Image:
-        // Default images to VeryLow, and promote when they become visible.
-        return increasePriorities ? ResourceLoadPriorityLow : ResourceLoadPriorityVeryLow;
-    case Resource::Media:
-        return ResourceLoadPriorityLow;
-    case Resource::XSLStyleSheet:
-        ASSERT(RuntimeEnabledFeatures::xsltEnabled());
-        return ResourceLoadPriorityHigh;
-    case Resource::SVGDocument:
-        return ResourceLoadPriorityLow;
-    case Resource::LinkPrefetch:
-    case Resource::LinkPreload:
-        return ResourceLoadPriorityVeryLow;
-    case Resource::LinkSubresource:
-        return ResourceLoadPriorityLow;
-    case Resource::TextTrack:
-        return ResourceLoadPriorityLow;
-    }
-
-    ASSERT_NOT_REACHED();
-    return ResourceLoadPriorityUnresolved;
+    return context().modifyPriorityForExperiments(typeToPriority(type), type, request);
 }
 
 static void populateResourceTiming(ResourceTimingInfo* info, Resource* resource, bool clearLoadTimings)
@@ -189,7 +176,6 @@ ResourceFetcher::ResourceFetcher(FetchContext* context)
     , m_autoLoadImages(true)
     , m_imagesEnabled(true)
     , m_allowStaleResources(false)
-    , m_imageFetched(false)
 {
 #if ENABLE(OILPAN)
     ThreadState::current()->registerPreFinalizer(this);
@@ -562,6 +548,33 @@ ResourceFetcher::RevalidationPolicy ResourceFetcher::determineRevalidationPolicy
 
     if (!existingResource)
         return Load;
+
+    // Checks if the resource has an explicit policy about integrity metadata.
+    // Currently only applies to ScriptResources.
+    //
+    // This is necessary because ScriptResource objects do not keep the raw
+    // data around after the source is accessed once, so if the resource is
+    // accessed from the MemoryCache for a second time, there is no way to redo
+    // an integrity check.
+    //
+    // Thus, Blink implements a scheme where it caches the integrity
+    // information for a ScriptResource after the first time it is checked, and
+    // if there is another request for that resource, with the same integrity
+    // metadata, Blink skips the integrity calculation. However, if the
+    // integrity metadata is a mismatch, the MemoryCache must be skipped here,
+    // and a new request for the resource must be made to get the raw data.
+    // This is expected to be an uncommon case, however, as it implies two
+    // same-origin requests to the same resource, but with different integrity
+    // metadata.
+    RecordSriResourceIntegrityMismatchEvent(CheckingForIntegrityMismatch);
+    if (existingResource->mustRefetchDueToIntegrityMetadata(fetchRequest)) {
+        RecordSriResourceIntegrityMismatchEvent(RefetchDueToIntegrityMismatch);
+        return Reload;
+    }
+
+    // Service Worker's CORS fallback message must not be cached.
+    if (existingResource->response().wasFallbackRequiredByServiceWorker())
+        return Reload;
 
     // We already have a preload going for this URL.
     if (fetchRequest.forPreload() && existingResource->isPreloaded())

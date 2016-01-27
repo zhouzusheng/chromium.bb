@@ -264,7 +264,7 @@ STDMETHODIMP BrowserAccessibilityWin::accHitTest(LONG x_left,
 
   gfx::Point point(x_left, y_top);
   if (!GetGlobalBoundsRect().Contains(point)) {
-    // Return S_FALSE and VT_EMPTY when the outside the object's boundaries.
+    // Return S_FALSE and VT_EMPTY when outside the object's boundaries.
     child->vt = VT_EMPTY;
     return S_FALSE;
   }
@@ -2446,33 +2446,109 @@ STDMETHODIMP BrowserAccessibilityWin::get_hyperlinkIndex(
 }
 
 //
-// IAccessibleHyperlink not implemented.
+// IAccessibleHyperlink methods.
 //
 
+// Currently, only text links are supported.
 STDMETHODIMP BrowserAccessibilityWin::get_anchor(long index, VARIANT* anchor) {
-  return E_NOTIMPL;
+  if (!instance_active() || !IsHyperlink())
+    return E_FAIL;
+
+  // IA2 text links can have only one anchor, that is the text inside them.
+  if (index != 0 || !anchor)
+    return E_INVALIDARG;
+
+  BSTR hypertext = SysAllocString(TextForIAccessibleText().c_str());
+  DCHECK(hypertext);
+  anchor->vt = VT_BSTR;
+  anchor->bstrVal = hypertext;
+
+  // Returning S_FALSE is not mentioned in the IA2 Spec, but it might have been
+  // an oversight.
+  if (!SysStringLen(hypertext))
+    return S_FALSE;
+
+  return S_OK;
 }
-STDMETHODIMP
-BrowserAccessibilityWin::get_anchorTarget(long index, VARIANT* anchor_target) {
-  return E_NOTIMPL;
+
+// Currently, only text links are supported.
+STDMETHODIMP BrowserAccessibilityWin::get_anchorTarget(long index,
+                                                       VARIANT* anchor_target) {
+  if (!instance_active() || !IsHyperlink())
+    return E_FAIL;
+
+  // IA2 text links can have at most one target, that is when they represent an
+  // HTML hyperlink, i.e. an <a> element with a "href" attribute.
+  if (index != 0 || !anchor_target)
+    return E_INVALIDARG;
+
+  BSTR target;
+  if (!(ia_state() & STATE_SYSTEM_LINKED) ||
+      FAILED(GetStringAttributeAsBstr(ui::AX_ATTR_URL, &target))) {
+    target = SysAllocString(L"");
+  }
+  DCHECK(target);
+  anchor_target->vt = VT_BSTR;
+  anchor_target->bstrVal = target;
+
+  // Returning S_FALSE is not mentioned in the IA2 Spec, but it might have been
+  // an oversight.
+  if (!SysStringLen(target))
+    return S_FALSE;
+
+  return S_OK;
 }
+
 STDMETHODIMP BrowserAccessibilityWin::get_startIndex(long* index) {
-  return E_NOTIMPL;
+  if (!instance_active() || !IsHyperlink())
+    return E_FAIL;
+
+  if (!index)
+    return E_INVALIDARG;
+
+  int32 hypertext_offset = 0;
+  const auto parent = GetParent();
+  if (parent) {
+    hypertext_offset =
+        parent->ToBrowserAccessibilityWin()->GetHypertextOffsetFromChild(*this);
+  }
+  *index = static_cast<LONG>(hypertext_offset);
+  return S_OK;
 }
+
 STDMETHODIMP BrowserAccessibilityWin::get_endIndex(long* index) {
-  return E_NOTIMPL;
+  LONG start_index;
+  HRESULT hr = get_startIndex(&start_index);
+  if (hr == S_OK)
+    *index = start_index + 1;
+  return hr;
 }
+
+// This method is deprecated in the IA2 Spec.
 STDMETHODIMP BrowserAccessibilityWin::get_valid(boolean* valid) {
   return E_NOTIMPL;
 }
 
 //
-// IAccessibleAction not implemented.
+// IAccessibleAction mostly not implemented.
 //
 
 STDMETHODIMP BrowserAccessibilityWin::nActions(long* n_actions) {
-  return E_NOTIMPL;
+  if (!instance_active())
+    return E_FAIL;
+
+  if (!n_actions)
+    return E_INVALIDARG;
+
+  // Required for IAccessibleHyperlink::anchor/anchorTarget to work properly.
+  // TODO(nektar): Implement the rest of the logic required by this interface.
+  if (IsHyperlink())
+    *n_actions = 1;
+  else
+    *n_actions = 0;
+  return S_OK;
 }
+
 STDMETHODIMP BrowserAccessibilityWin::doAction(long action_index) {
   return E_NOTIMPL;
 }
@@ -2648,10 +2724,10 @@ STDMETHODIMP BrowserAccessibilityWin::get_nodeInfo(
   *num_children = PlatformChildCount();
   *unique_id = unique_id_win_;
 
-  if (ia_role() == ROLE_SYSTEM_DOCUMENT) {
+  if (GetRole() == ui::AX_ROLE_ROOT_WEB_AREA ||
+    GetRole() == ui::AX_ROLE_WEB_AREA) {
     *node_type = NODETYPE_DOCUMENT;
-  } else if (ia_role() == ROLE_SYSTEM_TEXT &&
-             ((ia2_state() & IA2_STATE_EDITABLE) == 0)) {
+  } else if (IsTextOnlyObject()) {
     *node_type = NODETYPE_TEXT;
   } else {
     *node_type = NODETYPE_ELEMENT;
@@ -2979,7 +3055,7 @@ STDMETHODIMP BrowserAccessibilityWin::get_fontFamily(BSTR* font_family) {
 // IServiceProvider methods.
 //
 
-STDMETHODIMP BrowserAccessibilityWin::QueryService(REFGUID guidService,
+STDMETHODIMP BrowserAccessibilityWin::QueryService(REFGUID guid_service,
                                                    REFIID riid,
                                                    void** object) {
   if (!instance_active())
@@ -2991,7 +3067,7 @@ STDMETHODIMP BrowserAccessibilityWin::QueryService(REFGUID guidService,
   if (riid == IID_IAccessible2)
     BrowserAccessibilityStateImpl::GetInstance()->EnableAccessibility();
 
-  if (guidService == GUID_IAccessibleContentDocument) {
+  if (guid_service == GUID_IAccessibleContentDocument) {
     // Special Mozilla extension: return the accessible for the root document.
     // Screen readers use this to distinguish between a document loaded event
     // on the root document vs on an iframe.
@@ -2999,22 +3075,22 @@ STDMETHODIMP BrowserAccessibilityWin::QueryService(REFGUID guidService,
         IID_IAccessible2, object);
   }
 
-  if (guidService == IID_IAccessible ||
-      guidService == IID_IAccessible2 ||
-      guidService == IID_IAccessibleAction ||
-      guidService == IID_IAccessibleApplication ||
-      guidService == IID_IAccessibleHyperlink ||
-      guidService == IID_IAccessibleHypertext ||
-      guidService == IID_IAccessibleImage ||
-      guidService == IID_IAccessibleTable ||
-      guidService == IID_IAccessibleTable2 ||
-      guidService == IID_IAccessibleTableCell ||
-      guidService == IID_IAccessibleText ||
-      guidService == IID_IAccessibleValue ||
-      guidService == IID_ISimpleDOMDocument ||
-      guidService == IID_ISimpleDOMNode ||
-      guidService == IID_ISimpleDOMText ||
-      guidService == GUID_ISimpleDOM) {
+  if (guid_service == IID_IAccessible ||
+      guid_service == IID_IAccessible2 ||
+      guid_service == IID_IAccessibleAction ||
+      guid_service == IID_IAccessibleApplication ||
+      guid_service == IID_IAccessibleHyperlink ||
+      guid_service == IID_IAccessibleHypertext ||
+      guid_service == IID_IAccessibleImage ||
+      guid_service == IID_IAccessibleTable ||
+      guid_service == IID_IAccessibleTable2 ||
+      guid_service == IID_IAccessibleTableCell ||
+      guid_service == IID_IAccessibleText ||
+      guid_service == IID_IAccessibleValue ||
+      guid_service == IID_ISimpleDOMDocument ||
+      guid_service == IID_ISimpleDOMNode ||
+      guid_service == IID_ISimpleDOMText ||
+      guid_service == GUID_ISimpleDOM) {
     return QueryInterface(riid, object);
   }
 
@@ -3136,6 +3212,12 @@ HRESULT WINAPI BrowserAccessibilityWin::InternalQueryInterface(
   } else if (iid == IID_ISimpleDOMDocument) {
     if (ia_role != ROLE_SYSTEM_DOCUMENT) {
       *object = NULL;
+      return E_NOINTERFACE;
+    }
+  } else if (iid == IID_IAccessibleHyperlink) {
+    auto ax_object = reinterpret_cast<const BrowserAccessibilityWin*>(this_ptr);
+    if (!ax_object || !ax_object->IsHyperlink()) {
+      *object = nullptr;
       return E_NOINTERFACE;
     }
   }
@@ -3526,16 +3608,6 @@ void BrowserAccessibilityWin::UpdateStep3FireEvents(bool is_subtree_creation) {
       previous_scroll_y_ = sy;
     }
 
-    // Changing a static text node can affect the IAccessibleText hypertext
-    // of the parent node, so force an update on the parent.
-    BrowserAccessibilityWin* parent = GetParent()->ToBrowserAccessibilityWin();
-    if (parent && IsTextOnlyObject() &&
-        name() != old_win_attributes_->name) {
-      parent->UpdateStep1ComputeWinAttributes();
-      parent->UpdateStep2ComputeHypertext();
-      parent->UpdateStep3FireEvents(false);
-    }
-
     // Fire hypertext-related events.
     int start, old_len, new_len;
     ComputeHypertextRemovedAndInserted(&start, &old_len, &new_len);
@@ -3548,6 +3620,16 @@ void BrowserAccessibilityWin::UpdateStep3FireEvents(bool is_subtree_creation) {
       // In-process screen readers may call IAccessibleText::get_newText
       // in reaction to this event to retrieve the text that was inserted.
       manager->MaybeCallNotifyWinEvent(IA2_EVENT_TEXT_INSERTED, this);
+    }
+
+    // Changing a static text node can affect the IAccessibleText hypertext
+    // of the parent node, so force an update on the parent.
+    BrowserAccessibilityWin* parent = GetParent()->ToBrowserAccessibilityWin();
+    if (parent && IsTextOnlyObject() &&
+        name() != old_win_attributes_->name) {
+      parent->UpdateStep1ComputeWinAttributes();
+      parent->UpdateStep2ComputeHypertext();
+      parent->UpdateStep3FireEvents(false);
     }
   }
 
@@ -3644,6 +3726,19 @@ void BrowserAccessibilityWin::IntAttributeToIA2(
         base::ASCIIToUTF16(ia2_attr) + L":" +
         base::IntToString16(value));
   }
+}
+
+bool BrowserAccessibilityWin::IsHyperlink() const {
+  int32 hyperlink_index = -1;
+  const auto parent = GetParent();
+  if (parent) {
+    hyperlink_index =
+        parent->ToBrowserAccessibilityWin()->GetHyperlinkIndexFromChild(*this);
+  }
+
+  if (hyperlink_index >= 0)
+    return true;
+  return false;
 }
 
 int32 BrowserAccessibilityWin::GetHyperlinkIndexFromChild(
@@ -3753,7 +3848,8 @@ void BrowserAccessibilityWin::GetSelectionOffsets(
     int* selection_start, int* selection_end) const {
   DCHECK(selection_start && selection_end);
 
-  if (GetIntAttribute(ui::AX_ATTR_TEXT_SEL_START, selection_start) &&
+  if (IsEditableText() && !HasState(ui::AX_STATE_RICHLY_EDITABLE) &&
+      GetIntAttribute(ui::AX_ATTR_TEXT_SEL_START, selection_start) &&
       GetIntAttribute(ui::AX_ATTR_TEXT_SEL_END, selection_end)) {
     return;
   }
@@ -3767,8 +3863,11 @@ void BrowserAccessibilityWin::GetSelectionOffsets(
     std::swap(*selection_start, *selection_end);
 
   // IA2 Spec says that the end of the selection should be after the last
-  // embedded object character that is part of the selection.
-  ++(*selection_end);
+  // embedded object character that is part of the selection, if there is one.
+  if (hyperlink_offset_to_index().find(*selection_end) !=
+      hyperlink_offset_to_index().end()) {
+    ++(*selection_end);
+  }
 }
 
 base::string16 BrowserAccessibilityWin::GetNameRecursive() const {
@@ -4012,10 +4111,7 @@ void BrowserAccessibilityWin::InitRoleAndState() {
       ia_state |= STATE_SYSTEM_HOTTRACKED;
   }
 
-  // WebKit marks everything as readonly unless it's editable text, so if it's
-  // not readonly, mark it as editable now. The final computation of the
-  // READONLY state for MSAA is below, after the switch.
-  if (!HasState(ui::AX_STATE_READ_ONLY))
+  if (IsEditableText())
     ia2_state |= IA2_STATE_EDITABLE;
 
   if (GetBoolAttribute(ui::AX_ATTR_BUTTON_MIXED))
@@ -4427,7 +4523,6 @@ void BrowserAccessibilityWin::InitRoleAndState() {
         ia2_state |= IA2_STATE_MULTI_LINE;
       else
         ia2_state |= IA2_STATE_SINGLE_LINE;
-      ia2_state |= IA2_STATE_EDITABLE;
       ia2_state |= IA2_STATE_SELECTABLE_TEXT;
       break;
     case ui::AX_ROLE_TIME:

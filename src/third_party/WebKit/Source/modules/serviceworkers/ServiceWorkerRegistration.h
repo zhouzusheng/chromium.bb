@@ -5,6 +5,7 @@
 #ifndef ServiceWorkerRegistration_h
 #define ServiceWorkerRegistration_h
 
+#include "bindings/core/v8/ScriptPromiseResolver.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/events/EventTarget.h"
 #include "modules/serviceworkers/ServiceWorker.h"
@@ -20,10 +21,12 @@
 namespace blink {
 
 class ScriptPromise;
-class ScriptPromiseResolver;
 class ScriptState;
 class WebServiceWorkerProvider;
 
+// The implementation of a service worker registration object in Blink. Actual
+// registration representation is in the embedder and this class accesses it
+// via WebServiceWorkerRegistration::Handle object.
 class ServiceWorkerRegistration final
     : public RefCountedGarbageCollectedEventTargetWithInlineData<ServiceWorkerRegistration>
     , public ActiveDOMObject
@@ -43,9 +46,9 @@ public:
     void setWaiting(WebServiceWorker*) override;
     void setActive(WebServiceWorker*) override;
 
-    static ServiceWorkerRegistration* from(ExecutionContext*, WebServiceWorkerRegistration*);
-    static ServiceWorkerRegistration* take(ScriptPromiseResolver*, WebServiceWorkerRegistration*);
-    static void dispose(WebServiceWorkerRegistration*);
+    // Returns an existing registration object for the handle if it exists.
+    // Otherwise, returns a new registration object.
+    static ServiceWorkerRegistration* getOrCreate(ExecutionContext*, PassOwnPtr<WebServiceWorkerRegistration::Handle>);
 
     ServiceWorker* installing() { return m_installing; }
     ServiceWorker* waiting() { return m_waiting; }
@@ -53,7 +56,7 @@ public:
 
     String scope() const;
 
-    WebServiceWorkerRegistration* webRegistration() { return m_outerRegistration.get(); }
+    WebServiceWorkerRegistration* webRegistration() { return m_handle->registration(); }
 
     ScriptPromise update(ScriptState*);
     ScriptPromise unregister(ScriptState*);
@@ -67,14 +70,15 @@ public:
     DECLARE_VIRTUAL_TRACE();
 
 private:
-    static ServiceWorkerRegistration* getOrCreate(ExecutionContext*, WebServiceWorkerRegistration*);
-    ServiceWorkerRegistration(ExecutionContext*, PassOwnPtr<WebServiceWorkerRegistration>);
+    ServiceWorkerRegistration(ExecutionContext*, PassOwnPtr<WebServiceWorkerRegistration::Handle>);
 
     // ActiveDOMObject overrides.
     bool hasPendingActivity() const override;
     void stop() override;
 
-    OwnPtr<WebServiceWorkerRegistration> m_outerRegistration;
+    // A handle to the registration representation in the embedder.
+    OwnPtr<WebServiceWorkerRegistration::Handle> m_handle;
+
     WebServiceWorkerProvider* m_provider;
     Member<ServiceWorker> m_installing;
     Member<ServiceWorker> m_waiting;
@@ -86,18 +90,12 @@ private:
 class ServiceWorkerRegistrationArray {
     STATIC_ONLY(ServiceWorkerRegistrationArray);
 public:
-    static HeapVector<Member<ServiceWorkerRegistration>> take(ScriptPromiseResolver* resolver, PassOwnPtr<WebVector<WebServiceWorkerRegistration*>> webServiceWorkerRegistrations)
+    static HeapVector<Member<ServiceWorkerRegistration>> take(ScriptPromiseResolver* resolver, Vector<OwnPtr<WebServiceWorkerRegistration::Handle>>* webServiceWorkerRegistrations)
     {
         HeapVector<Member<ServiceWorkerRegistration>> registrations;
-        for (WebServiceWorkerRegistration* registration : *webServiceWorkerRegistrations)
-            registrations.append(ServiceWorkerRegistration::take(resolver, registration));
+        for (auto& registration : *webServiceWorkerRegistrations)
+            registrations.append(ServiceWorkerRegistration::getOrCreate(resolver->executionContext(), registration.release()));
         return registrations;
-    }
-
-    static void dispose(PassOwnPtr<WebVector<WebServiceWorkerRegistration*>> webServiceWorkerRegistrations)
-    {
-        for (WebServiceWorkerRegistration* registration : *webServiceWorkerRegistrations)
-            ServiceWorkerRegistration::dispose(registration);
     }
 };
 

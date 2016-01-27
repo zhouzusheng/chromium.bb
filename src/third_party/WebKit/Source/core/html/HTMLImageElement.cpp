@@ -363,7 +363,7 @@ void HTMLImageElement::attach(const AttachContext& context)
         LayoutImageResource* layoutImageResource = layoutImage->imageResource();
         if (m_isFallbackImage) {
             float deviceScaleFactor = blink::deviceScaleFactor(layoutImage->frame());
-            pair<Image*, float> brokenImageAndImageScaleFactor = ImageResource::brokenImage(deviceScaleFactor);
+            std::pair<Image*, float> brokenImageAndImageScaleFactor = ImageResource::brokenImage(deviceScaleFactor);
             ImageResource* newImageResource = new ImageResource(brokenImageAndImageScaleFactor.first);
             layoutImage->imageResource()->setImageResource(newImageResource);
         }
@@ -587,7 +587,7 @@ bool HTMLImageElement::isInteractiveContent() const
     return fastHasAttribute(usemapAttr);
 }
 
-PassRefPtr<Image> HTMLImageElement::getSourceImageForCanvas(SourceImageStatus* status) const
+PassRefPtr<Image> HTMLImageElement::getSourceImageForCanvas(SourceImageStatus* status, AccelerationHint) const
 {
     if (!complete() || !cachedImage()) {
         *status = IncompleteSourceImageStatus;
@@ -691,7 +691,10 @@ void HTMLImageElement::selectSourceURL(ImageLoader::UpdateFromElementBehavior be
     }
     imageLoader().updateFromElement(behavior, m_referrerPolicy);
 
-    if (imageLoader().image() || (imageLoader().hasPendingActivity() && !imageSourceURL().isEmpty()))
+    // Images such as data: uri's can return immediately and may already have errored out.
+    bool imageHasLoaded = imageLoader().image() && !imageLoader().image()->errorOccurred();
+    bool imageStillLoading = !imageHasLoaded && imageLoader().hasPendingActivity() && !imageLoader().hasPendingError() && !imageSourceURL().isEmpty();
+    if (imageHasLoaded || imageStillLoading)
         ensurePrimaryContent();
     else
         ensureFallbackContent();

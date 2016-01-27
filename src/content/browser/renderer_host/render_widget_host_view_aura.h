@@ -150,19 +150,19 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void CopyFromCompositingSurface(
       const gfx::Rect& src_subrect,
       const gfx::Size& dst_size,
-      ReadbackRequestCallback& callback,
+      const ReadbackRequestCallback& callback,
       const SkColorType preferred_color_type) override;
   void CopyFromCompositingSurfaceToVideoFrame(
       const gfx::Rect& src_subrect,
       const scoped_refptr<media::VideoFrame>& target,
       const base::Callback<void(bool)>& callback) override;
   bool CanCopyToVideoFrame() const override;
-  bool CanSubscribeFrame() const override;
   void BeginFrameSubscription(
       scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) override;
   void EndFrameSubscription() override;
   bool HasAcceleratedSurface(const gfx::Size& desired_size) override;
   void GetScreenInfo(blink::WebScreenInfo* results) override;
+  bool GetScreenColorProfile(std::vector<char>* color_profile) override;
   gfx::Rect GetBoundsInRootWindow() override;
   void WheelEventAck(const blink::WebMouseWheelEvent& event,
                      InputEventAckState ack_result) override;
@@ -173,7 +173,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   scoped_ptr<SyntheticGestureTarget> CreateSyntheticGestureTarget() override;
   InputEventAckState FilterInputEvent(
       const blink::WebInputEvent& input_event) override;
-  gfx::GLSurfaceHandle GetCompositingSurface() override;
   BrowserAccessibilityManager* CreateBrowserAccessibilityManager(
       BrowserAccessibilityDelegate* delegate) override;
   gfx::AcceleratedWidget AccessibilityGetAcceleratedWidget() override;
@@ -186,11 +185,14 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void HideRubberbandRect() override;
   void OnSwapCompositorFrame(uint32 output_surface_id,
                              scoped_ptr<cc::CompositorFrame> frame) override;
+  void ClearCompositorFrame() override;
   void DidStopFlinging() override;
   void OnDidNavigateMainFrameToNewPage() override;
   uint32_t GetSurfaceIdNamespace() override;
   uint32_t SurfaceIdNamespaceAtPoint(const gfx::Point& point,
                                      gfx::Point* transformed_point) override;
+  void ProcessMouseEvent(const blink::WebMouseEvent& event) override;
+  void ProcessMouseWheelEvent(const blink::WebMouseWheelEvent& event) override;
 
 #if defined(OS_WIN)
   void SetParentNativeViewAccessible(
@@ -501,7 +503,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void HandleGestureForTouchSelection(ui::GestureEvent* event);
 
   // The model object.
-  RenderWidgetHostImpl* host_;
+  RenderWidgetHostImpl* const host_;
 
   aura::Window* window_;
 
@@ -670,7 +672,12 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 
   BeginFrameObserverProxy begin_frame_observer_proxy_;
 
+  // This flag when set ensures that we send over a notification to blink that
+  // the current view has focus. Defaults to false.
+  bool set_focus_on_mouse_down_;
+
   base::WeakPtrFactory<RenderWidgetHostViewAura> weak_ptr_factory_;
+
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewAura);
 };
 

@@ -63,8 +63,6 @@ public:
     // View properties ---------------------------------------------------
 
     virtual void setViewportSize(const WebSize& deviceViewportSize) { }
-    // Gives the viewport size in physical device pixels.
-    virtual WebSize deviceViewportSize() const { return WebSize(); }
 
     virtual void setDeviceScaleFactor(float) { }
     virtual float deviceScaleFactor() const { return 0; }
@@ -128,10 +126,6 @@ public:
     // object alive until it is called.
     virtual void compositeAndReadbackAsync(WebCompositeAndReadbackAsyncCallback*) { }
 
-    // Blocks until the most recently composited frame has finished rendering on the GPU.
-    // This can have a significant performance impact and should be used with care.
-    virtual void finishAllRendering() { }
-
     // Prevents updates to layer tree from becoming visible.
     virtual void setDeferCommits(bool deferCommits) { }
 
@@ -148,8 +142,6 @@ public:
     virtual void clearViewportLayers() { }
 
     // Used to update the active selection bounds.
-    // FIXME: Remove this overload when downstream consumers have been updated to use WebSelection, crbug.com/466672.
-    virtual void registerSelection(const WebSelectionBound& start, const WebSelectionBound& end) { }
     virtual void registerSelection(const WebSelection&) { }
     virtual void clearSelection() { }
 
@@ -165,9 +157,6 @@ public:
 
     // Toggles the debug borders on layers
     virtual void setShowDebugBorders(bool) { }
-
-    // Toggles continuous painting
-    virtual void setContinuousPaintingEnabled(bool) { }
 
     // Toggles scroll bottleneck rects on the HUD layer
     virtual void setShowScrollBottleneckRects(bool) { }

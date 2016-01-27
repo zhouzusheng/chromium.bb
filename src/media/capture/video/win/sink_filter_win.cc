@@ -33,14 +33,14 @@ SinkFilter::SinkFilter(SinkFilterObserver* observer) : input_pin_(NULL) {
   input_pin_ = new SinkInputPin(this, observer);
 }
 
-void SinkFilter::SetRequestedMediaFormat(VideoCapturePixelFormat pixel_format,
+void SinkFilter::SetRequestedMediaFormat(VideoPixelFormat pixel_format,
                                          float frame_rate,
                                          const BITMAPINFOHEADER& info_header) {
   input_pin_->SetRequestedMediaFormat(pixel_format, frame_rate, info_header);
 }
 
-const VideoCaptureFormat& SinkFilter::ResultingFormat() {
-  return input_pin_->ResultingFormat();
+const VideoCaptureFormat& SinkFilter::ResultingFormat() const {
+  return input_pin_->resulting_format();
 }
 
 size_t SinkFilter::NoOfPins() {

@@ -32,15 +32,8 @@ public:
                                        float yInvZoom,
                                        float xInvInset,
                                        float yInvInset) {
-        return SkNEW_ARGS(GrMagnifierEffect, (procDataManager,
-                                              texture,
-                                              bounds,
-                                              xOffset,
-                                              yOffset,
-                                              xInvZoom,
-                                              yInvZoom,
-                                              xInvInset,
-                                              yInvInset));
+        return new GrMagnifierEffect(procDataManager, texture, bounds, xOffset, yOffset, xInvZoom,
+                                     yInvZoom, xInvInset, yInvInset);
     }
 
     virtual ~GrMagnifierEffect() {};
@@ -197,12 +190,12 @@ void GrMagnifierEffect::onGetGLProcessorKey(const GrGLSLCaps& caps,
 }
 
 GrGLFragmentProcessor* GrMagnifierEffect::onCreateGLInstance() const {
-    return SkNEW_ARGS(GrGLMagnifierEffect, (*this));
+    return new GrGLMagnifierEffect(*this);
 }
 
 GR_DEFINE_FRAGMENT_PROCESSOR_TEST(GrMagnifierEffect);
 
-GrFragmentProcessor* GrMagnifierEffect::TestCreate(GrProcessorTestData* d) {
+const GrFragmentProcessor* GrMagnifierEffect::TestCreate(GrProcessorTestData* d) {
     GrTexture* texture = d->fTextures[0];
     const int kMaxWidth = 200;
     const int kMaxHeight = 200;
@@ -252,13 +245,13 @@ SkImageFilter* SkMagnifierImageFilter::Create(const SkRect& srcRect, SkScalar in
                                               SkImageFilter* input) {
 
     if (!SkScalarIsFinite(inset) || !SkIsValidRect(srcRect)) {
-        return NULL;
+        return nullptr;
     }
     // Negative numbers in src rect are not supported
     if (srcRect.fLeft < 0 || srcRect.fTop < 0) {
-        return NULL;
+        return nullptr;
     }
-    return SkNEW_ARGS(SkMagnifierImageFilter, (srcRect, inset, input));
+    return new SkMagnifierImageFilter(srcRect, inset, input);
 }
 
 
@@ -368,8 +361,8 @@ bool SkMagnifierImageFilter::onFilterImage(Proxy*, const SkBitmap& src,
             SkScalar y_interp = SkScalarMul(weight, (fSrcRect.y() + y * inv_y_zoom)) +
                            (SK_Scalar1 - weight) * y;
 
-            int x_val = SkPin32(SkScalarFloorToInt(x_interp), 0, width - 1);
-            int y_val = SkPin32(SkScalarFloorToInt(y_interp), 0, height - 1);
+            int x_val = SkTPin(SkScalarFloorToInt(x_interp), 0, width - 1);
+            int y_val = SkTPin(SkScalarFloorToInt(y_interp), 0, height - 1);
 
             *dptr = sptr[y_val * width + x_val];
             dptr++;

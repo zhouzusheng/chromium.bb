@@ -15,6 +15,7 @@
 #include "media/base/audio_decoder_config.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/stream_parser_buffer.h"
+#include "media/base/timestamp_constants.h"
 #include "media/base/video_decoder_config.h"
 #include "media/filters/frame_processor.h"
 #include "media/filters/stream_parser_factory.h"
@@ -83,6 +84,8 @@ static Ranges<TimeDelta> ComputeIntersection(const RangesList& activeRanges,
 }
 
 // Contains state belonging to a source id.
+// TODO: SourceState needs to be moved to a separate file and covered with unit
+// tests (see crbug.com/525836)
 class SourceState {
  public:
   // Callback signature used to create ChunkDemuxerStreams.
@@ -123,9 +126,9 @@ class SourceState {
               const InitSegmentReceivedCB& init_segment_received_cb);
 
   // Aborts the current append sequence and resets the parser.
-  void Abort(TimeDelta append_window_start,
-             TimeDelta append_window_end,
-             TimeDelta* timestamp_offset);
+  void ResetParserState(TimeDelta append_window_start,
+                        TimeDelta append_window_end,
+                        TimeDelta* timestamp_offset);
 
   // Calls Remove(|start|, |end|, |duration|) on all
   // ChunkDemuxerStreams managed by this object.
@@ -352,9 +355,9 @@ bool SourceState::Append(
   return result;
 }
 
-void SourceState::Abort(TimeDelta append_window_start,
-                        TimeDelta append_window_end,
-                        base::TimeDelta* timestamp_offset) {
+void SourceState::ResetParserState(TimeDelta append_window_start,
+                                   TimeDelta append_window_end,
+                                   base::TimeDelta* timestamp_offset) {
   DCHECK(timestamp_offset);
   DCHECK(!timestamp_offset_during_append_);
   timestamp_offset_during_append_ = timestamp_offset;
@@ -385,9 +388,9 @@ size_t SourceState::EstimateVideoDataSize(size_t muxed_data_chunk_size) const {
   DCHECK(audio_);
   DCHECK(video_);
 
-  size_t bufferedVideoSize = video_->GetBufferedSize();
-  size_t bufferedAudioSize = audio_->GetBufferedSize();
-  if (bufferedVideoSize == 0 || bufferedAudioSize == 0) {
+  size_t videoBufferedSize = video_->GetBufferedSize();
+  size_t audioBufferedSize = audio_->GetBufferedSize();
+  if (videoBufferedSize == 0 || audioBufferedSize == 0) {
     // At this point either audio or video buffer is empty, which means buffer
     // levels are probably low anyway and we should have enough space in the
     // buffers for appending new data, so just take a very rough guess.
@@ -402,13 +405,17 @@ size_t SourceState::EstimateVideoDataSize(size_t muxed_data_chunk_size) const {
   // the current ratio of buffered audio/video.
   // Longer term this should go away once we further change the MSE GC algorithm
   // to work across all streams of a SourceBuffer (see crbug.com/520704).
-  CHECK(bufferedVideoSize + bufferedAudioSize > 0);
-  // Overflow check
-  CHECK(bufferedAudioSize <
-        std::numeric_limits<size_t>::max() - bufferedVideoSize);
-  size_t estimatedVideoData = (muxed_data_chunk_size * bufferedVideoSize) /
-      (bufferedVideoSize + bufferedAudioSize);
-  return estimatedVideoData;
+  double videoBufferedSizeF = static_cast<double>(videoBufferedSize);
+  double audioBufferedSizeF = static_cast<double>(audioBufferedSize);
+
+  double totalBufferedSizeF = videoBufferedSizeF + audioBufferedSizeF;
+  CHECK_GT(totalBufferedSizeF, 0.0);
+
+  double videoRatio = videoBufferedSizeF / totalBufferedSizeF;
+  CHECK_GE(videoRatio, 0.0);
+  CHECK_LE(videoRatio, 1.0);
+  double estimatedVideoSize = muxed_data_chunk_size * videoRatio;
+  return static_cast<size_t>(estimatedVideoSize);
 }
 
 bool SourceState::EvictCodedFrames(DecodeTimestamp media_time,
@@ -417,8 +424,8 @@ bool SourceState::EvictCodedFrames(DecodeTimestamp media_time,
 
   DVLOG(3) << __FUNCTION__ << " media_time=" << media_time.InSecondsF()
            << " newDataSize=" << newDataSize
-           << " bufferedVideoSize=" << (video_ ? video_->GetBufferedSize() : 0)
-           << " bufferedAudioSize=" << (audio_ ? audio_->GetBufferedSize() : 0);
+           << " videoBufferedSize=" << (video_ ? video_->GetBufferedSize() : 0)
+           << " audioBufferedSize=" << (audio_ ? audio_->GetBufferedSize() : 0);
 
   size_t newAudioSize = 0;
   size_t newVideoSize = 0;
@@ -447,8 +454,8 @@ bool SourceState::EvictCodedFrames(DecodeTimestamp media_time,
   }
 
   DVLOG(3) << __FUNCTION__ << " result=" << success
-           << " bufferedVideoSize=" << (video_ ? video_->GetBufferedSize() : 0)
-           << " bufferedAudioSize=" << (audio_ ? audio_->GetBufferedSize() : 0);
+           << " videoBufferedSize=" << (video_ ? video_->GetBufferedSize() : 0)
+           << " audioBufferedSize=" << (audio_ ? audio_->GetBufferedSize() : 0);
 
   return success;
 }
@@ -1506,19 +1513,19 @@ void ChunkDemuxer::AppendData(
     host_->AddBufferedTimeRange(ranges.start(i), ranges.end(i));
 }
 
-void ChunkDemuxer::Abort(const std::string& id,
-                         TimeDelta append_window_start,
-                         TimeDelta append_window_end,
-                         TimeDelta* timestamp_offset) {
-  DVLOG(1) << "Abort(" << id << ")";
+void ChunkDemuxer::ResetParserState(const std::string& id,
+                                    TimeDelta append_window_start,
+                                    TimeDelta append_window_end,
+                                    TimeDelta* timestamp_offset) {
+  DVLOG(1) << "ResetParserState(" << id << ")";
   base::AutoLock auto_lock(lock_);
   DCHECK(!id.empty());
   CHECK(IsValidId(id));
   bool old_waiting_for_data = IsSeekWaitingForData_Locked();
-  source_state_map_[id]->Abort(append_window_start,
-                               append_window_end,
-                               timestamp_offset);
-  // Abort can possibly emit some buffers.
+  source_state_map_[id]->ResetParserState(append_window_start,
+                                          append_window_end,
+                                          timestamp_offset);
+  // ResetParserState can possibly emit some buffers.
   // Need to check whether seeking can be completed.
   if (old_waiting_for_data && !IsSeekWaitingForData_Locked() &&
       !seek_cb_.is_null()) {

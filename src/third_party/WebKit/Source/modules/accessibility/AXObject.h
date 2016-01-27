@@ -37,7 +37,6 @@
 #include "platform/geometry/LayoutRect.h"
 #include "platform/graphics/Color.h"
 #include "wtf/Forward.h"
-#include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
 namespace blink {
@@ -215,20 +214,20 @@ enum AccessibilityState {
     AXVisitedState
 };
 
-class AccessibilityText final : public NoBaseWillBeGarbageCollectedFinalized<AccessibilityText> {
+class AccessibilityText final : public GarbageCollectedFinalized<AccessibilityText> {
 public:
-    static PassOwnPtrWillBeRawPtr<AccessibilityText> create(const String& text, const AccessibilityTextSource& source)
+    static AccessibilityText* create(const String& text, const AccessibilityTextSource& source)
     {
-        return adoptPtrWillBeNoop(new AccessibilityText(text, source, nullptr));
+        return new AccessibilityText(text, source, nullptr);
     }
-    static PassOwnPtrWillBeRawPtr<AccessibilityText> create(const String& text, const AccessibilityTextSource& source, const RefPtrWillBeRawPtr<AXObject> element)
+    static AccessibilityText* create(const String& text, const AccessibilityTextSource& source, AXObject* element)
     {
-        return adoptPtrWillBeNoop(new AccessibilityText(text, source, nullptr));
+        return new AccessibilityText(text, source, element);
     }
 
     String text() const { return m_text; }
     AccessibilityTextSource textSource() const { return m_textSource; }
-    AXObject* textElement() const { return m_textElement.get(); }
+    AXObject* textElement() const { return m_textElement; }
 
     DEFINE_INLINE_TRACE()
     {
@@ -236,7 +235,7 @@ public:
     }
 
 private:
-    AccessibilityText(const String& text, const AccessibilityTextSource& source, const RefPtrWillBeRawPtr<AXObject> element)
+    AccessibilityText(const String& text, const AccessibilityTextSource& source, AXObject* element)
     : m_text(text)
     , m_textSource(source)
     , m_textElement(element)
@@ -244,7 +243,7 @@ private:
 
     String m_text;
     AccessibilityTextSource m_textSource;
-    RefPtrWillBeMember<AXObject> m_textElement;
+    Member<AXObject> m_textElement;
 };
 
 enum AccessibilityOrientation {
@@ -368,7 +367,7 @@ class IgnoredReason {
     ALLOW_ONLY_INLINE_ALLOCATION();
 public:
     AXIgnoredReason reason;
-    RawPtrWillBeMember<const AXObject> relatedObject;
+    Member<const AXObject> relatedObject;
 
     explicit IgnoredReason(AXIgnoredReason reason)
         : reason(reason)
@@ -386,7 +385,7 @@ public:
     }
 };
 
-typedef WillBeHeapVector<RawPtrWillBeMember<AXObject>> AXObjectVector;
+typedef HeapVector<Member<AXObject>> AXObjectVector;
 class NameSource {
     ALLOW_ONLY_INLINE_ALLOCATION();
 public:
@@ -417,20 +416,20 @@ public:
     }
 };
 
-class MODULES_EXPORT AXObject : public RefCountedWillBeGarbageCollectedFinalized<AXObject> {
+class MODULES_EXPORT AXObject : public GarbageCollectedFinalized<AXObject> {
 public:
-    typedef WillBeHeapVector<RefPtrWillBeMember<AXObject>> AccessibilityChildrenVector;
+    typedef HeapVector<Member<AXObject>> AccessibilityChildrenVector;
 
     struct AXRange {
         // The deepest descendant in which the range starts.
         // (nullptr means the current object.)
-        RefPtrWillBePersistent<AXObject> anchorObject;
+        Persistent<AXObject> anchorObject;
         // The number of characters and child objects in the anchor object
         // before the range starts.
         int anchorOffset;
         // The deepest descendant in which the range ends.
         // (nullptr means the current object.)
-        RefPtrWillBePersistent<AXObject> focusObject;
+        Persistent<AXObject> focusObject;
         // The number of characters and child objects in the focus object
         // before the range ends.
         int focusOffset;
@@ -449,8 +448,8 @@ public:
             , focusOffset(endOffset)
         { }
 
-        AXRange(PassRefPtrWillBeRawPtr<AXObject> anchorObject, int anchorOffset,
-            PassRefPtrWillBeRawPtr<AXObject> focusObject, int focusOffset)
+        AXRange(AXObject* anchorObject, int anchorOffset,
+            AXObject* focusObject, int focusOffset)
             : anchorObject(anchorObject)
             , anchorOffset(anchorOffset)
             , focusObject(focusObject)
@@ -553,6 +552,7 @@ public:
     bool isPresentational() const { return roleValue() == NoneRole || roleValue() == PresentationalRole; }
     virtual bool isProgressIndicator() const { return false; }
     bool isRadioButton() const { return roleValue() == RadioButtonRole; }
+    bool isRange() const { return roleValue() == ProgressIndicatorRole || roleValue() == ScrollBarRole || roleValue() == SliderRole || roleValue() == SpinButtonRole; }
     bool isScrollbar() const { return roleValue() == ScrollBarRole; }
     virtual bool isSlider() const { return false; }
     virtual bool isNativeSlider() const { return false; }
@@ -595,7 +595,7 @@ public:
 
     // Whether objects are ignored, i.e. not included in the tree.
     bool accessibilityIsIgnored() const;
-    typedef WillBeHeapVector<IgnoredReason> IgnoredReasons;
+    typedef HeapVector<IgnoredReason> IgnoredReasons;
     virtual bool computeAccessibilityIsIgnored(IgnoredReasons* = nullptr) const { return true; }
     bool accessibilityIsIgnoredByDefault(IgnoredReasons* = nullptr) const;
     AXObjectInclusion accessibilityPlatformIncludesObject() const;
@@ -633,9 +633,9 @@ public:
 
     // Retrieves the accessible name of the object, an enum indicating where the name
     // was derived from, and a list of objects that were used to derive the name, if any.
-    virtual String name(AXNameFrom&, AXObjectVector& nameObjects) const;
+    virtual String name(AXNameFrom&, AXObjectVector* nameObjects) const;
 
-    typedef WillBeHeapVector<NameSource> NameSources;
+    typedef HeapVector<NameSource> NameSources;
     // Retrieves the accessible name of the object and a list of all potential sources
     // for the name, indicating which were used.
     virtual String name(NameSources*) const;
@@ -644,7 +644,7 @@ public:
     // accessible description of the object, which is secondary to |name|, an enum indicating
     // where the description was derived from, and a list of objects that were used to
     // derive the description, if any.
-    virtual String description(AXNameFrom, AXDescriptionFrom&, AXObjectVector& descriptionObjects) { return String(); }
+    virtual String description(AXNameFrom, AXDescriptionFrom&, AXObjectVector* descriptionObjects) { return String(); }
 
     // Takes the result of nameFrom and descriptionFrom from calling |name| and |description|,
     // above, and retrieves the placeholder of the object, if present and if it wasn't already
@@ -652,8 +652,8 @@ public:
     virtual String placeholder(AXNameFrom, AXDescriptionFrom) { return String(); }
 
     // Internal function used by name and description, above.
-    typedef WillBeHeapHashSet<RawPtrWillBeMember<const AXObject>> AXObjectSet;
-    virtual String textAlternative(bool recursive, bool inAriaLabelledByTraversal, AXObjectSet& visited, AXNameFrom& nameFrom, AXObjectVector& nameObjects, NameSources* nameSources) const { return String(); }
+    typedef HeapHashSet<Member<const AXObject>> AXObjectSet;
+    virtual String textAlternative(bool recursive, bool inAriaLabelledByTraversal, AXObjectSet& visited, AXNameFrom& nameFrom, AXObjectVector* nameObjects, NameSources* nameSources) const { return String(); }
 
     // Returns result of Accessible Name Calculation algorithm.
     // This is a simpler high-level interface to |name| used by Inspector.
@@ -716,6 +716,7 @@ public:
     virtual void ariaControlsElements(AccessibilityChildrenVector&) const { }
     virtual void ariaOwnsElements(AccessibilityChildrenVector& owns) const { }
     virtual bool ariaHasPopup() const { return false; }
+    virtual bool isEditable() const { return false; }
     bool isMultiline() const;
     virtual bool isRichlyEditable() const { return false; }
     virtual String ariaLabelledbyAttribute() const { return String(); }
@@ -890,7 +891,7 @@ protected:
 
     bool m_detached;
 
-    mutable RawPtrWillBeMember<AXObject> m_parent;
+    mutable Member<AXObject> m_parent;
 
     // The following cached attribute values (the ones starting with m_cached*)
     // are only valid if m_lastModificationCount matches AXObjectCacheImpl::modificationCount().
@@ -901,9 +902,9 @@ protected:
     mutable bool m_cachedIsDescendantOfDisabledNode : 1;
     mutable bool m_cachedHasInheritedPresentationalRole : 1;
     mutable bool m_cachedIsPresentationalChild : 1;
-    mutable RawPtrWillBeMember<const AXObject> m_cachedLiveRegionRoot;
+    mutable Member<const AXObject> m_cachedLiveRegionRoot;
 
-    RawPtrWillBeMember<AXObjectCacheImpl> m_axObjectCache;
+    Member<AXObjectCacheImpl> m_axObjectCache;
 
     // Updates the cached attribute values. This may be recursive, so to prevent deadlocks,
     // functions called here may only search up the tree (ancestors), not down.

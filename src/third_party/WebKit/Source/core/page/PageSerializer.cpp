@@ -164,7 +164,7 @@ void SerializerMarkupAccumulator::appendElement(StringBuilder& result, Element& 
         result.appendLiteral("<meta http-equiv=\"Content-Type\" content=\"");
         MarkupFormatter::appendAttributeValue(result, m_document->suggestedMIMEType(), m_document->isHTMLDocument());
         result.appendLiteral("; charset=");
-        MarkupFormatter::appendAttributeValue(result, m_document->charset(), m_document->isHTMLDocument());
+        MarkupFormatter::appendAttributeValue(result, m_document->characterSet(), m_document->isHTMLDocument());
         if (m_document->isXHTMLDocument())
             result.appendLiteral("\" />");
         else
@@ -253,9 +253,7 @@ void LinkChangeSerializerMarkupAccumulator::appendElement(StringBuilder& result,
         // Add MOTW (Mark of the Web) declaration before html tag.
         // See http://msdn2.microsoft.com/en-us/library/ms537628(VS.85).aspx.
         result.append('\n');
-        MarkupFormatter::appendComment(result, String::format(" saved from url=(%04d)%s ",
-            static_cast<int>(document().url().string().utf8().length()),
-            document().url().string().utf8().data()));
+        MarkupFormatter::appendComment(result, PageSerializer::markOfTheWebDeclaration(document().url()));
         result.append('\n');
     }
 
@@ -530,8 +528,9 @@ void PageSerializer::retrieveResourcesForCSSValue(CSSValue* cssValue, Document& 
 {
     if (cssValue->isImageValue()) {
         CSSImageValue* imageValue = toCSSImageValue(cssValue);
-        StyleImage* styleImage = imageValue->cachedOrPendingImage();
-        // Non cached-images are just place-holders and do not contain data.
+        if (imageValue->isCachePending())
+            return;
+        StyleImage* styleImage = imageValue->cachedImage();
         if (!styleImage || !styleImage->isImageResource())
             return;
 
@@ -575,6 +574,28 @@ KURL PageSerializer::urlForBlankFrame(LocalFrame* frame)
 PageSerializer::Delegate* PageSerializer::delegate()
 {
     return m_delegate.get();
+}
+
+// Returns MOTW (Mark of the Web) declaration before html tag which is in
+// HTML comment, e.g. "<!-- saved from url=(%04d)%s -->"
+// See http://msdn2.microsoft.com/en-us/library/ms537628(VS.85).aspx.
+String PageSerializer::markOfTheWebDeclaration(const KURL& url)
+{
+    StringBuilder builder;
+    bool emitsMinus = false;
+    CString orignalUrl = url.string().ascii();
+    for (const char* string = orignalUrl.data(); *string; ++string) {
+        const char ch = *string;
+        if (ch == '-' && emitsMinus) {
+            builder.append("%2D");
+            emitsMinus = false;
+            continue;
+        }
+        emitsMinus = ch == '-';
+        builder.append(ch);
+    }
+    CString escapedUrl = builder.toString().ascii();
+    return String::format("saved from url=(%04d)%s", static_cast<int>(escapedUrl.length()), escapedUrl.data());
 }
 
 } // namespace blink

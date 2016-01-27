@@ -74,6 +74,7 @@ public:
         int argc,
         v8::Local<v8::Value> argv[]) override;
     v8::Local<v8::Context> mainWorldScriptContext() const override;
+    v8::Local<v8::Context> deprecatedMainWorldScriptContext() const override;
     v8::Isolate* scriptIsolate() const override;
     void reload(bool ignoreCache) override;
     void reloadWithOverrideURL(const WebURL& overrideUrl, bool ignoreCache) override;
@@ -197,7 +198,7 @@ public:
 private:
     WebRemoteFrameImpl(WebTreeScopeType, WebRemoteFrameClient*);
 
-    RemoteFrameClientImpl m_frameClient;
+    OwnPtrWillBeMember<RemoteFrameClientImpl> m_frameClient;
     RefPtrWillBeMember<RemoteFrame> m_frame;
     WebRemoteFrameClient* m_client;
 

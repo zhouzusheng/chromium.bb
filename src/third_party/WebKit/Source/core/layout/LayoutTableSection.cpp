@@ -80,8 +80,10 @@ row, const LayoutTableCell* cell)
 
 void CellSpan::ensureConsistency(const unsigned maximumSpanSize)
 {
-    RELEASE_ASSERT(m_start >= 0 && m_start <= maximumSpanSize);
-    RELEASE_ASSERT(m_end >= 0 && m_end <= maximumSpanSize);
+    static_assert(WTF::IsSameType<decltype(m_start), unsigned>::value, "Asserts below assume m_start is unsigned");
+    static_assert(WTF::IsSameType<decltype(m_end), unsigned>::value, "Asserts below assume m_end is unsigned");
+    RELEASE_ASSERT(m_start <= maximumSpanSize);
+    RELEASE_ASSERT(m_end <= maximumSpanSize);
     RELEASE_ASSERT(m_start <= m_end);
 }
 
@@ -1275,7 +1277,7 @@ int LayoutTableSection::firstLineBoxBaseline() const
     return firstLineBaseline;
 }
 
-void LayoutTableSection::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void LayoutTableSection::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset) const
 {
     TableSectionPainter(*this).paint(paintInfo, paintOffset);
 }

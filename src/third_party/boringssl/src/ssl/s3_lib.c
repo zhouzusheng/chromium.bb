@@ -146,6 +146,8 @@
  * OTHER ENTITY BASED ON INFRINGEMENT OF INTELLECTUAL PROPERTY RIGHTS OR
  * OTHERWISE. */
 
+#include <openssl/ssl.h>
+
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -224,8 +226,8 @@ void ssl3_free(SSL *s) {
   }
 
   ssl3_cleanup_key_block(s);
-  ssl3_release_read_buffer(s);
-  ssl3_release_write_buffer(s);
+  ssl_read_buffer_clear(s);
+  ssl_write_buffer_clear(s);
   DH_free(s->s3->tmp.dh);
   EC_KEY_free(s->s3->tmp.ecdh);
 
@@ -233,6 +235,8 @@ void ssl3_free(SSL *s) {
   OPENSSL_free(s->s3->tmp.certificate_types);
   OPENSSL_free(s->s3->tmp.peer_ellipticcurvelist);
   OPENSSL_free(s->s3->tmp.peer_psk_identity_hint);
+  DH_free(s->s3->tmp.peer_dh_tmp);
+  EC_KEY_free(s->s3->tmp.peer_ecdh_tmp);
   ssl3_free_handshake_buffer(s);
   ssl3_free_handshake_hash(s);
   OPENSSL_free(s->s3->alpn_selected);
@@ -447,6 +451,11 @@ struct ssl_cipher_preference_list_st *ssl_get_cipher_preferences(SSL *s) {
   if (s->version >= TLS1_1_VERSION && s->ctx != NULL &&
       s->ctx->cipher_list_tls11 != NULL) {
     return s->ctx->cipher_list_tls11;
+  }
+
+  if (s->version >= TLS1_VERSION && s->ctx != NULL &&
+      s->ctx->cipher_list_tls10 != NULL) {
+    return s->ctx->cipher_list_tls10;
   }
 
   if (s->ctx != NULL && s->ctx->cipher_list != NULL) {

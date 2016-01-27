@@ -50,13 +50,12 @@ WebInspector.SettingsScreen = function(onHide)
     this._tabbedPane.insertBeforeTabStrip(settingsLabelElement);
     this._tabbedPane.setShrinkableTabs(false);
     this._tabbedPane.setVerticalTabLayout(true);
-
-    this._tabbedPaneController = new WebInspector.ExtensibleTabbedPaneController(this._tabbedPane, "settings-view");
-    this._tabbedPaneController.appendView("general", WebInspector.UIString("General"), 0, new WebInspector.GenericSettingsTab());
-    this._tabbedPaneController.appendView("workspace", WebInspector.UIString("Workspace"), 10, new WebInspector.WorkspaceSettingsTab());
+    this._tabbedPane.appendTab("general", WebInspector.UIString("General"), new WebInspector.GenericSettingsTab());
+    this._tabbedPane.appendTab("workspace", WebInspector.UIString("Workspace"), new WebInspector.WorkspaceSettingsTab());
     if (Runtime.experiments.supportEnabled())
-        this._tabbedPaneController.appendView("experiments", WebInspector.UIString("Experiments"), 100, new WebInspector.ExperimentsSettingsTab());
-    this._tabbedPaneController.appendView("shortcuts", WebInspector.UIString("Shortcuts"), 101, WebInspector.shortcutsScreen.createShortcutsTabView());
+        this._tabbedPane.appendTab("experiments", WebInspector.UIString("Experiments"), new WebInspector.ExperimentsSettingsTab());
+    this._tabbedPaneController = new WebInspector.ExtensibleTabbedPaneController(this._tabbedPane, "settings-view");
+    this._tabbedPane.appendTab("shortcuts", WebInspector.UIString("Shortcuts"), WebInspector.shortcutsScreen.createShortcutsTabView());
 
     this.element.addEventListener("keydown", this._keyDown.bind(this), false);
     this._developerModeCounter = 0;
@@ -326,7 +325,7 @@ WebInspector.SettingsScreen.SkipStackFramePatternSettingUI.prototype = {
 
     _onManageButtonClick: function()
     {
-        WebInspector.FrameworkBlackboxDialog.show(WebInspector.inspectorView.element);
+        WebInspector.FrameworkBlackboxDialog.show();
     }
 }
 
@@ -341,7 +340,7 @@ WebInspector.WorkspaceSettingsTab = function()
     WebInspector.isolatedFileSystemManager.addEventListener(WebInspector.IsolatedFileSystemManager.Events.FileSystemRemoved, this._fileSystemRemoved, this);
 
     this._commonSection = this._appendSection(WebInspector.UIString("Common"));
-    var folderExcludeSetting = WebInspector.isolatedFileSystemManager.excludedFolderManager().workspaceFolderExcludePatternSetting();
+    var folderExcludeSetting = WebInspector.isolatedFileSystemManager.workspaceFolderExcludePatternSetting();
     var folderExcludePatternInput = WebInspector.SettingsUI.createSettingInputField(WebInspector.UIString("Folder exclude pattern"), folderExcludeSetting, false, 0, "270px", WebInspector.SettingsUI.regexValidator);
     this._commonSection.appendChild(folderExcludePatternInput);
 
@@ -373,7 +372,7 @@ WebInspector.WorkspaceSettingsTab.prototype = {
     _resetFileSystems: function()
     {
         this._fileSystemsListContainer.removeChildren();
-        var fileSystemPaths = WebInspector.isolatedFileSystemManager.mapping().fileSystemPaths();
+        var fileSystemPaths = WebInspector.isolatedFileSystemManager.fileSystemPaths();
         delete this._fileSystemsList;
 
         if (!fileSystemPaths.length) {
@@ -425,7 +424,7 @@ WebInspector.WorkspaceSettingsTab.prototype = {
      */
     _editFileSystem: function(id)
     {
-        WebInspector.EditFileSystemDialog.show(WebInspector.inspectorView.element, id);
+        WebInspector.EditFileSystemDialog.show(id);
     },
 
     /**
@@ -697,6 +696,8 @@ WebInspector.SettingsList = function(columns, itemRenderer)
     /** @type {!Array.<?string>} */
     this._ids = [];
     this._columns = columns;
+    /** @type {!Set<string>} */
+    this._editableEntries = new Set();
 }
 
 WebInspector.SettingsList.Events = {
@@ -709,13 +710,16 @@ WebInspector.SettingsList.prototype = {
     /**
      * @param {?string} itemId
      * @param {?string=} beforeId
+     * @param {boolean=} readOnly
      * @return {!Element}
      */
-    addItem: function(itemId, beforeId)
+    addItem: function(itemId, beforeId, readOnly)
     {
+        if (!readOnly && itemId)
+            this._editableEntries.add(itemId);
         var listItem = createElementWithClass("div", "settings-list-item");
         listItem._id = itemId;
-        if (typeof beforeId !== "undefined")
+        if (beforeId)
             this.element.insertBefore(listItem, this.itemForId(beforeId));
         else
             this.element.appendChild(listItem);
@@ -730,10 +734,12 @@ WebInspector.SettingsList.prototype = {
             listItem.columnElements[column.id] = columnElement;
             this._itemRenderer(columnElement, column, itemId);
         }
-        var removeItemButton = this._createRemoveButton(removeItemClicked.bind(this));
-        listItemContents.addEventListener("click", this.selectItem.bind(this, itemId), false);
-        listItemContents.addEventListener("dblclick", this._onDoubleClick.bind(this, itemId), false);
-        listItemContents.appendChild(removeItemButton);
+        if (!readOnly) {
+            var removeItemButton = this._createRemoveButton(removeItemClicked.bind(this));
+            listItemContents.addEventListener("click", this.selectItem.bind(this, itemId), false);
+            listItemContents.addEventListener("dblclick", this._onDoubleClick.bind(this, itemId), false);
+            listItemContents.appendChild(removeItemButton);
+        }
 
         this._listItems.set(itemId || "", listItem);
         if (typeof beforeId !== "undefined")
@@ -805,12 +811,12 @@ WebInspector.SettingsList.prototype = {
     },
 
     /**
-     * @param {?string} itemId
+     * @param {string} itemId
      * @return {?Element}
      */
     itemForId: function(itemId)
     {
-        return this._listItems.get(itemId || "") || null;
+        return this._listItems.get(itemId) || null;
     },
 
     /**
@@ -828,11 +834,11 @@ WebInspector.SettingsList.prototype = {
      */
     selectItem: function(id, event)
     {
-        if (typeof this._selectedId !== "undefined")
+        if (this._selectedId)
             this.itemForId(this._selectedId).classList.remove("selected");
 
         this._selectedId = id;
-        if (typeof this._selectedId !== "undefined")
+        if (this._selectedId)
             this.itemForId(this._selectedId).classList.add("selected");
 
         this.dispatchEventToListeners(WebInspector.SettingsList.Events.Selected, id);
@@ -884,12 +890,14 @@ WebInspector.EditableSettingsList.prototype = {
      * @override
      * @param {?string} itemId
      * @param {?string=} beforeId
+     * @param {boolean=} readOnly
      * @return {!Element}
      */
-    addItem: function(itemId, beforeId)
+    addItem: function(itemId, beforeId, readOnly)
     {
-        var listItem = WebInspector.SettingsList.prototype.addItem.call(this, itemId, beforeId);
-        listItem.classList.add("editable");
+        var listItem = WebInspector.SettingsList.prototype.addItem.call(this, itemId, beforeId, readOnly);
+        if (!readOnly)
+            listItem.classList.add("editable");
         return listItem;
     },
 
@@ -960,11 +968,13 @@ WebInspector.EditableSettingsList.prototype = {
         var value = this._valuesProvider(itemId, columnId);
 
         var textElement = /** @type {!HTMLSpanElement} */ (columnElement.createChild("span", "list-column-text"));
-        columnElement.addEventListener("click", rowClicked.bind(this), false);
+        if (this._editableEntries.has(itemId))
+            columnElement.addEventListener("click", rowClicked.bind(this), false);
         this._textElements.get(itemId).set(columnId, textElement);
         this._setTextElementContent(itemId, columnId, value);
 
-        this._createEditElement(columnElement, column, itemId, value);
+        if (this._editableEntries.has(itemId))
+            this._createEditElement(columnElement, column, itemId, value);
 
         /**
          * @param {!Event} event

@@ -49,42 +49,15 @@ static inline const AtomicString& eventTypeForKeyboardEventType(PlatformEvent::T
     return EventTypeNames::keydown;
 }
 
-static inline int windowsVirtualKeyCodeWithoutLocation(int keycode)
-{
-    switch (keycode) {
-    case VK_LCONTROL:
-    case VK_RCONTROL:
-        return VK_CONTROL;
-    case VK_LSHIFT:
-    case VK_RSHIFT:
-        return VK_SHIFT;
-    case VK_LMENU:
-    case VK_RMENU:
-        return VK_MENU;
-    default:
-        return keycode;
-    }
-}
-
 static inline KeyboardEvent::KeyLocationCode keyLocationCode(const PlatformKeyboardEvent& key)
 {
     if (key.isKeypad())
         return KeyboardEvent::DOM_KEY_LOCATION_NUMPAD;
-
-    switch (key.windowsVirtualKeyCode()) {
-    case VK_LCONTROL:
-    case VK_LSHIFT:
-    case VK_LMENU:
-    case VK_LWIN:
+    if (key.modifiers() & PlatformEvent::IsLeft)
         return KeyboardEvent::DOM_KEY_LOCATION_LEFT;
-    case VK_RCONTROL:
-    case VK_RSHIFT:
-    case VK_RMENU:
-    case VK_RWIN:
+    if (key.modifiers() & PlatformEvent::IsRight)
         return KeyboardEvent::DOM_KEY_LOCATION_RIGHT;
-    default:
-        return KeyboardEvent::DOM_KEY_LOCATION_STANDARD;
-    }
+    return KeyboardEvent::DOM_KEY_LOCATION_STANDARD;
 }
 
 PassRefPtrWillBeRawPtr<KeyboardEvent> KeyboardEvent::create(ScriptState* scriptState, const AtomicString& type, const KeyboardEventInit& initializer)
@@ -111,7 +84,7 @@ KeyboardEvent::KeyboardEvent(const PlatformKeyboardEvent& key, AbstractView* vie
     , m_isAutoRepeat(key.isAutoRepeat())
     , m_bbIsNumLock(key.bbIsNumLock())
 {
-    setUICreateTime(key.timestamp());
+    setPlatformTimeStamp(key.timestamp());
 }
 
 KeyboardEvent::KeyboardEvent(const AtomicString& eventType, const KeyboardEventInit& initializer)
@@ -158,21 +131,6 @@ void KeyboardEvent::initKeyboardEvent(ScriptState* scriptState, const AtomicStri
     m_metaKey = metaKey;
 }
 
-bool KeyboardEvent::getModifierState(const String& keyIdentifier) const
-{
-    // FIXME: The following keyIdentifiers are not supported yet (crbug.com/265458):
-    // "AltGraph", "CapsLock", "Fn", "NumLock", "ScrollLock", "SymbolLock", "OS".
-    if (keyIdentifier == "Control")
-        return ctrlKey();
-    if (keyIdentifier == "Shift")
-        return shiftKey();
-    if (keyIdentifier == "Alt")
-        return altKey();
-    if (keyIdentifier == "Meta")
-        return metaKey();
-    return false;
-}
-
 int KeyboardEvent::keyCode() const
 {
     // IE: virtual key code for keyup/keydown, character code for keypress
@@ -189,7 +147,7 @@ int KeyboardEvent::keyCode() const
 #endif
 
     if (type() == EventTypeNames::keydown || type() == EventTypeNames::keyup)
-        return windowsVirtualKeyCodeWithoutLocation(m_keyEvent->windowsVirtualKeyCode());
+        return m_keyEvent->windowsVirtualKeyCode();
 
     return charCode();
 }

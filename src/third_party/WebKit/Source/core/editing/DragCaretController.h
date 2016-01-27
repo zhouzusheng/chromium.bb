@@ -26,11 +26,11 @@
 #ifndef DragCaretController_h
 #define DragCaretController_h
 
-#include "core/editing/Caret.h"
+#include "core/editing/CaretBase.h"
 
 namespace blink {
 
-class DragCaretController final : public NoBaseWillBeGarbageCollected<DragCaretController>, private CaretBase {
+class DragCaretController final : public NoBaseWillBeGarbageCollectedFinalized<DragCaretController>, private CaretBase {
     WTF_MAKE_NONCOPYABLE(DragCaretController);
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED(DragCaretController);
 public:
@@ -39,13 +39,13 @@ public:
     LayoutBlock* caretLayoutObject() const;
     void paintDragCaret(LocalFrame*, GraphicsContext*, const LayoutPoint&, const LayoutRect& clipRect) const;
 
-    bool isContentEditable() const { return m_position.rootEditableElement(); }
+    bool isContentEditable() const;
     bool isContentRichlyEditable() const;
 
     bool hasCaret() const { return m_position.isNotNull(); }
     const VisiblePosition& caretPosition() { return m_position; }
-    void setCaretPosition(const VisiblePosition&);
-    void clear() { setCaretPosition(VisiblePosition()); }
+    void setCaretPosition(const PositionWithAffinity&);
+    void clear() { setCaretPosition(PositionWithAffinity()); }
 
     void nodeWillBeRemoved(Node&);
 

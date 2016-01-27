@@ -51,9 +51,7 @@
 #include "base/win/windows_version.h"
 #endif
 
-#if defined(USE_OPENSSL_CERTS)
-#include "net/ssl/openssl_client_key_store.h"
-#else
+#if !defined(OS_NACL)
 #include "net/ssl/ssl_platform_key.h"
 #endif
 
@@ -90,11 +88,6 @@ void FreeX509Stack(STACK_OF(X509)* ptr) {
 }
 
 using ScopedX509Stack = crypto::ScopedOpenSSL<STACK_OF(X509), FreeX509Stack>;
-
-#if OPENSSL_VERSION_NUMBER < 0x1000103fL
-// This method doesn't seem to have made it into the OpenSSL headers.
-unsigned long SSL_CIPHER_get_id(const SSL_CIPHER* cipher) { return cipher->id; }
-#endif
 
 // Used for encoding the |connection_status| field of an SSLInfo object.
 int EncodeSSLConnectionStatus(uint16 cipher_suite,
@@ -175,7 +168,7 @@ bool EVP_MDToPrivateKeyHash(const EVP_MD* md, SSLPrivateKey::Hash* hash) {
   }
 }
 
-#if !defined(USE_OPENSSL_CERTS)
+#if !defined(OS_NACL)
 class PlatformKeyTaskRunner {
  public:
   PlatformKeyTaskRunner() {
@@ -200,13 +193,15 @@ class PlatformKeyTaskRunner {
 
 base::LazyInstance<PlatformKeyTaskRunner>::Leaky g_platform_key_task_runner =
     LAZY_INSTANCE_INITIALIZER;
-#endif  // !USE_OPENSSL_CERTS
+#endif
 
 }  // namespace
 
 class SSLClientSocketOpenSSL::SSLContext {
  public:
-  static SSLContext* GetInstance() { return Singleton<SSLContext>::get(); }
+  static SSLContext* GetInstance() {
+    return base::Singleton<SSLContext>::get();
+  }
   SSL_CTX* ssl_ctx() { return ssl_ctx_.get(); }
   SSLClientSessionCacheOpenSSL* session_cache() { return &session_cache_; }
 
@@ -225,7 +220,7 @@ class SSLClientSocketOpenSSL::SSLContext {
   static const SSL_PRIVATE_KEY_METHOD kPrivateKeyMethod;
 
  private:
-  friend struct DefaultSingletonTraits<SSLContext>;
+  friend struct base::DefaultSingletonTraits<SSLContext>;
 
   SSLContext() : session_cache_(SSLClientSessionCacheOpenSSL::Config()) {
     crypto::EnsureOpenSSLInit();
@@ -299,11 +294,6 @@ class SSLClientSocketOpenSSL::SSLContext {
     return socket->PrivateKeyTypeCallback();
   }
 
-  static int PrivateKeySupportsDigestCallback(SSL* ssl, const EVP_MD* md) {
-    SSLClientSocketOpenSSL* socket = GetInstance()->GetClientSocketFromSSL(ssl);
-    return socket->PrivateKeySupportsDigestCallback(md);
-  }
-
   static size_t PrivateKeyMaxSignatureLenCallback(SSL* ssl) {
     SSLClientSocketOpenSSL* socket = GetInstance()->GetClientSocketFromSSL(ssl);
     return socket->PrivateKeyMaxSignatureLenCallback();
@@ -347,7 +337,6 @@ class SSLClientSocketOpenSSL::SSLContext {
 const SSL_PRIVATE_KEY_METHOD
     SSLClientSocketOpenSSL::SSLContext::kPrivateKeyMethod = {
         &SSLClientSocketOpenSSL::SSLContext::PrivateKeyTypeCallback,
-        &SSLClientSocketOpenSSL::SSLContext::PrivateKeySupportsDigestCallback,
         &SSLClientSocketOpenSSL::SSLContext::PrivateKeyMaxSignatureLenCallback,
         &SSLClientSocketOpenSSL::SSLContext::PrivateKeySignCallback,
         &SSLClientSocketOpenSSL::SSLContext::PrivateKeySignCompleteCallback,
@@ -439,11 +428,6 @@ void SSLClientSocket::ClearSessionCache() {
   SSLClientSocketOpenSSL::SSLContext* context =
       SSLClientSocketOpenSSL::SSLContext::GetInstance();
   context->session_cache()->Flush();
-}
-
-// static
-uint16 SSLClientSocket::GetMaxSupportedSSLVersion() {
-  return SSL_PROTOCOL_VERSION_TLS1_2;
 }
 
 SSLClientSocketOpenSSL::SSLClientSocketOpenSSL(
@@ -731,6 +715,8 @@ bool SSLClientSocketOpenSSL::GetSSLInfo(SSLInfo* ssl_info) {
   const SSL_CIPHER* cipher = SSL_get_current_cipher(ssl_);
   CHECK(cipher);
   ssl_info->security_bits = SSL_CIPHER_get_bits(cipher, NULL);
+  ssl_info->key_exchange_info =
+      SSL_SESSION_get_key_exchange_info(SSL_get_session(ssl_));
 
   ssl_info->connection_status = EncodeSSLConnectionStatus(
       static_cast<uint16>(SSL_CIPHER_get_id(cipher)), 0 /* no compression */,
@@ -892,42 +878,33 @@ int SSLClientSocketOpenSSL::Init() {
   SSL_set_mode(ssl_, mode.set_mask);
   SSL_clear_mode(ssl_, mode.clear_mask);
 
-  // Removing ciphers by ID from OpenSSL is a bit involved as we must use the
-  // textual name with SSL_set_cipher_list because there is no public API to
-  // directly remove a cipher by ID.
-  STACK_OF(SSL_CIPHER)* ciphers = SSL_get_ciphers(ssl_);
-  DCHECK(ciphers);
   // See SSLConfig::disabled_cipher_suites for description of the suites
-  // disabled by default. Note that !SHA256 and !SHA384 only remove HMAC-SHA256
+  // disabled by default. Note that SHA256 and SHA384 only select HMAC-SHA256
   // and HMAC-SHA384 cipher suites, not GCM cipher suites with SHA256 or SHA384
   // as the handshake hash.
-  std::string command("DEFAULT:!SHA256:!SHA384:!AESGCM+AES256:!aPSK");
-  // Walk through all the installed ciphers, seeing if any need to be
-  // appended to the cipher removal |command|.
-  for (size_t i = 0; i < sk_SSL_CIPHER_num(ciphers); ++i) {
-    const SSL_CIPHER* cipher = sk_SSL_CIPHER_value(ciphers, i);
-    const uint16 id = static_cast<uint16>(SSL_CIPHER_get_id(cipher));
-    bool disable = false;
-    if (ssl_config_.require_ecdhe) {
-      base::StringPiece kx_name(SSL_CIPHER_get_kx_name(cipher));
-      disable = kx_name != "ECDHE_RSA" && kx_name != "ECDHE_ECDSA";
-    }
-    if (!disable) {
-      disable = std::find(ssl_config_.disabled_cipher_suites.begin(),
-                          ssl_config_.disabled_cipher_suites.end(), id) !=
-                    ssl_config_.disabled_cipher_suites.end();
-    }
-    if (disable) {
-       const char* name = SSL_CIPHER_get_name(cipher);
-       DVLOG(3) << "Found cipher to remove: '" << name << "', ID: " << id
-                << " strength: " << SSL_CIPHER_get_bits(cipher, NULL);
-       command.append(":!");
-       command.append(name);
-     }
+  std::string command("DEFAULT:!SHA256:-SHA384:!AESGCM+AES256:!aPSK");
+
+  if (ssl_config_.require_ecdhe)
+    command.append(":!kRSA:!kDHE");
+
+  if (!ssl_config_.enable_deprecated_cipher_suites) {
+    command.append(":!RC4");
+  } else {
+    // Add TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384 under a fallback. This is
+    // believed to work around a bug in some out-of-date Microsoft IIS servers
+    // which cause them to require the version downgrade
+    // (https://crbug.com/433406).
+    command.append(":ECDHE-RSA-AES256-SHA384");
   }
 
-  if (!ssl_config_.enable_deprecated_cipher_suites)
-    command.append(":!RC4");
+  // Remove any disabled ciphers.
+  for (uint16_t id : ssl_config_.disabled_cipher_suites) {
+    const SSL_CIPHER* cipher = SSL_get_cipher_by_value(id);
+    if (cipher) {
+      command.append(":!");
+      command.append(SSL_CIPHER_get_name(cipher));
+    }
+  }
 
   // Disable ECDSA cipher suites on platforms that do not support ECDSA
   // signed certificates, as servers may use the presence of such
@@ -960,10 +937,12 @@ int SSLClientSocketOpenSSL::Init() {
       enabled_ciphers_vector.push_back(id);
     }
 
-    std::vector<uint8_t> wire_protos =
-        SerializeNextProtos(ssl_config_.next_protos,
-                            HasCipherAdequateForHTTP2(enabled_ciphers_vector) &&
-                                IsTLSVersionAdequateForHTTP2(ssl_config_));
+    NextProtoVector next_protos = ssl_config_.next_protos;
+    if (!HasCipherAdequateForHTTP2(enabled_ciphers_vector) ||
+        !IsTLSVersionAdequateForHTTP2(ssl_config_)) {
+      DisableHTTP2(&next_protos);
+    }
+    std::vector<uint8_t> wire_protos = SerializeNextProtos(next_protos);
     SSL_set_alpn_protos(ssl_, wire_protos.empty() ? NULL : &wire_protos[0],
                         wire_protos.size());
   }
@@ -1817,24 +1796,10 @@ int SSLClientSocketOpenSSL::ClientCertRequestCallback(SSL* ssl) {
       return -1;
     }
 
-#if defined(USE_OPENSSL_CERTS)
-    // TODO(davidben): Move Android to the SSLPrivateKey codepath and disable
-    // client auth on NaCl altogether.
-    crypto::ScopedEVP_PKEY privkey =
-        OpenSSLClientKeyStore::GetInstance()->FetchClientCertPrivateKey(
-            ssl_config_.client_cert.get());
-    if (!privkey) {
-      // Could not find the private key. Fail the handshake and surface an
-      // appropriate error to the caller.
-      LOG(WARNING) << "Client cert found without private key";
+#if defined(OS_NACL)
       OpenSSLPutNetError(FROM_HERE, ERR_SSL_CLIENT_AUTH_CERT_NO_PRIVATE_KEY);
       return -1;
-    }
-    if (!SSL_use_PrivateKey(ssl_, privkey.get())) {
-      LOG(WARNING) << "Failed to set private key";
-      return -1;
-    }
-#else   // !USE_OPENSSL_CERTS
+#else
     // TODO(davidben): Lift this call up to the embedder so we can actually test
     // this code. https://crbug.com/394131
     private_key_ = FetchClientCertPrivateKey(
@@ -1849,7 +1814,35 @@ int SSLClientSocketOpenSSL::ClientCertRequestCallback(SSL* ssl) {
     }
 
     SSL_set_private_key_method(ssl_, &SSLContext::kPrivateKeyMethod);
-#endif  // USE_OPENSSL_CERTS
+
+    std::vector<SSLPrivateKey::Hash> digest_prefs =
+        private_key_->GetDigestPreferences();
+
+    size_t digests_len = digest_prefs.size();
+    std::vector<int> digests;
+    for (size_t i = 0; i < digests_len; i++) {
+      switch (digest_prefs[i]) {
+        case SSLPrivateKey::Hash::SHA1:
+          digests.push_back(NID_sha1);
+          break;
+        case SSLPrivateKey::Hash::SHA256:
+          digests.push_back(NID_sha256);
+          break;
+        case SSLPrivateKey::Hash::SHA384:
+          digests.push_back(NID_sha384);
+          break;
+        case SSLPrivateKey::Hash::SHA512:
+          digests.push_back(NID_sha512);
+          break;
+        case SSLPrivateKey::Hash::MD5_SHA1:
+          // MD5-SHA1 is not used in TLS 1.2.
+          break;
+      }
+    }
+
+    SSL_set_private_key_digest_prefs(ssl_, vector_as_array(&digests),
+                                     digests.size());
+#endif  // !OS_NACL
 
     int cert_count = 1 + sk_X509_num(chain.get());
     net_log_.AddEvent(NetLog::TYPE_SSL_CLIENT_CERT_PROVIDED,
@@ -2084,11 +2077,6 @@ int SSLClientSocketOpenSSL::PrivateKeyTypeCallback() {
   }
   NOTREACHED();
   return EVP_PKEY_NONE;
-}
-
-int SSLClientSocketOpenSSL::PrivateKeySupportsDigestCallback(const EVP_MD* md) {
-  SSLPrivateKey::Hash hash;
-  return EVP_MDToPrivateKeyHash(md, &hash) && private_key_->SupportsHash(hash);
 }
 
 size_t SSLClientSocketOpenSSL::PrivateKeyMaxSignatureLenCallback() {

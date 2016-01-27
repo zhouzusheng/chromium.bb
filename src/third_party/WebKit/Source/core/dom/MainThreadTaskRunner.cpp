@@ -35,7 +35,7 @@
 
 namespace blink {
 
-class MainThreadTask : public WebThread::Task {
+class MainThreadTask : public WebTaskRunner::Task {
     WTF_MAKE_NONCOPYABLE(MainThreadTask); WTF_MAKE_FAST_ALLOCATED(MainThreadTask);
 public:
     MainThreadTask(WeakPtrWillBeRawPtr<MainThreadTaskRunner> runner, PassOwnPtr<ExecutionContextTask> task, bool isInspectorTask)
@@ -48,11 +48,7 @@ public:
     void run() override;
 
 private:
-#if ENABLE(OILPAN)
-    CrossThreadWeakPersistent<MainThreadTaskRunner> m_runner;
-#else
-    WeakPtr<MainThreadTaskRunner> m_runner;
-#endif
+    WeakPtrWillBeCrossThreadWeakPersistent<MainThreadTaskRunner> m_runner;
     OwnPtr<ExecutionContextTask> m_task;
     bool m_isInspectorTask;
 };
@@ -89,12 +85,12 @@ void MainThreadTaskRunner::postTask(const WebTraceLocation& location, PassOwnPtr
 {
     if (!task->taskNameForInstrumentation().isEmpty())
         InspectorInstrumentation::didPostExecutionContextTask(m_context, task.get());
-    Platform::current()->mainThread()->postTask(location, new MainThreadTask(createWeakPointerToSelf(), task, false));
+    Platform::current()->mainThread()->taskRunner()->postTask(location, new MainThreadTask(createWeakPointerToSelf(), task, false));
 }
 
 void MainThreadTaskRunner::postInspectorTask(const WebTraceLocation& location, PassOwnPtr<ExecutionContextTask> task)
 {
-    Platform::current()->mainThread()->postTask(location, new MainThreadTask(createWeakPointerToSelf(), task, true));
+    Platform::current()->mainThread()->taskRunner()->postTask(location, new MainThreadTask(createWeakPointerToSelf(), task, true));
 }
 
 void MainThreadTaskRunner::perform(PassOwnPtr<ExecutionContextTask> task, bool isInspectorTask)

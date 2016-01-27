@@ -9,11 +9,13 @@
 #include "base/lazy_instance.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/core/SkPath.h"
+#include "third_party/skia/include/core/SkXfermode.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/canvas_image_source.h"
 #include "ui/gfx/vector_icon_types.h"
-#include "ui/gfx/vector_icons2.h"
+#include "ui/gfx/vector_icons.h"
 
 namespace gfx {
 
@@ -27,7 +29,9 @@ CommandType CommandFromString(const std::string& source) {
 
   RETURN_IF_IS(NEW_PATH);
   RETURN_IF_IS(PATH_COLOR_ARGB);
+  RETURN_IF_IS(PATH_MODE_CLEAR);
   RETURN_IF_IS(STROKE);
+  RETURN_IF_IS(CAP_SQUARE);
   RETURN_IF_IS(MOVE_TO);
   RETURN_IF_IS(R_MOVE_TO);
   RETURN_IF_IS(LINE_TO);
@@ -39,6 +43,7 @@ CommandType CommandFromString(const std::string& source) {
   RETURN_IF_IS(CUBIC_TO);
   RETURN_IF_IS(R_CUBIC_TO);
   RETURN_IF_IS(CIRCLE);
+  RETURN_IF_IS(ROUND_RECT);
   RETURN_IF_IS(CLOSE);
   RETURN_IF_IS(CANVAS_DIMENSIONS);
   RETURN_IF_IS(CLIP);
@@ -68,6 +73,7 @@ void PaintPath(Canvas* canvas,
                const PathElement* path_elements,
                size_t dip_size,
                SkColor color) {
+  canvas->Save();
   SkPath path;
   path.setFillType(SkPath::kEvenOdd_FillType);
 
@@ -103,10 +109,20 @@ void PaintPath(Canvas* canvas,
         break;
       }
 
+      case PATH_MODE_CLEAR: {
+        paint.setXfermodeMode(SkXfermode::kClear_Mode);
+        break;
+      };
+
       case STROKE: {
         paint.setStyle(SkPaint::kStroke_Style);
         SkScalar width = path_elements[++i].arg;
         paint.setStrokeWidth(width);
+        break;
+      }
+
+      case CAP_SQUARE: {
+        paint.setStrokeCap(SkPaint::kSquare_Cap);
         break;
       }
 
@@ -196,6 +212,16 @@ void PaintPath(Canvas* canvas,
         break;
       }
 
+      case ROUND_RECT: {
+        SkScalar x = path_elements[++i].arg;
+        SkScalar y = path_elements[++i].arg;
+        SkScalar w = path_elements[++i].arg;
+        SkScalar h = path_elements[++i].arg;
+        SkScalar radius = path_elements[++i].arg;
+        path.addRoundRect(SkRect::MakeXYWH(x, y, w, h), radius, radius);
+        break;
+      }
+
       case CLOSE: {
         path.close();
         break;
@@ -238,16 +264,21 @@ void PaintPath(Canvas* canvas,
   DCHECK_EQ(paints.size(), paths.size());
   for (size_t i = 0; i < paths.size(); ++i)
     canvas->DrawPath(paths[i], paints[i]);
+  canvas->Restore();
 }
 
 class VectorIconSource : public CanvasImageSource {
  public:
-  VectorIconSource(VectorIconId id, size_t dip_size, SkColor color)
+  VectorIconSource(VectorIconId id,
+                   size_t dip_size,
+                   SkColor color,
+                   VectorIconId badge_id)
       : CanvasImageSource(
             gfx::Size(static_cast<int>(dip_size), static_cast<int>(dip_size)),
             false),
         id_(id),
-        color_(color) {}
+        color_(color),
+        badge_id_(badge_id) {}
 
   VectorIconSource(const std::string& definition,
                    size_t dip_size,
@@ -257,22 +288,27 @@ class VectorIconSource : public CanvasImageSource {
             false),
         id_(VectorIconId::VECTOR_ICON_NONE),
         path_(PathFromSource(definition)),
-        color_(color) {}
+        color_(color),
+        badge_id_(VectorIconId::VECTOR_ICON_NONE) {}
 
   ~VectorIconSource() override {}
 
   // CanvasImageSource:
   void Draw(gfx::Canvas* canvas) override {
-    if (path_.empty())
+    if (path_.empty()) {
       PaintVectorIcon(canvas, id_, size_.width(), color_);
-    else
+      if (badge_id_ != VectorIconId::VECTOR_ICON_NONE)
+        PaintVectorIcon(canvas, badge_id_, size_.width(), color_);
+    } else {
       PaintPath(canvas, path_.data(), size_.width(), color_);
+    }
   }
 
  private:
   const VectorIconId id_;
   const std::vector<PathElement> path_;
   const SkColor color_;
+  const VectorIconId badge_id_;
 
   DISALLOW_COPY_AND_ASSIGN(VectorIconSource);
 };
@@ -285,14 +321,17 @@ class VectorIconCache {
   VectorIconCache() {}
   ~VectorIconCache() {}
 
-  ImageSkia GetOrCreateIcon(VectorIconId id, size_t dip_size, SkColor color) {
-    IconDescription description(id, dip_size, color);
+  ImageSkia GetOrCreateIcon(VectorIconId id,
+                            size_t dip_size,
+                            SkColor color,
+                            VectorIconId badge_id) {
+    IconDescription description(id, dip_size, color, badge_id);
     auto iter = images_.find(description);
     if (iter != images_.end())
       return iter->second;
 
     ImageSkia icon(
-        new VectorIconSource(id, dip_size, color),
+        new VectorIconSource(id, dip_size, color, badge_id),
         gfx::Size(static_cast<int>(dip_size), static_cast<int>(dip_size)));
     images_.insert(std::make_pair(description, icon));
     return icon;
@@ -300,20 +339,26 @@ class VectorIconCache {
 
  private:
   struct IconDescription {
-    IconDescription(VectorIconId id, size_t dip_size, SkColor color)
-        : id(id), dip_size(dip_size), color(color) {}
+    IconDescription(VectorIconId id,
+                    size_t dip_size,
+                    SkColor color,
+                    VectorIconId badge_id)
+        : id(id), dip_size(dip_size), color(color), badge_id(badge_id) {}
 
     bool operator<(const IconDescription& other) const {
       if (id != other.id)
         return id < other.id;
       if (dip_size != other.dip_size)
         return dip_size < other.dip_size;
-      return color < other.color;
+      if (color != other.color)
+        return color < other.color;
+      return badge_id < other.badge_id;
     }
 
     VectorIconId id;
     size_t dip_size;
     SkColor color;
+    VectorIconId badge_id;
   };
 
   std::map<IconDescription, ImageSkia> images_;
@@ -338,7 +383,15 @@ void PaintVectorIcon(Canvas* canvas,
 }
 
 ImageSkia CreateVectorIcon(VectorIconId id, size_t dip_size, SkColor color) {
-  return g_icon_cache.Get().GetOrCreateIcon(id, dip_size, color);
+  return CreateVectorIconWithBadge(id, dip_size, color,
+                                   VectorIconId::VECTOR_ICON_NONE);
+}
+
+ImageSkia CreateVectorIconWithBadge(VectorIconId id,
+                                    size_t dip_size,
+                                    SkColor color,
+                                    VectorIconId badge_id) {
+  return g_icon_cache.Get().GetOrCreateIcon(id, dip_size, color, badge_id);
 }
 
 ImageSkia CreateVectorIconFromSource(const std::string& source,

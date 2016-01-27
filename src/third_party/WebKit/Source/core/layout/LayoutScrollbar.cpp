@@ -200,7 +200,7 @@ void LayoutScrollbar::updateScrollbarParts(bool destroy)
             if (box->isLayoutBlock())
                 toLayoutBlock(box)->notifyScrollbarThicknessChanged();
             box->setChildNeedsLayout();
-            if (RuntimeEnabledFeatures::slimmingPaintEnabled() && m_scrollableArea)
+            if (m_scrollableArea)
                 m_scrollableArea->invalidateScrollCorner(m_scrollableArea->scrollCornerRect());
         }
     }
@@ -277,7 +277,7 @@ void LayoutScrollbar::updateScrollbarPart(ScrollbarPart partType, bool destroy)
         partLayoutObject->setStyle(partStyle.release());
 }
 
-IntRect LayoutScrollbar::buttonRect(ScrollbarPart partType)
+IntRect LayoutScrollbar::buttonRect(ScrollbarPart partType) const
 {
     LayoutScrollbarPart* partLayoutObject = m_parts.get(partType);
     if (!partLayoutObject)
@@ -310,7 +310,7 @@ IntRect LayoutScrollbar::buttonRect(ScrollbarPart partType)
         isHorizontal ? height() : partLayoutObject->pixelSnappedHeight());
 }
 
-IntRect LayoutScrollbar::trackRect(int startLength, int endLength)
+IntRect LayoutScrollbar::trackRect(int startLength, int endLength) const
 {
     LayoutScrollbarPart* part = m_parts.get(TrackBGPart);
     if (part)
@@ -334,7 +334,7 @@ IntRect LayoutScrollbar::trackRect(int startLength, int endLength)
     return IntRect(x(), y() + startLength, width(), height() - totalLength);
 }
 
-IntRect LayoutScrollbar::trackPieceRectWithMargins(ScrollbarPart partType, const IntRect& oldRect)
+IntRect LayoutScrollbar::trackPieceRectWithMargins(ScrollbarPart partType, const IntRect& oldRect) const
 {
     LayoutScrollbarPart* partLayoutObject = m_parts.get(partType);
     if (!partLayoutObject)
@@ -353,7 +353,7 @@ IntRect LayoutScrollbar::trackPieceRectWithMargins(ScrollbarPart partType, const
     return rect;
 }
 
-int LayoutScrollbar::minimumThumbLength()
+int LayoutScrollbar::minimumThumbLength() const
 {
     LayoutScrollbarPart* partLayoutObject = m_parts.get(ThumbPart);
     if (!partLayoutObject)
@@ -365,9 +365,6 @@ int LayoutScrollbar::minimumThumbLength()
 void LayoutScrollbar::invalidateRect(const IntRect& rect)
 {
     Scrollbar::invalidateRect(rect);
-
-    if (!RuntimeEnabledFeatures::slimmingPaintEnabled())
-        return;
 
     // FIXME: invalidate only the changed part.
     if (LayoutBox* owningLayoutObject = this->owningLayoutObject()) {

@@ -41,6 +41,8 @@
         '<(skia_src_path)/utils/SkBase64.h',
         '<(skia_src_path)/utils/SkBitmapHasher.cpp',
         '<(skia_src_path)/utils/SkBitmapHasher.h',
+        '<(skia_src_path)/utils/SkBitmapSourceDeserializer.cpp',
+        '<(skia_src_path)/utils/SkBitmapSourceDeserializer.h',
         '<(skia_src_path)/utils/SkBitSet.cpp',
         '<(skia_src_path)/utils/SkBitSet.h',
         '<(skia_src_path)/utils/SkBoundaryPatch.cpp',
@@ -100,6 +102,7 @@
         '<(skia_src_path)/utils/SkThreadUtils_win.cpp',
         '<(skia_src_path)/utils/SkThreadUtils_win.h',
         '<(skia_src_path)/utils/SkTFitsIn.h',
+        '<(skia_src_path)/utils/SkWhitelistTypefaces.cpp',
 
         #mac
         '<(skia_include_path)/utils/mac/SkCGUtils.h',

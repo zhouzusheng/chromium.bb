@@ -197,6 +197,8 @@ URLRequestHttpJob::URLRequestHttpJob(
       awaiting_callback_(false),
       http_user_agent_settings_(http_user_agent_settings),
       backoff_manager_(request->context()->backoff_manager()),
+      total_received_bytes_from_previous_transactions_(0),
+      total_sent_bytes_from_previous_transactions_(0),
       weak_factory_(this) {
   URLRequestThrottlerManager* manager = request->context()->throttler_manager();
   if (manager)
@@ -307,7 +309,8 @@ void URLRequestHttpJob::NotifyBeforeNetworkStart(bool* defer) {
   if (!request_)
     return;
   if (backoff_manager_) {
-    if (backoff_manager_->ShouldRejectRequest(request()->url(),
+    if ((request_->load_flags() & LOAD_MAYBE_USER_GESTURE) == 0 &&
+        backoff_manager_->ShouldRejectRequest(request()->url(),
                                               request()->request_time())) {
       *defer = true;
       base::MessageLoop::current()->PostTask(
@@ -421,6 +424,11 @@ void URLRequestHttpJob::DestroyTransaction() {
   DCHECK(transaction_.get());
 
   DoneWithRequest(ABORTED);
+
+  total_received_bytes_from_previous_transactions_ +=
+      transaction_->GetTotalReceivedBytes();
+  total_sent_bytes_from_previous_transactions_ +=
+      transaction_->GetTotalSentBytes();
   transaction_.reset();
   response_info_ = NULL;
   receive_headers_end_ = base::TimeTicks();
@@ -1084,6 +1092,13 @@ void URLRequestHttpJob::GetLoadTimingInfo(
     load_timing_info->receive_headers_end = receive_headers_end_;
 }
 
+bool URLRequestHttpJob::GetRemoteEndpoint(IPEndPoint* endpoint) const {
+  if (!transaction_)
+    return false;
+
+  return transaction_->GetRemoteEndpoint(endpoint);
+}
+
 bool URLRequestHttpJob::GetResponseCookies(std::vector<std::string>* cookies) {
   DCHECK(transaction_.get());
 
@@ -1359,10 +1374,18 @@ bool URLRequestHttpJob::GetFullRequestHeaders(
 }
 
 int64 URLRequestHttpJob::GetTotalReceivedBytes() const {
-  if (!transaction_)
-    return 0;
+  int64_t total_received_bytes =
+      total_received_bytes_from_previous_transactions_;
+  if (transaction_)
+    total_received_bytes += transaction_->GetTotalReceivedBytes();
+  return total_received_bytes;
+}
 
-  return transaction_->GetTotalReceivedBytes();
+int64_t URLRequestHttpJob::GetTotalSentBytes() const {
+  int64_t total_sent_bytes = total_sent_bytes_from_previous_transactions_;
+  if (transaction_)
+    total_sent_bytes += transaction_->GetTotalSentBytes();
+  return total_sent_bytes;
 }
 
 void URLRequestHttpJob::DoneReading() {

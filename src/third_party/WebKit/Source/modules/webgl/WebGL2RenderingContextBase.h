@@ -63,9 +63,13 @@ public:
     void uniform2ui(const WebGLUniformLocation*, GLuint, GLuint);
     void uniform3ui(const WebGLUniformLocation*, GLuint, GLuint, GLuint);
     void uniform4ui(const WebGLUniformLocation*, GLuint, GLuint, GLuint, GLuint);
+    void uniform1uiv(const WebGLUniformLocation*, const FlexibleUint32ArrayView&);
     void uniform1uiv(const WebGLUniformLocation*, Vector<GLuint>&);
+    void uniform2uiv(const WebGLUniformLocation*, const FlexibleUint32ArrayView&);
     void uniform2uiv(const WebGLUniformLocation*, Vector<GLuint>&);
+    void uniform3uiv(const WebGLUniformLocation*, const FlexibleUint32ArrayView&);
     void uniform3uiv(const WebGLUniformLocation*, Vector<GLuint>&);
+    void uniform4uiv(const WebGLUniformLocation*, const FlexibleUint32ArrayView&);
     void uniform4uiv(const WebGLUniformLocation*, Vector<GLuint>&);
     void uniformMatrix2x3fv(const WebGLUniformLocation*, GLboolean, DOMFloat32Array*);
     void uniformMatrix2x3fv(const WebGLUniformLocation*, GLboolean, Vector<GLfloat>&);
@@ -81,8 +85,10 @@ public:
     void uniformMatrix4x3fv(const WebGLUniformLocation*, GLboolean, Vector<GLfloat>&);
 
     void vertexAttribI4i(GLuint, GLint, GLint, GLint, GLint);
+    void vertexAttribI4iv(GLuint, const DOMInt32Array*);
     void vertexAttribI4iv(GLuint, const Vector<GLint>&);
     void vertexAttribI4ui(GLuint, GLuint, GLuint, GLuint, GLuint);
+    void vertexAttribI4uiv(GLuint, const DOMUint32Array*);
     void vertexAttribI4uiv(GLuint, const Vector<GLuint>&);
     void vertexAttribIPointer(GLuint index, GLint size, GLenum type, GLsizei stride, long long offset);
 
@@ -158,6 +164,9 @@ public:
     GLboolean isVertexArray(WebGLVertexArrayObject*);
     void bindVertexArray(WebGLVertexArrayObject*);
 
+    /* Reading */
+    void readPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, long long offset);
+
     /* WebGLRenderingContextBase overrides */
     void initializeNewContext() override;
     void bindFramebuffer(GLenum target, WebGLFramebuffer*) override;
@@ -165,6 +174,7 @@ public:
     ScriptValue getParameter(ScriptState*, GLenum pname) override;
     ScriptValue getTexParameter(ScriptState*, GLenum target, GLenum pname) override;
     ScriptValue getFramebufferAttachmentParameter(ScriptState*, GLenum target, GLenum attachment, GLenum pname) override;
+    void readPixels(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, DOMArrayBufferView* pixels) override;
     void restoreCurrentFramebuffer() override;
 
     EAGERLY_FINALIZE();
@@ -184,12 +194,23 @@ protected:
         TexStorageType3D,
     };
     bool validateTexStorage(const char*, GLenum, GLsizei, GLenum, GLsizei, GLsizei, GLsizei, TexStorageType);
+    bool validateTexImage3D(const char* functionName, GLenum target, GLint level, GLenum internalformat, GLenum format, GLenum type);
     bool validateTexSubImage3D(const char*, GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLenum format, GLenum type, GLsizei width, GLsizei height, GLsizei depth);
 
     ScriptValue getInt64Parameter(ScriptState*, GLenum);
 
     void texSubImage3DImpl(GLenum, GLint, GLint, GLint, GLint, GLenum, GLenum, Image*, WebGLImageConversion::ImageHtmlDomSource, bool, bool);
     void samplerParameter(WebGLSampler*, GLenum, GLfloat, GLint, bool);
+
+    bool isBufferBoundToTransformFeedback(WebGLBuffer*);
+    bool isBufferBoundToNonTransformFeedback(WebGLBuffer*);
+    bool validateBufferTargetCompatibility(const char*, GLenum, WebGLBuffer*);
+
+    bool validateBufferBaseTarget(const char* functionName, GLenum target);
+    bool validateAndUpdateBufferBindBaseTarget(const char* functionName, GLenum, GLuint, WebGLBuffer*);
+
+    void vertexAttribIivImpl(const char*, GLuint, const GLint*, GLsizei);
+    void vertexAttribIuivImpl(const char*, GLuint, const GLuint*, GLsizei);
 
     /* WebGLRenderingContextBase overrides */
     unsigned getMaxWebGLLocationLength() const override { return 1024; };
@@ -206,6 +227,7 @@ protected:
     GLenum boundFramebufferColorFormat() override;
 
     WebGLBuffer* validateBufferDataTarget(const char* functionName, GLenum target) override;
+    bool validateBufferDataUsage(const char* functionName, GLenum usage) override;
 
     void removeBoundBuffer(WebGLBuffer*) override;
 
@@ -214,12 +236,18 @@ protected:
     GLint m_max3DTextureSize;
     GLint m_max3DTextureLevel;
 
+    std::set<GLenum> m_supportedInternalFormatsStorage;
+
     PersistentWillBeMember<WebGLBuffer> m_boundCopyReadBuffer;
     PersistentWillBeMember<WebGLBuffer> m_boundCopyWriteBuffer;
     PersistentWillBeMember<WebGLBuffer> m_boundPixelPackBuffer;
     PersistentWillBeMember<WebGLBuffer> m_boundPixelUnpackBuffer;
     PersistentWillBeMember<WebGLBuffer> m_boundTransformFeedbackBuffer;
     PersistentWillBeMember<WebGLBuffer> m_boundUniformBuffer;
+
+    PersistentHeapVectorWillBeHeapVector<Member<WebGLBuffer>> m_boundIndexedTransformFeedbackBuffers;
+    PersistentHeapVectorWillBeHeapVector<Member<WebGLBuffer>> m_boundIndexedUniformBuffers;
+    size_t m_maxBoundUniformBufferIndex;
 
     PersistentWillBeMember<WebGLQuery> m_currentBooleanOcclusionQuery;
     PersistentWillBeMember<WebGLQuery> m_currentTransformFeedbackPrimitivesWrittenQuery;

@@ -413,7 +413,9 @@ bool AXObject::isDetached() const
 
 bool AXObject::isARIATextControl() const
 {
-    return ariaRoleAttribute() == TextFieldRole || ariaRoleAttribute() == SearchBoxRole;
+    return ariaRoleAttribute() == TextFieldRole
+        || ariaRoleAttribute() == SearchBoxRole
+        || ariaRoleAttribute() == ComboBoxRole;
 }
 
 bool AXObject::isButton() const
@@ -671,9 +673,9 @@ bool AXObject::isPresentationalChild() const
     return m_cachedIsPresentationalChild;
 }
 
-String AXObject::name(AXNameFrom& nameFrom, AXObjectVector& nameObjects) const
+String AXObject::name(AXNameFrom& nameFrom, AXObjectVector* nameObjects) const
 {
-    WillBeHeapHashSet<RawPtrWillBeMember<const AXObject>> visited;
+    HeapHashSet<Member<const AXObject>> visited;
     return textAlternative(false, false, visited, nameFrom, nameObjects, nullptr);
 }
 
@@ -682,19 +684,19 @@ String AXObject::name(NameSources* nameSources) const
     AXObjectSet visited;
     AXNameFrom tmpNameFrom;
     AXObjectVector tmpNameObjects;
-    return textAlternative(false, false, visited, tmpNameFrom, tmpNameObjects, nameSources);
+    return textAlternative(false, false, visited, tmpNameFrom, &tmpNameObjects, nameSources);
 }
 
 String AXObject::recursiveTextAlternative(const AXObject& axObj, bool inAriaLabelledByTraversal, AXObjectSet& visited)
 {
-    AXNameFrom unusedRecursiveNameFrom;
-    AXObjectVector unusedRecursiveNameObjects;
-    return axObj.textAlternative(true, inAriaLabelledByTraversal, visited, unusedRecursiveNameFrom, unusedRecursiveNameObjects, nullptr);
+    AXNameFrom tmpNameFrom;
+    return axObj.textAlternative(true, inAriaLabelledByTraversal, visited, tmpNameFrom, nullptr, nullptr);
 }
 
-// In ARIA 1.1, the default value for aria-orientation changed from horizontal to undefined.
 AccessibilityOrientation AXObject::orientation() const
 {
+    // In ARIA 1.1, the default value for aria-orientation changed from
+    // horizontal to undefined.
     return AccessibilityOrientationUndefined;
 }
 
@@ -1276,7 +1278,7 @@ void AXObject::scrollToGlobalPoint(const IntPoint& globalPoint) const
 {
     // Search up the parent chain and create a vector of all scrollable parent objects
     // and ending with this object itself.
-    Vector<const AXObject*> objects;
+    HeapVector<Member<const AXObject>> objects;
     AXObject* parentObject;
     for (parentObject = this->parentObject(); parentObject; parentObject = parentObject->parentObject()) {
         if (parentObject->getScrollableAreaIfScrollable() && !parentObject->isAXScrollView())

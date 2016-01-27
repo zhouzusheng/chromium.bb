@@ -41,6 +41,8 @@ class DevToolsHttpHandlerDelegateImpl
     std::string GetDiscoveryPageHTML() override { return std::string(); }
     std::string GetFrontendResource(const std::string& path) override;
     std::string GetPageThumbnailData(const GURL& url) override { return std::string(); }
+    content::DevToolsExternalAgentProxyDelegate*
+        HandleWebSocketConnection(const std::string& path) override { return nullptr; }
 };
 
 // TODO: document this

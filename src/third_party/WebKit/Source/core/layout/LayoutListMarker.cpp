@@ -29,8 +29,8 @@
 #include "core/layout/LayoutAnalyzer.h"
 #include "core/layout/LayoutListItem.h"
 #include "core/layout/TextRunConstructor.h"
-#include "core/paint/DeprecatedPaintLayer.h"
 #include "core/paint/ListMarkerPainter.h"
+#include "core/paint/PaintLayer.h"
 #include "platform/fonts/Font.h"
 #include "wtf/text/StringBuilder.h"
 
@@ -1028,7 +1028,7 @@ bool LayoutListMarker::isImage() const
     return m_image && !m_image->errorOccurred();
 }
 
-LayoutRect LayoutListMarker::localSelectionRect()
+LayoutRect LayoutListMarker::localSelectionRect() const
 {
     InlineBox* box = inlineBoxWrapper();
     if (!box)
@@ -1040,7 +1040,7 @@ LayoutRect LayoutListMarker::localSelectionRect()
     return LayoutRect(newLogicalTop, 0, root.selectionHeight(), size().height());
 }
 
-void LayoutListMarker::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset)
+void LayoutListMarker::paint(const PaintInfo& paintInfo, const LayoutPoint& paintOffset) const
 {
     ListMarkerPainter(*this).paint(paintInfo, paintOffset);
 }
@@ -1308,7 +1308,7 @@ bool LayoutListMarker::isInside() const
     return m_listItem->notInList() || style()->listStylePosition() == INSIDE;
 }
 
-IntRect LayoutListMarker::getRelativeMarkerRect()
+IntRect LayoutListMarker::getRelativeMarkerRect() const
 {
     IntRect relativeRect;
 
@@ -1427,9 +1427,8 @@ LayoutRect LayoutListMarker::selectionRectForPaintInvalidation(const LayoutBoxMo
     LayoutRect rect(0, root.selectionTop() - location().y(), size().width(), root.selectionHeight());
     mapRectToPaintInvalidationBacking(paintInvalidationContainer, rect, 0);
     // FIXME: groupedMapping() leaks the squashing abstraction.
-    // TODO(shez): Investigate why layer() is sometimes null here.
-    if (paintInvalidationContainer->layer() && paintInvalidationContainer->layer()->groupedMapping())
-        DeprecatedPaintLayer::mapRectToPaintBackingCoordinates(paintInvalidationContainer, rect);
+    if (paintInvalidationContainer->layer()->groupedMapping())
+        PaintLayer::mapRectToPaintBackingCoordinates(paintInvalidationContainer, rect);
     return rect;
 }
 

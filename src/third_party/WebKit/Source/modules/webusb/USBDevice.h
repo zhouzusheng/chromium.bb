@@ -5,7 +5,10 @@
 #ifndef USBDevice_h
 #define USBDevice_h
 
+#include "bindings/core/v8/ScriptPromise.h"
 #include "bindings/core/v8/ScriptWrappable.h"
+#include "bindings/modules/v8/UnionTypesModules.h"
+#include "core/dom/ContextLifecycleObserver.h"
 #include "platform/heap/Handle.h"
 #include "public/platform/modules/webusb/WebUSBDevice.h"
 #include "public/platform/modules/webusb/WebUSBDeviceInfo.h"
@@ -13,11 +16,15 @@
 namespace blink {
 
 class ScriptPromiseResolver;
+class ScriptState;
 class USBConfiguration;
+class USBControlTransferParameters;
 
 class USBDevice
     : public GarbageCollectedFinalized<USBDevice>
+    , public ContextLifecycleObserver
     , public ScriptWrappable {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(USBDevice);
     DEFINE_WRAPPERTYPEINFO();
 public:
     using WebType = OwnPtr<WebUSBDevice>;
@@ -33,7 +40,8 @@ public:
     }
 
     explicit USBDevice(PassOwnPtr<WebUSBDevice> device)
-        : m_device(device)
+        : ContextLifecycleObserver(nullptr)
+        , m_device(device)
     {
     }
 
@@ -58,7 +66,24 @@ public:
     String serialNumber() const { return info().serialNumber; }
     HeapVector<Member<USBConfiguration>> configurations() const;
 
-    DEFINE_INLINE_TRACE() { }
+    ScriptPromise open(ScriptState*);
+    ScriptPromise close(ScriptState*);
+    ScriptPromise getConfiguration(ScriptState*);
+    ScriptPromise setConfiguration(ScriptState*, uint8_t configurationValue);
+    ScriptPromise claimInterface(ScriptState*, uint8_t interfaceNumber);
+    ScriptPromise releaseInterface(ScriptState*, uint8_t interfaceNumber);
+    ScriptPromise setInterface(ScriptState*, uint8_t interfaceNumber, uint8_t alternateSetting);
+    ScriptPromise controlTransferIn(ScriptState*, const USBControlTransferParameters& setup, unsigned length);
+    ScriptPromise controlTransferOut(ScriptState*, const USBControlTransferParameters& setup);
+    ScriptPromise controlTransferOut(ScriptState*, const USBControlTransferParameters& setup, const ArrayBufferOrArrayBufferView& data);
+    ScriptPromise clearHalt(ScriptState*, uint8_t endpointNumber);
+    ScriptPromise transferIn(ScriptState*, uint8_t endpointNumber, unsigned length);
+    ScriptPromise transferOut(ScriptState*, uint8_t endpointNumber, const ArrayBufferOrArrayBufferView& data);
+    ScriptPromise reset(ScriptState*);
+
+    void contextDestroyed() override;
+
+    DECLARE_TRACE();
 
 private:
     OwnPtr<WebUSBDevice> m_device;

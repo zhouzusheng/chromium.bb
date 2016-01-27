@@ -176,6 +176,7 @@ public:
     // because a child frame can't manipulate the URL of a cross-origin
     // parent.
     bool allowAncestors(LocalFrame*, const KURL&, ReportingStatus = SendReport) const;
+    bool isFrameAncestorsEnforced() const;
 
     // The nonce and hash allow functions are guaranteed to not have any side
     // effects, including reporting.
@@ -259,12 +260,13 @@ public:
     static bool isFontResource(const ResourceRequest&);
     static bool isMediaResource(const ResourceRequest&);
 
+    Document* document() const;
+
 private:
     ContentSecurityPolicy();
 
     void applyPolicySideEffectsToExecutionContext();
 
-    Document* document() const;
     SecurityOrigin* securityOrigin() const;
     KURL completeURL(const String&) const;
 

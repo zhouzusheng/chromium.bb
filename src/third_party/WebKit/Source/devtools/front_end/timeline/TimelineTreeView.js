@@ -25,8 +25,8 @@ WebInspector.TimelineTreeView = function(model)
         WebInspector.TimelineModel.RecordType.TimerFire
     ];
     this._filters = [
-        WebInspector.TimelineUIUtils.hiddenEventsFilter(),
-        new WebInspector.ExclusiveTraceEventNameFilter(nonessentialEvents),
+        WebInspector.TimelineUIUtils.visibleEventsFilter(),
+        new WebInspector.ExclusiveNameFilter(nonessentialEvents),
         new WebInspector.ExcludeTopLevelFilter()
     ];
 
@@ -64,8 +64,17 @@ WebInspector.TimelineTreeView.prototype = {
      */
     updateContents: function(selection)
     {
-        this._startTime = selection.startTime();
-        this._endTime = selection.endTime();
+        this.setRange(selection.startTime(), selection.endTime());
+    },
+
+    /**
+     * @param {number} startTime
+     * @param {number} endTime
+     */
+    setRange: function(startTime, endTime)
+    {
+        this._startTime = startTime;
+        this._endTime = endTime;
         this._refreshTree();
     },
 
@@ -202,13 +211,16 @@ WebInspector.TimelineTreeView.prototype = {
          */
         function groupByDomain(groupSubdomains, node)
         {
-            var parsedURL = (WebInspector.TimelineTreeView.eventURL(node.event) || "").asParsedURL();
+            var url = WebInspector.TimelineTreeView.eventURL(node.event) || "";
+            if (url.startsWith("extensions::"))
+                return WebInspector.UIString("[Chrome extensions overhead]");
+            var parsedURL = url.asParsedURL();
             if (!parsedURL)
                 return "";
             if (parsedURL.scheme === "chrome-extension") {
-                var url = parsedURL.scheme + "://" + parsedURL.host;
+                url = parsedURL.scheme + "://" + parsedURL.host;
                 var displayName = executionContextNamesByOrigin.get(url);
-                return displayName ? WebInspector.UIString("Chrome Extension: %s", displayName) : url;
+                return displayName ? WebInspector.UIString("[Chrome extension] %s", displayName) : url;
             }
             if (!groupSubdomains)
                 return parsedURL.host;
@@ -219,9 +231,8 @@ WebInspector.TimelineTreeView.prototype = {
         }
 
         var executionContextNamesByOrigin = new Map();
-        var mainTarget = WebInspector.targetManager.mainTarget();
-        if (mainTarget) {
-            for (var context of mainTarget.runtimeModel.executionContexts())
+        for (var target of WebInspector.targetManager.targets()) {
+            for (var context of target.runtimeModel.executionContexts())
                 executionContextNamesByOrigin.set(context.origin, context.name);
         }
         var groupByMap = /** @type {!Map<!WebInspector.TimelineTreeView.GroupBy,?function(!WebInspector.TimelineModel.ProfileTreeNode):string>} */ (new Map([
@@ -391,9 +402,12 @@ WebInspector.TimelineTreeView.GridNode.prototype = {
         var container = cell.createChild("div", "name-container");
         var icon = container.createChild("div", "activity-icon");
         var name = container.createChild("div", "activity-name");
-        var link = container.createChild("div", "activity-link");
         var event = this._profileNode.event;
         if (event) {
+            var data = event.args["data"];
+            var deoptReason = data && data["deoptReason"];
+            if (deoptReason && deoptReason !== "no reason")
+                container.createChild("div", "activity-warning").title = WebInspector.UIString("Not optimized: %s", deoptReason);
             name.textContent = event.name === WebInspector.TimelineModel.RecordType.JSFrame
                 ? WebInspector.beautifyFunctionName(event.args["data"]["functionName"])
                 : WebInspector.TimelineUIUtils.eventTitle(event);
@@ -403,7 +417,7 @@ WebInspector.TimelineTreeView.GridNode.prototype = {
             var lineNumber = frame && frame["lineNumber"] || 1;
             var columnNumber = frame && frame["columnNumber"];
             if (url)
-                link.appendChild(this._treeView.linkifyLocation(scriptId, url, lineNumber, columnNumber));
+                container.createChild("div", "activity-link").appendChild(this._treeView.linkifyLocation(scriptId, url, lineNumber, columnNumber));
             var category = WebInspector.TimelineUIUtils.eventStyle(event).category;
             icon.style.backgroundColor = category.fillColorStop1;
         } else {
@@ -430,7 +444,8 @@ WebInspector.TimelineTreeView.GridNode.prototype = {
             textDiv.createChild("span", "percent-column").textContent = this.data[percentColumn];
             textDiv.classList.add("profile-multiple-values");
         }
-        cell.createChild("div", "background-bar").style.width = (this._profileNode[columnIdentifier + "Time"] * 100 / this._maxTimes[columnIdentifier]).toFixed(1) + "%";
+        var bar = cell.createChild("div", "background-bar-container").createChild("div", "background-bar");
+        bar.style.width = (this._profileNode[columnIdentifier + "Time"] * 100 / this._maxTimes[columnIdentifier]).toFixed(1) + "%";
         return cell;
     },
 

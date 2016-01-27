@@ -76,19 +76,6 @@ void InitDefaultPlatformImpl()
     }
 }
 
-void DeinitDefaultPlatformImpl()
-{
-    if (defaultPlatform != nullptr)
-    {
-        if (ANGLEPlatformCurrent() == defaultPlatform)
-        {
-            ANGLEPlatformShutdown();
-        }
-
-        SafeDelete(defaultPlatform);
-    }
-}
-
 typedef std::map<EGLNativeWindowType, Surface*> WindowSurfaceMap;
 // Get a map of all EGL window surfaces to validate that no window has more than one EGL surface
 // associated with it.
@@ -317,8 +304,7 @@ void Display::terminate()
 
     mInitialized = false;
 
-    // De-init default platform
-    DeinitDefaultPlatformImpl();
+    // Never de-init default platform.. terminate is not that final.
 }
 
 std::vector<const Config*> Display::getConfigs(const egl::AttributeMap &attribs) const
@@ -725,6 +711,8 @@ static ClientExtensions GenerateClientExtensions()
     extensions.platformANGLEOpenGL = true;
 #endif
 
+    extensions.clientGetAllProcAddresses = true;
+
     return extensions;
 }
 
@@ -753,6 +741,10 @@ const std::string &Display::getClientExtensionString()
 void Display::initDisplayExtensions()
 {
     mDisplayExtensions = mImplementation->getExtensions();
+
+    // Force EGL_KHR_get_all_proc_addresses on.
+    mDisplayExtensions.getAllProcAddresses = true;
+
     mDisplayExtensionString = GenerateExtensionsString(mDisplayExtensions);
 }
 

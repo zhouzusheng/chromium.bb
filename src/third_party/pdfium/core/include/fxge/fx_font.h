@@ -60,13 +60,13 @@ class CFX_Font {
   CFX_Font();
   ~CFX_Font();
 
-  FX_BOOL LoadSubst(const CFX_ByteString& face_name,
-                    FX_BOOL bTrueType,
-                    FX_DWORD flags,
-                    int weight,
-                    int italic_angle,
-                    int CharsetCP,
-                    FX_BOOL bVertical = FALSE);
+  void LoadSubst(const CFX_ByteString& face_name,
+                 FX_BOOL bTrueType,
+                 FX_DWORD flags,
+                 int weight,
+                 int italic_angle,
+                 int CharsetCP,
+                 FX_BOOL bVertical = FALSE);
   FX_BOOL LoadEmbedded(const uint8_t* data, FX_DWORD size);
   FXFT_Face GetFace() const { return m_Face; }
   const CFX_SubstFont* GetSubstFont() const { return m_pSubstFont; }
@@ -435,5 +435,7 @@ class IFX_GSUBTable {
  protected:
   virtual ~IFX_GSUBTable() {}
 };
+
+CFX_ByteString GetNameFromTT(const uint8_t* name_table, FX_DWORD name);
 
 #endif  // CORE_INCLUDE_FXGE_FX_FONT_H_

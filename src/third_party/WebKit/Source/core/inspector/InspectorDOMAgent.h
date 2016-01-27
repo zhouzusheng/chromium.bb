@@ -36,8 +36,10 @@
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InjectedScriptManager.h"
 #include "core/inspector/InspectorBaseAgent.h"
+#include "core/inspector/InspectorHighlight.h"
 #include "core/style/ComputedStyleConstants.h"
 #include "platform/JSONValues.h"
+#include "platform/geometry/FloatQuad.h"
 
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
@@ -60,7 +62,6 @@ class FloatQuad;
 class InsertionPoint;
 class InspectorFrontend;
 class InspectorHistory;
-class InspectorOverlay;
 class InspectorPageAgent;
 class Node;
 class QualifiedName;
@@ -70,8 +71,6 @@ class PlatformMouseEvent;
 class PlatformTouchEvent;
 class InspectorRevalidateDOMTask;
 class ShadowRoot;
-
-struct InspectorHighlightConfig;
 
 typedef String ErrorString;
 
@@ -87,13 +86,26 @@ public:
         virtual void didModifyDOMAttr(Element*) = 0;
     };
 
-    static PassOwnPtrWillBeRawPtr<InspectorDOMAgent> create(InspectorPageAgent* pageAgent, InjectedScriptManager* injectedScriptManager, InspectorOverlay* overlay)
+    enum SearchMode { NotSearching, SearchingForNormal, SearchingForUAShadow, ShowLayoutEditor };
+
+    class Client {
+    public:
+        virtual ~Client() { }
+        virtual void hideHighlight() { }
+        virtual void highlightNode(Node*, const InspectorHighlightConfig&, bool omitTooltip) { }
+        virtual void highlightQuad(PassOwnPtr<FloatQuad>, const InspectorHighlightConfig&) { }
+        virtual void setInspectMode(SearchMode searchMode, PassOwnPtr<InspectorHighlightConfig>) { }
+        virtual void setInspectedNode(Node*) { }
+    };
+
+    static PassOwnPtrWillBeRawPtr<InspectorDOMAgent> create(InspectorPageAgent* pageAgent, InjectedScriptManager* injectedScriptManager, Client* client)
     {
-        return adoptPtrWillBeNoop(new InspectorDOMAgent(pageAgent, injectedScriptManager, overlay));
+        return adoptPtrWillBeNoop(new InspectorDOMAgent(pageAgent, injectedScriptManager, client));
     }
 
     static String toErrorString(ExceptionState&);
     static bool getPseudoElementType(PseudoId, TypeBuilder::DOM::PseudoType::Enum*);
+    static ShadowRoot* userAgentShadowRoot(Node*);
 
     ~InspectorDOMAgent() override;
     DECLARE_VIRTUAL_TRACE();
@@ -123,7 +135,7 @@ public:
     void discardSearchResults(ErrorString*, const String& searchId) override;
     void resolveNode(ErrorString*, int nodeId, const String* objectGroup, RefPtr<TypeBuilder::Runtime::RemoteObject>& result) override;
     void getAttributes(ErrorString*, int nodeId, RefPtr<TypeBuilder::Array<String>>& result) override;
-    void setInspectModeEnabled(ErrorString*, bool enabled, const bool* inspectUAShadowDOM, const RefPtr<JSONObject>* highlightConfig) override;
+    void setInspectMode(ErrorString*, const String&, const RefPtr<JSONObject>* highlightConfig) override;
     void requestNode(ErrorString*, const String& objectId, int* nodeId) override;
     void pushNodeByPathToFrontend(ErrorString*, const String& path, int* nodeId) override;
     void pushNodesByBackendIdsToFrontend(ErrorString*, const RefPtr<JSONArray>& nodeIds, RefPtr<TypeBuilder::Array<int>>&) override;
@@ -175,10 +187,6 @@ public:
     static String documentURLString(Document*);
 
     PassRefPtr<TypeBuilder::Runtime::RemoteObject> resolveNode(Node*, const String& objectGroup);
-    bool handleMousePress();
-    bool handleGestureEvent(LocalFrame*, const PlatformGestureEvent&);
-    bool handleTouchEvent(LocalFrame*, const PlatformTouchEvent&);
-    bool handleMouseMove(LocalFrame*, const PlatformMouseEvent&);
 
     InspectorHistory* history() { return m_history.get(); }
 
@@ -196,9 +204,7 @@ public:
     Document* assertDocument(ErrorString*, int nodeId);
 
 private:
-    enum SearchMode { NotSearching, SearchingForNormal, SearchingForUAShadow };
-
-    InspectorDOMAgent(InspectorPageAgent*, InjectedScriptManager*, InspectorOverlay*);
+    InspectorDOMAgent(InspectorPageAgent*, InjectedScriptManager*, Client*);
 
     void setDocument(Document*);
     void innerEnable();
@@ -240,7 +246,7 @@ private:
 
     RawPtrWillBeMember<InspectorPageAgent> m_pageAgent;
     RawPtrWillBeMember<InjectedScriptManager> m_injectedScriptManager;
-    RawPtrWillBeMember<InspectorOverlay> m_overlay;
+    Client* m_client;
     RawPtrWillBeMember<DOMListener> m_domListener;
     OwnPtrWillBeMember<NodeToIdMap> m_documentNodeToIdMap;
     // Owns node mappings for dangling nodes.
@@ -255,9 +261,6 @@ private:
     typedef WillBeHeapHashMap<String, WillBeHeapVector<RefPtrWillBeMember<Node> > > SearchResults;
     SearchResults m_searchResults;
     OwnPtrWillBeMember<InspectorRevalidateDOMTask> m_revalidateTask;
-    SearchMode m_searchingForNode;
-    OwnPtr<InspectorHighlightConfig> m_inspectModeHighlightConfig;
-    RefPtrWillBeMember<Node> m_hoveredNodeForInspectMode;
     OwnPtrWillBeMember<InspectorHistory> m_history;
     OwnPtrWillBeMember<DOMEditor> m_domEditor;
     bool m_suppressAttributeModifiedEvent;

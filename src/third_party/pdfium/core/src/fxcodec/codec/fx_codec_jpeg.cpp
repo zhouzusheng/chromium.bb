@@ -426,7 +426,9 @@ FX_BOOL CCodec_JpegDecoder::Create(const uint8_t* src_buf,
   if ((int)cinfo.image_width < width) {
     return FALSE;
   }
-  m_Pitch = (cinfo.image_width * cinfo.num_components + 3) / 4 * 4;
+  m_Pitch =
+      (static_cast<FX_DWORD>(cinfo.image_width) * cinfo.num_components + 3) /
+      4 * 4;
   m_pScanlineBuf = FX_Alloc(uint8_t, m_Pitch);
   m_nComps = cinfo.num_components;
   m_bpc = 8;
@@ -464,7 +466,7 @@ void CCodec_JpegDecoder::v_DownScale(int dest_width, int dest_height) {
       FX_GetDownsampleRatio(m_OrigWidth, m_OrigHeight, dest_width, dest_height);
   m_OutputWidth = (m_OrigWidth + m_DownScale - 1) / m_DownScale;
   m_OutputHeight = (m_OrigHeight + m_DownScale - 1) / m_DownScale;
-  m_Pitch = (m_OutputWidth * m_nComps + 3) / 4 * 4;
+  m_Pitch = (static_cast<FX_DWORD>(m_OutputWidth) * m_nComps + 3) / 4 * 4;
   if (old_scale != m_DownScale) {
     m_NextLine = -1;
   }
@@ -500,9 +502,13 @@ uint8_t* CCodec_JpegDecoder::v_GetNextLine() {
   if (m_pExtProvider) {
     return m_pExtProvider->GetNextLine(m_pExtContext);
   }
+
+  if (setjmp(m_JmpBuf) == -1)
+    return nullptr;
+
   int nlines = jpeg_read_scanlines(&cinfo, &m_pScanlineBuf, 1);
   if (nlines < 1) {
-    return NULL;
+    return nullptr;
   }
   return m_pScanlineBuf;
 }
@@ -601,8 +607,7 @@ void* CCodec_JpegModule::Start() {
   if (m_pExtProvider) {
     return m_pExtProvider->Start();
   }
-  FXJPEG_Context* p =
-      (FXJPEG_Context*)FX_Alloc(uint8_t, sizeof(FXJPEG_Context));
+  FXJPEG_Context* p = FX_Alloc(FXJPEG_Context, 1);
   p->m_AllocFunc = jpeg_alloc_func;
   p->m_FreeFunc = jpeg_free_func;
   p->m_ErrMgr.error_exit = _error_fatal1;

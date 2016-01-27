@@ -68,6 +68,7 @@ class RenderViewHostImpl;
 class RenderWidgetHostDelegate;
 class RenderWidgetHostImpl;
 class RenderWidgetHostView;
+class RenderWidgetHostViewBase;
 class ResourceRequestBody;
 class StreamHandle;
 class TimeoutMonitor;
@@ -80,15 +81,8 @@ struct ResourceResponse;
 enum CreateRenderFrameFlags {
   // The RFH will be initially placed on the swapped out hosts list.
   CREATE_RF_SWAPPED_OUT = 1 << 0,
-  // The new RenderFrame is being created for a navigation of the
-  // top-level frame.
-  CREATE_RF_FOR_MAIN_FRAME_NAVIGATION = 1 << 1,
   // The RenderFrame is initially hidden.
-  CREATE_RF_HIDDEN = 1 << 2,
-  // The RenderFrameHost will have a new RenderWidgetHost created and
-  // attached to it. This is used when the RenderFrameHost is in a different
-  // process from its parent frame.
-  CREATE_RF_NEEDS_RENDER_WIDGET_HOST = 1 << 3
+  CREATE_RF_HIDDEN = 1 << 1,
 };
 
 class CONTENT_EXPORT RenderFrameHostImpl
@@ -193,11 +187,11 @@ class CONTENT_EXPORT RenderFrameHostImpl
   gfx::AcceleratedWidget AccessibilityGetAcceleratedWidget() override;
   gfx::NativeViewAccessible AccessibilityGetNativeViewAccessible() override;
 
-  // Creates a RenderFrame in the renderer process.  Only called for
-  // cross-process subframe navigations in --site-per-process.
-  bool CreateRenderFrame(int parent_routing_id,
-                         int previous_sibling_routing_id,
-                         int proxy_routing_id);
+  // Creates a RenderFrame in the renderer process.
+  bool CreateRenderFrame(int proxy_routing_id,
+                         int opener_routing_id,
+                         int parent_routing_id,
+                         int previous_sibling_routing_id);
 
   // Tracks whether the RenderFrame for this RenderFrameHost has been created in
   // the renderer process.  This is currently only used for subframes.
@@ -324,8 +318,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
                 const StartNavigationParams& start_params,
                 const RequestNavigationParams& request_params);
 
-  // Load the specified URL; this is a shortcut for Navigate().
-  void NavigateToURL(const GURL& url);
+  // Navigates to an interstitial page represented by the provided data URL.
+  void NavigateToInterstitialURL(const GURL& data_url);
 
   // Treat this prospective navigation as though it originated from the frame.
   // Used, e.g., for a navigation request that originated from a RemoteFrame.
@@ -374,9 +368,13 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // frame is the main frame.
   bool ShouldDispatchBeforeUnload();
 
-  // Set the frame's opener to null in the renderer process in response to an
-  // action in another renderer process.
-  void DisownOpener();
+  // Update the frame's opener in the renderer process in response to the
+  // opener being modified (e.g., with window.open or being set to null) in
+  // another renderer process.
+  void UpdateOpener();
+
+  // Clear focus from this frame in the renderer process.
+  void ClearFocus();
 
   // Deletes the current selection plus the specified number of characters
   // before and after the selection or caret.
@@ -485,7 +483,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
                       RenderWidgetHostDelegate* rwh_delegate,
                       FrameTree* frame_tree,
                       FrameTreeNode* frame_tree_node,
-                      int routing_id,
+                      int32 routing_id,
+                      int32 widget_routing_id,
                       int flags);
 
  private:
@@ -537,7 +536,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
                                           size_t start_offset,
                                           size_t end_offset);
   void OnDidAccessInitialDocument();
-  void OnDidDisownOpener();
+  void OnDidChangeOpener(int32 opener_routing_id);
   void OnDidChangeName(const std::string& name);
   void OnDidAssignPageId(int32 page_id);
   void OnDidChangeSandboxFlags(int32 frame_routing_id,
@@ -608,6 +607,11 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // AXNodeData structure.
   void AXContentNodeDataToAXNodeData(const AXContentNodeData& src,
                                      ui::AXNodeData* dst);
+
+  // Returns the RenderWidgetHostView used for accessibility. For subframes,
+  // this function will return the platform view on the main frame; for main
+  // frames, it will return the current frame's view.
+  RenderWidgetHostViewBase* GetViewForAccessibility();
 
   // For now, RenderFrameHosts indirectly keep RenderViewHosts alive via a
   // refcount that calls Shutdown when it reaches zero.  This allows each

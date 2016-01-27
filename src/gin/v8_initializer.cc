@@ -301,6 +301,10 @@ void V8Initializer::LoadV8SnapshotFromFD(base::PlatformFile snapshot_pf,
   if (!VerifyV8StartupFile(&g_mapped_snapshot, GetV8SnapshotFingerprint()))
     result = V8_LOAD_FAILED_VERIFY;
 #endif  // V8_VERIFY_EXTERNAL_STARTUP_DATA
+  if (result == V8_LOAD_SUCCESS) {
+    g_snapshot_pf = snapshot_pf;
+    g_snapshot_region = snapshot_region;
+  }
   UMA_HISTOGRAM_ENUMERATION("V8.Initializer.LoadV8Snapshot.Result", result,
                             V8_LOAD_MAX_VALUE);
 }
@@ -329,6 +333,8 @@ void V8Initializer::LoadV8NativesFromFD(base::PlatformFile natives_pf,
     LOG(FATAL) << "Couldn't verify contents of v8 natives data file";
   }
 #endif  // V8_VERIFY_EXTERNAL_STARTUP_DATA
+  g_natives_pf = natives_pf;
+  g_natives_region = natives_region;
 }
 
 // static

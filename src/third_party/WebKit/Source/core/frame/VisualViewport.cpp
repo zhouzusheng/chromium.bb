@@ -38,7 +38,7 @@
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/layout/LayoutView.h"
 #include "core/layout/TextAutosizer.h"
-#include "core/layout/compositing/DeprecatedPaintLayerCompositor.h"
+#include "core/layout/compositing/PaintLayerCompositor.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
@@ -49,7 +49,7 @@
 #include "platform/graphics/GraphicsLayer.h"
 #include "platform/graphics/GraphicsLayerFactory.h"
 #include "platform/scroll/Scrollbar.h"
-#include "platform/scroll/ScrollbarTheme.h"
+#include "platform/scroll/ScrollbarThemeOverlay.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebCompositorSupport.h"
 #include "public/platform/WebLayer.h"
@@ -71,12 +71,15 @@ VisualViewport::VisualViewport(FrameHost& owner)
     : m_frameHost(&owner)
     , m_scale(1)
     , m_topControlsAdjustment(0)
+    , m_maxPageScale(-1)
+    , m_trackPinchZoomStatsForPage(false)
 {
     reset();
 }
 
 VisualViewport::~VisualViewport()
 {
+    sendUMAMetrics();
 }
 
 DEFINE_TRACE(VisualViewport)
@@ -106,8 +109,7 @@ void VisualViewport::setSize(const IntSize& size)
         m_innerViewportContainerLayer->setSize(m_size);
 
         // Need to re-compute sizes for the overlay scrollbars.
-        setupScrollbar(WebScrollbar::Horizontal);
-        setupScrollbar(WebScrollbar::Vertical);
+        initializeScrollbars();
     }
 
     if (autosizerNeedsUpdating) {
@@ -215,13 +217,13 @@ void VisualViewport::setScaleAndLocation(float scale, const FloatPoint& location
         document->enqueueScrollEventForNode(document);
 
         mainFrame()->loader().client()->didChangeScrollOffset();
-        InspectorInstrumentation::didScroll(mainFrame());
         valuesChanged = true;
     }
 
     if (!valuesChanged)
         return;
 
+    InspectorInstrumentation::didUpdateLayout(mainFrame());
     mainFrame()->loader().saveScrollState();
 
     clampToBoundaries();
@@ -270,14 +272,12 @@ bool VisualViewport::magnifyScaleAroundAnchor(float magnifyDelta, const FloatPoi
 //  |       +- *pageScaleLayer
 //  |           +- *innerViewportScrollLayer
 //  |               +-- overflowControlsHostLayer (root layer)
-//  |                   +-- outerViewportContainerLayer (fixed pos container) [frame container layer in DeprecatedPaintLayerCompositor]
-//  |                   |   +-- outerViewportScrollLayer [frame scroll layer in DeprecatedPaintLayerCompositor]
+//  |                   +-- outerViewportContainerLayer (fixed pos container) [frame container layer in PaintLayerCompositor]
+//  |                   |   +-- outerViewportScrollLayer [frame scroll layer in PaintLayerCompositor]
 //  |                   |       +-- content layers ...
-//  |                   +-- horizontal ScrollbarLayer (non-overlay)
-//  |                   +-- verticalScrollbarLayer (non-overlay)
-//  |                   +-- scroll corner (non-overlay)
-//  +- *horizontalScrollbarLayer (overlay)
-//  +- *verticalScrollbarLayer (overlay)
+//  +- horizontalScrollbarLayer
+//  +- verticalScrollbarLayer
+//  +- scroll corner (non-overlay only)
 //
 void VisualViewport::attachToLayerTree(GraphicsLayer* currentLayerTreeRoot, GraphicsLayerFactory* graphicsLayerFactory)
 {
@@ -324,19 +324,31 @@ void VisualViewport::attachToLayerTree(GraphicsLayer* currentLayerTreeRoot, Grap
         m_innerViewportContainerLayer->addChild(m_overscrollElasticityLayer.get());
         m_overscrollElasticityLayer->addChild(m_pageScaleLayer.get());
         m_pageScaleLayer->addChild(m_innerViewportScrollLayer.get());
-        m_innerViewportContainerLayer->addChild(m_overlayScrollbarHorizontal.get());
-        m_innerViewportContainerLayer->addChild(m_overlayScrollbarVertical.get());
 
         // Ensure this class is set as the scroll layer's ScrollableArea.
         coordinator->scrollableAreaScrollLayerDidChange(this);
 
-        // Setup the inner viewport overlay scrollbars.
-        setupScrollbar(WebScrollbar::Horizontal);
-        setupScrollbar(WebScrollbar::Vertical);
+        initializeScrollbars();
     }
 
     m_innerViewportScrollLayer->removeAllChildren();
     m_innerViewportScrollLayer->addChild(currentLayerTreeRoot);
+}
+
+void VisualViewport::initializeScrollbars()
+{
+    if (visualViewportSuppliesScrollbars()) {
+        if (!m_overlayScrollbarHorizontal->parent())
+            m_innerViewportContainerLayer->addChild(m_overlayScrollbarHorizontal.get());
+        if (!m_overlayScrollbarVertical->parent())
+            m_innerViewportContainerLayer->addChild(m_overlayScrollbarVertical.get());
+    } else {
+        m_overlayScrollbarHorizontal->removeFromParent();
+        m_overlayScrollbarVertical->removeFromParent();
+    }
+
+    setupScrollbar(WebScrollbar::Horizontal);
+    setupScrollbar(WebScrollbar::Vertical);
 }
 
 void VisualViewport::setupScrollbar(WebScrollbar::Orientation orientation)
@@ -347,17 +359,10 @@ void VisualViewport::setupScrollbar(WebScrollbar::Orientation orientation)
     OwnPtr<WebScrollbarLayer>& webScrollbarLayer = isHorizontal ?
         m_webOverlayScrollbarHorizontal : m_webOverlayScrollbarVertical;
 
-    int thumbThickness = frameHost().settings().pinchOverlayScrollbarThickness();
-    int scrollbarThickness = thumbThickness;
-    int scrollbarMargin = scrollbarThickness;
-
-    // FIXME: Rather than manually creating scrollbar layers, we should create
-    // real scrollbars so we can reuse all the machinery from ScrollbarTheme.
-#if OS(ANDROID)
-    thumbThickness = ScrollbarTheme::theme()->thumbThickness(0);
-    scrollbarThickness = ScrollbarTheme::theme()->scrollbarThickness(RegularScrollbar);
-    scrollbarMargin = ScrollbarTheme::theme()->scrollbarMargin();
-#endif
+    ScrollbarTheme* theme = ScrollbarThemeOverlay::mobileTheme();
+    int thumbThickness = theme->thumbThickness(0);
+    int scrollbarThickness = theme->scrollbarThickness(RegularScrollbar);
+    int scrollbarMargin = theme->scrollbarMargin();
 
     if (!webScrollbarLayer) {
         ScrollingCoordinator* coordinator = frameHost().page().scrollingCoordinator();
@@ -370,7 +375,6 @@ void VisualViewport::setupScrollbar(WebScrollbar::Orientation orientation)
         // The compositor will control the scrollbar's visibility. Set to invisible by defualt
         // so scrollbars don't show up in layout tests.
         webScrollbarLayer->layer()->setOpacity(0);
-
         scrollbarGraphicsLayer->setContentsToPlatformLayer(webScrollbarLayer->layer());
         scrollbarGraphicsLayer->setDrawsContent(false);
     }
@@ -396,7 +400,7 @@ void VisualViewport::registerLayersWithTreeView(WebLayerTreeView* layerTreeView)
 
     ASSERT(frameHost().page().deprecatedLocalMainFrame()->contentLayoutObject());
 
-    DeprecatedPaintLayerCompositor* compositor = frameHost().page().deprecatedLocalMainFrame()->contentLayoutObject()->compositor();
+    PaintLayerCompositor* compositor = frameHost().page().deprecatedLocalMainFrame()->contentLayoutObject()->compositor();
     // Get the outer viewport scroll layer.
     WebLayer* scrollLayer = compositor->scrollLayer() ? compositor->scrollLayer()->platformLayer() : 0;
 
@@ -409,6 +413,14 @@ void VisualViewport::registerLayersWithTreeView(WebLayerTreeView* layerTreeView)
         m_pageScaleLayer->platformLayer(),
         m_innerViewportScrollLayer->platformLayer(),
         scrollLayer);
+
+    // TODO(aelias): Remove this call after this setting is deleted.
+    layerTreeView->setHidePinchScrollbarsNearMinScale(false);
+}
+
+bool VisualViewport::visualViewportSuppliesScrollbars() const
+{
+    return frameHost().settings().viewportMetaEnabled();
 }
 
 void VisualViewport::clearLayersForTreeView(WebLayerTreeView* layerTreeView) const
@@ -416,6 +428,11 @@ void VisualViewport::clearLayersForTreeView(WebLayerTreeView* layerTreeView) con
     ASSERT(layerTreeView);
 
     layerTreeView->clearViewportLayers();
+}
+
+HostWindow* VisualViewport::hostWindow() const
+{
+    return &frameHost().chromeClient();
 }
 
 DoubleRect VisualViewport::visibleContentRectDouble(IncludeScrollbarsInRect) const
@@ -562,7 +579,7 @@ GraphicsLayer* VisualViewport::layerForVerticalScrollbar() const
     return m_overlayScrollbarVertical.get();
 }
 
-void VisualViewport::paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& inClip)
+void VisualViewport::paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& inClip) const
 {
 }
 
@@ -638,6 +655,68 @@ IntPoint VisualViewport::rootFrameToViewport(const IntPoint& pointInRootFrame) c
 {
     // FIXME: How to snap to pixels?
     return flooredIntPoint(FloatPoint(rootFrameToViewport(FloatPoint(pointInRootFrame))));
+}
+
+void VisualViewport::startTrackingPinchStats()
+{
+    if (!mainFrame())
+        return;
+
+    Document* document = mainFrame()->document();
+    if (!document)
+        return;
+
+    if (!document->url().protocolIsInHTTPFamily())
+        return;
+
+    m_trackPinchZoomStatsForPage = !shouldDisableDesktopWorkarounds();
+}
+
+void VisualViewport::userDidChangeScale()
+{
+    if (!m_trackPinchZoomStatsForPage)
+        return;
+
+    m_maxPageScale = std::max(m_maxPageScale, m_scale);
+}
+
+void VisualViewport::sendUMAMetrics()
+{
+    if (m_trackPinchZoomStatsForPage) {
+        bool didScale = m_maxPageScale > 0;
+
+        Platform::current()->histogramEnumeration("Viewport.DidScalePage", didScale ? 1 : 0, 2);
+
+        if (didScale) {
+            int zoomPercentage = floor(m_maxPageScale * 100);
+
+            // See the PageScaleFactor enumeration in histograms.xml for the bucket ranges.
+            int bucket = floor(zoomPercentage / 25.f);
+
+            Platform::current()->histogramEnumeration("Viewport.MaxPageScale", bucket, 21);
+        }
+    }
+
+    m_maxPageScale = -1;
+    m_trackPinchZoomStatsForPage = false;
+}
+
+bool VisualViewport::shouldDisableDesktopWorkarounds() const
+{
+    if (!mainFrame() || !mainFrame()->view())
+        return false;
+
+    if (!mainFrame()->settings()->viewportEnabled())
+        return false;
+
+    // A document is considered adapted to small screen UAs if one of these holds:
+    // 1. The author specified viewport has a constrained width that is equal to
+    //    the initial viewport width.
+    // 2. The author has disabled viewport zoom.
+    const PageScaleConstraints& constraints = frameHost().pageScaleConstraintsSet().pageDefinedConstraints();
+
+    return mainFrame()->view()->layoutSize().width() == m_size.width()
+        || (constraints.minimumScale == constraints.maximumScale && constraints.minimumScale != -1);
 }
 
 String VisualViewport::debugName(const GraphicsLayer* graphicsLayer)

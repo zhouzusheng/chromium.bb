@@ -116,7 +116,7 @@ static Color textColorForWhiteBackground(Color textColor)
 }
 
 // static
-TextPainter::Style TextPainter::textPaintingStyle(LayoutObject& layoutObject, const ComputedStyle& style, const PaintInfo& paintInfo)
+TextPainter::Style TextPainter::textPaintingStyle(const LayoutObject& layoutObject, const ComputedStyle& style, const PaintInfo& paintInfo)
 {
     TextPainter::Style textStyle;
     bool isPrinting = paintInfo.isPrinting();
@@ -154,7 +154,7 @@ TextPainter::Style TextPainter::textPaintingStyle(LayoutObject& layoutObject, co
     return textStyle;
 }
 
-TextPainter::Style TextPainter::selectionPaintingStyle(LayoutObject& layoutObject, bool haveSelection, const PaintInfo& paintInfo, const TextPainter::Style& textStyle)
+TextPainter::Style TextPainter::selectionPaintingStyle(const LayoutObject& layoutObject, bool haveSelection, const PaintInfo& paintInfo, const TextPainter::Style& textStyle)
 {
     TextPainter::Style selectionStyle = textStyle;
     bool usesTextAsClip = paintInfo.phase == PaintPhaseTextClip;
@@ -202,7 +202,7 @@ template <TextPainter::PaintInternalStep Step>
 void TextPainter::paintInternal(int startOffset, int endOffset, int truncationPoint, TextBlobPtr* cachedTextBlob)
 {
     TextRunPaintInfo textRunPaintInfo(m_run);
-    textRunPaintInfo.bounds = m_textBounds;
+    textRunPaintInfo.bounds = FloatRect(m_textBounds);
     if (startOffset <= endOffset) {
         // FIXME: We should be able to use cachedTextBlob in more cases.
         textRunPaintInfo.cachedTextBlob = cachedTextBlob;
@@ -221,7 +221,7 @@ void TextPainter::paintEmphasisMarkForCombinedText()
     DEFINE_STATIC_LOCAL(TextRun, placeholderTextRun, (&ideographicFullStopCharacter, 1));
     FloatPoint emphasisMarkTextOrigin(m_textBounds.x().toFloat(), m_textBounds.y().toFloat() + m_font.fontMetrics().ascent() + m_emphasisMarkOffset);
     TextRunPaintInfo textRunPaintInfo(placeholderTextRun);
-    textRunPaintInfo.bounds = m_textBounds;
+    textRunPaintInfo.bounds = FloatRect(m_textBounds);
     m_graphicsContext->concatCTM(rotation(m_textBounds, Clockwise));
     m_graphicsContext->drawEmphasisMarks(m_combinedText->originalFont(), textRunPaintInfo, m_emphasisMark, emphasisMarkTextOrigin);
     m_graphicsContext->concatCTM(rotation(m_textBounds, Counterclockwise));

@@ -244,19 +244,19 @@ void StyleAdjuster::adjustComputedStyle(ComputedStyle& style, const ComputedStyl
             style.clearMultiCol();
     }
 
-    if (e && e->hasTagName(htmlTag)) {
-        if (e->document().frame() &&
-            e->document().frame()->deprecatedLocalOwner() &&
-            e->document().frame()->deprecatedLocalOwner()->layoutObject()) {
+    if (element && element->hasTagName(htmlTag)) {
+        if (element->document().frame() &&
+            element->document().frame()->deprecatedLocalOwner() &&
+            element->document().frame()->deprecatedLocalOwner()->layoutObject()) {
             float ownerEffectiveZoom
-                = e->document().frame()->deprecatedLocalOwner()->layoutObject()->style()->effectiveZoom();
+                = element->document().frame()->deprecatedLocalOwner()->layoutObject()->style()->effectiveZoom();
             float childZoom = style.zoom();
             style.setEffectiveZoom(ownerEffectiveZoom * childZoom);
         }
     }
 
-    if (e && e->hasTagName(iframeTag)) {
-        HTMLIFrameElement* iframe = static_cast<HTMLIFrameElement*>(e);
+    if (element && element->hasTagName(iframeTag)) {
+        HTMLIFrameElement* iframe = static_cast<HTMLIFrameElement*>(element);
         if (iframe->contentDocument() && iframe->contentDocument()->body() &&
             iframe->contentDocument()->body()->parentNode() &&
             iframe->contentDocument()->body()->parentNode()->layoutObject()) {

@@ -355,6 +355,11 @@ static HTMLElement* adjacentEnclosingList(const VisiblePosition& pos, const Visi
     return listElement;
 }
 
+static bool isInline(const Node* node)
+{
+    return node && node->layoutObject() && node->layoutObject()->isInline();
+}
+
 PassRefPtrWillBeRawPtr<HTMLElement> InsertListCommand::listifyParagraph(const VisiblePosition& originalStart, const HTMLQualifiedName& listTag)
 {
     VisiblePosition start = startOfParagraph(originalStart, CanSkipOverEditingBoundary);
@@ -396,6 +401,9 @@ PassRefPtrWillBeRawPtr<HTMLElement> InsertListCommand::listifyParagraph(const Vi
         // inline ancestors of start, since it is easier for editing to produce
         // clean markup when inline elements are pushed down as far as possible.
         Position insertionPos(mostBackwardCaretPosition(start.deepEquivalent()));
+        while (isInline(insertionPos.anchorNode()) && !insertionPos.anchorNode()->hasTagName(brTag)) {
+            insertionPos = positionInParentBeforeNode(*insertionPos.anchorNode());
+        }
         // Also avoid the containing list item.
         Node* listChild = enclosingListChild(insertionPos.anchorNode());
         if (isHTMLLIElement(listChild))

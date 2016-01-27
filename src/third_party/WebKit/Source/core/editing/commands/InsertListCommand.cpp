@@ -355,6 +355,11 @@ static HTMLElement* adjacentEnclosingList(const VisiblePosition& pos, const Visi
     return listElement;
 }
 
+static bool isInline(const Node* node)
+{
+    return node && node->layoutObject() && node->layoutObject()->isInline();
+}
+
 PassRefPtrWillBeRawPtr<HTMLElement> InsertListCommand::listifyParagraph(const VisiblePosition& originalStart, const HTMLQualifiedName& listTag)
 {
     VisiblePosition start = startOfParagraph(originalStart, CanSkipOverEditingBoundary);
